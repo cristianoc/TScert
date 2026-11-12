@@ -189,6 +189,9 @@ run_cmd do
   check ``Verification.TolerantFrames.escaping_checked
   check ``Verification.TolerantFrames.escaping_safe
   check ``Verification.TolerantFrames.escaping_raised
+  check ``Verification.TolerantFrames.oneBits_safe
+  check ``Verification.TolerantFrames.increment_judgment
+  check ``Verification.TolerantFrames.increment_checked
   check ``Verification.TolerantFrames.pure_inspect
   check ``Verification.TolerantFrames.created_keeps
   check ``Verification.TolerantFrames.base_shape

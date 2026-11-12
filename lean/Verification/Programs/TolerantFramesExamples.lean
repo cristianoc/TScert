@@ -112,4 +112,75 @@ theorem escaping_raised (m : Nat) {ρ : Env} {s : IndexedHeap} {k : Nat} {h' : H
     (escapingPre_admin m) (l := 0) trivial hrun hk
   exact he
 
+/-! ## The loop's increment
+
+The increment node of the loop of `out[j] = xs[j]` (`loop_back_edge`):
+`j + 1` at the write node's environment `v, j, to, xs, out`, `j` in slot 1 and
+`to` in slot 2. Under the guard's fact `j < to`, with `0 ≤ j`, the sum is a
+safe integer, and the node's judgment is the one `loop_back_edge` names: the
+empty effect, the post `j' = j + 1`. -/
+
+/-- The double `1`. -/
+def oneBits : UInt64 := bitsOfNat 1
+
+/-- The increment's term: `j + 1`, `j` in slot 1. -/
+def incTerm : Tm := .arith .add (.var 1) (.num oneBits)
+
+theorem oneBits_safe : SafeIntegers.SafeInt oneBits 1 := ⟨by decide, .inl ⟨by decide, rfl⟩⟩
+
+/-- **The increment's local judgment**: where slot 1 holds a non-negative
+integer below the integer slot 2 holds, `j + 1` takes one step to the double
+of the sum, keeping the heap, its value of every family admitting doubles; its
+post is the one `loop_back_edge` takes. -/
+theorem increment_judgment {Ξ T : Fam} {ce : Footprints.Closed} {Qe : Heap → Prop} {ρ : Env} {s : IndexedHeap}
+    (hT : ∀ n W b, T n W (.num b)) {a b : Int} (ha : HeapKnowledge.intValue (ρ 1) = some a)
+    (hb : HeapKnowledge.intValue (ρ 2) = some b) (h0 : 0 ≤ a) (hlt : a < b) :
+    SafePostExc Ξ T
+      (fun h' v => Footprints.Closed.empty.Holds s.h h' ∧
+        ∃ a, HeapKnowledge.intValue (ρ 1) = some a ∧ HeapKnowledge.intValue v = some (a + 1))
+      (fun h' => ce.Holds s.h h' ∧ Qe h') s.n s.W s.h (instantiate 0 ρ incTerm) := by
+  obtain ⟨x, hx⟩ : ∃ x, ρ 1 = .num x := by
+    cases h : ρ 1 <;> rw [h] at ha <;> first | exact ⟨_, rfl⟩ | cases ha
+  rw [hx] at ha
+  have hsx : SafeIntegers.SafeInt x a := SafeIntegers.safeIntOfBits_sound ha
+  have hbsafe : b.natAbs < 2 ^ 53 := by
+    cases h : ρ 2 <;> rw [h] at hb <;> first | exact (SafeIntegers.safeIntOfBits_sound hb).1 | cases hb
+  have hsum : SafeIntegers.SafeInt (arithBits .add x oneBits) (a + 1) :=
+    SafeIntegers.add_safe hsx oneBits_safe (by omega)
+  obtain ⟨n, W, h, pos, adm, ok⟩ := s
+  cases n with
+  | zero => exact absurd pos (Nat.lt_irrefl 0)
+  | succ n =>
+    have hinst : instantiate 0 ρ incTerm = .arith .add (.num x) (.num oneBits) := by
+      simp [incTerm, instantiate, hx]
+    rw [hinst]
+    have hstep : Step h (.arith .add (.num x) (.num oneBits)) h (.num (arithBits .add x oneBits)) :=
+      .arithV (by simp [binop, Arith.relational])
+    refine .inr ⟨trunc n (Nat.le_succ n) W, h, _, WExt_refl _, WorldAdm_trunc _ adm, hstep,
+      HeapOk_trunc n W h ok, SafePostExc.value rfl (hT _ _ _)
+        ⟨Footprints.Closed.Holds.refl _ _, a, by rw [hx]; exact ha,
+          SafeIntegers.safeIntOfBits_complete hsum⟩⟩
+
+/-- **The increment node checked**: its local judgment and its back edge's
+obligations together, the form `NodesChecked` asks of a node, from the head's
+facts `0 ≤ j`, `to ≤ |xs|` and the guard's `j < to` at the node's entry. -/
+theorem increment_checked {pre : Nat → Assertion} {Ξres Tres Ξ T : Fam} {Qres Rres : Heap → Prop}
+    {ce : Footprints.Closed} {Qe : Heap → Prop} {ρ : Env} {m : Nat} {s₀ : IndexedHeap} {hd : Nat}
+    (hT : ∀ n W b, T n W (.num b))
+    (hhead : ∀ ρ' s, NonNeg 0 ρ' m s → LowerBound 1 2 ρ' m s → pre hd ρ' m s)
+    (hΞ : ∀ s e, Above Ξ s e → Ξres s.n s.W e ∧ Rres s.h)
+    (hj : NonNeg 1 ρ m s₀) (hb : LowerBound 2 3 ρ m s₀)
+    (hguard : ∃ a b, HeapKnowledge.intValue (ρ 1) = some a ∧ HeapKnowledge.intValue (ρ 2) = some b ∧ a < b) :
+    SafePostExc Ξ T
+      (fun h' v => Footprints.Closed.empty.Holds s₀.h h' ∧
+        ∃ a, HeapKnowledge.intValue (ρ 1) = some a ∧ HeapKnowledge.intValue v = some (a + 1))
+      (fun h' => ce.Holds s₀.h h' ∧ Qe h') s₀.n s₀.W s₀.h (instantiate 0 ρ incTerm) ∧
+    NodeObligations pre Ξres Tres Qres Rres Ξ T Footprints.Closed.empty ce
+      (fun _ v => ∃ a, HeapKnowledge.intValue (ρ 1) = some a ∧ HeapKnowledge.intValue v = some (a + 1)) Qe
+      ρ m s₀ (.bind ⟨hd, some [0, 3, 4, 5]⟩) none := by
+  obtain ⟨a, b, ha, hb', hlt⟩ := hguard
+  obtain ⟨a', ha', h0⟩ := hj
+  rw [ha] at ha'; cases ha'
+  exact ⟨increment_judgment hT ha hb' h0 hlt, loop_back_edge hhead hΞ ⟨a, ha, h0⟩ hb⟩
+
 end Verification.TolerantFrames

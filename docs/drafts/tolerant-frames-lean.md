@@ -137,10 +137,18 @@ bound (`handled_safe`); in `escapingGraph` the throw escapes, the raise target
 the graph's exception family (`escaping_safe`), and a run to the raised state
 raises `null` (`escaping_raised`, from `invocation_raised`).
 
-The loop's initialisation, guard and read edges are not proved here; the
-increment's local judgment (its empty effect and its post) is a premise.
-Both edges take the escaping throw's obligation from the node's exception
-family one level up (`hΞ`).
+The increment's local judgment, proved (`increment_judgment`): with slot 1
+holding a non-negative integer $`j`$ below the integer slot 2 holds (the
+guard's $`j<\mathit{to}`$), `j + 1` takes one step to the double of
+$`j+1`$, a safe integer (`SafeIntegers.add_safe`), keeping the heap; its post
+is the one `loop_back_edge` takes. The increment node is then checked in the
+form `NodesChecked` asks, its judgment and its back edge's obligations
+together (`increment_checked`). The loop's initialisation, guard and read
+nodes are not proved: a closed instance of `graph_safe` for the loop needs
+their judgments (the comparison `j < to` as a Boolean, the read
+$`\mathit{xs}[j]`$ within the array's store contract) and a concrete world
+for $`\mathit{xs}`$ and $`\mathit{out}`$. Both edges take the escaping
+throw's obligation from the node's exception family one level up (`hΞ`).
 
 ## One action per invocation
 
