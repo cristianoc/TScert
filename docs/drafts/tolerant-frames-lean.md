@@ -1691,3 +1691,15 @@ invariant and its `env` states the call: its heads `passHeads`, its
 reached labels closed under exits below $`n`$, the start reached) and
 `VisitsRecord` (every visit that returns gives `VisitFacts`) named
 hypotheses over the setup and the visit.
+
+**The labels the depth-first walk reaches.** Module
+`lean/Verification/Programs/TolerantFramesDriverReached.lean`. A node the
+walk has seen (state other than 0) stays seen, and every marked head is
+seen (`HeadsSeen`), round after round (proved: `dfsStep_seen`,
+`dfsLoop_seen`). On an empty stack the seen nodes are closed under
+successors below $`n`$ (proved: `dfs_closed`): a seen node is done, and a
+done node's successors below $`n`$ are heads or done. From the start on a
+fuel of at least $`2n + \sum_{w<n} |\mathit{succ}\ w|`$ the stack is
+empty, the seen nodes closed and the start seen where it is below $`n`$
+(proved: `dfsLoop_init_closed`), which gives `EnvFacts`' `closed` and
+`start` once `loopHeads` reads the walk on that fuel.
