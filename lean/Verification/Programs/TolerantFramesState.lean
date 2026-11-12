@@ -115,12 +115,11 @@ structure StoreWF (s : Store) : Prop where
 
 - `store`: the store's well-formedness (`StoreWF`);
 - `below`: every name of the slots, of the stored facts and of `fresh` is
-  below `next`, so the next result name is fresh;
-- `freshHeld`: every fresh name is held by a slot. -/
+  below `next`, so the next result name is fresh. A fresh name need not be
+  held by a slot: a merge keeps a predecessor's fresh name beside its renames. -/
 structure StateWF (st : State) (next : Nat) : Prop where
   store : StoreWF st.store
   below : (∀ x ∈ st.names, x < next) ∧ (∀ a ∈ storeAll st.store, ∀ x ∈ a.names, x < next) ∧ ∀ x ∈ st.fresh, x < next
-  freshHeld : ∀ x ∈ st.fresh, x ∈ st.names
 
 /-- The next name is fresh for every stored fact. -/
 theorem StateWF.fresh_result {st : State} {next : Nat} (w : StateWF st next) :

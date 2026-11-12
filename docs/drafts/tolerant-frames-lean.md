@@ -1346,3 +1346,96 @@ implications, the inputs and the promised input are the edge check's other
 conjuncts, not proved. The merge line's `drop_ok` and `keepFirst_mem` are
 named `drop_holds` and `keepFirst_sub`, the edge lane keeping its copies
 under the original names.
+
+## Leg 10: the edge operations and well-formedness
+
+Module `lean/Verification/Programs/TolerantFramesStoreOpsEdge.lean`. Proved:
+
+- `deltaAdd_wf`, `deltaRestate_wf`, `applyDelta_wf`: `applyDelta`'s loops
+  only add and remove facts, so the delta keeps a store well-formed;
+- `edgeStoreOf_wf`: an edge's store is well-formed where the entry store and
+  the output store are (a handler's by `dropHeap_cover`, an observation's
+  and a promotion's by `applyDelta_wf`);
+- `edgeTransfer_wf`: the target's store, the edge's store without the
+  dropped names, is well-formed (`drop_wf`);
+- `edgeTransfer_width`: under `MapNamesLength` (`mapNames names (some
+  slots)` has one name per slot where every slot reads a source slot, a
+  premise: `orderedSuffix` is a `while` loop), the target has as many names
+  as the mapping has slots, and the identity mapping as many as the source
+  (`mapNames_none`).
+
+`StateWF` has the conjuncts `store` and `below`. A merge keeps a
+predecessor's fresh name beside its renames where no merged slot holds it
+(`mergeFresh`); what holds of every state's fresh names is that they are
+below the counter, the third part of `below` (`mergeState_wf` for a merge),
+and no proof reads more.
+
+The facts' names below the counter are not proved for `Store.drop`, the
+delta's restatements, `edgeTransfer` and `headEntry`: each needs the names
+of `HeapKnowledge.eliminateIndices`', `restateReads`' and `restateStores`'
+output to be names of their input facts or of the links they read
+(`Linear.eliminateAll` combines rows, whose variables are the rows'), and
+`back`'s names below the counter.
+
+## Leg 10: the start as a loop head
+
+`SinglePass.run` makes the start a head (`isHead`, line 1403) and enters it
+with `headEntry g true`: slot $`i`$ named by the start name
+$`\mathit{startNames}[i]`$, whatever the given inputs. The state's meaning
+pins a start name to the entry value ($`\eta(\mathit{startNames}[q])=\rho_0(q)`$),
+so the start's state holds at $`\rho'`$ only where $`\rho'(i)=\rho_0(i)`$ at
+every slot. An edge into the start checks the given facts, the given
+implications, the given inputs and the promised input (lines 1937–1953),
+and no equality of a slot not among the given inputs with its entry value.
+So `HeadsEntered` at the start does not follow from the edge check where an
+edge enters the start and changes a slot's value: the start's facts over
+start names, and the input tracking a return's `ensures` reads
+(`startNames[q]` in `entry.names`, line 1672), would then be read of the
+entry values while the slots hold others. Observed in the code; no source
+reaching it is demonstrated. The pass change that closes it: where an edge
+enters the start, enter it as any head (`headEntry g false`, fresh names
+for the slots outside the given inputs), or check every start-named slot
+on each edge into the start as the given inputs are checked. Until then
+`HeadsEntered` at the start is the named premise `StartNotReentered`: no
+edge enters the start, or each edge into it keeps every slot's entry value.
+
+## Leg 10: what the driver must record
+
+`run_traversed` (an accepted call yields a walk with `PassWalkSound`) needs
+`run`'s driver on fuel; `run` is a `while true` loop, as `loopHeads` is. Its
+record `Walk` must contain, per label: whether it was visited, its entry
+state and implications (after the head entry, the single state or the
+merge, and the written assertion's facts added at a node other than a head),
+the states with implications every processed edge carried into it, the
+merge's context, edges and fresh counter, and, per edge, the edge's mapping,
+whether it pushed, and the source's state after the step. `Traversed.merge`
+asks the merge's incoming list to be complete: every edge into a non-head
+node from a reached node is processed before the node. That rests on the
+in-degree order, which is sound where every cycle of reached nodes passes
+through a head (`HeadsCutCycles`: removing the edges into heads leaves the
+reached graph acyclic), which `loopHeads` gives where it marks every
+retreating edge's target of a complete depth-first walk; `loopHeads` is a
+`while` loop, so this needs it on fuel too.
+
+## Open premises of the graph-level proof
+
+The current list, replacing leg 8's. `run_guarantee` proves the unit lane's
+`GraphGuarantee` from `PassWalkSound` at every admitted assignment; each
+premise below is a part of it or of `run_traversed`.
+
+| Premise | Statement | Owner and status |
+| --- | --- | --- |
+| `run_traversed` | an accepted `run` yields a walk, given, contexts, merge edges and counters with `Traversed` | needs the driver on fuel returning `Walk` (pass lane) |
+| `HeadsCutCycles` | every cycle of reached nodes contains a head | needs `loopHeads` on fuel |
+| `StepEdgesSound` | per node, from `passPre`, the local judgment and every exit a holding edge state into its target | step-and-edge lane: from `checkedStep_sound`, `edge_normal_sound`, `edge_handler_sound`, `freshImpl_ok`, under `DirectKeepsSummaries`, `SearchKeepsSummaries`, `NamesBelow`, the names no wider than the context, `MapNamesSound`, the result's freshness where `outFresh`, `YieldsOk`, the target's types through `subtypeUsing` |
+| `HeadsEntered` | a head's state holds where an edge state into it does | `headsEntered_of` from `HeadEstablishes`; its facts from `head_query_sound` (`headEstablishes_of_edge`); its implications, inputs and promised input from the edge check, not proved; the start: `StartNotReentered` (pass change) |
+| `MergesSound` | `LinearNearSound`, `EntailedDefined`, `GuardedHolds`, the edges' joined implications | `LinearNearSound` needs `linearNear` on fuel (pass lane); `EntailedDefined` needs the `termDefined` check (pass lane); `GuardedHolds` and the joined implications (`meetImplications` relied on unchecked) need the recheck (pass lane) |
+| `Traversed.width`, `.wf`, `.below` | the merge's incoming states have the context's width, well-formed stores and names below its counter | `.wf`: `edgeStoreOf_wf`, `edgeTransfer_wf` with `checkedStep`'s output store well-formed; `.width`: `edgeTransfer_width` under `MapNamesLength` and the edge's mapping of the target's width; `.below`: the facts' names of the eliminations, not proved |
+| `entered` | the start's state holds at every entry meeting the inputs | `start_passPre`, given `entryRefusal`'s acceptance and the walk's start entry (`run_traversed`) |
+| `FootprintKept` | the footprint check keeps the bound at each node | step-and-edge lane: `pass_footprint_exits` outside the dead region (`DerivContext` now checked by the pass), the result's freshness where `outFresh`, `deadNode` inside it |
+| `ReturnsEnsured` | the return check establishes `ensures` | step-and-edge lane: `pass_return_ensures` with `checkedStep_sound`; the input tracking at the start needs `StartNotReentered` |
+| `RegionsKept` | the regional check keeps its facts | step-and-edge lane: `ArgumentRegionGraph.checkNode` over the tables `run` builds inline |
+| `AssertionsHeld` | each stated assertion holds where `passPre` at its label does | the written assertion's facts added to a non-head entry, the given facts at a head; needs the walk's entry recorded after that addition |
+| the reassignment | the walk's predicates at `reassign G η` for every admitted `η` | not addressed: the pass runs at `G` |
+| `RunKeepsSummaries` | the answers' summaries a call starts from are among those it leaves | needs the driver on fuel; per step, `DirectKeepsSummaries` and `SearchKeepsSummaries` |
+| unchecked searches | edge evidence, yields, merge implications, `outFresh`, the subtype cache, the summary table, `mapNames` (Leg 9's table) | named hypotheses until the pass lane's checks arrive |

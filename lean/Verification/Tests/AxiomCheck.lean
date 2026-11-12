@@ -33,6 +33,7 @@ import Verification.Programs.TolerantFramesStepLinkSound
 import Verification.Programs.TolerantFramesEdge
 import Verification.Programs.TolerantFramesStepLinkReturns
 import Verification.Programs.TolerantFramesGuarantee
+import Verification.Programs.TolerantFramesStoreOpsEdge
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -521,6 +522,12 @@ run_cmd do
   check ``Verification.TolerantFrames.asserted_of_walk
   check ``Verification.TolerantFrames.run_guarantee
   check ``Verification.TolerantFrames.headEstablishes_of_edge
+  check ``Verification.TolerantFrames.deltaAdd_wf
+  check ``Verification.TolerantFrames.deltaRestate_wf
+  check ``Verification.TolerantFrames.applyDelta_wf
+  check ``Verification.TolerantFrames.edgeStoreOf_wf
+  check ``Verification.TolerantFrames.edgeTransfer_wf
+  check ``Verification.TolerantFrames.edgeTransfer_width
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
