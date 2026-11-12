@@ -51,33 +51,21 @@ theorem nodesKeep_anti {P : Program} {pre pre' : Nat → Assertion} {X : Nat →
     (h : NodesKeep P pre X Q R m) : NodesKeep P pre' X Q R m :=
   fun l ρ s hp hx => h l ρ s (hle l ρ s hp) hx
 
-/-- **The walk predicates of the safety proof**, at entry values `ρ0` and
-mark `m`: the walk's construction, each node's step and edges delivering
-the targets' typed and written assertions, the heads entered, the merges'
-premises. -/
-structure WalkSound (P : Program) (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
-    (given : Nat → Bool) (ctx : Nat → List (Ty ι))
-    (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
-    (fresh : Nat → Nat) (stated : Nat → Option HeapKnowledge.Knowledge) (Ξres Tres : Fam) (ρ0 : Env) (m : Nat) :
-    Prop where
-  traversed : Traversed G w startNames given ctx edgesIn fresh
-  steps : StepEdgesSoundA P G w startNames ρ0 ctx stated Ξres Tres (fun _ => True) (fun _ => True) m
-  heads : HeadsEntered G w startNames ρ0 given m
-  merges : MergesSound G w given ctx edgesIn
-
-/-- **The walk checks every node at the node assertion.** -/
+omit [DecidableEq ι] [Hashable ι] in
+/-- **The checked nodes at the node assertion with the traversed fields**:
+every admissible transition keeps the fields fixed (`nodesChecked_stable`),
+so the nodes checked at `passPreA` are checked at `passPreU`. -/
 theorem nodesChecked_of_walk {P : Program} {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat}
-    {given : Nat → Bool} {ctx : Nat → List (Ty ι)}
-    {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
-    {fresh : Nat → Nat} {stated : Nat → Option HeapKnowledge.Knowledge} {Ξres Tres : Fam} {ρ0 : Env} {m : Nat}
-    (hw : WalkSound P G w startNames given ctx edgesIn fresh stated Ξres Tres ρ0 m)
+    {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge} {Ξres Tres : Fam} {ρ0 : Env} {m : Nat}
+    (hw : NodesChecked P (passPreA G w startNames ρ0 ctx stated) Ξres Tres (fun _ => True) (fun _ => True) m)
     (fields : List (Nat × String)) (h₀ : Heap) :
     NodesChecked P (passPreU G w startNames ρ0 ctx stated fields h₀) Ξres Tres (fun _ => True) (fun _ => True) m :=
   nodesChecked_stable (S := fun s => ArgumentPathTracking.StableNow fields ρ0 h₀ s.W)
-    (fun _ _ ha hs => hs.transfer ha.1 ha.2) (nodesChecked_of_walkA hw.traversed hw.steps hw.heads hw.merges)
+    (fun _ _ ha hs => hs.transfer ha.1 ha.2) hw
 
-/-- **What the pass's walk at one assignment provides**: the walk
-predicates at every entry value and mark; the start's typed and written
+/-- **What the pass's walk at one assignment provides**: every node
+checked at the node assertion stating the written assertions, at every
+entry value and mark; the start's typed and written
 assertion at every entry meeting the inputs, the separation and the index
 facts (`entered`); the regions' traversed fields fixed at such an entry
 (`stable`); the per-node hypotheses of each stated option; and each
@@ -91,8 +79,8 @@ structure PassWalkSound (G : NormalGraph ι) (P : Program) (start : Nat) (goal :
     (w : Walk ι) (given : Nat → Bool) (ctx : Nat → List (Ty ι))
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
     (fresh : Nat → Nat) (stated : Nat → Option HeapKnowledge.Knowledge) : Prop where
-  walk : ∀ ρ0 m, WalkSound P G w (List.range inputs.length) given ctx edgesIn fresh stated (excOf G)
-    (GoalHolds G goal (goal.argument ρ0)) ρ0 m
+  walk : ∀ ρ0 m, NodesChecked P (passPreA G w (List.range inputs.length) ρ0 ctx stated) (excOf G)
+    (GoalHolds G goal (goal.argument ρ0)) (fun _ => True) (fun _ => True) m
   entered : ∀ ρ m (s : IndexedHeap), EnvOk G inputs ρ s.n s.W → HeapSeparation.Holds sep ρ →
     HeapKnowledge.IndexHolds idx ρ s.h → passPreA G w (List.range inputs.length) ρ ctx stated start ρ m s
   stable : ∀ Φ regions exc, regional = some (Φ, regions, exc) → ∀ ρ (s : IndexedHeap), EnvOk G inputs ρ s.n s.W →
@@ -105,6 +93,7 @@ structure PassWalkSound (G : NormalGraph ι) (P : Program) (start : Nat) (goal :
       RegionsKeptS P G w (List.range inputs.length) ρ0 ctx (X ρ0 h₀) Φ regions h₀ exc
   labelled : ∀ l k, (l, k) ∈ assertions → stated l = some k
 
+omit [DecidableEq ι] [Hashable ι] in
 /-- **The start's node assertion** at an entry meeting the inputs, the
 separation and the index facts. -/
 theorem PassWalkSound.start {G : NormalGraph ι} {P : Program} {start : Nat} {goal : Goal ι}
@@ -126,6 +115,7 @@ theorem PassWalkSound.start {G : NormalGraph ι} {P : Program} {start : Nat} {go
     obtain ⟨Φ, regions, exc⟩ := r
     simpa [regionFields] using hp.stable Φ regions exc hr ρ s he
 
+omit [DecidableEq ι] [Hashable ι] in
 /-- **An accepted run's guarantee from its walk**: where the pass's walk
 provides `PassWalkSound` at every admitted assignment, the run guarantees
 every field of `GraphGuarantee`, each read at the node assertion

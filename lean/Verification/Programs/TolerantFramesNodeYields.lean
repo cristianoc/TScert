@@ -214,22 +214,23 @@ structure NodeYielded (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
 
 omit [Instantiates ι] in
 /-- **Every checked node delivers, its exits and return reading its kept
-yields** (`StepEdgesSoundJ`): `stepEdgesSoundJ_of_checked` with the
-judgment strengthened by the yields (`stepYields_judgment`), the return's
-goal and the exits from `NodeYielded`, the entry state, the shapes and the
-handler from `NodeMeaning`, the handler's joined implications from
-`NodeJoined`. -/
-theorem stepEdgesSoundJ_of_yields {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
+yields** (`StepEdgesSoundAt` at `edgePreAJ`): `stepEdgesSound_of_checkedAt`
+with the judgment strengthened by the yields (`stepYields_judgment`), the
+return's goal and the exits from `NodeYielded`, the entry state, the shapes
+and the handler from `NodeMeaning`, the handler's joined implications from
+`ExitsJoined`. -/
+theorem stepEdgesSound_of_yields {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
     {pc : PassChecker G images} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat} {ρ0 : Env}
     {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge} {given : Nat → Bool}
     {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
     {Tres : Fam} {m : Nat}
     (hacc : ∀ l, w.visited l → ∃ r : NodeChecked G images codes pc P w startNames ctx l,
       ∃ ys, NodeMeaning G w startNames ρ0 ctx stated Tres m l r.node r.c r.entry r.st ∧
-      NodeJoined G w startNames ρ0 ctx given edgesIn m l r.node r.c r.entry r.st ∧
+      ExitsJoined G w startNames ρ0 ctx given edgesIn m l r.node r.c r.entry r.st ∧
       NodeYielded G w startNames ρ0 ctx stated given edgesIn Tres m l r.node r.c r.entry r.st ys)
     (hcodes : CodesSound G codes) :
-    StepEdgesSoundJ P G w startNames ρ0 ctx stated given edgesIn (excOf G) Tres (fun _ => True) (fun _ => True) m := by
+    StepEdgesSoundAt (edgePreAJ G w startNames ρ0 ctx stated given edgesIn) P G w startNames ρ0 ctx (excOf G) Tres
+      (fun _ => True) (fun _ => True) m := by
   intro l ρ s hp
   obtain ⟨na, ys, hm, hJ, hY⟩ := hacc l hp.1.1
   have hS := hm.entered ρ s hp

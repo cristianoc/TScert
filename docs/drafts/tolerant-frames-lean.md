@@ -1426,38 +1426,24 @@ it visits. Proved: `footprintsKept_of_checked` (`NodesMean` ∧
 (`NodesMean` ∧ `ReturnsChecked` ⟹ `ReturnsKept`), and
 
 ```math
-\mathrm{RunTraversed} \wedge \mathrm{NodesMean} \wedge \mathrm{LinearNearFuelEq} \wedge \mathrm{MergesImpliesHold} \wedge \mathrm{BoundsChecked} \wedge \mathrm{ReturnsChecked} \wedge \mathrm{RegionsHeld} \wedge \mathrm{AssertionsLabelled} \Longrightarrow \mathrm{RunSound}
+\mathrm{RunTraversedA} \wedge \mathrm{NodesMean} \wedge \mathrm{LinearNearFuelEq} \wedge \mathrm{MergeExitsJoined} \wedge \mathrm{BoundsChecked} \wedge \mathrm{ReturnsChecked} \wedge \mathrm{RegionsHeld} \wedge \mathrm{AssertionsLabelled} \Longrightarrow \mathrm{RunSound}
 ```
 
 (`run_sound_17a`). `BoundChecked` over `NodeAccepted`, the mirror
 `passOutFresh` and `CallFreshBelow` are replaced by these.
 
 **The merges' joined implications at the exits** (module
-`TolerantFramesNodeJoined.lean`). A joined implication a merge keeps
-(`joinedChecked`) is justified by the source environment's types, which an
-edge state's meaning does not read, so the exit into the merge delivers it.
-`JoinedAt t ρ s`: where `t` is a merge, its kept implications hold at
-$`\rho`$. Proved:
-
-- (`joinedAt_of_exit`) an edge recorded into $`t`$ as
-  $`(\Gamma_e, \mathrm{atSlotsOf}\ \mathit{names}\ \mathit{carried}, m)`$,
-  its source environment $`\rho_s`$ typed by $`\Gamma_e`$, its slots holding
-  $`\mathit{names}`$' values at $`\eta`$, the carried implications holding
-  at $`\eta`$ ⟹ `JoinedAt` at $`\mathrm{mapEnv}\ m\ \rho_s`$;
-- (`stepEdgesSoundJ_of_checked`) `NodeChecked` with its `NodeMeaning` and
-  `NodeJoined` (each normal exit's and the handler's `JoinedAt` at the
-  target's environment) at every visited label ∧ `CodesSound` ⟹
-  `StepEdgesSoundJ` (`StepEdgesSoundA` with each target's `edgePreA` and
-  `JoinedAt`, `edgePreAJ`); `StepEdgesSoundJ.toA` forgets `JoinedAt`.
-
-`edgePreAJ` is `edgePreA` with the conjunct of the walk side's `edgePreJ`,
-so `entries_of_traversedJ` reads it; with it `MergesImpliesHold` leaves the
-graph theorem once the walk's predicates take `StepEdgesSoundJ`.
-`NodeJoined` is discharged per exit by `joinedAt_of_exit`, given the
-driver's record of the edge (`MergeEdgeRecorded`) and $`\Gamma_e`$ typing the
-source environment: at a handler edge $`\Gamma_e`$ is the node's context; at
-a normal edge it is the context as the step's yields refine it, typed where
-the kept yields hold of the step's value.
+`TolerantFramesNodeJoined.lean`). The walk side's `joinedAt` and
+`ExitsJoined` (Leg 18b) state the obligation. Proved: (`joinedAt_of_exit`)
+an edge recorded into $`t`$ as
+$`(\Gamma_e, \mathrm{atSlotsOf}\ \mathit{names}\ \mathit{carried}, m)`$,
+its source environment $`\rho_s`$ typed by $`\Gamma_e`$, its slots holding
+$`\mathit{names}`$' values at $`\eta`$, the carried implications holding at
+$`\eta`$ ⟹ `joinedAt` at $`\mathrm{mapEnv}\ m\ \rho_s`$. `ExitsJoined` is
+discharged per exit by it, given the driver's record of the edge and
+$`\Gamma_e`$ typing the source environment: at a handler edge $`\Gamma_e`$
+is the node's context; at a normal edge it is the context as the step's
+yields refine it, typed where the kept yields hold of the step's value.
 
 **The kept yields at the values the step returns** (module
 `TolerantFramesNodeYields.lean`). `run` keeps a step's yields where
@@ -1476,11 +1462,12 @@ yields `ys` read at the implications `xs`. Proved:
   typing $`\rho`$ ∧ `ImpliesOk xs` ∧ the step's links holding ∧ the step's
   judgment ⟹ the judgment with each value meeting the claim's type and
   `YieldsOk ys` (`yieldFollows_sound`);
-- `nodeObligations_of_partsY`, (`stepEdgesSoundJ_of_yields`) `NodeChecked`
-  ∧ `NodeMeaning` (entry, shapes, handler) ∧ `NodeJoined` (handler) ∧
+- `nodeObligations_of_partsY`, (`stepEdgesSound_of_yields`) `NodeChecked`
+  ∧ `NodeMeaning` (entry, shapes, handler) ∧ `ExitsJoined` (handler) ∧
   `NodeYielded` (the yields accepted, `xs` holding at the entry, the return's
   goal and each exit from the state after the step and the yields at the
-  value) at every visited label ∧ `CodesSound` ⟹ `StepEdgesSoundJ`;
+  value) at every visited label ∧ `CodesSound` ⟹ `StepEdgesSoundAt`
+  at `edgePreAJ`;
 - `exitDeliversY_of_edge`: `exitDelivers_of_edge` with the yields read at
   the step's value and the target's types from the edge's check where they
   hold, so an exit's `YieldsOk` premise and a refined context's typing come
@@ -1502,9 +1489,8 @@ Premises this leg discharges / leaves:
 - discharges `ReturnsKept` (into `ReturnsChecked`, a record of the
   driver's walk);
 - leaves `BoundsChecked` and `ReturnsChecked` to the driver on fuel
-  (`RunTraversed`'s walk records them).
-- states the exits' obligation into a merge (`NodeJoined`,
-  `StepEdgesSoundJ`) that replaces `MergesImpliesHold`; leaves `NodeJoined`
+  (`RunTraversedA`'s walk records them).
+- leaves `ExitsJoined`
   per exit to `joinedAt_of_exit` with the driver's record and the typing of
   the refined context.
 - discharges the yields premise of the exits and the return (`YieldsOk`
@@ -1516,9 +1502,227 @@ Premises this leg discharges / leaves:
   `stepDeriv`: a pass change), `xs` holding at the entry (`slotImplOf`
   over the state's implications, a proof to write), the head edge's
   version of `exitDeliversY_of_edge`, and the walk's predicates over
-  `StepEdgesSoundJ` (the walk side's `WalkSound`).
+  `StepEdgesSoundAt` at `edgePreAJ`.
 - discharges `RegionalTyped` at a copy (`regionalTyped_copy`, where the
   copy's `stepDeriv` and `stepEffect` are none, which `StepChecked`'s copy
   case does not yet state); leaves `RegionalTyped` at a step with step
   evidence alone (the rule's judgment at every state where the evidence's
   facts hold) and with a derivation (D11, `regionalTyped_of_tree`).
+
+## Leg 17b: the walk side of the graph theorem
+
+Modules `lean/Verification/Programs/TolerantFramesMergeExits.lean` and
+`TolerantFramesMergeNearRounds.lean`.
+
+**A merge's joined implications come with the exit into it.** The pass
+records each edge into a merge as $`(\Gamma_e, \mathrm{atSlotsOf}\ \mathit{names}\ \mathit{carried}, m)`$
+beside the state `edgeTransfer` carries, whose implications are
+$`\mathit{carried}`$ and whose names are `mapNames names m`
+(`MergeEdgeRecorded`, what `RunWalk` records of it). A kept joined
+implication holds at the target environment $`\mathrm{mapEnv}\ m\ \rho_s`$
+of an exit whose source environment $`\rho_s`$ meets $`\Gamma_e`$ and whose
+carried implications hold at the source's valuation (proved:
+`joined_of_exit`, from `meetImplications_ok_of_check` and `atSlots_ok`).
+The edge state's meaning (`StateHolds`) reads names, facts and
+implications, not types, and the merge keeps an implication whose target
+slot's source type is within it (`impliesFollows`, its second disjunct)
+without the edge stating it. So `MergesImpliesHold`, the joined
+implications wherever an edge state into the merge holds (`edgePre`), is
+stronger than the pass establishes (observed from the definitions, no
+counterexample built): the joined implications are delivered by the exit.
+An exit into a merge delivers
+
+```math
+\mathrm{edgePreJ}\ t\ \rho\ m\ s \iff \mathrm{edgePre}\ t\ \rho\ m\ s \wedge (t \text{ a merge} \Rightarrow \mathrm{ImpliesOk}\ (\mathrm{joinedChecked}\ (\mathit{ctx}\ t)\ (\mathit{edgesIn}\ t))\ \rho)
+```
+
+and the entries follow from it. Proved: `entry_of_edge` (the entry state
+where an edge state holds with, at a merge, the joined implications; from
+`Traversed`, `HeadsEntered`, `LinearNearFuelEq`), `entries_of_traversed`
+by it, `entries_of_traversedJ` (`edgePreJ` ⟹ `passPre`).
+
+**The rounds of the search near a merge's names.** Over a store with
+`StoreWF` (each fact an `about` list holds is live), more fuel than
+$`|s| + 1`$ returns the same facts:
+
+```math
+\mathrm{StoreWF}\ s \Rightarrow \mathrm{linearNearFuel}\ s\ \mathit{names}\ \mathit{limit}\ (|s| + 1 + k) = \mathrm{linearNearFuel}\ s\ \mathit{names}\ \mathit{limit}
+```
+
+(proved: `linearNearFuel_rounds`). The search's invariant `NearInv` (each
+listed fact kept, listed facts distinct and live) bounds the listed facts
+by $`|s|`$ (`NearInv.out_le`); a round leaving a non-empty next frontier
+lists one more (`nearRound_progress`); so the loop has ended once its fuel
+exceeds the facts left unlisted (`nearLoop_stable`).
+
+Premises this leg discharges / leaves:
+
+- `MergesImpliesHold`: left, and replaced in the decomposition by what the
+  exits deliver: `NodeMeaning`'s exits and handler into a merge deliver
+  `edgePreJ` (per edge, `joined_of_exit` at the exit's source environment,
+  the per-node side), the walk records `MergeEdgeRecorded`; then
+  `entries_of_traversedJ` takes the place of `MergesSound`'s second
+  conjunct. `run_sound`'s statement is unchanged until the per-node side's
+  exits deliver `edgePreJ`.
+- `LinearNearFuelEq`: the rounds bound discharged (`linearNearFuel_rounds`);
+  left: the equation of the pass's `while` loop with `linearNearFuel`, and
+  the terms an entailment reads named by the facts it reads.
+
+## Leg 18b: the driver's record read as the walk
+
+Modules `lean/Verification/Programs/TolerantFramesMergeWritten.lean` and
+`TolerantFramesDriverWalk.lean`.
+
+**The written facts at an entry.** At a node other than a loop head the
+pass adds its written assertion's facts to the state it enters with (the
+single incoming state or the merge), each atom renamed from its slot to the
+name the slot holds, an atom with a slot no name holds left out
+(`withWritten`), and records that state as the label's entry. So the
+record's entry is not the single incoming state or the merge where the
+label states an assertion, and `Traversed`'s `single` and `merge` fields do
+not hold of it. `TraversedA` states the walk's construction over entries
+`base` before the addition (`Traversed` of the walk with entries `base`),
+each label's entry being `base t` at a head and
+`withWritten (stated t) (base t)` elsewhere. Proved: `withWritten_holds`
+(the state with the facts added holds where the state and the written
+assertion hold), `withWritten_wf`, `TraversedA.reassign`; `entry_of_edgeA`:
+
+```math
+\mathrm{TraversedA} \wedge \mathrm{HeadsEntered} \wedge \mathrm{LinearNearFuelEq} \wedge \mathrm{edgePre}\ t\ \rho\ m\ s \wedge \mathrm{AssertsAt}\ \mathit{stated}\ t\ \rho\ s \wedge (t \text{ a merge} \Rightarrow \mathrm{ImpliesOk}\ (\mathrm{joinedChecked}\ \dots)\ \rho) \Longrightarrow \mathrm{passPre}\ t\ \rho\ m\ s
+```
+
+and with it `passPreA_of_edgeAJ`: `edgePreAJ` (`edgePreA` with, at a merge,
+the joined implications) gives `passPreA`.
+
+**The driver.** `SinglePass.drive` visits the queue's first node on fuel.
+Proved: a drive that returns made its visits, each from the queue's first
+node over the rest of the queue, until the queue is empty (`Drives`,
+`drives_of_drive`, `Drives.queue`); a property every visit keeps holds of
+its result (`Drives.inv`); an accepted call either stopped with an accepted
+outcome or returned a record visiting at least the nodes the start
+reaches, its answers the call's (`walk_of_accepts'`, from `run` being the
+record's `Walk.outcome`); with `WalkStopsRefuse` (a stopped walk is never
+accepted), the latter (`walk_of_accepts`).
+
+**The record as the proof's walk** (`ofPass`, with the loop heads
+`passHeads`, the start and `loopHeads`' targets as `runWalk` marks them): a
+label visited where its record says so; its recorded entry state and
+implications; into a node other than a head, the states and implications
+the processed edges carried; into a head, its own entry where a processed
+edge enters it, so each edge state into a head is the head's entry by
+construction (proved: `ofPass_heads`). The label contexts, written
+assertions, merge edges and merge counters are the call's and the record's
+(`passCtx`, `passStated`, `passEdgesIn`, `passFresh`). `RecordSound`, what
+the record must give: every visited node `NodeChecked`, `TraversedA`, the
+start entered. Proved: (`run_traversedA`) `WalkStopsRefuse` ∧
+`RecordsSound` ⟹ `RunTraversedA`, the driver's walk `RunWalkA` (`RunWalk`
+with `TraversedA`) of every accepted call.
+
+**A merge's joined implications on the exits.** The pass keeps a joined
+implication at a merge only where every incoming edge passes
+`PromiseCalls.impliesCheck` over the edge's context $`\Gamma_e`$ as the
+source's yields refine it, its implications at the source's slots and its
+mapping (`joinedChecked`). That check gives the kept implications at the
+target environment $`\mathrm{mapEnv}\ m\ \rho_s`$ of an exit whose source
+environment $`\rho_s`$ meets $`\Gamma_e`$ and whose carried implications
+hold (`joined_of_exit`). It does not give `edgePreJ` at an edge state alone:
+the edge state's meaning reads names, facts and implications, and the
+check reads $`\Gamma_e`$'s types at the source, which no edge state and no
+target type states (the merge's own context types the target, not the
+source's refined context). So the joined implications are an obligation of
+the exit, stated beside the exits' other obligations: `joinedAt` (at a
+merge, the kept implications at the environment) and `ExitsJoined` (each
+normal exit and the handler of a node delivering `joinedAt` of its
+target). `NodeMeaningAt pre` is a node's meaning with its exits and handler
+delivering `pre`, `NodeMeaning` the one at `edgePreA`;
+`StepEdgesSoundAt pre` is `StepEdgesSoundA` at `pre`. Proved:
+`stepEdgesSound_of_checkedAt` (`NodeChecked` with `NodeMeaningAt pre` at
+every visited node ∧ `CodesSound` ⟹ `StepEdgesSoundAt pre`),
+`NodeMeaning.withJoined` (`NodeMeaning` ∧ `ExitsJoined` ⟹
+`NodeMeaningAt edgePreAJ`), `nodesChecked_of_walkJ`:
+
+```math
+\mathrm{TraversedA} \wedge \mathrm{StepEdgesSoundAt}\ \mathrm{edgePreAJ} \wedge \mathrm{HeadsEntered} \wedge \mathrm{LinearNearFuelEq} \Longrightarrow \mathrm{NodesChecked}\ \mathrm{passPreA}
+```
+
+`PassWalkSound`'s walk field is `NodesChecked` at `passPreA` at every entry
+value and mark; `nodesChecked_of_walk` gives it at `passPreU`.
+
+**(`run_sound`, restated)**, proved:
+
+```math
+\mathrm{RunTraversedA} \wedge \mathrm{NodesMean} \wedge \mathrm{LinearNearFuelEq} \wedge \mathrm{MergeExitsJoined} \wedge \mathrm{FootprintsKept} \wedge \mathrm{ReturnsKept} \wedge \mathrm{RegionsHeld} \wedge \mathrm{AssertionsLabelled} \Longrightarrow \mathrm{RunSound}
+```
+
+`RunWalkA` is `RunWalk` with `TraversedA`; `MergeExitsJoined`: at every
+admitted reassigned graph, every visited node of the walk meets
+`ExitsJoined` (the per-node side's route: `joined_of_exit` at the exit,
+given the walk's `MergeEdgeRecorded` and the source environment meeting the
+edge's refined context). Every other premise is the one of the earlier
+statement, over `RunWalkA`.
+
+**The loop heads cut every cycle.** Module
+`lean/Verification/Programs/TolerantFramesDriverHeads.lean`.
+`SinglePass.loopHeads` is a `while` loop over the marks, the node states (0
+new, 1 on the stack, 2 done) and a stack of frames, each a node with its
+successors not yet examined. `dfsStep` is one round of it over functions in
+place of arrays, `dfsLoop` the rounds on fuel, `dfsInit` the start;
+`LoopHeadsFuelEq` (named hypothesis) is the equation of the pass's loop with
+them: it ends at a fuel where the mirror's stack is empty, with the
+mirror's marks and states. `HeadsCutCycles succ n reached heads`: no path of
+edges from a reached node to a successor below $`n`$ that is no head
+(`NonHeadEdge`) returns to its node. With ghost finishing times $`f`$ below
+a counter, the rounds keep `DfsInv`: the done nodes are those with a time;
+each done node's successors below $`n`$ are heads or done at an earlier
+time; each frame's examined successors are heads, done, or nodes of frames
+above it (`FramesOk`); a node in state 1 is a frame's node and every
+frame's node is in state 1, the frames' nodes distinct. Proved:
+`dfsStep_inv`, `dfsLoop_inv`, `dfsInit_inv`; (`dfs_cuts`) on an empty
+stack every reached node is done, so each non-head edge between reached
+nodes goes to an earlier time ($`f(b) < f(a)`$, `Path.rank_lt`) and no such
+path is a cycle; `loopHeads_cuts` (under `LoopHeadsFuelEq`, the marks
+`loopHeads` returns cut every cycle of the nodes it reaches);
+`HeadsCutCycles.mono`; `passHeads_cuts` (the call's heads, the start
+marked besides). No depth-first path theorem is used.
+
+**(`run_sound_18b`)**, proved (`run_sound` with `run_traversedA`):
+
+```math
+\mathrm{WalkStopsRefuse} \wedge \mathrm{RecordsSound} \wedge \mathrm{NodesMean} \wedge \mathrm{LinearNearFuelEq} \wedge \mathrm{MergeExitsJoined} \wedge \mathrm{FootprintsKept} \wedge \mathrm{ReturnsKept} \wedge \mathrm{RegionsHeld} \wedge \mathrm{AssertionsLabelled} \Longrightarrow \mathrm{RunSound}
+```
+
+**What the record lacks for `RecordsSound`** (pass changes, each a field
+or a definition the proof reads):
+
+- `runWalk`'s visit and setup as top-level functions (the visit is a local
+  `fun` of `runWalk`, which no statement can name), so that each visit's
+  effect on the record is a theorem over the visit and `Drives.inv` carries
+  it to the walk's end;
+- per label, the fresh counter the step starts from, the answers it starts
+  from and its `Stepped` result (`NodeChecked`'s `fresh`, `answers`, `st`),
+  and the counter on entry (the start's `StartEntered` counter);
+- the loop heads (`isHead`) in the record, or exposed by the setup
+  (`passHeads` restates them);
+- a stop type without acceptance (`WalkStopsRefuse` by its type);
+- `loopHeads` on fuel as `dfsLoop` (`LoopHeadsFuelEq` by construction);
+- `Store.linearNear` on fuel as `linearNearFuel` (`LinearNearFuelEq`).
+
+Premises this leg discharges / leaves:
+
+- `RunTraversed`: restated as `RunTraversedA` (the record's entries hold
+  the written facts, which `Traversed` did not state) and reduced by
+  `run_traversedA` to `WalkStopsRefuse` and `RecordsSound`; the heads'
+  records discharged by the reading (`ofPass_heads`). Left: `RecordsSound`
+  (each visited node `NodeChecked`, `TraversedA`, `StartEntered`, read off
+  the visit once it is a function), `WalkStopsRefuse`.
+- `HeadsCutCycles`: discharged under `LoopHeadsFuelEq` (`passHeads_cuts`),
+  for the proof of `TraversedA`'s merges; left: the in-degree order (a
+  node other than a head visited after every edge into it from a reached
+  node) and `TablesAgree` from it, both over the visit.
+- `MergesImpliesHold`: replaced by `MergeExitsJoined`, the exits into a
+  merge delivering its joined implications (`ExitsJoined`, the per-node
+  side's, by `joined_of_exit` at the source environment meeting the edge's
+  refined context); the pass's per-edge check does not give them at an
+  edge state alone.
+- `LinearNearFuelEq`, `RunKeepsSummaries`: left (`Store.linearNear` is a
+  `while` loop; the answers are threaded by the visit).

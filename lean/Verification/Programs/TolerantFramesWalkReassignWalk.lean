@@ -87,28 +87,42 @@ theorem passCheckerReassign_lexical {G : NormalGraph ι} {images : InstanceImage
     (lexicalBodySubtyping G images source domain aliases aliasesSound η As length allowed bounded)
     bodyCheck.symm ord⟩
 
+omit [DecidableEq ι] [Hashable ι] [Instantiates ι] in
+/-- **Each visited node's step and edges deliver `pre`**: from the typed
+node assertion, the node's local judgment and every exit `pre` of its
+target (`StepEdgesSoundA` at `pre`). -/
+def StepEdgesSoundAt (pre : Nat → Assertion) (P : ControlFlow.Program) (G : NormalGraph ι) (w : Walk ι)
+    (startNames : List Nat) (ρ0 : Env) (ctx : Nat → List (Ty ι)) (Ξres Tres : Fam) (Qres Rres : Heap → Prop)
+    (m : Nat) : Prop :=
+  ∀ l ρ (s : IndexedHeap), passPreT G w startNames ρ0 ctx l ρ m s → ∃ node, P[l]? = some node ∧
+    ∃ (Ξ T : Fam) (cn ce : Footprints.Closed) (Qn : Post) (Qe : Heap → Prop),
+      SafePostExc Ξ T (fun h' v => cn.Holds s.h h' ∧ Qn h' v) (fun h' => ce.Holds s.h h' ∧ Qe h')
+        s.n s.W s.h (instantiate 0 ρ node.expression) ∧
+      NodeObligations pre Ξres Tres Qres Rres Ξ T cn ce Qn Qe ρ m s node.continuation node.handler
+
 omit [Instantiates ι] in
-/-- **Every checked node of the pass delivers** (`StepEdgesSoundA`): where
-every visited node is checked with its searches as oracles (`NodeChecked`)
-and that node's step means at the graph what it states (`NodeMeaning`), the
-codes are sound, each visited node's step and exits meet the typed node
-obligations with the targets' written assertions, with the exception
-family `excOf G`, the result type `Tres`
-and no post on the heap at the graph's exits (`stepChecked_parts` in place
-of `checkedStep_parts` in `stepEdgesSound_of`). -/
-theorem stepEdgesSound_of_checked {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
+/-- **Every checked node of the pass delivers `pre`** (`StepEdgesSoundAt`):
+where every visited node is checked with its searches as oracles
+(`NodeChecked`) and that node's step means at the graph what it states
+with its exits delivering `pre` (`NodeMeaningAt`), the codes are sound,
+each visited node's step and exits meet the typed node obligations at
+`pre`, with the exception family `excOf G`, the result type `Tres` and no
+post on the heap at the graph's exits (`stepChecked_parts` in place of
+`checkedStep_parts` in `stepEdgesSound_of`). -/
+theorem stepEdgesSound_of_checkedAt {pre : Nat → Assertion} {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {codes : CodeEntry ι → Bool}
     {pc : PassChecker G images} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat} {ρ0 : Env}
-    {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge} {Tres : Fam} {m : Nat}
+    {ctx : Nat → List (Ty ι)} {Tres : Fam} {m : Nat}
     (hacc : ∀ l, w.visited l → ∃ r : NodeChecked G images codes pc P w startNames ctx l,
-      NodeMeaning G w startNames ρ0 ctx stated Tres m l r.node r.c r.entry r.st)
+      NodeMeaningAt pre G w startNames ρ0 ctx Tres m l r.node r.c r.entry r.st)
     (hcodes : CodesSound G codes) :
-    StepEdgesSoundA P G w startNames ρ0 ctx stated (excOf G) Tres (fun _ => True) (fun _ => True) m := by
+    StepEdgesSoundAt pre P G w startNames ρ0 ctx (excOf G) Tres (fun _ => True) (fun _ => True) m := by
   intro l ρ s hp
   obtain ⟨na, hm⟩ := hacc l hp.1.1
   have hS := hm.entered ρ s hp
   have he : EnvOk G na.c.context ρ s.n s.W := na.hctx ▸ hp.2
   obtain ⟨-, -, -, cn, ce, hparts⟩ := stepChecked_parts na.hstep hS na.wf na.below na.width he hcodes na.sums
-  obtain ⟨hj, ho⟩ := nodeObligations_of_parts (pre := edgePreA G w startNames ρ0 ctx stated) (Ξres := excOf G)
+  obtain ⟨hj, ho⟩ := nodeObligations_of_parts (pre := pre) (Ξres := excOf G)
     (Tres := Tres) (Qres := fun _ => True) (Rres := fun _ => True) (x := na.node.handler) hparts he
     (fun j U v hv => hm.shape (j + 1) U v hv)
     (fun s' v _ hv hF he' _ => normalTarget_of_exits (fun t p o q hmem => hm.exits t p o q hmem ρ) hm.ret
@@ -118,6 +132,19 @@ theorem stepEdgesSound_of_checked {G : NormalGraph ι} {images : InstanceImageCh
       | none => exact ⟨hx, trivial⟩
       | some t => exact hm.handler t hh ρ s' e hFe he' hsc hx)
   exact ⟨na.node, na.hP, _, _, cn, ce, _, _, hj, ho⟩
+
+omit [Instantiates ι] in
+/-- **Every checked node of the pass delivers** (`StepEdgesSoundA`):
+`stepEdgesSound_of_checkedAt` at `edgePreA`, the targets' typed and written
+assertions. -/
+theorem stepEdgesSound_of_checked {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
+    {pc : PassChecker G images} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat} {ρ0 : Env}
+    {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge} {Tres : Fam} {m : Nat}
+    (hacc : ∀ l, w.visited l → ∃ r : NodeChecked G images codes pc P w startNames ctx l,
+      NodeMeaning G w startNames ρ0 ctx stated Tres m l r.node r.c r.entry r.st)
+    (hcodes : CodesSound G codes) :
+    StepEdgesSoundA P G w startNames ρ0 ctx stated (excOf G) Tres (fun _ => True) (fun _ => True) m :=
+  stepEdgesSound_of_checkedAt hacc hcodes
 
 end Nodes
 

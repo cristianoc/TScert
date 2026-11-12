@@ -43,6 +43,8 @@ import Verification.Programs.TolerantFramesWalkReassignSelect
 import Verification.Programs.TolerantFramesWalkReassignStep
 import Verification.Programs.TolerantFramesWalkReassignWalk
 import Verification.Programs.TolerantFramesRunSound
+import Verification.Programs.TolerantFramesDriverWalk
+import Verification.Programs.TolerantFramesWalkJoined
 import Verification.Programs.TolerantFramesGuaranteeWalk
 import Verification.Programs.TolerantFramesMergeBelow
 import Verification.Programs.TolerantFramesMergeGuarded
@@ -63,6 +65,8 @@ import Verification.Programs.TolerantFramesComposeRunSound
 import Verification.Programs.TolerantFramesNodeJoined
 import Verification.Programs.TolerantFramesNodeYields
 import Verification.Programs.TolerantFramesNodeYielded
+import Verification.Programs.TolerantFramesMergeExits
+import Verification.Programs.TolerantFramesMergeNearRounds
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -727,14 +731,12 @@ run_cmd do
   check ``Verification.TolerantFrames.returnsKept_of_checked
   check ``Verification.TolerantFrames.run_sound_17a
   check ``Verification.TolerantFrames.joinedAt_of_exit
-  check ``Verification.TolerantFrames.stepEdgesSoundJ_of_checked
-  check ``Verification.TolerantFrames.StepEdgesSoundJ.toA
   check ``Verification.TolerantFrames.SafePostExc.conj_post
   check ``Verification.TolerantFrames.checkedYields_follows
   check ``Verification.TolerantFrames.stepYields_judgment
   check ``Verification.TolerantFrames.exitDeliversY_of_edge
   check ``Verification.TolerantFrames.nodeObligations_of_partsY
-  check ``Verification.TolerantFrames.stepEdgesSoundJ_of_yields
+  check ``Verification.TolerantFrames.stepEdgesSound_of_yields
   check ``Verification.TolerantFrames.regionalTyped_copy
   -- Leg 18a: the per-node side (TolerantFramesNode*, TolerantFramesCompose*)
   check ``Verification.TolerantFrames.yieldsJudged_of_follows
@@ -749,6 +751,40 @@ run_cmd do
   check ``Verification.TolerantFrames.yieldsJudged_of_checked
   check ``Verification.TolerantFrames.exitDeliversY_head
   check ``Verification.TolerantFrames.goalHolds_of_returnY
+
+  -- Leg 17b: the walk side of the graph theorem (TolerantFramesMergeExits, TolerantFramesMergeNearRounds)
+  check ``Verification.TolerantFrames.entry_of_edge
+  check ``Verification.TolerantFrames.joined_of_exit
+  check ``Verification.TolerantFrames.entries_of_traversedJ
+  check ``Verification.TolerantFrames.nearRound_progress
+  check ``Verification.TolerantFrames.nearLoop_stable
+  check ``Verification.TolerantFrames.linearNearFuel_rounds
+  -- Leg 18b: the driver's record read as the walk, a merge's joined implications on the exits, the loop heads (TolerantFramesDriver*, TolerantFramesMergeWritten, TolerantFramesWalk*)
+  check ``Verification.TolerantFrames.withWritten_holds
+  check ``Verification.TolerantFrames.withWritten_wf
+  check ``Verification.TolerantFrames.TraversedA.reassign
+  check ``Verification.TolerantFrames.entry_of_edgeA
+  check ``Verification.TolerantFrames.passPreA_of_edgeAJ
+  check ``Verification.TolerantFrames.drives_of_drive
+  check ``Verification.TolerantFrames.Drives.queue
+  check ``Verification.TolerantFrames.Drives.inv
+  check ``Verification.TolerantFrames.walk_of_accepts'
+  check ``Verification.TolerantFrames.walk_of_accepts
+  check ``Verification.TolerantFrames.ofPass_heads
+  check ``Verification.TolerantFrames.run_traversedA
+  check ``Verification.TolerantFrames.stepEdgesSound_of_checkedAt
+  check ``Verification.TolerantFrames.NodeMeaning.withJoined
+  check ``Verification.TolerantFrames.nodesChecked_of_walkJ
+  check ``Verification.TolerantFrames.FramesOk.mono
+  check ``Verification.TolerantFrames.dfsStep_inv
+  check ``Verification.TolerantFrames.dfsLoop_inv
+  check ``Verification.TolerantFrames.dfsInit_inv
+  check ``Verification.TolerantFrames.Path.rank_lt
+  check ``Verification.TolerantFrames.dfs_cuts
+  check ``Verification.TolerantFrames.loopHeads_cuts
+  check ``Verification.TolerantFrames.HeadsCutCycles.mono
+  check ``Verification.TolerantFrames.passHeads_cuts
+  check ``Verification.TolerantFrames.run_sound_18b
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

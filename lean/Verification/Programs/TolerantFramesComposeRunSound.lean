@@ -21,7 +21,7 @@ node of the driver's walk, at `G`, and the nodes' entry states
 `run_sound_17a` is `run_sound` with these two premises in place of
 `FootprintsKept` and `ReturnsKept`. `BoundsChecked` and `ReturnsChecked`
 are checks the driver makes at each node it visits, read off its walk as
-`RunWalk`'s other records are. -/
+`RunWalkA`'s other records are. -/
 namespace Verification.TolerantFrames
 open Verification Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
@@ -37,7 +37,7 @@ variable (ι) in
 visited node of the walk, at `G`. -/
 def BoundsChecked : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
-    RunPremises G I c after admits → ∀ r : RunWalk G I c,
+    RunPremises G I c after admits → ∀ r : RunWalkA G I c,
       ∀ Φ fr ex, c.bound = some (Φ, fr, ex) → ∃ dead : List Bool,
         ∀ l (hl : r.w.visited l), BoundChecked (r.node l hl) Φ dead fr ex
 
@@ -48,7 +48,7 @@ refuses nothing at every visited node whose continuation is a return, at
 `G`. -/
 def ReturnsChecked : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
-    RunPremises G I c after admits → ∀ r : RunWalk G I c, c.ensures ≠ [] →
+    RunPremises G I c after admits → ∀ r : RunWalkA G I c, c.ensures ≠ [] →
       ∀ l (hl : r.w.visited l), ReturnChecked (r.node l hl) c.goal c.ensures
 
 /-- **The footprint check keeps the bound at every admitted assignment**
@@ -79,8 +79,8 @@ theorem returnsKept_of_checked (hmean : NodesMean ι) (hrc : ReturnsChecked ι) 
 /-- **THE GRAPH THEOREM, the footprint and return premises from the
 checks** (`run_sound` with `BoundsChecked` for `FootprintsKept` and
 `ReturnsChecked` for `ReturnsKept`). -/
-theorem run_sound_17a (hrun : RunTraversed ι) (hmean : NodesMean ι) (hnear : LinearNearFuelEq)
-    (himp : MergesImpliesHold ι) (hb : BoundsChecked ι) (hrc : ReturnsChecked ι)
+theorem run_sound_17a (hrun : RunTraversedA ι) (hmean : NodesMean ι) (hnear : LinearNearFuelEq)
+    (himp : MergeExitsJoined ι) (hb : BoundsChecked ι) (hrc : ReturnsChecked ι)
     (hreg : RegionsHeld ι) (hasr : AssertionsLabelled ι) : Target.RunSound ι :=
   run_sound hrun hmean hnear himp (footprintsKept_of_checked hmean hb) (returnsKept_of_checked hmean hrc) hreg hasr
 

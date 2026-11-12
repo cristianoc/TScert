@@ -2,6 +2,7 @@ import Verification.Programs.TolerantFramesGuaranteeTarget
 import Verification.Programs.TolerantFramesWalkReassignWalk
 import Verification.Programs.TolerantFramesComposeEdges
 import Verification.Programs.TolerantFramesGuaranteeWalk
+import Verification.Programs.TolerantFramesWalkJoined
 
 /-! # Tolerant frames: the graph theorem
 
@@ -11,16 +12,18 @@ and the read summaries it leaves sound, guarantees `GraphGuarantee` of its
 options at its inputs. Its premises are the named hypotheses of the
 graph-level proof, each a definition below:
 
-- `RunTraversed`: the driver's walk of an accepted call (`RunWalk`): every
+- `RunTraversedA`: the driver's walk of an accepted call (`RunWalkA`): every
   visited node checked with its searches as oracles (`NodeChecked`), the
-  walk's construction (`Traversed`), each edge into a head recorded as the
-  head's entry, and the start entered with its head entry;
+  walk's construction with each entry's written facts (`TraversedA`), each
+  edge into a head recorded as the head's entry, and the start entered with
+  its head entry;
 - `NodesMean`: each visited node's step means at every admitted reassigned
   graph what it states (`NodeMeaning`: the entry state, the shapes, the
   return type, the exits and the handler delivering the targets' typed and
   written assertions);
-- `LinearNearFuelEq`, `MergesImpliesHold`: the merges' premises
-  (`MergesSound`);
+- `LinearNearFuelEq`, `MergeExitsJoined`: the merges' premises, the
+  second the exits into a merge delivering its joined implications
+  (`ExitsJoined`);
 - `FootprintsKept`, `ReturnsKept`, `RegionsHeld`: the per-node hypotheses
   of the guarantee's bounded, ensured and regional fields;
 - `AssertionsLabelled`: every assertion of the call is the written
@@ -29,7 +32,9 @@ graph-level proof, each a definition below:
 The proof carries each checked node to every admitted assignment
 (`nodeChecked_reassign`, the checker there from `CheckerScope`:
 `passCheckerReassign_ordinary`, `passCheckerReassign_lexical`), gives the
-node obligations there (`stepEdgesSound_of_checked`), the heads entered
+node obligations there at `edgePreAJ` (`stepEdgesSound_of_checkedAt`,
+`NodeMeaning.withJoined`), the checked nodes (`nodesChecked_of_walkJ`), the
+heads entered
 (`headsEntered_of_recorded`), the start entered (`StartEntered.entered`,
 the traversed fields fixed by the call's entry fields check), and assembles
 `GraphGuarantee` at one node assertion (`run_guarantee`), restated in the unit lane's record
@@ -70,25 +75,6 @@ theorem GraphGuarantee.toTarget {G : NormalGraph ι} {admits : MixedAssignment �
   asserted η hη n W h ρ he l k hl j h' ρ' hj hr := g.asserted η hη n W h ρ he l k hl j h' ρ' hj
     (transitions_of_reachesIn hr)
 
-omit [Labels ι] in
-/-- **A merge at a reassigned graph** is the merge at the graph: `mergeState`
-reads the graph through no rule whose result depends on the assignment. -/
-theorem mergeState_reassign [DecidableEq ι] [Hashable ι] (G : NormalGraph ι) (η : MixedAssignment ι)
-    (context : List (Ty ι)) (preds : List SinglePass.State)
-    (edgesIn : List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)) (fresh : Nat) :
-    SinglePass.mergeState (reassign G η) context preds edgesIn fresh = SinglePass.mergeState G context preds edgesIn fresh :=
-  rfl
-
-omit [Labels ι] in
-/-- **The walk's construction at a reassigned graph**: `Traversed` reads the
-graph only through `mergeState` (`mergeState_reassign`). -/
-theorem Traversed.reassign [DecidableEq ι] [Hashable ι] {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat}
-    {given : Nat → Bool} {ctx : Nat → List (Ty ι)}
-    {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
-    {fresh : Nat → Nat} (h : Traversed G w startNames given ctx edgesIn fresh) (η : MixedAssignment ι) :
-    Traversed (reassign G η) w startNames given ctx edgesIn fresh :=
-  { h with merge := fun t hg h2 => by rw [mergeState_reassign]; exact h.merge t hg h2 }
-
 /-- **A checker's scope gives the checker at each admitted assignment**:
 the ordinary checker at every assignment (`passCheckerReassign_ordinary`);
 a qualified body's at each instance its scope admits
@@ -126,22 +112,23 @@ def StartEntered {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.Run
       (c.goal.slot.bind ((List.range c.inputs.length)[·]?)) givenArgs givenInputs givenImplies).2.1 ∧
     ctx c.start = c.inputs
 
-/-- **What the driver records of an accepted call** (`run_traversed`'s
-conclusion): the walk, the label contexts, each merge's edges and fresh
-counter, each loop head (`given`) and the written assertions by label
-(`stated`, the table `run` reads); every visited node checked at `G`
-with its searches as oracles; the walk's construction; each edge state
-recorded into a head being the head's entry; the start entered. -/
-structure RunWalk (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) where
+/-- **What the driver records of an accepted call** (`run_traversedA`'s
+conclusion): the walk, the loop heads (`given`), the label contexts, each
+merge's edges and fresh counter, the written assertions by label (`stated`,
+the table `runWalk` reads); every visited node checked at `G` with its
+searches as oracles; the walk's construction with each entry's written
+facts (`TraversedA`); each edge state into a head being the head's entry;
+the start entered. -/
+structure RunWalkA (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) where
   w : Walk ι
   given : Nat → Bool
   ctx : Nat → List (Ty ι)
   edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)
   fresh : Nat → Nat
-  node : ∀ l, w.visited l → NodeChecked G I c.codes c.passChecker c.P w (List.range c.inputs.length) ctx l
-  traversed : Traversed G w (List.range c.inputs.length) given ctx edgesIn fresh
-  heads : ∀ t, given t = true → ∀ e ∈ w.incoming t, e = (w.entry t, w.implies t)
   stated : Nat → Option HeapKnowledge.Knowledge
+  node : ∀ l, w.visited l → NodeChecked G I c.codes c.passChecker c.P w (List.range c.inputs.length) ctx l
+  traversed : TraversedA G w (List.range c.inputs.length) given ctx edgesIn fresh stated
+  heads : ∀ t, given t = true → ∀ e ∈ w.incoming t, e = (w.entry t, w.implies t)
   start : StartEntered c w ctx stated
 
 /-- The premises `RunSound` gives a call. -/
@@ -153,11 +140,11 @@ def RunPremises (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunC
       GraphCode.ArgumentPathTracking.checkEntryFields G c.inputs regions = true)
 
 variable (ι) in
-/-- **(Named hypothesis) The driver's walk** (`run_traversed`): an accepted
-call whose final summaries are sound records a walk (`RunWalk`). -/
-def RunTraversed : Prop :=
+/-- **(Named hypothesis) The driver's walk** (`run_traversedA`): an accepted
+call whose final summaries are sound records a walk (`RunWalkA`). -/
+def RunTraversedA : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) (after : Answered G),
-    c.Accepts after → SummariesSound G I after.summaries.toList → Nonempty (RunWalk G I c)
+    c.Accepts after → SummariesSound G I after.summaries.toList → Nonempty (RunWalkA G I c)
 
 variable (ι) in
 /-- **(Named hypothesis) Each checked node means what it states** at every
@@ -168,28 +155,30 @@ stated assertion, the shapes, the return type, the exits and the handler
 (`NodeMeaning`) at the goal's result type. -/
 def NodesMean : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
-    RunPremises G I c after admits → ∀ r : RunWalk G I c, ∀ η, admits η → ∀ ρ0 m l (hl : r.w.visited l),
+    RunPremises G I c after admits → ∀ r : RunWalkA G I c, ∀ η, admits η → ∀ ρ0 m l (hl : r.w.visited l),
       NodeMeaning (reassign G η) r.w (List.range c.inputs.length) ρ0 r.ctx r.stated
         (GoalHolds (reassign G η) c.goal (c.goal.argument ρ0)) m l (r.node l hl).node (r.node l hl).c
         (r.node l hl).entry (r.node l hl).st
 
 variable (ι) in
-/-- **(Named hypothesis) Every merge's kept implications hold**
-(`joinedChecked`) at every admitted reassigned graph, wherever an edge state
-into the merge holds. -/
-def MergesImpliesHold : Prop :=
+/-- **(Named hypothesis) The exits into a merge deliver its joined
+implications** (`ExitsJoined`) at every admitted reassigned graph: at each
+visited node, each normal exit and the handler into a merge give the
+implications the merge keeps (`joinedChecked`) at the target environment,
+from the source environment meeting the edge's recorded context
+(`joined_of_exit`). -/
+def MergeExitsJoined : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
-    RunPremises G I c after admits → ∀ r : RunWalk G I c, ∀ η, admits η →
-      ∀ t, r.given t = false → 2 ≤ (r.w.incoming t).length →
-      ∀ startNames ρ0 m ρ (s : IndexedHeap), edgePre (reassign G η) r.w startNames ρ0 t ρ m s →
-        PromiseCalls.ImpliesOk (reassign G η) (joinedChecked (reassign G η) (r.ctx t) (r.edgesIn t)) ρ s.n s.W
+    RunPremises G I c after admits → ∀ r : RunWalkA G I c, ∀ η, admits η → ∀ ρ0 m l (hl : r.w.visited l),
+      ExitsJoined (reassign G η) r.w (List.range c.inputs.length) ρ0 r.ctx r.given r.edgesIn m l
+        (r.node l hl).node (r.node l hl).c (r.node l hl).entry (r.node l hl).st
 
 variable (ι) in
 /-- **(Named hypothesis) The footprint check keeps the bound** at every
 admitted reassigned graph (`FootprintKept`). -/
 def FootprintsKept : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
-    RunPremises G I c after admits → ∀ r : RunWalk G I c, ∀ η, admits η →
+    RunPremises G I c after admits → ∀ r : RunWalkA G I c, ∀ η, admits η →
       ∀ Φ fr ex, c.bound = some (Φ, fr, ex) → ∃ dead, ∀ ρ0 h₀,
         FootprintKept c.P (reassign G η) r.w (List.range c.inputs.length) ρ0 r.ctx Φ h₀ dead fr ex
 
@@ -198,7 +187,7 @@ variable (ι) in
 admitted reassigned graph (`ReturnsEnsured`). -/
 def ReturnsKept : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
-    RunPremises G I c after admits → ∀ r : RunWalk G I c, ∀ η, admits η →
+    RunPremises G I c after admits → ∀ r : RunWalkA G I c, ∀ η, admits η →
       c.ensures ≠ [] → ∀ ρ0 m, ReturnsEnsured c.P (reassign G η) r.w (List.range c.inputs.length) ρ0 r.ctx c.ensures m
 
 variable (ι) in
@@ -207,7 +196,7 @@ admitted reassigned graph, at the node assertion with the traversed fields
 fixed (`RegionsKeptS`), its facts holding at the start. -/
 def RegionsHeld : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
-    RunPremises G I c after admits → ∀ r : RunWalk G I c, ∀ η, admits η →
+    RunPremises G I c after admits → ∀ r : RunWalkA G I c, ∀ η, admits η →
       ∀ Φ regions exc, Target.regionOf c.regional = some (Φ, regions, exc) →
         ∃ X : Env → Heap → Nat → Env → Heap → Prop, ∀ ρ0 h₀, X ρ0 h₀ c.start ρ0 h₀ ∧
           RegionsKeptS c.P (reassign G η) r.w (List.range c.inputs.length) ρ0 r.ctx (X ρ0 h₀) Φ regions h₀ exc
@@ -218,7 +207,7 @@ assertion at its label** (`stated`, the table `run` checks the edges
 against). -/
 def AssertionsLabelled : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
-    RunPremises G I c after admits → ∀ r : RunWalk G I c, ∀ l k, (l, k) ∈ c.assertions → r.stated l = some k
+    RunPremises G I c after admits → ∀ r : RunWalkA G I c, ∀ l k, (l, k) ∈ c.assertions → r.stated l = some k
 
 /-- **The start entered at a reassigned graph**: the start's typed and
 written assertion holds at every entry meeting the inputs, the separation
@@ -249,14 +238,15 @@ theorem checkEntryFields_reassign [DecidableEq ι] (G : NormalGraph ι) (η : Mi
       GraphCode.ArgumentPathTracking.checkEntryFields G inputs regions := rfl
 
 /-- **THE GRAPH THEOREM** (`RunSound`, the unit lane's statement): from the
-driver's walk (`RunTraversed`), the nodes' meaning at every admitted
+driver's walk (`RunTraversedA`), the nodes' meaning at every admitted
 reassigned graph (`NodesMean`), the merges' premises (`LinearNearFuelEq`,
-`MergesImpliesHold`), the per-node hypotheses of the guarantee's other
+and `MergeExitsJoined`: the exits into a merge deliver its joined
+implications), the per-node hypotheses of the guarantee's other
 fields (`FootprintsKept`, `ReturnsKept`, `RegionsHeld`) and the call's
 assertions at their labels (`AssertionsLabelled`), an accepted call of the
 pass guarantees `GraphGuarantee` of its options at its inputs. -/
-theorem run_sound (hrun : RunTraversed ι) (hmean : NodesMean ι) (hnear : LinearNearFuelEq)
-    (himp : MergesImpliesHold ι) (hfoot : FootprintsKept ι) (hret : ReturnsKept ι)
+theorem run_sound (hrun : RunTraversedA ι) (hmean : NodesMean ι) (hnear : LinearNearFuelEq)
+    (hjoin : MergeExitsJoined ι) (hfoot : FootprintsKept ι) (hret : ReturnsKept ι)
     (hreg : RegionsHeld ι) (hasr : AssertionsLabelled ι) : Target.RunSound ι := by
   intro G I c after admits hacc hscope hcodes hsums hfields
   have hp : RunPremises G I c after admits := ⟨hacc, hscope, hcodes, hsums, hfields⟩
@@ -273,13 +263,12 @@ theorem run_sound (hrun : RunTraversed ι) (hmean : NodesMean ι) (hnear : Linea
       returns := hret G I c after admits hp r η hη
       regions := hreg G I c after admits hp r η hη
       labelled := hasr G I c after admits hp r }⟩
-  exact
-    { traversed := r.traversed.reassign η
-      steps := stepEdgesSound_of_checked
-        (fun l hl => ⟨nodeChecked_reassign hpc (r.node l hl), hmean G I c after admits hp r η hη ρ0 m l hl⟩)
-        (codesSound_reassign hcodes η)
-      heads := headsEntered_of_recorded r.heads
-      merges := ⟨hnear, fun t hg h2 => himp G I c after admits hp r η hη t hg h2⟩ }
+  exact nodesChecked_of_walkJ (r.traversed.reassign η)
+    (stepEdgesSound_of_checkedAt
+      (fun l hl => ⟨nodeChecked_reassign hpc (r.node l hl),
+        (hmean G I c after admits hp r η hη ρ0 m l hl).withJoined (hjoin G I c after admits hp r η hη ρ0 m l hl)⟩)
+      (codesSound_reassign hcodes η))
+    (headsEntered_of_recorded r.heads) hnear
 
 end Run
 
