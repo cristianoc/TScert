@@ -19,6 +19,7 @@ import Verification.Programs.TolerantFramesSelect
 import Verification.Programs.TolerantFramesFootprint
 import Verification.Programs.TolerantFramesElems
 import Verification.Programs.TolerantFramesState
+import Verification.Programs.TolerantFramesDelta
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -286,6 +287,26 @@ run_cmd do
   check ``Verification.TolerantFrames.stateHolds_materialize_whole
   check ``Verification.TolerantFrames.stateHolds_materialize
   check ``Verification.TolerantFrames.stateHolds_stepKnowledge
+  check ``Verification.TolerantFrames.applyDelta_eq
+  check ``Verification.TolerantFrames.forIn_inv_bind
+  check ``Verification.TolerantFrames.deltaRemove_sub
+  check ``Verification.TolerantFrames.deltaRemove_ok
+  check ``Verification.TolerantFrames.deltaAdd_ok
+  check ``Verification.TolerantFrames.deltaRestate_ok
+  check ``Verification.TolerantFrames.applyDelta_ok
+  check ``Verification.TolerantFrames.applyDelta_preserving
+  check ``Verification.TolerantFrames.inverse_foldl
+  check ``Verification.TolerantFrames.inverse_get
+  check ``Verification.TolerantFrames.passBack_ok
+  check ``Verification.TolerantFrames.impliesOk_admissible
+  check ``Verification.TolerantFrames.stateHolds_after
+  check ``Verification.TolerantFrames.stateHolds_fresh_result
+  check ``Verification.TolerantFrames.stateHolds_reused_name
+  check ``Verification.TolerantFrames.stateHolds_copy
+  check ``Verification.TolerantFrames.mapM_mem_fwd
+  check ``Verification.TolerantFrames.atomHolds_rename_rev
+  check ``Verification.TolerantFrames.rename_succ_total
+  check ``Verification.TolerantFrames.applyDelta_writing
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

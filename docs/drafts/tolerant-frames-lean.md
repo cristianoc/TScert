@@ -721,6 +721,68 @@ of the second gap of [the selected output](#the-selected-output-under-the-passs-
 worklist returns is listed by `Store.about` of some name. The worklist is a
 `while` loop, `Lean.Loop.forIn` through `repeatM`, which no proof unfolds.
 
+### A step's delta
+
+Module `lean/Verification/Programs/TolerantFramesDelta.lean`. `applyDelta`
+(`SinglePass.lean` lines 373–403) is three loops (`applyDelta_eq`, by
+definition): `deltaRemove` removes each handed fact whose image over the
+pushed slots the output lost, `deltaAdd` adds each output fact not among the
+images, renamed by `back`, and `deltaRestate` restates each added linear fact
+over a read's name over the read's path. The pass's `back` (lines 1316–1317,
+1331–1332) is `passBack`: slot 0 the result's name, a slot the table's
+inverse gives its name, else the slot's name. Proved, under `StoreLaws`:
+
+- `deltaRemove_sub`: the removal loop keeps only facts the store held;
+  `deltaAdd_ok`: the facts added hold where the output holds at the pushed
+  slots $`\rho'`$ and $`\mathit{back}\ i = x \Rightarrow \eta'\,x=\rho'\,i`$;
+  `deltaRestate_ok`: the restated facts hold (`restateReads_holds`, the read
+  links being the store's);
+- (`applyDelta_ok`) where the facts the removal loop keeps hold at
+  $`\eta'`$, every fact of the resulting store holds; (`applyDelta_preserving`)
+  so where every fact of the store holds after the step;
+- `passBack_ok`: the pass's renaming meets that condition at
+  $`\rho'=\mathrm{push}\ v\ \rho`$ where $`\eta'`$ names the result $`v`$ and
+  agrees with $`\eta`$ on the slots' names (`inverse_get`: the inverse sends a
+  slot to a name the table sends to it).
+
+The state after a step, proved:
+
+- (`stateHolds_after`) from the state's valuation $`\eta`$ before the step
+  and a valuation $`\eta'`$ agreeing with it on every name of the slots, the
+  fresh names, the start names and the implications and naming the result,
+  with the facts the removal loop keeps holding at $`\eta'`$ after an
+  admissible transition and the output at the pushed slots, the pushed state
+  holds at $`\mathrm{push}\ v\ \rho`$ (implications carried by
+  admissibility of every type's meaning, `impliesOk_admissible`);
+- a preserving step with a fresh result name (line 1309):
+  $`\eta'=\eta[r\mapsto v]`$ with $`r`$ new (`ResultFresh`), from the frame's
+  $`\mathrm{Named}\ \mathrm{all}(S)\ \eta[r\mapsto v]`$, which
+  `pass_preserving_frame_select` gives with `StateWF.fresh_result`
+  (`stateHolds_fresh_result`);
+- a read of a slot keeping its name (line 1307): $`\eta'=\eta`$, the result
+  slot $`i`$'s value (`stateHolds_reused_name`);
+- a copy (lines 1203–1220): no step, the store unchanged, slot 0 named as
+  slot $`i`$ (`stateHolds_copy`).
+
+The writing case, proved (`applyDelta_writing`): where every stored fact
+either holds after the step or is handed to the rule (a pair $`(x,b)`$ with
+$`x`$ renamed to $`b`$ by a table whose slots hold their names' values), and
+the removal loop removes the handed facts whose image the output lost
+(`RemovedLeave`), every fact of the resulting store holds: a kept handed
+fact's image is in the output, which holds at the pushed slots, and reads
+back through the shift (`rename_succ_total`) and the table
+(`atomHolds_rename_rev`) to the fact at $`\eta'`$. The facts that hold after
+a writing step are those its effect keeps (`writing_frame`,
+`Atom.keptByElems`); so the pass keeps no more than the effect and the output
+justify exactly where every stored fact reading the heap is a pair: where
+its names have slots (`StateWF.slotted`, with the whole table defining every
+slot's name; that completeness of `slotTable` is not proved).
+
+**`RemovedLeave`** (a named hypothesis): a fact the removal loop removes is
+not in the resulting store. It needs exact erasure laws of
+`Lean.PersistentHashMap`, index lists without duplicates (`List.erase`
+removes one copy) and each listed fact under its own names only.
+
 ## What the model requires beyond the note
 
 - **Admissibility needs no frame assumption.** Reflexivity, transitivity,
