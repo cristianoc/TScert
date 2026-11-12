@@ -596,12 +596,15 @@ end SearchM
 
 /-- Subtype search as the producer asks it: an answered request is answered
 again from its first answer, `subtypeSearch`'s for the same graph, image
-check, source and target. Untrusted: the consumer checks every result. -/
+check, source and target, an acceptance where its inclusion is among the
+proved ones (`proved`). Untrusted: the consumer checks every result. -/
 @[nospecialize] def subtypeUsing [DecidableEq ι] [Hashable ι] [Instantiates ι]
     (G : NormalGraph ι) (images : InstanceImageCheck G) (A B : Ty ι) :
     SearchM G (PositiveCertificates.SubtypeChoices ι) := fun s =>
   match s.subtypes.get? (A, B) with
-  | some r => (r, s)
+  -- A cached acceptance stands where its inclusion is proved
+  -- (`proved_sound`), as its one writer below records it.
+  | some r => (if r.value.isSome && !s.proved.contains (A, B) then { r with value := none } else r, s)
   | none =>
     let r := subtypeSearch G images A B
     let s := { s with subtypes := s.subtypes.insert (A, B) r }
