@@ -1212,12 +1212,15 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
       else .accepted
     | o => o
   -- A node observed whose step is refused, or that is not reached past
-  -- the refusal: the walk again, stopping on its entry.
+  -- the refusal: the walk again, stopping on its entry; the refusal kept
+  -- where that walk accepts.
   let o : SinglePass.Outcome _ := match o, observed with
     | .refused _, some _ => if tracing then o else
-      (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
+      match (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
         r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers #[] debugNode bound
-        givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed false true).1.asRefusal
+        givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed false true).1.asRefusal with
+      | .accepted => o
+      | o' => o'
     | o, _ => o
   let checked := fun (outcome : SinglePass.Outcome _) (line : String) =>
     ({ name, codes := codeRuns, main := some mainRun, summaries := some sumsOk,
