@@ -491,29 +491,29 @@ def Cursor.get (c : Cursor α) (i : Nat) : Option α × Cursor α :=
 
 /-- Where a mapping's last run starts: the longest suffix of `slots` that
 reads a source of `n` slots in order to its end begins at the result. -/
-def orderedSuffix (slots : List Nat) (n : Nat) : Nat := Id.run do
+def orderedSuffix (slots : List Nat) (n : Nat) : Nat :=
   let arr := slots.toArray
-  let mut k := arr.size
-  while k > 0 && arr[k - 1]! + (arr.size - k) + 1 == n do k := k - 1
-  return k
+  -- From `k`, down while the slot before it reads the source in order to
+  -- its end: structural on `k`.
+  let rec down : Nat → Nat
+    | 0 => 0
+    | k + 1 => if arr[k]! + (arr.size - (k + 1)) + 1 == n then down k else k + 1
+  down arr.size
 
 /-- The names of a target's slots: the mapping applied to the source's. -/
 def mapNames (names : List Nat) (m : PointClaims.Mapping) : List Nat :=
   match m with
   | none => names
-  | some slots => Id.run do
+  | some slots =>
     -- The longest suffix of `slots` reading the source's slots in order to
     -- its end: those target slots share the source's names.
     let arr := slots.toArray
     let k := orderedSuffix slots names.length
     let tail := if k < arr.size then names.drop arr[k]! else []
-    let mut cur := Cursor.of names
-    let mut out : Array Nat := Array.mkEmpty k
-    for s in slots.take k do
+    let (_, out) := (slots.take k).foldl (fun ((cur : Cursor Nat), (out : Array Nat)) s =>
       let (x, c) := cur.get s
-      cur := c
-      out := out.push (x.getD 0)
-    return out.toList ++ tail
+      (c, out.push (x.getD 0))) (Cursor.of names, Array.mkEmpty k)
+    out.toList ++ tail
 
 /-- The source names an edge's mapping leaves out of its target's slots:
 the names of the source slots it skips that no target slot holds. -/
@@ -900,33 +900,222 @@ def RegionState.meet : List RegionState → RegionState
       r.cells.filter fun x => rs.all (·.cells.contains x),
       r.fields.filter fun x => rs.all (·.fields.contains x)⟩
 
+/-- A function updated at one point. -/
+def upd {α : Type} (f : Nat → α) (a : Nat) (b : α) : Nat → α := fun x => if x = a then b else f x
+
+/-- The depth-first walk's state: the marked heads, each node's state (0
+new, 1 on the stack, 2 done), the frames (a node and its successors not yet
+examined), the top first. -/
+structure Dfs where
+  heads : Nat → Bool
+  state : Nat → Nat
+  stack : List (Nat × List Nat)
+
+/-- **One round of the depth-first walk**, over the successors `succ` and the
+bound `n`: a frame with no successor left is done; otherwise its next
+successor `w` below `n` is pushed where new, marked a head where on the
+stack, passed where done; none where the stack is empty. -/
+def dfsStep (succ : Nat → List Nat) (n : Nat) (σ : Dfs) : Option Dfs :=
+  match σ.stack with
+  | [] => none
+  | (v, []) :: rest => some ⟨σ.heads, upd σ.state v 2, rest⟩
+  | (v, w :: ws) :: rest =>
+    if w < n then
+      if σ.state w = 0 then some ⟨σ.heads, upd σ.state w 1, (w, succ w) :: (v, ws) :: rest⟩
+      else if σ.state w = 1 then some ⟨upd σ.heads w true, σ.state, (v, ws) :: rest⟩
+      else some ⟨σ.heads, σ.state, (v, ws) :: rest⟩
+    else some ⟨σ.heads, σ.state, (v, ws) :: rest⟩
+
+/-- The rounds on fuel, until the stack is empty. -/
+def dfsLoop (succ : Nat → List Nat) (n : Nat) : Nat → Dfs → Dfs
+  | 0, σ => σ
+  | k + 1, σ => match dfsStep succ n σ with
+    | none => σ
+    | some σ' => dfsLoop succ n k σ'
+
+/-- The walk's start: the start on the stack with all its successors to
+examine, where it is below the bound. -/
+def dfsInit (succ : Nat → List Nat) (n start : Nat) : Dfs :=
+  if start < n then ⟨fun _ => false, upd (fun _ => 0) start 1, [(start, succ start)]⟩
+  else ⟨fun _ => false, fun _ => 0, []⟩
+
+/-- A graph's successors: the continuation's targets and the handler. -/
+def nodeSucc (nodes : Array ControlFlow.Node) (w : Nat) : List Nat :=
+  (successors nodes[w]!.continuation ++ nodes[w]!.handler.toList).map (·.label)
+
+/-- The walk's fuel: each round pops a frame (each node is pushed at most
+once) or examines one successor of a pushed node, and one more round finds
+the stack empty. -/
+def dfsFuel (nodes : Array ControlFlow.Node) : Nat :=
+  2 * nodes.size + nodes.foldl (fun acc node => acc + (successors node.continuation).length + node.handler.toList.length) 0 + 1
+
+/-- A walk's marks and states as arrays of `n` labels: the heads, and the
+nodes it reached. -/
+def Dfs.marks (σ : Dfs) (n : Nat) : Array Bool × Array Bool :=
+  (Array.ofFn (n := n) fun i => σ.heads i, Array.ofFn (n := n) fun i => σ.state i != 0)
+
+/-- The depth-first walk from the start, on `dfsFuel` (`dfsLoop`). -/
+def loopHeadsWalk (nodes : Array ControlFlow.Node) (start : Nat) : Dfs :=
+  dfsLoop (nodeSucc nodes) nodes.size (dfsFuel nodes) (dfsInit (nodeSucc nodes) nodes.size start)
+
 /-- The loop heads of a graph: each target of a retreating edge of a
 depth-first walk from the start (handlers' edges included); and the nodes
-the walk reaches. -/
-def loopHeads (nodes : Array ControlFlow.Node) (start : Nat) : Array Bool × Array Bool := Id.run do
-  let n := nodes.size
-  let mut heads : Array Bool := Array.replicate n false
-  let mut state : Array Nat := Array.replicate n 0   -- 0 new, 1 on the stack, 2 done
-  let mut stack : List (Nat × List Nat) := []
-  if start < n then
-    state := state.set! start 1
-    stack := [(start, (successors nodes[start]!.continuation ++ nodes[start]!.handler.toList).map (·.label))]
-  while true do
-    match stack with
-    | [] => break
-    | (v, []) :: rest =>
-      state := state.set! v 2
-      stack := rest
-    | (v, w :: ws) :: rest =>
-      stack := (v, ws) :: rest
-      if w < n then
-        match state[w]! with
-        | 0 =>
-          state := state.set! w 1
-          stack := (w, (successors nodes[w]!.continuation ++ nodes[w]!.handler.toList).map (·.label)) :: stack
-        | 1 => heads := heads.set! w true
-        | _ => pure ()
-  return (heads, state.map (· != 0))
+the walk reaches (`loopHeadsWalk`'s marks and states, by label). -/
+def loopHeads (nodes : Array ControlFlow.Node) (start : Nat) : Array Bool × Array Bool :=
+  Dfs.marks (loopHeadsWalk nodes start) nodes.size
+
+/-- The loop heads' walk as the setup reads it: whether it ended within its
+fuel (its stack empty), and its marks (`loopHeads`). -/
+def loopHeadsRun (nodes : Array ControlFlow.Node) (start : Nat) : Bool × Array Bool × Array Bool :=
+  ((loopHeadsWalk nodes start).stack.isEmpty, loopHeads nodes start)
+
+/-- The depth-first walk's state over arrays of the `n` labels (`Dfs`). -/
+structure DfsA where
+  heads : Array Bool
+  state : Array Nat
+  stack : List (Nat × List Nat)
+
+/-- `dfsStep` over arrays. -/
+def dfsStepA (succ : Nat → List Nat) (n : Nat) (σ : DfsA) : Option DfsA :=
+  match σ.stack with
+  | [] => none
+  | (v, []) :: rest => some ⟨σ.heads, σ.state.set! v 2, rest⟩
+  | (v, w :: ws) :: rest =>
+    if w < n then
+      if σ.state[w]! = 0 then some ⟨σ.heads, σ.state.set! w 1, (w, succ w) :: (v, ws) :: rest⟩
+      else if σ.state[w]! = 1 then some ⟨σ.heads.set! w true, σ.state, (v, ws) :: rest⟩
+      else some ⟨σ.heads, σ.state, (v, ws) :: rest⟩
+    else some ⟨σ.heads, σ.state, (v, ws) :: rest⟩
+
+/-- `dfsLoop` over arrays. -/
+def dfsLoopA (succ : Nat → List Nat) (n : Nat) : Nat → DfsA → DfsA
+  | 0, σ => σ
+  | k + 1, σ => match dfsStepA succ n σ with
+    | none => σ
+    | some σ' => dfsLoopA succ n k σ'
+
+/-- `dfsInit` over arrays. -/
+def dfsInitA (succ : Nat → List Nat) (n start : Nat) : DfsA :=
+  if start < n then ⟨Array.replicate n false, (Array.replicate n 0).set! start 1, [(start, succ start)]⟩
+  else ⟨Array.replicate n false, Array.replicate n 0, []⟩
+
+/-- An array walk agrees with a walk: the same stack, arrays of `n` labels
+holding the walk's marks and states, every frame's node below `n`. -/
+structure DfsA.Agrees (n : Nat) (a : DfsA) (σ : Dfs) : Prop where
+  stack : a.stack = σ.stack
+  hsize : a.heads.size = n
+  ssize : a.state.size = n
+  heads : ∀ t, t < n → a.heads[t]! = σ.heads t
+  state : ∀ t, t < n → a.state[t]! = σ.state t
+  below : ∀ p ∈ σ.stack, p.1 < n
+
+theorem getElem!_set!_self {α : Type} [Inhabited α] (a : Array α) (i : Nat) (x : α) (h : i < a.size) :
+    (a.set! i x)[i]! = x := by
+  simp [Array.set!_eq_setIfInBounds, h]
+
+theorem getElem!_set!_ne {α : Type} [Inhabited α] (a : Array α) (i j : Nat) (x : α) (h : j ≠ i) :
+    (a.set! i x)[j]! = a[j]! := by
+  simp [Array.set!_eq_setIfInBounds, Array.getElem!_eq_getD, Array.getD_eq_getD_getElem?,
+    Array.getElem?_setIfInBounds_ne (Ne.symm h)]
+
+theorem agrees_upd {α : Type} [Inhabited α] (n : Nat) (a : Array α) (f : Nat → α) (i : Nat) (x : α)
+    (hs : a.size = n) (hi : i < n) (h : ∀ t, t < n → a[t]! = f t) :
+    ∀ t, t < n → (a.set! i x)[t]! = upd f i x t := by
+  intro t ht
+  unfold upd
+  by_cases e : t = i
+  · subst e; rw [getElem!_set!_self a t x (hs ▸ hi)]; simp
+  · rw [getElem!_set!_ne a i t x e, h t ht]; simp [e]
+
+theorem dfsStepA_agrees (succ : Nat → List Nat) (n : Nat) (a : DfsA) (σ : Dfs) (h : a.Agrees n σ) :
+    match dfsStepA succ n a, dfsStep succ n σ with
+    | none, none => True
+    | some a', some σ' => a'.Agrees n σ'
+    | _, _ => False := by
+  obtain ⟨hst, hhs, hss, hh, hs, hb⟩ := h
+  unfold dfsStepA dfsStep
+  rw [hst]
+  match hσ : σ.stack with
+  | [] => simp
+  | (v, []) :: rest =>
+    have hv : v < n := hb (v, []) (by rw [hσ]; simp)
+    refine ⟨rfl, hhs, by simp [hss], hh, agrees_upd n a.state σ.state v 2 hss hv hs, ?_⟩
+    intro p hp; exact hb p (by rw [hσ]; exact List.mem_cons_of_mem _ hp)
+  | (v, w :: ws) :: rest =>
+    have hbs : ∀ p ∈ (v, ws) :: rest, p.1 < n := by
+      intro p hp
+      rcases List.mem_cons.mp hp with e | hp
+      · rw [e]; exact hb (v, w :: ws) (by rw [hσ]; simp)
+      · exact hb p (by rw [hσ]; exact List.mem_cons_of_mem _ hp)
+    by_cases hw : w < n
+    · simp only [hw, if_true, hs w hw]
+      by_cases h0 : σ.state w = 0
+      · simp only [h0, if_true]
+        refine ⟨rfl, hhs, by simp [hss], hh, agrees_upd n a.state σ.state w 1 hss hw hs, ?_⟩
+        intro p hp
+        rcases List.mem_cons.mp hp with e | hp
+        · subst e; exact hw
+        · exact hbs p hp
+      · simp only [h0, if_false]
+        by_cases h1 : σ.state w = 1
+        · simp only [h1, if_true]
+          exact ⟨rfl, by simp [hhs], hss, agrees_upd n a.heads σ.heads w true hhs hw hh, hs, hbs⟩
+        · simp only [h1, if_false]
+          exact ⟨rfl, hhs, hss, hh, hs, hbs⟩
+    · simp only [hw, if_false]
+      exact ⟨rfl, hhs, hss, hh, hs, hbs⟩
+
+theorem dfsLoopA_agrees (succ : Nat → List Nat) (n : Nat) :
+    ∀ (k : Nat) (a : DfsA) (σ : Dfs), a.Agrees n σ → (dfsLoopA succ n k a).Agrees n (dfsLoop succ n k σ)
+  | 0, _, _, h => h
+  | k + 1, a, σ, h => by
+    have hs := dfsStepA_agrees succ n a σ h
+    unfold dfsLoopA dfsLoop
+    split at hs <;> rename_i ha hσ
+    · rw [ha, hσ]; exact h
+    · rw [ha, hσ]; exact dfsLoopA_agrees succ n k _ _ hs
+    · exact hs.elim
+
+theorem dfsInitA_agrees (succ : Nat → List Nat) (n start : Nat) :
+    (dfsInitA succ n start).Agrees n (dfsInit succ n start) := by
+  unfold dfsInitA dfsInit
+  by_cases h : start < n
+  · simp only [h, if_true]
+    refine ⟨rfl, by simp, by simp, fun t ht => by simp [ht], ?_, fun p hp => by simp at hp; rw [hp]; exact h⟩
+    intro t ht
+    unfold upd
+    by_cases e : t = start
+    · subst e; simp [Array.set!_eq_setIfInBounds, ht]
+    · rw [getElem!_set!_ne _ start t 1 e]; simp [e, ht]
+  · simp only [h, if_false]
+    exact ⟨rfl, by simp, by simp, fun t ht => by simp [ht], fun t ht => by simp [ht], fun p hp => by simp at hp⟩
+
+/-- `loopHeadsRun` over the array walk, which the compiled verifier runs
+(`loopHeadsRun_eq_A`). -/
+def loopHeadsRunA (nodes : Array ControlFlow.Node) (start : Nat) : Bool × Array Bool × Array Bool :=
+  let a := dfsLoopA (nodeSucc nodes) nodes.size (dfsFuel nodes) (dfsInitA (nodeSucc nodes) nodes.size start)
+  (a.stack.isEmpty, a.heads, a.state.map (· != 0))
+
+/-- **The array walk computes the loop heads' walk**: the same stack, and
+by label the same marks and reached nodes (`DfsA.Agrees`). -/
+@[csimp] theorem loopHeadsRun_eq_A : @loopHeadsRun = @loopHeadsRunA := by
+  funext nodes start
+  have h := dfsLoopA_agrees (nodeSucc nodes) nodes.size (dfsFuel nodes) _ _
+    (dfsInitA_agrees (nodeSucc nodes) nodes.size start)
+  obtain ⟨hst, hhs, hss, hh, hs, -⟩ := h
+  unfold loopHeadsRun loopHeadsRunA loopHeads Dfs.marks loopHeadsWalk
+  simp only [hst, Prod.mk.injEq, true_and]
+  constructor
+  · apply Array.ext
+    · simp [hhs]
+    · intro i h1 h2
+      simp only [Array.size_ofFn] at h1
+      rw [Array.getElem_ofFn, ← hh i h1, getElem!_pos _ _ (by omega)]
+  · apply Array.ext
+    · simp [hss]
+    · intro i h1 h2
+      simp only [Array.size_ofFn] at h1
+      rw [Array.getElem_ofFn, Array.getElem_map, ← hs i h1, getElem!_pos _ _ (by omega)]
 
 /-- A list of `n` labels' tables, empty but at the given labels. -/
 def sparse {α : Type} (n : Nat) (empty : α) (at_ : List (Nat × α)) : List α :=
@@ -1780,7 +1969,10 @@ def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty 
     | _ => false
   -- The loop heads (`loopHeads`). A statement entry that is no loop head is
   -- an ordinary node.
-  let (loopHeads, reached) := SinglePass.loopHeads nodes start
+  -- The walk that marks them, refused where its fuel ends before its stack
+  -- does (`loopHeads` is its marks).
+  let (ended, loopHeads, reached) := loopHeadsRun nodes start
+  if !ended then return .error (WalkStop.mk (.refused "the loop heads' fuel") counts answers trace)
   let _ := cuts
   let isHead : Array Bool := if start < n then loopHeads.set! start true else loopHeads
   -- Whether an edge enters the start: the start is then entered as any

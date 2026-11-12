@@ -394,31 +394,24 @@ theorem mapNames_mem {names : List Nat} {m : PointClaims.Mapping} {x : Nat} (hx 
   | none => exact .inl hx
   | some slots =>
     unfold SinglePass.mapNames at hx
-    simp only [Id.run] at hx
-    revert hx
-    refine forIn_inv_bind (R := fun (l : List Nat) => x ∈ l → x ∈ names ∨ x = 0)
-      (List.take (SinglePass.orderedSuffix slots names.length) slots)
-      ((SinglePass.Cursor.of names, Array.mkEmpty (SinglePass.orderedSuffix slots names.length)) :
-        SinglePass.Cursor Nat × Array Nat) _
-      (fun (r : SinglePass.Cursor Nat × Array Nat) => r.1.all = names ∧ (∀ y ∈ r.1.rest, y ∈ r.1.all) ∧
-        ∀ y ∈ r.2.toList, y ∈ names ∨ y = 0) _
-      ⟨rfl, fun y hy => hy, by simp⟩ ?_ ?_
-    · intro s _ r hr
+    simp only at hx
+    rcases List.mem_append.mp hx with hx | hx
+    · refine (foldl_inv (fun (r : SinglePass.Cursor Nat × Array Nat) => r.1.all = names ∧
+        (∀ y ∈ r.1.rest, y ∈ r.1.all) ∧ ∀ y ∈ r.2.toList, y ∈ names ∨ y = 0) _ _ _
+        ⟨rfl, fun y hy => hy, by simp⟩ ?_).2.2 x hx
+      intro s _ r hr
       obtain ⟨hall, hrest, hout⟩ := hr
       obtain ⟨h1, h2, h3⟩ := cursor_get_mem hrest s
       refine ⟨h2.trans hall, fun y hy => (show y ∈ (r.fst.get s).snd.all from h2 ▸ h3 y hy), fun y hy => ?_⟩
-      simp only [pure, ForInStep.value, Array.toList_push, List.mem_append, List.mem_singleton] at hy
+      simp only [Array.toList_push, List.mem_append, List.mem_singleton] at hy
       rcases hy with hy | rfl
       · exact hout y hy
       · cases hg : (r.1.get s).1 with
         | none => exact .inr rfl
         | some z => exact .inl (hall ▸ h1 z hg)
-    · intro r hr hx
-      rcases List.mem_append.mp hx with hx | hx
-      · exact hr.2.2 x hx
-      · split at hx
-        · exact .inl (List.mem_of_mem_drop hx)
-        · cases hx
+    · split at hx
+      · exact .inl (List.mem_of_mem_drop hx)
+      · cases hx
 
 /-- **An edge's transfer keeps the state below the counter** where the
 source's names, the edge's store, the entry's fresh names and the result
