@@ -23,6 +23,7 @@ import Verification.Programs.TolerantFramesMaterialize
 import Verification.Programs.TolerantFramesDelta
 import Verification.Programs.TolerantFramesStore
 import Verification.Programs.TolerantFramesEntry
+import Verification.Programs.TolerantFramesMerge
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -352,6 +353,12 @@ run_cmd do
   check ``Verification.TolerantFrames.storeWF_empty
   check ``Verification.TolerantFrames.headStore_ok
   check ``Verification.TolerantFrames.entry_stateHolds
+  check ``Verification.TolerantFrames.index_safeInt
+  check ``Verification.TolerantFrames.index_int
+  check ``Verification.TolerantFrames.integral_int
+  check ``Verification.TolerantFrames.mergeEqAtoms_holds
+  check ``Verification.TolerantFrames.zip_tail_eq
+  check ``Verification.TolerantFrames.mergeEqual_holds
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

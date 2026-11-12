@@ -818,12 +818,28 @@ these operations as pure functions of their inputs:
    materialization's elimination (`derivedOf_holds`) plus the alias
    restatement, not proved here.
 
-**Not justified: a merge's equalities of numbers.** `eqAtoms` (lines
-1022–1024) states, for a name a slot keeps and a fresh name renaming it,
-both the alias link and two linear facts $`\varphi-x\le 0`$, $`x-\varphi\le 0`$
-over their values. A linear fact holds only where every term denotes an
-integer (`IndexFact.HoldsAt.linear`); for names holding objects or strings
-the two facts do not hold at any valuation, while the alias link does.
+**A merge's equalities**, module
+`lean/Verification/Programs/TolerantFramesMerge.lean`. At a merge
+(`SinglePass.mergeState`) a predecessor renaming its name $`x`$ to fresh
+names $`\varphi_1,\dots`$ states each $`\varphi`$ equal to $`x`$ where a slot
+keeps $`x`$, and consecutive fresh names equal (`mergeEqual`, the merge's
+`equal`; `mergeEqAtoms`, its `eqAtoms`): by an alias link, and by
+$`\varphi-x\le 0`$, $`x-\varphi\le 0`$ where the predecessor's unconditional
+facts make $`x`$ an integer (`Store.integral`). Proved:
+
+- `index_safeInt`: the bits `indexOfBits` reads as $`i`$ are a safe integer
+  $`i`$ ($`\pm 0`$, or `bitsOfNat i` by the uniqueness of a normal double's
+  scaled value, `lex_scaled`);
+- `integral_int`: where every fact of a store holds at $`\eta`$, a name
+  `Store.integral` accepts holds a safe integer at $`\eta`$ (an `int`,
+  `index`, length, bound or linear fact over its value);
+- (`mergeEqual_holds`) where every fact of the predecessor's store holds at
+  $`\eta`$, and $`\eta'`$ holds at each fresh name of $`x`$ the value $`\eta`$
+  holds at $`x`$ and agrees with $`\eta`$ at every renamed name, every equality
+  the merge states for that predecessor holds at $`\eta'`$.
+
+`mergeEqual` is the merge's local `equal` with its `eqAtoms` unfolded (equal
+by unfolding the `let`s); the merge theorem reads it there.
 
 ## What the model requires beyond the note
 
