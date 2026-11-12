@@ -19,6 +19,8 @@ the joined implications included. Proved:
   `NodeChecked.hentry`;
 - `exitJoinedY`: an exit's joined implications at a merge from the edge's
   record at the refined context (`joinedAt_of_exit`, `passRefined_env`);
+  `exitDeliversAJ_of`: an exit delivering `edgePreA` and those joined
+  implications delivers `edgePreAJ`;
 - `nodeYielded_of_checks`: what `run` checks of the kept yields and the
   return (`NodeYieldChecks`) gives `NodeYielded`'s judgment and return
   (`yieldsJudged_of_checked`, `goalHolds_of_returnY`), its exits and
@@ -101,6 +103,22 @@ theorem exitJoinedY {G : NormalGraph ι} {w : Walk ι} {given : Nat → Bool} {c
     (hss : SlotsNamed names (if pushed then push v ρ else ρ) η) (hcar : PromiseCalls.ImpliesOk G carried η s.n s.W) :
     joinedAt G w given ctx edgesIn t.label (PointClaims.mapEnv t.mapping (if pushed then push v ρ else ρ)) k s :=
   joinedAt_of_exit hin (passRefined_env hm harms he hshape ho hy hout) hss hcar
+
+omit [DecidableEq ι] in
+/-- **A normal exit delivers `edgePreAJ`**: `ExitDelivers` at `edgePreA`
+and the merge's joined implications at every exit's target environment
+(`exitJoinedY`). -/
+theorem exitDeliversAJ_of [DecidableEq ι] [Hashable ι] {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat}
+    {ρ0 : Env} {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge} {given : Nat → Bool}
+    {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
+    {A : Ty ι} {Γ : List (Ty ι)} {Fn : Assertion} {ρ : Env} {m : Nat} {t : Target} {pushed : Bool}
+    {observed : Option BranchRefinement.Observation} {promote : Option Bool}
+    (hd : ExitDelivers (edgePreA G w startNames ρ0 ctx stated) G A Γ Fn ρ m t pushed observed promote)
+    (hJ : ∀ (s' : IndexedHeap) v, isVal v = true → Fn (push v ρ) m s' → EnvOk G (A :: Γ) (push v ρ) s'.n s'.W →
+      ObservedOk observed promote v →
+      joinedAt G w given ctx edgesIn t.label (PointClaims.mapEnv t.mapping (if pushed then push v ρ else ρ)) m s') :
+    ExitDelivers (edgePreAJ G w startNames ρ0 ctx stated given edgesIn) G A Γ Fn ρ m t pushed observed promote :=
+  fun s' v hv hF he ho => ⟨hd s' v hv hF he ho, hJ s' v hv hF he ho⟩
 
 end Joined
 
