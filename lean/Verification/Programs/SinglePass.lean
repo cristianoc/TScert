@@ -1949,8 +1949,73 @@ def deadRegion (G : NormalGraph ι) (nodes : Array Node) (claimed : Array (Point
     GraphCode.deadIterate flags (nodes.size + 1) (Array.replicate nodes.size true)
   | _ => #[]
 
-/-- The walk's setup over one graph: what every visit reads (`WalkEnv`) and
-the state the first visit starts from, or where it stopped. -/
+/-- **The in-degrees** the walk starts from: at each label below
+`nodes.size` that is no loop head, the count of the edges into it
+(continuations and handlers) from the nodes the start reaches. -/
+def inDegrees (nodes : Array Node) (reached isHead : Array Bool) : Array Nat :=
+  nodes.zipIdx.foldl (fun (indeg : Array Nat) (node, l) =>
+    if reached[l]! then
+      (successors node.continuation ++ node.handler.toList).foldl (fun (indeg : Array Nat) t =>
+        if t.label < nodes.size && !isHead[t.label]! then indeg.modify t.label (· + 1) else indeg) indeg
+    else indeg) (Array.replicate nodes.size 0)
+
+/-- **The queue** the walk starts from: the labels below `n` the start
+reaches, in order, of in-degree 0 that are loop heads or the start. -/
+def initialQueue (n : Nat) (reached : Array Bool) (indeg : Array Nat) (isHead : Array Bool) (start : Nat) :
+    List Nat :=
+  (List.range n).filter fun l => reached[l]! && indeg[l]! == 0 && (isHead[l]! || l == start)
+
+/-- The given invariant of each head below `n`, at its slots: its written
+assertion and the claims' facts there (`supplied`); at the start the
+request's entry facts, its index facts and the separation of its inputs
+(`startWritten`, `startGiven`); and the counters after them. -/
+def setupGiven (n start : Nat) (isHead : Array Bool) (stated : Array (Option Knowledge))
+    (supplied : Array (Option (List IndexAtom))) (entryIndices : List IndexAtom)
+    (entrySeparation : HeapSeparation.Separation) (counts : Counts) : Array (Option Knowledge) × Counts :=
+  (List.range n).foldl (fun (acc : Array (Option Knowledge) × Counts) l =>
+    if isHead[l]! then
+      let written : Knowledge := if l == start then startWritten stated[l]! entryIndices entrySeparation
+        else (stated[l]!).getD {}
+      let claimsFacts := (supplied[l]!).getD []
+      let counts := { acc.2 with
+        givenWritten := acc.2.givenWritten + (atomsOf written).length
+        givenClaims := acc.2.givenClaims + claimsFacts.length }
+      (acc.1.set! l (some (if l == start then startGiven stated[l]! entryIndices entrySeparation claimsFacts
+        else { written with indices := written.indices ++ claimsFacts })), counts)
+    else acc) (Array.replicate n none, counts)
+
+/-- **The state the first visit starts from**, over `n` labels: the empty
+record, the answers, counters and trace given, the in-degrees, the queue and
+the fresh counter given, and per label no regional facts, no origin and no
+satisfiability answer. -/
+def setupState {G : NormalGraph ι} (n : Nat) (answers : Answered G) (counts : Counts) (trace : Trace)
+    (indeg : Array Nat) (queue : List Nat) (fresh : Nat) : WalkState ι G :=
+  { walk := { labels := Array.replicate n {}, incoming := Array.replicate n [], incomingImpl := Array.replicate n [],
+              incomingEdges := Array.replicate n [] },
+    answers, counts, trace, indeg, fresh, regionIn := Array.replicate n [], incomingFrom := Array.replicate n [],
+    queue, unsat := Array.replicate n none, lastStamp := 0, lastKind := "" }
+
+/-- **What every visit reads** (`WalkEnv`), from the call's arguments and
+what the setup computes from them. -/
+def setupEnv (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
+    (suggestions : List (Sequent ι)) (index : KnownIndex ι) (codes : CodeEntry ι → Bool) (aliases : List (ι × ι))
+    (passChecker : PassChecker G images) (undefTy : Option (Ty ι)) (nodes : Array Node)
+    (claimed : Array (PointClaim ι)) (start : Nat) (goal : Goal ι) (ensures : List HeapKnowledge.IndexFact)
+    (reference : Array Knowledge) (debugNode : Nat) (bound : Option (Footprints.Closed × Bool × Bool))
+    (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
+    (givenInputs : Array (List (Nat × Nat))) (observe : Option Nat) (tracing observeEntry : Bool)
+    (regional : Option Regional) (isHead reached : Array Bool) (startEntered : Bool)
+    (stated given : Array (Option Knowledge)) (merging deadArr : Array Bool) (startNames : List Nat)
+    (argName : Option Nat) : WalkEnv ι G images :=
+  { pool, fuel, suggestions, index, codes, aliases, passChecker, undefTy, nodes, claimed, n := nodes.size, start,
+    goal, ensures, reference, debugNode, bound, givenImplies, givenArgs, givenInputs, observe, tracing,
+    observeEntry, regional, isHead, reached, startEntered, stated, given, merging, deadArr, startNames, argName }
+
+/-- The walk's setup over one graph: its checks (the claims' count, the
+loop heads' fuel, store regions with an edge into the start, the entry's
+fields under store regions, one written assertion per label, the entry),
+then what every visit reads (`setupEnv`) and the state the first visit
+starts from (`setupState`), or where it stopped. -/
 def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
     (P : Program) (claims : List (PointClaim ι)) (start : Nat) (inputs : List (Ty ι)) (goal : Goal ι)
     (assertions : List (Nat × Knowledge)) (cuts : List Nat)
@@ -1964,26 +2029,25 @@ def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty 
     (ensures : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
     (entrySeparation : HeapSeparation.Separation := {}) (observe : Option Nat := none) (tracing : Bool := false) (observeEntry : Bool := false)
     (regional : Option Regional := none) :
-    Except (WalkStop ι G) (WalkEnv ι G images × WalkState ι G) := Id.run do
+    Except (WalkStop ι G) (WalkEnv ι G images × WalkState ι G) :=
   let nodes := P.toArray
   let claimed := claims.toArray
   let n := nodes.size
   let edgeCount := nodes.foldl (fun acc node => acc + (successors node.continuation).length + node.handler.toList.length) 0
-  let mut counts : Counts := { nodes := n, edges := edgeCount }
-  let mut trace : Trace := {}
-  if claimed.size != n then return .error (WalkStop.mk (.notHandled "claim count") counts answers trace)
+  let counts : Counts := { nodes := n, edges := edgeCount }
+  let trace0 : Trace := {}
+  if claimed.size != n then .error (WalkStop.mk (.notHandled "claim count") counts answers trace0) else
   let index := KnownIndex.of known
   -- The type of `undefined` alone, among the pool's: a call's omitted
   -- receiver is read at it.
   let undefTy := pool.find? fun B => match PositiveRules.expand G B with
     | [PositiveNormalization.Clause.undef] => true
     | _ => false
-  -- The loop heads (`loopHeads`). A statement entry that is no loop head is
-  -- an ordinary node.
-  -- The walk that marks them, refused where its fuel ends before its stack
-  -- does (`loopHeads` is its marks).
+  -- The loop heads (`loopHeads`), from the walk that marks them, refused
+  -- where its fuel ends before its stack does. A statement entry that is no
+  -- loop head is an ordinary node.
   let (ended, loopHeads, reached) := loopHeadsRun nodes start
-  if !ended then return .error (WalkStop.mk (.refused "the loop heads' fuel") counts answers trace)
+  if !ended then .error (WalkStop.mk (.refused "the loop heads' fuel") counts answers trace0) else
   let _ := cuts
   let isHead : Array Bool := if start < n then loopHeads.set! start true else loopHeads
   -- Whether an edge enters the start: the start is then entered as any
@@ -1994,95 +2058,46 @@ def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty 
   -- A regional check assumes the regions' input facts at the start, which
   -- no edge into it establishes.
   if startEntered && regional.isSome then
-    return .error (WalkStop.mk (.notHandled "store regions with an edge into the start") counts answers trace)
+    .error (WalkStop.mk (.notHandled "store regions with an edge into the start") counts answers trace0) else
   -- Under store regions, the entry's fields the regions read
   -- (`ArgumentPathTracking.checkEntryFields`, as `goto_bounded` checks them).
-  if let some rg := regional then
-    if !GraphCode.ArgumentPathTracking.checkEntryFields G inputs rg.regions then
-      return .error (WalkStop.mk (.refused "store regions: the entry's fields") counts answers trace)
+  if (match regional with
+      | some rg => !GraphCode.ArgumentPathTracking.checkEntryFields G inputs rg.regions
+      | none => false) then
+    .error (WalkStop.mk (.refused "store regions: the entry's fields") counts answers trace0) else
   -- One written assertion per label (`byLabel` reads the first).
   if (assertions.map (·.1)).eraseDups.length != assertions.length then
-    return .error (WalkStop.mk (.refused "a label with two written assertions") counts answers trace)
+    .error (WalkStop.mk (.refused "a label with two written assertions") counts answers trace0) else
   let stated := byLabel n assertions
-  if tracing then
-    let e : Array (Option State) := Array.replicate n none
-    let ms : Array (List (Nat × State × Std.HashMap Nat (List Nat))) := Array.replicate n []
-    let sg : Array (Option Nat) := Array.replicate n none
-    trace := Trace.mk e e ms sg isHead start 0 none [] [] []
+  let trace : Trace := if tracing then
+      let e : Array (Option State) := Array.replicate n none
+      let ms : Array (List (Nat × State × Std.HashMap Nat (List Nat))) := Array.replicate n []
+      let sg : Array (Option Nat) := Array.replicate n none
+      Trace.mk e e ms sg isHead start 0 none [] [] []
+    else trace0
   let supplied := byLabel n candidates
   -- The entry, which no edge checks on the first invocation.
-  if let some why := entryRefusal G inputs claims start goal (stated.getD start none) ((supplied.getD start none).getD [])
+  match entryRefusal G inputs claims start goal (stated.getD start none) ((supplied.getD start none).getD [])
       ((givenImplies[start]?).getD []) ((givenArgs[start]?).getD []) ((givenInputs[start]?).getD [])
-      entryIndices entrySeparation then
-    return .error (WalkStop.mk (.refused why) counts answers trace)
-  -- In-degrees without the edges into cuts, of the edges from nodes the
-  -- start reaches: a node no path from the start reaches never runs.
-  let mut indeg : Array Nat := Array.replicate n 0
-  for (node, l) in nodes.zipIdx do
-    if reached[l]! then
-      for t in successors node.continuation ++ node.handler.toList do
-        if t.label < n && !isHead[t.label]! then indeg := indeg.modify t.label (· + 1)
-  let merging : Array Bool := indeg.map (· > 1)
-  let mut fresh := 0
-  -- Under a footprint bound, the region from which no normal return is
-  -- possible (`GraphCode.inferDead`), refined from every node.
-  let deadArr : Array Bool := deadRegion G nodes claimed bound
-  -- The states entering each node, one per predecessor.
-  let mut incoming : Array (List State) := Array.replicate n []
-  -- Under a regional check, the regional facts each edge into a label
-  -- establishes.
-  let mut regionIn : Array (List RegionState) := Array.replicate n []
-  -- Where each incoming state came from, kept only where observed.
-  let mut incomingFrom : Array (List Nat) := Array.replicate n []
-  -- Beside each entering state, the implications its edge carries, over
-  -- names (`PromiseCalls.Implication`: where the test holds `true`, the
-  -- target has the type).
-  let mut incomingImpl : Array (List (List (PromiseCalls.Implication ι))) := Array.replicate n []
-  -- Into a merge, each edge as the search's merge reads it
-  -- (`CertificateProducer.meetImplications`): its context refined by the
-  -- source's yields, its implications at the source's slots, its mapping.
-  let mut incomingEdges : Array (List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)) :=
-    Array.replicate n []
-  let mut queue : List Nat := []
-  -- The given invariant of each head, at its slots: its written assertion
-  -- and the claims' facts there.
-  let mut given : Array (Option Knowledge) := Array.replicate n none
-  for l in List.range n do
-    if isHead[l]! then
-      -- The start assumes the request's entry facts: its index facts and
-      -- the separation of its inputs (`startWritten`, `startGiven`).
-      let written : Knowledge := if l == start then startWritten stated[l]! entryIndices entrySeparation
-        else (stated[l]!).getD {}
-      let claimsFacts := (supplied[l]!).getD []
-      counts := { counts with
-        givenWritten := counts.givenWritten + (atomsOf written).length
-        givenClaims := counts.givenClaims + claimsFacts.length }
-      given := given.set! l (some (if l == start then startGiven stated[l]! entryIndices entrySeparation claimsFacts
-        else { written with indices := written.indices ++ claimsFacts }))
-  for l in List.range n do
-    if reached[l]! && indeg[l]! == 0 && (isHead[l]! || l == start) then queue := queue ++ [l]
-  -- The start's names, fixed before any node is visited (a cut may be
-  -- visited before it), and the name of the input a promise goal is about.
-  let startWidth := ((claimed[start]?).map (·.context.length)).getD 0
-  let startNames := (List.range startWidth).map (· + fresh)
-  fresh := fresh + startWidth
-  let argName : Option Nat := goal.slot.bind fun sl => startNames[sl]?
-  -- Per node, whether no environment meets its context, known from its
-  -- first entering edge.
-  let mut unsat : Array (Option Bool) := Array.replicate n none
-  let mut lastStamp := 0
-  let mut lastKind := ""
-  let w0 : Walk ι := { labels := Array.replicate n {}, incoming := incoming, incomingImpl := incomingImpl, incomingEdges := incomingEdges }
-  let σ0 : WalkState ι G := { walk := w0, answers := answers, counts := counts, trace := trace, indeg := indeg, fresh := fresh, regionIn := regionIn, incomingFrom := incomingFrom, queue := queue, unsat := unsat, lastStamp := lastStamp, lastKind := lastKind }
-  let env : WalkEnv ι G images :=
-    { pool := pool, fuel := fuel, suggestions := suggestions, index := index,
-      codes := codes, aliases := aliases, passChecker := passChecker, undefTy := undefTy, nodes := nodes,
-      claimed := claimed, n := n, start := start, goal := goal, ensures := ensures, reference := reference,
-      debugNode := debugNode, bound := bound, givenImplies := givenImplies, givenArgs := givenArgs,
-      givenInputs := givenInputs, observe := observe, tracing := tracing, observeEntry := observeEntry,
-      regional := regional, isHead := isHead, reached := reached, startEntered := startEntered, stated := stated,
-      given := given, merging := merging, deadArr := deadArr, startNames := startNames, argName := argName }
-  return .ok (env, σ0)
+      entryIndices entrySeparation with
+  | some why => .error (WalkStop.mk (.refused why) counts answers trace)
+  | none =>
+    -- In-degrees without the edges into heads, of the edges from nodes the
+    -- start reaches: a node no path from the start reaches never runs.
+    let indeg := inDegrees nodes reached isHead
+    let merging : Array Bool := indeg.map (· > 1)
+    let deadArr := deadRegion G nodes claimed bound
+    let (given, counts) := setupGiven n start isHead stated supplied entryIndices entrySeparation counts
+    let queue := initialQueue n reached indeg isHead start
+    -- The start's names, fixed before any node is visited (a cut may be
+    -- visited before it), and the name of the input a promise goal is about.
+    let startWidth := ((claimed[start]?).map (·.context.length)).getD 0
+    let startNames := List.range startWidth
+    let argName : Option Nat := goal.slot.bind fun sl => startNames[sl]?
+    .ok (setupEnv G images pool fuel suggestions index codes aliases passChecker undefTy nodes claimed start goal
+        ensures reference debugNode bound givenImplies givenArgs givenInputs observe tracing observeEntry regional
+        isHead reached startEntered stated given merging deadArr startNames argName,
+      setupState n answers counts trace indeg queue startWidth)
 
 /-- A node's output facts as an edge reads them: the step's output `out`
 with its links restated on every slot of their classes at the node's
