@@ -136,7 +136,9 @@ Co-Authored-By: <attribution>
   theorem change, and a new theorem that is the conclusion of the commit's
   argument is `Theorem added`.
 - **`Tooling`** is a change to how the project is built, tested or laid out:
-  the runner, a make target, a script, the module structure. It is never a
+  the runner, a make target, a script, the module structure. A change of
+  how a search finds its evidence that leaves every verdict as it was is
+  `Tooling` too. It is never a
   `Definition`, since it changes no concept of the calculus or the pipeline.
   Its lines are kept as written, aligned columns included.
 - **Sections** are a line `Name:` at the start of a line, followed by text or
@@ -176,6 +178,9 @@ Co-Authored-By: <attribution>
       promise-then-chained show@156   agreement   refused → verified   pipeline verified: the binder's declared default
   ```
 
+  The pass's verdicts are `verified`, `refused` and `not handled`;
+  `disagreed` stands before the arrow where the record knows only that the
+  unit's verdict differed from the pipeline's.
   The first field is `<case> <unit>`, one space between them, and the
   fields are three or more spaces apart; a statement about a case with no
   unit named goes in `Validation:`. The case exists at the commit.
