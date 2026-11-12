@@ -193,8 +193,9 @@ theorem yieldsJudged_of_follows {G : NormalGraph ι} {images : InstanceImageChec
 /-- **What a node's step means with its kept yields** `ys`: the step's
 judgment carrying them (`YieldsJudged`), a return's goal from the state after the step,
 the claim's type and the yields (`ret`, the premises of
-`goalHolds_of_return`), each normal exit delivering from the state after the step
-and the yields at the pushed value (`exits`). `NodeMeaning`'s `ret` and
+`goalHolds_of_return`), each normal exit delivering from the state after the step,
+the yields at the pushed value and the step's output (`exits`), and the
+handler delivering from the throw state (`handler`), each at `edgePreAJ`. `NodeMeaning`'s `ret` and
 `exits`, stated for every value of the claim's type, restated at the values
 the step returns. -/
 structure NodeYielded (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
@@ -210,53 +211,13 @@ structure NodeYielded (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
   exits : ∀ t pushed observed promote, Exit.normal t pushed observed promote ∈ Exit.ofNode node → ∀ ρ,
     ExitDelivers (edgePreAJ G w startNames ρ0 ctx stated given edgesIn) G c.type c.context
       (fun ρ' m' s' => StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ρ0
-        ρ' m' s' ∧ PromiseCalls.YieldsOk G ys ρ s'.n s'.W (ρ' 0)) ρ m t pushed observed promote
-
-omit [Instantiates ι] in
-/-- **Every checked node delivers, its exits and return reading its kept
-yields** (`StepEdgesSoundAt` at `edgePreAJ`): `stepEdgesSound_of_checkedAt`
-with the judgment strengthened by the yields (`stepYields_judgment`), the
-return's goal and the exits from `NodeYielded`, the entry state, the shapes
-and the handler from `NodeMeaning`, the handler's joined implications from
-`ExitsJoined`. -/
-theorem stepEdgesSound_of_yields {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
-    {pc : PassChecker G images} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat} {ρ0 : Env}
-    {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge} {given : Nat → Bool}
-    {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
-    {Tres : Fam} {m : Nat}
-    (hacc : ∀ l, w.visited l → ∃ r : NodeChecked G images codes pc P w startNames ctx l,
-      ∃ ys, NodeMeaning G w startNames ρ0 ctx stated Tres m l r.node r.c r.entry r.st ∧
-      ExitsJoined G w startNames ρ0 ctx given edgesIn m l r.node r.c r.entry r.st ∧
-      NodeYielded G w startNames ρ0 ctx stated given edgesIn Tres m l r.node r.c r.entry r.st ys)
-    (hcodes : CodesSound G codes) :
-    StepEdgesSoundAt (edgePreAJ G w startNames ρ0 ctx stated given edgesIn) P G w startNames ρ0 ctx (excOf G) Tres
-      (fun _ => True) (fun _ => True) m := by
-  intro l ρ s hp
-  obtain ⟨na, ys, hm, hJ, hY⟩ := hacc l hp.1.1
-  have hS := hm.entered ρ s hp
-  have he : EnvOk G na.c.context ρ s.n s.W := na.hctx ▸ hp.2
-  obtain ⟨-, hkS, -, cn, ce, hparts⟩ := stepChecked_parts na.hstep hS na.wf na.below na.width he hcodes na.sums
-  have hjY := hY.judged ρ s _ _ hS he hkS hparts.1
-  obtain ⟨hj, ho⟩ := nodeObligations_of_partsY (pre := edgePreAJ G w startNames ρ0 ctx stated given edgesIn)
-    (Ξres := excOf G) (Tres := Tres) (Qres := fun _ => True) (Rres := fun _ => True) (x := na.node.handler)
-    hparts he hjY
-    (fun j U v hv => hm.shape (j + 1) U v hv)
-    (fun s' v _ hv hF hy he' _ => by
-      have hshape := hm.shape _ _ v (he'.2 0 _ rfl)
-      by_cases hk : na.node.continuation = .ret
-      · rw [hk]
-        exact ⟨hY.ret hk ρ s' v hv hF he' hy, trivial⟩
-      · exact normalTarget_of_exits (Fn := fun ρ' m' s'' => StateHolds G
-            ⟨na.st.result :: na.entry.names, na.st.store, na.entry.fresh⟩ (w.implies l) startNames ρ0 ρ' m' s'' ∧
-            PromiseCalls.YieldsOk G ys ρ s''.n s''.W (ρ' 0))
-          (fun t p o q hmem => hY.exits t p o q hmem ρ) (fun h => absurd h hk)
-          (fun _ => trivial) s' v hv ⟨hF, hy⟩ he' hshape)
-    (fun s' e _ hFe he' hsc hx => by
-      cases hh : na.node.handler with
-      | none => exact ⟨hx, trivial⟩
-      | some t =>
-        exact ⟨hm.handler t hh ρ s' e hFe he' hsc hx, hJ.handler t hh ρ s' e hFe he' hsc hx⟩)
-  exact ⟨na.node, na.hP, _, _, cn, ce, _, _, hj, ho⟩
+        ρ' m' s' ∧ PromiseCalls.YieldsOk G ys ρ s'.n s'.W (ρ' 0) ∧ HeapKnowledge.Holds st.stepOut ρ' s'.h)
+      ρ m t pushed observed promote
+  handler : ∀ t, node.handler = some t → ∀ ρ (s' : IndexedHeap) e,
+    StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ (w.implies l) startNames ρ0
+      ρ m s' →
+    EnvOk G c.context ρ s'.n s'.W → Scoped 0 e → excOf G s'.n s'.W e →
+    edgePreAJ G w startNames ρ0 ctx stated given edgesIn t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s'
 
 end Obligations
 
