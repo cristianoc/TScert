@@ -2919,6 +2919,14 @@ def pushExit {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkEnv
   let queue := if indeg[t.label]! == 0 then t.label :: acc.queue else acc.queue
   { acc with incoming, incomingFrom, incomingImpl, edges, incomingEdges, indeg, queue }
 
+/-- Whether an exit's mapping `m` gives a target of `width` slots over
+`count` source names: the identity where `count = width`, else as many
+slots as `width`, each below `count`. -/
+def mappingWidthOk (m : PointClaims.Mapping) (count width : Nat) : Bool :=
+  match m with
+  | none => count == width
+  | some slots => slots.length == width && slots.all (· < count)
+
 /-- **One exit of node `l`** (`visitExits` folds it over the node's exits
 with their positions): the exit's context and names, its edge facts
 (`edgeStoreOf`), whether some environment meets it, the target's
@@ -2947,6 +2955,10 @@ def exitStep (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv
   | some tc =>
     let Γ := if isHandler then sd.thrownTy.getD [] :: c.context else if pushed then c.type :: c.context else c.context
     let names := if isHandler then sd.thrown :: entry.names else if pushed then pushedNames else entry.names
+    -- The mapping gives the target's width over the exit's names.
+    if !mappingWidthOk t.mapping names.length tc.context.length then
+      .error (WalkStop.mk (.refused s!"edge from {l}: its mapping's width") acc.counts acc.answers acc.trace)
+    else
     -- The edge's own facts: an observation of the result; a throw's, the
     -- entry's facts no heap change affects.
     let edgeStore := edgeStoreOf G Γ entry.store st.store names pushedNames width pushed isHandler observed ex.promote
