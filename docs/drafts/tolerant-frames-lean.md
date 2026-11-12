@@ -804,23 +804,28 @@ the heap-free facts hold after the step, the output holds at the pushed
 slots and `back` names each slot's value, every fact of the resulting store
 holds (`applyDelta_dropHeap`).
 
-### What the named state's proofs cannot reach as written
+### What the named state's proofs do not cover
 
-Not proved: a merge (`SinglePass.lean` lines 995–1167), a head's entry
-(965–988), an edge's store (1559–1578, 1753–1767). Each is code inside
-`run`'s `while` loop over mutable arrays, no function a theorem can name;
-the merge's names, variants, met store, weakest bounds, entailed and guarded
-facts, fresh intersection and implications are local `let`s. Proofs need
-these operations as pure functions of their inputs:
+The pass's operations are top-level functions of `SinglePass.lean`
+(`headEntry`, `mergeState`, `checkedStep`, `edgeStoreOf`, `edgeTransfer`,
+`Store.drop`, `Store.dropHeap`); the footprint, return and regional checks
+and the edges' type, head and assertion checks are inline in `run`. Not
+proved:
 
-1. The merge (995–1167) as `mergeState : List State → … → State × List Implication`,
-   with the fresh-name counter an argument and result; then each
-   predecessor's valuation extends to the φ names by its own names.
-2. The head entry (965–988) and the edge's store (1559–1578, 1753–1767) as
-   functions of the node's state, its edge and the counter.
-3. `Store.drop` (482–523) is a function; its soundness is the
-   materialization's elimination (`derivedOf_holds`) plus the alias
-   restatement, not proved here.
+1. the merge (`mergeState`): every predecessor's `StateHolds` implies the
+   merged state's, at predecessor-specific valuations extended to the fresh
+   names; its equalities are proved (below), its met store, weakest bounds,
+   entailed and guarded facts, fresh intersection and implications are not;
+2. the head entry of a loop head other than the start, and an edge's store
+   and transfer (`edgeStoreOf`, `edgeTransfer`);
+3. `Store.drop`: its soundness is the materialization's elimination
+   (`derivedOf_holds`) plus the alias restatement;
+4. `checkedStep` as a whole: the theorems of the selected output, the
+   preserving steps and the delta take its conditions as the definitions
+   that mirror its code (`passTreeCheck`, `passWholeCheck`, `passWithin`,
+   `passThrows`, `handedSet`), equal by unfolding, with no theorem about
+   `checkedStep` itself;
+5. `StateWF.below` maintained by the operations.
 
 **A merge's equalities**, module
 `lean/Verification/Programs/TolerantFramesMerge.lean`. At a merge
