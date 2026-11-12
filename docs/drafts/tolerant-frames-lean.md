@@ -1372,11 +1372,12 @@ of `TolerantFramesRunSound.lean`, quantified over every call the premises of
 
 The hypotheses of `run_sound_single_pass`
 (`TolerantFramesSinglePassSound.lean`: `run_sound_pass` with the walk
-side's `recordsSound_of` and `recordsChecked_of`), each with what
+side's `recordsSound_of` and `recordsChecked_of`, `VisitsRecord` from
+`visitsRecord_of` and `visitsRest_of`), each with what
 discharges it and the theorem that consumes it:
 
 ```math
-\mathrm{SetupRecords} \wedge \mathrm{VisitsRecord} \wedge \mathrm{SubtypeAnswersAll} \wedge \mathrm{ExitsYield} \wedge \mathrm{RegionsRecorded} \wedge \mathrm{RegionsTyped} \Longrightarrow \mathrm{RunSound}
+\mathrm{SetupRecords} \wedge \mathrm{ExitsPushOk} \wedge \mathrm{StepFresh} \wedge \mathrm{VisitsSettle} \wedge \mathrm{SubtypeAnswersAll} \wedge \mathrm{ExitsYield} \wedge \mathrm{RegionsRecorded} \wedge \mathrm{RegionsTyped} \Longrightarrow \mathrm{RunSound}
 ```
 
 The pass keeps the read summaries it was given with no hypothesis
@@ -1388,7 +1389,7 @@ checks, `NodeYieldChecks`, a field of `NodePassChecked`, hold there by
 `NodeYieldChecks.reassign`); the regional premise `RegionsHeld` follows
 from `RegionsRecorded` and `RegionsTyped` (`regionsHeld_of`).
  Pass changes are named by the pass lane's
-items in its queue; the pass lane (`engine-pass`) is at 58834875, where D1
+items in its queue; the pass lane (`engine-pass`) is at 3b2d6528, where D1
 to D4, D9 (`passShapeCheck'`), D10 (one written assertion per label), D11
 (the regional derivation check, the entry's fields under store regions),
 the driver on fuel (C9), the setup and visit as functions (`setup`,
@@ -1397,13 +1398,17 @@ restoring its read-summary table (W2, `keepSummaries`) and the visit as
 its entry, step and exits with one record write (W3: `visitEntry`,
 `visitStep`, `visitExits`, `LabelWalk.ofVisit`; D15's `refinedContext`
 and `outAllOf`), the loop heads' walk on fuel (`loopHeadsWalk`,
-`loopHeadsRun`) and the name mapping by structural recursion (D7, W7)
-have arrived. A stopped walk is never accepted by
+`loopHeadsRun`), the name mapping by structural recursion (D7, W7) and
+the visit's parts returning only what they compute (W6, R2's `boundOk`,
+W5's `exitStep`) have arrived. A stopped walk is never accepted by
 its type (`walkStopsRefuse`, from `StopOutcome.outcome_ne_accepted`).
 
 | Premise | Discharged by | Consumed by |
 | --- | --- | --- |
-| `SetupRecords`, `VisitsRecord` | the walk side (Leg 19b): what the setup gives (`EnvFacts`, `RecInv`, queue entry W4; `EnvFacts` from four equations of the setup and the start below the node count, `envFacts_of_loopHeads`, queue entry L2), what each visit that returns gives (`VisitFacts`: the record's fields, and at the visited label its checked step with `NodePassChecked` in the setup's `deadArr`: the footprint and return checks and the kept yields' checks `NodeYieldChecks` over a sound summary table; queue entries R2, W5 and W6 make the visit's parts readable) | `recordsSound_of` and `recordsChecked_of`, then `run_traversedC` |
+| `SetupRecords` | the walk side (Leg 19b): what the setup gives (`EnvFacts`, `RecInv`, queue entry W4; `EnvFacts` from four equations of the setup, the start below the node count, a claim per label and a given state at heads only, `envFacts_of_loopHeads`, queue entry L2) | `recordsSound_of` and `recordsChecked_of`, then `run_traversedC` |
+| `ExitsPushOk` | each state an exit pushes (`exitPushed`) meets `PushOk` at its target and the step's fresh counter: `pushOk_of_exit` from the mapping's width and the entry's and step's stores well-formed and below the counter | `visitsRest_of` |
+| `StepFresh` | the step's fresh counter (`StepDone.fresh`) not below the visit's: the entry's (`headEntry`, `mergeState`) and `checkedStep`'s counters only grow | `visitsRest_of` |
+| `VisitsSettle` | the visited label's record settled (`SettledCore`): its checked step with `NodePassChecked` in the setup's `deadArr` (the footprint and return checks, `boundOk` and `returnOk`, and the kept yields' checks `NodeYieldChecks` over a sound summary table, `DirectKeepsSummaries` and `SearchKeepsSummaries` until W8), the start entered, the entry from `entryStart` and `withStated` | `visitsRest_of` |
 | `SubtypeAnswersAll` | pass change D5: an answer `subtypeUsing` accepts from any answers is an inclusion of meanings, at every graph (the answers' `subtypes` cache carries no soundness, so this is not provable of the pass as it is; `proved_sound` is the form the change can give) | `nodesYield_of` (the return's goal, `goalHolds_of_returnY`) |
 | `ExitsYield` | over a checked walk, at the yields the visit kept (`NodeChecked.ys`), `NodeExitsY`: each exit by `exitDeliversAJ_of` from `exitDeliversY_of_edge` or `exitDeliversY_head` (the edge's checks, the target's types by `refinedEdge_env`), `assertsAt_of_edge` (the assertion check at the refined context) and `exitJoinedY` (the merge's recorded edge at `SinglePass.refinedContext`); the handler by `handlerDelivers_of_edge` and `joinedAt_of_exit` at the node's context; the edge checks to be read off the visit (queue entries W6, W5, R1) and carried to every reassigned graph (`edgeEvidenceChecked_reassign`, `headQuery_reassign`, `assertionQuery_reassign`) | `nodesYield_of`, then `stepEdgesSound_of_yields` |
 | `RegionsRecorded` | tables of the graph whose start entry holds each region's own position and no fresh value, cell or field, and at every visited node the visit's regional check (`checkNode` at `passRegionalEvidenceOf`) accepting over the node's own tables, which agree with the graph's (`TablesAgree`): the check read off the visit (queue entry W6), the graph's tables the region state each label's own check used, recorded per label (queue entry R4), each target's entry within its predecessors' by `meet_sub` and the in-degree order | `regionsHeld_of`, then `run_guarantee` (`regionally`) |
@@ -1913,7 +1918,33 @@ it visited, counts it once and keeps the record's size
 
 (`visitsRecord_of`), `VisitsRest` stating the rest of `VisitFacts`
 (`VisitRest`: the exits, what came in, the in-degrees, the queue, the
-settled record, the merge's counter) of every visit. A state an exit
+settled record, the merge's counter, the incoming arrays' equal sizes)
+of every visit.
+
+**The rest of a visit's facts from its parts.** Modules
+`lean/Verification/Programs/TolerantFramesDriverExits.lean` and
+`lean/Verification/Programs/TolerantFramesDriverVisitRest.lean`. One exit
+(`exitStep`) records one edge to its target, which has a claim; into a
+head it changes no incoming array, in-degree or queue; into another node
+it pushes `exitPushed` and implications at the target, changes the merge
+edges there only, lowers the target's in-degree by one and queues it at
+0 (proved: `exitStep_effect`, from `exitTypes_core`, `headExit_core`,
+`assertionExit_core`, `pushExit_fields`). Over the exits' fold
+(`visitExits`, `exitsFold_of`, `visitExits_fold`) this gives `ExitsFold`:
+the arrays change at the targets only, keeping their sizes; at each label
+the states and implications that came in grow by equally many pushed
+ones; the edges grow by edges to targets; a node other than a head's
+in-degree goes down by its count among the targets; the labels queued are
+targets at in-degree 0, distinct where no in-degree is below its count.
+The targets are the node's successors (`exitLabels_ofNode`), and a
+returned entry's merge is `entryStart`'s (`visitEntry_merge`), so
+
+```math
+\mathrm{ExitsPushOk} \wedge \mathrm{StepFresh} \wedge \mathrm{VisitsSettle} \Longrightarrow \mathrm{VisitsRest}
+```
+
+(`visitsRest_of`, under the setup's `EnvFacts` and the invariant's equal
+incoming sizes, `RecInv.inSizes`). A state an exit
 carries into its target (`edgeTransfer` over `edgeStoreOf`) meets
 `PushOk` where the mapping reads the source's slots and gives the
 target's width, the entry's and the step's stores are well-formed and
@@ -2008,14 +2039,14 @@ Premises this leg discharges / leaves:
   order is part of the invariant (`RecInv`), proved along the walk. Left:
   `SetupRecords` (over the setup's environment and first state, queue
   entry W4, with `dfsLoop_init_closed` for the reached labels) and
-  `VisitsRecord`, reduced to `PartsKeepLabels` and `VisitsRest`
-  (`visitsRecord_of`; over the visit's entry, step and exits: queue
-  entries R2, W5, W6 and W7; its settled record's node reads the step's
+  `VisitsRecord`, reduced to `VisitsRest` (`visitsRecord_of`) and that
+  to `ExitsPushOk`, `StepFresh` and `VisitsSettle` (`visitsRest_of`, the
+  exits' fold `ExitsFold`); the settled record's node reads the step's
   read-summary tables sound, from `DirectKeepsSummaries` and
   `SearchKeepsSummaries` (`stepChecked_of_step`) or from the final table's
   soundness where each table the visit reads is a prefix of the next
   (queue entry W8); each state an exit pushes meets `PushOk` by
-  `pushOk_of_exit`).
+  `pushOk_of_exit`.
 - `LoopHeadsFuelEq`, `MapNamesLength`: discharged (`loopHeads_cuts`,
   `loopHeads_closed`, `envFacts_of_loopHeads`; `mapNames_length`).
 - `NodesYield`: reduced to `SubtypeAnswersAll` (pass change D5) and

@@ -865,6 +865,17 @@ run_cmd do
   check ``Verification.TolerantFrames.visitResult_size
   check ``Verification.TolerantFrames.visitResult_visits
   check ``Verification.TolerantFrames.visitsRecord_of
+  check ``Verification.TolerantFrames.exitTypes_core
+  check ``Verification.TolerantFrames.assertionExit_core
+  check ``Verification.TolerantFrames.headExit_core
+  check ``Verification.TolerantFrames.pushExit_fields
+  check ``Verification.TolerantFrames.exitStep_effect
+  check ``Verification.TolerantFrames.ExitsFold.cons
+  check ``Verification.TolerantFrames.exitsFold_of
+  check ``Verification.TolerantFrames.visitExits_fold
+  check ``Verification.TolerantFrames.exitLabels_ofNode
+  check ``Verification.TolerantFrames.visitEntry_merge
+  check ``Verification.TolerantFrames.visitsRest_of
   check ``Verification.TolerantFrames.pushOk_of_exit
   check ``Verification.TolerantFrames.dfsStep_seen
   check ``Verification.TolerantFrames.dfsLoop_seen

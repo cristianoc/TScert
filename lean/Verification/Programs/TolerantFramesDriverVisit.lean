@@ -90,6 +90,7 @@ structure VisitRest (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) (
     ((∀ t < env.n, envHead env t = false → (exitsOf env l).count t ≤ deg σ t) → new.Nodup)
   settles : (envHead env l = false → l ∉ exitsOf env l) → SettledCore c (envHead env) env.deadArr.toList σ' l
   mergeFresh : envHead env l = false → 2 ≤ (incS σ.walk l).length → passFresh σ'.walk l = σ.fresh
+  inSizes : σ.walk.incoming.size = σ.walk.incomingImpl.size → σ'.walk.incoming.size = σ'.walk.incomingImpl.size
 
 variable (ι) in
 /-- **(Named hypothesis) Every visit gives `VisitRest`**, under
@@ -115,7 +116,8 @@ theorem visitsRecord_of (hr : VisitsRest ι) : VisitsRecord ι := by
           count := rfl,
           size := visitResult_size _ _ _ _ _,
           frame := hR.frame, pushes := hR.pushes, edges := hR.edges, fresh := hR.fresh, degs := hR.degs,
-          queue := hR.queue, settles := hR.settles, mergeFresh := hR.mergeFresh }
+          queue := hR.queue, settles := hR.settles, mergeFresh := hR.mergeFresh,
+          inSizes := hR.inSizes }
 
 /-- **A state an exit carries in meets `PushOk`** (`edgeTransfer_width`,
 `edgeTransfer_wf`, `edgeStoreOf_wf`, `edgeTransfer_below`,

@@ -199,12 +199,15 @@ structure Settled (c : Target.RunCall G I) (heads : Nat → Bool) (dead : List B
 
 /-- **What the setup's `env` states of the call**: its heads the call's
 (`passHeads`); the labels it reaches closed under exits below the bound;
-the start reached; the count `runWalk` reads of the reached labels. -/
+the start reached; the count `runWalk` reads of the reached labels; a
+claim per label below the bound; a given state at heads only. -/
 structure EnvFacts (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) : Prop where
   heads : envHead env = passHeads c
   closed : ∀ s t, envReached env s = true → t ∈ exitsOf env s → t < env.n → envReached env t = true
   start : c.start < env.n ∧ envReached env c.start = true
   reachable : (env.reached.toList.filter id).length = ((List.range env.n).filter (envReached env)).length
+  claimed : env.claimed.size = env.n
+  given : ∀ t : Nat, env.isHead[t]! = false → env.given[t]! = none
 
 omit [Labels ι] in
 /-- A list's true entries, counted by position. -/
@@ -218,14 +221,16 @@ theorem filter_id_length (l : List Bool) :
 
 /-- **The setup's loop facts from `loopHeads`**: where the setup's nodes are
 the call's, its reached flags `loopHeads`' and its heads the call's, with
-the start below the bound, `env` states the call (`loopHeads_closed`,
-`loopHeads_reached_size`). The four equations are read off `setup` (W4). -/
+the start below the bound, a claim per label and a given state at heads
+only, `env` states the call (`loopHeads_closed`, `loopHeads_reached_size`).
+The equations are read off `setup` (W4). -/
 theorem envFacts_of_loopHeads {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I}
     (hnodes : env.nodes = c.P.toArray) (hn : env.n = c.P.toArray.size)
     (hreached : env.reached = (SinglePass.loopHeads c.P.toArray c.start).2) (hheads : envHead env = passHeads c)
-    (hstart : c.start < env.n) : EnvFacts c env := by
+    (hstart : c.start < env.n) (hclaimed : env.claimed.size = env.n)
+    (hgiven : ∀ t : Nat, env.isHead[t]! = false → env.given[t]! = none) : EnvFacts c env := by
   have hc := loopHeads_closed c.P.toArray c.start
-  refine ⟨hheads, fun s t hs ht htn => ?_, ⟨hstart, ?_⟩, ?_⟩
+  refine ⟨hheads, fun s t hs ht htn => ?_, ⟨hstart, ?_⟩, ?_, hclaimed, hgiven⟩
   · unfold envReached exitsOf at *
     rw [hreached] at hs ⊢
     rw [hnodes] at ht
@@ -259,6 +264,7 @@ structure RecInv (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) (σ 
   size : σ.walk.labels.size = env.n
   degs : ∀ t < env.n, envHead env t = false → deg σ t = pend env σ t
   inLen : ∀ t, (incS σ.walk t).length = (incI σ.walk t).length
+  inSizes : σ.walk.incoming.size = σ.walk.incomingImpl.size
   inVis : ∀ t, incS σ.walk t ≠ [] → ∃ s, visB σ.walk s = true ∧ t ∈ exitsOf env s
   edgesVis : ∀ e ∈ σ.walk.edges.toList, ∃ s, visB σ.walk s = true ∧ e.target.label ∈ exitsOf env s
   push : ∀ t, ∀ s ∈ incS σ.walk t, PushOk c t s σ.fresh
@@ -412,6 +418,7 @@ structure VisitFacts (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) 
     ((∀ t < env.n, envHead env t = false → (exitsOf env l).count t ≤ deg σ t) → new.Nodup)
   settles : (envHead env l = false → l ∉ exitsOf env l) → SettledCore c (envHead env) env.deadArr.toList σ' l
   mergeFresh : envHead env l = false → 2 ≤ (incS σ.walk l).length → passFresh σ'.walk l = σ.fresh
+  inSizes : σ.walk.incoming.size = σ.walk.incomingImpl.size → σ'.walk.incoming.size = σ'.walk.incomingImpl.size
 
 omit [Labels ι] in
 theorem visB_frame {w w' : SinglePass.Walk ι} {t : Nat} (h : w'.labels[t]? = w.labels[t]?) : visB w' t = visB w t := by
@@ -463,7 +470,7 @@ theorem recInv_visit {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} 
   have hnew_ne : ∀ t ∈ newQ, t ≠ l := fun t ht htl => by
     subst htl; exact hself (hnewQ t ht).2.1 (hnewQ t ht).1
   refine { nodup := ?_, queue := ?_, visR := ?_, visDeg := ?_, exits := ?_, count := ?_, size := ?_, degs := ?_,
-           inLen := ?_, inVis := ?_, edgesVis := ?_, push := ?_, startFresh := ?_, settled := ?_ }
+           inLen := ?_, inSizes := hF.inSizes hI.inSizes, inVis := ?_, edgesVis := ?_, push := ?_, startFresh := ?_, settled := ?_ }
   · rw [hQ]
     refine List.nodup_append.mpr ⟨hnodupNew, hrest.2, fun a ha b hb hab => ?_⟩
     subst hab
