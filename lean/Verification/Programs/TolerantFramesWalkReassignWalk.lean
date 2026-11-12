@@ -243,6 +243,38 @@ theorem run_guarantee_of_checked {G : NormalGraph ι} {admits : MixedAssignment 
       let ⟨r⟩ := hran l hl; ⟨nodeChecked_reassign hp (r.checked hdir hsrch)⟩
     exact ⟨w, given, ctx, edgesIn, fresh, h⟩
 
+/-- **The guarantee from one run of the ordinary checker at `G`**: the
+checker at every assignment is the ordinary one (`passCheckerReassign_ordinary`),
+so the only premises beyond the run's nodes are the summary tables kept
+checked (`hdir`, `hsrch`) and `run_traversed`'s statement at each admitted
+reassigned graph (`hwalk`). -/
+theorem run_guarantee_of_ordinary {G : NormalGraph ι} {admits : MixedAssignment ι → Prop} {P : Program} {start : Nat}
+    {goal : Goal ι} {inputs : List (Ty ι)} {sep : HeapSeparation.Separation} {idx : List HeapKnowledge.IndexAtom}
+    {assertions : List (Nat × HeapKnowledge.Knowledge)} {bound : Option (Footprints.Closed × Bool × Bool)}
+    {ensures : List HeapKnowledge.IndexFact}
+    {regional : Option (Footprints.Closed × List Footprints.ArgumentStoreRegion × Bool)}
+    {images : InstanceImageCheck G} {pool : List (Ty ι)} {fuel : Nat} {suggestions : List (Sequent ι)}
+    {index : KnownIndex ι} {codes : CodeEntry ι → Bool} {aliases : List (ι × ι)}
+    {undefTy : Option (Ty ι)} {w : Walk ι} {ctx : Nat → List (Ty ι)}
+    (hran : ∀ l, w.visited l → Nonempty (NodeRan G images pool fuel suggestions index codes aliases .ordinary undefTy
+      P w (List.range inputs.length) ctx l))
+    (hdir : DirectKeepsSummaries G images undefTy)
+    (hsrch : SearchKeepsSummaries G images pool fuel suggestions index codes aliases
+      (PassChecker.ordinary (G := G) (images := images)).checker)
+    (hwalk : ∀ η, admits η →
+      (∀ l, w.visited l → Nonempty (NodeChecked (reassign G η) (images.reassign η) codes .ordinary P w
+        (List.range inputs.length) ctx l)) →
+      ∃ (given : Nat → Bool)
+        (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
+        (fresh : Nat → Nat),
+        PassWalkSound (reassign G η) P start goal inputs sep idx assertions bound ensures regional w given ctx
+          edgesIn fresh) :
+    GraphGuarantee G admits P start goal inputs sep idx assertions bound ensures regional :=
+  run_guarantee fun η hη => by
+    obtain ⟨given, edgesIn, fresh, h⟩ := hwalk η hη fun l hl =>
+      let ⟨r⟩ := hran l hl; ⟨nodeChecked_reassign (passCheckerReassign_ordinary G η images) (r.checked hdir hsrch)⟩
+    exact ⟨w, given, ctx, edgesIn, fresh, h⟩
+
 end Nodes
 
 section Queries

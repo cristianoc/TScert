@@ -1792,3 +1792,83 @@ invariance lemma is not stated.
 uniform in the graph, and the edge and merge functions it reads are equal
 at the reassigned graph (`mergeState` by unfolding, `edgeStoreOf_reassign`).
 
+
+## Leg 14a: the step at a reassignment, its searches as oracles
+
+Modules `lean/Verification/Programs/TolerantFramesWalkReassignCall.lean`,
+`TolerantFramesWalkReassignSelect.lean`, `TolerantFramesWalkReassignStep.lean`
+and `TolerantFramesWalkReassignWalk.lean`.
+
+**The searches are oracles.** `checkedStep` applies its checker's `select`
+and the tree check to the evidence the direct call or the search
+`expressionEffectUsing` returns (`checkedStep_ok`). A node's step at
+`reassign G η` is stated as the evidence returned at `G`, re-checked there:
+`StepChecked` is the conditions `checkedStep_ok` reads (`StepAccepted` at
+some evidence `effect`) with some answers whose summaries are checked when
+the entry's are, and no reference to the searches. The search's result is
+not required to be equal at `reassign G η`.
+
+```math
+\mathrm{StepAccepted}\ G\ I\ pc\ \dots\ e\ \dots\ st\ \wedge\ \mathrm{PassCheckerReassign}\ pc\ pc'\ \Longrightarrow\ \mathrm{StepAccepted}\ (\mathrm{reassign}\ G\ \eta)\ (I.\mathrm{reassign}\ \eta)\ pc'\ \dots\ e\ \dots\ st
+```
+
+(`stepAccepted_reassign`), where `PassCheckerReassign pc pc'` states that
+`pc'` checks the tree where `pc` does and that its `select` has the same
+value as `pc`'s at `G`. Proved:
+
+- `forIn_map_state`: a `for` loop in `Id` commutes with a map of its state
+  where its body does; `directCall_reassign`: the direct call returns the
+  same derivation at `reassign G η`, its answers reassigned;
+- `ordinarySelect_reassign`: the ordinary checker's `select` is the same
+  result at `reassign G η` (each layer as `Parametricity` gives it for
+  `run`, over `stepsSelect_reassign`, the steps' rules with the tree taken
+  as given); hence `passCheckerReassign_ordinary`;
+- `passCheckerReassign_qualified`: a qualified body's checker at a body
+  subtyping of `reassign G η` with the same check
+  (`Parametricity.checkBodyStep_reassign`); `passCheckerReassign_lexical`:
+  where the body's check is the lexical body check, that subtyping exists
+  at every assignment `assign η source.binders As` the scheme admits within
+  its bounds (`lexicalBodySubtyping`, the route of
+  `verify_qualified_safe_at`);
+- `stepChecked_of_step`: an accepted `checkedStep` under
+  `DirectKeepsSummaries` and `SearchKeepsSummaries` is `StepChecked`;
+  `stepChecked_reassign`: `StepChecked` at `G` with the entry's summaries
+  checked is `StepChecked` at `reassign G η`, the answers reassigned;
+- `stepChecked_parts`, `stepChecked_sound`: the step theorem's conclusions
+  from `StepChecked`, without the summary hypotheses;
+- `NodeChecked` (`NodeRan` with `StepChecked` in place of the step's
+  equation), `NodeRan.checked`, `nodeChecked_reassign`;
+- `run_guarantee_of_checked`: `NodeRan` at every visited node of one run at
+  `G` ∧ `DirectKeepsSummaries` ∧ `SearchKeepsSummaries` ∧ a checker with
+  `PassCheckerReassign` at every admitted `η` ∧ `hwalk` over `NodeChecked`
+  ⟹ `GraphGuarantee`; `run_guarantee_of_ordinary`: the same for the
+  ordinary checker with the checker premise discharged;
+- `headQuery_reassign`, `assertionQuery_reassign`: the head query and the
+  assertion query of an edge are the same checks at `reassign G η`;
+  `edgeEvidenceChecked_reassign`: the check of the edge search's evidence
+  is, so the edge search is an oracle as the step's search is.
+
+`CheckedStepReassign`, an equation of `checkedStep` at `reassign G η`,
+holds only where the search is invariant; `run_guarantee_of_checked`
+replaces its use in `run_guarantee_of_run`.
+
+**Parts of the searches' results used without a check of this leg**: the
+derivation `deriv` the search returns (`Stepped.stepDeriv`, read by the
+footprint check behind `derivChecked`), and the answers the searches return:
+the subtype cache, whose entries the pass reads back as results (the cached
+`subtypeUsing` of the unchecked searches table), and the read summaries,
+kept checked at `G` by `DirectKeepsSummaries` and `SearchKeepsSummaries`.
+
+Premises this leg discharges / leaves:
+
+- discharges: the invariance of `directCall`, of the ordinary checker's
+  `select` and of the head query; `CheckedStepReassign` as a premise of the
+  guarantee (replaced by `PassCheckerReassign`, proved for the ordinary
+  checker and, at the lexical scope, for a qualified body); the
+  `DirectKeepsSummaries` and `SearchKeepsSummaries` premises of the step
+  theorem at the reassigned graph;
+- leaves: `hwalk`, `run_traversed`'s statement at `reassign G η` over
+  `NodeChecked` (its step theorem is `stepChecked_sound`);
+  `DirectKeepsSummaries` and `SearchKeepsSummaries` at `G`; for a qualified
+  body, that the unit's admitted assignments are of the form
+  `assign η source.binders As` with the scheme's conditions.

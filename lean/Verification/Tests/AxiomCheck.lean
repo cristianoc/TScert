@@ -625,6 +625,7 @@ run_cmd do
   check ``Verification.TolerantFrames.nodeChecked_reassign
   check ``Verification.TolerantFrames.passCheckerReassign_lexical
   check ``Verification.TolerantFrames.run_guarantee_of_checked
+  check ``Verification.TolerantFrames.run_guarantee_of_ordinary
   check ``Verification.TolerantFrames.headQuery_reassign
   check ``Verification.TolerantFrames.assertionQuery_reassign
   check ``Verification.TolerantFrames.edgeEvidenceChecked_reassign
