@@ -901,6 +901,14 @@ def FilePlans.givenLines (f : FilePlans) (fuel : Nat) (group : List Nat) (facts 
 def countsLine (counting : Bool) (name : String) (c : SinglePass.Counts) : String :=
   if counting then s!"{c}\ncounts: {name} {c.json}" else toString c
 
+/-- The read summaries a run leaves, checked as a response's are
+(`validSummary`, `checkReadSummariesResult`) over the request's graph and
+image check. -/
+def summariesChecked {σ ι : Type} [Labels ι] [StoreView σ ι] (r : SourceRequest σ ι)
+    (sums : List (ProgramCertificates.ReadSummary ι)) : Bool :=
+  sums.all (RequestJson.validSummary (StoreView.valid r.types)) &&
+    (ProgramCertificates.checkReadSummariesResult (RequestJson.graph r.toRequest) (StoreView.images r.types) sums).accepted
+
 /-- The single forward pass over each member of a group (`SinglePass.run`),
 no certificate built: per member its outcome and counts; the group's
 verdict, the first member's refusal or construct not handled. -/
@@ -1100,18 +1108,19 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
           givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed tracing false regional
       let (o, counts, after, trace) := CertificateProducer.timed SinglePass.passNanos fun _ => walk bound regional
       -- A footprint the walk refuses node by node, checked regionally with no
-      -- regions where the result is not fresh; then the unit's own regions.
-      let (o, counts, after, trace) := match o with
+      -- regions where the result is not fresh; then the unit's own regions,
+      -- the fallback's answers kept for their read summaries' check.
+      let (o, counts, after, trace, fallbackAfter) := match o with
         | .outsideBound l => if !r.fresh then
             let fallback := regionalOf "footprintRegional" r.footprint [] r.onThrow
             match walk none (some fallback) with
             | (.accepted, c, a, t) => match regional with
-              | some rg => walk none (some rg)
-              | none => (.accepted, c, a, t)
-            | (.refused w', c, a, t) => (.refused s!"footprint by store regions: {w'} (after footprint at node {l})", c, a, t)
-            | x => x
-          else (o, counts, after, trace)
-        | _ => (o, counts, after, trace)
+              | some rg => let (o', c', a', t') := walk none (some rg); (o', c', a', t', some a)
+              | none => (.accepted, c, a, t, none)
+            | (.refused w', c, a, t) => (.refused s!"footprint by store regions: {w'} (after footprint at node {l})", c, a, t, none)
+            | (o', c, a, t) => (o', c, a, t, none)
+          else (o, counts, after, trace, none)
+        | _ => (o, counts, after, trace, none)
       let o := o.asRefusal
       -- The unit's own expression claims, as the check reads them.
       let obligations := SinglePass.timedKind "outside: expression claims checked" fun _ => ExpressionClaims.checkAllResult (RequestJson.graph r.toRequest) (StoreView.images r.types)
@@ -1120,9 +1129,10 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
       -- regions (`regionalChecked`), which the pass does not decide.
       -- The read summaries every step's check read, checked as a
       -- response's are (`validSummary`, `checkReadSummariesResult`).
-      let sums := after.summaries.toList
-      let sumsOk := sums.all (RequestJson.validSummary (StoreView.valid r.types)) &&
-        (ProgramCertificates.checkReadSummariesResult (RequestJson.graph r.toRequest) (StoreView.images r.types) sums).accepted
+      -- After the regional fallback and the unit's regions, the fallback
+      -- run's too: its footprint rests on them.
+      let sumsOk := summariesChecked r after.summaries.toList &&
+        fallbackAfter.all fun a => summariesChecked r a.summaries.toList
       let o : SinglePass.Outcome _ := match o with
         | .accepted => if !sumsOk then .refused "a read summary" else if !obligations.accepted then .refused "an expression claim"
           else match unchecked with

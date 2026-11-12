@@ -272,7 +272,10 @@ the target; `checkNode` decides the node over those facts and the node's
 evidence (its derivation, its step, its facts on entry), each loop head's
 given facts the obligation on an edge into it. The entry's conditions
 (`checkEntryFields`, a unit neither async nor promising a fresh result)
-are checked before the walk.
+are checked before the walk. Where the fallback accepts and the unit states
+regions, the regions' walk runs from the answers before the fallback, and
+the read summaries of both runs are checked: the fallback's footprint rests
+on its own.
 
 ### Qualified bodies
 
