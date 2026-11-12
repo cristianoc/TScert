@@ -22,7 +22,7 @@ function parsed(path: string): Record<string, unknown> {
   return record(v);
 }
 function manifestInput(v: Canonical): string {
-  return JSON.stringify(v);
+  return JSON.stringify(v) ?? "";
 }
 const [fragment, given, scratch] = process.argv.slice(2);
 if (!fragment || !given || !scratch) throw Error("fragment, given, scratch required");

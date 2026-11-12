@@ -70,6 +70,13 @@ names has its facts restated under each, and those fresh names are equal
 there. A fact is stored in one form: an unconditional fact reads no
 condition's polarity.
 
+`SinglePass.run` drives the walk over pure functions of a node's state:
+a loop head's entry (`headEntry`), a merge (`mergeState`), a node's step
+(`checkedStep`, its counts beside it as `StepStats`), an edge's store
+(`edgeStoreOf`) and what an edge into an ordinary node carries
+(`edgeTransfer`); `materialize` selects its facts by rounds
+(`selectRound`, `selectFrom`, structural on a fuel of the store's size).
+
 ## 4. Loop heads
 
 A loop head is the target of a retreating edge of a depth-first walk from

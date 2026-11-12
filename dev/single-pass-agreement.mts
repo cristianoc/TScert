@@ -126,8 +126,8 @@ function fileKey(artifacts: string): string | null {
 }
 
 /** The pass's verdict on each unit of a run's file. */
-function passVerdicts(artifacts: string, key: string, given: string | null, mode = process.env.TSCERT_PASS_MODE ?? "3",
-    force?: string, allCuts = false): Map<string, Verdict> {
+function passVerdicts(artifacts: string, key: string, given: string | null, mode: string = process.env.TSCERT_PASS_MODE ?? "3",
+    force?: string, allCuts: boolean = false): Map<string, Verdict> {
   let env: NodeJS.ProcessEnv = given === null ? process.env : { ...process.env, TSCERT_GIVEN: given };
   if (force !== undefined) env = { ...env, TSCERT_FORCE: force };
   if (allCuts) env = { ...env, TSCERT_ALL_CUTS: "1" };

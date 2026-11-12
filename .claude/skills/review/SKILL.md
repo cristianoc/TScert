@@ -77,10 +77,45 @@ Co-Authored-By: <attribution>
 ```
 
 - **Kinds:** `Rule`, `Semantics`, `Definition`, `Typing`, `Theorem`
-  (rendered as mathematics), `Lowering` (source ⇝ term), `Refusal`, `Trust`, `Wire`,
+  (rendered as mathematics), `Lowering` (source ⇝ term), `Proposal`
+  (source form ⇒ proposed type or effect), `Check` (an obligation),
+  `Control` (a forced proposal and its refusal), `Refusal`, `Trust`, `Wire`,
   `Docs` (prose), `Example`, `Counterexample` (code), `Tooling` (lines as
-  written). An added or removed object has one form; a modified one has
+  written). The list is closed: the hook refuses a change heading of
+  another kind. An added or removed object has one form; a modified one has
   `Before:` and `After:`.
+- **The kind is what the object is, never where it lives.** A file, a
+  function, a script, a command or a mode is no kind and no object:
+  `Function modified (Synthesis.lean)` says where the diff is, which the
+  ordinary diff already shows. Name the rule, the obligation, the control or
+  the tool the code implements; Lean names go in the `Lean:` trailer.
+- **A `Proposal` is a rule of the type and effect computation**: what
+  TScert computes for a source construct before anything is checked, a
+  type, an instance, an effect or a footprint. It is written as a lowering
+  line is, `<TypeScript form> ⇒ <the type or effect proposed>`, with its side
+  conditions as `label: …` lines. A proposal decides nothing: the record's
+  `Soundness:` names the check that refuses a wrong one (a `Check` of the
+  pass, or a `Control`). Where the rule restates one of the producer's, a
+  `Mirrors:` section names it by file and lines; a `Typing` is reserved for
+  a rule of the calculus the proofs are about.
+- **A `Check` is an obligation acceptance depends on**: what the single
+  pass, the referee or the verifier's command requires at a step, an edge, a
+  loop head, a unit's entry or a code request. It is written as the
+  obligation, `at <where>: <what must hold>`, Before and After when it
+  changes. A `Check` added or strengthened states what it now refuses; one
+  removed or weakened states in `Soundness:` why nothing unsafe is accepted,
+  and its `Effect:` lists every unit whose verdict moves.
+- **A `Control` is a forced proposal with its refusal**: the name the force
+  takes (`TSCERT_FORCE=<name>`), what it makes the computation state, the
+  unit it is shown on, and the two outcomes, `unforced: accepted` and
+  `forced: refused at <obligation>`. It also appears in `Tests:` as
+  `forced:<name>`. Its body is these lines in this order: `force: <name>`,
+  `states: <what the force makes the computation state>`, then for each
+  unit `unit: <case> <unit>`, `unforced: <verdict>`, `forced: <verdict> at
+  <obligation>`, the verdict first. A `Control` carries no change of
+  outcome: it is a test.
+- **A `Proposal`'s body has a `⇒` line and a `Check`'s an `at <where>:`
+  line**; prose may follow. A line that continues one is indented deeper.
 - **The object names its stage and its concept:** the parser's gate, the type
   reader, the producer, a lowering, a Lean rule, the verifier's CLI, tooling.
   `Definition modified (type reader: the members of a union)`, not
@@ -101,7 +136,9 @@ Co-Authored-By: <attribution>
   theorem change, and a new theorem that is the conclusion of the commit's
   argument is `Theorem added`.
 - **`Tooling`** is a change to how the project is built, tested or laid out:
-  the runner, a make target, a script, the module structure. It is never a
+  the runner, a make target, a script, the module structure. A change of
+  how a search finds its evidence that leaves every verdict as it was is
+  `Tooling` too. It is never a
   `Definition`, since it changes no concept of the calculus or the pipeline.
   Its lines are kept as written, aligned columns included.
 - **Sections** are a line `Name:` at the start of a line, followed by text or
@@ -131,6 +168,29 @@ Co-Authored-By: <attribution>
 
   An `Example (ts)` block is only for a program that is no case; a case's
   source is never copied into the record.
+- **An agreement line is an Effect line of a unit.** Where a change moves
+  what the single pass says of a unit and the case's expected outcome stays,
+  the line names the case and the unit, the kind `agreement`, the pass's
+  verdict before and after, and the pipeline's verdict it is compared with:
+
+  ```
+  Effect:
+      promise-then-chained show@156   agreement   refused → verified   pipeline verified: the binder's declared default
+  ```
+
+  The pass's verdicts are `verified`, `refused` and `not handled`;
+  `disagreed` stands before the arrow where the record knows only that the
+  unit's verdict differed from the pipeline's.
+  The first field is `<case> <unit>`, one space between them, and the
+  fields are three or more spaces apart; a statement about a case with no
+  unit named goes in `Validation:`. The case exists at the commit.
+  A unit the pass accepts where the pipeline refuses is marked `⚠` after
+  the new verdict unless the record's `Soundness:` reviews it.
+- **`Mirrors:`** (optional) names the rule of the producer or of the
+  existing lowering a `Proposal` restates, by file and lines.
+  **`Validation:`** (optional) states what was run on the commit and what it
+  showed: the suite, whether the run was complete, the units compared. The
+  one number a range's summary shows goes in the `Measured:` trailer.
 - **The final block is git trailers**: `Key: value` lines, continuation lines
   indented by one space, nothing after them. `git interpret-trailers --parse`
   must read every key. Every behaviour change states `Outcome` and `Trust`.

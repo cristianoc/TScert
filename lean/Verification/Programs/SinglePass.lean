@@ -314,6 +314,37 @@ def slotTable (names : List Nat) (want : Std.HashSet Nat) (whole : Bool) : Std.H
     i := i + 1
   return t
 
+/-- The names a selected fact chains through: an alias or read link's, and
+with `chain` a linear fact's (the facts an entailment over the given names
+may chain through). -/
+def Atom.through (chain : Bool) (a : Atom) : List Nat := match a with
+  | .link g => [g.cell, g.value]
+  | .index x => match x.fact with
+    | .linear _ => if chain then a.names else []
+    | _ => []
+  | _ => []
+
+/-- One round of the selective worklist: each fact over a frontier name
+not yet kept, kept in order; each name it chains through not yet seen,
+seen and on the next frontier. -/
+def selectRound (s : Store) (chain : Bool) (frontier : List Nat) (seen : Std.HashSet Nat)
+    (kept : Std.HashSet Atom) (out : Array Atom) : List Nat × Std.HashSet Nat × Std.HashSet Atom × Array Atom :=
+  frontier.foldl (fun acc x => (s.about x).foldl (fun (next, seen, kept, out) a =>
+    if kept.contains a then (next, seen, kept, out) else
+    (a.through chain).foldl (fun (next, seen, kept, out) y =>
+      if seen.contains y then (next, seen, kept, out) else (y :: next, seen.insert y, kept, out))
+      (next, seen, kept.insert a, out.push a)) acc) ([], seen, kept, out)
+
+/-- The selective worklist (`selectRound`) from `frontier` until a round
+finds no new name: each round with a next frontier keeps a new fact, so a
+fuel of the store's size and two never runs out. -/
+def selectFrom (s : Store) (chain : Bool) : Nat → List Nat → Std.HashSet Nat → Std.HashSet Atom → Array Atom → Array Atom
+  | 0, _, _, _, out => out
+  | fuel + 1, frontier, seen, kept, out =>
+    if frontier.isEmpty then out else
+    let (next, seen, kept, out) := selectRound s chain frontier seen kept out
+    selectFrom s chain fuel next seen kept out
+
 /-- The knowledge a step reads, at slots: the facts over the names of
 `slots` and over the names those facts mention, a name out of scope
 eliminated from the linear facts. With `whole`, every fact. The store's
@@ -321,34 +352,8 @@ facts with their images, for the step's delta, and the table of slots. -/
 def materialize (st : State) (d : Nat) (slots : List Nat) (whole : Bool) (chain : Bool := true) :
     Knowledge × List (Atom × Atom) × Std.HashMap Nat Nat := timedKind (if whole then "materialize whole" else "materialize") fun _ =>
   let given := slots.filterMap fun s => st.names[s]?
-  let atoms : List Atom := if whole then st.store.toList else Id.run do
-    -- The facts over the given names and over every name an alias link
-    -- relates to one of them.
-    let mut seen : Std.HashSet Nat := given.foldl (·.insert ·) {}
-    let mut frontier := given
-    let mut kept : Std.HashSet Atom := {}
-    let mut out : Array Atom := #[]
-    while !frontier.isEmpty do
-      let mut next := []
-      for x in frontier do
-        for a in st.store.about x do
-          if !kept.contains a then
-            kept := kept.insert a
-            out := out.push a
-            -- Through an alias link, and through a linear fact: the facts
-            -- an entailment over the given names may chain through.
-            let through := match a with
-              | .link g => [g.cell, g.value]
-              | .index x => match x.fact with
-                | .linear _ => if chain then a.names else []
-                | _ => []
-              | _ => []
-            for y in through do
-              if !seen.contains y then
-                seen := seen.insert y
-                next := y :: next
-      frontier := next
-    return out.toList
+  let atoms : List Atom := if whole then st.store.toList else
+    (selectFrom st.store chain (st.store.size + 2) given (given.foldl (·.insert ·) {}) {} #[]).toList
   let want : Std.HashSet Nat := atoms.foldl (fun acc a => a.names.foldl (·.insert ·) acc)
     (given.foldl (·.insert ·) {})
   let table := slotTable st.names want whole
@@ -415,13 +420,10 @@ def applyDelta (s : Store) (pairs : List (Atom × Atom)) (out : Knowledge) (shif
 
 instance : Inhabited Node := ⟨⟨.nul, .ret, none⟩⟩
 
-private unsafe def sameImpl {α : Type} [BEq α] (a b : α) : Bool := ptrAddrUnsafe a == ptrAddrUnsafe b || a == b
-/-- `a == b`, answered at once where they are one object. -/
-@[implemented_by sameImpl] def same {α : Type} [BEq α] (a b : α) : Bool := a == b
-
-private unsafe def oneObjectImpl {α : Type} (a b : α) : Bool := ptrAddrUnsafe a == ptrAddrUnsafe b
-/-- Whether `a` and `b` are one object: `false` says nothing. -/
-@[implemented_by oneObjectImpl] def oneObject {α : Type} (_a _b : α) : Bool := false
+/-- `a == b`, answered at once where they are one object (`withPtrEq`,
+justified by the equality's reflexivity). -/
+def same {α : Type} [BEq α] [ReflBEq α] (a b : α) : Bool :=
+  withPtrEq a b (fun _ => a == b) (fun h => by subst h; exact BEq.rfl)
 
 /-- A list read at indices that mostly increase: the suffix at `pos`. -/
 structure Cursor (α : Type) where
@@ -583,8 +585,6 @@ slot the mapping reads, with that slot. -/
 def differing (Γ Δ : List (Ty ι)) (m : PointClaims.Mapping) : List (Nat × Nat) := Id.run do
   match m with
   | none =>
-    -- One context object: no slot differs.
-    if oneObject Γ Δ then return []
     let mut out := []
     let mut i := 0
     let mut as := Γ
@@ -866,6 +866,461 @@ def entryRefusal (G : NormalGraph ι) (inputs : List (Ty ι)) (claims : List (Po
         some "the entry: a given fact the entry facts do not entail"
       else none
 
+/-- The store without its facts reading the heap (a cell, an element, a
+read link, an index fact reading the heap) that `keep` does not hold: the
+facts a throw keeps (`ControlFlow.handlerFacts`), or a writing step's facts
+its rule does not read. -/
+def Store.dropHeap (s : Store) (keep : Atom → Bool) : Store :=
+  s.toList.foldl (fun (acc : Store) a => if keep a then acc else match a with
+    | .cell _ | .elem _ => acc.remove a
+    | .link g => if g.alias then acc else acc.remove a
+    | .index x => if x.fact.envOnly then acc else acc.remove a
+    | _ => acc) s
+
+/-- An edge's store before its target's names: a handler's, the entry
+store's heap-free facts; an edge observing the result, the output store with
+the observation's facts (an alternative it contradicts released,
+`HeapKnowledge.withElements`); a truthy promotion's likewise; else the
+output store. -/
+def edgeStoreOf (G : NormalGraph ι) (Γ : List (Ty ι)) (entryStore store : Store) (names pushedNames : List Nat)
+    (width : Nat) (pushed isHandler : Bool) (observed : Option BranchRefinement.Observation) (promote : Option Bool) :
+    Store :=
+  if isHandler then entryStore.dropHeap fun _ => false else
+  match observed, promote with
+  | some o, _ =>
+    let (k, pairs, table) := materialize { names, store } (if pushed then width + 1 else width) [0] false
+    let k' := HeapKnowledge.withElements (HeapKnowledge.observeTyped G Γ k 0 o)
+    let inverse : Std.HashMap Nat Nat := table.fold (fun acc nm s => acc.insert s nm) {}
+    applyDelta store pairs k' false fun i => (inverse.get? i).orElse fun _ => names[i]?
+  | none, some q =>
+    let (k, pairs, table) := materialize { names := pushedNames, store } (width + 1) [0] false
+    let k' := HeapKnowledge.withElements (HeapKnowledge.promoteTruthy k 0 q)
+    let inverse : Std.HashMap Nat Nat := table.fold (fun acc nm s => acc.insert s nm) {}
+    applyDelta store pairs k' false fun i => (inverse.get? i).orElse fun _ => pushedNames[i]?
+  | none, none => store
+
+/-- What an edge into a node other than a loop head carries, from the
+source's names `names` on the edge and its store: the target's names (the
+mapping applied), the store without the names the edge drops
+(`droppedBy`, and an unpushed result no slot holds), the fresh names it
+keeps (the result where pushed and fresh), and the implications naming no
+dropped name. -/
+def edgeTransfer (names : List Nat) (m : PointClaims.Mapping) (pushed isHandler outFresh : Bool) (entry : State)
+    (result : Nat) (edgeStore : Store) (implies : List (PromiseCalls.Implication ι)) :
+    State × List (PromiseCalls.Implication ι) :=
+  let targetNames := timedKind "edge names" fun _ => mapNames names m
+  let gone := timedKind "edge dropped" fun _ => droppedBy names m targetNames ++
+    (if !pushed && !entry.names.contains result then [result] else [])
+  let freshOut := (if pushed && !isHandler && outFresh && !entry.fresh.contains result then result :: entry.fresh
+    else entry.fresh).filter (!gone.contains ·)
+  let carried := timedKind "edge implications" fun _ => (keepFirst {} (implies.filter fun x =>
+    !gone.contains x.test && !gone.contains x.target)).2.toList
+  ({ names := targetNames, store := edgeStore.drop gone, fresh := freshOut }, carried)
+
+/-- What a merge computes: the meet state, its implications, the next
+fresh name, the facts its predecessors state that the met store lacks
+(counted), each predecessor's state at the merge's names and its renaming. -/
+structure Merged (ι : Type) where
+  state : State
+  implies : List (PromiseCalls.Implication ι)
+  fresh : Nat
+  diffCount : Nat
+  views : List State
+  renames : List (Std.HashMap Nat (List Nat))
+
+/-- The merge of the states `preds` entering a node of context `context`
+through the edges `edgesIn` (each as the search's merge reads it), its
+fresh names from `fresh`: the names, the facts every predecessor holds and
+those a join keeps, the fresh stores, the implications. -/
+def mergeState (G : NormalGraph ι) (context : List (Ty ι)) (preds : List State)
+    (edgesIn : List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)) (fresh : Nat) :
+    Merged ι := Id.run do
+  let s := preds.headD { names := [] }
+  let rest := preds.tail
+  -- Names: a slot whose predecessors' names differ takes a fresh one.
+  let width := context.length
+  let mut fresh := fresh
+  let arrs := preds.map (·.names.toArray)
+  let mut names : Array Nat := Array.mkEmpty width
+  -- A name a predecessor holds at several slots that take different
+  -- fresh names is renamed to each; slots whose predecessors' names
+  -- agree take one fresh name.
+  let mut renames : List (Std.HashMap Nat (List Nat)) := arrs.map fun _ => {}
+  let mut phis : Std.HashMap (List Nat) Nat := {}
+  for i in List.range width do
+    let ns := arrs.map (·.getD i 0)
+    let n0 := ns.headD 0
+    if ns.all (· == n0) then names := names.push n0
+    else match phis.get? ns with
+      | some φ => names := names.push φ
+      | none =>
+        names := names.push fresh
+        phis := phis.insert ns fresh
+        renames := (renames.zip ns).map fun (m, x) => m.insert x (fresh :: m.getD x [])
+        fresh := fresh + 1
+  let mergedNames := names.toList
+  let live := Std.HashSet.ofList mergedNames
+  -- Each predecessor's facts about the names it renames, restated at
+  -- the fresh names (a name a slot keeps that another slot's fresh name
+  -- renames is stated equal to it, as are one name's fresh names).
+  -- The alias link always; the equality of their numbers only where
+  -- the predecessor's facts make `x` an integer (`Store.integral`): a
+  -- linear fact holds only where its terms denote integers.
+  let eqAtoms := fun (int : Bool) (φ x : Nat) => Atom.link { cell := φ, value := x, alias := true } ::
+    (if !int then [] else
+    [.index ⟨.linear (.le [(HeapKnowledge.Term.value φ, 1), (HeapKnowledge.Term.value x, -1)] 0), none, false⟩,
+    .index ⟨.linear (.le [(HeapKnowledge.Term.value φ, -1), (HeapKnowledge.Term.value x, 1)] 0), none, false⟩])
+  let variants : List (Std.HashSet Atom) := (preds.zip renames).map fun ((st : State), (m : Std.HashMap Nat (List Nat))) =>
+    let equal := m.fold (fun (acc : List Atom) x φs =>
+      let int := st.store.integral x
+      (if names.contains x then φs.flatMap (eqAtoms int · x) else []) ++
+      (φs.zip φs.tail).flatMap (fun (φ, ψ) => eqAtoms int ψ φ) ++ acc) []
+    let about := m.fold (fun (acc : List Atom) x _ => st.store.about x ++ acc) []
+    (about.foldl (fun (acc : Std.HashSet Atom) a => acc.insertMany (Atom.renameEach m a)) {}).insertMany equal
+  -- The facts every predecessor holds: the first's store less each fact
+  -- another lacks, found by what differs between the stores
+  -- (`Store.diff`), and the restated facts every one
+  -- states.
+  let mut met := s.store
+  for q in rest do
+    for a in (timedKind "merge diff" fun _ => Store.diff met q.store).1 do met := met.remove a
+  let firstV := variants.headD {}
+  met := timedKind "meet" fun _ => firstV.fold (fun (acc : Store) a =>
+    if variants.tail.all (·.contains a) then acc.add a else acc) met
+  -- The names a predecessor renames that no slot of the merge holds
+  -- leave the store once (`Store.drop`).
+  let renamedAway := (keepFirst {} (renames.flatMap fun (m : Std.HashMap Nat (List Nat)) =>
+    m.fold (fun acc x _ => if live.contains x then acc else x :: acc) [])).2.toList
+  met := met.drop renamedAway
+  let met0 := met
+  -- What each predecessor states that the merge does not, at the merge's
+  -- names: its facts the met store lacks, a fact over a name it renames
+  -- by its restatements.
+  let diffs : List (List Atom) := ((preds.zip renames).zip variants).map
+    fun (((st : State), (m : Std.HashMap Nat (List Nat))), (v : Std.HashSet Atom)) =>
+      ((timedKind "merge diff" fun _ => Store.diff met0 st.store).2.filter fun a => !a.names.any m.contains) ++
+        v.fold (fun acc a => if met0.live.contains a.canon then acc else a :: acc) []
+  let diffCount := diffs.foldl (fun acc d => acc + d.length) 0
+  -- A linear bound every predecessor states of one form (under one
+  -- condition), at the weakest of their bounds.
+  let bounds : List (Std.HashMap (Linear.Form HeapKnowledge.Term × Option Nat × Bool) Int) := diffs.map fun d =>
+    d.foldl (fun acc a => match a with
+      | .index ⟨.linear (.le F d), c, neg⟩ =>
+        let F := Linear.normalize F
+        acc.insert (F, c, neg) (match acc.get? (F, c, neg) with | some d' => min d d' | none => d)
+      | _ => acc) {}
+  met := match bounds with
+    | b0 :: bs => b0.fold (fun (acc : Store) key d => Id.run do
+        let mut weakest := d
+        for b in bs do
+          match b.get? key with
+          | some d' => weakest := max weakest d'
+          | none => return acc
+        let (F, c, neg) := key
+        return acc.add (.index ⟨.linear (.le F weakest), c, neg⟩)) met
+    | [] => met
+  -- Each predecessor's state at the merge's names: the met facts and its
+  -- own differences, sharing the met store.
+  let views : List State := diffs.map fun d =>
+    { names := mergedNames, store := d.foldl Store.add met0 }
+  -- A linear bound over the merge's names one predecessor states and
+  -- every other entails over its linear facts near the bound's names
+  -- (`HeapKnowledge.entailsKnown`), as an edge's entailment establishes a
+  -- fact at a statement entry.
+  met := timedKind "meet entailed" fun _ => Id.run do
+    let mut acc := met
+    let mut seen : Std.HashSet Atom := {}
+    for d in diffs do
+      for a in d do
+        if let .index ⟨.linear F, none, _⟩ := a then
+          if !seen.contains a && a.names.all live.contains && !acc.holds a then
+            seen := seen.insert a
+            if views.all fun (qs : State) => qs.store.holds a ||
+                HeapKnowledge.entailsKnown (qs.store.linearNear a.names) F then
+              acc := acc.add a
+    return acc
+  -- The guarded facts a join keeps, over the facts that differ: the
+  -- search's join (`CertificateProducer.joinGuarded`) over each
+  -- predecessor's facts near the differing guarded facts, read links and
+  -- separations, each predecessor's guards first also lowered once
+  -- through its read links (`HeapKnowledge.lowerGuards`): a guard on a
+  -- path two reads long reaches the value the second read gives; and a
+  -- fact one predecessor states of a slot another holds a tag's value
+  -- in, guarded by that tag (`x === null || F`), as the join guards a
+  -- store separation; each kept where every predecessor's facts entail it.
+  let tags : List HeapKnowledge.GuardTag := [.null, .undef]
+  let tagged := diffs.flatMap fun d => d.filterMap fun a => match a with
+    | .value f => if tags.any (fun g => HeapKnowledge.guardTags { values := [f] } f.slot [] g) then some f.slot else none
+    | _ => none
+  let seeds := (diffs.flatMap fun d => d.flatMap fun a => match a with
+    | .index ⟨.guarded .., _, _⟩ | .index ⟨.storeApart .., _, _⟩ | .link _ => a.names
+    | _ => [])
+  let seeds := if tagged.isEmpty then seeds else seeds ++ tagged ++
+    (diffs.flatMap fun d => d.flatMap fun a => if a.names.any tagged.contains then a.names else [])
+  let seedSlots := (keepFirst {} (seeds.filterMap mergedNames.idxOf?)).2.toList
+  let guarded : List HeapKnowledge.IndexAtom := if seedSlots.isEmpty then [] else Id.run do
+    let projections := views.map fun ps => (materialize ps width seedSlots false).1
+    let common := (materialize { names := mergedNames, store := met0 } width seedSlots false).1
+    let lowered := projections.map fun (p : Knowledge) =>
+      { p with indices := p.indices ++ ((HeapKnowledge.lowerGuards p.links p.indices).filter (!p.indices.contains ·)) }
+    let joined := timedKind "meet guarded" fun _ => CertificateProducer.joinGuarded lowered common
+    let tagged := timedKind "meet tagged" fun _ =>
+      let nullish := ((projections.flatMap fun (o : Knowledge) => o.values.flatMap fun f =>
+        (tags.filter fun g => HeapKnowledge.guardTags o f.slot [] g).flatMap fun g =>
+          (HeapLinks.aliases o.links f.slot).map (·, g))).eraseDups
+      if nullish.isEmpty then [] else
+      let candidates := (projections.flatMap fun (p : Knowledge) => p.indices.flatMap fun a =>
+        if a.cond.isSome || common.indices.contains a then [] else match a.fact with
+        | .guarded .. => []
+        | F => (nullish.filter fun (z, _) => F.slots.contains z).map fun (z, g) =>
+            ({ fact := .guarded z [] g F } : HeapKnowledge.IndexAtom)).eraseDups
+      candidates.filter fun a => projections.all fun (p : Knowledge) =>
+        HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags p) (HeapLinks.aliases p.links) p.links
+          p.indices [a] none
+    return joined ++ tagged
+  met := guarded.foldl (fun (acc : Store) x => match (Atom.index x).rename (mergedNames[·]?) with
+    | some a => acc.add a
+    | none => acc) met
+  -- A name holds a fresh store where every predecessor's does.
+  let freshLists := (preds.zip renames).map fun ((st : State), (m : Std.HashMap Nat (List Nat))) =>
+    st.fresh.flatMap fun x => x :: m.getD x []
+  let met' := match freshLists with
+    | f0 :: fs => f0.filter fun x => fs.all (·.contains x)
+    | [] => []
+  let state : State := { names := mergedNames, store := met, fresh := met' }
+  -- The implications the merge establishes, as the search's merge
+  -- finds them (`CertificateProducer.meetImplications`), at its names;
+  -- none where no edge carries one and no slot an edge's type differs
+  -- at is a test some edge's type answers `false`.
+  let some_ := edgesIn.any (fun (_, xs, _) => !xs.isEmpty) || Id.run do
+    let some (Γ0, _, m0) := edgesIn.head? | return false
+    for t in List.range width do
+      let A0 := Γ0[PointClaims.slot m0 t]?
+      let differs := edgesIn.any fun (Γ, _, m) => match Γ[PointClaims.slot m t]?, A0 with
+        | some A, some B => !same A B
+        | _, _ => true
+      if differs && edgesIn.any (fun (Γ, _, m) => (Γ[PointClaims.slot m t]?).any (BranchRefinement.impossible G · (.boolean true))) then
+        return true
+    return false
+  let implies := if !some_ then [] else
+    let joinedImpl := timedKind "meet implications" fun _ =>
+      CertificateProducer.meetImplications G edgesIn width context
+    (keepFirst {} (joinedImpl.filterMap fun (x : PromiseCalls.Implication ι) => do
+      pure (⟨← mergedNames[x.test]?, ← mergedNames[x.target]?, x.type⟩ : PromiseCalls.Implication ι))).2.toList
+  return { state, implies, fresh, diffCount, views, renames }
+
+/-- What a node's step counts: its rule applications (over every fact
+among them), its calls read off their signature, its copies. -/
+structure StepStats where
+  rules : Nat := 0
+  fullRules : Nat := 0
+  directCalls : Nat := 0
+  copies : Nat := 0
+
+/-- A node's checked step: the result's name, the store after the step, the
+next fresh name, whether it is a copy, and the step's input and output
+knowledge at slots, its derivation and its evidence, read where an edge or a
+footprint needs them. -/
+structure Stepped (ι : Type) where
+  result : Nat
+  store : Store
+  fresh : Nat
+  copied : Bool
+  stepK : Knowledge := {}
+  stepOut : Knowledge := {}
+  stepDeriv : Option (ProgramCertificates.Evidence ι) := none
+  stepEffect : Option (HeapExpressionRules.StepEvidence ι) := none
+
+/-- The step of node `l` (its claim `c`, the slots `ms` its expression
+reads) from the state `entry`: a copy of a slot at the claim's type, a call
+read off its callee's signatures (`directCall`), else the search's evidence;
+its output the checker's `select` of that evidence, its tree checked where
+`select` does not check it (`PassChecker.selectChecks`), a step that may
+write selected again over every fact; the store after it by its delta. The
+refusal where a check fails. -/
+def checkedStep (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
+    (suggestions : List (Sequent ι)) (index : KnownIndex ι) (codes : CodeEntry ι → Bool)
+    (aliases : List (ι × ι)) (passChecker : PassChecker G images) (undefTy : Option (Ty ι))
+    (l : Nat) (node : Node) (c : PointClaim ι) (entry : State) (ms : List Nat) (fresh : Nat) (answers : Answered G) :
+    Except String (Stepped ι) × StepStats × Answered G := Id.run do
+  let checker := passChecker.checker
+  -- Whether `select` checks the step (`PassChecker.select_eq_run`).
+  let selectChecks := passChecker.selectChecks
+  let width := c.context.length
+  let mut fresh := fresh
+  let mut answers := answers
+  let mut stats : StepStats := {}
+  -- A read of a slot whose type is the claim's: the result is that slot's
+  -- value, named as it (`HeapExpressionRules.copy`).
+  let copied : Option Nat := timedKind "node copied" fun _ => match node.expression with
+    | .var i => if (c.context[i]?).any (· == c.type) && (IndexWrites.litSlot G c.context i).isNone then
+        entry.names[i]? else none
+    | _ => none
+  let mut store := entry.store
+  let mut result : Nat := 0
+  -- The step's input and output at slots and its derivation, read where an
+  -- edge needs the step's yields.
+  let mut stepK : Knowledge := {}
+  let mut stepOut : Knowledge := {}
+  let mut stepDeriv : Option (ProgramCertificates.Evidence ι) := none
+  let mut stepEffect : Option (HeapExpressionRules.StepEvidence ι) := none
+  match copied with
+  | some x =>
+    stats := { stats with copies := stats.copies + 1 }
+    result := x
+  | none =>
+    -- A construction reads every fact: its result's facts (a typed array's
+    -- view length) follow from facts its operands' names do not reach.
+    let wholeStep := match node.expression with | .construct .. => true | _ => false
+    -- A test, a conditional or a read of a slot reads the facts over its
+    -- names and their aliases; a step that may need an entailment over
+    -- them also reads the linear facts they chain through.
+    let (k, pairs, table) := materialize entry width ms wholeStep
+    let kE := KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G c.context) k
+    let own := (keepFirst {} (c.type :: ms.filterMap fun i => c.context[i]?)).2.toList
+    let j : Sequent ι := ⟨c.context, node.expression, c.type⟩
+    let kindKey := SinglePassStats.termKind node.expression
+    -- Each precondition the call's signatures state, decided once, where the
+    -- search first asks it (`admitsNear`).
+    let stated : List ((Option CallEffects.ElemPred × List HeapKnowledge.IndexFact) × Thunk Bool) :=
+      own.foldl (fun acc F => match PositiveRules.expand G F with
+        | [PositiveNormalization.Clause.arrs L _] | [PositiveNormalization.Clause.callable _ _ L _ _] => L.foldl (fun acc p =>
+            let key := (p.effect.requires, p.effect.pre)
+            if acc.any (·.1 == key) then acc
+            else acc ++ [(key, Thunk.mk fun _ => admitsNear kE p.effect node.expression)]) acc
+        | _ => acc) []
+    let admits := fun (eff : CallEffects.Effect) (t : Tm) =>
+      if t == node.expression then
+        match stated.find? (·.1 == (eff.requires, eff.pre)) with
+        | some (_, v) => v.get
+        | none => admitsNear kE eff t
+      else admitsNear kE eff t
+    -- A call of a slot: its derivation read off the callee's signatures
+    -- (`directCall`), its step `ordinary`; otherwise the search.
+    let (direct, a0) := match node.expression with
+      | .invoke .. => timedKind "direct call" fun _ => directCall G images c.context node.expression c.type admits undefTy answers
+      | _ => (none, answers)
+    answers := a0
+    let sums := answers.summaries.toList
+    let (r, a) := match direct with
+      | some (e, _) =>
+        -- The proved layers' output (`Checker.ordinary`) at the call's
+        -- `ordinary` step over the facts it names.
+        let step : HeapExpressionRules.StepEvidence ι := .ordinary e
+        (timedKind "direct call output" fun _ => (checker.select j kE step codes sums).map fun out =>
+          (some e, step, out), answers)
+      | none => timedKind (if kindKey == "invoke" then s!"invoke facts {(atomsOf k).length / 10 * 10}" else kindKey) fun _ =>
+        expressionEffectUsing G images pool fuel j kE suggestions index codes aliases checker (some own)
+          (some admits) answers
+    answers := a
+    stats := { stats with rules := stats.rules + 1, directCalls := stats.directCalls + (if direct.isSome then 1 else 0) }
+    let some (deriv, effect, searched) := r.value | return (.error s!"expression at node {l}: {(reprStr node.expression).take 300} with {(atomsOf k).length} facts {(reprStr k).take 1500}", stats, answers)
+    -- The output the checker selects for the step the search returned,
+    -- computed here: the search's own output is not applied.
+    let out? : Option Knowledge := if direct.isSome then some searched
+      else (checker.select j kE effect codes answers.summaries.toList).value
+    let some out := out? | return (.error s!"expression at node {l}: the selected step", stats, answers)
+    -- The step's derivation checked as the checker's `run` checks it
+    -- (`checkStepResult`'s tree check): the search's `select` takes it as
+    -- given.
+    let tree := match effect with
+      | .slicedRead _ _ _ e _ => some e
+      | _ => effect.proof?
+    -- A checker whose `select` is its `run` (a qualified body's) has
+    -- checked the derivation already.
+    -- The tree `requiresTree` alone accepted, at the step's facts: a
+    -- `select` over other facts checks it again there.
+    let mut preconditioned : Option (ProgramCertificates.Evidence ι) := none
+    if let some p := (if selectChecks then none else tree) then
+      -- A call at a precondition the step's facts establish is checked as
+      -- `requiringCalls` checks it (`PromiseCalls.requiresTree`).
+      -- The read summaries the step's search added included.
+      let sums := answers.summaries.toList
+      if !(timedKind "tree check" fun _ => ProgramCertificates.checkTreeUsing G images p codes sums) then
+        if PromiseCalls.requiresTree G images kE codes sums p then preconditioned := some p
+        else return (.error s!"expression at node {l}: its derivation", stats, answers)
+    -- A call keeping the heap (`PromiseCalls.keepsCall`), where no layer
+    -- before it in `Checker.ordinary` decides the step, keeps every fact
+    -- it does not name: its output over the facts it names is its delta.
+    -- A call whose output keeps every heap fact it does not name, as the
+    -- layers of `Checker.ordinary` decide it, outermost first: one
+    -- promising its receiver's elements (`elementsCall`), one at a
+    -- precondition whose effect keeps the heap (`requiresCall`), one
+    -- allocating its result (`freshCall`), else one keeping the heap
+    -- (`keepsCall`) that changes no receiver's own locations (`ownCall`).
+    let keepsHeap := match effect with
+      | .ordinary p =>
+        (PromiseCalls.elementsCall G images j effect codes sums).isSome ||
+        (if PromiseCalls.requiresCall G images j kE effect codes sums then
+          (ExpressionEffects.selectedEffect p).any PromiseCalls.keepsHeap
+        else PromiseCalls.freshCall G images j effect codes sums ||
+          ((PromiseCalls.ownCall G images j effect codes sums).isNone &&
+            PromiseCalls.keepsCall G images j effect codes sums))
+      | _ => false
+    let preserving := keepsHeap || match effect with
+      | .ordinary _ | .written .. | .boundedWrite .. => false
+      | _ => true
+    -- A slot's read is that slot's value: it keeps its name.
+    match node.expression, entry.names[(match node.expression with | .var i => i | _ => 0)]? with
+    | .var _, some x => result := x
+    | _, _ =>
+      result := fresh
+      fresh := fresh + 1
+    stepK := kE
+    stepOut := out
+    stepDeriv := deriv
+    stepEffect := some effect
+    if preserving then
+      let inverse : Std.HashMap Nat Nat := table.fold (fun acc nm s => acc.insert s nm) {}
+      store := applyDelta store pairs out true fun i => if i == 0 then some result else (inverse.get? (i - 1)).orElse fun _ => entry.names[i - 1]?
+    else
+      -- A step that may write: its rule reads every fact.
+      let (k, pairs, table) := materialize entry width ms true
+      -- A heap fact over a name no slot holds is not among the facts the
+      -- rule reads, so its output does not say whether the step keeps it:
+      -- it is dropped (the handler's filter's heap facts); a heap-free
+      -- fact stays.
+      let renamed : Std.HashSet Atom := pairs.foldl (fun acc (a, _) => acc.insert a) {}
+      store := store.dropHeap renamed.contains
+      let kE := KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G c.context) k
+      -- The step the search selected over the facts the expression names,
+      -- its output over every fact.
+      let sums := answers.summaries.toList
+      -- A tree only its precondition accepted, checked at every fact.
+      if let some p := preconditioned then
+        if !PromiseCalls.requiresTree G images kE codes sums p then
+          return (.error s!"expression at node {l} over every fact: its derivation", stats, answers)
+      let r := timedKind ("whole " ++ kindKey) fun _ =>
+        checker.select j kE effect codes sums
+      stats := { stats with rules := stats.rules + 1, fullRules := stats.fullRules + 1 }
+      let some out := r.value | return (.error s!"expression at node {l} over every fact", stats, answers)
+      stepK := kE
+      stepOut := out
+      let inverse : Std.HashMap Nat Nat := table.fold (fun acc nm s => acc.insert s nm) {}
+      store := applyDelta store pairs out true fun i => if i == 0 then some result else (inverse.get? (i - 1)).orElse fun _ => entry.names[i - 1]?
+  return (.ok { result, store, fresh, copied := copied.isSome, stepK, stepOut, stepDeriv, stepEffect }, stats, answers)
+
+/-- A head's entry state: its given invariant `g` over fresh names from
+`fresh` (the start's own names at the start), a slot its given invariant
+states holds an input's entry value (`inputSlots`, `GraphCode.trackTable`'s
+pairs) or the promised input (`argSlots`) keeping that input's name; the
+implications it states, over those names; the next fresh name. -/
+def headEntry (g : Knowledge) (isStart : Bool) (width fresh : Nat) (startNames : List Nat) (argName : Option Nat)
+    (argSlots : List Nat) (inputSlots : List (Nat × Nat)) (implies : List (PromiseCalls.Implication ι)) :
+    State × List (PromiseCalls.Implication ι) × Nat :=
+  let base := if isStart then startNames.headD 0 else fresh
+  let next := if isStart then fresh else fresh + width
+  let names := (List.range width).map fun i =>
+    match (inputSlots.find? (·.1 == i)).bind fun (_, q) => startNames[q]? with
+    | some x => x
+    | none => match argName with
+      | some a => if argSlots.contains i then a else i + base
+      | none => i + base
+  let f := fun (i : Nat) => names[i]?
+  let store := timedKind "head state" fun _ => (atomsOf g).foldl (fun s a => match a.rename f with
+    | some b => s.add b | none => s) {}
+  ({ names, store }, implies.filterMap (fun x => do pure ⟨← f x.test, ← f x.target, x.type⟩), next)
+
 /-- The pass over one graph. -/
 def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
     (P : Program) (claims : List (PointClaim ι)) (start : Nat) (inputs : List (Ty ι)) (goal : Goal ι)
@@ -880,9 +1335,6 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     (ensures : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
     (entrySeparation : HeapSeparation.Separation := {}) (observe : Option Nat := none) (tracing : Bool := false) (observeEntry : Bool := false)
     (regional : Option Regional := none) : Outcome ι × Counts × Answered G × Trace := Id.run do
-  let checker := passChecker.checker
-  -- Whether `select` checks the step (`PassChecker.select_eq_run`).
-  let selectChecks := passChecker.selectChecks
   let nodes := P.toArray
   let claimed := claims.toArray
   let n := nodes.size
@@ -1001,27 +1453,11 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     let mut predNames : List (List Nat) := []
     match given[l]! with
     | some g =>
-      -- A head's state is its given invariant, over fresh names.
-      let base := if l == start then startNames.headD 0 else fresh
-      if l != start then fresh := fresh + width
-      -- The slots its given invariant states hold the promised input keep
-      -- the input's name.
-      let argSlots := (givenArgs[l]?).getD []
-      -- Likewise the slots it states hold an input's entry value
-      -- (`GraphCode.trackTable`'s pairs).
-      let inputSlots := (givenInputs[l]?).getD []
-      let names := (List.range width).map fun i =>
-        match (inputSlots.find? (·.1 == i)).bind fun (_, q) => startNames[q]? with
-        | some x => x
-        | none => match argName with
-          | some a => if argSlots.contains i then a else i + base
-          | none => i + base
-      let f := fun (i : Nat) => names[i]?
-      entry := { names, store := timedKind "head state" fun _ => (atomsOf g).foldl (fun s a => match a.rename f with
-        | some b => s.add b | none => s) {} }
-      -- The implications its given invariant states, over its names.
-      implies := ((givenImplies[l]?).getD []).filterMap fun x => do
-        pure ⟨← f x.test, ← f x.target, x.type⟩
+      let (st, imp, fr) := headEntry g (l == start) width fresh startNames argName ((givenArgs[l]?).getD [])
+        ((givenInputs[l]?).getD []) ((givenImplies[l]?).getD [])
+      entry := st
+      implies := imp
+      fresh := fr
       counts := { counts with givenImplies := counts.givenImplies + implies.length }
     | none => match incoming[l]! with
       | [s] =>
@@ -1030,183 +1466,16 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         implies := (incomingImpl[l]!).headD []
       | [] => pure ()
       | s :: rest =>
-        -- Names: a slot whose predecessors' names differ takes a fresh one.
-        let width := c.context.length
-        let preds := s :: rest
-        let arrs := preds.map (·.names.toArray)
-        let mut names : Array Nat := Array.mkEmpty width
-        -- A name a predecessor holds at several slots that take different
-        -- fresh names is renamed to each; slots whose predecessors' names
-        -- agree take one fresh name.
-        let mut renames : List (Std.HashMap Nat (List Nat)) := arrs.map fun _ => {}
-        let mut phis : Std.HashMap (List Nat) Nat := {}
-        for i in List.range width do
-          let ns := arrs.map (·.getD i 0)
-          let n0 := ns.headD 0
-          if ns.all (· == n0) then names := names.push n0
-          else match phis.get? ns with
-            | some φ => names := names.push φ
-            | none =>
-              names := names.push fresh
-              phis := phis.insert ns fresh
-              renames := (renames.zip ns).map fun (m, x) => m.insert x (fresh :: m.getD x [])
-              fresh := fresh + 1
-        let mergedNames := names.toList
-        let live := Std.HashSet.ofList mergedNames
-        -- Each predecessor's facts about the names it renames, restated at
-        -- the fresh names (a name a slot keeps that another slot's fresh name
-        -- renames is stated equal to it, as are one name's fresh names).
-        -- The alias link always; the equality of their numbers only where
-        -- the predecessor's facts make `x` an integer (`Store.integral`): a
-        -- linear fact holds only where its terms denote integers.
-        let eqAtoms := fun (int : Bool) (φ x : Nat) => Atom.link { cell := φ, value := x, alias := true } ::
-          (if !int then [] else
-          [.index ⟨.linear (.le [(HeapKnowledge.Term.value φ, 1), (HeapKnowledge.Term.value x, -1)] 0), none, false⟩,
-          .index ⟨.linear (.le [(HeapKnowledge.Term.value φ, -1), (HeapKnowledge.Term.value x, 1)] 0), none, false⟩])
-        let variants : List (Std.HashSet Atom) := (preds.zip renames).map fun ((st : State), (m : Std.HashMap Nat (List Nat))) =>
-          let equal := m.fold (fun (acc : List Atom) x φs =>
-            let int := st.store.integral x
-            (if names.contains x then φs.flatMap (eqAtoms int · x) else []) ++
-            (φs.zip φs.tail).flatMap (fun (φ, ψ) => eqAtoms int ψ φ) ++ acc) []
-          let about := m.fold (fun (acc : List Atom) x _ => st.store.about x ++ acc) []
-          (about.foldl (fun (acc : Std.HashSet Atom) a => acc.insertMany (Atom.renameEach m a)) {}).insertMany equal
-        -- The facts every predecessor holds: the first's store less each fact
-        -- another lacks, found by what differs between the stores
-        -- (`Store.diff`, sharing skipped), and the restated facts every one
-        -- states.
-        let mut met := s.store
-        for q in rest do
-          for a in (timedKind "merge diff" fun _ => Store.diff met q.store).1 do met := met.remove a
-        let firstV := variants.headD {}
-        met := timedKind "meet" fun _ => firstV.fold (fun (acc : Store) a =>
-          if variants.tail.all (·.contains a) then acc.add a else acc) met
-        -- The names a predecessor renames that no slot of the merge holds
-        -- leave the store once (`Store.drop`).
-        let renamedAway := (keepFirst {} (renames.flatMap fun (m : Std.HashMap Nat (List Nat)) =>
-          m.fold (fun acc x _ => if live.contains x then acc else x :: acc) [])).2.toList
-        met := met.drop renamedAway
-        let met0 := met
-        -- What each predecessor states that the merge does not, at the merge's
-        -- names: its facts the met store lacks, a fact over a name it renames
-        -- by its restatements.
-        let diffs : List (List Atom) := ((preds.zip renames).zip variants).map
-          fun (((st : State), (m : Std.HashMap Nat (List Nat))), (v : Std.HashSet Atom)) =>
-            ((timedKind "merge diff" fun _ => Store.diff met0 st.store).2.filter fun a => !a.names.any m.contains) ++
-              v.fold (fun acc a => if met0.live.contains a.canon then acc else a :: acc) []
-        let diffCount := diffs.foldl (fun acc d => acc + d.length) 0
-        counts := { counts with merges := counts.merges + 1, mergeDiffs := counts.mergeDiffs + diffCount }
-        -- A linear bound every predecessor states of one form (under one
-        -- condition), at the weakest of their bounds.
-        let bounds : List (Std.HashMap (Linear.Form HeapKnowledge.Term × Option Nat × Bool) Int) := diffs.map fun d =>
-          d.foldl (fun acc a => match a with
-            | .index ⟨.linear (.le F d), c, neg⟩ =>
-              let F := Linear.normalize F
-              acc.insert (F, c, neg) (match acc.get? (F, c, neg) with | some d' => min d d' | none => d)
-            | _ => acc) {}
-        met := match bounds with
-          | b0 :: bs => b0.fold (fun (acc : Store) key d => Id.run do
-              let mut weakest := d
-              for b in bs do
-                match b.get? key with
-                | some d' => weakest := max weakest d'
-                | none => return acc
-              let (F, c, neg) := key
-              return acc.add (.index ⟨.linear (.le F weakest), c, neg⟩)) met
-          | [] => met
-        -- Each predecessor's state at the merge's names: the met facts and its
-        -- own differences, sharing the met store.
-        let views : List State := diffs.map fun d =>
-          { names := mergedNames, store := d.foldl Store.add met0 }
-        -- A linear bound over the merge's names one predecessor states and
-        -- every other entails over its linear facts near the bound's names
-        -- (`HeapKnowledge.entailsKnown`), as an edge's entailment establishes a
-        -- fact at a statement entry.
-        met := timedKind "meet entailed" fun _ => Id.run do
-          let mut acc := met
-          let mut seen : Std.HashSet Atom := {}
-          for d in diffs do
-            for a in d do
-              if let .index ⟨.linear F, none, _⟩ := a then
-                if !seen.contains a && a.names.all live.contains && !acc.holds a then
-                  seen := seen.insert a
-                  if views.all fun (qs : State) => qs.store.holds a ||
-                      HeapKnowledge.entailsKnown (qs.store.linearNear a.names) F then
-                    acc := acc.add a
-          return acc
-        -- The guarded facts a join keeps, over the facts that differ: the
-        -- search's join (`CertificateProducer.joinGuarded`) over each
-        -- predecessor's facts near the differing guarded facts, read links and
-        -- separations, each predecessor's guards first also lowered once
-        -- through its read links (`HeapKnowledge.lowerGuards`): a guard on a
-        -- path two reads long reaches the value the second read gives; and a
-        -- fact one predecessor states of a slot another holds a tag's value
-        -- in, guarded by that tag (`x === null || F`), as the join guards a
-        -- store separation; each kept where every predecessor's facts entail it.
-        let tags : List HeapKnowledge.GuardTag := [.null, .undef]
-        let tagged := diffs.flatMap fun d => d.filterMap fun a => match a with
-          | .value f => if tags.any (fun g => HeapKnowledge.guardTags { values := [f] } f.slot [] g) then some f.slot else none
-          | _ => none
-        let seeds := (diffs.flatMap fun d => d.flatMap fun a => match a with
-          | .index ⟨.guarded .., _, _⟩ | .index ⟨.storeApart .., _, _⟩ | .link _ => a.names
-          | _ => [])
-        let seeds := if tagged.isEmpty then seeds else seeds ++ tagged ++
-          (diffs.flatMap fun d => d.flatMap fun a => if a.names.any tagged.contains then a.names else [])
-        let seedSlots := (keepFirst {} (seeds.filterMap mergedNames.idxOf?)).2.toList
-        let guarded : List HeapKnowledge.IndexAtom := if seedSlots.isEmpty then [] else Id.run do
-          let projections := views.map fun ps => (materialize ps width seedSlots false).1
-          let common := (materialize { names := mergedNames, store := met0 } width seedSlots false).1
-          let lowered := projections.map fun (p : Knowledge) =>
-            { p with indices := p.indices ++ ((HeapKnowledge.lowerGuards p.links p.indices).filter (!p.indices.contains ·)) }
-          let joined := timedKind "meet guarded" fun _ => CertificateProducer.joinGuarded lowered common
-          let tagged := timedKind "meet tagged" fun _ =>
-            let nullish := ((projections.flatMap fun (o : Knowledge) => o.values.flatMap fun f =>
-              (tags.filter fun g => HeapKnowledge.guardTags o f.slot [] g).flatMap fun g =>
-                (HeapLinks.aliases o.links f.slot).map (·, g))).eraseDups
-            if nullish.isEmpty then [] else
-            let candidates := (projections.flatMap fun (p : Knowledge) => p.indices.flatMap fun a =>
-              if a.cond.isSome || common.indices.contains a then [] else match a.fact with
-              | .guarded .. => []
-              | F => (nullish.filter fun (z, _) => F.slots.contains z).map fun (z, g) =>
-                  ({ fact := .guarded z [] g F } : HeapKnowledge.IndexAtom)).eraseDups
-            candidates.filter fun a => projections.all fun (p : Knowledge) =>
-              HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags p) (HeapLinks.aliases p.links) p.links
-                p.indices [a] none
-          return joined ++ tagged
-        met := guarded.foldl (fun (acc : Store) x => match (Atom.index x).rename (mergedNames[·]?) with
-          | some a => acc.add a
-          | none => acc) met
+        let mg := mergeState G c.context (s :: rest) incomingEdges[l]! fresh
+        fresh := mg.fresh
+        counts := { counts with merges := counts.merges + 1, mergeDiffs := counts.mergeDiffs + mg.diffCount }
         if observe == some l then
-          predViews := incomingFrom[l]!.zip (views.map fun ps => (materialize ps width (List.range width) true).1)
-          predNames := mergedNames :: preds.map (·.names)
+          predViews := incomingFrom[l]!.zip (mg.views.map fun ps => (materialize ps width (List.range width) true).1)
+          predNames := mg.state.names :: (s :: rest).map (·.names)
         if tracing then
-          trace := { trace with merges := trace.merges.set! l ((incomingFrom[l]!).zip (views.zip renames)) }
-        -- A name holds a fresh store where every predecessor's does.
-        let freshLists := (preds.zip renames).map fun ((st : State), (m : Std.HashMap Nat (List Nat))) =>
-          st.fresh.flatMap fun x => x :: m.getD x []
-        let met' := match freshLists with
-          | f0 :: fs => f0.filter fun x => fs.all (·.contains x)
-          | [] => []
-        entry := { names := mergedNames, store := met, fresh := met' }
-        -- The implications the merge establishes, as the search's merge
-        -- finds them (`CertificateProducer.meetImplications`), at its names;
-        -- none where no edge carries one and no slot an edge's type differs
-        -- at is a test some edge's type answers `false`.
-        let edgesIn := incomingEdges[l]!
-        let some_ := edgesIn.any (fun (_, xs, _) => !xs.isEmpty) || Id.run do
-          let some (Γ0, _, m0) := edgesIn.head? | return false
-          for t in List.range width do
-            let A0 := Γ0[PointClaims.slot m0 t]?
-            let differs := edgesIn.any fun (Γ, _, m) => match Γ[PointClaims.slot m t]?, A0 with
-              | some A, some B => !same A B
-              | _, _ => true
-            if differs && edgesIn.any (fun (Γ, _, m) => (Γ[PointClaims.slot m t]?).any (BranchRefinement.impossible G · (.boolean true))) then
-              return true
-          return false
-        if some_ then
-          let joinedImpl := timedKind "meet implications" fun _ =>
-            CertificateProducer.meetImplications G edgesIn width c.context
-          implies := (keepFirst {} (joinedImpl.filterMap fun (x : PromiseCalls.Implication ι) => do
-            pure (⟨← mergedNames[x.test]?, ← mergedNames[x.target]?, x.type⟩ : PromiseCalls.Implication ι))).2.toList
+          trace := { trace with merges := trace.merges.set! l ((incomingFrom[l]!).zip (mg.views.zip mg.renames)) }
+        entry := mg.state
+        implies := mg.implies
     if tracing then
       let focus := ((mentioned 0 node.expression).getD []).filterMap (entry.names[·]?)
       trace := { trace with entries := trace.entries.set! l (some entry), node := l, edge := none, names := fresh :: entry.names, focus }
@@ -1240,160 +1509,24 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     -- The step.
     let some ms := timedKind "node mentioned" fun _ => mentioned 0 node.expression | return (.notHandled s!"term at node {l}: {(reprStr node.expression).take 200}", counts, answers, trace)
     let ms := (keepFirst {} ms).2.toList
-    -- A read of a slot whose type is the claim's: the result is that slot's
-    -- value, named as it (`HeapExpressionRules.copy`).
-    let copied : Option Nat := timedKind "node copied" fun _ => match node.expression with
-      | .var i => if (c.context[i]?).any (· == c.type) && (IndexWrites.litSlot G c.context i).isNone then
-          entry.names[i]? else none
-      | _ => none
-    let mut store := entry.store
-    let mut result : Nat := 0
-    -- The step's input and output at slots and its derivation, read where an
-    -- edge needs the step's yields.
-    let mut stepK : Knowledge := {}
-    let mut stepOut : Knowledge := {}
-    let mut stepDeriv : Option (ProgramCertificates.Evidence ι) := none
-    let mut stepEffect : Option (HeapExpressionRules.StepEvidence ι) := none
+    let (stepped, stats, a) := checkedStep G images pool fuel suggestions index codes aliases passChecker undefTy
+      l node c entry ms fresh answers
+    answers := a
+    counts := { counts with
+      rules := counts.rules + stats.rules, fullRules := counts.fullRules + stats.fullRules
+      directCalls := counts.directCalls + stats.directCalls, copies := counts.copies + stats.copies }
+    let st ← match stepped with
+      | .ok st => pure st
+      | .error why => return (.refused why, counts, answers, trace)
     lastKind := if (given[l]!).isSome then "node: head" else if (incoming[l]!).length > 1 then "node: merge"
-      else if copied.isSome then "node: copy" else "node: step"
-    match copied with
-    | some x =>
-      counts := { counts with copies := counts.copies + 1 }
-      result := x
-    | none =>
-      -- A construction reads every fact: its result's facts (a typed array's
-      -- view length) follow from facts its operands' names do not reach.
-      let wholeStep := match node.expression with | .construct .. => true | _ => false
-      -- A test, a conditional or a read of a slot reads the facts over its
-      -- names and their aliases; a step that may need an entailment over
-      -- them also reads the linear facts they chain through.
-      let (k, pairs, table) := materialize entry width ms wholeStep
-      let kE := KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G c.context) k
-      let own := (keepFirst {} (c.type :: ms.filterMap fun i => c.context[i]?)).2.toList
-      let j : Sequent ι := ⟨c.context, node.expression, c.type⟩
-      let kindKey := SinglePassStats.termKind node.expression
-      -- Each precondition the call's signatures state, decided once, where the
-      -- search first asks it (`admitsNear`).
-      let stated : List ((Option CallEffects.ElemPred × List HeapKnowledge.IndexFact) × Thunk Bool) :=
-        own.foldl (fun acc F => match PositiveRules.expand G F with
-          | [PositiveNormalization.Clause.arrs L _] | [PositiveNormalization.Clause.callable _ _ L _ _] => L.foldl (fun acc p =>
-              let key := (p.effect.requires, p.effect.pre)
-              if acc.any (·.1 == key) then acc
-              else acc ++ [(key, Thunk.mk fun _ => admitsNear kE p.effect node.expression)]) acc
-          | _ => acc) []
-      let admits := fun (eff : CallEffects.Effect) (t : Tm) =>
-        if t == node.expression then
-          match stated.find? (·.1 == (eff.requires, eff.pre)) with
-          | some (_, v) => v.get
-          | none => admitsNear kE eff t
-        else admitsNear kE eff t
-      -- A call of a slot: its derivation read off the callee's signatures
-      -- (`directCall`), its step `ordinary`; otherwise the search.
-      let (direct, a0) := match node.expression with
-        | .invoke .. => timedKind "direct call" fun _ => directCall G images c.context node.expression c.type admits undefTy answers
-        | _ => (none, answers)
-      answers := a0
-      let sums := answers.summaries.toList
-      let (r, a) := match direct with
-        | some (e, _) =>
-          -- The proved layers' output (`Checker.ordinary`) at the call's
-          -- `ordinary` step over the facts it names.
-          let step : HeapExpressionRules.StepEvidence ι := .ordinary e
-          (timedKind "direct call output" fun _ => (checker.select j kE step codes sums).map fun out =>
-            (some e, step, out), answers)
-        | none => timedKind (if kindKey == "invoke" then s!"invoke facts {(atomsOf k).length / 10 * 10}" else kindKey) fun _ =>
-          expressionEffectUsing G images pool fuel j kE suggestions index codes aliases checker (some own)
-            (some admits) answers
-      answers := a
-      counts := { counts with rules := counts.rules + 1, directCalls := counts.directCalls + (if direct.isSome then 1 else 0) }
-      let some (deriv, effect, searched) := r.value | return (.refused s!"expression at node {l}: {(reprStr node.expression).take 300} with {(atomsOf k).length} facts {(reprStr k).take 1500}", counts, answers, trace)
-      -- The output the checker selects for the step the search returned,
-      -- computed here: the search's own output is not applied.
-      let out? : Option Knowledge := if direct.isSome then some searched
-        else (checker.select j kE effect codes answers.summaries.toList).value
-      let some out := out? | return (.refused s!"expression at node {l}: the selected step", counts, answers, trace)
-      -- The step's derivation checked as the checker's `run` checks it
-      -- (`checkStepResult`'s tree check): the search's `select` takes it as
-      -- given.
-      let tree := match effect with
-        | .slicedRead _ _ _ e _ => some e
-        | _ => effect.proof?
-      -- A checker whose `select` is its `run` (a qualified body's) has
-      -- checked the derivation already.
-      -- The tree `requiresTree` alone accepted, at the step's facts: a
-      -- `select` over other facts checks it again there.
-      let mut preconditioned : Option (ProgramCertificates.Evidence ι) := none
-      if let some p := (if selectChecks then none else tree) then
-        -- A call at a precondition the step's facts establish is checked as
-        -- `requiringCalls` checks it (`PromiseCalls.requiresTree`).
-        -- The read summaries the step's search added included.
-        let sums := answers.summaries.toList
-        if !(timedKind "tree check" fun _ => ProgramCertificates.checkTreeUsing G images p codes sums) then
-          if PromiseCalls.requiresTree G images kE codes sums p then preconditioned := some p
-          else return (.refused s!"expression at node {l}: its derivation", counts, answers, trace)
-      -- A call keeping the heap (`PromiseCalls.keepsCall`), where no layer
-      -- before it in `Checker.ordinary` decides the step, keeps every fact
-      -- it does not name: its output over the facts it names is its delta.
-      -- A call whose output keeps every heap fact it does not name, as the
-      -- layers of `Checker.ordinary` decide it, outermost first: one
-      -- promising its receiver's elements (`elementsCall`), one at a
-      -- precondition whose effect keeps the heap (`requiresCall`), one
-      -- allocating its result (`freshCall`), else one keeping the heap
-      -- (`keepsCall`) that changes no receiver's own locations (`ownCall`).
-      let keepsHeap := match effect with
-        | .ordinary p =>
-          (PromiseCalls.elementsCall G images j effect codes sums).isSome ||
-          (if PromiseCalls.requiresCall G images j kE effect codes sums then
-            (ExpressionEffects.selectedEffect p).any PromiseCalls.keepsHeap
-          else PromiseCalls.freshCall G images j effect codes sums ||
-            ((PromiseCalls.ownCall G images j effect codes sums).isNone &&
-              PromiseCalls.keepsCall G images j effect codes sums))
-        | _ => false
-      let preserving := keepsHeap || match effect with
-        | .ordinary _ | .written .. | .boundedWrite .. => false
-        | _ => true
-      -- A slot's read is that slot's value: it keeps its name.
-      match node.expression, entry.names[(match node.expression with | .var i => i | _ => 0)]? with
-      | .var _, some x => result := x
-      | _, _ =>
-        result := fresh
-        fresh := fresh + 1
-      stepK := kE
-      stepOut := out
-      stepDeriv := deriv
-      stepEffect := some effect
-      if preserving then
-        let inverse : Std.HashMap Nat Nat := table.fold (fun acc nm s => acc.insert s nm) {}
-        store := applyDelta store pairs out true fun i => if i == 0 then some result else (inverse.get? (i - 1)).orElse fun _ => entry.names[i - 1]?
-      else
-        -- A step that may write: its rule reads every fact.
-        let (k, pairs, table) := materialize entry width ms true
-        -- A heap fact over a name no slot holds is not among the facts the
-        -- rule reads, so its output does not say whether the step keeps it:
-        -- it is dropped (the handler's filter's heap facts); a heap-free
-        -- fact stays.
-        let renamed : Std.HashSet Atom := pairs.foldl (fun acc (a, _) => acc.insert a) {}
-        store := entry.store.toList.foldl (fun (acc : Store) a => if renamed.contains a then acc else match a with
-          | .cell _ | .elem _ => acc.remove a
-          | .link g => if g.alias then acc else acc.remove a
-          | .index x => if x.fact.envOnly then acc else acc.remove a
-          | _ => acc) store
-        let kE := KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G c.context) k
-        -- The step the search selected over the facts the expression names,
-        -- its output over every fact.
-        let sums := answers.summaries.toList
-        -- A tree only its precondition accepted, checked at every fact.
-        if let some p := preconditioned then
-          if !PromiseCalls.requiresTree G images kE codes sums p then
-            return (.refused s!"expression at node {l} over every fact: its derivation", counts, answers, trace)
-        let r := timedKind ("whole " ++ kindKey) fun _ =>
-          checker.select j kE effect codes sums
-        counts := { counts with rules := counts.rules + 1, fullRules := counts.fullRules + 1 }
-        let some out := r.value | return (.refused s!"expression at node {l} over every fact", counts, answers, trace)
-        stepK := kE
-        stepOut := out
-        let inverse : Std.HashMap Nat Nat := table.fold (fun acc nm s => acc.insert s nm) {}
-        store := applyDelta store pairs out true fun i => if i == 0 then some result else (inverse.get? (i - 1)).orElse fun _ => entry.names[i - 1]?
+      else if st.copied then "node: copy" else "node: step"
+    fresh := st.fresh
+    let store := st.store
+    let result := st.result
+    let stepK := st.stepK
+    let stepOut := st.stepOut
+    let stepDeriv := st.stepDeriv
+    let stepEffect := st.stepEffect
     let pushedNames := result :: entry.names
     if tracing then
       let st : State := { entry with names := pushedNames, store := store }
@@ -1466,7 +1599,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     -- Another step's yields (a test's, a promise call's): computed for the
     -- implications its pushed result carries.
     let isRead := match node.expression with | .var _ => true | _ => false
-    if yields.isNone && !isRead && copied.isNone then
+    if yields.isNone && !isRead && !st.copied then
       let e := stepDeriv.getD (.node ⟨c.context, node.expression, c.type⟩ .var [])
       let (ys, a) := timedKind "yields" fun _ => (nodeYields G images pool c.context slotImpl.get e stepOut stepK) answers
       answers := a
@@ -1627,27 +1760,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       let names := if isHandler then thrown :: entry.names else if pushed then pushedNames else entry.names
       -- The edge's own facts: an observation of the result; a throw's, the
       -- entry's facts no heap change affects.
-      let mut edgeStore := if isHandler then
-          entry.store.toList.foldl (fun (acc : Store) a => match a with
-            | .cell _ | .elem _ => acc.remove a
-            | .link g => if g.alias then acc else acc.remove a
-            | .index x => if x.fact.envOnly then acc else acc.remove a
-            | _ => acc) entry.store
-        else store
-      match observed, promote with
-      | some o, _ =>
-        let (k, pairs, table) := materialize { names, store } (if pushed then width + 1 else width) [0] false
-        -- An alternative the observation contradicts released, as an edge's
-        -- entailment releases it (`HeapKnowledge.withElements`).
-        let k' := HeapKnowledge.withElements (HeapKnowledge.observeTyped G Γ k 0 o)
-        let inverse : Std.HashMap Nat Nat := table.fold (fun acc nm s => acc.insert s nm) {}
-        edgeStore := applyDelta store pairs k' false fun i => (inverse.get? i).orElse fun _ => names[i]?
-      | none, some q =>
-        let (k, pairs, table) := materialize { names := pushedNames, store } (width + 1) [0] false
-        let k' := HeapKnowledge.withElements (HeapKnowledge.promoteTruthy k 0 q)
-        let inverse : Std.HashMap Nat Nat := table.fold (fun acc nm s => acc.insert s nm) {}
-        edgeStore := applyDelta store pairs k' false fun i => (inverse.get? i).orElse fun _ => pushedNames[i]?
-      | none, none => pure ()
+      let edgeStore := edgeStoreOf G Γ entry.store store names pushedNames width pushed isHandler observed promote
       -- The slots' types: each the target's, or below it.
       -- Whether no environment meets the edge's context: the node's own
       -- context's answer, and the pushed result's type.
@@ -1821,20 +1934,10 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
               if tracing then
                 trace := { trace with missing := missing.filterMap fun a => a.rename fun i => names[PointClaims.slot t.mapping i]? }
               return (.refused s!"edge from node {l} into node {t.label}: its assertion lacks {(missing.map fun a => match a with | .index x => (reprStr x.fact).take 80 | .cell f => s!"cell {f.slot}.{f.field}" | .value f => s!"value {f.slot}" | .link g => s!"link {g.cell}.{g.field}={g.value}" | .elem e => s!"elems {e.slot}" | .sep f => s!"sep {f.slot}").take 4}", counts, answers, trace)
-        let targetNames := timedKind "edge names" fun _ => mapNames names t.mapping
-        -- The names the edge drops leave the store.
-        let gone := timedKind "edge dropped" fun _ => droppedBy names t.mapping targetNames ++
-          (if !pushed && !entry.names.contains result then [result] else [])
-        let gone := if pushed || t.mapping.isSome then gone else gone
-        let freshOut := (if pushed && !isHandler && outFresh && !entry.fresh.contains result then result :: entry.fresh else entry.fresh).filter
-          (!gone.contains ·)
-        incoming := incoming.modify t.label ({ names := targetNames, store := edgeStore.drop gone, fresh := freshOut } :: ·)
+        let (target, carried) := edgeTransfer names t.mapping pushed isHandler outFresh entry result edgeStore
+          (implies ++ freshImpl)
+        incoming := incoming.modify t.label (target :: ·)
         if observe == some t.label || tracing then incomingFrom := incomingFrom.modify t.label (l :: ·)
-        -- The edge's implications: the entry's, and on a pushed edge those
-        -- the result's conditional yields state of it; none naming a name
-        -- the edge drops.
-        let carried := timedKind "edge implications" fun _ => (keepFirst {} ((implies ++ freshImpl).filter fun x =>
-          !gone.contains x.test && !gone.contains x.target)).2.toList
         incomingImpl := incomingImpl.modify t.label (carried :: ·)
         if merging[t.label]! then
           let Γe := if isHandler then Γ else refinedΓ first

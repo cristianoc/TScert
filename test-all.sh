@@ -134,8 +134,13 @@ commit_records() {
   record() { printf '%s\n\nWhy:\n    a reason\n\n%s\n\n%s\n' "$1" "$2" "$3"; }
   record "Subject" "Docs modified (a document):" $'Outcome: no-behaviour-change\nParts: docs' > "$dir/valid"
   record "Subject" "Rule added (a rule):" $'Outcome: verified\nParts: lean-rules\nTrust: none' > "$dir/valid-behaviour"
-  bin/git_hooks/commit_record.sh "$dir/valid" --check || return 1
-  bin/git_hooks/commit_record.sh "$dir/valid-behaviour" --check || return 1
+  record "Subject" $'Proposal added (`e as unknown`):\n    `e as unknown` ⇒ the type of `e`' $'Outcome: verified\nParts: tools\nTrust: none' > "$dir/valid-proposal"
+  record "Subject" $'Check modified (a loop head):\n  Before:\n    at a loop head: the given facts hold\n  After:\n    at a loop head: every edge into it establishes the given facts' $'Outcome: refused\nParts: lean-rules\nTrust: none' > "$dir/valid-check"
+  record "Subject" $'Control added (instances):\n    force: `TSCERT_FORCE=instances`\n    unit: invalid-native-promise-invariant-result widen\n    unforced: accepted\n    forced: refused at the result\'s field' $'Outcome: no-behaviour-change\nParts: tools\nTests: forced:instances' > "$dir/valid-control"
+  local valid
+  for valid in valid valid-behaviour valid-proposal valid-check valid-control; do
+    bin/git_hooks/commit_record.sh "$dir/$valid" --check || return 1
+  done
   refused() {
     local name="$1" expected="$2"
     if out="$(bin/git_hooks/commit_record.sh "$dir/$name" --check 2>&1)"; then echo "accepted: $name"; return 1; fi
@@ -161,7 +166,11 @@ commit_records() {
   refused unknown-trailer "unknown trailer 'Reviewed:'" || return 1
   record "Subject" "Docs modified (a document):" $'Outcome: no-behaviour-change\nParts: docs\nUnits: none' > "$dir/units-none"
   refused units-none "'Units: none'" || return 1
-  echo "two records accepted, ten malformed messages refused"
+  record "Subject" "Function modified (Synthesis.lean):" $'Outcome: no-behaviour-change\nParts: docs' > "$dir/unknown-kind"
+  refused unknown-kind "the change heading 'Function modified (Synthesis.lean):' names the kind 'Function', which is not one of" || return 1
+  record "Subject" $'Control modified (forged slot claims,\n  labels):' $'Outcome: no-behaviour-change\nParts: tools' > "$dir/wrapped-control"
+  refused wrapped-control "a change heading must close on its own line" || return 1
+  echo "five records accepted, twelve malformed messages refused"
 }
 run_test "Commit records: the commit-msg hook" commit_records
 # tests/docs.mts checks every document's links, anchors and math.

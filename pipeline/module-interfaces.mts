@@ -13,8 +13,9 @@ function object(value: Canonical): ObjectWire {
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw Error("expected object");
   return value as ObjectWire; // asserted: Canonical's only non-array object is its record alternative
 }
+const isCanonicalList = (value: Canonical | undefined): value is readonly Canonical[] => Array.isArray(value);
 function array(value: Canonical | undefined): readonly Canonical[] {
-  if (!Array.isArray(value)) throw Error("expected array");
+  if (!isCanonicalList(value)) throw Error("expected array");
   return value;
 }
 function string(value: Canonical | undefined): string {

@@ -42,7 +42,7 @@ const line = (at: number): number => source.slice(0, at).split("\n").length;
 // A `for` loop's head is its condition, the entry just after its first `;`.
 const isLoop = (at: number): boolean => /^((for|while|do)\b|;)/.test(source.slice(at, at + 6));
 
-let loops = 0, facts = 0, unwritten = 0;
+let loops: number = 0, facts: number = 0, unwritten: number = 0;
 for (const fn of list(field(doc, "functions"))) {
   if (only !== undefined && str(field(fn, "name")) !== only) continue;
   for (const e of list(field(fn, "entries"))) {
