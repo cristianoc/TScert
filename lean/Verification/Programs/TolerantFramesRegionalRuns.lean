@@ -183,26 +183,24 @@ def passRegionalEvidence (c : PointClaim ι) (node : Node) (stepDeriv : Option (
     | none, none => none
   ⟨ordinaryEv, some ⟨c.context, node.expression, c.type⟩, [], kHere, stepEffect, {}, none, [], [], [], none⟩
 
-/-- The check of the step's derivation the regional evidence needs: claimed
-at the node's term and context, its tree accepted (`passDerivChecked`'s
-conjuncts, its tree disjunct). -/
-def regionalDerivChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
-    (sums : List (ReadSummary ι)) (c : PointClaim ι) (node : Node) (d : ProgramCertificates.Evidence ι) : Bool :=
-  (claim d).term == node.expression && (claim d).context == c.context && checkTreeUsing G images d codes sums
-
 /-- **The derivation's tree check gives the regional evidence's typing**
-(`RegionalTyped`): with the step's derivation `d` accepted by
-`regionalDerivChecked`, the evidence's entry is the node's context and
-every environment it types runs the node's term at `d`'s type. -/
+(`RegionalTyped`): with the step's derivation `d` accepted by `run`'s
+check under store regions (`SinglePass.regionalDerivChecked`: claimed at
+the node's term and context) and its tree accepted by `checkTreeUsing`
+(`htree`: the check's first disjunct; the second, `requiresTree`, reads the
+step's facts, which the regional evidence's entry does not state: a pass
+change, queued as D14), the evidence's entry is the node's context and every
+environment it types runs the node's term at `d`'s type. -/
 theorem regionalTyped_of_tree {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
     {sums : List (ReadSummary ι)} {c : PointClaim ι} {node : Node} {d : ProgramCertificates.Evidence ι}
     {se : Option (HeapExpressionRules.StepEvidence ι)} {kHere : HeapKnowledge.Knowledge}
-    (hd : regionalDerivChecked G images codes sums c node d = true)
-    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums) :
+    {stepK : HeapKnowledge.Knowledge}
+    (hd : SinglePass.regionalDerivChecked G images codes sums c node stepK (some d) = true)
+    (htree : checkTreeUsing G images d codes sums = true) (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums) :
     ControlFlow.entry (passRegionalEvidence c node (some d) se kHere) = c.context ∧
       RegionalTyped G (passRegionalEvidence c node (some d) se kHere) node := by
-  simp only [regionalDerivChecked, Bool.and_eq_true, beq_iff_eq] at hd
-  obtain ⟨⟨hterm, hctx⟩, htree⟩ := hd
+  simp only [SinglePass.regionalDerivChecked, SinglePass.derivChecked, Bool.and_eq_true, beq_iff_eq] at hd
+  obtain ⟨⟨hterm, hctx⟩, -⟩ := hd
   refine ⟨by simpa [ControlFlow.entry, passRegionalEvidence, NodeEvidence.expression] using hctx, ?_⟩
   intro n W h ρ he _ _ hw hh
   have hs := HasTyUsing.sound (checkTreeUsing_sound d htree hcodes hsums) n W h ρ

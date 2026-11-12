@@ -677,6 +677,7 @@ run_cmd do
   check ``Verification.TolerantFrames.start_entered_passPreT
   check ``Verification.TolerantFrames.branchShape_of
   check ``Verification.TolerantFrames.nodeShape_of
+  check ``Verification.TolerantFrames.passShapeCheck'_reassign
   check ``Verification.GraphCode.ArgumentRegionGraph.checkNode_sound
   check ``Verification.GraphCode.ArgumentRegionGraph.nodesWithin_of
   check ``Verification.GraphCode.ArgumentRegionGraph.checkNode_mono

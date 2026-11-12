@@ -1,15 +1,16 @@
 import Verification.Programs.TolerantFramesNodeWalk
+import Verification.Programs.TolerantFramesWalkReassignChecks
 
 /-! # Tolerant frames: a continuation's shape from the claim's type
 
-`NodeAccepted.shape` asks that every value of the node's claim type has the
-shape its continuation takes (`ShapeOk`): at a branch, a Boolean. The proved
-checker checks it of a branch's evidence (`ControlFlow.checkNodeResult`,
-`decide (expand G (result c) = [.bool])`); the pass's claims are the
-producer's, and `run` makes no such check. `branchShape_of` proves the
-checker's test gives the shape, so the test at a branch node of `run`
-(`passShapeCheck`, with `onlyBoolean` at a `branchBind`) discharges
-`shape`; `nodeShape_of` gives it at every continuation. -/
+`NodeMeaning.shape` asks that every value of the node's claim type has the
+shape its continuation takes (`ShapeOk`): at a `branch` and a `branchBind`,
+a Boolean. `run` checks the claim type at every node
+(`SinglePass.passShapeCheck'`: the Boolean type at a `branch`, only
+Booleans at a `branchBind`). Proved: `branchShape_of` (a Boolean claim type
+gives a branch's shape), `nodeShape_of` (the check gives every value its
+continuation's shape) and `passShapeCheck'_reassign` (the check is the same
+at every reassigned graph). -/
 namespace Verification.TolerantFrames
 open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
@@ -17,15 +18,6 @@ open PositiveRules HeapExpressionRules
 
 section Shape
 variable {ι : Type} [DecidableEq ι]
-
-/-- The shape check a continuation's claim type needs, the proved checker's
-(`ControlFlow.checkNodeResult`): at a branch the type exactly Boolean, at a
-`branchBind` only Boolean values (`onlyBoolean`); other continuations need
-none. -/
-def passShapeCheck (G : NormalGraph ι) (A : Ty ι) : Continuation → Bool
-  | .branch _ _ => decide (PositiveRules.expand G A = [.bool])
-  | .branchBind _ _ => BranchRefinement.onlyBoolean G A
-  | .ret | .bind _ | .effect _ | .tagBind _ _ _ => true
 
 /-- **A Boolean claim type gives a branch's shape**: a value of a type
 represented by the Boolean clause is `true` or `false`. -/
@@ -37,15 +29,22 @@ theorem branchShape_of {G : NormalGraph ι} {A : Ty ι} {y no : Target}
   simpa [ShapeOk, PositiveNormalization.semWithArgs, boolT] using hc
 
 /-- **The shape check gives every value its continuation's shape**
-(`NodeAccepted.shape`): where `passShapeCheck` accepts the claim type at
-the continuation. -/
-theorem nodeShape_of {G : NormalGraph ι} {A : Ty ι} {k : Continuation} (hs : passShapeCheck G A k = true)
-    {n : Nat} {W : WorldT n} {v : Tm} (hv : meaning G A n W v) : ShapeOk v k := by
+(`NodeMeaning.shape`): where `run`'s shape check `passShapeCheck'`
+accepts the claim type at the continuation. -/
+theorem nodeShape_of {G : NormalGraph ι} {A : Ty ι} {k : Continuation}
+    (hs : SinglePass.passShapeCheck' G A k = true) {n : Nat} {W : WorldT n} {v : Tm} (hv : meaning G A n W v) :
+    ShapeOk v k := by
   cases k with
   | ret | bind _ | effect _ => trivial
-  | branch y no => exact branchShape_of hs hv
-  | branchBind _ _ => exact BranchRefinement.onlyBoolean_sound hs hv
+  | branch y no => exact branchShape_of (by simpa [SinglePass.passShapeCheck', SinglePass.passShapeCheck] using hs) hv
+  | branchBind _ _ => exact BranchRefinement.onlyBoolean_sound (by simpa [SinglePass.passShapeCheck'] using hs) hv
   | tagBind _ _ _ => trivial
+
+/-- **The shape check at a reassigned graph** is the check at the graph. -/
+theorem passShapeCheck'_reassign [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (η : MixedAssignment ι)
+    (A : Ty ι) (k : Continuation) :
+    SinglePass.passShapeCheck' (reassign G η) A k = SinglePass.passShapeCheck' G A k := by
+  cases k <;> rfl
 
 end Shape
 
