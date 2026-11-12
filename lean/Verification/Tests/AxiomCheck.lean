@@ -41,6 +41,7 @@ import Verification.Programs.TolerantFramesWalkReassignNodes
 import Verification.Programs.TolerantFramesWalkReassignCall
 import Verification.Programs.TolerantFramesWalkReassignSelect
 import Verification.Programs.TolerantFramesWalkReassignStep
+import Verification.Programs.TolerantFramesWalkReassignWalk
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -619,6 +620,11 @@ run_cmd do
   check ``Verification.TolerantFrames.stepAccepted_reassign
   check ``Verification.TolerantFrames.stepChecked_of_step
   check ``Verification.TolerantFrames.stepChecked_reassign
+  check ``Verification.TolerantFrames.stepChecked_parts
+  check ``Verification.TolerantFrames.stepChecked_sound
+  check ``Verification.TolerantFrames.nodeChecked_reassign
+  check ``Verification.TolerantFrames.passCheckerReassign_lexical
+  check ``Verification.TolerantFrames.run_guarantee_of_checked
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
