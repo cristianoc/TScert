@@ -1703,3 +1703,19 @@ fuel of at least $`2n + \sum_{w<n} |\mathit{succ}\ w|`$ the stack is
 empty, the seen nodes closed and the start seen where it is below $`n`$
 (proved: `dfsLoop_init_closed`), which gives `EnvFacts`' `closed` and
 `start` once `loopHeads` reads the walk on that fuel.
+
+Premises this leg discharges / leaves:
+
+- `WalkStopsRefuse`: discharged (`walkStopsRefuse`).
+- `RunKeepsSummaries`: reduced to `VisitsKeepSummaries` (`runKeepsSummaries`),
+  which the visit gives by construction where it restores the table at its
+  boundary (queue entry W2, `keep_prefix`).
+- `RecordsSound`: reduced to `SetupRecords`, `VisitsRecord` and
+  `VisitsKeepSummaries` (`recordsSound_of`); the in-degree order is part of
+  the invariant (`RecInv`), proved along the walk. Left: `SetupRecords`
+  (over the setup's environment and first state, queue entry W4, with
+  `dfsLoop_init_closed` for the reached labels) and `VisitsRecord` (over
+  the visit's entry, step and exits, queue entries W3 and W5).
+- `LoopHeadsFuelEq`: left until `loopHeads` reads the walk on fuel
+  (`dfsLoop_init_ends` and `OutsideClear` give its witness).
+- `TablesAgree`: not started.
