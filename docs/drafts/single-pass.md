@@ -88,7 +88,9 @@ first's store less each fact another lacks (`Store.diff`), and each predecessor'
 own differences at the merge's names; the rules below that query a
 predecessor's facts run over those differences alone, and the implications
 join runs where an edge carries an implication or a slot an edge's type
-differs at is a test some edge answers `false`. A name a predecessor
+differs at is a test some edge answers `false`. Each joined implication is kept
+where every incoming edge establishes it (`PromiseCalls.impliesCheck` over
+the edge's refined context, its implications at slots and its mapping). A name a predecessor
 renames that no slot of the merge holds leaves the store there. At a merge, a linear bound every predecessor states of one form
 under one condition is kept at the weakest of their bounds; a name a slot
 keeps that another slot's fresh name renames in some predecessor is stated

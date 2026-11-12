@@ -1308,6 +1308,10 @@ def mergeState (G : NormalGraph ι) (context : List (Ty ι)) (preds : List State
   let implies := if !some_ then [] else
     let joinedImpl := timedKind "meet implications" fun _ =>
       CertificateProducer.meetImplications G edgesIn width context
+    -- Each kept where every incoming edge establishes it
+    -- (`PromiseCalls.impliesCheck`, as an edge into a target carries it).
+    let joinedImpl := timedKind "meet implications checked" fun _ => joinedImpl.filter fun x =>
+      edgesIn.all fun (Γ, xs, m) => PromiseCalls.impliesCheck G Γ xs m [x]
     (keepFirst {} (joinedImpl.filterMap fun (x : PromiseCalls.Implication ι) => do
       pure (⟨← mergedNames[x.test]?, ← mergedNames[x.target]?, x.type⟩ : PromiseCalls.Implication ι))).2.toList
   return { state, implies, fresh, diffCount, views, renames }
