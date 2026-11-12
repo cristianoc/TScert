@@ -99,8 +99,9 @@ By group:
   reads the same declarations and native contracts, and the type
   computation proposes the instance at each call. Guarded by the Node
   counterexamples control and the `instances`, `iteration-values`,
-  `copy-exclusions`, `elements` and `array-spreads` forces. Conjectured: each
-  of the 18 has a negative source among the 365; not checked per control.
+  `copy-exclusions`, `elements` and `array-spreads` forces, and per control by
+  the negative cases below ("The native and host controls, one by one"): 11
+  of 25 covered, 13 in part, 1 not.
 - **Contracts and annotations (8): the boundary stands for the proposals.**
   A claim at a point narrower than its annotation (a result bound after a
   call, a type invariant at a call's entry, a guarded fact, a void
@@ -118,6 +119,45 @@ By group:
   (cited: `SinglePass.edgeEvidenceChecked` calls `PointClaims.checkMappedUsing`),
   but their specializations into the file plans are not mutated.
 
+## The native and host controls, one by one
+
+Each old control of a native or host contract with no guard on the route,
+against the negative cases on the route: covered where a negative case runs
+the same contract with the same wrong reading and the route refuses its unit
+for that reason. Measured: the route's verdicts of the full agreement run at
+25aae967 (fr-3), 2026-11-12; the controls read in `pipeline/test.mts` (lines
+of the classification at engine-switch 4ecb0149).
+
+| Old control | On the route |
+| --- | --- |
+| native lengths (189) | covered: the five invalid-native-length cases, each refused at the read past the length |
+| splice insertion (332) | in part: the erased receiver-store exception (invalid-splice-insert-map-density); a widened inserted rest has no case, TypeScript rejecting the insertion |
+| import.meta (2323) | covered: invalid-import-meta-url, -dirname, -resolve |
+| instanceof Map and Set (2343) | in part: the writable Map (invalid-instanceof-map-write); a Set at a Map's view has no case |
+| an erased generic contract (2464) | in part: invalid-generic-contract-erasure is refused before the pass, so the pass's own refusal is not shown |
+| a function and a class given a signature (2493) | covered |
+| thenable instances (2873) | in part: `await`, an async return, `Promise.resolve` and `new Promise` at a callable `then`; an allocation read as a promise has no case |
+| an async literal's own keys (2921) | covered, at the return |
+| `Reflect.apply` (3069, its claim half) | in part: the argument and receiver negatives; a nullable argument list has no case |
+| constructed errors' own keys (3134) | in part: writes and copies of `message`, `stack`, `name`; a construction read as owning them has no case |
+| prototype contracts (4075) | in part: invalid-generic-prototype-instanceof, refused at an argument; an invented prototype read type has no case |
+| a function's `toString` (4103) | in part: the related cases are refused before the pass; its result read at `number` has no case |
+| `Number`, a callable object (5122) | in part: its member and call contracts; the forged results have no case |
+| an array given `toJSON` by a write (5669) | covered |
+| an inherited `constructor` read (5826) | in part: the writes (invalid-native-promise-constructor-write, -alias); the read at `undefined` has no case |
+| a sparse receiver (6098) | covered |
+| `split`'s separator (6132) and its tuple (6155) | covered |
+| a global regex's replacement (6382) | in part: replacer callbacks that pop; a string replacement has no case |
+| host-admitting operands (7791) | in part: other host-admitting spreads (invalid-spread-readonly-array, invalid-spread-empty-record); the readonly record only in gap cases |
+| enum claims (8346), frozen literals (8363) | covered |
+| enum reverse keys (8383) | in part: the ambient enum (invalid-ambient-enum-reverse); invalid-enum-reverse-number is not handled on the route |
+| a corrected compiler-API method (8420) | not covered: no negative case; the correction exists only as the control's family override |
+| compiler-API corrections (8875) | covered |
+
+Most of the gaps are forged readings of a native that no source states,
+since TypeScript rejects the program: a negative case cannot carry them,
+and each needs a force or a forged fragment on the route.
+
 ## Forces the Lean lanes would add
 
 | Force | States | Unit | Expected |
@@ -125,3 +165,8 @@ By group:
 | `optional-reads` | a read `o.f` of an optional field at the field's type without `undefined` | blocker-census-options-default `config@148`, accepted unforced | refused at the read (`expression at node N: Tm.readAt`) |
 | `edge-evidence` | the edge search's evidence (`CertificateProducer.edgeUsing`) covering no slot, at every edge whose target needs a subtype answer | loop-head-contents `continued@413`, accepted unforced | refused at its edge (`edge from node l to node t`); with it, `sp-edge-evidence` is caught |
 | `annotations` | a parameter's or a result's proposed type narrower than its written annotation, at every read of it | type-guards `describe@1103`, accepted unforced | refused at the read or the return |
+
+`optional-reads` and `annotations` are written for `Lowering/Synthesis.lean`
+(the read site's field type and `walkUnit`'s parameters) and probed on
+those units with the expected refusals; their entries in
+`tests/single-pass-control-inputs.mts` land with that file's change.
