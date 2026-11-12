@@ -231,6 +231,7 @@ structure EnvFacts (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) : 
       ((env.givenImplies[c.start]?).getD []) ((env.givenArgs[c.start]?).getD [])
       ((env.givenInputs[c.start]?).getD []) c.entryIndices c.entrySeparation = none ∧
     env.given[c.start]! = some (startGiven (passStated c c.start) c.entryIndices c.entrySeparation supplied)
+  merging : env.merging = passMerging c
 
 omit [Labels ι] in
 /-- A list's true entries, counted by position. -/
@@ -263,11 +264,12 @@ theorem envFacts_of_loopHeads {c : Target.RunCall G I} {env : SinglePass.WalkEnv
       SinglePass.entryRefusal G c.inputs c.claims c.start c.goal (passStated c c.start) supplied
         ((env.givenImplies[c.start]?).getD []) ((env.givenArgs[c.start]?).getD [])
         ((env.givenInputs[c.start]?).getD []) c.entryIndices c.entrySeparation = none ∧
-      env.given[c.start]! = some (startGiven (passStated c c.start) c.entryIndices c.entrySeparation supplied)) :
+      env.given[c.start]! = some (startGiven (passStated c c.start) c.entryIndices c.entrySeparation supplied))
+    (hmerging : env.merging = passMerging c) :
     EnvFacts c env := by
   have hc := loopHeads_closed c.P.toArray c.start
   refine ⟨hheads, fun s t hs ht htn => ?_, ⟨hstart, ?_⟩, ?_, hclaimed, hclaims, hgiven, hnodes,
-    by simpa using hn, hcodes, hchecker, hbound, hgoal, hensures, hnames, harg, hstated, hstartLabel, hstartHead, hstartCtx, hstartGiven⟩
+    by simpa using hn, hcodes, hchecker, hbound, hgoal, hensures, hnames, harg, hstated, hstartLabel, hstartHead, hstartCtx, hstartGiven, hmerging⟩
   · unfold envReached exitsOf at *
     rw [hreached] at hs ⊢
     rw [hnodes] at ht
@@ -328,6 +330,9 @@ structure RecInv (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) (σ 
   settled : ∀ t, visB σ.walk t = true → Settled c (envHead env) env.deadArr.toList σ t
   impBelow : IncomingBelow σ.walk σ.fresh
   vacuity : CachedVacuity G env.claimed σ.unsat
+  allocation : σ.walk.incoming.size = env.n ∧ σ.walk.incomingEdges.size = env.n
+  incomingBudget : ∀ t < env.n, envHead env t = false →
+    (incS σ.walk t).length + deg σ t ≤ ((passDegrees c)[t]?).getD 0
 
 /-- **At the walk's end every reached label is visited**, where the record
 counts at least the reached labels (`filter_eq_of_le`). -/
@@ -389,7 +394,7 @@ theorem recordSound_of_inv {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι
     simp only [base, dif_pos (And.intro h hg)]
   refine ⟨fun l hl => ((hset l ((ofPass_visited _ _ _).mp hl)).node σ.walk σ.answers rfl (WalkExtends.refl _) (SumsPrefix.refl _)
     hsums).elim fun r _ => ⟨r⟩,
-    ⟨base, ?_, fun t hv => ?_⟩, ?_⟩
+    ⟨base, ?_, fun t hv => ?_⟩, ?_, ?_⟩
   · refine { visited := fun t hne => (ofPass_visited σ.walk (passHeads c) t).mpr (hvi t hne),
              single := fun t e hg hin => ?_, merge := fun t hg h2 => ?_, width := fun t hg h2 e he => ?_,
              wf := fun t hg h2 e he => ?_, below := fun t hg h2 e he => ?_, startBelow := fun t hg h2 => ?_ }
@@ -418,6 +423,20 @@ theorem recordSound_of_inv {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι
       rw [if_neg (by simp), hbase t hv' hg]
       exact (Classical.choose_spec ((hset t hv').entry hg)).1
   · exact (hset c.start (hI.all_visited hE hle c.start hE.start.1 hE.start.2)).start rfl σ.walk rfl
+  · intro t hg htwo
+    have hn : incS σ.walk t ≠ [] := by
+      intro hz
+      simp only [ofPass, hg, Bool.false_eq_true, ↓reduceIte, List.length_zip] at htwo
+      unfold incS at hz
+      rw [hz] at htwo
+      simp at htwo
+    obtain ⟨v, hv, ht⟩ := hI.inVis t hn
+    have hB := hI.incomingBudget t (hI.exits v hv t ht) (by rw [hE.heads]; exact hg)
+    apply passMerging_of_degree c t
+    simp only [ofPass, hg, Bool.false_eq_true, ↓reduceIte, List.length_zip] at htwo
+    change (incS σ.walk t).length + _ ≤ _ at hB
+    change 2 ≤ min (incS σ.walk t).length (incI σ.walk t).length at htwo
+    omega
 
 /-- **A settled record stays settled** where the label's record, the
 states, implications and merge edges that came into it (at a node other
@@ -480,6 +499,9 @@ structure VisitFacts (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) 
   impBelow : IncomingBelow σ.walk σ.fresh → IncomingBelow σ'.walk σ'.fresh
   extendsWalk : WalkExtends σ.walk σ'.walk
   vacuity : CachedVacuity G env.claimed σ.unsat → CachedVacuity G env.claimed σ'.unsat
+  allocation : σ'.walk.incoming.size = σ.walk.incoming.size ∧
+    σ'.walk.incomingEdges.size = σ.walk.incomingEdges.size
+  incomingGrowth : ∀ t, (incS σ'.walk t).length ≤ (incS σ.walk t).length + (exitsOf env l).count t
 
 omit [Labels ι] in
 theorem visB_frame {w w' : SinglePass.Walk ι} {t : Nat} (h : w'.labels[t]? = w.labels[t]?) : visB w' t = visB w t := by
@@ -532,7 +554,14 @@ theorem recInv_visit {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} 
     subst htl; exact hself (hnewQ t ht).2.1 (hnewQ t ht).1
   refine { nodup := ?_, queue := ?_, visR := ?_, visDeg := ?_, exits := ?_, count := ?_, size := ?_, degs := ?_,
            inLen := ?_, inSizes := hF.inSizes hI.inSizes, inVis := ?_, edgesVis := ?_, push := ?_, startFresh := ?_,
-           startBelow := hI.startBelow.mono hF.fresh, impBelow := hF.impBelow hI.impBelow, vacuity := hF.vacuity hI.vacuity, settled := ?_ }
+           startBelow := hI.startBelow.mono hF.fresh, impBelow := hF.impBelow hI.impBelow, vacuity := hF.vacuity hI.vacuity, settled := ?_, allocation := ⟨hF.allocation.1.trans hI.allocation.1, hF.allocation.2.trans hI.allocation.2⟩,
+           incomingBudget := fun t ht hg => by
+             have hB := hI.incomingBudget t ht hg
+             have hG := hF.incomingGrowth t
+             have hC := hcount t ht hg
+             have hD : deg σ' t = deg σ t - (exitsOf env l).count t := hF.degs t ht hg
+             change (incS σ'.walk t).length ≤ (incS σ.walk t).length + _ at hG
+             omega }
   · rw [hQ]
     refine List.nodup_append.mpr ⟨hnodupNew, hrest.2, fun a ha b hb hab => ?_⟩
     subst hab

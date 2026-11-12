@@ -1110,3 +1110,28 @@ run_cmd do
   check ``Verification.TolerantFrames.exitsFold_indexed_arrays
   check ``Verification.TolerantFrames.visitExits_indexed_arrays
   check ``Verification.TolerantFrames.ExitChecks.exitChecks_nonHead
+
+-- Setup allocation, incoming multiplicities, and extraction from recorded implications.
+open Lean Elab Command in
+run_cmd do
+  let standard := [``propext, ``Classical.choice, ``Quot.sound]
+  let check (decl : Name) : CommandElabM Unit := do
+    for axiom_ in ← liftCoreM <| collectAxioms decl do
+      unless standard.contains axiom_ do
+        throwError "{decl} depends on the axiom {axiom_}"
+  check ``Verification.TolerantFrames.passMerging_of_degree
+  check ``Verification.TolerantFrames.WalkChecked.givenAgreement
+  check ``Verification.TolerantFrames.WalkChecked.mergingOfIncoming
+  check ``Verification.TolerantFrames.exitsFold_arraySizes
+  check ``Verification.TolerantFrames.visitExits_arraySizes
+  check ``Verification.TolerantFrames.ExitsFold.cons
+  check ``Verification.TolerantFrames.SetupOk.envFacts
+  check ``Verification.TolerantFrames.SetupOk.recInv
+  check ``Verification.TolerantFrames.recInv_visit
+  check ``Verification.TolerantFrames.recordSound_of_inv
+  check ``Verification.TolerantFrames.visitsSettle_of
+  check ``Verification.TolerantFrames.run_traversedC
+  check ``Verification.TolerantFrames.nonHeadExit_delivers
+  check ``Verification.TolerantFrames.ExitChecks.Site.arrayAllocation
+  check ``Verification.TolerantFrames.ExitChecks.Site.mergingOfIncoming
+  check ``Verification.TolerantFrames.ExitChecks.exitChecks_nonHead

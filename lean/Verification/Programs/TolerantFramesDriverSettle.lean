@@ -186,7 +186,8 @@ theorem visitsSettle_of
     · exact ⟨hext.incoming, hext.incomingEdges, hext.edges⟩
     · exact visitExits_checked hP.exits hP.inv.inSizes ⟨hext.incoming, hext.incomingEdges, hext.edges⟩
     · exact visitEntry_hereEmpty hP.inv.vacuity hP.entry
-    · exact ⟨visitExits_records hP.exits hP.inv.inSizes, rfl⟩
+    · exact ⟨visitExits_records hP.exits hP.inv.inSizes, rfl,
+        hP.inv.allocation.1.trans hP.facts.claimed.symm, hP.inv.allocation.2.trans hP.facts.claimed.symm, hP.facts.merging⟩
   · intro hs w hw
     exact visitStart_entered hP hs (hw.trans hlabel)
 

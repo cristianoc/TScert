@@ -216,6 +216,8 @@ structure ExitsFold (env : SinglePass.WalkEnv ι G I) (l : Nat) (en : SinglePass
   queue : ∃ new, r.queue = new ++ acc.queue ∧
     (∀ y ∈ new, y ∈ xs.map (·.target.label) ∧ env.isHead[y]! = false ∧ dg r.indeg y = 0) ∧
     ((∀ y, env.isHead[y]! = false → (xs.map (·.target.label)).count y ≤ dg acc.indeg y) → new.Nodup)
+  incomingGrowth : ∀ y, ((r.incoming[y]?).getD []).length ≤
+    ((acc.incoming[y]?).getD []).length + (xs.map (·.target.label)).count y
 
 theorem ExitsFold.nil (env : SinglePass.WalkEnv ι G I) (l : Nat) (en : SinglePass.Entered ι)
     (sd : SinglePass.StepDone ι G) (acc : SinglePass.ExitsDone ι G) : ExitsFold env l en sd [] acc acc where
@@ -227,6 +229,7 @@ theorem ExitsFold.nil (env : SinglePass.WalkEnv ι G I) (l : Nat) (en : SinglePa
   degs := fun _ _ => by simp
   mono := fun _ => Nat.le_refl _
   queue := ⟨[], rfl, by simp, fun _ => List.nodup_nil⟩
+  incomingGrowth := fun _ => by simp
 
 /-- One exit's effect then the rest's fold. -/
 theorem ExitsFold.cons {env : SinglePass.WalkEnv ι G I} {l : Nat} {en : SinglePass.Entered ι}
@@ -254,7 +257,25 @@ theorem ExitsFold.cons {env : SinglePass.WalkEnv ι G I} {l : Nat} {en : SingleP
     | false =>
       obtain ⟨_, _, h1, h2, -, -, -⟩ := he.push hh
       rw [h1, h2]; exact ⟨Array.size_modify, Array.size_modify⟩
-  refine { claimed := ?_, frame := ?_, sizes := ?_, pushes := ?_, edges := ?_, degs := ?_, mono := ?_, queue := ?_ }
+  have hgrowth : ∀ y, ((a.incoming[y]?).getD []).length ≤
+      ((acc.incoming[y]?).getD []).length + (if ex.target.label == y then 1 else 0) := by
+    intro y
+    cases hh : env.isHead[ex.target.label]! with
+    | true => rw [(he.head hh).incoming]; omega
+    | false =>
+      obtain ⟨_, _, h1, -, -, -, -⟩ := he.push hh
+      rw [h1, Array.getElem?_modify]
+      by_cases hy : ex.target.label = y
+      · subst y
+        simp only [↓reduceIte, beq_self_eq_true]
+        cases acc.incoming[ex.target.label]? <;> simp
+      · simp [hy]
+  refine { claimed := ?_, frame := ?_, sizes := ?_, pushes := ?_, edges := ?_, degs := ?_, mono := ?_, queue := ?_,
+           incomingGrowth := fun y => by
+             have h1 := hgrowth y
+             have h2 := hf.incomingGrowth y
+             simp only [List.map_cons, List.count_cons]
+             omega }
   · intro x hx
     rcases List.mem_cons.mp hx with rfl | hx
     · exact he.claimed

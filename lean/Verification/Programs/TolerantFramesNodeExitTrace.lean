@@ -74,6 +74,7 @@ The equations are about execution at `G`, not execution at reassigned graphs. -/
     ExitStepsChecked G I env l en sd raw ∧
     (en.here = true → HereEmpty G (env.claimed[l]!).context) ∧
     ExitRecordsChecked G I env l en sd ex ∧
-    ctx = passCtx c
+    ctx = passCtx c ∧
+    σ.walk.incoming.size = env.claimed.size ∧ σ.walk.incomingEdges.size = env.claimed.size ∧ env.merging = passMerging c
 
 end Verification.TolerantFrames

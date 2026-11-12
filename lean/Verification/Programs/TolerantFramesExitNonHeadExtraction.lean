@@ -127,50 +127,6 @@ theorem exitStep_nonHead_checked {env : WalkEnv ι G I} {l i : Nat} {en : Entere
       Exit.promote, freshImpl, freshImplOf, normalNames, exitStore, exitCtx, Γe, node, first, Thunk.get, Bool.false_eq_true, ↓reduceIte] at hmem ⊢
     exact hmem
 
-/-- All three incoming arrays keep their allocated sizes through one exit. -/
-theorem exitStep_arraySizes {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd : StepDone ι G}
-    {ys : List (PromiseCalls.Yield ι)} {out : Thunk HeapKnowledge.Knowledge}
-    {a b : ExitsDone ι G} {e : Exit × Nat}
-    (h : exitStep G I env l en sd ys out a e = .ok b) :
-    b.incoming.size = a.incoming.size ∧ b.incomingImpl.size = a.incomingImpl.size ∧
-      b.incomingEdges.size = a.incomingEdges.size := by
-  unfold exitStep at h
-  extract_lets at h
-  split at h
-  · cases h
-  split at h
-  · cases h
-  extract_lets diff u a2 typed at h
-  generalize ht : typed = T at h
-  split at h
-  · cases h
-  rename_i a1 et
-  simp only [typed] at ht
-  have hp : SameCore a a2 ∧ a2.edges = a.edges :=
-    sameCore_unsat (sameCore_trace _ _ _) _ _
-  have hc : SameCore a a1 := by
-    split at ht
-    · cases ht; exact hp.1
-    · exact hp.1.trans (exitTypes_core ht).1
-  extract_lets freshImpl record at h
-  split at h
-  · simp only [Except.map] at h
-    split at h
-    · cases h
-    · rename_i a3 ha
-      cases h
-      have hc' := hc.trans (headExit_core ha).1
-      exact ⟨congrArg Array.size hc'.incoming, congrArg Array.size hc'.incomingImpl,
-        congrArg Array.size hc'.incomingEdges⟩
-  · split at h
-    · cases h
-    rename_i a3 ha
-    split at h
-    cases h
-    have hc' := hc.trans (assertionExit_core ha).1
-    dsimp only [pushExit]
-    split <;> simp only [Array.size_modify, hc'.incoming, hc'.incomingImpl, hc'.incomingEdges, and_self]
-
 /-- Each indexed computation has the fold's original allocation and extends
 into its final arrays. -/
 theorem exitsFold_indexed_arrays {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd : StepDone ι G}
@@ -233,28 +189,32 @@ namespace ExitChecks
 variable {ι : Type} [Labels ι] {G : NormalGraph ι} {I : InstanceImageCheck G}
     {c : Target.RunCall G I} {r : RunWalkA G I c} {l : Nat} {hl : r.w.visited l}
 
-/-- Non-head extraction from the execution trace. The allocation, final
-merge flag, run-view coherence, judged caches and pre/post-transfer slot
-agreement are explicit premises. -/
+/-- The execution trace retains the incoming arrays' setup allocation. -/
+theorem Site.arrayAllocation (s : Site c r l hl) :
+    s.σ.walk.incoming.size = s.env.claimed.size ∧
+      s.σ.walk.incomingEdges.size = s.env.claimed.size := by
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hs, he, _⟩ := s.facts
+  exact ⟨hs, he⟩
+
+/-- The site's merge flags agree with the checked walk's incoming count. -/
+theorem Site.mergingOfIncoming (s : Site c r l hl) (checked : WalkChecked c r) :
+    ∀ t, r.given t = false → 2 ≤ (r.w.incoming t).length → s.env.merging[t]! = true := by
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hm⟩ := s.facts
+  rw [hm]
+  exact checked.mergingOfIncoming
+
+/-- Non-head extraction from the execution trace. The checked walk and trace supply
+allocation, head agreement and merge flags. Cached yield judgments are
+an explicit premise. -/
 theorem exitChecks_nonHead (s : Site c r l hl) (η : MixedAssignment ι)
-    (givenAgreement : r.given = passHeads c)
-    (arrayAllocation : s.σ.walk.incoming.size = s.env.claimed.size ∧
-      s.σ.walk.incomingEdges.size = s.env.claimed.size)
-    (mergingOfIncoming : ∀ t, 2 ≤ (r.w.incoming t).length → s.env.merging[t]! = true)
+    (checked : WalkChecked c r)
     (exitCachesJudged : ∀ ysE, ExitYieldSource s.env l s.en s.sd s.sd.yields ysE →
       ExitYieldsJudged (reassign G η) r.w (List.range c.inputs.length) l
-        (r.node l hl).node (r.node l hl).c (r.node l hl).entry (r.node l hl).st ysE)
-    (mergeTransferAgreement : ∀ (i : Nat) t pushed observed promote,
-      (Exit.ofNode (r.node l hl).node)[i]? = some (Exit.normal t pushed observed promote) →
-      r.given t.label = false → 2 ≤ (r.w.incoming t.label).length →
-      ∀ ysE, ExitYieldSource s.env l s.en s.sd s.sd.yields ysE →
-        let names := normalNames s.en.entry s.sd.st pushed
-        let carried := s.en.implies ++ freshImplOf pushed false ysE s.en.entry.names s.sd.st.result
-        atSlotsOf names (edgeTransfer names t.mapping pushed false s.sd.outFresh s.en.entry s.sd.st.result
-          (exitStore G s.env.claimed[l]! s.en.entry s.sd.st pushed observed promote) carried).2 =
-          atSlotsOf names carried) : NonHead s η := by
+        (r.node l hl).node (r.node l hl).c (r.node l hl).entry (r.node l hl).st ysE) : NonHead s η := by
   obtain ⟨hw, hedges, _, hclaims, _, _, hheads, hstated, _, _, hex,
-    hnode, hclaim, hentry, hst, _, _, himplies, hsizes, hext, _, _, _, contextAgreement⟩ := s.facts
+    hnode, hclaim, hentry, hst, _, _, himplies, hsizes, hext, _, _, _, contextAgreement, _⟩ := s.facts
+  have arrayAllocation := s.arrayAllocation
+  have givenAgreement : r.given = passHeads c := checked.givenAgreement
   intro i t pushed observed promote hi hg
   have indexed : (Exit.normal t pushed observed promote, i) ∈
       (Exit.ofNode s.env.nodes[l]!).zipIdx := by
@@ -316,11 +276,13 @@ theorem exitChecks_nonHead (s : Site c r l hl) (η : MixedAssignment ι)
           (yieldsAtSlots (r.node l hl).entry.names s.ysA)
           (outAllOf G (r.node l hl).c (r.node l hl).st.stepOut) (i == 0),
           atSlotsOf (normalNames (r.node l hl).entry (r.node l hl).st pushed)
-            (r.w.implies l ++ freshImplOf pushed false (b.yields.getD []) (r.node l hl).entry.names
-              (r.node l hl).st.result), t.mapping) := by
+            (edgeTransfer (normalNames (r.node l hl).entry (r.node l hl).st pushed) t.mapping pushed false s.sd.outFresh
+              (r.node l hl).entry (r.node l hl).st.result
+              (exitStore G (r.node l hl).c (r.node l hl).entry (r.node l hl).st pushed observed promote)
+              (r.w.implies l ++ freshImplOf pushed false (b.yields.getD []) (r.node l hl).entry.names
+                (r.node l hl).st.result)).2, t.mapping) := by
     intro htwo
-    have hmem := hm (mergingOfIncoming t.label htwo)
-    rw [mergeTransferAgreement i t pushed observed promote hi hg htwo _ hsource] at hmem
+    have hmem := hm (s.mergingOfIncoming checked t.label hg htwo)
     refine ⟨exitsWalk b, s.raw, hedges, extension, ?_⟩
     simpa only [exitsWalk, hclaim, hentry, hst, hnode, ← himplies, Site.ysA] using hmem
   exact ⟨b.yields.getD [], exitCachesJudged _ hsource,

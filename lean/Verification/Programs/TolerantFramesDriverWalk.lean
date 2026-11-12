@@ -192,6 +192,25 @@ theorem passHeads_cuts {G : NormalGraph ι} {I : InstanceImageCheck G}
     · exact hv
   · exact hv
 
+/-- The initial in-degrees of the reached graph, with heads cut. -/
+@[nospecialize] def passDegrees {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) : Array Nat :=
+  SinglePass.inDegrees c.P.toArray (SinglePass.loopHeads c.P.toArray c.start).2 (passIsHead c.P c.start)
+
+/-- The setup marks targets with more than one incoming edge as merges. -/
+@[nospecialize] def passMerging {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) : Array Bool :=
+  (passDegrees c).map (· > 1)
+
+/-- A budget of at least two selects a merge. -/
+theorem passMerging_of_degree {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) (t : Nat)
+    (h : 2 ≤ ((passDegrees c)[t]?).getD 0) : (passMerging c)[t]! = true := by
+  simp only [passMerging, Array.getElem!_eq_getD, Array.getD_eq_getD_getElem?, Array.getElem?_map]
+  cases hd : (passDegrees c)[t]? with
+  | none => simp [hd] at h
+  | some n =>
+    simp only [hd, Option.getD_some] at h
+    simp only [Option.map_some, Option.getD_some, decide_eq_true_eq]
+    omega
+
 /-- A call's label contexts: each label's claim's. -/
 def passCtx {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) (t : Nat) : List (Ty ι) :=
   ((c.claims[t]?).map (·.context)).getD []
@@ -225,6 +244,8 @@ structure RecordSound (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Targe
   traversed : TraversedA G (ofPass σ.walk (passHeads c)) (List.range c.inputs.length) (passHeads c) (passCtx c)
     (passEdgesIn σ.walk) (passFresh σ.walk) (passStated c)
   start : StartEntered c (ofPass σ.walk (passHeads c)) (passCtx c) (passStated c)
+  merging : ∀ t, passHeads c t = false →
+    2 ≤ ((ofPass σ.walk (passHeads c)).incoming t).length → (passMerging c)[t]! = true
 
 variable (ι) in
 /-- **(Named hypothesis) The driver's record of an accepted call is

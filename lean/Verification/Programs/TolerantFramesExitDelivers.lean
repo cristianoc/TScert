@@ -119,7 +119,10 @@ structure NonHeadExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G
   merged : 2 ≤ (w.incoming t.label).length →
     MergeRecorded edgesIn t.label (SinglePass.refinedContext G c node.continuation (yieldsAtSlots entry.names ysA) (SinglePass.outAllOf G c st.stepOut)
         (i == 0),
-      atSlotsOf (normalNames entry st pushed) (w.implies l ++ freshImplOf pushed false ysE entry.names st.result),
+      atSlotsOf (normalNames entry st pushed)
+        (edgeTransfer (normalNames entry st pushed) t.mapping pushed false outFresh entry st.result
+          (exitStore G c entry st pushed observed promote)
+          (w.implies l ++ freshImplOf pushed false ysE entry.names st.result)).2,
       t.mapping)
 
 /-- **The checks at a reassigned graph**: the same checks there
@@ -251,7 +254,8 @@ theorem nonHeadExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
     | true => simpa using hn'
     | false => simpa using slotsNamed_tail hn'
   exact ⟨⟨hT, hAs⟩, fun hg hlen =>
-    joinedAt_of_exit (given := given) (k := m) (hc.merged hlen).mem hrA hss hI' hg hlen⟩
+    joinedAt_of_exit (given := given) (k := m) (hc.merged hlen).mem hrA hss
+      (fun y hy => hI' y (List.mem_filter.mp (keepFirst_mem hy)).1) hg hlen⟩
 
 /-- **What `exitStep` checks on the normal exit at position `i` into a
 loop head** (`headExit`), the head's given facts `req` (its written
