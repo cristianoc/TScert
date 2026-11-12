@@ -18,6 +18,7 @@ import Verification.Programs.TolerantFramesWrites
 import Verification.Programs.TolerantFramesSelect
 import Verification.Programs.TolerantFramesFootprint
 import Verification.Programs.TolerantFramesElems
+import Verification.Programs.TolerantFramesState
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -251,6 +252,40 @@ run_cmd do
   check ``Verification.TolerantFrames.named_keptByElems_box
   check ``Verification.TolerantFrames.elem_keptByElems_empty
   check ``Verification.TolerantFrames.every_keptBy_init
+  check ``Verification.TolerantFrames.StateWF.fresh_result
+  check ``Verification.TolerantFrames.forIn_idx
+  check ``Verification.TolerantFrames.forIn_idx_bind
+  check ``Verification.TolerantFrames.forIn_inv
+  check ``Verification.TolerantFrames.atomHolds_canon
+  check ``Verification.TolerantFrames.atomHolds_rename
+  check ``Verification.TolerantFrames.mapM_mem
+  check ``Verification.TolerantFrames.toList_eq
+  check ``Verification.TolerantFrames.about_storeAll
+  check ``Verification.TolerantFrames.toList_storeAll
+  check ``Verification.TolerantFrames.vals_foldl
+  check ``Verification.TolerantFrames.storeOk_of
+  check ``Verification.TolerantFrames.addRaw_ok
+  check ``Verification.TolerantFrames.remove_ok
+  check ``Verification.TolerantFrames.foldl_remove_ok
+  check ``Verification.TolerantFrames.addBound_ok
+  check ``Verification.TolerantFrames.foldl_addBound_ok
+  check ``Verification.TolerantFrames.add_ok
+  check ``Verification.TolerantFrames.materialize_eq
+  check ``Verification.TolerantFrames.selectedAtoms_whole
+  check ``Verification.TolerantFrames.slotTable_get
+  check ``Verification.TolerantFrames.aliasLinksOf_holds
+  check ``Verification.TolerantFrames.derivedOf_holds
+  check ``Verification.TolerantFrames.ofAtoms_eq
+  check ``Verification.TolerantFrames.ofStep_mem
+  check ``Verification.TolerantFrames.ofAtoms_holds
+  check ``Verification.TolerantFrames.atomsOf_holds
+  check ``Verification.TolerantFrames.table_named
+  check ``Verification.TolerantFrames.materializeFrom_holds
+  check ``Verification.TolerantFrames.materializeFrom_pairs
+  check ``Verification.TolerantFrames.materializeFrom_table
+  check ``Verification.TolerantFrames.stateHolds_materialize_whole
+  check ``Verification.TolerantFrames.stateHolds_materialize
+  check ``Verification.TolerantFrames.stateHolds_stepKnowledge
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

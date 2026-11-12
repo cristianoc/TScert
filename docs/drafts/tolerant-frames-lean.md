@@ -4,7 +4,7 @@ The Lean reading of the working note "Tolerant frames" (11 November 2026),
 the proof organisation of the [single forward pass](single-pass.md)'s
 soundness theorem. Its definitions and theorems are in
 `lean/Verification/Semantics/TolerantFrames.lean` and
-`lean/Verification/Programs/TolerantFramesRuns.lean`, namespace
+`lean/Verification/Programs/TolerantFramesRuns.lean` (and the modules each section names), namespace
 `Verification.TolerantFrames`. Each claim below is labelled **proved** (with
 its Lean name) or **not proved**.
 
@@ -631,6 +631,95 @@ $`y`$'s store location is not $`x`$'s, so it is kept (`growOne_keeps_store`),
 and $`x`$'s store gains only cells at or past the heap's end, beyond $`y`$'s
 allocated cells and store location. Both stores growing is not covered: their
 new cells may coincide.
+
+## The pass's named state
+
+Module `lean/Verification/Programs/TolerantFramesState.lean`. The pass's state
+at a point (`SinglePass.State`, `SinglePass.lean` lines 153–159) is its slots'
+names $`N`$, a store $`S`$ of facts over names (`Store`, lines 87–151) and the
+names $`F`$ holding stores the invocation allocated; the walk keeps the
+implications $`I`$ over names beside it (lines 961, 1767). The store's facts
+are its live set's and those its index by name lists
+($`\mathrm{all}(S)`$, `storeAll`).
+
+**Meaning** (`StateHolds G st I start entry`), at the slot environment
+$`\rho`$, the invocation's mark $`m`$ and the state $`s`$:
+
+```math
+\exists \eta.\;
+(\forall i\,x.\ N[i]=x \Rightarrow \rho\,i=\eta\,x) \;\wedge\;
+\mathrm{Named}\ \mathrm{all}(S)\ \eta \;\wedge\;
+\mathrm{ImpliesOk}\ I\ \eta \;\wedge\;
+(\forall x\in F.\ \mathrm{FreshAt}\ m\ (\eta\,x)) \;\wedge\;
+(\forall q\,x.\ \mathit{start}[q]=x \Rightarrow \eta\,x=\mathit{entry}\ q)
+```
+
+$`\mathrm{ImpliesOk}`$ is `PromiseCalls.ImpliesOk` at the names: where the
+test's name holds `true`, the target's value has the type. The valuation is
+existential per state: a loop head's names denote new values on each visit,
+and a name no slot holds denotes some value.
+
+**Well-formedness** (`StateWF st next`, with $`\mathit{next}`$ the pass's next
+fresh name), separate from the meaning:
+
+| Conjunct | States | Kept by |
+| --- | --- | --- |
+| `indexed` | each fact the index lists under a name is live | construction (`addRaw`, `remove`); not checked, not proved |
+| `slotted` | every name a stored fact reading the heap mentions is held by a slot | construction (`Store.drop` at edges, `renamedAway` at merges); not checked, not proved |
+| `below` | every name of the slots, the facts and $`F`$ is below $`\mathit{next}`$, so a result name is fresh (proved: `StateWF.fresh_result`) | construction (the counter only grows); not proved |
+| `canonical` | the live facts are canonical (`Atom.canon`) | construction (every insertion canonicalizes); not proved |
+| `freshHeld` | every fresh name is held by a slot | edges (line 1758 filters the names an edge drops); a merge keeps a predecessor's name beside its fresh renames (lines 1142–1146), held or not; freshness reads no heap, so the meaning does not need it |
+
+Soundness reads none of them but `below` (through `fresh_result`); `slotted`
+is what a writing step's frame needs ([the slotless finding](#the-footprint-check-at-a-node)).
+
+**The store's laws** (`StoreLaws`, a named hypothesis): an insertion into
+`Lean.PersistentHashMap` adds only its key (or list), an erasure adds
+nothing, a list found under a key is among the map's lists. The library
+states no lemma about `PersistentHashMap`; every theorem reading a store after
+a change assumes these four inclusions.
+
+Proved, per fact and per store operation:
+
+- `atomHolds_canon`: $`a.\mathrm{canon}`$ holds iff $`a`$ does;
+  `atomHolds_rename`: a fact renamed by $`f`$ holds at $`\rho`$ where
+  $`f\,x=i \Rightarrow \rho\,i=\eta\,x`$;
+- under `StoreLaws`, adding a holding fact and removing any fact keep every
+  fact of the store holding (`addRaw_ok`, `remove_ok`), a stronger bound
+  replacing weaker ones (`addBound_ok`), a length fact added with the linear
+  facts it means (`add_ok`, from `HeapKnowledge.atomLinear_holds`).
+
+### Materialization
+
+`materialize` is `materializeFrom` at its selected facts (`materialize_eq`,
+by definition): every live fact with `whole` (`selectedAtoms_whole`), else the
+facts its worklist collects. Proved:
+
+- the slot table maps each name to a slot holding it (`slotTable_get`); so
+  each renamed fact holds at $`\rho`$ (`table_named`);
+- the alias links between slots holding one name hold (`aliasLinksOf_holds`);
+- the facts derived for names no slot holds, restated through read links and
+  eliminated, hold at $`\eta`$ (`derivedOf_holds`, from `restateReads_holds`,
+  `restateStores_holds`, `eliminateIndices_holds`);
+- `ofAtoms` of holding facts at slots holds, its separation read at depth
+  $`d`$ (`ofAtoms_holds`); a knowledge's facts hold as `atomsOf` lists them
+  (`atomsOf_holds`);
+- (`materializeFrom_holds`) where every selected fact holds at $`\eta`$ and
+  each slot holds its name's value, the knowledge holds at $`\rho`$; each pair
+  is a selected fact and its image under the table (`materializeFrom_pairs`).
+
+From the state's meaning: the whole materialization holds
+(`stateHolds_materialize_whole`); the selective one holds under `StoreLaws`
+and `SelectedFromIndex` (`stateHolds_materialize`); and the step's knowledge
+$`k_E`$ (line 1229) and $`k_E'`$ (line 1321), each `expandLinks` at the node's
+context, hold together where the environment meets that context
+(`stateHolds_stepKnowledge`). So a precondition `requiresTree` decides at
+$`k_E`$ holds where the whole-facts `select` reads $`k_E'`$: the semantic half
+of the second gap of [the selected output](#the-selected-output-under-the-passs-tree-check).
+
+**`SelectedFromIndex`** (a named hypothesis): each fact the selective
+worklist returns is listed by `Store.about` of some name. The worklist is a
+`while` loop, `Lean.Loop.forIn` through `repeatM`, which no proof unfolds.
 
 ## What the model requires beyond the note
 
