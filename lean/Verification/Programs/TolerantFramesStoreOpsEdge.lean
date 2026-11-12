@@ -67,13 +67,56 @@ theorem edgeTransfer_wf [DecidableEq ι] [Hashable ι] {names : List Nat} {m : P
     StoreWF (edgeTransfer names m pushed isHandler outFresh entry result edgeStore implies).1.store :=
   drop_wf ws _
 
-/-- **An edge's transfer has the mapping's width** where `mapNames` gives
-the target one name per mapped slot (`MapNamesLength`, a premise:
-`orderedSuffix` is a `while` loop); the identity mapping keeps the source's
-names. -/
-def MapNamesLength : Prop :=
-  ∀ (names slots : List Nat), (∀ j ∈ slots, j < names.length) → (mapNames names (some slots)).length = slots.length
+/-- **Where a mapping's last run starts** (`orderedSuffix.down`): at most
+where it starts looking, and, where it stops before, at a slot reading the
+source in order to its end. -/
+theorem orderedSuffix_down (n : Nat) (arr : Array Nat) : ∀ k,
+    orderedSuffix.down n arr k ≤ k ∧ (orderedSuffix.down n arr k < k →
+      arr[orderedSuffix.down n arr k]! + (arr.size - (orderedSuffix.down n arr k + 1)) + 1 = n)
+  | 0 => by simp [orderedSuffix.down]
+  | k + 1 => by
+    unfold orderedSuffix.down
+    split
+    · rename_i hc
+      obtain ⟨h1, h2⟩ := orderedSuffix_down n arr k
+      refine ⟨by omega, fun hlt => ?_⟩
+      by_cases he : orderedSuffix.down n arr k < k
+      · exact h2 he
+      · have : orderedSuffix.down n arr k = k := by omega
+        rw [this]; simpa using hc
+    · exact ⟨Nat.le_refl _, fun h => absurd h (Nat.lt_irrefl _)⟩
 
+/-- A fold that pushes one element per step has one element per step. -/
+theorem foldl_push_size {α γ : Type} (F : γ × Array α → Nat → γ × Array α)
+    (hF : ∀ p s, (F p s).2.size = p.2.size + 1) :
+    ∀ (l : List Nat) (p : γ × Array α), (l.foldl F p).2.size = p.2.size + l.length
+  | [], _ => by simp
+  | s :: l, p => by
+    rw [List.foldl_cons, foldl_push_size F hF l, hF, List.length_cons]; omega
+
+/-- **An edge's mapping gives the target one name per mapped slot**
+(`mapNames`): the fold names the slots before the last run, the source's
+suffix from the run's first slot the rest. -/
+theorem mapNames_length (names slots : List Nat) : (mapNames names (some slots)).length = slots.length := by
+  unfold mapNames
+  simp only
+  rw [List.length_append, Array.length_toList,
+    foldl_push_size _ (fun p s => by simp) (List.take (orderedSuffix slots names.length) slots)]
+  simp only [show ∀ k, (Array.mkEmpty (α := Nat) k).size = 0 from fun _ => rfl, List.length_take]
+  have hd := orderedSuffix_down names.length slots.toArray slots.toArray.size
+  unfold orderedSuffix
+  simp only [List.size_toArray] at hd ⊢
+  obtain ⟨h1, h2⟩ := hd
+  split
+  · rename_i hlt
+    have := h2 hlt
+    rw [List.length_drop]
+    omega
+  · simp only [List.length_nil]
+    omega
+
+/-- **An edge's transfer has the mapping's width** (`mapNames_length`); the
+identity mapping keeps the source's names. -/
 theorem edgeTransfer_names [DecidableEq ι] [Hashable ι] {names : List Nat} {m : PointClaims.Mapping} {pushed isHandler outFresh : Bool}
     {entry : State} {result : Nat} {edgeStore : Store} (implies : List (PromiseCalls.Implication ι)) :
     (edgeTransfer names m pushed isHandler outFresh entry result edgeStore implies).1.names = mapNames names m :=
@@ -81,10 +124,10 @@ theorem edgeTransfer_names [DecidableEq ι] [Hashable ι] {names : List Nat} {m 
 
 theorem mapNames_none (names : List Nat) : mapNames names none = names := rfl
 
-/-- **The target's width**: with `MapNamesLength`, an edge whose mapping
+/-- **The target's width** (`mapNames_length`): an edge whose mapping
 reads only source slots gives the target as many names as the mapping has
 slots; the identity mapping as many as the source. -/
-theorem edgeTransfer_width [DecidableEq ι] [Hashable ι] (hlen : MapNamesLength) {names : List Nat} {m : PointClaims.Mapping}
+theorem edgeTransfer_width [DecidableEq ι] [Hashable ι] {names : List Nat} {m : PointClaims.Mapping}
     {pushed isHandler outFresh : Bool} {entry : State} {result : Nat} {edgeStore : Store}
     (implies : List (PromiseCalls.Implication ι)) {w : Nat}
     (hw : match m with | none => names.length = w | some slots => slots.length = w ∧ ∀ j ∈ slots, j < names.length) :
@@ -92,6 +135,6 @@ theorem edgeTransfer_width [DecidableEq ι] [Hashable ι] (hlen : MapNamesLength
   rw [edgeTransfer_names]
   cases m with
   | none => exact hw
-  | some slots => rw [hlen names slots hw.2]; exact hw.1
+  | some slots => rw [mapNames_length names slots]; exact hw.1
 
 end Verification.TolerantFrames

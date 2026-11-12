@@ -15,8 +15,7 @@ reduces to `PartsKeepLabels` and the rest of `VisitFacts` (`VisitRest`,
 target (`edgeTransfer` over `edgeStoreOf`) has the target's width, a
 well-formed store and is below the counter where the mapping reads the
 source's slots and gives the target's width, the stores are well-formed
-and below the counter, and so are the names (`pushOk_of_exit`, under
-`MapNamesLength`). -/
+and below the counter, and so are the names (`pushOk_of_exit`). -/
 
 namespace Verification.TolerantFrames
 open Verification ControlFlow CertificateProducer PositiveCertificates PositiveGraphs LabelStore
@@ -130,10 +129,10 @@ theorem visitsRecord_of (hk : PartsKeepLabels ι) (hr : VisitsRest ι) : VisitsR
 /-- **A state an exit carries in meets `PushOk`** (`edgeTransfer_width`,
 `edgeTransfer_wf`, `edgeStoreOf_wf`, `edgeTransfer_below`,
 `edgeStoreOf_below`): the mapping giving the target's width over the
-source's names (`MapNamesLength`), the entry's and the step's stores
+source's names (`mapNames_length`), the entry's and the step's stores
 well-formed and below a positive counter `next`, the source's names, the
 pushed names, the entry's fresh names and the result below it. -/
-theorem pushOk_of_exit (hlen : MapNamesLength) {c : Target.RunCall G I} {tl : Nat} {m : PointClaims.Mapping}
+theorem pushOk_of_exit {c : Target.RunCall G I} {tl : Nat} {m : PointClaims.Mapping}
     {names pushedNames : List Nat} {pushed isHandler outFresh : Bool} {entry : SinglePass.State}
     {store : SinglePass.Store} {result width next : Nat} {Γ : List (ProgramTyping.Ty ι)}
     {observed : Option BranchRefinement.Observation} {promote : Option Bool}
@@ -147,7 +146,7 @@ theorem pushOk_of_exit (hlen : MapNamesLength) {c : Target.RunCall G I} {tl : Na
     PushOk c tl (SinglePass.edgeTransfer names m pushed isHandler outFresh entry result
       (SinglePass.edgeStoreOf G Γ entry.store store names pushedNames width pushed isHandler observed promote)
       implies).1 next :=
-  ⟨edgeTransfer_width hlen implies hw,
+  ⟨edgeTransfer_width implies hw,
     edgeTransfer_wf (edgeStoreOf_wf we ws names pushedNames width pushed isHandler observed promote) implies,
     edgeTransfer_below hpos hn (edgeStoreOf_below we he hs hn hp width pushed isHandler observed promote) hf hr⟩
 

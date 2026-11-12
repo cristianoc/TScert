@@ -1,5 +1,5 @@
 import Verification.Programs.TolerantFramesRunSound
-import Verification.Programs.TolerantFramesDriverHeads
+import Verification.Programs.TolerantFramesDriverReached
 
 /-! # Tolerant frames: the driver's record read as the walk
 
@@ -173,13 +173,13 @@ def passHeads {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCal
   (passIsHead c.P c.start)[t]?.getD false
 
 /-- **A call's loop heads cut every cycle of the nodes `loopHeads`
-reaches** (`loopHeads_cuts` under `LoopHeadsFuelEq`; the start marked
-besides, `HeadsCutCycles.mono`). -/
-theorem passHeads_cuts (heq : LoopHeadsFuelEq) {G : NormalGraph ι} {I : InstanceImageCheck G}
+reaches** (`loopHeads_cuts`; the start marked besides,
+`HeadsCutCycles.mono`). -/
+theorem passHeads_cuts {G : NormalGraph ι} {I : InstanceImageCheck G}
     (c : Target.RunCall G I) :
-    HeadsCutCycles (nodeSucc c.P.toArray) c.P.toArray.size
+    HeadsCutCycles (SinglePass.nodeSucc c.P.toArray) c.P.toArray.size
       (fun t => (SinglePass.loopHeads c.P.toArray c.start).2[t]?.getD false) (passHeads c) := by
-  refine HeadsCutCycles.mono (fun v hv => ?_) (loopHeads_cuts heq c.P.toArray c.start)
+  refine HeadsCutCycles.mono (fun v hv => ?_) (loopHeads_cuts c.P.toArray c.start)
   unfold passHeads passIsHead
   split
   · rw [Array.set!_eq_setIfInBounds, Array.getElem?_setIfInBounds]

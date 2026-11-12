@@ -3,12 +3,10 @@ import Verification.Programs.SinglePass
 /-! # Tolerant frames: the loop heads cut every cycle
 
 `SinglePass.loopHeads` marks each target of a retreating edge of a
-depth-first walk from the start, a `while` loop over the marks, the node
-states (0 new, 1 on the stack, 2 done) and a stack of frames, each a node
-with its successors not yet examined. `dfsStep` is one round of that loop
-over functions in place of arrays, `dfsLoop` the rounds on fuel; the
-equation of the pass's loop with them is `LoopHeadsFuelEq` (named
-hypothesis: `loopHeads` is not on fuel).
+depth-first walk from the start (`SinglePass.loopHeadsWalk`): the rounds
+`SinglePass.dfsStep` on fuel (`SinglePass.dfsLoop`) over the marks, the
+node states (0 new, 1 on the stack, 2 done) and a stack of frames, each a
+node with its successors not yet examined.
 
 **Every cycle of reached nodes passes through a head** (`dfs_cuts`): with
 a ghost finishing time per done node, the rounds keep `DfsInv`: done nodes
@@ -21,62 +19,7 @@ cycle avoids the heads. -/
 namespace Verification.TolerantFrames
 
 section Dfs
-
-/-- A function updated at one point. -/
-def upd {α : Type} (f : Nat → α) (a : Nat) (b : α) : Nat → α := fun x => if x = a then b else f x
-
-/-- The depth-first walk's state: the marked heads, each node's state (0
-new, 1 on the stack, 2 done), the frames (a node and its successors not yet
-examined), the top first. -/
-structure Dfs where
-  heads : Nat → Bool
-  state : Nat → Nat
-  stack : List (Nat × List Nat)
-
-/-- **One round of `loopHeads`' loop**, over the successors `succ` and the
-bound `n`: a frame with no successor left is done; otherwise its next
-successor `w` below `n` is pushed where new, marked a head where on the
-stack, passed where done; none where the stack is empty. -/
-def dfsStep (succ : Nat → List Nat) (n : Nat) (σ : Dfs) : Option Dfs :=
-  match σ.stack with
-  | [] => none
-  | (v, []) :: rest => some ⟨σ.heads, upd σ.state v 2, rest⟩
-  | (v, w :: ws) :: rest =>
-    if w < n then
-      if σ.state w = 0 then some ⟨σ.heads, upd σ.state w 1, (w, succ w) :: (v, ws) :: rest⟩
-      else if σ.state w = 1 then some ⟨upd σ.heads w true, σ.state, (v, ws) :: rest⟩
-      else some ⟨σ.heads, σ.state, (v, ws) :: rest⟩
-    else some ⟨σ.heads, σ.state, (v, ws) :: rest⟩
-
-/-- The rounds on fuel, until the stack is empty. -/
-def dfsLoop (succ : Nat → List Nat) (n : Nat) : Nat → Dfs → Dfs
-  | 0, σ => σ
-  | k + 1, σ => match dfsStep succ n σ with
-    | none => σ
-    | some σ' => dfsLoop succ n k σ'
-
-/-- The walk's start: the start on the stack with all its successors to
-examine, where it is below the bound. -/
-def dfsInit (succ : Nat → List Nat) (n start : Nat) : Dfs :=
-  if start < n then ⟨fun _ => false, upd (fun _ => 0) start 1, [(start, succ start)]⟩
-  else ⟨fun _ => false, fun _ => 0, []⟩
-
-/-- A graph's successors, as `loopHeads` reads them: the continuation's
-targets and the handler. -/
-def nodeSucc (nodes : Array ControlFlow.Node) (w : Nat) : List Nat :=
-  (CertificateProducer.successors nodes[w]!.continuation ++ nodes[w]!.handler.toList).map (·.label)
-
-/-- **(Named hypothesis) `loopHeads` is its rounds on fuel**: its loop
-ends, at some fuel where the mirror's stack is empty, with the mirror's
-marks and states. It holds by construction once the pass's loop is
-written on fuel as `dfsLoop`. -/
-def LoopHeadsFuelEq : Prop :=
-  ∀ (nodes : Array ControlFlow.Node) (start : Nat), ∃ fuel,
-    (dfsLoop (nodeSucc nodes) nodes.size fuel (dfsInit (nodeSucc nodes) nodes.size start)).stack = [] ∧
-    ∀ t, (SinglePass.loopHeads nodes start).1[t]?.getD false =
-        (dfsLoop (nodeSucc nodes) nodes.size fuel (dfsInit (nodeSucc nodes) nodes.size start)).heads t ∧
-      (SinglePass.loopHeads nodes start).2[t]?.getD false =
-        ((dfsLoop (nodeSucc nodes) nodes.size fuel (dfsInit (nodeSucc nodes) nodes.size start)).state t != 0)
+open SinglePass (upd Dfs dfsStep dfsLoop dfsInit nodeSucc)
 
 /-- **Each frame's examined successors are fine** (`good`) or nodes of the
 frames above it (`above`, the top's none). -/
@@ -413,24 +356,6 @@ theorem dfs_cuts {succ : Nat → List Nat} {n : Nat} {σ : Dfs} {fin : Nat → O
     · rw [hh] at h; cases h
     · rw [ht, ht']; exact hlt
   exact Nat.lt_irrefl _ (Path.rank_lt hE hp)
-
-/-- **`loopHeads` cuts every cycle of the nodes it reaches**, under
-`LoopHeadsFuelEq`: its marks, read by label, cut every cycle of the labels
-its reached flags mark (`dfs_cuts` at the mirror's final state). -/
-theorem loopHeads_cuts (heq : LoopHeadsFuelEq) (nodes : Array ControlFlow.Node) (start : Nat) :
-    HeadsCutCycles (nodeSucc nodes) nodes.size (fun t => (SinglePass.loopHeads nodes start).2[t]?.getD false)
-      (fun t => (SinglePass.loopHeads nodes start).1[t]?.getD false) := by
-  obtain ⟨fuel, hempty, hval⟩ := heq nodes start
-  obtain ⟨fin, time, hI⟩ := dfsLoop_inv fuel _ _ _ (dfsInit_inv (nodeSucc nodes) nodes.size start)
-  have h := dfs_cuts hI hempty
-  have hr : (fun t => (SinglePass.loopHeads nodes start).2[t]?.getD false) =
-      fun v => (dfsLoop (nodeSucc nodes) nodes.size fuel (dfsInit (nodeSucc nodes) nodes.size start)).state v != 0 :=
-    funext fun t => (hval t).2
-  have hh : (fun t => (SinglePass.loopHeads nodes start).1[t]?.getD false) =
-      (dfsLoop (nodeSucc nodes) nodes.size fuel (dfsInit (nodeSucc nodes) nodes.size start)).heads :=
-    funext fun t => (hval t).1
-  rw [hr, hh]
-  exact h
 
 /-- **More heads still cut every cycle.** -/
 theorem HeadsCutCycles.mono {succ : Nat → List Nat} {n : Nat} {reached heads heads' : Nat → Bool}

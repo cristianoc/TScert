@@ -11,6 +11,7 @@ empties its stack within as many rounds as its start's measure
 (`dfsLoop_ends`), at most twice the nodes plus their successors
 (`dfsInit_measure`). -/
 namespace Verification.TolerantFrames
+open SinglePass (upd Dfs dfsStep dfsLoop dfsInit nodeSucc)
 
 section DfsFuel
 

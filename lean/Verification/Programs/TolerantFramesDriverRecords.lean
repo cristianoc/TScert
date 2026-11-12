@@ -151,7 +151,7 @@ def envHead (env : SinglePass.WalkEnv ι G I) (t : Nat) : Bool := (env.isHead[t]
 def envReached (env : SinglePass.WalkEnv ι G I) (t : Nat) : Bool := (env.reached[t]?).getD false
 
 /-- A label's exits' targets (the pass's nodes' successors). -/
-def exitsOf (env : SinglePass.WalkEnv ι G I) (l : Nat) : List Nat := nodeSucc env.nodes l
+def exitsOf (env : SinglePass.WalkEnv ι G I) (l : Nat) : List Nat := SinglePass.nodeSucc env.nodes l
 
 /-- **The exits still to come into `t`**: those of every reached label below
 the bound not yet visited. -/
@@ -205,6 +205,37 @@ structure EnvFacts (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) : 
   closed : ∀ s t, envReached env s = true → t ∈ exitsOf env s → t < env.n → envReached env t = true
   start : c.start < env.n ∧ envReached env c.start = true
   reachable : (env.reached.toList.filter id).length = ((List.range env.n).filter (envReached env)).length
+
+omit [Labels ι] in
+/-- A list's true entries, counted by position. -/
+theorem filter_id_length (l : List Bool) :
+    (l.filter id).length = ((List.range l.length).filter fun t => l[t]?.getD false).length := by
+  induction l with
+  | nil => simp
+  | cons b l ih =>
+    rw [List.length_cons, List.range_succ_eq_map, List.filter_cons, List.filter_cons, List.filter_map]
+    cases b <;> simp [Function.comp_def, ih]
+
+/-- **The setup's loop facts from `loopHeads`**: where the setup's nodes are
+the call's, its reached flags `loopHeads`' and its heads the call's, with
+the start below the bound, `env` states the call (`loopHeads_closed`,
+`loopHeads_reached_size`). The four equations are read off `setup` (W4). -/
+theorem envFacts_of_loopHeads {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I}
+    (hnodes : env.nodes = c.P.toArray) (hn : env.n = c.P.toArray.size)
+    (hreached : env.reached = (SinglePass.loopHeads c.P.toArray c.start).2) (hheads : envHead env = passHeads c)
+    (hstart : c.start < env.n) : EnvFacts c env := by
+  have hc := loopHeads_closed c.P.toArray c.start
+  refine ⟨hheads, fun s t hs ht htn => ?_, ⟨hstart, ?_⟩, ?_⟩
+  · unfold envReached exitsOf at *
+    rw [hreached] at hs ⊢
+    rw [hnodes] at ht
+    exact hc.1 s t hs ht (hn ▸ htn)
+  · unfold envReached; rw [hreached]; exact hc.2 (hn ▸ hstart)
+  · have hsz : env.reached.toList.length = env.n := by
+      rw [Array.length_toList, hreached, loopHeads_reached_size, hn]
+    rw [filter_id_length, hsz]
+    unfold envReached
+    simp only [Array.getElem?_toList]
 
 /-- **The walk's invariant**: the queue's labels distinct, below the bound,
 reached, unvisited and, other than heads, with no exit left to come in; the

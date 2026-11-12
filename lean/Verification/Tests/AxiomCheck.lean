@@ -853,6 +853,20 @@ run_cmd do
   check ``Verification.TolerantFrames.dfs_closed
   check ``Verification.TolerantFrames.dfsLoop_init_start
   check ``Verification.TolerantFrames.dfsLoop_init_closed
+  check ``Verification.TolerantFrames.succCount_nodeSucc
+  check ``Verification.TolerantFrames.dfsFuel_ge
+  check ``Verification.TolerantFrames.loopHeadsWalk_ends
+  check ``Verification.TolerantFrames.loopHeadsRun_ended
+  check ``Verification.TolerantFrames.loopHeadsWalk_clear
+  check ``Verification.TolerantFrames.loopHeads_heads
+  check ``Verification.TolerantFrames.loopHeads_reached
+  check ``Verification.TolerantFrames.loopHeads_reached_size
+  check ``Verification.TolerantFrames.loopHeads_closed
+  check ``Verification.TolerantFrames.filter_id_length
+  check ``Verification.TolerantFrames.envFacts_of_loopHeads
+  check ``Verification.TolerantFrames.orderedSuffix_down
+  check ``Verification.TolerantFrames.foldl_push_size
+  check ``Verification.TolerantFrames.mapNames_length
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

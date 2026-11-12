@@ -973,9 +973,12 @@ facts holding at the exit's valuation $`\eta`$. Proved:
   mapped environment (the `htc` premise of the exit lemmas);
 - `assertion_query_sound`: the check on an edge into a node stating an
   assertion gives the assertion at the target's environment;
-- `edgeStoreOf_wf`, `edgeTransfer_wf`, `edgeTransfer_width` (under
-  `MapNamesLength`), `edgeStoreOf_below`, `edgeTransfer_below`: the
-  target's state well-formed, of the mapping's width and below the counter.
+- `edgeStoreOf_wf`, `edgeTransfer_wf`, `edgeTransfer_width`,
+  `edgeStoreOf_below`, `edgeTransfer_below`: the target's state
+  well-formed, of the mapping's width and below the counter;
+  `mapNames_length`: `mapNames` gives the target one name per mapped slot
+  (the fold names the slots before the mapping's last run, the source's
+  suffix from that run's first slot the rest, `orderedSuffix_down`).
 
 `ofNode_flags`: an exit of `Exit.ofNode` observes only where it pushes and
 promotes only where it does not, the premises `hpo` and `hpp` of the exit
@@ -1380,7 +1383,7 @@ The pass keeps the read summaries it was given with no hypothesis
 (`runKeepsSummaries`, the unit level's `RunKeepsSummaries`), and its
 `linearNear` is its search on fuel by definition (`linearNearFuelEq`).
  Pass changes are named by the pass lane's
-items in its queue; the pass lane (`engine-pass`) is at a749210f, where D1
+items in its queue; the pass lane (`engine-pass`) is at 58834875, where D1
 to D4, D9 (`passShapeCheck'`), D10 (one written assertion per label), D11
 (the regional derivation check, the entry's fields under store regions),
 the driver on fuel (C9), the setup and visit as functions (`setup`,
@@ -1388,7 +1391,9 @@ the driver on fuel (C9), the setup and visit as functions (`setup`,
 restoring its read-summary table (W2, `keepSummaries`) and the visit as
 its entry, step and exits with one record write (W3: `visitEntry`,
 `visitStep`, `visitExits`, `LabelWalk.ofVisit`; D15's `refinedContext`
-and `outAllOf`) have arrived. A stopped walk is never accepted by
+and `outAllOf`), the loop heads' walk on fuel (`loopHeadsWalk`,
+`loopHeadsRun`) and the name mapping by structural recursion (D7, W7)
+have arrived. A stopped walk is never accepted by
 its type (`walkStopsRefuse`, from `StopOutcome.outcome_ne_accepted`).
 
 | Premise | Discharged by | Consumed by |
@@ -1655,13 +1660,11 @@ value and mark; `nodesChecked_of_walk` gives it at `passPreU`.
 
 **The loop heads cut every cycle.** Module
 `lean/Verification/Programs/TolerantFramesDriverHeads.lean`.
-`SinglePass.loopHeads` is a `while` loop over the marks, the node states (0
-new, 1 on the stack, 2 done) and a stack of frames, each a node with its
-successors not yet examined. `dfsStep` is one round of it over functions in
-place of arrays, `dfsLoop` the rounds on fuel, `dfsInit` the start;
-`LoopHeadsFuelEq` (named hypothesis) is the equation of the pass's loop with
-them: it ends at a fuel where the mirror's stack is empty, with the
-mirror's marks and states. `HeadsCutCycles succ n reached heads`: no path of
+`SinglePass.loopHeads` is the marks of `SinglePass.loopHeadsWalk`: the
+rounds `SinglePass.dfsStep` over the marks, the node states (0 new, 1 on
+the stack, 2 done) and a stack of frames, each a node with its successors
+not yet examined, on fuel (`dfsLoop`, on `dfsFuel`) from the start
+(`dfsInit`). `HeadsCutCycles succ n reached heads`: no path of
 edges from a reached node to a successor below $`n`$ that is no head
 (`NonHeadEdge`) returns to its node. With ghost finishing times $`f`$ below
 a counter, the rounds keep `DfsInv`: the done nodes are those with a time;
@@ -1672,8 +1675,8 @@ frame's node is in state 1, the frames' nodes distinct. Proved:
 `dfsStep_inv`, `dfsLoop_inv`, `dfsInit_inv`; (`dfs_cuts`) on an empty
 stack every reached node is done, so each non-head edge between reached
 nodes goes to an earlier time ($`f(b) < f(a)`$, `Path.rank_lt`) and no such
-path is a cycle; `loopHeads_cuts` (under `LoopHeadsFuelEq`, the marks
-`loopHeads` returns cut every cycle of the nodes it reaches);
+path is a cycle; `loopHeads_cuts` (Leg 19b: the marks `loopHeads` returns
+cut every cycle of the nodes it reaches);
 `HeadsCutCycles.mono`; `passHeads_cuts` (the call's heads, the start
 marked besides). No depth-first path theorem is used.
 
@@ -1690,7 +1693,6 @@ or a definition the proof reads):
 - the loop heads (`isHead`) in the record, or exposed by the setup
   (`passHeads` restates them);
 - a stop type without acceptance (`WalkStopsRefuse` by its type);
-- `loopHeads` on fuel as `dfsLoop` (`LoopHeadsFuelEq` by construction);
 - `Store.linearNear` on fuel as `linearNearFuel` (`LinearNearFuelEq`).
 
 Premises this leg discharges / leaves:
@@ -1702,7 +1704,7 @@ Premises this leg discharges / leaves:
   (each visited node `NodeChecked`, `TraversedA`, `StartEntered`, read off
   the visit once it is a function); `WalkStopsRefuse` is proved
   (`walkStopsRefuse`, Leg 19b).
-- `HeadsCutCycles`: discharged under `LoopHeadsFuelEq` (`passHeads_cuts`),
+- `HeadsCutCycles`: discharged (`passHeads_cuts`),
   for the proof of `TraversedA`'s merges; left: the in-degree order (a
   node other than a head visited after every edge into it from a reached
   node) and `TablesAgree` from it, both over the visit.
@@ -1812,9 +1814,7 @@ node is its frame's weight and one more), so a round decreases the measure
 weight off where it was new). From a state of measure at most $`k`$, $`k`$
 rounds empty the stack (`dfsLoop_ends`); the start's measure is at most
 $`2n + \sum_{w<n} |\mathit{succ}\ w|`$ (`dfsInit_measure`), so every fuel
-of at least that empties it (`dfsLoop_init_ends`). A `loopHeads` that runs
-the walk from the start on such a fuel meets `LoopHeadsFuelEq`, with that
-fuel as its witness.
+of at least that empties it (`dfsLoop_init_ends`).
 The walk touches no label at or past its bound: where every frame's node
 is below $`n`$ and, at or past $`n`$, no head is marked and every state is 0
 (`OutsideClear`), a round keeps both (proved: `dfsStep_clear`,
@@ -1913,7 +1913,7 @@ carries into its target (`edgeTransfer` over `edgeStoreOf`) meets
 target's width, the entry's and the step's stores are well-formed and
 below a positive counter, and so are the source's names, the pushed
 names, the entry's fresh names and the result (proved: `pushOk_of_exit`,
-under `MapNamesLength`, queue entry W7).
+by `mapNames_length`).
 
 **The visit's footprint check as `BoundChecked`.** Module
 `lean/Verification/Programs/TolerantFramesDriverChecks.lean`.
@@ -1935,8 +1935,23 @@ successors below $`n`$ (proved: `dfs_closed`): a seen node is done, and a
 done node's successors below $`n`$ are heads or done. From the start on a
 fuel of at least $`2n + \sum_{w<n} |\mathit{succ}\ w|`$ the stack is
 empty, the seen nodes closed and the start seen where it is below $`n`$
-(proved: `dfsLoop_init_closed`), which gives `EnvFacts`' `closed` and
-`start` once `loopHeads` reads the walk on that fuel.
+(proved: `dfsLoop_init_closed`).
+
+**The pass's loop heads.** Same module. `SinglePass.dfsFuel` is
+$`2n + \sum_{w<n} |\mathit{succ}\ w| + 1`$ (proved: `dfsFuel_ge`, by
+`succCount_nodeSucc`), so the loop heads' walk ends with its stack empty
+(proved: `loopHeadsWalk_ends`) and the setup's fuel check passes on every
+graph (`loopHeadsRun_ended`). The walk marks nothing at or past $`n`$
+(`loopHeadsWalk_clear`), so `loopHeads`' marks and reached flags, read by
+label, are the walk's heads and seen nodes (proved: `loopHeads_heads`,
+`loopHeads_reached`); they cut every cycle of the reached nodes (proved:
+`loopHeads_cuts`), and the reached nodes are closed under successors below
+$`n`$ and hold the start where it is below $`n`$ (proved:
+`loopHeads_closed`). So `EnvFacts` holds of a setup whose nodes are the
+call's, whose reached flags are `loopHeads`', whose heads are `passHeads`
+and whose start is below $`n`$ (proved: `envFacts_of_loopHeads`); these
+four equations are what `SetupRecords` still reads off the setup (queue
+entry W4).
 
 Premises this leg discharges / leaves:
 
@@ -1956,8 +1971,8 @@ Premises this leg discharges / leaves:
   soundness where each table the visit reads is a prefix of the next
   (queue entry W8); each state an exit pushes meets `PushOk` by
   `pushOk_of_exit`).
-- `LoopHeadsFuelEq`: left until `loopHeads` reads the walk on fuel
-  (`dfsLoop_init_ends` and `OutsideClear` give its witness).
+- `LoopHeadsFuelEq`, `MapNamesLength`: discharged (`loopHeads_cuts`,
+  `loopHeads_closed`, `envFacts_of_loopHeads`; `mapNames_length`).
 - `TablesAgree`: left; the graph's tables are the region states each
   visited node's check used at its label, which the record does not keep
   (queue entry R4).
