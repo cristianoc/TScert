@@ -1,0 +1,86 @@
+<title>Tolerant Frames</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono&display=swap">
+<style>
+/* layout: one reading column, 68ch, contents folded at the top; theorem-like blocks set off by a thin left rule */
+:root{--bg:#fbfcfd;--fg:#1a2230;--muted:#5b6778;--rule:#d9dfe7;--accent:#1f5f8b;--block:#f1f5f9;--accent2:#b45309;--chg:#0b7a68;--reg:#b45309;--asr:#6d3fc4;--boxc:#c2185b;--rulec:#8a1c4a;--ck:#0550ae;--cs:#116329;--cn:#953800;--ccm:#6e7781;--lean:#2f6f5e;--conj:#9a6700;--thmbg:#eef4f9;--defbg:#eef6f1;--exbg:#f6f4ee;
+ --serif:"Source Serif 4",Georgia,"Times New Roman",serif;--sans:"IBM Plex Sans",system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#12161c;--fg:#dde3ea;--muted:#93a0b1;--rule:#2a323d;--accent:#7db8e0;--block:#1a2029;--accent2:#e0a04a;--chg:#4fd1b8;--reg:#f0a35e;--asr:#b79cf5;--boxc:#f48fb1;--rulec:#f29bb8;--ck:#79b8ff;--cs:#7ee787;--cn:#ffa657;--ccm:#8b949e;--lean:#7fd1b9;--conj:#e3b341;--thmbg:#17212b;--defbg:#16231c;--exbg:#211f19;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#12161c;--fg:#dde3ea;--muted:#93a0b1;--rule:#2a323d;--accent:#7db8e0;--block:#1a2029;--accent2:#e0a04a;--chg:#4fd1b8;--reg:#f0a35e;--asr:#b79cf5;--boxc:#f48fb1;--rulec:#f29bb8;--ck:#79b8ff;--cs:#7ee787;--cn:#ffa657;--ccm:#8b949e;--lean:#7fd1b9;--conj:#e3b341;--thmbg:#17212b;--defbg:#16231c;--exbg:#211f19;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--serif);font-size:17px;line-height:1.6}
+main{max-width:68ch;margin:0 auto;padding-block:40px 80px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header h1{font-family:var(--sans);font-weight:600;font-size:2rem;line-height:1.15;margin:0 0 6px;text-wrap:balance}
+header .sub{font-size:1.1rem;color:var(--muted);margin:0 0 4px}
+header .meta{font-family:var(--sans);font-size:.8rem;color:var(--muted);letter-spacing:.02em;margin:0 0 28px}
+.abstract{border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:14px 0;font-size:.95rem;margin-bottom:24px}
+.abstract p{margin:0}
+details.toc{font-family:var(--sans);font-size:.88rem;margin-bottom:32px}
+details.toc summary{cursor:pointer;color:var(--accent);font-weight:500}
+details.toc ul{list-style:none;padding-left:1.1em;margin:.4em 0}
+details.toc a{color:var(--fg);text-decoration:none}
+details.toc a:hover{color:var(--accent);text-decoration:underline}
+.toc-section-number,.header-section-number{color:var(--muted);margin-right:.5em;font-variant-numeric:tabular-nums}
+h1{font-family:var(--sans);font-weight:600;font-size:1.3rem;margin:2.2em 0 .6em;text-wrap:balance}
+h2{font-family:var(--sans);font-weight:600;font-size:1.05rem;margin:1.8em 0 .5em}
+h4{font-family:var(--sans);font-weight:600;font-size:.95rem;margin:1.5em 0 .3em}
+dl{margin:1em 0}
+dl dt{font-family:var(--sans);font-weight:600;font-size:.95rem;margin-top:.9em}
+dl dd{margin:.15em 0 0 0;padding-left:16px;border-left:2px solid var(--rule)}
+dl dd p{margin:0}
+p{margin:0 0 .9em}
+a{color:var(--accent)}
+code,tt{font-family:var(--mono);font-size:.88em}
+.smallcaps{font-variant:small-caps;letter-spacing:.03em}
+.theorem,.proposition,.definition,.example,.remark,.proof{border-left:2px solid var(--rule);padding:2px 0 2px 16px;margin:1.2em 0}
+.theorem,.proposition{border-left-color:var(--accent)}
+.theorem p:last-child,.proposition p:last-child,.definition p:last-child,.example p:last-child,.remark p:last-child,.proof p:last-child{margin-bottom:0}
+.math.display{display:block;overflow-x:auto;overflow-y:hidden;padding:4px 0;margin:.2em 0}
+mjx-container{color:var(--fg)}
+.tablewrap{overflow-x:auto;margin:1.2em 0}
+table{border-collapse:collapse;font-size:.9rem;width:100%}
+th,td{text-align:left;vertical-align:top;padding:6px 10px 6px 0;border-bottom:1px solid var(--rule)}
+th{font-family:var(--sans);font-weight:600;font-size:.8rem;color:var(--muted)}
+.thebibliography{font-size:.9rem}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+figure.heapfigure{margin:1.4em 0;overflow-x:auto}
+.heapfig{display:block;width:100%;min-width:520px;height:auto;font-family:var(--sans)}
+.heapfig .lab{font-size:11px;fill:var(--muted)}
+.heapfig .mono{font-family:var(--mono);font-size:12px;fill:var(--fg)}
+.heapfig .num{font-size:12px;fill:var(--muted)}
+.heapfig .val{font-family:var(--mono);font-size:13px;fill:var(--fg)}
+.heapfig .kind{font-size:13px;font-style:italic;fill:var(--fg)}
+.heapfig .sub{font-family:var(--mono);font-size:10px;fill:var(--muted)}
+.heapfig .cell{fill:var(--block);stroke:var(--fg);stroke-width:1}
+.heapfig .cell.st{stroke:var(--accent2);stroke-width:1.6}
+.heapfig .arr{stroke:var(--muted);stroke-width:1.1;fill:none}
+.heapfig .ahd{fill:var(--muted)}
+.heapfig .rv{fill:var(--accent)}
+.heapfig .rs{fill:var(--accent2)}
+figcaption{font-size:.85rem;color:var(--muted);margin-top:.5em}
+
+/* colour by role, as in the PDF */
+h1,h4,dl dt{color:var(--accent)}
+header h1{color:var(--accent)}
+.theorem,.proposition,.definition,.example,.remark{border-left:3px solid var(--accent);padding:8px 12px 8px 14px;border-radius:0 4px 4px 0}
+.theorem,.proposition{background:var(--thmbg)}
+.definition{background:var(--defbg)}
+.example,.remark{background:var(--exbg)}
+.smallcaps{color:var(--rulec)}
+span.sans-serif{color:var(--lean)}
+span.sans-serif.conj{color:var(--conj)}
+em>code{font-style:normal;color:var(--lean)}
+code .ck{color:var(--ck);font-weight:600}
+code .cs{color:var(--cs)}
+code .cn{color:var(--cn)}
+code .cann{color:var(--asr)}
+code .ccm{color:var(--ccm)}
+mjx-container .chg{color:var(--chg);fill:var(--chg);stroke:var(--chg)}
+mjx-container .reg{color:var(--reg);fill:var(--reg);stroke:var(--reg)}
+mjx-container .asr{color:var(--asr);fill:var(--asr);stroke:var(--asr)}
+mjx-container .boxc{color:var(--boxc);fill:var(--boxc);stroke:var(--boxc)}
+mjx-container .rulec{color:var(--rulec);fill:var(--rulec);stroke:var(--rulec)}
+</style>
+<script>
+window.MathJax={tex:{inlineMath:[['\\(','\\)']],displayMath:[['\\[','\\]']]},svg:{fontCache:'global'},options:{enableMenu:false}};
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg-full.min.js"></script>
