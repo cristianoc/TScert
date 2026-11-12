@@ -2,7 +2,8 @@
 
 # commit-msg hook: every commit carries a commit
 # record (.claude/skills/review/SKILL.md): a Why: section, a change block when
-# behaviour changes, and trailers git can parse, with Outcome and Parts, and
+# behaviour changes, change headings of the closed list of kinds, each on one
+# line, and trailers git can parse, with Outcome and Parts, and
 # Trust unless the outcome is no-behaviour-change. A merge commit is checked
 # as every other: its record states Why:, Outcome and Parts.
 #
@@ -54,14 +55,19 @@ subject=$(printf '%s\n' "$body" | sed -n '1p')
 if (( ${#subject} > 100 )); then
     problems+=("the subject line has ${#subject} characters; keep it to 100 (the change in a short sentence)")
 fi
+kinds='Rule|Semantics|Definition|Typing|Theorem|Lowering|Proposal|Check|Control|Refusal|Trust|Wire|Docs|Example|Counterexample|Tooling'
+while IFS= read -r heading; do
+    kind=${heading%% *}
+    problems+=("the change heading '$heading' names the kind '$kind', which is not one of ${kinds//|/, } (the kind is what the object is, never where it lives)")
+done < <(printf '%s\n' "$body" | grep -E '^[A-Z][A-Za-z]* (added|modified|removed) \(' | grep -Ev "^($kinds) ")
 while IFS= read -r heading; do
     problems+=("a change heading must close on its own line with '):' — '$heading' wraps")
-done < <(printf '%s\n' "$body" | grep -E '^(Rule|Semantics|Definition|Typing|Theorem|Lowering|Refusal|Trust|Wire|Docs|Tooling|Example|Counterexample) (added|modified|removed) \(' | grep -v '):')
+done < <(printf '%s\n' "$body" | grep -E "^($kinds) (added|modified|removed) \\(" | grep -v '):')
 if ! printf '%s\n' "$body" | grep -q '^Why:'; then
     problems+=("no 'Why:' section (the problem this commit addresses)")
 fi
 if [[ "$outcome" != "no-behaviour-change" ]] &&
-    ! printf '%s\n' "$body" | grep -Eq '^(Rule|Semantics|Definition|Typing|Theorem|Lowering|Refusal|Trust|Wire) (added|modified|removed)'; then
+    ! printf '%s\n' "$body" | grep -Eq '^(Rule|Semantics|Definition|Typing|Theorem|Lowering|Proposal|Check|Refusal|Trust|Wire) (added|modified|removed)'; then
     problems+=("no change block such as 'Rule added (name):' or 'Lowering modified (name):'")
 fi
 
