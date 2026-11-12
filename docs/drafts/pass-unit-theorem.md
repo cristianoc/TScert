@@ -38,7 +38,8 @@ The Lean modules are
 [PassUnitRealize](../../lean/Verification/Source/Claims/PassUnitRealize.lean) (the module's environment) and
 [PassUnitFile](../../lean/Verification/Source/Claims/PassUnitFile.lean) (the file-level theorem) and
 [PassUnitModules](../../lean/Verification/Source/Claims/PassUnitModules.lean) (linking modules) and
-[PassUnitObligations](../../lean/Verification/Source/Claims/PassUnitObligations.lean) (expression obligations, async members).
+[PassUnitObligations](../../lean/Verification/Source/Claims/PassUnitObligations.lean) (expression obligations, async members) and
+[PassUnitInterfaces](../../lean/Verification/Source/Claims/PassUnitInterfaces.lean) (outside slots by kind, module interfaces, the command line's condition).
 
 ## 1. The statement
 
@@ -128,6 +129,56 @@ The premise is the condition under which mode 8 prints the unit's line
 `"accepted": true` (`Source/RequestCli.lean`, the mode 8 branch), every
 argument of `passGroup` free: the CLI's comparison, observation, repetition,
 counting and given-file inputs range over all their values.
+
+### The final statement
+
+**Theorem** `passUnitCli_safe` (proved under H1–H3). With
+$`f = \mathrm{preparedMode8}(\mathit{force}, \mathit{givenLines}, f_0)`$, the
+plans with the given head facts, and the false start fact where
+`TSCERT_FORCE` names `start-facts`:
+
+```math
+\begin{aligned}
+&\big(\exists\, \mathit{est}.\; \mathrm{fragmentPlansFromInterfaces}(\mathit{ast}, \ldots, \mathit{est}) = \mathrm{ok}\ f_0
+ \;\vee\; \exists\, \mathit{ms}\, \mathit{ns}.\; \mathrm{fragmentPlansWithModules}(\mathit{ast}, \ldots) = \mathrm{ok}\ (f_0, \mathit{ms}, \mathit{ns})\big) \\
+&\wedge\; (f.\mathrm{passGroup}(\mathit{fuel}, f.\mathrm{group}(i), \ldots)).2 = \mathrm{ok}\ \mathit{deps}
+ \;\Longrightarrow\; \forall j \in f.\mathrm{group}(i).\; \mathrm{MemberSafe}(f, j)
+\end{aligned}
+```
+
+The premise is the condition under which `verifyUnitsFile` prints unit
+$`i`$'s line `"accepted": true` in mode 8, with an interface file
+(`--verify-interface-stage`) or without; every other argument is free. Its
+conclusion is `checkUnitJson_safe`'s for a file's unit: every member's plan
+crosses the exhaustive certification and its request is safe
+(`RequestSafe`). With the file-level part (`passFile_safe_kinds`) every
+closed unit's value meets its interface.
+
+| Hypothesis | Statement | Discharged by |
+| --- | --- | --- |
+| H1 `RunSound` | an accepted run guarantees its graph | the graph lane |
+| H2 `RunKeepsSummaries` | a run keeps the summaries it starts from | the graph lane |
+| H3 `PassGroupChecks` | an accepted group's members are `MemberAccepted` | the wrapper lane (`passGroup_members`, `passMember_sound`) |
+| H5a `ModuleLayout` | each closed unit's code, interface and slots | the extraction; decidable at the verdict (wrapper lane) |
+| `EstablishedSlots` | an import slot holds its module's function, read at an agreeing type | H5a's import part and `SignatureAgrees` (section 7) |
+| `EstablishProvenance` | `establishModules` publishes only `EstablishedStep` entries | the wrapper lane |
+| `InterfaceProvenance` | the interface file read is `interfaceFile`'s output | trusted: the stage store's replay, the forged-interface control |
+| declared imports, host values | their declared and host contracts | trusted, as for the proved checker |
+| stand-ins | the written footprint | vacuous with no `TSCERT_STANDINS` (`standIns_vacuous`) |
+| module cells | the `:init` postcondition | the wrapper lane, once `:init` states it |
+
+Against `checkUnitJson_safe` with the old module theorem, clause by clause:
+its premise is the CLI's exact condition, as there; the certificate's
+acceptance has no counterpart, since no certificate is built; safety,
+footprint and fresh result, postcondition and regions are the same
+statements from the same entry; assertions hold at the reached states
+in place of being entailed by a certificate; the module values are
+discharged by linking (the old theorem assumes them in
+$`\rho \models \Gamma`$); an imported module's functions are discharged
+through its interface under `InterfaceProvenance`, where the old module case
+checks each certified import's restricted document in the same process;
+async holds of the member and its codes (`member_async`, `codes_async`), as
+`checkRequests_async` states outside `RequestsSafe`.
 
 ## 2. The hypotheses
 
@@ -379,26 +430,65 @@ at $`p`$ and meets the code conditions. It is a statement about the
 extraction (the slot table `ordinarySlots` builds, `withStandIns`,
 `withNeverImports`, the frame `extractMember` lays out), not proved: every
 function on that path is a `do` block over the front with no theorem about
-its frame, and part of it is decidable at the verdict (see 6.3).
+its frame, and part of it is decidable at the verdict (section 6).
 
 **H5b, the outside contracts** (`OutsideContracts`). Every value a closed
 unit's outside slot holds at depth $`i`$ meets the slot's type at every
-budget $`j \le i`$. It is the
-trusted boundary of section 5, slot by slot: an import's declared contract
-or an import stand-in's footprint, a host value's contract, and a module
-constant's or cell's type, which the initialization's request would have to
-establish as a postcondition on the module's cells (`withInitTypes`
-proposes these types; the `:init` request states no such postcondition). A
-function stand-in fixes a linked slot's type, $`I_u`$, which $`u`$'s own
-unit establishes: it needs no hypothesis. With no import, no host value and
-no module constant, no slot is outside and H5b holds vacuously.
+budget $`j \le i`$. It splits by the kind of the slot (`OutsideKind`, a
+table `kinds` the layout states), and `outsideContracts_of_kinds` (proved)
+gives `OutsideContracts` from the five kinds met (`KindMet`):
 
-**What H5a excludes.** A unit realized through `RowRealized` has fixed
-arity, no rest, an unqualified (non-generic) request, and signatures meeting
-the code conditions: no postcondition, stated region, precondition, element
-promise, fresh object, receiver growth or element write. A closed unit
-outside these has no layout and `passFile_safe` says nothing of its value;
-its members stay safe locally (`passUnit_safe`).
+- **An import with a body, read at an established entry** (`established`):
+  no hypothesis of its own; `established_met` (proved) discharges it from
+  the entry's module (section 7).
+- **A declaration-only import, or an import read at its declared type**
+  (`declared`): its contract is the declaration as the front reads it (the
+  importer's `declarations` entry of that name, lowered by the type reader
+  as for any declared value) and states that the value meets that type at
+  every budget. A trusted boundary, unchanged from the proved checker's
+  ([certified imports](../SOURCE-CONTRACTS.md#certified-imports)).
+- **An import stand-in** (`standIn`, `TSCERT_STANDINS`, a measurement aid):
+  its contract is the written footprint. `standIns_vacuous` (proved): with
+  no stand-in slot, as with no stand-in file, it holds.
+- **A host value** (`host`): its host contract, a trusted boundary.
+- **A module constant or cell** (`moduleCell`): the initialization's
+  obligation. The lemma the wrapper lane would provide:
+
+```math
+\mathrm{passGroup}(\texttt{:init}) \text{ accepts} \;\Longrightarrow\;
+  \forall \text{ cell } c \text{ of type } C_c.\; \forall n\, W.\; h_{\mathrm{after\ init}}(c) \in ⟦C_c⟧_{n,W}
+```
+
+  that is, the `:init` request states the types `withInitTypes` proposes as
+  its postcondition on the module's cells, and the pass checks it there
+  (`EnsuresClause` then gives it). Today the `:init` request states no such
+  postcondition, so this kind stays a named hypothesis.
+
+`passFile_safe_kinds` (proved) is `passFile_safe` with H5b replaced by
+these: `EstablishedSlots` and four `KindMet` premises.
+
+**What H5a excludes, and what each needs.** A unit realized through
+`RowRealized` has fixed arity, no rest, an unqualified request, and
+signatures meeting the code conditions. A closed unit outside these stays
+safe locally (`passUnit_safe`); `passFile_safe` says nothing of its value.
+None is lifted here. Each needs a clause of `UnitIsCode` and of
+`CodeEntry.Spec`, the code specification `closure_meets_below` consumes:
+
+- *a postcondition* (`ensures`): `EnsuresClause` gives the returns' facts;
+  `codeSpec_of_clauses` must carry them into the spec's normal-return
+  post, and `KindOffers` must read the arrow's `ensures` as that post;
+- *stated regions*: `RegionalClause` gives the bound; the spec's frame
+  condition must be the regional one (`ArgumentStoreRegionsWithin`) in
+  place of the footprint;
+- *a precondition* (`requires`): `UnitIsCode` takes the code's precondition
+  as entry facts already; the spec must assume it at entry, and the
+  caller's call rule, which checks it at the call, establishes it there;
+- *a rest parameter*: `CodeOffers` over the variadic signatures
+  $`S_v`$, with the packed rest frame (`codeFrame` with the row's rest),
+  and `RowRealized` per variadic row;
+- *type parameters*: the interface is a scheme; `RequestSafe` holds at the
+  admitted instances (`qualified_requestSafe`), and `approx_meets` must be
+  stated per instance $`\eta \in \mathrm{Adm}`$ against $`I_u\eta`$.
 
 ## 5. The boundaries that stay trusted
 
@@ -502,106 +592,113 @@ section 3 as written in `PassUnitMember`, its clauses the exact calls:
 `MainAccepted` (R2: in the fallback, the fallback run's own summaries
 checked, which `MainAccepted.fallback` requires), or the qualified case.
 
-### The old headline and the new one
-
-`checkUnitJson_safe` concludes, for a file's unit, `UnitSafe` (its
-certified requests' `RequestsSafe`) and, for a module run, `DocumentSafe`
-of its restricted document. Clause by clause:
-
-- *checker acceptance* (`checkRequests rs b = true`): the old conclusion
-  states the certificate's acceptance; the new one has no certificate and no
-  such clause.
-- *safety, footprint and fresh result, postcondition, regions*: the same
-  four statements, from the same entry (`EntryHolds`), at the same admitted
-  assignments.
-- *assertions*: the old states them entailed by the certificate
-  (`RequestAssertionsEntailed`); the new states each stated assertion of the
-  graph and of each code request true at every state reached within the
-  budget, which is about the program alone.
-- *module values*: the old states safety under $`\rho \models \Gamma`$,
-  every module slot included, and nothing discharges it; the new one
-  discharges each closed unit's linked slots in the module's environment
-  and states each closed function's value meets its interface.
-- *imported modules*: the old module case checks each certified import's
-  restricted document; mode 8 plans no module run, and an import's slot is
-  an outside contract (H5b) until section 7's interface theorem applies.
-- *which units*: the old covers each accepted line; the new one's local part
-  covers each accepted line (`passUnit_safe`), its linking part the closed
-  units with a layout (H5a's exclusions, section 4).
-- *async*: neither states the property `checkRequests_async` gives.
+The comparison with `checkUnitJson_safe` is in section 1, under the final
+statement.
 
 ## 7. Module interfaces
 
 ### The existing mechanism
 
-On the integration branch (`engine-types`), a module's interface is the
-result of the canonical component computation, `establishModules`, over the
-modules' components (`interfaceComponents`: the strongly connected
-components of the import graph in dependency order, members by location).
-Each module is planned with the entries established before it as its
-imports' footprints, its reached groups checked by the pass, and a
-function's entry $`((\ell, n), (\Phi, t, \Phi_r), u)`$ added where its
-group $`u`$ is in the fixpoint `ok`: accepted with every dependency in `ok`
-or established before. An importer reads an entry at its declared type with
-that footprint (`importedArrow`), after the existing declaration-identity
-and signature-agreement checks.
+A module's interface is the result of the canonical component computation,
+`establishModules`, over the modules' components (`interfaceComponents`:
+the strongly connected components of the import graph in dependency order,
+members by location). Each module is planned by `fragmentPlansCore` with
+the entries established before it as its imports' footprints, prepared
+(its given head facts), its reached groups checked by `check`, and a
+function's entry $`((\ell, n), (\Phi, t, \Phi_r), u)`$ added where its group
+$`u`$ is in the fixpoint `ok`: accepted with every dependency in `ok` or
+established before. An importer reads an entry at its declared type with
+that footprint (`importedArrow`), after the declaration-identity and
+signature-agreement checks. [Module interfaces](module-interfaces.md) owns
+the computation and its wire.
 
-### The statement
+### What is within Lean and what is trusted
 
-Let $`\mathrm{Holds}(e)`$, for an entry $`e`$ of module $`\ell`$'s function
-$`n`$, state that every slot of an importer reading $`e`$ is met at every
-depth by $`n`$'s value in $`\ell`$'s environment:
+Within Lean: the component computation (`establishModules`, run by
+`RequestCli.interfaceFile` on a component's request), its encoding
+(`encodeInterfaces`), the importer's decoding against its own fragment's
+module documents (`decodeInterfaces`), the importer's plans from the
+decoded entries (`fragmentPlansFromInterfaces`) and the same computation in
+one invocation (`fragmentPlansWithModules`). Trusted: the stage store's
+replay. The importer is a separate process that reads an interface file; that
+the file is the output of `interfaceFile` at the request its key names is
+the store's guarantee (`pipeline/module-interfaces.mts`), exercised by the
+forged-interface control. The theorem takes it as one hypothesis.
 
-```math
-\mathrm{Holds}(e) \iff \forall \text{importer slot } (A, v) \text{ reading } e.\;
-  \forall i.\; \forall j \le i.\; \forall W.\; v_i \in ⟦A⟧_{j,W}
-```
+**`InterfaceProvenance`** (trusted boundary, the stage store). Every entry
+$`e`$ the importer decodes was published by `establishModules` at mode 8's
+prepare and check: for some modules, incoming entries $`\mathit{inc}`$ with
+$`e \notin \mathit{inc}`$ and result $`\mathit{est}'`$ with $`e \in \mathit{est}'`$.
 
-**Theorem** `published_holds` (proved). For a step adding entries to those
-it is given, as `establishModules`' loop appends each module's entries to
-`established`:
+**`EstablishProvenance`** (under hypothesis; the wrapper lane, about
+`establishModules` as H3 is about `passGroup`). Every entry
+`establishModules` returns was given to it or satisfies `EstablishedStep`:
+its module $`m`$ is planned by `fragmentPlansCore` over its document at its
+names; its footprint is the one the module's claim of that function
+states; its unit is in a set `ok` of wire identities, each a leader of the
+prepared plans whose group `check` accepts with every dependency in `ok` or
+established before. `establishModules` is a `for` loop with `continue`
+over an `Except` block; the same repair as R1 (a pure per-module step and
+its fold) makes it a lemma per field.
 
-```math
-\frac{\forall \mathit{acc}\; m.\; (\forall e \in \mathit{acc}.\; \mathrm{Holds}(e)) \Rightarrow
-  \forall e \in \mathrm{step}(\mathit{acc}, m).\; \mathrm{Holds}(e)}
- {\forall \mathit{ms}.\; \forall e \in \mathrm{published}(\mathrm{step}, \mathit{ms}, []).\; \mathrm{Holds}(e)}
-```
+### The theorems
 
-**Theorem** `linkModules` (proved). The same over an explicit order in which
-each module reads only entries of modules strictly before it
-(`ReadsEarlier`), by strong induction on the position. The component order
-makes the import graph's order well founded: a cycle of imports lies inside
-one component, whose members read a later member at its declared contract
-(an outside contract) and an earlier one at its established entry only.
+**Theorem** `step_units_safe` (proved under H1–H3). For a step of mode 8's
+interface computation, every unit of its `ok` is a selected unit of the
+module's prepared plans whose group is safe (`PassUnitSafe`): the check is
+`passGroup`, the plans are over their store (`fragmentPlansCore_overStore`,
+at every argument of the core planner), so `passGroupOver_safe` applies.
 
-**Interface soundness** (the step premise, conjectured, to be proved on the
-joined branches). For one module $`\ell`$ processed by `establishModules`
-with entries $`\mathit{acc}`$ that hold, every entry it adds holds. The
-proof plan:
+**Theorem** `passPlans_safe` (proved). `passFile_safe`'s conclusion for any
+plans over their store and any set $`S`$ of units each a selected unit whose
+group is safe: with a layout of $`S`$ and its outside contracts, every
+$`u \in S`$ has $`\mathrm{approx}_n(u) \in ⟦I_u⟧_{m,W}`$ for $`m \le n`$.
+A module's step is this at its `ok`.
 
-1. *Closure.* An added entry's group $`u`$ is in `ok`, and `ok` is closed:
-   each member accepted with its dependencies in `ok` or in $`\mathit{acc}`$
-   (the counterpart of `closedUnits_closed`, about `ok`'s loop).
-2. *The module's file theorem.* `passFile_safe` for $`\ell`$'s plans
-   (`fragmentPlansCore` with `prepare`), its outside slots for $`\ell`$'s
-   implementation imports discharged by $`\mathrm{Holds}`$ of
-   $`\mathit{acc}`$ (the incoming entries), every other outside slot H5b;
-   dependencies on earlier modules count as closed because their entries
-   hold.
-3. *The entry is the interface.* The footprint published is the unit's own
-   claim's, $`(c.\mathrm{footprint}, c.\mathrm{onThrow}, c.\mathrm{resultFootprint})`$,
-   the one its slot $`I_n`$ states (`ordinarySlots`).
-4. *Signature agreement.* $`⟦I_n⟧`$ in $`\ell`$'s graph is within
-   $`⟦\mathrm{importedArrow}(U, \Phi, t, \Phi_r)⟧`$ in the importer's, $`U`$
-   the importer's declaration of $`n`$: a semantic statement across two
-   stores, which the declaration-identity and correspondence checks
-   (`canonical`) are to establish; no theorem relates two stores' meanings
-   today, so it stays a named hypothesis.
-5. *Replay.* An entry read from the stage store is the result of that
-   computation: the replay trust boundary, not a theorem.
+**Theorem** `entry_met` (proved). Let `EntryRealized`$`(e)`$ be the module
+side of an entry: its plans over their store, a set $`S_m`$ of safe
+selected units containing $`e`$'s unit $`u`$, a layout of $`S_m`$ and its
+outside contracts. If an importer's slot of type $`A`$ holds at depth $`i`$
+the value $`\mathrm{approx}_i(u)`$ of $`u`$'s module (`HoldsModuleValue`)
+and the stores agree on the signature (`SignatureAgrees`:
+$`w \in ⟦I_u⟧^{G_m}_{j,W} \Rightarrow w \in ⟦A⟧^{G}_{j,W}`$), then
+$`\forall i.\; \forall j \le i.\; \forall W.\; v_i \in ⟦A⟧_{j,W}`$.
+`established_met` (proved) lifts it to every slot of kind `established`
+(`EstablishedSlots`).
 
-With these, `published_holds` gives every established entry, and the
-importer's file theorem holds with its implementation imports discharged.
+**The cross-module theorem** (under `InterfaceProvenance`,
+`EstablishProvenance`, H5a of each module and of the importer, and
+`SignatureAgrees` per read). Every closed unit of an importer is safe and
+meets its interface: `passFile_safe_kinds` with `established_met`, each
+entry's `EntryRealized` built from its step by `step_units_safe` and the
+module's layout; the module's own established slots read entries of
+earlier components, so `linkModules` (proved, by strong induction on the
+component order, `ReadsEarlier`) carries the argument along the order.
+Proved: each link. Not proved: the assembly of a module's `EntryRealized`
+from `EstablishedStep`, which needs the module's layout (H5a at the module's
+`ok`) and the importer's slot facts (`HoldsModuleValue`, part of H5a: the
+extraction's slot for an import holds that module's function).
+
+### Signature agreement across two stores
+
+`SignatureAgrees` relates two frozen equation stores: the module's and the
+importer's. No theorem relates two stores' meanings. The store theorems
+(`Checked.graph_eq`, `Checked.images_eq`) are about one store's equations;
+freezing validates one state's heads. What is missing, in order:
+
+1. a label map $`\varphi`$ from the module's labels reachable from $`I_u`$ to
+   the importer's, with $`\mathrm{row}_{G}(\varphi\,l) = \varphi(\mathrm{row}_{G_m}(l))`$
+   and the same builtins, prototype and descriptor domain on its image;
+2. invariance of meaning under such a map:
+   $`⟦A⟧^{G_m}_{j,W} = ⟦\varphi A⟧^{G}_{j,W}`$, by induction on $`j`$ and
+   the row's structure;
+3. that both fronts lower the declaration of $`n`$ to rows related by
+   $`\varphi`$ (`importedArrow` over the importer's declaration $`U`$
+   against the slot $`I_n`$ the module's `ordinarySlots` builds): the
+   declaration-identity check compares the declarations' text, a lowering
+   theorem would make it the rows' relation.
+
+Until then `SignatureAgrees` is a named hypothesis per read.
 
 ## 8. Expression obligations and async members
 

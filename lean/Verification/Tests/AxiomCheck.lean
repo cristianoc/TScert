@@ -4,6 +4,7 @@ import Lean.Compiler.CSimpAttr
 import Verification.Source.Claims.Json
 import Verification.Source.RequestCli
 import Verification.Source.Claims.PassUnitObligations
+import Verification.Source.Claims.PassUnitInterfaces
 import Verification.Semantics.ArgumentStoreRegions
 import Verification.Semantics.FootprintNatives
 import Verification.Programs.ArgumentPathTracking
@@ -97,6 +98,19 @@ run_cmd do
   check ``Verification.SourceClaimJson.PassUnit.obligations_sound
   check ``Verification.SourceClaimJson.PassUnit.member_async
   check ``Verification.SourceClaimJson.PassUnit.codes_async
+  check ``Verification.SourceClaimJson.PassUnit.outsideContracts_of_kinds
+  check ``Verification.SourceClaimJson.PassUnit.standIns_vacuous
+  check ``Verification.SourceClaimJson.PassUnit.passPlans_safe
+  check ``Verification.SourceClaimJson.PassUnit.passGroupOver_safe
+  check ``Verification.SourceClaimJson.PassUnit.interface_entry_meets
+  check ``Verification.SourceClaimJson.PassUnit.entry_met
+  check ``Verification.SourceClaimJson.PassUnit.established_met
+  check ``Verification.SourceClaimJson.PassUnit.step_units_safe
+  check ``Verification.SourceClaimJson.PassUnit.passFile_safe_kinds
+  check ``Verification.SourceClaimJson.PassUnit.fragmentPlansFromInterfaces_overStore
+  check ``Verification.SourceClaimJson.PassUnit.fragmentPlansWithModules_overStore
+  check ``Verification.SourceClaimJson.PassUnit.withFalseStartFact_overStore
+  check ``Verification.SourceClaimJson.PassUnit.passUnitCli_safe
   check ``Verification.Footprints.transport_sound
   check ``Verification.Footprints.Sep.sound
   check ``Verification.Footprints.Post.mono
