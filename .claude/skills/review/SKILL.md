@@ -109,7 +109,13 @@ Co-Authored-By: <attribution>
   takes (`TSCERT_FORCE=<name>`), what it makes the computation state, the
   unit it is shown on, and the two outcomes, `unforced: accepted` and
   `forced: refused at <obligation>`. It also appears in `Tests:` as
-  `forced:<name>`.
+  `forced:<name>`. Its body is these lines in this order: `force: <name>`,
+  `states: <what the force makes the computation state>`, then for each
+  unit `unit: <case> <unit>`, `unforced: <verdict>`, `forced: <verdict> at
+  <obligation>`, the verdict first. A `Control` carries no change of
+  outcome: it is a test.
+- **A `Proposal`'s body has a `⇒` line and a `Check`'s an `at <where>:`
+  line**; prose may follow. A line that continues one is indented deeper.
 - **The object names its stage and its concept:** the parser's gate, the type
   reader, the producer, a lowering, a Lean rule, the verifier's CLI, tooling.
   `Definition modified (type reader: the members of a union)`, not
@@ -170,6 +176,9 @@ Co-Authored-By: <attribution>
       promise-then-chained show@156   agreement   refused → verified   pipeline verified: the binder's declared default
   ```
 
+  The first field is `<case> <unit>`, one space between them, and the
+  fields are three or more spaces apart; a statement about a case with no
+  unit named goes in `Validation:`. The case exists at the commit.
   A unit the pass accepts where the pipeline refuses is marked `⚠` after
   the new verdict unless the record's `Soundness:` reviews it.
 - **`Mirrors:`** (optional) names the rule of the producer or of the
