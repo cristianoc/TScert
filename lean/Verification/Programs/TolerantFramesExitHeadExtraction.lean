@@ -225,7 +225,8 @@ variable {c : Target.RunCall G I} {r : RunWalkA G I c} {l : Nat} {hl : r.w.visit
      (headEntry req false width fresh (List.range c.inputs.length) s.env.argName
       ((s.env.givenArgs[t]?).getD []) ((s.env.givenInputs[t]?).getD [])
       ((s.env.givenImplies[t]?).getD [])).2.1) ∈ r.w.incoming t ∧
-    ((r.stated t).getD {} = written ∧ req = { written with indices := written.indices ++ cf }) ∧
+    ((∀ ρ h, HeapKnowledge.Holds written ρ h → HeapKnowledge.Holds ((r.stated t).getD {}) ρ h) ∧
+      req = { written with indices := written.indices ++ cf }) ∧
     ∀ y ∈ List.range c.inputs.length, y < fresh
 
 /-- The trace identifies the head flag with the pass's flag. -/

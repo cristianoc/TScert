@@ -1150,7 +1150,6 @@ run_cmd do
   check ``Verification.TolerantFrames.ExitChecks.Site.exit_noninitial
   check ``Verification.TolerantFrames.ExitChecks.headEntryContract_of_checked
   check ``Verification.TolerantFrames.ExitChecks.headEntryContract_nonstart
-  check ``Verification.TolerantFrames.ExitChecks.Site.head_written_of_startSeparation
   check ``Verification.TolerantFrames.ExitChecks.headEntries_of_checked
   check ``Verification.TolerantFrames.ExitChecks.exitChecks_head_structural
   check ``Verification.TolerantFrames.ExitChecks.exitChecks_handler_structural
@@ -1172,5 +1171,23 @@ run_cmd do
       unless standard.contains axiom_ do
         throwError "{decl} depends on the axiom {axiom_}"
   check ``Verification.TolerantFrames.ExitChecks.handlerRecords_of_checked
+  check ``Verification.TolerantFrames.handlerExit_delivers
+  check ``Verification.TolerantFrames.exitsYield_of_yields
+
+-- Start contracts and their semantic projection to written assertions.
+open Lean Elab Command in
+run_cmd do
+  let standard := [``propext, ``Classical.choice, ``Quot.sound]
+  let check (decl : Name) : CommandElabM Unit := do
+    for axiom_ in ← liftCoreM <| collectAxioms decl do
+      unless standard.contains axiom_ do
+        throwError "{decl} depends on the axiom {axiom_}"
+  check ``Verification.TolerantFrames.startWritten_projection_counterexample
+  check ``Verification.TolerantFrames.ExitChecks.Site.start_given
+  check ``Verification.TolerantFrames.ExitChecks.Site.head_written_coherent
+  check ``Verification.TolerantFrames.ExitChecks.headEntryContract_of_checked
+  check ``Verification.TolerantFrames.ExitChecks.headEntryContract_nonstart
+  check ``Verification.TolerantFrames.ExitChecks.headEntries_of_checked
+  check ``Verification.TolerantFrames.headExit_delivers
   check ``Verification.TolerantFrames.handlerExit_delivers
   check ``Verification.TolerantFrames.exitsYield_of_yields

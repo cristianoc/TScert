@@ -2,6 +2,7 @@ import Verification.Programs.TolerantFramesExitHeadExtraction
 import Verification.Programs.TolerantFramesExitNonHeadExtraction
 import Verification.Programs.TolerantFramesDriverEntry
 import Verification.Programs.TolerantFramesDriverSetup
+import Verification.Programs.TolerantFramesExitStart
 
 /-! # Structural facts for head and handler exit extraction -/
 namespace Verification.TolerantFrames
@@ -231,8 +232,10 @@ supplies its entry and name bound even when it follows the source visit. -/
 theorem headEntryContract_of_checked (s : Site c r l hl) (checked : WalkChecked c r) {e : Exit}
     (hm : e ∈ Exit.ofNode (r.node l hl).node) (hh : r.given e.target.label = true)
     {req : HeapKnowledge.Knowledge} (hg : s.env.given[e.target.label]! = some req)
-    (writtenCoherent : ∃ cf, req = { (r.stated e.target.label).getD {} with
-      indices := ((r.stated e.target.label).getD {}).indices ++ cf }) :
+    (writtenCoherent : ∃ written cf,
+      (∀ ρ h, HeapKnowledge.Holds written ρ h →
+        HeapKnowledge.Holds ((r.stated e.target.label).getD {}) ρ h) ∧
+      req = { written with indices := written.indices ++ cf }) :
     HeadEntryContract s e.target.label req := by
   have hin := s.head_incoming hm hh
   have hne : r.w.incoming e.target.label ≠ [] := List.ne_nil_of_mem hin
@@ -247,9 +250,9 @@ theorem headEntryContract_of_checked (s : Site c r l hl) (checked : WalkChecked 
   have hpair := visitEntry_head_pair hentry hflag (henv ▸ hg) (henv ▸ s.exit_noninitial hm)
   have hrecord : (q.en.entry, q.en.implies) = (r.w.entry e.target.label, r.w.implies e.target.label) := by
     rw [← he, (r.node e.target.label visited).hentry, hi]
-  obtain ⟨cf, hcf⟩ := writtenCoherent
-  refine ⟨(r.stated e.target.label).getD {}, cf, (q.env.claimed[e.target.label]!).context.length,
-    q.σ.fresh, ?_, ⟨rfl, hcf⟩, ?_⟩
+  obtain ⟨written, cf, hwritten, hcf⟩ := writtenCoherent
+  refine ⟨written, cf, (q.env.claimed[e.target.label]!).context.length,
+    q.σ.fresh, ?_, ⟨hwritten, hcf⟩, ?_⟩
   · rw [henv, ← hnames, ← hpair, hrecord]
     exact hin
   · rw [← hnames]
@@ -260,70 +263,78 @@ theorem headEntryContract_nonstart (s : Site c r l hl) (checked : WalkChecked c 
     (hm : e ∈ Exit.ofNode (r.node l hl).node) (hh : r.given e.target.label = true)
     {req : HeapKnowledge.Knowledge} (hg : s.env.given[e.target.label]! = some req)
     (notStart : e.target.label ≠ c.start) : HeadEntryContract s e.target.label req := by
-  exact headEntryContract_of_checked s checked hm hh hg (s.head_written hg notStart)
+  obtain ⟨cf, hcf⟩ := s.head_written hg notStart
+  exact headEntryContract_of_checked s checked hm hh hg ⟨_, cf, fun _ _ h => h, hcf⟩
 
-/-- The written-only head interface requires the start's added separation
-to be present in its written assertion already. -/
-@[nospecialize] def StartSeparation (r : RunWalkA G I c) : Prop :=
-  HeapSeparation.union ((r.stated c.start).getD {}).separation c.entrySeparation =
-    ((r.stated c.start).getD {}).separation
+/-- The semantic projection needed when an exit targets the start.
+The pass's separation union does not establish this implication for arbitrary proposals. -/
+@[nospecialize] def StartWrittenImpliesStated (r : RunWalkA G I c) : Prop :=
+  ∀ ρ h, HeapKnowledge.Holds (startWritten (r.stated c.start) c.entryIndices c.entrySeparation) ρ h →
+    HeapKnowledge.Holds ((r.stated c.start).getD {}) ρ h
 
-/-- Setup's head contract has written coherence under the exact start-separation leaf. -/
-theorem Site.head_written_of_startSeparation (s : Site c r l hl) {t : Nat}
+/-- The start's given contract is `startWritten` with the supplied index facts. -/
+theorem Site.start_given (s : Site c r l hl) {req : HeapKnowledge.Knowledge}
+    (hg : s.env.given[c.start]! = some req) :
+    req = { startWritten (r.stated c.start) c.entryIndices c.entrySeparation with
+      indices := (startWritten (r.stated c.start) c.entryIndices c.entrySeparation).indices ++
+        ((byLabel c.P.toArray.size c.candidates)[c.start]!).getD [] } := by
+  obtain ⟨σ0, hs⟩ := s.setup
+  have h := setup_ok hs
+  obtain ⟨counts, hgiven⟩ := h.given
+  rw [hgiven, setupGiven_get] at hg
+  split at hg
+  · simp only [BEq.rfl, if_true, Option.some.injEq] at hg
+    have hst : s.env.stated[c.start]! = r.stated c.start := by
+      rw [h.stated, r.stated_eq]
+      simp only [Array.getElem!_eq_getD, Array.getD_eq_getD_getElem?]
+      rfl
+    rw [← hg, hst]; rfl
+  · cases hg
+
+/-- Setup's given head contract contains a base implying the written assertion.
+At the start the base is `startWritten`, including the entry facts. -/
+theorem Site.head_written_coherent (s : Site c r l hl) {t : Nat}
     {req : HeapKnowledge.Knowledge} (hg : s.env.given[t]! = some req)
-    (startSeparation : StartSeparation r) :
-    ∃ cf, req = { (r.stated t).getD {} with indices := ((r.stated t).getD {}).indices ++ cf } := by
+    (startWrittenSound : StartWrittenImpliesStated r) :
+    ∃ written cf,
+      (∀ ρ h, HeapKnowledge.Holds written ρ h → HeapKnowledge.Holds ((r.stated t).getD {}) ρ h) ∧
+      req = { written with indices := written.indices ++ cf } := by
   by_cases ht : t = c.start
   · subst t
-    obtain ⟨σ0, hs⟩ := s.setup
-    have h := setup_ok hs
-    obtain ⟨counts, hgiven⟩ := h.given
-    rw [hgiven, setupGiven_get] at hg
-    split at hg
-    · simp only [BEq.rfl, if_true, Option.some.injEq] at hg
-      have hst : s.env.stated[c.start]! = r.stated c.start := by
-        rw [h.stated, r.stated_eq]
-        simp only [Array.getElem!_eq_getD, Array.getD_eq_getD_getElem?]
-        rfl
-      refine ⟨c.entryIndices ++ ((byLabel c.P.toArray.size c.candidates)[c.start]!).getD [], ?_⟩
-      rw [← hg, hst]
-      simp only [SinglePass.startGiven, startWritten, List.append_assoc]
-      rw [show HeapSeparation.union ((r.stated c.start).getD {}).separation c.entrySeparation =
-        ((r.stated c.start).getD {}).separation from startSeparation]
-    · cases hg
-  · exact s.head_written hg ht
+    exact ⟨startWritten (r.stated c.start) c.entryIndices c.entrySeparation,
+      ((byLabel c.P.toArray.size c.candidates)[c.start]!).getD [], startWrittenSound, s.start_given hg⟩
+  · obtain ⟨cf, hcf⟩ := s.head_written hg ht
+    exact ⟨_, cf, fun _ _ h => h, hcf⟩
 
-/-- All targeted heads have their contract at the final walk; the only
-contract-shape leaf concerns separation added at the start. -/
+/-- All targeted heads have their contract at the final walk. -/
 theorem headEntries_of_checked (s : Site c r l hl) (checked : WalkChecked c r)
-    (startSeparation : StartSeparation r) :
+    (startWrittenSound : StartWrittenImpliesStated r) :
     ∀ t, (∃ e ∈ Exit.ofNode (r.node l hl).node, e.target.label = t) → r.given t = true →
       ∀ req, s.env.given[t]! = some req → HeadEntryContract s t req := by
   intro t htarget hh req hg
   obtain ⟨e, hm, rfl⟩ := htarget
-  exact headEntryContract_of_checked s checked hm hh hg (s.head_written_of_startSeparation hg startSeparation)
+  exact headEntryContract_of_checked s checked hm hh hg (s.head_written_coherent hg startWrittenSound)
 
-/-- Normal head extraction under the start-separation and yield-source leaves. -/
+/-- Normal head extraction under the yield-source judgment. -/
 theorem exitChecks_head_structural (s : Site c r l hl) (checked : WalkChecked c r) (η : MixedAssignment ι)
-    (startSeparation : StartSeparation r)
+    (startWrittenSound : StartWrittenImpliesStated r)
     (yieldSourcesJudged : ∀ ys, ExitYieldSource s.env l s.en s.sd s.sd.yields ys →
       ExitYieldsJudged (reassign G η) r.w (List.range c.inputs.length) l
         (r.node l hl).node (r.node l hl).c (r.node l hl).entry (r.node l hl).st ys) : Head s η :=
-  exitChecks_head s η (headEntries_of_checked s checked startSeparation) yieldSourcesJudged
+  exitChecks_head s η (headEntries_of_checked s checked startWrittenSound) yieldSourcesJudged
 
-/-- Handler extraction under the start-separation premise. -/
+/-- Handler extraction from checked records. -/
 theorem exitChecks_handler_structural (s : Site c r l hl) (checked : WalkChecked c r) (η : MixedAssignment ι)
-    (startSeparation : StartSeparation r) : Handler s η :=
-  exitChecks_handler_of_records s η (headEntries_of_checked s checked startSeparation)
+    (startWrittenSound : StartWrittenImpliesStated r) : Handler s η :=
+  exitChecks_handler_of_records s η (headEntries_of_checked s checked startWrittenSound)
     (fun _ ht => handlerRecords_of_checked s checked ht)
 
 end ExitChecks
-/-- Checked exit execution delivers under yield judgments and final-world realization.
-The start's written separation must absorb the entry separation. -/
+/-- Checked exit execution delivers under yield judgments and final-world realization. -/
 theorem exitsYield_of_yields
-    (startSeparation : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I)
+    (startWrittenSound : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I)
       after admits, RunPremises G I c after admits → ∀ r : RunWalkA G I c,
-        WalkChecked c r → ExitChecks.StartSeparation r)
+        WalkChecked c r → ExitChecks.StartWrittenImpliesStated r)
     (yieldSourcesJudged : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I)
       after admits, RunPremises G I c after admits → ∀ r : RunWalkA G I c,
         WalkChecked c r → ∀ η, admits η → ∀ l (hl : r.w.visited l) (s : ExitChecks.Site c r l hl),
@@ -341,14 +352,14 @@ theorem exitsYield_of_yields
           ExitChecks.Realization s η) : ExitsYield ι := by
   apply exitsYield_of_checks
   intro G I c after admits hp r checked η ha l hl s
-  have sep := startSeparation G I c after admits hp r checked
+  have startSound := startWrittenSound G I c after admits hp r checked
   have sources := yieldSourcesJudged G I c after admits hp r checked η ha l hl s
   exact ExitChecks.assemble s η
     (ExitChecks.exitChecks_here s η (initialYieldsJudged G I c after admits hp r checked η ha l hl s))
     (ExitChecks.exitChecks_widths s η)
     (ExitChecks.exitChecks_nonHead s η checked sources)
-    (ExitChecks.exitChecks_head_structural s checked η sep sources)
-    (ExitChecks.exitChecks_handler_structural s checked η sep)
+    (ExitChecks.exitChecks_head_structural s checked η startSound sources)
+    (ExitChecks.exitChecks_handler_structural s checked η startSound)
     (ExitChecks.exitChecks_fresh s)
     (realization G I c after admits hp r checked η ha l hl s)
 

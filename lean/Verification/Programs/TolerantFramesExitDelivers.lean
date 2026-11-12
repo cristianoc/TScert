@@ -258,8 +258,8 @@ theorem nonHeadExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
       (fun y hy => hI' y (List.mem_filter.mp (keepFirst_mem hy)).1) hg hlen⟩
 
 /-- **What `exitStep` checks on the normal exit at position `i` into a
-loop head** (`headExit`), the head's given facts `req` (its written
-assertion `written` with index facts `cf`), implications `gimp`, promised
+loop head** (`headExit`), the head's given facts `req` (a base `written`
+implying its stated assertion, with index facts `cf`), implications `gimp`, promised
 argument `argName` at its slots `argSlots` and inputs at `inputSlots`,
 entered by `headEntry` at width `hwidth` from the counter `hfresh`: where
 the exit is not vacuous, its types (`ExitTyped`), each given implication
@@ -298,7 +298,8 @@ structure HeadExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (
       req t.mapping = true
   entered : ((SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp).1,
     (SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp).2.1) ∈ w.incoming t.label
-  written : (stated t.label).getD {} = written ∧ req = { written with indices := written.indices ++ cf }
+  written : (∀ ρ h, HeapKnowledge.Holds written ρ h → HeapKnowledge.Holds ((stated t.label).getD {}) ρ h) ∧
+    req = { written with indices := written.indices ++ cf }
 
 /-- **The head checks at a reassigned graph** (`ExitTyped.reassign`,
 `subtypeUsing_reassign`, `headQuery_reassign`). -/
@@ -330,7 +331,7 @@ theorem HeadExitChecked.reassign {G : NormalGraph ι} {images : InstanceImageChe
 /-- **A normal exit into a loop head delivers `edgePreAJ`** from what
 `headExit` checked on it (`HeadExitChecked`): the head's entry by
 `headEstablishes_of_edge` and `headEntry_holds`, its written assertion by
-`assertsAt_of_head`, its types from the exit's checks; a head joins no
+`HeadExitChecked.written`, its types from the exit's checks; a head joins no
 implications. -/
 theorem headExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G} {w : Walk ι}
     {startNames : List Nat} {ρ0 : Env} {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge}
@@ -409,7 +410,9 @@ theorem headExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G} {
   · exact (headEntry_holds hnd hlt hargs hest).1
   · obtain ⟨hw, hreq⟩ := hc.written
     subst hreq
-    exact assertsAt_of_head hw hest
+    intro assertion ha
+    have hh := hw _ _ (holds_of_indices_append hest.facts)
+    simpa [ha] using hh
 
 /-- The handler edge's context: the thrown value's type `TT` pushed. -/
 def handlerCtx (c : PointClaim ι) (TT : Ty ι) : List (Ty ι) := TT :: c.context
@@ -484,7 +487,8 @@ structure HandlerExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G
     (((SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp).1,
       (SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp).2.1) ∈
         w.incoming t.label) ∧
-    ((stated t.label).getD {} = written ∧ req = { written with indices := written.indices ++ cf }) ∧
+    ((∀ ρ h, HeapKnowledge.Holds written ρ h → HeapKnowledge.Holds ((stated t.label).getD {}) ρ h) ∧
+      req = { written with indices := written.indices ++ cf }) ∧
     (∀ y ∈ startNames, y < hfresh) ∧ (∀ a, argName = some a → ∃ q : Nat, startNames[q]? = some a)
 
 /-- **A node's handler exit delivers `edgePreAJ`** from the throw state,
@@ -566,7 +570,9 @@ theorem handlerExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
     · exact (headEntry_holds hnd hlt hargs hest).1
     · obtain ⟨hw, hreq⟩ := hwr
       subst hreq
-      exact assertsAt_of_head hw hest
+      intro assertion ha
+      have hh := hw _ _ (holds_of_indices_append hest.facts)
+      simpa [ha] using hh
 
 theorem SubtypesPass.reassign {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ Δ : List (Ty ι)}
     {diff : List (Nat × Nat)} (h : SubtypesPass G images Γ Δ diff) (η : MixedAssignment ι) :

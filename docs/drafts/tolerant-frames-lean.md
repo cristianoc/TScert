@@ -1381,7 +1381,7 @@ The graph theorem `run_sound_single_pass`
 | --- | --- | --- |
 | `DirectKeepsSummaries` | Every summary returned by `directCall` is sound when its input summaries are sound. `keepSummaries` preserves the input prefix; soundness also requires checking every appended summary. This preservation theorem is not proved. | `visitsSettle_of` |
 | `SearchKeepsSummaries` | Every summary returned by `expressionEffectUsing` is sound when its input summaries are sound. Preservation through the search's operations is not proved. | `visitsSettle_of` |
-| `ExitsYield` | Each checked node's normal exits and handler deliver `NodeExitsY` at every admitted reassigned graph. `exitsYield_of_yields` in `TolerantFramesExitStructural.lean` composes the structural checks under the yield judgments, final-world realization and start-separation premise stated below. | `nodesYield_of`, then `stepEdgesSound_of_yields` |
+| `ExitsYield` | Each checked node's normal exits and handler deliver `NodeExitsY` at every admitted reassigned graph. `exitsYield_of_yields` in `TolerantFramesExitStructural.lean` composes the structural checks under the yield judgments, final-world realization and start-projection premise stated below. | `nodesYield_of`, then `stepEdgesSound_of_yields` |
 | `RegionsRecorded` | The graph's regional tables agree with the tables each visit checks, satisfy the initial regional facts, and admit each predecessor's established facts at its target. Each `RegionalDone` contains its tables and evidence; each label records its region state. The graph-wide agreement proof is not established. | `regionsHeld_of` |
 | `RegionsTyped` | Every visited node's regional evidence has its context and is typed at every admitted reassigned graph. `regionsTyped_of_tree` proves the tree-checked case, and `regionalTyped_copy` proves the copy case. The `requiresTree` case needs the evidence's `regionalFacts` to supply both the entry facts and `stepK`. | `regionsHeld_of` |
 
@@ -1389,13 +1389,14 @@ The proved `exitsYield_of_yields` uses `yieldSourcesJudged` for every
 `ExitYieldSource s.env l s.en s.sd s.sd.yields ys` (the same premise supplies
 `exitCachesJudged`), `initialYieldsJudged` for `s.ysA`, and
 `ExitChecks.Realization s η`, all at each admitted reassigned graph.
-It also requires `ExitChecks.StartSeparation r`:
-`HeapSeparation.union ((r.stated c.start).getD {}).separation c.entrySeparation =
-((r.stated c.start).getD {}).separation`.
-Setup reads `stated := byLabel n assertions` (`SinglePass.lean:2079`);
-`startWritten` adds entry separation to the given contract (line 1183),
-and `withStated` leaves head entries unchanged (line 2171).
-These definitions do not supply the required equality.
+It also requires `ExitChecks.StartWrittenImpliesStated r`:
+`∀ ρ h, HeapKnowledge.Holds (startWritten (r.stated c.start) c.entryIndices c.entrySeparation) ρ h → HeapKnowledge.Holds ((r.stated c.start).getD {}) ρ h`.
+`Site.start_given` identifies the start's given contract as `startWritten`
+with the supplied index facts. `Site.head_written_coherent` uses that
+contract as the start's base under this semantic projection hypothesis;
+other heads use their stated assertion. `HeadEntryContract`,
+`HeadExitChecked.written`, and the written coherence conjunct in
+`HandlerExitChecked.head` require the base to imply the stated assertion.
 `handlerRecords_of_checked` proves handler storage and merge recording
 from the allocated arrays and indexed execution; `HandlerExitChecked.merged`
 records the implications returned by `edgeTransfer`, whose semantic
@@ -1429,6 +1430,19 @@ Proved prerequisites:
   table is sound; `assertionExit_checked` exposes the written assertion check.
 
 
+The start-projection leaf is not established by the pass:
+`startWritten_projection_counterexample` in `TolerantFramesExitStart.lean`
+proves that an accepted `entryKnows` check and a holding `startWritten`
+contract can coexist with a false written assertion. Its separation has
+depth zero and one fact at slot zero with no partners; `union` normalizes
+away that fact and its slot-bound obligation. This counterexample concerns
+the projection, not `RunSound`: the caller's `EntryHolds` is impossible in
+this example. Setup refuses edges into the start only when `regional.isSome`;
+ordinary runs permit them (`SinglePass.setup`). Consequently,
+`exitsYield_of_yields` has the three yield premises and the explicit
+`StartWrittenImpliesStated` leaf. No shared structure has an additional field.
+
+
 [`TolerantFramesExitHeadExtraction.lean`](../../lean/Verification/Programs/TolerantFramesExitHeadExtraction.lean)
 proves `exitChecks_head`, `exitChecks_handler_edges`, and
 `exitChecks_handler_of_records` under explicit leaves: `r.given = passHeads c`,
@@ -1450,7 +1464,7 @@ and `ctx_eq`, established at both walk constructors. `NodeExitTrace` and
 `Site.facts` retain setup provenance and the input-name bound at the visit's
 counter. `headEntryContract_nonstart` proves the final entry contract for a
 targeted head other than the start; `headEntries_of_checked` covers the start
-under `StartSeparation`. The target's final visit follows from its recorded
+under the start-projection leaf above. The target's final visit follows from its recorded
 incoming edge and `TraversedA.visited`. Head extraction quantifies over exit
 targets: a head with no incoming edge has no incoming pair in `ofPass`.
 `exitStep_handler_arrays` and `Site.handler_record` identify the handler's
