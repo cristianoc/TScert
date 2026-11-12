@@ -986,6 +986,31 @@ def derivChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : C
     (ProgramCertificates.checkTreeUsing G images deriv codes sums ||
       PromiseCalls.requiresTree G images stepK codes sums deriv)
 
+/-- **A node's shape** as the certificate checker checks a `branch`: its
+claim type the Boolean (`expand G A = [.bool]`); a return, a bind or an
+effect any. -/
+def passShapeCheck (G : NormalGraph ι) (A : Ty ι) : Continuation → Bool
+  | .branch _ _ => decide (PositiveRules.expand G A = [.bool])
+  | .ret | .bind _ | .effect _ => true
+  | _ => false
+
+/-- **A node's shape at every continuation**: `passShapeCheck`, and at a
+`branchBind` the checker's test (`ControlFlow.checkNodeResult`,
+`BranchRefinement.onlyBoolean`); a `tagBind` needs none. -/
+def passShapeCheck' (G : NormalGraph ι) (A : Ty ι) : Continuation → Bool
+  | .branchBind _ _ => BranchRefinement.onlyBoolean G A
+  | .tagBind _ _ _ => true
+  | k => passShapeCheck G A k
+
+/-- **The derivation a regional check reads** checked as `footprintCheck`
+checks it (`derivChecked`), where the step has one. -/
+def regionalDerivChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
+    (sums : List (ReadSummary ι)) (c : PointClaim ι) (node : Node) (stepK : Knowledge)
+    (deriv : Option (ProgramCertificates.Evidence ι)) : Bool :=
+  match deriv with
+  | some d => derivChecked G images codes sums c node stepK d
+  | none => true
+
 /-- **A node's step within a footprint bound** (`GraphCode.nodeChecked`),
 at a node outside the region from which no normal return is possible: the
 step within `Φ` (`ExpressionEffects.check`, `writeWithin`, `initWriteWithin`,
@@ -1547,8 +1572,80 @@ def headEntry (g : Knowledge) (isStart : Bool) (width fresh : Nat) (startNames :
     | some b => s.add b | none => s) {}
   ({ names, store }, implies.filterMap (fun x => do pure ⟨← f x.test, ← f x.target, x.type⟩), next)
 
-/-- The pass over one graph. -/
-def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
+/-- What the walk records of one label: whether it was visited, its entry
+state and implications (after the head entry, the single state or the
+merge, and a written assertion's facts at a node other than a head), its
+state after its step, and at a merge its context and the fresh counter
+the merge started from. -/
+structure LabelWalk (ι : Type) where
+  visited : Bool := false
+  entry : Option State := none
+  implies : List (PromiseCalls.Implication ι) := []
+  after : Option State := none
+  merge : Option (List (Ty ι) × Nat) := none
+
+/-- An edge the walk processed: its source, its target with the mapping,
+whether it pushes the result, the implications it carries (into a node
+other than a head, those naming no name it drops), and whether some
+environment may meet its context (its context satisfiable and its
+observation possible). -/
+structure EdgeWalk (ι : Type) where
+  source : Nat
+  target : Target
+  pushed : Bool
+  carried : List (PromiseCalls.Implication ι) := []
+  meets : Bool := true
+
+/-- The walk's record: per label what `LabelWalk` states, the states and
+implications every processed edge carried into it, the edges into a merge
+as the merge reads them; the processed edges in order; the nodes visited. -/
+structure Walk (ι : Type) where
+  labels : Array (LabelWalk ι)
+  incoming : Array (List State)
+  incomingImpl : Array (List (List (PromiseCalls.Implication ι)))
+  incomingEdges : Array (List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
+  edges : Array (EdgeWalk ι) := #[]
+  visited : Nat := 0
+
+/-- The walk's state between two nodes: its record, and what it threads. -/
+structure WalkState (ι : Type) [BEq ι] [Hashable ι] (G : NormalGraph ι) where
+  walk : Walk ι
+  answers : Answered G
+  counts : Counts
+  trace : Trace
+  indeg : Array Nat
+  fresh : Nat
+  regionIn : Array (List RegionState)
+  incomingFrom : Array (List Nat)
+  queue : List Nat
+  unsat : Array (Option Bool)
+  lastStamp : Nat
+  lastKind : String
+
+/-- Where a walk stopped: its outcome, counts, answers and trace. -/
+abbrev WalkStop (ι : Type) [BEq ι] [Hashable ι] (G : NormalGraph ι) := Outcome ι × Counts × Answered G × Trace
+
+/-- The walk on fuel: the queue's first node visited, then the rest; a fuel
+that runs out before the queue does is a refusal. -/
+def drive {G : NormalGraph ι} (visit : WalkState ι G → Nat → Except (WalkStop ι G) (WalkState ι G)) :
+    Nat → WalkState ι G → Except (WalkStop ι G) (WalkState ι G)
+  | 0, σ => match σ.queue with
+    | [] => .ok σ
+    | _ => .error (.refused "the walk's fuel", σ.counts, σ.answers, σ.trace)
+  | fuel + 1, σ => match σ.queue with
+    | [] => .ok σ
+    | l :: rest => match visit { σ with queue := rest } l with
+      | .ok σ' => drive visit fuel σ'
+      | .error stop => .error stop
+
+/-- The verdict of a walk that ran out of queue, from its record: accepted
+where it visited every node the start reaches. -/
+def Walk.outcome (w : Walk ι) (reachable : Nat) : Outcome ι :=
+  if w.visited < reachable then .notHandled s!"{reachable - w.visited} nodes not reached" else .accepted
+
+/-- The walk over one graph: the walk's record and the nodes the start
+reaches, or where it stopped. -/
+def runWalk (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
     (P : Program) (claims : List (PointClaim ι)) (start : Nat) (inputs : List (Ty ι)) (goal : Goal ι)
     (assertions : List (Nat × Knowledge)) (cuts : List Nat)
     (candidates : List (Nat × List IndexAtom)) (entryIndices : List IndexAtom)
@@ -1560,7 +1657,8 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     (givenArgs : Array (List Nat) := #[])
     (ensures : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
     (entrySeparation : HeapSeparation.Separation := {}) (observe : Option Nat := none) (tracing : Bool := false) (observeEntry : Bool := false)
-    (regional : Option Regional := none) : Outcome ι × Counts × Answered G × Trace := Id.run do
+    (regional : Option Regional := none) :
+    Except (WalkStop ι G) (WalkState ι G × Nat) := Id.run do
   let nodes := P.toArray
   let claimed := claims.toArray
   let n := nodes.size
@@ -1568,7 +1666,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
   let edgeCount := nodes.foldl (fun acc node => acc + (successors node.continuation).length + node.handler.toList.length) 0
   let mut counts : Counts := { nodes := n, edges := edgeCount }
   let mut trace : Trace := {}
-  if claimed.size != n then return (.notHandled "claim count", counts, answers, trace)
+  if claimed.size != n then return .error (.notHandled "claim count", counts, answers, trace)
   let index := KnownIndex.of known
   -- The type of `undefined` alone, among the pool's: a call's omitted
   -- receiver is read at it.
@@ -1588,7 +1686,15 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
   -- A regional check assumes the regions' input facts at the start, which
   -- no edge into it establishes.
   if startEntered && regional.isSome then
-    return (.notHandled "store regions with an edge into the start", counts, answers, trace)
+    return .error (.notHandled "store regions with an edge into the start", counts, answers, trace)
+  -- Under store regions, the entry's fields the regions read
+  -- (`ArgumentPathTracking.checkEntryFields`, as `goto_bounded` checks them).
+  if let some rg := regional then
+    if !GraphCode.ArgumentPathTracking.checkEntryFields G inputs rg.regions then
+      return .error (.refused "store regions: the entry's fields", counts, answers, trace)
+  -- One written assertion per label (`byLabel` reads the first).
+  if (assertions.map (·.1)).eraseDups.length != assertions.length then
+    return .error (.refused "a label with two written assertions", counts, answers, trace)
   let stated := byLabel n assertions
   if tracing then
     let e : Array (Option State) := Array.replicate n none
@@ -1600,7 +1706,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
   if let some why := entryRefusal G inputs claims start goal (stated.getD start none) ((supplied.getD start none).getD [])
       ((givenImplies[start]?).getD []) ((givenArgs[start]?).getD []) ((givenInputs[start]?).getD [])
       entryIndices entrySeparation then
-    return (.refused why, counts, answers, trace)
+    return .error (.refused why, counts, answers, trace)
   -- In-degrees without the edges into cuts, of the edges from nodes the
   -- start reaches: a node no path from the start reaches never runs.
   let mut indeg : Array Nat := Array.replicate n 0
@@ -1651,7 +1757,6 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         else { written with indices := written.indices ++ claimsFacts }))
   for l in List.range n do
     if reached[l]! && indeg[l]! == 0 && (isHead[l]! || l == start) then queue := queue ++ [l]
-  let mut visitedAll := 0
   -- The start's names, fixed before any node is visited (a cut may be
   -- visited before it), and the name of the input a promise goal is about.
   let startWidth := ((claimed[start]?).map (·.context.length)).getD 0
@@ -1663,12 +1768,27 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
   let mut unsat : Array (Option Bool) := Array.replicate n none
   let mut lastStamp := 0
   let mut lastKind := ""
-  while true do
-    let some l := queue.head? | break
+  -- One node: its entry, its step, its exits (`drive` visits each once).
+  let visit := fun (σ : WalkState ι G) (l : Nat) => show Except (WalkStop ι G) (WalkState ι G) from do
+    let mut answers := σ.answers
+    let mut counts := σ.counts
+    let mut trace := σ.trace
+    let mut indeg := σ.indeg
+    let mut fresh := σ.fresh
+    let mut regionIn := σ.regionIn
+    let mut incomingFrom := σ.incomingFrom
+    let mut queue := σ.queue
+    let mut unsat := σ.unsat
+    let mut lastStamp := σ.lastStamp
+    let mut lastKind := σ.lastKind
+    let mut labels := σ.walk.labels
+    let mut incoming := σ.walk.incoming
+    let mut incomingImpl := σ.walk.incomingImpl
+    let mut incomingEdges := σ.walk.incomingEdges
+    let mut walkEdges := σ.walk.edges
+    let visitedBefore := σ.walk.visited
     -- Measuring: the previous node's time, with its edges, by its kind.
     lastStamp := clock lastKind lastStamp l
-    queue := queue.tail
-    visitedAll := visitedAll + 1
     let node := nodes[l]!
     let c := claimed[l]!
     let width := c.context.length
@@ -1698,6 +1818,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         implies := (incomingImpl[l]!).headD []
       | [] => pure ()
       | s :: rest =>
+        labels := labels.modify l fun r => { r with merge := some (c.context, fresh) }
         let mg := mergeState G c.context (s :: rest) incomingEdges[l]! fresh
         fresh := mg.fresh
         counts := { counts with merges := counts.merges + 1, mergeDiffs := counts.mergeDiffs + mg.diffCount }
@@ -1722,10 +1843,10 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         let ctx := KnowledgeExpand.ctxOf G c.context
         let missingCells := old.cells.filter fun f => !KnowledgeExpand.checkIn ctx k { cells := [f] } none
         if !missingCells.isEmpty then
-          return (.refused s!"reference: node {l} lacks cells {reprStr missingCells}", counts, answers, trace)
+          throw (.refused s!"reference: node {l} lacks cells {reprStr missingCells}", counts, answers, trace)
         let missing := old.indices.filter fun a => !KnowledgeExpand.checkIn ctx k { indices := [a] } none
         if !missing.isEmpty then
-          return (.refused s!"reference: node {l} lacks {reprStr missing}", counts, answers, trace)
+          throw (.refused s!"reference: node {l} lacks {reprStr missing}", counts, answers, trace)
     -- A written assertion, established on every edge into a node other than
     -- a head, holds there: its facts join the state.
     if !isHead[l]! then
@@ -1733,13 +1854,17 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         let f := fun (i : Nat) => entry.names[i]?
         entry := { entry with store := (atomsOf req).foldl (fun s a => match a.rename f with
           | some b => s.add b | none => s) entry.store }
+    labels := labels.modify l fun r => { r with visited := true, entry := some entry, implies }
     -- Observing a node whose step is refused: its state on entry alone.
     if observeEntry && observe == some l then
       let before := (materialize entry width (List.range width) true).1
       let o : Observation ι := { label := l, before, after := before, preds := predViews, names := predNames, implies := slotImplOf entry.names implies }
-      return (.observed o, counts, answers, trace)
+      throw (.observed o, counts, answers, trace)
+    -- The node's shape (`passShapeCheck'`).
+    if !passShapeCheck' G c.type node.continuation then
+      throw (.refused s!"the shape of node {l}", counts, answers, trace)
     -- The step.
-    let some ms := timedKind "node mentioned" fun _ => mentioned 0 node.expression | return (.notHandled s!"term at node {l}: {(reprStr node.expression).take 200}", counts, answers, trace)
+    let some ms := timedKind "node mentioned" fun _ => mentioned 0 node.expression | throw (.notHandled s!"term at node {l}: {(reprStr node.expression).take 200}", counts, answers, trace)
     let ms := (keepFirst {} ms).2.toList
     let (stepped, stats, a) := checkedStep G images pool fuel suggestions index codes aliases passChecker undefTy
       l node c entry ms fresh answers
@@ -1749,7 +1874,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       directCalls := counts.directCalls + stats.directCalls, copies := counts.copies + stats.copies }
     let st ← match stepped with
       | .ok st => pure st
-      | .error why => return (.refused why, counts, answers, trace)
+      | .error why => throw (.refused why, counts, answers, trace)
     lastKind := if (given[l]!).isSome then "node: head" else if (incoming[l]!).length > 1 then "node: merge"
       else if st.copied then "node: copy" else "node: step"
     fresh := st.fresh
@@ -1760,6 +1885,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     let stepDeriv := st.stepDeriv
     let stepEffect := st.stepEffect
     let pushedNames := result :: entry.names
+    labels := labels.modify l fun r => { r with after := some { entry with names := pushedNames, store } }
     if tracing then
       let st : State := { entry with names := pushedNames, store := store }
       trace := { trace with afters := trace.afters.set! l (some st), names := pushedNames, focus := result :: trace.focus }
@@ -1767,7 +1893,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       let before := (materialize entry width (List.range width) true).1
       let after := (materialize { entry with names := pushedNames, store := store } (width + 1) (List.range (width + 1)) true).1
       let o : Observation ι := { label := l, before, after, preds := predViews, names := predNames, implies := slotImplOf entry.names implies }
-      return (.observed o, counts, answers, trace)
+      throw (.observed o, counts, answers, trace)
     -- Whether the result holds a fresh store: a copy of a fresh slot, or a
     -- call at a selected signature stating a fresh result (`GraphCode.varFresh`,
     -- `callFresh`).
@@ -1782,7 +1908,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     if let some (Φ, ret, exc) := bound then
       if deadArr.getD l false then
         if !(GraphCode.deadNode G deadArr.toList node ⟨none, some ⟨c.context, node.expression, c.type⟩, [], {}, none, {}, none, [], [], [], none⟩ && !exc) then
-          return (.outsideBound l, counts, answers, trace)
+          throw (.outsideBound l, counts, answers, trace)
       else
         let F := match PromiseCalls.receiverSlot node.expression with
           | some i => if (entry.names[i]?).any entry.fresh.contains then [i] else []
@@ -1791,7 +1917,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
           | some t => !deadArr.getD t.label false
           | none => false
         if !footprintCheck G images codes answers.summaries.toList Φ F c node stepK deriv liveHandler exc ret outFresh then
-          return (.outsideBound l, counts, answers, trace)
+          throw (.outsideBound l, counts, answers, trace)
     -- The node's implications at its slots, as the search's yields read
     -- them (`produceNode`): a negation's or a copy's yields restate them.
     let slotImpl : Thunk (List (PromiseCalls.Implication ι)) := Thunk.mk fun _ => slotImplOf entry.names implies
@@ -1827,7 +1953,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       let landing := (List.range tc.context.length).filterMap fun i =>
         if PointClaims.slot t.mapping i == 0 then tc.context[i]? else none
       (landing ++ pool).find? (ControlFlow.admitsAll G)
-    if node.handler.isSome && thrownTy.isNone then return (.refused s!"handler of node {l}", counts, answers, trace)
+    if node.handler.isSome && thrownTy.isNone then throw (.refused s!"handler of node {l}", counts, answers, trace)
     let thrown := fresh
     if node.handler.isSome then fresh := fresh + 1
     if let .ret := node.continuation then
@@ -1836,7 +1962,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       answers := a
       if let some q := queried then
         counts := { counts with queries := counts.queries + 1, queryAtoms := counts.queryAtoms + q }
-      if let some why := refusal then return (.refused why, counts, answers, trace)
+      if let some why := refusal then throw (.refused why, counts, answers, trace)
     -- The edges: target, whether the result is pushed, an observation of
     -- it, and a branch's answer.
     let edges := Exit.ofNode node
@@ -1883,6 +2009,8 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         | none, some _ => some .effect
         | none, none => none
       let kHere := (materialize entry width (List.range width) true).1
+      if !regionalDerivChecked G images codes sums c node stepK stepDeriv then
+        throw (.refused s!"store regions at node {l}: its derivation", counts, answers, trace)
       let cEv : NodeEvidence ι := ⟨ordinaryEv, some ⟨c.context, node.expression, c.type⟩, [], kHere, stepEffect, {}, none, [], [], [], none⟩
       let t0 := node.expression
       let F := here.values
@@ -1921,7 +2049,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       let ft : GraphCode.ArgumentRegionFresh.FreshTables := ⟨sparse n [] (at_.map fun (x, r) => (x, r.values)),
         sparse n [] (at_.map fun (x, r) => (x, r.cells)), sparse n [] (at_.map fun (x, r) => (x, r.fields)), rg.names⟩
       if !(timedKind "regional node" fun _ => GraphCode.ArgumentRegionGraph.checkNode G images sums rg.Φ rg.regions table ft rg.exc l node cEv) then
-        return (.refused s!"store regions at node {l}", counts, answers, trace)
+        throw (.refused s!"store regions at node {l}", counts, answers, trace)
     let mut edgeIndex := 0
     for ex in edges do
       let t := ex.target
@@ -1932,7 +2060,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       let first := edgeIndex == 0
       edgeIndex := edgeIndex + 1
       if tracing then trace := { trace with edge := some t.label }
-      let some tc := claimed[t.label]? | return (.refused s!"edge from {l}", counts, answers, trace)
+      let some tc := claimed[t.label]? | throw (.refused s!"edge from {l}", counts, answers, trace)
       let Γ := if isHandler then thrownTy.getD [] :: c.context else if pushed then c.type :: c.context else c.context
       let names := if isHandler then thrown :: entry.names else if pushed then pushedNames else entry.names
       -- The edge's own facts: an observation of the result; a throw's, the
@@ -1975,7 +2103,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
           let (found, a) := timedKind "edge search" fun _ => checkedEdge G images claimed tc.context Γ t observed ko answers
           answers := a
           if !found && isHandler then
-            return (.refused s!"handler edge from node {l} to node {t.label}", counts, answers, trace)
+            throw (.refused s!"handler edge from node {l} to node {t.label}", counts, answers, trace)
           if !found then
             -- The edge's context as the step's yields refine it
             -- (`produceNodeAt`): what a test or a promise establishes.
@@ -2035,13 +2163,14 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
                 let (found', a) := checkedEdge G images claimed tc.context Γm t observed outL answers
                 answers := a
                 found := found'
-            if !found then return (.refused s!"edge from node {l} to node {t.label}{if l == debugNode then s!" fields {reprStr (readFields ko 0)} links {reprStr ko.links} diff {reprStr diff} implies {reprStr (implies.map fun x => (x.test, x.target))} names {reprStr (entry.names.take 6)} yields {reprStr ((yields.getD []).map fun y => (y.target, y.conditional))}" else ""}", counts, answers, trace)
+            if !found then throw (.refused s!"edge from node {l} to node {t.label}{if l == debugNode then s!" fields {reprStr (readFields ko 0)} links {reprStr ko.links} diff {reprStr diff} implies {reprStr (implies.map fun x => (x.test, x.target))} names {reprStr (entry.names.take 6)} yields {reprStr ((yields.getD []).map fun y => (y.target, y.conditional))}" else ""}", counts, answers, trace)
       -- The edge's implications: the entry's, and on a pushed edge those the
       -- result's conditional yields state of it.
       let freshImpl : List (PromiseCalls.Implication ι) := if !pushed || isHandler then [] else
         ((yields.getD []).filterMap fun y => if y.conditional && !y.onFalse then
           (entry.names[y.target]?).map fun tgt => ⟨result, tgt, y.type⟩ else none)
       if isHead[t.label]! then
+        walkEdges := walkEdges.push { source := l, target := t, pushed, carried := implies ++ freshImpl, meets := !vacuous }
         -- The head's given implications hold on every edge into it.
         if !vacuous then
           for x in (givenImplies[t.label]?).getD [] do
@@ -2056,18 +2185,18 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
                   let (res, a') := subtypeUsing G images y.type x.type answers
                   answers := a'
                   if res.value.isSome then ok := true
-            if !ok then return (.refused s!"edge from node {l} into statement entry {t.label}: an implication", counts, answers, trace)
+            if !ok then throw (.refused s!"edge from node {l} into statement entry {t.label}: an implication", counts, answers, trace)
         -- The slots it states hold the promised input, or an input's entry
         -- value, hold it on every edge.
         if !vacuous then
           for (j, q) in (givenInputs[t.label]?).getD [] do
             if names[PointClaims.slot t.mapping j]? != startNames[q]? then
-              return (.refused s!"edge from node {l} into statement entry {t.label}: an input's value", counts, answers, trace)
+              throw (.refused s!"edge from node {l} into statement entry {t.label}: an input's value", counts, answers, trace)
           for j in (givenArgs[t.label]?).getD [] do
             if names[PointClaims.slot t.mapping j]? != argName then
-              return (.refused s!"edge from node {l} into statement entry {t.label}: the promised input", counts, answers, trace)
+              throw (.refused s!"edge from node {l} into statement entry {t.label}: the promised input", counts, answers, trace)
         -- The head's given state is entailed on every edge into it.
-        let some req := given[t.label]! | return (.refused s!"head {t.label}", counts, answers, trace)
+        let some req := given[t.label]! | throw (.refused s!"head {t.label}", counts, answers, trace)
         let slots := (atomsOf req).flatMap Atom.names
         let srcSlots := slots.map (PointClaims.slot t.mapping)
         let (k, _, _) := materialize { names, store := edgeStore } (if pushed then width + 1 else width) srcSlots true
@@ -2080,7 +2209,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
           let missing := (atomsOf req).filter fun a => !KnowledgeExpand.checkIn ctx src (ofAtoms [a] tc.context.length) t.mapping
           if tracing then
             trace := { trace with missing := missing.filterMap fun a => a.rename fun i => names[PointClaims.slot t.mapping i]? }
-          return (.refused s!"edge from node {l} into statement entry {t.label}: lacks {(reprStr (missing.map fun a => match a with | .index x => reprStr x | .cell f => s!"cell {f.slot}" | .value f => s!"value {f.slot}" | .link g => s!"link {g.cell} {g.value}" | .elem e => s!"elems {e.slot}" | .sep f => s!"sep {f.slot}")).take 1500}", counts, answers, trace)
+          throw (.refused s!"edge from node {l} into statement entry {t.label}: lacks {(reprStr (missing.map fun a => match a with | .index x => reprStr x | .cell f => s!"cell {f.slot}" | .value f => s!"value {f.slot}" | .link g => s!"link {g.cell} {g.value}" | .elem e => s!"elems {e.slot}" | .sep f => s!"sep {f.slot}")).take 1500}", counts, answers, trace)
       else
         -- A target's assertion established on the edge, as the edge test
         -- into a statement entry establishes it (`checkTargetResult`): over the
@@ -2101,12 +2230,13 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
                 !KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G tc.context) k (ofAtoms [a] tc.context.length) t.mapping
               if tracing then
                 trace := { trace with missing := missing.filterMap fun a => a.rename fun i => names[PointClaims.slot t.mapping i]? }
-              return (.refused s!"edge from node {l} into node {t.label}: its assertion lacks {(missing.map fun a => match a with | .index x => (reprStr x.fact).take 80 | .cell f => s!"cell {f.slot}.{f.field}" | .value f => s!"value {f.slot}" | .link g => s!"link {g.cell}.{g.field}={g.value}" | .elem e => s!"elems {e.slot}" | .sep f => s!"sep {f.slot}").take 4}", counts, answers, trace)
+              throw (.refused s!"edge from node {l} into node {t.label}: its assertion lacks {(missing.map fun a => match a with | .index x => (reprStr x.fact).take 80 | .cell f => s!"cell {f.slot}.{f.field}" | .value f => s!"value {f.slot}" | .link g => s!"link {g.cell}.{g.field}={g.value}" | .elem e => s!"elems {e.slot}" | .sep f => s!"sep {f.slot}").take 4}", counts, answers, trace)
         let (target, carried) := edgeTransfer names t.mapping pushed isHandler outFresh entry result edgeStore
           (implies ++ freshImpl)
         incoming := incoming.modify t.label (target :: ·)
         if observe == some t.label || tracing then incomingFrom := incomingFrom.modify t.label (l :: ·)
         incomingImpl := incomingImpl.modify t.label (carried :: ·)
+        walkEdges := walkEdges.push { source := l, target := t, pushed, carried, meets := !vacuous }
         if merging[t.label]! then
           let Γe := if isHandler then Γ else refinedΓ first
           let slotsOf : Std.HashMap Nat (List Nat) := names.zipIdx.foldl (fun acc (x, i) =>
@@ -2117,16 +2247,39 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
           incomingEdges := incomingEdges.modify t.label ((Γe, atSlots, t.mapping) :: ·)
         indeg := indeg.modify t.label (· - 1)
         if indeg[t.label]! == 0 then queue := t.label :: queue
-  let _ := clock lastKind lastStamp visitedAll
-  let reachable := (reached.toList.filter id).length
-  counts := { counts with reached := reachable }
-  if visitedAll < reachable then return (.notHandled s!"{reachable - visitedAll} nodes not reached", counts, answers, trace)
-  -- A node no path from the start reaches never runs (`reached` follows
-  -- every normal and exceptional edge, so it holds every node a run can
-  -- be at): the pass decides nothing of it. The proved layer checks such a
-  -- node at its own context all the same (`GraphCode.unreachableEntry`),
-  -- which the referee still does.
-  return (.accepted, counts, answers, trace)
+    let w : Walk ι := { labels := labels, incoming := incoming, incomingImpl := incomingImpl, incomingEdges := incomingEdges, edges := walkEdges, visited := visitedBefore + 1 }
+    let σ' : WalkState ι G := { walk := w, answers := answers, counts := counts, trace := trace, indeg := indeg, fresh := fresh, regionIn := regionIn, incomingFrom := incomingFrom, queue := queue, unsat := unsat, lastStamp := lastStamp, lastKind := lastKind }
+    pure σ'
+  let w0 : Walk ι := { labels := Array.replicate n {}, incoming := incoming, incomingImpl := incomingImpl, incomingEdges := incomingEdges }
+  let σ0 : WalkState ι G := { walk := w0, answers := answers, counts := counts, trace := trace, indeg := indeg, fresh := fresh, regionIn := regionIn, incomingFrom := incomingFrom, queue := queue, unsat := unsat, lastStamp := lastStamp, lastKind := lastKind }
+  -- Each node enters the queue once: a fuel of the nodes and one never runs out.
+  match drive visit (n + 1) σ0 with
+  | .error stop => return .error stop
+  | .ok σ =>
+    let _ := clock σ.lastKind σ.lastStamp σ.walk.visited
+    let reachable := (reached.toList.filter id).length
+    return .ok (σ, reachable)
+
+/-- The pass over one graph: its verdict a function of the walk's record
+(`Walk.outcome`). -/
+def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
+    (P : Program) (claims : List (PointClaim ι)) (start : Nat) (inputs : List (Ty ι)) (goal : Goal ι)
+    (assertions : List (Nat × Knowledge)) (cuts : List Nat)
+    (candidates : List (Nat × List IndexAtom)) (entryIndices : List IndexAtom)
+    (suggestions : List (Sequent ι)) (known : List (ProgramCertificates.Evidence ι)) (codes : CodeEntry ι → Bool)
+    (aliases : List (ι × ι)) (passChecker : PassChecker G images)
+    (answers : Answered G) (reference : Array Knowledge := #[]) (debugNode : Nat := 1000000000)
+    (bound : Option (Footprints.Closed × Bool × Bool) := none)
+    (givenImplies : Array (List (PromiseCalls.Implication ι)) := #[])
+    (givenArgs : Array (List Nat) := #[])
+    (ensures : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
+    (entrySeparation : HeapSeparation.Separation := {}) (observe : Option Nat := none) (tracing : Bool := false) (observeEntry : Bool := false)
+    (regional : Option Regional := none) : Outcome ι × Counts × Answered G × Trace :=
+  match runWalk G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
+      codes aliases passChecker answers reference debugNode bound givenImplies givenArgs ensures givenInputs
+      entrySeparation observe tracing observeEntry regional with
+  | .error stop => stop
+  | .ok (σ, reachable) => (σ.walk.outcome reachable, { σ.counts with reached := reachable }, σ.answers, σ.trace)
 
 
 /-- Where a fact over names, absent on entry of node `p`, was last present,
