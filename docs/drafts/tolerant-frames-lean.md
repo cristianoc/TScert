@@ -1366,8 +1366,15 @@ of `TolerantFramesRunSound.lean`, quantified over every call the premises of
 
 ## Open premises
 
-The hypotheses of `run_sound_pass` (Leg 18a), each with what discharges it
-and the theorem that consumes it. Pass changes are named by the pass lane's
+The hypotheses of `run_sound_single_pass`
+(`TolerantFramesSinglePassSound.lean`: `run_sound_pass` with the walk
+side's `recordsSound_of`), each with what discharges it and the theorem
+that consumes it:
+
+```math
+\mathrm{SetupRecords} \wedge \mathrm{VisitsRecord} \wedge \mathrm{VisitsKeepSummaries} \wedge \mathrm{RecordsChecked} \wedge \mathrm{NodesYield} \wedge \mathrm{LinearNearFuelEq} \wedge \mathrm{RegionsHeld} \Longrightarrow \mathrm{RunSound}
+```
+ Pass changes are named by the pass lane's
 items in its queue; the pass lane (`engine-pass`) is at d50dd0ed, where D1
 to D4, D9 (`passShapeCheck'`), D10 (one written assertion per label), D11
 (the regional derivation check, the entry's fields under store regions),
@@ -1378,7 +1385,7 @@ its type (`walkStopsRefuse`, from `StopOutcome.outcome_ne_accepted`).
 
 | Premise | Discharged by | Consumed by |
 | --- | --- | --- |
-| `RecordsSound` | read off the visit once it is a top-level function (being lifted on the pass lane): each visited label `NodeChecked` (its step, its entry the recorded one, its shape check), `TraversedA` (the in-degree order, `HeadsCutCycles` under `LoopHeadsFuelEq`), `StartEntered`; the record's fields Leg 18b lists | `run_traversedA` |
+| `SetupRecords`, `VisitsRecord`, `VisitsKeepSummaries` | the walk side (Leg 19b): what the setup gives (`EnvFacts`, `RecInv`), what each visit that returns gives (`VisitFacts`, after W3), the visit keeping the read-summary table's prefix (W2) | `recordsSound_of`, then `run_traversedC` |
 | `NodesYield` | over a checked walk (`WalkChecked`, whose `NodePassChecked` takes the visit's yield and edge checks as fields once they are read off the visit); per node, `nodeYielded_of_checks`: the judgment and the return's goal from `NodeYieldChecks` (the visit's kept yields, `PromiseDerivChecked` (D12), the return check); each exit by `exitDeliversAJ_of` from `exitDeliversY_of_edge` or `exitDeliversY_head` (the edge's checks, the target's types by `refinedEdge_env`), `assertsAt_of_edge` (the assertion check at the refined context) and `exitJoinedY` (the merge's recorded edge at `passRefined`); the handler by `handlerDelivers_of_edge` and `joinedAt_of_exit` at the node's context; all read off the visit | `stepEdgesSound_of_yields` |
 | `LinearNearFuelEq` | a pass change: `Store.linearNear` as `linearNearFuel` (with `linearNearFuel_rounds`) | `entry_of_edgeA`, through `nodesChecked_of_walkJ` |
 | `RecordsChecked` | read off the visit: at each label the record visits, a checked step (`NodeChecked`, the step the visit ran, at its values: entry, fresh counter, answers, `Stepped`) with `NodePassChecked` (the visit's footprint check in the setup's no-return region `deadArr`, and its return check); a per-visit lemma once the visit is factored (W3), carried along the walk by `Drives.inv` | `run_traversedC` |
