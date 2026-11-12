@@ -96,16 +96,16 @@ theorem passPlans_safe (hdrop : ReceiverDropSound) {f : FilePlans} {selection : 
     fun u hu n W => approx_captures_envOk hreal layout.values n hu W⟩
 
 /-- **A group the pass accepts, over any plans over their store** (proved,
-under H1–H3): every member is safe. `passUnit_safe` is this at mode 8's
+under H1 and H2): every member is safe. `passUnit_safe` is this at mode 8's
 plans; the interface computation's `check` is `passGroup` at a module's. -/
 theorem passGroupOver_safe
     (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
-    (hgroup : PassGroupChecks) {f : FilePlans} (hover : OverStore f) {i fuel : Nat} {compare : Bool}
+    {f : FilePlans} (hover : OverStore f) {i fuel : Nat} {compare : Bool}
     {debugNode repeats : Nat} {given : Option (Std.HashMap String Json)} {observe : Option String}
     {counting : Bool} {deps : List String}
-    (haccepted : (f.passGroup fuel (f.fr.group i) compare debugNode repeats given observe counting).2 = .ok deps) :
+    (haccepted : (f.passGroup fuel (f.fr.group i) compare debugNode repeats given observe counting located).2 = .ok deps) :
     PassUnitSafe f i :=
-  fun j hj => member_safe (hrun _) (hkeep _) hover (hgroup _ _ _ _ _ _ _ _ _ _ haccepted j hj)
+  fun j hj => member_safe (hrun _) (hkeep _) hover (passGroupChecks _ _ _ _ _ _ _ _ _ _ _ haccepted j hj)
 
 /-! ## An importer's slot read at an established entry -/
 
@@ -138,7 +138,7 @@ def HoldsModuleValue (src : EntryRealized e) (v : Nat → Tm) : Prop :=
   ∀ i, v i = approx src.layout.code i src.unit
 
 /-- **An interface entry meets its interface in its module** (proved, under
-H1–H3 for the module's own check): the function's value in its module's
+H1 and H2 for the module's own check): the function's value in its module's
 environment, unfolded `n` times, meets its interface at every budget up to
 `n`. -/
 theorem interface_entry_meets (hdrop : ReceiverDropSound) (src : EntryRealized e) :
@@ -181,30 +181,46 @@ theorem established_met (hdrop : ReceiverDropSound) {f : FilePlans} {selection :
 
 /-! ## What the interface computation's step establishes -/
 
+/-- The plans a module's step checks (`establishStep`): the module's plans
+prepared (`prepare`), each read of an entry published before it checked by
+rows (`FilePlans.refuseRows`). -/
+def stepPlans (prepare : String → FilePlans → FilePlans) (location : String) (fm₀ : FilePlans)
+    (reads : List FragmentRead) (est : Established) (tables : List (String × RowTable)) : FilePlans :=
+  (prepare location fm₀).refuseRows reads est tables
+
+/-- A step's checked plans are over their store where the prepared plans are
+(proved). -/
+theorem stepPlans_overStore {prepare : String → FilePlans → FilePlans} {location : String} {fm₀ : FilePlans}
+    {reads : List FragmentRead} {est : Established} {tables : List (String × RowTable)}
+    (h : OverStore (prepare location fm₀)) : OverStore (stepPlans prepare location fm₀ reads est tables) :=
+  refuseRows_overStore h
+
 /-- **An entry published by one module's step** of the interface
-computation (`establishModules`), stated as the exact calls: the module
-`m` planned by `fragmentPlansCore` over its document, at its names, with
-some stand-ins and the reads of the entries established before it, then
-prepared (`prepare`); the entry's unit in a set `ok` of wire identities,
-each the identity of a leader of the prepared plans whose group `check`
-accepts with every dependency in `ok` or among the units `incoming`
-established before; and the entry's footprint the one the module's claim of
-that function states (`d.functions`, the claims the walk proposed). -/
+computation (`establishStep`), stated as the exact calls: the module `m`
+planned by `fragmentPlansCore` over its document, at its names, with some
+stand-ins and the reads of the entries `incoming` established before it,
+its interface slots lowered; then prepared (`prepare`) and its reads of
+entries checked by rows (`stepPlans`); the entry's unit in a set `ok` of
+wire identities, each the identity of a leader of those plans whose group
+`check` accepts with every dependency in `ok` or among the units `incoming`
+established; and the entry's footprint the one the module's claim of that
+function states (`d.functions`, the claims the walk proposed). -/
 def EstablishedStep (budget : PositiveCertificates.SearchBudget) (force : List String)
     (prepare : String → FilePlans → FilePlans)
     (check : FilePlans → List Nat → List String × Except String (List String))
     (needs : List ModuleNeed) (incoming : Established) (e : Entry) : Prop :=
   ∃ m ∈ needs, e.1.1 = m.module.location ∧ e.1.2 ∈ m.names ∧
   ∃ (fm₀ : FilePlans) (forced : StandIns) (imported : List (String × Footprints.Closed × Bool × Footprints.Closed))
-    (depends : List (String × List String)),
+    (depends : List (String × List String)) (reads : List FragmentRead) (tables : List (String × RowTable)),
     fragmentPlansCore m.module.document m.module.location budget (some m.names) forced force imported depends
-      true true none = .ok fm₀ ∧
+      true true none true = .ok fm₀ ∧
     ∃ ok : List String, e.2.2 ∈ ok ∧
-      (∃ c ∈ (prepare m.module.location fm₀).fr.d.functions, c.name = e.1.2 ∧
+      (∃ c ∈ (stepPlans prepare m.module.location fm₀ reads incoming tables).fr.d.functions, c.name = e.1.2 ∧
         (c.footprint, c.onThrow, c.resultFootprint) = e.2.1) ∧
-      ∀ u ∈ ok, ∃ l ∈ (prepare m.module.location fm₀).fr.leaders,
-        moduleUnitId m.module.location ((prepare m.module.location fm₀).fr.unitId l) = u ∧
-        ∃ lines deps, check (prepare m.module.location fm₀) ((prepare m.module.location fm₀).fr.group l) =
+      ∀ u ∈ ok, ∃ l ∈ (stepPlans prepare m.module.location fm₀ reads incoming tables).fr.leaders,
+        moduleUnitId m.module.location ((stepPlans prepare m.module.location fm₀ reads incoming tables).fr.unitId l) = u ∧
+        ∃ lines deps, check (stepPlans prepare m.module.location fm₀ reads incoming tables)
+          ((stepPlans prepare m.module.location fm₀ reads incoming tables).fr.group l) =
           (lines, .ok deps) ∧ ∀ d ∈ deps, d ∈ ok ∨ d ∈ incoming.map (·.2.2)
 
 /-- **The interface computation's step publishes only established
@@ -213,8 +229,9 @@ entries** (the wrapper lane's lemma about `establishModules`, as
 to it or published by a step of one of its modules. -/
 def EstablishProvenance : Prop :=
   ∀ needs budget force incoming prepare check (est : Established) vs ns,
-    establishModules needs budget force incoming prepare check = .ok (est, vs, ns) →
-    ∀ e ∈ est, e ∈ incoming ∨ EstablishedStep budget force prepare check needs incoming e
+    ∀ tables (ts : List (String × RowTable)),
+    establishModules needs budget force incoming prepare check tables = .ok (est, vs, ns, ts) →
+    ∀ e ∈ est, e ∈ incoming ∨ ∃ est₀, EstablishedStep budget force prepare check needs est₀ e
 
 /-- **The interface replay boundary** (trusted, the stage store): every
 entry the importer decodes (`decodeInterfaces`) from the interface file it
@@ -225,89 +242,107 @@ prepare (each module's plans with its given head facts) and check (the
 pass over each group). The forged-interface control exercises it. -/
 def InterfaceProvenance (budget : PositiveCertificates.SearchBudget) (force : List String) (fuel : Nat)
     (given : Std.HashMap String Json) (est : Established) : Prop :=
-  ∀ e ∈ est, ∃ needs incoming vs ns est',
+  ∀ e ∈ est, ∃ needs incoming tables vs ns ts est',
     establishModules needs budget force incoming
       (fun location f => f.withHeadFacts (RequestCli.forModule location given) false)
-      (fun f group => f.passGroup fuel group (given := some (RequestCli.moduleGiven f.fr.ast given)))
-      = .ok (est', vs, ns) ∧ e ∈ est' ∧ e ∉ incoming
+      (fun f group => f.passGroup fuel group (given := some (RequestCli.moduleGiven f.fr.ast given))) tables
+      = .ok (est', vs, ns, ts) ∧ e ∈ est' ∧ e ∉ incoming
 
-/-- **A step's units are safe** (proved, under H1–H3): every unit of the
+/-- **A step's units are safe** (proved, under H1 and H2): every unit of the
 set `ok` a step of mode 8's interface computation establishes is a leader
 of the module's prepared plans whose group is safe. -/
 theorem step_units_safe
     (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
-    (hgroup : PassGroupChecks) {budget : PositiveCertificates.SearchBudget} {force : List String} {fuel : Nat}
+    {budget : PositiveCertificates.SearchBudget} {force : List String} {fuel : Nat}
     {given : Std.HashMap String Json} {m : ModuleNeed} {fm₀ : FilePlans} {forced : StandIns}
     {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)} {depends : List (String × List String)}
     (hplan : fragmentPlansCore m.module.document m.module.location budget (some m.names) forced force imported
-      depends true true none = .ok fm₀)
-    {ok : List String} {incoming : Established}
-    (hok : ∀ u ∈ ok, ∃ l ∈ (fm₀.withHeadFacts (RequestCli.forModule m.module.location given) false).fr.leaders,
+      depends true true none true = .ok fm₀)
+    {ok : List String} {incoming : Established} {reads : List FragmentRead} {tables : List (String × RowTable)}
+    (hok : ∀ u ∈ ok, ∃ l ∈ (stepPlans (fun location f => f.withHeadFacts (RequestCli.forModule location given) false) m.module.location fm₀
+          reads incoming tables).fr.leaders,
         moduleUnitId m.module.location
-          ((fm₀.withHeadFacts (RequestCli.forModule m.module.location given) false).fr.unitId l) = u ∧
+          ((stepPlans (fun location f => f.withHeadFacts (RequestCli.forModule location given) false) m.module.location fm₀
+          reads incoming tables).fr.unitId l) = u ∧
         ∃ lines deps, (fun (f : FilePlans) group =>
             f.passGroup fuel group (given := some (RequestCli.moduleGiven f.fr.ast given)))
-          (fm₀.withHeadFacts (RequestCli.forModule m.module.location given) false)
-          ((fm₀.withHeadFacts (RequestCli.forModule m.module.location given) false).fr.group l) =
+          (stepPlans (fun location f => f.withHeadFacts (RequestCli.forModule location given) false) m.module.location fm₀
+          reads incoming tables)
+          ((stepPlans (fun location f => f.withHeadFacts (RequestCli.forModule location given) false) m.module.location fm₀
+          reads incoming tables).fr.group l) =
             (lines, .ok deps) ∧ ∀ d ∈ deps, d ∈ ok ∨ d ∈ incoming.map (·.2.2)) :
-    ∀ u ∈ ok, ∃ l ∈ (fm₀.withHeadFacts (RequestCli.forModule m.module.location given) false).fr.selected none,
+    ∀ u ∈ ok, ∃ l ∈ (stepPlans (fun location f => f.withHeadFacts (RequestCli.forModule location given) false) m.module.location fm₀
+          reads incoming tables).fr.selected none,
       moduleUnitId m.module.location
-        ((fm₀.withHeadFacts (RequestCli.forModule m.module.location given) false).fr.unitId l) = u ∧
-      PassUnitSafe (fm₀.withHeadFacts (RequestCli.forModule m.module.location given) false) l := by
+        ((stepPlans (fun location f => f.withHeadFacts (RequestCli.forModule location given) false) m.module.location fm₀
+          reads incoming tables).fr.unitId l) = u ∧
+      PassUnitSafe (stepPlans (fun location f => f.withHeadFacts (RequestCli.forModule location given) false) m.module.location fm₀
+          reads incoming tables) l := by
   intro u hu
   obtain ⟨l, hl, hid, lines, deps, hcheck, -⟩ := hok u hu
-  have hover := withHeadFacts_overStore (given := RequestCli.forModule m.module.location given) (entries := false)
-    (fragmentPlansCore_overStore hplan)
+  have hover := stepPlans_overStore (reads := reads) (est := incoming) (tables := tables)
+    (prepare := fun location f => f.withHeadFacts (RequestCli.forModule location given) false)
+    (withHeadFacts_overStore (given := RequestCli.forModule m.module.location given) (entries := false)
+      (fragmentPlansCore_overStore hplan))
   refine ⟨l, ?_, hid, ?_⟩
   · simp only [Front.selected, List.filter_eq_self.mpr (fun _ _ => rfl)]; exact hl
   · have h2 := congrArg Prod.snd hcheck
-    exact passGroupOver_safe hrun hkeep hgroup hover h2
+    exact passGroupOver_safe hrun hkeep hover h2
 
 /-- **The file-level theorem, its outside slots by kind** (proved, under
-H1–H3, the layout H5a and, per kind of outside slot, its contract): an
+H1 and H2, the layout H5a and, per kind of outside slot, its contract): an
 established entry's slots discharged by the entry's module
 (`EstablishedSlots`); a declaration-only import's, a stand-in's, a host
 value's and a module cell's contracts named. With no stand-in slot the
 stand-ins' contracts hold (`standIns_vacuous`). -/
 theorem passFile_safe_kinds
     (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
-    (hgroup : PassGroupChecks) (hdrop : ReceiverDropSound)
+    (hdrop : ReceiverDropSound)
     {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {selection : Option (List String)} {standIns : StandIns} {force : List String} {f : FilePlans}
     {givenLines : Std.HashMap String Json} {fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
-    {given : Option (Std.HashMap String Json)} {observe : Option String} {counting : Bool}
+    {given : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool}
     (hplans : fragmentPlans ast fileKey budget selection standIns force = .ok f)
     (layout : ModuleLayout (f.withHeadFacts givenLines false) selection
-      (closedUnits (fileVerdicts f selection givenLines fuel compare debugNode repeats given observe counting)))
+      (closedUnits (fileVerdicts f selection givenLines fuel compare debugNode repeats given observe counting located)))
     (kinds : String → Nat → OutsideKind)
     (hest : EstablishedSlots layout kinds) (hdecl : KindMet layout kinds (· = .declared))
     (hstand : KindMet layout kinds (· = .standIn)) (hhost : KindMet layout kinds (· = .host))
     (hcell : KindMet layout kinds (· = .moduleCell)) :
-    let S := closedUnits (fileVerdicts f selection givenLines fuel compare debugNode repeats given observe counting)
+    let S := closedUnits (fileVerdicts f selection givenLines fuel compare debugNode repeats given observe counting located)
     (∀ u ∈ S, ∃ i ∈ f.fr.selected selection, f.fr.unitId i = u ∧ PassUnitSafe (f.withHeadFacts givenLines false) i) ∧
     (∀ u ∈ layout.D, ∀ n, ∀ m ≤ n, ∀ W : WorldT m,
       meaning (graphOf (f.withHeadFacts givenLines false)) (layout.iface u) m W (approx layout.code n u)) ∧
     (∀ u ∈ layout.D, ∀ n (W : WorldT n), EnvOk (graphOf (f.withHeadFacts givenLines false)) (layout.code u).captures
       (envOf ((layout.code u).captured (approx layout.code n) n) .nul) n W) :=
-  passFile_safe hrun hkeep hgroup hdrop hplans layout
+  passFile_safe hrun hkeep hdrop hplans layout
     (outsideContracts_of_kinds (established_met hdrop hest) hdecl hstand hhost hcell)
 
 /-! ## Mode 8's plans as the command line computes them -/
 
 /-- **Importer plans from interfaces are over their store** (proved): both
-branches of `fragmentPlansFromInterfaces` return the core planner's plans. -/
+branches of `fragmentPlansOfInterfaces` return the core planner's plans, the
+rows check (`refuseRows`) and the unbound-import check (`refuseUnbound`)
+refusing plans and keeping the rest. -/
 theorem fragmentPlansFromInterfaces_overStore {ast : Json} {fileKey : String}
     {budget : PositiveCertificates.SearchBudget} {names : Option (List String)} {standIns : StandIns}
-    {force : List String} {est : Established} {f : FilePlans}
-    (h : fragmentPlansFromInterfaces ast fileKey budget names standIns force est = .ok f) : OverStore f := by
+    {force : List String} {est : Established} {tables : List (String × RowTable)} {f : FilePlans}
+    (h : fragmentPlansFromInterfaces ast fileKey budget names standIns force est tables = .ok f) : OverStore f := by
   unfold fragmentPlansFromInterfaces at h
+  obtain ⟨_, -, h⟩ := except_bind_ok h
+  obtain ⟨f₁, h₁, h⟩ := except_bind_ok h
+  cases h
+  apply refuseUnbound_overStore
+  unfold fragmentPlansOfInterfaces at h₁
   by_cases he : est.isEmpty = true
-  · rw [if_pos he] at h
-    exact fragmentPlansCore_overStore h
-  · rw [if_neg he] at h
-    obtain ⟨_, -, h⟩ := except_bind_ok h
-    obtain ⟨_, -, h⟩ := except_bind_ok h
-    exact fragmentPlansCore_overStore h
+  · rw [if_pos he] at h₁
+    exact fragmentPlansCore_overStore h₁
+  · rw [if_neg he] at h₁
+    obtain ⟨_, -, h₁⟩ := except_bind_ok h₁
+    obtain ⟨_, -, h₁⟩ := except_bind_ok h₁
+    obtain ⟨_, h₂, h₁⟩ := except_bind_ok h₁
+    cases h₁
+    exact refuseRows_overStore (fragmentPlansCore_overStore h₂)
 
 /-- **Plans with modules checked in the invocation are over their store**
 (proved): `fragmentPlansWithModules` returns importer plans from the
@@ -320,7 +355,6 @@ theorem fragmentPlansWithModules_overStore {ast : Json} {fileKey : String}
     (h : fragmentPlansWithModules ast fileKey budget names standIns force prepare check = .ok (f, ms, notes)) :
     OverStore f := by
   unfold fragmentPlansWithModules at h
-  obtain ⟨_, -, h⟩ := except_bind_ok h
   obtain ⟨_, -, h⟩ := except_bind_ok h
   obtain ⟨_, -, h⟩ := except_bind_ok h
   obtain ⟨f', hf', h⟩ := except_bind_ok h
@@ -351,28 +385,27 @@ def preparedMode8 (force : List String) (givenLines : Std.HashMap String Json) (
   else f.withHeadFacts givenLines false
 
 /-- **The headline at the command line's exact condition** (proved, under
-H1–H3): mode 8 plans the file from the interfaces it reads
+H1 and H2): mode 8 plans the file from the interfaces it reads
 (`fragmentPlansFromInterfaces`) or with its modules checked in the
 invocation (`fragmentPlansWithModules`), prepares it, and prints a selected
 unit accepted where `passGroup` accepts its group; every member of that
 group is safe. -/
 theorem passUnitCli_safe
     (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
-    (hgroup : PassGroupChecks)
     {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {selection : Option (List String)} {standIns : StandIns} {force : List String} {f₀ : FilePlans}
     {prepare : String → FilePlans → FilePlans}
     {check : FilePlans → List Nat → List String × Except String (List String)}
     {givenLines : Std.HashMap String Json} {i fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
-    {given : Option (Std.HashMap String Json)} {observe : Option String} {counting : Bool} {deps : List String}
-    (hplanned : (∃ est, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est = .ok f₀) ∨
+    {given : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool} {deps : List String}
+    (hplanned : (∃ est tables, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables = .ok f₀) ∨
       (∃ ms notes, fragmentPlansWithModules ast fileKey budget selection standIns force prepare check =
         .ok (f₀, ms, notes)))
     (haccepted : ((preparedMode8 force givenLines f₀).passGroup fuel ((preparedMode8 force givenLines f₀).fr.group i)
-      compare debugNode repeats given observe counting).2 = .ok deps) :
+      compare debugNode repeats given observe counting located).2 = .ok deps) :
     PassUnitSafe (preparedMode8 force givenLines f₀) i := by
   have h0 : OverStore f₀ := by
-    rcases hplanned with ⟨est, h⟩ | ⟨ms, notes, h⟩
+    rcases hplanned with ⟨est, tables, h⟩ | ⟨ms, notes, h⟩
     · exact fragmentPlansFromInterfaces_overStore h
     · exact fragmentPlansWithModules_overStore h
   have hover : OverStore (preparedMode8 force givenLines f₀) := by
@@ -380,6 +413,6 @@ theorem passUnitCli_safe
     split
     · exact withFalseStartFact_overStore (withHeadFacts_overStore h0)
     · exact withHeadFacts_overStore h0
-  exact passGroupOver_safe hrun hkeep hgroup hover haccepted
+  exact passGroupOver_safe hrun hkeep hover haccepted
 
 end Verification.SourceClaimJson.PassUnit

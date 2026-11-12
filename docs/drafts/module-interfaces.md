@@ -47,7 +47,9 @@ ordered by their first location. These orders depend on the module graph,
 independently of the requesting importer or selected function.
 
 A component receives its member documents and the completed interfaces of
-its outgoing dependencies. It checks members in canonical order. An import
+its outgoing dependencies. It checks members in canonical order, each
+member one step that reads only the entries published before it, the
+component's result the fold of those steps over its members. An import
 of a later member has the ordinary effect; an earlier member contributes
 only already established footprints. A group's successful check supplies
 its dependency list. A footprint becomes established only when the group
@@ -63,6 +65,28 @@ functions by name and name position. `established` records the footprint,
 on-throw flag, returned footprint and defining group whose successful check
 and dependency closure establish them, whatever proposed them, including a
 written effect. `ordinary` means no stronger footprint is established.
+
+A module with an established entry also carries its interface rows
+(`rows`): the rows of its own store on the region its functions' interface
+types reach (what each row reads, its meet's parts, its scheme's binders,
+and the built-ins' types), numbered from `0`, with the built-ins
+(`types`, `builtins`). Each established entry states its interface type as
+positions in that table (`interface`): the type its function's callers
+read it at in its module's store, lowered there at planning. The module
+publishes an entry only where the store-map check
+(`StoreMaps.matchStores`) from its store's interface type to the decoded
+table's accepts, and the importer reads an entry only where the check from
+the table's type to the type its own store reads the import at accepts,
+each image operand a canonical union of the importer's store. A refused
+read refuses each unit reading that import, at `signature rows differ`.
+A store map relates the two stores' built-ins only where both state them,
+so a module's document, and the document of a file importing one, list
+`ArrayProto` whatever their code writes, and a store whose document lists
+it states the built-ins (its arrays, their prototype and their `unknown`).
+The two accepted checks give the importer's slot type the meaning of the
+module's interface type (`signatureAgrees_of_checks`, proved on the
+unit-level proof's branch). The check is incomplete for unions with two
+members of one row shape and for qualified schemes.
 
 The importer resolves a read using the existing declaration-identity,
 eligibility and signature-agreement checks. It reads the matching module

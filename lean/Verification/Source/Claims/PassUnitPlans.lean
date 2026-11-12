@@ -56,13 +56,14 @@ theorem except_bind_ok {ε α β : Type} {x : Except ε α} {k : α → Except �
 
 /-- **The core planner's result** (proved), at every value of its
 arguments (the imported footprints, dependencies, closure, proposal flag and
-front given included): its import plan has no module run, and its plans are
+front given and the interface slots included): its import plan has no module run, and its plans are
 plans over its frozen store. -/
 theorem fragmentPlansCore_shape {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {names : Option (List String)} {standIns : StandIns} {force : List String}
     {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)} {depends : List (String × List String)}
-    {closure proposed : Bool} {front : Option (Json × Front)} {f : FilePlans}
-    (h : fragmentPlansCore ast fileKey budget names standIns force imported depends closure proposed front = .ok f) :
+    {closure proposed : Bool} {front : Option (Json × Front)} {interfaceSlots : Bool} {f : FilePlans}
+    (h : fragmentPlansCore ast fileKey budget names standIns force imported depends closure proposed front
+      interfaceSlots = .ok f) :
     f.p.modules = [] ∧ ∃ plans₀ : List (Except String (FunctionPlan EquationStore.State EquationGraphs.Tree)),
       f.plans = plans₀.map fun e => e.bind (FunctionPlan.over f.F) := by
   unfold fragmentPlansCore at h
@@ -87,8 +88,9 @@ every value of its arguments. -/
 theorem fragmentPlansCore_overStore {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {names : Option (List String)} {standIns : StandIns} {force : List String}
     {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)} {depends : List (String × List String)}
-    {closure proposed : Bool} {front : Option (Json × Front)} {f : FilePlans}
-    (h : fragmentPlansCore ast fileKey budget names standIns force imported depends closure proposed front = .ok f) :
+    {closure proposed : Bool} {front : Option (Json × Front)} {interfaceSlots : Bool} {f : FilePlans}
+    (h : fragmentPlansCore ast fileKey budget names standIns force imported depends closure proposed front
+      interfaceSlots = .ok f) :
     OverStore f := by
   obtain ⟨-, plans₀, hp⟩ := fragmentPlansCore_shape h
   intro i name pos r hi
@@ -107,8 +109,9 @@ its arguments. -/
 theorem fragmentPlansCore_modules {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {names : Option (List String)} {standIns : StandIns} {force : List String}
     {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)} {depends : List (String × List String)}
-    {closure proposed : Bool} {front : Option (Json × Front)} {f : FilePlans}
-    (h : fragmentPlansCore ast fileKey budget names standIns force imported depends closure proposed front = .ok f) :
+    {closure proposed : Bool} {front : Option (Json × Front)} {interfaceSlots : Bool} {f : FilePlans}
+    (h : fragmentPlansCore ast fileKey budget names standIns force imported depends closure proposed front
+      interfaceSlots = .ok f) :
     f.p.modules = [] :=
   (fragmentPlansCore_shape h).1
 
@@ -144,5 +147,68 @@ theorem withHeadFacts_overStore {f : FilePlans} {given : Std.HashMap String Json
   intro i name pos r hi
   obtain ⟨r₀, h₀, _, _, rfl⟩ := withHeadFacts_plan hi
   exact h i name pos r₀ h₀
+
+/-- Plans `P` keep the store of `f` where each request plan of `P` is one of
+`f`'s at the same index (proved). -/
+theorem overStore_of_plans {f : FilePlans} {P : List (Except String (FunctionPlan
+      (EquationStore.Checked f.F.equations f.F.primitive) (EquationStore.CheckedLabel f.F.equations f.F.primitive)))}
+    (hP : ∀ (i : Nat) x, P[i]? = some (Except.ok x) → f.plans[i]? = some (Except.ok x)) (h : OverStore f) :
+    OverStore { f with plans := P } := by
+  intro i name pos r hi
+  exact h i name pos r (hP i _ hi)
+
+/-- **The rows check refuses plans, nothing else** (proved): `refuseRows`
+keeps every field but the plans, and each request plan it returns is the
+one at its index. -/
+theorem refuseRows_plans (f : FilePlans) (reads : List FragmentRead) (est : Established)
+    (tables : List (String × RowTable)) :
+    ∃ P, f.refuseRows reads est tables = { f with plans := P } ∧
+      ∀ (i : Nat) x, P[i]? = some (Except.ok x) → f.plans[i]? = some (Except.ok x) := by
+  unfold FilePlans.refuseRows
+  dsimp only
+  split
+  · exact ⟨f.plans, rfl, fun _ _ h => h⟩
+  · refine ⟨_, rfl, ?_⟩
+    intro i x h
+    simp only [List.getElem?_map, List.getElem?_zipIdx, Option.map_eq_some_iff] at h
+    obtain ⟨⟨p, j⟩, hp, he⟩ := h
+    simp only [Prod.mk.injEq] at hp
+    obtain ⟨p', hp', rfl, rfl⟩ := hp
+    cases p' with
+    | error _ => cases he
+    | ok q =>
+      simp only [Except.bind] at he
+      split at he
+      · cases he
+      · cases he; exact hp'
+
+/-- **The unbound-import check refuses plans, nothing else** (proved). -/
+theorem refuseUnbound_plans (f : FilePlans) (unbound : List (String × List (String × String))) :
+    ∃ P, f.refuseUnbound unbound = { f with plans := P } ∧
+      ∀ (i : Nat) x, P[i]? = some (Except.ok x) → f.plans[i]? = some (Except.ok x) := by
+  unfold FilePlans.refuseUnbound
+  dsimp only
+  split
+  · exact ⟨f.plans, rfl, fun _ _ h => h⟩
+  · refine ⟨_, rfl, ?_⟩
+    intro i x h
+    simp only [List.getElem?_map, List.getElem?_zipIdx, Option.map_eq_some_iff] at h
+    obtain ⟨⟨p, j⟩, hp, he⟩ := h
+    simp only [Prod.mk.injEq] at hp
+    obtain ⟨p', hp', rfl, rfl⟩ := hp
+    dsimp only at he
+    split at he
+    · subst he; exact hp'
+    · cases he
+
+theorem refuseRows_overStore {f : FilePlans} {reads : List FragmentRead} {est : Established}
+    {tables : List (String × RowTable)} (h : OverStore f) : OverStore (f.refuseRows reads est tables) := by
+  obtain ⟨P, hP, hk⟩ := refuseRows_plans f reads est tables
+  rw [hP]; exact overStore_of_plans hk h
+
+theorem refuseUnbound_overStore {f : FilePlans} {unbound : List (String × List (String × String))}
+    (h : OverStore f) : OverStore (f.refuseUnbound unbound) := by
+  obtain ⟨P, hP, hk⟩ := refuseUnbound_plans f unbound
+  rw [hP]; exact overStore_of_plans hk h
 
 end Verification.SourceClaimJson.PassUnit

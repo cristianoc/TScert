@@ -3,8 +3,8 @@ import Verification.Source.Claims.PassUnitWrapper
 /-! # The single pass's unit theorem: what an accepted member run establishes
 
 `passMember_sound` proves `PassMemberSound`: where `FilePlans.passMember`,
-with no observation asked, returns a run whose outcome is acceptance, the
-member is `MemberAccepted`. The proof follows the function's own steps: the
+returns a run whose outcome is acceptance, the member is `MemberAccepted`,
+at every value of every argument, the observation asked included. The proof follows the function's own steps: the
 plan through `certify`, the request's own conditions, the qualified run or
 each code request's run in order (`codesInOrder_accepted`) and the main
 graph's route (direct, the regional fallback, the fallback then the stated
@@ -80,7 +80,7 @@ theorem asRefusal_accepted {ι : Type} {o : SinglePass.Outcome ι} (h : o.asRefu
 the member's plan, conditions, code runs and main runs as `MemberAccepted`
 states them. -/
 theorem passMember_sound : PassMemberSound := by
-  intro f fuel compare debugNode repeats given counting j m h hacc
+  intro f fuel compare debugNode repeats given observe counting j m h hacc
   unfold FilePlans.passMember at h
   extract_lets G I answers reference line tracing at h
   obtain ⟨plan, hplan, h⟩ := except_bind_ok h
@@ -218,7 +218,7 @@ theorem passMember_sound : PassMemberSound := by
         _ = r.codes.map (·.entry) := by rw [List.zipIdx_map_fst]
     extract_lets codes walk jp at h
     split at h
-    · rename_i hobs; simp at hobs
+    · have := except_pure_ok h; subst this; simp [MemberRun.accepted] at hacc
     obtain ⟨u, hfor, h⟩ := except_bind_ok h
     have hq' : r.qualification = none := Option.eq_none_iff_forall_ne_some.mpr fun q h => hq q h
     have hjp : (∀ Φ regions, r.regional = some (Φ, regions) → r.async = false ∧ r.fresh = false ∧
@@ -233,18 +233,30 @@ theorem passMember_sound : PassMemberSound := by
         generalize o₂ = O at h
         split at h
         · split at h
-          · rename_i htr; exact absurd htr (by decide)
+          · exfalso
+            have := except_pure_ok h; subst this
+            simp [checked, MemberRun.accepted] at hacc
           · exact h
         · exact h
       unfold jp₂ at hj
-      have ho21 : o₂ = o₁ := by
-        unfold o₂
-        generalize o₁ = O
-        cases O <;> rfl
+      -- The observation rerun's outcome replaces a refusal only where it is
+      -- no acceptance: an accepted outcome is the main run's own.
+      have h21 : o₂ = .accepted → o₁ = .accepted := by
+        intro hO; unfold o₂ at hO
+        generalize o₁ = O at hO ⊢
+        generalize observed = Ob at hO
+        cases O <;> cases Ob <;> simp only at hO ⊢
+        all_goals first
+          | exact hO
+          | (split at hO
+             · cases hO
+             · split at hO
+               · cases hO
+               · rename_i hne; exact (hne hO).elim)
       generalize hO : o₂ = O at hj
       cases O <;> (have := except_pure_ok hj; subst this) <;>
         (try simp only [checked, MemberRun.accepted] at hacc) <;> (try simp at hacc)
-      have h1 : o₁ = .accepted := ho21 ▸ hO
+      have h1 : o₁ = .accepted := h21 hO
       obtain ⟨hmo, hsok, hobl⟩ : mainRun.outcome = .accepted ∧ sumsOk = true ∧ obligations.accepted = true := by
         unfold o₁ at h1
         generalize mainRun.outcome = O at h1 ⊢
@@ -338,4 +350,8 @@ theorem passMember_sound : PassMemberSound := by
         simpa only [Bool.or_eq_true, not_or, Bool.not_eq_true, Bool.not_eq_false', and_assoc] using hc
     · rename_i hr
       exact hjp (fun Φ' regions' hr' => absurd hr' (hr Φ' regions')) m h hacc
+/-- **H3** (proved): `passGroup` accepting a group makes every member
+`MemberAccepted`, at every value of every argument. -/
+theorem passGroupChecks : PassGroupChecks := passGroupChecks_of_sound passMember_sound
+
 end Verification.SourceClaimJson.PassUnit

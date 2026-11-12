@@ -1,4 +1,4 @@
-import Verification.Source.Claims.PassUnitMember
+import Verification.Source.Claims.PassUnitMemberRun
 
 /-! # The single pass's unit theorem: an accepted member is safe
 

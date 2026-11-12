@@ -122,7 +122,7 @@ a compile error there, and no plan variant is filtered out.
 
 ### The headline
 
-**Theorem** `passUnit_safe` (proved under hypotheses H1–H3 of section 2). Let
+**Theorem** `passUnit_safe` (proved under hypotheses H1 and H2 of section 2). Let
 $`f' = f.\mathrm{withHeadFacts}(\mathit{givenLines}, \mathrm{false})`$. Then
 
 ```math
@@ -149,42 +149,38 @@ plans with the given head facts, and the false start fact where
 
 ```math
 \begin{aligned}
-&\big(\exists\, \mathit{est}.\; \mathrm{fragmentPlansFromInterfaces}(\mathit{ast}, \ldots, \mathit{est}) = \mathrm{ok}\ f_0
+&\big(\exists\, \mathit{est}\, \mathit{rows}.\; \mathrm{fragmentPlansFromInterfaces}(\mathit{ast}, \ldots, \mathit{est}, \mathit{rows}) = \mathrm{ok}\ f_0
  \;\vee\; \exists\, \mathit{ms}\, \mathit{ns}.\; \mathrm{fragmentPlansWithModules}(\mathit{ast}, \ldots) = \mathrm{ok}\ (f_0, \mathit{ms}, \mathit{ns})\big) \\
-&\wedge\; (f.\mathrm{passGroup}(\mathit{fuel}, f.\mathrm{group}(i), \ldots, \mathit{observe} = \mathrm{none}, \ldots)).2 = \mathrm{ok}\ \mathit{deps}
+&\wedge\; (f.\mathrm{passGroup}(\mathit{fuel}, f.\mathrm{group}(i), \ldots)).2 = \mathrm{ok}\ \mathit{deps}
  \;\Longrightarrow\; \forall j \in f.\mathrm{group}(i).\; \mathrm{MemberSafe}(f, j)
 \end{aligned}
 ```
 
-`passUnitCli_safe` states the same for every value of $`\mathit{observe}`$,
-under H1–H3; H3 at $`\mathit{observe} = \mathrm{none}`$ is proved
-(`passGroupChecks_unobserved passMember_sound`, section 3), so
-`passUnitVerdict_safe` has H1 and H2 as its only hypotheses.
+H3 is proved (`passGroupChecks`, section 3), so `passUnitVerdict_safe`
+has H1 and H2 as its only hypotheses; it is `passUnitCli_safe`.
 
 The premise is the condition under which `verifyUnitsFile` prints unit
-$`i`$'s line `"accepted": true` in mode 8 with `TSCERT_OBSERVE` unset, with
-an interface file (`--verify-interface-stage`) or without; every other
-argument is free: the comparison, node, repetition, given lines and counting
-inputs, the modules' check and the interface file's entries. With
-`TSCERT_OBSERVE` set, the observation rerun's outcome replaces a refusal
-(section 3), and the verdict is outside the theorem. Its
-conclusion is `checkUnitJson_safe`'s for a file's unit: every member's plan
-crosses the exhaustive certification and its request is safe
-(`RequestSafe`). With the file-level part (`passFile_safe_kinds`) every
-closed unit's value meets its interface, and with `crossModule_safe` an
-importer's units meet theirs, their imports discharged by their modules'
-checks (section 7).
+$`i`$'s line `"accepted": true` in mode 8, with an interface file
+(`--verify-interface-stage`, its entries and rows decoded) or without;
+every other argument is free: the comparison, node, repetition,
+observation (`TSCERT_OBSERVE`), given lines, counting and location
+(`TSCERT_PASS_REFUSALS`) inputs, the modules' check and the interface
+file's entries and rows. Its conclusion is `checkUnitJson_safe`'s for a
+file's unit: every member's plan crosses the exhaustive certification and
+its request is safe (`RequestSafe`). With the file-level part
+(`passFile_safe_kinds`) every closed unit's value meets its interface, and
+with `crossModule_safe` an importer's units meet theirs, their imports
+discharged by their modules' checks (section 7).
 
 ### The hypotheses, by level and class
 
 Each level's theorem adds hypotheses to the one below it:
 
-- **Unit**, `passUnitVerdict_safe`: H1, H2 (`passUnitCli_safe`, for every
-  `observe`: H1, H2, H3).
-- **File**, `passFile_safe_kinds`: H1–H3, `ReceiverDropSound`, the layout (H5a `ModuleLayout`),
+- **Unit**, `passUnitVerdict_safe`: H1, H2.
+- **File**, `passFile_safe_kinds`: H1, H2, `ReceiverDropSound`, the layout (H5a `ModuleLayout`),
   the established slots (`EstablishedSlots`) and the four outside kinds met
   (`KindMet` for `declared`, `standIn`, `host`, `moduleCell`).
-- **Cross-module**, `crossModule_safe`: H1–H3, `ReceiverDropSound`, the importer's layout, the
+- **Cross-module**, `crossModule_safe`: H1, H2, `ReceiverDropSound`, the importer's layout, the
   publication order (`ReadsEarlier`), each published entry's step
   (`EstablishedStep`) and layout (`StepLayouts`), the chosen slots
   (`ChosenSlots`), each established slot reading an entry of the order, and
@@ -213,10 +209,10 @@ statement for every value of every argument):
 
 - `passGroup_members`: $`(f.\mathrm{passGroup}(\mathit{fuel}, g, \ldots)).2 = \mathrm{ok}\ d \Rightarrow \forall j \in g.\; (f.\mathrm{passMember}(\mathit{fuel}, \ldots, j)).\mathrm{accepted}`$,
   and `passMember_sound`: $`(f.\mathrm{passMember}(\ldots, j)).\mathrm{accepted} \Rightarrow \mathrm{MemberAccepted}(f, j)`$;
-  both proved, `passMember_sound` at `observe = none`; together H3 on the
-  command's verdict path (`passGroupChecks_unobserved`, section 3).
-- `EstablishProvenance`: $`\mathrm{establishModules}(\mathit{needs}, \ldots, \mathit{incoming}, \mathit{prepare}, \mathit{check}) = \mathrm{ok}\ (\mathit{est}, \ldots) \Rightarrow \forall e \in \mathit{est}.\; e \in \mathit{incoming} \vee \mathrm{EstablishedStep}(e)`$,
-  after R1's repair of `establishModules` (a per-module step and its fold).
+  both proved, for every value of every argument; together H3
+  (`passGroupChecks`, section 3).
+- `EstablishProvenance`: $`\mathrm{establishModules}(\mathit{needs}, \ldots, \mathit{incoming}, \mathit{prepare}, \mathit{check}) = \mathrm{ok}\ (\mathit{est}, \ldots) \Rightarrow \forall e \in \mathit{est}.\; e \in \mathit{incoming} \vee \exists\, \mathit{est}_0.\; \mathrm{EstablishedStep}(\mathit{est}_0, e)`$,
+  a lemma about the fold of `establishStep`.
 - **The publication order**: for the components `interfaceComponents`
   returns and the entries `establishModules` publishes along them,
   `ReadsEarlier`: each module's reads are entries published at an earlier
@@ -356,9 +352,7 @@ run's summaries; the code runs before it rely on theirs.
 
 **H3 `PassGroupChecks`** (wrapper, section 3). `passGroup` accepting a group
 makes every member `MemberAccepted`. A statement about the actual function,
-proved at `observe = none` (`passGroupChecks_unobserved passMember_sound`);
-for every `observe` it needs the wrapper to keep a refusal where the
-observation rerun accepts.
+proved for every value of every argument (`passGroupChecks`).
 
 The wrapper gives each run the inputs the theorem's entry premise names:
 the request's inputs for its own graph (`MainCall`), each code request's
@@ -407,7 +401,7 @@ What each establishes, all proved:
 Two checks establish nothing `RequestSafe` states: the expression
 obligations and the declared effect's async condition (section 8).
 
-### H3 and the repairs it needs
+### H3
 
 `passMember` is a pure function returning the member's run (`MemberRun`:
 the request's own refusal, the qualified run, the code runs, the main
@@ -415,9 +409,9 @@ runs, the summaries' and obligations' checks, the outcome), and
 `passGroup` is its fold with the lines rendered. H3 splits in two:
 
 - `passGroup_members` (proved): $`(f.\mathrm{passGroup}(\ldots)).2 = \mathrm{ok}\ d \Rightarrow \forall j \in g.\; \exists m.\; f.\mathrm{passMember}(\ldots, j) = \mathrm{ok}\ m \wedge m.\mathrm{accepted}`$.
-- `passMember_sound` (proved, PassUnitMemberRun): `PassMemberSound`, at
-  `observe = none`,
-  $`f.\mathrm{passMember}(\ldots, \mathrm{none}, \ldots, j) = \mathrm{ok}\ m \wedge m.\mathrm{accepted} \Rightarrow \mathrm{MemberAccepted}(f, j)`$.
+- `passMember_sound` (proved, PassUnitMemberRun): `PassMemberSound`,
+  $`f.\mathrm{passMember}(\ldots, j) = \mathrm{ok}\ m \wedge m.\mathrm{accepted} \Rightarrow \mathrm{MemberAccepted}(f, j)`$
+  at every value of every argument.
   The proof follows the function's steps, each `let` of its body
   extracted as a local definition (`extract_lets`) and each branch split
   where it is reached, so no step unfolds the whole body (the module
@@ -432,12 +426,12 @@ runs, the summaries' and obligations' checks, the outcome), and
   refusals no clause names (`no node to observe`, the repeated runs'
   `notHandled`) only refuse.
 
-`passGroupChecks_unobserved passMember_sound` is H3 on the command's
-verdict path. With an observation asked (`TSCERT_OBSERVE`), a refused
-outcome is replaced by the outcome of an observation rerun, which nothing
-keeps from being accepted; H3 for every `observe` needs the wrapper to keep
-the refusal there (the rerun's outcome used only where it is not
-accepted), a request of the pass lane.
+`passGroupChecks` (`passGroupChecks_of_sound passMember_sound`) is H3.
+With an observation asked (`TSCERT_OBSERVE`), a refusal at an observed
+node is replaced by the outcome of an observation rerun only where that
+outcome is no acceptance, so an accepted outcome is the main run's own; the
+location of a refusal's text (`TSCERT_PASS_REFUSALS`) changes the text
+alone.
 
 ## 4. Dependencies and linking
 
@@ -464,7 +458,7 @@ verdicts $`V`$ (unit $`\mapsto`$ accepted dependencies, or refused) is
 has a dependency outside, kept where the result is closed; a dependency
 with no verdict refuses its dependents. `closedUnits_closed` (proved): its
 result is closed. `fileVerdicts` is the verdicts mode 8's loop prints, and
-`closedUnits_safe` (proved, under H1–H3): every closed unit is a selected
+`closedUnits_safe` (proved, under H1 and H2): every closed unit is a selected
 unit whose group `passGroup` accepts, so every member of its group is safe.
 The agreement tool's `closed` (`dev/single-pass-agreement.mts`) is this
 fixpoint, but it treats a dependency with no verdict as closed.
@@ -768,7 +762,7 @@ The hypotheses are listed with their owners in section 1.
 
 ### The statement
 
-**Theorem** `passFile_safe` (proved under H1–H3, H5a, H5b). Let
+**Theorem** `passFile_safe` (proved under H1, H2, H5a, H5b). Let
 $`f' = f.\mathrm{withHeadFacts}(\mathit{givenLines}, \mathrm{false})`$,
 $`V = \mathrm{fileVerdicts}(f, \ldots)`$ the verdicts mode 8's loop prints
 and $`S = \mathrm{closedUnits}(V)`$. Then
@@ -853,20 +847,23 @@ $`e`$ the importer decodes was published by `establishModules` at mode 8's
 prepare and check: for some modules, incoming entries $`\mathit{inc}`$ with
 $`e \notin \mathit{inc}`$ and result $`\mathit{est}'`$ with $`e \in \mathit{est}'`$.
 
-**`EstablishProvenance`** (under hypothesis; the wrapper lane, about
+**`EstablishProvenance`** (under hypothesis; a lemma about
 `establishModules` as H3 is about `passGroup`). Every entry
-`establishModules` returns was given to it or satisfies `EstablishedStep`:
-its module $`m`$ is planned by `fragmentPlansCore` over its document at its
-names; its footprint is the one the module's claim of that function
-states; its unit is in a set `ok` of wire identities, each a leader of the
-prepared plans whose group `check` accepts with every dependency in `ok` or
-established before. `establishModules` is a `for` loop with `continue`
-over an `Except` block; the same repair as R1 (a pure per-module step and
-its fold) makes it a lemma per field.
+`establishModules` returns was given to it or satisfies `EstablishedStep`
+at the entries $`\mathit{est}_0`$ published before its step: its module
+$`m`$ is planned by `fragmentPlansCore` over its document at its names,
+its interface slots lowered; the step's plans (`stepPlans`) are those
+prepared, each read of an entry of $`\mathit{est}_0`$ checked by rows
+(`refuseRows`); its footprint is the one the module's claim of that
+function states; its unit is in a set `ok` of wire identities, each a
+leader of the step's plans whose group `check` accepts with every
+dependency in `ok` or in $`\mathit{est}_0`$. `establishModules` is the
+fold (`establishFold`) of one pure step per module (`establishStep`), so
+the statement is a lemma per field of the step.
 
 ### The theorems
 
-**Theorem** `step_units_safe` (proved under H1–H3). For a step of mode 8's
+**Theorem** `step_units_safe` (proved under H1 and H2). For a step of mode 8's
 interface computation, every unit of its `ok` is a selected unit of the
 module's prepared plans whose group is safe (`PassUnitSafe`): the check is
 `passGroup`, the plans are over their store (`fragmentPlansCore_overStore`,
@@ -889,7 +886,7 @@ $`\forall i.\; \forall j \le i.\; \forall W.\; v_i \in ⟦A⟧_{j,W}`$.
 `established_met` (proved) lifts it to every slot of kind `established`
 (`EstablishedSlots`).
 
-**Theorem** `entryRealized_of_step` (proved under H1–H3). A step of mode
+**Theorem** `entryRealized_of_step` (proved under H1 and H2). A step of mode
 8's interface computation (`fragmentPlansCore` over the module's document,
 mode 8's prepare `mode8Prepare` and check `mode8Check`, its accepted set
 $`\mathit{ok}`$) and a layout of the module at units of $`\mathit{ok}`$
@@ -909,7 +906,7 @@ interface file an importer reads is published by a step of mode 8's
 interface computation: `establishModules` returned it and it was not among
 the incoming entries.
 
-**Theorem** `entries_realized` (proved under H1–H3). Over an order of
+**Theorem** `entries_realized` (proved under H1 and H2). Over an order of
 modules in which each reads only entries published before it
 (`ReadsEarlier`), where each module's entries are published by steps of
 mode 8's interface computation and laid out (`StepLayouts`) once the
@@ -917,7 +914,7 @@ entries it reads are realized, every published entry has a realization
 $`\mathit{Chosen}`$ names. By `linkModules`, `Holds`$`(e)`$ being
 $`\exists\, \mathit{src}.\; \mathit{Chosen}(e, \mathit{src})`$.
 
-**Theorem** `crossModule_safe` (proved under H1–H3, the importer's layout,
+**Theorem** `crossModule_safe` (proved under H1, H2, the importer's layout,
 the modules' `StepLayouts`, the publication order, and the per-kind
 contracts of the other outside slots). For plans over their store and a set
 $`S`$ of units each a selected unit whose group is safe, whose established

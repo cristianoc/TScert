@@ -68,7 +68,6 @@ run_cmd do
         throwError "{decl} depends on the axiom {axiom_}"
   check ``Verification.SourceClaimJson.checkUnitJson_safe
   check ``Verification.SourceClaimJson.PassUnit.passUnitVerdict_safe
-  check ``Verification.SourceClaimJson.PassUnit.passGroupOver_safe_unobserved
   check ``Verification.SourceClaimJson.PassUnit.passUnit_safe
   check ``Verification.SourceClaimJson.PassUnit.member_safe
   check ``Verification.SourceClaimJson.PassUnit.ordinary_requestSafe
@@ -149,7 +148,10 @@ run_cmd do
   check ``Verification.SourceClaimJson.PassUnit.rowRealized_spec
   check ``Verification.SourceClaimJson.PassUnit.layout_realizes
   check ``Verification.SourceClaimJson.PassUnit.passGroup_members
-  check ``Verification.SourceClaimJson.PassUnit.passGroupChecks_unobserved
+  check ``Verification.SourceClaimJson.PassUnit.passGroupChecks_of_sound
+  check ``Verification.SourceClaimJson.PassUnit.passGroupChecks
+  check ``Verification.SourceClaimJson.PassUnit.refuseRows_plans
+  check ``Verification.SourceClaimJson.PassUnit.refuseUnbound_plans
   check ``Verification.SourceClaimJson.PassUnit.passMember_sound
   check ``Verification.SourceClaimJson.PassUnit.codesInOrder_accepted
   check ``Verification.SourceClaimJson.PassUnit.init_asserted

@@ -74,10 +74,10 @@ selected unit, its identity and, where `passGroup` accepts its group, the
 dependencies it prints. -/
 def fileVerdicts (f : FilePlans) (selection : Option (List String)) (givenLines : Std.HashMap String Json)
     (fuel : Nat) (compare : Bool) (debugNode repeats : Nat) (given : Option (Std.HashMap String Json))
-    (observe : Option String) (counting : Bool) : Verdicts :=
+    (observe : Option String) (counting located : Bool) : Verdicts :=
   (f.fr.selected selection).map fun i => (f.fr.unitId i,
     ((f.withHeadFacts givenLines false).passGroup fuel (f.fr.group i) compare debugNode repeats given observe
-      counting).2.toOption)
+      counting located).2.toOption)
 
 theorem lookup_mem {vs : Verdicts} {u : String} {v : Option (List String)} (h : vs.lookup u = some v) :
     (u, v) ∈ vs := by
@@ -100,17 +100,16 @@ unit whose group `passGroup` accepts, so every member of its group is safe;
 and every unit its group depends on is closed too (`closedUnits_closed`). -/
 theorem closedUnits_safe
     (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
-    (hgroup : PassGroupChecks)
     {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {selection : Option (List String)} {standIns : StandIns} {force : List String} {f : FilePlans}
     {givenLines : Std.HashMap String Json} {fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
-    {given : Option (Std.HashMap String Json)} {observe : Option String} {counting : Bool}
+    {given : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool}
     (hplans : fragmentPlans ast fileKey budget selection standIns force = .ok f) {u : String}
-    (hu : u ∈ closedUnits (fileVerdicts f selection givenLines fuel compare debugNode repeats given observe counting)) :
+    (hu : u ∈ closedUnits (fileVerdicts f selection givenLines fuel compare debugNode repeats given observe counting located)) :
     ∃ i, f.fr.unitId i = u ∧ PassUnitSafe (f.withHeadFacts givenLines false) i := by
   obtain ⟨ds, ha, -⟩ := closedUnits_closed _ u hu
   unfold Verdicts.accepted at ha
-  cases hl : (fileVerdicts f selection givenLines fuel compare debugNode repeats given observe counting).lookup u with
+  cases hl : (fileVerdicts f selection givenLines fuel compare debugNode repeats given observe counting located).lookup u with
   | none => rw [hl] at ha; cases ha
   | some v =>
     rw [hl] at ha
@@ -120,9 +119,9 @@ theorem closedUnits_safe
     simp only [fileVerdicts, List.mem_map, Prod.mk.injEq] at hm
     obtain ⟨i, hi, hid, hv⟩ := hm
     cases hp : ((f.withHeadFacts givenLines false).passGroup fuel (f.fr.group i) compare debugNode repeats given
-        observe counting).2 with
+        observe counting located).2 with
     | error e => rw [hp] at hv; cases hv
-    | ok d => exact ⟨i, hid, passUnit_safe hrun hkeep hgroup hplans hi hp⟩
+    | ok d => exact ⟨i, hid, passUnit_safe hrun hkeep hplans hi hp⟩
 
 /-! ## The linking induction -/
 

@@ -46,32 +46,32 @@ structure StepLayout (fm : FilePlans) (location : String) (ok : List String) (e 
   hok : ∀ u ∈ Sm, moduleUnitId location u ∈ ok
   hentry : moduleUnitId location unit = e.2.2
 
-/-- **An entry realized from its module's step** (proved, under H1–H3 for
+/-- **An entry realized from its module's step** (proved, under H1 and H2 for
 the module's check): the prepared plans of a step of mode 8's interface
 computation, its accepted set `ok` and a layout of the module at units of
 `ok` realize the entry. -/
 def entryRealized_of_step
     (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
-    (hgroup : PassGroupChecks) {budget : PositiveCertificates.SearchBudget} {force : List String} {fuel : Nat}
+    {budget : PositiveCertificates.SearchBudget} {force : List String} {fuel : Nat}
     {given : Std.HashMap String Json} {m : ModuleNeed} {fm₀ : FilePlans} {forced : StandIns}
     {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)} {depends : List (String × List String)}
     (hplan : fragmentPlansCore m.module.document m.module.location budget (some m.names) forced force imported
-      depends true true none = .ok fm₀)
-    {ok : List String} {incoming : Established}
-    (hok : ∀ u ∈ ok, ∃ l ∈ (mode8Prepare given m.module.location fm₀).fr.leaders,
-        moduleUnitId m.module.location ((mode8Prepare given m.module.location fm₀).fr.unitId l) = u ∧
-        ∃ lines deps, mode8Check fuel given (mode8Prepare given m.module.location fm₀)
-          ((mode8Prepare given m.module.location fm₀).fr.group l) = (lines, .ok deps) ∧
+      depends true true none true = .ok fm₀)
+    {ok : List String} {incoming : Established} {reads : List FragmentRead} {tables : List (String × RowTable)}
+    (hok : ∀ u ∈ ok, ∃ l ∈ (stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables).fr.leaders,
+        moduleUnitId m.module.location ((stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables).fr.unitId l) = u ∧
+        ∃ lines deps, mode8Check fuel given (stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables)
+          ((stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables).fr.group l) = (lines, .ok deps) ∧
           ∀ d ∈ deps, d ∈ ok ∨ d ∈ incoming.map (·.2.2))
-    {e : Entry} (L : StepLayout (mode8Prepare given m.module.location fm₀) m.module.location ok e) :
+    {e : Entry} (L : StepLayout (stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables) m.module.location ok e) :
     EntryRealized e where
-  fm := mode8Prepare given m.module.location fm₀
+  fm := stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables
   selection := none
   Sm := L.Sm
-  hover := withHeadFacts_overStore (fragmentPlansCore_overStore hplan)
+  hover := stepPlans_overStore (withHeadFacts_overStore (fragmentPlansCore_overStore hplan))
   hsafe := by
     intro u hu
-    obtain ⟨l, hl, hid, hsafe⟩ := step_units_safe hrun hkeep hgroup hplan hok _ (L.hok u hu)
+    obtain ⟨l, hl, hid, hsafe⟩ := step_units_safe hrun hkeep hplan hok _ (L.hok u hu)
     exact ⟨l, hl, moduleUnitId_inj hid, hsafe⟩
   layout := L.layout
   hout := L.hout
@@ -85,35 +85,35 @@ step's accepted set whose realization `Chosen` names. -/
 def StepLayouts (budget : PositiveCertificates.SearchBudget) (force : List String) (fuel : Nat)
     (given : Std.HashMap String Json) (Chosen : (e : Entry) → EntryRealized e → Prop) (e : Entry) : Prop :=
   ∀ (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
-    (hgroup : PassGroupChecks) (m : ModuleNeed) (fm₀ : FilePlans) (forced : StandIns)
+    (m : ModuleNeed) (fm₀ : FilePlans) (forced : StandIns)
     (imported : List (String × Footprints.Closed × Bool × Footprints.Closed)) (depends : List (String × List String))
     (hplan : fragmentPlansCore m.module.document m.module.location budget (some m.names) forced force imported
-      depends true true none = .ok fm₀)
-    (ok : List String) (incoming : Established)
-    (hok : ∀ u ∈ ok, ∃ l ∈ (mode8Prepare given m.module.location fm₀).fr.leaders,
-        moduleUnitId m.module.location ((mode8Prepare given m.module.location fm₀).fr.unitId l) = u ∧
-        ∃ lines deps, mode8Check fuel given (mode8Prepare given m.module.location fm₀)
-          ((mode8Prepare given m.module.location fm₀).fr.group l) = (lines, .ok deps) ∧
+      depends true true none true = .ok fm₀)
+    (ok : List String) (incoming : Established) (reads : List FragmentRead) (tables : List (String × RowTable))
+    (hok : ∀ u ∈ ok, ∃ l ∈ (stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables).fr.leaders,
+        moduleUnitId m.module.location ((stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables).fr.unitId l) = u ∧
+        ∃ lines deps, mode8Check fuel given (stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables)
+          ((stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables).fr.group l) = (lines, .ok deps) ∧
           ∀ d ∈ deps, d ∈ ok ∨ d ∈ incoming.map (·.2.2)),
     e.2.2 ∈ ok →
-    ∃ L : StepLayout (mode8Prepare given m.module.location fm₀) m.module.location ok e,
-      Chosen e (entryRealized_of_step hrun hkeep hgroup hplan hok L)
+    ∃ L : StepLayout (stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables) m.module.location ok e,
+      Chosen e (entryRealized_of_step hrun hkeep hplan hok L)
 
-/-- **An established entry is realized** (proved, under H1–H3 and the
+/-- **An established entry is realized** (proved, under H1 and H2 and the
 module's layout): an entry a step of mode 8's interface computation
 publishes has a realization `Chosen` names. -/
 theorem realized_of_established
     (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
-    (hgroup : PassGroupChecks) {budget : PositiveCertificates.SearchBudget} {force : List String} {fuel : Nat}
+    {budget : PositiveCertificates.SearchBudget} {force : List String} {fuel : Nat}
     {given : Std.HashMap String Json} {Chosen : (e : Entry) → EntryRealized e → Prop}
     {needs : List ModuleNeed} {incoming : Established} {e : Entry}
     (hstep : EstablishedStep budget force (mode8Prepare given) (mode8Check fuel given) needs incoming e)
     (hlay : StepLayouts budget force fuel given Chosen e) : ∃ src : EntryRealized e, Chosen e src := by
-  obtain ⟨m, -, -, -, fm₀, forced, imported, depends, hplan, ok, he, -, hok⟩ := hstep
-  obtain ⟨L, hL⟩ := hlay hrun hkeep hgroup m fm₀ forced imported depends hplan ok incoming hok he
+  obtain ⟨m, -, -, -, fm₀, forced, imported, depends, reads, tables, hplan, ok, he, -, hok⟩ := hstep
+  obtain ⟨L, hL⟩ := hlay hrun hkeep m fm₀ forced imported depends hplan ok incoming reads tables hok he
   exact ⟨_, hL⟩
 
-/-- **Every published entry is realized** (proved, under H1–H3, the modules'
+/-- **Every published entry is realized** (proved, under H1 and H2, the modules'
 layouts and the publication order): over an order in which each module
 reads only entries published before it, where each module publishes its
 entries by steps of mode 8's interface computation and lays them out once
@@ -121,7 +121,7 @@ the entries it reads are realized, every published entry has a realization
 `Chosen` names. By `linkModules`. -/
 theorem entries_realized
     (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
-    (hgroup : PassGroupChecks) {budget : PositiveCertificates.SearchBudget} {force : List String} {fuel : Nat}
+    {budget : PositiveCertificates.SearchBudget} {force : List String} {fuel : Nat}
     {given : Std.HashMap String Json} {Chosen : (e : Entry) → EntryRealized e → Prop}
     {M : Type} (order : List M) (est reads : M → List Entry) (hord : ReadsEarlier order est reads)
     (hstep : ∀ m ∈ order, (∀ e ∈ reads m, ∃ src : EntryRealized e, Chosen e src) → ∀ e ∈ est m,
@@ -130,7 +130,7 @@ theorem entries_realized
     ∀ m ∈ order, ∀ e ∈ est m, ∃ src : EntryRealized e, Chosen e src :=
   linkModules order est reads (fun e => ∃ src : EntryRealized e, Chosen e src) hord fun m hm hreads e he => by
     obtain ⟨⟨needs, incoming, hs⟩, hl⟩ := hstep m hm hreads e he
-    exact realized_of_established hrun hkeep hgroup hs hl
+    exact realized_of_established hrun hkeep hs hl
 
 /-- **Every entry an importer reads was published by a step** (proved,
 under `InterfaceProvenance` and `EstablishProvenance`): an entry of the
@@ -142,10 +142,10 @@ theorem established_of_provenance {budget : PositiveCertificates.SearchBudget} {
     ∀ e ∈ est, ∃ needs incoming,
       EstablishedStep budget force (mode8Prepare given) (mode8Check fuel given) needs incoming e := by
   intro e he
-  obtain ⟨needs, incoming, vs, ns, est', hrun, he', hnot⟩ := hprov e he
-  rcases hest needs budget force incoming _ _ est' vs ns hrun e he' with hin | hstep
+  obtain ⟨needs, incoming, tables, vs, ns, ts, est', hrun, he', hnot⟩ := hprov e he
+  rcases hest needs budget force incoming _ _ est' vs ns tables ts hrun e he' with hin | ⟨est₀, hstep⟩
   · exact absurd hin hnot
-  · exact ⟨needs, incoming, hstep⟩
+  · exact ⟨needs, est₀, hstep⟩
 
 /-- **An importer's established slots, at the chosen realizations** (H5a's
 import part): each slot of kind `established e` holds, at each depth, the
@@ -169,7 +169,7 @@ theorem establishedSlots_of_chosen {f : FilePlans} {selection : Option (List Str
   obtain ⟨src, hsrc⟩ := hreal u hu k e hk
   exact ⟨src, h u hu k v A e hs hA hk src hsrc⟩
 
-/-- **The cross-module theorem** (proved, under H1–H3, the layouts of the
+/-- **The cross-module theorem** (proved, under H1 and H2, the layouts of the
 importer and of each module, the publication order and the per-kind
 contracts of the other outside slots): for plans over their store and a set
 `S` of their units each a selected unit whose group is safe, whose laid-out
@@ -180,7 +180,7 @@ types. Its premises about the published entries are what
 lane's lemma about `establishModules`) state. -/
 theorem crossModule_safe
     (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
-    (hgroup : PassGroupChecks) (hdrop : ReceiverDropSound) {budget : PositiveCertificates.SearchBudget}
+    (hdrop : ReceiverDropSound) {budget : PositiveCertificates.SearchBudget}
     {force : List String} {fuel : Nat}
     {given : Std.HashMap String Json} {Chosen : (e : Entry) → EntryRealized e → Prop}
     {M : Type} (order : List M) (est reads : M → List Entry) (hord : ReadsEarlier order est reads)
@@ -197,7 +197,7 @@ theorem crossModule_safe
     (∀ u ∈ layout.D, ∀ n, ∀ m ≤ n, ∀ W : WorldT m, meaning (graphOf f) (layout.iface u) m W (approx layout.code n u)) ∧
     (∀ u ∈ layout.D, ∀ n (W : WorldT n), EnvOk (graphOf f) (layout.code u).captures
       (envOf ((layout.code u).captured (approx layout.code n) n) .nul) n W) := by
-  have hreal := entries_realized hrun hkeep hgroup order est reads hord hstep
+  have hreal := entries_realized hrun hkeep order est reads hord hstep
   have hest : EstablishedSlots layout kinds := establishedSlots_of_chosen (fun u hu k e hk => by
     obtain ⟨m, hm, he⟩ := hread u hu k e hk
     exact hreal m hm e he) hslots

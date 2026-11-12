@@ -103,14 +103,15 @@ inductive MemberAccepted (f : FilePlans) (i : Nat) : Prop where
       r.codes = [] → MainCall r c (GraphCode.admits []) (.qualified q.body q.ordinary) a₀ → c.bound = none → c.regional = none →
       c.Accepts after → summariesChecked r after.summaries.toList = true → MemberAccepted f i
 
-/-- **The wrapper hypothesis**: `passGroup` accepting a group makes every
-member `MemberAccepted`. A statement about the actual function, not proved
-here: `passGroup` is one `Id.run` block whose member outcome is a local of
-its loop (docs/drafts/pass-unit-theorem.md, "The wrapper"). -/
+/-- **H3, the wrapper's statement**: `passGroup` accepting a group makes
+every member `MemberAccepted`, at every value of every argument. Proved
+(`passGroupChecks_of_sound passMember_sound`, PassUnitWrapper and
+PassUnitMemberRun). -/
 def PassGroupChecks : Prop :=
   ∀ (f : FilePlans) (fuel : Nat) (group : List Nat) (compare : Bool) (debugNode repeats : Nat)
-    (given : Option (Std.HashMap String Json)) (observe : Option String) (counting : Bool) (deps : List String),
-    (f.passGroup fuel group compare debugNode repeats given observe counting).2 = .ok deps →
+    (given : Option (Std.HashMap String Json)) (observe : Option String) (counting located : Bool)
+    (deps : List String),
+    (f.passGroup fuel group compare debugNode repeats given observe counting located).2 = .ok deps →
     ∀ j ∈ group, MemberAccepted f j
 
 end Verification.SourceClaimJson.PassUnit
