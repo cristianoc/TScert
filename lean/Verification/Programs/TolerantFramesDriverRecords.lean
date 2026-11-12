@@ -244,6 +244,18 @@ theorem envFacts_of_loopHeads {c : Target.RunCall G I} {env : SinglePass.WalkEnv
     unfold envReached
     simp only [Array.getElem?_toList]
 
+/-- **What the walk's state gives a node's entry**: the start's names and
+the promised input's name below the walk's counter, and the start's slots
+`i + base` below it (`headEntry`'s names at the start). -/
+def StartBelow (env : SinglePass.WalkEnv ι G I) (fresh : Nat) : Prop :=
+  (∀ x ∈ env.startNames, x < fresh) ∧ (∀ a, env.argName = some a → a < fresh) ∧
+    ∀ i < (env.claimed[env.start]!).context.length, i + env.startNames.headD 0 < fresh
+
+theorem StartBelow.mono {env : SinglePass.WalkEnv ι G I} {a b : Nat} (h : StartBelow env a) (hab : a ≤ b) :
+    StartBelow env b :=
+  ⟨fun x hx => Nat.lt_of_lt_of_le (h.1 x hx) hab, fun x hx => Nat.lt_of_lt_of_le (h.2.1 x hx) hab,
+    fun i hi => Nat.lt_of_lt_of_le (h.2.2 i hi) hab⟩
+
 /-- **The walk's invariant**: the queue's labels distinct, below the bound,
 reached, unvisited and, other than heads, with no exit left to come in; the
 visited labels reached, with no exit left to come in, their exits below the
@@ -253,7 +265,9 @@ exits still to come into it (`pend`); the states and implications that came
 in paired, each from an exit of a visited label, with its target's width, a
 well-formed store and below the fresh counter, the edges into heads from
 visited labels' exits; the start names below the counter; every visited
-label settled, its checks in the setup's no-return region `deadArr`. -/
+label settled, its checks in the setup's no-return region `deadArr`; the
+setup's start names and promised input's name below the counter
+(`StartBelow`). -/
 structure RecInv (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) (σ : SinglePass.WalkState ι G) :
     Prop where
   nodup : σ.queue.Nodup
@@ -271,6 +285,7 @@ structure RecInv (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) (σ 
   edgesVis : ∀ e ∈ σ.walk.edges.toList, ∃ s, visB σ.walk s = true ∧ e.target.label ∈ exitsOf env s
   push : ∀ t, ∀ s ∈ incS σ.walk t, PushOk c t s σ.fresh
   startFresh : ∀ x ∈ List.range c.inputs.length, x < σ.fresh
+  startBelow : StartBelow env σ.fresh
   settled : ∀ t, visB σ.walk t = true → Settled c (envHead env) env.deadArr.toList σ t
 
 /-- **At the walk's end every reached label is visited**, where the record
@@ -472,7 +487,8 @@ theorem recInv_visit {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} 
   have hnew_ne : ∀ t ∈ newQ, t ≠ l := fun t ht htl => by
     subst htl; exact hself (hnewQ t ht).2.1 (hnewQ t ht).1
   refine { nodup := ?_, queue := ?_, visR := ?_, visDeg := ?_, exits := ?_, count := ?_, size := ?_, degs := ?_,
-           inLen := ?_, inSizes := hF.inSizes hI.inSizes, inVis := ?_, edgesVis := ?_, push := ?_, startFresh := ?_, settled := ?_ }
+           inLen := ?_, inSizes := hF.inSizes hI.inSizes, inVis := ?_, edgesVis := ?_, push := ?_, startFresh := ?_,
+           startBelow := hI.startBelow.mono hF.fresh, settled := ?_ }
   · rw [hQ]
     refine List.nodup_append.mpr ⟨hnodupNew, hrest.2, fun a ha b hb hab => ?_⟩
     subst hab

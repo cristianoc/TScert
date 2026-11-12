@@ -1,5 +1,5 @@
 import Verification.Programs.TolerantFramesComposeYields
-import Verification.Programs.TolerantFramesDriverVisitRest
+import Verification.Programs.TolerantFramesDriverEntry
 import Verification.Programs.TolerantFramesRegionalHeld
 
 /-! # Tolerant frames: the single pass's graph theorem
@@ -15,8 +15,9 @@ section Run
 variable {ι : Type} [Labels ι]
 
 /-- **THE GRAPH THEOREM of the single pass, over its open premises**: what
-the setup records (`SetupRecords`); of each visit, the states its exits
-push meeting `PushOk` (`ExitsPushOk`) and its label settled, its checks at the node it
+the setup records (`SetupRecords`); of each visit, each exit's mapping of
+its target's width (`ExitsWidth`; the states its exits push then meet
+`PushOk`, `exitsPushOk_of`) and its label settled, its checks at the node it
 visits included, the yields it keeps among them (`VisitsSettle`; the rest
 of what a visit records, `visitsRecord_of` and `visitsRest_of`); the
 answered subtype requests sound
@@ -27,9 +28,9 @@ graph's tables (`RegionsRecorded`) and the regional evidence typed
 the return's goal, `nodesYield_of`; the regional premise,
 `regionsHeld_of`; the pass's `linearNear` its search on fuel by
 definition, `linearNearFuelEq`). -/
-theorem run_sound_single_pass (hs : SetupRecords ι) (hp : ExitsPushOk ι) (hst : VisitsSettle ι) (hsub : SubtypeAnswersAll ι) (hex : ExitsYield ι) (hrec : RegionsRecorded ι)
+theorem run_sound_single_pass (hs : SetupRecords ι) (hp : ExitsWidth ι) (hst : VisitsSettle ι) (hsub : SubtypeAnswersAll ι) (hex : ExitsYield ι) (hrec : RegionsRecorded ι)
     (htyped : RegionsTyped ι) : Target.RunSound ι :=
-  have hv := visitsRecord_of (visitsRest_of hp hst)
+  have hv := visitsRecord_of (visitsRest_of (exitsPushOk_of hp) hst)
   run_sound_pass (recordsSound_of hs hv) (recordsChecked_of hs hv) (nodesYield_of hsub hex) linearNearFuelEq
     (regionsHeld_of hrec htyped)
 

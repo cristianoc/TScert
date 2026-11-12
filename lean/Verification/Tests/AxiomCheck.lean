@@ -882,6 +882,16 @@ run_cmd do
   check ``Verification.TolerantFrames.entryStart_fresh
   check ``Verification.TolerantFrames.stepFresh
   check ``Verification.TolerantFrames.pushOk_of_exit
+  check ``Verification.TolerantFrames.withWritten_below
+  check ``Verification.TolerantFrames.headEntry_wf
+  check ``Verification.TolerantFrames.checkedStep_store
+  check ``Verification.TolerantFrames.entryStart_cases
+  check ``Verification.TolerantFrames.entryStart_ok
+  check ``Verification.TolerantFrames.withStated_ok
+  check ``Verification.TolerantFrames.visitEntry_ok
+  check ``Verification.TolerantFrames.visitStep_thrown
+  check ``Verification.TolerantFrames.ofNode_handler
+  check ``Verification.TolerantFrames.exitsPushOk_of
   check ``Verification.TolerantFrames.dfsStep_seen
   check ``Verification.TolerantFrames.dfsLoop_seen
   check ``Verification.TolerantFrames.dfs_closed
