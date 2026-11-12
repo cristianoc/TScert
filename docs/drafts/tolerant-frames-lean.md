@@ -1377,7 +1377,7 @@ side's `recordsSound_of` and `recordsChecked_of`, `VisitsRecord` from
 discharges it and the theorem that consumes it:
 
 ```math
-\mathrm{SetupRecords} \wedge \mathrm{ExitsWidth} \wedge \mathrm{DirectKeepsSummaries} \wedge \mathrm{SearchKeepsSummaries} \wedge \mathrm{SubtypeAnswersAll} \wedge \mathrm{ExitsYield} \wedge \mathrm{RegionsRecorded} \wedge \mathrm{RegionsTyped} \Longrightarrow \mathrm{RunSound}
+\mathrm{ExitsWidth} \wedge \mathrm{DirectKeepsSummaries} \wedge \mathrm{SearchKeepsSummaries} \wedge \mathrm{SubtypeAnswersAll} \wedge \mathrm{ExitsYield} \wedge \mathrm{RegionsRecorded} \wedge \mathrm{RegionsTyped} \Longrightarrow \mathrm{RunSound}
 ```
 
 The pass keeps the read summaries it was given with no hypothesis
@@ -1405,7 +1405,7 @@ its type (`walkStopsRefuse`, from `StopOutcome.outcome_ne_accepted`).
 
 | Premise | Discharged by | Consumed by |
 | --- | --- | --- |
-| `SetupRecords` | the walk side (Leg 19b): what the setup gives (`EnvFacts`, `RecInv`, queue entry W4; `EnvFacts` states the nodes and count, claims, heads, reachability, checker and code predicate, bound, goal, postcondition, start names and argument name, written assertions, start label, head flag, context and checked given entry; `envFacts_of_loopHeads`, queue entry L2) | `recordsSound_of` and `recordsChecked_of`, then `run_traversedC` |
+| `SetupRecords` | proved (`setupRecords_of`, module `TolerantFramesDriverSetup.lean`): a returned setup gives the claims one per node, the entry accepted and the environment and state of `setupEnv` and `setupState` (`setup_ok`); the environment states the call (`SetupOk.envFacts`, by `envFacts_of_loopHeads` and the heads' given states, `setupGiven_get`) and the first state meets `RecInv` (`SetupOk.recInv`: nothing visited or come in, the queue `initialQueue`'s labels, each in-degree the count of the edges still to come, `inDegrees_get`); `run_sound_single_pass` applies it | `recordsSound_of` and `recordsChecked_of`, then `run_traversedC` |
 | `ExitsWidth` | pass change W9: each exit's mapping has its target's width (no mapping: as many source names as the target's context; a mapping: as many slots, each a source slot); with it every state an exit pushes meets `PushOk` (`exitsPushOk_of`) | `visitsRest_of` (through `ExitsPushOk`) |
 | `DirectKeepsSummaries`, `SearchKeepsSummaries` | the direct call and expression search preserve soundness of the read-summary table; their discharge awaits table-prefix preservation in pass change W8. These two premises imply `VisitsSettle` (`visitsSettle_of`): the recorded node has its checked step, footprint and return checks, and checked yields (`visitStep_node`); the start is entered (`visitStart_entered`); a non-head's entry is its single predecessor or recorded merge with the written assertion (`visitEntry_settled`). Setup equations belong to `EnvFacts`; `RecInv.impBelow` bounds incoming implications and is preserved by `visitsImplications`. | `visitsRest_of` through `visitsSettle_of` |
 | `SubtypeAnswersAll` | pass change D5: an answer `subtypeUsing` accepts from any answers is an inclusion of meanings, at every graph (the answers' `subtypes` cache carries no soundness, so this is not provable of the pass as it is; `proved_sound` is the form the change can give) | `nodesYield_of` (the return's goal, `goalHolds_of_returnY`) |

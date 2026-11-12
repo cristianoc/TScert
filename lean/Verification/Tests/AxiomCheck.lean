@@ -81,6 +81,7 @@ import Verification.Programs.TolerantFramesExitTypes
 import Verification.Programs.TolerantFramesExitTyped
 import Verification.Programs.TolerantFramesExitChecks
 import Verification.Programs.TolerantFramesExitFresh
+import Verification.Programs.TolerantFramesDriverSetup
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -1015,3 +1016,14 @@ run_cmd do
   check ``Verification.TolerantFrames.stepFresh_judgment
   check ``Verification.TolerantFrames.keepSummaries_self
   check ``Verification.TolerantFrames.keepSummaries_sound
+  check ``Verification.TolerantFrames.setup_ok
+  check ``Verification.TolerantFrames.setupGiven_get
+  check ``Verification.TolerantFrames.getElem!_eq_getD_none
+  check ``Verification.TolerantFrames.SetupOk.startClaim
+  check ``Verification.TolerantFrames.SetupOk.envFacts
+  check ``Verification.TolerantFrames.inDeg_inner
+  check ``Verification.TolerantFrames.zipIdx_range
+  check ``Verification.TolerantFrames.inDegrees_get
+  check ``Verification.TolerantFrames.visB_replicate
+  check ``Verification.TolerantFrames.SetupOk.recInv
+  check ``Verification.TolerantFrames.setupRecords_of
