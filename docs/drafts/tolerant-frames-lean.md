@@ -1375,14 +1375,15 @@ of `TolerantFramesRunSound.lean`, quantified over every call the premises of
 
 The hypotheses of `run_sound_pass` (Leg 18a), each with what discharges it
 and the theorem that consumes it. Pass changes are named by the pass lane's
-items in its queue; the pass lane (`engine-pass`) is at 57a4bb25, where D1
+items in its queue; the pass lane (`engine-pass`) is at dc8f2a8a, where D1
 to D4, D9 (`passShapeCheck'`), D10 (one written assertion per label), D11
-(the regional derivation check, the entry's fields under store regions) and
-the driver on fuel (C9) have arrived.
+(the regional derivation check, the entry's fields under store regions),
+the driver on fuel (C9) and the setup and visit as functions (`setup`,
+`visit`, `StopOutcome`) have arrived. A stopped walk is never accepted by
+its type (`walkStopsRefuse`, from `StopOutcome.outcome_ne_accepted`).
 
 | Premise | Discharged by | Consumed by |
 | --- | --- | --- |
-| `WalkStopsRefuse` | a pass change: a stop type without acceptance | `walk_of_accepts`, `run_traversedA` |
 | `RecordsSound` | read off the visit once it is a top-level function (being lifted on the pass lane): each visited label `NodeChecked` (its step, its entry the recorded one, its shape check), `TraversedA` (the in-degree order, `HeadsCutCycles` under `LoopHeadsFuelEq`), `StartEntered`; the record's fields Leg 18b lists | `run_traversedA` |
 | `NodesYield` | per node, `nodeYielded_of_checks`: the judgment and the return's goal from `NodeYieldChecks` (the visit's kept yields, `PromiseDerivChecked` (D12), the return check); each exit by `exitDeliversAJ_of` from `exitDeliversY_of_edge` or `exitDeliversY_head` (the edge's checks, the target's types by `refinedEdge_env`), `assertsAt_of_edge` (the assertion check at the refined context) and `exitJoinedY` (the merge's recorded edge at `passRefined`, under `ArmsDistinct`, D13); the handler by `handlerDelivers_of_edge` and `joinedAt_of_exit` at the node's context; all read off the visit | `stepEdgesSound_of_yields` |
 | `LinearNearFuelEq` | a pass change: `Store.linearNear` as `linearNearFuel` (with `linearNearFuel_rounds`) | `entry_of_edgeA`, through `nodesChecked_of_walkJ` |
@@ -1598,8 +1599,8 @@ node over the rest of the queue, until the queue is empty (`Drives`,
 its result (`Drives.inv`); an accepted call either stopped with an accepted
 outcome or returned a record visiting at least the nodes the start
 reaches, its answers the call's (`walk_of_accepts'`, from `run` being the
-record's `Walk.outcome`); with `WalkStopsRefuse` (a stopped walk is never
-accepted), the latter (`walk_of_accepts`).
+record's `Walk.outcome`); a stopped walk is never accepted, by the stop's
+type (`walkStopsRefuse`), so the latter (`walk_of_accepts`).
 
 **The record as the proof's walk** (`ofPass`, with the loop heads
 `passHeads`, the start and `loopHeads`' targets as `runWalk` marks them): a
@@ -1785,11 +1786,10 @@ written assertion and a merge's joined implications). `NodesYield` is
 **(`run_sound_pass`)**, proved (`run_sound_yields` with `run_traversedA`):
 
 ```math
-\mathrm{WalkStopsRefuse} \wedge \mathrm{RecordsSound} \wedge \mathrm{NodesYield} \wedge \mathrm{LinearNearFuelEq} \wedge \mathrm{BoundsChecked} \wedge \mathrm{ReturnsChecked} \wedge \mathrm{RegionsHeld} \wedge \mathrm{LabelsChecked} \Longrightarrow \mathrm{RunSound}
+\mathrm{RecordsSound} \wedge \mathrm{NodesYield} \wedge \mathrm{LinearNearFuelEq} \wedge \mathrm{BoundsChecked} \wedge \mathrm{ReturnsChecked} \wedge \mathrm{RegionsHeld} \wedge \mathrm{LabelsChecked} \Longrightarrow \mathrm{RunSound}
 ```
 
-`run_sound_yields` is the same with `RunTraversedA` for `WalkStopsRefuse`
-and `RecordsSound`. Its premises are those of "Open premises".
+`run_sound_yields` is the same with `RunTraversedA` for `RecordsSound`. Its premises are those of "Open premises".
 
 Premises this leg discharges / leaves:
 

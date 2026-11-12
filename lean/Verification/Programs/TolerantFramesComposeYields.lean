@@ -250,10 +250,10 @@ theorem run_sound_yields (hrun : RunTraversedA ι) (hyield : NodesYield ι) (hne
 /-- **THE GRAPH THEOREM of the single pass over the nodes' kept yields**
 (`run_sound_yields` with the driver's walk from its record,
 `run_traversedA`). -/
-theorem run_sound_pass (hstop : WalkStopsRefuse ι) (hrec : RecordsSound ι) (hyield : NodesYield ι)
+theorem run_sound_pass (hrec : RecordsSound ι) (hyield : NodesYield ι)
     (hnear : LinearNearFuelEq) (hb : BoundsChecked ι) (hrc : ReturnsChecked ι) (hreg : RegionsHeld ι)
     (hlab : LabelsChecked ι) : Target.RunSound ι :=
-  run_sound_yields (run_traversedA hstop hrec) hyield hnear hb hrc hreg hlab
+  run_sound_yields (run_traversedA (walkStopsRefuse (ι := ι)) hrec) hyield hnear hb hrc hreg hlab
 
 end Run
 

@@ -787,6 +787,7 @@ run_cmd do
   check ``Verification.TolerantFrames.Drives.inv
   check ``Verification.TolerantFrames.walk_of_accepts'
   check ``Verification.TolerantFrames.walk_of_accepts
+  check ``Verification.TolerantFrames.walkStopsRefuse
   check ``Verification.TolerantFrames.ofPass_heads
   check ``Verification.TolerantFrames.run_traversedA
   check ``Verification.TolerantFrames.stepEdgesSound_of_checkedAt
