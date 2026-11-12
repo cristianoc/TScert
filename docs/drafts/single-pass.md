@@ -193,6 +193,10 @@ call's where `promiseYields` states them at an output the promise keeps,
 any other's each where `yieldFollows` accepts it; a slot read's yields are
 checked against the implications testing the slot's name.
 
+A node's claim type has the shape its continuation assumes, as the
+certificate checker checks it (`passShapeCheck'`): only Booleans at a
+`branchBind`, the Boolean at a `branch`.
+
 ### A call of a slot
 
 A call whose callee is a slot is read off the callee's signatures, in the

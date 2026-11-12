@@ -986,6 +986,22 @@ def derivChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : C
     (ProgramCertificates.checkTreeUsing G images deriv codes sums ||
       PromiseCalls.requiresTree G images stepK codes sums deriv)
 
+/-- **A node's shape** as the certificate checker checks a `branch`: its
+claim type the Boolean (`expand G A = [.bool]`); a return, a bind or an
+effect any. -/
+def passShapeCheck (G : NormalGraph ι) (A : Ty ι) : Continuation → Bool
+  | .branch _ _ => decide (PositiveRules.expand G A = [.bool])
+  | .ret | .bind _ | .effect _ => true
+  | _ => false
+
+/-- **A node's shape at every continuation**: `passShapeCheck`, and at a
+`branchBind` the checker's test (`ControlFlow.checkNodeResult`,
+`BranchRefinement.onlyBoolean`); a `tagBind` needs none. -/
+def passShapeCheck' (G : NormalGraph ι) (A : Ty ι) : Continuation → Bool
+  | .branchBind _ _ => BranchRefinement.onlyBoolean G A
+  | .tagBind _ _ _ => true
+  | k => passShapeCheck G A k
+
 /-- **A node's step within a footprint bound** (`GraphCode.nodeChecked`),
 at a node outside the region from which no normal return is possible: the
 step within `Φ` (`ExpressionEffects.check`, `writeWithin`, `initWriteWithin`,
@@ -1827,6 +1843,9 @@ def runWalk (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (T
       let before := (materialize entry width (List.range width) true).1
       let o : Observation ι := { label := l, before, after := before, preds := predViews, names := predNames, implies := slotImplOf entry.names implies }
       throw (.observed o, counts, answers, trace)
+    -- The node's shape (`passShapeCheck'`).
+    if !passShapeCheck' G c.type node.continuation then
+      throw (.refused s!"the shape of node {l}", counts, answers, trace)
     -- The step.
     let some ms := timedKind "node mentioned" fun _ => mentioned 0 node.expression | throw (.notHandled s!"term at node {l}: {(reprStr node.expression).take 200}", counts, answers, trace)
     let ms := (keepFirst {} ms).2.toList
