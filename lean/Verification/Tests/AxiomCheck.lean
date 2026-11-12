@@ -3,7 +3,7 @@ import Lean.Elab.Command
 import Lean.Compiler.CSimpAttr
 import Verification.Source.Claims.Json
 import Verification.Source.RequestCli
-import Verification.Source.Claims.PassUnitHeadline
+import Verification.Source.Claims.PassUnitLink
 import Verification.Semantics.ArgumentStoreRegions
 import Verification.Semantics.FootprintNatives
 import Verification.Programs.ArgumentPathTracking
@@ -30,7 +30,7 @@ the following depends on an axiom other than `propext`, `Classical.choice` and `
 - `SourceClaimJson.checkUnitJson_safe`, the acceptance theorem, of which every
   accepted function's and module run's safety is a consequence;
 - the single pass's unit theorem `SourceClaimJson.PassUnit.passUnit_safe` and
-  the wrapper, code-table and plan theorems it rests on;
+  the wrapper, code-table, plan and linking theorems it rests on;
 - the regional footprint's transport and composition, cell provenance, and the
   argument-store region composition, framing and stable separation theorems;
 - the tolerant-frame development's admissibility, adequacy, modal-law and
@@ -64,6 +64,11 @@ run_cmd do
   check ``Verification.SourceClaimJson.PassUnit.fragmentPlans_modules
   check ``Verification.SourceClaimJson.PassUnit.withHeadFacts_overStore
   check ``Verification.SourceClaimJson.PassUnit.withHeadFacts_startContexts
+  check ``Verification.SourceClaimJson.PassUnit.closedUnits_closed
+  check ``Verification.SourceClaimJson.PassUnit.link
+  check ``Verification.SourceClaimJson.PassUnit.closedUnits_linked
+  check ``Verification.SourceClaimJson.PassUnit.closedUnits_safe
+  check ``Verification.SourceClaimJson.PassUnit.envOk_of_linked
   check ``Verification.Footprints.transport_sound
   check ``Verification.Footprints.Sep.sound
   check ``Verification.Footprints.Post.mono

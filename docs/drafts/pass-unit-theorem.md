@@ -233,3 +233,125 @@ provable by unfolding:
   loop with no refusal, and the main graph runs over a table without that
   code and the ones after it. The code runs pass no observation, so this
   needs `run` to observe only when asked; the repair refuses there.
+
+## 4. Dependencies and linking
+
+`RequestSafe` is local: its entry premise $`\rho \models \Gamma`$ includes the
+slots holding the values of the functions the unit calls, at the types its
+callers read for them: the footprints `declarationEffects` proposes, a
+recursive function's self-assumption, the module values the
+initialization's walk types. A caller's theorem holds of the program once
+those values meet those types.
+
+### The closure
+
+A verdict line of mode 8 names a unit, its group's members and, accepted,
+its dependencies (`FilePlans.dependencies`): the groups its members reach
+outside the group. Mode 8 plans no module run (`fragmentPlans_modules`,
+proved), so every dependency is a unit of the file. The closure of a file's
+verdicts $`V`$ (unit $`\mapsto`$ accepted dependencies, or refused) is
+
+```math
+\mathrm{ClosedIn}(V, S) \iff \forall u \in S.\; \exists\, D.\; V(u) = \mathrm{accepted}(D) \wedge D \subseteq S
+```
+
+`closedUnits` computes it: the accepted units, shrunk while a remaining unit
+has a dependency outside, kept where the result is closed; a dependency
+with no verdict refuses its dependents. `closedUnits_closed` (proved): its
+result is closed. `fileVerdicts` is the verdicts mode 8's loop prints, and
+`closedUnits_safe` (proved, under H1–H4): every closed unit is a selected
+unit whose group `passGroup` accepts, so every member of its group is safe.
+The agreement tool's `closed` (`dev/single-pass-agreement.mts`) is this
+fixpoint, but it treats a dependency with no verdict as closed.
+
+### The induction
+
+Let $`M(u, n)`$ be the interface of unit $`u`$ at budget $`n`$: the value
+the module's environment holds for each member meets, in every world of
+budget $`n`$, the type its callers read (`MeetsAt`).
+
+**Theorem** `link` (proved). For a set $`S`$ closed under $`\mathrm{deps}`$,
+
+```math
+\frac{\forall u.\; M(u, 0) \qquad
+  \forall u \in S.\; \forall n.\; (\forall m \le n.\; M(u, m)) \wedge (\forall d \in \mathrm{deps}(u).\; \forall m \le n.\; M(d, m)) \Rightarrow M(u, n+1)}
+ {\forall n.\; \forall u \in S.\; M(u, n)}
+```
+
+by induction on $`n`$. Recursion needs no order on units: a unit's own
+group and every cycle of groups are covered because the step from $`n`$ to
+$`n + 1`$ reads interfaces at budgets up to $`n`$ only. `closedUnits_linked`
+(proved) instantiates it at `closedUnits`, each unit depending on itself
+(its group's members) and on its printed dependencies.
+
+**Theorem** `envOk_of_linked` (proved). Where each slot a link names holds
+its callee's module value at the type its interface states, that interface
+holds at budget $`n`$, and every other slot meets its type,
+$`\rho \models_{n,W} \Gamma`$. So `RequestSafe`'s entry premise reduces to
+the unit's own parameters once its callees are linked.
+
+### H5: the realization
+
+The step premise of `link` at a closed unit is the realization hypothesis
+`hreal` of `closedUnits_linked`, not proved:
+
+```math
+\mathrm{RequestSafe}(r_u) \wedge \forall m \le n.\; M(u, m) \wedge \forall d \in \mathrm{deps}(u).\; \forall m \le n.\; M(d, m)
+ \;\Longrightarrow\; M(u, n + 1)
+```
+
+It needs Lean code that does not exist:
+
+- the module's environment: a definition of the value each function and
+  module constant of a file holds when its initialization has run, as the
+  lowering places it in each caller's slots (the slot table of `Front`);
+- the slot agreement: the type every caller reads for $`u`$
+  (`moduleFunctions`, `withStandIns`) is the arrow $`u`$'s request
+  establishes, at the footprint and throw flag its unit claims;
+- the closure theorem: a function whose request is safe at budget $`n`$ is
+  graph code meeting its arrow (`TypingBasics.GraphCodeSpec`) at that budget,
+  and its closure meets the arrow at $`n + 1`$, as
+  `ProgramCertificates.funGraph_of_local` and `funGraphSelf_of_local` give
+  for code tables (cited: they are about closures a graph creates, and
+  transfer to module functions once the environment is defined as such
+  closures; not checked);
+- the initialization: the `:init` unit's acceptance establishes the module
+  constants' types the walk proposes (`withInitTypes`), a postcondition on
+  the module's cells its request does not state today.
+
+## 5. The boundaries that stay trusted
+
+Each enters the headline at a named place:
+
+- **Parser fidelity**: `ast`, the premise of `fragmentPlans`. The theorem
+  is about the plans of that document.
+- **Annotation interpretation**: each request's inputs, result, claimed
+  footprint, regions and postcondition, read from the declarations; they are
+  $`\Gamma`$, $`R`$ and the claims `RequestSafe` states.
+- **Source-to-graph lowering**: each request's program $`P`$. `RequestSafe`
+  is about $`P`$'s runs. In particular, at a test whose context type answers
+  it (`Answers`, `Source/Lowering/Execution.lean`, the expression dispatch),
+  the lowering emits the selected arm alone. The decision is proved sound,
+  `TypingBasics.answers_sound`: every value of the type answers the test as
+  decided. What stays trusted is that the tested value at that point of the
+  source run has the context type, which needs a source semantics to state.
+- **Sparse handler placement**: which nodes the lowering gives a handler;
+  the graph's handler edges are $`P`$'s.
+- **Host and declaration-only import contracts**: the types of the slots
+  holding host values and imports, assumed in $`\rho \models \Gamma`$ and
+  never discharged by linking; imported footprints (`standIns.imports`)
+  enter the front as written.
+- **Stand-ins**: a function stand-in fixes the footprint its callers read;
+  its own unit checks it, so it is discharged by H5 for a closed unit. An
+  import stand-in is an assumed contract, as above.
+- **Proposals of the walk**: the candidates, given implications, arguments
+  and inputs, known evidence and cached answers are arguments H1 quantifies
+  over; no proposal is trusted.
+- **Compiled replacements**: the proofs are about the logical definitions;
+  the verifier runs the pass's `implemented_by` replacements
+  (`SinglePass.timedKind`, `clock`, `same`, `oneObject`, `Store.diff`), which
+  no theorem relates to their definitions.
+
+The hypotheses H1–H5 are the open obligations; H3 and H4 are the two the
+wrapper and the extraction can discharge in Lean (section 3's repairs, a
+start-context check), H5 the one linking needs.
