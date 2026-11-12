@@ -1980,3 +1980,38 @@ node:
    checker from `StateOk`, here from `passPreT` and the step's judgment,
    with `StableNow` at the entry world carried in $`X`$.
    Not proved here.
+
+## Leg 14b: premises this leg discharges and leaves
+
+Discharges:
+
+- `FootprintKept`: `footprintKept_of`, from `NodeAccepted`, `BoundChecked`
+  and `CallFreshOk` at every visited node; its `FreshOk` of the receiver
+  slots from the entry state's fresh names (`freshOk_recv`);
+- `ReturnsEnsured`: `returnsEnsured_of`, from `NodeAccepted` and
+  `ReturnChecked` at every visited node;
+- the edge lemmas' target types (`htc`) on an edge accepted by the edge
+  search: `checkedEdge_env` (D1), given the edge's facts holding and its
+  context typing the source environment;
+- `StartNotReentered`: `start_entered_passPreT` at a start an edge enters
+  (D8), with `exitDelivers_head` and `headsEntered_of_recorded` at the start
+  as at any head;
+- `shape` at a branch: `nodeShape_of`, given the check `passShapeCheck`
+  (needs a pass change: the checker's Boolean test at a branch node).
+
+Leaves:
+
+- `CallFreshOk`: a call's fresh result read off the derivation's selected
+  effect (pass change D4);
+- `AssertionsHeld` from `passPreT`: the entry state does not entail every
+  written fact (Leg 14b: a written assertion on its edges and in the entry
+  state); the edge's check gives it (`assertion_query_sound`), carried by a
+  node assertion stating the assertions;
+- `RegionsKept`: `RegionalTyped` (the evidence's `ExpressionOk`), the
+  graph's tables' agreement with each node's through the in-degree order,
+  and the composition along a run;
+- the guard and assertion goals of `NodeAccepted.ret`: `ret` read at the
+  state after the step, `YieldsOk`, the subtype answers (D5);
+- `branchBind` and `tagBind` continuations: outside the node obligations;
+- `htc` on an edge accepted by subtype answers alone (D5), and at the
+  yields' refined and mixed contexts (`YieldsOk`, D2).
