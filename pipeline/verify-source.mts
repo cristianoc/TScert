@@ -27,6 +27,7 @@ import type { AssemblyEntry, Interface, UnitReads } from "./unit-documents.mts";
 import { canonicalDocument, decodeUnitFacts, proposalUnits, replaceNumbers, sliceOf, toDocument, type ProposalUnit, type UnitFacts } from "./unit-slices.mts";
 import { currentStore, invokeInProcess, invokeProcess, Recorder, readInvocationLog, referenceProposal, reusingEvidence,
   type AttemptRecord } from "./stages.mts";
+import { verifyWithInterfaces } from "./module-interfaces.mts";
 import { producerBuild, producerCall, producerProtocol, refusalEnd, verifierBuild, verifierCall, verifierProtocol, type ProcessCall, type Protocol } from "./stage-execution.mts";
 
 /** The file of a run's directory holding its stage invocations' attempts. */
@@ -1089,6 +1090,11 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
         throw Error("invalid initialization statement position");
       return [s.pos[0], s.pos[1]];
     });
+    if (singlePassRoute()) {
+      phase = "proposal";
+      return singlePass(recorder, artifacts, ast, snapshot, subtypeRounds, functions, initialization,
+        (detail) => refusedByTypeScript(detail, refusedErrors));
+    }
     const flow = join(artifacts, "flow.json");
     const lowered = runStep(verifierCall(verifier, ["--lower-control-flow", ast]), recorder);
     writeFileSync(join(artifacts, "flow.log"), lowered.detail);
@@ -1183,6 +1189,111 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
     };
   }
 }
+/** Whether a check takes the single-pass route (`TSCERT_ROUTE=single-pass`):
+ * the parse, then the single pass over the fragment alone (`verifier
+ * --verify-interface-stage 8`, docs/drafts/single-pass.md, "The claims-free
+ * front"), with the module-interface stages it needs; no producer, claims
+ * document, search or check stage. Unset, the route is the pipeline's. */
+export function singlePassRoute(): boolean {
+  const route = process.env["TSCERT_ROUTE"];
+  if (route === undefined || route === "" || route === "pipeline") return false;
+  if (route === "single-pass") return true;
+  throw Error(`TSCERT_ROUTE names no route: ${route} (single-pass or pipeline)`);
+}
+
+/** The single pass over a parsed file (`singlePassRoute`), its outcome in
+ * the shape of the pipeline's. The pass reads no given loop-head facts and
+ * no stand-ins: an empty given file and empty stand-ins are its inputs. Each
+ * unit's verdict is a line `{unit, members, accepted, depends}` or `{unit,
+ * members, refusal}`; a unit counts as verified only with every unit it
+ * depends on verified, a module unit (`module:<location>#<unit>`) only where
+ * its own line is printed. The file is verified when every unit is; else its
+ * outcome is its first unit's that is not, in the front's order (the
+ * functions by position, then the initialization). A unit the pass refuses
+ * has the outcome of a failed search (`unverified`, phase `search`), where
+ * the pipeline refuses an obligation; a refusal before any unit's verdict
+ * (the pass's front, which computes the types) has the producer's
+ * (`unsupported`, phase `proposal`); a stage over its limit is an error. */
+function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey: string, subtypeRounds: number | undefined,
+    functions: string[], initialization: [number, number][], named: (detail: string) => string): Outcome {
+  const given = join(artifacts, "given.jsonl"), standins = join(artifacts, "standins.json");
+  writeFileSync(given, "");
+  writeFileSync(standins, '{"functions":[],"imports":[]}');
+  let run: StepRun;
+  try {
+    const invoked = verifyWithInterfaces(ast, fileKey, "", standins, {
+      mode: 8, fuel: searchDepth, rounds: subtypeRounds ?? 4096, force: [], allCuts: false, given,
+      work: join(artifacts, "interfaces"), invocation: { limitMs: stepTimeoutMs, force: false, recorder },
+    }).run;
+    const execution = invoked.record.execution;
+    if (execution === "timed-out" || execution === "timeout-replayed")
+      return { status: "error", artifacts, phase: "check", units: null,
+        detail: `timeout: verifier --verify-interface-stage did not finish within ${stepTimeoutMs / 1000} s` +
+          (execution === "timeout-replayed" ? " (an earlier attempt; TSCERT_RETRY_TIMEOUTS=1 runs it again)" : "") };
+    if (invoked.error || invoked.signal || invoked.status === null)
+      return { status: "error", artifacts, phase: "check", units: null,
+        detail: `tool failure: verifier --verify-interface-stage ${invoked.signal ? `was killed by ${invoked.signal}` : "did not run"}: ` +
+          `${invoked.error?.message ?? (invoked.stderr.trim().split("\n")[0] || "no exit status")}` };
+    const out = wireText(invoked.stdoutBytes, "verifier --verify-interface-stage");
+    const err = wireText(invoked.stderrBytes, "verifier --verify-interface-stage");
+    run = { code: invoked.status, out, detail: err.trim() || out.trim(), record: invoked.record };
+  } catch (error) {
+    const message = messageOf(error);
+    return { status: "error", artifacts, phase: "check", units: null,
+      detail: /timed-out|timeout-replayed/.test(message)
+        ? `timeout: a module-interface stage did not finish within ${stepTimeoutMs / 1000} s: ${message}` : message };
+  }
+  writeFileSync(join(artifacts, "pass.log"), run.detail);
+  const lines = run.out.split("\n").filter((l) => l.startsWith("{"));
+  const refusal = verifierRefusal(run, "--verify-interface-stage");
+  if (refusal !== null && lines.length === 0)
+    return { status: "unsupported", artifacts, phase: "proposal", detail: named(refusal), units: null };
+  const strings = (value: unknown): string[] => {
+    if (!Array.isArray(value) || !value.every((x): x is string => typeof x === "string"))
+      throw Error("tool failure: the single pass printed a unit without its members or dependencies");
+    return value;
+  };
+  const verdicts = lines.map((line) => {
+    const value: unknown = JSON.parse(line);
+    const unit = field(value, "unit"), reason = field(value, "refusal");
+    if (typeof unit !== "string") throw Error("tool failure: the single pass printed a verdict without its unit");
+    const accepted = field(value, "accepted") === true;
+    if (!accepted && typeof reason !== "string") throw Error("tool failure: the single pass printed a verdict without its refusal");
+    return { unit, members: strings(field(value, "members")), accepted, depends: accepted ? strings(field(value, "depends")) : [],
+      refusal: typeof reason === "string" ? reason : "" };
+  });
+  // A unit is closed when it and every unit it depends on are accepted.
+  const byUnit = new Map(verdicts.map((v) => [v.unit, v]));
+  const closed = new Map(verdicts.map((v) => [v.unit, v.accepted]));
+  const openBy = new Map<string, string>();
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const v of verdicts) {
+      if (closed.get(v.unit) !== true) continue;
+      const open = v.depends.find((d) => closed.get(d) === false || (d.startsWith("module:") && !byUnit.has(d)));
+      if (open === undefined) continue;
+      closed.set(v.unit, false);
+      openBy.set(v.unit, open);
+      changed = true;
+    }
+  }
+  const place = (unit: string): number => unit === "init" ? Infinity : Number(/@(\d+)$/.exec(unit)?.[1] ?? Infinity);
+  const results: UnitResult[] = verdicts.filter((v) => !v.unit.startsWith("module:"))
+    .sort((a, b) => place(a.unit) - place(b.unit)).map((v): UnitResult => {
+      if (closed.get(v.unit) === true)
+        return { unit: v.unit, members: v.members, status: "verified", phase: "check", detail: "", depends: v.depends };
+      const detail = v.accepted ? `reject: a unit it depends on is refused: ${openBy.get(v.unit) ?? ""}` : `reject: ${v.refusal}`;
+      return { unit: v.unit, members: v.members, status: refusalStatus(detail), phase: "search", detail, depends: [] };
+    });
+  const first = results.find((u) => u.status !== "verified");
+  if (first === undefined && refusal === null)
+    return { status: "verified", artifacts, phase: "check", functions, initialization, units: results };
+  if (first === undefined)
+    return { status: "unsupported", artifacts, phase: "proposal", detail: named(refusal ?? ""), units: results };
+  return { status: first.status === "verified" ? "error" : first.status, artifacts, phase: "search", detail: first.detail,
+    units: results };
+}
+
 const phases: readonly Phase[] = ["source", "proposal", "search", "check"];
 const isPhase = (value: unknown): value is Phase => phases.some((p) => p === value);
 const isSpan = (value: unknown): value is [number, number] =>

@@ -352,6 +352,16 @@ have the same payload; the direct measurement command retains that output.
 The canonical computation and its dependency closure are specified in
 [module interfaces](drafts/module-interfaces.md).
 
+`TSCERT_ROUTE=single-pass` makes a check (`pipeline/verify-source.mts`,
+and the case runner and every caller through it) take the single-pass
+route: the parse stage, then the `pass` stage of mode 8 and the interface
+stages it needs, over an empty given file and empty stand-ins; no
+producer, plan, search or check stage runs. A unit counts as verified only
+with every unit it depends on accepted; a unit the pass refuses has the
+outcome of a failed search (`unverified`, phase `search`), a refusal of the
+pass's front the producer's (`unsupported`, phase `proposal`). Unset, a
+check takes the pipeline's route.
+
 ## Observed stages
 
 The parse and TypeScript's diagnostics read the file
