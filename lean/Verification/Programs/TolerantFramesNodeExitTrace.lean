@@ -37,7 +37,8 @@ persist in `raw`. The exit index fixes which branch receives refinement. -/
     WalkExtends (exitsWalk b) raw
 
 /-- Each indexed exit owns a record in the visit's final array, appended
-by that exit's successful computation. -/
+by that exit's successful computation. The same computation's incoming
+arrays and processed edges persist in the final visit. -/
 @[nospecialize] def ExitRecordsChecked {ι : Type} [Labels ι] (G : NormalGraph ι) (I : InstanceImageCheck G)
     (env : SinglePass.WalkEnv ι G I) (l : Nat) (en : SinglePass.Entered ι) (sd : SinglePass.StepDone ι G)
     (ex : SinglePass.ExitsDone ι G) : Prop :=
@@ -46,7 +47,7 @@ by that exit's successful computation. -/
     SinglePass.exitStep G I env l en sd
       (SinglePass.yieldsAtSlots en.entry.names ((SinglePass.exitsYields G I env l en sd).1.getD []))
       (Thunk.mk fun _ => SinglePass.outAllOf G env.claimed[l]! sd.st.stepOut) a e = .ok b ∧
-    b.exits = a.exits.push r
+    b.exits = a.exits.push r ∧ WalkExtends (exitsWalk b) (exitsWalk ex)
 
 /-- A successful entry, step, and exit visit at this very node's values.
 The exit arrays extend to the walk used by the node's check. This keeps the

@@ -1,3 +1,4 @@
+import Verification.Programs.TolerantFramesExitsYield
 import Verification.Programs.TolerantFramesExitYieldCache
 import Verification.Programs.TolerantFramesExitHeadChecks
 import Verification.Programs.TolerantFramesExitRecords
@@ -1080,3 +1081,4 @@ run_cmd do
   check ``Verification.TolerantFrames.headImplies_checked
   check ``Verification.TolerantFrames.headExit_checked
   check ``Verification.TolerantFrames.exitTypes_handler_checked
+  check ``Verification.TolerantFrames.exitsYield_of_checks
