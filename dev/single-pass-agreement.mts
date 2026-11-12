@@ -17,7 +17,8 @@
 // `hole:`; the other direction is counted. TSCERT_FORCE (passed through)
 // forces an adversarial proposal (`literals`, `callees`, `elements`,
 // `objects`, `spreads`, `stale`, `throws`, `guards`, `reads`, `paths`,
-// `offers`, `loops`, `decided`, `schemes`, `callbacks`, `fresh`, `defaults`, `finally`, `never`, `meets`, `implications`, `binds`, `arms`, `captures`, `cells`, `early`, `no-return`, `steps`, `head-entry`, `start-facts`); the controls below run with theirs forced whatever
+// `offers`, `loops`, `decided`, `schemes`, `callbacks`, `fresh`, `defaults`, `finally`, `never`, `meets`, `implications`, `binds`, `arms`, `captures`, `cells`, `early`, `no-return`, `steps`, `head-entry`, `start-facts`); the controls
+// (tests/single-pass-control-inputs.mts, the suite of the single pass's controls' list) run with theirs forced whatever
 // the patterns, each expected refused by mode 8; the forced proposal decides
 // the control's unit and the units it depends on, the file's other units
 // compared unforced.
@@ -35,6 +36,7 @@ import { checkApart } from "../pipeline/verify-source.mts";
 import { withoutEvidenceReuse } from "../pipeline/stages.mts";
 import { verifyWithInterfaces } from "../pipeline/module-interfaces.mts";
 import { standIns } from "./single-pass-standins.mts";
+import { forcedProposals, type ForcedProposal } from "../tests/single-pass-control-inputs.mts";
 
 const root = resolve(import.meta.dirname, "..");
 const verifier = join(root, "lean/.lake/build/bin/verifier");

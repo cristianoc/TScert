@@ -142,6 +142,9 @@ export function verifyWithInterfaces(fragment: string, key: string, names: strin
   const environment: Record<string, string> = {};
   if (options.force.length > 0) environment.TSCERT_FORCE = options.force.join(",");
   if (options.allCuts) environment.TSCERT_ALL_CUTS = "1";
+  // The pass's own refusal text, unlocated (`TSCERT_PASS_REFUSALS=raw`): part
+  // of the stage's environment, so its key.
+  if (process.env.TSCERT_PASS_REFUSALS === "raw") environment.TSCERT_PASS_REFUSALS = "raw";
   const check = (path: string): Invoked => invokeProcess(verifierCall(verifierBuild,
     ["--subtype-rounds", String(options.rounds), "--verify-interface-stage", String(options.mode),
       fragment, path, options.given, standins, key, String(options.fuel), names], environment),

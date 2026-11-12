@@ -10,6 +10,15 @@ import Lean.Elab.Command
 import Lean.Compiler.CSimpAttr
 import Verification.Source.Claims.Json
 import Verification.Source.RequestCli
+import Verification.Source.Claims.PassUnitObligations
+import Verification.Source.Claims.PassUnitInterfaces
+import Verification.Source.Claims.PassUnitSignatures
+import Verification.Source.Claims.PassUnitCross
+import Verification.Source.Claims.PassUnitWrapper
+import Verification.Source.Claims.PassUnitMemberRun
+import Verification.Source.Claims.PassUnitVerdict
+import Verification.Types.StoreMapsBuiltins
+import Verification.Source.Claims.PassUnitInit
 import Verification.Semantics.ArgumentStoreRegions
 import Verification.Semantics.FootprintNatives
 import Verification.Programs.ArgumentPathTracking
@@ -94,6 +103,11 @@ the following depends on an axiom other than `propext`, `Classical.choice` and `
 
 - `SourceClaimJson.checkUnitJson_safe`, the acceptance theorem, of which every
   accepted function's and module run's safety is a consequence;
+- the single pass's unit theorem at mode 8's verdict,
+  `SourceClaimJson.PassUnit.passUnitVerdict_safe`, `passUnit_safe` and
+  the wrapper, code-table, plan, linking and realization theorems it rests on,
+  the file-level theorem `SourceClaimJson.PassUnit.passFile_safe` and the
+  modules' linking theorems;
 - the regional footprint's transport and composition, cell provenance, and the
   argument-store region composition, framing and stable separation theorems;
 - the tolerant-frame development's admissibility, adequacy, modal-law and
@@ -113,6 +127,96 @@ run_cmd do
       unless standard.contains axiom_ do
         throwError "{decl} depends on the axiom {axiom_}"
   check ``Verification.SourceClaimJson.checkUnitJson_safe
+  check ``Verification.SourceClaimJson.PassUnit.passUnitVerdict_safe
+  check ``Verification.SourceClaimJson.PassUnit.passUnit_safe
+  check ``Verification.SourceClaimJson.PassUnit.member_safe
+  check ``Verification.SourceClaimJson.PassUnit.ordinary_requestSafe
+  check ``Verification.SourceClaimJson.PassUnit.qualified_requestSafe
+  check ``Verification.SourceClaimJson.PassUnit.codesAccepted_sound
+  check ``Verification.SourceClaimJson.PassUnit.codesAccepted_guarantees
+  check ``Verification.SourceClaimJson.PassUnit.codeSpec_of_guarantee
+  check ``Verification.SourceClaimJson.PassUnit.footprint_of_bound
+  check ``Verification.SourceClaimJson.PassUnit.footprint_of_fallback
+  check ``Verification.SourceClaimJson.PassUnit.main_guarantee
+  check ``Verification.SourceClaimJson.PassUnit.summaries_of_checked
+  check ``Verification.SourceClaimJson.PassUnit.fragmentPlans_overStore
+  check ``Verification.SourceClaimJson.PassUnit.fragmentPlans_modules
+  check ``Verification.SourceClaimJson.PassUnit.withHeadFacts_overStore
+  check ``Verification.SourceClaimJson.PassUnit.fragmentPlansCore_shape
+  check ``Verification.SourceClaimJson.PassUnit.fragmentPlansCore_overStore
+  check ``Verification.SourceClaimJson.PassUnit.fragmentPlansCore_modules
+  check ``Verification.SourceClaimJson.PassUnit.closedUnits_closed
+  check ``Verification.SourceClaimJson.PassUnit.link
+  check ``Verification.SourceClaimJson.PassUnit.closedUnits_linked
+  check ``Verification.SourceClaimJson.PassUnit.closedUnits_safe
+  check ``Verification.SourceClaimJson.PassUnit.envOk_of_linked
+  check ``Verification.SourceClaimJson.PassUnit.codeSpec_of_clauses
+  check ``Verification.SourceClaimJson.PassUnit.closure_meets_below
+  check ``Verification.SourceClaimJson.PassUnit.unitSpec_of_requestSafe
+  check ``Verification.SourceClaimJson.PassUnit.codeBound_some
+  check ``Verification.SourceClaimJson.PassUnit.captures_envOk
+  check ``Verification.SourceClaimJson.PassUnit.approx_meets
+  check ``Verification.SourceClaimJson.PassUnit.approx_captures_envOk
+  check ``Verification.SourceClaimJson.PassUnit.approx_link
+  check ``Verification.SourceClaimJson.PassUnit.approxEnv_value
+  check ``Verification.SourceClaimJson.PassUnit.requestSafe_of_member
+  check ``Verification.SourceClaimJson.PassUnit.closedUnits_selected_safe
+  check ``Verification.SourceClaimJson.PassUnit.passFile_safe
+  check ``Verification.SourceClaimJson.PassUnit.linkModules
+  check ``Verification.SourceClaimJson.PassUnit.published_holds
+  check ``Verification.SourceClaimJson.PassUnit.obligations_sound
+  check ``Verification.SourceClaimJson.PassUnit.member_async
+  check ``Verification.SourceClaimJson.PassUnit.codes_async
+  check ``Verification.SourceClaimJson.PassUnit.outsideContracts_of_kinds
+  check ``Verification.SourceClaimJson.PassUnit.standIns_vacuous
+  check ``Verification.SourceClaimJson.PassUnit.passPlans_safe
+  check ``Verification.SourceClaimJson.PassUnit.passGroupOver_safe
+  check ``Verification.SourceClaimJson.PassUnit.interface_entry_meets
+  check ``Verification.SourceClaimJson.PassUnit.entry_met
+  check ``Verification.SourceClaimJson.PassUnit.established_met
+  check ``Verification.SourceClaimJson.PassUnit.step_units_safe
+  check ``Verification.SourceClaimJson.PassUnit.passFile_safe_kinds
+  check ``Verification.SourceClaimJson.PassUnit.fragmentPlansFromInterfaces_overStore
+  check ``Verification.SourceClaimJson.PassUnit.fragmentPlansWithModules_overStore
+  check ``Verification.SourceClaimJson.PassUnit.withFalseStartFact_overStore
+  check ``Verification.SourceClaimJson.PassUnit.passUnitCli_safe
+  check ``Verification.StoreMaps.StoreMap.meaning_eq
+  check ``Verification.StoreMaps.StoreMap.meaning_eq_of_mem
+  check ``Verification.StoreMaps.StoreMap.denote_eq
+  check ``Verification.StoreMaps.StoreMap.normalDenote_eq
+  check ``Verification.StoreMaps.StoreMap.related_assign
+  check ``Verification.StoreMaps.ordinary_allowed
+  check ``Verification.SourceClaimJson.PassUnit.signatureAgrees_of_storeMap
+  check ``Verification.SourceClaimJson.PassUnit.signatureAgrees_of_maps
+  check ``Verification.StoreMaps.checkMap_sound
+  check ``Verification.StoreMaps.matchStores_sound
+  check ``Verification.StoreMaps.StoreMap.excOf_eq
+  check ``Verification.StoreMaps.StoreMap.builtins_isSome
+  check ``Verification.StoreMaps.matchStores_none_of_builtins
+  check ``Verification.StoreMaps.matchStores_sound_builtins
+  check ``Verification.StoreMaps.env_empty_agree
+  check ``Verification.SourceClaimJson.PassUnit.graphOf_env
+  check ``Verification.SourceClaimJson.PassUnit.storeMapAgrees_of_check
+  check ``Verification.SourceClaimJson.PassUnit.signatureAgrees_of_checks
+  check ``Verification.SourceClaimJson.PassUnit.signatureAgrees_of_rows
+  check ``Verification.SourceClaimJson.PassUnit.moduleUnitId_inj
+  check ``Verification.SourceClaimJson.PassUnit.entryRealized_of_step
+  check ``Verification.SourceClaimJson.PassUnit.realized_of_established
+  check ``Verification.SourceClaimJson.PassUnit.entries_realized
+  check ``Verification.SourceClaimJson.PassUnit.established_of_provenance
+  check ``Verification.SourceClaimJson.PassUnit.establishedSlots_of_chosen
+  check ``Verification.SourceClaimJson.PassUnit.crossModule_safe
+  check ``Verification.SourceClaimJson.PassUnit.rowRealized_spec
+  check ``Verification.SourceClaimJson.PassUnit.layout_realizes
+  check ``Verification.SourceClaimJson.PassUnit.receiverless_indices
+  check ``Verification.SourceClaimJson.PassUnit.passGroup_members
+  check ``Verification.SourceClaimJson.PassUnit.passGroupChecks_of_sound
+  check ``Verification.SourceClaimJson.PassUnit.passGroupChecks
+  check ``Verification.SourceClaimJson.PassUnit.refuseRows_plans
+  check ``Verification.SourceClaimJson.PassUnit.refuseUnbound_plans
+  check ``Verification.SourceClaimJson.PassUnit.passMember_sound
+  check ``Verification.SourceClaimJson.PassUnit.codesInOrder_accepted
+  check ``Verification.SourceClaimJson.PassUnit.init_asserted
   check ``Verification.Footprints.transport_sound
   check ``Verification.Footprints.Sep.sound
   check ``Verification.Footprints.Post.mono
@@ -422,6 +526,15 @@ run_cmd do
   check ``Verification.TolerantFrames.storeWF_empty
   check ``Verification.TolerantFrames.headStore_ok
   check ``Verification.TolerantFrames.entry_stateHolds
+
+set_option maxRecDepth 4096 in
+open Lean Elab Command in
+run_cmd do
+  let standard := [``propext, ``Classical.choice, ``Quot.sound]
+  let check (decl : Name) : CommandElabM Unit := do
+    for axiom_ in ← liftCoreM <| collectAxioms decl do
+      unless standard.contains axiom_ do
+        throwError "{decl} depends on the axiom {axiom_}"
   check ``Verification.TolerantFrames.index_safeInt
   check ``Verification.TolerantFrames.index_int
   check ``Verification.TolerantFrames.integral_int
