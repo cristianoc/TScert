@@ -1792,3 +1792,38 @@ invariance lemma is not stated.
 uniform in the graph, and the edge and merge functions it reads are equal
 at the reassigned graph (`mergeState` by unfolding, `edgeStoreOf_reassign`).
 
+
+## Leg 14c: a merge's facts below its counter
+
+Module `lean/Verification/Programs/TolerantFramesMergeBelow.lean`. Proved,
+for predecessors of the context's width with well-formed stores and every
+slot, fact and fresh name below the merge's first fresh name
+$`\mathit{fresh}`$ (`PredsBelow`), a non-empty list of them:
+
+- `renameEach_names`: a fact restated at fresh names names the original's
+  names and the names the renaming sends them to; `mergeEqual_names`: a
+  predecessor's equalities name a name its renaming renames and that
+  name's fresh names;
+- the fresh names a renaming sends a name to are slots' names of the merge,
+  so below the merge's next fresh name (`PredsBelow.renamed`, from the first
+  loop's invariant `mergeSlots_inv`); the renamed names are below
+  $`\mathit{fresh}`$ (`rename_key_below`);
+- the restatements (`PredsBelow.variants`), the met store
+  (`PredsBelow.met0`: the common facts are the first predecessor's live
+  facts, `mergeCommon_live`; `drop_below`), the differences
+  (`PredsBelow.diffs`), and the merged store (`PredsBelow.store`): a weakest
+  bound names the names of a predecessor's bound of its normal form
+  (`boundsOf_get`, `normalize_vars`), an entailed bound is a difference, a
+  guarded fact is renamed into the merge's names.
+
+**(Merge below)** (`mergeState_factsBelow`, `mergeState_below`):
+
+```math
+\mathit{preds}\neq[\,] \wedge \forall q\in\mathit{preds}.\ |q.\mathit{names}|=|\mathit{context}| \wedge \mathrm{StoreWF}\ q.\mathit{store} \wedge \mathrm{StateBelow}\ q\ \mathit{fresh}
+\ \Rightarrow\ \mathrm{StateBelow}\ m.\mathit{state}\ m.\mathit{fresh}
+```
+
+for $`m = \mathrm{mergeState}\ G\ \mathit{context}\ \mathit{preds}\ \mathit{edgesIn}\ \mathit{fresh}`$.
+With `mergeState_wf` this fills the merge's row of the store-operations
+table (Leg 12): `StoreWF`, names and fresh names below, facts below, all
+proved.

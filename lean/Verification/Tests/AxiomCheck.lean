@@ -38,6 +38,7 @@ import Verification.Programs.TolerantFramesNodeWalk
 import Verification.Programs.TolerantFramesStoreOpsBelowNames
 import Verification.Programs.TolerantFramesWalkReassign
 import Verification.Programs.TolerantFramesWalkReassignNodes
+import Verification.Programs.TolerantFramesMergeBelow
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -606,6 +607,12 @@ run_cmd do
   check ``Verification.TolerantFrames.entryRefusal_reassign
   check ``Verification.TolerantFrames.NodeAccepted.meaning
   check ``Verification.TolerantFrames.run_guarantee_of_run
+  -- Leg 14c: the merge's remaining premises (TolerantFramesMergeBelow and the modules after it)
+  check ``Verification.TolerantFrames.renameEach_names
+  check ``Verification.TolerantFrames.mergeEqual_names
+  check ``Verification.TolerantFrames.PredsBelow.store
+  check ``Verification.TolerantFrames.mergeState_factsBelow
+  check ``Verification.TolerantFrames.mergeState_below
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
