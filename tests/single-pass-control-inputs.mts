@@ -80,6 +80,8 @@ export const forcedProposals: readonly ForcedProposal[] = [
   { file: "map-stable-set", unit: "distinct@238", force: "steps", positive: true },
   { file: "loop-head-contents", unit: "continued@413", force: "head-entry", positive: true },
   { file: "returntype-guard", unit: "isName@125", force: "start-facts", positive: true },
+  // An object default proposed at a type its literal `{}` does not meet.
+  { file: "blocker-census-options-default", unit: "config@148", force: "objects", positive: true, at: /expression at node \d+: Verification\.Tm\.makeAt/ },
   // An element read typed without its missing arm, refused at the read.
   { file: "native-length-literal", unit: "order@440", force: "elements", positive: true, at: /expression at node \d+: Verification\.Tm\.elemAt/ },
   // An array literal's spread of strings proposed at its number[] contract, refused at the literal

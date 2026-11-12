@@ -16,7 +16,7 @@ import { join, resolve } from "node:path";
 import { availableParallelism } from "node:os";
 import { fork } from "node:child_process";
 import { controlOperations, ran as ranStage, startEviction, type Invoked } from "../pipeline/stages.mts";
-import { check as checkSource, readFragmentFile } from "../pipeline/verify-source.mts";
+import { check as checkSource, readFragmentFile, sourceKey } from "../pipeline/verify-source.mts";
 import { verifyWithInterfaces } from "../pipeline/module-interfaces.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
@@ -27,7 +27,7 @@ import { deferredIdentity } from "../tools/type-term.mts";
 import { cases } from "../pipeline/cases.mts";
 import type { Ast } from "../tools/fragment.mts";
 import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
-import { ordinaryEffect } from "../tools/type-graph.mts";
+import { emptyEffect, ordinaryEffect } from "../tools/type-graph.mts";
 import { forcedProposals, interfaceControls } from "./single-pass-control-inputs.mts";
 
 process.env.TSCERT_ROUTE = "single-pass";
@@ -636,6 +636,281 @@ control("forged fragment: binder roles, an unguarded alias, written applications
   assert.ok(exhausted.status !== "verified" && exhausted.status !== "error", JSON.stringify(exhausted));
   assert.match("detail" in exhausted ? exhausted.detail : "", /source direct obligation at \[202,212\): subtype search exhausted/);
   say("binder roles, an unguarded alias, written arguments, scopes and references forged: each refused; a written obligation out of rounds exhausted");
+});
+
+control("forged declarations: the Promise tag", async (): Promise<void> => {
+  // `Symbol.toStringTag` is the native `Promise` contract's: the declaration
+  // document lists it by its identity, only that contract's prototype holds
+  // it, its `then` names no `PromiseLike`, and no object the source makes is
+  // keyed by it. A document tampered with in any of these is refused where
+  // evidence is produced and where it is checked.
+  const tagged = (good: string, name: string, edit: (ast: Ast) => string, refusal: RegExp): void => {
+    const path = join(good, `${name}.fragment.json`);
+    writeFileSync(path, edit(readFragmentFile(fragmentOf(good))));
+    refusedFile(pass(path), name, refusal);
+  };
+  const wellKnown = '"module":"typescript/lib/lib.es2015.symbol.wellknown.d.ts","name":"toStringTag"';
+  const promises = run("async-await");
+  const native = (ast: Ast) => must(ast.declarations.definitions.find(d =>
+    d.declaration.name === "Promise" && d.declaration.module.startsWith("typescript/lib/")), "the native Promise");
+  const untagged = /the native Promise contract states no readonly `Symbol.toStringTag` of type string/;
+  tagged(promises, "tag-renamed", ast => {
+    const text = JSON.stringify(ast);
+    assert.ok(text.includes(wellKnown), "the tag's listed identity");
+    return text.replace(wellKnown, wellKnown.replace('"toStringTag"', '"toStringTagX"'));
+  }, untagged);
+  tagged(promises, "tag-dropped", ast => {
+    const index = ast.declarations.symbols.findIndex(s => JSON.stringify(s).includes(wellKnown));
+    const text = JSON.stringify(native(ast));
+    assert.ok(index >= 0 && text.includes(`"name":{"symbol":${index}}`), "the native prototype's tag");
+    return JSON.stringify(ast).replace(text, text.replaceAll(`"name":{"symbol":${index}}`, '"name":"tag"'));
+  }, untagged);
+  tagged(promises, "tag-promise-like", ast => {
+    const text = JSON.stringify(native(ast));
+    const reference = '"reference":{"name":"Promise","span"';
+    assert.ok(text.includes(reference), "a Promise the native then's callbacks return");
+    return JSON.stringify(ast).replace(text, text.replace(reference, '"reference":{"name":"PromiseLike","span"'));
+  }, /the native Promise contract names PromiseLike/);
+  const fields = run("then-member-fields");
+  tagged(fields, "tag-allocation", ast => {
+    const index = ast.declarations.symbols.length;
+    ast.declarations.symbols.push({ module: "typescript/lib/lib.es2015.symbol.wellknown.d.ts", name: "toStringTag",
+      span: [0, 0] });
+    const text = JSON.stringify(ast);
+    assert.ok(text.includes('{"name":"then","e":'), "an allocation's then field");
+    return text.replace('{"name":"then","e":', `{"name":{"symbol":${index}},"e":`);
+  }, /an object the source makes is keyed by `Symbol.toStringTag`/);
+  // `Fake` given the native contract's members at `number`, its methods
+  // compatible with the native ones. As an exact copy its prototype is the
+  // native record, and it verifies. With the tag dropped from its prototype,
+  // its value returned as a `Promise<number>` is refused at the return where
+  // evidence is produced, and the exact copy's evidence, justifying the
+  // return by the tag, is refused where it is checked: dropping the tag makes
+  // the prototype a record of its own, a head the exact copy's store lacks,
+  // so that evidence's labels name other rows and it is refused as it is
+  // read. With the tag on a prototype of one more field, on Fake or on
+  // a base, or on a prototype that is a callable object, the document is
+  // refused in both.
+  const inherited = run("tag-fake-holder");
+  // The copied contract with its prototype a callable object: every
+  // prototype field writable, and a call signature.
+  const callablePrototype = (text: string): string => {
+    const contract: unknown = JSON.parse(text);
+    const prototype = contract && typeof contract === "object" && "prototype" in contract ? contract.prototype : null;
+    assert.ok(prototype && typeof prototype === "object" && "fields" in prototype && Array.isArray(prototype.fields) &&
+      "calls" in prototype, "the copied prototype record");
+    const fields: unknown[] = prototype.fields;
+    for (const field of fields) if (field && typeof field === "object" && "readonly" in field) field.readonly = false;
+    prototype.calls = [{ k: "function", effect: { footprint: { value: "any", store: "any" }, promise: null, fresh: false,
+      receiverStore: false, onThrow: false, receiverOwn: false, freshObject: false, requires: null, elements: null,
+      pre: [], ensures: [], receiverGrows: false, elementWrite: null },
+      receiver: null, params: [], rest: null,
+      result: { k: "atom", name: "unknown", span: [0, 0] }, span: [0, 0] }];
+    return must(JSON.stringify(contract), "the callable contract's text");
+  };
+  type FakeMode = "exact" | "untagged" | "distinct" | "base" | "callable";
+  const fakeAt = (ast: Ast, mode: FakeMode): string => {
+    const promise = native(ast);
+    const fake = must(ast.declarations.definitions.find(d => d.declaration.name === "Fake"), "Fake");
+    const index = ast.declarations.symbols.findIndex(s => JSON.stringify(s).includes(wellKnown));
+    const text = JSON.stringify(must(promise.expression, "the native contract"))
+      .replace(/\{"k":"parameter","index":0,"span":\[\d+,\d+\]\}/g, '{"k":"atom","name":"number","span":[0,0]}');
+    const opening = '"prototype":{"k":"object","fields":[';
+    assert.ok(text.includes(opening), "the copied prototype");
+    const extra = '{"name":"forged","optional":false,"readonly":true,"type":{"k":"atom","name":"unknown","span":[0,0]},"span":[0,0]},';
+    const body = mode === "exact" ? text
+      : mode === "untagged" ? text.replace(new RegExp(`\\{"name":\\{"symbol":${index}\\}[^}]*\\}[^}]*\\},`), "")
+      : mode === "callable" ? callablePrototype(text)
+        : text.replace(opening, opening + extra);
+    assert.ok(mode === "exact" || body !== text, `the ${mode} copy`);
+    const replaced = mode === "base"
+      ? JSON.stringify({ ...fake, bases: [JSON.parse(body)] })
+      : JSON.stringify({ ...fake, bases: [], expression: JSON.parse(body) });
+    return JSON.stringify(ast).replace(JSON.stringify(fake), replaced);
+  };
+  const at = readFileSync(sourceKey(inherited), "utf8").indexOf("return f;") + "return ".length;
+  {
+    const exact = join(inherited, "tag-fake-exact.fragment.json");
+    writeFileSync(exact, fakeAt(readFragmentFile(fragmentOf(inherited)), "exact"));
+    const produced = pass(exact);
+    assert.ok(produced.status === 0 && [...produced.verdicts.values()].every((v) => v.closed), words(produced).slice(0, 1500));
+  }
+  // Refused at the read of `f` in `return f` (the old route: `source
+  // expression obligation at [at,at+1)`; the route names the node).
+  tagged(inherited, "tag-fake-untagged", ast => fakeAt(ast, "untagged"), /expression at node \d+: Verification\.Tm\.var 0 /);
+  assert.ok(at > 0);
+  const otherPrototype = /a prototype holding `Symbol.toStringTag` other than the native Promise's/;
+  tagged(inherited, "tag-fake-tagged", ast => fakeAt(ast, "distinct"), otherPrototype);
+  tagged(inherited, "tag-fake-base", ast => fakeAt(ast, "base"), otherPrototype);
+  tagged(inherited, "tag-fake-callable", ast => fakeAt(ast, "callable"), /a prototype is stated as no record/);
+  say("forged tag documents: the tag renamed, dropped, stated of another prototype or a base's, PromiseLike in the native then, an allocation keyed by the tag; a contract with the native methods and no tag, a callable prototype: refused");
+});
+
+control("forged fragment: a reserved member name", async (): Promise<void> => {
+  // The parser reserves `message` and `stack` as member names of a class
+  // extending `Error`; the pass reads no class declaration: the fragment with
+  // `text` renamed `stack` is accepted, the reservation the parser's alone.
+  const methods = run("error-subclass-methods");
+  const path = join(methods, "forged-stack-member-fragment.json");
+  writeFileSync(path, readFileSync(fragmentOf(methods), "utf8").replaceAll('"text"', '"stack"').replaceAll("Located.text", "Located.stack"));
+  assert.ok(readFileSync(path, "utf8").includes('"name":"stack"'), "the forged fragment names a member `stack`");
+  const p = pass(path);
+  assert.ok(p.status === 0 && [...p.verdicts.values()].every((v) => v.closed), words(p).slice(0, 1500));
+  say("forged stack member: accepted by the pass, the reservation enforced by the parser alone");
+});
+
+control("forged fragment: writes renamed to a reserved key", async (): Promise<void> => {
+  const twin = run("reserved-write-twin");
+  const source = readFileSync(sourceKey(twin), "utf8");
+  for (const [key, write] of [["stackPattern", "o.stackPattern"], ["stackUpdate", 'o.stackUpdate += "s"'],
+      ["stackLogical", 'o.stackLogical ??= "s"'], ["stackCallback", "o.stackCallback = v"], ["stackComputed", 'o[k] = "s"']] as const) {
+    const path = join(twin, `forged-${key}-fragment.json`);
+    writeFileSync(path, readFileSync(fragmentOf(twin), "utf8").replaceAll(`"${key}"`, '"stack"'));
+    const start = source.indexOf(write);
+    const at = `source refusal at [${start},${start + write.length}): a write at a key that may be \`message\`, \`stack\` or \`cause\``;
+    const p = pass(path);
+    refusedFile(p, key);
+    assert.ok(words(p).includes(at), `${key}: refused otherwise: ${words(p).slice(0, 1500)}`);
+  }
+  say("forged reserved writes: each write form renamed to `stack`, refused at the write");
+});
+
+control("forged declarations: a generic member's result", async (): Promise<void> => {
+  // The class's declaration tampered to promise a number where the closure
+  // returns its binder is refused at the construct code; the untampered one
+  // is accepted. `make` alone is kept.
+  const classGeneric = run("class-generic-method");
+  const source = readFileSync(sourceKey(classGeneric), "utf8");
+  const fragment: unknown = JSON.parse(readFileSync(fragmentOf(classGeneric), "utf8"));
+  assert.ok(isObject(fragment) && Array.isArray(fragment.functions));
+  fragment.functions = fragment.functions.filter((f: unknown) => isObject(f) && f.name === "make");
+  const kept = JSON.stringify(fragment);
+  const at = source.indexOf("pick<V>(a: V): V") + "pick<V>(a: V): ".length;
+  const declared = `"result":{"k":"binder","name":"V","span":[${at},${at + 1}]}`;
+  assert.ok(kept.includes(declared), "pick's declared result");
+  const search = (name: string, text: string): Pass => {
+    const path = join(classGeneric, `${name}.json`);
+    writeFileSync(path, text);
+    return pass(path);
+  };
+  const derived = search("make-only", kept);
+  assert.ok(derived.status === 0 && [...derived.verdicts.values()].every((v) => v.closed), words(derived).slice(0, 1500));
+  const make = [...derived.verdicts.keys()].find((u) => u.startsWith("make@"));
+  refused(search("forged-member-result", kept.replace(declared, '"result":{"k":"atom","name":"number","span":[0,0]}')),
+    must(make, "make's unit"), "forged member result");
+  say("forged declarations: a generic member's result narrowed in the class's declaration, refused at the construct code");
+});
+
+stop("forged declarations: another import closure", async (): Promise<void> => {
+  // The fragment's own code over another file's declarations: other types.
+  // The old route refuses the claims, which name declarations by position;
+  // the route accepts every unit (values' `identity` reads no declaration).
+  const good = run("values");
+  const fragment: unknown = JSON.parse(readFileSync(fragmentOf(good), "utf8"));
+  const json: unknown = JSON.parse(readFileSync(fragmentOf(run("collections-json-uninherited-key")), "utf8"));
+  assert.ok(isObject(fragment) && isObject(json) && "declarations" in json);
+  refusedFile(pass(forged(good, "forged-import", { ...fragment, declarations: json.declarations })), "forged import closure");
+  say("forged import closure: refused");
+});
+
+control("forged declarations: unequal bound member effects", async (): Promise<void> => {
+  // A method bound to a union of hosts needs each host's member at one
+  // signature: one host's `next` given the empty effect.
+  const artifacts = run("bind-union-host");
+  const ast = fragmentAst(artifacts);
+  honest("bind-union-host", "total@1704");
+  const host = must(ast.declarations.definitions.find((d) => d.declaration.name === "Countdown"), "Countdown");
+  assert.ok(host.expression?.k === "object");
+  const next = must(host.expression.fields.find((f) => f.name === "next"), "Countdown.next");
+  assert.ok(next.type.k === "function");
+  assert.deepEqual(next.type.effect, ordinaryEffect);
+  next.type.effect = emptyEffect;
+  refused(pass(forged(artifacts, "unequal-bound-member-effects", ast)), "total@1704", "unequal member effects");
+  say("unequal bound member effects: refused at the bound call's unit");
+});
+
+control("forged fragment: explicit type arguments widened", async (): Promise<void> => {
+  // `reduce<number | null>` written as `reduce<number | null | string>`, and
+  // `same<number | boolean>` as `same<number | boolean | string>`.
+  for (const [file, kind] of [["closure-result-contract", "invoke"], ["explicit-type-arguments", "apply"]] as const) {
+    const artifacts = run(file);
+    const unforced = pass(fragmentOf(artifacts));
+    const ast: unknown = JSON.parse(readFileSync(fragmentOf(artifacts), "utf8"));
+    const calls: { parts: unknown[]; span: unknown }[][] = [];
+    const found: { owner: string | null } = { owner: null };
+    visitAll(ast, (node) => {
+      if (node.k === kind && Array.isArray(node.typeArgs) && node.typeArgs.length > 0 && calls.length === 0)
+        calls.push(node.typeArgs.filter((a): a is { parts: unknown[]; span: unknown } => isObject(a) && Array.isArray(a.parts)));
+      if (calls.length > 0 && found.owner === null && typeof node.name === "string" && Array.isArray(node.namePos) &&
+          typeof node.namePos[0] === "number" && "body" in node) found.owner = `${node.name}@${node.namePos[0]}`;
+    });
+    const [typeArg] = must(calls[0], "the call's type arguments");
+    must(typeArg, "the type argument").parts.push({ k: "atom", name: "string", span: typeArg?.span });
+    assert.ok(isObject(ast));
+    const unit = must(found.owner, "the call's function");
+    honest(file, unit, unforced);
+    refused(pass(forged(artifacts, "forged-type-argument", ast)), unit, `${file} widened`);
+  }
+  say("explicit type arguments written wider than the call's instance: refused at the call's unit");
+});
+
+control("forged fragment: an array owning toJSON", async (): Promise<void> => {
+  const artifacts = run("json-stringify-sparse");
+  const ast = fragmentAst(artifacts);
+  const nested = must(ast.functions.find((f) => f.name === "nested"), "nested's declaration");
+  const unit = unitOf(ast, "nested");
+  honest("json-stringify-sparse", unit);
+  const rows = must(nested.params[0], "nested's parameter");
+  const span = rows.type.span;
+  rows.type = { k: "intersection", span, parts: [rows.type, { k: "object", span, stringIndex: null, calls: [],
+    fields: [{ name: "toJSON", optional: false, readonly: false, span, type: { k: "function", effect: ordinaryEffect,
+      receiver: null, params: [], rest: null, result: { k: "atom", name: "undefined", span }, span } }] }] };
+  refused(pass(forged(artifacts, "forged-array-tojson", ast)), unit, "forged", /intersection is empty/);
+  say("an array owning toJSON, forged past the parser: refused at the empty intersection");
+});
+
+control("forged fragment: a generic closure's statement", async (): Promise<void> => {
+  const artifacts = run("generic-function-type-annotation");
+  const fragment = readFileSync(fragmentOf(artifacts), "utf8");
+  const lambda = fragment.search(/"k":"lambda","pos":\[\d+,\d+\],"typeParams":\[\{/);
+  assert.ok(lambda >= 0, "a generic closure");
+  const unstated = fragment.indexOf('"stated":null', lambda);
+  assert.ok(unstated > lambda, "its statement");
+  const path = join(artifacts, "forged-generic-stated-fragment.json");
+  writeFileSync(path, fragment.slice(0, unstated) +
+    '"stated":{"footprint":{"value":"keep","store":"keep"},"onThrow":false,"fresh":false,"regions":[]}' + fragment.slice(unstated + '"stated":null'.length));
+  refusedFile(pass(path), "forged", /a generic closure states no effect/);
+  say("stated generic closure: a statement written into the Fragment refused");
+});
+
+control("forged fragment: a method's statement dropped", async (): Promise<void> => {
+  // The class's construction is checked against the member's statement:
+  // with `bump`'s statement dropped, the class is still refused.
+  const artifacts = run("invalid-method-effect-construction");
+  const fragment = readFileSync(fragmentOf(artifacts), "utf8");
+  const statement = '"stated":{"footprint":{"value":"keep","store":"keep"},"onThrow":false,"fresh":false,"regions":[]}';
+  assert.equal(fragment.split(statement).length, 2, "bump's statement");
+  const path = join(artifacts, "forged-unstated-fragment.json");
+  writeFileSync(path, fragment.replace(statement, '"stated":null'));
+  const unforced = pass(fragmentOf(artifacts));
+  const p = pass(path);
+  refusedFile(p, "forged");
+  // Refused where the honest document is: the construction.
+  for (const [u, v] of unforced.verdicts) if (!v.closed) refused(p, u, `forged: ${u}`);
+  say("unstated method of a stated member: the class's construction refused, the Fragment's statement dropped");
+});
+
+control("stated import: the exporting module refused", async (): Promise<void> => {
+  using importer = checkSource(join(root, "pipeline/examples/stated-assumed-value-import.ts"),
+    tsconfigOf(join(root, "pipeline/imports-project")), false, undefined, true);
+  const project = join(root, "pipeline/imports-project");
+  using outcome = checkSource(join(project, "stated.ts"), tsconfigOf(project), false, undefined, true);
+  assert.equal(importer.status, "verified", JSON.stringify(importer).slice(0, 1500));
+  if (outcome.status === "verified") assert.fail("drain's module verified");
+  const drain = must((outcome.units ?? []).find((u) => u.unit.startsWith("drain@")), "drain's unit");
+  assert.notEqual(drain.status, "verified");
+  assert.match(drain.detail, /footprint/);
+  say("stated import: the importer verified relative to the import assumption, the exporting module's drain refused at its footprint");
 });
 
 // ---------------------------------------------------------------------------
