@@ -24,6 +24,9 @@ import Verification.Programs.TolerantFramesDelta
 import Verification.Programs.TolerantFramesStore
 import Verification.Programs.TolerantFramesEntry
 import Verification.Programs.TolerantFramesMerge
+import Verification.Programs.TolerantFramesModelLoop
+import Verification.Programs.TolerantFramesModelTyped
+import Verification.Programs.TolerantFramesModelRules
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -365,6 +368,64 @@ run_cmd do
   check ``Verification.TolerantFrames.mergeEqAtoms_holds
   check ``Verification.TolerantFrames.zip_tail_eq
   check ``Verification.TolerantFrames.mergeEqual_holds
+  -- the model-side supports (TolerantFramesModel*)
+  check ``Verification.TolerantFrames.storeF_cell
+  check ``Verification.TolerantFrames.storeF_grow
+  check ``Verification.TolerantFrames.arrayF_at
+  check ``Verification.TolerantFrames.arrAt_invariant
+  check ``Verification.TolerantFrames.lowerBound_push
+  check ``Verification.TolerantFrames.arrayF_store
+  check ``Verification.TolerantFrames.cell_src
+  check ``Verification.TolerantFrames.write_safe
+  check ``Verification.TolerantFrames.lt_binop
+  check ``Verification.TolerantFrames.guard_safe
+  check ``Verification.TolerantFrames.read_safe
+  check ``Verification.TolerantFrames.lowerBound_iff
+  check ``Verification.TolerantFrames.headAt_action
+  check ``Verification.TolerantFrames.bodyAt_action
+  check ``Verification.TolerantFrames.loopPre_admin
+  check ``Verification.TolerantFrames.loop_checked
+  check ``Verification.TolerantFrames.loop_safe
+  check ``Verification.TolerantFrames.loop_done
+  check ``Verification.TolerantFrames.loop_no_raise
+  check ``Verification.TolerantFrames.aliasHeap_ok
+  check ``Verification.TolerantFrames.alias_entry
+  check ``Verification.TolerantFrames.alias_loop_safe
+  check ``Verification.TolerantFrames.storeListField_sound
+  check ``Verification.TolerantFrames.storeListTy_listT
+  check ``Verification.TolerantFrames.storeListField_at
+  check ``Verification.TolerantFrames.storeCells_of_typed
+  check ``Verification.TolerantFrames.storeListField_of_storeField
+  check ``Verification.TolerantFrames.storeCells_of_storeField
+  check ``Verification.TolerantFrames.storeCells_of_builtins
+  check ``Verification.TolerantFrames.apart_grow_keep_typed
+  check ``Verification.TolerantFrames.alloc_apart_typed
+  check ``Verification.TolerantFrames.stableAt_of_present
+  check ``Verification.TolerantFrames.stableAt_of_stableField
+  check ``Verification.TolerantFrames.stableAt_of_stableFirst
+  check ``Verification.TolerantFrames.stableAt_cons
+  check ``Verification.TolerantFrames.grow_path_typed
+  check ``Verification.TolerantFrames.valueClass_ok
+  check ``Verification.TolerantFrames.storeClass_ok
+  check ``Verification.TolerantFrames.action_le_valueClass
+  check ``Verification.TolerantFrames.viewLengthOf_kept
+  check ``Verification.TolerantFrames.viewStable_invariant
+  check ``Verification.TolerantFrames.view_box
+  check ``Verification.TolerantFrames.viewStable_of_typed
+  check ``Verification.TolerantFrames.view_not_invariant
+  check ``Verification.TolerantFrames.initTerm_kept
+  check ``Verification.TolerantFrames.init_box
+  check ``Verification.TolerantFrames.init_path
+  check ``Verification.TolerantFrames.call_rule
+  check ``Verification.TolerantFrames.alloc_step
+  check ``Verification.TolerantFrames.alloc_post
+  check ``Verification.TolerantFrames.apart_not_kept_fresh
+  check ``Verification.TolerantFrames.rebaseAll_labels
+  check ``Verification.TolerantFrames.rebase_elems
+  check ``Verification.TolerantFrames.seq_eff
+  check ``Verification.TolerantFrames.fresh_eff
+  check ``Verification.TolerantFrames.fresh_eff_bound
+  check ``Verification.TolerantFrames.fresh_cells_not_erased
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
