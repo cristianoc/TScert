@@ -19,6 +19,7 @@ import Verification.Programs.TolerantFramesSelect
 import Verification.Programs.TolerantFramesFootprint
 import Verification.Programs.TolerantFramesElems
 import Verification.Programs.TolerantFramesState
+import Verification.Programs.TolerantFramesMaterialize
 import Verification.Programs.TolerantFramesDelta
 import Verification.Programs.TolerantFramesStore
 
@@ -301,6 +302,10 @@ run_cmd do
   check ``Verification.TolerantFrames.materializeFrom_table
   check ``Verification.TolerantFrames.stateHolds_materialize_whole
   check ``Verification.TolerantFrames.stateHolds_materialize
+  check ``Verification.TolerantFrames.foldl_inv
+  check ``Verification.TolerantFrames.selectRound_about
+  check ``Verification.TolerantFrames.selectFrom_about
+  check ``Verification.TolerantFrames.selectedFromIndex
   check ``Verification.TolerantFrames.stateHolds_stepKnowledge
   check ``Verification.TolerantFrames.applyDelta_eq
   check ``Verification.TolerantFrames.forIn_inv_bind

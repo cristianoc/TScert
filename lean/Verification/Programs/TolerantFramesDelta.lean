@@ -1,4 +1,4 @@
-import Verification.Programs.TolerantFramesState
+import Verification.Programs.TolerantFramesMaterialize
 
 /-! # Tolerant frames: a step's delta on the named state
 

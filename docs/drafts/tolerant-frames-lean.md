@@ -682,6 +682,8 @@ Proved, per fact and per store operation:
 
 ### Materialization
 
+Module `lean/Verification/Programs/TolerantFramesMaterialize.lean`.
+
 `materialize` is `materializeFrom` at its selected facts (`materialize_eq`,
 by definition): every live fact with `whole` (`selectedAtoms_whole`), else the
 facts its worklist collects. Proved:
@@ -700,17 +702,16 @@ facts its worklist collects. Proved:
   is a selected fact and its image under the table (`materializeFrom_pairs`).
 
 From the state's meaning: the whole materialization holds
-(`stateHolds_materialize_whole`); the selective one holds under
-`SelectedFromIndex` (`stateHolds_materialize`); and the step's knowledge
-$`k_E`$ (line 1229) and $`k_E'`$ (line 1321), each `expandLinks` at the node's
-context, hold together where the environment meets that context
-(`stateHolds_stepKnowledge`). So a precondition `requiresTree` decides at
-$`k_E`$ holds where the whole-facts `select` reads $`k_E'`$: the semantic half
-of the second gap of [the selected output](#the-selected-output-under-the-passs-tree-check).
+(`stateHolds_materialize_whole`); the selective one holds
+(`stateHolds_materialize`), its facts drawn from the index by name; and the step's knowledge
+$`k_E`$ and $`k_E'`$ (`kE` of `SinglePass.run`, over the step's facts and over every fact), each `expandLinks` at the
+node's context, hold together where the environment meets that context
+(`stateHolds_stepKnowledge`).
 
-**`SelectedFromIndex`** (a named hypothesis): each fact the selective
-worklist returns is listed by `Store.about` of some name. The worklist is a
-`while` loop, `Lean.Loop.forIn` through `repeatM`, which no proof unfolds.
+The selective worklist (`SinglePass.selectFrom`, `SinglePass.lean`
+330–347) is rounds (`selectRound`) structural on a fuel of the store's size;
+every fact it returns is listed by `Store.about` of some name (proved:
+`selectRound_about`, `selectFrom_about`, `selectedFromIndex`).
 
 ### A step's delta
 
@@ -780,15 +781,12 @@ the merge's names, variants, met store, weakest bounds, entailed and guarded
 facts, fresh intersection and implications are local `let`s. Proofs need
 these operations as pure functions of their inputs:
 
-1. `materialize`'s selective worklist (313–340): a `while` loop, opaque
-   (`SelectedFromIndex`); a structural recursion on a fuel bound, or a fold
-   over rounds, makes it provable.
-2. The merge (995–1167) as `mergeState : List State → … → State × List Implication`,
+1. The merge (995–1167) as `mergeState : List State → … → State × List Implication`,
    with the fresh-name counter an argument and result; then each
    predecessor's valuation extends to the φ names by its own names.
-3. The head entry (965–988) and the edge's store (1559–1578, 1753–1767) as
+2. The head entry (965–988) and the edge's store (1559–1578, 1753–1767) as
    functions of the node's state, its edge and the counter.
-4. `Store.drop` (482–523) is a function; its soundness is the
+3. `Store.drop` (482–523) is a function; its soundness is the
    materialization's elimination (`derivedOf_holds`) plus the alias
    restatement, not proved here.
 
