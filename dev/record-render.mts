@@ -373,39 +373,78 @@ function check(lines: string[]): string {
   }).join("");
 }
 
-/** A `Control`: a small card with the force's name (`TSCERT_FORCE=<name>`,
- * else the heading's object), what it makes the computation state, the unit
- * it is shown on and its two outcomes, `unforced: accepted` and
- * `forced: refused at <obligation>`, drawn as outcomes are. A line of none of
- * these is the statement. */
+/** A `Control`: a small card with the force's name (`TSCERT_FORCE=<name>`
+ * in the heading's object or the block, else the object's leading name), what
+ * the force makes the computation state (a `force:` or `states:` line, and any
+ * line of no field), and each unit it is shown on (a `unit:` line, else the
+ * object's `… on <unit>`) with its outcomes, `unforced: accepted` and
+ * `forced: refused at <obligation>`, drawn as outcomes are. A field's value
+ * continues on the lines after it that start in lower case; an `unforced:`
+ * or `forced:` line stating no verdict is part of the statement. */
 function control(lines: string[], target: string): string {
-  const fields = new Map<string, string>();
-  const statement: string[] = [];
-  for (const g of paragraphs(lines)) {
-    const said: string[] = [];
-    for (const l of g) {
-      const m = /^(force|unit|unforced|forced|states):\s*(.*)$/.exec(l);
-      if (m?.[1] !== undefined) fields.set(m[1], m[2] ?? "");
-      else said.push(l);
+  type Shown = { unit?: string; unforced?: string; forced?: string };
+  const units: Shown[] = [];
+  const statement: string[][] = [];
+  let said: string[] | undefined;
+  // The value the next lower-case line continues.
+  let open: ((more: string) => void) | undefined;
+  const say = (l: string): void => {
+    if (said === undefined) statement.push(said = []);
+    said.push(l);
+  };
+  for (const raw of lines) {
+    const l = raw.trim();
+    if (!l) {
+      said = undefined;
+      open = undefined;
+      continue;
     }
-    if (said.length) statement.push(prose(said));
+    const m = /^(force|unit|unforced|forced|states):\s*(.*)$/.exec(l);
+    const field = m?.[1], value = m?.[2] ?? "";
+    if (field === "unit") {
+      const shown: Shown = { unit: value };
+      units.push(shown);
+      open = more => { shown.unit = `${shown.unit ?? ""} ${more}`; };
+    } else if ((field === "unforced" || field === "forced") && verdictOf(value)) {
+      const shown = units.at(-1) ?? (units[0] = {});
+      shown[field] = value;
+      open = more => { shown[field] = `${shown[field] ?? ""} ${more}`; };
+    } else if (field !== undefined) {
+      said = undefined;
+      say(field === "force" || field === "states"
+        ? value.replace(/^`?TSCERT_FORCE=[\w.-]+`?[,;:]?\s*/, "") : l);
+      open = more => say(more);
+    } else if (open !== undefined && /^[^A-Z]/.test(l)) open(l);
+    else {
+      open = undefined;
+      say(l);
+    }
   }
-  const all = [...fields.values(), ...lines].join(" ");
-  const name = /TSCERT_FORCE=([\w.-]+)/.exec(all)?.[1] ?? target.replace(/`/g, "");
-  const states = fields.get("states");
-  const unit = fields.get("unit");
+  const force = /TSCERT_FORCE=([\w.-]+)/;
+  // The object names the force by itself or as `<name>: <what it states>`.
+  const name = force.exec(target)?.[1] ?? force.exec(lines.join(" "))?.[1] ?? /^([\w.-]+)(?::\s|$)/.exec(target)?.[1];
+  const on = / on (.+)$/.exec(target)?.[1];
+  if (on !== undefined && !units.some(u => u.unit !== undefined)) (units[0] ??= {}).unit = on;
   const outcome = (label: string, value: string | undefined): string => {
     if (value === undefined) return "";
     const [verdict = "", ...why] = value.trim().split(/\s+/);
-    return `<span class="label">${label}</span> <span class="verdict ${VERDICTS.get(verdict) ?? ""}">${esc(verdict)}</span>` +
+    return `<span class="label">${label}</span> <span class="verdict ${VERDICTS.get(verdictOf(verdict) ?? "") ?? ""}">${esc(verdict)}</span>` +
       (why.length ? ` <span class="why">${inline(why.join(" "))}</span>` : "");
   };
-  const unforced = outcome("unforced", fields.get("unforced")), forced = outcome("forced", fields.get("forced"));
-  return `<div class="control"><div class="control-head"><code>TSCERT_FORCE=${esc(name)}</code>` +
-    (unit ? `<span class="unit">${inline(unit)}</span>` : "") + `</div>` +
-    (states ? `<p>${inline(states)}</p>` : "") + statement.join("") +
-    (unforced || forced ? `<div class="outcomes">${unforced}${unforced && forced ? ' <span class="arrow">→</span> ' : ""}${forced}</div>` : "") +
-    `</div>`;
+  const rows = units.map(u => {
+    const unforced = outcome("unforced", u.unforced), forced = outcome("forced", u.forced);
+    return `<div class="outcomes">${u.unit !== undefined ? `<span class="unit">${inline(u.unit)}</span>` : ""}` +
+      `${unforced}${unforced && forced ? ' <span class="arrow">→</span> ' : ""}${forced}</div>`;
+  });
+  return `<div class="control">${name !== undefined ? `<div class="control-head"><code>TSCERT_FORCE=${esc(name)}</code></div>` : ""}` +
+    statement.filter(p => p.join("").trim()).map(prose).join("") + rows.join("") + `</div>`;
+}
+
+/** The verdict a control's outcome opens with, or undefined for a value that
+ * states none. */
+function verdictOf(value: string): string | undefined {
+  const word = /^[a-z]+/.exec(value.trim())?.[0];
+  return word !== undefined && VERDICTS.has(word) ? word : undefined;
 }
 
 /** The program of an example, the span its diagnostic names marked. */
