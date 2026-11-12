@@ -150,6 +150,17 @@ def Store.size (s : Store) : Nat := s.count
 
 def Store.toList (s : Store) : List Atom := s.live.foldl (fun acc a _ => a :: acc) []
 
+/-- Whether an unconditional fact of the store makes the name's value an
+integer: a linear fact over its value, or an `int`, `index`, length or
+bound fact giving it (`IndexFact.HoldsAt`). -/
+def Store.integral (s : Store) (x : Nat) : Bool :=
+  (s.about x).any fun a => match a with
+    | .index ⟨f, none, _⟩ => match f with
+      | .int k | .index k | .length _ k | .bound _ k _ => k == x
+      | .linear F => F.vars.contains (HeapKnowledge.Term.value x)
+      | _ => false
+    | _ => false
+
 /-- A program point's state: the name at each slot, the facts. -/
 structure State where
   names : List Nat
@@ -1051,13 +1062,18 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         -- Each predecessor's facts about the names it renames, restated at
         -- the fresh names (a name a slot keeps that another slot's fresh name
         -- renames is stated equal to it, as are one name's fresh names).
-        let eqAtoms := fun (φ x : Nat) => [Atom.link { cell := φ, value := x, alias := true },
-          .index ⟨.linear (.le [(HeapKnowledge.Term.value φ, 1), (HeapKnowledge.Term.value x, -1)] 0), none, false⟩,
-          .index ⟨.linear (.le [(HeapKnowledge.Term.value φ, -1), (HeapKnowledge.Term.value x, 1)] 0), none, false⟩]
+        -- The alias link always; the equality of their numbers only where
+        -- the predecessor's facts make `x` an integer (`Store.integral`): a
+        -- linear fact holds only where its terms denote integers.
+        let eqAtoms := fun (int : Bool) (φ x : Nat) => Atom.link { cell := φ, value := x, alias := true } ::
+          (if !int then [] else
+          [.index ⟨.linear (.le [(HeapKnowledge.Term.value φ, 1), (HeapKnowledge.Term.value x, -1)] 0), none, false⟩,
+          .index ⟨.linear (.le [(HeapKnowledge.Term.value φ, -1), (HeapKnowledge.Term.value x, 1)] 0), none, false⟩])
         let variants : List (Std.HashSet Atom) := (preds.zip renames).map fun ((st : State), (m : Std.HashMap Nat (List Nat))) =>
           let equal := m.fold (fun (acc : List Atom) x φs =>
-            (if names.contains x then φs.flatMap (eqAtoms · x) else []) ++
-            (φs.zip φs.tail).flatMap (fun (φ, ψ) => eqAtoms ψ φ) ++ acc) []
+            let int := st.store.integral x
+            (if names.contains x then φs.flatMap (eqAtoms int · x) else []) ++
+            (φs.zip φs.tail).flatMap (fun (φ, ψ) => eqAtoms int ψ φ) ++ acc) []
           let about := m.fold (fun (acc : List Atom) x _ => st.store.about x ++ acc) []
           (about.foldl (fun (acc : Std.HashSet Atom) a => acc.insertMany (Atom.renameEach m a)) {}).insertMany equal
         -- The facts every predecessor holds: the first's store less each fact
