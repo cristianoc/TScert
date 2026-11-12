@@ -1023,17 +1023,21 @@ run_cmd do
   check ``Verification.TolerantFrames.MergeRecorded.mem
   check ``Verification.TolerantFrames.ExitChecks.site_of_trace
   check ``Verification.TolerantFrames.ExitChecks.assemble
-  check ``Verification.TolerantFrames.ExitChecks.extraction_of_fields
   check ``Verification.TolerantFrames.nodeExitsYF_of_checks
 
+open Lean Elab Command in
+run_cmd do
+  let standard := [``propext, ``Classical.choice, ``Quot.sound]
+  let check (decl : Name) : CommandElabM Unit := do
+    for axiom_ in ← liftCoreM <| collectAxioms decl do
+      unless standard.contains axiom_ do
+        throwError "{decl} depends on the axiom {axiom_}"
   check ``Verification.TolerantFrames.safePostExc_trace_lt
   check ``Verification.TolerantFrames.nodeObligations_marked
   check ``Verification.TolerantFrames.NodeExitsChecked.reassign
   check ``Verification.TolerantFrames.nodeExitsY_of_checks
   check ``Verification.TolerantFrames.exitsYields_source
   check ``Verification.TolerantFrames.exitTypes_checked
-  check ``Verification.TolerantFrames.checkYsAt_judged
-  check ``Verification.TolerantFrames.ExitYieldSource.judged
   check ``Verification.TolerantFrames.assertionExit_checked
   check ``Verification.TolerantFrames.exitUnsatAnswer_sound
   check ``Verification.TolerantFrames.visitEntry_hereEmpty
@@ -1093,6 +1097,14 @@ run_cmd do
   check ``Verification.TolerantFrames.exitsFold_records_prefix
   check ``Verification.TolerantFrames.exitsFold_records_checked
   check ``Verification.TolerantFrames.visitExits_records
+
+open Lean Elab Command in
+run_cmd do
+  let standard := [``propext, ``Classical.choice, ``Quot.sound]
+  let check (decl : Name) : CommandElabM Unit := do
+    for axiom_ in ← liftCoreM <| collectAxioms decl do
+      unless standard.contains axiom_ do
+        throwError "{decl} depends on the axiom {axiom_}"
   check ``Verification.TolerantFrames.ExitYieldSource.trans
   check ``Verification.TolerantFrames.exitTypes_yields_source
   check ``Verification.TolerantFrames.headExit_yields
@@ -1101,9 +1113,6 @@ run_cmd do
   check ``Verification.TolerantFrames.exitsFold_yields_source
   check ``Verification.TolerantFrames.exitsFold_records_yields
   check ``Verification.TolerantFrames.visitExits_records_yields
-  check ``Verification.TolerantFrames.exitTypes_refined_yields
-  check ``Verification.TolerantFrames.exitStep_refined_yields
-  check ``Verification.TolerantFrames.visitExits_refined_judged
   check ``Verification.TolerantFrames.impliesHeld_checked
   check ``Verification.TolerantFrames.headImplies_checked
   check ``Verification.TolerantFrames.headExit_checked
@@ -1111,6 +1120,9 @@ run_cmd do
   check ``Verification.TolerantFrames.exitsYield_of_checks
   check ``Verification.TolerantFrames.StepChecked.fresh_le
   check ``Verification.TolerantFrames.ExitChecks.exitChecks_fresh
+  check ``Verification.TolerantFrames.ExitChecks.Site.kept_yields
+  check ``Verification.TolerantFrames.ExitChecks.Site.ysA_eq
+  check ``Verification.TolerantFrames.ExitChecks.Site.source_eq
   check ``Verification.TolerantFrames.ExitChecks.exitChecks_here
   check ``Verification.TolerantFrames.ExitChecks.exitChecks_widths
   check ``Verification.TolerantFrames.ExitChecks.exitChecks_thrownBelow
@@ -1257,7 +1269,7 @@ run_cmd do
     for axiom_ in ← liftCoreM <| collectAxioms decl do
       unless standard.contains axiom_ do
         throwError "{decl} depends on the axiom {axiom_}"
-  check ``Verification.TolerantFrames.exitsYield_of_yields
+  check ``Verification.TolerantFrames.exitsYield_of_kept
 
 -- Start contracts and their semantic projection to written assertions.
 open Lean Elab Command in
@@ -1283,6 +1295,14 @@ run_cmd do
   check ``Verification.TolerantFrames.returnedWalk_regional_no_start
   check ``Verification.TolerantFrames.RecInv.regionalInputReadback
   check ``Verification.TolerantFrames.regionalRecorded_nonhead_of_inputs
+
+open Lean Elab Command in
+run_cmd do
+  let standard := [``propext, ``Classical.choice, ``Quot.sound]
+  let check (decl : Name) : CommandElabM Unit := do
+    for axiom_ in ← liftCoreM <| collectAxioms decl do
+      unless standard.contains axiom_ do
+        throwError "{decl} depends on the axiom {axiom_}"
   check ``Verification.TolerantFrames.regionalRecordedReadback
   check ``Verification.TolerantFrames.regionalFold_size
   check ``Verification.TolerantFrames.regionalAt_size
@@ -1291,6 +1311,14 @@ run_cmd do
   check ``Verification.TolerantFrames.regionalFacts_holds
   check ``Verification.TolerantFrames.regionalSeparation_recover
   check ``Verification.TolerantFrames.regionalStepBridge
+
+open Lean Elab Command in
+run_cmd do
+  let standard := [``propext, ``Classical.choice, ``Quot.sound]
+  let check (decl : Name) : CommandElabM Unit := do
+    for axiom_ in ← liftCoreM <| collectAxioms decl do
+      unless standard.contains axiom_ do
+        throwError "{decl} depends on the axiom {axiom_}"
   check ``Verification.TolerantFrames.run_sound_single_pass_of_exits
   check ``Verification.TolerantFrames.run_sound_single_pass
   check ``Verification.TolerantFrames.regionalAt_header

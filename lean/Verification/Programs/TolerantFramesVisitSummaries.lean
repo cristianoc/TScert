@@ -157,7 +157,7 @@ theorem exitTypes_prefix {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd 
     (h : exitTypes G I env l en sd out t tc Γ names store pushed handler obs first diff acc = .ok (result, typed)) :
     SumsPrefix acc.answers result.answers := by
   unfold exitTypes at h
-  extract_lets node c width entry at h
+  extract_lets node c width entry src counts ys outL Γr at h
   split at h
   rename_i ok a hd
   have hp := diffSubtypes_prefix (I := I) Γ tc.context diff obs acc.answers
@@ -175,21 +175,8 @@ theorem exitTypes_prefix {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd 
     · split at h
       · cases h; exact hp1
       · split at h
-        rename_i ys a2 hys
-        have hp2 : SumsPrefix acc.answers a2 := by
-          cases hc : acc.yields with
-          | some xs =>
-            simp only [hc] at hys
-            cases hys; exact hp1
-          | none =>
-            simp only [hc] at hys
-            split at hys
-            cases hys
-            exact hp1.trans (keep_prefix _ _)
-        extract_lets Γr at h
-        split at h
         extract_lets answersR at h
-        have hp3 : SumsPrefix acc.answers answersR := hp2.trans (keep_prefix _ _)
+        have hp3 : SumsPrefix acc.answers answersR := hp1.trans (keep_prefix _ _)
         split at h
         rename_i foundM a4 typ hmixed
         have hp4 : SumsPrefix acc.answers a4 := by

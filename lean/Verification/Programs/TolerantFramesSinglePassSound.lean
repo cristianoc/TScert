@@ -9,9 +9,8 @@ import Verification.Programs.TolerantFramesExitWidths
 
 `run_sound_single_pass` composes the per-node side's graph theorem
 (`run_sound_pass`) with the walk side's record soundness and checks
-(`recordsSound_of`, `recordsChecked_of`) and `exitsYield_of_yields`. Its four
-premises state start-contract projection, source and initial yield judgments,
-and final-world realization. -/
+(`recordsSound_of`, `recordsChecked_of`) and `exitsYield_of_kept`. Its premise
+states start-contract projection. -/
 namespace Verification.TolerantFrames
 open Verification PositiveGraphs PositiveCertificates LabelStore PositiveRules
 
@@ -28,29 +27,12 @@ theorem run_sound_single_pass_of_exits
   run_sound_pass (recordsSound_of setupRecords_of hv) (recordsChecked_of setupRecords_of hv) (nodesYield_of subtypeAnswersAll hex) linearNearFuelEq
     (regionsHeld_of (regionsRecorded_of_visitTables htables) (regionsTyped_of_visitTables htables hstep))
 
-/-- The graph theorem under start-contract projection, exit-yield judgments,
-initial-yield judgments, and their final-world realization. -/
+/-- The graph theorem under start-contract projection. -/
 theorem run_sound_single_pass
     (startWrittenSound : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I)
       after admits, RunPremises G I c after admits → ∀ r : RunWalkA G I c,
-        WalkChecked c r → ExitChecks.StartWrittenImpliesStated r)
-    (yieldSourcesJudged : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I)
-      after admits, RunPremises G I c after admits → ∀ r : RunWalkA G I c,
-        WalkChecked c r → ∀ η, admits η → ∀ l (hl : r.w.visited l) (s : ExitChecks.Site c r l hl),
-        ∀ ys, ExitYieldSource s.env l s.en s.sd s.sd.yields ys →
-          ExitYieldsJudged (reassign G η) r.w (List.range c.inputs.length) l
-            (r.node l hl).node (r.node l hl).c (r.node l hl).entry (r.node l hl).st ys)
-    (initialYieldsJudged : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I)
-      after admits, RunPremises G I c after admits → ∀ r : RunWalkA G I c,
-        WalkChecked c r → ∀ η, admits η → ∀ l (hl : r.w.visited l) (s : ExitChecks.Site c r l hl),
-          ExitYieldsJudged (reassign G η) r.w (List.range c.inputs.length) l
-            (r.node l hl).node (r.node l hl).c (r.node l hl).entry (r.node l hl).st s.ysA)
-    (realization : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I)
-      after admits, RunPremises G I c after admits → ∀ r : RunWalkA G I c,
-        WalkChecked c r → ∀ η, admits η → ∀ l (hl : r.w.visited l) (s : ExitChecks.Site c r l hl),
-          ExitChecks.Realization s η) : Target.RunSound ι :=
-  run_sound_single_pass_of_exits
-    (exitsYield_of_yields startWrittenSound yieldSourcesJudged initialYieldsJudged realization)
+        WalkChecked c r → ExitChecks.StartWrittenImpliesStated r) : Target.RunSound ι :=
+  run_sound_single_pass_of_exits (exitsYield_of_kept startWrittenSound)
 
 end Run
 

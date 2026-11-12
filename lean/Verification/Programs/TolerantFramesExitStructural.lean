@@ -315,13 +315,10 @@ theorem headEntries_of_checked (s : Site c r l hl) (checked : WalkChecked c r)
   obtain ⟨e, hm, rfl⟩ := htarget
   exact headEntryContract_of_checked s checked hm hh hg (s.head_written_coherent hg startWrittenSound)
 
-/-- Normal head extraction under the yield-source judgment. -/
+/-- Normal head extraction with the kept yields. -/
 theorem exitChecks_head_structural (s : Site c r l hl) (checked : WalkChecked c r) (η : MixedAssignment ι)
-    (startWrittenSound : StartWrittenImpliesStated r)
-    (yieldSourcesJudged : ∀ ys, ExitYieldSource s.env l s.en s.sd s.sd.yields ys →
-      ExitYieldsJudged (reassign G η) r.w (List.range c.inputs.length) l
-        (r.node l hl).node (r.node l hl).c (r.node l hl).entry (r.node l hl).st ys) : Head s η :=
-  exitChecks_head s η (headEntries_of_checked s checked startWrittenSound) yieldSourcesJudged
+    (startWrittenSound : StartWrittenImpliesStated r) : Head s η :=
+  exitChecks_head s η (headEntries_of_checked s checked startWrittenSound)
 
 /-- Handler extraction from checked records. -/
 theorem exitChecks_handler_structural (s : Site c r l hl) (checked : WalkChecked c r) (η : MixedAssignment ι)
@@ -330,38 +327,21 @@ theorem exitChecks_handler_structural (s : Site c r l hl) (checked : WalkChecked
     (fun _ ht => handlerRecords_of_checked s checked ht)
 
 end ExitChecks
-/-- Checked exit execution delivers under yield judgments and final-world realization. -/
-theorem exitsYield_of_yields
+/-- Checked exits deliver using the step's kept yields. -/
+theorem exitsYield_of_kept
     (startWrittenSound : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I)
       after admits, RunPremises G I c after admits → ∀ r : RunWalkA G I c,
-        WalkChecked c r → ExitChecks.StartWrittenImpliesStated r)
-    (yieldSourcesJudged : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I)
-      after admits, RunPremises G I c after admits → ∀ r : RunWalkA G I c,
-        WalkChecked c r → ∀ η, admits η → ∀ l (hl : r.w.visited l) (s : ExitChecks.Site c r l hl),
-        ∀ ys, ExitYieldSource s.env l s.en s.sd s.sd.yields ys →
-          ExitYieldsJudged (reassign G η) r.w (List.range c.inputs.length) l
-            (r.node l hl).node (r.node l hl).c (r.node l hl).entry (r.node l hl).st ys)
-    (initialYieldsJudged : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I)
-      after admits, RunPremises G I c after admits → ∀ r : RunWalkA G I c,
-        WalkChecked c r → ∀ η, admits η → ∀ l (hl : r.w.visited l) (s : ExitChecks.Site c r l hl),
-          ExitYieldsJudged (reassign G η) r.w (List.range c.inputs.length) l
-            (r.node l hl).node (r.node l hl).c (r.node l hl).entry (r.node l hl).st s.ysA)
-    (realization : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I)
-      after admits, RunPremises G I c after admits → ∀ r : RunWalkA G I c,
-        WalkChecked c r → ∀ η, admits η → ∀ l (hl : r.w.visited l) (s : ExitChecks.Site c r l hl),
-          ExitChecks.Realization s η) : ExitsYield ι := by
+        WalkChecked c r → ExitChecks.StartWrittenImpliesStated r) : ExitsYield ι := by
   apply exitsYield_of_checks
-  intro G I c after admits hp r checked η ha l hl s
+  intro G I c after admits hp r checked η _ l hl s
   have startSound := startWrittenSound G I c after admits hp r checked
-  have sources := yieldSourcesJudged G I c after admits hp r checked η ha l hl s
   exact ExitChecks.assemble s η
-    (ExitChecks.exitChecks_here s η (initialYieldsJudged G I c after admits hp r checked η ha l hl s))
+    (ExitChecks.exitChecks_here s η)
     (ExitChecks.exitChecks_widths s η)
-    (ExitChecks.exitChecks_nonHead s η checked sources)
-    (ExitChecks.exitChecks_head_structural s checked η startSound sources)
+    (ExitChecks.exitChecks_nonHead s η checked)
+    (ExitChecks.exitChecks_head_structural s checked η startSound)
     (ExitChecks.exitChecks_handler_structural s checked η startSound)
     (ExitChecks.exitChecks_fresh s)
-    (realization G I c after admits hp r checked η ha l hl s)
 
 end Structural
 end Verification.TolerantFrames

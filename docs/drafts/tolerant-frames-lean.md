@@ -1371,24 +1371,19 @@ of `TolerantFramesRunSound.lean`, quantified over every call the premises of
 ## Open premises
 
 The graph theorem `run_sound_single_pass`
-(`TolerantFramesSinglePassSound.lean`) has exactly four hypotheses, with
-`exitsYield_of_yields` composing them into `ExitsYield`. Each quantifies over
-`G`, `I`, a call `c`, `after`, `admits`, `RunPremises G I c after admits`,
-and a walk `r` with `WalkChecked c r`. The three yield premises additionally
-quantify over each admitted reassignment `η`, visited label `l` with proof
-`hl`, and execution site `s : ExitChecks.Site c r l hl`.
+(`TolerantFramesSinglePassSound.lean`) has one hypothesis, composed into
+`ExitsYield` by `exitsYield_of_kept`. It quantifies over `G`, `I`, a call
+`c`, `after`, `admits`, `RunPremises G I c after admits`, and a walk `r`
+with `WalkChecked c r`.
 
 | Premise | Statement | Consumed by |
 | --- | --- | --- |
 | `startWrittenSound` | `ExitChecks.StartWrittenImpliesStated r`: for every environment and heap, holding `startWritten (r.stated c.start) c.entryIndices c.entrySeparation` implies holding `(r.stated c.start).getD {}`. | `headEntries_of_checked` |
-| `yieldSourcesJudged` | Every `ys` with `ExitYieldSource s.env l s.en s.sd s.sd.yields ys` satisfies `ExitYieldsJudged` at `reassign G η`, the recorded walk and node, and the input names `List.range c.inputs.length`. | Head and non-head exit extraction |
-| `initialYieldsJudged` | `s.ysA` satisfies the same `ExitYieldsJudged` judgment. | `exitChecks_here` |
-| `realization` | `ExitChecks.Realization s η`: every judged yield list holds in every final state admitted by `AfterStep` for the recorded node's yields and `s.sd.outFresh`. | `nodeExitsY_of_checks` |
 
-`ExitYieldsJudged` quantifies over every initial environment and mark.
 `run_sound_single_pass_of_exits` proves `ExitsYield → Target.RunSound`;
 setup, exit widths, subtype answers, summary prefixes, and regional recording
-and typing are supplied by the proofs listed below.
+and typing are supplied by the proofs listed below. The yield equalities and
+their final-state interpretation are proved in [Exit checks from the trace](#exit-checks-from-the-trace).
 
 `regionalFacts_holds` proves that the union holds when both sources hold.
 `regionalSeparation_recover` recovers the step separation from that union
@@ -1491,8 +1486,7 @@ Proved prerequisites:
   `WalkChecked` retain that trace at the same checked node (`visitsSettle_of`).
 - `exitTypes_checked` (`TolerantFramesExitTypeChecks.lean`) exposes semantic
   `ExitTyped` checks from the pass's returned state and `SinglePass.ExitTyped`
-  tag. `ExitYieldSource.judged` justifies computed yields when their summary
-  table is sound; `assertionExit_checked` exposes the written assertion check.
+  tag. `assertionExit_checked` exposes the written assertion check.
 - `WalkChecked` carries the returned driver's record and each chosen node's
   equality with its stored step. `SettledCore.node` and `RecordsChecked`
   supply the step equality in the same existential as the node checks.
@@ -1566,8 +1560,7 @@ away that fact and its slot-bound obligation. This counterexample concerns
 the projection, not `RunSound`: the caller's `EntryHolds` is impossible in
 this example. Setup refuses edges into the start only when `regional.isSome`;
 ordinary runs permit them (`SinglePass.setup`). Consequently,
-`exitsYield_of_yields` has the three yield premises and the explicit
-`StartWrittenImpliesStated` leaf. No shared structure has an additional field.
+`exitsYield_of_kept` has the explicit `StartWrittenImpliesStated` leaf.
 
 
 [`TolerantFramesExitHeadExtraction.lean`](../../lean/Verification/Programs/TolerantFramesExitHeadExtraction.lean)
@@ -1575,7 +1568,7 @@ proves `exitChecks_head`, `exitChecks_handler_edges`, and
 `exitChecks_handler_of_records` under explicit leaves: `r.given = passHeads c`,
 `r.ctx = passCtx c`, and `HeadEntryContract` for each given head contract
 (constructed-entry membership, written-contract coherence, and setup-name
-bounds). Normal exits also require `yieldSourcesJudged`; handlers require
+bounds). Handlers require
 `HandlerRecords`, the final incoming and merge-record memberships. The merge
 membership uses the filtered implications returned by `edgeTransfer`,
 recorded by `pushExit` and justified by `handlerExit_delivers`. `NodeExitTrace` and `ExitChecks.Site.facts` carry the
@@ -1597,11 +1590,10 @@ targets: a head with no incoming edge has no incoming pair in `ofPass`.
 `exitStep_handler_arrays` and `Site.handler_record` identify the handler's
 transferred pair, merge record, indexed computation and final-walk extension.
 The handler's structural extraction is proved by `handlerRecords_of_checked`.
-The remaining hypotheses are stated with `exitsYield_of_yields` above.
+The start-projection hypothesis is stated in "Open premises".
 `ExitChecks.exitChecks_nonHead` in
 `TolerantFramesExitNonHeadExtraction.lean` proves `NonHead` from a checked
-walk and the named premise `exitCachesJudged`: every `ExitYieldSource` from
-the step's kept cache has `ExitYieldsJudged` at the reassigned graph.
+walk and its execution site.
 `exitStep_nonHead_checked` extracts the type and assertion checks and both
 insertions; `visitExits_indexed_arrays` retains each indexed computation's
 allocation, extension and yield-cache source. `NonHeadExitChecked.merged`
@@ -1636,58 +1628,38 @@ supplies such a site. The extraction witnesses are fixed:
 | `ysA` | `(exitsYields G I env l en sd).1.getD []`; `exitStep` receives `yieldsAtSlots en.entry.names ysA` |
 | `ysE` | The individual exit's cache after its type check, used for its fresh implications and refined type evidence |
 
-The tables distinguish proved component lemmas from the assembly
-obligations. Naming a component lemma does not assert that extraction of
-the whole field is proved. Execution equations concern the original
-graph. Semantic yield judgments concern the admitted reassigned graph;
-the extraction premise therefore includes `RunPremises` and its admitted
-assignment. Reassigning syntactic checks preserves their evidence, while
-`NodeExitsChecked.reassign` explicitly requires the yield judgments at the
-new meanings.
+Execution equations concern the original graph. `NodeExitsChecked.reassign`
+transports the checks to each reassigned graph and preserves the yield
+equalities.
 
 | `NodeExitsChecked` field | Trace source or remaining obligation |
 | --- | --- |
-| `hereEmpty` | Proved by `exitChecks_here`, using the trace's empty-context witness, claim equation, and `HereEmpty.reassign`. Its separate initial-yield-judgment premise supplies `yieldsRead`. |
-| `yieldsRead` | `ExitYieldsJudged … ysA`, meaning `YieldsJudged` at every initial environment and mark. `exitsYields_source` and `ExitYieldSource.judged` supply the local judgment under sound codes, sound `sd.answers` summaries, and a judged step cache. The initial yield judgment remains an explicit premise of `exitChecks_here` and `extraction_of_fields`. |
+| `hereEmpty` | Proved by `exitChecks_here`, using the trace's empty-context witness, claim equation, and `HereEmpty.reassign`. |
+| `yieldsRead` | `ysA = ys`, proved by `Site.ysA_eq` from `exitsYields` and the trace's kept-yield equation. |
 | `widths` | Proved by `exitChecks_widths`: `ExitStepsChecked` supplies the indexed successful `exitStep`, and `exitStep_mappingWidth` gives source-slot bounds. |
 | `handlerWidth` | Proved by `exitChecks_widths` at `Exit.handler t`, with source names `sd.thrown :: en.entry.names`. |
-| `normal` | The trace's `ExitRecordsChecked` supplies each indexed exit and its successful computation. `visitExits_records_yields` supplies its cache provenance. `ExitChecks.NonHead` and `ExitChecks.Head` select the appropriate branch with its own judged `ysE`; `ExitChecks.assemble` combines those branches. |
-| `handler` | The indexed handler computation from `ExitRecordsChecked`, together with the accepted `visitStep`, supplies the computations listed below. The handler edge-check function remains an explicit premise of `exitChecks_handler` and `extraction_of_fields`. |
+| `normal` | The trace's `ExitRecordsChecked` supplies each indexed exit and its successful computation. `visitExits_records_yields` supplies its cache provenance. `ExitChecks.NonHead` and `ExitChecks.Head` select the appropriate branch with `ysE = ys` proved by `Site.source_eq`; `ExitChecks.assemble` combines those branches. |
+| `handler` | The indexed handler computation from `ExitRecordsChecked`, together with the accepted `visitStep`, supplies the computations listed below. `exitChecks_handler_structural` supplies the handler checks. |
 | `thrownBelow` | Proved by `exitChecks_thrownBelow`: `visitStep_thrown` identifies `sd.thrown` with `sd.st.fresh`; `StepChecked.fresh_le` bounds that counter below by the checked node's initial counter; `namesBelow_mono` transports the checked node's `below` invariant. |
 
 `exitChecks_fresh` proves `ExitChecks.Fresh` directly from `visitStep_outFresh`
-and the site's equations. The exact remaining premises of
-`ExitChecks.extraction_of_fields`, at each admitted site, are:
-
-- `ExitYieldsJudged` for `s.ysA`;
-- `ExitChecks.NonHead`;
-- `ExitChecks.Head`;
-- `HandlerExitChecked` for each handler target;
-- `ExitChecks.Realization`.
-
-Extraction of the remaining edge checks needs a connection between
-`r.given t` and `env.isHead[t]!`, and between `r.ctx t` and the target
-claim read by the exit. The site's equations identify `env.isHead` with
-`passHeads c`, but do not identify `r.given` with that function. The
-checked node's `hctx` concerns its own label. Incoming insertion also
-needs the target below the incoming and implication arrays' sizes;
-equality of their sizes alone does not supply that bound. For a merge,
-`2 ≤ (r.w.incoming t).length → env.merging[t]! = true` and the target
-bound for `incomingEdges` are required. `WalkExtends` preserves membership
-once established; it supplies neither an insertion bound nor the merge
-flag. These obligations concern both handler and normal non-head exits.
-Head-specific obligations are listed below.
+and the site's equations. `WalkChecked` supplies head and context agreement,
+the incoming-array allocation, and the merge flag used by
+`exitChecks_nonHead` and `handlerRecords_of_checked`.
 
 `NonHeadExitChecked.typed` and `HeadExitChecked.typed` read `ysE`.
-The assertion and merge checks read `ysA`. Both lists have judged-yield
-obligations; neither is required to equal the kept list.
+The assertion and merge checks read `ysA`. Both lists equal the kept list:
+`ExitYieldSource` states equality with its cache, `exitStep_yields_source`
+preserves that equality, and `visitExits_records_yields` supplies it for
+each indexed exit. `Site.kept_yields` identifies the step cache with the
+node's kept list.
 
 | `NonHeadExitChecked` field | Trace source or remaining obligation |
 | --- | --- |
-| `typed` | The nonvacuous type branch of the recorded `exitStep`; `exitTypes_checked` extracts `ExitTyped` with the exit cache's refined context. `visitExits_refined_judged` judges a refined record's own yields under its stated premises. |
+| `typed` | The nonvacuous type branch of the recorded `exitStep`; `exitTypes_checked` extracts `ExitTyped` with the exit cache's refined context. |
 | `asserted` | The recorded `assertionExit` equation and `assertionExit_checked`, with the initial `ysA` slot translation in its context thunk and the trace's `env.stated` equation. |
-| `pushedIn` | `IncomingRecorded`: the paired state and implications in the post-exit arrays, their `WalkExtends` relation to `raw`, and `w = ofPass raw heads` with a non-head target. `ExitRecordsChecked` supplies the successful computation and extension to `ex`; the trace extends `ex` to `raw`. The local insertion and array bounds require extraction. `IncomingRecorded.mem` proves final membership using `WalkExtends.incoming_mem`. |
-| `merged` | `MergeRecorded`: the refined context, slot implications and mapping in post-exit `incomingEdges`, with extension to `raw` and `edgesIn = passEdgesIn raw`. `MergeRecorded.mem` uses `WalkExtends.merge_mem`. Relating a final incoming length of at least two to `env.merging` requires the driver's merge invariant; that implication is not a conjunct of `NodeExitTrace`. |
+| `pushedIn` | `IncomingRecorded`: the paired state and implications in the post-exit arrays, their `WalkExtends` relation to `raw`, and `w = ofPass raw heads` with a non-head target. `ExitRecordsChecked` supplies the successful computation and extension to `ex`; the trace extends `ex` to `raw`. `exitStep_nonHead_checked` and `Site.arrayAllocation` supply insertion and array bounds. `IncomingRecorded.mem` proves final membership using `WalkExtends.incoming_mem`. |
+| `merged` | `MergeRecorded`: the refined context, slot implications and mapping in post-exit `incomingEdges`, with extension to `raw` and `edgesIn = passEdgesIn raw`. `MergeRecorded.mem` uses `WalkExtends.merge_mem`. `Site.mergingOfIncoming` supplies the merge flag from the checked walk and the trace's table equation. |
 
 | `HeadExitChecked` field | Trace source or remaining obligation |
 | --- | --- |
@@ -1697,7 +1669,7 @@ obligations; neither is required to equal the kept list.
 | `args` | The third conjunct of `headExit_checked`, using the head's given argument slots and `env.argName`. |
 | `query` | The final existential of `headExit_checked`, identifying the selected `env.given` knowledge and its successful heap query. |
 | `entered` | Membership of the constructed `headEntry` state and implications in the final incoming list. The trace retains the processed edge through `WalkExtends.edge_mem`; `ofPass` supplies a head incoming when that edge exists. Identifying the target's recorded entry with the constructed head entry requires the target's entry record. |
-| `written` | Coherence of `env.given` with the target's written assertion and index facts. The trace equates `env.stated` with `passStated`; it does not state the needed `env.given` coherence. This remains within the named `ExitChecks.Head` hypothesis. |
+| `written` | Coherence of `env.given` with the target's written assertion and index facts. The trace equates `env.stated` with `passStated`; it does not state the needed `env.given` coherence. `Site.head_written_coherent` supplies it under `StartWrittenImpliesStated`. |
 | Head witnesses' bounds | The start names below `hfresh` and the argument's input-slot witness require setup and entry-counter invariants. These are explicit conjuncts of `ExitChecks.Head`. |
 
 The head membership field directly names the constructed state used by
@@ -1720,32 +1692,19 @@ uses the same formulation.
 | `head.written` | The same given/written-assertion coherence required for a normal head edge. |
 | `head` counter and argument bounds | The same setup and entry-counter invariants required for a normal head edge. |
 
-`ExitYieldRealization` is a separate, unproved semantic hypothesis. It says
-that a judged list holds in the particular final world admitted by
-`AfterStep`. `YieldsJudged` alone supplies a safety derivation whose
-intermediate worlds are existentially chosen. `AfterStep` records the
-final state, kept yields, output facts and freshness; it does not identify
-that world with a world of the additional judgment. No listed trace lemma
-proves this connection. `ExitChecks.Realization` exposes the connection
-required by the current delivery interface; proving it may require a
-stronger execution/world invariant or a revision of that interface.
+`AfterStep` contains `YieldsOk` for the kept yields at the final state.
+`nodeExitsYF_of_checks` transports that fact along `ysA = ys` and
+`ysE = ys` to supply `nonHeadExit_delivers` and `headExit_delivers`.
+`handlerExit_delivers` reads the retained array memberships and constructed
+head entry. `nodeExitsY_of_checks` derives result freshness from the actual
+execution with `passOutFreshChecked_fresh`.
 
-`nonHeadExit_delivers` and `headExit_delivers` take the needed final-world
-`YieldsOk` facts explicitly. `handlerExit_delivers` reads the retained array
-memberships and constructed head entry. `nodeExitsYF_of_checks` threads
-realization, and `nodeExitsY_of_checks` derives result freshness from the
-actual execution with `passOutFreshChecked_fresh`.
-
-The separately stated local Props are `ExitChecks.Here`, `Widths`,
-`NonHead`, `Head`, `Handler`, `Fresh`, and `Realization`.
-`Fresh` is the exact `visitStep_outFresh` equation after the trace's code,
-claim, node, entry, step and stepped-answer identifications.
-`ExitChecks.assemble` proves that these seven Props give
-`ExitChecks.Extracted` at the same site and assignment.
-`ExitChecks.extraction_of_fields` composes the five remaining premises
-listed above into `ExitChecks.Extraction`, the exact premise of
-`exitsYield_of_checks`. The field proofs and composition theorems are
-checked by `AxiomCheck`.
+The local Props are `ExitChecks.Here`, `Widths`, `NonHead`, `Head`,
+`Handler`, and `Fresh`. `ExitChecks.assemble` combines these six Props
+into `ExitChecks.Extracted` at the same site and assignment.
+`exitsYield_of_kept` supplies `ExitChecks.Extraction` under the
+start-projection hypothesis and applies `exitsYield_of_checks`.
+The field proofs and composition theorems are checked by `AxiomCheck`.
 
 ## Leg 17a: the per-node hypotheses from the pass's checks
 

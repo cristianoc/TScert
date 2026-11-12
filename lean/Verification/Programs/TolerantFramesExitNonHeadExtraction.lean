@@ -204,13 +204,9 @@ theorem Site.mergingOfIncoming (s : Site c r l hl) (checked : WalkChecked c r) :
   exact checked.mergingOfIncoming
 
 /-- Non-head extraction from the execution trace. The checked walk and trace supply
-allocation, head agreement and merge flags. Cached yield judgments are
-an explicit premise. -/
+allocation, head agreement, merge flags and equality with the kept yields. -/
 theorem exitChecks_nonHead (s : Site c r l hl) (η : MixedAssignment ι)
-    (checked : WalkChecked c r)
-    (exitCachesJudged : ∀ ysE, ExitYieldSource s.env l s.en s.sd s.sd.yields ysE →
-      ExitYieldsJudged (reassign G η) r.w (List.range c.inputs.length) l
-        (r.node l hl).node (r.node l hl).c (r.node l hl).entry (r.node l hl).st ysE) : NonHead s η := by
+    (checked : WalkChecked c r) : NonHead s η := by
   obtain ⟨hw, hedges, _, hclaims, _, _, hheads, hstated, _, _, hex,
     hnode, hclaim, hentry, hst, _, _, himplies, hsizes, hext, _, _, _, _, _, _, _, contextAgreement, _⟩ := s.facts
   have arrayAllocation := s.arrayAllocation
@@ -285,7 +281,7 @@ theorem exitChecks_nonHead (s : Site c r l hl) (η : MixedAssignment ι)
     have hmem := hm (s.mergingOfIncoming checked t.label hg htwo)
     refine ⟨exitsWalk b, s.raw, hedges, extension, ?_⟩
     simpa only [exitsWalk, hclaim, hentry, hst, hnode, ← himplies, Site.ysA] using hmem
-  exact ⟨b.yields.getD [], exitCachesJudged _ hsource,
+  exact ⟨b.yields.getD [], s.source_eq hsource,
     (NonHeadExitChecked.mk typed asserted pushedIn merged).reassign η⟩
 
 end ExitChecks

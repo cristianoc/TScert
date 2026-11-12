@@ -2,16 +2,9 @@ import Verification.Programs.TolerantFramesExitDelivers
 
 /-! # Exit checks and their final-world delivery
 
-`NodeExitsChecked` retains the vacuity answer, judged exit yields, mapping
-bounds, and normal and handler checks. Type refinement and fresh
-implications use each exit's own cache. Assertion and merge refinement use
-the initial exit yields. `ExitYieldRealization` is the explicit semantic
-hypothesis connecting those judgments to `AfterStep`'s final world.
-
-`nodeExitsYF_of_checks` proves delivery at the graph of the checks under
-that hypothesis. `nodeExitsY_of_checks` supplies freshness from the step's
-execution. Semantic judgments at a reassigned graph are separate premises
-of `NodeExitsChecked.reassign`.
+The initial and per-exit yield lists equal the node's kept yields.
+`AfterStep` carries their `YieldsOk` at the final state; the exit checks
+supply mapping bounds and normal and handler delivery.
 -/
 namespace Verification.TolerantFrames
 open Verification SinglePass Footprints HeapObservations
@@ -20,22 +13,6 @@ open PositiveRules HeapExpressionRules
 
 section Node
 variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
-
-/-- A yield list is judged at every initial environment and mark. -/
-@[nospecialize] def ExitYieldsJudged (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
-    (l : Nat) (node : Node) (c : PointClaim ι) (entry : SinglePass.State) (st : Stepped ι)
-    (ys : List (PromiseCalls.Yield ι)) : Prop :=
-  ∀ ρ0 m, YieldsJudged G c.type c.context node.expression entry (w.implies l) startNames ρ0 m st.stepK ys
-
-/-- The semantic bridge required by the final-world exit interface.
-A judgment alone chooses its own worlds; this property identifies the yields
-at every final state admitted by `AfterStep`. It is an explicit hypothesis. -/
-@[nospecialize] def ExitYieldRealization (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
-    (l : Nat) (node : Node) (c : PointClaim ι) (entry : SinglePass.State) (st : Stepped ι)
-    (ys : List (PromiseCalls.Yield ι)) (outFresh : Bool) : Prop :=
-  ∀ xs, ExitYieldsJudged G w startNames l node c entry st xs → ∀ ρ0 ρ m s' v,
-    AfterStep G w startNames ρ0 l entry st ys outFresh ρ (push v ρ) m s' →
-      PromiseCalls.YieldsOk G xs ρ s'.n s'.W v
 
 /-- **What the visit checks on a node's exits** at its claim `c`, entry,
 step `st` and kept yields `ys`, with the node's `here` answer, the step's
@@ -49,13 +26,13 @@ structure NodeExitsChecked (G : NormalGraph ι) (images : InstanceImageCheck G) 
     (ys : List (PromiseCalls.Yield ι)) (here outFresh : Bool) (ysA : List (PromiseCalls.Yield ι)) (thrown : Nat)
     (TT : Ty ι) : Prop where
   hereEmpty : here = true → HereEmpty G c.context
-  yieldsRead : ExitYieldsJudged G w startNames l node c entry st ysA
+  yieldsRead : ysA = ys
   widths : ∀ (i : Nat) t pushed observed promote, (Exit.ofNode node)[i]? = some (Exit.normal t pushed observed promote) →
     ∀ slots, t.mapping = some slots → ∀ j ∈ slots, j < (normalNames entry st pushed).length
   handlerWidth : ∀ t, node.handler = some t → ∀ slots, t.mapping = some slots → ∀ j ∈ slots,
     j < (thrown :: entry.names).length
   normal : ∀ (i : Nat) t pushed observed promote, (Exit.ofNode node)[i]? = some (Exit.normal t pushed observed promote) →
-    ∃ ysE : List (PromiseCalls.Yield ι), ExitYieldsJudged G w startNames l node c entry st ysE ∧
+    ∃ ysE : List (PromiseCalls.Yield ι), ysE = ys ∧
       (given t.label = false →
         NonHeadExitChecked G images w ctx stated edgesIn l node c entry st ys ysA ysE here outFresh i t pushed observed
           promote) ∧
@@ -69,7 +46,7 @@ structure NodeExitsChecked (G : NormalGraph ι) (images : InstanceImageCheck G) 
     HandlerExitChecked G images w startNames ctx stated given edgesIn l c entry st here outFresh TT thrown t
   thrownBelow : node.handler.isSome = true → NamesBelow entry (w.implies l) startNames thrown
 
-/-- Syntactic checks reassign; yield judgments at the new meanings are supplied explicitly. -/
+/-- Exit checks reassign with the same kept yield lists. -/
 theorem NodeExitsChecked.reassign {G : NormalGraph ι} {images : InstanceImageCheck G} {w : Walk ι}
     {startNames : List Nat} {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge}
     {given : Nat → Bool}
@@ -78,18 +55,16 @@ theorem NodeExitsChecked.reassign {G : NormalGraph ι} {images : InstanceImageCh
     {ys : List (PromiseCalls.Yield ι)} {here outFresh : Bool} {ysA : List (PromiseCalls.Yield ι)} {thrown : Nat}
     {TT : Ty ι}
     (hc : NodeExitsChecked G images w startNames ctx stated given edgesIn l node c entry st ys here outFresh ysA thrown TT)
-    (η : MixedAssignment ι)
-    (hjudged : ∀ xs, ExitYieldsJudged G w startNames l node c entry st xs →
-      ExitYieldsJudged (reassign G η) w startNames l node c entry st xs) :
+    (η : MixedAssignment ι) :
     NodeExitsChecked (reassign G η) (images.reassign η) w startNames ctx stated given edgesIn l node c entry st ys
       here outFresh ysA thrown TT where
   hereEmpty h := (hc.hereEmpty h).reassign η
-  yieldsRead := hjudged _ hc.yieldsRead
+  yieldsRead := hc.yieldsRead
   widths := hc.widths
   handlerWidth := hc.handlerWidth
   normal i t pushed observed promote hm := by
     obtain ⟨ysE, hE, hnh, hh⟩ := hc.normal i t pushed observed promote hm
-    refine ⟨ysE, hjudged _ hE, fun hn => (hnh hn).reassign η, fun hg => ?_⟩
+    refine ⟨ysE, hE, fun hn => (hnh hn).reassign η, fun hg => ?_⟩
     obtain ⟨req, written, cf, gimp, argName, argSlots, inputSlots, hwidth, hfresh, hc, hlt, ha⟩ := hh hg
     exact ⟨req, written, cf, gimp, argName, argSlots, inputSlots, hwidth, hfresh, hc.reassign η, hlt, ha⟩
   handler t ht := (hc.handler t ht).reassign η
@@ -111,7 +86,7 @@ structure NodeExitsYF (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
     EnvOk G c.context ρ s'.n s'.W → Scoped 0 e → excOf G s'.n s'.W e →
     edgePreAJ G w startNames ρ0 ctx stated given edgesIn t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s'
 
-/-- Exit checks, sound subtype answers and realized exit yields deliver
+/-- Exit checks, sound subtype answers and the kept exit yields deliver
 at the graph of the checks. Mapping bounds supply `MapNamesSound`. -/
 theorem nodeExitsYF_of_checks {G : NormalGraph ι} {images : InstanceImageCheck G} {w : Walk ι}
     {startNames : List Nat} {ρ0 : Env} {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge}
@@ -124,7 +99,6 @@ theorem nodeExitsYF_of_checks {G : NormalGraph ι} {images : InstanceImageCheck 
       TT)
     (hshape : SinglePass.passShapeCheck' G c.type node.continuation = true) (wf : StoreWF entry.store)
     (hnd : startNames.Nodup)
-    (hread : ExitYieldRealization G w startNames l node c entry st ys outFresh)
     (hsub : SubtypeAnswersSound G images) (m : Nat) :
     NodeExitsYF G w startNames ρ0 ctx stated given edgesIn m l node c entry st ys outFresh where
   exits t pushed observed promote hmem ρ := by
@@ -134,10 +108,10 @@ theorem nodeExitsYF_of_checks {G : NormalGraph ι} {images : InstanceImageCheck 
     | false =>
       exact nonHeadExit_delivers hm (hnh hg) hshape hsub
         (mapNamesSound_of_lt fun slots hs => hc.widths i t pushed observed promote hm slots hs)
-        hc.hereEmpty (hread _ hc.yieldsRead ρ0) (hread _ hE ρ0) ρ m
+        hc.hereEmpty (fun _ _ _ _ h => hc.yieldsRead ▸ h.2.1) (fun _ _ _ _ h => hE ▸ h.2.1) ρ m
     | true =>
       obtain ⟨req, written, cf, gimp, argName, argSlots, inputSlots, hwidth, hfresh, hh, hlt, hargs⟩ := hhd hg
-      exact headExit_delivers hm hh hg hshape hsub hc.hereEmpty (hread _ hE ρ0) hnd hlt hargs ρ m
+      exact headExit_delivers hm hh hg hshape hsub hc.hereEmpty (fun _ _ _ _ h => hE ▸ h.2.1) hnd hlt hargs ρ m
   handler t ht ρ s' e hS he hsc hx :=
     handlerExit_delivers (hc.handler t ht) hsub (mapNamesSound_of_lt (hc.handlerWidth t ht))
       hc.hereEmpty wf (hc.thrownBelow (by rw [ht]; rfl)) hnd ρ m s' e hS he hsc hx

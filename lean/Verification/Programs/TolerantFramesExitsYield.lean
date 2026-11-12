@@ -57,12 +57,12 @@ variable {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I
 @[nospecialize] def Site.ysA (s : Site c r l hl) : List (PromiseCalls.Yield ι) :=
   (SinglePass.exitsYields G I s.env l s.en s.sd).1.getD []
 
-/-- The empty-context answer and judged initial exit yields. -/
+/-- The empty-context answer and kept initial exit yields. -/
 @[nospecialize] def Here (s : Site c r l hl) (η : MixedAssignment ι) : Prop :=
   let n := r.node l hl
   let H := reassign G η
   (s.en.here = true → HereEmpty H n.c.context) ∧
-    ExitYieldsJudged H r.w (List.range c.inputs.length) l n.node n.c n.entry n.st s.ysA
+    s.ysA = n.ys
 
 /-- Normal and handler mappings stay within their source names. -/
 @[nospecialize] def Widths (s : Site c r l hl) (_η : MixedAssignment ι) : Prop :=
@@ -73,25 +73,25 @@ variable {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I
   (∀ t, n.node.handler = some t → ∀ slots, t.mapping = some slots → ∀ j ∈ slots,
     j < (s.sd.thrown :: n.entry.names).length)
 
-/-- Each non-head exit has a judged cache and its recorded checks. -/
+/-- Each non-head exit reads the kept yields and its recorded checks. -/
 @[nospecialize] def NonHead (s : Site c r l hl) (η : MixedAssignment ι) : Prop :=
   let n := r.node l hl
   let H := reassign G η
   ∀ (i : Nat) t pushed observed promote,
     (Exit.ofNode n.node)[i]? = some (Exit.normal t pushed observed promote) →
     r.given t.label = false → ∃ ysE : List (PromiseCalls.Yield ι),
-      ExitYieldsJudged H r.w (List.range c.inputs.length) l n.node n.c n.entry n.st ysE ∧
+      ysE = n.ys ∧
         NonHeadExitChecked H (I.reassign η) r.w r.ctx r.stated r.edgesIn l n.node n.c n.entry n.st n.ys
           s.ysA ysE s.en.here s.sd.outFresh i t pushed observed promote
 
-/-- Each head exit has a judged cache and its checked head contract. -/
+/-- Each head exit reads the kept yields and its checked head contract. -/
 @[nospecialize] def Head (s : Site c r l hl) (η : MixedAssignment ι) : Prop :=
   let n := r.node l hl
   let H := reassign G η
   ∀ (i : Nat) t pushed observed promote,
     (Exit.ofNode n.node)[i]? = some (Exit.normal t pushed observed promote) →
     r.given t.label = true → ∃ ysE : List (PromiseCalls.Yield ι),
-      ExitYieldsJudged H r.w (List.range c.inputs.length) l n.node n.c n.entry n.st ysE ∧
+      ysE = n.ys ∧
       ∃ (req written : HeapKnowledge.Knowledge) (cf : List HeapKnowledge.IndexAtom)
         (gimp : List (PromiseCalls.Implication ι)) (argName : Option Nat) (argSlots : List Nat)
         (inputSlots : List (Nat × Nat)) (hwidth hfresh : Nat),
@@ -115,17 +115,12 @@ variable {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I
   s.sd.outFresh = passOutFreshChecked G I c.codes n.ans.summaries.toList n.c n.node n.entry n.st.stepK
     (SinglePass.derivOf n.c n.node n.st)
 
-/-- The explicit judgment-to-final-world bridge. -/
-@[nospecialize] def Realization (s : Site c r l hl) (η : MixedAssignment ι) : Prop :=
-  let n := r.node l hl
-  ExitYieldRealization (reassign G η) r.w (List.range c.inputs.length) l n.node n.c n.entry n.st n.ys s.sd.outFresh
-
 /-- The exact local extraction target, with witnesses fixed by execution. -/
 @[nospecialize] def Extracted (s : Site c r l hl) (η : MixedAssignment ι) : Prop :=
   let n := r.node l hl
   NodeExitsChecked (reassign G η) (I.reassign η) r.w (List.range c.inputs.length) r.ctx r.stated r.given r.edgesIn l
     n.node n.c n.entry n.st n.ys s.en.here s.sd.outFresh s.ysA s.sd.thrown (s.sd.thrownTy.getD []) ∧
-    Fresh s ∧ Realization s η
+    Fresh s
 
 /-- The site's step equation fixes its checked freshness flag. -/
 theorem exitChecks_fresh (s : Site c r l hl) : Fresh s := by
@@ -136,13 +131,25 @@ theorem exitChecks_fresh (s : Site c r l hl) : Fresh s := by
   rw [← hcodes]
   exact visitStep_outFresh hstep
 
-/-- The trace proves the empty-context half of `Here`; the initial exit
-cache's judgment is the explicit remaining premise. -/
-theorem exitChecks_here (s : Site c r l hl) (η : MixedAssignment ι)
-    (initialYieldsJudged : ExitYieldsJudged (reassign G η) r.w (List.range c.inputs.length) l
-      (r.node l hl).node (r.node l hl).c (r.node l hl).entry (r.node l hl).st s.ysA) : Here s η := by
+/-- The trace identifies the kept node yields with the step cache. -/
+theorem Site.kept_yields (s : Site c r l hl) :
+    (r.node l hl).ys = s.sd.yields.getD [] := by
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hy, _⟩ := s.facts
+  exact hy
+
+/-- The initial exit yields equal the node's kept yields. -/
+theorem Site.ysA_eq (s : Site c r l hl) : s.ysA = (r.node l hl).ys :=
+  s.kept_yields.symm
+
+/-- Every cached exit source equals the node's kept yields. -/
+theorem Site.source_eq (s : Site c r l hl) {ys : List (PromiseCalls.Yield ι)}
+    (h : ys = s.sd.yields.getD []) : ys = (r.node l hl).ys :=
+  h.trans s.kept_yields.symm
+
+/-- The trace supplies the empty-context answer and the kept initial yields. -/
+theorem exitChecks_here (s : Site c r l hl) (η : MixedAssignment ι) : Here s η := by
   obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, hclaim, _, _, _, _, _, _, _, _, hhere, _⟩ := s.facts
-  refine ⟨?_, initialYieldsJudged⟩
+  refine ⟨?_, s.ysA_eq⟩
   intro hh
   rw [hclaim]
   exact (hhere hh).reassign η
@@ -193,8 +200,8 @@ theorem exitChecks_handler (s : Site c r l hl) (η : MixedAssignment ι)
 /-- The field obligations compose without any extraction assumption hidden in the proof. -/
 theorem assemble (s : Site c r l hl) (η : MixedAssignment ι)
     (hh : Here s η) (hw : Widths s η) (hn : NonHead s η) (hhead : Head s η) (hx : Handler s η)
-    (hf : Fresh s) (hr : Realization s η) : Extracted s η := by
-  refine ⟨⟨hh.1, hh.2, hw.1, hw.2, ?_, hx.1, hx.2⟩, hf, hr⟩
+    (hf : Fresh s) : Extracted s η := by
+  refine ⟨⟨hh.1, hh.2, hw.1, hw.2, ?_, hx.1, hx.2⟩, hf⟩
   intro i t pushed observed promote hm
   cases hg : r.given t.label with
   | false =>
@@ -206,41 +213,22 @@ theorem assemble (s : Site c r l hl) (η : MixedAssignment ι)
 
 end ExitChecks
 
-/-- Extraction at admitted reassigned graphs. Judged yields are semantic,
-so their extraction has the run's sound-code and admitted-graph premises. -/
+/-- Extraction at admitted reassigned graphs. -/
 @[nospecialize] def ExitChecks.Extraction (ι : Type) [Labels ι] : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
     RunPremises G I c after admits → ∀ r : RunWalkA G I c, WalkChecked c r → ∀ η, admits η →
       ∀ l (hl : r.w.visited l) (s : ExitChecks.Site c r l hl), ExitChecks.Extracted s η
-
-/-- Field groups at every admitted site give the exact extraction premise. -/
-theorem ExitChecks.extraction_of_fields
-    (fields : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
-      RunPremises G I c after admits → ∀ r : RunWalkA G I c, WalkChecked c r → ∀ η, admits η →
-        ∀ l (hl : r.w.visited l) (s : ExitChecks.Site c r l hl),
-          ExitYieldsJudged (reassign G η) r.w (List.range c.inputs.length) l
-            (r.node l hl).node (r.node l hl).c (r.node l hl).entry (r.node l hl).st s.ysA ∧
-          ExitChecks.NonHead s η ∧ ExitChecks.Head s η ∧
-          (∀ t, (r.node l hl).node.handler = some t →
-            HandlerExitChecked (reassign G η) (I.reassign η) r.w (List.range c.inputs.length)
-              r.ctx r.stated r.given r.edgesIn l (r.node l hl).c (r.node l hl).entry (r.node l hl).st
-              s.en.here s.sd.outFresh (s.sd.thrownTy.getD []) s.sd.thrown t) ∧
-          ExitChecks.Realization s η) : ExitChecks.Extraction ι := by
-  intro G I c after admits hp r hc η ha l hl s
-  obtain ⟨hh, hn, hhead, hx, hr⟩ := fields G I c after admits hp r hc η ha l hl s
-  exact ExitChecks.assemble s η (ExitChecks.exitChecks_here s η hh) (ExitChecks.exitChecks_widths s η)
-    hn hhead (ExitChecks.exitChecks_handler s η hx) (ExitChecks.exitChecks_fresh s) hr
 
 /-- The exit obligation from the explicit local extraction premise. -/
 theorem exitsYield_of_checks (checks : ExitChecks.Extraction ι) : ExitsYield ι := by
   intro G I c after admits hp r hchecked η ha ρ0 m l hl
   obtain ⟨dead, hnodes, hgiven, hmerging, hrecord⟩ := hchecked
   obtain ⟨s⟩ := ExitChecks.site_of_trace (hnodes l hl).2
-  obtain ⟨hc, hf, hr⟩ := checks G I c after admits hp r ⟨dead, hnodes, hgiven, hmerging, hrecord⟩ η ha l hl s
+  obtain ⟨hc, hf⟩ := checks G I c after admits hp r ⟨dead, hnodes, hgiven, hmerging, hrecord⟩ η ha l hl s
   have hsums := (r.node l hl).hstep.summaries (r.node l hl).sums
   have hcodes := codesSound_reassign hp.2.2.1 η
   exact nodeExitsY_of_checks η hc hf (r.node l hl).hshape (r.node l hl).wf
-    (r.node l hl).width List.nodup_range hr (subtypeAnswersAll _ _) hcodes
+    (r.node l hl).width List.nodup_range (subtypeAnswersAll _ _) hcodes
     (Parametricity.summariesSound_reassign G η I hsums) m
 
 end Assembly

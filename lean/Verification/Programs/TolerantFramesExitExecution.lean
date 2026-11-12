@@ -30,14 +30,13 @@ theorem nodeExitsY_of_checks {G : NormalGraph ι} {images : InstanceImageCheck G
     (hf : outFresh = passOutFreshChecked G images codes sums c node entry st.stepK deriv)
     (hshape : SinglePass.passShapeCheck' G c.type node.continuation = true) (wf : StoreWF entry.store)
     (hwidth : entry.names.length ≤ c.context.length) (hnd : startNames.Nodup)
-    (hread : ExitYieldRealization (reassign G η) w startNames l node c entry st ys outFresh)
     (hsub : SubtypeAnswersSound (reassign G η) (images.reassign η))
     (hcodes : CodesSound (reassign G η) codes) (hsums : SummariesSound (reassign G η) (images.reassign η) sums)
     (m : Nat) :
     NodeExitsY (reassign G η) w startNames ρ0 ctx stated given edgesIn m l node c entry st ys := by
   have hshape' : SinglePass.passShapeCheck' (reassign G η) c.type node.continuation = true := by
     rw [passShapeCheck'_reassign]; exact hshape
-  have hd := nodeExitsYF_of_checks hc hshape' wf hnd hread hsub (ρ0 := ρ0) m
+  have hd := nodeExitsYF_of_checks hc hshape' wf hnd hsub (ρ0 := ρ0) m
   refine ⟨?_, hd.handler⟩
   intro t pushed observed promote hmem ρ s hS he hkS hm s' v hv hF he' ho
   obtain ⟨hS', hy, hout, k, hk, hrun⟩ := hF

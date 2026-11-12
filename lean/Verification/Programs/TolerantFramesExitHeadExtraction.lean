@@ -252,13 +252,10 @@ theorem Site.argumentInput (s : Site c r l hl) :
   | none => simp [hslot] at he
   | some q => exact ⟨q, by simpa only [hslot, Option.bind_some] using he⟩
 
-/-- Normal head extraction. The structural entry and judged yield sources
-are explicit leaves; every edge check comes from the successful visit. -/
+/-- Normal head extraction under the structural entry contract.
+The successful visit supplies the edge checks and the kept yield list. -/
 theorem exitChecks_head (s : Site c r l hl) (η : MixedAssignment ι)
-    (headEntries : ∀ t, (∃ e ∈ Exit.ofNode (r.node l hl).node, e.target.label = t) → r.given t = true → ∀ req, s.env.given[t]! = some req → HeadEntryContract s t req)
-    (yieldSourcesJudged : ∀ ys, ExitYieldSource s.env l s.en s.sd s.sd.yields ys →
-      ExitYieldsJudged (reassign G η) r.w (List.range c.inputs.length) l
-        (r.node l hl).node (r.node l hl).c (r.node l hl).entry (r.node l hl).st ys) : Head s η := by
+    (headEntries : ∀ t, (∃ e ∈ Exit.ofNode (r.node l hl).node, e.target.label = t) → r.given t = true → ∀ req, s.env.given[t]! = some req → HeadEntryContract s t req) : Head s η := by
   obtain ⟨_, _, _, _, _, _, _, _, _, _, hv, hn, hc, he, hs, _, _, hi, _, _, _, _, _, hnames, _⟩ := s.facts
   intro i t pushed observed promote hm hg
   have headFlag : s.env.isHead[t.label]! = true := by
@@ -285,7 +282,7 @@ theorem exitChecks_head (s : Site c r l hl) (η : MixedAssignment ι)
     · simpa only [hc, he, hs, ← hnames] using checks.inputs
     · simpa only [hc, he, hs] using checks.args
     · simpa only [hc, he, hs, ← targetContext, exitWidth] using checks.query
-  exact ⟨b.yields.getD [], yieldSourcesJudged _ hy, req, written, cf,
+  exact ⟨b.yields.getD [], s.source_eq hy, req, written, cf,
     (s.env.givenImplies[t.label]?).getD [], s.env.argName, (s.env.givenArgs[t.label]?).getD [],
     (s.env.givenInputs[t.label]?).getD [], width, fresh, checked.reassign η, below, argumentInput⟩
 
