@@ -1459,8 +1459,10 @@ record's entry is not the single incoming state or the merge where the
 label states an assertion, and `Traversed`'s `single` and `merge` fields do
 not hold of it. `TraversedA` states the walk's construction over entries
 `base` before the addition (`Traversed` of the walk with entries `base`),
-each label's entry being `base t` at a head and
-`withWritten (stated t) (base t)` elsewhere. Proved: `withWritten_holds`
+each visited label's entry being `base t` at a head and
+`withWritten (stated t) (base t)` elsewhere (an unvisited label's
+recorded entry is the empty state, which no written fact without a slot
+leaves empty). Proved: `withWritten_holds`
 (the state with the facts added holds where the state and the written
 assertion hold), `withWritten_wf`, `TraversedA.reassign`; `entry_of_edgeA`:
 

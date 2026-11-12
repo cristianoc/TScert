@@ -98,14 +98,14 @@ theorem Traversed.reassign {G : NormalGraph ι} {w : Walk ι} {startNames : List
 /-- **The walk's construction with the written facts**: there are entries
 `base` (a head's entry, the single incoming state, the merge) over which
 the walk is constructed (`Traversed` of the walk with entries `base`), and
-each label's entry is its base, with the label's written facts added at a
-node other than a head (`withWritten`). -/
+each visited label's entry is its base, with the label's written facts
+added at a node other than a head (`withWritten`). -/
 def TraversedA (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (given : Nat → Bool)
     (ctx : Nat → List (Ty ι))
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
     (fresh : Nat → Nat) (stated : Nat → Option HeapKnowledge.Knowledge) : Prop :=
   ∃ base : Nat → SinglePass.State, Traversed G { w with entry := base } startNames given ctx edgesIn fresh ∧
-    ∀ t, w.entry t = if given t then base t else withWritten (stated t) (base t)
+    ∀ t, w.visited t → w.entry t = if given t then base t else withWritten (stated t) (base t)
 
 /-- `TraversedA` at a reassigned graph (`Traversed.reassign`). -/
 theorem TraversedA.reassign {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat}
@@ -134,10 +134,11 @@ theorem entry_of_edgeA {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat
   obtain ⟨base, hTb, hent⟩ := hT
   have hp := entry_of_edge (w := { w with entry := base }) hTb (fun t' ρ' s' hg he' => by
       have := hheads t' ρ' s' hg he'
-      rw [hent t', if_pos hg] at this
+      obtain ⟨e, hein, -⟩ := he'
+      rw [hent t' (hTb.visited t' (List.ne_nil_of_mem hein)), if_pos hg] at this
       exact this) hnear he hJ
   refine ⟨hp.1, ?_⟩
-  rw [hent t]
+  rw [hent t hp.1]
   split
   · exact hp.2
   · exact withWritten_holds hp.2 hA
