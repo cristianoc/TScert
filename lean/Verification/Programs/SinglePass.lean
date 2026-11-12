@@ -1090,10 +1090,58 @@ theorem dfsInitA_agrees (succ : Nat → List Nat) (n start : Nat) :
   · simp only [h, if_false]
     exact ⟨rfl, by simp, by simp, fun t ht => by simp [ht], fun t ht => by simp [ht], fun p hp => by simp at hp⟩
 
+/-- `dfsStepA` returning the state it was given where the stack is empty,
+with whether it took a round: the state is taken apart once, so its arrays
+are updated in place. -/
+def dfsStepB (succ : Nat → List Nat) (n : Nat) (σ : DfsA) : DfsA × Bool :=
+  let ⟨heads, state, stack⟩ := σ
+  match stack with
+  | [] => (⟨heads, state, []⟩, false)
+  | (v, []) :: rest => (⟨heads, state.set! v 2, rest⟩, true)
+  | (v, w :: ws) :: rest =>
+    if w < n then
+      if state[w]! = 0 then (⟨heads, state.set! w 1, (w, succ w) :: (v, ws) :: rest⟩, true)
+      else if state[w]! = 1 then (⟨heads.set! w true, state, (v, ws) :: rest⟩, true)
+      else (⟨heads, state, (v, ws) :: rest⟩, true)
+    else (⟨heads, state, (v, ws) :: rest⟩, true)
+
+theorem dfsStepB_eq (succ : Nat → List Nat) (n : Nat) (σ : DfsA) :
+    dfsStepB succ n σ = (match dfsStepA succ n σ with | none => (σ, false) | some σ' => (σ', true)) := by
+  obtain ⟨heads, state, stack⟩ := σ
+  unfold dfsStepB dfsStepA
+  match stack with
+  | [] => rfl
+  | (v, []) :: rest => rfl
+  | (v, w :: ws) :: rest =>
+    by_cases hw : w < n
+    · by_cases h0 : state[w]! = 0
+      · simp [hw, h0]
+      · by_cases h1 : state[w]! = 1
+        · simp [hw, h1]
+        · simp [hw, h0, h1]
+    · simp [hw]
+
+/-- `dfsLoopA` over `dfsStepB`: the state is not held across a round. -/
+def dfsLoopB (succ : Nat → List Nat) (n : Nat) : Nat → DfsA → DfsA
+  | 0, σ => σ
+  | k + 1, σ => match dfsStepB succ n σ with
+    | (σ', true) => dfsLoopB succ n k σ'
+    | (σ', false) => σ'
+
+theorem dfsLoopB_eq (succ : Nat → List Nat) (n : Nat) :
+    ∀ (k : Nat) (σ : DfsA), dfsLoopB succ n k σ = dfsLoopA succ n k σ
+  | 0, _ => rfl
+  | k + 1, σ => by
+    unfold dfsLoopB dfsLoopA
+    rw [dfsStepB_eq]
+    cases dfsStepA succ n σ with
+    | none => rfl
+    | some σ' => exact dfsLoopB_eq succ n k σ'
+
 /-- `loopHeadsRun` over the array walk, which the compiled verifier runs
 (`loopHeadsRun_eq_A`). -/
 def loopHeadsRunA (nodes : Array ControlFlow.Node) (start : Nat) : Bool × Array Bool × Array Bool :=
-  let a := dfsLoopA (nodeSucc nodes) nodes.size (dfsFuel nodes) (dfsInitA (nodeSucc nodes) nodes.size start)
+  let a := dfsLoopB (nodeSucc nodes) nodes.size (dfsFuel nodes) (dfsInitA (nodeSucc nodes) nodes.size start)
   (a.stack.isEmpty, a.heads, a.state.map (· != 0))
 
 /-- **The array walk computes the loop heads' walk**: the same stack, and
@@ -1104,7 +1152,7 @@ by label the same marks and reached nodes (`DfsA.Agrees`). -/
     (dfsInitA_agrees (nodeSucc nodes) nodes.size start)
   obtain ⟨hst, hhs, hss, hh, hs, -⟩ := h
   unfold loopHeadsRun loopHeadsRunA loopHeads Dfs.marks loopHeadsWalk
-  simp only [hst, Prod.mk.injEq, true_and]
+  simp only [dfsLoopB_eq, hst, Prod.mk.injEq, true_and]
   constructor
   · apply Array.ext
     · simp [hhs]
@@ -3078,6 +3126,77 @@ def visit (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι
   match visitBody G images env σ l with
   | .ok σ' => .ok { σ' with answers := keepSummaries σ.answers σ'.answers }
   | .error stop => .error { stop with answers := keepSummaries σ.answers stop.answers }
+
+/-! ### The visit as the compiled verifier runs it
+
+`visitBodyFast` and `visitFast` compute `visitBody` and `visit`
+(`visitBody_eq_fast`, `visit_eq_fast`) holding no value of the walk's state
+past its last read: the arrays and tables a visit updates are then held
+once, and updated in place. -/
+
+/-- `keepSummaries` from the earlier table alone. -/
+def keepSummariesOf {G : NormalGraph ι} (pre : Array (ReadSummary ι)) (b : Answered G) : Answered G :=
+  { b with summaries := pre ++ b.summaries.extract pre.size b.summaries.size }
+
+/-- A step's record with the answers only the proofs read emptied. -/
+def StepDone.light {G : NormalGraph ι} (sd : StepDone ι G) : StepDone ι G :=
+  { sd with stepAnswers := {}, steppedAnswers := {}, yieldAnswers := {} }
+
+theorem visitExits_light (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images)
+    (σ : WalkState ι G) (L : Array (LabelWalk ι)) (l : Nat) (en : Entered ι) (sd : StepDone ι G) :
+    visitExits G images env { σ with walk := { σ.walk with labels := L } } l en sd.light =
+      visitExits G images env σ l en sd := by
+  rfl
+
+/-- `visitBody`, the walk's state taken apart after the step, the step's
+record passed to the exits without the answers only the proofs read. -/
+def visitBodyFast (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (σ : WalkState ι G)
+    (l : Nat) : Except (WalkStop ι G) (WalkState ι G) :=
+  match visitEntry G images env σ l with
+  | .error stop => .error stop
+  | .ok en => match visitStep G images env σ l en with
+    | .error stop => .error stop
+    | .ok sd =>
+      let labels := σ.walk.labels
+      let fresh := σ.fresh
+      let visited := σ.walk.visited
+      let stepSummaries := sd.stepAnswers.summaries.size
+      let σx := { σ with walk := { σ.walk with labels := #[] } }
+      let sdx := sd.light
+      match visitExits G images env σx l en sdx with
+      | .error stop => .error stop
+      | .ok ex =>
+        .ok { walk := { labels := labels.set! l { LabelWalk.ofVisit fresh en sdx (ex.regional.map (·.state)) with
+                          stepSummaries }, incoming := ex.incoming,
+                        incomingImpl := ex.incomingImpl, incomingEdges := ex.incomingEdges, edges := ex.edges,
+                        visited := visited + 1 },
+              answers := ex.answers, counts := ex.counts, trace := ex.trace, indeg := ex.indeg, fresh := sdx.fresh,
+              regionIn := ex.regionIn, incomingFrom := ex.incomingFrom, queue := ex.queue, unsat := ex.unsat,
+              lastStamp := en.lastStamp, lastKind := sdx.lastKind }
+
+@[csimp] theorem visitBody_eq_fast : @visitBody = @visitBodyFast := by
+  funext ι _ _ _ G images env σ l
+  unfold visitBody visitBodyFast
+  split
+  · rfl
+  · split
+    · rfl
+    · rename_i sd _
+      simp only [visitExits_light]
+      split <;> rfl
+
+/-- `visit`, holding of the walk's state it started from its read-summary
+table alone. -/
+def visitFast (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (σ : WalkState ι G)
+    (l : Nat) : Except (WalkStop ι G) (WalkState ι G) :=
+  let pre := σ.answers.summaries
+  match visitBody G images env σ l with
+  | .ok σ' => .ok { σ' with answers := keepSummariesOf pre σ'.answers }
+  | .error stop => .error { stop with answers := keepSummariesOf pre stop.answers }
+
+@[csimp] theorem visit_eq_fast : @visit = @visitFast := by
+  funext ι _ _ _ G images env σ l
+  rfl
 
 /-- The walk over one graph: the setup, then `drive` over the visits; the
 walk's state and the nodes the start reaches, or where it stopped. -/
