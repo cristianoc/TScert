@@ -74,6 +74,7 @@ import Verification.Programs.TolerantFramesComposeYields
 import Verification.Programs.TolerantFramesSinglePassSound
 import Verification.Programs.TolerantFramesMergeExits
 import Verification.Programs.TolerantFramesMergeNearRounds
+import Verification.Programs.TolerantFramesExitTypes
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -920,3 +921,11 @@ run_cmd do
   check ``Verification.TolerantFrames.regionalDerivChecked_reassign
   check ``Verification.TolerantFrames.regionsTyped_of_tree
   check ``Verification.TolerantFrames.regionsHeld_of
+  check ``Verification.TolerantFrames.differing_eq
+  check ``Verification.TolerantFrames.differing_cover
+  check ``Verification.TolerantFrames.foldl_flag
+  check ``Verification.TolerantFrames.diffSubtypes_pairs
+  check ``Verification.TolerantFrames.diffSubtypes_covers
+  check ``Verification.TolerantFrames.diffSubtypes_env
+  check ``Verification.TolerantFrames.mixed_fold
+  check ``Verification.TolerantFrames.mixedContext_env
