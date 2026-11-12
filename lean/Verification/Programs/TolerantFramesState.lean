@@ -101,23 +101,28 @@ def StateHolds (G : NormalGraph ι) (st : State) (implies : List (PromiseCalls.I
     PromiseCalls.ImpliesOk G implies η s.n s.W ∧ (∀ x ∈ st.fresh, FreshAt m (η x)) ∧
     ∀ q x, start[q]? = some x → η x = entry q
 
+/-- **The store's well-formedness**: its live facts are canonical
+(`Atom.canon`), and each fact its index lists under a name is live, mentions
+that name, and is listed there once. -/
+structure StoreWF (s : Store) : Prop where
+  canonical : ∀ a ∈ s.live, a.canon = a
+  indexed : ∀ n, ∀ a ∈ s.byName.getD n [], a ∈ s.live
+  named : ∀ n, ∀ a ∈ s.byName.getD n [], n ∈ a.names
+  nodup : ∀ n, (s.byName.getD n []).Nodup
+
 /-- **The state's well-formedness** relative to the pass's next fresh name
 `next`, separate from its meaning:
 
-- `indexed`: each fact the index lists under a name is live (the index is a
-  view of the live facts);
+- `store`: the store's well-formedness (`StoreWF`);
 - `slotted`: every name a stored fact reading the heap mentions is held by a
-  slot (a slotless heap fact is not framed by a writing step:
-  `slotless_not_framed`);
+  slot;
 - `below`: every name of the slots, of the stored facts and of `fresh` is
   below `next`, so the next result name is fresh;
-- `canonical`: the store holds facts in their canonical form (`Atom.canon`);
 - `freshHeld`: every fresh name is held by a slot. -/
 structure StateWF (st : State) (next : Nat) : Prop where
-  indexed : ∀ n, ∀ a ∈ st.store.about n, a ∈ st.store.toList
+  store : StoreWF st.store
   slotted : ∀ a ∈ storeAll st.store, a.heapFree = false → ∀ x ∈ a.names, x ∈ st.names
   below : (∀ x ∈ st.names, x < next) ∧ (∀ a ∈ storeAll st.store, ∀ x ∈ a.names, x < next) ∧ ∀ x ∈ st.fresh, x < next
-  canonical : ∀ a ∈ st.store.toList, a.canon = a
   freshHeld : ∀ x ∈ st.fresh, x ∈ st.names
 
 /-- The next name is fresh for every stored fact. -/

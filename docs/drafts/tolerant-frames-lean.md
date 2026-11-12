@@ -656,14 +656,13 @@ fresh name), separate from the meaning:
 
 | Conjunct | States | Kept by |
 | --- | --- | --- |
-| `indexed` | each fact the index lists under a name is live | construction (`addRaw`, `remove`); not checked, not proved |
+| `store` | the store's well-formedness `StoreWF`: live facts canonical (`Atom.canon`); each fact the index lists under a name live, mentioning that name, listed there once | every insertion and removal (proved: `addRaw_wf`, `remove_wf`, `addBound_wf`, `add_wf`) |
 | `slotted` | every name a stored fact reading the heap mentions is held by a slot | construction (`Store.drop` at edges, `renamedAway` at merges); not checked, not proved |
 | `below` | every name of the slots, the facts and $`F`$ is below $`\mathit{next}`$, so a result name is fresh (proved: `StateWF.fresh_result`) | construction (the counter only grows); not proved |
-| `canonical` | the live facts are canonical (`Atom.canon`) | construction (every insertion canonicalizes); not proved |
 | `freshHeld` | every fresh name is held by a slot | edges (line 1758 filters the names an edge drops); a merge keeps a predecessor's name beside its fresh renames (lines 1142–1146), held or not; freshness reads no heap, so the meaning does not need it |
 
-Soundness reads none of them but `below` (through `fresh_result`); `slotted`
-is what a writing step's frame needs ([the slotless finding](#the-footprint-check-at-a-node)).
+Soundness reads `below` (through `fresh_result`) and `store` (through
+`removedLeave`).
 
 **The store's laws**, proved from the lemmas of `Std.HashSet` and
 `Std.HashMap` (the store's live facts and its index by name, `SinglePass.lean`
@@ -756,24 +755,21 @@ The state after a step, proved:
 - a copy (lines 1203–1220): no step, the store unchanged, slot 0 named as
   slot $`i`$ (`stateHolds_copy`).
 
-The writing case, proved (`applyDelta_writing`): where every stored fact
-either holds after the step or is handed to the rule (a pair $`(x,b)`$ with
-$`x`$ renamed to $`b`$ by a table whose slots hold their names' values), and
-the removal loop removes the handed facts whose image the output lost
-(`RemovedLeave`), every fact of the resulting store holds: a kept handed
-fact's image is in the output, which holds at the pushed slots, and reads
-back through the shift (`rename_succ_total`) and the table
-(`atomHolds_rename_rev`) to the fact at $`\eta'`$. The facts that hold after
-a writing step are those its effect keeps (`writing_frame`,
-`Atom.keptByElems`); so the pass keeps no more than the effect and the output
-justify exactly where every stored fact reading the heap is a pair: where
-its names have slots (`StateWF.slotted`, with the whole table defining every
-slot's name; that completeness of `slotTable` is not proved).
-
-**`RemovedLeave`** (a named hypothesis): a fact the removal loop removes is
-not in the resulting store. It needs exact erasure laws of
-`Lean.PersistentHashMap`, index lists without duplicates (`List.erase`
-removes one copy) and each listed fact under its own names only.
+The writing case, proved (`applyDelta_writing`, module
+`lean/Verification/Programs/TolerantFramesStore.lean`): for a well-formed
+store, where every stored fact either holds after the step or is handed to
+the rule (a pair $`(x,b)`$ with $`x`$ renamed to $`b`$ by a table whose slots
+hold their names' values), every fact of the resulting store holds: a kept
+handed fact's image is in the output, which holds at the pushed slots, and
+reads back through the shift (`rename_succ_total`) and the table
+(`atomHolds_rename_rev`) to the fact at $`\eta'`$. A handed fact whose image
+the output lost leaves the store (`removedLeave`): `Store.remove` erases a
+canonical fact from the live set and from each of its names' lists, which
+hold it once, and no other list holds it (`remove_absent`), and the loop keeps
+the store well-formed (`deltaRemove_wf`). The facts that hold after a writing
+step are those its effect keeps (`writing_frame`, `Atom.keptByElems`); the
+heap facts the step is not handed are removed before the delta
+([the facts a writing step is not handed](#the-footprint-check-at-a-node)).
 
 ### What the named state's proofs cannot reach as written
 
@@ -787,15 +783,12 @@ these operations as pure functions of their inputs:
 1. `materialize`'s selective worklist (313–340): a `while` loop, opaque
    (`SelectedFromIndex`); a structural recursion on a fuel bound, or a fold
    over rounds, makes it provable.
-2. `Store` over `Lean.PersistentHashMap` (87–151): no lemma (`StoreLaws`,
-   `RemovedLeave`); `Std.HashMap`, whose lemma library states insertion and
-   erasure exactly, makes both theorems.
-3. The merge (995–1167) as `mergeState : List State → … → State × List Implication`,
+2. The merge (995–1167) as `mergeState : List State → … → State × List Implication`,
    with the fresh-name counter an argument and result; then each
    predecessor's valuation extends to the φ names by its own names.
-4. The head entry (965–988) and the edge's store (1559–1578, 1753–1767) as
+3. The head entry (965–988) and the edge's store (1559–1578, 1753–1767) as
    functions of the node's state, its edge and the counter.
-5. `Store.drop` (482–523) is a function; its soundness is the
+4. `Store.drop` (482–523) is a function; its soundness is the
    materialization's elimination (`derivedOf_holds`) plus the alias
    restatement, not proved here.
 

@@ -437,13 +437,9 @@ theorem atomHolds_rename_rev {a b : Atom} {f : Nat → Option Nat} {η ρ : Env}
     obtain ⟨t, ht, rfl⟩ := hqp
     exact (hb _ hq g hg).congr (hf _ _ hs).symm (hf _ _ ht).symm
 
-/-- **(Obstacle) A fact the removal loop removes leaves the store**: each
-fact the loop keeps is the store's and none of the handed facts whose image
-the output lost. `Store.remove` erases a fact from the live set and from its
-names' lists (`List.erase`, the first copy); that it leaves the store needs
-exact erasure laws of `Lean.PersistentHashMap`, lists without duplicates and
-every listed fact under its own names only. A named hypothesis of the
-writing case. -/
+/-- **A fact the removal loop removes leaves the store**: each fact the
+loop keeps is the store's and none of the handed facts whose image the output
+lost (proved for a well-formed store: `removedLeave`). -/
 def RemovedLeave (s : Store) (pairs : List (Atom × Atom)) (out : HeapKnowledge.Knowledge) (shift : Bool) : Prop :=
   ∀ x ∈ storeAll (deltaRemove s pairs out shift),
     x ∈ storeAll s ∧ ∀ ab ∈ pairs, deltaImage shift ab.2 ∉ SinglePass.atomsOf out → x ≠ ab.1
@@ -466,30 +462,5 @@ theorem rename_succ_total (b : Atom) : ∃ c, b.rename (fun i => some (i + 1)) =
       | cons p l ih => obtain ⟨l', hl⟩ := ih; exact ⟨_, by rw [List.mapM_cons, hl]; rfl⟩
     obtain ⟨l', hl⟩ := this x.partners
     exact ⟨_, by simp only [Atom.rename]; rw [hl]; rfl⟩
-
-/-- **(Writing) A step's delta keeps the store's facts holding** where every
-stored fact either holds after the step (the facts its effect keeps) or is
-handed to the rule (a pair), and the removal loop removes the handed facts
-whose image the output lost (`RemovedLeave`): a kept handed fact holds by the
-output, read back through the pushed slots and the table. -/
-theorem applyDelta_writing {s : Store} {pairs : List (Atom × Atom)}
-    {out : HeapKnowledge.Knowledge} {back f : Nat → Option Nat} {η ρ : Env} {v : Tm} {h : Heap}
-    (hgone : RemovedLeave s pairs out true)
-    (hcov : ∀ x ∈ storeAll s, AtomHolds x η h ∨ ∃ b, (x, b) ∈ pairs ∧ x.rename f = some b)
-    (hf : ∀ x i, f x = some i → ρ i = η x) (hout : HeapKnowledge.Holds out (push v ρ) h)
-    (hback : ∀ i x, back i = some x → η x = push v ρ i) :
-    StoreOk (SinglePass.applyDelta s pairs out true back) η h := by
-  refine applyDelta_ok (fun x hx => ?_) hout hback
-  obtain ⟨hxs, hne⟩ := hgone x hx
-  rcases hcov x hxs with hh | ⟨b, hp, hr⟩
-  · exact hh
-  · have himg : deltaImage true b ∈ SinglePass.atomsOf out :=
-      Classical.byContradiction fun hn => hne (x, b) hp hn rfl
-    obtain ⟨c, hc⟩ := rename_succ_total b
-    have hci : deltaImage true b = c := by simp [deltaImage, hc]
-    have hcb : AtomHolds c (push v ρ) h := hci ▸ atomsOf_holds hout _ himg
-    have hb : AtomHolds b ρ h := atomHolds_rename_rev (f := fun i => some (i + 1))
-      (fun x i hx => by simp only [Option.some.injEq] at hx; subst hx; rfl) hc hcb
-    exact atomHolds_rename_rev hf hr hb
 
 end Verification.TolerantFrames
