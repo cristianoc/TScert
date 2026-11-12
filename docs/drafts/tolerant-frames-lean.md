@@ -680,6 +680,34 @@ Proved, per fact and per store operation:
   replacing weaker ones (`addBound_ok`), a length fact added with the linear
   facts it means (`add_ok`, from `HeapKnowledge.atomLinear_holds`).
 
+### The unit's entry
+
+Module `lean/Verification/Programs/TolerantFramesEntry.lean`. The pass checks
+the unit's entry before its walk (`SinglePass.entryRefusal`), and the start's
+state is the head entry (`SinglePass.headEntry`) of its given invariant
+(`startGiven`: the written assertion with the request's entry index facts
+and separation, then the supplied facts, as `SinglePass.run` builds it) over
+the start's names $`0,\dots,|\mathit{inputs}|-1`$. Proved:
+
+- `entryRefusal_ok`: an accepted check gives the start's claim at the
+  inputs, no given implication, the promised input at each slot named after
+  it, each input's entry value at its own slot, and `entryKnows` of the
+  written and supplied facts;
+- `startGiven_holds`: from `EnvOk` at the inputs, the entry separation and
+  the entry index facts, the given invariant holds at $`\rho`$
+  (`entryKnows_sound`, `union_holds`);
+- `headEntry_start_names`: each start slot is named by itself;
+  `headStore_ok`: the head's store holds and is well-formed;
+- (`entry_stateHolds`) $`\mathrm{entryRefusal}=\mathrm{none}\wedge
+  \mathrm{EnvOk}\ \mathit{inputs}\ \rho \wedge \rho\models S_{\mathrm{entry}}
+  \wedge \rho,h\models I_{\mathrm{entry}} \Rightarrow
+  \mathrm{StateHolds}\ \mathit{st}_0\ \mathit{imp}_0\ [0,\dots]\ \rho`$ at $`\rho`$:
+  the start's state holds, each start name holding its entry value, its store
+  well-formed.
+
+The start's names are $`0,\dots,w-1`$ in `run` (its `fresh` is 0 when they
+are drawn), and the request's inputs are the start's context by the check.
+
 ### Materialization
 
 Module `lean/Verification/Programs/TolerantFramesMaterialize.lean`.
