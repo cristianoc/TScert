@@ -1160,3 +1160,25 @@ run_cmd do
   check ``Verification.TolerantFrames.regionalAt_own_no_self
   check ``Verification.TolerantFrames.returnedWalk_successor_visited
   check ``Verification.TolerantFrames.regionalRecordedTableAgreement
+
+open Lean Elab Command in
+run_cmd do
+  let standard := [``propext, ``Classical.choice, ``Quot.sound]
+  let check (decl : Name) : CommandElabM Unit := do
+    for axiom_ in ← liftCoreM <| collectAxioms decl do
+      unless standard.contains axiom_ do
+        throwError "{decl} depends on the axiom {axiom_}"
+  check ``Verification.TolerantFrames.sparseFold_pick
+  check ``Verification.TolerantFrames.sparse_region_target
+  check ``Verification.TolerantFrames.regionalFold_retains_target
+  check ``Verification.TolerantFrames.regionalAt_nonhead_target
+  check ``Verification.TolerantFrames.regionalAt_head_target
+  check ``Verification.TolerantFrames.regionalAt_entry_header
+  check ``Verification.TolerantFrames.regionalAt_own_head
+  check ``Verification.TolerantFrames.returnedWalk_setup
+  check ``Verification.TolerantFrames.returnedWalk_setup_inv
+  check ``Verification.TolerantFrames.returnedWalk_self_head
+  check ``Verification.TolerantFrames.returnedWalk_regional_no_start
+  check ``Verification.TolerantFrames.RecInv.regionalInputReadback
+  check ``Verification.TolerantFrames.regionalRecorded_nonhead_of_inputs
+  check ``Verification.TolerantFrames.regionalRecordedReadback

@@ -1375,7 +1375,7 @@ The graph theorem `run_sound_single_pass`
 
 ```math
 \begin{aligned}
-&\mathrm{ExitsYield} \wedge \mathrm{RegionalRecordedTableAgreement} \\
+&\mathrm{ExitsYield} \wedge \mathrm{RegionalNonheadReadback} \\
 &\quad \wedge \mathrm{RegionalDiscardedSeparation} \wedge \mathrm{RegionalStepHeader}
 \quad\Longrightarrow \mathrm{RunSound}
 \end{aligned}
@@ -1384,32 +1384,60 @@ The graph theorem `run_sound_single_pass`
 | Premise | Obligation | Consumed by |
 | --- | --- | --- |
 | `ExitsYield` | Each checked node's normal exits and handler deliver `NodeExitsY` at every admitted reassigned graph. `nodeExitsY_of_checks` proves delivery from `NodeExitsChecked`, with freshness from the actual step execution. Assembly from the visit's records requires head-entry checks, handler bounds, incoming and merge membership, and semantic justification of the yields each exit reads. | `nodesYield_of` |
-| `RegionalRecordedTableAgreement` | For every returned driver state with `EnvFacts`, `RecInv`, the regional configuration and sound final summaries, every successful regional visit matching a visited label record whose exit summaries prefix the final table satisfies `TablesAgree done.table (recordedRegionFacts σ.walk) done.ft (recordedRegionFresh σ.walk rg.names) l env.nodes[l]!`. This requires equality at the node, equal field names, and containment at every successor and handler. `regionalRecordedTableAgreement` derives this from the explicit `RegionalRecordedReadback` leaf below. The exact quantified statements are in `TolerantFramesRegionalAlignment.lean`. | `regionalVisitTables_of_recordedAgreement` |
+| `RegionalNonheadReadback` | Every successful regional visit matching a visited final label record, with its exit summaries a prefix of the final table, has at each non-head continuation or handler target `t` some `e ∈ σ.regionIn[t.label]!` with `RegionBelow e (regionalTableState done t.label)`. The quantified run, invariant, configuration and summary premises are those of `RegionalRecordedReadback`. The exact statement is in `TolerantFramesRegionalReadback.lean`. | `regionalRecordedReadback`, then `regionalRecordedTableAgreement` |
 | `RegionalDiscardedSeparation` | For a successful visit, let `a` be the whole entry materialization and `b = sd.st.stepK`. If `a.separation.depth ≠ b.separation.depth` and `b.separation.facts ≠ []`, then for every environment, `Holds a.separation` implies `Holds b.separation`. This is precisely the discarded branch of `SinglePass.regionalFacts` (lines 2635–2636). `regionalFacts_discard_counterexample` proves failure for arbitrary facts: `a = {}`, `b` has depth 1 and one fact separating slot 0 from its own field `x`, and slot 0 holds an object with `x` at location 0. Reachability of these inputs is not established. | `regionalStepBridge` |
-| `RegionalStepHeader` | At every successful `visitStep` with `sd.st.stepDeriv = none`, every `p` satisfying `sd.st.stepEffect.bind StepEvidence.proof? = some p` has `(claim p).context = env.claimed[l]!.context` and `(claim p).type = env.claimed[l]!.type`. `regionalAt` selects `.effect` at lines 2661–2664; its derivation check at line 2665 reads `stepDeriv`. | `regionalStepBridge` |
+| `RegionalStepHeader` | At every successful `visitStep` with `sd.st.stepDeriv = none`, every `p` satisfying `sd.st.stepEffect.bind StepEvidence.proof? = some p` has `(claim p).context = env.claimed[l]!.context` and `(claim p).type = env.claimed[l]!.type`. `regionalAt` selects `.effect` at lines 2661–2664; its derivation check at line 2665 reads `stepDeriv`. | `regionalStepBridge`, `regionalAt_entry_header` |
 
-The remaining `RegionalRecordedReadback` leaf has the same quantified inputs
-and premises as `RegionalRecordedTableAgreement`. Write `R(done, t)` for
-`regionalTableState done t`, the four sparse-table entries at `t`.
-Its conclusion is exactly:
+The remaining `RegionalNonheadReadback` leaf quantifies over the same run,
+invariant, regional configuration, sound summaries and successful matching
+visits as `RegionalRecordedReadback`. Its conclusion is exactly:
 
-- `R(done, l) = done.state`.
-- For each continuation or handler target `t`, `t.label ≠ env.start`, and:
-  if `envHead env t.label = true`,
-  `RegionBelow ((rg.heads[t.label]?).join.getD {}) (R(done, t.label))`;
-  otherwise there exists `e ∈ σ.regionIn[t.label]!` with
-  `RegionBelow e (R(done, t.label))`.
+```lean
+∀ t, t ∈ successors env.nodes[l]!.continuation ∨ env.nodes[l]!.handler = some t →
+  envHead env t.label = false →
+  ∃ e ∈ σ.regionIn[t.label]!, RegionBelow e (regionalTableState done t.label)
+```
 
 `RegionBelow` means containment in each of the provenance, value, cell and
-field lists. The leaf includes arbitrary successful `before` states matching
-the final record and satisfying the exit-summary prefix premise. The retained
-incoming-state witness is for the actual visit. Relating an alternate matching
-visit's target entries to that witness is part of the leaf.
-`regionalAt_own_no_self` proves its own-entry equality when `l < env.n` and
-no target has label `l`. At a self-edge, `SinglePass.sparse` overwrites the
-own entry with the later target entry (lines 2695–2704 of `SinglePass.lean`);
-the own-entry equality requires a separate argument from the successful check.
-No counterexample to the full quantified leaf is established.
+field lists. `regionalRecordedReadback` proves the full readback statement
+under this leaf and the existing `RegionalStepHeader` premise.
+`regionalRecordedTableAgreement` composes that result with the head and
+non-head bounds on recorded states.
+
+The own-entry equality is proved for every successful matching visit.
+`regionalAt_own_no_self` handles labels without self-edges.
+`returnedWalk_self_head` proves that a visited self-edge targets a head,
+using the one-edge cycle case of `passHeads_cuts`.
+`regionalAt_head_target` proves that its sparse entry is the supplied head
+state. `regionalAt_own_head` uses the successful `checkNode`'s `cellsKept`
+and `fieldsKept` checks to prove that the cell and field filters preserve
+that state. The field check reads the selected proof's context;
+`regionalAt_entry_header` identifies it with the source claim's context
+under `RegionalStepHeader`. Thus this equality uses the existing header
+premise as well as the successful check.
+
+`returnedWalk_regional_no_start` proves start-target exclusion from setup.
+`SinglePass.setup` rejects every continuation or handler edge into the start
+when regional checking is enabled (`SinglePass.lean:2066–2069`). The start's
+fixed regional entry therefore needs no third target case in accepted runs.
+
+For non-head targets, `sparseFold_pick` and `sparse_region_target` prove
+that all four projections select the same last target occurrence, including
+duplicate targets. `regionalFold_retains_target` proves retention of each
+in-bounds non-head target's established state. `regionalAt_nonhead_target`
+therefore proves `regionalTableState done t ∈ done.regionIn[t]!` when
+`t < env.n`, `t < incoming.size`, and `t` is a non-head target.
+`RecInv.regionalInputReadback` combines this with
+`RecInv.regionalInputWitness` for the invariant's chosen actual visit.
+`regionalRecorded_nonhead_of_inputs` combines retention with
+`RecInv.regional_nonhead_bound` to obtain the final target-state bound.
+
+The remaining leaf includes arbitrary successful `before` states matching
+the final record. The invariant supplies retention for an existentially
+chosen actual visit; it does not identify every matching visit's incoming
+array with that visit's array. The local non-head lemma also requires the
+target to be in bounds in the input array. No counterexample to the full
+quantified leaf is established.
 
 Proved prerequisites:
 
