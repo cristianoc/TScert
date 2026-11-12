@@ -984,3 +984,50 @@ Not proved: the merged facts' names below the next fresh name (the names of
 `eliminateIndices`' output); `StateWF.freshHeld` of the merged state, which
 does not hold in general: a predecessor's fresh name stays beside its fresh
 renames (`mergeFresh`) when no slot of the merge holds it.
+
+## Leg 8: the graph invariant
+
+Module `lean/Verification/Programs/TolerantFramesMergeGraph.lean`. A walk of
+the pass (`Walk`) records the labels it visits, each visited node's entry
+state and implications, and the states with implications that edges carry
+into each node. The pass's node assertion at label $`l`$ (`passPre`) is: $`l`$
+is visited and its entry state holds (`StateHolds`), the start names holding
+the invocation's entry values. Proved:
+
+- `passPre_adminClosed`: the node assertions survive the administrative
+  steps (`AdminClosed`): a state's meaning reads the heap, and the world only
+  through the implications' types, which admissibility keeps;
+- `nodeObligations_mono`: node obligations are monotone in the node
+  assertions;
+- (`run_sound_of_traversed`) `StepEdgesSound` ∧ `EntriesFromEdges` ⟹ for
+  every label $`l`$ and state where `passPre` holds, `SafeGraph` from
+  $`(l,\rho)`$, by `graph_safe_at`;
+- (`entries_of_traversed`) `Traversed` ∧ `HeadsEntered` ∧ `MergesSound` ⟹
+  `EntriesFromEdges`: a head by `HeadsEntered`, one incoming state as it is,
+  several by `mergeState_holds`;
+- `run_sound_of_walk`, the two composed; `start_passPre`: the start's
+  assertion holds at every entry meeting the inputs, the entry separation and
+  the entry index facts, where the walk enters the start with its head entry
+  and `entryRefusal` accepts (`entry_stateHolds`).
+
+The conclusion is the `safe` field of the unit lane's `GraphGuarantee` at the
+start (on branch `engine-proof-unit`, `PassUnit.lean`), for the main graph;
+its `bounded`, `ensured`, `regionally` and `asserted` fields are not
+addressed here.
+
+**`Traversed`** (the walk's construction, as `run`'s driver builds it): every
+node an edge state enters is visited; a node with no given facts and one
+incoming state enters with it and its implications; with several, with
+`mergeState` of them over its context, merge edges and fresh counter, each
+incoming state of the context's width, with a well-formed store and names
+below the counter, the start names below it.
+
+**The premises of `run_sound_of_walk`:**
+
+| Premise | Status |
+| --- | --- |
+| `Traversed` | needs a pass change: `run`'s driver is `while true`, which Lean does not unfold; a fuel-structured driver returning the walk, and a theorem that acceptance gives `Traversed` |
+| `StepEdgesSound` | named hypothesis: the per-node step theorems (proved for the step kinds above, from `checkedStep`'s conditions taken as hypotheses) and the edge theorems (`edgeStoreOf`, `edgeTransfer`, the edges' checks; the other lane), including the walk's order: an edge's state is among those its target entered with |
+| `HeadsEntered` | named hypothesis: the head entry from `EdgeEstablishes` |
+| `MergesSound` | named hypotheses `LinearNearSound`, `EntailedDefined`, `GuardedHolds`, the edges' joined implications (Leg 8: the merge) |
+| `Traversed.width`, `.wf`, `.below` at merges | not proved: the edge operations' maintenance of the target's width, `StoreWF` and `StateBelow` |
