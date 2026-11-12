@@ -88,7 +88,9 @@ first's store less each fact another lacks (`Store.diff`), and each predecessor'
 own differences at the merge's names; the rules below that query a
 predecessor's facts run over those differences alone, and the implications
 join runs where an edge carries an implication or a slot an edge's type
-differs at is a test some edge answers `false`. A name a predecessor
+differs at is a test some edge answers `false`. Each joined implication is kept
+where every incoming edge establishes it (`PromiseCalls.impliesCheck` over
+the edge's refined context, its implications at slots and its mapping). A name a predecessor
 renames that no slot of the merge holds leaves the store there. At a merge, a linear bound every predecessor states of one form
 under one condition is kept at the weakest of their bounds; a name a slot
 keeps that another slot's fresh name renames in some predecessor is stated
@@ -96,7 +98,9 @@ equal to it there (an alias link; the two linear facts of their numbers'
 equality only where that predecessor's unconditional facts make the name an
 integer, `Store.integral`); a linear bound over the merge's names one predecessor
 states and every other entails over its linear facts near the bound's names
-(`HeapKnowledge.entailsKnown`) is kept; the guarded facts the search's join
+(`HeapKnowledge.entailsKnown`) is kept, where in every
+predecessor's view the bound is a fact or each of its terms is defined by
+the facts near its names (`entailDefinedCheck`, `HeapKnowledge.termDefined`); the guarded facts the search's join
 keeps (`CertificateProducer.joinGuarded`) are kept, each predecessor's guards
 first also lowered once through its read links (`lowerGuards`); and a fact
 one predecessor states of a slot another holds `null` or `undefined` in is
@@ -149,6 +153,12 @@ its written and supplied facts are entailed by the request's entry facts
 (its index facts and its inputs' separation, `ControlFlow.entryKnows`).
 `TSCERT_FORCE=start-facts` supplies a false fact at every start, the
 adversarial proposal the check refuses.
+Where an edge enters the start, the start is entered as any loop head: its
+slots outside the given inputs and the promised input take fresh names, and
+its given state is an obligation on every edge into it; such a unit under
+store regions is not handled. The lowering makes no edge into a unit's
+start: a function's entry is a node emitted after its body, a lambda's its
+block's `closure-entry` node or its expression's first node.
 
 ## 5. Steps and obligations
 
@@ -164,7 +174,14 @@ by an alias link. An edge observing a test releases the alternatives it
 contradicts (`HeapKnowledge.withElements`). An edge whose context, refined
 by the step's yields, its target does not admit is checked again with each
 slot the target does not admit at its refined type read at its unrefined
-type; both are types of its value.
+type; both are types of its value. The evidence an edge search returns is checked
+as the certificate checker checks a target's slots (`checkMappedUsing`, or
+under the edge's observation `checkObservedUsing`, `edgeEvidenceChecked`):
+an edge whose evidence the check refuses is not established by it. A step's yields are kept where the certificate checker's yield check
+accepts them (`checkedYields`, as `ControlFlow.checkYields`): a promise
+call's where `promiseYields` states them at an output the promise keeps,
+any other's each where `yieldFollows` accepts it; a slot read's yields are
+checked against the implications testing the slot's name.
 
 ### A call of a slot
 
@@ -187,7 +204,8 @@ is within the bound where the unit states the bound on a throw or a handler
 outside the region with no normal return catches it (`deadHandler`), so an
 effect without `onThrow` admits no such handler; a state also carries the names
 holding a store the run allocated (`inferFresh`'s facts, over names: a copy
-of such a name, or a call at a signature stating a fresh result; a merge
+of such a name, or a call at a signature stating a fresh result whose
+derivation `derivChecked` accepts; a merge
 keeps the names every predecessor holds; a cut holds none, its given
 invariant stating none); the region from which no normal return is possible
 is `GraphCode.deadIterate` over the claims' result types, computed once; at
@@ -272,7 +290,10 @@ the target; `checkNode` decides the node over those facts and the node's
 evidence (its derivation, its step, its facts on entry), each loop head's
 given facts the obligation on an edge into it. The entry's conditions
 (`checkEntryFields`, a unit neither async nor promising a fresh result)
-are checked before the walk.
+are checked before the walk. Where the fallback accepts and the unit states
+regions, the regions' walk runs from the answers before the fallback, and
+the read summaries of both runs are checked: the fallback's footprint rests
+on its own.
 
 ### Qualified bodies
 
