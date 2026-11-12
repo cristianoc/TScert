@@ -16,18 +16,15 @@ open Verification PositiveGraphs PositiveCertificates LabelStore
 section Run
 variable {ι : Type} [Labels ι]
 
-/-- The graph theorem from the remaining summary, exit-delivery and
-regional premises. Setup, exit widths and subtype answers are proved by
-`setupRecords_of`, `exitsWidth` and `subtypeAnswersAll`; the step's table
-is a prefix of the final one given the exit step's (`ExitStepPrefix`,
-`visitStepPrefix_of_exitStep`). -/
+/-- The graph theorem under exit delivery, regional visit-table agreement,
+and the local regional step bridge. Summary prefixes, setup, exit widths,
+and subtype answers are proved. -/
 theorem run_sound_single_pass
-    (hprefix : ExitStepPrefix ι)
-    (hex : ExitsYield ι) (hrec : RegionsRecorded ι)
-    (htyped : RegionsTyped ι) : Target.RunSound ι :=
-  have hv := visitsRecord_of (visitsRest_of (exitsPushOk_of exitsWidth) (visitsSettle_of (visitStepPrefix_of_exitStep hprefix)) visitsImplications)
+    (hex : ExitsYield ι) (htables : RegionalVisitTables ι)
+    (hstep : RegionalStepBridge ι) : Target.RunSound ι :=
+  have hv := visitsRecord_of (visitsRest_of (exitsPushOk_of exitsWidth) (visitsSettle_of (visitStepPrefix_of_exitStep exitStepPrefix)) visitsImplications)
   run_sound_pass (recordsSound_of setupRecords_of hv) (recordsChecked_of setupRecords_of hv) (nodesYield_of subtypeAnswersAll hex) linearNearFuelEq
-    (regionsHeld_of hrec htyped)
+    (regionsHeld_of (regionsRecorded_of_visitTables htables) (regionsTyped_of_visitTables htables hstep))
 
 end Run
 

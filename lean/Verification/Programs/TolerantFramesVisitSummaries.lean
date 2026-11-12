@@ -134,6 +134,145 @@ def ExitStepPrefix (ι : Type) [Labels ι] : Prop :=
     (acc result : ExitsDone ι G) (ex : Exit × Nat),
     exitStep G I env l en sd ys out acc ex = .ok result → SumsPrefix acc.answers result.answers
 
+/-- Refining a mixed context preserves the summary table. -/
+theorem mixedContext_prefix (Γ Γ' Δ : List (Ty ι)) (m : PointClaims.Mapping) (a : Answered G) :
+    SumsPrefix a (mixedContext G I Γ Γ' Δ m a).2 := by
+  unfold mixedContext
+  dsimp only
+  refine sumsPrefix_fold Prod.snd _ ?_ _ (#[], a)
+  intro acc x
+  dsimp only
+  refine sumsPrefix_fold Prod.snd _ ?_ _ (true, acc.2)
+  intro fa i
+  repeat' (first | split | extract_lets)
+  all_goals first | exact .refl _ | exact keep_prefix _ _
+
+set_option maxHeartbeats 2000000 in
+/-- Every successful exit type check preserves its input summary table. -/
+theorem exitTypes_prefix {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd : StepDone ι G}
+    {out : Thunk HeapKnowledge.Knowledge} {t : Target} {tc : PointClaim ι} {Γ : List (Ty ι)}
+    {names : List Nat} {store : Store} {pushed handler first : Bool}
+    {obs : Option BranchRefinement.Observation} {diff : List (Nat × Nat)}
+    {acc result : ExitsDone ι G} {typed : SinglePass.ExitTyped ι}
+    (h : exitTypes G I env l en sd out t tc Γ names store pushed handler obs first diff acc = .ok (result, typed)) :
+    SumsPrefix acc.answers result.answers := by
+  unfold exitTypes at h
+  extract_lets node c width entry at h
+  split at h
+  rename_i ok a hd
+  have hp := diffSubtypes_prefix (I := I) Γ tc.context diff obs acc.answers
+  rw [hd] at hp
+  split at h
+  · cases h; exact hp
+  · split at h
+    extract_lets ko at h
+    split at h
+    rename_i found a1 hf
+    extract_lets answers at h
+    have hp1 : SumsPrefix acc.answers answers := hp.trans (keep_prefix _ _)
+    split at h
+    · cases h
+    · split at h
+      · cases h; exact hp1
+      · split at h
+        rename_i ys a2 hys
+        have hp2 : SumsPrefix acc.answers a2 := by
+          cases hc : acc.yields with
+          | some xs =>
+            simp only [hc] at hys
+            cases hys; exact hp1
+          | none =>
+            simp only [hc] at hys
+            split at hys
+            cases hys
+            exact hp1.trans (keep_prefix _ _)
+        extract_lets Γr at h
+        split at h
+        extract_lets answersR at h
+        have hp3 : SumsPrefix acc.answers answersR := hp2.trans (keep_prefix _ _)
+        split at h
+        rename_i foundM a4 typ hmixed
+        have hp4 : SumsPrefix acc.answers a4 := by
+          split at hmixed
+          · cases hmixed; exact hp3
+          · split at hmixed
+            rename_i Γm am hmix
+            have hm := mixedContext_prefix (I := I) Γ Γr tc.context t.mapping answersR
+            rw [hmix] at hm
+            split at hmixed
+            · split at hmixed
+              cases hmixed
+              exact (hp3.trans hm).trans (keep_prefix _ _)
+            · cases hmixed; exact hp3.trans hm
+        split at h
+        · cases h
+        · cases h; exact hp4
+
+/-- A successful head exit preserves its input summary table. -/
+theorem headExit_prefix {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc : PointClaim ι}
+    {Γ : List (Ty ι)} {names : List Nat} {store : Store} {pushed vacuous : Bool}
+    {carried : List (PromiseCalls.Implication ι)} {acc result : ExitsDone ι G}
+    (h : headExit G I env l t tc Γ names store pushed vacuous carried acc = .ok result) :
+    SumsPrefix acc.answers result.answers := by
+  cases vacuous
+  all_goals unfold headExit at h
+  all_goals simp only [Bool.false_eq_true, ↓reduceIte] at h
+  repeat' (first | split at h | extract_lets at h)
+  all_goals first | cases h | skip
+  all_goals first
+    | exact .refl _
+    | exact headImplies_prefix env t names carried acc.answers
+
+/-- Assertion checking leaves the summary table unchanged. -/
+theorem assertionExit_answers {env : WalkEnv ι G I} {l : Nat} {t : Target} {tc : PointClaim ι}
+    {Γ : Thunk (List (Ty ι))} {names : List Nat} {store : Store} {pushed vacuous : Bool}
+    {obs : Option BranchRefinement.Observation} {acc result : ExitsDone ι G}
+    (h : assertionExit G env l t tc Γ names store pushed obs vacuous acc = .ok result) :
+    result.answers = acc.answers := by
+  unfold assertionExit at h
+  repeat' (first | split at h | extract_lets at h)
+  all_goals cases h <;> rfl
+
+/-- A successful exit preserves the input summary table. -/
+theorem exitStepPrefix : ExitStepPrefix ι := by
+  intro G I env l en sd ys out a b e h
+  unfold exitStep at h
+  extract_lets ex first node c width entry st t pushed observed handler pushedNames tr a0 Γ names store unsatΓ vacuous Γe read Γr at h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  extract_lets diff u a2 typed at h
+  generalize ht : typed = T at h
+  split at h
+  · cases h
+  rename_i a1 et
+  simp only [typed] at ht
+  have hp : a2.answers = a.answers := by
+    dsimp only [a2, a0]
+    split <;> split <;> rfl
+  have hp1 : SumsPrefix a.answers a1.answers := by
+    split at ht
+    · cases ht; rw [hp]; exact .refl _
+    · rw [← hp]; exact exitTypes_prefix ht
+  extract_lets freshImpl record at h
+  split at h
+  · simp only [Except.map] at h
+    split at h
+    · cases h
+    · rename_i a3 hhead
+      cases h
+      change SumsPrefix a.answers a3.answers
+      exact hp1.trans (headExit_prefix hhead)
+  · split at h
+    · cases h
+    rename_i a3 ha
+    split at h
+    cases h
+    change SumsPrefix a.answers a3.answers
+    rw [assertionExit_answers ha]
+    exact hp1
+
 /-- Successful exit folds preserve the summary prefix under the local exit obligation. -/
 theorem exitsFold_prefix (hp : ExitStepPrefix ι) {env : WalkEnv ι G I} {l : Nat} {en : Entered ι}
     {sd : StepDone ι G} {ys : List (PromiseCalls.Yield ι)} {out : Thunk HeapKnowledge.Knowledge}

@@ -1371,66 +1371,48 @@ of `TolerantFramesRunSound.lean`, quantified over every call the premises of
 ## Open premises
 
 The graph theorem `run_sound_single_pass`
-(`TolerantFramesSinglePassSound.lean`) has five hypotheses:
+(`TolerantFramesSinglePassSound.lean`) has three hypotheses:
 
 ```math
-\mathrm{ExitsWidth} \wedge \mathrm{ExitStepPrefix} \wedge \mathrm{ExitsYield} \wedge \mathrm{RegionsRecorded} \wedge \mathrm{RegionsTyped} \Longrightarrow \mathrm{RunSound}
-```
-
-The pass keeps the read summaries it was given with no hypothesis
-(`runKeepsSummaries`, the unit level's `RunKeepsSummaries`), its
-`linearNear` is its search on fuel by definition (`linearNearFuelEq`),
-and each visited node's kept yields are judged and meet the return's goal
-at every admitted reassigned graph (`nodesYield_of`: the visit's yield
-checks, `NodeYieldChecks`, a field of `NodePassChecked`, hold there by
-`NodeYieldChecks.reassign`); the regional premise `RegionsHeld` follows
-from `RegionsRecorded` and `RegionsTyped` (`regionsHeld_of`).
- A stopped walk is never accepted by
-its type (`walkStopsRefuse`, from `StopOutcome.outcome_ne_accepted`).
-
-| Premise | Discharged by | Consumed by |
-| --- | --- | --- |
-| `SetupRecords` | proved (`setupRecords_of`, module `TolerantFramesDriverSetup.lean`): a returned setup gives the claims one per node, the entry accepted and the environment and state of `setupEnv` and `setupState` (`setup_ok`); the environment states the call (`SetupOk.envFacts`, by `envFacts_of_loopHeads` and the heads' given states, `setupGiven_get`) and the first state meets `RecInv` (`SetupOk.recInv`: nothing visited or come in, the queue `initialQueue`'s labels, each in-degree the count of the edges still to come, `inDegrees_get`); `run_sound_single_pass` applies it | `recordsSound_of` and `recordsChecked_of`, then `run_traversedC` |
-| `ExitsWidth` | pass change W9: each exit's mapping has its target's width (no mapping: as many source names as the target's context; a mapping: as many slots, each a source slot); with it every state an exit pushes meets `PushOk` (`exitsPushOk_of`) | `visitsRest_of` (through `ExitsPushOk`) |
-| `ExitStepPrefix` | A successful `exitStep` preserves its input summary table. This is the remaining prefix obligation, including `exitTypes` and its mixed-context fallback. `TolerantFramesStepSummaries.lean` proves `stepChecked_of_final`: the final sound table supplies every summary used by the accepted step, independently of search soundness. `TolerantFramesVisitSummaries.lean` proves the prefixes through `checkedStep`, `stepYields`, `returnRun`, `visitStep`, `exitsYields` and the exit fold; `visitStepPrefix_of_exitStep` composes them. `diffSubtypes_prefix`, `impliesHeld_prefix` and `headImplies_prefix` cover the corresponding exit helpers. | `visitsSettle_of` through `visitStepPrefix_of_exitStep` |
-| `SubtypeAnswersAll` | Proved by `subtypeAnswersAll` in `TolerantFramesSubtypeAnswers.lean`. `subtypeUsing_sound` reads a cached acceptance through `Answered.proved_sound` and a search acceptance through `subtypeSearch_sound`; the theorem applies at every graph, including reassignments. | `nodesYield_of`; supplied by the headline theorem |
-| `ExitsYield` | each checked node's exits and handler deliver `NodeExitsY` at the recorded yields. Proved, at the records: `RecordsChecked`, `WalkChecked` and `SettledCore.node` retain `NodeExitTrace` in the same existential as `NodePassChecked` (`visitsSettle_of`): a successful entry, step and exit computation at the original graph, every indexed `exitStep` exposed (`visitExits_checked`) and its arrays extending to the checked walk (`WalkExtends`, `visitExits_extends`). Proved, at the exits: `NodeExitsChecked` states what `exitStep` checks at a node's values in a form every reassigned graph keeps (`NonHeadExitChecked`, `HeadExitChecked`, `HandlerExitChecked`; the types by `ExitTyped`: the subtype answers, the edge search's evidence at the edge's, refined or mixed context, `ExitTyped.reassign`), and `nodeExitsYF_of_checks` gives, at every reassigned graph with the subtype answers sound there, every exit and the handler delivering `edgePreAJ` (`nonHeadExit_delivers`, `headExit_delivers`, `handlerExit_delivers`; mapped names by `mapNamesSound_some` under the width bounds, vacuous exits by `vacuous_false`). Its conclusion `NodeExitsYF` is `NodeExitsY` with the state after the step also stating the result's freshness where `outFresh` holds (`AfterStep`), which `normal_edge_delivers` needs; the step's judgment carries it (`stepFresh_judgment`, by `SafePostExc.and_steps` and `passOutFreshChecked_fresh`), so `NodeYielded` and `stepEdgesSound_of_yields` are to carry `NodeExitsYF`. Not proved: `NodeExitTrace ⟹ NodeExitsChecked` (reading each `exitStep` branch); two of its fields have no source yet: `HereEmpty` of the cached `en.here` (an invariant of `σ.unsat`, `visitEntry_here`), and the yields the exits read being the recorded ones or none (`NodeExitTrace` records `sd.yields`, while `exitsYields` and `exitTypes` compute yields where the step kept none) | `nodesYield_of`, then `stepEdgesSound_of_yields` |
-| `RegionsRecorded` | `regionalAt_checks` in `TolerantFramesRegionalRecorded.lean` extracts the accepted derivation and regional checks over the actual combined entry facts. `recordedRegionFacts` and `recordedRegionFresh` state the graph tables from `LabelWalk.region`; `visitResult_region` identifies the state recorded at a visited label. The remaining obligations connect those records across the drive, establish the start tables, and prove `TablesAgree` at each node and target using `meet_sub` and incoming-edge order. The proof-side `passRegionalEvidenceOf` uses the entry materialization alone, while `regionalAt` uses `regionalFacts` of that materialization and `stepK`; connecting these evidence representations is also required. | `regionsHeld_of` |
-| `RegionsTyped` | `regionalTyped_of_derivation` in `TolerantFramesRegionalTyping.lean` proves both branches of the derivation check under `RegionalStepFacts`: the regional evidence's expanded entry facts imply `Holds stepK`. Its requirements branch is `regionalTyped_of_requires`; the tree branch is `regionalTyped_of_tree`. `regionalTyped_copy` covers copies with absent derivation and effect. The remaining obligations establish `RegionalStepFacts` for the evidence used by each visit, type the step-evidence-only case, and connect these local results to each checked node at every admitted reassignment. | `regionsHeld_of` |
-\mathrm{DirectKeepsSummaries} \wedge \mathrm{SearchKeepsSummaries} \wedge \mathrm{ExitsYield} \wedge \mathrm{RegionsRecorded} \wedge \mathrm{RegionsTyped} \Longrightarrow \mathrm{RunSound}
+\mathrm{ExitsYield} \wedge \mathrm{RegionalVisitTables} \wedge \mathrm{RegionalStepBridge} \Longrightarrow \mathrm{RunSound}
 ```
 
 | Premise | Obligation | Consumed by |
 | --- | --- | --- |
-| `DirectKeepsSummaries` | Every summary returned by `directCall` is sound when its input summaries are sound. `keepSummaries` preserves the input prefix; soundness also requires checking every appended summary. This preservation theorem is not proved. | `visitsSettle_of` |
-| `SearchKeepsSummaries` | Every summary returned by `expressionEffectUsing` is sound when its input summaries are sound. Preservation through the search's operations is not proved. | `visitsSettle_of` |
-| `ExitsYield` | Each checked node's normal exits and handler deliver `NodeExitsY` at every admitted reassigned graph. `nodeExitsY_of_checks` proves delivery from `NodeExitsChecked`, with freshness from the actual step execution. The assembly of `NodeExitsChecked` from the visit's records is not proved: it requires head-entry checks, handler bounds, incoming and merge membership, and semantic justification of the yields each exit reads. `NodeExitsChecked.yieldsRead` and its per-exit yield equality are stronger than `ExitYieldSource`, which states checkedness rather than equality with the node's kept yields. | `nodesYield_of`, then `stepEdgesSound_of_yields` |
-| `RegionsRecorded` | The graph's regional tables agree with the tables each visit checks, satisfy the initial regional facts, and admit each predecessor's established facts at its target. Each `RegionalDone` contains its tables and evidence; each label records its region state. The graph-wide agreement proof is not established. | `regionsHeld_of` |
-| `RegionsTyped` | Every visited node's regional evidence has its context and is typed at every admitted reassigned graph. `regionsTyped_of_tree` proves the tree-checked case, and `regionalTyped_copy` proves the copy case. The `requiresTree` case needs the evidence's `regionalFacts` to supply both the entry facts and `stepK`. | `regionsHeld_of` |
+| `ExitsYield` | Each checked node's normal exits and handler deliver `NodeExitsY` at every admitted reassigned graph. `nodeExitsY_of_checks` proves delivery from `NodeExitsChecked`, with freshness from the actual step execution. Assembly from the visit's records requires head-entry checks, handler bounds, incoming and merge membership, and semantic justification of the yields each exit reads. | `nodesYield_of` |
+| `RegionalVisitTables` | A checked walk has graph tables whose start entries equal a successful start visit's recorded state. Every visited node has a successful step and regional check at its recorded inputs, sound summaries, and `TablesAgree` between its returned `RegionalDone.table` / `.ft` and the graph tables. The outstanding invariant relates these local witnesses across `drive`, including target containment through incoming meets. `ExitsDone.regional` contains the full regional result; `LabelWalk.region` contains its state. | `regionsRecorded_of_visitTables`, `regionsTyped_of_visitTables` |
+| `RegionalStepBridge` | For a successful `visitStep`, at every reassignment, the regional evidence's expanded entry knowledge entails `stepK`'s links and separation; when `stepDeriv = none`, its effective context and result equal the node's claim. `regionalStepFacts_of_relations` proves recovery of cells, values, elements and indices. Relational recovery includes alias expansion, separation normalization and the depth condition in `regionalFacts`. The header condition concerns `NodeEvidence.expression`: ordinary evidence `.effect` can expose `stepEffect.proof?`. `regionalDerivChecked` checks `stepDeriv`; the relation between that optional derivation and the effect's proof requires a reachable-visit invariant. | `regionalTyped_of_derivation`, `regionalTyped_of_step` |
 
 Proved prerequisites:
 
-- `setupRecords_of` (`TolerantFramesDriverSetup.lean`) supplies `SetupRecords`.
-  `SetupOk.recInv` includes `RecInv.vacuity`, by `cachedVacuity_empty`;
-  `exitStep_cachedVacuity` and `visitExits_cachedVacuity` preserve it.
-- `exitsWidth` (`TolerantFramesExitWidths.lean`) supplies `ExitsWidth` from
-  `mappingWidthOk` at every successful indexed exit (`exitStep_mappingWidth`,
-  `exitsFold_mappingWidth`). It includes the target width and source-slot bounds.
-- `subtypeAnswersAll` supplies `SubtypeAnswersAll`, by `subtypeAnswersSound`
-  (`TolerantFramesNodeGoals.lean`): an accepted cache hit has `proved_sound`,
-  and an accepted search has `subtypeSearch_sound`.
-- `visitExits_records` (`TolerantFramesExitRecords.lean`) supplies
-  `ExitRecordsChecked`: each indexed exit has its own record in the final
-  `ExitsDone.exits` array and a successful `exitStep` that appends that record.
-  `exitStep_record` identifies its index, target, source names, head flag and
-  mapping check; `exitsFold_records_prefix` preserves earlier records.
-  `NodeExitTrace` carries this predicate alongside `ExitStepsChecked` and
-  the cached vacuity witness. `SettledCore.node`, `RecordsChecked` and
-  `WalkChecked` retain that trace at the same checked node (`visitsSettle_of`).
-- `exitTypes_checked` (`TolerantFramesExitTypeChecks.lean`) exposes semantic
-  `ExitTyped` checks from the pass's returned state and `SinglePass.ExitTyped`
-  tag. `ExitYieldSource.judged` justifies computed yields when their summary
-  table is sound; `assertionExit_checked` exposes the written assertion check.
+- `exitStepPrefix` (`TolerantFramesVisitSummaries.lean`) proves summary-prefix
+  preservation through `exitTypes`, nested `mixedContext` folds, head checks,
+  assertion checks and `exitStep`. `visitStepPrefix_of_exitStep` supplies
+  the step-summary premise of `visitsSettle_of`.
+- `regionalAt_checks` (`TolerantFramesRegionalRecorded.lean`) identifies
+  `RegionalDone.cEv` with `passRegionalEvidence` at `regionalFacts kHere stepK`
+  and extracts both accepted checks over the returned table and fresh tables.
+  `visitResult_region` identifies the state stored at the label.
+  `regionalAt_start` proves entry provenance and empty freshness at the start;
+  `regionsRecorded_of_visitTables` transfers this to the graph tables.
+- `regionalFacts_holds` (`TolerantFramesRegionalFacts.lean`) proves that the
+  combined knowledge holds when both sources hold. `regionNodeEntry_checked`
+  supplies those sources from a checked node's entry state and step.
+  `passRegionalEvidenceOf` uses this combined knowledge.
+- `stepChecked_safe` and `regionalTyped_of_step`
+  (`TolerantFramesRegionalTyping.lean`) type the step-only evidence under
+  knowledge recovery and header alignment. `regionalTyped_of_derivation`
+  covers both accepted derivation checks. `regionsTyped_of_visitTables`
+  connects these local results to visited nodes at admitted reassignments.
+- `setupRecords_of`, `exitsWidth` and `subtypeAnswersAll` supply setup,
+  mapping-width and subtype-answer soundness. `visitExits_records` retains
+  each indexed exit's successful check in `NodeExitTrace`.
+
+The two regional premises are proof obligations about reachable visits.
+No necessary pass modification is established. The relevant code is
+`regionalFacts`' separation-depth branch, `regionalAt`'s `ordinaryEv` and
+`cEv` construction and its check of `st.stepDeriv`, and `visitBody`'s storage
+of `ex.regional.map (·.state)`.
 
 ## Leg 17a: the per-node hypotheses from the pass's checks
 

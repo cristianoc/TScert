@@ -1083,3 +1083,18 @@ run_cmd do
   check ``Verification.TolerantFrames.exitsFold_records_prefix
   check ``Verification.TolerantFrames.exitsFold_records_checked
   check ``Verification.TolerantFrames.visitExits_records
+
+  check ``Verification.TolerantFrames.mixedContext_prefix
+  check ``Verification.TolerantFrames.exitTypes_prefix
+  check ``Verification.TolerantFrames.headExit_prefix
+  check ``Verification.TolerantFrames.assertionExit_answers
+  check ``Verification.TolerantFrames.exitStepPrefix
+  check ``Verification.TolerantFrames.separation_union_holds
+  check ``Verification.TolerantFrames.regionalFacts_holds
+  check ``Verification.TolerantFrames.regionNodeEntry_checked
+  check ``Verification.TolerantFrames.stepChecked_safe
+  check ``Verification.TolerantFrames.regionalTyped_of_step
+  check ``Verification.TolerantFrames.regionalAt_start
+  check ``Verification.TolerantFrames.regionsRecorded_of_visitTables
+  check ``Verification.TolerantFrames.regionsTyped_of_visitTables
+  check ``Verification.TolerantFrames.regionalStepFacts_of_relations
