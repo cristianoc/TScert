@@ -304,7 +304,7 @@ theorem returnedWalk_regional_no_start {c : Target.RunCall G I} {env : WalkEnv �
   exact ⟨target, htarget, by simp [hlabel, heq, hE.startLabel]⟩
 
 /-- The invariant's chosen visit reads retained final inputs at every
-in-bounds non-head target. The bound concerns the visit's incoming array. -/
+non-head target, using the allocation retained with that visit. -/
 theorem RecInv.regionalInputReadback {c : Target.RunCall G I} {env : WalkEnv ι G I}
     {σ : WalkState ι G} (hi : RecInv c env σ) {l : Nat} (hl : visB σ.walk l = true)
     {rg : Regional} (hreg : env.regional = some rg) :
@@ -315,15 +315,15 @@ theorem RecInv.regionalInputReadback {c : Target.RunCall G I} {env : WalkEnv ι 
       regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 before.regionIn = .ok done ∧
       σ.walk.labels[l]? = some (LabelWalk.ofVisit before.fresh en sd (some done.state)) ∧
       SumsPrefix ex.answers σ.answers ∧
-      ∀ t ∈ nodeSucc env.nodes l, envHead env t = false → t < before.regionIn.size →
+      ∀ t ∈ nodeSucc env.nodes l, envHead env t = false →
         regionalTableState done t ∈ σ.regionIn[t]! := by
-  obtain ⟨before, en, sd, ex, done, he, hs, hx, hd, hr, hp, _, hm⟩ := hi.regionalInputWitness hl hreg
+  obtain ⟨before, en, sd, ex, done, he, hs, hx, hd, hr, hp, hb, _, hm⟩ := hi.regionalInputWitness hl hreg
   refine ⟨before, en, sd, ex, done, he, hs, hx, hd, hr, hp, ?_⟩
-  intro t ht hh hb
+  intro t ht hh
   have hh' : env.isHead[t]! = false := by
     rw [Array.getElem!_eq_getD, Array.getD_eq_getD_getElem?]
     exact hh
-  exact hm t _ (regionalAt_nonhead_target hd (hi.exits l hl t ht) ht hh' hb)
+  exact hm t _ (regionalAt_nonhead_target hd (hi.exits l hl t ht) ht hh' (hb ▸ hi.exits l hl t ht))
 
 /-- A retained non-head input bounds the final target's recorded state. -/
 theorem regionalRecorded_nonhead_of_inputs {c : Target.RunCall G I} {env : WalkEnv ι G I}
@@ -342,31 +342,13 @@ theorem regionalRecorded_nonhead_of_inputs {c : Target.RunCall G I} {env : WalkE
   exact hi.regional_nonhead_bound (returnedWalk_successor_visited hw hle hE hl ht) hreg
     (returnedWalk_regional_no_start hw hE hi hreg hl t ht) hh he
 
-/-- The remaining leaf concerns non-head inputs of arbitrary successful
-visits matching the final label record. Actual-visit retention is existential
-in `RecInv.regionalInputWitness`; this statement quantifies over every match. -/
-@[nospecialize] def RegionalNonheadReadback (ι : Type) [Labels ι] : Prop :=
-  ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I)
-    (env : WalkEnv ι G I) (σ : WalkState ι G) (reach : Nat) (rg : Regional),
-    RunCall.walk c = .ok (σ, reach) → reach ≤ σ.walk.visited →
-    EnvFacts c env → RecInv c env σ → env.regional = some rg →
-    SummariesSound G I σ.answers.summaries.toList →
-    ∀ l, visB σ.walk l = true → ∀ (before : WalkState ι G) (en : Entered ι)
-      (sd : StepDone ι G) (ex : ExitsDone ι G) (done : RegionalDone ι),
-      visitEntry G I env before l = .ok en → visitStep G I env before l en = .ok sd →
-      visitExits G I env before l en sd = .ok ex →
-      regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 before.regionIn = .ok done →
-      σ.walk.labels[l]? = some (LabelWalk.ofVisit before.fresh en sd (some done.state)) →
-      SumsPrefix ex.answers σ.answers →
-      ∀ t, t ∈ successors env.nodes[l]!.continuation ∨ env.nodes[l]!.handler = some t →
-        envHead env t.label = false →
-        ∃ e ∈ σ.regionIn[t.label]!, RegionBelow e (regionalTableState done t.label)
-
 /-- Readback separates the own entry, start exclusion and target entries. -/
 theorem regionalRecordedReadback
-    (hheader : RegionalStepHeader ι) (htarget : RegionalNonheadReadback ι) :
+    (hheader : RegionalStepHeader ι) :
     RegionalRecordedReadback ι := by
-  intro G I c env σ reach rg hw hle hE hi hreg hsums l hl before en sd ex done he hs hx hd hr hp
+  intro G I c env σ reach rg hw hle hE hi hreg _ l hl
+  obtain ⟨before, en, sd, ex, done, he, hs, hx, hd, hr, hp, targets⟩ := hi.regionalInputReadback hl hreg
+  refine ⟨before, en, sd, ex, done, he, hs, hx, hd, hr, hp, ?_⟩
   have own : regionalTableState done l = done.state := by
     by_cases hloop : l ∈ nodeSucc env.nodes l
     · exact regionalAt_own_head hd (hi.visR l hl).1 hloop (returnedWalk_self_head hw hE hl hloop)
@@ -374,7 +356,6 @@ theorem regionalRecordedReadback
     · exact regionalAt_own_no_self hd (hi.visR l hl).1 hloop
   have noStart : ∀ t ∈ nodeSucc env.nodes l, t ≠ env.start :=
     returnedWalk_regional_no_start hw hE hi hreg hl
-  have targets := htarget G I c env σ reach rg hw hle hE hi hreg hsums l hl before en sd ex done he hs hx hd hr hp
   refine ⟨own, ?_⟩
   intro t ht
   have hm : t.label ∈ nodeSucc env.nodes l := by
@@ -394,6 +375,7 @@ theorem regionalRecordedReadback
     exact ⟨fun _ h => h, fun _ h => h, fun _ h => h, fun _ h => h⟩
   | false =>
     simp only [Bool.false_eq_true, ↓reduceIte]
-    exact targets t ht hh
+    exact ⟨regionalTableState done t.label, targets t.label hm hh,
+      fun _ h => h, fun _ h => h, fun _ h => h, fun _ h => h⟩
 
 end Verification.TolerantFrames

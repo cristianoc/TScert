@@ -1182,3 +1182,6 @@ run_cmd do
   check ``Verification.TolerantFrames.RecInv.regionalInputReadback
   check ``Verification.TolerantFrames.regionalRecorded_nonhead_of_inputs
   check ``Verification.TolerantFrames.regionalRecordedReadback
+  check ``Verification.TolerantFrames.regionalFold_size
+  check ``Verification.TolerantFrames.regionalAt_size
+  check ``Verification.TolerantFrames.visitExits_regionSize

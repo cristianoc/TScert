@@ -307,7 +307,7 @@ theorem SetupOk.recInv {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I
     split <;> rfl
   have hreach : ∀ s, envReached env s = env.reached[s]! := fun s => by
     simp only [envReached, getElem!_def]; cases env.reached[s]? <;> rfl
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · exact List.nodup_range.filter _
   · intro q hq
     simp only [SinglePass.setupState, SinglePass.initialQueue, List.mem_filter, List.mem_range, Bool.and_eq_true,
@@ -359,6 +359,7 @@ theorem SetupOk.recInv {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I
   · exact cachedVacuity_empty _ _
   · intro t h; rw [hvis] at h; cases h
   · intro t h; rw [hvis] at h; cases h
+  · simp [SinglePass.setupState, hs.n]
 
 /-- **(`setupRecords_of`) The setup starts the walk's invariant**
 (`SetupRecords`): a returned setup's environment states the call and its

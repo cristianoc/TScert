@@ -201,11 +201,12 @@ theorem RecInv.regionalInputWitness {c : Target.RunCall G I} {env : WalkEnv ι G
       regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 before.regionIn = .ok done ∧
       σ.walk.labels[l]? = some (LabelWalk.ofVisit before.fresh en sd (some done.state)) ∧
       SumsPrefix ex.answers σ.answers ∧
+      before.regionIn.size = env.n ∧
       (envHead env l = false → before.regionIn[l]? = σ.regionIn[l]?) ∧
       ∀ (t : Nat) (e : RegionState), e ∈ done.regionIn[t]! → e ∈ σ.regionIn[t]! := by
-  obtain ⟨before, en, sd, ex, he, hs, hx, hr, hp, hf, hm⟩ := hi.regionalOrigins l hl
+  obtain ⟨before, en, sd, ex, he, hs, hx, hr, hp, hb, hf, hm⟩ := hi.regionalOrigins l hl
   obtain ⟨done, hd, hdone⟩ := visitExits_regionalCheck hreg hx
-  refine ⟨before, en, sd, ex, done, he, hs, hx, hd, ?_, hp, hf, ?_⟩
+  refine ⟨before, en, sd, ex, done, he, hs, hx, hd, ?_, hp, hb, hf, ?_⟩
   · simpa [hdone] using hr
   · rw [← visitExits_regionalInputs hreg hx hd]
     exact hm
@@ -262,7 +263,7 @@ theorem RecInv.regional_nonhead_bound {c : Target.RunCall G I} {env : WalkEnv ι
     {rg : Regional} (hreg : env.regional = some rg) (hstart : l ≠ env.start)
     (hhead : envHead env l = false) {e : RegionState} (he : e ∈ σ.regionIn[l]!) :
     RegionBelow (recordedRegionState σ.walk l) e := by
-  obtain ⟨before, en, sd, ex, done, _, _, _, hd, hr, _, hf, _⟩ := hi.regionalInputWitness hl hreg
+  obtain ⟨before, en, sd, ex, done, _, _, _, hd, hr, _, _, hf, _⟩ := hi.regionalInputWitness hl hreg
   have hh : env.isHead[l]! = false := by
     unfold envHead at hhead
     rw [Array.getElem!_eq_getD, Array.getD_eq_getD_getElem?]
@@ -282,7 +283,7 @@ theorem RecInv.regional_head_bound {c : Target.RunCall G I} {env : WalkEnv ι G 
     {rg : Regional} (hreg : env.regional = some rg) (hstart : l ≠ env.start)
     (hhead : envHead env l = true) :
     RegionBelow (recordedRegionState σ.walk l) ((rg.heads[l]?).join.getD {}) := by
-  obtain ⟨before, en, sd, ex, done, _, _, _, hd, hr, _, _, _⟩ := hi.regionalInputWitness hl hreg
+  obtain ⟨before, en, sd, ex, done, _, _, _, hd, hr, _, _, _, _⟩ := hi.regionalInputWitness hl hreg
   have hh : env.isHead[l]! = true := by
     unfold envHead at hhead
     rw [Array.getElem!_eq_getD, Array.getD_eq_getD_getElem?]
@@ -362,12 +363,12 @@ this premise supplies their node alignment, summary soundness and table agreemen
           RecInv c env σ ∧ env.regional = some rg ∧ c.start = env.start ∧
           visB σ.walk c.start = true ∧ rg.Φ = Φ ∧ rg.regions = regions ∧ rg.exc = exc ∧
           (∀ l, r.w.visited l → visB σ.walk l = true) ∧
-          ∀ l (hl : r.w.visited l) (before : WalkState ι G) (en : Entered ι) (sd : StepDone ι G)
+          ∀ l (hl : r.w.visited l), ∃ (before : WalkState ι G) (en : Entered ι) (sd : StepDone ι G)
             (ex : ExitsDone ι G) (done : RegionalDone ι),
-            visitEntry G I env before l = .ok en → visitStep G I env before l en = .ok sd →
-            visitExits G I env before l en sd = .ok ex →
-            regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 before.regionIn = .ok done →
-            σ.walk.labels[l]? = some (LabelWalk.ofVisit before.fresh en sd (some done.state)) →
+            visitEntry G I env before l = .ok en ∧ visitStep G I env before l en = .ok sd ∧
+            visitExits G I env before l en sd = .ok ex ∧
+            regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 before.regionIn = .ok done ∧
+            σ.walk.labels[l]? = some (LabelWalk.ofVisit before.fresh en sd (some done.state)) ∧
             env.codes = c.codes ∧ env.claimed[l]! = (r.node l hl).c ∧ env.nodes[l]! = (r.node l hl).node ∧
             en.entry = (r.node l hl).entry ∧ sd.st = (r.node l hl).st ∧
             SummariesSound G I (exitsYields G I env l en sd).2.summaries.toList ∧
@@ -377,7 +378,7 @@ this premise supplies their node alignment, summary soundness and table agreemen
 /-- The graph tables from the driver's regional visit witnesses. -/
 theorem regionalVisitTables (alignment : RegionalWalkAlignment ι) : RegionalVisitTables ι := by
   intro G I c after admits hp r hchk Φ regions exc hreg
-  obtain ⟨env, σ, rg, hi, hrg, hstart, hvis, hΦ, hregions, hexc, hvisited, halign⟩ :=
+  obtain ⟨env, σ, rg, hi, hrg, hstart, hvis, hΦ, hregions, hexc, _, halign⟩ :=
     alignment G I c after admits hp r hchk Φ regions exc hreg
   have startWitness := hi.regionalWitness hvis hrg
   obtain ⟨before, en, sd, ex, done, _, _, _, hd, hr, _⟩ := startWitness
@@ -385,9 +386,7 @@ theorem regionalVisitTables (alignment : RegionalWalkAlignment ι) : RegionalVis
   refine ⟨recordedRegionFacts σ.walk, recordedRegionFresh σ.walk rg.names,
     ⟨env, en, sd, rg, _, before.regionIn, done, hstart, hd, startTables⟩, ?_⟩
   intro l hl
-  have visitWitness := hi.regionalWitness (hvisited l hl) hrg
-  obtain ⟨before, en, sd, ex, done, he, hs, hx, hd, hr, _⟩ := visitWitness
-  obtain ⟨hc, hclaim, hnode, hentry, hst, hsum, ht⟩ := halign l hl before en sd ex done he hs hx hd hr
+  obtain ⟨before, en, sd, ex, done, he, hs, hx, hd, hr, hc, hclaim, hnode, hentry, hst, hsum, ht⟩ := halign l hl
   exact ⟨env, before, en, sd, rg, _, before.regionIn, done, hs, hd,
     hc, hclaim, hnode, hentry, hst, hΦ, hregions, hexc, hsum, ht⟩
 

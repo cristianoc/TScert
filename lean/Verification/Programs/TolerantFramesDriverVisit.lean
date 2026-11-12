@@ -141,10 +141,11 @@ theorem visitsRecord_of (hr : VisitsRest ι)
               Array.getElem?_setIfInBounds_self_of_lt (hI.size ▸ hln)],
             hp G I env _ l en sd ex hs hx⟩,
           regionFrame := hframe, regionMono := hri.1,
+          regionSizes := visitExits_regionSize hx,
           regionalOrigin := fun hself => ⟨_, en, sd, ex, he, hs, hx, by
             simp only [visitResult, Array.set!_eq_setIfInBounds,
               Array.getElem?_setIfInBounds_self_of_lt (hI.size ▸ hln)],
-            hp G I env _ l en sd ex hs hx,
+            hp G I env _ l en sd ex hs hx, hI.regionSizes,
             fun hg => (hframe l (hself hg)).symm, fun _ _ h => h⟩ }
 
 /-- **A state an exit carries in meets `PushOk`** (`edgeTransfer_width`,

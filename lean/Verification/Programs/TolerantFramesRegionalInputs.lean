@@ -158,6 +158,52 @@ theorem sparse_own {α : Type} (n l : Nat) (empty value : α) (xs : List (Nat ×
   rw [sparse, List.foldl_cons, sparseFold_frame xs _ l hne]
   simp [hl]
 
+/-- The regional target fold preserves the incoming array's allocation. -/
+theorem regionalFold_size (heads : Nat → Bool) (given : Nat → RegionState)
+    (established : Target → Bool → RegionState) (ts : List (Target × Bool))
+    (acc : List (Nat × RegionState) × Array (List RegionState)) :
+    (ts.foldl (fun acc (t, h) =>
+      if heads t.label then (acc.1 ++ [(t.label, given t.label)], acc.2)
+      else (acc.1 ++ [(t.label, established t h)], acc.2.modify t.label (established t h :: ·))) acc).2.size = acc.2.size := by
+  induction ts generalizing acc with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [List.foldl_cons]
+    split <;> rw [ih] <;> simp
+
+/-- Regional checking preserves the input array's size. -/
+theorem regionalAt_size {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd : StepDone ι G}
+    {rg : Regional} {a : Answered G} {incoming : Array (List RegionState)} {done : RegionalDone ι}
+    (h : regionalAt G I env l en sd rg a incoming = .ok done) :
+    done.regionIn.size = incoming.size := by
+  unfold regionalAt at h
+  extract_lets node c width st here sums ordinaryEv kHere cEv t0 F C Fs origins pushes outR outF outC outFs established targets n at h
+  repeat' (first | split at h | extract_lets at h)
+  all_goals first | cases h | skip
+  all_goals
+    have hi := regionalFold_size (fun t => env.isHead[t]!)
+      (fun t => ((rg.heads[t]?).join).getD {}) established targets
+      ([(l, { here with cells := C, fields := Fs })], incoming)
+    simp_all only
+
+/-- Exits preserve the regional input array's allocation. -/
+theorem visitExits_regionSize {env : WalkEnv ι G I} {σ : WalkState ι G} {l : Nat}
+    {en : Entered ι} {sd : StepDone ι G} {ex : ExitsDone ι G}
+    (h : visitExits G I env σ l en sd = .ok ex) : ex.regionIn.size = σ.regionIn.size := by
+  unfold visitExits at h
+  cases hr : env.regional with
+  | none =>
+    simp only [hr] at h
+    rw [exitsFold_regionIn _ _ _ h]
+  | some rg =>
+    simp only [hr] at h
+    cases hd : regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 σ.regionIn with
+    | error why => simp [hd, Except.map] at h
+    | ok done =>
+      simp only [hd, Except.map] at h
+      rw [exitsFold_regionIn _ _ _ h]
+      exact regionalAt_size hd
+
 /-- A successful regional check retains incoming states and changes only
 its successors' and handler's entries. -/
 theorem regionalAt_inputs {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd : StepDone ι G}

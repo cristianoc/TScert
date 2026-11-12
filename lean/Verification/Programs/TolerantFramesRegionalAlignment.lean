@@ -9,20 +9,20 @@ open Verification SinglePass ControlFlow CertificateProducer PositiveCertificate
 open ProgramTyping LabelStore GraphCode GraphCode.ArgumentRegionGraph
 variable {ι : Type} [Labels ι] {G : NormalGraph ι} {I : InstanceImageCheck G}
 
-/-- The local evidence obligation for every successful visit matching a final
-label record. The prefix relates that visit's regional summaries to the accepted
+/-- Local evidence for a retained successful visit at each final label record.
+The prefix relates that visit's regional summaries to the accepted
 run's summaries; the tables agree with the recorded graph at the node and its targets. -/
 @[nospecialize] def RegionalVisitEvidence (ι : Type) [Labels ι] : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I)
     (env : WalkEnv ι G I) (σ : WalkState ι G) (reach : Nat) (rg : Regional),
     RunCall.walk c = .ok (σ, reach) → reach ≤ σ.walk.visited →
     EnvFacts c env → RecInv c env σ → env.regional = some rg →
-    ∀ l, visB σ.walk l = true → ∀ (before : WalkState ι G) (en : Entered ι)
+    ∀ l, visB σ.walk l = true → ∃ (before : WalkState ι G) (en : Entered ι)
       (sd : StepDone ι G) (ex : ExitsDone ι G) (done : RegionalDone ι),
-      visitEntry G I env before l = .ok en → visitStep G I env before l en = .ok sd →
-      visitExits G I env before l en sd = .ok ex →
-      regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 before.regionIn = .ok done →
-      σ.walk.labels[l]? = some (LabelWalk.ofVisit before.fresh en sd (some done.state)) →
+      visitEntry G I env before l = .ok en ∧ visitStep G I env before l en = .ok sd ∧
+      visitExits G I env before l en sd = .ok ex ∧
+      regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 before.regionIn = .ok done ∧
+      σ.walk.labels[l]? = some (LabelWalk.ofVisit before.fresh en sd (some done.state)) ∧
       SumsPrefix (exitsYields G I env l en sd).2 σ.answers ∧
       TablesAgree done.table (recordedRegionFacts σ.walk) done.ft
         (recordedRegionFresh σ.walk rg.names) l env.nodes[l]!
@@ -35,13 +35,13 @@ tables. The visit's exit summaries must be a prefix of the final sound table. -/
     RunCall.walk c = .ok (σ, reach) → reach ≤ σ.walk.visited →
     EnvFacts c env → RecInv c env σ → env.regional = some rg →
     SummariesSound G I σ.answers.summaries.toList →
-    ∀ l, visB σ.walk l = true → ∀ (before : WalkState ι G) (en : Entered ι)
+    ∀ l, visB σ.walk l = true → ∃ (before : WalkState ι G) (en : Entered ι)
       (sd : StepDone ι G) (ex : ExitsDone ι G) (done : RegionalDone ι),
-      visitEntry G I env before l = .ok en → visitStep G I env before l en = .ok sd →
-      visitExits G I env before l en sd = .ok ex →
-      regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 before.regionIn = .ok done →
-      σ.walk.labels[l]? = some (LabelWalk.ofVisit before.fresh en sd (some done.state)) →
-      SumsPrefix ex.answers σ.answers →
+      visitEntry G I env before l = .ok en ∧ visitStep G I env before l en = .ok sd ∧
+      visitExits G I env before l en sd = .ok ex ∧
+      regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 before.regionIn = .ok done ∧
+      σ.walk.labels[l]? = some (LabelWalk.ofVisit before.fresh en sd (some done.state)) ∧
+      SumsPrefix ex.answers σ.answers ∧
       TablesAgree done.table (recordedRegionFacts σ.walk) done.ft
         (recordedRegionFresh σ.walk rg.names) l env.nodes[l]!
 
@@ -89,23 +89,23 @@ theorem regionalAt_own_no_self {env : WalkEnv ι G I} {l : Nat} {en : Entered ι
     congr 1 <;> apply sparse_region_own _ _ _ _ _ hl <;>
       intro x hx <;> obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx <;> exact ht y hy
 
-/-- The remaining array-readback leaf. At the current node the sparse table
+/-- Readback of a retained regional visit. At the current node the sparse table
 reads the recorded state. A target is outside the start and its sparse entry
 contains the supplied head state or one state retained in the final incoming
-list. The quantification includes every successful visit matching the record. -/
+list. The witness supplies the recorded visit and its readback. -/
 @[nospecialize] def RegionalRecordedReadback (ι : Type) [Labels ι] : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I)
     (env : WalkEnv ι G I) (σ : WalkState ι G) (reach : Nat) (rg : Regional),
     RunCall.walk c = .ok (σ, reach) → reach ≤ σ.walk.visited →
     EnvFacts c env → RecInv c env σ → env.regional = some rg →
     SummariesSound G I σ.answers.summaries.toList →
-    ∀ l, visB σ.walk l = true → ∀ (before : WalkState ι G) (en : Entered ι)
+    ∀ l, visB σ.walk l = true → ∃ (before : WalkState ι G) (en : Entered ι)
       (sd : StepDone ι G) (ex : ExitsDone ι G) (done : RegionalDone ι),
-      visitEntry G I env before l = .ok en → visitStep G I env before l en = .ok sd →
-      visitExits G I env before l en sd = .ok ex →
-      regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 before.regionIn = .ok done →
-      σ.walk.labels[l]? = some (LabelWalk.ofVisit before.fresh en sd (some done.state)) →
-      SumsPrefix ex.answers σ.answers →
+      visitEntry G I env before l = .ok en ∧ visitStep G I env before l en = .ok sd ∧
+      visitExits G I env before l en sd = .ok ex ∧
+      regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 before.regionIn = .ok done ∧
+      σ.walk.labels[l]? = some (LabelWalk.ofVisit before.fresh en sd (some done.state)) ∧
+      SumsPrefix ex.answers σ.answers ∧
       regionalTableState done l = done.state ∧
       ∀ t, t ∈ successors env.nodes[l]!.continuation ∨ env.nodes[l]!.handler = some t →
         t.label ≠ env.start ∧
@@ -127,11 +127,13 @@ theorem returnedWalk_successor_visited {c : Target.RunCall G I} {env : WalkEnv �
   simpa only [exitsOf, hE.nodes, he₀.nodes] using ht
 
 /-- The preservation invariant reduces recorded-table agreement to sparse
-array readback. `RegionalRecordedReadback` is the explicit remaining leaf. -/
+array readback of the same retained visit. -/
 theorem regionalRecordedTableAgreement (hread : RegionalRecordedReadback ι) :
     RegionalRecordedTableAgreement ι := by
-  intro G I c env σ reach rg hw hle hE hi hreg hsums l hl before en sd ex done he hs hx hd hr hp
-  have readback := hread G I c env σ reach rg hw hle hE hi hreg hsums l hl before en sd ex done he hs hx hd hr hp
+  intro G I c env σ reach rg hw hle hE hi hreg hsums l hl
+  obtain ⟨before, en, sd, ex, done, he, hs, hx, hd, hr, hp, readback⟩ :=
+    hread G I c env σ reach rg hw hle hE hi hreg hsums l hl
+  refine ⟨before, en, sd, ex, done, he, hs, hx, hd, hr, hp, ?_⟩
   have own := recordedRegion_at hr (by rfl) rg.names
   have entries := readback.1
   have names := regionalAt_names hd
@@ -244,8 +246,8 @@ theorem RecInv.regionalWitnessSound {c : Target.RunCall G I} {env : WalkEnv ι G
   exact ⟨before, en, sd, ex, done, he, hs, hx, hd, hr,
     fun s hm => hsums s (((visitExits_regional_prefix hx).trans hp).mem s hm)⟩
 
-/-- The driver and chosen-node alignment leaves are proved. The remaining
-local leaf states summary-prefix and regional-table agreement at matching visits. -/
+/-- A retained visit with summary-prefix and table agreement supplies
+the checked walk's node alignment. -/
 theorem regionalWalkAlignment (hevidence : RegionalVisitEvidence ι) : RegionalWalkAlignment ι := by
   intro G I c after admits hp r hc Φ regions exc hr
   have final := checkedWalk_final hp hc hr
@@ -256,17 +258,17 @@ theorem regionalWalkAlignment (hevidence : RegionalVisitEvidence ι) : RegionalW
     rw [heq] at hl
     exact (ofPass_visited _ _ _).mp hl
   refine ⟨env, σ, rg, hi, hrg, hstart, hstartVis, hΦ, hregions, hexc, hvis, ?_⟩
-  intro l hl before en sd ex done hen hsd hex hd hrecord
+  intro l hl
+  obtain ⟨before, en, sd, ex, done, hen, hsd, hex, hd, hrecord, evidence⟩ :=
+    hevidence G I c env σ reach rg hw hle henv hi hrg l (hvis l hl)
+  refine ⟨before, en, sd, ex, done, hen, hsd, hex, hd, hrecord, ?_⟩
   have aligned := checkedWalk_nodeAlignment hc henv heq hsteps hl hrecord
-  have evidence := hevidence G I c env σ reach rg hw hle henv hi hrg l (hvis l hl)
-    before en sd ex done hen hsd hex hd hrecord
   refine ⟨aligned.1, aligned.2.1, aligned.2.2.1, aligned.2.2.2.1, aligned.2.2.2.2, ?_, ?_⟩
   · exact fun s hs => hsums s (evidence.1.mem s hs)
   · rw [← aligned.2.2.1]
     exact evidence.2
 
-/-- The graph uses the actual recorded visits, whose summaries are sound.
-Only agreement of their regional tables remains a local premise. -/
+/-- The graph uses retained visits with sound summaries and agreeing tables. -/
 theorem regionalVisitTables_of_recordedAgreement (ht : RegionalRecordedTableAgreement ι) :
     RegionalVisitTables ι := by
   intro G I c after admits hp r hc Φ regions exc hr
@@ -277,13 +279,12 @@ theorem regionalVisitTables_of_recordedAgreement (ht : RegionalRecordedTableAgre
     ⟨env, en, sd, rg, _, before.regionIn, done, hstart, hd, recordedRegion_at hrecord rfl rg.names⟩, ?_⟩
   intro l hl
   have hv : visB σ.walk l = true := (ofPass_visited _ _ _).mp (heq ▸ hl)
-  obtain ⟨before, en, sd, ex, done, hen, hsd, hex, hd, hrecord, hprefix⟩ := hi.regionalWitness hv hrg
+  obtain ⟨before, en, sd, ex, done, hen, hsd, hex, hd, hrecord, hprefix, hagree⟩ :=
+    ht G I c env σ reach rg hw hle henv hi hrg hsums l hv
   obtain ⟨hcodes, hclaim, hnode, hentry, hstep⟩ :=
     checkedWalk_nodeAlignment hc henv heq hsteps hl hrecord
   have hs : SummariesSound G I (exitsYields G I env l en sd).2.summaries.toList :=
     fun s hm => hsums s (((visitExits_regional_prefix hex).trans hprefix).mem s hm)
-  have hagree := ht G I c env σ reach rg hw hle henv hi hrg hsums l hv
-    before en sd ex done hen hsd hex hd hrecord hprefix
   rw [hnode] at hagree
   exact ⟨env, before, en, sd, rg, _, before.regionIn, done, hsd, hd,
     hcodes, hclaim, hnode, hentry, hstep, hΦ, hregions, hexc, hs, hagree⟩

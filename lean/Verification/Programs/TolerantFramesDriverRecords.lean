@@ -320,6 +320,7 @@ and every state its exits accumulated retained in the current incoming table. -/
     SinglePass.visitExits G I env before l en sd = .ok ex ∧
     σ.walk.labels[l]? = some (SinglePass.LabelWalk.ofVisit before.fresh en sd (ex.regional.map (·.state))) ∧
     SumsPrefix ex.answers σ.answers ∧
+    before.regionIn.size = env.n ∧
     (envHead env l = false → before.regionIn[l]? = σ.regionIn[l]?) ∧
     ∀ (t : Nat) (e : SinglePass.RegionState), e ∈ ex.regionIn[t]! → e ∈ σ.regionIn[t]!
 
@@ -358,6 +359,7 @@ structure RecInv (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) (σ 
   vacuity : CachedVacuity G env.claimed σ.unsat
   origins : ∀ l, visB σ.walk l = true → VisitOrigin env σ.walk σ.answers l
   regionalOrigins : ∀ l, visB σ.walk l = true → RegionalOrigin env σ l
+  regionSizes : σ.regionIn.size = env.n
 
 /-- **At the walk's end every reached label is visited**, where the record
 counts at least the reached labels (`filter_eq_of_le`). -/
@@ -513,6 +515,7 @@ structure VisitFacts (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) 
   origin : VisitOrigin env σ'.walk σ'.answers l
   regionFrame : ∀ t, t ∉ exitsOf env l → σ'.regionIn[t]? = σ.regionIn[t]?
   regionMono : ∀ (t : Nat) (e : SinglePass.RegionState), e ∈ σ.regionIn[t]! → e ∈ σ'.regionIn[t]!
+  regionSizes : σ'.regionIn.size = σ.regionIn.size
   regionalOrigin : (envHead env l = false → l ∉ exitsOf env l) → RegionalOrigin env σ' l
 
 omit [Labels ι] in
@@ -566,7 +569,7 @@ theorem recInv_visit {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} 
     subst htl; exact hself (hnewQ t ht).2.1 (hnewQ t ht).1
   refine { nodup := ?_, queue := ?_, visR := ?_, visDeg := ?_, exits := ?_, count := ?_, size := ?_, degs := ?_,
            inLen := ?_, inSizes := hF.inSizes hI.inSizes, inVis := ?_, edgesVis := ?_, push := ?_, startFresh := ?_,
-           startBelow := hI.startBelow.mono hF.fresh, impBelow := hF.impBelow hI.impBelow, vacuity := hF.vacuity hI.vacuity, settled := ?_, origins := ?_, regionalOrigins := ?_ }
+           startBelow := hI.startBelow.mono hF.fresh, impBelow := hF.impBelow hI.impBelow, vacuity := hF.vacuity hI.vacuity, settled := ?_, origins := ?_, regionalOrigins := ?_, regionSizes := hF.regionSizes.trans hI.regionSizes }
   · rw [hQ]
     refine List.nodup_append.mpr ⟨hnodupNew, hrest.2, fun a ha b hb hab => ?_⟩
     subst hab
@@ -669,8 +672,8 @@ theorem recInv_visit {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} 
     by_cases htl : t = l
     · subst t; exact hF.regionalOrigin hself
     · rw [hvis t htl] at ht
-      obtain ⟨before, en, sd, ex, he, hs, hx, hr, hp, hf, hm⟩ := hI.regionalOrigins t ht
-      refine ⟨before, en, sd, ex, he, hs, hx, (hF.labels t htl).trans hr, hp.trans hk,
+      obtain ⟨before, en, sd, ex, he, hs, hx, hr, hp, hb, hf, hm⟩ := hI.regionalOrigins t ht
+      refine ⟨before, en, sd, ex, he, hs, hx, (hF.labels t htl).trans hr, hp.trans hk, hb,
         fun hg => (hf hg).trans (hF.regionFrame t (hvisOld t ht hg)).symm,
         fun u e he => hF.regionMono u e (hm u e he)⟩
 
