@@ -21,6 +21,7 @@ import Verification.Programs.TolerantFramesElems
 import Verification.Programs.TolerantFramesState
 import Verification.Programs.TolerantFramesDelta
 import Verification.Programs.TolerantFramesModelLoop
+import Verification.Programs.TolerantFramesModelTyped
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -331,6 +332,23 @@ run_cmd do
   check ``Verification.TolerantFrames.aliasHeap_ok
   check ``Verification.TolerantFrames.alias_entry
   check ``Verification.TolerantFrames.alias_loop_safe
+  check ``Verification.TolerantFrames.storeListField_sound
+  check ``Verification.TolerantFrames.storeListTy_listT
+  check ``Verification.TolerantFrames.storeListField_at
+  check ``Verification.TolerantFrames.storeCells_of_typed
+  check ``Verification.TolerantFrames.storeListField_of_storeField
+  check ``Verification.TolerantFrames.storeCells_of_storeField
+  check ``Verification.TolerantFrames.storeCells_of_builtins
+  check ``Verification.TolerantFrames.apart_grow_keep_typed
+  check ``Verification.TolerantFrames.alloc_apart_typed
+  check ``Verification.TolerantFrames.stableAt_of_present
+  check ``Verification.TolerantFrames.stableAt_of_stableField
+  check ``Verification.TolerantFrames.stableAt_of_stableFirst
+  check ``Verification.TolerantFrames.stableAt_cons
+  check ``Verification.TolerantFrames.grow_path_typed
+  check ``Verification.TolerantFrames.valueClass_ok
+  check ``Verification.TolerantFrames.storeClass_ok
+  check ``Verification.TolerantFrames.action_le_valueClass
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
