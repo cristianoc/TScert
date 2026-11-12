@@ -1,34 +1,13 @@
 import Verification.Programs.TolerantFramesComposeRunSound
+import Verification.Programs.TolerantFramesRegionalFacts
 
-/-! # Tolerant frames: the regional premise from the visits' regional checks
+/-! # Regional checks and typing at checked nodes
 
-Under store regions `run` checks each visited node's regional obligation
-(`GraphCode.ArgumentRegionGraph.checkNode`) at the evidence `cEv` it builds
-(`passRegionalEvidence`, the entry's whole materialization as its facts,
-`passRegionalEvidenceOf`) over tables built for that node, after checking
-the derivation the evidence reads (`SinglePass.regionalDerivChecked`).
-`RegionsHeld` follows (`regionsHeld_of`) from two premises:
-
-- `RegionsRecorded`: some tables of the graph whose start entry holds the
-  regions' own positions and no fresh value, cell or field, and at every
-  visited node the visit's check accepting over tables that agree with the
-  graph's there (`TablesAgree`); the check is read off the visit, and the
-  graph's tables are the region states each label's own check used, which
-  the record keeps once each label records its region state (queue entry
-  R4);
-- `RegionsTyped`: the evidence's entry the node's context and the evidence
-  typed (`RegionalTyped`) at every admitted reassigned graph. Proved where
-  the step's derivation passes its tree check (`regionsTyped_of_tree`); the
-  other cases (the tree check's `requiresTree` disjunct, step evidence
-  alone) read the step's facts `stepK`, which the evidence's entry states
-  once it holds `kHere` together with `stepK` (queue entry R3).
-
-The check, the derivation check and the summary table's soundness carry to
-every reassigned graph (`checkNode_reassign`,
-`regionalDerivChecked_reassign`, `summariesSound_reassign`); the
-evidence's entry facts hold where the node assertion does
-(`regionNodeEntry_of`); the start's facts by `regionX_start`; each visited
-node keeps them by `regionsKept_of`. -/
+`RegionsRecorded` supplies graph tables agreeing with each node's checked
+tables. `RegionsTyped` supplies the regional evidence's typing. Their
+composition is `regionsHeld_of`. The evidence uses `regionalFacts kHere
+stepK`, whose meaning follows from the node's entry state and checked step
+(`regionNodeEntry_checked`). -/
 namespace Verification.TolerantFrames
 open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
@@ -69,21 +48,32 @@ variable {ι : Type} [Labels ι]
 
 /-- **The evidence `run` checks a visited node's regional obligation at**:
 `passRegionalEvidence` at the node's claim, its step's derivation and step
-evidence, and the entry's whole materialization (`kHere`). -/
+evidence, and `regionalFacts` of the entry materialization and step knowledge. -/
 def passRegionalEvidenceOf {G : NormalGraph ι} {I : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
     {pc : PassChecker G I} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat}
     {ctx : Nat → List (Ty ι)} {l : Nat} (r : NodeChecked G I codes pc P w startNames ctx l) : NodeEvidence ι :=
   passRegionalEvidence r.c r.node r.st.stepDeriv r.st.stepEffect
-    (SinglePass.materialize r.entry r.c.context.length (List.range r.c.context.length) true).1
+    (regionalFacts (SinglePass.materialize r.entry r.c.context.length (List.range r.c.context.length) true).1 r.st.stepK)
+
+/-- A checked node supplies both sources of its regional entry knowledge. -/
+theorem regionNodeEntry_checked {G : NormalGraph ι} {I : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
+    {pc : PassChecker G I} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat}
+    {ctx : Nat → List (Ty ι)} {l : Nat} (r : NodeChecked G I codes pc P w startNames ctx l)
+    (hc : CodesSound G codes) {ρ0 : Env} {m : Nat}
+    (hent : ControlFlow.entry (passRegionalEvidenceOf r) = r.c.context)
+    (ρ : Env) (s : IndexedHeap) (hp : passPreT G w startNames ρ0 ctx l ρ m s) :
+    EnvOk G (ControlFlow.entry (passRegionalEvidenceOf r)) ρ s.n s.W ∧
+      PromiseCalls.ImpliesOk G (passRegionalEvidenceOf r).implies ρ s.n s.W ∧
+      HeapKnowledge.Holds (entryFacts G (passRegionalEvidenceOf r)) ρ s.h := by
+  have he : EnvOk G r.c.context ρ s.n s.W := r.hctx ▸ hp.2
+  have hS : StateHolds G r.entry (w.implies l) startNames ρ0 ρ m s := r.hentry ▸ hp.1.2
+  have hk := (stepChecked_parts r.hstep hS r.wf r.below r.width he hc r.sums).2.1
+  refine ⟨hent ▸ he, PromiseCalls.ImpliesOk.nil G ρ s.n s.W, entryFacts_holds (hent ▸ he) ?_⟩
+  exact regionalFacts_holds (stateHolds_materialize_whole hS _ _ true) hk
 
 variable (ι) in
-/-- **(Named hypothesis; the checks read off the visit, the tables queue
-entry R4) The visits' regional checks over the graph's tables**: for a
-checked walk of a call under store regions, tables of the graph whose start
-entry holds each region's own position (`checkEntry`) and no fresh value,
-cell or field, and at every visited node a sound summary table and the
-regional check accepting over the node's own tables, which agree with the
-graph's (`TablesAgree`). -/
+/-- The visits' regional checks over tables agreeing with the graph's,
+with entry provenance and empty freshness at the start. -/
 def RegionsRecorded : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
     RunPremises G I c after admits → ∀ r : RunWalkA G I c, WalkChecked c r →
@@ -99,10 +89,8 @@ def RegionsRecorded : Prop :=
             TablesAgree T table ftl ft l (r.node l hl).node
 
 variable (ι) in
-/-- **(Named hypothesis; queue entry R3 for the cases no proof covers) The
-regional evidence typed**: at every visited node of a checked walk under
-store regions, the evidence's entry the node's context and, at every
-admitted reassigned graph, the evidence typed (`RegionalTyped`). -/
+/-- The regional evidence has the node's context and is typed at every
+admitted reassignment. -/
 def RegionsTyped : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
     RunPremises G I c after admits → ∀ r : RunWalkA G I c, WalkChecked c r →
@@ -146,10 +134,12 @@ theorem regionsHeld_of (hrec : RegionsRecorded ι) (htyped : RegionsTyped ι) : 
   refine regionsKept_of fun l hl => ?_
   obtain ⟨T, ftl, sums, hsums, hc, ha⟩ := hnodes l hl
   obtain ⟨hent, hty⟩ := htyped G I c after admits hp r hchk Φ regions exc hreg l hl
+  obtain ⟨pc', hpc'⟩ := scope_reassign hp.2.1 hη
+  let rn := nodeChecked_reassign hpc' (r.node l hl)
   exact ⟨RegionNodeOk.ofCheck (r.node l hl).hP
     ((checkNode_reassign G I sums η Φ regions T ftl exc l _ _).trans hc) ha (hty η hη)
     (Parametricity.summariesSound_reassign G η I hsums)
-    (regionNodeEntry_of (r.node l hl).hctx (fun _ _ hq => (r.node l hl).hentry ▸ hq.1.2) hent)⟩
+    (regionNodeEntry_checked rn (codesSound_reassign hp.2.2.1 η) hent)⟩
 
 end Held
 

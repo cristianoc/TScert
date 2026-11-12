@@ -1,4 +1,5 @@
 import Verification.Programs.TolerantFramesDriverSummaries
+import Verification.Programs.TolerantFramesRegionalInputs
 import Verification.Programs.TolerantFramesComposeYields
 import Verification.Programs.TolerantFramesDriverChecks
 
@@ -180,7 +181,8 @@ structure SettledCore (c : Target.RunCall G I) (heads : Nat → Bool) (dead : Li
     WalkExtends σ.walk w → SumsPrefix σ.answers a →
     ProgramCertificates.SummariesSound G I a.summaries.toList →
     ∃ r : NodeChecked G I c.codes c.passChecker c.P (ofPass w heads) (List.range c.inputs.length) (passCtx c) l,
-      NodePassChecked c dead r ∧ NodeExitTrace c (passEdgesIn w) r
+      NodePassChecked c dead r ∧ NodeExitTrace c (passEdgesIn w) r ∧
+        (w.labels[l]?).bind (·.stepped) = some r.st
   start : l = c.start → ∀ w : SinglePass.Walk ι, w.labels[l]? = σ.walk.labels[l]? →
     StartEntered c (ofPass w heads) (passCtx c) (passStated c)
   entry : heads l = false → ∃ b, (ofPass σ.walk heads).entry l = withWritten (passStated c l) b ∧
@@ -231,6 +233,8 @@ structure EnvFacts (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) : 
       ((env.givenImplies[c.start]?).getD []) ((env.givenArgs[c.start]?).getD [])
       ((env.givenInputs[c.start]?).getD []) c.entryIndices c.entrySeparation = none ∧
     env.given[c.start]! = some (startGiven (passStated c c.start) c.entryIndices c.entrySeparation supplied)
+  merging : env.merging = passMerging c
+  regional : env.regional = c.regional
 
 omit [Labels ι] in
 /-- A list's true entries, counted by position. -/
@@ -263,11 +267,13 @@ theorem envFacts_of_loopHeads {c : Target.RunCall G I} {env : SinglePass.WalkEnv
       SinglePass.entryRefusal G c.inputs c.claims c.start c.goal (passStated c c.start) supplied
         ((env.givenImplies[c.start]?).getD []) ((env.givenArgs[c.start]?).getD [])
         ((env.givenInputs[c.start]?).getD []) c.entryIndices c.entrySeparation = none ∧
-      env.given[c.start]! = some (startGiven (passStated c c.start) c.entryIndices c.entrySeparation supplied)) :
+      env.given[c.start]! = some (startGiven (passStated c c.start) c.entryIndices c.entrySeparation supplied))
+    (hmerging : env.merging = passMerging c)
+    (hregional : env.regional = c.regional) :
     EnvFacts c env := by
   have hc := loopHeads_closed c.P.toArray c.start
   refine ⟨hheads, fun s t hs ht htn => ?_, ⟨hstart, ?_⟩, ?_, hclaimed, hclaims, hgiven, hnodes,
-    by simpa using hn, hcodes, hchecker, hbound, hgoal, hensures, hnames, harg, hstated, hstartLabel, hstartHead, hstartCtx, hstartGiven⟩
+    by simpa using hn, hcodes, hchecker, hbound, hgoal, hensures, hnames, harg, hstated, hstartLabel, hstartHead, hstartCtx, hstartGiven, hmerging, hregional⟩
   · unfold envReached exitsOf at *
     rw [hreached] at hs ⊢
     rw [hnodes] at ht
@@ -294,6 +300,32 @@ theorem StartBelow.mono {env : SinglePass.WalkEnv ι G I} {a b : Nat} (h : Start
 /-- Every implication carried into a label names values below the counter. -/
 @[nospecialize] def IncomingBelow (w : SinglePass.Walk ι) (fresh : Nat) : Prop :=
   ∀ t xs, xs ∈ incI w t → ∀ y ∈ xs, y.test < fresh ∧ y.target < fresh
+
+/-- The successful visit whose result supplies this label's record, including
+its exits' complete optional regional result and summary prefix. -/
+@[nospecialize] def VisitOrigin (env : SinglePass.WalkEnv ι G I) (w : SinglePass.Walk ι) (a : Answered G) (l : Nat) : Prop :=
+  ∃ (σ : SinglePass.WalkState ι G) (en : SinglePass.Entered ι) (sd : SinglePass.StepDone ι G)
+    (ex : SinglePass.ExitsDone ι G),
+    SinglePass.visitEntry G I env σ l = .ok en ∧
+    SinglePass.visitStep G I env σ l en = .ok sd ∧
+    SinglePass.visitExits G I env σ l en sd = .ok ex ∧
+    w.labels[l]? = some (SinglePass.LabelWalk.ofVisit σ.fresh en sd (ex.regional.map (·.state))) ∧
+    SumsPrefix ex.answers a
+
+/-- A recorded visit with its regional inputs frozen at a visited non-head,
+and every state its exits accumulated retained in the current incoming table. -/
+@[nospecialize] def RegionalOrigin (env : SinglePass.WalkEnv ι G I)
+    (σ : SinglePass.WalkState ι G) (l : Nat) : Prop :=
+  ∃ (before : SinglePass.WalkState ι G) (en : SinglePass.Entered ι)
+    (sd : SinglePass.StepDone ι G) (ex : SinglePass.ExitsDone ι G),
+    SinglePass.visitEntry G I env before l = .ok en ∧
+    SinglePass.visitStep G I env before l en = .ok sd ∧
+    SinglePass.visitExits G I env before l en sd = .ok ex ∧
+    σ.walk.labels[l]? = some (SinglePass.LabelWalk.ofVisit before.fresh en sd (ex.regional.map (·.state))) ∧
+    SumsPrefix ex.answers σ.answers ∧
+    before.regionIn.size = env.n ∧
+    (envHead env l = false → before.regionIn[l]? = σ.regionIn[l]?) ∧
+    ∀ (t : Nat) (e : SinglePass.RegionState), e ∈ ex.regionIn[t]! → e ∈ σ.regionIn[t]!
 
 /-- **The walk's invariant**: the queue's labels distinct, below the bound,
 reached, unvisited and, other than heads, with no exit left to come in; the
@@ -328,6 +360,12 @@ structure RecInv (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) (σ 
   settled : ∀ t, visB σ.walk t = true → Settled c (envHead env) env.deadArr.toList σ t
   impBelow : IncomingBelow σ.walk σ.fresh
   vacuity : CachedVacuity G env.claimed σ.unsat
+  allocation : σ.walk.incoming.size = env.n ∧ σ.walk.incomingEdges.size = env.n
+  incomingBudget : ∀ t < env.n, envHead env t = false →
+    (incS σ.walk t).length + deg σ t ≤ ((passDegrees c)[t]?).getD 0
+  origins : ∀ l, visB σ.walk l = true → VisitOrigin env σ.walk σ.answers l
+  regionalOrigins : ∀ l, visB σ.walk l = true → RegionalOrigin env σ l
+  regionSizes : σ.regionIn.size = env.n
 
 /-- **At the walk's end every reached label is visited**, where the record
 counts at least the reached labels (`filter_eq_of_le`). -/
@@ -389,7 +427,7 @@ theorem recordSound_of_inv {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι
     simp only [base, dif_pos (And.intro h hg)]
   refine ⟨fun l hl => ((hset l ((ofPass_visited _ _ _).mp hl)).node σ.walk σ.answers rfl (WalkExtends.refl _) (SumsPrefix.refl _)
     hsums).elim fun r _ => ⟨r⟩,
-    ⟨base, ?_, fun t hv => ?_⟩, ?_⟩
+    ⟨base, ?_, fun t hv => ?_⟩, ?_, ?_⟩
   · refine { visited := fun t hne => (ofPass_visited σ.walk (passHeads c) t).mpr (hvi t hne),
              single := fun t e hg hin => ?_, merge := fun t hg h2 => ?_, width := fun t hg h2 e he => ?_,
              wf := fun t hg h2 e he => ?_, below := fun t hg h2 e he => ?_, startBelow := fun t hg h2 => ?_ }
@@ -418,6 +456,20 @@ theorem recordSound_of_inv {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι
       rw [if_neg (by simp), hbase t hv' hg]
       exact (Classical.choose_spec ((hset t hv').entry hg)).1
   · exact (hset c.start (hI.all_visited hE hle c.start hE.start.1 hE.start.2)).start rfl σ.walk rfl
+  · intro t hg htwo
+    have hn : incS σ.walk t ≠ [] := by
+      intro hz
+      simp only [ofPass, hg, Bool.false_eq_true, ↓reduceIte, List.length_zip] at htwo
+      unfold incS at hz
+      rw [hz] at htwo
+      simp at htwo
+    obtain ⟨v, hv, ht⟩ := hI.inVis t hn
+    have hB := hI.incomingBudget t (hI.exits v hv t ht) (by rw [hE.heads]; exact hg)
+    apply passMerging_of_degree c t
+    simp only [ofPass, hg, Bool.false_eq_true, ↓reduceIte, List.length_zip] at htwo
+    change (incS σ.walk t).length + _ ≤ _ at hB
+    change 2 ≤ min (incS σ.walk t).length (incI σ.walk t).length at htwo
+    omega
 
 /-- **A settled record stays settled** where the label's record, the
 states, implications and merge edges that came into it (at a node other
@@ -480,6 +532,14 @@ structure VisitFacts (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) 
   impBelow : IncomingBelow σ.walk σ.fresh → IncomingBelow σ'.walk σ'.fresh
   extendsWalk : WalkExtends σ.walk σ'.walk
   vacuity : CachedVacuity G env.claimed σ.unsat → CachedVacuity G env.claimed σ'.unsat
+  allocation : σ'.walk.incoming.size = σ.walk.incoming.size ∧
+    σ'.walk.incomingEdges.size = σ.walk.incomingEdges.size
+  incomingGrowth : ∀ t, (incS σ'.walk t).length ≤ (incS σ.walk t).length + (exitsOf env l).count t
+  origin : VisitOrigin env σ'.walk σ'.answers l
+  regionFrame : ∀ t, t ∉ exitsOf env l → σ'.regionIn[t]? = σ.regionIn[t]?
+  regionMono : ∀ (t : Nat) (e : SinglePass.RegionState), e ∈ σ.regionIn[t]! → e ∈ σ'.regionIn[t]!
+  regionSizes : σ'.regionIn.size = σ.regionIn.size
+  regionalOrigin : (envHead env l = false → l ∉ exitsOf env l) → RegionalOrigin env σ' l
 
 omit [Labels ι] in
 theorem visB_frame {w w' : SinglePass.Walk ι} {t : Nat} (h : w'.labels[t]? = w.labels[t]?) : visB w' t = visB w t := by
@@ -532,7 +592,14 @@ theorem recInv_visit {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} 
     subst htl; exact hself (hnewQ t ht).2.1 (hnewQ t ht).1
   refine { nodup := ?_, queue := ?_, visR := ?_, visDeg := ?_, exits := ?_, count := ?_, size := ?_, degs := ?_,
            inLen := ?_, inSizes := hF.inSizes hI.inSizes, inVis := ?_, edgesVis := ?_, push := ?_, startFresh := ?_,
-           startBelow := hI.startBelow.mono hF.fresh, impBelow := hF.impBelow hI.impBelow, vacuity := hF.vacuity hI.vacuity, settled := ?_ }
+           startBelow := hI.startBelow.mono hF.fresh, impBelow := hF.impBelow hI.impBelow, vacuity := hF.vacuity hI.vacuity, settled := ?_, allocation := ⟨hF.allocation.1.trans hI.allocation.1, hF.allocation.2.trans hI.allocation.2⟩,
+           incomingBudget := fun t ht hg => by
+             have hB := hI.incomingBudget t ht hg
+             have hG := hF.incomingGrowth t
+             have hC := hcount t ht hg
+             have hD : deg σ' t = deg σ t - (exitsOf env l).count t := hF.degs t ht hg
+             change (incS σ'.walk t).length ≤ (incS σ.walk t).length + _ at hG
+             omega, origins := ?_, regionalOrigins := ?_, regionSizes := hF.regionSizes.trans hI.regionSizes }
   · rw [hQ]
     refine List.nodup_append.mpr ⟨hnodupNew, hrest.2, fun a ha b hb hab => ?_⟩
     subst hab
@@ -624,13 +691,21 @@ theorem recInv_visit {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} 
     · rw [hvis t htl] at ht
       exact (hI.settled t ht).frame (hF.labels t htl) (fun hg => hF.frame t (hvisOld t ht hg)) hk hF.extendsWalk
 
-/-- A call's setup (`SinglePass.setup` over its arguments). -/
-def RunCall.setup {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) :
-    Except (SinglePass.WalkStop ι G) (SinglePass.WalkEnv ι G I × SinglePass.WalkState ι G) :=
-  SinglePass.setup G I c.pool c.fuel c.P c.claims c.start c.inputs c.goal c.assertions c.cuts c.candidates
-    c.entryIndices c.suggestions c.known c.codes c.aliases c.passChecker c.answers c.reference c.debugNode
-    c.bound c.givenImplies c.givenArgs c.ensures c.givenInputs c.entrySeparation c.observe c.tracing
-    c.observeEntry c.regional
+  · intro t ht
+    by_cases htl : t = l
+    · subst t; exact hF.origin
+    · rw [hvis t htl] at ht
+      obtain ⟨σ₀, en, sd, ex, he, hs, hx, hr, hp⟩ := hI.origins t ht
+      exact ⟨σ₀, en, sd, ex, he, hs, hx, (hF.labels t htl).trans hr, hp.trans hk⟩
+
+  · intro t ht
+    by_cases htl : t = l
+    · subst t; exact hF.regionalOrigin hself
+    · rw [hvis t htl] at ht
+      obtain ⟨before, en, sd, ex, he, hs, hx, hr, hp, hb, hf, hm⟩ := hI.regionalOrigins t ht
+      refine ⟨before, en, sd, ex, he, hs, hx, (hF.labels t htl).trans hr, hp.trans hk, hb,
+        fun hg => (hf hg).trans (hF.regionFrame t (hvisOld t ht hg)).symm,
+        fun u e he => hF.regionMono u e (hm u e he)⟩
 
 variable (ι) in
 /-- **(Named hypothesis) The setup starts the walk's invariant**: where a

@@ -1371,42 +1371,96 @@ of `TolerantFramesRunSound.lean`, quantified over every call the premises of
 ## Open premises
 
 The graph theorem `run_sound_single_pass`
-(`TolerantFramesSinglePassSound.lean`) has five hypotheses:
+(`TolerantFramesSinglePassSound.lean`) has one hypothesis, composed into
+`ExitsYield` by `exitsYield_of_kept`. It quantifies over `G`, `I`, a call
+`c`, `after`, `admits`, `RunPremises G I c after admits`, and a walk `r`
+with `WalkChecked c r`.
 
-```math
-\mathrm{ExitsWidth} \wedge \mathrm{ExitStepPrefix} \wedge \mathrm{ExitsYield} \wedge \mathrm{RegionsRecorded} \wedge \mathrm{RegionsTyped} \Longrightarrow \mathrm{RunSound}
+| Premise | Statement | Consumed by |
+| --- | --- | --- |
+| `startWrittenSound` | `ExitChecks.StartWrittenImpliesStated r`: for every environment and heap, holding `startWritten (r.stated c.start) c.entryIndices c.entrySeparation` implies holding `(r.stated c.start).getD {}`. | `headEntries_of_checked` |
+
+`run_sound_single_pass_of_exits` proves `ExitsYield → Target.RunSound`;
+setup, exit widths, subtype answers, summary prefixes, and regional recording
+and typing are supplied by the proofs listed below. The yield equalities and
+their final-state interpretation are proved in [Exit checks from the trace](#exit-checks-from-the-trace).
+
+`regionalFacts_holds` proves that the union holds when both sources hold.
+`regionalSeparation_recover` recovers the step separation from that union
+for facts with partners. `visitStep_separation_partners` establishes this
+condition, and `visitStep_regional_relations` supplies the relational part
+of `regionalStepBridge` from successful `visitStep`.
+
+`regionalAt_header` proves the following readback shape from the
+`regionalHeaderChecked` check in `regionalAt`, with `c = env.claimed[l]!`:
+
+```lean
+regionalAt G I env l en sd rg answers regionIn = .ok done →
+  sd.st.stepDeriv = none →
+  sd.st.stepEffect.bind HeapExpressionRules.StepEvidence.proof? = some p →
+  (claim p).context = c.context ∧ (claim p).type = c.type
 ```
 
-The pass keeps the read summaries it was given with no hypothesis
-(`runKeepsSummaries`, the unit level's `RunKeepsSummaries`), its
-`linearNear` is its search on fuel by definition (`linearNearFuelEq`),
-and each visited node's kept yields are judged and meet the return's goal
-at every admitted reassigned graph (`nodesYield_of`: the visit's yield
-checks, `NodeYieldChecks`, a field of `NodePassChecked`, hold there by
-`NodeYieldChecks.reassign`); the regional premise `RegionsHeld` follows
-from `RegionsRecorded` and `RegionsTyped` (`regionsHeld_of`).
- A stopped walk is never accepted by
-its type (`walkStopsRefuse`, from `StopOutcome.outcome_ne_accepted`).
+The `RegionalStepBridge` premise includes the successful regional check.
+`RecInv.regionalWitness` supplies that equation; the visit tables carry it
+to `regionsTyped_of_visitTables`, which applies `regionalStepBridge`.
 
-| Premise | Discharged by | Consumed by |
-| --- | --- | --- |
-| `SetupRecords` | proved (`setupRecords_of`, module `TolerantFramesDriverSetup.lean`): a returned setup gives the claims one per node, the entry accepted and the environment and state of `setupEnv` and `setupState` (`setup_ok`); the environment states the call (`SetupOk.envFacts`, by `envFacts_of_loopHeads` and the heads' given states, `setupGiven_get`) and the first state meets `RecInv` (`SetupOk.recInv`: nothing visited or come in, the queue `initialQueue`'s labels, each in-degree the count of the edges still to come, `inDegrees_get`); `run_sound_single_pass` applies it | `recordsSound_of` and `recordsChecked_of`, then `run_traversedC` |
-| `ExitsWidth` | pass change W9: each exit's mapping has its target's width (no mapping: as many source names as the target's context; a mapping: as many slots, each a source slot); with it every state an exit pushes meets `PushOk` (`exitsPushOk_of`) | `visitsRest_of` (through `ExitsPushOk`) |
-| `ExitStepPrefix` | A successful `exitStep` preserves its input summary table. This is the remaining prefix obligation, including `exitTypes` and its mixed-context fallback. `TolerantFramesStepSummaries.lean` proves `stepChecked_of_final`: the final sound table supplies every summary used by the accepted step, independently of search soundness. `TolerantFramesVisitSummaries.lean` proves the prefixes through `checkedStep`, `stepYields`, `returnRun`, `visitStep`, `exitsYields` and the exit fold; `visitStepPrefix_of_exitStep` composes them. `diffSubtypes_prefix`, `impliesHeld_prefix` and `headImplies_prefix` cover the corresponding exit helpers. | `visitsSettle_of` through `visitStepPrefix_of_exitStep` |
-| `SubtypeAnswersAll` | Proved by `subtypeAnswersAll` in `TolerantFramesSubtypeAnswers.lean`. `subtypeUsing_sound` reads a cached acceptance through `Answered.proved_sound` and a search acceptance through `subtypeSearch_sound`; the theorem applies at every graph, including reassignments. | `nodesYield_of`; supplied by the headline theorem |
-| `ExitsYield` | each checked node's exits and handler deliver `NodeExitsY` at the recorded yields. Proved, at the records: `RecordsChecked`, `WalkChecked` and `SettledCore.node` retain `NodeExitTrace` in the same existential as `NodePassChecked` (`visitsSettle_of`): a successful entry, step and exit computation at the original graph, every indexed `exitStep` exposed (`visitExits_checked`) and its arrays extending to the checked walk (`WalkExtends`, `visitExits_extends`). Proved, at the exits: `NodeExitsChecked` states what `exitStep` checks at a node's values in a form every reassigned graph keeps (`NonHeadExitChecked`, `HeadExitChecked`, `HandlerExitChecked`; the types by `ExitTyped`: the subtype answers, the edge search's evidence at the edge's, refined or mixed context, `ExitTyped.reassign`), and `nodeExitsYF_of_checks` gives, at every reassigned graph with the subtype answers sound there, every exit and the handler delivering `edgePreAJ` (`nonHeadExit_delivers`, `headExit_delivers`, `handlerExit_delivers`; mapped names by `mapNamesSound_some` under the width bounds, vacuous exits by `vacuous_false`). Its conclusion `NodeExitsYF` is `NodeExitsY` with the state after the step also stating the result's freshness where `outFresh` holds (`AfterStep`), which `normal_edge_delivers` needs; the step's judgment carries it (`stepFresh_judgment`, by `SafePostExc.and_steps` and `passOutFreshChecked_fresh`), so `NodeYielded` and `stepEdgesSound_of_yields` are to carry `NodeExitsYF`. Not proved: `NodeExitTrace ⟹ NodeExitsChecked` (reading each `exitStep` branch); two of its fields have no source yet: `HereEmpty` of the cached `en.here` (an invariant of `σ.unsat`, `visitEntry_here`), and the yields the exits read being the recorded ones or none (`NodeExitTrace` records `sd.yields`, while `exitsYields` and `exitTypes` compute yields where the step kept none) | `nodesYield_of`, then `stepEdgesSound_of_yields` |
-| `RegionsRecorded` | `regionalAt_checks` in `TolerantFramesRegionalRecorded.lean` extracts the accepted derivation and regional checks over the actual combined entry facts. `recordedRegionFacts` and `recordedRegionFresh` state the graph tables from `LabelWalk.region`; `visitResult_region` identifies the state recorded at a visited label. The remaining obligations connect those records across the drive, establish the start tables, and prove `TablesAgree` at each node and target using `meet_sub` and incoming-edge order. The proof-side `passRegionalEvidenceOf` uses the entry materialization alone, while `regionalAt` uses `regionalFacts` of that materialization and `stepK`; connecting these evidence representations is also required. | `regionsHeld_of` |
-| `RegionsTyped` | `regionalTyped_of_derivation` in `TolerantFramesRegionalTyping.lean` proves both branches of the derivation check under `RegionalStepFacts`: the regional evidence's expanded entry facts imply `Holds stepK`. Its requirements branch is `regionalTyped_of_requires`; the tree branch is `regionalTyped_of_tree`. `regionalTyped_copy` covers copies with absent derivation and effect. The remaining obligations establish `RegionalStepFacts` for the evidence used by each visit, type the step-evidence-only case, and connect these local results to each checked node at every admitted reassignment. | `regionsHeld_of` |
-\mathrm{DirectKeepsSummaries} \wedge \mathrm{SearchKeepsSummaries} \wedge \mathrm{ExitsYield} \wedge \mathrm{RegionsRecorded} \wedge \mathrm{RegionsTyped} \Longrightarrow \mathrm{RunSound}
-```
+`RegionalRecordedReadback` and `RegionalRecordedTableAgreement` supply
+one retained visit per visited label, together with its record, summary prefix
+and table facts. `RegionalVisitEvidence` and `RegionalWalkAlignment` use the
+same existential shape. `regionalVisitTables_of_recordedAgreement` applies
+`checkedWalk_nodeAlignment` to that witness's record; `RegionalVisitTables`
+and `regionsRecorded_of_visitTables` consume the resulting existential check.
+`regionalRecordedReadback` proves readback from the retained regional check.
+`regionalRecordedTableAgreement` composes it with the head and non-head bounds
+on recorded states. `RegionBelow` means containment in each of the provenance,
+value, cell and field lists.
 
-| Premise | Obligation | Consumed by |
-| --- | --- | --- |
-| `DirectKeepsSummaries` | Every summary returned by `directCall` is sound when its input summaries are sound. `keepSummaries` preserves the input prefix; soundness also requires checking every appended summary. This preservation theorem is not proved. | `visitsSettle_of` |
-| `SearchKeepsSummaries` | Every summary returned by `expressionEffectUsing` is sound when its input summaries are sound. Preservation through the search's operations is not proved. | `visitsSettle_of` |
-| `ExitsYield` | Each checked node's normal exits and handler deliver `NodeExitsY` at every admitted reassigned graph. `exitsYield_of_checks` (`TolerantFramesExitsYield.lean`) reduces this obligation to extracting `NodeExitsChecked` and the checked freshness flag at each visited node; its extraction argument is an intermediate proof premise, not a discharged obligation. `nodeExitsY_of_checks` proves delivery from `NodeExitsChecked`, with freshness from the actual step execution. `visitExits_records_yields` retains each indexed exit's record and checked cache provenance; `visitExits_refined_judged` judges the refined record's own yields under sound codes, sound final-step summaries and a judged step cache. `headExit_checked` extracts the head's implication, input-slot, argument-slot and heap checks; `exitTypes_handler_checked` extracts the handler's type alternatives. Assembly requires the recorded head entry, handler bounds, incoming and merge membership, and semantic delivery from the exit-specific judged yields. `NodeExitsChecked` requires equality of the exit-read yields with the kept yields (or emptiness); replacing that requirement and connecting `YieldsJudged` to delivery at the final indexed heap are unproved. | `nodesYield_of`, then `stepEdgesSound_of_yields` |
-| `RegionsRecorded` | The graph's regional tables agree with the tables each visit checks, satisfy the initial regional facts, and admit each predecessor's established facts at its target. Each `RegionalDone` contains its tables and evidence; each label records its region state. The graph-wide agreement proof is not established. | `regionsHeld_of` |
-| `RegionsTyped` | Every visited node's regional evidence has its context and is typed at every admitted reassigned graph. `regionsTyped_of_tree` proves the tree-checked case, and `regionalTyped_copy` proves the copy case. The `requiresTree` case needs the evidence's `regionalFacts` to supply both the entry facts and `stepK`. | `regionsHeld_of` |
+The own-entry equality is proved for every successful matching visit.
+`regionalAt_own_no_self` handles labels without self-edges.
+`returnedWalk_self_head` proves that a visited self-edge targets a head,
+using the one-edge cycle case of `passHeads_cuts`.
+`regionalAt_head_target` proves that its sparse entry is the supplied head
+state. `regionalAt_own_head` uses the successful `checkNode`'s `cellsKept`
+and `fieldsKept` checks to prove that the cell and field filters preserve
+that state. The field check reads the selected proof's context;
+`regionalAt_entry_header` identifies it with the source claim's context
+using `regionalAt_header` and the successful derivation check.
+
+`returnedWalk_regional_no_start` proves start-target exclusion from setup.
+`SinglePass.setup` rejects every continuation or handler edge into the start
+when regional checking is enabled (`SinglePass.lean:2066–2069`). The start's
+fixed regional entry therefore needs no third target case in accepted runs.
+
+For non-head targets, `sparseFold_pick` and `sparse_region_target` prove
+that all four projections select the same last target occurrence, including
+duplicate targets. `regionalFold_retains_target` proves retention of each
+in-bounds non-head target's established state. `regionalAt_nonhead_target`
+therefore proves `regionalTableState done t ∈ done.regionIn[t]!` when
+`t < env.n`, `t < incoming.size`, and `t` is a non-head target.
+`RecInv.regionalInputReadback` combines this with
+`RecInv.regionalInputWitness` for the invariant's chosen actual visit.
+`regionalRecorded_nonhead_of_inputs` combines retention with
+`RecInv.regional_nonhead_bound` to obtain the final target-state bound.
+
+`RecInv.regionSizes` states `σ.regionIn.size = env.n`.
+`SetupOk.recInv` proves it at setup; `regionalFold_size`, `regionalAt_size`
+and `visitExits_regionSize` prove preservation, carried by
+`VisitFacts.regionSizes` and `recInv_visit`. `RegionalOrigin` retains
+`before.regionIn.size = env.n` in the same existential as the visit and
+its input retention. `RecInv.regionalInputWitness` exposes this equality,
+so `RecInv.regionalInputReadback` needs no input-array bound premise.
+
+`Site.start_given` identifies the start's given contract as `startWritten`
+with the supplied index facts. `Site.head_written_coherent` uses that
+contract as the start's base under this semantic projection hypothesis;
+other heads use their stated assertion. `HeadEntryContract`,
+`HeadExitChecked.written`, and the written coherence conjunct in
+`HandlerExitChecked.head` require the base to imply the stated assertion.
+`handlerRecords_of_checked` proves handler storage and merge recording
+from the allocated arrays and indexed execution; `HandlerExitChecked.merged`
+records the implications returned by `edgeTransfer`, whose semantic
+validity is proved in `handlerExit_delivers`.
 
 Proved prerequisites:
 
@@ -1432,8 +1486,225 @@ Proved prerequisites:
   `WalkChecked` retain that trace at the same checked node (`visitsSettle_of`).
 - `exitTypes_checked` (`TolerantFramesExitTypeChecks.lean`) exposes semantic
   `ExitTyped` checks from the pass's returned state and `SinglePass.ExitTyped`
-  tag. `ExitYieldSource.judged` justifies computed yields when their summary
-  table is sound; `assertionExit_checked` exposes the written assertion check.
+  tag. `assertionExit_checked` exposes the written assertion check.
+- `WalkChecked` carries the returned driver's record and each chosen node's
+  equality with its stored step. `SettledCore.node` and `RecordsChecked`
+  supply the step equality in the same existential as the node checks.
+  `checkedWalk_final` proves the final invariant, start visit, regional
+  configuration and summary soundness; `checkedWalk_nodeAlignment` proves
+  the claim, node, entry and step equalities.
+- `RecInv.regionalOrigins` retains a successful visit, its record and summary
+  prefix, equality of its incoming list with the current list at a visited
+  non-head, and inclusion of its exit table in the current incoming table.
+  `SetupOk.recInv` proves the empty case; `recInv_visit` proves preservation
+  from `VisitFacts.regionFrame`, `regionMono` and `regionalOrigin`.
+  `regionalAt_inputs` and `visitExits_inputs` prove the frame and inclusion
+  properties; `RecInv.regionalInputWitness` supplies them with the regional check.
+- `regionalAt_state` proves equality of entry provenance and values and
+  containment of cells and fields. `RecInv.regional_nonhead_bound` combines
+  the frozen input list with `meet_sub`; `RecInv.regional_head_bound` bounds
+  the recorded state by the supplied head state. `returnedWalk_successor_visited`
+  proves successor and handler visits from acceptance; `setup_regional_no_start`
+  proves the setup's exclusion of edges into the start. `regionalAt_names`
+  proves agreement of field names.
+- `VisitOrigin` carries the exit summaries' prefix of the driver's table.
+  `recInv_visit` preserves it; `SetupOk.recInv` establishes its empty initial
+  case. `visitExits_answers_prefix` proves preservation at the visit boundary,
+  and `visitExits_regional_prefix` relates the regional check to the exits.
+  `RecInv.regionalWitnessSound` supplies sound summaries for the actual
+  recorded visit. `regionalVisitTables_of_recordedAgreement` uses that witness.
+- The stronger, universally quantified `RegionalWalkAlignment` follows from
+  `RegionalVisitEvidence` by `regionalWalkAlignment`. That local premise
+  requires the regional-summary prefix and table agreement for **every**
+  matching visit, including visits from arbitrary `before` states. The
+  origin invariant supplies a witness with a prefix; it does not establish
+  that universal prefix statement. The graph theorem uses the actual witness.
+- `RecInv.origins` retains each visited label's complete successful visit;
+  `VisitFacts.origin`, `recInv_visit` and `SetupOk.recInv` establish its
+  preservation and initial case. `exitsFold_regional` preserves the complete
+  regional result; `RecInv.regionalWitness` recovers its check and stored state.
+  `recordedRegion_at` reads the four components from the recorded graph tables.
+- `expandedLinks_recover` and `regionalLinks_recover` recover the original
+  links from expansion. `visitStep_separation_partners` proves that step
+  separation facts have partners; `separation_union_right` recovers them
+  through normalization, and `regionalSeparation_recover` isolates the
+  discarded-depth branch.
+
+- `exitStepPrefix` (`TolerantFramesVisitSummaries.lean`) proves summary-prefix
+  preservation through `exitTypes`, nested `mixedContext` folds, head checks,
+  assertion checks and `exitStep`. `visitStepPrefix_of_exitStep` supplies
+  the step-summary premise of `visitsSettle_of`.
+- `regionalAt_checks` (`TolerantFramesRegionalRecorded.lean`) identifies
+  `RegionalDone.cEv` with `passRegionalEvidence` at `regionalFacts kHere stepK`
+  and extracts both accepted checks over the returned table and fresh tables.
+  `visitResult_region` identifies the state stored at the label.
+  `regionalAt_start` proves entry provenance and empty freshness at the start;
+  `regionsRecorded_of_visitTables` transfers this to the graph tables.
+- `regionalFacts_holds` (`TolerantFramesRegionalFacts.lean`) proves that the
+  combined knowledge holds when both sources hold. `regionNodeEntry_checked`
+  supplies those sources from a checked node's entry state and step.
+  `passRegionalEvidenceOf` uses this combined knowledge.
+- `stepChecked_safe` and `regionalTyped_of_step`
+  (`TolerantFramesRegionalTyping.lean`) type the step-only evidence under
+  knowledge recovery and header alignment. `regionalTyped_of_derivation`
+  covers both accepted derivation checks. `regionsTyped_of_visitTables`
+  connects these local results to visited nodes at admitted reassignments.
+
+
+The start-projection leaf is not established by the pass:
+`startWritten_projection_counterexample` in `TolerantFramesExitStart.lean`
+proves that an accepted `entryKnows` check and a holding `startWritten`
+contract can coexist with a false written assertion. Its separation has
+depth zero and one fact at slot zero with no partners; `union` normalizes
+away that fact and its slot-bound obligation. This counterexample concerns
+the projection, not `RunSound`: the caller's `EntryHolds` is impossible in
+this example. Setup refuses edges into the start only when `regional.isSome`;
+ordinary runs permit them (`SinglePass.setup`). Consequently,
+`exitsYield_of_kept` has the explicit `StartWrittenImpliesStated` leaf.
+
+
+[`TolerantFramesExitHeadExtraction.lean`](../../lean/Verification/Programs/TolerantFramesExitHeadExtraction.lean)
+proves `exitChecks_head`, `exitChecks_handler_edges`, and
+`exitChecks_handler_of_records` under explicit leaves: `r.given = passHeads c`,
+`r.ctx = passCtx c`, and `HeadEntryContract` for each given head contract
+(constructed-entry membership, written-contract coherence, and setup-name
+bounds). Handlers require
+`HandlerRecords`, the final incoming and merge-record memberships. The merge
+membership uses the filtered implications returned by `edgeTransfer`,
+recorded by `pushExit` and justified by `handlerExit_delivers`. `NodeExitTrace` and `ExitChecks.Site.facts` carry the
+setup's `startNames` and `argName` equations, supplied by `EnvFacts` in
+`visitsSettle_of`. The successful step proves exception-type admission
+(`visitStep_handler_admits`); the successful exits prove the type, implication,
+input, argument, heap-query, and handler assertion checks.
+
+
+[`TolerantFramesExitStructural.lean`](../../lean/Verification/Programs/TolerantFramesExitStructural.lean)
+proves `givenCorrespondence` and `contextCorrespondence` from `RunWalkA.given_eq`
+and `ctx_eq`, established at both walk constructors. `NodeExitTrace` and
+`Site.facts` retain setup provenance and the input-name bound at the visit's
+counter. `headEntryContract_nonstart` proves the final entry contract for a
+targeted head other than the start; `headEntries_of_checked` covers the start
+under the start-projection leaf above. The target's final visit follows from its recorded
+incoming edge and `TraversedA.visited`. Head extraction quantifies over exit
+targets: a head with no incoming edge has no incoming pair in `ofPass`.
+`exitStep_handler_arrays` and `Site.handler_record` identify the handler's
+transferred pair, merge record, indexed computation and final-walk extension.
+The handler's structural extraction is proved by `handlerRecords_of_checked`.
+The start-projection hypothesis is stated in "Open premises".
+`ExitChecks.exitChecks_nonHead` in
+`TolerantFramesExitNonHeadExtraction.lean` proves `NonHead` from a checked
+walk and its execution site.
+`exitStep_nonHead_checked` extracts the type and assertion checks and both
+insertions; `visitExits_indexed_arrays` retains each indexed computation's
+allocation, extension and yield-cache source. `NonHeadExitChecked.merged`
+uses the implications returned by `edgeTransfer`. Filtering and deduplication
+preserve membership in the input list, which supplies the implication
+judgments used by `nonHeadExit_delivers`.
+
+The structural prerequisites are proved by `run_traversedC`,
+`SetupOk.recInv`, `recInv_visit`, `recordSound_of_inv`, and
+`visitsSettle_of`. `WalkChecked` carries head-table agreement and the
+non-head merge flag. `RecInv.allocation` fixes the incoming-state and merge
+array sizes; `RecInv.incomingBudget` bounds incoming states plus remaining
+in-degree by the setup's in-degree. `ExitsFold.incomingGrowth` bounds each
+visit's additions by its exit multiplicities. `NodeExitTrace` retains the
+allocation and `EnvFacts.merging` equation at the chosen node.
+
+## Exit checks from the trace
+
+`ExitChecks.Site` in
+[`TolerantFramesExitsYield.lean`](../../lean/Verification/Programs/TolerantFramesExitsYield.lean)
+contains exactly the witnesses and conjuncts of `NodeExitTrace` for the
+chosen checked node. `ExitChecks.site_of_trace` proves that the trace
+supplies such a site. The extraction witnesses are fixed:
+
+| Witness | Value |
+| --- | --- |
+| `here` | `en.here` |
+| `outFresh` | `sd.outFresh` |
+| `thrown` | `sd.thrown` |
+| `TT` | `sd.thrownTy.getD []` |
+| `ys` | The node's kept yields, equal to `sd.yields.getD []` |
+| `ysA` | `(exitsYields G I env l en sd).1.getD []`; `exitStep` receives `yieldsAtSlots en.entry.names ysA` |
+| `ysE` | The individual exit's cache after its type check, used for its fresh implications and refined type evidence |
+
+Execution equations concern the original graph. `NodeExitsChecked.reassign`
+transports the checks to each reassigned graph and preserves the yield
+equalities.
+
+| `NodeExitsChecked` field | Trace source or remaining obligation |
+| --- | --- |
+| `hereEmpty` | Proved by `exitChecks_here`, using the trace's empty-context witness, claim equation, and `HereEmpty.reassign`. |
+| `yieldsRead` | `ysA = ys`, proved by `Site.ysA_eq` from `exitsYields` and the trace's kept-yield equation. |
+| `widths` | Proved by `exitChecks_widths`: `ExitStepsChecked` supplies the indexed successful `exitStep`, and `exitStep_mappingWidth` gives source-slot bounds. |
+| `handlerWidth` | Proved by `exitChecks_widths` at `Exit.handler t`, with source names `sd.thrown :: en.entry.names`. |
+| `normal` | The trace's `ExitRecordsChecked` supplies each indexed exit and its successful computation. `visitExits_records_yields` supplies its cache provenance. `ExitChecks.NonHead` and `ExitChecks.Head` select the appropriate branch with `ysE = ys` proved by `Site.source_eq`; `ExitChecks.assemble` combines those branches. |
+| `handler` | The indexed handler computation from `ExitRecordsChecked`, together with the accepted `visitStep`, supplies the computations listed below. `exitChecks_handler_structural` supplies the handler checks. |
+| `thrownBelow` | Proved by `exitChecks_thrownBelow`: `visitStep_thrown` identifies `sd.thrown` with `sd.st.fresh`; `StepChecked.fresh_le` bounds that counter below by the checked node's initial counter; `namesBelow_mono` transports the checked node's `below` invariant. |
+
+`exitChecks_fresh` proves `ExitChecks.Fresh` directly from `visitStep_outFresh`
+and the site's equations. `WalkChecked` supplies head and context agreement,
+the incoming-array allocation, and the merge flag used by
+`exitChecks_nonHead` and `handlerRecords_of_checked`.
+
+`NonHeadExitChecked.typed` and `HeadExitChecked.typed` read `ysE`.
+The assertion and merge checks read `ysA`. Both lists equal the kept list:
+`ExitYieldSource` states equality with its cache, `exitStep_yields_source`
+preserves that equality, and `visitExits_records_yields` supplies it for
+each indexed exit. `Site.kept_yields` identifies the step cache with the
+node's kept list.
+
+| `NonHeadExitChecked` field | Trace source or remaining obligation |
+| --- | --- |
+| `typed` | The nonvacuous type branch of the recorded `exitStep`; `exitTypes_checked` extracts `ExitTyped` with the exit cache's refined context. |
+| `asserted` | The recorded `assertionExit` equation and `assertionExit_checked`, with the initial `ysA` slot translation in its context thunk and the trace's `env.stated` equation. |
+| `pushedIn` | `IncomingRecorded`: the paired state and implications in the post-exit arrays, their `WalkExtends` relation to `raw`, and `w = ofPass raw heads` with a non-head target. `ExitRecordsChecked` supplies the successful computation and extension to `ex`; the trace extends `ex` to `raw`. `exitStep_nonHead_checked` and `Site.arrayAllocation` supply insertion and array bounds. `IncomingRecorded.mem` proves final membership using `WalkExtends.incoming_mem`. |
+| `merged` | `MergeRecorded`: the refined context, slot implications and mapping in post-exit `incomingEdges`, with extension to `raw` and `edgesIn = passEdgesIn raw`. `MergeRecorded.mem` uses `WalkExtends.merge_mem`. `Site.mergingOfIncoming` supplies the merge flag from the checked walk and the trace's table equation. |
+
+| `HeadExitChecked` field | Trace source or remaining obligation |
+| --- | --- |
+| `typed` | `exitTypes_checked` at the exit's `ysE`, as for a non-head exit. |
+| `implied` | The first conjunct of `headExit_checked`, with `en.implies ++ freshImplOf … ysE …` as the carried implications. |
+| `inputs` | The second conjunct of `headExit_checked`, after identifying `env.startNames` with the call's input names. |
+| `args` | The third conjunct of `headExit_checked`, using the head's given argument slots and `env.argName`. |
+| `query` | The final existential of `headExit_checked`, identifying the selected `env.given` knowledge and its successful heap query. |
+| `entered` | Membership of the constructed `headEntry` state and implications in the final incoming list. The trace retains the processed edge through `WalkExtends.edge_mem`; `ofPass` supplies a head incoming when that edge exists. Identifying the target's recorded entry with the constructed head entry requires the target's entry record. |
+| `written` | Coherence of `env.given` with the target's written assertion and index facts. The trace equates `env.stated` with `passStated`; it does not state the needed `env.given` coherence. `Site.head_written_coherent` supplies it under `StartWrittenImpliesStated`. |
+| Head witnesses' bounds | The start names below `hfresh` and the argument's input-slot witness require setup and entry-counter invariants. These are explicit conjuncts of `ExitChecks.Head`. |
+
+The head membership field directly names the constructed state used by
+`headEntry_holds`; there is no separate `entry` equality field. Delivery
+uses that member as its incoming-state witness. The handler's head branch
+uses the same formulation.
+
+| `HandlerExitChecked` field | Trace source or remaining obligation |
+| --- | --- |
+| `admits` | Accepted `visitStep` checks that a handler has a `thrownTy`; `thrownTyOf` selects a type satisfying `ControlFlow.admitsAll`. Extracting that selection proves the obligation at `sd.thrownTy.getD []`. |
+| `typed` | `exitTypes_handler_checked` on the nonvacuous handler computation; it gives exactly the subtype or unrefined edge-evidence alternatives. |
+| `asserted` | `assertionExit_checked` at `handlerCtx c TT`, with the handler's materialized facts and no observation. |
+| `pushedIn` | `IncomingRecorded` for the handler transfer; handler fresh implications are empty. The paired arrays and their extension come from the same sources as the normal non-head transfer. |
+| `merged` | `MergeRecorded` at `handlerCtx c TT`; the merge-flag/indegree connection has the same remaining obligation as the normal merge. |
+| `head.implied` | `headExit_checked` with carried implications `en.implies`; `freshImplOf_handler` eliminates fresh implications. |
+| `head.inputs` | `headExit_checked`'s input-slot conjunct with source names `thrown :: entry.names`. |
+| `head.args` | `headExit_checked`'s argument-slot conjunct with the same source names. |
+| `head.query` | `headExit_checked`'s heap query at `handlerCtx c TT`. |
+| `head.entered` | Constructed-head membership from the processed handler edge and the target head's recorded entry. |
+| `head.written` | The same given/written-assertion coherence required for a normal head edge. |
+| `head` counter and argument bounds | The same setup and entry-counter invariants required for a normal head edge. |
+
+`AfterStep` contains `YieldsOk` for the kept yields at the final state.
+`nodeExitsYF_of_checks` transports that fact along `ysA = ys` and
+`ysE = ys` to supply `nonHeadExit_delivers` and `headExit_delivers`.
+`handlerExit_delivers` reads the retained array memberships and constructed
+head entry. `nodeExitsY_of_checks` derives result freshness from the actual
+execution with `passOutFreshChecked_fresh`.
+
+The local Props are `ExitChecks.Here`, `Widths`, `NonHead`, `Head`,
+`Handler`, and `Fresh`. `ExitChecks.assemble` combines these six Props
+into `ExitChecks.Extracted` at the same site and assignment.
+`exitsYield_of_kept` supplies `ExitChecks.Extraction` under the
+start-projection hypothesis and applies `exitsYield_of_checks`.
+The field proofs and composition theorems are checked by `AxiomCheck`.
 
 ## Leg 17a: the per-node hypotheses from the pass's checks
 

@@ -1234,6 +1234,15 @@ def regionalDerivChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (c
   | some d => derivChecked G images codes sums c node stepK d
   | none => true
 
+/-- **The step evidence's header** where the regional evidence is typed by
+the step's proof (no derivation, a proof `p` in the step evidence): `p`'s
+claim at the node's context and type. -/
+def regionalHeaderChecked (c : PointClaim ι) (deriv : Option (ProgramCertificates.Evidence ι))
+    (effect : Option (HeapExpressionRules.StepEvidence ι)) : Bool :=
+  match deriv, effect.bind HeapExpressionRules.StepEvidence.proof? with
+  | none, some p => decide ((ProgramCertificates.claim p).context = c.context ∧ (ProgramCertificates.claim p).type = c.type)
+  | _, _ => true
+
 /-- **A node's step within a footprint bound** (`GraphCode.nodeChecked`),
 at a node outside the region from which no normal return is possible: the
 step within `Φ` (`ExpressionEffects.check`, `writeWithin`, `initWriteWithin`,
@@ -2603,18 +2612,11 @@ structure ExitsDone (ι : Type) [BEq ι] [Hashable ι] (G : NormalGraph ι) wher
   regional : Option (RegionalDone ι)
   exits : Array (ExitRecord ι) := #[]
 
-/-- The step's yields the exits read: the step's, else, where a target's
-assertion is checked on an edge, `nodeYields` checked (`checkYsAt` at the
-step's final answers); and the answers after them. -/
-def exitsYields (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l : Nat)
-    (en : Entered ι) (sd : StepDone ι G) : Option (List (PromiseCalls.Yield ι)) × Answered G :=
-  let node := env.nodes[l]!
-  let c := env.claimed[l]!
-  if sd.yields.isNone && (Exit.ofNode node).any (fun e => !env.isHead[e.target.label]! && (env.stated[e.target.label]!).isSome) then
-    let slotImpl := slotImplOf en.entry.names en.implies
-    let (ys, a) := (nodeYields G images env.pool c.context slotImpl (derivOf c node sd.st) sd.st.stepOut sd.st.stepK) sd.answers
-    (some (checkYsAt G images env.codes sd.answers c node sd.st slotImpl ys), keepSummaries sd.answers a)
-  else (sd.yields, sd.answers)
+/-- The step's yields the exits read: those the step kept; and the step's
+final answers. -/
+def exitsYields (G : NormalGraph ι) (images : InstanceImageCheck G) (_env : WalkEnv ι G images) (_l : Nat)
+    (_en : Entered ι) (sd : StepDone ι G) : Option (List (PromiseCalls.Yield ι)) × Answered G :=
+  (sd.yields, sd.answers)
 
 /-- Each yield restated at every slot holding its target's name, as the
 alias links of a positional state relate them. -/
@@ -2625,15 +2627,15 @@ def yieldsAtSlots (names : List Nat) (ys : List (PromiseCalls.Yield ι)) : List 
 
 /-- **The regional evidence's entry facts**: the entry's whole
 materialization `kHere` together with the step's facts `stepK`, each list
-`kHere`'s then `stepK`'s others, the separations joined where both are at
-one depth or `stepK`'s is empty (`HeapSeparation.union`), `kHere`'s
-otherwise; every fact of `kHere` kept. -/
+`kHere`'s then `stepK`'s others; the separations joined
+(`HeapSeparation.union`): both where they are at one depth, the other where
+one is empty, `stepK`'s otherwise, so every separation fact of the step's
+derivation check is stated. -/
 def regionalFacts (kHere stepK : Knowledge) : Knowledge :=
   { cells := kHere.cells ++ stepK.cells.filter (!kHere.cells.contains ·)
     values := kHere.values ++ stepK.values.filter (!kHere.values.contains ·)
     links := kHere.links ++ stepK.links.filter (!kHere.links.contains ·)
-    separation := if kHere.separation.depth == stepK.separation.depth || stepK.separation.facts.isEmpty
-      then HeapSeparation.union kHere.separation stepK.separation else kHere.separation
+    separation := HeapSeparation.union kHere.separation stepK.separation
     elems := kHere.elems ++ stepK.elems.filter (!kHere.elems.contains ·)
     indices := kHere.indices ++ stepK.indices.filter (!kHere.indices.contains ·) }
 
@@ -2664,6 +2666,8 @@ def regionalAt (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkE
   let kHere := (materialize en.entry width (List.range width) true).1
   if !regionalDerivChecked G images env.codes sums c node st.stepK st.stepDeriv then
     .error s!"store regions at node {l}: its derivation"
+  else if !regionalHeaderChecked c st.stepDeriv st.stepEffect then
+    .error s!"store regions at node {l}: its step evidence"
   else
     let cEv : NodeEvidence ι := ⟨ordinaryEv, some ⟨c.context, node.expression, c.type⟩, [], regionalFacts kHere st.stepK, st.stepEffect, {}, none, [], [], [], none⟩
     let t0 := node.expression
@@ -2773,7 +2777,7 @@ the context the step's yields refine (`refinedContext`), else at the mixed
 context (`mixedContext`); how they passed (`ExitTyped`), or the refusal where
 none passes. -/
 def exitTypes (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l : Nat)
-    (en : Entered ι) (sd : StepDone ι G) (outAll : Thunk Knowledge) (t : Target) (tc : PointClaim ι)
+    (en : Entered ι) (_sd : StepDone ι G) (outAll : Thunk Knowledge) (t : Target) (tc : PointClaim ι)
     (Γ : List (Ty ι)) (names : List Nat) (edgeStore : Store) (pushed isHandler : Bool)
     (observed : Option BranchRefinement.Observation) (first : Bool) (diff : List (Nat × Nat))
     (acc : ExitsDone ι G) : Except (WalkStop ι G) (ExitsDone ι G × ExitTyped ι) :=
@@ -2799,12 +2803,7 @@ def exitTypes (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
     else
       -- The edge's context as the step's yields refine it
       -- (`produceNodeAt`): what a test or a promise establishes.
-      let (ys, answers) := match acc.yields with
-        | some ys => (ys, answers)
-        | none =>
-          let slotImpl := slotImplOf entry.names en.implies
-          let (ys, a) := (nodeYields G images env.pool c.context slotImpl (derivOf c node sd.st) sd.st.stepOut sd.st.stepK) answers
-          (checkYsAt G images env.codes sd.answers c node sd.st slotImpl ys, keepSummaries answers a)
+      let ys := acc.yields.getD []
       let outL := outAll.get
       let Γ' := refinedContext G c node.continuation (yieldsAtSlots entry.names ys) outL first
       let (found, a) := checkedEdge G images env.claimed tc.context Γ' t observed outL answers
@@ -2818,7 +2817,7 @@ def exitTypes (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
           else (found, answers, ExitTyped.mixed Γm outL)
       if !found then
         .error (WalkStop.mk (.refused s!"edge from node {l} to node {t.label}{if l == env.debugNode then s!" fields {reprStr (readFields ko 0)} links {reprStr ko.links} diff {reprStr diff} implies {reprStr (en.implies.map fun x => (x.test, x.target))} names {reprStr (entry.names.take 6)} yields {reprStr (ys.map fun y => (y.target, y.conditional))}" else ""}") counts answers acc.trace)
-      else .ok ({ acc with answers, counts, yields := some ys }, typed)
+      else .ok ({ acc with answers, counts }, typed)
 
 /-- An edge into a head (`exitStep`): recorded; where the edge's context is
 met, the head's given implications and the slots it states to hold an

@@ -195,7 +195,12 @@ theorem visitsRest_of (hp : ExitsPushOk ι) (hs : VisitsSettle ι)
            degs := ?_, queue := ?_, settles := hs G I c env σ l rest en sd ex hP, mergeFresh := ?_, inSizes := ?_,
            impBelow := fun _ => hi G I c env σ l rest en sd ex hP,
            extendsWalk := visitExits_extends hx hI.inSizes,
-           vacuity := fun hc => visitExits_cachedVacuity hx hc }
+           vacuity := fun hc => visitExits_cachedVacuity hx hc,
+           allocation := ⟨(visitExits_arraySizes hx).1, (visitExits_arraySizes hx).2.2⟩,
+           incomingGrowth := fun t => by
+             have hG := hF.incomingGrowth t
+             rw [a1, hL] at hG
+             exact hG }
   · intro t ht
     have := hF.frame t (hL ▸ ht)
     rw [a1, a2, a3] at this

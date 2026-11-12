@@ -24,15 +24,19 @@ theorem nodeExitsY_of_checks {G : NormalGraph ι} {images : InstanceImageCheck G
     {l : Nat} {node : Node} {c : PointClaim ι} {entry : SinglePass.State} {st : Stepped ι}
     {ys : List (PromiseCalls.Yield ι)} {here outFresh : Bool} {ysA : List (PromiseCalls.Yield ι)} {thrown : Nat}
     {TT : Ty ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} {deriv : ProgramCertificates.Evidence ι}
-    (hc : NodeExitsChecked G images w startNames ctx stated given edgesIn l node c entry st ys here outFresh ysA thrown TT)
+    (η : MixedAssignment ι)
+    (hc : NodeExitsChecked (reassign G η) (images.reassign η) w startNames ctx stated given edgesIn l node c entry st ys
+      here outFresh ysA thrown TT)
     (hf : outFresh = passOutFreshChecked G images codes sums c node entry st.stepK deriv)
     (hshape : SinglePass.passShapeCheck' G c.type node.continuation = true) (wf : StoreWF entry.store)
-    (hwidth : entry.names.length ≤ c.context.length) (hnd : startNames.Nodup) (η : MixedAssignment ι)
+    (hwidth : entry.names.length ≤ c.context.length) (hnd : startNames.Nodup)
     (hsub : SubtypeAnswersSound (reassign G η) (images.reassign η))
     (hcodes : CodesSound (reassign G η) codes) (hsums : SummariesSound (reassign G η) (images.reassign η) sums)
     (m : Nat) :
     NodeExitsY (reassign G η) w startNames ρ0 ctx stated given edgesIn m l node c entry st ys := by
-  have hd := nodeExitsYF_of_checks hc hshape wf hnd η hsub (ρ0 := ρ0) m
+  have hshape' : SinglePass.passShapeCheck' (reassign G η) c.type node.continuation = true := by
+    rw [passShapeCheck'_reassign]; exact hshape
+  have hd := nodeExitsYF_of_checks hc hshape' wf hnd hsub (ρ0 := ρ0) m
   refine ⟨?_, hd.handler⟩
   intro t pushed observed promote hmem ρ s hS he hkS hm s' v hv hF he' ho
   obtain ⟨hS', hy, hout, k, hk, hrun⟩ := hF

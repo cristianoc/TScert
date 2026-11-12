@@ -78,6 +78,14 @@ end Drive
 section Record
 variable {ι : Type} [Labels ι]
 
+/-- A call's setup (`SinglePass.setup` over its arguments). -/
+def RunCall.setup {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) :
+    Except (SinglePass.WalkStop ι G) (SinglePass.WalkEnv ι G I × SinglePass.WalkState ι G) :=
+  SinglePass.setup G I c.pool c.fuel c.P c.claims c.start c.inputs c.goal c.assertions c.cuts c.candidates
+    c.entryIndices c.suggestions c.known c.codes c.aliases c.passChecker c.answers c.reference c.debugNode
+    c.bound c.givenImplies c.givenArgs c.ensures c.givenInputs c.entrySeparation c.observe c.tracing
+    c.observeEntry c.regional
+
 /-- The walk of a call (`SinglePass.runWalk` over its arguments). -/
 def RunCall.walk {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) :
     Except (SinglePass.WalkStop ι G) (SinglePass.WalkState ι G × Nat) :=
@@ -162,16 +170,6 @@ theorem ofPass_heads (r : SinglePass.Walk ι) (heads : Nat → Bool) :
   · exact List.mem_singleton.mp he
   · simp at he
 
-/-- The loop heads `runWalk` marks: `loopHeads`' targets of retreating
-edges, and the start. -/
-def passIsHead (P : ControlFlow.Program) (start : Nat) : Array Bool :=
-  if start < P.toArray.size then (SinglePass.loopHeads P.toArray start).1.set! start true
-  else (SinglePass.loopHeads P.toArray start).1
-
-/-- A call's loop heads, by label. -/
-def passHeads {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) (t : Nat) : Bool :=
-  (passIsHead c.P c.start)[t]?.getD false
-
 /-- **A call's loop heads cut every cycle of the nodes `loopHeads`
 reaches** (`loopHeads_cuts`; the start marked besides,
 `HeadsCutCycles.mono`). -/
@@ -192,9 +190,24 @@ theorem passHeads_cuts {G : NormalGraph ι} {I : InstanceImageCheck G}
     · exact hv
   · exact hv
 
-/-- A call's label contexts: each label's claim's. -/
-def passCtx {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) (t : Nat) : List (Ty ι) :=
-  ((c.claims[t]?).map (·.context)).getD []
+/-- The initial in-degrees of the reached graph, with heads cut. -/
+@[nospecialize] def passDegrees {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) : Array Nat :=
+  SinglePass.inDegrees c.P.toArray (SinglePass.loopHeads c.P.toArray c.start).2 (passIsHead c.P c.start)
+
+/-- The setup marks targets with more than one incoming edge as merges. -/
+@[nospecialize] def passMerging {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) : Array Bool :=
+  (passDegrees c).map (· > 1)
+
+/-- A budget of at least two selects a merge. -/
+theorem passMerging_of_degree {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) (t : Nat)
+    (h : 2 ≤ ((passDegrees c)[t]?).getD 0) : (passMerging c)[t]! = true := by
+  simp only [passMerging, Array.getElem!_eq_getD, Array.getD_eq_getD_getElem?, Array.getElem?_map]
+  cases hd : (passDegrees c)[t]? with
+  | none => simp [hd] at h
+  | some n =>
+    simp only [hd, Option.getD_some] at h
+    simp only [Option.map_some, Option.getD_some, decide_eq_true_eq]
+    omega
 
 /-- A call's written assertions by label (`byLabel`, as `runWalk` reads
 them). -/
@@ -225,6 +238,8 @@ structure RecordSound (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Targe
   traversed : TraversedA G (ofPass σ.walk (passHeads c)) (List.range c.inputs.length) (passHeads c) (passCtx c)
     (passEdgesIn σ.walk) (passFresh σ.walk) (passStated c)
   start : StartEntered c (ofPass σ.walk (passHeads c)) (passCtx c) (passStated c)
+  merging : ∀ t, passHeads c t = false →
+    2 ≤ ((ofPass σ.walk (passHeads c)).incoming t).length → (passMerging c)[t]! = true
 
 variable (ι) in
 /-- **(Named hypothesis) The driver's record of an accepted call is
@@ -245,7 +260,7 @@ theorem run_traversedA (hstop : WalkStopsRefuse ι) (hrec : RecordsSound ι) : R
   have hr := hrec G I c σ reach hw hle (ha ▸ hsums)
   exact ⟨⟨ofPass σ.walk (passHeads c), passHeads c, passCtx c, passEdgesIn σ.walk, passFresh σ.walk,
     passStated c, fun l hl => Classical.choice (hr.node l hl), hr.traversed, ofPass_heads σ.walk (passHeads c),
-    hr.start, fun _ => rfl⟩⟩
+    hr.start, (fun _ => rfl), rfl, rfl⟩⟩
 
 end Record
 

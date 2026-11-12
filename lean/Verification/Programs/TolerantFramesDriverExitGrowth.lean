@@ -120,5 +120,84 @@ theorem visitExits_extends {env : SinglePass.WalkEnv ι G I} {σ : SinglePass.Wa
   · obtain ⟨es, he, -⟩ := hf.edges
     exact ⟨es, by rw [← h4]; exact he⟩
 
+open SinglePass ProgramTyping
+
+/-- All three incoming arrays keep their allocated sizes through one exit. -/
+theorem exitStep_arraySizes {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd : StepDone ι G}
+    {ys : List (PromiseCalls.Yield ι)} {out : Thunk HeapKnowledge.Knowledge}
+    {a b : ExitsDone ι G} {e : Exit × Nat}
+    (h : exitStep G I env l en sd ys out a e = .ok b) :
+    b.incoming.size = a.incoming.size ∧ b.incomingImpl.size = a.incomingImpl.size ∧
+      b.incomingEdges.size = a.incomingEdges.size := by
+  unfold exitStep at h
+  extract_lets at h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  extract_lets diff u a2 typed at h
+  generalize ht : typed = T at h
+  split at h
+  · cases h
+  rename_i a1 et
+  simp only [typed] at ht
+  have hp : SameCore a a2 ∧ a2.edges = a.edges :=
+    sameCore_unsat (sameCore_trace _ _ _) _ _
+  have hc : SameCore a a1 := by
+    split at ht
+    · cases ht; exact hp.1
+    · exact hp.1.trans (exitTypes_core ht).1
+  extract_lets freshImpl record at h
+  split at h
+  · simp only [Except.map] at h
+    split at h
+    · cases h
+    · rename_i a3 ha
+      cases h
+      have hc' := hc.trans (headExit_core ha).1
+      exact ⟨congrArg Array.size hc'.incoming, congrArg Array.size hc'.incomingImpl,
+        congrArg Array.size hc'.incomingEdges⟩
+  · split at h
+    · cases h
+    rename_i a3 ha
+    split at h
+    cases h
+    have hc' := hc.trans (assertionExit_core ha).1
+    dsimp only [pushExit]
+    split <;> simp only [Array.size_modify, hc'.incoming, hc'.incomingImpl, hc'.incomingEdges, and_self]
+
+/-- The exit fold preserves all incoming array sizes. -/
+theorem exitsFold_arraySizes {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd : StepDone ι G}
+    {ys : List (PromiseCalls.Yield ι)} {out : Thunk HeapKnowledge.Knowledge} :
+    ∀ (es : List (Exit × Nat)) (a b : ExitsDone ι G),
+      es.foldlM (exitStep G I env l en sd ys out) a = .ok b →
+      b.incoming.size = a.incoming.size ∧ b.incomingImpl.size = a.incomingImpl.size ∧
+        b.incomingEdges.size = a.incomingEdges.size
+  | [], a, b, h => by cases h; exact ⟨rfl, rfl, rfl⟩
+  | e :: es, a, b, h => by
+    rw [List.foldlM_cons] at h
+    cases ha : exitStep G I env l en sd ys out a e with
+    | error stop => rw [ha] at h; cases h
+    | ok a' =>
+      rw [ha] at h
+      obtain ⟨h1, h2, h3⟩ := exitStep_arraySizes ha
+      obtain ⟨g1, g2, g3⟩ := exitsFold_arraySizes es a' b h
+      exact ⟨g1.trans h1, g2.trans h2, g3.trans h3⟩
+
+/-- A successful exit visit preserves the setup's allocation. -/
+theorem visitExits_arraySizes {env : WalkEnv ι G I} {σ : WalkState ι G} {l : Nat}
+    {en : Entered ι} {sd : StepDone ι G} {ex : ExitsDone ι G}
+    (h : visitExits G I env σ l en sd = .ok ex) :
+    ex.incoming.size = σ.walk.incoming.size ∧ ex.incomingImpl.size = σ.walk.incomingImpl.size ∧
+      ex.incomingEdges.size = σ.walk.incomingEdges.size := by
+  unfold visitExits at h
+  extract_lets at h
+  split at h
+  extract_lets outAll regional at h
+  generalize regional = R at h
+  split at h
+  · cases h
+  · exact exitsFold_arraySizes _ _ _ h
+
 end Growth
 end Verification.TolerantFrames

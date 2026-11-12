@@ -94,6 +94,9 @@ structure VisitRest (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) (
   impBelow : IncomingBelow σ.walk σ.fresh → IncomingBelow σ'.walk σ'.fresh
   extendsWalk : WalkExtends σ.walk σ'.walk
   vacuity : CachedVacuity G env.claimed σ.unsat → CachedVacuity G env.claimed σ'.unsat
+  allocation : σ'.walk.incoming.size = σ.walk.incoming.size ∧
+    σ'.walk.incomingEdges.size = σ.walk.incomingEdges.size
+  incomingGrowth : ∀ t, (incS σ'.walk t).length ≤ (incS σ.walk t).length + (exitsOf env l).count t
 
 variable (ι) in
 /-- **(Named hypothesis) Every visit gives `VisitRest`**, under
@@ -108,11 +111,26 @@ def VisitsRest : Prop :=
 the rest (`VisitsRest`): the record's write at the visited label, below the
 record's size by the invariant (`visit_ok`, `visitResult_labels`,
 `visitResult_visits`, `visitResult_size`). -/
-theorem visitsRecord_of (hr : VisitsRest ι) : VisitsRecord ι := by
+theorem visitsRecord_of (hr : VisitsRest ι)
+    (hp : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (env : SinglePass.WalkEnv ι G I)
+      (σ : SinglePass.WalkState ι G) l en sd ex,
+      SinglePass.visitStep G I env σ l en = .ok sd →
+      SinglePass.visitExits G I env σ l en sd = .ok ex →
+      SumsPrefix ex.answers (SinglePass.keepSummaries σ.answers ex.answers)) : VisitsRecord ι := by
   intro G I c env σ0 σ σ'' l rest hs hE hI hq hv
   have hR := hr G I c env σ0 σ σ'' l rest hs hE hI hq hv
-  obtain ⟨en, sd, ex, -, -, -, rfl⟩ := visit_ok hv
+  obtain ⟨en, sd, ex, he, hs, hx, rfl⟩ := visit_ok hv
   have hln : l < env.n := (hI.queue l (by rw [hq]; exact List.mem_cons_self ..)).1
+  have hri := visitExits_inputs hx
+  have hframe : ∀ t, t ∉ exitsOf env l → ex.regionIn[t]? = σ.regionIn[t]? := by
+    intro t ht
+    apply hri.2 t
+    · intro x hx hxt
+      apply ht
+      exact List.mem_map.mpr ⟨x, List.mem_append_left _ hx, hxt⟩
+    · intro x hx hxt
+      apply ht
+      exact List.mem_map.mpr ⟨x, List.mem_append_right _ (by simpa using hx), hxt⟩
   exact { exits := hR.exits,
           labels := fun t ht => visitResult_labels _ _ _ _ _ ht,
           visits := visitResult_visits _ _ _ _ _ (hI.size ▸ hln),
@@ -120,7 +138,18 @@ theorem visitsRecord_of (hr : VisitsRest ι) : VisitsRecord ι := by
           size := visitResult_size _ _ _ _ _,
           frame := hR.frame, pushes := hR.pushes, edges := hR.edges, fresh := hR.fresh, degs := hR.degs,
           queue := hR.queue, settles := hR.settles, mergeFresh := hR.mergeFresh,
-          inSizes := hR.inSizes, impBelow := hR.impBelow, extendsWalk := hR.extendsWalk, vacuity := hR.vacuity }
+          inSizes := hR.inSizes, impBelow := hR.impBelow, extendsWalk := hR.extendsWalk, vacuity := hR.vacuity, allocation := hR.allocation, incomingGrowth := hR.incomingGrowth,
+          origin := ⟨_, en, sd, ex, he, hs, hx, by
+            simp only [visitResult, Array.set!_eq_setIfInBounds,
+              Array.getElem?_setIfInBounds_self_of_lt (hI.size ▸ hln)],
+            hp G I env _ l en sd ex hs hx⟩,
+          regionFrame := hframe, regionMono := hri.1,
+          regionSizes := visitExits_regionSize hx,
+          regionalOrigin := fun hself => ⟨_, en, sd, ex, he, hs, hx, by
+            simp only [visitResult, Array.set!_eq_setIfInBounds,
+              Array.getElem?_setIfInBounds_self_of_lt (hI.size ▸ hln)],
+            hp G I env _ l en sd ex hs hx, hI.regionSizes,
+            fun hg => (hframe l (hself hg)).symm, fun _ _ h => h⟩ }
 
 /-- **A state an exit carries in meets `PushOk`** (`edgeTransfer_width`,
 `edgeTransfer_wf`, `edgeStoreOf_wf`, `edgeTransfer_below`,
