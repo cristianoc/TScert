@@ -1,4 +1,5 @@
 import Verification.Programs.TolerantFramesDriverExitGrowth
+import Verification.Programs.TolerantFramesExitVacuity
 
 /-! # Tolerant frames: the rest of a visit's facts from its parts
 
@@ -193,7 +194,8 @@ theorem visitsRest_of (hp : ExitsPushOk ι) (hs : VisitsSettle ι)
   refine { exits := hexits, frame := ?_, pushes := ?_, edges := ?_, fresh := show σ.fresh ≤ sd.fresh from stepFresh hP,
            degs := ?_, queue := ?_, settles := hs G I c env σ l rest en sd ex hP, mergeFresh := ?_, inSizes := ?_,
            impBelow := fun _ => hi G I c env σ l rest en sd ex hP,
-           extendsWalk := visitExits_extends hx hI.inSizes }
+           extendsWalk := visitExits_extends hx hI.inSizes,
+           vacuity := fun hc => visitExits_cachedVacuity hx hc }
   · intro t ht
     have := hF.frame t (hL ▸ ht)
     rw [a1, a2, a3] at this

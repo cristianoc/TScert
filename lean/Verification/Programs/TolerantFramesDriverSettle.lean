@@ -179,11 +179,12 @@ theorem visitsSettle_of
         (fun s hs => ha s (hp.mem s hs))
     refine ⟨r, hchecked, w, env, { σ with queue := rest }, en, sd, ex, ?_, rfl,
       hP.facts.nodes, hP.facts.claims, hP.facts.codes, hP.facts.checker, ?_, hP.facts.stated,
-      hP.entry, hP.step, hP.exits, hn, hc, heq, hst, hans, hys, hi.symm, hP.inv.inSizes, ?_, ?_⟩
+      hP.entry, hP.step, hP.exits, hn, hc, heq, hst, hans, hys, hi.symm, hP.inv.inSizes, ?_, ?_, ?_⟩
     · rw [hP.facts.heads]
     · exact congrFun hP.facts.heads
     · exact ⟨hext.incoming, hext.incomingEdges, hext.edges⟩
     · exact visitExits_checked hP.exits hP.inv.inSizes ⟨hext.incoming, hext.incomingEdges, hext.edges⟩
+    · exact visitEntry_hereEmpty hP.inv.vacuity hP.entry
   · intro hs w hw
     exact visitStart_entered hP hs (hw.trans hlabel)
 

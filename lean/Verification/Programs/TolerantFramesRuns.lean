@@ -149,6 +149,31 @@ structure NodeObligations (pre : Nat → Assertion) (Ξres Tres : Fam) (Qres Rre
   raise : ∀ (s : IndexedHeap) (e : Tm), Action ce.fp ρ s₀ s → Scoped 0 e → Above Ξ s e → Qe s.h →
     RaiseTarget pre Ξres Rres ρ m s e x
 
+/-- The entry mark lies within the current heap. -/
+def marked (pre : Nat → Assertion) : Nat → Assertion :=
+  fun l ρ m s => pre l ρ m s ∧ m ≤ s.h.length
+
+/-- Every admissible exit preserves a bound on the entry mark. -/
+theorem nodeObligations_marked {pre : Nat → Assertion} {Ξres Tres Ξ T : Fam} {Qres Rres : Heap → Prop}
+    {cn ce : Footprints.Closed} {Qn : Post} {Qe : Heap → Prop} {ρ : Env} {m : Nat} {s : IndexedHeap}
+    {k : Continuation} {x : Option Target} (hm : m ≤ s.h.length)
+    (ho : NodeObligations pre Ξres Tres Qres Rres Ξ T cn ce Qn Qe ρ m s k x) :
+    NodeObligations (marked pre) Ξres Tres Qres Rres Ξ T cn ce Qn Qe ρ m s k x where
+  shape := ho.shape
+  normal s' v ha hv hT hq := by
+    have ht := ho.normal s' v ha hv hT hq
+    have hm' := (Nat.le_trans hm ha.1.length_le)
+    cases k with
+    | ret => exact ht
+    | effect t => exact ⟨ht, hm'⟩
+    | bind t => exact ⟨ht, hm'⟩
+    | _ => exact ht.imp (fun h => ⟨h.1, h.2, hm'⟩) (fun h => ⟨h.1, h.2, hm'⟩)
+  raise s' e ha hsc hΞ hq := by
+    have ht := ho.raise s' e ha hsc hΞ hq
+    cases x with
+    | none => exact ht
+    | some t => exact ⟨ht, (Nat.le_trans hm ha.1.length_le)⟩
+
 /-- A partially evaluated node: its local safety from its entry state `s₀`,
 the current world reached from `s₀`, and its exit obligations. -/
 def EvalOk (pre : Nat → Assertion) (Ξres Tres : Fam) (Qres Rres : Heap → Prop) (m n : Nat) (W : WorldT n) (h : Heap) (t : Tm)

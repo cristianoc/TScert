@@ -117,6 +117,18 @@ def StepEdgesSoundAt (pre : Nat → Assertion) (P : ControlFlow.Program) (G : No
         s.n s.W s.h (instantiate 0 ρ node.expression) ∧
       NodeObligations pre Ξres Tres Qres Rres Ξ T cn ce Qn Qe ρ m s node.continuation node.handler
 
+omit [DecidableEq ι] [Hashable ι] [Instantiates ι] in
+/-- Each visited node delivers its targets when the entry mark is bounded
+by the initial heap. -/
+@[nospecialize] def StepEdgesSoundMarked (pre : Nat → Assertion) (P : ControlFlow.Program) (G : NormalGraph ι) (w : Walk ι)
+    (startNames : List Nat) (ρ0 : Env) (ctx : Nat → List (Ty ι)) (Ξres Tres : Fam) (Qres Rres : Heap → Prop)
+    (m : Nat) : Prop :=
+  ∀ l ρ (s : IndexedHeap), passPreT G w startNames ρ0 ctx l ρ m s → m ≤ s.h.length → ∃ node, P[l]? = some node ∧
+    ∃ (Ξ T : Fam) (cn ce : Footprints.Closed) (Qn : Post) (Qe : Heap → Prop),
+      SafePostExc Ξ T (fun h' v => cn.Holds s.h h' ∧ Qn h' v) (fun h' => ce.Holds s.h h' ∧ Qe h')
+        s.n s.W s.h (instantiate 0 ρ node.expression) ∧
+      NodeObligations pre Ξres Tres Qres Rres Ξ T cn ce Qn Qe ρ m s node.continuation node.handler
+
 omit [Instantiates ι] in
 /-- **Every checked node of the pass delivers `pre`** (`StepEdgesSoundAt`):
 where every visited node is checked with its searches as oracles

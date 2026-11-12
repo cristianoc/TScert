@@ -137,27 +137,28 @@ theorem nodeObligations_of_partsY {G : NormalGraph ι} {A : Ty ι} {Γ : List (T
     (hnormal : ∀ (s' : IndexedHeap) v, Admissible s s' → isVal v = true → Fn (push v ρ) m s' →
       PromiseCalls.YieldsOk G ys ρ s'.n s'.W v →
       EnvOk G (A :: Γ) (push v ρ) s'.n s'.W → HeapKnowledge.Holds out (push v ρ) s'.h →
+      (∃ j, j < s.n ∧ Steps j s.h (instantiate 0 ρ t) s'.h v) →
       NormalTarget pre Tres Qres ρ m s' v k)
     (hraise : ∀ (s' : IndexedHeap) e, Admissible s s' → Fe ρ m s' → EnvOk G Γ ρ s'.n s'.W → Scoped 0 e →
       excOf G s'.n s'.W e → RaiseTarget pre Ξres Rres ρ m s' e x) :
     SafePostExc (excOf G) (fun j U u => meaning G A j U u ∧ PromiseCalls.YieldsOk G ys ρ j U u)
       (fun h' v => cn.Holds s.h h' ∧ (HeapKnowledge.Holds out (push v ρ) h' ∧
-        ∃ k, Steps k s.h (instantiate 0 ρ t) h' v))
+        ∃ k, k < s.n ∧ Steps k s.h (instantiate 0 ρ t) h' v))
       (fun h' => ce.Holds s.h h' ∧ True) s.n s.W s.h (instantiate 0 ρ t) ∧
     NodeObligations pre Ξres Tres Qres Rres (excOf G)
       (fun j U u => meaning G A j U u ∧ PromiseCalls.YieldsOk G ys ρ j U u) cn ce
-      (fun h' v => HeapKnowledge.Holds out (push v ρ) h' ∧ ∃ k, Steps k s.h (instantiate 0 ρ t) h' v)
+      (fun h' v => HeapKnowledge.Holds out (push v ρ) h' ∧ ∃ k, k < s.n ∧ Steps k s.h (instantiate 0 ρ t) h' v)
       (fun _ => True) ρ m s k x := by
   obtain ⟨-, hn, hx⟩ := hp
-  refine ⟨SafePostExc.weaken (fun _ _ ⟨⟨hc, ho⟩, hk⟩ => ⟨hc, ho, hk⟩) (fun _ h => h) (safePostExc_trace hjY),
+  refine ⟨SafePostExc.weaken (fun _ _ ⟨⟨hc, ho⟩, hk⟩ => ⟨hc, ho, hk⟩) (fun _ h => h) (safePostExc_trace_lt hjY),
     ⟨fun j U h v _ hT _ _ => hshape j U v hT.1, ?_, ?_⟩⟩
-  · intro s' v ha hv ⟨U, hU, hT, hY⟩ ⟨ho, k', hk⟩
+  · intro s' v ha hv ⟨U, hU, hT, hY⟩ ⟨ho, k', hlt, hk⟩
     have hT' : meaning G A s'.n s'.W v := by
       have := (meaning_adm G A).down_le (s'.n + 1) s'.n (Nat.le_succ _) U v hT
       rwa [hU] at this
     have hY' : PromiseCalls.YieldsOk G ys ρ s'.n s'.W v :=
       hY.transfer s'.n (Nat.le_succ _) s'.W (by rw [hU]; exact WExt_refl _)
-    exact hnormal s' v ha.1 hv (hn k' s'.h v s' hk hv ha rfl ho) hY' ((envOk_admissible ha.1 he).push hT') ho
+    exact hnormal s' v ha.1 hv (hn k' s'.h v s' hk hv ha rfl ho) hY' ((envOk_admissible ha.1 he).push hT') ho ⟨k', hlt, hk⟩
   · intro s' e ha hsc ⟨U, hU, hΞ⟩ _
     have hΞ' : excOf G s'.n s'.W e := by
       have := (builtinExc_adm G _).down_le (s'.n + 1) s'.n (Nat.le_succ _) U e hΞ
@@ -208,10 +209,13 @@ structure NodeYielded (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
     StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ρ0 (push v ρ) m s' →
     EnvOk G (c.type :: c.context) (push v ρ) s'.n s'.W → PromiseCalls.YieldsOk G ys ρ s'.n s'.W v →
     Tres s'.n s'.W v
-  exits : ∀ t pushed observed promote, Exit.normal t pushed observed promote ∈ Exit.ofNode node → ∀ ρ,
+  exits : ∀ t pushed observed promote, Exit.normal t pushed observed promote ∈ Exit.ofNode node → ∀ ρ (s : IndexedHeap),
+    StateHolds G entry (w.implies l) startNames ρ0 ρ m s →
+    EnvOk G c.context ρ s.n s.W → HeapKnowledge.Holds st.stepK ρ s.h → m ≤ s.h.length →
     ExitDelivers (edgePreAJ G w startNames ρ0 ctx stated given edgesIn) G c.type c.context
       (fun ρ' m' s' => StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ρ0
-        ρ' m' s' ∧ PromiseCalls.YieldsOk G ys ρ s'.n s'.W (ρ' 0) ∧ HeapKnowledge.Holds st.stepOut ρ' s'.h)
+        ρ' m' s' ∧ PromiseCalls.YieldsOk G ys ρ s'.n s'.W (ρ' 0) ∧ HeapKnowledge.Holds st.stepOut ρ' s'.h ∧
+          ∃ k, k < s.n ∧ Steps k s.h (instantiate 0 ρ node.expression) s'.h (ρ' 0))
       ρ m t pushed observed promote
   handler : ∀ t, node.handler = some t → ∀ ρ (s' : IndexedHeap) e,
     StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ (w.implies l) startNames ρ0
