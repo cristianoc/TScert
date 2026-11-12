@@ -282,6 +282,12 @@ macro "step_rest" : tactic => `(tactic| (
       · close_errors
       · step_tail (passTreeCheck_pre hTV hB hC), (wholeCheck_some hQ)))
 
+variable [Hashable ι] in
+/-- A table kept over itself is itself. -/
+theorem keepSummaries_self {G : NormalGraph ι} (a : Answered G) : keepSummaries a a = a := by
+  cases a
+  simp [keepSummaries]
+
 variable [Hashable ι] [Instantiates ι] in
 /-- **`checkedStep` accepting, read as its conditions** (an unfolding of the
 pass's code): a copy of a slot at the claim's type, the store unchanged; or a
@@ -299,9 +305,10 @@ theorem checkedStep_ok {G : NormalGraph ι} {images : InstanceImageCheck G} {poo
       st.fresh = fresh ∧ st.copied = true ∧ st.stepK = {} ∧ st.stepOut = {} ∧ ans = answers) ∨
     (copiedOf G c entry node.expression = none ∧
       ∃ (effect : HeapExpressionRules.StepEvidence ι) (a0 a1 : Answered G),
-        (a0 = answers ∨ ∃ adm, a0 = (directCall G images c.context node.expression c.type adm undefTy answers).2) ∧
-        (a1 = a0 ∨ ∃ k own adm, a1 = (expressionEffectUsing G images pool fuel (jOf c node) k suggestions index codes
-          aliases passChecker.checker own adm a0).2) ∧
+        (a0 = answers ∨
+          ∃ adm, a0 = keepSummaries answers (directCall G images c.context node.expression c.type adm undefTy answers).2) ∧
+        (a1 = a0 ∨ ∃ k own adm, a1 = keepSummaries a0 (expressionEffectUsing G images pool fuel
+          (jOf c node) k suggestions index codes aliases passChecker.checker own adm a0).2) ∧
         StepAccepted G images passChecker codes c node entry ms fresh effect a0.summaries.toList a1.summaries.toList st ∧
         ans = a1) := by
   unfold checkedStep at h
@@ -321,12 +328,14 @@ theorem checkedStep_ok {G : NormalGraph ι} {images : InstanceImageCheck G} {poo
   right
   refine ⟨hCP, ?_⟩
   obtain ⟨Df, a0⟩ := DO
-  have ha0 : a0 = answers ∨ ∃ adm, a0 = (directCall G images c.context node.expression c.type adm undefTy answers).2 := by
+  have ha0 : keepSummaries answers a0 = answers ∨
+      ∃ adm, keepSummaries answers a0 =
+        keepSummaries answers (directCall G images c.context node.expression c.type adm undefTy answers).2 := by
     split at hDO
     · exact .inr ⟨_, by rw [hD, hDO]⟩
-    · cases hDO; exact .inl rfl
+    · cases hDO; exact .inl (keepSummaries_self _)
   rcases Df with _ | ⟨e, b⟩ <;> try dsimp only at h
-  · generalize hR : S a0 = R at h
+  · generalize hR : S (keepSummaries answers a0) = R at h
     gen_discr h as RV with hRV
     rcases RV with _ | ⟨deriv, effect, searched⟩ <;> try dsimp only at h
     · close_errors
@@ -335,7 +344,9 @@ theorem checkedStep_ok {G : NormalGraph ι} {images : InstanceImageCheck G} {poo
     rcases OV with _ | out <;> try dsimp only at h
     · close_errors
     subst hR
-    refine ⟨effect, a0, (S a0).2, ha0, .inr ⟨_, _, _, congrArg (fun f => (f a0).2) hS.symm⟩, ?_⟩
+    refine ⟨effect, keepSummaries answers a0, keepSummaries (keepSummaries answers a0) (S (keepSummaries answers a0)).2,
+      ha0, .inr ⟨_, _, _, congrArg (fun f => keepSummaries (keepSummaries answers a0) (f (keepSummaries answers a0)).2)
+        hS.symm⟩, ?_⟩
     step_rest
   · gen_discr h as RV with hRV
     rcases RV with _ | ⟨deriv, effect, searched⟩ <;> try dsimp only at h
@@ -343,7 +354,8 @@ theorem checkedStep_ok {G : NormalGraph ι} {images : InstanceImageCheck G} {poo
     simp only [CheckResult.map, Option.map_eq_some_iff, Prod.mk.injEq] at hRV
     obtain ⟨out, hOV, -, rfl, rfl⟩ := hRV
     simp only [Option.isSome_some, if_true] at h
-    refine ⟨.ordinary e, a0, a0, ha0, .inl rfl, ?_⟩
+    simp only [keepSummaries_self] at h
+    refine ⟨.ordinary e, keepSummaries answers a0, keepSummaries answers a0, ha0, .inl rfl, ?_⟩
     step_rest
 
 end StepLink

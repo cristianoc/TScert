@@ -1,6 +1,7 @@
 import Verification.Programs.TolerantFramesComposeYields
 import Verification.Programs.TolerantFramesDriverSettle
 import Verification.Programs.TolerantFramesRegionalHeld
+import Verification.Programs.TolerantFramesDriverSetup
 
 /-! # Tolerant frames: the single pass's graph theorem
 
@@ -14,8 +15,8 @@ open Verification PositiveGraphs PositiveCertificates LabelStore
 section Run
 variable {ι : Type} [Labels ι]
 
-/-- **THE GRAPH THEOREM of the single pass, over its open premises**: what
-the setup records (`SetupRecords`); of each visit, each exit's mapping of
+/-- **THE GRAPH THEOREM of the single pass, over its open premises**: the
+setup starting the walk's invariant by proof (`setupRecords_of`); of each visit, each exit's mapping of
 its target's width (`ExitsWidth`; the states its exits push then meet
 `PushOk`, `exitsPushOk_of`) and its label settled, its checks at the node it
 visits included, the yields it keeps among them (`visitsSettle_of`, under `DirectKeepsSummaries` and `SearchKeepsSummaries`; the rest
@@ -28,7 +29,7 @@ graph's tables (`RegionsRecorded`) and the regional evidence typed
 the return's goal, `nodesYield_of`; the regional premise,
 `regionsHeld_of`; the pass's `linearNear` its search on fuel by
 definition, `linearNearFuelEq`). -/
-theorem run_sound_single_pass (hs : SetupRecords ι) (hp : ExitsWidth ι)
+theorem run_sound_single_pass (hp : ExitsWidth ι)
     (hdir : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (env : SinglePass.WalkEnv ι G I),
       DirectKeepsSummaries G I env.undefTy)
     (hsrch : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (env : SinglePass.WalkEnv ι G I),
@@ -37,7 +38,7 @@ theorem run_sound_single_pass (hs : SetupRecords ι) (hp : ExitsWidth ι)
     (hsub : SubtypeAnswersAll ι) (hex : ExitsYield ι) (hrec : RegionsRecorded ι)
     (htyped : RegionsTyped ι) : Target.RunSound ι :=
   have hv := visitsRecord_of (visitsRest_of (exitsPushOk_of hp) (visitsSettle_of hdir hsrch) visitsImplications)
-  run_sound_pass (recordsSound_of hs hv) (recordsChecked_of hs hv) (nodesYield_of hsub hex) linearNearFuelEq
+  run_sound_pass (recordsSound_of setupRecords_of hv) (recordsChecked_of setupRecords_of hv) (nodesYield_of hsub hex) linearNearFuelEq
     (regionsHeld_of hrec htyped)
 
 end Run

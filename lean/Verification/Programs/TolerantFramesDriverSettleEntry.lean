@@ -10,13 +10,13 @@ variable {ι : Type} [Labels ι] {G : NormalGraph ι} {I : InstanceImageCheck G}
 /-- The visited label contains exactly the visit's record. -/
 theorem visitResult_record {σ : SinglePass.WalkState ι G} {l : Nat} {en : SinglePass.Entered ι}
     {sd : SinglePass.StepDone ι G} {ex : SinglePass.ExitsDone ι G} (hl : l < σ.walk.labels.size) :
-    (visitResult σ l en sd ex).walk.labels[l]? = some (SinglePass.LabelWalk.ofVisit σ.fresh en sd) := by
+    (visitResult σ l en sd ex).walk.labels[l]? = some (SinglePass.LabelWalk.ofVisit σ.fresh en sd ex.region) := by
   simp only [visitResult, Array.set!_eq_setIfInBounds, Array.getElem?_setIfInBounds_self_of_lt hl]
 
 /-- A walk agreeing with the visit's label has its entry, implications and visited flag. -/
 theorem ofPass_visitRecord {w : SinglePass.Walk ι} {heads : Nat → Bool} {l fresh : Nat}
-    {en : SinglePass.Entered ι} {sd : SinglePass.StepDone ι G}
-    (h : w.labels[l]? = some (SinglePass.LabelWalk.ofVisit fresh en sd)) :
+    {en : SinglePass.Entered ι} {sd : SinglePass.StepDone ι G} {region : Option SinglePass.RegionState}
+    (h : w.labels[l]? = some (SinglePass.LabelWalk.ofVisit fresh en sd region)) :
     (ofPass w heads).entry l = en.entry ∧ (ofPass w heads).implies l = en.implies ∧
       (ofPass w heads).visited l := by
   simp [ofPass, h, SinglePass.LabelWalk.ofVisit]
@@ -27,7 +27,8 @@ theorem visitStart_entered {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι
     {sd : SinglePass.StepDone ι G} {ex : SinglePass.ExitsDone ι G}
     (hP : VisitParts c env σ l rest en sd ex) (hl : l = c.start)
     {w : SinglePass.Walk ι}
-    (hrec : w.labels[l]? = some (SinglePass.LabelWalk.ofVisit σ.fresh en sd)) :
+    {region : Option SinglePass.RegionState}
+    (hrec : w.labels[l]? = some (SinglePass.LabelWalk.ofVisit σ.fresh en sd region)) :
     StartEntered c (ofPass w (envHead env)) (passCtx c) (passStated c) := by
   subst l
   obtain ⟨he, hi, hv⟩ := ofPass_visitRecord (heads := envHead env) hrec
