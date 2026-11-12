@@ -92,7 +92,7 @@ reaches, its answers those the call leaves (`run` is the record's
 `Walk.outcome`). -/
 theorem walk_of_accepts' {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I}
     {after : Answered G} (h : c.Accepts after) :
-    (∃ stop : SinglePass.WalkStop ι G, RunCall.walk c = .error stop ∧ stop.1 = .accepted) ∨
+    (∃ stop : SinglePass.WalkStop ι G, RunCall.walk c = .error stop ∧ stop.outcome.outcome = .accepted) ∨
       ∃ σ reach, RunCall.walk c = .ok (σ, reach) ∧ reach ≤ σ.walk.visited ∧ σ.answers = after := by
   obtain ⟨counts, trace, h⟩ := h
   unfold Target.RunCall.result SinglePass.run at h
@@ -100,8 +100,8 @@ theorem walk_of_accepts' {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Ta
   | error stop =>
     unfold RunCall.walk at hw
     rw [hw] at h
-    simp only at h
-    exact .inl ⟨stop, rfl, by rw [h]⟩
+    simp only [Prod.mk.injEq] at h
+    exact .inl ⟨stop, rfl, h.1⟩
   | ok p =>
     obtain ⟨σ, reach⟩ := p
     unfold RunCall.walk at hw
@@ -115,13 +115,11 @@ theorem walk_of_accepts' {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Ta
     · omega
 
 variable (ι) in
-/-- **(Named hypothesis) A stopped walk is never accepted**: every outcome
-`runWalk` stops with is a refusal, a gap or an observation. The pass states
-each one explicitly; a stop type without acceptance (a pass change) makes
-this hold by its type. -/
+/-- **(Named hypothesis) A stopped walk is never accepted**: the verdict of
+every stop `runWalk` returns is a refusal, a gap or an observation. -/
 def WalkStopsRefuse : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) (stop : SinglePass.WalkStop ι G),
-    RunCall.walk c = .error stop → stop.1 ≠ .accepted
+    RunCall.walk c = .error stop → stop.outcome.outcome ≠ .accepted
 
 /-- **An accepted call's walk returned** (`walk_of_accepts'` and
 `WalkStopsRefuse`). -/

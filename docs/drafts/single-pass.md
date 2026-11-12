@@ -120,6 +120,9 @@ is kept per normalized form and condition, the strongest, and a length atom
 is also stated as the linear facts it means (`HeapKnowledge.atomLinear`).
 
 
+A unit states at most one written assertion per label; a request
+with two at one label is refused.
+
 A loop head's state is exactly its given invariant: its written assertion
 (`@invariant`, required assertions) and the facts the claims document
 records there. Every edge into a cut, a back edge included, carries the
@@ -192,6 +195,10 @@ accepts them (`checkedYields`, as `ControlFlow.checkYields`): a promise
 call's where `promiseYields` states them at an output the promise keeps,
 any other's each where `yieldFollows` accepts it; a slot read's yields are
 checked against the implications testing the slot's name.
+
+A node's claim type has the shape its continuation assumes, as the
+certificate checker checks it (`passShapeCheck'`): only Booleans at a
+`branchBind`, the Boolean at a `branch`.
 
 ### A call of a slot
 
@@ -304,6 +311,11 @@ are checked before the walk. Where the fallback accepts and the unit states
 regions, the regions' walk runs from the answers before the fallback, and
 the read summaries of both runs are checked: the fallback's footprint rests
 on its own.
+
+Under store regions the pass checks the entry's fields the regions read
+(`ArgumentPathTracking.checkEntryFields`) and, at a node whose step has a
+derivation, that derivation as the footprint check does
+(`regionalDerivChecked`).
 
 ### Qualified bodies
 
