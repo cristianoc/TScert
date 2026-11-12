@@ -205,7 +205,10 @@ A call whose result is the empty type is within the bound on normal
 return; its throw, caught by a live handler, is within it only at a
 signature bounding its throws. A graph the bound
 refuses may still be within it by its store regions (`regionalChecked`),
-which the pass does not decide: that unit is not handled.
+which the pass does not decide: that unit is not handled. A refusal at a
+node's footprint check is its own outcome (`Outcome.outsideBound`), the one
+the regional fallback answers; a node's exits are typed
+(`SinglePass.Exit`: an edge of its continuation, or its handler's).
 
 ### A step's derivation
 
