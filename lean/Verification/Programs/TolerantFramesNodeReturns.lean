@@ -1,4 +1,5 @@
 import Verification.Programs.TolerantFramesNodeBound
+import Verification.Programs.TolerantFramesWalkReassignWalk
 
 /-! # Tolerant frames: the return check kept along a run
 
@@ -10,7 +11,9 @@ node whose continuation is a return) accepts where the postcondition is
 empty, the claim's type or a context slot's is empty, or `returnEntails`
 accepts the output's facts over the result and the tracked inputs
 (`returnCheck_ensures`). `returnsEnsured_of` composes it with the step
-theorem's normal exit (`checkedStep_parts`) and `pass_return_ensures`. -/
+theorem's normal exit at a checked node (`stepChecked_parts`) and
+`pass_return_ensures`; `ReturnChecked.reassign` carries the check to every
+reassigned graph. -/
 namespace Verification.TolerantFrames
 open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
@@ -83,46 +86,58 @@ theorem returnCheck_ensures {G : NormalGraph ι} {images : InstanceImageCheck G}
         · exact .inr (.inr (.inl h2))
         · exfalso; simp_all
 
-/-- **The return check at a node** (`run`, a return's checks): at a node
-whose continuation is a return, `returnCheck` at the step's values refuses
-nothing. -/
-def ReturnChecked {G : NormalGraph ι} {images : InstanceImageCheck G} {pool : List (Ty ι)} {fuel : Nat}
-    {suggestions : List (Sequent ι)} {index : KnownIndex ι} {codes : CodeEntry ι → Bool} {aliases : List (ι × ι)}
-    {pc : PassChecker G images} {undefTy : Option (Ty ι)} {P : ControlFlow.Program} {w : Walk ι}
-    {startNames : List Nat} {ρ0 : Env} {ctx : Nat → List (Ty ι)} {Tres : Fam} {m : Nat} {l : Nat}
-    (na : NodeAccepted G images pool fuel suggestions index codes aliases pc undefTy P w startNames ρ0 ctx Tres m l)
+/-- **The return check at a checked node** (`run`, a return's checks): at a
+node whose continuation is a return, `returnCheck` at the step's values
+refuses nothing. -/
+def ReturnChecked {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
+    {pc : PassChecker G images} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat}
+    {ctx : Nat → List (Ty ι)} {l : Nat} (r : NodeChecked G images codes pc P w startNames ctx l)
     (goal : Goal ι) (ensures : List HeapKnowledge.IndexFact) : Prop :=
-  na.node.continuation = .ret → ∃ (start : Nat) (argName : Option Nat) (yields : List (PromiseCalls.Yield ι))
+  r.node.continuation = .ret → ∃ (start : Nat) (argName : Option Nat) (yields : List (PromiseCalls.Yield ι))
     (debugNode : Nat) (answers : Answered G),
-    (returnCheck G images goal ensures na.c l na.entry na.st.store na.st.result start startNames argName yields
+    (returnCheck G images goal ensures r.c l r.entry r.st.store r.st.result start startNames argName yields
       debugNode answers).1 = none
 
+/-- **The return check at a reassigned graph** (`returnCheck_reassign`, the
+answers reassigned). -/
+theorem ReturnChecked.reassign {G : NormalGraph ι} {η : MixedAssignment ι} {images : InstanceImageCheck G}
+    {codes : CodeEntry ι → Bool} {pc : PassChecker G images}
+    {pc' : PassChecker (PositiveRules.reassign G η) (images.reassign η)} {P : ControlFlow.Program} {w : Walk ι}
+    {startNames : List Nat} {ctx : Nat → List (Ty ι)} {l : Nat} (hpc : PassCheckerReassign G η images pc pc')
+    {r : NodeChecked G images codes pc P w startNames ctx l} {goal : Goal ι} {ens : List HeapKnowledge.IndexFact}
+    (h : ReturnChecked r goal ens) : ReturnChecked (nodeChecked_reassign hpc r) goal ens := by
+  intro hret
+  obtain ⟨start, argName, yields, debugNode, answers, hr⟩ := h hret
+  refine ⟨start, argName, yields, debugNode, Answered.reassign answers η, ?_⟩
+  show (returnCheck (PositiveRules.reassign G η) (images.reassign η) goal ens r.c l r.entry r.st.store
+    r.st.result start startNames argName yields debugNode (Answered.reassign answers η)).1 = none
+  rw [returnCheck_reassign]
+  exact hr
+
 /-- **The return check establishes `ensures` at every node**
-(`ReturnsEnsured`): where the pass accepted every visited node
-(`NodeAccepted`) and its return check refused nothing at each return
-(`ReturnChecked`), the codes are sound and the direct call and the search
-keep the summary table checked, every run of a node's term to a value at a
-return meets `ensures` at the value and the entry values: the state after
-the step (`checkedStep_parts`) gives it where `returnEntails` accepts
+(`ReturnsEnsured`): where every visited node is checked (`NodeChecked`), its
+entry state holds where the typed node assertion does, its return check
+refused nothing at each return (`ReturnChecked`) and the codes are sound,
+every run of a node's term to a value at a return meets `ensures` at the
+value and the entry values: the state after the step
+(`stepChecked_parts`) gives it where `returnEntails` accepts
 (`pass_return_ensures`, the tracked slots holding the inputs' start names,
 `passTracked_names`); an empty result type admits no value; an empty
 context type no environment. -/
-theorem returnsEnsured_of {G : NormalGraph ι} {images : InstanceImageCheck G} {pool : List (Ty ι)} {fuel : Nat}
-    {suggestions : List (Sequent ι)} {index : KnownIndex ι} {codes : CodeEntry ι → Bool}
-    {aliases : List (ι × ι)} {pc : PassChecker G images} {undefTy : Option (Ty ι)} {P : ControlFlow.Program}
-    {w : Walk ι} {startNames : List Nat} {ρ0 : Env} {ctx : Nat → List (Ty ι)} {Tres : Fam} {m : Nat}
-    {goal : Goal ι} {ens : List HeapKnowledge.IndexFact}
-    (hacc : ∀ l, w.visited l → ∃ na : NodeAccepted G images pool fuel suggestions index codes aliases pc undefTy P w
-      startNames ρ0 ctx Tres m l, ReturnChecked na goal ens)
-    (hcodes : CodesSound G codes) (hdir : DirectKeepsSummaries G images undefTy)
-    (hsrch : SearchKeepsSummaries G images pool fuel suggestions index codes aliases pc.checker) :
+theorem returnsEnsured_of {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
+    {pc : PassChecker G images} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat} {ρ0 : Env}
+    {ctx : Nat → List (Ty ι)} {m : Nat} {goal : Goal ι} {ens : List HeapKnowledge.IndexFact}
+    (hacc : ∀ l, w.visited l → ∃ r : NodeChecked G images codes pc P w startNames ctx l,
+      (∀ ρ (s : IndexedHeap), passPreT G w startNames ρ0 ctx l ρ m s →
+        StateHolds G r.entry (w.implies l) startNames ρ0 ρ m s) ∧ ReturnChecked r goal ens)
+    (hcodes : CodesSound G codes) :
     ReturnsEnsured P G w startNames ρ0 ctx ens m := by
   intro l ρ s hp _
-  obtain ⟨na, hrc⟩ := hacc l hp.1.1
-  have hS := na.stated ρ s hp
+  obtain ⟨na, hent, hrc⟩ := hacc l hp.1.1
+  have hS := hent ρ s hp
   have he : EnvOk G na.c.context ρ s.n s.W := na.hctx ▸ hp.2
   obtain ⟨-, -, -, cn, ce, hj, hn, hx⟩ :=
-    checkedStep_parts na.hstep hS na.wf na.below na.width he hcodes na.sums hdir hsrch
+    stepChecked_parts na.hstep hS na.wf na.below na.width he hcodes na.sums
   have hex := (stepExits_of hj hn hx).2
   refine ⟨na.node, na.hP, fun k h' t' hst hk => ⟨fun hv => ?_, fun e _ => ?_⟩⟩
   · obtain ⟨s', ha, hh, -, hT, -, hF⟩ := (hex k h' t' hst hk).1 hv

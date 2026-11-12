@@ -59,6 +59,7 @@ import Verification.Programs.TolerantFramesRegionalRuns
 import Verification.Programs.TolerantFramesNodeAsserts
 import Verification.Programs.TolerantFramesNodeGoals
 import Verification.Programs.TolerantFramesNodeCallFresh
+import Verification.Programs.TolerantFramesComposeRunSound
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -713,8 +714,15 @@ run_cmd do
   check ``Verification.TolerantFrames.goalHolds_at
   check ``Verification.TolerantFrames.returnOk_of_check
   check ``Verification.TolerantFrames.goalHolds_of_return
-  check ``Verification.TolerantFrames.passOutFresh_of_checked
   check ``Verification.TolerantFrames.callFresh_of_checked
+  -- Leg 17a: the per-node hypotheses of run_sound from the pass's checks (TolerantFramesNode*, TolerantFramesCompose*)
+  check ``Verification.TolerantFrames.passOutFreshChecked_cases
+  check ``Verification.TolerantFrames.passOutFreshChecked_reassign
+  check ``Verification.TolerantFrames.BoundChecked.reassign
+  check ``Verification.TolerantFrames.ReturnChecked.reassign
+  check ``Verification.TolerantFrames.footprintsKept_of_checked
+  check ``Verification.TolerantFrames.returnsKept_of_checked
+  check ``Verification.TolerantFrames.run_sound_17a
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

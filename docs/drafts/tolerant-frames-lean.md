@@ -1385,3 +1385,58 @@ derivation) and the entailed bounds' check have arrived.
 | `ReturnsKept` | `returnsEnsured_of`, over `NodeAccepted`, under `ReturnChecked`; a proof to write: the same over `NodeChecked` | `run_guarantee` (`ensured`) |
 | `RegionsHeld` | `regionsKept_of` from `RegionNodeOk` at every visited node (`RegionNodeOk.ofCheck`); left: `RegionalTyped` (`regionalTyped_of_tree` given `regionalDerivChecked` of the step's derivation at the regional check, a pass change D11, not arrived; a step with no derivation, a proof to write), `TablesAgree` at every visited node (the meet over every predecessor, from the in-degree order of `RunTraversed`) | `run_guarantee` (`regionally`) |
 | `AssertionsLabelled` | a pass change D10: `run` refuses a repeated assertion label or joins the assertions a label states (`byLabel` keeps the first; not arrived) | `run_guarantee` (`asserted`) |
+
+## Leg 17a: the per-node hypotheses from the pass's checks
+
+Modules `lean/Verification/Programs/TolerantFramesNodeBound.lean` (the
+values `run` reads at the footprint check), `TolerantFramesNodeCallFresh.lean`,
+`TolerantFramesNodeReturns.lean` and `TolerantFramesComposeRunSound.lean`.
+
+**The footprint check at a checked node.** `BoundChecked r Φ dead ret exc`
+is `run`'s check at a node `r : NodeChecked` under the bound
+$`(\Phi, \mathit{ret}, \mathit{exc})`$: inside `dead`, `deadNode` and
+$`\mathit{exc}=\mathit{false}`$; outside it, `footprintCheck` at the step's
+values with `outFresh` as `run` computes it (`passOutFreshChecked`: a copy
+of a slot holding a fresh name, or a call stating a fresh result, its
+operands selected, whose derivation `derivChecked` accepts). Proved:
+
+- `passOutFreshChecked_cases`: the call disjunct gives `passCallFresh` and
+  `passDerivChecked` at the node's sequent, the premises of
+  `callFresh_of_checked`;
+- (`footprintKept_of`) every visited node checked, its entry state holding
+  where `passPreT` does at mark $`|h_0|`$, and `BoundChecked` ∧ `CodesSound`
+  ⟹ `FootprintKept`; outside `dead` the heap $`h`$ is within $`\Phi`$ from
+  $`h_0`$, so $`|h_0| \le |h|`$ (`Post`'s first conjunct), the mark
+  premise of `callFresh_of_checked`;
+- `BoundChecked.reassign`, `passOutFreshChecked_reassign`: the check at `G`
+  is the check at `reassign G η`.
+
+**The return check at a checked node.** `ReturnChecked r goal ensures`:
+at a return, `returnCheck` at the step's values refuses nothing. Proved:
+(`returnsEnsured_of`) every visited node checked, its entry state holding
+where `passPreT` does, and `ReturnChecked` ∧ `CodesSound` ⟹
+`ReturnsEnsured`; `ReturnChecked.reassign`.
+
+**The graph theorem from the checks.** `BoundsChecked` (under the call's
+bound, some region `dead` with `BoundChecked` at every visited node of the
+walk, at `G`) and `ReturnsChecked` (where the call states `ensures`,
+`ReturnChecked` at every visited node) are the driver's checks at the nodes
+it visits. Proved: `footprintsKept_of_checked` (`NodesMean` ∧
+`BoundsChecked` ⟹ `FootprintsKept`), `returnsKept_of_checked`
+(`NodesMean` ∧ `ReturnsChecked` ⟹ `ReturnsKept`), and
+
+```math
+\mathrm{RunTraversed} \wedge \mathrm{NodesMean} \wedge \mathrm{LinearNearFuelEq} \wedge \mathrm{MergesImpliesHold} \wedge \mathrm{BoundsChecked} \wedge \mathrm{ReturnsChecked} \wedge \mathrm{RegionsHeld} \wedge \mathrm{AssertionsLabelled} \Longrightarrow \mathrm{RunSound}
+```
+
+(`run_sound_17a`). `BoundChecked` over `NodeAccepted`, the mirror
+`passOutFresh` and `CallFreshBelow` are replaced by these.
+
+Premises this leg discharges / leaves:
+
+- discharges `FootprintsKept` (into `BoundsChecked`, a record of the
+  driver's walk) and `CallFreshBelow`;
+- discharges `ReturnsKept` (into `ReturnsChecked`, a record of the
+  driver's walk);
+- leaves `BoundsChecked` and `ReturnsChecked` to the driver on fuel
+  (`RunTraversed`'s walk records them).
