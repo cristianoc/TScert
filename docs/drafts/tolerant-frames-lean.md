@@ -475,8 +475,38 @@ no heap or is an index fact $`c`$'s change keeps (`Atom.keptBy`). Proved:
 
 `written` and `boundedWrite` acceptance does not imply `writeWithin` or
 `fieldWriteWithin`; the effect a writing step has is what the pass's footprint
-check gives ([the footprint check](#the-footprint-check-at-a-node)). Density
-(`.elem` atoms) is not among the atoms `keptBy` decides.
+check gives ([the footprint check](#the-footprint-check-at-a-node)); the element facts
+an effect keeps are [below](#element-facts-under-an-effect).
+
+### Element facts under an effect
+
+Module `lean/Verification/Programs/TolerantFramesElems.lean`.
+`Atom.keptByElems c` extends `Atom.keptBy c` by two cases: an index atom whose
+fact $`c`$'s change keeps as a quantified element fact
+(`IndexFact.everyKept`: stores kept, no number changed, its length path, stop
+and body terms kept), and an elements atom (`.elem`, `ElemsAt`: every present
+element of the store meets the predicate) under
+$`\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$. Proved:
+
+- `keptBy_keptByElems`: it decides at least what `keptBy` decides;
+- `atom_keptByElems`, `named_keptByElems_box`: a fact it keeps survives every
+  action of $`c`$, so $`\mathrm{Named}\ S\ \eta\vdash\Box_c\,\mathrm{Named}\ S\ \eta`$
+  for $`S`$ kept by $`c`$;
+- `every_keptBy_init`: a quantified element fact over a slot's store with a
+  slot's value as its stop and a body of kept terms is kept by the
+  initialisation write's $`\{\mathsf{values}:\mathsf{init},\ \mathsf{stores}:\mathsf{keep}\}`$
+  (`initEffect`); `elem_keptByElems_empty`: an elements atom by
+  $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$.
+
+A dense prefix is kept by $`\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{grow}\}`$
+(`dense`); it is a semantic atom, not one of the pass's atoms. Under
+$`\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{grow}\}`$ and
+$`\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{keep}\}`$ neither
+element fact is kept by its effect alone: a `grow` change admits a fresh store
+entry, a `values: any` change any element value (observed in the definitions
+of `Change.Holds`; no counter-model is formalized). The element writes and
+field writes keep them through their rules' outputs (`IndexWrites.writeAtoms`,
+`HeapExpressionRules.fieldEvery`), which read the written location and value.
 
 ### The footprint check at a node
 
