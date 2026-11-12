@@ -1422,7 +1422,7 @@ Leg 12); each premise below is a part of it or of `run_traversed`.
 | Premise | Statement | Status |
 | --- | --- | --- |
 | `run_traversed` | an accepted `run` yields a walk, contexts, merge edges and counters with `Traversed`, `NodeAccepted` at every visited node, and each edge into a head recorded as the head's entry (`headsEntered_of_recorded`) | needs pass change: the driver on fuel returning `Walk` (not arrived) |
-| the reassignment | the walk's predicates at `reassign G η` for every admitted `η` | needs pass change: the driver on fuel, then `run_reassign` from per-function invariance lemmas (Leg 12: the reassignment link); qualified bodies also need the body's subtyping sound at each admitted `η` |
+| the reassignment | the walk predicates at `reassign G η` for every admitted `η` | the node runs carried: `nodeRan_reassign` under `CheckedStepReassign`, and `run_guarantee_of_run` from one run at `G` (Leg 13); `CheckedStepReassign` lacks the invariance of `directCall`, the search `expressionEffectUsing` and the checker's `select`, and for a qualified body a `BodySubtyping (reassign G η)` at the scope's admitted `η`; the meaning of each node at `reassign G η` is `run_traversed`'s at that graph (`hwalk`) |
 | `HeadsCutCycles` | every cycle of reached nodes contains a head | needs pass change: `loopHeads` on fuel (not arrived) |
 | `StepEdgesSoundT` | per node, from `passPreT`, the local judgment and every exit a holding edge state into its target | step-and-edge lane: `stepEdgesSound_of` from `NodeAccepted`, `CodesSound`, `DirectKeepsSummaries`, `SearchKeepsSummaries` |
 | `HeadsEntered` | a head's state holds where an edge state into it does | step-and-edge lane: `headEstablishes_of_edge`, `headsEntered_of_recorded`; the start: `StartNotReentered`, needs pass change D8 (not arrived) |
@@ -1733,4 +1733,62 @@ What `run_traversed` needs of the traversal, stated for the driver's
   processed flag of each edge, so that `Traversed.merge` (the merge's list
   complete) follows from the in-degree counter reaching zero, which counts
   the edges into the node from reached nodes outside the edges into heads.
+
+## Leg 13: the pass's checks at a reassignment
+
+Modules `lean/Verification/Programs/TolerantFramesWalkReassignChecks.lean`
+and `TolerantFramesWalkReassignNodes.lean`.
+
+**Invariant functions** (proved). Each is the same function at
+`reassign G η` with the image check `images.reassign η`, the answers
+carried by `Answered.reassign` where it threads them:
+
+- `footprintCheck_reassign`: `footprintCheck` is equal;
+- `subtypeSearch_reassign`: the subtype search, through its instance
+  proposals (`instantiationUsing_reassign`, `rowInstances_reassign`, over
+  `unifiedInstance_reassign`, `matchedInstance_reassign`, `matchRow_reassign`,
+  `matchSig_reassign`, `matchRest_reassign`, `searchReads_reassign`,
+  `searchFree_reassign`) and `Parametricity.compareUsing_reassign`;
+- `subtypeUsing_reassign`: an answered subtype request returns the same
+  result, its answers reassigned;
+- `returnCheck_reassign`: the return check's refusal and queried count are
+  equal, its answers reassigned (the promise's fold by `foldl_map_state`);
+- `edgeStoreOf_reassign`, `entryRefusal_reassign`: equal by unfolding.
+
+**A node's run and its meaning.** `NodeAccepted` splits into `NodeRan`,
+the pass's values and checks at a node (the step's equation, the store
+well-formed, the names below the counter, the width, the summary table
+checked), and `NodeMeaning`, the fields that read the graph's meaning (the
+stated assertion, the shapes, the return type, the exits, the handler);
+`NodeAccepted.ran`, `NodeAccepted.meaning` and `NodeAccepted.ofRan` convert.
+A meaning field holds at a graph by the theorems that give it at every graph
+from the checks there (`exitDelivers_of_edge`, `exitDelivers_head`,
+`handlerDelivers_of_edge`, `returnCheck_plain`); it is not carried from
+`G`, whose meaning is read at another assignment.
+
+- `nodeRan_reassign`: `CheckedStepReassign` ⟹ every `NodeRan` at `G` is a
+  `NodeRan` at `reassign G η`, the answers reassigned, the table checked by
+  `Parametricity.summariesSound_reassign`;
+- `nodeAccepted_reassign`: with the reassigned run's `NodeMeaning`, an
+  accepted node at `G` is accepted at `reassign G η`;
+- `run_guarantee_of_run`: `NodeRan` at every visited node of one run at
+  `G` ∧ for every admitted `η` a checker `pc'` with `CheckedStepReassign` ∧
+  `hwalk` (the nodes' runs at `reassign G η` give `PassWalkSound` there) ⟹
+  `GraphGuarantee`.
+
+**Named hypothesis `CheckedStepReassign`**: `checkedStep` at
+`reassign G η` with the checker `pc'` returns what it returns at `G`, its
+answers reassigned. The functions `checkedStep` calls whose invariance is
+not proved: `directCall` (its `for` loops thread the answers through
+`subtypeUsing`, whose invariance is proved), the search
+`expressionEffectUsing`, the checker's `select` at the reassigned graph; for
+a qualified body, `pc'` needs a `BodySubtyping (reassign G η)`, which exists
+where the body's check is sound at `η` (the scope `q.Admits η`, as
+`verify_qualified_safe_at`). The head query of an edge into a loop head is
+not equal by unfolding (`withTypedCells`, `withTypedLinks`, `ctxOf`); its
+invariance lemma is not stated.
+
+**`hwalk`** is `run_traversed`'s statement at `reassign G η`: its proof is
+uniform in the graph, and the edge and merge functions it reads are equal
+at the reassigned graph (`mergeState` by unfolding, `edgeStoreOf_reassign`).
 

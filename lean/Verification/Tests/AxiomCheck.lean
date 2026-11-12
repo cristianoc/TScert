@@ -37,6 +37,7 @@ import Verification.Programs.TolerantFramesStoreOpsEdge
 import Verification.Programs.TolerantFramesNodeWalk
 import Verification.Programs.TolerantFramesStoreOpsBelowNames
 import Verification.Programs.TolerantFramesWalkReassign
+import Verification.Programs.TolerantFramesWalkReassignNodes
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -579,6 +580,32 @@ run_cmd do
   check ``Verification.TolerantFrames.start_passPreT
   check ``Verification.TolerantFrames.run_guarantee
   check ``Verification.TolerantFrames.codesSound_reassign
+  -- Leg 13: the pass's checks at a reassignment (TolerantFramesWalkReassignChecks, TolerantFramesWalkReassignNodes)
+  check ``Verification.TolerantFrames.footprintCheck_reassign
+  check ``Verification.TolerantFrames.searching_reassign
+  check ``Verification.TolerantFrames.unifiedInstance_reassign
+  check ``Verification.TolerantFrames.searchReads_reassign
+  check ``Verification.TolerantFrames.searchFree_reassign
+  check ``Verification.TolerantFrames.matchRow_reassign
+  check ``Verification.TolerantFrames.matchSig_reassign
+  check ``Verification.TolerantFrames.matchRest_reassign
+  check ``Verification.TolerantFrames.matchedInstance_reassign
+  check ``Verification.TolerantFrames.instantiationUsing_reassign
+  check ``Verification.TolerantFrames.instanceCandidates_reassign
+  check ``Verification.TolerantFrames.rowInstances_reassign
+  check ``Verification.TolerantFrames.subtypeSearch_reassign
+  check ``Verification.TolerantFrames.subtypeUsing_reassign
+  check ``Verification.TolerantFrames.foldl_map_state
+  check ``Verification.TolerantFrames.emptyType_reassign
+  check ``Verification.TolerantFrames.typeSets_reassign
+  check ``Verification.TolerantFrames.onlyBoolean_reassign
+  check ``Verification.TolerantFrames.onlyUndef_reassign
+  check ``Verification.TolerantFrames.impossible_reassign
+  check ``Verification.TolerantFrames.returnCheck_reassign
+  check ``Verification.TolerantFrames.edgeStoreOf_reassign
+  check ``Verification.TolerantFrames.entryRefusal_reassign
+  check ``Verification.TolerantFrames.NodeAccepted.meaning
+  check ``Verification.TolerantFrames.run_guarantee_of_run
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
