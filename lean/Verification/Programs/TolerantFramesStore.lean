@@ -286,4 +286,111 @@ theorem applyDelta_writing {s : Store} {pairs : List (Atom × Atom)}
       (fun x i hx => by simp only [Option.some.injEq] at hx; subst hx; rfl) hc hcb
     exact atomHolds_rename_rev hf hr hb
 
+/-! ## A writing step's store -/
+
+/-- `Store.dropHeap`'s step: a fact `keep` refuses that reads the heap
+removed. -/
+def dropStep (keep : Atom → Bool) (acc : Store) (a : Atom) : Store :=
+  if keep a then acc else match a with
+    | .cell _ | .elem _ => acc.remove a
+    | .link g => if g.alias then acc else acc.remove a
+    | .index x => if x.fact.envOnly then acc else acc.remove a
+    | _ => acc
+
+theorem dropHeap_eq (s : Store) (keep : Atom → Bool) : s.dropHeap keep = s.toList.foldl (dropStep keep) s := rfl
+
+theorem dropStep_wf {keep : Atom → Bool} {acc : Store} (w : StoreWF acc) (a : Atom) :
+    StoreWF (dropStep keep acc a) ∧ (∀ x ∈ storeAll (dropStep keep acc a), x ∈ storeAll acc) ∧
+      (a ∈ storeAll (dropStep keep acc a) → keep a = true ∨ a.heapFree = true) := by
+  unfold dropStep
+  split
+  · rename_i hk; exact ⟨w, fun _ h => h, fun _ => .inl hk⟩
+  · have hrem : StoreWF (acc.remove a) ∧ (∀ x ∈ storeAll (acc.remove a), x ∈ storeAll acc) ∧
+        (a ∈ storeAll (acc.remove a) → keep a = true ∨ a.heapFree = true) :=
+      ⟨remove_wf w a, fun _ h => remove_sub h, fun h => absurd h (remove_absent w a)⟩
+    cases a with
+    | cell _ | elem _ => exact hrem
+    | link g =>
+      dsimp only
+      split
+      · rename_i hg; exact ⟨w, fun _ h => h, fun _ => .inr (by simp [SinglePass.Atom.heapFree, hg])⟩
+      · exact hrem
+    | index x =>
+      dsimp only
+      split
+      · rename_i hx; exact ⟨w, fun _ h => h, fun _ => .inr (by simp [SinglePass.Atom.heapFree, hx])⟩
+      · exact hrem
+    | value _ | sep _ => exact ⟨w, fun _ h => h, fun _ => .inr rfl⟩
+
+theorem foldl_dropStep {keep : Atom → Bool} :
+    ∀ (l : List Atom) (acc : Store), StoreWF acc →
+      StoreWF (l.foldl (dropStep keep) acc) ∧ ∀ x ∈ storeAll (l.foldl (dropStep keep) acc),
+        x ∈ storeAll acc ∧ (x ∈ l → keep x = true ∨ x.heapFree = true)
+  | [], _, w => ⟨w, fun _ h => ⟨h, fun h => by cases h⟩⟩
+  | a :: l, acc, w => by
+    obtain ⟨w1, hsub1, hgone⟩ := dropStep_wf (keep := keep) w a
+    obtain ⟨w2, h2⟩ := foldl_dropStep l _ w1
+    refine ⟨w2, fun x hx => ?_⟩
+    obtain ⟨hx1, hxl⟩ := h2 x hx
+    refine ⟨hsub1 x hx1, fun hm => ?_⟩
+    rcases List.mem_cons.mp hm with rfl | hm
+    · exact hgone hx1
+    · exact hxl hm
+
+/-- **A writing step's store keeps only handed and heap-free facts**: after
+`Store.dropHeap keep` of a well-formed store, every fact is the store's and
+`keep` accepts it or it reads no heap; the store stays well-formed. -/
+theorem dropHeap_cover {s : Store} (w : StoreWF s) (keep : Atom → Bool) :
+    StoreWF (s.dropHeap keep) ∧ ∀ x ∈ storeAll (s.dropHeap keep),
+      x ∈ storeAll s ∧ (keep x = true ∨ x.heapFree = true) := by
+  rw [dropHeap_eq]
+  obtain ⟨w', h⟩ := foldl_dropStep s.toList s w
+  refine ⟨w', fun x hx => ?_⟩
+  obtain ⟨hx1, hxl⟩ := h x hx
+  exact ⟨hx1, hxl (by rw [toList_eq]; exact mem_keysOf.mpr (storeAll_live w hx1))⟩
+
+/-- The facts of `pairs` the pass hands a writing step (`renamed`). -/
+def handedSet (pairs : List (Atom × Atom)) : Std.HashSet Atom := pairs.foldl (fun acc (a, _) => acc.insert a) {}
+
+theorem handedSet_mem {pairs : List (Atom × Atom)} {x : Atom} (h : (handedSet pairs).contains x = true) :
+    ∃ b, (x, b) ∈ pairs := by
+  have : ∀ (l : List (Atom × Atom)) (m : Std.HashSet Atom),
+      (l.foldl (fun acc (a, _) => acc.insert a) m).contains x = true → (∃ b, (x, b) ∈ l) ∨ m.contains x = true := by
+    intro l
+    induction l with
+    | nil => exact fun _ h => .inr h
+    | cons p l ih =>
+      intro m hm
+      rcases ih _ hm with ⟨b, hb⟩ | hm
+      · exact .inl ⟨b, List.mem_cons_of_mem _ hb⟩
+      · rw [Std.HashSet.contains_insert] at hm
+        rcases Bool.or_eq_true_iff.mp hm with hm | hm
+        · exact .inl ⟨p.2, by rw [← beq_iff_eq.mp hm]; exact List.mem_cons_self ..⟩
+        · exact .inr hm
+  rcases this pairs {} h with h | h
+  · exact h
+  · simp at h
+
+/-- **(Writing) The writing step's store after its delta holds**: the pass
+drops the heap facts it does not hand the rule (`Store.dropHeap` of
+`handedSet`), so every remaining fact is handed (renamed by the table to
+its image) or reads no heap; where the heap-free facts hold after the step,
+the output at the pushed slots and `back` sends each slot to a name holding
+its value, every fact of the resulting store holds, and the store stays
+well-formed. -/
+theorem applyDelta_dropHeap {s : Store} {pairs : List (Atom × Atom)}
+    {out : HeapKnowledge.Knowledge} {back f : Nat → Option Nat} {η ρ : Env} {v : Tm} {h : Heap}
+    (w : StoreWF s)
+    (hfree : ∀ x ∈ storeAll s, x.heapFree = true → AtomHolds x η h)
+    (hpairs : ∀ x b, (x, b) ∈ pairs → x.rename f = some b)
+    (hf : ∀ x i, f x = some i → ρ i = η x) (hout : HeapKnowledge.Holds out (push v ρ) h)
+    (hback : ∀ i x, back i = some x → η x = push v ρ i) :
+    StoreOk (SinglePass.applyDelta (s.dropHeap (handedSet pairs).contains) pairs out true back) η h := by
+  obtain ⟨w', hcov⟩ := dropHeap_cover w (handedSet pairs).contains
+  refine applyDelta_writing w' (fun x hx => ?_) hf hout hback
+  obtain ⟨hxs, hk | hfr⟩ := hcov x hx
+  · obtain ⟨b, hb⟩ := handedSet_mem hk
+    exact .inr ⟨b, hb, hpairs x b hb⟩
+  · exact .inl (hfree x hxs hfr)
+
 end Verification.TolerantFrames

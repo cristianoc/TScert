@@ -657,7 +657,6 @@ fresh name), separate from the meaning:
 | Conjunct | States | Kept by |
 | --- | --- | --- |
 | `store` | the store's well-formedness `StoreWF`: live facts canonical (`Atom.canon`); each fact the index lists under a name live, mentioning that name, listed there once | every insertion and removal (proved: `addRaw_wf`, `remove_wf`, `addBound_wf`, `add_wf`) |
-| `slotted` | every name a stored fact reading the heap mentions is held by a slot | construction (`Store.drop` at edges, `renamedAway` at merges); not checked, not proved |
 | `below` | every name of the slots, the facts and $`F`$ is below $`\mathit{next}`$, so a result name is fresh (proved: `StateWF.fresh_result`) | construction (the counter only grows); not proved |
 | `freshHeld` | every fresh name is held by a slot | edges (line 1758 filters the names an edge drops); a merge keeps a predecessor's name beside its fresh renames (lines 1142–1146), held or not; freshness reads no heap, so the meaning does not need it |
 
@@ -796,9 +795,14 @@ the output lost leaves the store (`removedLeave`): `Store.remove` erases a
 canonical fact from the live set and from each of its names' lists, which
 hold it once, and no other list holds it (`remove_absent`), and the loop keeps
 the store well-formed (`deltaRemove_wf`). The facts that hold after a writing
-step are those its effect keeps (`writing_frame`, `Atom.keptByElems`); the
-heap facts the step is not handed are removed before the delta
-([the facts a writing step is not handed](#the-footprint-check-at-a-node)).
+step are those its effect keeps (`writing_frame`, `Atom.keptByElems`). The
+pass removes before the delta the heap facts it does not hand the step
+(`Store.dropHeap` of the handed set, [the facts a writing step is not
+handed](#the-footprint-check-at-a-node)): after it every fact is handed or
+reads no heap and the store stays well-formed (`dropHeap_cover`), so where
+the heap-free facts hold after the step, the output holds at the pushed
+slots and `back` names each slot's value, every fact of the resulting store
+holds (`applyDelta_dropHeap`).
 
 ### What the named state's proofs cannot reach as written
 

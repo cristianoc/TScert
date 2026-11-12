@@ -345,6 +345,12 @@ run_cmd do
   check ``Verification.TolerantFrames.remove_absent
   check ``Verification.TolerantFrames.deltaRemove_wf
   check ``Verification.TolerantFrames.removedLeave
+  check ``Verification.TolerantFrames.dropHeap_eq
+  check ``Verification.TolerantFrames.dropStep_wf
+  check ``Verification.TolerantFrames.foldl_dropStep
+  check ``Verification.TolerantFrames.dropHeap_cover
+  check ``Verification.TolerantFrames.handedSet_mem
+  check ``Verification.TolerantFrames.applyDelta_dropHeap
   check ``Verification.TolerantFrames.entryRefusal_ok
   check ``Verification.TolerantFrames.union_holds
   check ``Verification.TolerantFrames.startGiven_holds
