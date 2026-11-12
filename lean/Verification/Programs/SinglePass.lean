@@ -784,28 +784,54 @@ def directCall (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (
 def Store.diff (s t : Store) : List Atom × List Atom :=
   (s.toList.filter fun a => !t.live.contains a, t.toList.filter fun a => !s.live.contains a)
 
+/-- The near-facts search's state: the names seen, the next frontier, the
+facts kept and the facts listed. -/
+structure NearState where
+  seen : Std.HashSet Nat
+  next : List Nat
+  kept : Std.HashSet Atom
+  out : Array IndexAtom
+
+/-- One fact read at a frontier name: kept where it is an unconditional
+index fact not kept yet and fewer than `limit` are listed; its names put on
+the next frontier, where it is linear, if not seen yet. -/
+def nearStep (limit : Nat) (st : NearState) (a : Atom) : NearState :=
+  match a with
+  | .index i =>
+    if i.cond.isNone && !st.kept.contains a && st.out.size < limit then
+      let st := { st with kept := st.kept.insert a, out := st.out.push i }
+      match i.fact with
+      | .linear _ => a.names.foldl (fun (st : NearState) y =>
+          if !st.seen.contains y then { st with seen := st.seen.insert y, next := y :: st.next } else st) st
+      | _ => st
+    else st
+  | _ => st
+
+/-- One round over the frontier `frontier`, from an empty next frontier. -/
+def nearRound (s : Store) (limit : Nat) (frontier : List Nat) (st : NearState) : NearState :=
+  frontier.foldl (fun st x => (s.about x).foldl (nearStep limit) st) { st with next := [] }
+
+/-- The search on fuel: rounds while the frontier is non-empty and fewer than
+`limit` facts are listed. -/
+def nearLoop (s : Store) (limit : Nat) : Nat → List Nat → NearState → NearState
+  | 0, _, st => st
+  | n + 1, frontier, st =>
+    if !frontier.isEmpty && st.out.size < limit then
+      let st' := nearRound s limit frontier st
+      nearLoop s limit n st'.next st'
+    else st
+
+/-- The facts the search lists from `names`, at most `limit`, in `fuel`
+rounds: a round that leaves the frontier non-empty keeps a fact not kept
+before, so the store's size and one rounds reach the search's end. -/
+def linearNearFuel (s : Store) (names : List Nat) (limit : Nat := 40) (fuel : Nat := s.size + 1) :
+    List IndexAtom :=
+  (nearLoop s limit fuel names { seen := Std.HashSet.ofList names, next := [], kept := {}, out := #[] }).out.toList
+
 /-- The unconditional index facts connected to the names through linear
 facts, at most `limit`: what a linear entailment over those names reads. -/
-def Store.linearNear (s : Store) (names : List Nat) (limit : Nat := 40) : List IndexAtom := Id.run do
-  let mut seen : Std.HashSet Nat := Std.HashSet.ofList names
-  let mut frontier := names
-  let mut kept : Std.HashSet Atom := {}
-  let mut out : Array IndexAtom := #[]
-  while !frontier.isEmpty && out.size < limit do
-    let mut next := []
-    for x in frontier do
-      for a in s.about x do
-        if let .index i := a then
-          if i.cond.isNone && !kept.contains a && out.size < limit then
-            kept := kept.insert a
-            out := out.push i
-            if let .linear _ := i.fact then
-              for y in a.names do
-                if !seen.contains y then
-                  seen := seen.insert y
-                  next := y :: next
-    frontier := next
-  return out.toList
+def Store.linearNear (s : Store) (names : List Nat) (limit : Nat := 40) : List IndexAtom :=
+  linearNearFuel s names limit
 
 /-- Whether a store holds a fact: as it is, or a linear bound as a bound
 of the same form at least as strong. -/
