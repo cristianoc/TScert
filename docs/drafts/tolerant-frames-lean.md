@@ -1917,3 +1917,24 @@ slot). `StartNotReentered` is then not a premise: `PassWalkSound.entered`
 is `start_passPreT` at a start no edge enters and `start_entered_passPreT`
 at one an edge enters, and `HeadsEntered` at the start is
 `headsEntered_of_recorded` as at any head.
+
+## Leg 14b: the shape of a branch's value
+
+Module `lean/Verification/Programs/TolerantFramesComposeShape.lean`.
+`NodeAccepted.shape` asks every value of the claim's type to have its
+continuation's shape (`ShapeOk`): a Boolean at a branch. Neither the
+graph's well-formedness nor the lowering gives it, since the claims are
+the producer's; the proved checker tests it of a branch's evidence
+(`ControlFlow.checkNodeResult` at `.branch`, `decide (expand G (result c)
+= [.bool])`), and `run` makes no such test. The check the pass needs is
+that test at a branch node (`passShapeCheck`). Proved: `branchShape_of`,
+the test gives `true` or `false` of every value (`represents_raw` at the
+Boolean clause); `nodeShape_of`, `passShapeCheck` gives `shape` at every
+continuation.
+
+`ShapeOk` and `NormalTarget` are `False` at `branchBind` and `tagBind`:
+the node obligations admit no node with those continuations, so a unit
+with one is outside `stepEdgesSound_of`. The checker covers them by
+`onlyBoolean` at `branchBind` and the tag's observation at `tagBind`
+(`ContinuationOk`, `BranchTargetOk`); `NodeObligations` would take the
+same.
