@@ -1938,3 +1938,45 @@ with one is outside `stepEdgesSound_of`. The checker covers them by
 `onlyBoolean` at `branchBind` and the tag's observation at `tagBind`
 (`ContinuationOk`, `BranchTargetOk`); `NodeObligations` would take the
 same.
+
+## Leg 14b: the regional check of one node
+
+Module `lean/Verification/Programs/TolerantFramesRegionalNode.lean`. Proved:
+
+- (`checkNode_sound`) `checkNode` accepting node $`l`$ at its evidence
+  $`c`$ ∧ `ExpressionOk G c node.expression` ∧ `SummariesSound` ⟹
+  `NodeWithinAt` (the node's conjunct of `NodesWithin`): the core of
+  `checkNodes_sound`, its typing premise the node's own instead of the
+  whole graph's acceptance (`graph_node`); `nodesWithin_of` assembles it;
+- (`checkNode_mono`) the check over the node's tables holds over the
+  graph's where they agree (`TablesAgree`): equal at the node, and at each
+  target of its continuation and handler the graph's entry within the
+  node's, in each of the four tables (every target check is an `all` over
+  the target's entry: `checkEdges_mono`, `checkHandler_mono`,
+  `edgesFresh_mono`, `handlerFresh_mono`, `edgesFields_mono`,
+  `handlerFields_mono`);
+- (`meet_sub`) the meet of the established entries is within each, the
+  agreement at a target other than a head, once the meet is over every
+  predecessor's entry (the in-degree order, `run_traversed`).
+
+The graph's tables are then, at each label, the entry `run` checks the node
+at (the regions' inputs at the start, a head's given facts, the meet of
+the entries the edges into it establish, with the kept cells and fields).
+What `RegionsKept` still needs, beyond `NodeWithinAt` at every visited
+node:
+
+1. `ExpressionOk G cEv node.expression` at the evidence `run` checks
+   (`⟨ordinaryEv, some ⟨c.context, node.expression, c.type⟩, [], kHere,
+   stepEffect, …⟩`): it quantifies over every environment meeting the
+   evidence's context and its facts `kHere` (materialized from the entry
+   state), while the step theorem gives the node's judgment from the entry
+   state holding; and the evidence's context is its derivation's claim,
+   which `run` does not compare with the node's at this check. A named
+   hypothesis (`RegionalTyped`), discharged by the derivation's tree check
+   at the node's context, as `footprintCheck`'s `derivChecked`;
+2. the composition along a run: `NodesKeep` with $`X`$ the graph's tables
+   holding (`LabelHolds`) and the regions within, as
+   `ArgumentRegionGraph.bounded_step` composes `NodesWithin` for the
+   checker from `StateOk`, here from `passPreT` and the step's judgment,
+   with `StableNow` at the entry world carried in $`X`$.
+   Not proved here.

@@ -43,6 +43,7 @@ import Verification.Programs.TolerantFramesNodeReturns
 import Verification.Programs.TolerantFramesNodeAsserted
 import Verification.Programs.TolerantFramesComposeEdges
 import Verification.Programs.TolerantFramesComposeShape
+import Verification.Programs.TolerantFramesRegionalNode
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -625,6 +626,10 @@ run_cmd do
   check ``Verification.TolerantFrames.start_entered_passPreT
   check ``Verification.TolerantFrames.branchShape_of
   check ``Verification.TolerantFrames.nodeShape_of
+  check ``Verification.GraphCode.ArgumentRegionGraph.checkNode_sound
+  check ``Verification.GraphCode.ArgumentRegionGraph.nodesWithin_of
+  check ``Verification.GraphCode.ArgumentRegionGraph.checkNode_mono
+  check ``Verification.GraphCode.ArgumentRegionGraph.meet_sub
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
