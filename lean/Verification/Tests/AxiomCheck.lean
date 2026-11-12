@@ -119,6 +119,7 @@ run_cmd do
   check ``Verification.StoreMaps.StoreMap.related_assign
   check ``Verification.StoreMaps.ordinary_allowed
   check ``Verification.SourceClaimJson.PassUnit.signatureAgrees_of_storeMap
+  check ``Verification.SourceClaimJson.PassUnit.signatureAgrees_of_maps
   check ``Verification.Footprints.transport_sound
   check ``Verification.Footprints.Sep.sound
   check ``Verification.Footprints.Post.mono
