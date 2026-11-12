@@ -41,7 +41,9 @@ The Lean modules are
 [PassUnitObligations](../../lean/Verification/Source/Claims/PassUnitObligations.lean) (expression obligations, async members) and
 [PassUnitInterfaces](../../lean/Verification/Source/Claims/PassUnitInterfaces.lean) (outside slots by kind, module interfaces, the command line's condition) and
 [PassUnitSignatures](../../lean/Verification/Source/Claims/PassUnitSignatures.lean) (signature agreement from a store map) and
-[PassUnitCross](../../lean/Verification/Source/Claims/PassUnitCross.lean) (the cross-module theorem), over
+[PassUnitCross](../../lean/Verification/Source/Claims/PassUnitCross.lean) (the cross-module theorem) and
+[PassUnitWrapper](../../lean/Verification/Source/Claims/PassUnitWrapper.lean) (the wrapper's lemmas) and
+[PassUnitInit](../../lean/Verification/Source/Claims/PassUnitInit.lean) (the initialization's assertions), over
 [StoreMaps](../../lean/Verification/Types/StoreMaps.lean) (one type's meaning in two stores) and
 [StoreMapsCheck](../../lean/Verification/Types/StoreMapsCheck.lean) (the store-map check).
 
@@ -197,7 +199,9 @@ statement for every value of every argument):
 
 - `passGroup_members`: $`(f.\mathrm{passGroup}(\mathit{fuel}, g, \ldots)).2 = \mathrm{ok}\ d \Rightarrow \forall j \in g.\; (f.\mathrm{passMember}(\mathit{fuel}, \ldots, j)).\mathrm{accepted}`$,
   and `passMember_sound`: $`(f.\mathrm{passMember}(\ldots, j)).\mathrm{accepted} \Rightarrow \mathrm{MemberAccepted}(f, j)`$;
-  together H3 `PassGroupChecks`, after the repairs R1–R3 (section 3).
+  `passGroup_members` is proved and `passMember_sound` is the named
+  hypothesis `PassMemberSound` at `observe = none`; together H3 on the
+  command's verdict path (`passGroupChecks_unobserved`, section 3).
 - `EstablishProvenance`: $`\mathrm{establishModules}(\mathit{needs}, \ldots, \mathit{incoming}, \mathit{prepare}, \mathit{check}) = \mathrm{ok}\ (\mathit{est}, \ldots) \Rightarrow \forall e \in \mathit{est}.\; e \in \mathit{incoming} \vee \mathrm{EstablishedStep}(e)`$,
   after R1's repair of `establishModules` (a per-module step and its fold).
 - **The publication order**: for the components `interfaceComponents`
@@ -210,11 +214,9 @@ statement for every value of every argument):
   capture, the slot agreement, each signature realized by a member's
   request, `RowRealized`), with a soundness lemma giving `ModuleLayout`;
   run at each module's step it gives `StepLayouts`.
-- **The `:init` postcondition**: the `:init` request states the types
-  `withInitTypes` proposes as its postcondition on the module's cells, and
-  `passGroup(:init)` accepting gives each cell's value its type after the
-  initialization, at every budget: then `KindMet` for `moduleCell` is
-  `EnsuresClause`'s consequence.
+- **The `:init` postcondition** (section 4, H5b): `KindMet` for
+  `moduleCell`, a named hypothesis; `init_asserted` (proved) gives the
+  stated facts at the init graph's finish states.
 - **The signature-agreement check** (section 7): the interface entry
   carries its rows $`(G_s, I_s)`$; `interfaceFile` publishes it where
   $`\mathrm{matchStores}(G_m, G_s, \ldots, I_u, I_s)`$ accepts
@@ -391,26 +393,34 @@ obligations and the declared effect's async condition (section 8).
 
 ### H3 and the repairs it needs
 
-`passGroup` is one `Id.run` block; each member's outcome is a local of its
-loop, with early returns, a `for` with `break` over the codes, and the
-diagnostics interleaved. No theorem can name the member's outcome, so H3 is
-not proved. H3 holds of `passGroup` once two repairs are made, and is then
-provable by unfolding:
+`passMember` is a pure function returning the member's run (`MemberRun`:
+the request's own refusal, the qualified run, the code runs, the main
+runs, the summaries' and obligations' checks, the outcome), and
+`passGroup` is its fold with the lines rendered. H3 splits in two:
 
-- **R1, the structure.** Extract `passMember : FilePlans → … → Nat → MemberRun`,
-  a pure function returning the request, the code runs with their answers,
-  the main runs taken and their summaries' checks, and make `passGroup` its
-  fold plus the rendering of lines. H3 is then a lemma per field.
-- **R2, the fallback's summaries.** After the regional fallback, where the
-  unit states regions, the regions' run starts from the answers before the
-  fallback and only its summaries are checked: the fallback run's summaries,
-  on which its footprint rests, are never checked. `MainAccepted.fallback`
-  requires them checked; the repair checks them, or starts the regions' run
-  from the fallback's answers so H2 carries them.
-- **R3, an observed code run.** A code run returning `.observed` breaks the
-  loop with no refusal, and the main graph runs over a table without that
-  code and the ones after it. The code runs pass no observation, so this
-  needs `run` to observe only when asked; the repair refuses there.
+- `passGroup_members` (proved): $`(f.\mathrm{passGroup}(\ldots)).2 = \mathrm{ok}\ d \Rightarrow \forall j \in g.\; \exists m.\; f.\mathrm{passMember}(\ldots, j) = \mathrm{ok}\ m \wedge m.\mathrm{accepted}`$.
+- `PassMemberSound` (named hypothesis): at `observe = none`,
+  $`f.\mathrm{passMember}(\ldots, \mathrm{none}, \ldots, j) = \mathrm{ok}\ m \wedge m.\mathrm{accepted} \Rightarrow \mathrm{MemberAccepted}(f, j)`$.
+  Not proved: one `dsimp` over `passMember`'s body exceeds 1,000,000
+  heartbeats (measured 2026-11-12), so the proof needs the body split into
+  named steps (the qualified run, the code step, the main route, the
+  final outcome), each a short definition the proof unfolds alone.
+  Against the code, `MemberAccepted` agrees clause by clause where
+  checked by reading: a code run's request is `codeRequest r q`
+  (`q.asRequest r.toRequest`), whose inputs and entry facts are
+  `codeFrame` and `codeEntryIndices` by definition; code conditions and
+  `codeBound` are written inline, equal by unfolding; the table the main
+  run reads is `admits` of the accepted codes (`codesInOrder`), equal to
+  `admits (r.codes.map entry)` because every code is accepted before the
+  main run; the code runs' async condition is checked. The obligations'
+  check and the two refusals no clause names (`no node to observe`, the
+  repeated runs' `notHandled`) only refuse.
+
+`passGroupChecks_unobserved` (proved under `PassMemberSound`) is H3 on
+the command's verdict path. With an observation asked, a refused outcome
+is replaced by the outcome of an observation rerun, which nothing keeps
+from being accepted; H3 for every `observe` needs the wrapper to keep the
+refusal there (the rerun's outcome used only where it is not accepted).
 
 ## 4. Dependencies and linking
 
@@ -627,10 +637,32 @@ gives `OutsideContracts` from the five kinds met (`KindMet`):
   \forall \text{ cell } c \text{ of type } C_c.\; \forall n\, W.\; h_{\mathrm{after\ init}}(c) \in ⟦C_c⟧_{n,W}
 ```
 
-  that is, the `:init` request states the types `withInitTypes` proposes as
-  its postcondition on the module's cells, and the pass checks it there
-  (`EnsuresClause` then gives it). Today the `:init` request states no such
-  postcondition, so this kind stays a named hypothesis.
+  The `:init` request's assertions at its finish nodes give, by
+  `init_asserted` (proved, from `RequestSafe`'s assertions clause), their
+  facts $`K`$ at every state reached there within the budget, from every
+  entry and admitted assignment:
+
+```math
+(l, K) \in r.\mathrm{assertions} \wedge \mathrm{RequestSafe}(r) \wedge \mathrm{Entry}(\rho, n, W, h)
+\wedge j < n \wedge P \vdash (h, \ell_0\,\rho) \to^j (h', l\,\rho') \Longrightarrow \rho', h' \models K
+```
+
+  The slot's contract is a type, and an assertion's facts are no type
+  labels (`HeapKnowledge.Knowledge`: cells, values, links, separation,
+  elements, indices), so `KindMet` for `moduleCell` stays a named
+  hypothesis. It follows from three statements: (a) the pass checks typed
+  assertions $`(l, s, A)`$, and the guarantee gives
+  $`\rho'(s) \in ⟦A⟧`$ at every reached state (the graph lane:
+  `GraphGuarantee`'s assertions conjunct for typed assertions), the
+  `:init` request stating, per module constant, its walk type met with its
+  annotation, per early cell its storage contract; (b) the slot's value at
+  each depth is slot $`s`$'s value at a reached finish state (the
+  extraction); (c) a cell's later writes keep it, each unit's write being
+  checked at the contract. A cell holds a reference, whose meaning depends
+  on the world, so (a) gives it at the worlds the run reaches, and
+  `KindMet`'s every world needs the meaning's world independence for the
+  slot's type, or `OutsideContracts` stated at the worlds extending the
+  initialization's.
 
 `passFile_safe_kinds` (proved) is `passFile_safe` with H5b replaced by
 these: `EstablishedSlots` and four `KindMet` premises.

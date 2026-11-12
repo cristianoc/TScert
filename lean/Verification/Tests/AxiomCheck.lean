@@ -7,6 +7,8 @@ import Verification.Source.Claims.PassUnitObligations
 import Verification.Source.Claims.PassUnitInterfaces
 import Verification.Source.Claims.PassUnitSignatures
 import Verification.Source.Claims.PassUnitCross
+import Verification.Source.Claims.PassUnitWrapper
+import Verification.Source.Claims.PassUnitInit
 import Verification.Semantics.ArgumentStoreRegions
 import Verification.Semantics.FootprintNatives
 import Verification.Programs.ArgumentPathTracking
@@ -136,6 +138,9 @@ run_cmd do
   check ``Verification.SourceClaimJson.PassUnit.crossModule_safe
   check ``Verification.SourceClaimJson.PassUnit.rowRealized_spec
   check ``Verification.SourceClaimJson.PassUnit.layout_realizes
+  check ``Verification.SourceClaimJson.PassUnit.passGroup_members
+  check ``Verification.SourceClaimJson.PassUnit.passGroupChecks_unobserved
+  check ``Verification.SourceClaimJson.PassUnit.init_asserted
   check ``Verification.Footprints.transport_sound
   check ``Verification.Footprints.Sep.sound
   check ``Verification.Footprints.Post.mono
