@@ -38,6 +38,7 @@ import Verification.Programs.TolerantFramesNodeWalk
 import Verification.Programs.TolerantFramesStoreOpsBelowNames
 import Verification.Programs.TolerantFramesWalkReassign
 import Verification.Programs.TolerantFramesWalkReassignNodes
+import Verification.Programs.TolerantFramesWalkReassignCall
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -606,6 +607,9 @@ run_cmd do
   check ``Verification.TolerantFrames.entryRefusal_reassign
   check ``Verification.TolerantFrames.NodeAccepted.meaning
   check ``Verification.TolerantFrames.run_guarantee_of_run
+  -- Leg 14a: the step at a reassignment (TolerantFramesWalkReassignCall, TolerantFramesWalkReassignStep)
+  check ``Verification.TolerantFrames.forIn_map_state
+  check ``Verification.TolerantFrames.directCall_reassign
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
