@@ -296,6 +296,19 @@ def StepChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (pc : PassC
       (SummariesSound G images answers.summaries.toList →
         SummariesSound G images a0.summaries.toList ∧ SummariesSound G images ans.summaries.toList))
 
+omit [Instantiates ι] in
+/-- **A table kept over another is checked where both are**
+(`keepSummaries`: the first's entries, then entries of the second). -/
+theorem keepSummaries_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {a b : Answered G}
+    (ha : SummariesSound G images a.summaries.toList) (hb : SummariesSound G images b.summaries.toList) :
+    SummariesSound G images (keepSummaries a b).summaries.toList := by
+  intro s hs
+  simp only [keepSummaries, Array.toList_append, List.mem_append] at hs
+  rcases hs with hs | hs
+  · exact ha s hs
+  · rw [Array.toList_extract] at hs
+    exact hb s (List.mem_of_mem_drop (List.mem_of_mem_take hs))
+
 /-- **An accepted step is accepted with its searches as oracles**, where
 the direct call and the search keep the summary table checked. -/
 theorem stepChecked_of_step {G : NormalGraph ι} {images : InstanceImageCheck G} {pool : List (Ty ι)} {fuel : Nat}
@@ -315,11 +328,11 @@ theorem stepChecked_of_step {G : NormalGraph ι} {images : InstanceImageCheck G}
     have hs0 : SummariesSound G images a0.summaries.toList := by
       rcases ha0 with rfl | ⟨adm, rfl⟩
       · exact hsum
-      · exact hdir _ _ _ _ _ hsum
+      · exact keepSummaries_sound hsum (hdir _ _ _ _ _ hsum)
     refine ⟨hs0, ?_⟩
     rcases ha1 with rfl | ⟨k, own, adm, rfl⟩
     · exact hs0
-    · exact hsrch _ _ _ _ _ hs0
+    · exact keepSummaries_sound hs0 (hsrch _ _ _ _ _ hs0)
 
 
 omit [Instantiates ι] in

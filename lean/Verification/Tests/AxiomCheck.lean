@@ -1013,3 +1013,5 @@ run_cmd do
   check ``Verification.TolerantFrames.nodeExitsYF_of_checks
   check ``Verification.TolerantFrames.SafePostExc.and_steps
   check ``Verification.TolerantFrames.stepFresh_judgment
+  check ``Verification.TolerantFrames.keepSummaries_self
+  check ``Verification.TolerantFrames.keepSummaries_sound
