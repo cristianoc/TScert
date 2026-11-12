@@ -1002,6 +1002,15 @@ def passShapeCheck' (G : NormalGraph ι) (A : Ty ι) : Continuation → Bool
   | .tagBind _ _ _ => true
   | k => passShapeCheck G A k
 
+/-- **The derivation a regional check reads** checked as `footprintCheck`
+checks it (`derivChecked`), where the step has one. -/
+def regionalDerivChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
+    (sums : List (ReadSummary ι)) (c : PointClaim ι) (node : Node) (stepK : Knowledge)
+    (deriv : Option (ProgramCertificates.Evidence ι)) : Bool :=
+  match deriv with
+  | some d => derivChecked G images codes sums c node stepK d
+  | none => true
+
 /-- **A node's step within a footprint bound** (`GraphCode.nodeChecked`),
 at a node outside the region from which no normal return is possible: the
 step within `Φ` (`ExpressionEffects.check`, `writeWithin`, `initWriteWithin`,
@@ -1678,6 +1687,11 @@ def runWalk (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (T
   -- no edge into it establishes.
   if startEntered && regional.isSome then
     return .error (.notHandled "store regions with an edge into the start", counts, answers, trace)
+  -- Under store regions, the entry's fields the regions read
+  -- (`ArgumentPathTracking.checkEntryFields`, as `goto_bounded` checks them).
+  if let some rg := regional then
+    if !GraphCode.ArgumentPathTracking.checkEntryFields G inputs rg.regions then
+      return .error (.refused "store regions: the entry's fields", counts, answers, trace)
   let stated := byLabel n assertions
   if tracing then
     let e : Array (Option State) := Array.replicate n none
@@ -1992,6 +2006,8 @@ def runWalk (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (T
         | none, some _ => some .effect
         | none, none => none
       let kHere := (materialize entry width (List.range width) true).1
+      if !regionalDerivChecked G images codes sums c node stepK stepDeriv then
+        throw (.refused s!"store regions at node {l}: its derivation", counts, answers, trace)
       let cEv : NodeEvidence ι := ⟨ordinaryEv, some ⟨c.context, node.expression, c.type⟩, [], kHere, stepEffect, {}, none, [], [], [], none⟩
       let t0 := node.expression
       let F := here.values

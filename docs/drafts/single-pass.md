@@ -309,6 +309,11 @@ regions, the regions' walk runs from the answers before the fallback, and
 the read summaries of both runs are checked: the fallback's footprint rests
 on its own.
 
+Under store regions the pass checks the entry's fields the regions read
+(`ArgumentPathTracking.checkEntryFields`) and, at a node whose step has a
+derivation, that derivation as the footprint check does
+(`regionalDerivChecked`).
+
 ### Qualified bodies
 
 A qualified body (`SourceRequest.checker`) is walked over the request's own
