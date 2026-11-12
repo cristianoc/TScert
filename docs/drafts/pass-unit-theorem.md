@@ -42,7 +42,8 @@ The Lean modules are
 [PassUnitInterfaces](../../lean/Verification/Source/Claims/PassUnitInterfaces.lean) (outside slots by kind, module interfaces, the command line's condition) and
 [PassUnitSignatures](../../lean/Verification/Source/Claims/PassUnitSignatures.lean) (signature agreement from a store map) and
 [PassUnitCross](../../lean/Verification/Source/Claims/PassUnitCross.lean) (the cross-module theorem), over
-[StoreMaps](../../lean/Verification/Types/StoreMaps.lean) (one type's meaning in two stores).
+[StoreMaps](../../lean/Verification/Types/StoreMaps.lean) (one type's meaning in two stores) and
+[StoreMapsCheck](../../lean/Verification/Types/StoreMapsCheck.lean) (the store-map check).
 
 ## 1. The statement
 
@@ -159,21 +160,126 @@ closed unit's value meets its interface, and with `crossModule_safe` an
 importer's units meet theirs, their imports discharged by their modules'
 checks (section 7).
 
-| Hypothesis | Statement | Discharged by |
-| --- | --- | --- |
-| H1 `RunSound` | an accepted run guarantees its graph | the graph lane |
-| H2 `RunKeepsSummaries` | a run keeps the summaries it starts from | the graph lane |
-| H3 `PassGroupChecks` | an accepted group's members are `MemberAccepted` | the wrapper lane (`passGroup_members`, `passMember_sound`) |
-| H5a `ModuleLayout` | each closed unit's code, interface and slots | the extraction; decidable at the verdict (wrapper lane) |
-| `EstablishedSlots` | an import slot holds its module's function, read at an agreeing type | proved from `ChosenSlots` and `entries_realized` (`crossModule_safe`) |
-| `EstablishProvenance` | `establishModules` publishes only `EstablishedStep` entries | the wrapper lane; with `InterfaceProvenance` it gives `established_of_provenance` |
-| publication order | each module reads only entries published before it (`ReadsEarlier`) | the wrapper lane, from `establishModules`' fold over the components (`published_holds`' form) |
-| `StepLayouts` | H5a at each module: a layout at its accepted units, with outside contracts once its reads are realized | the extraction, as H5a |
-| `ChosenSlots` | an importer's import slot holds its module's function in the chosen realization | H5a's import part; `SignatureAgrees` from `StoreMapAgrees` (section 7) |
-| `InterfaceProvenance` | the interface file read is `interfaceFile`'s output | trusted: the stage store's replay, the forged-interface control |
-| declared imports, host values | their declared and host contracts | trusted, as for the proved checker |
-| stand-ins | the written footprint | vacuous with no `TSCERT_STANDINS` (`standIns_vacuous`) |
-| module cells | the `:init` postcondition | the wrapper lane, once `:init` states it |
+### The hypotheses, by level and class
+
+Each level's theorem adds hypotheses to the one below it:
+
+- **Unit**, `passUnitCli_safe`: H1, H2, H3.
+- **File**, `passFile_safe_kinds`: H1–H3, the layout (H5a `ModuleLayout`),
+  the established slots (`EstablishedSlots`) and the four outside kinds met
+  (`KindMet` for `declared`, `standIn`, `host`, `moduleCell`).
+- **Cross-module**, `crossModule_safe`: H1–H3, the importer's layout, the
+  publication order (`ReadsEarlier`), each published entry's step
+  (`EstablishedStep`) and layout (`StepLayouts`), the chosen slots
+  (`ChosenSlots`), each established slot reading an entry of the order, and
+  the other three outside kinds; with `established_of_provenance` the steps
+  follow from `InterfaceProvenance` and `EstablishProvenance`.
+
+**(i) The graph lane** (about `SinglePass.run`, section 2):
+
+- **H1 `RunSound`**: for every call $`c`$ over $`G`$ and image check $`I`$,
+  every $`\mathit{after}`$ and every assignment set $`A`$, $`c`$ accepting
+  leaving $`\mathit{after}`$, $`\mathrm{Scope}(c.\mathrm{passChecker}, A)`$,
+  $`\mathrm{CodesSound}(G, c.\mathrm{codes})`$,
+  $`\mathrm{SummariesSound}(G, I, \mathit{after}.\mathrm{summaries})`$ and
+  $`c`$'s region entry fields imply
+  $`\mathrm{GraphGuarantee}_G(A, c.P, c.\mathrm{start}, c.\mathrm{goal}, c.\mathrm{inputs}, c.S, c.X, c.\mathit{assertions}, c.\mathit{bound}, c.E, c.\mathit{regional})`$.
+- **H2 `RunKeepsSummaries`**: for every call $`c`$, every summary of
+  $`c.\mathrm{answers}`$ is a summary of the answers $`c`$ returns.
+
+**(ii) The wrapper lane** (lemmas about the actual functions, each a
+statement for every value of every argument):
+
+- `passGroup_members`: $`(f.\mathrm{passGroup}(\mathit{fuel}, g, \ldots)).2 = \mathrm{ok}\ d \Rightarrow \forall j \in g.\; (f.\mathrm{passMember}(\mathit{fuel}, \ldots, j)).\mathrm{accepted}`$,
+  and `passMember_sound`: $`(f.\mathrm{passMember}(\ldots, j)).\mathrm{accepted} \Rightarrow \mathrm{MemberAccepted}(f, j)`$;
+  together H3 `PassGroupChecks`, after the repairs R1–R3 (section 3).
+- `EstablishProvenance`: $`\mathrm{establishModules}(\mathit{needs}, \ldots, \mathit{incoming}, \mathit{prepare}, \mathit{check}) = \mathrm{ok}\ (\mathit{est}, \ldots) \Rightarrow \forall e \in \mathit{est}.\; e \in \mathit{incoming} \vee \mathrm{EstablishedStep}(e)`$,
+  after R1's repair of `establishModules` (a per-module step and its fold).
+- **The publication order**: for the components `interfaceComponents`
+  returns and the entries `establishModules` publishes along them,
+  `ReadsEarlier`: each module's reads are entries published at an earlier
+  position. A lemma about the fold of `fragmentPlansWithModules` and of
+  the interface stage's component order, of `published_holds`' form.
+- **The layout check** (H5a): a decidable check at the verdict building
+  each closed unit's `ModuleCode` from its plan (one clause, one slot per
+  capture, the slot agreement, each signature realized by a member's
+  request, `RowRealized`), with a soundness lemma giving `ModuleLayout`;
+  run at each module's step it gives `StepLayouts`.
+- **The `:init` postcondition**: the `:init` request states the types
+  `withInitTypes` proposes as its postcondition on the module's cells, and
+  `passGroup(:init)` accepting gives each cell's value its type after the
+  initialization, at every budget: then `KindMet` for `moduleCell` is
+  `EnsuresClause`'s consequence.
+- **The signature-agreement check** (section 7): the interface entry
+  carries its rows $`(G_s, I_s)`$; `interfaceFile` publishes it where
+  $`\mathrm{matchStores}(G_m, G_s, \ldots, I_u, I_s)`$ accepts
+  (`EstablishedStep` states it); the importer refuses a slot whose
+  $`\mathrm{matchStores}(G_s, G, \ldots, I_s, A)`$ refuses (`ModuleLayout`
+  states the slot's type is that $`A`$). Then `ChosenSlots`' agreement is
+  `signatureAgrees_of_checks` (proved).
+
+**(iii) Trusted boundaries**, each with why no Lean theorem states it today
+and what would close it:
+
+- **Parser fidelity** (`ast`): the TypeScript parse and the front's
+  document are produced outside Lean, from TypeScript's compiler; closing
+  it needs a TypeScript syntax in Lean and a proof (or a checked
+  translation validation) of the parser's output against it.
+- **Annotation interpretation** (each request's $`\Gamma`$, $`R`$,
+  footprints, regions, pre- and postconditions): the meaning of a
+  TypeScript type annotation has no definition in Lean; closing it needs a
+  semantics of TypeScript's types and a theorem that the type reader's
+  lowering represents each annotation's whole contract.
+- **Source-to-graph lowering** (each request's program $`P`$, sparse
+  handler placement, the context type at a test, that a budget-$`n`$ source
+  run sees the depth-$`n`$ environment): there is no source semantics in
+  Lean to relate $`P`$'s runs to; closing it needs one, and a simulation
+  theorem for `extractMember`.
+- **Declaration-only import contracts** (kind `declared`): the imported
+  code is outside the checked fragment; closing it needs the import's
+  implementation checked as a module (kind `established`), or a reviewed
+  contract ([certified imports](../SOURCE-CONTRACTS.md#certified-imports)).
+- **Host contracts** (kind `host`, the intrinsics' declarations): the host
+  is native code; closing it needs a model of each host function
+  ([prototype contracts](../SOURCE-CONTRACTS.md#prototype-contracts)) or a
+  run-time check at the boundary.
+- **The stage store's replay** (`InterfaceProvenance`): the importer reads
+  an interface file another process wrote; closing it needs the importer to
+  recompute the interface (`fragmentPlansWithModules`, then the hypothesis
+  is `EstablishProvenance` alone) or a signed record of the computation.
+- **Compiled replacements** (`implemented_by`, section 5): the compiled code
+  is not the definitions the proofs are about; closing it needs each
+  replacement's equality to its definition proved (`@[csimp]`) or the
+  replacement removed.
+
+The stand-in kind is vacuous with no `TSCERT_STANDINS`
+(`standIns_vacuous`, proved), so it is a measurement aid, not a boundary.
+
+**(iv) Exclusions of the linking**, each a change of the proved side
+(other lanes' modules), stated as a request with the theorem it enables
+(section 4 states how each case is excluded):
+
+- **Element preconditions**: `GraphCodeSpec` (`TypingBasics`) gains a
+  premise $`\mathrm{ElemsAt}(e.\mathrm{requires})`$ at entry, and
+  `codeConditions` stops excluding `Effect.requires`; with an entry fact of
+  the request stating it, `unitSpec_of_requestSafe` and `approx_meets`
+  then cover a unit with an element precondition.
+- **Postconditions**: `Effect.below` admits `ensures` facts over slots up
+  to the arity plus one, `Effect.post` reads them (`post_args` for a
+  nonempty `ensures`), and `codeSpec_of_clauses` carries `EnsuresClause`
+  into that post; then `unitSpec_of_requestSafe` covers `@ensures`.
+- **Stated regions**: `GraphCodeSpec`'s frame condition is the regional
+  one (`ArgumentStoreRegionsWithin`) where the effect states regions, and
+  `Effect.below` admits them; `codeSpec_of_clauses` carries
+  `RegionalClause` into it.
+- **A rest parameter**: `CodeOffers` over variadic signatures with the
+  packed rest frame (`codeFrame` with the row's rest),
+  `closure_meets_below` over them, and `RowRealized` per variadic row; then
+  `approx_meets` covers a unit with a rest parameter.
+- **Type parameters**: a relation between a body's admitted instances
+  (`qualified_requestSafe`'s scope) and its scheme's bounded, allowed
+  substitutions (`schemeSemWithArgs`), and `approx_meets` stated per
+  instance; then a generic module function's value meets its scheme.
 
 Against `checkUnitJson_safe` with the old module theorem, clause by clause:
 its premise is the CLI's exact condition, as there; the certificate's
@@ -438,7 +544,7 @@ at $`p`$ and meets the code conditions. It is a statement about the
 extraction (the slot table `ordinarySlots` builds, `withStandIns`,
 `withNeverImports`, the frame `extractMember` lays out), not proved: every
 function on that path is a `do` block over the front with no theorem about
-its frame, and part of it is decidable at the verdict (section 6).
+its frame, and part of it is decidable at the verdict (section 1, the layout check).
 
 **H5b, the outside contracts** (`OutsideContracts`). Every value a closed
 unit's outside slot holds at depth $`i`$ meets the slot's type at every
@@ -553,7 +659,7 @@ Each enters the headline at a named place:
   (`SinglePass.timedKind`, `clock`, `same`, `oneObject`, `Store.diff`), which
   no theorem relates to their definitions.
 
-The hypotheses are listed with their owners in section 6.
+The hypotheses are listed with their owners in section 1.
 
 ## 6. The file-level theorem
 
@@ -583,23 +689,7 @@ module slots are met by that environment. This statement, with
 
 ### The hypotheses and who discharges them
 
-- **H1 `RunSound`, H2 `RunKeepsSummaries`**: the graph lane, about
-  `SinglePass.run` (section 2).
-- **H3 `PassGroupChecks`**: the wrapper lane, by the lemma below.
-- **H5a `ModuleLayout`**: the extraction, about the frame `extractMember`
-  lays out and the slot table (`ordinarySlots`, `withStandIns`,
-  `withNeverImports`). Its slot agreement and frame layout are decidable from
-  the plans: a check at the verdict, building each closed unit's
-  `ModuleCode` from its plan and comparing slot types, would make H5a a
-  theorem about that check.
-- **H5b `OutsideContracts`**: trusted boundaries, slot by slot (section 5);
-  the module-constant slots are the initialization's obligation, an
-  implementation import's are discharged by section 7.
-- **Trusted, outside any hypothesis**: parser fidelity, annotation
-  interpretation, source-to-graph lowering (that the graph's run is the
-  source function's, and that a budget-$`n`$ run of the source sees the
-  depth-$`n`$ environment), sparse handler placement, compiled
-  replacements (section 5).
+Section 1 lists them by class ("The hypotheses, by level and class").
 
 ### The lemma the wrapper lane provides
 
@@ -801,34 +891,98 @@ entry's module graph to the importer's graph whose region holds the
 interface $`I_u`$, and a slot type with the members of $`\varphi(I_u)`$,
 give `SignatureAgrees`.
 
-### The lowering side
+### Where signature agreement is decided
 
-The importer reads an entry through `importedArrow`: it expands its own
-declaration type $`U`$ of the name, takes its one arrow, spells each
-parameter and the result as claims (`graphClaim`) with the entry's footprint
-and throw flag, and lowers that arrow into its own store (`moduleArrow`).
-The module's interface $`I_u`$ is `moduleArrow` over its own units'
-signatures (`ordinarySlots`). So the two sides run the same lowering
-(`moduleArrow`) on claims, each in its own store. What is missing, as exact
-lemmas:
+**What the importer reads.** An interface entry
+$`((\ell, n), (\Phi, t, \Phi_r), u)`$ carries the established footprint,
+throw flag, result footprint and unit, and no type (`encodeInterfaces`,
+`decodeInterfaces`). The importer's slot of the import is
+`importedArrow` over its own declaration type $`U`$ of the name (the
+`imported` entry of its equation front): $`U`$'s one arrow, each parameter
+and the result spelled as claims of the importer's labels (`graphClaim`),
+the entry's footprint, lowered by `moduleArrow` into the importer's store.
+So the slot's type $`A`$ is a type of the importer's frozen store
+$`G = \mathrm{graphOf}(f)`$. The module's interface $`I_u`$ is
+`moduleArrow` over its unit's own signature (`ordinarySlots`), a type of
+the module's frozen store $`G_m = \mathrm{graphOf}(f_m)`$. The two
+lowerings share their input text only: `eligibleRead` requires the
+importer's and the module's readings of the declaration equal, recursively
+over the declarations they reach (`sameReading`), and the same
+precondition and postcondition.
 
-1. **Round trip within one store**: lowering `graphClaim A` into the store
-   that holds $`A`$ gives a type of the same meaning as $`A`$ (an
-   encoder/decoder lemma of `graphClaim` and the claim lowering).
-2. **Interning up to renaming**: lowering the same claim document in two
-   states gives labels related by a head renaming $`\pi`$ (each head's
-   header and body the other's, renamed), and such a head renaming gives a
-   `StoreMap` on the labels reachable from the result (rows by `rowFrom`
-   commuting with renaming; unions compared as sets, which `ClauseRel`
-   allows, since renaming changes the canonical order).
-3. **The same claims**: the importer's spelling of $`U`$'s arrow and the
-   module's own units' signatures are the same claims, and the module's
-   footprint is the entry's (`EstablishedStep` states the second); the
-   declaration-identity check compares the declarations' text, a lowering
-   theorem would make it the claims' equality.
+**A two-store question.** `SignatureAgrees` is the inclusion
+$`⟦I_u⟧^{G_m}_{j,W} \subseteq ⟦A⟧^{G}_{j,W}`$, and the module's theorem
+(`interface_entry_meets`) is about $`G_m`$'s labels, so the question
+relates two stores whatever the importer re-interns: a type decoded into
+the importer's store is a type of $`G`$, and relating it to $`I_u`$ is again
+a statement across $`G_m`$ and $`G`$. Two routes decide it without a
+theorem about the lowering:
 
-Until then the per-read hypothesis is `SignatureAgrees`, or the syntactic
-`StoreMapAgrees` (a store map exists) from which it is proved.
+- **One invocation** (`fragmentPlansWithModules`, where `establishModules`
+  plans the module in the importer's process). The check
+  $`\mathrm{matchStores}(G_m, G, \mathit{canon}, \mathit{fuel}, I_u, A)`$
+  accepting gives `StoreMapAgrees` (`storeMapAgrees_of_check`, proved).
+- **An interface file.** The entry carries a graph $`G_s`$ and a type
+  $`I_s`$ of it: the module's rows on the region its own check found. The
+  module's check $`\mathrm{matchStores}(G_m, G_s, \ldots, I_u, I_s)`$ and
+  the importer's $`\mathrm{matchStores}(G_s, G, \ldots, I_s, A)`$ accepting
+  give `SignatureAgrees` (`signatureAgrees_of_checks`, proved): the meanings
+  are equal along both maps. The module's check runs on the decoded
+  rows, so no theorem about the encoder or the decoder is needed.
+
+**The store-map check** (`StoreMapsCheck.matchStores`). A worklist from
+the roots, structural on its fuel, proposes a label map: clauses paired by
+their skeleton (each operand replaced by its size, so constructor, keys,
+literals, flags and effects), union members by the shape of their rows.
+The proposal is not relied on. The check then requires, of every label
+$`i`$ of the map's domain, with operands mapped by
+$`\sigma S = \mathit{canon}(S.\mathrm{map}\,\varphi)`$: $`\varphi\,i`$'s
+kind; a scheme mapped to $`\varphi\,i`$'s with no resolution and its
+binders mapped; a meet mapped to $`\varphi\,i`$'s; the further meet
+parameters renamed as sets; a clause row's clauses and $`\varphi\,i`$'s
+related both ways; its reads and meet parts mapped; an inverse map
+returning $`i`$; the built-ins related and mapped; the root mapped and the
+image root of the root's renamed members.
+
+**Theorem** `matchStores_sound` (proved). For $`\mathit{canon}`$ keeping
+members and graphs whose environments agree (both empty, as every frozen
+store's, `graphOf_env`),
+
+```math
+\mathrm{matchStores}(G, H, \mathit{canon}, \mathit{fuel}, I, A) = \mathrm{some}\ \mathit{mp}
+\;\Longrightarrow\; \exists\, m : \mathrm{StoreMap}(G, H).\;
+  I \subseteq m.D \;\wedge\; \mathrm{members}(A) = \mathrm{members}(I.\mathrm{map}\, m.\varphi)
+```
+
+Its cost, for $`s`$ the reachable rows' total size and $`k`$ the largest
+number of clauses of a row, is $`O(s \cdot k)`$ hash-map operations and
+clause comparisons. It is incomplete for unions with two members of one row
+shape, or rows with two clauses of one skeleton, which the proposal pairs
+in the wrong order; for a qualified scheme (nonempty resolution, whose
+domains it does not relate); for built-ins in one graph only; and for an
+image operand outside $`\mathit{canon}`$'s form.
+
+**The request to the wrapper lane** (the smallest change making signature
+agreement checked):
+
+1. `encodeInterfaces` writes, per established entry, `interface` (the
+   trees of $`I_u`$'s labels) and `rows` (for each label of the map the
+   module's check found, its row as trees, with the built-ins), and
+   `decodeInterfaces` reads them as $`G_s = \mathrm{NormalGraph.ofRowMap}`$
+   over a map from trees to rows and $`I_s`$.
+2. `interfaceFile` publishes an entry only where
+   $`\mathrm{matchStores}(G_m, G_s, \ldots, I_u, I_s)`$ accepts, with
+   $`G_m`$ the step's prepared plans' graph and $`I_u`$ the unit's slot
+   there; `EstablishedStep` gains that clause (`EstablishProvenance`).
+3. The importer, after `fragmentPlansFromInterfaces`, runs
+   $`\mathrm{matchStores}(G_s, \mathrm{graphOf}(f), \ldots, I_s, A)`$ for
+   each import slot read at an entry, $`A`$ the slot's type in its
+   frozen store; a refused check refuses the units reading the slot, with
+   the located reason `signature rows differ`. `ModuleLayout` (H5a) states
+   that the slot's capture type is that $`A`$.
+
+With these, `ChosenSlots`' agreement is `signatureAgrees_of_checks` at the
+two accepted checks, and `StoreMapAgrees` is no hypothesis.
 
 ## 8. Expression obligations and async members
 
