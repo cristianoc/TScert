@@ -1,3 +1,4 @@
+import Verification.Programs.TolerantFramesExitNonHeadExtraction
 import Verification.Programs.TolerantFramesExitsYield
 import Verification.Programs.TolerantFramesExitYieldCache
 import Verification.Programs.TolerantFramesExitHeadChecks
@@ -1093,3 +1094,19 @@ run_cmd do
   check ``Verification.TolerantFrames.ExitChecks.exitChecks_widths
   check ``Verification.TolerantFrames.ExitChecks.exitChecks_thrownBelow
   check ``Verification.TolerantFrames.ExitChecks.exitChecks_handler
+
+-- Non-head exit extraction and the incoming-array witnesses it consumes.
+open Lean Elab Command in
+run_cmd do
+  let standard := [``propext, ``Classical.choice, ``Quot.sound]
+  let check (decl : Name) : CommandElabM Unit := do
+    for axiom_ in ← liftCoreM <| collectAxioms decl do
+      unless standard.contains axiom_ do
+        throwError "{decl} depends on the axiom {axiom_}"
+  check ``Verification.TolerantFrames.pushExit_incoming_mem
+  check ``Verification.TolerantFrames.pushExit_merge_mem
+  check ``Verification.TolerantFrames.exitStep_nonHead_checked
+  check ``Verification.TolerantFrames.exitStep_arraySizes
+  check ``Verification.TolerantFrames.exitsFold_indexed_arrays
+  check ``Verification.TolerantFrames.visitExits_indexed_arrays
+  check ``Verification.TolerantFrames.ExitChecks.exitChecks_nonHead

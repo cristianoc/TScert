@@ -35,7 +35,8 @@ structure Site {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCa
     σ.walk.incoming.size = σ.walk.incomingImpl.size ∧ WalkExtends (exitsWalk ex) raw ∧
     ExitStepsChecked G I env l en sd raw ∧
     (en.here = true → HereEmpty G (env.claimed[l]!).context) ∧
-    ExitRecordsChecked G I env l en sd ex
+    ExitRecordsChecked G I env l en sd ex ∧
+    r.ctx = passCtx c
 
 /-- A trace supplies a common site, without extracting any exit checks. -/
 theorem site_of_trace {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I}

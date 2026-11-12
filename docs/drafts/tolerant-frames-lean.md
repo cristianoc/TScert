@@ -1413,6 +1413,24 @@ Proved prerequisites:
   table is sound; `assertionExit_checked` exposes the written assertion check.
 
 
+`ExitChecks.exitChecks_nonHead` in
+`TolerantFramesExitNonHeadExtraction.lean` proves `NonHead` under the named
+premises `givenAgreement`, `arrayAllocation`, `mergingOfIncoming`,
+`exitCachesJudged`, and `mergeTransferAgreement`. Its local theorem
+`exitStep_nonHead_checked` extracts the type and assertion checks and both
+insertions; `visitExits_indexed_arrays` retains each indexed computation's
+allocation, extension and yield-cache source. `NodeExitTrace` and
+`ExitChecks.Site.facts` include the context equation `ctx = passCtx c`,
+proved by `visitsSettle_of`. The merge agreement equates `atSlotsOf` on the
+implications returned by `edgeTransfer` with `atSlotsOf` on its input
+implications: `pushExit` records the former, while
+`NonHeadExitChecked.merged` requires the latter. This equality is a premise,
+not an established property of the pass. The other structural premises state
+`r.given = passHeads c`, that the visit's incoming-state and merge arrays have
+`env.claimed.size` slots, and that at least two final incoming states imply
+`env.merging[t]! = true`. The cache premise judges every `ExitYieldSource`
+from the step's kept cache.
+
 ## Exit checks from the trace
 
 `ExitChecks.Site` in
