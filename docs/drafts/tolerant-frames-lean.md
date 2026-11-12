@@ -1264,3 +1264,94 @@ validates it before the pass relies on it (`SinglePass.lean` lines at 16720b68).
 | `meetImplications` (1154) | a merge's implications (1525) | relied on unchecked; change: check each on every incoming edge (`PromiseCalls.impliesCheck_sound`, `PromiseCalls.lean` 167) |
 | `summaryUsing`, through the search (the table at 1251, 1285, 1335) | the read summaries every tree check reads | each summary checked before it is appended (`CertificateProducer.lean` 642); the table's soundness is not stated of `Answered` (`DirectKeepsSummaries`, `SearchKeepsSummaries`); change: a `summaries_sound` field of `Answered`, as `proved_sound` |
 | `mapNames` (958) | the target's names on every edge | relied on unproved: `orderedSuffix` is a `while` loop (`MapNamesSound`); change: structural recursion, as `selectFrom` |
+
+## Leg 11: one obligation per node
+
+Modules `lean/Verification/Programs/TolerantFramesNodeSound.lean`,
+`TolerantFramesNodeEdges.lean` and `TolerantFramesNodeWalk.lean`.
+
+**The typed node assertion.** A node's step needs its context's types at
+its environment (the `EnvOk` premise of `checkedStep_parts`), which no state
+carries: the pass checks them on every edge into the node. `StepEdgesSound`
+(Leg 8: the graph invariant) reads a node's assertion as `passPre` alone, and
+no node's step is provable from it. The typed assertions are
+$`\mathrm{passPreT}\ l = \mathrm{passPre}\ l\wedge\mathrm{EnvOk}\ (\mathit{ctx}\ l)`$
+and $`\mathrm{edgePreT}\ t = \mathrm{edgePre}\ t\wedge\mathrm{EnvOk}\ (\mathit{ctx}\ t)`$,
+and `StepEdgesSoundT` is `StepEdgesSound` at them. Proved:
+
+- `run_sound_of_walk_typed`: `Traversed` ∧ `StepEdgesSoundT` ∧
+  `HeadsEntered` ∧ `MergesSound` ∧ `passPreT` at the start ⟹ `SafeGraph`
+  from the start; its entry premise is the untyped `EntriesFromEdges`, since
+  an edge's types are the target's (`passPreT_adminClosed`: types survive an
+  admissible transition, `envOk_admissible`);
+- `headsEntered_of_recorded`: a walk recording, as each edge's state into a
+  head, the head's entry state and implications enters its heads.
+
+**The node's obligations from the step** (proved:
+`nodeObligations_of_parts`). `checkedStep_parts` states the step theorem's
+exits in parts (`StepParts`): the local judgment, the state after the step
+after every run to a value whose endpoint is an action of the normal effect
+with the rule's output, and the throw state after every action of the
+exceptional effect. With the normal post extended by the run that reaches the
+value (`safePostExc_trace`), these give `NodeObligations` at the node, the
+exception family `excOf G`, the claim's type, where the claim's type gives
+each value its continuation's shape, each normal exit's target obligation
+follows from the state after the step at the pushed environment, and each
+throw's from the throw state.
+
+**A node's exits** (proved):
+
+- `normalTarget_of_exits`: every normal exit of `Exit.ofNode` delivering
+  (`ExitDelivers`: the state after the step, the pushed environment's types
+  and the exit's observation give the target's assertion) gives the normal
+  target of a `bind`, `effect` and `branch` (the yes edge at `true`, its
+  promoted truthiness `true`), and of a return where the claim's type gives
+  the result type (`plain_return` for a plain goal);
+- `exitDelivers_of_edge`, `handlerDelivers_of_edge`: an edge into a node
+  other than a loop head delivers the state `edgeTransfer` builds from
+  `edgeStoreOf` with the implications `implies ++ freshImplOf …`
+  (`normal_edge_delivers`, `handler_edge_delivers`,
+  `stateHolds_freshImpl`), where the walk records it among the target's
+  incoming states;
+- `exitDelivers_head`: an edge into a loop head establishes each field of
+  `HeadEstablishes` (`headEstablishes_of_edge`): `facts` by the head query
+  (`head_query_sound` over the edge's materialized store,
+  `edgeStore_normal`), `implies` by an implication the edge carries at the
+  mapped slots' names with a type within the given one, `inputs` and `arg`
+  by the slot-name checks with the start names' entry values; the head's
+  entry then holds (`headEntry_holds`). The checks bind where the edge is
+  not vacuous; a vacuous edge has no environment meeting its context.
+
+`EdgeEstablishes` of Leg 9 is the `facts` field of `HeadEstablishes` with the
+target's types: `HeadEstablishes` is the interface.
+
+**Every node of the pass delivers** (proved: `stepEdgesSound_of`). Premises:
+`NodeAccepted` at every visited label, `CodesSound`, `DirectKeepsSummaries`,
+`SearchKeepsSummaries`. Conclusion: `StepEdgesSoundT` with the exception
+family `excOf G`, the result type `Tres` and no heap post. `NodeAccepted l`
+holds the values `SinglePass.run` computes at $`l`$ and the checks it passes
+there, by the pass's functions (the driver is a `while` loop no proof
+unfolds): the node and its claim, the label's context the claim's; the
+step's entry state (the walk's entry, the node's stated assertion joined),
+holding where the node's assertion holds (`stated`); `checkedStep`
+accepting, with the store well-formed, the names below the counter
+(`NamesBelow`), the width, the incoming summary table checked; the claim's
+type giving each continuation's shape and a return's result type; each normal
+exit delivering and the handler delivering (`exits`, `handler`, discharged
+by the exit lemmas above from the edge's checks).
+
+Named hypotheses and what discharges them:
+
+| Hypothesis | Discharged by |
+| --- | --- |
+| `NodeAccepted` as a whole | the pass's driver on fuel returning a `Walk` (queued in the pass lane), with the extractions `edgeCheck`, `returnCheck` |
+| `stated` | proved where the node states no assertion (the entry is the walk's); otherwise the stated assertion carried in the node assertion |
+| `sums`, `DirectKeepsSummaries`, `SearchKeepsSummaries` | the summary table's soundness as an invariant field of `Answered` (queued) |
+| `below` (`NamesBelow`), `width` | the maintenance of the state's names by the step, the edge and `mapNames` |
+| `shape` at a branch | the claim's type Boolean at a branch: no check of the pass states it; `branchBind` and `tagBind` are outside `NodeObligations` (`ShapeOk`) |
+| `ret` beyond a plain goal | the guard and assertion goals, under `YieldsOk` |
+| `MapNamesSound` | `mapNames` on fuel (queued) |
+| `YieldsOk` (`hY`) | yields kept only where `yieldFollows` accepts (queued) |
+| the result's freshness (`hfo`) | `outFresh` behind `derivChecked` (queued) |
+| the target's types (`htc`), a given implication's type within (`himp`) | edge evidence checked; the subtype cache's soundness (queued) |
+| the walk's records (`hrec`, `hrecHead`, `hentry`) | the driver returning a `Walk` (queued) |
