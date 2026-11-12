@@ -47,7 +47,8 @@ The Lean modules are
 [PassUnitVerdict](../../lean/Verification/Source/Claims/PassUnitVerdict.lean) (the headline at mode 8's verdict) and
 [PassUnitInit](../../lean/Verification/Source/Claims/PassUnitInit.lean) (the initialization's assertions), over
 [StoreMaps](../../lean/Verification/Types/StoreMaps.lean) (one type's meaning in two stores) and
-[StoreMapsCheck](../../lean/Verification/Types/StoreMapsCheck.lean) (the store-map check).
+[StoreMapsCheck](../../lean/Verification/Types/StoreMapsCheck.lean) (the store-map check) and
+[StoreMapsBuiltins](../../lean/Verification/Types/StoreMapsBuiltins.lean) (store maps and the built-ins).
 
 ## 1. The statement
 
@@ -1062,30 +1063,44 @@ one skeleton, which the proposal pairs in the wrong order; for a qualified
 scheme (nonempty resolution, whose domains it does not relate); and for an
 image operand outside $`\mathit{canon}`$'s form.
 
-**Built-ins in one graph only.** A store map relates the two graphs'
-built-ins, and no store map exists from a graph without them to one with
-them, whatever region the types reach: every arrow, method and constructor
-signature reads the graph's exception family (`builtinExc`, the $`\Xi`$ of
-`semWithArgs`), the values a call may throw, and that family is the
-built-ins' array invariant where the graph states them and only the store
-being a list where it states none (`builtinInvariant`). So for $`G_m`$
-without built-ins and $`G`$ with them, and any arrow type $`F`$ of a region
-of both,
+**Built-ins in one graph only.** Every arrow, method and constructor
+signature reads the graph's exception family (`excOf`: `builtinExc` at the
+built-in values, the $`\Xi`$ of `semWithArgs`), the values a call may throw,
+and that family is the built-ins' array invariant where the graph states
+them and only the store being a list where it states none
+(`builtinInvariant`). So for $`G_m`$ without built-ins and $`G`$ with them,
+and any arrow type $`F`$ of a region of both,
 $`⟦F⟧^{G_m}_{n,W} \not\subseteq ⟦F⟧^{G}_{n,W}`$ in general: a closure that throws
 an array whose store holds a value outside $`G`$'s `unknown` type, or whose
-prototype is not $`G`$'s, meets the first and not the second. The three
-reads the front lane lost (`certified-mts-value-import` `doubled@259`,
-`default-import-value-import` `twice@275` and `scaled@346`) and pretext's
-`missing` (from `checked.ts`) are arrows from a module whose store states
-no built-ins to an importer whose store does; no sound extension of the
-check admits them, since the module's theorem gives its functions' throws
-in the weaker family only. What admits them is the module's theorem at the
+prototype is not $`G`$'s, meets the first and not the second.
+[StoreMapsBuiltins](../../lean/Verification/Types/StoreMapsBuiltins.lean)
+states the store maps' side, all proved:
+
+- `StoreMap.excOf_eq`: along a store map $`m : G \to H`$,
+  $`\mathrm{excOf}(H) = \mathrm{excOf}(G)`$;
+- `StoreMap.builtins_isSome`: a store map relates a graph stating built-ins
+  only to one stating them, and `matchStores_none_of_builtins`: the check
+  returns none where exactly one of the two graphs states them;
+- `matchStores_sound_builtins`: where $`G`$ states the built-ins $`r`$ and
+  the check accepts, $`H`$ states built-ins $`r'`$ with
+  $`r'.\mathrm{keys} = r.\mathrm{keys}`$, its prototype and `unknown`
+  types the renamed ones, those types in the map's region, and
+  $`\mathrm{excOf}(H) = \mathrm{excOf}(G)`$, besides `matchStores_sound`'s
+  conclusion.
+
+The three reads the front lane lost (`certified-mts-value-import`
+`doubled@259`, `default-import-value-import` `twice@275` and `scaled@346`)
+and pretext's `missing` (from `checked.ts`) are arrows from a module whose
+store states no built-ins to an importer whose store does: the check
+refuses them (`matchStores_none_of_builtins`), and no sound extension of it
+admits them, since the module's theorem gives its functions' throws in the
+weaker family only. What admits them is the module's theorem at the
 importer's family: the module's frozen store states the built-ins (the
 standard ones, as the importer's: the same keys, prototype and `unknown`
 types) whenever its interface is published, so its units are checked
-against the same exception family; then `builtinsOkB` relates the two
-tables and the existing check applies unchanged. A module with no arrays
-throws no array, so its checks hold at the stronger family (not measured).
+against the same exception family; then `matchStores_sound_builtins`
+applies with the check unchanged. A module with no arrays throws no array,
+so its checks hold at the stronger family (not measured).
 
 **A module's own reads.** `crossModule_safe` needs each module's own
 established slots met (`StepLayouts`' outside contracts hold of the

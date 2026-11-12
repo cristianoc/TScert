@@ -10,6 +10,7 @@ import Verification.Source.Claims.PassUnitCross
 import Verification.Source.Claims.PassUnitWrapper
 import Verification.Source.Claims.PassUnitMemberRun
 import Verification.Source.Claims.PassUnitVerdict
+import Verification.Types.StoreMapsBuiltins
 import Verification.Source.Claims.PassUnitInit
 import Verification.Semantics.ArgumentStoreRegions
 import Verification.Semantics.FootprintNatives
@@ -130,6 +131,10 @@ run_cmd do
   check ``Verification.SourceClaimJson.PassUnit.signatureAgrees_of_maps
   check ``Verification.StoreMaps.checkMap_sound
   check ``Verification.StoreMaps.matchStores_sound
+  check ``Verification.StoreMaps.StoreMap.excOf_eq
+  check ``Verification.StoreMaps.StoreMap.builtins_isSome
+  check ``Verification.StoreMaps.matchStores_none_of_builtins
+  check ``Verification.StoreMaps.matchStores_sound_builtins
   check ``Verification.StoreMaps.env_empty_agree
   check ``Verification.SourceClaimJson.PassUnit.graphOf_env
   check ``Verification.SourceClaimJson.PassUnit.storeMapAgrees_of_check
