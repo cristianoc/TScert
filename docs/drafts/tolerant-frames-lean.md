@@ -364,6 +364,46 @@ elsewhere:
 4. Line 1276: with `selectChecks` (a qualified body) no tree check runs;
    `Checker.withSubtyping`'s `select` is its `run`, so there it is implied.
 
+### The writing steps
+
+Module `lean/Verification/Programs/TolerantFramesWrites.lean`. A step the pass
+does not frame reads every fact (line 1322) and the store keeps what its rule's
+output states. A named fact $`a`$ is kept by a closed effect $`c`$ when it reads
+no heap or is an index fact $`c`$'s change keeps (`Atom.keptBy`). Proved:
+
+- (Keep by atom) a kept fact survives every action of its effect
+  (`atom_kept`), so $`\mathrm{Named}\ S\ \eta\vdash\Box_c\,\mathrm{Named}\ S\ \eta`$
+  for $`S`$ kept by $`c`$ (`named_kept_box`); a length lower bound over names
+  is kept by $`\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{grow}\}`$
+  and by $`\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{keep}\}`$
+  (`lowerBound_keptBy_grow`, `lowerBound_keptBy_field`);
+- a run only grows the heap: a normal-only judgment holds on both exits with
+  each exit's heap at least as long (`safePost_grow`);
+- the judgments, in the form `NodesChecked` takes, each with `run`'s output
+  $`\mathit{out}`$ on the normal exit (`judgment_with_output`): a write the
+  pass's footprint check admits within $`c`$ (`write_judgment`, from
+  `writeWithin`, line 1360), a typed field write within
+  $`\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{keep}\}`$
+  (`field_write_judgment`), an element write within
+  $`\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{grow}\}`$
+  (`element_write_judgment`), a step the pass frames, an allocation among them,
+  normal exit within $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$
+  and throw within $`\top`$ (`preserving_judgment`), and an ordinary call or
+  expression within $`\top`$ on both exits (`top_judgment`);
+- both exits (`writing_frame`): from such a judgment, a normal return is an
+  action of $`c_n`$ with $`n'+k=n`$, the type, the post and the named facts
+  $`c_n`$ keeps at $`\eta[r\mapsto v]`$; a throw an action of $`c_e`$ with the
+  raised value closed and of the family and the named facts $`c_e`$ keeps.
+
+What the rules do not give: `written` and `boundedWrite` acceptance does not
+imply `writeWithin` or `fieldWriteWithin`; the effect comes from the pass's
+footprint check against the invocation's bound (line 1360), whose bound is the
+invocation's, so a per-step effect tighter than the bound (needed to keep a
+fact the bound does not tolerate) is not established for a writing step. The
+facts a writing step keeps are exactly its rule's output over every fact plus
+the facts its effect keeps by atom; density (`.elem` atoms) is not among the
+atoms `keptBy` decides.
+
 **Not justified: a slotless fact across a writing step.** A step that may
 write materializes every fact (`materialize … true`, `SinglePass.lean` lines
 1326–1336), but a fact naming a name no slot holds fails to rename, is not
