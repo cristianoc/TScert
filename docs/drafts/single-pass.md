@@ -37,7 +37,9 @@ table from names to slots is built only for the names its step reads.
 
 A state is the name at each slot and one store of facts over names
 (cells, values, links, elements, index facts, separation facts), indexed by
-the names each fact mentions. A step produces a delta: the facts its rule's
+the names each fact mentions (`SinglePass.Store`: the live facts a
+`Std.HashSet`, and by each name a `Std.HashMap` list holding each live fact
+mentioning it once). A step produces a delta: the facts its rule's
 output adds, and the facts of its input the output lost. A fact over a name
 no slot holds stays true (a binding never changes); where a step reads it,
 its linear facts are first restated through read links and eliminated
@@ -75,8 +77,7 @@ the start, handlers' edges included. A statement entry that is no loop head
 is an ordinary node: its state is its predecessor's, or the meet of its
 predecessors' at a merge; a written assertion there is an obligation on
 that state. A merge works on what differs between its predecessors: the
-first's store less each fact another lacks, found where the stores'
-persistent maps are not one object (`Store.diff`), and each predecessor's
+first's store less each fact another lacks (`Store.diff`), and each predecessor's
 own differences at the merge's names; the rules below that query a
 predecessor's facts run over those differences alone, and the implications
 join runs where an edge carries an implication or a slot an edge's type

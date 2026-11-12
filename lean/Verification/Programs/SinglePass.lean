@@ -1,6 +1,5 @@
 import Verification.Programs.CertificateProducer
 import Verification.Programs.GraphCode
-import Lean.Data.PersistentHashMap
 import Verification.Programs.SinglePassStats
 import Verification.Programs.ArgumentRegionCertificates
 
@@ -27,7 +26,7 @@ inductive Atom where
   /-- A separation fact, its subject and partners at slots (or names), not
   at levels. -/
   | sep (f : HeapSeparation.Fact)
-  deriving BEq, Hashable
+  deriving DecidableEq, Hashable
 
 def Atom.names : Atom → List Nat
   | .cell f | .value f => [f.slot]
@@ -87,9 +86,10 @@ def ofAtoms (as : List Atom) (d : Nat) : Knowledge :=
 /-- The facts a state holds, over names, and by each name the live facts
 that mention it. -/
 structure Store where
-  live : Lean.PersistentHashMap Atom Unit := {}
-  byName : Lean.PersistentHashMap Nat (List Atom) := {}
-  count : Nat := 0
+  live : Std.HashSet Atom := {}
+  /-- Each name's list holds no fact twice: a fact is listed once under
+  each of its distinct names, and only while live. -/
+  byName : Std.HashMap Nat (List Atom) := {}
 
 /-- The form and condition of an unconditional or conditional linear bound
 `F ≤ d`, and `d`: one fact is kept per form and condition. -/
@@ -107,15 +107,15 @@ def Atom.canon : Atom → Atom
 def Store.addRaw (s : Store) (a : Atom) : Store :=
   let a := a.canon
   if s.live.contains a then s else
-  { live := s.live.insert a (), count := s.count + 1,
-    byName := a.names.foldl (fun m n => m.insert n (a :: m.findD n [])) s.byName }
+  { live := s.live.insert a,
+    byName := a.names.eraseDups.foldl (fun m n => m.insert n (a :: m.getD n [])) s.byName }
 
 def Store.remove (s : Store) (a : Atom) : Store :=
   let a := a.canon
   if s.live.contains a then
-    { live := s.live.erase a, count := s.count - 1,
+    { live := s.live.erase a,
       -- Off each name's list: the index holds live facts only.
-      byName := a.names.foldl (fun m n => m.insert n ((m.findD n []).erase a)) s.byName }
+      byName := a.names.eraseDups.foldl (fun m n => m.insert n ((m.getD n []).erase a)) s.byName }
   else s
 
 /-- A fact added; of a linear bound, one per form and condition, the
@@ -126,7 +126,7 @@ def Store.addBound (s : Store) (a : Atom) : Store :=
   if s.live.contains a then s else
   match a.linearKey with
   | some (key, d) =>
-    let same := (s.byName.findD (a.names.headD 0) []).filter fun b => match b.linearKey with
+    let same := (s.byName.getD (a.names.headD 0) []).filter fun b => match b.linearKey with
       | some (key', _) => key' == key
       | none => false
     if same.any (fun b => match b.linearKey with | some (_, d') => d' ≤ d | none => false) then s
@@ -144,11 +144,11 @@ def Store.add (s : Store) (a : Atom) : Store :=
     | _ => s
   s.addBound a
 
-def Store.about (s : Store) (n : Nat) : List Atom := s.byName.findD n []
+def Store.about (s : Store) (n : Nat) : List Atom := s.byName.getD n []
 
-def Store.size (s : Store) : Nat := s.count
+def Store.size (s : Store) : Nat := s.live.size
 
-def Store.toList (s : Store) : List Atom := s.live.foldl (fun acc a _ => a :: acc) []
+def Store.toList (s : Store) : List Atom := s.live.toList
 
 /-- Whether an unconditional fact of the store makes the name's value an
 integer: a linear fact over its value, or an `int`, `index`, length or
@@ -687,43 +687,8 @@ def directCall (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (
       return (some (coerceBy sub (.node ⟨Γ, t, p.result⟩ (r p.effect) (ef :: parts.toList)) A, phase), answers)
   return timedKind s!"direct: no signature of {L.length}" fun _ => (none, answers)
 
-/-- The keys under two persistent maps' nodes that may differ: every key
-under a pair of positions whose nodes are not one object. -/
-private unsafe def nodeDiffImpl (a b : Lean.PersistentHashMap.Node Atom Unit)
-    (xs ys : Array Atom) : Array Atom × Array Atom :=
-  if ptrAddrUnsafe a == ptrAddrUnsafe b then (xs, ys) else
-  match a, b with
-  | .entries ea, .entries eb => Id.run do
-    let mut xs := xs
-    let mut ys := ys
-    for i in [0:max ea.size eb.size] do
-      let x := ea.getD i .null
-      let y := eb.getD i .null
-      match x, y with
-      | .null, .null => pure ()
-      | .entry k _, .entry k' _ => if !(k == k') then xs := xs.push k; ys := ys.push k'
-      | .ref n, .ref n' => (xs, ys) := nodeDiffImpl n n' xs ys
-      | _, _ =>
-        xs := entryKeys x xs
-        ys := entryKeys y ys
-    return (xs, ys)
-  | _, _ => (nodeKeys a xs, nodeKeys b ys)
-where
-  nodeKeys : Lean.PersistentHashMap.Node Atom Unit → Array Atom → Array Atom
-    | .entries es, acc => es.foldl (fun acc e => entryKeys e acc) acc
-    | .collision ks _ _, acc => acc ++ ks
-  entryKeys : Lean.PersistentHashMap.Entry Atom Unit (Lean.PersistentHashMap.Node Atom Unit) → Array Atom → Array Atom
-    | .entry k _, acc => acc.push k
-    | .ref n, acc => nodeKeys n acc
-    | .null, acc => acc
-
-private unsafe def storeDiffImpl (s t : Store) : List Atom × List Atom :=
-  let (xs, ys) := nodeDiffImpl s.live.root t.live.root #[] #[]
-  ((xs.filter fun a => !t.live.contains a).toList, (ys.filter fun a => !s.live.contains a).toList)
-
-/-- The facts one store holds and the other does not, each way: by the
-positions where the stores differ, the parts they share skipped. -/
-@[implemented_by storeDiffImpl] def Store.diff (s t : Store) : List Atom × List Atom :=
+/-- The facts one store holds and the other does not, each way. -/
+def Store.diff (s t : Store) : List Atom × List Atom :=
   (s.toList.filter fun a => !t.live.contains a, t.toList.filter fun a => !s.live.contains a)
 
 /-- The unconditional index facts connected to the names through linear
