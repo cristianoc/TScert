@@ -1,6 +1,5 @@
 import Verification.Programs.CertificateProducer
 import Verification.Programs.GraphCode
-import Lean.Data.PersistentHashMap
 import Verification.Programs.SinglePassStats
 import Verification.Programs.ArgumentRegionCertificates
 
@@ -27,7 +26,7 @@ inductive Atom where
   /-- A separation fact, its subject and partners at slots (or names), not
   at levels. -/
   | sep (f : HeapSeparation.Fact)
-  deriving BEq, Hashable
+  deriving DecidableEq, Hashable
 
 def Atom.names : Atom → List Nat
   | .cell f | .value f => [f.slot]
@@ -87,9 +86,10 @@ def ofAtoms (as : List Atom) (d : Nat) : Knowledge :=
 /-- The facts a state holds, over names, and by each name the live facts
 that mention it. -/
 structure Store where
-  live : Lean.PersistentHashMap Atom Unit := {}
-  byName : Lean.PersistentHashMap Nat (List Atom) := {}
-  count : Nat := 0
+  live : Std.HashSet Atom := {}
+  /-- Each name's list holds no fact twice: a fact is listed once under
+  each of its distinct names, and only while live. -/
+  byName : Std.HashMap Nat (List Atom) := {}
 
 /-- The form and condition of an unconditional or conditional linear bound
 `F ≤ d`, and `d`: one fact is kept per form and condition. -/
@@ -107,15 +107,15 @@ def Atom.canon : Atom → Atom
 def Store.addRaw (s : Store) (a : Atom) : Store :=
   let a := a.canon
   if s.live.contains a then s else
-  { live := s.live.insert a (), count := s.count + 1,
-    byName := a.names.foldl (fun m n => m.insert n (a :: m.findD n [])) s.byName }
+  { live := s.live.insert a,
+    byName := a.names.eraseDups.foldl (fun m n => m.insert n (a :: m.getD n [])) s.byName }
 
 def Store.remove (s : Store) (a : Atom) : Store :=
   let a := a.canon
   if s.live.contains a then
-    { live := s.live.erase a, count := s.count - 1,
+    { live := s.live.erase a,
       -- Off each name's list: the index holds live facts only.
-      byName := a.names.foldl (fun m n => m.insert n ((m.findD n []).erase a)) s.byName }
+      byName := a.names.eraseDups.foldl (fun m n => m.insert n ((m.getD n []).erase a)) s.byName }
   else s
 
 /-- A fact added; of a linear bound, one per form and condition, the
@@ -126,7 +126,7 @@ def Store.addBound (s : Store) (a : Atom) : Store :=
   if s.live.contains a then s else
   match a.linearKey with
   | some (key, d) =>
-    let same := (s.byName.findD (a.names.headD 0) []).filter fun b => match b.linearKey with
+    let same := (s.byName.getD (a.names.headD 0) []).filter fun b => match b.linearKey with
       | some (key', _) => key' == key
       | none => false
     if same.any (fun b => match b.linearKey with | some (_, d') => d' ≤ d | none => false) then s
@@ -144,11 +144,22 @@ def Store.add (s : Store) (a : Atom) : Store :=
     | _ => s
   s.addBound a
 
-def Store.about (s : Store) (n : Nat) : List Atom := s.byName.findD n []
+def Store.about (s : Store) (n : Nat) : List Atom := s.byName.getD n []
 
-def Store.size (s : Store) : Nat := s.count
+def Store.size (s : Store) : Nat := s.live.size
 
-def Store.toList (s : Store) : List Atom := s.live.foldl (fun acc a _ => a :: acc) []
+def Store.toList (s : Store) : List Atom := s.live.toList
+
+/-- Whether an unconditional fact of the store makes the name's value an
+integer: a linear fact over its value, or an `int`, `index`, length or
+bound fact giving it (`IndexFact.HoldsAt`). -/
+def Store.integral (s : Store) (x : Nat) : Bool :=
+  (s.about x).any fun a => match a with
+    | .index ⟨f, none, _⟩ => match f with
+      | .int k | .index k | .length _ k | .bound _ k _ => k == x
+      | .linear F => F.vars.contains (HeapKnowledge.Term.value x)
+      | _ => false
+    | _ => false
 
 /-- A program point's state: the name at each slot, the facts. -/
 structure State where
@@ -676,43 +687,8 @@ def directCall (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (
       return (some (coerceBy sub (.node ⟨Γ, t, p.result⟩ (r p.effect) (ef :: parts.toList)) A, phase), answers)
   return timedKind s!"direct: no signature of {L.length}" fun _ => (none, answers)
 
-/-- The keys under two persistent maps' nodes that may differ: every key
-under a pair of positions whose nodes are not one object. -/
-private unsafe def nodeDiffImpl (a b : Lean.PersistentHashMap.Node Atom Unit)
-    (xs ys : Array Atom) : Array Atom × Array Atom :=
-  if ptrAddrUnsafe a == ptrAddrUnsafe b then (xs, ys) else
-  match a, b with
-  | .entries ea, .entries eb => Id.run do
-    let mut xs := xs
-    let mut ys := ys
-    for i in [0:max ea.size eb.size] do
-      let x := ea.getD i .null
-      let y := eb.getD i .null
-      match x, y with
-      | .null, .null => pure ()
-      | .entry k _, .entry k' _ => if !(k == k') then xs := xs.push k; ys := ys.push k'
-      | .ref n, .ref n' => (xs, ys) := nodeDiffImpl n n' xs ys
-      | _, _ =>
-        xs := entryKeys x xs
-        ys := entryKeys y ys
-    return (xs, ys)
-  | _, _ => (nodeKeys a xs, nodeKeys b ys)
-where
-  nodeKeys : Lean.PersistentHashMap.Node Atom Unit → Array Atom → Array Atom
-    | .entries es, acc => es.foldl (fun acc e => entryKeys e acc) acc
-    | .collision ks _ _, acc => acc ++ ks
-  entryKeys : Lean.PersistentHashMap.Entry Atom Unit (Lean.PersistentHashMap.Node Atom Unit) → Array Atom → Array Atom
-    | .entry k _, acc => acc.push k
-    | .ref n, acc => nodeKeys n acc
-    | .null, acc => acc
-
-private unsafe def storeDiffImpl (s t : Store) : List Atom × List Atom :=
-  let (xs, ys) := nodeDiffImpl s.live.root t.live.root #[] #[]
-  ((xs.filter fun a => !t.live.contains a).toList, (ys.filter fun a => !s.live.contains a).toList)
-
-/-- The facts one store holds and the other does not, each way: by the
-positions where the stores differ, the parts they share skipped. -/
-@[implemented_by storeDiffImpl] def Store.diff (s t : Store) : List Atom × List Atom :=
+/-- The facts one store holds and the other does not, each way. -/
+def Store.diff (s t : Store) : List Atom × List Atom :=
   (s.toList.filter fun a => !t.live.contains a, t.toList.filter fun a => !s.live.contains a)
 
 /-- The unconditional index facts connected to the names through linear
@@ -837,20 +813,76 @@ def loopHeads (nodes : Array ControlFlow.Node) (start : Nat) : Array Bool × Arr
 def sparse {α : Type} (n : Nat) (empty : α) (at_ : List (Nat × α)) : List α :=
   at_.foldl (fun acc (l, x) => acc.set l x) (List.replicate n empty)
 
+/-- The checker the pass runs: the proved layers (`Checker.ordinary`),
+whose `select` takes a derivation as given, so the pass checks the step's
+tree; or a qualified body's (`Checker.withSubtyping`), whose `select` is its
+`run` (`select_eq_run`). -/
+inductive PassChecker (G : NormalGraph ι) (images : InstanceImageCheck G) where
+  | ordinary
+  | qualified (subtyping : BodySubtyping G)
+      (ord : ∀ {A B p}, PositiveCertificates.checkUsing G images A B p = true → subtyping.check A B p = true)
+
+def PassChecker.checker {G : NormalGraph ι} {images : InstanceImageCheck G} :
+    PassChecker G images → HeapExpressionRules.Checker G images
+  | .ordinary => HeapExpressionRules.Checker.ordinary G images
+  | .qualified s o => HeapExpressionRules.Checker.withSubtyping G images s o
+
+/-- Whether the checker's `select` checks the step itself. -/
+def PassChecker.selectChecks {G : NormalGraph ι} {images : InstanceImageCheck G} : PassChecker G images → Bool
+  | .ordinary => false
+  | .qualified .. => true
+
+omit [Hashable ι] [Instantiates ι] in
+theorem PassChecker.select_eq_run {G : NormalGraph ι} {images : InstanceImageCheck G} {p : PassChecker G images}
+    (h : p.selectChecks = true) : p.checker.select = p.checker.run := by
+  cases p with
+  | ordinary => cases h
+  | qualified s o => rfl
+
+/-- The unit's entry checked as `ControlFlow.checkEntryResult` checks a
+certificate's (no edge enters the start on the first invocation): the start's
+context is the request's inputs; the promised input's slot is one of them;
+the start's given state states no implication, names a slot after the
+promised input only at that input's own slot and after an input's entry value
+only at that input's slot; and its written and supplied facts are entailed
+by the request's entry facts (`ControlFlow.entryKnows`). The refusal where
+one fails. -/
+def entryRefusal (G : NormalGraph ι) (inputs : List (Ty ι)) (claims : List (PointClaim ι)) (start : Nat)
+    (goal : Goal ι) (written : Option Knowledge) (supplied : List IndexAtom)
+    (givenImplies : List (PromiseCalls.Implication ι)) (givenArgs : List Nat) (givenInputs : List (Nat × Nat))
+    (entryIndices : List IndexAtom) (entrySeparation : HeapSeparation.Separation) : Option String :=
+  match claims[start]? with
+  | none => some "the entry: no claim at the start"
+  | some c =>
+    if !(c.context == inputs) then some "the entry: its context is not the inputs'"
+    else if !goal.slot.all (· < inputs.length) then some "the entry: the promised input's slot"
+    else if !givenImplies.isEmpty then some "the entry: a given implication"
+    else if !givenArgs.all (some · == goal.slot) then some "the entry: a slot given the promised input"
+    else if !givenInputs.all (fun (j, q) => j == q) then some "the entry: a slot given an input's value"
+    else
+      let k := written.getD {}
+      let k := { k with indices := k.indices ++ supplied }
+      if !ControlFlow.entryKnows G inputs entrySeparation entryIndices k then
+        some "the entry: a given fact the entry facts do not entail"
+      else none
+
 /-- The pass over one graph. -/
 def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
-    (P : Program) (claims : List (PointClaim ι)) (start : Nat) (goal : Goal ι)
+    (P : Program) (claims : List (PointClaim ι)) (start : Nat) (inputs : List (Ty ι)) (goal : Goal ι)
     (assertions : List (Nat × Knowledge)) (cuts : List Nat)
     (candidates : List (Nat × List IndexAtom)) (entryIndices : List IndexAtom)
     (suggestions : List (Sequent ι)) (known : List (ProgramCertificates.Evidence ι)) (codes : CodeEntry ι → Bool)
-    (aliases : List (ι × ι)) (checker : HeapExpressionRules.Checker G images)
+    (aliases : List (ι × ι)) (passChecker : PassChecker G images)
     (answers : Answered G) (reference : Array Knowledge := #[]) (debugNode : Nat := 1000000000)
     (bound : Option (Footprints.Closed × Bool × Bool) := none)
     (givenImplies : Array (List (PromiseCalls.Implication ι)) := #[])
     (givenArgs : Array (List Nat) := #[])
     (ensures : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
     (entrySeparation : HeapSeparation.Separation := {}) (observe : Option Nat := none) (tracing : Bool := false) (observeEntry : Bool := false)
-    (selectChecks : Bool := false) (regional : Option Regional := none) : Outcome ι × Counts × Answered G × Trace := Id.run do
+    (regional : Option Regional := none) : Outcome ι × Counts × Answered G × Trace := Id.run do
+  let checker := passChecker.checker
+  -- Whether `select` checks the step (`PassChecker.select_eq_run`).
+  let selectChecks := passChecker.selectChecks
   let nodes := P.toArray
   let claimed := claims.toArray
   let n := nodes.size
@@ -877,6 +909,11 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     let sg : Array (Option Nat) := Array.replicate n none
     trace := Trace.mk e e ms sg isHead start 0 none [] [] []
   let supplied := byLabel n candidates
+  -- The entry, which no edge checks on the first invocation.
+  if let some why := entryRefusal G inputs claims start goal (stated.getD start none) ((supplied.getD start none).getD [])
+      ((givenImplies[start]?).getD []) ((givenArgs[start]?).getD []) ((givenInputs[start]?).getD [])
+      entryIndices entrySeparation then
+    return (.refused why, counts, answers, trace)
   -- In-degrees without the edges into cuts, of the edges from nodes the
   -- start reaches: a node no path from the start reaches never runs.
   let mut indeg : Array Nat := Array.replicate n 0
@@ -1019,13 +1056,18 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         -- Each predecessor's facts about the names it renames, restated at
         -- the fresh names (a name a slot keeps that another slot's fresh name
         -- renames is stated equal to it, as are one name's fresh names).
-        let eqAtoms := fun (φ x : Nat) => [Atom.link { cell := φ, value := x, alias := true },
-          .index ⟨.linear (.le [(HeapKnowledge.Term.value φ, 1), (HeapKnowledge.Term.value x, -1)] 0), none, false⟩,
-          .index ⟨.linear (.le [(HeapKnowledge.Term.value φ, -1), (HeapKnowledge.Term.value x, 1)] 0), none, false⟩]
+        -- The alias link always; the equality of their numbers only where
+        -- the predecessor's facts make `x` an integer (`Store.integral`): a
+        -- linear fact holds only where its terms denote integers.
+        let eqAtoms := fun (int : Bool) (φ x : Nat) => Atom.link { cell := φ, value := x, alias := true } ::
+          (if !int then [] else
+          [.index ⟨.linear (.le [(HeapKnowledge.Term.value φ, 1), (HeapKnowledge.Term.value x, -1)] 0), none, false⟩,
+          .index ⟨.linear (.le [(HeapKnowledge.Term.value φ, -1), (HeapKnowledge.Term.value x, 1)] 0), none, false⟩])
         let variants : List (Std.HashSet Atom) := (preds.zip renames).map fun ((st : State), (m : Std.HashMap Nat (List Nat))) =>
           let equal := m.fold (fun (acc : List Atom) x φs =>
-            (if names.contains x then φs.flatMap (eqAtoms · x) else []) ++
-            (φs.zip φs.tail).flatMap (fun (φ, ψ) => eqAtoms ψ φ) ++ acc) []
+            let int := st.store.integral x
+            (if names.contains x then φs.flatMap (eqAtoms int · x) else []) ++
+            (φs.zip φs.tail).flatMap (fun (φ, ψ) => eqAtoms int ψ φ) ++ acc) []
           let about := m.fold (fun (acc : List Atom) x _ => st.store.about x ++ acc) []
           (about.foldl (fun (acc : Std.HashSet Atom) a => acc.insertMany (Atom.renameEach m a)) {}).insertMany equal
         -- The facts every predecessor holds: the first's store less each fact
@@ -1264,7 +1306,12 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
             (some admits) answers
       answers := a
       counts := { counts with rules := counts.rules + 1, directCalls := counts.directCalls + (if direct.isSome then 1 else 0) }
-      let some (deriv, effect, out) := r.value | return (.refused s!"expression at node {l}: {(reprStr node.expression).take 300} with {(atomsOf k).length} facts {(reprStr k).take 1500}", counts, answers, trace)
+      let some (deriv, effect, searched) := r.value | return (.refused s!"expression at node {l}: {(reprStr node.expression).take 300} with {(atomsOf k).length} facts {(reprStr k).take 1500}", counts, answers, trace)
+      -- The output the checker selects for the step the search returned,
+      -- computed here: the search's own output is not applied.
+      let out? : Option Knowledge := if direct.isSome then some searched
+        else (checker.select j kE effect codes answers.summaries.toList).value
+      let some out := out? | return (.refused s!"expression at node {l}: the selected step", counts, answers, trace)
       -- The step's derivation checked as the checker's `run` checks it
       -- (`checkStepResult`'s tree check): the search's `select` takes it as
       -- given.
@@ -1273,14 +1320,17 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         | _ => effect.proof?
       -- A checker whose `select` is its `run` (a qualified body's) has
       -- checked the derivation already.
+      -- The tree `requiresTree` alone accepted, at the step's facts: a
+      -- `select` over other facts checks it again there.
+      let mut preconditioned : Option (ProgramCertificates.Evidence ι) := none
       if let some p := (if selectChecks then none else tree) then
         -- A call at a precondition the step's facts establish is checked as
         -- `requiringCalls` checks it (`PromiseCalls.requiresTree`).
         -- The read summaries the step's search added included.
         let sums := answers.summaries.toList
-        if !(timedKind "tree check" fun _ => ProgramCertificates.checkTreeUsing G images p codes sums ||
-            PromiseCalls.requiresTree G images kE codes sums p) then
-          return (.refused s!"expression at node {l}: its derivation", counts, answers, trace)
+        if !(timedKind "tree check" fun _ => ProgramCertificates.checkTreeUsing G images p codes sums) then
+          if PromiseCalls.requiresTree G images kE codes sums p then preconditioned := some p
+          else return (.refused s!"expression at node {l}: its derivation", counts, answers, trace)
       -- A call keeping the heap (`PromiseCalls.keepsCall`), where no layer
       -- before it in `Checker.ordinary` decides the step, keeps every fact
       -- it does not name: its output over the facts it names is its delta.
@@ -1318,10 +1368,24 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       else
         -- A step that may write: its rule reads every fact.
         let (k, pairs, table) := materialize entry width ms true
+        -- A heap fact over a name no slot holds is not among the facts the
+        -- rule reads, so its output does not say whether the step keeps it:
+        -- it is dropped (the handler's filter's heap facts); a heap-free
+        -- fact stays.
+        let renamed : Std.HashSet Atom := pairs.foldl (fun acc (a, _) => acc.insert a) {}
+        store := entry.store.toList.foldl (fun (acc : Store) a => if renamed.contains a then acc else match a with
+          | .cell _ | .elem _ => acc.remove a
+          | .link g => if g.alias then acc else acc.remove a
+          | .index x => if x.fact.envOnly then acc else acc.remove a
+          | _ => acc) store
         let kE := KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G c.context) k
         -- The step the search selected over the facts the expression names,
         -- its output over every fact.
         let sums := answers.summaries.toList
+        -- A tree only its precondition accepted, checked at every fact.
+        if let some p := preconditioned then
+          if !PromiseCalls.requiresTree G images kE codes sums p then
+            return (.refused s!"expression at node {l} over every fact: its derivation", counts, answers, trace)
         let r := timedKind ("whole " ++ kindKey) fun _ =>
           checker.select j kE effect codes sums
         counts := { counts with rules := counts.rules + 1, fullRules := counts.fullRules + 1 }
@@ -1357,10 +1421,17 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         let F := match PromiseCalls.receiverSlot node.expression with
           | some i => if (entry.names[i]?).any entry.fresh.contains then [i] else []
           | none => []
+        -- The step's derivation, where its signature bounds the step: claimed
+        -- at the node's term, its tree accepted (`GraphCode.nodeChecked`'s
+        -- conjuncts beside `selectedWithinAt`).
+        let derivChecked : Thunk Bool := Thunk.mk fun _ =>
+          (ProgramCertificates.claim deriv).term == node.expression &&
+            (ProgramCertificates.checkTreeUsing G images deriv codes answers.summaries.toList ||
+              PromiseCalls.requiresTree G images stepK codes answers.summaries.toList deriv)
         let writes := ExpressionEffects.writeWithin G c.context Φ node.expression ||
           ExpressionEffects.initWriteWithin G c.context stepK Φ node.expression
         let within := ExpressionEffects.check G c.context node.expression || writes ||
-          GraphCode.selectedWithinAt Φ F deriv || ExpressionEffects.emptyType G c.type ||
+          (GraphCode.selectedWithinAt Φ F deriv && derivChecked.get) || ExpressionEffects.emptyType G c.type ||
           c.context.any (ExpressionEffects.emptyType G ·)
         -- The throw within the bound where a handler outside the region with
         -- no normal return catches it or the bound covers throws
@@ -1370,7 +1441,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
           | some t => !deadArr.getD t.label false
           | none => false
         let throws := !(liveHandler || exc) || ExpressionEffects.check G c.context node.expression || writes ||
-          (GraphCode.selectedWithinAt Φ F deriv && ExpressionEffects.selectedThrows deriv &&
+          (GraphCode.selectedWithinAt Φ F deriv && derivChecked.get && ExpressionEffects.selectedThrows deriv &&
             (match ExpressionEffects.selectedEffect deriv with | some eff => eff.onThrow | none => false)) ||
           c.context.any (ExpressionEffects.emptyType G ·)
         let returns := match node.continuation with

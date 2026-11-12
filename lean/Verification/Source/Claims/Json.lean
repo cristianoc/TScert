@@ -554,11 +554,14 @@ def FilePlans.certified (f : FilePlans) (group : List Nat) :
   let plans ← group.mapM fun i => (f.plans[i]?).getD (.error s!"no unit {i}")
   certifyPlans plans
 
-/-- A group's dependencies on the wire: the groups its members reach and, where
-its code names a qualified read, the module runs. -/
+/-- A group's dependencies on the wire: the groups its members reach, where
+its code names a qualified read, the module runs, and the module units the
+reads it mentions rest on (`ImportPlan.depends`). -/
 def FilePlans.dependencies (f : FilePlans) (group : List Nat) : List String :=
   (f.fr.dependencies group).map f.fr.unitId ++
-    (if f.fr.readsQualified group then f.p.modules.map ("module:" ++ ·.location) else [])
+    (if f.fr.readsQualified group then f.p.modules.map ("module:" ++ ·.location) else []) ++
+    -- The module units a read of an import the group's code mentions rests on.
+    ((f.p.depends.filter fun (n, _) => group.any fun i => (f.fr.mentions i).contains n).flatMap (·.2)).eraseDups
 
 /-- A group's evidence, decoded: one response and one obligation list per
 member, in the group's order. -/
@@ -966,10 +969,10 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
         let I' := StoreView.images r.types
         let pool' := CertificateProducer.vocabulary G' labels r.claims r.inputs
         let (o, counts, after, _) := CertificateProducer.timed SinglePass.passNanos fun _ =>
-          SinglePass.run G' I' pool' fuel r.program r.claims r.start r.goal r.assertions r.cuts r.candidates
-            r.entryIndices [] (e ++ rendered) (GraphCode.admits []) r.aliases q.checker
+          SinglePass.run G' I' pool' fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
+            r.entryIndices [] (e ++ rendered) (GraphCode.admits []) r.aliases (.qualified q.body q.ordinary)
             { summaries := next.summaries, summaryAnswers := next.summaryAnswers } #[] debugNode none
-            givenImplies givenArgs r.ensures givenInputs r.entrySeparation none false false true
+            givenImplies givenArgs r.ensures givenInputs r.entrySeparation none false false
         let sums := after.summaries.toList
         let sumsOk := sums.all (RequestJson.validSummary (StoreView.valid r.types)) &&
           (ProgramCertificates.checkReadSummariesResult G' I' sums).accepted
@@ -1000,6 +1003,12 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
         if !conditions then
           codeOutcome := codeOutcome.orElse fun _ => some (.refused s!"code {ci}: its signature")
           break
+        -- An async code's footprint is `top` (`RequestJson.asyncEffects`, as
+        -- `codeTableResult` requires of every code): its call returns
+        -- normally where its body throws.
+        if !RequestJson.asyncEffects q.async eff.footprint then
+          codeOutcome := codeOutcome.orElse fun _ => some (.refused s!"code {ci}: an async definition's footprint")
+          break
         let codeBound := if eff.footprint == .top && !eff.fresh && !eff.onThrow then none
           else if !eff.fresh && q.entry.exprs.all Purity.pureTerm then none
           else some (eff.footprint, eff.fresh, eff.onThrow)
@@ -1013,17 +1022,17 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
           | none => {}
         let codeImplies := codeGiven.implies
         let codeArgs := codeGiven.args
-        let (o, _, a, _) := SinglePass.run G I codePool fuel rq.program rq.claims rq.start q.entry.goal hints.requirements
+        let (o, _, a, _) := SinglePass.run G I codePool fuel rq.program rq.claims rq.start rq.inputs q.entry.goal hints.requirements
           hints.cuts hints.candidates rq.entryIndices [] (e ++ rendered) (GraphCode.admits table) r.aliases
-          (HeapExpressionRules.Checker.ordinary G I) sumsAnswers #[] 1000000000 codeBound codeImplies codeArgs
+          .ordinary sumsAnswers #[] 1000000000 codeBound codeImplies codeArgs
         sumsAnswers := a
         -- A refusal observed in a code request: its obligation, the facts
         -- over its names and those it lacks, as for the unit's own graph.
         if let .refused w := o then
           if observe == some "refusal" then
-            let (_, _, _, trace) := SinglePass.run G I codePool fuel rq.program rq.claims rq.start q.entry.goal hints.requirements
+            let (_, _, _, trace) := SinglePass.run G I codePool fuel rq.program rq.claims rq.start rq.inputs q.entry.goal hints.requirements
               hints.cuts hints.candidates rq.entryIndices [] (e ++ rendered) (GraphCode.admits table) r.aliases
-              (HeapExpressionRules.Checker.ordinary G I) sumsAnswers #[] 1000000000 codeBound codeImplies codeArgs [] #[] {}
+              .ordinary sumsAnswers #[] 1000000000 codeBound codeImplies codeArgs [] #[] {}
               (some 1000000000) true
             let l := trace.node
             let mentioned := ((rq.claims[l]?).map RequestJson.PointClaim.mentions).getD []
@@ -1065,8 +1074,8 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
       if observe.isSome && observed.isNone then return (name, "", .notHandled "no node to observe")
       -- Profiling: the pass run `repeats` times, the last run's result kept.
       for k in List.range (repeats - 1) do
-        let (o, _, _, _) := SinglePass.run G I pool fuel r.program r.claims r.start r.goal r.assertions r.cuts r.candidates
-          r.entryIndices [] (e ++ rendered) codes r.aliases (HeapExpressionRules.Checker.ordinary G I) sumsAnswers #[] (debugNode + k)
+        let (o, _, _, _) := SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
+          r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers #[] (debugNode + k)
         if let .notHandled w := o then throw w
       let tracing := observe == some "refusal"
       -- The regional checks (`regionalChecked`), made in the walk: the
@@ -1084,9 +1093,9 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
         if r.async || r.fresh || !GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions then
           return (name, "", .refused "store regions")
       let walk := fun (bound : Option (Footprints.Closed × Bool × Bool)) (regional : Option SinglePass.Regional) =>
-        SinglePass.run G I pool fuel r.program r.claims r.start r.goal r.assertions r.cuts r.candidates
-          r.entryIndices [] (e ++ rendered) codes r.aliases (HeapExpressionRules.Checker.ordinary G I) sumsAnswers reference debugNode bound
-          givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed tracing false false regional
+        SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
+          r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers reference debugNode bound
+          givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed tracing false regional
       let (o, counts, after, trace) := CertificateProducer.timed SinglePass.passNanos fun _ => walk bound regional
       -- A footprint the walk refuses node by node, checked regionally with no
       -- regions where the result is not fresh; then the unit's own regions.
@@ -1121,8 +1130,8 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
       -- the refusal: the walk again, stopping on its entry.
       let o : SinglePass.Outcome _ := match o, observed with
         | .refused _, some _ => if tracing then o else
-          (SinglePass.run G I pool fuel r.program r.claims r.start r.goal r.assertions r.cuts r.candidates
-            r.entryIndices [] (e ++ rendered) codes r.aliases (HeapExpressionRules.Checker.ordinary G I) sumsAnswers #[] debugNode bound
+          (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
+            r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers #[] debugNode bound
             givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed false true).1
         | o, _ => o
       -- A refusal observed: its obligation's facts, the facts it lacks, and
@@ -1210,6 +1219,26 @@ checked at its claims and qualified reads (`checkDocument`). -/
 def moduleVerdict (m : ModuleRun) (budget : PositiveCertificates.SearchBudget) (evidence : Json) :
     Except String Unit :=
   (checkDocument m.ast m.claims m.location evidence budget m.qualified).mapError (s!"module {m.location}: " ++ ·)
+
+/-- A module run's plans: its restricted document's front at its claims and
+qualified reads, every unit extracted, as `filePlans` plans a file. -/
+def ModuleRun.plans (m : ModuleRun) (budget : PositiveCertificates.SearchBudget) : Except String FilePlans := do
+  let fr ← fileFront m.ast m.claims m.location budget m.qualified
+  let (T, plans) := fr.extractAll
+  let F ← EquationStore.freeze T
+  return ⟨⟨m.ast, m.claims, m.qualified, [], []⟩, fr, F, plans.map fun e => e.bind (FunctionPlan.over F)⟩
+
+/-- Each unit's given lines of a module run (`givenLines`), the unit named by
+its wire identity among the importer's (`module:<location>#<unit>`), which
+mode 8 reads for the module units it checks (`fragmentPlansWithModules`). -/
+def ModuleRun.givenLines (m : ModuleRun) (budget : PositiveCertificates.SearchBudget) (fuel : Nat)
+    (facts entries : Bool) : List Json :=
+  match m.plans budget with
+  | .error _ => []
+  | .ok f => f.fr.leaders.flatMap fun l => (f.givenLines fuel (f.fr.group l) facts entries).map fun j =>
+      match j.getObjValAs? String "unit" with
+      | .ok u => j.setObjVal! "unit" (toJson s!"module:{m.location}#{u}")
+      | .error _ => j
 
 /-- A unit's line of an evidence document: the unit, and its evidence. -/
 def unitLine (unit : String) (evidence : Json) : Json :=

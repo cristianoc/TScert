@@ -22,9 +22,9 @@ const here = import.meta.dirname;
 
 /** The stages of the pipeline's entry point (STAGE-STORE.md). */
 export type StageName = "parse" | "module" | "lower" | "facts" | "propose" | "assemble" | "plan" | "search" | "check" |
-  "module-search" | "module-check" | "explain" | "diagnostics";
+  "module-search" | "module-check" | "interface-plan" | "module-interface" | "pass" | "explain" | "diagnostics";
 export const stageNames: readonly StageName[] = ["parse", "module", "lower", "facts", "propose", "assemble", "plan",
-  "search", "check", "module-search", "module-check", "explain", "diagnostics"];
+  "search", "check", "module-search", "module-check", "interface-plan", "module-interface", "pass", "explain", "diagnostics"];
 export const isStageName = (value: unknown): value is StageName => stageNames.some((s) => s === value);
 
 /** The repository's builds of the two audited programs, at their build
@@ -81,7 +81,7 @@ const repository = resolve(here, "..");
  * publishes or records attempts, orchestrates stages over inputs their
  * manifests bind, or presents outcomes. */
 export const unkeyed: readonly string[] = [
-  "pipeline/stages.mts", "pipeline/stage-store.mts", "pipeline/verify-source.mts", "pipeline/run-cases.mts",
+  "pipeline/stages.mts", "pipeline/stage-store.mts", "pipeline/module-interfaces.mts", "pipeline/verify-source.mts", "pipeline/run-cases.mts",
   "pipeline/cases.mts", "pipeline/test.mts", "pipeline/default-parameters.mts", "pipeline/evidence-mutations.mts",
   "pipeline/generic-rest.mts", "pipeline/overload-claims.mts", "pipeline/rest-pack-instance.mts",
   "pipeline/run-example.mts", "pipeline/fixture-links.mts", "pipeline/unit-slices.mts", "pipeline/unit-documents.mts", "tools/diagnostic.mts", "tools/diagnostic-view.mts",
@@ -654,6 +654,14 @@ export function verifierCall(program: string, args: readonly string[],
   const [mode, ...rest] = args.slice(budget.length);
   const call = (stage: StageName, list: Argument[]): ProcessCall =>
     ({ stage, program, arguments: [...budget, { text: mode }, ...list], environment, protocol: verifierProtocol });
+  if (mode === "--module-interface-plan" && rest.length === 2)
+    return call("interface-plan", [{ input: "fragment.json", path: rest[0] }, { input: "selection.json", path: rest[1] }]);
+  if (mode === "--module-interface" && rest.length === 1)
+    return { ...call("module-interface", [{ input: "request.json", path: rest[0] }]), protocol: { refusal: null } };
+  if (mode === "--verify-interface-stage" && rest.length === 8)
+    return call("pass", [{ text: rest[0] }, { input: "fragment.json", path: rest[1] },
+      { input: "interfaces.json", path: rest[2] }, { input: "given.jsonl", path: rest[3] },
+      { input: "standins.json", path: rest[4] }, ...rest.slice(5).map((text) => ({ text }))]);
   if (mode === "--lower-control-flow" && rest.length === 1)
     return call("lower", [{ input: "fragment.json", path: rest[0] }]);
   if (mode === "--plan-imports" && rest.length === 2)

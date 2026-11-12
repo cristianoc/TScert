@@ -7,8 +7,10 @@ and annotations; each function's signature is its declaration's, at the
 footprint it writes (`Modifies<…>`, else the ordinary effect); every
 expression's and statement entry's type, and every `let`'s storage contract,
 is the walk's (`Synthesis.retypeUnit`); the execution points are the flow
-graphs' (`SourceFlow.pointId`); an import is read at its declared type. The
-loop heads' facts are the given file's (`FilePlans.passGroup`). -/
+graphs' (`SourceFlow.pointId`); an import is read at its declared type, at
+the footprint its module's units establish where the fragment resolves it
+to one (`fragmentPlansWithModules`). The loop heads' facts are the given
+file's (`FilePlans.passGroup`). -/
 namespace Verification.SourceClaimJson
 open Lean ProgramTyping SourceExtraction
 open EquationGraphs (Tree)
@@ -372,14 +374,45 @@ def Front.withInitTypes (fr : Front) (force : List String := []) : Front := Id.r
     return { fr with d := { fr.d with types := T }, moduleConstants := typed }
 
 /-- A module function's type with each signature's footprint `Φ`, bounding
-its throws where `onThrow`. -/
-def keepingType (A : Ty Tree) (onThrow : Bool) (Φ : Footprints.Closed := ⟨.keep, .keep⟩) : Compiler (Ty Tree) := do
-  match PositiveRules.expand (SourceTypes.graph (← table)) A with
+its throws where `onThrow`, and the function each returns at the footprint
+`R` where `R` is not `top` (`resultWithFootprint`'s reading: a result of one
+function type of fixed signatures, else left as it is). -/
+def keepingType (A : Ty Tree) (onThrow : Bool) (Φ : Footprints.Closed := ⟨.keep, .keep⟩)
+    (R : Footprints.Closed := .top) : Compiler (Ty Tree) := do
+  let G := SourceTypes.graph (← table)
+  let returning (B : Ty Tree) : Compiler (Ty Tree) := do
+    if R == .top then return B
+    match PositiveRules.expand G B with
+    | [.arrs L []] =>
+      if L.isEmpty || L.any (fun a => a.effect.footprint != .top || a.effect.onThrow || a.effect.promise.isSome) then
+        return B
+      return [← lower (SourceTypes.use (.arrs (L.map fun a => { a with effect := { a.effect with closed := R } }) []))]
+    | _ => return B
+  match PositiveRules.expand G A with
   | [.arrs L S] =>
     let e (x : CallEffects.Effect) : CallEffects.Effect := { x with closed := Φ, onThrow, regions := [] }
-    return [← lower (SourceTypes.use (.arrs (L.map fun a => { a with effect := e a.effect })
-      (S.map fun a => { a with effect := e a.effect })))]
+    let L ← L.mapM fun a => do return { a with effect := e a.effect, result := ← returning a.result }
+    let S ← S.mapM fun a => do return { a with effect := e a.effect, result := ← returning a.result }
+    return [← lower (SourceTypes.use (.arrs L S))]
   | _ => throw "a module function of no one signature"
+
+/-- **A returned function's footprint** (section 9, "Declarations"): the
+join of the footprints of every signature of each function the walk's
+returns hold, where each return holds one of fixed and variadic signatures;
+else `top` (the producer's `returned_footprint`, proposal.ml:164-174).
+With `least` (`TSCERT_FORCE=results`, the adversarial proposal), each such
+signature's footprint is taken as keeping values and stores. -/
+def returnedFootprint (T : EquationStore.State) (returns : List (Option (Ty Tree))) (least : Bool := false) :
+    Footprints.Closed :=
+  if returns.isEmpty then .top else
+  let G := SourceTypes.graph T
+  returns.foldl (init := ⟨.keep, .keep⟩) fun acc r => match r with
+    | some A => match PositiveRules.expand G A with
+      | [.arrs L S] => if L.isEmpty && S.isEmpty then .top else
+        ((L.map (·.effect)) ++ S.map (·.effect)).foldl (init := acc) fun acc e =>
+          if least then acc else ⟨acc.value.max e.footprint.value, acc.store.max e.footprint.store⟩
+      | _ => .top
+    | none => .top
 
 /-- **Declarations' footprints** (section 9, "Declarations"): each function
 a wanted unit reaches, callees first, walked as its unit is, each callee
@@ -395,9 +428,10 @@ more than it assumed, three walks at most (the least fixed point over a
 lattice of twelve footprints). Any other function, an async one, a generic
 one, one with a rest, a written effect, a written promise or a stand-in
 keeps what `fragmentClaims` gives it. Each proposal is a stand-in: its
-callers read it and its own unit establishes it. -/
-def declarationEffects (fr : Front) (wanted : List Nat) (standIns : StandIns) (force : List String) :
-    List StandIn := Id.run do
+callers read it and its own unit establishes it. Beside the proposals, the
+functions walked to the ordinary effect.
+ -/
+def declarationWalks (fr : Front) (wanted : List Nat) (standIns : StandIns) (force : List String) : List StandIn × List String := Id.run do
   -- Callees first: the wanted units' reach in post-order.
   let mut order : List Nat := []
   let mut seen : Std.HashSet Nat := {}
@@ -413,36 +447,47 @@ def declarationEffects (fr : Front) (wanted : List Nat) (standIns : StandIns) (f
         stack := (fr.edges i).filter (!seen.contains ·) |>.map (·, false) |>.append ((i, true) :: rest)
   let (schemes, generics) := fr.genericValues
   let top : Footprints.Closed := ⟨.any, .any⟩
-  let mut found : List (String × Footprints.Closed × Bool) := []
+  let mut found : List (String × (Footprints.Closed × Bool) × Footprints.Closed) := []
+  let mut tops : List String := []
   for i in order do
     let some (f, tps, none) := fr.units[i]? | continue
     if !tps.isEmpty || f.async || f.stated.isSome || f.params.any (·.rest) ||
         standIns.functions.any (·.name == f.name) then continue
-    let walkAt (own : Option (Footprints.Closed × Bool)) : Option (Footprints.Closed × Bool) :=
+    let walkAt (own : Option (Footprints.Closed × Bool)) : Option ((Footprints.Closed × Bool) × Footprints.Closed) :=
       let at_ := match own with
-        | some o => (f.name, o) :: found
+        | some o => (f.name, o, Footprints.Closed.top) :: found
         | none => found
       let module := (fr.moduleFunctions ++ fr.moduleConstants).map fun v => (v.1, (match at_.lookup v.1 with
-        | some (Φ, ot) => do keepingType (← moduleValueType v) ot Φ
+        | some ((Φ, ot), R) => do keepingType (← moduleValueType v) ot Φ R
         | none => moduleValueType v : Compiler (Ty Tree)))
       match Synthesis.walkUnit fr.d.types f (module ++ schemes) generics force none (strict := true) with
-      | .ok (w, _) => some (if w.writes then ⟨w.valueChange, w.storeChange⟩ else ⟨.keep, .keep⟩, !w.throwWrites)
+      | .ok (w, T) =>
+        some ((if w.writes then ⟨w.valueChange, w.storeChange⟩ else ⟨.keep, .keep⟩, !w.throwWrites),
+          -- (where the result annotation can state it, `resultWithFootprint`)
+          let R := returnedFootprint T w.returns (force.contains "results")
+          if (resultWithFootprint fr.d.types f.ret R).isOk then R else .top)
       | .error _ => none
     let within (a b : Footprints.Closed × Bool) : Bool := a.1.le b.1 && (a.2 || !b.2)
-    let r : Option (Footprints.Closed × Bool) :=
+    -- (a self-recursive function's own reads of its result at `top`)
+    let r : Option ((Footprints.Closed × Bool) × Footprints.Closed) :=
       if (fr.mentions i).contains f.name then Id.run do
         let mut assumed : Footprints.Closed × Bool := (⟨.keep, .keep⟩, true)
         for _ in List.range 3 do
           match walkAt (some assumed) with
           | none => return none
-          | some got =>
-            if within got assumed then return some assumed
+          | some (got, R) =>
+            if within got assumed then return some (assumed, R)
             assumed := (⟨assumed.1.value.max got.1.value, assumed.1.store.max got.1.store⟩, assumed.2 && got.2)
         return none
       else walkAt none
-    if let some (Φ, ot) := r then
-      if Φ != top then found := found ++ [(f.name, Φ, ot)]
-  return found.map fun (n, Φ, ot) => { name := n, footprint := Φ, onThrow := ot }
+    if let some ((Φ, ot), R) := r then
+      if Φ != top || R != top then found := found ++ [(f.name, (Φ, ot && Φ != top), R)] else tops := tops ++ [f.name]
+  return (found.map fun (n, (Φ, ot), R) => { name := n, footprint := Φ, onThrow := ot, resultFootprint := R }, tops)
+
+/-- The proposals of `declarationWalks`. -/
+def declarationEffects (fr : Front) (wanted : List Nat) (standIns : StandIns) (force : List String) :
+    List StandIn :=
+  (declarationWalks fr wanted standIns force).1
 
 /-- The front with the functions the stand-ins name at their footprints:
 their claims' and their slots', as `fragmentClaims` and `fileFront` state a
@@ -497,33 +542,256 @@ def Front.withNeverImports (fr : Front) : Front := Id.run do
     | .error _ => out := kept
   return { fr with d := { fr.d with types := T }, moduleFunctions := out }
 
+/-- Whether the front's claims state a function of that name at more than
+the ordinary effect. -/
+def Front.proposes (fr : Front) (n : String) : Bool :=
+  fr.d.functions.any fun c => c.name == n && (c.footprint, c.onThrow, c.resultFootprint) != (.top, false, .top)
+
 /-- **A selected unit's plans from the fragment alone** (mode 8): the front
 of `fragmentClaims`, no import planned, each import read at its declared
-type or at its stand-in's footprint, the module values typed by the
-initialization's walk, and each selected group's units extracted over their
-computed types (`retypeFromFragment`), the functions' footprints their
-walks give (`declarationEffects`). -/
-def fragmentPlans (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
-    (names : Option (List String)) (standIns : StandIns := {}) (force : List String := []) : Except String FilePlans := do
+type, at its stand-in's footprint, or at the footprint `qualified` gives it
+(an import whose module's units establish it, `fragmentPlansWithModules`),
+the module values typed by the initialization's walk, and each selected
+group's units extracted over their computed types (`retypeFromFragment`),
+the functions' footprints their walks give (`declarationEffects`). With
+`closure`, the selected groups and every group they reach; with
+`proposed`, of the selected functions those whose footprint is more than
+the ordinary effect. -/
+def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
+    (names : Option (List String)) (standIns : StandIns := {}) (force : List String := [])
+    (imported : List (String × Footprints.Closed × Bool × Footprints.Closed) := [])
+    (depends : List (String × List String) := []) (closure : Bool := false) (proposed : Bool := false)
+    (front : Option (Json × Front) := none) :
+    Except String FilePlans := do
   let ast := ast.setObjVal! "modules" (Json.arr #[])
-  let claims ← fragmentClaims ast fileKey standIns force
-  let qualified := standIns.imports.map fun s => (s.name, s.footprint, s.onThrow, s.resultFootprint)
-  let fr ← SinglePass.timedKind "lower: fileFront" fun _ => fileFront ast claims fileKey budget qualified
+  -- A stand-in's footprint first; then the footprint the module's units
+  -- establish.
+  let given := standIns.imports.map fun s => (s.name, s.footprint, s.onThrow, s.resultFootprint)
+  let qualified := given ++ imported.filter fun q => !given.any (·.1 == q.1)
+  let depends := depends.filter fun d => !given.any (·.1 == d.1)
+  -- (`front`: the claims and front `fileFront` gave with no qualified read
+  -- and no stand-in, given again with these reads)
+  let (claims, fr) ← match front with
+    | some (claims, fr) =>
+      if standIns.functions.isEmpty && standIns.imports.isEmpty then pure (claims, fr.withQualified qualified)
+      else do
+        let claims ← fragmentClaims ast fileKey standIns force
+        pure (claims, ← fileFront ast claims fileKey budget qualified (lenient := true))
+    | none => do
+      let claims ← fragmentClaims ast fileKey standIns force
+      pure (claims, ← SinglePass.timedKind "lower: fileFront" fun _ =>
+        fileFront ast claims fileKey budget qualified (lenient := true))
   let fr := fr.withNeverImports
+  let wantedOf (fr : Front) (names : Option (List String)) : List Nat :=
+    let selected := (fr.selected names).flatMap fr.group
+    if closure then (selected ++ selected.flatMap fr.reach).eraseDups.flatMap fr.group |>.eraseDups else selected
   -- The functions' footprints their walks give, as stand-ins; the claims
   -- and the front again where any is found.
   let computed := if force.contains "callees" || force.contains "throws" then [] else
     SinglePass.timedKind "lower: declarations' footprints" fun _ =>
-      declarationEffects (fr.withInitTypes force) ((fr.selected names).flatMap fr.group) standIns force
+      declarationEffects (fr.withInitTypes force) (wantedOf fr names) standIns force
+  -- Where the initialization calls a function proposed a returned
+  -- function's footprint, the module values it types hold such functions:
+  -- the walks once more, the initialization's walk reading the proposals.
+  let returning := (computed.filter (·.resultFootprint != .top)).map (·.name)
+  let computed := if returning.isEmpty || !(fr.init.flatMap stmtNames).any returning.contains then computed else
+    SinglePass.timedKind "lower: declarations' footprints" fun _ =>
+      declarationEffects ((fr.withStandIns computed).withInitTypes force) (wantedOf fr names) standIns force
   let (claims, fr) := if computed.isEmpty then (claims, fr) else (withStandIns claims computed, fr.withStandIns computed)
   let fr := SinglePass.timedKind "lower: initialization's walk" fun _ => fr.withInitTypes force
-  let wanted := (fr.selected names).flatMap fr.group
+  -- With `proposed`, the selected functions whose footprint is more than
+  -- the ordinary effect alone, and what they reach.
+  let names := if !proposed then names else names.map (·.filter fr.proposes)
+  let wanted := wantedOf fr names
   let (T, plans) := SinglePass.timedKind "lower: extractAll" fun _ =>
     fr.extractSome (wanted.foldl (·.insert ·) {}) (some (retypeFromFragment force)) (some (instancesFromWalk force))
       (some (writtenSchemes force))
   let F ← SinglePass.timedKind "lower: freeze" fun _ => EquationStore.freeze T
   let plans := SinglePass.timedKind "lower: plans over the store" fun _ => plans.map fun e => e.bind (FunctionPlan.over F)
-  return ⟨⟨ast, claims, qualified, []⟩, fr, F, plans⟩
+  return ⟨⟨ast, claims, qualified, [], depends⟩, fr, F, plans⟩
+
+/-- A module unit's identity on the wire: `module:<location>#<unit>`. -/
+def moduleUnitId (location unit : String) : String := s!"module:{location}#{unit}"
+
+/-- A module unit's group checked in the importer's invocation
+(`fragmentPlansWithModules`): its identity and its members' on the wire
+(`moduleUnitId`), the check's lines, and its verdict, accepted with its
+dependencies on the wire. -/
+structure ModuleVerdict where
+  unit : String
+  members : List String
+  lines : List String
+  verdict : Except String (List String)
+
+abbrev Established := List ((String × String) × (Footprints.Closed × Bool × Footprints.Closed) × String)
+
+def readsOf (rs : List FragmentRead) (est : Established) :
+    List ((String × Footprints.Closed × Bool × Footprints.Closed) × (String × List String)) :=
+  rs.filterMap fun r => (est.lookup (r.location, r.name)).map fun (p, u) => ((r.localName, p), (r.localName, [u]))
+
+/-- Complete module candidates and their resolved imports, independent of
+selection and measurement stand-ins. -/
+def interfaceNeeds (sc : ImportScope) : Except String (List ModuleNeed) := do
+  sc.modules.mapM fun m => do
+    let names ← (← jArr m.document "functions").mapM fun f => f.getObjValAs? String "name"
+    return { module := m, names, reads := (moduleReads sc m ("init" :: names)).toOption.getD [] }
+
+/-- Discover only modules reached by the importer, then close over each
+complete module's reads. Selection changes the requested components, never
+the candidates or inputs of a component check. -/
+def requestedInterfaceNeeds (sc : ImportScope) (ast : Json) (names : Option (List String))
+    (given fixed own : List String := []) : Except String (List ModuleNeed) := do
+  let roots ← importerReads sc ast names given fixed
+  let mut pending := (own ++ roots.map (·.location)).eraseDups
+  let mut needs : List ModuleNeed := []
+  for _ in sc.modules do
+    if pending.isEmpty then break
+    let batch := sc.modules.filter fun m => pending.contains m.location &&
+      !needs.any (·.module.location == m.location)
+    pending := []
+    for m in batch do
+      let ns ← (← jArr m.document "functions").mapM fun f => f.getObjValAs? String "name"
+      let reads := (moduleReads sc m ("init" :: ns)).toOption.getD []
+      needs := needs ++ [{ module := m, names := ns, reads }]
+      pending := (pending ++ reads.map (·.location)).eraseDups
+  return needs
+
+/-- The SCC DAG in dependency order; lexicographic module identities break
+all ties, including member order within a component. -/
+def interfaceComponents (needs : List ModuleNeed) : List (List ModuleNeed) := Id.run do
+  let sorted := needs.mergeSort (fun a b => a.module.location ≤ b.module.location)
+  let reach := fun (start : String) => Id.run do
+    let mut seen := [start]
+    for _ in needs do
+      seen := (seen ++ (needs.filter fun n => seen.contains n.module.location).flatMap
+        (fun n => n.reads.map (·.location))).eraseDups
+    return seen
+  let mut left := sorted
+  let mut components : List (List ModuleNeed) := []
+  for n in sorted do
+    if !left.any (·.module.location == n.module.location) then continue
+    let component := left.filter fun m => (reach n.module.location).contains m.module.location &&
+      (reach m.module.location).contains n.module.location
+    components := components ++ [component]
+    left := left.filter fun m => !component.any (·.module.location == m.module.location)
+  let mut out : List (List ModuleNeed) := []
+  let mut done : List String := []
+  for _ in components do
+    let some c := components.find? (fun c =>
+      !c.any (fun n => done.contains n.module.location) &&
+      c.all (fun n => n.reads.all (fun r => done.contains r.location || c.any (·.module.location == r.location))))
+      | break
+    out := out ++ [c]
+    done := done ++ c.map (·.module.location)
+  return out
+
+/-- The canonical component computation. Every candidate's required groups
+are checked without measurement stand-ins. Incoming footprints are closed
+results of predecessor components. -/
+def establishModules (needs : List ModuleNeed) (budget : PositiveCertificates.SearchBudget)
+    (force : List String) (incoming : Established)
+    (prepare : String → FilePlans → FilePlans)
+    (check : FilePlans → List Nat → List String × Except String (List String)) :
+    Except String (Established × List ModuleVerdict × List String) := do
+  let mut notes : List String := []
+  let mut established := incoming
+  let mut verdicts : List ModuleVerdict := []
+  for m in needs do
+    let location := m.module.location
+    let rs := readsOf (m.reads.filter (·.location != location)) established
+    let forced : StandIns := if force.contains "imports" then
+        { functions := m.names.map fun n => { name := n, footprint := ⟨.keep, .keep⟩, onThrow := true } } else {}
+    let planned := SinglePass.timedKind "lower: modules' plans" fun _ =>
+      fragmentPlansCore m.module.document location budget (some m.names) forced force (rs.map (·.1)) (rs.map (·.2))
+        (closure := true) (proposed := true)
+    let fm ← match planned with
+      | .ok fm => pure fm
+      | .error e => do notes := notes ++ [s!"{location}: its plans: {e.take 200}"]; continue
+    let fm := prepare location fm
+    -- Each group the reads reach, checked; accepted with its dependencies,
+    -- each a group of the module or a module unit established before.
+    let wanted := (fm.fr.selected (some (m.names.filter fm.fr.proposes)))
+    let reach := (wanted ++ wanted.flatMap fm.fr.reach).eraseDups.filterMap fun j => (fm.fr.group j).head?
+    let toCheck := fm.fr.leaders.filter reach.contains
+    -- Each function checked, at the footprint its claim states.
+    notes := notes ++ (toCheck.flatMap fm.fr.group).filterMap fun j => match fm.fr.units[j]? with
+      | some (g, _, none) => (fm.fr.d.functions.find? fun c => c.name == g.name && c.namePos == g.namePos).map fun c =>
+        s!"{location}#{g.name}: checked at {(toJson c.footprint).compress} onThrow {c.onThrow}"
+      | _ => none
+    let mut accepted : List (String × List String) := []
+    for l in toCheck do
+      let group := fm.fr.group l
+      let (lines, v) := SinglePass.timedKind "modules: pass" fun _ => check fm group
+      let wire := fun (d : String) => if d.startsWith "module:" then d else moduleUnitId location d
+      let v := v.map (·.map wire)
+      let mv : ModuleVerdict := ⟨moduleUnitId location (fm.fr.unitId l),
+        group.map (fun j => moduleUnitId location (fm.fr.unitId j)), lines, v⟩
+      verdicts := verdicts ++ [mv]
+      if let .ok deps := v then accepted := accepted ++ [(moduleUnitId location (fm.fr.unitId l), deps)]
+    -- A group is established where it and, transitively, every group it
+    -- depends on was accepted.
+    let earlier := established.map (·.2.2)
+    let mut ok : List String := []
+    for _ in [0:accepted.length + 1] do
+      let next := accepted.filter fun (u, deps) => !ok.contains u &&
+        deps.all fun d => ok.contains d || earlier.contains d
+      if next.isEmpty then break
+      ok := ok ++ next.map (·.1)
+    for n in m.names do
+      let some i := (List.range fm.fr.units.length).find? fun i => match fm.fr.units[i]? with
+          | some (f, _, none) => f.name == n
+          | _ => false
+        | notes := notes ++ [s!"{location}#{n}: no unit"]; continue
+      let some l := (fm.fr.group i).head? | continue
+      let u := moduleUnitId location (fm.fr.unitId l)
+      let some f := fm.fr.units[i]? | continue
+      let some c := fm.fr.d.functions.find? fun c => c.name == n && c.namePos == f.1.namePos | continue
+      let p := (c.footprint, c.onThrow, c.resultFootprint)
+      if p == (.top, false, .top) then
+        notes := notes ++ [s!"{location}#{n}: the ordinary effect"]
+        continue
+      if !ok.contains u then
+        notes := notes ++ [s!"{location}#{n}: proposed {(toJson p.1).compress} onThrow {p.2.1}, not established"]
+        continue
+      established := established ++ [((location, n), p, u)]
+  return (established, verdicts, notes)
+
+/-- Importer planning from closed interfaces. No module is planned here. -/
+def fragmentPlansFromInterfaces (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
+    (names : Option (List String)) (standIns : StandIns) (force : List String) (established : Established) :
+    Except String FilePlans := do
+  if established.isEmpty then
+    return ← fragmentPlansCore ast fileKey budget names standIns force
+  let sc ← ImportScope.of ast
+  let reads ← importerReads sc ast names (standIns.imports.map StandIn.name) (standIns.functions.map StandIn.name)
+  let rs := readsOf reads established
+  fragmentPlansCore ast fileKey budget names standIns force (rs.map (·.1)) (rs.map (·.2))
+
+/-- Direct invocation uses the same canonical component computation as
+stored interfaces. Its result is local to this invocation. -/
+def fragmentPlansWithModules (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
+    (names : Option (List String)) (standIns : StandIns := {}) (force : List String := [])
+    (prepare : String → FilePlans → FilePlans := fun _ f => f)
+    (check : FilePlans → List Nat → List String × Except String (List String) := fun _ _ => ([], .error "not checked")) :
+    Except String (FilePlans × List ModuleVerdict × List String) := do
+  let needs ← requestedInterfaceNeeds (← ImportScope.of ast) ast names
+    (standIns.imports.map StandIn.name) (standIns.functions.map StandIn.name)
+  let mut established : Established := []
+  let mut verdicts := []
+  let mut notes := []
+  for component in interfaceComponents needs do
+    let (es, vs, ns) ← establishModules component budget force established prepare check
+    established := es
+    verdicts := verdicts ++ vs
+    notes := notes ++ ns
+  let f ← fragmentPlansFromInterfaces ast fileKey budget names standIns force established
+  return (f, verdicts, notes)
+
+/-- `fragmentPlansWithModules`' importer plans, its module units unchecked:
+every import at its declared type or stand-in. -/
+def fragmentPlans (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
+    (names : Option (List String)) (standIns : StandIns := {}) (force : List String := []) : Except String FilePlans :=
+  fragmentPlansCore ast fileKey budget names standIns force
 
 /-- The plans with each unit's loop-head facts the given file states
 (`headFacts`, `headFactsOfCodes`) as its statement entries' candidates, its
@@ -547,6 +815,15 @@ def FilePlans.withHeadFacts (f : FilePlans) (given : Std.HashMap String Json) (e
           let start := ((r.codes[ci]?).map fun q => (q.asRequest r.toRequest).start).getD 0
           { c with candidates := headFactsFromJson c.sourceMap (start :: c.cuts) (ofCodes "headFactsOfCodes" ci) ++
             (if entries then headFactsFromJson c.sourceMap (start :: c.cuts) (ofCodes "entryFactsOfCodes" ci) else []) } } }
+
+/-- The plans with a false fact (`x - x ≤ -1` over slot 0) supplied at each
+graph's start, the adversarial proposal of `TSCERT_FORCE=start-facts`: the
+pass's entry check refuses it. -/
+def FilePlans.withFalseStartFact (f : FilePlans) : FilePlans :=
+  let fact : HeapKnowledge.IndexAtom :=
+    { fact := .linear (.le [(HeapKnowledge.Term.value 0, 1), (HeapKnowledge.Term.value 0, -1)] (-1)) }
+  { f with plans := f.plans.map fun p => p.map fun
+    | .graph name pos r => .graph name pos { r with candidates := (r.start, [fact]) :: r.candidates } }
 
 /-- The plans with each graph's statement entries reduced to its loop heads
 (`SinglePass.loopHeads`) and its start, its own and each code request's: the

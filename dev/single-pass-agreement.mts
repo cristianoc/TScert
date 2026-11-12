@@ -17,7 +17,7 @@
 // `hole:`; the other direction is counted. TSCERT_FORCE (passed through)
 // forces an adversarial proposal (`literals`, `callees`, `elements`,
 // `objects`, `spreads`, `stale`, `throws`, `guards`, `reads`, `paths`,
-// `offers`, `loops`, `decided`, `schemes`, `callbacks`, `fresh`, `defaults`, `finally`, `never`, `meets`, `implications`, `binds`, `arms`, `captures`, `cells`, `early`); the controls below run with theirs forced whatever
+// `offers`, `loops`, `decided`, `schemes`, `callbacks`, `fresh`, `defaults`, `finally`, `never`, `meets`, `implications`, `binds`, `arms`, `captures`, `cells`, `early`, `no-return`, `steps`, `head-entry`, `start-facts`); the controls below run with theirs forced whatever
 // the patterns, each expected refused by mode 8; the forced proposal decides
 // the control's unit and the units it depends on, the file's other units
 // compared unforced.
@@ -33,6 +33,7 @@ import { cases, type Case } from "../pipeline/cases.mts";
 import { pooled } from "../pipeline/run-cases.mts";
 import { checkApart } from "../pipeline/verify-source.mts";
 import { withoutEvidenceReuse } from "../pipeline/stages.mts";
+import { verifyWithInterfaces } from "../pipeline/module-interfaces.mts";
 import { standIns } from "./single-pass-standins.mts";
 
 const root = resolve(import.meta.dirname, "..");
@@ -42,10 +43,22 @@ withoutEvidenceReuse();
 type Verdict = { accepted: boolean; refusal: string; closed?: boolean };
 type Comparison = { file: string; unit: string; pipeline: string; pass: string; agree: boolean; notHandled: string | null; why: string;
   referee: string | null; control: boolean; closed: boolean; passClosed: boolean };
+/** Units the pass and the referee both accept, with every unit they depend
+ * on, where the pipeline refuses: each reviewed as a safe function the
+ * producer's proposal lost. They count as agreeing while both accept and the
+ * pipeline refuses; any other such unit is a disagreement. */
+const reviewed: { file: string; unit: string; why: string }[] = [
+  { file: "blocker-pretext-equality-conjunction", unit: "runs@923", why: "the producer loses an equality's narrowing on the right operand of `&&`" },
+  { file: "blocker-last-guard-param-inferred", unit: "fields@712", why: "the producer selects the plain `filter` row at an inferred union parameter" },
+  { file: "blocker-gap-round-cache-answer-inferred", unit: "real@605", why: "the producer builds the callback's records at separate invariant fields" },
+  { file: "invalid-bounds-callback-footprint", unit: "visit@88", why: "the callback keeps every store, so the read stays in bounds; the unit `broken` stays refused" },
+  { file: "invalid-native-promise-invariant-result", unit: "widen@89", why: "the call is made at `make<unknown>`, whose result is the stated one; the producer chose `make<number>`" },
+];
 /** Forced proposals: unsafe programs remain refused; the positive declaration,
  * growth and copy cases are accepted unforced and refused at the false proposal. */
 const controls: { file: string; unit: string; force: string; positive?: boolean }[] = [
   { file: "stated-signatures-presence", unit: "signatures@605", force: "path-callees", positive: true },
+  { file: "invalid-native-promise-invariant-result", unit: "widen@89", force: "instances", positive: true },
   { file: "early-let-literal", unit: "families@954", force: "early-contracts", positive: true },
   { file: "blocker-spread-tuple-field", unit: "returned@867", force: "objects", positive: true },
   { file: "blocker-prep-assign-error-value", unit: "absent@86", force: "copy-exclusions", positive: true },
@@ -59,7 +72,7 @@ const controls: { file: string; unit: string; force: string; positive?: boolean 
   { file: "invalid-method-effect-stated-throw-caught", unit: "wrong@596", force: "literals" },
   { file: "invalid-node-assert-catch-continue", unit: "rows@339", force: "literals" },
   { file: "invalid-cell-truthiness-narrowing", unit: "kept@176", force: "stale" },
-  { file: "module-cache-keeps-lengths", unit: "count@478", force: "cells" },
+  { file: "module-cache-keeps-lengths", unit: "count@478", force: "cells", positive: true },
   // (its early binding `cache` is also held at its written contract, `early-contracts`: forced with both)
   { file: "module-cache-before-initialization", unit: "rhs@341", force: "cells,early-contracts", positive: true },
   { file: "fresh-separation", unit: "handlerCell@1404", force: "cells", positive: true },
@@ -69,6 +82,10 @@ const controls: { file: string; unit: string; force: string; positive?: boolean 
   { file: "invalid-object-spread-two-sources", unit: "count@156", force: "spreads" },
   { file: "invalid-keyed-read", unit: "pick@70", force: "keys" },
   { file: "invalid-declaration-pop-callback", unit: "dropped@359", force: "callees" },
+  { file: "certified-value-import", unit: "tallies@829", force: "imports", positive: true },
+  { file: "invalid-certified-write-value-import", unit: "zeros@319", force: "imports" },
+  { file: "returned-closure-footprint", unit: "countLetters@972", force: "results", positive: true },
+  { file: "invalid-returned-closure-footprint", unit: "lastRead@421", force: "results" },
   { file: "invalid-compiler-api-guard-loop-partial", unit: "names@203", force: "guards" },
   { file: "invalid-read-narrows-write", unit: "wrong@187", force: "reads" },
   { file: "invalid-read-narrows-closure", unit: "wrong@153", force: "reads" },
@@ -92,6 +109,13 @@ const controls: { file: string; unit: string; force: string; positive?: boolean 
   { file: "invalid-closure-cell-capture-narrowed", unit: "wrong@181", force: "captures" },
   { file: "invalid-object-spread-width-replaced", unit: "wrong@385", force: "objects" },
   { file: "invalid-class-static-inherited-rest", unit: "rest@276", force: "spreads" },
+  { file: "invalid-async-throw-only-arrow", unit: "wrong@347", force: "no-return" },
+  { file: "invalid-async-throw-only-expression", unit: "wrong@361", force: "no-return" },
+  { file: "invalid-async-throw-only-object-method", unit: "wrong@369", force: "no-return" },
+  { file: "invalid-method-effect-throw-caught", unit: "wrong@487", force: "no-return" },
+  { file: "map-stable-set", unit: "distinct@238", force: "steps", positive: true },
+  { file: "loop-head-contents", unit: "continued@413", force: "head-entry", positive: true },
+  { file: "returntype-guard", unit: "isName@125", force: "start-facts", positive: true },
 ];
 
 /** The file key the pipeline's check of a run named: `--check-units`'s third argument. */
@@ -115,7 +139,18 @@ function passVerdicts(artifacts: string, key: string, given: string | null, mode
   // Modes 8 and 9 read the fragment alone.
   const documents = mode === "8" || mode === "9" ? [join(artifacts, "fragment.json")]
     : [join(artifacts, "fragment.json"), join(artifacts, "claims.json")];
-  const run = spawnSync(verifier, ["--verify-units", mode, ...documents, key, "12"],
+  let run: { stdout: string; stderr: string };
+  if (mode === "8" || mode === "9") {
+    const emptyGiven = join(artifacts, "empty-given.jsonl");
+    const emptyStandins = join(artifacts, "empty-standins.json");
+    writeFileSync(emptyGiven, "");
+    writeFileSync(emptyStandins, '{"functions":[],"imports":[]}');
+    run = verifyWithInterfaces(documents[0], key, "", env.TSCERT_STANDINS ?? emptyStandins, {
+      mode: mode === "8" ? 8 : 9, fuel: 12, rounds: 4096, force: force?.split(",") ?? [], allCuts,
+      given: given !== null && existsSync(given) ? given : emptyGiven, work: join(artifacts, "interfaces"),
+      invocation: { limitMs: 60_000, force: false, recorder: null },
+    }).run;
+  } else run = spawnSync(verifier, ["--verify-units", mode, ...documents, key, "12"],
     { encoding: "utf8", maxBuffer: 1 << 28, env });
   const verdicts = new Map<string, Verdict>();
   const dependencies = new Map<string, string[]>();
@@ -136,7 +171,10 @@ function passVerdicts(artifacts: string, key: string, given: string | null, mode
   for (let changed = true; changed; ) {
     changed = false;
     for (const [unit, v] of verdicts) {
-      if (v.closed === true && (dependencies.get(unit) ?? []).some((d) => verdicts.get(d)?.closed === false)) {
+      // A module unit it depends on (`module:<location>#<unit>`) counts only
+      // where its own line is printed.
+      if (v.closed === true && (dependencies.get(unit) ?? []).some((d) => verdicts.get(d)?.closed === false ||
+          (d.startsWith("module:") && !verdicts.has(d)))) {
         v.closed = false;
         changed = true;
       }
@@ -248,7 +286,9 @@ async function compare(test: Case): Promise<Comparison[]> {
     // Both accept with their dependencies accepted.
     const closed = v?.closed === true && (referee === null || r?.closed === true);
     return { file: test.file, unit: u.unit, pipeline: pipelineSays, pass: passSays,
-      agree: control?.positive && control.unit === u.unit ? passSays === "refused" : passSays === pipelineSays, notHandled, why: v ? v.refusal.replace(/\s+/g, " ").slice(0, 160) : "",
+      agree: control?.positive && control.unit === u.unit ? passSays === "refused" : passSays === pipelineSays ||
+        (pipelineSays === "refused" && passSays === "verified" && refereeSays === "verified" && closed &&
+          reviewed.some((k) => k.file === test.file && k.unit === u.unit)), notHandled, why: v ? v.refusal.replace(/\s+/g, " ").slice(0, 160) : "",
       referee: refereeSays, control: control?.unit === u.unit, closed, passClosed: v?.closed === true };
   });
 }
@@ -292,7 +332,8 @@ for (const c of holes) process.stdout.write(`hole: ${c.file} ${c.unit}: mode 8 a
 const refereeOnly = refereed.filter((c) => c.pass !== "verified" && c.referee === "verified");
 for (const c of refereeOnly) process.stdout.write(`referee only: ${c.file} ${c.unit}: mode 9 accepts, mode 8 ${c.pass}, pipeline ${c.pipeline}\n`);
 const bothAccept = refereed.filter((c) => c.closed && c.pipeline === "refused");
-for (const c of bothAccept) process.stdout.write(`both accept, pipeline refuses: ${c.file} ${c.unit}\n`);
+for (const c of bothAccept)
+  process.stdout.write(`both accept, pipeline refuses${c.agree ? " (reviewed)" : ""}: ${c.file} ${c.unit}\n`);
 if (refereed.length > 0)
   process.stdout.write(`referee: ${holes.length} mode 8 accepts / mode 9 refuses, ` +
     `${refereeOnly.length} mode 9 accepts / mode 8 refuses\n`);

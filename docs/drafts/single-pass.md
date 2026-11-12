@@ -37,7 +37,9 @@ table from names to slots is built only for the names its step reads.
 
 A state is the name at each slot and one store of facts over names
 (cells, values, links, elements, index facts, separation facts), indexed by
-the names each fact mentions. A step produces a delta: the facts its rule's
+the names each fact mentions (`SinglePass.Store`: the live facts a
+`Std.HashSet`, and by each name a `Std.HashMap` list holding each live fact
+mentioning it once). A step produces a delta: the facts its rule's
 output adds, and the facts of its input the output lost. A fact over a name
 no slot holds stays true (a binding never changes); where a step reads it,
 its linear facts are first restated through read links and eliminated
@@ -75,8 +77,7 @@ the start, handlers' edges included. A statement entry that is no loop head
 is an ordinary node: its state is its predecessor's, or the meet of its
 predecessors' at a merge; a written assertion there is an obligation on
 that state. A merge works on what differs between its predecessors: the
-first's store less each fact another lacks, found where the stores'
-persistent maps are not one object (`Store.diff`), and each predecessor's
+first's store less each fact another lacks (`Store.diff`), and each predecessor's
 own differences at the merge's names; the rules below that query a
 predecessor's facts run over those differences alone, and the implications
 join runs where an edge carries an implication or a slot an edge's type
@@ -84,7 +85,9 @@ differs at is a test some edge answers `false`. A name a predecessor
 renames that no slot of the merge holds leaves the store there. At a merge, a linear bound every predecessor states of one form
 under one condition is kept at the weakest of their bounds; a name a slot
 keeps that another slot's fresh name renames in some predecessor is stated
-equal to it there; a linear bound over the merge's names one predecessor
+equal to it there (an alias link; the two linear facts of their numbers'
+equality only where that predecessor's unconditional facts make the name an
+integer, `Store.integral`); a linear bound over the merge's names one predecessor
 states and every other entails over its linear facts near the bound's names
 (`HeapKnowledge.entailsKnown`) is kept; the guarded facts the search's join
 keeps (`CertificateProducer.joinGuarded`) are kept, each predecessor's guards
@@ -129,6 +132,17 @@ inputs' entry values, each the name the start gave its input, entail it
 an input's entry value (`GraphCode.trackTable`'s pairs), those slots
 keeping the input's name, each an obligation on every edge into it.
 
+The start is a cut no edge enters on the unit's first invocation; its
+entry is checked as `ControlFlow.checkEntryResult` checks a certificate's
+(`SinglePass.entryRefusal`): the start's context is the request's inputs,
+the promised input's slot is one of them, its given invariant states no
+implication, names a slot after the promised input only at that input's
+slot and after an input's entry value only at that input's own slot, and
+its written and supplied facts are entailed by the request's entry facts
+(its index facts and its inputs' separation, `ControlFlow.entryKnows`).
+`TSCERT_FORCE=start-facts` supplies a false fact at every start, the
+adversarial proposal the check refuses.
+
 ## 5. Steps and obligations
 
 A step's rule is applied to the facts over the names its expression reads,
@@ -172,9 +186,17 @@ invariant stating none); the region from which no normal return is possible
 is `GraphCode.deadIterate` over the claims' result types, computed once; at
 each node outside it, the node's step is within the bound
 (`ExpressionEffects.check`, `writeWithin`, `initWriteWithin`,
-`selectedWithinAt` with the receiver's freshness, an empty type), its throw
+`selectedWithinAt` with the receiver's freshness, the step's derivation
+claimed at the node's term and its tree accepted, as `nodeChecked` requires
+beside it; an empty type), its throw
 too where the unit states the bound on a throw, and a return under a fresh
-result returns a fresh name; inside it, `deadNode`. A graph the bound
+result returns a fresh name; inside it, `deadNode`. A code request of an
+async definition has the footprint `top` (`RequestJson.asyncEffects`, as
+`RequestJson.codeTableResult` requires of every code): its call returns
+normally where its body throws, so no bound its body meets is the call's.
+A call whose result is the empty type is within the bound on normal
+return; its throw, caught by a live handler, is within it only at a
+signature bounding its throws. A graph the bound
 refuses may still be within it by its store regions (`regionalChecked`),
 which the pass does not decide: that unit is not handled.
 
@@ -184,7 +206,12 @@ Every step's derivation is checked as the checker's `run` checks it
 (`ProgramCertificates.checkTreeUsing`, or `PromiseCalls.requiresTree` for a
 call at a precondition the step's facts establish): the search's `select`
 takes a derivation as given, and a derivation it selects may be one the
-check refuses. The read summaries the derivations read are checked once
+check refuses. A step the search finds is applied at the output the
+checker's `select` gives for the evidence the search returns, computed by
+the pass over the step's facts and the read summaries after the search. A
+step that may write is selected again over every fact; a derivation only
+`requiresTree` accepted at the step's facts is checked by `requiresTree`
+again at every fact before that selection. The read summaries the derivations read are checked once
 for the unit, as a response's are (`validSummary`,
 `checkReadSummariesResult`), and the unit's expression claims are checked
 over them.
@@ -205,7 +232,11 @@ reading no heap), from the node's entry state.
 - A step that may write (a call's `ordinary` step, `written`, `boundedWrite`)
   states which heap facts survive it: its derivation is searched over the
   facts its expression names, and its output selected once over every fact
-  (`Checker.select`, HeapExpressionRules.lean `Checker` structure).
+  (`Checker.select`, HeapExpressionRules.lean `Checker` structure). A heap
+  fact over a name no slot holds is outside what the step reads, so the
+  step drops it (cells, elements, read links and index facts reading the
+  heap, as a handler's edge drops them); a heap-free fact stays. Measured
+  2026-11-12 over the pipeline cases: no step reached such a fact.
 - An allocation states its object apart from every object slot of the
   context (`HeapExpressionRules.allocLinked`, the separation at the output's
   depth): its output names slots no fact it read names, mapped back through
@@ -236,8 +267,12 @@ are checked before the walk.
 ### Qualified bodies
 
 A qualified body (`SourceRequest.checker`) is walked over the request's own
-graph and image check at its checker and aliases. Its checker's `select` is
-its `run`, so a step's derivation is checked by the step's own check. Its
+graph and image check at its checker and aliases. The pass takes its
+checker as `SinglePass.PassChecker`: the proved layers (`Checker.ordinary`),
+whose steps' trees the pass checks, or a qualified body's
+(`Checker.withSubtyping`), whose `select` is its `run`
+(`PassChecker.select_eq_run`), so a step's derivation is checked by the
+step's own check. Its
 request-level conditions are those `effectResult`, `regionalResult` and
 `ensuresResult` state of a qualified body.
 
@@ -406,7 +441,10 @@ expected refused by mode 8:
 `invalid-cell-truthiness-narrowing` `kept`, under `stale`, and
 `invalid-exceptional-handler-fact` `wrong`, under `throws` (every function
 at keep/keep bounding its throws), `invalid-declaration-pop-callback`
-`dropped`, under `callees`, `invalid-compiler-api-guard-loop-partial`
+`dropped`, under `callees`, `invalid-certified-write-value-import` `zeros`
+and the positive `certified-value-import` `tallies`, under `imports` (every
+imported function a module establishes keeping values and stores and
+bounding its throws), `invalid-compiler-api-guard-loop-partial`
 `names`, under `guards`, `invalid-read-narrows-write` and
 `invalid-read-narrows-closure` `wrong`, under `reads`, and
 `invalid-slot-path-call` `keyText` and `invalid-path-witness-alias`
@@ -435,7 +473,19 @@ throws, its body's effect unchecked against that claim),
 `invalid-closure-cell-capture-narrowed` `wrong`, under `captures` (every
 captured binding at its type where the literal is made), and
 `invalid-object-spread-width-replaced` `wrong`, under `objects`, and
-`invalid-class-static-inherited-rest` `rest`, under `spreads`. A control's
+`invalid-class-static-inherited-rest` `rest`, under `spreads`, and
+`invalid-native-promise-invariant-result` `widen`, under `instances` (a
+call's instance kept at the one its actuals give where the type expected of
+its value does not admit that instance's result: `make<number>` returned at
+`Box<unknown>`, whose field is written at its contract). A control's
+`invalid-async-throw-only-arrow`, `-expression` and `-object-method`
+`wrong` (refused at the async code's footprint) and
+`invalid-method-effect-throw-caught` `wrong` (refused at the caught call's
+throw), under `no-return` (a never-returning call changing nothing under a
+handler and in an async body too), and `map-stable-set` `distinct`, under
+`steps` (accepted unforced, refused at its callback's iterator step), and
+`loop-head-contents` `continued`, under `head-entry` (accepted unforced,
+refused at an edge into its loop's head). A control's
 acceptance counts only with every unit
 it `depends` on accepted: a run with named units checks only those, a
 dependency's footprint among its proposals, so its reader follows
@@ -512,7 +562,11 @@ removal works through:
 - **Stand-ins.** `TSCERT_STANDINS`, written by
   `dev/single-pass-standins.mts` from a claims document: the footprints the
   file's functions and imports would write (`qualified` carries the
-  imports').
+  imports'), each taking the place of the walk's proposal or of the
+  module's established footprint.
+- **Module units' loop-head facts.** The given file's lines of the module
+  units checked for imports (`module:<location>#<unit>`), which mode 6
+  writes from the module runs the claims plan.
 
 - **Store and signatures.** The store is the fragment's declarations and
   annotations, lowered with a type table of the primitives alone
@@ -520,7 +574,8 @@ removal works through:
   annotations' types; its footprint is the one its declaration writes
   (`Modifies<…>`, with its `@requires` and `@ensures`), else the ordinary
   effect. Another function, and an import, is read at that signature; an
-  import at its declared type. A function literal whose body the walk sees
+  import at its declared type, at the footprint its module establishes
+  where one does ("Imports" below). A function literal whose body the walk sees
   change nothing states the footprint keeping values and stores.
 - **Types.** Every expression's and statement entry's type and every
   `let`'s storage contract is the walk's (`Synthesis.retypeUnit`), at each
@@ -554,7 +609,10 @@ removal works through:
   union, the one member naming it at the actual less what the other members
   admit and less the labels another binder of the call reads off one of
   them (a union iteration's parts, each kind's binders apart), else each
-  label of the actual at the first member it matches; one type
+  label of the actual, a single one included, at the first member it
+  matches, the bare binder last (`TResult1 | PromiseLike<TResult1>` at
+  `string` is `string`: the producer's arm of a part's own kind, else the
+  bare binder, inference.ml:425-503); one type
   constructor's arguments at the actual's of the same constructor; an
   array's elements (a tuple's positions separately), a record's fields and
   methods' results, a constructor's first signature's result and parameters,
@@ -563,7 +621,10 @@ removal works through:
   signatures (a guard's plain row beside its promise row) the first naming
   the binder (a written guard's promised type, the producer's `promised`). A binder no actual gives is at what
   the type expected of the call's value gives it, whether or not that
-  instance admits the actuals (the call's step decides), else at its bound
+  instance admits the actuals (the call's step decides), else at a
+  scheme's declared default read at the binders so far (`then`'s `TResult2
+  = never`; the producer's `default`, inference.ml:637-647), a proposal the
+  call's instance check decides, else at its bound
   read at the binders so far, else at `unknown` (the producer's upper
   candidates and `top`, inference.ml:584-636). Fresh array literals at generic
   tuple positions keep those positions recursively, each value widened.
@@ -588,6 +649,13 @@ removal works through:
   A packed generic class's construction reads written callback parameters
   before choosing its tuple instance; the tuple parameter's actual supplies
   that instance, whose argument lists the existing lowering derives.
+  A generic method's binder its annotations read as packed (a class
+  binder at its declaration's packed parameter) is packed in the method's
+  scheme, its argument lists its own row (the producer's `T#pack`,
+  claims.ml:490-499). A callee of one signature whose rest is a packed
+  binder's argument lists takes one last spread of a value of that binder
+  at its own type (expression_calls.ml:607-616); the lowering's
+  `callPacked` checks the operand (Atoms.lean:220-224).
   A finite record gives a dictionary parameter no index candidate; an
   otherwise unconstrained, unbounded binder there defaults to `unknown`,
   as inference.ml:301-308, 631-632. Its named fields do not constrain other
@@ -673,7 +741,12 @@ removal works through:
   where the walk sees no write, assignment or call changing the heap, else
   the closed footprint of the classes of contents its writes and calls
   change (an assignment of a binding it does not declare or a field write
-  the values; an element write the values and a store's growth; an array's
+  the values, `x ??= v` of such a binding whose `v` changes nothing its
+  initialization, `init`; an element write the values and a store's growth;
+  a `for...of` what each step of its stepper's first signature does, the
+  values and its store's change where the step changes its receiver's own
+  locations (a native iterator's position), else the step's footprint
+  (`TSCERT_FORCE=steps` leaves the steps out, the adversarial proposal); an array's
   `length`, and a call changing a receiver's store or elements, both,
   but a call changing the store of a constant holding a store the run
   allocated (one initialized by a call whose instance states a fresh
@@ -754,7 +827,11 @@ removal works through:
   record is, its signatures the method's (the producer's `f.read`,
   expression_objects.ml:25-36): a literal there is stated at each of them
   binding more parameters, an iterator's `next` at `(value) => …` beside
-  its own row.
+  its own row. A generic function literal at a key the expected record
+  states as a scheme is allocated at that scheme, the store's contract the
+  annotation's (the producer's field built at its contract's type,
+  expression_objects.ml:51-52); the allocation's typing checks the
+  literal's own scheme within it.
   A constant holding such a literal, read where one variadic signature of
   an element rest binding at least as many fixed parameters is expected,
   offers the literal that signature at its own leading parameters
@@ -785,6 +862,8 @@ removal works through:
   source.ml:1031-1035); its throw is its signature's. Under a handler or
   in an async body its throw is caught and the heap it leaves is a normal
   return's: the call changes what its instance's footprint states.
+  `TSCERT_FORCE=no-return` reads it as changing nothing there too, the
+  adversarial proposal.
   A synchronous throw operand outside a handler or finalizer contributes
   only its exceptional effect, since it has no normal exit
   (source.ml:1140-1144). A finalizer’s body and handler retain those effects:
@@ -796,14 +875,27 @@ removal works through:
   function literal's effect is found with, the producer's
   `footprint_stmts`): keep/keep where it changes nothing, and nothing where
   the join is the ordinary effect. It bounds its throws where nothing in it
-  leaves a throw unbounded. For this reading a write, an assignment of a
-  binding held in a cell or of one it does not declare, an early binding's
-  declaration, a call at its instance's footprint, a call of a local
-  binding at its declared type's effect, a call of an unknown callee (a
+  leaves a throw unbounded. For this reading the grades are the
+  producer's (`footprint_expr`, `footprint_stmts`, source.ml:1016-1170): an
+  assignment of a binding held in a cell or of one it does not declare, and
+  an early binding's declaration, change the values; `x ??= v` of such a
+  binding whose `v` changes nothing initializes it (`init`, the producer's
+  `NullishAssign`); a field write, update or logical assignment changes the
+  values, a `length`'s the stores too; an element write or update the values
+  and a store's growth; a call, at its instance and, for a call of a local
+  binding, at each signature of its declared type, changes its signature's
+  footprint, the values too where it changes its receiver's own locations,
+  and everything where it changes its receiver's store and the receiver is
+  no constant holding a store the run allocated (`effects_footprint`); a
+  typed array's element write (`elementWrite`) is within its footprint; a
+  `for...of` changes what its intrinsic's call states and, of each signature
+  of the stepper it gives, the values where the step changes its receiver's
+  own locations, the iterator, else the step's footprint
+  (`iteration_footprint`), everything where the walk determines no stepper;
+  a call of an unknown callee (a
   function's `toString` among them: its lowered call tests the receiver and
-  calls a value's own `toString` where it is no function), an
-  iteration, and a call without `onThrow` a handler catches each change the
-  heap; a call without `onThrow`, an iteration and a finalizer leave a throw
+  calls a value's own `toString` where it is no function) and a call without
+  `onThrow` a handler catches change everything; a call without `onThrow`, an iteration and a finalizer leave a throw
   unbounded. A function passed to a call changes what its own signatures'
   effects state; where the call's instance is a generic module function's,
   or the passed function has no known type,
@@ -811,7 +903,20 @@ removal works through:
   declaration creates, which this walk reads with no scheme. A
   self-recursive function is walked with itself at keep/keep bounding its
   throws, then at the join of that and what the walk found, until a walk
-  finds no more than it assumed, three walks at most. A guard or an
+  finds no more than it assumed, three walks at most. A function whose
+  result annotation can state a returned function's footprint
+  (`resultWithFootprint`: one function type of fixed signatures stating no
+  effect, throw bound or promise), and whose returns each hold a function
+  of fixed and variadic signatures, is proposed,
+  beside its footprint, the join of those signatures' footprints as the
+  footprint of the function it returns (the producer's `returned_footprint`,
+  proposal.ml:164-174); its callers read it, its returns establish it
+  (`resultWithFootprint`); `TSCERT_FORCE=results` proposes it keeping values
+  and stores, the adversarial proposal (the controls
+  `returned-closure-footprint` `countLetters`, accepted unforced, and
+  `invalid-returned-closure-footprint` `lastRead`). Where the initialization
+  calls a function so proposed, the walks run once more, the
+  initialization's walk typing the module values at the proposals. A guard or an
   assertion function is proposed like any other, its promise kept. An
   async, generic or rest function, or one with a written effect or a
   stand-in, keeps its footprint. Each proposal is a stand-in: its callers
@@ -832,6 +937,73 @@ removal works through:
   from the next statement on it is at its declared type, whether or not
   the walk has met an assignment of it (the producer's `forget` at a step
   that may write cells, execution_analysis.ml:243). What a cell currently holds is a current-content fact,
+- **Imports.** An import is read at the footprint its module establishes
+  where the fragment alone resolves it to a unit of a module the fragment
+  lists (`importNeeds`, `Claims/Imports.lean`), by the checks a qualified
+  read of the claims passes ([certified imports](../SOURCE-CONTRACTS.md#certified-imports),
+  `eligibleRead`): its declaration identity names that module, and the unit
+  is the module's function of the declaration's name whose name lies within
+  the declaration's span (a default import's declaration names the
+  function, a re-export's the module declaring it; a function the parser
+  leaves out, `absent`, is no unit); the unit has no binders, rest,
+  receiver or guard, and no code of its module writes its binding; the
+  import is one fixed call signature of no rest, receiver, binders or
+  promise, stating the unit's precondition and postcondition; the two
+  readings of the signature agree (`sameReading`); and no other import binds
+  its local name. Only the reads the code the selected units reach mentions
+  are resolved, a module's top-level code counted where its functions read a
+  name it binds (`reachMentions`); a module's own imports are resolved the
+  same way, recursively. The modules are planned callees first, each from
+  its own fragment (`fragmentPlansWithModules`): its imports at what the
+  modules planned before establish, a module on a cycle with its reads of
+  the modules not yet planned at the ordinary effect; each function read
+  proposed its walk's footprint (`declarationEffects`) or the one it writes.
+  Of the importer's functions reached, one read at a footprint the walk does
+  not propose (a stand-in's, or the one an async, generic, rest or
+  written-effect function keeps) adds no names: its body is neither walked
+  nor checked for the selected units. A stand-in for an import takes its
+  place: its module is not planned for it. Before the modules are planned,
+  the reads are resolved from the importer down, a round at a time, each
+  module's front built once and kept for its plans (`Front.withQualified`):
+  a function read whose walk with every import at the least footprint
+  (keeping values and stores, bounding its throws) proposes the ordinary
+  effect is at the ordinary effect, and its module is planned for it no
+  further, nor are the modules only its code reads (first its own walk with
+  every module value at that footprint, `Front.changesEverything`, then the
+  walks of what it reaches, `declarationWalks` with `least`, each function
+  returned at the least footprint too); nothing is so decided in a module
+  whose initialization calls a function returning one, whose values hold
+  the returned functions at the ordinary effect there. That its walk
+  at any established footprints proposes the ordinary effect too rests on
+  the walk's grades being monotone in its callees' footprints, conjectured;
+  where it fails, the read is at the ordinary effect, which needs no check.
+  The groups of the functions proposed more than the ordinary effect, and
+  every group they reach, are checked in the same invocation by the same
+  mode (mode 8's pass, mode 9's search and check), each verdict on its own
+  line as the unit `module:<location>#<unit>`, its loop heads' facts the
+  given file's lines of that name, which mode 6 writes from the module runs
+  the claims plan (`ModuleRun.givenLines`) and mode 8 reads only for a module
+  whose groups it checks. A read is at its proposal where
+  the function's group and every group it depends on, of its module and of
+  the modules it reads, was accepted there; the importer's units that
+  mention the read list that group in `depends`. Every other import, one
+  of no module fragment (a declaration file, a package), one the fragment
+  does not resolve, one of a module whose plans fail, and one whose
+  proposal is the ordinary effect or is not established, is at its declared
+  type with the ordinary effect (but the reading of an import that never
+  returns). The declared type is what the importer reads in every case;
+  only the effect rests on the module's check. A stand-in names an import's
+  footprint in place of its module's. `TSCERT_FORCE=imports` proposes
+  every function read keeping values and stores and bounding its throws,
+  the adversarial proposal: the controls `certified-value-import`
+  `tallies` (accepted unforced) and `invalid-certified-write-value-import`
+  `zeros` are refused under it, each at its module's refusal of `tally`
+  and `drop`, which change the heap.
+- **Cells.** A binding the unit assigns and holds in no slot (a module
+  binding, one a closure shares) is narrowed by its own assignment and by
+  tests, as a slot is, until a statement changes a value location other
+  than by assigning that binding: from the next statement on it is at its
+  declared type. What a cell currently holds is a current-content fact,
   which no step keeps across a write without a separation
   ([no general frame rule](../PROGRAM-TYPING.md#no-general-frame-rule));
   the producer's entries widen the binding there too. A handler's entry
@@ -1205,6 +1377,65 @@ removal works through:
   value's type, a literal's widened), the constant's records owning it
   after. `Object.assign`'s value is the target's fields and then each
   source's, a later key replacing an earlier one.
+- **Loop head types.** At the head of a `while` or `for` loop, a binding
+  the loop assigns is at its declared type, but a source binding a slot
+  holds (no cell) that enters narrower than its declared type, with no
+  literal that widens within the declared type (`let i = 0` at `number`
+  widens at the head, as TypeScript widens a mutable binding's literals):
+  that one is at the join of
+  its entry type and its types on the edges back to the head, the loop's
+  test, body and update walked again from that join until the edges add
+  nothing, at most three walks, the walk's state restored after each; kept
+  where the join settles strictly within the declared type, else at the
+  declared type (the producer's fixpoint, flow.ml:104-139). The head's
+  types are its point claims, so the pass checks every edge into the head
+  against them, the entry and each back edge (section 5).
+  `TSCERT_FORCE=head-entry` states such a binding at its entry type,
+  unwalked, the adversarial proposal: `loop-head-contents` `continued`,
+  accepted unforced, is refused at an edge into its loop's head.
+- **First use through a module function.** A use of an unannotated
+  constant's fresh array as an actual of a module function reads the
+  function at its one written signature, its slot's extension by a rest of
+  `unknown` aside (statement_analysis.ml:122-124): `joined([...a, ...xs])`
+  of `joined(terms: Term[])` builds `xs = forms.map(…)` at `Term[]`. The
+  pass checks the allocation at that contract and every use against it.
+- **Expected instance with a receiver.** Where the instance the actuals give
+  has a result the expected type does not admit, the expected type's
+  instance binds the receiver's binders from the receiver first, an input as
+  the actuals are (inference.ml:518-529): `calls.map(name)` expected at
+  `(string | undefined)[]` is the call at `U` of `string | undefined`. The
+  instance must still admit every actual; the pass checks the call at it.
+- **Rethrowing handlers.** A `try` with no finalizer whose handler has no
+  normal exit (it completes only by a throw, the producer's
+  `throw_only_stmts`, source.ml:975-993) contributes its body's changes
+  alone to a normal return's footprint, the body's calls graded as outside
+  any handler; the handler's changes leave a throw unbounded where they
+  exceed the body's (source.ml:1168-1169). The function's own unit checks
+  the proposal (SinglePass.lean:1351-1380, a dead handler region bounding
+  throws alone).
+- **Captured cells' contents.** No member path whose root a cell holds (a
+  `let` a closure shares, a captured binding of a function literal) is
+  narrowed: the producer states a field's contents of an immutable binding's
+  object alone (refinement.ml:312-314). A test that changes a value location
+  ends a cell's narrowed contents in both its arms, at the step
+  (execution_analysis.ml:243-246); and a cell whose contract names a type
+  parameter keeps its contract under a test, as `observed_contents` keeps a
+  contract that is no union of atoms (environment.ml:73-83). A member of a
+  union of objects is read at every object clause of each arm, a bounded
+  binder's meet row at its bound's clauses (`Synthesis.memberFor`).
+- **Dispatched callbacks.** For a declaration's footprint, a callback walked
+  at the callable an actual's method takes (a string's `replace` at a
+  regex's `[Symbol.replace]`) changes what that method's signature and the
+  callback's own signatures state, as the producer reads the call's member
+  at its claimed row (proposal.ml:84-91); any other function passed to a
+  generic module function's call changes everything. The function's own unit
+  checks the proposal; `TSCERT_FORCE=callbacks` still refuses
+  `invalid-map-fresh-alias` `drained`.
+- **Casts through `unknown`.** `x as unknown` is at `x`'s type
+  (expression_values.ml:483-486), so the outer cast of `x as unknown as H`
+  is the obligation that `x` meets `H` (a sealed handle's representation and
+  invariant); the cast's own claim is checked against its annotation
+  (`Atoms.lean`'s `cast-annotation`).
 - **Loop heads.** A loop head's facts beyond its written assertion are the
   given file's `headFacts` (and `headFactsOfCodes` for each code request),
   each at the statement entries that start where the given one does and hold
@@ -1213,33 +1444,7 @@ removal works through:
   claims' facts at the loop heads and the start (`SinglePass.loopHeads`).
   A callback's code request uses its own indexed `codes` row (implications,
   promise arguments and input identities) and `headFactsOfCodes` row
-  (source start, context width and index atoms). Neither row represents
-  fresh-store slots. At a loop head `SinglePass.run` constructs a state
-  with empty freshness (SinglePass.lean:965-984); a callback has no regional
-  fallback (Claims/Json.lean:993-1030). The proved code check obtains fresh
-  slots from `GraphCode.inferFresh` (GraphCode.lean:1276-1283, 1342-1351).
-  Measured 2026-11-11: `for-of-allocated-constant-field-guard` `captured`,
-  `blocker-nullable-field-argument` `use` and `map-stable-set` `distinct`
-  refuse code 0's iterator call at nodes 10, 20 and 11. Each needs its
-  loop-head slot holding `%next` marked fresh in this callback invocation.
-  A given input for this purpose must identify the code request, loop head
-  and fresh slots; the pass must check that freshness on every incoming
-  edge and assume none at the callback entry. The present reader accepts
-  no such input. `dev/single-pass-given.mts:35-42` copies mode 6's rows;
-  `GivenHeads` and `givenLines` (Claims/Json.lean:760-895) emit no freshness
-  row. Regenerating the available `use` and `distinct` certificates gives
-  the same empty code rows. Supplying those facts requires a pass input and
-  edge check as well as an exporter; a tooling-only change cannot do it.
-  The proposed field is freshSlots on each exact code-indexed, labeled
-  head row, with indices into that head's context. The entry list is empty.
-  Every live incoming edge, including back and handler edges, must map
-  each requested slot to an outgoing fresh name; only a normal pushed
-  result certified fresh can add one. Missing indices and malformed head
-  identities refuse. A forced captured-store fact must fail on the initial
-  edge, and a fact lost in the loop must fail on its back edge.
-  Mode 6 may export GraphCode.inferFresh's proposals at those heads;
-  mode 8 checks them without freshness inference. This is a proposed pass
-  extension, with no implementation in this round.
+  (source start, context width and index atoms).
 - **Written-footprint stand-ins.** For a measurement, `TSCERT_STANDINS`
   names a file of footprints the file's functions and imports would write
   (`{"functions": […], "imports": […]}`, each a name, footprint, on-throw
@@ -1259,18 +1464,34 @@ stamps):
 | buildEngineProfile | 3.12 MB, 252 ms | 1.32 MB, 127 ms | 84 ms (7), 34 ms |
 
 The stand-ins each unit needs, each a function its unit calls whose
-footprint the unit's verdict reads (removing any one refuses the unit):
-`measureAnalysis` 9 of its file's functions (`countRenderedSpacingGraphemes`,
-`addInternalLetterSpacing`, `needsComplexTextPath`, `isSpaceKind`,
-`mayHoldCursive`, `getFollowingSpaceTail`, `getTailKerning`,
-`getJoinedNarrowing`, `getTextSegmentWidth`) and 16 imports
-(`getHanKerningTrims`, `textMayHanKern`, `lazyRegExp`, `getEmojiCorrection`,
-`getExtraSpacings`, `getFollowingSpaceMetrics`, `getFontMeasurement`,
-`getFontSpaceKerning`, `getHyphenText`, `getSegmentFit`, `getSegmentMetrics`,
-`getSpaceKerning`, `getSpaceWidth`, `getTextWidth`, `textMayContainEmoji`,
-`zeros`); `prepareRichInline` 4 functions (`getHyphenRooms`,
-`setEmptyObjectFacts`, `zeroList`, `getOpeningFit`) and 2 imports
-(`isCollapsibleSpaceCode`, `readLetterSpacing`); `buildEngineProfile` none.
+footprint the unit's verdict reads, measured 2026-11-11 with the imports'
+footprints their modules establish (removing any one refuses the unit; the
+given file with the module units' lines): `measureAnalysis` 3 imports and
+none of its file's functions: `getHanKerningTrims`, whose module unit the
+pass refuses (a closure's loop head lacks a fact of `widthTrims`);
+`getSegmentFit`, resting on `getFontKanaKerning`, which the pass refuses;
+and `getFontMeasurement`, proposed the ordinary effect, through
+`getCanvasFont`, whose callback to a generic native method's instance the
+walk reads at the ordinary effect. `prepareRichInline` and
+`buildEngineProfile` need none and are verified with none. Of the 81
+functions the walk proposes for `measureAnalysis` (its file's and its
+imports' modules'), 79 are proposed the producer's claim (footprint,
+on-throw flag and returned footprint), 28 before the grades above; of
+`prepareRichInline`'s 169, 165 (75 before); `buildEngineProfile`'s 2 of 2.
+
+Imports' cost (perf gate, CPU of the verifier process, best of 3, measured
+2026-11-11 beside the verifier of f894d34a, which plans no module, in
+parentheses): with the gate's stand-ins, `measureAnalysis` 1287 ms (934),
+`prepareRichInline` 7146 ms (2188), `buildEngineProfile` 142 ms (143); with
+none, 2900 ms, refused (430), and 7270 ms, verified (920, refused). For
+`prepareRichInline` with the stand-ins, the modules' least fronts take
+0.23 s, their least walks 0.77 s, their plans 1.73 s and the 115 module
+groups checked 2.24 s, every invocation again; the footprints established
+keep more facts (`mergeDiffs` 1,826 for 1,823, `stateFactsSum` 132,919 for
+132,540), and the given lines of the modules checked add 206,985 bytes read
+(`measureAnalysis` 49,549). [Module interfaces](module-interfaces.md)
+designs the store of each module's established footprints that removes
+the repetition.
 
 Agreement with the pipeline over the 3,303 pipeline cases (mode 8 with the
 given files, `TSCERT_REFEREE`), measured 2026-11-11: 6,296 units, 4,974
