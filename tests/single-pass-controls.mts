@@ -15,8 +15,8 @@ import { pathToFileURL } from "node:url";
 import { join, resolve } from "node:path";
 import { availableParallelism } from "node:os";
 import { fork } from "node:child_process";
-import { controlOperations, ran as ranStage, startEviction, type Invoked } from "../pipeline/stages.mts";
-import { check as checkSource, readFragmentFile, sourceKey, type Outcome } from "../pipeline/verify-source.mts";
+import { controlOperations, ran as ranStage, readInvocationLog, startEviction, type Invoked } from "../pipeline/stages.mts";
+import { check as checkSource, invocationLog, readFragmentFile, sourceKey, type Outcome } from "../pipeline/verify-source.mts";
 import { stringFamily } from "../pipeline/string-family.mts";
 import type { FamilyDescription } from "../tools/host-families.mts";
 import { createHash } from "node:crypto";
@@ -1065,7 +1065,9 @@ control("forged fragment: guard domains", async (): Promise<void> => {
       return p;
     };
     const never = { k: "atom", name: "never", span: call.pos };
-    for (const [variant, replacedTags] of [["entry", tags], ["empty", []]] as const)
+    const variants: { variant: string; replacedTags: unknown }[] = [{ variant: "entry", replacedTags: tags },
+      { variant: "empty", replacedTags: [] }];
+    for (const { variant, replacedTags } of variants)
       refused(forgedDocument(`forged-guard-domain-${variant}`, never, replacedTags), caller, `${file}, ${variant} tags`);
     refusedFile(forgedDocument("forged-guard-no-domain", null, tags), `${file}: no domain`, /a family guard's call states its guard's domain/);
   }
@@ -1340,6 +1342,217 @@ control("a string-tagged family", async (): Promise<void> => {
     useFamiliesForTests(null);
   }
   process.stdout.write("string-tagged family, activated by its description beside the compiler API's: its guards' calls are membership tests of string constants narrowing both edges, through a helper too; a guard outside the contract narrows nothing; its declarations of the compiler API's view names read as declared; its tag enum read as a value where its runtime object matches, refused over a copy whose runtime value differs and where Node binds the import to such a copy while TypeScript reads the audited declarations (Node returns it); a guard Node binds to another family's function, of the same name and domain, no guard (Node returns the excluded tag); a description of another digest or of an installation Node does not find refuses the run, and without the description nothing narrows; a stable member's test read past a call, refused where the description excludes the member; an excluded tag stable in no residual; an omitted member's read refused where the description lists it\n");
+});
+
+control("forged declarations: stable keys", async (): Promise<void> => {
+  // Stable keys in the declaration document (HOST-FAMILIES.md, "Stable
+  // keys"): the decoder accepts them as readonly members, required or
+  // optional, of a marked family shape, and as required readonly fields of
+  // an unmarked shape, a program record's. Each forged document is
+  // refused by the decoder; its neighbour, differing in the one thing the
+  // check reads, is decoded.
+  const artifacts = run("compiler-api-path-witness");
+  type Definition = TypeDefinition;
+  type ObjectTerm = Extract<TypeTerm, { k: "object" }>;
+  const shapeOf = (d: Definition): ObjectTerm => {
+    const e = d.expression;
+    assert(e?.k === "object");
+    return e;
+  };
+  const searchWith = (file: string, change: (o: ObjectTerm) => void): string => {
+    const fragment: Ast = fragmentAst(artifacts);
+    const definition = must(must(fragment.declarations, "the declarations").definitions.find(d =>
+      d.expression?.k === "object" && d.expression.host !== undefined && (d.expression.stable ?? []).length > 1 &&
+      d.expression.fields.some(f => f.name === "text")), "a marked shape with stable keys");
+    change(shapeOf(definition));
+    return words(pass(forged(artifacts, file, fragment)));
+  };
+  const decoder = /stable key/;
+  const honestWords = searchWith("stable-honest", () => {});
+  assert.doesNotMatch(honestWords, decoder, honestWords);
+  // A writable member stated stable, optional and required; the neighbour
+  // of each states the member readonly, which the optional one is decoded
+  // as too.
+  const writable = searchWith("forged-stable-writable", o => {
+    const text = must(o.fields.find(f => f.name === "text"), "text");
+    text.optional = true;
+    text.readonly = false;
+  });
+  assert.match(writable, /the stable key "text" is no readonly member of its shape/, writable);
+  const writableRequired = searchWith("forged-stable-writable-required", o => {
+    must(o.fields.find(f => f.name === "text"), "text").readonly = false;
+  });
+  assert.match(writableRequired, /the stable key "text" is no readonly member of its shape/, writableRequired);
+  const optionalNeighbour = searchWith("stable-optional-neighbour", o => {
+    must(o.fields.find(f => f.name === "text"), "text").optional = true;
+  });
+  assert.doesNotMatch(optionalNeighbour, decoder, optionalNeighbour);
+  // A key the shape does not state; its neighbour states the member.
+  const absent = searchWith("forged-stable-absent", o => { o.stable = [...(o.stable ?? []), "noSuchMember"]; });
+  assert.match(absent, /the stable key "noSuchMember" is no readonly member of its shape/, absent);
+  const absentNeighbour = searchWith("stable-absent-neighbour", o => {
+    const text = must(o.fields.find(f => f.name === "text"), "text");
+    o.fields.push({ ...text, name: "noSuchMember" });
+    o.stable = [...(o.stable ?? []), "noSuchMember"];
+  });
+  assert.doesNotMatch(absentNeighbour, decoder, absentNeighbour);
+  // An unmarked shape, a program record's, stating an optional readonly
+  // member stable and a writable one; its neighbours state a required
+  // readonly field stable, and none.
+  const programRecord = /a program record's stable key is a required readonly field/;
+  const unmarkedOptional = searchWith("forged-stable-unmarked-optional", o => {
+    delete o.host;
+    o.stable = ["text"];
+    must(o.fields.find(f => f.name === "text"), "text").optional = true;
+  });
+  assert.match(unmarkedOptional, programRecord, unmarkedOptional);
+  const unmarkedWritable = searchWith("forged-stable-unmarked-writable", o => {
+    delete o.host;
+    o.stable = ["text"];
+    must(o.fields.find(f => f.name === "text"), "text").readonly = false;
+  });
+  assert.match(unmarkedWritable, programRecord, unmarkedWritable);
+  const unmarkedRequired = searchWith("stable-unmarked-required", o => { delete o.host; o.stable = ["text"]; });
+  assert.doesNotMatch(unmarkedRequired, decoder, unmarkedRequired);
+  const unmarkedNeighbour = searchWith("stable-unmarked-neighbour", o => { delete o.host; delete o.stable; });
+  assert.doesNotMatch(unmarkedNeighbour, decoder, unmarkedNeighbour);
+  say("stable keys: a writable (optional and required), an absent and an unmarked optional or writable stable key refused by the decoder, each beside its decoded neighbour, an optional readonly one of a marked shape and a required readonly one of an unmarked shape decoded");
+});
+
+
+control("forged declarations: a stable link's key dropped", async (): Promise<void> => {
+  // Stable links (HOST-FAMILIES.md, "Stable links"): a read link through a
+  // member every arm states stable survives a call. The positive case's
+  // document with the tested member's stable key dropped from its shape,
+  // the one thing the rule reads, is refused in search with the case's own
+  // claims and in checking with its own evidence, at the read past the call;
+  // the honest document is accepted.
+  const artifacts = run("compiler-api-stable-link");
+  const forged = (file: string, keys: (stable: readonly string[]) => string[] | undefined): string => {
+    const fragment: Ast = fragmentAst(artifacts);
+    for (const d of must(fragment.declarations, "the declarations").definitions) {
+      const e = d.expression;
+      if (e?.k !== "object" || e.host === undefined || e.stable === undefined) continue;
+      if (!e.fields.some(f => f.name === "initializer")) continue;
+      const next = keys(e.stable);
+      if (next && next.length) e.stable = next;
+      else delete e.stable;
+    }
+    const path = join(artifacts, `${file}.json`);
+    writeFileSync(path, JSON.stringify(fragment));
+    return path;
+  };
+  const honest = forged("stable-link-honest", s => [...s]);
+  const honestPass = pass(honest);
+  assert.ok(honestPass.status === 0 && [...honestPass.verdicts.values()].every((v) => v.closed), words(honestPass).slice(0, 1500));
+  // Refused at a unit the honest document accepts, at the read past the call.
+  const unstable = forged("forged-stable-link", s => s.filter(k => k !== "name"));
+  const p = pass(unstable);
+  refusedFile(p, "forged-stable-link", /obligation at \[\d+,\d+\)/);
+  say("stable links: the document without the tested member's stable key refused in search and in checking, the honest one accepted");
+});
+
+
+control("forged declarations: stable optional members' keys dropped", async (): Promise<void> => {
+  // Stable optional members (HOST-FAMILIES.md, "Stable keys"): the read of
+  // an optional member past a call, absent or present, rests on the member's
+  // stable key alone. The positive case's document with `initializer` and
+  // `expression` dropped from the stable keys of the shapes stating them, the
+  // one thing the rule reads, is refused in search with the case's own
+  // claims and in checking with its own evidence; the honest document is
+  // accepted.
+  const artifacts = run("compiler-api-stable-optional");
+  const forged = (file: string, keep: (key: string) => boolean): string => {
+    const fragment: Ast = fragmentAst(artifacts);
+    for (const d of must(fragment.declarations, "the declarations").definitions) {
+      const e = d.expression;
+      if (e?.k !== "object" || e.host === undefined || e.stable === undefined) continue;
+      const next = e.stable.filter(keep);
+      if (next.length) e.stable = next;
+      else delete e.stable;
+    }
+    const path = join(artifacts, `${file}.json`);
+    writeFileSync(path, JSON.stringify(fragment));
+    return path;
+  };
+  const honest = forged("stable-optional-honest", () => true);
+  const honestPass = pass(honest);
+  assert.ok(honestPass.status === 0 && [...honestPass.verdicts.values()].every((v) => v.closed), words(honestPass).slice(0, 1500));
+  // Refused at a unit the honest document accepts, at the read past the call.
+  const unstable = forged("forged-stable-optional", k => k !== "initializer" && k !== "expression");
+  const p = pass(unstable);
+  refusedFile(p, "forged-stable-optional", /obligation at \[\d+,\d+\)|expression at node \d+: Verification\.Tm\.var/);
+  say("stable optional members: the document without the optional members' stable keys refused in search and in checking, the honest one accepted");
+});
+
+
+// ---------------------------------------------------------------------------
+// The stage store on the route: in a fresh store of the control's own.
+
+control("store: cold and warm runs, an importer's edit, over the interface stages", async (): Promise<void> => {
+  const previous = process.env.TSCERT_STAGE_STORE;
+  const scratch = runDirectory("single-pass-store-");
+  const useStore = (name: string): void => {
+    process.env.TSCERT_STAGE_STORE = join(scratch, name);
+  };
+  try {
+    // An importer of certified.ts in a project of its own, so the control may edit it.
+    const dir = join(scratch, "project");
+    mkdirSync(dir);
+    const certified = join(root, "pipeline/imports-project/certified.ts");
+    writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true, noUncheckedIndexedAccess: true,
+      module: "Node16", moduleResolution: "Node16", target: "ES2022", verbatimModuleSyntax: true, noEmit: true,
+      paths: { "@fixture/certified": [certified] } }, include: ["*.ts", certified, join(root, "tools/resolvable.d.ts")] }));
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ type: "module" }));
+    const importer = join(dir, "importer.ts");
+    const text = readFileSync(join(root, "pipeline/examples/certified-value-import.ts"), "utf8");
+    writeFileSync(importer, text);
+    const records = (outcome: Outcome): { stage: string; execution: string }[] =>
+      readInvocationLog(join(outcome.artifacts, invocationLog)).map((r) => ({ stage: r.stage, execution: r.execution }));
+    const shape = (outcome: Outcome): string => JSON.stringify({ status: outcome.status,
+      units: (outcome.units ?? []).map((u) => [u.unit, u.status, u.detail]) });
+    useStore("first");
+    const cold = check(importer, tsconfigOf(dir));
+    assert.equal(cold.status, "verified", JSON.stringify(cold).slice(0, 1500));
+    const warm = check(importer, tsconfigOf(dir));
+    assert.equal(shape(warm), shape(cold), "warm and cold outcomes");
+    const coldRecords = records(cold), warmRecords = records(warm);
+    assert.ok(coldRecords.some((r) => r.execution === "executed"), JSON.stringify(coldRecords));
+    assert.ok(warmRecords.length > 0 && warmRecords.every((r) => r.execution === "replayed"), JSON.stringify(warmRecords));
+    // The interface stages, forced to run (`imports`): warm, replayed.
+    const forcedRecords = (fragment: string): Invoked[] => {
+      const work = runDirectory("single-pass-store-pass-");
+      const given = join(work, "given.jsonl"), standins = join(work, "standins.json");
+      writeFileSync(given, "");
+      writeFileSync(standins, '{"functions":[],"imports":[]}');
+      const ast: unknown = JSON.parse(readFileSync(fragment, "utf8"));
+      const { run, interfaces } = verifyWithInterfaces(fragment, isObject(ast) && typeof ast.file === "string" ? ast.file : "", "",
+        standins, { mode: 8, fuel: 12, rounds: 4096, force: ["imports"], allCuts: false, given, work: join(work, "interfaces"),
+          invocation: { limitMs: 60_000, force: false, recorder: null } });
+      return [...interfaces.records, run];
+    };
+    const component = (rs: Invoked[]): Invoked[] => rs.filter((r) => r.record.stage === "module-interface");
+    const firstForced = forcedRecords(fragmentOf(warm.artifacts));
+    assert.ok(component(firstForced).length > 0, "a module-interface stage");
+    assert.ok(forcedRecords(fragmentOf(warm.artifacts)).every((r) => r.record.execution === "replayed"), "forced, warm");
+    // An edit of the importer: its parse and its importer stage execute; the module's interface replays.
+    writeFileSync(importer, text + "\nexport function extra(): number {\n  return 1;\n}\n");
+    const edited = check(importer, tsconfigOf(dir));
+    const editedRecords = records(edited);
+    assert.ok(editedRecords.some((r) => r.execution === "executed"), JSON.stringify(editedRecords));
+    const editedForced = forcedRecords(fragmentOf(edited.artifacts));
+    assert.ok(component(editedForced).every((r) => r.record.execution === "replayed"), "the module's interface replayed");
+    assert.equal(must(editedForced.at(-1), "the importer stage").record.execution, "executed", "the importer stage executed");
+    // Each outcome a cold run's, in a fresh store.
+    useStore("second");
+    const fresh = check(importer, tsconfigOf(dir));
+    assert.equal(shape(fresh), shape(edited), "the edited outcome is a cold run's");
+    assert.ok(records(fresh).some((r) => r.execution === "executed"));
+  } finally {
+    if (previous === undefined) delete process.env.TSCERT_STAGE_STORE;
+    else process.env.TSCERT_STAGE_STORE = previous;
+  }
+  say("store: a warm run replays every stage to the cold outcome; the interface stages replay warm; an importer's edit executes its parse and importer stage, the module's interface replaying, to a cold run's outcome");
 });
 
 // ---------------------------------------------------------------------------
