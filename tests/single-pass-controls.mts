@@ -14,8 +14,10 @@ import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { join, resolve } from "node:path";
 import { availableParallelism } from "node:os";
-import { fork } from "node:child_process";
-import { controlOperations, ran as ranStage, readInvocationLog, startEviction, type Invoked } from "../pipeline/stages.mts";
+import { fork, spawn } from "node:child_process";
+import { controlOperations, invokeProcess, ran as ranStage, readInvocationLog, startEviction, type Invoked } from "../pipeline/stages.mts";
+import { verifierCall } from "../pipeline/stage-execution.mts";
+import { usePassMutationVerifier } from "./single-pass-mutations.mts";
 import { check as checkSource, invocationLog, readFragmentFile, sourceKey, type Outcome } from "../pipeline/verify-source.mts";
 import { stringFamily } from "../pipeline/string-family.mts";
 import type { FamilyDescription } from "../tools/host-families.mts";
@@ -72,6 +74,10 @@ function pass(fragment: string, force: readonly string[] = [], names: string = "
     invocation: { limitMs: 60_000, force: false, recorder: null } });
   for (const r of interfaces.records) counted(r);
   counted(run);
+  return passOf(run);
+}
+/** A pass's run read: its verdicts, each unit's closure computed. */
+function passOf(run: Invoked): Pass {
   const verdicts = new Map<string, Verdict>();
   const depends = new Map<string, string[]>();
   for (const line of run.stdout.split("\n").filter((l) => l.startsWith("{"))) {
@@ -93,7 +99,7 @@ function pass(fragment: string, force: readonly string[] = [], names: string = "
   }
   return { status: run.status, stdout: run.stdout, stderr: run.stderr, verdicts };
 }
-/** The pass's words: its refusal (standard error) and its verdicts. */
+/** Words of a pass: its refusal (standard error) and its verdicts. */
 const words = (p: Pass): string => p.stderr + p.stdout;
 /** Require `unit` accepted with every unit it depends on. */
 function accepted(p: Pass, unit: string, what: string): void {
@@ -146,6 +152,30 @@ const stops = new Set<number>();
 const stop = (name: string, body: () => Promise<void>): void => {
   stops.add(controls.push({ name: `stop: ${name}`, body }) - 1);
 };
+/** Controls running the pass's mutation verifier (tests/single-pass-mutations.mts):
+ * given once the suite's process has built it. */
+const mutationControls = new Set<number>();
+const mutationControl = (name: string, body: () => Promise<void>): void => {
+  mutationControls.add(controls.push({ name: `mutation: ${name}`, body }) - 1);
+};
+let mutated: string | null = null;
+/** The pass of the mutation verifier over an import-free `fragment` (its
+ * importer stage at the ordinary contracts), the mutation `name` selected. */
+function mutatedPass(fragment: string, name: string, force: readonly string[] = []): Pass {
+  const program = must(mutated, "the mutation verifier");
+  const work = runDirectory("single-pass-mutation-");
+  const given = join(work, "given.jsonl"), standins = join(work, "standins.json"), interfaces = join(work, "interfaces.json");
+  writeFileSync(given, "");
+  writeFileSync(standins, '{"functions":[],"imports":[]}');
+  writeFileSync(interfaces, '{"modules":[]}');
+  const ast: unknown = JSON.parse(readFileSync(fragment, "utf8"));
+  assert.ok(isObject(ast) && typeof ast.file === "string" && Array.isArray(ast.modules) && ast.modules.length === 0,
+    "an import-free fragment");
+  const environment: Record<string, string> = { TSCERT_TEST_MUTATIONS: name };
+  if (force.length > 0) environment.TSCERT_FORCE = force.join(",");
+  return passOf(counted(invokeProcess(verifierCall(program, ["--subtype-rounds", "4096", "--verify-interface-stage", "8",
+    fragment, interfaces, given, standins, ast.file, "12", ""], environment), { limitMs: 60_000, force: false, recorder: null })));
+}
 const serving: boolean = process.argv[2] === "--controls";
 const say = (line: string): void => {
   process.stdout.write(`${line}\n`);
@@ -1556,6 +1586,54 @@ control("store: cold and warm runs, an importer's edit, over the interface stage
 });
 
 // ---------------------------------------------------------------------------
+// Native and host contracts: each counterexample tests/node-runs.mts runs
+// under Node, a negative case, refused on the route. (Its Node half is that
+// suite's.)
+
+/** The negative cases the route accepts, each reviewed as a safe program
+ * the old route's producer lost (dev/single-pass-agreement.mts, `reviewed`). */
+const reviewedAcceptances: ReadonlySet<string> = new Set(["invalid-native-promise-invariant-result"]);
+const counterexamples: readonly string[] = [...new Set([...readFileSync(join(root, "tests/node-runs.mts"), "utf8")
+  .matchAll(/run(?:Example|Importing|Emitted)\("(invalid-[a-z0-9-]+)"/g)].map((m) => m[1] ?? ""))]
+  .filter((file) => cases.some((c) => c.file === file && c.kind === "negative")).sort();
+for (let start = 0; start < counterexamples.length; start += 25) {
+  const chunk = counterexamples.slice(start, start + 25);
+  control(`native contracts: Node counterexamples ${start + 1}-${start + chunk.length} refused`, async (): Promise<void> => {
+    for (const file of chunk) {
+      const test = must(cases.find((c) => c.file === file), file);
+      using outcome = checkSource(join(root, "pipeline/examples", `${file}.ts`),
+        test.project ? tsconfigOf(resolve(root, test.project)) : undefined, test.typescriptErrors, undefined, true);
+      assert.notEqual(outcome.status, "error", `${file}: ${outcome.status === "verified" ? "" : outcome.detail.slice(0, 600)}`);
+      if (reviewedAcceptances.has(file)) continue;
+      assert.notEqual(outcome.status, "verified", `${file}: a program Node shows unsafe accepted on the route`);
+    }
+    say(`native contracts: ${chunk.length} Node counterexamples (${chunk[0]} … ${chunk.at(-1)}) refused on the route`);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Mutations of the pass: each check mutated to accept, a unit the production
+// verifier refuses by that check accepted, so the control naming it is what
+// catches the mutation.
+
+mutationControl("sp-entry: the start's entry check, caught by the start-facts control", async (): Promise<void> => {
+  const fragment = fragmentOf(run("returntype-guard"));
+  refused(pass(fragment, ["start-facts"]), "isName@125", "production, forced start-facts");
+  accepted(mutatedPass(fragment, "sp-entry", ["start-facts"]), "isName@125", "sp-entry, forced start-facts");
+  say("mutation sp-entry: the false start facts accepted only without the entry check");
+});
+
+mutationControl("sp-footprint: the footprint check, caught by three negative cases", async (): Promise<void> => {
+  for (const [file, unit] of [["invalid-method-effect-declaration", "bump@266"], ["invalid-sort-comparator-shrink", "sorted@301"],
+      ["invalid-normal-return-catch", "wrong@94"]] as const) {
+    const fragment = fragmentOf(run(file));
+    refused(pass(fragment), unit, `${file} production`);
+    accepted(mutatedPass(fragment, "sp-footprint"), unit, `${file} sp-footprint`);
+  }
+  say("mutation sp-footprint: a declaration's, a comparator's and a caught normal return's footprints exceeded, each accepted only without the footprint check");
+});
+
+// ---------------------------------------------------------------------------
 // The pool.
 
 type Operations = { executed: number; replayed: number; elapsedMs: number };
@@ -1575,8 +1653,10 @@ if (serving) {
   // A control process: one control per message. A process whose caches may
   // disagree with the file system reports its control and exits.
   process.on("message", (message: unknown) => {
-    if (!isObject(message) || typeof message.control !== "number") throw Error(`not a control's request: ${JSON.stringify(message)}`);
+    if (!isObject(message) || typeof message.control !== "number" || !(message.mutated === null || typeof message.mutated === "string"))
+      throw Error(`not a control's request: ${JSON.stringify(message)}`);
     const index = message.control;
+    if (typeof message.mutated === "string") mutated = usePassMutationVerifier(message.mutated);
     const entry = controls[index];
     if (entry === undefined) throw Error(`no control ${index}`);
     const before = { ...controlOperations };
@@ -1602,13 +1682,40 @@ if (serving) {
   const failures: string[] = [];
   const tally: Operations = { executed: 0, replayed: 0, elapsedMs: 0 };
   const withStops = process.env.TSCERT_SINGLE_PASS_STOPS === "1";
-  const pending = controls.flatMap((c, i) => (withStops || !stops.has(i)) &&
+  const selected = controls.flatMap((c, i) => (withStops || !stops.has(i)) &&
     (chosen.length === 0 || chosen.some((p) => c.name.includes(p))) ? [i] : []);
+  const pending = selected.filter((i) => !mutationControls.has(i));
+  // The pass's mutation verifier, built beside the other controls when a
+  // selected control runs it; those controls join once it is built.
+  let mutationPath: string | null = null;
+  const waiting: (() => void)[] = [];
+  const needsMutation = selected.some((i) => mutationControls.has(i));
+  const mutationReady = !needsMutation ? Promise.resolve() : new Promise<void>((done, fail) => {
+    const build = spawn(process.execPath, [join(import.meta.dirname, "single-pass-mutations.mts"), "--build",
+      runDirectory("single-pass-mutations-")],
+      { stdio: ["ignore", "pipe", "pipe"] });
+    let out = "", err = "";
+    build.stdout.setEncoding("utf8");
+    build.stdout.on("data", (t: unknown) => { out += String(t); });
+    build.stderr.setEncoding("utf8");
+    build.stderr.on("data", (t: unknown) => { err += String(t); });
+    build.on("error", fail);
+    build.on("exit", (status: number | null) => {
+      if (status !== 0) {
+        fail(Error(`the pass's mutation verifier's build exited with ${status}: ${err}`));
+        return;
+      }
+      mutationPath = must(out.trim().split("\n").at(-1), "the mutation verifier's path");
+      pending.unshift(...selected.filter((i) => mutationControls.has(i)));
+      for (const wake of waiting.splice(0)) wake();
+      done();
+    });
+  });
   if (!withStops)
     for (const i of stops) process.stdout.write(`not run (TSCERT_SINGLE_PASS_STOPS=1 runs it): ${controls[i]?.name}\n`);
-  const total = pending.length;
+  const total = selected.length;
   let processes = 0;
-  const width = Math.max(1, Math.min(availableParallelism(), pending.length));
+  const width = Math.max(1, Math.min(availableParallelism(), selected.length));
   const lane = (): Promise<void> => new Promise<void>((done, fail) => {
     processes++;
     const child = fork(import.meta.filename, ["--controls"], { stdio: ["ignore", "pipe", "pipe", "ipc"] });
@@ -1626,7 +1733,8 @@ if (serving) {
     child.stderr?.on("data", (text: unknown) => { errors += String(text); });
     const give = (): void => {
       const index = pending.shift();
-      if (index !== undefined) child.send({ control: index });
+      if (index !== undefined) child.send({ control: index, mutated: mutationPath });
+      else if (needsMutation && mutationPath === null) waiting.push(give);
       else child.disconnect();
     };
     child.on("message", (message: unknown) => {
@@ -1642,12 +1750,12 @@ if (serving) {
     child.on("exit", (status: number | null) => {
       if (printed) process.stdout.write(printed + "\n");
       if (status !== 0) failures.push(`a control process exited with ${status}: ${errors}`);
-      if (retired && status === 0 && pending.length > 0) lane().then(done, fail);
+      if (retired && status === 0 && (pending.length > 0 || needsMutation && mutationPath === null)) lane().then(done, fail);
       else done();
     });
     give();
   });
-  await Promise.all(Array.from({ length: width }, lane));
+  await Promise.all([mutationReady, ...Array.from({ length: width }, lane)]);
   process.stdout.write(`single-pass controls: ${total} in ${((performance.now() - started) / 1000).toFixed(1)} s on ${width} ` +
     `lanes (${processes} processes); their operations ${tally.executed} executed (${(tally.elapsedMs / 1000).toFixed(1)} s ` +
     `in all), ${tally.replayed} replayed\n`);
