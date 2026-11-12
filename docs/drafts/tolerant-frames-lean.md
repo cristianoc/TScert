@@ -951,3 +951,52 @@ Named hypotheses of the step theorem:
 
 The theorem gives no effect tighter than $`\top`$ at a writing step; the
 footprint check gives the bound's.
+
+## Leg 9: an edge's store and transfer
+
+Module `lean/Verification/Programs/TolerantFramesEdge.lean`. The state's
+meaning is existential in the name valuation $`\eta`$; an edge renames
+slots, never names, so every operation of an edge keeps the facts holding at
+the exit's $`\eta`$. Proved:
+
+- `drop_ok`: `Store.drop` of any names keeps every fact holding at
+  $`\eta`$ (the removed facts leave; a separation with fewer partners, a fact
+  restated through an alias link, a derived linear fact each hold);
+- `edgeStore_observed`, `edgeStore_promote`: the observation's facts at slot 0
+  (`observeTyped` under the edge's context, `withElements`) and a branch's
+  promoted truthiness (`promoteTruthy`) added by the delta keep the state
+  holding, the delta's renaming reading back each slot's name
+  (`edgeBack_ok`);
+- `edgeTransfer_ok`: where each target slot is named by the name of the
+  source slot the mapping reads (`MapNamesSound`) and a fresh result holds a
+  store at or past the mark, the target's state (mapped names, dropped store,
+  kept fresh names, implications naming no dropped name) holds at
+  $`\mathrm{mapEnv}\ \theta\ \rho_x`$;
+- `edge_normal_sound`: from the step's normal exit
+  (`checkedStep_sound`) and the observation of its value (`ObservedOk`: a
+  branch-binding's observation holds of $`v`$, a branch's answer is $`v`$'s
+  truthiness), the state `edgeTransfer` builds from `edgeStoreOf` holds at
+  $`\mathrm{mapEnv}\ \theta\ (\mathrm{push}\ v\ \rho)`$ on a pushed edge and at
+  $`\mathrm{mapEnv}\ \theta\ \rho`$ on an unpushed one;
+- `edge_handler_sound`: from the step's throw state, the thrown value at a
+  name above every name, the handler's state at
+  $`\mathrm{mapEnv}\ \theta\ (\mathrm{push}\ e\ \rho)`$;
+- `freshImpl_ok`: where the step's yields hold of its value
+  (`PromiseCalls.YieldsOk`), the implications a pushed edge states of its
+  result hold (`stateHolds_addImplies` adds them).
+
+**Interface between the head entry and the edge check.** An edge into a loop
+head with given invariant $`\mathit{req}`$ over context $`\Delta`$
+establishes (`EdgeEstablishes`) $`\mathit{req}`$ at
+$`\mathrm{mapEnv}\ \theta\ \rho_x`$ and $`\Delta`$'s types there. Proved
+(`head_query_sound`): the head query `checkIn` accepting, with the edge's
+facts holding at $`\rho_x`$ and typed by the edge's context, gives the first
+conjunct from the second.
+
+Named hypotheses: `MapNamesSound` (`mapNames` reads the mapping's ordered
+suffix by `orderedSuffix`, a `while` loop, which no proof unfolds; the
+identity mapping is proved, `mapNamesSound_none`); the result's freshness
+where `outFresh`; the step's yields (`YieldsOk`, which `yieldFollows_sound`
+gives where `yieldFollows` accepts them; the pass does not evaluate
+`yieldFollows`); the target's types at the mapped environment (the edge's type
+check through `subtypeUsing`).

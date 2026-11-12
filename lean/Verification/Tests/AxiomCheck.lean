@@ -28,6 +28,7 @@ import Verification.Programs.TolerantFramesModelLoop
 import Verification.Programs.TolerantFramesModelTyped
 import Verification.Programs.TolerantFramesModelRules
 import Verification.Programs.TolerantFramesStepLinkSound
+import Verification.Programs.TolerantFramesEdge
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -436,6 +437,15 @@ run_cmd do
   check ``Verification.TolerantFrames.preserving_judgment_two
   check ``Verification.TolerantFrames.stepExits_of
   check ``Verification.TolerantFrames.checkedStep_sound
+  check ``Verification.TolerantFrames.drop_ok
+  check ``Verification.TolerantFrames.edgeStore_observed
+  check ``Verification.TolerantFrames.edgeStore_promote
+  check ``Verification.TolerantFrames.stateHolds_handler
+  check ``Verification.TolerantFrames.edgeTransfer_ok
+  check ``Verification.TolerantFrames.edge_normal_sound
+  check ``Verification.TolerantFrames.edge_handler_sound
+  check ``Verification.TolerantFrames.freshImpl_ok
+  check ``Verification.TolerantFrames.head_query_sound
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
