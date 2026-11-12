@@ -1000,3 +1000,49 @@ where `outFresh`; the step's yields (`YieldsOk`, which `yieldFollows_sound`
 gives where `yieldFollows` accepts them; the pass does not evaluate
 `yieldFollows`); the target's types at the mapped environment (the edge's type
 check through `subtypeUsing`).
+
+## Leg 9: returns and footprints at a step
+
+Module `lean/Verification/Programs/TolerantFramesStepLinkReturns.lean`.
+Proved:
+
+- `plain_return`: the plain goal's check (`c.type == R || c.type.isEmpty`)
+  gives a returned value of the claim's type the goal's type;
+- `pass_return_ensures`: where `returnEntails` accepts the output's facts over
+  the result and the tracked slots, each tracked slot holding the name of the
+  start's input it tracks, the state after the step (`checkedStep_sound`) gives
+  `ensures` at the result and the invocation's entry values
+  (`GraphCode.returnEntails_sound`, the context at the pushed slots
+  `setsCtx_push_ok`);
+- `pass_footprint_exits`: where `within` and `throws` hold at the node, a
+  bound $`\Phi`$ from the invocation's entry $`h_0`$ to the node's entry heap
+  and the node's local safety give $`\Phi`$ from $`h_0`$ to the heap of each
+  exit, normal and exceptional (`pass_within_normal`, `pass_within_throw`,
+  `pass_within_entry`).
+
+Named hypotheses: `FreshOk F |h_0| ρ` for the receiver slots the pass records
+fresh, and `DerivContext` (the context conjunct of `derivChecked`); a
+closed return's result freshness (`returns`, line 1628: `outFresh`, read off
+the step's derivation's selected effect, whose tree `outFresh` does not
+check); the guard and assertion goals (`ControlFlow.goal_return` needs the
+step's yields, which the pass takes from `nodeYields` unchecked). The
+regional checks (`ArgumentRegionGraph.checkNode` over the tables `run`
+builds inline, lines 1741–1791) are not connected.
+
+## Leg 9: the searches the pass relies on
+
+Each producer the pass runs, where its result is used, and the check that
+validates it before the pass relies on it (`SinglePass.lean` lines at 16720b68).
+
+| Producer | Result used at | Validated by |
+| --- | --- | --- |
+| `expressionEffectUsing` (1259) | the step's evidence `effect` (1268, 1341) | `select` with the tree check (`pass_select_sound`, `checkedStep_sound`) |
+| `expressionEffectUsing` (1259) | the derivation `deriv` (1318): `outFresh` (1590–1594) | relied on unchecked: the claim's term compared, the tree not; change: `outFresh` behind `derivChecked` |
+| `expressionEffectUsing` (1259) | `deriv` at the footprint (1607–1614) | `derivChecked` (`pass_within_normal`) with `DerivContext` |
+| `directCall` (1248) | the step's evidence `.ordinary e` (1256–1258) | `select` with the tree check (`checkedStep_ok`) |
+| `nodeYields` (1651, 1714, 1856) | the promise return (1690–1705), the edges' refined contexts (1873–1881, 1967, 1987), the result's implications (1917–1919) | relied on unchecked; change: keep the yields `PromiseCalls.yieldFollows` accepts (`yieldFollows_sound`, `PromiseCalls.lean` 728) |
+| `edgeUsing` (1842, 1881, 1908) | an edge's types accepted where its value is some (1847, 1914) | relied on unchecked: the edge evidence is not checked; change: check it with the certificate checker's target check (`ControlFlow.target_sound`, `ControlFlow.lean` 892) |
+| `subtypeUsing`, cached (1702, 1829, 1901, 1932) | a slot's type, a promise, an implication accepted where its value is some | `subtypeSearch_sound` (`CertificateProducer.lean` 441) where the cache holds only `subtypeSearch`'s answers (its one writer, 607); the cache's content is not stated of `Answered`; change: test `answers.proved.contains (A, B)` (`Answered.proved_sound`) |
+| `meetImplications` (1154) | a merge's implications (1525) | relied on unchecked; change: check each on every incoming edge (`PromiseCalls.impliesCheck_sound`, `PromiseCalls.lean` 167) |
+| `summaryUsing`, through the search (the table at 1251, 1285, 1335) | the read summaries every tree check reads | each summary checked before it is appended (`CertificateProducer.lean` 642); the table's soundness is not stated of `Answered` (`DirectKeepsSummaries`, `SearchKeepsSummaries`); change: a `summaries_sound` field of `Answered`, as `proved_sound` |
+| `mapNames` (958) | the target's names on every edge | relied on unproved: `orderedSuffix` is a `while` loop (`MapNamesSound`); change: structural recursion, as `selectFrom` |
