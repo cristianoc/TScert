@@ -1028,7 +1028,7 @@ below the counter, the start names below it.
 | --- | --- |
 | `Traversed` | needs a pass change: `run`'s driver is `while true`, which Lean does not unfold; a fuel-structured driver returning the walk, and a theorem that acceptance gives `Traversed` |
 | `StepEdgesSound` | named hypothesis: the per-node step theorems (proved for the step kinds above, from `checkedStep`'s conditions taken as hypotheses) and the edge theorems (`edgeStoreOf`, `edgeTransfer`, the edges' checks; the other lane), including the walk's order: an edge's state is among those its target entered with |
-| `HeadsEntered` | named hypothesis: the head entry from `EdgeEstablishes` |
+| `HeadsEntered` | a head's state holds where an edge state into it does | step-and-edge lane: `headEstablishes_of_edge`, `headsEntered_of_recorded`; the start: pass change D8 arrived (a start an edge enters is entered as any loop head, `run` at 0f8d18ce), so `StartNotReentered` is replaced by `headEstablishes_of_edge` at the start once `run_traversed` records its entry; not yet stated |
 | `MergesSound` | named hypotheses `LinearNearSound`, `EntailedDefined`, `GuardedHolds`, the edges' joined implications (Leg 8: the merge) |
 | `Traversed.width`, `.wf`, `.below` at merges | not proved: the edge operations' maintenance of the target's width, `StoreWF` and `StateBelow` |
 
@@ -1425,7 +1425,7 @@ Leg 12); each premise below is a part of it or of `run_traversed`.
 | the reassignment | the walk predicates at `reassign G η` for every admitted `η` | the node runs carried: `nodeRan_reassign` under `CheckedStepReassign`, and `run_guarantee_of_run` from one run at `G` (Leg 13); `CheckedStepReassign` lacks the invariance of `directCall`, the search `expressionEffectUsing` and the checker's `select`, and for a qualified body a `BodySubtyping (reassign G η)` at the scope's admitted `η`; the meaning of each node at `reassign G η` is `run_traversed`'s at that graph (`hwalk`) |
 | `HeadsCutCycles` | every cycle of reached nodes contains a head | needs pass change: `loopHeads` on fuel (not arrived) |
 | `StepEdgesSoundT` | per node, from `passPreT`, the local judgment and every exit a holding edge state into its target | step-and-edge lane: `stepEdgesSound_of` from `NodeAccepted`, `CodesSound`, `DirectKeepsSummaries`, `SearchKeepsSummaries` |
-| `HeadsEntered` | a head's state holds where an edge state into it does | step-and-edge lane: `headEstablishes_of_edge`, `headsEntered_of_recorded`; the start: `StartNotReentered`, needs pass change D8 (not arrived) |
+| `HeadsEntered` | a head's state holds where an edge state into it does | step-and-edge lane: `headEstablishes_of_edge`, `headsEntered_of_recorded`; the start: pass change D8 arrived (a start an edge enters is entered as any loop head, `run` at 0f8d18ce), so `StartNotReentered` is replaced by `headEstablishes_of_edge` at the start once `run_traversed` records its entry; not yet stated |
 | `MergesSound`: `LinearNearSound` | every fact `linearNear` returns is stored | needs pass change: `linearNear` on fuel (not arrived) |
 | `MergesSound`: `EntailedDefined` | the terms of an entailed bound are defined on each path | needs pass change: the `termDefined` check at merges (not arrived) |
 | `MergesSound`: `GuardedHolds` | the guarded join's facts hold on each path | needs pass change: the recheck of guarded joins (not arrived) |
@@ -1441,7 +1441,7 @@ Leg 12); each premise below is a part of it or of `run_traversed`.
 | `AssertionsHeld` | each stated assertion holds where `passPreT` at its label does | other: the node assertion carries the walk's entry, to which the pass adds the written assertion's facts at a node other than a head; `run_traversed` records the entry after that addition, and at a head the written assertion is part of the given facts |
 | `ShapeOk` at a branch | the claim's type at a branch is Boolean | needs pass change: no check of the pass states it |
 | `RunKeepsSummaries` | the answers' summaries a call starts from are among those it leaves | needs pass change: the driver on fuel; per step `DirectKeepsSummaries`, `SearchKeepsSummaries`, which pass change D6 (a `summaries_sound` field) makes structural |
-| unchecked searches | edge evidence, yields, `outFresh`, the subtype cache | needs pass changes D1, D2, D4, D5 (not arrived) |
+| unchecked searches | edge evidence, yields, `outFresh`, the subtype cache | edge evidence: pass change D1 arrived (`checkMappedUsing` or `checkObservedUsing` of the search's evidence, `run` at 9e925a2e), which discharges `htc` through `checkMapped_sound`, `checkObserved_sound` once `run_traversed` records the check; not yet stated; yields, `outFresh`, the subtype cache: pass changes D2, D4, D5 (not arrived) |
 
 ## Leg 11: one obligation per node
 
