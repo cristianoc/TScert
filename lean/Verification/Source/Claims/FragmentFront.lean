@@ -816,6 +816,15 @@ def FilePlans.withHeadFacts (f : FilePlans) (given : Std.HashMap String Json) (e
           { c with candidates := headFactsFromJson c.sourceMap (start :: c.cuts) (ofCodes "headFactsOfCodes" ci) ++
             (if entries then headFactsFromJson c.sourceMap (start :: c.cuts) (ofCodes "entryFactsOfCodes" ci) else []) } } }
 
+/-- The plans with a false fact (`x - x ≤ -1` over slot 0) supplied at each
+graph's start, the adversarial proposal of `TSCERT_FORCE=start-facts`: the
+pass's entry check refuses it. -/
+def FilePlans.withFalseStartFact (f : FilePlans) : FilePlans :=
+  let fact : HeapKnowledge.IndexAtom :=
+    { fact := .linear (.le [(HeapKnowledge.Term.value 0, 1), (HeapKnowledge.Term.value 0, -1)] (-1)) }
+  { f with plans := f.plans.map fun p => p.map fun
+    | .graph name pos r => .graph name pos { r with candidates := (r.start, [fact]) :: r.candidates } }
+
 /-- The plans with each graph's statement entries reduced to its loop heads
 (`SinglePass.loopHeads`) and its start, its own and each code request's: the
 search then carries facts through every other statement entry as the single

@@ -503,6 +503,7 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
     else if mode == 8 || mode == 9 then
       let prepare := fun (given : Std.HashMap String Json) (f : SourceClaimJson.FilePlans) =>
         let f := f.withHeadFacts given (mode == 9)
+        let f := if force.contains "start-facts" then f.withFalseStartFact else f
         if mode == 9 && !allCuts then f.headCuts else f
       -- The module units an import's footprint rests on, checked here by the
       -- same mode (`fragmentPlansWithModules`), each at the given lines of
