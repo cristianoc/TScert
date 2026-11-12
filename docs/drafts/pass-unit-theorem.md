@@ -43,6 +43,7 @@ The Lean modules are
 [PassUnitSignatures](../../lean/Verification/Source/Claims/PassUnitSignatures.lean) (signature agreement from a store map) and
 [PassUnitCross](../../lean/Verification/Source/Claims/PassUnitCross.lean) (the cross-module theorem) and
 [PassUnitWrapper](../../lean/Verification/Source/Claims/PassUnitWrapper.lean) (the wrapper's lemmas) and
+[PassUnitMemberRun](../../lean/Verification/Source/Claims/PassUnitMemberRun.lean) (what an accepted member run establishes) and
 [PassUnitInit](../../lean/Verification/Source/Claims/PassUnitInit.lean) (the initialization's assertions), over
 [StoreMaps](../../lean/Verification/Types/StoreMaps.lean) (one type's meaning in two stores) and
 [StoreMapsCheck](../../lean/Verification/Types/StoreMapsCheck.lean) (the store-map check).
@@ -199,8 +200,7 @@ statement for every value of every argument):
 
 - `passGroup_members`: $`(f.\mathrm{passGroup}(\mathit{fuel}, g, \ldots)).2 = \mathrm{ok}\ d \Rightarrow \forall j \in g.\; (f.\mathrm{passMember}(\mathit{fuel}, \ldots, j)).\mathrm{accepted}`$,
   and `passMember_sound`: $`(f.\mathrm{passMember}(\ldots, j)).\mathrm{accepted} \Rightarrow \mathrm{MemberAccepted}(f, j)`$;
-  `passGroup_members` is proved and `passMember_sound` is the named
-  hypothesis `PassMemberSound` at `observe = none`; together H3 on the
+  both proved, `passMember_sound` at `observe = none`; together H3 on the
   command's verdict path (`passGroupChecks_unobserved`, section 3).
 - `EstablishProvenance`: $`\mathrm{establishModules}(\mathit{needs}, \ldots, \mathit{incoming}, \mathit{prepare}, \mathit{check}) = \mathrm{ok}\ (\mathit{est}, \ldots) \Rightarrow \forall e \in \mathit{est}.\; e \in \mathit{incoming} \vee \mathrm{EstablishedStep}(e)`$,
   after R1's repair of `establishModules` (a per-module step and its fold).
@@ -399,28 +399,29 @@ runs, the summaries' and obligations' checks, the outcome), and
 `passGroup` is its fold with the lines rendered. H3 splits in two:
 
 - `passGroup_members` (proved): $`(f.\mathrm{passGroup}(\ldots)).2 = \mathrm{ok}\ d \Rightarrow \forall j \in g.\; \exists m.\; f.\mathrm{passMember}(\ldots, j) = \mathrm{ok}\ m \wedge m.\mathrm{accepted}`$.
-- `PassMemberSound` (named hypothesis): at `observe = none`,
+- `passMember_sound` (proved, PassUnitMemberRun): `PassMemberSound`, at
+  `observe = none`,
   $`f.\mathrm{passMember}(\ldots, \mathrm{none}, \ldots, j) = \mathrm{ok}\ m \wedge m.\mathrm{accepted} \Rightarrow \mathrm{MemberAccepted}(f, j)`$.
-  Not proved: one `dsimp` over `passMember`'s body exceeds 1,000,000
-  heartbeats (measured 2026-11-12), so the proof needs the body split into
-  named steps (the qualified run, the code step, the main route, the
-  final outcome), each a short definition the proof unfolds alone.
-  Against the code, `MemberAccepted` agrees clause by clause where
-  checked by reading: a code run's request is `codeRequest r q`
-  (`q.asRequest r.toRequest`), whose inputs and entry facts are
-  `codeFrame` and `codeEntryIndices` by definition; code conditions and
-  `codeBound` are written inline, equal by unfolding; the table the main
-  run reads is `admits` of the accepted codes (`codesInOrder`), equal to
-  `admits (r.codes.map entry)` because every code is accepted before the
-  main run; the code runs' async condition is checked. The obligations'
-  check and the two refusals no clause names (`no node to observe`, the
-  repeated runs' `notHandled`) only refuse.
+  The proof follows the function's steps, each `let` of its body
+  extracted as a local definition (`extract_lets`) and each branch split
+  where it is reached, so no step unfolds the whole body (the module
+  checks in about 10 s, measured 2026-11-12). A code run's request is
+  `codeRequest r q` (`q.asRequest r.toRequest`), whose inputs and entry
+  facts are `codeFrame` and `codeEntryIndices` by definition; code
+  conditions and `codeBound` are written inline, equal by unfolding; the
+  table the main run reads is `admits` of the accepted codes
+  (`codesInOrder_accepted`: every run `codesInOrder` returns accepted makes
+  the codes `CodesAccepted` and the table every code's entry), equal to
+  `admits (r.codes.map entry)`. The obligations' check and the two
+  refusals no clause names (`no node to observe`, the repeated runs'
+  `notHandled`) only refuse.
 
-`passGroupChecks_unobserved` (proved under `PassMemberSound`) is H3 on
-the command's verdict path. With an observation asked, a refused outcome
-is replaced by the outcome of an observation rerun, which nothing keeps
-from being accepted; H3 for every `observe` needs the wrapper to keep the
-refusal there (the rerun's outcome used only where it is not accepted).
+`passGroupChecks_unobserved passMember_sound` is H3 on the command's
+verdict path. With an observation asked (`TSCERT_OBSERVE`), a refused
+outcome is replaced by the outcome of an observation rerun, which nothing
+keeps from being accepted; H3 for every `observe` needs the wrapper to keep
+the refusal there (the rerun's outcome used only where it is not
+accepted), a request of the pass lane.
 
 ## 4. Dependencies and linking
 
@@ -1131,7 +1132,9 @@ is sound and the summaries are sound, every obligation holds semantically:
 by `checkTreeUsing_sound` and the typing's soundness. A member's table is
 sound by `codesAccepted_sound` and its last run's summaries by
 `summaries_of_checked`; the remaining step is a clause of `MemberAccepted`
-recording the obligations' check, which `passMember_sound` is to give. The
+recording the obligations' check, which `MemberAccepted` does not state;
+`passMember_sound`'s proof reads the check's acceptance from the outcome
+(`hobl`), where such a clause would take it. The
 old headline states no such clause: its `RequestsSafe` has no conjunct for
 obligations. The theorem says what a claimed expression type means for the
 term the obligation states; that the term is the source expression at that

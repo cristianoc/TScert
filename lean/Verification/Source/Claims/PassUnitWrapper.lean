@@ -4,10 +4,10 @@ import Verification.Source.Claims.PassUnitHeadline
 
 `FilePlans.passGroup` is the fold of `FilePlans.passMember` over a group's
 members. This module proves that a group it accepts has every member's run
-accepted (`passGroup_members`), and what a member's accepted run
-establishes (`passMember_sound`: `MemberAccepted`), so that H3
-(`PassGroupChecks`) holds of the code where the command's verdict is
-computed: with no observation asked. docs/drafts/pass-unit-theorem.md,
+accepted (`passGroup_members`), and states what a member's accepted run
+establishes (`PassMemberSound`: `MemberAccepted`, proved in
+PassUnitMemberRun), so that H3 (`PassGroupChecks`) holds of the code where
+the command's verdict is computed: with no observation asked. docs/drafts/pass-unit-theorem.md,
 section 3. -/
 
 namespace Verification.SourceClaimJson.PassUnit
@@ -84,15 +84,12 @@ theorem passGroup_members {f : FilePlans} {fuel : Nat} {group : List Nat} {compa
     | mk l failed => cases failed <;> simp
   exact (groupFold_none group _ key).2
 
-/-- **What an accepted member run establishes** (named hypothesis, the
-command's verdict path: no observation asked): where `passMember` returns
-an accepted run, the member is `MemberAccepted`. Not proved: one `dsimp`
-over `passMember`'s body exceeds 1,000,000 heartbeats (measured
-2026-11-12, about 80 s), so the proof needs the body split into named
-steps (docs/drafts/pass-unit-theorem.md, section 3). With an observation
-asked, a refused outcome is replaced by an observation rerun's, which
-nothing keeps from being accepted, so the statement is made at
-`observe = none` only. -/
+/-- **What an accepted member run establishes**, the command's verdict
+path (no observation asked): where `passMember` returns an accepted run,
+the member is `MemberAccepted`. Proved as `passMember_sound`
+(PassUnitMemberRun). The statement is made at `observe = none`: with an
+observation asked, a refused outcome is replaced by an observation rerun's,
+which nothing keeps from being accepted. -/
 def PassMemberSound : Prop :=
   ∀ (f : FilePlans) (fuel : Nat) (compare : Bool) (debugNode repeats : Nat)
     (given : Option (Std.HashMap String Json)) (counting : Bool) (j : Nat) m,
