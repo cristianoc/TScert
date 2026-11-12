@@ -1369,12 +1369,8 @@ predecessor's fresh name beside its renames where no merged slot holds it
 below the counter, the third part of `below` (`mergeState_wf` for a merge),
 and no proof reads more.
 
-The facts' names below the counter are not proved for `Store.drop`, the
-delta's restatements, `edgeTransfer` and `headEntry`: each needs the names
-of `HeapKnowledge.eliminateIndices`', `restateReads`' and `restateStores`'
-output to be names of their input facts or of the links they read
-(`Linear.eliminateAll` combines rows, whose variables are the rows'), and
-`back`'s names below the counter.
+The facts' names below the counter through `Store.drop`, the delta, an
+edge's store and transfer and `headEntry`: Leg 12.
 
 ## Leg 10: the start as a loop head
 
@@ -1429,7 +1425,7 @@ premise below is a part of it or of `run_traversed`.
 | `StepEdgesSound` | per node, from `passPre`, the local judgment and every exit a holding edge state into its target | step-and-edge lane: from `checkedStep_sound`, `edge_normal_sound`, `edge_handler_sound`, `freshImpl_ok`, under `DirectKeepsSummaries`, `SearchKeepsSummaries`, `NamesBelow`, the names no wider than the context, `MapNamesSound`, the result's freshness where `outFresh`, `YieldsOk`, the target's types through `subtypeUsing` |
 | `HeadsEntered` | a head's state holds where an edge state into it does | `headsEntered_of` from `HeadEstablishes`; its facts from `head_query_sound` (`headEstablishes_of_edge`); its implications, inputs and promised input from the edge check, not proved; the start: `StartNotReentered` (pass change) |
 | `MergesSound` | `LinearNearSound`, `EntailedDefined`, `GuardedHolds`, the edges' joined implications | `LinearNearSound` needs `linearNear` on fuel (pass lane); `EntailedDefined` needs the `termDefined` check (pass lane); `GuardedHolds` and the joined implications (`meetImplications` relied on unchecked) need the recheck (pass lane) |
-| `Traversed.width`, `.wf`, `.below` | the merge's incoming states have the context's width, well-formed stores and names below its counter | `.wf`: `edgeStoreOf_wf`, `edgeTransfer_wf` with `checkedStep`'s output store well-formed; `.width`: `edgeTransfer_width` under `MapNamesLength` and the edge's mapping of the target's width; `.below`: the facts' names of the eliminations, not proved |
+| `Traversed.width`, `.wf`, `.below` | the merge's incoming states have the context's width, well-formed stores and names below its counter | `.wf`: `edgeStoreOf_wf`, `edgeTransfer_wf` with `checkedStep`'s output store well-formed; `.width`: `edgeTransfer_width` under `MapNamesLength` and the edge's mapping of the target's width; `.below`: `edgeTransfer_below` over `edgeStoreOf_below` (Leg 12), given the step's output below the counter (`NamesBelow`) and a positive counter |
 | `entered` | the start's state holds at every entry meeting the inputs | `start_passPre`, given `entryRefusal`'s acceptance and the walk's start entry (`run_traversed`) |
 | `FootprintKept` | the footprint check keeps the bound at each node | step-and-edge lane: `pass_footprint_exits` outside the dead region (`DerivContext` now checked by the pass), the result's freshness where `outFresh`, `deadNode` inside it |
 | `ReturnsEnsured` | the return check establishes `ensures` | step-and-edge lane: `pass_return_ensures` with `checkedStep_sound`; the input tracking at the start needs `StartNotReentered` |
@@ -1528,3 +1524,46 @@ Named hypotheses and what discharges them:
 | the result's freshness (`hfo`) | `outFresh` behind `derivChecked` (queued) |
 | the target's types (`htc`), a given implication's type within (`himp`) | edge evidence checked; the subtype cache's soundness (queued) |
 | the walk's records (`hrec`, `hrecHead`, `hentry`) | the driver returning a `Walk` (queued) |
+
+## Leg 12: the facts' names below the counter
+
+Modules `lean/Verification/Programs/TolerantFramesStoreOpsNames.lean` (the
+eliminations and renamings) and `TolerantFramesStoreOpsBelowNames.lean` (the
+store operations).
+
+**The eliminations name their inputs' names** (proved). A name an index atom
+states is a slot of its fact or its condition (`NamedIn`).
+
+- `termDefined_named`: a term `termDefined as` accepts is rooted at a name
+  an atom of `as` states;
+- `eliminateLinear_named`, `eliminateIndices_named`: every name of the
+  output of `eliminateLinear D as` and `eliminateIndices D as` is a name of
+  `as`: a derived linear fact keeps only terms `termDefined as` accepts, under
+  the condition of an atom of `as`; `releasePast` restates a disjunct;
+- `restateReads_named`, `restateStores_named`: every name of their output is
+  a name of their input atoms or the cell of one of their links
+  (`liftDropped` and `liftPath` root a term at a read's cell);
+- `atom_rename_names`: a fact renamed by $`f`$ names only $`f`$'s images of its
+  names.
+
+**The store operations against the well-formedness conjuncts.** `StoreWF`,
+the slot and fresh names below the counter, the facts' names below the
+counter (`FactsBelow`); every cell proved, or stated with what it lacks.
+
+| Operation | `StoreWF` | names, fresh below | facts below |
+| --- | --- | --- | --- |
+| `Store.addRaw`, `remove`, `addBound`, `add` | `addRaw_wf`, `remove_wf`, `addBound_wf`, `add_wf` | unchanged | `addRaw_below`, `remove_below`, `addBound_below`, `add_below`, for a fact below |
+| `applyDelta` | `applyDelta_wf` | slot 0 the result name | `applyDelta_below`, where `back` renames below the counter (`BackBelow`) |
+| `Store.dropHeap` | `dropHeap_cover` | unchanged | `dropHeap_below` |
+| `Store.drop` | `drop_wf` | unchanged | `drop_below` |
+| `edgeStoreOf` | `edgeStoreOf_wf` | — | `edgeStoreOf_below`: the delta's `back` reads `materialize`'s table, whose keys are the state's slot names (`slotTable_keys`, `materialize_table_keys`, `inverse_keys`, `back_below`) |
+| `edgeTransfer` | `edgeTransfer_wf` | `edgeTransfer_below`: a target name is a source name or $`0`$ (`mapNames_mem`), so below a positive counter; the fresh names are the entry's and the result | `edgeTransfer_below` (`drop_below`) |
+| `mergeState` | `mergeState_wf` | `mergeState_wf` | not proved: the met store's and the joins' facts are predecessor facts renamed by the merge's renaming (`rename_key_below` gives the renamed names below the merge's counter) and `Store.drop`'s output; the composition through `mergeState`'s loops is not stated |
+| `headEntry` | `headStore_ok` | `headEntry_below` | `headEntry_below`: the store's facts are renamed to the slots' names; premise: each slot's own name `i + base` below the counter, automatic at a head other than the start ($`\mathit{base}=\mathit{fresh}`$, counter $`\mathit{fresh}+w`$), at the start $`i+\mathit{startNames}[0]<\mathit{fresh}`$ |
+| the step (`checkedStep`'s output store) | the step-and-edge lane (`NamesBelow`) | the step-and-edge lane | the step-and-edge lane |
+
+`Traversed.below` (each state into a merge below the merge's counter) is
+then `edgeTransfer_below` over `edgeStoreOf_below` at the source's step
+output, given the step's output below the counter (`NamesBelow` after the
+step) and a positive counter.
+

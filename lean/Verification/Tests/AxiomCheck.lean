@@ -35,6 +35,7 @@ import Verification.Programs.TolerantFramesStepLinkReturns
 import Verification.Programs.TolerantFramesGuarantee
 import Verification.Programs.TolerantFramesStoreOpsEdge
 import Verification.Programs.TolerantFramesNodeWalk
+import Verification.Programs.TolerantFramesStoreOpsBelowNames
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -53,6 +54,7 @@ the following depends on an axiom other than `propext`, `Classical.choice` and `
   proofs reason about, so its equation is part of what acceptance uses.
 -/
 
+set_option maxRecDepth 4096 in
 open Lean Elab Command in
 run_cmd do
   let standard := [``propext, ``Classical.choice, ``Quot.sound]
@@ -546,6 +548,26 @@ run_cmd do
   check ``Verification.TolerantFrames.exitDelivers_head
   check ``Verification.TolerantFrames.handlerDelivers_of_edge
   check ``Verification.TolerantFrames.stepEdgesSound_of
+  -- Leg 12: the facts' names below the counter (TolerantFramesStoreOps*), the merge, the reassignment
+  check ``Verification.TolerantFrames.atom_rename_names
+  check ``Verification.TolerantFrames.termDefined_named
+  check ``Verification.TolerantFrames.eliminateLinear_named
+  check ``Verification.TolerantFrames.eliminateIndices_named
+  check ``Verification.TolerantFrames.restateReads_named
+  check ``Verification.TolerantFrames.restateStores_named
+  check ``Verification.TolerantFrames.dropDerived_below
+  check ``Verification.TolerantFrames.keptAliasOf_named
+  check ``Verification.TolerantFrames.drop_below
+  check ``Verification.TolerantFrames.applyDelta_below
+  check ``Verification.TolerantFrames.slotTable_keys
+  check ``Verification.TolerantFrames.materialize_table_keys
+  check ``Verification.TolerantFrames.inverse_keys
+  check ``Verification.TolerantFrames.dropHeap_below
+  check ``Verification.TolerantFrames.back_below
+  check ``Verification.TolerantFrames.edgeStoreOf_below
+  check ``Verification.TolerantFrames.mapNames_mem
+  check ``Verification.TolerantFrames.edgeTransfer_below
+  check ``Verification.TolerantFrames.headEntry_below
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
