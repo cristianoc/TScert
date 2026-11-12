@@ -2015,3 +2015,55 @@ Leaves:
 - `branchBind` and `tagBind` continuations: outside the node obligations;
 - `htc` on an edge accepted by subtype answers alone (D5), and at the
   yields' refined and mixed contexts (`YieldsOk`, D2).
+
+## Leg 15b: node obligations at every continuation
+
+Modules `lean/Verification/Programs/TolerantFramesNodeBinds.lean` and
+`TolerantFramesNodeBindsExits.lean`.
+
+The lowering emits no `branch` continuation: every two-way dispatch of a
+source is a `branchBind` (a condition whose claim type is Boolean) or a
+`tagBind` (a condition by truthiness, a `typeof` or equality guard, `?.`
+and `??`, a default for `undefined`, a read before initialization, an
+`Array.isArray` test, a `__proto__` key), at 19 sites of
+`Source/Lowering` (`Control.lean`, `Atoms.lean`, `Execution.lean`,
+`Bindings.lean`, `Flow.lean`). `ShapeOk` and `NormalTarget` are `False` at
+both, so `NodeObligations` covers no unit with a condition.
+
+`ShapeOk'` and `NormalTarget'` extend them: at `branchBind y n` the value
+is `true` or `false` and the arm it selects holds at
+$`\mathrm{mapEnv}\ \theta\ (\mathrm{push}\ v\ \rho)`$; at `tagBind tg y n`
+any value, and the arm of `tagHoldsIn h tg v` in the heap of the state
+reached holds at the pushed environment, as `Transition.yesBind`, `noBind`
+and `tagBind` take them. `NodeObligations'`, `EvalOk'`, `GraphInv'` and
+`NodesChecked'` are the existing definitions over them. Proved:
+
+- `shapeOk'_eq`, `normalTarget'_eq`: on the other four continuations they
+  are `ShapeOk` and `NormalTarget`; `nodeObligations'_of`,
+  `nodesChecked'_of`: every `NodeObligations` is a `NodeObligations'`;
+- `graph_step'`, `graph_safe'`, `graph_safe_at'`, `graph_inv_run'`,
+  `reached_pre'`, `transfer'`: the graph theorems over `NodesChecked'`;
+- `nodeShape'_of`: the shape check `passShapeCheck'` (the proved
+  checker's `onlyBoolean` at a `branchBind`, nothing at a `tagBind`) gives
+  `ShapeOk'`;
+- `ofNode_flags`: an exit of `Exit.ofNode` observes only where it pushes
+  and promotes only where it does not, the premises `hpo` and `hpp` of
+  `exitDelivers_of_edge` and `exitDelivers_head`, which therefore deliver
+  the exits of both continuations as they stand (the observation's facts
+  by `edgeStore_observed`);
+- `normalTarget'_of_exits`: from every exit delivering, the normal target
+  at every continuation; a `branchBind`'s exits observe `.boolean`, a
+  `tagBind`'s observe `.tag tg q`, which `tagHolds_of_heap` gives from the
+  answer in the heap;
+- `nodeObligations'_of_parts`, `NodeAccepted'` (`NodeAccepted` with
+  `ShapeOk'`, `NodeAccepted.toPrime`), `stepEdgesSound'_of`,
+  `StepEdgesSoundT'`, `stepEdgesSoundT'_of`, `run_sound_of_walk_typed'`.
+
+The rest of the guarantee (`nodesChecked_of_walk`, `keeps_step`,
+`keeps_postExc`, `reached_pre` and the fields of `TolerantFramesGuarantee`)
+is generic in the node obligations: replacing `ShapeOk` and `NormalTarget`
+in `TolerantFramesRuns.lean` by `ShapeOk'` and `NormalTarget'` adds the two
+cases of `graph_step'` to `graph_step`, the two of `normalTarget'_of_exits`
+to `normalTarget_of_exits`, the two of `nodeObligations'_mono` to
+`nodeObligations_mono` and the `branchBind` case of `nodeShape'_of` to
+`nodeShape_of`; no other proof unfolds either definition.

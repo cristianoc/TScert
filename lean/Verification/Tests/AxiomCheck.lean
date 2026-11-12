@@ -44,6 +44,7 @@ import Verification.Programs.TolerantFramesNodeAsserted
 import Verification.Programs.TolerantFramesComposeEdges
 import Verification.Programs.TolerantFramesComposeShape
 import Verification.Programs.TolerantFramesRegionalNode
+import Verification.Programs.TolerantFramesNodeBindsExits
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -630,6 +631,23 @@ run_cmd do
   check ``Verification.GraphCode.ArgumentRegionGraph.nodesWithin_of
   check ``Verification.GraphCode.ArgumentRegionGraph.checkNode_mono
   check ``Verification.GraphCode.ArgumentRegionGraph.meet_sub
+  -- Leg 15b: the node obligations at every continuation, the regional check along a run, the stated assertions, the guard goals, a call's fresh result
+  check ``Verification.TolerantFrames.nodeObligations'_of
+  check ``Verification.TolerantFrames.nodesChecked'_of
+  check ``Verification.TolerantFrames.nodeObligations'_mono
+  check ``Verification.TolerantFrames.graph_step'
+  check ``Verification.TolerantFrames.graph_safe'
+  check ``Verification.TolerantFrames.graph_safe_at'
+  check ``Verification.TolerantFrames.graph_inv_run'
+  check ``Verification.TolerantFrames.reached_pre'
+  check ``Verification.TolerantFrames.transfer'
+  check ``Verification.TolerantFrames.nodeShape'_of
+  check ``Verification.TolerantFrames.ofNode_flags
+  check ``Verification.TolerantFrames.normalTarget'_of_exits
+  check ``Verification.TolerantFrames.stepEdgesSoundT'_of
+  check ``Verification.TolerantFrames.run_sound_of_walk_typed'
+  check ``Verification.TolerantFrames.nodeObligations'_of_parts
+  check ``Verification.TolerantFrames.stepEdgesSound'_of
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
