@@ -98,7 +98,9 @@ equal to it there (an alias link; the two linear facts of their numbers'
 equality only where that predecessor's unconditional facts make the name an
 integer, `Store.integral`); a linear bound over the merge's names one predecessor
 states and every other entails over its linear facts near the bound's names
-(`HeapKnowledge.entailsKnown`) is kept; the guarded facts the search's join
+(`HeapKnowledge.entailsKnown`) is kept, where in every
+predecessor's view the bound is a fact or each of its terms is defined by
+the facts near its names (`entailDefinedCheck`, `HeapKnowledge.termDefined`); the guarded facts the search's join
 keeps (`CertificateProducer.joinGuarded`) are kept, each predecessor's guards
 first also lowered once through its read links (`lowerGuards`); and a fact
 one predecessor states of a slot another holds `null` or `undefined` in is

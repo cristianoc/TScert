@@ -1129,6 +1129,14 @@ def edgeTransfer (names : List Nat) (m : PointClaims.Mapping) (pushed isHandler 
     !gone.contains x.test && !gone.contains x.target)).2.toList
   ({ names := targetNames, store := edgeStore.drop gone, fresh := freshOut }, carried)
 
+/-- **An entailed bound's terms defined** in a predecessor's view `q` of a
+merge, for the bound's atom `a` and its linear fact `F`: the view holds the
+atom, or each term of `F` is an integer by the facts near the atom's names
+(`HeapKnowledge.termDefined` over `Store.linearNear`): an entailment reads
+an undefined term as 0. -/
+def entailDefinedCheck (q : State) (a : Atom) (F : Linear.Fact HeapKnowledge.Term) : Bool :=
+  q.store.live.contains a.canon || F.vars.all (HeapKnowledge.termDefined (q.store.linearNear a.names) ·)
+
 /-- What a merge computes: the meet state, its implications, the next
 fresh name, the facts its predecessors state that the met store lacks
 (counted), each predecessor's state at the merge's names and its renaming. -/
@@ -1249,7 +1257,9 @@ def mergeState (G : NormalGraph ι) (context : List (Ty ι)) (preds : List State
             seen := seen.insert a
             if views.all fun (qs : State) => qs.store.holds a ||
                 HeapKnowledge.entailsKnown (qs.store.linearNear a.names) F then
-              acc := acc.add a
+              -- Its terms defined in every view (`entailDefinedCheck`).
+              if views.all fun (qs : State) => entailDefinedCheck qs a F then
+                acc := acc.add a
     return acc
   -- The guarded facts a join keeps, over the facts that differ: the
   -- search's join (`CertificateProducer.joinGuarded`) over each
