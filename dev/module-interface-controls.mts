@@ -157,7 +157,7 @@ console.log("timeout and malformed request: no finished interface published");
 // module's table is not read; the importer's store-map check refuses the
 // units reading it.
 const published = parsed(first.path);
-let forgedCount = 0;
+let forgedCount: number = 0;
 for (const m of list(published.modules).map(record)) {
   if (m.rows === null) continue;
   const types = list(record(m.rows).types);
