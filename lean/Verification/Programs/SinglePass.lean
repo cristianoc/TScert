@@ -1326,14 +1326,17 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         | _ => effect.proof?
       -- A checker whose `select` is its `run` (a qualified body's) has
       -- checked the derivation already.
+      -- The tree `requiresTree` alone accepted, at the step's facts: a
+      -- `select` over other facts checks it again there.
+      let mut preconditioned : Option (ProgramCertificates.Evidence ι) := none
       if let some p := (if selectChecks then none else tree) then
         -- A call at a precondition the step's facts establish is checked as
         -- `requiringCalls` checks it (`PromiseCalls.requiresTree`).
         -- The read summaries the step's search added included.
         let sums := answers.summaries.toList
-        if !(timedKind "tree check" fun _ => ProgramCertificates.checkTreeUsing G images p codes sums ||
-            PromiseCalls.requiresTree G images kE codes sums p) then
-          return (.refused s!"expression at node {l}: its derivation", counts, answers, trace)
+        if !(timedKind "tree check" fun _ => ProgramCertificates.checkTreeUsing G images p codes sums) then
+          if PromiseCalls.requiresTree G images kE codes sums p then preconditioned := some p
+          else return (.refused s!"expression at node {l}: its derivation", counts, answers, trace)
       -- A call keeping the heap (`PromiseCalls.keepsCall`), where no layer
       -- before it in `Checker.ordinary` decides the step, keeps every fact
       -- it does not name: its output over the facts it names is its delta.
@@ -1385,6 +1388,10 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         -- The step the search selected over the facts the expression names,
         -- its output over every fact.
         let sums := answers.summaries.toList
+        -- A tree only its precondition accepted, checked at every fact.
+        if let some p := preconditioned then
+          if !PromiseCalls.requiresTree G images kE codes sums p then
+            return (.refused s!"expression at node {l} over every fact: its derivation", counts, answers, trace)
         let r := timedKind ("whole " ++ kindKey) fun _ =>
           checker.select j kE effect codes sums
         counts := { counts with rules := counts.rules + 1, fullRules := counts.fullRules + 1 }

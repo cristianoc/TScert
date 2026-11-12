@@ -205,7 +205,10 @@ call at a precondition the step's facts establish): the search's `select`
 takes a derivation as given, and a derivation it selects may be one the
 check refuses. A step the search finds is applied at the output the
 checker's `select` gives for the evidence the search returns, computed by
-the pass over the step's facts and the read summaries after the search. The read summaries the derivations read are checked once
+the pass over the step's facts and the read summaries after the search. A
+step that may write is selected again over every fact; a derivation only
+`requiresTree` accepted at the step's facts is checked by `requiresTree`
+again at every fact before that selection. The read summaries the derivations read are checked once
 for the unit, as a response's are (`validSummary`,
 `checkReadSummariesResult`), and the unit's expression claims are checked
 over them.
