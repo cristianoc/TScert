@@ -1792,3 +1792,33 @@ invariance lemma is not stated.
 uniform in the graph, and the edge and merge functions it reads are equal
 at the reassigned graph (`mergeState` by unfolding, `edgeStoreOf_reassign`).
 
+
+## Leg 14b: the footprint check kept along a run
+
+Module `lean/Verification/Programs/TolerantFramesNodeBound.lean`. Under
+`bound = some (Φ, ret, exc)` and the region `dead`, `run` checks at each
+node (`BoundChecked`): at a node of `dead`, `GraphCode.deadNode` with
+`exc = false`; outside it, `footprintCheck` at the step's values, which
+`passRecvFresh`, `passDerivOf`, `passLiveHandler` and `passOutFresh`
+restate from `run`'s bindings (`F`, `deriv`, `liveHandler`, `outFresh`);
+`run` reads the region as an array, `deadAt_toList` gives the list. Proved:
+
+- `freshOk_recv`: the receiver slots `passRecvFresh` lists hold stores
+  allocated at or past the mark (`GraphCode.FreshOk`), from the entry
+  state's fresh names: the `FreshOk` premise of `footprint_exits`;
+- `copyFresh`: a copy of a slot holding a fresh name returns a fresh store;
+- (`footprintKept_of`) `NodeAccepted` at mark $`|h_0|`$ ∧ `BoundChecked`
+  ∧ `CallFreshOk` at every visited node ∧ `CodesSound` ∧
+  `DirectKeepsSummaries` ∧ `SearchKeepsSummaries` ⟹ `FootprintKept`.
+  Outside `dead`, from $`\Phi`$ between $`h_0`$ and the entry heap,
+  `footprint_exits` gives $`\Phi`$ on each normal exit and on a throw where
+  the handler is live or the bound covers throws; a return where `ret`
+  is fresh by `passOutFresh` (`copyFresh`, or `CallFreshOk`). Inside
+  `dead`, an empty result type admits no normal exit (the value's type from
+  the step's exits), a continuation into `dead` reaches a node of `dead`,
+  and a throw reaches a handler of `dead` or escapes with no throw bound.
+
+Named hypothesis `CallFreshOk`: where `outFresh` reads a fresh result off
+the derivation's selected effect (`passCallFresh`), the returned value's
+store is allocated at or past the mark; the pass does not check that
+derivation's tree there (pass change D4).
