@@ -491,29 +491,29 @@ def Cursor.get (c : Cursor α) (i : Nat) : Option α × Cursor α :=
 
 /-- Where a mapping's last run starts: the longest suffix of `slots` that
 reads a source of `n` slots in order to its end begins at the result. -/
-def orderedSuffix (slots : List Nat) (n : Nat) : Nat := Id.run do
+def orderedSuffix (slots : List Nat) (n : Nat) : Nat :=
   let arr := slots.toArray
-  let mut k := arr.size
-  while k > 0 && arr[k - 1]! + (arr.size - k) + 1 == n do k := k - 1
-  return k
+  -- From `k`, down while the slot before it reads the source in order to
+  -- its end: structural on `k`.
+  let rec down : Nat → Nat
+    | 0 => 0
+    | k + 1 => if arr[k]! + (arr.size - (k + 1)) + 1 == n then down k else k + 1
+  down arr.size
 
 /-- The names of a target's slots: the mapping applied to the source's. -/
 def mapNames (names : List Nat) (m : PointClaims.Mapping) : List Nat :=
   match m with
   | none => names
-  | some slots => Id.run do
+  | some slots =>
     -- The longest suffix of `slots` reading the source's slots in order to
     -- its end: those target slots share the source's names.
     let arr := slots.toArray
     let k := orderedSuffix slots names.length
     let tail := if k < arr.size then names.drop arr[k]! else []
-    let mut cur := Cursor.of names
-    let mut out : Array Nat := Array.mkEmpty k
-    for s in slots.take k do
+    let (_, out) := (slots.take k).foldl (fun ((cur : Cursor Nat), (out : Array Nat)) s =>
       let (x, c) := cur.get s
-      cur := c
-      out := out.push (x.getD 0)
-    return out.toList ++ tail
+      (c, out.push (x.getD 0))) (Cursor.of names, Array.mkEmpty k)
+    out.toList ++ tail
 
 /-- The source names an edge's mapping leaves out of its target's slots:
 the names of the source slots it skips that no target slot holds. -/
