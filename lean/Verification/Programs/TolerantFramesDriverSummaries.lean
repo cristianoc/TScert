@@ -8,8 +8,8 @@ with (`VisitStopsKeep`), leaves its start's table a prefix of the table it
 returns (`Drives.keeps`) or stops with (`drive_stop_keeps`). A table
 restored at a visit's boundary, the earlier table followed by what the
 later one adds after it, has the earlier as its prefix (`keep_prefix`).
-The setup leaves the answers it is given unchanged (`setup_answers`), so
-where every visit keeps its table (`VisitsKeepSummaries`) a call's walk
+The setup leaves the answers it is given unchanged (`setup_answers`), and
+every visit keeps its table (`visitsKeepSummaries`), so a call's walk
 keeps the call's table (`walk_keeps`) and the pass keeps the summaries it
 was given (`runKeepsSummaries`, the unit level's `RunKeepsSummaries`). -/
 namespace Verification.TolerantFrames
@@ -118,20 +118,37 @@ theorem setup_answers {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Targe
   all_goals (subst h; rfl)
 
 variable (ι) in
-/-- **(Named hypothesis) Every visit keeps the read-summary table it starts
-from** as a prefix of the one it returns or stops with, at every setup's
-`env` (`VisitKeeps`, `VisitStopsKeep` of `SinglePass.visit`). -/
+/-- **Every visit keeps the read-summary table it starts from** as a prefix
+of the one it returns or stops with, at every setup's `env` (`VisitKeeps`,
+`VisitStopsKeep` of `SinglePass.visit`). -/
 def VisitsKeepSummaries : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (env : SinglePass.WalkEnv ι G I),
     VisitKeeps (SinglePass.visit G I env) ∧ VisitStopsKeep (SinglePass.visit G I env)
 
+variable (ι) in
+/-- **(`visitsKeepSummaries`) The visit keeps its read-summary table**:
+`visit` returns or stops with `visitBody`'s answers under `keepSummaries`
+of the answers it starts from (`keep_prefix`). -/
+theorem visitsKeepSummaries : VisitsKeepSummaries ι := by
+  intro G I env
+  refine ⟨fun σ l σ' h => ?_, fun σ l stop h => ?_⟩
+  · unfold SinglePass.visit at h
+    split at h
+    · cases h; exact keep_prefix _ _
+    · cases h
+  · unfold SinglePass.visit at h
+    split at h
+    · cases h
+    · cases h; exact keep_prefix _ _
+
 /-- **A call's walk keeps the summaries it is given**: the table of the
 answers it returns or stops with has the call's table as a prefix
 (`setup_answers`, `Drives.keeps`, `drive_stop_keeps`). -/
-theorem walk_keeps (hv : VisitsKeepSummaries ι) {G : NormalGraph ι} {I : InstanceImageCheck G}
+theorem walk_keeps {G : NormalGraph ι} {I : InstanceImageCheck G}
     (c : Target.RunCall G I) :
     (∀ stop, RunCall.walk c = .error stop → SumsPrefix c.answers stop.answers) ∧
     (∀ σ reach, RunCall.walk c = .ok (σ, reach) → SumsPrefix c.answers σ.answers) := by
+  have hv := visitsKeepSummaries ι
   have hs := setup_answers c
   unfold RunCall.walk SinglePass.runWalk
   generalize SinglePass.setup G I _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ = r at hs ⊢
@@ -162,12 +179,12 @@ theorem walk_keeps (hv : VisitsKeepSummaries ι) {G : NormalGraph ι} {I : Insta
         exact hs ▸ Drives.keeps hk.1 (drives_of_drive _ _ _ hd)
 
 /-- **(`runKeepsSummaries`) The pass keeps the read summaries it was
-given** (`Target.RunKeepsSummaries`), where every visit keeps them
-(`walk_keeps`; `run` returns the answers of the stop or of the walk's
+given** (`Target.RunKeepsSummaries`): every visit keeps them
+(`visitsKeepSummaries`, `walk_keeps`; `run` returns the answers of the stop or of the walk's
 state). -/
-theorem runKeepsSummaries (hv : VisitsKeepSummaries ι) : Target.RunKeepsSummaries ι := by
+theorem runKeepsSummaries : Target.RunKeepsSummaries ι := by
   intro G I c s hs
-  have hk := walk_keeps hv c
+  have hk := walk_keeps c
   unfold Target.RunCall.result SinglePass.run
   cases hw : RunCall.walk c with
   | error stop =>

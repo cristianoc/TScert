@@ -541,10 +541,10 @@ def VisitsRecord : Prop :=
 
 /-- **(`recordsSound_of`) The driver's record of every returned walk is
 sound** (`RecordsSound`), where the setup starts the invariant, every visit
-gives `VisitFacts` and keeps the read summaries (`VisitsKeepSummaries`):
+gives `VisitFacts` and keeps the read summaries (`visitsKeepSummaries`):
 the invariant holds at the walk's end (`Drives.inv`, `recInv_visit`), and
 `recordSound_of_inv` reads the record from it. -/
-theorem recordsSound_of (hs : SetupRecords ι) (hv : VisitsRecord ι) (hk : VisitsKeepSummaries ι) :
+theorem recordsSound_of (hs : SetupRecords ι) (hv : VisitsRecord ι) :
     RecordsSound ι := by
   intro G I c σ reach hw hle hsums
   unfold RunCall.walk SinglePass.runWalk at hw
@@ -568,7 +568,7 @@ theorem recordsSound_of (hs : SetupRecords ι) (hv : VisitsRecord ι) (hk : Visi
       have hdr := drives_of_drive _ _ _ hd
       have hinv := Drives.inv (RecInv c env)
         (fun σ σ₁ l rest hq hI hvis => recInv_visit hE hI hq (hv G I c env σ0 σ σ₁ l rest hr hE hI hq hvis)
-          ((hk G I env).1 { σ with queue := rest } l σ₁ hvis)) hdr hI0
+          ((visitsKeepSummaries ι G I env).1 { σ with queue := rest } l σ₁ hvis)) hdr hI0
       exact recordSound_of_inv hE hinv hle hsums
 
 end Records

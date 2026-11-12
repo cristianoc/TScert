@@ -823,6 +823,7 @@ run_cmd do
   check ``Verification.TolerantFrames.Drives.keeps
   check ``Verification.TolerantFrames.drive_stop_keeps
   check ``Verification.TolerantFrames.setup_answers
+  check ``Verification.TolerantFrames.visitsKeepSummaries
   check ``Verification.TolerantFrames.walk_keeps
   check ``Verification.TolerantFrames.runKeepsSummaries
   check ``Verification.TolerantFrames.filter_eq_of_le
