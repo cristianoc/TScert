@@ -811,6 +811,24 @@ run_cmd do
   check ``Verification.TolerantFrames.loopHeads_cuts
   check ``Verification.TolerantFrames.HeadsCutCycles.mono
   check ``Verification.TolerantFrames.passHeads_cuts
+  let env ← getEnv
+  let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
+    | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
+    | none => false
+  let lemmas := (Compiler.CSimp.ext.getState env).thmNames.toList.filter project
+  if lemmas.isEmpty then throwError "no @[csimp] lemma of the project found"
+  for decl in lemmas do check decl
+
+-- The graph proof's walk and per-node theorems (Leg 19b), in a second command
+-- so that one command's compilation stays within its limits.
+set_option maxRecDepth 4096 in
+open Lean Elab Command in
+run_cmd do
+  let standard := [``propext, ``Classical.choice, ``Quot.sound]
+  let check (decl : Name) : CommandElabM Unit := do
+    for axiom_ in ← liftCoreM <| collectAxioms decl do
+      unless standard.contains axiom_ do
+        throwError "{decl} depends on the axiom {axiom_}"
   -- Leg 19b: the walk's premises from the driver (TolerantFramesDriverHeadsFuel)
   check ``Verification.TolerantFrames.zeroWeight_upd
   check ``Verification.TolerantFrames.dfsStep_measure
@@ -872,10 +890,7 @@ run_cmd do
   check ``Verification.TolerantFrames.checkedYields_reassign
   check ``Verification.TolerantFrames.NodeYieldChecks.reassign
   check ``Verification.TolerantFrames.nodesYield_of
-  let env ← getEnv
-  let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
-    | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
-    | none => false
-  let lemmas := (Compiler.CSimp.ext.getState env).thmNames.toList.filter project
-  if lemmas.isEmpty then throwError "no @[csimp] lemma of the project found"
-  for decl in lemmas do check decl
+  check ``Verification.TolerantFrames.checkNode_reassign
+  check ``Verification.TolerantFrames.regionalDerivChecked_reassign
+  check ``Verification.TolerantFrames.regionsTyped_of_tree
+  check ``Verification.TolerantFrames.regionsHeld_of

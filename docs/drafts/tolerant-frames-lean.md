@@ -1376,7 +1376,7 @@ side's `recordsSound_of` and `recordsChecked_of`), each with what
 discharges it and the theorem that consumes it:
 
 ```math
-\mathrm{SetupRecords} \wedge \mathrm{VisitsRecord} \wedge \mathrm{SubtypeAnswersAll} \wedge \mathrm{ExitsYield} \wedge \mathrm{RegionsHeld} \Longrightarrow \mathrm{RunSound}
+\mathrm{SetupRecords} \wedge \mathrm{VisitsRecord} \wedge \mathrm{SubtypeAnswersAll} \wedge \mathrm{ExitsYield} \wedge \mathrm{RegionsRecorded} \wedge \mathrm{RegionsTyped} \Longrightarrow \mathrm{RunSound}
 ```
 
 The pass keeps the read summaries it was given with no hypothesis
@@ -1385,7 +1385,8 @@ The pass keeps the read summaries it was given with no hypothesis
 and each visited node's kept yields are judged and meet the return's goal
 at every admitted reassigned graph (`nodesYield_of`: the visit's yield
 checks, `NodeYieldChecks`, a field of `NodePassChecked`, hold there by
-`NodeYieldChecks.reassign`).
+`NodeYieldChecks.reassign`); the regional premise `RegionsHeld` follows
+from `RegionsRecorded` and `RegionsTyped` (`regionsHeld_of`).
  Pass changes are named by the pass lane's
 items in its queue; the pass lane (`engine-pass`) is at 58834875, where D1
 to D4, D9 (`passShapeCheck'`), D10 (one written assertion per label), D11
@@ -1405,7 +1406,8 @@ its type (`walkStopsRefuse`, from `StopOutcome.outcome_ne_accepted`).
 | `SetupRecords`, `VisitsRecord` | the walk side (Leg 19b): what the setup gives (`EnvFacts`, `RecInv`, queue entry W4; `EnvFacts` from four equations of the setup, `envFacts_of_loopHeads`), what each visit that returns gives (`VisitFacts`: the record's fields, and at the visited label its checked step with `NodePassChecked` in the setup's `deadArr`: the footprint and return checks and the kept yields' checks `NodeYieldChecks` over a sound summary table; queue entries R2, W5 and W6 make the visit's parts readable) | `recordsSound_of` and `recordsChecked_of`, then `run_traversedC` |
 | `SubtypeAnswersAll` | pass change D5: an answer `subtypeUsing` accepts from any answers is an inclusion of meanings, at every graph (the answers' `subtypes` cache carries no soundness, so this is not provable of the pass as it is; `proved_sound` is the form the change can give) | `nodesYield_of` (the return's goal, `goalHolds_of_returnY`) |
 | `ExitsYield` | over a checked walk, at the yields the visit kept (`NodeChecked.ys`), `NodeExitsY`: each exit by `exitDeliversAJ_of` from `exitDeliversY_of_edge` or `exitDeliversY_head` (the edge's checks, the target's types by `refinedEdge_env`), `assertsAt_of_edge` (the assertion check at the refined context) and `exitJoinedY` (the merge's recorded edge at `SinglePass.refinedContext`); the handler by `handlerDelivers_of_edge` and `joinedAt_of_exit` at the node's context; the edge checks to be read off the visit (queue entries W6, W5, R1) and carried to every reassigned graph (`edgeEvidenceChecked_reassign`, `headQuery_reassign`, `assertionQuery_reassign`) | `nodesYield_of`, then `stepEdgesSound_of_yields` |
-| `RegionsHeld` | over a checked walk (the regional check joins `NodePassChecked`); `regionsKept_of` from `RegionNodeOk` at every visited node (`RegionNodeOk.ofCheck`); `RegionalTyped` by `regionalTyped_of_tree` from `SinglePass.regionalDerivChecked` and the tree disjunct (D14, queued: the check's `requiresTree` disjunct reads the step's facts, which the regional evidence's entry does not state), by `regionalTyped_copy` at a copy; left: a step with step evidence alone (its rule's judgment holds where the step's facts do, which the regional evidence's entry, the entry's whole materialization, does not state), and `TablesAgree` at every visited node (the graph's tables the region states each visited node's check used at its label, queue entry R4; each target's entry within its predecessors' by `meet_sub` and the in-degree order) | `run_guarantee` (`regionally`) |
+| `RegionsRecorded` | tables of the graph whose start entry holds each region's own position and no fresh value, cell or field, and at every visited node the visit's regional check (`checkNode` at `passRegionalEvidenceOf`) accepting over the node's own tables, which agree with the graph's (`TablesAgree`): the check read off the visit (queue entry W6), the graph's tables the region state each label's own check used, recorded per label (queue entry R4), each target's entry within its predecessors' by `meet_sub` and the in-degree order | `regionsHeld_of`, then `run_guarantee` (`regionally`) |
+| `RegionsTyped` | at every visited node, the regional evidence's entry the node's context and the evidence typed (`RegionalTyped`) at every admitted reassigned graph: proved where the step's derivation passes its tree check (`regionsTyped_of_tree`) and at a copy (`regionalTyped_copy`); the tree check's `requiresTree` disjunct and step evidence alone read the step's facts `stepK`, which the evidence's entry states once it holds `kHere` together with `stepK` (queue entry R3) | `regionsHeld_of` |
 
 ## Leg 17a: the per-node hypotheses from the pass's checks
 
@@ -1979,6 +1981,24 @@ results at `reassign G η` (proved: `derivChecked_reassign`,
 graph), `ExitsYield` stating each visited node's exits and handler
 delivering with its kept yields (`NodeExitsY`).
 
+**The regional premise from the visits' regional checks.** Module
+`lean/Verification/Programs/TolerantFramesRegionalHeld.lean`. The regional
+check of one node and the regional derivation check give the same results
+at every reassigned graph (proved: `checkNode_reassign`,
+`regionalDerivChecked_reassign`). With the graph's tables of
+`RegionsRecorded` and the evidence typed (`RegionsTyped`), the regional
+facts `RegionX` hold at the start (`regionX_start`) and every visited node
+keeps them (`regionsKept_of` from `RegionNodeOk.ofCheck`, the evidence's
+entry facts by `regionNodeEntry_of`):
+
+```math
+\mathrm{RegionsRecorded} \wedge \mathrm{RegionsTyped} \Longrightarrow \mathrm{RegionsHeld}
+```
+
+(`regionsHeld_of`). Where the step's derivation passes its tree check,
+the evidence is typed at every reassigned graph (proved:
+`regionsTyped_of_tree`).
+
 Premises this leg discharges / leaves:
 
 - `WalkStopsRefuse`: discharged (`walkStopsRefuse`).
@@ -2002,6 +2022,6 @@ Premises this leg discharges / leaves:
 - `NodesYield`: reduced to `SubtypeAnswersAll` (pass change D5) and
   `ExitsYield` (`nodesYield_of`), the yield checks a field of
   `NodePassChecked` and so part of `VisitsRecord`.
-- `TablesAgree`: left; the graph's tables are the region states each
-  visited node's check used at its label, which the record does not keep
-  (queue entry R4).
+- `RegionsHeld`: reduced to `RegionsRecorded` (the visit's regional check
+  and the graph's tables, queue entries W6 and R4) and `RegionsTyped` (the
+  cases no proof covers, queue entry R3) (`regionsHeld_of`).
