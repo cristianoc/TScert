@@ -25,6 +25,8 @@ export type Group = { name: string; range?: string; records: CommitRecord[]; fil
 const OUTCOMES = new Map<string, string>([
   ["verified", "ok"], ["refused", "principled"], ["gap", "gap"], ["no-behaviour-change", "neutral"],
 ]);
+/** A verdict's colour: an acceptance as a verified unit's, a refusal as a refused one's. */
+const VERDICTS = new Map<string, string>([["verified", "ok"], ["accepted", "ok"], ["refused", "principled"], ["gap", "gap"]]);
 const FACTS = ["Parts", "Lean", "Wire", "Trust", "Depends", "Measured", "Tests"];
 
 /** The trailers of a message: its last paragraph, when every line of it is
@@ -84,9 +86,10 @@ function pushProse(sections: Section[]): Section {
 const words = (r: CommitRecord, key: string): string[] => (r.trailers.get(key) ?? "").split(/\s+/).filter(Boolean);
 
 function tests(value: string): string {
-  return value.split(/\s+(?=[+-]|forged:)/).map(t => {
-    const kind = t.startsWith("+") ? "pos" : t.startsWith("-") ? "neg" : t.startsWith("forged:") ? "forged" : "plain";
-    return `<span class="test ${kind}">${esc(t.replace(/^[+-]|^forged:/, ""))}</span>`;
+  return value.split(/\s+(?=[+-]|forged:|forced:)/).map(t => {
+    const kind = t.startsWith("+") ? "pos" : t.startsWith("-") ? "neg" : t.startsWith("forged:") ? "forged"
+      : t.startsWith("forced:") ? "forced" : "plain";
+    return `<span class="test ${kind}">${esc(t.replace(/^[+-]|^forged:|^forced:/, ""))}</span>`;
   }).join(" ");
 }
 
@@ -289,8 +292,9 @@ const PLAIN_KINDS: ReadonlySet<string> = new Set(["Tooling"]);
 
 /** A lowering: each `source ⇝ target` line is the TypeScript form (highlighted)
  * mapped to its term in the calculus (operations coloured); `label: …` lines
- * are side conditions; a trailing parenthesized remark is a note. */
-function lowering(lines: string[], typing: boolean = false): string {
+ * are side conditions; a trailing parenthesized remark is a note. A proposal's
+ * lines are drawn the same way with `⇒`, the target the type or effect proposed. */
+function lowering(lines: string[], typing: boolean = false, to: "⇝" | "⇒" = "⇝"): string {
   const term = (t: string): string =>
     math(t);
   const note = (t: string): [string, string] => {
@@ -299,18 +303,109 @@ function lowering(lines: string[], typing: boolean = false): string {
   };
   return `<div class="lowering">${lines.filter(l => l.trim()).map(l => {
     const [body, remark] = note(l.trim());
-    const arrow = body.indexOf("⇝");
+    const arrow = body.indexOf(to);
     if (arrow >= 0) {
-      const src = `<code class="src">${highlight(body.slice(0, arrow).trim())}</code>`;
+      // A form written as code, `x as unknown`, is that code.
+      const form = body.slice(0, arrow).trim().replace(/^`([^`]+)`$/, "$1");
+      const src = `<code class="src">${highlight(form)}</code>`;
       // A type's meaning is written ⟦source⟧ = type; a lowering, source ⇝ term.
       return typing
         ? `<div class="map"><span class="tgt sem">⟦${src}⟧</span><span class="to">=</span><span class="tgt">${term(body.slice(arrow + 1).trim())}</span>${remark}</div>`
-        : `<div class="map">${src}<div class="result"><span class="to">⇝</span><span class="tgt">${term(body.slice(arrow + 1).trim())}</span>${remark}</div></div>`;
+        : `<div class="map">${src}<div class="result"><span class="to">${to}</span><span class="tgt">${term(body.slice(arrow + 1).trim())}</span>${remark}</div></div>`;
     }
     const lab = /^([a-z][\w ]{0,24}):\s+(.*)$/.exec(body);
     if (lab) return `<div class="cond"><span class="label">${esc(lab[1])}</span><span class="tgt">${term(lab[2])}</span>${remark}</div>`;
     return `<div class="cond"><span class="tgt">${term(body)}</span>${remark}</div>`;
   }).join("")}</div>`;
+}
+
+/** A block's paragraphs (runs of lines separated by blank lines), each line
+ * indented past its paragraph's first joined to the line above. */
+function paragraphs(lines: string[]): string[][] {
+  const out: string[][] = [];
+  let current: string[] = [];
+  let indent = 0;
+  for (const l of lines) {
+    if (!l.trim()) {
+      if (current.length) out.push(current);
+      current = [];
+      continue;
+    }
+    const at = /^ */.exec(l)?.[0].length ?? 0;
+    const last = current.length - 1;
+    if (last >= 0 && at > indent) current[last] = `${current[last]} ${l.trim()}`;
+    else {
+      if (last < 0) indent = at;
+      current.push(l.trim());
+    }
+  }
+  if (current.length) out.push(current);
+  return out;
+}
+
+const prose = (lines: string[]): string => `<p>${inline(lines.join(" ").replace(/\s+/g, " ").trim())}</p>`;
+
+/** A `Proposal`: its `<TypeScript form> ⇒ <type or effect>` lines and their
+ * `label: …` side conditions drawn as a lowering's are; a paragraph with no
+ * `⇒` is prose. */
+function proposal(lines: string[]): string {
+  return paragraphs(lines).map(g => (g.some(l => l.includes("⇒")) ? lowering(g, false, "⇒") : `<div class="prose">${prose(g)}</div>`)).join("");
+}
+
+/** A `Check`: each `at <where>: <what must hold>` line an obligation, the
+ * place set apart and what must hold typeset; the lines after it in its
+ * paragraph continue it. A paragraph with no such line is prose. */
+function check(lines: string[]): string {
+  return paragraphs(lines).map(g => {
+    if (!/^at\s/.test(g[0] ?? "")) return `<div class="prose">${prose(g)}</div>`;
+    const obligations: string[] = [];
+    for (const l of g) {
+      const last = obligations.length - 1;
+      if (/^at\s/.test(l) || last < 0) obligations.push(l);
+      else obligations[last] = `${obligations[last]} ${l}`;
+    }
+    return `<div class="obligations">${obligations.map(o => {
+      // The place ends at the first colon outside code.
+      const m = /^at\s+((?:`[^`]*`|[^`:])*?):(?:\s+(.*))?$/.exec(o);
+      return m ? `<div class="obligation"><span class="where"><span class="at">at</span> ${inline(m[1] ?? "")}</span><span class="tgt">${math(m[2] ?? "")}</span></div>`
+        : `<div class="obligation"><span class="tgt">${math(o)}</span></div>`;
+    }).join("")}</div>`;
+  }).join("");
+}
+
+/** A `Control`: a small card with the force's name (`TSCERT_FORCE=<name>`,
+ * else the heading's object), what it makes the computation state, the unit
+ * it is shown on and its two outcomes, `unforced: accepted` and
+ * `forced: refused at <obligation>`, drawn as outcomes are. A line of none of
+ * these is the statement. */
+function control(lines: string[], target: string): string {
+  const fields = new Map<string, string>();
+  const statement: string[] = [];
+  for (const g of paragraphs(lines)) {
+    const said: string[] = [];
+    for (const l of g) {
+      const m = /^(force|unit|unforced|forced|states):\s*(.*)$/.exec(l);
+      if (m?.[1] !== undefined) fields.set(m[1], m[2] ?? "");
+      else said.push(l);
+    }
+    if (said.length) statement.push(prose(said));
+  }
+  const all = [...fields.values(), ...lines].join(" ");
+  const name = /TSCERT_FORCE=([\w.-]+)/.exec(all)?.[1] ?? target.replace(/`/g, "");
+  const states = fields.get("states");
+  const unit = fields.get("unit");
+  const outcome = (label: string, value: string | undefined): string => {
+    if (value === undefined) return "";
+    const [verdict = "", ...why] = value.trim().split(/\s+/);
+    return `<span class="label">${label}</span> <span class="verdict ${VERDICTS.get(verdict) ?? ""}">${esc(verdict)}</span>` +
+      (why.length ? ` <span class="why">${inline(why.join(" "))}</span>` : "");
+  };
+  const unforced = outcome("unforced", fields.get("unforced")), forced = outcome("forced", fields.get("forced"));
+  return `<div class="control"><div class="control-head"><code>TSCERT_FORCE=${esc(name)}</code>` +
+    (unit ? `<span class="unit">${inline(unit)}</span>` : "") + `</div>` +
+    (states ? `<p>${inline(states)}</p>` : "") + statement.join("") +
+    (unforced || forced ? `<div class="outcomes">${unforced}${unforced && forced ? ' <span class="arrow">→</span> ' : ""}${forced}</div>` : "") +
+    `</div>`;
 }
 
 /** The program of an example, the span its diagnostic names marked. */
@@ -322,27 +417,40 @@ function program(e: Example): string {
 }
 
 /** An Effect line: `case   kind   old → new   reason`, three or more spaces
- * apart; ⚠ after the old outcome marks it unsound. A line naming a pipeline
- * case expands to the case's program at the commit. */
+ * apart; ⚠ after an outcome marks it unsound. An `agreement` line names a case
+ * and one of its units, `case unit`, the single pass's verdict before and
+ * after, and the pipeline's verdict it is compared with, `pipeline <verdict>:
+ * <reason>`. A line naming a pipeline case expands to the case's program at
+ * the commit. */
 function effects(lines: string[], examples: Map<string, Example>): string {
   // `control` is no kind of the review skill; records of the history use it.
-  const KINDS = new Set(["positive", "negative", "gap", "control"]);
+  const KINDS = new Set(["positive", "negative", "gap", "control", "agreement"]);
   return `<ul class="effect">${lines.filter(l => l.trim()).map(l => {
     // A line holds a word, so `parts` gives at least one.
     const rest = parts(l);
-    const what = rest.shift() ?? "";
-    const example = examples.get(what);
+    const field = rest.shift() ?? "";
     const first = rest[0];
+    const agreement = first === "agreement";
+    // An agreement line's first field is the case, then the unit.
+    const [what = "", ...unitWords] = agreement ? field.split(/\s+/) : [field];
+    const unit = unitWords.join(" ");
+    const example = examples.get(what);
     const kind = first !== undefined && KINDS.has(first) ? rest.shift() : example?.kind;
     const next = rest[0];
     const change = next !== undefined && next.includes("→") ? rest.shift() ?? "" : "";
     const sides = change.split("→").map(x => x.trim());
     const old = sides[0] ?? "", now = sides[1] ?? "";
     const outcome = change
-      ? `<span class="was${old.includes("⚠") ? " unsound" : ""}">${inline(old)}</span> <span class="arrow">→</span> <span class="now">${inline(now)}</span>`
+      ? `<span class="was${old.includes("⚠") ? " unsound" : ""}">${inline(old)}</span> <span class="arrow">→</span> <span class="now${now.includes("⚠") ? " unsound" : ""}">${inline(now)}</span>`
       : "";
-    const line = `<code>${esc(what)}</code>${kind ? ` <span class="kind ${esc(kind)}">${esc(kind)}</span>` : ""}` +
-      (outcome ? ` ${outcome}` : "") + (rest.length ? ` <span class="why">${rest.map(inline).join(" ")}</span>` : "");
+    const pipeline = agreement ? /^pipeline\s+(\S+?):?(?:\s+(.*))?$/.exec(rest[0] ?? "") : null;
+    if (pipeline) rest[0] = pipeline[2] ?? "";
+    const verdict = pipeline?.[1];
+    const reason = rest.filter(Boolean);
+    const line = `<code>${esc(what)}</code>${unit ? ` <span class="unit">${esc(unit)}</span>` : ""}${kind ? ` <span class="kind ${esc(kind)}">${esc(kind)}</span>` : ""}` +
+      (outcome ? ` ${outcome}` : "") +
+      (verdict !== undefined ? ` <span class="pipeline">pipeline <span class="verdict ${VERDICTS.get(verdict) ?? ""}">${esc(verdict)}</span>${reason.length ? ":" : ""}</span>` : "") +
+      (reason.length ? ` <span class="why">${reason.map(inline).join(" ")}</span>` : "");
     return `<li>${example ? `<details><summary>${line}</summary>${program(example)}</details>` : line}</li>`;
   }).join("")}</ul>`;
 }
@@ -382,7 +490,8 @@ function section(s: Section, examples: Map<string, Example> = new Map()): string
   if (kind === "Effect") return head + text + effects(lines, examples);
   const split = versions(lines);
   const draw = (body: string[], mark: "add" | "del" | "" = "", other: string[] = []): string =>
-    kind === "Lowering" ? lowering(body) : MATH_KINDS.has(kind) ? rules(body, kind) : CODE_KINDS.has(kind) ? codeBlock(body, mark, other)
+    kind === "Lowering" ? lowering(body) : kind === "Proposal" ? proposal(body) : kind === "Check" ? check(body)
+    : kind === "Control" ? control(body, target) : MATH_KINDS.has(kind) ? rules(body, kind) : CODE_KINDS.has(kind) ? codeBlock(body, mark, other)
     : PLAIN_KINDS.has(kind) ? `<pre class="code">${body.map(l => `<span class="ln">${esc(l) || " "}</span>`).join("")}</pre>`
     : `<div class="prose">${body.join("\n").split(/\n\s*\n/).map(p => `<p>${inline(p.replace(/\s+/g, " ").trim())}</p>`).join("")}</div>`;
   if (!split) return head + text + draw(lines);
@@ -407,7 +516,7 @@ function card(r: CommitRecord): string {
     if (v === undefined) return [];
     const shown =
       k === "Parts" ? v.split(/\s+/).map(p => `<span class="chip${/semantics|trust|wire/.test(p) ? " strong" : ""}">${esc(p)}</span>`).join(" ")
-      : k === "Tests" && /(^|\s)([+-]|forged:)/.test(v) ? tests(v)
+      : k === "Tests" && /(^|\s)([+-]|forged:|forced:)/.test(v) ? tests(v)
       : k === "Trust" ? `<span class="${v === "none" ? "none" : "trust"}">${esc(v)}</span>`
       : inline(v.replace(/; /g, " · "));
     return [`<dt>${k}</dt><dd>${shown}</dd>`];
@@ -431,8 +540,17 @@ function summary(groups: Group[]): string {
     const units = ["verified", "refused", "gap"].map(o => [o, count(o)] as const).filter(([, n]) => n).map(([o, n]) => `${n} ${o}`).join(", ");
     const list = (key: string, skip: string = ""): string[] => [...new Set(g.records.map(r => r.trailers.get(key) ?? "").filter(v => v && v !== skip))];
     const parts = [...new Set(g.records.flatMap(r => words(r, "Parts")))];
+    const changes = new Map<string, number>();
+    for (const r of g.records) for (const s of r.sections) {
+      const { kind, action } = changeHead(s.name);
+      if (action) changes.set(kind, (changes.get(kind) ?? 0) + 1);
+    }
+    const agreements = g.records.flatMap(r => r.sections.filter(s => s.name === "Effect").flatMap(s => s.block))
+      .filter(l => l.trim().split(/\s{3,}/)[1] === "agreement").length;
     const facts = [
       `${g.records.length} commit${g.records.length === 1 ? "" : "s"}${units ? `, units ${units}` : ""}`,
+      ...(changes.size ? [`changes: ${[...changes].map(([k, n]) => `${n} ${esc(k)}`).join(", ")}`] : []),
+      ...(agreements ? [`agreement lines: ${agreements}`] : []),
       `parts: ${parts.map(p => `<span class="chip${/semantics|trust|wire/.test(p) ? " strong" : ""}">${esc(p)}</span>`).join(" ")}`,
       ...list("Trust", "none").map(t => `new trust: <span class="trust">${esc(t)}</span>`),
       ...list("Wire").map(w => `wire: ${inline(w)}`),
@@ -492,6 +610,7 @@ dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:b
 .test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
 .test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
 .test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
 details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
 .table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
 table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
@@ -530,6 +649,16 @@ var { font-style:italic } .m-op { color:${SYNTAX.op}; font-style:normal } .m-con
 .lowering .refused { color:var(--neg); font-weight:600 }
 .lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
 .lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:${SYNTAX.unsound}; font-weight:600 }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
 @media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }`;
 
