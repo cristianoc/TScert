@@ -57,8 +57,8 @@ omit [Hashable ι] in
 (`checkedYields`' filter by `yieldFollows`). -/
 theorem checkedYields_follows {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ : List (Ty ι)} {A : Ty ι}
     {xs : List (PromiseCalls.Implication ι)} {k out : HeapKnowledge.Knowledge} {e : ProgramCertificates.Evidence ι}
-    {t : Tm} {ys : List (PromiseCalls.Yield ι)} (hp : PromiseCalls.promiseOf G e = none) :
-    (checkedYields G images Γ A xs k out e t ys).all (PromiseCalls.yieldFollows G images Γ xs k.links t) = true := by
+    {t : Tm} {pc : Unit → Bool} {ys : List (PromiseCalls.Yield ι)} (hp : PromiseCalls.promiseOf G e = none) :
+    (checkedYields G images Γ A xs k out e t pc ys).all (PromiseCalls.yieldFollows G images Γ xs k.links t) = true := by
   unfold checkedYields
   split
   · rfl

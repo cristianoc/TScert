@@ -129,8 +129,9 @@ variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
 /-- **What `run` checks of a node's kept yields and its return** (read off
 the visit): the yields `ys` none, or those `checkedYields` keeps at the
 implications `slotImplOf entry.names xs` for `xs` among the label's, the
-step's facts and output and a derivation `deriv` that a promise call's
-`derivChecked` accepts (`PromiseDerivChecked`); at a return, `returnCheck`
+step's facts and output, a derivation `deriv` and the pass's promise check
+(`SinglePass.promiseDerivChecked`) over a summary table `sums'` within
+`sums`; at a return, `returnCheck`
 refusing nothing at `ys`, with the subtype answers sound and the promised
 argument's name the start name of the goal's slot. -/
 structure NodeYieldChecks (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
@@ -138,10 +139,10 @@ structure NodeYieldChecks (G : NormalGraph ι) (images : InstanceImageCheck G) (
     (ensures : List HeapKnowledge.IndexFact) (l : Nat) (node : Node) (c : PointClaim ι) (entry : SinglePass.State)
     (st : Stepped ι) (ys : List (PromiseCalls.Yield ι)) : Prop where
   kept : ys = [] ∨ ∃ (xs : List (PromiseCalls.Implication ι)) (deriv : ProgramCertificates.Evidence ι)
-    (ys0 : List (PromiseCalls.Yield ι)), (∀ x ∈ xs, x ∈ w.implies l) ∧
-    PromiseDerivChecked G images codes sums c node st.stepK deriv ∧
+    (ys0 : List (PromiseCalls.Yield ι)) (sums' : List (ReadSummary ι)), (∀ x ∈ xs, x ∈ w.implies l) ∧
+    (∀ s ∈ sums', s ∈ sums) ∧
     ys = checkedYields G images c.context c.type (slotImplOf entry.names xs) st.stepK st.stepOut deriv
-      node.expression ys0
+      node.expression (fun _ => SinglePass.promiseDerivChecked G images codes sums' c node st.stepK deriv) ys0
   ret : node.continuation = .ret → SubtypeAnswersSound G images ∧ ∃ start argName debugNode answers,
     (returnCheck G images goal ensures c l entry st.store st.result start startNames argName ys debugNode
       answers).1 = none ∧ argName = goal.slot.bind (startNames[·]?)
@@ -171,9 +172,9 @@ theorem nodeYielded_of_checks {G : NormalGraph ι} {images : InstanceImageCheck 
     NodeYielded G w startNames ρ0 ctx stated given edgesIn (GoalHolds G goal (goal.argument ρ0)) m l node c entry st
       ys where
   judged := by
-    rcases hc.kept with rfl | ⟨xs, deriv, ys0, hsub, hpd, rfl⟩
+    rcases hc.kept with rfl | ⟨xs, deriv, ys0, sums', hsub, hss, rfl⟩
     · exact yieldsJudged_nil
-    · exact yieldsJudged_of_checked (fun ρ s hS => slotImplOf_entry hsub hS) hpd hcodes hsums
+    · exact yieldsJudged_of_checked (fun ρ s hS => slotImplOf_entry hsub hS) hcodes (fun s hs => hsums s (hss s hs))
   ret hk := by
     obtain ⟨hsub, start, argName, debugNode, answers, h, harg⟩ := hc.ret hk
     exact goalHolds_of_returnY hsub h harg

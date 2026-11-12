@@ -664,6 +664,7 @@ run_cmd do
   check ``Verification.TolerantFrames.OnPath.entailed_ok_checked
   check ``Verification.TolerantFrames.linearNearFuel_sound
   check ``Verification.TolerantFrames.linearNearSound_of_eq
+  check ``Verification.TolerantFrames.linearNearFuelEq
   check ``Verification.TolerantFrames.slotsOfNames_get
   check ``Verification.TolerantFrames.atSlots_ok
   check ``Verification.TolerantFrames.meetImplications_ok_of_check
@@ -751,6 +752,7 @@ run_cmd do
   check ``Verification.TolerantFrames.yieldsOk_passReturnYields
   check ``Verification.TolerantFrames.yieldsJudged_of_promise
   check ``Verification.TolerantFrames.yieldsJudged_nil
+  check ``Verification.TolerantFrames.promiseDerivChecked_of
   check ``Verification.TolerantFrames.yieldsJudged_of_checked
   check ``Verification.TolerantFrames.exitDeliversY_head
   check ``Verification.TolerantFrames.goalHolds_of_returnY

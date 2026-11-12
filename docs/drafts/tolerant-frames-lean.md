@@ -1052,15 +1052,16 @@ entailment reads, `q.store.linearNear a.names`. Proved:
 `checked_bound_holds`, `mergeEntailed_inv` (the merge's own check is the
 premise the bound's holding reads).
 
-**The facts near a merge's names.** `linearNearFuel s names limit fuel` is
-`Store.linearNear`'s search by structural recursion on `fuel` (default
-`s.size + 1`): each round (`nearRound`) reads every frontier name's facts and
+**The facts near a merge's names.** `Store.linearNear` is the pass's
+search on fuel `SinglePass.linearNearFuel s names limit fuel`, by
+structural recursion on `fuel` (default `s.size + 1`): each round (`nearRound`) reads every frontier name's facts and
 keeps an unconditional index fact not kept yet while fewer than `limit` are
 listed (`nearStep`); the rounds run while the frontier is non-empty
 (`nearLoop`). Proved: `linearNearFuel_sound`, every fact it lists is an
 unconditional `index` fact of the store, at any fuel;
-`linearNearSound_of_eq`: `LinearNearFuelEq` (the pass's `linearNear` is
-`linearNearFuel` at fuel `s.size + 1`) gives `LinearNearSound`.
+`linearNearFuelEq` (the pass's `linearNear` is `linearNearFuel` at fuel
+`s.size + 1`, by its definition) and `linearNearSound_of_eq`, which gives
+`LinearNearSound` from it.
 
 **The joined implications.** The pass records each edge into a merge as
 $`(\Gamma_e, \mathit{atSlots}, m)`$: the source's context, the implications
@@ -1372,11 +1373,12 @@ side's `recordsSound_of` and `recordsChecked_of`), each with what
 discharges it and the theorem that consumes it:
 
 ```math
-\mathrm{SetupRecords} \wedge \mathrm{VisitsRecord} \wedge \mathrm{NodesYield} \wedge \mathrm{LinearNearFuelEq} \wedge \mathrm{RegionsHeld} \Longrightarrow \mathrm{RunSound}
+\mathrm{SetupRecords} \wedge \mathrm{VisitsRecord} \wedge \mathrm{NodesYield} \wedge \mathrm{RegionsHeld} \Longrightarrow \mathrm{RunSound}
 ```
 
 The pass keeps the read summaries it was given with no hypothesis
-(`runKeepsSummaries`, the unit level's `RunKeepsSummaries`).
+(`runKeepsSummaries`, the unit level's `RunKeepsSummaries`), and its
+`linearNear` is its search on fuel by definition (`linearNearFuelEq`).
  Pass changes are named by the pass lane's
 items in its queue; the pass lane (`engine-pass`) is at a749210f, where D1
 to D4, D9 (`passShapeCheck'`), D10 (one written assertion per label), D11
@@ -1392,8 +1394,7 @@ its type (`walkStopsRefuse`, from `StopOutcome.outcome_ne_accepted`).
 | Premise | Discharged by | Consumed by |
 | --- | --- | --- |
 | `SetupRecords`, `VisitsRecord` | the walk side (Leg 19b): what the setup gives (`EnvFacts`, `RecInv`, queue entry W4), what each visit that returns gives (`VisitFacts`: the record's fields, and at the visited label its checked step with `NodePassChecked` in the setup's `deadArr`; queue entries R2, W5 and W6 make the visit's parts readable) | `recordsSound_of` and `recordsChecked_of`, then `run_traversedC` |
-| `NodesYield` | over a checked walk (`WalkChecked`, whose `NodePassChecked` takes the visit's yield and edge checks as fields once they are read off the visit); per node, `nodeYielded_of_checks`: the judgment and the return's goal from `NodeYieldChecks` (the visit's kept yields, `PromiseDerivChecked` (D12), the return check); each exit by `exitDeliversAJ_of` from `exitDeliversY_of_edge` or `exitDeliversY_head` (the edge's checks, the target's types by `refinedEdge_env`), `assertsAt_of_edge` (the assertion check at the refined context) and `exitJoinedY` (the merge's recorded edge at `SinglePass.refinedContext`); the handler by `handlerDelivers_of_edge` and `joinedAt_of_exit` at the node's context; all read off the visit | `stepEdgesSound_of_yields` |
-| `LinearNearFuelEq` | a pass change: `Store.linearNear` as `linearNearFuel` (with `linearNearFuel_rounds`) | `entry_of_edgeA`, through `nodesChecked_of_walkJ` |
+| `NodesYield` | over a checked walk (`WalkChecked`, whose `NodePassChecked` takes the visit's yield and edge checks as fields once they are read off the visit); per node, `nodeYielded_of_checks`: the judgment and the return's goal from `NodeYieldChecks` (the visit's kept yields, the pass's promise check `promiseDerivChecked`, `promiseDerivChecked_of`, the return check); each exit by `exitDeliversAJ_of` from `exitDeliversY_of_edge` or `exitDeliversY_head` (the edge's checks, the target's types by `refinedEdge_env`), `assertsAt_of_edge` (the assertion check at the refined context) and `exitJoinedY` (the merge's recorded edge at `SinglePass.refinedContext`); the handler by `handlerDelivers_of_edge` and `joinedAt_of_exit` at the node's context; all read off the visit | `stepEdgesSound_of_yields` |
 | `RegionsHeld` | over a checked walk (the regional check joins `NodePassChecked`); `regionsKept_of` from `RegionNodeOk` at every visited node (`RegionNodeOk.ofCheck`); `RegionalTyped` by `regionalTyped_of_tree` from `SinglePass.regionalDerivChecked` and the tree disjunct (D14, queued: the check's `requiresTree` disjunct reads the step's facts, which the regional evidence's entry does not state), by `regionalTyped_copy` at a copy; left: a step with step evidence alone (its rule's judgment holds where the step's facts do, which the regional evidence's entry, the entry's whole materialization, does not state), and `TablesAgree` at every visited node (the graph's tables the region states each visited node's check used at its label, queue entry R4; each target's entry within its predecessors' by `meet_sub` and the in-degree order) | `run_guarantee` (`regionally`) |
 
 ## Leg 17a: the per-node hypotheses from the pass's checks
@@ -1566,9 +1567,9 @@ Premises this leg discharges / leaves:
   the per-node side), the walk records `MergeEdgeRecorded`; then
   `entries_of_traversedJ` takes the place of `MergesSound`'s second
   conjunct.
-- `LinearNearFuelEq`: the rounds bound discharged (`linearNearFuel_rounds`);
-  left: the equation of the pass's `while` loop with `linearNearFuel`, and
-  the terms an entailment reads named by the facts it reads.
+- `LinearNearFuelEq`: discharged (`linearNearFuelEq`, the pass's
+  definition; the rounds bound `linearNearFuel_rounds`); left: the terms an
+  entailment reads named by the facts it reads.
 
 ## Leg 18b: the driver's record read as the walk
 
@@ -1710,8 +1711,8 @@ Premises this leg discharges / leaves:
   side's, by `joined_of_exit` at the source environment meeting the edge's
   refined context); the pass's per-edge check does not give them at an
   edge state alone.
-- `LinearNearFuelEq`, `RunKeepsSummaries`: left (`Store.linearNear` is a
-  `while` loop; the answers are threaded by the visit).
+- `LinearNearFuelEq`, `RunKeepsSummaries`: discharged (`linearNearFuelEq`,
+  `runKeepsSummaries`, Leg 19b).
 
 ## Leg 18a: the per-node side of the graph theorem
 
@@ -1766,8 +1767,8 @@ written assertion and a merge's joined implications). `NodesYield` is
 - `stepEdgesSound_of_yields`: `NodeChecked` ∧ `NodeYielded` at every
   visited label ∧ `CodesSound` ⟹ `StepEdgesSoundAt` at `edgePreAJ`;
 - `nodeYielded_of_checks`: `NodeYieldChecks` (the yields `checkedYields`
-  keeps at `slotImplOf` of the label's implications, `PromiseDerivChecked`,
-  at a return `returnCheck` refusing nothing) ∧ the exits and the handler
+  keeps at `slotImplOf` of the label's implications under the pass's
+  promise check over a table within the node's, at a return `returnCheck` refusing nothing) ∧ the exits and the handler
   delivering `edgePreAJ` ⟹ `NodeYielded`;
 - `exitJoinedY`: an edge recorded into a merge at `refinedContext` ∧
   `passRefined_env`'s premises ∧ its slots naming the names' values ∧ the
@@ -1791,8 +1792,8 @@ Premises this leg discharges / leaves:
 
 - `NodesMean`, `MergeExitsJoined`: replaced by `NodesYield`; its judgment
   and return discharged into `NodeYieldChecks` (the visit's checks); left:
-  each exit and the handler from the visit's edge checks, with D12
-  (`PromiseDerivChecked`).
+  each exit and the handler from the visit's edge checks; the promise
+  call's derivation from the pass's own check (`promiseDerivChecked_of`).
 - `AssertionsLabelled`: discharged (`labelsChecked`, the setup's check).
 - `FootprintsKept`, `ReturnsKept`: into `RecordsChecked` (`NodePassChecked`).
 - `RegionsHeld`: the regional derivation's typing over the pass's check

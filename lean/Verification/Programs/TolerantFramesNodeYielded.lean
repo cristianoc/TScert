@@ -112,16 +112,26 @@ end Slots
 section Judged
 variable {ι : Type} [DecidableEq ι] [Hashable ι]
 
-/-- **(Named hypothesis) A promise call's derivation is checked where its
-yields are kept** (the pass's queued change: `checkedYields`' promise
-branch behind `derivChecked`): where the step's derivation states a
-promise, `derivChecked` accepts it at the step's facts and its claim's type
-is the node's. -/
+/-- **A promise call's derivation checked**: where the step's derivation
+states a promise, `derivChecked` accepts it at the step's facts and its
+claim's type is the node's. -/
 def PromiseDerivChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
     (sums : List (ReadSummary ι)) (c : PointClaim ι) (node : Node) (stepK : HeapKnowledge.Knowledge)
     (deriv : ProgramCertificates.Evidence ι) : Prop :=
   (PromiseCalls.promiseOf G deriv).isSome = true →
     derivChecked G images codes sums c node stepK deriv = true ∧ (ProgramCertificates.claim deriv).type = c.type
+
+omit [Hashable ι] in
+/-- **The pass's promise check gives `PromiseDerivChecked`**
+(`SinglePass.promiseDerivChecked`: `derivChecked` and the claim's type the
+node's). -/
+theorem promiseDerivChecked_of {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
+    {sums : List (ReadSummary ι)} {c : PointClaim ι} {node : Node} {stepK : HeapKnowledge.Knowledge}
+    {deriv : ProgramCertificates.Evidence ι}
+    (h : SinglePass.promiseDerivChecked G images codes sums c node stepK deriv = true) :
+    PromiseDerivChecked G images codes sums c node stepK deriv := fun _ => by
+  simp only [SinglePass.promiseDerivChecked, Bool.and_eq_true, decide_eq_true_eq] at h
+  exact h
 
 omit [Hashable ι] in
 /-- **A promise call's kept yields are judged** (`YieldsJudged`): at a
@@ -156,18 +166,19 @@ omit [Hashable ι] in
 /-- **The yields `checkedYields` keeps are judged**: outside a promise call
 those `yieldFollows` accepts at the implications `xs`, which hold wherever
 the entry state does (`checkedYields_follows`, `yieldsJudged_of_follows`);
-at a promise call those `promiseYields` accepts, under
-`PromiseDerivChecked` (`yieldsJudged_of_promise`). -/
+at a promise call those `promiseYields` accepts where the pass's promise
+check `promiseDerivChecked` accepts the derivation
+(`yieldsJudged_of_promise`, `promiseDerivChecked_of`). -/
 theorem yieldsJudged_of_checked {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
     {sums : List (ReadSummary ι)} {c : PointClaim ι} {node : Node} {stepK out : HeapKnowledge.Knowledge}
     {deriv : ProgramCertificates.Evidence ι} {entry : SinglePass.State} {I : List (PromiseCalls.Implication ι)}
     {startNames : List Nat} {ρ0 : Env} {m : Nat} {xs : List (PromiseCalls.Implication ι)}
     {ys : List (PromiseCalls.Yield ι)}
     (hx : ∀ ρ (s : IndexedHeap), StateHolds G entry I startNames ρ0 ρ m s → PromiseCalls.ImpliesOk G xs ρ s.n s.W)
-    (hpd : PromiseDerivChecked G images codes sums c node stepK deriv)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums) :
     YieldsJudged G c.type c.context node.expression entry I startNames ρ0 m stepK
-      (checkedYields G images c.context c.type xs stepK out deriv node.expression ys) := by
+      (checkedYields G images c.context c.type xs stepK out deriv node.expression
+        (fun _ => SinglePass.promiseDerivChecked G images codes sums c node stepK deriv) ys) := by
   cases hp : PromiseCalls.promiseOf G deriv with
   | none => exact yieldsJudged_of_follows (checkedYields_follows hp) hx
   | some x =>
@@ -179,7 +190,8 @@ theorem yieldsJudged_of_checked {G : NormalGraph ι} {images : InstanceImageChec
       simp only
       split
       · rename_i hc
-        exact yieldsJudged_of_promise hp (Bool.and_eq_true_iff.mp hc).1 hpd hcodes hsums
+        simp only [Bool.and_eq_true] at hc
+        exact yieldsJudged_of_promise hp hc.1.1 (promiseDerivChecked_of hc.1.2) hcodes hsums
       · exact yieldsJudged_nil
 
 end Judged

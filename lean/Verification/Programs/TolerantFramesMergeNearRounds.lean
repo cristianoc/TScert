@@ -12,7 +12,7 @@ are distinct live facts, so at most `s.size` of them are listed
 (`NearInv.out_le`). -/
 namespace Verification.TolerantFrames
 open Verification Footprints HeapObservations HeapKnowledge
-open Verification.SinglePass (Atom Store State)
+open Verification.SinglePass (Atom Store State NearState nearStep nearRound nearLoop linearNearFuel)
 
 /-- A list without repeats inside another is no longer. -/
 theorem nodup_length_le {α : Type} [DecidableEq α] :
