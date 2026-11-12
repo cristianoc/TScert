@@ -1375,7 +1375,7 @@ The graph theorem `run_sound_single_pass`
 
 ```math
 \begin{aligned}
-&\mathrm{ExitsYield} \wedge \mathrm{RegionalWalkAlignment} \\
+&\mathrm{ExitsYield} \wedge \mathrm{RegionalRecordedTableAgreement} \\
 &\quad \wedge \mathrm{RegionalDiscardedSeparation} \wedge \mathrm{RegionalStepHeader}
 \quad\Longrightarrow \mathrm{RunSound}
 \end{aligned}
@@ -1384,12 +1384,30 @@ The graph theorem `run_sound_single_pass`
 | Premise | Obligation | Consumed by |
 | --- | --- | --- |
 | `ExitsYield` | Each checked node's normal exits and handler deliver `NodeExitsY` at every admitted reassigned graph. `nodeExitsY_of_checks` proves delivery from `NodeExitsChecked`, with freshness from the actual step execution. Assembly from the visit's records requires head-entry checks, handler bounds, incoming and merge membership, and semantic justification of the yields each exit reads. | `nodesYield_of` |
-| `RegionalWalkAlignment` | Every abstract `RunWalkA` meeting `WalkChecked` aligns with a driver state satisfying `RecInv`: the start and visited labels occur there, its recorded visits have the same node, claim, entry and step, their regional summary tables are sound, and their checked tables satisfy `TablesAgree` against `recordedRegionFacts` / `recordedRegionFresh`. The exact quantifiers are in `TolerantFramesRegionalRecorded.lean`. `WalkChecked` states node checks and exit traces; it contains no driver-origin witness. | `regionalVisitTables` |
+| `RegionalRecordedTableAgreement` | For every returned driver state with `EnvFacts`, `RecInv`, the regional configuration and sound final summaries, every successful regional visit matching a visited label record whose exit summaries prefix the final table satisfies `TablesAgree done.table (recordedRegionFacts σ.walk) done.ft (recordedRegionFresh σ.walk rg.names) l env.nodes[l]!`. This requires equality at the node, equal field names, and containment at every successor and handler. The exact quantified statement is in `TolerantFramesRegionalAlignment.lean`. | `regionalVisitTables_of_recordedAgreement` |
 | `RegionalDiscardedSeparation` | For a successful visit, let `a` be the whole entry materialization and `b = sd.st.stepK`. If `a.separation.depth ≠ b.separation.depth` and `b.separation.facts ≠ []`, then for every environment, `Holds a.separation` implies `Holds b.separation`. This is precisely the discarded branch of `SinglePass.regionalFacts` (lines 2635–2636). `regionalFacts_discard_counterexample` proves failure for arbitrary facts: `a = {}`, `b` has depth 1 and one fact separating slot 0 from its own field `x`, and slot 0 holds an object with `x` at location 0. Reachability of these inputs is not established. | `regionalStepBridge` |
 | `RegionalStepHeader` | At every successful `visitStep` with `sd.st.stepDeriv = none`, every `p` satisfying `sd.st.stepEffect.bind StepEvidence.proof? = some p` has `(claim p).context = env.claimed[l]!.context` and `(claim p).type = env.claimed[l]!.type`. `regionalAt` selects `.effect` at lines 2661–2664; its derivation check at line 2665 reads `stepDeriv`. | `regionalStepBridge` |
 
 Proved prerequisites:
 
+- `WalkChecked` carries the returned driver's record and each chosen node's
+  equality with its stored step. `SettledCore.node` and `RecordsChecked`
+  supply the step equality in the same existential as the node checks.
+  `checkedWalk_final` proves the final invariant, start visit, regional
+  configuration and summary soundness; `checkedWalk_nodeAlignment` proves
+  the claim, node, entry and step equalities.
+- `VisitOrigin` carries the exit summaries' prefix of the driver's table.
+  `recInv_visit` preserves it; `SetupOk.recInv` establishes its empty initial
+  case. `visitExits_answers_prefix` proves preservation at the visit boundary,
+  and `visitExits_regional_prefix` relates the regional check to the exits.
+  `RecInv.regionalWitnessSound` supplies sound summaries for the actual
+  recorded visit. `regionalVisitTables_of_recordedAgreement` uses that witness.
+- The stronger, universally quantified `RegionalWalkAlignment` follows from
+  `RegionalVisitEvidence` by `regionalWalkAlignment`. That local premise
+  requires the regional-summary prefix and table agreement for **every**
+  matching visit, including visits from arbitrary `before` states. The
+  origin invariant supplies a witness with a prefix; it does not establish
+  that universal prefix statement. The graph theorem uses the actual witness.
 - `RecInv.origins` retains each visited label's complete successful visit;
   `VisitFacts.origin`, `recInv_visit` and `SetupOk.recInv` establish its
   preservation and initial case. `exitsFold_regional` preserves the complete

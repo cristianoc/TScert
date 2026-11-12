@@ -173,15 +173,17 @@ theorem visitsSettle_of (hprefix : VisitStepPrefix ι) : VisitsSettle ι := by
         (fun s hs => ha s (((hprefix G I env _ l en sd ex hP.step hP.exits).trans hk).mem s hs))
         wf hb hwidth he.symm hi
         (fun s hs => ha s (hp.mem s hs))
-    refine ⟨r, hchecked, w, env, { σ with queue := rest }, en, sd, ex, ?_, rfl,
+    refine ⟨r, hchecked, ⟨w, env, { σ with queue := rest }, en, sd, ex, ?_, rfl,
       hP.facts.nodes, hP.facts.claims, hP.facts.codes, hP.facts.checker, ?_, hP.facts.stated,
-      hP.entry, hP.step, hP.exits, hn, hc, heq, hst, hans, hys, hi.symm, hP.inv.inSizes, ?_, ?_, ?_, ?_⟩
+      hP.entry, hP.step, hP.exits, hn, hc, heq, hst, hans, hys, hi.symm, hP.inv.inSizes, ?_, ?_, ?_, ?_⟩, ?_⟩
     · rw [hP.facts.heads]
     · exact congrFun hP.facts.heads
     · exact ⟨hext.incoming, hext.incomingEdges, hext.edges⟩
     · exact visitExits_checked hP.exits hP.inv.inSizes ⟨hext.incoming, hext.incomingEdges, hext.edges⟩
     · exact visitEntry_hereEmpty hP.inv.vacuity hP.entry
     · exact visitExits_records hP.exits
+    · rw [hw.trans hlabel, hst]
+      rfl
   · intro hs w hw
     exact visitStart_entered hP hs (hw.trans hlabel)
 

@@ -305,6 +305,34 @@ theorem visitExits_prefix (hp : ExitStepPrefix ι) {env : WalkEnv ι G I} {σ : 
     rw [heq] at hy
     exact hy.trans (exitsFold_prefix hp _ _ _ h)
 
+/-- Regional checking's input summaries are a prefix of the exit result. -/
+theorem visitExits_regional_prefix {env : WalkEnv ι G I} {σ : WalkState ι G} {l : Nat}
+    {en : Entered ι} {sd : StepDone ι G} {ex : ExitsDone ι G}
+    (h : visitExits G I env σ l en sd = .ok ex) :
+    SumsPrefix (exitsYields G I env l en sd).2 ex.answers := by
+  unfold visitExits at h
+  extract_lets node c at h
+  split at h
+  rename_i yields answers heq
+  extract_lets outAll regional at h
+  generalize regional = R at h
+  split at h
+  · cases h
+  · rw [heq]
+    exact exitsFold_prefix exitStepPrefix _ _ _ h
+
+/-- The exit result's complete summary table survives the visit boundary. -/
+theorem visitExits_answers_prefix (G : NormalGraph ι) (I : InstanceImageCheck G)
+    (env : WalkEnv ι G I) (σ : WalkState ι G) (l : Nat) (en : Entered ι)
+    (sd : StepDone ι G) (ex : ExitsDone ι G)
+    (hs : visitStep G I env σ l en = .ok sd) (he : visitExits G I env σ l en sd = .ok ex) :
+    SumsPrefix ex.answers (keepSummaries σ.answers ex.answers) := by
+  have hp := (visitStep_input_prefix hs).trans
+    ((visitStep_prefix hs).trans (visitExits_prefix exitStepPrefix he))
+  unfold SumsPrefix
+  rw [keepSummaries_table hp]
+  exact List.prefix_refl _
+
 /-- The successful visit retains its checked-step table under the local exit obligation. -/
 theorem visitStepPrefix_of_exitStep (hp : ExitStepPrefix ι) : VisitStepPrefix ι := by
   intro G I env σ l en sd ex hs he

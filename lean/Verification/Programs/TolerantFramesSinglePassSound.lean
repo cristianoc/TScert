@@ -1,6 +1,6 @@
 import Verification.Programs.TolerantFramesVisitSummaries
 import Verification.Programs.TolerantFramesRegionalTyping
-import Verification.Programs.TolerantFramesRegionalRecorded
+import Verification.Programs.TolerantFramesRegionalAlignment
 import Verification.Programs.TolerantFramesDriverSetup
 import Verification.Programs.TolerantFramesExitWidths
 
@@ -16,14 +16,14 @@ open Verification PositiveGraphs PositiveCertificates LabelStore
 section Run
 variable {ι : Type} [Labels ι]
 
-/-- The graph theorem under exit delivery, alignment with the recorded regional
-walk, discarded separation recovery and selected-proof header alignment. -/
+/-- The graph theorem under exit delivery, agreement with the recorded regional
+tables, discarded separation recovery and selected-proof header alignment. -/
 theorem run_sound_single_pass
-    (hex : ExitsYield ι) (halign : RegionalWalkAlignment ι)
+    (hex : ExitsYield ι) (htables : RegionalRecordedTableAgreement ι)
     (hdiscard : RegionalDiscardedSeparation ι) (hheader : RegionalStepHeader ι) : Target.RunSound ι :=
-  have htables := regionalVisitTables halign
+  have htables := regionalVisitTables_of_recordedAgreement htables
   have hstep := regionalStepBridge hdiscard hheader
-  have hv := visitsRecord_of (visitsRest_of (exitsPushOk_of exitsWidth) (visitsSettle_of (visitStepPrefix_of_exitStep exitStepPrefix)) visitsImplications)
+  have hv := visitsRecord_of (visitsRest_of (exitsPushOk_of exitsWidth) (visitsSettle_of (visitStepPrefix_of_exitStep exitStepPrefix)) visitsImplications) visitExits_answers_prefix
   run_sound_pass (recordsSound_of setupRecords_of hv) (recordsChecked_of setupRecords_of hv) (nodesYield_of subtypeAnswersAll hex) linearNearFuelEq
     (regionsHeld_of (regionsRecorded_of_visitTables htables) (regionsTyped_of_visitTables htables hstep))
 

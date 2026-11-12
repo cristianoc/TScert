@@ -108,7 +108,12 @@ def VisitsRest : Prop :=
 the rest (`VisitsRest`): the record's write at the visited label, below the
 record's size by the invariant (`visit_ok`, `visitResult_labels`,
 `visitResult_visits`, `visitResult_size`). -/
-theorem visitsRecord_of (hr : VisitsRest ι) : VisitsRecord ι := by
+theorem visitsRecord_of (hr : VisitsRest ι)
+    (hp : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (env : SinglePass.WalkEnv ι G I)
+      (σ : SinglePass.WalkState ι G) l en sd ex,
+      SinglePass.visitStep G I env σ l en = .ok sd →
+      SinglePass.visitExits G I env σ l en sd = .ok ex →
+      SumsPrefix ex.answers (SinglePass.keepSummaries σ.answers ex.answers)) : VisitsRecord ι := by
   intro G I c env σ0 σ σ'' l rest hs hE hI hq hv
   have hR := hr G I c env σ0 σ σ'' l rest hs hE hI hq hv
   obtain ⟨en, sd, ex, he, hs, hx, rfl⟩ := visit_ok hv
@@ -123,7 +128,8 @@ theorem visitsRecord_of (hr : VisitsRest ι) : VisitsRecord ι := by
           inSizes := hR.inSizes, impBelow := hR.impBelow, extendsWalk := hR.extendsWalk, vacuity := hR.vacuity,
           origin := ⟨_, en, sd, ex, he, hs, hx, by
             simp only [visitResult, Array.set!_eq_setIfInBounds,
-              Array.getElem?_setIfInBounds_self_of_lt (hI.size ▸ hln)]⟩ }
+              Array.getElem?_setIfInBounds_self_of_lt (hI.size ▸ hln)],
+            hp G I env _ l en sd ex hs hx⟩ }
 
 /-- **A state an exit carries in meets `PushOk`** (`edgeTransfer_width`,
 `edgeTransfer_wf`, `edgeStoreOf_wf`, `edgeTransfer_below`,

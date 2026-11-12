@@ -51,6 +51,8 @@ structure SetupOk (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) (σ
       env.isHead c.start)
     (((c.claims.toArray[c.start]?).map (·.context.length)).getD 0)
 
+  regional : env.regional = c.regional
+
 theorem setup_ok {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} {σ0 : SinglePass.WalkState ι G}
     (h : RunCall.setup c = .ok (env, σ0)) : SetupOk c env σ0 := by
   unfold RunCall.setup SinglePass.setup at h
@@ -65,7 +67,7 @@ theorem setup_ok {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} {σ0
     have hg := ‹SinglePass.setupGiven _ _ _ _ _ _ _ _ = _›
     have hcl : ¬(c.claims.toArray.size != c.P.toArray.size) = true := by assumption
     refine ⟨by simpa using hcl, by assumption, rfl, rfl, rfl, rfl, ?_, rfl, rfl, ⟨_, (congrArg Prod.fst hg).symm⟩,
-      rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, ⟨_, _, rfl⟩⟩
+      rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, ⟨_, _, rfl⟩, rfl⟩
     dsimp only [SinglePass.setupEnv]
     split <;> rename_i hs <;>
       first | rfl | exact absurd (‹c.start < _› : c.start < c.P.toArray.size) hs |
@@ -169,7 +171,7 @@ theorem SetupOk.envFacts {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G
   have hnames : env.startNames = List.range c.inputs.length := by rw [hs.startNames, hw]
   refine envFacts_of_loopHeads hs.nodes hs.n hs.reached hhead (by rw [hs.n]; exact hlt)
     (by rw [hs.claims, hs.n]; exact hs.claimed) hs.claims (fun t ht => ?_) hs.codes hs.checker hs.bound hs.goal
-    hs.ensures hnames (by rw [hs.argName, hnames]) hstated hs.start hstartHead hctx ?_
+    hs.ensures hnames (by rw [hs.argName, hnames]) hstated hs.start hstartHead hctx ?_ hs.regional
   · rw [hgiven, setupGiven_get, if_neg (fun h => by rw [ht] at h; exact Bool.false_ne_true h.2)]
   · refine ⟨((byLabel c.P.toArray.size c.candidates).getD c.start none).getD [], ?_, ?_⟩
     · have he := hs.entry

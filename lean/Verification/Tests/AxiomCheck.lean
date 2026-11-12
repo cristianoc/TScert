@@ -1119,3 +1119,11 @@ run_cmd do
   check ``Verification.TolerantFrames.RecInv.regionalWitness
   check ``Verification.TolerantFrames.recordedRegion_at
   check ``Verification.TolerantFrames.regionalVisitTables
+
+  check ``Verification.TolerantFrames.visitExits_regional_prefix
+  check ``Verification.TolerantFrames.visitExits_answers_prefix
+  check ``Verification.TolerantFrames.checkedWalk_final
+  check ``Verification.TolerantFrames.checkedWalk_nodeAlignment
+  check ``Verification.TolerantFrames.RecInv.regionalWitnessSound
+  check ``Verification.TolerantFrames.regionalWalkAlignment
+  check ``Verification.TolerantFrames.regionalVisitTables_of_recordedAgreement

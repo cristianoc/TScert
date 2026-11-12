@@ -173,10 +173,11 @@ theorem RecInv.regionalWitness {c : Target.RunCall G I} {env : WalkEnv ι G I} {
       visitEntry G I env before l = .ok en ∧ visitStep G I env before l en = .ok sd ∧
       visitExits G I env before l en sd = .ok ex ∧
       regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 before.regionIn = .ok done ∧
-      σ.walk.labels[l]? = some (LabelWalk.ofVisit before.fresh en sd (some done.state)) := by
-  obtain ⟨before, en, sd, ex, he, hs, hx, hr⟩ := hi.origins l hl
+      σ.walk.labels[l]? = some (LabelWalk.ofVisit before.fresh en sd (some done.state)) ∧
+      SumsPrefix ex.answers σ.answers := by
+  obtain ⟨before, en, sd, ex, he, hs, hx, hr, hp⟩ := hi.origins l hl
   obtain ⟨done, hd, hdone⟩ := visitExits_regionalCheck hreg hx
-  exact ⟨before, en, sd, ex, done, he, hs, hx, hd, by simpa [hdone] using hr⟩
+  exact ⟨before, en, sd, ex, done, he, hs, hx, hd, by simpa [hdone] using hr, hp⟩
 
 /-- The graph's regional facts, from each label's own recorded check. -/
 def recordedRegionFacts (w : SinglePass.Walk ι) : List (List ArgumentPathTracking.Fact) :=
@@ -257,13 +258,13 @@ theorem regionalVisitTables (alignment : RegionalWalkAlignment ι) : RegionalVis
   obtain ⟨env, σ, rg, hi, hrg, hstart, hvis, hΦ, hregions, hexc, hvisited, halign⟩ :=
     alignment G I c after admits hp r hchk Φ regions exc hreg
   have startWitness := hi.regionalWitness hvis hrg
-  obtain ⟨before, en, sd, ex, done, _, _, _, hd, hr⟩ := startWitness
+  obtain ⟨before, en, sd, ex, done, _, _, _, hd, hr, _⟩ := startWitness
   have startTables := recordedRegion_at hr (by rfl) rg.names
   refine ⟨recordedRegionFacts σ.walk, recordedRegionFresh σ.walk rg.names,
     ⟨env, en, sd, rg, _, before.regionIn, done, hstart, hd, startTables⟩, ?_⟩
   intro l hl
   have visitWitness := hi.regionalWitness (hvisited l hl) hrg
-  obtain ⟨before, en, sd, ex, done, he, hs, hx, hd, hr⟩ := visitWitness
+  obtain ⟨before, en, sd, ex, done, he, hs, hx, hd, hr, _⟩ := visitWitness
   obtain ⟨hc, hclaim, hnode, hentry, hst, hsum, ht⟩ := halign l hl before en sd ex done he hs hx hd hr
   exact ⟨env, before, en, sd, rg, _, before.regionIn, done, hs, hd,
     hc, hclaim, hnode, hentry, hst, hΦ, hregions, hexc, hsum, ht⟩

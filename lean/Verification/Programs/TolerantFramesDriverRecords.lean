@@ -180,7 +180,8 @@ structure SettledCore (c : Target.RunCall G I) (heads : Nat → Bool) (dead : Li
     WalkExtends σ.walk w → SumsPrefix σ.answers a →
     ProgramCertificates.SummariesSound G I a.summaries.toList →
     ∃ r : NodeChecked G I c.codes c.passChecker c.P (ofPass w heads) (List.range c.inputs.length) (passCtx c) l,
-      NodePassChecked c dead r ∧ NodeExitTrace c (passEdgesIn w) r
+      NodePassChecked c dead r ∧ NodeExitTrace c (passEdgesIn w) r ∧
+        (w.labels[l]?).bind (·.stepped) = some r.st
   start : l = c.start → ∀ w : SinglePass.Walk ι, w.labels[l]? = σ.walk.labels[l]? →
     StartEntered c (ofPass w heads) (passCtx c) (passStated c)
   entry : heads l = false → ∃ b, (ofPass σ.walk heads).entry l = withWritten (passStated c l) b ∧
@@ -231,6 +232,7 @@ structure EnvFacts (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) : 
       ((env.givenImplies[c.start]?).getD []) ((env.givenArgs[c.start]?).getD [])
       ((env.givenInputs[c.start]?).getD []) c.entryIndices c.entrySeparation = none ∧
     env.given[c.start]! = some (startGiven (passStated c c.start) c.entryIndices c.entrySeparation supplied)
+  regional : env.regional = c.regional
 
 omit [Labels ι] in
 /-- A list's true entries, counted by position. -/
@@ -263,11 +265,11 @@ theorem envFacts_of_loopHeads {c : Target.RunCall G I} {env : SinglePass.WalkEnv
       SinglePass.entryRefusal G c.inputs c.claims c.start c.goal (passStated c c.start) supplied
         ((env.givenImplies[c.start]?).getD []) ((env.givenArgs[c.start]?).getD [])
         ((env.givenInputs[c.start]?).getD []) c.entryIndices c.entrySeparation = none ∧
-      env.given[c.start]! = some (startGiven (passStated c c.start) c.entryIndices c.entrySeparation supplied)) :
-    EnvFacts c env := by
+      env.given[c.start]! = some (startGiven (passStated c c.start) c.entryIndices c.entrySeparation supplied))
+    (hregional : env.regional = c.regional) : EnvFacts c env := by
   have hc := loopHeads_closed c.P.toArray c.start
   refine ⟨hheads, fun s t hs ht htn => ?_, ⟨hstart, ?_⟩, ?_, hclaimed, hclaims, hgiven, hnodes,
-    by simpa using hn, hcodes, hchecker, hbound, hgoal, hensures, hnames, harg, hstated, hstartLabel, hstartHead, hstartCtx, hstartGiven⟩
+    by simpa using hn, hcodes, hchecker, hbound, hgoal, hensures, hnames, harg, hstated, hstartLabel, hstartHead, hstartCtx, hstartGiven, hregional⟩
   · unfold envReached exitsOf at *
     rw [hreached] at hs ⊢
     rw [hnodes] at ht
@@ -296,14 +298,15 @@ theorem StartBelow.mono {env : SinglePass.WalkEnv ι G I} {a b : Nat} (h : Start
   ∀ t xs, xs ∈ incI w t → ∀ y ∈ xs, y.test < fresh ∧ y.target < fresh
 
 /-- The successful visit whose result supplies this label's record, including
-its exits' complete optional regional result. -/
-@[nospecialize] def VisitOrigin (env : SinglePass.WalkEnv ι G I) (w : SinglePass.Walk ι) (l : Nat) : Prop :=
+its exits' complete optional regional result and summary prefix. -/
+@[nospecialize] def VisitOrigin (env : SinglePass.WalkEnv ι G I) (w : SinglePass.Walk ι) (a : Answered G) (l : Nat) : Prop :=
   ∃ (σ : SinglePass.WalkState ι G) (en : SinglePass.Entered ι) (sd : SinglePass.StepDone ι G)
     (ex : SinglePass.ExitsDone ι G),
     SinglePass.visitEntry G I env σ l = .ok en ∧
     SinglePass.visitStep G I env σ l en = .ok sd ∧
     SinglePass.visitExits G I env σ l en sd = .ok ex ∧
-    w.labels[l]? = some (SinglePass.LabelWalk.ofVisit σ.fresh en sd (ex.regional.map (·.state)))
+    w.labels[l]? = some (SinglePass.LabelWalk.ofVisit σ.fresh en sd (ex.regional.map (·.state))) ∧
+    SumsPrefix ex.answers a
 
 /-- **The walk's invariant**: the queue's labels distinct, below the bound,
 reached, unvisited and, other than heads, with no exit left to come in; the
@@ -338,7 +341,7 @@ structure RecInv (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) (σ 
   settled : ∀ t, visB σ.walk t = true → Settled c (envHead env) env.deadArr.toList σ t
   impBelow : IncomingBelow σ.walk σ.fresh
   vacuity : CachedVacuity G env.claimed σ.unsat
-  origins : ∀ l, visB σ.walk l = true → VisitOrigin env σ.walk l
+  origins : ∀ l, visB σ.walk l = true → VisitOrigin env σ.walk σ.answers l
 
 /-- **At the walk's end every reached label is visited**, where the record
 counts at least the reached labels (`filter_eq_of_le`). -/
@@ -491,7 +494,7 @@ structure VisitFacts (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) 
   impBelow : IncomingBelow σ.walk σ.fresh → IncomingBelow σ'.walk σ'.fresh
   extendsWalk : WalkExtends σ.walk σ'.walk
   vacuity : CachedVacuity G env.claimed σ.unsat → CachedVacuity G env.claimed σ'.unsat
-  origin : VisitOrigin env σ'.walk l
+  origin : VisitOrigin env σ'.walk σ'.answers l
 
 omit [Labels ι] in
 theorem visB_frame {w w' : SinglePass.Walk ι} {t : Nat} (h : w'.labels[t]? = w.labels[t]?) : visB w' t = visB w t := by
@@ -640,8 +643,8 @@ theorem recInv_visit {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} 
     by_cases htl : t = l
     · subst t; exact hF.origin
     · rw [hvis t htl] at ht
-      obtain ⟨σ₀, en, sd, ex, he, hs, hx, hr⟩ := hI.origins t ht
-      exact ⟨σ₀, en, sd, ex, he, hs, hx, (hF.labels t htl).trans hr⟩
+      obtain ⟨σ₀, en, sd, ex, he, hs, hx, hr, hp⟩ := hI.origins t ht
+      exact ⟨σ₀, en, sd, ex, he, hs, hx, (hF.labels t htl).trans hr, hp.trans hk⟩
 
 /-- A call's setup (`SinglePass.setup` over its arguments). -/
 def RunCall.setup {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) :

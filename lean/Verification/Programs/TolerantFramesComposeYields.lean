@@ -224,11 +224,11 @@ so there (`NodeYieldChecks.reassign`), judged and meeting the return's goal
 by `ExitsYield`. -/
 theorem nodesYield_of (hsub : SubtypeAnswersAll ι) (hex : ExitsYield ι) : NodesYield ι := by
   intro G I c after admits hp r hchk η hη ρ0 m l hl
-  obtain ⟨dead, hd⟩ := hchk
+  obtain ⟨dead, hd, hrecord⟩ := hchk
   obtain ⟨sums, hsums, hys⟩ := (hd l hl).1.yields
   exact ⟨(r.node l hl).ys, nodeYielded_of_checks (hys.reassign η) (codesSound_reassign hp.2.2.1 η)
     (Parametricity.summariesSound_reassign G η I hsums) (hsub _ _)
-    (hex G I c after admits hp r ⟨dead, hd⟩ η hη ρ0 m l hl)⟩
+    (hex G I c after admits hp r ⟨dead, hd, hrecord⟩ η hη ρ0 m l hl)⟩
 
 /-- **The footprint check keeps the bound at a checked walk**
 (`FootprintKept` at every admitted reassigned graph), the entry states from
@@ -272,7 +272,7 @@ theorem run_sound_checked (hrun : RunTraversedC ι) (hyield : NodesYield ι) (hn
   intro G I c after admits hacc hscope hcodes hsums hfields
   have hp : RunPremises G I c after admits := ⟨hacc, hscope, hcodes, hsums, hfields⟩
   obtain ⟨r, hchk⟩ := hrun G I c after hacc hsums
-  obtain ⟨dead, hd⟩ := hchk
+  obtain ⟨dead, hd, hrecord⟩ := hchk
   refine GraphGuarantee.toTarget (run_guarantee fun η hη => ?_)
   obtain ⟨pc', hpc⟩ := scope_reassign hscope hη
   refine ⟨r.w, r.given, r.ctx, r.edgesIn, r.fresh, r.stated,
@@ -283,12 +283,12 @@ theorem run_sound_checked (hrun : RunTraversedC ι) (hyield : NodesYield ι) (hn
           ((checkEntryFields_reassign G η c.inputs regions).trans (hfields Φ regions exc hr)) he s.pos s.ok
       footprint := fun Φ fr ex hbd => ⟨dead, footprintKept_of_walk hp (fun l hl => (hd l hl).1) hη hbd⟩
       returns := fun hne => returnsEnsured_of_walk hp (fun l hl => (hd l hl).1) hη hne
-      regions := hreg G I c after admits hp r ⟨dead, hd⟩ η hη
+      regions := hreg G I c after admits hp r ⟨dead, hd, hrecord⟩ η hη
       labelled := assertionsLabelled_of_checked labelsChecked G I c after admits hp r }⟩
   exact nodesChecked_of_walkJ (r.traversed.reassign η)
     (stepEdgesSound_of_yields
       (fun l hl => ⟨nodeChecked_reassign hpc (r.node l hl),
-        hyield G I c after admits hp r ⟨dead, hd⟩ η hη ρ0 m l hl⟩)
+        hyield G I c after admits hp r ⟨dead, hd, hrecord⟩ η hη ρ0 m l hl⟩)
       (codesSound_reassign hcodes η))
     (headsEntered_of_recorded r.heads) hnear
 
@@ -304,7 +304,8 @@ def RecordsChecked : Prop :=
     RunCall.walk c = .ok (σ, reach) → reach ≤ σ.walk.visited →
     SummariesSound G I σ.answers.summaries.toList → ∃ dead, ∀ l, (ofPass σ.walk (passHeads c)).visited l →
       ∃ r : NodeChecked G I c.codes c.passChecker c.P (ofPass σ.walk (passHeads c)) (List.range c.inputs.length)
-        (passCtx c) l, NodePassChecked c dead r ∧ NodeExitTrace c (passEdgesIn σ.walk) r
+        (passCtx c) l, NodePassChecked c dead r ∧ NodeExitTrace c (passEdgesIn σ.walk) r ∧
+          (σ.walk.labels[l]?).bind (·.stepped) = some r.st
 
 /-- **(`run_traversedC`) The driver's checked walk from its record**: the
 walk `run_traversedA` builds, its nodes the checked steps `RecordsChecked`
@@ -316,7 +317,8 @@ theorem run_traversedC (hrec : RecordsSound ι) (hchk : RecordsChecked ι) : Run
   obtain ⟨dead, hn⟩ := hchk G I c σ reach hw hle (ha ▸ hsums)
   exact ⟨⟨ofPass σ.walk (passHeads c), passHeads c, passCtx c, passEdgesIn σ.walk, passFresh σ.walk,
     passStated c, fun l hl => Classical.choose (hn l hl), hr.traversed, ofPass_heads σ.walk (passHeads c),
-    hr.start, fun _ => rfl⟩, dead, fun l hl => Classical.choose_spec (hn l hl)⟩
+    hr.start, fun _ => rfl⟩, dead, (fun l hl => ⟨(Classical.choose_spec (hn l hl)).1, (Classical.choose_spec (hn l hl)).2.1⟩),
+    σ, reach, hw, rfl, fun l hl => (Classical.choose_spec (hn l hl)).2.2⟩
 
 /-- **THE GRAPH THEOREM of the single pass** (`run_sound_checked` with the
 driver's checked walk from its record, `run_traversedC`). -/
