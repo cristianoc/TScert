@@ -2579,6 +2579,20 @@ def yieldsAtSlots (names : List Nat) (ys : List (PromiseCalls.Yield ι)) : List 
     | some nm => (names.zipIdx.filter (·.1 == nm)).map fun (_, j) => { y with target := j }
     | none => [y]
 
+/-- **The regional evidence's entry facts**: the entry's whole
+materialization `kHere` together with the step's facts `stepK`, each list
+`kHere`'s then `stepK`'s others, the separations joined where both are at
+one depth or `stepK`'s is empty (`HeapSeparation.union`), `kHere`'s
+otherwise; every fact of `kHere` kept. -/
+def regionalFacts (kHere stepK : Knowledge) : Knowledge :=
+  { cells := kHere.cells ++ stepK.cells.filter (!kHere.cells.contains ·)
+    values := kHere.values ++ stepK.values.filter (!kHere.values.contains ·)
+    links := kHere.links ++ stepK.links.filter (!kHere.links.contains ·)
+    separation := if kHere.separation.depth == stepK.separation.depth || stepK.separation.facts.isEmpty
+      then HeapSeparation.union kHere.separation stepK.separation else kHere.separation
+    elems := kHere.elems ++ stepK.elems.filter (!kHere.elems.contains ·)
+    indices := kHere.indices ++ stepK.indices.filter (!kHere.indices.contains ·) }
+
 /-- **A regional check at a node**, as `ArgumentRegionGraph.checkNode` makes
 it: its regional facts on entry (the regions' input slots at the start, a
 loop head's given ones, else what every edge into it establishes), the
@@ -2606,7 +2620,7 @@ def regionalAt (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkE
   if !regionalDerivChecked G images env.codes sums c node st.stepK st.stepDeriv then
     .error s!"store regions at node {l}: its derivation"
   else
-    let cEv : NodeEvidence ι := ⟨ordinaryEv, some ⟨c.context, node.expression, c.type⟩, [], kHere, st.stepEffect, {}, none, [], [], [], none⟩
+    let cEv : NodeEvidence ι := ⟨ordinaryEv, some ⟨c.context, node.expression, c.type⟩, [], regionalFacts kHere st.stepK, st.stepEffect, {}, none, [], [], [], none⟩
     let t0 := node.expression
     let F := here.values
     let C := if GraphCode.ArgumentRegionGraph.cellsKept G images sums rg.Φ F here.cells cEv t0 node.handler.isSome
