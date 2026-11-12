@@ -1857,3 +1857,50 @@ every lowered view, the tagged facts against every view; both checks are
 the ones the proof reads. The pass lane's queued item "recheck joined
 guarded facts with `indicesCheckWith`" adds no premise this proof uses: the
 check `joinGuarded` runs is that recheck.
+
+## Leg 14c: the entailed bounds' terms
+
+Module `lean/Verification/Programs/TolerantFramesMergeEntailed.lean`.
+
+**No term is defined at every valuation.** A term denotes what its kind
+reads of the value its path reads from its slot (`termValue`): a value term
+a safe integer, a length term an array's length, a view term a typed
+array's length, a string-length term a string's length, and none for a
+value of another kind (proved instances: `termValue_value_undef`, a value
+term at `undefined`; `termValue_length_num`, a length term at a number); a
+term with a path is undefined where a read along it finds no object or no
+field. So the class of bounds the merge keeps unconditionally is the class
+each view holds as a stored fact, whose holding states its terms defined.
+
+**The check** (`entailDefinedCheck`, at a view $`q`$, a bound $`a`$ of form
+$`F`$): $`q`$'s store holds $`a`$ as a live fact, or every term of $`F`$ is one
+`termDefined` accepts over the facts the entailment reads,
+`q.store.linearNear a.names`. `EntailedChecked`: every bound
+`mergeEntailed` adds passes the check at every view. Proved:
+
+- `checked_bound_holds`: `LinearNearSound` ∧ the view holds at $`\eta`$ ∧ the
+  view holds or entails the bound ∧ the check ⟹ the bound holds at $`\eta`$
+  (a live fact by the store; otherwise its terms defined by
+  `termDefined_sound` over the near facts, then `holds_sound` or
+  `entailsKnown_sound`);
+- `OnPath.entailed_ok_checked`: `LinearNearSound` ∧ `EntailedChecked` ⟹ the
+  entailed bounds hold on the path through any predecessor, which replaces
+  `EntailedDefined` in the merge theorem;
+- `entailedDefined_of_checked`: the check's `termDefined` disjunct at every
+  view ⟹ `EntailedDefined`.
+
+**The residue, the exact condition for the pass.** The check fails only for
+a bound kept at a view that does not store it, with a term that no
+unconditional fact the entailment reads names and that is neither a value
+slot stated `int` nor a length a `length` fact states. Two routes reach such
+a term (observed in the code, no source demonstrated): a view holding the
+bound through a stronger bound of the same normal form (`Store.holds`),
+where the term's coefficients cancel in `Linear.normalize`; and an
+entailment over the near facts, where the term's coefficient cancels in the
+derivation. Which terms can then be undefined on a path: a value term of a
+slot holding a non-integer there (a union-typed slot), a length, view or
+string-length term of a value of another kind, and any term read through a
+path whose object or field is absent on that path. The pass's merge tests
+`entailDefinedCheck` at each view before adding the bound; at a bound
+stored by the view, or over terms the near facts name, it passes with no
+extra work.
