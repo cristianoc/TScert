@@ -237,7 +237,7 @@ theorem regionNodeEntry_of [Hashable ι] {G : NormalGraph ι} {w : Walk ι} {sta
   intro cEv
   have he : EnvOk G (ControlFlow.entry cEv) ρ s.n s.W := by rw [hent, ← hctx]; exact hp.2
   refine ⟨he, PromiseCalls.ImpliesOk.nil G ρ s.n s.W, entryFacts_holds he ?_⟩
-  exact stateHolds_materialize_whole (hstated ρ s hp) _ _ false
+  exact stateHolds_materialize_whole (hstated ρ s hp) _ _ true
 
 /-- **The start's regional facts**: where the start's table holds each
 region's own position (`checkEntry`) and no fresh value, cell or field, the

@@ -2128,3 +2128,61 @@ What the pass needs for these premises:
 The guarantee's `regions` field (`PassWalkSound.regions`) reads
 `RegionsKept` at `passPreT`; `regionally_of_walk_stable` is its form at
 `passPreS`, which the fold replaces it by.
+
+## Leg 15b: the written assertions in the node assertion
+
+Module `lean/Verification/Programs/TolerantFramesNodeAsserts.lean`. `run`
+reads the request's assertions by label (`stated`, `byLabel`). The node
+assertion `passPreA` is `passPreT` and the label's written assertion
+holding (`AssertsAt stated`); `edgePreA` is `edgePreT` and the target's.
+Proved:
+
+- `passPreA_adminClosed`; (`nodesChecked_of_walkA`) `Traversed` ∧
+  `StepEdgesSoundA` (`StepEdgesSoundT` with the targets' `edgePreA`) ∧
+  `HeadsEntered` ∧ `MergesSound` ⟹ `NodesChecked` at `passPreA`;
+  (`asserted_of_walkA`) the written assertion holds at every node entry a
+  run from the start reaches with budget left;
+- `holds_of_assertsAt`: where every `(l, k)` of the request is `stated l`,
+  `AssertsAt` gives `AssertionsHeld`'s conclusion;
+- (`assertsAt_of_edge`) on an edge into a node other than a loop head, the
+  edge's assertion check gives the target's written assertion
+  (`assertion_query_sound`), its facts by `edgeFacts_holds` (the edge's
+  materialized store, `edgeStore_normal`, `stateHolds_materialize`);
+- (`assertsAt_of_head`) on an edge into a loop head, `HeadEstablishes`
+  gives the head's given facts, the written assertion with the claims'
+  index facts (`holds_of_indices_append`);
+- (`assertsAt_start`) at the start, `entryRefusal`'s entailment of the
+  written facts (`entryRefusal_ok`, `entryKnows_sound`);
+- `exitDeliversA_of`: an exit delivering `edgePreT` and the target's
+  written assertion delivers `edgePreA`.
+
+The change to the walk modules: `WalkSound.steps` at `StepEdgesSoundA`,
+`PassWalkSound.entered` at `passPreA` (`start_passPreT` with
+`assertsAt_start`), `AssertionsHeld` at `passPreA` (true by its
+definition), the field `asserted` of `run_guarantee` from
+`asserted_of_walkA`; `NodeAccepted.exits` and `exitDelivers_head` then
+deliver `edgePreA` through `exitDeliversA_of` with the three lemmas above.
+
+The three facts the entry state does not entail (Leg 14b: a written
+assertion on its edges and in the entry state) leave the entry state
+weaker than the written assertion: the step reads fewer facts and refuses
+more. With the written assertion stated in the node assertion they are
+only a proof inconvenience:
+
+- an atom whose renaming is `none` names a slot no name holds; the edge
+  check reads the written atom at the target's slots, independently of the
+  renaming;
+- `Store.addBound` skipping a bound for an equal-or-stronger one of the
+  same normal form keeps a bound the step reads in place of the written
+  one; the written one, with the definedness of the terms its normal form
+  drops, is the edge check's;
+- a separation fact's atoms carry no level bound in the state; the written
+  separation is read from the edge check.
+
+`byLabel` keeps the first assertion a request states at a label, so a
+request stating two at one label has the second checked on no edge, while
+`GraphGuarantee.asserted` states every pair of `assertions`. `run` accepting
+such a request states an assertion no check established (observed in the
+code; no request with a repeated label is demonstrated). Needs pass change:
+`run` refuses a repeated label, or joins the assertions a label states;
+`holds_of_assertsAt`'s premise then holds.
