@@ -115,11 +115,16 @@ theorem walk_of_accepts' {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Ta
     · omega
 
 variable (ι) in
-/-- **(Named hypothesis) A stopped walk is never accepted**: the verdict of
-every stop `runWalk` returns is a refusal, a gap or an observation. -/
+/-- **A stopped walk is never accepted**: the verdict of every stop
+`runWalk` returns is a refusal, a gap or an observation. -/
 def WalkStopsRefuse : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) (stop : SinglePass.WalkStop ι G),
     RunCall.walk c = .error stop → stop.outcome.outcome ≠ .accepted
+
+/-- **(`walkStopsRefuse`) A stopped walk is never accepted**, by its type
+(`StopOutcome.outcome_ne_accepted`). -/
+theorem walkStopsRefuse : WalkStopsRefuse ι :=
+  fun _ _ _ stop _ => stop.outcome.outcome_ne_accepted
 
 /-- **An accepted call's walk returned** (`walk_of_accepts'` and
 `WalkStopsRefuse`). -/

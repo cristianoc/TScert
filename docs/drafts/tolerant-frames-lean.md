@@ -1591,7 +1591,8 @@ Premises this leg discharges / leaves:
   `run_traversedA` to `WalkStopsRefuse` and `RecordsSound`; the heads'
   records discharged by the reading (`ofPass_heads`). Left: `RecordsSound`
   (each visited node `NodeChecked`, `TraversedA`, `StartEntered`, read off
-  the visit once it is a function), `WalkStopsRefuse`.
+  the visit once it is a function); `WalkStopsRefuse` is proved
+  (`walkStopsRefuse`, Leg 19b).
 - `HeadsCutCycles`: discharged under `LoopHeadsFuelEq` (`passHeads_cuts`),
   for the proof of `TraversedA`'s merges; left: the in-degree order (a
   node other than a head visited after every edge into it from a reached
@@ -1625,3 +1626,9 @@ is below $`n`$ and, at or past $`n`$, no head is marked and every state is 0
 (`OutsideClear`), a round keeps both (proved: `dfsStep_clear`,
 `dfsLoop_clear`, `dfsInit_clear`), so marks and states read from arrays of
 $`n`$ labels agree with the walk's at every label.
+
+**A stopped walk is never accepted.** A walk stops with a `StopOutcome`
+(a refusal, a refusal at a footprint, a construct not handled, an
+observation), and the verdict of each is no acceptance, so
+`WalkStopsRefuse` holds of every call (proved: `walkStopsRefuse`, from
+`StopOutcome.outcome_ne_accepted`).
