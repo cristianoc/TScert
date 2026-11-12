@@ -27,14 +27,6 @@ open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
 open PositiveRules HeapExpressionRules
 
-/-- **A mapping's target slots are named by their source slots' names**
-where every slot it reads is below the source's width (`mapNamesSound_some`). -/
-theorem mapNamesSound_of_lt {names : List Nat} {m : PointClaims.Mapping}
-    (hlt : ∀ slots, m = some slots → ∀ s ∈ slots, s < names.length) : MapNamesSound names m := by
-  cases m with
-  | none => exact mapNamesSound_none names
-  | some slots => exact mapNamesSound_some names slots (hlt slots rfl)
-
 section Node
 variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
 

@@ -78,7 +78,6 @@ import Verification.Programs.TolerantFramesSinglePassSound
 import Verification.Programs.TolerantFramesMergeExits
 import Verification.Programs.TolerantFramesMergeNearRounds
 import Verification.Programs.TolerantFramesExitTypes
-import Verification.Programs.TolerantFramesMapNames
 import Verification.Programs.TolerantFramesExitTyped
 import Verification.Programs.TolerantFramesExitChecks
 import Verification.Programs.TolerantFramesExitFresh
@@ -985,11 +984,10 @@ run_cmd do
   check ``Verification.TolerantFrames.visitStep_outFresh
   check ``Verification.TolerantFrames.passOutFreshChecked_fresh
   check ``Verification.TolerantFrames.visitEntry_here
-  check ``Verification.TolerantFrames.cursor_get_eq
-  check ``Verification.TolerantFrames.mapNames_fold
-  check ``Verification.TolerantFrames.orderedSuffix_slots
-  check ``Verification.TolerantFrames.mapNames_eq
-  check ``Verification.TolerantFrames.mapNamesSound_some
+  check ``Verification.TolerantFrames.cursor_get
+  check ``Verification.TolerantFrames.cursor_fold
+  check ``Verification.TolerantFrames.mapNames_some
+  check ``Verification.TolerantFrames.orderedSuffix_run
   check ``Verification.TolerantFrames.mapNamesSound_of_lt
   check ``Verification.TolerantFrames.yieldsOk_atSlots
   check ``Verification.TolerantFrames.outFreshOf_eq
