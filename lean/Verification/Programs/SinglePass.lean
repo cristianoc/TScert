@@ -848,6 +848,32 @@ def loopHeads (nodes : Array ControlFlow.Node) (start : Nat) : Array Bool × Arr
 def sparse {α : Type} (n : Nat) (empty : α) (at_ : List (Nat × α)) : List α :=
   at_.foldl (fun acc (l, x) => acc.set l x) (List.replicate n empty)
 
+/-- The checker the pass runs: the proved layers (`Checker.ordinary`),
+whose `select` takes a derivation as given, so the pass checks the step's
+tree; or a qualified body's (`Checker.withSubtyping`), whose `select` is its
+`run` (`select_eq_run`). -/
+inductive PassChecker (G : NormalGraph ι) (images : InstanceImageCheck G) where
+  | ordinary
+  | qualified (subtyping : BodySubtyping G)
+      (ord : ∀ {A B p}, PositiveCertificates.checkUsing G images A B p = true → subtyping.check A B p = true)
+
+def PassChecker.checker {G : NormalGraph ι} {images : InstanceImageCheck G} :
+    PassChecker G images → HeapExpressionRules.Checker G images
+  | .ordinary => HeapExpressionRules.Checker.ordinary G images
+  | .qualified s o => HeapExpressionRules.Checker.withSubtyping G images s o
+
+/-- Whether the checker's `select` checks the step itself. -/
+def PassChecker.selectChecks {G : NormalGraph ι} {images : InstanceImageCheck G} : PassChecker G images → Bool
+  | .ordinary => false
+  | .qualified .. => true
+
+omit [Hashable ι] [Instantiates ι] in
+theorem PassChecker.select_eq_run {G : NormalGraph ι} {images : InstanceImageCheck G} {p : PassChecker G images}
+    (h : p.selectChecks = true) : p.checker.select = p.checker.run := by
+  cases p with
+  | ordinary => cases h
+  | qualified s o => rfl
+
 /-- The unit's entry checked as `ControlFlow.checkEntryResult` checks a
 certificate's (no edge enters the start on the first invocation): the start's
 context is the request's inputs; the promised input's slot is one of them;
@@ -881,14 +907,17 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     (assertions : List (Nat × Knowledge)) (cuts : List Nat)
     (candidates : List (Nat × List IndexAtom)) (entryIndices : List IndexAtom)
     (suggestions : List (Sequent ι)) (known : List (ProgramCertificates.Evidence ι)) (codes : CodeEntry ι → Bool)
-    (aliases : List (ι × ι)) (checker : HeapExpressionRules.Checker G images)
+    (aliases : List (ι × ι)) (passChecker : PassChecker G images)
     (answers : Answered G) (reference : Array Knowledge := #[]) (debugNode : Nat := 1000000000)
     (bound : Option (Footprints.Closed × Bool × Bool) := none)
     (givenImplies : Array (List (PromiseCalls.Implication ι)) := #[])
     (givenArgs : Array (List Nat) := #[])
     (ensures : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
     (entrySeparation : HeapSeparation.Separation := {}) (observe : Option Nat := none) (tracing : Bool := false) (observeEntry : Bool := false)
-    (selectChecks : Bool := false) (regional : Option Regional := none) : Outcome ι × Counts × Answered G × Trace := Id.run do
+    (regional : Option Regional := none) : Outcome ι × Counts × Answered G × Trace := Id.run do
+  let checker := passChecker.checker
+  -- Whether `select` checks the step (`PassChecker.select_eq_run`).
+  let selectChecks := passChecker.selectChecks
   let nodes := P.toArray
   let claimed := claims.toArray
   let n := nodes.size

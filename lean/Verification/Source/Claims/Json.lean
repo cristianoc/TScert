@@ -970,9 +970,9 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
         let pool' := CertificateProducer.vocabulary G' labels r.claims r.inputs
         let (o, counts, after, _) := CertificateProducer.timed SinglePass.passNanos fun _ =>
           SinglePass.run G' I' pool' fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
-            r.entryIndices [] (e ++ rendered) (GraphCode.admits []) r.aliases q.checker
+            r.entryIndices [] (e ++ rendered) (GraphCode.admits []) r.aliases (.qualified q.body q.ordinary)
             { summaries := next.summaries, summaryAnswers := next.summaryAnswers } #[] debugNode none
-            givenImplies givenArgs r.ensures givenInputs r.entrySeparation none false false true
+            givenImplies givenArgs r.ensures givenInputs r.entrySeparation none false false
         let sums := after.summaries.toList
         let sumsOk := sums.all (RequestJson.validSummary (StoreView.valid r.types)) &&
           (ProgramCertificates.checkReadSummariesResult G' I' sums).accepted
@@ -1024,7 +1024,7 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
         let codeArgs := codeGiven.args
         let (o, _, a, _) := SinglePass.run G I codePool fuel rq.program rq.claims rq.start rq.inputs q.entry.goal hints.requirements
           hints.cuts hints.candidates rq.entryIndices [] (e ++ rendered) (GraphCode.admits table) r.aliases
-          (HeapExpressionRules.Checker.ordinary G I) sumsAnswers #[] 1000000000 codeBound codeImplies codeArgs
+          .ordinary sumsAnswers #[] 1000000000 codeBound codeImplies codeArgs
         sumsAnswers := a
         -- A refusal observed in a code request: its obligation, the facts
         -- over its names and those it lacks, as for the unit's own graph.
@@ -1032,7 +1032,7 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
           if observe == some "refusal" then
             let (_, _, _, trace) := SinglePass.run G I codePool fuel rq.program rq.claims rq.start rq.inputs q.entry.goal hints.requirements
               hints.cuts hints.candidates rq.entryIndices [] (e ++ rendered) (GraphCode.admits table) r.aliases
-              (HeapExpressionRules.Checker.ordinary G I) sumsAnswers #[] 1000000000 codeBound codeImplies codeArgs [] #[] {}
+              .ordinary sumsAnswers #[] 1000000000 codeBound codeImplies codeArgs [] #[] {}
               (some 1000000000) true
             let l := trace.node
             let mentioned := ((rq.claims[l]?).map RequestJson.PointClaim.mentions).getD []
@@ -1075,7 +1075,7 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
       -- Profiling: the pass run `repeats` times, the last run's result kept.
       for k in List.range (repeats - 1) do
         let (o, _, _, _) := SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
-          r.entryIndices [] (e ++ rendered) codes r.aliases (HeapExpressionRules.Checker.ordinary G I) sumsAnswers #[] (debugNode + k)
+          r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers #[] (debugNode + k)
         if let .notHandled w := o then throw w
       let tracing := observe == some "refusal"
       -- The regional checks (`regionalChecked`), made in the walk: the
@@ -1094,8 +1094,8 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
           return (name, "", .refused "store regions")
       let walk := fun (bound : Option (Footprints.Closed × Bool × Bool)) (regional : Option SinglePass.Regional) =>
         SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
-          r.entryIndices [] (e ++ rendered) codes r.aliases (HeapExpressionRules.Checker.ordinary G I) sumsAnswers reference debugNode bound
-          givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed tracing false false regional
+          r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers reference debugNode bound
+          givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed tracing false regional
       let (o, counts, after, trace) := CertificateProducer.timed SinglePass.passNanos fun _ => walk bound regional
       -- A footprint the walk refuses node by node, checked regionally with no
       -- regions where the result is not fresh; then the unit's own regions.
@@ -1131,7 +1131,7 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
       let o : SinglePass.Outcome _ := match o, observed with
         | .refused _, some _ => if tracing then o else
           (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
-            r.entryIndices [] (e ++ rendered) codes r.aliases (HeapExpressionRules.Checker.ordinary G I) sumsAnswers #[] debugNode bound
+            r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers #[] debugNode bound
             givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed false true).1
         | o, _ => o
       -- A refusal observed: its obligation's facts, the facts it lacks, and
