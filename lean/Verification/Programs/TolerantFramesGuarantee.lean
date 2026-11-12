@@ -292,24 +292,3 @@ theorem run_guarantee {G : NormalGraph ι} {admits : MixedAssignment ι → Prop
 end Guarantee
 
 end Verification.TolerantFrames
-
-namespace Verification.TolerantFrames
-open Verification PointClaims ProgramTyping PositiveGraphs
-
-/-- **The two statements of what an edge into a head establishes, joined**:
-the edge lane's `EdgeEstablishes` (the given facts and the head's types at
-`mapEnv θ ρ`, which `head_query_sound` gives from the pass's query) supplies
-the facts of `HeadEstablishes`; its implications, inputs and promised input
-are the edge check's other conjuncts. -/
-theorem headEstablishes_of_edge {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {Δ : List (Ty ι)}
-    {g : HeapKnowledge.Knowledge} {θ : Mapping} {ρ ρ0 : Env} {s : IndexedHeap}
-    {implies : List (PromiseCalls.Implication ι)} {startNames : List Nat} {argName : Option Nat}
-    {argSlots : List Nat} {inputSlots : List (Nat × Nat)}
-    (he : EdgeEstablishes G Δ g θ ρ s.n s.W s.h)
-    (hi : PromiseCalls.ImpliesOk G implies (mapEnv θ ρ) s.n s.W)
-    (hin : ∀ j q x, (j, q) ∈ inputSlots → startNames[q]? = some x → mapEnv θ ρ j = ρ0 q)
-    (harg : ∀ j a q, j ∈ argSlots → argName = some a → startNames[q]? = some a → mapEnv θ ρ j = ρ0 q) :
-    HeadEstablishes G g implies startNames argName argSlots inputSlots ρ0 (mapEnv θ ρ) s :=
-  ⟨he.1, hi, hin, harg⟩
-
-end Verification.TolerantFrames

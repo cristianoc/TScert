@@ -246,6 +246,18 @@ def StepExits (G : NormalGraph ι) (A : Ty ι) (cn ce : Footprints.Closed) (t : 
       (∀ x, Raises t' x → ∃ s' : IndexedHeap, Action ce.fp ρ s s' ∧ s'.h = h' ∧ s'.n + k = s.n ∧
         Scoped 0 x ∧ excOf G s'.n s'.W x ∧ Fe ρ m s')
 
+/-- **A step's exits in parts**: the local judgment, the assertion `Fn` at
+the pushed environment after every run to a value whose endpoint is an action
+of `cn` with the rule's output, and `Fe` at the node's environment after every
+action of `ce`. -/
+def StepParts (G : NormalGraph ι) (A : Ty ι) (cn ce : Footprints.Closed) (t : Tm) (out : HeapKnowledge.Knowledge)
+    (Fn Fe : Assertion) (ρ : Env) (m : Nat) (s : IndexedHeap) : Prop :=
+  SafePostExc (excOf G) (meaning G A) (fun h' v => cn.Holds s.h h' ∧ HeapKnowledge.Holds out (push v ρ) h')
+      (fun h' => ce.Holds s.h h' ∧ True) s.n s.W s.h (instantiate 0 ρ t) ∧
+    (∀ k h' v (s' : IndexedHeap), Steps k s.h (instantiate 0 ρ t) h' v → isVal v = true →
+      Action cn.fp ρ s s' → s'.h = h' → HeapKnowledge.Holds out (push v ρ) h' → Fn (push v ρ) m s') ∧
+    ∀ s' : IndexedHeap, Action ce.fp ρ s s' → Fe ρ m s'
+
 omit [DecidableEq ι] in
 theorem stepExits_of {G : NormalGraph ι} {A : Ty ι} {cn ce : Footprints.Closed} {t : Tm}
     {out : HeapKnowledge.Knowledge} {Fn Fe : Assertion} {ρ : Env} {m : Nat} {s : IndexedHeap}
@@ -268,7 +280,9 @@ end StepSound
 section StepTheorem
 variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
 
-/-- **THE STEP THEOREM.** Where `checkedStep` accepts node `l` (its claim
+/-- **THE STEP THEOREM, in parts** (`StepParts`: each exit's assertion
+stated for every run to a value and every action of the effect, the form a
+node's obligations read). Where `checkedStep` accepts node `l` (its claim
 `c`, its term `node.expression`) from the entry state `entry` with result
 `st`, and `entry`'s state holds at the node's environment `ρ` (typed by
 `c.context`) with its store well-formed and every name it mentions below the
@@ -282,7 +296,7 @@ node's local judgment and, on the normal exit with value `v`, the action of
 names, `st.store`) at `push v ρ`; on a throw, the action of `ce`, the raised
 value closed and of the exception family, and the entry's heap-free state at
 `ρ` (the store a handler edge starts from). -/
-theorem checkedStep_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {pool : List (Ty ι)} {fuel : Nat}
+theorem checkedStep_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {pool : List (Ty ι)} {fuel : Nat}
     {suggestions : List (Sequent ι)} {index : KnownIndex ι} {codes : CodeEntry ι → Bool}
     {aliases : List (ι × ι)} {pc : PassChecker G images} {undefTy : Option (Ty ι)}
     {l : Nat} {node : Node} {c : PointClaim ι} {entry : SinglePass.State} {ms : List Nat} {fresh : Nat}
@@ -298,7 +312,7 @@ theorem checkedStep_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
     (hsrch : SearchKeepsSummaries G images pool fuel suggestions index codes aliases pc.checker) :
     SummariesSound G images ans.summaries.toList ∧ HeapKnowledge.Holds st.stepK ρ s.h ∧
     ((st.result ∈ entry.names ∧ st.fresh = fresh) ∨ (st.result = fresh ∧ st.fresh = fresh + 1)) ∧
-    ∃ cn ce : Footprints.Closed, StepExits G c.type cn ce node.expression st.stepOut
+    ∃ cn ce : Footprints.Closed, StepParts G c.type cn ce node.expression st.stepOut
       (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ I start E)
       (StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start E) ρ m s := by
   have hS' := hS
@@ -311,7 +325,7 @@ theorem checkedStep_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
     have hval : instantiate 0 ρ node.expression = ρ i := by rw [hi]; simp [instantiate]
     have hv : isVal (ρ i) = true := (meaning_value (he.2 i _ hty)).1
     refine ⟨hsum, by rw [hK]; exact holds_empty, .inl ⟨hr ▸ List.mem_of_getElem? hx, hfr⟩,
-      Footprints.Closed.empty, Footprints.Closed.empty, stepExits_of ?_ ?_ ?_⟩
+      Footprints.Closed.empty, Footprints.Closed.empty, ⟨?_, ?_, ?_⟩⟩
     · rw [hval, hO]
       exact SafePostExc.value hv (he.2 i _ hty) ⟨Footprints.Closed.holds_empty.mpr (List.prefix_refl _), holds_empty⟩
     · intro k h' v s' hsteps _ ha _ _
@@ -359,7 +373,7 @@ theorem checkedStep_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
         a0.summaries.toList = true
     · obtain ⟨hstore, hK, hO⟩ := hpres hp
       refine ⟨hs1, by rw [hK]; exact hk.1, hres', Footprints.Closed.empty, Footprints.Closed.top,
-        stepExits_of ?_ ?_ ?_⟩
+        ⟨?_, ?_, ?_⟩⟩
       · rw [hO]; exact preserving_judgment_two hp hok hsel hcodes hs0 hs1 he hk.1 s.adm s.ok
       · intro k h' v s' hsteps _ ha hh hout
         rw [hstore]
@@ -373,7 +387,7 @@ theorem checkedStep_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
       obtain ⟨out', hwc, hsel', hstore, hK, hO⟩ := hwrit hpf
       have hrun := pass_select_whole htree hwc hsel'
       refine ⟨hs1, by rw [hK]; exact hk.2, hres', Footprints.Closed.top, Footprints.Closed.top,
-        stepExits_of ?_ ?_ ?_⟩
+        ⟨?_, ?_, ?_⟩⟩
       · rw [hO]; exact top_judgment (passRunChecker pc) hrun hcodes hs1 he hk.2 s.adm s.ok
       · intro k h' v s' hsteps _ ha hh hout
         rw [hstore]
@@ -381,6 +395,36 @@ theorem checkedStep_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
         rw [hO] at hout
         exact writing_store w hn (hkv k h' v hsteps) hst (hh ▸ hout)
       · intro s' ha; exact stateHolds_throw hS w ha.1
+
+/-- **THE STEP THEOREM.** Where `checkedStep` accepts node `l` (its claim
+`c`, its term `node.expression`) from the entry state `entry` with result
+`st`, and `entry`'s state holds at the node's environment `ρ` (typed by
+`c.context`) with its store well-formed and every name it mentions below the
+next fresh name: the summary table stays checked; the step's knowledge
+`st.stepK` holds; the result is a name of the entry or the fresh one; and
+there are closed effects `cn`, `ce` with the node's local judgment and the
+exits' endpoints (`StepExits`), from `checkedStep_parts`. -/
+theorem checkedStep_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {pool : List (Ty ι)} {fuel : Nat}
+    {suggestions : List (Sequent ι)} {index : KnownIndex ι} {codes : CodeEntry ι → Bool}
+    {aliases : List (ι × ι)} {pc : PassChecker G images} {undefTy : Option (Ty ι)}
+    {l : Nat} {node : Node} {c : PointClaim ι} {entry : SinglePass.State} {ms : List Nat} {fresh : Nat}
+    {answers : Answered G} {st : Stepped ι} {stats : StepStats} {ans : Answered G}
+    (h : checkedStep G images pool fuel suggestions index codes aliases pc undefTy l node c entry ms fresh
+      answers = (Except.ok st, stats, ans))
+    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {E ρ : Env} {m : Nat} {s : IndexedHeap}
+    (hS : StateHolds G entry I start E ρ m s) (w : StoreWF entry.store) (hnb : NamesBelow entry I start fresh)
+    (hwidth : entry.names.length ≤ c.context.length)
+    (he : EnvOk G c.context ρ s.n s.W) (hcodes : CodesSound G codes)
+    (hsum : SummariesSound G images answers.summaries.toList)
+    (hdir : DirectKeepsSummaries G images undefTy)
+    (hsrch : SearchKeepsSummaries G images pool fuel suggestions index codes aliases pc.checker) :
+    SummariesSound G images ans.summaries.toList ∧ HeapKnowledge.Holds st.stepK ρ s.h ∧
+    ((st.result ∈ entry.names ∧ st.fresh = fresh) ∨ (st.result = fresh ∧ st.fresh = fresh + 1)) ∧
+    ∃ cn ce : Footprints.Closed, StepExits G c.type cn ce node.expression st.stepOut
+      (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ I start E)
+      (StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start E) ρ m s := by
+  obtain ⟨h1, h2, h3, cn, ce, hj, hn, hx⟩ := checkedStep_parts h hS w hnb hwidth he hcodes hsum hdir hsrch
+  exact ⟨h1, h2, h3, cn, ce, stepExits_of hj hn hx⟩
 
 end StepTheorem
 

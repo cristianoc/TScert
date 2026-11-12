@@ -34,6 +34,7 @@ import Verification.Programs.TolerantFramesEdge
 import Verification.Programs.TolerantFramesStepLinkReturns
 import Verification.Programs.TolerantFramesGuarantee
 import Verification.Programs.TolerantFramesStoreOpsEdge
+import Verification.Programs.TolerantFramesNodeWalk
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -521,13 +522,30 @@ run_cmd do
   check ``Verification.TolerantFrames.regionally_of_walk
   check ``Verification.TolerantFrames.asserted_of_walk
   check ``Verification.TolerantFrames.run_guarantee
-  check ``Verification.TolerantFrames.headEstablishes_of_edge
   check ``Verification.TolerantFrames.deltaAdd_wf
   check ``Verification.TolerantFrames.deltaRestate_wf
   check ``Verification.TolerantFrames.applyDelta_wf
   check ``Verification.TolerantFrames.edgeStoreOf_wf
   check ``Verification.TolerantFrames.edgeTransfer_wf
   check ``Verification.TolerantFrames.edgeTransfer_width
+  -- Leg 11: one obligation per node (TolerantFramesNode*)
+  check ``Verification.TolerantFrames.safePostExc_trace
+  check ``Verification.TolerantFrames.envOk_admissible
+  check ``Verification.TolerantFrames.passPreT_adminClosed
+  check ``Verification.TolerantFrames.run_sound_of_walk_typed
+  check ``Verification.TolerantFrames.headsEntered_of_recorded
+  check ``Verification.TolerantFrames.nodeObligations_of_parts
+  check ``Verification.TolerantFrames.checkedStep_parts
+  check ``Verification.TolerantFrames.stateHolds_freshImpl
+  check ``Verification.TolerantFrames.edgeStore_normal
+  check ``Verification.TolerantFrames.normal_edge_delivers
+  check ``Verification.TolerantFrames.handler_edge_delivers
+  check ``Verification.TolerantFrames.headEstablishes_of_edge
+  check ``Verification.TolerantFrames.normalTarget_of_exits
+  check ``Verification.TolerantFrames.exitDelivers_of_edge
+  check ``Verification.TolerantFrames.exitDelivers_head
+  check ``Verification.TolerantFrames.handlerDelivers_of_edge
+  check ``Verification.TolerantFrames.stepEdgesSound_of
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
