@@ -45,6 +45,7 @@ import Verification.Programs.TolerantFramesComposeEdges
 import Verification.Programs.TolerantFramesComposeShape
 import Verification.Programs.TolerantFramesRegionalNode
 import Verification.Programs.TolerantFramesNodeBindsExits
+import Verification.Programs.TolerantFramesRegionalRuns
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -648,6 +649,14 @@ run_cmd do
   check ``Verification.TolerantFrames.run_sound_of_walk_typed'
   check ``Verification.TolerantFrames.nodeObligations'_of_parts
   check ``Verification.TolerantFrames.stepEdgesSound'_of
+  check ``Verification.TolerantFrames.contKeeps_regionX
+  check ``Verification.TolerantFrames.regionsKept_of
+  check ``Verification.TolerantFrames.regionalTyped_of_tree
+  check ``Verification.TolerantFrames.regionNodeEntry_of
+  check ``Verification.TolerantFrames.regionX_start
+  check ``Verification.TolerantFrames.nodesChecked_stable
+  check ``Verification.TolerantFrames.stableNow_admissible
+  check ``Verification.TolerantFrames.regionally_of_walk_stable
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

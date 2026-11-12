@@ -2067,3 +2067,64 @@ cases of `graph_step'` to `graph_step`, the two of `normalTarget'_of_exits`
 to `normalTarget_of_exits`, the two of `nodeObligations'_mono` to
 `nodeObligations_mono` and the `branchBind` case of `nodeShape'_of` to
 `nodeShape_of`; no other proof unfolds either definition.
+
+## Leg 15b: the regional check kept along a run
+
+Module `lean/Verification/Programs/TolerantFramesRegionalRuns.lean`. The
+regional facts at a node entry are `RegionX`: the regions within $`\Phi`$
+from the invocation's entry heap $`h_0`$ at the entry values
+$`\rho_0`$, and the graph's tables at the label holding (`LabelHolds`), as
+`ArgumentRegionGraph.bounded_step` carries them for the certificate
+checker.
+
+A node's regional obligation (`NodeWithinAt`) reads, beside these, the
+regions' single-field paths of $`\rho_0`$ fixed in the current world
+(`StableNow`), a property of the world that `RegionsKept`'s facts $`X`$
+(of the environment and heap) cannot state. The node assertion carries
+it: `passPreS` is `passPreT` and `StableNow` at the state's world, and
+`RegionsKeptS` is `RegionsKept` at `passPreS`. Proved:
+
+- `stableNow_admissible`: an admissible transition keeps `StableNow`;
+  `nodesChecked_stable`: a property every admissible transition keeps
+  joins the node obligations' targets;
+- (`regionally_of_walk_stable`) `WalkSound` ∧ `RegionsKeptS` ∧ `passPreT`
+  at the start ∧ `StableNow` at the start's world ∧ $`X`$ at the start ⟹
+  the run within the regional bound, the conclusion of
+  `regionally_of_walk`;
+- (`regionsKept_of`) `RegionNodeOk` at every visited node ⟹
+  `RegionsKeptS` with $`X`$ = `RegionX`: the node's obligation at the entry
+  state gives the regions within and the targets' tables on every normal
+  exit (`checkEdges_sound`, `edgesFresh_holds`, `edgesFields_holds`,
+  `contKeeps_regionX` at every continuation, `branchBind` and `tagBind`
+  included), and on a throw the handler's tables or, escaping, the regions
+  within where the bound covers throws;
+- `RegionNodeOk.ofCheck`: the check `run` makes over the node's tables,
+  their agreement with the graph's (`TablesAgree`, `checkNode_mono`),
+  `RegionalTyped` and the evidence's entry give `RegionNodeOk`;
+- `regionNodeEntry_of`: the evidence's entry (its context, no
+  implications, its facts the materialized entry state) holds where the
+  node assertion does, given the evidence's context is the node's;
+- (`regionalTyped_of_tree`) `regionalDerivChecked` (the step's derivation
+  claimed at the node's term and context, its tree accepted) ⟹ the
+  evidence's context is the node's and `RegionalTyped`;
+- `regionX_start`: the start's facts from the start's table
+  (`checkEntry`, no fresh value, cell or field).
+
+What the pass needs for these premises:
+
+- `StableNow` at the start's world: `checkEntryFields_sound` from
+  `ArgumentPathTracking.checkEntryFields G inputs regions`, which the
+  certificate checker's `goto_bounded` makes and `run` does not
+  (needs pass change);
+- `RegionalTyped` and the context agreement: `regionalDerivChecked` of the
+  step's derivation at the regional check, the conjuncts `derivChecked`
+  makes in `footprintCheck` (needs pass change: `run`'s regional check
+  reads `stepDeriv` unchecked); a step without a derivation (a copy, step
+  evidence alone) needs its own typing argument;
+- `TablesAgree` at every visited node: the graph's tables the meet of the
+  established entries over every predecessor (`meet_sub`), the in-degree
+  order of `run_traversed`.
+
+The guarantee's `regions` field (`PassWalkSound.regions`) reads
+`RegionsKept` at `passPreT`; `regionally_of_walk_stable` is its form at
+`passPreS`, which the fold replaces it by.
