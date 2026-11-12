@@ -1066,7 +1066,9 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
         | .accepted => table := table ++ [q.entry]
         | .refused w => codeOutcome := codeOutcome.orElse fun _ => some (.refused s!"code {ci}: {w}"); break
         | .notHandled w => codeOutcome := codeOutcome.orElse fun _ => some (.notHandled s!"{w} (in code {ci})"); break
-        | .observed _ | .outsideBound _ => break
+        -- A code run is given no node to observe: any other outcome is the
+        -- code's located refusal, never a table cut short.
+        | o => codeOutcome := codeOutcome.orElse fun _ => some (.refused s!"code {ci}: {o}"); break
       if let some o := codeOutcome then return (name, "", o)
       let codes := GraphCode.admits table
       -- Observing (`observe`): the node of that label (`node:L`), or the
