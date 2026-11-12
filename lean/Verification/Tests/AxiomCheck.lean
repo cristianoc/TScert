@@ -625,6 +625,9 @@ run_cmd do
   check ``Verification.TolerantFrames.nodeChecked_reassign
   check ``Verification.TolerantFrames.passCheckerReassign_lexical
   check ``Verification.TolerantFrames.run_guarantee_of_checked
+  check ``Verification.TolerantFrames.headQuery_reassign
+  check ``Verification.TolerantFrames.assertionQuery_reassign
+  check ``Verification.TolerantFrames.edgeEvidenceChecked_reassign
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

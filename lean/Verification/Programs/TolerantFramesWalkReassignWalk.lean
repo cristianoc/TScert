@@ -245,4 +245,54 @@ theorem run_guarantee_of_checked {G : NormalGraph ι} {admits : MixedAssignment 
 
 end Nodes
 
+section Queries
+variable {ι : Type} [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι) (images : InstanceImageCheck G)
+
+/-- **The head query at a reassignment** (`SinglePass.run`, an edge into a
+loop head): the given facts `req` checked over the edge's facts `k` with
+the facts the edge's context `Γ` states of the cells and links they read,
+in the target's context `Δ`, is the same check at `reassign G η`. -/
+theorem headQuery_reassign (Δ Γ : List (Ty ι)) (req k : HeapKnowledge.Knowledge) (m : PointClaims.Mapping) :
+    KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf (reassign G η) Δ)
+        (HeapKnowledge.withTypedLinks (reassign G η) Γ (ControlFlow.withTypedCells (reassign G η) Γ req m k)) req m =
+      KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G Δ)
+        (HeapKnowledge.withTypedLinks G Γ (ControlFlow.withTypedCells G Γ req m k)) req m := by
+  rw [Parametricity.withTypedCells_reassign]
+  rfl
+
+/-- **The assertion query at a reassignment** (`SinglePass.run`, an edge
+into a node stating an assertion): the edge's facts with what its context
+states of the cells it reads, observed where the edge observes the result,
+checked against the assertion, is the same check at `reassign G η`. -/
+theorem assertionQuery_reassign (Δ Γ : List (Ty ι)) (req k : HeapKnowledge.Knowledge) (m : PointClaims.Mapping)
+    (observed : Option BranchRefinement.Observation) :
+    KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf (reassign G η) Δ)
+        (match observed with
+          | some o => HeapKnowledge.observeTyped (reassign G η) Γ (ControlFlow.withTypedCells (reassign G η) Γ req m k) 0 o
+          | none => HeapKnowledge.withTypedLinks (reassign G η) Γ (ControlFlow.withTypedCells (reassign G η) Γ req m k))
+        req m =
+      KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G Δ)
+        (match observed with
+          | some o => HeapKnowledge.observeTyped G Γ (ControlFlow.withTypedCells G Γ req m k) 0 o
+          | none => HeapKnowledge.withTypedLinks G Γ (ControlFlow.withTypedCells G Γ req m k))
+        req m := by
+  rw [Parametricity.withTypedCells_reassign]
+  cases observed <;> rfl
+
+/-- **An edge's evidence check at a reassignment** (`edgeEvidenceChecked`,
+which the pass applies to the evidence the edge search returns): the same
+check at `reassign G η`, so the edge search is an oracle as the step's
+search is. -/
+theorem edgeEvidenceChecked_reassign (Γ Δ : List (Ty ι)) (t : Target)
+    (observed : Option BranchRefinement.Observation) (fields optionals : List (Nat × PropKey))
+    (cells : HeapFacts.Facts) (p : PointClaims.EdgeEvidence ι) :
+    edgeEvidenceChecked (reassign G η) (images.reassign η) Γ Δ t observed fields optionals cells p =
+      edgeEvidenceChecked G images Γ Δ t observed fields optionals cells p := by
+  unfold edgeEvidenceChecked
+  cases observed <;>
+    simp only [Parametricity.unsatisfiable_reassign, Parametricity.checkMapped_reassign,
+      Parametricity.checkObserved_reassign]
+
+end Queries
+
 end Verification.TolerantFrames
