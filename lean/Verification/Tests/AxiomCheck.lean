@@ -61,6 +61,7 @@ import Verification.Programs.TolerantFramesNodeGoals
 import Verification.Programs.TolerantFramesNodeCallFresh
 import Verification.Programs.TolerantFramesComposeRunSound
 import Verification.Programs.TolerantFramesNodeJoined
+import Verification.Programs.TolerantFramesNodeYields
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -727,6 +728,12 @@ run_cmd do
   check ``Verification.TolerantFrames.joinedAt_of_exit
   check ``Verification.TolerantFrames.stepEdgesSoundJ_of_checked
   check ``Verification.TolerantFrames.StepEdgesSoundJ.toA
+  check ``Verification.TolerantFrames.SafePostExc.conj_post
+  check ``Verification.TolerantFrames.checkedYields_follows
+  check ``Verification.TolerantFrames.stepYields_judgment
+  check ``Verification.TolerantFrames.exitDeliversY_of_edge
+  check ``Verification.TolerantFrames.nodeObligations_of_partsY
+  check ``Verification.TolerantFrames.stepEdgesSoundJ_of_yields
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

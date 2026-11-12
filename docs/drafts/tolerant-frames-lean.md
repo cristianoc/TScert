@@ -1459,6 +1459,36 @@ source environment: at a handler edge $`\Gamma_e`$ is the node's context; at
 a normal edge it is the context as the step's yields refine it, typed where
 the kept yields hold of the step's value.
 
+**The kept yields at the values the step returns** (module
+`TolerantFramesNodeYields.lean`). `run` keeps a step's yields where
+`checkedYields` accepts them: outside a call at a promise signature, those
+`yieldFollows` accepts of the node's term. `NodeMeaning`'s `ret` and
+`exits` are stated for every value of the claim's type; a guard's goal and
+the implications a pushed edge states of its result hold only of the
+values the step returns, so `NodeYielded` restates them there, with the
+yields `ys` read at the implications `xs`. Proved:
+
+- `SafePostExc.conj_post`: a run safe with postconditions $`Q, R`$ and
+  safe with a value property $`T'`$ is safe with $`T'`$, $`Q`$ and $`R`$;
+- `checkedYields_follows`: outside a promise call, every kept yield passes
+  `yieldFollows`;
+- (`stepYields_judgment`) the yields passing `yieldFollows` ∧ the context
+  typing $`\rho`$ ∧ `ImpliesOk xs` ∧ the step's links holding ∧ the step's
+  judgment ⟹ the judgment with each value meeting the claim's type and
+  `YieldsOk ys` (`yieldFollows_sound`);
+- `nodeObligations_of_partsY`, (`stepEdgesSoundJ_of_yields`) `NodeChecked`
+  ∧ `NodeMeaning` (entry, shapes, handler) ∧ `NodeJoined` (handler) ∧
+  `NodeYielded` (the yields accepted, `xs` holding at the entry, the return's
+  goal and each exit from the state after the step and the yields at the
+  value) at every visited label ∧ `CodesSound` ⟹ `StepEdgesSoundJ`;
+- `exitDeliversY_of_edge`: `exitDelivers_of_edge` with the yields read at
+  the step's value and the target's types from the edge's check where they
+  hold, so an exit's `YieldsOk` premise and a refined context's typing come
+  from the state after the step.
+
+`NodeYielded.ret` is `goalHolds_of_return`'s premises with the yields at
+the value (its yields `passReturnYields entry ys`).
+
 Premises this leg discharges / leaves:
 
 - discharges `FootprintsKept` (into `BoundsChecked`, a record of the
@@ -1471,3 +1501,13 @@ Premises this leg discharges / leaves:
   `StepEdgesSoundJ`) that replaces `MergesImpliesHold`; leaves `NodeJoined`
   per exit to `joinedAt_of_exit` with the driver's record and the typing of
   the refined context.
+- discharges the yields premise of the exits and the return (`YieldsOk`
+  at every value) into `NodeYielded`, whose `follows` field is
+  `checkedYields_follows` outside a promise call; leaves: a promise call's
+  kept yields (`checkedYields`' promise branch keeps them by
+  `promiseYields` and the output, where `promiseCall_sound` needs the
+  derivation's tree, which `run` checks of the step's evidence, not of
+  `stepDeriv`: a pass change), `xs` holding at the entry (`slotImplOf`
+  over the state's implications, a proof to write), the head edge's
+  version of `exitDeliversY_of_edge`, and the walk's predicates over
+  `StepEdgesSoundJ` (the walk side's `WalkSound`).
