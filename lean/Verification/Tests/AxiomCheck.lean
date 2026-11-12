@@ -46,6 +46,7 @@ import Verification.Programs.TolerantFramesRunSound
 import Verification.Programs.TolerantFramesDriverWalk
 import Verification.Programs.TolerantFramesDriverHeadsFuel
 import Verification.Programs.TolerantFramesDriverSummaries
+import Verification.Programs.TolerantFramesDriverRecords
 import Verification.Programs.TolerantFramesWalkJoined
 import Verification.Programs.TolerantFramesGuaranteeWalk
 import Verification.Programs.TolerantFramesMergeBelow
@@ -821,6 +822,15 @@ run_cmd do
   check ``Verification.TolerantFrames.setup_answers
   check ``Verification.TolerantFrames.walk_keeps
   check ``Verification.TolerantFrames.runKeepsSummaries
+  check ``Verification.TolerantFrames.filter_eq_of_le
+  check ``Verification.TolerantFrames.filter_flip
+  check ``Verification.TolerantFrames.sum_drop
+  check ``Verification.TolerantFrames.RecInv.all_visited
+  check ``Verification.TolerantFrames.RecInv.visited_of_incoming
+  check ``Verification.TolerantFrames.recordSound_of_inv
+  check ``Verification.TolerantFrames.Settled.frame
+  check ``Verification.TolerantFrames.recInv_visit
+  check ``Verification.TolerantFrames.recordsSound_of
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

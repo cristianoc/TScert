@@ -1572,8 +1572,10 @@ record's entry is not the single incoming state or the merge where the
 label states an assertion, and `Traversed`'s `single` and `merge` fields do
 not hold of it. `TraversedA` states the walk's construction over entries
 `base` before the addition (`Traversed` of the walk with entries `base`),
-each label's entry being `base t` at a head and
-`withWritten (stated t) (base t)` elsewhere. Proved: `withWritten_holds`
+each visited label's entry being `base t` at a head and
+`withWritten (stated t) (base t)` elsewhere (an unvisited label's
+recorded entry is the empty state, which no written fact without a slot
+leaves empty). Proved: `withWritten_holds`
 (the state with the facts added holds where the state and the written
 assertion hold), `withWritten_wf`, `TraversedA.reassign`; `entry_of_edgeA`:
 
@@ -1824,3 +1826,46 @@ the summaries it was given (proved: `runKeepsSummaries`, the unit level's
 boundary, the earlier table followed by what the later one adds past its
 length, has the earlier as its prefix (`keep_prefix`), which gives
 `VisitsKeepSummaries` once the visit restores it (queue entry W2).
+
+**The record from its visits.** Module
+`lean/Verification/Programs/TolerantFramesDriverRecords.lean`. The walk's
+state keeps an invariant (`RecInv`): the queue's labels are distinct,
+below the bound $`n`$, reached, unvisited and, other than heads, with
+in-degree 0; each visited label is reached, has in-degree 0 where it is no
+head, has its exits below $`n`$ and is settled (`Settled`: its node checked
+at every record agreeing with it at the label and every summary table its
+answers are a prefix of; the start entered; at a node other than a head,
+its entry the written facts added to its single incoming state or to the
+merge of the states that came in, those states and the start names below
+the merge's counter); the record counts the visited labels; a node other
+than a head's in-degree is the number of exits into it from reached
+labels not yet visited,
+
+```math
+\mathrm{deg}\ t = \sum_{s < n,\ s \text{ reached},\ s \text{ unvisited}} \mathrm{count}\ t\ (\mathrm{exits}\ s);
+```
+
+each state that came in came from an exit of a visited label, with its
+target's width, a well-formed store and below the fresh counter. What one
+visit of $`l`$ gives (`VisitFacts`, over the record's fields): the record
+changes at $`l`$ only and counts it; states come in at $`l`$'s exits only;
+each exit's in-degree goes down by its count among them; the labels queued
+are exits, other than heads, at in-degree 0; $`l`$'s record is settled
+where $`l`$ is no exit of its own. An exit's count is at most its target's
+in-degree ($`l`$ is a summand), so a node other than a head is no exit of
+its own, and no visited label other than a head is an exit of $`l`$: what
+came into it is final at its visit. Proved: `recInv_visit` (a visit keeps
+the invariant), `RecInv.all_visited` (a record counting at least the
+reached labels has visited them all: the visited labels are among the
+reached ones, `filter_eq_of_le`), `recordSound_of_inv` (the invariant at
+the walk's end gives `RecordSound`), and
+
+```math
+\mathrm{SetupRecords} \wedge \mathrm{VisitsRecord} \wedge \mathrm{VisitsKeepSummaries} \Longrightarrow \mathrm{RecordsSound}
+```
+
+(`recordsSound_of`), with `SetupRecords` (the setup's state meets the
+invariant and its `env` states the call: its heads `passHeads`, its
+reached labels closed under exits below $`n`$, the start reached) and
+`VisitsRecord` (every visit that returns gives `VisitFacts`) named
+hypotheses over the setup and the visit.
