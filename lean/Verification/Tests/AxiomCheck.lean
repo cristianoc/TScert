@@ -867,6 +867,11 @@ run_cmd do
   check ``Verification.TolerantFrames.orderedSuffix_down
   check ``Verification.TolerantFrames.foldl_push_size
   check ``Verification.TolerantFrames.mapNames_length
+  check ``Verification.TolerantFrames.derivChecked_reassign
+  check ``Verification.TolerantFrames.promiseDerivChecked_reassign
+  check ``Verification.TolerantFrames.checkedYields_reassign
+  check ``Verification.TolerantFrames.NodeYieldChecks.reassign
+  check ``Verification.TolerantFrames.nodesYield_of
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

@@ -126,30 +126,30 @@ end Joined
 section Checks
 variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
 
-/-- **What `run` checks of a node's kept yields and its return** (read off
-the visit): the yields `ys` none, or those `checkedYields` keeps at the
-implications `slotImplOf entry.names xs` for `xs` among the label's, the
-step's facts and output, a derivation `deriv` and the pass's promise check
-(`SinglePass.promiseDerivChecked`) over a summary table `sums'` within
-`sums`; at a return, `returnCheck`
-refusing nothing at `ys`, with the subtype answers sound and the promised
-argument's name the start name of the goal's slot. -/
-structure NodeYieldChecks (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
-    (sums : List (ReadSummary ι)) (w : Walk ι) (startNames : List Nat) (goal : Goal ι)
-    (ensures : List HeapKnowledge.IndexFact) (l : Nat) (node : Node) (c : PointClaim ι) (entry : SinglePass.State)
-    (st : Stepped ι) (ys : List (PromiseCalls.Yield ι)) : Prop where
-  kept : ys = [] ∨ ∃ (xs : List (PromiseCalls.Implication ι)) (deriv : ProgramCertificates.Evidence ι)
-    (ys0 : List (PromiseCalls.Yield ι)) (sums' : List (ReadSummary ι)), (∀ x ∈ xs, x ∈ w.implies l) ∧
-    (∀ s ∈ sums', s ∈ sums) ∧
-    ys = checkedYields G images c.context c.type (slotImplOf entry.names xs) st.stepK st.stepOut deriv
-      node.expression (fun _ => SinglePass.promiseDerivChecked G images codes sums' c node st.stepK deriv) ys0
-  ret : node.continuation = .ret → SubtypeAnswersSound G images ∧ ∃ start argName debugNode answers,
-    (returnCheck G images goal ensures c l entry st.store st.result start startNames argName ys debugNode
-      answers).1 = none ∧ argName = goal.slot.bind (startNames[·]?)
+/-- **A node's exits and handler deliver with its kept yields** `ys`
+(`NodeYielded`'s `exits` and `handler`): each normal exit from the state
+after the step, the yields at the pushed value and the step's output; the
+handler from the throw state; each at `edgePreAJ`. -/
+structure NodeExitsY (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
+    (ρ0 : Env) (ctx : Nat → List (Ty ι)) (stated : Nat → Option HeapKnowledge.Knowledge) (given : Nat → Bool)
+    (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
+    (m : Nat) (l : Nat) (node : Node) (c : PointClaim ι) (entry : SinglePass.State) (st : Stepped ι)
+    (ys : List (PromiseCalls.Yield ι)) : Prop where
+  exits : ∀ t pushed observed promote, Exit.normal t pushed observed promote ∈ Exit.ofNode node → ∀ ρ,
+    ExitDelivers (edgePreAJ G w startNames ρ0 ctx stated given edgesIn) G c.type c.context
+      (fun ρ' m' s' => StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ρ0
+        ρ' m' s' ∧ PromiseCalls.YieldsOk G ys ρ s'.n s'.W (ρ' 0) ∧ HeapKnowledge.Holds st.stepOut ρ' s'.h)
+      ρ m t pushed observed promote
+  handler : ∀ t, node.handler = some t → ∀ ρ (s' : IndexedHeap) e,
+    StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ (w.implies l) startNames ρ0
+      ρ m s' →
+    EnvOk G c.context ρ s'.n s'.W → Scoped 0 e → excOf G s'.n s'.W e →
+    edgePreAJ G w startNames ρ0 ctx stated given edgesIn t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s'
 
 /-- **A node's kept yields judged and its return's goal from the checks**:
-`NodeYieldChecks` with the exits and the handler delivering `edgePreAJ`
-gives `NodeYielded` (`yieldsJudged_of_checked` with `slotImplOf_entry`,
+`NodeYieldChecks` with the subtype answers sound (pass change D5) and the
+exits and the handler delivering `edgePreAJ` (`NodeExitsY`) gives
+`NodeYielded` (`yieldsJudged_of_checked` with `slotImplOf_entry`,
 `goalHolds_of_returnY`). -/
 theorem nodeYielded_of_checks {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
     {sums : List (ReadSummary ι)} {w : Walk ι} {startNames : List Nat} {ρ0 : Env} {ctx : Nat → List (Ty ι)}
@@ -158,17 +158,8 @@ theorem nodeYielded_of_checks {G : NormalGraph ι} {images : InstanceImageCheck 
     {goal : Goal ι} {ensures : List HeapKnowledge.IndexFact} {m l : Nat} {node : Node} {c : PointClaim ι}
     {entry : SinglePass.State} {st : Stepped ι} {ys : List (PromiseCalls.Yield ι)}
     (hc : NodeYieldChecks G images codes sums w startNames goal ensures l node c entry st ys)
-    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
-    (hexits : ∀ t pushed observed promote, Exit.normal t pushed observed promote ∈ Exit.ofNode node → ∀ ρ,
-      ExitDelivers (edgePreAJ G w startNames ρ0 ctx stated given edgesIn) G c.type c.context
-        (fun ρ' m' s' => StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ρ0
-          ρ' m' s' ∧ PromiseCalls.YieldsOk G ys ρ s'.n s'.W (ρ' 0) ∧ HeapKnowledge.Holds st.stepOut ρ' s'.h)
-        ρ m t pushed observed promote)
-    (hhandler : ∀ t, node.handler = some t → ∀ ρ (s' : IndexedHeap) e,
-      StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ (w.implies l) startNames ρ0
-        ρ m s' →
-      EnvOk G c.context ρ s'.n s'.W → Scoped 0 e → excOf G s'.n s'.W e →
-      edgePreAJ G w startNames ρ0 ctx stated given edgesIn t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s') :
+    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums) (hsub : SubtypeAnswersSound G images)
+    (hx : NodeExitsY G w startNames ρ0 ctx stated given edgesIn m l node c entry st ys) :
     NodeYielded G w startNames ρ0 ctx stated given edgesIn (GoalHolds G goal (goal.argument ρ0)) m l node c entry st
       ys where
   judged := by
@@ -176,10 +167,10 @@ theorem nodeYielded_of_checks {G : NormalGraph ι} {images : InstanceImageCheck 
     · exact yieldsJudged_nil
     · exact yieldsJudged_of_checked (fun ρ s hS => slotImplOf_entry hsub hS) hcodes (fun s hs => hsums s (hss s hs))
   ret hk := by
-    obtain ⟨hsub, start, argName, debugNode, answers, h, harg⟩ := hc.ret hk
+    obtain ⟨start, argName, debugNode, answers, h, harg⟩ := hc.ret hk
     exact goalHolds_of_returnY hsub h harg
-  exits := hexits
-  handler := hhandler
+  exits := hx.exits
+  handler := hx.handler
 
 end Checks
 
@@ -199,6 +190,38 @@ def NodesYield : Prop :=
       ∃ ys, NodeYielded (reassign G η) r.w (List.range c.inputs.length) ρ0 r.ctx r.stated r.given r.edgesIn
         (GoalHolds (reassign G η) c.goal (c.goal.argument ρ0)) m l (r.node l hl).node (r.node l hl).c
         (r.node l hl).entry (r.node l hl).st ys
+
+variable (ι) in
+/-- **(Named hypothesis, pass change D5) The answered subtype requests are
+sound**: an answer `subtypeUsing` accepts, from any answers, is an
+inclusion of meanings, at every graph (the reassigned ones included). -/
+def SubtypeAnswersAll : Prop := ∀ (G : NormalGraph ι) (I : InstanceImageCheck G), SubtypeAnswersSound G I
+
+variable (ι) in
+/-- **(Named hypothesis) Each checked node's exits and handler deliver
+with the yields the visit kept** (`NodeExitsY` at `(r.node l hl).ys`), at
+every admitted reassigned graph, over a checked walk. -/
+def ExitsYield : Prop :=
+  ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
+    RunPremises G I c after admits → ∀ r : RunWalkA G I c, WalkChecked c r → ∀ η, admits η →
+      ∀ ρ0 m l (hl : r.w.visited l),
+      NodeExitsY (reassign G η) r.w (List.range c.inputs.length) ρ0 r.ctx r.stated r.given r.edgesIn m l
+        (r.node l hl).node (r.node l hl).c (r.node l hl).entry (r.node l hl).st (r.node l hl).ys
+
+/-- **(`nodesYield_of`) Each checked node delivers with its kept yields**
+(`NodesYield`): at every admitted reassigned graph, the yields the visit
+kept (`(r.node l hl).ys`), checked at `G` (`NodePassChecked.yields`) and
+so there (`NodeYieldChecks.reassign`), judged and meeting the return's goal
+(`nodeYielded_of_checks`), the codes and the summary table sound there
+(`codesSound_reassign`, `summariesSound_reassign`), the exits and handler
+by `ExitsYield`. -/
+theorem nodesYield_of (hsub : SubtypeAnswersAll ι) (hex : ExitsYield ι) : NodesYield ι := by
+  intro G I c after admits hp r hchk η hη ρ0 m l hl
+  obtain ⟨dead, hd⟩ := hchk
+  obtain ⟨sums, hsums, hys⟩ := (hd l hl).yields
+  exact ⟨(r.node l hl).ys, nodeYielded_of_checks (hys.reassign η) (codesSound_reassign hp.2.2.1 η)
+    (Parametricity.summariesSound_reassign G η I hsums) (hsub _ _)
+    (hex G I c after admits hp r ⟨dead, hd⟩ η hη ρ0 m l hl)⟩
 
 /-- **The footprint check keeps the bound at a checked walk**
 (`FootprintKept` at every admitted reassigned graph), the entry states from

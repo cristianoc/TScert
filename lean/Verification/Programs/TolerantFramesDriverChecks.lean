@@ -76,15 +76,17 @@ theorem boundChecked_of_bounded {G : NormalGraph ι} {images : InstanceImageChec
 /-- **The visit's checks give `NodePassChecked`**: the footprint check
 passing at the node's own values under the call's bound
 (`boundChecked_of_bounded`), and where the call states a postcondition,
-the return check at the node's values. -/
+the return check at the node's values, and the yields it kept checked. -/
 theorem nodePassChecked_of {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I}
     {w : Walk ι} {ctx : Nat → List (Ty ι)} {l : Nat}
     (r : NodeChecked G I c.codes c.passChecker c.P w (List.range c.inputs.length) ctx l) {deadArr : Array Bool}
     (hb : passBounded G I c.codes c.bound deadArr l r.node r.c r.entry r.ans.summaries.toList r.st.stepK
       (passDerivOf r.c r.node r.st) = true)
-    (hret : c.ensures ≠ [] → ReturnChecked r c.goal c.ensures) :
+    (hret : c.ensures ≠ [] → ReturnChecked r c.goal c.ensures)
+    (hys : ∃ sums : List (ReadSummary ι), SummariesSound G I sums ∧
+      NodeYieldChecks G I c.codes sums w (List.range c.inputs.length) c.goal c.ensures l r.node r.c r.entry r.st r.ys) :
     NodePassChecked c deadArr.toList r :=
-  ⟨boundChecked_of_bounded r hb, hret⟩
+  ⟨boundChecked_of_bounded r hb, hret, hys⟩
 
 end Bounded
 

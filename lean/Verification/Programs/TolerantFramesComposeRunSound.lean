@@ -3,13 +3,15 @@ import Verification.Programs.TolerantFramesNodeCallFresh
 import Verification.Programs.TolerantFramesNodeReturns
 import Verification.Programs.TolerantFramesComposeShape
 import Verification.Programs.TolerantFramesNodeLabels
+import Verification.Programs.TolerantFramesNodeYieldChecks
 
 /-! # Tolerant frames: the driver's checks at the nodes it visits
 
 The driver checks each node it visits: under a footprint bound, the bound
 (`BoundChecked`, with `outFresh` as `run` computes it, in the call's
 no-return region `dead`), and where the call states a postcondition, the
-return (`ReturnChecked`) (`NodePassChecked`). A walk is checked
+return (`ReturnChecked`), and the yields it keeps (`NodeYieldChecks`)
+(`NodePassChecked`). A walk is checked
 (`WalkChecked`) where every visited node is, in one no-return region. The
 graph theorem's per-node premises are stated at a checked walk, the
 record's: `RegionsHeld` here, `NodesYield` in `TolerantFramesComposeYields`. -/
@@ -24,12 +26,16 @@ variable {ι : Type} [Labels ι]
 /-- **What the driver checks at a node it visits** (`run`, "The footprint
 bound at this node" and a return's checks), at the node's checked step
 `r`: under the call's bound `(Φ, fr, ex)`, `BoundChecked` in the no-return
-region `dead`; where the call states a postcondition, `ReturnChecked`. -/
+region `dead`; where the call states a postcondition, `ReturnChecked`; the
+yields it kept (`r.ys`) checked (`NodeYieldChecks`) over a sound summary
+table. -/
 structure NodePassChecked {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I)
     (dead : List Bool) {w : Walk ι} {ctx : Nat → List (Ty ι)} {l : Nat}
     (r : NodeChecked G I c.codes c.passChecker c.P w (List.range c.inputs.length) ctx l) : Prop where
   bound : ∀ Φ fr ex, c.bound = some (Φ, fr, ex) → BoundChecked r Φ dead fr ex
   ret : c.ensures ≠ [] → ReturnChecked r c.goal c.ensures
+  yields : ∃ sums : List (ReadSummary ι), SummariesSound G I sums ∧
+    NodeYieldChecks G I c.codes sums w (List.range c.inputs.length) c.goal c.ensures l r.node r.c r.entry r.st r.ys
 
 /-- **A checked walk**: every visited node's step `NodePassChecked`, in one
 no-return region. -/
