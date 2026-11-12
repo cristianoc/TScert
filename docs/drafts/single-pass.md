@@ -1374,6 +1374,12 @@ removal works through:
   `unknown` aside (statement_analysis.ml:122-124): `joined([...a, ...xs])`
   of `joined(terms: Term[])` builds `xs = forms.map(…)` at `Term[]`. The
   pass checks the allocation at that contract and every use against it.
+- **Expected instance with a receiver.** Where the instance the actuals give
+  has a result the expected type does not admit, the expected type's
+  instance binds the receiver's binders from the receiver first, an input as
+  the actuals are (inference.ml:518-529): `calls.map(name)` expected at
+  `(string | undefined)[]` is the call at `U` of `string | undefined`. The
+  instance must still admit every actual; the pass checks the call at it.
 - **Loop heads.** A loop head's facts beyond its written assertion are the
   given file's `headFacts` (and `headFactsOfCodes` for each code request),
   each at the statement entries that start where the given one does and hold

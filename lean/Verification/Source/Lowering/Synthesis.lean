@@ -4876,7 +4876,9 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
     if !(← get).force.contains "instances" &&
         c.binders.all (fun b => hidden.contains b || (σ.lookup b).isSome) &&
         !within T (substitute σ a.result) H then
-      let σe ← bindFrom c.seed [(a.result, H')]
+      -- (the receiver an input like the actuals, inference.ml:518-520: its
+      -- binders stay the receiver's)
+      let σe ← bindFrom c.seed [(a.receiver, c.receiver), (a.result, H')]
       if c.binders.all (fun b => hidden.contains b || (σe.lookup b).isSome) && admitsAt σe then σ := σe
   -- A binder that is a callback literal's parameter, which an earlier
   -- actual's parameter takes at a position of one of its methods: the
