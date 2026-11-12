@@ -60,7 +60,8 @@ theorem nodeObligations_mono {pre pre' : Nat → Assertion} {Ξres Tres Ξ T : F
       rcases this with ⟨h1, h2⟩ | ⟨h1, h2⟩
       · exact .inl ⟨h1, hpre _ _ _ h2⟩
       · exact .inr ⟨h1, hpre _ _ _ h2⟩
-    | _ => exact this
+    | branchBind y n => exact this.imp (fun h => ⟨h.1, hpre _ _ _ h.2⟩) (fun h => ⟨h.1, hpre _ _ _ h.2⟩)
+    | tagBind tg y n => exact this.imp (fun h => ⟨h.1, hpre _ _ _ h.2⟩) (fun h => ⟨h.1, hpre _ _ _ h.2⟩)
   raise := fun s e ha he hΞ hQ => by
     have := ho.raise s e ha he hΞ hQ
     cases x with

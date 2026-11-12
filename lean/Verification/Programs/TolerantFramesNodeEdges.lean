@@ -188,10 +188,27 @@ def ExitDelivers (pre : Nat → Assertion) (G : NormalGraph ι) (A : Ty ι) (Γ 
   ∀ (s' : IndexedHeap) v, isVal v = true → Fn (push v ρ) m s' → EnvOk G (A :: Γ) (push v ρ) s'.n s'.W →
     ObservedOk observed promote v → pre t.label (PointClaims.mapEnv t.mapping (if pushed then push v ρ else ρ)) m s'
 
+/-- **A node's normal exits observe only where they push and promote only
+where they do not** (`Exit.ofNode`): the premises `hpo`, `hpp` of the edge
+lemmas, at every exit. -/
+theorem ofNode_flags {node : Node} {t : Target} {pushed : Bool} {observed : Option BranchRefinement.Observation}
+    {promote : Option Bool} (hm : Exit.normal t pushed observed promote ∈ Exit.ofNode node) :
+    (observed.isSome = true → pushed = true) ∧ (promote.isSome = true → pushed = false) := by
+  unfold Exit.ofNode at hm
+  rcases List.mem_append.mp hm with hm | hm
+  · split at hm <;> simp at hm <;>
+      first
+        | (rcases hm with ⟨-, rfl, rfl, rfl⟩ | ⟨-, rfl, rfl, rfl⟩ <;> simp; done)
+        | (obtain ⟨-, rfl, rfl, rfl⟩ := hm; simp)
+  · simp at hm
+
 /-- **A continuation's normal target from its exits**: where every normal
-exit of the node (`Exit.ofNode`) delivers, and a branch's value is a
-Boolean, a value's normal target holds at a `bind`, `effect` or `branch`
-continuation; at a return, where the claim's type gives the result type. -/
+exit of the node (`Exit.ofNode`) delivers, and the value has its
+continuation's shape, a value's normal target holds at a `bind`, `effect`,
+`branch`, `branchBind` (the arm of the Boolean) and `tagBind` (the arm of
+the tag's answer in the heap, each exit observing what its arm's transition
+tests) continuation; at a return, where the claim's type gives the result
+type. -/
 theorem normalTarget_of_exits {pre : Nat → Assertion} {G : NormalGraph ι} {A : Ty ι} {Γ : List (Ty ι)}
     {Fn : Assertion} {ρ : Env} {m : Nat} {node : Node} {Tres : Fam} {Qres : Heap → Prop}
     (hex : ∀ t pushed observed promote, Exit.normal t pushed observed promote ∈ Exit.ofNode node →
@@ -223,8 +240,26 @@ theorem normalTarget_of_exits {pre : Nat → Assertion} {G : NormalGraph ι} {A 
     rcases hs with rfl | rfl
     · exact .inl ⟨rfl, by simpa using mem y false none (some true) (by simp) rfl⟩
     · exact .inr ⟨rfl, by simpa using mem n false none (some false) (by simp) rfl⟩
-  | .branchBind .., hs => exact hs.elim
-  | .tagBind .., hs => exact hs.elim
+  | .branchBind y n, hs =>
+    rw [hk] at mem
+    rcases hs with rfl | rfl
+    · have := mem y true (some (.boolean true)) none (by simp)
+        (by simp [ObservedOk, BranchRefinement.Observation.holds])
+      exact .inl ⟨rfl, by simpa using this⟩
+    · have := mem n true (some (.boolean false)) none (by simp)
+        (by simp [ObservedOk, BranchRefinement.Observation.holds])
+      exact .inr ⟨rfl, by simpa using this⟩
+  | .tagBind tg y n, _ =>
+    rw [hk] at mem
+    cases hq : tagHoldsIn s'.h tg v with
+    | true =>
+      have := mem y true (some (.tag tg true)) none (by simp)
+        (by simpa [ObservedOk, BranchRefinement.Observation.holds] using tagHolds_of_heap hq)
+      exact .inl ⟨hq, by simpa using this⟩
+    | false =>
+      have := mem n true (some (.tag tg false)) none (by simp)
+        (by simpa [ObservedOk, BranchRefinement.Observation.holds] using tagHolds_of_heap hq)
+      exact .inr ⟨hq, by simpa using this⟩
 
 end Edges
 

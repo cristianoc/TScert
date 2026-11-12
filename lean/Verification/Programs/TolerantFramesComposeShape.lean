@@ -8,8 +8,8 @@ checker checks it of a branch's evidence (`ControlFlow.checkNodeResult`,
 `decide (expand G (result c) = [.bool])`); the pass's claims are the
 producer's, and `run` makes no such check. `branchShape_of` proves the
 checker's test gives the shape, so the test at a branch node of `run`
-(`passShapeCheck`) discharges `shape`; `nodeShape_of` gives it at every
-continuation the node obligations admit. -/
+(`passShapeCheck`, with `onlyBoolean` at a `branchBind`) discharges
+`shape`; `nodeShape_of` gives it at every continuation. -/
 namespace Verification.TolerantFrames
 open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
@@ -18,13 +18,14 @@ open PositiveRules HeapExpressionRules
 section Shape
 variable {ι : Type} [DecidableEq ι]
 
-/-- The shape check a branch's claim type needs, the proved checker's
-(`ControlFlow.checkNodeResult` at `.branch`): the type is exactly Boolean.
-Other continuations the node obligations admit need none. -/
+/-- The shape check a continuation's claim type needs, the proved checker's
+(`ControlFlow.checkNodeResult`): at a branch the type exactly Boolean, at a
+`branchBind` only Boolean values (`onlyBoolean`); other continuations need
+none. -/
 def passShapeCheck (G : NormalGraph ι) (A : Ty ι) : Continuation → Bool
   | .branch _ _ => decide (PositiveRules.expand G A = [.bool])
-  | .ret | .bind _ | .effect _ => true
-  | _ => false
+  | .branchBind _ _ => BranchRefinement.onlyBoolean G A
+  | .ret | .bind _ | .effect _ | .tagBind _ _ _ => true
 
 /-- **A Boolean claim type gives a branch's shape**: a value of a type
 represented by the Boolean clause is `true` or `false`. -/
@@ -43,7 +44,8 @@ theorem nodeShape_of {G : NormalGraph ι} {A : Ty ι} {k : Continuation} (hs : p
   cases k with
   | ret | bind _ | effect _ => trivial
   | branch y no => exact branchShape_of hs hv
-  | branchBind _ _ | tagBind _ _ _ => simp [passShapeCheck] at hs
+  | branchBind _ _ => exact BranchRefinement.onlyBoolean_sound hs hv
+  | tagBind _ _ _ => trivial
 
 end Shape
 

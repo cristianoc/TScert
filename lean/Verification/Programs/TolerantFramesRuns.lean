@@ -101,16 +101,18 @@ node. -/
 def Above (T : Fam) (s : IndexedHeap) (v : Tm) : Prop :=
   ∃ U : WorldT (s.n + 1), trunc s.n (Nat.le_succ _) U = s.W ∧ T (s.n + 1) U v
 
-/-- What a continuation needs of a node's value to take a transition at all:
-a branch needs a Boolean; `branchBind` and `tagBind` are outside this
-statement. -/
+/-- What a continuation needs of a node's value to take a transition: a
+branch and a `branchBind` a Boolean; a `tagBind` any value. -/
 def ShapeOk (v : Tm) : Continuation → Prop
   | .ret | .bind _ | .effect _ => True
   | .branch _ _ => v = .tru ∨ v = .fls
-  | _ => False
+  | .branchBind _ _ => v = .tru ∨ v = .fls
+  | .tagBind _ _ _ => True
 
 /-- The obligation a normal exit with value `v` meets at the state `s` its
-continuation's transition reaches: the target's assertion at its environment,
+continuation's transition reaches: the target's assertion at its environment
+(at a `branchBind`, the arm of the Boolean with the value pushed; at a
+`tagBind`, the arm of the tag's answer in `s`'s heap with the value pushed),
 or the result type and the graph's normal exit post `Qres`. -/
 def NormalTarget (pre : Nat → Assertion) (Tres : Fam) (Qres : Heap → Prop) (ρ : Env) (m : Nat) (s : IndexedHeap)
     (v : Tm) : Continuation → Prop
@@ -119,7 +121,10 @@ def NormalTarget (pre : Nat → Assertion) (Tres : Fam) (Qres : Heap → Prop) (
   | .effect l => pre l.label (mapEnv l.mapping ρ) m s
   | .branch y n => (v = .tru ∧ pre y.label (mapEnv y.mapping ρ) m s) ∨
       (v = .fls ∧ pre n.label (mapEnv n.mapping ρ) m s)
-  | _ => False
+  | .branchBind y n => (v = .tru ∧ pre y.label (mapEnv y.mapping (push v ρ)) m s) ∨
+      (v = .fls ∧ pre n.label (mapEnv n.mapping (push v ρ)) m s)
+  | .tagBind tag y n => (tagHoldsIn s.h tag v = true ∧ pre y.label (mapEnv y.mapping (push v ρ)) m s) ∨
+      (tagHoldsIn s.h tag v = false ∧ pre n.label (mapEnv n.mapping (push v ρ)) m s)
 
 /-- The obligation a throw of `e` meets at the state the handler's transition
 reaches: the handler's assertion with `e` bound, or, escaping, the graph's
@@ -247,8 +252,25 @@ theorem graph_step {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Q
           rcases tgt hp with ⟨he, -⟩ | ⟨-, hn⟩
           · cases he
           · exact hn
-      | branchBind _ _ => exact hshape.elim
-      | tagBind _ _ _ => exact hshape.elim
+      | branchBind y no =>
+        rcases hshape with rfl | rfl
+        · refine next _ (WExt_refl _) ha' .yesBind ho' fun hp _ _ => ?_
+          rcases tgt hp with ⟨-, hy⟩ | ⟨he, -⟩
+          · exact hy
+          · cases he
+        · refine next _ (WExt_refl _) ha' .noBind ho' fun hp _ _ => ?_
+          rcases tgt hp with ⟨he, -⟩ | ⟨-, hn⟩
+          · cases he
+          · exact hn
+      | tagBind tag y no =>
+        refine next _ (WExt_refl _) ha' (.tagBind hv) ho' fun hp _ _ => ?_
+        rcases tgt hp with ⟨hq, hy⟩ | ⟨hq, hn⟩
+        · simp only [below] at hq
+          simp only [hq, if_true]
+          exact hy
+        · simp only [below] at hq
+          simp only [hq, Bool.false_eq_true, if_false]
+          exact hn
     · -- a throw: the handler's transition, or the run ends raised
       have tgt : ∀ (hp : 0 < n), RaiseTarget pre Ξres Rres ρ m (below n W h hp ha ho) e x := fun hp =>
         hobl.raise _ e (below_action hr hc) hsc ⟨W, rfl, hΞ⟩ hq

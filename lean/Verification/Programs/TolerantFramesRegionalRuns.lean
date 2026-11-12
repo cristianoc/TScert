@@ -275,8 +275,8 @@ theorem nodesChecked_stable {P : Program} {pre : Nat → Assertion} {Ξres Tres 
     · exact ⟨ht, hs'⟩
     · exact ⟨ht, hs'⟩
     · exact ht.imp (fun h => ⟨h.1, h.2, hs'⟩) (fun h => ⟨h.1, h.2, hs'⟩)
-    · exact ht.elim
-    · exact ht.elim
+    · exact ht.imp (fun h => ⟨h.1, h.2, hs'⟩) (fun h => ⟨h.1, h.2, hs'⟩)
+    · exact ht.imp (fun h => ⟨h.1, h.2, hs'⟩) (fun h => ⟨h.1, h.2, hs'⟩)
   · have ht := ho.raise s' e ha hsc hΞ hq
     cases hx : node.handler <;> rw [hx] at ht
     · exact ht
