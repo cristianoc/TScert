@@ -454,7 +454,9 @@ its value does not admit that instance's result: `make<number>` returned at
 `invalid-method-effect-throw-caught` `wrong` (refused at the caught call's
 throw), under `no-return` (a never-returning call changing nothing under a
 handler and in an async body too), and `map-stable-set` `distinct`, under
-`steps` (accepted unforced, refused at its callback's iterator step). A control's
+`steps` (accepted unforced, refused at its callback's iterator step), and
+`loop-head-contents` `continued`, under `head-entry` (accepted unforced,
+refused at an edge into its loop's head). A control's
 acceptance counts only with every unit
 it `depends` on accepted: a run with named units checks only those, a
 dependency's footprint among its proposals, so its reader follows
@@ -1346,6 +1348,22 @@ removal works through:
   value's type, a literal's widened), the constant's records owning it
   after. `Object.assign`'s value is the target's fields and then each
   source's, a later key replacing an earlier one.
+- **Loop head types.** At the head of a `while` or `for` loop, a binding
+  the loop assigns is at its declared type, but a source binding a slot
+  holds (no cell) that enters narrower than its declared type, with no
+  literal that widens within the declared type (`let i = 0` at `number`
+  widens at the head, as TypeScript widens a mutable binding's literals):
+  that one is at the join of
+  its entry type and its types on the edges back to the head, the loop's
+  test, body and update walked again from that join until the edges add
+  nothing, at most three walks, the walk's state restored after each; kept
+  where the join settles strictly within the declared type, else at the
+  declared type (the producer's fixpoint, flow.ml:104-139). The head's
+  types are its point claims, so the pass checks every edge into the head
+  against them, the entry and each back edge (section 5).
+  `TSCERT_FORCE=head-entry` states such a binding at its entry type,
+  unwalked, the adversarial proposal: `loop-head-contents` `continued`,
+  accepted unforced, is refused at an edge into its loop's head.
 - **Loop heads.** A loop head's facts beyond its written assertion are the
   given file's `headFacts` (and `headFactsOfCodes` for each code request),
   each at the statement entries that start where the given one does and hold
