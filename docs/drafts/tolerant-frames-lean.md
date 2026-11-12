@@ -354,23 +354,93 @@ $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$. Proved:
 excludes `keepsCall` (line 1296), the second is an `ordinary` step taking the
 writing path.
 
-**Where the pass's treatment is not implied by its checked rule.** The theorems
-above assume the output the pass applies is `run`'s (`hrun`). The pass takes it
-elsewhere:
+The theorems above take the output of a checker's `run` (`hr`); the pass's
+own conditions discharge it ([the selected output](#the-selected-output-under-the-passs-tree-check)).
 
-1. `SinglePass.lean` 1326 (every writing step) and 1260 (a direct call):
-   `Checker.select`, whose `Checker.steps` layer skips the derivation's tree
-   check (`tree := false`); the pass checks that tree once, at 1276–1282.
-   Agreement of `select` with `run` given that check is not proved.
-2. Lines 1276–1282 accept the tree by `checkTreeUsing … codes` or by
-   `PromiseCalls.requiresTree`. `run` checks `typedRead`'s optional-field
-   branch with no codes (`checkStepResult`, `fun _ => false`), and checks the
-   other kinds by `checkTreeUsing` alone: a tree accepted only by `requiresTree`,
-   or by codes in that branch, has no `run` acceptance behind it.
-3. Line 1263: the search (`expressionEffectUsing`) returns the output; nothing
-   rechecks it against `run` for a preserving step.
-4. Line 1276: with `selectChecks` (a qualified body) no tree check runs;
-   `Checker.withSubtyping`'s `select` is its `run`, so there it is implied.
+### The selected output under the pass's tree check
+
+Module `lean/Verification/Programs/TolerantFramesSelect.lean`. The pass takes a
+step's output from `Checker.select` (`SinglePass.lean` 1260 for a direct call,
+1335 over every fact for a writing step) or from the search (1263), and checks
+the step's derivation once (1271–1282, `selectChecks` false):
+
+```
+let tree := match effect with
+  | .slicedRead _ _ _ e _ => some e
+  | _ => effect.proof?
+if let some p := (if selectChecks then none else tree) then
+  if !(checkTreeUsing G images p codes sums ||
+      PromiseCalls.requiresTree G images kE codes sums p) then refuse
+```
+
+`passTree` is that `tree`, and `passTreeOk G images k codes sums e` that
+condition at knowledge $`k`$. `passSteps` is the base checker whose `run` is
+`Checker.steps`' `select` (`checkStepResult … (tree := false)`) where
+`passTreeOk` holds; `ordinaryOver b` is `Checker.ordinary`'s layers over a base
+$`b`$ (`Checker.ordinary = ordinaryOver (Checker.steps …)`, by definition);
+`passOrdinary = ordinaryOver passSteps`. Proved:
+
+- `requiresTree` roots at a call: the claimed term of its tree is an
+  `invoke` or a `construct` (`requiresApp_term`, `requiresTree_term`); no kind
+  but `ordinary` accepts such a term at `select` (`select_call_none`); the
+  pass's tree is claimed at the step's term (`select_claim_term`);
+- where `checkTreeUsing` accepts the tree, the base's `select` has `run`'s
+  value for every kind but `typedRead` (`select_value_eq`);
+- (`passSteps_value`) the base's `select` with `passTreeOk` gives one of:
+  `checkStepUsing … = some out`; an `ordinary` step whose tree only
+  `requiresTree` accepts, $`\mathit{out}=\mathrm{ordinaryOutput}\ k`$; or
+  `typedRead`'s optional-field branch with its tree accepted with the codes.
+  Each is sound (`passSteps_sound`): the first by `checkStep_sound`, the
+  second by `requiresTree_sound`'s typing with the output's facts holding of
+  every heap, the third by `optionalRead_sound` with the codes;
+- (`ordinary_select_eq`) $`\mathrm{passTreeOk}\ k\ e \Rightarrow
+  \mathrm{ordinary.select}\ j\ k\ e = \mathrm{passOrdinary.run}\ j\ k\ e`$:
+  every layer reads its base at the same step; so the pass's selected output
+  is `passOrdinary`'s `run` (`select_run`) and sound (`ordinary_select_sound`),
+  and every theorem stated for a checker's `run` (`judgment_with_output`,
+  `write_judgment`, `top_judgment`, `writing_frame`'s premise,
+  `preserving_step_frame`) holds of it at `passOrdinary`;
+- a qualified body's `select` is its `run` (`withSubtyping_select`);
+- the preserving steps at the selected output: `ordinaryOver b` accepts a
+  preserving kind only where $`b`$ or `elementsCall` does
+  (`ordinaryOver_run_base`); `passSteps` keeps the heap at a preserving kind
+  (`passSteps_keeps`); so `passPreserving_keeps_select`,
+  `pass_preserving_frame_select` and `preserving_judgment_select` are
+  `passPreserving_keeps`, `pass_preserving_frame` and `preserving_judgment`
+  from the pass's conditions;
+- a tree `checkTreeUsing` accepts passes the check at every knowledge
+  (`passTreeOk_of_tree`).
+
+**Where the pass's conditions do not give the theorem's premise**, most
+important first:
+
+1. Line 1263: the output is the search's. `expressionEffectUsing` returns
+   `checker.select j kE effect codes sums` of its last loop, with `sums` the
+   state's summaries, which that loop does not change; this property of the
+   monadic search is not proved. The pass would close it by computing
+   `checker.select j kE effect codes sums` from the returned evidence (the
+   search returning derivation and evidence only).
+2. Line 1335: the whole-facts `select` runs at the knowledge $`k_E'`$ of every
+   fact, the tree check at the narrower $`k_E`$ (1276). Where `checkTreeUsing`
+   accepted the tree the premise holds (`passTreeOk_of_tree`). A tree only
+   `requiresTree kE` accepts has no `passTreeOk kE'`: for $`e`$ `.ordinary p`
+   with $`\mathrm{claim}\ p=j`$, `checkTreeUsing p` false, `requiresTree kE p`
+   true and `requiresTree kE' p` false, and no other call layer deciding the
+   step (`elementsCall`, `freshCall`, `ownCall`, `keepsCall`), `run` at $`k_E'`$ rejects (its base checks the tree) and
+   `select` returns $`\mathrm{ordinaryOutput}\ k_E'`$ with the outer layers'
+   atoms. That output is sound when $`k_E'`$'s facts imply $`k_E`$'s and the
+   precondition read at $`k_E`$ holds (conjectured; the inclusion is a property
+   of `materialize`, not proved). The pass would close it by evaluating
+   `requiresTree` at $`k_E'`$ for that `select`.
+3. `typedRead`'s optional-field branch: `run` checks its tree with no codes
+   (`fun _ => false`), the pass with the codes, so `run` rejects a tree whose
+   check consults a code entry. The output is sound with the codes
+   (`passSteps_sound`); `run` and the pass differ, safety does not.
+4. `selectChecks` is a Boolean argument of the pass: no check ties it to a
+   checker whose `select` is its `run` (`withSubtyping_select` holds of the
+   qualified body's checker, and `Checker.ordinary`'s `select` skips the
+   tree). A `Checker` field stating `select = run`, or the pass deriving
+   `selectChecks` from the checker, would close it.
 
 ### The writing steps
 

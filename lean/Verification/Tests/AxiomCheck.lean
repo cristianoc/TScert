@@ -15,6 +15,7 @@ import Verification.Programs.TolerantFramesInvocation
 import Verification.Programs.TolerantFramesExamples
 import Verification.Programs.TolerantFramesSteps
 import Verification.Programs.TolerantFramesWrites
+import Verification.Programs.TolerantFramesSelect
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -217,6 +218,25 @@ run_cmd do
   check ``Verification.TolerantFrames.preserving_judgment
   check ``Verification.TolerantFrames.writing_frame
   check ``Verification.TolerantFrames.storeCells_of_arrayInvariant
+  check ``Verification.TolerantFrames.passTreeOk_of_tree
+  check ``Verification.TolerantFrames.requiresApp_term
+  check ``Verification.TolerantFrames.requiresTree_term
+  check ``Verification.TolerantFrames.checkedOutput_value_tree
+  check ``Verification.TolerantFrames.select_value_eq
+  check ``Verification.TolerantFrames.select_claim_term
+  check ``Verification.TolerantFrames.select_call_none
+  check ``Verification.TolerantFrames.passSteps_value
+  check ``Verification.TolerantFrames.passSteps_sound
+  check ``Verification.TolerantFrames.ordinary_eq_over
+  check ``Verification.TolerantFrames.ordinary_select_eq
+  check ``Verification.TolerantFrames.select_run
+  check ``Verification.TolerantFrames.ordinary_select_sound
+  check ``Verification.TolerantFrames.withSubtyping_select
+  check ``Verification.TolerantFrames.ordinaryOver_run_base
+  check ``Verification.TolerantFrames.passSteps_keeps
+  check ``Verification.TolerantFrames.passPreserving_keeps_select
+  check ``Verification.TolerantFrames.pass_preserving_frame_select
+  check ``Verification.TolerantFrames.preserving_judgment_select
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!
