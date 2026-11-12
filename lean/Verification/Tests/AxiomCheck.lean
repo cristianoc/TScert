@@ -78,6 +78,8 @@ import Verification.Programs.TolerantFramesSinglePassSound
 import Verification.Programs.TolerantFramesMergeExits
 import Verification.Programs.TolerantFramesMergeNearRounds
 import Verification.Programs.TolerantFramesExitTypes
+import Verification.Programs.TolerantFramesExitTyped
+import Verification.Programs.TolerantFramesExitChecks
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -981,8 +983,30 @@ run_cmd do
   check ``Verification.TolerantFrames.visitStep_outFresh
   check ``Verification.TolerantFrames.passOutFreshChecked_fresh
   check ``Verification.TolerantFrames.visitEntry_here
-  check ``Verification.TolerantFrames.cursor_get_eq
-  check ``Verification.TolerantFrames.mapNames_fold
-  check ``Verification.TolerantFrames.orderedSuffix_slots
-  check ``Verification.TolerantFrames.mapNames_eq
-  check ``Verification.TolerantFrames.mapNamesSound_some
+  check ``Verification.TolerantFrames.cursor_get
+  check ``Verification.TolerantFrames.cursor_fold
+  check ``Verification.TolerantFrames.mapNames_some
+  check ``Verification.TolerantFrames.orderedSuffix_run
+  check ``Verification.TolerantFrames.mapNamesSound_of_lt
+  check ``Verification.TolerantFrames.yieldsOk_atSlots
+  check ``Verification.TolerantFrames.outFreshOf_eq
+  check ``Verification.TolerantFrames.subtypesPass_of
+  check ``Verification.TolerantFrames.edgeFound_of_checked
+  check ``Verification.TolerantFrames.mixedOf_mixedContext
+  check ``Verification.TolerantFrames.ExitTyped.reassign
+  check ``Verification.TolerantFrames.edgeFound_env
+  check ``Verification.TolerantFrames.ExitTyped.env
+  check ``Verification.TolerantFrames.HereEmpty.reassign
+  check ``Verification.TolerantFrames.hereEmpty_false
+  check ``Verification.TolerantFrames.vacuous_false
+  check ``Verification.TolerantFrames.yieldsOk_of_or
+  check ``Verification.TolerantFrames.slotsNamed_tail
+  check ``Verification.TolerantFrames.NonHeadExitChecked.reassign
+  check ``Verification.TolerantFrames.nonHeadExit_delivers
+  check ``Verification.TolerantFrames.HeadExitChecked.reassign
+  check ``Verification.TolerantFrames.headExit_delivers
+  check ``Verification.TolerantFrames.SubtypesPass.reassign
+  check ``Verification.TolerantFrames.EdgeFound.reassign
+  check ``Verification.TolerantFrames.HandlerExitChecked.reassign
+  check ``Verification.TolerantFrames.handlerExit_delivers
+  check ``Verification.TolerantFrames.nodeExitsYF_of_checks
