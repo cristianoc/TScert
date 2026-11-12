@@ -129,6 +129,17 @@ inputs' entry values, each the name the start gave its input, entail it
 an input's entry value (`GraphCode.trackTable`'s pairs), those slots
 keeping the input's name, each an obligation on every edge into it.
 
+The start is a cut no edge enters on the unit's first invocation; its
+entry is checked as `ControlFlow.checkEntryResult` checks a certificate's
+(`SinglePass.entryRefusal`): the start's context is the request's inputs,
+the promised input's slot is one of them, its given invariant states no
+implication, names a slot after the promised input only at that input's
+slot and after an input's entry value only at that input's own slot, and
+its written and supplied facts are entailed by the request's entry facts
+(its index facts and its inputs' separation, `ControlFlow.entryKnows`).
+`TSCERT_FORCE=start-facts` supplies a false fact at every start, the
+adversarial proposal the check refuses.
+
 ## 5. Steps and obligations
 
 A step's rule is applied to the facts over the names its expression reads,

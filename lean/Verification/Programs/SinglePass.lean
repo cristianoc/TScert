@@ -837,9 +837,36 @@ def loopHeads (nodes : Array ControlFlow.Node) (start : Nat) : Array Bool × Arr
 def sparse {α : Type} (n : Nat) (empty : α) (at_ : List (Nat × α)) : List α :=
   at_.foldl (fun acc (l, x) => acc.set l x) (List.replicate n empty)
 
+/-- The unit's entry checked as `ControlFlow.checkEntryResult` checks a
+certificate's (no edge enters the start on the first invocation): the start's
+context is the request's inputs; the promised input's slot is one of them;
+the start's given state states no implication, names a slot after the
+promised input only at that input's own slot and after an input's entry value
+only at that input's slot; and its written and supplied facts are entailed
+by the request's entry facts (`ControlFlow.entryKnows`). The refusal where
+one fails. -/
+def entryRefusal (G : NormalGraph ι) (inputs : List (Ty ι)) (claims : List (PointClaim ι)) (start : Nat)
+    (goal : Goal ι) (written : Option Knowledge) (supplied : List IndexAtom)
+    (givenImplies : List (PromiseCalls.Implication ι)) (givenArgs : List Nat) (givenInputs : List (Nat × Nat))
+    (entryIndices : List IndexAtom) (entrySeparation : HeapSeparation.Separation) : Option String :=
+  match claims[start]? with
+  | none => some "the entry: no claim at the start"
+  | some c =>
+    if !(c.context == inputs) then some "the entry: its context is not the inputs'"
+    else if !goal.slot.all (· < inputs.length) then some "the entry: the promised input's slot"
+    else if !givenImplies.isEmpty then some "the entry: a given implication"
+    else if !givenArgs.all (some · == goal.slot) then some "the entry: a slot given the promised input"
+    else if !givenInputs.all (fun (j, q) => j == q) then some "the entry: a slot given an input's value"
+    else
+      let k := written.getD {}
+      let k := { k with indices := k.indices ++ supplied }
+      if !ControlFlow.entryKnows G inputs entrySeparation entryIndices k then
+        some "the entry: a given fact the entry facts do not entail"
+      else none
+
 /-- The pass over one graph. -/
 def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
-    (P : Program) (claims : List (PointClaim ι)) (start : Nat) (goal : Goal ι)
+    (P : Program) (claims : List (PointClaim ι)) (start : Nat) (inputs : List (Ty ι)) (goal : Goal ι)
     (assertions : List (Nat × Knowledge)) (cuts : List Nat)
     (candidates : List (Nat × List IndexAtom)) (entryIndices : List IndexAtom)
     (suggestions : List (Sequent ι)) (known : List (ProgramCertificates.Evidence ι)) (codes : CodeEntry ι → Bool)
@@ -877,6 +904,11 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     let sg : Array (Option Nat) := Array.replicate n none
     trace := Trace.mk e e ms sg isHead start 0 none [] [] []
   let supplied := byLabel n candidates
+  -- The entry, which no edge checks on the first invocation.
+  if let some why := entryRefusal G inputs claims start goal (stated.getD start none) ((supplied.getD start none).getD [])
+      ((givenImplies[start]?).getD []) ((givenArgs[start]?).getD []) ((givenInputs[start]?).getD [])
+      entryIndices entrySeparation then
+    return (.refused why, counts, answers, trace)
   -- In-degrees without the edges into cuts, of the edges from nodes the
   -- start reaches: a node no path from the start reaches never runs.
   let mut indeg : Array Nat := Array.replicate n 0

@@ -17,7 +17,7 @@
 // `hole:`; the other direction is counted. TSCERT_FORCE (passed through)
 // forces an adversarial proposal (`literals`, `callees`, `elements`,
 // `objects`, `spreads`, `stale`, `throws`, `guards`, `reads`, `paths`,
-// `offers`, `loops`, `decided`, `schemes`, `callbacks`, `fresh`, `defaults`, `finally`, `never`, `meets`, `implications`, `binds`, `arms`, `captures`, `cells`, `early`, `no-return`, `steps`, `head-entry`); the controls below run with theirs forced whatever
+// `offers`, `loops`, `decided`, `schemes`, `callbacks`, `fresh`, `defaults`, `finally`, `never`, `meets`, `implications`, `binds`, `arms`, `captures`, `cells`, `early`, `no-return`, `steps`, `head-entry`, `start-facts`); the controls below run with theirs forced whatever
 // the patterns, each expected refused by mode 8; the forced proposal decides
 // the control's unit and the units it depends on, the file's other units
 // compared unforced.
@@ -115,6 +115,7 @@ const controls: { file: string; unit: string; force: string; positive?: boolean 
   { file: "invalid-method-effect-throw-caught", unit: "wrong@487", force: "no-return" },
   { file: "map-stable-set", unit: "distinct@238", force: "steps", positive: true },
   { file: "loop-head-contents", unit: "continued@413", force: "head-entry", positive: true },
+  { file: "returntype-guard", unit: "isName@125", force: "start-facts", positive: true },
 ];
 
 /** The file key the pipeline's check of a run named: `--check-units`'s third argument. */
