@@ -29,24 +29,6 @@ theorem termValue_length_num {ρ : Env} {h : Heap} {s : Nat} {b : UInt64} (hs : 
     termValue ρ h (.length s) = none := by
   simp [hs, lengthOf, Footprints.storeOf, fieldsOf]
 
-/-- **The check an entailed bound needs at a view**: the view holds the bound
-as a stored fact, or every term of the bound is one `termDefined` accepts
-over the facts the entailment reads. -/
-def entailDefinedCheck (qs : State) (a : Atom) (F : Linear.Fact Term) : Bool :=
-  qs.store.live.contains a.canon || F.vars.all (termDefined (qs.store.linearNear a.names))
-
-/-- **Every entailed bound passes the check at every view**: the condition
-the pass's merge tests, as `mergeEntailed` reads its bounds. -/
-def EntailedChecked (preds : List State) (width fresh0 : Nat) : Prop :=
-  let variants := mergeVariants preds (mNames preds width fresh0) (mRen preds width fresh0)
-  let met0 := mergeMet0 preds (mNames preds width fresh0) (mRen preds width fresh0)
-  let diffs := mergeDiffs preds (mRen preds width fresh0) variants met0
-  let views := mergeViews (mNames preds width fresh0).toList diffs met0
-  ∀ d ∈ diffs, ∀ F neg, Atom.index ⟨.linear F, none, neg⟩ ∈ d →
-    (views.all fun (qs : State) => qs.store.holds (.index ⟨.linear F, none, neg⟩) ||
-      HeapKnowledge.entailsKnown (qs.store.linearNear (Atom.index ⟨.linear F, none, neg⟩).names) F) = true →
-    (views.all fun (qs : State) => entailDefinedCheck qs (.index ⟨.linear F, none, neg⟩) F) = true
-
 /-- The facts `linearNear` lists hold where the store does. -/
 theorem linearNear_holds (hnear : LinearNearSound) {s : Store} {η : Env} {h : Heap} (hs : StoreOk s η h)
     (names : List Nat) (limit : Nat) : IndexHolds (s.linearNear names limit) η h :=
@@ -58,7 +40,7 @@ theorem checked_bound_holds (hnear : LinearNearSound) {qs : State} {F : Linear.F
     {η : Env} {h : Heap} (hv : StoreOk qs.store η h)
     (hdec : (qs.store.holds (.index ⟨.linear F, none, neg⟩) ||
       HeapKnowledge.entailsKnown (qs.store.linearNear (Atom.index ⟨.linear F, none, neg⟩).names) F) = true)
-    (hc : entailDefinedCheck qs (.index ⟨.linear F, none, neg⟩) F = true) :
+    (hc : SinglePass.entailDefinedCheck qs (.index ⟨.linear F, none, neg⟩) F = true) :
     AtomHolds (.index ⟨.linear F, none, neg⟩) η h := by
   rcases Bool.or_eq_true_iff.mp hc with hl | hall
   · exact atomHolds_canon.mp (hv _ (live_storeAll (Std.HashSet.contains_iff_mem.mp hl)))
@@ -71,10 +53,9 @@ theorem checked_bound_holds (hnear : LinearNearSound) {qs : State} {F : Linear.F
 section Path
 variable {preds : List State} {width fresh0 p : Nat} {ρ η : Env} {h : Heap}
 
-/-- **The entailed bounds hold** on the path, with `LinearNearSound` and the
-check at every view (`EntailedChecked`). -/
-theorem OnPath.entailed_ok_checked (P : OnPath preds width fresh0 p ρ η h) (hnear : LinearNearSound)
-    (hchk : EntailedChecked preds width fresh0) {met : Store}
+/-- **The entailed bounds hold** on the path, with `LinearNearSound`: the
+merge adds a bound only where every view passes `entailDefinedCheck`. -/
+theorem OnPath.entailed_ok_checked (P : OnPath preds width fresh0 p ρ η h) (hnear : LinearNearSound) {met : Store}
     (hm : StoreOk met (mVal preds width fresh0 ρ η) h) :
     let met0 := mergeMet0 preds (mNames preds width fresh0) (mRen preds width fresh0)
     let diffs := mergeDiffs preds (mRen preds width fresh0)
@@ -85,8 +66,8 @@ theorem OnPath.entailed_ok_checked (P : OnPath preds width fresh0 p ρ η h) (hn
   obtain ⟨v, -, hv, hall⟩ := P.view_ok
   refine mergeEntailed_inv (fun s => StoreOk s (mVal preds width fresh0 ρ η) h)
     (fun a => AtomHolds a (mVal preds width fresh0 ρ η) h) (fun _ _ hs ha => add_ok hs ha) ?_ hm
-  intro d hd F neg ha hviews
-  exact checked_bound_holds hnear hv (hall _ hviews) (hall _ (hchk d hd F neg ha hviews))
+  intro d hd F neg ha hviews hdefs
+  exact checked_bound_holds hnear hv (hall _ hviews) (hall _ hdefs)
 
 end Path
 

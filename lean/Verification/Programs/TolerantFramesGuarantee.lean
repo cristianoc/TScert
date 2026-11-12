@@ -141,7 +141,7 @@ structure WalkSound (P : Program) (G : NormalGraph ι) (w : Walk ι) (startNames
   traversed : Traversed G w startNames given ctx edgesIn fresh
   steps : StepEdgesSoundT P G w startNames ρ0 ctx Ξres Tres (fun _ => True) (fun _ => True) m
   heads : HeadsEntered G w startNames ρ0 given m
-  merges : MergesSound G w given ctx edgesIn fresh
+  merges : MergesSound G w given ctx edgesIn
 
 /-! ## Each field from the walk -/
 

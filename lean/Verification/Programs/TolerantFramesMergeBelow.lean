@@ -267,7 +267,7 @@ theorem PredsBelow.store (B : PredsBelow preds width fresh0) (hne : preds ≠ []
     obtain ⟨i, -, hi⟩ := atom_rename_names hr y hy
     exact B.names hne y (List.mem_of_getElem? hi)
   refine mergeEntailed_inv (fun s => FactsBelow s (mNext preds width fresh0)) (AtomBelow (mNext preds width fresh0))
-    (fun _ _ hs ha => add_below hs ha) (fun d hd F neg ha _ => hD d hd _ ha) ?_
+    (fun _ _ hs ha => add_below hs ha) (fun d hd F neg ha _ _ => hD d hd _ ha) ?_
   refine mergeBounds_inv (fun s => FactsBelow s (mNext preds width fresh0)) (AtomBelow (mNext preds width fresh0))
     (fun _ _ hs ha => add_below hs ha) ?_ (B.met0 hne)
   intro key w hall

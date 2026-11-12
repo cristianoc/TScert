@@ -17,8 +17,8 @@ graph-level proof, each a definition below:
 - `NodesMean`: each visited node's step means at every admitted reassigned
   graph what it states (`NodeMeaning`: the stated assertion, the shapes, the
   return type, the exits, the handler);
-- `LinearNearFuelEq`, `MergesEntailedChecked`, `MergesImpliesHold`: the
-  merges' premises (`MergesSound`);
+- `LinearNearFuelEq`, `MergesImpliesHold`: the merges' premises
+  (`MergesSound`);
 - `FootprintsKept`, `ReturnsKept`, `RegionsHeld`, `AssertionsKept`: the
   per-node hypotheses of the guarantee's other fields (`PassWalkSound`).
 
@@ -166,23 +166,15 @@ def NodesMean : Prop :=
         (r.node l hl).entry (r.node l hl).st
 
 variable (ι) in
-/-- **(Named hypothesis) Every merge's entailed bounds pass the check**
-(`EntailedChecked`) at every view. -/
-def MergesEntailedChecked : Prop :=
-  ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
-    RunPremises G I c after admits → ∀ r : RunWalk G I c, ∀ t, r.given t = false → 2 ≤ (r.w.incoming t).length →
-      EntailedChecked ((r.w.incoming t).map (·.1)) (r.ctx t).length (r.fresh t)
-
-variable (ι) in
-/-- **(Named hypothesis) Every merge's joined implications hold** at every
-admitted reassigned graph, wherever an edge state into the merge holds. -/
+/-- **(Named hypothesis) Every merge's kept implications hold**
+(`joinedChecked`) at every admitted reassigned graph, wherever an edge state
+into the merge holds. -/
 def MergesImpliesHold : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
     RunPremises G I c after admits → ∀ r : RunWalk G I c, ∀ η, admits η →
       ∀ t, r.given t = false → 2 ≤ (r.w.incoming t).length →
       ∀ startNames ρ0 m ρ (s : IndexedHeap), edgePre (reassign G η) r.w startNames ρ0 t ρ m s →
-        PromiseCalls.ImpliesOk (reassign G η)
-          (CertificateProducer.meetImplications (reassign G η) (r.edgesIn t) (r.ctx t).length (r.ctx t)) ρ s.n s.W
+        PromiseCalls.ImpliesOk (reassign G η) (joinedChecked (reassign G η) (r.ctx t) (r.edgesIn t)) ρ s.n s.W
 
 variable (ι) in
 /-- **(Named hypothesis) The footprint check keeps the bound** at every
@@ -241,12 +233,12 @@ theorem StartEntered.entered {G : NormalGraph ι} {I : InstanceImageCheck G} {c 
 /-- **THE GRAPH THEOREM** (`RunSound`, the unit lane's statement): from the
 driver's walk (`RunTraversed`), the nodes' meaning at every admitted
 reassigned graph (`NodesMean`), the merges' premises (`LinearNearFuelEq`,
-`MergesEntailedChecked`, `MergesImpliesHold`) and the per-node hypotheses
+`MergesImpliesHold`) and the per-node hypotheses
 of the guarantee's other fields (`FootprintsKept`, `ReturnsKept`,
 `RegionsHeld`, `AssertionsKept`), an accepted call of the pass guarantees
 `GraphGuarantee` of its options at its inputs. -/
 theorem run_sound (hrun : RunTraversed ι) (hmean : NodesMean ι) (hnear : LinearNearFuelEq)
-    (hent : MergesEntailedChecked ι) (himp : MergesImpliesHold ι) (hfoot : FootprintsKept ι) (hret : ReturnsKept ι)
+    (himp : MergesImpliesHold ι) (hfoot : FootprintsKept ι) (hret : ReturnsKept ι)
     (hreg : RegionsHeld ι) (hasr : AssertionsKept ι) : Target.RunSound ι := by
   intro G I c after admits hacc hscope hcodes hsums hfields
   have hp : RunPremises G I c after admits := ⟨hacc, hscope, hcodes, hsums, hfields⟩
@@ -266,7 +258,7 @@ theorem run_sound (hrun : RunTraversed ι) (hmean : NodesMean ι) (hnear : Linea
         (fun l hl => ⟨nodeChecked_reassign hpc (r.node l hl), hmean G I c after admits hp r η hη ρ0 m l hl⟩)
         (codesSound_reassign hcodes η)
       heads := headsEntered_of_recorded r.heads
-      merges := ⟨hnear, fun t hg h2 => ⟨hent G I c after admits hp r t hg h2, himp G I c after admits hp r η hη t hg h2⟩⟩ }
+      merges := ⟨hnear, fun t hg h2 => himp G I c after admits hp r η hη t hg h2⟩ }
 
 end Run
 

@@ -129,7 +129,9 @@ def mergeEntailed (live : Std.HashSet Nat) (diffs : List (List Atom)) (views : L
             seen := seen.insert a
             if views.all fun (qs : State) => qs.store.holds a ||
                 HeapKnowledge.entailsKnown (qs.store.linearNear a.names) F then
-              acc := acc.add a
+              -- Its terms defined in every view (`entailDefinedCheck`).
+              if views.all fun (qs : State) => SinglePass.entailDefinedCheck qs a F then
+                acc := acc.add a
     return acc
 
 /-- The guarded facts a join keeps, at slots. -/
@@ -199,6 +201,10 @@ def mergeImplies (G : NormalGraph ι) (context : List (Ty ι))
   if !some_ then [] else
     let joinedImpl := SinglePass.timedKind "meet implications" fun _ =>
       CertificateProducer.meetImplications G edgesIn width context
+    -- Each kept where every incoming edge establishes it
+    -- (`PromiseCalls.impliesCheck`, as an edge into a target carries it).
+    let joinedImpl := SinglePass.timedKind "meet implications checked" fun _ => joinedImpl.filter fun x =>
+      edgesIn.all fun (Γ, xs, m) => PromiseCalls.impliesCheck G Γ xs m [x]
     (CertificateProducer.keepFirst {} (joinedImpl.filterMap fun (x : PromiseCalls.Implication ι) => do
       pure (⟨← mergedNames[x.test]?, ← mergedNames[x.target]?, x.type⟩ : PromiseCalls.Implication ι))).2.toList
 

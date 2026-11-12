@@ -23,7 +23,7 @@ theorem footprintCheck_reassign (codes : CodeEntry ι → Bool) (sums : List (Re
     (deriv : ProgramCertificates.Evidence ι) (liveHandler exc ret outFresh : Bool) :
     footprintCheck (reassign G η) (images.reassign η) codes sums Φ F c node stepK deriv liveHandler exc ret outFresh =
       footprintCheck G images codes sums Φ F c node stepK deriv liveHandler exc ret outFresh := by
-  simp only [footprintCheck, Parametricity.checkTree_reassign, Parametricity.requiresTree_reassign]
+  simp only [footprintCheck, derivChecked, Parametricity.checkTree_reassign, Parametricity.requiresTree_reassign]
   rfl
 
 omit [Hashable ι] [Instantiates ι] in

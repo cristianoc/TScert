@@ -224,12 +224,14 @@ def LinearNearSound : Prop :=
   ∀ (s : Store) (names : List Nat) (limit : Nat), ∀ x ∈ s.linearNear names limit, Atom.index x ∈ storeAll s
 
 /-- **The entailed bounds keep a property of stores** closed under adding a
-linear fact of the differences that every view holds or entails. -/
+linear fact of the differences that every view holds or entails and whose
+terms every view defines (`SinglePass.entailDefinedCheck`). -/
 theorem mergeEntailed_inv (Pr : Store → Prop) (Q : Atom → Prop) (hadd : ∀ s a, Pr s → Q a → Pr (s.add a))
     {live : Std.HashSet Nat} {diffs : List (List Atom)} {views : List State}
     (hQ : ∀ d ∈ diffs, ∀ F neg, Atom.index ⟨.linear F, none, neg⟩ ∈ d →
       (views.all fun (qs : State) => qs.store.holds (.index ⟨.linear F, none, neg⟩) ||
         HeapKnowledge.entailsKnown (qs.store.linearNear (Atom.index ⟨.linear F, none, neg⟩).names) F) = true →
+      (views.all fun (qs : State) => SinglePass.entailDefinedCheck qs (.index ⟨.linear F, none, neg⟩) F) = true →
       Q (.index ⟨.linear F, none, neg⟩))
     {met : Store} (h0 : Pr met) : Pr (mergeEntailed live diffs views met) := by
   unfold mergeEntailed SinglePass.timedKind
@@ -244,7 +246,10 @@ theorem mergeEntailed_inv (Pr : Store → Prop) (Q : Atom → Prop) (hadd : ∀ 
     split
     · split
       · rename_i hall
-        exact hadd _ _ hr' (hQ d hd F neg ha hall)
+        split
+        · rename_i hdef
+          exact hadd _ _ hr' (hQ d hd F neg ha hall hdef)
+        · exact hr'
       · exact hr'
     · exact hr'
   · exact hr'

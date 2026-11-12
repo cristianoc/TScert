@@ -685,6 +685,25 @@ def checkedEdge (G : NormalGraph ι) (images : InstanceImageCheck G) (claimed : 
   let (r, a) := edgeUsing G images claimed Γ t (observed.map (0, ·)) fields optionals cells answers
   (r.value.any (edgeEvidenceChecked G images Γ Δ t observed fields optionals cells), a)
 
+/-- **A step's yields checked** as the certificate checker checks a node's
+(`ControlFlow.checkYields`), at the node's context `Γ`, its claim's type
+`A`, its implications at slots `xs`, its step's input facts `k` and output
+`out` and its derivation `e`: of a call at a promise signature, the yields
+where the promise states them (`PromiseCalls.promiseYields`) at an output
+the promise keeps; otherwise each yield `PromiseCalls.yieldFollows` accepts
+of the node's term `t`. -/
+def checkedYields (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (Ty ι)) (A : Ty ι)
+    (xs : List (PromiseCalls.Implication ι)) (k out : Knowledge) (e : ProgramCertificates.Evidence ι) (t : Tm)
+    (ys : List (PromiseCalls.Yield ι)) : List (PromiseCalls.Yield ι) :=
+  if ys.isEmpty then [] else
+  match PromiseCalls.promiseOf G e with
+  | some (effect, a, T) =>
+    if PromiseCalls.promiseYields G A effect a T ys &&
+        [HeapExpressionRules.ordinaryOutput k, PromiseCalls.promiseOutput effect k].any fun o =>
+          out == o || out == HeapExpressionRules.withStable G Γ k o then ys
+    else []
+  | none => ys.filter (PromiseCalls.yieldFollows G images Γ xs k.links t)
+
 /-- A call's derivation read off its callee's signatures (the direct form
 of `CertificateProducer.expressionWithUsing`'s `direct`): the callee a slot,
 its type's signatures in the same order (those promising elements first;
@@ -954,6 +973,19 @@ def startGiven (written : Option Knowledge) (entryIndices : List IndexAtom)
   let w := startWritten written entryIndices entrySeparation
   { w with indices := w.indices ++ supplied }
 
+/-- **A step's derivation checked** where a footprint or a fresh result
+reads it (`GraphCode.nodeChecked`'s conjuncts beside `selectedWithinAt`):
+claimed at the node's term and context, its tree accepted
+(`ProgramCertificates.checkTreeUsing`, or `PromiseCalls.requiresTree` at the
+step's facts `stepK`). -/
+def derivChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
+    (sums : List (ReadSummary ι)) (c : PointClaim ι) (node : Node) (stepK : Knowledge)
+    (deriv : ProgramCertificates.Evidence ι) : Bool :=
+  (ProgramCertificates.claim deriv).term == node.expression &&
+    (ProgramCertificates.claim deriv).context == c.context &&
+    (ProgramCertificates.checkTreeUsing G images deriv codes sums ||
+      PromiseCalls.requiresTree G images stepK codes sums deriv)
+
 /-- **A node's step within a footprint bound** (`GraphCode.nodeChecked`),
 at a node outside the region from which no normal return is possible: the
 step within `Φ` (`ExpressionEffects.check`, `writeWithin`, `initWriteWithin`,
@@ -968,11 +1000,7 @@ def footprintCheck (G : NormalGraph ι) (images : InstanceImageCheck G) (codes :
   -- The step's derivation, where its signature bounds the step: claimed
   -- at the node's term and context, its tree accepted (`GraphCode.nodeChecked`'s
   -- conjuncts beside `selectedWithinAt`).
-  let derivChecked : Thunk Bool := Thunk.mk fun _ =>
-    (ProgramCertificates.claim deriv).term == node.expression &&
-      (ProgramCertificates.claim deriv).context == c.context &&
-      (ProgramCertificates.checkTreeUsing G images deriv codes sums ||
-        PromiseCalls.requiresTree G images stepK codes sums deriv)
+  let derivChecked : Thunk Bool := Thunk.mk fun _ => SinglePass.derivChecked G images codes sums c node stepK deriv
   let writes := ExpressionEffects.writeWithin G c.context Φ node.expression ||
     ExpressionEffects.initWriteWithin G c.context stepK Φ node.expression
   let within := ExpressionEffects.check G c.context node.expression || writes ||
@@ -1101,6 +1129,14 @@ def edgeTransfer (names : List Nat) (m : PointClaims.Mapping) (pushed isHandler 
     !gone.contains x.test && !gone.contains x.target)).2.toList
   ({ names := targetNames, store := edgeStore.drop gone, fresh := freshOut }, carried)
 
+/-- **An entailed bound's terms defined** in a predecessor's view `q` of a
+merge, for the bound's atom `a` and its linear fact `F`: the view holds the
+atom, or each term of `F` is an integer by the facts near the atom's names
+(`HeapKnowledge.termDefined` over `Store.linearNear`): an entailment reads
+an undefined term as 0. -/
+def entailDefinedCheck (q : State) (a : Atom) (F : Linear.Fact HeapKnowledge.Term) : Bool :=
+  q.store.live.contains a.canon || F.vars.all (HeapKnowledge.termDefined (q.store.linearNear a.names) ·)
+
 /-- What a merge computes: the meet state, its implications, the next
 fresh name, the facts its predecessors state that the met store lacks
 (counted), each predecessor's state at the merge's names and its renaming. -/
@@ -1221,7 +1257,9 @@ def mergeState (G : NormalGraph ι) (context : List (Ty ι)) (preds : List State
             seen := seen.insert a
             if views.all fun (qs : State) => qs.store.holds a ||
                 HeapKnowledge.entailsKnown (qs.store.linearNear a.names) F then
-              acc := acc.add a
+              -- Its terms defined in every view (`entailDefinedCheck`).
+              if views.all fun (qs : State) => entailDefinedCheck qs a F then
+                acc := acc.add a
     return acc
   -- The guarded facts a join keeps, over the facts that differ: the
   -- search's join (`CertificateProducer.joinGuarded`) over each
@@ -1289,6 +1327,10 @@ def mergeState (G : NormalGraph ι) (context : List (Ty ι)) (preds : List State
   let implies := if !some_ then [] else
     let joinedImpl := timedKind "meet implications" fun _ =>
       CertificateProducer.meetImplications G edgesIn width context
+    -- Each kept where every incoming edge establishes it
+    -- (`PromiseCalls.impliesCheck`, as an edge into a target carries it).
+    let joinedImpl := timedKind "meet implications checked" fun _ => joinedImpl.filter fun x =>
+      edgesIn.all fun (Γ, xs, m) => PromiseCalls.impliesCheck G Γ xs m [x]
     (keepFirst {} (joinedImpl.filterMap fun (x : PromiseCalls.Implication ι) => do
       pure (⟨← mergedNames[x.test]?, ← mergedNames[x.target]?, x.type⟩ : PromiseCalls.Implication ι))).2.toList
   return { state, implies, fresh, diffCount, views, renames }
@@ -1734,7 +1776,8 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       | .var i => (entry.names[i]?).any entry.fresh.contains
       | _ => false) ||
       ((match ExpressionEffects.selectedEffect deriv with | some eff => eff.fresh | none => false) &&
-        ExpressionEffects.selectedOperands deriv && (ProgramCertificates.claim deriv).term == node.expression)
+        ExpressionEffects.selectedOperands deriv &&
+        derivChecked G images codes answers.summaries.toList c node stepK deriv)
     -- The footprint bound at this node (`GraphCode.nodeChecked`).
     if let some (Φ, ret, exc) := bound then
       if deadArr.getD l false then
@@ -1749,6 +1792,12 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
           | none => false
         if !footprintCheck G images codes answers.summaries.toList Φ F c node stepK deriv liveHandler exc ret outFresh then
           return (.outsideBound l, counts, answers, trace)
+    -- The node's implications at its slots, as the search's yields read
+    -- them (`produceNode`): a negation's or a copy's yields restate them.
+    let slotImpl : Thunk (List (PromiseCalls.Implication ι)) := Thunk.mk fun _ => slotImplOf entry.names implies
+    -- The yields kept: those the checker's yield check accepts (`checkedYields`).
+    let checkYs := fun (xs : List (PromiseCalls.Implication ι)) (ys : List (PromiseCalls.Yield ι)) => timedKind "yields checked" fun _ =>
+      checkedYields G images c.context c.type xs stepK stepOut deriv node.expression ys
     -- The step's yields, computed where an edge's types need them. A read
     -- of a slot yields what the implications testing it state.
     let mut yields : Option (List (PromiseCalls.Yield ι)) := none
@@ -1758,11 +1807,9 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
         if !tested.isEmpty then
           -- At every slot holding a target's name.
           let held := (entry.names.zipIdx).filter fun (nm, _) => tested.any (·.target == nm)
-          yields := some (tested.flatMap fun y => (held.filter (·.1 == y.target)).map fun (_, t) =>
-            ({ conditional := true, target := t, type := y.type } : PromiseCalls.Yield ι))
-    -- The node's implications at its slots, as the search's yields read
-    -- them (`produceNode`): a negation's or a copy's yields restate them.
-    let slotImpl : Thunk (List (PromiseCalls.Implication ι)) := Thunk.mk fun _ => slotImplOf entry.names implies
+          -- Checked against the implications testing the slot's name.
+          yields := some (checkYs (slotImplOf entry.names tested) (tested.flatMap fun y => (held.filter (·.1 == y.target)).map fun (_, t) =>
+            ({ conditional := true, target := t, type := y.type } : PromiseCalls.Yield ι)))
     -- Another step's yields (a test's, a promise call's): computed for the
     -- implications its pushed result carries.
     let isRead := match node.expression with | .var _ => true | _ => false
@@ -1770,7 +1817,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       let e := stepDeriv.getD (.node ⟨c.context, node.expression, c.type⟩ .var [])
       let (ys, a) := timedKind "yields" fun _ => (nodeYields G images pool c.context slotImpl.get e stepOut stepK) answers
       answers := a
-      yields := some ys
+      yields := some (checkYs slotImpl.get ys)
     -- A handler receives the thrown value in a fresh name, at a type
     -- admitting every value its target states for the slot it lands in, or
     -- the pool's (`produceNodeAt`), under the facts a throw keeps
@@ -1799,7 +1846,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
       let e := stepDeriv.getD (.node ⟨c.context, node.expression, c.type⟩ .var [])
       let (ys, a) := (nodeYields G images pool c.context slotImpl.get e stepOut stepK) answers
       answers := a
-      yields := some ys
+      yields := some (checkYs slotImpl.get ys)
     let ysAll := (yields.getD []).flatMap fun y => match entry.names[y.target]? with
       | some nm => (entry.names.zipIdx.filter (·.1 == nm)).map fun (_, j) => { y with target := j }
       | none => [y]
@@ -1938,7 +1985,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
                 let e := stepDeriv.getD (.node ⟨c.context, node.expression, c.type⟩ .var [])
                 let (ys, a) := (nodeYields G images pool c.context slotImpl.get e stepOut stepK) answers
                 answers := a
-                pure ys
+                pure (checkYs slotImpl.get ys)
             yields := some ys
             -- Each yield restated at every slot holding its target's name, as
             -- the alias links of a positional state relate them.

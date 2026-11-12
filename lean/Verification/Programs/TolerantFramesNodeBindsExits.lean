@@ -136,7 +136,7 @@ theorem run_sound_of_walk_typed' {P : ControlFlow.Program} {G : NormalGraph ι} 
     {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
     {fresh : Nat → Nat} (hT : Traversed G w startNames given ctx edgesIn fresh)
     (hstep : StepEdgesSoundT' P G w startNames ρ0 ctx Ξres Tres Qres Rres m)
-    (hheads : HeadsEntered G w startNames ρ0 given m) (hmerges : MergesSound G w given ctx edgesIn fresh)
+    (hheads : HeadsEntered G w startNames ρ0 given m) (hmerges : MergesSound G w given ctx edgesIn)
     {start : Nat} {s : IndexedHeap} (hpre : passPreT G w startNames ρ0 ctx start ρ0 m s) :
     ControlFlow.SafeGraph Ξres P Tres s.n s.W s.h (.at start ρ0) := by
   have hentries := entries_of_traversed (ρ0 := ρ0) (m := m) hT hheads hmerges

@@ -1044,12 +1044,13 @@ stores (`OnPath.fresh_ok`).
 
 **The entailed bounds' check.** A term denotes what its kind reads of the
 value its path reads from its slot (`termValue`); no term is defined at
-every valuation (`termValue_value_undef`, `termValue_length_num`).
-`entailDefinedCheck q a F`: $`q`$'s store holds $`a`$ as a live fact, or
-every term of $`F`$ is one `termDefined` accepts over the facts the
-entailment reads, `q.store.linearNear a.names`. `EntailedChecked`: every
-bound `mergeEntailed` adds passes it at every view. Proved:
-`checked_bound_holds`.
+every valuation (`termValue_value_undef`, `termValue_length_num`). The
+merge adds an entailed bound only where every view passes
+`SinglePass.entailDefinedCheck q a F`: $`q`$'s store holds $`a`$ as a live
+fact, or every term of $`F`$ is one `termDefined` accepts over the facts the
+entailment reads, `q.store.linearNear a.names`. Proved:
+`checked_bound_holds`, `mergeEntailed_inv` (the merge's own check is the
+premise the bound's holding reads).
 
 **The facts near a merge's names.** `linearNearFuel s names limit fuel` is
 `Store.linearNear`'s search by structural recursion on `fuel` (default
@@ -1064,14 +1065,17 @@ unconditional `index` fact of the store, at any fuel;
 **The joined implications.** The pass records each edge into a merge as
 $`(\Gamma_e, \mathit{atSlots}, m)`$: the source's context, the implications
 the edge carries restated at the source's slots (`atSlotsOf`), the edge's
-mapping. Proved: `atSlots_ok`; `meetImplications_ok_of_check`: where
+mapping. The merge keeps a joined implication $`x`$
+(`CertificateProducer.meetImplications`) only where every incoming edge
+passes
 
 ```math
-\mathrm{impliesCheck}\ G\ \Gamma_e\ \mathit{atSlots}\ m\ (\mathrm{meetImplications}\ G\ \mathit{edgesIn}\ |\mathit{context}|\ \mathit{context}) = \mathit{true}
+\mathrm{impliesCheck}\ G\ \Gamma_e\ \mathit{atSlots}\ m\ [x] = \mathit{true}
 ```
 
-and $`\Gamma_e`$ types the source environment $`\rho_s`$, where the edge's
-implications hold, the joined implications hold at
+(`joinedChecked`). Proved: `atSlots_ok`; `meetImplications_ok_of_check`:
+for a recorded edge whose context types the source environment $`\rho_s`$,
+where the edge's implications hold, the kept implications hold at
 $`\mathrm{mapEnv}\ m\ \rho_s`$; `mergeImplies_ok_of_check`: the merge's
 implications then hold at its valuation.
 
@@ -1083,8 +1087,8 @@ the merge's first fresh name $`\mathit{fresh}`$,
 \begin{aligned}
 &\forall q\in\mathit{preds}.\ |q.\mathit{names}| = |\mathit{context}| \wedge \mathrm{StoreWF}\ q.\mathit{store} \wedge \mathrm{StateBelow}\ q\ \mathit{fresh}
 \ \wedge\ \forall x\in\mathit{start}.\ x<\mathit{fresh}
-\\ &\wedge\ \mathrm{LinearNearFuelEq} \wedge \mathrm{EntailedChecked}
-\ \wedge\ \mathrm{ImpliesOk}\ (\mathrm{meetImplications}\ \mathit{edgesIn})\ \rho
+\\ &\wedge\ \mathrm{LinearNearFuelEq}
+\ \wedge\ \mathrm{ImpliesOk}\ (\mathrm{joinedChecked}\ \mathit{edgesIn})\ \rho
 \ \wedge\ \mathrm{StateHoldsAt}\ \mathit{preds}[p]\ \eta\ \rho
 \\ &\Rightarrow\ \mathrm{StateHoldsAt}\ (\mathrm{mergeState}\ \dots).\mathit{state}\ (\mathrm{mergeState}\ \dots).\mathit{implies}\ \eta'\ \rho
 \end{aligned}
@@ -1150,8 +1154,8 @@ is visited; a node with no given facts and one incoming state enters with
 it; with several, with `mergeState` of them over its context, merge edges
 and fresh counter, each incoming state of the context's width, well-formed
 and below the counter, the start names below it. `MergesSound`:
-`LinearNearFuelEq`, and at each merge `EntailedChecked` and the joined
-implications wherever an edge state into it holds. Proved:
+`LinearNearFuelEq`, and at each merge the kept joined implications
+(`joinedChecked`) wherever an edge state into it holds. Proved:
 
 - (`entries_of_traversed`) `Traversed` ∧ `HeadsEntered` ∧ `MergesSound` ⟹
   `EntriesFromEdges`: a node's entry state holds wherever an edge state into
@@ -1321,7 +1325,7 @@ the inputs).
 **(`run_sound`)**, proved:
 
 ```math
-\mathrm{RunTraversed} \wedge \mathrm{NodesMean} \wedge \mathrm{LinearNearFuelEq} \wedge \mathrm{MergesEntailedChecked} \wedge \mathrm{MergesImpliesHold} \wedge \mathrm{FootprintsKept} \wedge \mathrm{ReturnsKept} \wedge \mathrm{RegionsHeld} \wedge \mathrm{AssertionsKept} \Longrightarrow \mathrm{RunSound}
+\mathrm{RunTraversed} \wedge \mathrm{NodesMean} \wedge \mathrm{LinearNearFuelEq} \wedge \mathrm{MergesImpliesHold} \wedge \mathrm{FootprintsKept} \wedge \mathrm{ReturnsKept} \wedge \mathrm{RegionsHeld} \wedge \mathrm{AssertionsKept} \Longrightarrow \mathrm{RunSound}
 ```
 
 `RunSound` is the unit lane's statement: for an accepted `RunCall`, under
@@ -1340,15 +1344,14 @@ of `TolerantFramesRunSound.lean`, quantified over every call the premises of
 
 The hypotheses of `run_sound`, each with what discharges it and the theorem
 that consumes it. Pass changes are named by the pass lane's items; the pass
-lane (`engine-pass`) is at 0f8d18ce.
+lane (`engine-pass`) is at 7fd1fedb.
 
 | Premise | Discharged by | Consumed by |
 | --- | --- | --- |
 | `RunTraversed` | a pass change: the driver on fuel returning a `Walk` (not arrived), then a proof `run_traversed` composing: `NodeRan.checked` at each visited node, under `DirectKeepsSummaries` and `SearchKeepsSummaries` (pass change D6, a `summaries_sound` field of `Answered`, not arrived) and the entry's summaries among the final ones (`RunKeepsSummaries`, the same driver); `NamesBelow` and the width at each entry (proofs to write along the walk from `namesBelow_step`, `edgeTransfer_below`, `mergeState_below`, `headEntry_below`); `Traversed`'s fields (the in-degree order and `HeadsCutCycles`: `loopHeads` on fuel, a pass change not arrived, and the depth-first fact, a proof to write; `width` under `MapNamesLength`, pass change D7, `mapNames` on fuel, not arrived; `wf`, `below` proved per edge); the heads' records and `StartEntered`, read off the driver | `run_sound` (the walk, the checked nodes, `Traversed.reassign`, `headsEntered_of_recorded`, `StartEntered.entered`) |
 | `NodesMean` | per field: `stated`, proved where the node states no assertion, else as `AssertionsKept`; `shape`, `nodeShape_of` given the Boolean test at a branch (pass change, not arrived), and at `branchBind` and `tagBind` false, so the hypothesis fails at a unit with a condition until `TolerantFramesRuns.lean` takes `ShapeOk'` and `NormalTarget'` (a proof change, the route of `TolerantFramesNodeBinds.lean`); `ret`, `returnCheck_plain` at a plain goal, the guard and assertion goals under `YieldsOk` and the subtype answers (pass changes D2, D5, not arrived); `exits`, `exitDelivers_of_edge`, `exitDelivers_head` under `MapNamesSound` (D7), `YieldsOk` (D2), the result's freshness (D4), the target's types (`checkedEdge_env`, D1 arrived; an edge accepted by subtype answers alone, D5) and a given implication's type (D5); `handler`, `handlerDelivers_of_edge` | `stepEdgesSound_of_checked` |
 | `LinearNearFuelEq` | a pass change: `Store.linearNear` on fuel `s.size + 1` as `linearNearFuel` (not arrived) | `mergeState_holdsAt_checked`, through `MergesSound` |
-| `MergesEntailedChecked` | a pass change: the merge adds an entailed bound only where every view passes `entailDefinedCheck` (not arrived) | `mergeState_holdsAt_checked`, through `MergesSound` |
-| `MergesImpliesHold` | pass change D3: each edge into a merge passes `impliesCheck` of the joined implications (not arrived); then a proof to write: the edge delivers the joined implications at the merge's environment (`meetImplications_ok_of_check` from the edge's context typing the source and its carried implications holding there) | `entries_of_traversed`, through `MergesSound` |
+| `MergesImpliesHold` | a proof to write: the walk records, for each state into a merge, its edge among `edgesIn` with the source's context typing the source environment and the carried implications holding there (the edge's `EnvOk` and `edgeTransfer`'s carried implications), then `meetImplications_ok_of_check`; the merge's per-edge check is the pass's (`joinedChecked`, D3 at 5382cf4a) | `entries_of_traversed`, through `MergesSound` |
 | `FootprintsKept` | `footprintKept_of`, over `NodeAccepted`, under `BoundChecked`, `CallFreshOk` (pass change D4, not arrived), `DirectKeepsSummaries`, `SearchKeepsSummaries`; a proof to write: the same over `NodeChecked` with `NodeMeaning` at the reassigned graph (`stepChecked_parts` in place of `checkedStep_parts`) | `run_guarantee` (`bounded`) |
 | `ReturnsKept` | `returnsEnsured_of`, over `NodeAccepted`, under `ReturnChecked`; a proof to write: the same over `NodeChecked` | `run_guarantee` (`ensured`) |
 | `RegionsHeld` | `checkNode_sound`, `checkNode_mono`, `meet_sub`; left: `RegionalTyped` (the evidence's `ExpressionOk` at the node's context, a pass change: the derivation's tree check there, not arrived), the tables' agreement through the in-degree order (with `RunTraversed`), and the composition along a run (a proof to write, as `ArgumentRegionGraph.bounded_step` composes `NodesWithin`) | `run_guarantee` (`regionally`) |

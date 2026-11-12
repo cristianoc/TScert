@@ -111,7 +111,7 @@ theorem footprintCheck_sound [DecidableEq ι] {G : NormalGraph ι} {images : Ins
     (node.continuation = .ret → ret = true → outFresh = true) ∧
     checkScope c.context.length node.expression = true := by
   have tg : ∀ f : Unit → Bool, (Thunk.mk f).get = f () := fun _ => rfl
-  simp only [footprintCheck, tg, Bool.and_eq_true] at h
+  simp only [footprintCheck, SinglePass.derivChecked, tg, Bool.and_eq_true] at h
   obtain ⟨⟨⟨hw, ht⟩, hr⟩, hs⟩ := h
   refine ⟨?_, fun hl => ?_, fun hk hret => ?_, hs⟩
   · simpa [passWithin, passWrites, passDerivChecked, Bool.or_assoc, Bool.and_assoc] using hw

@@ -150,13 +150,22 @@ end Path
 section Implies
 variable {ι : Type} [DecidableEq ι] [Hashable ι]
 
-/-- **The merge's implications hold** at its valuation where the edges'
-implications, joined at slots (`CertificateProducer.meetImplications`), hold
-at the slot environment: each is renamed by the merge's names. -/
+/-- The edges' implications joined at slots
+(`CertificateProducer.meetImplications`) that every incoming edge
+establishes (`PromiseCalls.impliesCheck`): those the merge keeps. -/
+def joinedChecked (G : NormalGraph ι) (context : List (Ty ι))
+    (edgesIn : List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)) :
+    List (PromiseCalls.Implication ι) :=
+  (CertificateProducer.meetImplications G edgesIn context.length context).filter fun x =>
+    edgesIn.all fun (Γ, xs, m) => PromiseCalls.impliesCheck G Γ xs m [x]
+
+/-- **The merge's implications hold** at its valuation where the joined
+implications the merge keeps (`joinedChecked`) hold at the slot
+environment: each is renamed by the merge's names. -/
 theorem mergeImplies_ok {G : NormalGraph ι} {context : List (Ty ι)}
     {edgesIn : List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)} {names : List Nat}
     {ρ η : Env} {n : Nat} {W : WorldT n} (hs : SlotsNamed names ρ η)
-    (hI : PromiseCalls.ImpliesOk G (CertificateProducer.meetImplications G edgesIn context.length context) ρ n W) :
+    (hI : PromiseCalls.ImpliesOk G (joinedChecked G context edgesIn) ρ n W) :
     PromiseCalls.ImpliesOk G (mergeImplies G context edgesIn names) η n W := by
   have key : ∀ {α : Type} (b : Bool) (L : List α) (x : α), x ∈ (if !b then [] else L) → x ∈ L := by
     intro α b L x h; cases b <;> simp_all
@@ -168,7 +177,7 @@ theorem mergeImplies_ok {G : NormalGraph ι} {context : List (Ty ι)}
     obtain ⟨a, ha, b, hb, rfl⟩ := hyx
     intro htest
     rw [← hs _ _ hb]
-    exact hI y (by simpa [SinglePass.timedKind] using hy) (by rw [hs _ _ ha]; exact htest)
+    exact hI y (by simpa [SinglePass.timedKind, joinedChecked] using hy) (by rw [hs _ _ ha]; exact htest)
 
 end Implies
 
@@ -217,7 +226,7 @@ theorem mergeState_wf {G : NormalGraph ι} {context : List (Ty ι)} {preds : Lis
   · show StoreWF (mergeStore _ _ _ _)
     unfold mergeStore
     exact mergeAddGuarded_inv StoreWF (fun _ => True) (fun s a hs _ => add_wf hs a) (fun _ _ _ _ => trivial)
-      (mergeEntailed_inv StoreWF (fun _ => True) (fun s a hs _ => add_wf hs a) (fun _ _ _ _ _ _ => trivial)
+      (mergeEntailed_inv StoreWF (fun _ => True) (fun s a hs _ => add_wf hs a) (fun _ _ _ _ _ _ _ => trivial)
         (mergeBounds_inv StoreWF (fun _ => True) (fun s a hs _ => add_wf hs a) (fun _ _ _ => trivial)
           (mergeMet0_wf hwf)))
   · have hrl : 0 < (mergeSlots (q :: qs) context.length fresh).2.2.1.length := by rw [I.len]; simp

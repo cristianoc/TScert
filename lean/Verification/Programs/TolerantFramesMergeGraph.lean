@@ -110,16 +110,13 @@ def HeadsEntered (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0
     StateHolds G (w.entry t) (w.implies t) startNames ρ0 ρ m s
 
 /-- **The merges' premises**: the pass's `linearNear` is its search on fuel
-(`LinearNearFuelEq`), and at each merge every entailed bound passes the
-check at every view (`EntailedChecked`) and the edges' joined implications
-hold wherever an edge state into the merge holds. -/
+(`LinearNearFuelEq`), and at each merge the joined implications it keeps
+(`joinedChecked`) hold wherever an edge state into the merge holds. -/
 def MergesSound (G : NormalGraph ι) (w : Walk ι) (given : Nat → Bool) (ctx : Nat → List (Ty ι))
-    (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
-    (fresh : Nat → Nat) : Prop :=
+    (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)) : Prop :=
   LinearNearFuelEq ∧ ∀ t, given t = false → 2 ≤ (w.incoming t).length →
-    EntailedChecked ((w.incoming t).map (·.1)) (ctx t).length (fresh t) ∧
     ∀ startNames ρ0 m ρ (s : IndexedHeap), edgePre G w startNames ρ0 t ρ m s →
-      PromiseCalls.ImpliesOk G (CertificateProducer.meetImplications G (edgesIn t) (ctx t).length (ctx t)) ρ s.n s.W
+      PromiseCalls.ImpliesOk G (joinedChecked G (ctx t) (edgesIn t)) ρ s.n s.W
 
 /-- **Entry states hold where edge states into them do**, from the walk's
 construction: a head by `HeadsEntered`, one predecessor as it is, several by
@@ -128,7 +125,7 @@ theorem entries_of_traversed {G : NormalGraph ι} {w : Walk ι} {startNames : Li
     {given : Nat → Bool} {ctx : Nat → List (Ty ι)}
     {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
     {fresh : Nat → Nat} {m : Nat} (hT : Traversed G w startNames given ctx edgesIn fresh)
-    (hheads : HeadsEntered G w startNames ρ0 given m) (hmerges : MergesSound G w given ctx edgesIn fresh) :
+    (hheads : HeadsEntered G w startNames ρ0 given m) (hmerges : MergesSound G w given ctx edgesIn) :
     EntriesFromEdges G w startNames ρ0 m := by
   intro t ρ s he
   obtain ⟨e, hein, heh⟩ := he
@@ -142,9 +139,9 @@ theorem entries_of_traversed {G : NormalGraph ι} {w : Walk ι} {startNames : Li
       rw [hentry, himp]
       obtain ⟨p, hp, rfl⟩ := List.getElem_of_mem hein
       obtain ⟨hnear, hside⟩ := hmerges
-      obtain ⟨hchk, hI⟩ := hside t hg h2
+      have hI := hside t hg h2
       have hp' : p < ((w.incoming t).map (·.1)).length := by simpa using hp
-      refine mergeState_holds_checked (implies := (w.incoming t)[p].2) hp' ?_ ?_ ?_ (hT.startBelow t hg h2) hnear hchk
+      refine mergeState_holds_checked (implies := (w.incoming t)[p].2) hp' ?_ ?_ ?_ (hT.startBelow t hg h2) hnear
         (hI startNames ρ0 m ρ s ⟨_, List.getElem_mem hp, heh⟩) (by simpa using heh)
       · intro q hq; obtain ⟨e', he', rfl⟩ := List.mem_map.mp hq; exact hT.width t hg h2 e' he'
       · intro q hq; obtain ⟨e', he', rfl⟩ := List.mem_map.mp hq; exact hT.wf t hg h2 e' he'
