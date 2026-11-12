@@ -1950,10 +1950,12 @@ Premises this leg discharges / leaves:
   entry W4, with `dfsLoop_init_closed` for the reached labels) and
   `VisitsRecord`, reduced to `PartsKeepLabels` and `VisitsRest`
   (`visitsRecord_of`; over the visit's entry, step and exits: queue
-  entries R2, W5, W6 and W7; its settled record's node needs the per-node side's
-  `DirectKeepsSummaries` and `SearchKeepsSummaries` for
-  `stepChecked_of_step`, and each state an exit pushes its target's width,
-  a well-formed store and below the fresh counter, `PushOk`).
+  entries R2, W5, W6 and W7; its settled record's node reads the step's
+  read-summary tables sound, from `DirectKeepsSummaries` and
+  `SearchKeepsSummaries` (`stepChecked_of_step`) or from the final table's
+  soundness where each table the visit reads is a prefix of the next
+  (queue entry W8); each state an exit pushes meets `PushOk` by
+  `pushOk_of_exit`).
 - `LoopHeadsFuelEq`: left until `loopHeads` reads the walk on fuel
   (`dfsLoop_init_ends` and `OutsideClear` give its witness).
 - `TablesAgree`: left; the graph's tables are the region states each
