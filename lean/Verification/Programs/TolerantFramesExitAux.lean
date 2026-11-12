@@ -5,6 +5,7 @@ import Verification.Programs.TolerantFramesExitVacuity
 namespace Verification.TolerantFrames
 open Verification Footprints HeapObservations PositiveRules HeapExpressionRules
 open Verification ControlFlow PositiveGraphs PositiveCertificates LabelStore ProgramTyping ProgramCertificates
+open CertificateProducer SinglePass
 
 section Aux
 variable {ι : Type} [Labels ι] {G : NormalGraph ι} {I : InstanceImageCheck G}
@@ -42,6 +43,19 @@ theorem visitStep_outFresh {env : SinglePass.WalkEnv ι G I} {σ : SinglePass.Wa
   repeat' (first | split at h | extract_lets at h)
   all_goals first | cases h | skip
   all_goals rfl
+
+/-- The step's next-name counter is at least its initial counter. -/
+theorem StepChecked.fresh_le {pc : PassChecker G I} {codes : CodeEntry ι → Bool}
+    {c : PointClaim ι} {node : Node} {entry : SinglePass.State} {ms : List Nat} {fresh : Nat}
+    {answers ans : Answered G} {st : Stepped ι}
+    (h : StepChecked G I pc codes c node entry ms fresh answers ans st) : fresh ≤ st.fresh := by
+  rcases h with ⟨_, _, _, _, hf, _⟩ | ⟨_, _, _, ha, _⟩
+  · exact Nat.le_of_eq hf.symm
+  · obtain ⟨_, _, _, _, _, hf, _⟩ := ha
+    rcases resultOf_cases node.expression entry.names fresh with ⟨_, _, _, hr⟩ | ⟨_, hr⟩
+    · exact Nat.le_of_eq (hf.trans hr).symm
+    · rw [hf, hr]
+      exact Nat.le_succ _
 
 /-- The checked freshness flag guarantees freshness for an actual normal
 execution, relative to a mark below its initial heap. -/

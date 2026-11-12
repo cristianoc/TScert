@@ -1381,7 +1381,7 @@ The graph theorem `run_sound_single_pass`
 | --- | --- | --- |
 | `DirectKeepsSummaries` | Every summary returned by `directCall` is sound when its input summaries are sound. `keepSummaries` preserves the input prefix; soundness also requires checking every appended summary. This preservation theorem is not proved. | `visitsSettle_of` |
 | `SearchKeepsSummaries` | Every summary returned by `expressionEffectUsing` is sound when its input summaries are sound. Preservation through the search's operations is not proved. | `visitsSettle_of` |
-| `ExitsYield` | Each checked node's normal exits and handler deliver `NodeExitsY` at every admitted reassigned graph. `exitsYield_of_checks` takes the exact named premise `ExitChecks.Extraction`. Its field groups, execution witnesses, and separate final-world realization hypothesis are specified in [Exit checks from the trace](#exit-checks-from-the-trace). Extraction and realization are unproved. | `nodesYield_of`, then `stepEdgesSound_of_yields` |
+| `ExitsYield` | Each checked node's normal exits and handler deliver `NodeExitsY` at every admitted reassigned graph. `exitsYield_of_checks` takes the exact named premise `ExitChecks.Extraction`. Its field groups, execution witnesses, and separate final-world realization hypothesis are specified in [Exit checks from the trace](#exit-checks-from-the-trace). `exitChecks_fresh` and `exitChecks_widths` prove freshness and both mapping bounds. `exitChecks_here` leaves the initial yield judgment; `exitChecks_handler` leaves handler edge checks, with `exitChecks_thrownBelow` proving the name bound. Extraction retains those two premises, `Head`, `NonHead`, and `Realization`. | `nodesYield_of`, then `stepEdgesSound_of_yields` |
 | `RegionsRecorded` | The graph's regional tables agree with the tables each visit checks, satisfy the initial regional facts, and admit each predecessor's established facts at its target. Each `RegionalDone` contains its tables and evidence; each label records its region state. The graph-wide agreement proof is not established. | `regionsHeld_of` |
 | `RegionsTyped` | Every visited node's regional evidence has its context and is typed at every admitted reassigned graph. `regionsTyped_of_tree` proves the tree-checked case, and `regionalTyped_copy` proves the copy case. The `requiresTree` case needs the evidence's `regionalFacts` to supply both the entry facts and `stepK`. | `regionsHeld_of` |
 
@@ -1442,13 +1442,36 @@ new meanings.
 
 | `NodeExitsChecked` field | Trace source or remaining obligation |
 | --- | --- |
-| `hereEmpty` | The trace's `en.here = true → HereEmpty …` conjunct, transported by its claim equation and `HereEmpty.reassign`. `visitEntry_hereEmpty` proves the component from cached vacuity. |
-| `yieldsRead` | `ExitYieldsJudged … ysA`, meaning `YieldsJudged` at every initial environment and mark. `exitsYields_source` and `ExitYieldSource.judged` supply the local judgment under sound codes, sound `sd.answers` summaries, and a judged step cache. The trace identifies the kept cache; transporting these premises is part of `ExitChecks.Here`. |
-| `widths` | `ExitRecordsChecked` supplies the indexed successful `exitStep`; `exitStep_mappingWidth` gives source-slot bounds. `exitsWidth` proves the graph-level width invariant. |
-| `handlerWidth` | The same indexed check for `Exit.handler t`, with source names `sd.thrown :: en.entry.names`. |
+| `hereEmpty` | Proved by `exitChecks_here`, using the trace's empty-context witness, claim equation, and `HereEmpty.reassign`. Its separate initial-yield-judgment premise supplies `yieldsRead`. |
+| `yieldsRead` | `ExitYieldsJudged … ysA`, meaning `YieldsJudged` at every initial environment and mark. `exitsYields_source` and `ExitYieldSource.judged` supply the local judgment under sound codes, sound `sd.answers` summaries, and a judged step cache. The initial yield judgment remains an explicit premise of `exitChecks_here` and `extraction_of_fields`. |
+| `widths` | Proved by `exitChecks_widths`: `ExitStepsChecked` supplies the indexed successful `exitStep`, and `exitStep_mappingWidth` gives source-slot bounds. |
+| `handlerWidth` | Proved by `exitChecks_widths` at `Exit.handler t`, with source names `sd.thrown :: en.entry.names`. |
 | `normal` | The trace's `ExitRecordsChecked` supplies each indexed exit and its successful computation. `visitExits_records_yields` supplies its cache provenance. `ExitChecks.NonHead` and `ExitChecks.Head` select the appropriate branch with its own judged `ysE`; `ExitChecks.assemble` combines those branches. |
-| `handler` | The indexed handler computation from `ExitRecordsChecked`, together with the accepted `visitStep`, supplies the computations listed below. The assembly obligation is `ExitChecks.Handler`. |
-| `thrownBelow` | The accepted `visitStep` chooses `sd.thrown = sd.st.fresh`. Connecting this counter to `NamesBelow entry (w.implies l) startNames thrown` requires the entry/step name invariant; it is a separate conjunct of `ExitChecks.Handler`, not a consequence of the width lemma. |
+| `handler` | The indexed handler computation from `ExitRecordsChecked`, together with the accepted `visitStep`, supplies the computations listed below. The handler edge-check function remains an explicit premise of `exitChecks_handler` and `extraction_of_fields`. |
+| `thrownBelow` | Proved by `exitChecks_thrownBelow`: `visitStep_thrown` identifies `sd.thrown` with `sd.st.fresh`; `StepChecked.fresh_le` bounds that counter below by the checked node's initial counter; `namesBelow_mono` transports the checked node's `below` invariant. |
+
+`exitChecks_fresh` proves `ExitChecks.Fresh` directly from `visitStep_outFresh`
+and the site's equations. The exact remaining premises of
+`ExitChecks.extraction_of_fields`, at each admitted site, are:
+
+- `ExitYieldsJudged` for `s.ysA`;
+- `ExitChecks.NonHead`;
+- `ExitChecks.Head`;
+- `HandlerExitChecked` for each handler target;
+- `ExitChecks.Realization`.
+
+Extraction of the remaining edge checks needs a connection between
+`r.given t` and `env.isHead[t]!`, and between `r.ctx t` and the target
+claim read by the exit. The site's equations identify `env.isHead` with
+`passHeads c`, but do not identify `r.given` with that function. The
+checked node's `hctx` concerns its own label. Incoming insertion also
+needs the target below the incoming and implication arrays' sizes;
+equality of their sizes alone does not supply that bound. For a merge,
+`2 ≤ (r.w.incoming t).length → env.merging[t]! = true` and the target
+bound for `incomingEdges` are required. `WalkExtends` preserves membership
+once established; it supplies neither an insertion bound nor the merge
+flag. These obligations concern both handler and normal non-head exits.
+Head-specific obligations are listed below.
 
 `NonHeadExitChecked.typed` and `HeadExitChecked.typed` read `ysE`.
 The assertion and merge checks read `ysA`. Both lists have judged-yield
@@ -1514,10 +1537,10 @@ The separately stated local Props are `ExitChecks.Here`, `Widths`,
 claim, node, entry, step and stepped-answer identifications.
 `ExitChecks.assemble` proves that these seven Props give
 `ExitChecks.Extracted` at the same site and assignment.
-`ExitChecks.extraction_of_fields` proves their universally quantified
-composition into `ExitChecks.Extraction`, the exact premise of
-`exitsYield_of_checks`. The field Props and realization remain hypotheses;
-the composition theorems are checked by `AxiomCheck`.
+`ExitChecks.extraction_of_fields` composes the five remaining premises
+listed above into `ExitChecks.Extraction`, the exact premise of
+`exitsYield_of_checks`. The field proofs and composition theorems are
+checked by `AxiomCheck`.
 
 ## Leg 17a: the per-node hypotheses from the pass's checks
 

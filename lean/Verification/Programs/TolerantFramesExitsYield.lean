@@ -1,4 +1,5 @@
 import Verification.Programs.TolerantFramesExitExecution
+import Verification.Programs.TolerantFramesExitWidths
 
 /-! # Assembly of checked exits into the graph's exit obligation -/
 namespace Verification.TolerantFrames
@@ -120,6 +121,69 @@ variable {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I
     n.node n.c n.entry n.st n.ys s.en.here s.sd.outFresh s.ysA s.sd.thrown (s.sd.thrownTy.getD []) ∧
     Fresh s ∧ Realization s η
 
+/-- The site's step equation fixes its checked freshness flag. -/
+theorem exitChecks_fresh (s : Site c r l hl) : Fresh s := by
+  obtain ⟨_, _, _, _, hcodes, _, _, _, _, hstep, _, hnode, hclaim,
+    hentry, hst, hans, _⟩ := s.facts
+  unfold Fresh
+  simp only [hans, hclaim, hnode, hentry, hst]
+  rw [← hcodes]
+  exact visitStep_outFresh hstep
+
+/-- The trace proves the empty-context half of `Here`; the initial exit
+cache's judgment is the explicit remaining premise. -/
+theorem exitChecks_here (s : Site c r l hl) (η : MixedAssignment ι)
+    (initialYieldsJudged : ExitYieldsJudged (reassign G η) r.w (List.range c.inputs.length) l
+      (r.node l hl).node (r.node l hl).c (r.node l hl).entry (r.node l hl).st s.ysA) : Here s η := by
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, hclaim, _, _, _, _, _, _, _, _, hhere, _⟩ := s.facts
+  refine ⟨?_, initialYieldsJudged⟩
+  intro hh
+  rw [hclaim]
+  exact (hhere hh).reassign η
+
+/-- Every source slot read by a successful indexed exit is in bounds. -/
+theorem exitChecks_widths (s : Site c r l hl) (η : MixedAssignment ι) : Widths s η := by
+  obtain ⟨_, _, _, _, _, _, _, _, _, _, _, hnode, _, hentry, hst, _, _, _, _, _, hsteps, _⟩ := s.facts
+  have bound : ∀ e ∈ Exit.ofNode s.env.nodes[l]!, ∀ slots, e.target.mapping = some slots →
+      ∀ j ∈ slots, j < (exitNames s.en s.sd e).length := by
+    intro e he slots hs j hj
+    obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp he
+    have hei : (e, i) ∈ (Exit.ofNode s.env.nodes[l]!).zipIdx := List.mem_zipIdx_iff_getElem?.mpr hi
+    obtain ⟨a, b, hb, _⟩ := hsteps (e, i) hei
+    obtain ⟨tc, _, hw⟩ := exitStep_mappingWidth hb
+    simp only [hs, mappingWidthOk, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at hw
+    exact hw.2 j hj
+  constructor
+  · intro i t pushed observed promote hm slots hs j hj
+    rw [hnode] at hm
+    have hb := bound _ (List.mem_of_getElem? hm) slots hs j hj
+    cases pushed <;> simpa only [exitNames, Exit.isHandler, Exit.pushed, Bool.false_eq_true, if_false,
+      if_true, normalNames, hentry, hst] using hb
+  · intro t ht slots hs j hj
+    rw [hnode] at ht
+    have hm : Exit.handler t ∈ Exit.ofNode s.env.nodes[l]! := by
+      simp only [Exit.ofNode, ht, Option.toList_some, List.map_cons, List.map_nil,
+        List.mem_append, List.mem_singleton]
+      exact Or.inr trivial
+    have hb := bound _ hm slots hs j hj
+    simpa only [exitNames, Exit.isHandler, if_true, hentry] using hb
+
+/-- The checked step bounds every entry name below its handler name. -/
+theorem exitChecks_thrownBelow (s : Site c r l hl) :
+    NamesBelow (r.node l hl).entry (r.w.implies l) (List.range c.inputs.length) s.sd.thrown := by
+  obtain ⟨_, _, _, _, _, _, _, _, _, hstep, _, _, _, _, hst, _⟩ := s.facts
+  rw [visitStep_thrown hstep, ← hst]
+  exact namesBelow_mono (r.node l hl).hstep.fresh_le (r.node l hl).below
+
+/-- The handler name bound comes from the checked step. Extraction of the
+handler's edge checks is the explicit remaining premise. -/
+theorem exitChecks_handler (s : Site c r l hl) (η : MixedAssignment ι)
+    (handlerEdgeChecks : ∀ t, (r.node l hl).node.handler = some t →
+      HandlerExitChecked (reassign G η) (I.reassign η) r.w (List.range c.inputs.length)
+        r.ctx r.stated r.given r.edgesIn l (r.node l hl).c (r.node l hl).entry (r.node l hl).st
+        s.en.here s.sd.outFresh (s.sd.thrownTy.getD []) s.sd.thrown t) : Handler s η :=
+  ⟨handlerEdgeChecks, fun _ => exitChecks_thrownBelow s⟩
+
 /-- The field obligations compose without any extraction assumption hidden in the proof. -/
 theorem assemble (s : Site c r l hl) (η : MixedAssignment ι)
     (hh : Here s η) (hw : Widths s η) (hn : NonHead s η) (hhead : Head s η) (hx : Handler s η)
@@ -148,11 +212,18 @@ theorem ExitChecks.extraction_of_fields
     (fields : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
       RunPremises G I c after admits → ∀ r : RunWalkA G I c, WalkChecked c r → ∀ η, admits η →
         ∀ l (hl : r.w.visited l) (s : ExitChecks.Site c r l hl),
-          ExitChecks.Here s η ∧ ExitChecks.Widths s η ∧ ExitChecks.NonHead s η ∧ ExitChecks.Head s η ∧
-            ExitChecks.Handler s η ∧ ExitChecks.Fresh s ∧ ExitChecks.Realization s η) : ExitChecks.Extraction ι := by
+          ExitYieldsJudged (reassign G η) r.w (List.range c.inputs.length) l
+            (r.node l hl).node (r.node l hl).c (r.node l hl).entry (r.node l hl).st s.ysA ∧
+          ExitChecks.NonHead s η ∧ ExitChecks.Head s η ∧
+          (∀ t, (r.node l hl).node.handler = some t →
+            HandlerExitChecked (reassign G η) (I.reassign η) r.w (List.range c.inputs.length)
+              r.ctx r.stated r.given r.edgesIn l (r.node l hl).c (r.node l hl).entry (r.node l hl).st
+              s.en.here s.sd.outFresh (s.sd.thrownTy.getD []) s.sd.thrown t) ∧
+          ExitChecks.Realization s η) : ExitChecks.Extraction ι := by
   intro G I c after admits hp r hc η ha l hl s
-  obtain ⟨hh, hw, hn, hhead, hx, hf, hr⟩ := fields G I c after admits hp r hc η ha l hl s
-  exact ExitChecks.assemble s η hh hw hn hhead hx hf hr
+  obtain ⟨hh, hn, hhead, hx, hr⟩ := fields G I c after admits hp r hc η ha l hl s
+  exact ExitChecks.assemble s η (ExitChecks.exitChecks_here s η hh) (ExitChecks.exitChecks_widths s η)
+    hn hhead (ExitChecks.exitChecks_handler s η hx) (ExitChecks.exitChecks_fresh s) hr
 
 /-- The exit obligation from the explicit local extraction premise. -/
 theorem exitsYield_of_checks (checks : ExitChecks.Extraction ι) : ExitsYield ι := by

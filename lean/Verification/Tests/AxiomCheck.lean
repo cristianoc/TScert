@@ -1087,3 +1087,9 @@ run_cmd do
   check ``Verification.TolerantFrames.headExit_checked
   check ``Verification.TolerantFrames.exitTypes_handler_checked
   check ``Verification.TolerantFrames.exitsYield_of_checks
+  check ``Verification.TolerantFrames.StepChecked.fresh_le
+  check ``Verification.TolerantFrames.ExitChecks.exitChecks_fresh
+  check ``Verification.TolerantFrames.ExitChecks.exitChecks_here
+  check ``Verification.TolerantFrames.ExitChecks.exitChecks_widths
+  check ``Verification.TolerantFrames.ExitChecks.exitChecks_thrownBelow
+  check ``Verification.TolerantFrames.ExitChecks.exitChecks_handler
