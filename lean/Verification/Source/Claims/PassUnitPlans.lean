@@ -48,35 +48,76 @@ theorem planOver_types {F : EquationStore.Frozen} {e : Except String (FunctionPl
         cases h
         exact over_types hr
 
+theorem except_bind_ok {ε α β : Type} {x : Except ε α} {k : α → Except ε β} {b : β}
+    (h : (x >>= k) = .ok b) : ∃ a, x = .ok a ∧ k a = .ok b := by
+  cases x with
+  | error e => cases h
+  | ok a => exact ⟨a, rfl, h⟩
+
+/-- **The core planner's result** (proved), at every value of its
+arguments (the imported footprints, dependencies, closure, proposal flag and
+front given included): its import plan has no module run, and its plans are
+plans over its frozen store. -/
+theorem fragmentPlansCore_shape {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
+    {names : Option (List String)} {standIns : StandIns} {force : List String}
+    {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)} {depends : List (String × List String)}
+    {closure proposed : Bool} {front : Option (Json × Front)} {f : FilePlans}
+    (h : fragmentPlansCore ast fileKey budget names standIns force imported depends closure proposed front = .ok f) :
+    f.p.modules = [] ∧ ∃ plans₀ : List (Except String (FunctionPlan EquationStore.State EquationGraphs.Tree)),
+      f.plans = plans₀.map fun e => e.bind (FunctionPlan.over f.F) := by
+  unfold fragmentPlansCore at h
+  cases front with
+  | none =>
+    dsimp only at h
+    repeat (obtain ⟨_, -, h⟩ := except_bind_ok h)
+    cases h; exact ⟨rfl, _, rfl⟩
+  | some p =>
+    obtain ⟨claims, fr⟩ := p
+    dsimp only at h
+    by_cases hc : (standIns.functions.isEmpty && standIns.imports.isEmpty) = true
+    · rw [if_pos hc] at h
+      repeat (obtain ⟨_, -, h⟩ := except_bind_ok h)
+      cases h; exact ⟨rfl, _, rfl⟩
+    · rw [if_neg hc] at h
+      repeat (obtain ⟨_, -, h⟩ := except_bind_ok h)
+      cases h; exact ⟨rfl, _, rfl⟩
+
+/-- **The core planner's plans are over its frozen store** (proved), at
+every value of its arguments. -/
+theorem fragmentPlansCore_overStore {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
+    {names : Option (List String)} {standIns : StandIns} {force : List String}
+    {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)} {depends : List (String × List String)}
+    {closure proposed : Bool} {front : Option (Json × Front)} {f : FilePlans}
+    (h : fragmentPlansCore ast fileKey budget names standIns force imported depends closure proposed front = .ok f) :
+    OverStore f := by
+  obtain ⟨-, plans₀, hp⟩ := fragmentPlansCore_shape h
+  intro i name pos r hi
+  simp only [PlanAt, hp, List.getElem?_map, Option.map_eq_some_iff] at hi
+  obtain ⟨e, -, he⟩ := hi
+  exact planOver_types he
+
 /-- **Mode 8's plans are over its frozen store** (proved). -/
 theorem fragmentPlans_overStore {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {names : Option (List String)} {standIns : StandIns} {force : List String} {f : FilePlans}
-    (h : fragmentPlans ast fileKey budget names standIns force = .ok f) : OverStore f := by
-  unfold fragmentPlans at h
-  simp only [bind, Except.bind, pure, Except.pure, SinglePass.timedKind] at h
-  repeat' split at h
-  all_goals first | (cases h; done) | skip
-  all_goals
-    injection h with h
-    subst h
-    intro i name pos r hi
-    simp only [PlanAt, List.getElem?_map, Option.map_eq_some_iff] at hi
-    obtain ⟨e, -, he⟩ := hi
-    exact planOver_types he
+    (h : fragmentPlans ast fileKey budget names standIns force = .ok f) : OverStore f :=
+  fragmentPlansCore_overStore h
+
+/-- **The core planner plans no module run** (proved), at every value of
+its arguments. -/
+theorem fragmentPlansCore_modules {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
+    {names : Option (List String)} {standIns : StandIns} {force : List String}
+    {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)} {depends : List (String × List String)}
+    {closure proposed : Bool} {front : Option (Json × Front)} {f : FilePlans}
+    (h : fragmentPlansCore ast fileKey budget names standIns force imported depends closure proposed front = .ok f) :
+    f.p.modules = [] :=
+  (fragmentPlansCore_shape h).1
 
 /-- **Mode 8 plans no module run** (proved): its import plan's module runs
 are empty, so `FilePlans.dependencies` names the file's units alone. -/
 theorem fragmentPlans_modules {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {names : Option (List String)} {standIns : StandIns} {force : List String} {f : FilePlans}
-    (h : fragmentPlans ast fileKey budget names standIns force = .ok f) : f.p.modules = [] := by
-  unfold fragmentPlans at h
-  simp only [bind, Except.bind, pure, Except.pure, SinglePass.timedKind] at h
-  repeat' split at h
-  all_goals first | (cases h; done) | skip
-  all_goals
-    injection h with h
-    subst h
-    rfl
+    (h : fragmentPlans ast fileKey budget names standIns force = .ok f) : f.p.modules = [] :=
+  fragmentPlansCore_modules h
 
 /-- The plans with the given head facts are those plans, each request with
 other candidates and code sources and every other field kept. -/

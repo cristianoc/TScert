@@ -1,4 +1,4 @@
-import Verification.Programs.TolerantFramesState
+import Verification.Programs.TolerantFramesMaterialize
 
 /-! # Tolerant frames: a step's delta on the named state
 
@@ -73,7 +73,7 @@ theorem forIn_inv_bind {α β γ : Type} (l : List α) (init : β) (f : α → �
 /-! ## Each loop keeps the store's facts holding -/
 
 /-- **The removal loop keeps only facts the store held.** -/
-theorem deltaRemove_sub (L : StoreLaws) {s : Store} {pairs : List (Atom × Atom)} {out : HeapKnowledge.Knowledge}
+theorem deltaRemove_sub {s : Store} {pairs : List (Atom × Atom)} {out : HeapKnowledge.Knowledge}
     {shift : Bool} : ∀ x ∈ storeAll (deltaRemove s pairs out shift), x ∈ storeAll s := by
   unfold deltaRemove
   simp only [Id.run]
@@ -87,24 +87,24 @@ theorem deltaRemove_sub (L : StoreLaws) {s : Store} {pairs : List (Atom × Atom)
     dsimp only at hx
     split at hx
     · rcases List.mem_append.mp hx with hx | hx
-      · exact List.mem_append_left _ (L.keys_erase _ _ _ hx)
+      · exact List.mem_append_left _ (keys_erase _ _ _ hx)
       · refine vals_foldl (fun x => x ∈ storeAll t) _ (fun m n hm y hy => ?_) _ _
           (fun y hy => List.mem_append_right _ hy) x hx
-        rcases L.vals_insert _ _ _ _ hy with hy | hy
-        · exact hm y (L.findD_vals _ _ _ (List.mem_of_mem_erase hy))
+        rcases vals_insert _ _ _ _ hy with hy | hy
+        · exact hm y (findD_vals _ _ _ (List.mem_of_mem_erase hy))
         · exact hm y hy
     · exact hx
   · exact ht
 
 /-- The removal loop keeps the store's facts holding. -/
-theorem deltaRemove_ok (L : StoreLaws) {s : Store} {pairs : List (Atom × Atom)} {out : HeapKnowledge.Knowledge}
+theorem deltaRemove_ok {s : Store} {pairs : List (Atom × Atom)} {out : HeapKnowledge.Knowledge}
     {shift : Bool} {η : Env} {h : Heap} (hs : StoreOk s η h) : StoreOk (deltaRemove s pairs out shift) η h :=
-  fun x hx => hs x (deltaRemove_sub L x hx)
+  fun x hx => hs x (deltaRemove_sub x hx)
 
 /-- **The addition loop adds holding facts**: each output fact holds at the
 pushed slots `ρ'`, and `back` sends each slot to a name holding its value;
 the index facts it records hold too. -/
-theorem deltaAdd_ok (L : StoreLaws) {s : Store} {pairs : List (Atom × Atom)} {out : HeapKnowledge.Knowledge}
+theorem deltaAdd_ok {s : Store} {pairs : List (Atom × Atom)} {out : HeapKnowledge.Knowledge}
     {shift : Bool} {back : Nat → Option Nat} {η ρ' : Env} {h : Heap} (hs : StoreOk s η h)
     (hout : ∀ o ∈ SinglePass.atomsOf out, AtomHolds o ρ' h) (hback : ∀ i x, back i = some x → η x = ρ' i) :
     StoreOk (deltaAdd s pairs out shift back).1 η h ∧
@@ -125,7 +125,7 @@ theorem deltaAdd_ok (L : StoreLaws) {s : Store} {pairs : List (Atom × Atom)} {o
   · split
     · rename_i a hra
       have ha : AtomHolds a η h := atomHolds_rename (η := ρ') (ρ := η) (fun i x hx => hback i x hx) hra (hout o ho)
-      have hadd := add_ok L hr ha
+      have hadd := add_ok hr ha
       cases a with
       | index x => exact ⟨hadd, hidx x _ ha rfl⟩
       | link g =>
@@ -142,7 +142,7 @@ theorem deltaAdd_ok (L : StoreLaws) {s : Store} {pairs : List (Atom × Atom)} {o
 /-- **The restatement loop adds holding facts**: a linear fact restated over
 a read's path (`HeapKnowledge.restateReads_holds`), the read links being the
 store's. -/
-theorem deltaRestate_ok (L : StoreLaws) {s : Store} {added : List HeapKnowledge.IndexAtom} {η : Env} {h : Heap}
+theorem deltaRestate_ok {s : Store} {added : List HeapKnowledge.IndexAtom} {η : Env} {h : Heap}
     (hs : StoreOk s η h) (hadd : HeapKnowledge.IndexHolds added η h) : StoreOk (deltaRestate s added) η h := by
   unfold deltaRestate
   simp only [Id.run]
@@ -162,7 +162,7 @@ theorem deltaRestate_ok (L : StoreLaws) {s : Store} {added : List HeapKnowledge.
       obtain ⟨b, hb, hbg⟩ := List.mem_filterMap.mp hg
       split at hbg
       · split at hbg
-        · cases hbg; exact hu _ (about_storeAll L hb) g (List.mem_singleton_self _)
+        · cases hbg; exact hu _ (about_storeAll hb) g (List.mem_singleton_self _)
         · cases hbg
       · cases hbg
     have hx1 : HeapKnowledge.IndexHolds [x] η h := fun y hy hc => by
@@ -170,28 +170,28 @@ theorem deltaRestate_ok (L : StoreLaws) {s : Store} {added : List HeapKnowledge.
     have hy := HeapKnowledge.restateReads_holds (dropped := (· == v)) hl hx1
     refine forIn_inv _ _ _ (fun t => StoreOk t η h) hu ?_
     intro y hyl w hw
-    exact add_ok L hw fun z hz hc => by simp only [List.mem_singleton] at hz; subst hz; exact hy z hyl hc
+    exact add_ok hw fun z hz hc => by simp only [List.mem_singleton] at hz; subst hz; exact hy z hyl hc
   · exact hu
 
 /-- **A step's delta keeps the store's facts holding**: where the facts the
 removal loop keeps hold at `η`, the output holds at the pushed slots `ρ'`
 and `back` sends each slot to a name holding its value. -/
-theorem applyDelta_ok (L : StoreLaws) {s : Store} {pairs : List (Atom × Atom)} {out : HeapKnowledge.Knowledge}
+theorem applyDelta_ok {s : Store} {pairs : List (Atom × Atom)} {out : HeapKnowledge.Knowledge}
     {shift : Bool} {back : Nat → Option Nat} {η ρ' : Env} {h : Heap}
     (hrem : StoreOk (deltaRemove s pairs out shift) η h) (hout : HeapKnowledge.Holds out ρ' h)
     (hback : ∀ i x, back i = some x → η x = ρ' i) :
     StoreOk (SinglePass.applyDelta s pairs out shift back) η h := by
   rw [applyDelta_eq]
-  obtain ⟨h1, h2⟩ := deltaAdd_ok (pairs := pairs) (shift := shift) L hrem (atomsOf_holds hout) hback
-  exact deltaRestate_ok L h1 h2
+  obtain ⟨h1, h2⟩ := deltaAdd_ok (pairs := pairs) (shift := shift) hrem (atomsOf_holds hout) hback
+  exact deltaRestate_ok h1 h2
 
 /-- **(Preserving) A step's delta keeps the store's facts holding** where
 every fact of the store holds after the step. -/
-theorem applyDelta_preserving (L : StoreLaws) {s : Store} {pairs : List (Atom × Atom)}
+theorem applyDelta_preserving {s : Store} {pairs : List (Atom × Atom)}
     {out : HeapKnowledge.Knowledge} {shift : Bool} {back : Nat → Option Nat} {η ρ' : Env} {h : Heap}
     (hs : StoreOk s η h) (hout : HeapKnowledge.Holds out ρ' h) (hback : ∀ i x, back i = some x → η x = ρ' i) :
     StoreOk (SinglePass.applyDelta s pairs out shift back) η h :=
-  applyDelta_ok L (deltaRemove_ok L hs) hout hback
+  applyDelta_ok (deltaRemove_ok hs) hout hback
 
 /-! ## The renaming back to names -/
 
@@ -268,7 +268,7 @@ with `η` on every name the slots, the fresh names, the start names and the
 implications mention and naming the result `r` with the value `v`, where the
 store's facts the removal loop keeps hold at `η'` after the step and the
 rule's output at the pushed slots, the pushed state holds. -/
-theorem stateHolds_after (L : StoreLaws) {G : NormalGraph ι} {st : State} {I : List (PromiseCalls.Implication ι)}
+theorem stateHolds_after {G : NormalGraph ι} {st : State} {I : List (PromiseCalls.Implication ι)}
     {start : List Nat} {entry ρ η η' : Env} {m : Nat} {s s' : IndexedHeap} {r : Nat} {v : Tm}
     {pairs : List (Atom × Atom)} {out : HeapKnowledge.Knowledge} {want : Std.HashSet Nat} {whole : Bool}
     (hn : SlotsNamed st.names ρ η) (hI : PromiseCalls.ImpliesOk G I η s.n s.W) (hF : ∀ x ∈ st.fresh, FreshAt m (η x))
@@ -279,7 +279,7 @@ theorem stateHolds_after (L : StoreLaws) {G : NormalGraph ι} {st : State} {I : 
     StateHolds G ⟨r :: st.names, SinglePass.applyDelta st.store pairs out true
         (passBack (SinglePass.slotTable st.names want whole) st.names r), st.fresh⟩
       I start entry (push v ρ) m s' := by
-  refine ⟨η', fun i x hx => ?_, applyDelta_ok L hrem hout (passBack_ok hn h0 hagree), ?_, ?_, ?_⟩
+  refine ⟨η', fun i x hx => ?_, applyDelta_ok hrem hout (passBack_ok hn h0 hagree), ?_, ?_, ?_⟩
   · cases i with
     | zero => simp only [List.getElem?_cons_zero, Option.some.injEq] at hx; subst hx; exact h0.symm
     | succ j =>
@@ -301,7 +301,7 @@ def ResultFresh (st : State) (I : List (PromiseCalls.Implication ι)) (start : L
 (line 1309): the frame's facts at `Env.set η r v` (`named_keep_box`,
 `pass_preserving_frame_select`) and the rule's output at the pushed slots
 give the pushed state. -/
-theorem stateHolds_fresh_result (L : StoreLaws) {G : NormalGraph ι} {st : State}
+theorem stateHolds_fresh_result {G : NormalGraph ι} {st : State}
     {I : List (PromiseCalls.Implication ι)} {start : List Nat} {entry ρ η : Env} {m : Nat} {s s' : IndexedHeap}
     {r : Nat} {v : Tm} {pairs : List (Atom × Atom)} {out : HeapKnowledge.Knowledge} {want : Std.HashSet Nat}
     {whole : Bool} (hn : SlotsNamed st.names ρ η) (hI : PromiseCalls.ImpliesOk G I η s.n s.W)
@@ -313,14 +313,14 @@ theorem stateHolds_fresh_result (L : StoreLaws) {G : NormalGraph ι} {st : State
       I start entry (push v ρ) m s' := by
   obtain ⟨hrn, hrf, hrs, hri⟩ := hr
   have ne : ∀ {x}, x ≠ r → Env.set η r v x = η x := fun hx => by simp [Env.set, hx]
-  exact stateHolds_after L hn hI hF hst ha (by simp [Env.set])
+  exact stateHolds_after hn hI hF hst ha (by simp [Env.set])
     (fun x hx => ne fun e => hrn (e ▸ hx)) (fun x hx => ne fun e => hrf (e ▸ hx))
     (fun q x hq => ne fun e => hrs (e ▸ List.mem_of_getElem? hq))
-    (fun y hy => ⟨ne (hri y hy).1, ne (hri y hy).2⟩) (deltaRemove_ok L hS) hout
+    (fun y hy => ⟨ne (hri y hy).1, ne (hri y hy).2⟩) (deltaRemove_ok hS) hout
 
 /-- **The state after a preserving read of a slot** (line 1307): the result
 keeps the slot's name `x`, whose value `v` it is; every name keeps its value. -/
-theorem stateHolds_reused_name (L : StoreLaws) {G : NormalGraph ι} {st : State}
+theorem stateHolds_reused_name {G : NormalGraph ι} {st : State}
     {I : List (PromiseCalls.Implication ι)} {start : List Nat} {entry ρ η : Env} {m : Nat} {s s' : IndexedHeap}
     {i x : Nat} {pairs : List (Atom × Atom)} {out : HeapKnowledge.Knowledge} {want : Std.HashSet Nat}
     {whole : Bool} (hn : SlotsNamed st.names ρ η) (hI : PromiseCalls.ImpliesOk G I η s.n s.W)
@@ -330,8 +330,8 @@ theorem stateHolds_reused_name (L : StoreLaws) {G : NormalGraph ι} {st : State}
     StateHolds G ⟨x :: st.names, SinglePass.applyDelta st.store pairs out true
         (passBack (SinglePass.slotTable st.names want whole) st.names x), st.fresh⟩
       I start entry (push (ρ i) ρ) m s' :=
-  stateHolds_after L hn hI hF hst ha (hn i x hx).symm (fun _ _ => rfl) (fun _ _ => rfl) (fun _ _ _ => rfl)
-    (fun _ _ => ⟨rfl, rfl⟩) (deltaRemove_ok L hS) hout
+  stateHolds_after hn hI hF hst ha (hn i x hx).symm (fun _ _ => rfl) (fun _ _ => rfl) (fun _ _ _ => rfl)
+    (fun _ _ => ⟨rfl, rfl⟩) (deltaRemove_ok hS) hout
 
 /-- **A copy (lines 1203–1220) keeps the state**: the result is slot `i`'s
 value, named as it; the store and the heap are unchanged. -/
@@ -437,13 +437,9 @@ theorem atomHolds_rename_rev {a b : Atom} {f : Nat → Option Nat} {η ρ : Env}
     obtain ⟨t, ht, rfl⟩ := hqp
     exact (hb _ hq g hg).congr (hf _ _ hs).symm (hf _ _ ht).symm
 
-/-- **(Obstacle) A fact the removal loop removes leaves the store**: each
-fact the loop keeps is the store's and none of the handed facts whose image
-the output lost. `Store.remove` erases a fact from the live set and from its
-names' lists (`List.erase`, the first copy); that it leaves the store needs
-exact erasure laws of `Lean.PersistentHashMap`, lists without duplicates and
-every listed fact under its own names only. A named hypothesis of the
-writing case. -/
+/-- **A fact the removal loop removes leaves the store**: each fact the
+loop keeps is the store's and none of the handed facts whose image the output
+lost (proved for a well-formed store: `removedLeave`). -/
 def RemovedLeave (s : Store) (pairs : List (Atom × Atom)) (out : HeapKnowledge.Knowledge) (shift : Bool) : Prop :=
   ∀ x ∈ storeAll (deltaRemove s pairs out shift),
     x ∈ storeAll s ∧ ∀ ab ∈ pairs, deltaImage shift ab.2 ∉ SinglePass.atomsOf out → x ≠ ab.1
@@ -466,30 +462,5 @@ theorem rename_succ_total (b : Atom) : ∃ c, b.rename (fun i => some (i + 1)) =
       | cons p l ih => obtain ⟨l', hl⟩ := ih; exact ⟨_, by rw [List.mapM_cons, hl]; rfl⟩
     obtain ⟨l', hl⟩ := this x.partners
     exact ⟨_, by simp only [Atom.rename]; rw [hl]; rfl⟩
-
-/-- **(Writing) A step's delta keeps the store's facts holding** where every
-stored fact either holds after the step (the facts its effect keeps) or is
-handed to the rule (a pair), and the removal loop removes the handed facts
-whose image the output lost (`RemovedLeave`): a kept handed fact holds by the
-output, read back through the pushed slots and the table. -/
-theorem applyDelta_writing (L : StoreLaws) {s : Store} {pairs : List (Atom × Atom)}
-    {out : HeapKnowledge.Knowledge} {back f : Nat → Option Nat} {η ρ : Env} {v : Tm} {h : Heap}
-    (hgone : RemovedLeave s pairs out true)
-    (hcov : ∀ x ∈ storeAll s, AtomHolds x η h ∨ ∃ b, (x, b) ∈ pairs ∧ x.rename f = some b)
-    (hf : ∀ x i, f x = some i → ρ i = η x) (hout : HeapKnowledge.Holds out (push v ρ) h)
-    (hback : ∀ i x, back i = some x → η x = push v ρ i) :
-    StoreOk (SinglePass.applyDelta s pairs out true back) η h := by
-  refine applyDelta_ok L (fun x hx => ?_) hout hback
-  obtain ⟨hxs, hne⟩ := hgone x hx
-  rcases hcov x hxs with hh | ⟨b, hp, hr⟩
-  · exact hh
-  · have himg : deltaImage true b ∈ SinglePass.atomsOf out :=
-      Classical.byContradiction fun hn => hne (x, b) hp hn rfl
-    obtain ⟨c, hc⟩ := rename_succ_total b
-    have hci : deltaImage true b = c := by simp [deltaImage, hc]
-    have hcb : AtomHolds c (push v ρ) h := hci ▸ atomsOf_holds hout _ himg
-    have hb : AtomHolds b ρ h := atomHolds_rename_rev (f := fun i => some (i + 1))
-      (fun x i hx => by simp only [Option.some.injEq] at hx; subst hx; rfl) hc hcb
-    exact atomHolds_rename_rev hf hr hb
 
 end Verification.TolerantFrames

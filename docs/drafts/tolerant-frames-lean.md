@@ -360,17 +360,19 @@ own conditions discharge it ([the selected output](#the-selected-output-under-th
 ### The selected output under the pass's tree check
 
 Module `lean/Verification/Programs/TolerantFramesSelect.lean`. The pass takes a
-step's output from `Checker.select` (`SinglePass.lean` 1260 for a direct call,
-1335 over every fact for a writing step) or from the search (1263), and checks
-the step's derivation once (1271–1282, `selectChecks` false):
+step's output from `Checker.select` of the step's evidence (`SinglePass.lean`
+1302 for a direct call, 1313 for a searched step, 1390 over every fact for a
+writing step), and checks the step's derivation once (1318–1333) where its
+checker's `select` checks nothing:
 
 ```
 let tree := match effect with
   | .slicedRead _ _ _ e _ => some e
   | _ => effect.proof?
 if let some p := (if selectChecks then none else tree) then
-  if !(checkTreeUsing G images p codes sums ||
-      PromiseCalls.requiresTree G images kE codes sums p) then refuse
+  if !checkTreeUsing G images p codes sums then
+    if requiresTree G images kE codes sums p then preconditioned := some p
+    else refuse
 ```
 
 `passTree` is that `tree`, and `passTreeOk G images k codes sums e` that
@@ -411,36 +413,34 @@ $`b`$ (`Checker.ordinary = ordinaryOver (Checker.steps …)`, by definition);
 - a tree `checkTreeUsing` accepts passes the check at every knowledge
   (`passTreeOk_of_tree`).
 
-**Where the pass's conditions do not give the theorem's premise**, most
-important first:
+The pass's checker (`SinglePass.PassChecker`, `SinglePass.lean` 819–840) is
+`ordinary` (`Checker.ordinary`, whose `select` takes a derivation as given,
+the pass checking its tree) or `qualified` (`Checker.withSubtyping`, whose
+`select` is its `run`). The pass's tree check at the step's facts
+$`k_E`$ (lines 1325–1333) is `passTreeCheck`: refused, or accepted with the
+tree only `requiresTree` accepted (`preconditioned`); before a writing step's
+`select` over every fact $`k_E'`$ that tree is checked again at $`k_E'`$
+(lines 1386–1388, `passWholeCheck`). `passRunChecker` is `passOrdinary` for
+the ordinary checker and the qualified body's checker itself. Proved:
 
-1. Line 1263: the output is the search's. `expressionEffectUsing` returns
-   `checker.select j kE effect codes sums` of its last loop, with `sums` the
-   state's summaries, which that loop does not change; this property of the
-   monadic search is not proved. The pass would close it by computing
-   `checker.select j kE effect codes sums` from the returned evidence (the
-   search returning derivation and evidence only).
-2. Line 1335: the whole-facts `select` runs at the knowledge $`k_E'`$ of every
-   fact, the tree check at the narrower $`k_E`$ (1276). Where `checkTreeUsing`
-   accepted the tree the premise holds (`passTreeOk_of_tree`). A tree only
-   `requiresTree kE` accepts has no `passTreeOk kE'`: for $`e`$ `.ordinary p`
-   with $`\mathrm{claim}\ p=j`$, `checkTreeUsing p` false, `requiresTree kE p`
-   true and `requiresTree kE' p` false, and no other call layer deciding the
-   step (`elementsCall`, `freshCall`, `ownCall`, `keepsCall`), `run` at $`k_E'`$ rejects (its base checks the tree) and
-   `select` returns $`\mathrm{ordinaryOutput}\ k_E'`$ with the outer layers'
-   atoms. That output is sound when $`k_E'`$'s facts imply $`k_E`$'s and the
-   precondition read at $`k_E`$ holds (conjectured; the inclusion is a property
-   of `materialize`, not proved). The pass would close it by evaluating
-   `requiresTree` at $`k_E'`$ for that `select`.
-3. `typedRead`'s optional-field branch: `run` checks its tree with no codes
-   (`fun _ => false`), the pass with the codes, so `run` rejects a tree whose
-   check consults a code entry. The output is sound with the codes
-   (`passSteps_sound`); `run` and the pass differ, safety does not.
-4. `selectChecks` is a Boolean argument of the pass: no check ties it to a
-   checker whose `select` is its `run` (`withSubtyping_select` holds of the
-   qualified body's checker, and `Checker.ordinary`'s `select` skips the
-   tree). A `Checker` field stating `select = run`, or the pass deriving
-   `selectChecks` from the checker, would close it.
+- `passTreeCheck` accepting gives `passTreeOk` at $`k_E`$
+  (`passTreeCheck_ok`), and with `passWholeCheck` at $`k_E'`$
+  (`passWholeCheck_ok`), for the ordinary checker;
+- (`pass_select_run`) where the checker's `select` checks nothing,
+  `passTreeOk` at $`k`$, $`\mathrm{select}\ j\ k\ e=\mathit{out}\Rightarrow
+  \mathrm{passRunChecker.run}\ j\ k\ e=\mathit{out}`$; so the output the pass
+  applies over the step's facts (lines 1302 for a direct call, 1313 for a
+  searched step, both `select` of the step's evidence) is its checker's `run`
+  (`pass_select_narrow`), and the output over every fact (line 1390) too
+  (`pass_select_whole`); it is sound (`pass_select_sound`);
+- the preserving steps at either checker: `passPreserving_keeps_pass`,
+  `pass_preserving_frame_pass`, `preserving_judgment_pass`.
+
+**Where `run` and the pass differ**: `typedRead`'s optional-field branch.
+`run` checks its tree with no codes (`fun _ => false`), the pass with the
+codes, so `run` rejects a tree whose check consults a code entry. The output
+is sound with the codes (`passSteps_sound`); `run` and the pass differ,
+safety does not.
 
 ### The writing steps
 
@@ -511,21 +511,22 @@ field writes keep them through their rules' outputs (`IndexWrites.writeAtoms`,
 ### The footprint check at a node
 
 Module `lean/Verification/Programs/TolerantFramesFootprint.lean`. Where the
-invocation states a bound $`\Phi`$ (`SinglePass.lean` 1342–1380), the pass
+invocation states a bound $`\Phi`$ (`SinglePass.lean` 1416–1451), the pass
 evaluates at a node with sequent $`j`$, step knowledge $`k_S`$ (`stepK`), step
 derivation $`d`$ (`stepDeriv`) and fresh receiver slots $`F`$:
-`passWrites` (`writes`, 1356–1357: `writeWithin` or `initWriteWithin` at
-$`\Phi`$), `passWithin` (`within`, 1358–1360: an inspection, `passWrites`,
-`selectedWithinAt Φ F d`, or a type no value has) and `passThrows` (`throws`,
-1367–1371, its first disjunct, which bounds no throw, left out).
-`DerivChecked … k j d` states $`d`$ claimed at $`j`$'s context and term with its
-tree accepted by `checkTreeUsing` or by `requiresTree` at $`k`$. Proved, for
-$`\mathrm{FreshOk}\ F\ b\ \rho`$:
+`passWrites` (`writes`, 1431–1432: `writeWithin` or `initWriteWithin` at
+$`\Phi`$), `passDerivChecked` (`derivChecked`, 1427–1430: $`d`$ claimed at the
+node's term, its tree accepted by `checkTreeUsing` or by `requiresTree` at
+$`k_S`$), `passWithin` (`within`, 1433–1435: an inspection, `passWrites`,
+`selectedWithinAt Φ F d` with `passDerivChecked`, or a type no value has) and
+`passThrows` (`throws`, 1443–1446, its first disjunct, which bounds no
+throw, left out). Proved, for $`\mathrm{FreshOk}\ F\ b\ \rho`$ and
+`DerivContext` (below):
 
-- `pass_within_normal`: `passWithin` and (`selectedWithinAt` ⟹ `DerivChecked`)
-  ⟹ the normal exit is within $`\Phi`$ on the locations below $`b`$ from the
-  node's entry heap: $`\Phi.\mathrm{HoldsOn}\ (\cdot < b)\ h\ h'`$;
-  `pass_within_throw`: `passThrows` and the same premise ⟹ the throw is too;
+- `pass_within_normal`: `passWithin` ⟹ the normal exit is within $`\Phi`$ on
+  the locations below $`b`$ from the node's entry heap:
+  $`\Phi.\mathrm{HoldsOn}\ (\cdot < b)\ h\ h'`$; `pass_within_throw`:
+  `passThrows` ⟹ the throw is too;
 - relative to the invocation's entry $`h_0`$ with $`b=|h_0|`$:
   $`\Phi.\mathrm{Holds}\ h_0\ h \wedge \Phi.\mathrm{HoldsOn}\ (\cdot<|h_0|)\ h\ h'
   \Rightarrow \Phi.\mathrm{Holds}\ h_0\ h'`$ (`pass_within_entry`, from
@@ -534,24 +535,17 @@ $`\mathrm{FreshOk}\ F\ b\ \rho`$:
 - `pass_write_judgment`: `passWrites` ⟹ the step's judgment within $`\Phi`$ on
   the whole heap, both exits, with its rule's output: `write_judgment`'s
   `writeWithin` premise discharged at $`c=\Phi`$, the initialisation write
-  included;
-- `derivChecked_of_select`: where $`d`$ is the tree the pass checks
-  ($`\mathrm{passTree}\ e = d`$), `DerivChecked` holds at the step's knowledge.
+  included.
+
+**`DerivContext`** (a named hypothesis, where `selectedWithinAt` holds): the
+claim of $`d`$ is at the node's context. `passDerivChecked` compares the
+claim's term only (`SinglePass.lean` 1428); the selected signature's
+soundness (`selected_sound`, `requiresTree_sound`) is stated at the claim's
+context. A conjunct `(claim deriv).context == c.context` there discharges it.
 
 What the check does not give:
 
-1. **The step's derivation is unchecked where it is not the checked tree.**
-   `stepDeriv` is the search's ordinary derivation (`ordinary.value`), and the
-   step's evidence the first of its choices `select` accepts. For a
-   `knownValue`, `observedRead`, `linkedRead`, `slicedRead` or `boundedWrite`
-   step, `passTree e` is not $`d`$ (none, or the sliced read's location
-   derivation), and nothing checks $`d`$'s claim or tree; `selectedWithinAt Φ F d`
-   then reads an unchecked signature. The read kinds pass `within` as
-   inspections, so a `boundedWrite` outside `writes` is the step whose bound
-   rests on it. `GraphCode.nodeChecked` requires
-   `claim d`'s term to be the node's and its tree accepted beside
-   `selectedWithinAt`; the pass would close it with the same conjuncts.
-2. **The effect is the invocation's bound, not the step's.** The check
+1. **The effect is the invocation's bound, not the step's.** The check
    establishes $`\Phi`$ (below $`b`$), so the per-step effect a writing step's
    judgment has is $`\Phi`$; a fact $`\Phi`$ does not tolerate is kept across
    a writing step only through the rule's output over every fact. A per-step
@@ -560,22 +554,20 @@ What the check does not give:
    element write's $`\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{grow}\}`$)
    would need the pass to evaluate `fieldWriteWithin` or `writeWithin` at that
    effect for the step, beside the bound check.
-3. Where no bound is stated (`bound = none`) the pass checks no footprint; a
+2. Where no bound is stated (`bound = none`) the pass checks no footprint; a
    writing step's judgment is then `top_judgment`'s.
-4. `FreshOk F b ρ`, the receiver slots the pass records fresh (`entry.fresh`)
+3. `FreshOk F b ρ`, the receiver slots the pass records fresh (`entry.fresh`)
    holding stores allocated at or after the invocation's entry, is a premise:
    the pass's freshness tracking is not connected.
 
-**Not justified: a slotless fact across a writing step.** A step that may
-write materializes every fact (`materialize … true`, `SinglePass.lean` lines
-1326–1336), but a fact naming a name no slot holds fails to rename, is not
-among `pairs`, and `applyDelta` (lines 373–381) keeps it. A writing step's
-effect does not tolerate it: a cell fact over a name fails after an action of
-$`\top`$ (proved: `slotless_not_framed`). The pass is sound here only under
-the store invariant that every name a stored fact mentions is held by a slot,
-which edges (`Store.drop` of `droppedBy`) and merges (`renamedAway`) maintain
-and nothing checks; `materialize`'s elimination of names out of scope
-presupposes such facts.
+**The facts a writing step is not handed.** A step that may write
+materializes every fact (`materialize … true`, `SinglePass.lean` 1370), and a
+fact naming a name no slot holds fails to rename and is not among `pairs`.
+Before the step's delta the pass removes each such fact that reads the heap
+and keeps the heap-free ones (lines 1375–1380, the handler's filter): a
+writing step's effect does not tolerate a heap fact it is not handed (a cell
+fact over a name fails after an action of $`\top`$, proved:
+`slotless_not_framed`).
 
 ## Allocated cells and separation
 
@@ -635,8 +627,8 @@ new cells may coincide.
 ## The pass's named state
 
 Module `lean/Verification/Programs/TolerantFramesState.lean`. The pass's state
-at a point (`SinglePass.State`, `SinglePass.lean` lines 153–159) is its slots'
-names $`N`$, a store $`S`$ of facts over names (`Store`, lines 87–151) and the
+at a point (`SinglePass.State`, `SinglePass.lean` lines 165–170) is its slots'
+names $`N`$, a store $`S`$ of facts over names (`Store`, lines 88–162) and the
 names $`F`$ holding stores the invocation allocated; the walk keeps the
 implications $`I`$ over names beside it (lines 961, 1767). The store's facts
 are its live set's and those its index by name lists
@@ -664,32 +656,60 @@ fresh name), separate from the meaning:
 
 | Conjunct | States | Kept by |
 | --- | --- | --- |
-| `indexed` | each fact the index lists under a name is live | construction (`addRaw`, `remove`); not checked, not proved |
-| `slotted` | every name a stored fact reading the heap mentions is held by a slot | construction (`Store.drop` at edges, `renamedAway` at merges); not checked, not proved |
+| `store` | the store's well-formedness `StoreWF`: live facts canonical (`Atom.canon`); each fact the index lists under a name live, mentioning that name, listed there once | every insertion and removal (proved: `addRaw_wf`, `remove_wf`, `addBound_wf`, `add_wf`) |
 | `below` | every name of the slots, the facts and $`F`$ is below $`\mathit{next}`$, so a result name is fresh (proved: `StateWF.fresh_result`) | construction (the counter only grows); not proved |
-| `canonical` | the live facts are canonical (`Atom.canon`) | construction (every insertion canonicalizes); not proved |
 | `freshHeld` | every fresh name is held by a slot | edges (line 1758 filters the names an edge drops); a merge keeps a predecessor's name beside its fresh renames (lines 1142–1146), held or not; freshness reads no heap, so the meaning does not need it |
 
-Soundness reads none of them but `below` (through `fresh_result`); `slotted`
-is what a writing step's frame needs ([the slotless finding](#the-footprint-check-at-a-node)).
+Soundness reads `below` (through `fresh_result`) and `store` (through
+`removedLeave`).
 
-**The store's laws** (`StoreLaws`, a named hypothesis): an insertion into
-`Lean.PersistentHashMap` adds only its key (or list), an erasure adds
-nothing, a list found under a key is among the map's lists. The library
-states no lemma about `PersistentHashMap`; every theorem reading a store after
-a change assumes these four inclusions.
+**The store's laws**, proved from the lemmas of `Std.HashSet` and
+`Std.HashMap` (the store's live facts and its index by name, `SinglePass.lean`
+88–92): an insertion adds only its key or its list (`keys_insert`,
+`vals_insert`), an erasure adds nothing (`keys_erase`), a list found under a
+name is among the index's lists (`findD_vals`, `mem_valsOf`).
 
 Proved, per fact and per store operation:
 
 - `atomHolds_canon`: $`a.\mathrm{canon}`$ holds iff $`a`$ does;
   `atomHolds_rename`: a fact renamed by $`f`$ holds at $`\rho`$ where
   $`f\,x=i \Rightarrow \rho\,i=\eta\,x`$;
-- under `StoreLaws`, adding a holding fact and removing any fact keep every
+- adding a holding fact and removing any fact keep every
   fact of the store holding (`addRaw_ok`, `remove_ok`), a stronger bound
   replacing weaker ones (`addBound_ok`), a length fact added with the linear
   facts it means (`add_ok`, from `HeapKnowledge.atomLinear_holds`).
 
+### The unit's entry
+
+Module `lean/Verification/Programs/TolerantFramesEntry.lean`. The pass checks
+the unit's entry before its walk (`SinglePass.entryRefusal`), and the start's
+state is the head entry (`SinglePass.headEntry`) of its given invariant
+(`startGiven`: the written assertion with the request's entry index facts
+and separation, then the supplied facts, as `SinglePass.run` builds it) over
+the start's names $`0,\dots,|\mathit{inputs}|-1`$. Proved:
+
+- `entryRefusal_ok`: an accepted check gives the start's claim at the
+  inputs, no given implication, the promised input at each slot named after
+  it, each input's entry value at its own slot, and `entryKnows` of the
+  written and supplied facts;
+- `startGiven_holds`: from `EnvOk` at the inputs, the entry separation and
+  the entry index facts, the given invariant holds at $`\rho`$
+  (`entryKnows_sound`, `union_holds`);
+- `headEntry_start_names`: each start slot is named by itself;
+  `headStore_ok`: the head's store holds and is well-formed;
+- (`entry_stateHolds`) $`\mathrm{entryRefusal}=\mathrm{none}\wedge
+  \mathrm{EnvOk}\ \mathit{inputs}\ \rho \wedge \rho\models S_{\mathrm{entry}}
+  \wedge \rho,h\models I_{\mathrm{entry}} \Rightarrow
+  \mathrm{StateHolds}\ \mathit{st}_0\ \mathit{imp}_0\ [0,\dots]\ \rho`$ at $`\rho`$:
+  the start's state holds, each start name holding its entry value, its store
+  well-formed.
+
+The start's names are $`0,\dots,w-1`$ in `run` (its `fresh` is 0 when they
+are drawn), and the request's inputs are the start's context by the check.
+
 ### Materialization
+
+Module `lean/Verification/Programs/TolerantFramesMaterialize.lean`.
 
 `materialize` is `materializeFrom` at its selected facts (`materialize_eq`,
 by definition): every live fact with `whole` (`selectedAtoms_whole`), else the
@@ -709,17 +729,16 @@ facts its worklist collects. Proved:
   is a selected fact and its image under the table (`materializeFrom_pairs`).
 
 From the state's meaning: the whole materialization holds
-(`stateHolds_materialize_whole`); the selective one holds under `StoreLaws`
-and `SelectedFromIndex` (`stateHolds_materialize`); and the step's knowledge
-$`k_E`$ (line 1229) and $`k_E'`$ (line 1321), each `expandLinks` at the node's
-context, hold together where the environment meets that context
-(`stateHolds_stepKnowledge`). So a precondition `requiresTree` decides at
-$`k_E`$ holds where the whole-facts `select` reads $`k_E'`$: the semantic half
-of the second gap of [the selected output](#the-selected-output-under-the-passs-tree-check).
+(`stateHolds_materialize_whole`); the selective one holds
+(`stateHolds_materialize`), its facts drawn from the index by name; and the step's knowledge
+$`k_E`$ and $`k_E'`$ (`kE` of `SinglePass.run`, over the step's facts and over every fact), each `expandLinks` at the
+node's context, hold together where the environment meets that context
+(`stateHolds_stepKnowledge`).
 
-**`SelectedFromIndex`** (a named hypothesis): each fact the selective
-worklist returns is listed by `Store.about` of some name. The worklist is a
-`while` loop, `Lean.Loop.forIn` through `repeatM`, which no proof unfolds.
+The selective worklist (`SinglePass.selectFrom`, `SinglePass.lean`
+330–347) is rounds (`selectRound`) structural on a fuel of the store's size;
+every fact it returns is listed by `Store.about` of some name (proved:
+`selectRound_about`, `selectFrom_about`, `selectedFromIndex`).
 
 ### A step's delta
 
@@ -730,7 +749,7 @@ pushed slots the output lost, `deltaAdd` adds each output fact not among the
 images, renamed by `back`, and `deltaRestate` restates each added linear fact
 over a read's name over the read's path. The pass's `back` (lines 1316–1317,
 1331–1332) is `passBack`: slot 0 the result's name, a slot the table's
-inverse gives its name, else the slot's name. Proved, under `StoreLaws`:
+inverse gives its name, else the slot's name. Proved:
 
 - `deltaRemove_sub`: the removal loop keeps only facts the store held;
   `deltaAdd_ok`: the facts added hold where the output holds at the pushed
@@ -764,55 +783,72 @@ The state after a step, proved:
 - a copy (lines 1203–1220): no step, the store unchanged, slot 0 named as
   slot $`i`$ (`stateHolds_copy`).
 
-The writing case, proved (`applyDelta_writing`): where every stored fact
-either holds after the step or is handed to the rule (a pair $`(x,b)`$ with
-$`x`$ renamed to $`b`$ by a table whose slots hold their names' values), and
-the removal loop removes the handed facts whose image the output lost
-(`RemovedLeave`), every fact of the resulting store holds: a kept handed
-fact's image is in the output, which holds at the pushed slots, and reads
-back through the shift (`rename_succ_total`) and the table
-(`atomHolds_rename_rev`) to the fact at $`\eta'`$. The facts that hold after
-a writing step are those its effect keeps (`writing_frame`,
-`Atom.keptByElems`); so the pass keeps no more than the effect and the output
-justify exactly where every stored fact reading the heap is a pair: where
-its names have slots (`StateWF.slotted`, with the whole table defining every
-slot's name; that completeness of `slotTable` is not proved).
+The writing case, proved (`applyDelta_writing`, module
+`lean/Verification/Programs/TolerantFramesStore.lean`): for a well-formed
+store, where every stored fact either holds after the step or is handed to
+the rule (a pair $`(x,b)`$ with $`x`$ renamed to $`b`$ by a table whose slots
+hold their names' values), every fact of the resulting store holds: a kept
+handed fact's image is in the output, which holds at the pushed slots, and
+reads back through the shift (`rename_succ_total`) and the table
+(`atomHolds_rename_rev`) to the fact at $`\eta'`$. A handed fact whose image
+the output lost leaves the store (`removedLeave`): `Store.remove` erases a
+canonical fact from the live set and from each of its names' lists, which
+hold it once, and no other list holds it (`remove_absent`), and the loop keeps
+the store well-formed (`deltaRemove_wf`). The facts that hold after a writing
+step are those its effect keeps (`writing_frame`, `Atom.keptByElems`). The
+pass removes before the delta the heap facts it does not hand the step
+(`Store.dropHeap` of the handed set, [the facts a writing step is not
+handed](#the-footprint-check-at-a-node)): after it every fact is handed or
+reads no heap and the store stays well-formed (`dropHeap_cover`), so where
+the heap-free facts hold after the step, the output holds at the pushed
+slots and `back` names each slot's value, every fact of the resulting store
+holds (`applyDelta_dropHeap`).
 
-**`RemovedLeave`** (a named hypothesis): a fact the removal loop removes is
-not in the resulting store. It needs exact erasure laws of
-`Lean.PersistentHashMap`, index lists without duplicates (`List.erase`
-removes one copy) and each listed fact under its own names only.
+### What the named state's proofs do not cover
 
-### What the named state's proofs cannot reach as written
+The pass's operations are top-level functions of `SinglePass.lean`
+(`headEntry`, `mergeState`, `checkedStep`, `edgeStoreOf`, `edgeTransfer`,
+`Store.drop`, `Store.dropHeap`); the footprint, return and regional checks
+and the edges' type, head and assertion checks are inline in `run`. Not
+proved:
 
-Not proved: a merge (`SinglePass.lean` lines 995–1167), a head's entry
-(965–988), an edge's store (1559–1578, 1753–1767). Each is code inside
-`run`'s `while` loop over mutable arrays, no function a theorem can name;
-the merge's names, variants, met store, weakest bounds, entailed and guarded
-facts, fresh intersection and implications are local `let`s. Proofs need
-these operations as pure functions of their inputs:
+1. the merge (`mergeState`): every predecessor's `StateHolds` implies the
+   merged state's, at predecessor-specific valuations extended to the fresh
+   names; its equalities are proved (below), its met store, weakest bounds,
+   entailed and guarded facts, fresh intersection and implications are not;
+2. the head entry of a loop head other than the start, and an edge's store
+   and transfer (`edgeStoreOf`, `edgeTransfer`);
+3. `Store.drop`: its soundness is the materialization's elimination
+   (`derivedOf_holds`) plus the alias restatement;
+4. `checkedStep` as a whole: the theorems of the selected output, the
+   preserving steps and the delta take its conditions as the definitions
+   that mirror its code (`passTreeCheck`, `passWholeCheck`, `passWithin`,
+   `passThrows`, `handedSet`), equal by unfolding, with no theorem about
+   `checkedStep` itself;
+5. `StateWF.below` maintained by the operations.
 
-1. `materialize`'s selective worklist (313–340): a `while` loop, opaque
-   (`SelectedFromIndex`); a structural recursion on a fuel bound, or a fold
-   over rounds, makes it provable.
-2. `Store` over `Lean.PersistentHashMap` (87–151): no lemma (`StoreLaws`,
-   `RemovedLeave`); `Std.HashMap`, whose lemma library states insertion and
-   erasure exactly, makes both theorems.
-3. The merge (995–1167) as `mergeState : List State → … → State × List Implication`,
-   with the fresh-name counter an argument and result; then each
-   predecessor's valuation extends to the φ names by its own names.
-4. The head entry (965–988) and the edge's store (1559–1578, 1753–1767) as
-   functions of the node's state, its edge and the counter.
-5. `Store.drop` (482–523) is a function; its soundness is the
-   materialization's elimination (`derivedOf_holds`) plus the alias
-   restatement, not proved here.
+**A merge's equalities**, module
+`lean/Verification/Programs/TolerantFramesMerge.lean`. At a merge
+(`SinglePass.mergeState`) a predecessor renaming its name $`x`$ to fresh
+names $`\varphi_1,\dots`$ states each $`\varphi`$ equal to $`x`$ where a slot
+keeps $`x`$, and consecutive fresh names equal (`mergeEqual`, the merge's
+`equal`; `mergeEqAtoms`, its `eqAtoms`): by an alias link, and by
+$`\varphi-x\le 0`$, $`x-\varphi\le 0`$ where the predecessor's unconditional
+facts make $`x`$ an integer (`Store.integral`). Proved:
 
-**Not justified: a merge's equalities of numbers.** `eqAtoms` (lines
-1022–1024) states, for a name a slot keeps and a fresh name renaming it,
-both the alias link and two linear facts $`\varphi-x\le 0`$, $`x-\varphi\le 0`$
-over their values. A linear fact holds only where every term denotes an
-integer (`IndexFact.HoldsAt.linear`); for names holding objects or strings
-the two facts do not hold at any valuation, while the alias link does.
+- `index_safeInt`: the bits `indexOfBits` reads as $`i`$ are a safe integer
+  $`i`$ ($`\pm 0`$, or `bitsOfNat i` by the uniqueness of a normal double's
+  scaled value, `lex_scaled`);
+- `integral_int`: where every fact of a store holds at $`\eta`$, a name
+  `Store.integral` accepts holds a safe integer at $`\eta`$ (an `int`,
+  `index`, length, bound or linear fact over its value);
+- (`mergeEqual_holds`) where every fact of the predecessor's store holds at
+  $`\eta`$, and $`\eta'`$ holds at each fresh name of $`x`$ the value $`\eta`$
+  holds at $`x`$ and agrees with $`\eta`$ at every renamed name, every equality
+  the merge states for that predecessor holds at $`\eta'`$.
+
+`mergeEqual` is the merge's local `equal` with its `eqAtoms` unfolded (equal
+by unfolding the `let`s); the merge theorem reads it there.
 
 ## What the model requires beyond the note
 

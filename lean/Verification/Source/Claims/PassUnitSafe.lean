@@ -4,7 +4,7 @@ import Verification.Source.Claims.PassUnitMember
 
 `member_safe`: a member `passGroup` accepts (`MemberAccepted`) is safe
 (`MemberSafe`), under `RunSound` and `RunKeepsSummaries`, its plans over the
-file's frozen store and stating their start contexts. Then the headline
+file's frozen store. Then the headline
 (`passUnit_safe`) from mode 8's exact acceptance condition. -/
 
 namespace Verification.SourceClaimJson.PassUnit
@@ -24,22 +24,21 @@ theorem checkEntryFields_nil (G : NormalGraph ι) (inputs : List (Ty ι)) :
 /-- **A main call's guarantee** (under `RunSound`): a call of the pass over a
 request's own graph (`MainCall`), accepted, its checker covering `admits`,
 its codes and the summaries it leaves sound, its regions meeting their
-entry conditions, the request's start claim stating its inputs, guarantees
+entry conditions, guarantees
 the request's graph at its bound, postcondition and regional option. -/
 theorem main_guarantee {G : NormalGraph ι} {I : InstanceImageCheck G} {r : SourceRequest σ ι}
-    (hrun : RunSound ι) {c : RunCall G I} {codes : CodeEntry ι → Bool} {checker : Checker G I}
+    (hrun : RunSound ι) {c : RunCall G I} {codes : CodeEntry ι → Bool} {checker : SinglePass.PassChecker G I}
     {a after : Answered G} {admits : MixedAssignment ι → Prop}
     (hm : MainCall r c codes checker a) (hscope : CheckerScope G I checker admits)
-    (hctx : StartContext r.claims r.start r.inputs) (hcodes : ProgramCertificates.CodesSound G codes)
+    (hcodes : ProgramCertificates.CodesSound G codes)
     (hacc : c.Accepts after) (hsums : ProgramCertificates.SummariesSound G I after.summaries.toList)
     (hreg : ∀ Φ regions exc, regionOf c.regional = some (Φ, regions, exc) →
       GraphCode.ArgumentPathTracking.checkEntryFields G r.inputs regions = true) :
     GraphGuarantee G admits r.program r.start r.goal r.inputs r.entrySeparation r.entryIndices r.assertions
       c.bound r.ensures (regionOf c.regional) := by
-  obtain ⟨hP, hcl, hst, hgoal, has, hidx, hc, hchk, -, hens, hsep⟩ := hm
-  have hg := hrun G I c after admits r.inputs hacc (hchk ▸ hscope) (by rw [hcl, hst]; exact hctx)
-    (hc ▸ hcodes) hsums hreg
-  rw [hP, hst, hgoal, hsep, hidx, has, hens] at hg
+  obtain ⟨hP, -, hst, hin, hgoal, has, hidx, hc, hchk, -, hens, hsep⟩ := hm
+  have hg := hrun G I c after admits hacc (hchk ▸ hscope) (hc ▸ hcodes) hsums (hin ▸ hreg)
+  rw [hP, hst, hin, hgoal, hsep, hidx, has, hens] at hg
   exact hg
 
 /-- The node lists of a request's program. -/

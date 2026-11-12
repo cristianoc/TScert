@@ -20,7 +20,14 @@ import Verification.Programs.TolerantFramesSelect
 import Verification.Programs.TolerantFramesFootprint
 import Verification.Programs.TolerantFramesElems
 import Verification.Programs.TolerantFramesState
+import Verification.Programs.TolerantFramesMaterialize
 import Verification.Programs.TolerantFramesDelta
+import Verification.Programs.TolerantFramesStore
+import Verification.Programs.TolerantFramesEntry
+import Verification.Programs.TolerantFramesMerge
+import Verification.Programs.TolerantFramesModelLoop
+import Verification.Programs.TolerantFramesModelTyped
+import Verification.Programs.TolerantFramesModelRules
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -65,7 +72,9 @@ run_cmd do
   check ``Verification.SourceClaimJson.PassUnit.fragmentPlans_overStore
   check ``Verification.SourceClaimJson.PassUnit.fragmentPlans_modules
   check ``Verification.SourceClaimJson.PassUnit.withHeadFacts_overStore
-  check ``Verification.SourceClaimJson.PassUnit.withHeadFacts_startContexts
+  check ``Verification.SourceClaimJson.PassUnit.fragmentPlansCore_shape
+  check ``Verification.SourceClaimJson.PassUnit.fragmentPlansCore_overStore
+  check ``Verification.SourceClaimJson.PassUnit.fragmentPlansCore_modules
   check ``Verification.SourceClaimJson.PassUnit.closedUnits_closed
   check ``Verification.SourceClaimJson.PassUnit.link
   check ``Verification.SourceClaimJson.PassUnit.closedUnits_linked
@@ -87,6 +96,7 @@ run_cmd do
   check ``Verification.SourceClaimJson.PassUnit.published_holds
   check ``Verification.SourceClaimJson.PassUnit.obligations_sound
   check ``Verification.SourceClaimJson.PassUnit.member_async
+  check ``Verification.SourceClaimJson.PassUnit.codes_async
   check ``Verification.Footprints.transport_sound
   check ``Verification.Footprints.Sep.sound
   check ``Verification.Footprints.Post.mono
@@ -282,7 +292,15 @@ run_cmd do
   check ``Verification.TolerantFrames.passPreserving_keeps_select
   check ``Verification.TolerantFrames.pass_preserving_frame_select
   check ``Verification.TolerantFrames.preserving_judgment_select
-  check ``Verification.TolerantFrames.derivChecked_of_select
+  check ``Verification.TolerantFrames.passTreeCheck_ok
+  check ``Verification.TolerantFrames.passWholeCheck_ok
+  check ``Verification.TolerantFrames.pass_select_run
+  check ``Verification.TolerantFrames.pass_select_narrow
+  check ``Verification.TolerantFrames.pass_select_whole
+  check ``Verification.TolerantFrames.pass_select_sound
+  check ``Verification.TolerantFrames.passPreserving_keeps_pass
+  check ``Verification.TolerantFrames.pass_preserving_frame_pass
+  check ``Verification.TolerantFrames.preserving_judgment_pass
   check ``Verification.TolerantFrames.passWrites_sound
   check ``Verification.TolerantFrames.selected_within_on
   check ``Verification.TolerantFrames.pass_within_normal
@@ -301,6 +319,12 @@ run_cmd do
   check ``Verification.TolerantFrames.atomHolds_canon
   check ``Verification.TolerantFrames.atomHolds_rename
   check ``Verification.TolerantFrames.mapM_mem
+  check ``Verification.TolerantFrames.mem_keysOf
+  check ``Verification.TolerantFrames.mem_valsOf
+  check ``Verification.TolerantFrames.keys_insert
+  check ``Verification.TolerantFrames.keys_erase
+  check ``Verification.TolerantFrames.vals_insert
+  check ``Verification.TolerantFrames.findD_vals
   check ``Verification.TolerantFrames.toList_eq
   check ``Verification.TolerantFrames.about_storeAll
   check ``Verification.TolerantFrames.toList_storeAll
@@ -327,6 +351,10 @@ run_cmd do
   check ``Verification.TolerantFrames.materializeFrom_table
   check ``Verification.TolerantFrames.stateHolds_materialize_whole
   check ``Verification.TolerantFrames.stateHolds_materialize
+  check ``Verification.TolerantFrames.foldl_inv
+  check ``Verification.TolerantFrames.selectRound_about
+  check ``Verification.TolerantFrames.selectFrom_about
+  check ``Verification.TolerantFrames.selectedFromIndex
   check ``Verification.TolerantFrames.stateHolds_stepKnowledge
   check ``Verification.TolerantFrames.applyDelta_eq
   check ``Verification.TolerantFrames.forIn_inv_bind
@@ -348,6 +376,100 @@ run_cmd do
   check ``Verification.TolerantFrames.atomHolds_rename_rev
   check ``Verification.TolerantFrames.rename_succ_total
   check ``Verification.TolerantFrames.applyDelta_writing
+  check ``Verification.TolerantFrames.canon_canon
+  check ``Verification.TolerantFrames.nodup_eraseDups
+  check ``Verification.TolerantFrames.getD_foldl_insert
+  check ``Verification.TolerantFrames.contains_foldl_insert
+  check ``Verification.TolerantFrames.storeAll_live
+  check ``Verification.TolerantFrames.storeAll_canon
+  check ``Verification.TolerantFrames.addRaw_wf
+  check ``Verification.TolerantFrames.remove_wf
+  check ``Verification.TolerantFrames.foldl_remove_wf
+  check ``Verification.TolerantFrames.addBound_wf
+  check ``Verification.TolerantFrames.foldl_addBound_wf
+  check ``Verification.TolerantFrames.add_wf
+  check ``Verification.TolerantFrames.remove_sub
+  check ``Verification.TolerantFrames.remove_absent
+  check ``Verification.TolerantFrames.deltaRemove_wf
+  check ``Verification.TolerantFrames.removedLeave
+  check ``Verification.TolerantFrames.dropHeap_eq
+  check ``Verification.TolerantFrames.dropStep_wf
+  check ``Verification.TolerantFrames.foldl_dropStep
+  check ``Verification.TolerantFrames.dropHeap_cover
+  check ``Verification.TolerantFrames.handedSet_mem
+  check ``Verification.TolerantFrames.applyDelta_dropHeap
+  check ``Verification.TolerantFrames.entryRefusal_ok
+  check ``Verification.TolerantFrames.union_holds
+  check ``Verification.TolerantFrames.startGiven_holds
+  check ``Verification.TolerantFrames.headEntry_start_names
+  check ``Verification.TolerantFrames.storeOk_empty
+  check ``Verification.TolerantFrames.storeWF_empty
+  check ``Verification.TolerantFrames.headStore_ok
+  check ``Verification.TolerantFrames.entry_stateHolds
+  check ``Verification.TolerantFrames.index_safeInt
+  check ``Verification.TolerantFrames.index_int
+  check ``Verification.TolerantFrames.integral_int
+  check ``Verification.TolerantFrames.mergeEqAtoms_holds
+  check ``Verification.TolerantFrames.zip_tail_eq
+  check ``Verification.TolerantFrames.mergeEqual_holds
+  -- the model-side supports (TolerantFramesModel*)
+  check ``Verification.TolerantFrames.storeF_cell
+  check ``Verification.TolerantFrames.storeF_grow
+  check ``Verification.TolerantFrames.arrayF_at
+  check ``Verification.TolerantFrames.arrAt_invariant
+  check ``Verification.TolerantFrames.lowerBound_push
+  check ``Verification.TolerantFrames.arrayF_store
+  check ``Verification.TolerantFrames.cell_src
+  check ``Verification.TolerantFrames.write_safe
+  check ``Verification.TolerantFrames.lt_binop
+  check ``Verification.TolerantFrames.guard_safe
+  check ``Verification.TolerantFrames.read_safe
+  check ``Verification.TolerantFrames.lowerBound_iff
+  check ``Verification.TolerantFrames.headAt_action
+  check ``Verification.TolerantFrames.bodyAt_action
+  check ``Verification.TolerantFrames.loopPre_admin
+  check ``Verification.TolerantFrames.loop_checked
+  check ``Verification.TolerantFrames.loop_safe
+  check ``Verification.TolerantFrames.loop_done
+  check ``Verification.TolerantFrames.loop_no_raise
+  check ``Verification.TolerantFrames.aliasHeap_ok
+  check ``Verification.TolerantFrames.alias_entry
+  check ``Verification.TolerantFrames.alias_loop_safe
+  check ``Verification.TolerantFrames.storeListField_sound
+  check ``Verification.TolerantFrames.storeListTy_listT
+  check ``Verification.TolerantFrames.storeListField_at
+  check ``Verification.TolerantFrames.storeCells_of_typed
+  check ``Verification.TolerantFrames.storeListField_of_storeField
+  check ``Verification.TolerantFrames.storeCells_of_storeField
+  check ``Verification.TolerantFrames.storeCells_of_builtins
+  check ``Verification.TolerantFrames.apart_grow_keep_typed
+  check ``Verification.TolerantFrames.alloc_apart_typed
+  check ``Verification.TolerantFrames.stableAt_of_present
+  check ``Verification.TolerantFrames.stableAt_of_stableField
+  check ``Verification.TolerantFrames.stableAt_of_stableFirst
+  check ``Verification.TolerantFrames.stableAt_cons
+  check ``Verification.TolerantFrames.grow_path_typed
+  check ``Verification.TolerantFrames.valueClass_ok
+  check ``Verification.TolerantFrames.storeClass_ok
+  check ``Verification.TolerantFrames.action_le_valueClass
+  check ``Verification.TolerantFrames.viewLengthOf_kept
+  check ``Verification.TolerantFrames.viewStable_invariant
+  check ``Verification.TolerantFrames.view_box
+  check ``Verification.TolerantFrames.viewStable_of_typed
+  check ``Verification.TolerantFrames.view_not_invariant
+  check ``Verification.TolerantFrames.initTerm_kept
+  check ``Verification.TolerantFrames.init_box
+  check ``Verification.TolerantFrames.init_path
+  check ``Verification.TolerantFrames.call_rule
+  check ``Verification.TolerantFrames.alloc_step
+  check ``Verification.TolerantFrames.alloc_post
+  check ``Verification.TolerantFrames.apart_not_kept_fresh
+  check ``Verification.TolerantFrames.rebaseAll_labels
+  check ``Verification.TolerantFrames.rebase_elems
+  check ``Verification.TolerantFrames.seq_eff
+  check ``Verification.TolerantFrames.fresh_eff
+  check ``Verification.TolerantFrames.fresh_eff_bound
+  check ``Verification.TolerantFrames.fresh_cells_not_erased
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

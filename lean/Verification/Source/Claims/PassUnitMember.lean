@@ -48,13 +48,14 @@ def declaredEffect (r : SourceRequest σ ι) : Bool :=
     RequestJson.statedWithin r.async r.footprint r.onThrow r.fresh r.stated
 
 /-- A call of the pass over a request's own graph, as `passGroup` makes it:
-the request's program, claims, start, goal, assertions, entry indices,
-postcondition and entry separation, the codes `codes` admits, the checker
-`checker`, from the answers `a`. -/
+the request's program, claims, start, inputs, goal, assertions, entry
+indices, postcondition and entry separation, the codes `codes` admits, the
+pass checker `checker`, from the answers `a`. -/
 def MainCall {G : NormalGraph ι} {I : InstanceImageCheck G} (r : SourceRequest σ ι) (c : RunCall G I)
-    (codes : CodeEntry ι → Bool) (checker : Checker G I) (a : Answered G) : Prop :=
-  c.P = r.program ∧ c.claims = r.claims ∧ c.start = r.start ∧ c.goal = r.goal ∧ c.assertions = r.assertions ∧
-    c.entryIndices = r.entryIndices ∧ c.codes = codes ∧ c.checker = checker ∧ c.answers = a ∧
+    (codes : CodeEntry ι → Bool) (checker : SinglePass.PassChecker G I) (a : Answered G) : Prop :=
+  c.P = r.program ∧ c.claims = r.claims ∧ c.start = r.start ∧ c.inputs = r.inputs ∧ c.goal = r.goal ∧
+    c.assertions = r.assertions ∧
+    c.entryIndices = r.entryIndices ∧ c.codes = codes ∧ c.passChecker = checker ∧ c.answers = a ∧
     c.ensures = r.ensures ∧ c.entrySeparation = r.entrySeparation
 
 /-- **The main graph accepted** as `passGroup` accepts it: directly, at its
@@ -64,13 +65,13 @@ it states any. Each accepted run's read summaries checked. -/
 inductive MainAccepted (G : NormalGraph ι) (I : InstanceImageCheck G) (r : SourceRequest σ ι)
     (codes : CodeEntry ι → Bool) (a : Answered G) : Prop where
   | direct (c : RunCall G I) (after : Answered G) :
-      MainCall r c codes (Checker.ordinary G I) a → c.bound = mainBound r → regionOf c.regional = regionalSpec r →
+      MainCall r c codes .ordinary a → c.bound = mainBound r → regionOf c.regional = regionalSpec r →
       c.Accepts after → summariesChecked r after.summaries.toList = true → MainAccepted G I r codes a
   | fallback (c₁ : RunCall G I) (a₁ : Answered G) :
-      r.fresh = false → MainCall r c₁ codes (Checker.ordinary G I) a → c₁.bound = none →
+      r.fresh = false → MainCall r c₁ codes .ordinary a → c₁.bound = none →
       regionOf c₁.regional = some (r.footprint, [], r.onThrow) → c₁.Accepts a₁ →
       summariesChecked r a₁.summaries.toList = true →
-      (r.regional = none ∨ ∃ (c₂ : RunCall G I) (a₂ : Answered G), MainCall r c₂ codes (Checker.ordinary G I) a ∧
+      (r.regional = none ∨ ∃ (c₂ : RunCall G I) (a₂ : Answered G), MainCall r c₂ codes .ordinary a ∧
         c₂.bound = none ∧ regionOf c₂.regional = regionalSpec r ∧ c₂.Accepts a₂ ∧
         summariesChecked r a₂.summaries.toList = true) →
       MainAccepted G I r codes a
@@ -99,7 +100,7 @@ inductive MemberAccepted (f : FilePlans) (i : Nat) : Prop where
       (a₀ after : Answered (RequestJson.graph r.toRequest)) :
       PlanAt f i name pos r → r.qualification = some q → declaredEffect r = true →
       r.footprint = .top → r.onThrow = false → r.fresh = false → r.ensures = [] → r.regional = none →
-      r.codes = [] → MainCall r c (GraphCode.admits []) q.checker a₀ → c.bound = none → c.regional = none →
+      r.codes = [] → MainCall r c (GraphCode.admits []) (.qualified q.body q.ordinary) a₀ → c.bound = none → c.regional = none →
       c.Accepts after → summariesChecked r after.summaries.toList = true → MemberAccepted f i
 
 /-- **The wrapper hypothesis**: `passGroup` accepting a group makes every
@@ -111,26 +112,5 @@ def PassGroupChecks : Prop :=
     (given : Option (Std.HashMap String Json)) (observe : Option String) (counting : Bool) (deps : List String),
     (f.passGroup fuel group compare debugNode repeats given observe counting).2 = .ok deps →
     ∀ j ∈ group, MemberAccepted f j
-
-/-- Each request's start claim states its inputs, and each code request's
-start claim its frame. -/
-def StartContexts (f : FilePlans) : Prop :=
-  ∀ i name pos (r : Req f), PlanAt f i name pos r → StartContext r.claims r.start r.inputs ∧
-    ∀ q ∈ r.codes, StartContext q.claims q.entry.start
-      (codeFrame q.entry.arity q.entry.row q.entry.captures q.entry.store)
-
-/-- **The entry-context hypothesis**: mode 8's plans have the start
-contexts of `StartContexts`. Neither the pass nor `passGroup` checks it. -/
-def FragmentStartContexts : Prop :=
-  ∀ (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget) (names : Option (List String))
-    (standIns : StandIns) (force : List String) (f : FilePlans),
-    fragmentPlans ast fileKey budget names standIns force = .ok f → StartContexts f
-
-/-- Head facts keep the start contexts (proved). -/
-theorem withHeadFacts_startContexts {f : FilePlans} {given : Std.HashMap String Json} {entries : Bool}
-    (h : StartContexts f) : StartContexts (f.withHeadFacts given entries) := by
-  intro i name pos r hi
-  obtain ⟨r₀, h₀, _, _, rfl⟩ := withHeadFacts_plan hi
-  exact h i name pos r₀ h₀
 
 end Verification.SourceClaimJson.PassUnit

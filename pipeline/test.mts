@@ -2944,10 +2944,13 @@ control(async (): Promise<void> => {
   process.stdout.write("forged async literal: a returned literal with a callable then claimed as owning no key, refused at the allocation\n");
 });
 control(async (): Promise<void> => {
-  // `new Array<T>(n).fill(v)` is `%ArrayFilled%(%ArrayLength%(n), v)`, its
-  // instance the producer's to propose: claimed at `number` where `v` is
-  // `null`, the argument does not meet it, and search refuses at the call;
-  // checking refuses the evidence of the original claim for it.
+  // `new Array<T>(n).fill(v)` is `%ArrayFilled%(%ArrayLength%(n), v)` at
+  // the construct's explicit type argument `T`, its instance the producer's
+  // to propose. Claimed at `number`, which is not `T`, request validation
+  // refuses the call, in search and in checking. With the type argument
+  // also stated `number` (a document no source makes under TypeScript),
+  // `v`, `null`, does not meet it: search refuses at the call, and checking
+  // refuses the evidence of the original claim for it.
   const artifacts = run("blocker-pretext-new-array-fill");
   const claims = readClaims(artifacts);
   const source = readFileSync(sourceKey(artifacts), "utf8");
@@ -2956,22 +2959,50 @@ control(async (): Promise<void> => {
   const site = must(fn.expressions.find(e => e.pos[0] === start && e.instantiate?.length), "the filled array's instance");
   for (const image of site.instantiate ?? []) image.type = [rowOf(claims, "num")];
   const forged = writeClaims(artifacts, "forged-array-filled-instance", claims);
-  refusedAt(artifacts, forged, "forged-array-filled-instance",
-    `source expression obligation at [${site.pos[0]},${site.pos[1]}): evidence search failed`);
-  const fill = source.indexOf("fill", site.pos[0]);
-  assert.ok(invoke(forged, join(artifacts, "evidence.json"), artifacts, /^reject: source evidence refusal at \[\d+,\d+\)/m)
-    .includes(`source evidence refusal at [${fill},${fill + "fill".length})`));
+  const otherInstance = `source refusal at [${site.pos[0]},${site.pos[1]}): the call's instance is not the one its explicit type arguments state`;
+  refusedAt(artifacts, forged, "forged-array-filled-instance", otherInstance);
+  assert.ok(invoke(forged, join(artifacts, "evidence.json"), artifacts, /^reject: source refusal at \[\d+,\d+\)/m)
+    .includes(otherInstance));
   // The lowering: the length check of `n` as the first argument, `v` the
-  // second, each once, so `n`, the check and `v` run in JavaScript's order.
+  // second, each once, so `n`, the check and `v` run in JavaScript's order;
+  // the call's type arguments are the construct's, `number[] | null`.
+  const fill = source.indexOf("fill", site.pos[0]);
   const length = source.indexOf("Array", start);
   const n = source.indexOf("(n)", start) + 1;
   const lowered = JSON.stringify({ k: "apply", pos: site.pos, callee: { k: "id", pos: [fill, fill + 4], name: "%ArrayFilled%" },
     args: [{ k: "apply", pos: [start, n + 2], callee: { k: "id", pos: [length, length + 5], name: "%ArrayLength%" },
-      args: [{ k: "id", pos: [n, n + 1], name: "n" }] }, { k: "lit", pos: [fill + 5, fill + 9], lit: { a: "null" } }] });
+      args: [{ k: "id", pos: [n, n + 1], name: "n" }] }, { k: "lit", pos: [fill + 5, fill + 9], lit: { a: "null" } }] })
+    .slice(0, -1) + ',"typeArgs":[{"k":"union","parts":[{"k":"array"';
   const fragment = readFileSync(join(artifacts, "fragment.json"), "utf8");
   assert.equal(fragment.split(lowered).length, 2, `${lowered} once in the fragment`);
   assert.equal(fragment.split('"name":"%ArrayLength%"}').length, 2, "one length check");
-  process.stdout.write("forged filled array: its instance claimed at a type the fill value does not meet, refused in search and checking\n");
+  // The type argument stated `number` too.
+  const argument: [number, number] = [source.indexOf("<", start) + 1, source.indexOf(">(", start)];
+  const document: unknown = JSON.parse(fragment);
+  let restated = 0;
+  const restate = (v: unknown): void => {
+    if (Array.isArray(v)) {
+      for (const x of v) restate(x);
+      return;
+    }
+    if (typeof v !== "object" || v === null) return;
+    if ("typeArgs" in v && "pos" in v && JSON.stringify(v.pos) === JSON.stringify(site.pos)) {
+      v.typeArgs = [{ k: "atom", name: "number", span: argument }];
+      restated++;
+    }
+    for (const x of Object.values(v)) restate(x);
+  };
+  restate(document);
+  assert.equal(restated, 1, "the filled array's type arguments");
+  const numbers = join(artifacts, "forged-array-filled-number-fragment.json");
+  writeFileSync(numbers, JSON.stringify(document) ?? "");
+  const searched = produceWith(artifacts, forged, "forged-array-filled-number", numbers);
+  const detail = searched.stdout + searched.stderr;
+  assert.equal(searched.status, 1, detail);
+  assert.ok(detail.includes(`source expression obligation at [${site.pos[0]},${site.pos[1]}): evidence search failed`), detail);
+  assert.ok(invoke(forged, join(artifacts, "evidence.json"), artifacts, /^reject: source evidence refusal at \[\d+,\d+\)/m, numbers)
+    .includes(`source evidence refusal at [${fill},${fill + "fill".length})`));
+  process.stdout.write("forged filled array: its instance claimed at a type other than its explicit type argument, refused in search and checking; claimed with its type argument at a type the fill value does not meet, refused in search and checking\n");
 });
 control(async (): Promise<void> => {
   // A key-adding write's key claimed at `symbol` in place of `string`: it

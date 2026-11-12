@@ -4,7 +4,7 @@
 import { isJsonList, isJsonObject, type JsonRead, type JsonValue } from "../tools/calculus.mts";
 
 const num = (v: JsonRead): number => (typeof v === "number" ? v : -1);
-const str = (v: JsonRead): string => (typeof v === "string" ? v : JSON.stringify(v ?? null));
+const str = (v: JsonRead): string => (typeof v === "string" ? v : JSON.stringify(v ?? null) ?? "");
 const list = (v: JsonRead): readonly JsonValue[] => (isJsonList(v) ? v : []);
 const field = (v: JsonRead, k: string): JsonRead => (isJsonObject(v) ? v[k] : undefined);
 
@@ -64,7 +64,7 @@ export function indexFact(f: JsonRead, name: (slot: number) => string): string {
     const at = [name(num(field(every, "slot"))), ...list(field(every, "path")).map(str)].join(".");
     return `every element of ${at} below ${term(field(every, "stop"), name)}: ${JSON.stringify(field(every, "body"))}`;
   }
-  return JSON.stringify(f ?? null);
+  return JSON.stringify(f ?? null) ?? "";
 }
 
 /** A value set: the kinds it admits, with their literal lists. */

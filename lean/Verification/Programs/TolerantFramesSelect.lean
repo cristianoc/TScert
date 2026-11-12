@@ -474,6 +474,195 @@ theorem preserving_judgment_select {G : NormalGraph ι} {images : InstanceImageC
   exact SafePostExc.weaken (fun _ _ hq => ⟨hq.2.1.1, hq.2.2⟩)
     (fun _ hq => ⟨Footprints.Closed.holds_top.mpr hq, trivial⟩) (safePost_grow h.length (Nat.le_refl _) hboth)
 
+/-! ## The pass's checker
+
+The pass runs a `SinglePass.PassChecker`: `ordinary`, whose `select` takes a
+derivation as given and whose tree the pass checks, or `qualified`, whose
+`select` is its `run` (`PassChecker.select_eq_run`). Its tree check at the
+step's facts (`SinglePass.lean` 1325–1333) is `passTreeCheck`; before a
+writing step's `select` over every fact, a tree only `requiresTree` accepted
+is checked again there (1386–1388, `passWholeCheck`). -/
+
+variable {G : NormalGraph ι} {images : InstanceImageCheck G}
+
+/-- The pass's tree check at the step's facts `kE` (`SinglePass.lean`
+1325–1333): `none` where the pass refuses the step, else `some pre` with
+`pre` the tree only `requiresTree` accepted (`preconditioned`), if any. A
+checker whose `select` is its `run` checks no tree here. -/
+def passTreeCheck (pc : SinglePass.PassChecker G images) (kE : HeapKnowledge.Knowledge) (codes : CodeEntry ι → Bool)
+    (sums : List (ReadSummary ι)) (e : StepEvidence ι) : Option (Option (ProgramCertificates.Evidence ι)) :=
+  match (if pc.selectChecks then none else passTree e) with
+  | none => some none
+  | some p =>
+    if checkTreeUsing G images p codes sums then some none
+    else if PromiseCalls.requiresTree G images kE codes sums p then some (some p) else none
+
+/-- The pass's check over every fact `kE'` before a writing step's `select`
+(`SinglePass.lean` 1386–1388): the tree only `requiresTree` accepted at the
+step's facts is accepted by `requiresTree` at `kE'`. -/
+def passWholeCheck (G : NormalGraph ι) (images : InstanceImageCheck G) (kE' : HeapKnowledge.Knowledge)
+    (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) : Option (ProgramCertificates.Evidence ι) → Bool
+  | some p => PromiseCalls.requiresTree G images kE' codes sums p
+  | none => true
+
+/-- The checker whose `run` the pass's selected output is: `passOrdinary`
+for the ordinary checker, the qualified body's checker itself. -/
+@[nospecialize] def passRunChecker : SinglePass.PassChecker G images → Checker G images
+  | .ordinary => passOrdinary G images
+  | .qualified s o => Checker.withSubtyping G images s o
+
+/-- **The pass's tree check gives `passTreeOk` at the step's facts**, for the
+ordinary checker. -/
+theorem passTreeCheck_ok {pc : SinglePass.PassChecker G images} {kE : HeapKnowledge.Knowledge} {codes : CodeEntry ι → Bool}
+    {sums : List (ReadSummary ι)} {e : StepEvidence ι} {pre : Option (ProgramCertificates.Evidence ι)}
+    (hc : passTreeCheck pc kE codes sums e = some pre) (hs : pc.selectChecks = false) :
+    passTreeOk G images kE codes sums e = true := by
+  unfold passTreeCheck at hc
+  rw [hs] at hc
+  simp only [Bool.false_eq_true, if_false] at hc
+  unfold passTreeOk
+  split at hc
+  · rename_i hp; rw [hp]
+  · rename_i p hp
+    rw [hp]
+    split at hc
+    · rename_i ht; simp [ht]
+    · split at hc
+      · rename_i hr; simp [hr]
+      · cases hc
+
+/-- **The pass's two checks give `passTreeOk` over every fact** (the premise
+of `ordinary_select_eq` at a writing step's `select`, `SinglePass.lean`
+1390): a tree `checkTreeUsing` accepted passes at every knowledge, and a tree
+only `requiresTree` accepted at `kE` is checked again at `kE'`. -/
+theorem passWholeCheck_ok {pc : SinglePass.PassChecker G images} {kE kE' : HeapKnowledge.Knowledge}
+    {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} {e : StepEvidence ι}
+    {pre : Option (ProgramCertificates.Evidence ι)}
+    (hc : passTreeCheck pc kE codes sums e = some pre) (hw : passWholeCheck G images kE' codes sums pre = true)
+    (hs : pc.selectChecks = false) : passTreeOk G images kE' codes sums e = true := by
+  unfold passTreeCheck at hc
+  rw [hs] at hc
+  simp only [Bool.false_eq_true, if_false] at hc
+  unfold passTreeOk
+  split at hc
+  · rename_i hp; rw [hp]
+  · rename_i p hp
+    rw [hp]
+    split at hc
+    · rename_i ht; simp [ht]
+    · split at hc
+      · cases hc; simp only [passWholeCheck] at hw; simp [hw]
+      · cases hc
+
+/-- **The pass's selected output is its checker's `run`**: where the
+checker's `select` checks nothing, under `passTreeOk`, `passOrdinary`'s `run`
+(`select_run`); a qualified body's `select` is its `run`. -/
+theorem pass_select_run {pc : SinglePass.PassChecker G images} {j : Sequent ι} {k out : HeapKnowledge.Knowledge}
+    {e : StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    (hok : pc.selectChecks = false → passTreeOk G images k codes sums e = true)
+    (hsel : (pc.checker.select j k e codes sums).value = some out) :
+    ((passRunChecker pc).run j k e codes sums).value = some out := by
+  cases pc with
+  | ordinary => exact select_run (hok rfl) hsel
+  | qualified s o => exact hsel
+
+/-- **The output the pass applies at a step over its own facts is its
+checker's `run`**: from the tree check (`passTreeCheck`) and `select` at the
+step's facts (`SinglePass.lean` 1302, 1313). -/
+theorem pass_select_narrow {pc : SinglePass.PassChecker G images} {j : Sequent ι} {kE out : HeapKnowledge.Knowledge}
+    {e : StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    {pre : Option (ProgramCertificates.Evidence ι)}
+    (hc : passTreeCheck pc kE codes sums e = some pre)
+    (hsel : (pc.checker.select j kE e codes sums).value = some out) :
+    ((passRunChecker pc).run j kE e codes sums).value = some out :=
+  pass_select_run (passTreeCheck_ok hc) hsel
+
+/-- **The output the pass applies at a writing step is its checker's `run`
+over every fact**: from the tree check at the step's facts, the check over
+every fact (`passWholeCheck`) and `select` over every fact (`SinglePass.lean`
+1390). -/
+theorem pass_select_whole {pc : SinglePass.PassChecker G images} {j : Sequent ι} {kE kE' out : HeapKnowledge.Knowledge}
+    {e : StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    {pre : Option (ProgramCertificates.Evidence ι)}
+    (hc : passTreeCheck pc kE codes sums e = some pre) (hw : passWholeCheck G images kE' codes sums pre = true)
+    (hsel : (pc.checker.select j kE' e codes sums).value = some out) :
+    ((passRunChecker pc).run j kE' e codes sums).value = some out :=
+  pass_select_run (passWholeCheck_ok hc hw) hsel
+
+/-- **The pass's selected output is sound**, at either checker: the
+conclusion `Checker.sound` states for `run`. -/
+theorem pass_select_sound {pc : SinglePass.PassChecker G images} {j : Sequent ι} {k out : HeapKnowledge.Knowledge}
+    {e : StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    (hok : pc.selectChecks = false → passTreeOk G images k codes sums e = true)
+    (hsel : (pc.checker.select j k e codes sums).value = some out)
+    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
+    {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (excOf G) (meaning G j.type) (fun h' v => HeapKnowledge.Holds out (push v ρ) h') n W h
+      (instantiate 0 ρ j.term) :=
+  (passRunChecker pc).sound (pass_select_run hok hsel) hcodes hsums he hk hw hh
+
+/-- **Every step the pass classifies preserving keeps the heap**, at either
+checker's selected output. -/
+theorem passPreserving_keeps_pass {pc : SinglePass.PassChecker G images} {j : Sequent ι}
+    {kE out : HeapKnowledge.Knowledge} {e : StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    (hpres : passPreserving G images j kE e codes sums = true)
+    (hok : pc.selectChecks = false → passTreeOk G images kE codes sums e = true)
+    (hsel : (pc.checker.select j kE e codes sums).value = some out)
+    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
+    {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ρ h)
+    (hw : WorldAdm W) (hh : HeapOk n W h) : KeepsPost G j ρ n W h := by
+  cases pc with
+  | ordinary => exact passPreserving_keeps_select hpres (hok rfl) hsel hcodes hsums he hk hw hh
+  | qualified s o =>
+    simp only [passPreserving, Bool.or_eq_true] at hpres
+    rcases hpres with hc | hp
+    · exact callKeepsHeap_keeps hc hcodes hsums he hk hw hh
+    · obtain ⟨o₀, hb⟩ := withSubtyping_run_base (ord := o) hp hsel
+      exact base_keeps hb hp hcodes hsums he hk hw hh
+
+/-- **The pass's preserving steps, both exits, at either checker's selected
+output**: `preserving_step_frame` at `runChecker`. -/
+theorem pass_preserving_frame_pass {pc : SinglePass.PassChecker G images}
+    {j : Sequent ι} {kE out : HeapKnowledge.Knowledge} {e : StepEvidence ι} {codes : CodeEntry ι → Bool}
+    {sums : List (ReadSummary ι)}
+    (hpres : passPreserving G images j kE e codes sums = true)
+    (hok : pc.selectChecks = false → passTreeOk G images kE codes sums e = true)
+    (hsel : (pc.checker.select j kE e codes sums).value = some out)
+    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
+    {ρ η : Env} {r m : Nat} {s : IndexedHeap} {S : List Atom}
+    (he : EnvOk G j.context ρ s.n s.W) (hkE : HeapKnowledge.Holds kE ρ s.h)
+    (hS : Named S η ρ m s) (hfr : ∀ a ∈ S, r ∉ a.names)
+    {k : Nat} {h' : Heap} {t' : Tm} (hst : Steps k s.h (instantiate 0 ρ j.term) h' t') (hk : k < s.n) :
+    (isVal t' = true → ∃ s' : IndexedHeap, Action Footprints.Closed.empty.fp ρ s s' ∧ s'.h = h' ∧
+        s'.n + k = s.n ∧ meaning G j.type s'.n s'.W t' ∧
+        HeapKnowledge.Holds out (push t' ρ) h' ∧ Named S (Env.set η r t') ρ m s') ∧
+      (∀ x, Raises t' x → ∃ s' : IndexedHeap, Action Footprints.Closed.top.fp ρ s s' ∧ s'.h = h' ∧
+        s'.n + k = s.n ∧ Scoped 0 x ∧ excOf G s'.n s'.W x ∧ Named (S.filter (·.heapFree)) η ρ m s') :=
+  preserving_step_frame (passRunChecker pc) (pass_select_run hok hsel) hcodes hsums he hkE
+    (passPreserving_keeps_pass hpres hok hsel hcodes hsums he hkE s.adm s.ok) hS hfr hst hk
+
+/-- **A step the pass frames, at either checker's selected output**: normal
+exit within `{values: keep, stores: keep}` with the output, throw within
+`top`. -/
+theorem preserving_judgment_pass {pc : SinglePass.PassChecker G images}
+    {j : Sequent ι} {kE out : HeapKnowledge.Knowledge} {e : StepEvidence ι} {codes : CodeEntry ι → Bool}
+    {sums : List (ReadSummary ι)}
+    (hpres : passPreserving G images j kE e codes sums = true)
+    (hok : pc.selectChecks = false → passTreeOk G images kE codes sums e = true)
+    (hsel : (pc.checker.select j kE e codes sums).value = some out)
+    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
+    {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePostExc (excOf G) (meaning G j.type)
+      (fun h' v => Footprints.Closed.empty.Holds h h' ∧ HeapKnowledge.Holds out (push v ρ) h')
+      (fun h' => Footprints.Closed.top.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) := by
+  have hboth := cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh
+    (passPreserving_keeps_pass hpres hok hsel hcodes hsums he hk hw hh)
+    (pass_select_sound hok hsel hcodes hsums he hk hw hh)
+  exact SafePostExc.weaken (fun _ _ hq => ⟨hq.2.1.1, hq.2.2⟩)
+    (fun _ hq => ⟨Footprints.Closed.holds_top.mpr hq, trivial⟩) (safePost_grow h.length (Nat.le_refl _) hboth)
+
 end Select
 
 end Verification.TolerantFrames

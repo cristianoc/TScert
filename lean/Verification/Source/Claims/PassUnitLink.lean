@@ -100,7 +100,7 @@ unit whose group `passGroup` accepts, so every member of its group is safe;
 and every unit its group depends on is closed too (`closedUnits_closed`). -/
 theorem closedUnits_safe
     (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
-    (hgroup : PassGroupChecks) (hstarts : FragmentStartContexts)
+    (hgroup : PassGroupChecks)
     {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {selection : Option (List String)} {standIns : StandIns} {force : List String} {f : FilePlans}
     {givenLines : Std.HashMap String Json} {fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
@@ -122,7 +122,7 @@ theorem closedUnits_safe
     cases hp : ((f.withHeadFacts givenLines false).passGroup fuel (f.fr.group i) compare debugNode repeats given
         observe counting).2 with
     | error e => rw [hp] at hv; cases hv
-    | ok d => exact ⟨i, hid, passUnit_safe hrun hkeep hgroup hstarts hplans hi hp⟩
+    | ok d => exact ⟨i, hid, passUnit_safe hrun hkeep hgroup hplans hi hp⟩
 
 /-! ## The linking induction -/
 

@@ -112,7 +112,7 @@ a compile error there, and no plan variant is filtered out.
 
 ### The headline
 
-**Theorem** `passUnit_safe` (proved under hypotheses H1–H4 of section 2). Let
+**Theorem** `passUnit_safe` (proved under hypotheses H1–H3 of section 2). Let
 $`f' = f.\mathrm{withHeadFacts}(\mathit{givenLines}, \mathrm{false})`$. Then
 
 ```math
@@ -133,23 +133,25 @@ counting and given-file inputs range over all their values.
 
 **H1 `RunSound`** (the graph lane's target). For every call $`c`$ of
 `SinglePass.run` (`RunCall`: every argument it takes) over $`G`$ and image
-check $`I`$, every $`\mathit{after}`$, assignment set $`A`$ and inputs
-$`\Gamma`$:
+check $`I`$, every $`\mathit{after}`$ and assignment set $`A`$, with
+$`\Gamma = c.\mathrm{inputs}`$:
 
 ```math
 \begin{aligned}
 &c \text{ accepts leaving } \mathit{after}
- \;\wedge\; \mathrm{Scope}(c.\mathrm{checker}, A)
- \;\wedge\; c.\mathrm{claims}[c.\mathrm{start}].\mathrm{context} = \Gamma \\
-&\wedge\; \mathrm{CodesSound}(G, c.\mathrm{codes})
- \;\wedge\; \mathrm{SummariesSound}(G, I, \mathit{after}.\mathrm{summaries})
+ \;\wedge\; \mathrm{Scope}(c.\mathrm{passChecker}, A)
+ \;\wedge\; \mathrm{CodesSound}(G, c.\mathrm{codes}) \\
+&\wedge\; \mathrm{SummariesSound}(G, I, \mathit{after}.\mathrm{summaries})
  \;\wedge\; \mathrm{entryFields}(G, \Gamma, \mathcal R) \text{ for } c\text{'s regions } \mathcal R \\
 &\Longrightarrow\; \mathrm{GraphGuarantee}_G(A, P, \ell_0, R, \Gamma, S, X, \mathit{assertions}, \mathit{bound}, E, \mathit{regional})
 \end{aligned}
 ```
 
-$`\mathrm{Scope}`$ (`CheckerScope`) relates the ordinary checker to every
-assignment and a qualified body's checker to its admitted instances.
+$`\mathrm{Scope}`$ (`CheckerScope`) relates the pass checker
+(`SinglePass.PassChecker`) `.ordinary` to every assignment and
+`.qualified` at a body's subtyping to that body's admitted instances. The
+call's inputs $`c.\mathrm{inputs}`$ are an argument of `run`, which checks
+the start claim's context against them (`SinglePass.entryRefusal`).
 `GraphGuarantee` is conjuncts 1–5 of `RequestSafe` for the call's own
 arguments: conjunct 2 where $`\mathit{bound} = (\Phi, \mathit{fresh}, \mathit{onThrow})`$,
 conjunct 4 where $`\mathit{regional} = (\Phi, \mathcal R, \mathit{exc})`$, conjuncts 2–4
@@ -167,10 +169,10 @@ run's summaries; the code runs before it rely on theirs.
 **H3 `PassGroupChecks`** (wrapper, section 3). `passGroup` accepting a group
 makes every member `MemberAccepted`. A statement about the actual function.
 
-**H4 `FragmentStartContexts`** (extraction). In mode 8's plans, each
-request's start claim states its inputs and each code request's its frame
-(`StartContexts`). Neither the pass nor `passGroup` checks it, and `run`
-receives no inputs.
+The wrapper gives each run the inputs the theorem's entry premise names:
+the request's inputs for its own graph (`MainCall`), each code request's
+frame for that code's (`CodeRunAccepted`). No hypothesis about the plans'
+start claims is needed.
 
 ## 3. The wrapper
 
@@ -262,7 +264,7 @@ verdicts $`V`$ (unit $`\mapsto`$ accepted dependencies, or refused) is
 has a dependency outside, kept where the result is closed; a dependency
 with no verdict refuses its dependents. `closedUnits_closed` (proved): its
 result is closed. `fileVerdicts` is the verdicts mode 8's loop prints, and
-`closedUnits_safe` (proved, under H1–H4): every closed unit is a selected
+`closedUnits_safe` (proved, under H1–H3): every closed unit is a selected
 unit whose group `passGroup` accepts, so every member of its group is safe.
 The agreement tool's `closed` (`dev/single-pass-agreement.mts`) is this
 fixpoint, but it treats a dependency with no verdict as closed.
@@ -437,7 +439,7 @@ The hypotheses are listed with their owners in section 6.
 
 ### The statement
 
-**Theorem** `passFile_safe` (proved under H1–H4, H5a, H5b). Let
+**Theorem** `passFile_safe` (proved under H1–H3, H5a, H5b). Let
 $`f' = f.\mathrm{withHeadFacts}(\mathit{givenLines}, \mathrm{false})`$,
 $`V = \mathrm{fileVerdicts}(f, \ldots)`$ the verdicts mode 8's loop prints
 and $`S = \mathrm{closedUnits}(V)`$. Then
@@ -464,9 +466,6 @@ module slots are met by that environment. This statement, with
 - **H1 `RunSound`, H2 `RunKeepsSummaries`**: the graph lane, about
   `SinglePass.run` (section 2).
 - **H3 `PassGroupChecks`**: the wrapper lane, by the lemma below.
-- **H4 `FragmentStartContexts`**: the wrapper lane, by a start-context check
-  in `passMember` (below), which makes it a clause of `MemberAccepted`; H4
-  then leaves the headline.
 - **H5a `ModuleLayout`**: the extraction, about the frame `extractMember`
   lays out and the slot table (`ordinarySlots`, `withStandIns`,
   `withNeverImports`). Its slot agreement and frame layout are decidable from
@@ -492,7 +491,7 @@ the pure function a member's checks become, and `.accepted` its verdict:
 &\texttt{passGroup\_members}:\; (f.\mathrm{passGroup}(\mathit{fuel}, g, \ldots)).2 = \mathrm{ok}\ d
   \;\Longrightarrow\; \forall j \in g.\; (f.\mathrm{passMember}(\mathit{fuel}, \ldots, j)).\mathrm{accepted} \\
 &\texttt{passMember\_sound}:\; (f.\mathrm{passMember}(\mathit{fuel}, \ldots, j)).\mathrm{accepted}
-  \;\Longrightarrow\; \mathrm{MemberAccepted}(f, j) \wedge \mathrm{StartContexts}_j(f)
+  \;\Longrightarrow\; \mathrm{MemberAccepted}(f, j)
 \end{aligned}
 ```
 
@@ -502,8 +501,6 @@ section 3 as written in `PassUnitMember`, its clauses the exact calls:
 (each code run accepted, R3: a run returning an observation refuses) and
 `MainAccepted` (R2: in the fallback, the fallback run's own summaries
 checked, which `MainAccepted.fallback` requires), or the qualified case.
-$`\mathrm{StartContexts}_j`$ is `StartContexts` at member $`j`$: its start
-claim states its inputs and each code request's its frame.
 
 ### The old headline and the new one
 
@@ -641,12 +638,11 @@ $`\mathrm{MemberAccepted}(f, j) \wedge r.\mathrm{async} \Rightarrow r.\mathrm{fo
 from the declared effect's condition. It is the member half of
 `checkRequests_async`, which the old checker states outside `RequestsSafe`.
 
-`checkRequests_async` also states it of each code request
-($`q.\mathrm{async} \Rightarrow q.\mathrm{footprint} = \top`$, from the code
-table's check). `passGroup` checks the member's async condition and not its
-code requests' (observed in `Json.lean`: the code conditions name no async
-flag). The repair is the code requests' condition in `passMember`, and
-`passMember_sound` then gives both halves.
+**Theorem** `codes_async` (proved). Each code request of an accepted member
+meets the same condition,
+$`q.\mathrm{async} \Rightarrow q.\mathrm{footprint} = \top`$, from the
+condition `passGroup` checks before each code's run (`CodeRunAccepted`):
+the other half of `checkRequests_async`.
 
 The async property stays outside `RequestSafe`: it constrains how a claim is
 read against the source (an async body runs after its call returns its

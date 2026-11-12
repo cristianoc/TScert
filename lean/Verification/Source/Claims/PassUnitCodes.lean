@@ -35,17 +35,19 @@ def codeBound (c : CodeEntry ι) : Option (Footprints.Closed × Bool × Bool) :=
   else some (c.row.effect.footprint, c.row.effect.fresh, c.row.effect.onThrow)
 
 /-- **A code request's run, as `passGroup` makes it**: its conditions hold,
-and a call of the pass over its graph from its start, at its goal, its
-requirements as assertions, its entry indices, the codes `table` admits, the
-ordinary checker, starting from the answers `a`, at its bound, with no
-postcondition, separation or regional option, accepted leaving `a'`. -/
+an async code's footprint is `top` (`RequestJson.asyncEffects`), and a call
+of the pass over its graph from its start, given its frame as inputs, at its
+goal, its requirements as assertions, its entry indices, the codes `table`
+admits, the ordinary checker, starting from the answers `a`, at its bound,
+with no postcondition, separation or regional option, accepted leaving
+`a'`. -/
 def CodeRunAccepted (G : NormalGraph ι) (I : InstanceImageCheck G) (r : SourceRequest σ ι)
     (table : List (CodeEntry ι)) (q : CodeRequest ι) (ci : Nat) (a a' : Answered G) : Prop :=
-  codeConditions q.entry = true ∧
+  codeConditions q.entry = true ∧ RequestJson.asyncEffects q.async q.entry.row.effect.footprint = true ∧
   ∃ c : RunCall G I, c.P = (codeRequest r q).program ∧ c.claims = q.claims ∧ c.start = q.entry.start ∧
-    c.goal = q.entry.goal ∧ c.assertions = (codeHintsAt r ci).requirements ∧
+    c.inputs = codeFrame q.entry.arity q.entry.row q.entry.captures q.entry.store ∧ c.goal = q.entry.goal ∧ c.assertions = (codeHintsAt r ci).requirements ∧
     c.entryIndices = GraphCode.codeEntryIndices q.entry ∧ c.codes = GraphCode.admits table ∧
-    c.checker = Checker.ordinary G I ∧ c.answers = a ∧ c.bound = codeBound q.entry ∧ c.ensures = [] ∧
+    c.passChecker = .ordinary ∧ c.answers = a ∧ c.bound = codeBound q.entry ∧ c.ensures = [] ∧
     c.entrySeparation = {} ∧ c.regional = none ∧ c.Accepts a'
 
 /-- The code requests `rest` (with their positions) accepted in order, each
@@ -212,7 +214,7 @@ theorem codesAccepted_keeps {G : NormalGraph ι} {I : InstanceImageCheck G} {r :
   | _, [], a, a', h => by
     simp only [CodesAccepted] at h; subst h; exact fun _ hs => hs
   | table, (q, ci) :: rest, a, a', h => by
-    obtain ⟨a₁, ⟨_, c, -, -, -, -, -, -, -, -, hans, -, -, -, -, counts, trace, hres⟩, hrest⟩ := h
+    obtain ⟨a₁, ⟨_, _, c, -, -, -, -, -, -, -, -, -, hans, -, -, -, -, counts, trace, hres⟩, hrest⟩ := h
     intro s hs
     have h1 := hkeep G I c s (hans ▸ hs)
     rw [hres] at h1
@@ -221,8 +223,7 @@ theorem codesAccepted_keeps {G : NormalGraph ι} {I : InstanceImageCheck G} {r :
 /-- **The table the pass builds is sound** (proved, under `RunSound` and
 `RunKeepsSummaries`): code requests accepted in order, each against the
 table of those before it, starting from a sound table, with the summaries
-the last run leaves within a sound table, and each code's start claim
-stating its frame, extend it to a sound table. The pass's counterpart of
+the last run leaves within a sound table, extend it to a sound table. The pass's counterpart of
 `GraphCode.extendTable_sound`: each step's premise is an accepted run of
 the pass (`CodeRunAccepted`) in place of `codeCheckedUsing`, and the
 summaries are the final ones the wrapper checks. -/
@@ -230,27 +231,21 @@ theorem codesAccepted_sound {G : NormalGraph ι} {I : InstanceImageCheck G} {r :
     (hrun : RunSound ι) (hkeep : RunKeepsSummaries ι)
     {final : List (ProgramCertificates.ReadSummary ι)} (hfinal : ProgramCertificates.SummariesSound G I final) :
     ∀ {table rest a a'}, CodesAccepted G I r table rest a a' →
-      (∀ p ∈ rest, StartContext p.1.claims p.1.entry.start
-        (codeFrame p.1.entry.arity p.1.entry.row p.1.entry.captures p.1.entry.store)) →
       (∀ s ∈ a'.summaries.toList, s ∈ final) →
       ProgramCertificates.CodesSound G (GraphCode.admits table) →
       ProgramCertificates.CodesSound G (GraphCode.admits (table ++ rest.map (·.1.entry)))
-  | table, [], a, a', _, _, _, ht => by simpa using ht
-  | table, (q, ci) :: rest, a, a', h, hstart, hsub, ht => by
-    obtain ⟨a₁, ⟨hcond, c, hP, hcl, hst, hgoal, has, hidx, hcodes, hchk, hans, hbd, hens, hsep, hreg, hacc⟩,
+  | table, [], a, a', _, _, ht => by simpa using ht
+  | table, (q, ci) :: rest, a, a', h, hsub, ht => by
+    obtain ⟨a₁, ⟨hcond, -, c, hP, -, hst, hin, hgoal, has, hidx, hcodes, hchk, hans, hbd, hens, hsep, hreg, hacc⟩,
       hrest⟩ := h
     have hsums : ProgramCertificates.SummariesSound G I a₁.summaries.toList :=
       summariesSound_sub (fun s hs => hsub s (codesAccepted_keeps hkeep hrest s hs)) hfinal
-    have hscope : CheckerScope G I c.checker (fun _ => True) := hchk ▸ CheckerScope.ordinary
-    have hctx : StartContext c.claims c.start
-        (codeFrame q.entry.arity q.entry.row q.entry.captures q.entry.store) := by
-      rw [hcl, hst]; exact hstart (q, ci) List.mem_cons_self
-    have hg := hrun G I c a₁ _ _ hacc hscope hctx (hcodes ▸ ht) hsums
+    have hscope : CheckerScope G I c.passChecker (fun _ => True) := hchk ▸ CheckerScope.ordinary
+    have hg := hrun G I c a₁ _ hacc hscope (hcodes ▸ ht) hsums
       (fun _ _ _ h => by rw [hreg] at h; cases h)
-    rw [hP, hgoal, hst, hsep, hidx, hbd, hens, hreg] at hg
+    rw [hP, hgoal, hst, hin, hsep, hidx, hbd, hens, hreg] at hg
     have hspec := codeSpec_of_guarantee hcond hg
-    have := codesAccepted_sound hrun hkeep hfinal hrest (fun p hp => hstart p (List.mem_cons_of_mem _ hp))
-      hsub (codesSound_snoc ht hspec)
+    have := codesAccepted_sound hrun hkeep hfinal hrest hsub (codesSound_snoc ht hspec)
     simpa [List.append_assoc] using this
 
 /-- **Each accepted code's graph is guaranteed** (proved, under `RunSound`
@@ -261,31 +256,25 @@ theorem codesAccepted_guarantees {G : NormalGraph ι} {I : InstanceImageCheck G}
     (hrun : RunSound ι) (hkeep : RunKeepsSummaries ι)
     {final : List (ProgramCertificates.ReadSummary ι)} (hfinal : ProgramCertificates.SummariesSound G I final) :
     ∀ {table rest a a'}, CodesAccepted G I r table rest a a' →
-      (∀ p ∈ rest, StartContext p.1.claims p.1.entry.start
-        (codeFrame p.1.entry.arity p.1.entry.row p.1.entry.captures p.1.entry.store)) →
       (∀ s ∈ a'.summaries.toList, s ∈ final) →
       ProgramCertificates.CodesSound G (GraphCode.admits table) →
       ∀ p ∈ rest, GraphGuarantee G (fun _ => True) (GraphCode.program p.1.entry.exprs p.1.entry.conts)
         p.1.entry.start p.1.entry.goal (codeFrame p.1.entry.arity p.1.entry.row p.1.entry.captures p.1.entry.store)
         {} (GraphCode.codeEntryIndices p.1.entry) (codeHintsAt r p.2).requirements (codeBound p.1.entry) [] none
-  | _, [], _, _, _, _, _, _ => fun _ hp => nomatch hp
-  | table, (q, ci) :: rest, a, a', h, hstart, hsub, ht => by
-    obtain ⟨a₁, ⟨hcond, c, hP, hcl, hst, hgoal, has, hidx, hcodes, hchk, hans, hbd, hens, hsep, hreg, hacc⟩,
+  | _, [], _, _, _, _, _ => fun _ hp => nomatch hp
+  | table, (q, ci) :: rest, a, a', h, hsub, ht => by
+    obtain ⟨a₁, ⟨hcond, -, c, hP, -, hst, hin, hgoal, has, hidx, hcodes, hchk, hans, hbd, hens, hsep, hreg, hacc⟩,
       hrest⟩ := h
     have hsums : ProgramCertificates.SummariesSound G I a₁.summaries.toList :=
       summariesSound_sub (fun s hs => hsub s (codesAccepted_keeps hkeep hrest s hs)) hfinal
-    have hscope : CheckerScope G I c.checker (fun _ => True) := hchk ▸ CheckerScope.ordinary
-    have hctx : StartContext c.claims c.start
-        (codeFrame q.entry.arity q.entry.row q.entry.captures q.entry.store) := by
-      rw [hcl, hst]; exact hstart (q, ci) List.mem_cons_self
-    have hg := hrun G I c a₁ _ _ hacc hscope hctx (hcodes ▸ ht) hsums
+    have hscope : CheckerScope G I c.passChecker (fun _ => True) := hchk ▸ CheckerScope.ordinary
+    have hg := hrun G I c a₁ _ hacc hscope (hcodes ▸ ht) hsums
       (fun _ _ _ h => by rw [hreg] at h; cases h)
-    rw [hP, hgoal, hst, hsep, hidx, hbd, hens, hreg, has] at hg
+    rw [hP, hgoal, hst, hin, hsep, hidx, hbd, hens, hreg, has] at hg
     intro p hp
     rcases List.mem_cons.mp hp with rfl | hp
     · exact hg
-    · exact codesAccepted_guarantees hrun hkeep hfinal hrest (fun p hp => hstart p (List.mem_cons_of_mem _ hp))
-        hsub (codesSound_snoc ht (codeSpec_of_guarantee hcond hg)) p hp
+    · exact codesAccepted_guarantees hrun hkeep hfinal hrest hsub (codesSound_snoc ht (codeSpec_of_guarantee hcond hg)) p hp
 
 end
 

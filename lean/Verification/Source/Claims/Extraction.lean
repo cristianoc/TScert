@@ -92,6 +92,9 @@ structure Front where
   edgeTable : Array (List Nat)
   /-- Each unit's group (`Front.groupOf`), by its index. -/
   groupTable : Array (List Nat)
+  /-- The imported values at their declared types, by local name and span,
+  which `Front.withQualified` reads again. -/
+  imported : List (String × Span × List Tree)
 
 /-- A unit's identity on the wire: a function's name and its name's start,
 or `init` for the module's initialization. -/
@@ -195,10 +198,11 @@ def ordinarySlots (d : Document EquationStore.State Tree) (ordinary : List Fragm
 
 /-- The front of a source's units. A qualified import, by its name, is read
 at its certified unit's footprint and on-throw flag (`importedArrow`); every
-other at its declared type. -/
+other at its declared type. With `lenient` (mode 8), a qualified import
+whose declared type `importedArrow` does not read is at its declared type. -/
 def fileFront (ast claims : Json) (fileKey : String)
     (budget : PositiveCertificates.SearchBudget := {})
-    (qualified : List (String × Footprints.Closed × Bool × Footprints.Closed) := []) :
+    (qualified : List (String × Footprints.Closed × Bool × Footprints.Closed) := []) (lenient : Bool := false) :
     Except String Front := do
   -- A source with arrays lists `ArrayProto`: its units see `Array.prototype`.
   let arrays := match (ast.getObjVal? "declarations").toOption.bind
@@ -236,7 +240,9 @@ def fileFront (ast claims : Json) (fileKey : String)
   let moduleFunctions : List (SourceExtraction.ModuleValue Tree) :=
     ordinarySlots d ordinary (ordinary.map (·.name)).eraseDups ++
     (imported.map fun (name, span, U) => (name, span, match qualified.lookup name with
-      | some (footprint, onThrow, result) => (importedArrow d.types U footprint onThrow result).map .written
+      | some (footprint, onThrow, result) => match importedArrow d.types U footprint onThrow result with
+        | .ok J => .ok (.written J)
+        | .error e => if lenient then .ok (.written (graphClaim U)) else .error e
       | none => .ok (.written (graphClaim U)))) ++
     (if arrays then [(SourceExtraction.arrayPrototypeName, (0, 0),
       Except.ok (.written (Json.mkObj [("top", toJson false), ("atoms", toJson [Json.mkObj
@@ -304,7 +310,22 @@ def fileFront (ast claims : Json) (fileKey : String)
   return Front.indexed ⟨ast, d, functionJsons, init, generics, unitBinders, initBinders, classNames, freshConstructors,
     moduleFunctions, moduleConstants, classSelves, units, qualified.map (·.1), initOrder,
     SourceExtraction.ownedModuleCells init (all.map (·.1.body)) (← Fragment.decodeOmittedMentions ast),
-    #[], #[]⟩
+    #[], #[], imported⟩
+
+/-- The front `fileFront` gives with the qualified reads `qualified`, of a
+front it gave with none (`lenient`, mode 8): each imported value the reads
+name at its certified unit's footprint and on-throw flag
+(`importedArrow`), else at its declared type. -/
+def Front.withQualified (fr : Front)
+    (qualified : List (String × Footprints.Closed × Bool × Footprints.Closed)) : Front :=
+  { fr with
+    moduleFunctions := fr.moduleFunctions.map fun v =>
+      match fr.imported.find? (fun (n, span, _) => n == v.1 && span == v.2.1), qualified.lookup v.1 with
+      | some (_, _, U), some (footprint, onThrow, result) => match importedArrow fr.d.types U footprint onThrow result with
+        | .ok J => (v.1, v.2.1, .ok (.written J))
+        | .error _ => v
+      | _, _ => v
+    qualifiedNames := qualified.map (·.1) }
 
 /-- What replaces a unit's claims before its extraction, where one does:
 its claims with the types a computation gives (`Synthesis.retypeUnit`), over
@@ -332,7 +353,7 @@ def extractMember (fr : Front) (T : EquationStore.State)
     (instances : Option Instances := none) (closureSchemes : Option ClosureSchemes := none) :
     Except String (EquationStore.State × FunctionPlan EquationStore.State Tree) := do
   let ⟨ast, d, functionJsons, init, generics, unitBinders, initBinders, classNames, freshConstructors,
-    moduleFunctions, moduleConstants, classSelves, _, _, initOrder, moduleOwned, _, _⟩ := fr
+    moduleFunctions, moduleConstants, classSelves, _, _, initOrder, moduleOwned, _, _, _⟩ := fr
   let (f, tps, initClaims) := u
   if let (some _, some reason) := (initClaims, initOrder) then throw reason
   let d := { d with types := T }

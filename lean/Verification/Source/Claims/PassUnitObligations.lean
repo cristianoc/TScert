@@ -73,4 +73,37 @@ theorem member_async {f : FilePlans} {j : Nat} {name : String} {pos : Span} {r :
     Bool.not_true, Bool.false_or, beq_iff_eq] at hd
   exact hd.1.1
 
+/-- Each code request accepted in order meets the async condition (proved). -/
+theorem codesAccepted_async {σ ι : Type} [Labels ι] [StoreView σ ι] {G : NormalGraph ι}
+    {I : PositiveCertificates.InstanceImageCheck G} {r : SourceRequest σ ι} :
+    ∀ {table rest a a'}, CodesAccepted G I r table rest a a' →
+      ∀ p ∈ rest, RequestJson.asyncEffects p.1.async p.1.entry.row.effect.footprint = true
+  | _, [], _, _, _ => fun _ hp => nomatch hp
+  | _, (q, ci) :: rest, _, _, h => by
+    obtain ⟨_, ⟨_, hasync, _⟩, hrest⟩ := h
+    intro p hp
+    rcases List.mem_cons.mp hp with rfl | hp
+    · exact hasync
+    · exact codesAccepted_async hrest p hp
+
+/-- **An accepted member's async code requests claim no footprint**
+(proved): the other half of `checkRequests_async`, from the async condition
+`passGroup` checks of each code request before its run. -/
+theorem codes_async {f : FilePlans} {j : Nat} {name : String} {pos : Span} {r : Req f}
+    (hm : MemberAccepted f j) (hp : PlanAt f j name pos r) :
+    ∀ q ∈ r.codes, q.async = true → q.entry.row.effect.footprint = .top := by
+  intro q hq ha
+  cases hm with
+  | ordinary name' pos' r' _ _ hplan _ _ _ hcodes _ =>
+    rw [← planAt_unique hp hplan] at hcodes
+    obtain ⟨ci, hci⟩ : ∃ ci, (q, ci) ∈ r.codes.zipIdx := by
+      obtain ⟨ci, hci, rfl⟩ := List.getElem_of_mem hq
+      exact ⟨ci, List.mk_mem_zipIdx_iff_getElem?.mpr (by simp [hci])⟩
+    have h := codesAccepted_async hcodes (q, ci) hci
+    simp only [RequestJson.asyncEffects, ha, Bool.not_true, Bool.false_or, beq_iff_eq] at h
+    exact h
+  | qualified name' pos' r' _ _ _ _ hplan _ _ _ _ _ _ _ hcodes _ _ _ _ _ =>
+    rw [← planAt_unique hp hplan] at hcodes
+    rw [hcodes] at hq; cases hq
+
 end Verification.SourceClaimJson.PassUnit

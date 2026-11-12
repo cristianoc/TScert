@@ -474,6 +474,16 @@ private partial def mentions (names : List String) : ClaimType Tree → Bool
       rest.any (mentions names) || mentions names r
   | _ => false
 
+/-- Whether a claim's labels mention a tree. -/
+private partial def mentionsTree (x : Tree) : ClaimType Tree → Bool
+  | .labels A => A.any fun t => EquationLowering.treeReplace (fun u => if u == x then some [] else none) t != [t]
+  | .union ts => ts.any (mentionsTree x)
+  | .array e => mentionsTree x e
+  | .scheme tps rc ps rest r _ =>
+    tps.any (·.bound.any (mentionsTree x)) || mentionsTree x rc || ps.any (mentionsTree x) ||
+      rest.any (mentionsTree x) || mentionsTree x r
+  | _ => false
+
 /-- The row of a scheme with binders: its binders fresh value parameter rows,
 its signature over them. A binder with a bound of clause rows is read, in the
 signature and inside the closure, as the meet of its row and its bound, as a
@@ -494,7 +504,14 @@ private partial def schemeRowOf (t : ClaimType Tree) : SchemeM (Tree × List (St
   -- its lists are its own row's.
   let (T, reg) ← get
   let parts := rc :: ps ++ rest.toList ++ [r]
-  let packed := names.filter fun n => parts.any fun c =>
+  -- So is one an annotation's lowering reads as a packed placeholder of its
+  -- name (`bindNames`: a binder typing a value and, as a declaration's
+  -- packed argument, its argument lists), whose companion the producer
+  -- spells `T#pack` (claims.ml:490-499).
+  let packedAt (n : String) : Bool := match T.names.toList.idxOf? (n, .packed) with
+    | some i => parts.any (mentionsTree (.var EquationLowering.nameOwner i .packed))
+    | none => false
+  let packed := names.filter fun n => packedAt n || parts.any fun c =>
     rebindClaim T [(n ++ "#pack", [.local 0])] c != c
   let (T, binders) := EquationStore.binders T names packed
   set (T, reg)

@@ -432,7 +432,8 @@ partial def packBound (ctx : Ctx) (bound : Json) : M Union := do
 
 /-- A scheme's row: its binders the head's locals, its bounds read outside
 them (§3.1). -/
-partial def schemeRow (ctx : Ctx) (term : Json) : M (GraphRow Tree (List Tree)) := do
+partial def schemeRow (ctx : Ctx) (term : Json) :
+    M (GraphRow Tree (List Tree) × List (Nat × List Tree)) := do
   let (names, packs, resolution) ← (schemeBinders ctx.site term : Except String _)
   let bs ← arr term "binders"
   let inner : Ctx := { ctx with binders := (names.zipIdx.map fun ((n : String), (k : Nat)) =>
@@ -485,7 +486,18 @@ partial def schemeRow (ctx : Ctx) (term : Json) : M (GraphRow Tree (List Tree)) 
     let effect : CallEffects.Effect ← fromJson? (← field f "effect")
     if restTerm == .null then fixed := fixed ++ [⟨recv, ps, res, effect⟩]
     else rests := rests ++ [⟨recv, (ps, ← lowerRest inner restTerm), res, effect⟩]
-  return .scheme ((List.range names.length).map Tree.local) fixed bounds rests resolution construct
+  -- Each value binder's declared default, read as the signatures read the
+  -- binders; one no row form represents is left out (a default is a
+  -- proposal of the walk, never part of the contract).
+  let mut defaults : List (Nat × List Tree) := []
+  for b in bs.toList do
+    let n ← str b "name"
+    let d := b.getObjValD "default"
+    if d == .null || packs.contains n then continue
+    let saved ← get
+    try defaults := defaults ++ [(names.idxOf n, ← lowerType inner d)]
+    catch _ => set saved
+  return (.scheme ((List.range names.length).map Tree.local) fixed bounds rests resolution construct, defaults)
 
 /-- A declaration's row: the source meet of its own members with its bases'
 rows (§8.1, heritage). -/
@@ -695,7 +707,10 @@ partial def runJob (job : Job) : M Unit := do
       let required ← required.mapM (lowerType ctx)
       let rest ← rest.mapM (lowerType ctx)
       pure (.clauses [.pack ⟨required, [], rest, false, .dense⟩ []])
-    | .scheme _ ctx term => schemeRow ctx term
+    | .scheme h ctx term => do
+      let (row, defaults) ← schemeRow ctx term
+      if !defaults.isEmpty then setDefaults h defaults
+      pure row
     | .unit _ ctx node => unitRow ctx node
     | .row _ n => rowBody n
   setBody h row

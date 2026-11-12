@@ -28,8 +28,9 @@ function examplesOf(rev: string, text: string): Map<string, Example> {
   const found = new Map<string, Example>();
   const effect = /^Effect:\s*\n((?: {2,}.*\n?|\s*\n)*)/m.exec(text);
   if (!effect) return found;
-  // A line's first field, or "" for a line with none, which no name matches.
-  const names = effect[1].split("\n").map(l => l.trim().split(/\s{3,}/)[0] ?? "").filter(n => n && /^[\w/.-]+$/.test(n));
+  // A line's first field, or "" for a line with none, which no name matches;
+  // an agreement line's first field is the case, then its unit.
+  const names = effect[1].split("\n").map(l => (l.trim().split(/\s{3,}/)[0] ?? "").split(/\s+/)[0] ?? "").filter(n => n && /^[\w/.-]+$/.test(n));
   for (const name of names) {
     for (const r of [rev, `${rev}^`]) {
       const source = at(r, `pipeline/examples/${name}.ts`);

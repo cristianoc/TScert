@@ -77,12 +77,13 @@ structure GraphGuarantee (G : NormalGraph ι) (admits : MixedAssignment ι → P
     ∀ l k, (l, k) ∈ assertions → ∀ j h' ρ', j < n → ReachesIn P j h (.at start ρ) h' (.at l ρ') →
       HeapKnowledge.Holds k ρ' h'
 
-/-- The assignments a checker's acceptance covers: every one for the
-ordinary checker, a qualified body's admitted instances for its checker. -/
+/-- The assignments a pass checker's acceptance covers: every one for the
+ordinary checker, a qualified body's admitted instances for its checker
+(`SinglePass.PassChecker.qualified` at the body's subtyping). -/
 inductive CheckerScope (G : NormalGraph ι) (I : InstanceImageCheck G) :
-    Checker G I → (MixedAssignment ι → Prop) → Prop where
-  | ordinary : CheckerScope G I (Checker.ordinary G I) (fun _ => True)
-  | qualified (q : QualifiedBody G I) : CheckerScope G I q.checker q.Admits
+    SinglePass.PassChecker G I → (MixedAssignment ι → Prop) → Prop where
+  | ordinary : CheckerScope G I .ordinary (fun _ => True)
+  | qualified (q : QualifiedBody G I) : CheckerScope G I (.qualified q.body q.ordinary) q.Admits
 
 /-! ## A call of the pass -/
 
@@ -94,6 +95,7 @@ structure RunCall (G : NormalGraph ι) (I : InstanceImageCheck G) where
   P : Program
   claims : List (CertificateProducer.PointClaim ι)
   start : Nat
+  inputs : List (Ty ι)
   goal : Goal ι
   assertions : List (Nat × HeapKnowledge.Knowledge)
   cuts : List Nat
@@ -103,7 +105,7 @@ structure RunCall (G : NormalGraph ι) (I : InstanceImageCheck G) where
   known : List (ProgramCertificates.Evidence ι)
   codes : CodeEntry ι → Bool
   aliases : List (ι × ι)
-  checker : Checker G I
+  passChecker : SinglePass.PassChecker G I
   answers : Answered G
   reference : Array HeapKnowledge.Knowledge
   debugNode : Nat
@@ -116,16 +118,15 @@ structure RunCall (G : NormalGraph ι) (I : InstanceImageCheck G) where
   observe : Option Nat
   tracing : Bool
   observeEntry : Bool
-  selectChecks : Bool
   regional : Option SinglePass.Regional
 
 /-- The call's result. -/
 def RunCall.result {G : NormalGraph ι} {I : InstanceImageCheck G} (c : RunCall G I) :
     SinglePass.Outcome ι × SinglePass.Counts × Answered G × SinglePass.Trace :=
-  SinglePass.run G I c.pool c.fuel c.P c.claims c.start c.goal c.assertions c.cuts c.candidates
-    c.entryIndices c.suggestions c.known c.codes c.aliases c.checker c.answers c.reference c.debugNode
+  SinglePass.run G I c.pool c.fuel c.P c.claims c.start c.inputs c.goal c.assertions c.cuts c.candidates
+    c.entryIndices c.suggestions c.known c.codes c.aliases c.passChecker c.answers c.reference c.debugNode
     c.bound c.givenImplies c.givenArgs c.ensures c.givenInputs c.entrySeparation c.observe c.tracing
-    c.observeEntry c.selectChecks c.regional
+    c.observeEntry c.regional
 
 /-- The call accepted, leaving the answers `after`. -/
 def RunCall.Accepts {G : NormalGraph ι} {I : InstanceImageCheck G} (c : RunCall G I) (after : Answered G) : Prop :=
@@ -141,20 +142,22 @@ def StartContext (claims : List (CertificateProducer.PointClaim ι)) (start : Na
   (claims[start]?).map (·.context) = some inputs
 
 /-- **The graph-level hypothesis** (the tolerant-frames lane's target): an
-accepted call of the pass, whose checker covers `admits`, whose start claim
-states `inputs`, run with sound codes and with the read summaries it leaves
-sound, and with each region's entry field condition, guarantees what its
-options ask (`GraphGuarantee`). Every other argument is a free proposal: the
-candidates, given implications, arguments and inputs, known evidence, cached
-answers, reference and pool are arbitrary. -/
+accepted call of the pass, whose checker covers `admits`, run with sound
+codes and with the read summaries it leaves sound, and with each region's
+entry field condition, guarantees what its options ask (`GraphGuarantee`)
+from every entry meeting the inputs it is given. The pass checks the start's
+context against those inputs itself (`SinglePass.entryRefusal`). Every
+other argument is a free proposal: the candidates, given implications,
+arguments and inputs, known evidence, cached answers, reference and pool are
+arbitrary. -/
 def RunSound (ι : Type) [Labels ι] : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : RunCall G I) (after : Answered G)
-    (admits : MixedAssignment ι → Prop) (inputs : List (Ty ι)),
-    c.Accepts after → CheckerScope G I c.checker admits → StartContext c.claims c.start inputs →
+    (admits : MixedAssignment ι → Prop),
+    c.Accepts after → CheckerScope G I c.passChecker admits →
     ProgramCertificates.CodesSound G c.codes → ProgramCertificates.SummariesSound G I after.summaries.toList →
     (∀ Φ regions exc, regionOf c.regional = some (Φ, regions, exc) →
-      GraphCode.ArgumentPathTracking.checkEntryFields G inputs regions = true) →
-    GraphGuarantee G admits c.P c.start c.goal inputs c.entrySeparation c.entryIndices c.assertions c.bound
+      GraphCode.ArgumentPathTracking.checkEntryFields G c.inputs regions = true) →
+    GraphGuarantee G admits c.P c.start c.goal c.inputs c.entrySeparation c.entryIndices c.assertions c.bound
       c.ensures (regionOf c.regional)
 
 /-- **The pass keeps the read summaries it was given**: every summary of
