@@ -1371,26 +1371,91 @@ of `TolerantFramesRunSound.lean`, quantified over every call the premises of
 ## Open premises
 
 The graph theorem `run_sound_single_pass`
-(`TolerantFramesSinglePassSound.lean`) has five hypotheses:
+(`TolerantFramesSinglePassSound.lean`) has exactly four hypotheses, with
+`exitsYield_of_yields` composing them into `ExitsYield`. Each quantifies over
+`G`, `I`, a call `c`, `after`, `admits`, `RunPremises G I c after admits`,
+and a walk `r` with `WalkChecked c r`. The three yield premises additionally
+quantify over each admitted reassignment `η`, visited label `l` with proof
+`hl`, and execution site `s : ExitChecks.Site c r l hl`.
 
-```math
-\mathrm{DirectKeepsSummaries} \wedge \mathrm{SearchKeepsSummaries} \wedge \mathrm{ExitsYield} \wedge \mathrm{RegionsRecorded} \wedge \mathrm{RegionsTyped} \Longrightarrow \mathrm{RunSound}
+| Premise | Statement | Consumed by |
+| --- | --- | --- |
+| `startWrittenSound` | `ExitChecks.StartWrittenImpliesStated r`: for every environment and heap, holding `startWritten (r.stated c.start) c.entryIndices c.entrySeparation` implies holding `(r.stated c.start).getD {}`. | `headEntries_of_checked` |
+| `yieldSourcesJudged` | Every `ys` with `ExitYieldSource s.env l s.en s.sd s.sd.yields ys` satisfies `ExitYieldsJudged` at `reassign G η`, the recorded walk and node, and the input names `List.range c.inputs.length`. | Head and non-head exit extraction |
+| `initialYieldsJudged` | `s.ysA` satisfies the same `ExitYieldsJudged` judgment. | `exitChecks_here` |
+| `realization` | `ExitChecks.Realization s η`: every judged yield list holds in every final state admitted by `AfterStep` for the recorded node's yields and `s.sd.outFresh`. | `nodeExitsY_of_checks` |
+
+`ExitYieldsJudged` quantifies over every initial environment and mark.
+`run_sound_single_pass_of_exits` proves `ExitsYield → Target.RunSound`;
+setup, exit widths, subtype answers, summary prefixes, and regional recording
+and typing are supplied by the proofs listed below.
+
+`regionalFacts_holds` proves that the union holds when both sources hold.
+`regionalSeparation_recover` recovers the step separation from that union
+for facts with partners. `visitStep_separation_partners` establishes this
+condition, and `visitStep_regional_relations` supplies the relational part
+of `regionalStepBridge` from successful `visitStep`.
+
+`regionalAt_header` proves the following readback shape from the
+`regionalHeaderChecked` check in `regionalAt`, with `c = env.claimed[l]!`:
+
+```lean
+regionalAt G I env l en sd rg answers regionIn = .ok done →
+  sd.st.stepDeriv = none →
+  sd.st.stepEffect.bind HeapExpressionRules.StepEvidence.proof? = some p →
+  (claim p).context = c.context ∧ (claim p).type = c.type
 ```
 
-| Premise | Obligation | Consumed by |
-| --- | --- | --- |
-| `DirectKeepsSummaries` | Every summary returned by `directCall` is sound when its input summaries are sound. `keepSummaries` preserves the input prefix; soundness also requires checking every appended summary. This preservation theorem is not proved. | `visitsSettle_of` |
-| `SearchKeepsSummaries` | Every summary returned by `expressionEffectUsing` is sound when its input summaries are sound. Preservation through the search's operations is not proved. | `visitsSettle_of` |
-| `ExitsYield` | Each checked node's normal exits and handler deliver `NodeExitsY` at every admitted reassigned graph. `exitsYield_of_yields` in `TolerantFramesExitStructural.lean` composes the structural checks under the yield judgments, final-world realization and start-projection premise stated below. | `nodesYield_of`, then `stepEdgesSound_of_yields` |
-| `RegionsRecorded` | The graph's regional tables agree with the tables each visit checks, satisfy the initial regional facts, and admit each predecessor's established facts at its target. Each `RegionalDone` contains its tables and evidence; each label records its region state. The graph-wide agreement proof is not established. | `regionsHeld_of` |
-| `RegionsTyped` | Every visited node's regional evidence has its context and is typed at every admitted reassigned graph. `regionsTyped_of_tree` proves the tree-checked case, and `regionalTyped_copy` proves the copy case. The `requiresTree` case needs the evidence's `regionalFacts` to supply both the entry facts and `stepK`. | `regionsHeld_of` |
+The `RegionalStepBridge` premise includes the successful regional check.
+`RecInv.regionalWitness` supplies that equation; the visit tables carry it
+to `regionsTyped_of_visitTables`, which applies `regionalStepBridge`.
 
-The proved `exitsYield_of_yields` uses `yieldSourcesJudged` for every
-`ExitYieldSource s.env l s.en s.sd s.sd.yields ys` (the same premise supplies
-`exitCachesJudged`), `initialYieldsJudged` for `s.ysA`, and
-`ExitChecks.Realization s η`, all at each admitted reassigned graph.
-It also requires `ExitChecks.StartWrittenImpliesStated r`:
-`∀ ρ h, HeapKnowledge.Holds (startWritten (r.stated c.start) c.entryIndices c.entrySeparation) ρ h → HeapKnowledge.Holds ((r.stated c.start).getD {}) ρ h`.
+`RegionalRecordedReadback` and `RegionalRecordedTableAgreement` supply
+one retained visit per visited label, together with its record, summary prefix
+and table facts. `RegionalVisitEvidence` and `RegionalWalkAlignment` use the
+same existential shape. `regionalVisitTables_of_recordedAgreement` applies
+`checkedWalk_nodeAlignment` to that witness's record; `RegionalVisitTables`
+and `regionsRecorded_of_visitTables` consume the resulting existential check.
+`regionalRecordedReadback` proves readback from the retained regional check.
+`regionalRecordedTableAgreement` composes it with the head and non-head bounds
+on recorded states. `RegionBelow` means containment in each of the provenance,
+value, cell and field lists.
+
+The own-entry equality is proved for every successful matching visit.
+`regionalAt_own_no_self` handles labels without self-edges.
+`returnedWalk_self_head` proves that a visited self-edge targets a head,
+using the one-edge cycle case of `passHeads_cuts`.
+`regionalAt_head_target` proves that its sparse entry is the supplied head
+state. `regionalAt_own_head` uses the successful `checkNode`'s `cellsKept`
+and `fieldsKept` checks to prove that the cell and field filters preserve
+that state. The field check reads the selected proof's context;
+`regionalAt_entry_header` identifies it with the source claim's context
+using `regionalAt_header` and the successful derivation check.
+
+`returnedWalk_regional_no_start` proves start-target exclusion from setup.
+`SinglePass.setup` rejects every continuation or handler edge into the start
+when regional checking is enabled (`SinglePass.lean:2066–2069`). The start's
+fixed regional entry therefore needs no third target case in accepted runs.
+
+For non-head targets, `sparseFold_pick` and `sparse_region_target` prove
+that all four projections select the same last target occurrence, including
+duplicate targets. `regionalFold_retains_target` proves retention of each
+in-bounds non-head target's established state. `regionalAt_nonhead_target`
+therefore proves `regionalTableState done t ∈ done.regionIn[t]!` when
+`t < env.n`, `t < incoming.size`, and `t` is a non-head target.
+`RecInv.regionalInputReadback` combines this with
+`RecInv.regionalInputWitness` for the invariant's chosen actual visit.
+`regionalRecorded_nonhead_of_inputs` combines retention with
+`RecInv.regional_nonhead_bound` to obtain the final target-state bound.
+
+`RecInv.regionSizes` states `σ.regionIn.size = env.n`.
+`SetupOk.recInv` proves it at setup; `regionalFold_size`, `regionalAt_size`
+and `visitExits_regionSize` prove preservation, carried by
+`VisitFacts.regionSizes` and `recInv_visit`. `RegionalOrigin` retains
+`before.regionIn.size = env.n` in the same existential as the visit and
+its input retention. `RecInv.regionalInputWitness` exposes this equality,
+so `RecInv.regionalInputReadback` needs no input-array bound premise.
+
 `Site.start_given` identifies the start's given contract as `startWritten`
 with the supplied index facts. `Site.head_written_coherent` uses that
 contract as the start's base under this semantic projection hypothesis;
@@ -1428,6 +1493,68 @@ Proved prerequisites:
   `ExitTyped` checks from the pass's returned state and `SinglePass.ExitTyped`
   tag. `ExitYieldSource.judged` justifies computed yields when their summary
   table is sound; `assertionExit_checked` exposes the written assertion check.
+- `WalkChecked` carries the returned driver's record and each chosen node's
+  equality with its stored step. `SettledCore.node` and `RecordsChecked`
+  supply the step equality in the same existential as the node checks.
+  `checkedWalk_final` proves the final invariant, start visit, regional
+  configuration and summary soundness; `checkedWalk_nodeAlignment` proves
+  the claim, node, entry and step equalities.
+- `RecInv.regionalOrigins` retains a successful visit, its record and summary
+  prefix, equality of its incoming list with the current list at a visited
+  non-head, and inclusion of its exit table in the current incoming table.
+  `SetupOk.recInv` proves the empty case; `recInv_visit` proves preservation
+  from `VisitFacts.regionFrame`, `regionMono` and `regionalOrigin`.
+  `regionalAt_inputs` and `visitExits_inputs` prove the frame and inclusion
+  properties; `RecInv.regionalInputWitness` supplies them with the regional check.
+- `regionalAt_state` proves equality of entry provenance and values and
+  containment of cells and fields. `RecInv.regional_nonhead_bound` combines
+  the frozen input list with `meet_sub`; `RecInv.regional_head_bound` bounds
+  the recorded state by the supplied head state. `returnedWalk_successor_visited`
+  proves successor and handler visits from acceptance; `setup_regional_no_start`
+  proves the setup's exclusion of edges into the start. `regionalAt_names`
+  proves agreement of field names.
+- `VisitOrigin` carries the exit summaries' prefix of the driver's table.
+  `recInv_visit` preserves it; `SetupOk.recInv` establishes its empty initial
+  case. `visitExits_answers_prefix` proves preservation at the visit boundary,
+  and `visitExits_regional_prefix` relates the regional check to the exits.
+  `RecInv.regionalWitnessSound` supplies sound summaries for the actual
+  recorded visit. `regionalVisitTables_of_recordedAgreement` uses that witness.
+- The stronger, universally quantified `RegionalWalkAlignment` follows from
+  `RegionalVisitEvidence` by `regionalWalkAlignment`. That local premise
+  requires the regional-summary prefix and table agreement for **every**
+  matching visit, including visits from arbitrary `before` states. The
+  origin invariant supplies a witness with a prefix; it does not establish
+  that universal prefix statement. The graph theorem uses the actual witness.
+- `RecInv.origins` retains each visited label's complete successful visit;
+  `VisitFacts.origin`, `recInv_visit` and `SetupOk.recInv` establish its
+  preservation and initial case. `exitsFold_regional` preserves the complete
+  regional result; `RecInv.regionalWitness` recovers its check and stored state.
+  `recordedRegion_at` reads the four components from the recorded graph tables.
+- `expandedLinks_recover` and `regionalLinks_recover` recover the original
+  links from expansion. `visitStep_separation_partners` proves that step
+  separation facts have partners; `separation_union_right` recovers them
+  through normalization, and `regionalSeparation_recover` isolates the
+  discarded-depth branch.
+
+- `exitStepPrefix` (`TolerantFramesVisitSummaries.lean`) proves summary-prefix
+  preservation through `exitTypes`, nested `mixedContext` folds, head checks,
+  assertion checks and `exitStep`. `visitStepPrefix_of_exitStep` supplies
+  the step-summary premise of `visitsSettle_of`.
+- `regionalAt_checks` (`TolerantFramesRegionalRecorded.lean`) identifies
+  `RegionalDone.cEv` with `passRegionalEvidence` at `regionalFacts kHere stepK`
+  and extracts both accepted checks over the returned table and fresh tables.
+  `visitResult_region` identifies the state stored at the label.
+  `regionalAt_start` proves entry provenance and empty freshness at the start;
+  `regionsRecorded_of_visitTables` transfers this to the graph tables.
+- `regionalFacts_holds` (`TolerantFramesRegionalFacts.lean`) proves that the
+  combined knowledge holds when both sources hold. `regionNodeEntry_checked`
+  supplies those sources from a checked node's entry state and step.
+  `passRegionalEvidenceOf` uses this combined knowledge.
+- `stepChecked_safe` and `regionalTyped_of_step`
+  (`TolerantFramesRegionalTyping.lean`) type the step-only evidence under
+  knowledge recovery and header alignment. `regionalTyped_of_derivation`
+  covers both accepted derivation checks. `regionsTyped_of_visitTables`
+  connects these local results to visited nodes at admitted reassignments.
 
 
 The start-projection leaf is not established by the pass:

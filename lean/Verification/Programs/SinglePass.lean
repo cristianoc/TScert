@@ -1234,6 +1234,15 @@ def regionalDerivChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (c
   | some d => derivChecked G images codes sums c node stepK d
   | none => true
 
+/-- **The step evidence's header** where the regional evidence is typed by
+the step's proof (no derivation, a proof `p` in the step evidence): `p`'s
+claim at the node's context and type. -/
+def regionalHeaderChecked (c : PointClaim ι) (deriv : Option (ProgramCertificates.Evidence ι))
+    (effect : Option (HeapExpressionRules.StepEvidence ι)) : Bool :=
+  match deriv, effect.bind HeapExpressionRules.StepEvidence.proof? with
+  | none, some p => decide ((ProgramCertificates.claim p).context = c.context ∧ (ProgramCertificates.claim p).type = c.type)
+  | _, _ => true
+
 /-- **A node's step within a footprint bound** (`GraphCode.nodeChecked`),
 at a node outside the region from which no normal return is possible: the
 step within `Φ` (`ExpressionEffects.check`, `writeWithin`, `initWriteWithin`,
@@ -2625,15 +2634,15 @@ def yieldsAtSlots (names : List Nat) (ys : List (PromiseCalls.Yield ι)) : List 
 
 /-- **The regional evidence's entry facts**: the entry's whole
 materialization `kHere` together with the step's facts `stepK`, each list
-`kHere`'s then `stepK`'s others, the separations joined where both are at
-one depth or `stepK`'s is empty (`HeapSeparation.union`), `kHere`'s
-otherwise; every fact of `kHere` kept. -/
+`kHere`'s then `stepK`'s others; the separations joined
+(`HeapSeparation.union`): both where they are at one depth, the other where
+one is empty, `stepK`'s otherwise, so every separation fact of the step's
+derivation check is stated. -/
 def regionalFacts (kHere stepK : Knowledge) : Knowledge :=
   { cells := kHere.cells ++ stepK.cells.filter (!kHere.cells.contains ·)
     values := kHere.values ++ stepK.values.filter (!kHere.values.contains ·)
     links := kHere.links ++ stepK.links.filter (!kHere.links.contains ·)
-    separation := if kHere.separation.depth == stepK.separation.depth || stepK.separation.facts.isEmpty
-      then HeapSeparation.union kHere.separation stepK.separation else kHere.separation
+    separation := HeapSeparation.union kHere.separation stepK.separation
     elems := kHere.elems ++ stepK.elems.filter (!kHere.elems.contains ·)
     indices := kHere.indices ++ stepK.indices.filter (!kHere.indices.contains ·) }
 
@@ -2664,6 +2673,8 @@ def regionalAt (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkE
   let kHere := (materialize en.entry width (List.range width) true).1
   if !regionalDerivChecked G images env.codes sums c node st.stepK st.stepDeriv then
     .error s!"store regions at node {l}: its derivation"
+  else if !regionalHeaderChecked c st.stepDeriv st.stepEffect then
+    .error s!"store regions at node {l}: its step evidence"
   else
     let cEv : NodeEvidence ι := ⟨ordinaryEv, some ⟨c.context, node.expression, c.type⟩, [], regionalFacts kHere st.stepK, st.stepEffect, {}, none, [], [], [], none⟩
     let t0 := node.expression

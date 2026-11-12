@@ -39,12 +39,15 @@ structure NodePassChecked {G : NormalGraph ι} {I : InstanceImageCheck G} (c : T
     NodeYieldChecks G I c.codes sums w (List.range c.inputs.length) c.goal c.ensures l r.node r.c r.entry r.st r.ys
 
 /-- **A checked walk**: every visited node has `NodePassChecked`, in one
-no-return region, and `NodeExitTrace` at the same chosen node. -/
+no-return region, and `NodeExitTrace` at the same chosen node. The walk is
+the returned driver record and each chosen step is its label's recorded step. -/
 def WalkChecked {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) (r : RunWalkA G I c) :
     Prop :=
   ∃ dead, (∀ l (hl : r.w.visited l), NodePassChecked c dead (r.node l hl) ∧ NodeExitTrace c r.edgesIn (r.node l hl)) ∧
     r.given = passHeads c ∧
-    ∀ t, r.given t = false → 2 ≤ (r.w.incoming t).length → (passMerging c)[t]! = true
+    (∀ t, r.given t = false → 2 ≤ (r.w.incoming t).length → (passMerging c)[t]! = true) ∧
+    ∃ σ reach, RunCall.walk c = .ok (σ, reach) ∧ r.w = ofPass σ.walk (passHeads c) ∧
+      ∀ l (hl : r.w.visited l), (σ.walk.labels[l]?).bind (·.stepped) = some (r.node l hl).st
 
 /-- A checked walk uses the setup's head table. -/
 theorem WalkChecked.givenAgreement {G : NormalGraph ι} {I : InstanceImageCheck G}
@@ -55,7 +58,7 @@ theorem WalkChecked.givenAgreement {G : NormalGraph ι} {I : InstanceImageCheck 
 theorem WalkChecked.mergingOfIncoming {G : NormalGraph ι} {I : InstanceImageCheck G}
     {c : Target.RunCall G I} {r : RunWalkA G I c} (h : WalkChecked c r) :
     ∀ t, r.given t = false → 2 ≤ (r.w.incoming t).length → (passMerging c)[t]! = true :=
-  h.choose_spec.2.2
+  h.choose_spec.2.2.1
 
 variable (ι) in
 /-- **(Named hypothesis) An accepted call records a checked walk**: an

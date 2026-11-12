@@ -793,7 +793,6 @@ run_cmd do
   check ``Verification.TolerantFrames.returnsEnsured_of_walk
   check ``Verification.TolerantFrames.run_sound_checked
   check ``Verification.TolerantFrames.run_traversedC
-  check ``Verification.TolerantFrames.run_sound_single_pass
   check ``Verification.TolerantFrames.run_sound_pass
 
   -- Leg 17b: the walk side of the graph theorem (TolerantFramesMergeExits, TolerantFramesMergeNearRounds)
@@ -1061,8 +1060,29 @@ run_cmd do
   check ``Verification.TolerantFrames.visB_replicate
   check ``Verification.TolerantFrames.SetupOk.recInv
   check ``Verification.TolerantFrames.setupRecords_of
-  check ``Verification.TolerantFrames.subtypeAnswersSound
+  check ``Verification.TolerantFrames.sumsPrefix_keep
+  check ``Verification.TolerantFrames.stepChecked_of_final
+  check ``Verification.TolerantFrames.sumsPrefix_fold
+  check ``Verification.TolerantFrames.stepYields_prefix
+  check ``Verification.TolerantFrames.returnRun_prefix
+  check ``Verification.TolerantFrames.stepYields_prefix_of
+  check ``Verification.TolerantFrames.visitStep_prefix
+  check ``Verification.TolerantFrames.exitsYields_prefix
+  check ``Verification.TolerantFrames.diffSubtypes_prefix
+  check ``Verification.TolerantFrames.impliesHeld_prefix
+  check ``Verification.TolerantFrames.headImplies_prefix
+  check ``Verification.TolerantFrames.keepSummaries_table
+  check ``Verification.TolerantFrames.checkedStep_prefix
+  check ``Verification.TolerantFrames.visitStep_input_prefix
+  check ``Verification.TolerantFrames.exitsFold_prefix
+  check ``Verification.TolerantFrames.visitExits_prefix
+  check ``Verification.TolerantFrames.visitStepPrefix_of_exitStep
   check ``Verification.TolerantFrames.subtypeAnswersAll
+  check ``Verification.TolerantFrames.regionalTyped_of_requires
+  check ``Verification.TolerantFrames.regionalTyped_of_derivation
+  check ``Verification.TolerantFrames.regionalAt_checks
+  check ``Verification.TolerantFrames.visitResult_region
+  check ``Verification.TolerantFrames.subtypeAnswersSound
   check ``Verification.TolerantFrames.exitStep_mappingWidth
   check ``Verification.TolerantFrames.exitsFold_mappingWidth
   check ``Verification.TolerantFrames.exitsWidth
@@ -1098,6 +1118,47 @@ run_cmd do
 
 -- Head and handler exit extraction.
 -- Non-head exit extraction and the incoming-array witnesses it consumes.
+
+  check ``Verification.TolerantFrames.mixedContext_prefix
+  check ``Verification.TolerantFrames.exitTypes_prefix
+  check ``Verification.TolerantFrames.headExit_prefix
+  check ``Verification.TolerantFrames.assertionExit_answers
+  check ``Verification.TolerantFrames.exitStepPrefix
+  check ``Verification.TolerantFrames.separation_union_holds
+  check ``Verification.TolerantFrames.regionNodeEntry_checked
+  check ``Verification.TolerantFrames.stepChecked_safe
+  check ``Verification.TolerantFrames.regionalTyped_of_step
+  check ``Verification.TolerantFrames.regionalAt_start
+  check ``Verification.TolerantFrames.regionsRecorded_of_visitTables
+  check ``Verification.TolerantFrames.regionsTyped_of_visitTables
+  check ``Verification.TolerantFrames.regionalStepFacts_of_relations
+
+  check ``Verification.TolerantFrames.expandedLinks_recover
+  check ``Verification.TolerantFrames.regionalJoin_right
+  check ``Verification.TolerantFrames.regionalLinks_recover
+  check ``Verification.TolerantFrames.separation_norm_recover
+  check ``Verification.TolerantFrames.separation_union_right
+  check ``Verification.TolerantFrames.separation_norm_partners
+  check ``Verification.TolerantFrames.materialize_separation_partners
+  check ``Verification.TolerantFrames.visitStep_separation_partners
+  check ``Verification.TolerantFrames.exitTypes_regional
+  check ``Verification.TolerantFrames.headExit_regional
+  check ``Verification.TolerantFrames.assertionExit_regional
+  check ``Verification.TolerantFrames.exitStep_regional
+  check ``Verification.TolerantFrames.exitsFold_regional
+  check ``Verification.TolerantFrames.visitExits_regionalCheck
+  check ``Verification.TolerantFrames.RecInv.regionalWitness
+  check ``Verification.TolerantFrames.recordedRegion_at
+  check ``Verification.TolerantFrames.regionalVisitTables
+
+  check ``Verification.TolerantFrames.visitExits_regional_prefix
+  check ``Verification.TolerantFrames.visitExits_answers_prefix
+  check ``Verification.TolerantFrames.checkedWalk_final
+  check ``Verification.TolerantFrames.checkedWalk_nodeAlignment
+  check ``Verification.TolerantFrames.RecInv.regionalWitnessSound
+  check ``Verification.TolerantFrames.regionalWalkAlignment
+  check ``Verification.TolerantFrames.regionalVisitTables_of_recordedAgreement
+
 open Lean Elab Command in
 run_cmd do
   let standard := [``propext, ``Classical.choice, ``Quot.sound]
@@ -1127,6 +1188,32 @@ run_cmd do
   check ``Verification.TolerantFrames.ExitChecks.exitChecks_nonHead
 
 -- Setup allocation, incoming multiplicities, and extraction from recorded implications.
+  check ``Verification.TolerantFrames.exitTypes_regionIn
+  check ``Verification.TolerantFrames.headExit_regionIn
+  check ``Verification.TolerantFrames.assertionExit_regionIn
+  check ``Verification.TolerantFrames.exitStep_regionIn
+  check ``Verification.TolerantFrames.exitsFold_regionIn
+  check ``Verification.TolerantFrames.regionIn_modify_mono
+  check ``Verification.TolerantFrames.regionalFold_inputs
+  check ``Verification.TolerantFrames.regionalFold_entries
+  check ``Verification.TolerantFrames.sparseFold_frame
+  check ``Verification.TolerantFrames.sparse_own
+  check ``Verification.TolerantFrames.regionalAt_inputs
+  check ``Verification.TolerantFrames.visitExits_inputs
+  check ``Verification.TolerantFrames.setup_regional_no_start
+  check ``Verification.TolerantFrames.visitExits_regionalInputs
+  check ``Verification.TolerantFrames.RecInv.regionalInputWitness
+  check ``Verification.TolerantFrames.RegionBelow.trans
+  check ``Verification.TolerantFrames.regionalAt_state
+  check ``Verification.TolerantFrames.regionalAt_names
+  check ``Verification.TolerantFrames.RecInv.regional_nonhead_bound
+  check ``Verification.TolerantFrames.RecInv.regional_head_bound
+  check ``Verification.TolerantFrames.RecInv.successor_visited
+  check ``Verification.TolerantFrames.sparse_region_own
+  check ``Verification.TolerantFrames.regionalAt_own_no_self
+  check ``Verification.TolerantFrames.returnedWalk_successor_visited
+  check ``Verification.TolerantFrames.regionalRecordedTableAgreement
+
 open Lean Elab Command in
 run_cmd do
   let standard := [``propext, ``Classical.choice, ``Quot.sound]
@@ -1170,8 +1257,6 @@ run_cmd do
     for axiom_ in ← liftCoreM <| collectAxioms decl do
       unless standard.contains axiom_ do
         throwError "{decl} depends on the axiom {axiom_}"
-  check ``Verification.TolerantFrames.ExitChecks.handlerRecords_of_checked
-  check ``Verification.TolerantFrames.handlerExit_delivers
   check ``Verification.TolerantFrames.exitsYield_of_yields
 
 -- Start contracts and their semantic projection to written assertions.
@@ -1185,9 +1270,27 @@ run_cmd do
   check ``Verification.TolerantFrames.startWritten_projection_counterexample
   check ``Verification.TolerantFrames.ExitChecks.Site.start_given
   check ``Verification.TolerantFrames.ExitChecks.Site.head_written_coherent
-  check ``Verification.TolerantFrames.ExitChecks.headEntryContract_of_checked
-  check ``Verification.TolerantFrames.ExitChecks.headEntryContract_nonstart
-  check ``Verification.TolerantFrames.ExitChecks.headEntries_of_checked
-  check ``Verification.TolerantFrames.headExit_delivers
-  check ``Verification.TolerantFrames.handlerExit_delivers
-  check ``Verification.TolerantFrames.exitsYield_of_yields
+  check ``Verification.TolerantFrames.sparseFold_pick
+  check ``Verification.TolerantFrames.sparse_region_target
+  check ``Verification.TolerantFrames.regionalFold_retains_target
+  check ``Verification.TolerantFrames.regionalAt_nonhead_target
+  check ``Verification.TolerantFrames.regionalAt_head_target
+  check ``Verification.TolerantFrames.regionalAt_entry_header
+  check ``Verification.TolerantFrames.regionalAt_own_head
+  check ``Verification.TolerantFrames.returnedWalk_setup
+  check ``Verification.TolerantFrames.returnedWalk_setup_inv
+  check ``Verification.TolerantFrames.returnedWalk_self_head
+  check ``Verification.TolerantFrames.returnedWalk_regional_no_start
+  check ``Verification.TolerantFrames.RecInv.regionalInputReadback
+  check ``Verification.TolerantFrames.regionalRecorded_nonhead_of_inputs
+  check ``Verification.TolerantFrames.regionalRecordedReadback
+  check ``Verification.TolerantFrames.regionalFold_size
+  check ``Verification.TolerantFrames.regionalAt_size
+  check ``Verification.TolerantFrames.visitExits_regionSize
+  check ``Verification.TolerantFrames.visitStep_regional_relations
+  check ``Verification.TolerantFrames.regionalFacts_holds
+  check ``Verification.TolerantFrames.regionalSeparation_recover
+  check ``Verification.TolerantFrames.regionalStepBridge
+  check ``Verification.TolerantFrames.run_sound_single_pass_of_exits
+  check ``Verification.TolerantFrames.run_sound_single_pass
+  check ``Verification.TolerantFrames.regionalAt_header

@@ -234,9 +234,9 @@ theorem ExitChecks.extraction_of_fields
 /-- The exit obligation from the explicit local extraction premise. -/
 theorem exitsYield_of_checks (checks : ExitChecks.Extraction ι) : ExitsYield ι := by
   intro G I c after admits hp r hchecked η ha ρ0 m l hl
-  obtain ⟨dead, hnodes, hgiven, hmerging⟩ := hchecked
+  obtain ⟨dead, hnodes, hgiven, hmerging, hrecord⟩ := hchecked
   obtain ⟨s⟩ := ExitChecks.site_of_trace (hnodes l hl).2
-  obtain ⟨hc, hf, hr⟩ := checks G I c after admits hp r ⟨dead, hnodes, hgiven, hmerging⟩ η ha l hl s
+  obtain ⟨hc, hf, hr⟩ := checks G I c after admits hp r ⟨dead, hnodes, hgiven, hmerging, hrecord⟩ η ha l hl s
   have hsums := (r.node l hl).hstep.summaries (r.node l hl).sums
   have hcodes := codesSound_reassign hp.2.2.1 η
   exact nodeExitsY_of_checks η hc hf (r.node l hl).hshape (r.node l hl).wf
