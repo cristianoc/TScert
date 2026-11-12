@@ -515,13 +515,12 @@ invocation states a bound $`\Phi`$ (`SinglePass.lean` 1416–1451), the pass
 evaluates at a node with sequent $`j`$, step knowledge $`k_S`$ (`stepK`), step
 derivation $`d`$ (`stepDeriv`) and fresh receiver slots $`F`$:
 `passWrites` (`writes`, 1431–1432: `writeWithin` or `initWriteWithin` at
-$`\Phi`$), `passDerivChecked` (`derivChecked`, 1427–1430: $`d`$ claimed at the
-node's term, its tree accepted by `checkTreeUsing` or by `requiresTree` at
+$`\Phi`$), `passDerivChecked` (`derivChecked`: $`d`$ claimed at the
+node's term and context, its tree accepted by `checkTreeUsing` or by `requiresTree` at
 $`k_S`$), `passWithin` (`within`, 1433–1435: an inspection, `passWrites`,
 `selectedWithinAt Φ F d` with `passDerivChecked`, or a type no value has) and
 `passThrows` (`throws`, 1443–1446, its first disjunct, which bounds no
-throw, left out). Proved, for $`\mathrm{FreshOk}\ F\ b\ \rho`$ and
-`DerivContext` (below):
+throw, left out). Proved, for $`\mathrm{FreshOk}\ F\ b\ \rho`$:
 
 - `pass_within_normal`: `passWithin` ⟹ the normal exit is within $`\Phi`$ on
   the locations below $`b`$ from the node's entry heap:
@@ -537,11 +536,10 @@ throw, left out). Proved, for $`\mathrm{FreshOk}\ F\ b\ \rho`$ and
   `writeWithin` premise discharged at $`c=\Phi`$, the initialisation write
   included.
 
-**`DerivContext`** (a named hypothesis, where `selectedWithinAt` holds): the
-claim of $`d`$ is at the node's context. `passDerivChecked` compares the
-claim's term only (`SinglePass.lean` 1428); the selected signature's
-soundness (`selected_sound`, `requiresTree_sound`) is stated at the claim's
-context. A conjunct `(claim deriv).context == c.context` there discharges it.
+**The derivation's context.** `passDerivChecked`, as `footprintCheck`'s
+`derivChecked`, compares the claim of $`d`$ with the node's term and context;
+the selected signature's soundness (`selected_sound`, `requiresTree_sound`)
+is stated at the claim's context, so it holds at the node's.
 
 What the check does not give:
 
@@ -657,7 +655,7 @@ fresh name), separate from the meaning:
 | Conjunct | States | Kept by |
 | --- | --- | --- |
 | `store` | the store's well-formedness `StoreWF`: live facts canonical (`Atom.canon`); each fact the index lists under a name live, mentioning that name, listed there once | every insertion and removal (proved: `addRaw_wf`, `remove_wf`, `addBound_wf`, `add_wf`) |
-| `below` | every name of the slots, the facts and $`F`$ is below $`\mathit{next}`$, so a result name is fresh (proved: `StateWF.fresh_result`) | construction (the counter only grows); not proved |
+| `below` | every name of the slots, the facts and $`F`$ is below $`\mathit{next}`$, so a result name is fresh (proved: `StateWF.fresh_result`) | each store operation (proved: the store operations' table below) |
 | `freshHeld` | every fresh name is held by a slot | edges (line 1758 filters the names an edge drops); a merge keeps a predecessor's name beside its fresh renames (lines 1142–1146), held or not; freshness reads no heap, so the meaning does not need it |
 
 Soundness reads `below` (through `fresh_result`) and `store` (through
@@ -804,31 +802,9 @@ the heap-free facts hold after the step, the output holds at the pushed
 slots and `back` names each slot's value, every fact of the resulting store
 holds (`applyDelta_dropHeap`).
 
-### What the named state's proofs do not cover
+### A merge's equalities
 
-The pass's operations are top-level functions of `SinglePass.lean`
-(`headEntry`, `mergeState`, `checkedStep`, `edgeStoreOf`, `edgeTransfer`,
-`Store.drop`, `Store.dropHeap`); the footprint, return and regional checks
-and the edges' type, head and assertion checks are inline in `run`. Not
-proved:
-
-1. the merge (`mergeState`): every predecessor's `StateHolds` implies the
-   merged state's, at predecessor-specific valuations extended to the fresh
-   names; its equalities are proved (below), its met store, weakest bounds,
-   entailed and guarded facts, fresh intersection and implications are not;
-2. the head entry of a loop head other than the start, and an edge's store
-   and transfer (`edgeStoreOf`, `edgeTransfer`);
-3. `Store.drop`: its soundness is the materialization's elimination
-   (`derivedOf_holds`) plus the alias restatement;
-4. `checkedStep` as a whole: the theorems of the selected output, the
-   preserving steps and the delta take its conditions as the definitions
-   that mirror its code (`passTreeCheck`, `passWholeCheck`, `passWithin`,
-   `passThrows`, `handedSet`), equal by unfolding, with no theorem about
-   `checkedStep` itself;
-5. `StateWF.below` maintained by the operations.
-
-**A merge's equalities**, module
-`lean/Verification/Programs/TolerantFramesMerge.lean`. At a merge
+Module `lean/Verification/Programs/TolerantFramesMerge.lean`. At a merge
 (`SinglePass.mergeState`) a predecessor renaming its name $`x`$ to fresh
 names $`\varphi_1,\dots`$ states each $`\varphi`$ equal to $`x`$ where a slot
 keeps $`x`$, and consecutive fresh names equal (`mergeEqual`, the merge's
@@ -881,12 +857,156 @@ by unfolding the `let`s); the merge theorem reads it there.
   A graph run's footprint is the node judgments composed from the
   invocation entry and stated as the graph's exit posts (`invocation_action`).
 
-## Leg 8: the merge
+## The step
 
-Modules `lean/Verification/Programs/TolerantFramesMergeMirror.lean`,
-`TolerantFramesMergeNames.lean`, `TolerantFramesMergeMeet.lean`,
-`TolerantFramesMergeJoin.lean`, `TolerantFramesMergeHolds.lean` and
-`TolerantFramesStoreOpsDrop.lean`.
+Modules `lean/Verification/Programs/TolerantFramesStepLink.lean`,
+`TolerantFramesStepLinkSound.lean` and `TolerantFramesStepLinkReturns.lean`.
+
+**A step's conditions** (proved: `checkedStep_ok`, by unfolding the pass's
+function). An accepted step of node $`l`$ from the entry state
+$`\mathit{st}_0`$ with result $`r`$ is
+
+- a copy (`copiedOf`): the term is a slot $`i`$ whose context type is the
+  claim's, $`r=\mathit{st}_0.\mathrm{names}[i]`$, the store and the answers
+  unchanged; or
+- a step (`StepAccepted`) at evidence $`e`$, the call layers reading the
+  summaries $`\mathit{sums}_0`$ of the answers after the direct call and the
+  selection those, $`\mathit{sums}`$, after the search: the output
+  $`\mathit{out}=\mathrm{select}\ j\ k_E\ e\ \mathit{sums}`$ at the step's
+  facts $`k_E`$ (`kOf`); the tree check
+  $`\mathrm{passTreeCheck}\ k_E\ \mathit{sums}\ e=\mathrm{some}\ \mathit{pre}`$;
+  the result $`(r,\mathit{fresh}')=\mathrm{resultOf}`$; where
+  $`\mathrm{passPreserving}\ j\ k_E\ e\ \mathit{sums}_0`$, the store
+  $`\mathrm{applyDelta}\ \mathit{st}_0.\mathrm{store}\ \mathit{pairs}\ \mathit{out}`$;
+  otherwise `passWholeCheck` at every fact $`k_W`$, the output
+  $`\mathit{out}'=\mathrm{select}\ j\ k_W\ e\ \mathit{sums}`$ and the store
+  $`\mathrm{applyDelta}\ (\mathit{st}_0.\mathrm{store}.\mathrm{dropHeap}\ (\mathrm{handedSet}\ \mathit{pairs}_W))\ \mathit{pairs}_W\ \mathit{out}'`$.
+
+`StepChecked` is these conditions at some evidence and some answers whose
+summaries are checked where the entry's are: the searches
+(`directCall`, `expressionEffectUsing`) are oracles, and the evidence they
+return is what `select` and the tree check read. Proved:
+`stepChecked_of_step`, an accepted `checkedStep` is `StepChecked` under
+`DirectKeepsSummaries` and `SearchKeepsSummaries` (each search keeps the
+answers' summary table checked).
+
+**The step theorem** (proved: `stepChecked_parts`, `stepChecked_sound`;
+`checkedStep_parts`, `checkedStep_sound` are them at `stepChecked_of_step`).
+Premises: `StepChecked`;
+$`\mathrm{StateHolds}\ \mathit{st}_0\ I\ \mathit{start}\ E`$ at $`\rho,m,s`$;
+`StoreWF` of the entry's store; every name of the entry state, its start
+names and its implications below the fresh counter (`NamesBelow`); the
+entry's names no wider than the context; `EnvOk` of the context at
+$`\rho`$; `CodesSound`; the entry's summaries checked. Conclusion: the
+final summaries checked; `st.stepK` holds at $`\rho`$; $`r`$ an entry name
+with the counter kept, or the counter with the counter advanced; and for
+closed effects $`c_n,c_e`$ (`StepParts`, `StepExits`):
+
+- the local judgment of the node's term with normal post
+  $`c_n\wedge\mathit{st}.\mathrm{stepOut}`$ at $`\mathrm{push}\ v\ \rho`$ and
+  exceptional post $`c_e`$;
+- a run with budget left to a value $`v`$: an action of $`c_n`$, $`v`$ of
+  the claim's type, `st.stepOut` at $`\mathrm{push}\ v\ \rho`$, and
+  $`\mathrm{StateHolds}\ \langle r::\mathit{st}_0.\mathrm{names},\ \mathit{st}.\mathrm{store},\ \mathit{st}_0.\mathrm{fresh}\rangle`$
+  at $`\mathrm{push}\ v\ \rho`$;
+- a raise of $`x`$: an action of $`c_e`$, $`x`$ closed and of the exception
+  family, and $`\mathrm{StateHolds}\ \langle\mathit{st}_0.\mathrm{names},\ \mathit{st}_0.\mathrm{store}.\mathrm{dropHeap}\ \bot,\ \mathit{st}_0.\mathrm{fresh}\rangle`$
+  at $`\rho`$, the store a handler edge starts from.
+
+The effects are $`c_n=\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$,
+$`c_e=\top`$ at a preserving step, $`c_n=c_e=\top`$ at a writing step, and
+$`c_n=c_e=\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$
+at a copy. The footprint check gives a writing step's bound.
+
+**Returns, footprints and reads at a step** (proved):
+
+- `plain_return`, `returnCheck_plain`: the plain goal's check gives a
+  returned value of the claim's type the goal's type;
+- `pass_return_ensures`, `returnCheck_ensures`, `passTracked_names`: where
+  `returnCheck` refuses nothing, the state after the step gives `ensures`
+  at the result and the invocation's entry values;
+- `footprintCheck_sound`, `footprint_exits`, `pass_footprint_exits`: where
+  `footprintCheck` accepts the node, the receiver slots it records fresh
+  hold stores allocated at or past the mark (`FreshOk`, `freshOk_recv`),
+  and each run with budget left keeps the bound $`\Phi`$ from the
+  invocation's entry heap to the heap of its normal exit, and of its throw
+  where a live handler catches it or the bound covers throws;
+- `typedRead_optional_sound`: at a read of a field the slot's type states
+  optional, the output `readFrame k i fld true` holds after the read;
+- `namesBelow_step`, `width_step`: the state after the step is below the
+  next counter, given its store's facts are, and no wider than the pushed
+  context.
+
+## The edge
+
+Modules `lean/Verification/Programs/TolerantFramesEdge.lean`,
+`TolerantFramesNodeEdges.lean`, `TolerantFramesNodeWalk.lean`,
+`TolerantFramesNodeAsserted.lean` and `TolerantFramesComposeEdges.lean`.
+An edge renames slots, never names, so every operation of an edge keeps the
+facts holding at the exit's valuation $`\eta`$. Proved:
+
+- `drop_ok`: `Store.drop` of any names keeps every fact holding;
+- `edgeStore_observed`, `edgeStore_promote`, `edgeBack_ok`: the
+  observation's facts at slot 0 and a branch's promoted truthiness, added by
+  the delta, keep the state holding;
+- `edgeTransfer_ok`: where each target slot is named by the name of the
+  source slot the mapping reads (`MapNamesSound`), the target's state
+  (mapped names, dropped store, kept fresh names, implications naming no
+  dropped name) holds at $`\mathrm{mapEnv}\ \theta\ \rho_x`$;
+- `edge_normal_sound`, `edge_handler_sound`: from the step's normal exit and
+  the observation of its value, or from its throw state, the state
+  `edgeTransfer` builds from `edgeStoreOf` holds at the target's
+  environment; `freshImpl_ok`: where the step's yields hold of its value
+  (`YieldsOk`), the implications a pushed edge states of its result hold;
+- `exitDelivers_of_edge`, `handlerDelivers_of_edge`: an edge into a node
+  other than a loop head delivers that state with its implications, where
+  the walk records it among the target's incoming states;
+  `exitDelivers_head`: an edge into a loop head establishes
+  `HeadEstablishes` (`headEstablishes_of_edge`): the given facts by the head
+  query (`head_query_sound` over the edge's materialized store), the given
+  implications by an implication the edge carries with a type within the
+  given one, the given inputs and the promised input by the slot-name
+  checks;
+- `edgeEvidenceChecked_env`, `checkedEdge_env`: where `edgeEvidenceChecked`
+  accepts the edge search's evidence, the edge's facts holding and its
+  context typing the source environment, the target's context types the
+  mapped environment (the `htc` premise of the exit lemmas);
+- `assertion_query_sound`: the check on an edge into a node stating an
+  assertion gives the assertion at the target's environment;
+- `edgeStoreOf_wf`, `edgeTransfer_wf`, `edgeTransfer_width` (under
+  `MapNamesLength`), `edgeStoreOf_below`, `edgeTransfer_below`: the
+  target's state well-formed, of the mapping's width and below the counter.
+
+`ofNode_flags`: an exit of `Exit.ofNode` observes only where it pushes and
+promotes only where it does not, the premises `hpo` and `hpp` of the exit
+lemmas.
+
+## The store operations
+
+Modules `lean/Verification/Programs/TolerantFramesStoreOps*.lean` and
+`TolerantFramesMergeBelow.lean`. Each operation against the conjuncts of
+`StateWF`: `StoreWF`, the slot and fresh names below the counter, the facts'
+names below the counter (`FactsBelow`). Every cell is proved.
+
+| Operation | `StoreWF` | names, fresh below | facts below |
+| --- | --- | --- | --- |
+| `Store.addRaw`, `remove`, `addBound`, `add` | `addRaw_wf`, `remove_wf`, `addBound_wf`, `add_wf` | unchanged | `addRaw_below`, `remove_below`, `addBound_below`, `add_below`, for a fact below |
+| `applyDelta` | `applyDelta_wf` | slot 0 the result name | `applyDelta_below`, where `back` renames below the counter (`BackBelow`) |
+| `Store.dropHeap` | `dropHeap_cover` | unchanged | `dropHeap_below` |
+| `Store.drop` | `drop_wf` | unchanged | `drop_below` (the eliminations name their inputs' names: `eliminateIndices_named`) |
+| `edgeStoreOf` | `edgeStoreOf_wf` | — | `edgeStoreOf_below` |
+| `edgeTransfer` | `edgeTransfer_wf` | `edgeTransfer_below` | `edgeTransfer_below` |
+| `mergeState` | `mergeState_wf` | `mergeState_wf` | `mergeState_below` |
+| `headEntry` | `headStore_ok` | `headEntry_below` | `headEntry_below` |
+
+`freshHeld` (every fresh name held by a slot) does not hold of a merge: a
+predecessor's fresh name stays beside its fresh renames (`mergeFresh`) when
+no slot of the merge holds it. No proof reads it.
+
+## The merge
+
+Modules `lean/Verification/Programs/TolerantFramesMergeMirror.lean` to
+`TolerantFramesMergeChecked.lean`.
 
 **The merge in parts.** `SinglePass.mergeState` is the composition of its
 parts, by unfolding (proved: `mergeState_state`, `mergeState_implies`,
@@ -905,1145 +1025,57 @@ holds at $`\eta`$ and slot environment $`\rho`$, the merge's valuation is
 \eta'(y) = \begin{cases} \eta(y) & y < \mathit{fresh} \\ \rho(i) & \text{for a slot } i \text{ the merge names } y \\ \eta(y) & \text{otherwise} \end{cases}
 ```
 
-(`mergeVal`). Proved: the first loop's invariant (`mergeSlots_inv`: a slot
-keeps the predecessors' common name or takes the fresh name of their names'
-vector, distinct vectors distinct fresh names, each renaming sends a name to
-fresh names of slots where the predecessor holds it); two slots with one
-merged name hold one value (`slots_same`); each slot holds its merged name's
-value under $`\eta'`$ (`mergeVal_slots`); a fresh name $`\varphi`$ that $`p`$
-renames $`x`$ to has $`\eta'(\varphi)=\eta(x)`$ (`mergeVal_rename`), and a
-renamed name is below $`\mathit{fresh}`$ (`rename_key_below`).
-
-**Forgetting names**, proved: `Store.drop` keeps every fact holding
-(`drop_ok`: removed facts leave, a separation fact keeps its partners outside
-the dropped names, a fact restated through an alias link holds by the link,
-`keptAliasOf_eq`, the derived facts by `eliminateIndices_holds`,
-`restateReads_holds`, `restateStores_holds` over facts of the store,
-`dropDerived_holds`) and keeps the store well-formed (`drop_wf`).
-
-**The merged store**, proved on the path through $`p`$ at $`\eta'`$:
-
-- the common facts are live facts of every predecessor (`mergeCommon_live`);
-- $`p`$'s restatements hold (`OnPath.variants_ok`: `renameEach_holds`, and
-  `mergeEqual_holds`), so the met store holds (`OnPath.met0_ok`) and so does
-  each fact $`p`$ states beyond it (`OnPath.diffs_ok`);
-- a weakest bound: each predecessor's map holds a bound of the form that is
-  one of its facts (`boundsOf_get`), the bound added is at least each
-  (`weakestStep_cases`), and a weakened bound in normal form holds
-  (`linear_weaken`, `normalize_vars`): `OnPath.bounds_ok`;
-- an entailed bound: `Store.holds` is sound for an unconditional linear fact
-  whose terms are defined (`holds_sound`), and `entailsKnown_sound` over the
-  facts `linearNear` lists: `OnPath.entailed_ok`;
-- the guarded facts renamed by the merge's names: `OnPath.guarded_ok`;
-- each part as a property of stores closed under the facts it adds
-  (`mergeMeet_inv`, `mergeBounds_inv`, `mergeEntailed_inv`,
-  `mergeAddGuarded_inv`), instantiated at holding (`OnPath.store_ok`) and at
-  well-formedness.
-
-**(Merge)**, proved (`mergeState_holdsAt`, `mergeState_holds` its
-existential form): for predecessors `preds`, $`p`$ below their number, the
-merge's first fresh name $`\mathit{fresh}`$,
-
-```math
-\begin{aligned}
-&\forall q\in\mathit{preds}.\ |q.\mathit{names}| = |\mathit{context}| \wedge \mathrm{StoreWF}\ q.\mathit{store} \wedge \mathrm{StateBelow}\ q\ \mathit{fresh}
-\\ &\wedge\ \forall x\in\mathit{start}.\ x<\mathit{fresh}
-\ \wedge\ \mathrm{LinearNearSound} \wedge \mathrm{EntailedDefined}_\eta \wedge \mathrm{GuardedHolds}
-\\ &\wedge\ \mathrm{ImpliesOk}\ (\mathrm{meetImplications}\ \mathit{edgesIn})\ \rho
-\ \wedge\ \mathrm{StateHoldsAt}\ \mathit{preds}[p]\ \eta\ \rho
-\\ &\Rightarrow\ \mathrm{StateHoldsAt}\ (\mathrm{mergeState}\ \dots).\mathit{state}\ (\mathrm{mergeState}\ \dots).\mathit{implies}\ \eta'\ \rho
-\end{aligned}
-```
-
-where $`\mathrm{StateHoldsAt}`$ is $`\mathrm{StateHolds}`$ at a given
-valuation (`stateHolds_iff`) and $`\mathrm{StateBelow}`$ is the type of
-`StateWF.below`. The implications hold where the edges' joined implications
-hold at the slots (`mergeImplies_ok`); the fresh names hold fresh stores
-(`OnPath.fresh_ok`). The merged store is well-formed, the next fresh name is
-at least $`\mathit{fresh}`$, and the merged names and fresh names are below
-it (`mergeState_wf`, for a non-empty list of predecessors).
-
-**Named hypotheses of (Merge):**
-
-1. `LinearNearSound`: every fact `Store.linearNear` lists is an `index` fact
-   of its store. Its search is a `while` loop, which Lean does not unfold; a
-   fuel bound, as `selectFrom` has, makes it provable.
-2. `EntailedDefined`: an entailed bound's terms have integer values at
-   $`\eta'`$. `Linear.Known.entails` reads an undefined term as 0, and the
-   merge checks no definedness; a `termDefined` check per view, as
-   `IndexWrites`' rules make, discharges it.
-3. `GuardedHolds`: the guarded join's facts hold at $`\rho`$. Its tagged
-   candidates are checked against every view by `indicesCheckWith`; its
-   joined facts are `CertificateProducer.joinGuarded`'s, a search function
-   with no soundness theorem.
-4. `hI`: the edges' implications joined at the slots
-   (`CertificateProducer.meetImplications`) hold at $`\rho`$, an obligation on
-   the edges.
-
-Not proved: the merged facts' names below the next fresh name (the names of
-`eliminateIndices`' output); `StateWF.freshHeld` of the merged state, which
-does not hold in general: a predecessor's fresh name stays beside its fresh
-renames (`mergeFresh`) when no slot of the merge holds it.
-
-## Leg 8: the graph invariant
-
-Module `lean/Verification/Programs/TolerantFramesMergeGraph.lean`. A walk of
-the pass (`Walk`) records the labels it visits, each visited node's entry
-state and implications, and the states with implications that edges carry
-into each node. The pass's node assertion at label $`l`$ (`passPre`) is: $`l`$
-is visited and its entry state holds (`StateHolds`), the start names holding
-the invocation's entry values. Proved:
-
-- `passPre_adminClosed`: the node assertions survive the administrative
-  steps (`AdminClosed`): a state's meaning reads the heap, and the world only
-  through the implications' types, which admissibility keeps;
-- `nodeObligations_mono`: node obligations are monotone in the node
-  assertions;
-- (`run_sound_of_traversed`) `StepEdgesSound` ∧ `EntriesFromEdges` ⟹ for
-  every label $`l`$ and state where `passPre` holds, `SafeGraph` from
-  $`(l,\rho)`$, by `graph_safe_at`;
-- (`entries_of_traversed`) `Traversed` ∧ `HeadsEntered` ∧ `MergesSound` ⟹
-  `EntriesFromEdges`: a head by `HeadsEntered`, one incoming state as it is,
-  several by `mergeState_holds`;
-- `run_sound_of_walk`, the two composed; `start_passPre`: the start's
-  assertion holds at every entry meeting the inputs, the entry separation and
-  the entry index facts, where the walk enters the start with its head entry
-  and `entryRefusal` accepts (`entry_stateHolds`).
-
-The conclusion is the `safe` field of the unit lane's `GraphGuarantee` at the
-start (on branch `engine-proof-unit`, `PassUnit.lean`), for the main graph;
-its `bounded`, `ensured`, `regionally` and `asserted` fields are not
-addressed here.
-
-**`Traversed`** (the walk's construction, as `run`'s driver builds it): every
-node an edge state enters is visited; a node with no given facts and one
-incoming state enters with it and its implications; with several, with
-`mergeState` of them over its context, merge edges and fresh counter, each
-incoming state of the context's width, with a well-formed store and names
-below the counter, the start names below it.
-
-**The premises of `run_sound_of_walk`:**
-
-| Premise | Status |
-| --- | --- |
-| `Traversed` | needs a pass change: `run`'s driver is `while true`, which Lean does not unfold; a fuel-structured driver returning the walk, and a theorem that acceptance gives `Traversed` |
-| `StepEdgesSound` | named hypothesis: the per-node step theorems (proved for the step kinds above, from `checkedStep`'s conditions taken as hypotheses) and the edge theorems (`edgeStoreOf`, `edgeTransfer`, the edges' checks; the other lane), including the walk's order: an edge's state is among those its target entered with |
-| `HeadsEntered` | a head's state holds where an edge state into it does | step-and-edge lane: `headEstablishes_of_edge`, `headsEntered_of_recorded`; the start: pass change D8 arrived (a start an edge enters is entered as any loop head, `run` at 0f8d18ce), so `StartNotReentered` is replaced by `headEstablishes_of_edge` at the start once `run_traversed` records its entry; not yet stated |
-| `MergesSound` | named hypotheses `LinearNearSound`, `EntailedDefined`, `GuardedHolds`, the edges' joined implications (Leg 8: the merge) |
-| `Traversed.width`, `.wf`, `.below` at merges | not proved: the edge operations' maintenance of the target's width, `StoreWF` and `StateBelow` |
-
-## Leg 8: the head entry
-
-Module `lean/Verification/Programs/TolerantFramesMergeHead.lean`. A loop
-head other than the start enters with `SinglePass.headEntry g false`: slot
-$`i`$ named by the start name a given input `(i, q)` names, else by the
-promised input's start name where the slot is among the promised input's
-slots, else by the fresh name $`\mathit{fresh}+i`$; the store is the given
-facts $`g`$ renamed from slots to those names; the given implications
-renamed alike; the next fresh name $`\mathit{fresh}+\mathit{width}`$. Its
-valuation (`headVal`) gives a start name `startNames[q]` the entry value
-$`\rho_0(q)`$ and any other name $`\mathit{fresh}+i`$ the value of slot $`i`$.
-
-### Interface between the head entry and the edge check
-
-`EdgeEstablishes G g implies startNames argName argSlots inputSlots ρ0 ρ' s`,
-at the head's environment $`\rho'`$ (the edge's mapping applied to the
-source's slots, with the exit's value bound where the edge pushes it) and
-the state $`s`$ the edge reaches:
-
-1. `facts`: $`\rho', s.h \models g`$ (`HeapKnowledge.Holds`), the head's given
-   facts at its slots;
-2. `implies`: the head's given implications hold at $`\rho'`$
-   (`PromiseCalls.ImpliesOk`);
-3. `inputs`: for each given input $`(j,q)`$ with `startNames[q] = x`,
-   $`\rho'(j)=\rho_0(q)`$;
-4. `arg`: for each promised-input slot $`j`$, where `argName = a` and
-   `startNames[q] = a`, $`\rho'(j)=\rho_0(q)`$.
-
-These are what the edge into a head checks (`SinglePass.lean`, the edge loop
-of `run`: the given implications, the inputs' values, the promised input, and
-`KnowledgeExpand.checkIn` of the given facts over the edge's materialized
-store), stated at the target environment; the edge lane proves that the
-checks and the source's holding state give them.
-
-Proved:
-
-- (`headEntry_holds`) start names distinct and below $`\mathit{fresh}`$ ∧
-  the promised input a start name ∧ `EdgeEstablishes` at $`\rho'`$ ⟹ the
-  head's state with its implications holds at $`\rho'`$ (`StateHolds`, at
-  `headVal`) ∧ its store is well-formed; `headEntry_slots`: each slot holds
-  its name's value under `headVal`;
-- (`headsEntered_of`) a walk entering each head with its head entry, every
-  edge state into a head establishing it (`EdgeEstablishes`) ⟹
-  `HeadsEntered`.
-
-Not proved: the start as a loop head with edges into it
-(`headEntry … true`, its names the start names themselves).
-
-## Leg 8: the store operations and well-formedness
-
-Module `lean/Verification/Programs/TolerantFramesStoreOpsBelow.lean` and the
-modules above. The store operations the pass uses, by function of
-`SinglePass.lean`, and the well-formedness conjuncts of `StateWF`: `store`
-(`StoreWF`), the slot and fresh names below the counter (`below`, names), the
-facts' names below the counter (`below`, facts), `freshHeld`.
-
-| Operation | `StoreWF` | names, fresh below | facts below | `freshHeld` |
-| --- | --- | --- | --- | --- |
-| `Store.addRaw`, `remove`, `addBound`, `add` | proved (`addRaw_wf`, `remove_wf`, `addBound_wf`, `add_wf`) | no names change | proved for a fact below (`addRaw_below`, `remove_below`, `addBound_below`, `add_below`) | no names change |
-| `applyDelta` | removal loop proved (`deltaRemove_wf`); additions by `add_wf`; the loops as a whole not stated | slot 0 named by the result name | not proved: the names `back` gives | not stated |
-| `Store.dropHeap` | proved (`dropHeap_cover`) | no names change | removals only, not stated | no names change |
-| `Store.drop` | proved (`drop_wf`) | no names change | not proved: the names of `eliminateIndices`' output | no names change |
-| `edgeStoreOf` | handler: `dropHeap`; observed: `applyDelta`; as those | — | as those | — |
-| `edgeTransfer` | through `Store.drop` | not proved: `mapNames`' output | not proved | the fresh names filtered by the dropped names; not proved |
-| `mergeState` | proved (`mergeState_wf`) | proved (`mergeState_wf`) | not proved: through `Store.drop` | does not hold in general |
-| `headEntry` | proved (`headStore_ok`, `headEntry_holds`) | not stated | not proved: the renamed facts' names | no fresh names |
-
-## Leg 9: the step theorem about `checkedStep`
-
-Modules `lean/Verification/Programs/TolerantFramesStepLink.lean` and
-`lean/Verification/Programs/TolerantFramesStepLinkSound.lean`.
-
-**`checkedStep` read as its conditions** (proved: `checkedStep_ok`, by
-unfolding the pass's own function). An accepted step of node $`l`$ from the
-entry state $`\mathit{st}_0`$ with result $`r`$ is
-
-- a copy (`copiedOf`): the term is a slot $`i`$ whose context type is the
-  claim's, $`r=\mathit{st}_0.\mathrm{names}[i]`$, the store unchanged, the
-  answers unchanged; or
-- a step (`StepAccepted`) at evidence $`e`$, with $`\mathit{sums}_0`$ the read
-  summaries after the direct call (if any) and $`\mathit{sums}`$ those after
-  the search (if any), the final answers: the output
-  $`\mathit{out}=\mathrm{select}\ j\ k_E\ e\ \mathit{sums}`$ at the step's
-  facts $`k_E`$ (`kOf`); the tree check
-  $`\mathrm{passTreeCheck}\ k_E\ \mathit{sums}\ e=\mathrm{some}\ \mathit{pre}`$;
-  the result $`(r,\mathit{fresh}')=\mathrm{resultOf}`$ (a slot's read keeps
-  its name, else the fresh name); where
-  $`\mathrm{passPreserving}\ j\ k_E\ e\ \mathit{sums}_0`$, the store
-  $`\mathrm{applyDelta}\ \mathit{st}_0.\mathrm{store}\ \mathit{pairs}\ \mathit{out}`$
-  with `passBack`; otherwise `passWholeCheck` at every fact $`k_W`$, the output
-  $`\mathit{out}'=\mathrm{select}\ j\ k_W\ e\ \mathit{sums}`$ and the store
-  $`\mathrm{applyDelta}\ (\mathit{st}_0.\mathrm{store}.\mathrm{dropHeap}\ (\mathrm{handedSet}\ \mathit{pairs}_W))\ \mathit{pairs}_W\ \mathit{out}'`$.
-
-The call layers' test reads $`\mathit{sums}_0`$ and the selection
-$`\mathit{sums}`$ (`SinglePass.lean` 1251, 1285): the preserving judgment is
-stated at both (`passPreserving_keeps_two`, `preserving_judgment_two`).
-
-**The step theorem** (proved: `checkedStep_sound`). Premises:
-`checkedStep … = (ok st, _, ans)`;
-$`\mathrm{StateHolds}\ \mathit{st}_0\ I\ \mathit{start}\ E`$ at $`\rho,m,s`$;
-`StoreWF` of the entry's store; every name of the entry state, its start names
-and its implications below the fresh counter (`NamesBelow`); the entry's names
-no wider than the context; `EnvOk` of the context at $`\rho`$; `CodesSound`;
-the incoming summaries checked. Conclusion: the outgoing summaries are checked;
-`st.stepK` holds at $`\rho`$; $`r`$ is an entry name with the counter kept, or
-the counter with the counter advanced; and for closed effects $`c_n,c_e`$
-(`StepExits`):
-
-- the local judgment of the node's term with normal post
-  $`c_n\wedge\mathit{st}.\mathrm{stepOut}`$ at $`\mathrm{push}\ v\ \rho`$ and
-  exceptional post $`c_e`$;
-- a run with budget left to a value $`v`$: an action of $`c_n`$, $`n'+k=n`$,
-  $`v`$ of the claim's type, `st.stepOut` at $`\mathrm{push}\ v\ \rho`$, and
-  $`\mathrm{StateHolds}\ \langle r::\mathit{st}_0.\mathrm{names},\ \mathit{st}.\mathrm{store},\ \mathit{st}_0.\mathrm{fresh}\rangle`$
-  at $`\mathrm{push}\ v\ \rho`$ (`stateHolds_pushed`, `preserving_store`,
-  `writing_store`);
-- a raise of $`x`$: an action of $`c_e`$, $`x`$ closed and of the exception
-  family, and $`\mathrm{StateHolds}\ \langle\mathit{st}_0.\mathrm{names},\ \mathit{st}_0.\mathrm{store}.\mathrm{dropHeap}\ \bot,\ \mathit{st}_0.\mathrm{fresh}\rangle`$
-  at $`\rho`$ (`stateHolds_throw`), the store a handler edge starts from.
-
-The effects are $`c_n=\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$,
-$`c_e=\top`$ at a preserving step, $`c_n=c_e=\top`$ at a writing step, and
-$`c_n=c_e=\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$
-at a copy.
-
-Named hypotheses of the step theorem:
-
-- `DirectKeepsSummaries`, `SearchKeepsSummaries`: `directCall` and
-  `expressionEffectUsing` keep every summary of the answers' table checked
-  (`checkReadSummary`). `summaryUsing` checks a summary before appending it
-  (`CertificateProducer.lean` 625–651); no theorem states it of the search.
-- `NamesBelow` and the width of the entry's names: invariants of the pass's
-  states (`StateWF.below` with the start names and implications), not proved
-  maintained.
-
-The theorem gives no effect tighter than $`\top`$ at a writing step; the
-footprint check gives the bound's.
-
-## Leg 9: an edge's store and transfer
-
-Module `lean/Verification/Programs/TolerantFramesEdge.lean`. The state's
-meaning is existential in the name valuation $`\eta`$; an edge renames
-slots, never names, so every operation of an edge keeps the facts holding at
-the exit's $`\eta`$. Proved:
-
-- `drop_ok`: `Store.drop` of any names keeps every fact holding at
-  $`\eta`$ (the removed facts leave; a separation with fewer partners, a fact
-  restated through an alias link, a derived linear fact each hold);
-- `edgeStore_observed`, `edgeStore_promote`: the observation's facts at slot 0
-  (`observeTyped` under the edge's context, `withElements`) and a branch's
-  promoted truthiness (`promoteTruthy`) added by the delta keep the state
-  holding, the delta's renaming reading back each slot's name
-  (`edgeBack_ok`);
-- `edgeTransfer_ok`: where each target slot is named by the name of the
-  source slot the mapping reads (`MapNamesSound`) and a fresh result holds a
-  store at or past the mark, the target's state (mapped names, dropped store,
-  kept fresh names, implications naming no dropped name) holds at
-  $`\mathrm{mapEnv}\ \theta\ \rho_x`$;
-- `edge_normal_sound`: from the step's normal exit
-  (`checkedStep_sound`) and the observation of its value (`ObservedOk`: a
-  branch-binding's observation holds of $`v`$, a branch's answer is $`v`$'s
-  truthiness), the state `edgeTransfer` builds from `edgeStoreOf` holds at
-  $`\mathrm{mapEnv}\ \theta\ (\mathrm{push}\ v\ \rho)`$ on a pushed edge and at
-  $`\mathrm{mapEnv}\ \theta\ \rho`$ on an unpushed one;
-- `edge_handler_sound`: from the step's throw state, the thrown value at a
-  name above every name, the handler's state at
-  $`\mathrm{mapEnv}\ \theta\ (\mathrm{push}\ e\ \rho)`$;
-- `freshImpl_ok`: where the step's yields hold of its value
-  (`PromiseCalls.YieldsOk`), the implications a pushed edge states of its
-  result hold (`stateHolds_addImplies` adds them).
-
-**Interface between the head entry and the edge check.** An edge into a loop
-head with given invariant $`\mathit{req}`$ over context $`\Delta`$
-establishes (`EdgeEstablishes`) $`\mathit{req}`$ at
-$`\mathrm{mapEnv}\ \theta\ \rho_x`$ and $`\Delta`$'s types there. Proved
-(`head_query_sound`): the head query `checkIn` accepting, with the edge's
-facts holding at $`\rho_x`$ and typed by the edge's context, gives the first
-conjunct from the second.
-
-Named hypotheses: `MapNamesSound` (`mapNames` reads the mapping's ordered
-suffix by `orderedSuffix`, a `while` loop, which no proof unfolds; the
-identity mapping is proved, `mapNamesSound_none`); the result's freshness
-where `outFresh`; the step's yields (`YieldsOk`, which `yieldFollows_sound`
-gives where `yieldFollows` accepts them; the pass does not evaluate
-`yieldFollows`); the target's types at the mapped environment (the edge's type
-check through `subtypeUsing`).
-
-## Leg 9: returns and footprints at a step
-
-Module `lean/Verification/Programs/TolerantFramesStepLinkReturns.lean`.
-Proved:
-
-- `plain_return`: the plain goal's check (`c.type == R || c.type.isEmpty`)
-  gives a returned value of the claim's type the goal's type;
-- `pass_return_ensures`: where `returnEntails` accepts the output's facts over
-  the result and the tracked slots, each tracked slot holding the name of the
-  start's input it tracks, the state after the step (`checkedStep_sound`) gives
-  `ensures` at the result and the invocation's entry values
-  (`GraphCode.returnEntails_sound`, the context at the pushed slots
-  `setsCtx_push_ok`);
-- `pass_footprint_exits`: where `within` and `throws` hold at the node, a
-  bound $`\Phi`$ from the invocation's entry $`h_0`$ to the node's entry heap
-  and the node's local safety give $`\Phi`$ from $`h_0`$ to the heap of each
-  exit, normal and exceptional (`pass_within_normal`, `pass_within_throw`,
-  `pass_within_entry`).
-
-Named hypotheses: `FreshOk F |h_0| ρ` for the receiver slots the pass records
-fresh, and `DerivContext` (the context conjunct of `derivChecked`); a
-closed return's result freshness (`returns`, line 1628: `outFresh`, read off
-the step's derivation's selected effect, whose tree `outFresh` does not
-check); the guard and assertion goals (`ControlFlow.goal_return` needs the
-step's yields, which the pass takes from `nodeYields` unchecked). The
-regional checks (`ArgumentRegionGraph.checkNode` over the tables `run`
-builds inline, lines 1741–1791) are not connected.
-
-## Leg 9: the searches the pass relies on
-
-Each producer the pass runs, where its result is used, and the check that
-validates it before the pass relies on it (`SinglePass.lean` lines at 16720b68).
-
-| Producer | Result used at | Validated by |
-| --- | --- | --- |
-| `expressionEffectUsing` (1259) | the step's evidence `effect` (1268, 1341) | `select` with the tree check (`pass_select_sound`, `checkedStep_sound`) |
-| `expressionEffectUsing` (1259) | the derivation `deriv` (1318): `outFresh` (1590–1594) | relied on unchecked: the claim's term compared, the tree not; change: `outFresh` behind `derivChecked` |
-| `expressionEffectUsing` (1259) | `deriv` at the footprint (1607–1614) | `derivChecked` (`pass_within_normal`) with `DerivContext` |
-| `directCall` (1248) | the step's evidence `.ordinary e` (1256–1258) | `select` with the tree check (`checkedStep_ok`) |
-| `nodeYields` (1651, 1714, 1856) | the promise return (1690–1705), the edges' refined contexts (1873–1881, 1967, 1987), the result's implications (1917–1919) | relied on unchecked; change: keep the yields `PromiseCalls.yieldFollows` accepts (`yieldFollows_sound`, `PromiseCalls.lean` 728) |
-| `edgeUsing` (1842, 1881, 1908) | an edge's types accepted where its value is some (1847, 1914) | relied on unchecked: the edge evidence is not checked; change: check it with the certificate checker's target check (`ControlFlow.target_sound`, `ControlFlow.lean` 892) |
-| `subtypeUsing`, cached (1702, 1829, 1901, 1932) | a slot's type, a promise, an implication accepted where its value is some | `subtypeSearch_sound` (`CertificateProducer.lean` 441) where the cache holds only `subtypeSearch`'s answers (its one writer, 607); the cache's content is not stated of `Answered`; change: test `answers.proved.contains (A, B)` (`Answered.proved_sound`) |
-| `meetImplications` (1154) | a merge's implications (1525) | relied on unchecked; change: check each on every incoming edge (`PromiseCalls.impliesCheck_sound`, `PromiseCalls.lean` 167) |
-| `summaryUsing`, through the search (the table at 1251, 1285, 1335) | the read summaries every tree check reads | each summary checked before it is appended (`CertificateProducer.lean` 642); the table's soundness is not stated of `Answered` (`DirectKeepsSummaries`, `SearchKeepsSummaries`); change: a `summaries_sound` field of `Answered`, as `proved_sound` |
-| `mapNames` (958) | the target's names on every edge | relied on unproved: `orderedSuffix` is a `while` loop (`MapNamesSound`); change: structural recursion, as `selectFrom` |
-
-## Leg 10: the guarantee's fields from the walk
-
-Modules `lean/Verification/Programs/TolerantFramesGuaranteeRuns.lean` and
-`lean/Verification/Programs/TolerantFramesGuarantee.lean`.
-
-**Run properties beside the graph invariant.** A property of the graph
-machine's states (`StateKeeps X Q R`) is, at a node entry $`(l,\rho)`$ in heap
-$`h`$, a property $`X\ l\ \rho\ h`$; inside a node, that every run of its term
-with budget left meets the obligation of the exit it reaches (`EvalKeeps`:
-$`X`$ at the target's environment, `ContKeeps` and `HandlerKeeps`); at the
-ends, $`Q\ h\ v`$ at `.done v` and $`R\ h`$ at `.raised`. A node keeps it
-(`NodesKeep P pre X Q R`) when from every state where its assertion and
-$`X`$ hold, every run of its term meets its exit's obligation. Proved:
-
-- `keeps_step`: one transition from a state the graph invariant describes
-  keeps `StateKeeps`;
-- `keeps_postExc`: `NodesChecked` ∧ `AdminClosed` ∧ `NodesKeep` ⟹ the term
-  simulating (`GraphCode.Sim`) a state the invariant and the run property
-  describe satisfies $`\mathrm{SafePostExc}\ \Xi\ T\ Q\ R`$;
-- `reached_pre`: a graph run from a node entry whose assertion holds, with
-  budget left, to the entry of $`l'`$ ends where $`l'`$'s assertion holds.
-
-**The guarantee.** `GraphGuarantee` is the unit lane's record field by field
-(its reachability `ReachesIn` read as `Transitions`, the same constructors).
-`WalkSound` bundles the safety proof's walk predicates (`Traversed`,
-`StepEdgesSoundT` with exit posts $`\top`$, `HeadsEntered`, `MergesSound`);
-`nodesChecked_of_walk` gives `NodesChecked` for `passPreT` (Leg 11) from them. Each
-field, proved from `WalkSound` and one per-node hypothesis, at the start
-entered at `envOf L d` with mark $`|h|`$:
-
-| Field | Theorem | Per-node hypothesis | $`X`$, $`Q`$, $`R`$ |
-| --- | --- | --- | --- |
-| `safe` | `run_sound_of_walk` | none | — |
-| `bounded` | `bounded_of_walk` | `FootprintKept` | `BoundX`: the label in the region `dead` or $`\Phi.\mathrm{Holds}\ h_0\ h`$; `BoundQ`: $`\Phi`$ from $`h_0`$, the value fresh at $`\lvert h_0\rvert`$ where `fresh`; `BoundR`: $`\Phi`$ where `onThrow` |
-| `ensured` | `ensured_of_walk` | `ReturnsEnsured` | $`\top`$; `EnsuresQ`: `EnsuresAt ensures h (push v ρ0)`; $`\top`$ |
-| `regionally` | `regionally_of_walk` | `RegionsKept` (its facts $`X`$ holding at the start) | $`X`$; `RegionQ`, `RegionR`: `ArgumentStoreRegionsWithin Φ regions ρ0 h0` |
-| `asserted` | `asserted_of_walk` | `AssertionsHeld` | — |
-
-The per-node hypotheses, exactly (`pre` = `passPreT G w startNames ρ0 ctx`, each
-hypothesis taking the contexts `ctx`):
-
-- `FootprintKept P G w startNames ρ0 Φ h₀ dead fresh onThrow` =
-  `NodesKeep P pre (BoundX Φ h₀ dead) (BoundQ Φ h₀ fresh) (BoundR Φ h₀ onThrow) |h₀|`:
-  outside the region `dead`, `pass_footprint_exits` gives $`\Phi`$ from
-  $`h_0`$ on each exit of a run (its premises `FreshOk` from the state's
-  fresh names at mark $`\lvert h_0\rvert`$, `DerivContext`); at a return
-  where `fresh`, the result's freshness (`returns`, `outFresh`); inside
-  `dead`, `deadNode`'s no-return and exit closure, as `GraphCode.bounded_step`
-  proves them for the checker;
-- `ReturnsEnsured P G w startNames ρ0 ens m` =
-  `NodesKeep P pre ⊤ (EnsuresQ ens ρ0) ⊤ m`: at a `ret` node,
-  `pass_return_ensures` from the state `checkedStep_sound` gives after the
-  step; at every other continuation the obligation is $`\top`$;
-- `RegionsKept P G w startNames ρ0 X Φ regions h₀ exc` =
-  `NodesKeep P pre X (RegionQ …) (RegionR …) |h₀|`, $`X`$ the regional facts
-  the pass's tables (`regionIn`, `ArgumentRegionGraph.checkNode`) state, and
-  $`X`$ at the start from `checkEntryFields`;
-- `AssertionsHeld G w startNames ρ0 assertions m`: each stated
-  $`(l,K)`$ holds at $`\rho, s.h`$ wherever `passPre l ρ m s` holds: at a node
-  other than a head the pass adds $`K`$'s facts to the entry state after the
-  edges check it, at a head $`K`$ is part of the given facts.
-
-**`run_guarantee`**, proved: $`\forall\eta.\ \mathrm{admits}\ \eta\Rightarrow\exists\ w\ \mathit{given}\ \mathit{ctx}\ \mathit{edgesIn}\ \mathit{fresh}.\ \mathrm{PassWalkSound}\ (\mathrm{reassign}\ G\ \eta)\ \dots`$
-⟹ `GraphGuarantee G admits P start goal inputs sep idx assertions bound ensures regional`.
-`PassWalkSound` holds `WalkSound` at every entry value $`\rho_0`$ and mark,
-the start entered at every entry meeting the inputs, the separation and the
-index facts (`entered`, which `start_passPreT` gives from `entryRefusal`'s
-acceptance, the walk's start entry and the start's context the inputs), and the four per-node hypotheses
-for the options the call states. The unit lane's `RunSound` is then
-`run_guarantee` composed with `run_traversed` (an accepted call yields a walk
-with `PassWalkSound` at every admitted assignment), which needs the driver on
-fuel.
-
-**The head's interface.** The edge lane's `EdgeEstablishes` (the given
-facts and the head's types at $`\mathrm{mapEnv}\ \theta\ \rho`$,
-`head_query_sound`) and the merge line's `HeadEstablishes` (facts, given
-implications, given inputs, promised input) are connected by the step lane's
-`headEstablishes_of_edge` (Leg 11), which proves `HeadEstablishes` from the
-pass's checks on the edge. The merge line's `drop_ok` and `keepFirst_mem` are
-named `drop_holds` and `keepFirst_sub`, the edge lane keeping its copies
-under the original names.
-
-## Leg 10: the edge operations and well-formedness
-
-Module `lean/Verification/Programs/TolerantFramesStoreOpsEdge.lean`. Proved:
-
-- `deltaAdd_wf`, `deltaRestate_wf`, `applyDelta_wf`: `applyDelta`'s loops
-  only add and remove facts, so the delta keeps a store well-formed;
-- `edgeStoreOf_wf`: an edge's store is well-formed where the entry store and
-  the output store are (a handler's by `dropHeap_cover`, an observation's
-  and a promotion's by `applyDelta_wf`);
-- `edgeTransfer_wf`: the target's store, the edge's store without the
-  dropped names, is well-formed (`drop_wf`);
-- `edgeTransfer_width`: under `MapNamesLength` (`mapNames names (some
-  slots)` has one name per slot where every slot reads a source slot, a
-  premise: `orderedSuffix` is a `while` loop), the target has as many names
-  as the mapping has slots, and the identity mapping as many as the source
-  (`mapNames_none`).
-
-`StateWF` has the conjuncts `store` and `below`. A merge keeps a
-predecessor's fresh name beside its renames where no merged slot holds it
-(`mergeFresh`); what holds of every state's fresh names is that they are
-below the counter, the third part of `below` (`mergeState_wf` for a merge),
-and no proof reads more.
-
-The facts' names below the counter through `Store.drop`, the delta, an
-edge's store and transfer and `headEntry`: Leg 12.
-
-## Leg 10: the start as a loop head
-
-`SinglePass.run` makes the start a head (`isHead`, line 1403) and enters it
-with `headEntry g true`: slot $`i`$ named by the start name
-$`\mathit{startNames}[i]`$, whatever the given inputs. The state's meaning
-pins a start name to the entry value ($`\eta(\mathit{startNames}[q])=\rho_0(q)`$),
-so the start's state holds at $`\rho'`$ only where $`\rho'(i)=\rho_0(i)`$ at
-every slot. An edge into the start checks the given facts, the given
-implications, the given inputs and the promised input (lines 1937–1953),
-and no equality of a slot not among the given inputs with its entry value.
-So `HeadsEntered` at the start does not follow from the edge check where an
-edge enters the start and changes a slot's value: the start's facts over
-start names, and the input tracking a return's `ensures` reads
-(`startNames[q]` in `entry.names`, line 1672), would then be read of the
-entry values while the slots hold others. Observed in the code; no source
-reaching it is demonstrated. The pass change that closes it: where an edge
-enters the start, enter it as any head (`headEntry g false`, fresh names
-for the slots outside the given inputs), or check every start-named slot
-on each edge into the start as the given inputs are checked. Until then
-`HeadsEntered` at the start is the named premise `StartNotReentered`: no
-edge enters the start, or each edge into it keeps every slot's entry value.
-
-## Leg 10: what the driver must record
-
-`run_traversed` (an accepted call yields a walk with `PassWalkSound`) needs
-`run`'s driver on fuel; `run` is a `while true` loop, as `loopHeads` is. Its
-record `Walk` must contain, per label: whether it was visited, its entry
-state and implications (after the head entry, the single state or the
-merge, and the written assertion's facts added at a node other than a head),
-the states with implications every processed edge carried into it, the
-merge's context, edges and fresh counter, and, per edge, the edge's mapping,
-whether it pushed, and the source's state after the step. `Traversed.merge`
-asks the merge's incoming list to be complete: every edge into a non-head
-node from a reached node is processed before the node. That rests on the
-in-degree order, which is sound where every cycle of reached nodes passes
-through a head (`HeadsCutCycles`: removing the edges into heads leaves the
-reached graph acyclic), which `loopHeads` gives where it marks every
-retreating edge's target of a complete depth-first walk; `loopHeads` is a
-`while` loop, so this needs it on fuel too.
-
-## Open premises of the graph-level proof
-
-The current list. `run_guarantee` proves the unit lane's `GraphGuarantee`
-from `PassWalkSound` at every admitted assignment (at the typed assertions,
-Leg 12); each premise below is a part of it or of `run_traversed`.
-
-| Premise | Statement | Status |
-| --- | --- | --- |
-| `run_traversed` | an accepted `run` yields a walk, contexts, merge edges and counters with `Traversed`, `NodeAccepted` at every visited node, and each edge into a head recorded as the head's entry (`headsEntered_of_recorded`) | needs pass change: the driver on fuel returning `Walk` (not arrived) |
-| the reassignment | the walk predicates at `reassign G η` for every admitted `η` | the node runs carried: `nodeRan_reassign` under `CheckedStepReassign`, and `run_guarantee_of_run` from one run at `G` (Leg 13); `CheckedStepReassign` lacks the invariance of `directCall`, the search `expressionEffectUsing` and the checker's `select`, and for a qualified body a `BodySubtyping (reassign G η)` at the scope's admitted `η`; the meaning of each node at `reassign G η` is `run_traversed`'s at that graph (`hwalk`) |
-| `HeadsCutCycles` | every cycle of reached nodes contains a head | needs pass change: `loopHeads` on fuel (not arrived) |
-| `StepEdgesSoundT` | per node, from `passPreT`, the local judgment and every exit a holding edge state into its target | step-and-edge lane: `stepEdgesSound_of` from `NodeAccepted`, `CodesSound`, `DirectKeepsSummaries`, `SearchKeepsSummaries` |
-| `HeadsEntered` | a head's state holds where an edge state into it does | step-and-edge lane: `headEstablishes_of_edge`, `headsEntered_of_recorded`; the start: pass change D8 arrived (a start an edge enters is entered as any loop head, `run` at 0f8d18ce), so `StartNotReentered` is replaced by `headEstablishes_of_edge` at the start once `run_traversed` records its entry; not yet stated |
-| `MergesSound`: `LinearNearSound` | every fact `linearNear` returns is stored | needs pass change: `linearNear` on fuel (not arrived) |
-| `MergesSound`: `EntailedDefined` | the terms of an entailed bound are defined on each path | needs pass change: the `termDefined` check at merges (not arrived) |
-| `MergesSound`: `GuardedHolds` | the guarded join's facts hold on each path | needs pass change: the recheck of guarded joins (not arrived) |
-| `MergesSound`: the joined implications | `ImpliesOk` of `meetImplications` at the merge's environment | needs pass change D3: on each incoming edge, each met implication established by `impliesCheck` from the implications the edge carries (`impliesCheck_sound`); this is the check's specification (not arrived) |
-| `Traversed.width` | the incoming states have the context's width | `edgeTransfer_width` under `MapNamesLength`; `MapNamesLength` needs pass change D7 (`mapNames` on fuel, not arrived) |
-| `Traversed.wf` | the incoming stores are well-formed | proved from the step's output store well-formed (`edgeStoreOf_wf`, `edgeTransfer_wf`) |
-| `Traversed.below` | the incoming states below the merge's counter | proved from the step's output below the counter and a positive counter (`edgeStoreOf_below`, `edgeTransfer_below`, Leg 12); the step's output facts: `applyDelta_below` with `passBack_below` |
-| a merge's facts below its counter | the met store's facts below the merge's next name | other: not proved (Leg 12's table) |
-| `entered` | the start's typed state holds at every entry meeting the inputs | `start_passPreT`, given `entryRefusal`'s acceptance, the walk's start entry and the start's context the inputs (`StartContext`) |
-| `FootprintKept` | the footprint check keeps the bound at each node | step-and-edge lane: `footprintCheck_sound`, `footprint_exits`; composition into `NodesKeep` not stated |
-| `ReturnsEnsured` | the return check establishes `ensures` | step-and-edge lane: `pass_return_ensures`; at the start, `StartNotReentered` |
-| `RegionsKept` | the regional check keeps its facts per node | step-and-edge lane: `ArgumentRegionGraph.checkNode`'s soundness from a node's own typing and the tables' agreement, not proved |
-| `AssertionsHeld` | each stated assertion holds where `passPreT` at its label does | other: the node assertion carries the walk's entry, to which the pass adds the written assertion's facts at a node other than a head; `run_traversed` records the entry after that addition, and at a head the written assertion is part of the given facts |
-| `ShapeOk` at a branch | the claim's type at a branch is Boolean | needs pass change: no check of the pass states it |
-| `RunKeepsSummaries` | the answers' summaries a call starts from are among those it leaves | needs pass change: the driver on fuel; per step `DirectKeepsSummaries`, `SearchKeepsSummaries`, which pass change D6 (a `summaries_sound` field) makes structural |
-| unchecked searches | edge evidence, yields, `outFresh`, the subtype cache | edge evidence: pass change D1 arrived (`checkMappedUsing` or `checkObservedUsing` of the search's evidence, `run` at 9e925a2e), which discharges `htc` through `checkMapped_sound`, `checkObserved_sound` once `run_traversed` records the check; not yet stated; yields, `outFresh`, the subtype cache: pass changes D2, D4, D5 (not arrived) |
-
-## Leg 11: one obligation per node
-
-Modules `lean/Verification/Programs/TolerantFramesNodeSound.lean`,
-`TolerantFramesNodeEdges.lean` and `TolerantFramesNodeWalk.lean`.
-
-**The typed node assertion.** A node's step needs its context's types at
-its environment (the `EnvOk` premise of `checkedStep_parts`), which no state
-carries: the pass checks them on every edge into the node. `StepEdgesSound`
-(Leg 8: the graph invariant) reads a node's assertion as `passPre` alone, and
-no node's step is provable from it. The typed assertions are
-$`\mathrm{passPreT}\ l = \mathrm{passPre}\ l\wedge\mathrm{EnvOk}\ (\mathit{ctx}\ l)`$
-and $`\mathrm{edgePreT}\ t = \mathrm{edgePre}\ t\wedge\mathrm{EnvOk}\ (\mathit{ctx}\ t)`$,
-and `StepEdgesSoundT` is `StepEdgesSound` at them. Proved:
-
-- `run_sound_of_walk_typed`: `Traversed` ∧ `StepEdgesSoundT` ∧
-  `HeadsEntered` ∧ `MergesSound` ∧ `passPreT` at the start ⟹ `SafeGraph`
-  from the start; its entry premise is the untyped `EntriesFromEdges`, since
-  an edge's types are the target's (`passPreT_adminClosed`: types survive an
-  admissible transition, `envOk_admissible`);
-- `headsEntered_of_recorded`: a walk recording, as each edge's state into a
-  head, the head's entry state and implications enters its heads.
-
-**The node's obligations from the step** (proved:
-`nodeObligations_of_parts`). `checkedStep_parts` states the step theorem's
-exits in parts (`StepParts`): the local judgment, the state after the step
-after every run to a value whose endpoint is an action of the normal effect
-with the rule's output, and the throw state after every action of the
-exceptional effect. With the normal post extended by the run that reaches the
-value (`safePostExc_trace`), these give `NodeObligations` at the node, the
-exception family `excOf G`, the claim's type, where the claim's type gives
-each value its continuation's shape, each normal exit's target obligation
-follows from the state after the step at the pushed environment, and each
-throw's from the throw state.
-
-**A node's exits** (proved):
-
-- `normalTarget_of_exits`: every normal exit of `Exit.ofNode` delivering
-  (`ExitDelivers`: the state after the step, the pushed environment's types
-  and the exit's observation give the target's assertion) gives the normal
-  target of a `bind`, `effect` and `branch` (the yes edge at `true`, its
-  promoted truthiness `true`), and of a return where the claim's type gives
-  the result type (`plain_return` for a plain goal);
-- `exitDelivers_of_edge`, `handlerDelivers_of_edge`: an edge into a node
-  other than a loop head delivers the state `edgeTransfer` builds from
-  `edgeStoreOf` with the implications `implies ++ freshImplOf …`
-  (`normal_edge_delivers`, `handler_edge_delivers`,
-  `stateHolds_freshImpl`), where the walk records it among the target's
-  incoming states;
-- `exitDelivers_head`: an edge into a loop head establishes each field of
-  `HeadEstablishes` (`headEstablishes_of_edge`): `facts` by the head query
-  (`head_query_sound` over the edge's materialized store,
-  `edgeStore_normal`), `implies` by an implication the edge carries at the
-  mapped slots' names with a type within the given one, `inputs` and `arg`
-  by the slot-name checks with the start names' entry values; the head's
-  entry then holds (`headEntry_holds`). The checks bind where the edge is
-  not vacuous; a vacuous edge has no environment meeting its context.
-
-`EdgeEstablishes` of Leg 9 is the `facts` field of `HeadEstablishes` with the
-target's types: `HeadEstablishes` is the interface.
-
-**Every node of the pass delivers** (proved: `stepEdgesSound_of`). Premises:
-`NodeAccepted` at every visited label, `CodesSound`, `DirectKeepsSummaries`,
-`SearchKeepsSummaries`. Conclusion: `StepEdgesSoundT` with the exception
-family `excOf G`, the result type `Tres` and no heap post. `NodeAccepted l`
-holds the values `SinglePass.run` computes at $`l`$ and the checks it passes
-there, by the pass's functions (the driver is a `while` loop no proof
-unfolds): the node and its claim, the label's context the claim's; the
-step's entry state (the walk's entry, the node's stated assertion joined),
-holding where the node's assertion holds (`stated`); `checkedStep`
-accepting, with the store well-formed, the names below the counter
-(`NamesBelow`), the width, the incoming summary table checked; the claim's
-type giving each continuation's shape and a return's result type; each normal
-exit delivering and the handler delivering (`exits`, `handler`, discharged
-by the exit lemmas above from the edge's checks).
-
-Named hypotheses and what discharges them:
-
-| Hypothesis | Discharged by |
-| --- | --- |
-| `NodeAccepted` as a whole | the pass's driver on fuel returning a `Walk` (queued in the pass lane), with the extractions `edgeCheck`, `returnCheck` |
-| `stated` | proved where the node states no assertion (the entry is the walk's); otherwise the stated assertion carried in the node assertion |
-| `sums`, `DirectKeepsSummaries`, `SearchKeepsSummaries` | the summary table's soundness as an invariant field of `Answered` (queued) |
-| `below` (`NamesBelow`), `width` | the maintenance of the state's names by the step, the edge and `mapNames` |
-| `shape` at a branch | the claim's type Boolean at a branch: no check of the pass states it; `branchBind` and `tagBind` are outside `NodeObligations` (`ShapeOk`) |
-| `ret` beyond a plain goal | the guard and assertion goals, under `YieldsOk` |
-| `MapNamesSound` | `mapNames` on fuel (queued) |
-| `YieldsOk` (`hY`) | yields kept only where `yieldFollows` accepts (queued) |
-| the result's freshness (`hfo`) | `outFresh` behind `derivChecked` (queued) |
-| the target's types (`htc`), a given implication's type within (`himp`) | edge evidence checked; the subtype cache's soundness (queued) |
-| the walk's records (`hrec`, `hrecHead`, `hentry`) | the driver returning a `Walk` (queued) |
-
-## Leg 11: the footprint and return checks at a node
-
-Module `lean/Verification/Programs/TolerantFramesStepLinkReturns.lean`, over
-the pass's functions `SinglePass.footprintCheck` and `SinglePass.returnCheck`.
-Proved:
-
-- `footprintCheck_sound`, by unfolding: at the node's sequent, `within`
-  (`passWithin`), `throws` (`passThrows`) where a live handler catches the
-  throw or the bound covers throws, a return's freshness where the bound
-  requires a fresh result, and the term's scope. The derivation check
-  (`passDerivChecked`) states the claim at the node's term and context, as
-  `footprintCheck`'s `derivChecked` does;
-- `footprint_exits`: where `footprintCheck` accepts the node, the fresh
-  receiver slots hold stores allocated at or past the invocation's entry
-  $`h_0`$ (`FreshOk`), and the node's local safety and $`\Phi`$ from $`h_0`$ to
-  its entry heap hold, each run with budget left keeps $`\Phi`$ from $`h_0`$ to
-  the heap of its normal exit, and of its throw where a live handler catches
-  it or the bound covers throws: the per-node form the `bounded` field
-  composes along a run;
-- `returnCheck_plain`: where `returnCheck` refuses nothing at a plain goal,
-  a returned value of the claim's type is of the goal's (`GoalHolds`), which
-  is `NodeAccepted.ret` at a plain goal.
-
-Named hypotheses: `FreshOk` of the receiver slots the pass records fresh;
-the guard and assertion goals of `returnCheck` (the yields' soundness,
-`YieldsOk`, and the subtype cache's).
-
-The regional check (`ArgumentRegionGraph.checkNode` over the tables `run`
-builds per node) has a soundness theorem only for a whole certified graph
-(`ArgumentRegionGraph.checkNodes_sound`, whose premise is the certificate
-checker's acceptance, `checkGraphUsing`); the pass supplies a node's typing
-by its step, and its tables per node (`sparse` over the node and its
-targets), so the per-node regional statement needs `checkNode`'s soundness
-from the node's own typing and the agreement of each node's tables with its
-targets' (`regionIn`'s meet).
-
-## Leg 11: the names after a step, and the hypotheses of pure functions
-
-Module `lean/Verification/Programs/TolerantFramesNodeWalk.lean`. Proved:
-
-- `namesBelow_step`: where the entry's names, start names and implications
-  are below the counter and the result is an entry name with the counter
-  kept or the counter with the counter advanced (`checkedStep_parts`), the
-  state after the step is below the next counter, given its store's facts
-  are;
-- `width_step`: the pushed names no wider than the pushed context.
-
-Not proved, with the function each needs:
-
-- the store's facts after a step below the next counter: the names
-  `applyDelta` reads back (`passBack`), and after an edge, the names of
-  `Store.drop`'s derived facts (`HeapKnowledge.eliminateIndices`' output);
-- `MapNamesSound` for a mapping other than the identity: `mapNames` reads the
-  ordered suffix by `orderedSuffix`, a `while` loop;
-- `DirectKeepsSummaries`, `SearchKeepsSummaries`: the table's one writer is
-  `summaryUsing` (`CertificateProducer.lean` 646), which appends a summary
-  `checkReadSummaryResult` accepts; a proof through `directCall` and
-  `expressionEffectUsing` is an invariant of every `SearchM` function they
-  run, which a `summaries_sound` field of `Answered` (as `proved_sound`)
-  makes structural;
-- the result's freshness where `outFresh`: read off the step's derivation's
-  selected effect, whose tree `outFresh` does not check (`run`, the
-  definition of `outFresh`).
-
-## Leg 11: `typedRead`'s optional-field branch
-
-Module `lean/Verification/Programs/TolerantFramesSelect.lean`. Proved
-(`typedRead_optional_sound`): where the pass's tree check accepts the read's
-derivation with the codes, at a read of a field the slot's type states
-optional, the output `readFrame k i fld true` holds after the read. The
-checker's `run` checks this tree with no codes; the pass's selection reaches
-the branch by `passSteps_value`'s third case, and `passSteps_sound` consumes
-it through `typedRead_optional_sound` alone.
-
-## Leg 12: the facts' names below the counter
-
-Modules `lean/Verification/Programs/TolerantFramesStoreOpsNames.lean` (the
-eliminations and renamings) and `TolerantFramesStoreOpsBelowNames.lean` (the
-store operations).
-
-**The eliminations name their inputs' names** (proved). A name an index atom
-states is a slot of its fact or its condition (`NamedIn`).
-
-- `termDefined_named`: a term `termDefined as` accepts is rooted at a name
-  an atom of `as` states;
-- `eliminateLinear_named`, `eliminateIndices_named`: every name of the
-  output of `eliminateLinear D as` and `eliminateIndices D as` is a name of
-  `as`: a derived linear fact keeps only terms `termDefined as` accepts, under
-  the condition of an atom of `as`; `releasePast` restates a disjunct;
-- `restateReads_named`, `restateStores_named`: every name of their output is
-  a name of their input atoms or the cell of one of their links
-  (`liftDropped` and `liftPath` root a term at a read's cell);
-- `atom_rename_names`: a fact renamed by $`f`$ names only $`f`$'s images of its
-  names.
-
-**The store operations against the well-formedness conjuncts.** `StoreWF`,
-the slot and fresh names below the counter, the facts' names below the
-counter (`FactsBelow`); every cell proved, or stated with what it lacks.
-
-| Operation | `StoreWF` | names, fresh below | facts below |
-| --- | --- | --- | --- |
-| `Store.addRaw`, `remove`, `addBound`, `add` | `addRaw_wf`, `remove_wf`, `addBound_wf`, `add_wf` | unchanged | `addRaw_below`, `remove_below`, `addBound_below`, `add_below`, for a fact below |
-| `applyDelta` | `applyDelta_wf` | slot 0 the result name | `applyDelta_below`, where `back` renames below the counter (`BackBelow`) |
-| `Store.dropHeap` | `dropHeap_cover` | unchanged | `dropHeap_below` |
-| `Store.drop` | `drop_wf` | unchanged | `drop_below` |
-| `edgeStoreOf` | `edgeStoreOf_wf` | — | `edgeStoreOf_below`: the delta's `back` reads `materialize`'s table, whose keys are the state's slot names (`slotTable_keys`, `materialize_table_keys`, `inverse_keys`, `back_below`) |
-| `edgeTransfer` | `edgeTransfer_wf` | `edgeTransfer_below`: a target name is a source name or $`0`$ (`mapNames_mem`), so below a positive counter; the fresh names are the entry's and the result | `edgeTransfer_below` (`drop_below`) |
-| `mergeState` | `mergeState_wf` | `mergeState_wf` | not proved: the met store's and the joins' facts are predecessor facts renamed by the merge's renaming (`rename_key_below` gives the renamed names below the merge's counter) and `Store.drop`'s output; the composition through `mergeState`'s loops is not stated |
-| `headEntry` | `headStore_ok` | `headEntry_below` | `headEntry_below`: the store's facts are renamed to the slots' names; premise: each slot's own name `i + base` below the counter, automatic at a head other than the start ($`\mathit{base}=\mathit{fresh}`$, counter $`\mathit{fresh}+w`$), at the start $`i+\mathit{startNames}[0]<\mathit{fresh}`$ |
-| the step (`checkedStep`'s output store) | the step-and-edge lane (`NamesBelow`) | the step-and-edge lane | the step-and-edge lane |
-
-`Traversed.below` (each state into a merge below the merge's counter) is
-then `edgeTransfer_below` over `edgeStoreOf_below` at the source's step
-output, given the step's output below the counter (`NamesBelow` after the
-step) and a positive counter.
-
-## Leg 12: the guarantee at the typed assertions
-
-Module `lean/Verification/Programs/TolerantFramesGuarantee.lean`. The walk
-predicates of `run_guarantee` are the typed ones (Leg 11): `WalkSound.steps`
-is `StepEdgesSoundT`, `nodesChecked_of_walk` gives `NodesChecked` for
-`passPreT`, and the four per-node hypotheses (`FootprintKept`,
-`ReturnsEnsured`, `RegionsKept`, `AssertionsHeld`) are stated from `passPreT`
-at the contexts `ctx`. `run_guarantee`'s `safe` field is
-`run_sound_of_walk_typed`. `PassWalkSound.entered` gives `passPreT` at the
-start, which `start_passPreT` proves from `start_passPre` where the start's
-context is the inputs (the unit lane's `StartContext`).
-
-## Leg 12: the reassignment link
-
-Module `lean/Verification/Programs/TolerantFramesWalkReassign.lean`.
-
-**How the proved checker covers every assignment.** Its rules' soundness
-theorems are stated for every graph, at the graph's own assignment
-(`ControlFlow.accepted_inputs_safe` at any `G`); its acceptance at `G` is its
-acceptance at `reassign G η` (`Parametricity.accept_reassign`: each checker
-equal at the reassigned graph, by `rfl` where it unfolds and by a lemma for
-the recursive ones: `checkTree_reassign`, `checkStep_reassign`,
-`checkTarget_reassign`, `yieldFollows_reassign`, `checkReturn_reassign` and
-the rest of `Parametricity.lean`); so one check gives safety at every `η`
-(`Parametricity.accepted_at`). A qualified body is not covered that way: its
-subtyping (`BodySubtyping`) is sound at the graph's own assignment only, and
-`RequestJson.verify_qualified_safe_at` gives safety at an admitted instance
-`assign η source.binders As` from the lexical body check and the descriptor
-capabilities.
-
-**The same route for the pass.** The step-and-edge lane's theorems
-(`checkedStep_sound`, `stepEdgesSound_of`, `headEstablishes_of_edge`) and this
-lane's (`mergeState_holds`, the store operations) are stated for every graph.
-So the walk predicates at `reassign G η` follow from an accepted run at
-`reassign G η` with the reassigned arguments, and `run_guarantee`'s premise
-from the equation
-
-```math
-\mathrm{run}\ (\mathrm{reassign}\ G\ \eta)\ (I.\mathrm{reassign}\ \eta)\ \dots\ (a.\mathrm{reassign}\ \eta)\ =_{\mathrm{outcome}}\ \mathrm{run}\ G\ I\ \dots\ a
-```
-
-(`run_reassign`, not proved). Proved: the arguments at the reassigned graph
-exist and keep their soundness: `codesSound_reassign` (a code table sound at
-`G` is sound at every reassignment), `Answered.reassign` (the cached answers,
-their proved inclusions holding at every assignment),
-`Parametricity.summariesSound_reassign`. Observed: `mergeState`,
-`entryRefusal` and `edgeStoreOf` are equal at the reassigned graph by `rfl`;
-`footprintCheck` and `returnCheck` are not (they call the tree check, which
-`checkTree_reassign` covers by a lemma). What `run_reassign` needs:
-
-- the driver on fuel (a `while` loop is a `partial` definition: no equation
-  unfolds it);
-- an invariance lemma for each pass function that is not `rfl`:
-  `footprintCheck`, `returnCheck`, `checkedStep` and the searches it runs
-  (their results are data the run carries, so each search must return the
-  same at the reassigned graph), the edge checks, the head query;
-- for a qualified checker, `PassChecker.qualified`'s subtyping at
-  `reassign G η`: a `BodySubtyping (reassign G η)` exists only where the
-  body's check is sound at `η`, which the lexical body check gives at
-  `q.Admits η` (`verify_qualified_safe_at`'s route). This is the one rule
-  whose soundness is not uniform in `η`.
-
-Until then the link is `run_guarantee`'s premise as stated: `PassWalkSound` at
-`reassign G η` for every admitted `η`.
-
-## Leg 12: the loop heads and the order
-
-What `run_traversed` needs of the traversal, stated for the driver's
-`Walk`:
-
-- `HeadsCutCycles`: every cycle of reached nodes passes through a node
-  `isHead` marks. `loopHeads` marks every target of a retreating edge of the
-  depth-first walk it runs, and every cycle of a graph contains a retreating
-  edge of any complete depth-first walk (a standard fact of depth-first
-  search, not proved here); the theorem needs `loopHeads` as a
-  function a proof unfolds (on fuel) and its walk complete over the reached
-  nodes;
-- the in-degree order: a node other than a head is processed after every
-  edge into it from a reached node is processed. The driver must record,
-  per label, the list of incoming states in processing order and the
-  processed flag of each edge, so that `Traversed.merge` (the merge's list
-  complete) follows from the in-degree counter reaching zero, which counts
-  the edges into the node from reached nodes outside the edges into heads.
-
-## Leg 13: the pass's checks at a reassignment
-
-Modules `lean/Verification/Programs/TolerantFramesWalkReassignChecks.lean`
-and `TolerantFramesWalkReassignNodes.lean`.
-
-**Invariant functions** (proved). Each is the same function at
-`reassign G η` with the image check `images.reassign η`, the answers
-carried by `Answered.reassign` where it threads them:
-
-- `footprintCheck_reassign`: `footprintCheck` is equal;
-- `subtypeSearch_reassign`: the subtype search, through its instance
-  proposals (`instantiationUsing_reassign`, `rowInstances_reassign`, over
-  `unifiedInstance_reassign`, `matchedInstance_reassign`, `matchRow_reassign`,
-  `matchSig_reassign`, `matchRest_reassign`, `searchReads_reassign`,
-  `searchFree_reassign`) and `Parametricity.compareUsing_reassign`;
-- `subtypeUsing_reassign`: an answered subtype request returns the same
-  result, its answers reassigned;
-- `returnCheck_reassign`: the return check's refusal and queried count are
-  equal, its answers reassigned (the promise's fold by `foldl_map_state`);
-- `edgeStoreOf_reassign`, `entryRefusal_reassign`: equal by unfolding.
-
-**A node's run and its meaning.** `NodeAccepted` splits into `NodeRan`,
-the pass's values and checks at a node (the step's equation, the store
-well-formed, the names below the counter, the width, the summary table
-checked), and `NodeMeaning`, the fields that read the graph's meaning (the
-stated assertion, the shapes, the return type, the exits, the handler);
-`NodeAccepted.ran`, `NodeAccepted.meaning` and `NodeAccepted.ofRan` convert.
-A meaning field holds at a graph by the theorems that give it at every graph
-from the checks there (`exitDelivers_of_edge`, `exitDelivers_head`,
-`handlerDelivers_of_edge`, `returnCheck_plain`); it is not carried from
-`G`, whose meaning is read at another assignment.
-
-- `nodeRan_reassign`: `CheckedStepReassign` ⟹ every `NodeRan` at `G` is a
-  `NodeRan` at `reassign G η`, the answers reassigned, the table checked by
-  `Parametricity.summariesSound_reassign`;
-- `nodeAccepted_reassign`: with the reassigned run's `NodeMeaning`, an
-  accepted node at `G` is accepted at `reassign G η`;
-- `run_guarantee_of_run`: `NodeRan` at every visited node of one run at
-  `G` ∧ for every admitted `η` a checker `pc'` with `CheckedStepReassign` ∧
-  `hwalk` (the nodes' runs at `reassign G η` give `PassWalkSound` there) ⟹
-  `GraphGuarantee`.
-
-**Named hypothesis `CheckedStepReassign`**: `checkedStep` at
-`reassign G η` with the checker `pc'` returns what it returns at `G`, its
-answers reassigned. The functions `checkedStep` calls whose invariance is
-not proved: `directCall` (its `for` loops thread the answers through
-`subtypeUsing`, whose invariance is proved), the search
-`expressionEffectUsing`, the checker's `select` at the reassigned graph; for
-a qualified body, `pc'` needs a `BodySubtyping (reassign G η)`, which exists
-where the body's check is sound at `η` (the scope `q.Admits η`, as
-`verify_qualified_safe_at`). The head query of an edge into a loop head is
-not equal by unfolding (`withTypedCells`, `withTypedLinks`, `ctxOf`); its
-invariance lemma is not stated.
-
-**`hwalk`** is `run_traversed`'s statement at `reassign G η`: its proof is
-uniform in the graph, and the edge and merge functions it reads are equal
-at the reassigned graph (`mergeState` by unfolding, `edgeStoreOf_reassign`).
-
-
-## Leg 14a: the step at a reassignment, its searches as oracles
-
-Modules `lean/Verification/Programs/TolerantFramesWalkReassignCall.lean`,
-`TolerantFramesWalkReassignSelect.lean`, `TolerantFramesWalkReassignStep.lean`
-and `TolerantFramesWalkReassignWalk.lean`.
-
-**The searches are oracles.** `checkedStep` applies its checker's `select`
-and the tree check to the evidence the direct call or the search
-`expressionEffectUsing` returns (`checkedStep_ok`). A node's step at
-`reassign G η` is stated as the evidence returned at `G`, re-checked there:
-`StepChecked` is the conditions `checkedStep_ok` reads (`StepAccepted` at
-some evidence `effect`) with some answers whose summaries are checked when
-the entry's are, and no reference to the searches. The search's result is
-not required to be equal at `reassign G η`.
-
-```math
-\mathrm{StepAccepted}\ G\ I\ pc\ \dots\ e\ \dots\ st\ \wedge\ \mathrm{PassCheckerReassign}\ pc\ pc'\ \Longrightarrow\ \mathrm{StepAccepted}\ (\mathrm{reassign}\ G\ \eta)\ (I.\mathrm{reassign}\ \eta)\ pc'\ \dots\ e\ \dots\ st
-```
-
-(`stepAccepted_reassign`), where `PassCheckerReassign pc pc'` states that
-`pc'` checks the tree where `pc` does and that its `select` has the same
-value as `pc`'s at `G`. Proved:
-
-- `forIn_map_state`: a `for` loop in `Id` commutes with a map of its state
-  where its body does; `directCall_reassign`: the direct call returns the
-  same derivation at `reassign G η`, its answers reassigned;
-- `ordinarySelect_reassign`: the ordinary checker's `select` is the same
-  result at `reassign G η` (each layer as `Parametricity` gives it for
-  `run`, over `stepsSelect_reassign`, the steps' rules with the tree taken
-  as given); hence `passCheckerReassign_ordinary`;
-- `passCheckerReassign_qualified`: a qualified body's checker at a body
-  subtyping of `reassign G η` with the same check
-  (`Parametricity.checkBodyStep_reassign`); `passCheckerReassign_lexical`:
-  where the body's check is the lexical body check, that subtyping exists
-  at every assignment `assign η source.binders As` the scheme admits within
-  its bounds (`lexicalBodySubtyping`, the route of
-  `verify_qualified_safe_at`);
-- `stepChecked_of_step`: an accepted `checkedStep` under
-  `DirectKeepsSummaries` and `SearchKeepsSummaries` is `StepChecked`;
-  `stepChecked_reassign`: `StepChecked` at `G` with the entry's summaries
-  checked is `StepChecked` at `reassign G η`, the answers reassigned;
-- `stepChecked_parts`, `stepChecked_sound`: the step theorem's conclusions
-  from `StepChecked`, without the summary hypotheses;
-- `NodeChecked` (`NodeRan` with `StepChecked` in place of the step's
-  equation), `NodeRan.checked`, `nodeChecked_reassign`;
-- `run_guarantee_of_checked`: `NodeRan` at every visited node of one run at
-  `G` ∧ `DirectKeepsSummaries` ∧ `SearchKeepsSummaries` ∧ a checker with
-  `PassCheckerReassign` at every admitted `η` ∧ `hwalk` over `NodeChecked`
-  ⟹ `GraphGuarantee`; `run_guarantee_of_ordinary`: the same for the
-  ordinary checker with the checker premise discharged;
-- `headQuery_reassign`, `assertionQuery_reassign`: the head query and the
-  assertion query of an edge are the same checks at `reassign G η`;
-  `edgeEvidenceChecked_reassign`: the check of the edge search's evidence
-  is, so the edge search is an oracle as the step's search is.
-
-`CheckedStepReassign`, an equation of `checkedStep` at `reassign G η`,
-holds only where the search is invariant; `run_guarantee_of_checked`
-replaces its use in `run_guarantee_of_run`.
-
-**Parts of the searches' results used without a check of this leg**: the
-derivation `deriv` the search returns (`Stepped.stepDeriv`, read by the
-footprint check behind `derivChecked`), and the answers the searches return:
-the subtype cache, whose entries the pass reads back as results (the cached
-`subtypeUsing` of the unchecked searches table), and the read summaries,
-kept checked at `G` by `DirectKeepsSummaries` and `SearchKeepsSummaries`.
-
-Premises this leg discharges / leaves:
-
-- discharges: the invariance of `directCall`, of the ordinary checker's
-  `select` and of the head query; `CheckedStepReassign` as a premise of the
-  guarantee (replaced by `PassCheckerReassign`, proved for the ordinary
-  checker and, at the lexical scope, for a qualified body); the
-  `DirectKeepsSummaries` and `SearchKeepsSummaries` premises of the step
-  theorem at the reassigned graph;
-- leaves: `hwalk`, `run_traversed`'s statement at `reassign G η` over
-  `NodeChecked` (its step theorem is `stepChecked_sound`);
-  `DirectKeepsSummaries` and `SearchKeepsSummaries` at `G`; for a qualified
-  body, that the unit's admitted assignments are of the form
-  `assign η source.binders As` with the scheme's conditions.
-## Leg 14c: a merge's facts below its counter
-
-Module `lean/Verification/Programs/TolerantFramesMergeBelow.lean`. Proved,
-for predecessors of the context's width with well-formed stores and every
-slot, fact and fresh name below the merge's first fresh name
-$`\mathit{fresh}`$ (`PredsBelow`), a non-empty list of them:
-
-- `renameEach_names`: a fact restated at fresh names names the original's
-  names and the names the renaming sends them to; `mergeEqual_names`: a
-  predecessor's equalities name a name its renaming renames and that
-  name's fresh names;
-- the fresh names a renaming sends a name to are slots' names of the merge,
-  so below the merge's next fresh name (`PredsBelow.renamed`, from the first
-  loop's invariant `mergeSlots_inv`); the renamed names are below
-  $`\mathit{fresh}`$ (`rename_key_below`);
-- the restatements (`PredsBelow.variants`), the met store
-  (`PredsBelow.met0`: the common facts are the first predecessor's live
-  facts, `mergeCommon_live`; `drop_below`), the differences
-  (`PredsBelow.diffs`), and the merged store (`PredsBelow.store`): a weakest
-  bound names the names of a predecessor's bound of its normal form
-  (`boundsOf_get`, `normalize_vars`), an entailed bound is a difference, a
-  guarded fact is renamed into the merge's names.
-
-**(Merge below)** (`mergeState_factsBelow`, `mergeState_below`):
-
-```math
-\mathit{preds}\neq[\,] \wedge \forall q\in\mathit{preds}.\ |q.\mathit{names}|=|\mathit{context}| \wedge \mathrm{StoreWF}\ q.\mathit{store} \wedge \mathrm{StateBelow}\ q\ \mathit{fresh}
-\ \Rightarrow\ \mathrm{StateBelow}\ m.\mathit{state}\ m.\mathit{fresh}
-```
-
-for $`m = \mathrm{mergeState}\ G\ \mathit{context}\ \mathit{preds}\ \mathit{edgesIn}\ \mathit{fresh}`$.
-With `mergeState_wf` this fills the merge's row of the store-operations
-table (Leg 12): `StoreWF`, names and fresh names below, facts below, all
-proved.
-
-## Leg 14c: the guarded join
-
-Module `lean/Verification/Programs/TolerantFramesMergeGuarded.lean`.
-`GuardedHolds` is a theorem (`guardedHolds_of_path`): on the path through
-any predecessor $`p`$ (`OnPath`), every fact `mergeGuarded` keeps holds at the
-slot environment. The join is sound as written: each fact it keeps passes
-`indicesCheckWith` against every predecessor's view materialized at the
-seed slots, among them $`p`$'s, which holds on the path. Proved:
-
-- `guardReads_path`: a read link from $`c`$ through field $`f`$ into $`v`$
-  that holds makes a path $`f :: q`$ read from $`c`$ read what $`q`$ reads
-  from $`v`$ (`readPath`; `guardReads_read` is its `readGuard` form);
-- `lowerRead_holds`: a fact lowered through such a link
-  (`IndexFact.lowerRead`) holds where the fact does: a term rooted at $`c`$
-  with path $`f :: q`$ denotes the term rooted at $`v`$ with path $`q`$, a
-  guard's path alike, the other facts unchanged; `lowerGuards_holds`:
-  the lowered guards hold where the atoms and links do;
-- `check_holds`: a fact `indicesCheckWith` accepts over a holding knowledge,
-  with that knowledge's guard tags and alias classes, holds
-  (`indicesCheckWith_sound`, `guardTags_sound`, `HeapLinks.aliases_eq`);
-- `OnPath.projection_holds`: $`p`$'s view, which holds at the merge's
-  valuation (`OnPath.view_ok`), materialized at any slots holds at the slots
-  (`materializeFrom_holds`, `selectedFromIndex`).
-
-The joined facts (`CertificateProducer.joinGuarded`) are checked against
-every lowered view, the tagged facts against every view; both checks are
-the ones the proof reads. The pass lane's queued item "recheck joined
-guarded facts with `indicesCheckWith`" adds no premise this proof uses: the
-check `joinGuarded` runs is that recheck.
-
-## Leg 14c: the entailed bounds' terms
-
-Module `lean/Verification/Programs/TolerantFramesMergeEntailed.lean`.
-
-**No term is defined at every valuation.** A term denotes what its kind
-reads of the value its path reads from its slot (`termValue`): a value term
-a safe integer, a length term an array's length, a view term a typed
-array's length, a string-length term a string's length, and none for a
-value of another kind (proved instances: `termValue_value_undef`, a value
-term at `undefined`; `termValue_length_num`, a length term at a number); a
-term with a path is undefined where a read along it finds no object or no
-field. So the class of bounds the merge keeps unconditionally is the class
-each view holds as a stored fact, whose holding states its terms defined.
-
-**The check** (`entailDefinedCheck`, at a view $`q`$, a bound $`a`$ of form
-$`F`$): $`q`$'s store holds $`a`$ as a live fact, or every term of $`F`$ is one
-`termDefined` accepts over the facts the entailment reads,
-`q.store.linearNear a.names`. `EntailedChecked`: every bound
-`mergeEntailed` adds passes the check at every view. Proved:
-
-- `checked_bound_holds`: `LinearNearSound` ∧ the view holds at $`\eta`$ ∧ the
-  view holds or entails the bound ∧ the check ⟹ the bound holds at $`\eta`$
-  (a live fact by the store; otherwise its terms defined by
-  `termDefined_sound` over the near facts, then `holds_sound` or
-  `entailsKnown_sound`);
-- `OnPath.entailed_ok_checked`: `LinearNearSound` ∧ `EntailedChecked` ⟹ the
-  entailed bounds hold on the path through any predecessor, which replaces
-  `EntailedDefined` in the merge theorem;
-- `entailedDefined_of_checked`: the check's `termDefined` disjunct at every
-  view ⟹ `EntailedDefined`.
-
-**The residue, the exact condition for the pass.** The check fails only for
-a bound kept at a view that does not store it, with a term that no
-unconditional fact the entailment reads names and that is neither a value
-slot stated `int` nor a length a `length` fact states. Two routes reach such
-a term (observed in the code, no source demonstrated): a view holding the
-bound through a stronger bound of the same normal form (`Store.holds`),
-where the term's coefficients cancel in `Linear.normalize`; and an
-entailment over the near facts, where the term's coefficient cancels in the
-derivation. Which terms can then be undefined on a path: a value term of a
-slot holding a non-integer there (a union-typed slot), a length, view or
-string-length term of a value of another kind, and any term read through a
-path whose object or field is absent on that path. The pass's merge tests
-`entailDefinedCheck` at each view before adding the bound; at a bound
-stored by the view, or over terms the near facts name, it passes with no
-extra work.
-
-## Leg 14c: the facts near a merge's names, on fuel
-
-Module `lean/Verification/Programs/TolerantFramesMergeNear.lean`.
-`linearNearFuel s names limit fuel` is `Store.linearNear`'s search by
-structural recursion on `fuel` (default `s.size + 1`): each round
-(`nearRound`) reads every frontier name's facts, keeps an unconditional index
-fact not kept yet while fewer than `limit` are listed (`nearStep`), and puts
-the unseen names of a kept linear fact on the next frontier; the rounds run
-while the frontier is non-empty and fewer than `limit` facts are listed
+(`mVal`). Proved: the first loop's invariant (`mergeSlots_inv`), one value
+per merged name (`slots_same`), each slot its merged name's value
+(`mergeVal_slots`), a fresh rename of $`x`$ the value of $`x`$
+(`mergeVal_rename`).
+
+**The merged store on the path** (proved): the common facts are live facts
+of every predecessor (`mergeCommon_live`); $`p`$'s restatements hold
+(`OnPath.variants_ok`), so the met store and each difference hold
+(`OnPath.met0_ok`, `OnPath.diffs_ok`); a weakest bound holds
+(`OnPath.bounds_ok`); an entailed bound holds where it passes the check
+below (`OnPath.entailed_ok_checked`); the guarded facts hold
+(`OnPath.guarded_ok` with `guardedHolds_of_path`: each fact the join keeps
+passes `indicesCheckWith` against every predecessor's view, among them
+$`p`$'s, through `guardReads_path`, `lowerRead_holds`, `lowerGuards_holds`,
+`check_holds`, `OnPath.projection_holds`); the fresh names hold fresh
+stores (`OnPath.fresh_ok`).
+
+**The entailed bounds' check.** A term denotes what its kind reads of the
+value its path reads from its slot (`termValue`); no term is defined at
+every valuation (`termValue_value_undef`, `termValue_length_num`).
+`entailDefinedCheck q a F`: $`q`$'s store holds $`a`$ as a live fact, or
+every term of $`F`$ is one `termDefined` accepts over the facts the
+entailment reads, `q.store.linearNear a.names`. `EntailedChecked`: every
+bound `mergeEntailed` adds passes it at every view. Proved:
+`checked_bound_holds`.
+
+**The facts near a merge's names.** `linearNearFuel s names limit fuel` is
+`Store.linearNear`'s search by structural recursion on `fuel` (default
+`s.size + 1`): each round (`nearRound`) reads every frontier name's facts and
+keeps an unconditional index fact not kept yet while fewer than `limit` are
+listed (`nearStep`); the rounds run while the frontier is non-empty
 (`nearLoop`). Proved: `linearNearFuel_sound`, every fact it lists is an
-unconditional `index` fact of the store (an `about` list's, so in
-`storeAll`), at any fuel.
+unconditional `index` fact of the store, at any fuel;
+`linearNearSound_of_eq`: `LinearNearFuelEq` (the pass's `linearNear` is
+`linearNearFuel` at fuel `s.size + 1`) gives `LinearNearSound`.
 
-The single residue is the named hypothesis `LinearNearFuelEq`: the pass's
-`linearNear` (a `while` loop, which Lean does not unfold) returns what
-`linearNearFuel` returns at fuel `s.size + 1`. `linearNearSound_of_eq`:
-`LinearNearFuelEq` ⟹ `LinearNearSound`. A round that leaves the frontier
-non-empty listed a fact not listed before, and the listed facts are
-distinct live facts, so `s.size + 1` rounds reach the loop's end (read from
-the code, not proved). `engine-pass` at 0f8d18ce has `linearNear` as the
-`while` loop; once the pass's search is on that fuel, the equation is its
-definition.
-
-## Leg 14c: the joined implications
-
-Module `lean/Verification/Programs/TolerantFramesMergeChecked.lean`. The pass
-records each edge into a merge as $`(\Gamma_e, \mathit{atSlots}, m)`$
-(`SinglePass.run`, `incomingEdges`): the source's context as its yields
-refine it, the implications the edge carries restated at the source's slots
-(`atSlotsOf names carried`, the same expression, with `slotsOfNames`), the
-edge's mapping.
-
-**The check each incoming edge needs** (the pass lane's D3, its
-specification):
+**The joined implications.** The pass records each edge into a merge as
+$`(\Gamma_e, \mathit{atSlots}, m)`$: the source's context, the implications
+the edge carries restated at the source's slots (`atSlotsOf`), the edge's
+mapping. Proved: `atSlots_ok`; `meetImplications_ok_of_check`: where
 
 ```math
 \mathrm{impliesCheck}\ G\ \Gamma_e\ \mathit{atSlots}\ m\ (\mathrm{meetImplications}\ G\ \mathit{edgesIn}\ |\mathit{context}|\ \mathit{context}) = \mathit{true}
 ```
 
-Proved:
+and $`\Gamma_e`$ types the source environment $`\rho_s`$, where the edge's
+implications hold, the joined implications hold at
+$`\mathrm{mapEnv}\ m\ \rho_s`$; `mergeImplies_ok_of_check`: the merge's
+implications then hold at its valuation.
 
-- `slotsOfNames_get`: a slot listed for a name holds that name;
-  `atSlots_ok`: the source's slots hold their names' values at $`\eta_s`$ ∧
-  the carried implications hold at $`\eta_s`$ ⟹ the implications at the
-  source's slots hold at the source environment $`\rho_s`$;
-- `meetImplications_ok_of_check`: the check ∧ $`\mathrm{EnvOk}\ G\ \Gamma_e\ \rho_s`$
-  ∧ the edge's implications hold at $`\rho_s`$ ⟹ the joined implications hold at
-  $`\mathrm{mapEnv}\ m\ \rho_s`$ (`impliesCheck_sound`);
-- `mergeImplies_ok_of_check`: with the merge's slots holding their names'
-  values at $`\mathrm{mapEnv}\ m\ \rho_s`$, the merge's implications
-  (`mergeImplies`) hold at the merge's valuation: the merge theorem's `hI`.
-
-The edge's obligations beside the check are the source's: its context met
-($`\mathrm{EnvOk}`$, the step's typing) and its carried implications holding
-(the edge's transfer keeps the source's).
-
-## Leg 14c: the merge theorem from its theorems
-
-Module `lean/Verification/Programs/TolerantFramesMergeChecked.lean`.
-**(Merge, checked)** (`mergeState_holdsAt_checked`, `mergeState_holds_checked`
+**(Merge)**, proved (`mergeState_holdsAt_checked`, `mergeState_holds_checked`
 its existential form): for predecessors `preds`, $`p`$ below their number,
 the merge's first fresh name $`\mathit{fresh}`$,
 
@@ -2058,309 +1090,267 @@ the merge's first fresh name $`\mathit{fresh}`$,
 \end{aligned}
 ```
 
-with $`\eta'`$ the merge's valuation (`mVal`). `GuardedHolds` is gone
-(`guardedHolds_of_path`), `LinearNearSound` follows from its equation
-(`linearNearSound_of_eq`), `EntailedDefined` is replaced by the check
-(`OnPath.entailed_ok_checked`), and `ImpliesOk` of the joined implications
-follows from the edge check (`meetImplications_ok_of_check`). With
-`mergeState_wf` and `mergeState_below`, the merged state is well-formed and
-below its counter.
+**(Merge below)**, proved (`mergeState_below`, with `mergeState_wf`): a
+non-empty list of predecessors of the context's width, well-formed and below
+$`\mathit{fresh}`$, gives a merged state below its next fresh name.
 
-**Premises this leg discharges / leaves.**
+## The head
 
-Discharges:
+Module `lean/Verification/Programs/TolerantFramesMergeHead.lean`. A loop head
+enters with `SinglePass.headEntry g false`: slot $`i`$ named by the start
+name a given input `(i, q)` names, else by the promised input's start name
+where the slot is among its slots, else by $`\mathit{fresh}+i`$; the store
+is the given facts $`g`$ renamed to those names; the next fresh name
+$`\mathit{fresh}+\mathit{width}`$. Its valuation (`headVal`) gives a start
+name `startNames[q]` the entry value $`\rho_0(q)`$ and $`\mathit{fresh}+i`$
+the value of slot $`i`$.
 
-- the open-premises row "a merge's facts below its counter":
-  `mergeState_below` (the merge's row of the store-operations table is
-  complete);
-- `MergesSound`: `GuardedHolds`, a theorem with no pass change; the queued
-  recheck of joined guarded facts is the check `joinGuarded` already runs.
+**What an edge establishes at a head** (`HeadEstablishes`), at the head's
+environment $`\rho'`$ and the state $`s`$: $`g`$ holds at $`\rho', s.h`$; the
+given implications hold; for each given input $`(j,q)`$,
+$`\rho'(j)=\rho_0(q)`$; for each promised-input slot $`j`$,
+$`\rho'(j)=\rho_0(q)`$ for the start name $`q`$ the promised input is.
+Proved:
 
-Leaves, each a pass change with its specification stated here:
+- `headEntry_holds`: start names distinct and below $`\mathit{fresh}`$ ∧ the
+  promised input a start name ∧ `HeadEstablishes` ⟹ the head's state with
+  its implications holds at $`\rho'`$, its store well-formed;
+- `headsEntered_of_recorded`: a walk recording each edge state into a head
+  as the head's entry enters its heads (`HeadsEntered`).
 
-- `LinearNearFuelEq`: `Store.linearNear` on fuel `s.size + 1`, as
-  `linearNearFuel` (replaces the row `MergesSound`: `LinearNearSound`);
-- `EntailedChecked`: the merge adds an entailed bound only where every view
-  passes `entailDefinedCheck` (replaces `EntailedDefined`);
-- D3, the joined implications: each incoming edge passes
-  `impliesCheck G Γe atSlots m (meetImplications …)`; the premise is then
-  `meetImplications_ok_of_check` from the edge's `EnvOk` and carried
-  implications, which `run_traversed` must record per edge;
-- the structural premises read from the walk: the incoming states' width
-  (`Traversed.width`, under `MapNamesLength`), well-formedness and
-  `StateBelow` (proved at the edges, Legs 10 and 12), the start names below
-  the merge's counter.
-## Leg 14b: the footprint check kept along a run
+**The start.** The pass enters the start with `headEntry g true` (each slot
+named by its own start name) where no edge enters it, and with
+`headEntry g false` as any head where one does; `g` is `startGiven`, the
+written assertion with the entry index facts and separation and the
+supplied facts. Proved: `entryRefusal_ok`, `startGiven_holds`,
+`entry_stateHolds`; `start_passPreT` (no edge into the start) and
+`start_entered_passPreT` (an edge into it, the counter at or past the
+inputs' width): where `entryRefusal` accepts, the start's typed assertion
+holds at every entry meeting the inputs, the separation and the index facts.
 
-Module `lean/Verification/Programs/TolerantFramesNodeBound.lean`. Under
-`bound = some (Φ, ret, exc)` and the region `dead`, `run` checks at each
-node (`BoundChecked`): at a node of `dead`, `GraphCode.deadNode` with
-`exc = false`; outside it, `footprintCheck` at the step's values, which
-`passRecvFresh`, `passDerivOf`, `passLiveHandler` and `passOutFresh`
-restate from `run`'s bindings (`F`, `deriv`, `liveHandler`, `outFresh`);
-`run` reads the region as an array, `deadAt_toList` gives the list. Proved:
+## The walk
 
-- `freshOk_recv`: the receiver slots `passRecvFresh` lists hold stores
-  allocated at or past the mark (`GraphCode.FreshOk`), from the entry
-  state's fresh names: the `FreshOk` premise of `footprint_exits`;
-- `copyFresh`: a copy of a slot holding a fresh name returns a fresh store;
+Modules `lean/Verification/Programs/TolerantFramesMergeGraph.lean`,
+`TolerantFramesNodeSound.lean`, `TolerantFramesNodeWalk.lean`,
+`TolerantFramesWalkReassignNodes.lean` and
+`TolerantFramesWalkReassignWalk.lean`.
+
+**The node assertion.** A walk (`Walk`) records the visited labels, each
+visited node's entry state and implications, and the states with
+implications edges carry into each node. At label $`l`$,
+$`\mathrm{passPreT}\ l = \mathrm{passPre}\ l\wedge\mathrm{EnvOk}\ (\mathit{ctx}\ l)`$:
+$`l`$ visited, its entry state holding with the start names at the entry
+values, its context typing the environment; $`\mathrm{edgePreT}\ t`$: an
+edge state into $`t`$ holds and $`t`$'s context types the environment.
+Proved: `passPre_adminClosed`, `passPreT_adminClosed` (the assertions
+survive the administrative steps), `nodeObligations_mono`.
+
+**The walk's construction** (`Traversed`): every node an edge state enters
+is visited; a node with no given facts and one incoming state enters with
+it; with several, with `mergeState` of them over its context, merge edges
+and fresh counter, each incoming state of the context's width, well-formed
+and below the counter, the start names below it. `MergesSound`:
+`LinearNearFuelEq`, and at each merge `EntailedChecked` and the joined
+implications wherever an edge state into it holds. Proved:
+
+- (`entries_of_traversed`) `Traversed` ∧ `HeadsEntered` ∧ `MergesSound` ⟹
+  `EntriesFromEdges`: a node's entry state holds wherever an edge state into
+  it holds (a head by `HeadsEntered`, one incoming state as it is, several by
+  `mergeState_holds_checked`);
+- (`run_sound_of_walk_typed`) `Traversed` ∧ `StepEdgesSoundT` ∧
+  `HeadsEntered` ∧ `MergesSound` ∧ `passPreT` at the start ⟹ `SafeGraph`
+  from the start, by `graph_safe_at`. `StepEdgesSoundT`: from `passPreT` at
+  every visited node, the node's local judgment and every exit an
+  `edgePreT` of its target.
+
+**A node of the walk.** `NodeRan` holds the pass's values and checks at a
+visited node: the node and its claim, the label's context the claim's, the
+entry state, `checkedStep`'s equation, the store well-formed, `NamesBelow`,
+the width, the entry's summaries checked. `NodeChecked` is `NodeRan` with
+`StepChecked` in place of the step's equation (`NodeRan.checked`, under
+`DirectKeepsSummaries` and `SearchKeepsSummaries`). `NodeMeaning`, about a
+node's values, is what they mean at a graph: the entry state holding where
+the node assertion does (`stated`), the claim's type giving each
+continuation's shape (`shape`) and a return's result type (`ret`), each
+normal exit and the handler delivering (`exits`, `handler`, by the edge's
+exit lemmas). `NodeAccepted` is `NodeRan` with `NodeMeaning`
+(`NodeAccepted.ran`, `NodeAccepted.meaning`, `NodeAccepted.ofRan`). Proved:
+
+- `nodeObligations_of_parts`: the step's parts and the meaning give the
+  node's `NodeObligations`;
+- `stepEdgesSound_of`: `NodeAccepted` at every visited label ∧ `CodesSound`
+  ∧ `DirectKeepsSummaries` ∧ `SearchKeepsSummaries` ⟹ `StepEdgesSoundT`;
+- `stepEdgesSound_of_checked`: `NodeChecked` with its `NodeMeaning` at every
+  visited label ∧ `CodesSound` ⟹ `StepEdgesSoundT`, with the exception
+  family `excOf G` and no heap post.
+
+**Binding continuations.** `ShapeOk` and `NormalTarget` are false at
+`branchBind` and `tagBind`, and the lowering emits every two-way dispatch as
+one of the two. `ShapeOk'` and `NormalTarget'` (module
+`TolerantFramesNodeBinds.lean`) extend them: at `branchBind y n` the value is
+a Boolean and the arm it selects holds at the pushed environment; at
+`tagBind tg y n` the arm of `tagHoldsIn h tg v` does. Proved over them:
+`nodeObligations'_of`, `graph_safe_at'`, `reached_pre'`, `nodeShape'_of`
+(the checker's `onlyBoolean` at a `branchBind`), `normalTarget'_of_exits`,
+`stepEdgesSoundT'_of`, `run_sound_of_walk_typed'`. The guarantee's fields
+(`nodesChecked_of_walk`, `keeps_postExc`) read `NodeObligations`.
+
+**What `Traversed` requires of the traversal**, stated for the driver's
+walk: every cycle of reached nodes passes through a node `isHead` marks
+(`HeadsCutCycles`), which `loopHeads` gives where it marks every target of a
+retreating edge of a complete depth-first walk (every cycle of a graph
+contains a retreating edge of any complete depth-first walk, a standard fact
+of depth-first search, not proved here); and a node other than a head
+processed after every edge into it from a reached node (the in-degree
+order), so that a merge's incoming list is complete.
+
+## The guarantee
+
+Modules `lean/Verification/Programs/TolerantFramesGuaranteeRuns.lean`,
+`TolerantFramesGuarantee.lean`, `TolerantFramesNodeBound.lean`,
+`TolerantFramesNodeReturns.lean`, `TolerantFramesNodeAsserted.lean` and
+`TolerantFramesRegionalNode.lean`.
+
+**Run properties.** A property of the graph machine's states
+(`StateKeeps X Q R`) is $`X`$ at a node entry, at each node's exits the
+target's $`X`$ (`EvalKeeps`), $`Q`$ at `.done v` and $`R`$ at `.raised`. A
+node keeps it (`NodesKeep P pre X Q R`) when from every state where its
+assertion and $`X`$ hold every run of its term meets its exit's obligation.
+Proved: `keeps_step`, `keeps_postExc` (`NodesChecked` ∧ `AdminClosed` ∧
+`NodesKeep` ⟹ $`\mathrm{SafePostExc}\ \Xi\ T\ Q\ R`$), `reached_pre`.
+
+**The fields.** `GraphGuarantee` is the unit lane's record field by field
+(`GraphGuarantee.toTarget`: its reachability `ReachesIn` is `Transitions`,
+`transitions_of_reachesIn`). `WalkSound` bundles `Traversed`,
+`StepEdgesSoundT`, `HeadsEntered` and `MergesSound`; `nodesChecked_of_walk`
+gives `NodesChecked` for `passPreT` from them. Each field, proved from
+`WalkSound` and one per-node hypothesis:
+
+| Field | Theorem | Per-node hypothesis |
+| --- | --- | --- |
+| `safe` | `run_sound_of_walk_typed` | none |
+| `bounded` | `bounded_of_walk` | `FootprintKept`: `NodesKeep` with $`X`$ the label in the region `dead` or $`\Phi`$ from $`h_0`$, $`Q`$ $`\Phi`$ with the value fresh where `fresh`, $`R`$ $`\Phi`$ where `onThrow` |
+| `ensured` | `ensured_of_walk` | `ReturnsEnsured`: `NodesKeep` with $`Q`$ `EnsuresAt ensures h (push v ρ0)` |
+| `regionally` | `regionally_of_walk` | `RegionsKept`: `NodesKeep` with the regional facts $`X`$, holding at the start, and $`Q`$, $`R`$ `ArgumentStoreRegionsWithin Φ regions ρ0 h0` |
+| `asserted` | `asserted_of_walk` | `AssertionsHeld`: each stated $`(l,K)`$ holds wherever `passPreT` at $`l`$ does |
+
+`PassWalkSound` holds `WalkSound` at every entry value and mark, the start
+entered at every entry meeting the inputs, the separation and the index
+facts (`entered`), and the four per-node hypotheses for the options the
+call states. Proved: (`run_guarantee`) `PassWalkSound` at `reassign G η` for
+every admitted $`\eta`$ ⟹ `GraphGuarantee`.
+
+**The per-node hypotheses from the pass's checks**, proved over
+`NodeAccepted`:
+
 - (`footprintKept_of`) `NodeAccepted` at mark $`|h_0|`$ ∧ `BoundChecked`
-  ∧ `CallFreshOk` at every visited node ∧ `CodesSound` ∧
-  `DirectKeepsSummaries` ∧ `SearchKeepsSummaries` ⟹ `FootprintKept`.
-  Outside `dead`, from $`\Phi`$ between $`h_0`$ and the entry heap,
-  `footprint_exits` gives $`\Phi`$ on each normal exit and on a throw where
-  the handler is live or the bound covers throws; a return where `ret`
-  is fresh by `passOutFresh` (`copyFresh`, or `CallFreshOk`). Inside
-  `dead`, an empty result type admits no normal exit (the value's type from
-  the step's exits), a continuation into `dead` reaches a node of `dead`,
-  and a throw reaches a handler of `dead` or escapes with no throw bound.
-
-Named hypothesis `CallFreshOk`: where `outFresh` reads a fresh result off
-the derivation's selected effect (`passCallFresh`), the returned value's
-store is allocated at or past the mark; the pass does not check that
-derivation's tree there (pass change D4).
-
-## Leg 14b: the return check kept along a run
-
-Module `lean/Verification/Programs/TolerantFramesNodeReturns.lean`.
-`ReturnChecked` is `returnCheck` refusing nothing at a node whose
-continuation is a return, at the step's output store and result. Proved:
-
-- `returnCheck_ensures`, by unfolding: where `returnCheck` refuses nothing,
-  `ensures` is empty, the claim's type or a context slot's is empty, or
-  `returnEntails` accepts the output's facts over the result and the
-  tracked inputs (`passTracked`, `returnCheck`'s `tracked`);
-- `passTracked_names`: each tracked slot holds the start name of the input
-  it tracks, the premise `htr` of `pass_return_ensures`;
+  (`deadNode` inside `dead`, `footprintCheck` outside it) ∧ `CallFreshOk`
+  at every visited node ∧ `CodesSound` ∧ `DirectKeepsSummaries` ∧
+  `SearchKeepsSummaries` ⟹ `FootprintKept`; `CallFreshOk`: where `outFresh`
+  reads a fresh result off the derivation's selected effect, the returned
+  value's store is allocated at or past the mark;
 - (`returnsEnsured_of`) `NodeAccepted` ∧ `ReturnChecked` at every visited
   node ∧ `CodesSound` ∧ `DirectKeepsSummaries` ∧ `SearchKeepsSummaries` ⟹
-  `ReturnsEnsured`: the state after the step at the pushed environment
-  (the step's normal exit) gives `ensures` by `pass_return_ensures`; an
-  empty result type admits no value, an empty context type no
-  environment.
+  `ReturnsEnsured`;
+- (`checkNode_sound`) `ArgumentRegionGraph.checkNode` accepting node $`l`$
+  at its evidence $`c`$ ∧ `ExpressionOk G c node.expression` ∧
+  `SummariesSound` ⟹ `NodeWithinAt`; `checkNode_mono`: the check over the
+  node's tables holds over the graph's where they agree (`TablesAgree`);
+  `meet_sub`: the meet of the entries the edges establish is within each.
 
-The guard and assertion goals are not composed here: `NodeAccepted.ret`
-states the goal of every value of the claim's type, while a guard's goal
-reads the promised argument (`GoalHolds (.guards T _) a`), which only the
-state after the step determines (the argument's slots, named by
-`argName`, refined by the step's yields). Their proof needs `ret` read at
-that state, as `ControlFlow.goal_return` reads `ReturnOk`, `YieldsOk` and
-`ArgumentsOk`, with the subtype answers' soundness (pass change D5) for
-`returnCheck`'s `subtypeUsing`.
+`AssertionsHeld` reads the assertion from the entry state, into which `run`
+adds each written fact renamed to the slots' names (`Store.add`); that state
+does not entail every written fact (a fact with an unnamed slot is not
+added, `Store.addBound` skips a bound whose normal form drops a term, a
+separation fact carries no level bound; observed in the code, no source
+reaching these demonstrated). The edge's check gives the assertion at every
+entry (`assertion_query_sound`, `head_query_sound`).
 
-## Leg 14b: a written assertion on its edges and in the entry state
+## The reassignment
 
-Module `lean/Verification/Programs/TolerantFramesNodeAsserted.lean`.
-Proved (`assertion_query_sound`): the check `run` makes on every edge into
-a node other than a head that states an assertion `req` (`checkIn` of `req`
-over the edge's materialized facts with the typed cells and links of the
-edge's context $`\Gamma_e`$, under the edge's observation where it has one,
-`assertionSource`) gives `req` at the target's environment
-$`\mathrm{mapEnv}\ \theta\ \rho`$, where the edge's facts hold at
-$`\rho`$, $`\Gamma_e`$ types $`\rho`$ (on a refined edge context, the
-step's yields: `YieldsOk`), the observation holds of the result and the
-target's context types the mapped environment.
+Modules `lean/Verification/Programs/TolerantFramesWalkReassign*.lean`.
 
-`AssertionsHeld` reads the assertion from the node's entry state
-(`passPreT`), into which `run` adds each written fact renamed to the
-slots' names (`Store.add`). That state does not entail every written
-fact: a fact one of whose slots has no name is not added (its renaming is
-`none`); `Store.addBound` does not add a linear bound when the store has a
-bound of the same normal form at least as strong, though the normal form
-may drop a term (`x - x`) whose value the skipped fact requires defined;
-and a separation fact's atoms carry no level bound. Observed in the code;
-no source reaching these is demonstrated. So `AssertionsHeld` is a named
-hypothesis of this leg. The edge check above is the obligation that gives
-the assertion at every entry: a node assertion that states, beside
-`passPreT`, the stated assertions at the label, with every edge into the
-label establishing them (`assertion_query_sound` at a node other than a
-head, `head_query_sound` at a head, whose given facts include the written
-assertion), carries them to every reached entry as `reached_pre` carries
-`passPreT`.
+**How the proved checker covers every assignment.** Its rules' soundness
+theorems are stated for every graph at the graph's own assignment; its
+acceptance at `G` is its acceptance at `reassign G η`
+(`Parametricity.accept_reassign`); so one check gives safety at every
+$`\eta`$. A qualified body's subtyping (`BodySubtyping`) is sound at the
+graph's own assignment only; `RequestJson.verify_qualified_safe_at` gives
+safety at an admitted instance `assign η source.binders As` from the lexical
+body check.
 
-## Leg 14b: the edge evidence checked, and a start an edge enters
+**The same route for the pass.** Every theorem above is stated for every
+graph. Proved, the pass's functions at a reassigned graph, the answers
+carried by `Answered.reassign`: `codesSound_reassign`,
+`Parametricity.summariesSound_reassign`, `footprintCheck_reassign`,
+`subtypeSearch_reassign`, `subtypeUsing_reassign`, `returnCheck_reassign`,
+`edgeStoreOf_reassign`, `entryRefusal_reassign`, `mergeState_reassign`
+(each equal at `reassign G η`), `directCall_reassign` (through
+`forIn_map_state`), `ordinarySelect_reassign`, `headQuery_reassign`,
+`assertionQuery_reassign`, `edgeEvidenceChecked_reassign`.
 
-Module `lean/Verification/Programs/TolerantFramesComposeEdges.lean`.
+**The searches as oracles.** `PassCheckerReassign pc pc'`: `pc'` checks the
+tree where `pc` does and its `select` has the same value as `pc`'s at `G`.
+Proved:
 
-**D1, the edge evidence.** Proved: (`edgeEvidenceChecked_env`) where
-`edgeEvidenceChecked` accepts the search's evidence at the edge's context
-$`\Gamma`$ and the target's $`\Delta`$, over the fields, optional fields
-and cells read off the edge's facts $`k`$, with $`k`$ holding at
-$`\rho`$, $`\Gamma`$ typing $`\rho`$ and the observation holding of slot
-0, $`\Delta`$ types $`\mathrm{mapEnv}\ \theta\ \rho`$: an unsatisfiable
-context meets no environment, `checkMapped_sound` gives `MappedCovers`
-and `checkObserved_sound` `ObservedCovers`, each read at the environment
-(`MappedCovers.env`, `ObservedCovers.env` with `readFields_holds`,
-`optionalFields_holds`, `aliasCells_holds`), as `ControlFlow.target_sound`
-and `branch_target_sound` read them for the checker; `checkedEdge_env` is
-the same for `checkedEdge`'s accepted result. This is the `htc` premise
-of `exitDelivers_of_edge` and `exitDelivers_head` on an edge `run` accepts
-by its search, at each context `run` searches from: the edge's own (its
-facts the materialized edge store, expanded, which `edgeStore_normal`
-gives), the yields' refinement and the mixed one (their typing at
-$`\rho`$ the step's yields, `YieldsOk`, pass change D2). An edge accepted
-by subtype answers alone reads the subtype cache (pass change D5).
+```math
+\mathrm{StepAccepted}\ G\ I\ pc\ \dots\ e\ \dots\ st\ \wedge\ \mathrm{PassCheckerReassign}\ pc\ pc'\ \Longrightarrow\ \mathrm{StepAccepted}\ (\mathrm{reassign}\ G\ \eta)\ (I.\mathrm{reassign}\ \eta)\ pc'\ \dots\ e\ \dots\ st
+```
 
-**D8, the start an edge enters.** `run` enters it with `headEntry g
-false`, as any head, and checks each edge into it as an edge into a head,
-so `exitDelivers_head` covers those edges with the start's given facts
-`startGiven …`. Proved (`start_entered_passPreT`): with that entry,
-`entryRefusal` accepting, the counter at or past the inputs' width and the
-entry meeting the inputs, the separation and the index facts, the start's
-typed assertion holds at the entry values (`headEntry_holds` from
-`HeadEstablishes` at the entry: the given facts by `startGiven_holds`, no
-given implication, each given input and the promised input at its own
-slot). `StartNotReentered` is then not a premise: `PassWalkSound.entered`
-is `start_passPreT` at a start no edge enters and `start_entered_passPreT`
-at one an edge enters, and `HeadsEntered` at the start is
-`headsEntered_of_recorded` as at any head.
+(`stepAccepted_reassign`), and with it `stepChecked_reassign`,
+`nodeChecked_reassign` (a node checked at `G` is checked at
+`reassign G η`, the answers reassigned); `passCheckerReassign_ordinary`;
+`passCheckerReassign_qualified`, `passCheckerReassign_lexical` (a qualified
+body's checker at each instance its scheme admits within its bounds);
+`scope_reassign` (a checker's scope, `CheckerScope`, gives the checker at
+each admitted assignment); `Traversed.reassign`; `StartEntered.entered`.
 
-## Leg 14b: the shape of a branch's value
+## The graph theorem
 
-Module `lean/Verification/Programs/TolerantFramesComposeShape.lean`.
-`NodeAccepted.shape` asks every value of the claim's type to have its
-continuation's shape (`ShapeOk`): a Boolean at a branch. Neither the
-graph's well-formedness nor the lowering gives it, since the claims are
-the producer's; the proved checker tests it of a branch's evidence
-(`ControlFlow.checkNodeResult` at `.branch`, `decide (expand G (result c)
-= [.bool])`), and `run` makes no such test. The check the pass needs is
-that test at a branch node (`passShapeCheck`). Proved: `branchShape_of`,
-the test gives `true` or `false` of every value (`represents_raw` at the
-Boolean clause); `nodeShape_of`, `passShapeCheck` gives `shape` at every
-continuation.
+Modules `lean/Verification/Programs/TolerantFramesGuaranteeTarget.lean` (the
+unit lane's definitions, copied from `PassUnit.lean` at c99647d3 on
+`engine-proof-unit`) and `TolerantFramesRunSound.lean`.
 
-`ShapeOk` and `NormalTarget` are `False` at `branchBind` and `tagBind`:
-the node obligations admit no node with those continuations, so a unit
-with one is outside `stepEdgesSound_of`. The checker covers them by
-`onlyBoolean` at `branchBind` and the tag's observation at `tagBind`
-(`ContinuationOk`, `BranchTargetOk`); `NodeObligations` would take the
-same.
+`RunWalk G I c`, what the driver records of an accepted call: a walk, the
+label contexts, each merge's edges and counter, the loop heads; every
+visited node `NodeChecked` at `G`; `Traversed`; each edge state into a head
+the head's entry; `StartEntered` (`entryRefusal` accepting, the start's
+entry `headEntry` over `startGiven` as the start or as any head, its context
+the inputs).
 
-## Leg 14b: the regional check of one node
+**(`run_sound`)**, proved:
 
-Module `lean/Verification/Programs/TolerantFramesRegionalNode.lean`. Proved:
+```math
+\mathrm{RunTraversed} \wedge \mathrm{NodesMean} \wedge \mathrm{LinearNearFuelEq} \wedge \mathrm{MergesEntailedChecked} \wedge \mathrm{MergesImpliesHold} \wedge \mathrm{FootprintsKept} \wedge \mathrm{ReturnsKept} \wedge \mathrm{RegionsHeld} \wedge \mathrm{AssertionsKept} \Longrightarrow \mathrm{RunSound}
+```
 
-- (`checkNode_sound`) `checkNode` accepting node $`l`$ at its evidence
-  $`c`$ ∧ `ExpressionOk G c node.expression` ∧ `SummariesSound` ⟹
-  `NodeWithinAt` (the node's conjunct of `NodesWithin`): the core of
-  `checkNodes_sound`, its typing premise the node's own instead of the
-  whole graph's acceptance (`graph_node`); `nodesWithin_of` assembles it;
-- (`checkNode_mono`) the check over the node's tables holds over the
-  graph's where they agree (`TablesAgree`): equal at the node, and at each
-  target of its continuation and handler the graph's entry within the
-  node's, in each of the four tables (every target check is an `all` over
-  the target's entry: `checkEdges_mono`, `checkHandler_mono`,
-  `edgesFresh_mono`, `handlerFresh_mono`, `edgesFields_mono`,
-  `handlerFields_mono`);
-- (`meet_sub`) the meet of the established entries is within each, the
-  agreement at a target other than a head, once the meet is over every
-  predecessor's entry (the in-degree order, `run_traversed`).
+`RunSound` is the unit lane's statement: for an accepted `RunCall`, under
+its `CheckerScope`, with `CodesSound` and `SummariesSound` of the summaries
+it leaves, `GraphGuarantee` of its options at its inputs. The proof carries
+each checked node to every admitted assignment (`scope_reassign`,
+`nodeChecked_reassign`), gives the node obligations there
+(`stepEdgesSound_of_checked`), the heads entered
+(`headsEntered_of_recorded`), the start entered (`StartEntered.entered`),
+the walk's construction (`Traversed.reassign`), and assembles the guarantee
+(`run_guarantee`, `GraphGuarantee.toTarget`). Each premise is a definition
+of `TolerantFramesRunSound.lean`, quantified over every call the premises of
+`RunSound` hold of and every walk it records.
 
-The graph's tables are then, at each label, the entry `run` checks the node
-at (the regions' inputs at the start, a head's given facts, the meet of
-the entries the edges into it establish, with the kept cells and fields).
-What `RegionsKept` still needs, beyond `NodeWithinAt` at every visited
-node:
+## Open premises
 
-1. `ExpressionOk G cEv node.expression` at the evidence `run` checks
-   (`⟨ordinaryEv, some ⟨c.context, node.expression, c.type⟩, [], kHere,
-   stepEffect, …⟩`): it quantifies over every environment meeting the
-   evidence's context and its facts `kHere` (materialized from the entry
-   state), while the step theorem gives the node's judgment from the entry
-   state holding; and the evidence's context is its derivation's claim,
-   which `run` does not compare with the node's at this check. A named
-   hypothesis (`RegionalTyped`), discharged by the derivation's tree check
-   at the node's context, as `footprintCheck`'s `derivChecked`;
-2. the composition along a run: `NodesKeep` with $`X`$ the graph's tables
-   holding (`LabelHolds`) and the regions within, as
-   `ArgumentRegionGraph.bounded_step` composes `NodesWithin` for the
-   checker from `StateOk`, here from `passPreT` and the step's judgment,
-   with `StableNow` at the entry world carried in $`X`$.
-   Not proved here.
+The hypotheses of `run_sound`, each with what discharges it and the theorem
+that consumes it. Pass changes are named by the pass lane's items; the pass
+lane (`engine-pass`) is at 0f8d18ce.
 
-## Leg 14b: premises this leg discharges and leaves
+| Premise | Discharged by | Consumed by |
+| --- | --- | --- |
+| `RunTraversed` | a pass change: the driver on fuel returning a `Walk` (not arrived), then a proof `run_traversed` composing: `NodeRan.checked` at each visited node, under `DirectKeepsSummaries` and `SearchKeepsSummaries` (pass change D6, a `summaries_sound` field of `Answered`, not arrived) and the entry's summaries among the final ones (`RunKeepsSummaries`, the same driver); `NamesBelow` and the width at each entry (proofs to write along the walk from `namesBelow_step`, `edgeTransfer_below`, `mergeState_below`, `headEntry_below`); `Traversed`'s fields (the in-degree order and `HeadsCutCycles`: `loopHeads` on fuel, a pass change not arrived, and the depth-first fact, a proof to write; `width` under `MapNamesLength`, pass change D7, `mapNames` on fuel, not arrived; `wf`, `below` proved per edge); the heads' records and `StartEntered`, read off the driver | `run_sound` (the walk, the checked nodes, `Traversed.reassign`, `headsEntered_of_recorded`, `StartEntered.entered`) |
+| `NodesMean` | per field: `stated`, proved where the node states no assertion, else as `AssertionsKept`; `shape`, `nodeShape_of` given the Boolean test at a branch (pass change, not arrived), and at `branchBind` and `tagBind` false, so the hypothesis fails at a unit with a condition until `TolerantFramesRuns.lean` takes `ShapeOk'` and `NormalTarget'` (a proof change, the route of `TolerantFramesNodeBinds.lean`); `ret`, `returnCheck_plain` at a plain goal, the guard and assertion goals under `YieldsOk` and the subtype answers (pass changes D2, D5, not arrived); `exits`, `exitDelivers_of_edge`, `exitDelivers_head` under `MapNamesSound` (D7), `YieldsOk` (D2), the result's freshness (D4), the target's types (`checkedEdge_env`, D1 arrived; an edge accepted by subtype answers alone, D5) and a given implication's type (D5); `handler`, `handlerDelivers_of_edge` | `stepEdgesSound_of_checked` |
+| `LinearNearFuelEq` | a pass change: `Store.linearNear` on fuel `s.size + 1` as `linearNearFuel` (not arrived) | `mergeState_holdsAt_checked`, through `MergesSound` |
+| `MergesEntailedChecked` | a pass change: the merge adds an entailed bound only where every view passes `entailDefinedCheck` (not arrived) | `mergeState_holdsAt_checked`, through `MergesSound` |
+| `MergesImpliesHold` | pass change D3: each edge into a merge passes `impliesCheck` of the joined implications (not arrived); then a proof to write: the edge delivers the joined implications at the merge's environment (`meetImplications_ok_of_check` from the edge's context typing the source and its carried implications holding there) | `entries_of_traversed`, through `MergesSound` |
+| `FootprintsKept` | `footprintKept_of`, over `NodeAccepted`, under `BoundChecked`, `CallFreshOk` (pass change D4, not arrived), `DirectKeepsSummaries`, `SearchKeepsSummaries`; a proof to write: the same over `NodeChecked` with `NodeMeaning` at the reassigned graph (`stepChecked_parts` in place of `checkedStep_parts`) | `run_guarantee` (`bounded`) |
+| `ReturnsKept` | `returnsEnsured_of`, over `NodeAccepted`, under `ReturnChecked`; a proof to write: the same over `NodeChecked` | `run_guarantee` (`ensured`) |
+| `RegionsHeld` | `checkNode_sound`, `checkNode_mono`, `meet_sub`; left: `RegionalTyped` (the evidence's `ExpressionOk` at the node's context, a pass change: the derivation's tree check there, not arrived), the tables' agreement through the in-degree order (with `RunTraversed`), and the composition along a run (a proof to write, as `ArgumentRegionGraph.bounded_step` composes `NodesWithin`) | `run_guarantee` (`regionally`) |
+| `AssertionsKept` | a proof to write: a node assertion stating the assertions at its label, each edge into it establishing them (`assertion_query_sound`, `head_query_sound`), carried as `reached_pre` carries `passPreT` | `run_guarantee` (`asserted`) |
 
-Discharges:
-
-- `FootprintKept`: `footprintKept_of`, from `NodeAccepted`, `BoundChecked`
-  and `CallFreshOk` at every visited node; its `FreshOk` of the receiver
-  slots from the entry state's fresh names (`freshOk_recv`);
-- `ReturnsEnsured`: `returnsEnsured_of`, from `NodeAccepted` and
-  `ReturnChecked` at every visited node;
-- the edge lemmas' target types (`htc`) on an edge accepted by the edge
-  search: `checkedEdge_env` (D1), given the edge's facts holding and its
-  context typing the source environment;
-- `StartNotReentered`: `start_entered_passPreT` at a start an edge enters
-  (D8), with `exitDelivers_head` and `headsEntered_of_recorded` at the start
-  as at any head;
-- `shape` at a branch: `nodeShape_of`, given the check `passShapeCheck`
-  (needs a pass change: the checker's Boolean test at a branch node).
-
-Leaves:
-
-- `CallFreshOk`: a call's fresh result read off the derivation's selected
-  effect (pass change D4);
-- `AssertionsHeld` from `passPreT`: the entry state does not entail every
-  written fact (Leg 14b: a written assertion on its edges and in the entry
-  state); the edge's check gives it (`assertion_query_sound`), carried by a
-  node assertion stating the assertions;
-- `RegionsKept`: `RegionalTyped` (the evidence's `ExpressionOk`), the
-  graph's tables' agreement with each node's through the in-degree order,
-  and the composition along a run;
-- the guard and assertion goals of `NodeAccepted.ret`: `ret` read at the
-  state after the step, `YieldsOk`, the subtype answers (D5);
-- `branchBind` and `tagBind` continuations: outside the node obligations;
-- `htc` on an edge accepted by subtype answers alone (D5), and at the
-  yields' refined and mixed contexts (`YieldsOk`, D2).
-
-## Leg 15b: node obligations at every continuation
-
-Modules `lean/Verification/Programs/TolerantFramesNodeBinds.lean` and
-`TolerantFramesNodeBindsExits.lean`.
-
-The lowering emits no `branch` continuation: every two-way dispatch of a
-source is a `branchBind` (a condition whose claim type is Boolean) or a
-`tagBind` (a condition by truthiness, a `typeof` or equality guard, `?.`
-and `??`, a default for `undefined`, a read before initialization, an
-`Array.isArray` test, a `__proto__` key), at 19 sites of
-`Source/Lowering` (`Control.lean`, `Atoms.lean`, `Execution.lean`,
-`Bindings.lean`, `Flow.lean`). `ShapeOk` and `NormalTarget` are `False` at
-both, so `NodeObligations` covers no unit with a condition.
-
-`ShapeOk'` and `NormalTarget'` extend them: at `branchBind y n` the value
-is `true` or `false` and the arm it selects holds at
-$`\mathrm{mapEnv}\ \theta\ (\mathrm{push}\ v\ \rho)`$; at `tagBind tg y n`
-any value, and the arm of `tagHoldsIn h tg v` in the heap of the state
-reached holds at the pushed environment, as `Transition.yesBind`, `noBind`
-and `tagBind` take them. `NodeObligations'`, `EvalOk'`, `GraphInv'` and
-`NodesChecked'` are the existing definitions over them. Proved:
-
-- `shapeOk'_eq`, `normalTarget'_eq`: on the other four continuations they
-  are `ShapeOk` and `NormalTarget`; `nodeObligations'_of`,
-  `nodesChecked'_of`: every `NodeObligations` is a `NodeObligations'`;
-- `graph_step'`, `graph_safe'`, `graph_safe_at'`, `graph_inv_run'`,
-  `reached_pre'`, `transfer'`: the graph theorems over `NodesChecked'`;
-- `nodeShape'_of`: the shape check `passShapeCheck'` (the proved
-  checker's `onlyBoolean` at a `branchBind`, nothing at a `tagBind`) gives
-  `ShapeOk'`;
-- `ofNode_flags`: an exit of `Exit.ofNode` observes only where it pushes
-  and promotes only where it does not, the premises `hpo` and `hpp` of
-  `exitDelivers_of_edge` and `exitDelivers_head`, which therefore deliver
-  the exits of both continuations as they stand (the observation's facts
-  by `edgeStore_observed`);
-- `normalTarget'_of_exits`: from every exit delivering, the normal target
-  at every continuation; a `branchBind`'s exits observe `.boolean`, a
-  `tagBind`'s observe `.tag tg q`, which `tagHolds_of_heap` gives from the
-  answer in the heap;
-- `nodeObligations'_of_parts`, `NodeAccepted'` (`NodeAccepted` with
-  `ShapeOk'`, `NodeAccepted.toPrime`), `stepEdgesSound'_of`,
-  `StepEdgesSoundT'`, `stepEdgesSoundT'_of`, `run_sound_of_walk_typed'`.
-
-The rest of the guarantee (`nodesChecked_of_walk`, `keeps_step`,
-`keeps_postExc`, `reached_pre` and the fields of `TolerantFramesGuarantee`)
-is generic in the node obligations: replacing `ShapeOk` and `NormalTarget`
-in `TolerantFramesRuns.lean` by `ShapeOk'` and `NormalTarget'` adds the two
-cases of `graph_step'` to `graph_step`, the two of `normalTarget'_of_exits`
-to `normalTarget_of_exits`, the two of `nodeObligations'_mono` to
-`nodeObligations_mono` and the `branchBind` case of `nodeShape'_of` to
-`nodeShape_of`; no other proof unfolds either definition.
