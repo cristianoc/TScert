@@ -1,3 +1,6 @@
+import Verification.Programs.TolerantFramesDriverExitTrace
+import Verification.Programs.TolerantFramesExitAux
+import Verification.Programs.TolerantFramesMapNames
 import Lean.Util.CollectAxioms
 import Lean.Elab.Command
 import Lean.Compiler.CSimpAttr
@@ -960,3 +963,26 @@ run_cmd do
   check ``Verification.TolerantFrames.diffSubtypes_env
   check ``Verification.TolerantFrames.mixed_fold
   check ``Verification.TolerantFrames.mixedContext_env
+  check ``Verification.TolerantFrames.WalkExtends.refl
+  check ``Verification.TolerantFrames.WalkExtends.trans
+  check ``Verification.TolerantFrames.WalkExtends.incoming_mem
+  check ``Verification.TolerantFrames.WalkExtends.merge_mem
+  check ``Verification.TolerantFrames.WalkExtends.edge_mem
+  check ``Verification.TolerantFrames.modify_cons_suffix
+  check ``Verification.TolerantFrames.pushExit_mergeGrowth
+  check ``Verification.TolerantFrames.exitStep_mergeGrowth
+  check ``Verification.TolerantFrames.exitsFold_mergeGrowth
+  check ``Verification.TolerantFrames.visitExits_mergeGrowth
+  check ``Verification.TolerantFrames.visitExits_extends
+  check ``Verification.TolerantFrames.exitsFold_extends
+  check ``Verification.TolerantFrames.exitsFold_checked
+  check ``Verification.TolerantFrames.visitExits_checked
+  check ``Verification.TolerantFrames.yieldsAtSlots_ok
+  check ``Verification.TolerantFrames.visitStep_outFresh
+  check ``Verification.TolerantFrames.passOutFreshChecked_fresh
+  check ``Verification.TolerantFrames.visitEntry_here
+  check ``Verification.TolerantFrames.cursor_get_eq
+  check ``Verification.TolerantFrames.mapNames_fold
+  check ``Verification.TolerantFrames.orderedSuffix_slots
+  check ``Verification.TolerantFrames.mapNames_eq
+  check ``Verification.TolerantFrames.mapNamesSound_some

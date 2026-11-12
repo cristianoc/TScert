@@ -1,3 +1,4 @@
+import Verification.Programs.TolerantFramesDriverExitTrace
 import Verification.Programs.TolerantFramesDriverSettleEntry
 
 /-! # Tolerant frames: checks retained by a successful visit -/
@@ -129,7 +130,8 @@ theorem visitStep_node {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I
     (hentry : en.entry = w.entry l) (himp : w.implies l = en.implies)
     (hsums : SummariesSound G I σ.answers.summaries.toList) :
     ∃ r : NodeChecked G I c.codes c.passChecker c.P w (List.range c.inputs.length) (passCtx c) l,
-      NodePassChecked c env.deadArr.toList r := by
+      NodePassChecked c env.deadArr.toList r ∧ r.node = env.nodes[l]! ∧ r.c = env.claimed[l]! ∧
+      r.entry = en.entry ∧ r.st = sd.st ∧ r.ans = sd.steppedAnswers ∧ r.ys = sd.yields.getD [] := by
   obtain ⟨⟨ms, stats, hr⟩, -, -⟩ := visitStep_ok h
   have hc := stepChecked_of_step (stepRun_ok hr) hdir hsrch
   have ha := hc.summaries hsums
@@ -146,7 +148,8 @@ theorem visitStep_node {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I
   obtain ⟨hbound, hret, -⟩ := visitStep_checks h
   have hy := visitStep_yields h himp (by rw [hE.goal, hE.startNames]; exact hE.argName)
   rw [hE.codes, hE.startNames, hE.goal, hE.ensures] at hy
-  refine ⟨r, nodePassChecked_of r ?_ (fun _ hk => ?_) ⟨sd.steppedAnswers.summaries.toList, ha, hy⟩⟩
+  refine ⟨r, nodePassChecked_of r ?_ (fun _ hk => ?_) ⟨sd.steppedAnswers.summaries.toList, ha, hy⟩,
+    rfl, rfl, rfl, rfl, rfl, rfl⟩
   · change passBounded G I c.codes c.bound env.deadArr l _ _ _ _ _ _ = true
     rw [hE.codes, hE.bound] at hbound
     exact hbound
@@ -167,12 +170,20 @@ theorem visitsSettle_of
   have hlabel := visitResult_record (σ := { σ with queue := rest }) (en := en) (sd := sd) (ex := ex)
     (hP.inv.size ▸ hl)
   refine ⟨?_, ?_, visitEntry_settled hP hself⟩
-  · intro w a hw hk ha
+  · intro w a hw hext hk ha
     obtain ⟨he, hi, -⟩ := ofPass_visitRecord (heads := envHead env) (hw.trans hlabel)
     obtain ⟨wf, hb, hwidth⟩ := hP.entryNames
     have hp : SumsPrefix σ.answers a := (keep_prefix σ.answers ex.answers).trans hk
-    exact visitStep_node hP.facts hl hP.step (hdir G I env) (hsrch G I env) wf hb hwidth he.symm hi
-      (fun s hs => ha s (hp.mem s hs))
+    obtain ⟨r, hchecked, hn, hc, heq, hst, hans, hys⟩ :=
+      visitStep_node hP.facts hl hP.step (hdir G I env) (hsrch G I env) wf hb hwidth he.symm hi
+        (fun s hs => ha s (hp.mem s hs))
+    refine ⟨r, hchecked, w, env, { σ with queue := rest }, en, sd, ex, ?_, rfl,
+      hP.facts.nodes, hP.facts.claims, hP.facts.codes, hP.facts.checker, ?_, hP.facts.stated,
+      hP.entry, hP.step, hP.exits, hn, hc, heq, hst, hans, hys, hi.symm, hP.inv.inSizes, ?_, ?_⟩
+    · rw [hP.facts.heads]
+    · exact congrFun hP.facts.heads
+    · exact ⟨hext.incoming, hext.incomingEdges, hext.edges⟩
+    · exact visitExits_checked hP.exits hP.inv.inSizes ⟨hext.incoming, hext.incomingEdges, hext.edges⟩
   · intro hs w hw
     exact visitStart_entered hP hs (hw.trans hlabel)
 
