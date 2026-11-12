@@ -1018,6 +1018,11 @@ run_cmd do
   check ``Verification.TolerantFrames.EdgeFound.reassign
   check ``Verification.TolerantFrames.HandlerExitChecked.reassign
   check ``Verification.TolerantFrames.handlerExit_delivers
+  check ``Verification.TolerantFrames.IncomingRecorded.mem
+  check ``Verification.TolerantFrames.MergeRecorded.mem
+  check ``Verification.TolerantFrames.ExitChecks.site_of_trace
+  check ``Verification.TolerantFrames.ExitChecks.assemble
+  check ``Verification.TolerantFrames.ExitChecks.extraction_of_fields
   check ``Verification.TolerantFrames.nodeExitsYF_of_checks
 
   check ``Verification.TolerantFrames.safePostExc_trace_lt

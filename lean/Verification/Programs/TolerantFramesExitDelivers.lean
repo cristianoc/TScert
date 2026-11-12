@@ -1,5 +1,6 @@
 import Verification.Programs.TolerantFramesExitTyped
 import Verification.Programs.TolerantFramesMapNames
+import Verification.Programs.TolerantFramesWalkExtends
 
 /-! # Tolerant frames: a normal exit into a node other than a loop head delivers from its checks
 
@@ -20,6 +21,37 @@ open PositiveRules HeapExpressionRules
 
 section NonHead
 variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
+
+/-- An incoming pair in the post-exit arrays, retained by the final walk. -/
+@[nospecialize] def IncomingRecorded (w : Walk ι) (t : Nat)
+    (e : SinglePass.State × List (PromiseCalls.Implication ι)) : Prop :=
+  ∃ a b : SinglePass.Walk ι, ∃ heads : Nat → Bool,
+    w = ofPass b heads ∧ heads t = false ∧ WalkExtends a b ∧
+      e ∈ ((a.incoming[t]?).getD []).zip ((a.incomingImpl[t]?).getD [])
+
+omit [DecidableEq ι] [Hashable ι] [Instantiates ι] in
+/-- Extension preserves the paired state and implications read by delivery. -/
+theorem IncomingRecorded.mem {w : Walk ι} {t : Nat}
+    {e : SinglePass.State × List (PromiseCalls.Implication ι)} (h : IncomingRecorded w t e) :
+    e ∈ w.incoming t := by
+  obtain ⟨a, b, heads, rfl, ht, hext, he⟩ := h
+  simpa only [ofPass, ht, Bool.false_eq_true, if_false] using hext.incoming_mem he
+
+/-- A merge record in the post-exit arrays, retained by the final walk. -/
+@[nospecialize] def MergeRecorded
+    (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
+    (t : Nat) (e : List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping) : Prop :=
+  ∃ a b : SinglePass.Walk ι, edgesIn = passEdgesIn b ∧ WalkExtends a b ∧
+    e ∈ (a.incomingEdges[t]?).getD []
+
+omit [DecidableEq ι] [Hashable ι] [Instantiates ι] in
+/-- Extension preserves the merge record read by delivery. -/
+theorem MergeRecorded.mem
+    {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
+    {t : Nat} {e : List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping}
+    (h : MergeRecorded edgesIn t e) : e ∈ edgesIn t := by
+  obtain ⟨a, b, rfl, hext, he⟩ := h
+  exact hext.merge_mem he
 
 /-- The edge's context of a normal exit: the claim's type pushed where the
 exit pushes the result. -/
@@ -60,7 +92,7 @@ node other than a loop head, at the node's claim `c`, entry, step `st`, the
 yields `ys` the visit kept, those the exits' contexts read (`ysA`), those
 the exit's implications read (`ysE`), the node's `here` answer and the
 step's `outFresh`: where the exit is not vacuous, its types
-(`ExitTyped`, the refined context at `ys`) and the target's written
+(`ExitTyped`, the refined context at `ysE`) and the target's written
 assertion at the context `ysA` refine; the state it carries and its
 implications among the target's incoming; at a merge, the edge as the
 merge reads it. -/
@@ -73,7 +105,7 @@ structure NonHeadExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G
   typed : vacuousOf G here c.type (exitCtx c pushed) pushed observed = false →
     ExitTyped G images (exitCtx c pushed) (ctx t.label) t observed
       (exitSearchFacts G c entry st pushed observed promote (ctx t.label) t.mapping)
-      (SinglePass.refinedContext G c node.continuation (yieldsAtSlots entry.names ys) (SinglePass.outAllOf G c st.stepOut)
+      (SinglePass.refinedContext G c node.continuation (yieldsAtSlots entry.names ysE) (SinglePass.outAllOf G c st.stepOut)
         (i == 0))
       (SinglePass.outAllOf G c st.stepOut)
   asserted : vacuousOf G here c.type (exitCtx c pushed) pushed observed = false → ∀ req, stated t.label = some req →
@@ -81,14 +113,14 @@ structure NonHeadExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G
       (assertionSource G (SinglePass.refinedContext G c node.continuation (yieldsAtSlots entry.names ysA)
           (SinglePass.outAllOf G c st.stepOut) (i == 0)) req
         (exitAssertFacts G c entry st pushed observed promote req t.mapping) t.mapping observed) req t.mapping = true
-  pushedIn : (edgeTransfer (normalNames entry st pushed) t.mapping pushed false outFresh entry st.result
+  pushedIn : IncomingRecorded w t.label (edgeTransfer (normalNames entry st pushed) t.mapping pushed false outFresh entry st.result
     (exitStore G c entry st pushed observed promote)
-    (w.implies l ++ freshImplOf pushed false ysE entry.names st.result)) ∈ w.incoming t.label
+    (w.implies l ++ freshImplOf pushed false ysE entry.names st.result))
   merged : 2 ≤ (w.incoming t.label).length →
-    (SinglePass.refinedContext G c node.continuation (yieldsAtSlots entry.names ysA) (SinglePass.outAllOf G c st.stepOut)
+    MergeRecorded edgesIn t.label (SinglePass.refinedContext G c node.continuation (yieldsAtSlots entry.names ysA) (SinglePass.outAllOf G c st.stepOut)
         (i == 0),
       atSlotsOf (normalNames entry st pushed) (w.implies l ++ freshImplOf pushed false ysE entry.names st.result),
-      t.mapping) ∈ edgesIn t.label
+      t.mapping)
 
 /-- **The checks at a reassigned graph**: the same checks there
 (`ExitTyped.reassign`, `assertionQuery_reassign`; the edge's facts, the
@@ -137,8 +169,8 @@ theorem slotsNamed_tail {names : List Nat} {x : Nat} {v : Tm} {ρ η : Env} (h :
 /-- **A normal exit into a node other than a loop head delivers
 `edgePreAJ`** from what `exitStep` checked on it (`NonHeadExitChecked`),
 the subtype answers sound, the mapping's names sound, the node's `here`
-answer stating its context empty and the yields the exits read the kept
-ones or none. -/
+answer stating its context empty and the read yields holding at the
+final world. The type check and fresh implications share `ysE`. -/
 theorem nonHeadExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G} {w : Walk ι}
     {startNames : List Nat} {ρ0 : Env} {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge}
     {given : Nat → Bool}
@@ -151,12 +183,17 @@ theorem nonHeadExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
       observed promote)
     (hshape : SinglePass.passShapeCheck' G c.type node.continuation = true)
     (hsub : SubtypeAnswersSound G images) (hmap : MapNamesSound (normalNames entry st pushed) t.mapping)
-    (hhere : here = true → HereEmpty G c.context) (hA : ysA = [] ∨ ysA = ys) (hE : ysE = [] ∨ ysE = ys)
+    (hhere : here = true → HereEmpty G c.context) (hA : ∀ ρ m s' v, AfterStep G w startNames ρ0 l entry st ys outFresh ρ (push v ρ) m s' →
+      PromiseCalls.YieldsOk G ysA ρ s'.n s'.W v)
+    (hE : ∀ ρ m s' v, AfterStep G w startNames ρ0 l entry st ys outFresh ρ (push v ρ) m s' →
+      PromiseCalls.YieldsOk G ysE ρ s'.n s'.W v)
     (ρ : Env) (m : Nat) :
     ExitDelivers (edgePreAJ G w startNames ρ0 ctx stated given edgesIn) G c.type c.context
       (AfterStep G w startNames ρ0 l entry st ys outFresh ρ) ρ m t pushed observed promote := by
   intro s' v _ hF he ho
-  obtain ⟨hS, hY, hout, hfr⟩ := hF
+  have hYA := hA ρ m s' v hF
+  have hYE := hE ρ m s' v hF
+  obtain ⟨hS, _, hout, hfr⟩ := hF
   obtain ⟨hpo, hpp⟩ := ofNode_flags (List.mem_of_getElem? hm)
   cases hvac : vacuousOf G here c.type (exitCtx c pushed) pushed observed with
   | true => exact (vacuous_false (C := c.context) hvac hhere hpo he ho).elim
@@ -165,7 +202,7 @@ theorem nonHeadExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
   cases n with
   | zero => exact absurd pos (Nat.lt_irrefl 0)
   | succ n =>
-  simp only at he hY hout hfr ⊢
+  simp only at he hout hfr ⊢
   obtain ⟨η, hn, -⟩ := id hS
   have hnames : SlotsNamed entry.names ρ η := slotsNamed_tail hn
   have hshv : ShapeOk v node.continuation := nodeShape_of hshape (he.2 0 _ rfl)
@@ -183,7 +220,7 @@ theorem nonHeadExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
     have hp : pushed = true := hpo hs
     subst hp; simpa [exitCtx] using he
   -- The target's types from the exit's checks.
-  have hr := passRefined_env (s := ⟨n + 1, W, h, pos, adm, hh⟩) hm he hshv ho (yieldsOk_atSlots hnames hY) hout
+  have hr := passRefined_env (s := ⟨n + 1, W, h, pos, adm, hh⟩) hm he hshv ho (yieldsOk_atSlots hnames hYE) hout
   have hko : HeapKnowledge.Holds (exitSearchFacts G c entry st pushed observed promote (ctx t.label) t.mapping)
       (if pushed then push v ρ else ρ) h := by
     unfold exitSearchFacts
@@ -196,12 +233,11 @@ theorem nonHeadExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
     exact KnowledgeExpand.expandLinks_holds (setsCtx_push_ok (envOk_tail he) v) hout
   have htc := (hc.typed hvac).env hsub hΓ hko hr houtL hh ho'
   -- The edge's state.
-  have hYE : PromiseCalls.YieldsOk G ysE ρ (n + 1) W v := yieldsOk_of_or hE hY
   have hT := normal_edge_delivers (w := w) (ctx := ctx) (s := ⟨n + 1, W, h, pos, adm, hh⟩) (width := c.context.length)
-    hS ho hpo hpp heo (fun _ => hYE) hmap (fun _ hf hn => hfr hf hn) hc.pushedIn htc
+    hS ho hpo hpp heo (fun _ => hYE) hmap (fun _ hf hn => hfr hf hn) hc.pushedIn.mem htc
   -- The written assertion at the context the yields `ysA` refine.
   have hrA := passRefined_env (s := ⟨n + 1, W, h, pos, adm, hh⟩) hm he hshv ho
-    (yieldsOk_atSlots hnames (yieldsOk_of_or hA hY)) hout
+    (yieldsOk_atSlots hnames hYA) hout
   have hAs : AssertsAt stated t.label (PointClaims.mapEnv t.mapping (if pushed then push v ρ else ρ))
       ⟨n + 1, W, h, pos, adm, hh⟩ := fun req hreq =>
     assertion_query_sound (hc.asserted hvac req hreq)
@@ -215,7 +251,7 @@ theorem nonHeadExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
     | true => simpa using hn'
     | false => simpa using slotsNamed_tail hn'
   exact ⟨⟨hT, hAs⟩, fun hg hlen =>
-    joinedAt_of_exit (given := given) (k := m) (hc.merged hlen) hrA hss hI' hg hlen⟩
+    joinedAt_of_exit (given := given) (k := m) (hc.merged hlen).mem hrA hss hI' hg hlen⟩
 
 /-- **What `exitStep` checks on the normal exit at position `i` into a
 loop head** (`headExit`), the head's given facts `req` (its written
@@ -225,7 +261,7 @@ entered by `headEntry` at width `hwidth` from the counter `hfresh`: where
 the exit is not vacuous, its types (`ExitTyped`), each given implication
 held by one the edge carries (of the same type or below it by an accepted
 subtype answer), the inputs' and the argument's slots holding their names,
-the given facts entailed over the edge's facts; the head's own entry among
+the given facts entailed over the edge's facts; the constructed head entry among
 its incoming. -/
 structure HeadExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (w : Walk ι)
     (startNames : List Nat) (ctx : Nat → List (Ty ι)) (stated : Nat → Option HeapKnowledge.Knowledge)
@@ -238,7 +274,7 @@ structure HeadExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (
   typed : vacuousOf G here c.type (exitCtx c pushed) pushed observed = false →
     ExitTyped G images (exitCtx c pushed) (ctx t.label) t observed
       (exitSearchFacts G c entry st pushed observed promote (ctx t.label) t.mapping)
-      (SinglePass.refinedContext G c node.continuation (yieldsAtSlots entry.names ys) (SinglePass.outAllOf G c st.stepOut)
+      (SinglePass.refinedContext G c node.continuation (yieldsAtSlots entry.names ysE) (SinglePass.outAllOf G c st.stepOut)
         (i == 0))
       (SinglePass.outAllOf G c st.stepOut)
   implied : vacuousOf G here c.type (exitCtx c pushed) pushed observed = false → ∀ x ∈ gimp,
@@ -256,9 +292,8 @@ structure HeadExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (
         (materialize { names := normalNames entry st pushed, store := exitStore G c entry st pushed observed promote }
           (exitWidth c pushed) (((atomsOf req).flatMap Atom.names).map (PointClaims.slot t.mapping)) true).1))
       req t.mapping = true
-  entered : (w.entry t.label, w.implies t.label) ∈ w.incoming t.label
-  entry : w.entry t.label = (SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp).1 ∧
-    w.implies t.label = (SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp).2.1
+  entered : ((SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp).1,
+    (SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp).2.1) ∈ w.incoming t.label
   written : (stated t.label).getD {} = written ∧ req = { written with indices := written.indices ++ cf }
 
 /-- **The head checks at a reassigned graph** (`ExitTyped.reassign`,
@@ -286,7 +321,6 @@ theorem HeadExitChecked.reassign {G : NormalGraph ι} {images : InstanceImageChe
   args := hc.args
   query hv := (headQuery_reassign G η _ _ req _ t.mapping).trans (hc.query hv)
   entered := hc.entered
-  entry := hc.entry
   written := hc.written
 
 /-- **A normal exit into a loop head delivers `edgePreAJ`** from what
@@ -310,14 +344,16 @@ theorem headExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G} {
     (hgiven : given t.label = true)
     (hshape : SinglePass.passShapeCheck' G c.type node.continuation = true)
     (hsub : SubtypeAnswersSound G images)
-    (hhere : here = true → HereEmpty G c.context) (hE : ysE = [] ∨ ysE = ys)
+    (hhere : here = true → HereEmpty G c.context) (hE : ∀ ρ m s' v, AfterStep G w startNames ρ0 l entry st ys outFresh ρ (push v ρ) m s' →
+      PromiseCalls.YieldsOk G ysE ρ s'.n s'.W v)
     (hnd : startNames.Nodup) (hlt : ∀ x ∈ startNames, x < hfresh)
     (hargs : ∀ a, argName = some a → ∃ q : Nat, startNames[q]? = some a)
     (ρ : Env) (m : Nat) :
     ExitDelivers (edgePreAJ G w startNames ρ0 ctx stated given edgesIn) G c.type c.context
       (AfterStep G w startNames ρ0 l entry st ys outFresh ρ) ρ m t pushed observed promote := by
   intro s' v _ hF he ho
-  obtain ⟨hS, hY, hout, -⟩ := hF
+  have hYE := hE ρ m s' v hF
+  obtain ⟨hS, _, hout, -⟩ := hF
   obtain ⟨hpo, hpp⟩ := ofNode_flags (List.mem_of_getElem? hm)
   cases hvac : vacuousOf G here c.type (exitCtx c pushed) pushed observed with
   | true => exact (vacuous_false (C := c.context) hvac hhere hpo he ho).elim
@@ -326,7 +362,7 @@ theorem headExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G} {
   cases n with
   | zero => exact absurd pos (Nat.lt_irrefl 0)
   | succ n =>
-  simp only at he hY hout ⊢
+  simp only at he hout ⊢
   obtain ⟨η, hn, -⟩ := id hS
   have hnames : SlotsNamed entry.names ρ η := slotsNamed_tail hn
   have hshv : ShapeOk v node.continuation := nodeShape_of hshape (he.2 0 _ rfl)
@@ -343,7 +379,7 @@ theorem headExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G} {
   have heo : observed.isSome = true → EnvOk G (exitCtx c pushed) (push v ρ) (n + 1) W := fun hs => by
     have hp : pushed = true := hpo hs
     subst hp; simpa [exitCtx] using he
-  have hr := passRefined_env (s := ⟨n + 1, W, h, pos, adm, hh⟩) hm he hshv ho (yieldsOk_atSlots hnames hY) hout
+  have hr := passRefined_env (s := ⟨n + 1, W, h, pos, adm, hh⟩) hm he hshv ho (yieldsOk_atSlots hnames hYE) hout
   have hko : HeapKnowledge.Holds (exitSearchFacts G c entry st pushed observed promote (ctx t.label) t.mapping)
       (if pushed then push v ρ else ρ) h := by
     unfold exitSearchFacts
@@ -355,7 +391,6 @@ theorem headExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G} {
     subst hp
     exact KnowledgeExpand.expandLinks_holds (setsCtx_push_ok (envOk_tail he) v) hout
   have htc := (hc.typed hvac).env hsub hΓ hko hr houtL hh ho'
-  have hYE : PromiseCalls.YieldsOk G ysE ρ (n + 1) W v := yieldsOk_of_or hE hY
   have hSe := edgeStore_normal (Γ := exitCtx c pushed) (width := c.context.length)
     (stateHolds_freshImpl (pushed := pushed) (s := ⟨n + 1, W, h, pos, adm, hh⟩) hS (fun _ => hYE)) ho hpo hpp heo
   have hest := headEstablishes_of_edge hSe hΓ htc (hc.query hvac)
@@ -367,8 +402,7 @@ theorem headExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G} {
       · exact hsub _ _ a ha)
     (hc.inputs hvac) (hc.args hvac)
   refine ⟨⟨⟨⟨_, hc.entered, ?_⟩, htc⟩, ?_⟩, fun hg => absurd (hg.symm.trans hgiven) (by decide)⟩
-  · rw [hc.entry.1, hc.entry.2]
-    exact (headEntry_holds hnd hlt hargs hest).1
+  · exact (headEntry_holds hnd hlt hargs hest).1
   · obtain ⟨hw, hreq⟩ := hc.written
     subst hreq
     exact assertsAt_of_head hw hest
@@ -420,10 +454,10 @@ structure HandlerExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G
     KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (ctx t.label))
       (assertionSource G (handlerCtx c TT) req (handlerAssertFacts G c TT entry st x req t.mapping) t.mapping none) req
       t.mapping = true
-  pushedIn : given t.label = false → (edgeTransfer (x :: entry.names) t.mapping true true outFresh entry st.result
-    (handlerStore G c TT entry st x) (w.implies l)) ∈ w.incoming t.label
+  pushedIn : given t.label = false → IncomingRecorded w t.label (edgeTransfer (x :: entry.names) t.mapping true true outFresh entry st.result
+    (handlerStore G c TT entry st x) (w.implies l))
   merged : given t.label = false → 2 ≤ (w.incoming t.label).length →
-    (handlerCtx c TT, atSlotsOf (x :: entry.names) (w.implies l), t.mapping) ∈ edgesIn t.label
+    MergeRecorded edgesIn t.label (handlerCtx c TT, atSlotsOf (x :: entry.names) (w.implies l), t.mapping)
   head : given t.label = true → ∃ (req written : HeapKnowledge.Knowledge) (cf : List HeapKnowledge.IndexAtom)
     (gimp : List (PromiseCalls.Implication ι)) (argName : Option Nat) (argSlots : List Nat)
     (inputSlots : List (Nat × Nat)) (hwidth hfresh : Nat),
@@ -441,10 +475,9 @@ structure HandlerExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G
           (materialize { names := x :: entry.names, store := handlerStore G c TT entry st x } (c.context.length + 1)
             (((atomsOf req).flatMap Atom.names).map (PointClaims.slot t.mapping)) true).1))
         req t.mapping = true) ∧
-    (w.entry t.label, w.implies t.label) ∈ w.incoming t.label ∧
-    (w.entry t.label = (SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp).1 ∧
-      w.implies t.label =
-        (SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp).2.1) ∧
+    (((SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp).1,
+      (SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp).2.1) ∈
+        w.incoming t.label) ∧
     ((stated t.label).getD {} = written ∧ req = { written with indices := written.indices ++ cf }) ∧
     (∀ y ∈ startNames, y < hfresh) ∧ (∀ a, argName = some a → ∃ q : Nat, startNames[q]? = some a)
 
@@ -501,7 +534,7 @@ theorem handlerExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
   have htc := hty.env hsub heh hko heh (fun h => by cases h) hh (fun o ho => by cases ho)
   cases hg : given t.label with
   | false =>
-    have hrec := hc.pushedIn hg
+    have hrec := (hc.pushedIn hg).mem
     have hT := handler_edge_delivers (w := w) (ctx := ctx) (ys := ([] : List (PromiseCalls.Yield ι)))
       (s := ⟨n + 1, W, h, pos, adm, hh⟩) hS wf hb hmap
       (by rw [freshImplOf_handler, List.append_nil]; exact hrec) htc
@@ -510,9 +543,9 @@ theorem handlerExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
         (stateHolds_materialize (stateHolds_edge hSe) _ _ true) heh hh (fun o ho => by cases ho) htc
     obtain ⟨η', hn', -, hI', -⟩ := hSh
     exact ⟨⟨hT, hAs⟩, fun hg' hlen =>
-      joinedAt_of_exit (given := given) (k := m) (hc.merged hg hlen) heh hn' hI' hg' hlen⟩
+      joinedAt_of_exit (given := given) (k := m) (hc.merged hg hlen).mem heh hn' hI' hg' hlen⟩
   | true =>
-    obtain ⟨req, written, cf, gimp, argName, argSlots, inputSlots, hwidth, hfresh, himp, hin, harg, hq, hent, hentry,
+    obtain ⟨req, written, cf, gimp, argName, argSlots, inputSlots, hwidth, hfresh, himp, hin, harg, hq, hent,
       hwr, hlt, hargs⟩ := hc.head hg
     have hest := headEstablishes_of_edge hSe heh htc (hq hvac)
       (fun y hy => by
@@ -523,8 +556,7 @@ theorem handlerExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
         · exact hsub _ _ a ha)
       (hin hvac) (harg hvac)
     refine ⟨⟨⟨⟨_, hent, ?_⟩, htc⟩, ?_⟩, fun hg' => absurd (hg'.symm.trans hg) (by decide)⟩
-    · rw [hentry.1, hentry.2]
-      exact (headEntry_holds hnd hlt hargs hest).1
+    · exact (headEntry_holds hnd hlt hargs hest).1
     · obtain ⟨hw, hreq⟩ := hwr
       subst hreq
       exact assertsAt_of_head hw hest
@@ -563,10 +595,10 @@ theorem HandlerExitChecked.reassign {G : NormalGraph ι} {images : InstanceImage
   pushedIn := hc.pushedIn
   merged := hc.merged
   head hg := by
-    obtain ⟨req, written, cf, gimp, argName, argSlots, inputSlots, hwidth, hfresh, himp, hin, harg, hq, hent, hentry,
+    obtain ⟨req, written, cf, gimp, argName, argSlots, inputSlots, hwidth, hfresh, himp, hin, harg, hq, hent,
       hwr, hlt, hargs⟩ := hc.head hg
     refine ⟨req, written, cf, gimp, argName, argSlots, inputSlots, hwidth, hfresh, fun hv y hy => ?_, hin, harg,
-      fun hv => (headQuery_reassign G η _ _ req _ t.mapping).trans (hq hv), hent, hentry, hwr, hlt, hargs⟩
+      fun hv => (headQuery_reassign G η _ _ req _ t.mapping).trans (hq hv), hent, hwr, hlt, hargs⟩
     obtain ⟨z, hz, h1, h2, h3⟩ := himp hv y hy
     refine ⟨z, hz, h1, h2, ?_⟩
     rcases h3 with h3 | ⟨a, ha⟩
