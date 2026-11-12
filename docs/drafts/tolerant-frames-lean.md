@@ -1444,3 +1444,53 @@ Premises this leg discharges / leaves:
 - `LinearNearFuelEq`: the rounds bound discharged (`linearNearFuel_rounds`);
   left: the equation of the pass's `while` loop with `linearNearFuel`, and
   the terms an entailment reads named by the facts it reads.
+
+## Leg 18b: the driver's record read as the walk
+
+Modules `lean/Verification/Programs/TolerantFramesMergeWritten.lean` and
+`TolerantFramesDriverWalk.lean`.
+
+**The written facts at an entry.** At a node other than a loop head the
+pass adds its written assertion's facts to the state it enters with (the
+single incoming state or the merge), each atom renamed from its slot to the
+name the slot holds, an atom with a slot no name holds left out
+(`withWritten`), and records that state as the label's entry. So the
+record's entry is not the single incoming state or the merge where the
+label states an assertion, and `Traversed`'s `single` and `merge` fields do
+not hold of it. `TraversedA` states the walk's construction over entries
+`base` before the addition (`Traversed` of the walk with entries `base`),
+each label's entry being `base t` at a head and
+`withWritten (stated t) (base t)` elsewhere. Proved: `withWritten_holds`
+(the state with the facts added holds where the state and the written
+assertion hold), `withWritten_wf`, `TraversedA.reassign`; `entry_of_edgeA`:
+
+```math
+\mathrm{TraversedA} \wedge \mathrm{HeadsEntered} \wedge \mathrm{LinearNearFuelEq} \wedge \mathrm{edgePre}\ t\ \rho\ m\ s \wedge \mathrm{AssertsAt}\ \mathit{stated}\ t\ \rho\ s \wedge (t \text{ a merge} \Rightarrow \mathrm{ImpliesOk}\ (\mathrm{joinedChecked}\ \dots)\ \rho) \Longrightarrow \mathrm{passPre}\ t\ \rho\ m\ s
+```
+
+and with it `passPreA_of_edgeAJ`: `edgePreAJ` (`edgePreA` with, at a merge,
+the joined implications) gives `passPreA`.
+
+**The driver.** `SinglePass.drive` visits the queue's first node on fuel.
+Proved: a drive that returns made its visits, each from the queue's first
+node over the rest of the queue, until the queue is empty (`Drives`,
+`drives_of_drive`, `Drives.queue`); a property every visit keeps holds of
+its result (`Drives.inv`); an accepted call either stopped with an accepted
+outcome or returned a record visiting at least the nodes the start
+reaches, its answers the call's (`walk_of_accepts'`, from `run` being the
+record's `Walk.outcome`); with `WalkStopsRefuse` (a stopped walk is never
+accepted), the latter (`walk_of_accepts`).
+
+**The record as the proof's walk** (`ofPass`, with the loop heads
+`passHeads`, the start and `loopHeads`' targets as `runWalk` marks them): a
+label visited where its record says so; its recorded entry state and
+implications; into a node other than a head, the states and implications
+the processed edges carried; into a head, its own entry where a processed
+edge enters it, so each edge state into a head is the head's entry by
+construction (proved: `ofPass_heads`). The label contexts, written
+assertions, merge edges and merge counters are the call's and the record's
+(`passCtx`, `passStated`, `passEdgesIn`, `passFresh`). `RecordSound`, what
+the record must give: every visited node `NodeChecked`, `TraversedA`, the
+start entered. Proved: (`run_traversedA`) `WalkStopsRefuse` ∧
+`RecordsSound` ⟹ `RunTraversedA`, the driver's walk `RunWalkA` (`RunWalk`
+with `TraversedA`) of every accepted call.

@@ -43,6 +43,7 @@ import Verification.Programs.TolerantFramesWalkReassignSelect
 import Verification.Programs.TolerantFramesWalkReassignStep
 import Verification.Programs.TolerantFramesWalkReassignWalk
 import Verification.Programs.TolerantFramesRunSound
+import Verification.Programs.TolerantFramesDriverWalk
 import Verification.Programs.TolerantFramesGuaranteeWalk
 import Verification.Programs.TolerantFramesMergeBelow
 import Verification.Programs.TolerantFramesMergeGuarded
@@ -724,6 +725,19 @@ run_cmd do
   check ``Verification.TolerantFrames.nearRound_progress
   check ``Verification.TolerantFrames.nearLoop_stable
   check ``Verification.TolerantFrames.linearNearFuel_rounds
+  -- Leg 18b: the driver's record read as the walk, a merge's joined implications on the exits, the loop heads (TolerantFramesDriver*, TolerantFramesMergeWritten, TolerantFramesWalk*)
+  check ``Verification.TolerantFrames.withWritten_holds
+  check ``Verification.TolerantFrames.withWritten_wf
+  check ``Verification.TolerantFrames.TraversedA.reassign
+  check ``Verification.TolerantFrames.entry_of_edgeA
+  check ``Verification.TolerantFrames.passPreA_of_edgeAJ
+  check ``Verification.TolerantFrames.drives_of_drive
+  check ``Verification.TolerantFrames.Drives.queue
+  check ``Verification.TolerantFrames.Drives.inv
+  check ``Verification.TolerantFrames.walk_of_accepts'
+  check ``Verification.TolerantFrames.walk_of_accepts
+  check ``Verification.TolerantFrames.ofPass_heads
+  check ``Verification.TolerantFrames.run_traversedA
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

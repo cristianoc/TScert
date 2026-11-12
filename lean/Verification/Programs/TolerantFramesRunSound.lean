@@ -2,6 +2,7 @@ import Verification.Programs.TolerantFramesGuaranteeTarget
 import Verification.Programs.TolerantFramesWalkReassignWalk
 import Verification.Programs.TolerantFramesComposeEdges
 import Verification.Programs.TolerantFramesGuaranteeWalk
+import Verification.Programs.TolerantFramesMergeWritten
 
 /-! # Tolerant frames: the graph theorem
 
@@ -69,25 +70,6 @@ theorem GraphGuarantee.toTarget {G : NormalGraph ι} {admits : MixedAssignment �
   regionally := g.regionally
   asserted η hη n W h ρ he l k hl j h' ρ' hj hr := g.asserted η hη n W h ρ he l k hl j h' ρ' hj
     (transitions_of_reachesIn hr)
-
-omit [Labels ι] in
-/-- **A merge at a reassigned graph** is the merge at the graph: `mergeState`
-reads the graph through no rule whose result depends on the assignment. -/
-theorem mergeState_reassign [DecidableEq ι] [Hashable ι] (G : NormalGraph ι) (η : MixedAssignment ι)
-    (context : List (Ty ι)) (preds : List SinglePass.State)
-    (edgesIn : List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)) (fresh : Nat) :
-    SinglePass.mergeState (reassign G η) context preds edgesIn fresh = SinglePass.mergeState G context preds edgesIn fresh :=
-  rfl
-
-omit [Labels ι] in
-/-- **The walk's construction at a reassigned graph**: `Traversed` reads the
-graph only through `mergeState` (`mergeState_reassign`). -/
-theorem Traversed.reassign [DecidableEq ι] [Hashable ι] {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat}
-    {given : Nat → Bool} {ctx : Nat → List (Ty ι)}
-    {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
-    {fresh : Nat → Nat} (h : Traversed G w startNames given ctx edgesIn fresh) (η : MixedAssignment ι) :
-    Traversed (reassign G η) w startNames given ctx edgesIn fresh :=
-  { h with merge := fun t hg h2 => by rw [mergeState_reassign]; exact h.merge t hg h2 }
 
 /-- **A checker's scope gives the checker at each admitted assignment**:
 the ordinary checker at every assignment (`passCheckerReassign_ordinary`);
