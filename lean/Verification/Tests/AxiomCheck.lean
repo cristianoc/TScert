@@ -75,6 +75,8 @@ import Verification.Programs.TolerantFramesSinglePassSound
 import Verification.Programs.TolerantFramesMergeExits
 import Verification.Programs.TolerantFramesMergeNearRounds
 import Verification.Programs.TolerantFramesExitTypes
+import Verification.Programs.TolerantFramesMapNames
+import Verification.Programs.TolerantFramesExitTyped
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -960,3 +962,19 @@ run_cmd do
   check ``Verification.TolerantFrames.diffSubtypes_env
   check ``Verification.TolerantFrames.mixed_fold
   check ``Verification.TolerantFrames.mixedContext_env
+  check ``Verification.TolerantFrames.cursor_get
+  check ``Verification.TolerantFrames.cursor_fold
+  check ``Verification.TolerantFrames.mapNames_some
+  check ``Verification.TolerantFrames.orderedSuffix_run
+  check ``Verification.TolerantFrames.mapNamesSound_of_lt
+  check ``Verification.TolerantFrames.yieldsOk_atSlots
+  check ``Verification.TolerantFrames.outFreshOf_eq
+  check ``Verification.TolerantFrames.subtypesPass_of
+  check ``Verification.TolerantFrames.edgeFound_of_checked
+  check ``Verification.TolerantFrames.mixedOf_mixedContext
+  check ``Verification.TolerantFrames.ExitTyped.reassign
+  check ``Verification.TolerantFrames.edgeFound_env
+  check ``Verification.TolerantFrames.ExitTyped.env
+  check ``Verification.TolerantFrames.HereEmpty.reassign
+  check ``Verification.TolerantFrames.hereEmpty_false
+  check ``Verification.TolerantFrames.vacuous_false
