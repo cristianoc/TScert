@@ -130,6 +130,8 @@ structure RunWalkA (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.R
   traversed : TraversedA G w (List.range c.inputs.length) given ctx edgesIn fresh stated
   heads : ∀ t, given t = true → ∀ e ∈ w.incoming t, e = (w.entry t, w.implies t)
   start : StartEntered c w ctx stated
+  /-- The written assertions by label are the table `runWalk` reads. -/
+  stated_eq : ∀ t, stated t = (CertificateProducer.byLabel c.P.toArray.size c.assertions)[t]?.getD none
 
 /-- The premises `RunSound` gives a call. -/
 def RunPremises (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) (after : Answered G)
@@ -207,7 +209,8 @@ assertion at its label** (`stated`, the table `run` checks the edges
 against). -/
 def AssertionsLabelled : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
-    RunPremises G I c after admits → ∀ r : RunWalkA G I c, ∀ l k, (l, k) ∈ c.assertions → r.stated l = some k
+    RunPremises G I c after admits → ∀ r : RunWalkA G I c, ∀ l k, (l, k) ∈ c.assertions → r.w.visited l →
+      r.stated l = some k
 
 /-- **The start entered at a reassigned graph**: the start's typed and
 written assertion holds at every entry meeting the inputs, the separation

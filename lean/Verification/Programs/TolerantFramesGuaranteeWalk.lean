@@ -91,7 +91,7 @@ structure PassWalkSound (G : NormalGraph ι) (P : Program) (start : Nat) (goal :
   regions : ∀ Φ regions exc, regional = some (Φ, regions, exc) →
     ∃ X : Env → Heap → Nat → Env → Heap → Prop, ∀ ρ0 h₀, X ρ0 h₀ start ρ0 h₀ ∧
       RegionsKeptS P G w (List.range inputs.length) ρ0 ctx (X ρ0 h₀) Φ regions h₀ exc
-  labelled : ∀ l k, (l, k) ∈ assertions → stated l = some k
+  labelled : ∀ l k, (l, k) ∈ assertions → w.visited l → stated l = some k
 
 omit [DecidableEq ι] [Hashable ι] in
 /-- **The start's node assertion** at an entry meeting the inputs, the
@@ -176,7 +176,7 @@ theorem run_guarantee {G : NormalGraph ι} {admits : MixedAssignment ι → Prop
       let s : IndexedHeap := ⟨n + 1, W, h, Nat.zero_lt_succ _, ha, ho⟩
       obtain ⟨s', he', hp'⟩ := reached_pre (nodesChecked_of_walk (hp.walk ρ 0) (regionFields regional) h)
         passPreU_adminClosed (hp.start (s := s) hv hs hi) hrun hj
-      exact he' ▸ holds_of_assertsAt hp.labelled hl hp'.1.2
+      exact he' ▸ hp'.1.2 k (hp.labelled l k hl hp'.1.1.1.1)
 
 end Walk
 

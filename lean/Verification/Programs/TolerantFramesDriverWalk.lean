@@ -241,7 +241,7 @@ theorem run_traversedA (hstop : WalkStopsRefuse ι) (hrec : RecordsSound ι) : R
   have hr := hrec G I c σ reach hw hle (ha ▸ hsums)
   exact ⟨⟨ofPass σ.walk (passHeads c), passHeads c, passCtx c, passEdgesIn σ.walk, passFresh σ.walk,
     passStated c, fun l hl => Classical.choice (hr.node l hl), hr.traversed, ofPass_heads σ.walk (passHeads c),
-    hr.start⟩⟩
+    hr.start, fun _ => rfl⟩⟩
 
 /-- **THE GRAPH THEOREM from the driver's record** (`run_sound` with
 `RunTraversedA` from `run_traversedA`): from a stopped walk never being

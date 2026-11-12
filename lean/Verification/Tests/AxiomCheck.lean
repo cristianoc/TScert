@@ -677,7 +677,6 @@ run_cmd do
   check ``Verification.TolerantFrames.start_entered_passPreT
   check ``Verification.TolerantFrames.branchShape_of
   check ``Verification.TolerantFrames.nodeShape_of
-  check ``Verification.TolerantFrames.passShapeCheck'_reassign
   check ``Verification.GraphCode.ArgumentRegionGraph.checkNode_sound
   check ``Verification.GraphCode.ArgumentRegionGraph.nodesWithin_of
   check ``Verification.GraphCode.ArgumentRegionGraph.checkNode_mono
@@ -752,6 +751,16 @@ run_cmd do
   check ``Verification.TolerantFrames.yieldsJudged_of_checked
   check ``Verification.TolerantFrames.exitDeliversY_head
   check ``Verification.TolerantFrames.goalHolds_of_returnY
+  check ``Verification.TolerantFrames.passShapeCheck'_reassign
+  check ``Verification.TolerantFrames.NodeChecked.meaning
+  check ``Verification.TolerantFrames.nodesMean_of_delivers
+  check ``Verification.TolerantFrames.nodup_of_eraseDups
+  check ``Verification.TolerantFrames.byLabel_size
+  check ``Verification.TolerantFrames.byLabel_cons
+  check ``Verification.TolerantFrames.byLabel_of_nodup
+  check ``Verification.TolerantFrames.assertionsLabelled_of_checked
+  check ``Verification.TolerantFrames.run_sound_18a
+  check ``Verification.TolerantFrames.run_sound_pass
 
   -- Leg 17b: the walk side of the graph theorem (TolerantFramesMergeExits, TolerantFramesMergeNearRounds)
   check ``Verification.TolerantFrames.entry_of_edge

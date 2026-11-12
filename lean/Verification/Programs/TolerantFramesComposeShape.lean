@@ -1,5 +1,4 @@
 import Verification.Programs.TolerantFramesNodeWalk
-import Verification.Programs.TolerantFramesWalkReassignChecks
 
 /-! # Tolerant frames: a continuation's shape from the claim's type
 
@@ -9,8 +8,7 @@ a Boolean. `run` checks the claim type at every node
 (`SinglePass.passShapeCheck'`: the Boolean type at a `branch`, only
 Booleans at a `branchBind`). Proved: `branchShape_of` (a Boolean claim type
 gives a branch's shape), `nodeShape_of` (the check gives every value its
-continuation's shape) and `passShapeCheck'_reassign` (the check is the same
-at every reassigned graph). -/
+continuation's shape). -/
 namespace Verification.TolerantFrames
 open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
@@ -39,12 +37,6 @@ theorem nodeShape_of {G : NormalGraph ι} {A : Ty ι} {k : Continuation}
   | branch y no => exact branchShape_of (by simpa [SinglePass.passShapeCheck', SinglePass.passShapeCheck] using hs) hv
   | branchBind _ _ => exact BranchRefinement.onlyBoolean_sound (by simpa [SinglePass.passShapeCheck'] using hs) hv
   | tagBind _ _ _ => trivial
-
-/-- **The shape check at a reassigned graph** is the check at the graph. -/
-theorem passShapeCheck'_reassign [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (η : MixedAssignment ι)
-    (A : Ty ι) (k : Continuation) :
-    SinglePass.passShapeCheck' (reassign G η) A k = SinglePass.passShapeCheck' G A k := by
-  cases k <;> rfl
 
 end Shape
 

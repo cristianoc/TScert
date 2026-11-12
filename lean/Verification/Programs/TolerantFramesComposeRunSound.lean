@@ -1,6 +1,8 @@
 import Verification.Programs.TolerantFramesRunSound
 import Verification.Programs.TolerantFramesNodeCallFresh
 import Verification.Programs.TolerantFramesNodeReturns
+import Verification.Programs.TolerantFramesNodeMeans
+import Verification.Programs.TolerantFramesNodeLabels
 
 /-! # Tolerant frames: the graph theorem with the per-node hypotheses the checks give
 
@@ -21,7 +23,14 @@ node of the driver's walk, at `G`, and the nodes' entry states
 `run_sound_17a` is `run_sound` with these two premises in place of
 `FootprintsKept` and `ReturnsKept`. `BoundsChecked` and `ReturnsChecked`
 are checks the driver makes at each node it visits, read off its walk as
-`RunWalkA`'s other records are. -/
+`RunWalkA`'s other records are.
+
+`run_sound_18a` takes in place of `NodesMean` what a node delivers beyond
+the pass's checks at it (`NodesDeliver`, by `nodesMean_of_delivers`), and in
+place of `AssertionsLabelled` the setup's label check (`LabelsChecked`, by
+`assertionsLabelled_of_checked`). `run_sound_pass` is it with the driver's
+walk from its record (`run_traversedA`): the graph theorem with every
+hypothesis left open on either side. -/
 namespace Verification.TolerantFrames
 open Verification Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
@@ -83,6 +92,28 @@ theorem run_sound_17a (hrun : RunTraversedA ι) (hmean : NodesMean ι) (hnear : 
     (himp : MergeExitsJoined ι) (hb : BoundsChecked ι) (hrc : ReturnsChecked ι)
     (hreg : RegionsHeld ι) (hasr : AssertionsLabelled ι) : Target.RunSound ι :=
   run_sound hrun hmean hnear himp (footprintsKept_of_checked hmean hb) (returnsKept_of_checked hmean hrc) hreg hasr
+
+/-- **THE GRAPH THEOREM, the per-node side** (`run_sound_17a` with
+`NodesDeliver` for `NodesMean` and `LabelsChecked` for
+`AssertionsLabelled`). -/
+theorem run_sound_18a (hrun : RunTraversedA ι) (hdel : NodesDeliver ι) (hnear : LinearNearFuelEq)
+    (hjoin : MergeExitsJoined ι) (hb : BoundsChecked ι) (hrc : ReturnsChecked ι)
+    (hreg : RegionsHeld ι) (hlab : LabelsChecked ι) : Target.RunSound ι :=
+  run_sound_17a hrun (nodesMean_of_delivers hdel) hnear hjoin hb hrc hreg (assertionsLabelled_of_checked hlab)
+
+/-- **THE GRAPH THEOREM of the single pass** (`run_sound_18a` with the
+driver's walk from its record, `run_traversedA`): from a stopped walk never
+being accepted (`WalkStopsRefuse`), the record's soundness (`RecordsSound`),
+what each checked node delivers (`NodesDeliver`), the merges' premises
+(`LinearNearFuelEq`, `MergeExitsJoined`), the driver's footprint and return
+checks at its nodes (`BoundsChecked`, `ReturnsChecked`), the regional
+premise (`RegionsHeld`) and the setup's label check (`LabelsChecked`), an
+accepted call of the pass guarantees `GraphGuarantee` of its options at its
+inputs. -/
+theorem run_sound_pass (hstop : WalkStopsRefuse ι) (hrec : RecordsSound ι) (hdel : NodesDeliver ι)
+    (hnear : LinearNearFuelEq) (hjoin : MergeExitsJoined ι) (hb : BoundsChecked ι) (hrc : ReturnsChecked ι)
+    (hreg : RegionsHeld ι) (hlab : LabelsChecked ι) : Target.RunSound ι :=
+  run_sound_18a (run_traversedA hstop hrec) hdel hnear hjoin hb hrc hreg hlab
 
 end Checked
 
