@@ -1127,3 +1127,36 @@ run_cmd do
   check ``Verification.TolerantFrames.RecInv.regionalWitnessSound
   check ``Verification.TolerantFrames.regionalWalkAlignment
   check ``Verification.TolerantFrames.regionalVisitTables_of_recordedAgreement
+
+open Lean Elab Command in
+run_cmd do
+  let standard := [``propext, ``Classical.choice, ``Quot.sound]
+  let check (decl : Name) : CommandElabM Unit := do
+    for axiom_ in ← liftCoreM <| collectAxioms decl do
+      unless standard.contains axiom_ do
+        throwError "{decl} depends on the axiom {axiom_}"
+  check ``Verification.TolerantFrames.exitTypes_regionIn
+  check ``Verification.TolerantFrames.headExit_regionIn
+  check ``Verification.TolerantFrames.assertionExit_regionIn
+  check ``Verification.TolerantFrames.exitStep_regionIn
+  check ``Verification.TolerantFrames.exitsFold_regionIn
+  check ``Verification.TolerantFrames.regionIn_modify_mono
+  check ``Verification.TolerantFrames.regionalFold_inputs
+  check ``Verification.TolerantFrames.regionalFold_entries
+  check ``Verification.TolerantFrames.sparseFold_frame
+  check ``Verification.TolerantFrames.sparse_own
+  check ``Verification.TolerantFrames.regionalAt_inputs
+  check ``Verification.TolerantFrames.visitExits_inputs
+  check ``Verification.TolerantFrames.setup_regional_no_start
+  check ``Verification.TolerantFrames.visitExits_regionalInputs
+  check ``Verification.TolerantFrames.RecInv.regionalInputWitness
+  check ``Verification.TolerantFrames.RegionBelow.trans
+  check ``Verification.TolerantFrames.regionalAt_state
+  check ``Verification.TolerantFrames.regionalAt_names
+  check ``Verification.TolerantFrames.RecInv.regional_nonhead_bound
+  check ``Verification.TolerantFrames.RecInv.regional_head_bound
+  check ``Verification.TolerantFrames.RecInv.successor_visited
+  check ``Verification.TolerantFrames.sparse_region_own
+  check ``Verification.TolerantFrames.regionalAt_own_no_self
+  check ``Verification.TolerantFrames.returnedWalk_successor_visited
+  check ``Verification.TolerantFrames.regionalRecordedTableAgreement

@@ -118,6 +118,16 @@ theorem visitsRecord_of (hr : VisitsRest ι)
   have hR := hr G I c env σ0 σ σ'' l rest hs hE hI hq hv
   obtain ⟨en, sd, ex, he, hs, hx, rfl⟩ := visit_ok hv
   have hln : l < env.n := (hI.queue l (by rw [hq]; exact List.mem_cons_self ..)).1
+  have hri := visitExits_inputs hx
+  have hframe : ∀ t, t ∉ exitsOf env l → ex.regionIn[t]? = σ.regionIn[t]? := by
+    intro t ht
+    apply hri.2 t
+    · intro x hx hxt
+      apply ht
+      exact List.mem_map.mpr ⟨x, List.mem_append_left _ hx, hxt⟩
+    · intro x hx hxt
+      apply ht
+      exact List.mem_map.mpr ⟨x, List.mem_append_right _ (by simpa using hx), hxt⟩
   exact { exits := hR.exits,
           labels := fun t ht => visitResult_labels _ _ _ _ _ ht,
           visits := visitResult_visits _ _ _ _ _ (hI.size ▸ hln),
@@ -129,7 +139,13 @@ theorem visitsRecord_of (hr : VisitsRest ι)
           origin := ⟨_, en, sd, ex, he, hs, hx, by
             simp only [visitResult, Array.set!_eq_setIfInBounds,
               Array.getElem?_setIfInBounds_self_of_lt (hI.size ▸ hln)],
-            hp G I env _ l en sd ex hs hx⟩ }
+            hp G I env _ l en sd ex hs hx⟩,
+          regionFrame := hframe, regionMono := hri.1,
+          regionalOrigin := fun hself => ⟨_, en, sd, ex, he, hs, hx, by
+            simp only [visitResult, Array.set!_eq_setIfInBounds,
+              Array.getElem?_setIfInBounds_self_of_lt (hI.size ▸ hln)],
+            hp G I env _ l en sd ex hs hx,
+            fun hg => (hframe l (hself hg)).symm, fun _ _ h => h⟩ }
 
 /-- **A state an exit carries in meets `PushOk`** (`edgeTransfer_width`,
 `edgeTransfer_wf`, `edgeStoreOf_wf`, `edgeTransfer_below`,

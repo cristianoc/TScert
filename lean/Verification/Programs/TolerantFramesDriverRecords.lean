@@ -1,4 +1,5 @@
 import Verification.Programs.TolerantFramesDriverSummaries
+import Verification.Programs.TolerantFramesRegionalInputs
 import Verification.Programs.TolerantFramesComposeYields
 import Verification.Programs.TolerantFramesDriverChecks
 
@@ -308,6 +309,20 @@ its exits' complete optional regional result and summary prefix. -/
     w.labels[l]? = some (SinglePass.LabelWalk.ofVisit σ.fresh en sd (ex.regional.map (·.state))) ∧
     SumsPrefix ex.answers a
 
+/-- A recorded visit with its regional inputs frozen at a visited non-head,
+and every state its exits accumulated retained in the current incoming table. -/
+@[nospecialize] def RegionalOrigin (env : SinglePass.WalkEnv ι G I)
+    (σ : SinglePass.WalkState ι G) (l : Nat) : Prop :=
+  ∃ (before : SinglePass.WalkState ι G) (en : SinglePass.Entered ι)
+    (sd : SinglePass.StepDone ι G) (ex : SinglePass.ExitsDone ι G),
+    SinglePass.visitEntry G I env before l = .ok en ∧
+    SinglePass.visitStep G I env before l en = .ok sd ∧
+    SinglePass.visitExits G I env before l en sd = .ok ex ∧
+    σ.walk.labels[l]? = some (SinglePass.LabelWalk.ofVisit before.fresh en sd (ex.regional.map (·.state))) ∧
+    SumsPrefix ex.answers σ.answers ∧
+    (envHead env l = false → before.regionIn[l]? = σ.regionIn[l]?) ∧
+    ∀ (t : Nat) (e : SinglePass.RegionState), e ∈ ex.regionIn[t]! → e ∈ σ.regionIn[t]!
+
 /-- **The walk's invariant**: the queue's labels distinct, below the bound,
 reached, unvisited and, other than heads, with no exit left to come in; the
 visited labels reached, with no exit left to come in, their exits below the
@@ -342,6 +357,7 @@ structure RecInv (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) (σ 
   impBelow : IncomingBelow σ.walk σ.fresh
   vacuity : CachedVacuity G env.claimed σ.unsat
   origins : ∀ l, visB σ.walk l = true → VisitOrigin env σ.walk σ.answers l
+  regionalOrigins : ∀ l, visB σ.walk l = true → RegionalOrigin env σ l
 
 /-- **At the walk's end every reached label is visited**, where the record
 counts at least the reached labels (`filter_eq_of_le`). -/
@@ -495,6 +511,9 @@ structure VisitFacts (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) 
   extendsWalk : WalkExtends σ.walk σ'.walk
   vacuity : CachedVacuity G env.claimed σ.unsat → CachedVacuity G env.claimed σ'.unsat
   origin : VisitOrigin env σ'.walk σ'.answers l
+  regionFrame : ∀ t, t ∉ exitsOf env l → σ'.regionIn[t]? = σ.regionIn[t]?
+  regionMono : ∀ (t : Nat) (e : SinglePass.RegionState), e ∈ σ.regionIn[t]! → e ∈ σ'.regionIn[t]!
+  regionalOrigin : (envHead env l = false → l ∉ exitsOf env l) → RegionalOrigin env σ' l
 
 omit [Labels ι] in
 theorem visB_frame {w w' : SinglePass.Walk ι} {t : Nat} (h : w'.labels[t]? = w.labels[t]?) : visB w' t = visB w t := by
@@ -547,7 +566,7 @@ theorem recInv_visit {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} 
     subst htl; exact hself (hnewQ t ht).2.1 (hnewQ t ht).1
   refine { nodup := ?_, queue := ?_, visR := ?_, visDeg := ?_, exits := ?_, count := ?_, size := ?_, degs := ?_,
            inLen := ?_, inSizes := hF.inSizes hI.inSizes, inVis := ?_, edgesVis := ?_, push := ?_, startFresh := ?_,
-           startBelow := hI.startBelow.mono hF.fresh, impBelow := hF.impBelow hI.impBelow, vacuity := hF.vacuity hI.vacuity, settled := ?_, origins := ?_ }
+           startBelow := hI.startBelow.mono hF.fresh, impBelow := hF.impBelow hI.impBelow, vacuity := hF.vacuity hI.vacuity, settled := ?_, origins := ?_, regionalOrigins := ?_ }
   · rw [hQ]
     refine List.nodup_append.mpr ⟨hnodupNew, hrest.2, fun a ha b hb hab => ?_⟩
     subst hab
@@ -645,6 +664,15 @@ theorem recInv_visit {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} 
     · rw [hvis t htl] at ht
       obtain ⟨σ₀, en, sd, ex, he, hs, hx, hr, hp⟩ := hI.origins t ht
       exact ⟨σ₀, en, sd, ex, he, hs, hx, (hF.labels t htl).trans hr, hp.trans hk⟩
+
+  · intro t ht
+    by_cases htl : t = l
+    · subst t; exact hF.regionalOrigin hself
+    · rw [hvis t htl] at ht
+      obtain ⟨before, en, sd, ex, he, hs, hx, hr, hp, hf, hm⟩ := hI.regionalOrigins t ht
+      refine ⟨before, en, sd, ex, he, hs, hx, (hF.labels t htl).trans hr, hp.trans hk,
+        fun hg => (hf hg).trans (hF.regionFrame t (hvisOld t ht hg)).symm,
+        fun u e he => hF.regionMono u e (hm u e he)⟩
 
 /-- A call's setup (`SinglePass.setup` over its arguments). -/
 def RunCall.setup {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I) :

@@ -1384,9 +1384,32 @@ The graph theorem `run_sound_single_pass`
 | Premise | Obligation | Consumed by |
 | --- | --- | --- |
 | `ExitsYield` | Each checked node's normal exits and handler deliver `NodeExitsY` at every admitted reassigned graph. `nodeExitsY_of_checks` proves delivery from `NodeExitsChecked`, with freshness from the actual step execution. Assembly from the visit's records requires head-entry checks, handler bounds, incoming and merge membership, and semantic justification of the yields each exit reads. | `nodesYield_of` |
-| `RegionalRecordedTableAgreement` | For every returned driver state with `EnvFacts`, `RecInv`, the regional configuration and sound final summaries, every successful regional visit matching a visited label record whose exit summaries prefix the final table satisfies `TablesAgree done.table (recordedRegionFacts σ.walk) done.ft (recordedRegionFresh σ.walk rg.names) l env.nodes[l]!`. This requires equality at the node, equal field names, and containment at every successor and handler. The exact quantified statement is in `TolerantFramesRegionalAlignment.lean`. | `regionalVisitTables_of_recordedAgreement` |
+| `RegionalRecordedTableAgreement` | For every returned driver state with `EnvFacts`, `RecInv`, the regional configuration and sound final summaries, every successful regional visit matching a visited label record whose exit summaries prefix the final table satisfies `TablesAgree done.table (recordedRegionFacts σ.walk) done.ft (recordedRegionFresh σ.walk rg.names) l env.nodes[l]!`. This requires equality at the node, equal field names, and containment at every successor and handler. `regionalRecordedTableAgreement` derives this from the explicit `RegionalRecordedReadback` leaf below. The exact quantified statements are in `TolerantFramesRegionalAlignment.lean`. | `regionalVisitTables_of_recordedAgreement` |
 | `RegionalDiscardedSeparation` | For a successful visit, let `a` be the whole entry materialization and `b = sd.st.stepK`. If `a.separation.depth ≠ b.separation.depth` and `b.separation.facts ≠ []`, then for every environment, `Holds a.separation` implies `Holds b.separation`. This is precisely the discarded branch of `SinglePass.regionalFacts` (lines 2635–2636). `regionalFacts_discard_counterexample` proves failure for arbitrary facts: `a = {}`, `b` has depth 1 and one fact separating slot 0 from its own field `x`, and slot 0 holds an object with `x` at location 0. Reachability of these inputs is not established. | `regionalStepBridge` |
 | `RegionalStepHeader` | At every successful `visitStep` with `sd.st.stepDeriv = none`, every `p` satisfying `sd.st.stepEffect.bind StepEvidence.proof? = some p` has `(claim p).context = env.claimed[l]!.context` and `(claim p).type = env.claimed[l]!.type`. `regionalAt` selects `.effect` at lines 2661–2664; its derivation check at line 2665 reads `stepDeriv`. | `regionalStepBridge` |
+
+The remaining `RegionalRecordedReadback` leaf has the same quantified inputs
+and premises as `RegionalRecordedTableAgreement`. Write `R(done, t)` for
+`regionalTableState done t`, the four sparse-table entries at `t`.
+Its conclusion is exactly:
+
+- `R(done, l) = done.state`.
+- For each continuation or handler target `t`, `t.label ≠ env.start`, and:
+  if `envHead env t.label = true`,
+  `RegionBelow ((rg.heads[t.label]?).join.getD {}) (R(done, t.label))`;
+  otherwise there exists `e ∈ σ.regionIn[t.label]!` with
+  `RegionBelow e (R(done, t.label))`.
+
+`RegionBelow` means containment in each of the provenance, value, cell and
+field lists. The leaf includes arbitrary successful `before` states matching
+the final record and satisfying the exit-summary prefix premise. The retained
+incoming-state witness is for the actual visit. Relating an alternate matching
+visit's target entries to that witness is part of the leaf.
+`regionalAt_own_no_self` proves its own-entry equality when `l < env.n` and
+no target has label `l`. At a self-edge, `SinglePass.sparse` overwrites the
+own entry with the later target entry (lines 2695–2704 of `SinglePass.lean`);
+the own-entry equality requires a separate argument from the successful check.
+No counterexample to the full quantified leaf is established.
 
 Proved prerequisites:
 
@@ -1396,6 +1419,20 @@ Proved prerequisites:
   `checkedWalk_final` proves the final invariant, start visit, regional
   configuration and summary soundness; `checkedWalk_nodeAlignment` proves
   the claim, node, entry and step equalities.
+- `RecInv.regionalOrigins` retains a successful visit, its record and summary
+  prefix, equality of its incoming list with the current list at a visited
+  non-head, and inclusion of its exit table in the current incoming table.
+  `SetupOk.recInv` proves the empty case; `recInv_visit` proves preservation
+  from `VisitFacts.regionFrame`, `regionMono` and `regionalOrigin`.
+  `regionalAt_inputs` and `visitExits_inputs` prove the frame and inclusion
+  properties; `RecInv.regionalInputWitness` supplies them with the regional check.
+- `regionalAt_state` proves equality of entry provenance and values and
+  containment of cells and fields. `RecInv.regional_nonhead_bound` combines
+  the frozen input list with `meet_sub`; `RecInv.regional_head_bound` bounds
+  the recorded state by the supplied head state. `returnedWalk_successor_visited`
+  proves successor and handler visits from acceptance; `setup_regional_no_start`
+  proves the setup's exclusion of edges into the start. `regionalAt_names`
+  proves agreement of field names.
 - `VisitOrigin` carries the exit summaries' prefix of the driver's table.
   `recInv_visit` preserves it; `SetupOk.recInv` establishes its empty initial
   case. `visitExits_answers_prefix` proves preservation at the visit boundary,

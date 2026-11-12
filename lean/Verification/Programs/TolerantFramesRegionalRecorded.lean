@@ -179,6 +179,128 @@ theorem RecInv.regionalWitness {c : Target.RunCall G I} {env : WalkEnv ι G I} {
   obtain ⟨done, hd, hdone⟩ := visitExits_regionalCheck hreg hx
   exact ⟨before, en, sd, ex, done, he, hs, hx, hd, by simpa [hdone] using hr, hp⟩
 
+/-- The exits' incoming table is the regional check's output table. -/
+theorem visitExits_regionalInputs {env : WalkEnv ι G I} {σ : WalkState ι G} {l : Nat}
+    {en : Entered ι} {sd : StepDone ι G} {ex : ExitsDone ι G} {rg : Regional} {done : RegionalDone ι}
+    (hreg : env.regional = some rg) (h : visitExits G I env σ l en sd = .ok ex)
+    (hd : regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 σ.regionIn = .ok done) :
+    ex.regionIn = done.regionIn := by
+  unfold visitExits at h
+  simp only [hreg, hd, Except.map] at h
+  exact exitsFold_regionIn _ _ _ h
+
+/-- A recorded regional visit reads the final incoming list at a non-head,
+and every state it accumulates remains in the final incoming table. -/
+theorem RecInv.regionalInputWitness {c : Target.RunCall G I} {env : WalkEnv ι G I}
+    {σ : WalkState ι G} (hi : RecInv c env σ) {l : Nat} (hl : visB σ.walk l = true)
+    {rg : Regional} (hreg : env.regional = some rg) :
+    ∃ (before : WalkState ι G) (en : Entered ι) (sd : StepDone ι G) (ex : ExitsDone ι G)
+      (done : RegionalDone ι),
+      visitEntry G I env before l = .ok en ∧ visitStep G I env before l en = .ok sd ∧
+      visitExits G I env before l en sd = .ok ex ∧
+      regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 before.regionIn = .ok done ∧
+      σ.walk.labels[l]? = some (LabelWalk.ofVisit before.fresh en sd (some done.state)) ∧
+      SumsPrefix ex.answers σ.answers ∧
+      (envHead env l = false → before.regionIn[l]? = σ.regionIn[l]?) ∧
+      ∀ (t : Nat) (e : RegionState), e ∈ done.regionIn[t]! → e ∈ σ.regionIn[t]! := by
+  obtain ⟨before, en, sd, ex, he, hs, hx, hr, hp, hf, hm⟩ := hi.regionalOrigins l hl
+  obtain ⟨done, hd, hdone⟩ := visitExits_regionalCheck hreg hx
+  refine ⟨before, en, sd, ex, done, he, hs, hx, hd, ?_, hp, hf, ?_⟩
+  · simpa [hdone] using hr
+  · rw [← visitExits_regionalInputs hreg hx hd]
+    exact hm
+
+/-- Componentwise containment of the four regional tables. -/
+def RegionBelow (r s : RegionState) : Prop :=
+  (∀ f ∈ r.facts, f ∈ s.facts) ∧ (∀ i ∈ r.values, i ∈ s.values) ∧
+  (∀ i ∈ r.cells, i ∈ s.cells) ∧ (∀ p ∈ r.fields, p ∈ s.fields)
+
+theorem RegionBelow.trans {r s t : RegionState} (hrs : RegionBelow r s) (hst : RegionBelow s t) :
+    RegionBelow r t :=
+  ⟨fun f hf => hst.1 f (hrs.1 f hf), fun i hi => hst.2.1 i (hrs.2.1 i hi),
+    fun i hi => hst.2.2.1 i (hrs.2.2.1 i hi), fun p hp => hst.2.2.2 p (hrs.2.2.2 p hp)⟩
+
+/-- A recorded state retains provenance and fresh values from its entry,
+and contains only cells and fields of that entry. -/
+theorem regionalAt_state {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd : StepDone ι G}
+    {rg : Regional} {a : Answered G} {incoming : Array (List RegionState)} {done : RegionalDone ι}
+    (h : regionalAt G I env l en sd rg a incoming = .ok done) :
+    let here : RegionState := if l == env.start then
+      { facts := ((rg.regions.map fun (x : Footprints.ArgumentStoreRegion) =>
+          (⟨x.position, []⟩ : Footprints.ArgumentStoreRegion)).eraseDups).map fun x => ⟨x.position, x⟩ }
+      else if env.isHead[l]! then ((rg.heads[l]?).join).getD {}
+      else RegionState.meet (incoming[l]!)
+    done.state.facts = here.facts ∧ done.state.values = here.values ∧ RegionBelow done.state here := by
+  unfold regionalAt at h
+  extract_lets node c width st here sums ordinaryEv kHere cEv t0 F C Fs at h
+  repeat' (first | split at h | extract_lets at h)
+  all_goals first | cases h | skip
+  all_goals
+    refine ⟨rfl, rfl, fun _ h => h, fun _ h => h, ?_, ?_⟩
+    · dsimp only [C]
+      split
+      · exact fun _ h => h
+      · simp
+    · exact fun _ h => (List.mem_filter.mp h).1
+
+/-- The field-name table is fixed by the regional configuration. -/
+theorem regionalAt_names {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd : StepDone ι G}
+    {rg : Regional} {a : Answered G} {incoming : Array (List RegionState)} {done : RegionalDone ι}
+    (h : regionalAt G I env l en sd rg a incoming = .ok done) : done.ft.names = rg.names := by
+  unfold regionalAt at h
+  repeat' (first | split at h | extract_lets at h)
+  all_goals cases h <;> rfl
+
+/-- The state stored at a label, empty when no regional check is recorded. -/
+@[nospecialize] def recordedRegionState (w : SinglePass.Walk ι) (l : Nat) : RegionState :=
+  ((w.labels[l]?).bind (·.region)).getD {}
+
+/-- A visited non-head's recorded state is within every incoming regional
+state, because its incoming list is frozen at its visit. -/
+theorem RecInv.regional_nonhead_bound {c : Target.RunCall G I} {env : WalkEnv ι G I}
+    {σ : WalkState ι G} (hi : RecInv c env σ) {l : Nat} (hl : visB σ.walk l = true)
+    {rg : Regional} (hreg : env.regional = some rg) (hstart : l ≠ env.start)
+    (hhead : envHead env l = false) {e : RegionState} (he : e ∈ σ.regionIn[l]!) :
+    RegionBelow (recordedRegionState σ.walk l) e := by
+  obtain ⟨before, en, sd, ex, done, _, _, _, hd, hr, _, hf, _⟩ := hi.regionalInputWitness hl hreg
+  have hh : env.isHead[l]! = false := by
+    unfold envHead at hhead
+    rw [Array.getElem!_eq_getD, Array.getD_eq_getD_getElem?]
+    exact hhead
+  have hb := (regionalAt_state hd).2.2
+  simp only [beq_eq_false_iff_ne.mpr hstart, Bool.false_eq_true, ↓reduceIte, hh] at hb
+  have hin : before.regionIn[l]! = σ.regionIn[l]! := by
+    simp only [getElem!_def, hf hhead]
+  rw [hin] at hb
+  have hmeet : RegionBelow (RegionState.meet σ.regionIn[l]!) e := meet_sub he
+  simpa only [recordedRegionState, hr, LabelWalk.ofVisit, Option.bind_some, Option.getD_some] using hb.trans hmeet
+
+/-- A visited head other than the start records only facts from its given
+regional state; its cell and field filters can reduce that state. -/
+theorem RecInv.regional_head_bound {c : Target.RunCall G I} {env : WalkEnv ι G I}
+    {σ : WalkState ι G} (hi : RecInv c env σ) {l : Nat} (hl : visB σ.walk l = true)
+    {rg : Regional} (hreg : env.regional = some rg) (hstart : l ≠ env.start)
+    (hhead : envHead env l = true) :
+    RegionBelow (recordedRegionState σ.walk l) ((rg.heads[l]?).join.getD {}) := by
+  obtain ⟨before, en, sd, ex, done, _, _, _, hd, hr, _, _, _⟩ := hi.regionalInputWitness hl hreg
+  have hh : env.isHead[l]! = true := by
+    unfold envHead at hhead
+    rw [Array.getElem!_eq_getD, Array.getD_eq_getD_getElem?]
+    exact hhead
+  have hb := (regionalAt_state hd).2.2
+  simpa only [beq_eq_false_iff_ne.mpr hstart, Bool.false_eq_true, ↓reduceIte, hh,
+    recordedRegionState, hr, LabelWalk.ofVisit, Option.bind_some, Option.getD_some] using hb
+
+/-- Every successor of a visited node is visited once the record accounts
+for all reached labels. This includes handler targets. -/
+theorem RecInv.successor_visited {c : Target.RunCall G I} {env : WalkEnv ι G I}
+    {σ : WalkState ι G} (hi : RecInv c env σ) (hE : EnvFacts c env)
+    (hle : (env.reached.toList.filter id).length ≤ σ.walk.visited)
+    {l t : Nat} (hl : visB σ.walk l = true) (ht : t ∈ exitsOf env l) :
+    visB σ.walk t = true :=
+  hi.all_visited hE hle t (hi.exits l hl t ht)
+    (hE.closed l t (hi.visR l hl).2 ht (hi.exits l hl t ht))
+
 /-- The graph's regional facts, from each label's own recorded check. -/
 def recordedRegionFacts (w : SinglePass.Walk ι) : List (List ArgumentPathTracking.Fact) :=
   w.labels.toList.map fun r => (r.region.getD {}).facts

@@ -45,6 +45,135 @@ tables. The visit's exit summaries must be a prefix of the final sound table. -/
       TablesAgree done.table (recordedRegionFacts σ.walk) done.ft
         (recordedRegionFresh σ.walk rg.names) l env.nodes[l]!
 
+/-- The four entries a regional check reads at a label. -/
+@[nospecialize] def regionalTableState (done : RegionalDone ι) (l : Nat) : RegionState :=
+  ⟨ArgumentPathTracking.atLabel done.table l, factsAt done.ft.values l,
+    factsAt done.ft.cells l, fieldsAt done.ft.fields l⟩
+
+/-- Projection of an own sparse entry is unchanged by entries at other labels. -/
+theorem sparse_region_own {α : Type} (n l : Nat) (r : RegionState) (xs : List (Nat × RegionState))
+    (get : RegionState → List α) (hl : l < n) (hne : ∀ x ∈ xs, x.1 ≠ l) :
+    (sparse n [] (([(l, r)] ++ xs).map fun x => (x.1, get x.2))).getD l [] = get r := by
+  simp only [List.singleton_append, List.map_cons, List.getD_eq_getElem?_getD]
+  rw [sparse_own n l [] (get r) _ hl]
+  · rfl
+  · intro x hx
+    obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx
+    exact hne y hy
+
+/-- Without a self-edge, a regional check's own table entry is its recorded state. -/
+theorem regionalAt_own_no_self {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd : StepDone ι G}
+    {rg : Regional} {a : Answered G} {incoming : Array (List RegionState)} {done : RegionalDone ι}
+    (h : regionalAt G I env l en sd rg a incoming = .ok done) (hl : l < env.n)
+    (hself : l ∉ nodeSucc env.nodes l) : regionalTableState done l = done.state := by
+  unfold regionalAt at h
+  extract_lets node c width st here sums ordinaryEv kHere cEv t0 F C Fs origins pushes outR outF outC outFs established targets n at h
+  repeat' (first | split at h | extract_lets at h)
+  all_goals first | cases h | skip
+  all_goals
+    have hf := regionalFold_entries (fun t => env.isHead[t]!)
+      (fun t => ((rg.heads[t]?).join).getD {}) established targets
+      ([(l, { here with cells := C, fields := Fs })], incoming)
+    have ht : ∀ x ∈ targets, x.1.label ≠ l := by
+      intro x hx hxl
+      apply hself
+      simp only [targets, List.mem_append, List.mem_map] at hx
+      rcases hx with ⟨y, hy, rfl⟩ | ⟨y, hy, rfl⟩
+      · exact List.mem_map.mpr ⟨y, List.mem_append_left _ hy, hxl⟩
+      · exact List.mem_map.mpr ⟨y, List.mem_append_right _ hy, hxl⟩
+    simp_all only
+    rename_i hderiv x at_ rin table ft hcheck
+    simp only [regionalTableState, ArgumentPathTracking.atLabel, factsAt, fieldsAt]
+    dsimp only [table, ft]
+    rw [hf]
+    congr 1 <;> apply sparse_region_own _ _ _ _ _ hl <;>
+      intro x hx <;> obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx <;> exact ht y hy
+
+/-- The remaining array-readback leaf. At the current node the sparse table
+reads the recorded state. A target is outside the start and its sparse entry
+contains the supplied head state or one state retained in the final incoming
+list. The quantification includes every successful visit matching the record. -/
+@[nospecialize] def RegionalRecordedReadback (ι : Type) [Labels ι] : Prop :=
+  ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I)
+    (env : WalkEnv ι G I) (σ : WalkState ι G) (reach : Nat) (rg : Regional),
+    RunCall.walk c = .ok (σ, reach) → reach ≤ σ.walk.visited →
+    EnvFacts c env → RecInv c env σ → env.regional = some rg →
+    SummariesSound G I σ.answers.summaries.toList →
+    ∀ l, visB σ.walk l = true → ∀ (before : WalkState ι G) (en : Entered ι)
+      (sd : StepDone ι G) (ex : ExitsDone ι G) (done : RegionalDone ι),
+      visitEntry G I env before l = .ok en → visitStep G I env before l en = .ok sd →
+      visitExits G I env before l en sd = .ok ex →
+      regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 before.regionIn = .ok done →
+      σ.walk.labels[l]? = some (LabelWalk.ofVisit before.fresh en sd (some done.state)) →
+      SumsPrefix ex.answers σ.answers →
+      regionalTableState done l = done.state ∧
+      ∀ t, t ∈ successors env.nodes[l]!.continuation ∨ env.nodes[l]!.handler = some t →
+        t.label ≠ env.start ∧
+        (if envHead env t.label then
+          RegionBelow ((rg.heads[t.label]?).join.getD {}) (regionalTableState done t.label)
+        else ∃ e ∈ σ.regionIn[t.label]!, RegionBelow e (regionalTableState done t.label))
+
+/-- A returned, accepted walk visits every successor of a visited label,
+using the setup's own reached flags. -/
+theorem returnedWalk_successor_visited {c : Target.RunCall G I} {env : WalkEnv ι G I}
+    {σ : WalkState ι G} {reach : Nat} (hw : RunCall.walk c = .ok (σ, reach))
+    (hle : reach ≤ σ.walk.visited) (hE : EnvFacts c env)
+    {l t : Nat} (hl : visB σ.walk l = true) (ht : t ∈ exitsOf env l) :
+    visB σ.walk t = true := by
+  have hv : VisitsRecord ι := visitsRecord_of (visitsRest_of (exitsPushOk_of exitsWidth)
+    (visitsSettle_of (visitStepPrefix_of_exitStep exitStepPrefix)) visitsImplications) visitExits_answers_prefix
+  obtain ⟨env₀, he₀, hi₀, hr⟩ := walk_inv setupRecords_of hv hw
+  apply hi₀.successor_visited he₀ (hr ▸ hle) hl
+  simpa only [exitsOf, hE.nodes, he₀.nodes] using ht
+
+/-- The preservation invariant reduces recorded-table agreement to sparse
+array readback. `RegionalRecordedReadback` is the explicit remaining leaf. -/
+theorem regionalRecordedTableAgreement (hread : RegionalRecordedReadback ι) :
+    RegionalRecordedTableAgreement ι := by
+  intro G I c env σ reach rg hw hle hE hi hreg hsums l hl before en sd ex done he hs hx hd hr hp
+  have readback := hread G I c env σ reach rg hw hle hE hi hreg hsums l hl before en sd ex done he hs hx hd hr hp
+  have own := recordedRegion_at hr (by rfl) rg.names
+  have entries := readback.1
+  have names := regionalAt_names hd
+  have targets : ∀ t, t ∈ successors env.nodes[l]!.continuation ∨ env.nodes[l]!.handler = some t →
+      RegionBelow (recordedRegionState σ.walk t.label) (regionalTableState done t.label) := by
+    intro t ht
+    have ht' : t.label ∈ exitsOf env l := by
+      apply List.mem_map.mpr
+      refine ⟨t, ?_, rfl⟩
+      rcases ht with ht | ht
+      · exact List.mem_append_left _ ht
+      · exact List.mem_append_right _ (by simpa using ht)
+    have hv := returnedWalk_successor_visited hw hle hE hl ht'
+    obtain ⟨hn, hb⟩ := readback.2 t ht
+    cases hh : envHead env t.label with
+    | true =>
+      simp only [hh, ↓reduceIte] at hb
+      exact (hi.regional_head_bound hv hreg hn hh).trans hb
+    | false =>
+      simp only [hh, Bool.false_eq_true, ↓reduceIte] at hb
+      obtain ⟨e, hm, hb⟩ := hb
+      exact (hi.regional_nonhead_bound hv hreg hn hh hm).trans hb
+  have recorded : ∀ t, regionalTableState
+      { done with table := recordedRegionFacts σ.walk, ft := recordedRegionFresh σ.walk rg.names } t =
+      recordedRegionState σ.walk t := by
+    intro t
+    simp only [regionalTableState, recordedRegionFacts, recordedRegionFresh, recordedRegionState,
+      ArgumentPathTracking.atLabel, factsAt, fieldsAt, List.getD_eq_getElem?_getD,
+      List.getElem?_map, Array.getElem?_toList]
+    cases σ.walk.labels[t]? with
+    | none => rfl
+    | some r => cases r.region <;> rfl
+  refine ⟨?_, ?_, ?_, ?_, names.symm, ?_⟩
+  · exact own.1.trans (congrArg RegionState.facts entries).symm
+  · exact own.2.1.trans (congrArg RegionState.values entries).symm
+  · exact own.2.2.1.trans (congrArg RegionState.cells entries).symm
+  · exact own.2.2.2.trans (congrArg RegionState.fields entries).symm
+  · intro t ht
+    have hb := targets t ht
+    rw [← recorded t.label] at hb
+    exact hb
+
 /-- A checked walk is the accepted run's final driver record. Its invariant,
 start visit, regional configuration and sound final summaries are consequences
 of execution and the run premises. -/

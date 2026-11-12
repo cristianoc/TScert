@@ -73,6 +73,22 @@ theorem setup_ok {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I} {σ0
       first | rfl | exact absurd (‹c.start < _› : c.start < c.P.toArray.size) hs |
         exact absurd hs (‹¬c.start < _› : ¬c.start < c.P.toArray.size)
 
+/-- A regional setup excludes every edge into the start. -/
+theorem setup_regional_no_start {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I}
+    {σ0 : SinglePass.WalkState ι G} (h : RunCall.setup c = .ok (env, σ0))
+    (hreg : c.regional.isSome = true) :
+    (c.P.toArray.any fun node =>
+      (successors node.continuation ++ node.handler.toList).any (·.label == c.start)) = false := by
+  unfold RunCall.setup SinglePass.setup at h
+  repeat' (first | split at h | extract_lets at h)
+  all_goals first | (cases h; done) | skip
+  all_goals
+    have hn : ¬((c.P.toArray.any fun node =>
+      (successors node.continuation ++ node.handler.toList).any (·.label == c.start)) &&
+      c.regional.isSome) = true := by assumption
+    simp only [hreg, Bool.and_true] at hn
+    exact Bool.eq_false_iff.mpr hn
+
 omit [Labels ι] in
 /-- **The heads' given states** (`setupGiven`'s fold over the labels
 below `n`): a label other than a head has none, a head below `n` its
@@ -291,7 +307,7 @@ theorem SetupOk.recInv {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I
     split <;> rfl
   have hreach : ∀ s, envReached env s = env.reached[s]! := fun s => by
     simp only [envReached, getElem!_def]; cases env.reached[s]? <;> rfl
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · exact List.nodup_range.filter _
   · intro q hq
     simp only [SinglePass.setupState, SinglePass.initialQueue, List.mem_filter, List.mem_range, Bool.and_eq_true,
@@ -341,6 +357,7 @@ theorem SetupOk.recInv {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I
   · intro t h; rw [hvis] at h; cases h
   · intro t xs hx; simp [incI, SinglePass.setupState, Array.getElem?_replicate] at hx; split at hx <;> simp at hx
   · exact cachedVacuity_empty _ _
+  · intro t h; rw [hvis] at h; cases h
   · intro t h; rw [hvis] at h; cases h
 
 /-- **(`setupRecords_of`) The setup starts the walk's invariant**
