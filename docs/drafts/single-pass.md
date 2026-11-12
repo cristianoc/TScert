@@ -84,7 +84,9 @@ differs at is a test some edge answers `false`. A name a predecessor
 renames that no slot of the merge holds leaves the store there. At a merge, a linear bound every predecessor states of one form
 under one condition is kept at the weakest of their bounds; a name a slot
 keeps that another slot's fresh name renames in some predecessor is stated
-equal to it there; a linear bound over the merge's names one predecessor
+equal to it there (an alias link; the two linear facts of their numbers'
+equality only where that predecessor's unconditional facts make the name an
+integer, `Store.integral`); a linear bound over the merge's names one predecessor
 states and every other entails over its linear facts near the bound's names
 (`HeapKnowledge.entailsKnown`) is kept; the guarded facts the search's join
 keeps (`CertificateProducer.joinGuarded`) are kept, each predecessor's guards
