@@ -165,10 +165,10 @@ checks (section 7).
 Each level's theorem adds hypotheses to the one below it:
 
 - **Unit**, `passUnitCli_safe`: H1, H2, H3.
-- **File**, `passFile_safe_kinds`: H1–H3, the layout (H5a `ModuleLayout`),
+- **File**, `passFile_safe_kinds`: H1–H3, `ReceiverDropSound`, the layout (H5a `ModuleLayout`),
   the established slots (`EstablishedSlots`) and the four outside kinds met
   (`KindMet` for `declared`, `standIn`, `host`, `moduleCell`).
-- **Cross-module**, `crossModule_safe`: H1–H3, the importer's layout, the
+- **Cross-module**, `crossModule_safe`: H1–H3, `ReceiverDropSound`, the importer's layout, the
   publication order (`ReadsEarlier`), each published entry's step
   (`EstablishedStep`) and layout (`StepLayouts`), the chosen slots
   (`ChosenSlots`), each established slot reading an entry of the order, and
@@ -186,6 +186,11 @@ Each level's theorem adds hypotheses to the one below it:
   $`\mathrm{GraphGuarantee}_G(A, c.P, c.\mathrm{start}, c.\mathrm{goal}, c.\mathrm{inputs}, c.S, c.X, c.\mathit{assertions}, c.\mathit{bound}, c.E, c.\mathit{regional})`$.
 - **H2 `RunKeepsSummaries`**: for every call $`c`$, every summary of
   $`c.\mathrm{answers}`$ is a summary of the answers $`c`$ returns.
+- **`ReceiverDropSound`** (a lemma about the graph machine): for a request
+  $`r`$ with no receiver slot and a code $`c`$ with
+  $`\mathrm{UnitIsReceiverless}(r, c)`$ and $`\mathrm{codeConditions}(c)`$,
+  $`\mathrm{RequestSafe}(r) \Rightarrow \forall \eta.\; \mathrm{GraphCodeSpec}_{G\eta}(\mathrm{dropReceiver}(c))`$
+  (section 4, "H5: the realization").
 
 **(ii) The wrapper lane** (lemmas about the actual functions, each a
 statement for every value of every argument):
@@ -535,16 +540,62 @@ captures for $`u \in S`$ meet $`u`$'s capture types at $`n`$, the module
 part of $`u`$'s entry premise. `approx_link` (proved) restates
 `approx_meets` as `link`'s interface.
 
+**A function declared without `this`.** Every call of a closure enters
+its code with the receiver in slot 0 (`graphEntry`; a plain call passes
+`undefined`), and the request of a function declared without `this` has
+no receiver slot: its inputs are $`\mathit{params} \mathbin{+\!\!+} C`$
+(`extractNormalizedFn`). Its module code is
+$`\mathrm{dropReceiver}(c)`$: the request's node lists with one node
+appended, at which the code starts, evaluating `undefined` and continuing
+at the request's start with the slots $`1, \ldots, a + |C| + 1`$ of the
+frame (the parameters, the captures, the closure). `UnitIsReceiverless`
+$`(r, c)`$ states the request is $`c`$'s behind that prologue: unqualified,
+no rest, $`r.\mathrm{inputs} = c.\mathrm{row.arguments.take}(a) \mathbin{+\!\!+} C`$,
+its program, start and goal $`c`$'s at that frame (a promise's parameter
+unshifted, `receiverlessGoal`), no entry separation, its entry facts implied
+by $`c`$'s at every frame with a receiver in front, and $`c`$'s footprint,
+fresh and throw flags. `ReceiverDropSound` (a named hypothesis, section 1)
+gives $`\mathrm{GraphCodeSpec}(\mathrm{dropReceiver}(c))`$ from
+$`\mathrm{RequestSafe}(r)`$: the prologue's two transitions lead from
+$`\mathit{recv} :: L`$ to the request's start at $`L`$, and every later
+transition is one of the request's program.
+
 **H5a, the module's layout** (`ModuleLayout`, the extraction's frame
-layout). For each closed unit $`u`$: its code, interface and slots as
-above, its interface one clause, one slot per capture, the slot agreement,
-and each signature $`p`$ of its interface realized by a member $`j`$ of its
-group (`RowRealized`): $`j`$'s plan is a request that is the code of $`u`$
-at $`p`$ and meets the code conditions. It is a statement about the
-extraction (the slot table `ordinarySlots` builds, `withStandIns`,
-`withNeverImports`, the frame `extractMember` lays out), not proved: every
-function on that path is a `do` block over the front with no theorem about
-its frame, and part of it is decidable at the verdict (section 1, the layout check).
+layout). A set $`D`$ of functions laid out, holding every closed unit and
+every member of its group (a mutually recursive group's non-leaders
+included), and for each $`x \in D`$: its code, interface and slots as above,
+its interface one clause, one slot per capture, each linked slot's callee
+in $`D`$ at its interface, and each signature $`p`$ of its interface
+realized (`RowRealized`) by a member $`j`$ of the group of some closed
+unit: $`j`$'s plan is a request that is a code $`e`$'s (`CodeOf`:
+`UnitIsCode` with $`e`$ the module code, or `UnitIsReceiverless` with
+$`\mathrm{dropReceiver}(e)`$ the module code) meeting the code conditions.
+The realizing member is any member of any closed group: a member of its own
+group, or, for an overload, of the group whose request is at that
+signature. Linking is per function within and across groups: the
+environment (`approxEnv`) is indexed by function, its captured values one
+unfolding below, so `approx_meets` covers every $`x \in D`$; the verdicts'
+closure (`closedUnits`) is per group. `layout_realizes` (proved under
+`ReceiverDropSound`) gives every $`x \in D`$ realized from its members'
+safety (`rowRealized_spec`). H5a is a statement about the extraction (the
+slot table `ordinarySlots` builds, `withStandIns`, `withNeverImports`, the
+frame `extractMember` lays out), not proved: every function on that path is
+a `do` block over the front with no theorem about its frame; part of it is
+decidable at the verdict (the layout check).
+
+**The layout check against real units** (measured by the front lane on
+206 units of the pipeline's cases, 2026-11-12, with the previous layout:
+one member per unit, rows realized by the unit's own group, a receiver
+slot required): 30 refused, every one a unit another unit of its file
+calls. Against the restated layout, argued from the refusal kinds (not
+rerun): 26 refused at "no receiver slot" are admitted under
+`ReceiverDropSound` where their entry facts are empty (the check's
+sufficient case of `UnitIsReceiverless.indices`); the mutually recursive
+unit (`even@210`, whose group's non-leader `odd@302` it captures) is
+admitted, `odd` laid out in $`D`$; an overload is admitted where each
+overload signature's row is realized by the member whose request is at it
+with the same node lists, decided per row; the 4 generic functions stay
+refused (type parameters, below).
 
 **H5b, the outside contracts** (`OutsideContracts`). Every value a closed
 unit's outside slot holds at depth $`i`$ meets the slot's type at every
@@ -581,7 +632,7 @@ gives `OutsideContracts` from the five kinds met (`KindMet`):
 `passFile_safe_kinds` (proved) is `passFile_safe` with H5b replaced by
 these: `EstablishedSlots` and four `KindMet` premises.
 
-**What H5a excludes, and what each needs.** A unit realized through
+**What H5a excludes, and what each needs.** A function realized through
 `RowRealized` has fixed arity, no rest, an unqualified request, and
 signatures meeting the code conditions (`codeConditions`) and the code
 specification's own condition `Effect.below` (inside `GraphCodeSpec`). A

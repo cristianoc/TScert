@@ -230,6 +230,80 @@ theorem unitSpec_of_requestSafe {r : SourceRequest σ ι} {c : CodeEntry ι}
 
 end
 
+/-! ## A function declared without `this` -/
+
+section
+variable {ι : Type}
+
+/-- **The code of a function declared without `this`**: every call of a
+closure enters its code with the receiver in slot `0` (`graphEntry`; a
+plain call passes `undefined`), and such a function's request has no
+receiver slot (its inputs are its parameters and captures). Its module code
+is the request's node lists behind one prologue node, appended, at which
+the code starts: it evaluates `undefined` and continues at the request's
+start with the frame past the receiver (`envMap` keeps slots `1` to
+`arity + captures + 1`: the parameters, the captures and the closure
+itself). -/
+def dropReceiver (c : CodeEntry ι) : CodeEntry ι :=
+  { c with
+    exprs := c.exprs ++ [.undef]
+    conts := c.conts ++
+      [(.effect ⟨c.start, some ((List.range (c.arity + c.captures.length + 1)).map (· + 1))⟩, none)]
+    start := c.exprs.length }
+
+/-- The goal of a request with no receiver slot: the code's, its promise's
+parameter at its place in that request's frame. -/
+def receiverlessGoal (c : CodeEntry ι) : ControlFlow.Goal ι :=
+  match c.row.effect.promise with
+  | some (.guards p) => .guards c.row.result p
+  | some (.asserts p) => .asserts c.row.result p
+  | none => .plain c.row.result
+
+end
+
+section
+variable {σ ι : Type} [Labels ι] [StoreView σ ι]
+
+/-- **A unit request of a function declared without `this` is a code's
+behind the receiver's prologue**: unqualified, collecting no rest, its
+inputs the code's frame past the receiver (the parameters, then the
+captures), its program, start and goal the code's at that frame, no entry
+separation, its entry facts implied by the code's at every frame with a
+receiver in front, and the code's footprint, fresh flag and throw flag. -/
+structure UnitIsReceiverless (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop where
+  unqualified : r.qualification = none
+  store : c.store = none
+  inputs : r.inputs = c.row.arguments.take c.arity ++ c.captures
+  exprs : c.exprs = r.program.map (·.expression)
+  conts : c.conts = r.program.map fun n => (n.continuation, n.handler)
+  start : r.start = c.start
+  goal : r.goal = receiverlessGoal c
+  separation : r.entrySeparation = {}
+  indices : ∀ (L : List Tm) (recv : Tm) h,
+    HeapKnowledge.IndexHolds (GraphCode.codeEntryIndices c) (envOf (recv :: L) .nul) h →
+    HeapKnowledge.IndexHolds r.entryIndices (envOf L .nul) h
+  footprint : r.footprint = c.row.effect.footprint
+  fresh : r.fresh = c.row.effect.fresh
+  onThrow : r.onThrow = c.row.effect.onThrow
+
+end
+
+/-- **The receiver's prologue keeps a safe request safe** (named hypothesis
+`ReceiverDropSound`, a lemma about the graph machine): where a request with
+no receiver slot is a code's behind the prologue (`UnitIsReceiverless`) and
+the code meets the code conditions, the request's safety makes the code with
+the prologue (`dropReceiver`) meet its signature at every assignment. The
+argument: the prologue's two transitions (entering it, then its `effect`
+continuation) lead from the frame `recv :: L ++ [self]` to the request's
+start at `L ++ [self]` with the receiver as the default slot value, and
+every later transition of the code is one of the request's program, its
+labels below the appended node's; the step-indexed safety at budget `n`
+then follows from the request's at `n - 2`, the world downcast along. -/
+def ReceiverDropSound : Prop :=
+  ∀ (σ ι : Type) [Labels ι] [StoreView σ ι] (r : SourceRequest σ ι) (c : CodeEntry ι),
+    RequestSafe r → UnitIsReceiverless r c → codeConditions c = true →
+    ∀ η, (dropReceiver c).Spec (reassign (RequestJson.graph r.toRequest) η)
+
 /-! ## The module's environment meets every closed unit's interface -/
 
 section

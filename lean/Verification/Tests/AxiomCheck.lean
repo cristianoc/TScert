@@ -134,6 +134,8 @@ run_cmd do
   check ``Verification.SourceClaimJson.PassUnit.established_of_provenance
   check ``Verification.SourceClaimJson.PassUnit.establishedSlots_of_chosen
   check ``Verification.SourceClaimJson.PassUnit.crossModule_safe
+  check ``Verification.SourceClaimJson.PassUnit.rowRealized_spec
+  check ``Verification.SourceClaimJson.PassUnit.layout_realizes
   check ``Verification.Footprints.transport_sound
   check ``Verification.Footprints.Sep.sound
   check ``Verification.Footprints.Post.mono

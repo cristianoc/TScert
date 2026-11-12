@@ -154,7 +154,7 @@ type the stores agree on. -/
 def ChosenSlots {f : FilePlans} {selection : Option (List String)} {S : List String}
     (m : ModuleLayout f selection S) (kinds : String → Nat → OutsideKind)
     (Chosen : (e : Entry) → EntryRealized e → Prop) : Prop :=
-  ∀ u ∈ S, ∀ (k : Nat) v A e, (m.code u).slots[k]? = some (Slot.outside v) → (m.code u).captures[k]? = some A →
+  ∀ u ∈ m.D, ∀ (k : Nat) v A e, (m.code u).slots[k]? = some (Slot.outside v) → (m.code u).captures[k]? = some A →
     kinds u k = .established e → ∀ src : EntryRealized e, Chosen e src →
       HoldsModuleValue src v ∧ SignatureAgrees src (graphOf f) A
 
@@ -163,7 +163,7 @@ slots (proved). -/
 theorem establishedSlots_of_chosen {f : FilePlans} {selection : Option (List String)} {S : List String}
     {m : ModuleLayout f selection S} {kinds : String → Nat → OutsideKind}
     {Chosen : (e : Entry) → EntryRealized e → Prop}
-    (hreal : ∀ u ∈ S, ∀ k e, kinds u k = .established e → ∃ src : EntryRealized e, Chosen e src)
+    (hreal : ∀ u ∈ m.D, ∀ k e, kinds u k = .established e → ∃ src : EntryRealized e, Chosen e src)
     (h : ChosenSlots m kinds Chosen) : EstablishedSlots m kinds := by
   intro u hu k v A e hs hA hk
   obtain ⟨src, hsrc⟩ := hreal u hu k e hk
@@ -172,15 +172,16 @@ theorem establishedSlots_of_chosen {f : FilePlans} {selection : Option (List Str
 /-- **The cross-module theorem** (proved, under H1–H3, the layouts of the
 importer and of each module, the publication order and the per-kind
 contracts of the other outside slots): for plans over their store and a set
-`S` of their units each a selected unit whose group is safe, whose
-established slots read entries published along the order, every unit of
-`S` meets its interface at every budget and its captures meet their
+`S` of their units each a selected unit whose group is safe, whose laid-out
+functions' established slots read entries published along the order, every
+function the layout lays out (the members of `S`'s groups) meets its interface at every budget and its captures meet their
 types. Its premises about the published entries are what
 `InterfaceProvenance` (the replay) and `EstablishProvenance` (the wrapper
 lane's lemma about `establishModules`) state. -/
 theorem crossModule_safe
     (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
-    (hgroup : PassGroupChecks) {budget : PositiveCertificates.SearchBudget} {force : List String} {fuel : Nat}
+    (hgroup : PassGroupChecks) (hdrop : ReceiverDropSound) {budget : PositiveCertificates.SearchBudget}
+    {force : List String} {fuel : Nat}
     {given : Std.HashMap String Json} {Chosen : (e : Entry) → EntryRealized e → Prop}
     {M : Type} (order : List M) (est reads : M → List Entry) (hord : ReadsEarlier order est reads)
     (hstep : ∀ m ∈ order, (∀ e ∈ reads m, ∃ src : EntryRealized e, Chosen e src) → ∀ e ∈ est m,
@@ -189,18 +190,18 @@ theorem crossModule_safe
     {f : FilePlans} {selection : Option (List String)} {S : List String} (hover : OverStore f)
     (hsafe : ∀ u ∈ S, ∃ i ∈ f.fr.selected selection, f.fr.unitId i = u ∧ PassUnitSafe f i)
     (layout : ModuleLayout f selection S) (kinds : String → Nat → OutsideKind)
-    (hread : ∀ u ∈ S, ∀ k e, kinds u k = .established e → ∃ m ∈ order, e ∈ est m)
+    (hread : ∀ u ∈ layout.D, ∀ k e, kinds u k = .established e → ∃ m ∈ order, e ∈ est m)
     (hslots : ChosenSlots layout kinds Chosen) (hdecl : KindMet layout kinds (· = .declared))
     (hstand : KindMet layout kinds (· = .standIn)) (hhost : KindMet layout kinds (· = .host))
     (hcell : KindMet layout kinds (· = .moduleCell)) :
-    (∀ u ∈ S, ∀ n, ∀ m ≤ n, ∀ W : WorldT m, meaning (graphOf f) (layout.iface u) m W (approx layout.code n u)) ∧
-    (∀ u ∈ S, ∀ n (W : WorldT n), EnvOk (graphOf f) (layout.code u).captures
+    (∀ u ∈ layout.D, ∀ n, ∀ m ≤ n, ∀ W : WorldT m, meaning (graphOf f) (layout.iface u) m W (approx layout.code n u)) ∧
+    (∀ u ∈ layout.D, ∀ n (W : WorldT n), EnvOk (graphOf f) (layout.code u).captures
       (envOf ((layout.code u).captured (approx layout.code n) n) .nul) n W) := by
   have hreal := entries_realized hrun hkeep hgroup order est reads hord hstep
   have hest : EstablishedSlots layout kinds := establishedSlots_of_chosen (fun u hu k e hk => by
     obtain ⟨m, hm, he⟩ := hread u hu k e hk
     exact hreal m hm e he) hslots
-  exact passPlans_safe hover hsafe layout
-    (outsideContracts_of_kinds (established_met hest) hdecl hstand hhost hcell)
+  exact passPlans_safe hdrop hover hsafe layout
+    (outsideContracts_of_kinds (established_met hdrop hest) hdecl hstand hhost hcell)
 
 end Verification.SourceClaimJson.PassUnit
