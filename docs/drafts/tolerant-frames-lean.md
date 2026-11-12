@@ -1413,6 +1413,21 @@ Proved prerequisites:
   table is sound; `assertionExit_checked` exposes the written assertion check.
 
 
+[`TolerantFramesExitHeadExtraction.lean`](../../lean/Verification/Programs/TolerantFramesExitHeadExtraction.lean)
+proves `exitChecks_head`, `exitChecks_handler_edges`, and
+`exitChecks_handler_of_records` under explicit leaves: `r.given = passHeads c`,
+`r.ctx = passCtx c`, and `HeadEntryContract` for each given head contract
+(constructed-entry membership, written-contract coherence, and setup-name
+bounds). Normal exits also require `yieldSourcesJudged`; handlers require
+`HandlerRecords`, the final incoming and merge-record memberships. The merge
+membership requests source implications at slots; `pushExit` records the
+filtered implications returned by `edgeTransfer`. Their correspondence is an
+explicit obligation. `NodeExitTrace` and `ExitChecks.Site.facts` carry the
+setup's `startNames` and `argName` equations, supplied by `EnvFacts` in
+`visitsSettle_of`. The successful step proves exception-type admission
+(`visitStep_handler_admits`); the successful exits prove the type, implication,
+input, argument, heap-query, and handler assertion checks.
+
 ## Exit checks from the trace
 
 `ExitChecks.Site` in

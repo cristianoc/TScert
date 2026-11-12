@@ -1,3 +1,4 @@
+import Verification.Programs.TolerantFramesExitHeadExtraction
 import Verification.Programs.TolerantFramesExitsYield
 import Verification.Programs.TolerantFramesExitYieldCache
 import Verification.Programs.TolerantFramesExitHeadChecks
@@ -1093,3 +1094,23 @@ run_cmd do
   check ``Verification.TolerantFrames.ExitChecks.exitChecks_widths
   check ``Verification.TolerantFrames.ExitChecks.exitChecks_thrownBelow
   check ``Verification.TolerantFrames.ExitChecks.exitChecks_handler
+
+-- Head and handler exit extraction.
+open Lean Elab Command in
+run_cmd do
+  let standard := [``propext, ``Classical.choice, ``Quot.sound]
+  let check (decl : Name) : CommandElabM Unit := do
+    for axiom_ in ← liftCoreM <| collectAxioms decl do
+      unless standard.contains axiom_ do
+        throwError "{decl} depends on the axiom {axiom_}"
+  check ``Verification.TolerantFrames.headExit_contract
+  check ``Verification.TolerantFrames.exitStep_head_checks
+  check ``Verification.TolerantFrames.exitStep_handler_checks
+  check ``Verification.TolerantFrames.thrownTyOf_admits
+  check ``Verification.TolerantFrames.visitStep_handler_admits
+  check ``Verification.TolerantFrames.ExitChecks.Site.headFlag
+  check ``Verification.TolerantFrames.ExitChecks.Site.targetContext
+  check ``Verification.TolerantFrames.ExitChecks.Site.argumentInput
+  check ``Verification.TolerantFrames.ExitChecks.exitChecks_head
+  check ``Verification.TolerantFrames.ExitChecks.exitChecks_handler_edges
+  check ``Verification.TolerantFrames.ExitChecks.exitChecks_handler_of_records
