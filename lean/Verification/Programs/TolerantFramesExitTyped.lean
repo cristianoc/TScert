@@ -196,11 +196,6 @@ def vacuousOf (G : NormalGraph ι) (here : Bool) (A : Ty ι) (Γ : List (Ty ι))
   | some o => (here || (pushed && ControlFlow.unsatisfiable G [A])) || (Γ[0]?).any (BranchRefinement.impossible G · o)
   | none => here || (pushed && ControlFlow.unsatisfiable G [A])
 
-/-- **What a node's `here` answer states**: its context has a slot of an
-empty type, or is unsatisfiable (`unsat`, as an edge into the node sets it). -/
-def HereEmpty (G : NormalGraph ι) (C : List (Ty ι)) : Prop :=
-  ControlFlow.unsatisfiable G C = true ∨ ∃ (i : Nat) (B : Ty ι), C[i]? = some B ∧ ControlFlow.unsatisfiable G [B] = true
-
 omit [DecidableEq ι] [Hashable ι] [Instantiates ι] in
 theorem HereEmpty.reassign {G : NormalGraph ι} {C : List (Ty ι)} (h : HereEmpty G C) (η : MixedAssignment ι) :
     HereEmpty (PositiveRules.reassign G η) C := by unfold HereEmpty; exact h

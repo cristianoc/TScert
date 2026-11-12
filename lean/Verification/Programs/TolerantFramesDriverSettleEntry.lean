@@ -10,7 +10,7 @@ variable {ι : Type} [Labels ι] {G : NormalGraph ι} {I : InstanceImageCheck G}
 /-- The visited label contains exactly the visit's record. -/
 theorem visitResult_record {σ : SinglePass.WalkState ι G} {l : Nat} {en : SinglePass.Entered ι}
     {sd : SinglePass.StepDone ι G} {ex : SinglePass.ExitsDone ι G} (hl : l < σ.walk.labels.size) :
-    (visitResult σ l en sd ex).walk.labels[l]? = some (SinglePass.LabelWalk.ofVisit σ.fresh en sd ex.region) := by
+    (visitResult σ l en sd ex).walk.labels[l]? = some (SinglePass.LabelWalk.ofVisit σ.fresh en sd (ex.regional.map (·.state))) := by
   simp only [visitResult, Array.set!_eq_setIfInBounds, Array.getElem?_setIfInBounds_self_of_lt hl]
 
 /-- A walk agreeing with the visit's label has its entry, implications and visited flag. -/

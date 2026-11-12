@@ -2,11 +2,22 @@ import Verification.Programs.TolerantFramesWalkExtends
 
 /-! # A node and its successful exit computation
 
-This is an operational record at the original graph. Its semantic
-interpretation, including reassignment, is a separate obligation.
+The record retains successful computations at the original graph and
+the cached vacuity answer's empty-context witness. Edge-check extraction
+and reassignment are separate obligations.
 -/
 namespace Verification.TolerantFrames
-open Verification ControlFlow PositiveGraphs PositiveCertificates LabelStore ProgramTyping
+open Verification ControlFlow PositiveGraphs PositiveCertificates LabelStore ProgramTyping CertificateProducer
+
+/-- **What a node's `here` answer states**: its context has a slot of an
+empty type, or is unsatisfiable (`unsat`, as an edge into the node sets it). -/
+@[nospecialize] def HereEmpty {ι : Type} (G : NormalGraph ι) (C : List (Ty ι)) : Prop :=
+  ControlFlow.unsatisfiable G C = true ∨ ∃ (i : Nat) (B : Ty ι), C[i]? = some B ∧ ControlFlow.unsatisfiable G [B] = true
+
+/-- Every cached refusal to admit an environment has an empty-context witness. -/
+@[nospecialize] def CachedVacuity {ι : Type} (G : NormalGraph ι) (claimed : Array (PointClaim ι))
+    (cache : Array (Option Bool)) : Prop :=
+  ∀ l : Nat, cache[l]! = some true → HereEmpty G (claimed[l]!).context
 
 /-- The incoming arrays and processed edges returned by the exit computation. -/
 @[nospecialize] def exitsWalk {ι : Type} [BEq ι] [Hashable ι] {G : NormalGraph ι}
@@ -24,6 +35,18 @@ persist in `raw`. The exit index fixes which branch receives refinement. -/
       (SinglePass.yieldsAtSlots en.entry.names ((SinglePass.exitsYields G I env l en sd).1.getD []))
       (Thunk.mk fun _ => SinglePass.outAllOf G env.claimed[l]! sd.st.stepOut) a e = .ok b ∧
     WalkExtends (exitsWalk b) raw
+
+/-- Each indexed exit owns a record in the visit's final array, appended
+by that exit's successful computation. -/
+@[nospecialize] def ExitRecordsChecked {ι : Type} [Labels ι] (G : NormalGraph ι) (I : InstanceImageCheck G)
+    (env : SinglePass.WalkEnv ι G I) (l : Nat) (en : SinglePass.Entered ι) (sd : SinglePass.StepDone ι G)
+    (ex : SinglePass.ExitsDone ι G) : Prop :=
+  ∀ e ∈ (SinglePass.Exit.ofNode env.nodes[l]!).zipIdx, ∃ r ∈ ex.exits.toList,
+    r.index = e.2 ∧ r.target = e.1.target ∧ ∃ a b,
+    SinglePass.exitStep G I env l en sd
+      (SinglePass.yieldsAtSlots en.entry.names ((SinglePass.exitsYields G I env l en sd).1.getD []))
+      (Thunk.mk fun _ => SinglePass.outAllOf G env.claimed[l]! sd.st.stepOut) a e = .ok b ∧
+    b.exits = a.exits.push r
 
 /-- A successful entry, step, and exit visit at this very node's values.
 The exit arrays extend to the walk used by the node's check. This keeps the
@@ -47,6 +70,8 @@ The equations are about execution at `G`, not execution at reassigned graphs. -/
     r.node = env.nodes[l]! ∧ r.c = env.claimed[l]! ∧ r.entry = en.entry ∧ r.st = sd.st ∧
     r.ans = sd.steppedAnswers ∧ r.ys = sd.yields.getD [] ∧ en.implies = w.implies l ∧
     σ.walk.incoming.size = σ.walk.incomingImpl.size ∧ WalkExtends (exitsWalk ex) raw ∧
-    ExitStepsChecked G I env l en sd raw
+    ExitStepsChecked G I env l en sd raw ∧
+    (en.here = true → HereEmpty G (env.claimed[l]!).context) ∧
+    ExitRecordsChecked G I env l en sd ex
 
 end Verification.TolerantFrames

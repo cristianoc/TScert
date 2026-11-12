@@ -76,14 +76,14 @@ theorem nodesChecked_of_walkJ {P : ControlFlow.Program} {G : NormalGraph ι} {w 
     {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
     {fresh : Nat → Nat} {Ξres Tres : Fam} {ρ0 : Env} {m : Nat} {stated : Nat → Option HeapKnowledge.Knowledge}
     (hT : TraversedA G w startNames given ctx edgesIn fresh stated)
-    (hstep : StepEdgesSoundAt (edgePreAJ G w startNames ρ0 ctx stated given edgesIn) P G w startNames ρ0 ctx Ξres
+    (hstep : StepEdgesSoundMarked (edgePreAJ G w startNames ρ0 ctx stated given edgesIn) P G w startNames ρ0 ctx Ξres
       Tres (fun _ => True) (fun _ => True) m)
     (hheads : HeadsEntered G w startNames ρ0 given m) (hnear : LinearNearFuelEq) :
-    NodesChecked P (passPreA G w startNames ρ0 ctx stated) Ξres Tres (fun _ => True) (fun _ => True) m := by
-  intro l ρ s hp
-  obtain ⟨node, hn, Ξ, T, cn, ce, Qn, Qe, hsafe, ho⟩ := hstep l ρ s hp.1
+    NodesChecked P (marked (passPreA G w startNames ρ0 ctx stated)) Ξres Tres (fun _ => True) (fun _ => True) m := by
+  intro l ρ s ⟨hp, hm⟩
+  obtain ⟨node, hn, Ξ, T, cn, ce, Qn, Qe, hsafe, ho⟩ := hstep l ρ s hp.1 hm
   exact ⟨node, hn, Ξ, T, cn, ce, Qn, Qe, hsafe,
-    nodeObligations_mono (fun _ _ _ h => passPreA_of_edgeAJ hT hheads hnear h) ho⟩
+    nodeObligations_marked hm (nodeObligations_mono (fun _ _ _ h => passPreA_of_edgeAJ hT hheads hnear h) ho)⟩
 
 end Joined
 

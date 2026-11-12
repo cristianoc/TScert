@@ -18,10 +18,9 @@ with the subtype answers sound there give every exit and the handler
 delivering `edgePreAJ` (`NodeExitsYF`), each normal exit from the state
 after the step with its kept yields, its output and, where the step
 states its result fresh and its name is not fresh yet, the result's
-freshness (`AfterStep`). `NodeExitsY` is `NodeExitsYF` without that last
-conjunct of the state after the step: the edge lemmas need it wherever an
-exit pushes a fresh result (`normal_edge_delivers`'s `hfo`), and it is a
-property of the step's run (`callFresh_of_checked`, at `outFreshOf_eq`). -/
+freshness (`AfterStep`). `NodeExitsY` retains the step execution and the
+initial heap's mark bound; `nodeExitsY_of_checks` in
+`TolerantFramesExitExecution` derives freshness from these facts. -/
 namespace Verification.TolerantFrames
 open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
@@ -61,6 +60,30 @@ structure NodeExitsChecked (G : NormalGraph ι) (images : InstanceImageCheck G) 
   handler : ∀ t, node.handler = some t →
     HandlerExitChecked G images w startNames ctx stated given edgesIn l c entry st here outFresh TT thrown t
   thrownBelow : node.handler.isSome = true → NamesBelow entry (w.implies l) startNames thrown
+
+/-- Every exit check is preserved by reassignment of type meanings. -/
+theorem NodeExitsChecked.reassign {G : NormalGraph ι} {images : InstanceImageCheck G} {w : Walk ι}
+    {startNames : List Nat} {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge}
+    {given : Nat → Bool}
+    {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
+    {l : Nat} {node : Node} {c : PointClaim ι} {entry : SinglePass.State} {st : Stepped ι}
+    {ys : List (PromiseCalls.Yield ι)} {here outFresh : Bool} {ysA : List (PromiseCalls.Yield ι)} {thrown : Nat}
+    {TT : Ty ι}
+    (hc : NodeExitsChecked G images w startNames ctx stated given edgesIn l node c entry st ys here outFresh ysA thrown TT)
+    (η : MixedAssignment ι) :
+    NodeExitsChecked (reassign G η) (images.reassign η) w startNames ctx stated given edgesIn l node c entry st ys
+      here outFresh ysA thrown TT where
+  hereEmpty h := (hc.hereEmpty h).reassign η
+  yieldsRead := hc.yieldsRead
+  widths := hc.widths
+  handlerWidth := hc.handlerWidth
+  normal i t pushed observed promote hm := by
+    obtain ⟨ysE, hE, hnh, hh⟩ := hc.normal i t pushed observed promote hm
+    refine ⟨ysE, hE, fun hn => (hnh hn).reassign η, fun hg => ?_⟩
+    obtain ⟨req, written, cf, gimp, argName, argSlots, inputSlots, hwidth, hfresh, hc, hlt, ha⟩ := hh hg
+    exact ⟨req, written, cf, gimp, argName, argSlots, inputSlots, hwidth, hfresh, hc.reassign η, hlt, ha⟩
+  handler t ht := (hc.handler t ht).reassign η
+  thrownBelow := hc.thrownBelow
 
 /-- **A node's exits and handler deliver** (`NodeExitsY` with the step's
 result's freshness in the state after the step, `AfterStep`). -/

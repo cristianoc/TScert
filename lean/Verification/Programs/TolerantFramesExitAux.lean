@@ -1,4 +1,5 @@
 import Verification.Programs.TolerantFramesDriverSettle
+import Verification.Programs.TolerantFramesExitVacuity
 
 /-! # Names and freshness used by the exit interpretation -/
 namespace Verification.TolerantFrames
@@ -59,14 +60,6 @@ theorem passOutFreshChecked_fresh {codes : CodeEntry ι → Bool} {sums : List (
   · exact copyFresh hS he hwidth hc hst
   · exact callFresh_of_checked hcf hdc hcodes hsums hm he hkS k h' v hk hst hv
 
-/-- A successful entry exposes exactly the cached unsatisfiability answer it uses. -/
-theorem visitEntry_here {env : SinglePass.WalkEnv ι G I} {σ : SinglePass.WalkState ι G} {l : Nat}
-    {en : SinglePass.Entered ι} (h : SinglePass.visitEntry G I env σ l = .ok en) :
-    en.here = (σ.unsat[l]!).getD (ControlFlow.unsatisfiable G (env.claimed[l]!).context) := by
-  unfold SinglePass.visitEntry at h
-  repeat' (first | split at h | extract_lets at h)
-  all_goals first | cases h | skip
-  all_goals simp_all only [Option.getD_some, Option.getD_none] <;> rfl
 
 end Aux
 end Verification.TolerantFrames

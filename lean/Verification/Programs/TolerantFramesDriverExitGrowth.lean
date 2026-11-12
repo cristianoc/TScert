@@ -40,11 +40,13 @@ theorem exitStep_mergeGrowth {env : SinglePass.WalkEnv ι G I} {l : Nat} {en : S
   extract_lets at h
   split at h
   · cases h
+  split at h
+  · cases h
   extract_lets diff u acc2 typed at h
   generalize ht : typed = T at h
   split at h
   · cases h
-  rename_i acc1
+  rename_i acc1 et
   simp only [typed] at ht
   have hp : SameCore acc acc2 ∧ acc2.edges = acc.edges :=
     sameCore_unsat (sameCore_trace _ _ _) _ _
@@ -52,10 +54,15 @@ theorem exitStep_mergeGrowth {env : SinglePass.WalkEnv ι G I} {l : Nat} {en : S
     split at ht
     · cases ht; exact hp.1
     · exact hp.1.trans (exitTypes_core ht).1
-  extract_lets freshImpl at h
+  extract_lets freshImpl record at h
   split at h
-  · have hc2 := (headExit_core h).1
-    exact ⟨[], by rw [hc2.incomingEdges, hc1.incomingEdges]; rfl⟩
+  · simp only [Except.map] at h
+    split at h
+    · cases h
+    · rename_i a hh
+      cases h
+      have hc2 := (headExit_core hh).1
+      exact ⟨[], by rw [hc2.incomingEdges, hc1.incomingEdges]; rfl⟩
   · split at h
     · cases h
     rename_i acc3 hA

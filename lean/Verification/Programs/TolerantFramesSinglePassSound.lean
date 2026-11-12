@@ -1,8 +1,8 @@
-import Verification.Programs.TolerantFramesSubtypeAnswers
 import Verification.Programs.TolerantFramesVisitSummaries
 import Verification.Programs.TolerantFramesRegionalTyping
 import Verification.Programs.TolerantFramesRegionalRecorded
 import Verification.Programs.TolerantFramesDriverSetup
+import Verification.Programs.TolerantFramesExitWidths
 
 /-! # Tolerant frames: the single pass's graph theorem
 
@@ -16,15 +16,16 @@ open Verification PositiveGraphs PositiveCertificates LabelStore
 section Run
 variable {ι : Type} [Labels ι]
 
-/-- The graph theorem under exit width, exit summary-prefix preservation, exit yields,
-and regional recording and typing. Subtype answers are sound by `subtypeAnswersAll`;
-`visitStepPrefix_of_exitStep` and `visitsSettle_of` connect the final sound summary table
-to each checked node. -/
-theorem run_sound_single_pass (hp : ExitsWidth ι)
+/-- The graph theorem from the remaining summary, exit-delivery and
+regional premises. Setup, exit widths and subtype answers are proved by
+`setupRecords_of`, `exitsWidth` and `subtypeAnswersAll`; the step's table
+is a prefix of the final one given the exit step's (`ExitStepPrefix`,
+`visitStepPrefix_of_exitStep`). -/
+theorem run_sound_single_pass
     (hprefix : ExitStepPrefix ι)
     (hex : ExitsYield ι) (hrec : RegionsRecorded ι)
     (htyped : RegionsTyped ι) : Target.RunSound ι :=
-  have hv := visitsRecord_of (visitsRest_of (exitsPushOk_of hp) (visitsSettle_of (visitStepPrefix_of_exitStep hprefix)) visitsImplications)
+  have hv := visitsRecord_of (visitsRest_of (exitsPushOk_of exitsWidth) (visitsSettle_of (visitStepPrefix_of_exitStep hprefix)) visitsImplications)
   run_sound_pass (recordsSound_of setupRecords_of hv) (recordsChecked_of setupRecords_of hv) (nodesYield_of subtypeAnswersAll hex) linearNearFuelEq
     (regionsHeld_of hrec htyped)
 

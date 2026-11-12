@@ -36,6 +36,23 @@ theorem safePostExc_trace {Ξ T : Fam} {Q : Post} {R : Heap → Prop} :
     · refine .inr ⟨U, h', t', hx, hu, st, hh, ?_⟩
       exact SafePostExc.weaken (fun _ _ ⟨hq, k, hk⟩ => ⟨hq, k + 1, .next st hk⟩) (fun _ h => h) (ih hs')
 
+/-- A normal endpoint carries an execution shorter than the initial budget. -/
+theorem safePostExc_trace_lt {Ξ T : Fam} {Q : Post} {R : Heap → Prop} :
+    ∀ {n W h t}, SafePostExc Ξ T Q R n W h t →
+      SafePostExc Ξ T (fun h' v => Q h' v ∧ ∃ k, k < n ∧ Steps k h t h' v) R n W h t := by
+  intro n
+  induction n with
+  | zero => intros; trivial
+  | succ n ih =>
+    intro W h t hs
+    rcases hs with (⟨hv, hT, hq⟩ | ⟨hx, hr⟩) | ⟨U, h', t', hx, hu, st, hh, hs'⟩
+    · exact .inl (.inl ⟨hv, hT, hq, 0, Nat.zero_lt_succ _, .refl⟩)
+    · exact .inl (.inr ⟨hx, hr⟩)
+    · refine .inr ⟨U, h', t', hx, hu, st, hh, ?_⟩
+      exact SafePostExc.weaken
+        (fun _ _ ⟨hq, k, hk, ht⟩ => ⟨hq, k + 1, Nat.succ_lt_succ hk, .next st ht⟩)
+        (fun _ h => h) (ih hs')
+
 end Trace
 
 section Typed

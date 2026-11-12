@@ -13,7 +13,7 @@ the joined implications included. Proved:
 
 - `stepEdgesSound_of_yields`: every visited node checked (`NodeChecked`:
   its entry the recorded one, its shape check) with `NodeYielded` ∧
-  `CodesSound` ⟹ `StepEdgesSoundAt` at `edgePreAJ`;
+  `CodesSound` ⟹ `StepEdgesSoundMarked` at `edgePreAJ`;
 - `footprintKept_of_walk`, `returnsEnsured_of_walk`: a checked walk
   (`WalkChecked`) keeps the bound and establishes `ensures` at every
   admitted reassigned graph, the entry states from `NodeChecked.hentry`;
@@ -38,7 +38,7 @@ section Steps
 variable {ι : Type} [DecidableEq ι] [Hashable ι]
 
 /-- **Every checked node delivers, its exits, handler and return reading
-its kept yields** (`StepEdgesSoundAt` at `edgePreAJ`): the entry state from
+its kept yields** (`StepEdgesSoundMarked` at `edgePreAJ`): the entry state from
 the recorded entry (`hentry`), the shapes from the shape check
 (`nodeShape_of`), the judgment strengthened by the yields
 (`NodeYielded.judged`), the return's goal, the exits and the handler from
@@ -51,9 +51,9 @@ theorem stepEdgesSound_of_yields {G : NormalGraph ι} {images : InstanceImageChe
     (hacc : ∀ l, w.visited l → ∃ r : NodeChecked G images codes pc P w startNames ctx l,
       ∃ ys, NodeYielded G w startNames ρ0 ctx stated given edgesIn Tres m l r.node r.c r.entry r.st ys)
     (hcodes : CodesSound G codes) :
-    StepEdgesSoundAt (edgePreAJ G w startNames ρ0 ctx stated given edgesIn) P G w startNames ρ0 ctx (excOf G) Tres
+    StepEdgesSoundMarked (edgePreAJ G w startNames ρ0 ctx stated given edgesIn) P G w startNames ρ0 ctx (excOf G) Tres
       (fun _ => True) (fun _ => True) m := by
-  intro l ρ s hp
+  intro l ρ s hp hm
   obtain ⟨na, ys, hY⟩ := hacc l hp.1.1
   have hS : StateHolds G na.entry (w.implies l) startNames ρ0 ρ m s := na.hentry ▸ hp.1.2
   have he : EnvOk G na.c.context ρ s.n s.W := na.hctx ▸ hp.2
@@ -63,16 +63,17 @@ theorem stepEdgesSound_of_yields {G : NormalGraph ι} {images : InstanceImageChe
     (Ξres := excOf G) (Tres := Tres) (Qres := fun _ => True) (Rres := fun _ => True) (x := na.node.handler)
     hparts he hjY
     (fun _ _ _ hv => nodeShape_of na.hshape hv)
-    (fun s' v _ hv hF hy he' hout => by
+    (fun s' v _ hv hF hy he' hout hrun => by
       have hshape := nodeShape_of na.hshape (he'.2 0 _ rfl)
       by_cases hk : na.node.continuation = .ret
       · rw [hk]
         exact ⟨hY.ret hk ρ s' v hv hF he' hy, trivial⟩
       · exact normalTarget_of_exits (Fn := fun ρ' m' s'' => StateHolds G
             ⟨na.st.result :: na.entry.names, na.st.store, na.entry.fresh⟩ (w.implies l) startNames ρ0 ρ' m' s'' ∧
-            PromiseCalls.YieldsOk G ys ρ s''.n s''.W (ρ' 0) ∧ HeapKnowledge.Holds na.st.stepOut ρ' s''.h)
-          (fun t p o q hmem => hY.exits t p o q hmem ρ) (fun h => absurd h hk)
-          (fun _ => trivial) s' v hv ⟨hF, hy, hout⟩ he' hshape)
+            PromiseCalls.YieldsOk G ys ρ s''.n s''.W (ρ' 0) ∧ HeapKnowledge.Holds na.st.stepOut ρ' s''.h ∧
+              ∃ k, k < s.n ∧ Steps k s.h (instantiate 0 ρ na.node.expression) s''.h (ρ' 0))
+          (fun t p o q hmem => hY.exits t p o q hmem ρ s hS he hkS hm) (fun h => absurd h hk)
+          (fun _ => trivial) s' v hv ⟨hF, hy, hout, hrun⟩ he' hshape)
     (fun s' e _ hFe he' hsc hx => by
       cases hh : na.node.handler with
       | none => exact ⟨hx, trivial⟩
@@ -135,10 +136,13 @@ structure NodeExitsY (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
     (m : Nat) (l : Nat) (node : Node) (c : PointClaim ι) (entry : SinglePass.State) (st : Stepped ι)
     (ys : List (PromiseCalls.Yield ι)) : Prop where
-  exits : ∀ t pushed observed promote, Exit.normal t pushed observed promote ∈ Exit.ofNode node → ∀ ρ,
+  exits : ∀ t pushed observed promote, Exit.normal t pushed observed promote ∈ Exit.ofNode node → ∀ ρ (s : IndexedHeap),
+    StateHolds G entry (w.implies l) startNames ρ0 ρ m s →
+    EnvOk G c.context ρ s.n s.W → HeapKnowledge.Holds st.stepK ρ s.h → m ≤ s.h.length →
     ExitDelivers (edgePreAJ G w startNames ρ0 ctx stated given edgesIn) G c.type c.context
       (fun ρ' m' s' => StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ρ0
-        ρ' m' s' ∧ PromiseCalls.YieldsOk G ys ρ s'.n s'.W (ρ' 0) ∧ HeapKnowledge.Holds st.stepOut ρ' s'.h)
+        ρ' m' s' ∧ PromiseCalls.YieldsOk G ys ρ s'.n s'.W (ρ' 0) ∧ HeapKnowledge.Holds st.stepOut ρ' s'.h ∧
+          ∃ k, k < s.n ∧ Steps k s.h (instantiate 0 ρ node.expression) s'.h (ρ' 0))
       ρ m t pushed observed promote
   handler : ∀ t, node.handler = some t → ∀ ρ (s' : IndexedHeap) e,
     StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ (w.implies l) startNames ρ0
@@ -192,10 +196,13 @@ def NodesYield : Prop :=
         (r.node l hl).entry (r.node l hl).st ys
 
 variable (ι) in
-/-- **(Named hypothesis, pass change D5) The answered subtype requests are
+/-- **The answered subtype requests are
 sound**: an answer `subtypeUsing` accepts, from any answers, is an
 inclusion of meanings, at every graph (the reassigned ones included). -/
 def SubtypeAnswersAll : Prop := ∀ (G : NormalGraph ι) (I : InstanceImageCheck G), SubtypeAnswersSound G I
+
+/-- Subtype acceptance is sound at every graph. -/
+theorem subtypeAnswersAll : SubtypeAnswersAll ι := subtypeAnswersSound
 
 variable (ι) in
 /-- **(Named hypothesis) Each checked node's exits and handler deliver

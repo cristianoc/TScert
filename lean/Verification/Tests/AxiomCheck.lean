@@ -1,3 +1,7 @@
+import Verification.Programs.TolerantFramesExitRecords
+import Verification.Programs.TolerantFramesExitExecution
+import Verification.Programs.TolerantFramesExitTypeChecks
+import Verification.Programs.TolerantFramesExitVacuity
 import Verification.Programs.TolerantFramesDriverExitTrace
 import Verification.Programs.TolerantFramesExitAux
 import Verification.Programs.TolerantFramesMapNames
@@ -612,7 +616,6 @@ run_cmd do
   check ``Verification.TolerantFrames.headEntry_below
   check ``Verification.TolerantFrames.passBack_below
   check ``Verification.TolerantFrames.start_passPreT
-  check ``Verification.TolerantFrames.run_guarantee
   check ``Verification.TolerantFrames.codesSound_reassign
   -- Leg 13: the pass's checks at a reassignment (TolerantFramesWalkReassignChecks, TolerantFramesWalkReassignNodes)
   check ``Verification.TolerantFrames.footprintCheck_reassign
@@ -1012,6 +1015,26 @@ run_cmd do
   check ``Verification.TolerantFrames.HandlerExitChecked.reassign
   check ``Verification.TolerantFrames.handlerExit_delivers
   check ``Verification.TolerantFrames.nodeExitsYF_of_checks
+
+  check ``Verification.TolerantFrames.safePostExc_trace_lt
+  check ``Verification.TolerantFrames.nodeObligations_marked
+  check ``Verification.TolerantFrames.NodeExitsChecked.reassign
+  check ``Verification.TolerantFrames.nodeExitsY_of_checks
+  check ``Verification.TolerantFrames.exitsYields_source
+  check ``Verification.TolerantFrames.exitTypes_checked
+  check ``Verification.TolerantFrames.checkYsAt_judged
+  check ``Verification.TolerantFrames.ExitYieldSource.judged
+  check ``Verification.TolerantFrames.assertionExit_checked
+  check ``Verification.TolerantFrames.exitUnsatAnswer_sound
+  check ``Verification.TolerantFrames.visitEntry_hereEmpty
+  check ``Verification.TolerantFrames.CachedVacuity.set
+  check ``Verification.TolerantFrames.exitTypes_unsat
+  check ``Verification.TolerantFrames.headExit_unsat
+  check ``Verification.TolerantFrames.assertionExit_unsat
+  check ``Verification.TolerantFrames.exitStep_cachedVacuity
+  check ``Verification.TolerantFrames.exitsFold_cachedVacuity
+  check ``Verification.TolerantFrames.visitExits_cachedVacuity
+  check ``Verification.TolerantFrames.cachedVacuity_empty
   check ``Verification.TolerantFrames.SafePostExc.and_steps
   check ``Verification.TolerantFrames.stepFresh_judgment
   check ``Verification.TolerantFrames.keepSummaries_self
@@ -1044,9 +1067,19 @@ run_cmd do
   check ``Verification.TolerantFrames.exitsFold_prefix
   check ``Verification.TolerantFrames.visitExits_prefix
   check ``Verification.TolerantFrames.visitStepPrefix_of_exitStep
-  check ``Verification.TolerantFrames.subtypeUsing_sound
   check ``Verification.TolerantFrames.subtypeAnswersAll
   check ``Verification.TolerantFrames.regionalTyped_of_requires
   check ``Verification.TolerantFrames.regionalTyped_of_derivation
   check ``Verification.TolerantFrames.regionalAt_checks
   check ``Verification.TolerantFrames.visitResult_region
+  check ``Verification.TolerantFrames.subtypeAnswersSound
+  check ``Verification.TolerantFrames.exitStep_mappingWidth
+  check ``Verification.TolerantFrames.exitsFold_mappingWidth
+  check ``Verification.TolerantFrames.exitsWidth
+  check ``Verification.TolerantFrames.exitTypes_exits
+  check ``Verification.TolerantFrames.headExit_exits
+  check ``Verification.TolerantFrames.assertionExit_exits
+  check ``Verification.TolerantFrames.exitStep_record
+  check ``Verification.TolerantFrames.exitsFold_records_prefix
+  check ``Verification.TolerantFrames.exitsFold_records_checked
+  check ``Verification.TolerantFrames.visitExits_records

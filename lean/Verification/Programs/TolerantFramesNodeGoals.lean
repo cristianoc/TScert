@@ -46,12 +46,33 @@ def returnWithin (G : NormalGraph ι) (images : InstanceImageCheck G) (refined :
       | some B => let (res, a') := subtypeUsing G images B T answers; (res.value.isSome, a')
       | none => (false, answers)) (false, answers)
 
-/-- **(Named hypothesis) The subtype answers are sound** (pass change D5):
+/-- **The subtype answers are sound**:
 an answer `subtypeUsing` accepts, from any table of answers, states an
 inclusion of meanings. -/
 def SubtypeAnswersSound (G : NormalGraph ι) (images : InstanceImageCheck G) : Prop :=
   ∀ (A B : Ty ι) (ans : Answered G), ((subtypeUsing G images A B ans).1).value.isSome = true →
     ∀ n (W : WorldT n) v, meaning G A n W v → meaning G B n W v
+
+/-- Every accepted subtype answer carries a proved inclusion. -/
+theorem subtypeAnswersSound (G : NormalGraph ι) (images : InstanceImageCheck G) :
+    SubtypeAnswersSound G images := by
+  intro A B ans h n W v hv
+  have hincl : ∀ η, FamLe (mixedMeaning G η A) (mixedMeaning G η B) := by
+    unfold subtypeUsing at h
+    split at h
+    · rename_i r hr
+      split at h
+      · cases h
+      · rename_i hc
+        have hp : ans.proved.contains (A, B) = true := by
+          simp only [Bool.and_eq_true, Bool.not_eq_true'] at hc
+          by_cases hp : ans.proved.contains (A, B) = true
+          · exact hp
+          · have hf : ans.proved.contains (A, B) = false := Bool.eq_false_iff.mpr hp
+            exact False.elim (hc ⟨h, hf⟩)
+        exact ans.proved_sound A B hp
+    · exact subtypeSearch_sound h
+  exact hincl G.env n W (.inl v) hv
 
 theorem returnWithin_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {refined : List (Ty ι)}
     {T : Ty ι} {held : List Nat} :

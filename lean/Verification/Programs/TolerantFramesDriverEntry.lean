@@ -254,7 +254,7 @@ def exitNames (en : SinglePass.Entered ι) (sd : SinglePass.StepDone ι G) (e : 
   else en.entry.names
 
 variable (ι) in
-/-- **(Named hypothesis, pass change W9) Each exit's mapping has its
+/-- **Each exit's mapping has its
 target's width**: no mapping, the source's names as many as the target's
 context; a mapping, as many slots as the target's context, each a source
 slot. -/
