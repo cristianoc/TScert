@@ -1,6 +1,7 @@
-import Verification.Programs.TolerantFramesComposeYields
-import Verification.Programs.TolerantFramesDriverSettle
-import Verification.Programs.TolerantFramesRegionalHeld
+import Verification.Programs.TolerantFramesSubtypeAnswers
+import Verification.Programs.TolerantFramesVisitSummaries
+import Verification.Programs.TolerantFramesRegionalTyping
+import Verification.Programs.TolerantFramesRegionalRecorded
 import Verification.Programs.TolerantFramesDriverSetup
 
 /-! # Tolerant frames: the single pass's graph theorem
@@ -15,30 +16,16 @@ open Verification PositiveGraphs PositiveCertificates LabelStore
 section Run
 variable {ι : Type} [Labels ι]
 
-/-- **THE GRAPH THEOREM of the single pass, over its open premises**: the
-setup starting the walk's invariant by proof (`setupRecords_of`); of each visit, each exit's mapping of
-its target's width (`ExitsWidth`; the states its exits push then meet
-`PushOk`, `exitsPushOk_of`) and its label settled, its checks at the node it
-visits included, the yields it keeps among them (`visitsSettle_of`, under `DirectKeepsSummaries` and `SearchKeepsSummaries`; the rest
-of what a visit records, `visitsRecord_of` and `visitsRest_of`); the
-answered subtype requests sound
-(`SubtypeAnswersAll`), each checked node's exits and handler delivering
-with its kept yields (`ExitsYield`), the visits' regional checks over the
-graph's tables (`RegionsRecorded`) and the regional evidence typed
-(`RegionsTyped`) ⟹ `RunSound` (each node's kept yields judged and meeting
-the return's goal, `nodesYield_of`; the regional premise,
-`regionsHeld_of`; the pass's `linearNear` its search on fuel by
-definition, `linearNearFuelEq`). -/
+/-- The graph theorem under exit width, exit summary-prefix preservation, exit yields,
+and regional recording and typing. Subtype answers are sound by `subtypeAnswersAll`;
+`visitStepPrefix_of_exitStep` and `visitsSettle_of` connect the final sound summary table
+to each checked node. -/
 theorem run_sound_single_pass (hp : ExitsWidth ι)
-    (hdir : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (env : SinglePass.WalkEnv ι G I),
-      DirectKeepsSummaries G I env.undefTy)
-    (hsrch : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (env : SinglePass.WalkEnv ι G I),
-      SearchKeepsSummaries G I env.pool env.fuel env.suggestions env.index env.codes env.aliases
-        env.passChecker.checker)
-    (hsub : SubtypeAnswersAll ι) (hex : ExitsYield ι) (hrec : RegionsRecorded ι)
+    (hprefix : ExitStepPrefix ι)
+    (hex : ExitsYield ι) (hrec : RegionsRecorded ι)
     (htyped : RegionsTyped ι) : Target.RunSound ι :=
-  have hv := visitsRecord_of (visitsRest_of (exitsPushOk_of hp) (visitsSettle_of hdir hsrch) visitsImplications)
-  run_sound_pass (recordsSound_of setupRecords_of hv) (recordsChecked_of setupRecords_of hv) (nodesYield_of hsub hex) linearNearFuelEq
+  have hv := visitsRecord_of (visitsRest_of (exitsPushOk_of hp) (visitsSettle_of (visitStepPrefix_of_exitStep hprefix)) visitsImplications)
+  run_sound_pass (recordsSound_of setupRecords_of hv) (recordsChecked_of setupRecords_of hv) (nodesYield_of subtypeAnswersAll hex) linearNearFuelEq
     (regionsHeld_of hrec htyped)
 
 end Run

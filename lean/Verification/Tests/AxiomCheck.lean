@@ -1027,3 +1027,26 @@ run_cmd do
   check ``Verification.TolerantFrames.visB_replicate
   check ``Verification.TolerantFrames.SetupOk.recInv
   check ``Verification.TolerantFrames.setupRecords_of
+  check ``Verification.TolerantFrames.sumsPrefix_keep
+  check ``Verification.TolerantFrames.stepChecked_of_final
+  check ``Verification.TolerantFrames.sumsPrefix_fold
+  check ``Verification.TolerantFrames.stepYields_prefix
+  check ``Verification.TolerantFrames.returnRun_prefix
+  check ``Verification.TolerantFrames.stepYields_prefix_of
+  check ``Verification.TolerantFrames.visitStep_prefix
+  check ``Verification.TolerantFrames.exitsYields_prefix
+  check ``Verification.TolerantFrames.diffSubtypes_prefix
+  check ``Verification.TolerantFrames.impliesHeld_prefix
+  check ``Verification.TolerantFrames.headImplies_prefix
+  check ``Verification.TolerantFrames.keepSummaries_table
+  check ``Verification.TolerantFrames.checkedStep_prefix
+  check ``Verification.TolerantFrames.visitStep_input_prefix
+  check ``Verification.TolerantFrames.exitsFold_prefix
+  check ``Verification.TolerantFrames.visitExits_prefix
+  check ``Verification.TolerantFrames.visitStepPrefix_of_exitStep
+  check ``Verification.TolerantFrames.subtypeUsing_sound
+  check ``Verification.TolerantFrames.subtypeAnswersAll
+  check ``Verification.TolerantFrames.regionalTyped_of_requires
+  check ``Verification.TolerantFrames.regionalTyped_of_derivation
+  check ``Verification.TolerantFrames.regionalAt_checks
+  check ``Verification.TolerantFrames.visitResult_region

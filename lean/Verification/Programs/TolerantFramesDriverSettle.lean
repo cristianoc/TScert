@@ -1,5 +1,6 @@
 import Verification.Programs.TolerantFramesDriverExitTrace
 import Verification.Programs.TolerantFramesDriverSettleEntry
+import Verification.Programs.TolerantFramesStepSummaries
 
 /-! # Tolerant frames: checks retained by a successful visit -/
 namespace Verification.TolerantFrames
@@ -121,9 +122,7 @@ theorem visitStep_node {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I
     {σ : SinglePass.WalkState ι G} {l : Nat} {en : SinglePass.Entered ι} {sd : SinglePass.StepDone ι G}
     {w : Walk ι} (hE : EnvFacts c env) (hl : l < env.n)
     (h : SinglePass.visitStep G I env σ l en = .ok sd)
-    (hdir : DirectKeepsSummaries G I env.undefTy)
-    (hsrch : SearchKeepsSummaries G I env.pool env.fuel env.suggestions env.index env.codes env.aliases
-      env.passChecker.checker)
+    (ha : SummariesSound G I sd.steppedAnswers.summaries.toList)
     (hw : StoreWF en.entry.store)
     (hb : NamesBelow en.entry en.implies (List.range c.inputs.length) en.fresh)
     (hwidth : en.entry.names.length ≤ (env.claimed[l]!).context.length)
@@ -133,8 +132,7 @@ theorem visitStep_node {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I
       NodePassChecked c env.deadArr.toList r ∧ r.node = env.nodes[l]! ∧ r.c = env.claimed[l]! ∧
       r.entry = en.entry ∧ r.st = sd.st ∧ r.ans = sd.steppedAnswers ∧ r.ys = sd.yields.getD [] := by
   obtain ⟨⟨ms, stats, hr⟩, -, -⟩ := visitStep_ok h
-  have hc := stepChecked_of_step (stepRun_ok hr) hdir hsrch
-  have ha := hc.summaries hsums
+  have hc := stepChecked_of_final (stepRun_ok hr) ha
   have hn : c.P[l]? = some env.nodes[l]! := by
     rw [hE.nodes]
     have hpl : l < c.P.length := hE.nodeCount ▸ hl
@@ -156,15 +154,10 @@ theorem visitStep_node {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G I
   · obtain ⟨start, arg, debug, answers, hr, -⟩ := hy.ret hk
     exact ⟨start, arg, sd.yields.getD [], debug, answers, hr⟩
 
-/-- A visit settles its label under the direct-call and search summary
-soundness premises. Setup equations are fields of `EnvFacts`; incoming
+/-- A visit settles its label when its checked-step table is a prefix of the
+visit's returned table. Setup equations are fields of `EnvFacts`; incoming
 implications are bounded by `RecInv.impBelow`. -/
-theorem visitsSettle_of
-    (hdir : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (env : SinglePass.WalkEnv ι G I),
-      DirectKeepsSummaries G I env.undefTy)
-    (hsrch : ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (env : SinglePass.WalkEnv ι G I),
-      SearchKeepsSummaries G I env.pool env.fuel env.suggestions env.index env.codes env.aliases
-        env.passChecker.checker) : VisitsSettle ι := by
+theorem visitsSettle_of (hprefix : VisitStepPrefix ι) : VisitsSettle ι := by
   intro G I c env σ l rest en sd ex hP hself
   have hl := (hP.inv.queue l (by rw [hP.queue]; exact List.mem_cons_self ..)).1
   have hlabel := visitResult_record (σ := { σ with queue := rest }) (en := en) (sd := sd) (ex := ex)
@@ -175,7 +168,9 @@ theorem visitsSettle_of
     obtain ⟨wf, hb, hwidth⟩ := hP.entryNames
     have hp : SumsPrefix σ.answers a := (keep_prefix σ.answers ex.answers).trans hk
     obtain ⟨r, hchecked, hn, hc, heq, hst, hans, hys⟩ :=
-      visitStep_node hP.facts hl hP.step (hdir G I env) (hsrch G I env) wf hb hwidth he.symm hi
+      visitStep_node hP.facts hl hP.step
+        (fun s hs => ha s (((hprefix G I env _ l en sd ex hP.step hP.exits).trans hk).mem s hs))
+        wf hb hwidth he.symm hi
         (fun s hs => ha s (hp.mem s hs))
     refine ⟨r, hchecked, w, env, { σ with queue := rest }, en, sd, ex, ?_, rfl,
       hP.facts.nodes, hP.facts.claims, hP.facts.codes, hP.facts.checker, ?_, hP.facts.stated,
