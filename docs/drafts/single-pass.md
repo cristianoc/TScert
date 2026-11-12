@@ -37,7 +37,9 @@ table from names to slots is built only for the names its step reads.
 
 A state is the name at each slot and one store of facts over names
 (cells, values, links, elements, index facts, separation facts), indexed by
-the names each fact mentions. A step produces a delta: the facts its rule's
+the names each fact mentions (`SinglePass.Store`: the live facts a
+`Std.HashSet`, and by each name a `Std.HashMap` list holding each live fact
+mentioning it once). A step produces a delta: the facts its rule's
 output adds, and the facts of its input the output lost. A fact over a name
 no slot holds stays true (a binding never changes); where a step reads it,
 its linear facts are first restated through read links and eliminated
@@ -68,6 +70,23 @@ names has its facts restated under each, and those fresh names are equal
 there. A fact is stored in one form: an unconditional fact reads no
 condition's polarity.
 
+`SinglePass.runWalk` drives the walk by structural recursion on a fuel of
+the nodes and one (`drive`, one node per step from the queue, a fuel that
+runs out a refusal) and returns its record (`Walk`): per label whether it
+was visited, its entry state and implications (a written assertion's facts
+added), its state after its step and at a merge its context and the fresh
+counter the merge started from; the states and implications each edge
+carried into it and the edges into a merge as the merge reads them; per
+processed edge its source, target and mapping, whether it pushes, the
+implications it carries and whether some environment may meet its
+context. `SinglePass.run`'s verdict is a function of that record
+(`Walk.outcome`). Each node is visited over pure functions of its state:
+a loop head's entry (`headEntry`), a merge (`mergeState`), a node's step
+(`checkedStep`, its counts beside it as `StepStats`), an edge's store
+(`edgeStoreOf`) and what an edge into an ordinary node carries
+(`edgeTransfer`); `materialize` selects its facts by rounds
+(`selectRound`, `selectFrom`, structural on a fuel of the store's size).
+
 ## 4. Loop heads
 
 A loop head is the target of a retreating edge of a depth-first walk from
@@ -75,18 +94,23 @@ the start, handlers' edges included. A statement entry that is no loop head
 is an ordinary node: its state is its predecessor's, or the meet of its
 predecessors' at a merge; a written assertion there is an obligation on
 that state. A merge works on what differs between its predecessors: the
-first's store less each fact another lacks, found where the stores'
-persistent maps are not one object (`Store.diff`), and each predecessor's
+first's store less each fact another lacks (`Store.diff`), and each predecessor's
 own differences at the merge's names; the rules below that query a
 predecessor's facts run over those differences alone, and the implications
 join runs where an edge carries an implication or a slot an edge's type
-differs at is a test some edge answers `false`. A name a predecessor
+differs at is a test some edge answers `false`. Each joined implication is kept
+where every incoming edge establishes it (`PromiseCalls.impliesCheck` over
+the edge's refined context, its implications at slots and its mapping). A name a predecessor
 renames that no slot of the merge holds leaves the store there. At a merge, a linear bound every predecessor states of one form
 under one condition is kept at the weakest of their bounds; a name a slot
 keeps that another slot's fresh name renames in some predecessor is stated
-equal to it there; a linear bound over the merge's names one predecessor
+equal to it there (an alias link; the two linear facts of their numbers'
+equality only where that predecessor's unconditional facts make the name an
+integer, `Store.integral`); a linear bound over the merge's names one predecessor
 states and every other entails over its linear facts near the bound's names
-(`HeapKnowledge.entailsKnown`) is kept; the guarded facts the search's join
+(`HeapKnowledge.entailsKnown`) is kept, where in every
+predecessor's view the bound is a fact or each of its terms is defined by
+the facts near its names (`entailDefinedCheck`, `HeapKnowledge.termDefined`); the guarded facts the search's join
 keeps (`CertificateProducer.joinGuarded`) are kept, each predecessor's guards
 first also lowered once through its read links (`lowerGuards`); and a fact
 one predecessor states of a slot another holds `null` or `undefined` in is
@@ -95,6 +119,9 @@ kept guarded by that tag where every predecessor's facts entail it
 is kept per normalized form and condition, the strongest, and a length atom
 is also stated as the linear facts it means (`HeapKnowledge.atomLinear`).
 
+
+A unit states at most one written assertion per label; a request
+with two at one label is refused.
 
 A loop head's state is exactly its given invariant: its written assertion
 (`@invariant`, required assertions) and the facts the claims document
@@ -129,6 +156,23 @@ inputs' entry values, each the name the start gave its input, entail it
 an input's entry value (`GraphCode.trackTable`'s pairs), those slots
 keeping the input's name, each an obligation on every edge into it.
 
+The start is a cut no edge enters on the unit's first invocation; its
+entry is checked as `ControlFlow.checkEntryResult` checks a certificate's
+(`SinglePass.entryRefusal`): the start's context is the request's inputs,
+the promised input's slot is one of them, its given invariant states no
+implication, names a slot after the promised input only at that input's
+slot and after an input's entry value only at that input's own slot, and
+its written and supplied facts are entailed by the request's entry facts
+(its index facts and its inputs' separation, `ControlFlow.entryKnows`).
+`TSCERT_FORCE=start-facts` supplies a false fact at every start, the
+adversarial proposal the check refuses.
+Where an edge enters the start, the start is entered as any loop head: its
+slots outside the given inputs and the promised input take fresh names, and
+its given state is an obligation on every edge into it; such a unit under
+store regions is not handled. The lowering makes no edge into a unit's
+start: a function's entry is a node emitted after its body, a lambda's its
+block's `closure-entry` node or its expression's first node.
+
 ## 5. Steps and obligations
 
 A step's rule is applied to the facts over the names its expression reads,
@@ -143,7 +187,18 @@ by an alias link. An edge observing a test releases the alternatives it
 contradicts (`HeapKnowledge.withElements`). An edge whose context, refined
 by the step's yields, its target does not admit is checked again with each
 slot the target does not admit at its refined type read at its unrefined
-type; both are types of its value.
+type; both are types of its value. The evidence an edge search returns is checked
+as the certificate checker checks a target's slots (`checkMappedUsing`, or
+under the edge's observation `checkObservedUsing`, `edgeEvidenceChecked`):
+an edge whose evidence the check refuses is not established by it. A step's yields are kept where the certificate checker's yield check
+accepts them (`checkedYields`, as `ControlFlow.checkYields`): a promise
+call's where `promiseYields` states them at an output the promise keeps,
+any other's each where `yieldFollows` accepts it; a slot read's yields are
+checked against the implications testing the slot's name.
+
+A node's claim type has the shape its continuation assumes, as the
+certificate checker checks it (`passShapeCheck'`): only Booleans at a
+`branchBind`, the Boolean at a `branch`.
 
 ### A call of a slot
 
@@ -166,13 +221,16 @@ is within the bound where the unit states the bound on a throw or a handler
 outside the region with no normal return catches it (`deadHandler`), so an
 effect without `onThrow` admits no such handler; a state also carries the names
 holding a store the run allocated (`inferFresh`'s facts, over names: a copy
-of such a name, or a call at a signature stating a fresh result; a merge
+of such a name, or a call at a signature stating a fresh result whose
+derivation `derivChecked` accepts; a merge
 keeps the names every predecessor holds; a cut holds none, its given
 invariant stating none); the region from which no normal return is possible
 is `GraphCode.deadIterate` over the claims' result types, computed once; at
 each node outside it, the node's step is within the bound
 (`ExpressionEffects.check`, `writeWithin`, `initWriteWithin`,
-`selectedWithinAt` with the receiver's freshness, an empty type), its throw
+`selectedWithinAt` with the receiver's freshness, the step's derivation
+claimed at the node's term and its tree accepted, as `nodeChecked` requires
+beside it; an empty type), its throw
 too where the unit states the bound on a throw, and a return under a fresh
 result returns a fresh name; inside it, `deadNode`. A code request of an
 async definition has the footprint `top` (`RequestJson.asyncEffects`, as
@@ -182,7 +240,10 @@ A call whose result is the empty type is within the bound on normal
 return; its throw, caught by a live handler, is within it only at a
 signature bounding its throws. A graph the bound
 refuses may still be within it by its store regions (`regionalChecked`),
-which the pass does not decide: that unit is not handled.
+which the pass does not decide: that unit is not handled. A refusal at a
+node's footprint check is its own outcome (`Outcome.outsideBound`), the one
+the regional fallback answers; a node's exits are typed
+(`SinglePass.Exit`: an edge of its continuation, or its handler's).
 
 ### A step's derivation
 
@@ -190,7 +251,12 @@ Every step's derivation is checked as the checker's `run` checks it
 (`ProgramCertificates.checkTreeUsing`, or `PromiseCalls.requiresTree` for a
 call at a precondition the step's facts establish): the search's `select`
 takes a derivation as given, and a derivation it selects may be one the
-check refuses. The read summaries the derivations read are checked once
+check refuses. A step the search finds is applied at the output the
+checker's `select` gives for the evidence the search returns, computed by
+the pass over the step's facts and the read summaries after the search. A
+step that may write is selected again over every fact; a derivation only
+`requiresTree` accepted at the step's facts is checked by `requiresTree`
+again at every fact before that selection. The read summaries the derivations read are checked once
 for the unit, as a response's are (`validSummary`,
 `checkReadSummariesResult`), and the unit's expression claims are checked
 over them.
@@ -241,13 +307,25 @@ the target; `checkNode` decides the node over those facts and the node's
 evidence (its derivation, its step, its facts on entry), each loop head's
 given facts the obligation on an edge into it. The entry's conditions
 (`checkEntryFields`, a unit neither async nor promising a fresh result)
-are checked before the walk.
+are checked before the walk. Where the fallback accepts and the unit states
+regions, the regions' walk runs from the answers before the fallback, and
+the read summaries of both runs are checked: the fallback's footprint rests
+on its own.
+
+Under store regions the pass checks the entry's fields the regions read
+(`ArgumentPathTracking.checkEntryFields`) and, at a node whose step has a
+derivation, that derivation as the footprint check does
+(`regionalDerivChecked`).
 
 ### Qualified bodies
 
 A qualified body (`SourceRequest.checker`) is walked over the request's own
-graph and image check at its checker and aliases. Its checker's `select` is
-its `run`, so a step's derivation is checked by the step's own check. Its
+graph and image check at its checker and aliases. The pass takes its
+checker as `SinglePass.PassChecker`: the proved layers (`Checker.ordinary`),
+whose steps' trees the pass checks, or a qualified body's
+(`Checker.withSubtyping`), whose `select` is its `run`
+(`PassChecker.select_eq_run`), so a step's derivation is checked by the
+step's own check. Its
 request-level conditions are those `effectResult`, `regionalResult` and
 `ensuresResult` state of a qualified body.
 
@@ -256,6 +334,18 @@ request-level conditions are those `effectResult`, `regionalResult` and
 The output is the verdict, with the first refused obligation located; a
 construct the pass does not handle is an explicit `not handled` result,
 never an acceptance. Not handled: a qualified body with code requests.
+
+A unit's refusal line in modes 3 and 8 names the obligation at its source
+span, in the wording the search's refusal of the same obligation has: an
+expression or return (`source expression obligation at [a,b): evidence
+search failed: no derivation of its <role> claim`, or the promise's), a
+postcondition (`source ensures refusal at [a,b)`), an edge at its target
+(`source incoming edge obligation at [a,b)`), a footprint or stated frame
+(`source effect refusal at [a,b)`); the pass's own text follows on the next
+line. A refusal before the pass that names no place is named at its unit's
+declaration (`source refusal at [a,b)`). `TSCERT_PASS_REFUSALS=raw` prints
+the pass's own text alone. On the single-pass route, a unit refused for a
+dependency also prints the refusal that dependency rests on.
 
 `verifier --verify-units 3 <fragment> <claims> <file-key> <depth> <name>`
 runs the pass; `TSCERT_COMPARE=1` checks, at every node, that the state

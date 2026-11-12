@@ -205,6 +205,8 @@ run_test "Claim text of malformed input" node tests/claim-text.mts
 run_test "Rule inventory" node tests/rule-inventory.mts
 # pipeline/test.mts runs the controls no case can make, their operations replayed from the stage store, and the observed stages' replay controls.
 run_test "Controls" node pipeline/test.mts
+# tests/single-pass-controls.mts runs the single pass's controls (TSCERT_ROUTE=single-pass): forced proposals, forged fragments, the interface stages' store boundary.
+run_test "Single-pass controls" node tests/single-pass-controls.mts
 
 report_tests
 

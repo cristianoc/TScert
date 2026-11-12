@@ -2269,15 +2269,20 @@ function lowerFile(file: string, carriesContext: boolean,
     node.forEachChild(findComputed);
   };
   if (!carriesContext) scan(findComputed);
+  // A module an import reaches, and a file importing one, state the
+  // built-ins (`Array.prototype`'s contract) whatever their code writes:
+  // an importer reads the module's interface through a map between the two
+  // stores, which relates their built-ins, so each states them.
+  const builtinsAt: Node | undefined = firstArray ?? (location !== null || importNodes.length ? source : undefined);
   if (importNodes.length || reexportNodes.length || localNodes.length || globalNodes.length || globalValueNodes.length || importMetaNodes.length ||
-      firstArray || firstAsync || keyNodes.length || ambientNames.length || staticNodes.length ||
+      builtinsAt || firstAsync || keyNodes.length || ambientNames.length || staticNodes.length ||
       classTestNodes.length || classReadNodes.length || contextualNodes.length || assignNodes.length ||
       staticTypeNodes.length ||
       hookTestNodes.length || receiverNodes.length || enumNodes.length || computedNodes.length || symbolNameNodes.length ||
       keyTypeNodes.length || mappedNodes.length || bindingNodes.length || iterableNodes.length || spreadNodes.length ||
       restTargets.length || privateNodes.length || inKeyNodes.length || receiverTargetNodes.length || libraryNameNodes.length || elementReadNodes.length || elementWriteNodes.length || memberWriteNodes.length || memberReadNodes.length || lengthReadNodes.length || openReadNodes.length ||
       regexpNodes.length || dispatchNodes.length || blockNodes.length) {
-    const first =importNodes[0] ?? reexportNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? importMetaNodes[0] ?? firstArray ??
+    const first =importNodes[0] ?? reexportNodes[0] ?? localNodes[0] ?? globalNodes[0] ?? globalValueNodes[0] ?? importMetaNodes[0] ?? builtinsAt ??
       firstAsync ?? keyNodes[0] ?? ambientNames[0] ?? staticNodes[0] ?? classTestNodes[0] ?? classReadNodes[0] ?? contextualNodes[0] ?? assignNodes[0] ??
       hookTestNodes[0] ?? staticTypeNodes[0] ?? receiverNodes[0] ?? enumNodes[0] ??
       computedNodes[0] ?? symbolNameNodes[0] ?? keyTypeNodes[0] ?? bindingNodes[0] ?? iterableNodes[0] ??
@@ -2313,7 +2318,7 @@ function lowerFile(file: string, carriesContext: boolean,
         omitted: omittedSpans(),
         reexports: reexportNodes.map(node => gate.span(node)),
         root: gate.span(first),
-        ...(firstArray ? { arrays: gate.span(firstArray) } : {}),
+        ...(builtinsAt ? { arrays: gate.span(builtinsAt) } : {}),
         ...(firstAsync ? { intrinsics: { span: gate.span(firstAsync), names: [...intrinsicNames] } } : {}),
         symbolKeys: keyNodes.map(node => gate.span(node)),
         symbolKey: ([start, end], symbol) => gate.symbolKeys.set(`${start}:${end}`, symbol),

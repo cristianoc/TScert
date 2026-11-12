@@ -17,7 +17,8 @@
 // `hole:`; the other direction is counted. TSCERT_FORCE (passed through)
 // forces an adversarial proposal (`literals`, `callees`, `elements`,
 // `objects`, `spreads`, `stale`, `throws`, `guards`, `reads`, `paths`,
-// `offers`, `loops`, `decided`, `schemes`, `callbacks`, `fresh`, `defaults`, `finally`, `never`, `meets`, `implications`, `binds`, `arms`, `captures`, `cells`, `early`, `no-return`, `steps`, `head-entry`); the controls below run with theirs forced whatever
+// `offers`, `loops`, `decided`, `schemes`, `callbacks`, `fresh`, `defaults`, `finally`, `never`, `meets`, `implications`, `binds`, `arms`, `captures`, `cells`, `early`, `no-return`, `steps`, `head-entry`, `start-facts`); the controls
+// (tests/single-pass-control-inputs.mts, the suite of the single pass's controls' list) run with theirs forced whatever
 // the patterns, each expected refused by mode 8; the forced proposal decides
 // the control's unit and the units it depends on, the file's other units
 // compared unforced.
@@ -35,6 +36,7 @@ import { checkApart } from "../pipeline/verify-source.mts";
 import { withoutEvidenceReuse } from "../pipeline/stages.mts";
 import { verifyWithInterfaces } from "../pipeline/module-interfaces.mts";
 import { standIns } from "./single-pass-standins.mts";
+import { forcedProposals, type ForcedProposal } from "../tests/single-pass-control-inputs.mts";
 
 const root = resolve(import.meta.dirname, "..");
 const verifier = join(root, "lean/.lake/build/bin/verifier");
@@ -115,6 +117,32 @@ const controls: { file: string; unit: string; force: string; positive?: boolean 
   { file: "invalid-method-effect-throw-caught", unit: "wrong@487", force: "no-return" },
   { file: "map-stable-set", unit: "distinct@238", force: "steps", positive: true },
   { file: "loop-head-contents", unit: "continued@413", force: "head-entry", positive: true },
+  { file: "returntype-guard", unit: "isName@125", force: "start-facts", positive: true },
+];
+/** Forged documents: mode 3 (the pass over a claims document) accepts the
+ * unit at the producer's claims and refuses it at the forged ones, with the
+ * refusal stated. */
+const forgedDocuments: { file: string; unit: string; forge: (claims: Record<string, unknown>, source: string) => void;
+    refusal: RegExp }[] = [
+  // `x` claimed `string` at the return after a saved test whose `if` has an
+  // empty arm, so that both exits enter the return's node: the false exit
+  // carries no narrowing (under Node `kept(1)` returns 1).
+  { file: "saved-test-empty-arm", unit: "kept@453", refusal: /edge from node \d+ to node \d+/, forge: (claims, source) => {
+    const types = claims.types;
+    const functions = claims.functions;
+    if (!Array.isArray(types) || !Array.isArray(functions)) throw new Error("claims without types or functions");
+    const str = types.findIndex((t) => JSON.stringify(t) === '["str"]');
+    const at = source.indexOf("return x");
+    const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
+    const fn: unknown = functions.find((f) => isRecord(f) && f.name === "kept");
+    if (str < 0 || at < 0 || !isRecord(fn) || !Array.isArray(fn.entries) || !Array.isArray(fn.expressions))
+      throw new Error("kept's claims");
+    let forged = 0;
+    for (const e of fn.entries) if (isRecord(e) && e.start === at && Array.isArray(e.bindings))
+      for (const b of e.bindings) if (isRecord(b) && b.name === "x") { b.type = [str]; forged++; }
+    for (const e of fn.expressions) if (isRecord(e) && Array.isArray(e.pos) && e.pos[0] === at + 7) { e.type = [str]; forged++; }
+    if (forged !== 2) throw new Error(`kept's return: ${forged} claims forged`);
+  } },
 ];
 
 /** The file key the pipeline's check of a run named: `--check-units`'s third argument. */
@@ -126,7 +154,7 @@ function fileKey(artifacts: string): string | null {
 
 /** The pass's verdict on each unit of a run's file. */
 function passVerdicts(artifacts: string, key: string, given: string | null, mode: string = process.env.TSCERT_PASS_MODE ?? "3",
-    force?: string, allCuts: boolean = false): Map<string, Verdict> {
+    force?: string, allCuts: boolean = false, claimsDocument: string = join(artifacts, "claims.json")): Map<string, Verdict> {
   let env: NodeJS.ProcessEnv = given === null ? process.env : { ...process.env, TSCERT_GIVEN: given };
   if (force !== undefined) env = { ...env, TSCERT_FORCE: force };
   if (allCuts) env = { ...env, TSCERT_ALL_CUTS: "1" };
@@ -137,7 +165,7 @@ function passVerdicts(artifacts: string, key: string, given: string | null, mode
   }
   // Modes 8 and 9 read the fragment alone.
   const documents = mode === "8" || mode === "9" ? [join(artifacts, "fragment.json")]
-    : [join(artifacts, "fragment.json"), join(artifacts, "claims.json")];
+    : [join(artifacts, "fragment.json"), claimsDocument];
   let run: { stdout: string; stderr: string };
   if (mode === "8" || mode === "9") {
     const emptyGiven = join(artifacts, "empty-given.jsonl");
@@ -257,6 +285,21 @@ async function compare(test: Case): Promise<Comparison[]> {
     return verdicts;
   };
   const pass = decide(undefined, force);
+  const forgedDocument = forgedDocuments.find((d) => d.file === test.file);
+  if (forgedDocument !== undefined) {
+    const honest = passVerdicts(outcome.artifacts, key, null, "3").get(forgedDocument.unit);
+    if (honest?.accepted !== true)
+      throw new Error(`forged-document control refused at the producer's claims: ${test.file} ${forgedDocument.unit}`);
+    const claims: unknown = JSON.parse(readFileSync(join(outcome.artifacts, "claims.json"), "utf8"));
+    if (typeof claims !== "object" || claims === null || Array.isArray(claims)) throw new Error("claims not an object");
+    const record = Object.fromEntries(Object.entries(claims));
+    forgedDocument.forge(record, readFileSync(source, "utf8"));
+    const document = join(outcome.artifacts, "forged-claims.json");
+    writeFileSync(document, JSON.stringify(record));
+    const forged = passVerdicts(outcome.artifacts, key, null, "3", undefined, false, document).get(forgedDocument.unit);
+    if (forged === undefined || forged.accepted || !forgedDocument.refusal.test(forged.refusal))
+      throw new Error(`forged-document control not refused as stated: ${test.file} ${forgedDocument.unit}: ${forged?.refusal ?? "missing"}`);
+  }
   // The referee accepts a unit where the search finds evidence the proved
   // check accepts with the search's cuts at the loop heads, or else at every
   // statement entry: either is a certificate of the same proposals.

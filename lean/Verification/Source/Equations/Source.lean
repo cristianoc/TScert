@@ -212,6 +212,11 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
   -- The built-in array prototype.
   let proto ← protoLabel
   modify fun s => { s with proto := match proto with | .app h _ => some h | _ => none }
+  -- A document listing `ArrayProto` states the built-ins, whatever its
+  -- code lowers: the store's arrays, their prototype and their `unknown`.
+  if ds[0]?.any (ImplicitDependency.arrayProto.selects ·.identity) then
+    modify fun s => { s with arrays := true }
+    let _ ← ground "unknown" [.source]
   drain
   -- Every written application's bound obligations.
   for entry in ← arr (ast.getObjValD "declarations") "applications" do

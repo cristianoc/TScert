@@ -405,7 +405,9 @@ def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) :
           throw "component dependency overlaps"
         imported := imported ++ [m]
     let sc : SourceClaimJson.ImportScope := ⟨modules ++ imported, SourceClaimJson.ModuleCode.of (modules ++ imported)⟩
-    let incoming ← ds.flatMapM fun (d : Json) => SourceClaimJson.decodeInterfaces sc (d.getObjValD "interface")
+    let decoded ← ds.mapM fun (d : Json) => SourceClaimJson.decodeInterfaces sc (d.getObjValD "interface")
+    let incoming := decoded.flatMap (·.1)
+    let incomingTables := decoded.flatMap (·.2)
     let needs ← SourceClaimJson.interfaceNeeds sc
     let own := needs.filter fun (n : SourceClaimJson.ModuleNeed) => modules.any (·.location == n.module.location)
     let mut given : Std.HashMap String Json := {}
@@ -425,9 +427,9 @@ def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) :
     let check := fun (f : SourceClaimJson.FilePlans) group =>
       if mode == 9 then (([] : List String), f.verifyGroup fuel group false)
       else f.passGroup fuel group (given := some (moduleGiven f.fr.ast given))
-    let (est, _, _) ← SourceClaimJson.establishModules
-      (own.mergeSort (fun a b => a.module.location ≤ b.module.location)) budget force incoming prepare check
-    SourceClaimJson.encodeInterfaces modules est
+    let (est, _, _, tables) ← SourceClaimJson.establishModules
+      (own.mergeSort (fun a b => a.module.location ≤ b.module.location)) budget force incoming prepare check incomingTables
+    SourceClaimJson.encodeInterfaces modules est tables
   match parsed with
   | .error e => refuse e
   | .ok j => IO.println j.compress; return 0
@@ -483,6 +485,10 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
         | .ok u => m.insert u j
         | .error _ => m
       | .error _ => m) {}
+  -- A pass refusal's text located at the source obligation it names
+  -- (`FilePlans.locatedRefusal`), unless `TSCERT_PASS_REFUSALS=raw`: the
+  -- pass's own text alone.
+  let located := (← IO.getEnv "TSCERT_PASS_REFUSALS") != some "raw"
   -- Adversarial proposals forced, for the referee (`TSCERT_FORCE`, comma-separated).
   let force := ((← IO.getEnv "TSCERT_FORCE").getD "").splitOn "," |>.filter (!·.isEmpty)
   -- The referee's statement entries all the search's cuts (`TSCERT_ALL_CUTS`).
@@ -503,6 +509,7 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
     else if mode == 8 || mode == 9 then
       let prepare := fun (given : Std.HashMap String Json) (f : SourceClaimJson.FilePlans) =>
         let f := f.withHeadFacts given (mode == 9)
+        let f := if force.contains "start-facts" then f.withFalseStartFact else f
         if mode == 9 && !allCuts then f.headCuts else f
       -- The module units an import's footprint rests on, checked here by the
       -- same mode (`fragmentPlansWithModules`), each at the given lines of
@@ -510,14 +517,14 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
       let check := fun (f : SourceClaimJson.FilePlans) (group : List Nat) =>
         if mode == 9 then (([] : List String), f.verifyGroup fuel group false)
         else f.passGroup fuel group (given := some (moduleGiven f.fr.ast
-          (moduleLines ((f.fr.ast.getObjValAs? String "file").toOption.getD ""))))
+          (moduleLines ((f.fr.ast.getObjValAs? String "file").toOption.getD "")))) (located := located)
       if let some cached := interfaces then
         let cached ← cached
         let sc ← if (← jArr cached "modules").isEmpty then
             pure (⟨[], {}⟩ : SourceClaimJson.ImportScope)
           else SourceClaimJson.ImportScope.of (← ast)
-        let est ← SourceClaimJson.decodeInterfaces sc cached
-        let f ← SourceClaimJson.fragmentPlansFromInterfaces (← ast) fileKey budget (selection names) (← standIns) force est
+        let (est, tables) ← SourceClaimJson.decodeInterfaces sc cached
+        let f ← SourceClaimJson.fragmentPlansFromInterfaces (← ast) fileKey budget (selection names) (← standIns) force est tables
         let ms : List SourceClaimJson.ModuleVerdict := (est.map (·.2.2)).eraseDups.map fun u =>
           ⟨u, [u], [], .ok []⟩
         return (prepare givenLines f, ms, [])
@@ -601,7 +608,7 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
               | none => pure 0
             emit s!"counts-read: \{\"fragmentBytes\":{← size astPath},\"claimsBytes\":{claimsBytes},\"givenBytes\":{given},\"standInBytes\":{standInBytes},\"interfaceBytes\":{interfaceBytes}}"
           let (lines, v) ← IO.lazyPure fun _ =>
-            f.passGroup fuel (f.fr.group i) compare debugNode repeats given observe counting
+            f.passGroup fuel (f.fr.group i) compare debugNode repeats given observe counting located
           let p1 ← SinglePass.passNanos.get
           let s1 ← IO.monoNanosNow
           for line in lines do emit line
