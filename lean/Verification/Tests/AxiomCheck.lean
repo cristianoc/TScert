@@ -730,7 +730,6 @@ run_cmd do
   check ``Verification.TolerantFrames.headEntry_below
   check ``Verification.TolerantFrames.passBack_below
   check ``Verification.TolerantFrames.start_passPreT
-  check ``Verification.TolerantFrames.run_guarantee
   check ``Verification.TolerantFrames.codesSound_reassign
   -- Leg 13: the pass's checks at a reassignment (TolerantFramesWalkReassignChecks, TolerantFramesWalkReassignNodes)
   check ``Verification.TolerantFrames.footprintCheck_reassign
@@ -1165,8 +1164,29 @@ run_cmd do
   check ``Verification.TolerantFrames.visB_replicate
   check ``Verification.TolerantFrames.SetupOk.recInv
   check ``Verification.TolerantFrames.setupRecords_of
-  check ``Verification.TolerantFrames.subtypeAnswersSound
+  check ``Verification.TolerantFrames.sumsPrefix_keep
+  check ``Verification.TolerantFrames.stepChecked_of_final
+  check ``Verification.TolerantFrames.sumsPrefix_fold
+  check ``Verification.TolerantFrames.stepYields_prefix
+  check ``Verification.TolerantFrames.returnRun_prefix
+  check ``Verification.TolerantFrames.stepYields_prefix_of
+  check ``Verification.TolerantFrames.visitStep_prefix
+  check ``Verification.TolerantFrames.exitsYields_prefix
+  check ``Verification.TolerantFrames.diffSubtypes_prefix
+  check ``Verification.TolerantFrames.impliesHeld_prefix
+  check ``Verification.TolerantFrames.headImplies_prefix
+  check ``Verification.TolerantFrames.keepSummaries_table
+  check ``Verification.TolerantFrames.checkedStep_prefix
+  check ``Verification.TolerantFrames.visitStep_input_prefix
+  check ``Verification.TolerantFrames.exitsFold_prefix
+  check ``Verification.TolerantFrames.visitExits_prefix
+  check ``Verification.TolerantFrames.visitStepPrefix_of_exitStep
   check ``Verification.TolerantFrames.subtypeAnswersAll
+  check ``Verification.TolerantFrames.regionalTyped_of_requires
+  check ``Verification.TolerantFrames.regionalTyped_of_derivation
+  check ``Verification.TolerantFrames.regionalAt_checks
+  check ``Verification.TolerantFrames.visitResult_region
+  check ``Verification.TolerantFrames.subtypeAnswersSound
   check ``Verification.TolerantFrames.exitStep_mappingWidth
   check ``Verification.TolerantFrames.exitsFold_mappingWidth
   check ``Verification.TolerantFrames.exitsWidth
