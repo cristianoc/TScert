@@ -1808,7 +1808,8 @@ other than a head); the fresh counter its step starts from, the length of
 the read-summary table it starts from, the step's result and the state
 after it; whether its footprint check and
 its return check passed (each `true` where it makes none); at a merge its
-context and the fresh counter the merge started from. -/
+context and the fresh counter the merge started from; under a regional
+check, the regional facts that check used at the label itself. -/
 structure LabelWalk (ι : Type) where
   visited : Bool := false
   entryFresh : Nat := 0
@@ -1821,6 +1822,7 @@ structure LabelWalk (ι : Type) where
   bounded : Bool := false
   returned : Bool := false
   merge : Option (List (Ty ι) × Nat) := none
+  region : Option RegionState := none
 
 /-- An edge the walk processed: its source, its target with the mapping,
 whether it pushes the result, the implications it carries (into a node
@@ -2543,7 +2545,8 @@ def visitStep (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
 implications and merge edges carried into each label, the processed edges,
 the answers, counters and trace, the in-degrees, the regional facts carried
 in, where each incoming state came from, the queue, each node's
-satisfiability, and the step's yields. -/
+satisfiability, the step's yields, and the regional facts the node's regional
+check used at itself. -/
 structure ExitsDone (ι : Type) [BEq ι] [Hashable ι] (G : NormalGraph ι) where
   incoming : Array (List State)
   incomingImpl : Array (List (List (PromiseCalls.Implication ι)))
@@ -2558,6 +2561,7 @@ structure ExitsDone (ι : Type) [BEq ι] [Hashable ι] (G : NormalGraph ι) wher
   queue : List Nat
   unsat : Array (Option Bool)
   yields : Option (List (PromiseCalls.Yield ι))
+  region : Option RegionState
 
 /-- The step's yields the exits read: the step's, else, where a target's
 assertion is checked on an edge, `nodeYields` checked (`checkYsAt` at the
@@ -2598,10 +2602,11 @@ it: its regional facts on entry (the regions' input slots at the start, a
 loop head's given ones, else what every edge into it establishes), the
 cells and fields it keeps, and on each edge what the node establishes at the
 target (a loop head's given facts there); the regional facts carried into
-each label after it, or the refusal. -/
+each label after it and those the check used at the node itself, or the
+refusal. -/
 def regionalAt (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l : Nat)
     (en : Entered ι) (sd : StepDone ι G) (rg : Regional) (answers : Answered G)
-    (regionIn : Array (List RegionState)) : Except String (Array (List RegionState)) :=
+    (regionIn : Array (List RegionState)) : Except String (Array (List RegionState) × RegionState) :=
   let node := env.nodes[l]!
   let c := env.claimed[l]!
   let width := c.context.length
@@ -2659,7 +2664,7 @@ def regionalAt (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkE
       sparse n [] (at_.map fun (x, r) => (x, r.cells)), sparse n [] (at_.map fun (x, r) => (x, r.fields)), rg.names⟩
     if !(timedKind "regional node" fun _ => GraphCode.ArgumentRegionGraph.checkNode G images sums rg.Φ rg.regions table ft rg.exc l node cEv) then
       .error s!"store regions at node {l}"
-    else .ok regionIn
+    else .ok (regionIn, { here with cells := C, fields := Fs })
 
 /-- Whether each slot `diff` names has, in the edge's context `Γ`, a type
 below the target's (`subtypeUsing`; the observed slot 0 never); and the
@@ -2951,25 +2956,27 @@ def visitExits (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkE
   let (yields, answers) := exitsYields G images env l en sd
   let ysAll := yieldsAtSlots en.entry.names (yields.getD [])
   let outAll : Thunk Knowledge := Thunk.mk fun _ => outAllOf G c sd.st.stepOut
-  let regional : Except String (Array (List RegionState)) := match env.regional with
-    | none => .ok σ.regionIn
-    | some rg => regionalAt G images env l en sd rg answers σ.regionIn
+  let regional : Except String (Array (List RegionState) × Option RegionState) := match env.regional with
+    | none => .ok (σ.regionIn, none)
+    | some rg => (regionalAt G images env l en sd rg answers σ.regionIn).map fun (r, h) => (r, some h)
   match regional with
   | .error why => .error (WalkStop.mk (.refused why) sd.counts answers sd.trace)
-  | .ok regionIn =>
+  | .ok (regionIn, region) =>
     let acc0 : ExitsDone ι G :=
       { incoming := σ.walk.incoming, incomingImpl := σ.walk.incomingImpl, incomingEdges := σ.walk.incomingEdges,
         edges := σ.walk.edges, answers, counts := sd.counts, trace := sd.trace, indeg := σ.indeg, regionIn,
-        incomingFrom := σ.incomingFrom, queue := σ.queue, unsat := σ.unsat, yields }
+        incomingFrom := σ.incomingFrom, queue := σ.queue, unsat := σ.unsat, yields, region }
     (Exit.ofNode node).zipIdx.foldlM (exitStep G images env l en sd ysAll outAll) acc0
 
-/-- What the walk records of a visited label, from its entry `en` and its
-step `sd` (`visitBody` writes it once). -/
-def LabelWalk.ofVisit {G : NormalGraph ι} (entryFresh : Nat) (en : Entered ι) (sd : StepDone ι G) : LabelWalk ι :=
+/-- What the walk records of a visited label, from its entry `en`, its step
+`sd` and the regional facts its regional check used (`visitBody` writes it
+once). -/
+def LabelWalk.ofVisit {G : NormalGraph ι} (entryFresh : Nat) (en : Entered ι) (sd : StepDone ι G)
+    (region : Option RegionState) : LabelWalk ι :=
   { visited := true, entryFresh, entry := some en.entry, implies := en.implies, stepFresh := en.fresh,
     stepSummaries := sd.stepAnswers.summaries.size, stepped := some sd.st,
     after := some { en.entry with names := sd.st.result :: en.entry.names, store := sd.st.store },
-    bounded := sd.bounded, returned := sd.returned, merge := en.merge }
+    bounded := sd.bounded, returned := sd.returned, merge := en.merge, region }
 
 /-- One node's visit, its entry, its step and its exits, from the walk's
 state `σ`: the state after it built here alone, the label's record written
@@ -2983,7 +2990,7 @@ def visitBody (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
     | .ok sd => match visitExits G images env σ l en sd with
       | .error stop => .error stop
       | .ok ex =>
-        .ok { walk := { labels := σ.walk.labels.set! l (LabelWalk.ofVisit σ.fresh en sd), incoming := ex.incoming,
+        .ok { walk := { labels := σ.walk.labels.set! l (LabelWalk.ofVisit σ.fresh en sd ex.region), incoming := ex.incoming,
                         incomingImpl := ex.incomingImpl, incomingEdges := ex.incomingEdges, edges := ex.edges,
                         visited := σ.walk.visited + 1 },
               answers := ex.answers, counts := ex.counts, trace := ex.trace, indeg := ex.indeg, fresh := sd.fresh,
