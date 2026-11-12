@@ -4,14 +4,12 @@ import Verification.Programs.TolerantFramesStoreOpsEdge
 /-! # Tolerant frames: a visit's record from its parts
 
 A visit that returns ran its entry, its step and its exits, and returns
-the exits' state with the label's record written once, the visited count
-one more and the read-summary table restored (`visit_ok`,
-`visitResult`). Where the parts leave the records of the labels as they
-were (`PartsKeepLabels`), the record changes at the visited label only,
-counts it, keeps its size and, at a label below the size, marks it
-visited (`visitResult_labels`, `visitResult_visits`); so `VisitsRecord`
-reduces to `PartsKeepLabels` and the rest of `VisitFacts` (`VisitRest`,
-`VisitsRest`) (`visitsRecord_of`). A state an exit carries into its
+the state `visitBody` builds from them, the read-summary table kept
+(`visit_ok`, `visitResult`): the record changes at the visited label only,
+counts it, keeps its size and, at a label below the size, marks it visited
+(`visitResult_labels`, `visitResult_visits`, `visitResult_size`); so
+`VisitsRecord` reduces to the rest of `VisitFacts` (`VisitRest`,
+`VisitsRest`, `visitsRecord_of`). A state an exit carries into its
 target (`edgeTransfer` over `edgeStoreOf`) has the target's width, a
 well-formed store and is below the counter where the mapping reads the
 source's slots and gives the target's width, the stores are well-formed
@@ -23,63 +21,58 @@ open Verification ControlFlow CertificateProducer PositiveCertificates PositiveG
 section Visit
 variable {ι : Type} [Labels ι] {G : NormalGraph ι} {I : InstanceImageCheck G}
 
-/-- The state a visit returns from its parts: the exits' state with the
-label's record written once, the visited count one more and the
-read-summary table restored. -/
-def visitResult (σ : SinglePass.WalkState ι G) (l : Nat) (en : SinglePass.Entered ι G) (sd : SinglePass.StepDone ι G)
-    (σ' : SinglePass.WalkState ι G) : SinglePass.WalkState ι G :=
-  let labels := σ'.walk.labels.set! l (SinglePass.LabelWalk.ofVisit σ.fresh en sd)
-  let w : SinglePass.Walk ι := { σ'.walk with labels, visited := σ.walk.visited + 1 }
-  { σ' with walk := w, answers := SinglePass.keepSummaries σ.answers σ'.answers }
+/-- The state a visit returns from its parts (`visitBody`): the exits'
+arrays and threaded values, the label's record written once, the visited
+count one more, the step's fresh counter and the read-summary table kept
+(`visit`). -/
+def visitResult (σ : SinglePass.WalkState ι G) (l : Nat) (en : SinglePass.Entered ι) (sd : SinglePass.StepDone ι G)
+    (ex : SinglePass.ExitsDone ι G) : SinglePass.WalkState ι G :=
+  { walk := { labels := σ.walk.labels.set! l (SinglePass.LabelWalk.ofVisit σ.fresh en sd), incoming := ex.incoming,
+              incomingImpl := ex.incomingImpl, incomingEdges := ex.incomingEdges, edges := ex.edges,
+              visited := σ.walk.visited + 1 },
+    answers := SinglePass.keepSummaries σ.answers ex.answers, counts := ex.counts, trace := ex.trace,
+    indeg := ex.indeg, fresh := sd.fresh, regionIn := ex.regionIn, incomingFrom := ex.incomingFrom,
+    queue := ex.queue, unsat := ex.unsat, lastStamp := en.lastStamp, lastKind := sd.lastKind }
 
 theorem visit_ok {env : SinglePass.WalkEnv ι G I} {σ σ'' : SinglePass.WalkState ι G} {l : Nat}
     (h : SinglePass.visit G I env σ l = .ok σ'') :
-    ∃ en sd σ', SinglePass.visitEntry G I env σ l = .ok en ∧ SinglePass.visitStep G I env l en = .ok sd ∧
-      SinglePass.visitExits G I env l en sd = .ok σ' ∧
-      σ'' = visitResult σ l en sd σ' := by
+    ∃ en sd ex, SinglePass.visitEntry G I env σ l = .ok en ∧ SinglePass.visitStep G I env σ l en = .ok sd ∧
+      SinglePass.visitExits G I env σ l en sd = .ok ex ∧
+      σ'' = visitResult σ l en sd ex := by
   unfold SinglePass.visit at h
   split at h
   · rename_i σb hb
     cases h
     unfold SinglePass.visitBody at hb
-    cases he : SinglePass.visitEntry G I env σ l with
-    | error e => simp [he, bind, Except.bind] at hb
-    | ok en =>
-      cases hs : SinglePass.visitStep G I env l en with
-      | error e => simp [he, hs, bind, Except.bind] at hb
-      | ok sd =>
-        cases hx : SinglePass.visitExits G I env l en sd with
-        | error e => simp [he, hs, hx, bind, Except.bind] at hb
-        | ok σ' =>
-          simp only [he, hs, hx, bind, Except.bind, pure, Except.pure, Except.ok.injEq] at hb
-          exact ⟨en, sd, σ', rfl, hs, hx, by rw [← hb]; rfl⟩
+    split at hb
+    · cases hb
+    · rename_i en he
+      split at hb
+      · cases hb
+      · rename_i sd hs
+        split at hb
+        · cases hb
+        · rename_i ex hx
+          cases hb
+          exact ⟨en, sd, ex, he, hs, hx, rfl⟩
   · cases h
 
-theorem visitResult_labels (σ : SinglePass.WalkState ι G) (l : Nat) (en : SinglePass.Entered ι G)
-    (sd : SinglePass.StepDone ι G) (σ' : SinglePass.WalkState ι G) {t : Nat} (ht : t ≠ l) :
-    (visitResult σ l en sd σ').walk.labels[t]? = σ'.walk.labels[t]? := by
+theorem visitResult_labels (σ : SinglePass.WalkState ι G) (l : Nat) (en : SinglePass.Entered ι)
+    (sd : SinglePass.StepDone ι G) (ex : SinglePass.ExitsDone ι G) {t : Nat} (ht : t ≠ l) :
+    (visitResult σ l en sd ex).walk.labels[t]? = σ.walk.labels[t]? := by
   simp only [visitResult]
   rw [Array.set!_eq_setIfInBounds, Array.getElem?_setIfInBounds_ne (Ne.symm ht)]
 
-theorem visitResult_size (σ : SinglePass.WalkState ι G) (l : Nat) (en : SinglePass.Entered ι G)
-    (sd : SinglePass.StepDone ι G) (σ' : SinglePass.WalkState ι G) :
-    (visitResult σ l en sd σ').walk.labels.size = σ'.walk.labels.size := by
+theorem visitResult_size (σ : SinglePass.WalkState ι G) (l : Nat) (en : SinglePass.Entered ι)
+    (sd : SinglePass.StepDone ι G) (ex : SinglePass.ExitsDone ι G) :
+    (visitResult σ l en sd ex).walk.labels.size = σ.walk.labels.size := by
   simp only [visitResult, Array.set!_eq_setIfInBounds, Array.size_setIfInBounds]
 
-theorem visitResult_visits (σ : SinglePass.WalkState ι G) (l : Nat) (en : SinglePass.Entered ι G)
-    (sd : SinglePass.StepDone ι G) (σ' : SinglePass.WalkState ι G) (hl : l < σ'.walk.labels.size) :
-    visB (visitResult σ l en sd σ').walk l = true := by
+theorem visitResult_visits (σ : SinglePass.WalkState ι G) (l : Nat) (en : SinglePass.Entered ι)
+    (sd : SinglePass.StepDone ι G) (ex : SinglePass.ExitsDone ι G) (hl : l < σ.walk.labels.size) :
+    visB (visitResult σ l en sd ex).walk l = true := by
   simp only [visB, visitResult, Array.set!_eq_setIfInBounds, Array.getElem?_setIfInBounds_self_of_lt hl]
   rfl
-
-variable (ι) in
-/-- **(Named hypothesis) The visit's parts keep the records of the
-labels**: where the entry, the step and the exits return, the exits'
-state has the records the visit started from. -/
-def PartsKeepLabels : Prop :=
-  ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (env : SinglePass.WalkEnv ι G I) σ l en sd σ',
-    SinglePass.visitEntry G I env σ l = .ok en → SinglePass.visitStep G I env l en = .ok sd →
-    SinglePass.visitExits G I env l en sd = .ok σ' → σ'.walk.labels = σ.walk.labels
 
 /-- **What a visit gives beyond its record's write** (`VisitFacts` but
 `labels`, `visits`, `count` and `size`). -/
@@ -107,22 +100,20 @@ def VisitsRest : Prop :=
     σ.queue = l :: rest → SinglePass.visit G I env { σ with queue := rest } l = .ok σ' →
     VisitRest c env { σ with queue := rest } l σ'
 
-/-- **(`visitsRecord_of`) Every visit gives `VisitFacts`** where the
-visit's parts keep the records (`PartsKeepLabels`) and it gives the rest
-(`VisitsRest`): the record's write at the visited label, below the
+/-- **(`visitsRecord_of`) Every visit gives `VisitFacts`** where it gives
+the rest (`VisitsRest`): the record's write at the visited label, below the
 record's size by the invariant (`visit_ok`, `visitResult_labels`,
 `visitResult_visits`, `visitResult_size`). -/
-theorem visitsRecord_of (hk : PartsKeepLabels ι) (hr : VisitsRest ι) : VisitsRecord ι := by
+theorem visitsRecord_of (hr : VisitsRest ι) : VisitsRecord ι := by
   intro G I c env σ0 σ σ'' l rest hs hE hI hq hv
   have hR := hr G I c env σ0 σ σ'' l rest hs hE hI hq hv
-  obtain ⟨en, sd, σ', he, hst, hx, rfl⟩ := visit_ok hv
-  have hlab := hk G I env _ l en sd σ' he hst hx
+  obtain ⟨en, sd, ex, -, -, -, rfl⟩ := visit_ok hv
   have hln : l < env.n := (hI.queue l (by rw [hq]; exact List.mem_cons_self ..)).1
   exact { exits := hR.exits,
-          labels := fun t ht => (visitResult_labels _ _ _ _ _ ht).trans (by rw [hlab]),
-          visits := visitResult_visits _ _ _ _ _ (by rw [hlab]; exact hI.size ▸ hln),
+          labels := fun t ht => visitResult_labels _ _ _ _ _ ht,
+          visits := visitResult_visits _ _ _ _ _ (hI.size ▸ hln),
           count := rfl,
-          size := by rw [visitResult_size, hlab],
+          size := visitResult_size _ _ _ _ _,
           frame := hR.frame, pushes := hR.pushes, edges := hR.edges, fresh := hR.fresh, degs := hR.degs,
           queue := hR.queue, settles := hR.settles, mergeFresh := hR.mergeFresh }
 

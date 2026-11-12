@@ -1899,17 +1899,16 @@ hypotheses over the setup and the visit.
 **A visit's record from its parts.** Module
 `lean/Verification/Programs/TolerantFramesDriverVisit.lean`. A visit that
 returns ran `visitEntry`, `visitStep` and `visitExits` and returns the
-exits' state with the label's record written once
-(`LabelWalk.ofVisit`), the visited count one more and the read-summary
-table restored (proved: `visit_ok`, the state `visitResult`). The record
-has a record per label below the bound (`RecInv.size`), so where the parts
-leave the records as they were (`PartsKeepLabels`, named hypothesis), the
-visit changes the record at its label only, marks it visited, counts it
-once and keeps the record's size (`visitResult_labels`,
-`visitResult_visits`, `visitResult_size`):
+state `visitBody` builds from them: the exits' arrays and threaded
+values, the label's record written once (`LabelWalk.ofVisit`), the visited
+count one more, the read-summary table kept (proved: `visit_ok`, the state
+`visitResult`). The record has a record per label below the bound
+(`RecInv.size`), so the visit changes the record at its label only, marks
+it visited, counts it once and keeps the record's size
+(`visitResult_labels`, `visitResult_visits`, `visitResult_size`):
 
 ```math
-\mathrm{PartsKeepLabels} \wedge \mathrm{VisitsRest} \Longrightarrow \mathrm{VisitsRecord}
+\mathrm{VisitsRest} \Longrightarrow \mathrm{VisitsRecord}
 ```
 
 (`visitsRecord_of`), `VisitsRest` stating the rest of `VisitFacts`
