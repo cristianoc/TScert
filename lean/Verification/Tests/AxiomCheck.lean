@@ -27,6 +27,7 @@ import Verification.Programs.TolerantFramesMerge
 import Verification.Programs.TolerantFramesModelLoop
 import Verification.Programs.TolerantFramesModelTyped
 import Verification.Programs.TolerantFramesModelRules
+import Verification.Programs.TolerantFramesMergeHolds
 
 /-!
 Acceptance rests on Lean's standard axioms alone. The build fails when any of
@@ -426,6 +427,47 @@ run_cmd do
   check ``Verification.TolerantFrames.fresh_eff
   check ``Verification.TolerantFrames.fresh_eff_bound
   check ``Verification.TolerantFrames.fresh_cells_not_erased
+  -- Leg 8: the merge and forgetting names (TolerantFramesMerge*, TolerantFramesStoreOps*)
+  check ``Verification.TolerantFrames.mergeState_state
+  check ``Verification.TolerantFrames.mergeState_implies
+  check ``Verification.TolerantFrames.mergeState_fresh
+  check ``Verification.TolerantFrames.keepFirst_mem
+  check ``Verification.TolerantFrames.keptAliasOf_eq
+  check ``Verification.TolerantFrames.dropDerived_holds
+  check ``Verification.TolerantFrames.drop_ok
+  check ``Verification.TolerantFrames.drop_wf
+  check ``Verification.TolerantFrames.slotsInv_step
+  check ``Verification.TolerantFrames.mergeSlots_inv
+  check ``Verification.TolerantFrames.slots_same
+  check ``Verification.TolerantFrames.mergeVal_slots
+  check ``Verification.TolerantFrames.mergeVal_rename
+  check ``Verification.TolerantFrames.rename_key_below
+  check ``Verification.TolerantFrames.remove_live
+  check ``Verification.TolerantFrames.diffRemove_live
+  check ``Verification.TolerantFrames.mergeCommon_live
+  check ``Verification.TolerantFrames.renameEach_holds
+  check ``Verification.TolerantFrames.OnPath.variants_ok
+  check ``Verification.TolerantFrames.mergeMeet_inv
+  check ``Verification.TolerantFrames.mergeMet0_wf
+  check ``Verification.TolerantFrames.OnPath.met0_ok
+  check ``Verification.TolerantFrames.OnPath.diffs_ok
+  check ``Verification.TolerantFrames.normalize_vars
+  check ``Verification.TolerantFrames.linear_weaken
+  check ``Verification.TolerantFrames.boundsOf_get
+  check ``Verification.TolerantFrames.weakestStep_cases
+  check ``Verification.TolerantFrames.mergeBounds_inv
+  check ``Verification.TolerantFrames.holds_sound
+  check ``Verification.TolerantFrames.mergeEntailed_inv
+  check ``Verification.TolerantFrames.mergeAddGuarded_inv
+  check ``Verification.TolerantFrames.OnPath.bounds_ok
+  check ``Verification.TolerantFrames.OnPath.entailed_ok
+  check ``Verification.TolerantFrames.OnPath.guarded_ok
+  check ``Verification.TolerantFrames.OnPath.store_ok
+  check ``Verification.TolerantFrames.OnPath.fresh_ok
+  check ``Verification.TolerantFrames.mergeImplies_ok
+  check ``Verification.TolerantFrames.mergeState_holdsAt
+  check ``Verification.TolerantFrames.mergeState_holds
+  check ``Verification.TolerantFrames.mergeState_wf
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

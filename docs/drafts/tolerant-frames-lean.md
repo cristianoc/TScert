@@ -880,3 +880,107 @@ by unfolding the `let`s); the merge theorem reads it there.
   to the run's first heap, on each exit (`action_normal`, `action_throw`).
   A graph run's footprint is the node judgments composed from the
   invocation entry and stated as the graph's exit posts (`invocation_action`).
+
+## Leg 8: the merge
+
+Modules `lean/Verification/Programs/TolerantFramesMergeMirror.lean`,
+`TolerantFramesMergeNames.lean`, `TolerantFramesMergeMeet.lean`,
+`TolerantFramesMergeJoin.lean`, `TolerantFramesMergeHolds.lean` and
+`TolerantFramesStoreOpsDrop.lean`.
+
+**The merge in parts.** `SinglePass.mergeState` is the composition of its
+parts, by unfolding (proved: `mergeState_state`, `mergeState_implies`,
+`mergeState_fresh`): the names and renamings (`mergeSlots`), the
+restatements (`mergeVariants`), the common facts (`mergeCommon`), the
+restated facts every predecessor states (`mergeMeet`), the names renamed
+away forgotten (`mergeMet0`, `Store.drop`), the differences (`mergeDiffs`),
+the weakest bounds (`mergeBounds`), the entailed bounds (`mergeEntailed`),
+the guarded join (`mergeGuarded`, `mergeAddGuarded`), the fresh names
+(`mergeFresh`) and the implications (`mergeImplies`).
+
+**The path's valuation.** On the path through predecessor $`p`$, whose state
+holds at $`\eta`$ and slot environment $`\rho`$, the merge's valuation is
+
+```math
+\eta'(y) = \begin{cases} \eta(y) & y < \mathit{fresh} \\ \rho(i) & \text{for a slot } i \text{ the merge names } y \\ \eta(y) & \text{otherwise} \end{cases}
+```
+
+(`mergeVal`). Proved: the first loop's invariant (`mergeSlots_inv`: a slot
+keeps the predecessors' common name or takes the fresh name of their names'
+vector, distinct vectors distinct fresh names, each renaming sends a name to
+fresh names of slots where the predecessor holds it); two slots with one
+merged name hold one value (`slots_same`); each slot holds its merged name's
+value under $`\eta'`$ (`mergeVal_slots`); a fresh name $`\varphi`$ that $`p`$
+renames $`x`$ to has $`\eta'(\varphi)=\eta(x)`$ (`mergeVal_rename`), and a
+renamed name is below $`\mathit{fresh}`$ (`rename_key_below`).
+
+**Forgetting names**, proved: `Store.drop` keeps every fact holding
+(`drop_ok`: removed facts leave, a separation fact keeps its partners outside
+the dropped names, a fact restated through an alias link holds by the link,
+`keptAliasOf_eq`, the derived facts by `eliminateIndices_holds`,
+`restateReads_holds`, `restateStores_holds` over facts of the store,
+`dropDerived_holds`) and keeps the store well-formed (`drop_wf`).
+
+**The merged store**, proved on the path through $`p`$ at $`\eta'`$:
+
+- the common facts are live facts of every predecessor (`mergeCommon_live`);
+- $`p`$'s restatements hold (`OnPath.variants_ok`: `renameEach_holds`, and
+  `mergeEqual_holds`), so the met store holds (`OnPath.met0_ok`) and so does
+  each fact $`p`$ states beyond it (`OnPath.diffs_ok`);
+- a weakest bound: each predecessor's map holds a bound of the form that is
+  one of its facts (`boundsOf_get`), the bound added is at least each
+  (`weakestStep_cases`), and a weakened bound in normal form holds
+  (`linear_weaken`, `normalize_vars`): `OnPath.bounds_ok`;
+- an entailed bound: `Store.holds` is sound for an unconditional linear fact
+  whose terms are defined (`holds_sound`), and `entailsKnown_sound` over the
+  facts `linearNear` lists: `OnPath.entailed_ok`;
+- the guarded facts renamed by the merge's names: `OnPath.guarded_ok`;
+- each part as a property of stores closed under the facts it adds
+  (`mergeMeet_inv`, `mergeBounds_inv`, `mergeEntailed_inv`,
+  `mergeAddGuarded_inv`), instantiated at holding (`OnPath.store_ok`) and at
+  well-formedness.
+
+**(Merge)**, proved (`mergeState_holdsAt`, `mergeState_holds` its
+existential form): for predecessors `preds`, $`p`$ below their number, the
+merge's first fresh name $`\mathit{fresh}`$,
+
+```math
+\begin{aligned}
+&\forall q\in\mathit{preds}.\ |q.\mathit{names}| = |\mathit{context}| \wedge \mathrm{StoreWF}\ q.\mathit{store} \wedge \mathrm{StateBelow}\ q\ \mathit{fresh}
+\\ &\wedge\ \forall x\in\mathit{start}.\ x<\mathit{fresh}
+\ \wedge\ \mathrm{LinearNearSound} \wedge \mathrm{EntailedDefined}_\eta \wedge \mathrm{GuardedHolds}
+\\ &\wedge\ \mathrm{ImpliesOk}\ (\mathrm{meetImplications}\ \mathit{edgesIn})\ \rho
+\ \wedge\ \mathrm{StateHoldsAt}\ \mathit{preds}[p]\ \eta\ \rho
+\\ &\Rightarrow\ \mathrm{StateHoldsAt}\ (\mathrm{mergeState}\ \dots).\mathit{state}\ (\mathrm{mergeState}\ \dots).\mathit{implies}\ \eta'\ \rho
+\end{aligned}
+```
+
+where $`\mathrm{StateHoldsAt}`$ is $`\mathrm{StateHolds}`$ at a given
+valuation (`stateHolds_iff`) and $`\mathrm{StateBelow}`$ is the type of
+`StateWF.below`. The implications hold where the edges' joined implications
+hold at the slots (`mergeImplies_ok`); the fresh names hold fresh stores
+(`OnPath.fresh_ok`). The merged store is well-formed, the next fresh name is
+at least $`\mathit{fresh}`$, and the merged names and fresh names are below
+it (`mergeState_wf`, for a non-empty list of predecessors).
+
+**Named hypotheses of (Merge):**
+
+1. `LinearNearSound`: every fact `Store.linearNear` lists is an `index` fact
+   of its store. Its search is a `while` loop, which Lean does not unfold; a
+   fuel bound, as `selectFrom` has, makes it provable.
+2. `EntailedDefined`: an entailed bound's terms have integer values at
+   $`\eta'`$. `Linear.Known.entails` reads an undefined term as 0, and the
+   merge checks no definedness; a `termDefined` check per view, as
+   `IndexWrites`' rules make, discharges it.
+3. `GuardedHolds`: the guarded join's facts hold at $`\rho`$. Its tagged
+   candidates are checked against every view by `indicesCheckWith`; its
+   joined facts are `CertificateProducer.joinGuarded`'s, a search function
+   with no soundness theorem.
+4. `hI`: the edges' implications joined at the slots
+   (`CertificateProducer.meetImplications`) hold at $`\rho`$, an obligation on
+   the edges.
+
+Not proved: the merged facts' names below the next fresh name (the names of
+`eliminateIndices`' output); `StateWF.freshHeld` of the merged state, which
+does not hold in general: a predecessor's fresh name stays beside its fresh
+renames (`mergeFresh`) when no slot of the merge holds it.
