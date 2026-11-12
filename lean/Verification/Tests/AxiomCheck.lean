@@ -44,6 +44,7 @@ import Verification.Programs.TolerantFramesWalkReassignStep
 import Verification.Programs.TolerantFramesWalkReassignWalk
 import Verification.Programs.TolerantFramesRunSound
 import Verification.Programs.TolerantFramesDriverWalk
+import Verification.Programs.TolerantFramesWalkJoined
 import Verification.Programs.TolerantFramesGuaranteeWalk
 import Verification.Programs.TolerantFramesMergeBelow
 import Verification.Programs.TolerantFramesMergeGuarded
@@ -738,6 +739,9 @@ run_cmd do
   check ``Verification.TolerantFrames.walk_of_accepts
   check ``Verification.TolerantFrames.ofPass_heads
   check ``Verification.TolerantFrames.run_traversedA
+  check ``Verification.TolerantFrames.stepEdgesSound_of_checkedAt
+  check ``Verification.TolerantFrames.NodeMeaning.withJoined
+  check ``Verification.TolerantFrames.nodesChecked_of_walkJ
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

@@ -1494,3 +1494,46 @@ the record must give: every visited node `NodeChecked`, `TraversedA`, the
 start entered. Proved: (`run_traversedA`) `WalkStopsRefuse` ∧
 `RecordsSound` ⟹ `RunTraversedA`, the driver's walk `RunWalkA` (`RunWalk`
 with `TraversedA`) of every accepted call.
+
+**A merge's joined implications on the exits.** The pass keeps a joined
+implication at a merge only where every incoming edge passes
+`PromiseCalls.impliesCheck` over the edge's context $`\Gamma_e`$ as the
+source's yields refine it, its implications at the source's slots and its
+mapping (`joinedChecked`). That check gives the kept implications at the
+target environment $`\mathrm{mapEnv}\ m\ \rho_s`$ of an exit whose source
+environment $`\rho_s`$ meets $`\Gamma_e`$ and whose carried implications
+hold (`joined_of_exit`). It does not give `edgePreJ` at an edge state alone:
+the edge state's meaning reads names, facts and implications, and the
+check reads $`\Gamma_e`$'s types at the source, which no edge state and no
+target type states (the merge's own context types the target, not the
+source's refined context). So the joined implications are an obligation of
+the exit, stated beside the exits' other obligations: `joinedAt` (at a
+merge, the kept implications at the environment) and `ExitsJoined` (each
+normal exit and the handler of a node delivering `joinedAt` of its
+target). `NodeMeaningAt pre` is a node's meaning with its exits and handler
+delivering `pre`, `NodeMeaning` the one at `edgePreA`;
+`StepEdgesSoundAt pre` is `StepEdgesSoundA` at `pre`. Proved:
+`stepEdgesSound_of_checkedAt` (`NodeChecked` with `NodeMeaningAt pre` at
+every visited node ∧ `CodesSound` ⟹ `StepEdgesSoundAt pre`),
+`NodeMeaning.withJoined` (`NodeMeaning` ∧ `ExitsJoined` ⟹
+`NodeMeaningAt edgePreAJ`), `nodesChecked_of_walkJ`:
+
+```math
+\mathrm{TraversedA} \wedge \mathrm{StepEdgesSoundAt}\ \mathrm{edgePreAJ} \wedge \mathrm{HeadsEntered} \wedge \mathrm{LinearNearFuelEq} \Longrightarrow \mathrm{NodesChecked}\ \mathrm{passPreA}
+```
+
+`PassWalkSound`'s walk field is `NodesChecked` at `passPreA` at every entry
+value and mark; `nodesChecked_of_walk` gives it at `passPreU`.
+
+**(`run_sound`, restated)**, proved:
+
+```math
+\mathrm{RunTraversedA} \wedge \mathrm{NodesMean} \wedge \mathrm{LinearNearFuelEq} \wedge \mathrm{MergeExitsJoined} \wedge \mathrm{FootprintsKept} \wedge \mathrm{ReturnsKept} \wedge \mathrm{RegionsHeld} \wedge \mathrm{AssertionsLabelled} \Longrightarrow \mathrm{RunSound}
+```
+
+`RunWalkA` is `RunWalk` with `TraversedA`; `MergeExitsJoined`: at every
+admitted reassigned graph, every visited node of the walk meets
+`ExitsJoined` (the per-node side's route: `joined_of_exit` at the exit,
+given the walk's `MergeEdgeRecorded` and the source environment meeting the
+edge's refined context). Every other premise is the one of the earlier
+statement, over `RunWalkA`.

@@ -210,28 +210,6 @@ def RecordsSound : Prop :=
     RunCall.walk c = .ok (σ, reach) → reach ≤ σ.walk.visited →
     SummariesSound G I σ.answers.summaries.toList → RecordSound G I c σ
 
-/-- **What the driver records of an accepted call**, the walk as the proof
-reads it: `RunWalk` with the walk's construction stating the written
-facts (`TraversedA`). -/
-structure RunWalkA (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) where
-  w : Walk ι
-  given : Nat → Bool
-  ctx : Nat → List (Ty ι)
-  edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)
-  fresh : Nat → Nat
-  stated : Nat → Option HeapKnowledge.Knowledge
-  node : ∀ l, w.visited l → NodeChecked G I c.codes c.passChecker c.P w (List.range c.inputs.length) ctx l
-  traversed : TraversedA G w (List.range c.inputs.length) given ctx edgesIn fresh stated
-  heads : ∀ t, given t = true → ∀ e ∈ w.incoming t, e = (w.entry t, w.implies t)
-  start : StartEntered c w ctx stated
-
-variable (ι) in
-/-- **The driver's walk** (`RunWalkA`) of every accepted call whose final
-summaries are sound. -/
-def RunTraversedA : Prop :=
-  ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) (after : Answered G),
-    c.Accepts after → SummariesSound G I after.summaries.toList → Nonempty (RunWalkA G I c)
-
 /-- **(`run_traversedA`) The driver's walk from its record**: an accepted
 call's walk returned (`walk_of_accepts`), its record read as the proof's
 walk (`ofPass`), each edge state into a head the head's entry
