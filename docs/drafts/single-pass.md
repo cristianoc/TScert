@@ -1398,6 +1398,14 @@ removal works through:
   contract that is no union of atoms (environment.ml:73-83). A member of a
   union of objects is read at every object clause of each arm, a bounded
   binder's meet row at its bound's clauses (`Synthesis.memberFor`).
+- **Dispatched callbacks.** For a declaration's footprint, a callback walked
+  at the callable an actual's method takes (a string's `replace` at a
+  regex's `[Symbol.replace]`) changes what that method's signature and the
+  callback's own signatures state, as the producer reads the call's member
+  at its claimed row (proposal.ml:84-91); any other function passed to a
+  generic module function's call changes everything. The function's own unit
+  checks the proposal; `TSCERT_FORCE=callbacks` still refuses
+  `invalid-map-fresh-alias` `drained`.
 - **Loop heads.** A loop head's facts beyond its written assertion are the
   given file's `headFacts` (and `headFactsOfCodes` for each code request),
   each at the statement entries that start where the given one does and hold

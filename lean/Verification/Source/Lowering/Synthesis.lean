@@ -2943,8 +2943,8 @@ earlier actual's parameter takes at a position of one of its methods, at the
 callable the actual's method of that key takes there (`applyCall`'s
 `from_actuals`). -/
 def methodBinders (args : List Expr) (Ps : List (Ty Tree)) (As : List (Option (Ty Tree)))
-    (lambdaBinders : List Tree) : Compiler (List (Tree × Ty Tree)) := do
-  let mut fromActuals : List (Tree × Ty Tree) := []
+    (lambdaBinders : List Tree) : Compiler (List (Tree × Ty Tree × CallEffects.Effect)) := do
+  let mut fromActuals : List (Tree × Ty Tree × CallEffects.Effect) := []
   if lambdaBinders.isEmpty then return fromActuals
   let Ga := SourceTypes.graph (← table)
   -- A type's methods by key, each its signatures' parameters and effects.
@@ -2969,7 +2969,7 @@ def methodBinders (args : List Expr) (Ps : List (Ty Tree)) (As : List (Option (T
             | some t => if (ProgramTyping.callSigs Ga t).isEmpty then none else some (e, t)
             | none => none
         match (callables.filter fun (e, _) => e.covers we).reverse.head? <|> callables.head? with
-        | some (_, t) => fromActuals := fromActuals ++ [(r, t)]
+        | some (e, t) => fromActuals := fromActuals ++ [(r, t, e)]
         | none => pure ()
   return fromActuals
 
@@ -2978,7 +2978,7 @@ its instance's footprint, a declaration's passed functions' effects, a change
 of its receiver's store or elements, its fresh result and its throws
 (`applyCall`'s effects, read after the actuals are walked). -/
 def callChanges (c : Callee) (inst : CallEffects.Arrow (Ty Tree)) (As : List (Option (Ty Tree)))
-    (args : List Expr) (receiverFresh : Bool) : W Unit := do
+    (args : List Expr) (receiverFresh : Bool) (dispatched : List CallEffects.Effect := []) : W Unit := do
   -- A call whose instance's result is the empty type never returns
   -- normally: on a normal return it changes nothing; its throw is its
   -- signature's (the producer's `no_return`, source.ml:1031-1035,
@@ -3001,7 +3001,14 @@ def callChanges (c : Callee) (inst : CallEffects.Arrow (Ty Tree)) (As : List (Op
     let Gn := SourceTypes.graph (← StateT.lift table)
     -- (a generic module function's instance is not yet read off the
     -- function passed: the ordinary effect)
-    let unread := !c.names.isEmpty || !c.explicit.isEmpty
+    -- (but a callback whose binder an actual's method takes, walked at
+    -- that method's callable: the method's effect, which the instance
+    -- dispatches to, and the callback's own, as the producer reads the
+    -- call's member at its claimed type, proposal.ml:84-91)
+    let unread := (!c.names.isEmpty || !c.explicit.isEmpty) && dispatched.isEmpty
+    for e in dispatched do
+      callChange e
+      if !e.onThrow then modify fun w => { w with throwWrites := true }
     for (A, x) in As.zip args do
       match (if unread then none else A) with
       | some A =>
@@ -4944,7 +4951,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       -- The callback's parameter's signature taking the most parameters:
       -- the callback walked there is within each of them.
       let Pc := match P with
-        | [r] => if (σ.lookup r).isNone then ((fromActuals.lookup r).getD (sub P)) else sub P
+        | [r] => if (σ.lookup r).isNone then (((fromActuals.lookup r).map (·.1)).getD (sub P)) else sub P
         | _ => sub P
       -- Where the type expected of the call's value names a hole, the
       -- callback is walked at its parameter read at the binders the result
@@ -5046,7 +5053,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   if !c.names.isEmpty || !c.explicit.isEmpty then
     modify fun w => { w with lastInstance := some (c.explicit ++
       c.names.zip (c.binders.map fun b => (σ.lookup b).getD [])), lastResolution := certificates }
-  callChanges c inst As args receiverFresh
+  callChanges c inst As args receiverFresh (fromActuals.map (·.2.2))
   -- A fresh result where a type is expected: made at the expected array.
   let mut result := inst.result
   if let some H := hint then
