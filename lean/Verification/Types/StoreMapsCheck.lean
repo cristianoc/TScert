@@ -13,8 +13,9 @@ two graphs from a pair of root types, and its soundness.
    A pair's rows give the pairs of their operands: clauses are paired by
    their skeleton (`skeleton`: the clause with each operand replaced by its
    size, so constructor, keys, literals, flags and effects included), and a
-   union's members by the shape of their rows (`shapeKey`), first unused
-   match first. Nothing about the proposal is relied on.
+   union's members by the shape of their rows to depth two (`sameDeepShape`:
+   the row's shape and its operands' members' shapes), first unused match
+   first. Nothing about the proposal is relied on.
 2. **Check** (`checkMap`, proved): every label of the map's domain has its
    image's kind, a scheme mapped to the image's scheme (unqualified), a meet
    mapped to the image's meet, its further meet parameters renamed as sets,
@@ -32,8 +33,8 @@ to a union with the image root's members, for graphs whose environments
 agree (both empty, as every equation graph's).
 
 **Incompleteness.** The check refuses where the proposal pairs wrongly:
-unions with two members of one row shape, or two clauses of one skeleton
-in a row, paired in the other order; a qualified scheme (nonempty
+unions with two members of one row shape to depth two, or two clauses of
+one skeleton in a row, paired in the other order; a qualified scheme (nonempty
 resolution, whose domains the check does not relate); built-ins in one
 graph only; an image operand not in `canon`'s normal form.
 
@@ -58,14 +59,27 @@ clauses' skeletons. -/
     Option ParameterKind × Bool × Bool × List (Clause Nat) :=
   (G.parameterKinds i, (G.schemes i).isSome, (G.meets i).isSome, (G.rows i).map skeleton)
 
+abbrev Shape := Option ParameterKind × Bool × Bool × List (Clause Nat)
+
+/-- The shapes of the members of a row's operands. -/
+@[nospecialize] def memberShapes {α : Type} (G : NormalGraph α) (i : α) : List Shape :=
+  (G.rows i).flatMap fun c => c.operands.flatMap (·.map (shapeKey G))
+
+/-- Two rows of one shape to depth two: the same shape, and their operands'
+members of the same shapes as sets (an operand's order is the store's). -/
+@[nospecialize] def sameDeepShape {α β : Type} (G : NormalGraph α) (H : NormalGraph β) (i : α) (j : β) : Bool :=
+  decide (shapeKey H j = shapeKey G i) &&
+    (memberShapes G i).all (fun x => (memberShapes H j).contains x) &&
+    (memberShapes H j).all (fun x => (memberShapes G i).contains x)
+
 /-- Pairs of a union's members with an image union's: each member with the
-first unused image member of the same row shape. -/
+first unused image member of the same row shape to depth two. -/
 @[nospecialize] def pairUnion (G : NormalGraph ι) (H : NormalGraph κ) (S : List ι) (S' : List κ) :
     List (ι × κ) :=
   match S, S' with
   | [j], [j'] => [(j, j')]
   | _, _ => (S.foldl (fun (acc : List (ι × κ) × List κ) j =>
-      match acc.2.find? (fun j' => decide (shapeKey H j' = shapeKey G j)) with
+      match acc.2.find? (fun j' => sameDeepShape G H j j') with
       | some j' => ((j, j') :: acc.1, acc.2.erase j')
       | none => acc) ([], S')).1
 

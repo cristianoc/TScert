@@ -220,8 +220,11 @@ statement for every value of every argument):
   $`\mathrm{matchStores}(G_m, G_s, \ldots, I_u, I_s)`$ accepts
   (`EstablishedStep` states it); the importer refuses a slot whose
   $`\mathrm{matchStores}(G_s, G, \ldots, I_s, A)`$ refuses (`ModuleLayout`
-  states the slot's type is that $`A`$). Then `ChosenSlots`' agreement is
-  `signatureAgrees_of_checks` (proved).
+  states the slot's type is that $`A`$), and a module's step refuses its own
+  read the same way (section 7, "A module's own reads"); a published
+  module's store states the built-ins (section 7, "Built-ins in one graph
+  only"). Then `ChosenSlots`' agreement is `signatureAgrees_of_checks`
+  (proved).
 
 **(iii) Trusted boundaries**, each with why no Lean theorem states it today
 and what would close it:
@@ -1008,10 +1011,50 @@ store's, `graphOf_env`),
 Its cost, for $`s`$ the reachable rows' total size and $`k`$ the largest
 number of clauses of a row, is $`O(s \cdot k)`$ hash-map operations and
 clause comparisons. It is incomplete for unions with two members of one row
-shape, or rows with two clauses of one skeleton, which the proposal pairs
-in the wrong order; for a qualified scheme (nonempty resolution, whose
-domains it does not relate); for built-ins in one graph only; and for an
+shape to depth two (the proposal pairs members by their row's shape and the
+shapes of their operands' members, as sets), or rows with two clauses of
+one skeleton, which the proposal pairs in the wrong order; for a qualified
+scheme (nonempty resolution, whose domains it does not relate); and for an
 image operand outside $`\mathit{canon}`$'s form.
+
+**Built-ins in one graph only.** A store map relates the two graphs'
+built-ins, and no store map exists from a graph without them to one with
+them, whatever region the types reach: every arrow, method and constructor
+signature reads the graph's exception family (`builtinExc`, the $`\Xi`$ of
+`semWithArgs`), the values a call may throw, and that family is the
+built-ins' array invariant where the graph states them and only the store
+being a list where it states none (`builtinInvariant`). So for $`G_m`$
+without built-ins and $`G`$ with them, and any arrow type $`F`$ of a region
+of both,
+$`⟦F⟧^{G_m}_{n,W} \not\subseteq ⟦F⟧^{G}_{n,W}`$ in general: a closure that throws
+an array whose store holds a value outside $`G`$'s `unknown` type, or whose
+prototype is not $`G`$'s, meets the first and not the second. The three
+reads the front lane lost (`certified-mts-value-import` `doubled@259`,
+`default-import-value-import` `twice@275` and `scaled@346`) and pretext's
+`missing` (from `checked.ts`) are arrows from a module whose store states
+no built-ins to an importer whose store does; no sound extension of the
+check admits them, since the module's theorem gives its functions' throws
+in the weaker family only. What admits them is the module's theorem at the
+importer's family: the module's frozen store states the built-ins (the
+standard ones, as the importer's: the same keys, prototype and `unknown`
+types) whenever its interface is published, so its units are checked
+against the same exception family; then `builtinsOkB` relates the two
+tables and the existing check applies unchanged. A module with no arrays
+throws no array, so its checks hold at the stronger family (not measured).
+
+**A module's own reads.** `crossModule_safe` needs each module's own
+established slots met (`StepLayouts`' outside contracts hold of the
+module's layout, its established kind among them), so a module's reads of
+entries published before it need the same check as an importer's: at each
+step of the interface computation, for each capture of the module's plans
+read at an entry $`e`$ published earlier,
+$`\mathrm{matchStores}(G_s(e), G_m, \mathit{canon}, \mathit{fuel}, I_s(e), A)`$
+accepts, with $`G_s(e)`$ and $`I_s(e)`$ the rows table and interface type
+of $`e`$ in the file the step reads, $`G_m`$ the module's frozen store and
+$`A`$ the capture's type in it; a refused check refuses the units reading
+the slot at `signature rows differ`. Then the module's established slots
+are `signatureAgrees_of_checks` at that check and its own publication
+check.
 
 **The request to the wrapper lane** (the smallest change making signature
 agreement checked):
