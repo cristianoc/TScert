@@ -1,4 +1,4 @@
-import Verification.Programs.TolerantFramesMergeHolds
+import Verification.Programs.TolerantFramesMergeChecked
 import Verification.Programs.TolerantFramesInvocation
 
 /-! # Tolerant frames: the pass's graph invariant
@@ -7,15 +7,13 @@ The node assertion of the pass at a label it visits is that its entry state
 holds (`passPre`): the state `StateHolds` reads, with the invocation's start
 names holding its entry values. A walk of the pass (`Walk`) records each
 visited node's entry state and implications and the states the edges carry
-into each node. `run_sound_of_traversed` instantiates `graph_safe_at` with
-`passPre`: where each visited node's step and edges deliver, at every exit,
-a holding edge state into the target (`StepEdgesSound`), and a node's entry
-state holds wherever an edge state into it holds (`EntriesFromEdges`), the
-graph is safe from every entry whose state holds. `entries_of_traversed`
-derives `EntriesFromEdges` from the walk's construction (`Traversed`: one
-predecessor's state taken as it is, several merged by `mergeState`, a loop
-head's given state) with the merge's named hypotheses and the head entry's
-(`HeadsEntered`). -/
+into each node. `entries_of_traversed` gives a node's entry state wherever
+an edge state into it holds (`EntriesFromEdges`) from the walk's
+construction (`Traversed`: one predecessor's state taken as it is, several
+merged by `mergeState`, a loop head's given state), the merges' premises
+(`MergesSound`) and the head entry's (`HeadsEntered`); with each node's step
+and edges delivering, `run_sound_of_walk_typed` instantiates
+`graph_safe_at` with the typed node assertion. -/
 namespace Verification.TolerantFrames
 open Verification Footprints HeapObservations
 open ProgramTyping PositiveGraphs
@@ -40,24 +38,6 @@ def passPre (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0 : En
 /-- An edge state into `t` holds. -/
 def edgePre (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0 : Env) : Nat → Assertion :=
   fun t ρ m s => ∃ e ∈ w.incoming t, StateHolds G e.1 e.2 startNames ρ0 ρ m s
-
-/-- **(Named hypothesis) Each visited node's step and edges deliver**: from
-its entry state holding, the node exists and is locally safe with exit
-footprints and posts, and each exit meets its obligations with the target's
-assertion read as a holding edge state into the target (`edgePre`); a return
-meets the result type and the graph's posts. This is the per-node theorem
-(the step: `pass_preserving_frame_pass`, `writing_frame`, the delta; the
-edge: `edgeStoreOf`, `edgeTransfer`, the edge checks), and it includes the
-order of the walk: the state an edge carries is among those its target's
-entry was computed from. -/
-def StepEdgesSound (P : ControlFlow.Program) (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0 : Env)
-    (Ξres Tres : Fam) (Qres Rres : Heap → Prop) (m : Nat) : Prop :=
-  ∀ l ρ (s : IndexedHeap), passPre G w startNames ρ0 l ρ m s → ∃ node, P[l]? = some node ∧
-    ∃ (Ξ T : Fam) (cn ce : Footprints.Closed) (Qn : Post) (Qe : Heap → Prop),
-      SafePostExc Ξ T (fun h' v => cn.Holds s.h h' ∧ Qn h' v) (fun h' => ce.Holds s.h h' ∧ Qe h')
-        s.n s.W s.h (instantiate 0 ρ node.expression) ∧
-      NodeObligations (edgePre G w startNames ρ0) Ξres Tres Qres Rres Ξ T cn ce Qn Qe ρ m s node.continuation
-        node.handler
 
 /-- **A node's entry state holds wherever an edge state into it holds.** -/
 def EntriesFromEdges (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0 : Env) (m : Nat) : Prop :=
@@ -97,20 +77,6 @@ theorem passPre_adminClosed {G : NormalGraph ι} {w : Walk ι} {startNames : Lis
   refine ⟨hv, η, hsl, fun a ha' => ?_, impliesOk_admissible ha hi, hf, hst⟩
   rw [hh]; exact hn a ha'
 
-omit [DecidableEq ι] [Hashable ι] in
-/-- **The pass's graph is safe from every entry whose state holds**, where
-each visited node's step and edges deliver (`StepEdgesSound`) and entry
-states hold where edge states into them do (`EntriesFromEdges`). -/
-theorem run_sound_of_traversed {P : ControlFlow.Program} {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat}
-    {ρ0 : Env} {Ξres Tres : Fam} {Qres Rres : Heap → Prop} {m : Nat}
-    (hstep : StepEdgesSound P G w startNames ρ0 Ξres Tres Qres Rres m)
-    (hentries : EntriesFromEdges G w startNames ρ0 m) {l : Nat} {ρ : Env} {s : IndexedHeap}
-    (hpre : passPre G w startNames ρ0 l ρ m s) : ControlFlow.SafeGraph Ξres P Tres s.n s.W s.h (.at l ρ) := by
-  refine graph_safe_at (pre := passPre G w startNames ρ0) (Qres := Qres) (Rres := Rres) ?_ passPre_adminClosed hpre
-  intro l ρ s hp
-  obtain ⟨node, hn, Ξ, T, cn, ce, Qn, Qe, hsafe, ho⟩ := hstep l ρ s hp
-  exact ⟨node, hn, Ξ, T, cn, ce, Qn, Qe, hsafe, nodeObligations_mono (fun t ρ s h => hentries t ρ s h) ho⟩
-
 /-! ## The walk's construction -/
 
 /-- **The walk the pass's driver builds**: a node with given facts (a loop
@@ -143,21 +109,21 @@ def HeadsEntered (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0
   ∀ t ρ (s : IndexedHeap), given t = true → edgePre G w startNames ρ0 t ρ m s →
     StateHolds G (w.entry t) (w.implies t) startNames ρ0 ρ m s
 
-/-- **(Named hypotheses) The merges' side conditions on every path**:
-`LinearNearSound`, and at each merge and each state of the graph,
-`EntailedDefined` at every valuation, `GuardedHolds` and the edges' joined
-implications. -/
+/-- **The merges' premises**: the pass's `linearNear` is its search on fuel
+(`LinearNearFuelEq`), and at each merge every entailed bound passes the
+check at every view (`EntailedChecked`) and the edges' joined implications
+hold wherever an edge state into the merge holds. -/
 def MergesSound (G : NormalGraph ι) (w : Walk ι) (given : Nat → Bool) (ctx : Nat → List (Ty ι))
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
     (fresh : Nat → Nat) : Prop :=
-  LinearNearSound ∧ ∀ t ρ (s : IndexedHeap), given t = false → 2 ≤ (w.incoming t).length →
-    (∀ η, EntailedDefined ((w.incoming t).map (·.1)) (ctx t).length (fresh t) ρ η s.h) ∧
-    GuardedHolds ((w.incoming t).map (·.1)) (ctx t).length (fresh t) ρ s.h ∧
-    PromiseCalls.ImpliesOk G (CertificateProducer.meetImplications G (edgesIn t) (ctx t).length (ctx t)) ρ s.n s.W
+  LinearNearFuelEq ∧ ∀ t, given t = false → 2 ≤ (w.incoming t).length →
+    EntailedChecked ((w.incoming t).map (·.1)) (ctx t).length (fresh t) ∧
+    ∀ startNames ρ0 m ρ (s : IndexedHeap), edgePre G w startNames ρ0 t ρ m s →
+      PromiseCalls.ImpliesOk G (CertificateProducer.meetImplications G (edgesIn t) (ctx t).length (ctx t)) ρ s.n s.W
 
 /-- **Entry states hold where edge states into them do**, from the walk's
 construction: a head by `HeadsEntered`, one predecessor as it is, several by
-the merge theorem (`mergeState_holds`) with its side conditions. -/
+the merge theorem (`mergeState_holds_checked`) with its premises. -/
 theorem entries_of_traversed {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat} {ρ0 : Env}
     {given : Nat → Bool} {ctx : Nat → List (Ty ι)}
     {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
@@ -176,10 +142,10 @@ theorem entries_of_traversed {G : NormalGraph ι} {w : Walk ι} {startNames : Li
       rw [hentry, himp]
       obtain ⟨p, hp, rfl⟩ := List.getElem_of_mem hein
       obtain ⟨hnear, hside⟩ := hmerges
-      obtain ⟨hdef, hguard, hI⟩ := hside t ρ s hg h2
+      obtain ⟨hchk, hI⟩ := hside t hg h2
       have hp' : p < ((w.incoming t).map (·.1)).length := by simpa using hp
-      refine mergeState_holds (implies := (w.incoming t)[p].2) hp' ?_ ?_ ?_ (hT.startBelow t hg h2) hnear hdef hguard hI
-        (by simpa using heh)
+      refine mergeState_holds_checked (implies := (w.incoming t)[p].2) hp' ?_ ?_ ?_ (hT.startBelow t hg h2) hnear hchk
+        (hI startNames ρ0 m ρ s ⟨_, List.getElem_mem hp, heh⟩) (by simpa using heh)
       · intro q hq; obtain ⟨e', he', rfl⟩ := List.mem_map.mp hq; exact hT.width t hg h2 e' he'
       · intro q hq; obtain ⟨e', he', rfl⟩ := List.mem_map.mp hq; exact hT.wf t hg h2 e' he'
       · intro q hq; obtain ⟨e', he', rfl⟩ := List.mem_map.mp hq; exact hT.below t hg h2 e' he'
@@ -190,20 +156,6 @@ theorem entries_of_traversed {G : NormalGraph ι} {w : Walk ι} {startNames : Li
         | _ :: _ :: _, _ => rw [hl] at h2; simp at h2
       obtain ⟨hentry, himp⟩ := hT.single t e hg hone
       rw [hentry, himp]; exact heh
-
-/-- **The pass's graph is safe from the start's entry**: the walk built as
-`Traversed` states, its steps and edges delivering, its heads entered and its
-merges' side conditions holding, is safe from every state where the start's
-entry state holds. -/
-theorem run_sound_of_walk {P : ControlFlow.Program} {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat} {ρ0 : Env}
-    {Ξres Tres : Fam} {Qres Rres : Heap → Prop} {m : Nat} {given : Nat → Bool} {ctx : Nat → List (Ty ι)}
-    {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
-    {fresh : Nat → Nat} (hT : Traversed G w startNames given ctx edgesIn fresh)
-    (hstep : StepEdgesSound P G w startNames ρ0 Ξres Tres Qres Rres m)
-    (hheads : HeadsEntered G w startNames ρ0 given m) (hmerges : MergesSound G w given ctx edgesIn fresh)
-    {start : Nat} {s : IndexedHeap} (hpre : passPre G w startNames ρ0 start ρ0 m s) :
-    ControlFlow.SafeGraph Ξres P Tres s.n s.W s.h (.at start ρ0) :=
-  run_sound_of_traversed hstep (entries_of_traversed hT hheads hmerges) hpre
 
 omit [Hashable ι] in
 /-- **The start's node assertion holds at the unit's entry**: where the walk

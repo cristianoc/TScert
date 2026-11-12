@@ -15,7 +15,7 @@ by field, the reachability relation being `Transitions`, which has the same
 constructors as the unit lane's `ReachesIn`.
 
 Each field follows from the walk predicates of the safety proof
-(`WalkSound`: `Traversed`, `StepEdgesSound`, `HeadsEntered`, `MergesSound`)
+(`WalkSound`: `Traversed`, `StepEdgesSoundT`, `HeadsEntered`, `MergesSound`)
 and one per-node hypothesis in the pass's terms, an instance of
 `NodesKeep`: the footprint check's (`FootprintKept`), the return check's
 (`ReturnsEnsured`), the regional check's (`RegionsKept`) and the stated

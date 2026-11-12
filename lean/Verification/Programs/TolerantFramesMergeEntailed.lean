@@ -9,8 +9,7 @@ defined), or where each of its terms is one `HeapKnowledge.termDefined`
 accepts over the facts the entailment reads (`Store.linearNear`): those facts
 hold on the path, so the term is defined there (`termDefined_sound`). The
 check `entailDefinedCheck` states this per view; with it at every view, the
-merge's entailed part holds (`OnPath.entailed_ok_checked`) and so does
-`EntailedDefined`'s use (`entailedDefined_of_checked`).
+merge's entailed part holds (`OnPath.entailed_ok_checked`).
 
 No term is defined at every valuation: a term reads its slot's value
 (`termValue`) through its kind, and a value of another kind gives none
@@ -88,22 +87,6 @@ theorem OnPath.entailed_ok_checked (P : OnPath preds width fresh0 p ρ η h) (hn
     (fun a => AtomHolds a (mVal preds width fresh0 ρ η) h) (fun _ _ hs ha => add_ok hs ha) ?_ hm
   intro d hd F neg ha hviews
   exact checked_bound_holds hnear hv (hall _ hviews) (hall _ (hchk d hd F neg ha hviews))
-
-/-- **`EntailedDefined` from the check**, for the bounds no view holds as a
-stored fact: where every view passes the check through its
-`termDefined` disjunct, the terms are defined on the path. -/
-theorem entailedDefined_of_checked (P : OnPath preds width fresh0 p ρ η h) (hnear : LinearNearSound)
-    (hchk : let variants := mergeVariants preds (mNames preds width fresh0) (mRen preds width fresh0)
-      let met0 := mergeMet0 preds (mNames preds width fresh0) (mRen preds width fresh0)
-      let diffs := mergeDiffs preds (mRen preds width fresh0) variants met0
-      let views := mergeViews (mNames preds width fresh0).toList diffs met0
-      ∀ d ∈ diffs, ∀ F neg, Atom.index ⟨.linear F, none, neg⟩ ∈ d →
-        (views.all fun (qs : State) => F.vars.all (termDefined (qs.store.linearNear
-          (Atom.index ⟨.linear F, none, neg⟩).names))) = true) :
-    EntailedDefined preds width fresh0 ρ η h := by
-  obtain ⟨v, -, hv, hall⟩ := P.view_ok
-  intro d hd F neg ha _ t ht
-  exact termDefined_sound (linearNear_holds hnear hv _ 40) (List.all_eq_true.mp (hall _ (hchk d hd F neg ha)) t ht)
 
 end Path
 

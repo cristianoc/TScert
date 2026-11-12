@@ -42,6 +42,7 @@ import Verification.Programs.TolerantFramesWalkReassignCall
 import Verification.Programs.TolerantFramesWalkReassignSelect
 import Verification.Programs.TolerantFramesWalkReassignStep
 import Verification.Programs.TolerantFramesWalkReassignWalk
+import Verification.Programs.TolerantFramesRunSound
 import Verification.Programs.TolerantFramesMergeBelow
 import Verification.Programs.TolerantFramesMergeGuarded
 import Verification.Programs.TolerantFramesMergeEntailed
@@ -487,19 +488,13 @@ run_cmd do
   check ``Verification.TolerantFrames.mergeEntailed_inv
   check ``Verification.TolerantFrames.mergeAddGuarded_inv
   check ``Verification.TolerantFrames.OnPath.bounds_ok
-  check ``Verification.TolerantFrames.OnPath.entailed_ok
   check ``Verification.TolerantFrames.OnPath.guarded_ok
-  check ``Verification.TolerantFrames.OnPath.store_ok
   check ``Verification.TolerantFrames.OnPath.fresh_ok
   check ``Verification.TolerantFrames.mergeImplies_ok
-  check ``Verification.TolerantFrames.mergeState_holdsAt
-  check ``Verification.TolerantFrames.mergeState_holds
   check ``Verification.TolerantFrames.mergeState_wf
   check ``Verification.TolerantFrames.nodeObligations_mono
   check ``Verification.TolerantFrames.passPre_adminClosed
-  check ``Verification.TolerantFrames.run_sound_of_traversed
   check ``Verification.TolerantFrames.entries_of_traversed
-  check ``Verification.TolerantFrames.run_sound_of_walk
   check ``Verification.TolerantFrames.start_passPre
   check ``Verification.TolerantFrames.headVal_start
   check ``Verification.TolerantFrames.headVal_fresh
@@ -621,7 +616,6 @@ run_cmd do
   check ``Verification.TolerantFrames.edgeStoreOf_reassign
   check ``Verification.TolerantFrames.entryRefusal_reassign
   check ``Verification.TolerantFrames.NodeAccepted.meaning
-  check ``Verification.TolerantFrames.run_guarantee_of_run
   -- Leg 14a: the step at a reassignment (TolerantFramesWalkReassignCall, TolerantFramesWalkReassignStep)
   check ``Verification.TolerantFrames.forIn_map_state
   check ``Verification.TolerantFrames.directCall_reassign
@@ -636,8 +630,6 @@ run_cmd do
   check ``Verification.TolerantFrames.stepChecked_sound
   check ``Verification.TolerantFrames.nodeChecked_reassign
   check ``Verification.TolerantFrames.passCheckerReassign_lexical
-  check ``Verification.TolerantFrames.run_guarantee_of_checked
-  check ``Verification.TolerantFrames.run_guarantee_of_ordinary
   check ``Verification.TolerantFrames.headQuery_reassign
   check ``Verification.TolerantFrames.assertionQuery_reassign
   check ``Verification.TolerantFrames.edgeEvidenceChecked_reassign
@@ -656,7 +648,6 @@ run_cmd do
   check ``Verification.TolerantFrames.termValue_length_num
   check ``Verification.TolerantFrames.checked_bound_holds
   check ``Verification.TolerantFrames.OnPath.entailed_ok_checked
-  check ``Verification.TolerantFrames.entailedDefined_of_checked
   check ``Verification.TolerantFrames.linearNearFuel_sound
   check ``Verification.TolerantFrames.linearNearSound_of_eq
   check ``Verification.TolerantFrames.slotsOfNames_get
@@ -700,6 +691,15 @@ run_cmd do
   check ``Verification.TolerantFrames.run_sound_of_walk_typed'
   check ``Verification.TolerantFrames.nodeObligations'_of_parts
   check ``Verification.TolerantFrames.stepEdgesSound'_of
+  -- Leg 16: the graph theorem in the unit lane's statement (TolerantFramesGuaranteeTarget, TolerantFramesRunSound)
+  check ``Verification.TolerantFrames.stepEdgesSound_of_checked
+  check ``Verification.TolerantFrames.transitions_of_reachesIn
+  check ``Verification.TolerantFrames.GraphGuarantee.toTarget
+  check ``Verification.TolerantFrames.mergeState_reassign
+  check ``Verification.TolerantFrames.Traversed.reassign
+  check ``Verification.TolerantFrames.scope_reassign
+  check ``Verification.TolerantFrames.StartEntered.entered
+  check ``Verification.TolerantFrames.run_sound
   let env ← getEnv
   let project (decl : Name) : Bool := match env.getModuleIdxFor? decl with
     | some i => (`Verification).isPrefixOf env.header.moduleNames[i.toNat]!

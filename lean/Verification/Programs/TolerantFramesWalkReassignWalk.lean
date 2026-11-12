@@ -1,137 +1,19 @@
 import Verification.Programs.TolerantFramesWalkReassignStep
 import Verification.Programs.TolerantFramesNodeWalk
 
-/-! # Tolerant frames: the walk at a reassignment from one run
+/-! # Tolerant frames: a node checked with its searches as oracles
 
-The step theorem from a step accepted with its searches as oracles
-(`stepChecked_parts`, `stepChecked_sound`: `checkedStep_parts` and
-`checkedStep_sound` with `StepChecked` in place of the step's equation), so
-that a node's step at `reassign G η` is stated without the searches run
-there. `NodeChecked` is `NodeRan` with the step's equation replaced by
-`StepChecked`; `nodeChecked_reassign` carries a node checked at `G` to
-`reassign G η`, and `run_guarantee_of_checked` gives `GraphGuarantee` from
-one run at `G`, the checker at each admitted assignment
-(`PassCheckerReassign`) and `run_traversed`'s statement at the reassigned
-graph over `NodeChecked`. -/
+`NodeChecked` is `NodeRan` with the step's equation replaced by the step's
+conditions (`StepChecked`), so that a node's step at `reassign G η` is
+stated without the searches run there; `nodeChecked_reassign` carries a
+node checked at `G` to `reassign G η`, and `stepEdgesSound_of_checked`
+gives the typed node obligations from the checked nodes and their meaning
+(`NodeMeaning`) at a graph. -/
 namespace Verification.TolerantFrames
 open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
 open PositiveRules HeapExpressionRules
 
-section StepTheorem
-variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
-
-omit [Instantiates ι] in
-/-- **The step theorem, in parts, with the searches as oracles**: the
-conclusion of `checkedStep_parts` from `StepChecked`. -/
-theorem stepChecked_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
-    {pc : PassChecker G images} {node : Node} {c : PointClaim ι} {entry : SinglePass.State} {ms : List Nat}
-    {fresh : Nat} {answers : Answered G} {st : Stepped ι} {ans : Answered G}
-    (h : StepChecked G images pc codes c node entry ms fresh answers ans st)
-    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {E ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hS : StateHolds G entry I start E ρ m s) (w : StoreWF entry.store) (hnb : NamesBelow entry I start fresh)
-    (hwidth : entry.names.length ≤ c.context.length)
-    (he : EnvOk G c.context ρ s.n s.W) (hcodes : CodesSound G codes)
-    (hsum : SummariesSound G images answers.summaries.toList) :
-    SummariesSound G images ans.summaries.toList ∧ HeapKnowledge.Holds st.stepK ρ s.h ∧
-    ((st.result ∈ entry.names ∧ st.fresh = fresh) ∨ (st.result = fresh ∧ st.fresh = fresh + 1)) ∧
-    ∃ cn ce : Footprints.Closed, StepParts G c.type cn ce node.expression st.stepOut
-      (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ I start E)
-      (StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start E) ρ m s := by
-  have hS' := hS
-  obtain ⟨η, hn, hst, hI, hF, hstart⟩ := hS'
-  have hk := stateHolds_stepKnowledge hS he c.context.length ms (wholeOf node.expression)
-  rcases h with ⟨x, hc, hr, hstore, hfr, -, hK, hO, rfl⟩ |
-      ⟨-, effect, a0, ⟨out, pre, hsel, htree, hres, hfresh, -, -, hpres, hwrit⟩, hss⟩
-  · -- A copy of slot `i`: the term is the slot's value.
-    obtain ⟨i, hi, hty, hx⟩ := copiedOf_some hc
-    have hval : instantiate 0 ρ node.expression = ρ i := by rw [hi]; simp [instantiate]
-    have hv : isVal (ρ i) = true := (meaning_value (he.2 i _ hty)).1
-    refine ⟨hsum, by rw [hK]; exact holds_empty, .inl ⟨hr ▸ List.mem_of_getElem? hx, hfr⟩,
-      Footprints.Closed.empty, Footprints.Closed.empty, ⟨?_, ?_, ?_⟩⟩
-    · rw [hval, hO]
-      exact SafePostExc.value hv (he.2 i _ hty) ⟨Footprints.Closed.holds_empty.mpr (List.prefix_refl _), holds_empty⟩
-    · intro k h' v s' hsteps _ ha _ _
-      rw [hval] at hsteps
-      have hvv := PromiseCalls.steps_value hv hsteps
-      subst hvv
-      have hηx : η x = ρ i := (hn i x hx).symm
-      obtain ⟨-, g2, -⟩ := set_agree (st := entry) (I := I) (start := start) (r := x) (.inr hηx)
-      rw [hr, hstore]
-      refine stateHolds_pushed hn hI hF hstart ha.1 (.inr hηx) fun a ha' => ?_
-      exact (atomHolds_congr fun y hy => (g2 a ha' y hy).symm).mp
-        (named_keep_box (Footprints.Closed.empty_le _) hst s' ha a ha')
-    · intro s' ha; exact stateHolds_throw hS w ha.1
-  · obtain ⟨hs0, hs1⟩ := hss hsum
-    -- The result's name: a slot's name its value holds, or the fresh one.
-    have hkv : ∀ k h' v, Steps k s.h (instantiate 0 ρ node.expression) h' v →
-        NamesBelow entry I start st.result ∨ η st.result = v := by
-      intro k h' v hsteps
-      rcases resultOf_cases node.expression entry.names fresh with ⟨i, hi, hx, -⟩ | ⟨hr1, -⟩
-      · right
-        rw [hres]
-        have hval : instantiate 0 ρ node.expression = ρ i := by rw [hi]; simp [instantiate]
-        rw [hval] at hsteps
-        have hi' : i < c.context.length := Nat.lt_of_lt_of_le (List.getElem?_eq_some_iff.mp hx).1 hwidth
-        obtain ⟨A, hA⟩ : ∃ A, c.context[i]? = some A := ⟨_, List.getElem?_eq_getElem hi'⟩
-        have hv : isVal (ρ i) = true := (meaning_value (he.2 i A hA)).1
-        rw [PromiseCalls.steps_value hv hsteps]
-        exact (hn i _ hx).symm
-      · left; rw [hres, hr1]; exact hnb
-    have hres' : (st.result ∈ entry.names ∧ st.fresh = fresh) ∨ (st.result = fresh ∧ st.fresh = fresh + 1) := by
-      rcases resultOf_cases node.expression entry.names fresh with ⟨i, -, hx, hf⟩ | ⟨hr1, hf⟩
-      · exact .inl ⟨hres ▸ List.mem_of_getElem? hx, hfresh.trans hf⟩
-      · exact .inr ⟨hres.trans hr1, hfresh.trans hf⟩
-    have hok : pc.selectChecks = false → passTreeOk G images (kOf G c entry ms (wholeOf node.expression)) codes
-        ans.summaries.toList effect = true := fun hs => passTreeCheck_ok htree hs
-    by_cases hp : passPreserving G images (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect codes
-        a0.summaries.toList = true
-    · obtain ⟨hstore, hK, hO⟩ := hpres hp
-      refine ⟨hs1, by rw [hK]; exact hk.1, hres', Footprints.Closed.empty, Footprints.Closed.top,
-        ⟨?_, ?_, ?_⟩⟩
-      · rw [hO]; exact preserving_judgment_two hp hok hsel hcodes hs0 hs1 he hk.1 s.adm s.ok
-      · intro k h' v s' hsteps _ ha hh hout
-        rw [hstore]
-        refine stateHolds_pushed hn hI hF hstart ha.1 (hkv k h' v hsteps) ?_
-        rw [hO] at hout
-        exact preserving_store hn (hkv k h' v hsteps)
-          (fun a ha' => named_keep_box (Footprints.Closed.empty_le _) hst s' ha a ha') (hh ▸ hout)
-      · intro s' ha; exact stateHolds_throw hS w ha.1
-    · have hpf : passPreserving G images (jOf c node) (kOf G c entry ms (wholeOf node.expression)) effect codes
-          a0.summaries.toList = false := by simpa using hp
-      obtain ⟨out', hwc, hsel', hstore, hK, hO⟩ := hwrit hpf
-      have hrun := pass_select_whole htree hwc hsel'
-      refine ⟨hs1, by rw [hK]; exact hk.2, hres', Footprints.Closed.top, Footprints.Closed.top,
-        ⟨?_, ?_, ?_⟩⟩
-      · rw [hO]; exact top_judgment (passRunChecker pc) hrun hcodes hs1 he hk.2 s.adm s.ok
-      · intro k h' v s' hsteps _ ha hh hout
-        rw [hstore]
-        refine stateHolds_pushed hn hI hF hstart ha.1 (hkv k h' v hsteps) ?_
-        rw [hO] at hout
-        exact writing_store w hn (hkv k h' v hsteps) hst (hh ▸ hout)
-      · intro s' ha; exact stateHolds_throw hS w ha.1
-
-omit [Instantiates ι] in
-/-- **The step theorem with the searches as oracles**: the conclusion of
-`checkedStep_sound` from `StepChecked`. -/
-theorem stepChecked_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
-    {pc : PassChecker G images} {node : Node} {c : PointClaim ι} {entry : SinglePass.State} {ms : List Nat}
-    {fresh : Nat} {answers : Answered G} {st : Stepped ι} {ans : Answered G}
-    (h : StepChecked G images pc codes c node entry ms fresh answers ans st)
-    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {E ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hS : StateHolds G entry I start E ρ m s) (w : StoreWF entry.store) (hnb : NamesBelow entry I start fresh)
-    (hwidth : entry.names.length ≤ c.context.length)
-    (he : EnvOk G c.context ρ s.n s.W) (hcodes : CodesSound G codes)
-    (hsum : SummariesSound G images answers.summaries.toList) :
-    SummariesSound G images ans.summaries.toList ∧ HeapKnowledge.Holds st.stepK ρ s.h ∧
-    ((st.result ∈ entry.names ∧ st.fresh = fresh) ∨ (st.result = fresh ∧ st.fresh = fresh + 1)) ∧
-    ∃ cn ce : Footprints.Closed, StepExits G c.type cn ce node.expression st.stepOut
-      (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ I start E)
-      (StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start E) ρ m s := by
-  obtain ⟨h1, h2, h3, cn, ce, hj, hn, hx⟩ := stepChecked_parts h hS w hnb hwidth he hcodes hsum
-  exact ⟨h1, h2, h3, cn, ce, stepExits_of hj hn hx⟩
-
-end StepTheorem
 
 section Nodes
 variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
@@ -205,75 +87,36 @@ theorem passCheckerReassign_lexical {G : NormalGraph ι} {images : InstanceImage
     (lexicalBodySubtyping G images source domain aliases aliasesSound η As length allowed bounded)
     bodyCheck.symm ord⟩
 
-/-- **The guarantee from one run at `G`, the searches as oracles**: where
-the pass's run at `G` computed every visited node (`NodeRan`), the direct
-call and the search keep the summary table checked (`hdir`, `hsrch`), at
-every admitted assignment there is a checker whose `select` is the same
-result (`hpc`: `passCheckerReassign_ordinary`, or
-`passCheckerReassign_lexical` for a qualified body), and the checked nodes
-at `reassign G η` give the walk predicates there (`hwalk`,
-`run_traversed`'s statement at the reassigned graph over `NodeChecked`),
-the run guarantees every field of `GraphGuarantee`. -/
-theorem run_guarantee_of_checked {G : NormalGraph ι} {admits : MixedAssignment ι → Prop} {P : Program} {start : Nat}
-    {goal : Goal ι} {inputs : List (Ty ι)} {sep : HeapSeparation.Separation} {idx : List HeapKnowledge.IndexAtom}
-    {assertions : List (Nat × HeapKnowledge.Knowledge)} {bound : Option (Footprints.Closed × Bool × Bool)}
-    {ensures : List HeapKnowledge.IndexFact}
-    {regional : Option (Footprints.Closed × List Footprints.ArgumentStoreRegion × Bool)}
-    {images : InstanceImageCheck G} {pool : List (Ty ι)} {fuel : Nat} {suggestions : List (Sequent ι)}
-    {index : KnownIndex ι} {codes : CodeEntry ι → Bool} {aliases : List (ι × ι)} {pc : PassChecker G images}
-    {undefTy : Option (Ty ι)} {w : Walk ι} {ctx : Nat → List (Ty ι)}
-    (hran : ∀ l, w.visited l → Nonempty (NodeRan G images pool fuel suggestions index codes aliases pc undefTy P w
-      (List.range inputs.length) ctx l))
-    (hdir : DirectKeepsSummaries G images undefTy)
-    (hsrch : SearchKeepsSummaries G images pool fuel suggestions index codes aliases pc.checker)
-    (hpc : ∀ η, admits η → ∃ pc' : PassChecker (reassign G η) (images.reassign η),
-      PassCheckerReassign G η images pc pc')
-    (hwalk : ∀ η, admits η → ∀ pc' : PassChecker (reassign G η) (images.reassign η),
-      (∀ l, w.visited l → Nonempty (NodeChecked (reassign G η) (images.reassign η) codes pc' P w
-        (List.range inputs.length) ctx l)) →
-      ∃ (given : Nat → Bool)
-        (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
-        (fresh : Nat → Nat),
-        PassWalkSound (reassign G η) P start goal inputs sep idx assertions bound ensures regional w given ctx
-          edgesIn fresh) :
-    GraphGuarantee G admits P start goal inputs sep idx assertions bound ensures regional :=
-  run_guarantee fun η hη => by
-    obtain ⟨pc', hp⟩ := hpc η hη
-    obtain ⟨given, edgesIn, fresh, h⟩ := hwalk η hη pc' fun l hl =>
-      let ⟨r⟩ := hran l hl; ⟨nodeChecked_reassign hp (r.checked hdir hsrch)⟩
-    exact ⟨w, given, ctx, edgesIn, fresh, h⟩
-
-/-- **The guarantee from one run of the ordinary checker at `G`**: the
-checker at every assignment is the ordinary one (`passCheckerReassign_ordinary`),
-so the only premises beyond the run's nodes are the summary tables kept
-checked (`hdir`, `hsrch`) and `run_traversed`'s statement at each admitted
-reassigned graph (`hwalk`). -/
-theorem run_guarantee_of_ordinary {G : NormalGraph ι} {admits : MixedAssignment ι → Prop} {P : Program} {start : Nat}
-    {goal : Goal ι} {inputs : List (Ty ι)} {sep : HeapSeparation.Separation} {idx : List HeapKnowledge.IndexAtom}
-    {assertions : List (Nat × HeapKnowledge.Knowledge)} {bound : Option (Footprints.Closed × Bool × Bool)}
-    {ensures : List HeapKnowledge.IndexFact}
-    {regional : Option (Footprints.Closed × List Footprints.ArgumentStoreRegion × Bool)}
-    {images : InstanceImageCheck G} {pool : List (Ty ι)} {fuel : Nat} {suggestions : List (Sequent ι)}
-    {index : KnownIndex ι} {codes : CodeEntry ι → Bool} {aliases : List (ι × ι)}
-    {undefTy : Option (Ty ι)} {w : Walk ι} {ctx : Nat → List (Ty ι)}
-    (hran : ∀ l, w.visited l → Nonempty (NodeRan G images pool fuel suggestions index codes aliases .ordinary undefTy
-      P w (List.range inputs.length) ctx l))
-    (hdir : DirectKeepsSummaries G images undefTy)
-    (hsrch : SearchKeepsSummaries G images pool fuel suggestions index codes aliases
-      (PassChecker.ordinary (G := G) (images := images)).checker)
-    (hwalk : ∀ η, admits η →
-      (∀ l, w.visited l → Nonempty (NodeChecked (reassign G η) (images.reassign η) codes .ordinary P w
-        (List.range inputs.length) ctx l)) →
-      ∃ (given : Nat → Bool)
-        (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
-        (fresh : Nat → Nat),
-        PassWalkSound (reassign G η) P start goal inputs sep idx assertions bound ensures regional w given ctx
-          edgesIn fresh) :
-    GraphGuarantee G admits P start goal inputs sep idx assertions bound ensures regional :=
-  run_guarantee fun η hη => by
-    obtain ⟨given, edgesIn, fresh, h⟩ := hwalk η hη fun l hl =>
-      let ⟨r⟩ := hran l hl; ⟨nodeChecked_reassign (passCheckerReassign_ordinary G η images) (r.checked hdir hsrch)⟩
-    exact ⟨w, given, ctx, edgesIn, fresh, h⟩
+omit [Instantiates ι] in
+/-- **Every checked node of the pass delivers** (`StepEdgesSoundT`): where
+every visited node is checked with its searches as oracles (`NodeChecked`)
+and that node's step means at the graph what it states (`NodeMeaning`), the
+codes are sound, each visited node's step and exits meet the typed node
+obligations, with the exception family `excOf G`, the result type `Tres`
+and no post on the heap at the graph's exits (`stepChecked_parts` in place
+of `checkedStep_parts` in `stepEdgesSound_of`). -/
+theorem stepEdgesSound_of_checked {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
+    {pc : PassChecker G images} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat} {ρ0 : Env}
+    {ctx : Nat → List (Ty ι)} {Tres : Fam} {m : Nat}
+    (hacc : ∀ l, w.visited l → ∃ r : NodeChecked G images codes pc P w startNames ctx l,
+      NodeMeaning G w startNames ρ0 ctx Tres m l r.node r.c r.entry r.st)
+    (hcodes : CodesSound G codes) :
+    StepEdgesSoundT P G w startNames ρ0 ctx (excOf G) Tres (fun _ => True) (fun _ => True) m := by
+  intro l ρ s hp
+  obtain ⟨na, hm⟩ := hacc l hp.1.1
+  have hS := hm.stated ρ s hp
+  have he : EnvOk G na.c.context ρ s.n s.W := na.hctx ▸ hp.2
+  obtain ⟨-, -, -, cn, ce, hparts⟩ := stepChecked_parts na.hstep hS na.wf na.below na.width he hcodes na.sums
+  obtain ⟨hj, ho⟩ := nodeObligations_of_parts (pre := edgePreT G w startNames ρ0 ctx) (Ξres := excOf G)
+    (Tres := Tres) (Qres := fun _ => True) (Rres := fun _ => True) (x := na.node.handler) hparts he
+    (fun j U v hv => hm.shape (j + 1) U v hv)
+    (fun s' v _ hv hF he' _ => normalTarget_of_exits (fun t p o q hmem => hm.exits t p o q hmem ρ) hm.ret
+      (fun _ => trivial) s' v hv hF he' (hm.shape _ _ v (he'.2 0 _ rfl)))
+    (fun s' e _ hFe he' hsc hx => by
+      cases hh : na.node.handler with
+      | none => exact ⟨hx, trivial⟩
+      | some t => exact hm.handler t hh ρ s' e hFe he' hsc hx)
+  exact ⟨na.node, na.hP, _, _, cn, ce, _, _, hj, ho⟩
 
 end Nodes
 

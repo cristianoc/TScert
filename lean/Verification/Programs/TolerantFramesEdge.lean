@@ -453,24 +453,18 @@ theorem freshImpl_ok [DecidableEq ι] {G : NormalGraph ι} {ys : List (PromiseCa
 
 /-! ## Interface between the head entry and the edge check -/
 
-/-- **What an edge into a loop head establishes** of the target's given
-invariant `req` over its context `Δ`: the given facts hold at the target's
-environment under the mapping, and the target's types hold there. -/
-def EdgeEstablishes [DecidableEq ι] (G : NormalGraph ι) (Δ : List (Ty ι)) (req : HeapKnowledge.Knowledge)
-    (θ : PointClaims.Mapping) (ρ : Env) (n : Nat) (W : WorldT n) (h : Heap) : Prop :=
-  HeapKnowledge.Holds req (PointClaims.mapEnv θ ρ) h ∧ EnvOk G Δ (PointClaims.mapEnv θ ρ) n W
-
 /-- **The head query is sound** (`SinglePass.lean` 1949–1952): where the
 edge's facts `k` hold at the source environment, typed by the edge's context
 `Γ`, and the target's types hold at the mapped environment, the given facts
-`checkIn` accepts hold there: `EdgeEstablishes` from the pass's own check,
-with the types its type check establishes. -/
+`checkIn` accepts hold there (the `facts` field of `HeadEstablishes` at the
+head's environment `mapEnv θ ρ`), with the target's types. -/
 theorem head_query_sound [DecidableEq ι] {G : NormalGraph ι} {Γ Δ : List (Ty ι)} {req k : HeapKnowledge.Knowledge}
     {θ : PointClaims.Mapping} {ρ : Env} {n : Nat} {W : WorldT (n + 1)} {h : Heap}
     (hq : KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G Δ)
       (HeapKnowledge.withTypedLinks G Γ (ControlFlow.withTypedCells G Γ req θ k)) req θ = true)
     (hk : HeapKnowledge.Holds k ρ h) (he : EnvOk G Γ ρ (n + 1) W) (hh : HeapOk (n + 1) W h)
-    (htc : EnvOk G Δ (PointClaims.mapEnv θ ρ) (n + 1) W) : EdgeEstablishes G Δ req θ ρ (n + 1) W h :=
+    (htc : EnvOk G Δ (PointClaims.mapEnv θ ρ) (n + 1) W) :
+    HeapKnowledge.Holds req (PointClaims.mapEnv θ ρ) h ∧ EnvOk G Δ (PointClaims.mapEnv θ ρ) (n + 1) W :=
   ⟨KnowledgeExpand.checkIn_sound hq (KnowledgeExpand.ctxOf_ok htc)
     (HeapKnowledge.withTypedLinks_holds he (withTypedCells_holds (fun _ => HeapExpressionRules.typedCells_holds he hh)
       (fun _ _ hr => HeapExpressionRules.typeValues_sound hr he) hk)), htc⟩

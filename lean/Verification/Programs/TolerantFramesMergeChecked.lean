@@ -11,11 +11,10 @@ with it, the merge's joined implications hold at the merge's slot
 environment, the edge's mapping applied to the source's (`meetImplications_ok_of_check`),
 so the merge's implications hold (`mergeImplies_ok_of_check`).
 
-**The merge theorem** (`mergeState_holdsAt_checked`) with every premise that
-is a theorem removed: `GuardedHolds` (`guardedHolds_of_path`),
-`LinearNearSound` from the equation `LinearNearFuelEq`, `EntailedDefined`
-replaced by the pass's check `EntailedChecked`, the joined implications from
-the edge check. -/
+**The merge theorem** (`mergeState_holdsAt_checked`): its premises are the
+predecessors' width, well-formedness and names below the merge's counter,
+the equation `LinearNearFuelEq`, the pass's check `EntailedChecked` and the
+joined implications; the guarded join holds by `guardedHolds_of_path`. -/
 namespace Verification.TolerantFrames
 open Verification Footprints HeapObservations
 open Verification.SinglePass (Atom Store State)

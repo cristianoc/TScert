@@ -2,17 +2,14 @@ import Verification.Programs.TolerantFramesMergeJoin
 
 /-! # Tolerant frames: the merge's state holds
 
-**(Merge)** On the path into a merge through predecessor `p`, whose state
-holds at the valuation `η`, the merged state (`SinglePass.mergeState`) holds
-at the merge's valuation `mVal` (`mergeState_holdsAt`): each slot holds its
-merged name's value, every fact of the merged store holds, the merge's
-implications hold, every fresh name holds a store past the mark and the
-start names keep their entry values. Three results are named hypotheses:
-`LinearNearSound` (a `while` loop of the pass), `EntailedDefined` (the terms
-of an entailed bound are defined on the path) and `GuardedHolds` (the guarded
-join's facts hold on the path); the merge's implications are taken from the
-edges (`hI`). The merged store is well-formed and its names and fresh names
-are below the merge's next fresh name (`mergeState_wf`). -/
+On the path into a merge through predecessor `p`, whose state holds at the
+valuation `η`, each part of the merged state (`SinglePass.mergeState`) holds
+at the merge's valuation `mVal`: the weakest bounds (`OnPath.bounds_ok`),
+the guarded facts where `GuardedHolds` (`OnPath.guarded_ok`), the merge's
+implications where the edges' joined implications hold (`mergeImplies_ok`)
+and the fresh names (`OnPath.fresh_ok`); the merge theorem composing them is
+`mergeState_holdsAt_checked`. The merged store is well-formed and its names
+and fresh names are below the merge's next fresh name (`mergeState_wf`). -/
 namespace Verification.TolerantFrames
 open Verification Footprints HeapObservations
 open Verification.SinglePass (Atom Store State)
@@ -40,22 +37,6 @@ end Holds
 (`StateWF.below`). -/
 def StateBelow (st : State) (next : Nat) : Prop :=
   (∀ x ∈ st.names, x < next) ∧ (∀ a ∈ storeAll st.store, ∀ x ∈ a.names, x < next) ∧ ∀ x ∈ st.fresh, x < next
-
-/-- **(Named hypothesis) The terms of an entailed bound are defined on the
-path**: each unconditional linear fact a predecessor states beyond the met
-store that every view holds or entails names terms with an integer value
-at the merge's valuation on the path through `p`. `Linear.Known.entails`
-reads an undefined term as 0 (`termValuation`), and the merge does not check
-definedness where `IndexWrites`' rules do (`termDefined_sound`). -/
-def EntailedDefined (preds : List State) (width fresh0 : Nat) (ρ η : Env) (h : Heap) : Prop :=
-  let variants := mergeVariants preds (mNames preds width fresh0) (mRen preds width fresh0)
-  let met0 := mergeMet0 preds (mNames preds width fresh0) (mRen preds width fresh0)
-  let diffs := mergeDiffs preds (mRen preds width fresh0) variants met0
-  let views := mergeViews (mNames preds width fresh0).toList diffs met0
-  ∀ d ∈ diffs, ∀ F neg, Atom.index ⟨.linear F, none, neg⟩ ∈ d →
-    (views.all fun (qs : State) => qs.store.holds (.index ⟨.linear F, none, neg⟩) ||
-      HeapKnowledge.entailsKnown (qs.store.linearNear (Atom.index ⟨.linear F, none, neg⟩).names) F) = true →
-    ∀ t ∈ F.vars, (HeapKnowledge.termValue (mVal preds width fresh0 ρ η) h t).isSome
 
 /-- **(Named hypothesis) The guarded join's facts hold on the path**: each
 fact `mergeGuarded` keeps, at slots, holds at the slot environment. Its
@@ -115,27 +96,6 @@ theorem OnPath.view_ok (P : OnPath preds width fresh0 p ρ η h) :
   · intro f hall
     exact List.all_eq_true.mp hall _ (List.mem_map.mpr ⟨_, List.getElem_mem hl, rfl⟩)
 
-/-- **The entailed bounds hold** on the path, with `LinearNearSound` and
-`EntailedDefined`. -/
-theorem OnPath.entailed_ok (P : OnPath preds width fresh0 p ρ η h) (hnear : LinearNearSound)
-    (hdef : EntailedDefined preds width fresh0 ρ η h) {met : Store}
-    (hm : StoreOk met (mVal preds width fresh0 ρ η) h) :
-    let met0 := mergeMet0 preds (mNames preds width fresh0) (mRen preds width fresh0)
-    let diffs := mergeDiffs preds (mRen preds width fresh0)
-      (mergeVariants preds (mNames preds width fresh0) (mRen preds width fresh0)) met0
-    StoreOk (mergeEntailed (Std.HashSet.ofList (mNames preds width fresh0).toList) diffs
-      (mergeViews (mNames preds width fresh0).toList diffs met0) met) (mVal preds width fresh0 ρ η) h := by
-  intro met0 diffs
-  obtain ⟨v, -, hv, hall⟩ := P.view_ok
-  refine mergeEntailed_inv (fun s => StoreOk s (mVal preds width fresh0 ρ η) h)
-    (fun a => AtomHolds a (mVal preds width fresh0 ρ η) h) (fun _ _ hs ha => add_ok hs ha) ?_ hm
-  intro d hd F neg ha hviews
-  have hdF := hdef d hd F neg ha hviews
-  rcases Bool.or_eq_true_iff.mp (hall _ hviews) with hh | he
-  · exact holds_sound hv hh hdF
-  · refine index_none_holds ⟨hdF, HeapKnowledge.entailsKnown_sound (fun x hx => ?_) he⟩
-    exact hv _ (hnear _ _ _ x hx) x (List.mem_singleton_self _)
-
 /-- **The guarded facts hold** on the path, renamed to the merge's names,
 with `GuardedHolds`. -/
 theorem OnPath.guarded_ok (P : OnPath preds width fresh0 p ρ η h) (hguard : GuardedHolds preds width fresh0 ρ h)
@@ -150,13 +110,6 @@ theorem OnPath.guarded_ok (P : OnPath preds width fresh0 p ρ η h) (hguard : Gu
     (fun a => AtomHolds a (mVal preds width fresh0 ρ η) h) (fun _ _ hs ha => add_ok hs ha) ?_ hm
   intro x hx a hr
   exact atomHolds_rename (fun i y hy => (P.slotsNamed i y hy).symm) hr (hguard x hx)
-
-/-- **The merged store holds** on the path. -/
-theorem OnPath.store_ok (P : OnPath preds width fresh0 p ρ η h) (hnear : LinearNearSound)
-    (hdef : EntailedDefined preds width fresh0 ρ η h) (hguard : GuardedHolds preds width fresh0 ρ h) :
-    StoreOk (mergeStore preds width (mNames preds width fresh0) (mRen preds width fresh0))
-      (mVal preds width fresh0 ρ η) h :=
-  P.guarded_ok hguard (P.entailed_ok hnear hdef (P.bounds_ok P.met0_ok))
 
 /-- **The merged fresh names hold fresh stores** on the path: each is a
 fresh name of `p` or a fresh name `p` renames one to. -/
@@ -221,51 +174,6 @@ end Implies
 
 section Merge
 variable {ι : Type} [DecidableEq ι] [Hashable ι]
-
-/-- **(Merge) The merged state holds on the path through a predecessor**:
-where predecessor `p`'s state holds at `η`, every predecessor has the
-merge's width, a well-formed store and names below the merge's first fresh
-name `fresh`, the start names are below it, and with the named hypotheses
-`LinearNearSound`, `EntailedDefined` and `GuardedHolds` and the edges'
-implications `hI`, the merged state with the merge's implications holds at
-the merge's valuation `mVal`. -/
-theorem mergeState_holdsAt {G : NormalGraph ι} {context : List (Ty ι)} {preds : List State}
-    {edgesIn : List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)} {fresh : Nat}
-    {start : List Nat} {entry : Env} {implies : List (PromiseCalls.Implication ι)} {p : Nat} {η ρ : Env}
-    {mark : Nat} {s : IndexedHeap} (hp : p < preds.length)
-    (hlen : ∀ q ∈ preds, q.names.length = context.length) (hwf : ∀ q ∈ preds, StoreWF q.store)
-    (hbel : ∀ q ∈ preds, StateBelow q fresh) (hstart : ∀ x ∈ start, x < fresh) (hnear : LinearNearSound)
-    (hdef : EntailedDefined preds context.length fresh ρ η s.h) (hguard : GuardedHolds preds context.length fresh ρ s.h)
-    (hI : PromiseCalls.ImpliesOk G (CertificateProducer.meetImplications G edgesIn context.length context) ρ s.n s.W)
-    (hS : StateHoldsAt G preds[p] implies start entry η ρ mark s) :
-    StateHoldsAt G (SinglePass.mergeState G context preds edgesIn fresh).state
-      (SinglePass.mergeState G context preds edgesIn fresh).implies start entry
-      (mVal preds context.length fresh ρ η) ρ mark s := by
-  obtain ⟨hslots, hstore, -, hfresh, hst⟩ := hS
-  have P : OnPath preds context.length fresh p ρ η s.h :=
-    { hp, len := hlen, bel := fun q hq => (hbel q hq).1, facts := fun q hq => (hbel q hq).2.1, wf := hwf,
-      slots := hslots, store := hstore }
-  rw [mergeState_state, mergeState_implies]
-  refine ⟨P.slotsNamed, P.store_ok hnear hdef hguard, mergeImplies_ok P.slotsNamed hI,
-    P.fresh_ok (hbel _ (List.getElem_mem hp)).2.2 hfresh, fun q x hq => ?_⟩
-  rw [show mVal preds context.length fresh ρ η x = η x from mergeVal_below (hstart x (List.mem_of_getElem? hq))]
-  exact hst q x hq
-
-/-- **(Merge) The merged state holds** (`StateHolds`) where predecessor `p`'s
-does, the named hypotheses holding at every valuation of `p`'s names. -/
-theorem mergeState_holds {G : NormalGraph ι} {context : List (Ty ι)} {preds : List State}
-    {edgesIn : List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)} {fresh : Nat}
-    {start : List Nat} {entry : Env} {implies : List (PromiseCalls.Implication ι)} {p : Nat} {ρ : Env}
-    {mark : Nat} {s : IndexedHeap} (hp : p < preds.length)
-    (hlen : ∀ q ∈ preds, q.names.length = context.length) (hwf : ∀ q ∈ preds, StoreWF q.store)
-    (hbel : ∀ q ∈ preds, StateBelow q fresh) (hstart : ∀ x ∈ start, x < fresh) (hnear : LinearNearSound)
-    (hdef : ∀ η, EntailedDefined preds context.length fresh ρ η s.h) (hguard : GuardedHolds preds context.length fresh ρ s.h)
-    (hI : PromiseCalls.ImpliesOk G (CertificateProducer.meetImplications G edgesIn context.length context) ρ s.n s.W)
-    (hS : StateHolds G preds[p] implies start entry ρ mark s) :
-    StateHolds G (SinglePass.mergeState G context preds edgesIn fresh).state
-      (SinglePass.mergeState G context preds edgesIn fresh).implies start entry ρ mark s := by
-  obtain ⟨η, hη⟩ := hS
-  exact ⟨_, mergeState_holdsAt hp hlen hwf hbel hstart hnear (hdef η) hguard hI hη⟩
 
 /-- A name of the merge's first predecessor's fresh names or renames. -/
 theorem mergeFresh_head {q : State} {qs : List State} {r : Std.HashMap Nat (List Nat)}

@@ -123,47 +123,6 @@ end Transport
 section Oracle
 variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
 
-/-- **A step accepted with its searches as oracles**: a copy of a slot at
-the claim's type, the store unchanged; or `StepAccepted` at some evidence
-`effect`, the call layers reading the summaries of some answers `a0` and the
-selection those of the final answers `ans`, where the summaries of `a0` and
-`ans` are checked when the entry's are. The conditions `checkedStep_ok`
-reads, without the searches' results. -/
-def StepChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (pc : PassChecker G images)
-    (codes : CodeEntry ι → Bool) (c : PointClaim ι) (node : Node) (entry : SinglePass.State) (ms : List Nat)
-    (fresh : Nat) (answers ans : Answered G) (st : Stepped ι) : Prop :=
-  (∃ x, copiedOf G c entry node.expression = some x ∧ st.result = x ∧ st.store = entry.store ∧
-      st.fresh = fresh ∧ st.copied = true ∧ st.stepK = {} ∧ st.stepOut = {} ∧ ans = answers) ∨
-    (copiedOf G c entry node.expression = none ∧ ∃ (effect : StepEvidence ι) (a0 : Answered G),
-      StepAccepted G images pc codes c node entry ms fresh effect a0.summaries.toList ans.summaries.toList st ∧
-      (SummariesSound G images answers.summaries.toList →
-        SummariesSound G images a0.summaries.toList ∧ SummariesSound G images ans.summaries.toList))
-
-/-- **An accepted step is accepted with its searches as oracles**, where
-the direct call and the search keep the summary table checked. -/
-theorem stepChecked_of_step {G : NormalGraph ι} {images : InstanceImageCheck G} {pool : List (Ty ι)} {fuel : Nat}
-    {suggestions : List (Sequent ι)} {index : KnownIndex ι} {codes : CodeEntry ι → Bool}
-    {aliases : List (ι × ι)} {pc : PassChecker G images} {undefTy : Option (Ty ι)}
-    {l : Nat} {node : Node} {c : PointClaim ι} {entry : SinglePass.State} {ms : List Nat} {fresh : Nat}
-    {answers : Answered G} {st : Stepped ι} {stats : StepStats} {ans : Answered G}
-    (h : checkedStep G images pool fuel suggestions index codes aliases pc undefTy l node c entry ms fresh
-      answers = (Except.ok st, stats, ans))
-    (hdir : DirectKeepsSummaries G images undefTy)
-    (hsrch : SearchKeepsSummaries G images pool fuel suggestions index codes aliases pc.checker) :
-    StepChecked G images pc codes c node entry ms fresh answers ans st := by
-  rcases checkedStep_ok h with hcopy | ⟨hc, effect, a0, a1, ha0, ha1, hacc, hans⟩
-  · exact .inl hcopy
-  · subst hans
-    refine .inr ⟨hc, effect, a0, hacc, fun hsum => ?_⟩
-    have hs0 : SummariesSound G images a0.summaries.toList := by
-      rcases ha0 with rfl | ⟨adm, rfl⟩
-      · exact hsum
-      · exact hdir _ _ _ _ _ hsum
-    refine ⟨hs0, ?_⟩
-    rcases ha1 with rfl | ⟨k, own, adm, rfl⟩
-    · exact hs0
-    · exact hsrch _ _ _ _ _ hs0
-
 omit [Instantiates ι] in
 /-- **A step at a reassignment, its searches as oracles**: a step accepted
 at `G` from answers whose summaries are checked is accepted at
