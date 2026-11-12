@@ -235,6 +235,7 @@ structure EnvFacts (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) : 
     env.given[c.start]! = some (startGiven (passStated c c.start) c.entryIndices c.entrySeparation supplied)
   merging : env.merging = passMerging c
   regional : env.regional = c.regional
+  startKept : SinglePass.startSeparationKept (passStated c c.start) c.entrySeparation = true
 
 omit [Labels ι] in
 /-- A list's true entries, counted by position. -/
@@ -269,11 +270,12 @@ theorem envFacts_of_loopHeads {c : Target.RunCall G I} {env : SinglePass.WalkEnv
         ((env.givenInputs[c.start]?).getD []) c.entryIndices c.entrySeparation = none ∧
       env.given[c.start]! = some (startGiven (passStated c c.start) c.entryIndices c.entrySeparation supplied))
     (hmerging : env.merging = passMerging c)
-    (hregional : env.regional = c.regional) :
+    (hregional : env.regional = c.regional)
+    (hstartKept : SinglePass.startSeparationKept (passStated c c.start) c.entrySeparation = true) :
     EnvFacts c env := by
   have hc := loopHeads_closed c.P.toArray c.start
   refine ⟨hheads, fun s t hs ht htn => ?_, ⟨hstart, ?_⟩, ?_, hclaimed, hclaims, hgiven, hnodes,
-    by simpa using hn, hcodes, hchecker, hbound, hgoal, hensures, hnames, harg, hstated, hstartLabel, hstartHead, hstartCtx, hstartGiven, hmerging, hregional⟩
+    by simpa using hn, hcodes, hchecker, hbound, hgoal, hensures, hnames, harg, hstated, hstartLabel, hstartHead, hstartCtx, hstartGiven, hmerging, hregional, hstartKept⟩
   · unfold envReached exitsOf at *
     rw [hreached] at hs ⊢
     rw [hnodes] at ht
