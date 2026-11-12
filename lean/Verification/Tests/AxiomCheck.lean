@@ -730,9 +730,6 @@ run_cmd do
   check ``Verification.TolerantFrames.passOutFreshChecked_reassign
   check ``Verification.TolerantFrames.BoundChecked.reassign
   check ``Verification.TolerantFrames.ReturnChecked.reassign
-  check ``Verification.TolerantFrames.footprintsKept_of_checked
-  check ``Verification.TolerantFrames.returnsKept_of_checked
-  check ``Verification.TolerantFrames.run_sound_17a
   check ``Verification.TolerantFrames.joinedAt_of_exit
   check ``Verification.TolerantFrames.SafePostExc.conj_post
   check ``Verification.TolerantFrames.checkedYields_follows
@@ -755,15 +752,11 @@ run_cmd do
   check ``Verification.TolerantFrames.exitDeliversY_head
   check ``Verification.TolerantFrames.goalHolds_of_returnY
   check ``Verification.TolerantFrames.passShapeCheck'_reassign
-  check ``Verification.TolerantFrames.NodeChecked.meaning
-  check ``Verification.TolerantFrames.nodesMean_of_delivers
   check ``Verification.TolerantFrames.nodup_of_eraseDups
   check ``Verification.TolerantFrames.byLabel_size
   check ``Verification.TolerantFrames.byLabel_cons
   check ``Verification.TolerantFrames.byLabel_of_nodup
   check ``Verification.TolerantFrames.assertionsLabelled_of_checked
-  check ``Verification.TolerantFrames.run_sound_18a
-  check ``Verification.TolerantFrames.run_sound_pass
   check ``Verification.TolerantFrames.truthy_arm
   check ``Verification.TolerantFrames.passRefined_env
   check ``Verification.TolerantFrames.checkedEdge_env_none
@@ -772,7 +765,7 @@ run_cmd do
   check ``Verification.TolerantFrames.returnsKept_of_returns
   check ``Verification.TolerantFrames.exitJoinedY
   check ``Verification.TolerantFrames.run_sound_yields
-  check ``Verification.TolerantFrames.run_sound_passY
+  check ``Verification.TolerantFrames.run_sound_pass
 
   -- Leg 17b: the walk side of the graph theorem (TolerantFramesMergeExits, TolerantFramesMergeNearRounds)
   check ``Verification.TolerantFrames.entry_of_edge

@@ -7,8 +7,7 @@ import Verification.Programs.TolerantFramesNodeRefined
 of the claim's type; the pass checks them only at the values the step
 returns, with its kept yields (`NodeYielded`), and checks a merge's joined
 implications at the edge's context as the yields refine it. So the graph
-theorem takes, in place of `NodesDeliver` and `MergeExitsJoined`, the
-nodes' kept yields: at every visited node some yields `ys` with
+theorem takes the nodes' kept yields: at every visited node some yields `ys` with
 `NodeYielded` (`NodesYield`), whose exits and handler deliver `edgePreAJ`,
 the joined implications included. Proved:
 
@@ -22,7 +21,7 @@ the joined implications included. Proved:
   record at the refined context (`joinedAt_of_exit`, `passRefined_env`);
 - (`run_sound_yields`) `RunTraversedA` ∧ `NodesYield` ∧ `LinearNearFuelEq`
   ∧ `BoundsChecked` ∧ `ReturnsChecked` ∧ `RegionsHeld` ∧ `LabelsChecked` ⟹
-  `RunSound`; `run_sound_passY` is it with `run_traversedA`. -/
+  `RunSound`; `run_sound_pass` is it with `run_traversedA`. -/
 namespace Verification.TolerantFrames
 open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
@@ -170,7 +169,7 @@ theorem run_sound_yields (hrun : RunTraversedA ι) (hyield : NodesYield ι) (hne
 /-- **THE GRAPH THEOREM of the single pass over the nodes' kept yields**
 (`run_sound_yields` with the driver's walk from its record,
 `run_traversedA`). -/
-theorem run_sound_passY (hstop : WalkStopsRefuse ι) (hrec : RecordsSound ι) (hyield : NodesYield ι)
+theorem run_sound_pass (hstop : WalkStopsRefuse ι) (hrec : RecordsSound ι) (hyield : NodesYield ι)
     (hnear : LinearNearFuelEq) (hb : BoundsChecked ι) (hrc : ReturnsChecked ι) (hreg : RegionsHeld ι)
     (hlab : LabelsChecked ι) : Target.RunSound ι :=
   run_sound_yields (run_traversedA hstop hrec) hyield hnear hb hrc hreg hlab
