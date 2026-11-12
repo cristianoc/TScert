@@ -1822,3 +1822,31 @@ Named hypothesis `CallFreshOk`: where `outFresh` reads a fresh result off
 the derivation's selected effect (`passCallFresh`), the returned value's
 store is allocated at or past the mark; the pass does not check that
 derivation's tree there (pass change D4).
+
+## Leg 14b: the return check kept along a run
+
+Module `lean/Verification/Programs/TolerantFramesNodeReturns.lean`.
+`ReturnChecked` is `returnCheck` refusing nothing at a node whose
+continuation is a return, at the step's output store and result. Proved:
+
+- `returnCheck_ensures`, by unfolding: where `returnCheck` refuses nothing,
+  `ensures` is empty, the claim's type or a context slot's is empty, or
+  `returnEntails` accepts the output's facts over the result and the
+  tracked inputs (`passTracked`, `returnCheck`'s `tracked`);
+- `passTracked_names`: each tracked slot holds the start name of the input
+  it tracks, the premise `htr` of `pass_return_ensures`;
+- (`returnsEnsured_of`) `NodeAccepted` ∧ `ReturnChecked` at every visited
+  node ∧ `CodesSound` ∧ `DirectKeepsSummaries` ∧ `SearchKeepsSummaries` ⟹
+  `ReturnsEnsured`: the state after the step at the pushed environment
+  (the step's normal exit) gives `ensures` by `pass_return_ensures`; an
+  empty result type admits no value, an empty context type no
+  environment.
+
+The guard and assertion goals are not composed here: `NodeAccepted.ret`
+states the goal of every value of the claim's type, while a guard's goal
+reads the promised argument (`GoalHolds (.guards T _) a`), which only the
+state after the step determines (the argument's slots, named by
+`argName`, refined by the step's yields). Their proof needs `ret` read at
+that state, as `ControlFlow.goal_return` reads `ReturnOk`, `YieldsOk` and
+`ArgumentsOk`, with the subtype answers' soundness (pass change D5) for
+`returnCheck`'s `subtypeUsing`.
