@@ -764,6 +764,7 @@ run_cmd do
   check ``Verification.TolerantFrames.footprintsKept_of_bounds
   check ``Verification.TolerantFrames.returnsKept_of_returns
   check ``Verification.TolerantFrames.exitJoinedY
+  check ``Verification.TolerantFrames.nodeYielded_of_checks
   check ``Verification.TolerantFrames.run_sound_yields
   check ``Verification.TolerantFrames.run_sound_pass
 

@@ -19,6 +19,10 @@ the joined implications included. Proved:
   `NodeChecked.hentry`;
 - `exitJoinedY`: an exit's joined implications at a merge from the edge's
   record at the refined context (`joinedAt_of_exit`, `passRefined_env`);
+- `nodeYielded_of_checks`: what `run` checks of the kept yields and the
+  return (`NodeYieldChecks`) gives `NodeYielded`'s judgment and return
+  (`yieldsJudged_of_checked`, `goalHolds_of_returnY`), its exits and
+  handler given;
 - (`run_sound_yields`) `RunTraversedA` ∧ `NodesYield` ∧ `LinearNearFuelEq`
   ∧ `BoundsChecked` ∧ `ReturnsChecked` ∧ `RegionsHeld` ∧ `LabelsChecked` ⟹
   `RunSound`; `run_sound_pass` is it with `run_traversedA`. -/
@@ -99,6 +103,65 @@ theorem exitJoinedY {G : NormalGraph ι} {w : Walk ι} {given : Nat → Bool} {c
   joinedAt_of_exit hin (passRefined_env hm harms he hshape ho hy hout) hss hcar
 
 end Joined
+
+section Checks
+variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
+
+/-- **What `run` checks of a node's kept yields and its return** (read off
+the visit): the yields `ys` none, or those `checkedYields` keeps at the
+implications `slotImplOf entry.names xs` for `xs` among the label's, the
+step's facts and output and a derivation `deriv` that a promise call's
+`derivChecked` accepts (`PromiseDerivChecked`); at a return, `returnCheck`
+refusing nothing at `ys`, with the subtype answers sound and the promised
+argument's name the start name of the goal's slot. -/
+structure NodeYieldChecks (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
+    (sums : List (ReadSummary ι)) (w : Walk ι) (startNames : List Nat) (goal : Goal ι)
+    (ensures : List HeapKnowledge.IndexFact) (l : Nat) (node : Node) (c : PointClaim ι) (entry : SinglePass.State)
+    (st : Stepped ι) (ys : List (PromiseCalls.Yield ι)) : Prop where
+  kept : ys = [] ∨ ∃ (xs : List (PromiseCalls.Implication ι)) (deriv : ProgramCertificates.Evidence ι)
+    (ys0 : List (PromiseCalls.Yield ι)), (∀ x ∈ xs, x ∈ w.implies l) ∧
+    PromiseDerivChecked G images codes sums c node st.stepK deriv ∧
+    ys = checkedYields G images c.context c.type (slotImplOf entry.names xs) st.stepK st.stepOut deriv
+      node.expression ys0
+  ret : node.continuation = .ret → SubtypeAnswersSound G images ∧ ∃ start argName debugNode answers,
+    (returnCheck G images goal ensures c l entry st.store st.result start startNames argName ys debugNode
+      answers).1 = none ∧ argName = goal.slot.bind (startNames[·]?)
+
+/-- **A node's kept yields judged and its return's goal from the checks**:
+`NodeYieldChecks` with the exits and the handler delivering `edgePreAJ`
+gives `NodeYielded` (`yieldsJudged_of_checked` with `slotImplOf_entry`,
+`goalHolds_of_returnY`). -/
+theorem nodeYielded_of_checks {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
+    {sums : List (ReadSummary ι)} {w : Walk ι} {startNames : List Nat} {ρ0 : Env} {ctx : Nat → List (Ty ι)}
+    {stated : Nat → Option HeapKnowledge.Knowledge} {given : Nat → Bool}
+    {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
+    {goal : Goal ι} {ensures : List HeapKnowledge.IndexFact} {m l : Nat} {node : Node} {c : PointClaim ι}
+    {entry : SinglePass.State} {st : Stepped ι} {ys : List (PromiseCalls.Yield ι)}
+    (hc : NodeYieldChecks G images codes sums w startNames goal ensures l node c entry st ys)
+    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
+    (hexits : ∀ t pushed observed promote, Exit.normal t pushed observed promote ∈ Exit.ofNode node → ∀ ρ,
+      ExitDelivers (edgePreAJ G w startNames ρ0 ctx stated given edgesIn) G c.type c.context
+        (fun ρ' m' s' => StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ρ0
+          ρ' m' s' ∧ PromiseCalls.YieldsOk G ys ρ s'.n s'.W (ρ' 0) ∧ HeapKnowledge.Holds st.stepOut ρ' s'.h)
+        ρ m t pushed observed promote)
+    (hhandler : ∀ t, node.handler = some t → ∀ ρ (s' : IndexedHeap) e,
+      StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ (w.implies l) startNames ρ0
+        ρ m s' →
+      EnvOk G c.context ρ s'.n s'.W → Scoped 0 e → excOf G s'.n s'.W e →
+      edgePreAJ G w startNames ρ0 ctx stated given edgesIn t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s') :
+    NodeYielded G w startNames ρ0 ctx stated given edgesIn (GoalHolds G goal (goal.argument ρ0)) m l node c entry st
+      ys where
+  judged := by
+    rcases hc.kept with rfl | ⟨xs, deriv, ys0, hsub, hpd, rfl⟩
+    · exact yieldsJudged_nil
+    · exact yieldsJudged_of_checked (fun ρ s hS => slotImplOf_entry hsub hS) hpd hcodes hsums
+  ret hk := by
+    obtain ⟨hsub, start, argName, debugNode, answers, h, harg⟩ := hc.ret hk
+    exact goalHolds_of_returnY hsub h harg
+  exits := hexits
+  handler := hhandler
+
+end Checks
 
 section Run
 variable {ι : Type} [Labels ι]
