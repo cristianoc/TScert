@@ -58,7 +58,9 @@ A role refines a kind:
 
 F holds an object's ordinary property, C a binding's storage, E an element,
 S a store, I an object's identity (a location holding `null` that every
-object allocation adds). An ordinary array's store and a typed array's view
+object allocation adds, whose contract admits `null` alone: `idCtr`, the
+contract `objectEntries` gives every identity, and the representative host
+world's). An ordinary array's store and a typed array's view
 store of fixed length $`N`$ are two forms of S, distinguished by role.
 
 A world entry is a pair of a role and a contract. The kinded world
@@ -95,7 +97,9 @@ occurs (`ViewMetaOk`):
   value $`N`$ alone (`LengthMeta`);
 - every location $`fs`$ gives `[[viewElements]]` has role
   $`S_{\mathrm{view}(N)}`$, and $`fs`$'s `[[viewLength]]` location is a
-  length metadata location of that same $`N`$.
+  length metadata location of that same $`N`$;
+- a map naming `[[viewElements]]` names `[[host]]`: a typed array is a host
+  object.
 
 The first clause covers a host object that holds its length alone, which
 the length observation `viewLengthOf`
@@ -503,8 +507,10 @@ consequence (**planned**).
   congruences, substitution, a graph's entry, a node's instantiation, every
   continuation's environment map, handlers and raises, reads, spreads,
   copies, tests and arithmetic.
-- **Copies** (`mergeParts_cat`): no copied key is `[]`, and every copied
-  value under a key other than `[[viewElements]]` is a source value.
+- **Copies** (`mergeParts_cat`): no copied key is `[]` or
+  `[[viewElements]]`, and every copied value is a source value: a copy's
+  accumulator is no host object, an object owning `[[viewElements]]` is one
+  (view metadata validity), and its source copies no internal key.
 - **Array natives** (`Arr.natives_within`, `Arr.Within.refs`,
   `native_shaped`): `Set`, `Delete`, a length change, `push`, `pop`,
   `shift`, `unshift`, `reverse` and `sort`'s writeback keep a store's cells
@@ -534,9 +540,9 @@ typing rules, through the capabilities of §4.
 - **Present element write** (`Step.setPresent`) and **hole or past-end
   write** (`Step.setGrow`): the payload is a source value.
 - **Natives**: `NativeContract` (§5).
-- **Copies** (`Step.mergeV`): an ordinary accumulator owns no
-  `[[viewElements]]` slot, or the copy's allocating rule gives that key a
-  view role with its length metadata.
+- **Copies** (`Step.mergeV`): the copied fields are allocated as fields;
+  every copied key fits that role and every copied value has its category
+  (`mergeParts_cat`), so no premise remains beyond the step's own.
 - **Every step**: the running term's references are valid (`SafeW`'s
   structural component), and the environment's (`RootsOk`).
 

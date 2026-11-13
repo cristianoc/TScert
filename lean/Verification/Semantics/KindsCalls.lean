@@ -258,8 +258,8 @@ theorem valCtr_adm {k : Nat} : CtrAdm (valCtr (k := k)) :=
 def allocThrow (f : PropKey) (v : Tm) : Tm := .throw (.makeAt .absent [f] [v])
 
 /-- The world the callback's allocation extends: the property `f` in F and
-the object's identity in I, each with a contract admitting every value. -/
-def allocEntries {k : Nat} : List (Role × Ctr k) := objectEntries [.field] [valCtr] valCtr
+the object's identity in I, the property with a contract admitting every value, the identity with one admitting `null` alone. -/
+def allocEntries {k : Nat} : List (Role × Ctr k) := objectEntries [.field] [valCtr]
 
 /-- **The callback is safe with no exceptional postcondition** (an effect
 without `onThrow`): from every well-formed configuration with the initializer
@@ -279,14 +279,16 @@ theorem allocThrow_safe {Ξ T : Fam} {Q : WPost} {f : PropKey} {v : Tm} {n : Nat
   have hmake : RefsOk W₁ (.makeAt .absent [f] [v]) := by
     intro r hr; simp only [refs, refsArgs_eq, List.flatMap_cons, List.flatMap_nil, List.append_nil] at hr
     exact RefsOk_trunc _ hvr r hr
-  obtain ⟨hsh, hobj⟩ := objectLiteral_shaped (c := .absent) (ns := [f]) (vs := [v]) [valCtr] valCtr
+  obtain ⟨hsh, hobj⟩ := objectLiteral_shaped (c := .absent) (ns := [f]) (vs := [v]) [valCtr]
     (by simpa using hok₁.1.1) hok₁.2 rfl rfl hmake (by simpa using hf) (by simpa using hsrc)
   have hokU : HeapOk (n + 1) U (h ++ [v] ++ [.nul]) := by
     have := HeapOk_appendWs (es := allocEntries (k := n + 1)) (vs := [v, .nul]) hok₁
       (WorldAdm_trunc _ hadm) (fun e he => by
         simp only [allocEntries, objectEntries, List.cons_append, List.nil_append, List.zip_cons_cons,
           List.zip_nil_right, List.mem_cons, List.not_mem_nil, or_false] at he
-        rcases he with rfl | rfl <;> exact valCtr_adm)
+        rcases he with rfl | rfl
+        · exact valCtr_adm
+        · exact idCtr_adm)
       rfl
       (fun i c u hc hu j hj => by
         match i with
@@ -310,7 +312,9 @@ theorem allocThrow_safe {Ξ T : Fam} {Q : WPost} {f : PropKey} {v : Tm} {n : Nat
   · intro e he
     simp only [allocEntries, objectEntries, List.cons_append, List.nil_append, List.zip_cons_cons,
       List.zip_nil_right, List.mem_cons, List.not_mem_nil, or_false] at he
-    rcases he with rfl | rfl <;> exact valCtr_adm
+    rcases he with rfl | rfl
+    · exact valCtr_adm
+    · exact idCtr_adm
   · exact .throwC (.makeFields (by simpa using hv) rfl)
   · exact ⟨hoRefs, .inl (.inr ⟨⟨o, Raises.throwV (v := o) rfl rfl, trivial, hΞ U o⟩, trivial⟩)⟩
 

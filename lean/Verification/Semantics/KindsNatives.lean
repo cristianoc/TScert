@@ -365,6 +365,14 @@ theorem toString_ne_store (n : Nat) : toString n ≠ "[]" := by
   have := Nat.isDigit_of_mem_toDigits (by decide) (by decide) hd
   simp at this
 
+theorem toString_ne_viewElements (n : Nat) : toString n ≠ "[[viewElements]]" := by
+  intro h
+  have := congrArg String.toList h
+  simp [toString, Nat.repr] at this
+  have hd : '[' ∈ Nat.toDigits 10 n := by rw [this]; simp
+  have := Nat.isDigit_of_mem_toDigits (by decide) (by decide) hd
+  simp at this
+
 theorem heapVal_src {k : Nat} {W : WorldT k} {h : Heap} {l : Nat} {r : Role}
     (hsh : Shaped W h) (hr : roleAt W l = some r) (hc : r = .field ∨ r = .cell ∨ r = .elem) :
     isSourceVal (heapVal h l) = true := by
@@ -393,16 +401,17 @@ theorem slot_src {k : Nat} {W : WorldT k} {h : Heap} {fs : List (PropKey × Nat)
     | store fm => cases fm <;> simp [SlotRole] at this <;> simp_all
 
 /-- **A copy allocates source values under ordinary keys**: every property a
-merge reads is under a key other than `[]`, and holds a source value unless
-the key is `[[viewElements]]`, whose value is the view store an ordinary
-accumulator could own. -/
+merge reads is under a key other than `[]` and `[[viewElements]]`, and holds
+a source value. A copy's accumulator is no host object (`ownAll`), and an
+object owning `[[viewElements]]` with valid references is one (`ViewMetaOk`);
+its source copies no internal key (`copiedKey`). -/
 theorem mergeParts_cat {k : Nat} {W : WorldT k} {h : Heap} {d : List PropKey} {a b : Tm}
     {ps : List (PropKey × Tm)} (hsh : Shaped W h)
     (ha : RefsOk W a) (hb : RefsOk W b) (hm : mergeParts h d a b = some ps) :
-    ∀ p ∈ ps, p.1 ≠ arrayStoreKey ∧ (p.1 ≠ viewElementsKey → isSourceVal p.2 = true) := by
+    ∀ p ∈ ps, p.1 ≠ arrayStoreKey ∧ p.1 ≠ viewElementsKey ∧ isSourceVal p.2 = true := by
   simp only [mergeParts, bind, Option.bind_eq_some_iff, pure, Option.some.injEq] at hm
   obtain ⟨p, hp, q, hq, rfl⟩ := hm
-  have hown : ∀ e ∈ p, e.1 ≠ arrayStoreKey ∧ (e.1 ≠ viewElementsKey → isSourceVal e.2 = true) := by
+  have hown : ∀ e ∈ p, e.1 ≠ arrayStoreKey ∧ e.1 ≠ viewElementsKey ∧ isSourceVal e.2 = true := by
     intro e he
     unfold ownAll at hp
     split at hp
@@ -412,9 +421,14 @@ theorem mergeParts_cat {k : Nat} {W : WorldT k} {h : Heap} {d : List PropKey} {a
         have := mem_firstKeys he
         simp only [List.mem_map, List.mem_filter, bne_iff_ne, ne_eq] at this
         obtain ⟨x, ⟨hx, hk⟩, rfl⟩ := this
-        exact ⟨hk, fun hv => slot_src hsh ha hx hk hv⟩
+        have hv : x.1 ≠ viewElementsKey := by
+          intro hv
+          rename_i fs₀ _ hhost
+          have hmeta : ViewMetaOk W fs₀ := ha (.fields fs₀) (by rw [refs_objAt]; simp [objRefs])
+          exact hhost (hmeta.2.2 x.2 (by rw [← hv]; exact hx))
+        exact ⟨hk, hv, slot_src hsh ha hx hk hv⟩
     · cases hp
-  have hdata : ∀ e ∈ q, e.1 ≠ arrayStoreKey ∧ (e.1 ≠ viewElementsKey → isSourceVal e.2 = true) := by
+  have hdata : ∀ e ∈ q, e.1 ≠ arrayStoreKey ∧ e.1 ≠ viewElementsKey ∧ isSourceVal e.2 = true := by
     intro e he
     unfold ownData at hq
     split at hq
@@ -433,7 +447,7 @@ theorem mergeParts_cat {k : Nat} {W : WorldT k} {h : Heap} {d : List PropKey} {a
             | str s =>
               simp only [copiedKey, Bool.and_eq_true, bne_iff_ne, ne_eq] at hk
               refine ⟨fun h => ?_, fun h => ?_⟩ <;> cases h <;> simp_all
-          exact ⟨hne.1, fun _ => slot_src hsh hb hx hne.1 hne.2⟩
+          exact ⟨hne.1, hne.2, slot_src hsh hb hx hne.1 hne.2⟩
         · unfold storeData at he
           split at he
           · rename_i ls0 hls0
@@ -447,7 +461,8 @@ theorem mergeParts_cat {k : Nat} {W : WorldT k} {h : Heap} {d : List PropKey} {a
               | some m =>
                 simp only [Option.map_some, Option.some.injEq] at hxe
                 subst hxe
-                refine ⟨fun h => toString_ne_store i (PropKey.str.inj h), fun _ => ?_⟩
+                refine ⟨fun h => toString_ne_store i (PropKey.str.inj h),
+                  fun h => toString_ne_viewElements i (PropKey.str.inj h), ?_⟩
                 -- the store slot is an array store, whose cells are element cells
                 have hst := hb (.slot arrayStoreKey ls0) (by
                   rw [refs_objAt]; exact List.mem_append_left _
@@ -468,7 +483,8 @@ theorem mergeParts_cat {k : Nat} {W : WorldT k} {h : Heap} {d : List PropKey} {a
       have := mem_firstKeys he
       simp only [stringData, List.mem_map] at this
       obtain ⟨x, -, rfl⟩ := this
-      exact ⟨fun h => toString_ne_store x.2 (PropKey.str.inj h), fun _ => rfl⟩
+      exact ⟨fun h => toString_ne_store x.2 (PropKey.str.inj h),
+        fun h => toString_ne_viewElements x.2 (PropKey.str.inj h), rfl⟩
     all_goals (first | (simp only [Option.some.injEq] at hq; subst hq; simp at he) | cases hq)
   intro e he
   simp only [mergeData, List.mem_append, List.mem_filter] at he

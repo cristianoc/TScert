@@ -79,16 +79,16 @@ theorem alloc_post {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h) :
 
 /-- **The allocation keeps the heap well-formed.** The rule gives the store
 slot the role of an array store and the identity its own, with contracts
-`c` and `cid` that survive allocation and admit the empty store and `null`;
+`c` that survives allocation and admits the empty store, the identity's
+admitting `null` alone (`idCtr`);
 the allocated array's references are valid in the extended world. -/
 theorem alloc_wellformed {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h) (hadm : WorldAdm W)
-    {c cid : Ctr n} (hc : CtrAdm c) (hcid : CtrAdm cid)
-    (hcv : ∀ (j : Nat) (hj : j < n), c j hj (trunc j (Nat.le_of_lt hj) W) (.arr []))
-    (hiv : ∀ (j : Nat) (hj : j < n), cid j hj (trunc j (Nat.le_of_lt hj) W) .nul) :
-    HeapOk n (appendWs W (objectEntries [.store .array] [c] cid)) (h ++ [.arr []] ++ [.nul]) ∧
-      RefsOk (appendWs W (objectEntries [.store .array] [c] cid)) (allocated h) := by
+    {c : Ctr n} (hc : CtrAdm c)
+    (hcv : ∀ (j : Nat) (hj : j < n), c j hj (trunc j (Nat.le_of_lt hj) W) (.arr [])) :
+    HeapOk n (appendWs W (objectEntries [.store .array] [c])) (h ++ [.arr []] ++ [.nul]) ∧
+      RefsOk (appendWs W (objectEntries [.store .array] [c])) (allocated h) := by
   have hlen : h.length = (entries W).length := by simpa using hok.1.1
-  obtain ⟨hsh, href⟩ := arrayObject_shaped (ls := []) c cid hlen hok.2 (fun _ hr => by simp [refs, storeRefs] at hr)
+  obtain ⟨hsh, href⟩ := arrayObject_shaped (ls := []) c hlen hok.2 (fun _ hr => by simp [refs, storeRefs] at hr)
   refine ⟨⟨?_, hsh⟩, href⟩
   rw [List.append_assoc]
   refine HeapMeets_appendWs hok.1 hadm (fun e he => ?_) rfl (fun i d v hd hv => ?_)
@@ -96,10 +96,10 @@ theorem alloc_wellformed {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h
       List.cons_append, List.mem_cons, List.not_mem_nil, or_false] at he
     rcases he with rfl | rfl
     · exact hc
-    · exact hcid
+    · exact idCtr_adm
   · match i with
     | 0 => simp [objectEntries] at hd hv; subst hd hv; exact hcv
-    | 1 => simp [objectEntries] at hd hv; subst hd hv; exact hiv
+    | 1 => simp [objectEntries] at hd hv; subst hd hv; exact fun _ _ => rfl
     | i + 2 => simp [objectEntries] at hd
 
 /-! ## A view-element write over two overlapping views -/
@@ -223,8 +223,8 @@ def oneCtr {k : Nat} : Ctr k := fun _ _ _ v => v = .num (bitsOfNat 1)
 
 /-- The roles and contracts of the initial host world, by location. -/
 def hostEntries {k : Nat} : List (Role × Ctr k) :=
-  [(.store (.view 1), anyCtr), (.elem, anyCtr), (.field, oneCtr), (.field, anyCtr), (.identity, anyCtr),
-   (.store .array, anyCtr), (.elem, anyCtr), (.identity, anyCtr), (.field, anyCtr), (.identity, anyCtr)]
+  [(.store (.view 1), anyCtr), (.elem, anyCtr), (.field, oneCtr), (.field, anyCtr), (.identity, idCtr),
+   (.store .array, anyCtr), (.elem, anyCtr), (.identity, idCtr), (.field, anyCtr), (.identity, idCtr)]
 
 def hostWorld {k : Nat} : WorldT k := ofEntries hostEntries
 
@@ -269,7 +269,7 @@ theorem lengthMeta_host {k : Nat} : LengthMeta (hostWorld (k := k)) 2 1 :=
 theorem hostBefore_ok (n : Nat) : HeapOk n (hostWorld (k := n)) hostBefore := by
   refine ⟨entries_meets rfl fun i e v he hv j hj W => ?_, fun l r hr => ?_⟩
   · rcases i with _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | i <;>
-      simp [hostEntries, hostBefore] at he hv <;> subst he hv <;> simp [anyCtr, oneCtr, isVal]
+      simp [hostEntries, hostBefore] at he hv <;> subst he hv <;> simp [anyCtr, oneCtr, idCtr, isVal]
   · simp only [hostWorld, roleAt_ofEntries] at hr
     rcases l with _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | l <;> simp [hostEntries] at hr <;> subst hr <;>
       refine ⟨_, rfl, ?_, ?_⟩ <;>
@@ -281,7 +281,7 @@ theorem hostBefore_ok (n : Nat) : HeapOk n (hostWorld (k := n)) hostBefore := by
 theorem hostAfter_ok (n : Nat) : HeapOk n (hostWorld' (k := n)) hostAfter := by
   refine ⟨entries_meets rfl fun i e v he hv j hj W => ?_, fun l r hr => ?_⟩
   · rcases i with _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | i <;>
-      simp [hostEntries, hostAfter] at he hv <;> subst he hv <;> simp [anyCtr, oneCtr, isVal]
+      simp [hostEntries, hostAfter] at he hv <;> subst he hv <;> simp [anyCtr, oneCtr, idCtr, isVal]
   · simp only [hostWorld', roleAt_ofEntries] at hr
     rcases l with _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | l <;> simp [hostEntries] at hr <;> subst hr <;>
       refine ⟨_, rfl, ?_, ?_⟩ <;>
@@ -303,7 +303,7 @@ theorem host_refs {k : Nat} :
       or_false] at hr
     rcases hr with rfl | rfl | rfl | rfl | rfl
     · simp [RefOk, hostWorld, hostEntries]
-    · refine ⟨fun m hm => ⟨1, ?_⟩, fun e he => ⟨1, 2, ?_, rfl, lengthMeta_host⟩⟩
+    · refine ⟨fun m hm => ⟨1, ?_⟩, fun e he => ⟨1, 2, ?_, rfl, lengthMeta_host⟩, fun _ _ => rfl⟩
       · simp [viewLengthKey, hostKey, viewElementsKey] at hm; subst hm; exact lengthMeta_host
       · simp [viewLengthKey, hostKey, viewElementsKey] at he; subst he; simp [hostWorld, hostEntries]
     · simp [RefOk, SlotRole, hostWorld, hostEntries, hostKey, arrayStoreKey, viewElementsKey]
@@ -314,13 +314,15 @@ theorem host_refs {k : Nat} :
     rcases hr with rfl | rfl | rfl
     · simp [RefOk, hostWorld, hostEntries]
     · exact ⟨fun m hm => by simp [viewLengthKey, arrayStoreKey] at hm,
+        fun e he => by simp [viewElementsKey, arrayStoreKey] at he,
         fun e he => by simp [viewElementsKey, arrayStoreKey] at he⟩
     · simp [RefOk, SlotRole, hostWorld, hostEntries]
   · simp only [hostObject, refs, objRefs, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
       or_false] at hr
     rcases hr with rfl | rfl | rfl
     · simp [RefOk, hostWorld, hostEntries]
-    · exact ⟨fun m hm => by simp [viewLengthKey] at hm, fun e he => by simp [viewElementsKey] at he⟩
+    · exact ⟨fun m hm => by simp [viewLengthKey] at hm, fun e he => by simp [viewElementsKey] at he,
+        fun e he => by simp [viewElementsKey] at he⟩
     · simp [RefOk, SlotRole, hostWorld, hostEntries, arrayStoreKey, viewElementsKey]
 
 /-- **The repaired view-element write is inhabited from the initial host

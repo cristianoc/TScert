@@ -1505,6 +1505,8 @@ run_cmd do
   check ``Verification.Kinds.raises_refs
   check ``Verification.Kinds.heap_refs
   check ``Verification.Kinds.mergeParts_cat
+  check ``Verification.Kinds.toString_ne_viewElements
+  check ``Verification.Kinds.idCtr_adm
   check ``Verification.Kinds.Arr.Within.refs
   check ``Verification.Kinds.Arr.natives_within
   check ``Verification.Kinds.native_shaped

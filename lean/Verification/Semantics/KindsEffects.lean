@@ -308,24 +308,23 @@ well-formed configuration, `{ f: x }` (an ordinary key `f`, a source value
 world extended by the property in F with the contract of `A` and the identity
 in I; there the field capability of `f` at `A` holds of the object. -/
 theorem literal_safe {Ξ T : Fam} {R : WExc} {f : PropKey} {x : Tm} {A : Fam} {n : Nat}
-    {W : WorldT (n + 2)} {h : Heap} (cid : Ctr (n + 1)) (hadm : WorldAdm W) (hok : HeapOk (n + 2) W h)
+    {W : WorldT (n + 2)} {h : Heap} (hadm : WorldAdm W) (hok : HeapOk (n + 2) W h)
     (hsrc : isSourceVal x = true) (hxr : RefsOk W x)
     (hf : f ≠ arrayStoreKey ∧ f ≠ viewElementsKey ∧ f ≠ viewLengthKey)
-    (hA : CtrAdm (res A : Ctr (n + 1))) (hcid : CtrAdm cid)
+    (hA : CtrAdm (res A : Ctr (n + 1))) 
     (hxA : ∀ j (hj : j < n + 1), A j (trunc j (Nat.le_of_lt hj) (trunc (n + 1) (Nat.le_succ _) W)) x)
-    (hnul : ∀ j (hj : j < n + 1), cid j hj (trunc j (Nat.le_of_lt hj) (trunc (n + 1) (Nat.le_succ _) W)) .nul)
     (hT : ∀ (U : WorldT (n + 1)) u, T (n + 1) U u) :
     SafeW Ξ T (fun _ U h' v => v = .objAt (slots h.length [f]) .absent (h.length + 1) ∧ RefsOk U v ∧
       h.IsPrefix h' ∧ (Capability.field f A).Holds U (slots h.length [f])) R (n + 2) W h (literal f x) := by
   have hv : isVal x = true := sourceVal_isVal hsrc
   let W₁ := trunc (n + 1) (Nat.le_succ _) W
-  let es : List (Role × Ctr (n + 1)) := objectEntries [.field] [res A] cid
+  let es : List (Role × Ctr (n + 1)) := objectEntries [.field] [res A]
   let U := appendWs W₁ es
   have hok₁ : HeapOk (n + 1) W₁ h := HeapOk_trunc (n + 1) W h hok
   have hmake : RefsOk W₁ (.makeAt .absent [f] [x]) := by
     intro r hr; simp only [refs, refsArgs_eq, List.flatMap_cons, List.flatMap_nil, List.append_nil] at hr
     exact RefsOk_trunc _ hxr r hr
-  obtain ⟨hsh, hobj⟩ := objectLiteral_shaped (c := .absent) (ns := [f]) (vs := [x]) [res A] cid
+  obtain ⟨hsh, hobj⟩ := objectLiteral_shaped (c := .absent) (ns := [f]) (vs := [x]) [res A]
     (by simpa using hok₁.1.1) hok₁.2 rfl rfl hmake (by simpa using hf) (by simpa using hsrc)
   have hadmE : ∀ e ∈ es, CtrAdm e.2 := by
     intro e he
@@ -333,13 +332,13 @@ theorem literal_safe {Ξ T : Fam} {R : WExc} {f : PropKey} {x : Tm} {A : Fam} {n
       List.zip_nil_right, List.mem_cons, List.not_mem_nil, or_false] at he
     rcases he with rfl | rfl
     · exact hA
-    · exact hcid
+    · exact idCtr_adm
   have hokU : HeapOk (n + 1) U (h ++ [x] ++ [.nul]) := by
     have := HeapOk_appendWs (es := es) (vs := [x, .nul]) hok₁ (WorldAdm_trunc _ hadm) hadmE rfl
       (fun i c u hc hu j hj => by
         match i with
         | 0 => simp [es, objectEntries] at hc hu; subst hc hu; exact hxA j hj
-        | 1 => simp [es, objectEntries] at hc hu; subst hc hu; exact hnul j hj
+        | 1 => simp [es, objectEntries] at hc hu; subst hc hu; rfl
         | i + 2 => simp [es, objectEntries] at hc)
       (fun i r u hr hu => by
         have hl₁ : h.length = (entries W₁).length := by simpa using hok₁.1.1
@@ -354,7 +353,7 @@ theorem literal_safe {Ξ T : Fam} {R : WExc} {f : PropKey} {x : Tm} {A : Fam} {n
   have hcap : (Capability.field f A).Holds U (slots h.length [f]) := by
     have hl₁ : h.length = (entries W₁).length := by simpa using hok₁.1.1
     rw [hl₁]
-    exact Capability.holds_alloc W₁ (ns := [f]) (rs := [.field]) (As := [A]) cid (by simp) rfl rfl
+    exact Capability.holds_alloc W₁ (ns := [f]) (rs := [.field]) (As := [A])  (by simp) rfl rfl
       (i := 0) (by simp) rfl ⟨rfl, rfl⟩
   refine ⟨fun r hr => hxr r (by simpa [literal, refs, refsArgs_eq] using hr), .inr ⟨U, h ++ [x] ++ [.nul],
     o, WExt_appendWs _ _, WorldAdm_appendWs (WorldAdm_trunc _ hadm) hadmE,
@@ -388,15 +387,14 @@ the first's view write from the call's entry world; on a throw, the same
 with both exceptional postconditions. -/
 theorem gate_write {Ξ : Fam} {a b : CallEffects.Effect} {Acc : (j : Nat) → WorldT j → List Tm → Prop}
     {Rc : Fam} {B C D : Tm → List Tm → Fam} {f : PropKey} {x g r : Tm} {args : List Tm} {A : Fam}
-    {n : Nat} {W : WorldT (n + 2)} {h : Heap} (cid : Ctr (n + 1))
+    {n : Nat} {W : WorldT (n + 2)} {h : Heap}
     (hs : a.sameResult b = true) (ha : PromiseK Ξ a Acc Rc B (n + 2) W g)
     (hb : PromiseK Ξ b Acc Rc C (n + 2) W g)
     (hcross : ∀ r args j, j < n + 2 → CrossK j (B r args) (C r args) (D r args))
     (hadm : WorldAdm W) (hok : HeapOk (n + 2) W h) (hsrc : isSourceVal x = true)
     (hf : f ≠ arrayStoreKey ∧ f ≠ viewElementsKey ∧ f ≠ viewLengthKey)
-    (hA : CtrAdm (res A : Ctr (n + 1))) (hcid : CtrAdm cid)
+    (hA : CtrAdm (res A : Ctr (n + 1))) 
     (hxA : ∀ j (hj : j < n + 1), A j (trunc j (Nat.le_of_lt hj) (trunc (n + 1) (Nat.le_succ _) W)) x)
-    (hnul : ∀ j (hj : j < n + 1), cid j hj (trunc j (Nat.le_of_lt hj) (trunc (n + 1) (Nat.le_succ _) W)) .nul)
     (hrefs : RefsOk W (.letE (literal f x) (.invoke g r args)))
     (hscope : Scoped 0 (.invoke g r args)) (hrv : isVal r = true) (hargs : CallArguments.Values args)
     (hrc : ∀ j (U : WorldT j), Rc j U r) (hacc : ∀ j (U : WorldT j), Acc j U args)
@@ -416,7 +414,7 @@ theorem gate_write {Ξ : Fam} {a b : CallEffects.Effect} {Acc : (j : Nat) → Wo
     exact .inl hy)
   have hctx : CtxRefs (fun t => Tm.letE t body) := fun t y => by simp [refs]
   have hlit := literal_safe (Ξ := Ξ) (T := fun _ _ _ => True)
-    (R := gateExc a b r args cap fs) cid hadm hok hsrc hxr hf hA hcid hxA hnul (fun _ _ => trivial)
+    (R := gateExc a b r args cap fs) hadm hok hsrc hxr hf hA hxA (fun _ _ => trivial)
   refine SafeW.bind (fun t => Tm.letE t body) (fun st => .letC st) (fun hr => .letC hr) hctx
     (n + 2) W h (literal f x) hadm hok
     (fun y hy => (List.mem_append.mp (show y ∈ refs .undef ++ refs body from hy)).elim
@@ -465,7 +463,7 @@ postcondition holds (`SafeW.handle`). -/
 theorem gate_handled {Ξ Ξ' B' : Fam} {Q' : WPost} {R' : WExc} {a b : CallEffects.Effect}
     {Acc : (j : Nat) → WorldT j → List Tm → Prop}
     {Rc : Fam} {B C D : Tm → List Tm → Fam} {f : PropKey} {x g r : Tm} {args : List Tm} {A : Fam}
-    {n : Nat} {W : WorldT (n + 2)} {h : Heap} (cid : Ctr (n + 1))
+    {n : Nat} {W : WorldT (n + 2)} {h : Heap}
     {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {L : List Tm}
     {d : Tm} {k : ControlFlow.Continuation} {l : ControlFlow.Target}
     (hs : a.sameResult b = true) (ha : PromiseK Ξ a Acc Rc B (n + 2) W g)
@@ -473,9 +471,8 @@ theorem gate_handled {Ξ Ξ' B' : Fam} {Q' : WPost} {R' : WExc} {a b : CallEffec
     (hcross : ∀ r args j, j < n + 2 → CrossK j (B r args) (C r args) (D r args))
     (hadm : WorldAdm W) (hok : HeapOk (n + 2) W h) (hsrc : isSourceVal x = true)
     (hf : f ≠ arrayStoreKey ∧ f ≠ viewElementsKey ∧ f ≠ viewLengthKey)
-    (hA : CtrAdm (res A : Ctr (n + 1))) (hcid : CtrAdm cid)
+    (hA : CtrAdm (res A : Ctr (n + 1))) 
     (hxA : ∀ j (hj : j < n + 1), A j (trunc j (Nat.le_of_lt hj) (trunc (n + 1) (Nat.le_succ _) W)) x)
-    (hnul : ∀ j (hj : j < n + 1), cid j hj (trunc j (Nat.le_of_lt hj) (trunc (n + 1) (Nat.le_succ _) W)) .nul)
     (hrefs : RefsOk W (.frame E K (.letE (literal f x) (.invoke g r args)) L d k (some l)))
     (hscope : Scoped 0 (.invoke g r args)) (hrv : isVal r = true) (hargs : CallArguments.Values args)
     (hrc : ∀ j (U : WorldT j), Rc j U r) (hacc : ∀ j (U : WorldT j), Acc j U args)
@@ -511,7 +508,7 @@ theorem gate_handled {Ξ Ξ' B' : Fam} {Q' : WPost} {R' : WExc} {a b : CallEffec
     rcases (hctx .undef y).mp hy with h | h
     · simp [refs] at h
     · exact hrefs y ((hctx _ y).mpr (.inr h))
-  have hgate := gate_write (D := D) cid hs ha hb hcross hadm hok hsrc hf hA hcid hxA hnul hinner hscope hrv hargs
+  have hgate := gate_write (D := D) hs ha hb hcross hadm hok hsrc hf hA hxA hinner hscope hrv hargs
     hrc hacc hreq
   exact SafeW.handle (fun t => Tm.frame E K t L d k (some l))
     (fun t => .goto E K l.label (envMap l.mapping (t :: L) d).1

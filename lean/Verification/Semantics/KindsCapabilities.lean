@@ -128,8 +128,8 @@ store type `A N`. -/
 def viewStore (A : Nat → Fam) : Capability :=
   ⟨viewElementsKey, fun r T => ∃ N, r = .store (.view N) ∧ T = A N⟩
 
-theorem objectEntries_snd {k : Nat} {rs : List Role} {cs : List (Ctr k)} {cid : Ctr k}
-    (h : rs.length = cs.length) : (objectEntries rs cs cid).map Prod.snd = cs ++ [cid] := by
+theorem objectEntries_snd {k : Nat} {rs : List Role} {cs : List (Ctr k)}
+    (h : rs.length = cs.length) : (objectEntries rs cs).map Prod.snd = cs ++ [idCtr] := by
   simp [objectEntries, List.map_snd_zip, h]
 
 /-- **Allocation establishes a capability.** In the world an object
@@ -138,10 +138,10 @@ named field the role `rs[i]` and the contract of the type `As[i]`), a
 capability over the `i`-th key permitting that role with that type holds of
 the allocated object's field map. -/
 theorem holds_alloc {k : Nat} (W : WorldT k) {ns : List PropKey} {rs : List Role} {As : List Fam}
-    (cid : Ctr k) (hnd : ns.Nodup) (hrs : rs.length = ns.length) (hAs : As.length = ns.length)
+    (hnd : ns.Nodup) (hrs : rs.length = ns.length) (hAs : As.length = ns.length)
     {i : Nat} (hi : i < ns.length) {cap : Capability} (hk : cap.key = ns[i])
     (hp : cap.permits (rs[i]'(by omega)) (As[i]'(by omega))) :
-    cap.Holds (appendWs W (objectEntries rs (As.map res) cid)) (slots (entries W).length ns) := by
+    cap.Holds (appendWs W (objectEntries rs (As.map res))) (slots (entries W).length ns) := by
   refine ⟨(entries W).length + i, by rw [hk]; exact lookup_slots hnd hi,
     rs[i]'(by omega), res (As[i]'(by omega)), As[i]'(by omega), ?_, ?_, hp, fun _ _ _ _ => Iff.rfl⟩
   · rw [roleAt_appendWs', objectEntries_fst (by simp; omega),
@@ -152,25 +152,25 @@ theorem holds_alloc {k : Nat} (W : WorldT k) {ns : List PropKey} {rs : List Role
 
 /-- **An object literal's property is a field**: the allocation of
 `{value: v}` with the role `field` establishes the field capability. -/
-theorem field_holds_literal {k : Nat} (W : WorldT k) (A : Fam) (cid : Ctr k) :
-    (field valueField A).Holds (appendWs W (objectEntries [.field] [res A] cid))
+theorem field_holds_literal {k : Nat} (W : WorldT k) (A : Fam) :
+    (field valueField A).Holds (appendWs W (objectEntries [.field] [res A]))
       [(valueField, (entries W).length)] :=
-  holds_alloc W (ns := [valueField]) (rs := [.field]) (As := [A]) cid (by simp) rfl rfl
+  holds_alloc W (ns := [valueField]) (rs := [.field]) (As := [A])  (by simp) rfl rfl
     (i := 0) (by simp) rfl ⟨rfl, rfl⟩
 
 /-- **A binding cell's storage is a cell**: the same allocation with the role
 `cell` establishes the binding capability. -/
-theorem binding_holds_cell {k : Nat} (W : WorldT k) (A : Fam) (cid : Ctr k) :
-    (binding A).Holds (appendWs W (objectEntries [.cell] [res A] cid))
+theorem binding_holds_cell {k : Nat} (W : WorldT k) (A : Fam) :
+    (binding A).Holds (appendWs W (objectEntries [.cell] [res A]))
       [(valueField, (entries W).length)] :=
-  holds_alloc W (ns := [valueField]) (rs := [.cell]) (As := [A]) cid (by simp) rfl rfl
+  holds_alloc W (ns := [valueField]) (rs := [.cell]) (As := [A])  (by simp) rfl rfl
     (i := 0) (by simp) rfl ⟨rfl, rfl⟩
 
 /-- **An array's store slot is an array store.** -/
-theorem arrayStore_holds_array {k : Nat} (W : WorldT k) (A : Fam) (cid : Ctr k) :
-    (arrayStore A).Holds (appendWs W (objectEntries [.store .array] [res A] cid))
+theorem arrayStore_holds_array {k : Nat} (W : WorldT k) (A : Fam) :
+    (arrayStore A).Holds (appendWs W (objectEntries [.store .array] [res A]))
       [(arrayStoreKey, (entries W).length)] :=
-  holds_alloc W (ns := [arrayStoreKey]) (rs := [.store .array]) (As := [A]) cid (by simp) rfl rfl
+  holds_alloc W (ns := [arrayStoreKey]) (rs := [.store .array]) (As := [A])  (by simp) rfl rfl
     (i := 0) (by simp) rfl ⟨rfl, rfl⟩
 
 /-- A field write's target is a field location, a binding write's a cell. -/
@@ -258,12 +258,12 @@ theorem ofRole_le {s s' : StorageRole} {k k' : PropKey} {A B : Fam}
 the allocation chose**: the `i`-th key of an object allocated with roles `rs`
 and types `As`. -/
 theorem ofRole_holds_alloc {k : Nat} (W : WorldT k) {ns : List PropKey} {rs : List Role}
-    {As : List Fam} (cid : Ctr k) (hnd : ns.Nodup) (hrs : rs.length = ns.length)
+    {As : List Fam} (hnd : ns.Nodup) (hrs : rs.length = ns.length)
     (hAs : As.length = ns.length) {i : Nat} (hi : i < ns.length) {s : StorageRole}
     (hs : s.permits (rs[i]'(by omega))) :
-    (ofRole s ns[i] (As[i]'(by omega))).Holds (appendWs W (objectEntries rs (As.map res) cid))
+    (ofRole s ns[i] (As[i]'(by omega))).Holds (appendWs W (objectEntries rs (As.map res)))
       (slots (entries W).length ns) :=
-  holds_alloc W cid hnd hrs hAs hi rfl ⟨hs, rfl⟩
+  holds_alloc W  hnd hrs hAs hi rfl ⟨hs, rfl⟩
 
 /-- **A binding capability cannot be read as a field capability**: of one
 object, at any world, not both hold (an instance of `ofRole_exclusive`). -/
@@ -410,36 +410,43 @@ theorem _root_.Verification.StorageRole.slotRole_of_fitsKey {s : StorageRole} {k
 contracts `cs`: each `[[viewLength]]` location is a field whose contract
 admits one length `N` alone, and each `[[viewElements]]` location a view
 store of a length `N` that the allocation's `[[viewLength]]` location
-admits alone. -/
+admits alone, the allocation then naming `[[host]]`. -/
 def MetaFit {k : Nat} (ns : List PropKey) (rs : List Role) (cs : List (Ctr k)) : Prop :=
   (∀ i : Nat, ns[i]? = some viewLengthKey →
     ∃ (N : Nat) (c : Ctr k), rs[i]? = some Role.field ∧ cs[i]? = some c ∧ CtrStable c (.num (bitsOfNat N))) ∧
   (∀ j : Nat, ns[j]? = some viewElementsKey → ∃ (N i : Nat) (c : Ctr k), rs[j]? = some (Role.store (.view N)) ∧
     ns[i]? = some viewLengthKey ∧ rs[i]? = some Role.field ∧ cs[i]? = some c ∧
-      CtrStable c (.num (bitsOfNat N)))
+      CtrStable c (.num (bitsOfNat N))) ∧
+  (viewElementsKey ∈ ns → hostKey ∈ ns)
 
 /-- An allocation naming neither metadata key fits trivially. -/
 theorem MetaFit.of_not_mem {k : Nat} {ns : List PropKey} {rs : List Role} {cs : List (Ctr k)}
     (hl : viewLengthKey ∉ ns) (he : viewElementsKey ∉ ns) : MetaFit ns rs cs :=
-  ⟨fun _ hi => absurd (List.mem_of_getElem? hi) hl, fun _ hj => absurd (List.mem_of_getElem? hj) he⟩
+  ⟨fun _ hi => absurd (List.mem_of_getElem? hi) hl, fun _ hj => absurd (List.mem_of_getElem? hj) he,
+    fun hm => absurd hm he⟩
 
 /-- **View metadata of an allocated object**: an allocation whose roles and
 contracts fit its metadata keys gives a field map with valid view
 metadata. -/
 theorem viewMetaOk_alloc {k : Nat} (W : WorldT k) {ns : List PropKey} {rs : List Role}
-    {cs : List (Ctr k)} (cid : Ctr k) (hnd : ns.Nodup) (hrs : rs.length = ns.length)
+    {cs : List (Ctr k)} (hnd : ns.Nodup) (hrs : rs.length = ns.length)
     (hcs : cs.length = ns.length) (hfit : MetaFit ns rs cs) :
-    ViewMetaOk (appendWs W (objectEntries rs cs cid)) (slots (entries W).length ns) := by
-  have hfst := objectEntries_fst (cid := cid) (show rs.length = cs.length by omega)
-  have hsnd := Capability.objectEntries_snd (cid := cid) (show rs.length = cs.length by omega)
+    ViewMetaOk (appendWs W (objectEntries rs cs)) (slots (entries W).length ns) := by
+  have hfst := objectEntries_fst (show rs.length = cs.length by omega)
+  have hsnd := Capability.objectEntries_snd (show rs.length = cs.length by omega)
   have hmeta : ∀ i N c, i < ns.length → rs[i]? = some .field → cs[i]? = some c →
       CtrStable c (.num (bitsOfNat N)) →
-      LengthMeta (appendWs W (objectEntries rs cs cid)) ((entries W).length + i) N := by
+      LengthMeta (appendWs W (objectEntries rs cs)) ((entries W).length + i) N := by
     intro i N c hi hr hc hst
     refine ⟨c, ?_, ?_, hst⟩
     · rw [roleAt_appendWs', hfst, List.getElem?_append_left (by omega)]; exact hr
     · rw [lookup_appendWs_ge, hsnd, List.getElem?_append_left (by omega)]; exact hc
-  refine ⟨fun m hm => ?_, fun e he => ?_⟩
+  refine ⟨fun m hm => ?_, fun e he => ?_, fun e he => ?_⟩
+  rotate_left 2
+  · obtain ⟨j, hj, hp⟩ := mem_slots he
+    simp only [Prod.mk.injEq] at hp
+    obtain ⟨i, hi, hk⟩ := List.getElem_of_mem (hfit.2.2 (hp.1 ▸ List.getElem_mem hj))
+    rw [← hk, lookup_slots hnd hi]; rfl
   · obtain ⟨i, hi, hp⟩ := mem_slots hm
     simp only [Prod.mk.injEq] at hp
     obtain ⟨hk, rfl⟩ := hp
@@ -448,7 +455,7 @@ theorem viewMetaOk_alloc {k : Nat} (W : WorldT k) {ns : List PropKey} {rs : List
   · obtain ⟨j, hj, hp⟩ := mem_slots he
     simp only [Prod.mk.injEq] at hp
     obtain ⟨hk, rfl⟩ := hp
-    obtain ⟨N, i, c, hr, hni, hri, hc, hst⟩ := hfit.2 j (by rw [List.getElem?_eq_getElem hj, hk])
+    obtain ⟨N, i, c, hr, hni, hri, hc, hst⟩ := hfit.2.1 j (by rw [List.getElem?_eq_getElem hj, hk])
     have hi : i < ns.length := (List.getElem?_eq_some_iff.mp hni).1
     have hki : ns[i] = viewLengthKey := by
       have := List.getElem?_eq_getElem hi; rw [hni] at this; exact (Option.some.inj this).symm
@@ -505,15 +512,15 @@ and its contents choose (`StorageRole.concrete`), and with contracts fitting
 its metadata keys the extended heap is well-formed in its structural part
 and the object's references are valid. -/
 theorem concrete_shaped {k : Nat} {W : WorldT k} {h : Heap} {c : CallCode} {ns : List PropKey}
-    {vs : List Tm} {ss : List StorageRole} {rs : List Role} (cs : List (Ctr k)) (cid : Ctr k)
+    {vs : List Tm} {ss : List StorageRole} {rs : List Role} (cs : List (Ctr k))
     (hlen : h.length = (entries W).length) (hsh : Shaped W h) (hnd : ns.Nodup)
     (hss : ss.length = ns.length) (hcs : cs.length = ns.length) (hns : ns.length = vs.length)
     (hrs : concreteRoles ss vs = some rs)
     (href : RefsOk W (.makeAt c ns vs))
     (hfits : ∀ (i : Nat) (s : StorageRole), ss[i]? = some s → ∀ key : PropKey, ns[i]? = some key → s.fitsKey key = true)
     (hmeta : MetaFit ns rs cs) :
-    Shaped (appendWs W (objectEntries rs cs cid)) (h ++ vs ++ [.nul]) ∧
-      RefsOk (appendWs W (objectEntries rs cs cid)) (.objAt (slots h.length ns) c (h.length + vs.length)) := by
+    Shaped (appendWs W (objectEntries rs cs)) (h ++ vs ++ [.nul]) ∧
+      RefsOk (appendWs W (objectEntries rs cs)) (.objAt (slots h.length ns) c (h.length + vs.length)) := by
   obtain ⟨_, hrl', hri⟩ := concreteRoles_spec hrs
   have hrl : rs.length = ns.length := by omega
   have hat : ∀ i (hi : i < ns.length), ∃ s, ss[i]? = some s ∧
@@ -524,7 +531,7 @@ theorem concrete_shaped {k : Nat} {W : WorldT k} {h : Heap} {c : CallCode} {ns :
     rw [List.getElem?_eq_getElem (by omega)] at hr
     cases hr
     exact ⟨_, List.getElem?_eq_getElem _, hc⟩
-  refine makeFields_shaped rs cs cid hlen hsh hrl hcs hns href
+  refine makeFields_shaped rs cs hlen hsh hrl hcs hns href
     (fun i hi => by
       obtain ⟨s, hs, hc⟩ := hat i hi
       exact StorageRole.slotRole_of_fitsKey (hfits i s hs _ (List.getElem?_eq_getElem hi))
@@ -533,6 +540,6 @@ theorem concrete_shaped {k : Nat} {W : WorldT k} {h : Heap} {c : CallCode} {ns :
       obtain ⟨s, hs, hc⟩ := hat i hi
       exact StorageRole.concrete_cat hc) ?_
   rw [hlen]
-  exact viewMetaOk_alloc W cid hnd hrl hcs hmeta
+  exact viewMetaOk_alloc W  hnd hrl hcs hmeta
 
 end Verification.Kinds

@@ -372,11 +372,14 @@ map gives `[[viewLength]]` is a view-length metadata location of some fixed
 length, whether or not the map names `[[viewElements]]` (a host object may
 hold its length alone). Every location the map gives `[[viewElements]]` is a
 view store of some length `N`, and the location the map's `[[viewLength]]`
-finds is a view-length metadata location of that same `N`. -/
+finds is a view-length metadata location of that same `N`; and a map
+naming `[[viewElements]]` names `[[host]]`: a typed array is a host
+object. -/
 def ViewMetaOk {k : Nat} (W : WorldT k) (fs : List (PropKey × Nat)) : Prop :=
   (∀ m, (viewLengthKey, m) ∈ fs → ∃ N, LengthMeta W m N) ∧
-    ∀ e, (viewElementsKey, e) ∈ fs → ∃ N m, roleAt W e = some (.store (.view N)) ∧
-      fs.lookup viewLengthKey = some m ∧ LengthMeta W m N
+    (∀ e, (viewElementsKey, e) ∈ fs → ∃ N m, roleAt W e = some (.store (.view N)) ∧
+      fs.lookup viewLengthKey = some m ∧ LengthMeta W m N) ∧
+    ∀ e, (viewElementsKey, e) ∈ fs → (fs.lookup hostKey).isSome
 
 def RefOk {k : Nat} (W : WorldT k) : Ref → Prop
   | .ident l => roleAt W l = some .identity
@@ -436,7 +439,7 @@ theorem RefOk_mono {k} {W W' : WorldT k} (hx : WExt W W') : ∀ {r : Ref}, RefOk
   | .elem _, h => WExt_roleAt hx h
   | .fields _, h =>
     ⟨fun m hm => let ⟨N, hN⟩ := h.1 m hm; ⟨N, hN.mono hx⟩,
-      fun e he => let ⟨N, m, hr, hm, hN⟩ := h.2 e he; ⟨N, m, WExt_roleAt hx hr, hm, hN.mono hx⟩⟩
+      fun e he => let ⟨N, m, hr, hm, hN⟩ := h.2.1 e he; ⟨N, m, WExt_roleAt hx hr, hm, hN.mono hx⟩, h.2.2⟩
 
 theorem RefsOk_mono {k} {W W' : WorldT k} (hx : WExt W W') {t : Tm} (h : RefsOk W t) :
     RefsOk W' t := fun r hr => RefOk_mono hx (h r hr)
@@ -452,7 +455,7 @@ theorem RefOk_trunc {k j} (hj : j ≤ k) {W : WorldT k} : ∀ {r : Ref}, RefOk W
   | .elem _, h => by simpa [RefOk] using h
   | .fields _, h =>
     ⟨fun m hm => let ⟨N, hN⟩ := h.1 m hm; ⟨N, hN.trunc hj⟩,
-      fun e he => let ⟨N, m, hr, hm, hN⟩ := h.2 e he; ⟨N, m, by simpa using hr, hm, hN.trunc hj⟩⟩
+      fun e he => let ⟨N, m, hr, hm, hN⟩ := h.2.1 e he; ⟨N, m, by simpa using hr, hm, hN.trunc hj⟩, h.2.2⟩
 
 theorem RefsOk_trunc {k j} (hj : j ≤ k) {W : WorldT k} {t : Tm} (h : RefsOk W t) :
     RefsOk (trunc j hj W) t := fun r hr => RefOk_trunc hj (h r hr)
