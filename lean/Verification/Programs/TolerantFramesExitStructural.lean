@@ -176,7 +176,7 @@ theorem Site.head_written (s : Site c r l hl) {t : Nat} {req : HeapKnowledge.Kno
   rw [hgiven, setupGiven_get] at hg
   split at hg
   · simp only [beq_iff_eq, ht, if_false, Option.some.injEq] at hg
-    refine ⟨((byLabel c.P.toArray.size (SinglePass.withStartOld c.start c.ensures c.candidates))[t]!).getD [], ?_⟩
+    refine ⟨((byLabel c.P.toArray.size (SinglePass.withStartOld G c.inputs c.entryIndices c.entrySeparation c.start c.ensures c.candidates))[t]!).getD [], ?_⟩
     rw [← hg]
     have hst : s.env.stated[t]! = r.stated t := by
       rw [h.stated, r.stated_eq]
@@ -271,7 +271,7 @@ theorem Site.start_given (s : Site c r l hl) {req : HeapKnowledge.Knowledge}
     (hg : s.env.given[c.start]! = some req) :
     req = { startWritten (r.stated c.start) c.entryIndices c.entrySeparation with
       indices := (startWritten (r.stated c.start) c.entryIndices c.entrySeparation).indices ++
-        ((byLabel c.P.toArray.size (SinglePass.withStartOld c.start c.ensures c.candidates))[c.start]!).getD [] } := by
+        ((byLabel c.P.toArray.size (SinglePass.withStartOld G c.inputs c.entryIndices c.entrySeparation c.start c.ensures c.candidates))[c.start]!).getD [] } := by
   obtain ⟨σ0, hs⟩ := s.setup
   have h := setup_ok hs
   obtain ⟨counts, hgiven⟩ := h.given
@@ -296,7 +296,7 @@ theorem Site.head_written_coherent (s : Site c r l hl) {t : Nat}
   by_cases ht : t = c.start
   · subst t
     exact ⟨startWritten (r.stated c.start) c.entryIndices c.entrySeparation,
-      ((byLabel c.P.toArray.size (SinglePass.withStartOld c.start c.ensures c.candidates))[c.start]!).getD [], startWrittenSound, s.start_given hg⟩
+      ((byLabel c.P.toArray.size (SinglePass.withStartOld G c.inputs c.entryIndices c.entrySeparation c.start c.ensures c.candidates))[c.start]!).getD [], startWrittenSound, s.start_given hg⟩
   · obtain ⟨cf, hcf⟩ := s.head_written hg ht
     exact ⟨_, cf, fun _ _ _ h => h, hcf⟩
 

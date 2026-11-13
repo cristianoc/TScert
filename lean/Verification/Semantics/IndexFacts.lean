@@ -1247,6 +1247,29 @@ def entryTerms : IndexFact → List Term
       | _ => none
   | _ => []
 
+/-- The identity `t = old(t)` of an entry term `old(t)`: the linear facts
+`t - old(t) ≤ 0` and `old(t) - t ≤ 0`. -/
+def identity (t : Term) : List IndexFact :=
+  [.linear (.le [(t.toNow, 1), (t, -1)] 0), .linear (.le [(t, 1), (t.toNow, -1)] 0)]
+
+/-- **At the entry state, `old(t)` and `t` denote the same wherever `t` is
+defined** (proved, by `termValue_toNow`, the term form of `holdsAt_toNow`):
+where the current environment and heap are the entry state's and `t`
+denotes an integer, each fact of its identity holds. -/
+theorem identity_holds {t : Term} {ρ : Env} {h : Heap} (hρ : ε.env = ρ) (hh : ε.heap = h)
+    (hd : (termValue ε ρ h t.toNow).isSome) : ∀ F ∈ identity t, F.HoldsAt ε ρ h := by
+  have he : termValue ε ρ h t = termValue ε ρ h t.toNow := (termValue_toNow hρ hh t).symm
+  have hd' : (termValue ε ρ h t).isSome := he ▸ hd
+  intro F hF
+  simp only [identity, List.mem_cons, List.not_mem_nil, or_false] at hF
+  rcases hF with rfl | rfl <;>
+  · refine ⟨fun x hx => ?_, ?_⟩
+    · simp only [Linear.Fact.vars, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+        or_false] at hx
+      rcases hx with rfl | rfl <;> assumption
+    · simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, he]
+      omega
+
 /-- A total renaming renames every fact. -/
 theorem mapM_total (f : Nat → Nat) : ∀ F : IndexFact, ∃ G, F.mapM (some ∘ f) = some G
   | .index k => ⟨_, rfl⟩

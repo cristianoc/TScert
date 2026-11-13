@@ -81,12 +81,26 @@ no receiverless request (`not_receiverless_of_oldReceiver`).
 
 **The start.** At the start the current state is the entry state, and
 $`\varepsilon=\langle\rho,h\rangle\Rightarrow(\varepsilon;\rho,h\models F\iff\varepsilon;\rho,h\models F[\mathrm{old}(t):=t])`$
-(proved, `IndexFact.holdsAt_toNow`, every fact form). The pass proposes,
-for each entry term $`\mathrm{old}(t)`$ the postcondition names, the facts
-$`t-\mathrm{old}(t)\le 0`$ and $`\mathrm{old}(t)-t\le 0`$ among the start's
-(`SinglePass.startOldFacts`); the entry check reads them at the entry state,
-where they are $`t-t\le 0`$, entailed where the entry facts state $`t`$
-defined.
+(proved, `IndexFact.holdsAt_toNow`, every fact form); for a term,
+$`\varepsilon=\langle\rho,h\rangle\wedge[\![t]\!]\ \text{defined}\Rightarrow[\![t]\!]=[\![\mathrm{old}(t)]\!]`$
+(proved, `IndexFact.identity_holds`). The post needs that identity where it
+reads the term. For each occurrence of an entry term in a post fact, by
+structural recursion over every form of fact (`SinglePass.startIdentities`),
+the statements of the identity are, strongest first, the identity itself
+and the identity under each guard the occurrence is read beneath, a guard on
+an input read at the start at that input:
+
+```math
+\mathrm{ids}(A\lor B)=\mathrm{ids}(A)\cup\mathrm{ids}(B)\qquad
+\mathrm{ids}(g_{x}\lor B)=\{\,c\cdot(g_{x}\lor I)\mid c\cdot I\in\mathrm{ids}(B)\,\}
+```
+
+The start knows, of each occurrence, the first statement the entry facts
+entail (`SinglePass.startOldFacts`). Where none is entailed, an occurrence
+read in every state the post holds in (one beneath no disjunction's arm and
+no guard on the result) is proposed in its weakest statement, which the
+entry check refuses; any other gives the start no identity for it, and the
+post is established at the return from the facts there.
 
 **A return.** `EnsuresAt ens ε h' (push v ρ0)`: each fact at the result
 pushed onto the inputs' entry values, its entry terms at $`\varepsilon`$. The

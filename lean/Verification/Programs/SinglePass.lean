@@ -1257,21 +1257,49 @@ def startWritten (written : Option Knowledge) (entryIndices : List IndexAtom)
   let w := written.getD {}
   { w with indices := w.indices ++ entryIndices, separation := HeapSeparation.union w.separation entrySeparation }
 
-/-- The start's facts `t = old(t)` for each entry term `old(t)` the
-postcondition names (the note "Tolerant frames", section 6, "Triples"): at
-the start the current state is the entry state. A proposal: the entry check
-reads it at the entry state itself (`ControlFlow.entryKnows`), where it is
-`t = t`, entailed where the entry facts state `t` defined. -/
-def startOldFacts (ens : List HeapKnowledge.IndexFact) : List IndexAtom :=
-  (ens.flatMap HeapKnowledge.IndexFact.entryTerms).eraseDups.flatMap fun t =>
-    let now : HeapKnowledge.Term := { t with atEntry := false }
-    [{ fact := .linear (.le [(now, 1), (t, -1)] 0) }, { fact := .linear (.le [(t, 1), (now, -1)] 0) }]
+/-- **The start's identities a post fact reads** (the note "Tolerant
+frames", section 6, "Triples": at the start the current state is the entry
+state, where `old(t)` and `t` denote the same wherever `t` is defined,
+`IndexFact.identity_holds`), by structural recursion over every form of
+fact. Each occurrence of an entry term `old(t)` gives each fact of its
+identity (`IndexFact.identity`) as a list of statements, strongest first:
+the fact itself, then the fact under each guard the occurrence is read
+beneath, the innermost first, a guard on an input read at that input's slot
+at the start (the post's slot `s + 1` is the start's `s`). With each, whether
+every state the post fact holds in reads the occurrence: one in a
+disjunction's arm is read where that arm holds, and one beneath a guard on
+the result where the result fails it, neither a condition of the start's
+state. -/
+def startIdentities : HeapKnowledge.IndexFact → List (List HeapKnowledge.IndexFact × Bool)
+  | F@(.linear _) | F@(.every _ _ _ _) =>
+    F.entryTerms.flatMap fun t => (HeapKnowledge.IndexFact.identity t).map fun I => ([I], true)
+  | .either A B => (startIdentities A ++ startIdentities B).map fun (c, _) => (c, false)
+  | .guarded 0 _ _ B => (startIdentities B).map fun (c, _) => (c, false)
+  | .guarded (s + 1) p tag B =>
+    (startIdentities B).map fun (c, r) => (c ++ (c.getLast?.map (.guarded s p tag ·)).toList, r)
+  | .index _ | .length _ _ | .bound _ _ _ | .int _ | .pastSafe _ | .element _ _ _ | .apart _ _
+  | .storeApart _ _ _ _ => []
 
-/-- The claims' facts with the start's `t = old(t)` facts (`startOldFacts`)
+/-- The start's identity facts (`startIdentities`) for the postcondition
+`ens`: of each statement list, the first the entry facts entail
+(`ControlFlow.entryKnows`); where none is, the last of one every state of
+the post reads, which the entry check then refuses, as a fact the post needs
+and the entry does not establish. Each is a proposal the entry check reads
+at the entry state (`entryRefusal`). -/
+def startOldFacts (G : NormalGraph ι) (inputs : List (Ty ι)) (entryIndices : List IndexAtom)
+    (entrySeparation : HeapSeparation.Separation) (ens : List HeapKnowledge.IndexFact) : List IndexAtom :=
+  (ens.flatMap startIdentities).eraseDups.filterMap fun (cands, req) =>
+    match cands.find? (fun I => ControlFlow.entryKnows G inputs entrySeparation entryIndices
+        { indices := [{ fact := I }] }) with
+    | some I => some { fact := I }
+    | none => if req then cands.getLast?.map ({ fact := · }) else none
+
+/-- The claims' facts with the start's identity facts (`startOldFacts`)
 among the start's. -/
-def withStartOld (start : Nat) (ens : List HeapKnowledge.IndexFact) (candidates : List (Nat × List IndexAtom)) :
-    List (Nat × List IndexAtom) :=
-  match startOldFacts ens with
+def withStartOld (G : NormalGraph ι) (inputs : List (Ty ι)) (entryIndices : List IndexAtom)
+    (entrySeparation : HeapSeparation.Separation) (start : Nat) (ens : List HeapKnowledge.IndexFact)
+    (candidates : List (Nat × List IndexAtom)) : List (Nat × List IndexAtom) :=
+  match startOldFacts G inputs entryIndices entrySeparation ens with
   | [] => candidates
   | extra => (start, ((candidates.find? (·.1 == start)).map (·.2)).getD [] ++ extra) :: candidates
 
@@ -2186,7 +2214,7 @@ def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty 
       let sg : Array (Option Nat) := Array.replicate n none
       Trace.mk e e ms sg isHead start 0 none [] [] []
     else trace0
-  let supplied := byLabel n (withStartOld start ensures candidates)
+  let supplied := byLabel n (withStartOld G inputs entryIndices entrySeparation start ensures candidates)
   -- The entry, which no edge checks on the first invocation.
   match entryRefusal G inputs claims start goal (stated.getD start none) ((supplied.getD start none).getD [])
       ((givenImplies[start]?).getD []) ((givenArgs[start]?).getD []) ((givenInputs[start]?).getD [])
