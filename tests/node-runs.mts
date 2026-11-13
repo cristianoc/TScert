@@ -32,6 +32,26 @@ assert.equal(runExample("invalid-bounds-quantified-invariant", "(() => { const f
 assert.equal(runExample("invalid-bounds-cell-invariant", "Number.isNaN(broken([1], [1]))"), true,
   "the cell starts at the length and its read makes the sum NaN");
 
+// The unsafe neighbours of the bounds patterns (`bounds-pattern-*`), refused
+// as the capability each pattern needs must keep refusing them.
+assert.equal(runExample("invalid-bounds-pattern-visitor", "Number.isNaN(emptied([1, 2], 1))"), true,
+  "a visitor emptying the array leaves the read after the walk past its end");
+assert.equal(runExample("invalid-bounds-pattern-known-growth", "Number.isNaN(overgrown(10))"), true,
+  "a callee growing the list by 11 for a step of 10 reads past the flags' end");
+assert.equal(runExample("invalid-bounds-pattern-grow-upper",
+  "(() => { const a = { starts: [1, 2], flags: [0, 0] }; return Number.isNaN(aliased(a, a.flags)); })()"), true,
+  "growing a.flags through `out` breaks the upper bound and reads past a.starts' end");
+assert.equal(runExample("invalid-bounds-pattern-generated-table", "typeof next(0)"), "undefined",
+  "a table entry past the table's end reads an absent element");
+assert.throws(() => runExample("invalid-bounds-pattern-closure", "pastEnd()"), /TypeError/,
+  "the closure called past the captured array's end reads an absent glyph");
+assert.equal(runExample("invalid-bounds-pattern-module-constant", "(drop(), typeof kindName(3))"), "undefined",
+  "a module array popped by another function is read past its end");
+assert.equal(runExample("invalid-bounds-pattern-lazy-cell", "(reset(), typeof bitsAt(5))"), "undefined",
+  "a shorter table written into the cell is read past its end");
+assert.equal(runExample("invalid-bounds-pattern-map-invariant", '(poison("x"), typeof classOf("x", 70000))'), "undefined",
+  "a one-element table set into the map is read past its end");
+
 assert.equal(runExample("invalid-closure-precondition-call", "typeof broken([1])"), "undefined",
   "a local arrow called at the length reads an absent element");
 
