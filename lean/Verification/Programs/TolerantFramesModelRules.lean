@@ -8,14 +8,15 @@ Each atom or rule of the note "Tolerant frames" not stated elsewhere, as a
 theorem with the hypotheses the indexed model forces, or a counter-model
 where the note's statement does not hold:
 
-- (View): a linear fact over slots' integers and typed-array lengths holds
-  after every admissible transition where each view's length location is
-  single-valued (`view_box`), which a type stating `viewLengthKey` stable
-  gives (`viewStable_of_typed`); without it the length may change
-  (`view_not_invariant`);
-- (Init): every linear fact without a string length at a path survives every
-  action of `{values: init, stores: keep}` (`init_box`), with no condition on
-  its paths;
+- (View): a linear fact whose current terms are slots' integers and
+  typed-array lengths holds after every admissible transition where each
+  view's length location is single-valued (`view_box`), which a type stating
+  `viewLengthKey` stable gives (`viewStable_of_typed`); without it the length
+  may change (`view_not_invariant`); an entry term reads the entry state,
+  which no transition changes;
+- (Init): every linear fact whose current terms are no string lengths
+  survives every action of `{values: init, stores: keep}` (`init_box`), with
+  no condition on its paths, its entry terms of every kind;
 - Call: a callee's run is an action of its renamed regional effect at the
   caller's slots, its post holds, and the caller's facts it keeps are named
   at the result's fresh name (`call_rule`);
@@ -64,11 +65,13 @@ theorem viewStable_invariant (w : Nat) : Invariant (ViewStable w) := by
     exact ⟨_, value, hc', hcs.restrict hle⟩
   · exact hst
 
-/-- **(View)**: a linear fact whose terms are slots' integers and stable
-views' lengths holds after every admissible transition: `a(view(w)) ⊢ □_⊤
-a(view(w))`. -/
+/-- **(View)**: a linear fact whose current terms are slots' integers and
+stable views' lengths holds after every admissible transition: `a(view(w)) ⊢
+□_⊤ a(view(w))`; its entry terms, of any kind and path, read the entry state
+(`termValue_entry_invariant`). -/
 theorem view_box {F : Linear.Fact HeapKnowledge.Term} {ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hv : ∀ t ∈ F.vars, t.path = [] ∧ (t.kind = .value ∨ (t.kind = .view ∧ ViewStable t.slot ρ m s)))
+    (hv : ∀ t ∈ F.vars, t.atEntry = false →
+      t.path = [] ∧ (t.kind = .value ∨ (t.kind = .view ∧ ViewStable t.slot ρ m s)))
     (hF : (HeapKnowledge.IndexFact.linear F).HoldsAt ε ρ s.h) :
     Box Footprints.Closed.top.fp (fun ρ _ s => (HeapKnowledge.IndexFact.linear F).HoldsAt ε ρ s.h) ρ m s := by
   intro s' ha
@@ -77,7 +80,7 @@ theorem view_box {F : Linear.Fact HeapKnowledge.Term} {ρ : Env} {m : Nat} {s : 
     obtain ⟨k, slot, p, e⟩ := t
     cases e
     case true => exact HeapKnowledge.termValue_entry_invariant rfl
-    obtain ⟨hp, hk⟩ := hv _ ht
+    obtain ⟨hp, hk⟩ := hv _ ht rfl
     simp only at hp hk
     subst hp
     rcases hk with rfl | ⟨rfl, fs, cd, o, hw, hst⟩
@@ -123,22 +126,24 @@ theorem view_not_invariant :
 
 /-! ## (Init) -/
 
-theorem initTerm_kept (t : HeapKnowledge.Term) (hk : t.kind ≠ .strLength) :
+theorem initTerm_kept (t : HeapKnowledge.Term) (hk : t.atEntry = false → t.kind ≠ .strLength) :
     t.keptBy (HeapKnowledge.Changes.ofClosed initEffect) (fun _ _ => false) = true := by
   obtain ⟨k, slot, p, e⟩ := t
   cases e
   case true => simp [HeapKnowledge.Term.keptBy]
+  have hk := hk rfl
   cases k <;> cases p <;>
     simp_all [HeapKnowledge.Term.keptBy, HeapKnowledge.Term.pathKeptBy, HeapKnowledge.Changes.ofClosed,
       initEffect, HeapKnowledge.Changes.keepsLength, Footprints.Change.le, Footprints.Change.rank,
       Footprints.Change.onStore]
 
-/-- **(Init)**: a linear fact over integers, lengths and view lengths at
-any paths holds after every action of the initialisation write's
-`{values: init, stores: keep}`. The note's side condition, paths through
-fields holding objects, is what a defined path read already is. -/
+/-- **(Init)**: a linear fact whose current terms are integers, lengths and
+view lengths at any paths holds after every action of the initialisation
+write's `{values: init, stores: keep}`; its entry terms are of any kind. The
+note's side condition, paths through fields holding objects, is what a
+defined path read already is. -/
 theorem init_box {F : Linear.Fact HeapKnowledge.Term} {ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hk : ∀ t ∈ F.vars, t.kind ≠ .strLength) (hF : (HeapKnowledge.IndexFact.linear F).HoldsAt ε ρ s.h) :
+    (hk : ∀ t ∈ F.vars, t.atEntry = false → t.kind ≠ .strLength) (hF : (HeapKnowledge.IndexFact.linear F).HoldsAt ε ρ s.h) :
     Box initEffect.fp (fun ρ _ s => (HeapKnowledge.IndexFact.linear F).HoldsAt ε ρ s.h) ρ m s :=
   kept_box initEffect (by
     simp only [HeapKnowledge.IndexFact.keptBy, Bool.or_eq_true, List.all_eq_true]
@@ -149,7 +154,7 @@ theorem init_path {y x : Nat} {p : List String} {ρ : Env} {m : Nat} {s : Indexe
     (hb : PathLowerBound y x p ρ m s) : Box initEffect.fp (PathLowerBound y x p) ρ m s := by
   intro s' ha
   refine pathLowerBound_iff.mpr (init_box (ε := ⟨ρ, s.h⟩) (m := m) (F := .le [(.value y, 1), (⟨.length, x, p, false⟩, -1)] 0)
-    (fun t ht => ?_) (pathLowerBound_iff.mp hb) s' ha)
+    (fun t ht _ => ?_) (pathLowerBound_iff.mp hb) s' ha)
   simp only [Linear.Fact.vars, List.map, List.mem_cons, List.not_mem_nil, or_false] at ht
   rcases ht with rfl | rfl <;> simp [HeapKnowledge.Term.value]
 

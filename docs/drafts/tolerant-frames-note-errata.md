@@ -43,18 +43,20 @@ differences in the model's states and transitions themselves are listed in
 
 - **(View)** $`a(\mathrm{view}(w))\vdash\Box_\top\,a(\mathrm{view}(w))`$
   holds where $`w`$'s view-length key is read at a location whose contract
-  admits one value, $`\mathrm{ViewStable}(w)`$, for a linear fact over slots'
-  integers and such lengths (proved: `view_box`); a type stating the view
+  admits one value, $`\mathrm{ViewStable}(w)`$, for a linear fact whose
+  current terms are slots' integers and such lengths, its entry terms of any
+  kind (proved: `view_box`); a type stating the view
   length stable gives $`\mathrm{ViewStable}(w)`$ (proved:
   `viewStable_of_typed`). A typed array's length is not single-valued by being
   a typed array's: in a world whose locations admit every value, a transition
   changes it from 1 to 2 (false as stated: `view_not_invariant`).
 - **(Init)** $`a(|\pi|)\vdash\Box_{\{\mathsf{values}:\mathsf{init},\ \mathsf{stores}:\mathsf{keep}\}}\,a(|\pi|)`$
-  holds for every linear fact over integers, array lengths and view lengths at
-  any paths, with no condition on the fields $`\pi`$ passes (proved:
-  `init_box`, `init_path`): a defined path read passes only fields holding
-  objects, which $`\mathsf{init}`$ keeps. A string length at a path is outside
-  it: the model's kept-change test treats a string's location as altered.
+  holds for every linear fact whose current terms are integers, array lengths
+  and view lengths at any paths, with no condition on the fields $`\pi`$
+  passes, its entry terms of any kind (proved: `init_box`, `init_path`): a
+  defined path read passes only fields holding objects, which
+  $`\mathsf{init}`$ keeps. A current string length at a path is outside it:
+  the model's kept-change test treats a string's location as altered.
 
 ## The rules
 
