@@ -26,11 +26,6 @@ def StateHoldsAt (G : NormalGraph ι) (st : State) (implies : List (PromiseCalls
     PromiseCalls.ImpliesOk G implies η s.n s.W ∧ (∀ x ∈ st.fresh, FreshAt m (η x)) ∧
     ∀ q x, start[q]? = some x → η x = entry q
 
-omit [DecidableEq ι] in
-theorem stateHolds_iff {G : NormalGraph ι} {st : State} {implies : List (PromiseCalls.Implication ι)}
-    {start : List Nat} {entry ρ : Env} {m : Nat} {s : IndexedHeap} :
-    StateHolds G st implies start entry ρ m s ↔ ∃ η, StateHoldsAt G st implies start entry η ρ m s := Iff.rfl
-
 end Holds
 
 /-- Every name of a state's slots, facts and fresh names is below `next`

@@ -55,10 +55,6 @@ theorem headEntry_names_length {g : HeapKnowledge.Knowledge} {isStart : Bool} {w
 theorem factsBelow_mono {s : SinglePass.Store} {a b : Nat} (h : FactsBelow s a) (hab : a ≤ b) : FactsBelow s b :=
   fun x hx y hy => Nat.lt_of_lt_of_le (h x hx y hy) hab
 
-theorem stateBelow_mono {s : SinglePass.State} {a b : Nat} (h : StateBelow s a) (hab : a ≤ b) : StateBelow s b :=
-  ⟨fun x hx => Nat.lt_of_lt_of_le (h.1 x hx) hab, fun x hx y hy => Nat.lt_of_lt_of_le (h.2.1 x hx y hy) hab,
-    fun x hx => Nat.lt_of_lt_of_le (h.2.2 x hx) hab⟩
-
 end Stores
 
 section Step

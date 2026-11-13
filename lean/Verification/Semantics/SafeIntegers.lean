@@ -539,9 +539,6 @@ theorem safeIntOfBits_complete {x : UInt64} {i : Int} (hx : SafeInt x i) : safeI
     rw [if_pos ⟨hx.1, by simp [he]⟩]
     simp [hn]; omega
 
-theorem safeInt_unique {x : UInt64} {i j : Int} (hi : SafeInt x i) (hj : SafeInt x j) : i = j :=
-  Option.some.inj ((safeIntOfBits_complete hi).symm.trans (safeIntOfBits_complete hj))
-
 /-! ## Order and equality -/
 
 /-- The canonical forms of two positive safe integers compare as they do. -/

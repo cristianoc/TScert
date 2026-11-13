@@ -89,10 +89,6 @@ def lookup (s : State) (cs : List (Clause (List Tree))) : Option Tree :=
   let (key, args) := internKey s.heads cs
   (s.keys.get? key).map fun h => mkApp h args
 
-/-- The graph the rows present (`NormalGraph.ofRowMap`). -/
-def rowGraph (s : State) : NormalGraph Tree := NormalGraph.ofRowMap (rowOf s) (builtins s) .ordinary
-  fun | .num b => lookup s [.numLit b] | .str v => lookup s [.strLit v]
-
 /-- A label's row form (`rowOf`'s), read without instantiating a template:
 an instance has its template's form (`GraphRow.map` keeps it), and a meet is
 a meet row exactly when one of its parts is no clause row (`meetRowOf`). -/
@@ -126,55 +122,6 @@ reads at every step. Equal to `rowGraph` (`graph_eq`). -/
 def graph (s : State) : NormalGraph Tree :=
   NormalGraph.ofRowMapForms (cachedRow s) (rowForm s) (builtins s) .ordinary
     fun | .num b => lookup s [.numLit b] | .str v => lookup s [.strLit v]
-
-theorem baseForm_eq (s : State) (t : Tree) : baseForm s t = GraphRow.form (baseRow s t) := by
-  match t with
-  | .app h args =>
-    simp only [baseForm, baseRow]
-    cases s.heads[h]?.bind (·.body) with
-    | none => rfl
-    | some body => simp only [instantiateRow, GraphRow.form_map]
-  | .bound h args j =>
-    simp only [baseForm, baseRow]
-    cases s.heads[h]?.bind (·.binders[j]?) <;> rfl
-  | .var .. => rfl
-  | .meet _ => rfl
-  | .argument _ => rfl
-  | .local _ => rfl
-
-theorem rowForm_eq (s : State) (t : Tree) : rowForm s t = GraphRow.form (rowOf s t) := by
-  match t with
-  | .meet ps =>
-    have hm : ∀ parts : List (Tree × GraphRow Tree), GraphRow.form (meetRowOf parts) =
-        if meetRigid parts = [] then .clauses else .meet := by
-      intro parts
-      unfold meetRowOf
-      split <;> simp_all [GraphRow.form]
-    have h := meetRigid_nil_iff (ps.toList.map fun q => (q, baseRow s q))
-    have hc : ps.toList.all (baseForm s · == .clauses) = true ↔
-        meetRigid (ps.toList.map fun q => (q, baseRow s q)) = [] := by
-      rw [h]; simp [List.all_map, Function.comp_def, baseForm_eq]
-    simp only [rowForm, rowOf, hm]
-    by_cases hp : ps.toList.all (baseForm s · == .clauses) = true
-    · simp [hp, hc.mp hp]
-    · simp [hp, mt hc.mpr hp]
-  | .app .. | .bound .. | .var .. | .argument _ | .local _ =>
-    simp only [rowForm, rowOf]; exact baseForm_eq s _
-
-/-- The store's graph is the rows' graph. -/
-theorem graph_eq (s : State) : graph s = rowGraph s := by
-  have hf := rowForm_eq s
-  have hc : cachedRow s = rowOf s := by
-    funext t
-    unfold cachedRow
-    split
-    · next h =>
-      rw [s.nullary_eq]
-      by_cases hh : h < s.heads.size <;> simp [hh, nullaryOf, Thunk.get, nullaryRow, rowOf, baseRow] <;>
-        (cases s.heads[h].body <;> rfl)
-    · rfl
-  simp only [graph, rowGraph, hc]
-  exact NormalGraph.ofRowMapForms_eq hf _ _ _
 
 /-- A value parameter within clauses and further parameters, `p ⊓ cs ⊓ also`:
 the meet label of its parts (§3.3), the clauses a head of their own. -/

@@ -9,7 +9,7 @@ modules before it. An entry holds once its module's own check, run with the
 entries it reads holding, establishes it. This module proves the induction
 over that order, parameterised by that soundness of each module's step
 (`linkModules`); the statement of the step against the integration branch's
-`establishModules` and its proof plan are in docs/drafts/pass-unit-theorem.md,
+`establishModules` and its proof plan are in docs/SINGLE-PASS-THEOREM.md,
 section 7. -/
 
 namespace Verification.SourceClaimJson.PassUnit

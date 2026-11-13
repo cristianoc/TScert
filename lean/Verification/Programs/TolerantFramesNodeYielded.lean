@@ -199,67 +199,6 @@ end Judged
 section Exits
 variable {ι : Type} [DecidableEq ι] [Hashable ι]
 
-/-- **A normal exit into a loop head delivers, its yields at the step's
-value** (`exitDelivers_head` with the step's yields read from the state
-after the step at the returned value, and the head's types from the edge's
-check where the yields hold). -/
-theorem exitDeliversY_head {G : NormalGraph ι} {w : Walk ι} {ctx : Nat → List (Ty ι)} {A : Ty ι}
-    {Γ : List (Ty ι)} {entry : SinglePass.State} {store : Store} {result width : Nat} {pushed : Bool}
-    {observed : Option BranchRefinement.Observation} {promote : Option Bool} {t : Target}
-    {I : List (PromiseCalls.Implication ι)} {ys : List (PromiseCalls.Yield ι)} {startNames : List Nat} {ρ0 : Env}
-    {m : Nat} {req : HeapKnowledge.Knowledge} {gimp : List (PromiseCalls.Implication ι)} {argName : Option Nat}
-    {argSlots : List Nat} {inputSlots : List (Nat × Nat)} {hwidth hfresh : Nat} {V : Bool}
-    (hpo : observed.isSome = true → pushed = true) (hpp : promote.isSome = true → pushed = false)
-    (hrecHead : (w.entry t.label, w.implies t.label) ∈ w.incoming t.label)
-    (hentry : w.entry t.label =
-        (SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp).1 ∧
-      w.implies t.label =
-        (SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp).2.1)
-    (hnd : startNames.Nodup) (hlt : ∀ x ∈ startNames, x < hfresh)
-    (hargs : ∀ a, argName = some a → ∃ q : Nat, startNames[q]? = some a)
-    (hvac : V = true → ∀ (ρ : Env) (s' : IndexedHeap) v, EnvOk G (A :: Γ) (push v ρ) s'.n s'.W →
-      ObservedOk observed promote v → False)
-    (hq : V = false → KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G (ctx t.label))
-      (HeapKnowledge.withTypedLinks G (if pushed then A :: Γ else Γ)
-        (ControlFlow.withTypedCells G (if pushed then A :: Γ else Γ) req t.mapping
-          (materialize (⟨if pushed then result :: entry.names else entry.names,
-              edgeStoreOf G (if pushed then A :: Γ else Γ) entry.store store
-                (if pushed then result :: entry.names else entry.names) (result :: entry.names) width pushed false
-                observed promote, []⟩ : SinglePass.State)
-            (if pushed then width + 1 else width)
-            (((atomsOf req).flatMap Atom.names).map (PointClaims.slot t.mapping)) true).1)) req t.mapping = true)
-    (himp : V = false → ∀ x ∈ gimp, ∃ y ∈ I ++ freshImplOf pushed false ys entry.names result,
-      (if pushed then result :: entry.names else entry.names)[PointClaims.slot t.mapping x.test]? = some y.test ∧
-      (if pushed then result :: entry.names else entry.names)[PointClaims.slot t.mapping x.target]? = some y.target ∧
-      ∀ n (W : WorldT n) v, meaning G y.type n W v → meaning G x.type n W v)
-    (hin : V = false → ∀ p ∈ inputSlots,
-      (if pushed then result :: entry.names else entry.names)[PointClaims.slot t.mapping p.1]? = startNames[p.2]?)
-    (harg : V = false → ∀ j ∈ argSlots,
-      (if pushed then result :: entry.names else entry.names)[PointClaims.slot t.mapping j]? = argName)
-    (ρ : Env)
-    (htc : ∀ (s' : IndexedHeap) v, EnvOk G (A :: Γ) (push v ρ) s'.n s'.W → ObservedOk observed promote v →
-      PromiseCalls.YieldsOk G ys ρ s'.n s'.W v →
-      EnvOk G (ctx t.label) (PointClaims.mapEnv t.mapping (if pushed then push v ρ else ρ)) s'.n s'.W) :
-    ExitDelivers (edgePreT G w startNames ρ0 ctx) G A Γ
-      (fun ρ' m' s' => StateHolds G ⟨result :: entry.names, store, entry.fresh⟩ I startNames ρ0 ρ' m' s' ∧
-        PromiseCalls.YieldsOk G ys ρ s'.n s'.W (ρ' 0)) ρ m t pushed observed promote := by
-  intro s' v _ hF he ho
-  obtain ⟨hF, hy⟩ := hF
-  cases hV : V with
-  | true => exact (hvac hV ρ s' v he ho).elim
-  | false =>
-    have hS := edgeStore_normal (Γ := if pushed then A :: Γ else Γ) (width := width)
-      (stateHolds_freshImpl (pushed := pushed) hF (fun _ => hy)) ho hpo hpp (fun hs => by rw [hpo hs]; simpa using he)
-    have heΓ : EnvOk G (if pushed then A :: Γ else Γ) (if pushed then push v ρ else ρ) s'.n s'.W := by
-      cases pushed with
-      | true => simpa using he
-      | false => simpa using envOk_tail he
-    have htc' := htc s' v he ho hy
-    have hest := headEstablishes_of_edge hS heΓ htc' (hq hV) (himp hV) (hin hV) (harg hV)
-    refine ⟨⟨_, hrecHead, ?_⟩, htc'⟩
-    rw [hentry.1, hentry.2]
-    exact (headEntry_holds hnd hlt hargs hest).1
-
 end Exits
 
 section Return

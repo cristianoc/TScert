@@ -826,23 +826,6 @@ def returnsEnsure (G : NormalGraph ι) (P : Program) (C : Certificate ι)
     (ens : List HeapKnowledge.IndexFact) (start : Nat) : Bool :=
   returnsEnsureWith G P C ens start (trackTable P C start (namedInputs ens))
 
-/-- The same check, each node's failure located at it. -/
-def returnsEnsureResult (G : NormalGraph ι) (P : Program) (C : Certificate ι)
-    (ens : List HeapKnowledge.IndexFact) (start : Nat) : ProgramCertificates.CheckResult ι Unit :=
-  let T := trackTable P C start (namedInputs ens)
-  (ProgramCertificates.CheckResult.ofBool (startTracks T start)).bind fun _ =>
-  ProgramCertificates.CheckResult.all (List.range P.length) fun l =>
-    (ProgramCertificates.CheckResult.ofBool (match P[l]?, C[l]? with
-      | some node, some c => edgesTrack T l node && returnOk G c node.continuation (trackedAt T l) ens
-      | _, _ => true)).at (.node l)
-
-theorem returnsEnsureResult_accepted (G : NormalGraph ι) (P : Program) (C : Certificate ι)
-    (ens : List HeapKnowledge.IndexFact) (start : Nat) :
-    (returnsEnsureResult G P C ens start).accepted = returnsEnsure G P C ens start := by
-  simp only [returnsEnsureResult, returnsEnsure, returnsEnsureWith, ProgramCertificates.CheckResult.accepted_bind,
-    ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.CheckResult.accepted_all,
-    ProgramCertificates.CheckResult.accepted_at]
-
 /-- A run whose values meet no type returns none: any postcondition holds of
 its normal returns. -/
 theorem SafePost_empty {Ξ T : Fam} {Q Q' : HeapObservations.Post} (hT : ∀ k U u, T k U u → False) :
@@ -856,12 +839,6 @@ theorem SafePost_empty {Ξ T : Fam} {Q Q' : HeapObservations.Post} (hT : ∀ k U
     · exact (hT _ _ _ ht).elim
     · exact .inl (.inr hr)
     · exact .inr ⟨U, h', t', hx, hu, st, hh, ih hs⟩
-
-theorem returnsEnsure_reassign (G : NormalGraph ι) (η : MixedAssignment ι) (P : Program) (C : Certificate ι)
-    (ens : List HeapKnowledge.IndexFact) (start : Nat) :
-    returnsEnsure (reassign G η) P C ens start = returnsEnsure G P C ens start := by
-  simp only [returnsEnsure, returnsEnsureWith, returnOk, unreachableEntry, ExpressionEffects.emptyType]
-  rfl
 
 theorem returnsEnsure_at {G : NormalGraph ι} {P : Program} {C : Certificate ι}
     {ens : List HeapKnowledge.IndexFact} {start : Nat} {T : List (Option Tracked)}
@@ -1328,15 +1305,6 @@ the independent operational rule, which also covers their handlers. -/
     ProgramCertificates.CheckResult.ofBool (ExpressionEffects.emptyType G (result c))).orElse fun _ =>
   ProgramCertificates.CheckResult.ofBool (unreachableEntry G c)
 
-theorem nodeCheckedResult_accepted [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (sums : List (ProgramCertificates.ReadSummary ι))
-    (Φ : Footprints.Closed) (facts : List (List Nat)) (dead : List Bool) (ret exc : Bool) (l : Nat) (node : Node) (c : NodeEvidence ι) :
-    (nodeCheckedResult G images sums Φ facts dead ret exc l node c).accepted = nodeChecked G images sums Φ facts dead ret exc l node c := by
-  unfold nodeCheckedResult nodeChecked
-  split <;> simp only [ ProgramCertificates.CheckResult.accepted_bind,
-    ProgramCertificates.CheckResult.accepted_orElse, ProgramCertificates.CheckResult.accepted_ofBool,
-    ProgramCertificates.checkTreeUsing, Bool.and_assoc]
-
 /-- Every node within the bound, at the facts inferred for the graph, the
 entry with none; with `ret`, every return a fresh value. -/
 @[nospecialize] def compositionalCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
@@ -1349,72 +1317,8 @@ entry with none; with `ret`, every return a fresh value. -/
   ProgramCertificates.CheckResult.all (P.zip C).zipIdx fun ((node, c), l) =>
     (nodeCheckedResult G images sums Φ facts dead ret exc l node c).at (.node l)
 
-@[nospecialize] def compositionalChecked [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (sums : List (ProgramCertificates.ReadSummary ι))
-    (Φ : Footprints.Closed) (ret exc : Bool) (start : Nat) (P : Program) (C : Certificate ι) : Bool :=
-  (compositionalCheckedResult G images sums Φ ret exc start P C).accepted
-
-theorem compositionalChecked_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (sums : List (ProgramCertificates.ReadSummary ι))
-    (Φ : Footprints.Closed) (ret exc : Bool) (start : Nat) (P : Program) (C : Certificate ι) :
-    compositionalChecked G images sums Φ ret exc start P C = (
-  (factsAt (inferFresh G images sums P C start) start).isEmpty &&
-    (P.zip C).zipIdx.all fun ((node, c), l) => nodeChecked G images sums Φ (inferFresh G images sums P C start) (inferDead G P C exc) ret exc l node c
-  ) := by
-  simp only [compositionalChecked, compositionalCheckedResult, ProgramCertificates.CheckResult.accepted_bind,
-    ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.CheckResult.accepted_all,
-    ProgramCertificates.CheckResult.accepted_at, nodeCheckedResult_accepted]
-
-theorem inferFresh_reassign [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (sums : List (ProgramCertificates.ReadSummary ι))
-    (η : MixedAssignment ι) (P : Program) (C : Certificate ι) (start : Nat) :
-    inferFresh (reassign G η) (images.reassign η) sums P C start = inferFresh G images sums P C start := by
-  simp only [inferFresh, callFresh, Parametricity.checkTree_reassign]
-  rfl
-
 theorem entryFacts_reassign [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι) (c : NodeEvidence ι) :
     entryFacts (reassign G η) c = entryFacts G c := rfl
-
-@[simp] theorem compositionalChecked_reassign [DecidableEq ι] (G : NormalGraph ι)
-    (images : InstanceImageCheck G) (sums : List (ProgramCertificates.ReadSummary ι)) (η : MixedAssignment ι) (Φ : Footprints.Closed) (ret exc : Bool) (start : Nat)
-    (P : Program) (C : Certificate ι) :
-    compositionalChecked (reassign G η) (images.reassign η) sums Φ ret exc start P C =
-      compositionalChecked G images sums Φ ret exc start P C := by
-  simp only [compositionalChecked_eq, inferFresh_reassign, nodeChecked, callFresh, throwsWithin,
-    Parametricity.checkTree_reassign, entryFacts_reassign, Parametricity.requiresTree_reassign,
-    inferDead, deadNode, ExpressionEffects.emptyType]
-  rfl
-
-/-- The node checks give the premise the bounded run reads. -/
-theorem nodes_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)}
-    {Φ : Footprints.Closed} {ret exc : Bool} {Rty : Goal ι} {P : Program} {C : Certificate ι} {codes}
-    (hgraph : checkGraphUsing (sums := sums) G images Rty P C codes = true)
-    (hcodes : ProgramCertificates.CodesSound G codes) (hsums : ProgramCertificates.SummariesSound G images sums)
-    {facts : List (List Nat)} {dead : List Bool}
-    (hall : ((P.zip C).zipIdx.all fun ((node, c), l) => nodeChecked G images sums Φ facts dead ret exc l node c) = true) :
-    NodesWithin G Φ P C facts dead ret exc := by
-  intro l node c hn hc
-  have hzip : (P.zip C)[l]? = some (node, c) := List.getElem?_zip_eq_some.mpr ⟨hn, hc⟩
-  have hmem : ((node, c), l) ∈ (P.zip C).zipIdx := List.mem_zipIdx_iff_getElem?.mpr hzip
-  have hp := List.all_eq_true.mp hall _ hmem
-  cases hd : deadAt dead l with
-  | true =>
-    simp only [nodeChecked, hd, if_true, Bool.and_eq_true, Bool.not_eq_true'] at hp
-    exact .inr ⟨fun _ => hp, (fun h => by cases h)⟩
-  | false =>
-    simp only [nodeChecked, hd, Bool.false_eq_true, if_false, Bool.or_eq_true, Bool.and_eq_true] at hp
-    rcases hp with ⟨⟨⟨⟨hx, hthr⟩, hscope⟩, hedge⟩, hcases⟩ | hu
-    rotate_right
-    · exact .inl hu
-    obtain ⟨actual, hactual, hterm, -⟩ := graph_node hgraph hcodes hsums hc
-    cases hn.symm.trans hactual
-    refine .inr ⟨(fun h => by cases h), fun _ => ?_⟩
-    refine ⟨fun t ht => by simpa [ht] using hx, _, nodeWithin_of_checked hscope ?_ (fun h => ?_) hterm hsums, hedge⟩
-    · simpa only [Bool.or_eq_true, Bool.and_eq_true] using hcases
-    simp only [Bool.not_eq_true'] at hthr
-    rcases hthr with hthr | hthr
-    · rw [h] at hthr; cases hthr
-    · exact hthr
 
 /-- Definition effects supplement, rather than replace, ordinary safety. A
 footprint letting everything change, without a fresh result or a footprint on
@@ -1432,29 +1336,6 @@ result is established node by node whatever the footprint. -/
     (ProgramCertificates.CheckResult.ofBool (!c.row.effect.fresh && c.exprs.all Purity.pureTerm)).orElse fun _ =>
     compositionalCheckedResult G images sums c.row.effect.footprint c.row.effect.fresh c.row.effect.onThrow c.start
       (program c.exprs c.conts) C
-
-@[nospecialize] def effectChecked [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (sums : List (ProgramCertificates.ReadSummary ι))
-    (c : CodeEntry ι) (C : Certificate ι) : Bool :=
-  (effectCheckedResult G images sums c C).accepted
-
-theorem effectChecked_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (sums : List (ProgramCertificates.ReadSummary ι))
-    (c : CodeEntry ι) (C : Certificate ι) :
-    effectChecked G images sums c C = (!c.row.effect.freshObject &&
-      (c.row.effect.requires.isNone && (c.row.effect.elements.isNone && (!c.row.effect.receiverGrows && c.row.effect.elementWrite.isNone))) && (
-  decide (c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false) ||
-    ((!c.row.effect.fresh && c.exprs.all Purity.pureTerm) ||
-      compositionalChecked G images sums c.row.effect.footprint c.row.effect.fresh c.row.effect.onThrow c.start
-        (program c.exprs c.conts) C)
-  )) := by
-  cases hfo : (!c.row.effect.freshObject && (c.row.effect.requires.isNone && (c.row.effect.elements.isNone && (!c.row.effect.receiverGrows && c.row.effect.elementWrite.isNone))))
-  · simp only [effectChecked, effectCheckedResult, hfo, ProgramCertificates.CheckResult.accepted_ofBool,
-      ProgramCertificates.CheckResult.accepted_bind, Bool.false_and]
-  · by_cases h : c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false <;>
-      simp [effectChecked, effectCheckedResult, hfo, h, ProgramCertificates.CheckResult.accepted_orElse,
-        ProgramCertificates.CheckResult.accepted_ofBool, ProgramCertificates.CheckResult.accepted_bind,
-        compositionalChecked] <;> rfl
 
 /-- What a code entry's graph is checked to return: its signature's result,
 or its signature's promise about the parameter it names, at that parameter's
@@ -1492,119 +1373,6 @@ describes, against an earlier table. -/
   checkEntryResult (sums := sums) (entryIndices := codeEntryIndices c) G images c.goal (program c.exprs c.conts)
     C c.start (codeFrame c.arity c.row c.captures c.store) (admits table)
 
-@[nospecialize] def codeCheckedUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (sums : List (ProgramCertificates.ReadSummary ι))
-    (table : List (CodeEntry ι)) (c : CodeEntry ι) (C : ControlFlow.Certificate ι) : Bool :=
-  (codeCheckedResult G images sums table c C).accepted
-
-theorem codeCheckedUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (sums : List (ProgramCertificates.ReadSummary ι))
-    (table : List (CodeEntry ι)) (c : CodeEntry ι) (C : ControlFlow.Certificate ι) :
-    codeCheckedUsing G images sums table c C = (
-  decide (c.arity ≤ c.row.arguments.length) && c.row.effect.below c.arity && effectChecked G images sums c C &&
-    checkEntryUsing (sums := sums) (entryIndices := codeEntryIndices c) G images c.goal (program c.exprs c.conts)
-      C c.start (codeFrame c.arity c.row c.captures c.store) (admits table)
-  ) := by
-  simp only [codeCheckedUsing, codeCheckedResult, ProgramCertificates.CheckResult.accepted_bind,
-    ProgramCertificates.CheckResult.accepted_ofBool, effectChecked, checkEntryUsing, Bool.and_assoc]
-
-/-- A checked entry meets its signature in the graph reassigned at every
-assignment: the check reads none (`Parametricity.checkEntry_reassign`). -/
-theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)}
-    {table c C} (htable : ProgramCertificates.CodesSound G (admits table))
-    (hsums : ProgramCertificates.SummariesSound G images sums)
-    (h : codeCheckedUsing G images sums table c C = true) : ∀ η, c.Spec (reassign G η) := by
-  intro η
-  simp only [codeCheckedUsing_eq, Bool.and_eq_true, decide_eq_true_eq] at h
-  obtain ⟨⟨⟨harity, hbelow⟩, heff⟩, hentry⟩ := h
-  have hc : checkEntryUsing (sums := sums) (entryIndices := codeEntryIndices c) (reassign G η) (images.reassign η)
-      c.goal (program c.exprs c.conts) C c.start
-      (codeFrame c.arity c.row c.captures c.store) (admits table) = true := by
-    exact (Parametricity.checkEntry_reassign G η images _ _ _ _ _ _ _ _ _).trans hentry
-  have hs' := Parametricity.summariesSound_reassign G η images hsums
-  have ht : ProgramCertificates.CodesSound (reassign G η) (admits table) :=
-    fun e he η' => htable e he η'
-  refine ⟨harity, hbelow, ?_⟩
-  intro n W heap L he hw hh hvalues hpre r args _hframe
-  have hidx := codeEntryIndices_holds hpre
-  have hs := goto_safe hc ht hs' n W heap L .nul he hw hh (hidx := hidx)
-  -- The goal the graph is checked at is the signature's result, its
-  -- promise included.
-  have hres : GoalHolds (reassign G η) c.goal (c.goal.argument (envOf L .nul)) =
-      c.row.effect.result (meaning (reassign G η) c.row.result)
-        (framePromised c.row.effect (frameOffset c.store) L) := by
-    rcases hpr : c.row.effect.promise with _ | (p | p)
-    · have hg : c.goal = .plain c.row.result := by simp [CodeEntry.goal, hpr]
-      rw [hg, CallEffects.Effect.result_none hpr]
-      rfl
-    · have hg : c.goal = .guards c.row.result (frameOffset c.store + p) := by
-        simp [CodeEntry.goal, hpr]
-      rw [hg]
-      simp only [CallEffects.Effect.result, framePromised, hpr, CallEffects.TypePromise.result,
-        CallEffects.TypePromise.param]
-      rfl
-    · have hg : c.goal = .asserts c.row.result (frameOffset c.store + p) := by
-        simp [CodeEntry.goal, hpr]
-      rw [hg]
-      simp only [CallEffects.Effect.result, framePromised, hpr, CallEffects.TypePromise.result,
-        CallEffects.TypePromise.param]
-      rfl
-  have hsafe : Safe (excOf (reassign G η)) (c.row.effect.result (meaning (reassign G η) c.row.result)
-      (framePromised c.row.effect (frameOffset c.store) L)) n W heap
-      (.goto c.exprs c.conts c.start L .nul) := hres ▸ hs
-  rw [effectChecked_eq] at heff
-  simp only [Bool.and_eq_true, Bool.not_eq_true'] at heff
-  obtain ⟨⟨hfo, hel⟩, heff⟩ := heff
-  have hens := CallEffects.Effect.below_ensures hbelow
-  have hnrg := CallEffects.Effect.below_regions hbelow
-  have hnen : ∀ F, F ∈ c.row.effect.ensures → False := fun F hF => by rw [hens] at hF; cases hF
-  have hnel : ∀ R, c.row.effect.elements = some R → False := by
-    intro R hR
-    simp only [Option.isNone_iff_eq_none] at hel
-    rw [hel.2.1] at hR; cases hR
-  have hngr : c.row.effect.receiverGrows = true → False := fun hg => by
-    have := hel.2.2.1; rw [hg] at this; cases this
-  have hnew : ∀ w, c.row.effect.elementWrite = some w → False := fun w hw => by
-    have := hel.2.2.2; rw [hw] at this; cases this
-  by_cases htop : c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false
-  · -- No footprint on a throw: the throw's postcondition is vacuous.
-    apply HeapObservations.SafePostExc.of_post (fun _ h => absurd h (by simp [htop.2.2]))
-    refine HeapObservations.weaken (fun h' v hp => ?_) (Footprints.Closed.top_safe hsafe)
-    refine ⟨CallEffects.Effect.within_of_footprint hnrg ?_, fun hf => (by rw [htop.2.1] at hf; cases hf),
-      fun hf => (by rw [hfo] at hf; cases hf), fun R hR => (hnel R hR).elim, fun F hF => (hnen F hF).elim,
-      fun hg => (hngr hg).elim, fun w hw => (hnew w hw).elim⟩
-    rw [htop.1]
-    exact hp
-  · simp only [htop, decide_false, Bool.false_or, Bool.and_eq_true, Bool.or_eq_true] at heff
-    rcases heff with hp | hp
-    · simp only [Bool.not_eq_true'] at hp
-      have hfresh := hp.1
-      have hp : ∀ e ∈ c.exprs, Purity.pureTerm e = true := List.all_eq_true.mp hp.2
-      exact HeapObservations.SafePostExc.weaken
-        (fun h' v hq => ⟨CallEffects.Effect.within_of_footprint hnrg
-          (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _)
-            ((CallEffects.Effect.post_ofFootprint _ .undef [] _ _ _).mp hq)), fun hf => (by rw [hfresh] at hf; cases hf),
-          fun hf => (by rw [hfo] at hf; cases hf), fun R hR => (hnel R hR).elim, fun F hF => (hnen F hF).elim,
-      fun hg => (hngr hg).elim, fun w hw => (hnew w hw).elim⟩)
-        (fun h' hq _ => CallEffects.Effect.within_of_footprint hnrg
-          (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq))
-        (CallEffects.pure_safe_exc (r := .undef) (args := []) (.goto hp hvalues rfl) hsafe)
-    · rw [← compositionalChecked_reassign G images sums η, compositionalChecked_eq] at hp
-      simp only [Bool.and_eq_true, List.isEmpty_iff] at hp
-      have hgraph : checkGraphUsing (sums := sums) (reassign G η) (images.reassign η) c.goal
-          (program c.exprs c.conts) C (admits table) = true := by
-        have hchecked := hc
-        simp only [checkEntryUsing_eq, Bool.and_eq_true] at hchecked
-        exact hchecked.1
-      have hb := goto_bounded hc ht hs' (nodes_of_checked hgraph ht hs' hp.2) hp.1 n W heap L .nul he hw hh
-        (hidx := hidx)
-      rw [hres] at hb
-      exact HeapObservations.SafePostExc.weaken
-        (fun h' v hq => ⟨CallEffects.Effect.within_of_footprint hnrg hq.1, hq.2, fun hf => (by rw [hfo] at hf; cases hf),
-          fun R hR => (hnel R hR).elim, fun F hF => (hnen F hF).elim,
-      fun hg => (hngr hg).elim, fun w hw => (hnew w hw).elim⟩)
-        (fun h' hq ho => CallEffects.Effect.within_of_footprint hnrg (hq ho)) hb
-
 /-- Check codes in order, each against the table of those before it. -/
 @[nospecialize] def extendTableResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (sums : List (ProgramCertificates.ReadSummary ι)) :
@@ -1614,67 +1382,12 @@ theorem codeChecked_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instan
   | table, (c, C) :: rest =>
       ((codeCheckedResult G images sums table c C).at (.code table.length)).bind fun _ => extendTableResult G images sums (table ++ [c]) rest
 
-@[nospecialize] def extendTable [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (sums : List (ProgramCertificates.ReadSummary ι))
-    (table : List (CodeEntry ι)) (checks : List (CodeEntry ι × ControlFlow.Certificate ι)) :
-    Option (List (CodeEntry ι)) :=
-  (extendTableResult G images sums table checks).value
-
-theorem extendTable_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (sums : List (ProgramCertificates.ReadSummary ι))
-    (table : List (CodeEntry ι)) (checks : List (CodeEntry ι × ControlFlow.Certificate ι)) :
-    extendTable G images sums table checks = match checks with
-    | [] => some table
-    | (c, C) :: rest =>
-        if codeCheckedUsing G images sums table c C then extendTable G images sums (table ++ [c]) rest else none := by
-  cases checks with
-  | nil => rfl
-  | cons pair rest =>
-    rcases pair with ⟨c, C⟩
-    rw [extendTable, extendTableResult, ProgramCertificates.CheckResult.value_bind_const]
-    rfl
-
-theorem extendTable_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)} :
-    ProgramCertificates.SummariesSound G images sums →
-    ∀ {table checks result}, ProgramCertificates.CodesSound G (admits table) →
-      extendTable G images sums table checks = some result →
-      ProgramCertificates.CodesSound G (admits result)
-  | _, table, [], result, ht, h => by
-    rw [extendTable_eq] at h
-    simp only [Option.some.injEq] at h; subst h; exact ht
-  | hsums, table, (c, C) :: rest, result, ht, h => by
-    rw [extendTable_eq] at h
-    dsimp only at h
-    split at h
-    · rename_i hc
-      apply extendTable_sound hsums _ h
-      intro e he
-      simp only [admits, List.contains_append, Bool.or_eq_true, List.contains_cons,
-        List.contains_nil, Bool.or_false, beq_iff_eq] at he
-      rcases he with he | rfl
-      · exact ht e he
-      · exact codeChecked_sound ht hsums hc
-    · contradiction
-
 /-- A unit's codes, checked from the empty table. -/
 @[nospecialize] def checkCodesResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (sums : List (ProgramCertificates.ReadSummary ι))
     (checks : List (CodeEntry ι × ControlFlow.Certificate ι)) :
     ProgramCertificates.CheckResult ι (List (CodeEntry ι)) :=
   extendTableResult G images sums [] checks
-
-@[nospecialize] def checkCodesUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (sums : List (ProgramCertificates.ReadSummary ι))
-    (checks : List (CodeEntry ι × ControlFlow.Certificate ι)) : Option (List (CodeEntry ι)) :=
-  (checkCodesResult G images sums checks).value
-
-/-- A checked table is sound at every reassignment of the graph's parameter
-rows, since `CodesSound` quantifies over all of them. -/
-theorem checkCodes_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)}
-    {checks table} (hsums : ProgramCertificates.SummariesSound G images sums)
-    (h : checkCodesUsing G images sums checks = some table) :
-    ProgramCertificates.CodesSound G (admits table) :=
-  extendTable_sound hsums (fun c hc => by simp [admits] at hc) h
 
 /-! ### A node's referenced derivation
 
@@ -1686,15 +1399,6 @@ does (`ControlFlow.checkGraphResult_explicit`). -/
 section
 variable [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (sums : List (ProgramCertificates.ReadSummary ι))
   (c : NodeEvidence ι)
-
-theorem nodeChecked_explicit (Φ : Footprints.Closed) (facts : List (List Nat)) (dead : List Bool) (ret exc : Bool)
-    (l : Nat) (node : Node) :
-    nodeChecked G images sums Φ facts dead ret exc l node c.explicit = nodeChecked G images sums Φ facts dead ret exc l node c := rfl
-
-theorem callFresh_explicit (t : Tm) : callFresh G images sums c.explicit t = callFresh G images sums c t := rfl
-
-theorem throwsWithin_explicit (Φ : Footprints.Closed) (F : List Nat) (t : Tm) :
-    throwsWithin G images sums Φ F c.explicit t = throwsWithin G images sums Φ F c t := rfl
 
 end
 

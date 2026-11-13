@@ -25,13 +25,6 @@ namespace Verification.Footprints
 
 /-! ## Marks and stamps -/
 
-/-- A mark valuation: monotone, mark 0 the entry heap's length, every mark at
-most the current heap's length. -/
-structure MarksOk (μ : Nat → Nat) (b : Nat) (h : Heap) : Prop where
-  mono : ∀ i j, i ≤ j → μ i ≤ μ j
-  entry : μ 0 = b
-  below : ∀ i, μ i ≤ h.length
-
 structure Stamps where
   after : Nat → Option Nat
   before : Nat → Option Nat
@@ -57,10 +50,6 @@ theorem stamps_separate {st typed μ ρ h x y m m' r l k l'} (hs : StampsHold st
 
 /-! ## Edges: renaming marks -/
 
-def sortedB : List Nat → Bool
-  | a :: b :: t => decide (a ≤ b) && sortedB (b :: t)
-  | _ => true
-
 /-- A target mark's source mark; marks past the list keep the last one. -/
 def markAt : List Nat → Nat → Nat
   | [], _ => 0
@@ -68,134 +57,7 @@ def markAt : List Nat → Nat → Nat
   | a :: _ :: _, 0 => a
   | _ :: b :: t, i + 1 => markAt (b :: t) i
 
-theorem head_le_markAt : ∀ (a : Nat) (t : List Nat) (i : Nat), sortedB (a :: t) = true →
-    a ≤ markAt (a :: t) i
-  | a, [], _, _ => by simp [markAt]
-  | a, b :: t, 0, _ => by simp [markAt]
-  | a, b :: t, i + 1, hs => by
-    simp only [sortedB, Bool.and_eq_true, decide_eq_true_eq] at hs
-    simp only [markAt]
-    exact Nat.le_trans hs.1 (head_le_markAt b t i hs.2)
-
-theorem markAt_mono : ∀ (σ : List Nat) (i j : Nat), sortedB σ = true → i ≤ j → markAt σ i ≤ markAt σ j
-  | [], _, _, _, _ => by simp [markAt]
-  | [a], _, _, _, _ => by simp [markAt]
-  | a :: b :: t, 0, j, hs, _ => by
-    cases j with
-    | zero => exact Nat.le_refl _
-    | succ j =>
-      simp only [markAt]
-      simp only [sortedB, Bool.and_eq_true, decide_eq_true_eq] at hs
-      exact Nat.le_trans hs.1 (head_le_markAt b t j hs.2)
-  | a :: b :: t, i + 1, j, hs, hij => by
-    cases j with
-    | zero => omega
-    | succ j =>
-      simp only [markAt]
-      simp only [sortedB, Bool.and_eq_true] at hs
-      exact markAt_mono (b :: t) i j hs.2 (by omega)
-
-theorem markAt_zero {σ : List Nat} (h : σ.head?.all (· == 0) = true) : markAt σ 0 = 0 := by
-  match σ, h with
-  | [], _ => rfl
-  | [a], h => simpa [markAt] using h
-  | a :: b :: t, h => simpa [markAt] using h
-
-/-- An edge: target marks to source marks, target slots to source slots. -/
-structure StampEdge where
-  marks : List Nat
-  slot : Nat → Nat
-
-/-- The edge check, over the target slots that carry stamps. -/
-def stampEdgeOk (e : StampEdge) (st st' : Stamps) (typed typed' : Nat → List PropKey)
-    (slots : List Nat) : Bool :=
-  sortedB e.marks && e.marks.head?.all (· == 0) && slots.all fun j =>
-    (match st'.after j with
-     | none => true
-     | some m' => match st.after (e.slot j) with
-       | some m => decide (markAt e.marks m' ≤ m)
-       | none => false) &&
-    (match st'.before j with
-     | none => true
-     | some m' => match st.before (e.slot j) with
-       | some m => decide (m ≤ markAt e.marks m') && (typed' j).all (typed (e.slot j)).contains
-       | none => false)
-
-theorem MarksOk.rename {μ b h} {σ : List Nat} (hm : MarksOk μ b h) (hs : sortedB σ = true)
-    (h0 : σ.head?.all (· == 0) = true) : MarksOk (fun i => μ (markAt σ i)) b h :=
-  ⟨fun i j hij => hm.mono _ _ (markAt_mono σ i j hs hij),
-   by simp only [markAt_zero h0]; exact hm.entry, fun i => hm.below _⟩
-
-theorem stamps_transport {e st st' typed typed' slots μ ρ}
-    (hc : stampEdgeOk e st st' typed typed' slots = true)
-    (hdom : ∀ j, (st'.after j).isSome ∨ (st'.before j).isSome → j ∈ slots)
-    (hs : StampsHold st typed μ ρ) (hμ : ∀ i j, i ≤ j → μ i ≤ μ j) :
-    StampsHold st' typed' (fun i => μ (markAt e.marks i)) (fun j => ρ (e.slot j)) := by
-  simp only [stampEdgeOk, Bool.and_eq_true, List.all_eq_true] at hc
-  obtain ⟨⟨_, _⟩, hall⟩ := hc
-  refine ⟨fun x m' ha l hl => ?_, fun y m' hb k hk l hl => ?_⟩
-  · have hj := (hall x (hdom x (.inl (by simp [ha])))).1
-    simp only [ha] at hj
-    cases hsrc : st.after (e.slot x) with
-    | none => simp [hsrc] at hj
-    | some m =>
-      simp only [hsrc, decide_eq_true_eq] at hj
-      exact Nat.le_trans (hμ _ _ hj) (hs.1 _ m hsrc l hl)
-  · have hj := (hall y (hdom y (.inr (by simp [hb])))).2
-    simp only [hb] at hj
-    cases hsrc : st.before (e.slot y) with
-    | none => simp [hsrc] at hj
-    | some m =>
-      simp only [hsrc, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hj
-      exact Nat.lt_of_lt_of_le (hs.2 _ m hsrc k (by simpa using hj.2 k hk) l hl) (hμ _ _ hj.1)
-
 /-! ## Establishing stamps -/
-
-theorem slots_ge : ∀ (b : Nat) (ns : List PropKey), ∀ l ∈ (slots b ns).map Prod.snd, b ≤ l
-  | _, [] => by simp [slots]
-  | b, f :: fs => by
-    intro l hl
-    simp only [slots, List.map_cons, List.mem_cons] at hl
-    rcases hl with rfl | hl
-    · exact Nat.le_refl _
-    · exact Nat.le_trans (Nat.le_succ b) (slots_ge (b + 1) fs l hl)
-
-/-- An allocated object's own locations are at least the heap's length before
-the allocation. -/
-theorem alloc_after {h c ns vs h' r} (st : Step h (.makeAt c ns vs) h' r) (hv : ∀ v ∈ vs, isVal v = true) :
-    ∀ l ∈ (fieldsOf r).map Prod.snd, h.length ≤ l := by
-  cases st with
-  | makeArg _ _ s =>
-    rename_i i a _ hi _
-    exact absurd s (value_no_step (hv a (List.mem_of_getElem? hi)))
-  | makeFields => exact slots_ge h.length ns
-
-/-- A location with a world contract lies below the heap's length. -/
-theorem typed_below {n W h l c} (hh : HeapOk n W h) (hc : lookup W l = some c) : l < h.length := by
-  rw [hh.1]
-  exact (List.getElem?_eq_some_iff.mp hc).1
-
-/-- At a new mark equal to the heap's length, a slot whose typed fields have
-world contracts gets a `before` stamp. -/
-theorem before_of_typed {n W h} {μ : Nat → Nat} {m : Nat} {ρ : Env} {y : Nat} {typed : Nat → List PropKey} (hh : HeapOk n W h)
-    (hm : μ m = h.length)
-    (ht : ∀ k ∈ typed y, ∀ l, (fieldsOf (ρ y)).lookup k = some l → ∃ c, lookup W l = some c) :
-    ∀ k ∈ typed y, ∀ l, (fieldsOf (ρ y)).lookup k = some l → l < μ m := by
-  intro k hk l hl
-  obtain ⟨c, hc⟩ := ht k hk l hl
-  rw [hm]; exact typed_below hh hc
-
-/-- A new last mark at the current heap's length keeps the valuation sound. -/
-theorem MarksOk.push {μ b h M} (hm : MarksOk μ b h) (hM : 0 < M) {h' : Heap} (hh : h.length ≤ h'.length) :
-    MarksOk (fun i => if i < M then μ i else h.length) b h' := by
-  refine ⟨fun i j hij => ?_, by simp [hM, hm.entry], fun i => ?_⟩
-  · by_cases hi : i < M <;> by_cases hj : j < M <;> simp [hi, hj]
-    · exact hm.mono i j hij
-    · exact hm.below i
-    · omega
-  · by_cases hi : i < M <;> simp [hi]
-    · exact Nat.le_trans (hm.below i) hh
-    · exact hh
 
 /-! ## Classes of contents -/
 

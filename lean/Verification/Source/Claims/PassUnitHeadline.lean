@@ -7,7 +7,7 @@ import Verification.Source.Claims.PassUnitSafe
 mode 8's exact acceptance condition of a unit, every member of its group is
 safe, under the graph-level hypotheses `RunSound` and `RunKeepsSummaries`
 (H3, `PassGroupChecks`, proved in PassUnitMemberRun;
-docs/drafts/pass-unit-theorem.md). -/
+docs/SINGLE-PASS-THEOREM.md). -/
 
 namespace Verification.SourceClaimJson.PassUnit
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore

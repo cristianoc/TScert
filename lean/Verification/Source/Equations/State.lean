@@ -28,7 +28,7 @@ structure Draft where
   body : Option (GraphRow Tree (List Tree)) := none
   /-- A scheme's declared binder defaults, by binder position, as its
   signatures read them: proposal metadata for the walk's instance choice
-  (the producer's `default`, inference.ml:637-647), no part of the row. -/
+  (the producer's `default`), no part of the row. -/
   defaults : List (Nat × List Tree) := []
   deriving Inhabited
 

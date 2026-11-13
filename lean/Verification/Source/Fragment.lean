@@ -1364,6 +1364,67 @@ def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
     ← decodeStated (← jField j "stated"), ← fromJson? (← jField j "requires"), ← fromJson? (← jField j "ensures")⟩
   return (fn, typeParams)
 
+/-! ### Canonical symbol numbers
+
+A symbol key `{"symbol": i}` names the `i`-th entry of its document's
+`symbols`, a `unique symbol` declaration's identity. Two documents list
+their symbols in their own orders, so one index can name two symbols and
+one symbol two indices. The single pass reads every document's symbol keys
+at their canonical numbers instead: a function of the declaration identity
+alone (`symbolNumber`), so every store a run builds, a module's and each
+importer's, gives one symbol one key. Canonical numbers are at least
+`symbolBase`, above every index, so renumbering a renumbered document
+changes nothing. Two identities of one number are refused
+(`symbolNumbersApart`). -/
+
+/-- A document's symbol identities, from its `declarations`' `symbols`. -/
+def documentSymbols (doc : Json) : Array Json :=
+  ((doc.getObjValD "declarations").getObjValAs? (Array Json) "symbols").toOption.getD #[]
+
+/-- A JSON value with each symbol index (a natural number in a field
+`symbol`) below `symbolBase` replaced by its symbol's canonical number,
+outside the fields named in `skip`. -/
+partial def renumberSymbols (symbols : Array Json) (skip : List String := []) : Json → Json
+  | .arr xs => .arr (xs.map (renumberSymbols symbols))
+  | .obj kvs => Json.mkObj (kvs.toArray.toList.map fun (k, v) =>
+      if skip.contains k then (k, v) else
+      (k, match k, v with
+        | "symbol", .num n =>
+          if n.exponent == 0 && n.mantissa ≥ 0 && n.mantissa.toNat < symbolBase then
+            match symbols[n.mantissa.toNat]? with
+            | some id => toJson (symbolNumber id)
+            | none => v
+          else v
+        | _, _ => renumberSymbols symbols [] v))
+  | j => j
+
+/-- **A document at canonical symbol numbers**: its own symbol keys
+renumbered by its own `symbols`, and each module document it carries
+(`modules`) by that module's. -/
+def canonicalSymbols (doc : Json) : Json :=
+  let own := renumberSymbols (documentSymbols doc) ["modules"] doc
+  match doc.getObjVal? "modules" with
+  | .ok (.arr ms) => own.setObjVal! "modules" (.arr (ms.map fun m => renumberSymbols (documentSymbols m) [] m))
+  | _ => own
+
+/-- The symbol identities of documents and of the documents they carry. -/
+def symbolIdentities (docs : List Json) : List Json :=
+  docs.flatMap fun d => (documentSymbols d).toList ++ match d.getObjVal? "modules" with
+    | .ok (.arr ms) => ms.toList.flatMap fun m => (documentSymbols m).toList
+    | _ => []
+
+/-- **Distinct identities have distinct numbers** over documents read
+together, or the refusal naming two that share one. -/
+def symbolNumbersApart (docs : List Json) : Except String Unit := do
+  let mut seen : Std.HashMap Nat Json := {}
+  for id in symbolIdentities docs do
+    let n := symbolNumber id
+    match seen.get? n with
+    | some other =>
+      if other != id then
+        throw s!"two unique symbol declarations share one canonical number: {other.compress} and {id.compress}"
+    | none => seen := seen.insert n id
+
 /-- A program module a certified import may read: its artifact, the
 module identity its declarations carry and the sha256 of the bytes lowered;
 its document, as a fragment of that file; and the functions it could not

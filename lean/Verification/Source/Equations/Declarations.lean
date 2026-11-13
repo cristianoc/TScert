@@ -66,13 +66,13 @@ def isTagSymbol (identity : Json) : Bool :=
   (identity.getObjValAs? String "module").toOption == some "typescript/lib/lib.es2015.symbol.wellknown.d.ts" &&
     (identity.getObjValAs? String "name").toOption == some "toStringTag"
 
-/-- The indices of the document's symbol list naming `Symbol.toStringTag`. -/
+/-- The symbol numbers naming `Symbol.toStringTag` in a document: the
+indices of its symbol list naming it, and its canonical number
+(`symbolNumber`), which a document the single pass reads carries. -/
 def tagSymbols (document : Json) : List Nat :=
   let symbols := (document.getObjValAs? (Array Json) "symbols").toOption.getD #[]
-  (List.range symbols.size).filter fun i => (symbols[i]?).any isTagSymbol
-
-theorem ImplicitDependency.mem_all (d : ImplicitDependency) : d ∈ ImplicitDependency.all := by
-  cases d <;> simp [ImplicitDependency.all]
+  let tags := (List.range symbols.size).filter fun i => (symbols[i]?).any isTagSymbol
+  tags ++ (symbols.toList.filter isTagSymbol).map symbolNumber
 
 /-- An object term's index signatures, by the keys each constrains. -/
 def indexSignatures (term : Json) : List (String × IndexKeys × Json) :=

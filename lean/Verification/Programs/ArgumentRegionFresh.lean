@@ -33,9 +33,6 @@ def cellKey : PropKey := .str "value"
 above `b`. -/
 def FreshValue (b : Nat) (v : Tm) : Prop := isArr v = false ∧ FreshIfStore b v
 
-theorem FreshValue.lower {b b' : Nat} {v : Tm} (hb : b ≤ b') (h : FreshValue b' v) : FreshValue b v :=
-  ⟨h.1, h.2.lower hb⟩
-
 theorem freshAt_value {b : Nat} {v : Tm} (h : FreshAt b v) : FreshValue b v := by
   refine ⟨?_, FreshAt.ifStore h⟩
   obtain ⟨s, hs, -⟩ := h
@@ -112,12 +109,6 @@ theorem CellFresh.set {b : Nat} {h : Heap} {c u : Tm} {l : Nat} (hu : FreshValue
     have hlt := (List.getElem?_eq_some_iff.mp hv).1
     exact ⟨l, u, hl, by simp [hlt], hu⟩
   · exact ⟨l', v, hl, by rw [List.getElem?_set_ne he]; exact hv, hf⟩
-
-/-- Allocation keeps every fresh cell. -/
-theorem CellFresh.append {b : Nat} {h : Heap} {c : Tm} (vs : List Tm) (hc : CellFresh b h c) :
-    CellFresh b (h ++ vs) c := by
-  obtain ⟨l, v, hl, hv, hf⟩ := hc
-  exact ⟨l, v, hl, by rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hv).1]; exact hv, hf⟩
 
 /-! ## Runs of a node -/
 

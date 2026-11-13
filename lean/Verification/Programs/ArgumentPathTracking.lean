@@ -188,12 +188,6 @@ def checkEntryFields [DecidableEq ι] (G : PositiveGraphs.NormalGraph ι) (input
     | some A => entryField G A f
     | none => false
 
-theorem checkEntryFields_paths [DecidableEq ι] {G : PositiveGraphs.NormalGraph ι} {inputs : List (ProgramTyping.Ty ι)}
-    {regions : List ArgumentStoreRegion} (hc : checkEntryFields G inputs regions = true) :
-    ∀ r ∈ regions, r.path.length ≤ 1 := by
-  simp only [checkEntryFields, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at hc
-  exact hc.1
-
 /-- The entry check gives the stable witnesses at the entry world. -/
 theorem checkEntryFields_sound [DecidableEq ι] {G : PositiveGraphs.NormalGraph ι}
     {inputs : List (ProgramTyping.Ty ι)} {regions : List ArgumentStoreRegion}
@@ -255,15 +249,6 @@ theorem read_now {facts : List Fact} {ρ entry : Env} {h₀ h : Heap} {fields : 
   · exact absurd (hx ▸ hnone) hpresent
   · exact ⟨v, hv, hr, hx ▸ hsp.read hn hh⟩
 
-/-- Copying a tracked slot establishes the same path at the result slot. -/
-theorem copy {facts : List Fact} {ρ entry : Env} {h₀ : Heap} {f : Fact}
-    (hs : Holds facts ρ entry h₀) (hf : f ∈ facts) :
-    Holds ({ f with slot := 0 } :: shift facts) (push (ρ f.slot) ρ) entry h₀ := by
-  intro g hg
-  rcases List.mem_cons.mp hg with rfl | hg
-  · exact hs f hf
-  · exact shift_sound hs _ g hg
-
 /-- A read of a tracked value extends its entry path when the entry path's
 reading is preserved. The result's array store may change independently. -/
 theorem read {facts : List Fact} {ρ entry : Env} {h₀ h : Heap} {f : Fact} {field : String} {v : Val}
@@ -290,11 +275,5 @@ theorem read_stable {facts : List Fact} {ρ entry : Env} {h₀ h : Heap} {f : Fa
       (push v ρ) entry h₀ :=
   read hs hf ((hp.transfer hm hx).read hn hh)
     ((hp.read (Nat.lt_of_lt_of_le hn hm) hh₀).trans ((hp.transfer hm hx).read hn hh).symm)
-
-/-- The store at a tracked slot is the store the entry region selects. -/
-theorem resolve {facts : List Fact} {ρ entry : Env} {h₀ : Heap} {f : Fact}
-    (hs : Holds facts ρ entry h₀) (hf : f ∈ facts) :
-    f.region.resolve entry h₀ = storeOf (ρ f.slot) := by
-  simp [ArgumentStoreRegion.resolve, hs f hf]
 
 end Verification.GraphCode.ArgumentPathTracking

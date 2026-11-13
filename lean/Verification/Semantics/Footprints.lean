@@ -520,13 +520,6 @@ heap `h₀`'s length, the store of `v` listed at `h₀`: **cell provenance**. -/
 def CellsFrom (h₀ h : Heap) (v : Val) : Prop :=
   ∀ l, some l ∈ storeElems h v → l < h₀.length → some l ∈ storeElems h₀ v
 
-theorem CellsFrom.refl (h : Heap) (v : Val) : CellsFrom h h v := fun _ hm _ => hm
-
-/-- Cell provenance composes along a growing heap. -/
-theorem CellsFrom.trans {h₀ h₁ h₂ : Heap} {v : Val} (hb : h₀.length ≤ h₁.length)
-    (h₁₀ : CellsFrom h₀ h₁ v) (h₂₁ : CellsFrom h₁ h₂ v) : CellsFrom h₀ h₂ v :=
-  fun l hm hl => h₁₀ l (h₂₁ l hm (Nat.lt_of_lt_of_le hl hb)) hl
-
 /-- A store location whose list at `h` keeps only cells of its list at `h₀`
 and cells at or above `h₀`'s length gives cell provenance. -/
 theorem CellsFrom.of_lists {h₀ h : Heap} {v : Val} {s : Nat}
@@ -568,23 +561,6 @@ theorem CellsFrom.of_post {Φ : Footprint} {ρ : Env} {h₀ h : Heap} {v : Val} 
   rcases ha with rfl | ⟨e, he, hm, hh⟩
   · exact CellsFrom.of_change (δ := .keep) rfl hs hw hw' rfl
   · exact CellsFrom.of_change (hΦ e he hm) hs hw hw' hh
-
-/-- Placing a location in a store lists only that location beyond the
-store's own. -/
-theorem mem_placeAt {ls : List (Option Nat)} {k l m : Nat} (h : some m ∈ placeAt ls k l) :
-    some m ∈ ls ∨ m = l := by
-  unfold placeAt at h
-  rcases List.mem_or_eq_of_mem_set h with h | h
-  · rcases List.mem_append.mp h with h | h
-    · exact .inl h
-    · simp [List.mem_replicate] at h
-  · cases h; exact .inr rfl
-
-/-- An element write, which places a location allocated at or above `b`,
-lists below `b` only cells its store listed: the step's cell provenance. -/
-theorem placeAt_cells {ls : List (Option Nat)} {k l b : Nat} (hb : b ≤ l) :
-    ∀ m, some m ∈ placeAt ls k l → m < b → some m ∈ ls := fun m hm hmb =>
-  (mem_placeAt hm).resolve_right fun h => by omega
 
 /-- What transport may use, at the heap the step starts in: the slots whose
 own locations are at least the entry heap's length, and the slots whose

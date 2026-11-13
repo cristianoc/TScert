@@ -7,7 +7,7 @@ What an accepted unit of mode 8 (`FilePlans.passGroup`) means, stated
 without certificates (`RequestSafe`, `PassUnitSafe`), and the interface the
 graph-level proof of `SinglePass.run` supplies (`RunSound`). The statements
 and the theorems built on them are presented in
-docs/drafts/pass-unit-theorem.md. -/
+docs/SINGLE-PASS-THEOREM.md. -/
 
 namespace Verification.SourceClaimJson.PassUnit
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
@@ -31,10 +31,6 @@ variable {ι : Type} [Labels ι]
 /-- The term that runs a program graph from `start`, frame `L`, receiver `d`. -/
 def gotoOf (P : Program) (start : Nat) (L : List Tm) (d : Tm) : Tm :=
   .goto (P.map (·.expression)) (P.map fun n => (n.continuation, n.handler)) start L d
-
-/-- The start's point claim states the inputs as its context. -/
-def StartContext (claims : List (CertificateProducer.PointClaim ι)) (start : Nat) (inputs : List (Ty ι)) : Prop :=
-  (claims[start]?).map (·.context) = some inputs
 
 end
 

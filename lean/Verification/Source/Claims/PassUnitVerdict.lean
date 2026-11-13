@@ -5,7 +5,7 @@ import Verification.Source.Claims.PassUnitInterfaces
 
 `passUnitVerdict_safe`: where mode 8 (`verifyUnitsFile`) prints a unit's
 line `"accepted": true`, every member of the unit's group is safe, under the
-graph-level hypotheses `RunSound` and `RunKeepsSummaries` alone. docs/drafts/pass-unit-theorem.md, section 1. -/
+graph-level hypotheses `RunSound` and `RunKeepsSummaries` alone. docs/SINGLE-PASS-THEOREM.md, section 1. -/
 
 namespace Verification.SourceClaimJson.PassUnit
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore

@@ -161,7 +161,13 @@ run_cmd do
   check ``Verification.SourceClaimJson.PassUnit.envOk_of_linked
   check ``Verification.SourceClaimJson.PassUnit.codeSpec_of_clauses
   check ``Verification.SourceClaimJson.PassUnit.closure_meets_below
-  check ``Verification.SourceClaimJson.PassUnit.unitSpec_of_requestSafe
+  check ``Verification.SourceClaimJson.PassUnit.rowSpec_of_requestSafe
+  check ``Verification.SourceClaimJson.PassUnit.rowSpec_of_clauses
+  check ``Verification.SourceClaimJson.PassUnit.codeRun_of_clauses
+  check ``Verification.SourceClaimJson.PassUnit.row_invoke_at
+  check ``Verification.SourceClaimJson.PassUnit.safePostExc_and
+  check ``Verification.CallEffects.Effect.post_take_row
+  check ``Verification.CallEffects.Effect.ensures_frame
   check ``Verification.SourceClaimJson.PassUnit.codeBound_some
   check ``Verification.SourceClaimJson.PassUnit.captures_envOk
   check ``Verification.SourceClaimJson.PassUnit.approx_meets
@@ -196,7 +202,6 @@ run_cmd do
   check ``Verification.StoreMaps.StoreMap.related_assign
   check ``Verification.StoreMaps.ordinary_allowed
   check ``Verification.SourceClaimJson.PassUnit.signatureAgrees_of_storeMap
-  check ``Verification.SourceClaimJson.PassUnit.signatureAgrees_of_maps
   check ``Verification.StoreMaps.checkMap_sound
   check ``Verification.StoreMaps.matchStores_sound
   check ``Verification.StoreMaps.StoreMap.excOf_eq
@@ -230,7 +235,6 @@ run_cmd do
   check ``Verification.Footprints.Sep.sound
   check ``Verification.Footprints.Post.mono
   check ``Verification.Footprints.keep_across_call
-  check ``Verification.Footprints.StoreApart.sep
   check ``Verification.CallEffects.Effect.within_iff_closed
   check ``Verification.CallEffects.Effect.within_closed
   check ``Verification.CallEffects.Effect.within_iff_regions
@@ -240,18 +244,11 @@ run_cmd do
   check ``Verification.Footprints.Post.compose
   check ``Verification.Footprints.Region.sub_mem
   check ``Verification.Footprints.CellsFrom.of_post
-  check ``Verification.Footprints.CellsFrom.trans
-  check ``Verification.Footprints.placeAt_cells
-  check ``Verification.Footprints.Arr.Within.cells
   check ``Verification.Footprints.ArgumentStoreRegionsWithin.iff_post
   check ``Verification.Footprints.ArgumentStoreRegionsWithin.trans
-  check ``Verification.Footprints.ArgumentStoreRegionsWithin.frame_length
-  check ``Verification.Footprints.ArgumentStoreRegionsWithin.frame_densePrefix
   check ``Verification.Footprints.StoreApart.stable_frame
   check ``Verification.Footprints.StablePath.frame
-  check ``Verification.Footprints.ArgumentStoreRegionsWithin.nested
   check ``Verification.Footprints.StoreApart.stable_path_frame
-  check ``Verification.Footprints.StoreApart.not_alias
   check ``Verification.GraphCode.ArgumentPathTracking.checkEntry_sound
   check ``Verification.GraphCode.ArgumentPathTracking.checkEdges_sound
   check ``Verification.GraphCode.ArgumentPathTracking.checkHandler_sound
@@ -325,7 +322,6 @@ run_cmd do
   check ``Verification.TolerantFrames.kept_box
   check ``Verification.TolerantFrames.grow
   check ``Verification.TolerantFrames.grow_path
-  check ``Verification.TolerantFrames.dense
   check ``Verification.TolerantFrames.field_write_keeps_bound
   check ``Verification.TolerantFrames.atomHolds_extend
   check ``Verification.TolerantFrames.atomHolds_heapFree
@@ -411,7 +407,6 @@ run_cmd do
   check ``Verification.TolerantFrames.select_call_none
   check ``Verification.TolerantFrames.passSteps_value
   check ``Verification.TolerantFrames.passSteps_sound
-  check ``Verification.TolerantFrames.ordinary_eq_over
   check ``Verification.TolerantFrames.ordinary_select_eq
   check ``Verification.TolerantFrames.select_run
   check ``Verification.TolerantFrames.ordinary_select_sound
@@ -551,63 +546,7 @@ run_cmd do
   check ``Verification.TolerantFrames.zip_tail_eq
   check ``Verification.TolerantFrames.mergeEqual_holds
   -- the model-side supports (TolerantFramesModel*)
-  check ``Verification.TolerantFrames.storeF_cell
-  check ``Verification.TolerantFrames.storeF_grow
-  check ``Verification.TolerantFrames.arrayF_at
-  check ``Verification.TolerantFrames.arrAt_invariant
-  check ``Verification.TolerantFrames.lowerBound_push
-  check ``Verification.TolerantFrames.arrayF_store
-  check ``Verification.TolerantFrames.cell_src
-  check ``Verification.TolerantFrames.write_safe
-  check ``Verification.TolerantFrames.lt_binop
-  check ``Verification.TolerantFrames.guard_safe
-  check ``Verification.TolerantFrames.read_safe
-  check ``Verification.TolerantFrames.lowerBound_iff
-  check ``Verification.TolerantFrames.headAt_action
-  check ``Verification.TolerantFrames.bodyAt_action
-  check ``Verification.TolerantFrames.loopPre_admin
-  check ``Verification.TolerantFrames.loop_checked
-  check ``Verification.TolerantFrames.loop_safe
-  check ``Verification.TolerantFrames.loop_done
-  check ``Verification.TolerantFrames.loop_no_raise
-  check ``Verification.TolerantFrames.aliasHeap_ok
-  check ``Verification.TolerantFrames.alias_entry
-  check ``Verification.TolerantFrames.alias_loop_safe
-  check ``Verification.TolerantFrames.storeListField_sound
-  check ``Verification.TolerantFrames.storeListTy_listT
-  check ``Verification.TolerantFrames.storeListField_at
-  check ``Verification.TolerantFrames.storeCells_of_typed
-  check ``Verification.TolerantFrames.storeListField_of_storeField
-  check ``Verification.TolerantFrames.storeCells_of_storeField
-  check ``Verification.TolerantFrames.storeCells_of_builtins
-  check ``Verification.TolerantFrames.apart_grow_keep_typed
-  check ``Verification.TolerantFrames.alloc_apart_typed
-  check ``Verification.TolerantFrames.stableAt_of_present
-  check ``Verification.TolerantFrames.stableAt_of_stableField
-  check ``Verification.TolerantFrames.stableAt_of_stableFirst
-  check ``Verification.TolerantFrames.stableAt_cons
-  check ``Verification.TolerantFrames.grow_path_typed
-  check ``Verification.TolerantFrames.valueClass_ok
-  check ``Verification.TolerantFrames.storeClass_ok
-  check ``Verification.TolerantFrames.action_le_valueClass
-  check ``Verification.TolerantFrames.viewLengthOf_kept
-  check ``Verification.TolerantFrames.viewStable_invariant
-  check ``Verification.TolerantFrames.view_box
-  check ``Verification.TolerantFrames.viewStable_of_typed
-  check ``Verification.TolerantFrames.view_not_invariant
-  check ``Verification.TolerantFrames.initTerm_kept
-  check ``Verification.TolerantFrames.init_box
-  check ``Verification.TolerantFrames.init_path
-  check ``Verification.TolerantFrames.call_rule
   check ``Verification.TolerantFrames.alloc_step
-  check ``Verification.TolerantFrames.alloc_post
-  check ``Verification.TolerantFrames.apart_not_kept_fresh
-  check ``Verification.TolerantFrames.rebaseAll_labels
-  check ``Verification.TolerantFrames.rebase_elems
-  check ``Verification.TolerantFrames.seq_eff
-  check ``Verification.TolerantFrames.fresh_eff
-  check ``Verification.TolerantFrames.fresh_eff_bound
-  check ``Verification.TolerantFrames.fresh_cells_not_erased
   -- Leg 8: the merge and forgetting names (TolerantFramesMerge*, TolerantFramesStoreOps*)
   check ``Verification.TolerantFrames.mergeState_state
   check ``Verification.TolerantFrames.mergeState_implies
@@ -653,7 +592,6 @@ run_cmd do
   check ``Verification.TolerantFrames.headVal_fresh
   check ``Verification.TolerantFrames.headEntry_slots
   check ``Verification.TolerantFrames.headEntry_holds
-  check ``Verification.TolerantFrames.headsEntered_of
   check ``Verification.TolerantFrames.canon_names
   check ``Verification.TolerantFrames.addRaw_below
   check ``Verification.TolerantFrames.remove_below
@@ -819,7 +757,6 @@ run_cmd do
   check ``Verification.TolerantFrames.branchShape_of
   check ``Verification.TolerantFrames.nodeShape_of
   check ``Verification.GraphCode.ArgumentRegionGraph.checkNode_sound
-  check ``Verification.GraphCode.ArgumentRegionGraph.nodesWithin_of
   check ``Verification.GraphCode.ArgumentRegionGraph.checkNode_mono
   check ``Verification.GraphCode.ArgumentRegionGraph.meet_sub
   -- Leg 15b: the node obligations at every continuation, the regional check along a run, the stated assertions, the guard goals, a call's fresh result
@@ -842,10 +779,8 @@ run_cmd do
   check ``Verification.TolerantFrames.regionNodeEntry_of
   check ``Verification.TolerantFrames.regionX_start
   check ``Verification.TolerantFrames.nodesChecked_stable
-  check ``Verification.TolerantFrames.stableNow_admissible
   check ``Verification.TolerantFrames.passPreA_adminClosed
   check ``Verification.TolerantFrames.nodesChecked_of_walkA
-  check ``Verification.TolerantFrames.asserted_of_walkA
   check ``Verification.TolerantFrames.holds_of_assertsAt
   check ``Verification.TolerantFrames.holds_of_indices_append
   check ``Verification.TolerantFrames.assertsAt_of_edge
@@ -887,7 +822,6 @@ run_cmd do
   check ``Verification.TolerantFrames.yieldsJudged_nil
   check ``Verification.TolerantFrames.promiseDerivChecked_of
   check ``Verification.TolerantFrames.yieldsJudged_of_checked
-  check ``Verification.TolerantFrames.exitDeliversY_head
   check ``Verification.TolerantFrames.goalHolds_of_returnY
   check ``Verification.TolerantFrames.passShapeCheck'_reassign
   check ``Verification.TolerantFrames.nodup_of_eraseDups
@@ -1075,7 +1009,6 @@ run_cmd do
   check ``Verification.TolerantFrames.visitEntry_settled
   check ``Verification.TolerantFrames.visitCheck_true
   check ``Verification.TolerantFrames.stepRun_shape
-  check ``Verification.TolerantFrames.boundOk_eq
   check ``Verification.TolerantFrames.visitStep_checks
   check ``Verification.TolerantFrames.returnOk_check
   check ``Verification.TolerantFrames.stepYields_kept
@@ -1087,10 +1020,7 @@ run_cmd do
   check ``Verification.TolerantFrames.differing_cover
   check ``Verification.TolerantFrames.foldl_flag
   check ``Verification.TolerantFrames.diffSubtypes_pairs
-  check ``Verification.TolerantFrames.diffSubtypes_covers
-  check ``Verification.TolerantFrames.diffSubtypes_env
   check ``Verification.TolerantFrames.mixed_fold
-  check ``Verification.TolerantFrames.mixedContext_env
   check ``Verification.TolerantFrames.WalkExtends.refl
   check ``Verification.TolerantFrames.WalkExtends.trans
   check ``Verification.TolerantFrames.WalkExtends.incoming_mem
@@ -1125,7 +1055,6 @@ run_cmd do
   check ``Verification.TolerantFrames.HereEmpty.reassign
   check ``Verification.TolerantFrames.hereEmpty_false
   check ``Verification.TolerantFrames.vacuous_false
-  check ``Verification.TolerantFrames.yieldsOk_of_or
   check ``Verification.TolerantFrames.slotsNamed_tail
   check ``Verification.TolerantFrames.NonHeadExitChecked.reassign
   check ``Verification.TolerantFrames.nonHeadExit_delivers
@@ -1165,8 +1094,6 @@ run_cmd do
   check ``Verification.TolerantFrames.exitsFold_cachedVacuity
   check ``Verification.TolerantFrames.visitExits_cachedVacuity
   check ``Verification.TolerantFrames.cachedVacuity_empty
-  check ``Verification.TolerantFrames.SafePostExc.and_steps
-  check ``Verification.TolerantFrames.stepFresh_judgment
   check ``Verification.TolerantFrames.keepSummaries_self
   check ``Verification.TolerantFrames.keepSummaries_sound
   check ``Verification.TolerantFrames.setup_ok
@@ -1230,7 +1157,6 @@ run_cmd do
   check ``Verification.TolerantFrames.headExit_yields
   check ``Verification.TolerantFrames.assertionExit_yields
   check ``Verification.TolerantFrames.exitStep_yields_source
-  check ``Verification.TolerantFrames.exitsFold_yields_source
   check ``Verification.TolerantFrames.exitsFold_records_yields
   check ``Verification.TolerantFrames.visitExits_records_yields
   check ``Verification.TolerantFrames.impliesHeld_checked
@@ -1268,7 +1194,6 @@ run_cmd do
   check ``Verification.TolerantFrames.expandedLinks_recover
   check ``Verification.TolerantFrames.regionalJoin_right
   check ``Verification.TolerantFrames.regionalLinks_recover
-  check ``Verification.TolerantFrames.separation_norm_recover
   check ``Verification.TolerantFrames.separation_union_right
   check ``Verification.TolerantFrames.separation_norm_partners
   check ``Verification.TolerantFrames.materialize_separation_partners
@@ -1281,14 +1206,12 @@ run_cmd do
   check ``Verification.TolerantFrames.visitExits_regionalCheck
   check ``Verification.TolerantFrames.RecInv.regionalWitness
   check ``Verification.TolerantFrames.recordedRegion_at
-  check ``Verification.TolerantFrames.regionalVisitTables
 
   check ``Verification.TolerantFrames.visitExits_regional_prefix
   check ``Verification.TolerantFrames.visitExits_answers_prefix
   check ``Verification.TolerantFrames.checkedWalk_final
   check ``Verification.TolerantFrames.checkedWalk_nodeAlignment
   check ``Verification.TolerantFrames.RecInv.regionalWitnessSound
-  check ``Verification.TolerantFrames.regionalWalkAlignment
   check ``Verification.TolerantFrames.regionalVisitTables_of_recordedAgreement
 
 open Lean Elab Command in
@@ -1357,8 +1280,6 @@ run_cmd do
   check ``Verification.TolerantFrames.visitEntry_head_pair
   check ``Verification.TolerantFrames.setup_startEntered
   check ``Verification.TolerantFrames.exit_target_labels
-  check ``Verification.TolerantFrames.ExitChecks.givenCorrespondence
-  check ``Verification.TolerantFrames.ExitChecks.contextCorrespondence
   check ``Verification.TolerantFrames.ExitChecks.Site.handler_record
   check ``Verification.TolerantFrames.ExitChecks.handlerRecords_of_checked
   check ``Verification.TolerantFrames.ExitChecks.Site.setup

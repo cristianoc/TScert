@@ -122,8 +122,6 @@ theorem edgeTransfer_names [DecidableEq ι] [Hashable ι] {names : List Nat} {m 
     (edgeTransfer names m pushed isHandler outFresh entry result edgeStore implies).1.names = mapNames names m :=
   rfl
 
-theorem mapNames_none (names : List Nat) : mapNames names none = names := rfl
-
 /-- **The target's width** (`mapNames_length`): an edge whose mapping
 reads only source slots gives the target as many names as the mapping has
 slots; the identity mapping as many as the source. -/

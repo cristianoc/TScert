@@ -157,12 +157,6 @@ def AfterStep (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0 : 
     (outFresh = true → st.result ∉ entry.fresh → FreshAt m' (ρ' 0))
 
 omit [DecidableEq ι] [Hashable ι] [Instantiates ι] in
-theorem yieldsOk_of_or {G : NormalGraph ι} {ys ys' : List (PromiseCalls.Yield ι)} {ρ : Env} {n : Nat}
-    {W : WorldT n} {u : Tm} (h : ys' = [] ∨ ys' = ys) (hy : PromiseCalls.YieldsOk G ys ρ n W u) :
-    PromiseCalls.YieldsOk G ys' ρ n W u := by
-  rcases h with rfl | rfl
-  · intro y hy; cases hy
-  · exact hy
 
 omit [DecidableEq ι] [Hashable ι] [Instantiates ι] in
 theorem slotsNamed_tail {names : List Nat} {x : Nat} {v : Tm} {ρ η : Env} (h : SlotsNamed (x :: names) (push v ρ) η) :

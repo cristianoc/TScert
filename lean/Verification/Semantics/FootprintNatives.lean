@@ -72,14 +72,6 @@ theorem dense_iff_present {n : Nat} {ls : List (Option Nat)} :
     · have := h i hi
       simp [present, hn] at this
 
-private theorem padded_get {ls : List (Option Nat)} {m i : Nat} :
-    (ls ++ List.replicate m none)[i]? = some (some l) → ls[i]? = some (some l) := by
-  intro h
-  by_cases hi : i < ls.length
-  · rwa [List.getElem?_append_left hi] at h
-  · rw [List.getElem?_append_right (by omega), List.getElem?_replicate] at h
-    split at h <;> simp at h
-
 theorem present_placeAt_self (ls : List (Option Nat)) (k l : Nat) : present (placeAt ls k l) k = true := by
   unfold present placeAt
   rw [List.getElem?_set_self (by simp; omega)]
@@ -133,12 +125,6 @@ def Arr.Within (b : Nat) (orig : List (Option Nat)) (a : Arr) : Prop :=
 
 theorem Arr.Within.refl {b : Nat} {a : Arr} (h : b ≤ a.next) : a.Within b a.ls :=
   ⟨h, fun _ hl => .inl hl⟩
-
-/-- A native's store steps list below `b` only cells of the original store:
-cell provenance of the native step (`CellsFrom`). -/
-theorem Arr.Within.cells {b orig} {a : Arr} (h : a.Within b orig) :
-    ∀ m, some m ∈ a.ls → m < b → some m ∈ orig := fun m hm hmb =>
-  (h.2 m hm).resolve_right fun hle => by omega
 
 theorem Arr.Within.set {b orig} {a : Arr} (h : a.Within b orig) (k : Nat) : (a.set k).Within b orig := by
   unfold Arr.set
@@ -466,22 +452,6 @@ theorem array_native_post {ρ x s h h' ls ls'} (hs : (fieldsOf (ρ x)).lookup ar
   · subst hls
     rw [hv] at hl; cases hl
     exact ⟨_, hv', .inr ⟨(.field x arrayStoreKey, .grow), List.mem_cons_self .., by simp [Region.mem, hs], hg⟩⟩
-  · rcases hrest l v hl hls with h | ⟨hc, v', hv''⟩
-    · exact ⟨v, h, .inl rfl⟩
-    · exact ⟨v', hv'', .inr ⟨(.cls .value, .any), by simp, hc, trivial⟩⟩
-
-/-- The same for a native that changes its store arbitrarily: the removing
-mutators. -/
-theorem array_native_post_any {ρ x s h h'} (hs : (fieldsOf (ρ x)).lookup arrayStoreKey = some s)
-    (hlen : h.length ≤ h'.length) (hs' : ∃ v', h'[s]? = some v')
-    (hrest : ∀ l v, h[l]? = some v → l ≠ s → h'[l]? = some v ∨
-      ((Region.cls .value).mem ρ h l = true ∧ ∃ v', h'[l]? = some v')) :
-    Post [(.field x arrayStoreKey, .any), (.cls .value, .any)] ρ h h' := by
-  refine ⟨hlen, fun l v hl => ?_⟩
-  by_cases hls : l = s
-  · subst hls
-    obtain ⟨v', hv'⟩ := hs'
-    exact ⟨v', hv', .inr ⟨(.field x arrayStoreKey, .any), List.mem_cons_self .., by simp [Region.mem, hs], trivial⟩⟩
   · rcases hrest l v hl hls with h | ⟨hc, v', hv''⟩
     · exact ⟨v, h, .inl rfl⟩
     · exact ⟨v', hv'', .inr ⟨(.cls .value, .any), by simp, hc, trivial⟩⟩

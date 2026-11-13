@@ -9,24 +9,6 @@ open Verification SinglePass ControlFlow CertificateProducer PositiveCertificate
 open ProgramTyping LabelStore GraphCode GraphCode.ArgumentRegionGraph
 variable {ι : Type} [Labels ι] {G : NormalGraph ι} {I : InstanceImageCheck G}
 
-/-- Local evidence for a retained successful visit at each final label record.
-The prefix relates that visit's regional summaries to the accepted
-run's summaries; the tables agree with the recorded graph at the node and its targets. -/
-@[nospecialize] def RegionalVisitEvidence (ι : Type) [Labels ι] : Prop :=
-  ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I)
-    (env : WalkEnv ι G I) (σ : WalkState ι G) (reach : Nat) (rg : Regional),
-    RunCall.walk c = .ok (σ, reach) → reach ≤ σ.walk.visited →
-    EnvFacts c env → RecInv c env σ → env.regional = some rg →
-    ∀ l, visB σ.walk l = true → ∃ (before : WalkState ι G) (en : Entered ι)
-      (sd : StepDone ι G) (ex : ExitsDone ι G) (done : RegionalDone ι),
-      visitEntry G I env before l = .ok en ∧ visitStep G I env before l en = .ok sd ∧
-      visitExits G I env before l en sd = .ok ex ∧
-      regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 before.regionIn = .ok done ∧
-      σ.walk.labels[l]? = some (LabelWalk.ofVisit before.fresh en sd (some done.state)) ∧
-      SumsPrefix (exitsYields G I env l en sd).2 σ.answers ∧
-      TablesAgree done.table (recordedRegionFacts σ.walk) done.ft
-        (recordedRegionFresh σ.walk rg.names) l env.nodes[l]!
-
 /-- The regional tables of a recorded visit agree with the final graph's
 tables. The visit's exit summaries must be a prefix of the final sound table. -/
 @[nospecialize] def RegionalRecordedTableAgreement (ι : Type) [Labels ι] : Prop :=
@@ -245,28 +227,6 @@ theorem RecInv.regionalWitnessSound {c : Target.RunCall G I} {env : WalkEnv ι G
   obtain ⟨before, en, sd, ex, done, he, hs, hx, hd, hr, hp⟩ := hi.regionalWitness hl hreg
   exact ⟨before, en, sd, ex, done, he, hs, hx, hd, hr,
     fun s hm => hsums s (((visitExits_regional_prefix hx).trans hp).mem s hm)⟩
-
-/-- A retained visit with summary-prefix and table agreement supplies
-the checked walk's node alignment. -/
-theorem regionalWalkAlignment (hevidence : RegionalVisitEvidence ι) : RegionalWalkAlignment ι := by
-  intro G I c after admits hp r hc Φ regions exc hr
-  have final := checkedWalk_final hp hc hr
-  obtain ⟨env, σ, reach, rg, hw, hle, henv, hi, hrg, hstart, hstartVis,
-    hΦ, hregions, hexc, hsums, heq, hsteps⟩ := final
-  have hvis : ∀ l, r.w.visited l → visB σ.walk l = true := by
-    intro l hl
-    rw [heq] at hl
-    exact (ofPass_visited _ _ _).mp hl
-  refine ⟨env, σ, rg, hi, hrg, hstart, hstartVis, hΦ, hregions, hexc, hvis, ?_⟩
-  intro l hl
-  obtain ⟨before, en, sd, ex, done, hen, hsd, hex, hd, hrecord, evidence⟩ :=
-    hevidence G I c env σ reach rg hw hle henv hi hrg l (hvis l hl)
-  refine ⟨before, en, sd, ex, done, hen, hsd, hex, hd, hrecord, ?_⟩
-  have aligned := checkedWalk_nodeAlignment hc henv heq hsteps hl hrecord
-  refine ⟨aligned.1, aligned.2.1, aligned.2.2.1, aligned.2.2.2.1, aligned.2.2.2.2, ?_, ?_⟩
-  · exact fun s hs => hsums s (evidence.1.mem s hs)
-  · rw [← aligned.2.2.1]
-    exact evidence.2
 
 /-- The graph uses retained visits with sound summaries and agreeing tables. -/
 theorem regionalVisitTables_of_recordedAgreement (ht : RegionalRecordedTableAgreement ι) :

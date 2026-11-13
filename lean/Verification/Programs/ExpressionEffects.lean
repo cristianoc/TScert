@@ -1669,16 +1669,6 @@ def storeFieldEvery (G : NormalGraph ι) (cs : List (PositiveNormalization.Claus
     | some B => B.any (fun p => decide (p.1 = fld)) && B.all (fun p => !decide (p.1 = fld) || storeTyEvery G p.2)
     | none => false
 
-theorem storeFieldEvery_at {G : NormalGraph ι} {cs : List (PositiveNormalization.Clause (Ty ι))} {fld : PropKey}
-    (h : storeFieldEvery G cs fld = true) (idx : Nat) : storeField G cs fld idx false = true := by
-  simp only [storeFieldEvery, storeField, Bool.and_eq_true, List.all_eq_true] at h ⊢
-  refine ⟨h.1, fun c hc => ?_⟩
-  have := h.2 c hc
-  split at this
-  · simp only [Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true] at this ⊢
-    exact ⟨this.1, fun p hp => (this.2 p hp).imp id (fun hp' => storeTyEvery_at hp' idx)⟩
-  · cases this
-
 theorem storeFieldEvery_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
     (hr : storeFieldEvery G (expand G Ref) fld = true) (hv : meaning G Ref n W v) :
     ∃ B L, (fld, L) ∈ B ∧ storeTyEvery G L = true ∧

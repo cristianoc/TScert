@@ -67,9 +67,6 @@ omit [DecidableEq ι] in
 theorem kOf_reassign (c : PointClaim ι) (entry : SinglePass.State) (ms : List Nat) (whole : Bool) :
     kOf (reassign G η) c entry ms whole = kOf G c entry ms whole := rfl
 
-theorem copiedOf_reassign (c : PointClaim ι) (entry : SinglePass.State) (t : Tm) :
-    copiedOf (reassign G η) c entry t = copiedOf G c entry t := rfl
-
 theorem passTreeCheck_reassign {pc : PassChecker G images} {pc' : PassChecker (reassign G η) (images.reassign η)}
     (hs : pc'.selectChecks = pc.selectChecks) (kE : HeapKnowledge.Knowledge) (codes : CodeEntry ι → Bool)
     (sums : List (ReadSummary ι)) (e : StepEvidence ι) :

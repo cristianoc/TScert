@@ -9,7 +9,7 @@ contracts of the slots no unit of the file fills (`OutsideContracts`),
 give every function of the file safe: each member of each closed unit's
 group is safe (`PassUnitSafe`), and each closed unit's value in the module's
 environment meets its interface at every budget (`approx_meets`), so its
-captures meet their types (docs/drafts/pass-unit-theorem.md, section 6). -/
+captures meet their types (docs/SINGLE-PASS-THEOREM.md, section 6). -/
 
 namespace Verification.SourceClaimJson.PassUnit
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
@@ -34,42 +34,47 @@ theorem requestSafe_of_member {f : FilePlans} {j : Nat} {name : String} {pos : S
   subst hc
   exact hs
 
-/-- **The code a member's request is**: its own code (`UnitIsCode`), or,
-for a function declared without `this`, the code behind the receiver's
-prologue (`UnitIsReceiverless`, `dropReceiver`). -/
-def CodeOf (f : FilePlans) (r : Req f) (e e' : CodeEntry (Lab f)) : Prop :=
-  (UnitIsCode r e ∧ e' = e) ∨ (UnitIsReceiverless r e ∧ e' = dropReceiver e)
+/-- **The code a member's request is**: its own code (`UnitIsCode`), its
+frames' separation the request's entry separation, or, for a function
+declared without `this`, the code behind the receiver's prologue
+(`UnitIsReceiverless`, `dropReceiver`), its frames' separation the
+request's with the receiver in front (`receiverSeparation`). -/
+def CodeOf (f : FilePlans) (r : Req f) (e e' : CodeEntry (Lab f)) (sep : HeapSeparation.Separation) : Prop :=
+  (UnitIsCode r e ∧ e' = e ∧ sep = r.entrySeparation) ∨
+    (UnitIsReceiverless r e ∧ e' = dropReceiver e ∧ sep = receiverSeparation r.entrySeparation)
 
 /-- **A signature realized by a member**: the member `j`'s plan is a graph
-request that is a code's (`CodeOf`) meeting the code conditions, and that
-code is the module function's code `c` at the signature `p`. -/
+request that is a code's (`CodeOf`) at the module function's separation,
+meeting the row conditions, and that code is the module function's code `c`
+at the signature `p`. -/
 def RowRealized (f : FilePlans) (c : ModuleCode (Lab f) String) (j : Nat) (p : CallEffects.Arrow (Ty (Lab f))) :
     Prop :=
-  ∃ (name : String) (pos : Span) (r : Req f) (e e' : CodeEntry (Lab f)), PlanAt f j name pos r ∧ CodeOf f r e e' ∧
-    codeConditions e = true ∧ e'.arity = c.arity ∧ e'.exprs = c.exprs ∧ e'.conts = c.conts ∧ e'.start = c.start ∧
+  ∃ (name : String) (pos : Span) (r : Req f) (e e' : CodeEntry (Lab f)), PlanAt f j name pos r ∧
+    CodeOf f r e e' c.sep ∧ rowConditions e = true ∧ e'.arity = c.arity ∧ e'.exprs = c.exprs ∧ e'.conts = c.conts ∧ e'.start = c.start ∧
     e'.captures = c.captures ∧ e'.store = none ∧ e'.row = p
 
 /-- **A realized signature is met by the module function's code** (proved,
 under `ReceiverDropSound` for a function declared without `this`): where
-the realizing member is safe and its plan is over the file's store. -/
+the realizing member is safe and its plan is over the file's store, as a
+module row at the function's separation. -/
 theorem rowRealized_spec (hdrop : ReceiverDropSound) {f : FilePlans} (hover : OverStore f)
     {c : ModuleCode (Lab f) String} {j : Nat} {p : CallEffects.Arrow (Ty (Lab f))}
     (hrow : RowRealized f c j p) (hj : MemberSafe f j) :
-    GraphCodeSpec (graphOf f) c.arity c.exprs c.conts c.start c.captures p := by
+    RowSpec (graphOf f) c.arity c.exprs c.conts c.start c.captures p c.sep := by
   obtain ⟨name, pos, r, e, e', hplan, hcode, hcond, ha, hex, hco, hst, hca, hsto, hrow⟩ := hrow
   have hr := requestSafe_of_member hj hplan
   have hG : RequestJson.graph r.toRequest = graphOf f := by
     show StoreView.graph r.types = _
     rw [hover j name pos r hplan]
-  have hspec : ∀ η, e'.Spec (reassign (RequestJson.graph r.toRequest) η) := by
-    rcases hcode with ⟨hu, rfl⟩ | ⟨hu, rfl⟩
-    · exact unitSpec_of_requestSafe hr hu hcond
-    · exact hdrop _ _ r e hr hu hcond
+  have hspec : ∀ η, RowSpec (reassign (RequestJson.graph r.toRequest) η) e'.arity e'.exprs e'.conts e'.start
+      e'.captures e'.row c.sep := by
+    rcases hcode with ⟨hu, rfl, hsep⟩ | ⟨hu, rfl, hsep⟩
+    · rw [hsep]; exact rowSpec_of_requestSafe hr hu hcond hsto
+    · rw [hsep]; exact hdrop _ _ r e hr hu hcond
   rw [hG] at hspec
   have he := hspec (graphOf f).env
   rw [reassign_env] at he
-  unfold CodeEntry.Spec at he
-  rw [ha, hex, hco, hst, hca, hsto, hrow] at he
+  rw [ha, hex, hco, hst, hca, hrow] at he
   exact he
 
 /-- **The module's layout** (H5a, the extraction's frame layout): the
@@ -79,7 +84,8 @@ and its interface, such that each function `x` of `D` has an interface presentin
 offers, one slot per capture, each linked slot read at its callee's
 interface with its callee in `D`, and each signature realized by a member
 of the group of a unit of `S` (its own group, or another one for an
-overload's signature); the outside values are closed values. The file-level
+overload's signature); the outside values are closed values, and the frames
+of each function's calls meet its separation (`apart`). The file-level
 theorem's value claims are about `D`; a function outside `D` keeps its
 members' safety from the units' verdicts alone. -/
 structure ModuleLayout (f : FilePlans) (selection : Option (List String)) (S : List String) where
@@ -93,6 +99,9 @@ structure ModuleLayout (f : FilePlans) (selection : Option (List String)) (S : L
     (∀ (k : Nat) d, (code x).slots[k]? = some (Slot.linked d) → (code x).captures[k]? = some (iface d) ∧ d ∈ D) ∧
     ∀ p ∈ offerRows L Sg, ∃ u ∈ S, ∀ i ∈ f.fr.selected selection, f.fr.unitId i = u → ∃ j ∈ f.fr.group i,
       RowRealized f (code x) j p
+  /-- The frames of each laid-out function's calls meet its separation, its
+  module cells apart: the initialization allocates each cell fresh. -/
+  apart : ∀ x ∈ D, CapturesApart code x
 
 /-- **The outside contracts** (H5b, the trusted boundary of the module's
 slots): every value a laid-out function's slot holds from outside the file's
@@ -117,7 +126,8 @@ theorem layout_realizes (hdrop : ReceiverDropSound) {f : FilePlans} {selection :
     ∀ x, x ∈ layout.D → Realizes (graphOf f) layout.code layout.iface (· ∈ layout.D) x := by
   intro x hx
   obtain ⟨L, Sg, hrep, hk, hlen, hagree, hrows⟩ := layout.shape x hx
-  refine ⟨L, Sg, hrep, hk, ?_, hlen, hagree, fun k v A hs hA i j hj V => hout x hx k v A hs hA i j hj V⟩
+  refine ⟨L, Sg, hrep, hk, ?_, hlen, hagree, fun k v A hs hA i j hj V => hout x hx k v A hs hA i j hj V,
+    layout.apart x hx⟩
   intro p hp
   obtain ⟨u, hu, hall⟩ := hrows p hp
   obtain ⟨i, hi, hid, hunit⟩ := hsafe u hu

@@ -57,13 +57,8 @@ namespace Term
 def value (s : Nat) : Term := ⟨.value, s, []⟩
 /-- The length of the array store a slot holds. -/
 def length (s : Nat) : Term := ⟨.length, s, []⟩
-/-- The length of the typed array a slot holds. -/
-def view (s : Nat) : Term := ⟨.view, s, []⟩
 /-- The length of the string a slot holds. -/
 def strLength (s : Nat) : Term := ⟨.strLength, s, []⟩
-
-/-- The term of a kind at a slot, its path empty. -/
-def ofKind (k : Kind) (s : Nat) : Term := ⟨k, s, []⟩
 
 /-- Whether a term reads the environment alone: a slot's own value, or the
 length of the string it is. -/
@@ -350,15 +345,6 @@ theorem strLengthOf_range {v : Val} {n : Int} (hv : strLengthOf v = some n) :
     · cases hv
   · cases hv
 
-theorem strLengthOf_inv {v : Val} {n : Int} (hv : strLengthOf v = some n) :
-    ∃ s, v = .str s ∧ (utf16Units s).length ≤ maxStringLength ∧ n = (utf16Units s).length := by
-  unfold strLengthOf at hv
-  split at hv
-  · split at hv
-    · cases hv; exact ⟨_, rfl, by assumption, rfl⟩
-    · cases hv
-  · cases hv
-
 /-- What a kind of term reads of a value. -/
 def kindValue (h : Heap) : Term.Kind → Val → Option Int
   | .value, v => intValue v
@@ -376,7 +362,6 @@ theorem termValue_nil {ρ : Env} {h : Heap} {k : Term.Kind} {s : Nat} :
 
 @[simp] theorem termValue_value {ρ : Env} {h : Heap} {s : Nat} : termValue ρ h (.value s) = intValue (ρ s) := rfl
 @[simp] theorem termValue_length {ρ : Env} {h : Heap} {s : Nat} : termValue ρ h (.length s) = lengthOf h (ρ s) := rfl
-@[simp] theorem termValue_view {ρ : Env} {h : Heap} {s : Nat} : termValue ρ h (.view s) = viewLengthOf h (ρ s) := rfl
 @[simp] theorem termValue_strLength {ρ : Env} {h : Heap} {s : Nat} : termValue ρ h (.strLength s) = strLengthOf (ρ s) := rfl
 
 theorem termValue_slot {ρ ρ' : Env} {h : Heap} {t : Term} {s : Nat} (hs : ρ' s = ρ t.slot) :

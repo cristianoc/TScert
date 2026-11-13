@@ -170,13 +170,6 @@ theorem named_le_box {cl : ClassEvidence} {Φ : Footprint} {c : Footprints.Close
     Box Φ (Named S η) ρ m s :=
   box_anti (fun _ ha => action_le hle hc ha) (named_keep_box hcE hS)
 
-/-- The class evidence a density fact supplies holds at the heap the density
-holds at (`FootprintStability.dense_classOk`): a weakening of a footprint
-through `x`'s store field reads it at the source state. -/
-theorem dense_class_at {x k : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} (hd : DenseAt x k ρ m s) :
-    ClassOk (denseClass x) ρ s.h :=
-  dense_classOk hd
-
 /-! ## The step: both exits -/
 
 /-- **The normal exit of a preserving step frames every fact it was not

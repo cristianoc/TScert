@@ -352,44 +352,6 @@ and agreement at the node and all its targets. -/
             rg.Φ = Φ ∧ rg.regions = regions ∧ rg.exc = exc ∧
             SummariesSound G I a.summaries.toList ∧ TablesAgree done.table table done.ft ft l (r.node l hl).node
 
-/-- Alignment of a checked abstract walk with a driver state and its
-recorded regional checks. The driver invariant supplies the visit witnesses;
-this premise supplies their node alignment, summary soundness and table agreement. -/
-@[nospecialize] def RegionalWalkAlignment (ι : Type) [Labels ι] : Prop :=
-  ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
-    RunPremises G I c after admits → ∀ r : RunWalkA G I c, WalkChecked c r →
-      ∀ Φ regions exc, Target.regionOf c.regional = some (Φ, regions, exc) →
-        ∃ (env : WalkEnv ι G I) (σ : WalkState ι G) (rg : Regional),
-          RecInv c env σ ∧ env.regional = some rg ∧ c.start = env.start ∧
-          visB σ.walk c.start = true ∧ rg.Φ = Φ ∧ rg.regions = regions ∧ rg.exc = exc ∧
-          (∀ l, r.w.visited l → visB σ.walk l = true) ∧
-          ∀ l (hl : r.w.visited l), ∃ (before : WalkState ι G) (en : Entered ι) (sd : StepDone ι G)
-            (ex : ExitsDone ι G) (done : RegionalDone ι),
-            visitEntry G I env before l = .ok en ∧ visitStep G I env before l en = .ok sd ∧
-            visitExits G I env before l en sd = .ok ex ∧
-            regionalAt G I env l en sd rg (exitsYields G I env l en sd).2 before.regionIn = .ok done ∧
-            σ.walk.labels[l]? = some (LabelWalk.ofVisit before.fresh en sd (some done.state)) ∧
-            env.codes = c.codes ∧ env.claimed[l]! = (r.node l hl).c ∧ env.nodes[l]! = (r.node l hl).node ∧
-            en.entry = (r.node l hl).entry ∧ sd.st = (r.node l hl).st ∧
-            SummariesSound G I (exitsYields G I env l en sd).2.summaries.toList ∧
-            TablesAgree done.table (recordedRegionFacts σ.walk) done.ft (recordedRegionFresh σ.walk rg.names)
-              l (r.node l hl).node
-
-/-- The graph tables from the driver's regional visit witnesses. -/
-theorem regionalVisitTables (alignment : RegionalWalkAlignment ι) : RegionalVisitTables ι := by
-  intro G I c after admits hp r hchk Φ regions exc hreg
-  obtain ⟨env, σ, rg, hi, hrg, hstart, hvis, hΦ, hregions, hexc, _, halign⟩ :=
-    alignment G I c after admits hp r hchk Φ regions exc hreg
-  have startWitness := hi.regionalWitness hvis hrg
-  obtain ⟨before, en, sd, ex, done, _, _, _, hd, hr, _⟩ := startWitness
-  have startTables := recordedRegion_at hr (by rfl) rg.names
-  refine ⟨recordedRegionFacts σ.walk, recordedRegionFresh σ.walk rg.names,
-    ⟨env, en, sd, rg, _, before.regionIn, done, hstart, hd, startTables⟩, ?_⟩
-  intro l hl
-  obtain ⟨before, en, sd, ex, done, he, hs, hx, hd, hr, hc, hclaim, hnode, hentry, hst, hsum, ht⟩ := halign l hl
-  exact ⟨env, before, en, sd, rg, _, before.regionIn, done, hs, hd,
-    hc, hclaim, hnode, hentry, hst, hΦ, hregions, hexc, hsum, ht⟩
-
 /-- Successful regional visits supply the recorded checks once their tables
 satisfy the graph invariant. -/
 theorem regionsRecorded_of_visitTables (hv : RegionalVisitTables ι) : RegionsRecorded ι := by

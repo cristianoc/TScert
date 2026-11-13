@@ -17,7 +17,7 @@ built-ins, so:
   map relating the two tables and the two exception families
   (`matchStores_sound_builtins`).
 
-docs/drafts/pass-unit-theorem.md, section 7, "Built-ins in one graph
+docs/SINGLE-PASS-THEOREM.md, section 7, "Built-ins in one graph
 only". -/
 
 namespace Verification.StoreMaps

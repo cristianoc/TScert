@@ -11,6 +11,25 @@ open EquationGraphs (Tree)
 section
 variable {ι : Type} [Labels ι]
 
+/-- A certified import's declared signatures: one plain signature, and
+beside it a guard's promise at most, the promised signature of the same
+actuals (`moduleArrow`'s guard). -/
+def importedSignatures (T : EquationStore.State) (U : List Tree) :
+    Except String (CallEffects.Arrow (List Tree) × Option Fragment.Guard) :=
+  match PositiveRules.expand (SourceTypes.graph T) U with
+  | [.arrs [a] []] => .ok (a, none)
+  | [.arrs [a, g] []] => do
+    let some p := g.effect.promise
+      | throw "a certified import needs one fixed call signature and a guard's at most"
+    if a.effect.promise.isSome || g.arguments != a.arguments || g.receiver != a.receiver ||
+        ({ g.effect with promise := none } : CallEffects.Effect) != a.effect then
+      throw "a certified import's guard is a signature of its plain one's actuals"
+    let asserts : Bool := match p with
+      | .asserts _ => true
+      | .guards _ => false
+    return (a, some { param := p.param, asserts, type := graphClaim g.result })
+  | _ => throw "a certified import needs one fixed call signature"
+
 /-- An import a certified unit stands for, read as the unit's module reads
 the unit (`moduleArrow`): its declared signature, `U`'s one call signature,
 with the unit's footprint and on-throw flag, its returned function's
@@ -18,14 +37,55 @@ signature with the footprint the unit proposes for it, and its extension
 discarding further actuals, which the unit's code does. -/
 def importedArrow (T : EquationStore.State) (U : List Tree) (footprint : Footprints.Closed) (onThrow : Bool)
     (result : Footprints.Closed) : Except String Json := do
+  let (a, guard) ← importedSignatures T U
+  if a.effect.promise.isSome then throw "a certified import's plain signature states no promise"
+  let params : List Fragment.Param := a.arguments.zipIdx.map fun (A, i) => ⟨s!"p{i}", graphClaim A, false⟩
+  let ret ← resultWithFootprint T (graphClaim a.result) result
+  moduleArrow ⟨"", (0, 0), params, ret, [], false, guard, false, none, a.effect.pre, a.effect.ensures⟩
+    footprint onThrow
+
+/-- Whether a declaration's module is one with a body, whose functions a
+module check certifies: a source file, not a declaration file. -/
+def bodyModule (module : String) : Bool :=
+  let ends := fun (x : String) => module.endsWith x
+  (ends ".ts" || ends ".mts" || ends ".cts" || ends ".tsx" || ends ".js" || ends ".mjs" || ends ".cjs") &&
+    !(ends ".d.ts" || ends ".d.mts" || ends ".d.cts")
+
+/-- An effect stating nothing a caller may assume beyond the ordinary effect:
+at most a precondition, which the caller discharges. -/
+def assumesNothing (e : CallEffects.Effect) : Bool :=
+  ({ e with pre := [], requires := none } : CallEffects.Effect) == CallEffects.Effect.ofFootprint .top
+
+/-- **An import with a body read at its declared type, with no entry**
+(`ordinaryImport`): what the declaration's signatures state of a call beyond
+its precondition (a footprint, a postcondition, fresh results, a promise, a
+throw bound, regions) its module's check certifies only through a published
+entry (`importedArrow`), so without one each signature is read at the
+ordinary effect, its precondition kept. A declared type whose signatures
+assume nothing is read as written; one that is no clause of signatures, or
+whose rest signatures assume something, is read as written where its
+signatures assume nothing and refused otherwise. -/
+def ordinaryImport (T : EquationStore.State) (U : List Tree) : Except String Json := do
+  let claim (V : List Tree) : Json := Json.mkObj [("top", toJson false), ("atoms", Json.arr (V.map fun l =>
+    Json.mkObj [("a", toJson "graph"), ("label", Tree.toJson l)]).toArray)]
   match PositiveRules.expand (SourceTypes.graph T) U with
-  | [.arrs [a] []] =>
-    if a.effect.promise.isSome then throw "a certified import's signature states no promise"
-    let params : List Fragment.Param := a.arguments.zipIdx.map fun (A, i) => ⟨s!"p{i}", graphClaim A, false⟩
-    let ret ← resultWithFootprint T (graphClaim a.result) result
-    moduleArrow ⟨"", (0, 0), params, ret, [], false, none, false, none, a.effect.pre, a.effect.ensures⟩
-      footprint onThrow
-  | _ => throw "a certified import needs one fixed call signature"
+  | [.arrs L S] =>
+    if L.all (assumesNothing ·.effect) && S.all (assumesNothing ·.effect) then return graphClaim U
+    if !S.all (assumesNothing ·.effect) || L.isEmpty then
+      throw "an import with a body whose variadic signature states an effect is read only at its module's entry"
+    let ordinary (e : CallEffects.Effect) : CallEffects.Effect :=
+      { CallEffects.Effect.ofFootprint .top with pre := e.pre, requires := e.requires }
+    let signature (a : CallEffects.Arrow (List Tree)) : Json :=
+      Json.mkObj [("a", toJson "function"), ("this", claim a.receiver),
+        ("params", toJson (a.arguments.map claim)), ("result", claim a.result), ("construct", toJson "unknown"),
+        ("array", toJson "unknown"), ("effect", toJson (ordinary a.effect))]
+    let atoms := L.map signature
+    let atom := match atoms with
+      | [a] => a
+      | a :: rest => a.setObjVal! "and" (toJson rest)
+      | [] => Json.null
+    return Json.mkObj [("top", toJson false), ("atoms", toJson [atom])]
+  | _ => return graphClaim U
 
 /-- The units of one name are the overloads of one declaration: each runs the
 implementation's code, so they share their parameters' names, their body,
@@ -222,6 +282,15 @@ def fileFront (ast claims : Json) (fileKey : String)
         (declaration.getObjValAs? String "name").toOption != some "Error" then none else
       some (← (binding.getObjValAs? String "local").toOption,
         ← (fromJson? (binding.getObjValD "span") : Except String Span).toOption)
+  -- The imported values whose declarations are in modules with a body.
+  let bodyImports : List (String × Span) := (((ast.getObjVal? "declarations").toOption.bind
+      (fun doc => (doc.getObjVal? "values").toOption.bind (·.getArr?.toOption))).getD #[]).toList.filterMap fun value => do
+    let binding ← (value.getObjVal? "binding").toOption
+    let declaration ← (value.getObjVal? "declaration").toOption
+    let module ← (declaration.getObjValAs? String "module").toOption
+    if !bodyModule module then none else
+    some (← (binding.getObjValAs? String "local").toOption,
+      ← (fromJson? (binding.getObjValD "span") : Except String Span).toOption)
   let ⟨ast, d, imported, generics, unitBinders, initBinders⟩ ← equationFront ast claims fileKey budget
   let functionJsons := ((ast.getObjVal? "functions").toOption.bind (·.getArr?.toOption)).getD #[]
   let all ← Fragment.decodeAstWithParams ast
@@ -239,11 +308,17 @@ def fileFront (ast claims : Json) (fileKey : String)
   let ordinary := (all.filter (·.2.isEmpty)).map (·.1)
   let moduleFunctions : List (SourceExtraction.ModuleValue Tree) :=
     ordinarySlots d ordinary (ordinary.map (·.name)).eraseDups ++
-    (imported.map fun (name, span, U) => (name, span, match qualified.lookup name with
+    (imported.map fun (name, span, U) =>
+      -- An import with a body, read at no entry, at the ordinary effect
+      -- (`ordinaryImport`); a declaration-only import at its declaration.
+      let declared : Except String (SourceExtraction.ModuleType Tree) :=
+        if bodyImports.contains (name, span) then (ordinaryImport d.types U).map .written
+        else .ok (.written (graphClaim U))
+      (name, span, match qualified.lookup name with
       | some (footprint, onThrow, result) => match importedArrow d.types U footprint onThrow result with
         | .ok J => .ok (.written J)
-        | .error e => if lenient then .ok (.written (graphClaim U)) else .error e
-      | none => .ok (.written (graphClaim U)))) ++
+        | .error e => if lenient then declared else .error e
+      | none => declared)) ++
     (if arrays then [(SourceExtraction.arrayPrototypeName, (0, 0),
       Except.ok (.written (Json.mkObj [("top", toJson false), ("atoms", toJson [Json.mkObj
         [("a", toJson "graph"), ("label", toJson (StoreView.arrayProto d.types))]])])))] else [])

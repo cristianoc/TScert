@@ -507,7 +507,7 @@ private partial def schemeRowOf (t : ClaimType Tree) : SchemeM (Tree × List (St
   -- So is one an annotation's lowering reads as a packed placeholder of its
   -- name (`bindNames`: a binder typing a value and, as a declaration's
   -- packed argument, its argument lists), whose companion the producer
-  -- spells `T#pack` (claims.ml:490-499).
+  -- spells `T#pack`.
   let packedAt (n : String) : Bool := match T.names.toList.idxOf? (n, .packed) with
     | some i => parts.any (mentionsTree (.var EquationLowering.nameOwner i .packed))
     | none => false

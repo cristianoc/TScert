@@ -10,7 +10,6 @@ open ProgramCertificates PointClaims ControlFlow
 open CallEffects (Arrow RestArrow Contract Effect)
 open PositiveCertificates (InstanceImageCheck finiteInstanceImages)
 
-
 /-- Nanoseconds this process spent in the forward pass (`produceRawUsing`),
 read by `--verify-units` to print its phase times. A measurement only. -/
 initialize forwardNanos : IO.Ref Nat ← IO.mkRef 0
@@ -79,41 +78,6 @@ structure PointClaim (ι : Type) where
   (CheckResult.ofBool (decide (C.map signature = claims))).bind fun _ =>
   checkEntryResult (checker := checker) (sums := sums) (entrySeparation := entrySeparation)
     (entryIndices := entryIndices) G images R P C start inputs codes
-
-@[nospecialize] def acceptUsing [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (R : ControlFlow.Goal ι) (P : Program)
-    (claims : List (PointClaim ι)) (C : ControlFlow.Certificate ι) (start : Nat)
-    (inputs : List (Ty ι) := []) (codes : CodeEntry ι → Bool := fun _ => false)
-    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
-    (sums : List (ReadSummary ι) := []) (entrySeparation : HeapSeparation.Separation := {})
-    (entryIndices : List HeapKnowledge.IndexAtom := []) : Bool :=
-  (acceptResult (checker := checker) (sums := sums) (entrySeparation := entrySeparation)
-    (entryIndices := entryIndices) G images R P claims C start inputs codes).accepted
-
-theorem acceptUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (R : ControlFlow.Goal ι) (P : Program)
-    (claims : List (PointClaim ι)) (C : ControlFlow.Certificate ι) (start : Nat)
-    (inputs : List (Ty ι)) (codes : CodeEntry ι → Bool)
-    (checker : HeapExpressionRules.Checker G images := HeapExpressionRules.Checker.ordinary G images)
-    (sums : List (ReadSummary ι)) (entrySeparation : HeapSeparation.Separation := {})
-    (entryIndices : List HeapKnowledge.IndexAtom := []) :
-    acceptUsing (checker := checker) (sums := sums) (entrySeparation := entrySeparation)
-      (entryIndices := entryIndices) G images R P claims C start inputs codes = (
-  decide (C.map signature = claims) && checkEntryUsing (checker := checker) (sums := sums)
-    (entrySeparation := entrySeparation) (entryIndices := entryIndices) G images R P C start inputs codes
-  ) := by
-  simp only [acceptUsing, acceptResult, CheckResult.accepted_bind,
-    CheckResult.accepted_ofBool, checkEntryUsing]
-
-theorem accepted_from_inputs [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
-    {checker : HeapExpressionRules.Checker G images} {R : Ty ι} {P claims C start inputs}
-    {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
-    (hc : acceptUsing (checker := checker) (sums := sums) G images (.plain R) P claims C start inputs codes = true) (n W h ρ)
-    (he : EnvOk G inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
-    (hcodes : ProgramCertificates.CodesSound G codes := by exact Verification.ProgramCertificates.codesSound_none _)
-    (hsums : ProgramCertificates.SummariesSound G images sums := by
-      exact Verification.ProgramCertificates.summariesSound_none _ _) :
-    SafeGraph (excOf G) P (meaning G R) n W h (.at start ρ) := by
-  simp only [acceptUsing_eq, Bool.and_eq_true] at hc
-  exact ControlFlow.accepted_inputs_safe hc.2 n W h ρ he hw hh hcodes hsums
 
 /-- Known rows with the instances proving them. -/
 abbrev KnownInstances (ι : Type) :=
@@ -267,7 +231,6 @@ scheme row, its binders standing for the other's. Untrusted:
     else (p.receiver :: p.arguments.2 :: p.result :: p.arguments.1).zip (q.receiver :: q.arguments.2 :: q.result :: q.arguments.1)
   pairs.foldlM (fun st xy => matchRow G bs V fuel st κ xy.1 xy.2) st
 
-
 /-- Propose a substitution by matching the rows read by a scheme and its target. -/
 @[nospecialize] def matchedInstance [DecidableEq ι] [Hashable ι] [Instantiates ι]
     (G : NormalGraph ι) (fuel : Nat) (s : SchemeRow ι)
@@ -323,7 +286,6 @@ scheme row, its binders standing for the other's. Untrusted:
       s.variadic.findSome? fun p => matchRest G s.binders V fuel st κ p q) st
   let final ← each κ₀ {}
   some ⟨final.table, θs, D, V⟩
-
 
 /-- The instance unification proposes: of the whole signatures, or, where that
 fails (a result the target spells otherwise, `Pair<[number, string]>` for
@@ -581,9 +543,6 @@ its exhaustion. -/
 
 /-- A step whose result is read as a value of a state computation. -/
 @[inline] def toState (x : SearchM G α) : StateM (Answered G) (CheckResult ι α) := fun s => x s
-
-/-- A state computation as a step. -/
-@[inline] def ofState (x : StateM (Answered G) (CheckResult ι α)) : SearchM G α := fun s => x s
 
 end SearchM
 
@@ -1420,7 +1379,6 @@ observation comes from graph dispatch, never from supplied point annotations. -/
           else none
     | none => subtypeUsing G images A B
 
-
 /-- Known derivations by a key of their claims (the context's length and the
 claimed type), each bucket in list order. Search only. -/
 abbrev KnownIndex (ι : Type) := Std.HashMap UInt64 (List (Evidence ι))
@@ -1883,7 +1841,6 @@ promise's evidence. -/
     | none, none => (none, some ⟨c.context, node.expression, c.type⟩)
   let evidence : NodeEvidence ι := {ordinary, sequent, edges := ps, knowledge := stored, effect := some effect, output := storedOut, handler := hd}
   return { evidence with implies := implies, yields := ys, arguments := arguments, promise := promise }
-
 
 @[nospecialize] def produceNode [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι))
     (fuel l : Nat) (node : Node) (claims : Array (PointClaim ι))

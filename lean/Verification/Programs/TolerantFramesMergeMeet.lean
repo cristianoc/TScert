@@ -196,12 +196,6 @@ theorem OnPath.pred_ok (P : OnPath preds width fresh0 p ρ η h) :
   refine (atomHolds_congr fun x hx => ?_).mp (P.store a ha)
   exact (mergeVal_below (P.facts _ (List.getElem_mem P.hp) a ha x hx)).symm
 
-/-- A fact of any store over names below the counter holds at the merge's
-valuation where it holds at `η`. -/
-theorem OnPath.below_ok (_P : OnPath preds width fresh0 p ρ η h) {a : Atom} (hb : ∀ x ∈ a.names, x < fresh0)
-    (ha : AtomHolds a η h) : AtomHolds a (mVal preds width fresh0 ρ η) h :=
-  (atomHolds_congr fun x hx => (mergeVal_below (hb x hx)).symm).mp ha
-
 theorem OnPath.rename (P : OnPath preds width fresh0 p ρ η h) :
     ∀ x φs, ((mRen preds width fresh0)[p]'P.ren_len)[x]? = some φs → ∀ φ ∈ φs,
       mVal preds width fresh0 ρ η φ = η x := by

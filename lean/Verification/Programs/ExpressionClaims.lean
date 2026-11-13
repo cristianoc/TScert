@@ -43,10 +43,6 @@ omit [CertificateProducer.Instantiates ι] in
   (CheckResult.ofBool (rs.length == es.length)).bind fun _ =>
   CheckResult.allLocated (rs.zip es) .obligation fun (r,e) => checkResult G images valid r.sequent e codes sums
 
-@[nospecialize] def checkAllUsing (G : NormalGraph ι) (images : InstanceImageCheck G) (valid : ι → Bool) (rs : List (Required ι)) (es : List (Evidence ι))
-    (codes : CodeEntry ι → Bool := fun _ => false) (sums : List (ReadSummary ι) := []) : Bool :=
-  (checkAllResult G images valid rs es codes sums).accepted
-
 omit [CertificateProducer.Instantiates ι] in
 
 omit [CertificateProducer.Instantiates ι] in

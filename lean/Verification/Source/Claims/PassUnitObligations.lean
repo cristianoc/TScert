@@ -8,7 +8,7 @@ member's code table and the read summaries its last run left. Each
 obligation is a sequent `Γ ⊢ t : A` at a source position. This module proves
 what an accepted check gives: each obligation's term, run from every
 environment meeting its context, is safe at its type
-(docs/drafts/pass-unit-theorem.md, section 8). -/
+(docs/SINGLE-PASS-THEOREM.md, section 8). -/
 
 namespace Verification.SourceClaimJson.PassUnit
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore

@@ -11,63 +11,14 @@ reference reading, which `KnowledgeExpand.expand` restates on every alias. -/
 namespace Verification.SeparationNormal
 open ProgramTyping HeapSeparation CanonicalLists
 
-/-- An atomic separation: every own location of `i`'s object (`whole`), or
-its field `f`, differs from field `g` of `j`'s. -/
-inductive SepAtom where
-  | whole (i j : Nat) (g : PropKey)
-  | field (i : Nat) (f : PropKey) (j : Nat) (g : PropKey)
-  deriving DecidableEq, Hashable
-
-def SepAtom.Holds (ρ : Env) : SepAtom → Prop
-  | .whole i j g => Apart ρ i none j g
-  | .field i f j g => Apart ρ i (some [f]) j g
-
-/-- The atomic statements of a separation, about slots. -/
-def atoms (S : Separation) : List SepAtom :=
-  S.facts.flatMap fun a => a.partners.flatMap fun p => p.2.flatMap fun g =>
-    let i := S.depth - 1 - a.slot
-    let j := S.depth - 1 - p.1
-    match a.fields with
-    | none => [.whole i j g]
-    | some fs => fs.map fun f => .field i f j g
-
 /-- A separation whose levels name slots. -/
 def WellFormed (S : Separation) : Prop :=
   ∀ a ∈ S.facts, a.slot < S.depth ∧ ∀ p ∈ a.partners, p.1 < S.depth
 
-/-- An atom as a fact at depth `d`. -/
-def encode (d : Nat) : SepAtom → Fact
-  | .whole i j g => ⟨d - 1 - i, none, [(d - 1 - j, [g])]⟩
-  | .field i f j g => ⟨d - 1 - i, some [f], [(d - 1 - j, [g])]⟩
-
 section
 variable {ρ : Env}
 
-theorem encode_holds {d : Nat} {x : SepAtom} (h : match x with | .whole i j _ | .field i _ j _ => i < d ∧ j < d) :
-    (encode d x).Holds d ρ ↔ x.Holds ρ := by
-  cases x with
-  | whole i j g =>
-    obtain ⟨hi, hj⟩ := h
-    have e₁ : d - 1 - (d - 1 - i) = i := by omega
-    have e₂ : d - 1 - (d - 1 - j) = j := by omega
-    simp only [encode, Fact.Holds, List.mem_singleton, forall_eq, List.mem_singleton, e₁, e₂, SepAtom.Holds]
-    constructor
-    · rintro ⟨_, _, h⟩; exact h
-    · intro h; exact ⟨by omega, by omega, h⟩
-  | field i f j g =>
-    obtain ⟨hi, hj⟩ := h
-    have e₁ : d - 1 - (d - 1 - i) = i := by omega
-    have e₂ : d - 1 - (d - 1 - j) = j := by omega
-    simp only [encode, Fact.Holds, List.mem_singleton, forall_eq, e₁, e₂, SepAtom.Holds]
-    constructor
-    · rintro ⟨_, _, h⟩; exact h
-    · intro h; exact ⟨by omega, by omega, h⟩
-
 end
-
-/-- A separation that holds names slots at every level. -/
-theorem wellFormed_of_holds {S : Separation} {ρ : Env} (h : Holds S ρ) : WellFormed S :=
-  fun a ha => ⟨(h a ha).1, fun p hp => ((h a ha).2 p hp).1⟩
 
 /-! ## Compaction -/
 
@@ -264,11 +215,6 @@ theorem mergePartners_covers {ps : List (Nat × List PropKey)} {p : Nat × List 
     List.mem_map.mpr ⟨p.1, mem_canon.mpr (List.mem_map.mpr ⟨p, hp, rfl⟩), rfl⟩, rfl, fun g hg => ?_⟩
   simp only [mem_fieldsCanon, List.mem_flatMap, List.mem_filter, decide_eq_true_eq]
   exact ⟨p, ⟨hp, rfl⟩, hg⟩
-
-theorem mergePartners_ne_nil {ps : List (Nat × List PropKey)} (h : ps ≠ []) : mergePartners ps ≠ [] := by
-  obtain ⟨p, hp⟩ := List.exists_mem_of_ne_nil ps h
-  obtain ⟨q, hq, -⟩ := mergePartners_covers hp
-  exact List.ne_nil_of_mem hq
 
 theorem mergePartners_def (ps : List (Nat × List PropKey)) : mergePartners ps =
     (canon (ps.map (·.1))).map fun l => (l, fieldsCanon ((ps.filter (·.1 = l)).flatMap (·.2))) := rfl
@@ -509,8 +455,6 @@ theorem compactBy_size :
       simpa using this
   · obtain ⟨key, -, rfl⟩ := List.mem_map.mp (hmem t ht)
     exact ⟨mergePartners_fst _ ▸ pairwise_canon _, fun q hq => mergePartners_snd hq⟩
-
-theorem compactBy_empty (rn : Nat → Nat) : compactBy rn {} = {} := rfl
 
 theorem compactBy_cases (rn : Nat → Nat) (S : Separation) :
     compactBy rn S = {} ∨ (compactBy rn S).depth = S.depth := by

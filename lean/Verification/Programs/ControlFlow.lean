@@ -109,34 +109,6 @@ establishes no typing where the term is not that variable. -/
   | some .effect, some p => p
   | _, _ => .node c.header .var []
 
-/-- The one spelling of each node: an ordinary derivation states the sequent
-at its root; a step's proof supplies it where no ordinary derivation is
-given; a sequent is stated only where neither does; a node without step
-evidence has an ordinary derivation. -/
-@[nospecialize] def NodeEvidence.wellFormed (c : NodeEvidence ι) : Bool :=
-  match c.ordinary, c.sequent, c.effect.bind HeapExpressionRules.StepEvidence.proof? with
-  | some (.proof _), none, _ => true
-  | some .effect, none, some _ => true
-  | none, none, some _ => true
-  | none, some _, none => c.effect.isSome
-  | _, _, _ => false
-
-/-- The same node with its derivation written out: what a document stating
-every node's derivation in full gives. -/
-@[nospecialize] def NodeEvidence.explicit (c : NodeEvidence ι) : NodeEvidence ι :=
-  { c with ordinary := some (.proof c.expression), sequent := none }
-
-@[simp] theorem NodeEvidence.explicit_expression (c : NodeEvidence ι) :
-    c.explicit.expression = c.expression := rfl
-
-/-- A well-formed node's derivation has its header at its root, so the
-sequent a node states or references is exactly the one it is checked at. -/
-theorem NodeEvidence.claim_expression {c : NodeEvidence ι} (h : c.wellFormed = true) :
-    claim c.expression = c.header := by
-  unfold wellFormed at h
-  unfold expression header
-  split at h <;> simp_all [claim]
-
 def entry (c : NodeEvidence ι) := (claim c.expression).context
 def result (c : NodeEvidence ι) := (claim c.expression).type
 
@@ -185,11 +157,6 @@ def outFacts (G : NormalGraph ι) (c : NodeEvidence ι) : HeapKnowledge.Knowledg
 theorem outFacts_holds {G : NormalGraph ι} {c : NodeEvidence ι} {ρ n W h v} (he : EnvOk G (entry c) ρ n W)
     (ho : HeapKnowledge.Holds c.output (push v ρ) h) : HeapKnowledge.Holds (outFacts G c) (push v ρ) h :=
   KnowledgeExpand.expandLinks_holds (outputCtx_ok he v) ho
-
-/-- Another node reads a node through its entry, its result and its other
-fields, which the written-out node keeps. -/
-theorem entry_explicit (c : NodeEvidence ι) : entry c.explicit = entry c := rfl
-theorem result_explicit (c : NodeEvidence ι) : result c.explicit = result c := rfl
 
 /-- A run of a graph: at a node, evaluating a node's term (with its
 continuation and handler), returned, or ended by a throw no handler caught. -/
@@ -774,64 +741,6 @@ theorem checkGraphUsing_eq [DecidableEq ι] (G : NormalGraph ι) (images : Insta
 /-! A certificate whose nodes reference their steps' proofs, or state only
 their sequents, is checked as the certificate with every derivation written
 out: the same graph check, node by node and at every edge. -/
-
-theorem checkNodeUsing_explicit [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (c : NodeEvidence ι) (Rty : Goal ι) (P : Program) (C : Certificate ι) (node : Node)
-    (codes : CodeEntry ι → Bool) (checker : HeapExpressionRules.Checker G images)
-    (sums : List (ReadSummary ι)) :
-    checkNodeUsing (checker := checker) (sums := sums) G images Rty P C node c.explicit codes =
-      checkNodeUsing (checker := checker) (sums := sums) G images Rty P C node c codes := rfl
-
-theorem checkYields_explicit [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (c : NodeEvidence ι) (codes : CodeEntry ι → Bool)
-    (sums : List (ReadSummary ι)) :
-    checkYields G images c.explicit codes sums = checkYields G images c codes sums := rfl
-
-theorem checkReturnResult_explicit [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (c : NodeEvidence ι) (goal : Goal ι) :
-    checkReturnResult G images goal c.explicit = checkReturnResult G images goal c := rfl
-
-theorem checkHandlerUsing_explicit [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G) (c : NodeEvidence ι) (P : Program) (C : Certificate ι) (node : Node) :
-    checkHandlerUsing G images P C node c.explicit = checkHandlerUsing G images P C node c := rfl
-
-theorem checkTargetResult_explicit [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (P : Program) (C : Certificate ι) (Γ : List (Ty ι)) (target : Target) (p : EdgeEvidence ι)
-    (facts : HeapKnowledge.Knowledge) (xs : List (Implication ι)) (sources : List Nat) :
-    checkTargetResult G images P (C.map NodeEvidence.explicit) Γ target p facts xs sources =
-      checkTargetResult G images P C Γ target p facts xs sources := by
-  simp only [checkTargetResult, List.getElem?_map]
-  cases P[target.label]? <;> cases C[target.label]? <;> rfl
-
-theorem checkBranchTargetResult_explicit [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (P : Program) (C : Certificate ι) (Γ : List (Ty ι)) (o : Observation) (target : Target) (p : EdgeEvidence ι)
-    (facts : HeapKnowledge.Knowledge) (xs : List (Implication ι)) (sources : List Nat) :
-    checkBranchTargetResult G images P (C.map NodeEvidence.explicit) Γ o target p facts xs sources =
-      checkBranchTargetResult G images P C Γ o target p facts xs sources := by
-  simp only [checkBranchTargetResult, List.getElem?_map]
-  cases P[target.label]? <;> cases C[target.label]? <;> rfl
-
-theorem checkNodeResult_explicit [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (Rty : Goal ι) (P : Program) (C : Certificate ι) (node : Node) (c : NodeEvidence ι)
-    (codes : CodeEntry ι → Bool) (checker : HeapExpressionRules.Checker G images)
-    (sums : List (ReadSummary ι)) :
-    checkNodeResult (checker := checker) (sums := sums) G images Rty P (C.map NodeEvidence.explicit) node c.explicit codes =
-      checkNodeResult (checker := checker) (sums := sums) G images Rty P C node c codes := by
-  simp only [checkNodeResult, checkHandlerResult, checkTargetResult_explicit, checkBranchTargetResult_explicit]
-  rfl
-
-theorem checkGraphResult_explicit [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
-    (Rty : Goal ι) (P : Program) (C : Certificate ι) (codes : CodeEntry ι → Bool)
-    (checker : HeapExpressionRules.Checker G images) (sums : List (ReadSummary ι)) :
-    checkGraphResult (checker := checker) (sums := sums) G images Rty P (C.map NodeEvidence.explicit) codes =
-      checkGraphResult (checker := checker) (sums := sums) G images Rty P C codes := by
-  have h : ∀ l, (match P[l]?, (C.map NodeEvidence.explicit)[l]? with
-      | some node, some c =>
-        (checkNodeResult (checker := checker) (sums := sums) G images Rty P (C.map NodeEvidence.explicit) node c codes).at (.node l)
-      | _, _ => failure) =
-      (match P[l]?, C[l]? with
-      | some node, some c => (checkNodeResult (checker := checker) (sums := sums) G images Rty P C node c codes).at (.node l)
-      | _, _ => failure) := by
-    intro l
-    simp only [List.getElem?_map]
-    cases P[l]? <;> cases C[l]? <;> simp only [Option.map, checkNodeResult_explicit]
-  simp only [checkGraphResult, FieldSlices.ofCertificate_eq, List.length_map, h]
 
 def TargetOk [DecidableEq ι] (G : NormalGraph ι) (C : Certificate ι) (Γ : List (Ty ι)) (l : Target)
     (facts : HeapKnowledge.Knowledge) (xs : List (Implication ι)) (sources : List Nat) : Prop :=

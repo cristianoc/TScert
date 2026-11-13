@@ -2,7 +2,7 @@ import Verification.Source.Claims.PassUnitHeadline
 
 /-! # The single pass's unit theorem: mode 8's inferred route
 
-With no given file mode 8 checks a group by `FilePlans.passGroupMode8`:
+Mode 8 checks a group by `FilePlans.passGroupMode8`, with no given lines:
 the loop heads' proposals inference computes, each member run until
 accepted or its refusal stands, a refused proposal dropped between runs
 (`passGroupInferred`). Inference changes only the candidates the pass
@@ -198,6 +198,40 @@ theorem inferredNext_recandidated {f : FilePlans} {fixed : Bool} {protect : List
               | cons x xs ih => intro g h; exact ih _ (h.trans (dropCandidates_recandidated _ _ _ _))
             exact key _ _ (dropCandidates_recandidated _ _ _ _)
 
+/-- Leaving candidates out head by head keeps the plans `Recandidated`
+(proved). -/
+theorem dropAll_recandidated (f : FilePlans) (i : Nat) (ds : List (Nat × List HeapKnowledge.IndexAtom)) :
+    Recandidated f (f.dropAll i ds) := by
+  unfold FilePlans.dropAll
+  have key : ∀ (xs : List (Nat × List HeapKnowledge.IndexAtom)) (g : FilePlans), Recandidated f g →
+      Recandidated f (xs.foldl (fun (g : FilePlans) (x : Nat × List HeapKnowledge.IndexAtom) =>
+        g.dropCandidates i x.1 x.2) g) := by
+    intro xs
+    induction xs with
+    | nil => intro g h; exact h
+    | cons x xs ih => intro g h; exact ih _ (h.trans (dropCandidates_recandidated _ _ _ _))
+  exact key ds f (Recandidated.refl f)
+
+/-- A next state of `inferredNextAll` is `Recandidated` (proved):
+`inferredNext`'s, then candidates left out. -/
+theorem inferredNextAll_recandidated {f : FilePlans} {fuel : Nat} {fixed : Bool}
+    {protect : List (Nat × List HeapKnowledge.IndexAtom)}
+    {given : Option (Std.HashMap String Json)} {i : Nat} {w : String} {f' : FilePlans}
+    {given' : Option (Std.HashMap String Json)} {ls : List String} {d : Nat}
+    (h : f.inferredNextAll fuel fixed protect given i w = some (f', given', ls, d)) : Recandidated f f' := by
+  unfold FilePlans.inferredNextAll at h
+  split at h
+  · cases h
+  · rename_i f₁ g₁ ls₁ d₁ hn
+    have h₁ := inferredNext_recandidated hn
+    split at h
+    · simp only [Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, -, -, -⟩ := h
+      exact h₁
+    · simp only [Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, -, -, -⟩ := h
+      exact h₁.trans (dropAll_recandidated _ _ _)
+
 /-- **A member's runs end at an inferred run of plans with other
 candidates** (proved). -/
 theorem inferredSettle_last {f : FilePlans} {fuel : Nat} {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)}
@@ -210,7 +244,7 @@ theorem inferredSettle_last {f : FilePlans} {fuel : Nat} {keep : Nat → List (N
           (f.inferredSettle fuel keep fixed compare debugNode repeats observe counting located given i).given i := by
   unfold FilePlans.inferredSettle
   exact settleInferred_last Recandidated Recandidated.refl (fun _ _ _ => Recandidated.trans)
-    (fun _ _ _ _ _ _ _ hn => inferredNext_recandidated hn) _ _ _ _ _ _
+    (fun _ _ _ _ _ _ _ hn => inferredNextAll_recandidated hn) _ _ _ _ _ _
 
 /-- An accepted inferred run is the pass's accepted run (proved). -/
 theorem inferredRun_accepted {g : FilePlans} {fuel : Nat} {compare : Bool} {debugNode repeats : Nat}

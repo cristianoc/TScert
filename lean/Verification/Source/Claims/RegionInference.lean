@@ -148,7 +148,8 @@ def elementWritten : Tm → Option Nat
 /-- The nodes of the loop at head `h`, by label: those the head reaches that reach it. -/
 def loopBody (P : ControlFlow.Program) (h : Nat) : Array Bool := Id.run do
   let n := P.length
-  let succ := fun (l : Nat) => ((P[l]?).map fun node =>
+  let A := P.toArray
+  let succ := fun (l : Nat) => ((A[l]?).map fun node =>
     (GraphCode.edgesOf node.continuation node.handler).map (·.1.label)).getD []
   let mut pred : Array (List Nat) := Array.replicate n []
   for l in List.range n do
@@ -179,6 +180,7 @@ result adds, `same` whether `a = b` is kept. -/
 def carryForward (P : ControlFlow.Program) (start : Nat) (width : Nat → Nat)
     (made : Nat → List (Nat × Nat × Nat)) (same : Bool) : Array (Option (List (Nat × Nat × Nat))) := Id.run do
   let n := P.length
+  let A := P.toArray
   let mut table : Array (Option (List (Nat × Nat × Nat))) := Array.replicate n none
   if start < n then table := table.set! start (some [])
   -- (a worklist: a label again only where what enters it changed; each
@@ -191,7 +193,7 @@ def carryForward (P : ControlFlow.Program) (start : Nat) (width : Nat → Nat)
     | l :: rest =>
       queue := rest
       work := work.erase l
-      let some node := P[l]? | continue
+      let some node := A[l]? | continue
       let some here := table.getD l none | continue
       let mine := if GraphCode.pushes node.continuation then made l else []
       let edges := (GraphCode.edgesOf node.continuation none).map (·, false) ++ node.handler.toList.map fun t => ((t, true), true)
@@ -237,12 +239,13 @@ def freshApartAt (r : SourceExtraction.SourceRequest σ ι) (force : Bool := fal
   if !P.any fun node => (elementWritten node.expression).isSome then return []
   let bodies := (r.cuts.filter (heads.getD · false)).map fun h => (h, loopBody P h)
   -- The element writes each loop holds outside every loop inside it.
-  let writeNodes : List (Nat × Nat) := (List.range P.length).filterMap fun l => ((P[l]?).bind (elementWritten ·.expression)).map (l, ·)
+  let A := P.toArray
+  let writeNodes : List (Nat × Nat) := (List.range A.size).filterMap fun l => ((A[l]?).bind (elementWritten ·.expression)).map (l, ·)
   let writes := bodies.map fun (h, body) =>
     let inner := fun (l : Nat) => bodies.any fun (h', b) => h' != h && body.getD h' false && b.getD l false
     (h, writeNodes.filter fun (p : Nat × Nat) => body.getD p.1 false && !inner p.1)
   if writes.all (·.2.isEmpty) then return []
-  let allocates := fun (l : Nat) => ((P[l]?).map fun node =>
+  let allocates := fun (l : Nat) => ((A[l]?).map fun node =>
     (IndexWrites.regionAtoms G (ctxOf l) {} node.expression).filterMap fun a => match a.fact with
       | .apart x y => some (x, y, l)
       | _ => none).getD []

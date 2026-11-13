@@ -792,10 +792,6 @@ theorem Effect.keeps_pre {e : Effect} {n : Nat} (h : e.keeps n = true) : e.pre =
   have := Effect.keeps_elementFree h
   simp only [Effect.elementFree, Bool.and_eq_true, List.isEmpty_iff] at this; exact this.1.2
 
-theorem Effect.keeps_ensures {e : Effect} {n : Nat} (h : e.keeps n = true) : e.ensures = [] := by
-  have := Effect.keeps_elementFree h
-  simp only [Effect.elementFree, Bool.and_eq_true, List.isEmpty_iff] at this; exact this.2
-
 theorem Effect.promised_drop {e : Effect} {pre args : List Tm} (h : e.keeps pre.length = true) :
     (e.drop pre.length).promised args = e.promised (pre ++ args) := by
   rcases e with ⟨c, _ | (p | p), f, s, o, w, fo, rq, el⟩ <;>
@@ -934,6 +930,77 @@ theorem Effect.pre_take {e : Effect} {n m : Nat} (h : e.below n = true) (hm : n 
   | succ i =>
     simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel, List.getD_eq_getElem?_getD, List.getElem?_take]
     rw [if_pos (by omega)]
+
+/-- **What a module function's code realizes at arity `n`**: its effect
+below `n` (`below`) but for its postcondition, each fact of which names the
+result (position `0`), the receiver (`1`) and the first `n` parameters only.
+A unit request states its postcondition at its entry frame
+(`PassUnit.EnsuresClause`), so a reassigned parameter does not change what
+it reads. -/
+def Effect.belowRow (n : Nat) (e : Effect) : Bool :=
+  ({ e with ensures := [] } : Effect).below n && e.ensures.all (fun F => F.slots.all (· ≤ n + 1))
+
+theorem Effect.belowRow_below {e : Effect} {n : Nat} (h : e.belowRow n = true) :
+    ({ e with ensures := [] } : Effect).below n = true := by
+  simp only [Effect.belowRow, Bool.and_eq_true] at h; exact h.1
+
+theorem Effect.belowRow_ensures {e : Effect} {n : Nat} (h : e.belowRow n = true) :
+    ∀ F ∈ e.ensures, ∀ s ∈ F.slots, s ≤ n + 1 := by
+  simp only [Effect.belowRow, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at h; exact h.2
+
+/-- An effect below `n` is one a module function's code realizes. -/
+theorem Effect.belowRow_of_below {e : Effect} {n : Nat} (h : e.below n = true) : e.belowRow n = true := by
+  have he := Effect.below_ensures h
+  have h' : ({ e with ensures := [] } : Effect) = e := by cases e; simp_all
+  simp [Effect.belowRow, h', h, he]
+
+/-- Actuals past those code binds do not change what its postcondition
+reads. -/
+theorem Effect.ensures_take {e : Effect} {n m : Nat} (h : e.belowRow n = true) (hm : n ≤ m)
+    {F : HeapKnowledge.IndexFact} (hF : F ∈ e.ensures) (v r : Tm) (args : List Tm) (heap : Heap) :
+    F.HoldsAt (ensuresEnv v r (args.take m)) heap ↔ F.HoldsAt (ensuresEnv v r args) heap := by
+  refine HeapKnowledge.IndexFact.holdsAt_congr fun s hs => ?_
+  have hle := Effect.belowRow_ensures h F hF s hs
+  simp only [ensuresEnv, callEnv]
+  rcases s with _ | _ | i
+  · simp
+  · simp
+  · simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel, List.getD_eq_getElem?_getD, List.getElem?_take]
+    rw [if_pos (by omega)]
+
+/-- Code binding `n` parameters reads its postcondition's positions in its
+entry frame, the result pushed, as the call passed them. -/
+theorem Effect.ensures_frame {e : Effect} {n : Nat} (h : e.belowRow n = true) {F : HeapKnowledge.IndexFact}
+    (hF : F ∈ e.ensures) (v r : Tm) (args vs : List Tm) (d : Tm) (heap : Heap) :
+    F.HoldsAt (ensuresEnv v r args) heap ↔
+      F.HoldsAt (push v (envOf (r :: CallArguments.parameters n args ++ vs) d)) heap := by
+  refine HeapKnowledge.IndexFact.holdsAt_congr fun s hs => ?_
+  have hle := Effect.belowRow_ensures h F hF s hs
+  rcases s with _ | _ | i
+  · rfl
+  · simp [ensuresEnv, callEnv, push, envOf]
+  · have hp : (CallArguments.parameters n args).getD i .undef = args.getD i .undef :=
+      parameters_getD n args i (by omega)
+    have hlen : i < (CallArguments.parameters n args).length := by rw [Effect.parameters_length]; omega
+    obtain ⟨x, hx⟩ : ∃ x, (CallArguments.parameters n args)[i]? = some x :=
+      ⟨_, List.getElem?_eq_getElem hlen⟩
+    simp only [List.getD_eq_getElem?_getD, hx, Option.getD_some] at hp
+    simp only [ensuresEnv, callEnv, push, envOf, Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel,
+      List.getD_eq_getElem?_getD, List.cons_append, List.getElem?_cons_succ, List.getElem?_append_left hlen, hx,
+      Option.getD_some, hp]
+
+/-- **A module row's post at a prefix of the actuals is its post at all of
+them** (proved), the prefix at least `n` long. -/
+theorem Effect.post_take_row {e : Effect} {n m : Nat} (h : e.belowRow n = true) (hm : n ≤ m) {r : Tm}
+    {args : List Tm} {before after : Heap} {v : Tm}
+    (hp : e.post r (args.take m) before after v) : e.post r args before after v := by
+  have hb := Effect.belowRow_below h
+  have hreg : e.regions = [] := Effect.below_regions (e := { e with ensures := [] }) hb
+  have hg : e.receiverGrows = false := Effect.below_grows (e := { e with ensures := [] }) hb
+  have hx : e.elementWrite = none := Effect.below_write (e := { e with ensures := [] }) hb
+  exact ⟨Effect.within_args hreg hp.1, hp.2.1, hp.2.2.1, hp.2.2.2.1,
+    fun F hF => (Effect.ensures_take h hm hF v r args after).mp (hp.2.2.2.2.1 F hF),
+    (fun h' => by rw [hg] at h'; cases h'), fun w hw => (by rw [hx] at hw; cases hw)⟩
 
 theorem Effect.result_drop (e : Effect) (n : Nat) (R : Fam) (a : Tm) :
     (e.drop n).result R a = e.result R a := by

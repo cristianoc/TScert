@@ -46,21 +46,6 @@ structure NodeChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (code
   exits and its return read. -/
   ys : List (PromiseCalls.Yield ι)
 
-/-- A node's run is checked with its searches as oracles, where the direct
-call and the search keep the summary table checked, with the yields `ys`
-the visit kept. -/
-def NodeRan.checked {G : NormalGraph ι} {images : InstanceImageCheck G} {pool : List (Ty ι)} {fuel : Nat}
-    {suggestions : List (Sequent ι)} {index : KnownIndex ι} {codes : CodeEntry ι → Bool} {aliases : List (ι × ι)}
-    {pc : PassChecker G images} {undefTy : Option (Ty ι)} {P : ControlFlow.Program} {w : Walk ι}
-    {startNames : List Nat} {ctx : Nat → List (Ty ι)} {l : Nat}
-    (hdir : DirectKeepsSummaries G images undefTy)
-    (hsrch : SearchKeepsSummaries G images pool fuel suggestions index codes aliases pc.checker)
-    (r : NodeRan G images pool fuel suggestions index codes aliases pc undefTy P w startNames ctx l)
-    (hentry : r.entry = w.entry l) (hshape : SinglePass.passShapeCheck' G r.c.type r.node.continuation = true)
-    (ys : List (PromiseCalls.Yield ι)) : NodeChecked G images codes pc P w startNames ctx l :=
-  ⟨r.node, r.hP, r.c, r.hctx, r.entry, r.ms, r.fresh, r.answers, r.st, r.ans,
-    stepChecked_of_step r.hstep hdir hsrch, r.wf, r.below, r.width, r.sums, hentry, hshape, ys⟩
-
 omit [Hashable ι] [Instantiates ι] in
 /-- **The shape check at a reassigned graph** is the check at the graph. -/
 theorem passShapeCheck'_reassign (G : NormalGraph ι) (η : MixedAssignment ι) (A : Ty ι)

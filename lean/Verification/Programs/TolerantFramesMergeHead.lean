@@ -116,28 +116,6 @@ theorem headEntry_holds {G : NormalGraph ι} {g : HeapKnowledge.Knowledge} {widt
     exact he.implies y hy (by rw [hsl _ _ ha]; exact htest)
   · simp [SinglePass.headEntry] at hx
 
-/-- **The heads a walk enters with their head entries are entered**
-(`HeadsEntered`), where every edge state into a head holding establishes the
-head's given facts at the head's environment (`HeadEstablishes`) and no head
-is the start. -/
-theorem headsEntered_of {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat} {ρ0 : Env}
-    {given : Nat → Bool} {m : Nat} (gk : Nat → HeapKnowledge.Knowledge) (width fresh : Nat → Nat)
-    (argName : Option Nat) (argSlots : Nat → List Nat) (inputSlots : Nat → List (Nat × Nat))
-    (gimp : Nat → List (PromiseCalls.Implication ι))
-    (hnd : startNames.Nodup) (hlt : ∀ t, given t = true → ∀ x ∈ startNames, x < fresh t)
-    (harg : ∀ a, argName = some a → ∃ q : Nat, startNames[q]? = some a)
-    (hentry : ∀ t, given t = true → w.entry t =
-      (SinglePass.headEntry (gk t) false (width t) (fresh t) startNames argName (argSlots t) (inputSlots t) (gimp t)).1 ∧
-      w.implies t =
-      (SinglePass.headEntry (gk t) false (width t) (fresh t) startNames argName (argSlots t) (inputSlots t) (gimp t)).2.1)
-    (hedges : ∀ t ρ (s : IndexedHeap), given t = true → edgePre G w startNames ρ0 t ρ m s →
-      HeadEstablishes G (gk t) (gimp t) startNames argName (argSlots t) (inputSlots t) ρ0 ρ s) :
-    HeadsEntered G w startNames ρ0 given m := by
-  intro t ρ s hg he
-  obtain ⟨h1, h2⟩ := hentry t hg
-  rw [h1, h2]
-  exact (headEntry_holds hnd (hlt t hg) harg (hedges t ρ s hg he)).1
-
 end Head
 
 end Verification.TolerantFrames

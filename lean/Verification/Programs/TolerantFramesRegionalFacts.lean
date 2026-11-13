@@ -85,22 +85,6 @@ theorem regionalLinks_recover {ctx : KnowledgeNormal.Ctx} {a b : Knowledge} {ρ 
   have hl := expandedLinks_recover hh.2.2.1
   exact fun g hg => hl g (regionalJoin_right a.links b.links hg)
 
-/-- Normalization retains every fact with a partner. -/
-theorem separation_norm_recover {d : Nat} {fs : List HeapSeparation.Fact} {ρ : Env}
-    (hn : ∀ f ∈ fs, f.partners ≠ []) (hh : HeapSeparation.Holds (HeapSeparation.norm d fs) ρ) :
-    ∀ f ∈ fs, f.Holds d ρ := by
-  intro f hf
-  have hm : f ∈ fs.filter (fun a => !a.partners.isEmpty) :=
-    List.mem_filter.mpr ⟨hf, by simpa using hn f hf⟩
-  unfold HeapSeparation.norm at hh
-  dsimp only at hh
-  split at hh
-  · rename_i he
-    have he := List.isEmpty_iff.mp he
-    rw [he] at hm
-    cases hm
-  · exact hh f hm
-
 /-- A union supplies its right separation when its facts have partners. -/
 theorem separation_union_right {S T : HeapSeparation.Separation} {ρ : Env}
     (hn : ∀ f ∈ T.facts, f.partners ≠ [])

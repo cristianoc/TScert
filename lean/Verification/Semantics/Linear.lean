@@ -592,15 +592,6 @@ theorem searchIn_sound [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := 
         · cases h
       · cases h
 
-/-- Whether the held facts entail `goal`, by a certificate `check` accepts,
-searched over the facts connected to the goal. -/
-def entailsDirect [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) (goal : Fact V) : Bool :=
-  searchIn (relevant known goal) goal
-
-theorem entailsDirect_sound [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] {v : V → Int} {known : List (Fact V)} {goal : Fact V} (h : entailsDirect known goal = true)
-    (hk : ∀ F ∈ known, F.Holds v) : goal.Holds v :=
-  searchIn_sound h fun _ hF => hk _ (relevant_mem hF)
-
 /-- The facts `near` with the strict bounds their inequalities give: for each
 `c·x ≠ d`, the bound `c·x ≤ d - 1` where the facts `nearOf` gives for it
 entail `c·x ≤ d`, and `-c·x ≤ -d - 1` where they entail `-c·x ≤ -d`

@@ -54,9 +54,6 @@ theorem FreshAt.ifStore {b : Nat} {v : Tm} (h : FreshAt b v) : FreshIfStore b v 
   cases hs'
   exact hle
 
-theorem FreshIfStore.lower {b b' : Nat} {v : Tm} (hb : b ≤ b') (h : FreshIfStore b' v) : FreshIfStore b v :=
-  fun s hs => Nat.le_trans hb (h s hs)
-
 /-- The evidence holds of the step's positions `σ` at heap `h`, against the
 entry values `ρ₀` at the entry heap `h₀`. -/
 structure RebaseOk (ev : RebaseEvidence) (σ ρ₀ : Env) (h₀ h : Heap) : Prop where

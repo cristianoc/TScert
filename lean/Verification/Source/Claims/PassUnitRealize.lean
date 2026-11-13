@@ -12,7 +12,7 @@ signature (`unitSpec_of_requestSafe`), and that over a set of units closed
 under their links every unfolding meets its interface at every budget
 (`approx_meets`), so that each closed unit's inputs are met by the module's
 environment (`approx_envOk`). The definitions and the residue are presented in
-docs/drafts/pass-unit-theorem.md, section 4. -/
+docs/SINGLE-PASS-THEOREM.md, section 4. -/
 
 namespace Verification.SourceClaimJson.PassUnit
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
@@ -29,8 +29,9 @@ inductive Slot (U : Type) where
   | outside (v : Nat → Tm)
 
 /-- **A module function's code**: its graph code (arity, node lists, start,
-kind), the object it is (fields and identity), and per capture, in frame
-order after its receiver and parameters, its type and what it holds. -/
+kind), the object it is (fields and identity), per capture, in frame order
+after its receiver and parameters, its type and what it holds, and the
+separation of its frames. -/
 structure ModuleCode (ι U : Type) where
   arity : Nat
   exprs : List Tm
@@ -41,6 +42,9 @@ structure ModuleCode (ι U : Type) where
   oid : Nat
   captures : List (Ty ι)
   slots : List (Slot U)
+  /-- The separation its calls' frames assume: its module cells' apart
+  (`moduleCellSeparation`), at the frame's depth. -/
+  sep : HeapSeparation.Separation := {}
 
 /-- What a slot holds at depth `i`, with each linked function's value given
 by `f`. -/
@@ -104,19 +108,90 @@ theorem captured_get {ι U : Type} {c : ModuleCode ι U} {f : U → Tm} {i k : N
 section
 variable {ι : Type}
 
+/-! ## A module row's specification -/
+
+/-- **A module function's code at one of its signatures** (`RowSpec`): code
+of `arity`, collecting no rest, whose effect is one module code realizes
+(`Effect.belowRow`: below its arity, a postcondition over the result, the
+receiver and its parameters admitted), safe from every frame meeting the
+signature's, its precondition and the separation `sep`, at the signature's
+result and post. `GraphCodeSpec` at no rest store, at `sep = {}` and with no
+postcondition, is one (`rowSpec_of_graphCodeSpec`). -/
+def RowSpec (G : NormalGraph ι) (arity : Nat) (E : List Tm)
+    (K : List (ControlFlow.Continuation × Option ControlFlow.Target)) (start : Nat)
+    (Cs : List (Ty ι)) (row : CallEffects.Arrow (Ty ι)) (sep : HeapSeparation.Separation) : Prop :=
+  arity ≤ row.arguments.length ∧ row.effect.belowRow arity = true ∧
+  ∀ n W h L, EnvOk G (codeFrame arity row Cs none) (envOf L .nul) n W → WorldAdm W →
+    HeapOk n W h → CallArguments.Values L → PreAt row.effect (none : Option (Ty ι)) L h →
+    HeapSeparation.Holds sep (envOf L .nul) →
+    ∀ r args, FrameValues arity (none : Option (Ty ι)) L r args →
+      HeapObservations.SafePostExc (excOf G)
+        (row.effect.result (meaning G row.result) (framePromised row.effect (frameOffset (none : Option (Ty ι))) L))
+        (row.effect.post r args h) (row.effect.excPost r args h)
+        n W h (.goto E K start L .nul)
+
+/-- **Graph code at a signature is module code at it** (proved). -/
+theorem rowSpec_of_graphCodeSpec {G : NormalGraph ι} {arity E K start Cs row}
+    (hs : GraphCodeSpec G arity E K start Cs row) : RowSpec G arity E K start Cs row {} :=
+  ⟨hs.1, CallEffects.Effect.belowRow_of_below hs.2.1,
+    fun n W h L he hw hh hv hpre _ r args hf => hs.2.2 n W h L he hw hh hv hpre r args hf⟩
+
+/-- **Invoking a module row's code from a frame at the call's own level**
+(proved): as `graph_invoke_at`, the frame's separation given. -/
+theorem row_invoke_at {G : NormalGraph ι} {arity E K start Cs row vs sep}
+    (hs : RowSpec G arity E K start Cs row sep) {j : Nat} {U : WorldT j}
+    (hvs : EnvOk G Cs (envOf vs .nul) j U) (hvalues : CallArguments.Values vs)
+    (hu : WorldAdm U) {heap : Heap} (hh : HeapOk j U heap) {r : Tm} (hr : meaning G row.receiver j U r)
+    {args : List Tm} (ha : ArgsShort (row.arguments.map (meaning G)) j U args)
+    (hq : ∀ F ∈ row.effect.pre, F.HoldsAt (CallEffects.callEnv r args) heap)
+    (hsep : HeapSeparation.Holds sep (envOf (r :: CallArguments.parameters arity args ++ vs) .nul)) :
+    HeapObservations.SafePostExc (excOf G) (row.effect.result (meaning G row.result) (row.effect.promised args))
+      (row.effect.post r args heap) (row.effect.excPost r args heap) j U heap
+      (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul) := by
+  have hx : WExt (trunc j (Nat.le_refl j) U) U := by rw [trunc_id]; exact WExt_refl U
+  have hb := CallEffects.Effect.belowRow_below hs.2.1
+  have hsafe := hs.2.2 j U heap _ (frame_envOk hs.1 hvs (Nat.le_refl j) hx hr ha) hu hh (by
+    intro v hv
+    rcases List.mem_cons.mp hv with rfl | hv
+    · exact (meaning_value hr).1
+    · rcases List.mem_append.mp hv with hv | hv
+      · exact CallArguments.parameters_property (P := fun v => isVal v = true) rfl
+          (ArgsT_values (fun A hA => by obtain ⟨a, _, rfl⟩ := List.mem_map.mp (List.mem_of_mem_take hA); exact meaning_valOnly G a) ha.2.1) v hv
+      · exact hvalues v hv)
+    (fun _ F hF => (CallEffects.Effect.pre_frame hb (F := F) hF r args vs .nul heap).mp (hq F hF))
+    hsep r args ⟨[], vs, rfl, rfl⟩
+  have hp := framePromised_params hb [r] args vs
+  simp only [List.length_singleton, List.singleton_append] at hp
+  have hp' : framePromised row.effect 1 (r :: CallArguments.parameters arity args ++ vs) =
+      row.effect.promised args := hp
+  rw [show frameOffset (none : Option (Ty ι)) = 1 from rfl, hp'] at hsafe
+  exact hsafe
+
+/-- **The signatures a module function's code offers** (`RowOffers`): each
+row of its clause (`offerRows`) at the separation `sep`. -/
+def RowOffers (G : NormalGraph ι) (arity : Nat) (E : List Tm)
+    (K : List (ControlFlow.Continuation × Option ControlFlow.Target)) (start : Nat)
+    (Cs : List (Ty ι)) (L : List (CallEffects.Arrow (Ty ι))) (S : List (CallEffects.RestArrow (Ty ι)))
+    (sep : HeapSeparation.Separation) : Prop :=
+  ∀ p ∈ offerRows L S, RowSpec G arity E K start Cs p sep
+
 /-! ## A closure meets its arrow -/
 
 /-- **A closure meets its arrow from captures meeting theirs below the
-budget** (proved): graph code of fixed arity offering the signatures of `F`,
-whose captured values meet their types at every budget below `n`, in every
-world, meets `F` at `n` in every world. Every call of the closure runs its
-code below the budget at which it is made. The induction of `offers_self`
-with the self entry replaced by captures given at every smaller budget. -/
+budget** (proved): code of fixed arity offering the signatures of `F` as
+module rows (`RowOffers`) at the separation `sep`, whose captured values meet
+their types at every budget below `n`, in every world, and every frame of
+whose calls meets `sep`, meets `F` at `n` in every world. Every call of the
+closure runs its code below the budget at which it is made. The induction of
+`offers_self` with the self entry replaced by captures given at every
+smaller budget. -/
 theorem closure_meets_below {G : NormalGraph ι} {arity E K start Cs vs} {kind : Invoke}
     {F : Ty ι} {L : List (CallEffects.Arrow (Ty ι))} {S : List (CallEffects.RestArrow (Ty ι))} (fs : List (PropKey × Nat)) {oid : Nat}
+    {sep : HeapSeparation.Separation}
     (hr : Represents G F (.arrs L S)) (hk : KindOffers G kind L S)
-    (ho : CodeOffers G arity E K start Cs false L S [])
+    (ho : RowOffers G arity E K start Cs L S sep)
     (hlen : Cs.length ≤ vs.length) (hsc : ∀ v ∈ vs, Scoped 0 v) (hvalues : CallArguments.Values vs)
+    (hsep : ∀ r args more, HeapSeparation.Holds sep (envOf (r :: CallArguments.parameters arity args ++ (vs ++ more)) .nul))
     {n : Nat} (hcaps : ∀ j < n, ∀ U : WorldT j, EnvOk G Cs (envOf vs .nul) j U) (W : WorldT n) :
     meaning G F n W (.objAt fs (.graph arity E K start vs kind false) oid) := by
   obtain ⟨hkind, hrows⟩ := hk
@@ -131,28 +206,30 @@ theorem closure_meets_below {G : NormalGraph ι} {arity E K start Cs vs} {kind :
     obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
     have henv := (hcaps j hj U).withSelf hlen hself
     exact ⟨_, .graph hrv hvals (hbL p hp j U r hrr),
-      graph_invoke_at (ho p (List.mem_append_left _ hp)) henv
-        (Values.withSelf hvalues rfl) hu hh hrr ha (fun F hF => hreq.2 F hF)⟩
+      row_invoke_at (ho p (List.mem_append_left _ hp)) henv
+        (Values.withSelf hvalues rfl) hu hh hrr ha (fun F hF => hreq.2 F hF) (hsep r args _)⟩
   · intro q hq j hj U hx hu heap hh r hrv hrr args hvals ha hreq
     obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
     have hspec := ho _ (List.mem_append_right _ (List.mem_map.mpr ⟨s, hsm, rfl⟩))
     have hle : arity ≤ s.arguments.1.length := hspec.1
-    have hbelow : s.fixed.effect.below arity = true := hspec.2.1
+    have hrow : s.fixed.effect.belowRow arity = true := hspec.2.1
+    have hbelow := CallEffects.Effect.belowRow_below hrow
     have henv := (hcaps j hj U).withSelf hlen hself
-    have hsafe := graph_invoke_at hspec henv (Values.withSelf hvalues rfl) hu hh
-      (args := args.take s.arguments.1.length) hrr
-      (by simpa [CallEffects.RestArrow.mapWith, CallEffects.Contract.map, CallEffects.RestArrow.fixed] using ha.1)
-      (fun F hF => (CallEffects.Effect.pre_take hbelow hle hF r args heap).mpr
-        (hreq.2 F (by simpa [CallEffects.RestArrow.mapWith, CallEffects.Contract.map, CallEffects.RestArrow.fixed] using hF)))
     have hp : CallArguments.parameters arity (args.take s.arguments.1.length) =
         CallArguments.parameters arity args := by
       rw [← CallArguments.parameters_take arity (args.take _), List.take_take,
         Nat.min_eq_left hle, CallArguments.parameters_take]
-    rw [hp, CallEffects.Effect.promised_take (e := s.fixed.effect) hbelow hle] at hsafe
+    have hsafe := row_invoke_at hspec henv (Values.withSelf hvalues rfl) hu hh
+      (args := args.take s.arguments.1.length) hrr
+      (by simpa [CallEffects.RestArrow.mapWith, CallEffects.Contract.map, CallEffects.RestArrow.fixed] using ha.1)
+      (fun F hF => (CallEffects.Effect.pre_take hbelow hle (F := F) hF r args heap).mpr
+        (hreq.2 F (by simpa [CallEffects.RestArrow.mapWith, CallEffects.Contract.map, CallEffects.RestArrow.fixed] using hF)))
+      (by rw [hp]; exact hsep r args _)
+    have hpr : s.fixed.effect.promised (args.take s.arguments.1.length) = s.fixed.effect.promised args :=
+      CallEffects.Effect.promised_take hbelow hle args
+    rw [hp, hpr] at hsafe
     exact ⟨_, .graph hrv hvals (hbS s hsm j U r hrr), HeapObservations.SafePostExc.weaken
-      (fun _ _ h => CallEffects.Effect.post_args (CallEffects.Effect.below_ensures hbelow)
-      (CallEffects.Effect.below_grows hbelow) (CallEffects.Effect.below_write hbelow)
-      (CallEffects.Effect.below_regions hbelow) h)
+      (fun _ _ h => CallEffects.Effect.post_take_row hrow hle h)
       (fun _ h => CallEffects.Effect.excPost_args (CallEffects.Effect.below_regions hbelow) h) hsafe⟩
 
 theorem reassign_env (G : NormalGraph ι) : reassign G G.env = G := by
@@ -165,11 +242,24 @@ end
 section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 
+omit [Labels ι] [StoreView σ ι] in
+/-- A module row's signature conditions, as the layout check asks them of
+a member's code (`layoutOwn`): its arity within its arguments, its effect one
+module code realizes (`Effect.belowRow`: a postcondition over its call's
+values admitted), and no fresh object, precondition on the receiver's
+elements, element promise, receiver growth or element write. -/
+def rowConditions (c : CodeEntry ι) : Bool :=
+  decide (c.arity ≤ c.row.arguments.length) && c.row.effect.belowRow c.arity &&
+    !c.row.effect.freshObject && c.row.effect.requires.isNone && c.row.effect.elements.isNone &&
+    !c.row.effect.receiverGrows && c.row.effect.elementWrite.isNone
+
 /-- **A unit request is a code's**: unqualified, its inputs the code's frame
 (receiver, parameters, then the captures), its program the code's node
-lists, its start and goal the code's, no entry separation, the code's
-precondition as its entry facts, and the code's footprint, fresh flag and
-throw flag as its own. -/
+lists, its start and goal the code's, the code's precondition as its entry
+facts, the signature's postcondition as its own (a function declaring
+`this` reads each call position at the input slot of the same number), and
+the code's footprint, fresh flag and throw flag as its own. Its entry
+separation is the separation of the code's frames (`rowSpec_of_requestSafe`). -/
 structure UnitIsCode (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop where
   unqualified : r.qualification = none
   inputs : r.inputs = codeFrame c.arity c.row c.captures c.store
@@ -177,8 +267,8 @@ structure UnitIsCode (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop where
   conts : c.conts = r.program.map fun n => (n.continuation, n.handler)
   start : r.start = c.start
   goal : r.goal = c.goal
-  separation : r.entrySeparation = {}
   indices : r.entryIndices = GraphCode.codeEntryIndices c
+  ensures : r.ensures = c.row.effect.ensures
   footprint : r.footprint = c.row.effect.footprint
   fresh : r.fresh = c.row.effect.fresh
   onThrow : r.onThrow = c.row.effect.onThrow
@@ -202,30 +292,127 @@ theorem codeBound_some {c : CodeEntry ι} {Φ : Footprints.Closed} {fresh onThro
         cases hf : c.row.effect.fresh <;> cases ho : c.row.effect.onThrow <;> simp_all
       · exact Or.inl hfp
 
-/-- **A safe unit request is graph code at its signature** (proved): where a
-unit request is a code's (`UnitIsCode`) and the code meets the conditions
-`passGroup` checks of a code (`codeConditions`), the request's safety
-(`RequestSafe`: its safety and footprint clauses) makes the code meet its
-signature at every assignment (`CodeEntry.Spec`). -/
-theorem unitSpec_of_requestSafe {r : SourceRequest σ ι} {c : CodeEntry ι}
-    (hsafe : RequestSafe r) (hu : UnitIsCode r c) (hcond : codeConditions c = true) :
-    ∀ η, c.Spec (reassign (RequestJson.graph r.toRequest) η) := by
+end
+
+/-- Two postconditions of one run hold together, the throw's kept: its
+execution is deterministic (proved). -/
+theorem safePostExc_and {Ξ T : Fam} {Q Q' : HeapObservations.Post} {R : Heap → Prop} :
+    ∀ {n W W' h t}, HeapObservations.SafePostExc Ξ T Q R n W h t → HeapObservations.SafePost Ξ T Q' n W' h t →
+      HeapObservations.SafePostExc Ξ T (fun h' u => Q h' u ∧ Q' h' u) R n W h t := by
+  intro n; induction n with
+  | zero => intros; trivial
+  | succ n ih =>
+    intro W W' h t hq hr
+    rcases hq with (⟨hv, ht, hq⟩ | ⟨hth, hR⟩) | ⟨U, h1, t1, hx, hu, st1, hh1, hq1⟩
+    · rcases hr with (⟨_, _, hr⟩ | hth') | ⟨_, _, _, _, _, st2, _, _⟩
+      · exact .inl (.inl ⟨hv, ht, hq, hr⟩)
+      · exact absurd hth' (val_not_thrown hv)
+      · exact absurd st2 (value_no_step hv)
+    · exact .inl (.inr ⟨hth, hR⟩)
+    · rcases hr with (⟨hv', _, _⟩ | hth') | ⟨U2, h2, t2, _, _, st2, _, hr2⟩
+      · exact absurd st1 (value_no_step hv')
+      · exact absurd st1 hth'.no_step
+      · obtain ⟨rfl, rfl⟩ := Step_det st1 st2
+        exact .inr ⟨U, h1, t1, hx, hu, st1, hh1, ih hq1 hr2⟩
+
+section
+variable {ι : Type}
+
+/-- **A code safe from its frame, within its bound and meeting its
+postcondition, is module code at its signature** (proved): a code meeting
+the row conditions and collecting no rest, whose graph is safe at every
+assignment from its frame and the separation `sep`, within its bound where
+it has one, and, where its signature states a postcondition, returns with
+the postcondition's facts true of the result and its entry frame, meets its
+signature as a module row (`RowSpec`) at `sep`. The run is
+`codeRun_of_clauses`'s; the postcondition's facts at the entry frame are
+those at the call's values (`Effect.ensures_frame`). -/
+theorem rowSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSeparation.Separation}
+    (hcond : rowConditions c = true) (hstore : c.store = none)
+    (hsafeG : ∀ η n W h ρ, EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep
+      (GraphCode.codeEntryIndices c) ρ n W h →
+      SafeGraph (excOf (reassign G η)) (GraphCode.program c.exprs c.conts)
+        (GoalHolds (reassign G η) c.goal (c.goal.argument ρ)) n W h (.at c.start ρ))
+    (hboundG : ∀ Φ fresh onThrow, codeBound c = some (Φ, fresh, onThrow) → ∀ η n W h L d,
+      EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep (GraphCode.codeEntryIndices c)
+        (envOf L d) n W h → (∀ v ∈ L, isVal v = true) → isVal d = true →
+      HeapObservations.SafePostExc (excOf (reassign G η))
+        (GoalHolds (reassign G η) c.goal (c.goal.argument (envOf L d)))
+        (fun h' v => Φ.Holds h h' ∧ (fresh = true → Footprints.FreshAt h.length v))
+        (fun h' => onThrow = true → Φ.Holds h h') n W h (.goto c.exprs c.conts c.start L d))
+    (hensG : c.row.effect.ensures ≠ [] → ∀ η n W h L d,
+      EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep (GraphCode.codeEntryIndices c)
+        (envOf L d) n W h →
+      HeapObservations.SafePost (excOf (reassign G η))
+        (GoalHolds (reassign G η) c.goal (c.goal.argument (envOf L d)))
+        (fun h' v => GraphCode.EnsuresAt c.row.effect.ensures h' (push v (envOf L d))) n W h
+        (.goto c.exprs c.conts c.start L d)) :
+    ∀ η, RowSpec (reassign G η) c.arity c.exprs c.conts c.start c.captures c.row sep := by
+  intro η
+  simp only [rowConditions, Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true',
+    Option.isNone_iff_eq_none] at hcond
+  obtain ⟨⟨⟨⟨⟨⟨harity, hrow⟩, hfo⟩, _hreq⟩, hel⟩, hgr⟩, hew⟩ := hcond
+  have hbelow0 := CallEffects.Effect.belowRow_below hrow
+  refine ⟨harity, hrow, ?_⟩
+  intro n W heap L he hw hh hvalues hpre hsep r args hframe
+  have he' : EnvOk (reassign G η) (codeFrame c.arity c.row c.captures c.store) (envOf L .nul) n W := by
+    rw [hstore]; exact he
+  have hpre' : PreAt c.row.effect c.store L heap := by rw [hstore]; exact hpre
+  have hrun := codeRun_of_clauses (sep := sep) hbelow0 hfo hel hgr hew hsafeG hboundG η n W heap L he' hw hh
+    hvalues hpre' hsep r args
+  rw [hstore] at hrun
+  obtain ⟨pre, vs, hpl, rfl⟩ := hframe
+  have hpre0 : pre = [] := List.eq_nil_of_length_eq_zero (by simpa [frameOffset] using hpl)
+  subst hpre0
+  by_cases hne : c.row.effect.ensures = []
+  · have he0 : ({ c.row.effect with ensures := [] } : CallEffects.Effect) = c.row.effect := by rw [← hne]
+    rw [he0] at hrun
+    exact hrun
+  · have hentry : EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep
+        (GraphCode.codeEntryIndices c) (envOf ([] ++ r :: CallArguments.parameters c.arity args ++ vs) .nul) n W heap :=
+      ⟨he', hsep, GraphCode.codeEntryIndices_holds hpre', hw, hh⟩
+    have hens := hensG hne η n W heap _ .nul hentry
+    rw [code_goal, hstore] at hens
+    refine HeapObservations.SafePostExc.weaken (fun h' v hq => ?_) (fun _ h => h) (safePostExc_and hrun hens)
+    obtain ⟨⟨h1, h2, h3, h4, -, h6, h7⟩, hq⟩ := hq
+    refine ⟨h1, h2, h3, h4, fun F hF => ?_, h6, h7⟩
+    exact (CallEffects.Effect.ensures_frame hrow hF v r args vs .nul h').mpr (by simpa using hq F hF)
+
+end
+
+section
+variable {σ ι : Type} [Labels ι] [StoreView σ ι]
+
+/-- **A safe unit request is module code at its signature** (proved): where
+a unit request is a code's (`UnitIsCode`) collecting no rest and the code
+meets the row conditions (`rowConditions`), the request's safety
+(`RequestSafe`: its safety, footprint and postcondition clauses) makes the
+code meet its signature as a module row at the request's entry separation,
+at every assignment. -/
+theorem rowSpec_of_requestSafe {r : SourceRequest σ ι} {c : CodeEntry ι}
+    (hsafe : RequestSafe r) (hu : UnitIsCode r c) (hcond : rowConditions c = true) (hstore : c.store = none) :
+    ∀ η, RowSpec (reassign (RequestJson.graph r.toRequest) η) c.arity c.exprs c.conts c.start c.captures c.row
+      r.entrySeparation := by
   have hadm : ∀ η, r.Admits η := fun η => by simp [SourceRequest.Admits, hu.unqualified]
   have hprog : r.program = GraphCode.program c.exprs c.conts := by
     rw [hu.exprs, hu.conts, program_nodes]
   have hgoto : ∀ L d, gotoOf r.program r.start L d = .goto c.exprs c.conts c.start L d := by
     intro L d; simp only [gotoOf, hu.exprs, hu.conts, hu.start]
-  apply codeSpec_of_clauses hcond
+  apply rowSpec_of_clauses hcond hstore
   · intro η n W h ρ he
-    have := hsafe.1 η (hadm η) n W h ρ (by rw [hu.inputs, hu.separation, hu.indices]; exact he)
+    have := hsafe.1 η (hadm η) n W h ρ (by rw [hu.inputs, hu.indices]; exact he)
     rw [hprog, hu.goal, hu.start] at this
     exact this
   · intro Φ fresh onThrow hb η n W h L d he hvals hd
     obtain ⟨rfl, rfl, rfl, hne⟩ := codeBound_some hb
     have hpre : r.footprint ≠ .top ∨ r.onThrow = true ∨ r.fresh = true := by
       rw [hu.footprint, hu.onThrow, hu.fresh]; exact hne
-    have := hsafe.2.1 hpre η n W h L d (by rw [hu.inputs, hu.separation, hu.indices]; exact he) hvals hd
+    have := hsafe.2.1 hpre η n W h L d (by rw [hu.inputs, hu.indices]; exact he) hvals hd
     rw [hgoto, hu.goal, hu.footprint, hu.fresh, hu.onThrow] at this
+    exact this
+  · intro hne η n W h L d he
+    have := hsafe.2.2.1 (by rw [hu.ensures]; exact hne) η n W h L d (by rw [hu.inputs, hu.indices]; exact he)
+    rw [hgoto, hu.goal, hu.ensures] at this
     exact this
 
 end
@@ -267,9 +454,11 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 /-- **A unit request of a function declared without `this` is a code's
 behind the receiver's prologue**: unqualified, collecting no rest, its
 inputs the code's frame past the receiver (the parameters, then the
-captures), its program, start and goal the code's at that frame, no entry
-separation, its entry facts implied by the code's at every frame with a
-receiver in front, and the code's footprint, fresh flag and throw flag. -/
+captures), its program, start and goal the code's at that frame, its entry
+facts implied by the code's at every frame with a receiver in front, the
+signature's postcondition, which names no receiver, as its own, each
+position past the receiver (`ensuresPast`), and the code's footprint, fresh
+flag and throw flag. -/
 structure UnitIsReceiverless (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop where
   unqualified : r.qualification = none
   store : c.store = none
@@ -278,10 +467,11 @@ structure UnitIsReceiverless (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop
   conts : c.conts = r.program.map fun n => (n.continuation, n.handler)
   start : r.start = c.start
   goal : r.goal = receiverlessGoal c
-  separation : r.entrySeparation = {}
   indices : ∀ (L : List Tm) (recv : Tm) h,
     HeapKnowledge.IndexHolds (GraphCode.codeEntryIndices c) (envOf (recv :: L) .nul) h →
     HeapKnowledge.IndexHolds r.entryIndices (envOf L .nul) h
+  noReceiver : ∀ F ∈ c.row.effect.ensures, 1 ∉ F.slots
+  ensures : r.ensures = c.row.effect.ensures.map (·.map ensuresPast)
   footprint : r.footprint = c.row.effect.footprint
   fresh : r.fresh = c.row.effect.fresh
   onThrow : r.onThrow = c.row.effect.onThrow
@@ -314,11 +504,20 @@ theorem receiverless_indices {ι : Type} {c : CodeEntry ι} {facts : List HeapKn
       simp [envOf]
   exact HeapKnowledge.mapIndices_holds hf he a (hsub a ha)
 
+/-- The separation of a request with no receiver slot, read in the frame
+with the receiver in front: the same facts at one more depth, since a level
+names the same slot with a slot pushed below the parameters. -/
+def receiverSeparation (S : HeapSeparation.Separation) : HeapSeparation.Separation :=
+  { S with depth := S.depth + 1 }
+
 /-- **The receiver's prologue keeps a safe request safe** (named hypothesis
 `ReceiverDropSound`, a lemma about the graph machine): where a request with
 no receiver slot is a code's behind the prologue (`UnitIsReceiverless`) and
-the code meets the code conditions, the request's safety makes the code with
-the prologue (`dropReceiver`) meet its signature at every assignment. The
+the code meets the row conditions, the request's safety makes the code with
+the prologue (`dropReceiver`) meet its signature as a module row at every
+assignment, at the request's entry separation read with the receiver in
+front (`receiverSeparation`), its postcondition at the request's past the
+receiver. The
 argument: the prologue's two transitions (entering it, then its `effect`
 continuation) lead from the frame `recv :: L ++ [self]` to the request's
 start at `L ++ [self]` with the receiver as the default slot value, and
@@ -327,13 +526,25 @@ labels below the appended node's; the step-indexed safety at budget `n`
 then follows from the request's at `n - 2`, the world downcast along. -/
 def ReceiverDropSound : Prop :=
   ∀ (σ ι : Type) [Labels ι] [StoreView σ ι] (r : SourceRequest σ ι) (c : CodeEntry ι),
-    RequestSafe r → UnitIsReceiverless r c → codeConditions c = true →
-    ∀ η, (dropReceiver c).Spec (reassign (RequestJson.graph r.toRequest) η)
+    RequestSafe r → UnitIsReceiverless r c → rowConditions c = true →
+    ∀ η, RowSpec (reassign (RequestJson.graph r.toRequest) η) (dropReceiver c).arity (dropReceiver c).exprs
+      (dropReceiver c).conts (dropReceiver c).start (dropReceiver c).captures (dropReceiver c).row
+      (receiverSeparation r.entrySeparation)
 
 /-! ## The module's environment meets every closed unit's interface -/
 
 section
 variable {ι U : Type}
+
+/-- **A function's frames meet its separation** (`CapturesApart`): every
+frame a call of its closure enters at any depth of the module's environment,
+whatever the receiver, the actuals and what follows the captures, meets the
+separation of its code. The separation names the frame's module cells alone
+(`moduleCellSeparation`), so it is a fact of the captured values. -/
+def CapturesApart (code : U → ModuleCode ι U) (u : U) : Prop :=
+  ∀ (f : U → Tm) (i : Nat) (r : Tm) (args more : List Tm),
+    HeapSeparation.Holds (code u).sep
+      (envOf (r :: CallArguments.parameters (code u).arity args ++ ((code u).captured f i ++ more)) .nul)
 
 /-- **What a unit of the module must meet to be realized**: its interface
 `iface u` presents one clause of signatures `L` and variadic signatures `Sg`
@@ -342,16 +553,18 @@ captures is a slot; each linked capture is read at its callee's interface
 and its callee is in the set (`S`): the slot agreement; and each outside
 capture's value at each depth meets its type at every budget up to that
 depth in every world: the
-contract of the import, host value, stand-in or module value it holds. -/
+contract of the import, host value, stand-in or module value it holds; and
+its frames meet its separation (`CapturesApart`). -/
 def Realizes (G : NormalGraph ι) (code : U → ModuleCode ι U) (iface : U → Ty ι) (S : U → Prop) (u : U) :
     Prop :=
   ∃ (L : List (CallEffects.Arrow (Ty ι))) (Sg : List (CallEffects.RestArrow (Ty ι))),
     Represents G (iface u) (.arrs L Sg) ∧ KindOffers G (code u).kind L Sg ∧
-    CodeOffers G (code u).arity (code u).exprs (code u).conts (code u).start (code u).captures false L Sg [] ∧
+    RowOffers G (code u).arity (code u).exprs (code u).conts (code u).start (code u).captures L Sg (code u).sep ∧
     (code u).captures.length = (code u).slots.length ∧
     (∀ (k : Nat) d, (code u).slots[k]? = some (Slot.linked d) → (code u).captures[k]? = some (iface d) ∧ S d) ∧
     (∀ (k : Nat) v A, (code u).slots[k]? = some (Slot.outside v) → (code u).captures[k]? = some A →
-      ∀ i, ∀ j ≤ i, ∀ V : WorldT j, meaning G A j V (v i))
+      ∀ i, ∀ j ≤ i, ∀ V : WorldT j, meaning G A j V (v i)) ∧
+    CapturesApart code u
 
 /-- The captures of a realized unit meet their types at `j`, where every
 linked function's value, given by `f`, meets its interface there. -/
@@ -360,7 +573,7 @@ theorem captures_envOk {G : NormalGraph ι} {code : U → ModuleCode ι U} {ifac
     (hf : ∀ d, isVal (f d) = true ∧ Scoped 0 (f d)) {i j : Nat} (hji : j ≤ i) {V : WorldT j}
     (hm : ∀ d, S d → meaning G (iface d) j V (f d)) :
     EnvOk G (code u).captures (envOf ((code u).captured f i) .nul) j V := by
-  obtain ⟨L, Sg, -, -, -, hlen, hagree, hout⟩ := hr
+  obtain ⟨L, Sg, -, -, -, hlen, hagree, hout, -⟩ := hr
   apply EnvOk.envOf_nul (fun v hv => (captured_values ho hf u i v hv).2)
     (by simp [ModuleCode.captured, hlen])
   intro k A hA v hv
@@ -393,20 +606,20 @@ theorem approx_meets {G : NormalGraph ι} {code : U → ModuleCode ι U} {iface 
   induction n with
   | zero =>
     intro u hu m hm W
-    obtain ⟨L, Sg, hrep, hk, hoff, hlen, -, -⟩ := hreal u hu
+    obtain ⟨L, Sg, hrep, hk, hoff, hlen, -, -, hsep⟩ := hreal u hu
     have hm0 : m = 0 := Nat.le_zero.mp hm
     subst hm0
     exact closure_meets_below (code u).fields hrep hk hoff (by simp [ModuleCode.captured, hlen])
       (fun v hv => (captured_values ho (approxEnv_value ho 0) u 0 v hv).2)
       (fun v hv => (captured_values ho (approxEnv_value ho 0) u 0 v hv).1)
-      (fun j hj => absurd hj (Nat.not_lt_zero j)) W
+      (hsep _ 0) (fun j hj => absurd hj (Nat.not_lt_zero j)) W
   | succ n ih =>
     intro u hu m hm W
-    obtain ⟨L, Sg, hrep, hk, hoff, hlen, -, -⟩ := hreal u hu
+    obtain ⟨L, Sg, hrep, hk, hoff, hlen, -, -, hsep⟩ := hreal u hu
     exact closure_meets_below (code u).fields hrep hk hoff (by simp [ModuleCode.captured, hlen])
       (fun v hv => (captured_values ho (approxEnv_value ho (n + 1)) u (n + 1) v hv).2)
       (fun v hv => (captured_values ho (approxEnv_value ho (n + 1)) u (n + 1) v hv).1)
-      (fun j hj V => captures_envOk (hreal u hu) ho (approxEnv_value ho (n + 1)) (by omega)
+      (hsep _ (n + 1)) (fun j hj V => captures_envOk (hreal u hu) ho (approxEnv_value ho (n + 1)) (by omega)
         (fun d hd => ih d hd j (by omega) V)) W
 
 /-- **Each closed unit's captures are met by the module's environment**

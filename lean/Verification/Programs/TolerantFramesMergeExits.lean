@@ -28,17 +28,6 @@ open ProgramTyping PositiveGraphs
 section Joined
 variable {ι : Type} [DecidableEq ι] [Hashable ι]
 
-/-- **What the walk records of each edge into a merge**: every state
-entering a merge `t` (no given facts, at least two incoming states) has its
-edge among `edgesIn t` as `(Γe, atSlotsOf names e.2, m)`, the state's names
-the source's `names` mapped by `m` (`SinglePass.mapNames`), as `run`'s
-`edgeTransfer` and `incomingEdges` compute them. -/
-def MergeEdgeRecorded (w : Walk ι) (given : Nat → Bool)
-    (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)) : Prop :=
-  ∀ t, given t = false → 2 ≤ (w.incoming t).length → ∀ e ∈ w.incoming t,
-    ∃ (Γe : List (Ty ι)) (names : List Nat) (m : PointClaims.Mapping),
-      (Γe, atSlotsOf names e.2, m) ∈ edgesIn t ∧ e.1.names = SinglePass.mapNames names m
-
 omit [Hashable ι] in
 /-- **An exit establishes the merge's joined implications**: for an edge
 recorded as `(Γe, atSlotsOf names carried, m)`, a source environment `ρs`

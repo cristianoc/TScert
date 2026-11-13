@@ -235,7 +235,9 @@ def moduleGiven (ast : Json) (given : Std.HashMap String Json) : Std.HashMap Str
 
 /-- Discovery binds both the fragment and its requested roots. -/
 def interfacePlanFile (path selection : String) : IO UInt32 := do
-  let ast ← readJson path
+  let ast := (← readJson path) >>= fun a => do
+    Fragment.symbolNumbersApart [a]
+    pure (Fragment.canonicalSymbols a)
   let selected ← readJson selection
   match (do SourceClaimJson.interfacePlan (← ast) (← selected)) with
   | .error e => refuse e
@@ -248,8 +250,15 @@ def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) :
   let parsed : Except String Json := do
     let j ← request
     fieldsExactly j ["modules", "dependencies", "force", "fuel", "mode"]
-    let modules ← (← jArr j "modules").mapM Fragment.decodeModule
+    -- Every symbol key at its canonical number (`Fragment.canonicalSymbols`):
+    -- the members' documents, and the dependencies', which their own
+    -- components' checks wrote so.
+    let members ← jArr j "modules"
     let ds ← jArr j "dependencies"
+    Fragment.symbolNumbersApart (members ++ ds.flatMap fun d =>
+      (((d.getObjValD "interface").getObjValAs? (Array Json) "modules").toOption.getD #[]).toList.map
+        (·.getObjValD "module"))
+    let modules ← members.mapM fun m => Fragment.decodeModule (Fragment.canonicalSymbols m)
     let mut imported : List Fragment.ModuleAst := []
     for d in ds do
       fieldsExactly d ["key", "interface"]
@@ -257,7 +266,7 @@ def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) :
       let i ← jField d "interface"
       fieldsExactly i ["modules"]
       for row in ← jArr i "modules" do
-        let m ← Fragment.decodeModule (← jField row "module")
+        let m ← Fragment.decodeModule (Fragment.canonicalSymbols (← jField row "module"))
         if modules.any (·.location == m.location) || imported.any (·.location == m.location) then
           throw "component dependency overlaps"
         imported := imported ++ [m]
@@ -302,6 +311,11 @@ def verifyUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names : 
   SinglePass.profiling.set (← IO.getEnv "TSCERT_PROFILE").isSome
   let t0 ← IO.monoNanosNow
   let ast ← readJson astPath
+  -- Every symbol key at its canonical number (`Fragment.canonicalSymbols`),
+  -- the module documents it carries too.
+  let ast := ast >>= fun a => do
+    Fragment.symbolNumbersApart [a]
+    pure (Fragment.canonicalSymbols a)
   -- No unit is given a line: every loop head's proposal is inferred.
   let givenLines : Std.HashMap String Json := {}
   -- A pass refusal's text located at the source obligation it names

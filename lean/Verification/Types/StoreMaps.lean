@@ -10,7 +10,8 @@ a region `D` of the first graph closed under what its rows read, that is a
 row homomorphism there: each label's kind is its image's; its clauses and
 its image's cover each other, clause by clause, constructor by constructor,
 each operand a union of the same labels renamed (`ClauseRel`: the clause
-mapped by an operand map `σ` with `σ S` and `S.map φ` of the same members);
+mapped by an operand map `σ` with `σ S` and `S.map φ` of the same members,
+up to the order of a record's or a dictionary's conjunctions, `Reordered`);
 its scheme is the image's with binders renamed by `φ` and operands by such a
 `σ` (`mapSchemeWith`); its meet's parameter is renamed, its clauses related,
 its further parameters the renamed ones; the built-ins are the renamed
@@ -25,7 +26,7 @@ approximation index over pairs of related assignments
 footprints, throw flags and fresh results of callable types are covered;
 schemes are covered with their binders, bounds, variadic signatures,
 qualification and construct flag; argument packs and parameter rows of
-every kind are covered. docs/drafts/pass-unit-theorem.md, section 7, states
+every kind are covered. docs/SINGLE-PASS-THEOREM.md, section 7, states
 how the importer's signature agreement follows. -/
 
 namespace Verification.StoreMaps
@@ -40,10 +41,108 @@ and the empty one, maps to a union of the same members as its renaming. -/
 def Equiv (φ : ι → κ) (σ : List ι → List κ) (ops : List (List ι)) : Prop :=
   ∀ S, (S ∈ ops ∨ S = []) → ∀ x, x ∈ σ S ↔ x ∈ S.map φ
 
+/-- Two lists of the same members, in any order. -/
+def SameMembers {α : Type} (l l' : List α) : Prop := ∀ x, x ∈ l ↔ x ∈ l'
+
+/-- **Two clauses alike up to the order of their conjunctions**: a record's
+or a dictionary's lists (its fields, further record operands, views,
+optional fields, methods, key bounds and stable keys, a dictionary's index
+views and cells too), each a conjunction its meaning reads by membership,
+with the same members; any other clause the same. A meet lists its parts'
+conjunctions in its parts' order (`meetClause`), which is a store's. -/
+def Reordered {α : Type} : Clause α → Clause α → Prop
+  | .refs a bs vs os ms ks st, c' => ∃ a' bs' vs' os' ms' ks' st', c' = .refs a' bs' vs' os' ms' ks' st' ∧
+      SameMembers a a' ∧ SameMembers bs bs' ∧ SameMembers vs vs' ∧ SameMembers os os' ∧ SameMembers ms ms' ∧
+      SameMembers ks ks' ∧ SameMembers st st'
+  | .dict a bs vs ds os ms ks cs st, c' => ∃ a' bs' vs' ds' os' ms' ks' cs' st',
+      c' = .dict a' bs' vs' ds' os' ms' ks' cs' st' ∧
+      SameMembers a a' ∧ SameMembers bs bs' ∧ SameMembers vs vs' ∧ SameMembers ds ds' ∧ SameMembers os os' ∧
+      SameMembers ms ms' ∧ SameMembers ks ks' ∧ SameMembers cs cs' ∧ SameMembers st st'
+  | c, c' => c' = c
+
 /-- **Related clauses**: the image clause is the clause, constructor by
-constructor, each operand mapped by an operand map agreeing with `φ`. -/
+constructor, each operand mapped by an operand map agreeing with `φ`, its
+conjunctions in any order (`Reordered`). -/
 def ClauseRel (φ : ι → κ) (c : Clause (List ι)) (c' : Clause (List κ)) : Prop :=
-  ∃ σ, Equiv φ σ c.operands ∧ c' = c.map σ
+  ∃ σ, Equiv φ σ c.operands ∧ Reordered (c.map σ) c'
+
+section Reordered
+variable {α : Type}
+
+theorem SameMembers.map {β : Type} {l l' : List α} (h : SameMembers l l') (g : α → β) :
+    SameMembers (l.map g) (l'.map g) := fun x => by
+  have h : ∀ y, y ∈ l ↔ y ∈ l' := h
+  simp only [List.mem_map, h]
+
+theorem SameMembers.nil_iff {l l' : List α} (h : SameMembers l l') : l = [] ↔ l' = [] := by
+  have h : ∀ y, y ∈ l ↔ y ∈ l' := h
+  simp only [List.eq_nil_iff_forall_not_mem, h]
+
+/-- A record's conjunctions read by membership (proved). -/
+theorem refsT_reordered {A A' : ReferenceConjunctions.Fields} {Bs Bs' : List ReferenceConjunctions.Fields}
+    (hA : SameMembers A A') (hB : SameMembers Bs Bs') :
+    ReferenceConjunctions.refsT A' Bs' = ReferenceConjunctions.refsT A Bs := by
+  funext n W v
+  have hn := hA.nil_iff
+  have hA : ∀ y, y ∈ A ↔ y ∈ A' := hA
+  have hB : ∀ y, y ∈ Bs ↔ y ∈ Bs' := hB
+  have hne : ((A' :: Bs').flatten ≠ []) = ((A :: Bs).flatten ≠ []) := by
+    simp only [ne_eq, List.flatten_cons, List.append_eq_nil_iff, List.flatten_eq_nil_iff, hn, hB]
+  simp only [ReferenceConjunctions.refsT, recT, hA, hB, hne]
+
+/-- **Reordering a clause's conjunctions keeps its meaning** (proved). -/
+theorem semWithArgs_reordered {Ξ : Fam} {X : α → Fam} {P : α → ArgFam} {c c' : Clause α}
+    (h : Reordered c c') : semWithArgs Ξ X P c' = semWithArgs Ξ X P c := by
+  cases c
+  case refs a bs vs os ms ks st =>
+    obtain ⟨a', bs', vs', os', ms', ks', st', rfl, h1, h2, h3, h4, h5, h6, h7⟩ := h
+    funext n W v
+    have h3 : ∀ y, y ∈ vs ↔ y ∈ vs' := h3
+    have h4 : ∀ y, y ∈ os ↔ y ∈ os' := h4
+    have h5 : ∀ y, y ∈ ms ↔ y ∈ ms' := h5
+    have h6 : ∀ y, y ∈ ks ↔ y ∈ ks' := h6
+    have h7 : ∀ y, y ∈ st ↔ y ∈ st' := h7
+    simp only [semWithArgs]
+    have hA : SameMembers (ReferenceConjunctions.famsOf X a) (ReferenceConjunctions.famsOf X a') := h1.map _
+    rw [refsT_reordered hA (h2.map (ReferenceConjunctions.famsOf X))]
+    simp only [viewsT, optT, MethodMembers.methodT, stableKeysT, ReferenceConjunctions.famsOf, List.mem_map, h3,
+      h4, h5, h6, h7]
+  case dict a bs vs ds os ms ks cs st =>
+    obtain ⟨a', bs', vs', ds', os', ms', ks', cs', st', rfl, h1, h2, h3, h4, h5, h6, h7, h8, h9⟩ := h
+    funext n W v
+    have h3 : ∀ y, y ∈ vs ↔ y ∈ vs' := h3
+    have h4 : ∀ y, y ∈ ds ↔ y ∈ ds' := h4
+    have h5 : ∀ y, y ∈ os ↔ y ∈ os' := h5
+    have h6 : ∀ y, y ∈ ms ↔ y ∈ ms' := h6
+    have h7 : ∀ y, y ∈ ks ↔ y ∈ ks' := h7
+    have h8 : ∀ y, y ∈ cs ↔ y ∈ cs' := h8
+    have h9 : ∀ y, y ∈ st ↔ y ∈ st' := h9
+    simp only [semWithArgs]
+    have hA : SameMembers (ReferenceConjunctions.famsOf X a) (ReferenceConjunctions.famsOf X a') := h1.map _
+    rw [refsT_reordered hA (h2.map (ReferenceConjunctions.famsOf X))]
+    simp only [viewsT, optT, MethodMembers.methodT, stableKeysT, ReferenceConjunctions.famsOf, List.mem_map, h3,
+      h4, h5, h6, h7, h8, h9]
+  all_goals (cases h; rfl)
+
+/-- Reordering keeps the constructor, so whether the built-ins' invariant
+applies (proved). -/
+theorem carriesInvariant_reordered {c c' : Clause α} (h : Reordered c c') :
+    c'.carriesInvariant = c.carriesInvariant := by
+  cases c
+  case refs => obtain ⟨_, _, _, _, _, _, _, rfl, -⟩ := h; rfl
+  case dict => obtain ⟨_, _, _, _, _, _, _, _, _, rfl, -⟩ := h; rfl
+  all_goals (cases h; rfl)
+
+/-- Reordering keeps an argument list's reading: a record or a dictionary
+is no argument list (proved). -/
+theorem clauseArguments_reordered {X : α → Fam} {c c' : Clause α} (h : Reordered c c') :
+    clauseArguments X c' = clauseArguments X c := by
+  cases c
+  case refs => obtain ⟨_, _, _, _, _, _, _, rfl, -⟩ := h; rfl
+  case dict => obtain ⟨_, _, _, _, _, _, _, _, _, rfl, -⟩ := h; rfl
+  all_goals (cases h; rfl)
+
+end Reordered
 
 /-- **Related clause lists**: each clause of one is related to a clause of
 the other, both ways. -/
@@ -74,13 +173,17 @@ def BuiltinsRel (φ : ι → κ) : Option (ArrayBuiltins ι) → Option (ArrayBu
   | _, _ => False
 
 /-- **A store map** from graph `G` to graph `H` on the region `D`: a label
-map, injective on `D`, under which every label of `D` has a row related to
-its image's. `D` is closed under the rows its labels read, their meet parts,
+map giving a parameter or a binder of a scheme of `D` an image no other label
+of `D` has, under which every label of `D` has a row related to its image's.
+Two labels of other rows may share an image: a store may hold one type at two
+labels. `D` is closed under the rows its labels read, their meet parts,
 their schemes' binders and bound binders, and holds the built-ins' types. -/
 structure StoreMap (G : NormalGraph ι) (H : NormalGraph κ) where
   φ : ι → κ
   D : ι → Prop
-  inj : ∀ a b, D a → D b → φ a = φ b → a = b
+  inj : ∀ a b, D a → D b →
+    (G.params a = true ∨ ∃ i, D i ∧ ∃ s, G.schemes i = some s ∧ (a ∈ s.binders ∨ ∃ c ∈ s.bounds, c.1 = a)) →
+    φ a = φ b → a = b
   reads : ∀ i, D i → ∀ j ∈ PositiveRules.reads G i, D j
   parts : ∀ i, D i → ∀ j ∈ meetParts G i, D j
   binders : ∀ i, D i → ∀ s, G.schemes i = some s → (∀ b ∈ s.binders, D b) ∧ ∀ b ∈ s.bounds, D b.1
@@ -115,28 +218,31 @@ theorem related_env : m.Related G.env H.env := m.env
 /-- A scheme's reassignment keeps related assignments related. -/
 theorem related_assign {η : MixedAssignment ι} {θ : MixedAssignment κ} (h : m.Related η θ) :
     ∀ (bs : List ι) (As : List MixedFamily), (∀ b ∈ bs, m.D b) →
+      (∀ b ∈ bs, G.params b = true ∨ ∃ i, m.D i ∧ ∃ s, G.schemes i = some s ∧ (b ∈ s.binders ∨ ∃ c ∈ s.bounds, c.1 = b)) →
       m.Related (assign η bs As) (assign θ (bs.map m.φ) As)
-  | [], As, _ => by
+  | [], As, _, _ => by
     intro p hp
     have h1 : (assign θ ([] : List κ) As).1 (m.φ p) = θ.1 (m.φ p) := assign_nmem θ [] As (by simp)
     have h2 : (assign η ([] : List ι) As).1 p = η.1 p := assign_nmem η [] As (by simp)
     simp only [List.map_nil]
     rw [h1, h2, h p hp]
-  | b :: bs, [], hbs => by
+  | b :: bs, [], hbs, _ => by
     intro p hp
     have h1 : (assign θ ((b :: bs).map m.φ) []).1 (m.φ p) = θ.1 (m.φ p) := by
       simp [assign]
     have h2 : (assign η (b :: bs) []).1 p = η.1 p := by simp [assign]
     rw [h1, h2, h p hp]
-  | b :: bs, A :: As, hbs => by
+  | b :: bs, A :: As, hbs, hbind => by
     intro p hp
     simp only [List.map_cons]
     by_cases hpb : p = b
     · subst hpb
       rw [assign_cons_head, assign_cons_head]
-    · have hne : m.φ p ≠ m.φ b := fun he => hpb (m.inj p b hp (hbs b List.mem_cons_self) he)
+    · have hne : m.φ p ≠ m.φ b := fun he =>
+        hpb (m.inj b p (hbs b List.mem_cons_self) hp (hbind b List.mem_cons_self) he.symm).symm
       rw [assign_cons_ne _ _ _ _ hne, assign_cons_ne _ _ _ _ hpb]
-      exact related_assign h bs As (fun b' hb' => hbs b' (List.mem_cons_of_mem _ hb')) p hp
+      exact related_assign h bs As (fun b' hb' => hbs b' (List.mem_cons_of_mem _ hb'))
+        (fun b' hb' => hbind b' (List.mem_cons_of_mem _ hb')) p hp
 
 theorem params_eq {i : ι} (hi : m.D i) : H.params (m.φ i) = G.params i := by
   simp [NormalGraph.params, m.kinds i hi]
@@ -168,12 +274,14 @@ theorem clauses_rel {i : ι} (hi : m.D i) : RowsRel m.φ (G i) (H (m.φ i)) := b
   · simp only [if_true]
     exact m.rows i hi hp
 
-theorem mem_map_iff {bs : List ι} (hbs : ∀ b ∈ bs, m.D b) {p : ι} (hp : m.D p) :
+theorem mem_map_iff {bs : List ι} (hbs : ∀ b ∈ bs, m.D b)
+    (hbind : ∀ b ∈ bs, G.params b = true ∨ ∃ i, m.D i ∧ ∃ s, G.schemes i = some s ∧ (b ∈ s.binders ∨ ∃ c ∈ s.bounds, c.1 = b))
+    {p : ι} (hp : m.D p) :
     m.φ p ∈ bs.map m.φ ↔ p ∈ bs := by
   constructor
   · intro h
     obtain ⟨b, hb, he⟩ := List.mem_map.mp h
-    rw [m.inj b p (hbs b hb) hp he] at hb
+    rw [m.inj b p (hbs b hb) hp (hbind b hb) he] at hb
     exact hb
   · exact List.mem_map_of_mem
 
@@ -271,10 +379,11 @@ theorem rowSem_eq {A X : List κ → Fam} {P : List κ → ArgFam} {A' X' : List
     {c : Clause (List ι)} {c' : Clause (List κ)} (hrel : ClauseRel m.φ c c')
     (hc : ∀ S ∈ c.operands, ∀ j ∈ S, m.D j) :
     rowSem H A X P c' = rowSem G A' X' P' c := by
-  obtain ⟨σ, he, rfl⟩ := hrel
+  obtain ⟨σ, he, hr⟩ := hrel
   funext n W v
   unfold rowSem
-  rw [m.builtinInvariant_eq hA (Clause.carriesInvariant_map _ _), m.builtinExc_eq hA, semWithArgs_map]
+  rw [semWithArgs_reordered hr, m.builtinInvariant_eq hA ((carriesInvariant_reordered hr).trans
+    (Clause.carriesInvariant_map _ _)), m.builtinExc_eq hA, semWithArgs_map]
   rw [semWithArgs_on (X' := X') (P' := P') fun S hS =>
     ⟨m.agrees_ops hX he hc S hS, m.agrees_ops hP he hc S hS⟩]
 
@@ -282,8 +391,8 @@ theorem clauseArguments_eq {X : List κ → Fam} {X' : List ι → Fam} (hX : m.
     {c : Clause (List ι)} {c' : Clause (List κ)} (hrel : ClauseRel m.φ c c')
     (hc : ∀ S ∈ c.operands, ∀ j ∈ S, m.D j) :
     clauseArguments X c' = clauseArguments X' c := by
-  obtain ⟨σ, he, rfl⟩ := hrel
-  rw [clauseArguments_map, clauseArguments_on (X' := X') fun S hS => m.agrees_ops hX he hc S hS]
+  obtain ⟨σ, he, hr⟩ := hrel
+  rw [clauseArguments_reordered hr, clauseArguments_map, clauseArguments_on (X' := X') fun S hS => m.agrees_ops hX he hc S hS]
 
 /-- Related clause lists, each clause read the same as its related clause,
 mean the same. -/
@@ -417,12 +526,15 @@ theorem scheme_eq (h : m.StepPremise X Y) {η θ} (hr : m.Related η θ) {i : ι
   have hlen : (mapSchemeWith m.φ σ s).binders.length = s.binders.length := by simp [mapSchemeWith]
   rw [hlen]
   refine imp_congr_right fun hAs => imp_congr (m.allowed i hi s hs _ hs' As) ?_
-  have hr' := m.related_assign hr s.binders As hbs
+  have hbind : ∀ b ∈ s.binders, G.params b = true ∨
+      ∃ i', m.D i' ∧ ∃ s', G.schemes i' = some s' ∧ (b ∈ s'.binders ∨ ∃ c ∈ s'.bounds, c.1 = b) :=
+    fun b hb => .inr ⟨i, hi, s, hs, .inl hb⟩
+  have hr' := m.related_assign hr s.binders As hbs hbind
   refine imp_congr ?_ ?_
   · unfold Bounded
     simp only [mapSchemeWith, List.forall_mem_map]
     refine forall_congr' fun b => forall_congr' fun hb => ?_
-    rw [m.mem_map_iff hbs (hbb b hb)]
+    rw [m.mem_map_iff hbs hbind (hbb b hb)]
     refine forall_congr' fun _ => forall_congr' fun j => forall_congr' fun _ =>
       forall_congr' fun U => forall_congr' fun u => ?_
     rw [hr' b.1 (hbb b hb)]

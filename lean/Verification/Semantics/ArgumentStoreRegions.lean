@@ -60,9 +60,6 @@ theorem StablePath.frame {Ξ T Q R x path v} : ∀ {n W h t},
     · exact .inr ⟨U, h', t', hx, hu, st, hh',
         ih (hp.transfer (Nat.le_succ n) hx) hh' hs'⟩
 
-theorem ArgumentStoreRegion.resolve_nil (i : Nat) (ρ : Env) (h : Heap) :
-    (ArgumentStoreRegion.mk i []).resolve ρ h = storeOf (ρ i) := rfl
-
 /-- Fixed protected locations compose even when intermediate heaps grow. -/
 theorem Closed.HoldsOn.trans_on {c : Closed} {P : Nat → Prop} {h₀ h h' : Heap}
     (h₁ : c.HoldsOn P h₀ h) (h₂ : c.HoldsOn (fun l => l < h₀.length ∧ P l) h h') :
@@ -89,83 +86,6 @@ theorem ArgumentStoreRegionsWithin.trans {c : Closed} {regions : List ArgumentSt
   apply h₁.trans_on
   exact h₂.weaken (fun l hl r hr => by rw [hs r hr]; exact hl.2 r hr)
 
-/-- A nested call may select entry stores or stores allocated since entry.
-The actuals and the paths of the nested call may differ from the caller's. -/
-theorem ArgumentStoreRegionsWithin.nested {c : Closed}
-    {regions nested : List ArgumentStoreRegion} {ρ actuals : Env} {entry middle after : Heap}
-    (h₁ : ArgumentStoreRegionsWithin c regions ρ entry middle)
-    (h₂ : ArgumentStoreRegionsWithin c nested actuals middle after)
-    (hs : ∀ r ∈ nested, ∀ l, r.resolve actuals middle = some l → l < entry.length →
-      ∃ outer ∈ regions, outer.resolve ρ entry = some l) :
-    ArgumentStoreRegionsWithin c regions ρ entry after := by
-  apply h₁.trans_on
-  apply h₂.weaken
-  intro l hl r hr heq
-  obtain ⟨outer, hm, he⟩ := hs r hr l heq hl.1
-  exact hl.2 outer hm he
-
-/-- A receiver-store call is a regional call at the empty receiver path. -/
-theorem ArgumentStoreRegionsWithin.receiver {c : Closed} {ρ : Env} {before after : Heap}
-    (h : c.HoldsOn (fun l => storeOf (ρ 0) ≠ some l) before after) :
-    ArgumentStoreRegionsWithin c [⟨0, []⟩] ρ before after := by
-  apply h.weaken
-  intro l hl
-  exact hl ⟨0, []⟩ (by simp)
-
-/-- The caller's separated array store meets the closed footprint. -/
-theorem ArgumentStoreRegionsWithin.frame_store {c : Closed} {regions : List ArgumentStoreRegion}
-    {ρ : Env} {entry after : Heap} {y : Val} {s : Nat} {ls : List (Option Nat)}
-    (hw : ArgumentStoreRegionsWithin c regions ρ entry after)
-    (ha : ∀ r ∈ regions, StoreApart entry (ρ r.position) r.path y)
-    (hy : storeOf y = some s) (hl : entry[s]? = some (.arr ls)) :
-    ∃ v, after[s]? = some v ∧ c.store.Holds entry.length (.arr ls) v := by
-  apply hw.2 s (.arr ls) _ hl
-  intro r hr heq
-  obtain ⟨v, a, b, hv, hvs, hys, hne⟩ := ha r hr
-  have hb : b = s := Option.some.inj (hys.symm.trans hy)
-  have has : a = s := by
-    simpa [ArgumentStoreRegion.resolve, hv, hvs] using heq
-  exact hne (has.trans hb.symm)
-
-/-- A kept store retains its exact length across the regional call. -/
-theorem ArgumentStoreRegionsWithin.frame_length {c : Closed} {regions : List ArgumentStoreRegion}
-    {ρ : Env} {entry after : Heap} {y : Val} {n : Int}
-    (hw : ArgumentStoreRegionsWithin c regions ρ entry after)
-    (ha : ∀ r ∈ regions, StoreApart entry (ρ r.position) r.path y)
-    (hc : c.store = .keep) (hn : HeapKnowledge.lengthOf entry y = some n) :
-    HeapKnowledge.lengthOf after y = some n := by
-  obtain ⟨s, ls, hy, hl, rfl, hm⟩ := HeapKnowledge.lengthOf_store hn
-  obtain ⟨v, hv, hchange⟩ := hw.frame_store ha hy hl
-  rw [hc] at hchange
-  change v = .arr ls at hchange
-  subst v
-  exact HeapKnowledge.lengthOf_of_store hy hv hm
-
-/-- A growing store retains every dense prefix, hence the corresponding
-lower bound on length. -/
-theorem ArgumentStoreRegionsWithin.frame_densePrefix {c : Closed}
-    {regions : List ArgumentStoreRegion} {ρ : Env} {entry after : Heap}
-    {y : Val} {s n : Nat} {ls : List (Option Nat)}
-    (hw : ArgumentStoreRegionsWithin c regions ρ entry after)
-    (ha : ∀ r ∈ regions, StoreApart entry (ρ r.position) r.path y)
-    (hc : c.store = .grow) (hy : storeOf y = some s)
-    (hl : entry[s]? = some (.arr ls)) (hd : DensePrefix n ls) :
-    ∃ ls', after[s]? = some (.arr ls') ∧ DensePrefix n ls' := by
-  obtain ⟨v, hv, hchange⟩ := hw.frame_store ha hy hl
-  rw [hc] at hchange
-  rcases hchange with heq | ⟨a, b, heq, rfl, hprefix, _⟩ | hscalar
-  · subst v; exact ⟨ls, hv, hd⟩
-  · cases heq; exact ⟨b, hv, hprefix n hd⟩
-  · simp [ScalarStep, isArr] at hscalar
-
-/-- Re-reading a preserved path keeps its store separation. -/
-theorem StoreApart.transport {h h' : Heap} {x y : Val} {path : List String}
-    (ha : StoreApart h x path y)
-    (hp : ∀ v, HeapKnowledge.readPath h x path = some v → HeapKnowledge.readPath h' x path = some v) :
-    StoreApart h' x path y := by
-  obtain ⟨v, s, t, hv, hs, ht, hne⟩ := ha
-  exact ⟨v, s, t, hp v hv, hs, ht, hne⟩
-
 /-- A stable path retains store separation on normal and exceptional returns.
 Preservation of another fact additionally needs the call's footprint there. -/
 theorem StoreApart.stable_path_frame {Ξ T Q R x path v y s t n W h term}
@@ -181,14 +101,6 @@ theorem StoreApart.stable_path_frame {Ξ T Q R x path v y s t n W h term}
   · intro h' hq
     exact ⟨hq.1, v, s, t, hq.2, hs, ht, hne⟩
 
-/-- An alias of the selected array supplies no store-separation witness. -/
-theorem StoreApart.not_alias {h x path y}
-    (hp : HeapKnowledge.readPath h x path = some y) : ¬ StoreApart h x path y := by
-  rintro ⟨v, s, t, hv, hs, ht, hne⟩
-  have he : y = v := Option.some.inj (hp.symm.trans hv)
-  subst v
-  exact hne (Option.some.inj (hs.symm.trans ht))
-
 /-- A stable own field keeps separation on every normal return. -/
 theorem StoreApart.stable_frame {Ξ T Q} {fs : List (PropKey × Nat)} {code : CallCode}
     {oid l : Nat} {field : String} {v y : Val} {s t : Nat} {n W h term} {c : Ctr n}
@@ -200,41 +112,5 @@ theorem StoreApart.stable_frame {Ξ T Q} {fs : List (PropKey × Nat)} {code : Ca
   apply HeapObservations.weaken _ (HeapObservations.stable_frame hl hc hh hr)
   intro h' u hp
   exact ⟨hp.1, v, s, t, by simp [HeapKnowledge.readPath, hf, hp.2], hs, ht, hne⟩
-
-/-- A kept store retains its exact length across a regional footprint whose
-selected stores are apart from it (`frame_length` on `Post`). -/
-theorem ArgumentStoreRegion.post_frame_length {c : Closed} {regions : List ArgumentStoreRegion}
-    {ρ : Env} {entry after : Heap} {y : Val} {n : Int}
-    (hp : Post (c.fp ++ regions.map ArgumentStoreRegion.entry) ρ entry after)
-    (ha : ∀ r ∈ regions, StoreApart entry (ρ r.position) r.path y)
-    (hc : c.store = .keep) (hn : HeapKnowledge.lengthOf entry y = some n) :
-    HeapKnowledge.lengthOf after y = some n :=
-  (ArgumentStoreRegionsWithin.iff_post.mpr hp).frame_length ha hc hn
-
-/-- Regional footprints at unchanged selected stores compose (`trans` on
-`Post`). -/
-theorem ArgumentStoreRegion.post_trans {c : Closed} {regions : List ArgumentStoreRegion}
-    {ρ : Env} {entry middle after : Heap}
-    (h₁ : Post (c.fp ++ regions.map ArgumentStoreRegion.entry) ρ entry middle)
-    (h₂ : Post (c.fp ++ regions.map ArgumentStoreRegion.entry) ρ middle after)
-    (hs : ∀ r ∈ regions, r.resolve ρ middle = r.resolve ρ entry) :
-    Post (c.fp ++ regions.map ArgumentStoreRegion.entry) ρ entry after :=
-  ArgumentStoreRegionsWithin.iff_post.mp
-    ((ArgumentStoreRegionsWithin.iff_post.mpr h₁).trans (ArgumentStoreRegionsWithin.iff_post.mpr h₂) hs)
-
-/-- Store separation of a path from a slot is the separation knowledge
-`storeApart` states: the path's store location is not the slot's. -/
-theorem StoreApart.sep {h : Heap} {ρ : Env} {x y : Nat} {p : List String}
-    (ha : StoreApart h (ρ x) p (ρ y)) :
-    ∀ l, (Region.path x p arrayStoreKey).mem ρ h l = true →
-      (Region.field y arrayStoreKey).mem ρ h l = false := by
-  intro l hm
-  obtain ⟨v, s, t, hv, hs, ht, hne⟩ := ha
-  simp only [Region.mem, hv, beq_iff_eq] at hm
-  simp only [storeOf] at hs ht
-  rw [hs] at hm
-  cases hm
-  simp only [Region.mem, ht]
-  simpa [beq_iff_eq] using fun h => hne h.symm
 
 end Verification.Footprints

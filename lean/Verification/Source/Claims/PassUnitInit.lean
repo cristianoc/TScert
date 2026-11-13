@@ -7,7 +7,7 @@ initialization unit (`:init`) binds. This module states what the `:init`
 request's acceptance gives at its finish states (`init_asserted`, proved
 from `RequestSafe`'s assertions clause) and the typed form of that
 postcondition the slot's contract (`KindMet` at `moduleCell`) needs, which
-stays a named hypothesis: docs/drafts/pass-unit-theorem.md, section 4, "H5b". -/
+stays a named hypothesis: docs/SINGLE-PASS-THEOREM.md, section 4, "H5b". -/
 
 namespace Verification.SourceClaimJson.PassUnit
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore

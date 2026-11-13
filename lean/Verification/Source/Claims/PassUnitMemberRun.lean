@@ -9,7 +9,7 @@ plan through `certify`, the request's own conditions, the qualified run or
 each code request's run in order (`codesInOrder_accepted`) and the main
 graph's route (direct, the regional fallback, the fallback then the stated
 regions), each step's refusals excluded by the outcome.
-docs/drafts/pass-unit-theorem.md, section 3. -/
+docs/SINGLE-PASS-THEOREM.md, section 3. -/
 
 namespace Verification.SourceClaimJson.PassUnit
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore

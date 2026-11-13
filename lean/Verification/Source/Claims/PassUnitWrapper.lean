@@ -7,7 +7,7 @@ members. This module proves that a group it accepts has every member's run
 accepted (`passGroup_members`), and states what a member's accepted run
 establishes (`PassMemberSound`: `MemberAccepted`, proved in
 PassUnitMemberRun), so that H3 (`PassGroupChecks`) holds of the code
-(`passGroupChecks_of_sound`). docs/drafts/pass-unit-theorem.md,
+(`passGroupChecks_of_sound`). docs/SINGLE-PASS-THEOREM.md,
 section 3. -/
 
 namespace Verification.SourceClaimJson.PassUnit

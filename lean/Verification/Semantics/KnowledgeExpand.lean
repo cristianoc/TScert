@@ -41,53 +41,12 @@ def restrict (C : Option ValueSet) (V : ValueSet) : ValueSet :=
   | none => V
   | some C => V.meet C
 
-/-- Each value fact on every slot of its class, at the class's context; and
-the context of every read's value, which a normal form leaves unstated where
-it is all that is known. -/
-def values : Facts :=
-  (k.values.flatMap fun f =>
-    let C := classCtxIn ctx cs f.slot
-    (members cs f.slot).map fun y => ⟨y, restrict C f.contents, f.field⟩) ++
-  (k.links.filter fun g => !g.alias).flatMap fun g => match classCtxIn ctx cs g.value with
-    | some C => (members cs g.value).map fun y => ⟨y, C, valueField⟩
-    | none => []
-
 def links : HeapLinks.Links :=
   (LinkClasses.slots k.links).filterMap (fun x =>
     let r := LinkClasses.least x (members cs x)
     if r = x then none else some ⟨r, x, true, valueField, false⟩) ++
   k.links.flatMap fun g => if g.alias then [] else
     (members cs g.cell).flatMap fun c => (members cs g.value).map fun v => ⟨c, v, false, g.field, g.optional⟩
-
-/-- The cell facts on every slot of their classes, and behind each read link
-of `ls` the value facts `vs` of its value. -/
-def cells (vs : Facts) (ls : HeapLinks.Links) : Facts :=
-  (k.cells.flatMap fun f => (members cs f.slot).map fun y => { f with slot := y }) ++
-  vs.flatMap fun F => linkFacts ⟨[], [], ls, {}, [], []⟩ F.slot F.contents
-
-/-- An atomic pair between every two slots of its classes. -/
-def spread : SepAtom → List SepAtom
-  | .whole i j g => (members cs i).flatMap fun i' => (members cs j).map fun j' => .whole i' j' g
-  | .field i f j g => (members cs i).flatMap fun i' => (members cs j).map fun j' => .field i' f j' g
-
-def bounded (d : Nat) : SepAtom → Bool
-  | .whole i j _ | .field i _ j _ => decide (i < d) && decide (j < d)
-
-/-- The separation's facts, and each atomic pair on every two slots of its
-classes not already among them. -/
-def separation : HeapSeparation.Separation :=
-  let S := k.separation
-  let stated : Std.HashSet HeapSeparation.Fact := Std.HashSet.ofList S.facts
-  ⟨S.depth, S.facts ++ ((((SeparationNormal.atoms S).flatMap (spread cs)).filter (bounded S.depth)).map
-    (encode S.depth)).filter (!stated.contains ·)⟩
-
-/-- The knowledge with what its normal form leaves implicit restated, its
-alias closure computed once. -/
-def expand : Knowledge :=
-  let cs := LinkClasses.closure k.links
-  let vs := values ctx k cs
-  let ls := links k cs
-  ⟨cells k cs vs ls, vs, ls, separation k cs, k.elems, k.indices⟩
 
 end
 
@@ -122,25 +81,6 @@ theorem restrict_mem {o : Option ValueSet} {v : Tm} (ho : ∀ C, o = some C → 
   · rename_i C
     rw [ValueSet.mem_meet, hv, ho C rfl]; rfl
 
-theorem values_holds (hc : CtxOk ctx ρ) (hk : HeapKnowledge.Holds k ρ h) :
-    ValueHolds (values ctx k (LinkClasses.closure k.links)) ρ := by
-  have hs : ∀ x, ∀ y ∈ Partitions.cls (LinkClasses.closure k.links) x, ρ y = ρ x :=
-    fun _ _ hy => members_eq hk.2.2.1 hy
-  intro F hF
-  rcases List.mem_append.mp hF with hF | hF
-  · obtain ⟨f, hf, hF⟩ := List.mem_flatMap.mp hF
-    obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hF
-    rw [members_eq hk.2.2.1 hy]
-    exact restrict_mem (fun _ hC => classCtxIn_mem hc (hs f.slot) hC) (hk.2.1 f hf)
-  · obtain ⟨g, -, hF⟩ := List.mem_flatMap.mp hF
-    split at hF
-    · rename_i C hC
-      obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hF
-      show C.mem (ρ y) = true
-      rw [members_eq hk.2.2.1 hy]
-      exact classCtxIn_mem hc (hs g.value) hC
-    · cases hF
-
 theorem links_holds (hk : HeapKnowledge.Holds k ρ h) : HeapLinks.Holds (links k (LinkClasses.closure k.links)) ρ h := by
   have hl := hk.2.2.1
   intro L hL
@@ -167,64 +107,6 @@ theorem links_holds (hk : HeapKnowledge.Holds k ρ h) : HeapLinks.Holds (links k
       simp only [ha, Bool.false_eq_true, ite_false] at hgl ⊢
       rw [members_eq hl hcm, members_eq hl hvm]
       exact hgl
-
-theorem cells_holds (hk : HeapKnowledge.Holds k ρ h) {vs : Facts} {ls : HeapLinks.Links} (hv : ValueHolds vs ρ)
-    (hl : HeapLinks.Holds ls ρ h) : HeapFacts.Holds (cells k (LinkClasses.closure k.links) vs ls) ρ h := by
-  intro F hF
-  rcases List.mem_append.mp hF with hF | hF
-  · obtain ⟨f, hf, hF⟩ := List.mem_flatMap.mp hF
-    obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hF
-    obtain ⟨flds, c, oid, u, he, hr, hm⟩ := hk.1 f hf
-    exact ⟨flds, c, oid, u, by rw [members_eq hk.2.2.1 hy]; exact he, hr, hm⟩
-  · obtain ⟨V, hV, hF⟩ := List.mem_flatMap.mp hF
-    have hk' : HeapKnowledge.Holds ⟨[], [], ls, {}, [], []⟩ ρ h :=
-      ⟨holds_nil ρ h, by simp [ValueHolds], hl, HeapSeparation.empty_holds ρ, elemsHolds_nil ρ h,
-        indexHolds_nil ρ h⟩
-    exact linkFacts_holds hk' (hv V hV) F hF
-
-theorem atoms_of_holds {S : HeapSeparation.Separation} (hS : HeapSeparation.Holds S ρ) :
-    ∀ x ∈ SeparationNormal.atoms S, x.Holds ρ := by
-  intro x hx
-  simp only [SeparationNormal.atoms, List.mem_flatMap] at hx
-  obtain ⟨a, ha, p, hp, g, hg, hx⟩ := hx
-  have hap := ((hS a ha).2 p hp).2 g hg
-  cases hf : a.fields with
-  | none => rw [hf] at hx hap; simp at hx; subst hx; exact hap
-  | some fs =>
-    rw [hf] at hx hap
-    obtain ⟨f, hf', rfl⟩ := List.mem_map.mp hx
-    exact hap.single (by simp [HeapSeparation.covers, hf'])
-
-theorem spread_holds (hl : HeapLinks.Holds k.links ρ h) {x : SepAtom} (hx : x.Holds ρ) :
-    ∀ y ∈ spread (LinkClasses.closure k.links) x, y.Holds ρ := by
-  intro y hy
-  cases x with
-  | whole i j g =>
-    obtain ⟨i', hi, hy⟩ := List.mem_flatMap.mp hy
-    obtain ⟨j', hj, rfl⟩ := List.mem_map.mp hy
-    exact (hx : HeapSeparation.Apart ρ i none j g).congr (members_eq hl hi) (members_eq hl hj)
-  | field i f j g =>
-    obtain ⟨i', hi, hy⟩ := List.mem_flatMap.mp hy
-    obtain ⟨j', hj, rfl⟩ := List.mem_map.mp hy
-    exact (hx : HeapSeparation.Apart ρ i (some [f]) j g).congr (members_eq hl hi) (members_eq hl hj)
-
-theorem separation_holds (hk : HeapKnowledge.Holds k ρ h) :
-    HeapSeparation.Holds (separation k (LinkClasses.closure k.links)) ρ := by
-  intro a ha
-  rcases List.mem_append.mp ha with ha | ha
-  · exact hk.2.2.2.1 a ha
-  obtain ⟨ha, -⟩ := List.mem_filter.mp ha
-  obtain ⟨y, hy, rfl⟩ := List.mem_map.mp ha
-  obtain ⟨hy, hb⟩ := List.mem_filter.mp hy
-  obtain ⟨x, hx, hy⟩ := List.mem_flatMap.mp hy
-  have hyh := spread_holds hk.2.2.1 (atoms_of_holds hk.2.2.2.1 x hx) y hy
-  cases y with
-  | whole i j g =>
-    simp only [bounded, Bool.and_eq_true, decide_eq_true_eq] at hb
-    exact (encode_holds (x := .whole i j g) hb).mpr hyh
-  | field i f j g =>
-    simp only [bounded, Bool.and_eq_true, decide_eq_true_eq] at hb
-    exact (encode_holds (x := .field i f j g) hb).mpr hyh
 
 /-- What readers need of a knowledge whose facts are stored once per class:
 its value facts restricted to their classes' contexts, and each read's value
@@ -266,13 +148,6 @@ theorem expandLinks_holds {ctx : Ctx} {k : Knowledge} {ρ : Env} {h : Heap} (hc 
       ⟨holds_nil ρ h, by simp [ValueHolds], hk.2.2.1, HeapSeparation.empty_holds ρ, elemsHolds_nil ρ h,
         indexHolds_nil ρ h⟩
     exact linkFacts_holds hk' (hv V hV) F hF
-
-/-- The expansion holds wherever the knowledge does, at environments meeting
-the contexts. -/
-theorem expand_holds (hc : CtxOk ctx ρ) (hk : HeapKnowledge.Holds k ρ h) :
-    HeapKnowledge.Holds (expand ctx k) ρ h :=
-  ⟨cells_holds hk (values_holds hc hk) (links_holds hk), values_holds hc hk, links_holds hk, separation_holds hk,
-    hk.2.2.2.2⟩
 
 end sound
 

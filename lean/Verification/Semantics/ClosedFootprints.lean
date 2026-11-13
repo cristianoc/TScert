@@ -88,13 +88,6 @@ theorem Closed.post_mono {a b : Closed} (hle : a.le b = true) {ρ h h'} (hp : Po
 
 private def ρ₀ : Env := fun _ => .undef
 
-private theorem single_post {Φ : Footprint} {v v' : Val} (hp : Post Φ ρ₀ [v] [v']) :
-    v' = v ∨ ∃ e ∈ Φ, e.1.mem ρ₀ [v] 0 = true ∧ e.2.Holds 1 v v' := by
-  obtain ⟨v₁, hv₁, ha⟩ := hp.2 0 v rfl
-  simp only [List.getElem?_cons_zero, Option.some.injEq] at hv₁
-  subst hv₁
-  exact ha
-
 /-! ## Closed footprints as call effects -/
 
 /-- The footprint letting no old location change, and the one letting every
@@ -220,18 +213,6 @@ private theorem Closed.at_of_holds {c : Closed} {b v v'} (h : (c.at v).Holds b v
 
 theorem Closed.Holds.refl (c : Closed) (h : Heap) : c.Holds h h :=
   Closed.Holds.mono (Closed.empty_le c) (Closed.holds_empty.mpr (List.prefix_refl h))
-
-/-- A footprint from a later heap holds from an earlier one the later one
-extends: fresh allocation before a call composes with the call's footprint. -/
-theorem Closed.Holds.prefix_left {c : Closed} {h₀ h h' : Heap} (hpre : h₀.IsPrefix h)
-    (hp : c.Holds h h') : c.Holds h₀ h' := by
-  rw [Closed.holds_iff] at hp ⊢
-  refine ⟨Nat.le_trans hpre.length_le hp.1, fun l v hv => ?_⟩
-  have hv₀ : h[l]? = some v := by
-    obtain ⟨t, rfl⟩ := hpre
-    rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hv).1, hv]
-  obtain ⟨v', hv', hc⟩ := hp.2 l v hv₀
-  exact ⟨v', hv', hc.lower hpre.length_le⟩
 
 /-- The weaker of two changes. -/
 def Change.min (a b : Change) : Change := if a.le b then a else b
@@ -376,15 +357,6 @@ theorem Closed.Holds.trans_on {c : Closed} {h₀ h h' : Heap} (h₁ : c.Holds h�
   · have heq := Closed.at_of_holds hc₁ hany
     rw [heq] at hc₂
     exact hc₁.trans h₁.1 hc₂
-
-theorem Closed.HoldsOn.prefix_left {c : Closed} {P : Nat → Prop} {h₀ h h' : Heap} (hpre : h₀.IsPrefix h)
-    (hp : c.HoldsOn P h h') : c.HoldsOn P h₀ h' := by
-  refine ⟨Nat.le_trans hpre.length_le hp.1, fun l v hl hv => ?_⟩
-  have hv₀ : h[l]? = some v := by
-    obtain ⟨t, rfl⟩ := hpre
-    rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hv).1, hv]
-  obtain ⟨v', hv', hc⟩ := hp.2 l v hl hv₀
-  exact ⟨v', hv', hc.lower hpre.length_le⟩
 
 theorem Closed.holdsOn_meet {a b : Closed} {P : Nat → Prop} {h h' : Heap} :
     (a.meet b).HoldsOn P h h' ↔ a.HoldsOn P h h' ∧ b.HoldsOn P h h' := by

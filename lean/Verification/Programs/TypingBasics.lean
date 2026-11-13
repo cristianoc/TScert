@@ -229,10 +229,6 @@ def stablePart {α : Type} (st : List PropKey) (b : Bool) (ps : List (PropKey ×
 @[simp] theorem stablePart_nil_true {α : Type} (ps : List (PropKey × α)) : stablePart [] true ps = [] := by
   simp [stablePart]
 
-theorem stablePart_map {α β : Type} (st : List PropKey) (b : Bool) (ps : List (PropKey × α)) (f : α → β) :
-    stablePart st b (ps.map fun p => (p.1, f p.2)) = (stablePart st b ps).map fun p => (p.1, f p.2) := by
-  simp [stablePart, List.filter_map, Function.comp_def]
-
 /-- The family a stable field's location is allocated with: its contract's
 values that are the value it is initialized with. -/
 def singleT (A : Fam) (v : Val) : Fam := fun j W u => A j W u ∧ u = v

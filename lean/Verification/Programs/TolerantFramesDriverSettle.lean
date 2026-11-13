@@ -27,13 +27,6 @@ theorem stepRun_shape {env : SinglePass.WalkEnv ι G I} {l : Nat} {entry : Singl
   · rename_i hs
     exact visitCheck_true hs
 
-/-- The footprint check in the pass is the check read by the soundness theorem. -/
-theorem boundOk_eq (codes : CodeEntry ι → Bool) (bound : Option (Footprints.Closed × Bool × Bool))
-    (dead : Array Bool) (l : Nat) (node : Node) (c : PointClaim ι) (entry : SinglePass.State)
-    (sums : List (ReadSummary ι)) (k : HeapKnowledge.Knowledge) (d : ProgramCertificates.Evidence ι) :
-    SinglePass.boundOk G I codes bound dead l node c entry sums k d =
-      passBounded G I codes bound dead l node c entry sums k d := rfl
-
 /-- A successful visit step retains its passing bound and return checks
 and the yields computed at the answers after the checked step. -/
 theorem visitStep_checks {env : SinglePass.WalkEnv ι G I} {σ : SinglePass.WalkState ι G} {l : Nat}

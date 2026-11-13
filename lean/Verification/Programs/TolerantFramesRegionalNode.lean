@@ -79,14 +79,6 @@ theorem checkNode_sound {G : NormalGraph ι} {images : InstanceImageCheck G}
     obtain ⟨se, hse, hwithin⟩ := List.any_eq_true.mp hp
     exact nodeWithin_of_step (stepEffects_ok hse ht hsums) hwithin
 
-/-- **The nodes' regional obligations over a graph** (`NodesWithin`): each
-node of the program at its evidence meets its own (`NodeWithinAt`). -/
-theorem nodesWithin_of {G : NormalGraph ι} {Φ : Footprints.Closed} {regions : List ArgumentStoreRegion}
-    {P : Program} {C : Certificate ι} {table : List (List ArgumentPathTracking.Fact)} {ft : FreshTables}
-    {exc : Bool}
-    (h : ∀ l node c, P[l]? = some node → C[l]? = some c → NodeWithinAt G Φ regions table ft exc l node c) :
-    NodesWithin G Φ regions P C table ft exc := h
-
 /-! ## Agreement of a node's tables with the graph's
 
 `run` checks each node over tables it builds for the node and its targets:

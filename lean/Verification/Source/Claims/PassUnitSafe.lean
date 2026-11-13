@@ -41,12 +41,6 @@ theorem main_guarantee {G : NormalGraph ι} {I : InstanceImageCheck G} {r : Sour
   rw [hP, hst, hin, hgoal, hsep, hidx, has, hens] at hg
   exact hg
 
-/-- The node lists of a request's program. -/
-abbrev exprsOf (P : Program) : List Tm := P.map (·.expression)
-
-/-- The continuations and handlers of a request's program. -/
-abbrev contsOf (P : Program) : List (Continuation × Option Target) := P.map fun n => (n.continuation, n.handler)
-
 omit [Labels ι] [StoreView σ ι] in
 /-- A guarantee's safety, as the term running the graph. -/
 theorem guarantee_goto {G : NormalGraph ι} {admits : MixedAssignment ι → Prop} {P : Program} {start : Nat}

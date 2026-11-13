@@ -113,15 +113,6 @@ def RegionR (Φ : Footprints.Closed) (regions : List Footprints.ArgumentStoreReg
     (exc : Bool) : Heap → Prop :=
   fun h => exc = true → Footprints.ArgumentStoreRegionsWithin Φ regions ρ0 h₀ h
 
-/-- **(Named hypothesis) The regional check keeps its facts `X`**: from a
-node entry where the pass's assertion and `X` hold, every run of its term
-with budget left reaches an exit whose target meets `X`, a return within
-the regional bound, an escaping throw within it where `exc`. -/
-def RegionsKept (P : Program) (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0 : Env)
-    (ctx : Nat → List (Ty ι)) (X : Nat → Env → Heap → Prop) (Φ : Footprints.Closed) (regions : List Footprints.ArgumentStoreRegion)
-    (h₀ : Heap) (exc : Bool) : Prop :=
-  NodesKeep P (passPreT G w startNames ρ0 ctx) X (RegionQ Φ regions ρ0 h₀) (RegionR Φ regions ρ0 h₀ exc) h₀.length
-
 omit [Hashable ι] in
 /-- **The start entered, typed**: `start_passPre` with the start's context
 the request's inputs, whose types the entry gives. -/

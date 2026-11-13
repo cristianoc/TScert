@@ -20,30 +20,6 @@ open PositiveRules HeapExpressionRules
 
 variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
 
-/-- **What the pass computed at a visited node**: the fields of
-`NodeAccepted` that are the pass's values and checks. -/
-structure NodeRan (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
-    (suggestions : List (Sequent ι)) (index : KnownIndex ι) (codes : CodeEntry ι → Bool) (aliases : List (ι × ι))
-    (pc : PassChecker G images) (undefTy : Option (Ty ι)) (P : ControlFlow.Program) (w : Walk ι)
-    (startNames : List Nat) (ctx : Nat → List (Ty ι)) (l : Nat) where
-  node : Node
-  hP : P[l]? = some node
-  c : PointClaim ι
-  hctx : ctx l = c.context
-  entry : SinglePass.State
-  ms : List Nat
-  fresh : Nat
-  answers : Answered G
-  st : Stepped ι
-  stats : StepStats
-  ans : Answered G
-  hstep : checkedStep G images pool fuel suggestions index codes aliases pc undefTy l node c entry ms fresh answers =
-    (Except.ok st, stats, ans)
-  wf : StoreWF entry.store
-  below : NamesBelow entry (w.implies l) startNames fresh
-  width : entry.names.length ≤ c.context.length
-  sums : SummariesSound G images answers.summaries.toList
-
 /-- **What a node's step means at a graph, its exits delivering `pre`**:
 about the node `node` at `l`, its claim `c`, its entry state `entry` and its
 step's result `st`: the entry state holding where the node assertion does,
@@ -79,12 +55,6 @@ variable {G : NormalGraph ι} {images : InstanceImageCheck G} {pool : List (Ty �
   {suggestions : List (Sequent ι)} {index : KnownIndex ι} {codes : CodeEntry ι → Bool} {aliases : List (ι × ι)}
   {pc : PassChecker G images} {undefTy : Option (Ty ι)} {P : ControlFlow.Program} {w : Walk ι}
   {startNames : List Nat} {ρ0 : Env} {ctx : Nat → List (Ty ι)} {Tres : Fam} {m : Nat} {l : Nat}
-
-/-- The pass's values and checks at an accepted node. -/
-def NodeAccepted.ran (na : NodeAccepted G images pool fuel suggestions index codes aliases pc undefTy P w startNames ρ0
-    ctx Tres m l) : NodeRan G images pool fuel suggestions index codes aliases pc undefTy P w startNames ctx l :=
-  ⟨na.node, na.hP, na.c, na.hctx, na.entry, na.ms, na.fresh, na.answers, na.st, na.stats, na.ans, na.hstep, na.wf,
-    na.below, na.width, na.sums⟩
 
 end Split
 

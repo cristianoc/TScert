@@ -74,19 +74,6 @@ theorem nodesChecked_of_walkA {P : ControlFlow.Program} {G : NormalGraph ι} {w 
   exact ⟨node, hn, Ξ, T, cn, ce, Qn, Qe, hsafe,
     nodeObligations_mono (fun t ρ s h => ⟨⟨entries_of_traversed hT hheads hmerges t ρ s h.1.1, h.1.2⟩, h.2⟩) ho⟩
 
-/-- **`asserted` from the walk at the assertion stating the written
-assertions**: the written assertion holds at every node entry at its
-label a run from the start reaches with budget left. -/
-theorem asserted_of_walkA {P : ControlFlow.Program} {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat}
-    {ρ0 : Env} {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge} {Ξres Tres : Fam}
-    {m : Nat} (hnodes : NodesChecked P (passPreA G w startNames ρ0 ctx stated) Ξres Tres (fun _ => True)
-      (fun _ => True) m)
-    {start : Nat} {ρ : Env} {s : IndexedHeap} (hpre : passPreA G w startNames ρ0 ctx stated start ρ m s)
-    {l : Nat} {req : HeapKnowledge.Knowledge} (hl : stated l = some req) {j : Nat} {h' : Heap} {ρ' : Env}
-    (hrun : Transitions P j s.h (.at start ρ) h' (.at l ρ')) (hj : j < s.n) : HeapKnowledge.Holds req ρ' h' := by
-  obtain ⟨s', he, hp'⟩ := reached_pre hnodes passPreA_adminClosed hpre hrun hj
-  exact he ▸ hp'.2 req hl
-
 /-- **The stated table holds every assertion** where `run` reads the
 request's assertions by label (`byLabel`) and no label is stated twice:
 then `AssertsAt` at every label gives every assertion of the request. -/

@@ -3424,9 +3424,6 @@ theorem atoms_noTag {G : NormalGraph ι} {A R} (h : atoms G A = some R) : R.all 
 
 /-! ## Reading a quantified fact at an element (ARITHMETIC.md, "Quantified clauses") -/
 
-theorem holdsAt_linear_iff {F : Linear.Fact Term} {ρ : Env} {h : Heap} :
-    (IndexFact.linear F).HoldsAt ρ h ↔ FactAt (termValue ρ h) F := Iff.rfl
-
 /-- A checked read of the same array at an index a fixed offset away. -/
 def offsetSlot (as : List IndexAtom) (cls : List Nat) (k d : Nat) : Option Nat := do
   let a ← as.find? fun a => a.cond.isNone && match a.fact with

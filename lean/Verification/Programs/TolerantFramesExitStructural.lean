@@ -91,12 +91,6 @@ theorem exit_target_labels (node : Node) :
 namespace ExitChecks
 variable {c : Target.RunCall G I} {r : RunWalkA G I c} {l : Nat} {hl : r.w.visited l}
 
-/-- The run record identifies its head flags with setup's flags. -/
-theorem givenCorrespondence : r.given = passHeads c := r.given_eq
-
-/-- The run record identifies its contexts with the claims read by the pass. -/
-theorem contextCorrespondence : r.ctx = passCtx c := r.ctx_eq
-
 /-- The successful computation belonging to the handler's indexed record. -/
 theorem Site.handler_record (s : Site c r l hl) {t : Target}
     (ht : (r.node l hl).node.handler = some t) :
@@ -206,7 +200,6 @@ theorem Site.head_incoming (s : Site c r l hl) {e : Exit}
     List.any_eq_true.mpr ⟨edge, hmem, by simp [htarget]⟩
   rw [hw]
   simp only [ofPass, ← r.given_eq, hh, if_true, hany, List.mem_singleton]
-
 
 /-- An edge into the start uses its ordinary fresh head entry. -/
 theorem Site.exit_noninitial (s : Site c r l hl) {e : Exit}

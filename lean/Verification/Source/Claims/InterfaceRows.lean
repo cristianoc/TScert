@@ -12,7 +12,7 @@ own store's interface type to the decoded table's; an importer reads an
 entry only where the check relates the table's type to the type its own
 store reads the import at. The two checks give the importer's slot type
 the module's interface's meaning (`signatureAgrees_of_checks`,
-docs/drafts/pass-unit-theorem.md, section 7). -/
+docs/SINGLE-PASS-THEOREM.md, section 7). -/
 namespace Verification.SourceClaimJson
 open Lean ProgramTyping SourceExtraction LabelStore PositiveGraphs
 open EquationGraphs (Tree)
@@ -121,13 +121,17 @@ def moduleRowsAgree {σ ι : Type} [Labels ι] [StoreView σ ι] (T : σ) (t : R
 /-- **The importer's check of a read**: the store-map check from the
 table's type for the function to the type `A` the importer's store reads it
 at, each image operand a canonical union of the importer's store (sorted,
-each label once). -/
+each label once); or, where that map is not one to one (two labels of the
+table of one type, as a module's store may hold), the check from `A` to the
+table's type. A store map's meanings are equal both ways
+(`StoreMap.meaning_eq`), so either gives the agreement. -/
 def importerRowsAgree {σ ι : Type} [Labels ι] [StoreView σ ι] (T : σ) (t : RowTable) (name : String) (A : List ι) :
     Bool :=
   have : Inhabited ι := ⟨Labels.nul⟩
   match t.interfaces.lookup name with
   | some I => (StoreMaps.matchStores t.graph (StoreView.graph T) (fun S => (S.mergeSort Labels.le).eraseDups)
-      (matchFuel t.rows.size) I A).isSome
+      (matchFuel t.rows.size) I A).isSome ||
+      (StoreMaps.matchStores (StoreView.graph T) t.graph id (matchFuel t.rows.size) A I).isSome
   | none => false
 
 /-- The module values unit `j`'s request captures, in its frame's order

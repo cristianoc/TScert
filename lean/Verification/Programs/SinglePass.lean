@@ -4,7 +4,7 @@ import Verification.Programs.SinglePassStats
 import Verification.Programs.ArgumentRegionCertificates
 
 /-! One forward pass over a graph cut at its statement entries
-(docs/drafts/single-pass.md): each node visited once, in a topological order
+(docs/SINGLE-PASS.md): each node visited once, in a topological order
 of the graph without the edges into cuts; bindings named once, by where they
 are introduced; facts stored over names, indexed by the names they mention;
 each step's proved rule applied to the facts over the names its expression
@@ -1207,13 +1207,6 @@ def PassChecker.selectChecks {G : NormalGraph ι} {images : InstanceImageCheck G
   | .ordinary => false
   | .qualified .. => true
 
-omit [Hashable ι] [Instantiates ι] in
-theorem PassChecker.select_eq_run {G : NormalGraph ι} {images : InstanceImageCheck G} {p : PassChecker G images}
-    (h : p.selectChecks = true) : p.checker.select = p.checker.run := by
-  cases p with
-  | ordinary => cases h
-  | qualified s o => rfl
-
 /-- **The start's written separation kept** in its given state
 (`startWritten`, `HeapSeparation.union`): each of its facts has a partner,
 and where it and the entry separation `entrySeparation` both state facts,
@@ -2266,15 +2259,6 @@ def withStated {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkE
         | some b => s.add b | none => s) entry.store }
     | none => entry
   else entry
-
-/-- **A node's entry state**, its implications, the fresh counter after its
-entry and at a merge its context and the fresh counter the merge started
-from (`entryStart`, then a written assertion's facts at a node other than a
-head, `withStated`). -/
-def entryOf (G : NormalGraph ι) {images : InstanceImageCheck G} (env : WalkEnv ι G images) (σ : WalkState ι G)
-    (l : Nat) : State × List (PromiseCalls.Implication ι) × Nat × Option (List (Ty ι) × Nat) :=
-  let es := entryStart G env σ l
-  (withStated env l es.base, es.implies, es.fresh, es.merge)
 
 /-- The counters after a node's entry `es`. -/
 def entryCounts {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkEnv ι G images) (counts : Counts) (l : Nat)

@@ -11,7 +11,7 @@ typing of each construct. What it computes is a proposal: the proved rules
 check every type the lowering states, so nothing here adds trust.
 
 Evolving declarations use the producer's four bounded contract-growth
-rounds and its unique-use fallback (proposal.ml:19-47). Each resulting
+rounds and its unique-use fallback. Each resulting
 contract is a proposal checked from the declaration onwards. A construct
 whose type the direct rule does not determine is recorded as undetermined.
 A loop body is walked once, from the loop head, where each binding the loop
@@ -38,7 +38,7 @@ structure Env where
   /-- The bindings held in cells (`cellLocals`; a function literal's
   captured ones no slot holds): no member path of one is narrowed, as the
   producer states a field's contents of an immutable binding's object alone
-  (`refine_field`'s `Value` root, refinement.ml:312-314). -/
+  (`refine_field`'s `Value` root). -/
   cells : List String := []
 
 /-- What ends a narrowed member path: anything (a call that may change a
@@ -67,7 +67,7 @@ computed type or reason, each statement entry's bindings, and the
 environments a `break` leaves with, by label; and the generic module
 functions it reads. -/
 structure Walk where
-  /-- Interiors under each advertised signature (expression_closures.ml:455-473). -/
+  /-- Interiors under each advertised signature. -/
   arrowClaims : List (Span × List (SourceClaims.Overlay Tree)) := []
   generics : List (String × Generic) := []
   /-- The types the `return`s of the body being walked give, and the result
@@ -77,8 +77,7 @@ structure Walk where
   /-- Each `let`'s storage contract, by its initializer's span and name:
   its declared type. -/
   contracts : List ((Span × String) × Ty Tree) := []
-  /-- Evolving initializer contracts, proposed by at most four growth rounds
-  (producer proposal.ml:19-47); each write is checked by the pass. -/
+  /-- Evolving initializer contracts, proposed by at most four growth rounds; each write is checked by the pass. -/
   assumed : List (Span × Ty Tree) := []
   evolving : List (String × (Span × Bool)) := []
   evolvedWrites : List (Span × Ty Tree) := []
@@ -210,7 +209,7 @@ structure Walk where
   values : List String := []
   /-- Each constant holding a function literal of no type parameters and no
   rest: its literal's span and own parameters' types (the producer's
-  `named_closure`, closure_offers.ml:29). -/
+  `named_closure`). -/
   closureConsts : List (String × Span × List (Ty Tree)) := []
   /-- Whether the walk is the module's initialization's. -/
   moduleInit : Bool := false
@@ -224,13 +223,13 @@ structure Walk where
   restOffered : List (Span × CallEffects.RestArrow (Ty Tree)) := []
   restOffers : List (Span × CallEffects.RestArrow (Ty Tree)) := []
   /-- Each unannotated constant holding an object literal, with its fields
-  (the producer's `register_object`, closure_offers.ml:33). -/
+  (the producer's `register_object`). -/
   objectConsts : List (String × List (PropKey × Expr)) := []
   /-- Each annotated constant holding a class value whose constructor's body
   returns an allocation last: the class value's span, its constructor's
   parameters, its written instance, and its methods, each key of the
   instance's prototype chain holding a constant of `closureConsts` (the
-  producer's `register_class`, closure_offers.ml:34-48). -/
+  producer's `register_class`). -/
   classConsts : List (String × Span × List (Ty Tree) × Ty Tree × List (PropKey × String)) := []
   /-- The construct signatures a use offers a class value (`offer_class`,
   closure_offers.ml:62-95), by its span, a variadic one with its pack:
@@ -249,7 +248,7 @@ structure Walk where
   holes : List Tree := []
   /-- The constants holding a store the run allocated: each initialized by
   a call whose instance states a fresh result, or by such a constant (the
-  producer's `fresh_expr`, source.ml:957-966); and whether the last call's
+  producer's `fresh_expr`); and whether the last call's
   instance states one. -/
   freshConsts : List String := []
   lastFresh : Bool := false
@@ -352,49 +351,6 @@ def literal : Claim.Val → Compiler (Ty Tree)
   | .vnum b => prim (.numLit b)
   | .vstr s => lower (SourceTypes.numberLabels ⟨false, [.strLit s]⟩)
   | .vbigint i => lower (SourceTypes.numberLabels ⟨false, [.bigintLit i]⟩)
-
-/-- A type shown to a reader of the comparison, two levels deep: records by
-their fields, arrays by their elements, functions by their signatures. -/
-partial def shown (T : EquationStore.State) (A : Ty Tree) (depth : Nat := 2) : String :=
-  let G := SourceTypes.graph T
-  let one (l : Tree) : String :=
-    if depth == 0 then SourceTypes.render T [l] else
-    match PositiveRules.expand G [l] with
-    | [.refs fs [] vs os _ _ _] =>
-      match (fs ++ vs).lookup SourceTypes.storeField with
-      | some S => match PositiveRules.expand G S with
-        | [.list t []] =>
-          let parts := t.required.map (shown T · (depth - 1)) ++ t.optional.map (fun o => shown T o (depth - 1) ++ "?")
-          let rest := (t.rest.map fun r => s!"...{shown T r (depth - 1)}").toList
-          s!"[{", ".intercalate (parts ++ rest)}]"
-        | _ => "array"
-      | none =>
-        let named := (fs ++ vs).filter (·.1 != SourceTypes.protoField) |>.map fun (k, B) =>
-          s!"{match k with | .str n => n | _ => "#"}: {shown T B (depth - 1)}"
-        let opt := os.map fun o => s!"{match o.key with | .str n => n | _ => "#"}?: {shown T o.type (depth - 1)}"
-        "{" ++ ", ".intercalate (named ++ opt) ++ "}"
-    | [.arrs L S] =>
-      -- Each row with its effect, where it is not the ordinary one: its
-      -- footprint by class, `T` a bounded throw, `F` a fresh result, `P` a
-      -- promise, `R` a receiver's store or own locations, `+` anything else.
-      let ch (c : Footprints.Change) : String := match c with
-        | .keep => "keep" | .init => "init" | .scalar => "scalar" | .grow => "grow" | .any => "any"
-      let eff (e : CallEffects.Effect) : String :=
-        if e == CallEffects.Effect.ordinary then "" else
-        let rest := { e with closed := .top, onThrow := false, fresh := false, promise := none,
-                             receiverStore := false, receiverOwn := false }
-        s!" !{ch e.closed.value}/{ch e.closed.store}{if e.onThrow then "T" else ""}{if e.fresh then "F" else ""}{if e.promise.isSome then "P" else ""}{if e.receiverStore || e.receiverOwn then "R" else ""}{if rest == CallEffects.Effect.ordinary then "" else "+"}"
-      " & ".intercalate ((L.map fun a =>
-        s!"({", ".intercalate (a.arguments.map (shown T · (depth - 1)))}) => {shown T a.result (depth - 1)}{eff a.effect}") ++
-        S.map fun a =>
-        s!"({", ".intercalate (a.arguments.1.map (shown T · (depth - 1)) ++ [s!"...{shown T a.arguments.2 (depth - 1)}"])}) => {shown T a.result (depth - 1)}{eff a.effect}")
-    | [.ctors L S _] =>
-      " & ".intercalate ((L.map fun a =>
-        s!"new ({", ".intercalate (a.arguments.map (shown T · (depth - 1)))}) => {shown T a.result (depth - 1)}") ++
-        S.map fun a =>
-        s!"new ({", ".intercalate (a.arguments.1.map (shown T · (depth - 1)) ++ ["..."])}) => {shown T a.result (depth - 1)}")
-    | _ => SourceTypes.render T [l]
-  if A.isEmpty then "never" else " | ".intercalate (A.map one).eraseDups
 
 /-- A `let`'s declared type from its initializer: each literal type widened
 to its primitive (TypeScript's widening of a mutable location). -/
@@ -619,7 +575,7 @@ def readField (vars : List (String × Ty Tree)) (A : Ty Tree) (fld : PropKey) : 
   -- A nullish receiver throws before its member is read: the read is of the
   -- others (`nullishSplit`, the lowering's read, Atoms.lean:599-618).
   -- Union elimination drops contradictory duplicate discriminants
-  -- (`labelMembers`/`conflicting`; type_queries.ml:407-423).
+  -- (`labelMembers`/`conflicting`).
   let A := (readMembers G (present G A)).filter fun l =>
     -- An empty intersection contributes no receiver. Drop it before
     -- partitioning dictionaries from the other object contracts.
@@ -736,22 +692,6 @@ beside a binder (`T | undefined`, which no clause expansion opens). -/
 def omissible (G : PositiveGraphs.NormalGraph Tree) (A : Ty Tree) : Bool :=
   A.contains Labels.undef || admitsUndefined G A
 
-/-- The signature a call's actuals select: the first whose parameter count
-admits them (omitted positions admitting `undefined`, also before a rest)
-and whose parameters each actual is within, else the first whose count
-admits them (the producer's `callable`, expression_calls.ml:757-761). -/
-def choose (sigs : List Sig) (args : List (Ty Tree)) : Compiler Sig := do
-  let T ← table
-  let G := SourceTypes.graph T
-  let fits (s : Sig) : Bool :=
-    (s.rest && s.params.length ≤ args.length) ||
-      (args.length ≤ s.params.length && (s.params.drop args.length).all (fun D => omissible G D || within T [Labels.undef] D))
-  let candidates := sigs.filter fits
-  let accepts (s : Sig) : Bool := (args.zip s.params).all fun (A, D) => within T A D
-  match candidates.find? accepts <|> candidates.head? with
-  | some s => return s
-  | none => throw s!"no signature admits {args.length} actuals (of {sigs.map fun s => (s.params.length, s.rest)})"
-
 /-- The signatures a callable type offers, fixed and variadic. -/
 def callSigsOf (F : Ty Tree) : Compiler (List Sig) := do
   let G ← graphNow
@@ -765,12 +705,6 @@ def protoOf (G : PositiveGraphs.NormalGraph Tree) (O : Ty Tree) : Option (Ty Tre
   match PositiveRules.expand G O with
   | [.refs fs [] vs _ _ _ _] => (fs ++ vs).lookup SourceTypes.protoField
   | _ => none
-
-def memberSigs (m : MethodMembers.Sig (Ty Tree)) : Compiler (List Sig) := do
-  if m.calls.isEmpty && m.rests.isEmpty then
-    throw "a generic member: its signature needs type arguments"
-  return m.calls.map (fun a => ⟨a.arguments, false, a.result⟩) ++
-    m.rests.map (fun a => ⟨a.arguments.1, true, a.result⟩)
 
 /-- A member path `root.path` narrowed by `k`: its narrowed type, else the
 type read along it, at `k`'s, where the path is a member of an object other
@@ -852,7 +786,7 @@ def narrowTargetWith (env : Env) (target : Expr) (slice : Ty Tree → Compiler (
             if keep then kept := kept ++ [l]
           return kept
     -- Successive tests share the path's accumulated contents: an arm
-    -- disjoint from them is impossible (`contents_meet`, refinement.ml:276).
+    -- disjoint from them is impossible (`contents_meet`).
     if let [f] := path then
       let mut kept : Ty Tree := []
       for l in A do
@@ -893,7 +827,7 @@ states `k` of each. -/
 def growth (O : Ty Tree) (k : PropKey) (R : Ty Tree) (literal_ : Bool) : Compiler (Option (Ty Tree × Ty Tree)) := do
   let G ← graphNow
   -- A dictionary retains its index contracts when a write establishes a
-  -- named key (type_queries.ml:525-564); no store is upcast.
+  -- named key; no store is upcast.
   if !O.isEmpty && O.all (fun l => match PositiveRules.expand G [l] with | [.dict _ [] ..] => true | _ => false) then
     let rows := O.filterMap fun l => match PositiveRules.expand G [l] with
       | [.dict fs [] vs ix os ms bs cells st] => some (fs, vs, ix, os, ms, bs, cells, st)
@@ -1086,9 +1020,9 @@ def loopHead (env : Env) (ss : List Stmt) : Env :=
 
 /-- Each binding held in a cell at its declared type: what a cell holds is a
 current-content fact, which no step keeps across a write without a
-separation and no throw keeps (the producer's `forget`, environment.ml:138,
-at a step that may write cells, execution_analysis.ml:243, and at a
-handler's edge, proposal_flow.ml:556).
+separation and no throw keeps (the producer's `forget`,
+at a step that may write cells, and at a
+handler's edge).
 (`TSCERT_FORCE=cells` keeps them, the adversarial proposal) -/
 def cellsDeclared (w : Walk) (e : Env) : Env :=
   if w.force.contains "cells" then e else
@@ -1098,7 +1032,7 @@ def cellsDeclared (w : Walk) (e : Env) : Env :=
 /-- Each binding held in a cell whose contract names a type parameter (a
 binder's row, `T` or a bounded `T ⊓ B`) at its contract: a test states no
 contents of it, as the producer's `observed_contents` keeps the contract of
-a cell where the test's slice is no union of atoms (environment.ml:73-83). -/
+a cell where the test's slice is no union of atoms. -/
 def cellsAtRigid (w : Walk) (e : Env) : Env :=
   if w.force.contains "cells" then e else
   let rigid (A : Ty Tree) : Bool := A.any fun | .bound .. | .meet .. => true | _ => false
@@ -1111,7 +1045,7 @@ def cellsAtRigid (w : Walk) (e : Env) : Env :=
 
 /-- Whether each member of the path `root.path` is a key every arm of its
 receiver states stable (the producer's `stable_path` through
-`stable_member`, refinement.ml:195-251): no step writes it, so its
+`stable_member`): no step writes it, so its
 narrowing survives a call that may change the heap. -/
 def stablePath (env : Env) (root : String) (path : List PropKey) : Compiler Bool := do
   let some A := env.vars.lookup root | return false
@@ -1133,7 +1067,7 @@ def stablePath (env : Env) (root : String) (path : List PropKey) : Compiler Bool
 
 /-- Whether an iterator's step keeps the path `root.path`: each member a
 required field every record arm of its receiver states, none a `length`
-(the producer's `separated_path`, statement_analysis.ml:785-793, the
+(the producer's `separated_path`, the
 locations the iterator is apart from). -/
 def separatedPath (env : Env) (root : String) (path : List PropKey) : Compiler Bool := do
   let some A := env.vars.lookup root | return false
@@ -1159,8 +1093,6 @@ def decided (C : Option (Ty Tree)) (q : Bool) : Compiler Bool := do
 /-- An environment with the paths `kept` beside its own. -/
 def keepPaths (kept : List ((String × List PropKey) × Ty Tree)) (env : Env) : Env :=
   { env with paths := env.paths ++ kept.filter fun (p, _) => (env.paths.lookup p).isNone }
-
-def typeofNames : List String := ["bigint", "boolean", "function", "number", "object", "string", "symbol", "undefined"]
 
 def need (o : Option (Ty Tree)) (what : String) : Compiler (Ty Tree) :=
   match o with
@@ -1249,7 +1181,7 @@ def schemeDefaults (T : EquationStore.State) (l : Tree) : List (Tree × Ty Tree)
 /-- The callee a value of type `F` is, called with receiver `O`: a scheme
 by its binders and signatures, at `typeArgs` where they are written; a
 union of callables, each arm of one fixed signature and no binders, by its
-arms (the producer's union of callables, expression_calls.ml:1105-1118);
+arms (the producer's union of callables);
 any other callable by its signatures. -/
 def calleeOf (F O : Ty Tree) (typeArgs : List Json := []) : Compiler Callee := do
   let G ← graphNow
@@ -1323,7 +1255,7 @@ a rest's argument lists, whose signature at a fresh binder has no argument
 lists (they are an array or tuple instance's): at the tuple of the actuals
 past its fixed parameters, widened, a spread of a tuple of required
 positions standing for them (the producer's pack rest, a binder typing a
-value too, expression_calls.ml:666-671); where its signature at that tuple
+value too); where its signature at that tuple
 states no rest, at the actual of the first parameter that is the binder
 itself. -/
 def packedCallee (g : Generic) (As : List (Option (Ty Tree))) (spreads : List Nat) :
@@ -1362,8 +1294,7 @@ def packedCallee (g : Generic) (As : List (Option (Ty Tree))) (spreads : List Na
     return some (← at_ A)
   | _ => return none
 
-/-- The expressions an expected type naming a hole guides
-(expression_typing.ml:38-40). -/
+/-- The expressions an expected type naming a hole guides. -/
 def holeGuided : Expr → Bool
   | .arrayLit .. | .call .. | .invoke .. | .lambda .. => true
   | _ => false
@@ -1467,7 +1398,7 @@ partial def occurs (b : Tree) (t : Tree) : Bool :=
 /-- A callback's parameter `Ph`, read at the binders the type expected of
 its call's value gives, where it is one signature naming holes in its
 result alone and no binder of the call; else `Pc` (the producer's
-`result_bound`, expression_calls.ml:852-868). -/
+`result_bound`). -/
 def holedCallback (G : PositiveGraphs.NormalGraph Tree) (holes binders : List Tree) (Ph Pc : Ty Tree) : Ty Tree :=
   let holed (A : Ty Tree) : Bool := holes.any fun h => A.any (occurs h)
   match Ph, ProgramTyping.callSigs G Ph with
@@ -1499,7 +1430,7 @@ partial def matchBinder (b : Tree) (P A : Ty Tree) (fuel : Nat := 6) (vars : Lis
   -- A union: the actual less what the members not mentioning `b` admit;
   -- each of its labels at the first member mentioning `b` it matches, the
   -- bare binder last (the producer's arm of a part's own kind, else the
-  -- bare binder, inference.ml:425-503): a single label too, where several
+  -- bare binder): a single label too, where several
   -- members mention `b` (`TResult1 | PromiseLike<TResult1>` at `string`).
   let ordered := withB.filter (!isBinder b [·]) ++ withB.filter (isBinder b [·])
   let perLabel (A : Ty Tree) (single : Bool := false) : Compiler (Option (Ty Tree)) := do
@@ -1558,7 +1489,7 @@ partial def matchBinder (b : Tree) (P A : Ty Tree) (fuel : Nat := 6) (vars : Lis
   let r ← match PositiveRules.expand G [l] with
   | [.ctors fixed rests ..] =>
     -- The class's own constructor is first; its result and parameters
-    -- constrain the target constructor (inference.ml:287-294).
+    -- constrain the target constructor.
     let target := (fixed.head?.map fun a => (a.arguments, a.result)) <|>
       (rests.head?.map fun a => (a.arguments.1, a.result))
     let actual := match PositiveRules.expand G A with
@@ -1581,12 +1512,12 @@ partial def matchBinder (b : Tree) (P A : Ty Tree) (fuel : Nat := 6) (vars : Lis
   | _ =>
     -- (of a parameter stating a guard's plain row beside its promise row,
     -- the first signature mentioning `b`: a written guard's promised type
-    -- is the binder's, the producer's `promised`, expression_calls.ml:438-445)
+    -- is the binder's, the producer's `promised`)
     let sigs := ProgramTyping.callSigs G [l]
     let some s := (sigs.find? fun s => (s.result :: s.arguments).any (·.any (occurs b))) <|> sigs.head?
       | return none
     -- A callback's result supplies the lower candidate first; only a
-    -- binder absent there is read off its parameters (inference.ml:311-329).
+    -- binder absent there is read off its parameters.
     let rows := ProgramTyping.callSigs G A
     let row := rows.find? fun a => a.effect.promise == s.effect.promise &&
       a.arguments.length ≤ s.arguments.length
@@ -1603,8 +1534,7 @@ partial def matchBinder (b : Tree) (P A : Ty Tree) (fuel : Nat := 6) (vars : Lis
   perLabel A
 
 /-- Whether a binder supplies values in a signature. A constructor or
-callback's argument pack alone does not make it a value binder
-(expression_calls.ml:661-671). -/
+callback's argument pack alone does not make it a value binder. -/
 partial def valueBinder (G : PositiveGraphs.NormalGraph Tree) (b : Tree) (A : Ty Tree)
     (fuel : Nat := 6) : Bool :=
   if fuel == 0 then A.any (occurs b) else
@@ -1650,7 +1580,7 @@ differ: of each arm its first signature of no promise binding keeps
 (`Effect.keeps`); where all take the same parameters at the same effect, the
 bound function at any receiver taking them, at the effect binding keeps
 (`Effect.drop`), returning the union of their results (the producer's
-`Bind` of a union of hosts, `bound_union`, expression_values.ml:349-363;
+`Bind` of a union of hosts, `bound_union`;
 the lowering splits the host's slot, `unionVar`, and binds each arm's
 member, `bindMember`). `forced` states it keeping values and stores. -/
 def boundUnion (M : Ty Tree) (forced : Bool) : Compiler (Option (Ty Tree)) := do
@@ -1720,7 +1650,7 @@ def fieldExpected (P : Ty Tree) (k : PropKey) : Compiler (Option (Ty Tree)) := d
   let mut out : Ty Tree := []
   for l in P do
     -- Construction at an optional field uses its value contract, without
-    -- the undefined contributed by an absent read (expression_objects.ml:34).
+    -- the undefined contributed by an absent read.
     let named := match PositiveRules.expand G [l] with
       | [.refs fs [] vs os _ _ _] | [.dict fs [] vs _ os _ _ _ _] =>
         fs.lookup k <|> vs.lookup k <|> (os.find? (·.key == k)).map (·.type)
@@ -1730,7 +1660,7 @@ def fieldExpected (P : Ty Tree) (k : PropKey) : Compiler (Option (Ty Tree)) := d
       | none =>
         -- A key the member states as a method: the callable a read of it
         -- bound to that member is (the producer's `f.read` of a method
-        -- field, expression_objects.ml:25-36).
+        -- field).
         match (match ProgramTyping.objectClauses G [l] with
             | [c] => ProgramTyping.clauseMember c k
             | _ => none) with
@@ -1897,7 +1827,7 @@ def wrote (value store : Footprints.Change := .any) : W Unit := do
 
 /-- For a declaration's footprint, a call's change of the heap at one of its
 callee's signatures, graded as the producer's `effects_footprint`
-(source.ml:953-956) grades it: the signature's footprint; with the values
+ grades it: the signature's footprint; with the values
 where it changes its receiver's own locations; everything where it changes
 its receiver's store and the receiver's store is not one the run allocated
 (`receiverFresh`). A typed array's element write (`elementWrite`) is a
@@ -1954,8 +1884,7 @@ def earlyContract (b : Fragment.Binding) (effect : CallEffects.Effect := .ordina
       return [← lower (SourceTypes.use (.arrs [⟨Rt, Ds, R, stated.getD effect⟩] []))]
     | _, _ => throw "no written contract") fun _ => pure none)
 
-/-- A call's actuals with its spreads read as the call reads them
-(`expression_calls.ml`): a spread of a tuple of required positions as those
+/-- A call's actuals with its spreads read as the call reads them: a spread of a tuple of required positions as those
 positions; a spread of any other array as one actual of its elements, which
 only a variadic signature taking no more fixed parameters than the actuals
 before the first such spread admits (its elements checked against the
@@ -2067,7 +1996,7 @@ def copiesOf (A : Ty Tree) (force : Bool) (target : Bool := false) : Compiler (L
     -- indexed operands. Inspect its parts before their indexes merge.
     if let .meet ps := l then
       -- Check each product before its fields are normalized together, as
-      -- arm_products/meet_product do (object_spread.ml:93-122).
+      -- arm_products/meet_product do.
       let mut products : List (List (PositiveNormalization.Clause (Ty Tree))) := [[]]
       for p in ps.toList do
         products := products.flatMap fun row => (PositiveRules.expand G [p]).map fun c => row ++ [c]
@@ -2118,7 +2047,7 @@ def copiesOf (A : Ty Tree) (force : Bool) (target : Bool := false) : Compiler (L
       out := out ++ [{ fields := fields ++ opt, exact := false, index := if force && (ix.lookup .strings).isSome then some [Labels.tru] else ix.lookup .strings, symbols := ix.lookup .symbols }]
     | [.callable fs rest _ _ ms] =>
       -- A callable object's fields are copied just as the producer's
-      -- callable Shape (object_spread.ml:156-160); every intersection
+      -- callable Shape; every intersection
       -- operand constrains a repeated key (field_meet, lines 56-70). A
       -- copy onto a callable is not handled.
       if target then throw "a spread of a value of no record contract"
@@ -2140,7 +2069,7 @@ def copiesOf (A : Ty Tree) (force : Bool) (target : Bool := false) : Compiler (L
     | [.arrs ..] => out := out ++ [{ exact := false }]
     -- (a label of no value: no copy)
     | [] => pure ()
-    -- The producer rejects these operand contracts (object_spread.ml:176).
+    -- The producer rejects these operand contracts.
     | _ => throw (refusalMark ++ "copy: a spread of a value of no record contract")
   return out
 
@@ -2213,7 +2142,7 @@ def copyParts (start : List Copy) (parts : List (Option PropKey × Ty Tree)) (fo
     match k with
     | some k =>
       -- A written field also contributes to each applicable index of the
-      -- fresh copy (object_spread.ml:merge_alternative). Every named cell
+      -- fresh copy. Every named cell
       -- covered by that writable index is allocated at its combined type.
       alts ← alts.mapM fun a =>
         if a.index.isSome || a.symbols.isSome || a.numeric.isSome then
@@ -2313,7 +2242,7 @@ def offerUse (n : String) (P : Ty Tree) : W Unit := do
   | [s], [] => let _ ← offerSig n s
   | [], [r] =>
     -- One variadic signature of an element rest binding at least as many
-    -- fixed parameters (closure_offers.ml:54-56).
+    -- fixed parameters.
     if (PositiveRules.restElem G r.arguments.2).isNone || r.arguments.1.length < own.length then return
     if !(← get).force.contains "offers" && !((r.arguments.1.take own.length).zip own).all fun (D, Q) => within T D Q then return
     modify fun w => { w with restOffered := if w.restOffered.contains (sp, r) then w.restOffered else w.restOffered ++ [(sp, r)] }
@@ -2346,7 +2275,7 @@ def contextRows (T : EquationStore.State) (ctx : Option (Ty Tree)) (own : CallEf
         ({ r with result := own.result, effect := own.effect } : CallEffects.RestArrow (Ty Tree)))
 
 /-- The fields of the allocation a constructor's body returns last (the
-producer's `allocated`, closure_offers.ml:11-18). -/
+producer's `allocated`). -/
 partial def allocatedIn (ss : List Stmt) : Option (List (PropKey × Expr)) :=
   match ss.getLast? with
   | some (.ret _ (.alloc _ names es)) => some (names.zip es)
@@ -2354,8 +2283,7 @@ partial def allocatedIn (ss : List Stmt) : Option (List (PropKey × Expr)) :=
   | some (.ite _ _ a _) => allocatedIn a
   | _ => none
 
-/-- An instance's methods are its prototype chain's, the nearer first
-(closure_offers.ml:37-43). -/
+/-- An instance's methods are its prototype chain's, the nearer first. -/
 def protoChain (objects : List (String × List (PropKey × Expr))) :
     Nat → List String → List (PropKey × Expr) → List (PropKey × Expr)
   | fuel + 1, seen, fs => match fs.lookup SourceTypes.protoField with
@@ -2368,7 +2296,7 @@ def protoChain (objects : List (String × List (PropKey × Expr))) :
   | 0, _, _ => []
 
 /-- A constant's object literal or class value, registered for the offers
-its uses make (the producer's `named_closure`, closure_offers.ml:29-49). -/
+its uses make (the producer's `named_closure`). -/
 def registerNamed (b : Binding) : W Unit := do
   match b.annot, b.init with
   | none, .alloc _ names es =>
@@ -2398,14 +2326,14 @@ that instance, at that signature's parameters where it binds more than the
 constructor whose leading ones are within its own, else at the
 constructor's; a variadic signature of an element rest binding no more
 fixed parameters, each the constructor's, is offered as it is (the
-producer's `offer_class`, closure_offers.ml:62-95, from
+producer's `offer_class`, from
 expression_values.ml:54 and expression_calls.ml:317-318). -/
 def offerClass (n : String) (P : Ty Tree) : W Unit := do
   let some (_, pos, params, inst, methods) := (← get).classConsts.find? (·.1 == n) | return
   let T ← StateT.lift table
   let G := SourceTypes.graph T
   -- (a dictionary's field is expected at its index's value, without the
-  -- `undefined` an absent read gives, expression_objects.ml:36-37)
+  -- `undefined` an absent read gives)
   let [.ctors L S _] := PositiveRules.expand G (P.filter (· != Labels.undef)) | return
   let force := (← get).force.contains "offers"
   let offer (c : CallEffects.MethodArrow (Ty Tree) × Option (Ty Tree)) : W Unit :=
@@ -2431,8 +2359,19 @@ def offerClass (n : String) (P : Ty Tree) : W Unit := do
       offer (⟨(), r.arguments.1, r.result, r.effect⟩, some r.arguments.2)
     else if widened then
       -- A non-variadic pack still offers its result when a method widened;
-      -- the constructor keeps its own parameters (closure_offers.ml:92-95).
+      -- the constructor keeps its own parameters.
       offer (⟨(), params, r.result, r.effect⟩, none)
+
+/-- The type proposed for the expression at `span`: its computed type, but
+under `TSCERT_FORCE=point@<start>-<end>` at that span (a control's wrong
+proposal at one program point) a narrower or other one: the first of two or
+more members, else `false` for `true` and `true` for any other. The walk goes
+on with the computed type. -/
+def forcedPoint (force : List String) (span : Nat × Nat) (r : Except String (Ty Tree)) : Except String (Ty Tree) :=
+  if !force.contains s!"point@{span.1}-{span.2}" then r else
+  match r with
+  | .ok A => .ok (if A.length ≥ 2 then A.take 1 else if A == [Labels.tru] then [Labels.fls] else [Labels.tru])
+  | .error m => .error m
 
 /-- Record an expression's computed type or the reason it has none. -/
 partial def record (e : Expr) (r : Except String (Ty Tree)) : W (Option (Ty Tree)) := do
@@ -2446,14 +2385,16 @@ partial def record (e : Expr) (r : Except String (Ty Tree)) : W (Option (Ty Tree
           | some (_, m') => .error m'
           | none => r)
     | .ok _ => pure r
-  modify fun w => { w with exprs := w.exprs.insert e.span (kindOf e, r), exprsAt := w.exprsAt.insert (w.stmtAt, e.span) r,
+  let p := forcedPoint (← get).force e.span r
+  modify fun w => { w with exprs := w.exprs.insert e.span (kindOf e, p), exprsAt := w.exprsAt.insert (w.stmtAt, e.span) p,
                            refusals := match r with
                              | .error m => if m.startsWith refusalMark then w.refusals.insert e.span m else w.refusals
                              | .ok _ => w.refusals.erase e.span }
   return r.toOption
 
 partial def recordAt (span : Span) (kind : String) (r : Except String (Ty Tree)) : W Unit :=
-  modify fun w => { w with exprs := w.exprs.insert span (kind, r), exprsAt := w.exprsAt.insert (w.stmtAt, span) r,
+  modify fun w => let p := forcedPoint w.force span r
+    { w with exprs := w.exprs.insert span (kind, p), exprsAt := w.exprsAt.insert (w.stmtAt, span) p,
                            refusals := match r with
                              | .error m => if m.startsWith refusalMark then w.refusals.insert span m else w.refusals
                              | .ok _ => w.refusals.erase span }
@@ -2508,8 +2449,7 @@ partial def placesHoles (G : PositiveGraphs.NormalGraph Tree) (free : List Tree)
     | none => false
 
 /-- Fresh array literals at generic tuple positions retain those positions,
-with each value widened, recursively through an array of tuples
-(expression_support.ml:124-139). Existing stores keep their contracts. -/
+with each value widened, recursively through an array of tuples. Existing stores keep their contracts. -/
 partial def tupleActual (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty Tree)) := do
   let .arrayLit _ es [] := x | return A
   let G ← StateT.lift graphNow
@@ -2549,7 +2489,7 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
   -- An expected type naming a hole (a binder of a call whose actual is
   -- being walked at its parameter, `applyCall`): an array literal keeps the
   -- tuple positions it states, a position holding a hole its element's own
-  -- type (expression_objects.ml:269-275); any other value its own type.
+  -- type; any other value its own type.
   if (← get).holes.any (fun h => P.any (occurs h)) then
     return ← match x with
       | .arrayLit _ (_ :: _) [] => tupleActual P x A
@@ -2640,7 +2580,7 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
         let some B ← fit D y ((w.exprs.get? y.span).bind (·.2.toOption)) | ok := false; break
         -- A generic function literal at a field the expected record states
         -- a scheme: allocated at that scheme (the producer's field built at
-        -- its contract's type, expression_objects.ml:51-52), the
+        -- its contract's type), the
         -- allocation's typing checking the literal's scheme within it.
         let scheme := match y, D with
           | .lambda _ _ (_ :: _) .., [d] => (G.schemes d).isSome
@@ -2740,7 +2680,7 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
     return some A
   | .build _ names es =>
     -- Context reaches every fresh part of a copy, including a copy nested
-    -- in a call's object literal (expression_objects.ml:135-218).
+    -- in a call's object literal.
     let some A := A | return none
     if (← get).force.contains "objects" && !P.isEmpty then return ← record x (.ok P)
     let spreadExp ← StateT.lift (spreadContext P)
@@ -2820,7 +2760,7 @@ partial def promised (env : Env) (callee : Expr) (args : List Expr) (asserts : B
   return env
 
 /-- Statements that complete only by falling through or a throw (the
-producer's `falls_or_throws`, source.ml:978-985). -/
+producer's `falls_or_throws`). -/
 partial def fallsOrThrows : List Stmt → Bool
   | [] => true
   | s :: rest => (match s with
@@ -2831,7 +2771,7 @@ partial def fallsOrThrows : List Stmt → Bool
 
 /-- Statements that may complete otherwise than by falling through or a
 throw: a `return`, `break` or `continue` anywhere in them, a nested loop's
-included (the producer's `leaves_stmts`, source.ml:996-1006). -/
+included (the producer's `leaves_stmts`). -/
 partial def leaves (ss : List Stmt) : Bool := ss.any fun
   | .ret .. | .brk .. | .cont .. => true
   | .ite _ _ a b => leaves a || leaves (b.getD [])
@@ -2842,7 +2782,7 @@ partial def leaves (ss : List Stmt) : Bool := ss.any fun
   | _ => false
 
 /-- A handler that has no normal exit: it completes only by a throw (the
-producer's `throw_only_stmts`, source.ml:975-993). -/
+producer's `throw_only_stmts`). -/
 partial def throwOnly : List Stmt → Bool
   | [] => false
   | s :: rest => match s with
@@ -2898,7 +2838,7 @@ partial def useIn (env : Env) (n : String) (e : Expr) (P : Option (Ty Tree)) : W
           let some F := env.vars.lookup g | return []
           calleeOf F [Labels.undef] []
       let [a] := c.fixed | return []
-      -- One plain signature, the producer's declared head (statement_analysis.ml:122-124):
+      -- One plain signature, the producer's declared head:
       -- a module function's slot also states it extended by a rest of
       -- `unknown` (`moduleArrow`), which the declaration does not write.
       if !c.rests.all (fun r => r.arguments.1 == a.arguments && r.result == a.result) then return []
@@ -3078,8 +3018,8 @@ def callChanges (c : Callee) (inst : CallEffects.Arrow (Ty Tree)) (As : List (Op
     (args : List Expr) (receiverFresh : Bool) (dispatched : List CallEffects.Effect := []) : W Unit := do
   -- A call whose instance's result is the empty type never returns
   -- normally: on a normal return it changes nothing; its throw is its
-  -- signature's (the producer's `no_return`, source.ml:1031-1035,
-  -- expression_closures.ml:320, proposal.ml:96; the pass's footprint of a
+  -- signature's (the producer's `no_return`,
+  -- expression_closures.ml:320; the pass's footprint of a
   -- call decides the result's emptiness itself).
   -- (but under a handler or in an async body, where its throw is caught and
   -- the heap it leaves is a normal return's: source.ml:1166-1175,
@@ -3101,7 +3041,7 @@ def callChanges (c : Callee) (inst : CallEffects.Arrow (Ty Tree)) (As : List (Op
     -- (but a callback whose binder an actual's method takes, walked at
     -- that method's callable: the method's effect, which the instance
     -- dispatches to, and the callback's own, as the producer reads the
-    -- call's member at its claimed type, proposal.ml:84-91)
+    -- call's member at its claimed type)
     let unread := (!c.names.isEmpty || !c.explicit.isEmpty) && dispatched.isEmpty
     for e in dispatched do
       callChange e
@@ -3204,7 +3144,7 @@ partial def refine (env : Env) (c : Expr) (q : Bool) : W Env := do
     -- assignment), or where it was not walked and may call, the narrowed
     -- paths end but those through stable members, as after a call
     -- (`afterCall`; the producer's step havocs only where it may write and
-    -- keeps `stable_path`, execution_analysis.ml:244-249).
+    -- keeps `stable_path`).
     let after (e : Env) : W Env := do
       if !((← get).endsIn.get? r.span).getD (mayCall r) then return e
       return { e with paths := ← StateT.lift (e.paths.filterM fun ((root, p), _) => stablePath e root p) }
@@ -3388,7 +3328,7 @@ def literalRows (span : Span) (a : CallEffects.Arrow (Ty Tree)) (qs : List (Ty T
   let leads (Ds : List (Ty Tree)) : Bool := forceOffers || (Ds.zip qs).all fun (D, Q) => within T D Q
   -- An offered row at the offered signature's result where the body's is
   -- within it, else the body's (the producer's `{s with call_effect}` and
-  -- `discarded_signature`, expression_closures.ml:400-405, semantic.ml:358:
+  -- `discarded_signature`, semantic.ml:358:
   -- the offered result, the closure's own effect and leading parameters).
   let atResult (R : Ty Tree) : Ty Tree := if within T ownRow.result R then R else ownRow.result
   let (fixedOffers, restOffers) := if rest then ([], []) else contextRows T ctx ownRow qs forceOffers
@@ -3410,12 +3350,12 @@ def literalRows (span : Span) (a : CallEffects.Arrow (Ty Tree)) (qs : List (Ty T
   let same := a.arguments.take qs.length == qs
   let (rows, restOffers) := if walkedAtSig && !same then
     -- The body was walked at its own written leading parameters; the
-    -- further actuals are discarded (semantic.ml:358). This row keeps
+    -- further actuals are discarded. This row keeps
     -- that domain when a callback's result enlarges a binder's candidate.
     ([{ a with arguments := qs ++ a.arguments.drop qs.length }], []) else (rows, restOffers)
   return [← StateT.lift (lower (SourceTypes.use (.arrs rows restOffers)))]
 
-/-- Definite non-reading uses from Source.reads_only (source.ml:1453-1482):
+/-- Definite non-reading uses from Source.reads_only:
 an alias or a mutating member prevents a required-position result contract.
 Other uses leave the existing proposal unchanged. -/
 partial def generalArrayUse (name : String) : Stmt → Bool
@@ -3434,7 +3374,7 @@ partial def generalArrayUse (name : String) : Stmt → Bool
   | _ => false
 
 /-- The producer's matching overloads without required result positions,
-where one exists (expression_calls.ml:1079-1087), before the fresh call. -/
+where one exists, before the fresh call. -/
 def generalArrayCallee (c : Callee) (As : List (Option (Ty Tree))) : Compiler Callee := do
   if !c.binders.isEmpty then return c
   let T ← table
@@ -3451,7 +3391,7 @@ def generalArrayCallee (c : Callee) (As : List (Option (Ty Tree))) : Compiler Ca
   return if general.isEmpty then c else { c with fixed := general }
 
 /-- Guard values prefer parameters stating their promise among otherwise
-matching overloads (expression_calls.ml:1032-1050). -/
+matching overloads. -/
 def promisesOfActuals (G : PositiveGraphs.NormalGraph Tree)
     (As : List (Option (Ty Tree))) (a : CallEffects.Arrow (Ty Tree)) : Bool :=
   (As.zip a.arguments).all fun (A, P) =>
@@ -3520,7 +3460,7 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
   let before := (← get).pathEnds.length
   -- An expected type naming a hole guides an array literal, a call's
   -- callback and a function literal's result alone; any other expression
-  -- is at no expected type (expression_typing.ml:35-41).
+  -- is at no expected type.
   let holes := (← get).holes
   let exp := exp.filter fun P => holeGuided e || !holes.any fun h => P.any (occurs h)
   let r ← exprAt env e exp
@@ -3536,7 +3476,7 @@ partial def expr (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (Op
       if !element || isArray then
         let mut A := (w.exprs.get? rhs.span).bind (·.2.toOption)
         -- A self-reading assignment is measured for every value its cell
-        -- can hold (expression_properties.ml:156-164); speculation publishes
+        -- can hold; speculation publishes
         -- no expression or flow claim.
         if !element && rhs.freeNames.contains n then
           let saved ← get
@@ -3646,7 +3586,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     let (A, e1) ← expr env x target
     -- `x as unknown` is `x`'s value at `x`'s type, which meets `unknown`: an
     -- outer cast (`x as unknown as H`) is then the obligation that `x`
-    -- meets its target (expression_values.ml:483-486).
+    -- meets its target.
     let G0 ← StateT.lift graphNow
     let toUnknown : Bool := match target with
       | some [l] => G0.plain l && PositiveRules.expand G0 [l] == [.source]
@@ -3718,7 +3658,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     let r ← attempt e do
       -- A literal's type widens in a mutable field, as TypeScript's fresh
       -- literal types do; a name's or a read's type does not, nor a const
-      -- assertion's (the producer's `fresh`, expression_objects.ml:49-54;
+      -- assertion's (the producer's `fresh`;
       -- a literal's cast of no annotation is its `as const`).
       let fresh (y : Expr) : Bool := match y with
         | .var .. | .read .. | .cast _ none (.alloc ..) | .cast _ none (.arrayLit ..) | .cast _ none (.lit ..) => false
@@ -3749,8 +3689,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
       let (A, e') ← expr e1 y D
       As := As ++ [A]
       e1 := e'
-    -- Each copy the parts give, a named field at its value's widened type
-    -- (`object_spread.ml`).
+    -- Each copy the parts give, a named field at its value's widened type.
     let r ← attempt e do
       let mut parts : List (Option PropKey × Ty Tree) := []
       for (k, A) in names.zip As do
@@ -3944,7 +3883,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
           let D ← positionExpected P i
           if !spreads.contains i then return D
           -- A spread's operand is expected at the readonly array of the
-          -- destination's element (expression_objects.ml:276-278).
+          -- destination's element.
           match D with
           | none => return none
           | some E => some <$> lower do
@@ -3976,7 +3915,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     wrote
     -- A literal assigned to a pattern is made at its targets' contracts,
     -- defaults admitting undefined and the rest supplying the remaining
-    -- positions (expression_values.ml:250-269).
+    -- positions.
     let targetType (target : Expr) : Compiler (Option (Ty Tree)) := do
       match target.targetLocal, target with
       | some n, _ => return env.decl.lookup n
@@ -4121,7 +4060,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
   | .nullishAssign _ n namePos rhs =>
     -- `x ??= v` of a binding held in a cell whose `v` changes nothing
     -- initializes the cell: it writes it only where it holds `null` or
-    -- `undefined` (the producer's `NullishAssign`, source.ml:1076-1083,
+    -- `undefined` (the producer's `NullishAssign`,
     -- Lean's initializing write); else it changes the values.
     let initializing := !(← get).locals.contains n
     assigns n (if initializing then .init else .any)
@@ -4256,7 +4195,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
         | some D => return (k, D)
         | none => return (k, ← widen (← need S "a static field"))
       -- The construct signatures its uses offer it, beside its own
-      -- (`offer_class`; expression_closures.ml:52-57, 66-68): the pass
+      -- (`offer_class`, 66-68): the pass
       -- checks the constructor's body at each.
       let extra := offers.filterMap fun (c, pack) => if pack.isNone then some c else none
       let extraRests := offers.filterMap fun (c, pack) => pack.map fun pack =>
@@ -4311,8 +4250,7 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
     let mut actualTypes := As
     if F.isNone && generic.isSome then
       -- A packed construction's arguments are typed before its instance;
-      -- written callback parameters supply their own types here
-      -- (expression_closures.ml:128-134).
+      -- written callback parameters supply their own types here.
       for (x, i) in args.zipIdx do
         if callback x then actualTypes := actualTypes.set i (← walkLambda e2 x none)
     let c ← StateT.lift (tryCatch (do
@@ -4320,7 +4258,7 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
           | none, some g =>
             -- Ordinary constructors expose their parameters at fresh
             -- binders, as their call signatures do (expression_closures.ml:
-            -- 111-143; inference.ml:287-294). A packed constructor
+            -- 111-143). A packed constructor
             -- requires the actual tuple before its signature can be read.
             tryCatch (genericCallee g typeArgs) fun m => do
               if !typeArgs.isEmpty then throw m
@@ -4688,7 +4626,7 @@ unbounded binders at tuple positions made at the parameter with those
 binders as holes: an array literal a tuple there, and a call's callback's
 result (`new Map(xs.map((x) => [x.k, x]))`); of a construction's
 signatures, at the first placing them so (the producer's
-`contextual_actual`, expression_support.ml:105-137, expression_calls.ml:927,
+`contextual_actual`,
 expression_closures.ml:121-133). `skip`: the positions made at their
 binders' bounds. -/
 partial def holedActuals (env : Env) (c : Callee) (candidates : List (List (Ty Tree))) (args : List Expr)
@@ -4725,7 +4663,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   let G := SourceTypes.graph T
   let n := args.length
   -- An expected type naming a hole guides a callback's result alone; the
-  -- call's instance is read off its actuals (expression_calls.ml:42-46).
+  -- call's instance is read off its actuals.
   let outer := (← get).holes
   let contextual := hint.filter fun H => outer.any fun h => H.any (occurs h)
   let hint := if contextual.isSome then none else hint
@@ -4740,7 +4678,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   -- A variadic signature: its fixed parameters, then each further actual at
   -- the element its rest's argument list states; a call omitting fixed
   -- parameters that each admit `undefined` passes no rest (the producer's
-  -- `callable`, expression_calls.ml:757-761).
+  -- `callable`).
   let variadic := c.rests.filterMap fun r =>
     if r.arguments.1.length ≤ n then
       match PositiveRules.expand G r.arguments.2 with
@@ -4837,7 +4775,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   -- A binder the signature reads only at its callbacks' parameters (each
   -- parameter mentioning it a callable whose results do not): its
   -- candidates are upper bounds, of which the one within every other is
-  -- taken (the producer's upper-only candidates' meet, inference.ml:557-569).
+  -- taken (the producer's upper-only candidates' meet).
   let uppersOf (a : CallEffects.Arrow (Ty Tree)) : List Tree := c.binders.filter fun b =>
     (a.receiver :: a.arguments).any (·.any (occurs b)) &&
     (a.receiver :: a.arguments).all fun P => !P.any (occurs b) ||
@@ -4848,7 +4786,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
     let mut σ := σ
     -- Each binder at what the first pair (the receiver, where the caller
     -- passes it first) gives it, else at the join of what the others give
-    -- it (the producer's join of its lower bounds, inference.ml:557-569),
+    -- it (the producer's join of its lower bounds),
     -- a primitive's members read off its prototype.
     for b in c.binders do
       if hidden.contains b || (c.seed.lookup b).isSome ||
@@ -4904,7 +4842,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   -- its own effect: the signature chosen is the first whose parameter its
   -- type is within (the checker's subtyping of arrows, its effect within
   -- the parameter's), in the store after its walk (the producer's
-  -- `matches_actuals`, expression_calls.ml:980-1000).
+  -- `matches_actuals`).
   -- A member stating its signatures at several receivers (a dense and a
   -- sparse array's): those whose receiver, at the binders it gives, admits
   -- the callee's, where some does (the producer reads the member at the
@@ -4936,7 +4874,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   -- An object or array literal at a parameter the candidates state
   -- differently is made at the first candidate's parameter it fits, as
   -- TypeScript reads a literal against each overload in turn (the
-  -- producer's `shared_actuals`, expression_calls.ml:353-380).
+  -- producer's `shared_actuals`).
   if candidates.length > 1 && c.binders.isEmpty then
     for (x, i) in args.zipIdx do
       let literal := match x with
@@ -4968,7 +4906,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
       if fallback.isNone then fallback := some (a, r)
       -- (where none admits a callback, the first stating each callback's
       -- promise: the rows stating a guard's written promise first, the
-      -- producer's `states_written`, expression_calls.ml:1032-1047)
+      -- producer's `states_written`)
       if promised.isNone && walked.all (fun (i, L) => match a.arguments[i]? with
           | some D =>
             let Gw := SourceTypes.graph Tw
@@ -5046,7 +4984,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   -- effect covers the parameter's method's, else the first (a string's
   -- `replace` dispatching to a native regex's `[Symbol.replace]`, whose
   -- replacer rows differ by the footprint they keep; the producer's
-  -- `from_actuals`, expression_calls.ml:446-485). The binder is then read
+  -- `from_actuals`). The binder is then read
   -- off the walked literal, as any callback's.
   let lambdaBinders := (args.zip a.arguments).filterMap fun (x, P) => match x, P with
     | .lambda .., [r] => if c.binders.contains r && (σ.lookup r).isNone then some r else none
@@ -5082,9 +5020,8 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
         offerUse n (sub P)
         offerClass n (sub P)
       As := As.set i (← fit (sub P) x A)
-  -- A finite record supplies no index candidate to a dictionary parameter
-  -- (inference.ml:301-308). With no other candidate or declared bound,
-  -- that binder defaults to unknown (inference.ml:631-632): its unnamed
+  -- A finite record supplies no index candidate to a dictionary parameter. With no other candidate or declared bound,
+  -- that binder defaults to unknown: its unnamed
   -- own values are unconstrained, not the union of its named fields.
   for b in c.binders do
     if (σ.lookup b).isSome || (c.bounds.lookup b).isSome || hidden.contains b then continue
@@ -5134,7 +5071,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   -- bounds' join, else the upper bounds', the expected result among them,
   -- else `top`). A binder the expected type does not give either takes its
   -- declared default, read at the binders so far, before its bound (the
-  -- producer's `default`, inference.ml:637-647): a proposal, the instance
+  -- producer's `default`): a proposal, the instance
   -- checked against the scheme at the call.
   for b in c.binders do
     if (σ.lookup b).isSome then continue
@@ -5172,7 +5109,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
 /-- A function literal's walk: its parameters at their written types, or
 else at `expected` (a callback's, from the parameter it is passed at),
 each captured cell at its contract and each captured slot at its current
-type (environment.ml:138-142); its result its written one,
+type; its result its written one,
 or else what its body gives (its returns' union, `undefined` where it
 completes). Recorded at the literal as a signature where every part is
 determined. -/
@@ -5192,7 +5129,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   -- A captured binding held in a cell at its declared type (a cell holds
   -- whatever its contract admits when the body runs); one held in a slot at
   -- its type here: no write of it follows the closure's creation
-  -- (`cellLocals`; the producer's `forget`, environment.ml:138-142, keeps
+  -- (`cellLocals`; the producer's `forget`, keeps
   -- every binding but a cell's).
   -- (`TSCERT_FORCE=captures`: every captured binding at its type here, a
   -- cell's included, the adversarial proposal)
@@ -5218,7 +5155,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
         let E ← lower (Fragment.callableType el)
         pure (some [← lower (SourceTypes.use (.pack ⟨[], [], some E, false, .dense⟩ []))])) fun _ => pure none))
       -- A rest of a tuple of required positions: one fixed parameter per
-      -- position (the lowering's tuple rest, the producer's source.ml:644-646).
+      -- position (the lowering's tuple rest).
       if restPack == some none then
         let G ← StateT.lift graphNow
         if let some [l] := A then
@@ -5254,7 +5191,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   modify fun w => { w with writes := false, throwWrites := false, valueChange := .keep, storeChange := .keep, locals := declared, inLiteral := true,
                            literalSlots := declared.filter (!cells.contains ·) ++ w.literalSlots, heldCells := cells ++ w.heldCells }
   -- The contextual result guides async resolution calls as well as ordinary
-  -- returns (expression_closures.ml:263-268), before their stores are made.
+  -- returns, before their stores are made.
   modify fun w => { w with returns := [], expected := (if rowInterior then expectedResult else written <|> expectedResult), asyncBody := async }
   -- An expression body's entry is its prologue's, at the body's start.
   modify fun w => { w with entries := w.entries.insert body.span.1 inner.vars }
@@ -5263,8 +5200,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   -- (`TSCERT_FORCE=defaults`: their changes left out of the literal's
   -- effect, the adversarial proposal)
   let beforeDefaults ← get
-  -- The body binds a defaulted parameter after replacing `undefined`
-  -- (expression_closures.ml:187-201).
+  -- The body binds a defaulted parameter after replacing `undefined`.
   -- A parameter of `unknown` is bound at `unknown`, which holds the default's
   -- value too: its parts other than `undefined` are no type the prologue's
   -- join states (the producer states `(value: unknown = seed)` at
@@ -5312,7 +5248,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   modify fun w => { w with writes := saved.writes, throwWrites := saved.throwWrites, locals := saved.locals, inLiteral := saved.inLiteral }
   modify fun w => { w with valueChange := saved.valueChange, storeChange := saved.storeChange, lastBody := R, asyncBody := saved.asyncBody }
   -- Async returns are already the fragment's resolution calls, including
-  -- returns in a block (expression_closures.ml:263-291). Their walked
+  -- returns in a block. Their walked
   -- result is a proposal checked at each body return.
   let R := written <|> R
   let forced := (← get).force.contains "literals"
@@ -5410,7 +5346,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
     -- ones are within its own (or, variadic, at least as many), at its own
     -- result and effect: calls through it discard the actuals past its
     -- parameters, and its body is checked at each row (`ClosureSetup`;
-    -- the producer's `from_context`, expression_closures.ml:372-386).
+    -- the producer's `from_context`).
     -- One body obligation for each implemented signature, at that row's
     -- parameters; captured cells retain the contracts above. The producer
     -- states these interiors in expression_closures.ml:455-473.
@@ -5463,7 +5399,7 @@ partial def bindPattern (env : Env) (p : Pattern Expr) (A : Option (Ty Tree))
           | some A => StateT.lift (tryCatch (some <$> readField env.vars A (.str key)) fun _ => pure none)
           | none => pure none
       -- A defaulted part's read keeps the original field type at its span;
-      -- its binding receives the value after the default (binding_analysis.ml:61).
+      -- its binding receives the value after the default.
       if let (some _, some B) := (d, B) then
         let sp := match q with | .name _ sp | .object sp .. | .array sp .. => sp
         if !(← get).exprs.contains sp then recordAt sp "other" (.ok B)
@@ -5532,7 +5468,7 @@ partial def restOf (env : Env) (A : Option (Ty Tree)) (k : Nat) (rp : Span) (sli
     let .ok c ← StateT.lift (tryCatch (Except.ok <$> genericCallee g []) fun m => pure (Except.error m)) | return none
     -- Its binder the union of the value's elements from position `k` on,
     -- its rest's included, an optional one's with `undefined` (the
-    -- producer's `slice_element`, type_queries.ml:626-638).
+    -- producer's `slice_element`).
     let E ← StateT.lift (tryCatch (do
         let G ← graphNow
         let mut Es : List (Ty Tree) := []
@@ -5585,7 +5521,7 @@ partial def withDefault (env : Env) (B : Option (Ty Tree)) (d : Option Expr) : W
       -- (a function the default makes within the part's type is held at
       -- that type, an upcast of a function value, whichever value the part
       -- took: a parameter's type is what the body reads, the default
-      -- replacing `undefined`, the producer's source.ml:643-646)
+      -- replacing `undefined`)
       let T ← StateT.lift table
       let G := SourceTypes.graph T
       if !D.isEmpty && within T D Bd && D.all (fun l => !(ProgramTyping.callSigs G [l]).isEmpty) &&
@@ -5605,7 +5541,7 @@ binding (no `%` name the lowering makes) a slot holds that the loop assigns, ent
 is at the join of its types on the edges into the head, from its entry type,
 the loop walked again until its edges add nothing, at most three walks, the
 walk's state restored after each; kept where that join is strictly within
-the declared type and settles (the producer's fixpoint, flow.ml:104-139).
+the declared type and settles (the producer's fixpoint).
 The pass checks each edge's types against the head's.
 (`TSCERT_FORCE=head-entry`: at its entry type, unwalked, the adversarial
 proposal) -/
@@ -5718,7 +5654,7 @@ partial def stmts (env : Option Env) (ss : List Stmt) : W (Option Env) := do
     -- An array pattern's element bindings (`let %v0 = undefined, …`,
     -- `protocolPattern`, tools/fragment-statements.mts) before the
     -- protocol's `%next`: each an evolving `let` holding what a step not done
-    -- yields (statement_analysis.ml:222-240), at `undefined` or that, the
+    -- yields, at `undefined` or that, the
     -- step's type read off the next statement, walked ahead.
     if let .mutables _ bs := s then
       if !bs.isEmpty && bs.all (fun b => b.name.startsWith "%v" && b.annot.isNone &&
@@ -5777,8 +5713,7 @@ the two agree (the producer's `raise_selves`), at most four rounds: the
 footprint of each class of contents only rises and `onThrow` only falls. -/
 partial def recursiveConstant (env : Env) (b : Fragment.Binding) (written : Bool) :
     W (Option (Ty Tree) × Env) := do
-  -- An early self is read through its cell at the early contract
-  -- (statement_analysis.ml:289-293), rather than a self-entry proposal.
+  -- An early self is read through its cell at the early contract, rather than a self-entry proposal.
   let some S0 ← earlyContract b (if b.early then .ordinary else
       { CallEffects.Effect.ofFootprint ⟨.keep, .keep⟩ with onThrow := true })
     | expr env b.init
@@ -5834,7 +5769,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     let before ← get
     let _ ← expr env x
     -- With no enclosing handler and outside async completion, neither
-    -- the throw nor its operand has a normal exit (source.ml:1140-1144).
+    -- the throw nor its operand has a normal exit.
     -- Keep its throw effect, and every expression claim, for the checker.
     if !before.caught && !before.asyncBody then
       modify fun w => { w with writes := before.writes, valueChange := before.valueChange, storeChange := before.storeChange }
@@ -5860,7 +5795,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     -- A value of no type (a call of a function returning `never`): the
     -- statement does not complete; what follows is walked for its entries,
     -- unreached, each binding at the empty type (the producer's
-    -- `unreachable`, environment.ml:91, proposal_flow.ml:347).
+    -- `unreachable`).
     -- (`TSCERT_FORCE=never`: every call's statement so, whatever it returns)
     let forced := (← get).force.contains "never" && match x with
       | .call .. | .callWithReceiver .. | .invoke .. => true
@@ -5876,8 +5811,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     -- `protocolPattern`, tools/fragment-statements.mts: `const %items = [],
     -- %iterator = …, %next = …`, the values pushed onto it): an unannotated
     -- `[]` whose elements the protocol's steps write, made at the array of
-    -- the values a step not done yields, the evolving array's type
-    -- (statement_analysis.ml:222-230), the step's type read off the
+    -- the values a step not done yields, the evolving array's type, the step's type read off the
     -- statement's other bindings, walked ahead.
     let collected ← match bs with
       | b0 :: rest@(_ :: _) =>
@@ -5930,7 +5864,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       -- parameters, rest, defaults or guard whose result is written: also
       -- at its signature extended by a rest of `unknown`, its code
       -- discarding the further actuals, as a module function's slot is (the
-      -- producer's, proposal.ml:320-327, module_contract.ml:34-38).
+      -- producer's).
       let mut A₀ := A
       if let (.lambda _ _ [] _ [] false (some _) none _ _ _ _, some L, none, true, false) :=
           (b.init, A, b.annot, (← get).moduleInit, (← get).inLiteral) then
@@ -5971,7 +5905,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
         -- (an early binding, read through its cell from the list's entry
         -- on, stays at its written contract: its declaration writes the
         -- cell, whose contents every later read checks against it, the
-        -- producer's early declaration, proposal_flow.ml:317-327)
+        -- producer's early declaration)
         -- (`TSCERT_FORCE=early`: at its initializer's type, the adversarial
         -- proposal)
         match (if b.early && !(← get).force.contains "early" then env.decl.lookup b.name else none) with
@@ -6017,7 +5951,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       match D, A with
       | some D, some A =>
         -- Initializing an early cell keeps its entry contract; later reads
-        -- run through that cell (proposal_flow.ml:317-327).
+        -- run through that cell.
         let held ← if b.early && !(← get).force.contains "early-contracts" then pure D
           else StateT.lift (if b.annot.isSome then declaredAt D A else assigned D A)
         env := { env with vars := upd env.vars b.name held, decl := upd env.decl b.name D }
@@ -6147,7 +6081,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     -- intrinsic's call states (`applyCall`) and what each step of the
     -- stepper it gives does: the values where a step changes its receiver's
     -- own locations, the iterator the call made, else its footprint (the
-    -- producer's `iteration_footprint`, source.ml:939-950); an iteration
+    -- producer's `iteration_footprint`); an iteration
     -- whose stepper the walk does not determine may change anything.
     if (← get).strict then
       match stepper with
@@ -6176,8 +6110,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       | none => exit
     modify fun w => { w with entries := w.entries.insert p.1 head.vars }
     -- The yielded value is the step result's field, not necessarily the
-    -- intrinsic's binder: ForIn yields a key/value pair
-    -- (statement_analysis.ml:765-779).
+    -- intrinsic's binder: ForIn yields a key/value pair.
     let elem ← match stepper, bound, I with
       | some N, _, _ => StateT.lift (tryCatch (do
           let some s := (← callSigsOf N).head? | throw "no step"
@@ -6226,12 +6159,12 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     -- throws leave reaches no normal return, so the body is walked as
     -- outside it, and the handler's changes are no part of the footprint of
     -- a normal return; a throw it leaves may change what they change (the
-    -- producer's `Try` of a `throw_only_stmts` handler, source.ml:1168-1169).
+    -- producer's `Try` of a `throw_only_stmts` handler).
     let rethrows := finalizer.isNone && (handler.any fun (_, hs) => throwOnly hs)
     -- A finalizer that only falls through or throws completes normally only
     -- where the guarded block did: after a throw it throws again, so it
     -- catches nothing (the producer's `Try` of a finalizer that does not
-    -- leave, source.ml:1162-1167).
+    -- leave).
     let finalizerLeaves := finalizer.any leaves
     if finalizer.isSome && !finalizerLeaves then modify fun w => { w with quietFinalizer := true }
     if (handler.isSome || finalizerLeaves) && !rethrows then modify fun w => { w with caught := true }
@@ -6349,67 +6282,6 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     return b
 end
 
-/-- How a computed type stands to the claimed one. -/
-def classify (T : EquationStore.State) (A C : Ty Tree) : String :=
-  if within T A C && within T C A then "identical"
-  else if within T C A then "wider"
-  else if within T A C then "narrower"
-  else "unrelated"
-
-/-- The comparison of a walk with a function's claims: per construct kind
-and class, the count; and each occurrence that is not identical, with its
-span, kind, class and both types rendered, or the reason. -/
-def compareWalk (T : EquationStore.State) (fc : SourceClaims.Function Tree) (w : Walk) :
-    Std.HashMap (String × String) Nat × Array Json := Id.run do
-  let mut counts : Std.HashMap (String × String) Nat := {}
-  let mut samples : Array Json := #[]
-  let mut seen : Std.HashSet Span := {}
-  let bump (m : Std.HashMap (String × String) Nat) (k : String × String) := m.insert k ((m.getD k 0) + 1)
-  let raw (A : Ty Tree) : String := reprStr (A.map fun l => (l, PositiveRules.expand (SourceTypes.graph T) [l]))
-  for (span, cand) in fc.exprs do
-    if seen.contains span then continue
-    seen := seen.insert span
-    let some C := (SourceClaims.resolve T cand).toOption | continue
-    let (kind, r) := (w.exprs.get? span).getD ("unvisited", .error "not reached by the walk")
-    let cls := match r with
-      | .ok A => classify T A C
-      | .error _ => "undetermined"
-    counts := bump counts (kind, cls)
-    -- Same meaning under other labels: what a syntactic reading of the type
-    -- (a clause's form) may still tell apart.
-    let other := match r with
-      | .ok A => cls == "identical" && norm A != norm C
-      | .error _ => false
-    if other then
-      samples := samples.push (Json.mkObj [("span", toJson span), ("kind", toJson kind), ("class", toJson "same meaning, other labels"),
-        ("computed", toJson (match r with | .ok A => reprStr (A.map fun l => PositiveRules.expand (SourceTypes.graph T) [l]) | .error m => m)),
-        ("claimed", toJson (reprStr (C.map fun l => PositiveRules.expand (SourceTypes.graph T) [l])))])
-    if cls != "identical" then
-      samples := samples.push (Json.mkObj [("span", toJson span), ("kind", toJson kind), ("class", toJson cls),
-        ("computed", toJson (match r with | .ok A => shown T A | .error m => s!"({m})")),
-        ("claimed", toJson (shown T C)), ("computedRaw", toJson (match r with | .ok A => raw A | .error _ => "")),
-        ("claimedRaw", toJson (raw C))])
-  for (pos, vars) in fc.envs do
-    let computed := w.entries.get? pos
-    for (n, cand) in vars do
-      let some C := (SourceClaims.resolve T cand).toOption | continue
-      let r : Except String (Ty Tree) := match computed with
-        | none => .error "statement not reached by the walk"
-        | some vs => match vs.lookup n with
-          | some A => .ok A
-          | none => .error s!"binding not held by the walk (held: {vs.map (·.1)})"
-      let cls := match r with
-        | .ok A => classify T A C
-        | .error _ => "undetermined"
-      counts := bump counts ("entry", cls)
-      if cls != "identical" then
-        samples := samples.push (Json.mkObj [("pos", toJson pos), ("name", toJson n), ("kind", toJson "entry"),
-          ("class", toJson cls),
-          ("computed", toJson (match r with | .ok A => shown T A | .error m => s!"({m})")),
-          ("claimed", toJson (shown T C)), ("computedRaw", toJson (match r with | .ok A => raw A | .error _ => "")),
-          ("claimedRaw", toJson (raw C))])
-  return (counts, samples)
-
 /-- A unit's walk over the store `T`, from its parameters' written types
 and the module values `module` it reads: what it records, and the grown
 store. -/
@@ -6466,7 +6338,7 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
     let (result, assumed) ← settle start []
     let (done, w) := result
     -- Where a use offers a constant's literal more rows, walked again with
-    -- them (the producer's second round, proposal.ml:47-52), once.
+    -- them (the producer's second round), once.
     let (done, w) ← if w.offered.isEmpty && w.ctorOffered.isEmpty && w.restOffered.isEmpty then pure (done, w)
       else do
         let (result, _) ← settle { start with offers := w.offered, ctorOffers := w.ctorOffered, restOffers := w.restOffered } assumed
@@ -6475,17 +6347,6 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
     return (w, ← table)
   let ((w, T'), _) ← runCompiler T [] action
   return (w, T')
-
-/-- A unit's walk compared with its claims. -/
-def compareUnit (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Function Tree)
-    (module : List (String × Compiler (Ty Tree))) (generics : List (String × Generic) := []) :
-    Except String Json := do
-  let (w, T') ← walkUnit T f module generics
-  let (counts, samples) := compareWalk T' fc w
-  return Json.mkObj [
-    ("counts", Json.arr (counts.toArray.map fun ((k, c), n) =>
-      Json.mkObj [("kind", toJson k), ("class", toJson c), ("n", toJson n)])),
-    ("samples", Json.arr samples)]
 
 /-- The lowering's reading of an expression the walk gives no type: the
 unit's refusal where a rule the lowering shares refuses it (`refusalMark`), else a type
@@ -6549,14 +6410,5 @@ def retypeUnitWith (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaim
                       entryCurrent := if keep then row.entryCurrent else currents,
                       exprCurrent := if keep then row.exprCurrent else [] }) } : SourceClaims.Function Tree), w.completion,
     w.declarations, w.spanEntries, w.exprsAt.fold (fun m k r => m.insert k (r.mapError undetermined)) {})
-
-/-- `retypeUnitWith`'s grown store and claims. -/
-def retypeUnit (T : EquationStore.State) (f : Fragment.Fn) (fc : SourceClaims.Function Tree)
-    (module : List (String × Compiler (Ty Tree))) (generics : List (String × Generic) := [])
-    (parts : String := "xec") (force : List String := [])
-    (scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none) :
-    Except String (EquationStore.State × SourceClaims.Function Tree) := do
-  let (T, fc, _, _, _, _) ← retypeUnitWith T f fc module generics parts force scope
-  return (T, fc)
 
 end Verification.SourceExtraction.Synthesis

@@ -4,7 +4,7 @@ import Verification.Semantics.SafeIntegers
 
 /-! Loop-head proposals of the claims-free front (mode 8): facts a loop's
 head is proposed to hold, computed from the fragment's statements alone,
-over source names (docs/drafts/single-pass.md, "The claims-free front").
+over source names (docs/SINGLE-PASS.md, "The claims-free front").
 They reach the pass as the producer's facts reach it: as entry claims at the
 loop's execution point (`SourceClaims.PointData.entryFacts`), which the
 lowering records as the head's candidates (`LoweringFlow.flowNode`), each an

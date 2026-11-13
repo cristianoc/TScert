@@ -94,21 +94,6 @@ theorem exitStep_yields_source {env : WalkEnv ι G I} {l : Nat} {en : Entered ι
     rw [assertionExit_yields ha]
     exact hp1
 
-/-- The final cache of a successful fold has a source in its initial cache. -/
-theorem exitsFold_yields_source {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd : StepDone ι G}
-    {ys : List (PromiseCalls.Yield ι)} {out : Thunk HeapKnowledge.Knowledge} :
-    ∀ (es : List (Exit × Nat)) (a b : ExitsDone ι G),
-      es.foldlM (exitStep G I env l en sd ys out) a = .ok b →
-      ExitYieldSource env l en sd a.yields (b.yields.getD [])
-  | [], _, _, h => by cases h; rfl
-  | e :: es, a, b, h => by
-    rw [List.foldlM_cons] at h
-    cases ha : exitStep G I env l en sd ys out a e with
-    | error stop => rw [ha] at h; cases h
-    | ok a' =>
-      rw [ha] at h
-      exact (exitStep_yields_source ha).trans (exitsFold_yields_source es a' b h)
-
 /-- Each record has an execution witness whose input and output caches
 have checked sources in the fold's initial cache. -/
 theorem exitsFold_records_yields {env : WalkEnv ι G I} {l : Nat} {en : Entered ι} {sd : StepDone ι G}

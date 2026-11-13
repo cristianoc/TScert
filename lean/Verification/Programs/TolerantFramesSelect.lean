@@ -320,9 +320,6 @@ pass's tree check holds. -/
   base.keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.ensuringCalls
     |>.negatingSlots.indexing.boundedWrites.keepingStable
 
-theorem ordinary_eq_over (G : NormalGraph ι) (images : InstanceImageCheck G) :
-    Checker.ordinary G images = ordinaryOver (Checker.steps G images) := rfl
-
 /-- `Checker.ordinary`'s layers over `passSteps`. -/
 @[nospecialize] def passOrdinary (G : NormalGraph ι) (images : InstanceImageCheck G) : Checker G images :=
   ordinaryOver (passSteps G images)

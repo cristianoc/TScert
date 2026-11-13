@@ -142,11 +142,6 @@ theorem CheckResult.accepted_bind_ofBool (s : CheckResult ι α) (p : α → Boo
   rw [CheckResult.accepted_bind_value]
   cases s.value <;> simp [CheckResult.accepted_ofBool]
 
-theorem CheckResult.accepted_map (s : CheckResult ι α) (f : α → β) :
-    (s.map f).accepted = s.accepted := by
-  cases s with
-  | mk v e => cases v <;> rfl
-
 theorem CheckResult.accepted_bind (s : CheckResult ι α) (t : CheckResult ι β) :
     (s.bind fun _ => t).accepted = (s.accepted && t.accepted) := by
   cases s with

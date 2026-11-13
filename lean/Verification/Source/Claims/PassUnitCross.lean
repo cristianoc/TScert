@@ -10,7 +10,7 @@ module's layout at its established units (`StepLayout`, H5a at the module),
 carries it along the publication order of the modules (`linkModules`), the
 module's own established slots read at the realizations of the entries it
 reads, and concludes the importer's file-level theorem from the entries its
-interface file holds. docs/drafts/pass-unit-theorem.md, section 7. -/
+interface file holds. docs/SINGLE-PASS-THEOREM.md, section 7. -/
 
 namespace Verification.SourceClaimJson.PassUnit
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore

@@ -15,30 +15,6 @@ def index : Partition → Std.HashMap Nat (List Nat)
   | [] => {}
   | c :: cs => c.foldl (fun m x => m.insert x c) (index cs)
 
-private theorem insertClass_get (c xs : List Nat) (m : Std.HashMap Nat (List Nat)) (x : Nat) :
-    (xs.foldl (fun m y => m.insert y c) m)[x]? =
-      if x ∈ xs then some c else m[x]? := by
-  induction xs generalizing m with
-  | nil => simp
-  | cons y ys ih =>
-    simp only [List.foldl_cons, ih, List.mem_cons, Std.HashMap.getElem?_insert]
-    by_cases h : x ∈ ys
-    · simp [h]
-    · by_cases e : y = x
-      · subst y; simp [h]
-      · simp [h, e, Ne.symm e]
-
-theorem index_get (cs : Partition) (x : Nat) :
-    (index cs)[x]? = cs.find? (·.contains x) := by
-  induction cs with
-  | nil => simp [index]
-  | cons c cs ih =>
-    simp only [index, insertClass_get, ih, List.find?_cons]
-    by_cases h : x ∈ c <;> simp [h]
-
-theorem index_cls (cs : Partition) (x : Nat) :
-    ((index cs)[x]?).getD [x] = cls cs x := by rw [index_get]; rfl
-
 /-- Whether `a` and `b` are in one class. -/
 def same (cs : Partition) (a b : Nat) : Bool := (cls cs a).contains b
 

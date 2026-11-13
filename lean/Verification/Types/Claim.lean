@@ -89,6 +89,15 @@ instance : FromJson PropKey where
       if fields.size != 1 then throw "a symbol key has exactly the field 'symbol'"
       return .sym (← (← j.getObjVal? "symbol").getNat?)
 
+/-- The least canonical symbol number: every number a symbol key carries
+in the single pass is at least it, above every index of a document's
+`symbols` (`Fragment.canonicalSymbols`). -/
+def symbolBase : Nat := 2 ^ 40
+
+/-- A `unique symbol` declaration identity's canonical symbol number, a
+function of the identity alone. -/
+def symbolNumber (identity : Json) : Nat := symbolBase + (hash identity.compress).toNat % symbolBase
+
 /-- A field name: a string key as its JSON string, a symbol key as
 `{"symbol": id}`. -/
 def PropKey.decode (j : Json) : Except String PropKey :=

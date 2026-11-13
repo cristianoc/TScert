@@ -14,7 +14,7 @@ that a module checked by the interface computation (`establishModules`) has
 the same theorem as the selected file; and that an importer's slot reading
 an established entry is met where the entry's module realizes it and the
 two stores agree on its signature (`entry_met`). The statements and the
-hypotheses' owners are in docs/drafts/pass-unit-theorem.md, section 7. -/
+hypotheses' owners are in docs/SINGLE-PASS-THEOREM.md, section 7. -/
 
 namespace Verification.SourceClaimJson.PassUnit
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore

@@ -371,7 +371,6 @@ structure Document (σ ι : Type) where
   functions : List (Function ι)
   /-- Present exactly when the source has module initialization code. -/
   init : Option (InitClaims ι) := none
-  deriving FromJson
 
 section
 variable {ι : Type} [Labels ι]

@@ -221,12 +221,6 @@ def SoundRel (η : MixedAssignment ι) (R : List ι → List ι → Prop) : Prop
   ∀ A B, R A B → FamLe (mixedValues G η A) (mixedValues G η B)
 
 omit [DecidableEq ι] in
-theorem lit_member {η : MixedAssignment ι} {A : List ι} {c : Clause (List ι)} {v : Val}
-    (hc : c ∈ clausesOf G A) (hv : litVal c = some v) {n W} : mixedValues G η A n W v :=
-  mixed_expand_mpr ⟨c, hc, litVal_sem hv n W,
-    builtinInvariant_of_withoutInvariant (litVal_plain hv) _ _ _⟩
-
-omit [DecidableEq ι] in
 /-- An element's literal of a clause of a type is a member of the type. -/
 theorem element_member {η : MixedAssignment ι} {A : List ι} {c e : Clause (List ι)} {v : Val}
     (hc : c ∈ clausesOf G A) (he : e ∈ c.elements) (hv : litVal e = some v) {n W} :

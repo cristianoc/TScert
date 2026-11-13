@@ -303,11 +303,6 @@ theorem nodesChecked_stable {P : Program} {pre : Nat → Assertion} {Ξres Tres 
     · exact ht
     · exact ⟨ht, hS s s' ha.1 hs⟩
 
-theorem stableNow_admissible {regions : List ArgumentStoreRegion} {ρ0 : Env} {h₀ : Heap} {s s' : IndexedHeap}
-    (ha : Admissible s s') (hs : ArgumentPathTracking.StableNow (ArgumentPathTracking.stableFields regions) ρ0 h₀ s.W) :
-    ArgumentPathTracking.StableNow (ArgumentPathTracking.stableFields regions) ρ0 h₀ s'.W :=
-  hs.transfer ha.1 ha.2
-
 end Regional
 
 end Verification.TolerantFrames

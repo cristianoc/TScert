@@ -238,30 +238,6 @@ theorem diffSubtypes_pairs {G : NormalGraph ι} {images : InstanceImageCheck G} 
     · cases hx
   · cases hx
 
-/-- **The edge's context covers the target's where `diffSubtypes` passes
-over `differing`'s slots** (`differing_cover`, `diffSubtypes_pairs`), the
-subtype answers sound. -/
-theorem diffSubtypes_covers {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ Δ : List (Ty ι)}
-    {m : PointClaims.Mapping} {observed : Option BranchRefinement.Observation} {answers : Answered G}
-    (h : (diffSubtypes G images Γ Δ (differing Γ Δ m) observed answers).1 = true)
-    (hsub : SubtypeAnswersSound G images) : PointClaims.MappedCovers G Γ Δ m := by
-  intro i B hB
-  by_cases hd : (i, PointClaims.slot m i) ∈ differing Γ Δ m
-  · obtain ⟨A, B', a, hA, hB', hs⟩ := diffSubtypes_pairs h _ hd
-    rw [hB] at hB'
-    obtain rfl := Option.some.inj hB'
-    exact ⟨A, hA, hsub A B a hs⟩
-  · exact ⟨B, differing_cover Γ Δ m hB hd, fun _ _ _ h => h⟩
-
-/-- **The target's context types the mapped environment where
-`diffSubtypes` passes** (`diffSubtypes_covers`, `MappedCovers.env`). -/
-theorem diffSubtypes_env {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ Δ : List (Ty ι)}
-    {m : PointClaims.Mapping} {observed : Option BranchRefinement.Observation} {answers : Answered G}
-    (h : (diffSubtypes G images Γ Δ (differing Γ Δ m) observed answers).1 = true)
-    (hsub : SubtypeAnswersSound G images) {ρ : Env} {n : Nat} {W : WorldT n} (he : EnvOk G Γ ρ n W) :
-    EnvOk G Δ (PointClaims.mapEnv m ρ) n W :=
-  (diffSubtypes_covers h hsub).env he
-
 omit [DecidableEq ι] [Hashable ι] [Instantiates ι] in
 /-- A fold pushing, at each slot `s`, the slot's refined type `A'` or its
 type in `Γ`: each entry of the result is the refined context's or `Γ`'s at
@@ -295,21 +271,6 @@ theorem mixed_fold {γ : Type} (Γ Γ' : List (Ty ι)) (f : Array (Ty ι) × γ 
       · exact hacc j X hj
     · have := hl (j + 1) X (by simpa using hj)
       rw [Nat.add_assoc, Nat.add_comm 1 j]; exact this
-
-/-- **The mixed context types what the edge's and the refined context
-type**: each slot of `mixedContext`'s context the refined context's type or
-the edge context's (`mixed_fold`). -/
-theorem mixedContext_env {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ Γ' Δ : List (Ty ι)}
-    {m : PointClaims.Mapping} {answers : Answered G} {ρ : Env} {n : Nat} {W : WorldT n}
-    (he : EnvOk G Γ ρ n W) (he' : EnvOk G Γ' ρ n W) :
-    EnvOk G (mixedContext G images Γ Γ' Δ m answers).1 ρ n W := by
-  refine ⟨he.1, fun j X hj => ?_⟩
-  unfold mixedContext at hj
-  rw [Array.getElem?_toList] at hj
-  rcases mixed_fold Γ Γ' _ (fun acc A' s => ⟨_, rfl⟩) Γ' 0 (#[], answers) rfl (by simp) (fun j X h => by simpa using h)
-    j X hj with h | h
-  · exact he'.2 j X h
-  · exact he.2 j X h
 
 end Subtypes
 

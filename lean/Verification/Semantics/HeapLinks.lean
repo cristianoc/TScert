@@ -250,25 +250,6 @@ def aliasReads (ls : Links) : Links :=
     (aliases ls g.cell).flatMap fun c => (aliases ls g.value).filterMap fun v =>
       if c == g.cell && v == g.value then none else some { g with cell := c, value := v }
 
-theorem aliasReads_holds {ls : Links} {ρ h} (hh : Holds ls ρ h) : Holds (aliasReads ls) ρ h := by
-  intro g hg
-  rcases List.mem_append.mp hg with hg | hg
-  · exact hh g hg
-  · obtain ⟨g0, hg0, hg⟩ := List.mem_flatMap.mp hg
-    obtain ⟨c, hc, hg⟩ := List.mem_flatMap.mp hg
-    obtain ⟨v, hv, hg⟩ := List.mem_filterMap.mp hg
-    split at hg
-    · cases hg
-    · cases hg
-      have hg0' := List.mem_filter.mp hg0
-      have hna : g0.alias = false := by simpa using hg0'.2
-      have h0 := hh g0 hg0'.1
-      have ec := aliases_eq hh hc
-      have ev := aliases_eq hh hv
-      simp only [hna, Bool.false_eq_true, ite_false] at h0 ⊢
-      rw [ec, ev]
-      exact h0
-
 /-- Before slots are dropped, each dropped slot's alias neighbours linked
 to one of them: a class keeps its equalities when the slot joining them
 goes. -/

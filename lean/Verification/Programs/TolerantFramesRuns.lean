@@ -348,10 +348,6 @@ theorem transported_of {K : List IndexFact} {ρ : Env} {h : Heap} (hK : ∀ F �
     (ρ' : Env) : Transported K ρ ρ' h :=
   fun F hF _ _ hm hg => (IndexFact.holdsAt_mapM hm hg).mpr (hK F hF)
 
-/-- A target slot mapped to a source slot reads that slot. -/
-theorem mapEnv_slot {θ : Mapping} {ρ : Env} {i j : Nat} (hs : slot θ j = i) : mapEnv θ ρ j = ρ i := by
-  simp [mapEnv, hs]
-
 /-- With the exit's value bound, a target slot mapped to source slot `i + 1`
 reads the node's slot `i`. -/
 theorem mapEnv_push_slot {θ : Mapping} {v : Tm} {ρ : Env} {i j : Nat} (hs : slot θ j = i + 1) :

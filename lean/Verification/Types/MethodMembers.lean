@@ -138,17 +138,6 @@ theorem memberT_adm (m : Member) : Adm (memberT Ξ m) := by
   · rintro n W W' hx v ⟨d, h⟩
     exact ⟨d, (along_adm _ _ d).mono n W W' hx v h⟩
 
-/-- An object with code holds a member as a plain object does: at its own
-location for the key, whose contract implies the member's signatures invoked
-on it. -/
-theorem memberT_own {m : Member} {k : Nat} {W : WorldT k} {flds : List (PropKey × Nat)}
-    {code : CallCode} {oid l : Nat} {c : Ctr k}
-    (hf : flds.lookup m.key = some l) (hl : lookup W l = some c)
-    (hag : ∀ (j : Nat) (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
-      ∀ (u : Val), c j hj U u → onHost Ξ (.objAt flds code oid) m j U u) :
-    memberT Ξ m k W (.objAt flds code oid) :=
-  ⟨0, flds, l, c, oid, code, rfl, hf, hl, hag⟩
-
 /-- A member whose signatures imply another's below the level, found by the
 same key, is that member. -/
 theorem memberT_mono {Ξ Ξ' : Fam} {m m' : Member} (hkey : m.key = m'.key) {k : Nat}
