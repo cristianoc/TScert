@@ -254,7 +254,9 @@ Work done more than once, by site (s, share of the corpus's stage CPU):
 | 8 initialization and returned callables | 0.3 (0.4%) | 1.4 (0.2%) | 24.6 (0.3%) |
 | 9 recursive proposals | 0.0 | 0.5 (0.1%) | 0.9 (0.0%) |
 | 11 diagnostic and refinement runs | 9.1 (13.0%) | 2.2 (0.4%) | 210.6 (2.9%) |
-| 12 settled run computed twice | 4.0 (5.7%) | 40.7 (7.1%) | 587.4 (7.9%) |
+| 12 settled run computed twice | 4.0 (5.7%); 0 with the run shared, 2026-11-13 | 40.7 (7.1%); 0 with the run shared, 2026-11-13 | 587.4 (7.9%) |
+
+With the settled run shared (`settleInferred` makes each run once, reads its refusal and returns it), measured 2026-11-13 on fresh stores, load at start 5.0 to 9.6, against the parent commit measured the same way: pretext's stage CPU 68.7 s → 60.4 s (pass stages 25.4 s → 21.2 s), the cases' 572.8 s → 545.7 s (pass stages 76.0 s → 57.8 s), the verdict lines identical. The performance gate's units, against the parent commit's verifier: every counter equal, CPU 9,549 ms → 8,736 ms in all.
 
 Site 10 (overloads) is counted only where a function name has several checked units: none in these corpora. The census slice's omission rounds (two of fragment-parse.mts, one of declaration-graph.mts) answer refusals at the parse, before any pass, so they repeat parses alone, within the slice's 52.3 s of parse CPU; a shallow census has no dependency rounds. The functions with the most repeated work in the slice are initializations reached by every per-unit stage: fragment-parse.mts's (379.1 of 388.5 s, in 16 stages) and fragment-statements.mts's (178.6 of 184.2 s, in 62 stages).
 

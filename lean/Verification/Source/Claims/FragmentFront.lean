@@ -1676,17 +1676,19 @@ structure Settled (S G R : Type) where
   last : R
 
 /-- A member's runs until one is accepted or its refusal stands, at most
-`n + 1`: each run `run` of the current plans and given lines, a refusal's
-next state from `next`. -/
+`n + 1`: each run `run` of the current plans and given lines, made once and
+both read for its refusal and returned, a refusal's next state from
+`next`. -/
 def settleInferred {S G R W : Type} (run : S → G → R) (refusal : R → Option W)
     (next : S → G → W → Option (S × G × List String × Nat)) :
     Nat → S → G → List String → Nat → Nat → Settled S G R
   | 0, f, g, ls, d, runs => ⟨f, g, ls, d, runs + 1, run f g⟩
   | n + 1, f, g, ls, d, runs =>
-    match refusal (run f g) with
-    | none => ⟨f, g, ls, d, runs + 1, run f g⟩
+    let r := run f g
+    match refusal r with
+    | none => ⟨f, g, ls, d, runs + 1, r⟩
     | some w => match next f g w with
-      | none => ⟨f, g, ls, d, runs + 1, run f g⟩
+      | none => ⟨f, g, ls, d, runs + 1, r⟩
       | some (f', g', ls', d') => settleInferred run refusal next n f' g' (ls ++ ls') (d + d') (runs + 1)
 
 /-- Member `i`'s runs (`settleInferred`): each `inferredRun`, a refusal's
