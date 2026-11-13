@@ -547,6 +547,7 @@ run_cmd do
       unless standard.contains axiom_ do
         throwError "{decl} depends on the axiom {axiom_}"
   check ``Verification.IndexWrites.index_safeInt
+  check ``Verification.IndexWrites.boundedCells_sound
   check ``Verification.TolerantFrames.index_int
   check ``Verification.TolerantFrames.integral_int
   check ``Verification.TolerantFrames.mergeEqAtoms_holds

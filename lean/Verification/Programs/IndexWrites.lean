@@ -2787,6 +2787,105 @@ theorem withWritten_sound {Ξ T : Fam} {out : Knowledge} {kept : List IndexAtom}
   weaken (fun _ u hq => ⟨hq.1.1, hq.1.2.1, hq.1.2.2.1, hq.1.2.2.2.1, hq.1.2.2.2.2.1,
     indexHolds_cat hq.1.2.2.2.2.2 (shiftIndices_holds (v := u) hq.2)⟩) (safePost_and ho hk)
 
+/-- **The observations an element write keeps whatever it aliases**
+(`weak-update`): of the cell facts, those whose contents hold an array store
+and every value of `R`, the written value's set. The write changes the
+array's store location, which then holds an array store, and at most one
+element location, which then holds the written value; every other location
+keeps its value; so a location's contents meeting both are met after it,
+whichever location it is. -/
+def writtenCells (k : Knowledge) (R : Option ValueSets.ValueSet) : HeapFacts.Facts :=
+  match R with
+  | some R => (k.cells.filter fun f => f.contents.arr && R.le f.contents).map fun f => { f with slot := f.slot + 1 }
+  | none => []
+
+/-- `out` with the cell facts `cs` added. -/
+def withCells (out : Knowledge) (cs : HeapFacts.Facts) : Knowledge :=
+  { out with cells := out.cells ++ cs }
+
+theorem withCells_sound {Ξ T : Fam} {out : Knowledge} {cs : HeapFacts.Facts} {ρ n W h t}
+    (hc : SafePost Ξ T (fun h' u => HeapFacts.Holds cs (push u ρ) h') n W h t)
+    (ho : SafePost Ξ T (fun h' u => Holds out ε (push u ρ) h') n W h t) :
+    SafePost Ξ T (fun h' u => Holds (withCells out cs) ε (push u ρ) h') n W h t :=
+  weaken (fun _ _ hq => ⟨fun f hf => (List.mem_append.mp hf).elim (hq.1.1 f) (hq.2 f), hq.1.2⟩)
+    (safePost_and ho hc)
+
+/-- A cell fact holds after a heap change that sets each location either to
+its old value, to an array store, or to a value of `R`, where its contents
+hold an array store and `R`. -/
+theorem cell_kept {f : HeapFacts.Fact} {R : ValueSets.ValueSet} {ρ : Env} {h h' : Heap}
+    (hf : HeapFacts.Holds [f] ρ h) (harr : f.contents.arr = true) (hR : R.le f.contents = true)
+    (hloc : ∀ (l : Nat) (w : Tm), h[l]? = some w → h'[l]? = some w ∨ (∃ xs, h'[l]? = some (Tm.arr xs)) ∨
+      ∃ u, h'[l]? = some u ∧ R.mem u = true) :
+    HeapFacts.Holds [f] ρ h' := by
+  intro g hg
+  simp only [List.mem_singleton] at hg
+  subst hg
+  obtain ⟨flds, c, oid, w, hρ, hr, hm⟩ := hf g (List.mem_singleton_self _)
+  unfold HeapFacts.ReadGave at hr
+  split at hr
+  · rename_i l hl
+    rcases hloc l w hr with hw | ⟨xs, hx⟩ | ⟨u, hu, hRu⟩
+    · exact ⟨flds, c, oid, w, hρ, by simp [HeapFacts.ReadGave, hl, hw], hm⟩
+    · exact ⟨flds, c, oid, .arr xs, hρ, by simp [HeapFacts.ReadGave, hl, hx],
+        by simp [ValueSets.ValueSet.mem, harr]⟩
+    · exact ⟨flds, c, oid, u, hρ, by simp [HeapFacts.ReadGave, hl, hu], ValueSets.ValueSet.le_sound hR hRu⟩
+  · rename_i hl
+    exact ⟨flds, c, oid, w, hρ, by unfold HeapFacts.ReadGave; rw [hl]; exact hr, hm⟩
+
+/-- **A write at a checked index keeps `writtenCells`** (`weak-update`). -/
+theorem boundedCells_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
+    (hc : boundedWriteCheck G images j k a i v sub = true) {ρ n W h}
+    (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (excOf G) (meaning G j.type)
+      (fun h' u => HeapFacts.Holds (writtenCells k (HeapExpressionRules.valuesAt G j.context k v)) (push u ρ) h')
+      n W h (instantiate 0 ρ j.term) := by
+  have hs := boundedWrite_sound hc he hk hw hh
+  cases hR : HeapExpressionRules.valuesAt G j.context k v with
+  | none => exact weaken (fun _ _ _ => by simp [writtenCells, HeapFacts.Holds]) hs
+  | some R =>
+    have hRv : R.mem (ρ v) = true := HeapExpressionRules.valuesAt_sound hR he hk
+    have hcheck := hc
+    simp only [boundedWriteCheck, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hcheck
+    obtain ⟨⟨⟨⟨hslots, -⟩, -⟩, hbd⟩, -⟩ := hcheck
+    obtain ⟨s, ls, b, idx, hst, hl, hb, -, -⟩ := bounded_sound hbd hk
+    obtain ⟨flds, cd, oid, hoi⟩ : ∃ flds cd oid, ρ a = .objAt flds cd oid := by
+      cases hra : ρ a
+      case objAt => exact ⟨_, _, _, rfl⟩
+      all_goals rw [hra] at hst; simp [Footprints.storeOf, Footprints.fieldsOf] at hst
+    have hfl : flds.lookup arrayStoreKey = some s := by
+      simpa [Footprints.storeOf, Footprints.fieldsOf, hoi] using hst
+    have hval : isVal (ρ v) = true := ValueSets.ValueSet.mem_isVal hRv
+    -- every kept fact, over the unshifted slots
+    have hkept : ∀ h' : Heap, (∀ (l : Nat) (w : Tm), h[l]? = some w → h'[l]? = some w ∨ (∃ xs, h'[l]? = some (Tm.arr xs)) ∨
+        ∃ u, h'[l]? = some u ∧ R.mem u = true) → ∀ u, HeapFacts.Holds (writtenCells k (some R)) (push u ρ) h' := by
+      intro h' hloc u g hg
+      simp only [writtenCells, List.mem_map, List.mem_filter, Bool.and_eq_true] at hg
+      obtain ⟨f, ⟨hfm, harr, hle⟩, rfl⟩ := hg
+      have h1 : HeapFacts.Holds [f] ρ h := fun g hg => by
+        simp only [List.mem_singleton] at hg; subst hg; exact hk.1 g hfm
+      obtain ⟨flds', c', oid', w', hρ', hr', hm'⟩ := cell_kept h1 harr hle hloc f (List.mem_singleton_self _)
+      exact ⟨flds', c', oid', w', by simpa [push] using hρ', hr', hm'⟩
+    rw [boundedSlots_eq hslots] at hs ⊢
+    simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hb, hoi] at hs ⊢
+    have hslt : s < h.length := (List.getElem?_eq_some_iff.mp hl).1
+    refine elementWrite_post (P := fun h' => ∀ u, HeapFacts.Holds (writtenCells k (some R)) (push u ρ) h')
+      hfl hl hval (fun cell _ => hkept _ fun l w hw => ?_) (fun i' _ _ => hkept _ fun l w hw => ?_)
+      (HeapObservations.erase hs) |> weaken fun h' u hq => hq u
+    · by_cases hls : l = s
+      · subst hls; exact .inr (.inl ⟨ls, by rw [List.getElem?_set_self (by simp; exact hslt)]⟩)
+      · rw [List.getElem?_set_ne (Ne.symm hls)]
+        by_cases hlc : l = cell
+        · subst hlc
+          have hlt : l < h.length := (List.getElem?_eq_some_iff.mp hw).1
+          exact .inr (.inr ⟨ρ v, by rw [List.getElem?_set_self hlt], hRv⟩)
+        · rw [List.getElem?_set_ne (Ne.symm hlc)]; exact .inl hw
+    · by_cases hls : l = s
+      · subst hls; exact .inr (.inl ⟨_, by rw [List.getElem?_set_self (by simp; omega)]⟩)
+      · have hlt : l < h.length := (List.getElem?_eq_some_iff.mp hw).1
+        rw [List.getElem?_set_ne (Ne.symm hls), List.getElem?_append_left hlt]; exact .inl hw
+
 /-- The knowledge after a step that is an element write at any index: `out`,
 and every atom the change `{value: any, store: grow}` keeps, a linear fact
 whose length terms have non-positive coefficients and whose other terms read
@@ -3047,7 +3146,9 @@ theorem indexHolds_append {as bs : List HeapKnowledge.IndexAtom} {ρ h}
       (IndexWrites.lengthAtoms_holds he hk (IndexWrites.linearAtoms_holds he hk (IndexWrites.stepAtoms_holds he hk hs)))
 
 /-- A checker whose `boundedWrite` steps are writes at a checked index
-(`IndexWrites.boundedWriteCheck`, `setElem-bounded`), and whose element writes
+(`IndexWrites.boundedWriteCheck`, `setElem-bounded`), keeping the cell facts
+the written value and an array store meet (`IndexWrites.writtenCells`,
+`weak-update`), and whose element writes
 at any index keep the atoms a growing change keeps (`IndexWrites.growOutput`);
 every other step is `base`'s. -/
 @[nospecialize] def Checker.boundedWrites [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
@@ -3055,17 +3156,19 @@ every other step is `base`'s. -/
   run := fun j k e codes sums => match e with
     | .boundedWrite a i v p =>
       if IndexWrites.boundedWriteCheck G images j k a i v p then
-        pure (IndexWrites.withWritten (if IndexWrites.keepsLengths G j k a i then IndexWrites.lengthOutput (stableFirst G j.context) k
+        pure (IndexWrites.withCells (IndexWrites.withWritten (if IndexWrites.keepsLengths G j k a i then IndexWrites.lengthOutput (stableFirst G j.context) k
           else IndexWrites.growOutput G j k (ordinaryOutput k))
           (IndexWrites.writeAtoms G j.context k a ++ IndexWrites.atLengthAtoms G j k a i))
+          (IndexWrites.writtenCells k (valuesAt G j.context k v)))
       else failure
     | _ => (base.run j k e codes sums).map (IndexWrites.growOutput G j k)
   select := fun j k e codes sums => match e with
     | .boundedWrite a i v p =>
       if IndexWrites.boundedWriteCheck G images j k a i v p then
-        pure (IndexWrites.withWritten (if IndexWrites.keepsLengths G j k a i then IndexWrites.lengthOutput (stableFirst G j.context) k
+        pure (IndexWrites.withCells (IndexWrites.withWritten (if IndexWrites.keepsLengths G j k a i then IndexWrites.lengthOutput (stableFirst G j.context) k
           else IndexWrites.growOutput G j k (ordinaryOutput k))
           (IndexWrites.writeAtoms G j.context k a ++ IndexWrites.atLengthAtoms G j k a i))
+          (IndexWrites.writtenCells k (valuesAt G j.context k v)))
       else failure
     | _ => (base.select j k e codes sums).map (IndexWrites.growOutput G j k)
   sound := by
@@ -3074,6 +3177,7 @@ every other step is `base`'s. -/
     · split at hc
       · rename_i hck
         cases hc
+        apply IndexWrites.withCells_sound (IndexWrites.boundedCells_sound hck he hk hw hh)
         apply IndexWrites.withWritten_sound (weaken (fun _ _ hq => indexHolds_append hq.1 hq.2)
           (IndexWrites.safePost_and (IndexWrites.boundedRegions_sound hck he hk hw hh)
             (IndexWrites.atLengthAtoms_sound hck he hk hw hh)))

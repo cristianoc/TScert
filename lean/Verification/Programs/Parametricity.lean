@@ -592,6 +592,10 @@ theorem growOutput_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) :
 theorem atLengthAtoms_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (a i : Nat) :
     IndexWrites.atLengthAtoms (reassign G η) j k a i = IndexWrites.atLengthAtoms G j k a i := rfl
 
+omit [DecidableEq ι] in
+theorem valuesAt_reassign (Γ : List (List ι)) (k : HeapKnowledge.Knowledge) (i : Nat) :
+    HeapExpressionRules.valuesAt (reassign G η) Γ k i = HeapExpressionRules.valuesAt G Γ k i := rfl
+
 theorem boundedWrites_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge)
     (e : StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
     ((Checker.steps (reassign G η) (images.reassign η)).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.ensuringCalls.negatingSlots.indexing.boundedWrites.run
@@ -601,7 +605,7 @@ theorem boundedWrites_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowled
   simp only [Checker.boundedWrites]
   split
   · rw [boundedWriteCheck_reassign, keepsLengths_reassign, writeAtoms_reassign, growOutput_reassign,
-      stableFirst_reassign, atLengthAtoms_reassign]
+      stableFirst_reassign, atLengthAtoms_reassign, valuesAt_reassign]
   · simp only [CheckResult.map]
     rw [indexing_value_reassign, growOutput_reassign]
 

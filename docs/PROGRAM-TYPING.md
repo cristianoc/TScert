@@ -1414,6 +1414,22 @@ store field is, so the step carries no observation of the heap past it. Its
 frame condition is the footprint `{value: any, store: grow}`
 ([element writes](FOOTPRINTS.md#element-writes)).
 
+**What the write keeps of fields' contents.** The write sets the store
+location to an array store, at most one element location to $`v`$, and
+leaves every other location as it was. So a fact $`y.f\in V`$ on the
+contents of a field (a cell fact) whose set $`V`$ holds every array store
+and every value $`\Gamma;\Sigma`$ admits for $`v`$ ($`R`$) holds after it,
+whichever location $`y.f`$ is:
+
+```math
+\frac{y.f\in V\in\Sigma\qquad \mathsf{arr}\in V\qquad R(v)\subseteq V}
+     {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow x.\mathtt{[]}:=x.\mathtt{[]}⟦k\mapsto v⟧\dashv\ldots,\ y.f\in V}\ \textsf{weak-update}
+```
+
+Proved: `IndexWrites.boundedCells_sound`, from `elementWrite_post`'s two
+cases and `cell_kept` (`bounded-write-keeps-cells`: `out.xs ??= …` stays
+non-null across a write into `out.xs`'s array).
+
 **The length after the write.** At $`0\le k\le|x|`$ the write leaves
 $`|x|=\max(|x|_{\mathrm{before}},k+1)`$ with the index $`k`$ present: a
 present cell keeps the store, and a fresh cell is placed at $`k`$
