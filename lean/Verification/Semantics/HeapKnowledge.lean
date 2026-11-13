@@ -444,14 +444,36 @@ theorem factFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {s t 
     · simpa only [IndexFact.HoldsAt, PointClaims.mapEnv, hM _ _ ha, hM _ _ hb] using
         PathStoresApart.symm hs
 
+/-- Whether a source atom's condition holds wherever a target's does: the
+source is unconditional, or conditional on a slot of the class of the
+target's condition slot (`M`), at the same answer. -/
+def condFollows (M : Nat → List Nat) (m : PointClaims.Mapping) (s t : IndexAtom) : Bool :=
+  match s.cond, t.cond with
+  | none, _ => true
+  | some c, some c' => (M (PointClaims.slot m c')).contains c && s.negated == t.negated
+  | some _, none => false
+
+/-- A source atom whose condition `condFollows` the target's holds wherever
+the target's condition does. -/
+theorem condFollows_cond {M : Nat → List Nat} {m : PointClaims.Mapping} {s t : IndexAtom} {ρ : Env}
+    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hcd : condFollows M m s t = true)
+    (hcond : ∀ c, t.cond = some c → tagHolds .truthy (PointClaims.mapEnv m ρ c) = !t.negated) :
+    ∀ c, s.cond = some c → tagHolds .truthy (ρ c) = !s.negated := by
+  intro c hc
+  unfold condFollows at hcd
+  rw [hc] at hcd
+  cases htc : t.cond with
+  | none => rw [htc] at hcd; cases hcd
+  | some c' =>
+    rw [htc] at hcd
+    simp only [Bool.and_eq_true, List.contains_iff_mem, beq_iff_eq] at hcd
+    rw [hM _ _ hcd.1, hcd.2]
+    exact hcond c' htc
+
 /-- Whether a target atom follows from a source atom: its fact follows, and its
 condition is none or the mapped one's, at the same answer. -/
 def indexFollows (M : Nat → List Nat) (m : PointClaims.Mapping) (s t : IndexAtom) : Bool :=
-  factFollows M m s.fact t.fact &&
-    match s.cond, t.cond with
-    | none, _ => true
-    | some c, some c' => (M (PointClaims.slot m c')).contains c && s.negated == t.negated
-    | some _, none => false
+  factFollows M m s.fact t.fact && condFollows M m s t
 
 /-- A store's length lies between `0` and `maxArrayLength`. -/
 def lengthRange (t : Term) : List (Linear.Fact Term) :=
@@ -2000,41 +2022,74 @@ theorem guardBodyFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} 
     exact ⟨_, rfl, Or.inr (factFollows_sound hM hm (ha s hs fun c hc => by rw [hn] at hc; cases hc))⟩
   · cases hf
 
-/-- **Prefix weakening** of a quantified fact: an unconditional target
-`every(s', p, t, φ)` follows from an unconditional source `every(x, p, u, φ')`
-over the array of `s'`'s class (`M`), whose body gives each of the target's
-(`bodyFactFollows`), where the source's facts `K` state `t` defined and
-entail `t ≤ u`: every index below `t` is below `u`. A bound equal to the
-source's is its instance. -/
+/-- The linear facts known where a target atom's condition holds: the
+source's facts `K` for an unconditional target; for one conditional on slot
+`c'`, the source's unconditional linear facts with those conditional on a
+slot `c` of `c'`'s class at the same answer (`condFacts`), as
+`linearFollowsIn` reads them. Whether those of some such `c` entail `goal`. -/
+def entailsUnder (K : Linear.Known Term) (M : Nat → List Nat) (m : PointClaims.Mapping) (a : List IndexAtom)
+    (t : IndexAtom) (goal : Linear.Fact Term) : Bool :=
+  match t.cond with
+  | none => K.entails goal
+  | some c' => (M (PointClaims.slot m c')).any fun c =>
+      (Linear.Known.build (linearRaw a ++ condFacts a c t.negated) (rangesRaw a)).entails goal
+
+theorem entailsUnder_sound {K : Linear.Known Term} {M : Nat → List Nat} {m : PointClaims.Mapping}
+    {a : List IndexAtom} {t : IndexAtom} {goal : Linear.Fact Term} {ρ : Env} {h : Heap}
+    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hK : K.Holds (termValuation ε ρ h)) (ha : IndexHolds ε a ρ h)
+    (hcond : ∀ c, t.cond = some c → tagHolds .truthy (PointClaims.mapEnv m ρ c) = !t.negated)
+    (he : entailsUnder K M m a t goal = true) : goal.Holds (termValuation ε ρ h) := by
+  unfold entailsUnder at he
+  split at he
+  · exact Linear.Known.entails_sound hK he
+  · rename_i c' hc'
+    obtain ⟨c, hc, he⟩ := List.any_eq_true.mp he
+    have hcv : tagHolds .truthy (ρ c) = !t.negated := by
+      rw [hM _ _ hc]; exact hcond c' hc'
+    have hkn : ∀ G ∈ linearRaw a ++ condFacts a c t.negated, G.Holds (termValuation ε ρ h) := by
+      intro G hG
+      rcases List.mem_append.mp hG with hG | hG
+      · exact linearRaw_holds ha G hG
+      · exact condFacts_holds ha hcv G hG
+    exact Linear.Known.entails_sound (Linear.Known.build_holds hkn (rangesRaw_holds ha)) he
+
+/-- **Prefix weakening** of a quantified fact: a target `every(s', p, t, φ)`
+follows from a source `every(x, p, u, φ')` over the array of `s'`'s class
+(`M`), whose condition holds wherever the target's does (`condFollows`) and
+whose body gives each of the target's (`bodyFactFollows`), where the
+source's facts state `t` defined and, where the target's condition holds,
+entail `t ≤ u` (`entailsUnder`): every index below `t` is below `u`. A bound
+equal to the source's is its instance. -/
 def everyPrefix (K : Linear.Known Term) (M : Nat → List Nat) (m : PointClaims.Mapping) (a : List IndexAtom)
     (t : IndexAtom) : Bool :=
-  t.cond.isNone && match t.fact with
+  match t.fact with
   | .every s' p stop' body' =>
     let u := pickTerm M m a stop'
-    termDefined a u && a.any fun src => src.cond.isNone && match src.fact with
+    termDefined a u && a.any fun src => condFollows M m src t && match src.fact with
       | .every x q st b => (M (PointClaims.slot m s')).contains x && q == p &&
           body'.all (fun F' => b.any fun F => bodyFactFollows M m F F') &&
-          K.entails (.le [(u, 1), (st, -1)] 0)
+          entailsUnder K M m a t (.le [(u, 1), (st, -1)] 0)
       | _ => false
   | _ => false
 
-/-- **Prefix weakening is sound** (proved): from `every(x, p, u, φ')`, `t`
-defined and `t ≤ u`, the target `every(s', p, t, φ)` holds. -/
+/-- **Prefix weakening is sound** (proved): where the target's condition
+holds, from `every(x, p, u, φ')`, `t` defined and `t ≤ u`, the target
+`every(s', p, t, φ)` holds. -/
 theorem everyPrefix_sound {K : Linear.Known Term} {M : Nat → List Nat} {m : PointClaims.Mapping}
     {a : List IndexAtom} {t : IndexAtom} {ρ : Env} {h : Heap}
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hK : K.Holds (termValuation ε ρ h)) (ha : IndexHolds ε a ρ h)
+    (hcond : ∀ c, t.cond = some c → tagHolds .truthy (PointClaims.mapEnv m ρ c) = !t.negated)
     (hf : everyPrefix K M m a t = true) : t.fact.HoldsAt ε (PointClaims.mapEnv m ρ) h := by
-  simp only [everyPrefix, Bool.and_eq_true] at hf
-  obtain ⟨-, hf⟩ := hf
+  unfold everyPrefix at hf
   split at hf
   · rename_i s' p stop' body' hfact
     rw [hfact]
     simp only [Bool.and_eq_true] at hf
     obtain ⟨hdef, hany⟩ := hf
     obtain ⟨src, hsrc, hm⟩ := List.any_eq_true.mp hany
-    simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
-    obtain ⟨hcn, hm⟩ := hm
-    have hS := ha src hsrc fun c hc => by rw [hcn] at hc; cases hc
+    simp only [Bool.and_eq_true] at hm
+    obtain ⟨hcd, hm⟩ := hm
+    have hS := ha src hsrc (condFollows_cond hM hcd hcond)
     split at hm
     · rename_i x q st b hsf
       rw [hsf] at hS
@@ -2042,7 +2097,7 @@ theorem everyPrefix_sound {K : Linear.Known Term} {M : Nat → List Nat} {m : Po
       obtain ⟨⟨⟨hx, rfl⟩, hb⟩, hent⟩ := hm
       obtain ⟨w, sto, ls, n, hw, hsto, hls, hn, hall⟩ := hS
       obtain ⟨n', hn'⟩ := Option.isSome_iff_exists.mp (termDefined_sound ha hdef)
-      have hle := Linear.Known.entails_sound hK hent
+      have hle := entailsUnder_sound hM hK ha hcond hent
       simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, hn', hn, Option.getD_some] at hle
       have hs' : PointClaims.mapEnv m ρ s' = ρ x := (hM _ _ (List.contains_iff_mem.mp hx)).symm
       refine ⟨w, sto, ls, n', by rw [hs']; exact hw, hsto, hls, by rw [← pickTerm_eq hM]; exact hn',
@@ -2150,7 +2205,7 @@ theorem indicesCheckWith_sound {tags : Nat → List String → GuardTag → Bool
     IndexHolds ε b (PointClaims.mapEnv m ρ) h := by
   intro t ht hcond
   rcases Bool.or_eq_true_iff.mp (List.all_eq_true.mp hc t ht) with hc' | hev
-  case inr => exact everyPrefix_sound hM (knownOf_holds ha) ha hev
+  case inr => exact everyPrefix_sound hM (knownOf_holds ha) ha hcond hev
   rcases Bool.or_eq_true_iff.mp hc' with hc' | hgb
   case inr => exact guardBodyFollows_sound hM hgb ha
   rcases Bool.or_eq_true_iff.mp hc' with hc' | hst
@@ -2162,17 +2217,7 @@ theorem indicesCheckWith_sound {tags : Nat → List String → GuardTag → Bool
   obtain ⟨s, hs, hf⟩ := List.any_eq_true.mp hc'
   simp only [indexFollows, Bool.and_eq_true] at hf
   obtain ⟨hfact, hcd⟩ := hf
-  have hsc : ∀ c, s.cond = some c → tagHolds .truthy (ρ c) = !s.negated := by
-    intro c hc
-    rw [hc] at hcd
-    cases htc : t.cond with
-    | none => rw [htc] at hcd; cases hcd
-    | some c' =>
-      rw [htc] at hcd
-      simp only [Bool.and_eq_true, List.contains_iff_mem, beq_iff_eq] at hcd
-      rw [hM _ _ hcd.1, hcd.2]
-      exact hcond c' htc
-  exact factFollows_sound hM hfact (ha s hs hsc)
+  exact factFollows_sound hM hfact (ha s hs (condFollows_cond hM hcd hcond))
 
 theorem indicesCheckBy_sound {M : Nat → List Nat} {ls : HeapLinks.Links} {a b : List IndexAtom} {m ρ h}
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hl : HeapLinks.Holds ls ρ h) (hc : indicesCheckBy M ls a b m = true)
