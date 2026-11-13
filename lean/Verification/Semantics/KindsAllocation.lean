@@ -7,7 +7,8 @@ justifies it extends the world by one entry per location, whose role it
 chooses: an object literal's properties are fields, a binding cell's single
 property `value` is a cell, an array's elements are element cells, its store
 slot an array store, a typed array's elements slot a view store of the
-array's length, and every object's identity an identity location. The step is
+array's length, a host object's `[[viewLength]]` a field whose contract
+admits that length alone, and every object's identity an identity location. The step is
 the calculus's own (`Step.makeFields`, `Step.arrAlloc`, the throwing steps);
 the world extension differs.
 
@@ -151,8 +152,9 @@ Typing premises, which the raw step does not give: each role fits its key
 (`SlotRole`: an array store under `[]`, a view store under `[[viewElements]]`,
 a field or a cell under any other key); each initializer has its role's
 category (`Cat`: a source value in a field or cell, a store in a store slot);
-and the allocated field map meets the view-length condition, which holds
-vacuously where no key is `[[viewElements]]` (`viewLengthOk_of_not_mem`). -/
+and the allocated field map meets view metadata validity (`ViewMetaOk`),
+which holds where no key is `[[viewLength]]` or `[[viewElements]]`
+(`viewMetaOk_of_not_mem`). -/
 theorem makeFields_shaped {k : Nat} {W : WorldT k} {h : Heap} {c : CallCode}
     {ns : List PropKey} {vs : List Tm} (rs : List Role) (cs : List (Ctr k)) (cid : Ctr k)
     (hlen : h.length = (entries W).length) (hsh : Shaped W h)
@@ -160,7 +162,7 @@ theorem makeFields_shaped {k : Nat} {W : WorldT k} {h : Heap} {c : CallCode}
     (href : RefsOk W (.makeAt c ns vs))
     (hslot : ∀ i (hi : i < ns.length), SlotRole ns[i] (some (rs[i]'(by omega))))
     (hcat : ∀ i (hi : i < ns.length), Cat (rs[i]'(by omega)) (vs[i]'(by omega)))
-    (hview : ViewLengthOk (appendWs W (objectEntries rs cs cid)) (slots h.length ns)) :
+    (hview : ViewMetaOk (appendWs W (objectEntries rs cs cid)) (slots h.length ns)) :
     Shaped (appendWs W (objectEntries rs cs cid)) (h ++ vs ++ [.nul]) ∧
       RefsOk (appendWs W (objectEntries rs cs cid))
         (.objAt (slots h.length ns) c (h.length + vs.length)) := by
@@ -202,30 +204,36 @@ theorem makeFields_shaped {k : Nat} {W : WorldT k} {h : Heap} {c : CallCode}
         exact hslot i hi
     · exact RefOk_mono hxt (href r (by rw [refs_makeAt]; exact List.mem_append_left _ hr))
 
-/-- Without a `[[viewElements]]` key the view-length condition holds. -/
-theorem viewLengthOk_of_not_mem {k : Nat} {W : WorldT k} {base : Nat} {ns : List PropKey}
-    (h : viewElementsKey ∉ ns) : ViewLengthOk W (slots base ns) := by
-  intro e he
+theorem not_mem_slots {base : Nat} {ns : List PropKey} {f : PropKey} (h : f ∉ ns) (l : Nat) :
+    (f, l) ∉ slots base ns := fun he => by
   obtain ⟨i, hi, hp⟩ := mem_slots he
   simp only [Prod.mk.injEq] at hp
   exact absurd (hp.1 ▸ List.getElem_mem hi) h
 
+/-- A field map naming neither metadata key meets view metadata validity. -/
+theorem viewMetaOk_of_not_mem {k : Nat} {W : WorldT k} {base : Nat} {ns : List PropKey}
+    (hl : viewLengthKey ∉ ns) (he : viewElementsKey ∉ ns) : ViewMetaOk W (slots base ns) :=
+  ⟨fun m hm => absurd hm (not_mem_slots hl m), fun e hm => absurd hm (not_mem_slots he e)⟩
+
 /-- **An object literal** allocates its properties as fields: under keys other
-than the store slots, initializers that are source values. -/
+than the store slots and the view metadata, initializers that are source
+values. -/
 theorem objectLiteral_shaped {k : Nat} {W : WorldT k} {h : Heap} {c : CallCode}
     {ns : List PropKey} {vs : List Tm} (cs : List (Ctr k)) (cid : Ctr k)
     (hlen : h.length = (entries W).length) (hsh : Shaped W h)
     (hcs : cs.length = ns.length) (hns : ns.length = vs.length)
     (href : RefsOk W (.makeAt c ns vs))
-    (hkeys : ∀ f ∈ ns, f ≠ arrayStoreKey ∧ f ≠ viewElementsKey)
+    (hkeys : ∀ f ∈ ns, f ≠ arrayStoreKey ∧ f ≠ viewElementsKey ∧ f ≠ viewLengthKey)
     (hsrc : ∀ v ∈ vs, isSourceVal v = true) :
     Shaped (appendWs W (objectEntries (ns.map fun _ => .field) cs cid)) (h ++ vs ++ [.nul]) ∧
       RefsOk (appendWs W (objectEntries (ns.map fun _ => .field) cs cid))
         (.objAt (slots h.length ns) c (h.length + vs.length)) :=
   makeFields_shaped _ cs cid hlen hsh (by simp) hcs hns href
-    (fun i hi => by simpa [SlotRole] using hkeys _ (List.getElem_mem hi))
+    (fun i hi => by
+      have := hkeys _ (List.getElem_mem hi)
+      simpa [SlotRole] using And.intro this.1 this.2.1)
     (fun i hi => by simpa [Cat] using hsrc _ (List.getElem_mem (by omega)))
-    (viewLengthOk_of_not_mem (fun hm => (hkeys _ hm).2 rfl))
+    (viewMetaOk_of_not_mem (fun hm => (hkeys _ hm).2.2 rfl) (fun hm => (hkeys _ hm).2.1 rfl))
 
 /-! ## Binding cells
 
@@ -244,6 +252,7 @@ theorem bindingCell_shaped {k : Nat} {W : WorldT k} {h : Heap} {v : Tm} (c : Ctr
         (.objAt [(valueField, h.length)] .absent (h.length + 1)) := by
   have hne1 : valueField ≠ arrayStoreKey := by decide
   have hne2 : valueField ≠ viewElementsKey := by decide
+  have hne3 : valueField ≠ viewLengthKey := by decide
   have := makeFields_shaped (c := .absent) (ns := [valueField]) (vs := [v]) [.cell] [c] cid hlen hsh
     rfl rfl rfl (fun r hr => href r (by simpa [refs_makeAt, codeRefs] using hr))
     (fun i hi => by
@@ -252,7 +261,7 @@ theorem bindingCell_shaped {k : Nat} {W : WorldT k} {h : Heap} {v : Tm} (c : Ctr
     (fun i hi => by
       obtain rfl : i = 0 := by simpa using hi
       simpa [Cat] using hsrc)
-    (viewLengthOk_of_not_mem (by simpa using hne2.symm))
+    (viewMetaOk_of_not_mem (by simpa using hne3.symm) (by simpa using hne2.symm))
   simpa [slots] using this
 
 /-- **A binding read** yields the cell's contents, a source value whose
@@ -277,6 +286,7 @@ theorem closure_shaped {k : Nat} {W : WorldT k} {h : Heap} {code : CallCode} {a 
         (.objAt [(codeField, h.length)] code (h.length + 1)) := by
   have hne1 : codeField ≠ arrayStoreKey := by decide
   have hne2 : codeField ≠ viewElementsKey := by decide
+  have hne3 : codeField ≠ viewLengthKey := by decide
   have := makeFields_shaped (c := code) (ns := [codeField]) (vs := [a]) [.field] [c] cid hlen hsh
     rfl rfl rfl href
     (fun i hi => by
@@ -285,7 +295,7 @@ theorem closure_shaped {k : Nat} {W : WorldT k} {h : Heap} {code : CallCode} {a 
     (fun i hi => by
       obtain rfl : i = 0 := by simpa using hi
       simpa [Cat] using hsrc)
-    (viewLengthOk_of_not_mem (by simpa using hne2.symm))
+    (viewMetaOk_of_not_mem (by simpa using hne3.symm) (by simpa using hne2.symm))
   simpa [slots] using this
 
 /-! ## Arrays -/
@@ -328,6 +338,7 @@ theorem arrayObject_shaped {k : Nat} {W : WorldT k} {h : Heap} {ls : List (Optio
       RefsOk (appendWs W (objectEntries [.store .array] [c] cid))
         (.objAt [(arrayStoreKey, h.length)] .absent (h.length + 1)) := by
   have hne : arrayStoreKey ≠ viewElementsKey := by decide
+  have hne' : arrayStoreKey ≠ viewLengthKey := by decide
   have := makeFields_shaped (c := .absent) (ns := [arrayStoreKey]) (vs := [.arr ls])
     [.store .array] [c] cid hlen hsh rfl rfl rfl (fun r hr => href r (by simpa [refs_makeAt, codeRefs] using hr))
     (fun i hi => by
@@ -336,7 +347,8 @@ theorem arrayObject_shaped {k : Nat} {W : WorldT k} {h : Heap} {ls : List (Optio
     (fun i hi => by
       obtain rfl : i = 0 := by simpa using hi
       exact ⟨ls, rfl⟩)
-    (viewLengthOk_of_not_mem (fun hm => hne (List.mem_singleton.mp hm).symm))
+    (viewMetaOk_of_not_mem (fun hm => hne' (List.mem_singleton.mp hm).symm)
+      (fun hm => hne (List.mem_singleton.mp hm).symm))
   simpa [slots] using this
 
 /-! ## Typed arrays -/
@@ -360,6 +372,7 @@ theorem typedArray_shaped {k : Nat} {W : WorldT k} {h : Heap} {hv : Tm} {ls : Li
   have hd4 : viewLengthKey ≠ viewElementsKey := by decide
   have hd5 : viewElementsKey ≠ hostKey := by decide
   have hd6 : viewElementsKey ≠ viewLengthKey := by decide
+  have hd7 : hostKey ≠ viewLengthKey := by decide
   have hfst := objectEntries_fst (rs := [.field, .field, .store (.view ls.length)])
     (cs := [chost, clen, celem]) (cid := cid) rfl
   have := makeFields_shaped (c := .absent) (ns := [hostKey, viewLengthKey, viewElementsKey])
@@ -384,19 +397,76 @@ theorem typedArray_shaped {k : Nat} {W : WorldT k} {h : Heap} {hv : Tm} {ls : Li
       | 1, _ => rfl
       | 2, _ => exact ⟨ls, rfl, rfl⟩)
     (by
-      intro e he
-      simp only [slots, List.mem_cons, Prod.mk.injEq, List.not_mem_nil, or_false] at he
-      rcases he with ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨-, rfl⟩
-      · exact absurd h1 hd5
-      · exact absurd h1 hd6
-      · refine ⟨ls.length, h.length + 1, clen, ?_, ?_, ?_, ?_, hstable⟩
-        · rw [hlen, show (entries W).length + 2 = (entries W).length + 2 from rfl,
-            roleAt_appendWs', hfst]; rfl
-        · have hb : (viewLengthKey == hostKey) = false := by decide
-          have hb' : (viewLengthKey == viewLengthKey) = true := by decide
-          simp only [slots, List.lookup, hb, hb']
+      have hmeta : LengthMeta W' (h.length + 1) ls.length := by
+        refine ⟨clen, ?_, ?_, hstable⟩
         · rw [hlen, roleAt_appendWs', hfst]; rfl
-        · rw [hlen, lookup_appendWs_ge]; simp [objectEntries])
+        · rw [hlen, lookup_appendWs_ge]; simp [objectEntries]
+      refine ⟨fun m hm => ?_, fun e he => ?_⟩
+      · simp only [slots, List.mem_cons, Prod.mk.injEq, List.not_mem_nil, or_false] at hm
+        rcases hm with ⟨h1, -⟩ | ⟨-, rfl⟩ | ⟨h1, -⟩
+        · exact absurd h1.symm hd7
+        · exact ⟨ls.length, hmeta⟩
+        · exact absurd h1.symm hd6
+      · simp only [slots, List.mem_cons, Prod.mk.injEq, List.not_mem_nil, or_false] at he
+        rcases he with ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨-, rfl⟩
+        · exact absurd h1 hd5
+        · exact absurd h1 hd6
+        · refine ⟨ls.length, h.length + 1, ?_, ?_, hmeta⟩
+          · rw [hlen, show (entries W).length + 2 = (entries W).length + 2 from rfl,
+              roleAt_appendWs', hfst]; rfl
+          · have hb : (viewLengthKey == hostKey) = false := by decide
+            have hb' : (viewLengthKey == viewLengthKey) = true := by decide
+            simp only [slots, List.lookup, hb, hb'])
+  simpa [slots, Nat.add_assoc] using this
+
+/-- **A host object holding its length alone**: an object owning `[[host]]`
+and `[[viewLength]]` and no `[[viewElements]]`, which the length observation
+reads as a typed array (`HeapKnowledge.viewLengthOf`). Its length is in a
+field whose contract admits `N` alone. -/
+theorem hostLength_shaped {k : Nat} {W : WorldT k} {h : Heap} {hv : Tm} (N : Nat)
+    (chost clen cid : Ctr k) (hlen : h.length = (entries W).length) (hsh : Shaped W h)
+    (hhost : isSourceVal hv = true) (hhref : RefsOk W hv)
+    (hstable : CtrStable clen (.num (bitsOfNat N))) :
+    let W' := appendWs W (objectEntries [.field, .field] [chost, clen] cid)
+    Shaped W' (h ++ [hv, .num (bitsOfNat N)] ++ [.nul]) ∧
+      RefsOk W' (.objAt [(hostKey, h.length), (viewLengthKey, h.length + 1)] .absent (h.length + 2)) := by
+  intro W'
+  have hd1 : hostKey ≠ arrayStoreKey := by decide
+  have hd2 : hostKey ≠ viewElementsKey := by decide
+  have hd3 : viewLengthKey ≠ arrayStoreKey := by decide
+  have hd4 : viewLengthKey ≠ viewElementsKey := by decide
+  have hd7 : hostKey ≠ viewLengthKey := by decide
+  have hfst := objectEntries_fst (rs := [.field, .field]) (cs := [chost, clen]) (cid := cid) rfl
+  have := makeFields_shaped (c := .absent) (ns := [hostKey, viewLengthKey])
+    (vs := [hv, .num (bitsOfNat N)]) (W := W) (h := h) [.field, .field] [chost, clen] cid hlen hsh
+    rfl rfl rfl
+    (by
+      intro r hr
+      simp only [refs_makeAt, codeRefs, List.nil_append, List.flatMap_cons, List.flatMap_nil,
+        List.append_nil, List.mem_append] at hr
+      rcases hr with hr | hr
+      · exact hhref r hr
+      · simp [refs] at hr)
+    (fun i hi => by
+      match i, hi with
+      | 0, _ => exact ⟨hd1, hd2⟩
+      | 1, _ => exact ⟨hd3, hd4⟩)
+    (fun i hi => by
+      match i, hi with
+      | 0, _ => simpa [Cat] using hhost
+      | 1, _ => rfl)
+    (by
+      refine ⟨fun m hm => ?_, fun e he => ?_⟩
+      · simp only [slots, List.mem_cons, Prod.mk.injEq, List.not_mem_nil, or_false] at hm
+        rcases hm with ⟨h1, -⟩ | ⟨-, rfl⟩
+        · exact absurd h1.symm hd7
+        · refine ⟨N, clen, ?_, ?_, hstable⟩
+          · rw [hlen, roleAt_appendWs', hfst]; rfl
+          · rw [hlen, lookup_appendWs_ge]; simp [objectEntries]
+      · simp only [slots, List.mem_cons, Prod.mk.injEq, List.not_mem_nil, or_false] at he
+        rcases he with ⟨h1, -⟩ | ⟨h1, -⟩
+        · exact absurd h1.symm hd2
+        · exact absurd h1.symm hd4)
   simpa [slots, Nat.add_assoc] using this
 
 /-! ## Fresh errors -/
@@ -418,6 +488,6 @@ theorem thrownError_shaped {k : Nat} {W : WorldT k} {h : Heap} (cid : Ctr k)
     rcases hr with rfl | rfl
     · show roleAt _ _ = _
       rw [hlen, show (entries W).length = (entries W).length + 0 from rfl, roleAt_appendWs']; rfl
-    · intro e he; simp at he
+    · exact ⟨fun m hm => by simp at hm, fun e he => by simp at he⟩
 
 end Verification.Kinds

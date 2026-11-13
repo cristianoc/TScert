@@ -6,7 +6,7 @@ The model of the note *Tolerant frames* (§§2–3) partitions a heap's location
 by **kind**, fixed for a location's life: field locations F, cells C, element
 cells E, store locations S, and object-identity locations I
 (docs/drafts/location-kinds.md). A kind is part of the world, which is
-proof-level: the calculus (`Step`) and the lowering are those of
+proof-level: the terms and the steps (`Step`) are those of
 `Semantics/Calculus.lean`, and a location receives its role when a typing rule
 extends the world at the allocation that justifies it.
 
@@ -23,7 +23,9 @@ rule that allocates the binding; the calculus allocates both as the same
 object. Its array store slot `[]` has the role of an array store, its
 `[[viewElements]]` slot that of a view store of a fixed length, its identity
 the role `identity`. A store lists element cells only. F, C and E hold source
-values whose references are valid (`RefsOk`); I holds `null`.
+values whose references are valid (`RefsOk`); I holds `null`. Every location
+an object holds under `[[viewLength]]` is a field whose contract admits one
+length, and a view store's length is that length (`ViewMetaOk`).
 -/
 namespace Verification.Kinds
 
@@ -283,8 +285,8 @@ theorem WorldAdm_appendWs {k : Nat} {W : WorldT k} {es : List (Role × Ctr k)}
 /-! ## References and their validity -/
 
 /-- A location reference a term holds: an object's identity, an object's slot
-under a key, a store's element cell, or an object's field map, whose
-typed-array length field the view store's length fixes. -/
+under a key, a store's element cell, or an object's field map, whose view
+metadata is valid as a whole (`ViewMetaOk`). -/
 inductive Ref where
   | ident (l : Nat)
   | slot (key : PropKey) (l : Nat)
@@ -360,19 +362,27 @@ def SlotRole (key : PropKey) : Option Role → Prop
   | some .cell => key ≠ arrayStoreKey ∧ key ≠ viewElementsKey
   | _ => False
 
-/-- A typed array's length field: each `[[viewElements]]` slot of an object
-is a view store of some length `N`, and the object's `[[viewLength]]` field
-is a field location whose contract admits the single value `N`. -/
-def ViewLengthOk {k : Nat} (W : WorldT k) (fs : List (PropKey × Nat)) : Prop :=
-  ∀ e, (viewElementsKey, e) ∈ fs → ∃ N m c, roleAt W e = some (.store (.view N)) ∧
-    fs.lookup viewLengthKey = some m ∧ roleAt W m = some .field ∧
-      lookup W m = some c ∧ CtrStable c (.num (bitsOfNat N))
+/-- **A view-length metadata location** of the fixed length `N`: a field
+location whose contract admits the single value `N`. -/
+def LengthMeta {k : Nat} (W : WorldT k) (m N : Nat) : Prop :=
+  ∃ c, roleAt W m = some .field ∧ lookup W m = some c ∧ CtrStable c (.num (bitsOfNat N))
+
+/-- **View metadata validity** of an object's field map. Every location the
+map gives `[[viewLength]]` is a view-length metadata location of some fixed
+length, whether or not the map names `[[viewElements]]` (a host object may
+hold its length alone). Every location the map gives `[[viewElements]]` is a
+view store of some length `N`, and the location the map's `[[viewLength]]`
+finds is a view-length metadata location of that same `N`. -/
+def ViewMetaOk {k : Nat} (W : WorldT k) (fs : List (PropKey × Nat)) : Prop :=
+  (∀ m, (viewLengthKey, m) ∈ fs → ∃ N, LengthMeta W m N) ∧
+    ∀ e, (viewElementsKey, e) ∈ fs → ∃ N m, roleAt W e = some (.store (.view N)) ∧
+      fs.lookup viewLengthKey = some m ∧ LengthMeta W m N
 
 def RefOk {k : Nat} (W : WorldT k) : Ref → Prop
   | .ident l => roleAt W l = some .identity
   | .slot key l => SlotRole key (roleAt W l)
   | .elem l => roleAt W l = some .elem
-  | .fields fs => ViewLengthOk W fs
+  | .fields fs => ViewMetaOk W fs
 
 /-- **Reference validity**: every location a term refers to has the role its
 position demands. It reads the world only, never the heap. -/
@@ -412,13 +422,21 @@ theorem SlotRole_mono {k} {W W' : WorldT k} (hx : WExt W W') {key : PropKey} {l 
   · rw [hr] at h; cases h
   · rw [WExt_roleAt hx hr]; rw [hr] at h; exact h
 
+theorem LengthMeta.mono {k} {W W' : WorldT k} (hx : WExt W W') {m N : Nat}
+    (h : LengthMeta W m N) : LengthMeta W' m N :=
+  let ⟨c, hr, hl, hs⟩ := h; ⟨c, WExt_roleAt hx hr, WExt_lookup hx hl, hs⟩
+
+theorem LengthMeta.trunc {k j} (hj : j ≤ k) {W : WorldT k} {m N : Nat}
+    (h : LengthMeta W m N) : LengthMeta (trunc j hj W) m N :=
+  let ⟨c, hr, hl, hs⟩ := h; ⟨_, by simpa using hr, lookup_trunc hj W m c hl, hs.restrict hj⟩
+
 theorem RefOk_mono {k} {W W' : WorldT k} (hx : WExt W W') : ∀ {r : Ref}, RefOk W r → RefOk W' r
   | .ident _, h => WExt_roleAt hx h
   | .slot _ _, h => SlotRole_mono hx h
   | .elem _, h => WExt_roleAt hx h
-  | .fields _, h => fun e he => by
-    obtain ⟨N, m, c, hr, hm, hmr, hml, hs⟩ := h e he
-    exact ⟨N, m, c, WExt_roleAt hx hr, hm, WExt_roleAt hx hmr, WExt_lookup hx hml, hs⟩
+  | .fields _, h =>
+    ⟨fun m hm => let ⟨N, hN⟩ := h.1 m hm; ⟨N, hN.mono hx⟩,
+      fun e he => let ⟨N, m, hr, hm, hN⟩ := h.2 e he; ⟨N, m, WExt_roleAt hx hr, hm, hN.mono hx⟩⟩
 
 theorem RefsOk_mono {k} {W W' : WorldT k} (hx : WExt W W') {t : Tm} (h : RefsOk W t) :
     RefsOk W' t := fun r hr => RefOk_mono hx (h r hr)
@@ -432,10 +450,9 @@ theorem RefOk_trunc {k j} (hj : j ≤ k) {W : WorldT k} : ∀ {r : Ref}, RefOk W
   | .ident _, h => by simpa [RefOk] using h
   | .slot _ _, h => by simpa [RefOk] using h
   | .elem _, h => by simpa [RefOk] using h
-  | .fields _, h => fun e he => by
-    obtain ⟨N, m, c, hr, hm, hmr, hml, hs⟩ := h e he
-    exact ⟨N, m, _, by simpa using hr, hm, by simpa using hmr, lookup_trunc hj W m c hml,
-      hs.restrict hj⟩
+  | .fields _, h =>
+    ⟨fun m hm => let ⟨N, hN⟩ := h.1 m hm; ⟨N, hN.trunc hj⟩,
+      fun e he => let ⟨N, m, hr, hm, hN⟩ := h.2 e he; ⟨N, m, by simpa using hr, hm, hN.trunc hj⟩⟩
 
 theorem RefsOk_trunc {k j} (hj : j ≤ k) {W : WorldT k} {t : Tm} (h : RefsOk W t) :
     RefsOk (trunc j hj W) t := fun r hr => RefOk_trunc hj (h r hr)

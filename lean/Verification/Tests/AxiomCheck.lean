@@ -1485,6 +1485,7 @@ run_cmd do
   check ``Verification.Kinds.arrAlloc_shaped
   check ``Verification.Kinds.arrayObject_shaped
   check ``Verification.Kinds.typedArray_shaped
+  check ``Verification.Kinds.hostLength_shaped
   check ``Verification.Kinds.thrownError_shaped
   -- writes preserve kinds
   check ``Verification.Kinds.write_sound
