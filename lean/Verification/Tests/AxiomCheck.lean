@@ -15,6 +15,7 @@ import Verification.Programs.SinglePassClose
 import Verification.Semantics.Kinds
 import Verification.Semantics.KindsAllocation
 import Verification.Semantics.KindsWrites
+import Verification.Semantics.KindsNatives
 import Lean.Util.CollectAxioms
 import Lean.Elab.Command
 import Lean.Compiler.CSimpAttr
@@ -1494,3 +1495,14 @@ run_cmd do
   check ``Verification.Kinds.lengthStore_refs
   check ``Verification.Kinds.setPresent_shaped
   check ``Verification.Kinds.setGrow_shaped
+  -- natives, copies, contracts and administrative steps
+  check ``Verification.Kinds.step_refs
+  check ``Verification.Kinds.subst_refs
+  check ``Verification.Kinds.instantiate_refs
+  check ``Verification.Kinds.raises_refs
+  check ``Verification.Kinds.heap_refs
+  check ``Verification.Kinds.mergeParts_cat
+  check ``Verification.Kinds.Arr.Within.refs
+  check ``Verification.Kinds.Arr.natives_within
+  check ``Verification.Kinds.native_shaped
+  check ``Verification.Kinds.elementWrite_not_respects
