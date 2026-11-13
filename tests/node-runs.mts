@@ -27,6 +27,8 @@ assert.equal(runExample("invalid-two-state-ensures-body", "(() => { const l = { 
   "the body grows the list by 3 where its two-state postcondition states old(length) + 2");
 assert.equal(runExample("invalid-two-state-guarded-call", "typeof lastAppended([], false)"), "undefined",
   "without the branch on its guard the caller reads an empty array at -1");
+assert.equal(runExample("invalid-two-state-every-call", "typeof pickOne([1], 1, 0, [5])"), "undefined",
+  "the kept element 1 reads a one-element array past its end");
 assert.equal(runExample("invalid-written-ensures-unstated", "Number.isNaN(read(1))"), true,
   "a caller cannot obtain a result bound from an unstated postcondition");
 assert.equal(runExample("invalid-bounds-callback-footprint", "typeof broken([1])"), "undefined",

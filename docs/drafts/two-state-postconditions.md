@@ -272,5 +272,3 @@ Restrictions of the language, documented in
 - A before-name in a quantified fact's bound composes only where the
   caller's linear facts bound it below by one term after the call
   ([not derivable](../ARITHMETIC.md#two-state-postconditions)).
-- A return entails a quantified fact naming an entry term only from one
-  naming the same bound (`two-state-every-call-refused`).

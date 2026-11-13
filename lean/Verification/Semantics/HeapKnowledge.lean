@@ -2000,17 +2000,73 @@ theorem guardBodyFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} 
     exact ⟨_, rfl, Or.inr (factFollows_sound hM hm (ha s hs fun c hc => by rw [hn] at hc; cases hc))⟩
   · cases hf
 
+/-- **Prefix weakening** of a quantified fact: an unconditional target
+`every(s', p, t, φ)` follows from an unconditional source `every(x, p, u, φ')`
+over the array of `s'`'s class (`M`), whose body gives each of the target's
+(`bodyFactFollows`), where the source's facts `K` state `t` defined and
+entail `t ≤ u`: every index below `t` is below `u`. A bound equal to the
+source's is its instance. -/
+def everyPrefix (K : Linear.Known Term) (M : Nat → List Nat) (m : PointClaims.Mapping) (a : List IndexAtom)
+    (t : IndexAtom) : Bool :=
+  t.cond.isNone && match t.fact with
+  | .every s' p stop' body' =>
+    let u := pickTerm M m a stop'
+    termDefined a u && a.any fun src => src.cond.isNone && match src.fact with
+      | .every x q st b => (M (PointClaims.slot m s')).contains x && q == p &&
+          body'.all (fun F' => b.any fun F => bodyFactFollows M m F F') &&
+          K.entails (.le [(u, 1), (st, -1)] 0)
+      | _ => false
+  | _ => false
+
+/-- **Prefix weakening is sound** (proved): from `every(x, p, u, φ')`, `t`
+defined and `t ≤ u`, the target `every(s', p, t, φ)` holds. -/
+theorem everyPrefix_sound {K : Linear.Known Term} {M : Nat → List Nat} {m : PointClaims.Mapping}
+    {a : List IndexAtom} {t : IndexAtom} {ρ : Env} {h : Heap}
+    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hK : K.Holds (termValuation ε ρ h)) (ha : IndexHolds ε a ρ h)
+    (hf : everyPrefix K M m a t = true) : t.fact.HoldsAt ε (PointClaims.mapEnv m ρ) h := by
+  simp only [everyPrefix, Bool.and_eq_true] at hf
+  obtain ⟨-, hf⟩ := hf
+  split at hf
+  · rename_i s' p stop' body' hfact
+    rw [hfact]
+    simp only [Bool.and_eq_true] at hf
+    obtain ⟨hdef, hany⟩ := hf
+    obtain ⟨src, hsrc, hm⟩ := List.any_eq_true.mp hany
+    simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
+    obtain ⟨hcn, hm⟩ := hm
+    have hS := ha src hsrc fun c hc => by rw [hcn] at hc; cases hc
+    split at hm
+    · rename_i x q st b hsf
+      rw [hsf] at hS
+      simp only [Bool.and_eq_true, List.all_eq_true, beq_iff_eq] at hm
+      obtain ⟨⟨⟨hx, rfl⟩, hb⟩, hent⟩ := hm
+      obtain ⟨w, sto, ls, n, hw, hsto, hls, hn, hall⟩ := hS
+      obtain ⟨n', hn'⟩ := Option.isSome_iff_exists.mp (termDefined_sound ha hdef)
+      have hle := Linear.Known.entails_sound hK hent
+      simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, hn', hn, Option.getD_some] at hle
+      have hs' : PointClaims.mapEnv m ρ s' = ρ x := (hM _ _ (List.contains_iff_mem.mp hx)).symm
+      refine ⟨w, sto, ls, n', by rw [hs']; exact hw, hsto, hls, by rw [← pickTerm_eq hM]; exact hn',
+        fun i hi F' hF' => ?_⟩
+      obtain ⟨F, hF, hbf⟩ := List.any_eq_true.mp (hb F' hF')
+      simp only [bodyFactFollows, Bool.and_eq_true, List.all_eq_true, beq_iff_eq] at hbf
+      obtain ⟨hps, hmap⟩ := hbf
+      refine (LinearClause.holdsAt_mapVars hmap fun y _ z hz => ?_).mp (hall i (by omega) F hF)
+      exact boundFollows_sound hM (hps _ (lookup_mem' hz))
+    · cases hm
+  · cases hf
+
 /-- Whether each target atom follows from a source atom or from the source's
 linear facts, with the source's read links `ls` as the bridge (`bridgeOf`),
 or, guarded, from the source's guarded atoms (`guardFollows`), `tags` stating
 which guard paths read a tag's value, or from an atom its body follows from
-(`guardBodyFollows`). -/
+(`guardBodyFollows`), or, a quantified fact, from one over a longer prefix
+(`everyPrefix`). -/
 def indicesCheckWith (tags : Nat → List String → GuardTag → Bool) (M : Nat → List Nat) (ls : HeapLinks.Links)
     (a b : List IndexAtom) (m : PointClaims.Mapping) : Bool :=
   let B := bridgeOf ls a b
   let K := Thunk.mk fun _ => knownOf a
   b.all fun t => a.any (fun s => indexFollows M m s t) || linearFollowsIn K.get M m a B t || guardFollows M m ls tags a t ||
-    storeFollows M m ls a t || guardBodyFollows M m a t
+    storeFollows M m ls a t || guardBodyFollows M m a t || everyPrefix K.get M m a t
 
 /-- Whether a value set holds the value a guard's tag names alone. -/
 def onlyTag (V : ValueSets.ValueSet) : GuardTag → Bool
@@ -2093,7 +2149,9 @@ theorem indicesCheckWith_sound {tags : Nat → List String → GuardTag → Bool
     (ha : IndexHolds ε a ρ h) :
     IndexHolds ε b (PointClaims.mapEnv m ρ) h := by
   intro t ht hcond
-  rcases Bool.or_eq_true_iff.mp (List.all_eq_true.mp hc t ht) with hc' | hgb
+  rcases Bool.or_eq_true_iff.mp (List.all_eq_true.mp hc t ht) with hc' | hev
+  case inr => exact everyPrefix_sound hM (knownOf_holds ha) ha hev
+  rcases Bool.or_eq_true_iff.mp hc' with hc' | hgb
   case inr => exact guardBodyFollows_sound hM hgb ha
   rcases Bool.or_eq_true_iff.mp hc' with hc' | hst
   case inr => exact storeFollows_sound hM hl hst ha

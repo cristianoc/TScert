@@ -823,10 +823,13 @@ grown by a callee), its unsafe neighbour `invalid-bounds-pattern-known-growth`,
 false, run under Node), `two-state-ensures-value-import` (an importer
 reading the postcondition at its established entry), `two-state-guarded-call`
 and its unsafe neighbour `invalid-two-state-guarded-call` (a post under a
-guard), `two-state-either-call` (a post under a disjunction);
-`written-ensures-old-refused` is a gap at the entry check and
-`two-state-every-call-refused` at its callee's return, which entails a
-quantified fact only from one naming the same bound.
+guard), `two-state-either-call` (a post under a disjunction),
+`two-state-every-call` and its unsafe neighbour
+`invalid-two-state-every-call` (a post under a quantifier, its callee's
+return establishing it by prefix weakening), `two-state-guarded-start` (the
+start's identity under a guard), `two-state-post-defines` (two equalities
+through one entry value); `written-ensures-old-refused` is a gap at the
+entry check.
 
 **Implementation.** The positions are `CallEffects.ensuresEnv`, the meaning
 the last conjunct of `CallEffects.Effect.post`, which takes the call's
@@ -1282,6 +1285,18 @@ element fact from the same one renamed. A read of field $`f`$ from slot
 $`c`$ into slot $`v`$ restates of $`v`$ a quantified fact whose root, bound
 or body terms read through $`c.f`$ (proved), so `const { widths } = data`
 retains the fact of $`|\mathit{widths}|`$.
+
+**Prefix weakening.** Every entailment of index facts (an edge, a loop
+head, a return, a call's precondition) derives a quantified fact over a
+shorter prefix of the same array: from a source quantified fact whose body
+facts give the target's, a bound $`t`$ the facts state defined and entail
+at most the source's bound $`u`$ (`HeapKnowledge.everyPrefix`, proved
+`everyPrefix_sound`). Equal bounds are its instance.
+
+```math
+\frac{\mathrm{every}(x.p,u,\Phi)\qquad K\vdash t\ \text{defined}\qquad K\vdash t\le u}
+     {\mathrm{every}(x.p,t,\Phi)}\ \textsf{every-prefix}
+```
 
 **Empty arrays.** A quantified fact over an array of length zero holds for
 any body (proved). Its body terms need no interpretation, since no index
