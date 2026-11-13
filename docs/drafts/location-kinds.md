@@ -17,7 +17,11 @@ development: [Kinds](../../lean/Verification/Semantics/Kinds.lean),
 [KindsStates](../../lean/Verification/Semantics/KindsStates.lean),
 [KindsCapabilities](../../lean/Verification/Semantics/KindsCapabilities.lean),
 [KindsContracts](../../lean/Verification/Semantics/KindsContracts.lean),
-[KindsCalls](../../lean/Verification/Semantics/KindsCalls.lean) and
+[KindsCalls](../../lean/Verification/Semantics/KindsCalls.lean),
+[KindsEffects](../../lean/Verification/Semantics/KindsEffects.lean),
+[ElementWrites](../../lean/Verification/Semantics/ElementWrites.lean)
+(below the call effects, so that their postconditions can state the view
+write) and
 [KindsModelRules](../../lean/Verification/Programs/KindsModelRules.lean),
 each theorem checked by the
 [axiom check](../../lean/Verification/Tests/AxiomCheck.lean) in its block
@@ -230,7 +234,8 @@ The one condition on every native and every call contract
 budget (a heap meeting an admissible extension $`U`$ of the truncated
 world; callee, receiver and actuals valid in $`U`$ and of their input
 types; the precondition) the invocation is `SafeW` at its result type, its
-normal postcondition and its exceptional one. Every execution prefix of
+normal postcondition and its exceptional one, each given the entry budget,
+world $`U`$ and heap and reading the exit world (`CPost`, `CExc`). Every execution prefix of
 such a call then ends in a well-formed configuration under one extension
 of $`U`$, its budget possibly zero (**proved**, `SafeW.run`,
 `NativeContract.run`), and a thrown value is of the exception family with
@@ -250,9 +255,42 @@ configuration's world and heap, well-formed whatever the exceptional
 postcondition states (`SafeW.handle`); a callee meeting `NativeContract`
 makes its invocation `SafeW` (`NativeContract.safe`); the condition is
 closed downward (`NativeContract.down`) and a forwarding descriptor meets it
-when its target does (`NativeContract.bound`); world-indexed postconditions
-implying heap-only ones give `SafeW` at the heap-only ones lifted
-(`SafeW.erase`).
+when its target does, the target's postconditions read from the
+descriptor's entry world truncated by the forwarding step
+(`NativeContract.bound`); world-indexed postconditions implying heap-only
+ones give `SafeW` at the heap-only ones lifted (`SafeW.erase`).
+
+**Signatures over kinded worlds** (**proved**,
+[KindsEffects](../../lean/Verification/Semantics/KindsEffects.lean)). A
+signature's normal postcondition, given the call's entry world $`W`$ and
+heap $`h`$, is its heap postcondition and, where it states an element
+write, the view write from $`(W,h)`$ to the exit world and heap
+(`Effect.postK`); its exceptional one is its heap postcondition on a throw
+(`Effect.excPostK`). A promise over kinded worlds (`PromiseK`) is
+`NativeContract` at these; a construct signature (`ConstructK`) is the
+condition of `new` (`NativeConstruct`), whose construction is safe
+(`NativeConstruct.safe`). Two promises of one value whose signatures mean
+the same result (`Effect.sameResult`) give the promise of their meet
+(`PromiseK.combine`): the first run's world and its view write are kept,
+the second run takes the same steps and its heap postconditions hold at
+the same exits (`SafeW.cross`), and the two view writes are one, since the
+signatures state the same element write (`Effect.postK_meet`). A promise
+weakens to a signature it covers, its element write included
+(`PromiseK.weaken`, `Effect.coversK_sound`); allocation between the call's
+entry and its body composes with the postcondition, the view write
+included (`Effect.postK_prefix`, `ViewWrite.prefix_left`); a fact of the
+world that extension and truncation keep holds at every exit
+(`SafeW.world`).
+
+**One world per exit** (**proved**, `gate_write`, `gate_handled`). A
+callback allocates `{ f: x }`; then a value meeting two such promises is
+called with a view write among its effects. Every normal exit of
+`let o = { f: x } in g(r, args)` is at one world where the object's field
+capability holds, the heap meets the world in both parts (`SafeW.exit`),
+and both signatures' postconditions hold, the view write from the call's
+entry world; every throw into a node's handler enters it at one world with
+the heap well-formed, the thrown value valid, the capability, and the
+meet's exceptional postcondition.
 
 **Early evidence** (**proved**): the callback `throw { f: v }` is `SafeW`
 with no exceptional postcondition from every well-formed configuration
@@ -307,8 +345,13 @@ heap $`h`$ to the exit world $`W'`$ and heap $`h'`$ (`ViewWrite`):
 - every old location whose role is no view store keeps its contents;
 - every cell an old view store newly lists is fresh against $`h`$;
 - the exact form adds `ExactWrite` of the designated view's element type,
-  view, index and value: the cell at the index holds the type's conversion
-  of the value (`ElementKind.convert`).
+  view, index and value: the value is a safe integer within the type's
+  range (`ElementKind.Takes`), and the cell at the index holds the type's
+  conversion of it (`ElementKind.convert`, the host's ToUint8, ToUint16 or
+  ToInt32 there, the value itself for `Float64Array`:
+  `ElementKind.convert_takes`). An exact effect's precondition states the
+  range (`ElementKind.preFacts`, required by the effect decoder), and a call
+  meeting it writes such a value (`ElementKind.takes_of_requires`).
 
 Over the active worlds, which hold no roles, the element write's defining
 contract is the same relation read against a role assignment of the entry
@@ -319,8 +362,14 @@ whose role is no view store, each view store's length with its cells
 locations of the exit heap, and the freshness of newly listed cells. Three
 conjuncts read the kinded world and wait for it: the listed cells are E,
 every location has its role's shape, and the exit heap meets the exit world.
-The kinded relation gives the active one at the entry world's roles
-(`ViewWriteOf.holds`), and the coarse change follows from the active one
+`ViewWriteA` is the weaker relation of the active worlds: its role
+assignment is any one fitting the entry heap's categories, so an ordinary
+array's store may be classed a view store for it, and it states neither
+reference validity nor the contracts. The kinded relation gives it at the
+entry world's roles, one way (`ViewWriteOf.holds`); the statement the
+activation uses is `Effect.viewPost`, whose assignment is the entry world's
+roles and whose exit world is the one safety chose. The coarse change
+follows from the active one
 (`ViewWriteA.changes`); a location holding a string never comes to hold a
 store (`ElementWrite.Holds.not_string_to_store`). The relation from a heap
 holds from each of its prefixes (`ViewWriteA.prefix_left`).

@@ -32,19 +32,6 @@ open Verification.HeapKnowledge (ElementsBelow ElementsAbove RegionsApart viewLe
 
 /-! ## Structural consequences of heap satisfaction, at every budget -/
 
-/-- **Allocated cells**: every cell a store of a well-formed heap lists is an
-element cell of the world and a location of the heap. The budget is any,
-zero included. -/
-theorem HeapOk.store_cells {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h) {s : Nat}
-    {ls : List (Option Nat)} (hs : h[s]? = some (Tm.arr ls)) {l : Nat} (hl : some l ∈ ls) :
-    roleAt W l = some .elem ∧ l < h.length := by
-  have hk := (HeapOk.kinds hok).2.2 s ls hs l hl
-  refine ⟨?_, hk.2⟩
-  have hk1 := hk.1
-  simp only [K, kindAt, Option.map_eq_some_iff] at hk1
-  obtain ⟨r, hr, hk'⟩ := hk1
-  cases r <;> first | exact hr | simp [Role.kind] at hk'
-
 theorem HeapOk.elementsBelow {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h) {s : Nat}
     {ls : List (Option Nat)} (hs : h[s]? = some (Tm.arr ls)) : ElementsBelow h.length ls :=
   fun _ hl => (hok.store_cells hs hl).2

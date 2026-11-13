@@ -17,7 +17,7 @@ import Verification.Semantics.KindsAllocation
 import Verification.Semantics.KindsWrites
 import Verification.Semantics.KindsNatives
 import Verification.Programs.KindsModelRules
-import Verification.Semantics.KindsCalls
+import Verification.Semantics.KindsEffects
 import Lean.Util.CollectAxioms
 import Lean.Elab.Command
 import Lean.Compiler.CSimpAttr
@@ -1594,3 +1594,20 @@ run_cmd do
   check ``Verification.CallEffects.ElementKind.intValue_convert
   check ``Verification.CallEffects.ElementKind.readPath_convert
   check ``Verification.CallEffects.ElementKind.convert_negZero
+  check ``Verification.CallEffects.ElementKind.convert_takes
+  check ``Verification.CallEffects.ElementKind.takes_of_requires
+  -- call effects over kinded worlds and the composition gate
+  check ``Verification.Kinds.SafeW.consequence
+  check ``Verification.Kinds.SafeW.world
+  check ``Verification.Kinds.SafeW.cross
+  check ``Verification.CallEffects.Effect.postK_meet
+  check ``Verification.CallEffects.Effect.coversK_sound
+  check ``Verification.Kinds.ViewWrite.prefix_left
+  check ``Verification.CallEffects.Effect.postK_prefix
+  check ``Verification.Kinds.PromiseK.combine
+  check ``Verification.Kinds.PromiseK.weaken
+  check ``Verification.Kinds.ConstructsTo.step
+  check ``Verification.Kinds.NativeConstruct.safe
+  check ``Verification.Kinds.literal_safe
+  check ``Verification.Kinds.gate_write
+  check ``Verification.Kinds.gate_handled

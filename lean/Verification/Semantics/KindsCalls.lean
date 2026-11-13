@@ -178,14 +178,15 @@ meet the input contract at the world one step below, the invocation is safe
 at the contract's result type and both its postconditions. -/
 theorem NativeContract.safe {Ξ : Fam} {Acc : (j : Nat) → WorldT j → List Tm → Prop} {Rc : Fam}
     {requires : Tm → List Tm → Heap → Prop} {R : Tm → List Tm → Fam}
-    {post : Tm → List Tm → Heap → WPost} {excPost : Tm → List Tm → Heap → WExc}
+    {post : CPost} {excPost : CExc}
     {n : Nat} {W : WorldT (n + 1)} {v : Val}
     (hc : NativeContract Ξ Acc Rc requires R post excPost (n + 1) W v) (hadm : WorldAdm W)
     {heap : Heap} (hh : HeapOk (n + 1) W heap) (hv : RefsOk W v) {r : Tm} (hrv : isVal r = true)
     (hrc : Rc n (trunc n (Nat.le_succ n) W) r) (hrr : RefsOk W r) {args : List Tm}
     (ha : CallArguments.Values args) (hacc : Acc n (trunc n (Nat.le_succ n) W) args)
     (har : ∀ a ∈ args, RefsOk W a) (hreq : requires r args heap) :
-    SafeW Ξ (R r args) (post r args heap) (excPost r args heap) (n + 1) W heap (.invoke v r args) := by
+    SafeW Ξ (R r args) (post r args n (trunc n (Nat.le_succ n) W) heap)
+      (excPost r args n (trunc n (Nat.le_succ n) W) heap) (n + 1) W heap (.invoke v r args) := by
   obtain ⟨result, hi, hs⟩ := hc n (Nat.lt_succ_self n) _ (WExt_refl _) (WorldAdm_trunc _ hadm) heap
     (HeapOk_trunc n W heap hh) (RefsOk_trunc _ hv) r hrv hrc (RefsOk_trunc _ hrr) args ha hacc
     (fun a h => RefsOk_trunc _ (har a h)) hreq
@@ -198,7 +199,7 @@ theorem NativeContract.safe {Ξ : Fam} {Acc : (j : Nat) → WorldT j → List Tm
 and an extension of the world truncated there. -/
 theorem NativeContract.down {Ξ : Fam} {Acc : (j : Nat) → WorldT j → List Tm → Prop} {Rc : Fam}
     {requires : Tm → List Tm → Heap → Prop} {R : Tm → List Tm → Fam}
-    {post : Tm → List Tm → Heap → WPost} {excPost : Tm → List Tm → Heap → WExc}
+    {post : CPost} {excPost : CExc}
     {k : Nat} {W : WorldT k} {v : Val} (hc : NativeContract Ξ Acc Rc requires R post excPost k W v)
     {j : Nat} (hj : j ≤ k) {U : WorldT j} (hx : WExt (trunc j hj W) U) :
     NativeContract Ξ Acc Rc requires R post excPost j U v := by
@@ -209,12 +210,14 @@ theorem NativeContract.down {Ξ : Fam} {Acc : (j : Nat) → WorldT j → List Tm
 /-- **A forwarding descriptor meets the native-contract condition when its
 target does**, at the saved receiver and the saved prefix before the
 actuals, when the target's actuals' contract survives truncation, as an
-admissible family's does. Its invocation changes no heap: it calls the target, so every
+admissible family's does. The target is entered one step after the
+descriptor, so its postconditions are read from the descriptor's entry
+world truncated by that step. Its invocation changes no heap: it calls the target, so every
 configuration of the call is one of the target's. The descriptor's call
 ignores its own receiver. -/
 theorem NativeContract.bound {Ξ : Fam} {Acc : (j : Nat) → WorldT j → List Tm → Prop} {Rc : Fam}
     {requires : Tm → List Tm → Heap → Prop} {R : Tm → List Tm → Fam}
-    {post : Tm → List Tm → Heap → WPost} {excPost : Tm → List Tm → Heap → WExc}
+    {post : CPost} {excPost : CExc}
     {k : Nat} {W : WorldT k} {target r₀ : Tm} {pre : List Tm} {fs : List (PropKey × Nat)} {oid : Nat}
     (ht : NativeContract Ξ Acc Rc requires R post excPost k W target)
     (hr₀ : isVal r₀ = true) (hrc : ∀ j (U : WorldT j), j < k → Rc j U r₀)
@@ -222,7 +225,8 @@ theorem NativeContract.bound {Ξ : Fam} {Acc : (j : Nat) → WorldT j → List T
     (hdown : ∀ j (U : WorldT (j + 1)) args, Acc (j + 1) U args → Acc j (trunc j (Nat.le_succ j) U) args) :
     NativeContract Ξ (fun j U args => Acc j U (pre ++ args)) (fun _ _ _ => True)
       (fun _ args heap => requires r₀ (pre ++ args) heap) (fun _ args => R r₀ (pre ++ args))
-      (fun _ args heap => post r₀ (pre ++ args) heap) (fun _ args heap => excPost r₀ (pre ++ args) heap)
+      (fun _ args j U heap => post r₀ (pre ++ args) (j - 1) (trunc (j - 1) (Nat.sub_le j 1) U) heap)
+      (fun _ args j U heap => excPost r₀ (pre ++ args) (j - 1) (trunc (j - 1) (Nat.sub_le j 1) U) heap)
       k W (.objAt fs (.bound target r₀ pre) oid) := by
   intro j hj U hx hu heap hh hv r hrv _ _ args ha hacc har hreq
   have hrefs : RefsOk U target ∧ RefsOk U r₀ ∧ ∀ a ∈ pre, RefsOk U a := by

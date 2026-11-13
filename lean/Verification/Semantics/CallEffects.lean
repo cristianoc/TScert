@@ -3,7 +3,7 @@ import Verification.Semantics.Purity
 import Verification.Semantics.ClosedFootprints
 import Verification.Semantics.IndexFacts
 import Verification.Semantics.StoreRegions
-import Verification.Semantics.Kinds
+import Verification.Semantics.ElementWrites
 
 /-! Call postconditions qualify the same receiver/arguments/result contract
 as ordinary arrows. They concern calls admitted by that contract, not every
@@ -75,267 +75,6 @@ theorem ElemsAt.mono {R R' : ElemPred} {r : Tm} {h : Heap} (hle : R.le R' = true
     ElemsAt R' r h := by
   obtain ⟨s, ls, hs, hl, hall⟩ := he
   exact ⟨s, ls, hs, hl, fun l hm => let ⟨v, hv, hr⟩ := hall l hm; ⟨v, hv, ElemPred.le_sound hle hr⟩⟩
-
-/-- A typed array's element type: the element of a `Uint8Array`, a
-`Uint16Array`, an `Int32Array` or a `Float64Array` (`%ByteSet%`'s exact
-signatures, one per element type). -/
-inductive ElementKind where
-  | uint8
-  | uint16
-  | int32
-  | float64
-  deriving Repr, DecidableEq
-
-/-- **The value an element of type `k` holds after a write of `v`** within
-the exact form's precondition, `v` a safe integer in `k`'s range (ECMA-262,
-NumericToRawBytes, then RawBytesToNumeric): an integer type converts `v`
-(ToUint8, ToUint16, ToInt32), which gives the number denoting `v`'s integer
-(`int32Bits`, so `+0` of `-0`); a `Float64Array` element holds `v` itself.
-A value denoting no safe integer, outside the precondition, is left as it
-is. -/
-def ElementKind.convert : ElementKind → Tm → Tm
-  | .float64, v => v
-  | _, .num b => match SafeIntegers.safeIntOfBits b with
-    | some i => .num (int32Bits i)
-    | none => .num b
-  | _, v => v
-
-/-- A typed array's element write (`%ByteSet%`, a view's `fill`,
-`copyWithin` and `set`; SOURCE-CONTRACTS.md, "Stated library types"). The
-model holds a view's elements as a store (`viewElementsKey`) of fixed
-length, and a write replaces entries of the stores of the views over the
-written bytes by fresh cells (`ElementWrite.Holds`). -/
-inductive ElementWrite where
-  | stores
-  /-- Besides, the element store of the view (the first actual), whose
-  element type is `k`, changed only at the index (the second actual, a safe
-  integer below its length), whose entry is a location holding `k`'s
-  conversion of the value (the third actual, `ElementKind.convert`): each
-  element of a view is its own bytes of the buffer, and the value is a safe
-  integer within `k`'s range (`%ByteSet%`'s exact signatures). -/
-  | exact (k : ElementKind)
-  deriving Repr, DecidableEq
-
-/-- The coarse change an element write implies (`ElementWrite.Holds.changes`):
-no object or number altered, every store's length kept. The checker frames
-facts through it. -/
-def ElementWrite.changes : ElementWrite → HeapKnowledge.Changes
-  | _ => ⟨false, false, .length⟩
-
-/-- An exact element write of the actuals `args` into a view of element
-type `k`: where the store of elements of `args[0]` held entries `ls`, it
-lists after the call the same entries but at the safe integer `args[1]`,
-below their number, where it lists a location holding `k`'s conversion of
-`args[2]` (`ElementKind.convert`). -/
-def ExactWrite (k : ElementKind) (args : List Tm) (before after : Heap) : Prop :=
-  ∀ s ls, HeapKnowledge.elementsOf (args.getD 0 .undef) = some s → before[s]? = some (.arr ls) →
-    ∃ ls' b, ∃ i : Nat, after[s]? = some (.arr ls') ∧ args.getD 1 .undef = .num b ∧
-      SafeIntegers.SafeInt b (i : Int) ∧ i < ls.length ∧ (∀ j, j ≠ i → ls'[j]? = ls[j]?) ∧
-      ∃ l, ls'[i]? = some (some l) ∧ after[l]? = some (k.convert (args.getD 2 .undef))
-
-/-- The double `int32Bits i` denotes the safe integer `i`. -/
-theorem safeInt_int32Bits {i : Int} (hi : i.natAbs < 2 ^ 53) : SafeIntegers.SafeInt (int32Bits i) i := by
-  have hlt := SafeIntegers.bitsOfNat_lt hi
-  refine ⟨hi, ?_⟩
-  by_cases hn : i < 0
-  · refine .inr ⟨by omega, ?_⟩
-    have he : (-i).toNat = i.natAbs := by omega
-    simp only [int32Bits, if_pos hn, he, UInt64.toNat_or]
-    have hor := Nat.two_pow_add_eq_or_of_lt hlt 1
-    rw [Nat.mul_one] at hor
-    rw [show (0x8000000000000000 : UInt64).toNat = 2 ^ 63 from rfl, Nat.or_comm, ← hor]
-    omega
-  · refine .inl ⟨by omega, ?_⟩
-    simp only [int32Bits, if_neg hn]
-    congr 3
-    omega
-
-/-- **The conversion keeps the integer a value denotes.** -/
-theorem ElementKind.intValue_convert (k : ElementKind) (v : Tm) :
-    HeapKnowledge.intValue (k.convert v) = HeapKnowledge.intValue v := by
-  cases k <;> cases v <;> simp only [ElementKind.convert] <;>
-    first
-      | rfl
-      | (rename_i b
-         cases hb : SafeIntegers.safeIntOfBits b with
-         | none => rfl
-         | some i =>
-           simp only [HeapKnowledge.intValue, hb]
-           exact SafeIntegers.safeIntOfBits_complete
-             (safeInt_int32Bits (SafeIntegers.safeIntOfBits_sound hb).1))
-
-/-- **Every integer a term reads of a converted value is the one it reads of
-the value**: a number has no field, and its kinds read its integer alone. -/
-theorem ElementKind.readPath_convert (k : ElementKind) (h : Heap) (v : Tm) (p : List String)
-    (kd : HeapKnowledge.Term.Kind) :
-    (HeapKnowledge.readPath h (k.convert v) p).bind (HeapKnowledge.kindValue h kd) =
-      (HeapKnowledge.readPath h v p).bind (HeapKnowledge.kindValue h kd) := by
-  have hnum : ∀ b b', HeapKnowledge.intValue (.num b) = HeapKnowledge.intValue (.num b') →
-      (HeapKnowledge.readPath h (.num b) p).bind (HeapKnowledge.kindValue h kd) =
-        (HeapKnowledge.readPath h (.num b') p).bind (HeapKnowledge.kindValue h kd) := by
-    intro b b' he
-    cases p with
-    | cons _ _ => rfl
-    | nil =>
-      cases kd <;> simp [HeapKnowledge.readPath, HeapKnowledge.kindValue, HeapKnowledge.lengthOf,
-        HeapKnowledge.viewLengthOf, HeapKnowledge.strLengthOf, Footprints.storeOf, Footprints.fieldsOf, he]
-  have hc := k.intValue_convert v
-  cases v with
-  | num b =>
-    obtain ⟨b', hb'⟩ : ∃ b', k.convert (.num b) = .num b' := by
-      cases k <;> simp only [ElementKind.convert] <;> first | exact ⟨_, rfl⟩ | (split <;> exact ⟨_, rfl⟩)
-    rw [hb'] at hc ⊢
-    exact hnum _ _ hc
-  | _ => cases k <;> rfl
-
-/-- A number in its canonical form, a natural below `2^53`, is its own
-conversion. -/
-theorem ElementKind.convert_bitsOfNat (k : ElementKind) {n : Nat} (hn : n < 2 ^ 53) :
-    k.convert (.num (bitsOfNat n)) = .num (bitsOfNat n) := by
-  have hs : SafeIntegers.safeIntOfBits (bitsOfNat n) = some (n : Int) :=
-    SafeIntegers.safeIntOfBits_complete ⟨by simpa using hn, .inl ⟨by omega, by simp⟩⟩
-  cases k <;> simp [ElementKind.convert, hs, IndexNumbers.int32Bits_nat]
-
-/-- **An integer element converts `-0` to `+0`; a `Float64Array` element
-keeps it**: the exact write's statement separates the element types at
-`-0`, which every integer element type's precondition admits (`-0`
-denotes `0`). -/
-theorem ElementKind.convert_negZero :
-    SafeIntegers.SafeInt 0x8000000000000000 0 ∧
-      (∀ k : ElementKind, k ≠ .float64 → k.convert (.num 0x8000000000000000) = .num 0) ∧
-      ElementKind.float64.convert (.num 0x8000000000000000) = .num 0x8000000000000000 ∧
-      (Tm.num 0 : Tm) ≠ .num 0x8000000000000000 := by
-  have hz : SafeIntegers.SafeInt 0x8000000000000000 0 := ⟨by decide, .inr ⟨by decide, by
-    rw [show (0 : Int).natAbs = 0 from rfl, SafeIntegers.bitsOfNat_zero]; rfl⟩⟩
-  have hs := SafeIntegers.safeIntOfBits_complete hz
-  refine ⟨hz, fun k hk => ?_, rfl, by simp⟩
-  cases k <;> simp_all [ElementKind.convert, int32Bits, bitsOfNat] <;> decide
-
-/-- **A role assignment fitting a heap**: every location of the heap has a
-role (`Kinds.Role`), and its contents have that role's category
-(`Kinds.Cat`): a source value in F, C and E, a store in S, of the view's
-length in a view store, `null` in I. A kinded world's roles fit every heap
-meeting it (`Kinds.ViewWriteOf.holds`). -/
-structure RolesFit (roles : Nat → Option Kinds.Role) (h : Heap) : Prop where
-  dom : ∀ l, l < h.length → ∃ r, roles l = some r
-  cat : ∀ l r v, roles l = some r → h[l]? = some v → Kinds.Cat r v
-
-/-- **The view-element write from `before` to `after`, read against the
-roles `roles` of `before`'s locations** (location-kinds draft, §6): the
-domain grows; every location whose role is no view store keeps its
-contents; every view store of length `N` holds a store of length `N`
-listing locations of `after`; and every cell a view store newly lists is
-fresh against `before`. It constrains every view store, whichever view the
-call names. -/
-structure ViewWriteAt (roles : Nat → Option Kinds.Role) (before after : Heap) : Prop where
-  grows : before.length ≤ after.length
-  keep : ∀ l r, roles l = some r → (∀ N, r ≠ .store (.view N)) → after[l]? = before[l]?
-  view : ∀ l N, roles l = some (.store (.view N)) →
-    ∃ ls', after[l]? = some (.arr ls') ∧ ls'.length = N ∧ ∀ c, some c ∈ ls' → c < after.length
-  grow : ∀ l N ls ls', roles l = some (.store (.view N)) → before[l]? = some (.arr ls) →
-    after[l]? = some (.arr ls') → ∀ c, some c ∈ ls' → some c ∈ ls ∨ before.length ≤ c
-
-/-- **The view-element write over the active worlds**: `ViewWriteAt` at a
-role assignment fitting the entry heap. The active worlds hold no roles, so
-the assignment is a stated hypothesis of the relation, constrained by the
-entry heap's categories alone; over kinded worlds it is the entry world's
-(`Kinds.ViewWriteOf.holds`), and three conjuncts of the kinded relation
-(`Kinds.ViewWrite`) read that world: the cells a view store lists are
-element cells, every location, fresh ones included, has its role's shape,
-and the exit heap meets the exit world, which extends the entry one. -/
-def ViewWriteA (before after : Heap) : Prop :=
-  ∃ roles, RolesFit roles before ∧ ViewWriteAt roles before after
-
-/-- What an element write states of a call with actuals `args`: the view
-write, and, where exact, `ExactWrite`. -/
-def ElementWrite.Holds (w : ElementWrite) (args : List Tm) (before after : Heap) : Prop :=
-  ViewWriteA before after ∧ (∀ k, w = .exact k → ExactWrite k args before after)
-
-theorem RolesFit.role_of {roles : Nat → Option Kinds.Role} {h : Heap} (hf : RolesFit roles h) {l : Nat}
-    {v : Val} (hv : h[l]? = some v) : ∃ r, roles l = some r ∧ Kinds.Cat r v := by
-  obtain ⟨r, hr⟩ := hf.dom l (List.getElem?_eq_some_iff.mp hv).1
-  exact ⟨r, hr, hf.cat l r v hr hv⟩
-
-/-- **Every location holding no store keeps its contents.** -/
-theorem ViewWriteA.keeps {before after : Heap} (hw : ViewWriteA before after) {l : Nat} {v : Val}
-    (hv : before[l]? = some v) (hns : ∀ ls, v ≠ .arr ls) : after[l]? = some v := by
-  obtain ⟨roles, hf, hw⟩ := hw
-  obtain ⟨r, hr, hc⟩ := hf.role_of hv
-  rw [hw.keep l r hr (fun N hN => by subst hN; obtain ⟨ls, rfl, -⟩ := hc; exact hns ls rfl), hv]
-
-/-- **The coarse change is a consequence**: every location holding an object
-or a number keeps its contents, and every store keeps its length. -/
-theorem ViewWriteA.changes {before after : Heap} (hw : ViewWriteA before after) (w : ElementWrite) :
-    w.changes.Holds before after := by
-  refine ⟨fun l v hv halt => hw.keeps hv (fun ls h => ?_), fun _ l ls hl => ?_, fun hg => by cases w <;> cases hg⟩
-  · subst h; cases w <;> simp [ElementWrite.changes, HeapKnowledge.Changes.alters] at halt
-  · obtain ⟨roles, hf, hw⟩ := hw
-    obtain ⟨r, hr, hc⟩ := hf.role_of hl
-    cases r with
-    | store f =>
-      cases f with
-      | array => exact ⟨ls, by rw [hw.keep l _ hr (fun N hN => by cases hN), hl], rfl⟩
-      | view N =>
-        obtain ⟨ls₀, he, hlen⟩ := hc
-        cases he
-        obtain ⟨ls', hl', hlen', -⟩ := hw.view l N hr
-        exact ⟨ls', hl', by omega⟩
-    | field | cell | elem => simp [Kinds.Cat, isSourceVal] at hc
-    | identity => simp [Kinds.Cat] at hc
-
-theorem ElementWrite.Holds.changes {w : ElementWrite} {args : List Tm} {before after : Heap}
-    (h : w.Holds args before after) : w.changes.Holds before after := h.1.changes w
-
-/-- **A location holding a string never comes to hold a store**: the coarse
-change admits it (`Kinds.elementWrite_not_respects`), the element write does
-not. -/
-theorem ElementWrite.Holds.not_string_to_store (w : ElementWrite) (args : List Tm) (s : String) :
-    ¬ w.Holds args [.str s] [.arr []] := fun h => by
-  have := h.1.keeps (l := 0) rfl (fun _ h => by cases h)
-  simp at this
-
-theorem ExactWrite.prefix_left {k : ElementKind} {args : List Tm} {before middle after : Heap}
-    (hx : ExactWrite k args middle after) (hprefix : before.IsPrefix middle) : ExactWrite k args before after := by
-  intro s ls hs hls
-  apply hx s ls hs
-  obtain ⟨t, rfl⟩ := hprefix
-  rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hls).1, hls]
-
-/-- The view write from a heap holds from each of its prefixes, the roles
-restricted to the prefix's locations. -/
-theorem ViewWriteA.prefix_left {before middle after : Heap} (hw : ViewWriteA middle after)
-    (hp : before.IsPrefix middle) : ViewWriteA before after := by
-  obtain ⟨roles, hf, hv⟩ := hw
-  obtain ⟨t, rfl⟩ := hp
-  have hget : ∀ l, l < before.length → (before ++ t)[l]? = before[l]? := fun l hl =>
-    List.getElem?_append_left hl
-  refine ⟨fun l => if l < before.length then roles l else none, ⟨fun l hl => ?_, fun l r v hr hv' => ?_⟩,
-    ⟨?_, fun l r hr hne => ?_, fun l N hr => ?_, fun l N ls ls' hr hl hl' c hc => ?_⟩⟩
-  · simp only [if_pos hl]; exact hf.dom l (by simp; omega)
-  · split at hr
-    · exact hf.cat l r v hr (by rw [hget l ‹_›]; exact hv')
-    · cases hr
-  · have := hv.grows; simp at this; omega
-  · split at hr
-    · rw [hv.keep l r hr hne, hget l ‹_›]
-    · cases hr
-  · split at hr
-    · exact hv.view l N hr
-    · cases hr
-  · split at hr
-    · rcases hv.grow l N ls ls' hr (by rw [hget l ‹_›]; exact hl) hl' c hc with h | h
-      · exact .inl h
-      · right; simp at h; omega
-    · cases hr
-
-theorem ElementWrite.Holds.prefix_left {w : ElementWrite} {args : List Tm} {before middle after : Heap}
-    (hx : w.Holds args middle after) (hprefix : before.IsPrefix middle) : w.Holds args before after :=
-  ⟨hx.1.prefix_left hprefix, fun k he => (hx.2 k he).prefix_left hprefix⟩
-
-/-- An element write of any actuals keeps what a write of stores does. -/
-theorem ElementWrite.Holds.stores {w : ElementWrite} {args args' : List Tm} {before after : Heap}
-    (h : w.Holds args before after) : ElementWrite.stores.Holds args' before after :=
-  ⟨h.1, fun _ he => by cases he⟩
 
 /-- What a call signature guarantees beyond its contract: a closed footprint
 (`Footprints.Closed`) bounding the change from its entry heap to the heap a
@@ -430,6 +169,28 @@ def Effect.Requires (e : Effect) (r : Tm) (args : List Tm) (h : Heap) : Prop :=
 theorem Effect.requires_none {e : Effect} (h : e.requires = none) (hp : e.pre = []) (r : Tm) (args : List Tm)
     (heap : Heap) : e.Requires r args heap :=
   ⟨fun R hR => (by rw [h] at hR; cases hR), fun F hF => (by rw [hp] at hF; cases hF)⟩
+
+/-- **An exact write's precondition gives the range of its value**: where an
+effect's precondition states each fact of `ElementKind.preFacts` (as the
+effect decoder requires of an exact element write), a call meeting it has a
+value (the third actual) its element type takes, so the exact write's
+statement (`ExactWrite`) is the host's conversion of that value. -/
+theorem ElementKind.takes_of_requires {e : Effect} {k : ElementKind}
+    (hpre : ∀ F ∈ k.preFacts, F ∈ e.pre) {r : Tm} {args : List Tm} {heap : Heap}
+    (hq : e.Requires r args heap) : k.Takes (args.getD 2 .undef) := by
+  have hf : ∀ F ∈ k.preFacts, F.HoldsAt ⟨callEnv r args, heap⟩ (callEnv r args) heap :=
+    fun F hF => hq.2 F (hpre F hF)
+  have h3 : callEnv r args 3 = args.getD 2 .undef := rfl
+  have hint := hf (.int 3) (by simp [ElementKind.preFacts])
+  simp only [HeapKnowledge.IndexFact.HoldsAt, h3] at hint
+  obtain ⟨i, hi⟩ := Option.isSome_iff_exists.mp hint
+  obtain ⟨b, hb, hs⟩ := HeapKnowledge.intValue_safe hi
+  refine ⟨b, i, hb, hs, fun lo hi' hr => ?_⟩
+  have hlo := hf (.linear (.le [(.value 3, -1)] (-lo))) (by simp [ElementKind.preFacts, hr])
+  have hhi := hf (.linear (.le [(.value 3, 1)] hi')) (by simp [ElementKind.preFacts, hr])
+  simp only [HeapKnowledge.IndexFact.HoldsAt, Linear.Fact.Holds, Linear.Form.eval,
+    HeapKnowledge.termValuation, HeapKnowledge.termValue_value, h3, hi, Option.getD_some] at hlo hhi
+  omega
 
 /-- An ordinary arrow's guarantee: none beyond its contract. -/
 def Effect.ordinary : Effect := .ofFootprint .top

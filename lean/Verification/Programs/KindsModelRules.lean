@@ -190,7 +190,8 @@ theorem viewWrite_overlap (n : Nat) :
       simp [overlapAfter] at hl' <;> subst hl' <;> simp at hc <;> subst hc <;>
       exact .inr (by simp [overlapBefore])
   · cases hk
-    intro s ls hs hls
+    refine ⟨⟨oneBits, 1, rfl, oneBits_safe, fun lo hi he => by
+      simp [CallEffects.ElementKind.range] at he; omega⟩, fun s ls hs hls => ?_⟩
     have h0 : SafeIntegers.SafeInt (0 : UInt64) (0 : Int) := ⟨by decide, .inl ⟨by decide, rfl⟩⟩
     have he : HeapKnowledge.elementsOf overlapView = some 0 := by decide
     have hg : ([overlapView, Tm.num 0, Tm.num oneBits] : List Tm).getD 0 .undef = overlapView := rfl
@@ -340,7 +341,8 @@ theorem host_viewWrite (n : Nat) :
       simp [hostAfter] at hl' <;> subst hl' <;> simp at hc <;> subst hc <;>
       exact .inr (by simp [hostBefore])
   · cases hk
-    intro s ls hs hls
+    refine ⟨⟨oneBits, 1, rfl, oneBits_safe, fun lo hi he => by
+      simp [CallEffects.ElementKind.range] at he; omega⟩, fun s ls hs hls => ?_⟩
     have h0 : SafeIntegers.SafeInt (0 : UInt64) (0 : Int) := ⟨by decide, .inl ⟨by decide, rfl⟩⟩
     have he : HeapKnowledge.elementsOf hostView = some 0 := by decide
     have hg : ([hostView, Tm.num 0, Tm.num oneBits] : List Tm).getD 0 .undef = hostView := rfl

@@ -6,9 +6,8 @@ import Verification.Semantics.KindsCapabilities
 
 A **world-indexed postcondition** (`WPost`) is a predicate of an exit: the
 budget left, the world the safety derivation chose there, the heap and the
-result. A postcondition of the heap and result alone lifts by ignoring the
-world (`WPost.lift`); a contract that must speak of roles reads the exit
-world, which is the one typing and structural validity use.
+result. A contract that must speak of roles reads the exit world, which is
+the one typing and structural validity use.
 
 **Safety with world-indexed postconditions** (`SafeW`) is the safety
 predicate of `Semantics/ExceptionalPosts.lean` over kinded worlds, with the
@@ -23,36 +22,12 @@ of every native and every call contract: from every well-formed entry
 configuration meeting the input contract, the call is safe in that sense at
 its result type, its normal postcondition and its exceptional one.
 
-**The view-element write** (`ViewWrite`) is the primitive contract of a typed
-array's element write as a relation between the entry world and heap and the
-exit ones. It is a world-indexed postcondition (`ViewWrite.post`), and the
-active element write of `CallEffects.ElementWrite` is its consequence at the
-entry world's roles (`ViewWriteOf.holds`).
+World-indexed postconditions (`WPost`, `WExc`) and the view-element write
+(`ViewWrite`), a postcondition of that kind, are defined below the call
+effects, in `Semantics/ElementWrites.lean`.
 -/
 namespace Verification.Kinds
 open Verification
-
-/-! ## World-indexed postconditions -/
-
-/-- A postcondition of a normal exit: the budget left, the exit world, the
-heap and the result. -/
-abbrev WPost := (k : Nat) → WorldT k → Heap → Val → Prop
-
-/-- A postcondition of an exceptional exit: the budget left, the exit world
-and the heap the term raises in. -/
-abbrev WExc := (k : Nat) → WorldT k → Heap → Prop
-
-/-- A postcondition of the heap and the result lifts by ignoring the world. -/
-def WPost.lift (Q : Heap → Val → Prop) : WPost := fun _ _ h v => Q h v
-
-/-- A postcondition of the heap lifts by ignoring the world. -/
-def WExc.lift (R : Heap → Prop) : WExc := fun _ _ h => R h
-
-@[simp] theorem WPost.lift_apply (Q : Heap → Val → Prop) {k : Nat} (W : WorldT k) (h : Heap) (v : Val) :
-    WPost.lift Q k W h v ↔ Q h v := Iff.rfl
-
-@[simp] theorem WExc.lift_apply (R : Heap → Prop) {k : Nat} (W : WorldT k) (h : Heap) :
-    WExc.lift R k W h ↔ R h := Iff.rfl
 
 /-! ## Safety with world-indexed postconditions -/
 
@@ -127,6 +102,15 @@ theorem SafeW.run {Ξ T : Fam} {Q : WPost} {R : WExc} :
 
 /-! ## The native-contract condition -/
 
+/-- A call's normal postcondition: given the receiver, the actuals, and the
+entry budget, world and heap, a world-indexed postcondition of the exit. -/
+abbrev CPost := Tm → List Tm → (j : Nat) → WorldT j → Heap → WPost
+
+/-- A call's exceptional postcondition: given the receiver, the actuals, and
+the entry budget, world and heap, a world-indexed postcondition of the
+throwing configuration. -/
+abbrev CExc := Tm → List Tm → (j : Nat) → WorldT j → Heap → WExc
+
 /-- **The native-contract condition** of a callable value `v`, at budget `k`
 and world `W`. From every well-formed entry configuration below `k` (a heap
 meeting an admissible extension `U` of the truncated world, with the
@@ -135,11 +119,12 @@ meets the input contract (the receiver's type `Rc`, the actuals' `Acc`, the
 precondition `requires`), the invocation is safe with world-indexed
 postconditions: a normal result has the result type `R` and meets `post` at
 its exit world, a throw is of the exception family `Ξ` and meets `excPost`
-at its exit world, and every configuration on the way is well-formed under
-one extension of `U` (`NativeContract.run`). -/
+at its exit world, each given the entry world and heap, and every
+configuration on the way is well-formed under one extension of `U`
+(`NativeContract.run`). -/
 def NativeContract (Ξ : Fam) (Acc : (j : Nat) → WorldT j → List Tm → Prop) (Rc : Fam)
     (requires : Tm → List Tm → Heap → Prop) (R : Tm → List Tm → Fam)
-    (post : Tm → List Tm → Heap → WPost) (excPost : Tm → List Tm → Heap → WExc)
+    (post : CPost) (excPost : CExc)
     (k : Nat) (W : WorldT k) (v : Val) : Prop :=
   ∀ (j : Nat) (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U →
     ∀ (heap : Heap), HeapOk j U heap → RefsOk U v →
@@ -147,7 +132,7 @@ def NativeContract (Ξ : Fam) (Acc : (j : Nat) → WorldT j → List Tm → Prop
       ∀ args, CallArguments.Values args → Acc j U args → (∀ a ∈ args, RefsOk U a) →
         requires r args heap →
         ∃ result, CallArguments.Invoke ⟨v, r, args⟩ result ∧
-          SafeW Ξ (R r args) (post r args heap) (excPost r args heap) j U heap result
+          SafeW Ξ (R r args) (post r args j U heap) (excPost r args j U heap) j U heap result
 
 /-- **A contract's every execution prefix is well-formed**: the configuration
 `i` steps into the call meets one extension of the entry world truncated to
@@ -155,7 +140,7 @@ the budget left, in both parts of heap satisfaction and with valid
 references. -/
 theorem NativeContract.run {Ξ : Fam} {Acc : (j : Nat) → WorldT j → List Tm → Prop} {Rc : Fam}
     {requires : Tm → List Tm → Heap → Prop} {R : Tm → List Tm → Fam}
-    {post : Tm → List Tm → Heap → WPost} {excPost : Tm → List Tm → Heap → WExc}
+    {post : CPost} {excPost : CExc}
     {k : Nat} {W : WorldT k} {v : Val} (hc : NativeContract Ξ Acc Rc requires R post excPost k W v)
     {j : Nat} (hj : j < k) {U : WorldT j} (hx : WExt (trunc j (Nat.le_of_lt hj) W) U) (hu : WorldAdm U)
     {heap : Heap} (hh : HeapOk j U heap) (hv : RefsOk U v) {r : Tm} (hr : isVal r = true)
@@ -169,116 +154,5 @@ theorem NativeContract.run {Ξ : Fam} {Acc : (j : Nat) → WorldT j → List Tm 
   refine ⟨result, hi, fun hst hle => ?_⟩
   obtain ⟨m, hm, U', hmi, hx', -, hh', hr', -⟩ := hs.run hst hle hu hh
   exact ⟨m, hm, U', hmi, hx', hh', hr'⟩
-
-/-! ## The view-element write -/
-
-/-- **The view-element write**, from the entry world `W` and heap `h` to the
-exit world `W'` and heap `h'`. The exit world extends the entry one
-truncated to its budget; the exit heap meets the exit world in both parts,
-so its domain is the exit world's, each location has its role's shape and
-its contract's contents, the fresh ones included; every old location whose
-role is no view store keeps its contents; and each cell an old view store
-newly lists is fresh against `h`. The relation constrains every view store,
-whichever view the call names. -/
-structure ViewWrite {n n' : Nat} (W : WorldT n) (h : Heap) (W' : WorldT n') (h' : Heap) : Prop where
-  le : n' ≤ n
-  ext : WExt (trunc n' le W) W'
-  ok : HeapOk n' W' h'
-  keep : ∀ (l : Nat) (r : Role), roleAt W l = some r → (∀ N, r ≠ .store (.view N)) → h'[l]? = h[l]?
-  grow : ∀ (l N : Nat) (ls ls' : List (Option Nat)), roleAt W l = some (.store (.view N)) →
-    h[l]? = some (Tm.arr ls) → h'[l]? = some (Tm.arr ls') →
-    ∀ c, some c ∈ ls' → some c ∈ ls ∨ h.length ≤ c
-
-namespace ViewWrite
-variable {n n' : Nat} {W : WorldT n} {h : Heap} {W' : WorldT n'} {h' : Heap}
-
-/-- Every location keeps its role. -/
-theorem roleAt (hw : ViewWrite W h W' h') {l : Nat} {r : Role} (hl : roleAt W l = some r) :
-    Kinds.roleAt W' l = some r := WExt_roleAt hw.ext (by simpa using hl)
-
-/-- **An ordinary array's store is kept.** -/
-theorem keeps_array (hw : ViewWrite W h W' h') {l : Nat} (hl : Kinds.roleAt W l = some (.store .array)) :
-    h'[l]? = h[l]? := hw.keep l _ hl (fun N hN => by cases hN)
-
-/-- **An old view store holds a replacement store of its fixed length, whose
-present entries are element cells of the exit world and locations of the
-exit heap.** -/
-theorem view_store (hw : ViewWrite W h W' h') {l N : Nat}
-    (hl : Kinds.roleAt W l = some (.store (.view N))) :
-    ∃ ls', h'[l]? = some (Tm.arr ls') ∧ ls'.length = N ∧
-      ∀ c, some c ∈ ls' → Kinds.roleAt W' c = some .elem ∧ c < h'.length := by
-  obtain ⟨u, hu, ⟨ls', rfl, hlen⟩, -⟩ := hw.ok.2 l _ (hw.roleAt hl)
-  exact ⟨ls', hu, hlen, fun c hc => hw.ok.store_cells hu hc⟩
-
-/-- **A fresh location has its role's shape.** -/
-theorem fresh (hw : ViewWrite W h W' h') {l : Nat} {r : Role} (hl : Kinds.roleAt W' l = some r) :
-    ∃ u, h'[l]? = some u ∧ Shape W' r u := hw.ok.2 l r hl
-
-/-- **The coarse change is a consequence**: from a well-formed entry heap,
-every location holding an object or a number keeps its contents, and every
-store keeps its length (`CallEffects.ElementWrite.changes`). -/
-theorem changes (hw : ViewWrite W h W' h') (hok : HeapOk n W h) (w : CallEffects.ElementWrite) :
-    w.changes.Holds h h' := by
-  have role_of : ∀ {l : Nat} {v : Val}, h[l]? = some v → ∃ r, Kinds.roleAt W l = some r ∧ Shape W r v := by
-    intro l v hv
-    have hlt : l < (entries W).length := by
-      have h1 := (List.getElem?_eq_some_iff.mp hv).1
-      have h2 : h.length = (entries W).length := by simpa using hok.1.1
-      omega
-    obtain ⟨r, hr⟩ := roleAt_some hlt
-    obtain ⟨u, hu, hs⟩ := hok.2 l r hr
-    rw [hv] at hu; cases hu
-    exact ⟨r, hr, hs⟩
-  refine ⟨fun l v hv halt => ?_, fun _ l ls hl => ?_, fun hg => by cases w <;> cases hg⟩
-  · obtain ⟨r, hr, hc, -⟩ := role_of hv
-    rw [hw.keep l r hr (fun N hN => ?_), hv]
-    subst hN
-    obtain ⟨ls, rfl, -⟩ := hc
-    cases w <;> simp [CallEffects.ElementWrite.changes, HeapKnowledge.Changes.alters] at halt
-  · obtain ⟨r, hr, hc, -⟩ := role_of hl
-    cases r with
-    | store f =>
-      cases f with
-      | array => exact ⟨ls, by rw [hw.keeps_array hr, hl], rfl⟩
-      | view N =>
-        obtain ⟨ls₀, he, hlen⟩ := hc
-        cases he
-        obtain ⟨ls', hl', hlen', -⟩ := hw.view_store hr
-        exact ⟨ls', hl', by omega⟩
-    | field | cell | elem => simp [Cat, isSourceVal] at hc
-    | identity => simp [Cat] at hc
-
-end ViewWrite
-
-/-- **The view-element write of a call's actuals**: the relation, and for the
-exact form the designated view's store changed at the index alone
-(`CallEffects.ExactWrite`). Exactness constrains the designated view; every
-other view store may change. -/
-def ViewWriteOf (w : CallEffects.ElementWrite) (args : List Tm) {n n' : Nat} (W : WorldT n) (h : Heap)
-    (W' : WorldT n') (h' : Heap) : Prop :=
-  ViewWrite W h W' h' ∧ (∀ k, w = .exact k → CallEffects.ExactWrite k args h h')
-
-/-- **The active element write follows from the relation**: at the entry
-world's roles, which fit every heap meeting it, the relation is the active
-one (`CallEffects.ViewWriteA`), and for the exact form `ExactWrite` holds. -/
-theorem ViewWriteOf.holds {w : CallEffects.ElementWrite} {args : List Tm} {n n' : Nat} {W : WorldT n}
-    {h : Heap} {W' : WorldT n'} {h' : Heap} (hw : ViewWriteOf w args W h W' h') (hok : HeapOk n W h) :
-    w.Holds args h h' := by
-  have hlen : h.length = (entries W).length := by simpa using hok.1.1
-  have hlen' : h'.length = (entries W').length := by simpa using hw.1.ok.1.1
-  have hge : (entries W).length ≤ (entries W').length := by
-    have := WExt_length hw.1.ext; simpa using this
-  refine ⟨⟨roleAt W, ⟨fun l hl => roleAt_some (by omega), fun l r v hr hv => ?_⟩,
-    ⟨by omega, hw.1.keep, fun l N hr => ?_, hw.1.grow⟩⟩, hw.2⟩
-  · obtain ⟨u, hu, hc, -⟩ := hok.2 l r hr
-    rw [hv] at hu; cases hu; exact hc
-  · obtain ⟨ls', hl', hn, hc⟩ := hw.1.view_store hr
-    exact ⟨ls', hl', hn, fun c h => (hc c h).2⟩
-
-/-- The view-element write as a world-indexed postcondition of a call
-entered at the world `W` and heap `h`: it reads the exit world the safety
-derivation chose. -/
-def ViewWrite.post (w : CallEffects.ElementWrite) (args : List Tm) {n : Nat} (W : WorldT n) (h : Heap) :
-    WPost := fun _ W' h' _ => ViewWriteOf w args W h W' h'
 
 end Verification.Kinds

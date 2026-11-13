@@ -1928,7 +1928,13 @@ read gives the number denoting $`v`$'s integer, $`+0`$ where $`v`$ is
 $`-0`$; for `Float64Array`, $`v`$ itself, $`-0`$ included. So a normal
 return leaves the view's element store listing the same entries but at
 $`k`$, where it lists a location holding $`\mathrm{conv}_t(v)`$
-(`CallEffects.ExactWrite`), beside the change every write makes; other
+(`CallEffects.ExactWrite`), beside the change every write makes. The
+exact write states $`v`$ a safe integer within $`t`$'s range
+(`ElementKind.Takes`), where $`\mathrm{conv}_t`$ is the host's conversion
+(`ElementKind.convert_takes`); an exact effect's precondition states that
+range (`ElementKind.preFacts`), so a call meeting it writes such a value
+(`ElementKind.takes_of_requires`), and the effect decoder refuses an exact
+effect whose precondition omits it. Other
 views over the bytes may change, as above. $`\mathrm{conv}_t(v)`$ and
 $`v`$ denote the same integer (`ElementKind.intValue_convert`), which is
 what every index fact reads; the two differ only at $`-0`$ of an integer type

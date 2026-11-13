@@ -565,6 +565,19 @@ theorem HeapOk.kinds {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h) :
 
 /-! ## What kinded satisfaction excludes -/
 
+/-- **Allocated cells**: every cell a store of a well-formed heap lists is an
+element cell of the world and a location of the heap. The budget is any,
+zero included. -/
+theorem HeapOk.store_cells {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h) {s : Nat}
+    {ls : List (Option Nat)} (hs : h[s]? = some (Tm.arr ls)) {l : Nat} (hl : some l ∈ ls) :
+    roleAt W l = some .elem ∧ l < h.length := by
+  have hk := (HeapOk.kinds hok).2.2 s ls hs l hl
+  refine ⟨?_, hk.2⟩
+  have hk1 := hk.1
+  simp only [K, kindAt, Option.map_eq_some_iff] at hk1
+  obtain ⟨r, hr, hk'⟩ := hk1
+  cases r <;> first | exact hr | simp [Role.kind] at hk'
+
 /-- **The audit's counter-heap is excluded.** In `[[1], 0, null]` the array
 `z` holds its store at 0 and the object `o` its field `f` at 1, which `z`'s
 store lists: location 1 would be both a field (or cell) location and an

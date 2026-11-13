@@ -9,7 +9,9 @@ closed `footprint`, `{"value", "store"}`; a `promise`, `null` or
 element predicates `requires` and `elements`, each `null` or its kinds in
 order; the index-fact lists `pre` and `ensures`; the Boolean
 `receiverGrows`; and `elementWrite`, `null`, `"stores"` or the exact write of an element type,
-`"exactUint8"`, `"exactUint16"`, `"exactInt32"` or `"exactFloat64"`. Each decoder
+`"exactUint8"`, `"exactUint16"`, `"exactInt32"` or `"exactFloat64"`, whose
+precondition states the value's range (`ElementKind.preFacts`, which
+`ElementKind.takes_of_requires` reads as the range `ExactWrite` states). Each decoder
 re-encodes what it read and refuses a document that differs, so a field
 outside these, a `grow` on `value` or an `init` or `scalar` on `store`, is refused. -/
 namespace Verification.EffectJson
@@ -178,6 +180,21 @@ instance : FromJson Effect := ⟨fun j => do
     throw ("an effect has exactly the fields footprint, promise, fresh, receiverStore, onThrow, receiverOwn, " ++
       "freshObject, requires, elements, a predicate its kinds in order, pre, ensures, receiverGrows and elementWrite, " ++
       "and regions where its frame states store regions")
+  if let some (.exact k) := e.elementWrite then
+    unless k.preFacts.all e.pre.contains do
+      throw s!"an exact element write '{elementWriteName (.exact k)}' states its value's range in its precondition"
   pure e⟩
+
+/-- An exact element write is decoded with its value's range in its
+precondition, and refused without it. -/
+private def decodes (e : Effect) : Bool :=
+  match (fromJson? (toJson e) : Except String Effect) with
+  | .ok d => d == e
+  | .error _ => false
+
+#guard decodes { Effect.ordinary with elementWrite := some (.exact .uint8), pre := ElementKind.preFacts .uint8 }
+#guard decodes { Effect.ordinary with elementWrite := some (.exact .float64), pre := ElementKind.preFacts .float64 }
+#guard !decodes { Effect.ordinary with elementWrite := some (.exact .uint8) }
+#guard !decodes { Effect.ordinary with elementWrite := some (.exact .int32), pre := ElementKind.preFacts .uint8 }
 
 end Verification.EffectJson

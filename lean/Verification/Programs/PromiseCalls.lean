@@ -2724,7 +2724,7 @@ theorem every_written {ρ : Env} {h h' : Heap} {b i x s : Nat} {st : Term} {body
   obtain ⟨w, sto, ls, n, hw, hsto, hls, hn, hall⟩ := hF
   simp only [readPath, Option.some.injEq] at hw
   subst hw
-  obtain ⟨ls', kb, i0, hls', hkb, hi0, hlt, hj, l, hl, hlv⟩ := hx sto ls (by simpa [hs] using hsto) hls
+  obtain ⟨ls', kb, i0, hls', hkb, hi0, hlt, hj, l, hl, hlv⟩ := hx.2 sto ls (by simpa [hs] using hsto) hls
   simp only [List.getD_cons_succ, List.getD_cons_zero] at hkb hlv
   have hki : intValue (ρ i) = some (i0 : Int) := by rw [hkb]; exact intValue_num hi0
   have hn' := termValue_kept hc firstKept_none hst hn
@@ -2800,7 +2800,7 @@ theorem every_written_prefix {ρ : Env} {h h' : Heap} {b i x s : Nat} {st next :
   obtain ⟨w, sto, ls, n, hw, hsto, hls, hn, hall⟩ := hF
   simp only [readPath, Option.some.injEq] at hw
   subst hw
-  obtain ⟨ls', kb, i0, hls', hkb, hi0, hlt, hj, l, hl, hlv⟩ := hx sto ls (by simpa [hs] using hsto) hls
+  obtain ⟨ls', kb, i0, hls', hkb, hi0, hlt, hj, l, hl, hlv⟩ := hx.2 sto ls (by simpa [hs] using hsto) hls
   simp only [List.getD_cons_succ, List.getD_cons_zero] at hkb hlv
   have hki : intValue (ρ i) = some (i0 : Int) := by rw [hkb]; exact intValue_num hi0
   obtain ⟨n', hn0⟩ := Option.isSome_iff_exists.mp (termDefined_sound he hnext)
