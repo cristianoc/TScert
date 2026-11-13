@@ -1192,8 +1192,12 @@ admit its key, at exactly that index's type or beside an index no value meets
 ($`\varnothing(V)`$), so a key added there keeps it. The object owns no other
 key, so every index, a view or writable, holds of it (`dictCellT_of_recT`),
 it lacks every optional field (no prototype), and no bound is claimed that a
-key added later would falsify. With $`\overline{D}`$ the index views and
-$`\overline{C}`$ the writable indexes:
+key added later would falsify. One location is granted by a named field,
+or a writable optional field, and by every writable index whose class may
+admit its key, so their storage roles agree: each named field's role $`s_i`$
+and each writable optional field's role are those of every such index. With
+$`\overline{D}`$ the index views and $`\overline{C}`$ the writable indexes,
+$`\theta{:}^{s}V`$ an index of role $`s`$:
 
 ```math
 \frac{\begin{array}{c}
@@ -1201,9 +1205,12 @@ $`\overline{C}`$ the writable indexes:
       \Gamma\vdash_G e_i:A_i\quad
       \forall i.\;\forall(\theta{:}V)\in\overline{D}\,\overline{C}.\;\theta\ni_?k_i\Rightarrow A_i=V\\
       \forall(\kappa{:}^{r}B)\in\omega.\;\kappa\notin\vec k\land
-      \forall(\theta{:}V)\in\overline{C}.\;\theta\ni_?\kappa\Rightarrow B=V\lor\varnothing(V)
+      \forall(\theta{:}V)\in\overline{C}.\;\theta\ni_?\kappa\Rightarrow B=V\lor\varnothing(V)\\
+      \forall i.\;\forall(\theta{:}^{s}V)\in\overline{C}.\;\theta\ni_?k_i\Rightarrow s_i=s\quad
+      \forall(\kappa{:}^{r}_{t}B)\in\omega.\;r=\mathsf{false}\Rightarrow
+      \forall(\theta{:}^{s}V)\in\overline{C}.\;\theta\ni_?\kappa\Rightarrow t=s
       \end{array}}
-     {\Gamma\vdash_G\{\overline{k_i{:}e_i}\}:\mathsf{Dict}(\overline{k_i{:}A_i};\overline{D};\overline{C};\omega)}
+     {\Gamma\vdash_G\{\overline{k_i{:}e_i}\}:\mathsf{Dict}(\overline{k_i{:}^{s_i}A_i};\overline{D};\overline{C};\omega)}
 ```
 
 Its evidence is `alloc` at a dictionary type, the literal's claim wherever its
