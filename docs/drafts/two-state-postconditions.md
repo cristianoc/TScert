@@ -261,14 +261,18 @@ Restrictions of the language, documented in
 
 ## What the rules do not derive
 
-- The start's $`t=\mathrm{old}(t)`$ is entailed only where the entry facts
-  state $`t`$ defined. Definedness from the inputs' types holds in the model
-  only above a budget: a value a path of $`d`$ fields reads meets its type
-  at the budget less $`d`$, and its length is defined only where the budget
-  exceeds $`d`$ (`recT`'s field contracts agree only below the level,
-  `HeapOk` constrains a location only below it). `EntryHolds` holds at every
-  budget, so a start fact read from types alone is not a fact of every entry
-  state.
-- A before-name in a quantified fact's bound composes only where the
-  caller's linear facts bound it below by one term after the call
-  ([not derivable](../ARITHMETIC.md#two-state-postconditions)).
+[Two-state postconditions](../ARITHMETIC.md#two-state-postconditions) states
+each consequence the composition loses with its smallest example (a bound
+that is no term, bounds from the composition's facts alone, body atoms one
+at a time, a value no slot holds, separations at an absent position) and
+the start's identities the language cannot state.
+
+**Implemented scope: definedness of an entry term is an obligation the
+function's stated entry facts discharge.** It does not follow from the
+input types in the present model, because a value meets its type only to
+the depth of the budget: `recT`'s field contracts agree only below the
+level and `HeapOk` constrains a location only below it, while `EntryHolds`
+holds at every budget. The counter-model and the intended design (the
+finite field-and-store shape a type demands in the unindexed structural
+part of heap well-formedness) are stated
+[there](../ARITHMETIC.md#two-state-postconditions).

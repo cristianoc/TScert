@@ -799,23 +799,70 @@ each term after the call $`C`$ bounds it below by, and each body atom has
 its before-names eliminated with $`C`$, which names no bound variable, for
 every index alike. A fact naming no before-name is its renaming.
 
-**Not derivable.** A before-name in a position that holds a single term,
-a quantified fact's bound, is eliminated only where $`C`$ bounds it below
-by one term after the call. Where $`C`$ gives it only as a linear
-combination, the composed fact is not in this fact language: from
-$`|x|_{\mathrm{after}} = b + 1`$ and $`\forall i<b.\ x[i]=1`$, the fact
-$`\forall i<|x|_{\mathrm{after}}-1.\ x[i]=1`$ has a bound that is no term,
-and nothing about $`x`$'s elements is derived. This is incompleteness of the
-quantifier elimination, a property of where the name occurs.
+**Not derivable.** The composition is sound and loses these consequences,
+each a property of the fact composed:
 
-The start of a run proposes $`t=\mathrm{old}(t)`$ for each entry term its
-postcondition names; the entry check reads it at the entry state, where it is
-$`t=t`$, entailed where the entry facts state $`t`$ defined (here
-`0 <= lists.widths.length`). The inputs' types do not state it: a state of
-the model meets its types at its budget $`k`$, so a value a path of $`d`$
-fields reads meets its type at $`k-d`$, and its length, which reads the
-store's contents a level further, is defined only where $`k>d`$; the entry
-facts hold at every budget. An exceptional postcondition is the frame alone.
+- *A bound that is no term.* A before-name in a position that holds a single
+  term, a quantified fact's bound, is eliminated only where $`C`$ bounds it
+  below by one term after the call. Where $`C`$ gives it only as an affine
+  combination, the composed fact is not in this fact language: from
+  $`|x|_{\mathrm{after}} = b + 1`$ and $`\forall i<b.\ x[i]=1`$, the fact
+  $`\forall i<|x|_{\mathrm{after}}-1.\ x[i]=1`$ has a bound that is no term,
+  and nothing about $`x`$'s elements is derived.
+- *Bounds from the composition's facts.* The bound's candidates are the terms after the
+  call $`C`$ names (`Composer.stops`, over `definedOf`), and $`C`$ bounds no
+  other term. $`C`$ is the caller's unconditional linear facts and the
+  post's linear facts naming an entry term; a fact conditional on a slot, a
+  guarded or quantified fact of the caller's, and a post fact naming no
+  entry term are not in it. From $`\mathit{ok}\Rightarrow k\le|x|`$ before
+  the call and $`\forall i<\mathrm{old}(|x|).\ x[i]=1`$, the fact
+  $`\mathit{ok}\Rightarrow\forall i<k.\ x[i]=1`$ is not derived.
+- *Body atoms one at a time.* Each atom of a quantified fact's body has its
+  before-names eliminated with $`C`$ separately (`Composer.atom`), so a
+  consequence of two atoms through a shared before-name is lost: from
+  $`\forall i<n.\ x[i]\le\mathrm{old}(m)\land\mathrm{old}(m)\le x[i+1]`$
+  with $`C`$ naming no $`\mathrm{old}(m)`$, the fact
+  $`\forall i<n.\ x[i]\le x[i+1]`$ is not derived.
+- *A value no slot holds.* A post term reading a position whose value no
+  caller slot holds (the receiver of a call on a computed receiver) has no
+  term of the caller's; a fact reading it composes to nothing.
+- *Separations at an absent position.* A region or store separation
+  reading a position the call passes nothing at, and an element fact whose
+  value is that position, compose to nothing; every other form reads it as
+  `undefined` (the draft
+  [two-state postconditions](drafts/two-state-postconditions.md)).
+
+These are incompleteness of the composition, not of the definition: rule
+Call states each lost consequence.
+
+**The start's identities.** At the start the current state is the entry
+state, where $`t`$ and $`\mathrm{old}(t)`$ denote the same wherever $`t`$
+is defined (`IndexFact.identity_holds`). For each occurrence of an entry
+term in the postcondition, the start knows the strongest statement of
+$`t=\mathrm{old}(t)`$ the entry facts entail: the identity itself, or the
+identity beneath the guards on inputs the occurrence is read under
+(`SinglePass.startIdentities`). An occurrence read wherever the post holds
+whose identity the entry facts do not entail is refused at the entry
+check; for one in a disjunction's arm or beneath a guard on the result, the
+start knows nothing of it, since "$`t=\mathrm{old}(t)`$ where $`t`$ is
+defined" is no fact of this language (a linear fact holds only where its
+terms denote integers).
+
+**Definedness of an entry term is an obligation the function's stated entry
+facts discharge** (here `0 <= lists.widths.length`). In the present model
+it does not follow from the inputs' types, because a value meets its type
+only to the depth of the budget. A counter-model: at budget 1, an input
+`lists : {widths: number[]}` holds an object whose `widths` field holds an
+array object at level 0, and that object's store location, under an
+unconstrained level-0 contract, holds a number, so
+$`|\mathit{lists}.\mathit{widths}|`$ denotes no integer; the entry facts hold
+at every budget. The intended design places the finite field-and-store
+shape a type demands in the unindexed structural part of heap
+well-formedness, preserved by allocation, writes, truncation and calls;
+the location-kinds work (branch `location-kinds`) extends well-formedness
+with such a part for roles, and field-specific type shape is not in it.
+Until that is proved, a function states the definedness its postcondition
+reads. An exceptional postcondition is the frame alone.
 
 **Cases.** `bounds-pattern-known-growth-refused` (a caller bounding a list
 grown by a callee), its unsafe neighbour `invalid-bounds-pattern-known-growth`,
