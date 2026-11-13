@@ -2258,8 +2258,10 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
  * refused. */
 export function precondition(gate: Gate, clauses: readonly string[],
     parameters: readonly { name: string; type: TypeTerm | undefined }[], receiver: boolean): Modifies<{ values: "any"; stores: "grow" }, IndexFact[] | string> {
+  // A precondition is read at the call's entry, where `old(p)` is `p`: the
+  // entry's position of a name is its own.
   const named = parameters.map(({ name, type }, i): ClauseParameter =>
-    clauseParameter(gate, name, receiver ? i : i + 1, type));
+    ({ ...clauseParameter(gate, name, receiver ? i : i + 1, type), entry: receiver ? i : i + 1 }));
   const elaborated = elaborateRequires(clauses, named);
   if ("refused" in elaborated) return `a precondition (\`@requires\`): ${elaborated.refused}`;
   if (!receiver && elaborated.facts.some(f => indexFactPositions(f).includes(0)))

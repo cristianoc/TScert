@@ -1609,9 +1609,9 @@ def preconditionHolds (k : HeapKnowledge.Knowledge) (eff : Effect) (t : Tm) : Bo
       | none => false) &&
   (eff.pre.isEmpty || match callSlots t with
     | some (recv, slots) =>
-        eff.pre.all (fun F => F.slots.all (fun p => p < slots.length && (p != 0 || recv)) && F.entrySlots.isEmpty) &&
+        eff.pre.all (fun F => F.toNow.slots.all (fun p => p < slots.length && (p != 0 || recv))) &&
         HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags k) (HeapLinks.aliases k.links) k.links k.indices
-          (eff.pre.map fun F => ⟨F, none, false⟩) (some slots)
+          (eff.pre.map fun F => ⟨F.toNow, none, false⟩) (some slots)
     | none => false)
 
 theorem preconditionHolds_sound {k : HeapKnowledge.Knowledge} {eff : Effect} {t : Tm} {ρ h}
@@ -1636,10 +1636,10 @@ theorem preconditionHolds_sound {k : HeapKnowledge.Knowledge} {eff : Effect} {t 
         obtain ⟨hin, hchk⟩ := hpre
         have hheld := HeapKnowledge.indicesCheckWith_sound (HeapKnowledge.guardTags_sound hk)
           (fun x y hy => HeapLinks.aliases_eq hk.2.2.1 hy) hk.2.2.1 hchk
-          hk.2.2.2.2.2 ⟨F, none, false⟩ (List.mem_map_of_mem hF) (fun b hb => by cases hb)
-        refine (HeapKnowledge.IndexFact.holdsAt_entry (by simpa using (hin F hF).2) _).mp
-          ((HeapKnowledge.IndexFact.holdsAt_congr fun s hs' => ?_).mp hheld)
-        have hp := (hin F hF).1 s hs'
+          hk.2.2.2.2.2 ⟨F.toNow, none, false⟩ (List.mem_map_of_mem (f := fun F => (⟨F.toNow, none, false⟩ : HeapKnowledge.IndexAtom)) hF)
+          (fun b hb => by cases hb)
+        refine (CallEffects.Effect.pre_toNow ε _ h).mpr ((HeapKnowledge.IndexFact.holdsAt_congr fun s hs' => ?_).mp hheld)
+        have hp := hin F hF s hs'
         simp only [decide_eq_true_eq, Bool.or_eq_true, bne_iff_ne, ne_eq] at hp
         exact callSlots_env hs ρ s hp.1 hp.2
       · simp at hpre

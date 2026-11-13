@@ -648,6 +648,18 @@ theorem mapVars_some (f : V → W) : ∀ F : LinearClause V, ∃ G, F.mapVars (s
     obtain ⟨B', hB⟩ := mapVars_some f B
     exact ⟨.either A' B', by simp [mapVars, hA, hB]⟩
 
+theorem mapVars_vars {f : V → Option W} :
+    ∀ {F : LinearClause V} {G : LinearClause W}, F.mapVars f = some G → ∀ y ∈ G.vars, ∃ x ∈ F.vars, f x = some y
+  | .atom F, G, hm, y, hy => by
+    obtain ⟨G', hG, rfl⟩ := Option.map_eq_some_iff.mp hm
+    exact Linear.Fact.mapVars_vars hG y hy
+  | .either A B, G, hm, y, hy => by
+    simp only [mapVars, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
+    obtain ⟨A', hA, B', hB, rfl⟩ := hm
+    rcases List.mem_append.mp hy with hy | hy
+    · obtain ⟨x, hx, h⟩ := mapVars_vars hA y hy; exact ⟨x, List.mem_append_left _ hx, h⟩
+    · obtain ⟨x, hx, h⟩ := mapVars_vars hB y hy; exact ⟨x, List.mem_append_right _ hx, h⟩
+
 theorem holdsAt_mapVars {f : V → Option W} {val : V → Option Int} {val' : W → Option Int}
     {F : LinearClause V} {G : LinearClause W} (hm : F.mapVars f = some G)
     (hf : ∀ x ∈ F.vars, ∀ y, f x = some y → val' y = val x) : G.HoldsAt val' ↔ F.HoldsAt val := by
@@ -1140,12 +1152,30 @@ theorem holdsAt_linear_mapVars {F F' : Linear.Fact Term} {f : Term → Option Te
     obtain ⟨x, hx, hfx⟩ := Linear.Fact.mapVars_vars hm y hy
     rw [hf x hx y hfx]; exact hi x hx
 
+/-- A term read at the current state: `old(t)` as `t`. -/
+def _root_.Verification.HeapKnowledge.Term.toNow (t : Term) : Term := { t with atEntry := false }
+
+/-- At the entry state, `old(t)` denotes what `t` does. -/
+theorem termValue_toNow {ρ : Env} {h : Heap} (hρ : ε.env = ρ) (hh : ε.heap = h) (t : Term) :
+    termValue ε ρ h t.toNow = termValue ε ρ h t := by
+  cases he : t.atEntry
+  · obtain ⟨k, s, p, a⟩ := t; simp only at he; subst he; rfl
+  · rw [termValue_now rfl, termValue_atEntry he]
+    simp only [Term.toNow, termAt, hρ, hh]
+
+/-- A body variable read at the current state. -/
+def _root_.Verification.HeapKnowledge.Bound.toNow : Bound → Bound
+  | .free t => .free t.toNow
+  | b => b
+
 /-- The fact read at the entry state itself: each entry term `old(t)`
-restated as `t` (the current term at the same slot). -/
+restated as `t` (the current term at the same slot), in every fact form
+whose terms are terms, a quantified fact's bound and body included. -/
 def toNow : IndexFact → IndexFact
-  | .linear F => .linear ((F.mapVars fun t => some { t with atEntry := false }).getD F)
+  | .linear F => .linear ((F.mapVars fun t => some t.toNow).getD F)
   | .either A B => .either A.toNow B.toNow
   | .guarded s p t B => .guarded s p t B.toNow
+  | .every s p stop body => .every s p stop.toNow (body.map fun C => (C.mapVars (some ∘ Bound.toNow)).getD C)
   | F => F
 
 /-- **At the entry state, `old(t)` is `t`**: where the current environment
@@ -1155,24 +1185,66 @@ theorem holdsAt_toNow {F : IndexFact} (hρ : ε.env = ρ) (hh : ε.heap = h) :
     F.toNow.HoldsAt ε ρ h ↔ F.HoldsAt ε ρ h := by
   induction F with
   | linear G =>
-    obtain ⟨G', hG⟩ := Linear.Fact.mapVars_some (fun t : Term => { t with atEntry := false }) G
-    have hG' : G.mapVars (fun t => some { t with atEntry := false }) = some G' := hG
+    obtain ⟨G', hG⟩ := Linear.Fact.mapVars_some Term.toNow G
+    have hG' : G.mapVars (fun t => some t.toNow) = some G' := hG
     simp only [toNow, hG', Option.getD_some]
-    refine holdsAt_linear_mapVars hG' fun x _ y hy => ?_
-    cases hy
-    cases he : x.atEntry
-    · obtain ⟨k, s, p, a⟩ := x; simp only at he; subst he; rfl
-    · rw [termValue_now rfl, termValue_atEntry he]
-      simp only [termAt, hρ, hh]
+    exact holdsAt_linear_mapVars hG' fun x _ y hy => by cases hy; exact termValue_toNow hρ hh x
   | either A B ihA ihB => exact or_congr ihA ihB
   | guarded s p t B ih => simp only [toNow, HoldsAt, ih]
+  | every s p stop body =>
+    have hb : ∀ (ls : List (Option Nat)) (i : Nat) (C : LinearClause Bound),
+        ((C.mapVars (some ∘ Bound.toNow)).getD C).HoldsAt (boundValue ε ρ h ls i) ↔ C.HoldsAt (boundValue ε ρ h ls i) := by
+      intro ls i C
+      obtain ⟨C', hC⟩ := LinearClause.mapVars_some Bound.toNow C
+      rw [hC, Option.getD_some]
+      refine LinearClause.holdsAt_mapVars hC fun x _ y hy => ?_
+      cases hy
+      cases x with
+      | free t => exact termValue_toNow hρ hh t
+      | _ => rfl
+    simp only [toNow, HoldsAt, termValue_toNow hρ hh stop]
+    constructor
+    · rintro ⟨w, st, ls, n, hw, hsto, hls, hn, hall⟩
+      exact ⟨w, st, ls, n, hw, hsto, hls, hn, fun i hi C hC => (hb ls i C).mp (hall i hi _ (List.mem_map_of_mem hC))⟩
+    · rintro ⟨w, st, ls, n, hw, hsto, hls, hn, hall⟩
+      refine ⟨w, st, ls, n, hw, hsto, hls, hn, fun i hi C' hC' => ?_⟩
+      obtain ⟨C, hC, rfl⟩ := List.mem_map.mp hC'
+      exact (hb ls i C).mpr (hall i hi C hC)
   | _ => exact Iff.rfl
+
+/-- A fact read at the current state names no entry term. -/
+theorem entrySlots_toNow (F : IndexFact) : F.toNow.entrySlots = [] := by
+  induction F with
+  | linear G =>
+    obtain ⟨G', hG⟩ := Linear.Fact.mapVars_some Term.toNow G
+    have hG' : G.mapVars (fun t => some t.toNow) = some G' := hG
+    simp only [toNow, hG', Option.getD_some, entrySlots, List.flatMap_eq_nil_iff]
+    intro y hy
+    obtain ⟨x, -, hx⟩ := Linear.Fact.mapVars_vars hG' y hy
+    cases hx
+    simp [Term.entrySlots, Term.toNow]
+  | either A B ihA ihB => simp [toNow, entrySlots, ihA, ihB]
+  | guarded s p t B ih => simp [toNow, entrySlots, ih]
+  | every s p stop body =>
+    simp only [toNow, entrySlots, List.append_eq_nil_iff, List.flatMap_eq_nil_iff]
+    refine ⟨by simp [Term.entrySlots, Term.toNow], fun C' hC' => ?_⟩
+    obtain ⟨C, -, rfl⟩ := List.mem_map.mp hC'
+    obtain ⟨D, hD⟩ := LinearClause.mapVars_some Bound.toNow C
+    rw [hD, Option.getD_some]
+    intro b hb
+    obtain ⟨x, -, hx⟩ := LinearClause.mapVars_vars hD b hb
+    cases hx
+    cases x <;> simp [Bound.toNow, Term.entrySlots, Term.toNow]
+  | _ => rfl
 
 /-- The entry terms a fact names. -/
 def entryTerms : IndexFact → List Term
   | .linear F => F.vars.filter (·.atEntry)
   | .either A B => A.entryTerms ++ B.entryTerms
   | .guarded _ _ _ B => B.entryTerms
+  | .every _ _ stop body => (if stop.atEntry then [stop] else []) ++ body.flatMap fun C => C.vars.filterMap fun
+      | .free t => if t.atEntry then some t else none
+      | _ => none
   | _ => []
 
 /-- A total renaming renames every fact. -/

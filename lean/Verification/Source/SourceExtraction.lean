@@ -288,7 +288,9 @@ did not mention grow it, and the request carries the result. -/
     let receiverInput := (f.params.head?.map (·.name == "this")).getD false
     let slotOf : Nat → Option Nat := fun p => if receiverInput then some p else if p = 0 then none else some (p - 1)
     let T ← table
-    let entryIndices ← f.requires.mapM fun F => match F.mapM slotOf with
+    -- A precondition is read at the call's entry, where `old(t)` is `t`
+    -- (`IndexFact.toNow`).
+    let entryIndices ← f.requires.mapM fun F => match F.toNow.mapM slotOf with
       | some G => pure ({ fact := G } : HeapKnowledge.IndexAtom)
       | none => throw (locatedRefusal T f.namePos .bindingAnnotation
           "a precondition names the receiver, which the function does not declare")

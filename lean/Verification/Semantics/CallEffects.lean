@@ -810,27 +810,31 @@ def Effect.promiseBelow (n : Nat) (e : Effect) : Bool :=
 
 /-- Whether what a signature states of the call's values is about the
 receiver and the first `n` parameters, the ones code of arity `n` binds: its
-promise, and each position its precondition `pre` names. Code states no
+promise, and each position its precondition `pre` names, read at the
+callee's entry, where `old(t)` is `t` (`IndexFact.toNow`). Code states no
 postcondition: a fact over a parameter needs its entry value, which a
 reassigned parameter no longer holds; and no append, which a native's
 audited signature alone states. -/
 def Effect.below (n : Nat) (e : Effect) : Bool :=
-  e.promiseBelow n && e.pre.all (fun F => F.slots.all (· ≤ n) && F.entrySlots.isEmpty) && e.ensures.isEmpty &&
+  e.promiseBelow n && e.pre.all (fun F => F.toNow.slots.all (· ≤ n)) && e.ensures.isEmpty &&
     !e.receiverGrows && e.elementWrite.isNone && e.regions.isEmpty
 
 theorem Effect.below_promise {e : Effect} {n : Nat} (h : e.below n = true) : e.promiseBelow n = true := by
   simp only [Effect.below, Bool.and_eq_true] at h; exact h.1.1.1.1.1
 
 theorem Effect.below_pre {e : Effect} {n : Nat} (h : e.below n = true) :
-    ∀ F ∈ e.pre, ∀ s ∈ F.slots, s ≤ n := by
+    ∀ F ∈ e.pre, ∀ s ∈ F.toNow.slots, s ≤ n := by
   simp only [Effect.below, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at h
-  exact fun F hF => (h.1.1.1.1.2 F hF).1
+  exact fun F hF => h.1.1.1.1.2 F hF
 
-/-- A precondition is one-state: it names no entry term. -/
-theorem Effect.below_pre_entry {e : Effect} {n : Nat} (h : e.below n = true) :
-    ∀ F ∈ e.pre, F.entrySlots = [] := by
-  simp only [Effect.below, Bool.and_eq_true, List.all_eq_true, List.isEmpty_iff] at h
-  exact fun F hF => (h.1.1.1.1.2 F hF).2
+/-- **A precondition is one-state**: read at the callee's entry, where the
+current state is the entry state, a fact holds exactly where its
+restatement with each `old(t)` as `t` does (`IndexFact.holdsAt_toNow`), at
+any entry state (`IndexFact.entrySlots_toNow`). -/
+theorem Effect.pre_toNow {F : HeapKnowledge.IndexFact} (ε : HeapKnowledge.EntryState) (ρ : Env) (heap : Heap) :
+    F.HoldsAt ⟨ρ, heap⟩ ρ heap ↔ F.toNow.HoldsAt ε ρ heap :=
+  (HeapKnowledge.IndexFact.holdsAt_toNow rfl rfl).symm.trans
+    (HeapKnowledge.IndexFact.holdsAt_entry (HeapKnowledge.IndexFact.entrySlots_toNow F) _)
 
 theorem Effect.below_ensures {e : Effect} {n : Nat} (h : e.below n = true) : e.ensures = [] := by
   simp only [Effect.below, Bool.and_eq_true, List.isEmpty_iff] at h; exact h.1.1.1.2
@@ -939,16 +943,16 @@ theorem Effect.pre_frame {e : Effect} {n : Nat} (h : e.below n = true) {F : Heap
     F.HoldsAt ⟨callEnv r args, heap⟩ (callEnv r args) heap ↔
       F.HoldsAt ⟨envOf (r :: CallArguments.parameters n args ++ vs) d, heap⟩
         (envOf (r :: CallArguments.parameters n args ++ vs) d) heap := by
-  exact (HeapKnowledge.IndexFact.holdsAt_entry (Effect.below_pre_entry h F hF) _).trans
-    (HeapKnowledge.IndexFact.holdsAt_congr fun s hs => callEnv_frame (Effect.below_pre h F hF s hs) r args vs d)
+  refine (Effect.pre_toNow ⟨callEnv r args, heap⟩ _ heap).trans (Iff.trans ?_ (Effect.pre_toNow ⟨callEnv r args, heap⟩ _ heap).symm)
+  exact HeapKnowledge.IndexFact.holdsAt_congr fun s hs => callEnv_frame (Effect.below_pre h F hF s hs) r args vs d
 
 /-- Actuals past those code binds do not change what its precondition reads. -/
 theorem Effect.pre_take {e : Effect} {n m : Nat} (h : e.below n = true) (hm : n ≤ m) {F : HeapKnowledge.IndexFact}
     (hF : F ∈ e.pre) (r : Tm) (args : List Tm) (heap : Heap) :
     F.HoldsAt ⟨callEnv r (args.take m), heap⟩ (callEnv r (args.take m)) heap ↔
       F.HoldsAt ⟨callEnv r args, heap⟩ (callEnv r args) heap := by
-  exact (HeapKnowledge.IndexFact.holdsAt_entry (Effect.below_pre_entry h F hF) _).trans
-    (HeapKnowledge.IndexFact.holdsAt_congr fun s hs => callEnv_take (by have := Effect.below_pre h F hF s hs; omega) r args)
+  refine (Effect.pre_toNow ⟨callEnv r args, heap⟩ _ heap).trans (Iff.trans ?_ (Effect.pre_toNow ⟨callEnv r args, heap⟩ _ heap).symm)
+  exact HeapKnowledge.IndexFact.holdsAt_congr fun s hs => callEnv_take (by have := Effect.below_pre h F hF s hs; omega) r args
 
 /-- **What a module function's code realizes at arity `n`**: its effect
 below `n` (`below`) but for its postcondition, each fact of which names the
