@@ -548,6 +548,9 @@ run_cmd do
         throwError "{decl} depends on the axiom {axiom_}"
   check ``Verification.IndexWrites.index_safeInt
   check ``Verification.IndexWrites.boundedCells_sound
+  check ``Verification.HeapExpressionRules.keptCells_holds
+  check ``Verification.IndexWrites.growOutput_sound
+  check ``Verification.PromiseCalls.withGrown_holds
   check ``Verification.TolerantFrames.index_int
   check ``Verification.TolerantFrames.integral_int
   check ``Verification.TolerantFrames.mergeEqAtoms_holds

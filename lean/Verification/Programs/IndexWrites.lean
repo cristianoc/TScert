@@ -2787,17 +2787,67 @@ theorem withWritten_sound {Ξ T : Fam} {out : Knowledge} {kept : List IndexAtom}
   weaken (fun _ u hq => ⟨hq.1.1, hq.1.2.1, hq.1.2.2.1, hq.1.2.2.2.1, hq.1.2.2.2.2.1,
     indexHolds_cat hq.1.2.2.2.2.2 (shiftIndices_holds (v := u) hq.2)⟩) (safePost_and ho hk)
 
-/-- **The observations an element write keeps whatever it aliases**
-(`weak-update`): of the cell facts, those whose contents hold an array store
-and every value of `R`, the written value's set. The write changes the
-array's store location, which then holds an array store, and at most one
-element location, which then holds the written value; every other location
-keeps its value; so a location's contents meeting both are met after it,
-whichever location it is. -/
+/-- **An element write's change** (`weak-update`'s effect): at any index, it
+sets the store location to an array store and at most one element location
+to the written value, and leaves every other old location as it was; a
+fresh element's location is past the heap. The store location held a store
+and holds one. -/
+theorem elementWrite_into {Ξ T : Fam} {h : Heap} {flds : List (PropKey × Nat)} {cd : CallCode}
+    {oid target : Nat} {iv value : Tm} {R : ValueSets.ValueSet} {n W}
+    (hfield : flds.lookup arrayStoreKey = some target) (hiv : isVal iv = true) (hR : R.mem value = true)
+    (hw : WorldAdm W) (hh : HeapOk n W h)
+    (hs : Safe Ξ T n W h (.writeAt arrayStoreKey (.objAt flds cd oid)
+      (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) iv value))) :
+    SafePost Ξ T (fun h' _ => HeapExpressionRules.IntoContents (fun _ => True) (some R) h h')
+      n W h (.writeAt arrayStoreKey (.objAt flds cd oid)
+        (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) iv value)) := by
+  have hv : isVal value = true := ValueSets.ValueSet.mem_isVal hR
+  cases n with
+  | zero => trivial
+  | succ n1 =>
+    rcases hs with (⟨hbad, _⟩ | hr) | ⟨U1, h1, t1, hx1, hu1, step1, hh1, hs1⟩
+    · simp [isVal] at hbad
+    · exact .inl (.inr hr)
+    obtain ⟨u, hu, rfl, rfl⟩ := ExpressionEffects.elem_read_inv hfield step1
+    have huv : isVal u = true := HeapExpressionRules.heap_values hw hh target u hu
+    have htlt : target < h.length := (List.getElem?_eq_some_iff.mp hu).1
+    refine .inr ⟨U1, h, _, hx1, hu1, step1, hh1, ?_⟩
+    cases n1 with
+    | zero => trivial
+    | succ n2 =>
+      rcases hs1 with (⟨hbad, _⟩ | hr) | ⟨U2, h2, t2, hx2, hu2, step2, hh2, hs2⟩
+      · simp [isVal] at hbad
+      · exact .inl (.inr hr)
+      obtain ⟨b', xs, -, rfl, hcase⟩ := ExpressionEffects.elem_set_inv rfl huv hiv hv step2
+      rcases hcase with ⟨cell, -, rfl, rfl⟩ | ⟨i, -, -, rfl, rfl⟩
+      · refine .inr ⟨U2, _, _, hx2, hu2, step2, hh2,
+          (ExpressionEffects.write_back_post hfield ?_ hs2).post⟩
+        intro l w hl
+        by_cases hlt : l = target
+        · subst hlt
+          rw [hu] at hl; cases hl
+          exact .inr (.inl ⟨xs, xs, rfl, by rw [List.getElem?_set_self (by simpa using htlt)]⟩)
+        · rw [List.getElem?_set_ne (Ne.symm hlt)]
+          by_cases hlc : l = cell
+          · subst hlc
+            have hl' : l < h.length := (List.getElem?_eq_some_iff.mp hl).1
+            exact .inr (.inr ⟨trivial, value, by rw [List.getElem?_set_self hl'], fun R' hR' => by cases hR'; exact hR⟩)
+          · rw [List.getElem?_set_ne (Ne.symm hlc)]; exact .inl hl
+      · refine .inr ⟨U2, _, _, hx2, hu2, step2, hh2,
+          (ExpressionEffects.write_back_post hfield ?_ hs2).post⟩
+        intro l w hl
+        have hl' : l < h.length := (List.getElem?_eq_some_iff.mp hl).1
+        by_cases hlt : l = target
+        · subst hlt
+          rw [hu] at hl; cases hl
+          exact .inr (.inl ⟨xs, _, rfl, by rw [List.getElem?_set_self (by simp; omega)]⟩)
+        · rw [List.getElem?_set_ne (Ne.symm hlt), List.getElem?_append_left hl']; exact .inl hl
+
+/-- The cell facts an element write of a value of `R` keeps
+(`weak-update`): those whose contents hold every value of `R`
+(`HeapExpressionRules.keptCells`, nothing known apart). -/
 def writtenCells (k : Knowledge) (R : Option ValueSets.ValueSet) : HeapFacts.Facts :=
-  match R with
-  | some R => (k.cells.filter fun f => f.contents.arr && R.le f.contents).map fun f => { f with slot := f.slot + 1 }
-  | none => []
+  HeapExpressionRules.keptCells (fun _ => false) R k.cells
 
 /-- `out` with the cell facts `cs` added. -/
 def withCells (out : Knowledge) (cs : HeapFacts.Facts) : Knowledge :=
@@ -2810,28 +2860,25 @@ theorem withCells_sound {Ξ T : Fam} {out : Knowledge} {cs : HeapFacts.Facts} {�
   weaken (fun _ _ hq => ⟨fun f hf => (List.mem_append.mp hf).elim (hq.1.1 f) (hq.2 f), hq.1.2⟩)
     (safePost_and ho hc)
 
-/-- A cell fact holds after a heap change that sets each location either to
-its old value, to an array store, or to a value of `R`, where its contents
-hold an array store and `R`. -/
-theorem cell_kept {f : HeapFacts.Fact} {R : ValueSets.ValueSet} {ρ : Env} {h h' : Heap}
-    (hf : HeapFacts.Holds [f] ρ h) (harr : f.contents.arr = true) (hR : R.le f.contents = true)
-    (hloc : ∀ (l : Nat) (w : Tm), h[l]? = some w → h'[l]? = some w ∨ (∃ xs, h'[l]? = some (Tm.arr xs)) ∨
-      ∃ u, h'[l]? = some u ∧ R.mem u = true) :
-    HeapFacts.Holds [f] ρ h' := by
-  intro g hg
-  simp only [List.mem_singleton] at hg
-  subst hg
-  obtain ⟨flds, c, oid, w, hρ, hr, hm⟩ := hf g (List.mem_singleton_self _)
-  unfold HeapFacts.ReadGave at hr
-  split at hr
-  · rename_i l hl
-    rcases hloc l w hr with hw | ⟨xs, hx⟩ | ⟨u, hu, hRu⟩
-    · exact ⟨flds, c, oid, w, hρ, by simp [HeapFacts.ReadGave, hl, hw], hm⟩
-    · exact ⟨flds, c, oid, .arr xs, hρ, by simp [HeapFacts.ReadGave, hl, hx],
-        by simp [ValueSets.ValueSet.mem, harr]⟩
-    · exact ⟨flds, c, oid, u, hρ, by simp [HeapFacts.ReadGave, hl, hu], ValueSets.ValueSet.le_sound hR hRu⟩
-  · rename_i hl
-    exact ⟨flds, c, oid, w, hρ, by unfold HeapFacts.ReadGave; rw [hl]; exact hr, hm⟩
+/-- **An element write keeps `writtenCells`** at any index: of an object
+holding a store, of a value of `R`. -/
+theorem writtenCells_sound {Ξ T : Fam} {k : Knowledge} {R : Option ValueSets.ValueSet} {ρ : Env}
+    {h : Heap} {flds : List (PropKey × Nat)} {cd : CallCode} {oid target : Nat} {iv value : Tm} {n W}
+    (hk : Holds k ε ρ h) (hfield : flds.lookup arrayStoreKey = some target) (hiv : isVal iv = true)
+    (hR : ∀ R', R = some R' → R'.mem value = true)
+    (hw : WorldAdm W) (hh : HeapOk n W h)
+    (hs : Safe Ξ T n W h (.writeAt arrayStoreKey (.objAt flds cd oid)
+      (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) iv value))) :
+    SafePost Ξ T (fun h' u => HeapFacts.Holds (writtenCells k R) (push u ρ) h') n W h
+      (.writeAt arrayStoreKey (.objAt flds cd oid)
+        (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) iv value)) := by
+  cases hRc : R with
+  | none =>
+    exact weaken (fun _ _ _ => by simp [writtenCells, HeapExpressionRules.keptCells,
+      HeapExpressionRules.cellKept, HeapFacts.Holds]) (HeapObservations.of_safe hs)
+  | some R' =>
+    exact weaken (fun h' u hq => HeapExpressionRules.keptCells_holds hk.1 hq (fun _ _ ha => by cases ha))
+      (elementWrite_into hfield hiv (hR R' hRc) hw hh hs)
 
 /-- **A write at a checked index keeps `writtenCells`** (`weak-update`). -/
 theorem boundedCells_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
@@ -2842,74 +2889,123 @@ theorem boundedCells_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
       (fun h' u => HeapFacts.Holds (writtenCells k (HeapExpressionRules.valuesAt G j.context k v)) (push u ρ) h')
       n W h (instantiate 0 ρ j.term) := by
   have hs := boundedWrite_sound hc he hk hw hh
-  cases hR : HeapExpressionRules.valuesAt G j.context k v with
-  | none => exact weaken (fun _ _ _ => by simp [writtenCells, HeapFacts.Holds]) hs
-  | some R =>
-    have hRv : R.mem (ρ v) = true := HeapExpressionRules.valuesAt_sound hR he hk
-    have hcheck := hc
-    simp only [boundedWriteCheck, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hcheck
-    obtain ⟨⟨⟨⟨hslots, -⟩, -⟩, hbd⟩, -⟩ := hcheck
-    obtain ⟨s, ls, b, idx, hst, hl, hb, -, -⟩ := bounded_sound hbd hk
-    obtain ⟨flds, cd, oid, hoi⟩ : ∃ flds cd oid, ρ a = .objAt flds cd oid := by
-      cases hra : ρ a
-      case objAt => exact ⟨_, _, _, rfl⟩
-      all_goals rw [hra] at hst; simp [Footprints.storeOf, Footprints.fieldsOf] at hst
-    have hfl : flds.lookup arrayStoreKey = some s := by
-      simpa [Footprints.storeOf, Footprints.fieldsOf, hoi] using hst
-    have hval : isVal (ρ v) = true := ValueSets.ValueSet.mem_isVal hRv
-    -- every kept fact, over the unshifted slots
-    have hkept : ∀ h' : Heap, (∀ (l : Nat) (w : Tm), h[l]? = some w → h'[l]? = some w ∨ (∃ xs, h'[l]? = some (Tm.arr xs)) ∨
-        ∃ u, h'[l]? = some u ∧ R.mem u = true) → ∀ u, HeapFacts.Holds (writtenCells k (some R)) (push u ρ) h' := by
-      intro h' hloc u g hg
-      simp only [writtenCells, List.mem_map, List.mem_filter, Bool.and_eq_true] at hg
-      obtain ⟨f, ⟨hfm, harr, hle⟩, rfl⟩ := hg
-      have h1 : HeapFacts.Holds [f] ρ h := fun g hg => by
-        simp only [List.mem_singleton] at hg; subst hg; exact hk.1 g hfm
-      obtain ⟨flds', c', oid', w', hρ', hr', hm'⟩ := cell_kept h1 harr hle hloc f (List.mem_singleton_self _)
-      exact ⟨flds', c', oid', w', by simpa [push] using hρ', hr', hm'⟩
-    rw [boundedSlots_eq hslots] at hs ⊢
-    simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hb, hoi] at hs ⊢
-    have hslt : s < h.length := (List.getElem?_eq_some_iff.mp hl).1
-    refine elementWrite_post (P := fun h' => ∀ u, HeapFacts.Holds (writtenCells k (some R)) (push u ρ) h')
-      hfl hl hval (fun cell _ => hkept _ fun l w hw => ?_) (fun i' _ _ => hkept _ fun l w hw => ?_)
-      (HeapObservations.erase hs) |> weaken fun h' u hq => hq u
-    · by_cases hls : l = s
-      · subst hls; exact .inr (.inl ⟨ls, by rw [List.getElem?_set_self (by simp; exact hslt)]⟩)
-      · rw [List.getElem?_set_ne (Ne.symm hls)]
-        by_cases hlc : l = cell
-        · subst hlc
-          have hlt : l < h.length := (List.getElem?_eq_some_iff.mp hw).1
-          exact .inr (.inr ⟨ρ v, by rw [List.getElem?_set_self hlt], hRv⟩)
-        · rw [List.getElem?_set_ne (Ne.symm hlc)]; exact .inl hw
-    · by_cases hls : l = s
-      · subst hls; exact .inr (.inl ⟨_, by rw [List.getElem?_set_self (by simp; omega)]⟩)
-      · have hlt : l < h.length := (List.getElem?_eq_some_iff.mp hw).1
-        rw [List.getElem?_set_ne (Ne.symm hls), List.getElem?_append_left hlt]; exact .inl hw
+  have hcheck := hc
+  simp only [boundedWriteCheck, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hcheck
+  obtain ⟨⟨⟨⟨hslots, -⟩, htypes⟩, hbd⟩, -⟩ := hcheck
+  have hvl : v < j.context.length := by
+    split at htypes
+    · rename_i R' V hR' hV; exact (List.getElem?_eq_some_iff.mp hV).1
+    · cases htypes
+  obtain ⟨s, ls, b, idx, hst, hl, hb, -, -⟩ := bounded_sound hbd hk
+  obtain ⟨flds, cd, oid, hoi⟩ : ∃ flds cd oid, ρ a = .objAt flds cd oid := by
+    cases hra : ρ a
+    case objAt => exact ⟨_, _, _, rfl⟩
+    all_goals rw [hra] at hst; simp [Footprints.storeOf, Footprints.fieldsOf] at hst
+  have hfl : flds.lookup arrayStoreKey = some s := by
+    simpa [Footprints.storeOf, Footprints.fieldsOf, hoi] using hst
+  have hval : isVal (ρ v) = true := (meaning_value (he.2 v _ (List.getElem?_eq_getElem hvl))).1
+  rw [boundedSlots_eq hslots] at hs ⊢
+  simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hb, hoi] at hs ⊢
+  exact writtenCells_sound hk hfl rfl (fun R' hR' => HeapExpressionRules.valuesAt_sound hR' he hk) hw hh
+    (HeapObservations.erase hs)
+
+/-- The slot an element write's value is read from. -/
+def writeValue (t : Tm) : Option Nat :=
+  match ExpressionEffects.elemVarWriteSlots t with
+  | some (_, _, _, k) => some k
+  | none => (ExpressionEffects.elemWriteSlots t).map fun (_, _, _, k) => k
+
+/-- **An element write whose typing gives its change writes a store field**:
+its array slot holds an object with a store, its index is a value, and it
+writes the value of `writeValue`'s slot. -/
+theorem writeStep_store [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {t : Tm} {i : Nat} {ρ n W}
+    (hc : ExpressionEffects.writeStep G Γ t = some i) (he : EnvOk G Γ ρ n W) :
+    ∃ flds cd oid fl iv v, ρ i = .objAt flds cd oid ∧ flds.lookup arrayStoreKey = some fl ∧ isVal iv = true ∧
+      writeValue t = some v ∧ v < Γ.length ∧
+      instantiate 0 ρ t = .writeAt arrayStoreKey (.objAt flds cd oid)
+        (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) iv (ρ v)) := by
+  unfold ExpressionEffects.writeStep at hc
+  split at hc
+  · rename_i f i' j k hw
+    split at hc
+    · rename_i hcond
+      cases hc
+      simp only [ExpressionEffects.varWriteOk, Bool.and_eq_true, decide_eq_true_eq] at hcond
+      obtain ⟨⟨⟨rfl, hk⟩, hj⟩, hsel⟩ := hcond
+      split at hsel
+      · rename_i Ref hi
+        obtain ⟨B, L, hmem, -, hbag⟩ := ExpressionEffects.storeFieldEvery_sound hsel (he.2 _ Ref hi)
+        obtain ⟨flds, code, oid, hl0, _, hrec⟩ := hbag
+        obtain ⟨flds1, fl, cfl, oid', hproj, hfd, -, -⟩ :=
+          recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
+        cases hproj
+        refine ⟨flds, code, oid, fl, ρ j, k, hl0, hfd,
+          (meaning_value (he.2 j Γ[j] (List.getElem?_eq_getElem hj))).1, by simp [writeValue, hw], hk, ?_⟩
+        rw [ExpressionEffects.elemVarWriteSlots_eq hw]
+        simp [instantiate, hl0]
+      · cases hsel
+    · cases hc
+  · rename_i hnv
+    split at hc
+    · rename_i f i' b k hw
+      split at hc
+      · rename_i hcond
+        cases hc
+        simp only [ExpressionEffects.litWriteOk, Bool.and_eq_true, decide_eq_true_eq] at hcond
+        obtain ⟨⟨rfl, hk⟩, hsel⟩ := hcond
+        split at hsel
+        · rename_i Ref idx hi hidx
+          have hobj : ∃ flds code oid fl, ρ i = .objAt flds code oid ∧ flds.lookup arrayStoreKey = some fl := by
+            rcases Bool.or_eq_true_iff.mp hsel with hst | hst
+            all_goals
+              obtain ⟨B, L, hmem, -, hbag⟩ := ExpressionEffects.storeField_sound hst (he.2 _ Ref hi)
+              obtain ⟨flds, code, oid, hl0, _, hrec⟩ := hbag
+              obtain ⟨flds1, fl, cfl, oid', hproj, hfd, -, -⟩ :=
+                recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
+              cases hproj
+              exact ⟨flds, code, oid, fl, hl0, hfd⟩
+          obtain ⟨flds, code, oid, fl, hl0, hfd⟩ := hobj
+          refine ⟨flds, code, oid, fl, .num b, k, hl0, hfd, rfl, by simp [writeValue, hnv, hw], hk, ?_⟩
+          rw [ExpressionEffects.elemWriteSlots_eq hw]
+          simp [instantiate, hl0]
+        · cases hsel
+      · cases hc
+    · cases hc
 
 /-- The knowledge after a step that is an element write at any index: `out`,
 and every atom the change `{value: any, store: grow}` keeps, a linear fact
 whose length terms have non-positive coefficients and whose other terms read
 no location holding an object or a number, or locations a stable field holds
-(`ExpressionEffects.writeStep_grow`, `stable-first`). -/
+(`ExpressionEffects.writeStep_grow`, `stable-first`); and the cell facts the
+write's change respects (`writtenCells`, `weak-update`). -/
 def growOutput [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (k out : Knowledge) : Knowledge :=
   if (ExpressionEffects.writeStep G j.context j.term).isSome then
-    withWritten out (keptIndices (Changes.ofClosed ⟨.any, .grow⟩) (HeapExpressionRules.stableFirst G j.context)
-      k.indices)
+    withCells (withWritten out (keptIndices (Changes.ofClosed ⟨.any, .grow⟩) (HeapExpressionRules.stableFirst G j.context)
+      k.indices))
+      (match writeValue j.term with
+        | some v => writtenCells k (HeapExpressionRules.valuesAt G j.context k v)
+        | none => [])
   else out
 
 theorem growOutput_sound [DecidableEq ι] {G : NormalGraph ι} {j : Sequent ι} {k out : Knowledge} {T : Fam}
-    {ρ n W h} (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hh : HeapOk n W h)
+    {ρ n W h} (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hs : SafePost (excOf G) T (fun h' u => Holds out ε (push u ρ) h') n W h (instantiate 0 ρ j.term)) :
     SafePost (excOf G) T (fun h' u => Holds (growOutput G j k out) ε (push u ρ) h') n W h
       (instantiate 0 ρ j.term) := by
   unfold growOutput
   split
-  · rename_i hw
-    obtain ⟨i, hi⟩ := Option.isSome_iff_exists.mp hw
-    refine withWritten_sound ?_ hs
-    exact weaken (fun _ _ hq => keptIndices_holds hk.2.2.2.2.2 hq.1 hq.2)
-      (HeapExpressionRules.stableFirst_frame he hh
-        (ExpressionEffects.writeStep_grow hi he hh (HeapObservations.erase hs)))
+  · rename_i hw'
+    obtain ⟨i, hi⟩ := Option.isSome_iff_exists.mp hw'
+    refine withCells_sound ?_ (withWritten_sound ?_ hs)
+    · obtain ⟨flds, cd, oid, fl, iv, v, -, hfd, hiv, hv, hvl, ht⟩ := writeStep_store hi he
+      rw [hv]
+      simp only
+      have hsafe := HeapObservations.erase hs
+      rw [ht] at hsafe ⊢
+      exact writtenCells_sound hk hfd hiv (fun R' hR' => HeapExpressionRules.valuesAt_sound hR' he hk) hw hh hsafe
+    · exact weaken (fun _ _ hq => keptIndices_holds hk.2.2.2.2.2 hq.1 hq.2)
+        (HeapExpressionRules.stableFirst_frame he hh
+          (ExpressionEffects.writeStep_grow hi he hh (HeapObservations.erase hs)))
   · exact hs
 
 theorem boundedRegions_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
@@ -3184,10 +3280,10 @@ every other step is `base`'s. -/
         split
         · rename_i hkeep
           exact IndexWrites.boundedLength_sound hck hkeep he hk hw hh
-        · exact IndexWrites.growOutput_sound he hk hh (IndexWrites.boundedWrite_sound hck he hk hw hh)
+        · exact IndexWrites.growOutput_sound he hk hw hh (IndexWrites.boundedWrite_sound hck he hk hw hh)
       · cases hc
     · simp only [CheckResult.map, Option.map_eq_some_iff] at hc
       obtain ⟨out0, hrun, rfl⟩ := hc
-      exact IndexWrites.growOutput_sound he hk hh (base.sound hrun hcodes hsums he hk hw hh)
+      exact IndexWrites.growOutput_sound he hk hw hh (base.sound hrun hcodes hsums he hk hw hh)
 
 end Verification.HeapExpressionRules

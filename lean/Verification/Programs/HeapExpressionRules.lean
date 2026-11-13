@@ -1374,8 +1374,78 @@ theorem fieldEvery_holds {as : List IndexAtom} {chg : Changes} {first : Nat → 
           | free t => simp [Bound.grownBy, Term.grownBy, hstore] at hgy
   · cases hk
 
-/-- A write forgets old cell observations, except those about locations known
-to be distinct from the written one, establishes its new contents where the
+/-! ## A field's contents across a write (`weak-update`)
+
+The tolerant frame theorem for a cell fact `y.f ∈ V`: its support is the
+location `y.f`, at the change "into `V`" (the location keeps its value or
+comes to hold one of `V`). A write's effect states the locations it changes
+(`changed`) and, where it is known, a set `C` holding every value a changed
+location may come to hold, a store's change into a store aside: a location
+holding a store meets `V` only where every store does (`IntoContents`). The effect respects the support
+where the two are apart (`apart`) or where `C ⊆ V` (`cellKept`); every write
+the pass checks states its effect so and keeps its cell facts by
+`keptCells_holds`. -/
+
+/-- A change from `h` to `h'` that leaves each old location's value, or
+replaces an array store by an array store, or changes a location of
+`changed` to a value of `C` where `C` is known. -/
+def IntoContents (changed : Nat → Prop) (C : Option ValueSets.ValueSet) (h h' : Heap) : Prop :=
+  ∀ (l : Nat) (w : Tm), h[l]? = some w → h'[l]? = some w ∨
+    (∃ xs ys, w = .arr xs ∧ h'[l]? = some (.arr ys)) ∨
+    (changed l ∧ ∃ u, h'[l]? = some u ∧ ∀ R, C = some R → R.mem u = true)
+
+/-- Whether a change into `C` respects a cell fact's support: the fact is
+known apart from the change (`apart`), or its contents hold every value of
+`C`. -/
+def cellKept (apart : HeapFacts.Fact → Bool) (C : Option ValueSets.ValueSet) (f : HeapFacts.Fact) : Bool :=
+  apart f || match C with
+    | some R => R.le f.contents
+    | none => false
+
+/-- The cell facts a change into `C` respects, renamed past the step's
+result. -/
+def keptCells (apart : HeapFacts.Fact → Bool) (C : Option ValueSets.ValueSet) (cells : HeapFacts.Facts) :
+    HeapFacts.Facts :=
+  (cells.filter (cellKept apart C)).map fun f => { f with slot := f.slot + 1 }
+
+/-- **Weak update** (the tolerant frame for cell facts): a cell fact whose
+support a change respects holds after it. -/
+theorem keptCells_holds {apart : HeapFacts.Fact → Bool} {C : Option ValueSets.ValueSet}
+    {cells : HeapFacts.Facts} {changed : Nat → Prop} {ρ : Env} {h h' : Heap} {u : Tm}
+    (hk : HeapFacts.Holds cells ρ h) (hc : IntoContents changed C h h')
+    (hapart : ∀ f ∈ cells, apart f = true → ∀ flds c oid l, ρ f.slot = .objAt flds c oid →
+      flds.lookup f.field = some l → ¬ changed l) :
+    HeapFacts.Holds (keptCells apart C cells) (push u ρ) h' := by
+  intro g hg
+  obtain ⟨f, hf, rfl⟩ := List.mem_map.mp hg
+  obtain ⟨hfm, hkept⟩ := List.mem_filter.mp hf
+  obtain ⟨flds, c, oid, w, hρ, hr, hm⟩ := hk f hfm
+  suffices hv : ∃ v, ReadGave flds f.field h' v ∧ f.contents.mem v = true by
+    obtain ⟨v, hrv, hmv⟩ := hv
+    exact ⟨flds, c, oid, v, by simpa [push] using hρ, hrv, hmv⟩
+  unfold ReadGave at hr
+  cases hl : flds.lookup f.field with
+  | none =>
+    rw [hl] at hr
+    exact ⟨w, by unfold ReadGave; rw [hl]; exact hr, hm⟩
+  | some l =>
+    rw [hl] at hr
+    rcases hc l w hr with hw | ⟨xs, ys, rfl, hys⟩ | ⟨hch, u', hu', hR⟩
+    · exact ⟨w, by unfold ReadGave; rw [hl]; exact hw, hm⟩
+    · exact ⟨.arr ys, by unfold ReadGave; rw [hl]; exact hys, by simpa [ValueSets.ValueSet.mem] using hm⟩
+    · unfold cellKept at hkept
+      rcases Bool.or_eq_true_iff.mp hkept with ha | hle
+      · exact absurd hch (hapart f hfm ha flds c oid l hρ hl)
+      · cases hC : C with
+        | none => rw [hC] at hle; cases hle
+        | some R =>
+          rw [hC] at hle
+          exact ⟨u', by unfold ReadGave; rw [hl]; exact hu', ValueSets.ValueSet.le_sound hle (hR R hC)⟩
+
+/-- A write keeps the cell observations it respects (`keptCells`: about
+locations known distinct from the written one, or whose contents hold every
+value `R` admits for the written one, `weak-update`), establishes its new
+contents where the
 written value is a known primitive (`R`), states that reading the field from
 the receiver gives the written slot's value (a read link, `write-link`), and
 retains immutable values already read into slots. An index atom is kept
@@ -1384,8 +1454,7 @@ where `chg` keeps it, its first locations kept by separation or
 def writeOutput (k : Knowledge) (i v : Nat) (fld : PropKey) (R : Option ValueSets.ValueSet) (owned : Bool)
     (chg : Changes) (views stable : Nat → String → Bool) : Knowledge :=
   HeapKnowledge.withReadAtoms ⟨(R.map fun R => (HeapLinks.aliases k.links i).map (fun j => (⟨j+1,R,fld⟩ : Fact))).getD [] ++
-      (k.cells.filter fun f => writeKeeps k i fld owned f.slot f.field).map
-        (fun f => {f with slot := f.slot + 1}),
+      keptCells (fun f => writeKeeps k i fld owned f.slot f.field) R k.cells,
     ⟨0,{ nul := true },valueField⟩ :: HeapFacts.shift k.values,
     ⟨i+1, v+1, false, fld, false⟩ :: HeapLinks.stable (HeapKnowledge.shift k).links,
     HeapSeparation.shift k.separation, [],
@@ -1553,18 +1622,12 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
             obtain ⟨slot,hs,rfl⟩ := List.mem_map.mp (by simpa using hf)
             have heq := HeapLinks.aliases_eq hk.2.2.1 hs
             exact ⟨flds,c,oid,ρ j,heq.trans hl,ReadGave.present hfd (write_new hlt),hv⟩
-        · obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
-          have hg := List.mem_filter.mp hg
-          obtain ⟨flds0,c0,oid0,u,hs0,hrd,hb'⟩ := hk.1 g hg.1
-          refine ⟨flds0,c0,oid0,u,?_,?_,hb'⟩
-          · simpa [push] using hs0
-          · unfold ReadGave at hrd ⊢
-            cases hfd0 : flds0.lookup g.field with
-            | none => rw [hfd0] at hrd; exact hrd
-            | some l0 =>
-              rw [hfd0] at hrd
-              have hne : l ≠ l0 := writeKeeps_ne he hk hi hg.2 hl hfd hs0 hfd0
-              simpa only [List.getElem?_set_ne hne] using hrd
+        · refine keptCells_holds (changed := (· = l)) hk.1 (fun l0 w hw => ?_)
+            (fun g _ hg flds0 c0 oid0 l0 hs0 hfd0 hl0 => writeKeeps_ne he hk hi hg hl hfd hs0 hfd0 hl0.symm) f hf
+          by_cases hl0 : l0 = l
+          · subst hl0
+            exact .inr (.inr ⟨rfl, ρ j, write_new hlt, fun R' hR' => valuesAt_sound (hR' ▸ hr) he hk⟩)
+          · exact .inl (by rw [List.getElem?_set_ne (Ne.symm hl0)]; exact hw)
       · intro f hf
         rcases List.mem_cons.mp hf with rfl | hf
         · rfl

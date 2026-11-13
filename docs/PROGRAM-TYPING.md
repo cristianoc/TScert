@@ -1414,21 +1414,10 @@ store field is, so the step carries no observation of the heap past it. Its
 frame condition is the footprint `{value: any, store: grow}`
 ([element writes](FOOTPRINTS.md#element-writes)).
 
-**What the write keeps of fields' contents.** The write sets the store
-location to an array store, at most one element location to $`v`$, and
-leaves every other location as it was. So a fact $`y.f\in V`$ on the
-contents of a field (a cell fact) whose set $`V`$ holds every array store
-and every value $`\Gamma;\Sigma`$ admits for $`v`$ ($`R`$) holds after it,
-whichever location $`y.f`$ is:
-
-```math
-\frac{y.f\in V\in\Sigma\qquad \mathsf{arr}\in V\qquad R(v)\subseteq V}
-     {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow x.\mathtt{[]}:=x.\mathtt{[]}⟦k\mapsto v⟧\dashv\ldots,\ y.f\in V}\ \textsf{weak-update}
-```
-
-Proved: `IndexWrites.boundedCells_sound`, from `elementWrite_post`'s two
-cases and `cell_kept` (`bounded-write-keeps-cells`: `out.xs ??= …` stays
-non-null across a write into `out.xs`'s array).
+**What the write keeps of fields' contents** is
+[`weak-update`](#a-fields-contents-across-a-write) at the change
+$`(\top,\ R(v))`$: the write replaces the store location's array store by
+one and sets at most one element location to $`v`$.
 
 **The length after the write.** At $`0\le k\le|x|`$ the write leaves
 $`|x|=\max(|x|_{\mathrm{before}},k+1)`$ with the index $`k`$ present: a
@@ -1648,6 +1637,45 @@ object:
 \frac{\Gamma;\Sigma\vdash x.f:=y\qquad h'=h[\ell\mapsto\rho(y)]}
      {\Gamma;\Sigma\vdash x.f:=y\dashv\Sigma',\ x.f\mapsto y}\ \textsf{write-link}
 ```
+
+#### A field's contents across a write
+
+A fact $`y.f\in V`$ on a field's contents (a cell fact) reads one
+location, $`y.f`$'s, and tolerates any change of it into $`V`$: that is
+its support, $`\{y.f:\ \mathrm{into}\ V\}`$. A write's change is a pair
+$`(L,C)`$: the locations $`L`$ it may change, each of which comes to hold a
+value of $`C`$, every other old location keeping its value or replacing an
+array store by an array store (`IntoContents`). A store's replacement by a
+store keeps every cell fact: a location holding a store meets $`V`$ only
+where $`V`$ holds every store. By the [tolerant frame
+theorem](REFERENCES.md#the-tolerant-frames-note) the change respects the
+support where $`y.f`$ is known apart from $`L`$, or where
+$`C\subseteq V`$:
+
+```math
+\frac{y.f\in V\in\Sigma\qquad s:(L,C)\qquad y.f\mathrel{\#}L\ \lor\ C\subseteq V}
+     {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow s\dashv\ldots,\ y.f\in V}\ \textsf{weak-update}
+```
+
+Every write the pass checks states its change so:
+
+- a field write $`x.f:=v`$: $`L=\{x.f\}`$, $`C=R(v)`$, the values
+  $`\Gamma;\Sigma`$ admit for $`v`$; $`y.f\mathrel{\#}L`$ by a separation or
+  `write-sibling` (`writeKeeps_ne`);
+- an element write $`x.\mathtt{[]}:=x.\mathtt{[]}⟦k\mapsto v⟧`$ at any index,
+  a checked one and the length among them: $`L=\top`$, $`C=R(v)`$ (at most
+  one element location comes to hold $`v`$, the store location a store; a
+  fresh element's location is past the heap, `elementWrite_into`);
+- a call growing its receiver's store (`ReceiverGrows`): $`L=\emptyset`$
+  (its store location alone changes, to a store, `grows_into`).
+
+A step whose change bounds no contents (a call at a footprint, an
+`elementWrite` change) keeps the cell facts its own rule keeps.
+
+Proved: `HeapExpressionRules.keptCells_holds`, used by `write_sound`
+(`writeOutput`), `IndexWrites.writtenCells_sound` (`boundedCells_sound`,
+`growOutput_sound`) and `PromiseCalls.withGrown_holds`.
+Cases: `bounded-write-keeps-cells`, `write-keeps-cells`.
 
 **Typed-array lengths through every step.** A typed array's length is read
 from the location of its `[[viewLength]]`, which the view's type states a

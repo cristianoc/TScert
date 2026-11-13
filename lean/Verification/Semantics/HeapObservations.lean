@@ -37,6 +37,17 @@ theorem erase {T Q} : ∀ {n W h t}, SafePost Ξ T Q n W h t → Safe Ξ T n W h
     · exact Or.inl (Or.inr hr)
     · exact Or.inr ⟨U,h',t',hx,hu,step,hh,ih hs⟩
 
+/-- A safe term meets the postcondition that holds of every heap. -/
+theorem of_safe {T} : ∀ {n W h t}, Safe Ξ T n W h t → SafePost Ξ T (fun _ _ => True) n W h t := by
+  intro n; induction n with
+  | zero => intros; trivial
+  | succ n ih =>
+    intro W h t hs
+    rcases hs with (⟨hv,ht⟩ | hr) | ⟨U,h',t',hx,hu,step,hh,hs⟩
+    · exact Or.inl (Or.inl ⟨hv,ht,trivial⟩)
+    · exact Or.inl (Or.inr hr)
+    · exact Or.inr ⟨U,h',t',hx,hu,step,hh,ih hs⟩
+
 /-- A stable contract frames its location through every modeled execution on
 normal return. External calls receiving the host object rely on F1′ (T1′)
 and T8 for their correspondence with this execution. A thrown outcome carries
