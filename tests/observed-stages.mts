@@ -7,8 +7,8 @@
 // TypeScript's diagnostics replay by the same mechanism. The confined
 // compiler is killed on a read the API's queries do not serve, and the stages'
 // code reads the file system only through tools/files.mts. Replay controls
-// use fresh processes, and the parse's run real compilers: they are a suite
-// of pipeline/test.mts. The retirement control reuses one process.
+// use fresh processes, and the parse's run real compilers: they run beside
+// the controls of tests/single-pass-controls.mts. The retirement control reuses one process.
 // --node-only runs the controls that do not require the sandbox; --reads
 // only the check that the stages' code reads through tools/files.mts, a fast
 // check of test-all.sh.

@@ -3011,13 +3011,14 @@ for (const [file, call] of [
 {
   // The cases whose description or header states what Node does with them:
   // each run here, its case still of the kind the observation is for (a
-  // negative's program is unsafe as Node shows it; a positive runs as its
-  // types say).
-  const ofKind = (file: string, kind: "positive" | "negative"): string => {
-    assert.equal(cases.find((c) => c.file === file)?.kind, kind, `${file} is a ${kind} case`);
+  // negative's program is unsafe as Node shows it, as is a gap's refused
+  // before its own obligation; a positive runs as its types say).
+  const ofKind = (file: string, kinds: readonly string[]): string => {
+    const kind = cases.find((c) => c.file === file)?.kind;
+    assert.ok(kind !== undefined && kinds.includes(kind), `${file} is a ${kinds.join(" or ")} case: ${kind}`);
     return file;
   };
-  const negative = (file: string): string => ofKind(file, "negative");
+  const negative = (file: string): string => ofKind(file, ["negative", "gap"]);
   const ast = fileURLToPath(new URL("../tools/node_modules/typescript/dist/ast/index.js", import.meta.url));
   const compilerApi = { "typescript/unstable/ast": ast };
   const thrown = (expression: string): string =>
@@ -3037,7 +3038,7 @@ for (const [file, call] of [
     "subarray constructs its result with the subclass, whose code replaces the narrowed string");
   assert.equal(runExample(negative("invalid-typed-array-float64-subclass"), "typeof trimmed(reset())"), "number",
     "subarray constructs its result with the Float64Array subclass, whose code replaces the narrowed string");
-  assert.equal(runExample(ofKind("typed-array-float64", "positive"),
+  assert.equal(runExample(ofKind("typed-array-float64", ["positive"]),
     "JSON.stringify((() => { const m = { kanaKerning: undefined, size: 1 }; const t = getKerning(m, 2); return [t.length, Number.isNaN(t[3]), kerningAt(t, 3, 0.5), kerningAt(t, 3, 2), Number.isNaN(t[0]), Number.isNaN(total(t))]; })())"),
     "[4,true,0.5,0.5,true,true]", "typed-array-float64: a fresh table's elements are NaN, a written one a double");
   assert.equal(runExample(negative("invalid-intl-segmenter-options-getter"), "typeof segmented()"), "number",
@@ -3048,10 +3049,10 @@ for (const [file, call] of [
     "a program's object typed Intl.Segmenter runs its own segment, replacing the narrowed string");
   assert.equal(runExample(negative("invalid-intl-segments-structural"), "typeof count(fake())"), "number",
     "a program's object typed Intl.Segments runs its own iterator, replacing the narrowed string");
-  assert.equal(runExample(ofKind("intl-segmenter-words", "positive"),
+  assert.equal(runExample(ofKind("intl-segmenter-words", ["positive"]),
     "JSON.stringify([wordStarts(\"hello big world\", 10), firstWord(\" hi there\"), graphemes(\"abc\")])"),
     "[[15,16,19,20],\"hi\",3]", "intl-segmenter-words: word starts after the first, the first word-like segment, three graphemes");
-  assert.equal(runExample(ofKind("typed-array-views", "positive"),
+  assert.equal(runExample(ofKind("typed-array-views", ["positive"]),
     "JSON.stringify([first(unpack(1)), [...unpack(1).values.subarray(0, 9)], [...mark(3, 1)], mark(3, 5)])"),
     "[1,[1,1,1,1,1,1,1,1,1],[0,1,0],null]", "typed-array-views: the elements are numbers");
   assert.equal(runExample(negative("invalid-range-text-argument-write"),
@@ -3198,13 +3199,13 @@ for (const [file, call] of [
   // Declaration lists and parameter defaults run in source order.
   assert.equal(runExample(negative("invalid-declaration-list-patterns"), "typeof first([])"), "undefined",
     "the pattern binds an absent position");
-  assert.equal(runEmitted(ofKind("declaration-list-order", "positive"), "order(new Steps([]))"), "next,return,second:s,s3",
+  assert.equal(runEmitted(ofKind("declaration-list-order", ["positive"]), "order(new Steps([]))"), "next,return,second:s,s3",
     "the pattern's iterator steps and closes, then the later initializer runs, then the default");
-  assert.deepEqual(runPlain(ofKind("declaration-list-forward-read", "positive"),
+  assert.deepEqual(runPlain(ofKind("declaration-list-forward-read", ["positive"]),
     `[${thrown("forward([])")}, forward([2])]`), ["ReferenceError", 3], "the default reads the later binding before its initialization");
-  assert.equal(runExample(ofKind("declaration-list-capture", "positive"), "capture([])"), 4,
+  assert.equal(runExample(ofKind("declaration-list-capture", ["positive"]), "capture([])"), 4,
     "the closure runs after the list, where the later binding holds 2");
-  assert.deepEqual(runPlain(ofKind("parameter-default-written", "positive"),
+  assert.deepEqual(runPlain(ofKind("parameter-default-written", ["positive"]),
     '[later(), side(), closure(), prototypeOf("string", ["a"], [{ name: "split", stated: ["b"] }])]'), [2, 2, "x!", 1],
     "a later default's closure reads the assigned binding");
   assert.equal(runExample(negative("invalid-parameter-pattern-assigned"), "f({ n: 1 })"), 2,
@@ -3216,7 +3217,7 @@ for (const [file, call] of [
   // `new Array<T>(n).fill(v)`: the length is checked before `v` is
   // evaluated, and the result is dense; a hole read before a fill, or left
   // by a partial fill, is `undefined`.
-  assert.equal(runExample(ofKind("array-fill", "positive"), `(() => {
+  assert.equal(runExample(ofKind("array-fill", ["positive"]), `(() => {
     const seen = [];
     try { counted(-1); } catch (e) { seen.push(e.name); }
     try { counted(1.5); } catch (e) { seen.push(e.name); }
@@ -3234,14 +3235,14 @@ for (const [file, call] of [
   // `String.raw` as a tag: the raw strings, each substitution converted
   // between them, the substitutions run in order; an object substitution's
   // `toString` runs and replaces the narrowed `let`.
-  assert.equal(runExample(ofKind("string-raw-tag", "positive"), `(() => {
+  assert.equal(runExample(ofKind("string-raw-tag", ["positive"]), `(() => {
     const log = [];
     return JSON.stringify([mark, joined(1.5, "s", undefined, true, 2n), escapes(), ordered(log), log]);
   })()`), JSON.stringify(["^\\p{M}$", "n=1.5\\ts\\nundefined|true|2", ["\\u{", "\\`", "\\${x}", "a\\\nb", ""], "a1-b22", ["a", "b"]]),
     "string-raw-tag: the raw strings and the converted substitutions, in order");
   assert.equal(runExample(negative("invalid-string-raw-object-substitution"), "typeof shown()"), "string",
     "an object substitution's toString writes the narrowed let, returned as a number");
-  assert.equal(runExample(ofKind("blocker-pretext-string-raw", "positive"), "source()"), "[ぁ-ヿ]",
+  assert.equal(runExample(ofKind("blocker-pretext-string-raw", ["positive"]), "source()"), "[ぁ-ヿ]",
     "blocker-pretext-string-raw: the raw string");
   // Pretext's line walkers: an element read past its own array's end, where
   // the index is bounded by another array's length or another argument.
@@ -3252,23 +3253,23 @@ for (const [file, call] of [
     "the advances read past their end are undefined, pass the test against null and throw at length");
   assert.throws(() => runExample(negative("blocker-pretext-argument-implied-assertion"), "firstAdvanceCount([null], 0, 1)"),
     /TypeError/, "a grapheme index inside the segment does not make its advances present");
-  assert.equal(runEmitted(ofKind("literal-default-parameters", "positive"), "JSON.stringify([calls(), boxes(), written(), arrow(3), block(3)])"),
+  assert.equal(runEmitted(ofKind("literal-default-parameters", ["positive"]), "JSON.stringify([calls(), boxes(), written(), arrow(3), block(3)])"),
     '[22,"boxwide36",1,6,4]', "literal-default-parameters: the defaults run where the argument is undefined");
-  assert.equal(runExample(ofKind("do-while", "positive"),
+  assert.equal(runExample(ofKind("do-while", ["positive"]),
     "JSON.stringify([varint(String.fromCharCode(0x81, 0x01), 0), once(), tests([32, 9, 32, 7]), replaced(2), shadowed(3), lengthOf(5), lengthOf(\"abc\")])"),
     '[129,1,3,2,"sss",1,12]', "do-while: the body before the test, a continue to the test, a finally replacing it");
   assert.equal(runExample(negative("invalid-do-while-body-first"), "typeof last([])"), "undefined",
     "invalid-do-while-body-first: the body reads past the end of an empty array before the test");
-  assert.equal(runExample(ofKind("labeled-statements", "positive"),
+  assert.equal(runExample(ofKind("labeled-statements", ["positive"]),
     "JSON.stringify([decide([1, 5, 2], 3), decide([1], 3), rowsWithout([1, 2], [0, 2, 3]), lastKind([[1], [-1]]), lastKind([[-1], [1]]), captured([0, 2], 4), chained([0, 1, 1, 2, 1]), finals([[0, 1], [0], [2], [0]])])"),
     '[1,1,3,"skipped",2,4,2,"ffrf"]', "labeled-statements: each jump reaches its label, through the updates and finalizers between");
-  assert.equal(runExample(ofKind("labeled-program-iterable", "positive"),
+  assert.equal(runExample(ofKind("labeled-program-iterable", ["positive"]),
     "(() => { const a = { closed: 0 }, b = { closed: 0 }; const [o, i] = lists([2, 1], [9, 3, 2, 1], a); const n = nested(o, i); const [p, q] = lists([5], [9, 3, 2, 1], b); const m = nested(p, q); return JSON.stringify([n, a.closed, m, b.closed]); })()"),
     "[1,2,3,2]", "labeled-program-iterable: continue outer closes the inner iterator, break outer both");
   assert.equal(runExample(negative("invalid-labeled-break-stale-narrowing"),
     '(() => { const box = { v: "a" }; return typeof stale(box, () => { box.v = 1; }); })()'), "number",
     "invalid-labeled-break-stale-narrowing: the call after the test writes a number");
-  assert.equal(runExample(ofKind("destructuring-assignment", "positive"),
+  assert.equal(runExample(ofKind("destructuring-assignment", ["positive"]),
     '(() => { let calls = 0; return JSON.stringify([once(() => { calls++; return { a: 3 }; }), calls, nullKept({ v: null }), nullKept({}), nested({ p: { x: 1, y: 2 }, q: "z" }), captured({ n: 7 }), shadowed({ s: "x" })]); })()'),
     '[33,1,"null","default","z3",7,"outer"]', "destructuring-assignment: the right side once, each property read, defaulted and written in turn");
   assert.equal(runExample(negative("invalid-destructuring-assignment-dictionary"), "typeof total({})"), "undefined",

@@ -1,7 +1,6 @@
 // A verifier whose single pass (`Programs/SinglePass.lean`) has opt-in
 // mutations of its checks, for the controls showing each check is what
-// refuses some unit (tests/single-pass-controls.mts). Built as
-// pipeline/evidence-mutations.mts builds the old checker's: the current
+// refuses some unit (tests/single-pass-controls.mts). Built from the current
 // build's generated C of the pass's module and of the module its generic
 // code is specialized into (`Source/Claims/Json`, the file plans), a
 // mutation injected at the entry of each definition of the check, its

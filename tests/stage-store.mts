@@ -5,7 +5,7 @@
 // it again at the same limit, an edit of the replay policy, which no key
 // covers, replaying its entries, and eviction within a budget. The stages are shell-script
 // stand-ins declared audited for the test, so no build is needed; the
-// pipeline's own stages replay in `pipeline/test.mts`.
+// pipeline's own stages replay in `tests/single-pass-controls.mts`.
 import assert from "node:assert/strict";
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { chmodSync, closeSync, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync,

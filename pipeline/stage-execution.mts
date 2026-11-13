@@ -85,8 +85,7 @@ const repository = resolve(here, "..");
  * manifests bind, or presents outcomes. */
 export const unkeyed: readonly string[] = [
   "pipeline/stages.mts", "pipeline/stage-store.mts", "pipeline/module-interfaces.mts", "pipeline/verify-source.mts", "pipeline/run-cases.mts",
-  "pipeline/cases.mts", "pipeline/test.mts", "pipeline/default-parameters.mts", "pipeline/evidence-mutations.mts",
-  "pipeline/generic-rest.mts", "pipeline/overload-claims.mts", "pipeline/rest-pack-instance.mts",
+  "pipeline/cases.mts",
   "pipeline/run-example.mts", "pipeline/fixture-links.mts", "pipeline/unit-slices.mts", "pipeline/unit-documents.mts", "tools/diagnostic.mts", "tools/diagnostic-view.mts",
   "tools/claim-text.mts", "tools/unchecked.mts", "tools/shadow-contracts.mts", "tools/strip-types.mts",
   "tools/compiler-processes.mts", "tools/child-output.mts",
@@ -405,7 +404,7 @@ function resolveLoaderName(name: string, loader: string, executable: string, loa
 }
 
 /** The mutation verifiers this process runs, by real path: builds of the
- * verifier with test-only mutations (`evidence-mutations.mts`), audited as
+ * verifier with test-only mutations (`tests/single-pass-mutations.mts`), audited as
  * the verifier is. */
 const mutationBuilds = new Set<string>();
 /** Treat `executable`, a mutation verifier built from the repository's

@@ -1,21 +1,25 @@
-// The single pass's controls (`TSCERT_ROUTE=single-pass`, docs/drafts/single-pass.md):
-// the inputs no case makes on the single-pass route, each control a block of
+// The controls: the inputs no pipeline case makes, each control a block of
 // this file run by a pool of control processes, one per core, every
-// operation replayed from the stage store as pipeline/test.mts's controls'
-// are (STAGE-STORE.md, "Controls"). A case is checked on the route (the
-// parse, then `verifier --verify-interface-stage 8` with the interface
-// stages it needs); a control then runs the pass over its fragment under a
-// forced proposal (`TSCERT_FORCE`), or over a forged fragment, and requires
-// the unit it names refused. The store-boundary controls of the interface
-// stages name a fresh store.
+// operation replayed from the stage store (STAGE-STORE.md, "Controls"). A
+// case is checked through the pipeline (the parse, then `verifier
+// --verify-interface-stage 8` with the interface stages it needs); a
+// control then runs the pass over its fragment under a forced proposal
+// (`TSCERT_FORCE`), or over a forged fragment, and requires the unit it
+// names refused. Other controls read what the parser's document states,
+// run a native counterexample under Node, or check the driver's run
+// retention and the store's replay. The store-boundary controls of the
+// interface stages name a fresh store.
 import assert from "node:assert/strict";
-import { chmodSync, cpSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { join, resolve } from "node:path";
 import { availableParallelism } from "node:os";
 import { fork, spawn } from "node:child_process";
-import { controlOperations, invokeProcess, ran as ranStage, readInvocationLog, startEviction, type Invoked } from "../pipeline/stages.mts";
+import { controlOperations, invokeProcess, ran as ranStage, readInvocationLog, startEviction, type AttemptRecord, type Invoked }
+  from "../pipeline/stages.mts";
+import { Store } from "../pipeline/stage-store.mts";
+import { runExample } from "../pipeline/run-example.mts";
 import { verifierBuild, verifierCall, verifierProtocol } from "../pipeline/stage-execution.mts";
 import { usePassMutationVerifier } from "./single-pass-mutations.mts";
 import { check as checkSource, invocationLog, readFragmentFile, readOutcome, sourceKey, type Outcome } from "../pipeline/verify-source.mts";
@@ -1851,6 +1855,280 @@ mutationControl("sp-footprint: the footprint check, caught by three negative cas
 });
 
 // ---------------------------------------------------------------------------
+// The parser's document and the driver: what the fragment states, a native
+// counterexample under Node, run retention and replay.
+
+control("string object hook: the counterexample under Node", async (): Promise<void> => {
+  assert.equal(runExample("invalid-string-object-hook",
+    '(() => { const cell = { value: "kept" }; return kept(cell, { a: 1, toString() { cell.value = undefined; return "object"; } }); })()'), undefined);
+  say("string object hook: the counterexample's own toString writes the cell under Node");
+});
+
+control("imported functions left out with a function they read", async (): Promise<void> => {
+  // Which functions of an imported module the parser keeps: `partial.ts`'s
+  // `jumped` is refused, and each function reading it, directly, through
+  // another, as a value, in a closure or in a parameter default, is left out
+  // with it; a parameter of the same name is no read of it. A module whose
+  // top-level code reads a function left out is not listed.
+  const partial = fragmentAst(run("invalid-absent-callee-value-import"));
+  const [module] = partial.modules;
+  assert.ok(module && partial.modules.length === 1 && module.location === "./partial.ts");
+  assert.deepEqual(module.functions.map((f) => f.name), ["shadowed", "kept"]);
+  const leftOut = (name: string, line: number, col: number): string =>
+    `gate: a read of ${name}, a function of its module left out (line ${line}, col ${col})`;
+  assert.deepEqual(module.absent.map((a) => [a.name, a.reason]), [
+    ["jumped", "gate: statement outside the fragment (LastStatement) (line 8, col 3)"],
+    ["relayed", leftOut("jumped", 13, 10)],
+    ["passed", leftOut("jumped", 19, 17)],
+    ["inClosure", leftOut("jumped", 22, 24)],
+    ["defaulted", leftOut("jumped", 24, 50)],
+    ["chained", leftOut("relayed", 16, 10)],
+  ]);
+  assert.deepEqual(fragmentAst(run("invalid-absent-init-value-import")).modules, []);
+  say("an imported module's functions reading a function left out: left out with it, transitively; a module whose top-level code reads one: not listed");
+});
+
+control("guard binding: a closure's write keeps the guard an ordinary call", async (): Promise<void> => {
+  // A family guard is the inline membership test of a name only where no
+  // write in its binding's scope names it (`unassigned`): a nested closure's
+  // write keeps the guard an ordinary call; another function's write of its
+  // own `e` does not.
+  const lowered = (file: string): boolean => readFileSync(fragmentOf(run(file)), "utf8").includes('"tagMember"');
+  assert.ok(lowered("compiler-api-guard-own-binding"),
+    "compiler-api-guard-own-binding: the guard of a never-assigned binding is not the membership test");
+  assert.ok(!lowered("compiler-api-guard-closure-write"),
+    "compiler-api-guard-closure-write: the guard of a binding a closure assigns is the membership test");
+  say("guard binding: a closure's write keeps the guard an ordinary call, another binding's does not");
+});
+
+control("tag selection: one per run", async (): Promise<void> => {
+  // One tag selection per run (HOST-FAMILIES.md, "Residuals"): the importer
+  // and the module it imports a function from name different kinds, and the
+  // run reads every family declaration alike in both modules' documents,
+  // the union of the kinds both name. The module's own run selects only its
+  // own kinds.
+  const ast = fragmentAst(run("compiler-api-units"));
+  const [module] = ast.modules;
+  const family = (definitions: readonly TypeDefinition[]): Map<string, TypeDefinition> => new Map(definitions
+    .filter((d) => d.declaration.module.startsWith("tscert/family/") || d.declaration.module.includes("/typescript/dist/ast/"))
+    .map((d) => [`${d.declaration.module}#${d.declaration.name}`, d]));
+  const main = family(must(ast.declarations, "the importer's declarations").definitions);
+  const imported = family(must(must(module, "the imported module").declarations, "its declarations").definitions);
+  assert.deepEqual([...imported.keys()].sort(), [...main.keys()].sort(), "both documents read the same family declarations");
+  for (const [key, definition] of main)
+    assert.equal(JSON.stringify(imported.get(key)), JSON.stringify(definition), `${key} is read alike in both modules`);
+  const arms = (definitions: Map<string, TypeDefinition>): number[] => {
+    const node = [...definitions].find(([key]) => key.endsWith("/ast.d.ts#Node"));
+    const expression = must(node, "Node's reading")[1].expression;
+    assert.ok(expression?.k === "union", "Node's reading is a union");
+    return expression.parts.map((part) => part.k !== "reference" ? -2
+      : part.reference.name === "NumericLiteral" ? 9 : part.reference.name === "Identifier" ? 80 : -1);
+  };
+  assert.deepEqual(arms(main), [9, 80, -1], "the run's Node: NumericLiteral, Identifier and a residual");
+  const project = join(root, "pipeline", "compiler-api-project");
+  using alone = checkSource(join(project, "node-names.ts"), tsconfigOf(project), false, undefined, true);
+  assert.equal(alone.status, "verified", JSON.stringify(alone));
+  assert.deepEqual(arms(family(must(fragmentAst(alone.artifacts).declarations, "the module's declarations").definitions)), [80, -1],
+    "the module's own run: Identifier and a residual");
+  say("tag selection: one per run, the importer's and its module's family readings equal; the module's own run selects its own kinds");
+});
+
+control("run retention: only requested runs are kept", async (): Promise<void> => {
+  // A long-lived caller retains only explicitly requested runs, including
+  // replayed results and results whose consumer throws.
+  const source = join(root, "pipeline", "examples", "values.ts");
+  for (let i = 0; i < 3; i++) {
+    const result = checkSource(source);
+    assert.equal(result.status, "verified");
+    assert.equal(existsSync(result.artifacts), false);
+  }
+  let path = "";
+  assert.throws(() => {
+    using result = checkSource(source, undefined, false, undefined, true);
+    path = result.artifacts;
+    assert.ok(existsSync(join(path, "pass.log")));
+    throw Error("consumer failed");
+  }, /consumer failed/);
+  assert.equal(existsSync(path), false);
+  const module = pathToFileURL(join(root, "pipeline", "run-directory.mts")).href;
+  const driver = pathToFileURL(join(root, "pipeline", "verify-source.mts")).href;
+  // The driver is a file: a worker `checkApart` forks inherits the driver's
+  // `execArgv`, where `--input-type` without `-e` stops it at its start.
+  const failing = runDirectory("cleanup-control-");
+  const failingDriver = join(failing, "driver.mts");
+  writeFileSync(failingDriver, `
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const { runRoot, runDirectory } = await import(${JSON.stringify(module)});
+const root = runRoot();
+const before = fs.readdirSync(root).sort();
+const write = fs.writeFileSync;
+fs.writeFileSync = (path, ...args) => {
+  if (String(path).endsWith("request.json")) {
+    runDirectory("nested-stage-");
+    throw Error("injected request write failure");
+  }
+  return write(path, ...args);
+};
+syncBuiltinESMExports();
+const { check, checkApart, RunFailure } = await import(${JSON.stringify(driver)});
+assert.throws(() => check(${JSON.stringify(source)}), RunFailure);
+assert.deepEqual(fs.readdirSync(root).sort(), before);
+fs.writeFileSync = write;
+syncBuiltinESMExports();
+await assert.rejects(checkApart(${JSON.stringify(source)}), (e) => e instanceof RunFailure && e.message.startsWith("timeout: "));
+assert.deepEqual(fs.readdirSync(root).sort(), before);
+`);
+  const failures = spawnSync(process.execPath, [failingDriver], { encoding: "utf8", timeout: 30_000,
+    env: { ...process.env, TSCERT_STEP_LIMIT: "0.001", TSCERT_RUN_ROOT: failing } });
+  assert.equal(failures.status, 0, failures.stderr);
+  const tree = runDirectory("cleanup-tree-control-");
+  const preload = join(tree, "preload.mjs");
+  const driverFile = join(tree, "driver.mts");
+  const armed = join(tree, "armed");
+  writeFileSync(preload, `
+import fs from "node:fs";
+import { spawn } from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
+const { runDirectory } = await import(${JSON.stringify(module)});
+const write = fs.writeFileSync;
+fs.writeFileSync = (path, ...args) => {
+  if (String(path).endsWith("request.json")) {
+    runDirectory("nested-stage-");
+    spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: ["ignore", "ignore", "inherit"] });
+    write(${JSON.stringify(armed)}, "");
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);
+  }
+  return write(path, ...args);
+};
+syncBuiltinESMExports();
+`);
+  writeFileSync(driverFile, `
+import assert from "node:assert/strict";
+import { existsSync, readdirSync } from "node:fs";
+import { checkApart, RunFailure } from ${JSON.stringify(driver)};
+const checked = checkApart(${JSON.stringify(source)});
+// The check's timer cannot fire while this thread waits: the worker is
+// stopped by it only once blocked, its child started.
+const pause = new Int32Array(new SharedArrayBuffer(4));
+while (!existsSync(${JSON.stringify(armed)})) Atomics.wait(pause, 0, 0, 10);
+// The check settles at the worker's close, once every process holding its
+// standard error, the child included, has ended.
+await assert.rejects(checked, (e) => e instanceof RunFailure && e.message.startsWith("timeout: "));
+assert.ok(existsSync(${JSON.stringify(armed)}));
+assert.deepEqual(readdirSync(${JSON.stringify(tree)}).sort(), ["armed", "driver.mts", "preload.mjs"]);
+`);
+  const killedTree = spawnSync(process.execPath, ["--import", preload, driverFile], {
+    encoding: "utf8", timeout: 60_000,
+    env: { ...process.env, TSCERT_RUN_ROOT: tree, TSCERT_STEP_LIMIT: "0.5" },
+  });
+  assert.equal(killedTree.status, 0, killedTree.stderr);
+  const low = spawnSync(process.execPath, ["--input-type=module", "-e", `
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+const { tmpdir } = await import("node:os");
+const { join } = await import("node:path");
+const stale = fs.mkdtempSync(join(tmpdir(), "tscert-runs-"));
+fs.writeFileSync(join(stale, ".owner"), "2147483647");
+delete process.env.TSCERT_RUN_ROOT;
+fs.statfsSync = () => {
+  if (fs.existsSync(stale)) throw Error("space checked before pruning");
+  return { bavail: 0, bsize: 4096 };
+};
+syncBuiltinESMExports();
+const { runDirectory } = await import(${JSON.stringify(module)});
+runDirectory("must-not-start-");
+`], { encoding: "utf8" });
+  assert.equal(low.status, 1);
+  assert.match(low.stderr, /TScert stopped: 0.00 GiB free.*at least 10 GiB required/);
+  say("run retention: unrequested runs, a throwing consumer's, a failed request write's and a timed-out worker's left nothing; a run stops before it starts on a full disk");
+});
+
+control("replay: cold, warm and evicted runs agree", async (): Promise<void> => {
+  // Replay: a cold run in a fresh store and a warm run in another run root
+  // agree on their outcome, documents and logs; the warm run replays every
+  // stage (the module interfaces included), the parse by its observations.
+  // The warm worker first checks other sources. After a pass evicting
+  // everything, its source snapshots included, a run executes every stage
+  // again to the same outcome, documents and logs. A changed source
+  // executes again.
+  const store = runDirectory("tscert-replay-store-");
+  const runAt = (source: string, project: string | null, preceding: readonly string[] = []): { outcome: Outcome; records: AttemptRecord[] } => {
+    const runs = runDirectory("tscert-replay-root-");
+    // Sequential awaits use the same idle worker; each driver starts a fresh pool.
+    const driver = `import { checkApart } from ${JSON.stringify(pathToFileURL(join(root, "pipeline", "verify-source.mts")).href)};
+for (const source of ${JSON.stringify(preceding)}) await checkApart(source);
+process.stdout.write(JSON.stringify(await checkApart(${JSON.stringify(source)}, ${JSON.stringify(project ?? undefined)}, false, undefined, true)));`;
+    const driverPath = join(runs, "worker-history.mts");
+    writeFileSync(driverPath, driver);
+    const ran = spawnSync(process.execPath, [driverPath],
+      { encoding: "utf8", timeout: 240_000, env: { ...process.env, TSCERT_STAGE_STORE: store, TSCERT_RUN_ROOT: runs } });
+    assert.equal(ran.status, 0, ran.stderr);
+    const outcome = readOutcome(JSON.parse(ran.stdout.slice(ran.stdout.indexOf("{"))));
+    return { outcome, records: readInvocationLog(join(outcome.artifacts, invocationLog)) };
+  };
+  const documents = ["fragment.json", "parse.log", "pass.log", "typescript-diagnostics.json"];
+  const contents = (artifacts: string): Map<string, string> => new Map(documents.flatMap((name): [string, string][] =>
+    existsSync(join(artifacts, name)) ? [[name, readFileSync(join(artifacts, name), "utf8")]] : []));
+  const replayed = new Set(["parse", "interface-plan", "module-interface", "pass", "diagnostics"]);
+  const runs: [string, string | null][] = [["certified-nested-value-import", "pipeline/imports-project"],
+    ["invalid-closure-contextual-result", null]];
+  for (const [name, project] of runs) {
+    const source = join(root, "pipeline", "examples", `${name}.ts`);
+    const projectPath = project ? resolve(root, project) : null;
+    const cold = runAt(source, projectPath), warm = runAt(source, projectPath,
+      [join(root, "pipeline", "examples", "values.ts"), join(root, "pipeline", "examples", "invalid-void-result.ts")]);
+    const { artifacts: coldArtifacts, ...coldOutcome } = cold.outcome;
+    const { artifacts: warmArtifacts, ...warmOutcome } = warm.outcome;
+    assert.notEqual(coldArtifacts, warmArtifacts);
+    assert.deepEqual(warmOutcome, coldOutcome, `${name}: the same outcome`);
+    assert.deepEqual(contents(warmArtifacts), contents(coldArtifacts), `${name}: the same documents and logs`);
+    // A replayed parse runs no stage nested in it: its imported modules' stages ran in the cold run only.
+    const outer = (records: readonly AttemptRecord[]): string[] => records.filter((r) => r.stage !== "module").map((r) => r.stage);
+    assert.deepEqual(outer(warm.records), outer(cold.records), `${name}: the same stages`);
+    assert.ok(project === null || cold.records.some((r) => r.stage === "module"), `${name}: its modules' stages ran cold`);
+    for (const r of cold.records) assert.ok(ranStage(r), `${name}: cold ${r.stage} executed`);
+    for (const r of warm.records) {
+      assert.equal(r.execution, replayed.has(r.stage) && r.key !== null ? "replayed" : "executed", `${name}: warm ${r.stage}`);
+      if (replayed.has(r.stage) && r.key === null) {
+        assert.match(r.ineligible ?? "", /macOS and Linux only|Node import, require or loader|Node DYLD_|Node LD_|ld\.so\.preload|confined on macOS/,
+          `${name}: ${r.stage} explains its unidentified dependencies`);
+        say(`${name}: ${r.stage} executes without a key: ${r.ineligible}`);
+      }
+    }
+    assert.ok(project === null || warm.records.some((r) => r.stage === "module-interface"), `${name}: module interfaces replayed`);
+    // The drivers' worker processes hold their source snapshots until they stop.
+    const stored = (part: string): number => existsSync(join(store, part)) ? readdirSync(join(store, part)).length : 0;
+    // A platform where no stage has a key stores no entry (`ineligible`).
+    if (cold.records.some((r) => r.key !== null))
+      assert.ok(stored("sources") > 0 && stored("entries") > 0, `${name}: snapshots and entries stored`);
+    else assert.equal(stored("entries"), 0, `${name}: no entry stored without keys`);
+    let evictionPass = new Store(store).evictionPass(0);
+    for (const started = Date.now(); evictionPass && evictionPass.held > 0 && Date.now() - started < 30_000;) {
+      await new Promise((done) => setTimeout(done, 200));
+      evictionPass = new Store(store).evictionPass(0);
+    }
+    assert.ok(evictionPass && evictionPass.afterBytes === 0 && stored("sources") === 0, JSON.stringify(evictionPass));
+    assert.ok(readdirSync(join(store, "entries")).every((stage) => stored(join("entries", stage)) === 0), `${name}: no entry left`);
+    const evicted = runAt(source, projectPath);
+    const { artifacts: evictedArtifacts, ...evictedOutcome } = evicted.outcome;
+    assert.deepEqual(evictedOutcome, coldOutcome, `${name}: the same outcome after eviction`);
+    assert.deepEqual(contents(evictedArtifacts), contents(coldArtifacts), `${name}: the same documents and logs after eviction`);
+    for (const r of evicted.records) assert.ok(ranStage(r), `${name}: ${r.stage} executed after eviction`);
+  }
+  const changed = join(runDirectory("tscert-replay-changed-"), "changed.ts");
+  writeFileSync(changed, readFileSync(join(root, "pipeline", "examples", "values.ts"), "utf8") + "\n// changed\n");
+  const before = runAt(join(root, "pipeline", "examples", "values.ts"), null);
+  const after = runAt(changed, null);
+  assert.equal(after.outcome.status, before.outcome.status);
+  for (const r of after.records) assert.ok(ranStage(r), `a changed source: ${r.stage} executed`);
+  say("replay: cold and warm workers with different request histories agree on outcomes, documents and logs; the warm run " +
+    "replays every stage, the parse by its observations, and executes stages with unidentified dependencies; after an eviction " +
+    "every stage executes to the same outcome; a changed source executes its stages");
+});
+
+// ---------------------------------------------------------------------------
 // The pool.
 
 type Operations = { executed: number; replayed: number; elapsedMs: number };
@@ -1895,6 +2173,23 @@ if (serving) {
   // names contain a pattern, every one with none.
   startEviction();
   linkFixtures();
+  // With no pattern, the observed stages' replay controls
+  // (tests/observed-stages.mts), which run their stages in fresh processes,
+  // the parse's with real compilers, and the retained declaration sessions'
+  // controls (tests/session-reuse.mts), each in a process of its own beside
+  // the pool; their results are reported at its end.
+  const beside = (module: string): Promise<{ status: number | null; stdout: string; stderr: string }> =>
+    new Promise((done, fail) => {
+      const child = spawn(process.execPath, [join(import.meta.dirname, module)], { stdio: ["ignore", "pipe", "pipe"] });
+      let stdout = "", stderr = "";
+      child.stdout.setEncoding("utf8");
+      child.stderr.setEncoding("utf8");
+      child.stdout.on("data", (text: unknown) => { stdout += String(text); });
+      child.stderr.on("data", (text: unknown) => { stderr += String(text); });
+      child.on("error", fail);
+      child.on("close", (status: number | null) => done({ status, stdout, stderr }));
+    });
+  const besides = chosen.length > 0 ? [] : [beside("observed-stages.mts"), beside("session-reuse.mts")];
   const started = performance.now();
   const failures: string[] = [];
   const tally: Operations = { executed: 0, replayed: 0, elapsedMs: 0 };
@@ -1973,6 +2268,10 @@ if (serving) {
     give();
   });
   await Promise.all([mutationReady, ...Array.from({ length: width }, lane)]);
+  for (const ran of await Promise.all(besides)) {
+    if (ran.status !== 0) failures.push(ran.stdout + ran.stderr);
+    else process.stdout.write(ran.stdout);
+  }
   process.stdout.write(`single-pass controls: ${total} in ${((performance.now() - started) / 1000).toFixed(1)} s on ${width} ` +
     `lanes (${processes} processes); their operations ${tally.executed} executed (${(tally.elapsedMs / 1000).toFixed(1)} s ` +
     `in all), ${tally.replayed} replayed\n`);

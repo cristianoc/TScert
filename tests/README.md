@@ -1,7 +1,7 @@
 # Verification regressions
 
 `make test-checks` builds, then runs the fast checks and the controls
-([`test-all.sh`](../test-all.sh), [`pipeline/test.mts`](../pipeline/test.mts));
+([`test-all.sh`](../test-all.sh), [`single-pass-controls.mts`](single-pass-controls.mts));
 `make test-cases` builds, then runs the pipeline cases
 ([`pipeline/run-cases.mts`](../pipeline/run-cases.mts)).
 
@@ -9,7 +9,7 @@ The pipeline cases are listed in [`pipeline/cases.mts`](../pipeline/cases.mts),
 each a source file under [`pipeline/examples/`](../pipeline/examples/) with its
 expected outcome, run by `pipeline/run-cases.mts` (`make test-cases`, and
 `make cases P=…` for those whose names contain `P`); the controls no case can
-make are `pipeline/test.mts`'s. Two families in
+make are `single-pass-controls.mts`'s. Two families in
 `pipeline/examples/` hold one source per feature, every function checked:
 
 - `stateful-source/`: storage contracts, refinements, loops, generics and the
@@ -48,7 +48,7 @@ creates.
 This directory holds the suites that check the repository around the
 pipeline. `test-all.sh` runs each but `compiler-api-shapes.mts`, which
 `make compiler-api-shapes` and CI run, and `session-reuse.mts`, which
-`pipeline/test.mts` runs beside its controls, as it runs the full
+`single-pass-controls.mts` runs beside its controls, as it runs the full
 `observed-stages.mts` (`test-all.sh` runs it with `--reads`);
 `force-tool-failure.mts` is the forced failure `tool-failures.mts` imports:
 
@@ -62,7 +62,7 @@ pipeline. `test-all.sh` runs each but `compiler-api-shapes.mts`, which
 | [`stage-store.mts`](stage-store.mts) | The [stage store](../docs/STAGE-STORE.md) with stand-in stages: dependency invalidation, concurrent publication, an interrupted writer, a timeout/success race, writable artifact isolation, timeouts at a longer limit and retried, and an edit of the replay policy replaying its entries. |
 | [`shared-work.mts`](shared-work.mts) | The work shared within a process: an attempt's answers, a snapshot's query answers and every compiler's ledger. |
 | [`session-reuse.mts`](session-reuse.mts) | Retained declaration sessions: a parse in a reused session is byte for byte the parse in fresh compilers, in forward, reverse and A–B–A orders, and the replacements, invalidations and failed restorations [retained declaration sessions](../docs/STAGE-STORE.md#retained-declaration-sessions) lists. |
-| [`observed-stages.mts`](observed-stages.mts) | With `--reads` (a fast check), that the stages' code reads the file system only through `tools/files.mts`; in full, run by `pipeline/test.mts`, that a parse replays after an unchanged run and executes after each change that alters what it read, that forged entries are refused, and that the confined compiler is killed on a read the API's queries do not serve. |
+| [`observed-stages.mts`](observed-stages.mts) | With `--reads` (a fast check), that the stages' code reads the file system only through `tools/files.mts`; in full, run by `single-pass-controls.mts`, that a parse replays after an unchanged run and executes after each change that alters what it read, that forged entries are refused, and that the confined compiler is killed on a read the API's queries do not serve. |
 | [`compiler-api.mts`](compiler-api.mts) | The compiler-API contract against the installed package: the host package is the audited installation with the reviewed declarations (C0); the host enums' declared values are their runtime values (C1); node lists answer as dense readonly arrays, `jsDoc` allocates on each read, a stable member does not (C4); open reads find data properties or audited getters (C5); the stated guards (C6); the symbol tables and type predicates (C7). |
 | [`compiler-api-guards.mts`](compiler-api-guards.mts) | Each family's guard table, the compiler API's and the string-tagged stand-in's, equals its generator's output, and every entry run under Node answers exactly its tag set (C2). |
 | [`compiler-api-shapes.mts`](compiler-api-shapes.mts) | Every node of a corpus holds the properties its shape states required, or a correction covers them (C3), and its members read one value throughout (C4). |
@@ -98,33 +98,3 @@ Each example function has a doc comment explaining the behavior or proof
 obligation it illustrates. For unsupported examples, the comment distinguishes
 the adapter's limitation from a soundness result; loop examples say when
 termination is not established.
-
-## Path-witness and stable-link evidence controls
-
-`node pipeline/test.mts` derives the path-witness and stable-link forgeries
-from each run's claims and evidence. Function names, parsed statements, source spans and named
-receiver paths select the changes. There are no stored evidence patches or
-fixture regeneration commands.
-
-[`pipeline/evidence-mutations.mts`](../pipeline/evidence-mutations.mts) builds
-an isolated mutation executable in the run directory from the current Lake
-build's generated C and link response file. Run `(cd lean && lake build)` first.
-The helper uses the pinned toolchain's compiler; it reads the Lake cache and
-writes only to the run directory. `pipeline/test.mts` builds it once per run,
-beside its controls (`node pipeline/evidence-mutations.mts --build`), and
-gives it to its control processes; its invocations replay from the stage
-store by its executable's digest and the mutation selection
-([controls](../docs/STAGE-STORE.md#controls)). The production verifier and
-Lean sources contain no mutation switches.
-
-The mutations bypass mapped/observed edge coverage, read-link entailment or
-heap-cell entailment, retain all links through `withStable`, or retain links
-through `handlerFacts`. Symbol lookup requires one matching definition and
-checks the handler's inlined call site. A compiler output change that breaks
-these anchors fails the test. The coverage search constructs empty subtype
-choices for the destination context; the other mutations use ordinary search.
-Each generated document must be accepted under its selected mutation and
-refused with each selected component removed. The stable and handler controls
-also require refusal under each other's mutation. The production verifier
-checks every forgery against its exact refusal location, including the
-handler's incoming edge.

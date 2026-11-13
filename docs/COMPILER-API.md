@@ -1256,9 +1256,9 @@ accepts, and the front end recognises a type alias by its kind
 described in [cases.mts](../pipeline/cases.mts): positive and negative
 sources importing the package from `pipeline/compiler-api-project/`, the
 negatives with their counterexample run under Node. The controls a source
-cannot make (forged claims and evidence, a family description of another
+cannot make (forged fragments, a family description of another
 digest, the string-tagged stand-in) are in
-[test.mts](../pipeline/test.mts); C0–C7 are `tests/compiler-api.mts`,
+[single-pass-controls.mts](../tests/single-pass-controls.mts); C0–C7 are `tests/compiler-api.mts`,
 `tests/compiler-api-guards.mts` and `tests/compiler-api-shapes.mts`.
 
 ## Where it lives

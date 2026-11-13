@@ -67,11 +67,6 @@ Excluded from every key (`unkeyed`), by role:
   documents' types;
 - `pipeline/run-cases.mts`, `pipeline/cases.mts`: the case runner and the
   case inventory;
-- `pipeline/test.mts`, `pipeline/default-parameters.mts`,
-  `pipeline/evidence-mutations.mts`, `pipeline/generic-rest.mts`,
-  `pipeline/overload-claims.mts`, `pipeline/rest-pack-instance.mts`: the
-  controls and their forged inputs, which reach a stage only as manifest
-  inputs;
 - `pipeline/run-example.mts`, `pipeline/fixture-links.mts`: running an
   example under Node, and creating the fixture projects' links;
 - `tools/diagnostic.mts`, `tools/diagnostic-view.mts`, `tools/claim-text.mts`:
@@ -969,7 +964,7 @@ replaced.
 - *The mode.* Reuse is on; `TSCERT_EVIDENCE_REUSE=0` turns it off, and off
   nothing is read from or written to the `proposed` index. The variable is
   outside every key. `test-all.sh` (and so `make test-checks`),
-  `pipeline/test.mts` and `pipeline/run-cases.mts` set it to `0` in their
+  and `pipeline/run-cases.mts` set it to `0` in their
   environment, so their checks search: they are where a search that no
   longer finds its evidence shows. The census runs with reuse on: its
   counts are of what the current check accepts. The controls of reuse
@@ -998,7 +993,7 @@ and earlier lines change only the cost.
 A control tests the verifier, the producer or the pipeline on
 an input no case makes: a forged or tampered document, a mutation of the
 verifier, an injected tool failure, a host-family override. The controls of
-`pipeline/test.mts` run in `make test-checks`, in a pool of processes. Every
+`tests/single-pass-controls.mts` run in `make test-checks`, in a pool of processes. Every
 operation a control runs is a stage invocation of the common mechanism and
 replays from the store like any other: its key binds the executable by
 content, its argument vector, its environment and the bytes of every input
@@ -1030,17 +1025,15 @@ the operation's result, executed or replayed.
 - *Limit.* A control's operation is killed after 30 s unless the control
   states another limit (`tested`, `pipeline/stages.mts`).
 
-The single pass's controls (`tests/single-pass-controls.mts`) run the same
-way on the single-pass route: a control checks its case through the parse
-and the pass (`TSCERT_ROUTE=single-pass`), then runs the pass's importer and
-interface stages over its fragment under a forced proposal or over a forged
-fragment, each stage replayed where the store holds a finished result and
-counted as the controls of `pipeline/test.mts` count theirs. Its
-store-boundary controls of the [module-interface
-stages](#single-pass-module-interfaces) name a fresh store.
+A control checks its case through the parse and the pass, then runs the
+pass's importer and interface stages over its fragment under a forced
+proposal or over a forged fragment, each stage replayed where the store
+holds a finished result. Its store-boundary controls of the
+[module-interface stages](#single-pass-module-interfaces) name a fresh
+store.
 
 The controls of the store itself (`tests/stage-store.mts`, the observed
-stages' replay controls, the cold and warm comparison of `pipeline/test.mts`)
+stages' replay controls, the cold and warm comparison of `tests/single-pass-controls.mts`)
 name fresh stores of their own and execute every time: their subject is the
 replay mechanism. Store tests cover dependency invalidation, concurrent
 publication, interrupted writers, timeout/success races, writable
@@ -1058,10 +1051,7 @@ item, a replay racing
 passes a miss or the entry's own result, and a pass an orchestrator starts
 leaving the store within its budget. The replay control evicts its store
 whole and runs again: every stage executes, to the same outcome, documents
-and logs. The edit replay control of `pipeline/test.mts` edits an importer
-of a certified module in its own code: the module run's search and check
-replay, the importer's search executes, and the edited run's outcome is a
-cold run's in a fresh store.
+and logs.
 
 The controls of evidence reuse ([evidence proposals](#evidence-proposals))
 name fresh stores too, and set `TSCERT_EVIDENCE_REUSE=1` on the runs they

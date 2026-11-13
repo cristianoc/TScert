@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The checks of `make test-checks`, after its build: the suites below, each a
 # `run_test` line with a comment naming what it checks, running no stage, and
-# the controls no pipeline case can make (pipeline/test.mts). The pipeline
+# the controls no pipeline case can make (tests/single-pass-controls.mts). The pipeline
 # cases are pipeline/run-cases.mts (`make test-cases`).
 # Usage: test-all.sh
 set -uo pipefail
@@ -203,10 +203,9 @@ run_test "Diagnostic decoder" node tests/diagnostic.mts
 run_test "Claim text of malformed input" node tests/claim-text.mts
 # tests/rule-inventory.mts checks that the rules REQUEST-PROTOCOL documents are the rules Lean declares.
 run_test "Rule inventory" node tests/rule-inventory.mts
-# pipeline/test.mts runs, on the pipeline's route, the controls no case can make, their operations replayed from the stage store, and the observed stages' replay controls.
-run_test "Controls" env TSCERT_ROUTE=pipeline node pipeline/test.mts
-# tests/single-pass-controls.mts runs the single pass's controls (TSCERT_ROUTE=single-pass): forced proposals, forged fragments, the interface stages' store boundary.
-run_test "Single-pass controls" node tests/single-pass-controls.mts
+# tests/single-pass-controls.mts runs the controls no case can make, their operations replayed from the stage store: forced proposals, forged fragments,
+# the interface stages' store boundary, run retention and replay; beside them the observed stages' replay controls and the declaration sessions' controls.
+run_test "Controls" node tests/single-pass-controls.mts
 
 report_tests
 
