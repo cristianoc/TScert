@@ -22,7 +22,7 @@ theorem bagT_adm (P : Fields) : Adm (bagT P) := by
   · rintro n W W' hx v ⟨l, code, oid, hv, hval, hr⟩
     exact ⟨l, code, oid, hv, hval, (recT_adm P).mono n W W' hx _ hr⟩
 
-theorem bagT_contractive {ι : Type} (X Y : ι → Fam) (fs : List (PropKey × ι)) (n : Nat)
+theorem bagT_contractive {ι : Type} (X Y : ι → Fam) (fs : List (Stored ι)) (n : Nat)
     (hag : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :
     bagT (ReferenceConjunctions.famsOf X fs) n W v ↔
       bagT (ReferenceConjunctions.famsOf Y fs) n W v := by
@@ -34,8 +34,8 @@ theorem recT_bag {P : Fields} {n W v} (h : recT P n W v) : bagT P n W v := by
   obtain ⟨flds, oid, rfl, hr⟩ := h
   exact ⟨flds, .absent, oid, rfl, rfl, flds, oid, rfl, hr⟩
 
-theorem bag_read {fs : Fields} {f : PropKey} {P : Fam} (hP : ValOnly P)
-    (hm : (f, P) ∈ fs) {n W h v}
+theorem bag_read {fs : Fields} {f : PropKey} {s : StorageRole} {P : Fam} (hP : ValOnly P)
+    (hm : (f, s, P) ∈ fs) {n W h v}
     (hv : bagT fs n W v) (hw : WorldAdm W) (hh : HeapOk n W h) :
     Safe Ξ P n W h (.readAt f v) := by
   obtain ⟨flds, code, oid, rfl, _, hr⟩ := hv
@@ -43,8 +43,8 @@ theorem bag_read {fs : Fields} {f : PropKey} {P : Fam} (hP : ValOnly P)
   cases he
   exact read_rule (code := code) hP n W h l hw hh hf hl hc
 
-theorem bag_write {fs : Fields} {f : PropKey} {P : Fam} (hP : Adm P)
-    (hm : (f, P) ∈ fs) {n W h v a}
+theorem bag_write {fs : Fields} {f : PropKey} {s : StorageRole} {P : Fam} (hP : Adm P)
+    (hm : (f, s, P) ∈ fs) {n W h v a}
     (hv : bagT fs n W v) (ha : P n W a) (hval : isVal a = true)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     Safe Ξ nulT n W h (.writeAt f v a) := by

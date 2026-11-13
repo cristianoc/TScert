@@ -1136,7 +1136,7 @@ theorem fresh_store_safe {E : Fam} (ro : Bool) (presence : ArrayPresence) (hE : 
 
 /-- The named fields and readonly views of an object of one record operand:
 a record's, or a dictionary's, whose named members hold beside its index. -/
-def namedMembers : Clause α → Option (List (PropKey × α) × List (PropKey × α))
+def namedMembers : Clause α → Option (List (Stored α) × List (PropKey × α))
   | .refs fs [] vs _ _ _ _ => some (fs, vs)
   | .dict fs [] vs _ _ _ _ _ _ => some (fs, vs)
   | _ => none
@@ -1144,10 +1144,10 @@ def namedMembers : Clause α → Option (List (PropKey × α) × List (PropKey �
 /-- A value of a type with named members holds each named field as a cell of
 its contract and each view as a location whose contents meet its bound. -/
 theorem namedMembers_sem {G : NormalGraph ι} {A : Ty ι} {c : Clause (Ty ι)}
-    {fs vs : List (PropKey × Ty ι)} (hr : Represents G A c)
+    {fs : List (Stored (Ty ι))} {vs : List (PropKey × Ty ι)} (hr : Represents G A c)
     (hc : namedMembers c = some (fs, vs)) {n W v} (h : meaning G A n W v) :
     recT (ReferenceConjunctions.famsOf (meaning G) fs) n W v ∧
-      viewsT (ReferenceConjunctions.famsOf (meaning G) vs) n W v := by
+      viewsT (ReferenceConjunctions.viewsOf (meaning G) vs) n W v := by
   have hs := (represents_raw hr n W v) h
   match c, hc with
   | .refs _ [] _ _ _ _ _, rfl => exact ⟨hs.1.1, hs.2.1⟩
@@ -1155,7 +1155,7 @@ theorem namedMembers_sem {G : NormalGraph ι} {A : Ty ι} {c : Clause (Ty ι)}
 
 /-- A clause with named members is a record's or a dictionary's, which the
 builtins's invariant applies to. -/
-theorem namedMembers_carriesInvariant {c : Clause α} {fs vs : List (PropKey × α)}
+theorem namedMembers_carriesInvariant {c : Clause α} {fs : List (Stored α)} {vs : List (PropKey × α)}
     (hc : namedMembers c = some (fs, vs)) : c.carriesInvariant = true := by
   match c, hc with
   | .refs _ [] _ _ _ _ _, rfl => rfl
@@ -1219,7 +1219,7 @@ among its fields, at a type excluding no number found. -/
 @[nospecialize] def lengthViewed (G : NormalGraph ι) (B : Ty ι) : Bool :=
   match expand G B with
   | [c] => match namedMembers c with
-    | some (fs, vs) => (fs.lookup lengthKey).isNone &&
+    | some (fs, vs) => ((Stored.views fs).lookup lengthKey).isNone &&
         match vs.lookup lengthKey with
         | some A => !lengthExcluded G A
         | none => false

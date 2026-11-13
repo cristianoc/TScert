@@ -113,7 +113,8 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       {S : List (MethodRestArrow (Ty ι))} {arity start : Nat}
       {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
       {caps : List (Ty ι × Nat)} {parts : List (PropKey × Ty ι × Tm)} :
-      Represents G F (.ctors L S (parts.map fun p => (p.1, p.2.1)) []) → Represents G U .undef →
+      Represents G F (.ctors L S (withRole .field (parts.map fun p => (p.1, p.2.1))) []) →
+      Represents G U .undef →
       (codeField :: parts.map Prod.fst).Nodup →
       (∀ p ∈ parts, HasTyWith G images subtyping Γ p.2.2 p.2.1) →
       (∀ p ∈ L, GraphCodeSpec G arity E K start (caps.map Prod.fst) ⟨U, p.arguments, p.result, p.effect⟩) →
@@ -132,7 +133,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
       {caps : List (Ty ι × Nat)} {kind : Invoke} {rest : Bool} {As : List (Ty ι)}
       {parts : List (PropKey × Ty ι × Tm)} :
-      Represents G F (.callable (parts.map fun p => (p.1, p.2.1)) [] L S) →
+      Represents G F (.callable (withRole .field (parts.map fun p => (p.1, p.2.1))) [] L S) →
       (parts.map Prod.fst).Nodup →
       (∀ p ∈ parts, HasTyWith G images subtyping Γ p.2.2 p.2.1) →
       KindOffers G kind L S →
@@ -147,7 +148,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   value the machine binds there. -/
   | construct {Γ : List (Ty ι)} {f : Tm} {F B : Ty ι} {L : List (MethodArrow (Ty ι))}
       {S : List (MethodRestArrow (Ty ι))} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)}
-      {a : List (PropKey × Ty ι)} {bs : List (List (PropKey × Ty ι))} {vs : List (PropKey × Ty ι)}
+      {a : List (Stored (Ty ι))} {bs : List (List (Stored (Ty ι)))} {vs : List (PropKey × Ty ι)}
       {e : Effect} :
       HasTyWith G images subtyping Γ f F → Represents G F (.ctors L S a bs vs) →
       ⟨(), xs.map Prod.fst ++ Us, B, e⟩ ∈ L → e.plain = true →
@@ -158,7 +159,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   parts that fit its rest (`RestParts`), as a variadic call's do. -/
   | constructRest {Γ : List (Ty ι)} {f : Tm} {F P B : Ty ι} {L : List (MethodArrow (Ty ι))}
       {S : List (MethodRestArrow (Ty ι))} {xs : List (Ty ι × Tm)} {parts : List (Bool × Ty ι × Tm)}
-      {a : List (PropKey × Ty ι)} {bs : List (List (PropKey × Ty ι))} {vs : List (PropKey × Ty ι)}
+      {a : List (Stored (Ty ι))} {bs : List (List (Stored (Ty ι)))} {vs : List (PropKey × Ty ι)}
       {e : Effect} :
       HasTyWith G images subtyping Γ f F → Represents G F (.ctors L S a bs vs) →
       ⟨(), (xs.map Prod.fst, P), B, e⟩ ∈ S → e.plain = true →
@@ -170,8 +171,8 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   at the selected signature's receiver. `Us` are the trailing positions the
   signature declares and this call omits; each admits `undefined`, which is
   the value the machine binds there. `Us = []` is the exact-arity call. -/
-  | callCallable {effect : Effect} {Γ : List (Ty ι)} {f r : Tm} {F Rt B : Ty ι} {P : List (PropKey × Ty ι)}
-      {Ps : List (List (PropKey × Ty ι))} {L : List (Arrow (Ty ι))}
+  | callCallable {effect : Effect} {Γ : List (Ty ι)} {f r : Tm} {F Rt B : Ty ι} {P : List (Stored (Ty ι))}
+      {Ps : List (List (Stored (Ty ι)))} {L : List (Arrow (Ty ι))}
       {S : List (RestArrow (Ty ι))} {ms : List (MethodMembers.Sig (Ty ι))} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} :
       HasTyWith G images subtyping Γ f F → Represents G F (.callable P Ps L S ms) →
       ⟨Rt, xs.map Prod.fst ++ Us, B, effect⟩ ∈ L → HasTyWith G images subtyping Γ r Rt →
@@ -180,13 +181,13 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   /-- A field of a value with code: a callable object's bag field, or a
   class value's static field. -/
   | readCallable {c : Clause (Ty ι)} : HasTyWith G images subtyping Γ a F → Represents G F c →
-      c.bag = some (P, Ps) → (f, A) ∈ P →
+      c.bag = some (P, Ps) → (f, s, A) ∈ P →
       HasTyWith G images subtyping Γ (.readAt f a) A
   /-- A readonly static field of a class value: a view of its own field. -/
   | readBagView {c : Clause (Ty ι)} : HasTyWith G images subtyping Γ a F → Represents G F c →
       (f, A) ∈ c.bagViews → HasTyWith G images subtyping Γ (.readAt f a) A
   | writeCallable {c : Clause (Ty ι)} : HasTyWith G images subtyping Γ a F → Represents G F c →
-      c.bag = some (P, Ps) → (f, A) ∈ P →
+      c.bag = some (P, Ps) → (f, s, A) ∈ P →
       HasTyWith G images subtyping Γ b A → Represents G N .nul → HasTyWith G images subtyping Γ (.writeAt f a b) N
   | app {effect : Effect} {Γ : List (Ty ι)} {f r : Tm} {F Rt B : Ty ι} {L : List (Arrow (Ty ι))}
       {S : List (RestArrow (Ty ι))} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} :
@@ -200,12 +201,19 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   keys are exactly those names, so any bound admitting them holds of it. A
   field among the stable keys `st` is allocated with a contract admitting
   only its initial value: the clause states it a view and a stable key
-  (POSITIVE-TYPES.md, "Records"). Such an object holds no array store. -/
-  | alloc {parts : List (PropKey × Ty ι × Tm)} {ks : List KeyBound} {st : List PropKey} :
+  (POSITIVE-TYPES.md, "Records"). Such an object holds no array store.
+  Every allocation of named locations is this one rule: an object literal, a
+  binding's cell and its uninitialized marker, an array object with its
+  store slot. The clause states each field's storage position (`fs`), the
+  key and contract of a part with the role the claim gives its location;
+  in this development the rule leaves the role free, since its worlds record
+  none. -/
+  | alloc {parts : List (PropKey × Ty ι × Tm)} {fs : List (Stored (Ty ι))} {ks : List KeyBound}
+      {st : List PropKey} :
       (parts.map Prod.fst).Nodup → hostKey ∉ parts.map Prod.fst →
       (∀ p ∈ parts, HasTyWith G images subtyping Γ p.2.2 p.2.1) →
-      Represents G Ref (.refs (stablePart st false (parts.map fun p => (p.1, p.2.1))) []
-        (stablePart st true (parts.map fun p => (p.1, p.2.1))) [] [] ks st) →
+      Stored.views fs = stablePart st false (parts.map fun p => (p.1, p.2.1)) →
+      Represents G Ref (.refs fs [] (stablePart st true (parts.map fun p => (p.1, p.2.1))) [] [] ks st) →
       (∀ K ∈ ks, ∀ p ∈ parts, K.admits p.1 = true) →
       allocBuiltins G (parts.map fun p => (p.1, p.2.1)) = true →
       (st = [] ∨ CallArguments.arrayStoreField ∉ parts.map Prod.fst) →
@@ -218,20 +226,24 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   index holds of it, writable ones included, and it lacks each optional field
   the clause states, which a key added at a writable index's contract keeps
   (the field at that contract, or none meets it). No own-key bound is stated,
-  since code holding the dictionary may add keys. -/
-  | allocDict {parts : List (PropKey × Ty ι × Tm)} {ix cs : List (IndexKeys × Ty ι)}
+  since code holding the dictionary may add keys. The clause states each
+  field's and each writable index's role, which the rule leaves free, as
+  `alloc` does. -/
+  | allocDict {parts : List (PropKey × Ty ι × Tm)} {fs : List (Stored (Ty ι))}
+      {ix : List (IndexKeys × Ty ι)} {cs : List (IndexKeys × StorageRole × Ty ι)}
       {os : List (OptionalField (Ty ι))} :
       (parts.map Prod.fst).Nodup → CallArguments.protoField ∉ parts.map Prod.fst →
       CallArguments.arrayStoreField ∉ parts.map Prod.fst → hostKey ∉ parts.map Prod.fst →
       (∀ p ∈ parts, HasTyWith G images subtyping Γ p.2.2 p.2.1) →
-      Represents G Ref (.dict (parts.map fun p => (p.1, p.2.1)) [] [] ix os [] [] cs) →
-      (∀ p ∈ parts, ∀ y ∈ ix ++ cs, y.1.may p.1 = true → p.2.1 = y.2) →
+      Stored.views fs = parts.map (fun p => (p.1, p.2.1)) →
+      Represents G Ref (.dict fs [] [] ix os [] [] cs) →
+      (∀ p ∈ parts, ∀ y ∈ ix ++ cellViews cs, y.1.may p.1 = true → p.2.1 = y.2) →
       (∀ o ∈ os, o.key ∉ parts.map Prod.fst) →
-      (∀ o ∈ os, ∀ y ∈ cs, y.1.may o.key = true → o.type = y.2 ∨ PositiveRules.Uninhabited G y.2) →
+      (∀ o ∈ os, ∀ y ∈ cs, y.1.may o.key = true → o.type = y.2.2 ∨ PositiveRules.Uninhabited G y.2.2) →
       HasTyWith G images subtyping Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
   /-- A named field, of a record or of a dictionary, reads at its contract. -/
   | read : HasTyWith G images subtyping Γ a Ref → Represents G Ref c → namedMembers c = some (fs, vs) →
-      (f, A) ∈ fs → HasTyWith G images subtyping Γ (.readAt f a) A
+      (f, s, A) ∈ fs → HasTyWith G images subtyping Γ (.readAt f a) A
   /-- A view field reads at its bound: a capability, never a write permission.
   A view of `length` is read so where its type excludes a number, so that no
   array meets it (`lengthExcluded`). -/
@@ -241,7 +253,8 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   `length` is its store's: the read tests the slot's value, and reads an
   array's store length, a number the view's type holds, or any other object's
   own `length` location. -/
-  | lenView {Γ : List (Ty ι)} {i : Nat} {Ref A : Ty ι} {c : Clause (Ty ι)} {fs vs : List (PropKey × Ty ι)} :
+  | lenView {Γ : List (Ty ι)} {i : Nat} {Ref A : Ty ι} {c : Clause (Ty ι)} {fs : List (Stored (Ty ι))}
+      {vs : List (PropKey × Ty ι)} :
       Γ[i]? = some Ref → Represents G Ref c → namedMembers c = some (fs, vs) → (lengthKey, A) ∈ vs →
       PositiveRules.numIn G A = true →
       HasTyWith G images subtyping Γ (lengthRead i) A
@@ -249,20 +262,22 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   does not admit is not its own, so the read continues at the prototype, which the
   object holds under the reserved key at `P`; the prototype's field or view
   for the key gives the type. -/
-  | readProto {a : Tm} {Ref P : Ty ι} {fs vs : List (PropKey × Ty ι)} {os : List (OptionalField (Ty ι))}
+  | readProto {a : Tm} {Ref P : Ty ι} {fs : List (Stored (Ty ι))} {vs : List (PropKey × Ty ι)}
+      {os : List (OptionalField (Ty ι))}
       {ms : List (MethodMembers.Sig (Ty ι))} {ks : List KeyBound} {K : KeyBound}
-      {gs ws : List (PropKey × Ty ι)} {os' : List (OptionalField (Ty ι))}
+      {gs : List (Stored (Ty ι))} {ws : List (PropKey × Ty ι)} {os' : List (OptionalField (Ty ι))}
       {ms' : List (MethodMembers.Sig (Ty ι))}
       {ks' : List KeyBound} {st st' : List PropKey} {f : PropKey} {A : Ty ι} :
       HasTyWith G images subtyping Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks st) → K ∈ ks → K.admits f = false →
-      (CallArguments.protoField, P) ∈ fs ++ vs → Represents G P (.refs gs [] ws os' ms' ks' st') →
-      (f, A) ∈ gs ++ ws.filter (·.1 != lengthKey) → HasTyWith G images subtyping Γ (.readAt f a) A
+      (CallArguments.protoField, P) ∈ Stored.views fs ++ vs → Represents G P (.refs gs [] ws os' ms' ks' st') →
+      (f, A) ∈ Stored.views gs ++ ws.filter (·.1 != lengthKey) → HasTyWith G images subtyping Γ (.readAt f a) A
   /-- An optional field, writable or readonly, reads at its type or, where the
   object lacks the key, as `undefined`. -/
-  | readOptional {a : Tm} {Ref : Ty ι} {fs vs : List (PropKey × Ty ι)} {os : List (OptionalField (Ty ι))}
+  | readOptional {a : Tm} {Ref : Ty ι} {fs : List (Stored (Ty ι))} {vs : List (PropKey × Ty ι)}
+      {os : List (OptionalField (Ty ι))}
       {ms : List (MethodMembers.Sig (Ty ι))} {ks : List KeyBound} {st : List PropKey} {f : PropKey} {r : Bool}
-      {A U : Ty ι} :
-      HasTyWith G images subtyping Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks st) → ⟨f, r, A⟩ ∈ os →
+      {s : StorageRole} {A U : Ty ι} :
+      HasTyWith G images subtyping Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks st) → ⟨f, r, s, A⟩ ∈ os →
       Represents G U .undef → inheritedKey f = false → HasTyWith G images subtyping Γ (.readAt f a) (A ++ U)
   /-- A dictionary read may miss even when every present value has type `A`.
   An index says nothing of a key its class does not admit, so a key is read
@@ -280,7 +295,7 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       HasTyWith G images subtyping Γ key Kt → Represents G Kt (keyClause KK) → KK.within K = true →
       (K, A) ∈ ix → Represents G U .undef → KK ≠ .strings →
       HasTyWith G images subtyping Γ (.indexAt a key) (A ++ U)
-  | write : HasTyWith G images subtyping Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks st) → (f, A) ∈ fs →
+  | write : HasTyWith G images subtyping Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks st) → (f, s, A) ∈ fs →
       HasTyWith G images subtyping Γ b A → Represents G N .nul → HasTyWith G images subtyping Γ (.writeAt f a b) N
   /-- A binary operator needs operand types it answers for, pair by pair
   (`Operands`), and yields the family of its result kind: no singleton, since
@@ -591,6 +606,18 @@ theorem setElem_store_safe {Ξ : Fam} {G : NormalGraph ι} {L A : Ty ι} {T : Tu
     · exact indexOfBits_lt hk
     · exact hm'
 
+/-- A record's storage positions, read as keys, roles and contracts side by
+side. -/
+theorem famsOf_zip {α : Type} {X : α → Fam} : ∀ (fs : List (Stored α)),
+    ReferenceConjunctions.famsOf X fs =
+      ((Stored.views fs).map Prod.fst).zip ((fs.map (·.2.1)).zip ((Stored.views fs).map fun p => X p.2))
+  | [] => rfl
+  | (k, s, a) :: fs => by
+    have ih := famsOf_zip (X := X) fs
+    simp only [ReferenceConjunctions.famsOf, mapStored, Stored.views, List.map_cons,
+      List.zip_cons_cons] at ih ⊢
+    rw [ih]
+
 /-- Every derivation is safe in every admissible world and satisfying heap. -/
 theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.InstanceImageCheck G}
     {subtyping : BodySubtyping G} {Γ t A}
@@ -719,7 +746,10 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         = parts.map fun p => meaning G p.2.1 := by simp [List.map_map, Function.comp_def]
     rw [hAs] at hargs
     have hlenA := ArgsT_length hargs
-    apply make_fields_rule (As := nulT :: parts.map fun p => meaning G p.2.1)
+    -- A class value is an ordinary object: its code field and static fields
+    -- are allocated with the role `field`.
+    apply make_fields_rule (ss := StorageRole.field :: parts.map fun _ => StorageRole.field)
+      (As := nulT :: parts.map fun p => meaning G p.2.1) (by simp)
       (by
         intro A hA'
         rcases List.mem_cons.mp hA' with rfl | hA'
@@ -760,14 +790,15 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       (slots heap.length (codeField :: parts.map Prod.fst)) hspec hu henv (by simp) hsc hvals
     have hcr := ctorRestsT_of_graph (oid := heap.length + (.nul :: args).length)
       (slots heap.length (codeField :: parts.map Prod.fst)) hrest hu henv (by simp) hsc hvals
-    have hfam : ReferenceConjunctions.famsOf (meaning G) (parts.map fun p => (p.1, p.2.1))
-        = (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2.1) := by
-      simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
-    have hbag : recT (ReferenceConjunctions.famsOf (meaning G) (parts.map fun p => (p.1, p.2.1))) k' V
-        (.objAt (slots heap.length (codeField :: parts.map Prod.fst)) .absent
+    have hfam : ReferenceConjunctions.famsOf (meaning G) (withRole .field (parts.map fun p => (p.1, p.2.1)))
+        = (parts.map Prod.fst).zip ((parts.map fun _ => StorageRole.field).zip
+          (parts.map fun p => meaning G p.2.1)) := by
+      simp [ReferenceConjunctions.famsOf, mapStored, withRole, List.map_map, Function.comp_def, List.zip_map']
+    have hbag : recT (ReferenceConjunctions.famsOf (meaning G) (withRole .field (parts.map fun p => (p.1, p.2.1))))
+        k' V (.objAt (slots heap.length (codeField :: parts.map Prod.fst)) .absent
           (heap.length + (.nul :: args).length)) := by
       obtain ⟨flds, oid, he', hown, hall⟩ := hrec
-      refine ⟨flds, oid, he', fun f T hm => hown f T ?_, fun f T hm => hall f T ?_⟩
+      refine ⟨flds, oid, he', fun f s T hm => hown f s T ?_, fun f s T hm => hall f s T ?_⟩
       · rw [hfam] at hm
         simp only [List.zip_cons_cons]
         exact List.mem_cons_of_mem _ hm
@@ -798,7 +829,9 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         = parts.map fun p => meaning G p.2.1 := by simp [List.map_map, Function.comp_def]
     rw [hAs] at hargs
     have hlenA := ArgsT_length hargs
-    apply make_fields_rule (As := parts.map fun p => meaning G p.2.1)
+    -- A callable object's bag is an ordinary object's: role `field`.
+    apply make_fields_rule (ss := parts.map fun _ => StorageRole.field)
+      (As := parts.map fun p => meaning G p.2.1) (by simp)
       (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_adm G r.2.1)
       (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_valOnly G r.2.1)
       j U heap (.graph arity E K start (caps.map fun c => ρ c.2) kind rest) _ args hnd
@@ -817,9 +850,10 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       intro v hv
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hv
       exact (meaning_value (hcapv c hc)).1)
-    have hfam : ReferenceConjunctions.famsOf (meaning G) (parts.map fun p => (p.1, p.2.1))
-        = (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2.1) := by
-      simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
+    have hfam : ReferenceConjunctions.famsOf (meaning G) (withRole .field (parts.map fun p => (p.1, p.2.1)))
+        = (parts.map Prod.fst).zip ((parts.map fun _ => StorageRole.field).zip
+          (parts.map fun p => meaning G p.2.1)) := by
+      simp [ReferenceConjunctions.famsOf, mapStored, withRole, List.map_map, Function.comp_def, List.zip_map']
     exact (represents_back hr k' V _)
       ⟨⟨⟨⟨⟨_, _, _, rfl, rfl, by rw [hfam]; exact hrec⟩, by simp⟩, ho.1⟩, ho.2⟩,
         MethodMembers.methodT_nil _ _ _⟩
@@ -982,7 +1016,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hA
       intro j hj U hx hu' heap hok
       exact ihu q hq j U heap ρ (he.transfer j hj U hx) hu' hok
-  | @readCallable Γ a Ref P Ps f A c ha hr hc hm ih =>
+  | @readCallable Γ a Ref P Ps f _ A c ha hr hc hm ih =>
     intro n W h ρ he hw hh
     apply Safe_bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
@@ -993,10 +1027,10 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     apply Safe_bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
     obtain ⟨flds, code, oid, l, c', rfl, hf, hl, hag⟩ :=
-      CallableConjunctions.views_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
+      CallableConjunctions.views_at (ReferenceConjunctions.mem_viewsOf.mpr ⟨A, hm, rfl⟩)
         (bagViews_sem ((represents_raw hr j U v) ha') (List.ne_nil_of_mem hm))
     exact read_view_rule (meaning_valOnly G A) j U heap l hu hok hf hl hag
-  | @writeCallable Γ a Ref P Ps f A b N c ha hr hc hm hb hn iha ihb =>
+  | @writeCallable Γ a Ref P Ps f _ A b N c ha hr hc hm hb hn iha ihb =>
     intro n W h ρ he hw hh
     apply Safe_bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 Raises.writeC1 n W h _ hw hh
       (iha n W h ρ he hw hh)
@@ -1049,7 +1083,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       have he' := ((he.transfer (k+1) hj U hx).push ha').transfer k (Nat.le_succ k)
         (trunc k (Nat.le_succ k) U) (WExt_refl _)
       exact ihb k _ heap (push av ρ) he' (WorldAdm_trunc _ hu) (HeapOk_trunc k U heap hok)
-  | @alloc Γ Ref parts ks st hnd hhostp hp hr hbound hreal hstore hst ih =>
+  | @alloc Γ Ref parts fs ks st hnd hhostp hp hfs hr hbound hreal hstore hst ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
     have hmap : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.snd
@@ -1088,7 +1122,10 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       rw [List.zip_map_left] at hz
       intro q hq
       exact hz _ (List.mem_map_of_mem hq)
-    apply make_fields_rule (As := (parts.zip args).map fam)
+    -- Each location is allocated with the role the claim states for its key.
+    let role : (PropKey × Ty ι × Tm) × Tm → StorageRole := fun q => allocRole fs q.1.1
+    apply make_fields_rule (ss := (parts.zip args).map role)
+      (As := (parts.zip args).map fam) (by simp)
       (by intro A hA'; obtain ⟨q, -, rfl⟩ := List.mem_map.mp hA'; exact hfamA q)
       (by intro A hA'; obtain ⟨q, -, rfl⟩ := List.mem_map.mp hA'; exact hfamV q)
       j U heap .absent _ args hnd (by simpa using hpl) (by simp [hpl])
@@ -1103,32 +1140,34 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         · exact ⟨hpart q hq, rfl⟩
         · exact hpart q hq)
     intro k hk V hy hrec
+    have hrecZ := hrec
+    rw [List.zip_map'] at hrecZ
     -- A part's field holds its location at the part's family.
     have hat : ∀ q ∈ parts.zip args, ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k) (oid : Nat),
         Tm.objAt (slots heap.length (parts.map Prod.fst)) .absent (heap.length + args.length)
           = .objAt flds .absent oid ∧ flds.lookup q.1.1 = some l ∧ lookup V l = some c ∧
         ∀ (i : Nat) (hi : i < k) (W' : WorldT i) (u : Val), c i hi W' u ↔ fam q i W' u :=
-      fun q hq => recT_at (mem_zip_map_zip Prod.fst fam hq) hrec
-    have hrecA : recT (ReferenceConjunctions.famsOf (meaning G)
-        (stablePart st false (parts.map fun p => (p.1, p.2.1))))
+      fun q hq => recT_at (mem_zip_map_zip Prod.fst (fun q => (role q, fam q)) hq) hrecZ
+    have hrecA : recT (ReferenceConjunctions.famsOf (meaning G) fs)
         k V (.objAt (slots heap.length (parts.map Prod.fst)) .absent (heap.length + args.length)) := by
-      obtain ⟨flds, oid, hobj, hown, -⟩ := hrec
-      have hfs : ∀ f T, (f, T) ∈ ReferenceConjunctions.famsOf (meaning G)
-          (stablePart st false (parts.map fun p => (p.1, p.2.1))) →
+      obtain ⟨flds, oid, hobj, hown, -⟩ := hrecZ
+      have hfs : ∀ f s T, (f, s, T) ∈ ReferenceConjunctions.famsOf (meaning G) fs →
           ∃ q ∈ parts.zip args, f = q.1.1 ∧ T = fam q := by
-        intro f T hm
-        simp only [ReferenceConjunctions.famsOf, stablePart, List.mem_map, List.mem_filter,
-          beq_iff_eq] at hm
-        obtain ⟨⟨f', B⟩, ⟨⟨p, hp', hpe⟩, hns⟩, he'⟩ := hm
-        cases hpe; cases he'
+        intro f s T hm
+        obtain ⟨B, hB, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hm
+        have hB : (f, B) ∈ stablePart st false (parts.map fun p => (p.1, p.2.1)) :=
+          hfs ▸ Stored.mem_views.mpr ⟨s, hB⟩
+        simp only [stablePart, List.mem_map, List.mem_filter, beq_iff_eq] at hB
+        obtain ⟨⟨p, hp', hpe⟩, hns⟩ := hB
+        cases hpe
         obtain ⟨v, hv⟩ := exists_mem_zip_left hpl hp'
         refine ⟨(p, v), hv, rfl, ?_⟩
         have hns' : st.contains p.1 = false := hns
         simp only [fam, hns', Bool.false_eq_true, if_false]
-      refine ⟨flds, oid, hobj, fun f T hm l hl => ?_, fun f T hm => ?_⟩
-      · obtain ⟨q, hq, rfl, rfl⟩ := hfs f T hm
-        exact hown _ _ (mem_zip_map_zip Prod.fst fam hq) l hl
-      · obtain ⟨q, hq, rfl, rfl⟩ := hfs f T hm
+      refine ⟨flds, oid, hobj, fun f s T hm l hl => ?_, fun f s T hm => ?_⟩
+      · obtain ⟨q, hq, rfl, rfl⟩ := hfs f s T hm
+        exact hown _ _ _ (mem_zip_map_zip Prod.fst (fun q => (role q, fam q)) hq) l hl
+      · obtain ⟨q, hq, rfl, rfl⟩ := hfs f s T hm
         obtain ⟨flds', l, c, oid', he', hl, hw', hag⟩ := hat q hq
         rw [hobj] at he'; cases he'
         exact ⟨l, c, hl, hw', hag⟩
@@ -1152,7 +1191,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hn
           exact hbound K hK p hp, fun key hkey => ?_⟩⟩, ?_⟩
     · -- A stable field is a view of its type.
-      simp only [ReferenceConjunctions.famsOf, stablePart, List.mem_map, List.mem_filter,
+      simp only [ReferenceConjunctions.viewsOf, stablePart, List.mem_map, List.mem_filter,
         beq_iff_eq] at hm
       obtain ⟨⟨f', B⟩, ⟨⟨p, hp', hpe⟩, hsc⟩, he'⟩ := hm
       cases hpe; cases he'
@@ -1165,21 +1204,23 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       simp only [StableAt, hl]
       exact ⟨c, v, hw', fun i hi W' u hc => ((hag i hi W' u).mp hc).2⟩
     · rcases hstore with rfl | hstore
-      · have hfam : (parts.zip args).map fam = parts.map fun p => meaning G p.2.1 := by
-          have : (parts.zip args).map fam = (parts.zip args).map fun q => meaning G q.1.2.1 :=
-            List.map_congr_left fun q _ => by simp [fam]
-          rw [this, show (fun q : (PropKey × Ty ι × Tm) × Tm => meaning G q.1.2.1)
-              = (fun p : PropKey × Ty ι × Tm => meaning G p.2.1) ∘ Prod.fst from rfl,
+      · have hfam : (parts.zip args).map (fun q => (role q, fam q)) =
+            parts.map fun p => (allocRole fs p.1, meaning G p.2.1) := by
+          have : (parts.zip args).map (fun q => (role q, fam q)) =
+              (parts.zip args).map fun q => (allocRole fs q.1.1, meaning G q.1.2.1) :=
+            List.map_congr_left fun q _ => by simp [fam, role]
+          rw [this, show (fun q : (PropKey × Ty ι × Tm) × Tm => (allocRole fs q.1.1, meaning G q.1.2.1))
+              = (fun p : PropKey × Ty ι × Tm => (allocRole fs p.1, meaning G p.2.1)) ∘ Prod.fst from rfl,
             ← List.map_map, List.map_fst_zip (by omega)]
-        rw [hfam] at hrec
-        have hinv := allocBuiltins_sound hreal (by simpa [List.map_map, Function.comp_def] using hnd)
-          (.refs (stablePart [] false (parts.map fun p => (p.1, p.2.1))) []
-            (stablePart [] true (parts.map fun p => (p.1, p.2.1))) [] [] ks [])
+        rw [hfam] at hrecZ
+        have hinv := allocBuiltins_sound (r := allocRole fs) hreal
+          (by simpa [List.map_map, Function.comp_def] using hnd)
+          (.refs fs [] (stablePart [] true (parts.map fun p => (p.1, p.2.1))) [] [] ks [])
           (base := heap.length) (k := k) (V := V)
-          (by simpa [List.map_map, Function.comp_def] using hrec)
+          (by simpa [List.map_map, Function.comp_def] using hrecZ)
         simpa [List.map_map, Function.comp_def] using hinv
       · exact builtinInvariant_of_lookup (slots_lookup_none hstore)
-  | @allocDict Γ Ref parts ix cs os hnd hproto hstore hhostp hp hr hix habs _ ih =>
+  | @allocDict Γ Ref parts fs ix cs os hnd hproto hstore hhostp hp hfs hr hix habs _ ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
     have hmap : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.snd
@@ -1200,8 +1241,10 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         = parts.map fun p => meaning G p.2.1 := by simp [List.map_map, Function.comp_def]
     rw [hAs] at hargs
     have hlen := ArgsT_length hargs
-    apply make_fields_rule
-      (As := parts.map fun p => meaning G p.2.1)
+    -- Each location is allocated with the role the claim states for its key.
+    have hfl : fs.length = parts.length := by simpa [Stored.views] using congrArg List.length hfs
+    apply make_fields_rule (ss := fs.map (·.2.1))
+      (As := parts.map fun p => meaning G p.2.1) (by simpa using hfl)
       (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_adm G r.2.1)
       (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_valOnly G r.2.1)
       j U heap .absent _ args hnd (by simpa using hlen.symm) (by simpa using hlen.symm)
@@ -1210,41 +1253,47 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         hargs)
       hu hok (ArgsT_zip hargs)
     intro k hk V hy hrec
-    have hfam : ReferenceConjunctions.famsOf (meaning G) (parts.map fun p => (p.1, p.2.1))
-        = (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2.1) := by
-      simp [ReferenceConjunctions.famsOf, List.map_map, Function.comp_def, List.zip_map']
+    have hfam : ReferenceConjunctions.famsOf (meaning G) fs
+        = (parts.map Prod.fst).zip ((fs.map (·.2.1)).zip (parts.map fun p => meaning G p.2.1)) := by
+      rw [famsOf_zip, hfs]
+      simp [List.map_map, Function.comp_def]
     -- The object owns exactly the fields, each at its part's type.
     have hown : ∀ f l, (slots heap.length (parts.map Prod.fst)).lookup f = some l →
-        ∃ T, (f, T) ∈ (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2.1) := by
+        ∃ s T, (f, s, T) ∈ (parts.map Prod.fst).zip ((fs.map (·.2.1)).zip
+          (parts.map fun p => meaning G p.2.1)) := by
       intro f l hl
       obtain ⟨p, hp, rfl⟩ := List.mem_map.mp (slots_lookup_mem hl)
-      exact ⟨meaning G p.2.1, by
-        rw [← hfam]; exact List.mem_map.mpr ⟨(p.1, p.2.1), List.mem_map_of_mem hp, rfl⟩⟩
+      have hpv : (p.1, p.2.1) ∈ Stored.views fs := hfs ▸ List.mem_map_of_mem hp
+      obtain ⟨s, hs⟩ := Stored.mem_views.mp hpv
+      exact ⟨s, meaning G p.2.1, by
+        rw [← hfam]
+        exact ReferenceConjunctions.mem_famsOf.mpr ⟨p.2.1, hs, rfl⟩⟩
     have hnp := slots_lookup_none (base := heap.length) hproto
     have hnh := slots_lookup_none (base := heap.length) hhostp
-    have hcell : ∀ y ∈ ix ++ cs,
+    have hcell : ∀ y ∈ ix ++ cellViews cs,
         dictCellT y.1 (meaning G y.2) k V (.objAt (slots heap.length (parts.map Prod.fst)) .absent (heap.length + args.length)) := by
       intro y hy
-      refine dictCellT_of_recT hrec hown hnp hnh fun f T hT hk => ?_
+      refine dictCellT_of_recT hrec hown hnp hnh fun f s T hT hk => ?_
       rw [← hfam] at hT
-      obtain ⟨q, hq, hqe⟩ := List.mem_map.mp hT
-      obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
-      cases hqe
+      obtain ⟨B, hB, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hT
+      have hB : (f, B) ∈ parts.map (fun p => (p.1, p.2.1)) := hfs ▸ Stored.mem_views.mpr ⟨s, hB⟩
+      obtain ⟨p, hp, hpe⟩ := List.mem_map.mp hB
+      cases hpe
       rw [hix p hp y hy (IndexKeys.may_of_admits hk)]
       exact fun _ _ _ _ => Iff.rfl
     have hrec' := hrec
     rw [← hfam] at hrec'
     refine (represents_sem hr k V _).mpr ⟨⟨⟨hrec', by simp, fun _ _ _ he => by cases he; exact hnh⟩,
-      fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm,
+      fun f T hm => by simp [ReferenceConjunctions.viewsOf] at hm,
       ⟨fun y hy => dictCellT_view (hcell y (List.mem_append_left _ hy)),
-        fun y hy => hcell y (List.mem_append_right _ hy)⟩,
+        fun y hy => hcell (y.1, y.2.2) (List.mem_append_right _ (List.mem_map_of_mem hy))⟩,
       ⟨_, _, rfl, fun _ _ _ _ hl => owned_of_nodup (slots_nodup _ _) hl, fun _ _ _ => hnp, fun o ho l hl => by
         obtain ⟨o', ho', rfl⟩ := List.mem_map.mp ho
         rw [show (OptionalField.map (meaning G) o').key = o'.key from rfl,
           slots_lookup_none (habs o' ho')] at hl
         cases hl⟩, MethodMembers.methodT_nil _ _ _,
       fun K hK => by simp at hK, stableKeysT_nil _ _ _⟩, builtinInvariant_of_lookup (slots_lookup_none hstore)⟩
-  | @read Γ a Ref c fs vs f A ha hr hc hm ih =>
+  | @read Γ a Ref c fs vs f _ A ha hr hc hm ih =>
     intro n W h ρ he hw hh
     apply Safe_bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
@@ -1256,8 +1305,8 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     apply Safe_bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj U hx hu heap v hok hv ha'
     have hviews := (namedMembers_sem hr hc ha').2
-    have hmA : (f, meaning G A) ∈ ReferenceConjunctions.famsOf (meaning G) vs :=
-      ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩
+    have hmA : (f, meaning G A) ∈ ReferenceConjunctions.viewsOf (meaning G) vs :=
+      ReferenceConjunctions.mem_viewsOf.mpr ⟨A, hm, rfl⟩
     cases j with
     | zero => trivial
     | succ j =>
@@ -1315,7 +1364,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
             | some l => rw [hl] at hf2; cases hf2
           rw [hρ] at hviews
           obtain ⟨flds', l, c', oid', he', hf', hl, hag⟩ :=
-            viewsT_at_plain (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) hns hviews
+            viewsT_at_plain (ReferenceConjunctions.mem_viewsOf.mpr ⟨A, hm, rfl⟩) hns hviews
           cases he'
           exact read_view_rule (meaning_valOnly G A) k _ h l hw' hh' hf' hl hag
   | @readProto Γ a Ref P fs vs os ms ks K gs ws os' ms' ks' st st' f A ha hr hK hf hpr hP hm ih =>
@@ -1327,24 +1376,26 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         flds.lookup CallArguments.protoField = some l ∧ lookup U l = some c ∧
         ∀ (i : Nat) (hi : i < j) (V : WorldT i) (u : Val), c i hi V u → meaning G P i V u := by
       rcases List.mem_append.mp hpr with hpr | hpr
-      · obtain ⟨flds, l, c, oid', he, hf', hl, hag⟩ :=
+      · obtain ⟨_, hpr⟩ := Stored.mem_views.mp hpr
+        obtain ⟨flds, l, c, oid', he, hf', hl, hag⟩ :=
           recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨P, hpr, rfl⟩) hs.1.1
         exact ⟨flds, l, c, oid', he, hf', hl, fun i hi V u hu => (hag i hi V u).mp hu⟩
-      · exact viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨P, hpr, rfl⟩) (by decide) hs.2.1
+      · exact viewsT_at (ReferenceConjunctions.mem_viewsOf.mpr ⟨P, hpr, rfl⟩) (by decide) hs.2.1
     obtain ⟨flds, l, c, oid, rfl, hpf, hl, hag⟩ := hloc
     have hmiss := ownKeysT_lookup (hs.2.2.2.2.1 K hK) hf
     apply read_proto_rule j U heap l hu hok hmiss hpf hl hag
     intro i V h' hV hh' u hu
     have hp := (represents_raw hP i V u) hu
     rcases List.mem_append.mp hm with hm | hm
-    · obtain ⟨flds', l', c', oid'', rfl, hf', hl', hag'⟩ :=
+    · obtain ⟨_, hm⟩ := Stored.mem_views.mp hm
+      obtain ⟨flds', l', c', oid'', rfl, hf', hl', hag'⟩ :=
         recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) hp.1.1
       exact read_rule (meaning_valOnly G A) i V h' l' hV hh' hf' hl' hag'
     · obtain ⟨hm, hml⟩ := List.mem_filter.mp hm
       obtain ⟨flds', l', c', oid'', rfl, hf', hl', hag'⟩ :=
-        viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) (by simpa using hml) hp.2.1
+        viewsT_at (ReferenceConjunctions.mem_viewsOf.mpr ⟨A, hm, rfl⟩) (by simpa using hml) hp.2.1
       exact read_view_rule (meaning_valOnly G A) i V h' l' hV hh' hf' hl' hag'
-  | @readOptional Γ a Ref fs vs os ms ks st f r A U ha hr hm hUnd _ ih =>
+  | @readOptional Γ a Ref fs vs os ms ks st f r _ A U ha hr hm hUnd _ ih =>
     intro n W h ρ he hw hh
     apply Safe_bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
     intro j hj V hx hv heap v hok hval ha'
@@ -1643,7 +1694,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       rcases hr with rfl | rfl
       · exact expand_sem_mpr ⟨_, expand_sub hn.1, rfl, builtinInvariant_of_withoutInvariant rfl _ _ _⟩
       · exact expand_sem_mpr ⟨_, expand_sub hn.2, rfl, builtinInvariant_of_withoutInvariant rfl _ _ _⟩
-  | @write Γ a Ref fs vs os ms ks st f A b N ha hr hm hb hn iha ihb =>
+  | @write Γ a Ref fs vs os ms ks st f _ A b N ha hr hm hb hn iha ihb =>
     intro n W h ρ he hw hh
     apply Safe_bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 Raises.writeC1 n W h _ hw hh
       (iha n W h ρ he hw hh)

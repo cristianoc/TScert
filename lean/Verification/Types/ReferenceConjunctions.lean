@@ -10,9 +10,6 @@ same field, which is what makes a conjunction of contracts on disjoint fields
 the composed record rather than the empty type. -/
 namespace Verification.ReferenceConjunctions
 
-/-- What one operand says: a contract per named field. -/
-abbrev Fields := List (PropKey × Fam)
-
 def refsT (A : Fields) (Bs : List Fields) : Fam := fun n W v =>
   recT A n W v ∧ (∀ B ∈ Bs, recT B n W v) ∧ ((A :: Bs).flatten ≠ [] → NoHost v)
 
@@ -29,13 +26,27 @@ theorem adm (A : Fields) (Bs : List Fields) : Adm (refsT A Bs) := by
 theorem noHost {A : Fields} {Bs : List Fields} {n : Nat} {W : WorldT n} {v : Val}
     (h : refsT A Bs n W v) (hne : (A :: Bs).flatten ≠ []) : NoHost v := h.2.2 hne
 
-/-- The families a label map denotes, field by field. -/
-def famsOf {ι : Type} (X : ι → Fam) (fs : List (PropKey × ι)) : Fields :=
+/-- The families a label map denotes, storage position by position: each
+key keeps its role. -/
+def famsOf {ι : Type} (X : ι → Fam) (fs : List (Stored ι)) : Fields := mapStored X fs
+
+theorem mem_famsOf {ι : Type} {X : ι → Fam} {fs : List (Stored ι)} {f : PropKey}
+    {s : StorageRole} {A : Fam} :
+    (f, s, A) ∈ famsOf X fs ↔ ∃ i, (f, s, i) ∈ fs ∧ A = X i := by
+  simp only [famsOf, mem_mapStored]
+  exact ⟨fun ⟨i, hi, he⟩ => ⟨i, hi, he.symm⟩, fun ⟨i, hi, he⟩ => ⟨i, hi, he.symm⟩⟩
+
+/-- **Interpretation keeps every key's role.** -/
+@[simp] theorem storageOf_famsOf {ι : Type} (X : ι → Fam) (fs : List (Stored ι)) :
+    storageOf (famsOf X fs) = storageOf fs := storageOf_mapStored X fs
+
+/-- The families a map of read capabilities denotes, key by key. -/
+def viewsOf {ι : Type} (X : ι → Fam) (fs : List (PropKey × ι)) : Views :=
   fs.map (fun p => (p.1, X p.2))
 
-theorem mem_famsOf {ι : Type} {X : ι → Fam} {fs : List (PropKey × ι)} {f : PropKey} {A : Fam} :
-    (f, A) ∈ famsOf X fs ↔ ∃ i, (f, i) ∈ fs ∧ A = X i := by
-  simp only [famsOf, List.mem_map]
+theorem mem_viewsOf {ι : Type} {X : ι → Fam} {fs : List (PropKey × ι)} {f : PropKey} {A : Fam} :
+    (f, A) ∈ viewsOf X fs ↔ ∃ i, (f, i) ∈ fs ∧ A = X i := by
+  simp only [viewsOf, List.mem_map]
   constructor
   · rintro ⟨⟨g, i⟩, hp, he⟩
     cases he
@@ -43,53 +54,56 @@ theorem mem_famsOf {ι : Type} {X : ι → Fam} {fs : List (PropKey × ι)} {f :
   · rintro ⟨i, hi, rfl⟩
     exact ⟨(f, i), hi, rfl⟩
 
+theorem viewsOf_append {ι : Type} (X : ι → Fam) (a b : List (PropKey × ι)) :
+    viewsOf X (a ++ b) = viewsOf X a ++ viewsOf X b := List.map_append ..
+
 /-- Naming an invariant field is a fact about the labels, whatever they
 denote. -/
-theorem famsOf_flatten_ne {ι : Type} {X : ι → Fam} {a : List (PropKey × ι)} {bs : List (List (PropKey × ι))}
+theorem famsOf_flatten_ne {ι : Type} {X : ι → Fam} {a : List (Stored ι)} {bs : List (List (Stored ι))}
     (h : (a :: bs).flatten ≠ []) : (famsOf X a :: bs.map (famsOf X)).flatten ≠ [] := by
   intro he
   apply h
   simp only [List.flatten_cons, List.append_eq_nil_iff, List.flatten_eq_nil_iff, List.mem_map,
-    forall_exists_index, and_imp, forall_apply_eq_imp_iff₂, famsOf, List.map_eq_nil_iff] at he ⊢
+    forall_exists_index, and_imp, forall_apply_eq_imp_iff₂, famsOf, mapStored, List.map_eq_nil_iff] at he ⊢
   exact he
 
-theorem recT_congr_below {ι : Type} (X Y : ι → Fam) (a : List (PropKey × ι)) (n : Nat)
+theorem recT_congr_below {ι : Type} (X Y : ι → Fam) (a : List (Stored ι)) (n : Nat)
     (h : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :
     recT (famsOf X a) n W v ↔ recT (famsOf Y a) n W v := by
   constructor <;> rintro ⟨flds, oid, rfl, hown, hfs⟩
-  · refine ⟨flds, oid, rfl, fun f T hm => ?_, fun f T hm => ?_⟩ <;>
+  · refine ⟨flds, oid, rfl, fun f s T hm => ?_, fun f s T hm => ?_⟩ <;>
       obtain ⟨i, hi, rfl⟩ := mem_famsOf.mp hm
-    · exact hown f (X i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
-    · obtain ⟨l, c, hl, hw, hag⟩ := hfs f (X i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
+    · exact hown f s (X i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
+    · obtain ⟨l, c, hl, hw, hag⟩ := hfs f s (X i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
       exact ⟨l, c, hl, hw, fun j hj W' u => (hag j hj W' u).trans (h i j hj W' u)⟩
-  · refine ⟨flds, oid, rfl, fun f T hm => ?_, fun f T hm => ?_⟩ <;>
+  · refine ⟨flds, oid, rfl, fun f s T hm => ?_, fun f s T hm => ?_⟩ <;>
       obtain ⟨i, hi, rfl⟩ := mem_famsOf.mp hm
-    · exact hown f (Y i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
-    · obtain ⟨l, c, hl, hw, hag⟩ := hfs f (Y i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
+    · exact hown f s (Y i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
+    · obtain ⟨l, c, hl, hw, hag⟩ := hfs f s (Y i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
       exact ⟨l, c, hl, hw, fun j hj W' u => (hag j hj W' u).trans (h i j hj W' u).symm⟩
 
-theorem famsOf_append {ι : Type} (X : ι → Fam) (a b : List (PropKey × ι)) :
+theorem famsOf_append {ι : Type} (X : ι → Fam) (a b : List (Stored ι)) :
     famsOf X (a ++ b) = famsOf X a ++ famsOf X b := List.map_append ..
 
 theorem view_congr_below {ι : Type} (X Y : ι → Fam) (a : List (PropKey × ι)) (n : Nat)
     (h : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :
-    viewT (famsOf X a) n W v ↔ viewT (famsOf Y a) n W v := by
-  constructor <;> intro hv f T hm <;> obtain ⟨i, hi, rfl⟩ := mem_famsOf.mp hm
-  · obtain ⟨flds, l, c, oid, rfl, hf, hl, hag⟩ := hv f (X i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
+    viewT (viewsOf X a) n W v ↔ viewT (viewsOf Y a) n W v := by
+  constructor <;> intro hv f T hm <;> obtain ⟨i, hi, rfl⟩ := mem_viewsOf.mp hm
+  · obtain ⟨flds, l, c, oid, rfl, hf, hl, hag⟩ := hv f (X i) (mem_viewsOf.mpr ⟨i, hi, rfl⟩)
     exact ⟨flds, l, c, oid, rfl, hf, hl, fun j hj W' u hu => (h i j hj W' u).mp (hag j hj W' u hu)⟩
-  · obtain ⟨flds, l, c, oid, rfl, hf, hl, hag⟩ := hv f (Y i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
+  · obtain ⟨flds, l, c, oid, rfl, hf, hl, hag⟩ := hv f (Y i) (mem_viewsOf.mpr ⟨i, hi, rfl⟩)
     exact ⟨flds, l, c, oid, rfl, hf, hl, fun j hj W' u hu => (h i j hj W' u).mpr (hag j hj W' u hu)⟩
 
 /-- Read capabilities, an array's `length` included, read their families
 below the level. -/
 theorem views_congr_below {ι : Type} (X Y : ι → Fam) (a : List (PropKey × ι)) (n : Nat)
     (h : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :
-    viewsT (famsOf X a) n W v ↔ viewsT (famsOf Y a) n W v := by
+    viewsT (viewsOf X a) n W v ↔ viewsT (viewsOf Y a) n W v := by
   have side : ∀ (X Y : ι → Fam), (∀ i, Agree (X i) (Y i) n) →
-      viewsT (famsOf X a) n W v → viewsT (famsOf Y a) n W v := by
+      viewsT (viewsOf X a) n W v → viewsT (viewsOf Y a) n W v := by
     intro X Y h hv f T hm
-    obtain ⟨i, hi, rfl⟩ := mem_famsOf.mp hm
-    rcases hv f (X i) (mem_famsOf.mpr ⟨i, hi, rfl⟩) with hw | ⟨hf, hst, hall⟩
+    obtain ⟨i, hi, rfl⟩ := mem_viewsOf.mp hm
+    rcases hv f (X i) (mem_viewsOf.mpr ⟨i, hi, rfl⟩) with hw | ⟨hf, hst, hall⟩
     · left
       intro g U hg
       simp only [List.mem_singleton, Prod.mk.injEq] at hg
@@ -116,14 +130,14 @@ theorem opt_congr_below {ι : Type} (X Y : ι → Fam) (a : List (OptionalField 
   exact ⟨side X Y fun i j hj W' u => h i j hj W' u,
     side Y X fun i j hj W' u => (h i j hj W' u).symm⟩
 
-theorem congr_below {ι : Type} (X Y : ι → Fam) (a : List (PropKey × ι))
-    (bs : List (List (PropKey × ι))) (n : Nat)
+theorem congr_below {ι : Type} (X Y : ι → Fam) (a : List (Stored ι))
+    (bs : List (List (Stored ι))) (n : Nat)
     (h : ∀ i, Agree (X i) (Y i) n) (W : WorldT n) (v : Val) :
     refsT (famsOf X a) (bs.map (famsOf X)) n W v ↔
       refsT (famsOf Y a) (bs.map (famsOf Y)) n W v := by
   have hne : ∀ Z : ι → Fam, (famsOf Z a :: bs.map (famsOf Z)).flatten = [] ↔ (a :: bs).flatten = [] := by
     intro Z
-    simp [famsOf, List.flatten_eq_nil_iff]
+    simp [famsOf, mapStored, List.flatten_eq_nil_iff]
   simp only [refsT, List.forall_mem_map]
   constructor
   · rintro ⟨ha, hb, hh⟩
@@ -142,19 +156,19 @@ theorem recT_append (A C : Fields) (n : Nat) (W : WorldT n) (v : Val) :
     recT (A ++ C) n W v ↔ interT (recT A) (recT C) n W v := by
   constructor
   · rintro ⟨flds, oid, rfl, hown, h⟩
-    exact ⟨⟨flds, oid, rfl, fun f T hm => hown f T (List.mem_append_left _ hm),
-        fun f T hm => h f T (List.mem_append_left _ hm)⟩,
-      ⟨flds, oid, rfl, fun f T hm => hown f T (List.mem_append_right _ hm),
-        fun f T hm => h f T (List.mem_append_right _ hm)⟩⟩
+    exact ⟨⟨flds, oid, rfl, fun f s T hm => hown f s T (List.mem_append_left _ hm),
+        fun f s T hm => h f s T (List.mem_append_left _ hm)⟩,
+      ⟨flds, oid, rfl, fun f s T hm => hown f s T (List.mem_append_right _ hm),
+        fun f s T hm => h f s T (List.mem_append_right _ hm)⟩⟩
   · rintro ⟨⟨flds, oid, rfl, hoa, ha⟩, ⟨flds', oid', he, hoc, hc⟩⟩
     cases he
-    refine ⟨flds, oid, rfl, fun f T hm => ?_, fun f T hm => ?_⟩
+    refine ⟨flds, oid, rfl, fun f s T hm => ?_, fun f s T hm => ?_⟩
     · rcases List.mem_append.mp hm with h | h
-      · exact hoa f T h
-      · exact hoc f T h
+      · exact hoa f s T h
+      · exact hoc f s T h
     rcases List.mem_append.mp hm with h | h
-    · exact ha f T h
-    · exact hc f T h
+    · exact ha f s T h
+    · exact hc f s T h
 
 /-- The conjunction of two conjunctions, with their first operands joined
 into one: the record the meet of two object contracts is, whose named fields

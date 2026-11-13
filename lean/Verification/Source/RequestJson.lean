@@ -57,6 +57,21 @@ deriving instance ToJson, FromJson for ArrayPresence
 deriving instance ToJson, FromJson for PositiveNormalization.Tuple
 deriving instance ToJson, FromJson for Contract
 deriving instance ToJson, FromJson for MethodMembers.Sig
+deriving instance ToJson, FromJson for StorageRole
+
+/-- A storage position, a field's or a writable index's, is the flat array
+`[key, role, contents]`, the key a property key or an index's key class, the
+role its constructor's name (`"field"`, `"cell"`, `"arrayStore"`,
+`"viewStore"`). -/
+instance (priority := high) {κ α : Type} [ToJson κ] [ToJson α] : ToJson (κ × StorageRole × α) :=
+  ⟨fun p => .arr #[toJson p.1, toJson p.2.1, toJson p.2.2]⟩
+
+instance (priority := high) {κ α : Type} [FromJson κ] [FromJson α] : FromJson (κ × StorageRole × α) :=
+  ⟨fun j => do
+    let xs ← j.getArr?
+    let #[k, s, a] := xs | throw s!"expected [key, role, contents], got {j.compress}"
+    pure (← fromJson? k, ← fromJson? s, ← fromJson? a)⟩
+
 deriving instance ToJson, FromJson for OptionalField
 deriving instance ToJson, FromJson for KeyBound
 deriving instance ToJson, FromJson for IndexKeys
@@ -219,7 +234,7 @@ def arrayExcludedKeys (ks : List PropKey) : List PropKey :=
 and methods', the reserved keys aside. -/
 @[nospecialize] def arrayExcludedKeysOf : List (Clause (List ι)) → List PropKey
   | [.refs a bs vs os ms _ _] =>
-    arrayExcludedKeys (((a :: bs).flatten ++ vs).map (·.1) ++ os.map (·.key) ++ ms.map (·.key))
+    arrayExcludedKeys ((a :: bs).flatten.map (·.1) ++ vs.map (·.1) ++ os.map (·.key) ++ ms.map (·.key))
   | _ => arrayExcludedKeys []
 
 deriving instance ToJson for Node

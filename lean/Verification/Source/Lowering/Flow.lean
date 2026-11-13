@@ -209,7 +209,7 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
         | none, _ => throw (locatedRefusal (← table) b.init.span .bindingAnnotation reason)
         let C ← if ← moduleOwnedName b.name then plainContract C else pure C
         let stored := (C ++ U).eraseDups
-        let reference ← lower (do return [← CellClaims.reference [(valueField, stored)]])
+        let reference ← lower (do return [← CellClaims.reference [(valueField, .cell, stored)]])
         pure (stored, reference)
       let n := bindings.length
       let cells : List (ScopeBinding Tree) := (bindings.zip contracts).zipIdx.map

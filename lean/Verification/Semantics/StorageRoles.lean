@@ -21,6 +21,12 @@ inductive StorageRole where
   | field | cell | arrayStore | viewStore
   deriving DecidableEq, Repr, Inhabited
 
+/-- The order roles are compared in, their declaration order. -/
+def StorageRole.rank : StorageRole → Nat
+  | .field => 0 | .cell => 1 | .arrayStore => 2 | .viewStore => 3
+
+def StorageRole.before (a b : StorageRole) : Bool := a.rank < b.rank
+
 /-- One storage position of a type: its key, the role it grants, and its
 contents' type. -/
 abbrev Stored (α : Type) := PropKey × StorageRole × α
@@ -29,6 +35,33 @@ abbrev Stored (α : Type) := PropKey × StorageRole × α
 roles kept. -/
 def mapStored {α β : Type} (f : α → β) (fs : List (Stored α)) : List (Stored β) :=
   fs.map fun p => (p.1, p.2.1, f p.2.2)
+
+/-- Positions of one role: each key (a property key, or an index's key
+class) with its contents, every location allocated with the role `s`. -/
+def withRole {κ α : Type} (s : StorageRole) (fs : List (κ × α)) : List (κ × StorageRole × α) :=
+  fs.map fun p => (p.1, s, p.2)
+
+theorem mem_withRole {κ α : Type} {s r : StorageRole} {fs : List (κ × α)} {k : κ} {a : α} :
+    (k, r, a) ∈ withRole s fs ↔ r = s ∧ (k, a) ∈ fs := by
+  simp only [withRole, List.mem_map, Prod.mk.injEq]
+  constructor
+  · rintro ⟨⟨k', a'⟩, hm, rfl, rfl, rfl⟩; exact ⟨rfl, hm⟩
+  · rintro ⟨rfl, hm⟩; exact ⟨(k, a), hm, rfl, rfl, rfl⟩
+
+theorem mapStored_withRole {α β : Type} (f : α → β) (s : StorageRole) (fs : List (PropKey × α)) :
+    mapStored f (withRole s fs) = withRole s (fs.map fun p => (p.1, f p.2)) := by
+  simp [mapStored, withRole, Function.comp_def]
+
+theorem withRole_map_snd {κ α : Type} {s : StorageRole} {cs : List (κ × StorageRole × α)}
+    (h : ∀ y ∈ cs, y.2.1 = s) : withRole s (cs.map fun c => (c.1, c.2.2)) = cs := by
+  induction cs with
+  | nil => rfl
+  | cons c cs ih =>
+    obtain ⟨k, r, a⟩ := c
+    have hr : r = s := h _ List.mem_cons_self
+    subst hr
+    simp only [withRole, List.map_cons, List.map_map] at ih ⊢
+    rw [ih fun y hy => h y (List.mem_cons_of_mem _ hy)]
 
 /-- The storage a list of positions grants: each key with its role. -/
 def storageOf {α : Type} (fs : List (Stored α)) : List (PropKey × StorageRole) :=

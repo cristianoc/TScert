@@ -29,13 +29,15 @@ holding the object can be (`KeyBound.keeps`). -/
 def modelKeys : List PropKey := [arrayStoreKey, CallArguments.protoField]
 
 /-- The dictionary over the class `K`, writable at `A`, owning neither the
-array store nor a prototype, of no other part. -/
+array store nor a prototype, of no other part: its locations ordinary
+properties, role `field`. -/
 def classDict (K : IndexKeys) (A : List ι) : Clause (List ι) :=
-  .dict [] [] [] [(K, A)] [] [] [⟨false, modelKeys⟩] [(K, A)]
+  .dict [] [] [] [(K, A)] [] [] [⟨false, modelKeys⟩] [(K, .field, A)]
 
-/-- The record of the one field `f` at `A`, owning `f` alone. -/
+/-- The record of the one field `f` at `A`, owning `f` alone: an ordinary
+property, the role its allocation gives it. -/
 def oneField (f : PropKey) (A : List ι) : Clause (List ι) :=
-  .refs [(f, A)] [] [] [] [] [⟨true, [f]⟩]
+  .refs [(f, .field, A)] [] [] [] [] [⟨true, [f]⟩]
 
 /-- The object an allocation at a key of clause `c`, holding a value of `A`,
 is of: the one field a literal key names, or the dictionary over the class of
@@ -170,18 +172,19 @@ theorem keyed_values_safe [DecidableEq ι] {G : NormalGraph ι} {K A R : List ι
     hadmA.down_le (p + 1) p (Nat.le_succ p) W av hav
   refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, .makeAt .absent [f] [av], WExt_refl _,
     WorldAdm_trunc _ hadm, Step.makeKeyV hval hf, HeapOk_trunc p W h hok, ?_⟩
-  apply make_fields_rule (As := [meaning G A]) (by simpa using hadmA)
+  apply make_fields_rule (ss := [.field]) (As := [meaning G A]) rfl (by simpa using hadmA)
     (fun B hB => by
       rw [List.mem_singleton.mp hB]
       exact fun _ _ _ ⟨_, _, h⟩ => (normalDenote_value h).1) p _ h .absent [f] [av] (by simp) rfl rfl (by simpa using hval) (WorldAdm_trunc _ hadm)
     (HeapOk_trunc p W h hok) (by simpa using hav')
   intro j hj U hx hrec
-  have hown : ∀ g l, (slots h.length [f]).lookup g = some l → ∃ T, (g, T) ∈ [f].zip [meaning G A] := by
+  have hown : ∀ g l, (slots h.length [f]).lookup g = some l →
+      ∃ s T, (g, s, T) ∈ [f].zip ([StorageRole.field].zip [meaning G A]) := by
     intro g l hl
     have := slots_lookup_mem hl
     simp only [List.mem_singleton] at this
     subst this
-    exact ⟨meaning G A, by simp⟩
+    exact ⟨.field, meaning G A, by simp⟩
   have hproto := slots_lookup_none (base := h.length) (ns := [f]) (f := CallArguments.protoField)
     (by simp only [List.mem_singleton]; exact fun he => hnp he.symm)
   have hstore := slots_lookup_none (base := h.length) (ns := [f]) (f := CallArguments.arrayStoreField)
@@ -192,24 +195,24 @@ theorem keyed_values_safe [DecidableEq ι] {G : NormalGraph ι} {K A R : List ι
     ⟨d, hdR, ?_, builtinInvariant_of_lookup hstore⟩
   rcases hshape with rfl | ⟨K, rfl, hKf⟩
   · simp only [oneField, semWithArgs]
-    refine ⟨⟨by simpa [ReferenceConjunctions.famsOf] using hrec, by simp,
+    refine ⟨⟨by simpa [ReferenceConjunctions.famsOf, mapStored] using hrec, by simp,
         fun _ _ _ he => by cases he; exact hhost⟩,
-      fun g T hm => by simp [ReferenceConjunctions.famsOf] at hm,
+      fun g T hm => by simp [ReferenceConjunctions.viewsOf] at hm,
       by simpa using optT_nil, MethodMembers.methodT_nil _ _ _,
       fun B hB => ?_, stableKeysT_nil _ _ _⟩
     simp only [List.mem_singleton] at hB
     subst hB
     exact ownKeysT_slots fun g hg => by simp_all [KeyBound.admits]
   · have hcell : dictCellT K (meaning G A) j U (.objAt (slots h.length [f]) .absent (h.length + 1)) :=
-      dictCellT_of_recT hrec hown hproto hhost fun g T hT _ => by
+      dictCellT_of_recT hrec hown hproto hhost fun g s T hT _ => by
         simp only [List.zip_cons_cons, List.zip_nil_right, List.mem_singleton, Prod.mk.injEq] at hT
-        obtain ⟨-, rfl⟩ := hT
+        obtain ⟨-, -, rfl⟩ := hT
         exact fun _ _ _ _ => Iff.rfl
     simp only [classDict, semWithArgs]
-    refine ⟨⟨⟨_, _, rfl, fun g T hm => by simp [ReferenceConjunctions.famsOf] at hm,
-          fun g T hm => by simp [ReferenceConjunctions.famsOf] at hm⟩, by simp,
-        by simp [ReferenceConjunctions.famsOf]⟩,
-      fun g T hm => by simp [ReferenceConjunctions.famsOf] at hm,
+    refine ⟨⟨⟨_, _, rfl, fun g s T hm => by simp [ReferenceConjunctions.famsOf, mapStored] at hm,
+          fun g s T hm => by simp [ReferenceConjunctions.famsOf, mapStored] at hm⟩, by simp,
+        by simp [ReferenceConjunctions.famsOf, mapStored]⟩,
+      fun g T hm => by simp [ReferenceConjunctions.viewsOf] at hm,
       ⟨fun y hy => ?_, fun y hy => ?_⟩, by simpa using optT_nil, MethodMembers.methodT_nil _ _ _,
       fun B hB => ?_, stableKeysT_nil _ _ _⟩
     · simp only [List.mem_singleton] at hy; subst hy; exact dictCellT_view hcell

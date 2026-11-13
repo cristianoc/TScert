@@ -38,9 +38,9 @@ def anyTuple : TupleF := { required := [], optional := [], rest := some srcF, pr
 exactly theirs. -/
 def storeF : Fam := listT anyTuple
 
-/-- An array of source values: an object whose array-store field's location
-has the store contract `storeF`. -/
-def arrayF : Fam := recT [(arrayStoreKey, storeF)]
+/-- An array of source values: an object whose array-store field's location,
+an array store, has the store contract `storeF`. -/
+def arrayF : Fam := recT [(arrayStoreKey, .arrayStore, storeF)]
 
 /-- A listed cell of such a store has the contract of the source values. -/
 theorem storeF_cell {k : Nat} {W : WorldT k} {ls : List (Option Nat)} {i l : Nat}
@@ -623,7 +623,7 @@ def aliasState (n : Nat) : IndexedHeap :=
   ⟨n + 1, aliasWorld (n + 1), aliasHeap, Nat.zero_lt_succ n, aliasWorld_adm _, aliasHeap_ok _⟩
 
 theorem aliasArray_arrayF (n : Nat) : arrayF n (aliasWorld n) aliasArray := by
-  refine ⟨[(arrayStoreKey, 0)], 2, rfl, fun f T hm l hl g hg => ?_, fun f T hm => ?_⟩
+  refine ⟨[(arrayStoreKey, 0)], 2, rfl, fun f s T hm l hl g hg => ?_, fun f s T hm => ?_⟩
   · simp only [List.mem_singleton, Prod.mk.injEq] at hm
     obtain ⟨rfl, -⟩ := hm
     simp only [List.lookup] at hg
@@ -632,7 +632,7 @@ theorem aliasArray_arrayF (n : Nat) : arrayF n (aliasWorld n) aliasArray := by
       exact beq_iff_eq.mp hb
     · cases hg
   · simp only [List.mem_singleton, Prod.mk.injEq] at hm
-    obtain ⟨rfl, rfl⟩ := hm
+    obtain ⟨rfl, -, rfl⟩ := hm
     exact ⟨0, res storeF, by simp [List.lookup], by simp [lookup, aliasWorld], fun _ _ _ _ => Iff.rfl⟩
 
 /-- **The entry assertion holds with `xs` and `out` aliased.** -/

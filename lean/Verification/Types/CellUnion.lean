@@ -41,12 +41,14 @@ def select [DecidableEq ι] (cs : List (Contract ι)) (c : Contract ι) : Contra
 def normalize [DecidableEq ι] (cs : List (Contract ι)) : List (Contract ι) := cs.map (select cs)
 
 /-- All arms are validated before absorption, including their field and object
-modes. A remaining non-invariant arm rejects the entire union. -/
+modes. A remaining non-invariant arm rejects the entire union. A TypeScript
+record type describes ordinary objects, so each invariant field's role is
+`field`. -/
 def lower (cs : List (Contract Tree)) : SourceTypes.Lowering (List (Ty Tree)) := do
   (normalize cs).mapM fun c => do
-    if invariant c then return [← CellClaims.reference (c.map fun f => (f.name, f.read))]
+    if invariant c then return [← CellClaims.reference (c.map fun f => (f.name, .field, f.read))]
     if viewed c then
-      let fields := (c.filter fun f => !readonly f).map fun f => (f.name, f.read)
+      let fields := (c.filter fun f => !readonly f).map fun f => (f.name, .field, f.read)
       let views := (c.filter readonly).map fun f => (f.name, f.read)
       return [← CellClaims.viewReference fields views]
     throw "cell read and write types do not describe the same invariant"

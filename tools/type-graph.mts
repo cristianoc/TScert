@@ -367,12 +367,20 @@ type CallContract<Receiver, Arguments, L = number> = {
 type Arrow<L = number> = CallContract<Labels<L>, Labels<L>[], L>;
 type MethodArrow<L = number> = CallContract<Record<string, never>, Labels<L>[], L>;
 type MethodRestArrow<L = number> = CallContract<Record<string, never>, [Labels<L>[], Labels<L>], L>;
-/** An object contract: one label list per named field, in the order the
+/** Read capabilities: one label list per named field, in the order the
  * row lists them. Fields a contract does not name are unconstrained. */
 type Fields<L = number> = [name: PropertyKey, labels: Labels<L>][];
-/** An optional field: constrains its key only where the object has it; a
- * readonly one is a view there. */
-type OptionalField<L = number> = { key: PropertyKey; readonly: boolean; type: Labels<L> };
+/** The role a storage position's location was allocated with: an ordinary
+ * property, a binding's cell, an array's store or a typed array's view store. */
+type StorageRole = "field" | "cell" | "arrayStore" | "viewStore";
+const storageRoles: readonly StorageRole[] = ["field", "cell", "arrayStore", "viewStore"];
+/** An object contract's storage positions: one per named field, with the
+ * role its location was allocated with and its label list, in the order the
+ * row lists them. */
+type Stored<L = number> = [name: PropertyKey, role: StorageRole, labels: Labels<L>][];
+/** An optional field: constrains its key only where the object has it, a
+ * location of its role there; a readonly one is a view there. */
+type OptionalField<L = number> = { key: PropertyKey; readonly: boolean; role: StorageRole; type: Labels<L> };
 /** An own-key bound: the object's own keys are among `keys` (`among`), or
  * none of them is (an array owns no key its prototype provides). */
 type KeyBound = { among: boolean; keys: PropertyKey[] };
@@ -428,21 +436,21 @@ export type Clause<L = number> =
    * host-relative members; each of `bounds` says which keys the object may
    * own; `stable` lists its stable keys (HOST-FAMILIES.md, "Stable keys").
    * Each is left out when there are none. */
-  | { refs: { first: Fields<L>; rest: Fields<L>[]; views: Fields<L>; optional?: OptionalField<L>[];
+  | { refs: { first: Stored<L>; rest: Stored<L>[]; views: Fields<L>; optional?: OptionalField<L>[];
       methods?: MethodSig<L>[]; bounds?: KeyBound[]; stable?: PropertyKey[] } }
   /** Readonly index views apply to every present own field their key class
    * admits; each of `cells`, a mutable index signature's, is also one every
    * such field holds exactly. Left out when there are none. */
   | {
       dict: {
-        first: Fields<L>;
-        rest: Fields<L>[];
+        first: Stored<L>;
+        rest: Stored<L>[];
         views: Fields<L>;
         indexes: IndexEntry<L>[];
         optional?: OptionalField<L>[];
         methods?: MethodSig<L>[];
         bounds?: KeyBound[];
-        cells?: IndexEntry<L>[];
+        cells?: CellEntry<L>[];
         stable?: PropertyKey[];
       };
     }
@@ -465,15 +473,15 @@ export type Clause<L = number> =
       ctors: {
         signatures: MethodArrow<L>[];
         variadic?: MethodRestArrow<L>[];
-        first?: Fields<L>;
-        rest?: Fields<L>[];
+        first?: Stored<L>;
+        rest?: Stored<L>[];
         views?: Fields<L>;
       };
     }
   | {
       callable: {
-        first: Fields<L>;
-        rest: Fields<L>[];
+        first: Stored<L>;
+        rest: Stored<L>[];
         arrows: Arrow<L>[];
         variadic?: RestArrow<L>[];
         methods?: MethodSig<L>[];
@@ -569,6 +577,9 @@ export function decodeLabels(v: JsonRead, size: number): Labels {
 type IndexClass = "strings" | "numeric" | "symbols";
 /** An index contract: its key class and the type of each present key. */
 type IndexEntry<L = number> = [IndexClass, Labels<L>];
+/** A writable index: its key class, the role of the locations it grants and
+ * the type each present key holds exactly. */
+type CellEntry<L = number> = [IndexClass, StorageRole, Labels<L>];
 function isIndexClass(v: unknown): v is IndexClass {
   return v === "strings" || v === "numeric" || v === "symbols";
 }
@@ -672,19 +683,48 @@ function clauseDecoders<L>(label: (v: JsonRead) => L, labels: (v: JsonRead) => L
     }
     return result;
   };
-  const fieldLists = (v: JsonRead): Fields<L>[] => each(v, (f) => fields(f));
+  const role = (v: JsonRead): StorageRole => {
+    const r = storageRoles.find((s) => s === v);
+    if (r === undefined) throw Error("expected a storage role");
+    return r;
+  };
+  const stored = (v: JsonRead, repeated = false): Stored<L> => {
+    const names = new Set<string>();
+    const result: Stored<L> = [];
+    for (const f of array(v)) {
+      const triple = array(f);
+      if (triple.length !== 3)
+        throw Error("expected a field name, its role and its labels");
+      const k = key(triple[0], "a field name");
+      const name = keyText(k);
+      if (!repeated && names.has(name))
+        throw Error("duplicate field in an object contract");
+      names.add(name);
+      const field: [PropertyKey, StorageRole, Labels<L>] = [k, role(triple[1]), labels(triple[2])];
+      result.push(field);
+    }
+    return result;
+  };
+  const storedLists = (v: JsonRead): Stored<L>[] => each(v, (f) => stored(f));
+  const cellEntry = (v: JsonRead): CellEntry<L> => {
+    const triple = array(v);
+    const keyClass = triple[0];
+    if (triple.length !== 3 || !isIndexClass(keyClass))
+      throw Error("expected an index key class, its role and its type");
+    return [keyClass, role(triple[1]), labels(triple[2])];
+  };
   const optionalFields = (v: JsonRead): OptionalField<L>[] => {
     const names = new Set<string>();
     const result: OptionalField<L>[] = [];
     for (const f of array(v)) {
-      const r = obj(f, ["key", "readonly", "type"]);
+      const r = obj(f, ["key", "readonly", "role", "type"]);
       const k = key(r.key, "an optional field's key");
       const name = keyText(k);
       if (names.has(name)) throw Error("duplicate optional field in an object contract");
       names.add(name);
       const readonly = r.readonly;
       if (typeof readonly !== "boolean") throw Error("expected an optional field's readonly flag");
-      result.push({ key: k, readonly, type: labels(r.type) });
+      result.push({ key: k, readonly, role: role(r.role), type: labels(r.type) });
     }
     return result;
   };
@@ -797,8 +837,8 @@ function clauseDecoders<L>(label: (v: JsonRead) => L, labels: (v: JsonRead) => L
       // A verifier graph's record is a meet of field constraints: the
       // intersection of two records constraining one key states the key once
       // per constraint, as the views below do.
-      const first = fields(r.first, true);
-      const rest = fieldLists(r.rest);
+      const first = stored(r.first, true);
+      const rest = storedLists(r.rest);
       // Views are conjunctive capabilities, not an object literal: a meet
       // can constrain one key more than once, exactly as Lean viewT does.
       const views = fields(r.views, true);
@@ -818,13 +858,13 @@ function clauseDecoders<L>(label: (v: JsonRead) => L, labels: (v: JsonRead) => L
     },
     dict: (b) => {
       const r = objOptional(b, ["first", "rest", "views", "indexes"], ["optional", "methods", "bounds", "cells", "stable"]);
-      const first = fields(r.first);
-      const rest = fieldLists(r.rest);
+      const first = stored(r.first);
+      const rest = storedLists(r.rest);
       // Views are conjunctive capabilities, not an object literal: a meet
       // can constrain one key more than once, exactly as Lean viewT does.
       const views = fields(r.views, true);
       const indexes = each(r.indexes, indexEntry);
-      const cells = "cells" in r ? each(r.cells, indexEntry) : undefined;
+      const cells = "cells" in r ? each(r.cells, cellEntry) : undefined;
       const optional = "optional" in r ? optionalFields(r.optional) : undefined;
       const sigs = "methods" in r ? methods(r.methods) : undefined;
       const keyBounds = "bounds" in r ? bounds(r.bounds) : undefined;
@@ -842,8 +882,8 @@ function clauseDecoders<L>(label: (v: JsonRead) => L, labels: (v: JsonRead) => L
     },
     ctors: (b) => {
       const r = objOptional(b, ["signatures"], ["variadic", "first", "rest", "views"]);
-      const first = "first" in r ? fields(r.first) : undefined;
-      const rest = "rest" in r ? fieldLists(r.rest) : undefined;
+      const first = "first" in r ? stored(r.first) : undefined;
+      const rest = "rest" in r ? storedLists(r.rest) : undefined;
       const views = "views" in r ? fields(r.views, true) : undefined;
       const signatures = each(r.signatures, methodArrow);
       const sigs = "variadic" in r ? methodVariadic(r.variadic) : undefined;
@@ -867,8 +907,8 @@ function clauseDecoders<L>(label: (v: JsonRead) => L, labels: (v: JsonRead) => L
     },
     callable: (b) => {
       const r = objOptional(b, ["first", "rest", "arrows"], ["variadic", "methods"]);
-      const first = fields(r.first);
-      const rest = fieldLists(r.rest);
+      const first = stored(r.first);
+      const rest = storedLists(r.rest);
       const fixed = arrows(r.arrows);
       const sigs = "variadic" in r ? variadic(r.variadic) : undefined;
       const members = "methods" in r ? methods(r.methods) : undefined;

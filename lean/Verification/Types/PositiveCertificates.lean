@@ -543,8 +543,8 @@ bucket (`ClauseIndex.has_of`). -/
 @[nospecialize] def clauseBucket (G : NormalGraph ι) (c : Clause (List ι)) : UInt64 :=
   let fields (a : List (PropKey × List ι)) : UInt64 :=
     a.foldl (fun h (k, ls) => ls.foldl (fun h l => mixHash h (G.labelHash l)) (mixHash h (hash k))) 11
-  let operands (a : List (PropKey × List ι)) (r : List (List (PropKey × List ι))) (v : List (PropKey × List ι)) :=
-    r.foldl (fun h x => mixHash h (fields x)) (mixHash (fields a) (fields v))
+  let operands (a : List (Stored (List ι))) (r : List (List (Stored (List ι)))) (v : List (PropKey × List ι)) :=
+    r.foldl (fun h x => mixHash h (fields (Stored.views x))) (mixHash (fields (Stored.views a)) (fields v))
   mixHash (hash c.ctorIdx) (match c with
     | .refs a r v _ _ _ _ | .dict a r v _ _ _ _ _ _ => operands a r v
     | .callable a r _ _ _ => operands a r []
@@ -1158,26 +1158,26 @@ and the target's receivers, its signatures against the target's schemes'). -/
     Clause (List ι) → Clause (List ι) → List (List ι × List ι)
   | .refs a bs vs os ms _ _, .refs c ds ws ps ns _ _
   | .dict a bs vs _ os ms _ _ _, .refs c ds ws ps ns _ _ =>
-    recordPairs G known self (a :: bs).flatten vs os ms (c :: ds).flatten ws ps ns
+    recordPairs G known self (Stored.views (a :: bs).flatten) vs os ms (Stored.views (c :: ds).flatten) ws ps ns
   | .refs a bs vs os ms _ _, .dict c ds ws iy ps ns _ cy _ =>
-    recordPairs G known self (a :: bs).flatten vs os ms (c :: ds).flatten ws ps ns ++
-      (iy.flatMap fun y => ((a :: bs).flatten ++ vs).map fun p => (p.2, y.2)) ++
-      (cy.flatMap fun y => (a :: bs).flatten.flatMap fun p => [(p.2, y.2), (y.2, p.2)])
+    recordPairs G known self (Stored.views (a :: bs).flatten) vs os ms (Stored.views (c :: ds).flatten) ws ps ns ++
+      (iy.flatMap fun y => (Stored.views (a :: bs).flatten ++ vs).map fun p => (p.2, y.2)) ++
+      (cy.flatMap fun y => (a :: bs).flatten.flatMap fun p => [(p.2.2, y.2.2), (y.2.2, p.2.2)])
   | .dict a bs vs ix os ms _ cx _, .dict c ds ws iy ps ns _ cy _ =>
-    recordPairs G known self (a :: bs).flatten vs os ms (c :: ds).flatten ws ps ns ++
-      ((iy ++ cy).flatMap fun y => (ix ++ cx).flatMap fun x => [(x.2, y.2), (y.2, x.2)]) ++
-      (cy.flatMap fun y => os.map fun o => (y.2, o.type))
+    recordPairs G known self (Stored.views (a :: bs).flatten) vs os ms (Stored.views (c :: ds).flatten) ws ps ns ++
+      ((iy ++ cellViews cy).flatMap fun y => (ix ++ cellViews cx).flatMap fun x => [(x.2, y.2), (y.2, x.2)]) ++
+      (cy.flatMap fun y => os.map fun o => (y.2.2, o.type))
   | .arrs L S, .arrs M T | .callable _ _ L S _, .arrs M T =>
     signaturePairs L M ++ restPairs S T ++ elemPairs G S T ++ packPairs G L T ++
       restFixedPairs G S M
   | .callable a bs L S ms, .callable c ds M T ns =>
-    recordPairs G known self (a :: bs).flatten [] [] ms (c :: ds).flatten [] [] ns ++
+    recordPairs G known self (Stored.views (a :: bs).flatten) [] [] ms (Stored.views (c :: ds).flatten) [] [] ns ++
     signaturePairs L M ++ restPairs S T ++ elemPairs G S T ++ packPairs G L T ++
       restFixedPairs G S M
   | .ctors L S a bs vs, .ctors M T c ds ws =>
     let fixed (p : MethodArrow (List ι)) : Arrow (List ι) := p.withReceiver []
     let rest (p : MethodRestArrow (List ι)) : RestArrow (List ι) := p.withReceiver []
-    recordPairs G known self (a :: bs).flatten vs [] [] (c :: ds).flatten ws [] [] ++
+    recordPairs G known self (Stored.views (a :: bs).flatten) vs [] [] (Stored.views (c :: ds).flatten) ws [] [] ++
     signaturePairs (L.map fixed) (M.map fixed) ++ restPairs (S.map rest) (T.map rest) ++
       packPairs G (L.map fixed) (T.map rest)
   | .list a bs, .list c ds | .pack a bs, .pack c ds =>

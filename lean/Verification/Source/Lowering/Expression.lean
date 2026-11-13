@@ -256,26 +256,31 @@ slots are introduced only after the operand supplying their type is checked. -/
         if !st.isEmpty && ns.contains CallArguments.arrayStoreField then
           throw "an array literal states no stable key"
         let all ← ns.mapM fun name => do
-          let some D := (B ++ V).lookup name | throw "allocation claim names different fields"
+          let some D := (Stored.views B ++ V).lookup name | throw "allocation claim names different fields"
           pure (name,D)
-        pure (PositiveNormalization.Clause.refs (stablePart st false all) [] (stablePart st true all) [] [] ks st)
+        -- An object literal allocates an ordinary object: role `field`.
+        pure (PositiveNormalization.Clause.refs (withRole .field (stablePart st false all)) []
+          (stablePart st true all) [] [] ks st)
       | [.dict B [] [] ix os [] [] cs] => do
         if B.length != ns.length then throw "allocation claim names different fields"
         if ns.contains SourceTypes.protoField then
           throw "a literal allocated at a dictionary holds no prototype"
+        -- A literal at a dictionary allocates an ordinary object: role `field`.
         let B ← ns.mapM fun name => do
-          let some D := B.lookup name | throw "allocation claim names different fields"
-          pure (name,D)
-        if !B.all (fun f => (ix ++ cs).all fun y => !y.1.may f.1 || f.2 == y.2) then
+          let some D := (Stored.views B).lookup name | throw "allocation claim names different fields"
+          pure (name, StorageRole.field, D)
+        -- Its writable indexes grant its ordinary properties: role `field`.
+        let cs := withRole .field (PositiveNormalization.cellViews cs)
+        if !B.all (fun f => (ix ++ PositiveNormalization.cellViews cs).all fun y => !y.1.may f.1 || f.2.2 == y.2) then
           throw "a literal allocated at a dictionary holds each field an index admits at that index's type"
         if !os.all (fun o => !ns.contains o.key && cs.all fun y => !y.1.may o.key ||
-            o.type == y.2 || (G.plainTy y.2 && (PositiveRules.expand G y.2).isEmpty)) then
+            o.type == y.2.2 || (G.plainTy y.2.2 && (PositiveRules.expand G y.2.2).isEmpty)) then
           throw "a literal allocated at a dictionary lacks each optional field, at a writable index's type there"
         pure (PositiveNormalization.Clause.dict B [] [] ix os [] [] cs)
       | _ => throw "allocation claim must name a record or dictionary contract"
     let B := match clause with
-      | .refs B _ V .. => ns.filterMap fun n => (B ++ V).lookup n |>.map (n, ·)
-      | .dict B .. => B
+      | .refs B _ V .. => ns.filterMap fun n => (Stored.views B ++ V).lookup n |>.map (n, ·)
+      | .dict B .. => Stored.views B
       | _ => []
     let Ref ← lower (SourceTypes.use clause)
     -- The calculus evaluates these initializers from left to right.
@@ -832,7 +837,7 @@ slots are introduced only after the operand supplying their type is checked. -/
         lower (SourceTypes.use (.callable P [] [] S))
       else lower (SourceTypes.use (.callable P [] L []))
     recordHints [C]
-    let casts := (values.zip (P.map Prod.snd)).map fun (v,D) => DirectProof.cast Γ D v
+    let casts := (values.zip (P.map (·.2.2))).map fun (v,D) => DirectProof.cast Γ D v
     pure (DirectProof.node Γ
       (.makeAt (code.code code.kind) (P.map Prod.fst) (values.map (·.term))) [C]
       (.callableGraph code.arrays) (casts ++ code.capturePlans Γ))
@@ -850,7 +855,7 @@ slots are introduced only after the operand supplying their type is checked. -/
     if P.map Prod.fst != statics.map Prod.fst then
       throw "a class value's claim must state exactly its static fields, in member order"
     let values ← statics.mapM fun (_, e) => closureExpr recursive fc scope Γ e
-    let casts := (values.zip (P.map Prod.snd)).map fun (v, D) => DirectProof.cast Γ D v
+    let casts := (values.zip (P.map (·.2.2))).map fun (v, D) => DirectProof.cast Γ D v
     let code ← LoweringClosures.lambdaCode recursive fc scope Γ lam A (.ctor [Labels.undef])
     pure (DirectProof.node Γ
       (.makeAt (code.code .construct) (codeField :: P.map Prod.fst) (.nul :: values.map (·.term))) A

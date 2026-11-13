@@ -107,7 +107,7 @@ theorem covers_prim [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renamin
 /-! ### R3, R4: discriminants and required keys of object clauses -/
 
 /-- The record operands and views of a plain-object clause. -/
-def objParts : Clause α → Option (List (List (PropKey × α)) × List (PropKey × α))
+def objParts : Clause α → Option (List (List (Stored α)) × List (PropKey × α))
   | .refs a bs vs .. | .dict a bs vs .. => some (a :: bs, vs)
   | _ => none
 
@@ -115,13 +115,13 @@ def objParts : Clause α → Option (List (List (PropKey × α)) × List (PropKe
 `length`, which the array store also meets. -/
 def fixedOf (c : Clause α) : List (PropKey × α) :=
   match objParts c with
-  | some (F, V) => F.flatten ++ V.filter (·.1 != lengthKey)
+  | some (F, V) => Stored.views F.flatten ++ V.filter (·.1 != lengthKey)
   | none => []
 
 /-- A source object clause's entries: its fields and all its views. -/
 def entriesOf (c : Clause α) : List (PropKey × α) :=
   match objParts c with
-  | some (F, V) => F.flatten ++ V
+  | some (F, V) => Stored.views F.flatten ++ V
   | none => []
 
 theorem covers_obj [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)}
@@ -154,12 +154,13 @@ theorem covers_fixed [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renami
     | some s =>
       obtain ⟨Fa, Va⟩ := s
       obtain ⟨hfl, hvw⟩ := covers_obj h ha hb
-      have he : entriesOf a = Fa.flatten ++ Va := by simp [entriesOf, ha]
+      have he : entriesOf a = Stored.views Fa.flatten ++ Va := by simp [entriesOf, ha]
       rw [he]
       rcases List.mem_append.mp hq with hq | hq
-      · obtain ⟨g, hg, hqg⟩ := List.mem_flatten.mp hq
-        obtain ⟨p, hp, hpf, hpB, -⟩ := hfl g hg (f, B) hqg
-        exact ⟨p, List.mem_append_left _ hp, hpf, hpB⟩
+      · obtain ⟨s, hq⟩ := Stored.mem_views.mp hq
+        obtain ⟨g, hg, hqg⟩ := List.mem_flatten.mp hq
+        obtain ⟨p, hp, hpf, -, hpB, -⟩ := hfl g hg (f, s, B) hqg
+        exact ⟨(p.1, p.2.2), List.mem_append_left _ (Stored.mem_views.mpr ⟨p.2.1, hp⟩), hpf, hpB⟩
       · obtain ⟨hq, hl⟩ := List.mem_filter.mp hq
         rcases hvw (f, B) hq with ⟨p, hp, hpf, hpB⟩ | ⟨hlk, -⟩
         · exact ⟨p, hp, hpf, hpB⟩

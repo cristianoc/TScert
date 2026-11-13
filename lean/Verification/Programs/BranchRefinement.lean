@@ -125,7 +125,7 @@ label, which is timeless; what the field holds later is not claimed. -/
 with `q`: an invariant field or a readonly view. -/
 def fieldAnswers (G : NormalGraph ι) (c : Clause (Ty ι)) (f : PropKey) (tag : Tag) (q : Bool) : Bool :=
   match c with
-  | .refs a _ vs _ _ _ _ => (a ++ vs.filter (·.1 != lengthKey)).any fun p =>
+  | .refs a _ vs _ _ _ _ => (Stored.views a ++ vs.filter (·.1 != lengthKey)).any fun p =>
       decide (p.1 = f) && G.plainTy p.2 && (expand G p.2).all fun c => tagClause tag c == some q
   | _ => false
 
@@ -140,7 +140,7 @@ down: its contract says so, and a heap meeting the world holds it. -/
 theorem field_value {G : NormalGraph ι} {c : Clause (Ty ι)} {f : PropKey} {K : Ty ι}
     {n W h v flds code l u}
     (hK : match c with
-      | .refs a _ vs _ _ _ _ => (f, K) ∈ a ++ vs.filter (·.1 != lengthKey)
+      | .refs a _ vs _ _ _ _ => (f, K) ∈ Stored.views a ++ vs.filter (·.1 != lengthKey)
       | _ => False)
     (hv : semWithArgs (excOf G) (meaning G) (argMeaning G) c (n+1) W v) (hh : HeapOk (n+1) W h)
     (hl : v = .objAt flds code oid) (hf : flds.lookup f = some l) (hu : h[l]? = some u) :
@@ -157,16 +157,17 @@ theorem field_value {G : NormalGraph ι} {c : Clause (Ty ι)} {f : PropKey} {K :
       cases hu'
       exact himp _ _ (hall n (Nat.lt_succ_self n))
     rcases List.mem_append.mp hK with hK | hK
-    · obtain ⟨flds', oid', hv', -, hall⟩ := hv.1.1
+    · obtain ⟨_, hK⟩ := Stored.mem_views.mp hK
+      obtain ⟨flds', oid', hv', -, hall⟩ := hv.1.1
       rw [hl] at hv'
       cases hv'
-      obtain ⟨l', c', hl', hc', hag⟩ := hall f (meaning G K) (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩)
+      obtain ⟨l', c', hl', hc', hag⟩ := hall f _ (meaning G K) (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩)
       rw [hf] at hl'
       cases hl'
       exact take c' hc' fun W' w hw => (hag n (Nat.lt_succ_self n) W' w).mp hw
     · obtain ⟨hK, hKl⟩ := List.mem_filter.mp hK
       obtain ⟨flds', l', c', oid', hv', hl', hc', himp⟩ :=
-        viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩) (by simpa using hKl) hv.2.1
+        viewsT_at (ReferenceConjunctions.mem_viewsOf.mpr ⟨K, hK, rfl⟩) (by simpa using hKl) hv.2.1
       rw [hl] at hv'
       cases hv'
       rw [hf] at hl'
@@ -223,15 +224,16 @@ theorem fieldSlice_absent {G : NormalGraph ι} {A : Ty ι} {f tag q n W v flds c
       simp only [fieldAnswers, List.any_eq_true, Bool.and_eq_true, decide_eq_true_eq] at hans
       obtain ⟨⟨g, K⟩, hp, ⟨rfl, _⟩, _⟩ := hans
       rcases List.mem_append.mp hp with hK | hK
-      · obtain ⟨flds', oid', hv', -, hall⟩ := hcv.1.1
+      · obtain ⟨_, hK⟩ := Stored.mem_views.mp hK
+        obtain ⟨flds', oid', hv', -, hall⟩ := hcv.1.1
         rw [hl] at hv'
         cases hv'
-        obtain ⟨l', _, hl', _⟩ := hall g (meaning G K) (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩)
+        obtain ⟨l', _, hl', _⟩ := hall g _ (meaning G K) (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩)
         rw [hf] at hl'
         cases hl'
       · obtain ⟨hK, hKl⟩ := List.mem_filter.mp hK
         obtain ⟨flds', l', _, oid', hv', hl', _⟩ :=
-          viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩) (by simpa using hKl) hcv.2.1
+          viewsT_at (ReferenceConjunctions.mem_viewsOf.mpr ⟨K, hK, rfl⟩) (by simpa using hKl) hcv.2.1
         rw [hl] at hv'
         cases hv'
         rw [hf] at hl'
@@ -252,7 +254,7 @@ keeps the fact's labels the slot's type does not exclude
 the length view aside. -/
 @[nospecialize] def fixedFields (c : Clause (Ty ι)) : List (PropKey × Ty ι) :=
   match c with
-  | .refs a _ vs _ _ _ _ => a ++ vs.filter (·.1 != lengthKey)
+  | .refs a _ vs _ _ _ _ => Stored.views a ++ vs.filter (·.1 != lengthKey)
   | _ => []
 
 /-- No clause of `A` meets a clause of `B` consistently: `meetLists A B` is
@@ -317,13 +319,14 @@ theorem field_located {G : NormalGraph ι} {c : Clause (Ty ι)} {f : PropKey} {K
   | refs a bs vs os ms ks =>
     simp only [fixedFields] at hK
     rcases List.mem_append.mp hK with hK | hK
-    · obtain ⟨flds', oid', hv', -, hall⟩ := hv.1.1
-      obtain ⟨l', c', hl', hc', -⟩ := hall f (meaning G K) (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩)
+    · obtain ⟨_, hK⟩ := Stored.mem_views.mp hK
+      obtain ⟨flds', oid', hv', -, hall⟩ := hv.1.1
+      obtain ⟨l', c', hl', hc', -⟩ := hall f _ (meaning G K) (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩)
       obtain ⟨u, hu, -⟩ := hh.2 l' c' hc'
       exact ⟨flds', _, oid', l', u, hv', hl', hu⟩
     · obtain ⟨hK, hKl⟩ := List.mem_filter.mp hK
       obtain ⟨flds', l', c', oid', hv', hl', hc', -⟩ :=
-        viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩) (by simpa using hKl) hv.2.1
+        viewsT_at (ReferenceConjunctions.mem_viewsOf.mpr ⟨K, hK, rfl⟩) (by simpa using hKl) hv.2.1
       obtain ⟨u, hu, -⟩ := hh.2 l' c' hc'
       exact ⟨flds', _, oid', l', u, hv', hl', hu⟩
   | _ => simp [fixedFields] at hK
@@ -457,7 +460,7 @@ theorem uncovered_sound {G : NormalGraph ι} {A : Ty ι} {ts n W v} (hv : meanin
 which `ts` covers: an invariant field or a readonly view. -/
 def fieldCovered (G : NormalGraph ι) (c : Clause (Ty ι)) (f : PropKey) (ts : List Tag) : Bool :=
   match c with
-  | .refs a _ vs _ _ _ _ => (a ++ vs.filter (·.1 != lengthKey)).any fun p =>
+  | .refs a _ vs _ _ _ _ => (Stored.views a ++ vs.filter (·.1 != lengthKey)).any fun p =>
       decide (p.1 = f) && G.plainTy p.2 && (expand G p.2).all (coveredBy ts)
   | _ => false
 
@@ -517,16 +520,16 @@ theorem restricts_sound [DecidableEq ι] {G : NormalGraph ι} {c c' : Clause (Ty
         rw [hu] at this; exact Option.some.inj this
       subst hvalue
       intro g T hm
-      obtain ⟨i', hi', rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hm
+      obtain ⟨i', hi', rfl⟩ := ReferenceConjunctions.mem_viewsOf.mp hm
       obtain ⟨⟨g0, i⟩, hz⟩ := exists_zip_left (by simpa using hlen') hi'
       have hpair := hall _ hz
       simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at hpair
       obtain ⟨rfl, hsame | ⟨⟨⟨⟨rfl, hK⟩, hK'⟩, helems⟩⟩⟩ := hpair
       · subst hsame
-        exact hviews g0 _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, (List.of_mem_zip hz).1, rfl⟩)
+        exact hviews g0 _ (ReferenceConjunctions.mem_viewsOf.mpr ⟨i, (List.of_mem_zip hz).1, rfl⟩)
       · -- The original view of `f`, at the stable location.
         obtain ⟨vflds, vl, vc, void, hvv, hvl, hvc, himp⟩ :=
-          viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨i, (List.of_mem_zip hz).1, rfl⟩) hlen hviews
+          viewsT_at (ReferenceConjunctions.mem_viewsOf.mpr ⟨i, (List.of_mem_zip hz).1, rfl⟩) hlen hviews
         rw [hl] at hvv
         cases hvv
         rw [hf] at hvl
@@ -650,7 +653,7 @@ theorem restrictionIn_eq [DecidableEq ι] (G : NormalGraph ι) (a : ι) (f : Pro
 its views but at `f`, hashed by the graph's label hash. A candidate
 `restricts` accepts has its source's key (`restricts_key`). -/
 @[nospecialize] def restrictKey (G : NormalGraph ι) (f : PropKey) : Clause (Ty ι) → UInt64
-  | .refs a _ vs _ _ _ _ => mixHash (a.foldl (fun acc p => mixHash acc (mixHash (hash p.1) (tyHash G p.2))) 11)
+  | .refs a _ vs _ _ _ _ => mixHash (a.foldl (fun acc p => mixHash acc (mixHash (hash p.1) (tyHash G p.2.2))) 11)
       (viewsHash G f vs)
   | _ => 0
 
@@ -902,16 +905,17 @@ def presentViews (k : PropKey) (ds : List (IndexKeys × α)) : List (PropKey × 
 /-- The record clause `c` with its optional key `k` taken as present, and
 the dictionary clause with `k` a view at each index type whose class surely
 admits it. Other clauses, and a record without that optional key, are
-unchanged. A writable optional key becomes an invariant field only of a
-record whose objects are ordinary (an invariant field already, or a closed
-own-key bound): a field a host object might hold is read as a view. -/
+unchanged. A writable optional key becomes an invariant field, of the
+optional field's role, only of a record whose objects are ordinary (an
+invariant field already, or a closed own-key bound): a field a host object
+might hold is read as a view. -/
 def promote (k : PropKey) : Clause α → Clause α
   | .refs a bs vs os ms ks st =>
     match os.find? (fun o => decide (o.key = k)) with
     | some o =>
       if o.readonly || ((a :: bs).flatten.isEmpty && !ks.any KeyBound.closed) then
         .refs a bs (vs ++ [(k, o.type)]) os ms ks st
-      else .refs (a ++ [(k, o.type)]) bs vs os ms ks st
+      else .refs (a ++ [(k, o.role, o.type)]) bs vs os ms ks st
     | none => .refs a bs vs os ms ks st
   | .dict a bs vs ds os ms ks cs st => .dict a bs (vs ++ presentViews k ds) ds os ms ks cs st
   | c => c
@@ -951,21 +955,21 @@ theorem promote_sound {X : α → Fam} {P : α → ArgFam} {k : PropKey} {c : Cl
         simp only [Bool.or_eq_false_iff, Bool.and_eq_false_iff, Bool.not_eq_false'] at hcond
         have hro : o.readonly = false := hcond.1
         refine ⟨⟨⟨flds, oid, rfl, ?_, ?_⟩, hbs.1, fun _ => ?_⟩, hview, hopt, hmeth, hkeys, hst⟩
-        · intro f T hm
-          simp only [ReferenceConjunctions.famsOf, List.map_append, List.mem_append,
+        · intro f s T hm
+          simp only [ReferenceConjunctions.famsOf, mapStored, List.map_append, List.mem_append,
             List.map_cons, List.map_nil, List.mem_singleton] at hm
           rcases hm with hm | hm
-          · exact hown f T hm
+          · exact hown f s T hm
           · cases hm
             intro l' hl''
             have := optT_owned hmem' (by simpa [OptionalField.map] using hro) hopt
               (by simpa [OptionalField.map, hkey] using hl'')
             simpa [OptionalField.map, hkey] using this
-        · intro f T hm
-          simp only [ReferenceConjunctions.famsOf, List.map_append, List.mem_append,
+        · intro f s T hm
+          simp only [ReferenceConjunctions.famsOf, mapStored, List.map_append, List.mem_append,
             List.map_cons, List.map_nil, List.mem_singleton] at hm
           rcases hm with hm | hm
-          · exact hrec f T hm
+          · exact hrec f s T hm
           · cases hm
             refine ⟨l, c', hl, hw, fun j hj W' u => ⟨(hsc j hj W' u).1, ?_⟩⟩
             exact (hsc j hj W' u).2 (by simp [OptionalField.map, hro])
@@ -985,7 +989,7 @@ theorem promote_sound {X : α → Fam} {P : α → ArgFam} {k : PropKey} {c : Cl
         rw [if_pos hc']
         refine ⟨⟨⟨flds, oid, rfl, hown, hrec⟩, hbs⟩, ?_, hopt, hmeth, hkeys, hst⟩
         intro f T hm
-        simp only [ReferenceConjunctions.famsOf, List.map_append, List.mem_append,
+        simp only [ReferenceConjunctions.viewsOf, List.map_append, List.mem_append,
           List.map_cons, List.map_nil, List.mem_singleton] at hm
         rcases hm with hm | hm
         · exact hview f T hm
@@ -995,9 +999,9 @@ theorem promote_sound {X : α → Fam} {P : α → ArgFam} {k : PropKey} {c : Cl
   | dict a bs vs ds os ms ks cs =>
     obtain ⟨hr, hview, ⟨hd, hcs⟩, hopt, hmeth, hkeys, hst⟩ := hc
     refine ⟨hr, fun f T hm => ?_, ⟨hd, hcs⟩, hopt, hmeth, hkeys, hst⟩
-    obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hm
+    obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_viewsOf.mp hm
     rcases List.mem_append.mp hi with hi | hi
-    · exact hview f _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, hi, rfl⟩)
+    · exact hview f _ (ReferenceConjunctions.mem_viewsOf.mpr ⟨i, hi, rfl⟩)
     · obtain ⟨x, hx, he⟩ := List.mem_map.mp hi
       simp only [Prod.mk.injEq] at he
       obtain ⟨rfl, rfl⟩ := he
@@ -1055,8 +1059,8 @@ def weaker [DecidableEq α] : Clause α → Clause α → Bool
 
 /-- Asking fewer operands names an invariant field only where asking more
 does. -/
-theorem fewer_named [DecidableEq α] {X : α → Fam} {a a' : List (PropKey × α)}
-    {bs bs' : List (List (PropKey × α))} (ha : within a a' = true) (hb : within bs bs' = true)
+theorem fewer_named [DecidableEq α] {X : α → Fam} {a a' : List (Stored α)}
+    {bs bs' : List (List (Stored α))} (ha : within a a' = true) (hb : within bs bs' = true)
     (hne : (ReferenceConjunctions.famsOf X a :: bs.map (ReferenceConjunctions.famsOf X)).flatten ≠ []) :
     (ReferenceConjunctions.famsOf X a' :: bs'.map (ReferenceConjunctions.famsOf X)).flatten ≠ [] := by
   intro he
@@ -1066,7 +1070,7 @@ theorem fewer_named [DecidableEq α] {X : α → Fam} {a a' : List (PropKey × �
   obtain ⟨L, hL, hqL⟩ := List.mem_flatten.mp hq
   have hm : q ∈ (ReferenceConjunctions.famsOf X a' :: bs'.map (ReferenceConjunctions.famsOf X)).flatten := by
     rcases List.mem_cons.mp hL with rfl | hL
-    · obtain ⟨⟨f, i⟩, hi, rfl⟩ := List.mem_map.mp hqL
+    · obtain ⟨⟨f, s, i⟩, hi, rfl⟩ := List.mem_map.mp hqL
       exact List.mem_flatten.mpr ⟨_, List.mem_cons_self,
         ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem ha hi, rfl⟩⟩
     · obtain ⟨b, hb', rfl⟩ := List.mem_map.mp hL
@@ -1083,18 +1087,18 @@ theorem weaker_sound [DecidableEq α] {X : α → Fam} {P : α → ArgFam} {d c 
       simp only [weaker, Bool.and_eq_true] at hw
       obtain ⟨⟨⟨⟨⟨⟨ha, hb⟩, hv⟩, ho⟩, hm⟩, hk⟩, hs⟩ := hw
       obtain ⟨⟨⟨flds, oid, hvf, hown, hrec⟩, hbs⟩, hview, hopt, hmeth, hkeys, hst⟩ := hc
-      refine ⟨⟨⟨flds, oid, hvf, fun f T hmem => ?_, fun f T hmem => ?_⟩, fun B hB => ?_,
+      refine ⟨⟨⟨flds, oid, hvf, fun f s T hmem => ?_, fun f s T hmem => ?_⟩, fun B hB => ?_,
         fun hne => hbs.2 (fewer_named ha hb hne)⟩, fun f T hmem => ?_, ?_,
         fun m hm' => ?_, fun K hK => hkeys K (within_mem hk hK),
         stableKeysT_weaken (fun x hx => within_mem hs hx) n W v hst⟩
       · obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hmem
-        exact hown f _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem ha hi, rfl⟩)
+        exact hown f s _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem ha hi, rfl⟩)
       · obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hmem
-        exact hrec f _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem ha hi, rfl⟩)
+        exact hrec f s _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem ha hi, rfl⟩)
       · obtain ⟨B', hB', rfl⟩ := List.mem_map.mp hB
         exact hbs.1 _ (List.mem_map.mpr ⟨B', within_mem hb hB', rfl⟩)
-      · obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hmem
-        exact hview f _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem hv hi, rfl⟩)
+      · obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_viewsOf.mp hmem
+        exact hview f _ (ReferenceConjunctions.mem_viewsOf.mpr ⟨i, within_mem hv hi, rfl⟩)
       · obtain ⟨flds', oid', hv', hw, hp, hf⟩ := hopt
         refine ⟨flds', oid', hv', fun o hmo => ?_, fun o hmo => ?_, fun o hmo => ?_⟩
         · obtain ⟨o', ho', rfl⟩ := List.mem_map.mp hmo
@@ -1112,19 +1116,19 @@ theorem weaker_sound [DecidableEq α] {X : α → Fam} {P : α → ArgFam} {d c 
       simp only [weaker, Bool.and_eq_true] at hw
       obtain ⟨⟨⟨⟨⟨⟨⟨⟨ha, hb⟩, hv⟩, hds⟩, ho⟩, hm⟩, hk⟩, hcs⟩, hs⟩ := hw
       obtain ⟨⟨⟨flds, oid, hvf, hown, hrec⟩, hbs⟩, hview, ⟨hd, hc⟩, hopt, hmeth, hkeys, hst⟩ := hc
-      refine ⟨⟨⟨flds, oid, hvf, fun f T hmem => ?_, fun f T hmem => ?_⟩, fun B hB => ?_,
+      refine ⟨⟨⟨flds, oid, hvf, fun f s T hmem => ?_, fun f s T hmem => ?_⟩, fun B hB => ?_,
         fun hne => hbs.2 (fewer_named ha hb hne)⟩, fun f T hmem => ?_,
         ⟨fun x hx => hd x (within_mem hds hx), fun x hx => hc x (within_mem hcs hx)⟩, ?_,
         fun m hm' => ?_, fun K hK => hkeys K (within_mem hk hK),
         stableKeysT_weaken (fun x hx => within_mem hs hx) n W v hst⟩
       · obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hmem
-        exact hown f _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem ha hi, rfl⟩)
+        exact hown f s _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem ha hi, rfl⟩)
       · obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hmem
-        exact hrec f _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem ha hi, rfl⟩)
+        exact hrec f s _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem ha hi, rfl⟩)
       · obtain ⟨B', hB', rfl⟩ := List.mem_map.mp hB
         exact hbs.1 _ (List.mem_map.mpr ⟨B', within_mem hb hB', rfl⟩)
-      · obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hmem
-        exact hview f _ (ReferenceConjunctions.mem_famsOf.mpr ⟨i, within_mem hv hi, rfl⟩)
+      · obtain ⟨i, hi, rfl⟩ := ReferenceConjunctions.mem_viewsOf.mp hmem
+        exact hview f _ (ReferenceConjunctions.mem_viewsOf.mpr ⟨i, within_mem hv hi, rfl⟩)
       · obtain ⟨flds', oid', hv', hw, hp, hf⟩ := hopt
         refine ⟨flds', oid', hv', fun o hmo => ?_, fun o hmo => ?_, fun o hmo => ?_⟩
         · obtain ⟨o', ho', rfl⟩ := List.mem_map.mp hmo
@@ -1491,11 +1495,12 @@ theorem builtinArray_of_record [DecidableEq ι] {G : NormalGraph ι} {L : ι}
       refine ⟨L, List.mem_singleton_self L, (unfold_plain hplain n W _).mpr
         ⟨.refs [] [] [(CallArguments.arrayStoreField, S), (CallArguments.protoField, r.proto)] [] []
           [⟨false, r.keys⟩], by rw [hGL]; simp, ?_, ?_⟩⟩
-      · refine ⟨⟨⟨flds, oid, rfl, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm⟩, by simp,
-          by simp [ReferenceConjunctions.famsOf]⟩,
+      · refine ⟨⟨⟨flds, oid, rfl, fun f s T hm => by simp [ReferenceConjunctions.famsOf, mapStored] at hm,
+            fun f s T hm => by simp [ReferenceConjunctions.famsOf, mapStored] at hm⟩, by simp,
+          by simp [ReferenceConjunctions.famsOf, mapStored]⟩,
           fun f T hm => ?_, by simpa [OptionalField.map] using optT_nil,
           MethodMembers.methodT_nil _ _ _, fun K hK => ?_, stableKeysT_nil _ _ _⟩
-        · simp only [ReferenceConjunctions.famsOf, List.map_cons, List.map_nil, List.mem_cons,
+        · simp only [ReferenceConjunctions.viewsOf, List.map_cons, List.map_nil, List.mem_cons,
             Prod.mk.injEq, List.not_mem_nil, or_false] at hm
           rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
           · obtain ⟨flds', l, c', oid', he, hl, hw, hag⟩ := hview CallArguments.arrayStoreField
@@ -1692,9 +1697,10 @@ theorem sourceKinds_cover {G : NormalGraph ι} {n W v} (hv : clauseSem G .source
   | objAt fs code oid =>
     cases code with
     | absent =>
-      refine ⟨.refs [] [] [], by simp [sourceKinds], ⟨⟨⟨⟨fs, oid, rfl, fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm, fun f T hm => by
-          simp [ReferenceConjunctions.famsOf] at hm⟩, by simp, by simp [ReferenceConjunctions.famsOf]⟩,
-        fun f T hm => by simp [ReferenceConjunctions.famsOf] at hm, optT_nil,
+      refine ⟨.refs [] [] [], by simp [sourceKinds], ⟨⟨⟨⟨fs, oid, rfl,
+          fun f s T hm => by simp [ReferenceConjunctions.famsOf, mapStored] at hm, fun f s T hm => by
+          simp [ReferenceConjunctions.famsOf, mapStored] at hm⟩, by simp, by simp [ReferenceConjunctions.famsOf, mapStored]⟩,
+        fun f T hm => by simp [ReferenceConjunctions.viewsOf] at hm, optT_nil,
         MethodMembers.methodT_nil _ _ _, fun K hK => by simp at hK, stableKeysT_nil _ _ _⟩, ?_⟩⟩
       exact (builtinInvariant_carriesInvariant rfl rfl).mp hinv
     | bound t r pre => exact family .isFun (by simp [familyMember, sourceKinds]) rfl

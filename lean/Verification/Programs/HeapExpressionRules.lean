@@ -238,7 +238,7 @@ theorem read_sound {G : NormalGraph ι} {Γ k i fld R A ρ n W h}
     · exact hout.2.2.1 link hm
 
 /-- A clause's first invariant bag operand, independent of callability. -/
-def clauseBagOperand : PositiveNormalization.Clause α → Option (List (PropKey × α))
+def clauseBagOperand : PositiveNormalization.Clause α → Option (List (Stored α))
   | .refs B _ _ _ _ _ _ | .callable B _ _ _ _ => some B
   | _ => none
 
@@ -274,7 +274,7 @@ each clause's first invariant operand, and, for a record, in its readonly
 views other than `length` (`clauseField`). -/
 @[nospecialize] def fieldTys (cs : List (PositiveNormalization.Clause α)) (fld : PropKey) : List α :=
   cs.flatMap fun c =>
-    ((clauseBagOperand c).getD []).filterMap (fun p => if p.1 = fld then some p.2 else none) ++
+    ((clauseBagOperand c).getD []).filterMap (fun p => if p.1 = fld then some p.2.2 else none) ++
     (match c with
       | .refs _ _ vs _ _ _ _ => if fld != lengthKey then vs.filterMap (fun p => if p.1 = fld then some p.2 else none) else []
       | _ => [])
@@ -290,14 +290,16 @@ theorem clauseField_typed [DecidableEq ι] {G : NormalGraph ι} {cs : List (Posi
     ∃ (El : Ty ι) (flds : List (PropKey × Nat)) (code : CallCode) (oid l : Nat) (c : Ctr n), v = .objAt flds code oid ∧ flds.lookup fld = some l ∧
       lookup W l = some c ∧ (∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val), c j hj W' u → meaning G El j W' u) ∧
       El ∈ fieldTys cs fld := by
-  have inBag : ∀ {El : Ty ι}, (fld, El) ∈ (clauseBagOperand c).getD [] → El ∈ fieldTys cs fld :=
+  have inBag : ∀ {s : StorageRole} {El : Ty ι}, (fld, s, El) ∈ (clauseBagOperand c).getD [] →
+      El ∈ fieldTys cs fld :=
     fun hmem => List.mem_flatMap.mpr ⟨c, hm, List.mem_append_left _ (List.mem_filterMap.mpr ⟨_, hmem, by simp⟩)⟩
-  have ofBag : ∀ {B : List (PropKey × Ty ι)} {El : Ty ι}, (fld, El) ∈ B → El ∈ fieldTys cs fld →
+  have ofBag : ∀ {B : List (Stored (Ty ι))} {s : StorageRole} {El : Ty ι}, (fld, s, El) ∈ B →
+      El ∈ fieldTys cs fld →
       bagT (ReferenceConjunctions.famsOf (meaning G) B) n W v →
       ∃ (El : Ty ι) (flds : List (PropKey × Nat)) (code : CallCode) (oid l : Nat) (c : Ctr n), v = .objAt flds code oid ∧ flds.lookup fld = some l ∧
         lookup W l = some c ∧ (∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val), c j hj W' u → meaning G El j W' u) ∧
         El ∈ fieldTys cs fld := by
-    intro B El hmem hin hbag
+    intro B s El hmem hin hbag
     obtain ⟨flds,code,oid,hl,_,hrec⟩ := hbag
     obtain ⟨flds',l,c',oid',hproj,hfd,hlookup,hagree⟩ :=
       recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) hrec
@@ -307,16 +309,16 @@ theorem clauseField_typed [DecidableEq ι] {G : NormalGraph ι} {cs : List (Posi
   | refs a bs vs os ms ks =>
     simp only [clauseField, clauseBagOperand, Bool.or_eq_true, Bool.and_eq_true, bne_iff_ne, ne_eq,
       List.any_eq_true, decide_eq_true_eq] at hb
-    rcases hb with ⟨⟨g, El⟩, hmem, rfl⟩ | ⟨hlen, ⟨g, El⟩, hmem, rfl⟩
+    rcases hb with ⟨⟨g, s, El⟩, hmem, rfl⟩ | ⟨hlen, ⟨g, El⟩, hmem, rfl⟩
     · exact ofBag hmem (inBag (by simpa [clauseBagOperand] using hmem)) (recT_bag hc.1.1)
     · obtain ⟨flds,l,c',oid,hl,hfd,hlookup,himp⟩ :=
-        viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) hlen hc.2.1
+        viewsT_at (ReferenceConjunctions.mem_viewsOf.mpr ⟨El, hmem, rfl⟩) hlen hc.2.1
       refine ⟨El, flds, .absent, oid, l, c', hl, hfd, hlookup, himp, ?_⟩
       exact List.mem_flatMap.mpr ⟨_, hm, List.mem_append_right _
         (by simp only [bne_iff_ne, ne_eq, hlen, not_false_eq_true, if_true]; exact List.mem_filterMap.mpr ⟨_, hmem, by simp⟩)⟩
   | callable a bs L S ms =>
     simp only [clauseField, clauseBagOperand, Bool.or_false, List.any_eq_true, decide_eq_true_eq] at hb
-    obtain ⟨⟨g, El⟩, hmem, rfl⟩ := hb
+    obtain ⟨⟨g, s, El⟩, hmem, rfl⟩ := hb
     exact ofBag hmem (inBag (by simpa [clauseBagOperand] using hmem)) hc.1.1.1.1
   | _ => simp [clauseField, clauseBagOperand] at hb
 
@@ -358,16 +360,16 @@ theorem ownedField_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
     exact plain_of_mem_expand (c := c) hc
   obtain ⟨c,hm,hc,-⟩ := (expand_sem G Ref hp n W v).mp hv
   have hb := hr.2 c hm
-  have ofBag : ∀ {B : List (PropKey × Ty ι)}, B.any (fun p => decide (p.1 = fld)) = true →
+  have ofBag : ∀ {B : List (Stored (Ty ι))}, B.any (fun p => decide (p.1 = fld)) = true →
       bagT (ReferenceConjunctions.famsOf (meaning G) B) n W v →
       ∃ (flds : List (PropKey × Nat)) (code : CallCode) (oid l : Nat), v = .objAt flds code oid ∧
         flds.lookup fld = some l ∧ Owned flds fld l := by
     intro B hB hbag
-    obtain ⟨⟨g, El⟩, hmem, hg⟩ := List.any_eq_true.mp hB
+    obtain ⟨⟨g, s, El⟩, hmem, hg⟩ := List.any_eq_true.mp hB
     simp only [decide_eq_true_eq] at hg
     subst hg
     obtain ⟨flds,code,oid,hl,_,hrec⟩ := hbag
-    have hmf : (g, meaning G El) ∈ ReferenceConjunctions.famsOf (meaning G) B :=
+    have hmf : (g, s, meaning G El) ∈ ReferenceConjunctions.famsOf (meaning G) B :=
       ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩
     obtain ⟨flds',l,c',oid',hproj,hfd,-⟩ := recT_at hmf hrec
     cases hproj
@@ -549,7 +551,7 @@ def optionalOperand (cs : List (PositiveNormalization.Clause α)) (fld : PropKey
   !cs.isEmpty && cs.all fun c => match c with
     | .refs a _ vs os _ _ _ => a.any (fun p => decide (p.1 = fld)) ||
       vs.any (fun p => p.1 != lengthKey && decide (p.1 = fld)) || os.any (fun o => decide (o.key = fld))
-    | .dict _ _ _ ds _ _ _ cs _ => (ds ++ cs).any (stringIndex · fld)
+    | .dict _ _ _ ds _ _ _ cs _ => (ds ++ cellViews cs).any (stringIndex · fld)
     | _ => false
 
 /-- What such a read finds: the object, and, where it has the key, a
@@ -574,14 +576,14 @@ theorem optionalOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W
     subst hvf
     refine ⟨flds, oid, rfl, ?_, ?_⟩
     · intro l hl
-      rcases hb with (⟨⟨g, El⟩, hmem, rfl⟩ | ⟨⟨g, El⟩, hmem, hne, rfl⟩) | ⟨o, hmem, rfl⟩
-      · obtain ⟨l', c', hl', hw, hag⟩ := hrec g (meaning G El)
+      rcases hb with (⟨⟨g, s, El⟩, hmem, rfl⟩ | ⟨⟨g, El⟩, hmem, hne, rfl⟩) | ⟨o, hmem, rfl⟩
+      · obtain ⟨l', c', hl', hw, hag⟩ := hrec g s (meaning G El)
           (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩)
         rw [hl] at hl'
         cases hl'
         exact ⟨c', hw, fun W' u hu => meaning_valOnly G El 0 W' u ((hag 0 (by omega) W' u).mp hu)⟩
       · obtain ⟨flds', loc, ctr, oid', obj, key, hw, imp⟩ :=
-          viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) hne hc.2.1
+          viewsT_at (ReferenceConjunctions.mem_viewsOf.mpr ⟨El, hmem, rfl⟩) hne hc.2.1
         cases obj
         rw [hl] at key
         cases key
@@ -589,13 +591,13 @@ theorem optionalOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W
       · obtain ⟨c', hw, hsc⟩ := optT_present (List.mem_map.mpr ⟨o, hmem, rfl⟩) hc.2.2.1 hl
         exact ⟨c', hw, fun W' u hu => meaning_valOnly G o.type 0 W' u ((hsc 0 (by omega) W' u).1 hu)⟩
     · intro hl
-      rcases hb with (⟨⟨g, El⟩, hmem, rfl⟩ | ⟨⟨g, El⟩, hmem, hne, rfl⟩) | ⟨o, hmem, rfl⟩
-      · obtain ⟨l', c', hl', _⟩ := hrec g (meaning G El)
+      rcases hb with (⟨⟨g, s, El⟩, hmem, rfl⟩ | ⟨⟨g, El⟩, hmem, hne, rfl⟩) | ⟨o, hmem, rfl⟩
+      · obtain ⟨l', c', hl', _⟩ := hrec g s (meaning G El)
           (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩)
         rw [hl] at hl'
         cases hl'
       · obtain ⟨flds', loc, ctr, oid', obj, key, _⟩ :=
-          viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩) hne hc.2.1
+          viewsT_at (ReferenceConjunctions.mem_viewsOf.mpr ⟨El, hmem, rfl⟩) hne hc.2.1
         cases obj
         rw [hl] at key
         cases key
@@ -614,7 +616,8 @@ theorem optionalOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W
     have hview : dictViewT d.1 (meaning G d.2) (n+1) W v := by
       rcases List.mem_append.mp hd with hd | hd
       · exact hds d hd
-      · exact dictCellT_view (hcs d hd)
+      · obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hd
+        exact dictCellT_view (hcs y hy)
     obtain ⟨flds, oid, hvf, hproto, hkeys⟩ := hview
     subst hvf
     refine ⟨flds, oid, rfl, fun l hl => ?_, fun _ => hproto.1⟩

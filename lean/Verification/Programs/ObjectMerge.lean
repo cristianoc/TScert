@@ -417,8 +417,11 @@ structure Obj (ι : Type) where
   plain : Bool
 
 @[nospecialize] def objOf : Clause (List ι) → Option (Obj ι)
-  | .refs a bs vs os _ ks _ => some ⟨(a :: bs).flatten ++ vs.filter (·.1 != lengthKey), os, [], ks, false⟩
-  | .dict a bs vs ds os _ ks cs _ => some ⟨(a :: bs).flatten ++ vs.filter (·.1 != lengthKey), os, ds ++ cs, ks, !(ds ++ cs).isEmpty⟩
+  | .refs a bs vs os _ ks _ =>
+    some ⟨Stored.views (a :: bs).flatten ++ vs.filter (·.1 != lengthKey), os, [], ks, false⟩
+  | .dict a bs vs ds os _ ks cs _ =>
+    some ⟨Stored.views (a :: bs).flatten ++ vs.filter (·.1 != lengthKey), os, ds ++ cellViews cs, ks,
+      !(ds ++ cellViews cs).isEmpty⟩
   | _ => none
 
 /-- A clause whose values own no enumerable property: `null`, `undefined`,
@@ -496,11 +499,12 @@ theorem objFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι}
     cases ho
     obtain ⟨hr, hw, ⟨hd, hcs⟩, hopt, -, hb, -⟩ := hv
     obtain ⟨fs, oid, rfl, -⟩ := hr.1
-    have hview : ∀ x ∈ ds ++ cs, dictViewT x.1 (meaning G x.2) n W (.objAt fs .absent oid) := by
+    have hview : ∀ x ∈ ds ++ cellViews cs, dictViewT x.1 (meaning G x.2) n W (.objAt fs .absent oid) := by
       intro x hx
       rcases List.mem_append.mp hx with hx | hx
       · exact hd x hx
-      · exact dictCellT_view (hcs x hx)
+      · obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hx
+        exact dictCellT_view (hcs y hy)
     refine ⟨fs, oid, rfl, ⟨fun p hp => ?_, fun q hq l hl => ?_, fun x hx f l hk hl => ?_,
       fun K hK => ownKeysT_reid (hb K hK),
       fun hp => ?_, fun S T hS hst hrl => numeric_of_inv rfl hinv (by
@@ -514,7 +518,7 @@ theorem objFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι}
       obtain ⟨c, hc, hag⟩ := hall _ (List.mem_map_of_mem hq) l hl
       exact ⟨c, hc, fun j hj U u hu => (hag j hj U u).1 hu⟩
     · exact dictViewT_present (hview x hx) hk hl
-    · cases hne : ds ++ cs with
+    · cases hne : ds ++ cellViews cs with
       | nil => rw [hne] at hp; simp at hp
       | cons x _ => exact dictViewT_no_proto (hview x (by rw [hne]; exact List.mem_cons_self))
   · cases ho
@@ -545,18 +549,18 @@ if any, and no bound. -/
 @[nospecialize] def codeOf : Clause (List ι) → Option (Obj ι)
   | .arrs _ _ => some ⟨[], [], [], [], false⟩
   | .callable a bs _ _ _ =>
-    some ⟨(a :: bs).flatten.filter (·.1 != CallArguments.arrayStoreField), [], [], [], false⟩
+    some ⟨(Stored.views (a :: bs).flatten).filter (·.1 != CallArguments.arrayStoreField), [], [], [], false⟩
   | .ctors _ _ a bs vs =>
-    some ⟨((a :: bs).flatten ++ vs).filter (·.1 != CallArguments.arrayStoreField), [], [], [], false⟩
+    some ⟨(Stored.views (a :: bs).flatten ++ vs).filter (·.1 != CallArguments.arrayStoreField), [], [], [], false⟩
   | _ => none
 
 /-- A bag's fields hold their contracts on the object the bag is of. -/
-theorem bagFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {a : List (PropKey × List ι)}
-    {bs : List (List (PropKey × List ι))} (hc : c.bag = some (a, bs)) {vs : List (PropKey × List ι)}
+theorem bagFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {a : List (Stored (List ι))}
+    {bs : List (List (Stored (List ι)))} (hc : c.bag = some (a, bs)) {vs : List (PropKey × List ι)}
     {n : Nat} {W : WorldT n} {v : Val} (hv : semWithArgs (excOf G) (meaning G) (argMeaning G) c n W v)
-    (hvs : CallableConjunctions.viewsT (ReferenceConjunctions.famsOf (meaning G) vs) n W v) :
+    (hvs : CallableConjunctions.viewsT (ReferenceConjunctions.viewsOf (meaning G) vs) n W v) :
     ∃ fs code oid, v = .objAt fs code oid ∧
-      ObjFacts G ⟨((a :: bs).flatten ++ vs).filter (·.1 != CallArguments.arrayStoreField), [], [], [], false⟩
+      ObjFacts G ⟨(Stored.views (a :: bs).flatten ++ vs).filter (·.1 != CallArguments.arrayStoreField), [], [], [], false⟩
         n W fs := by
   obtain ⟨⟨fs, code, oid, rfl, -, ha⟩, hbs⟩ := bag_sem hc hv
   refine ⟨fs, code, oid, rfl, ⟨fun p hp => ?_, fun q hq => by simp at hq,
@@ -566,10 +570,11 @@ theorem bagFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {a : List (P
   -- A view's field is the object's own, within the view's contract.
   by_cases hpv : p ∈ vs
   · obtain ⟨flds, code', oid', l, c, he, hl, hc, hag⟩ :=
-      CallableConjunctions.views_at (ReferenceConjunctions.mem_famsOf.mpr ⟨p.2, hpv, rfl⟩) hvs
+      CallableConjunctions.views_at (ReferenceConjunctions.mem_viewsOf.mpr ⟨p.2, hpv, rfl⟩) hvs
     cases he
     exact ⟨l, c, hl, hc, hag⟩
-  replace hp : p ∈ (a :: bs).flatten := (List.mem_append.mp hp).resolve_right hpv
+  replace hp : p ∈ Stored.views (a :: bs).flatten := (List.mem_append.mp hp).resolve_right hpv
+  obtain ⟨_, hp⟩ := Stored.mem_views.mp hp
   -- The field is one of an operand's, whose bag is over the same fields.
   have hrec : ∀ B ∈ a :: bs, recT (ReferenceConjunctions.famsOf (meaning G) B) n W (.objAt fs .absent oid) := by
     intro B hB
@@ -626,7 +631,7 @@ or a clause of primitives. A merge reads only operands of such clauses, since
 its copy is stuck on a host object. -/
 @[nospecialize] def hostFree : Clause (List ι) → Bool
   | .refs a bs _ _ _ ks _ => !(a :: bs).flatten.isEmpty || ks.any KeyBound.closed
-  | .dict a bs _ ds _ _ ks cs _ => !(ds ++ cs).isEmpty || !(a :: bs).flatten.isEmpty || ks.any KeyBound.closed
+  | .dict a bs _ ds _ _ ks cs _ => !(ds ++ cellViews cs).isEmpty || !(a :: bs).flatten.isEmpty || ks.any KeyBound.closed
   | .arrs .. | .callable .. | .ctors .. => true
   | c => emptyClause c || stringClause c
 
@@ -649,13 +654,14 @@ theorem hostFree_sound {G : NormalGraph ι} {c : Clause (List ι)} (hc : hostFre
     simp only [hostFree, Bool.or_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
       List.any_eq_true] at hc
     rcases hc with (hix | hne) | ⟨K, hK, hc⟩
-    · cases hx : ds ++ cs with
+    · cases hx : ds ++ cellViews cs with
       | nil => exact absurd hx hix
       | cons x _ =>
-        have hm : x ∈ ds ++ cs := by rw [hx]; exact List.mem_cons_self
+        have hm : x ∈ ds ++ cellViews cs := by rw [hx]; exact List.mem_cons_self
         rcases List.mem_append.mp hm with hm | hm
         · exact dictViewT_noHost (hd x hm) flds oid rfl
-        · exact dictViewT_noHost (dictCellT_view (hcs x hm)) flds oid rfl
+        · obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hm
+          exact dictViewT_noHost (dictCellT_view (hcs y hy)) flds oid rfl
     · exact ReferenceConjunctions.noHost hr (ReferenceConjunctions.famsOf_flatten_ne hne) flds oid rfl
     · exact KeyBound.closed_lookup hc (hb K hK)
   | arrs L S =>
@@ -1253,16 +1259,19 @@ it, whose locations hold exactly that type. -/
 /-- **A merge's result, clause by clause.** The accumulator is a plain object
 and the source a plain object or a value owning no enumerable property; the
 result is a record of fields and optional fields with key bounds
-(`FieldsOk`), and, where both sides say what they give under an index's
-keys, a dictionary (`DictOk`). A writable index lets outside code add keys,
+(`FieldsOk`), each field of the role the merge's allocation gives it,
+`field`, and, where both sides say what they give under an index's keys, a
+dictionary (`DictOk`) whose writable indexes are of the role `field` too. A writable index lets outside code add keys,
 which an own-key bound listing keys, or excluding a key of the index's class,
 would deny: each bound of a result with one keeps its writable classes
 (`KeyBound.keeps`). -/
 @[nospecialize] def MergeClause (G : NormalGraph ι) (d : List PropKey) (ca cb cr : Clause (List ι)) : Bool :=
   match objOf ca, srcOf cb, cr with
-  | some oa, some sb, .refs fs [] [] os [] ks => FieldsOk d oa sb fs os ks
+  | some oa, some sb, .refs fs [] [] os [] ks =>
+    fs.all (·.2.1 == .field) && FieldsOk d oa sb (Stored.views fs) os ks
   | some oa, some sb, .dict fs [] [] ds os [] ks cs =>
-    FieldsOk d oa sb fs os ks && DictOk G d oa sb fs os ds cs &&
+    fs.all (·.2.1 == .field) && cs.all (·.2.1 == .field) && FieldsOk d oa sb (Stored.views fs) os ks &&
+      DictOk G d oa sb (Stored.views fs) os ds (cellViews cs) &&
       ks.all (fun K => cs.all fun y => K.keeps y.1)
   | _, _, _ => false
 
@@ -1609,35 +1618,35 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
     (hpn : (pa.map Prod.fst).Nodup) (hqn : (qs.map Prod.fst).Nodup)
     (hva : isVal va = true) (hvb : isVal vb = true)
     (hparts : mergeParts h d va vb = some (mergeData pa qs))
-    {R : List ι} {cr : Clause (List ι)} {fs : List (PropKey × List ι)}
+    {R : List ι} {cr : Clause (List ι)} {fs : List (Stored (List ι))}
     {os : List (OptionalField (List ι))} {ks : List KeyBound}
-    {ds cs : List (IndexKeys × List ι)}
+    {ds : List (IndexKeys × List ι)} {cs : List (IndexKeys × StorageRole × List ι)}
     (hcr : cr ∈ expand G R)
-    (hshape : cr = .refs fs [] [] os [] ks ∨ (cr = .dict fs [] [] ds os [] ks cs ∧ ds ++ cs ≠ []))
-    (hnd : (fs.map Prod.fst ++ os.map (·.key)).Nodup)
-    (hfs : ∀ q ∈ fs, (sb.sure d q.1 q.2 || (oa.sureA q.1 q.2 && sb.within d q.1 q.2)) = true)
+    (hshape : cr = .refs fs [] [] os [] ks ∨ (cr = .dict fs [] [] ds os [] ks cs ∧ ds ++ cellViews cs ≠ []))
+    (hnd : ((Stored.views fs).map Prod.fst ++ os.map (·.key)).Nodup)
+    (hfs : ∀ q ∈ Stored.views fs, (sb.sure d q.1 q.2 || (oa.sureA q.1 q.2 && sb.within d q.1 q.2)) = true)
     (hos : ∀ q ∈ os, (oa.withinA q.key q.type && sb.within d q.key q.type) = true)
     (hpr : (os.isEmpty || oa.neverA CallArguments.protoField) = true)
     (hks : ∀ K ∈ ks, boundOk oa sb d K = true)
-    (hov : ∀ x ∈ ds ++ cs, ∀ y ∈ ds ++ cs, ∀ k, x.1.Admits k → y.1.Admits k → x.2 = y.2)
-    (hcls : ∀ x ∈ ds ++ cs, ∀ k v, x.1.Admits k → (mergeData pa qs).lookup k = some v →
+    (hov : ∀ x ∈ ds ++ cellViews cs, ∀ y ∈ ds ++ cellViews cs, ∀ k, x.1.Admits k → y.1.Admits k → x.2 = y.2)
+    (hcls : ∀ x ∈ ds ++ cellViews cs, ∀ k v, x.1.Admits k → (mergeData pa qs).lookup k = some v →
       ∀ (j : Nat) (hj : j + 1 < p), meaning G x.2 j (trunc j (by omega) (below W)) v)
-    (hnp : ds ++ cs ≠ [] → (mergeData pa qs).lookup CallArguments.protoField = none)
-    (hfd : ∀ q ∈ fs, (∀ x ∈ cs, x.1.Admits q.1 → q.2 = x.2) ∧
+    (hnp : ds ++ cellViews cs ≠ [] → (mergeData pa qs).lookup CallArguments.protoField = none)
+    (hfd : ∀ q ∈ Stored.views fs, (∀ x ∈ cellViews cs, x.1.Admits q.1 → q.2 = x.2) ∧
       (∀ x ∈ ds, x.1.Admits q.1 → inLabels q.2 x.2 = true))
-    (hod : ∀ q ∈ os, (∀ x ∈ cs, x.1.Admits q.key → q.type = x.2) ∧
+    (hod : ∀ q ∈ os, (∀ x ∈ cellViews cs, x.1.Admits q.key → q.type = x.2) ∧
       (∀ x ∈ ds, x.1.Admits q.key → inLabels q.type x.2 = true)) :
     Safe (excOf G) (meaning G R) (p + 1) W h (.merge d va vb) := by
   have hnodup := mergeData_nodup hpn hqn
   obtain ⟨hF, hO, hP, hK⟩ := result_facts hs hfs hos hpr hks
-  have hfn : (fs.map Prod.fst).Nodup := hnd.sublist (List.sublist_append_left _ _)
+  have hfn : ((Stored.views fs).map Prod.fst).Nodup := hnd.sublist (List.sublist_append_left _ _)
   have hon : (os.map (·.key)).Nodup := hnd.sublist (List.sublist_append_right _ _)
-  have hdisj : ∀ q ∈ os, fs.lookup q.key = none := by
+  have hdisj : ∀ q ∈ os, (Stored.views fs).lookup q.key = none := by
     intro q hq
     apply lookup_eq_none
     intro hm
     exact (List.nodup_append.mp hnd).2.2 _ hm _ (List.mem_map_of_mem hq) rfl
-  let ix : List (IndexKeys × List ι) := ds ++ cs
+  let ix : List (IndexKeys × List ι) := ds ++ cellViews cs
   generalize mergeData pa qs = ps at hparts hnodup hF hO hP hK hcls hnp
   have hnohost : (slots h.length (ps.map Prod.fst)).lookup hostKey = none := by
     apply lookup_slots_none
@@ -1653,10 +1662,10 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
     · rw [h3]; rfl
   -- The family an entry's location is given, and why its value meets it.
   have hfam : ∀ e ∈ ps, ∀ (j : Nat) (hj : j + 1 < p),
-      entryFam G fs os ix e j (trunc j (by omega) (below W)) e.2 := by
+      entryFam G (Stored.views fs) os ix e j (trunc j (by omega) (below W)) e.2 := by
     intro e he j hj
     have hl := lookup_of_mem hnodup he
-    cases hT : fs.lookup e.1 with
+    cases hT : (Stored.views fs).lookup e.1 with
     | some T =>
       simp only [entryFam, hT]
       obtain ⟨v, hv, hm⟩ := hF (e.1, T) (mem_of_lookup hT)
@@ -1677,11 +1686,13 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
         · rfl
   refine Or.inr ⟨below W, h, .makeAt .absent (ps.map Prod.fst) (ps.map Prod.snd), WExt_refl _,
     WorldAdm_trunc _ hadm, Step.mergeV hva hvb hparts, HeapOk_trunc p W h hok, ?_⟩
-  apply make_fields_rule_below (As := ps.map (entryFam G fs os ix))
-    (fun A hA => by obtain ⟨e, -, rfl⟩ := List.mem_map.mp hA; exact entryFam_adm G fs os ix e)
+  -- The merge allocates an ordinary object: every entry's role is `field`.
+  apply make_fields_rule_below (ss := ps.map fun _ => StorageRole.field)
+    (As := ps.map (entryFam G (Stored.views fs) os ix)) (by simp)
+    (fun A hA => by obtain ⟨e, -, rfl⟩ := List.mem_map.mp hA; exact entryFam_adm G (Stored.views fs) os ix e)
     (fun A hA => by
       obtain ⟨e, he, rfl⟩ := List.mem_map.mp hA
-      exact entryFam_valOnly G fs os ix e (hvals _ (List.mem_map_of_mem he)))
+      exact entryFam_valOnly G (Stored.views fs) os ix e (hvals _ (List.mem_map_of_mem he)))
     p (below W) h .absent (ps.map Prod.fst) (ps.map Prod.snd) hnodup (by simp) (by simp) hvals
     (WorldAdm_trunc _ hadm) (HeapOk_trunc p W h hok)
   · intro q hq
@@ -1690,15 +1701,16 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
     exact hfam e he
   · intro j hj U hx hrec
     -- The pair each entry contributes to the record the allocation meets.
-    have hzip : ∀ e ∈ ps, (e.1, entryFam G fs os ix e) ∈
-        (ps.map Prod.fst).zip (ps.map (entryFam G fs os ix)) := by
+    have hzip : ∀ e ∈ ps, (e.1, StorageRole.field, entryFam G (Stored.views fs) os ix e) ∈
+        (ps.map Prod.fst).zip ((ps.map fun _ => StorageRole.field).zip
+          (ps.map (entryFam G (Stored.views fs) os ix))) := by
       intro e he
-      rw [List.zip_map', List.mem_map]
+      rw [List.zip_map', List.zip_map', List.mem_map]
       exact ⟨e, he, rfl⟩
     -- The location under a key the object owns, and what its contract is.
     have hat : ∀ f l, (slots h.length (ps.map Prod.fst)).lookup f = some l →
         ∃ v c, ps.lookup f = some v ∧ lookup U l = some c ∧
-          ∀ i (hi : i < j) (U' : WorldT i) u, c i hi U' u ↔ entryFam G fs os ix (f, v) i U' u := by
+          ∀ i (hi : i < j) (U' : WorldT i) u, c i hi U' u ↔ entryFam G (Stored.views fs) os ix (f, v) i U' u := by
       intro f l hl
       have hmem := mem_of_lookup_slots hl
       obtain ⟨v, hv⟩ := lookup_isSome hmem
@@ -1709,19 +1721,21 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
       exact ⟨v, c, hv, hU, hag⟩
     have hrefs : ReferenceConjunctions.refsT (ReferenceConjunctions.famsOf (meaning G) fs) [] j U
         (.objAt (slots h.length (ps.map Prod.fst)) .absent (h.length + (ps.map Prod.snd).length)) := by
-      refine ⟨⟨_, _, rfl, fun _ _ _ _ hl => owned_of_nodup (slots_nodup _ _) hl, ?_⟩, by simp, fun _ _ _ he => by cases he; exact hnohost⟩
-      intro f F hm
+      refine ⟨⟨_, _, rfl, fun _ _ _ _ _ hl => owned_of_nodup (slots_nodup _ _) hl, ?_⟩, by simp,
+        fun _ _ _ he => by cases he; exact hnohost⟩
+      intro f s F hm
       obtain ⟨T, hT, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hm
+      have hT : (f, T) ∈ Stored.views fs := Stored.mem_views.mpr ⟨s, hT⟩
       obtain ⟨v, hv, -⟩ := hF (f, T) hT
       have he := mem_of_lookup hv
       obtain ⟨fl, l, c, oid', hfl, hl, hU, hag⟩ := recT_at (hzip _ he) hrec
       cases hfl
-      have : entryFam G fs os ix (f, v) = meaning G T := by
+      have : entryFam G (Stored.views fs) os ix (f, v) = meaning G T := by
         simp [entryFam, lookup_of_mem hfn hT]
       exact ⟨l, c, hl, hU, fun i hi U' u => (hag i hi U' u).trans (by rw [this])⟩
-    have hviews : viewT (ReferenceConjunctions.famsOf (meaning G) []) j U
+    have hviews : viewT (ReferenceConjunctions.viewsOf (meaning G) []) j U
         (.objAt (slots h.length (ps.map Prod.fst)) .absent (h.length + (ps.map Prod.snd).length)) := by
-      intro f F hm; simp [ReferenceConjunctions.famsOf] at hm
+      intro f F hm; simp [ReferenceConjunctions.viewsOf] at hm
     have hopt : optT (os.map (·.map (meaning G))) j U
         (.objAt (slots h.length (ps.map Prod.fst)) .absent (h.length + (ps.map Prod.snd).length)) := by
       refine ⟨_, _, rfl, fun _ _ _ _ hl => owned_of_nodup (slots_nodup _ _) hl, ?_, ?_⟩
@@ -1745,7 +1759,7 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
             refine ⟨q', rfl, key_unique hon (List.mem_of_find?_eq_some hf) hq ?_⟩
             simpa using List.find?_some hf
         obtain ⟨q', hf, rfl⟩ := hfind
-        have : entryFam G fs os ix (q'.key, v) = meaning G q'.type := by
+        have : entryFam G (Stored.views fs) os ix (q'.key, v) = meaning G q'.type := by
           simp only [entryFam, hdisj q' hq, hf]
         refine ⟨c, hU, fun i hi U' u => ?_⟩
         have hiff : c i hi U' u ↔ meaning G q'.type i U' u :=
@@ -1768,19 +1782,19 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
       -- What a location under a key an index class admits holds: exactly
       -- the type of a writable index admitting it, and within the index's
       -- type in any case.
-      have hkey : ∀ x ∈ ds ++ cs, ∀ f l, (slots h.length (ps.map Prod.fst)).lookup f = some l →
+      have hkey : ∀ x ∈ ds ++ cellViews cs, ∀ f l, (slots h.length (ps.map Prod.fst)).lookup f = some l →
           x.1.Admits f → ∃ c : Ctr j, lookup U l = some c ∧
-            ((∀ y ∈ cs, y.1.Admits f →
+            ((∀ y ∈ cellViews cs, y.1.Admits f →
                 ∀ i (hi : i < j) (U' : WorldT i) u, c i hi U' u ↔ meaning G y.2 i U' u) ∧
              ∀ i (hi : i < j) (U' : WorldT i) u, c i hi U' u → meaning G x.2 i U' u) := by
         intro x hx f l hl hxf
         obtain ⟨v, c, hv, hU, hag⟩ := hat f l hl
         refine ⟨c, hU, ?_⟩
-        cases hT : fs.lookup f with
+        cases hT : (Stored.views fs).lookup f with
         | some T =>
           have hq := hfd (f, T) (mem_of_lookup hT)
           simp only at hq
-          have hfam : entryFam G fs os ix (f, v) = meaning G T := by simp [entryFam, hT]
+          have hfam : entryFam G (Stored.views fs) os ix (f, v) = meaning G T := by simp [entryFam, hT]
           refine ⟨fun y hy hyf i hi U' u => ?_, fun i hi U' u hc => ?_⟩
           · rw [hag i hi U' u, hfam, hq.1 y hy hyf]
           · rw [hag i hi U' u, hfam] at hc
@@ -1793,7 +1807,7 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
             have hqk : q.key = f := by simpa using List.find?_some hf
             have hq := hod q (List.mem_of_find?_eq_some hf)
             rw [hqk] at hq
-            have hfam : entryFam G fs os ix (f, v) = meaning G q.type := by
+            have hfam : entryFam G (Stored.views fs) os ix (f, v) = meaning G q.type := by
               simp only [entryFam, hT, hf]
             refine ⟨fun y hy hyf i hi U' u => ?_, fun i hi U' u hc => ?_⟩
             · rw [hag i hi U' u, hfam, hq.1 y hy hyf]
@@ -1804,7 +1818,7 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
           | none =>
             have hex : ∃ z ∈ ix, z.1.Admits f := ⟨x, hx, hxf⟩
             obtain ⟨hz, hzf⟩ := Classical.choose_spec hex
-            have hfam : entryFam G fs os ix (f, v) = meaning G (Classical.choose hex).2 := by
+            have hfam : entryFam G (Stored.views fs) os ix (f, v) = meaning G (Classical.choose hex).2 := by
               simp only [entryFam, hT, hf]
               rw [dif_pos hex]
             refine ⟨fun y hy hyf i hi U' u => ?_, fun i hi U' u hc => ?_⟩
@@ -1820,8 +1834,8 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
         hbounds, stableKeysT_nil _ _ _⟩
       · obtain ⟨c, hU, -, himp⟩ := hkey x (List.mem_append_left _ hx) f l hl hxf
         exact ⟨c, hU, himp⟩
-      · obtain ⟨c, hU, hiff, -⟩ := hkey x (List.mem_append_right _ hx) f l hl hxf
-        exact ⟨c, hU, hiff x hx hxf⟩
+      · obtain ⟨c, hU, hiff, -⟩ := hkey (x.1, x.2.2) (List.mem_append_right _ (List.mem_map_of_mem hx)) f l hl hxf
+        exact ⟨c, hU, hiff (x.1, x.2.2) (List.mem_map_of_mem hx) hxf⟩
 
 /-- The conditions `FieldsOk` states, as `merge_finish` takes them. -/
 theorem fieldsOk_facts {d : List PropKey} {oa : Obj ι} {sb : Src ι} {fs : List (PropKey × List ι)}
@@ -1945,14 +1959,16 @@ theorem merge_values_safe {G : NormalGraph ι} {d : List PropKey} {A B R : List 
   split at hmc
   · rename_i oa sb fs os ks hoa hsrc
     obtain ⟨pa, qs, hpn, hqn, hva, hvb, hparts, hs⟩ := merge_sides (d := d) hoa hsrc hok hsa hsb hna hnb
+    simp only [Bool.and_eq_true] at hmc
+    obtain ⟨-, hmc⟩ := hmc
     obtain ⟨hnd, hfs, hos, hpr, hks⟩ := fieldsOk_facts hmc
     exact merge_finish (ds := []) (cs := []) hadm hok hs hpn hqn hva hvb hparts hcr
-      (.inl rfl) hnd hfs hos hpr hks (by simp) (by simp) (by simp)
-      (fun _ _ => ⟨by simp, by simp⟩) (fun _ _ => ⟨by simp, by simp⟩)
+      (.inl rfl) hnd hfs hos hpr hks (by simp [cellViews]) (by simp [cellViews]) (by simp [cellViews])
+      (fun _ _ => ⟨by simp [cellViews], by simp⟩) (fun _ _ => ⟨by simp [cellViews], by simp⟩)
   · rename_i oa sb fs ds os ks cs hoa hsrc
     obtain ⟨pa, qs, hpn, hqn, hva, hvb, hparts, hs⟩ := merge_sides (d := d) hoa hsrc hok hsa hsb hna hnb
     simp only [Bool.and_eq_true] at hmc
-    obtain ⟨⟨hmf, hmd⟩, -⟩ := hmc
+    obtain ⟨⟨⟨⟨-, -⟩, hmf⟩, hmd⟩, -⟩ := hmc
     obtain ⟨hnd, hfs, hos, hpr, hks⟩ := fieldsOk_facts hmf
     obtain ⟨hne, hnp, hix, hov, hfd, hod⟩ := dictOk_facts hmd
     refine merge_finish hadm hok hs hpn hqn hva hvb hparts hcr (.inr ⟨rfl, hne⟩) hnd hfs
@@ -2007,17 +2023,17 @@ may hold, optional; and, when both sides list their keys, the keys listed. -/
     | .obj ob => if !d.contains k && copiedKey k then ob.maybeTypes k else []
   let fields := keys.filterMap fun k =>
     match bNamed k with
-    | some T => some (k, T)
+    | some T => some (k, StorageRole.field, T)
     | none => match oa.namedType k with
       | some Ta =>
         let T := (Ta ++ bMaybe k).eraseDups
-        if sb.within d k T then some (k, T) else none
+        if sb.within d k T then some (k, StorageRole.field, T) else none
       | none => none
   let optional : List (OptionalField (List ι)) :=
     if oa.neverA CallArguments.protoField then keys.filterMap fun k =>
       if fields.any (·.1 == k) then none else
       let T := (oa.maybeTypes k ++ bMaybe k).eraseDups
-      if oa.withinA k T && sb.within d k T then some ⟨k, false, T⟩ else none
+      if oa.withinA k T && sb.within d k T then some ⟨k, false, .field, T⟩ else none
     else []
   let bound : List KeyBound := match oa.bounds.find? (·.among), sb with
     | some Ka, .prim => [⟨true, Ka.keys.filter (· != arrayStoreKey)⟩]
@@ -2044,16 +2060,16 @@ may hold, optional; and, when both sides list their keys, the keys listed. -/
   let typeOf (K : IndexKeys) : List ι :=
     ((oa.indexes.filter (·.1.overlaps K)).flatMap (·.2) ++
       (bIndexes.filter (·.1.overlaps K)).flatMap (·.2) ++
-      (fields.filter (admittedBy K ·.1)).flatMap (·.2) ++
+      (fields.filter (admittedBy K ·.1)).flatMap (·.2.2) ++
       (optional.filter (admittedBy K ·.key)).flatMap (·.type)).eraseDups
   let ix := classes.map fun K => (K, typeOf K)
   let typeAt (k : PropKey) : Option (List ι) := (ix.find? (·.1.may k)).map (·.2)
   let dict : Clause (List ι) :=
-    .dict (fields.map fun (k, T) => (k, (typeAt k).getD T)) [] [] ix
+    .dict (fields.map fun (k, s, T) => (k, s, (typeAt k).getD T)) [] [] ix
       (optional.map fun q => match typeAt q.key with
         | some V => { q with type := V }
         | none => q) []
-      (bound.filter fun K => ix.all fun y => K.keeps y.1) ix
+      (bound.filter fun K => ix.all fun y => K.keeps y.1) (ix.map fun (K, T) => (K, .field, T))
   pure (if MergeClause G d ca cb dict then dict else record)
 
 end Verification.ObjectMerge

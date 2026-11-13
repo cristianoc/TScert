@@ -1546,6 +1546,10 @@ run_cmd do
   check ``Verification.Kinds.Capability.arrayStore_holds_array
   check ``Verification.Kinds.Capability.binding_not_field
   check ``Verification.Kinds.Capability.binding_not_le_field
+  check ``Verification.PositiveNormalization.storage_map
+  check ``Verification.PositiveRules.CoversFields.storage
+  check ``Verification.PositiveRules.binding_not_covers_field
+  check ``Verification.ReferenceConjunctions.storageOf_famsOf
   check ``Verification.StorageRole.permits_unique
   check ``Verification.StorageRole.inhabited
   check ``Verification.Kinds.Capability.ofRole_viewStore

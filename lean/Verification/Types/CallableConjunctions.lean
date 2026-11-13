@@ -16,10 +16,10 @@ def objectsT (Ξ : Fam) (A : Fields) (Bs : List Fields) (L : List (Arrow Fam)) :
 
 /-- Readonly fields of an object whatever its code: views of its own fields,
 as a record's (`viewT`) are of a plain object's. -/
-def viewsT (vs : Fields) : Fam := fun n W v =>
+def viewsT (vs : Views) : Fam := fun n W v =>
   ∃ flds code oid, v = .objAt flds code oid ∧ viewT vs n W (.objAt flds .absent oid)
 
-theorem views_adm (vs : Fields) : Adm (viewsT vs) := by
+theorem views_adm (vs : Views) : Adm (viewsT vs) := by
   constructor
   · rintro n W v ⟨flds, code, oid, rfl, h⟩
     exact ⟨flds, code, oid, rfl, (viewT_adm vs).down n W _ h⟩
@@ -31,7 +31,7 @@ theorem views_nil {fs : List (PropKey × Nat)} {code : CallCode} {oid n W} :
     viewsT [] n W (.objAt fs code oid) :=
   ⟨fs, code, oid, rfl, fun _ _ h => by simp at h⟩
 
-theorem views_append (vs ws : Fields) {fs : List (PropKey × Nat)} {code : CallCode} {oid n W} :
+theorem views_append (vs ws : Views) {fs : List (PropKey × Nat)} {code : CallCode} {oid n W} :
     viewsT (vs ++ ws) n W (.objAt fs code oid) ↔
       viewsT vs n W (.objAt fs code oid) ∧ viewsT ws n W (.objAt fs code oid) := by
   constructor
@@ -44,13 +44,13 @@ theorem views_append (vs ws : Fields) {fs : List (PropKey × Nat)} {code : CallC
 
 theorem views_congr_below {α : Type} (X Y : α → Fam) (vs : List (PropKey × α)) (n : Nat)
     (h : ∀ a, Agree (X a) (Y a) n) (W : WorldT n) (v : Val) :
-    viewsT (ReferenceConjunctions.famsOf X vs) n W v ↔ viewsT (ReferenceConjunctions.famsOf Y vs) n W v := by
+    viewsT (ReferenceConjunctions.viewsOf X vs) n W v ↔ viewsT (ReferenceConjunctions.viewsOf Y vs) n W v := by
   constructor <;> rintro ⟨flds, code, oid, rfl, hv⟩ <;> refine ⟨flds, code, oid, rfl, ?_⟩
   · exact (ReferenceConjunctions.view_congr_below X Y vs n h W _).mp hv
   · exact (ReferenceConjunctions.view_congr_below X Y vs n h W _).mpr hv
 
 /-- A view's field: its location, whose contract is within the view's. -/
-theorem views_at {vs : Fields} {f : PropKey} {A : Fam} (hm : (f, A) ∈ vs) {n W v}
+theorem views_at {vs : Views} {f : PropKey} {A : Fam} (hm : (f, A) ∈ vs) {n W v}
     (h : viewsT vs n W v) :
     ∃ (flds : List (PropKey × Nat)) (code : CallCode) (oid l : Nat) (c : Ctr n),
       v = .objAt flds code oid ∧ flds.lookup f = some l ∧ lookup W l = some c ∧
@@ -92,10 +92,10 @@ theorem adm (A : Fields) (Bs : List Fields) (L : List (Arrow Fam)) : Adm (object
 /-- A bag stating no field holds of every object value. -/
 theorem props_nil {fs : List (PropKey × Nat)} {code : CallCode} {oid n W} :
     propsT [] [] n W (.objAt fs code oid) :=
-  ⟨⟨fs, code, oid, rfl, rfl, fs, oid, rfl, fun _ _ h => by simp at h, fun _ _ h => by simp at h⟩, fun _ h => by simp at h⟩
+  ⟨⟨fs, code, oid, rfl, rfl, fs, oid, rfl, fun _ _ _ h => by simp at h, fun _ _ _ h => by simp at h⟩, fun _ h => by simp at h⟩
 
-theorem props_congr_below {α : Type} (X Y : α → Fam) (a : List (PropKey × α))
-    (bs : List (List (PropKey × α))) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n) (W : WorldT n)
+theorem props_congr_below {α : Type} (X Y : α → Fam) (a : List (Stored α))
+    (bs : List (List (Stored α))) (n : Nat) (h : ∀ a, Agree (X a) (Y a) n) (W : WorldT n)
     (v : Val) :
     propsT (ReferenceConjunctions.famsOf X a) (bs.map (ReferenceConjunctions.famsOf X)) n W v ↔
       propsT (ReferenceConjunctions.famsOf Y a) (bs.map (ReferenceConjunctions.famsOf Y)) n W v := by
@@ -105,8 +105,8 @@ theorem props_congr_below {α : Type} (X Y : α → Fam) (a : List (PropKey × �
   · exact (bagT_contractive X Y b n h W v).mp (hb b hm)
   · exact (bagT_contractive X Y b n h W v).mpr (hb b hm)
 
-theorem congr_below {Ξ Ξ' : Fam} {α : Type} (X Y : α → Fam) (a : List (PropKey × α))
-    (bs : List (List (PropKey × α))) (L : List (Arrow α))
+theorem congr_below {Ξ Ξ' : Fam} {α : Type} (X Y : α → Fam) (a : List (Stored α))
+    (bs : List (List (Stored α))) (L : List (Arrow α))
     (n : Nat) (hexc : Agree Ξ Ξ' n) (h : ∀ a, Agree (X a) (Y a) n) (W : WorldT n) (v : Val) :
     objectsT Ξ (ReferenceConjunctions.famsOf X a) (bs.map (ReferenceConjunctions.famsOf X))
         (L.map (Arrow.map X)) n W v ↔

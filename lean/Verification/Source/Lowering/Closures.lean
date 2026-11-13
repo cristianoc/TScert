@@ -76,7 +76,7 @@ state resume afterwards. -/
         let some contract := inputs[i]? | throw "internal closure slot mismatch"
         if stmts.any (assignsStmt b.source.name) then
           if heldInCell b.source.name stmts then
-            let reference ← lower (do return [← CellClaims.reference [(valueField, contract)]])
+            let reference ← lower (do return [← CellClaims.reference [(valueField, .cell, contract)]])
             pure { b with storage := .cell contract reference }
           else pure { b with storage := .slot contract }
         else pure b

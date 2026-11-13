@@ -192,7 +192,7 @@ theorem renames_sound [DecidableEq ι] {G : NormalGraph ι} {η : MixedAssignmen
         s.body n W v := (instance_body G η s As) ▸ hall As (by rw [hlen]; exact hl) hal hb'
     have hcovered := covers_body_sound hcov (by
       unfold SchemeRow.body; rw [sameShape_construct hord]
-      cases s'.construct <;> simp [Clause.map, mapFields]) n (hre i s As hs).1 (hre i s As hs).2 W v hi
+      cases s'.construct <;> simp [Clause.map, mapFields, mapStored]) n (hre i s As hs).1 (hre i s As hs).2 W v hi
     show instanceTWithArgs _ _ η s' As _ n W v
     rw [instance_body]
     rw [← semWithArgs_map_meaning (η := assign η s.binders As)

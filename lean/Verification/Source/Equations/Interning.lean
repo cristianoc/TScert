@@ -163,17 +163,19 @@ prototype, as a class instance holds its methods. The fields at a method's
 key are left out, so no reader takes the key for an own property; a call of
 the key is checked at the method's signatures. -/
 def methodKeysOnly (c : Clause α) : Clause α :=
-  let fields (ms : List (MethodMembers.Sig α)) (fs : List (PropKey × α)) : List (PropKey × α) :=
+  let fields (ms : List (MethodMembers.Sig α)) (fs : List (Stored α)) : List (Stored α) :=
     fs.filter fun f => !ms.any (·.key == f.1)
-  let operands (ms : List (MethodMembers.Sig α)) (bs : List (List (PropKey × α))) :
-      List (List (PropKey × α)) :=
+  let views (ms : List (MethodMembers.Sig α)) (fs : List (PropKey × α)) : List (PropKey × α) :=
+    fs.filter fun f => !ms.any (·.key == f.1)
+  let operands (ms : List (MethodMembers.Sig α)) (bs : List (List (Stored α))) :
+      List (List (Stored α)) :=
     (bs.map (fields ms)).filter (!·.isEmpty)
   let optional (ms : List (MethodMembers.Sig α)) (os : List (OptionalField α)) : List (OptionalField α) :=
     os.filter fun o => !ms.any (·.key == o.key)
   match c with
-  | .refs a bs vs os ms ks st => .refs (fields ms a) (operands ms bs) (fields ms vs) (optional ms os) ms ks st
+  | .refs a bs vs os ms ks st => .refs (fields ms a) (operands ms bs) (views ms vs) (optional ms os) ms ks st
   | .dict a bs vs ix os ms ks cs st =>
-    .dict (fields ms a) (operands ms bs) (fields ms vs) ix (optional ms os) ms ks cs st
+    .dict (fields ms a) (operands ms bs) (views ms vs) ix (optional ms os) ms ks cs st
   | .callable a bs L S ms => .callable (fields ms a) (operands ms bs) L S ms
   | c => c
 

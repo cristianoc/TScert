@@ -368,7 +368,7 @@ instances whose signatures are the method's with either host as receiver. -/
       | _ => []
     (expand G A).flatMap fun c => match c with
       | .refs a bs vs _ _ _ _ =>
-        match ((a :: bs).flatten ++ vs).lookup CallArguments.protoField with
+        match (Stored.views (a :: bs).flatten ++ vs).lookup CallArguments.protoField with
         | some P => (PositiveCertificates.protoChain G PositiveRules.protoChainDepth P).flatMap fun P => methods.flatMap fun q =>
             match PositiveRules.viewOf G P q.key with
             | some [i] => match G.schemes i with
@@ -730,7 +730,7 @@ it before the pool's types. Untrusted: it only orders alternatives. -/
 @[nospecialize] def synthesized [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) : Tm → Option (Ty ι)
   | .var i => Γ[i]?
   | .readAt f a => (synthesized G Γ a).bind fun R => match expand G R with
-    | [.refs fs [] vs _ _ _ _] => (fs.lookup f).orElse fun _ => vs.lookup f
+    | [.refs fs [] vs _ _ _ _] => ((Stored.views fs).lookup f).orElse fun _ => vs.lookup f
     | _ => none
   | _ => none
 
@@ -830,11 +830,11 @@ came from a different context. No execution budget is inspected. -/
         | .construct, [.ctors _ [] P []] =>
           if !classFields || P.map Prod.fst != ns.tail || inits.length != ns.length then none else do
           let U ← pool.find? fun U => decide (expand G U = [.undef])
-          let eas ← (inits.tail.zip (P.map Prod.snd)).mapM fun (a,D) => recur Γ a D
+          let eas ← (inits.tail.zip (P.map (·.2.2))).mapM fun (a,D) => recur Γ a D
           coerce G images aliases (.node ⟨Γ,t,F⟩ (.ctorGraph U) (eas ++ ps)) A
         | .call, [.callable P [] _ S] =>
           if P.map Prod.fst != ns || inits.length != ns.length then none else do
-          let eas ← (inits.zip (P.map Prod.snd)).mapM fun (a,D) => recur Γ a D
+          let eas ← (inits.zip (P.map (·.2.2))).mapM fun (a,D) => recur Γ a D
           coerce G images aliases (.node ⟨Γ,t,F⟩ (.callableGraph (← arraysOf S)) (eas ++ ps)) A
         | _, _ => none
     -- `new f(args)`: a construct signature of the constructor's type taking at
@@ -999,8 +999,8 @@ came from a different context. No execution budget is inspected. -/
         -- A stable key is a view the literal allocates at its initial value
         -- alone (`HasTyUsing.alloc`).
         | [.refs B [] V [] [] ks st] =>
-          let all := ns.filterMap fun n => ((B ++ V).lookup n).map (n, ·)
-          if all.length != ns.length || stablePart st false all != B || stablePart st true all != V ||
+          let all := ns.filterMap fun n => ((Stored.views B ++ V).lookup n).map (n, ·)
+          if all.length != ns.length || Stored.views B != stablePart st false all || stablePart st true all != V ||
             !ks.all (fun K => ns.all K.admits) || !st.all ns.contains ||
             (!st.isEmpty && ns.contains CallArguments.arrayStoreField) then none else do
           let ps ← (inits.zip (all.map Prod.snd)).mapM fun (a,D) => recur Γ a D
@@ -1009,10 +1009,10 @@ came from a different context. No execution budget is inspected. -/
         -- may admit at that index's type.
         | [.dict B [] [] ix os [] [] cs] =>
           if B.map Prod.fst != ns || ns.contains CallArguments.protoField ||
-            !B.all (fun f => (ix ++ cs).all fun y => !y.1.may f.1 || f.2 == y.2) ||
+            !B.all (fun f => (ix ++ cellViews cs).all fun y => !y.1.may f.1 || f.2.2 == y.2) ||
             !os.all (fun o => !ns.contains o.key && cs.all fun y => !y.1.may o.key ||
-              o.type == y.2 || (G.plainTy y.2 && (expand G y.2).isEmpty)) then none else do
-          let ps ← (inits.zip (B.map Prod.snd)).mapM fun (a,D) => recur Γ a D
+              o.type == y.2.2 || (G.plainTy y.2.2 && (expand G y.2.2).isEmpty)) then none else do
+          let ps ← (inits.zip (B.map (·.2.2))).mapM fun (a,D) => recur Γ a D
           coerce G images aliases (.node ⟨Γ,t,R⟩ .alloc ps) A
         | _ => none
     | .indexAt a key =>
@@ -1040,23 +1040,23 @@ came from a different context. No execution budget is inspected. -/
         -- bound does not admit at the prototype's field or view.
         let (B,r) ← (show Option (Ty ι × Rule ι) from match expand G R with
           | [.refs fs [] vs os _ ks _] =>
-            (fs.lookup f).map (·,Rule.read) <|>
+            ((Stored.views fs).lookup f).map (·,Rule.read) <|>
               ((vs.lookup f).bind fun B => if f == lengthKey && !lengthExcluded G B then none else some (B, Rule.readView)) <|>
               (((os.find? (·.key == f)).map (·.type)).bind fun E => pool.findSome? fun U =>
                 if expand G U == [.undef] then some (E ++ U, Rule.readOptional E U) else none) <|>
               (if ks.any (fun K => !K.admits f) then
-                ((fs ++ vs).lookup CallArguments.protoField).bind fun P =>
+                ((Stored.views fs ++ vs).lookup CallArguments.protoField).bind fun P =>
                   match expand G P with
                   | [.refs gs [] ws _ _ _ _] =>
-                    ((gs ++ ws.filter (·.1 != lengthKey)).lookup f).map (·, Rule.readProto P)
+                    ((Stored.views gs ++ ws.filter (·.1 != lengthKey)).lookup f).map (·, Rule.readProto P)
                   | _ => none
               else none)
-          | [.callable fs _ _ _ _] => (fs.lookup f).map (·,Rule.readCallable)
-          | [.ctors _ _ fs _ vs] => (fs.lookup f).map (·,Rule.readCallable) <|> (vs.lookup f).map (·,Rule.readBagView)
+          | [.callable fs _ _ _ _] => ((Stored.views fs).lookup f).map (·,Rule.readCallable)
+          | [.ctors _ _ fs _ vs] => ((Stored.views fs).lookup f).map (·,Rule.readCallable) <|> (vs.lookup f).map (·,Rule.readBagView)
           -- A dictionary's named field or view, else its index, which may miss.
           -- The index holds of every present field, an optional one included.
           | [.dict fs [] vs ix _ _ _ _ _] =>
-            (fs.lookup f).map (·,Rule.read) <|>
+            ((Stored.views fs).lookup f).map (·,Rule.read) <|>
             ((vs.lookup f).bind fun B => if f == lengthKey && !lengthExcluded G B then none else some (B, Rule.readView)) <|>
             (numericFirst ix).findSome? fun (K, B) => if !K.surely f then none else
               pool.findSome? fun U =>
@@ -1080,7 +1080,7 @@ came from a different context. No execution budget is inspected. -/
           | [.refs fs [] _ _ _ _ _] => some (fs,Rule.write)
           | [.callable fs _ _ _ _] | [.ctors _ _ fs _ _] => some (fs,Rule.writeCallable)
           | _ => none
-        let B ← fs.lookup f
+        let B ← (Stored.views fs).lookup f
         let ea ← recur Γ a R
         let eb ← recur Γ b B
         (A :: pool).findSearch? fun N =>
@@ -1215,7 +1215,7 @@ came from a different context. No execution budget is inspected. -/
       let slot (x : Tm) := match x with | .var i => Γ[i]?.toList | _ => []
       -- The type the requested result holds its one key at.
       let held := (expand G A).filterMap fun c => match c with
-        | .refs [(_, T)] [] [] [] [] _ => some T
+        | .refs [(_, _, T)] [] [] [] [] _ => some T
         | .dict [] [] [] [(_, T)] [] [] [] _ => some T
         | _ => none
       return (slot k ++ pool).findSearch? fun K => do
@@ -1464,13 +1464,13 @@ read/value rule may succeed when ordinary derivation search cannot. -/
       -- The contract the read is typed at: the record's field, or a
       -- dictionary's index, with `undefined` where the key is absent.
       let contract : Option (Ty ι) := match expand G Ref with
-        | [.refs fs _ vs _ _ _ _] => if HeapExpressionRules.fieldOperand (expand G Ref) fld then fs.lookup fld <|> vs.lookup fld else none
+        | [.refs fs _ vs _ _ _ _] => if HeapExpressionRules.fieldOperand (expand G Ref) fld then (Stored.views fs).lookup fld <|> vs.lookup fld else none
         -- A union of records each fixing the field: the union of their
         -- fields' types, which a read of the union gives.
         | cs@(_ :: _ :: _) =>
           if HeapExpressionRules.fieldOperand cs fld then
             cs.foldlM (fun (acc : Ty ι) c => match c with
-              | .refs fs _ vs _ _ _ _ => (fs.lookup fld <|> vs.lookup fld).map fun T => (acc ++ T).eraseDups
+              | .refs fs _ vs _ _ _ _ => ((Stored.views fs).lookup fld <|> vs.lookup fld).map fun T => (acc ++ T).eraseDups
               | _ => none) []
           else none
         | [.dict _ _ _ ds _ _ _ cs _] =>
@@ -1478,7 +1478,7 @@ read/value rule may succeed when ordinary derivation search cannot. -/
             -- The graph's `undefined` row, among the labels the search knows.
             let undef := (j.type :: own ++ pool).findSome? fun T => T.find? fun l =>
               G.plain l && match G l with | [.undef] => true | _ => false
-            match ((ds ++ cs).find? (HeapExpressionRules.stringIndex · fld)), undef with
+            match ((ds ++ cellViews cs).find? (HeapExpressionRules.stringIndex · fld)), undef with
             | some d, some u => some (u :: d.2).eraseDups
             | _, _ => none
           else none

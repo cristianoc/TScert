@@ -462,7 +462,8 @@ private def validCurrent (T : EquationStore.State) (A : ClaimType Tree) (current
       | cs => cs.all fun
         | .refs contract [] vs os _ _ _ => firsts.all (fun k => (contract.lookup k).isSome ||
             (vs.lookup k).isSome || os.any (fun o => o.key == k))
-        | .dict _ _ _ ds _ _ _ cells _ => firsts.all (fun k => (ds ++ cells).any (HeapExpressionRules.stringIndex · k))
+        | .dict _ _ _ ds _ _ _ cells _ =>
+          firsts.all (fun k => (ds ++ PositiveNormalization.cellViews cells).any (HeapExpressionRules.stringIndex · k))
         | _ => false) &&
     fs.all (fun p => validType T (.labels p.2))
 private def validBindings (T : EquationStore.State) (bs : List (Binding Tree)) : Bool :=

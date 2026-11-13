@@ -397,7 +397,7 @@ def slice (A : Ty Tree) (tag : Tag) (q : Bool) (literalOperand : Bool := false) 
           let os := os.filter (·.key != k)
           let c : PositiveNormalization.Clause (Ty Tree) :=
             if fs.isEmpty then .refs fs [] (vs ++ [(k, o.type)]) os ms bs st
-            else .refs (fs ++ [(k, o.type)]) [] vs os ms bs st
+            else .refs (fs ++ [(k, o.role, o.type)]) [] vs os ms bs st
           out := out ++ (← prim c).toArray
           continue
       | [.dict fs [] vs ix os ms bs cells st] =>
@@ -604,7 +604,7 @@ def readField (vars : List (String × Ty Tree)) (A : Ty Tree) (fld : PropKey) : 
     | _ => false
   for l in dicts do
     if let [.dict fs [] vs ix os _ _ _ _] := PositiveRules.expand G [l] then
-      match fs.lookup fld <|> vs.lookup fld with
+      match (Stored.views fs).lookup fld <|> vs.lookup fld with
       | some B => out := out ++ B
       | none =>
         match os.find? (·.key == fld) with
@@ -695,7 +695,7 @@ def callSigsOf (F : Ty Tree) : Compiler (List Sig) := do
 or view. -/
 def protoOf (G : PositiveGraphs.NormalGraph Tree) (O : Ty Tree) : Option (Ty Tree) :=
   match PositiveRules.expand G O with
-  | [.refs fs [] vs _ _ _ _] => (fs ++ vs).lookup SourceTypes.protoField
+  | [.refs fs [] vs _ _ _ _] => (Stored.views fs ++ vs).lookup SourceTypes.protoField
   | _ => none
 
 /-- A member path `root.path` narrowed by `k`: its narrowed type, else the
@@ -827,12 +827,16 @@ def growth (O : Ty Tree) (k : PropKey) (R : Ty Tree) (literal_ : Bool) : Compile
     if !(rows.any fun (fs, vs, _, _, ms, _, _, _) => (fs.lookup k).isNone && (vs.lookup k).isNone && !ms.any (·.key == k)) then return none
     if rows.any (fun (_, _, _, os, _, bs, _, _) =>
         os.any (fun o => o.key == k && o.readonly) || bs.any (fun b => !b.among && b.keys.contains k)) then return none
-    let D := rows.findSome? fun (_, _, _, os, _, _, _, _) => (os.find? (·.key == k)).map (·.type)
-    let C ← match D with | some D => pure D | none => if literal_ then widen R else pure R
+    let D := rows.findSome? fun (_, _, _, os, _, _, _, _) => (os.find? (·.key == k))
+    let C ← match D with | some D => pure D.type | none => if literal_ then widen R else pure R
+    -- The key's location: the declared optional field's, with its role, or
+    -- the own property the key-adding write makes on this ordinary object,
+    -- role `field`.
+    let S := (D.map (·.role)).getD .field
     let grown ← rows.mapM fun (fs, vs, ix, os, ms, bs, cells, st) =>
-      prim (.dict (fs.filter (·.1 != k) ++ [(k, C)]) [] (vs.filter (·.1 != k)) ix (os.filter (·.key != k)) ms bs cells st)
+      prim (.dict (fs.filter (·.1 != k) ++ [(k, S, C)]) [] (vs.filter (·.1 != k)) ix (os.filter (·.key != k)) ms bs cells st)
     return some (C, norm grown.flatten)
-  let mut arms : List (List (PropKey × Ty Tree) × List (PropKey × Ty Tree) × List (OptionalField (Ty Tree)) ×
+  let mut arms : List (List (Stored (Ty Tree)) × List (PropKey × Ty Tree) × List (OptionalField (Ty Tree)) ×
       List (MethodMembers.Sig (Ty Tree)) × List KeyBound × List PropKey) := []
   for l in O do
     let [.refs fs [] vs os ms bs st] := PositiveRules.expand G [l] | return none
@@ -842,14 +846,18 @@ def growth (O : Ty Tree) (k : PropKey) (R : Ty Tree) (literal_ : Bool) : Compile
   if arms.isEmpty then return none
   let lacks := arms.any fun (fs, vs, _, ms, _, _) => (fs.lookup k).isNone && (vs.lookup k).isNone && !ms.any (·.key == k)
   if !lacks then return none
-  let declared := arms.findSome? fun (_, _, os, _, _, _) => (os.find? fun o => o.key == k && !o.readonly).map (·.type)
+  let declared := arms.findSome? fun (_, _, os, _, _, _) => os.find? fun o => o.key == k && !o.readonly
   let c ← match declared with
-    | some D => pure D
+    | some D => pure D.type
     | none => if literal_ then widen R else pure R
+  -- The key's location: the declared optional field's, with its role, or
+  -- the own property the key-adding write makes on this ordinary object,
+  -- role `field`.
+  let S := (declared.map (·.role)).getD .field
   let mut grown : Ty Tree := []
   for (fs, vs, os, ms, bs, st) in arms do
     let bs := bs.map fun b => if b.among && !b.keys.contains k then { b with keys := b.keys ++ [k] } else b
-    grown := grown ++ (← prim (.refs (fs.filter (·.1 != k) ++ [(k, c)]) [] (vs.filter (·.1 != k)) (os.filter (·.key != k)) ms bs st))
+    grown := grown ++ (← prim (.refs (fs.filter (·.1 != k) ++ [(k, S, c)]) [] (vs.filter (·.1 != k)) (os.filter (·.key != k)) ms bs st))
   return some (c, norm grown)
 
 /-- Holders of a local's object, as analysis_state.ml's holders_of: aliases
@@ -1494,7 +1502,7 @@ partial def matchBinder (b : Tree) (P A : Ty Tree) (fuel : Nat := 6) (vars : Lis
     | _, _ => pure none
   | [.dict _ _ _ ix _ _ _ _ _] => first [(norm (ix.flatMap (·.2)), elementAt A none (missing := false))]
   | [.refs fs [] vs os ms _ _] =>
-    first (((fs ++ vs).filter (fun (k, _) => k != SourceTypes.protoField)).map (fun (k, F) => (F, readField vars A k)) ++
+    first (((Stored.views fs ++ vs).filter (fun (k, _) => k != SourceTypes.protoField)).map (fun (k, F) => (F, readField vars A k)) ++
       os.map (fun o => (o.type, do slice (← readField vars A o.key) .isUndef false)) ++
       -- A method: its result at `A`'s member's.
       ms.map fun m => (norm (m.calls.flatMap (·.result)), do
@@ -1532,7 +1540,7 @@ partial def valueBinder (G : PositiveGraphs.NormalGraph Tree) (b : Tree) (A : Ty
   if fuel == 0 then A.any (occurs b) else
   match PositiveRules.expand G A with
   | [.ctors fixed rests fs more vs] =>
-    (fs ++ more.flatten ++ vs).any (fun (_, A) => A.any (occurs b)) ||
+    (Stored.views (fs ++ more.flatten) ++ vs).any (fun (_, A) => A.any (occurs b)) ||
     fixed.any (fun a => (a.result :: a.arguments).any (valueBinder G b · (fuel - 1))) ||
     rests.any (fun a => (a.result :: a.arguments.1).any (valueBinder G b · (fuel - 1)))
   | [.arrs fixed rests] =>
@@ -1645,7 +1653,7 @@ def fieldExpected (P : Ty Tree) (k : PropKey) : Compiler (Option (Ty Tree)) := d
     -- the undefined contributed by an absent read.
     let named := match PositiveRules.expand G [l] with
       | [.refs fs [] vs os _ _ _] | [.dict fs [] vs _ os _ _ _ _] =>
-        fs.lookup k <|> vs.lookup k <|> (os.find? (·.key == k)).map (·.type)
+        (Stored.views fs).lookup k <|> vs.lookup k <|> (os.find? (·.key == k)).map (·.type)
       | _ => none
     let D ← match named with
       | some D => pure (some D)
@@ -1676,7 +1684,7 @@ def recordContext (P : Ty Tree) (names : List PropKey) (es : List Expr) : Compil
   let mut selected := []
   for l in arms do
     let required : List PropKey := match PositiveRules.expand G [l] with
-      | [.refs fs [] vs _ _ _ _] | [.dict fs [] vs _ _ _ _ _ _] => (fs ++ vs).map (fun (p : PropKey × Ty Tree) => p.1)
+      | [.refs fs [] vs _ _ _ _] | [.dict fs [] vs _ _ _ _ _ _] => (Stored.views fs ++ vs).map (fun (p : PropKey × Ty Tree) => p.1)
       | _ => []
     if !required.all names.contains then continue
     let mut ok := true
@@ -1695,13 +1703,13 @@ def spreadContext (P : Ty Tree) : Compiler (Option (Ty Tree)) := do
   let G ← graphNow
   let fields := P.flatMap fun l => match PositiveRules.expand G [l] with
     | [.refs fs [] vs os ms _ _] | [.dict fs [] vs _ os ms _ _ _] =>
-      ((fs ++ vs) ++ os.map (fun o => (o.key, o.type))).filter fun (k, _) => !ms.any (·.key == k)
+      ((Stored.views fs ++ vs) ++ os.map (fun o => (o.key, o.type))).filter fun (k, _) => !ms.any (·.key == k)
     | _ => []
   let mut optional : List (OptionalField (Ty Tree)) := []
   for k in (fields.map (·.1)).eraseDups do
     if k == SourceTypes.protoField then continue
     match ((fields.filter (·.1 == k)).map (·.2)).eraseDups with
-    | [A] => optional := optional ++ [⟨k, false, A⟩]
+    | [A] => optional := optional ++ [⟨k, false, .field, A⟩]
     | _ => pure ()
   if optional.isEmpty then return none
   return some (← prim (.refs [] [] [] optional [] [] []))
@@ -1932,8 +1940,8 @@ constraints do not supply required presence. -/
 def checkCopyFields (cs : List (PositiveNormalization.Clause (Ty Tree))) : Compiler Unit := do
   let fields := cs.flatMap fun c => match c with
     | .refs fs [] vs _ ms _ _ | .dict fs [] vs _ _ ms _ _ _ =>
-      (fs ++ vs).filter fun (k, _) => !ms.any (·.key == k)
-    | .callable fs rest _ _ ms => (fs ++ rest.flatten).filter fun (k, _) => !ms.any (·.key == k)
+      (Stored.views fs ++ vs).filter fun (k, _) => !ms.any (·.key == k)
+    | .callable fs rest _ _ ms => (Stored.views (fs ++ rest.flatten)).filter fun (k, _) => !ms.any (·.key == k)
     | _ => []
   let optional := cs.flatMap fun c => match c with
     | .refs _ [] _ os _ _ _ | .dict _ [] _ _ os _ _ _ _ => os.map fun o => (o.key, o.type)
@@ -1994,7 +2002,7 @@ def copiesOf (A : Ty Tree) (force : Bool) (target : Bool := false) : Compiler (L
     for c in clauses do checkCopyFields [c]
     match clauses with
     | [.refs fs [] vs os ms bs _] =>
-      let named := ((fs ++ vs).filter fun (f, _) => f != SourceTypes.storeField &&
+      let named := ((Stored.views fs ++ vs).filter fun (f, _) => f != SourceTypes.storeField &&
           (target || f != SourceTypes.protoField) && (force || !ms.any (·.key == f))).map fun (f, B) => (f, false, B)
       -- A key an intersection's operands state twice: at the field within
       -- the others (`object_spread.ml`, `field_meet`), else the first.
@@ -2005,10 +2013,10 @@ def copiesOf (A : Ty Tree) (force : Bool) (target : Bool := false) : Compiler (L
         | none => acc ++ [(f, o, B)]) []
       let opt := (os.filter fun o => !named.any (·.1 == o.key)).map fun o => (o.key, !force, o.type)
       -- (an array's own keys are its elements' too, which no field states)
-      let array := (fs ++ vs).any (·.1 == SourceTypes.storeField)
+      let array := (Stored.views fs ++ vs).any (·.1 == SourceTypes.storeField)
       out := out ++ [{ fields := named ++ opt, exact := force || (bs.any (·.among) && !array), excluded := if target then (bs.filter (!·.among)).flatMap (·.keys) else [] }]
     | [.dict fs [] vs ix os ms _ _ _] =>
-      let fields := ((fs ++ vs).filter fun (k, _) =>
+      let fields := ((Stored.views fs ++ vs).filter fun (k, _) =>
         (target || k != SourceTypes.protoField) && !ms.any (·.key == k)).map fun (k, A) => (k, false, A)
       let opt := (os.filter fun o => !fields.any (·.1 == o.key)).map fun o => (o.key, true, o.type)
       out := out ++ [{ fields := fields ++ opt, exact := false, index := if force && (ix.lookup .strings).isSome then some [Labels.tru] else ix.lookup .strings, symbols := ix.lookup .symbols }]
@@ -2018,7 +2026,7 @@ def copiesOf (A : Ty Tree) (force : Bool) (target : Bool := false) : Compiler (L
       -- operand constrains a repeated key (field_meet, lines 56-70). A
       -- copy onto a callable is not handled.
       if target then throw "a spread of a value of no record contract"
-      let all := (fs ++ rest.flatten).filter fun (k, _) =>
+      let all := (Stored.views (fs ++ rest.flatten)).filter fun (k, _) =>
         k != SourceTypes.protoField && !ms.any (·.key == k) &&
           (match k with | .str _ => true | _ => false)
       let T ← table
@@ -2032,7 +2040,7 @@ def copiesOf (A : Ty Tree) (force : Bool) (target : Bool := false) : Compiler (L
       -- bound, whose proof the pass must refuse.
       out := out ++ [{ fields, exact := force }]
     | [.ctors _ _ statics] =>
-      out := out ++ [{ fields := (statics.filter (·.1 != SourceTypes.protoField)).map fun (f, B) => (f, false, B), exact := false }]
+      out := out ++ [{ fields := (statics.filter (·.1 != SourceTypes.protoField)).map fun (f, _, B) => (f, false, B), exact := false }]
     | [.arrs ..] => out := out ++ [{ exact := false }]
     -- (a label of no value: no copy)
     | [] => pure ()
@@ -2092,14 +2100,16 @@ def mergeCopy (a b : Copy) : Compiler Copy := do
 exactly where its keys are exact and none is optional
 (`object_spread.ml`, `alternative_type`). -/
 def copyType (c : Copy) : Compiler (Ty Tree) := do
-  let req := (c.fields.filter fun (_, o, _) => !o).map fun (k, _, A) => (k, A)
-  let opt := (c.fields.filter fun (_, o, _) => o).map fun (k, _, A) => (⟨k, false, A⟩ : OptionalField (Ty Tree))
+  -- A copy allocates an ordinary object: each field's role is `field`.
+  let req : List (Stored (Ty Tree)) := (c.fields.filter fun (_, o, _) => !o).map fun (k, _, A) => (k, .field, A)
+  let opt := (c.fields.filter fun (_, o, _) => o).map fun (k, _, A) => (⟨k, false, .field, A⟩ : OptionalField (Ty Tree))
   let bound : List KeyBound := (if c.exact && opt.isEmpty then [⟨true, req.map (·.1)⟩] else []) ++
     (if c.excluded.isEmpty then [] else [⟨false, c.excluded⟩])
   let indexes := (c.index.map (IndexKeys.strings, ·)).toList ++
     (c.numeric.map (IndexKeys.numeric, ·)).toList ++ (c.symbols.map (IndexKeys.symbols, ·)).toList
   if indexes.isEmpty then prim (.refs req [] [] opt [] bound [])
-  else prim (.dict req [] [] indexes opt [] [] indexes [])
+  -- The copy's writable indexes grant its ordinary properties: role `field`.
+  else prim (.dict req [] [] indexes opt [] [] (withRole .field indexes) [])
 
 /-- The copies after each part: a named field set in every copy, a spread
 merged into each copy once per copy its operand gives. -/
@@ -2516,14 +2526,15 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
       -- leaves out absent.
       if let [.dict first [] vs ix os [] bs cells st] := PositiveRules.expand G [l] then
         if !cells.isEmpty && first.all (fun (k, _) => names.contains k) then
-          let index := norm (cells.flatMap (·.2))
+          let index := norm (cells.flatMap (·.2.2))
           let mut ok := true
-          let mut fields : List (PropKey × Ty Tree) := []
+          -- A literal at a dictionary allocates an ordinary object: role `field`.
+          let mut fields : List (Stored (Ty Tree)) := []
           for (k, y) in names.zip es do
-            let D := (first.lookup k).getD index
+            let D := ((Stored.views first).lookup k).getD index
             let some B ← fit D y ((w.exprs.get? y.span).bind (·.2.toOption)) | ok := false; break
             if !within (← StateT.lift table) B D then ok := false; break
-            fields := fields ++ [(k, D)]
+            fields := fields ++ [(k, .field, D)]
           if ok then
             let R ← StateT.lift (prim (.dict fields [] vs ix (os.filter fun o => !names.contains o.key) [] bs cells st))
             if within (← StateT.lift table) R [l] then return ← record x (.ok R)
@@ -2568,9 +2579,9 @@ partial def fit (P : Ty Tree) (x : Expr) (A : Option (Ty Tree)) : W (Option (Ty 
             let (fs, vs, st) := match PositiveRules.expand G [l] with
               | [.refs _ [] evs _ _ _ est] =>
                 let isView (k : PropKey) : Bool := (evs.lookup k).isSome && est.contains k
-                (byField.filter (fun (k, _) => !isView k), byField.filter (fun (k, _) => isView k),
+                (withRole .field (byField.filter (fun (k, _) => !isView k)), byField.filter (fun (k, _) => isView k),
                   est.filter names.contains)
-              | _ => (byField, [], [])
+              | _ => (withRole .field byField, [], [])
             let R ← prim (.refs fs [] vs [] [] [] st)
             if !exact && within (← table) R [l] then return some (R, false)
             let R ← prim (.refs fs [] vs [] [] [⟨true, names⟩] st)
@@ -2790,7 +2801,7 @@ partial def useIn (env : Env) (n : String) (e : Expr) (P : Option (Ty Tree)) : W
     let G ← StateT.lift graphNow
     let ds := (P.getD []).filterMap fun l => match PositiveRules.expand G [l] with
       | [.refs fs [] vs os ..] | [.dict fs [] vs _ os ..] =>
-        fs.lookup k <|> vs.lookup k <|> ((os.find? (·.key == k)).map (·.type))
+        (Stored.views fs).lookup k <|> vs.lookup k <|> ((os.find? (·.key == k)).map (·.type))
       | _ => none
     return match ds.eraseDups with | [D] => some D | _ => none
   match e with
@@ -2955,7 +2966,7 @@ def methodBinders (args : List Expr) (Ps : List (Ty Tree)) (As : List (Option (T
   let methodsOf (X : Ty Tree) : List (PropKey × List (List (Ty Tree) × CallEffects.Effect)) :=
     match ProgramTyping.objectClauses Ga X with
     | [.refs fs _ vs _ ms _ _] =>
-      ((fs ++ vs).map fun (k, t) => (k, (ProgramTyping.callSigs Ga t).map fun s => (s.arguments, s.effect))) ++
+      ((Stored.views fs ++ vs).map fun (k, t) => (k, (ProgramTyping.callSigs Ga t).map fun s => (s.arguments, s.effect))) ++
         ms.map fun m => (m.key, m.calls.map fun s => (s.arguments, s.effect))
     | _ => []
   for ((x, P), i) in (args.zip Ps).zipIdx do
@@ -3557,7 +3568,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
         let w ← get
         match es.mapM (fun y => (w.exprs.get? y.span).bind (·.2.toOption)) with
         | some Es => do
-          let r ← attempt e (prim (.refs (names.zip Es) [] [] [] [] [⟨true, names⟩] []))
+          let r ← attempt e (prim (.refs (withRole .field (names.zip Es)) [] [] [] [] [⟨true, names⟩] []))
           if let some C := r then let _ ← record x (.ok C)
           pure r
         | none => pure r
@@ -3601,8 +3612,9 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
       let fields ← (names.zip (As.zip es)).mapM fun (n, A, y) => do
         let A ← need A "a field"
         return (n, ← if fresh y then widen A else pure A)
-      -- Its own keys exactly (`HasTyUsing.alloc`'s bound).
-      prim (.refs fields [] [] [] [] [⟨true, names⟩] [])
+      -- Its own keys exactly (`HasTyUsing.alloc`'s bound); an object
+      -- literal's fields are ordinary properties, role `field`.
+      prim (.refs (withRole .field fields) [] [] [] [] [⟨true, names⟩] [])
     let r ← match exp with
       | some P => fit P e r
       | none => pure r
@@ -4123,9 +4135,10 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     let offers := ((← get).ctorOffers.filter (·.1 == e.span)).map (·.2)
     let r ← attempt e do
       let fields ← (statics.zip Ss).mapM fun ((k, _), S) => do
-        match written.lookup k with
-        | some D => return (k, D)
-        | none => return (k, ← widen (← need S "a static field"))
+        -- A class value's static fields are ordinary properties: role `field`.
+        match (Stored.views written).lookup k with
+        | some D => return (k, StorageRole.field, D)
+        | none => return (k, StorageRole.field, ← widen (← need S "a static field"))
       -- The construct signatures its uses offer it, beside its own
       -- (`offer_class`, 66-68): the pass
       -- checks the constructor's body at each.
@@ -5304,16 +5317,17 @@ partial def bindPattern (env : Env) (p : Pattern Expr) (A : Option (Ty Tree))
             match PositiveRules.expand G A with
             | [.callable fs _ _ _ _] =>
               let named := props.map fun (k, _, _) => PropKey.str k
-              Except.ok <$> prim (.refs (fs.filter fun (k, _) => !named.contains k) [] [])
+              -- The rest is a fresh ordinary object: role `field`.
+              Except.ok <$> prim (.refs (withRole .field (Stored.views (fs.filter fun (k, _) => !named.contains k))) [] [])
             | [.refs fs [] vs [] ms _ _] =>
-              if (fs ++ vs).any (·.1 == SourceTypes.storeField) then
+              if (Stored.views fs ++ vs).any (·.1 == SourceTypes.storeField) then
                 let cs ← copiesOf A forced
                 let Rs ← cs.mapM copyType
                 return .ok (norm Rs.flatten)
               let named := props.map fun (k, _, _) => PropKey.str k
-              let fields := (fs ++ vs).filter fun (f, _) => f != SourceTypes.protoField &&
+              let fields := (Stored.views fs ++ vs).filter fun (f, _) => f != SourceTypes.protoField &&
                 f != SourceTypes.storeField && !ms.any (·.key == f) && !named.contains f
-              Except.ok <$> prim (.refs fields [] [] [] [] [])
+              Except.ok <$> prim (.refs (withRole .field fields) [] [] [] [] [])
             | _ =>
               -- Any other value: the copies it gives as a spread's operand
               -- (`copiesOf`: each record arm's, a class value's static

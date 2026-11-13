@@ -532,13 +532,14 @@ type `A` after them. -/
 /-- A class value's construct signatures, each a checked entry of its graph
 code at the row whose receiver is `U`, the `undefined` type `new` passes; a
 variadic one with an element rest at the row `ctorRestParams` gives; and its
-static fields, exactly `P`. -/
+static fields, exactly `P`, each of the role `field` the class value's
+allocation gives it. -/
 @[nospecialize] def ctorCodesChecked [DecidableEq ι] (G : NormalGraph ι) (A U : Ty ι) (codes : CodeEntry ι → Bool)
     (arity : Nat) (E : List Tm) (K : List (ControlFlow.Continuation × Option ControlFlow.Target))
     (start : Nat) (Cs : List (Ty ι)) (P : List (PropKey × Ty ι)) : Bool :=
   match expand G A with
   | [.ctors L S P' []] =>
-      (P' == P && L.all fun p => codes ⟨arity, E, K, start, Cs, ⟨U, p.arguments, p.result, p.effect⟩, none⟩) &&
+      (P' == withRole .field P && L.all fun p => codes ⟨arity, E, K, start, Cs, ⟨U, p.arguments, p.result, p.effect⟩, none⟩) &&
       S.all fun s => s.effect.plain && match restElem G s.arguments.2 with
         | some El => codes ⟨arity, E, K, start, Cs,
             ⟨U, ctorRestParams arity s.arguments.1 El U, s.result, s.effect⟩, none⟩
@@ -548,7 +549,7 @@ static fields, exactly `P`. -/
 /-- The prototype type `P` has a field or view `f` at `A`. -/
 @[nospecialize] def ProtoMember (G : NormalGraph ι) (P : Ty ι) (f : PropKey) (A : Ty ι) : Prop :=
   match expand G P with
-  | [.refs gs [] ws _ _ _ _] => (f, A) ∈ gs ++ ws.filter (·.1 != lengthKey)
+  | [.refs gs [] ws _ _ _ _] => (f, A) ∈ Stored.views gs ++ ws.filter (·.1 != lengthKey)
   | _ => False
 
 instance [DecidableEq ι] (G : NormalGraph ι) (P : Ty ι) (f : PropKey) (A : Ty ι) :
@@ -945,7 +946,7 @@ declared bounds. -/
         KindOffers G kind L S ∧ ns.Nodup ∧ ns.length = inits.length ∧
         (ps.take ns.length).map Sequent.term = inits ∧
         (∀ p ∈ ps, p.context = j.context) ∧
-        P = ns.zip ((ps.take ns.length).map Sequent.type) ∧
+        P = withRole .field (ns.zip ((ps.take ns.length).map Sequent.type)) ∧
         (ps.drop ns.length).map Sequent.term = caps ∧ capSlotsBelow caps j.context.length = true ∧
         offersChecked G codes arity E K start ((ps.drop ns.length).map Sequent.type) rest L S As = true
       | _ => False
@@ -979,7 +980,8 @@ declared bounds. -/
       -- value alone (`HasTyUsing.alloc`).
       | [.refs fs [] vs [] [] ks st] =>
         ns.Nodup ∧ hostKey ∉ ns ∧ ns.length = ps.length ∧ ps.map Sequent.term = inits ∧
-        (∀ p ∈ ps, p.context = j.context) ∧ fs = stablePart st false (ns.zip (ps.map Sequent.type)) ∧
+        (∀ p ∈ ps, p.context = j.context) ∧
+        Stored.views fs = stablePart st false (ns.zip (ps.map Sequent.type)) ∧
         vs = stablePart st true (ns.zip (ps.map Sequent.type)) ∧
         (∀ K ∈ ks, ∀ n ∈ ns, K.admits n = true) ∧ allocBuiltinsUsing images (ns.zip (ps.map Sequent.type)) = true ∧
         (st = [] ∨ CallArguments.arrayStoreField ∉ ns) ∧ (∀ k ∈ st, k ∈ ns)
@@ -989,10 +991,10 @@ declared bounds. -/
       | [.dict fs [] [] ix os [] [] cs] =>
         ns.Nodup ∧ CallArguments.protoField ∉ ns ∧ CallArguments.arrayStoreField ∉ ns ∧ hostKey ∉ ns ∧
         ns.length = ps.length ∧ ps.map Sequent.term = inits ∧
-        (∀ p ∈ ps, p.context = j.context) ∧ fs = ns.zip (ps.map Sequent.type) ∧
-        (∀ f ∈ fs, ∀ y ∈ ix ++ cs, y.1.may f.1 = true → f.2 = y.2) ∧
+        (∀ p ∈ ps, p.context = j.context) ∧ Stored.views fs = ns.zip (ps.map Sequent.type) ∧
+        (∀ f ∈ fs, ∀ y ∈ ix ++ cellViews cs, y.1.may f.1 = true → f.2.2 = y.2) ∧
         (∀ o ∈ os, o.key ∉ ns) ∧
-        (∀ o ∈ os, ∀ y ∈ cs, y.1.may o.key = true → o.type = y.2 ∨ PositiveRules.Uninhabited G y.2)
+        (∀ o ∈ os, ∀ y ∈ cs, y.1.may o.key = true → o.type = y.2.2 ∨ PositiveRules.Uninhabited G y.2.2)
       | _ => False
     | _, _ => False
   | .read =>
@@ -1000,7 +1002,7 @@ declared bounds. -/
     | .readAt f a, [ja] =>
       ja.context = j.context ∧ ja.term = a ∧
       (match expand G ja.type with
-       | [c] => (f, j.type) ∈ ((namedMembers c).map Prod.fst).getD []
+       | [c] => (f, j.type) ∈ ((namedMembers c).map fun m => Stored.views m.1).getD []
        | _ => False)
     | _, _ => False
   | .readView =>
@@ -1019,7 +1021,7 @@ declared bounds. -/
       ja.context = j.context ∧ ja.term = a ∧
       (match expand G ja.type with
        | [.refs fs [] vs _ _ ks _] =>
-         (∃ K ∈ ks, K.admits f = false) ∧ (CallArguments.protoField, P) ∈ fs ++ vs ∧
+         (∃ K ∈ ks, K.admits f = false) ∧ (CallArguments.protoField, P) ∈ Stored.views fs ++ vs ∧
          ProtoMember G P f j.type
        | _ => False)
     | _, _ => False
@@ -1058,7 +1060,7 @@ declared bounds. -/
       ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
       Represents G j.type .nul ∧
       (match expand G ja.type with
-       | [.refs fs [] _ _ _ _ _] => (f, jb.type) ∈ fs
+       | [.refs fs [] _ _ _ _ _] => (f, jb.type) ∈ Stored.views fs
        | _ => False)
     | _, _ => False
   | .arith =>
@@ -1201,7 +1203,7 @@ declared bounds. -/
     | .readAt f a, [ja] =>
       ja.context = j.context ∧ ja.term = a ∧
       match expand G ja.type with
-      | [c] => (f, j.type) ∈ c.bagFields
+      | [c] => (f, j.type) ∈ Stored.views c.bagFields
       | _ => False
     | _, _ => False
   -- A readonly static field of a class value.
@@ -1219,7 +1221,7 @@ declared bounds. -/
       ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
       Represents G j.type .nul ∧
       match expand G ja.type with
-      | [c] => (f, jb.type) ∈ c.bagFields
+      | [c] => (f, jb.type) ∈ Stored.views c.bagFields
       | _ => False
     | _, _ => False
   -- One premise per part: the entry itself, at the element type, or, for a
@@ -1932,7 +1934,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
   · rename_i _ ps _ _ ns inits
     split at hl
     · rename_i fs vs ks st he
-      obtain ⟨hnd, hnh, hlen, hterms, hctx, rfl, rfl, hk, hreal, hstore, hst⟩ := hl
+      obtain ⟨hnd, hnh, hlen, hterms, hctx, hfsv, rfl, hk, hreal, hstore, hst⟩ := hl
       have hzl : (ns.zip ps).length = ns.length := by simp [hlen]
       have hfst : ((ns.zip ps).map fun r => (r.1, r.2.type, r.2.term)).map Prod.fst = ns := by
         simp only [List.map_map, Function.comp_def]
@@ -1962,6 +1964,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
           have h := hp r.2 hmem
           rw [hctx r.2 hmem] at h
           exact h)
+        (by rw [htyp]; exact hfsv)
         (by rw [htyp]; exact he)
         (by
           intro K hK q hq
@@ -1974,7 +1977,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
       rw [hfst, hsnd] at this
       exact this
     · rename_i fs ix os cs he
-      obtain ⟨hnd, hnp, hns, hnh, hlen, hterms, hctx, rfl, hix, habs, hos⟩ := hl
+      obtain ⟨hnd, hnp, hns, hnh, hlen, hterms, hctx, hfsv, hix, habs, hos⟩ := hl
       have hfst : ((ns.zip ps).map fun r => (r.1, r.2.type, r.2.term)).map Prod.fst = ns := by
         simp only [List.map_map, Function.comp_def]
         exact List.map_fst_zip (by omega)
@@ -1994,7 +1997,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
         intro r _
         rfl
       have := HasTyUsing.allocDict (G := G) (images := images) (Γ := Γ) (Ref := A)
-        (parts := (ns.zip ps).map fun r => (r.1, r.2.type, r.2.term)) (ix := ix) (cs := cs) (os := os)
+        (parts := (ns.zip ps).map fun r => (r.1, r.2.type, r.2.term)) (fs := fs) (ix := ix) (cs := cs) (os := os)
         (by rw [hfst]; exact hnd) (by rw [hfst]; exact hnp) (by rw [hfst]; exact hns) (by rw [hfst]; exact hnh)
         (by
           intro q hq
@@ -2003,12 +2006,14 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
           have h := hp r.2 hmem
           rw [hctx r.2 hmem] at h
           exact h)
-        (by rw [htyp]; exact he)
+        (by rw [htyp]; exact hfsv)
+        he
         (by
           intro q hq y hy hm
-          have : (q.1, q.2.1) ∈ ns.zip (ps.map Sequent.type) := by
-            rw [← htyp]; exact List.mem_map_of_mem hq
-          exact hix _ this y hy hm)
+          have : (q.1, q.2.1) ∈ Stored.views fs := by
+            rw [hfsv, ← htyp]; exact List.mem_map_of_mem hq
+          obtain ⟨s, hs⟩ := Stored.mem_views.mp this
+          exact hix _ hs y hy hm)
         (by rw [hfst]; exact habs) hos
       rw [hfst, hsnd] at this
       exact this
@@ -2021,7 +2026,10 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     · rename_i c he
       cases hc : namedMembers c with
       | none => simp [hc] at hr
-      | some m => simp only [hc, Option.map_some, Option.getD_some] at hr; exact .read ha he hc hr
+      | some m =>
+        simp only [hc, Option.map_some, Option.getD_some] at hr
+        obtain ⟨_, hr⟩ := Stored.mem_views.mp hr
+        exact .read ha he hc hr
     · contradiction
   · rename_i f a ja
     rcases hl with ⟨hΓ, ht, hlen, hr⟩
@@ -2086,6 +2094,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     rw [hΓb, htb] at hb
     split at hr
     · rename_i fs vs os ms ks st he
+      obtain ⟨_, hr⟩ := Stored.mem_views.mp hr
       exact .write ha he hr hb hn
     · contradiction
   · rename_i op a b ja jb
@@ -2276,8 +2285,9 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
       unfold Clause.bagFields at hL
       split at hL
       · rename_i P Ps hc
+        obtain ⟨_, hL⟩ := Stored.mem_views.mp hL
         exact .readCallable ha he hc hL
-      · simp at hL
+      · simp [Stored.views] at hL
     · contradiction
   · rename_i a ja
     rcases hl with ⟨hΓ,ht,hL⟩
@@ -2298,8 +2308,9 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
       unfold Clause.bagFields at hL
       split at hL
       · rename_i P Ps hc
+        obtain ⟨_, hL⟩ := Stored.mem_views.mp hL
         exact .writeCallable ha he hc hL hb hn
-      · simp at hL
+      · simp [Stored.views] at hL
     · contradiction
   · rename_i E flags _ args
     rcases hl with ⟨hctx, hlen, rfl, hparts, hr⟩

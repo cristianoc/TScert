@@ -311,18 +311,21 @@ partial def objectClause (ctx : Ctx) (term : Json) : M (Clause (List Tree)) := d
         all := all.push (name, value, ← bool f "readonly", optional)
   let fs := all.filterMap fun (n, v, r, o) => if o then none else some (n, v, r)
   let optional := all.toList.filterMap fun (n, v, r, o) =>
-    if o then some (⟨n, r, v⟩ : OptionalField (List Tree)) else none
+    if o then some (⟨n, r, .field, v⟩ : OptionalField (List Tree)) else none
   let names := fs.toList.map (·.1) ++ optional.map (·.key) ++ methods.map (·.key)
   if names.eraseDups.length != names.length then throw s!"{ctx.site}: duplicate declaration field"
   let mut indexes : List (IndexKeys × List Tree) := []
-  let mut cells : List (IndexKeys × List Tree) := []
+  -- A writable index grants locations of ordinary properties: role `field`.
+  let mut cells : List (IndexKeys × StorageRole × List Tree) := []
   for (_, keys, index) in indexSignatures term do
     fieldsExactly index ["readonly", "value", "span"]
     let value ← lowerType ctx (← field index "value")
     indexes := indexes ++ [(keys, value)]
-    if !(← bool index "readonly") then cells := cells ++ [(keys, value)]
-  let writes := fs.toList.filterMap fun (name, value, readonly) =>
-    if readonly then none else some (name, value)
+    if !(← bool index "readonly") then cells := cells ++ [(keys, .field, value)]
+  -- A source object type describes ordinary objects: each writable member's
+  -- location is a property, role `field`.
+  let writes : List (Stored (List Tree)) := fs.toList.filterMap fun (name, value, readonly) =>
+    if readonly then none else some (name, .field, value)
   let views := fs.toList.filterMap (fun (name, value, readonly) =>
     if readonly then some (name, value) else none) ++ marker
   -- A shape's stable members (HOST-FAMILIES.md, "Stable keys"): each a
@@ -411,7 +414,9 @@ partial def termRow (ctx : Ctx) (term : Json) : M (GraphRow Tree (List Tree)) :=
             throw s!"{ctx.site}: a static field's readonly mark is `true`, left out otherwise"
         let key ← PropKey.decode (← field f "name")
         return (readonly, key, ← lowerType ctx (← field f "type"))
-    let fields := statics.filterMap fun (ro, k, t) => if ro then none else some (k, t)
+    -- A class value is an ordinary object: a static field's role is `field`.
+    let fields : List (Stored (List Tree)) :=
+      statics.filterMap fun (ro, k, t) => if ro then none else some (k, .field, t)
     let views := statics.filterMap fun (ro, k, t) => if ro then some (k, t) else none
     if restTerm == .null then return .clauses [.ctors [⟨(), ps.toList, result, effect⟩] [] fields [] views]
     return .clauses [.ctors [] [⟨(), (ps.toList, ← lowerRest ctx restTerm), result, effect⟩] fields [] views]

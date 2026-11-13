@@ -143,7 +143,7 @@ did not mention grow it, and the request carries the result. -/
             s!"module cell '{value.1}': {msg}"
           let contract ← if ← moduleOwnedName value.1 then plainContract contract else pure contract
           let stored := (contract ++ (← uninitializedTy)).eraseDups
-          let reference ← lower (do return [← CellClaims.reference [(valueField, stored)]])
+          let reference ← lower (do return [← CellClaims.reference [(valueField, .cell, stored)]])
           pure (some (Storage.early stored reference true, reference))
         | _ => pure none
     let siblingTypes ← (siblings.zip siblingStorage).mapM fun (value, storage) => do
@@ -227,7 +227,7 @@ did not mention grow it, and the request carries the result. -/
       if stmts.any (assignsStmt b.source.name) then
         let b := { b with param := true }
         if heldInCell b.source.name stmts then
-          let reference ← lower (do return [← CellClaims.reference [(valueField, contract)]])
+          let reference ← lower (do return [← CellClaims.reference [(valueField, .cell, contract)]])
           pure { b with storage := .cell contract reference }
         else pure { b with storage := .slot contract }
       else pure { b with param := true }

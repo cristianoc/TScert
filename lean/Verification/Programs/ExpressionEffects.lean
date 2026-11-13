@@ -77,12 +77,12 @@ theorem sourceTy_sound {G : NormalGraph ι} {A n W v} (hs : sourceTy G A = true)
 the field `fld`, at a type of source values in each. -/
 def sourceField (G : NormalGraph ι) (cs : List (PositiveNormalization.Clause (Ty ι))) (fld : PropKey) : Bool :=
   !cs.isEmpty && cs.all fun c => match HeapExpressionRules.clauseBagOperand c with
-    | some B => B.any (fun p => decide (p.1 = fld)) && B.all (fun p => !decide (p.1 = fld) || sourceTy G p.2)
+    | some B => B.any (fun p => decide (p.1 = fld)) && B.all (fun p => !decide (p.1 = fld) || sourceTy G p.2.2)
     | none => false
 
 theorem sourceField_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
     (hr : sourceField G (expand G Ref) fld = true) (hv : meaning G Ref n W v) :
-    ∃ B A, (fld, A) ∈ B ∧ sourceTy G A = true ∧
+    ∃ B s A, (fld, s, A) ∈ B ∧ sourceTy G A = true ∧
       bagT (ReferenceConjunctions.famsOf (meaning G) B) n W v := by
   simp only [sourceField, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
     List.all_eq_true] at hr
@@ -97,12 +97,12 @@ theorem sourceField_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
     simp only [Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true, Bool.not_eq_true',
       decide_eq_false_iff_not] at hb
     obtain ⟨hany, hall⟩ := hb
-    obtain ⟨⟨g, El⟩, hmem, hg⟩ := List.any_eq_true.mp hany
+    obtain ⟨⟨g, s, El⟩, hmem, hg⟩ := List.any_eq_true.mp hany
     simp only [decide_eq_true_eq] at hg
     subst hg
     have hsrc : sourceTy G El = true := (hall _ hmem).resolve_left (by simp)
-  · exact ⟨_, El, hmem, hsrc, recT_bag hc.1.1⟩
-  · exact ⟨_, El, hmem, hsrc, hc.1.1.1.1⟩
+  · exact ⟨_, s, El, hmem, hsrc, recT_bag hc.1.1⟩
+  · exact ⟨_, s, El, hmem, hsrc, hc.1.1.1.1⟩
 
 /-- A write of a field of the object in a slot whose type gives it a type of
 source values: it changes one location, which holds a value, not a store. -/
@@ -144,7 +144,7 @@ theorem field_write_within [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n
         by_cases hll : l' = l
         · subst hll
           refine ⟨ρ k, by simp [hlt], ?_⟩
-          obtain ⟨B, A, hmem, hsrc, hbag⟩ := sourceField_sound hsel (he.2 i Ref hi)
+          obtain ⟨B, _, A, hmem, hsrc, hbag⟩ := sourceField_sound hsel (he.2 i Ref hi)
           obtain ⟨flds0, code0, oid0, hl0, _, hrec⟩ := hbag
           obtain ⟨flds1, l1, c1, oid', hproj, hfd1, hlookup, hagree⟩ :=
             recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hmem, rfl⟩) hrec
@@ -1282,12 +1282,12 @@ def storeTy (G : NormalGraph ι) (L : Ty ι) (idx : Nat) (present : Bool) : Bool
 def storeField (G : NormalGraph ι) (cs : List (PositiveNormalization.Clause (Ty ι))) (fld : PropKey)
     (idx : Nat) (present : Bool) : Bool :=
   !cs.isEmpty && cs.all fun c => match HeapExpressionRules.clauseBagOperand c with
-    | some B => B.any (fun p => decide (p.1 = fld)) && B.all (fun p => !decide (p.1 = fld) || storeTy G p.2 idx present)
+    | some B => B.any (fun p => decide (p.1 = fld)) && B.all (fun p => !decide (p.1 = fld) || storeTy G p.2.2 idx present)
     | none => false
 
 theorem storeField_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld idx present n W v}
     (hr : storeField G (expand G Ref) fld idx present = true) (hv : meaning G Ref n W v) :
-    ∃ B L, (fld, L) ∈ B ∧ storeTy G L idx present = true ∧
+    ∃ B s L, (fld, s, L) ∈ B ∧ storeTy G L idx present = true ∧
       bagT (ReferenceConjunctions.famsOf (meaning G) B) n W v := by
   simp only [storeField, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
     List.all_eq_true] at hr
@@ -1302,12 +1302,12 @@ theorem storeField_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld idx pres
     simp only [Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true, Bool.not_eq_true',
       decide_eq_false_iff_not] at hb
     obtain ⟨hany, hall⟩ := hb
-    obtain ⟨⟨g, El⟩, hmem, hg⟩ := List.any_eq_true.mp hany
+    obtain ⟨⟨g, s, El⟩, hmem, hg⟩ := List.any_eq_true.mp hany
     simp only [decide_eq_true_eq] at hg
     subst hg
     have hsrc : storeTy G El idx present = true := (hall _ hmem).resolve_left (by simp)
-  · exact ⟨_, El, hmem, hsrc, recT_bag hc.1.1⟩
-  · exact ⟨_, El, hmem, hsrc, hc.1.1.1.1⟩
+  · exact ⟨_, s, El, hmem, hsrc, recT_bag hc.1.1⟩
+  · exact ⟨_, s, El, hmem, hsrc, hc.1.1.1.1⟩
 
 /-- A listed position of a store under a tuple contract has a location whose
 contract implies the position's family. -/
@@ -1512,7 +1512,7 @@ theorem elem_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
       (fun h' => StoreWrite f (ρ i) ⟨.any, if present then .keep else .grow⟩ h h') n W h
       (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.num b) (.var k)))) := by
   have hvv := (meaning_value (he.2 k Γ[k] (List.getElem?_eq_getElem hk))).1
-  obtain ⟨B, L, hmem, hstore, hbag⟩ := storeField_sound hst (he.2 i Ref hi)
+  obtain ⟨B, _, L, hmem, hstore, hbag⟩ := storeField_sound hst (he.2 i Ref hi)
   obtain ⟨flds, code, oid, hl0, _, hrec⟩ := hbag
   obtain ⟨flds1, fl, cfl, oid', hproj, hfd, hlookup, hagree⟩ :=
     recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
@@ -1667,12 +1667,12 @@ theorem storeTyEvery_at {G : NormalGraph ι} {L : Ty ι} (h : storeTyEvery G L =
 `fld`, at a store type `storeTyEvery` accepts in each. -/
 def storeFieldEvery (G : NormalGraph ι) (cs : List (PositiveNormalization.Clause (Ty ι))) (fld : PropKey) : Bool :=
   !cs.isEmpty && cs.all fun c => match HeapExpressionRules.clauseBagOperand c with
-    | some B => B.any (fun p => decide (p.1 = fld)) && B.all (fun p => !decide (p.1 = fld) || storeTyEvery G p.2)
+    | some B => B.any (fun p => decide (p.1 = fld)) && B.all (fun p => !decide (p.1 = fld) || storeTyEvery G p.2.2)
     | none => false
 
 theorem storeFieldEvery_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
     (hr : storeFieldEvery G (expand G Ref) fld = true) (hv : meaning G Ref n W v) :
-    ∃ B L, (fld, L) ∈ B ∧ storeTyEvery G L = true ∧
+    ∃ B s L, (fld, s, L) ∈ B ∧ storeTyEvery G L = true ∧
       bagT (ReferenceConjunctions.famsOf (meaning G) B) n W v := by
   simp only [storeFieldEvery, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
     List.all_eq_true] at hr
@@ -1687,12 +1687,12 @@ theorem storeFieldEvery_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W
     simp only [Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true, Bool.not_eq_true',
       decide_eq_false_iff_not] at hb
     obtain ⟨hany, hall⟩ := hb
-    obtain ⟨⟨g, El⟩, hmem, hg⟩ := List.any_eq_true.mp hany
+    obtain ⟨⟨g, s, El⟩, hmem, hg⟩ := List.any_eq_true.mp hany
     simp only [decide_eq_true_eq] at hg
     subst hg
     have hsrc : storeTyEvery G El = true := (hall _ hmem).resolve_left (by simp)
-  · exact ⟨_, El, hmem, hsrc, recT_bag hc.1.1⟩
-  · exact ⟨_, El, hmem, hsrc, hc.1.1.1.1⟩
+  · exact ⟨_, s, El, hmem, hsrc, recT_bag hc.1.1⟩
+  · exact ⟨_, s, El, hmem, hsrc, hc.1.1.1.1⟩
 
 /-- **An element write at a run-time index is within its store's change**,
 `grow`, on its normal return and where it raises. The index decodes, where
@@ -1709,7 +1709,7 @@ theorem elem_var_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty
       (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.var j) (.var k)))) := by
   have hvv := (meaning_value (he.2 k Γ[k] (List.getElem?_eq_getElem hk))).1
   have hjv := (meaning_value (he.2 j Γ[j] (List.getElem?_eq_getElem hj))).1
-  obtain ⟨B, L, hmem, hevery, hbag⟩ := storeFieldEvery_sound hst (he.2 i Ref hi)
+  obtain ⟨B, _, L, hmem, hevery, hbag⟩ := storeFieldEvery_sound hst (he.2 i Ref hi)
   obtain ⟨flds, code, oid, hl0, _, hrec⟩ := hbag
   obtain ⟨flds1, fl, cfl, oid', hproj, hfd, hlookup, hagree⟩ :=
     recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
@@ -1800,7 +1800,7 @@ theorem elem_var_write_length [DecidableEq ι] {G : NormalGraph ι} {Γ : List (
       (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.var j) (.var k)))) := by
   have hvv := (meaning_value (he.2 k Γ[k] (List.getElem?_eq_getElem hk))).1
   have hjv := (meaning_value (he.2 j Γ[j] (List.getElem?_eq_getElem hj))).1
-  obtain ⟨B, L, hmem, hevery, hbag⟩ := storeFieldEvery_sound hst (he.2 i Ref hi)
+  obtain ⟨B, _, L, hmem, hevery, hbag⟩ := storeFieldEvery_sound hst (he.2 i Ref hi)
   obtain ⟨flds0, code, oid0, hl0, _, hrec⟩ := hbag
   obtain ⟨flds1, fl1, cfl, oid', hproj, hfd, hlookup, hagree⟩ :=
     recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
@@ -1963,8 +1963,8 @@ theorem storeWrite_post {ρ : Env} {i fl : Nat} {c : Footprints.Closed} {h h' : 
     · exact .inr ⟨e, List.mem_append_left _ he, hm, hh⟩
 
 /-- An object a record operand states a field of has the field. -/
-theorem bag_lookup {G : NormalGraph ι} {B : List (PropKey × Ty ι)} {L : Ty ι} {fld : PropKey} {n W v}
-    (hmem : (fld, L) ∈ B) (hbag : bagT (ReferenceConjunctions.famsOf (meaning G) B) n W v) :
+theorem bag_lookup {G : NormalGraph ι} {B : List (Stored (Ty ι))} {s : StorageRole} {L : Ty ι} {fld : PropKey}
+    {n W v} (hmem : (fld, s, L) ∈ B) (hbag : bagT (ReferenceConjunctions.famsOf (meaning G) B) n W v) :
     ∃ fl, (Footprints.fieldsOf v).lookup fld = some fl := by
   obtain ⟨flds, code, oid, hl0, _, hrec⟩ := hbag
   obtain ⟨flds1, fl, cfl, oid', hproj, hfd, -, -⟩ :=
@@ -2012,7 +2012,7 @@ theorem writeStep_sound [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
       obtain ⟨⟨⟨rfl, hk⟩, hj⟩, hsel⟩ := hcond
       split at hsel
       · rename_i Ref hi
-        obtain ⟨B, L, hmem, -, hbag⟩ := storeFieldEvery_sound hsel (he.2 _ Ref hi)
+        obtain ⟨B, _, L, hmem, -, hbag⟩ := storeFieldEvery_sound hsel (he.2 _ Ref hi)
         obtain ⟨fl, hfl⟩ := bag_lookup hmem hbag
         rw [elemVarWriteSlots_eq hw] at hs ⊢
         exact SafePostExc.weaken (fun _ _ hq => storeWrite_post hfl hq) (fun _ hq => storeWrite_post hfl hq)
@@ -2031,7 +2031,7 @@ theorem writeStep_sound [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
           rw [elemWriteSlots_eq hw] at hs ⊢
           rcases Bool.or_eq_true_iff.mp hsel with hst | hst
           all_goals
-            obtain ⟨B, L, hmem, -, hbag⟩ := storeField_sound hst (he.2 _ Ref hi)
+            obtain ⟨B, _, L, hmem, -, hbag⟩ := storeField_sound hst (he.2 _ Ref hi)
             obtain ⟨fl, hfl⟩ := bag_lookup hmem hbag
             exact SafePostExc.weaken (fun _ _ hq => storeWrite_post hfl hq) (fun _ hq => storeWrite_post hfl hq)
               (elem_write_core hk hi hidx hst he hh hs)

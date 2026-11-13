@@ -62,10 +62,10 @@ optional key. This only selects a persistent proof obligation. -/
 def declaredRead (c : PositiveNormalization.Clause (Ty Tree)) (fld : PropKey) : Option (Ty Tree) :=
   match c with
   | .refs W [] vs os _ _ _ =>
-    (W.lookup fld).orElse fun _ => (vs.lookup fld).orElse fun _ =>
+    ((Stored.views W).lookup fld).orElse fun _ => (vs.lookup fld).orElse fun _ =>
       (os.find? (fun o => o.key == fld)).map (fun o => o.type ++ [Labels.undef])
   | .dict _ _ _ ds _ _ _ cs _ =>
-    ((ds ++ cs).find? (HeapExpressionRules.stringIndex · fld)).map (fun d => d.2 ++ [Labels.undef])
+    ((ds ++ PositiveNormalization.cellViews cs).find? (HeapExpressionRules.stringIndex · fld)).map (fun d => d.2 ++ [Labels.undef])
   | _ => none
 
 /-- The declared read of `field` from every record `R` may hold, including
@@ -237,14 +237,14 @@ rest. -/
 invariantly or as a view. -/
 @[nospecialize] def storeOf (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) : Option (Ty ι) :=
   match PositiveRules.expand G A with
-  | [.refs fs [] vs _ _ _ _] => fs.lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField
+  | [.refs fs [] vs _ _ _ _] => (Stored.views fs).lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField
   | _ => none
 
 /-- A union of arrays: every clause of the type holds a store. -/
 @[nospecialize] def arraysOnly (G : PositiveGraphs.NormalGraph ι) (A : Ty ι) : Bool :=
   let cs := PositiveRules.expand G A
   !cs.isEmpty && cs.all fun c => match c with
-    | .refs fs [] vs _ _ _ _ => (fs.lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField).isSome
+    | .refs fs [] vs _ _ _ _ => ((Stored.views fs).lookup SourceTypes.storeField <|> vs.lookup SourceTypes.storeField).isSome
     | _ => false
 
 /-- A source numeric key must denote one valid array index. The two runtime
@@ -262,10 +262,12 @@ zeros name the same property although their numeric values remain distinct. -/
 def arrayPrototypeName : String := SourceTypes.arrayPrototypeName
 
 /-- A fresh array object's type: its store and prototype as fields, and its own
-keys bounded to them, the type `alloc` gives before it is read as an array. -/
+keys bounded to them, the type `alloc` gives before it is read as an array.
+The array's allocation gives its store slot the role `arrayStore` and its
+prototype slot, an ordinary own key, the role `field`. -/
 @[nospecialize] def arrayObject (S : Ty Tree) : Compiler (Ty Tree) := do
-  let label ← lower (SourceTypes.use (.refs [(SourceTypes.storeField, S),
-    (SourceTypes.protoField, [StoreView.arrayProto (← table)])] [] [] [] []
+  let label ← lower (SourceTypes.use (.refs [(SourceTypes.storeField, .arrayStore, S),
+    (SourceTypes.protoField, .field, [StoreView.arrayProto (← table)])] [] [] [] []
     [⟨true, [SourceTypes.storeField, SourceTypes.protoField]⟩]))
   recordHints [label]
   return [label]

@@ -371,9 +371,9 @@ while no step changes the store: a function answering each of them. -/
 
 /-- The type of an early binding's uninitialized marker, `U` (SOURCE-ELABORATION.md,
 "Lexical bindings before initialization"): the object owning the marker's
-key, at `undefined`. -/
+key, at `undefined`, a binding's storage of role `cell`. -/
 @[nospecialize] def uninitializedTy : Compiler (Ty Tree) :=
-  lower (do return [← CellClaims.reference [(uninitializedKey, [Labels.undef])]])
+  lower (do return [← CellClaims.reference [(uninitializedKey, .cell, [Labels.undef])]])
 
 /-- A write of a `const` early binding outside its declaration: JavaScript
 throws a `TypeError` there (SetMutableBinding of an immutable binding), a

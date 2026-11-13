@@ -227,7 +227,8 @@ theorem write_rule {code : CallCode} {flds : List (PropKey × Nat)} {f : PropKey
 /-- **Allocating an object with named fields.** One step takes one fresh
 location per field, so the world grows by one contract per field and the result
 sees the whole record. The single-cell rule above is the one-field case. -/
-theorem make_fields_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A) (hV : ∀ A ∈ As, ValOnly A)
+theorem make_fields_rule {Q : Fam} {ss : List StorageRole} {As : List Fam}
+    (hss : ss.length = As.length) (hA : ∀ A ∈ As, Adm A) (hV : ∀ A ∈ As, ValOnly A)
     (n : Nat) (W : WorldT n) (h : Heap) (code : CallCode)
     (ns : List PropKey) (vs : List Val)
     (hnd : ns.Nodup) (hns : ns.length = vs.length) (hAs : As.length = vs.length)
@@ -236,17 +237,18 @@ theorem make_fields_rule {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A) (h
     (hv : ∀ p ∈ As.zip vs, p.1 n W p.2)
     (result : ∀ j (hj : j < n) (U : WorldT j),
       WExt (trunc j (Nat.le_of_lt hj) W) U →
-      recT (ns.zip As) j U (.objAt (slots h.length ns) .absent (h.length + vs.length)) →
+      recT (ns.zip (ss.zip As)) j U (.objAt (slots h.length ns) .absent (h.length + vs.length)) →
       Q j U (.objAt (slots h.length ns) code (h.length + vs.length))) :
     Safe Ξ Q n W h (.makeAt code ns vs) :=
   OperationWorlds.erase n W h (.makeAt code ns vs)
-    (AllocationWorlds.allocation_safe hA hV n W h code ns vs hnd hns hAs hvals hadm hok
+    (AllocationWorlds.allocation_safe hss hA hV n W h code ns vs hnd hns hAs hvals hadm hok
       (fun p hp j _ => (hA p.1 (List.of_mem_zip hp).1).down_le n j (by omega) W p.2 (hv p hp)) result)
 
 /-- **Allocating named fields, from values known below the level.** The
 allocation step spends a level, so each value need meet its family only at
 the levels the heap is judged at after it. -/
-theorem make_fields_rule_below {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A) (hV : ∀ A ∈ As, ValOnly A)
+theorem make_fields_rule_below {Q : Fam} {ss : List StorageRole} {As : List Fam}
+    (hss : ss.length = As.length) (hA : ∀ A ∈ As, Adm A) (hV : ∀ A ∈ As, ValOnly A)
     (n : Nat) (W : WorldT n) (h : Heap) (code : CallCode)
     (ns : List PropKey) (vs : List Val)
     (hnd : ns.Nodup) (hns : ns.length = vs.length) (hAs : As.length = vs.length)
@@ -255,18 +257,18 @@ theorem make_fields_rule_below {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm
     (hv : ∀ p ∈ As.zip vs, ∀ (j : Nat) (hj : j + 1 < n), p.1 j (trunc j (by omega) W) p.2)
     (result : ∀ j (hj : j < n) (U : WorldT j),
       WExt (trunc j (Nat.le_of_lt hj) W) U →
-      recT (ns.zip As) j U (.objAt (slots h.length ns) .absent (h.length + vs.length)) →
+      recT (ns.zip (ss.zip As)) j U (.objAt (slots h.length ns) .absent (h.length + vs.length)) →
       Q j U (.objAt (slots h.length ns) code (h.length + vs.length))) :
     Safe Ξ Q n W h (.makeAt code ns vs) :=
   OperationWorlds.erase n W h (.makeAt code ns vs)
-    (AllocationWorlds.allocation_safe hA hV n W h code ns vs hnd hns hAs hvals hadm hok hv result)
+    (AllocationWorlds.allocation_safe hss hA hV n W h code ns vs hnd hns hAs hvals hadm hok hv result)
 
 /-- **Allocating an object with no named field**, as `.bind` does: the
 result meets `Q` at whatever identity the allocation gives it. -/
 theorem make_empty_rule {Q : Fam} (hQ : Adm Q) (n : Nat) (W : WorldT n) (h : Heap)
     (code : CallCode) (hadm : WorldAdm W) (hok : HeapOk n W h)
     (hv : ∀ oid, Q n W (.objAt [] code oid)) : Safe Ξ Q n W h (.makeAt code [] []) :=
-  make_fields_rule (As := []) (fun _ h => by simp at h) (fun _ h => by simp at h) n W h code [] [] List.nodup_nil rfl rfl
+  make_fields_rule (ss := []) (As := []) rfl (fun _ h => by simp at h) (fun _ h => by simp at h) n W h code [] [] List.nodup_nil rfl rfl
     (by simp) hadm hok (by simp) fun j hj U hx _ =>
       hQ.mono j _ U hx _ (hQ.down_le n j (Nat.le_of_lt hj) W _ (hv _))
 
@@ -278,7 +280,7 @@ theorem makeFn_rule {A Q : Fam} (hA : Adm A) (hV : ValOnly A) (n : Nat) (W : Wor
     (result : ∀ j (hj : j < n) (U : WorldT j),
       WExt (trunc j (Nat.le_of_lt hj) W) U → Q j U (.fnObj h.length code)) :
     Safe Ξ Q n W h (.makeFn code v) :=
-  make_fields_rule (As := [A]) (by intro B hB; rw [List.mem_singleton.mp hB]; exact hA)
+  make_fields_rule (ss := [.field]) (As := [A]) rfl (by intro B hB; rw [List.mem_singleton.mp hB]; exact hA)
     (by intro B hB; rw [List.mem_singleton.mp hB]; exact hV) n W h code
     [codeField] [v] (by simp) rfl rfl
     (by intro u hu; rw [List.mem_singleton.mp hu]; exact hval) hadm hok

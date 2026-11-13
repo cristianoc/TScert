@@ -165,7 +165,7 @@ end
 theorem clause_operands_map (f : α → β) (c : Clause α) :
     (c.map f).operands = c.operands.map f := by
   cases c <;> simp [Clause.map, Clause.operands, Tuple.map, Tuple.operands,
-    mapFields, OptionalField.map, MethodMembers.Sig.map, MethodMembers.Sig.operands,
+    mapFields, mapStored, mapCells, OptionalField.map, MethodMembers.Sig.map, MethodMembers.Sig.operands,
     Arrow.map, Arrow.operands, RestArrow.map, RestArrow.mapWith, RestArrow.operands,
     MethodArrow.map, MethodArrow.operands, MethodRestArrow.map,
     MethodRestArrow.mapWith, MethodRestArrow.operands, Contract.map,

@@ -120,7 +120,9 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Tree) := do
           effect⟩ : CallEffects.MethodArrow (Ty Tree)), statics)
       let statics := (parts.head?.map (·.2)).getD []
       if parts.any (·.2 != statics) then throw "a class value's instances state the same static fields"
-      let fields := statics.filterMap fun (k, r, t) => if r then none else some (k, t)
+      -- A class value is an ordinary object: a static field's role is `field`.
+      let fields : List (Stored (Ty Tree)) :=
+        statics.filterMap fun (k, r, t) => if r then none else some (k, .field, t)
       let views := statics.filterMap fun (k, r, t) => if r then some (k, t) else none
       return [← SourceTypes.use (.ctors (parts.map (·.1)) [] fields [] views)]
     else if ["array", "store"].contains (← jStr (← jField atom "a")) then
@@ -167,12 +169,13 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Tree) := do
         if mode != "absent" && mode != "synthetic" then
           throw "unsupported synthetic index marker"
       let element ← callableType (← jField index "read")
-      let invariant := fields.filterMap fun (name, A, writable) =>
-        if writable then some (name, A) else none
+      -- A TypeScript record type describes ordinary objects: role `field`.
+      let invariant : List (Stored (Ty Tree)) := fields.filterMap fun (name, A, writable) =>
+        if writable then some (name, .field, A) else none
       let views := fields.filterMap fun (name, A, writable) =>
         if writable then none else some (name, A)
       return [← SourceTypes.use (.dict invariant [] views [(.strings, element)] [] [] []
-        (if writable then [(.strings, element)] else []))]
+        (if writable then [(.strings, .field, element)] else []))]
     else if (← jStr (← jField atom "a")) == "record" && hasOptional atom then
       return [← optionalRecord atom]
     else if (← jStr (← jField atom "a")) == "record" then
@@ -182,7 +185,9 @@ partial def callableType (j : Json) : SourceTypes.Lowering (Ty Tree) := do
         (Json.mkObj [("top", toJson false), ("atoms", toJson [atom])])
       let lowered ← fields.mapM fun (name, read, write) => do
         return (name, ← callableType read, ← callableType write)
-      let invariant := lowered.filterMap fun (n, r, w) => if r == w then some (n, w) else none
+      -- A TypeScript record type describes ordinary objects: role `field`.
+      let invariant : List (Stored (Ty Tree)) :=
+        lowered.filterMap fun (n, r, w) => if r == w then some (n, .field, w) else none
       let views := lowered.filterMap fun (n, r, w) => if r == w then none else some (n, r)
       return [← SourceTypes.use (.refs invariant [] views)]
     else
@@ -219,10 +224,12 @@ partial def optionalRecord (atom : Json) : SourceTypes.Lowering Tree := do
   let lowered ← fields.mapM fun (name, read, write, optional) => do
     let r ← callableType read
     return (name, r, r != (← callableType write), optional)
-  let invariant := lowered.filterMap fun (n, t, ro, o) => if o || ro then none else some (n, t)
+  -- A TypeScript record type describes ordinary objects: role `field`.
+  let invariant : List (Stored (Ty Tree)) :=
+    lowered.filterMap fun (n, t, ro, o) => if o || ro then none else some (n, .field, t)
   let views := lowered.filterMap fun (n, t, ro, o) => if !o && ro then some (n, t) else none
   let optional := lowered.filterMap fun (n, t, ro, o) =>
-    if o then some (⟨n, ro, t⟩ : OptionalField (Ty Tree)) else none
+    if o then some (⟨n, ro, .field, t⟩ : OptionalField (Ty Tree)) else none
   SourceTypes.use (.refs invariant [] views optional)
 
 end
@@ -240,6 +247,11 @@ idempotent, so two spellings of one contract intern as one label. -/
 private def canonicalFields (fs : List (PropKey × Ty ι)) : List (PropKey × Ty ι) :=
   (fs.mergeSort fun a b => CellClaims.beforeFields [a] [b]).eraseDups
 
+/-- Storage positions in canonical order, by key, role and label, each
+once. -/
+private def canonicalStored (fs : List (Stored (Ty ι))) : List (Stored (Ty ι)) :=
+  (fs.mergeSort fun a b => CellClaims.beforeStored [a] [b]).eraseDups
+
 /-- One object under every conjunct. Each conjunct is a record with views, as
 a plain record arm is (`CellUnion.lower`): its invariant fields and its
 readonly fields as views. The conjunction is their meet, the one a
@@ -251,13 +263,14 @@ private def cellConjunction (atom : Json) : SourceTypes.Lowering Tree := do
     let c ← cellContract part
     if !CellUnion.viewed c then
       throw "cell read and write types do not describe the same invariant"
-    let fields := (c.filter fun f => !CellUnion.readonly f).map fun f => (f.name, f.read)
+    let fields : List (Stored (Ty Tree)) :=
+      (c.filter fun f => !CellUnion.readonly f).map fun f => (f.name, .field, f.read)
     let views := (c.filter CellUnion.readonly).map fun f => (f.name, f.read)
     return [(.refs fields [] views : PositiveNormalization.Clause (Ty Tree))]
   let some last := clauses.getLast? | throw "an empty conjunction is not a contract"
   match clauses.dropLast.foldr PositiveNormalization.meetLists last with
   | [.refs fields [] views [] [] []] =>
-    SourceTypes.use (.refs (canonicalFields fields) [] (canonicalFields views))
+    SourceTypes.use (.refs (canonicalStored fields) [] (canonicalFields views))
   | _ => throw "a record conjunction meets as one record"
 
 /-- A callable bag is one value satisfying both contracts, never a union. -/
@@ -272,9 +285,11 @@ private def callableObject (atom : Json) : SourceTypes.Lowering Tree := do
   let c ← cellContract (← jField atom "bag")
   if !CellUnion.invariant c then
     throw "callable field requires an invariant read/write contract"
+  -- A callable object's bag is an ordinary object's: role `field`.
+  let bag : List (Stored (Ty Tree)) := c.map fun f => (f.name, .field, f.write)
   match E with
-  | none => SourceTypes.use (.callable (c.map fun f => (f.name, f.write)) [] [⟨Rc,Ds,R,.ordinary⟩] [])
-  | some E => SourceTypes.use (.callable (c.map fun f => (f.name, f.write)) [] [] [⟨Rc,(Ds,E),R,.ordinary⟩])
+  | none => SourceTypes.use (.callable bag [] [⟨Rc,Ds,R,.ordinary⟩] [])
+  | some E => SourceTypes.use (.callable bag [] [] [⟨Rc,(Ds,E),R,.ordinary⟩])
 
 /-- Validate every union arm. Record alternatives may absorb a redundant
 read/write contract into an existing invariant alternative (CellUnion.normalize_exact).

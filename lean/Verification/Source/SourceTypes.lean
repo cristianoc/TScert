@@ -107,7 +107,7 @@ def renderIn {ι : Type} [Labels ι] (G : NormalGraph ι) (A : Ty ι) : String :
   | [] => "never"
   | [.boolLit true, .boolLit false] | [.boolLit false, .boolLit true] => "boolean"
   | cs => String.intercalate " | " (cs.map fun c => match c with
-      | .refs fs _ vs .. => if ((fs ++ vs).lookup storeField).isSome then "array" else clauseName c
+      | .refs fs _ vs .. => if ((Stored.views fs ++ vs).lookup storeField).isSome then "array" else clauseName c
       | _ => clauseName c).eraseDups
 
 def render (T : State) (A : Ty Tree) : String :=

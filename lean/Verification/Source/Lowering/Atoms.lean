@@ -31,7 +31,7 @@ new observation of their source expression. -/
       let invariant := fun (fld : PropKey) => do
         if clauses.isEmpty then none
         let ws ← clauses.mapM fun (c : PositiveNormalization.Clause (Ty Tree)) => match c with
-          | PositiveNormalization.Clause.refs W [] [] [] [] [] [] => W.lookup fld
+          | PositiveNormalization.Clause.refs W [] [] [] [] [] [] => (Stored.views W).lookup fld
           | _ => none
         some ws.flatten.eraseDups
       let (uniform, pointwise) := asserted.partition fun (fld, R) =>
@@ -1336,7 +1336,7 @@ with the knowledge their edges carry, such as the field a failed test left
       let G := SourceTypes.graph (← table)
       let T := Γ[k]?.getD []
       let fixes := fun (a : Tree) => (PositiveRules.expand G [a]).all fun c => match c with
-        | .refs fs _ vs .. => (fs ++ vs).any (·.1 == f)
+        | .refs fs _ vs .. => (Stored.views fs ++ vs).any (·.1 == f)
         | _ => false
       let refines := [true, false].any fun q =>
         (BranchRefinement.fieldSlice G T f .truthy q).length != T.length

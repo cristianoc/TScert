@@ -117,7 +117,7 @@ before the member is read. -/
       | _ => throw "only field and local assignments are supported"
     match PositiveRules.expand (SourceTypes.graph (← table)) B with
     | [.refs fs [] _ _ _ _ _] =>
-      let some T := fs.lookup fld
+      let some T := (Stored.views fs).lookup fld
         | throw (locatedRefusal (← table) original.span .storageWrite
           s!"update of a field '{fld}' the contract does not name as a writable location")
       pure (.field (.var i) fld T)
@@ -408,7 +408,7 @@ copy takes: the copy of such an object holds all of it. -/
     let classes := (cs.filterMap keyClass).eraseDups
     let cellType : Option (Ty Tree) := match PositiveRules.expand G X with
       | [.dict _ _ _ _ _ _ _ cells _] =>
-        let ts := classes.map fun K => (cells.find? fun y => IndexKeys.within K y.1).map (·.2)
+        let ts := classes.map fun K => (cells.find? fun y => IndexKeys.within K y.1).map (·.2.2)
         match (ts.filterMap id).eraseDups with
         | [V] => if ts.all Option.isSome then some V else none
         | _ => none

@@ -1577,9 +1577,10 @@ homogeneous writable store; that store, at its location now, has `ls`, and
 element or appends (`setElem_store_safe`), and writes the store it yields,
 which meets the field's contract, back. -/
 theorem boundedWrite_safe [DecidableEq ι] {Ξ : Fam} {G : NormalGraph ι} {R S E : Ty ι}
-    {fs vs : List (PropKey × Ty ι)} {os : List (OptionalField (Ty ι))} {ms : List (MethodMembers.Sig (Ty ι))}
-    {ks : List KeyBound} {st : List PropKey} {pr : ArrayPresence}
-    (hr : Represents G R (.refs fs [] vs os ms ks st)) (hm : (arrayStoreKey, S) ∈ fs)
+    {fs : List (Stored (Ty ι))} {vs : List (PropKey × Ty ι)} {os : List (OptionalField (Ty ι))}
+    {ms : List (MethodMembers.Sig (Ty ι))}
+    {ks : List KeyBound} {st : List PropKey} {pr : ArrayPresence} {sr : StorageRole}
+    (hr : Represents G R (.refs fs [] vs os ms ks st)) (hm : (arrayStoreKey, sr, S) ∈ fs)
     (hS : Represents G S (.list ⟨[], [], some E, false, pr⟩ []))
     {obj vv : Tm} {s : Nat} {ls : List (Option Nat)} {b : UInt64} {i : Nat} {n : Nat} {W : WorldT n} {h : Heap}
     (hobj : meaning G R n W obj) (hs : Footprints.storeOf obj = some s) (hl : h[s]? = some (.arr ls))
@@ -1732,7 +1733,7 @@ record whose invariant store field holds one list contract of no required
 or optional position. -/
 def writableElement (G : NormalGraph ι) (R : Ty ι) : Option (Ty ι) :=
   match expand G R with
-  | [.refs fs [] _ _ _ _ _] => match fs.lookup arrayStoreKey with
+  | [.refs fs [] _ _ _ _ _] => match (Stored.views fs).lookup arrayStoreKey with
     | some S => match expand G S with
       | [.list ⟨[], [], some E, false, _⟩ []] => some E
       | _ => none
@@ -1740,7 +1741,7 @@ def writableElement (G : NormalGraph ι) (R : Ty ι) : Option (Ty ι) :=
   | _ => none
 
 theorem writableElement_sound {G : NormalGraph ι} {R E : Ty ι} (h : writableElement G R = some E) :
-    ∃ fs vs os ms ks st S pr, Represents G R (.refs fs [] vs os ms ks st) ∧ (arrayStoreKey, S) ∈ fs ∧
+    ∃ fs vs os ms ks st sr S pr, Represents G R (.refs fs [] vs os ms ks st) ∧ (arrayStoreKey, sr, S) ∈ fs ∧
       Represents G S (.list ⟨[], [], some E, false, pr⟩ []) := by
   unfold writableElement at h
   split at h
@@ -1750,7 +1751,8 @@ theorem writableElement_sound {G : NormalGraph ι} {R E : Ty ι} (h : writableEl
       split at h
       · rename_i pr hE
         cases h
-        exact ⟨fs, vs, os, ms, ks, st, S, pr, hR, PositiveRules.mem_of_lookup hS, hE⟩
+        obtain ⟨sr, hm⟩ := Stored.mem_views.mp (PositiveRules.mem_of_lookup hS)
+        exact ⟨fs, vs, os, ms, ks, st, sr, S, pr, hR, hm, hE⟩
       · cases h
     · cases h
   · cases h
@@ -1782,7 +1784,7 @@ theorem boundedWrite_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
   · rename_i R V hR hV
     split at htypes
     · rename_i E hE
-      obtain ⟨fs, vs, os, ms, ks, st, S, pr, hrep, hm, hS⟩ := writableElement_sound hE
+      obtain ⟨fs, vs, os, ms, ks, st, _, S, pr, hrep, hm, hS⟩ := writableElement_sound hE
       obtain ⟨s, ls, b, idx, hs, hl, hb, hidx, hle⟩ := bounded_sound hbd hk
       have hv : meaning G E n W (ρ v) := PositiveCertificates.acceptedUsing htypes n W _ (he.2 v V hV)
       have hsafe := boundedWrite_safe (Ξ := excOf G) hrep hm hS (he.2 a R hR) hs hl hidx (by simpa using hle) hv hw hh
@@ -1863,7 +1865,8 @@ written or read only, holds one list contract. -/
 def arraySlot (G : NormalGraph ι) (Γ : List (Ty ι)) (j : Nat) : Bool :=
   match Γ[j]? with
   | some R => match expand G R with
-    | [.refs fs [] vs _ _ _ _] => match (fs.lookup arrayStoreKey).orElse fun _ => vs.lookup arrayStoreKey with
+    | [.refs fs [] vs _ _ _ _] =>
+      match ((Stored.views fs).lookup arrayStoreKey).orElse fun _ => vs.lookup arrayStoreKey with
       | some S => match expand G S with
         | [.list _ []] => true
         | _ => false
@@ -1914,18 +1917,19 @@ theorem arraySlot_region {G : NormalGraph ι} {Γ : List (Ty ι)} {j : Nat} {ρ 
   obtain ⟨flds, l, c, oid, hobj, hf, hlc, hag⟩ : ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr (n + 1)) (oid : Nat),
       ρ j = .objAt flds .absent oid ∧ flds.lookup arrayStoreKey = some l ∧ lookup W l = some c ∧
       ∀ (i : Nat) (hi : i < n + 1) (W' : WorldT i) (u : Val), c i hi W' u → meaning G S i W' u := by
-    cases hfs : fs.lookup arrayStoreKey with
+    cases hfs : (Stored.views fs).lookup arrayStoreKey with
     | some S' =>
       rw [hfs] at hS
       simp only [Option.orElse_some, Option.some.injEq] at hS
       subst hS
+      obtain ⟨_, hm⟩ := Stored.mem_views.mp (PositiveRules.mem_of_lookup hfs)
       obtain ⟨flds, l, c, oid, hobj, hf, hlc, hag⟩ := recT_at
-        (ReferenceConjunctions.mem_famsOf.mpr ⟨S', PositiveRules.mem_of_lookup hfs, rfl⟩) hsem.1.1
+        (ReferenceConjunctions.mem_famsOf.mpr ⟨S', hm, rfl⟩) hsem.1.1
       exact ⟨flds, l, c, oid, hobj, hf, hlc, fun i hi W' u hu => (hag i hi W' u).mp hu⟩
     | none =>
       rw [hfs] at hS
       simp only [Option.orElse_none] at hS
-      exact viewsT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨S, PositiveRules.mem_of_lookup hS, rfl⟩)
+      exact viewsT_at (ReferenceConjunctions.mem_viewsOf.mpr ⟨S, PositiveRules.mem_of_lookup hS, rfl⟩)
         (by simp [arrayStoreKey, lengthKey]) hsem.2.1
   obtain ⟨w, hwv, hwc⟩ := hh.2 l c hlc
   have hstore : meaning G S n (trunc n (Nat.le_succ n) W) w := hag n (by omega) _ _ (hwc n (by omega))
@@ -2552,7 +2556,7 @@ theorem boundedWrite_store [DecidableEq ι] {G : NormalGraph ι} {images : Insta
   · rename_i R V hR hV
     split at htypes
     · rename_i E hE
-      obtain ⟨fs, vs, os, ms, ks, st, S, pr, hrep, hm, hS⟩ := writableElement_sound hE
+      obtain ⟨fs, vs, os, ms, ks, st, _, S, pr, hrep, hm, hS⟩ := writableElement_sound hE
       obtain ⟨s, ls, b, idx, hs, hl, hb, hidx, hle⟩ := bounded_sound hbd hk
       have hv : meaning G E n W (ρ v) := PositiveCertificates.acceptedUsing htypes n W _ (he.2 v V hV)
       have hsafe := boundedWrite_safe (Ξ := excOf G) hrep hm hS (he.2 a R hR) hs hl hidx (by simpa using hle) hv hw hh
@@ -2934,7 +2938,7 @@ theorem writeStep_store [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
       obtain ⟨⟨⟨rfl, hk⟩, hj⟩, hsel⟩ := hcond
       split at hsel
       · rename_i Ref hi
-        obtain ⟨B, L, hmem, -, hbag⟩ := ExpressionEffects.storeFieldEvery_sound hsel (he.2 _ Ref hi)
+        obtain ⟨B, _, L, hmem, -, hbag⟩ := ExpressionEffects.storeFieldEvery_sound hsel (he.2 _ Ref hi)
         obtain ⟨flds, code, oid, hl0, _, hrec⟩ := hbag
         obtain ⟨flds1, fl, cfl, oid', hproj, hfd, -, -⟩ :=
           recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
@@ -2958,7 +2962,7 @@ theorem writeStep_store [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
           have hobj : ∃ flds code oid fl, ρ i = .objAt flds code oid ∧ flds.lookup arrayStoreKey = some fl := by
             rcases Bool.or_eq_true_iff.mp hsel with hst | hst
             all_goals
-              obtain ⟨B, L, hmem, -, hbag⟩ := ExpressionEffects.storeField_sound hst (he.2 _ Ref hi)
+              obtain ⟨B, _, L, hmem, -, hbag⟩ := ExpressionEffects.storeField_sound hst (he.2 _ Ref hi)
               obtain ⟨flds, code, oid, hl0, _, hrec⟩ := hbag
               obtain ⟨flds1, fl, cfl, oid', hproj, hfd, -, -⟩ :=
                 recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec

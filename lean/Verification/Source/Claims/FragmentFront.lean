@@ -213,7 +213,8 @@ def lengthKindIn (T : EquationStore.State) (j : Json) : Option HeapKnowledge.Ter
   match (Fragment.translate j).run T with
   | .error _ => HeadInference.kindOfType j
   | .ok (A, T) =>
-    let field := fun (fs vs : List (PropKey × List Tree)) (k : PropKey) => (fs.lookup k <|> vs.lookup k).isSome
+    let field := fun (fs : List (Stored (List Tree))) (vs : List (PropKey × List Tree)) (k : PropKey) =>
+      ((Stored.views fs).lookup k <|> vs.lookup k).isSome
     let kinds := (PositiveRules.expand (SourceTypes.graph T) A).filterMap fun c => match c with
       | .nul | .undef => none
       | .str | .strLit _ | .strIn _ => some (some HeapKnowledge.Term.Kind.strLength)
@@ -292,7 +293,8 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
       let typed := (envMap.get? pos).getD []
       let holdsArray := fun (n : String) => match typed.lookup n with
         | some (.ok A) =>
-          let field := fun (fs vs : List (PropKey × List Tree)) (k : PropKey) => (fs.lookup k <|> vs.lookup k).isSome
+          let field := fun (fs : List (Stored (List Tree))) (vs : List (PropKey × List Tree)) (k : PropKey) =>
+            ((Stored.views fs).lookup k <|> vs.lookup k).isSome
           let cs := PositiveRules.expand (SourceTypes.graph T) A
           !cs.isEmpty && cs.all fun
             | .refs fs _ vs .. => field fs vs SourceTypes.storeField || field fs vs viewLengthKey

@@ -87,12 +87,15 @@ def conjuncts (atom : Json) : Except String (List Json) := do
 section
 variable {ι : Type} [Labels ι]
 
-/-- The label of a location under one record contract. -/
-def reference (fs : List (PropKey × Ty Tree)) : Lowering Tree := use (.refs fs [] [])
+/-- The label of a location under one record contract, each invariant
+field with the role its caller's allocation gives its location. -/
+def reference (fs : List (Stored (Ty Tree))) : Lowering Tree := use (.refs fs [] [])
 
 /-- The label of a location under one record contract with readonly views:
-the invariant fields and, separately, the fields read through a capability. -/
-def viewReference (fs vs : List (PropKey × Ty Tree)) : Lowering Tree := use (.refs fs [] vs)
+the invariant fields, each with its role, and, separately, the fields read
+through a capability. -/
+def viewReference (fs : List (Stored (Ty Tree))) (vs : List (PropKey × Ty Tree)) : Lowering Tree :=
+  use (.refs fs [] vs)
 
 /-- Field maps compare by name first, then by the labels their contracts got. -/
 def beforeFields : List (PropKey × Ty ι) → List (PropKey × Ty ι) → Bool
@@ -100,6 +103,15 @@ def beforeFields : List (PropKey × Ty ι) → List (PropKey × Ty ι) → Bool
   | _ :: _, [] => false
   | a :: as, b :: bs =>
     a.1.before b.1 || (a.1 == b.1 && (Labels.before a.2 b.2 || (a.2 == b.2 && beforeFields as bs)))
+
+/-- Storage positions compare by name first, then by role, then by the
+labels their contracts got. -/
+def beforeStored : List (Stored (Ty ι)) → List (Stored (Ty ι)) → Bool
+  | [], _ => true
+  | _ :: _, [] => false
+  | a :: as, b :: bs =>
+    a.1.before b.1 || (a.1 == b.1 && (a.2.1.before b.2.1 || (a.2.1 == b.2.1 &&
+      (Labels.before a.2.2 b.2.2 || (a.2.2 == b.2.2 && beforeStored as bs)))))
 
 end
 

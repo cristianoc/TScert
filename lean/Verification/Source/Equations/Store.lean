@@ -254,7 +254,7 @@ instance : FromJson State where
     let arrayProtos : List (List Tree) := heads.toList.flatMap fun d => match d.body with
       | some (.clauses cs) => cs.filterMap fun c => if arrayShaped c then
           (match c with
-            | .refs a bs vs .. => ((a :: bs).flatten ++ vs).lookup CallArguments.protoField
+            | .refs a bs vs .. => (Stored.views (a :: bs).flatten ++ vs).lookup CallArguments.protoField
             | _ => none)
           else none
       | _ => []
@@ -698,8 +698,8 @@ def resolutionContext (s : State) (p : NativePromise E) :
 /-- The keys a record clause names: its fields, views, optional fields and
 methods. -/
 private def clauseKeys : Clause (List Tree) → List PropKey
-  | .refs fs rs vs os ms _ _ => (fs ++ rs.flatten ++ vs).map (·.1) ++ os.map (·.key) ++ ms.map (·.key)
-  | .dict fs rs vs _ os ms _ _ _ => (fs ++ rs.flatten ++ vs).map (·.1) ++ os.map (·.key) ++ ms.map (·.key)
+  | .refs fs rs vs os ms _ _ => (fs ++ rs.flatten).map (·.1) ++ vs.map (·.1) ++ os.map (·.key) ++ ms.map (·.key)
+  | .dict fs rs vs _ os ms _ _ _ => (fs ++ rs.flatten).map (·.1) ++ vs.map (·.1) ++ os.map (·.key) ++ ms.map (·.key)
   | _ => []
 
 /-- The prototype operands a clause states under `[[proto]]`. -/

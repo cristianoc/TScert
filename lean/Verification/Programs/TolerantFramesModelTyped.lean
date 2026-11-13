@@ -38,13 +38,13 @@ def storeListTy (G : NormalGraph ι) (L : Ty ι) : Bool :=
 field `fld`, at a type `storeListTy` accepts in each. -/
 def storeListField (G : NormalGraph ι) (cs : List (Clause (Ty ι))) (fld : PropKey) : Bool :=
   !cs.isEmpty && cs.all fun c => match clauseBagOperand c with
-    | some B => B.any (fun p => decide (p.1 = fld)) && B.all (fun p => !decide (p.1 = fld) || storeListTy G p.2)
+    | some B => B.any (fun p => decide (p.1 = fld)) && B.all (fun p => !decide (p.1 = fld) || storeListTy G p.2.2)
     | none => false
 
 theorem storeListField_sound [DecidableEq ι] {G : NormalGraph ι} {Ref : Ty ι} {fld : PropKey} {n : Nat}
     {W : WorldT n} {v : Val}
     (hr : storeListField G (expand G Ref) fld = true) (hv : meaning G Ref n W v) :
-    ∃ B L, (fld, L) ∈ B ∧ storeListTy G L = true ∧
+    ∃ B s L, (fld, s, L) ∈ B ∧ storeListTy G L = true ∧
       bagT (ReferenceConjunctions.famsOf (meaning G) B) n W v := by
   simp only [storeListField, Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_eq_false_iff,
     List.all_eq_true] at hr
@@ -59,12 +59,12 @@ theorem storeListField_sound [DecidableEq ι] {G : NormalGraph ι} {Ref : Ty ι}
     simp only [Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true, Bool.not_eq_true',
       decide_eq_false_iff_not] at hb
     obtain ⟨hany, hall⟩ := hb
-    obtain ⟨⟨g, El⟩, hmem, hg⟩ := List.any_eq_true.mp hany
+    obtain ⟨⟨g, s, El⟩, hmem, hg⟩ := List.any_eq_true.mp hany
     simp only [decide_eq_true_eq] at hg
     subst hg
     have hsrc : storeListTy G El = true := (hall _ hmem).resolve_left (by simp)
-  · exact ⟨_, El, hmem, hsrc, recT_bag hc.1.1⟩
-  · exact ⟨_, El, hmem, hsrc, hc.1.1.1.1⟩
+  · exact ⟨_, s, El, hmem, hsrc, recT_bag hc.1.1⟩
+  · exact ⟨_, s, El, hmem, hsrc, hc.1.1.1.1⟩
 
 /-- A member of a type of one `.list` clause is a store under a tuple
 contract. -/
@@ -84,7 +84,7 @@ theorem storeListField_at [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
     (hs : storeListField G (expand G Ref) arrayStoreKey = true) :
     ∃ (L : Ty ι) (st : Nat) (c : Ctr n), storeListTy G L = true ∧ storeOf (ρ x) = some st ∧
       lookup W st = some c ∧ ∀ (j : Nat) (hj : j < n) (U : WorldT j) (u : Val), c j hj U u ↔ meaning G L j U u := by
-  obtain ⟨B, L, hmem, hL, hbag⟩ := storeListField_sound hs (he.2 x Ref hx)
+  obtain ⟨B, _, L, hmem, hL, hbag⟩ := storeListField_sound hs (he.2 x Ref hx)
   obtain ⟨flds, code, oid, hv, -, hrec⟩ := hbag
   obtain ⟨flds1, fl, c, oid', hproj, hfd, hlookup, hagree⟩ :=
     recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨L, hmem, rfl⟩) hrec
@@ -254,7 +254,7 @@ theorem valueClass_ok [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} 
   · rename_i hyk
     obtain ⟨rfl, rfl⟩ := hyk
     cases hc
-    obtain ⟨B, A, hmem, hsrc, hbag⟩ := sourceField_sound hs (he.2 y Ref hx)
+    obtain ⟨B, _, A, hmem, hsrc, hbag⟩ := sourceField_sound hs (he.2 y Ref hx)
     obtain ⟨flds, code, oid, hv, -, hrec⟩ := hbag
     obtain ⟨flds1, fl, cc, oid', hproj, hfd, hlookup, hagree⟩ :=
       recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hmem, rfl⟩) hrec

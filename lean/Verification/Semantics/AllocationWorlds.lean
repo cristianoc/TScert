@@ -4,19 +4,22 @@ import Verification.Semantics.OperationWorlds
 namespace Verification.AllocationWorlds
 open OperationResults OperationWorlds
 
-/-- The field families are the allocation's declared contracts. The result
-bound Q does not participate in the choice of successor world. -/
-def next (As : List Fam) : Config → Config
+/-- The allocation's entries, a role and a contents type per field, determine
+the successor world: each field's contract is its entry's type. The result
+bound Q does not participate in the choice. The world of this development
+records contracts only; an entry's role is what the kinded world records
+beside it (`Kinds.objectEntries`). -/
+def next (Es : List (StorageRole × Fam)) : Config → Config
   | ⟨n+1,W,h,.makeAt code ns vs⟩ =>
       ⟨n, appendWs (trunc n (Nat.le_succ n) W)
-        (As.map (fun A => (res A : Ctr n)) ++ [res nulT]),
+        (Es.map (fun e => (res e.2 : Ctr n)) ++ [res nulT]),
         h ++ vs ++ [.nul], .objAt (slots h.length ns) code (h.length + vs.length)⟩
   | c => c
 
-def policy (As : List Fam) : Policy :=
-  ⟨fun c d => next As c = d, fun h₁ h₂ => h₁.symm.trans h₂⟩
+def policy (Es : List (StorageRole × Fam)) : Policy :=
+  ⟨fun c d => next Es c = d, fun h₁ h₂ => h₁.symm.trans h₂⟩
 
-theorem allocation_safe {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A) (hV : ∀ A ∈ As, ValOnly A)
+theorem allocation_safe {Q : Fam} {ss : List StorageRole} {As : List Fam} (hss : ss.length = As.length) (hA : ∀ A ∈ As, Adm A) (hV : ∀ A ∈ As, ValOnly A)
     (n : Nat) (W : WorldT n) (h : Heap) (code : CallCode)
     (ns : List PropKey) (vs : List Val)
     (hnd : ns.Nodup) (hns : ns.length = vs.length) (hAs : As.length = vs.length)
@@ -25,12 +28,15 @@ theorem allocation_safe {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A) (hV
     (hv : ∀ p ∈ As.zip vs, ∀ (j : Nat) (hj : j + 1 < n), p.1 j (trunc j (by omega) W) p.2)
     (result : ∀ j (hj : j < n) (U : WorldT j),
       WExt (trunc j (Nat.le_of_lt hj) W) U →
-      recT (ns.zip As) j U (.objAt (slots h.length ns) .absent (h.length + vs.length)) →
+      recT (ns.zip (ss.zip As)) j U (.objAt (slots h.length ns) .absent (h.length + vs.length)) →
       Q j U (.objAt (slots h.length ns) code (h.length + vs.length))) :
-    SafeWith Ξ (policy As) Q n W h (.makeAt code ns vs) := by
+    SafeWith Ξ (policy (ss.zip As)) Q n W h (.makeAt code ns vs) := by
   cases n with
   | zero => trivial
   | succ p =>
+    have hE : (ss.zip As).map (fun e => (res e.2 : Ctr p)) = As.map (fun A => (res A : Ctr p)) := by
+      rw [show (fun e : StorageRole × Fam => (res e.2 : Ctr p)) = (fun A => (res A : Ctr p)) ∘ Prod.snd
+        from rfl, ← List.map_map, List.map_snd_zip (by omega)]
     have hcadm : ∀ c ∈ As.map (fun A => (res A : Ctr p)), CtrAdm c := by
       intro c hc
       obtain ⟨A, hA', rfl⟩ := List.mem_map.mp hc
@@ -67,7 +73,7 @@ theorem allocation_safe {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A) (hV
       .makeFields hvals hns,
       by simpa only [List.append_assoc] using
         heap_allocs p contracts (trunc p (Nat.le_succ p) W) h (vs ++ [.nul]) (HeapOk_trunc p W h hok)
-          (WorldAdm_trunc _ hadm) hcadm' (by simp [contracts, hAs]) hcont', (by simp [policy, next, contracts]), ?_⟩
+          (WorldAdm_trunc _ hadm) hcadm' (by simp [contracts, hAs]) hcont', (by simp only [policy, next, contracts, hE]), ?_⟩
     cases p with
     | zero => trivial
     | succ q =>

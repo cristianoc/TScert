@@ -71,7 +71,7 @@ set_option maxHeartbeats 1000000
     return ← LoweringExecution.compileExprThen recursive fc scope Γ b.init fun Γ =>
       emitAt b.init.span (.var 0) (.effect continued) (A::Γ) contract
         "storage-contract" (some pos.1) (scope := held ⟨"",some b.init.span⟩::scope)
-  let reference ← lower (do return [← CellClaims.reference [(valueField, contract)]])
+  let reference ← lower (do return [← CellClaims.reference [(valueField, .cell, contract)]])
   let binding : ScopeBinding Tree := { source := ⟨b.name,some pos⟩, storage := .cell contract reference, apart := some Γ }
   let continued ← after (binding::scope)
   let drop := ⟨continued.label, some ((continued.mapping.getD (List.range (Γ.length+1))).map

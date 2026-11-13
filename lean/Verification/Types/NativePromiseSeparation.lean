@@ -80,9 +80,9 @@ theorem witness_clause (G : NormalGraph ι) (η : MixedAssignment ι)
     semWithArgs Ξ (mixedValues G η) (mixedArgs G η)
       (.refs [] [] vs [] ms ks) 1 witnessWorld (witness (viewKeys vs)) := by
   refine ⟨⟨⟨fields (viewKeys vs), 1, rfl, ?_⟩, ?_, ?_⟩, ?_, ?_, ?_, ?_, stableKeysT_nil _ _ _⟩
-  · simp [famsOf]
+  · simp [famsOf, mapStored]
   · simp
-  · simp [famsOf]
+  · simp [famsOf, mapStored]
   · intro key T hm
     obtain ⟨p, hp, he⟩ := List.mem_map.mp hm
     cases he

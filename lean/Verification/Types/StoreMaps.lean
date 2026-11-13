@@ -79,7 +79,7 @@ theorem SameMembers.nil_iff {l l' : List α} (h : SameMembers l l') : l = [] ↔
   simp only [List.eq_nil_iff_forall_not_mem, h]
 
 /-- A record's conjunctions read by membership (proved). -/
-theorem refsT_reordered {A A' : ReferenceConjunctions.Fields} {Bs Bs' : List ReferenceConjunctions.Fields}
+theorem refsT_reordered {A A' : Fields} {Bs Bs' : List Fields}
     (hA : SameMembers A A') (hB : SameMembers Bs Bs') :
     ReferenceConjunctions.refsT A' Bs' = ReferenceConjunctions.refsT A Bs := by
   funext n W v
@@ -105,7 +105,8 @@ theorem semWithArgs_reordered {Ξ : Fam} {X : α → Fam} {P : α → ArgFam} {c
     simp only [semWithArgs]
     have hA : SameMembers (ReferenceConjunctions.famsOf X a) (ReferenceConjunctions.famsOf X a') := h1.map _
     rw [refsT_reordered hA (h2.map (ReferenceConjunctions.famsOf X))]
-    simp only [viewsT, optT, MethodMembers.methodT, stableKeysT, ReferenceConjunctions.famsOf, List.mem_map, h3,
+    simp only [viewsT, optT, MethodMembers.methodT, stableKeysT, ReferenceConjunctions.famsOf,
+      ReferenceConjunctions.viewsOf, List.mem_map, h3,
       h4, h5, h6, h7]
   case dict a bs vs ds os ms ks cs st =>
     obtain ⟨a', bs', vs', ds', os', ms', ks', cs', st', rfl, h1, h2, h3, h4, h5, h6, h7, h8, h9⟩ := h
@@ -120,7 +121,8 @@ theorem semWithArgs_reordered {Ξ : Fam} {X : α → Fam} {P : α → ArgFam} {c
     simp only [semWithArgs]
     have hA : SameMembers (ReferenceConjunctions.famsOf X a) (ReferenceConjunctions.famsOf X a') := h1.map _
     rw [refsT_reordered hA (h2.map (ReferenceConjunctions.famsOf X))]
-    simp only [viewsT, optT, MethodMembers.methodT, stableKeysT, ReferenceConjunctions.famsOf, List.mem_map, h3,
+    simp only [viewsT, optT, MethodMembers.methodT, stableKeysT, ReferenceConjunctions.famsOf,
+      ReferenceConjunctions.viewsOf, List.mem_map, h3,
       h4, h5, h6, h7, h8, h9]
   all_goals (cases h; rfl)
 

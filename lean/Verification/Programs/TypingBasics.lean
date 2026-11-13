@@ -311,13 +311,21 @@ theorem allocBuiltins_of_using [DecidableEq ι] {G : NormalGraph ι}
     · exact .inl h
     · exact .inr ⟨⟨⟨⟨⟨images.builtinsOk_sound hok r hb, hu⟩, hk⟩, hn⟩, hs⟩, hp⟩
 
+/-- The role a claim's storage positions give a key's location: its position's
+role, `field` for a key no position of the claim names (a stable key, which
+the claim reads as a view). -/
+def allocRole {α : Type} (fs : List (Stored α)) (k : PropKey) : StorageRole :=
+  ((fs.find? (·.1 == k)).map (·.2.1)).getD .field
+
 theorem allocBuiltins_sound [DecidableEq ι] {G : NormalGraph ι} {parts : List (PropKey × Ty ι)}
+    {r : PropKey → StorageRole}
     (hok : allocBuiltins G parts = true) (_hnd : (parts.map Prod.fst).Nodup) (c : Clause (Ty ι))
     {k : Nat} {V : WorldT k} {base : Nat}
-    (hrec : recT ((parts.map Prod.fst).zip (parts.map fun p => meaning G p.2)) k V
+    (hrec : recT ((parts.map Prod.fst).zip (parts.map fun p => (r p.1, meaning G p.2))) k V
       (.objAt (slots base (parts.map Prod.fst)) .absent oid)) :
     builtinInvariant G (builtinValues G) c k V (.objAt (slots base (parts.map Prod.fst)) .absent oid) := by
-  have hmem : ∀ p ∈ parts, (p.1, meaning G p.2) ∈ (parts.map Prod.fst).zip (parts.map fun p => meaning G p.2) := by
+  have hmem : ∀ p ∈ parts, (p.1, r p.1, meaning G p.2) ∈
+      (parts.map Prod.fst).zip (parts.map fun p => (r p.1, meaning G p.2)) := by
     intro p hp
     rw [List.zip_map']
     exact List.mem_map.mpr ⟨p, hp, rfl⟩
@@ -1063,12 +1071,12 @@ theorem fieldLits_sem {G : NormalGraph ι} {A : Ty ι} {ks : List LitKey} (h : f
 
 /-- The fields of a clause of one record operand: a record's or a
 dictionary's. -/
-def recordFields : Clause α → Option (List (PropKey × α))
+def recordFields : Clause α → Option (List (Stored α))
   | .refs fs [] _ _ _ _ _ => some fs
   | .dict fs [] _ _ _ _ _ _ _ => some fs
   | _ => none
 
-theorem recordFields_rec {c : Clause α} {fs : List (PropKey × α)} (h : recordFields c = some fs)
+theorem recordFields_rec {c : Clause α} {fs : List (Stored α)} (h : recordFields c = some fs)
     {Ξ : Fam} {X : α → Fam} {P : α → ArgFam} {n W v} (hs : semWithArgs Ξ X P c n W v) :
     recT (ReferenceConjunctions.famsOf X fs) n W v := by
   match c, h with
@@ -1077,8 +1085,8 @@ theorem recordFields_rec {c : Clause α} {fs : List (PropKey × α)} (h : record
 
 /-- Whether a list of fields names one key at two disjoint literal sets,
 the first nonempty. -/
-def litClash (G : NormalGraph ι) (fs : List (PropKey × Ty ι)) : Bool :=
-  fs.any fun p => fs.any fun q => decide (p.1 = q.1) && match fieldLits G p.2, fieldLits G q.2 with
+def litClash (G : NormalGraph ι) (fs : List (Stored (Ty ι))) : Bool :=
+  fs.any fun p => fs.any fun q => decide (p.1 = q.1) && match fieldLits G p.2.2, fieldLits G q.2.2 with
     | some (x :: xs), some ys => (x :: xs).all fun z => !ys.contains z
     | _, _ => false
 
@@ -1099,8 +1107,8 @@ theorem conflicting_empty {G : NormalGraph ι} {A : Ty ι} {c : Clause (Ty ι)}
   split at hc
   · rename_i fs hfs
     have hrec := recordFields_rec hfs hs
-    obtain ⟨⟨f, B⟩, hp, hany⟩ := List.any_eq_true.mp hc
-    obtain ⟨⟨f', C⟩, hq, hpq⟩ := List.any_eq_true.mp hany
+    obtain ⟨⟨f, s, B⟩, hp, hany⟩ := List.any_eq_true.mp hc
+    obtain ⟨⟨f', s', C⟩, hq, hpq⟩ := List.any_eq_true.mp hany
     simp only [Bool.and_eq_true, decide_eq_true_eq] at hpq
     obtain ⟨rfl, hlit⟩ := hpq
     split at hlit

@@ -16,9 +16,9 @@ private def G : NormalGraph Nat where
     | _ => [.numIn [0x3ff0000000000000, 0x4000000000000000, 0x4008000000000000]]
 
 /-- `{ f: 1 | 2 }` and `{ f: 3 }`, each the record of one field. -/
-private def source : Clause (List Nat) := .refs [("f", [0])] [] []
-private def three : Clause (List Nat) := .refs [("f", [1])] [] []
-private def upToThree : Clause (List Nat) := .refs [("f", [2])] [] []
+private def source : Clause (List Nat) := .refs [("f", .field, [0])] [] []
+private def three : Clause (List Nat) := .refs [("f", .field, [1])] [] []
+private def upToThree : Clause (List Nat) := .refs [("f", .field, [2])] [] []
 
 -- A source field at the set `1 | 2` excludes a target field at `3`: its
 -- element `1` is a value the target does not admit.

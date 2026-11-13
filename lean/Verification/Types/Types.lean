@@ -1,4 +1,5 @@
 import Verification.Semantics.Worlds
+import Verification.Semantics.StorageRoles
 /-!
 # Semantic types
 
@@ -35,17 +36,46 @@ The location a named field finds belongs to that key alone (`Owned`), as each
 own data property of a JavaScript object is its own storage: so a write of a
 named field leaves every other key of the object unchanged
 (PROGRAM-TYPING.md, "Separation facts"). -/
-abbrev Fields := List (PropKey × Fam)
+abbrev Fields := List (Stored Fam)
+
+/-- **Read capabilities**: a contents type per named key, granting no write
+and so stating no role. -/
+abbrev Views := List (PropKey × Fam)
+
+/-- The read capability each storage position grants: its key and contents
+type, whatever its role. -/
+def Stored.views {α : Type} (fs : List (Stored α)) : List (PropKey × α) :=
+  fs.map fun p => (p.1, p.2.2)
+
+theorem Stored.mem_views {α : Type} {fs : List (Stored α)} {f : PropKey} {a : α} :
+    (f, a) ∈ Stored.views fs ↔ ∃ s, (f, s, a) ∈ fs := by
+  simp only [Stored.views, List.mem_map, Prod.mk.injEq]
+  constructor
+  · rintro ⟨⟨g, s, b⟩, hm, rfl, rfl⟩; exact ⟨s, hm⟩
+  · rintro ⟨s, hm⟩; exact ⟨(f, s, a), hm, rfl, rfl⟩
+
+@[simp] theorem Stored.views_withRole {α : Type} (s : StorageRole) (fs : List (PropKey × α)) :
+    Stored.views (withRole s fs) = fs := by
+  simp [Stored.views, withRole, Function.comp_def]
+
+@[simp] theorem Stored.views_append {α : Type} (A B : List (Stored α)) :
+    Stored.views (A ++ B) = Stored.views A ++ Stored.views B := by simp [Stored.views]
 
 /-- **Not a host object** (`hostKey`): a primitive, a callable, or an
 ordinary object. The families that grant a capability over an object's own
 keys (an invariant field, a dictionary, an own-key bound) admit only these. -/
 def NoHost (v : Val) : Prop := ∀ flds oid, v = .objAt flds .absent oid → flds.lookup hostKey = none
 
+/-- A record over storage positions. Each position states the role its
+location was allocated with (`StorageRole`); worlds of this development
+record no role, so the record's meaning reads the key and the contents type,
+and the role is what the kinded world checks
+(`Kinds.Capability.ofRole`). -/
 def recT (fs : Fields) : Fam := fun k W v =>
   ∃ (flds : List (PropKey × Nat)) (oid : Nat), v = .objAt flds .absent oid ∧
-    (∀ (f : PropKey) (T : Fam), (f, T) ∈ fs → ∀ l, flds.lookup f = some l → Owned flds f l) ∧
-    ∀ (f : PropKey) (T : Fam), (f, T) ∈ fs →
+    (∀ (f : PropKey) (s : StorageRole) (T : Fam), (f, s, T) ∈ fs →
+      ∀ l, flds.lookup f = some l → Owned flds f l) ∧
+    ∀ (f : PropKey) (s : StorageRole) (T : Fam), (f, s, T) ∈ fs →
       ∃ (l : Nat) (c : Ctr k), flds.lookup f = some l ∧ lookup W l = some c ∧
         ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ T j W' u
 
@@ -67,35 +97,43 @@ theorem mem_zip_index {α β : Type} {as : List α} {bs : List β} {a : α} {b :
         exact ⟨i + 1, by simpa using hi, by simpa using hj, h1, h2⟩
 
 /-- **The record a fresh allocation satisfies.** Each named field stands for the
-location its position was given, under the contract stated for it there. -/
-theorem recT_alloc {n : Nat} {W : WorldT n} {ns : List PropKey} {As : List Fam} {base : Nat}
+location its position was given, under the contract stated for it there, with
+the role the allocation chose for it. -/
+theorem recT_alloc {n : Nat} {W : WorldT n} {ns : List PropKey} {ss : List StorageRole}
+    {As : List Fam} {base : Nat}
     (hnd : ns.Nodup) (hlen : ns.length = As.length)
     (hl : ∀ (i : Nat) (hi : i < ns.length),
       lookup W (base + i) = some (res (As[i]'(hlen ▸ hi)))) :
-    recT (ns.zip As) n W (.objAt (slots base ns) .absent oid) := by
+    recT (ns.zip (ss.zip As)) n W (.objAt (slots base ns) .absent oid) := by
   refine ⟨slots base ns, oid, rfl, ?_⟩
-  refine ⟨fun _ _ _ _ hl => owned_of_nodup (slots_nodup base ns) hl, ?_⟩
-  intro f T hm
-  obtain ⟨i, hi, hj, rfl, rfl⟩ := mem_zip_index hm
-  exact ⟨base + i, res (As[i]'hj), lookup_slots hnd hi, hl i hi, fun _ _ _ _ => Iff.rfl⟩
+  refine ⟨fun _ _ _ _ _ hl => owned_of_nodup (slots_nodup base ns) hl, ?_⟩
+  intro f s T hm
+  obtain ⟨i, hi, hj, rfl, hp⟩ := mem_zip_index hm
+  have hT : T = As[i]'(by simp at hj; omega) := by
+    rw [List.getElem_zip] at hp
+    exact (congrArg Prod.snd hp).symm
+  subst hT
+  exact ⟨base + i, res (As[i]'(by simp at hj; omega)), lookup_slots hnd hi, hl i hi,
+    fun _ _ _ _ => Iff.rfl⟩
 
 /-- What a record type says about one of its fields. -/
-theorem recT_at {fs : List (PropKey × Fam)} {f : PropKey} {A : Fam} (hm : (f, A) ∈ fs)
+theorem recT_at {fs : Fields} {f : PropKey} {s : StorageRole} {A : Fam} (hm : (f, s, A) ∈ fs)
     {k} {W : WorldT k} {v} (h : recT fs k W v) :
     ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k) (oid : Nat),
       v = .objAt flds .absent oid ∧ flds.lookup f = some l ∧ lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ A j W' u := by
   obtain ⟨flds, oid, rfl, -, hfs⟩ := h
-  obtain ⟨l, c, hl, hw, hag⟩ := hfs f A hm
+  obtain ⟨l, c, hl, hw, hag⟩ := hfs f s A hm
   exact ⟨flds, l, c, oid, rfl, hl, hw, hag⟩
 
 /-- The location a record's named field finds belongs to that key alone. -/
 theorem recT_owned {fs : Fields} {k : Nat} {W : WorldT k} {flds : List (PropKey × Nat)} {c : CallCode} {oid : Nat}
-    (h : recT fs k W (.objAt flds c oid)) {f : PropKey} {T : Fam} (hm : (f, T) ∈ fs) {l : Nat}
+    (h : recT fs k W (.objAt flds c oid)) {f : PropKey} {s : StorageRole} {T : Fam}
+    (hm : (f, s, T) ∈ fs) {l : Nat}
     (hl : flds.lookup f = some l) : Owned flds f l := by
   obtain ⟨flds', oid', he, hown, -⟩ := h
   cases he
-  exact hown f T hm l hl
+  exact hown f s T hm l hl
 
 def nulT : Fam := fun _ _ v => v = .nul
 
@@ -129,12 +167,12 @@ def Agree {α : Type} (T U : WorldFamily α) (n : Nat) : Prop := ∀ m, m < n �
 
 /-- Allocation cannot invalidate a reference claim: a future world keeps every
 contract it already had. -/
-theorem recT_mono (fs : List (PropKey × Fam)) (k : Nat) (W W' : WorldT k) (h : WExt W W')
+theorem recT_mono (fs : Fields) (k : Nat) (W W' : WorldT k) (h : WExt W W')
     (v : Val) (hv : recT fs k W v) : recT fs k W' v := by
   obtain ⟨flds, oid, rfl, hnd, hfs⟩ := hv
   refine ⟨flds, oid, rfl, hnd, ?_⟩
-  intro f T hm
-  obtain ⟨l, c, hf, hl, hag⟩ := hfs f T hm
+  intro f s T hm
+  obtain ⟨l, c, hf, hl, hag⟩ := hfs f s T hm
   exact ⟨l, c, hf, WExt_lookup h hl, hag⟩
 
 /-! ## Admissibility -/
@@ -158,12 +196,12 @@ theorem topF_adm : Adm topF := ⟨fun _ _ _ _ => trivial, fun _ _ _ _ _ _ => tri
 
 /-- A reference is admissible whatever its element type is: the level drop is
 absorbed by restricting the stored contract, and allocation only appends. -/
-theorem recT_adm (fs : List (PropKey × Fam)) : Adm (recT fs) := by
+theorem recT_adm (fs : Fields) : Adm (recT fs) := by
   refine ⟨?_, fun n W W' hx v hv => recT_mono fs n W W' hx v hv⟩
   rintro n W v ⟨flds, oid, rfl, hnd, hfs⟩
   refine ⟨flds, oid, rfl, hnd, ?_⟩
-  intro f T hm
-  obtain ⟨l, c, hf, hl, hag⟩ := hfs f T hm
+  intro f s T hm
+  obtain ⟨l, c, hf, hl, hag⟩ := hfs f s T hm
   refine ⟨l, _, hf, lookup_trunc (Nat.le_succ n) W l c hl, ?_⟩
   intro j hj W' u
   exact hag j (by omega) W' u
@@ -172,7 +210,7 @@ theorem recT_adm (fs : List (PropKey × Fam)) : Adm (recT fs) := by
 contract implies the stated family, so a read observes that family; nothing
 here permits a write, and the backing invariant, which may be stronger, is
 never retyped. A readonly view of a mutable cell is such a capability. -/
-def viewT (fs : Fields) : Fam := fun k W v =>
+def viewT (fs : Views) : Fam := fun k W v =>
   ∀ (f : PropKey) (T : Fam), (f, T) ∈ fs →
     ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k) (oid : Nat), v = .objAt flds .absent oid ∧
       flds.lookup f = some l ∧ lookup W l = some c ∧
@@ -486,11 +524,13 @@ readonly one is a view that may be absent. -/
 structure OptionalField (α : Type) where
   key : PropKey
   readonly : Bool
+  /-- The role of the key's location where the object has it. -/
+  role : StorageRole
   type : α
   deriving Repr, DecidableEq
 
 def OptionalField.map {α β : Type} (f : α → β) (o : OptionalField α) : OptionalField β :=
-  ⟨o.key, o.readonly, f o.type⟩
+  ⟨o.key, o.readonly, o.role, f o.type⟩
 
 /-- **Optional fields.** Each named key, when the object has it, stands for a
 location whose contract is the stated type, as a required field's is, or, for
@@ -721,19 +761,19 @@ index over a class whose every field agrees with the index's contract: an
 object allocated with exactly those fields is a dictionary from the start. -/
 theorem dictCellT_of_recT {fs : Fields} {flds : List (PropKey × Nat)} {K : IndexKeys} {A : Fam}
     {k : Nat} {W : WorldT k} (hrec : recT fs k W (.objAt flds .absent oid))
-    (hown : ∀ f l, flds.lookup f = some l → ∃ T, (f, T) ∈ fs)
+    (hown : ∀ f l, flds.lookup f = some l → ∃ s T, (f, s, T) ∈ fs)
     (hproto : flds.lookup CallArguments.protoField = none) (hhost : flds.lookup hostKey = none)
-    (hA : ∀ f T, (f, T) ∈ fs → K.Admits f →
+    (hA : ∀ f s T, (f, s, T) ∈ fs → K.Admits f →
       ∀ (j : Nat) (_hj : j < k) (W' : WorldT j) (u : Val), T j W' u ↔ A j W' u) :
     dictCellT K A k W (.objAt flds .absent oid) := by
   refine ⟨flds, oid, rfl, ⟨hproto, hhost⟩, fun f l hl hk => ?_⟩
-  obtain ⟨T, hT⟩ := hown f l hl
+  obtain ⟨s, T, hT⟩ := hown f l hl
   obtain ⟨flds', oid, he, -, hfs⟩ := hrec
   cases he
-  obtain ⟨l', c, hl', hc, hag⟩ := hfs f T hT
+  obtain ⟨l', c, hl', hc, hag⟩ := hfs f s T hT
   rw [hl] at hl'
   cases hl'
-  exact ⟨c, hc, fun j hj W' u => (hag j hj W' u).trans (hA f T hT hk j hj W' u)⟩
+  exact ⟨c, hc, fun j hj W' u => (hag j hj W' u).trans (hA f s T hT hk j hj W' u)⟩
 
 /-- A fresh object owns exactly the keys it allocated. -/
 theorem slots_lookup_mem {base : Nat} {ns : List PropKey} {f : PropKey} {l : Nat}
@@ -749,13 +789,13 @@ theorem slots_lookup_none {base : Nat} {ns : List PropKey} {f : PropKey} (h : f 
   | none => rfl
   | some l => exact absurd (slots_lookup_mem hl) h
 
-theorem viewT_at {fs : Fields} {f : PropKey} {A : Fam} (hm : (f, A) ∈ fs)
+theorem viewT_at {fs : Views} {f : PropKey} {A : Fam} (hm : (f, A) ∈ fs)
     {k} {W : WorldT k} {v} (h : viewT fs k W v) :
     ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k) (oid : Nat),
       v = .objAt flds .absent oid ∧ flds.lookup f = some l ∧ lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u → A j W' u := h f A hm
 
-theorem viewT_append (A B : Fields) (k : Nat) (W : WorldT k) (v : Val) :
+theorem viewT_append (A B : Views) (k : Nat) (W : WorldT k) (v : Val) :
     viewT (A ++ B) k W v ↔ viewT A k W v ∧ viewT B k W v := by
   simp only [viewT, List.mem_append, or_imp, forall_and]
 
@@ -773,7 +813,7 @@ def arrayLenT (T : Fam) : Fam := fun k _ v =>
 
 /-- **A record's read capabilities**: each a view (`viewT`), and a view of
 `length` met by an array as well (`arrayLenT`). -/
-def viewsT (fs : Fields) : Fam := fun k W v =>
+def viewsT (fs : Views) : Fam := fun k W v =>
   ∀ (f : PropKey) (T : Fam), (f, T) ∈ fs → viewT [(f, T)] k W v ∨ (f = lengthKey ∧ arrayLenT T k W v)
 
 theorem viewT_single {f : PropKey} {A : Fam} {k} {W : WorldT k} {v}
@@ -785,11 +825,11 @@ theorem viewT_single {f : PropKey} {A : Fam} {k} {W : WorldT k} {v}
   obtain ⟨rfl, rfl⟩ := hg
   exact h
 
-theorem viewsT_of_viewT {fs : Fields} {k} {W : WorldT k} {v} (h : viewT fs k W v) : viewsT fs k W v :=
+theorem viewsT_of_viewT {fs : Views} {k} {W : WorldT k} {v} (h : viewT fs k W v) : viewsT fs k W v :=
   fun f T hm => .inl (viewT_single (h f T hm))
 
 /-- A view at a key other than `length` is at a location. -/
-theorem viewsT_at {fs : Fields} {f : PropKey} {A : Fam} (hm : (f, A) ∈ fs) (hf : f ≠ lengthKey)
+theorem viewsT_at {fs : Views} {f : PropKey} {A : Fam} (hm : (f, A) ∈ fs) (hf : f ≠ lengthKey)
     {k} {W : WorldT k} {v} (h : viewsT fs k W v) :
     ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k) (oid : Nat),
       v = .objAt flds .absent oid ∧ flds.lookup f = some l ∧ lookup W l = some c ∧
@@ -799,7 +839,7 @@ theorem viewsT_at {fs : Fields} {f : PropKey} {A : Fam} (hm : (f, A) ∈ fs) (hf
   · exact absurd rfl hf
 
 /-- A view of an object owning no array store is at a location. -/
-theorem viewsT_at_plain {fs : Fields} {f : PropKey} {A : Fam} (hm : (f, A) ∈ fs)
+theorem viewsT_at_plain {fs : Views} {f : PropKey} {A : Fam} (hm : (f, A) ∈ fs)
     {k} {W : WorldT k} {flds : List (PropKey × Nat)} {oid : Nat}
     (hs : flds.lookup arrayStoreKey = none) (h : viewsT fs k W (.objAt flds .absent oid)) :
     ∃ (flds' : List (PropKey × Nat)) (l : Nat) (c : Ctr k) (oid' : Nat),
@@ -809,7 +849,7 @@ theorem viewsT_at_plain {fs : Fields} {f : PropKey} {A : Fam} (hm : (f, A) ∈ f
   · exact viewT_at (List.mem_singleton_self _) h
   · cases he; rw [hs] at hst; cases hst
 
-theorem viewsT_append (A B : Fields) (k : Nat) (W : WorldT k) (v : Val) :
+theorem viewsT_append (A B : Views) (k : Nat) (W : WorldT k) (v : Val) :
     viewsT (A ++ B) k W v ↔ viewsT A k W v ∧ viewsT B k W v := by
   simp only [viewsT, List.mem_append, or_imp, forall_and]
 
@@ -1075,7 +1115,7 @@ theorem listT_grow {n : Nat} {W : WorldT n} {T : TupleF} {ls : List (Option Nat)
       · exact hrest i l hi hl
       · split at hl <;> cases hl
 
-theorem viewT_adm (fs : Fields) : Adm (viewT fs) := by
+theorem viewT_adm (fs : Views) : Adm (viewT fs) := by
   refine ⟨?_, ?_⟩
   · intro n W v h f T hm
     obtain ⟨flds, l, c, oid, rfl, hf, hl, hag⟩ := h f T hm
@@ -1088,7 +1128,7 @@ theorem viewT_adm (fs : Fields) : Adm (viewT fs) := by
 theorem arrayLenT_adm (T : Fam) : Adm (arrayLenT T) :=
   ⟨fun _ _ _ h => ⟨h.1, fun j hj W' n => h.2 j (by omega) W' n⟩, fun _ _ _ _ _ h => h⟩
 
-theorem viewsT_adm (fs : Fields) : Adm (viewsT fs) := by
+theorem viewsT_adm (fs : Views) : Adm (viewsT fs) := by
   refine ⟨?_, ?_⟩
   · intro n W v h f T hm
     rcases h f T hm with h | ⟨hf, h⟩

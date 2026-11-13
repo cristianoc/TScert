@@ -397,9 +397,10 @@ const cell = (
   const contractField = (
     entry: JsonValue,
   ): Modifies<{ values: "any"; stores: "grow" }, ShownField> => {
-    const pair: readonly JsonValue[] = isJsonList(entry) ? entry : [];
-    const key = pair[0];
-    const invariant = pair[1];
+    // A storage position: `[name, role, labels]`.
+    const triple: readonly JsonValue[] = isJsonList(entry) ? entry : [];
+    const key = triple[0];
+    const invariant = triple[2];
     const name = typeof key === "string" ? key : "";
     return {
       name,

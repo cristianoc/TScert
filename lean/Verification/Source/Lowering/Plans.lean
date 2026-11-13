@@ -23,10 +23,11 @@ section
 variable {ι : Type} [Labels ι]
 
 /-- The record a group of an object literal's fields allocates: exactly their
-keys, each at its initializer's type, which its own obligation establishes. -/
+keys, each at its initializer's type, which its own obligation establishes,
+and of the role `field` the literal's allocation gives it. -/
 @[nospecialize] def groupType (ns : List String) (As : List (Ty Tree)) : Compiler (Ty Tree) := do
   let keys := ns.map PropKey.str
-  let label ← lower (SourceTypes.use (.refs (keys.zip As) [] [] [] [] [⟨true, keys⟩]))
+  let label ← lower (SourceTypes.use (.refs (withRole .field (keys.zip As)) [] [] [] [] [⟨true, keys⟩]))
   -- A type the search may need at a node it types on its own.
   recordHints [label]
   return [label]
@@ -39,7 +40,7 @@ fields are at its claim's. -/
   let keyed := fun (ps : List (PropKey × Ty Tree)) => ps.filterMap fun (k, T) => match k with
     | .str s => some (s, T) | .sym _ => none
   let each := (PositiveRules.expand G A).map fun c => match c with
-    | .refs fs [] vs os _ _ _ | .dict fs [] vs _ os _ _ _ _ => keyed (fs ++ vs ++ os.map fun o => (o.key, o.type))
+    | .refs fs [] vs os _ _ _ | .dict fs [] vs _ os _ _ _ _ => keyed (Stored.views fs ++ vs ++ os.map fun o => (o.key, o.type))
     | _ => []
   -- Over a union, a key every record naming it states at one type.
   let all := each.flatten
@@ -375,12 +376,12 @@ field or view, or, for a key an own-key bound does not admit, its prototype's, a
 @[nospecialize] def fieldRow (G : PositiveGraphs.NormalGraph ι) (O : Ty ι) (fld : PropKey) :
     Option (Ty ι) :=
   match PositiveRules.expand G O with
-  | [.refs fs [] vs _ _ ks _] => fs.lookup fld <|> vs.lookup fld <|> do
+  | [.refs fs [] vs _ _ ks _] => (Stored.views fs).lookup fld <|> vs.lookup fld <|> do
       if !ks.any (fun K => !K.admits fld) then none
-      let P ← (fs ++ vs).lookup SourceTypes.protoField
+      let P ← (Stored.views fs ++ vs).lookup SourceTypes.protoField
       let [.refs gs [] ws _ _ _ _] := PositiveRules.expand G P | none
-      (gs ++ ws.filter (·.1 != lengthKey)).lookup fld
-  | [.callable fs _ _ _ _] => fs.lookup fld
+      (Stored.views gs ++ ws.filter (·.1 != lengthKey)).lookup fld
+  | [.callable fs _ _ _ _] => (Stored.views fs).lookup fld
   | _ => none
 
 /-- A method call's explicit type arguments, `o.m<A₁,…,Aₖ>(…)`, are a
@@ -476,7 +477,7 @@ bag, or an explicit union of cell contracts each naming the field. -/
     -- an optional field at its type or `undefined` (`readOptional`); a key a
     -- bound of the object does not admit at its prototype's field or view
     -- (`readProto`), as at the top level.
-    match fs.lookup fld, vs.lookup fld, (os.find? (·.key == fld)).map (·.type) with
+    match (Stored.views fs).lookup fld, vs.lookup fld, (os.find? (·.key == fld)).map (·.type) with
     | some B, _, _ => pure (DirectProof.node Γ (.readAt fld a.term) B .read [a])
     | none, some B, _ =>
       if fld == lengthKey && !lengthExcluded G B then lengthView G Γ a B
@@ -485,16 +486,16 @@ bag, or an explicit union of cell contracts each naming the field. -/
     | none, none, none =>
       let inherited : Option (Ty Tree × Ty Tree) := do
         if !ks.any (fun K => !K.admits fld) then none
-        let P ← (fs ++ vs).lookup SourceTypes.protoField
+        let P ← (Stored.views fs ++ vs).lookup SourceTypes.protoField
         let [.refs gs [] ws _ _ _ _] := PositiveRules.expand G P | none
-        let B ← (gs ++ ws.filter (·.1 != lengthKey)).lookup fld
+        let B ← (Stored.views gs ++ ws.filter (·.1 != lengthKey)).lookup fld
         pure (P, B)
       let some (P, B) := inherited | throw s!"read of a field '{fld}' the contract does not name"
       pure (DirectProof.node Γ (.readAt fld a.term) B (.readProto P) [a])
   | [.dict fs [] vs ix [] [] [] _ _] =>
     -- A named field or view, else an index whose class surely admits the
     -- key, which may miss.
-    match fs.lookup fld, vs.lookup fld with
+    match (Stored.views fs).lookup fld, vs.lookup fld with
     | some B, _ => pure (DirectProof.node Γ (.readAt fld a.term) B .read [a])
     | none, some B =>
       if fld == lengthKey && !lengthExcluded G B then lengthView G Γ a B
@@ -504,11 +505,11 @@ bag, or an explicit union of cell contracts each naming the field. -/
         | throw s!"read of a key '{fld}' no index of the object constrains"
       pure (DirectProof.node Γ (.readAt fld a.term) (B ++ [Labels.undef]) (.readDict K B [Labels.undef]) [a])
   | [.callable fs _ _ _ _] =>
-    let some B := fs.lookup fld | throw s!"read of a field '{fld}' the contract does not name"
+    let some B := (Stored.views fs).lookup fld | throw s!"read of a field '{fld}' the contract does not name"
     pure (DirectProof.node Γ (.readAt fld a.term) B .readCallable [a])
   -- A class value's static field, or its readonly view.
   | [.ctors _ _ fs _ vs] =>
-    match fs.lookup fld, vs.lookup fld with
+    match (Stored.views fs).lookup fld, vs.lookup fld with
     | some B, _ => pure (DirectProof.node Γ (.readAt fld a.term) B .readCallable [a])
     | none, some B => pure (DirectProof.node Γ (.readAt fld a.term) B .readBagView [a])
     | none, none => throw s!"read of a field '{fld}' the contract does not name"
@@ -646,7 +647,9 @@ shape needs none. -/
     let some (p, .value) := resolve scope name
       | throw s!"a member of a primitive is read from {name}, which this unit does not see"
     let some P := K[p]? | throw "internal prototype slot mismatch"
-    let R ← lower (SourceTypes.use (.refs [(SourceTypes.protoField, P)] [] [] [] []
+    -- The wrapper object `alloc` makes: its prototype slot is an ordinary
+    -- own key, role `field`.
+    let R ← lower (SourceTypes.use (.refs [(SourceTypes.protoField, .field, P)] [] [] [] []
       [⟨true, [SourceTypes.protoField]⟩]))
     recordHints [R]
     return (tag, .proto p P [R])
@@ -693,7 +696,7 @@ is read as an object (`readCell`). -/
     | .proto p P R => do
       let [.refs gs [] ws _ _ _ _] := PositiveRules.expand G P
         | throw "a primitive's prototype contract must be a record"
-      let some B := (gs ++ ws.filter (·.1 != lengthKey)).lookup fld
+      let some B := (Stored.views gs ++ ws.filter (·.1 != lengthKey)).lookup fld
         | throw s!"read of a member '{fld}' the primitive's prototype contract does not name"
       let wrapper := DirectProof.node L (.makeAt .absent [SourceTypes.protoField] [.var p]) R .alloc
         [DirectProof.var L p P]
@@ -720,7 +723,7 @@ receiver, claimed at `B`, in slot `ri`. -/
   let term := Tm.writeAt fld (.var ri) (.var 0)
   match PositiveRules.expand G B with
   | [.refs fs [] vs [] _ _ _] =>
-    let some D := fs.lookup fld
+    let some D := (Stored.views fs).lookup fld
       | throw (if (vs.lookup fld).isSome then s!"write to a readonly field '{fld}'"
           else s!"write to a field '{fld}' the contract does not name")
     pure (DirectProof.node H term [Labels.nul] .write
@@ -730,7 +733,7 @@ receiver, claimed at `B`, in slot `ri`. -/
     let alternatives ← B.mapM fun label => do
       let [.refs fs [] [] [] _ _ _] := PositiveRules.expand G [label]
         | throw "every write alternative must name a cell contract"
-      let some D := fs.lookup fld
+      let some D := (Stored.views fs).lookup fld
         | throw s!"write to a field '{fld}' an alternative does not name"
       pure (label,D)
     let children := alternatives.map fun (label,D) =>
@@ -749,7 +752,7 @@ obligation checks writes at a forbidden key against the retained bound. -/
   let optionalView := fun (os : List (OptionalField (Ty ι))) => os.any fun o => o.key == fld && o.readonly
   cs.any (fun c => match c with
     | .refs fs rs vs _ ms _ _ | .dict fs rs vs _ _ ms _ _ _ =>
-      !((fs :: rs).flatten ++ vs).any (·.1 == fld) && !ms.any (·.key == fld)
+      !(Stored.views (fs :: rs).flatten ++ vs).any (·.1 == fld) && !ms.any (·.key == fld)
     | _ => false) &&
   !cs.any fun c => match c with
     | .refs _ _ _ os _ ks _ | .dict _ _ _ _ os _ ks _ _ =>
