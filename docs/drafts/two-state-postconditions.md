@@ -101,8 +101,10 @@ is $`t`$: every check of it reads $`F[\mathrm{old}(t):=t]`$
 **A call** (rule Call). The callee's post is read at
 $`\langle\mathrm{callEnv}\,r\,\mathit{args},h_{\mathrm{before}}\rangle`$
 (`Effect.post`). Its facts naming no entry term join the caller's facts at
-the return's slots (`ensuresAtoms`). Its linear facts naming an entry term
-form a relation between the caller's states before and after the call,
+the return's slots (`ensuresAtoms`). Its other facts naming an entry term,
+under a disjunction, a guard or a quantifier, compose form by form
+(`HeapKnowledge.Composer.fact`, proved `Composer.fact_holds`). Its linear
+facts naming an entry term form a relation between the caller's states before and after the call,
 over variables $`\mathrm{before}(t)`$ and $`\mathrm{after}(t)`$
 (`StepVar`, `callRelation`):
 
@@ -223,9 +225,15 @@ Restrictions of the language, documented in
 ## What the rules do not derive
 
 - The start's $`t=\mathrm{old}(t)`$ is entailed only where the entry facts
-  state $`t`$ defined; the general entry identity during entailment, with
-  definedness from the inputs' types, would remove the precondition the
-  cases state (`0 <= lists.widths.length`) and make
-  `written-ensures-old-refused` verify.
-- A callee post fact naming an entry term under a disjunction, a guard or
-  a quantified fact adds no fact to a caller.
+  state $`t`$ defined. Definedness from the inputs' types holds in the model
+  only above a budget: a value a path of $`d`$ fields reads meets its type
+  at the budget less $`d`$, and its length is defined only where the budget
+  exceeds $`d`$ (`recT`'s field contracts agree only below the level,
+  `HeapOk` constrains a location only below it). `EntryHolds` holds at every
+  budget, so a start fact read from types alone is not a fact of every entry
+  state.
+- A before-name in a quantified fact's bound composes only where the
+  caller's linear facts bound it below by one term after the call
+  ([not derivable](../ARITHMETIC.md#two-state-postconditions)).
+- A return entails a quantified fact naming an entry term only from one
+  naming the same bound (`two-state-every-call-refused`).

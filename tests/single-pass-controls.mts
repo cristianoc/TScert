@@ -38,7 +38,7 @@ import { cases } from "../pipeline/cases.mts";
 import type { Ast } from "../tools/fragment.mts";
 import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import { emptyEffect, ordinaryEffect } from "../tools/type-graph.mts";
-import { forcedProposals, interfaceControls } from "./single-pass-control-inputs.mts";
+import { entryRowControl, forcedProposals, interfaceControls } from "./single-pass-control-inputs.mts";
 
 const root = resolve(import.meta.dirname, "..");
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -200,6 +200,11 @@ for (const k of forcedProposals) {
 control("module interfaces: the store boundary", async (): Promise<void> => {
   const artifacts = run("certified-value-import");
   interfaceControls(fragmentOf(artifacts), join(artifacts, "interface-controls"), say, counted);
+});
+
+control("module interfaces: a forged row's entry term", async (): Promise<void> => {
+  const artifacts = run("two-state-ensures-value-import");
+  entryRowControl(fragmentOf(artifacts), join(artifacts, "entry-row-control"), say, counted);
 });
 
 control("module interfaces: a module's store stating no built-ins", async (): Promise<void> => {

@@ -350,3 +350,46 @@ export function interfaceControls(fragment: string, scratch: string, log: (line:
     else process.env.TSCERT_STAGE_STORE = previous;
   }
 }
+
+/** The objects of a JSON value carrying `atEntry: true`: entry terms. */
+function entryTerms(v: unknown): Record<string, unknown>[] {
+  if (Array.isArray(v)) return v.flatMap(entryTerms);
+  if (typeof v !== "object" || v === null) return [];
+  const o = record(v);
+  return [...(o.atEntry === true ? [o] : []), ...Object.values(o).flatMap(entryTerms)];
+}
+
+/** A forged interface row stating an import's two-state postcondition with
+ * its entry term `old(lists.widths.length)` read at the receiver: the
+ * import declares no `this`, so the row is no translation of its
+ * declaration, and the importer's store-map check refuses the unit reading
+ * it. Run over a fresh store under `scratch`; `log` and `ran` as
+ * `interfaceControls`'. */
+export function entryRowControl(fragment: string, scratch: string, log: (line: string) => void,
+    ran: (invoked: Invoked) => void = () => {}): void {
+  mkdirSync(scratch, { recursive: true });
+  const work = mkdtempSync(join(scratch, "entry-row-control-"));
+  const previous = process.env.TSCERT_STAGE_STORE;
+  process.env.TSCERT_STAGE_STORE = join(work, "store");
+  try {
+    const options: InterfaceOptions = { mode: 8, fuel: 12, rounds: 4096, force: [],
+      work: join(work, "first"), invocation: { limitMs: 60_000, force: false, recorder: null } };
+    const first = prepareInterfaces(fragment, options);
+    for (const r of first.records) ran(r);
+    const published = parsed(first.path);
+    const terms = list(published.modules).map(record).flatMap((m) => entryTerms(m.rows));
+    assert(terms.length > 0, "an interface row stating an entry term");
+    for (const t of terms) t.slot = 0;
+    const forged = join(work, "forged-entry-rows.json");
+    writeFileSync(forged, JSON.stringify(published));
+    const ast = parsed(fragment);
+    const forgedRun = invokeProcess(verifierCall(verifierBuild, ["--verify-interface-stage", "8", fragment, forged,
+      String(ast.file), "12", ""]), options.invocation);
+    ran(forgedRun);
+    assert(forgedRun.stdout.includes("signature rows differ"), forgedRun.stdout + forgedRun.stderr);
+    log("forged entry row: old(…) read at the receiver of an import declaring none is refused");
+  } finally {
+    if (previous === undefined) delete process.env.TSCERT_STAGE_STORE;
+    else process.env.TSCERT_STAGE_STORE = previous;
+  }
+}

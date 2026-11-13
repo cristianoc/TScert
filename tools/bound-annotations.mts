@@ -324,7 +324,7 @@ class Parser {
       this.at++;
       const binder = this.take();
       if (!binder || binder.k !== "name") throw new ClauseError("`forall` names its index");
-      const stop = this.isOp("<") ? (this.at++, this.variable()) : null;
+      const stop = this.isOp("<") ? (this.at++, this.stop()) : null;
       const word = this.take();
       if (!word || word.k !== "name" || word.v !== (stop === null ? "in" : "of")) throw new ClauseError("`forall i` is followed by `in P` or `< n of P`");
       const array = this.variable();
@@ -382,6 +382,18 @@ class Parser {
       names.push(f.v);
     }
     return names.join(".");
+  }
+  /** A prefix clause's bound: a path, or `old(p)`, the path read in the
+   * entry state. */
+  private stop(): string {
+    const t = this.peek();
+    if (t?.k === "name" && t.v === "old" && this.ts[this.at + 1]?.k === "op" && this.ts[this.at + 1]?.v === "(") {
+      this.at += 2;
+      const inner = this.variable();
+      this.expect(")");
+      return `old(${inner})`;
+    }
+    return this.variable();
   }
   /** A path, or the element `p[i]` a path's array holds at a `forall`'s index. */
   private element(path: string): string {

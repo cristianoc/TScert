@@ -50,7 +50,8 @@ function measure(flags: number[], runs: Runs): number { … }
 On a synchronous module function declaration. A postcondition: the body
 establishes it at each return, and each caller assumes it after the call;
 `result` names the returned value, and `old(P)` or `old(P.length)` the term
-in the state the call started in.
+in the state the call started in, a term of a linear clause or a prefix
+clause's bound.
 [Postconditions](ARITHMETIC.md#postconditions),
 [two-state postconditions](ARITHMETIC.md#two-state-postconditions).
 

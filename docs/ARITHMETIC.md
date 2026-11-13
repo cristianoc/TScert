@@ -778,19 +778,55 @@ function measure(lists: Lists, n: number): Modifies<{ values: "any"; stores: "gr
 }
 ```
 
+A post fact of every form composes by the same principle, by structural
+recursion over the fact (`HeapKnowledge.Composer.fact`, proved
+`Composer.fact_holds`), with $`C`$ the caller's linear facts before the call
+and the post's own linear facts:
+
+```math
+\frac{\exists b.\ C\land(A\lor B)}{(\exists b.\ C\land A)\lor(\exists b.\ C\land B)}
+\qquad
+\frac{\exists b.\ C\land(g\lor B)}{g\lor\exists b.\ C\land B}
+\qquad
+\frac{\exists b.\ C\land\forall i<b.\ \varphi(i,b)\qquad C\vdash t'\le b}{\forall i<t'.\ \exists b.\ C\land\varphi(i,b)}
+```
+
+A linear part composes as above; a disjunction of the conjunctions its arms
+compose to is each pair's disjunction, two bounds on one form joined into
+the larger; a guard, read after the call, stays the guard of what its body
+composes to; a quantified fact's bound is the term after the call it is, or
+each term after the call $`C`$ bounds it below by, and each body atom has
+its before-names eliminated with $`C`$, which names no bound variable, for
+every index alike. A fact naming no before-name is its renaming.
+
+**Not derivable.** A before-name in a position that holds a single term,
+a quantified fact's bound, is eliminated only where $`C`$ bounds it below
+by one term after the call. Where $`C`$ gives it only as a linear
+combination, the composed fact is not in this fact language: from
+$`|x|_{\mathrm{after}} = b + 1`$ and $`\forall i<b.\ x[i]=1`$, the fact
+$`\forall i<|x|_{\mathrm{after}}-1.\ x[i]=1`$ has a bound that is no term,
+and nothing about $`x`$'s elements is derived. This is incompleteness of the
+quantifier elimination, a property of where the name occurs.
+
 The start of a run proposes $`t=\mathrm{old}(t)`$ for each entry term its
 postcondition names; the entry check reads it at the entry state, where it is
 $`t=t`$, entailed where the entry facts state $`t`$ defined (here
-`0 <= lists.widths.length`). A post fact naming an entry term under a
-disjunction, a guard or a quantified fact adds no fact to a caller. An
-exceptional postcondition is the frame alone.
+`0 <= lists.widths.length`). The inputs' types do not state it: a state of
+the model meets its types at its budget $`k`$, so a value a path of $`d`$
+fields reads meets its type at $`k-d`$, and its length, which reads the
+store's contents a level further, is defined only where $`k>d`$; the entry
+facts hold at every budget. An exceptional postcondition is the frame alone.
 
 **Cases.** `bounds-pattern-known-growth-refused` (a caller bounding a list
 grown by a callee), its unsafe neighbour `invalid-bounds-pattern-known-growth`,
 `invalid-two-state-ensures-body` (a body whose two-state postcondition is
-false, run under Node) and `two-state-ensures-value-import` (an importer
-reading the postcondition at its established entry);
-`written-ensures-old-refused` is a gap at the entry check.
+false, run under Node), `two-state-ensures-value-import` (an importer
+reading the postcondition at its established entry), `two-state-guarded-call`
+and its unsafe neighbour `invalid-two-state-guarded-call` (a post under a
+guard), `two-state-either-call` (a post under a disjunction);
+`written-ensures-old-refused` is a gap at the entry check and
+`two-state-every-call-refused` at its callee's return, which entails a
+quantified fact only from one naming the same bound.
 
 **Implementation.** The positions are `CallEffects.ensuresEnv`, the meaning
 the last conjunct of `CallEffects.Effect.post`, which takes the call's
@@ -1185,7 +1221,8 @@ their root; mapping and heap extension preserve their meaning (proved).
 
 A prefix clause `forall i < n of P: B` uses the same quantified fact with
 its bound the term `n`. The clause states `safeInteger(n)` when `n` names a
-value. Length paths are terms too. A bound is one term; a named successor
+value. Length paths are terms too, and in a postcondition `old(P)` or
+`old(P.length)`. A bound is one term; a named successor
 `const next = n + 1` supplies the bound for an extended prefix.
 
 **Reading an element.** The bounded signature of
