@@ -2956,6 +2956,20 @@ def headImplies (G : NormalGraph ι) (images : InstanceImageCheck G) (env : Walk
       let held := carried.filter fun y => some y.test == nt && some y.target == na
       impliesHeld G images x held acc.2) (true, answers)
 
+/-- The first of a head's given implications (at `t`'s label) that does not
+hold on an edge into it carrying `carried` (`headImplies`), by its tested and
+narrowed slots: what a refusal names, each implication a proposal of its own. -/
+def headImpliesFailing (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (t : Target)
+    (names : List Nat) (carried : List (PromiseCalls.Implication ι)) (answers : Answered G) : Option (Nat × Nat) :=
+  (((env.givenImplies[t.label]?).getD []).foldl (fun (acc : Option (Nat × Nat) × Answered G) x =>
+    if acc.1.isSome then acc
+    else
+      let nt := names[PointClaims.slot t.mapping x.test]?
+      let na := names[PointClaims.slot t.mapping x.target]?
+      let held := carried.filter fun y => some y.test == nt && some y.target == na
+      let (ok, a) := impliesHeld G images x held acc.2
+      (if ok then none else some (x.test, x.target), a)) (none, answers)).1
+
 /-- The edge's types (`visitExits`, where the edge's context is met): each
 slot's type below the target's (`diffSubtypes`), else the edge search
 (`checkedEdge`) over the edge's facts, else over the node's output facts at
@@ -3018,7 +3032,9 @@ def headExit (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv
   -- The head's given implications hold on every edge into it.
   let (implOk, answers) := if vacuous then (true, acc.answers) else headImplies G images env t names carried acc.answers
   if !implOk then
-    .error (WalkStop.mk (.refused s!"edge from node {l} into statement entry {t.label}: an implication") acc.counts answers acc.trace)
+    .error (WalkStop.mk (.refused s!"edge from node {l} into statement entry {t.label}: an implication{match headImpliesFailing G images env t names carried acc.answers with
+      | some (a, b) => s!" {a} {b}"
+      | none => ""}") acc.counts answers acc.trace)
   -- The slots it states hold the promised input, or an input's entry
   -- value, hold it on every edge.
   else if !vacuous && ((env.givenInputs[t.label]?).getD []).any (fun (j, q) => names[PointClaims.slot t.mapping j]? != env.startNames[q]?) then

@@ -22,13 +22,25 @@ section
 variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
 
 /-- The head of a refusal of an edge into a statement entry for an
-implication it states (`headExit`'s wording). -/
-def implicationIn (why : String) : Option Nat :=
+implication it states, and the implication's tested and narrowed slots
+where the refusal names them (`headExit`'s wording). -/
+def implicationIn (why : String) : Option (Nat × Option (Nat × Nat)) :=
   match why.splitOn "into statement entry " with
   | _ :: rest :: _ => match rest.splitOn ": an implication" with
-    | t :: _ :: _ => t.toNat?
+    | t :: after :: _ => t.toNat?.map fun t => (t, match (after.splitOn " ").filter (!·.isEmpty) with
+      | [a, b] => match a.toNat?, b.toNat? with
+        | some a, some b => some (a, b)
+        | _, _ => none
+      | _ => none)
     | _ => none
   | _ => none
+
+/-- What the diagnosing walk leaves out of a head: given facts, or one of
+its implications by its tested and narrowed slots (all of them where the
+refusal names none). -/
+inductive LeftOut where
+  | facts (fs : List IndexAtom)
+  | implication (which : Option (Nat × Nat))
 
 /-- The head's given state without the facts `drop`. -/
 def weakenedAt {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkEnv ι G images) (l : Nat)
@@ -45,33 +57,40 @@ record; or where it stopped. -/
 def exitDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppable : Nat → List IndexAtom) (implied : Bool) (l : Nat)
     (en : Entered ι) (sd : StepDone ι G) (ysAll : List (PromiseCalls.Yield ι)) (outAll : Thunk Knowledge)
     (exi : Exit × Nat) :
-    Nat → WalkEnv ι G images × List (Nat × Option (List IndexAtom)) × ExitsDone ι G →
-      Except (WalkStop ι G) (WalkEnv ι G images × List (Nat × Option (List IndexAtom)) × ExitsDone ι G)
+    Nat → WalkEnv ι G images × List (Nat × LeftOut) × ExitsDone ι G →
+      Except (WalkStop ι G) (WalkEnv ι G images × List (Nat × LeftOut) × ExitsDone ι G)
   | k, (env, dropped, acc) =>
     match exitStep G images env l en sd ysAll outAll acc exi with
     | .ok acc' => .ok (env, dropped, acc')
     | .error stop => match k, stop.outcome with
       | k + 1, .refused why lacks => match lacks with
         | some (t, missing) =>
-          let left := (dropped.filter (·.1 == t)).flatMap fun x => x.2.getD []
+          let left := (dropped.filter (·.1 == t)).flatMap fun x => match x.2 with
+            | .facts fs => fs
+            | .implication _ => []
           let open_ := (droppable t).filter (!left.contains ·)
           match open_.filter missing.contains with
           | [] => .error stop
           | named => exitDiagnosed G images droppable implied l en sd ysAll outAll exi k
-              (weakenedAt env t named, dropped ++ [(t, some named)], acc)
+              (weakenedAt env t named, dropped ++ [(t, .facts named)], acc)
         | none => match implicationIn why with
-          | some t =>
-            if !implied || ((env.givenImplies[t]?).getD []).isEmpty then .error stop else
+          | some (t, which) =>
+            let held := (env.givenImplies[t]?).getD []
+            if !implied || held.isEmpty then .error stop else
+            -- (the implication the refusal names left out, all where it names none)
+            let kept := match which with
+              | some (a, b) => held.filter fun x => !(x.test == a && x.target == b)
+              | none => []
             exitDiagnosed G images droppable implied l en sd ysAll outAll exi k
-              ({ env with givenImplies := env.givenImplies.set! t [] }, dropped ++ [(t, none)], acc)
+              ({ env with givenImplies := env.givenImplies.set! t kept }, dropped ++ [(t, .implication which)], acc)
           | none => .error stop
       | _, _ => .error stop
 
 /-- A node's exits (`visitExits`), each diagnosed (`exitDiagnosed`). -/
 def exitsDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppable : Nat → List IndexAtom) (implied : Bool)
-    (env : WalkEnv ι G images) (dropped : List (Nat × Option (List IndexAtom))) (σ : WalkState ι G)
+    (env : WalkEnv ι G images) (dropped : List (Nat × LeftOut)) (σ : WalkState ι G)
     (l : Nat) (en : Entered ι) (sd : StepDone ι G) :
-    Except (WalkStop ι G) (WalkEnv ι G images × List (Nat × Option (List IndexAtom)) × ExitsDone ι G) :=
+    Except (WalkStop ι G) (WalkEnv ι G images × List (Nat × LeftOut) × ExitsDone ι G) :=
   let node := env.nodes[l]!
   let c := env.claimed[l]!
   let (yields, answers) := exitsYields G images env l en sd
@@ -96,8 +115,8 @@ def exitsDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppab
 
 /-- One node's visit (`visitBody`, `visit`), its exits diagnosed. -/
 def visitDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppable : Nat → List IndexAtom) (implied : Bool)
-    (env : WalkEnv ι G images) (dropped : List (Nat × Option (List IndexAtom))) (σ : WalkState ι G) (l : Nat) :
-    Except (WalkStop ι G) (WalkEnv ι G images × List (Nat × Option (List IndexAtom)) × WalkState ι G) :=
+    (env : WalkEnv ι G images) (dropped : List (Nat × LeftOut)) (σ : WalkState ι G) (l : Nat) :
+    Except (WalkStop ι G) (WalkEnv ι G images × List (Nat × LeftOut) × WalkState ι G) :=
   match visitEntry G images env σ l with
   | .error stop => .error stop
   | .ok en => match visitStep G images env σ l en with
@@ -116,7 +135,7 @@ def visitDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppab
 /-- The walk on fuel (`drive`), each visit diagnosed: the facts left out by
 head, up to where it ends or stops. -/
 def driveDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppable : Nat → List IndexAtom) (implied : Bool) :
-    Nat → WalkEnv ι G images → List (Nat × Option (List IndexAtom)) → WalkState ι G → List (Nat × Option (List IndexAtom))
+    Nat → WalkEnv ι G images → List (Nat × LeftOut) → WalkState ι G → List (Nat × LeftOut)
   | 0, _, dropped, _ => dropped
   | fuel + 1, env, dropped, σ => match σ.queue with
     | [] => dropped
@@ -138,7 +157,7 @@ def lackingFacts (G : NormalGraph ι) (images : InstanceImageCheck G) (droppable
     (answers : Answered G) (bound : Option (Footprints.Closed × Bool × Bool))
     (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
     (ensures : List HeapKnowledge.IndexFact) (givenInputs : Array (List (Nat × Nat)))
-    (entrySeparation : HeapSeparation.Separation) (regional : Option Regional) : List (Nat × Option (List IndexAtom)) :=
+    (entrySeparation : HeapSeparation.Separation) (regional : Option Regional) : List (Nat × LeftOut) :=
   match setup G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices
       suggestions known codes aliases passChecker answers #[] 1000000000 bound givenImplies givenArgs ensures
       givenInputs entrySeparation none false false regional with

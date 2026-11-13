@@ -495,9 +495,12 @@ walk over those plans finds lacking left out with them
 (`SinglePass.lackingFacts`, `FilePlans.lackingAt`) is the pass's walk over
 the member's main graph, at the arguments of its main run, where an edge
 into a head refused for proposals it lacks, or for an implication the head
-states, is taken again with those proposals, or the head's implications,
-left out of the head's state, and the walk goes on; its result is what it
-left out, by head, and it decides nothing. A head's facts left out after
+states, is taken again with those proposals, or that implication, left out
+of the head's state, and the walk goes on; its result is what it left out,
+by head, and it decides nothing. Each implication is a proposal of its own:
+a refusal names the first the edge does not establish by its tested and
+narrowed slots (`SinglePass.headImpliesFailing`), and a run refused so is
+run again with that one left out (`withoutImplications`). A head's facts left out after
 its loop was walked weaken what that walk carried only in the next run, so
 the runs are bounded by how deep such facts depend on each other, not by
 how many are refused. At most `4·h + 4` runs for `h` statement entries

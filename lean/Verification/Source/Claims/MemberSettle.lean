@@ -223,23 +223,28 @@ def FilePlans.laterDrops (f : FilePlans) (i l : Nat) (drop : List HeapKnowledge.
   | _ => []
 
 /-- An edge's refusal into a statement entry for an implication it does not
-establish (`SinglePass.run`): the entry's label. -/
-def implicationAt (why : String) : Option Nat :=
-  match why.splitOn "into statement entry " with
-  | _ :: rest :: _ => match rest.splitOn ": an implication" with
-    | t :: _ :: _ => t.toNat?
-    | _ => none
-  | _ => none
+establish (`SinglePass.run`): the entry's label, and the implication's
+tested and narrowed slots where the refusal names them
+(`SinglePass.implicationIn`). -/
+def implicationAt (why : String) : Option (Nat × Option (Nat × Nat)) := SinglePass.implicationIn why
 
-/-- The given line of unit `u` with the implications at label `l` left out. -/
-def withoutImplications (given : Std.HashMap String Json) (u : String) (l : Nat) : Option (Std.HashMap String Json) := do
+/-- The given line of unit `u` with an implication at label `l` left out:
+the one of tested and narrowed slots `which`, every one where `which` names
+none. Each implication is a proposal of its own. -/
+def withoutImplications (given : Std.HashMap String Json) (u : String) (l : Nat) (which : Option (Nat × Nat) := none) :
+    Option (Std.HashMap String Json) := do
   let line ← given.get? u
   let rows ← ((line.getObjVal? "graph").bind Json.getArr?).toOption
   let at_ := fun (row : Json) => (row.getObjValAs? Nat "label").toOption == some l
+  let named := fun (x : Json) => match which with
+    | some (a, b) => (x.getObjValAs? Nat "test").toOption == some a && (x.getObjValAs? Nat "target").toOption == some b
+    | none => true
   let held := rows.any fun row => at_ row &&
-    (((row.getObjVal? "implies").bind Json.getArr?).toOption.map (!·.isEmpty)).getD false
+    (((row.getObjVal? "implies").bind Json.getArr?).toOption.map (·.any named)).getD false
   guard held
-  let rows := rows.map fun row => if at_ row then row.setObjVal! "implies" (Json.arr #[]) else row
+  let rows := rows.map fun row => if !at_ row then row else
+    let kept := (((row.getObjVal? "implies").bind Json.getArr?).toOption.getD #[]).filter (!named ·)
+    row.setObjVal! "implies" (Json.arr kept)
   pure (given.insert u (line.setObjVal! "graph" (Json.arr rows)))
 
 /-- The given line of unit `u` with its regional checks' tables
@@ -278,6 +283,11 @@ def FilePlans.inferredRun (g : FilePlans) (fuel : Nat) (compare : Bool) (debugNo
       | none => reason
     (s!"refused before the pass: {reason.take 200}", none, some reason)
 
+/-- An implication left out, as a line names it. -/
+def implicationShown : Option (Nat × Nat) → String
+  | some (a, b) => s!"its implication from slot {a} to slot {b}"
+  | none => "its implications"
+
 /-- What a refusal `w` of member `i`'s run calls for (its text, and the entry
 and lacking facts of a refusal of an edge into a statement entry, as data):
 the plans and given lines of its next run, the lines saying what was left
@@ -293,10 +303,10 @@ the forced fact is never left out, nor an implication or a regional table. -/
 def FilePlans.inferredNext (f : FilePlans) (fixed : Bool) (protect : List (Nat × List HeapKnowledge.IndexAtom))
     (given : Option (Std.HashMap String Json)) (i : Nat) (w : String × Option (Nat × List HeapKnowledge.IndexAtom)) :
     Option (FilePlans × Option (Std.HashMap String Json) × List String × Nat) :=
-  if let some l := implicationAt w.1 then
+  if let some (l, which) := implicationAt w.1 then
     if fixed then none else do
-    let g ← given.bind (withoutImplications · (f.fr.unitId i) l)
-    pure (f, some g, [s!"inferred heads: dropped at {l}: its implications"], 1)
+    let g ← given.bind (withoutImplications · (f.fr.unitId i) l which)
+    pure (f, some g, [s!"inferred heads: dropped at {l}: {implicationShown which}"], 1)
   -- (a refusal stating the facts an edge lacks is that edge's, whichever
   -- route's run made it: the regional fallback's included)
   else if w.2.isNone && (w.1.splitOn "store regions").length > 1 then
@@ -367,10 +377,14 @@ def FilePlans.inferredNextAll (f : FilePlans) (fuel : Nat) (fixed : Bool)
       ((candidates.filter (·.1 == l)).flatMap (·.2)).filter (!kept.contains ·)
     let all := SinglePass.timedKind "inferred heads: diagnosing walk" fun _ =>
       SinglePass.work "check: diagnosing walk" (f₁.fr.workItem i) fun _ => f₁.lackingAt fuel i g₁ droppable
-    let lacking := all.filterMap fun (l, x) => x.map (l, ·)
-    let implied := (all.filterMap fun (l, x) => if x.isNone then some l else none).eraseDups
-    let g₂ := implied.foldl (fun (g : Option (Std.HashMap String Json)) l =>
-      match g.bind (withoutImplications · (f₁.fr.unitId i) l) with
+    let lacking := all.filterMap fun
+      | (l, .facts fs) => some (l, fs)
+      | (_, .implication _) => none
+    let implied := (all.filterMap fun
+      | (l, .implication which) => some (l, which)
+      | (_, .facts _) => none).eraseDups
+    let g₂ := implied.foldl (fun (g : Option (Std.HashMap String Json)) (l, which) =>
+      match g.bind (withoutImplications · (f₁.fr.unitId i) l which) with
       | some g' => some g'
       | none => g) g₁
     let heads := (lacking.map (·.1)).eraseDups
@@ -380,7 +394,7 @@ def FilePlans.inferredNextAll (f : FilePlans) (fuel : Nat) (fixed : Bool)
       let ds := ds.filter (!kept.contains ·)
       if ds.isEmpty then none else some (l', ds)
     let shown := fun (a : HeapKnowledge.IndexAtom) => (reprStr a.fact).replace "\n" " " |>.replace "  " ""
-    let lines := implied.map (fun l => s!"inferred heads: dropped at {l} (lacking): its implications") ++
+    let lines := implied.map (fun (l, which) => s!"inferred heads: dropped at {l} (lacking): {implicationShown which}") ++
       found.flatMap (fun (l, ds) => ds.map fun a => s!"inferred heads: dropped at {l} (lacking): {shown a}") ++
       later.flatMap fun (l', ds) => ds.map fun a => s!"inferred heads: dropped at {l'} (later): {shown a}"
     some (f₁.dropAll i (found ++ later), g₂, ls ++ lines,
