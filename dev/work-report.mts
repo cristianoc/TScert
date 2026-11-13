@@ -16,7 +16,7 @@
 // `cases`, `pretext` and `census-verdicts` print each file's and each
 // unit's verdict, one line each, sorted, to compare two runs.
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { readInvocationLog, type AttemptRecord } from "../pipeline/stages.mts";
@@ -235,10 +235,39 @@ function report(directory: string, sourceList: string[], jsonOut: string | null)
   }
   const overloadUnits = new Set([...unitsByName.values()].filter((s) => s.size > 1).flatMap((s) => [...s].sort().slice(1)));
   for (const r of rows) if (r.site === "once" && r.cls === "check" && overloadUnits.has(r.item)) r.site = sites.overloads;
+  // The parses: a file's lowering by TypeScript, as itself (`parse`) and as
+  // a module an importer reads (`module`, nested in the importer's parse),
+  // each keyed by its path; the paths' digests are told by `--sources`.
+  const digest = (text: string): string => createHash("sha256").update(text).digest("hex");
+  const pathOf = new Map<string, string>();
+  for (const f of sourceList) {
+    const real = realpathSync(f);
+    for (const v of [resolve(f), real, real.replace(/^\/private\//, "/")]) pathOf.set(digest(v), real);
+  }
+  const lowered = new Map<string, AttemptRecord>();
+  let parseRepeated = { count: 0, ms: 0 }, parseOmitted = { count: 0, ms: 0 };
+  const loweringOf = (r: AttemptRecord): string | undefined => {
+    const i = manifestOf(r).inputs;
+    return pathOf.get((r.stage === "parse" ? i.get("resolution") : i.get("module")) ?? "");
+  };
+  const lowerings = records.filter((r) => ranOf(r) && (r.stage === "parse" || r.stage === "module"));
+  // The file's own parse is its lowering, else its first module lowering.
+  for (const r of [...lowerings.filter((r) => r.stage === "parse"), ...lowerings.filter((r) => r.stage === "module")]) {
+    const i = manifestOf(r).inputs;
+    const file = loweringOf(r);
+    if (file === undefined) continue;
+    const first = lowered.get(file);
+    if (first === undefined) { lowered.set(file, r); continue; }
+    const omittedDiffers = first.stage === "parse" && r.stage === "parse" &&
+      manifestOf(first).inputs.get("omitted") !== i.get("omitted");
+    const into = omittedDiffers ? parseOmitted : parseRepeated;
+    into.count++;
+    into.ms += cpuMs(r);
+  }
   // Totals.
   const attributedMs = rows.reduce((a, r) => a + r.ns, 0) / 1e6;
   const repeated = rows.filter((r) => r.site !== "once");
-  const repeatedMs = repeated.reduce((a, r) => a + r.ns, 0) / 1e6 + timedOutWholeMs;
+  const repeatedMs = repeated.reduce((a, r) => a + r.ns, 0) / 1e6 + timedOutWholeMs + parseRepeated.ms + parseOmitted.ms;
   const bySite = new Map<string, { count: number; ms: number }>();
   for (const r of repeated) {
     const s = bySite.get(r.site) ?? { count: 0, ms: 0 };
@@ -246,6 +275,13 @@ function report(directory: string, sourceList: string[], jsonOut: string | null)
     s.ms += r.ns / 1e6;
     bySite.set(r.site, s);
   }
+  const addSite = (site: string, x: { count: number; ms: number }): void => {
+    if (x.count === 0) return;
+    const s = bySite.get(site) ?? { count: 0, ms: 0 };
+    bySite.set(site, { count: s.count + x.count, ms: s.ms + x.ms });
+  };
+  addSite(`${sites.roles} (parse level)`, parseRepeated);
+  addSite(`${sites.omission} (parse level)`, parseOmitted);
   if (timedOutWholeMs > 0) bySite.set(sites.wholeTimeout, { count: [...records].filter((r) => r.stage === "pass" &&
     r.execution === "timed-out" && manifestOf(r).argv.at(-1) === "").length, ms: timedOutWholeMs });
   // Per function: the attempts that worked on it and its traversals.

@@ -35,9 +35,15 @@ verifier --lower-control-flow       <ast.json>
   by name, its initialization among them where its mentions place it
   ([units](DESIGN.md#function-coverage-and-release-thresholds)). A group is
   named by its first member, `name@offset` for a function and `init` for the
-  initialization. `<names>` selects the groups with a member of one of the
-  comma-separated names (a function's name, `:init` for the
-  initialization); empty, every unit.
+  initialization. `<names>` names a selection's roots, comma-separated (a
+  function's name, `:init` for the initialization); the command checks the
+  groups with a member among the roots or among the units their code
+  reaches by name, closed (`RequestCli.selectionClosure`): the units the
+  roots' verdicts rest on. Empty, every unit. A run's request names its
+  roots (`UnitSelection.select`, the census's, the pretext tier's and
+  `dev/check-functions.mts`'s), its interface plan the modules those units'
+  code reaches; a unit depended on with no verdict leaves its dependents
+  unverified.
 - `--verify-interface-stage 8` checks each selected unit by the single pass
   (`RequestCli.verifyUnitsFile`, `FilePlans.passGroupMode8`): its types
   computed by the walk, every loop head's candidates inferred

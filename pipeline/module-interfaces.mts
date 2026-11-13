@@ -80,8 +80,9 @@ export function prepareInterfaces(fragmentPath: string, options: InterfaceOption
     return run;
   };
   const selection = join(options.work, "selection.json");
+  // (the initialization named as the plan's reach names it, `init`)
   writeFileSync(selection, canonical({
-    names: options.names ? options.names.split(",").filter(Boolean) : null,
+    names: options.names ? options.names.split(",").filter(Boolean).map((n) => n === ":init" ? "init" : n) : null,
     imports: [],
     functions: [],
     own: options.ownModule === undefined ? [] : [string(object(json(readFileSync(options.ownModule, "utf8"))).location)],
@@ -126,13 +127,16 @@ const overLimit = (run: Invoked): boolean =>
   run.record.execution === "timed-out" || run.record.execution === "timeout-replayed";
 
 /** The importer's check by units: the file's stage at its modules'
- * interfaces, or at ordinary contracts where it reads no module; where that stage exceeds its limit, a stage for each name of
- * `units` (a function's name, `:init`), each with its own limit and its own
- * key, so a unit over its limit costs only its own verdict and its
- * dependents'. Where the module-interface stages fail (a timeout, a
+ * interfaces, or at ordinary contracts where it reads no module, of the units
+ * `names` selects (comma-separated, `""` every unit) and those their
+ * verdicts rest on; where that stage exceeds its limit, a stage for each
+ * name of `units` (a function's name, `:init`), each with its own limit and
+ * its own key, so a unit over its limit costs only its own verdict and its
+ * dependents'. The module interfaces are those the selected units' code
+ * reaches. Where the module-interface stages fail (a timeout, a
  * refusal), the checks at ordinary contracts stand, with that failure: a unit
  * accepted there is accepted with no stronger module fact. */
-export function verifyByUnits(fragment: string, key: string, units: readonly string[],
+export function verifyByUnits(fragment: string, key: string, units: readonly string[], names: string,
     options: InterfaceOptions): CheckedUnits {
   mkdirSync(options.work, { recursive: true });
   const environment: Record<string, string> = {};
@@ -142,7 +146,7 @@ export function verifyByUnits(fragment: string, key: string, units: readonly str
       fragment, path, key, String(options.fuel), names], environment),
     options.invocation);
   const checkAll = (path: string): UnitsRun[] => {
-    const whole = check(path, "");
+    const whole = check(path, names);
     if (!overLimit(whole) || units.length < 2) return [{ names: null, run: whole }];
     return units.map((u) => ({ names: u, run: check(path, u) }));
   };
@@ -161,7 +165,7 @@ export function verifyByUnits(fragment: string, key: string, units: readonly str
   if (array(object(json(readFileSync(fragment, "utf8"))).modules).length === 0) return checked(checkAll(ordinary), null);
   let interfaces: PreparedInterfaces;
   try {
-    interfaces = prepareInterfaces(fragment, { ...options, names: "" });
+    interfaces = prepareInterfaces(fragment, { ...options, names });
   } catch (error) {
     return checked(checkAll(ordinary), error instanceof Error ? error.message : String(error));
   }

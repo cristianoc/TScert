@@ -312,7 +312,7 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
     });
     phase = "proposal";
     return singlePass(recorder, artifacts, ast, snapshot, subtypeRounds, functions, unitIds, initialization,
-      (detail) => refusedByTypeScript(detail, refusedErrors));
+      (detail) => refusedByTypeScript(detail, refusedErrors), units.select);
   } catch (e) {
     return {
       status: "error",
@@ -336,13 +336,19 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
  * not established or exhausted, which is a refused unit's; a stage over its
  * limit is an error. */
 function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey: string, subtypeRounds: number | undefined,
-    functions: string[], unitIds: [string, string][], initialization: [number, number][], named: (detail: string) => string): Outcome {
+    functions: string[], unitIds: [string, string][], initialization: [number, number][], named: (detail: string) => string,
+    select: string[] | null = null): Outcome {
   // The names a check of one unit selects: each function's, and the
   // initialization's where it runs code.
-  const names = [...new Set(functions), ...(initialization.length > 0 ? [":init"] : [])];
+  const all = [...new Set(functions), ...(initialization.length > 0 ? [":init"] : [])];
+  // A selection's roots, the file's names it names; the verifier checks
+  // them and every unit their verdicts rest on (`selectionClosure`). A
+  // selection of every name is the whole file.
+  const roots = select === null ? all : all.filter((n) => select.includes(n));
+  const names = roots.length === all.length ? "" : roots.join(",");
   let checked: CheckedUnits;
   try {
-    checked = verifyByUnits(ast, fileKey, names, {
+    checked = verifyByUnits(ast, fileKey, roots, names, {
       mode: 8, fuel: searchDepth, rounds: subtypeRounds ?? 4096, force: [],
       work: join(artifacts, "interfaces"), invocation: { limitMs: stepTimeoutMs, force: false, recorder },
     });
@@ -414,7 +420,8 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
       refusal: typeof reason === "string" ? (unestablished === null ? reason : `${unestablished}\nat ordinary contracts: ${reason}`)
         : "" };
   }).filter((v, i, all) => all.findIndex((w) => w.unit === v.unit) === i);
-  // A unit is closed when it and every unit it depends on are accepted.
+  // A unit is closed when it and every unit it depends on are accepted; a
+  // unit depended on with no verdict, the file's or a module's, is open.
   const byUnit = new Map(verdicts.map((v) => [v.unit, v]));
   const closed = new Map(verdicts.map((v) => [v.unit, v.accepted]));
   const openBy = new Map<string, string>();
@@ -422,7 +429,7 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
     changed = false;
     for (const v of verdicts) {
       if (closed.get(v.unit) !== true) continue;
-      const open = v.depends.find((d) => closed.get(d) === false || (d.startsWith("module:") && !byUnit.has(d)));
+      const open = v.depends.find((d) => closed.get(d) === false || !byUnit.has(d));
       if (open === undefined) continue;
       closed.set(v.unit, false);
       openBy.set(v.unit, open);

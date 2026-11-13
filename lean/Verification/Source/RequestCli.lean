@@ -238,6 +238,32 @@ def selection : Option String → Option (List String)
   | none => none
   | some names => some ((names.splitOn ",").filter (· != ""))
 
+/-- **The units a selection's processing needs**, by the names a selection
+names them by (a function's name, `:init`): the named ones and every unit
+their code reaches by name, closed, as the front's edges reach them
+(`Front.edgesOf`), read off the fragment: a function by its name, the
+initialization by a name its statements bind, a class's self binding or a
+generic class. A unit of the selection's verdict closure lacking here is
+missing a verdict, and the runner leaves the units depending on it open. -/
+def selectionClosure (ast : Json) (roots : List String) : List String := Id.run do
+  let fns := ((ast.getObjValAs? (Array Json) "functions").toOption.getD #[]).toList.filterMap fun j =>
+    (Fragment.decodeFn j).toOption.map (·.1)
+  let init := (Fragment.decodeInit ast).toOption.getD []
+  let bound := init.flatMap Fragment.Stmt.bound
+  let owned := bound ++ bound.map Fragment.selfBindingOf ++
+    SourceClaimJson.genericClassNames ((ast.getObjVal? "init").toOption.getD (.arr #[]))
+  let initMentions := init.flatMap SourceExtraction.stmtNames
+  let mentions := fun (n : String) => if n == ":init" then initMentions else
+    (fns.filter (·.name == n)).flatMap fun f => f.body.flatMap SourceExtraction.stmtNames
+  let names := fns.map (·.name)
+  let mut set := roots.eraseDups
+  for _ in List.range (fns.length + 2) do
+    let ms := set.flatMap mentions
+    let next := (set ++ names.filter ms.contains ++ (if !init.isEmpty && ms.any owned.contains then [":init"] else [])).eraseDups
+    if next.length == set.length then break
+    set := next
+  return set
+
 /-- The given lines of a module's units, by their identity in the module:
 each line of a unit `module:<location>#<unit>`. -/
 def forModule (location : String) (given : Std.HashMap String Json) : Std.HashMap String Json :=
@@ -288,7 +314,8 @@ def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) :
           throw "component dependency overlaps"
         imported := imported ++ [m]
     let sc : SourceClaimJson.ImportScope := ⟨modules ++ imported, SourceClaimJson.ModuleCode.of (modules ++ imported)⟩
-    let decoded ← ds.mapM fun (d : Json) => SinglePass.work "rows: decode interfaces" "" fun _ =>
+    let item := (modules.head?.map fun m => SourceClaimJson.fileItem m.document).getD ""
+    let decoded ← ds.mapM fun (d : Json) => SinglePass.work "rows: decode interfaces" item fun _ =>
       SourceClaimJson.decodeInterfaces sc (d.getObjValD "interface")
     let incoming := decoded.flatMap (·.1)
     let incomingTables := decoded.flatMap (·.2)
@@ -346,6 +373,11 @@ def verifyUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names : 
   let force := ((← IO.getEnv "TSCERT_FORCE").getD "").splitOn "," |>.filter (!·.isEmpty)
   let infer := true
   let interfaces ← readJson interfacesPath
+  -- A selection names its roots: the units checked are those and every unit
+  -- their verdicts rest on (`selectionClosure`).
+  let selected : Option (List String) := match ast, selection names with
+    | .ok a, some roots => some (selectionClosure a roots)
+    | _, s => s
   let tj ← IO.monoNanosNow
   -- The plans, and the module units the interfaces establish, each printed
   -- accepted (`decodeInterfaces`).
@@ -357,11 +389,11 @@ def verifyUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names : 
     let sc ← if (← jArr cached "modules").isEmpty then
         pure (⟨[], {}⟩ : SourceClaimJson.ImportScope)
       else SourceClaimJson.ImportScope.of (← ast)
-    let (est, tables) ← SinglePass.work "rows: decode interfaces" "" fun _ => SourceClaimJson.decodeInterfaces sc cached
     let a ← ast
     let item := SourceClaimJson.fileItem a
+    let (est, tables) ← SinglePass.work "rows: decode interfaces" item fun _ => SourceClaimJson.decodeInterfaces sc cached
     let f ← SinglePass.work "prepare: importer plans" item fun _ =>
-      SourceClaimJson.fragmentPlansFromInterfaces a fileKey budget (selection names) {} force est tables
+      SourceClaimJson.fragmentPlansFromInterfaces a fileKey budget selected {} force est tables
     return (SinglePass.work "prepare: head facts" item fun _ => prepare givenLines f, (est.map (·.2.2)).eraseDups)
   let t1 ← IO.monoNanosNow
   let ms := fun (a b : Nat) => s!"{(b - a) / 1000000}"
@@ -378,7 +410,7 @@ def verifyUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names : 
     if (← SinglePass.profiling.get) then
       for (n, Φ, ot, r) in f.p.qualified do
         emit s!"import: {n} {(toJson Φ).compress} onThrow {ot} result {(toJson r).compress}"
-    for i in f.fr.selected (selection names) do
+    for i in f.fr.selected selected do
       let unit := f.fr.unitId i
       let members := (f.fr.group i).map f.fr.unitId
       let s0 ← IO.monoNanosNow
@@ -412,7 +444,7 @@ def verifyUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names : 
         | .error reason => Json.mkObj [("unit", toJson unit), ("members", toJson members),
             ("refusal", toJson reason)]).compress
       if let .error reason := verdict then refused := refused.orElse fun _ => some reason
-    match f.extractionRefusal (selection names) with
+    match f.extractionRefusal selected with
     | some reason => refuse reason
     | none =>
       match refused with
