@@ -92,8 +92,8 @@ var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { co
 .verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
 ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
 a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
-@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">1 commit, rendered from their records.</p></header>
-<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-160"><code>034d8001af544b8ed6a281d076444e52b9d5ed23..pr-160</code></a><ul><li>1 commit</li><li>changes: 2 Docs</li><li>parts: <span class="chip">docs</span></li></ul></li></ul></section>
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">2 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-160"><code>034d8001af544b8ed6a281d076444e52b9d5ed23..pr-160</code></a><ul><li>2 commits</li><li>changes: 3 Docs</li><li>parts: <span class="chip">docs</span></li></ul></li></ul></section>
 <h2 id="g-pr-160"><code>034d8001af544b8ed6a281d076444e52b9d5ed23..pr-160</code></h2><article class="card" id="c-5f432b516"><header><div><div class="sha">5f432b516 · Cristiano Calcagno · Nov 13, 08:53</div><h3>State the rule of general statements in the project instructions</h3></div><span class="pill neutral">no-behaviour-change</span></header>
 <h4 class="change"><span class="act added">added</span>Docs <span class="target">AGENTS.md, &quot;General statements, no lists of special cases&quot;</span></h4><div class="prose"><p>a definition, a rule or a theorem is stated at the generality of its notion; a list of supported cases standing for a property is a defect; an exhaustive case analysis over an inductive definition is a proof; a special case states its reason; a restriction of the language is explicit; a change to code holding such a list first replaces the list by its general statement, in its own commit; a review asks first whether a notion is represented as its definition states it</p></div>
 <h4 class="change"><span class="act added">added</span>Docs <span class="target">docs/REFERENCES.md, &quot;The Tolerant frames note&quot;</span></h4><div class="prose"><p>the entry for the note the rule cites</p></div>
@@ -101,6 +101,13 @@ a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outl
 <dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
 <details><summary>2 files changed, 49 insertions(+)</summary><pre class="code"> AGENTS.md          | 32 ++++++++++++++++++++++++++++++++
  docs/REFERENCES.md | 17 +++++++++++++++++</pre></details>
+<div class="sha">with Claude Fable 5.2</div>
+</article>
+<article class="card" id="c-5b2118004"><header><div><div class="sha">5b2118004 · Cristiano Calcagno · Nov 13, 08:57</div><h3>State that the note is corrected where the model shows it wrong</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">AGENTS.md, &quot;General statements, no lists of special cases&quot;</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>the Lean represents a notion as the note defines it</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>the Lean and the note state the same definition; where the model shows the note wrong or incomplete, the note is corrected and the Lean follows the corrected definition</p></div></figure></div>
+<h4 class="change">Why</h4><div class="prose"><p>The audit of the note against the Lean found sentences of the note the model refutes (a typed array's length without a single-valued contract, functions under the change <code>scalar</code>) and notions it omits (an object's identity location). Agreement is restored by fixing whichever side is wrong.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>1 file changed, 5 insertions(+), 1 deletion(-)</summary><pre class="code"> AGENTS.md | 6 +++++-</pre></details>
 <div class="sha">with Claude Fable 5.2</div>
 </article>
 </main></body></html>
