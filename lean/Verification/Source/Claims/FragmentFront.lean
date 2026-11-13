@@ -1370,7 +1370,7 @@ def branchImplications {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreVi
       if acc.any fun y => y.test == x.test && y.target == x.target then acc else acc ++ [x]) []
     if xs.isEmpty then none else some (h, xs)
 
-/-- Each unit's given line computed from its plan where `given` has none: for
+/-- Each unit of `group`'s given line computed from its plan where `given` has none: for
 a unit whose postcondition names inputs (`@ensures`), the slots holding each
 input's entry value at its statement entries (`inputsTable` from
 `GraphCode.namedInputs`), the `graph` rows' `inputs` the pass reads; at its
@@ -1386,10 +1386,13 @@ tables at its statement entries (`regionalLines`), its `regional` and
 `footprintRegional`; with `falseRegional` (`TSCERT_FORCE=head-region-…`),
 an entry of that kind no edge establishes added at each. -/
 def FilePlans.computedGiven (f : FilePlans) (given : Std.HashMap String Json) (falseInputs : Bool := false)
-    (falseImplications : Bool := false) (falseRegional : Option String := none) :
+    (falseImplications : Bool := false) (falseRegional : Option String := none) (group : List Nat) :
     Std.HashMap String Json :=
   f.plans.zipIdx.foldl (init := given) fun m (p, i) =>
     let u := f.fr.unitId i
+    -- (only the group's members: a member's run reads its own line alone,
+    -- `passMember`)
+    if !group.contains i then m else
     -- (forced, the given file's line replaced: the control holds beside it too)
     if m.contains u && !falseInputs && !falseImplications && falseRegional.isNone then m else match p with
     | .ok (.graph _ _ r) =>
@@ -1756,7 +1759,7 @@ def FilePlans.passGroupMode8 (f : FilePlans) (infer : Bool) (force : List String
     List String × Except String (List String) × Nat × Nat :=
   if infer then
     let given := some (f.computedGiven (given.getD {}) (force.contains "head-inputs")
-      (force.contains "head-implications") (force.find? (·.startsWith "head-region-")))
+      (force.contains "head-implications") (force.find? (·.startsWith "head-region-")) group)
     (f.withFreshApart (force.contains "head-apart") group).passGroupInferred fuel group keep
       (force.any (·.startsWith "head-")) compare debugNode repeats given observe counting located
   else
