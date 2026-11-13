@@ -253,7 +253,7 @@ writeFileSync(join(project, "tsconfig.json"), JSON.stringify({
   include: [join(root, "src/**/*.ts")], exclude: [join(root, "src/layout.test.ts")],
 }, null, 2));
 const pretextCounts = counts();
-let pretextTime = "";
+let pretextTime: string = "";
 const pretextChecks = Promise.all(selectedFiles.map((f) => checkPretextFile(root, project, f, pretextCounts)))
   .finally(() => { pretextTime = seconds(started); });
 
