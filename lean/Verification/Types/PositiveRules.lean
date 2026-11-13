@@ -3677,24 +3677,14 @@ check. -/
 theorem sourceCategory_not_exc :
     valueParamGraph.Sorted danglingAssignment ∧ tyIn valueParamGraph .source [0] = true ∧
       ¬ FamLe (mixedValues valueParamGraph danglingAssignment [0]) (excOf valueParamGraph) := by
-  refine ⟨?_, by decide, ?_⟩
-  · intro i k hk n W x hx
-    simp only [valueParamGraph, Option.some.injEq] at hk
-    subst hk
-    cases x with
-    | inl v =>
-      obtain ⟨-, hv⟩ | ⟨h, -⟩ := hx
-      · cases (show Sum.inl v = Sum.inl danglingArray from hv)
-        exact ⟨.source, rfl, rfl, by simp [danglingArray, Scoped]⟩
-      · cases h
-    | inr vs => exact absurd hx.2 (by simp [danglingAssignment])
+  refine ⟨valueParamGraph.sorted _, by decide, ?_⟩
   · intro h
     have hm : mixedValues valueParamGraph danglingAssignment [0] 0 (ofList []) danglingArray := by
       refine ⟨0, List.mem_singleton_self _, ?_⟩
       show qDenoteWithArgs _ _ _ _ _ _
       rw [qDenoteWithArgs_unfold]
-      simp [qLayerWithArgs, NormalGraph.params, valueParamGraph, mixedParameters, selectParameter,
-        danglingAssignment]
+      simp only [qLayerWithArgs, NormalGraph.params, valueParamGraph, Option.isSome_some]
+      exact ⟨⟨_, rfl, .source, rfl, rfl, by simp [danglingArray, Scoped]⟩, rfl, fun e => by cases e⟩
     obtain ⟨-, hinv⟩ := h 0 (ofList []) _ hm
     simp only [builtinInvariant, valueParamGraph, Clause.carriesInvariant] at hinv
     obtain ⟨flds, l, c, oid, he, hf, hl, -⟩ := hinv _ _ rfl (by simp) _ _ (List.mem_singleton_self _)
@@ -3760,10 +3750,8 @@ theorem sortTy_sound {G : NormalGraph ι} {η : MixedAssignment ι} (hη : G.Sor
       · simp only [hp, if_true] at hx
         obtain ⟨k', hk'⟩ : ∃ k', G.parameterKinds i = some k' := by
           rcases NormalGraph.listParam_iff.mp hp with h | h <;> exact ⟨_, h⟩
-        have hsel : selectParameter (some k') (η.1 i) n W (.inr vs) := by
-          rcases NormalGraph.listParam_iff.mp hp with h | h <;> rw [h] at hk' <;> cases hk' <;>
-            exact ⟨by simp, hx⟩
-        exact (hη i k' hk' n W _ hsel).2
+        rw [hk'] at hx
+        exact (hη i k' hk' n W _ hx).2
       · simp only [hp, if_false, Bool.false_eq_true] at hx
         obtain ⟨c, hc, hx⟩ := hx
         have hpos := List.all_eq_true.mp (List.all_eq_true.mp (show listsIn G U = true from hl) i hi) c hc
@@ -3780,6 +3768,14 @@ theorem sortTy_sound {G : NormalGraph ι} {η : MixedAssignment ι} (hη : G.Sor
           simp only [hpj, Option.map_some, Option.some.injEq] at hA
           subst hA
           exact tyIn_sound hη (hpos a List.mem_cons_self S (Tuple.position_mem hpj)) hu
+
+/-- **A checked substitution argument is its binder's selection of it**: the
+argument's meaning is in the binder's sort at every assignment, selection
+restricting to the sort (`NormalGraph.sorted`). -/
+theorem sortTy_selected {G : NormalGraph ι} (η : MixedAssignment ι) {k : ParameterKind} {U : List ι}
+    (h : sortTy G k U = true) :
+    selectParameter (some k) (mixedMeaning G η U) = mixedMeaning G η U :=
+  mixedMeaning_selected G η U k (sortTy_hasKind h) (sortTy_sound (G.sorted η) h).2
 
 /-- **A meet target, read part by part**: each part of a target meet row is
 the source row, one of the source meet's parts, or a scheme the source row or

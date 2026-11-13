@@ -12,17 +12,21 @@ open PositiveCertificates (ComparisonResult)
 variable {ι : Type} {U N : Fam} {C : Capabilities U N}
 
 open Classical in
-/-- A value binder's assigned family, read through the graph. -/
+/-- A value binder's assigned family of source values, read through the
+graph: the binder observes it whole. -/
 theorem assigned_value (G : NormalGraph ι) (η : MixedAssignment ι)
     (s : SchemeRow ι) (As : List MixedFamily) (p : ι) (A : MixedFamily)
     (hp : (s.binders.zip As).lookup p = some A)
-    (hk : G.parameterKinds p = some .value) :
+    (hk : G.parameterKinds p = some .value)
+    (hA : ∀ n W v, A.value.1 n W v → ValueSort.source.Holds v) :
     PositiveRules.mixedValues G (assign η s.binders As) [p] = A.value.1 := by
   have he := mixedMeaning_parameter G (assign η s.binders As) p .value hk
   funext n W v
   have hv := congrFun (congrFun (congrFun he n) W) (Sum.inl v)
-  simpa [mixedMeaning, mixedParameters, PositiveRules.mixedValues,
-    selectParameter, assign, hp, MixedFamily.value] using hv
+  have hv' : PositiveRules.mixedValues G (assign η s.binders As) [p] n W v ↔
+      A.1 n W (.inl v) ∧ ValueSort.source.Holds v := by
+    simpa [mixedMeaning, mixedParameters, PositiveRules.mixedValues, assign, hp] using hv
+  exact propext (hv'.trans ⟨And.left, fun h => ⟨h, hA n W v h⟩⟩)
 
 open Classical in
 /-- The body assignment retains every group's observation at its declared
@@ -34,13 +38,17 @@ theorem assigned_observation (G : NormalGraph ι) (η : MixedAssignment ι)
     (ht : (s.binders.zip As).lookup t = As[g.input]?)
     (ho : (s.binders.zip As).lookup o = As[g.observation]?)
     (kt : G.parameterKinds t = some .value)
-    (ko : G.parameterKinds o = some .value) :
+    (ko : G.parameterKinds o = some .value)
+    (hU : ∀ n W v, U n W v → ValueSort.source.Holds v) :
     ∃ d : Observation C,
       PositiveRules.mixedValues G (assign η s.binders As) [t] = d.input ∧
       PositiveRules.mixedValues G (assign η s.binders As) [o] = d.observation := by
   obtain ⟨d, T, O, hT, hO, eT, eO⟩ := allowed_observation C s As ha g hg
-  exact ⟨d, (assigned_value G η s As t T (ht.trans hT) kt).trans eT,
-    (assigned_value G η s As o O (ho.trans hO) ko).trans eO⟩
+  have src := C.observe_source d.observed
+  exact ⟨d, (assigned_value G η s As t T (ht.trans hT) kt
+      (fun n W v h => hU n W v (src.1 n W v (eT ▸ h)))).trans eT,
+    (assigned_value G η s As o O (ho.trans hO) ko
+      (fun n W v h => hU n W v (src.2 n W v (eO ▸ h)))).trans eO⟩
 
 open Classical in
 /-- The body assignment retains a resolvable group's descriptor at its
@@ -55,16 +63,22 @@ theorem assigned_descriptor (G : NormalGraph ι) (η : MixedAssignment ι)
     (hr : (s.binders.zip As).lookup r = As[slot]?)
     (kt : G.parameterKinds t = some .value)
     (ko : G.parameterKinds o = some .value)
-    (kr : G.parameterKinds r = some .value) :
+    (kr : G.parameterKinds r = some .value)
+    (hU : ∀ n W v, U n W v → ValueSort.source.Holds v) :
     ∃ d : Descriptor C,
       PositiveRules.mixedValues G (assign η s.binders As) [t] = d.input ∧
       PositiveRules.mixedValues G (assign η s.binders As) [o] = d.observation ∧
       PositiveRules.mixedValues G (assign η s.binders As) [r] = d.result := by
   obtain ⟨d, T, O, R, hT, hO, hR, eT, eO, eR⟩ :=
     allowed_descriptor C s As ha g hg slot hs
-  exact ⟨d, (assigned_value G η s As t T (ht.trans hT) kt).trans eT,
-    (assigned_value G η s As o O (ho.trans hO) ko).trans eO,
-    (assigned_value G η s As r R (hr.trans hR) kr).trans eR⟩
+  have src := C.observe_source d.observed
+  have srcR := C.resolve_source d.resolved
+  exact ⟨d, (assigned_value G η s As t T (ht.trans hT) kt
+      (fun n W v h => hU n W v (src.1 n W v (eT ▸ h)))).trans eT,
+    (assigned_value G η s As o O (ho.trans hO) ko
+      (fun n W v h => hU n W v (src.2 n W v (eO ▸ h)))).trans eO,
+    (assigned_value G η s As r R (hr.trans hR) kr
+      (fun n W v h => hU n W v (srcR.2 n W v (eR ▸ h)))).trans eR⟩
 
 /-- A group's value binders, checked against the graph: the input, the
 observation, and the result where the group has one. -/
@@ -211,7 +225,7 @@ theorem lexicalAdmission_sound [DecidableEq ι] (G : NormalGraph ι)
       simp only [List.getElem?_map, e, Option.map_some]
     obtain ⟨d, et, eo⟩ := assigned_observation G η source As ha g hg b.input b.observation
       (assignment_position checked.1.1 hl ht)
-      (assignment_position checked.1.1 hl ho) kt ko
+      (assignment_position checked.1.1 hl ho) kt ko (fun n W v h => (hU n W v h).1)
     have et' : (F T).value.1 = d.input :=
       (sourceView_sound tv kt _ (by rw [et]; exact fun n W v h => hU n W v ((C.observe_source d.observed).1 n W v h))).trans et
     have eo' : (F O).value.1 = d.observation :=
@@ -235,7 +249,7 @@ theorem lexicalAdmission_sound [DecidableEq ι] (G : NormalGraph ι)
       b.input b.observation r
       (assignment_position checked.1.1 hl ht)
       (assignment_position checked.1.1 hl ho)
-      (assignment_position checked.1.1 hl hr) kt ko kr
+      (assignment_position checked.1.1 hl hr) kt ko kr (fun n W v h => (hU n W v h).1)
     have et' : (F T).value.1 = e.input :=
       (sourceView_sound tv kt _ (by rw [et]; exact fun n W v h => hU n W v ((C.observe_source e.observed).1 n W v h))).trans et
     have eo' : (F O).value.1 = e.observation :=

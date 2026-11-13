@@ -843,12 +843,13 @@ theorem packedBy_sound {G : NormalGraph ι} {A : Ty ι} {t : ι} (hp : PackedBy 
   have hpart : ∀ {m U u}, (mixedParameters G).value t (G.env.1 t) m U u →
       Packable (argMeaning G [t]) m U u := by
     intro m U u h
-    simp only [mixedParameters, hk, selectParameter] at h
-    rcases h with ⟨h, _⟩ | ⟨_, _, h⟩
-    · rcases h with h | h <;> cases h
-    · refine Packable_mono ?_ h
-      intro j U' vs hvs
-      exact ⟨t, List.mem_singleton_self t, by simpa [NormalGraph.listParam, hk] using hvs⟩
+    change selectParameter (G.parameterKinds t) (G.env.1 t) m U (.inl u) at h
+    rw [hk] at h
+    refine Packable_mono ?_ (h.2.2 rfl)
+    intro j U' vs ⟨hvs, hl⟩
+    refine ⟨t, List.mem_singleton_self t, ?_⟩
+    simp only [NormalGraph.listParam, hk, beq_self_eq_true, Bool.or_true, if_true]
+    exact ⟨⟨_, rfl, rfl, hl⟩, hvs, trivial⟩
   obtain ⟨l, hl, hv⟩ := hv
   rcases hA l hl with rfl | ⟨hlp, hls, hm'⟩
   · change qDenoteWithArgs G (mixedParameters G) (G.env, l) n W v at hv

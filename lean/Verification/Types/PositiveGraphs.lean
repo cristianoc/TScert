@@ -183,48 +183,78 @@ def ParameterAssignment.empty (k : ParameterSpace) : ParameterAssignment k ι :=
   ⟨fun _ _ _ _ => False,
     fun _ => ⟨⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩, fun _ _ _ h => h.elim⟩⟩
 
-/-- A binder observes only the component selected by its declared kind.
-The other component of a mixed semantic family cannot constrain its meaning. -/
+/-- **A binder observes its family restricted to its sort**
+(`ParameterKind.MixedSort`): a value binder the source values of its value
+component, a store binder the stores, an argument binder the lists of source
+values of its list component, a packed binder both, its values packable by
+its lists (`Packable`). The other component of a mixed semantic family
+cannot constrain its meaning. A binder of kind `k` so ranges over exactly the
+families valid at its sort (`selectParameter_sorted`, `selectParameter_self`). -/
 def selectParameter (kind : Option ParameterKind) (A : WorldFamily ParameterSpace.mixed.Carrier) :
-    WorldFamily ParameterSpace.mixed.Carrier := fun n W x => match x with
-  | .inl v => ((kind = some .value ∨ kind = some .store) ∧ A n W (.inl v)) ∨
-      (kind = some .packed ∧ A n W (.inl v) ∧ Packable (fun j U vs => A j U (.inr vs)) n W v)
-  | .inr vs => (kind = some .arguments ∨ kind = some .packed) ∧ A n W (.inr vs)
+    WorldFamily ParameterSpace.mixed.Carrier := fun n W x =>
+  (∃ k, kind = some k ∧ k.MixedSort x) ∧ A n W x ∧
+    match x with
+    | .inl v => kind = some .packed → Packable (fun j U vs => A j U (.inr vs) ∧ SourceList vs) n W v
+    | .inr _ => True
 
 theorem selectParameter_adm (kind : Option ParameterKind) {A : WorldFamily ParameterSpace.mixed.Carrier}
     (h : Adm A) : Adm (selectParameter kind A) := by
   constructor
   · intro n W x hx
+    obtain ⟨hk, ha, hp⟩ := hx
+    refine ⟨hk, h.down _ _ _ ha, ?_⟩
     cases x with
-    | inl v =>
-      rcases hx with ⟨hk, ha⟩ | ⟨hk, ha, hp⟩
-      · exact Or.inl ⟨hk, h.down _ _ _ ha⟩
-      · exact Or.inr ⟨hk, h.down _ _ _ ha, (Packable_adm _).down _ _ _ hp⟩
-    | inr vs => exact ⟨hx.1, h.down _ _ _ hx.2⟩
+    | inl v => exact fun e => (Packable_adm _).down _ _ _ (hp e)
+    | inr vs => trivial
   · intro n W U hw x hx
+    obtain ⟨hk, ha, hp⟩ := hx
+    refine ⟨hk, h.mono _ _ _ hw _ ha, ?_⟩
     cases x with
-    | inl v =>
-      rcases hx with ⟨hk, ha⟩ | ⟨hk, ha, hp⟩
-      · exact Or.inl ⟨hk, h.mono _ _ _ hw _ ha⟩
-      · exact Or.inr ⟨hk, h.mono _ _ _ hw _ ha, (Packable_adm _).mono _ _ _ hw _ hp⟩
-    | inr vs => exact ⟨hx.1, h.mono _ _ _ hw _ hx.2⟩
+    | inl v => exact fun e => (Packable_adm _).mono _ _ _ hw _ (hp e)
+    | inr vs => trivial
 
 /-- Selection is nonexpansive: it reads its family at the same levels and,
 for a packed binder's spread, below them. -/
 theorem selectParameter_agree (kind : Option ParameterKind) {A B : WorldFamily ParameterSpace.mixed.Carrier}
     {n : Nat} (h : Agree A B n) : Agree (selectParameter kind A) (selectParameter kind B) n := by
   intro m hm W x
+  simp only [selectParameter]
+  rw [h m hm W x]
   cases x with
-  | inr vs => exact and_congr Iff.rfl (h m hm W (.inr vs))
+  | inr vs => exact Iff.rfl
   | inl v =>
-    have hp := Packable_congr (P := fun j U vs => A j U (.inr vs)) (Q := fun j U vs => B j U (.inr vs))
-      (n := m) (fun j hj U vs => h j (by omega) U (.inr vs)) W v
-    simp only [selectParameter]
-    rw [h m hm W (.inl v), hp]
+    have hp := Packable_congr (P := fun j U vs => A j U (.inr vs) ∧ SourceList vs)
+      (Q := fun j U vs => B j U (.inr vs) ∧ SourceList vs)
+      (n := m) (fun j hj U vs => and_congr (h j (by omega) U (.inr vs)) Iff.rfl) W v
+    simp only [hp]
+
+/-- A selection is in its binder's sort. -/
+theorem selectParameter_sorted {k : ParameterKind} {A : WorldFamily ParameterSpace.mixed.Carrier}
+    {n W x} (h : selectParameter (some k) A n W x) : k.MixedSort x := by
+  obtain ⟨⟨k', hk, hs⟩, -⟩ := h
+  cases hk
+  exact hs
+
+/-- A family in a value, store or argument binder's sort is its own selection. -/
+theorem selectParameter_self {k : ParameterKind} (hk : k ≠ .packed)
+    {A : WorldFamily ParameterSpace.mixed.Carrier} (h : ∀ n W x, A n W x → k.MixedSort x) :
+    selectParameter (some k) A = A := by
+  funext n W x
+  apply propext
+  refine ⟨fun h => h.2.1, fun ha => ⟨⟨k, rfl, h n W x ha⟩, ha, ?_⟩⟩
+  cases x with
+  | inl v => intro e; cases e; exact absurd rfl hk
+  | inr vs => trivial
 
 @[simp] theorem selectParameter_value {A : WorldFamily ParameterSpace.mixed.Carrier} {n W v} :
-    selectParameter (some .value) A n W (.inl v) ↔ A n W (.inl v) := by
-  simp [selectParameter]
+    selectParameter (some .value) A n W (.inl v) ↔ A n W (.inl v) ∧ ValueSort.source.Holds v := by
+  simp only [selectParameter, ParameterKind.MixedSort, ParameterKind.valueSort, Option.some.injEq]
+  constructor
+  · rintro ⟨⟨k, rfl, q, hq, hv⟩, ha, -⟩
+    cases hq
+    exact ⟨ha, hv⟩
+  · rintro ⟨ha, hv⟩
+    exact ⟨⟨_, rfl, _, rfl, hv⟩, ha, fun e => by cases e⟩
 
 /-- Positions of a retained resolution input, literal observation and associated
 result among a scheme's binders. An observation-only group (`Awaitable`) has no
@@ -443,9 +473,13 @@ structure NormalGraph (ι : Type) where
   overlapping : ι → Bool := fun _ => false
 
 /-- **A sorted assignment**: each parameter row's selected family lies in its
-binder's sort (`ParameterKind.MixedSort`). -/
+binder's sort (`ParameterKind.MixedSort`). Every assignment is, selection
+restricting to the sort (`NormalGraph.sorted`). -/
 def NormalGraph.Sorted (G : NormalGraph ι) (η : MixedAssignment ι) : Prop :=
   ∀ i k, G.parameterKinds i = some k → ∀ n W x, selectParameter (some k) (η.1 i) n W x → k.MixedSort x
+
+theorem NormalGraph.sorted (G : NormalGraph ι) (η : MixedAssignment ι) : G.Sorted η :=
+  fun _ _ _ _ _ _ h => selectParameter_sorted h
 
 /-- Whether a row is a parameter is derived from its kind, never maintained
 separately. -/
@@ -910,7 +944,7 @@ Ordinary value rows and value parameters have no argument-list members.
 Tuple positions use the recursive value meanings at the current level. -/
 def graphArguments (G : NormalGraph ι) : ArgumentInterpreter ι .mixed :=
   fun η X S n W vs => ∃ i ∈ S,
-    if G.listParam i then η.1 i n W (.inr vs)
+    if G.listParam i then selectParameter (G.parameterKinds i) (η.1 i) n W (.inr vs)
     else ∃ c ∈ G i, clauseArguments X c n W vs
 
 theorem graphArguments_nonexp (G : NormalGraph ι) : ArgumentNonExp (graphArguments G) := by
@@ -918,7 +952,7 @@ theorem graphArguments_nonexp (G : NormalGraph ι) : ArgumentNonExp (graphArgume
   unfold graphArguments
   apply exists_congr fun i => and_congr Iff.rfl ?_
   split
-  · exact hη i j hj W (.inr vs)
+  · exact selectParameter_agree (G.parameterKinds i) (hη i) j hj W (.inr vs)
   · apply exists_congr fun c => and_congr Iff.rfl ?_
     exact clauseArguments_congr X Y c j W (fun a v => hX a j hj W v) vs
 
@@ -939,7 +973,7 @@ theorem graphArguments_adm (G : NormalGraph ι) (η : MixedAssignment ι)
   refine ⟨i, hi, ?_⟩
   by_cases hp : G.listParam i = true
   · simp only [hp, if_true] at h ⊢
-    exact (η.2 i).1.transfer h j hj U hx
+    exact (selectParameter_adm _ (η.2 i).1).transfer h j hj U hx
   · simp only [hp, if_false, Bool.false_eq_true] at h ⊢
     obtain ⟨c, hc, h⟩ := h
     refine ⟨c, hc, ?_⟩
@@ -966,7 +1000,7 @@ theorem graphArguments_valid (G : NormalGraph ι) (η : MixedAssignment ι)
     obtain ⟨i, hi, h⟩ := h
     by_cases hp : G.listParam i = true
     · simp only [hp, if_true] at h
-      exact (η.2 i).2 n W (.inr vs) h
+      exact (η.2 i).2 n W (.inr vs) h.2.1
     · simp only [hp, if_false, Bool.false_eq_true] at h
       obtain ⟨c, hc, h⟩ := h
       cases c <;> try exact h.elim
@@ -1455,7 +1489,7 @@ theorem mixedDenote_value (G : NormalGraph ι) (η : MixedAssignment ι) (i : ι
   rw [qDenoteWithArgs_unfold] at h
   unfold qLayerWithArgs at h
   split at h
-  · rcases h with ⟨_, h⟩ | ⟨_, h, _⟩ <;> exact (η.2 i).2 n W (.inl v) h
+  · exact (η.2 i).2 n W (.inl v) h.2.1
   · cases hs : G.schemes i with
     | some s => simp only [hs] at h; exact h.1.val
     | none =>
@@ -1525,7 +1559,8 @@ theorem mixedMeaning_parameter (G : NormalGraph ι) (η : MixedAssignment ι) (i
     simp [qLayerWithArgs, hp, mixedParameters, selectParameter, hi]
   | inr vs =>
     change graphArguments G η _ [i] n W vs ↔ _
-    cases kind <;> simp [graphArguments, hc, hi, selectParameter, NormalGraph.listParam]
+    cases kind <;> simp [graphArguments, hc, hi, selectParameter, NormalGraph.listParam,
+      ParameterKind.MixedSort, ParameterKind.lists]
 
 /-- A sorted pack type cannot contribute runtime-value members, including
 unions of pack rows and pack parameters. -/
@@ -1539,7 +1574,8 @@ theorem mixedMeaning_noValues (G : NormalGraph ι) (η : MixedAssignment ι) (S 
   cases hp : G.parameterKinds i with
   | some k =>
     cases k <;> simp [hp] at hk
-    simp [NormalGraph.params, hp, mixedParameters, selectParameter] at hv
+    simp [NormalGraph.params, hp, mixedParameters, selectParameter, ParameterKind.MixedSort,
+      ParameterKind.valueSort] at hv
   | none =>
     cases hq : G.schemes i with
     | some sch => simp [hp, hq] at hk
@@ -1584,39 +1620,42 @@ theorem mixedMeaning_noArguments (G : NormalGraph ι) (η : MixedAssignment ι) 
     ¬ mixedMeaning G η S n W (.inr vs) :=
   mixedMeaning_noArguments_of G η S rfl hs n W vs
 
-/-- The existing sort check guarantees that a type image equals its selected
-component. This connects the wire's kind check to semantic correspondence. -/
+/-- **A substitution image is its own selection** where it has its binder's
+outer sort and its meaning lies in the binder's sort (`sortTy_sound` gives
+the latter from the checked sort). This connects the substitution check to
+semantic correspondence. -/
 theorem mixedMeaning_selected (G : NormalGraph ι) (η : MixedAssignment ι) (S : List ι)
-    (kind : ParameterKind) (hs : G.hasKind kind S = true) :
+    (kind : ParameterKind) (hs : G.hasKind kind S = true)
+    (hsort : ∀ n W x, mixedMeaning G η S n W x → kind.MixedSort x) :
     selectParameter (some kind) (mixedMeaning G η S) = mixedMeaning G η S := by
-  funext n W x
-  apply propext
-  cases kind <;> cases x
-  · simp [selectParameter]
-  · simp [selectParameter, mixedMeaning_noArguments G η S hs]
-  · simp [selectParameter, mixedMeaning_noValues G η S hs]
-  · simp [selectParameter]
-  · -- A packed-sorted type is a union of packed parameter rows, each of
-    -- whose values is packable by its own lists, so by the union's.
-    rename_i v
-    simp only [selectParameter]
-    constructor
-    · rintro (⟨hk, _⟩ | ⟨_, h, _⟩)
-      · rcases hk with hk | hk <;> cases hk
-      · exact h
-    · intro h
-      refine Or.inr ⟨by simp, h, ?_⟩
-      obtain ⟨i, hi, hv⟩ := h
+  cases kind
+  · exact selectParameter_self (by decide) hsort
+  · exact selectParameter_self (by decide) hsort
+  · funext n W x
+    apply propext
+    refine ⟨fun h => h.2.1, fun hx => ⟨⟨_, rfl, hsort n W x hx⟩, hx, ?_⟩⟩
+    cases x with
+    | inr vs => trivial
+    | inl v =>
+      -- A packed-sorted type is a union of packed parameter rows, each of
+      -- whose values is packable by its own lists, so by the union's.
+      intro _
+      obtain ⟨i, hi, hv⟩ := hx
       have hk := List.all_eq_true.mp hs i hi
       rw [qDenoteWithArgs_unfold] at hv
       unfold qLayerWithArgs at hv
       cases hp : G.parameterKinds i with
       | some k =>
         cases k <;> simp [hp] at hk
-        simp [NormalGraph.params, hp, mixedParameters, selectParameter] at hv
-        refine Packable_mono ?_ hv.2
-        intro m U vs hvs
-        exact ⟨i, hi, by simpa [NormalGraph.listParam, hp] using hvs⟩
+        have hpar : G.params i = true := by simp [NormalGraph.params, hp]
+        simp only [hpar, if_true] at hv
+        change selectParameter (G.parameterKinds i) (η.1 i) n W (.inl v) at hv
+        rw [hp] at hv
+        refine Packable_mono ?_ (hv.2.2 rfl)
+        intro m U vs ⟨hvs, hl⟩
+        refine ⟨⟨i, hi, ?_⟩, hl⟩
+        simp only [NormalGraph.listParam, hp, beq_self_eq_true, Bool.or_true, if_true]
+        exact ⟨⟨_, rfl, rfl, hl⟩, hvs, trivial⟩
       | none =>
         cases hq : G.schemes i with
         | some sch => simp [hp, hq] at hk
@@ -1632,9 +1671,7 @@ theorem mixedMeaning_selected (G : NormalGraph ι) (η : MixedAssignment ι) (S 
             List.all_eq_true] at hk
           have := hk c hr
           cases c <;> simp at this
-  · simp [selectParameter]
-  · simp [selectParameter]
-  · simp [selectParameter, mixedMeaning_noArguments_of G η S (kind := .store) rfl hs]
+  · exact selectParameter_self (by decide) hsort
 
 /-- A graph's meaning reads its parameter rows at its own assignment. -/
 noncomputable def normalDenote (G : NormalGraph ι) (i : ι) : Fam :=

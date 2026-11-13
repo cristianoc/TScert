@@ -454,13 +454,13 @@ theorem arguments_agree (h : m.StepPremise X Y) {η θ} (hr : m.Related η θ) :
   apply propext
   unfold graphArguments
   have body : ∀ i ∈ S,
-      (if H.listParam (m.φ i) then θ.1 (m.φ i) n W (.inr vs)
+      (if H.listParam (m.φ i) then selectParameter (H.parameterKinds (m.φ i)) (θ.1 (m.φ i)) n W (.inr vs)
         else ∃ c ∈ H (m.φ i), clauseArguments (setSem fun l => Y (θ, l)) c n W vs) ↔
-      (if G.listParam i then η.1 i n W (.inr vs)
+      (if G.listParam i then selectParameter (G.parameterKinds i) (η.1 i) n W (.inr vs)
         else ∃ c ∈ G i, clauseArguments (setSem fun l => X (η, l)) c n W vs) := by
     intro i hi
     have hD := hS i hi
-    rw [m.listParam_eq hD, hr i hD]
+    rw [m.listParam_eq hD, hr i hD, m.kinds i hD]
     split
     · exact Iff.rfl
     · exact m.rows_exists (m.clauses_rel hD) fun c hc c' hrel => by

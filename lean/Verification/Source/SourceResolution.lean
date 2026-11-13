@@ -72,7 +72,7 @@ def lexicalBinding (c : ResolutionContext E) (source : SchemeRow (Label E.signat
               obtain ⟨o, et, eo⟩ := QualifiedGraphs.assigned_observation E.graph η source As
                 allowed group member b.input b.observation
                 (QualifiedGraphs.assignment_position unique length ht)
-                (QualifiedGraphs.assignment_position unique length ho) kt ko
+                (QualifiedGraphs.assignment_position unique length ho) kt ko (fun _ _ _ h => h.1)
               simp only [hnone hg, Option.map_none]
               have vt := QualifiedGraphs.sourceView_sound projections.1 kt _
                 (by rw [et]; exact (c.capabilities.observe_source o.observed).1)
@@ -85,7 +85,7 @@ def lexicalBinding (c : ResolutionContext E) (source : SchemeRow (Label E.signat
                 allowed group member slot hg b.input b.observation r
                 (QualifiedGraphs.assignment_position unique length ht)
                 (QualifiedGraphs.assignment_position unique length ho)
-                (QualifiedGraphs.assignment_position unique length hr) kt ko kr
+                (QualifiedGraphs.assignment_position unique length hr) kt ko kr (fun _ _ _ h => h.1)
               simp only [hbr, Option.map_some]
               have vt := QualifiedGraphs.sourceView_sound projections.1 kt _
                 (by rw [et]; exact (c.capabilities.observe_source d.observed).1)
@@ -511,7 +511,7 @@ theorem rawStableAliases_sound (c : ResolutionContext E) (domain : E.domain = c.
     intro j U u hu
     have h1 : mixedMeaning E.graph η' [b.input] j U (.inl u) := hu
     rw [mixedMeaning_parameter E.graph η' b.input .value kt] at h1
-    exact bounded (j + 1) (b.input, B) hmem hbinder j (by omega) U (.inl u) (selectParameter_value.mp h1)
+    exact bounded (j + 1) (b.input, B) hmem hbinder j (by omega) U (.inl u) (selectParameter_value.mp h1).1
   have stable : FamLe (mixedValues E.graph η' [b.input]) c.stableFamily := by
     intro j U u hu
     rw [← c.stable_meaning η]
@@ -530,7 +530,7 @@ theorem rawStableAliases_sound (c : ResolutionContext E) (domain : E.domain = c.
   obtain ⟨o, et, eo⟩ := QualifiedGraphs.assigned_observation (C := c.capabilities) E.graph η
     source As allowed' g hg b.input b.observation
     (QualifiedGraphs.assignment_position unique length ht)
-    (QualifiedGraphs.assignment_position unique length ho) kt ko
+    (QualifiedGraphs.assignment_position unique length ho) kt ko (fun _ _ _ h => h.1)
   simp only [List.mem_cons] at hp
   rcases hp with rfl | hp
   · change mixedValues E.graph η' [b.observation] n W v ↔ _
@@ -549,7 +549,7 @@ theorem rawStableAliases_sound (c : ResolutionContext E) (domain : E.domain = c.
         source As allowed' g hg slot hgr b.input b.observation r
         (QualifiedGraphs.assignment_position unique length ht)
         (QualifiedGraphs.assignment_position unique length ho)
-        (QualifiedGraphs.assignment_position unique length hr) kt ko kr
+        (QualifiedGraphs.assignment_position unique length hr) kt ko kr (fun _ _ _ h => h.1)
       change mixedValues E.graph η' [r] n W v ↔ _
       rw [input, dr, d.result_eq_input (by rw [← dt]; exact stable), ← dt]
 

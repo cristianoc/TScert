@@ -460,8 +460,14 @@ theorem application_meaning (p : NativePromise E)
     simp only [θ, assign_cons_head]
     funext n W x
     cases x with
-    | inl v => simp [selectParameter, MixedFamily.ofValue, V, MixedFamily.value]
-    | inr vs => simp [selectParameter, mixedMeaning_noArguments E.graph η A (sortTy_hasKind kind)]
+    | inl v =>
+      simp only [selectParameter, MixedFamily.ofValue, V, MixedFamily.value]
+      refine propext ⟨fun h => ⟨⟨_, rfl, (sortTy_sound (E.graph.sorted η) kind).2 n W _ h⟩, h, fun e => by cases e⟩,
+        fun h => h.2.1⟩
+    | inr vs =>
+      simp only [selectParameter, MixedFamily.ofValue]
+      refine propext ⟨fun h => absurd h (mixedMeaning_noArguments E.graph η A (sortTy_hasKind kind) n W vs),
+        fun h => h.2.1.elim⟩
   have same := E.application_congr (p.application A) (p.application [parameter E]) η θ
     rfl rfl (by
       intro i hi hj

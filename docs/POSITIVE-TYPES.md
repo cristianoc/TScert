@@ -519,9 +519,12 @@ Lean: `clauseArguments`, `Tuple.position`, `ArgumentContracts.Fits`,
 A label is one of four kinds of **row**:
 
 - a **clause row** means the union of its clauses;
-- a **parameter row** means what the graph's assignment `env` gives it. The
-  assignment is a mixed family over values and argument lists; a row's kind
-  selects the component: values for a value binder, lists for a pack binder;
+- a **parameter row** means what the graph's assignment `env` gives it,
+  within its binder's sort. The assignment is a mixed family over values and
+  argument lists; a row's kind selects the component and restricts it to the
+  binder's sort: source values for a value binder, stores for a store binder,
+  lists of source values for a pack binder
+  ([sorts](PROGRAM-TYPING.md#sorts-and-categories), `selectParameter`);
 - a **scheme row** $`(\vec p;\Sigma;\beta;\Sigma_\ldots)_\kappa`$ means one function
   meeting its signatures at every reassignment of its binders $`\vec p`$, which
   are parameter rows, within their bounds $`\beta`$. Its kind $`\kappa`$ says
@@ -548,13 +551,13 @@ denotation is the guarded fixed point of
 ```math
 ⟦i⟧^\eta=
 \begin{cases}
-\eta(i) & i\ \text{a parameter row},\\[2pt]
+\eta(i)\cap\mathrm{sort}(i) & i\ \text{a parameter row},\\[2pt]
 \bigl\{\,v\;\bigm|\;\mathsf{Callee}_\kappa(v)\land\forall j\le n.\;\forall\vec X\in\mathcal D_s.\;
   \mathsf{Bounded}_j(\vec X)\Rightarrow
   v\in_j⟦\mathsf{body}_\kappa(\Sigma;\Sigma_\ldots)⟧^{\eta'},\
   \eta'=\eta[\vec p\mapsto\vec X]\,\bigr\}
   & i\ \text{a scheme row},\\[2pt]
-\eta(p)\cap\textstyle\bigcap_{q\in\vec q}\eta(q)\cap\bigcup_{c\in\vec c}⟦c⟧^\eta & i\ \text{the meet row}\ p\sqcap\vec q\sqcap\vec c,\\[2pt]
+⟦p⟧^\eta\cap\textstyle\bigcap_{q\in\vec q}⟦q⟧^\eta\cap\bigcup_{c\in\vec c}⟦c⟧^\eta & i\ \text{the meet row}\ p\sqcap\vec q\sqcap\vec c,\\[2pt]
 \textstyle\bigcup_{c\in G(i)}⟦c⟧^\eta & i\ \text{a clause row},
 \end{cases}
 ```

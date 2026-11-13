@@ -889,7 +889,7 @@ family $`\eta(T)`$: its argument lists are $`\eta(T)^{\mathsf{args}}`$, and
 its values are $`\eta(T)`$'s values that are **packable** by those lists:
 
 ```math
-⟦T⟧_n(W,v)\iff \eta(T)_n(W,v)\ \land\ \mathrm{Packable}(\eta(T)^{\mathsf{args}})_n(W,v)
+⟦T⟧_n(W,v)\iff v\in V\ \land\ \eta(T)_n(W,v)\ \land\ \mathrm{Packable}(\eta(T)^{\mathsf{args}}\cap L)_n(W,v)
 ```
 
 ```math
@@ -963,9 +963,23 @@ carrier's own closedness is machine closedness, $`V\cup S`$
 (`MachineClosed`), since every type's meaning, a store type's included, is a
 family on it. The outer sort a substitution checks (`hasKind`) groups value
 and store binders: a type of clause rows other than packs, of schemes or of
-meets has the outer sort of both (`ParameterKind.valued`). An assignment is
-**sorted** when each parameter row's selected family is in its binder's sort
-(`NormalGraph.Sorted`).
+meets has the outer sort of both (`ParameterKind.valued`).
+
+A binder observes its assigned family restricted to its sort
+(`selectParameter`), a packed binder's values also packable by its lists:
+
+```math
+⟦p⟧^{\eta}=\eta(p)\cap\mathrm{sort}(p)
+```
+
+so a binder of kind $`k`$ ranges over exactly the families valid at its sort:
+every selection is valid at it (`selectParameter_sorted`), and a family valid
+at the sort of a value, store or argument binder is its own selection
+(`selectParameter_self`). An assignment is **sorted** when each parameter
+row's selected family is in its binder's sort (`NormalGraph.Sorted`); every
+assignment is (`NormalGraph.sorted`). A substitution's image is its own
+selection where it is in the binder's sort (`mixedMeaning_selected`), which
+the checked sort gives (`sortTy_selected`).
 
 A type's **category** $`A\subseteq q`$ is checked by cases over its rows
 (`tyIn`, `rowIn`, `partIn`, `clauseIn`):

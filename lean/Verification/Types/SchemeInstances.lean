@@ -1004,23 +1004,21 @@ theorem meet_param_image [DecidableEq ι] {G : NormalGraph ι} {κ : Ctx ι} {p 
     {ηL ηR : MixedAssignment ι} {n : Nat} {W : WorldT n} {v : Val}
     (hpk : G.parameterKinds p = some .value)
     (hr : RelKWith G (mixedParameters G) κ [p] ηL ηR) :
-    ηL.1 p n W (.inl v) ↔ mixedValues G ηR ((κ.lookup p).getD [p]) n W v := by
-  have hsel : ∀ A : WorldFamily ParameterSpace.mixed.Carrier,
-      (mixedParameters G).parameter p A n W (.inl v) ↔ A n W (.inl v) := by
-    intro A; simp [mixedParameters, selectParameter, hpk]
+    (mixedParameters G).parameter p (ηL.1 p) n W (.inl v) ↔
+      mixedValues G ηR ((κ.lookup p).getD [p]) n W v := by
   have h := hr p (List.mem_singleton_self p)
   cases hU : κ.lookup p with
   | none =>
     rw [hU] at h
     simp only [Option.getD_none]
-    rw [← hsel (ηL.1 p), h, hsel]
+    rw [h]
     change _ ↔ mixedMeaning G ηR [p] n W (.inl v)
     rw [mixedMeaning_parameter G ηR p .value hpk]
-    simp [selectParameter]
+    simp [mixedParameters, hpk]
   | some U =>
     rw [hU] at h
     simp only [Option.getD_some]
-    rw [← hsel (ηL.1 p), h]; rfl
+    rw [h]; rfl
 
 /-- **A meet row means its image.** Under a context relating the meet row's
 parameters, and with its clauses' images, `ps ⊓ cs` means the meet row of the
@@ -1045,7 +1043,6 @@ theorem meet_row_value [DecidableEq ι] {G : NormalGraph ι} {tbl : InstTable ι
       mixedValues G ηR ((κ.lookup q).getD [q]) n W v) := by
     intro q hq
     rw [partSemWithArgs_param (by simp [NormalGraph.params, hpk q hq])]
-    simp [mixedParameters, hpk q hq, selectParameter]
     exact meet_param_image (hpk q hq) (fun r hr => by
       cases List.mem_singleton.mp hr; exact hrel q hq)
   have hL : qDenoteWithArgs G (mixedParameters G) (ηL, i) n W v ↔
@@ -1734,7 +1731,7 @@ theorem mixed_assignment_substitution [DecidableEq ι] (G : NormalGraph ι) (η 
     | some kind =>
       change selectParameter (G.parameterKinds b) _ = mixedMeaning G η U
       rw [hp, he, hU]
-      exact mixedMeaning_selected G η U kind (PositiveRules.sortTy_hasKind (by simpa [substitutionKind, hp] using hkind))
+      exact PositiveRules.sortTy_selected η (by simpa [substitutionKind, hp] using hkind)
 
 /-- The semantic obligation of an instantiation witness: its named type
 images mean substitution, for values and argument packs together. Only images
