@@ -61,7 +61,7 @@ tolerates; or the invariant annotations on a type fix what the fact reads. Eleve
 patterns from a TypeScript code base become one-line annotations, and
 four more show what the language still lacks. Every statement carries one of two marks. \status{Lean} names the theorem
 of the TScert development that proves the statement's content, and gives
-that theorem's scope. \status{conj.} marks a conjecture. A cited Lean theorem states that content directly about heaps and effects; it does not mention $\bx{}$.
+that theorem's scope; where the theorem is narrower than the statement, the mark says how. \status{conj.} marks a conjecture.
 \end{abstract}
 
 \section{The problem}
@@ -99,8 +99,8 @@ A local binding of the program (a \code{const}, a \code{let}, a
 parameter) is modelled in one of two ways. It is a \emph{cell}, a
 location of the heap, when a closure can change it or can see it change:
 a closure writes it, or it is written after the creation of a closure
-that mentions it. In every other case it is a \emph{variable}, held in $\rho$. Every \code{const} is a variable, and so are most
-\code{let}s.
+that mentions it. A module binding is a cell too. In every other case a binding is a \emph{variable}, held in $\rho$. Every local \code{const} is a variable, and so are most
+local \code{let}s.
 
 For example, in \code{let i = 0; while (i < k) i++;} the binding
 \code{i} is a variable. In \code{let n = 0; const inc = () => \{ n++; \};}
@@ -123,9 +123,9 @@ $i<n$, holds after every step once it holds.
 \paragraph{Locations.} A heap $h$ is a finite map from locations, ranged over by $l$, to
 contents. Locations are natural numbers, and the domain of $h$ is the
 initial segment $\{0,\dots,\len h-1\}$: an allocation extends it, and no
-location is ever removed. The locations of a heap $h$ are of four kinds, by what they hold. Write
-$F$, $C$, $E$ and $S$ for the sets of its locations of each kind; they
-partition its domain, $\mathrm{dom}\,h=F\uplus C\uplus E\uplus S$. Each kind belongs to one of two
+location is ever removed. The locations of a heap $h$ are of five kinds, by what allocated them. Write
+$F$, $C$, $E$, $S$ and $I$ for the sets of its locations of each kind; they
+partition its domain, $\mathrm{dom}\,h=F\uplus C\uplus E\uplus S\uplus I$. A location's kind is fixed for its life. Each kind belongs to one of two
 classes, \emph{value} or \emph{store}; effects refer to locations by
 class.
 
@@ -153,11 +153,16 @@ $\langle l_0,\circ,l_2\rangle$. \code{a.push(40)} allocates an element
 cell $l_3$ and changes the store to $\langle l_0,\circ,l_2,l_3\rangle$;
 \code{a.length = 1} changes it to $\langle l_0\rangle$. Class:
 \emph{store}.
+\item[Identity location, in $I$] One for each object, allocated with it.
+It holds \code{null}, and its contract admits \code{null} alone. Two
+objects are the same object when they have the same identity location.
+After \code{const o = \{ n: 1, m: 2 \};} the object has one identity
+location beside its two field locations. Class: \emph{value}.
 \end{description}
 
 \noindent
 So a heap maps a location to a value or to a store:
-$h(l)\in\mathit{Val}$ for $l\in F\cup C\cup E$, and
+$h(l)\in\mathit{Val}$ for $l\in F\cup C\cup E\cup I$, and
 $h(l)\in\mathit{Store}$ for $l\in S$. Here
 $\mathit{Store}=(\mathit{Loc}\uplus\{\circ\})^{*}$ is the set of finite
 sequences whose entries are locations or the hole $\circ$, and
@@ -167,13 +172,13 @@ its length and $\mathit{cells}(\sigma)=\{c_i\mid c_i\ne\circ\}$ for the
 set of locations it lists. In one line,
 $h:\mathit{Loc}\rightharpoonup\mathit{Val}\uplus\mathit{Store}$.
 
-A value in $\mathit{Val}$ is a scalar, a function, or an object. A
+A value in $\mathit{Val}$ is a scalar or an object. A function is an object that also carries code. A
 \emph{scalar} is \code{null}, \code{undefined}, a number, a string, a
 boolean or a bigint; $\mathit{Scalar}\subseteq\mathit{Val}$ is the set of
 scalars and $\mathit{Obj}\subseteq\mathit{Val}$ the set of objects. An object is a finite map $v:\mathit{Key}\rightharpoonup F$ from its
-own keys to field locations, fixed when the object is allocated. The
-read of a field $f$ of $v$ in a heap $h$ is $h(v(f))$. The object's
-identity is the map $v$; what changes is $h$ at the locations $v(f)$. An array is an object with one distinguished field, whose
+own keys to field locations, together with an identity location in $I$;
+both are fixed when the object is allocated. The
+read of a field $f$ of $v$ in a heap $h$ is $h(v(f))$. What changes is $h$ at the locations $v(f)$. An array is an object with one distinguished field, whose
 location $s\in S$ is the array's store location. Its \emph{store} is the
 sequence $h(s)=\langle c_0,\dots,c_{n-1}\rangle\in\mathit{Store}$, where
 $c_i\in E$ if index $i$ is present and $c_i=\circ$ if it is a hole. The
@@ -183,7 +188,7 @@ $h(s)=\langle l_0,\circ,l_2\rangle$, the length is 3, $h(l_0)=10$ and
 $h(l_2)=30$. 
 \paragraph{A whole heap.} Take the program
 \code{const o = \{ n: 1, m: 2 \}; let k = 0; const inc = () => \{ k++; \}; const a = [10, , 30];}
-and number the locations in the order they are allocated. After it runs,
+and number its locations as in the table. After it runs,
 one heap $h$ it can have is:
 \[
 \begin{array}{llll}
@@ -193,10 +198,11 @@ one heap $h$ it can have is:
 2 & C & 0 & \text{the cell of \code{k}}\\
 3 & S & \langle 4,\circ,5\rangle & \text{the store of \code{a}}\\
 4 & E & 10 & \text{the element \code{a[0]}}\\
-5 & E & 30 & \text{the element \code{a[2]}}
+5 & E & 30 & \text{the element \code{a[2]}}\\
+6,7,8 & I & \code{null} & \text{the identity locations of \code{o}, \code{inc} and \code{a}}
 \end{array}
 \]
-Here $\mathrm{dom}\,h=\{0,\dots,5\}$, $F=\{0,1\}$, $C=\{2\}$, $S=\{3\}$ and $E=\{4,5\}$. The object \code{o} is the map $\{\code{n}\mapsto 0,\ \code{m}\mapsto 1\}$ from its keys to their field locations: the value of \code{o} holds no field contents, and \code{o.n} is read as $h(0)$, \code{o.m} as $h(1)$. The array \code{a} is an object whose distinguished field is the location 3.
+Here $\mathrm{dom}\,h=\{0,\dots,8\}$, $F=\{0,1\}$, $C=\{2\}$, $S=\{3\}$, $E=\{4,5\}$ and $I=\{6,7,8\}$. The object \code{o} is the map $\{\code{n}\mapsto 0,\ \code{m}\mapsto 1\}$ from its keys to their field locations: the value of \code{o} holds no field contents, and \code{o.n} is read as $h(0)$, \code{o.m} as $h(1)$. The array \code{a} is an object whose distinguished field is the location 3.
 The environment $\rho$ holds \code{o}, \code{inc} and \code{a}; the
 binding \code{k} is the cell 2. A call \code{inc()} changes $h(2)$ to 1 and nothing else, and \code{o.m = 7} changes $h(1)$ to 7 and nothing else.
 
@@ -240,7 +246,7 @@ is outside it. TypeScript's \code{readonly} restricts one view of a
 location and makes no location immutable, since another alias may write.
 
 A location is \emph{immutable} exactly when its contract admits a single
-value. Two kinds of location are immutable. The first is a field
+value. Three kinds of location are immutable. The first is a field
 declared \code{@stable}. This is an annotation of TScert, written in a
 comment on a \code{readonly} field of a record type:
 \code{type Runs = \{ /** @stable */ readonly openBrackets: number[] \}}.
@@ -248,8 +254,9 @@ It states that the field holds, for the object's whole life, the value
 the object was created with; the contract of the field's location is
 that one value. Here the field \code{openBrackets} of a \code{Runs}
 object always holds the same array, whose elements and length may still
-change. The second is a typed array's length. They belong to the value
-class like any field, and no admissible step (Section~3) changes them.
+change. The second is a typed array's length. The third is an identity
+location. All three belong to the value
+class, and no admissible step (Section~3) changes them.
 
 \section{Model}
 
@@ -354,8 +361,8 @@ where, for two stores, $\sigma\preceq_b\sigma'$ (read: $\sigma'$ is a
 \end{array}
 \]
 In words: $\keep$ allows no change. $\init$ lets \code{null} or
-\code{undefined} be replaced by any value. $\kw{scalar}$ lets any value
-that is not an object (a scalar or a function) be replaced by any value.
+\code{undefined} be replaced by any value. $\kw{scalar}$ lets a scalar
+be replaced by any value; it keeps every object, functions included.
 $\grow$ also lets a store grow. $\any$ allows everything.
 
 A change bounds contents and ignores types. So
@@ -525,7 +532,7 @@ $h'$, then $h\tr{\Phi^{e}}_\rho h'$. We write $c:\Phi$ when $\Phi^{e}$ is
 $\top$. For example $\code{out[j] = v}:\{\val:\any,\ \st:\grow\}$. This
 judgment is what a \code{Modifies} annotation states and what an effect
 system derives
-\status{Lean: \lean{Post}; \lean{checkRequests\_footprint\_at}, \lean{checkRequests\_regional\_at} for graph code}.
+\status{Lean: \lean{Post}; for graph code \lean{run\_sound\_single\_pass}, whose guarantee states the bound over class regions and the regional bound of an accepted function}.
 
 \section{The assertion language}
 
@@ -616,7 +623,7 @@ stable under $\tr{\Phi}$: the floor of explicit
 stabilisation~\cite{wickerson}, at a rely denoted by an effect.
 \end{remark}
 
-\begin{proposition}[Laws]\label{prop:laws}\status{conj.}
+\begin{proposition}[Laws]\label{prop:laws}\status{Lean: \lean{box\_elim}, \lean{box\_and}, \lean{box\_mono}, \lean{box\_anti}, \lean{box\_or}, \lean{box\_idem}}
 \begin{enumerate}[label=(\alph*),itemsep=1pt,topsep=2pt]
 \item $\bx{\Phi}F\vdash F$.
 \item $\bx{\Phi}(F\wedge G)\dashv\vdash\bx{\Phi}F\wedge\bx{\Phi}G$; if $F\vdash G$ then $\bx{\Phi}F\vdash\bx{\Phi}G$.
@@ -672,7 +679,7 @@ meets the second: a store location is no location of class value.
 
 \begin{theorem}[Tolerant frame]\label{thm:frame}
 If $S$ supports $F$ and $\Phi\resp_K S$, then $K\wedge F\vdash\bx{\Phi}F$.
-\status{Lean: \lean{stable\_sound}, with \lean{frame\_sound} for the supports of cell, link, density and element-kind facts}
+\status{Lean: \lean{tolerant\_frame}, from \lean{stable\_sound} and \lean{frame\_sound}, for five forms of fact with their supports: a cell's contents, a link of a variable to a field, a value's kind, density, and the kind of elements. Linear facts enter the modality by the axioms below}
 \end{theorem}
 \begin{proof}
 Let $h\tr{\Phi}_\rho h'$ and $l\in r(\rho,h)$ with $(r:\delta)\in S$.
@@ -705,40 +712,50 @@ atom that reads, besides variables, only what is displayed:
 \textsc{(Dense)} & \dense(x,n)\ \vdash\ \bx{\val:\any,\ \st:\grow}\,\dense(x,n)\\[2pt]
 \textsc{(Sep)} & x\sep y\wedge a(\len x)\ \vdash\ \bx{\val:\any,\ y.\kw{store}:\any}\ a(\len x)\\[2pt]
 \textsc{(Every)} & \apart(x,z)\wedge\every(z,t,\varphi)\ \vdash\ \bx{x[\ast]:\any}\,\every(z,t,\varphi)\quad t\text{ a variable, }\varphi\text{ over scalars}\\[2pt]
-\textsc{(Init)} & a(\len\pi)\ \vdash\ \bx{\val:\init}\ a(\len\pi)\quad\pi\text{ through fields holding objects}\\[2pt]
+\textsc{(Init)} & a(\len\pi)\ \vdash\ \bx{\val:\init}\ a(\len\pi)\\[2pt]
 \textsc{(Rigid)} & \rigid(\pi)\wedge a(\len{\pi})\ \vdash\ \bx{\Phi}\,a(\len\pi)\quad\text{if } a(\len y)\vdash\bx{\Phi}\,a(\len y)\text{ for a fresh }y\\[2pt]
 \textsc{(View)} & a(\kw{view}(w))\ \vdash\ \bx{\top}\,a(\kw{view}(w))\quad\kw{view}(w)\text{ a typed array's length}
 \end{array}
 \]
 \end{proposition}
 \noindent
-Each axiom, in words, with the Lean theorem that proves its content. The
-Lean development proves each for the steps TScert has, not for an
-arbitrary transition bounded by the displayed effect.
+Each axiom, in words, with its mark. \textsc{(Grow)} and \textsc{(Init)} are Lean theorems about every
+transition bounded by the displayed effect, and so is \textsc{(View)}
+under the premise its mark states. \textsc{(Sep)}, \textsc{(Every)} and the
+substitution of \textsc{(Rigid)} are \status{conj.} in that form; the
+Lean theorem named for each proves it for one kind of step.
 \begin{description}[leftmargin=1.5em,style=nextline]
 \item[\textsc{(Grow)}] A lower bound on a length survives any change
 that only grows arrays. It mentions no separation: it is
-Example~\ref{ex:alias}. Lean: \lean{termValue\_grown}, for defined terms
-on preserved paths.
+Example~\ref{ex:alias}. Lean: \lean{grow}.
 \item[\textsc{(Dense)}] A dense prefix survives any change that only
-grows arrays. Lean: \lean{dense\_support}.
+grows arrays. Lean: \lean{dense\_support}, the statement that
+$\{x.\kw{store}:\grow\}$ supports $\dense(x,n)$; the axiom follows by
+Theorem~\ref{thm:frame}.
 \item[\textsc{(Sep)}] A fact about the length of $x$ survives an
-arbitrary change of another array $y$. It is Example~\ref{ex:sep}. Lean:
-\lean{regionFirst\_kept}, at a call.
+arbitrary change of another array $y$. It is Example~\ref{ex:sep}.
+\status{conj.} Lean: \lean{regionFirst\_kept}, for the store of an array
+a variable holds, across a call with a regional effect.
 \item[\textsc{(Every)}] A fact about each element of $z$ survives an
 arbitrary change of an array $x$ that shares no element cell with $z$.
-Lean: \lean{writeAtoms\_holds}, for an element write at a checked index.
+\status{conj.} Lean: \lean{writeAtoms\_holds}, for an element write at a checked index.
 \item[\textsc{(Init)}] A fact about a length survives a change that only
 initialises: $\init$ changes no location that holds an object, a number
-or a store. It is Theorem~\ref{thm:frame} at a support that tolerates
-$\init$ on the fields of the path. Lean: \lean{ofClosed\_holds}.
+or a store, and a defined read of a path passes only fields that hold
+objects. Lean: \lean{init\_box}, \lean{init\_path}, for linear facts
+over integers, array lengths and typed-array lengths at any paths.
 \item[\textsc{(Rigid)}] A fact that holds of an array named by a
 variable holds of the array at a rigid path. The substitution of the
-witness for $y$ is capture-avoiding. Lean: \lean{stableFirst\_frame},
-for \code{@stable} fields on normal return.
+witness for $y$ is capture-avoiding. \status{conj.} as a rule of
+substitution. Lean: a path through fields that each type states stable is
+rigid (\lean{stableAt\_of\_stableField}, \lean{stableAt\_cons},
+\lean{stable\_rigid}), and the instance for \textsc{(Grow)} is
+\lean{grow\_path\_typed}.
 \item[\textsc{(View)}] A fact about a typed array's length survives
-every change: that length is an immutable location, by (T4). Lean: the
-rule \code{view-stable}.
+every change: that length is an immutable location, by (T4). Lean:
+\lean{view\_box}, under the premise that the contract of the length's
+location admits one value, which \lean{viewStable\_of\_typed} gives for a
+value of a typed-array type.
 \end{description}
 
 \section{Programs}
@@ -794,16 +811,23 @@ $R$ mentions none of them.
 \item[\textsc{Call}] The frame rule at a call. The actual arguments
 $\vec x$ are variables, hence fixed values. The substitution
 $[\vec x/\vec p]$ is capture-avoiding, and $Q$ may mention the result
-$y$.
+$y$. When the callee throws, the frame crosses under the callee's
+exceptional effect, which is $\top$ unless stated. Lean:
+\lean{call\_rule}, \lean{invocation\_throw\_action}.
 \item[\textsc{Alloc}] A new array is fresh, empty, and apart from every
 well-formed array $y$ that exists before the step. These separations are
 facts of the state after the step. Later steps keep or lose them like
-any other fact.
+any other fact: a growth of the new array's store keeps them, and an
+arbitrary change of that store does not, since it may make the store
+list a cell of $y$. Lean: \lean{alloc\_post}, and \lean{alloc\_apart\_typed} for arrays of an
+array type; \lean{apart\_grow\_keep}, \lean{apart\_not\_kept\_fresh}.
 \item[\textsc{Seq-Eff}] The effect of a sequence, stated at the entry of
 the sequence. The effect $\Psi$ of the second command is read where that
 command starts, so it is first \emph{rebased} to the entry (below).
-\item[\textsc{Fresh-Eff}] A change to an array that the command itself
-allocated is no part of the command's effect, seen from its entry.
+\item[\textsc{Fresh-Eff}] A change to the store of an array that the
+command itself allocated is no part of the command's effect, seen from
+its entry. A fresh store may list a cell of the entry heap, and a change
+of that cell is part of the effect.
 \end{description}
 
 \begin{definition}[Rebasing]
@@ -826,7 +850,7 @@ has the effect $\{\mathit{xs}.\kw{store}:\grow\}$ where it starts. If
 $o.\mathit{items}$ is rigid, the effect of \code{f} at its entry is
 $\{o.\mathit{items}.\kw{store}:\grow\}$. Otherwise it widens to
 $\{\st:\grow\}$
-\status{Lean: \lean{Post.compose\_at}, \lean{rebaseAll}, \lean{rebase\_sound}, \lean{checkFresh\_sound}}.
+\status{Lean: \lean{seq\_eff}, \lean{fresh\_eff}, \lean{fresh\_cells\_not\_erased}, \lean{rebaseAll}, \lean{rebase\_sound}, \lean{rebaseAll\_labels}. The Lean rebasing widens element cells and regions it cannot place to every location (\lean{rebase\_elems}), a wider bound than their class}.
 
 \begin{example}[Freshness bounds effects, not facts]\label{ex:fresh}
 Let \code{shrink(xs)} pop its argument,
@@ -902,7 +926,7 @@ node's, and the entailment includes that every path $A$ reads is
 defined.
 \end{definition}
 
-\begin{theorem}[Transfer]\label{thm:transfer}\status{conj.\ as one statement; proved for TScert's checker edge by edge, \lean{ControlFlow} with \lean{HeapKnowledge}'s transport}
+\begin{theorem}[Transfer]\label{thm:transfer}\status{Lean: \lean{transfer}, one theorem per exit, for exit effects over class regions; \lean{graph\_safe} composes the exits into the safety of a graph, and \lean{loop\_safe} is the loop of Section~\ref{sec:transfer} as an instance. A conjecture for exit effects with regions at paths}
 If $s$ is well-formed, $s\models_m\Sigma$, the node $c$ runs from $s$
 through exit $e$ to $s'$, and $\mathrm{Check}(c,\Sigma,e,A)$, then
 $\theta_e(s')\models_m A$.
@@ -1041,12 +1065,9 @@ and then restores has no form. At each step a fact either enters the
 modality or is derived anew.
 \item[Fixed contracts] A location's contract never changes, so there is
 no type-changing update.
-\item[Transfer as one Lean theorem] The laws and rules are stated for
-admissible transitions and use the properties (T1) to (T4) of Section~3.
-Theorem~\ref{thm:transfer} is not one Lean theorem. Stating it in Lean
-needs, beyond those properties, the correspondence between this note's
-named variables and the model's environment, which a result extends by a
-push.
+\item[Transfer at regional effects] The Lean theorem for
+Theorem~\ref{thm:transfer} takes exit effects over the class regions. An
+exit whose effect has a region at a path is outside it.
 \end{description}
 
 \begin{thebibliography}{9}\small\itemsep1pt
