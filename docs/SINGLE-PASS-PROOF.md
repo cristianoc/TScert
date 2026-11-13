@@ -636,17 +636,23 @@ implications $`I`$ over names beside it. The store's facts
 are its live set's and those its index by name lists
 ($`\mathrm{all}(S)`$, `storeAll`).
 
-**Meaning** (`StateHolds G st I start entry`), at the slot environment
-$`\rho`$, the invocation's mark $`m`$ and the state $`s`$:
+**Meaning** (`StateHolds G st I start ε`), at the invocation's entry state
+$`\varepsilon`$ (`HeapKnowledge.EntryState`: the environment and heap the
+invocation started in, the same at every state of one run), the slot
+environment $`\rho`$, the invocation's mark $`m`$ and the state $`s`$:
 
 ```math
 \exists \eta.\;
 (\forall i\,x.\ N[i]=x \Rightarrow \rho\,i=\eta\,x) \;\wedge\;
-\mathrm{Named}\ \mathrm{all}(S)\ \eta \;\wedge\;
+\mathrm{Named}_\varepsilon\ \mathrm{all}(S)\ \eta \;\wedge\;
 \mathrm{ImpliesOk}\ I\ \eta \;\wedge\;
 (\forall x\in F.\ \mathrm{FreshAt}\ m\ (\eta\,x)) \;\wedge\;
-(\forall q\,x.\ \mathit{start}[q]=x \Rightarrow \eta\,x=\mathit{entry}\ q)
+(\forall q\,x.\ \mathit{start}[q]=x \Rightarrow \eta\,x=\varepsilon.\mathrm{env}\ q)
 ```
+
+Each fact is read relative to $`\varepsilon`$
+([two-state postconditions](drafts/two-state-postconditions.md)): an entry
+term $`\mathrm{old}(t)`$ denotes $`t`$ at $`\varepsilon`$.
 
 $`\mathrm{ImpliesOk}`$ is `PromiseCalls.ImpliesOk` at the names: where the
 test's name holds `true`, the target's value has the type. The valuation is

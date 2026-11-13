@@ -99,10 +99,12 @@ theorem add_below {s : Store} {a : Atom} {next : Nat} (hs : FactsBelow s next) (
         intro F hF y hy
         simp only [HeapKnowledge.atomLinear, List.mem_cons, List.mem_nil_iff, or_false] at hF
         apply hc
-        rcases hF with rfl | rfl <;>
-          simp only [Atom.names, HeapKnowledge.IndexFact.slots, Linear.Fact.vars, List.map_cons, List.map_nil,
-            List.mem_append, List.mem_cons, List.mem_nil_iff, or_false] at hy ⊢ <;>
-          rcases hy with (rfl | rfl) | hy <;> simp_all
+        have hy' : y = x ∨ y = n ∨ c = some y := by
+          rcases hF with rfl | rfl <;>
+            simp [Atom.names, HeapKnowledge.IndexFact.slots, Linear.Fact.vars, HeapKnowledge.Term.slots,
+              HeapKnowledge.Term.length, HeapKnowledge.Term.value] at hy <;>
+            rcases hy with h | h | h <;> simp [h]
+        rcases hy' with rfl | rfl | h <;> simp_all [Atom.names, HeapKnowledge.IndexFact.slots]
       exact foldl_addBound_below _ _ hs hx
     · exact hs
 

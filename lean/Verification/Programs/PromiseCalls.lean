@@ -1608,7 +1608,8 @@ def preconditionHolds (k : HeapKnowledge.Knowledge) (eff : Effect) (t : Tm) : Bo
       | some x => atomFor k x R
       | none => false) &&
   (eff.pre.isEmpty || match callSlots t with
-    | some (recv, slots) => eff.pre.all (fun F => F.slots.all fun p => p < slots.length && (p != 0 || recv)) &&
+    | some (recv, slots) =>
+        eff.pre.all (fun F => F.slots.all (fun p => p < slots.length && (p != 0 || recv)) && F.entrySlots.isEmpty) &&
         HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags k) (HeapLinks.aliases k.links) k.links k.indices
           (eff.pre.map fun F => ⟨F, none, false⟩) (some slots)
     | none => false)
@@ -1636,8 +1637,9 @@ theorem preconditionHolds_sound {k : HeapKnowledge.Knowledge} {eff : Effect} {t 
         have hheld := HeapKnowledge.indicesCheckWith_sound (HeapKnowledge.guardTags_sound hk)
           (fun x y hy => HeapLinks.aliases_eq hk.2.2.1 hy) hk.2.2.1 hchk
           hk.2.2.2.2.2 ⟨F, none, false⟩ (List.mem_map_of_mem hF) (fun b hb => by cases hb)
-        refine (HeapKnowledge.IndexFact.holdsAt_entry _).mp ((HeapKnowledge.IndexFact.holdsAt_congr fun s hs' => ?_).mp hheld)
-        have hp := hin F hF s hs'
+        refine (HeapKnowledge.IndexFact.holdsAt_entry (by simpa using (hin F hF).2) _).mp
+          ((HeapKnowledge.IndexFact.holdsAt_congr fun s hs' => ?_).mp hheld)
+        have hp := (hin F hF).1 s hs'
         simp only [decide_eq_true_eq, Bool.or_eq_true, bne_iff_ne, ne_eq] at hp
         exact callSlots_env hs ρ s hp.1 hp.2
       · simp at hpre
@@ -1931,11 +1933,13 @@ after the return: each result fact every position of which a slot holds,
 renamed (`call-ensures`). -/
 def ensuresAtoms (eff : Effect) (t : Tm) : List HeapKnowledge.IndexAtom :=
   match callSlots t with
-  | some (recv, slots) => HeapKnowledge.mapIndices (ensuresSlot recv slots) (eff.ensures.map fun F => { fact := F })
+  | some (recv, slots) => HeapKnowledge.mapIndices (ensuresSlot recv slots)
+      ((eff.ensures.filter (·.entrySlots.isEmpty)).map fun F => { fact := F })
   | none => []
 
 theorem ensuresAtoms_holds {eff : Effect} {t : Tm} {ρ : Env} {h' : Heap} {v : Tm}
-    (hp : ∀ F ∈ eff.ensures, F.HoldsAt ε (CallEffects.ensuresEnv v (ExpressionEffects.receiverOf (instantiate 0 ρ t))
+    (hp : ∀ F ∈ eff.ensures, F.entrySlots = [] →
+      F.HoldsAt ε (CallEffects.ensuresEnv v (ExpressionEffects.receiverOf (instantiate 0 ρ t))
       (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h') :
     HeapKnowledge.IndexHolds ε (ensuresAtoms eff t) (push v ρ) h' := by
   unfold ensuresAtoms
@@ -1961,7 +1965,8 @@ theorem ensuresAtoms_holds {eff : Effect} {t : Tm} {ρ : Env} {h' : Heap} {v : T
         · cases hst
     · intro a ha _
       obtain ⟨F, hF, rfl⟩ := List.mem_map.mp ha
-      exact hp F hF
+      obtain ⟨hF, he⟩ := List.mem_filter.mp hF
+      exact hp F hF (by simpa using he)
   · exact HeapKnowledge.indexHolds_nil _ _
 
 /-- The change of a call growing its receiver's store (`ReceiverGrows`):
@@ -2412,7 +2417,7 @@ def appendTerm (i a : Nat) : HeapKnowledge.Bound → HeapKnowledge.Term
   | .index => .length i
   | .elem => .value a
   | .offset _ => .value a
-  | .project k p => ⟨k, a, p⟩
+  | .project k p => ⟨k, a, p, false⟩
   | .free t => t
 
 open HeapKnowledge in
@@ -2776,7 +2781,7 @@ theorem every_written {ρ : Env} {h h' : Heap} {b i x s : Nat} {st : Term} {body
           | index => simp only [Bound.inst, termValue_value, hki, boundValue]
           | elem => simp only [Bound.inst, termValue_value, boundValue, elementInt, hl, hlv, Option.bind_some]
           | offset d => have := List.all_eq_true.mp hvalid (.offset d) hy; simp at this
-          | project k p => simp only [Bound.inst, boundValue, hl, hlv, Option.bind_some, termValue]
+          | project k p => simp only [Bound.inst, boundValue, hl, hlv, Option.bind_some, termValue, termAt, Bool.false_eq_true, if_false]
           | free t => rfl
         | none => simp [hG] at hwb
   · refine LinearClause.holdsAt_monotone (fun y m hky hy => ?_) (fun y m hgy hy => ?_) hbF (hall j hj' F hF)
@@ -2850,7 +2855,7 @@ theorem every_written_prefix {ρ : Env} {h h' : Heap} {b i x s : Nat} {st next :
         | index => simp only [Bound.inst, termValue_value, hki, boundValue]
         | elem => simp only [Bound.inst, termValue_value, boundValue, elementInt, hl, hlv, Option.bind_some]
         | offset d => have := List.all_eq_true.mp hvalid (.offset d) hy; simp at this
-        | project k p => simp only [Bound.inst, boundValue, hl, hlv, Option.bind_some, termValue]
+        | project k p => simp only [Bound.inst, boundValue, hl, hlv, Option.bind_some, termValue, termAt, Bool.false_eq_true, if_false]
         | free t => rfl
       | none => simp [hG] at hwb
   · refine LinearClause.holdsAt_monotone (fun y m hky hy => ?_) (fun y m hgy hy => ?_) hbF (hall j (by omega) F hF)
@@ -2962,7 +2967,7 @@ theorem withEnsures_holds {views stable : Nat → String → Bool} {n : Nat} {ef
         · rcases List.mem_append.mp ha with ha | ha
           · rcases List.mem_append.mp ha with ha | ha
             · exact hk.2.2.2.2.2 a ha hc
-            · exact ensuresAtoms_holds (fun F hF => (HeapKnowledge.IndexFact.holdsAt_entry _).mp (hp F hF)) a ha hc
+            · exact ensuresAtoms_holds (fun F hF he => (HeapKnowledge.IndexFact.holdsAt_entry he _).mp (hp F hF)) a ha hc
           · exact effectKept_holds hk0 hw (fun hgr => (hg hgr).1) hew hviews hstable a ha hc
         · exact appendKept_holds hk0 hg a ha hc
       · exact writeKept_holds hk0 hew a ha hc

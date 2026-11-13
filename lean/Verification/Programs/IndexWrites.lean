@@ -2282,7 +2282,9 @@ theorem termApart_kept {k : Knowledge} {a : Nat} {t : Term} {ρ : Env} {h h' : H
     (hw : WriteHeap h h' target xs written) (hk : Holds k ε ρ h)
     (hu : RegionOf h (ρ a) (some target) xs) (hc : termApart k a t = true)
     (ht : termValue ε ρ h t = some z) : termValue ε ρ h' t = some z := by
-  obtain ⟨kind, x, p⟩ := t
+  obtain ⟨kind, x, p, e⟩ := t
+  cases e
+  case true => exact termValue_entry_some rfl ht
   simp only [termApart, Bool.and_eq_true, List.isEmpty_iff] at hc
   obtain ⟨rfl, hc⟩ := hc
   simp only [termValue_nil] at ht ⊢

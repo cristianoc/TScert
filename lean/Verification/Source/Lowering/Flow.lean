@@ -26,7 +26,7 @@ def invariantFact (root : Nat → Option (Nat × List String)) :
     HeapKnowledge.IndexFact → Option HeapKnowledge.IndexFact
   | .int p => do
     let (slot, path) ← root p
-    pure (if path.isEmpty then .int slot else .linear (.le [(⟨.value, slot, path⟩, 1)] (2 ^ 53 - 1)))
+    pure (if path.isEmpty then .int slot else .linear (.le [(⟨.value, slot, path, false⟩, 1)] (2 ^ 53 - 1)))
   | .linear f => (f.mapVars (invariantTerm root)).map .linear
   | .either A B => do pure (.either (← invariantFact root A) (← invariantFact root B))
   | .guarded p path tag body => do
@@ -94,7 +94,7 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
     pure (left.flatMap fun a => right.map fun b => { fact := .either a.fact b.fact })
   | .linear guards terms bound => do
     let form ← terms.mapM fun (name, path, kind, c) => match termRoot scope name with
-      | some (x, pre) => pure ((⟨kind, x, pre ++ path⟩ : HeapKnowledge.Term), c)
+      | some (x, pre) => pure ((⟨kind, x, pre ++ path, false⟩ : HeapKnowledge.Term), c)
       | none => do throw (locatedRefusal (← table) source .entryClaim
           s!"a linear fact names '{name}', which is no value binding or cell")
     let guards ← guards.mapM fun (name, path, tag) => match termRoot scope name with
@@ -389,7 +389,7 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
           | .elem => pure .elem
           | .offset d => pure (.offset d)
           | .project k p => pure (.project k p)
-          | .term n path kind => do let (z, r) ← root n path; pure (.free ⟨kind, z, r⟩)
+          | .term n path kind => do let (z, r) ← root n path; pure (.free ⟨kind, z, r, false⟩)
         pure (b, c)
       pure (.atom (.le form bound))
     | .either A B => do pure (.either (← bodyClause A) (← bodyClause B))
@@ -397,7 +397,7 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
     let (x, p) ← root name path
     let (y, q) ← root sn sp
     let body ← body.mapM bodyClause
-    pure ({ fact := .every x p ⟨sk, y, q⟩ body } : HeapKnowledge.IndexAtom)
+    pure ({ fact := .every x p ⟨sk, y, q, false⟩ body } : HeapKnowledge.IndexAtom)
   -- The region facts the producer proposes (FOOTPRINTS.md, "Element
   -- regions"): both sides value bindings; a claim naming any other is
   -- refused rather than dropped.

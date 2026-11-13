@@ -1262,23 +1262,26 @@ below the length"). -/
     (entrySeparation : HeapSeparation.Separation) (entryIndices : List HeapKnowledge.IndexAtom)
     (k : HeapKnowledge.Knowledge) : Bool :=
   k == {} || KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G inputs)
-    { separation := entrySeparation, indices := entryIndices } k none
+    { separation := entrySeparation, indices := entryIndices } k.toNow none
 
+/-- **The entry facts entail the start's knowledge**, read at the entry
+state itself, where `old(t)` is `t` (`HeapKnowledge.holds_toNow`). -/
 theorem entryKnows_sound [DecidableEq ι] {G : NormalGraph ι} {inputs : List (Ty ι)}
     {S : HeapSeparation.Separation} {I : List HeapKnowledge.IndexAtom} {k : HeapKnowledge.Knowledge} {ρ n W h}
     (hk : entryKnows G inputs S I k = true) (he : EnvOk G inputs ρ n W) (hs : HeapSeparation.Holds S ρ)
-    (hi : HeapKnowledge.IndexHolds ε I ρ h) :
-    HeapKnowledge.Holds k ε ρ h := by
+    (hi : HeapKnowledge.IndexHolds ⟨ρ, h⟩ I ρ h) :
+    HeapKnowledge.Holds k ⟨ρ, h⟩ ρ h := by
   rcases Bool.or_eq_true_iff.mp hk with hk | hk
   · rw [eq_of_beq hk]; exact HeapKnowledge.empty ρ h
   · have hid : PointClaims.mapEnv none ρ = ρ := rfl
     have hctx : KnowledgeNormal.CtxOk (KnowledgeExpand.ctxOf G inputs) (PointClaims.mapEnv none ρ) := by
       rw [hid]; exact KnowledgeExpand.ctxOf_ok he
-    have hsrc : HeapKnowledge.Holds { separation := S, indices := I } ε ρ h :=
+    have hsrc : HeapKnowledge.Holds { separation := S, indices := I } ⟨ρ, h⟩ ρ h :=
       ⟨HeapFacts.holds_nil ρ h, by simp [HeapKnowledge.ValueHolds], by simp [HeapLinks.Holds], hs,
         HeapKnowledge.elemsHolds_nil ρ h, hi⟩
     have := KnowledgeExpand.checkIn_sound hk hctx hsrc
-    rwa [hid] at this
+    rw [hid] at this
+    exact (HeapKnowledge.holds_toNow rfl rfl).mp this
 
 /-- The external input contract is independent of the supplied point claims.
 The entry states no implication, knows only what the inputs' separation

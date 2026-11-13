@@ -445,7 +445,8 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     have hagree := Effect.prefixAgrees_of_regions (Effect.below_regions hs.2.1) (CallEffects.callEnv r args) heap heap'
     apply HeapObservations.SafePostExc.weaken (Q := s.fixed.effect.post r args heap')
       (R := s.fixed.effect.excPost r args heap')
-      (fun heap'' v hp => s.effect.post_prefix hprefix hagree hp)
+      (fun heap'' v hp => s.effect.post_prefix hprefix hagree
+        (by rw [show s.effect.ensures = [] from Effect.below_ensures hs.2.1]; intro F hF; cases hF) hp)
       (fun heap'' hp => s.effect.excPost_prefix hprefix hagree hp)
     have hpromised := framePromised_params (e := s.fixed.effect) hs.2.1 [a, r] args vs
     simp only [List.length_cons, List.length_nil, List.cons_append, List.nil_append] at hpromised

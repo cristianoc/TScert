@@ -68,23 +68,25 @@ theorem lowerRead_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapL
   | linear F =>
     intro ⟨hd, hF⟩
     let g' : Term → Term := fun t => match t.path with
-      | g :: q => if t.slot == c && g == f then ⟨t.kind, v, q⟩ else t
+      | g :: q => if t.slot == c && g == f && !t.atEntry then ⟨t.kind, v, q, false⟩ else t
       | [] => t
     have heq : ∀ t ∈ F.vars, termValue ε ρ h (g' t) = termValue ε ρ h t := by
       intro t ht
-      obtain ⟨w, n, hw, hk, hn⟩ := termValue_isSome (hd t ht)
+      obtain ⟨kind, s, path, a⟩ := t
+      cases a
+      case true => cases path <;> simp [g']
+      obtain ⟨w, n, hw, hk, hn⟩ := termValue_isSome (hd _ ht) rfl
       rw [hn]
-      obtain ⟨kind, s, path⟩ := t
       simp only at hw hk
       cases path with
       | nil => exact hn
       | cons g q =>
-        show termValue ε ρ h (if s == c && g == f then ⟨kind, v, q⟩ else ⟨kind, s, g :: q⟩) = some n
+        show termValue ε ρ h (if s == c && g == f && !false then ⟨kind, v, q, false⟩ else ⟨kind, s, g :: q, false⟩) = some n
         split
         · rename_i hc
-          simp only [Bool.and_eq_true, beq_iff_eq] at hc
+          simp only [Bool.not_false, Bool.and_true, Bool.and_eq_true, beq_iff_eq] at hc
           obtain ⟨rfl, rfl⟩ := hc
-          simp only [termValue, guardReads_path hl hm hw, Option.bind_some, hk]
+          simp only [termValue, termAt, Bool.false_eq_true, if_false, guardReads_path hl hm hw, Option.bind_some, hk]
         · exact hn
     obtain ⟨F', hF'⟩ := Linear.Fact.mapVars_some g' F
     show (IndexFact.linear ((F.mapVars fun t => some (g' t)).getD F)).HoldsAt ε ρ h

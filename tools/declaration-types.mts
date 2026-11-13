@@ -114,6 +114,10 @@ export type LinearTerm = {
   readonly kind: "value" | "length" | "view" | "strLength";
   readonly slot: number;
   readonly path: readonly string[];
+  /** An entry term `old(t)` of a postcondition (the note "Tolerant frames",
+   * section 6): `t` read at the state the function started in, `slot` a
+   * position of its entry. */
+  readonly atEntry?: true;
 };
 /** The kinds of value an elements predicate admits (`CallEffects.ElemPred`),
  * each at most once, in this order. */

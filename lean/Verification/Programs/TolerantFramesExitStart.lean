@@ -16,7 +16,7 @@ theorem startWritten_projection_counterexample {ι : Type} [DecidableEq ι]
   let written : HeapKnowledge.Knowledge :=
     { separation := { depth := 0, facts := [{ slot := 0, partners := [] }] } }
   refine ⟨written, ?_, ?_, ?_⟩
-  · simp [ControlFlow.entryKnows, KnowledgeExpand.checkIn, KnowledgeExpand.cellsCheck,
+  · simp [ControlFlow.entryKnows, HeapKnowledge.Knowledge.toNow, KnowledgeExpand.checkIn, KnowledgeExpand.cellsCheck,
       KnowledgeExpand.valuesCheck, HeapLinks.checkWith, HeapSeparation.checkWithTable,
       HeapSeparation.checkBy, written]
     decide

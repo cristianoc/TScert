@@ -1255,6 +1255,24 @@ def startWritten (written : Option Knowledge) (entryIndices : List IndexAtom)
   let w := written.getD {}
   { w with indices := w.indices ++ entryIndices, separation := HeapSeparation.union w.separation entrySeparation }
 
+/-- The start's facts `t = old(t)` for each entry term `old(t)` the
+postcondition names (the note "Tolerant frames", section 6, "Triples"): at
+the start the current state is the entry state. A proposal: the entry check
+reads it at the entry state itself (`ControlFlow.entryKnows`), where it is
+`t = t`, entailed where the entry facts state `t` defined. -/
+def startOldFacts (ens : List HeapKnowledge.IndexFact) : List IndexAtom :=
+  (ens.flatMap HeapKnowledge.IndexFact.entryTerms).eraseDups.flatMap fun t =>
+    let now : HeapKnowledge.Term := { t with atEntry := false }
+    [{ fact := .linear (.le [(now, 1), (t, -1)] 0) }, { fact := .linear (.le [(t, 1), (now, -1)] 0) }]
+
+/-- The claims' facts with the start's `t = old(t)` facts (`startOldFacts`)
+among the start's. -/
+def withStartOld (start : Nat) (ens : List HeapKnowledge.IndexFact) (candidates : List (Nat × List IndexAtom)) :
+    List (Nat × List IndexAtom) :=
+  match startOldFacts ens with
+  | [] => candidates
+  | extra => (start, ((candidates.find? (·.1 == start)).map (·.2)).getD [] ++ extra) :: candidates
+
 /-- The start's given state as `run` builds it: `startWritten`, with the
 claims' facts there (`supplied`). -/
 def startGiven (written : Option Knowledge) (entryIndices : List IndexAtom)
@@ -2165,7 +2183,7 @@ def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty 
       let sg : Array (Option Nat) := Array.replicate n none
       Trace.mk e e ms sg isHead start 0 none [] [] []
     else trace0
-  let supplied := byLabel n candidates
+  let supplied := byLabel n (withStartOld start ensures candidates)
   -- The entry, which no edge checks on the first invocation.
   match entryRefusal G inputs claims start goal (stated.getD start none) ((supplied.getD start none).getD [])
       ((givenImplies[start]?).getD []) ((givenArgs[start]?).getD []) ((givenInputs[start]?).getD [])

@@ -22,7 +22,7 @@ structure SetupOk (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) (σ
   claimed : c.claims.toArray.size = c.P.toArray.size
   entry : SinglePass.entryRefusal G c.inputs c.claims c.start c.goal
     ((byLabel c.P.toArray.size c.assertions).getD c.start none)
-    (((byLabel c.P.toArray.size c.candidates).getD c.start none).getD [])
+    (((byLabel c.P.toArray.size (SinglePass.withStartOld c.start c.ensures c.candidates)).getD c.start none).getD [])
     ((c.givenImplies[c.start]?).getD []) ((c.givenArgs[c.start]?).getD []) ((c.givenInputs[c.start]?).getD [])
     c.entryIndices c.entrySeparation = none
   nodes : env.nodes = c.P.toArray
@@ -34,7 +34,7 @@ structure SetupOk (c : Target.RunCall G I) (env : SinglePass.WalkEnv ι G I) (σ
   reached : env.reached = (SinglePass.loopHeads c.P.toArray c.start).2
   stated : env.stated = byLabel c.P.toArray.size c.assertions
   given : ∃ counts, env.given = (SinglePass.setupGiven c.P.toArray.size c.start env.isHead env.stated
-    (byLabel c.P.toArray.size c.candidates) c.entryIndices c.entrySeparation counts).1
+    (byLabel c.P.toArray.size (SinglePass.withStartOld c.start c.ensures c.candidates)) c.entryIndices c.entrySeparation counts).1
   codes : env.codes = c.codes
   checker : env.passChecker = c.passChecker
   bound : env.bound = c.bound
@@ -196,14 +196,14 @@ theorem SetupOk.envFacts {c : Target.RunCall G I} {env : SinglePass.WalkEnv ι G
     (by rw [hs.claims, hs.n]; exact hs.claimed) hs.claims (fun t ht => ?_) hs.codes hs.checker hs.bound hs.goal
     hs.ensures hnames (by rw [hs.argName, hnames]) hstated hs.start hstartHead hctx ?_ hs.merging hs.regional hs.startKept
   · rw [hgiven, setupGiven_get, if_neg (fun h => by rw [ht] at h; exact Bool.false_ne_true h.2)]
-  · refine ⟨((byLabel c.P.toArray.size c.candidates).getD c.start none).getD [], ?_, ?_⟩
+  · refine ⟨((byLabel c.P.toArray.size (SinglePass.withStartOld c.start c.ensures c.candidates)).getD c.start none).getD [], ?_, ?_⟩
     · have he := hs.entry
       rw [hs.givenImplies, hs.givenArgs, hs.givenInputs]
       unfold passStated
       rw [← Array.getD_eq_getD_getElem?]
       exact he
     · rw [hgiven, setupGiven_get, if_pos ⟨hlt, hstartHead⟩, if_pos (by simp), hstated c.start,
-        getElem!_eq_getD_none (byLabel _ c.candidates), Array.getD_eq_getD_getElem?]
+        getElem!_eq_getD_none (byLabel _ (SinglePass.withStartOld c.start c.ensures c.candidates)), Array.getD_eq_getD_getElem?]
       rfl
 
 omit [Labels ι] in

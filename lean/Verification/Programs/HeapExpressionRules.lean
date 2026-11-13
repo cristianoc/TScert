@@ -2560,7 +2560,9 @@ private theorem stableTerm_eq {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env
   simp only [stableTerm, Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, List.isEmpty_iff] at ht
   rcases ht with ht | ⟨⟨hk, hp⟩, hty⟩
   · exact termValue_envOnly ht
-  · obtain ⟨k, s, p⟩ := t
+  · obtain ⟨k, s, p, a⟩ := t
+    cases a
+    case true => exact termValue_entry_invariant rfl
     simp only at hk hp hty
     subst hk; subst hp
     have hs : s ∈ viewSlots G Γ := by

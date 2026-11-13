@@ -60,11 +60,11 @@ theorem mergeEqAtoms_names {int : Bool} {φ x : Nat} {a : Atom} (ha : a ∈ merg
       simp only [Bool.not_true, Bool.false_eq_true, if_false, List.mem_cons, List.mem_nil_iff, or_false] at ha
       rcases ha with rfl | rfl <;>
       · intro y hy
-        simp only [Atom.names, HeapKnowledge.IndexFact.slots, Linear.Fact.vars, List.map_cons, List.map_nil,
-          Option.toList, List.append_nil, List.mem_cons, List.mem_nil_iff, or_false] at hy
-        rcases hy with rfl | rfl
-        · exact .inl rfl
-        · exact .inr rfl
+        simp [Atom.names, HeapKnowledge.IndexFact.slots, Linear.Fact.vars, HeapKnowledge.Term.slots,
+          HeapKnowledge.Term.value] at hy
+        rcases hy with h | h
+        · exact .inl h
+        · exact .inr h
 
 /-- **A predecessor's equalities** (`mergeEqual`) name only names its
 renaming renames and their fresh names. -/
@@ -279,10 +279,10 @@ theorem PredsBelow.store (B : PredsBelow preds width fresh0) (hne : preds ≠ []
   simp only [Atom.names, HeapKnowledge.IndexFact.slots, Linear.Fact.vars, List.mem_append] at hy ⊢
   rcases hy with hy | hy
   · refine .inl ?_
-    obtain ⟨t, ht, rfl⟩ := List.mem_map.mp hy
+    obtain ⟨t, ht, hy⟩ := List.mem_flatMap.mp hy
     obtain ⟨⟨t', c⟩, hc, rfl⟩ := List.mem_map.mp ht
     rw [← hn] at hc
-    exact List.mem_map.mpr ⟨t', normalize_vars F0 t' (List.mem_map.mpr ⟨_, hc, rfl⟩), rfl⟩
+    exact List.mem_flatMap.mpr ⟨t', normalize_vars F0 t' (List.mem_map.mpr ⟨_, hc, rfl⟩), hy⟩
   · exact .inr hy
 
 end Below

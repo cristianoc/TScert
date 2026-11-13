@@ -114,8 +114,8 @@ theorem startGiven_holds {G : NormalGraph ι} {inputs : List (Ty ι)} {written :
     (hk : ControlFlow.entryKnows G inputs entrySeparation entryIndices
       { written.getD {} with indices := (written.getD {}).indices ++ supplied } = true)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G inputs ρ n W)
-    (hs : HeapSeparation.Holds entrySeparation ρ) (hi : HeapKnowledge.IndexHolds ε entryIndices ρ h) :
-    HeapKnowledge.Holds (startGiven written entryIndices entrySeparation supplied) ε ρ h := by
+    (hs : HeapSeparation.Holds entrySeparation ρ) (hi : HeapKnowledge.IndexHolds ⟨ρ, h⟩ entryIndices ρ h) :
+    HeapKnowledge.Holds (startGiven written entryIndices entrySeparation supplied) ⟨ρ, h⟩ ρ h := by
   obtain ⟨h1, h2, h3, h4, h5, h6⟩ := ControlFlow.entryKnows_sound hk he hs hi
   refine ⟨h1, h2, h3, union_holds h4 hs, h5, fun a ha => ?_⟩
   simp only [startGiven, List.append_assoc, List.mem_append] at ha

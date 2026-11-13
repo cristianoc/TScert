@@ -83,9 +83,22 @@ private def predOf : Json → Except String (Option ElemPred)
 -- positions (`0` the result, `i + 1` the call's position `i`) and in
 -- diagnostics' knowledge: its
 -- constructor's name holding its fields; a linear term is `{"kind", "slot",
--- "path"}`, its kind's name, its root and its fields.
+-- "path"}`, its kind's name, its root and its fields, and an entry term
+-- `old(t)` (the note "Tolerant frames", section 6) also `"atEntry": true`,
+-- its root a position of the entry's.
 deriving instance ToJson, FromJson for HeapKnowledge.Term.Kind
-deriving instance ToJson, FromJson for HeapKnowledge.Term
+instance : ToJson HeapKnowledge.Term where
+  toJson t := Json.mkObj ([("kind", toJson t.kind), ("slot", toJson t.slot), ("path", toJson t.path)] ++
+    if t.atEntry then [("atEntry", toJson true)] else [])
+instance : FromJson HeapKnowledge.Term where
+  fromJson? j := do
+    let kind ← j.getObjValAs? HeapKnowledge.Term.Kind "kind"
+    let slot ← j.getObjValAs? Nat "slot"
+    let path ← j.getObjValAs? (List String) "path"
+    let atEntry ← match j.getObjVal? "atEntry" with
+      | .ok v => fromJson? v
+      | .error _ => pure false
+    return ⟨kind, slot, path, atEntry⟩
 deriving instance ToJson, FromJson for HeapKnowledge.Bound
 deriving instance ToJson, FromJson for Linear.Fact
 private def clauseJson [ToJson V] : HeapKnowledge.LinearClause V → Json

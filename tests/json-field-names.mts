@@ -80,11 +80,9 @@ const equationReaders = [
   });
   expectSubset("Fragment fields Lean ignores", ts, leanNames, {
     arguments: "a reference's argument spans are provenance",
-    kind: "a root binding's kind is provenance",
     v: "a literal atom's value is read by the claim decoder",
     fact: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
     form: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
-    slot: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
     int: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
     pastSafe: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
     le: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",

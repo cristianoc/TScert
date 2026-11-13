@@ -22,10 +22,7 @@ theorem bound_mapM_slots {f : Nat → Option Nat} {b b' : Bound} (h : b.mapM f =
   | free t =>
     simp only [Bound.mapM, Option.map_eq_some_iff] at h
     obtain ⟨t', ht, rfl⟩ := h
-    intro y hy
-    simp only [Bound.slots, List.mem_singleton] at hy
-    subst hy
-    exact ⟨t.slot, by simp [Bound.slots], Term.mapM_slot ht⟩
+    exact Term.mapM_slots ht
   | _ =>
     simp only [Bound.mapM, Option.some.injEq] at h
     subst h
@@ -56,10 +53,11 @@ theorem indexFact_mapM_slots {f : Nat → Option Nat} :
     intro F' h y hy
     simp only [IndexFact.mapM, Option.map_eq_some_iff] at h
     obtain ⟨L', hL, rfl⟩ := h
-    simp only [IndexFact.slots, List.mem_map] at hy ⊢
-    obtain ⟨t', ht', rfl⟩ := hy
+    simp only [IndexFact.slots, List.mem_flatMap] at hy ⊢
+    obtain ⟨t', ht', hy⟩ := hy
     obtain ⟨t, ht, e⟩ := Linear.Fact.mapVars_vars hL t' ht'
-    exact ⟨t.slot, ⟨t, ht, rfl⟩, Term.mapM_slot e⟩
+    obtain ⟨x, hx, ex⟩ := Term.mapM_slots e y hy
+    exact ⟨x, ⟨t, ht, hx⟩, ex⟩
   | either A B ihA ihB =>
     intro F' h y hy
     simp only [IndexFact.mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
@@ -83,14 +81,19 @@ theorem indexFact_mapM_slots {f : Nat → Option Nat} :
     simp only [IndexFact.mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
       Option.some.injEq] at h
     obtain ⟨s', hs, stop', hst, body', hb, rfl⟩ := h
-    simp only [IndexFact.slots, List.mem_cons, List.mem_flatMap] at hy ⊢
-    rcases hy with rfl | rfl | ⟨C', hC', b', hb', hy⟩
-    · exact ⟨s, .inl rfl, hs⟩
-    · exact ⟨stop.slot, .inr (.inl rfl), Term.mapM_slot hst⟩
-    · obtain ⟨C, hC, hCm⟩ := (IndexFact.mapBody_pairs hb).1 C' hC'
+    simp only [IndexFact.slots] at hy ⊢
+    rcases List.mem_cons.mp hy with h1 | hy
+    · subst h1; exact ⟨s, List.mem_cons_self .., hs⟩
+    rcases List.mem_append.mp hy with hy | hy
+    · obtain ⟨x, hx, e⟩ := Term.mapM_slots hst y hy
+      exact ⟨x, List.mem_cons_of_mem _ (List.mem_append_left _ hx), e⟩
+    · obtain ⟨C', hC', hy⟩ := List.mem_flatMap.mp hy
+      obtain ⟨b', hb', hy⟩ := List.mem_flatMap.mp hy
+      obtain ⟨C, hC, hCm⟩ := (IndexFact.mapBody_pairs hb).1 C' hC'
       obtain ⟨b, hb0, hbm⟩ := clause_mapVars_vars hCm b' hb'
       obtain ⟨x, hx, e⟩ := bound_mapM_slots hbm y hy
-      exact ⟨x, .inr (.inr ⟨C, hC, b, hb0, hx⟩), e⟩
+      exact ⟨x, List.mem_cons_of_mem _ (List.mem_append_right _
+        (List.mem_flatMap.mpr ⟨C, hC, List.mem_flatMap.mpr ⟨b, hb0, hx⟩⟩)), e⟩
   | _ =>
     intro F' h y hy
     simp only [IndexFact.mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
@@ -191,10 +194,14 @@ def NamedIn (as : List IndexAtom) (x : Nat) : Prop := ∃ a ∈ as, x ∈ (Atom.
 theorem namedIn_of_slots {as : List IndexAtom} {a : IndexAtom} (ha : a ∈ as) {x : Nat} (hx : x ∈ a.fact.slots) :
     NamedIn as x := ⟨a, ha, by simp [Atom.names, hx]⟩
 
-/-- **A term an atom states defined is rooted at a name it states.** -/
-theorem termDefined_named {as : List IndexAtom} {t : Term} (h : termDefined as t = true) : NamedIn as t.slot := by
+/-- **A term an atom states defined is rooted at a name it states**: each
+current slot it reads is named. -/
+theorem termDefined_named {as : List IndexAtom} {t : Term} (h : termDefined as t = true) :
+    ∀ x ∈ t.slots, NamedIn as x := by
+  intro x hx
+  obtain ⟨he, rfl⟩ := Term.mem_slots.mp hx
   unfold termDefined at h
-  simp only [Bool.or_eq_true, Bool.and_eq_true, List.any_eq_true] at h
+  simp only [he, Bool.not_false, Bool.true_and, Bool.or_eq_true, Bool.and_eq_true, List.any_eq_true] at h
   rcases h with ⟨-, hk⟩ | ⟨a, ha, -, hf⟩
   · revert hk
     cases t.kind <;> intro hk <;> try (cases hk; done)
@@ -207,8 +214,8 @@ theorem termDefined_named {as : List IndexAtom} {t : Term} (h : termDefined as t
       · rename_i y n hk; simp only [beq_iff_eq] at hf; simp [IndexFact.slots, hk, hf]
       · rename_i F hk
         simp only [List.contains_iff_mem] at hf
-        simp only [hk, IndexFact.slots, List.mem_map]
-        exact ⟨_, hf, rfl⟩
+        simp only [hk, IndexFact.slots, List.mem_flatMap]
+        exact ⟨_, hf, by simp [Term.slots, Term.value]⟩
       · cases hf
     · simp only [List.any_eq_true, Bool.and_eq_true] at hk
       obtain ⟨a, ha, -, hf⟩ := hk
@@ -220,8 +227,8 @@ theorem termDefined_named {as : List IndexAtom} {t : Term} (h : termDefined as t
     split at hf
     · rename_i F hk
       simp only [List.contains_iff_mem] at hf
-      simp only [hk, IndexFact.slots, List.mem_map]
-      exact ⟨_, hf, rfl⟩
+      simp only [hk, IndexFact.slots, List.mem_flatMap]
+      exact ⟨_, hf, by simp [Term.slots, he]⟩
     · cases hf
 
 theorem namedIn_append {as bs : List IndexAtom} {x : Nat} : NamedIn (as ++ bs) x ↔ NamedIn as x ∨ NamedIn bs x := by
@@ -251,17 +258,17 @@ theorem eliminateLinear_named {D : List Nat} {as : List IndexAtom} {b : IndexAto
     · obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hb
       obtain ⟨-, hk⟩ := List.mem_filter.mp hF
       simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true] at hk
-      simp only [Atom.names, IndexFact.slots, Option.toList_none, List.append_nil, List.mem_map] at hx
-      obtain ⟨t, ht, rfl⟩ := hx
-      exact termDefined_named (hk.2 t ht).2
+      simp only [Atom.names, IndexFact.slots, Option.toList_none, List.append_nil, List.mem_flatMap] at hx
+      obtain ⟨t, ht, hx⟩ := hx
+      exact termDefined_named (hk.2 t ht).2 x hx
   · obtain ⟨⟨c, neg⟩, hg, hb⟩ := List.mem_flatMap.mp hb
     obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hb
     obtain ⟨-, hk⟩ := List.mem_filter.mp hF
     simp only [Bool.and_eq_true, Bool.not_eq_true', List.all_eq_true] at hk
-    simp only [Atom.names, IndexFact.slots, Option.toList_some, List.mem_append, List.mem_map,
+    simp only [Atom.names, IndexFact.slots, Option.toList_some, List.mem_append, List.mem_flatMap,
       List.mem_singleton] at hx
-    rcases hx with ⟨t, ht, rfl⟩ | rfl
-    · exact termDefined_named (hk.2 t ht).2
+    rcases hx with ⟨t, ht, hx⟩ | rfl
+    · exact termDefined_named (hk.2 t ht).2 x hx
     · obtain ⟨a, ha, hm⟩ := List.mem_filterMap.mp (List.mem_eraseDups.mp hg)
       refine ⟨a, ha, ?_⟩
       split at hm
@@ -296,21 +303,22 @@ theorem eliminateIndices_named {D : List Nat} {as : List IndexAtom} {b : IndexAt
     · cases ha
 
 theorem atomLinear_slots {f : IndexFact} {F : Linear.Fact Term} (hF : F ∈ atomLinear f) :
-    ∀ t ∈ F.vars, t.slot ∈ f.slots := by
+    ∀ t ∈ F.vars, ∀ x ∈ t.slots, x ∈ f.slots := by
   cases f with
   | linear G =>
     simp only [atomLinear, List.mem_singleton] at hF; subst hF
-    intro t ht; simp only [IndexFact.slots, List.mem_map]; exact ⟨t, ht, rfl⟩
+    intro t ht x hx; simp only [IndexFact.slots, List.mem_flatMap]; exact ⟨t, ht, hx⟩
   | length y n =>
     simp only [atomLinear, List.mem_cons, List.mem_nil_iff, or_false] at hF
-    intro t ht
+    intro t ht x hx
     rcases hF with rfl | rfl <;>
       simp only [Linear.Fact.vars, List.map_cons, List.map_nil, List.mem_cons, List.mem_nil_iff,
-        or_false] at ht <;> rcases ht with rfl | rfl <;> simp [IndexFact.slots, Term.value, Term.length]
+        or_false] at ht <;> rcases ht with rfl | rfl <;>
+      simp_all [IndexFact.slots, Term.value, Term.length, Term.slots]
   | _ => simp [atomLinear] at hF
 
 theorem liftDropped_slot {dropped : Nat → Bool} {reads : List (Nat × String × Nat)} :
-    ∀ n t t', liftDropped dropped reads n t = some t' → t'.slot = t.slot ∨ ∃ r ∈ reads, t'.slot = r.1 := by
+    ∀ n t t', liftDropped dropped reads n t = some t' → t' = t ∨ ∃ r ∈ reads, t'.slot = r.1 := by
   intro n
   induction n with
   | zero => intro t t' h; simp only [liftDropped] at h; split at h <;> simp_all
@@ -321,7 +329,7 @@ theorem liftDropped_slot {dropped : Nat → Bool} {reads : List (Nat × String �
     · split at h
       · rename_i c f v hfind
         rcases ih _ _ h with h | h
-        · exact .inr ⟨_, List.mem_of_find?_eq_some hfind, h⟩
+        · subst h; exact .inr ⟨_, List.mem_of_find?_eq_some hfind, rfl⟩
         · exact .inr h
       · cases h
     · cases h; exact .inl rfl
@@ -359,12 +367,13 @@ theorem restateReads_named {ls : HeapLinks.Links} {dropped : Nat → Bool} {as :
   obtain ⟨F, hF, hab⟩ := List.mem_filterMap.mp hb
   split at hab
   · obtain ⟨F', hF', rfl⟩ := Option.map_eq_some_iff.mp hab
-    simp only [Atom.names, IndexFact.slots, List.mem_append, List.mem_map] at hx
-    rcases hx with ⟨t', ht', rfl⟩ | hx
+    simp only [Atom.names, IndexFact.slots, List.mem_append, List.mem_flatMap] at hx
+    rcases hx with ⟨t', ht', hx⟩ | hx
     · obtain ⟨t, ht, e⟩ := Linear.Fact.mapVars_vars hF' t' ht'
-      rcases liftDropped_slot _ _ _ e with e | ⟨r, hr, e⟩
-      · exact .inl (namedIn_of_slots ha (e ▸ atomLinear_slots hF t ht))
-      · obtain ⟨hr, -⟩ := List.mem_filter.mp hr
+      rcases liftDropped_slot _ _ _ e with rfl | ⟨r, hr, e⟩
+      · exact .inl (namedIn_of_slots ha (atomLinear_slots hF t' ht x hx))
+      · obtain ⟨-, rfl⟩ := Term.mem_slots.mp hx
+        obtain ⟨hr, -⟩ := List.mem_filter.mp hr
         obtain ⟨g, hg, hgm⟩ := List.mem_filterMap.mp hr
         split at hgm
         · cases hgm
