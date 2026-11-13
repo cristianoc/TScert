@@ -25,7 +25,7 @@ private def groupStep (f : FilePlans) (fuel : Nat) (compare : Bool) (debugNode r
   | .ok m =>
     let failure := match m.outcome with
       | .accepted => none
-      | .refused w => some (place i w s!"single pass: {m.outcome} ({w.length})")
+      | .refused w _ => some (place i w s!"single pass: {m.outcome} ({w.length})")
       | .notHandled w => some s!"single pass: {m.outcome} ({w.length})"
       | o => some s!"single pass: {o} ({(toString o).length})"
     (acc.1 ++ [s!"{m.name}: {m.outcome}; {m.line}"], acc.2.orElse fun _ => failure)

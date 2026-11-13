@@ -1520,26 +1520,17 @@ def withoutRegional (given : Std.HashMap String Json) (u : String) : Option (Std
   guard (kvs.contains "regional" || kvs.contains "footprintRegional")
   pure (given.insert u (.obj ((kvs.erase "regional").erase "footprintRegional")))
 
-/-- An edge's refusal into a statement entry for the facts it lacks
-(`SinglePass.run`): the entry's label and the facts' text. -/
-def lacksAt (why : String) : Option (Nat × String) :=
-  match why.splitOn "into statement entry " with
-  | _ :: rest :: _ => match rest.splitOn ": lacks " with
-    | t :: x :: _ => t.toNat?.map (·, x)
-    | _ => none
-  | _ => none
-
 /-- A member's run as the inferred route reads it (`passGroup`'s wording):
 its line, its refusal where refused, and its failure, the refusal's text
 located with `located` (`FilePlans.locatedRefusal`). -/
 def FilePlans.inferredRun (g : FilePlans) (fuel : Nat) (compare : Bool) (debugNode repeats : Nat)
     (observe : Option String) (counting located : Bool) (given : Option (Std.HashMap String Json)) (i : Nat) :
-    String × Option String × Option String :=
+    String × Option (String × Option (Nat × List HeapKnowledge.IndexAtom)) × Option String :=
   match g.passMember fuel i compare debugNode repeats given observe counting with
   | .ok m =>
     let failure := match m.outcome with
       | .accepted => none
-      | .refused w =>
+      | .refused w _ =>
         let raw := s!"single pass: {m.outcome} ({w.length})"
         some (if !located then raw else match g.locatedRefusal i w with
           | some l => s!"{l}\n{raw}"
@@ -1547,7 +1538,7 @@ def FilePlans.inferredRun (g : FilePlans) (fuel : Nat) (compare : Bool) (debugNo
       | .notHandled w => some s!"single pass: {m.outcome} ({w.length})"
       | o => some s!"single pass: {o} ({(toString o).length})"
     let why := match m.outcome with
-      | .refused w => some w
+      | .refused w lacks => some (w, lacks)
       | _ => none
     (s!"{m.name}: {m.outcome}; {m.line}", why, failure)
   | .error reason =>
@@ -1557,29 +1548,30 @@ def FilePlans.inferredRun (g : FilePlans) (fuel : Nat) (compare : Bool) (debugNo
       | none => reason
     (s!"refused before the pass: {reason.take 200}", none, some reason)
 
-/-- What a refusal `w` of member `i`'s run calls for: the plans and given
-lines of its next run, the lines saying what was left out and how many facts,
-or none where the refusal stands. An implication an edge refuses: the entry's
-proposed ones left out. A regional check refused at the tables inferred for
-it (`regionalLines`): the member without them, as with no given line. An edge
-into a statement entry lacking facts: the candidates there the refusal names
-(all of them where its text is cut before naming any) left out, the given
-file's (`protect`) kept, and the same facts at the heads that read that
-head's facts (`laterDrops`). With `fixed` (an adversarial proposal forced)
+/-- What a refusal `w` of member `i`'s run calls for (its text, and the entry
+and lacking facts of a refusal of an edge into a statement entry, as data):
+the plans and given lines of its next run, the lines saying what was left
+out and how many facts, or none where the refusal stands. An implication an
+edge refuses: the entry's proposed ones left out. A regional check refused
+at the tables inferred for it (`regionalLines`): the member without them, as
+with no given line. An edge into a statement entry lacking facts: the
+candidates there among the lacking facts left out, the given file's
+(`protect`) kept, and the same facts at the heads that read that head's
+facts (`laterDrops`); a refusal lacking none of them stands. With `fixed` (an adversarial proposal forced)
 the forced fact is never left out, nor an implication or a regional table. -/
 def FilePlans.inferredNext (f : FilePlans) (fixed : Bool) (protect : List (Nat × List HeapKnowledge.IndexAtom))
-    (given : Option (Std.HashMap String Json)) (i : Nat) (w : String) :
+    (given : Option (Std.HashMap String Json)) (i : Nat) (w : String × Option (Nat × List HeapKnowledge.IndexAtom)) :
     Option (FilePlans × Option (Std.HashMap String Json) × List String × Nat) :=
-  if let some l := implicationAt w then
+  if let some l := implicationAt w.1 then
     if fixed then none else do
     let g ← given.bind (withoutImplications · (f.fr.unitId i) l)
     pure (f, some g, [s!"inferred heads: dropped at {l}: its implications"], 1)
-  else if (w.splitOn "store regions").length > 1 then
+  else if (w.1.splitOn "store regions").length > 1 then
     if fixed then none else do
     let g ← given.bind (withoutRegional · (f.fr.unitId i))
     pure (f, some g, ["inferred heads: dropped the regional tables"], 0)
   else do
-    let (l, text) ← lacksAt w
+    let (l, missing) ← w.2
     let candidates := match f.plans[i]? with
       | some (.ok (.graph _ _ r)) => r.candidates
       | _ => []
@@ -1595,17 +1587,10 @@ def FilePlans.inferredNext (f : FilePlans) (fixed : Bool) (protect : List (Nat �
       | _ => false
     let open_ := held.filter fun a => !kept.contains a && !forced a
     guard !open_.isEmpty
-    -- The refusal's text writes each fact as `reprStr` does, inside the
-    -- `reprStr` of a list of strings.
-    let names := fun (a : HeapKnowledge.IndexAtom) =>
-      let s := reprStr (reprStr a)
-      (text.splitOn (((s.drop 1).toString.dropEnd 1).toString)).length > 1
-    let named := open_.filter names
-    -- A refusal naming only facts no rerun leaves out stands; one naming
-    -- none of the held facts, its text whole (`SinglePass.run` keeps 1500
-    -- characters), is of written facts.
-    guard !(named.isEmpty && (held.any names || text.length < 1400))
-    let drop := if named.isEmpty then open_ else named
+    -- The candidates the edge lacks; a refusal lacking only facts no
+    -- rerun leaves out (written, kept or forced) stands.
+    let drop := open_.filter missing.contains
+    guard !drop.isEmpty
     let shown := fun (a : HeapKnowledge.IndexAtom) => (reprStr a.fact).replace "\n" " " |>.replace "  " ""
     let f₁ := f.dropCandidates i l drop
     -- A fact an edge into a head refuses is left out at the heads that
@@ -1635,7 +1620,8 @@ left out. With `fixed` (an adversarial proposal forced),
 `inferredNext`'s alone. -/
 def FilePlans.inferredNextAll (f : FilePlans) (fuel : Nat) (fixed : Bool)
     (protect : List (Nat × List HeapKnowledge.IndexAtom)) (given : Option (Std.HashMap String Json)) (i : Nat)
-    (w : String) : Option (FilePlans × Option (Std.HashMap String Json) × List String × Nat) :=
+    (w : String × Option (Nat × List HeapKnowledge.IndexAtom)) :
+    Option (FilePlans × Option (Std.HashMap String Json) × List String × Nat) :=
   match f.inferredNext fixed protect given i w with
   | none => none
   | some (f₁, g₁, ls, d) =>
@@ -1680,8 +1666,8 @@ structure Settled (S G R : Type) where
 /-- A member's runs until one is accepted or its refusal stands, at most
 `n + 1`: each run `run` of the current plans and given lines, a refusal's
 next state from `next`. -/
-def settleInferred {S G R : Type} (run : S → G → R) (refusal : R → Option String)
-    (next : S → G → String → Option (S × G × List String × Nat)) :
+def settleInferred {S G R W : Type} (run : S → G → R) (refusal : R → Option W)
+    (next : S → G → W → Option (S × G × List String × Nat)) :
     Nat → S → G → List String → Nat → Nat → Settled S G R
   | 0, f, g, ls, d, runs => ⟨f, g, ls, d, runs + 1, run f g⟩
   | n + 1, f, g, ls, d, runs =>
@@ -1697,7 +1683,8 @@ statement entries holding candidates. -/
 def FilePlans.inferredSettle (f : FilePlans) (fuel : Nat) (keep : Nat → List (Nat × List HeapKnowledge.IndexAtom))
     (fixed compare : Bool) (debugNode repeats : Nat) (observe : Option String) (counting located : Bool)
     (given : Option (Std.HashMap String Json)) (i : Nat) :
-    Settled FilePlans (Option (Std.HashMap String Json)) (String × Option String × Option String) :=
+    Settled FilePlans (Option (Std.HashMap String Json))
+      (String × Option (String × Option (Nat × List HeapKnowledge.IndexAtom)) × Option String) :=
   let candidates : List (Nat × List HeapKnowledge.IndexAtom) := match f.plans[i]? with
     | some (.ok (.graph _ _ r)) => r.candidates
     | _ => []

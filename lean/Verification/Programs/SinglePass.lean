@@ -305,10 +305,12 @@ structure Observation (ι : Type) where
   implies : List (PromiseCalls.Implication ι) := []
 
 /-- The verdict: refused at a located obligation, a construct the pass
-does not handle, or the state observed at a chosen node. -/
+does not handle, or the state observed at a chosen node. A refusal of an
+edge into a statement entry for lacking given facts carries the entry and
+those facts (`lacks`), as data. -/
 inductive Outcome (ι : Type) where
   | accepted
-  | refused (why : String)
+  | refused (why : String) (lacks : Option (Nat × List HeapKnowledge.IndexAtom) := none)
   /-- Refused at node `l`'s footprint check (`GraphCode.nodeChecked`): the
   one refusal a regional check may still answer. -/
   | outsideBound (l : Nat)
@@ -318,7 +320,7 @@ inductive Outcome (ι : Type) where
 instance : ToString (Outcome ι) where
   toString
     | .accepted => "accepted"
-    | .refused w => s!"refused: {w}"
+    | .refused w _ => s!"refused: {w}"
     | .outsideBound l => s!"refused: footprint at node {l}"
     | .notHandled w => s!"not handled: {w}"
     | .observed o => s!"observed node {o.label}"
@@ -1962,17 +1964,18 @@ structure WalkState (ι : Type) [BEq ι] [Hashable ι] (G : NormalGraph ι) wher
   lastStamp : Nat
   lastKind : String
 
-/-- The outcomes a walk stops with: a refusal, a refusal at a footprint, a
-construct not handled, an observation. -/
+/-- The outcomes a walk stops with: a refusal (with the entry and the given
+facts an edge into it lacks, where it is that refusal), a refusal at a
+footprint, a construct not handled, an observation. -/
 inductive StopOutcome (ι : Type) where
-  | refused (why : String)
+  | refused (why : String) (lacks : Option (Nat × List HeapKnowledge.IndexAtom) := none)
   | outsideBound (l : Nat)
   | notHandled (what : String)
   | observed (o : Observation ι)
 
 /-- A stop's outcome as a verdict. -/
 def StopOutcome.outcome : StopOutcome ι → Outcome ι
-  | .refused why => .refused why
+  | .refused why lacks => .refused why lacks
   | .outsideBound l => .outsideBound l
   | .notHandled what => .notHandled what
   | .observed o => .observed o
@@ -2939,7 +2942,8 @@ def headExit (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv
         let trace := if env.tracing then
             { acc.trace with missing := missing.filterMap fun a => a.rename fun i => names[PointClaims.slot t.mapping i]? }
           else acc.trace
-        .error (WalkStop.mk (.refused s!"edge from node {l} into statement entry {t.label}: lacks {(reprStr (missing.map fun a => match a with | .index x => reprStr x | .cell f => s!"cell {f.slot}" | .value f => s!"value {f.slot}" | .link g => s!"link {g.cell} {g.value}" | .elem e => s!"elems {e.slot}" | .sep f => s!"sep {f.slot}")).take 1500}") counts answers trace)
+        .error (WalkStop.mk (.refused s!"edge from node {l} into statement entry {t.label}: lacks {(reprStr (missing.map fun a => match a with | .index x => reprStr x | .cell f => s!"cell {f.slot}" | .value f => s!"value {f.slot}" | .link g => s!"link {g.cell} {g.value}" | .elem e => s!"elems {e.slot}" | .sep f => s!"sep {f.slot}")).take 1500}"
+          (some (t.label, missing.filterMap fun a => match a with | .index x => some x | _ => none))) counts answers trace)
       else .ok { acc with edges, answers, counts }
 
 /-- A target's assertion established on an edge into a node other than a

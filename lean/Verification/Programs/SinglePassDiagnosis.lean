@@ -21,15 +21,6 @@ open HeapKnowledge (Knowledge IndexAtom)
 section
 variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
 
-/-- The head and the text of a refusal of an edge into a statement entry for
-lacking facts (`headExit`'s wording). -/
-def lacksIn (why : String) : Option (Nat × String) :=
-  match why.splitOn "into statement entry " with
-  | _ :: rest :: _ => match rest.splitOn ": lacks " with
-    | t :: x :: _ => t.toNat?.map (·, x)
-    | _ => none
-  | _ => none
-
 /-- The head of a refusal of an edge into a statement entry for an
 implication it states (`headExit`'s wording). -/
 def implicationIn (why : String) : Option Nat :=
@@ -38,13 +29,6 @@ def implicationIn (why : String) : Option Nat :=
     | t :: _ :: _ => t.toNat?
     | _ => none
   | _ => none
-
-/-- The facts of `held` a lacks refusal's text names: each written as
-`reprStr` writes it, inside the `reprStr` of a list of strings. -/
-def namedIn (text : String) (held : List IndexAtom) : List IndexAtom :=
-  held.filter fun a =>
-    let s := reprStr (reprStr a)
-    (text.splitOn ((s.drop 1).toString.dropEnd 1).toString).length > 1
 
 /-- The head's given state without the facts `drop`. -/
 def weakenedAt {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkEnv ι G images) (l : Nat)
@@ -67,11 +51,11 @@ def exitDiagnosed (G : NormalGraph ι) (images : InstanceImageCheck G) (droppabl
     match exitStep G images env l en sd ysAll outAll acc exi with
     | .ok acc' => .ok (env, dropped, acc')
     | .error stop => match k, stop.outcome with
-      | k + 1, .refused why => match lacksIn why with
-        | some (t, text) =>
+      | k + 1, .refused why lacks => match lacks with
+        | some (t, missing) =>
           let left := (dropped.filter (·.1 == t)).flatMap fun x => x.2.getD []
           let open_ := (droppable t).filter (!left.contains ·)
-          match namedIn text open_ with
+          match open_.filter missing.contains with
           | [] => .error stop
           | named => exitDiagnosed G images droppable implied l en sd ysAll outAll exi k
               (weakenedAt env t named, dropped ++ [(t, some named)], acc)

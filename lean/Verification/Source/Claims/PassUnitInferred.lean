@@ -130,8 +130,8 @@ theorem withFreshApart_recandidated (f : FilePlans) (force : Bool) (group : List
 `settleInferred`'s run is `run` of its last state, and that state is
 related to the first by any reflexive, transitive relation each next state
 keeps. -/
-theorem settleInferred_last {S G R : Type} {run : S → G → R} {refusal : R → Option String}
-    {next : S → G → String → Option (S × G × List String × Nat)} (Q : S → S → Prop)
+theorem settleInferred_last {S G R W : Type} {run : S → G → R} {refusal : R → Option W}
+    {next : S → G → W → Option (S × G × List String × Nat)} (Q : S → S → Prop)
     (hrefl : ∀ s, Q s s) (htrans : ∀ a b c, Q a b → Q b c → Q a c)
     (hnext : ∀ s g w s' g' ls d, next s g w = some (s', g', ls, d) → Q s s') :
     ∀ n s g ls d runs, Q s (settleInferred run refusal next n s g ls d runs).state ∧
@@ -157,8 +157,8 @@ theorem settleInferred_last {S G R : Type} {run : S → G → R} {refusal : R �
 
 /-- A next state of `inferredNext` is `Recandidated` (proved). -/
 theorem inferredNext_recandidated {f : FilePlans} {fixed : Bool} {protect : List (Nat × List HeapKnowledge.IndexAtom)}
-    {given : Option (Std.HashMap String Json)} {i : Nat} {w : String} {f' : FilePlans}
-    {given' : Option (Std.HashMap String Json)} {ls : List String} {d : Nat}
+    {given : Option (Std.HashMap String Json)} {i : Nat} {w : String × Option (Nat × List HeapKnowledge.IndexAtom)}
+    {f' : FilePlans} {given' : Option (Std.HashMap String Json)} {ls : List String} {d : Nat}
     (h : f.inferredNext fixed protect given i w = some (f', given', ls, d)) : Recandidated f f' := by
   unfold FilePlans.inferredNext at h
   split at h
@@ -179,7 +179,7 @@ theorem inferredNext_recandidated {f : FilePlans} {fixed : Bool} {protect : List
       split at h
       · cases h
       · rename_i x _
-        obtain ⟨l, text⟩ := x
+        obtain ⟨l, missing⟩ := x
         dsimp only at h
         split at h
         · cases h
@@ -216,8 +216,8 @@ theorem dropAll_recandidated (f : FilePlans) (i : Nat) (ds : List (Nat × List H
 `inferredNext`'s, then candidates left out. -/
 theorem inferredNextAll_recandidated {f : FilePlans} {fuel : Nat} {fixed : Bool}
     {protect : List (Nat × List HeapKnowledge.IndexAtom)}
-    {given : Option (Std.HashMap String Json)} {i : Nat} {w : String} {f' : FilePlans}
-    {given' : Option (Std.HashMap String Json)} {ls : List String} {d : Nat}
+    {given : Option (Std.HashMap String Json)} {i : Nat} {w : String × Option (Nat × List HeapKnowledge.IndexAtom)}
+    {f' : FilePlans} {given' : Option (Std.HashMap String Json)} {ls : List String} {d : Nat}
     (h : f.inferredNextAll fuel fixed protect given i w = some (f', given', ls, d)) : Recandidated f f' := by
   unfold FilePlans.inferredNextAll at h
   split at h

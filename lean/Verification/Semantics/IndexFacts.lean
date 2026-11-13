@@ -60,24 +60,19 @@ structure Term where
   slot : Nat
   path : List String
   atEntry : Bool := false
-  deriving DecidableEq
+  deriving DecidableEq, Repr
 
-/-- A term's kind, slot and path, which a current term's hash and text
-read. -/
+/-- A term's kind, slot and path, which a term's hash reads. -/
 structure Term.Root where
   kind : Term.Kind
   slot : Nat
   path : List String
-  deriving Hashable, Repr
+  deriving Hashable
 
-/-- A current term is written as its kind, slot and path; an entry term as
-`old` before them. -/
-instance : Repr Term where
-  reprPrec t n := let r := Term.Root.mk t.kind t.slot t.path
-    if t.atEntry then Repr.addAppParen ("old " ++ reprArg r) n else reprPrec r n
-
-/-- A current term hashes as its kind, slot and path; an entry term mixes in
-its mark. -/
+/-- A term's hash: its kind's, slot's and path's, with its entry mark mixed
+in for an entry term. It is consistent with equality (equal terms have equal
+fields, so equal hashes); terms differing only in the mark may share none,
+and hash maps compare their keys by equality. -/
 instance : Hashable Term where
   hash t := let r : UInt64 := hash (Term.Root.mk t.kind t.slot t.path)
     if t.atEntry then mixHash r 1 else r

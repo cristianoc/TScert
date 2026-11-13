@@ -417,7 +417,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
     let outcome : SinglePass.Outcome _ := match o with
       | .accepted => if !sumsOk then .refused "a read summary"
         else if !obligations.accepted then .refused "an expression claim" else .accepted
-      | .refused w => .refused w
+      | .refused w lacks => .refused w lacks
       | .outsideBound l => .refused s!"footprint at node {l}"
       | .notHandled w => .notHandled w
       | .observed _ => .notHandled "observing a qualified body"
@@ -465,7 +465,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
     match o.asRefusal with
     | .accepted => { index := ci, outcome := .accepted, answers := a, line := "" }
     | .notHandled w => { index := ci, outcome := .notHandled s!"{w} (in code {ci})", answers := a, line := "" }
-    | .refused w =>
+    | .refused w lacks =>
       -- A refusal observed in a code request: its obligation, the facts
       -- over its names and those it lacks, as for the unit's own graph.
       let record := if observe != some "refusal" then "" else
@@ -491,7 +491,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
           ("claim", toJson ((rq.claims[l]?).map (RequestJson.PointClaim.shown p))),
           ("facts", shown facts), ("missing", Json.arr missingJson.toArray)] ++ p.fields)
         "refusal-observation: " ++ record.compress
-      { index := ci, outcome := .refused s!"code {ci}: {w}", answers := a, line := record }
+      { index := ci, outcome := .refused s!"code {ci}: {w}" lacks, answers := a, line := record }
     | o => { index := ci, outcome := .refused s!"code {ci}: {o}", answers := a, line := "" }
   let (codeRuns, table, sumsAnswers) := codesInOrder (·.1.entry) codeStep [] next r.codes.zipIdx
   if let some c := codeRuns.find? fun c => !(c.outcome matches .accepted) then
@@ -547,8 +547,8 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
           | some rg => let (o', c', a', t') := walk none (some rg)
             { route := .fallbackThenRegions, outcome := o'.asRefusal, counts := c', after := a', trace := t', fallbackAfter := some a }
           | none => { route := .fallback, outcome := .accepted, counts := c, after := a, trace := t, fallbackAfter := none }
-        | (.refused w', c, a, t) =>
-          { route := .fallback, outcome := .refused s!"footprint by store regions: {w'} (after footprint at node {l})",
+        | (.refused w' lacks, c, a, t) =>
+          { route := .fallback, outcome := .refused s!"footprint by store regions: {w'} (after footprint at node {l})" lacks,
             counts := c, after := a, trace := t, fallbackAfter := none }
         | (o', c, a, t) => { route := .fallback, outcome := o'.asRefusal, counts := c, after := a, trace := t, fallbackAfter := none }
       else { route := .direct, outcome := o.asRefusal, counts, after, trace, fallbackAfter := none }
@@ -572,7 +572,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
   -- the refusal: the walk again, stopping on its entry; the refusal kept
   -- where that walk accepts.
   let o : SinglePass.Outcome _ := match o, observed with
-    | .refused _, some _ => if tracing then o else
+    | .refused _ _, some _ => if tracing then o else
       match (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
         r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers #[] debugNode bound
         givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed false true).1.asRefusal with
@@ -585,7 +585,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
   -- A refusal observed: its obligation's facts, the facts it lacks, and
   -- each fact over its names an earlier state held, where last present
   -- and what removed it (`Trace.locate`, `Trace.lost`).
-  if let .refused w := o then
+  if let .refused w _ := o then
     if tracing then
       let l := trace.node
       let mentioned := ((r.claims[l]?).map RequestJson.PointClaim.mentions).getD []
@@ -721,7 +721,7 @@ def FilePlans.passGroup (f : FilePlans) (fuel : Nat) (group : List Nat) (compare
     | .ok m =>
       let failure := match m.outcome with
         | .accepted => none
-        | .refused w => some (place i w s!"single pass: {m.outcome} ({w.length})")
+        | .refused w _ => some (place i w s!"single pass: {m.outcome} ({w.length})")
         | .notHandled w => some s!"single pass: {m.outcome} ({w.length})"
         | o => some s!"single pass: {o} ({(toString o).length})"
       (lines ++ [s!"{m.name}: {m.outcome}; {m.line}"], failed.orElse fun _ => failure)
