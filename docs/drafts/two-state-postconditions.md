@@ -2,8 +2,8 @@
 
 A postcondition such as `lists.widths.length === old(lists.widths.length) + n`
 relates the state a function starts in and the state it returns in. This
-draft states the definition, how the Lean represents it, and which
-statements it changes.
+draft states the definition, how the Lean represents it, the rules that
+read it, and which statements it changes.
 
 ## The existing mechanism this extends
 
@@ -15,16 +15,17 @@ statements it changes.
   by entailment from the facts there (`GraphCode.returnEntails`).
 - **The pass's named state**
   ([the pass's named state](../SINGLE-PASS-PROOF.md#the-passs-named-state)):
-  the facts the walk keeps, over names, with the start names pinned to the
-  invocation's entry values, kept across steps by the frame checks
-  (`Term.keptBy`, `IndexFact.keptBy`) and across a throw where they read no
-  heap (`Atom.heapFree`).
+  the facts the walk keeps, over names, kept across steps by the frame
+  checks (`Term.keptBy`, `IndexFact.keptBy`).
 - **The entry check** (`SinglePass.entryRefusal`, `ControlFlow.entryKnows`):
   the start's given facts, written and proposed, entailed by the request's
   entry facts.
+- **Exact changes across a step**: the push rule and the write at the
+  length, each a relation between a length before and after a step.
 
 Each is extended, none replaced: the entry state is a parameter of the
-satisfaction all three read, and `old` is one more form of term.
+satisfaction all of them read, `old` is one more form of term, and the
+exact changes are instances of one composition.
 
 ## The definition
 
@@ -32,22 +33,19 @@ The note "Tolerant frames", section 6, "Triples": the posts of a triple
 are two-state; in them $`\mathrm{old}(e)`$ denotes the value of $`e`$ in the
 environment and heap the command started in. That state is a whole state,
 fixed for the run. An assertion that reads only the entry state is
-invariant under every step: no step changes a past state (its support is
-empty, section 5). Rule Call instantiates a callee's two-state post with
-the caller's state at the call as the callee's entry.
+invariant under every step (its support is empty, section 5). Rule Call
+instantiates a callee's two-state post with the caller's state just before
+the call as the callee's entry. A precondition is one-state.
 
 ## The representation
 
 **The entry state** $`\varepsilon=\langle\varepsilon.\mathrm{env},\varepsilon.\mathrm{heap}\rangle`$
 (`HeapKnowledge.EntryState`) is a parameter of every satisfaction relation:
 $`\varepsilon;\rho,h\models F`$ (`IndexFact.HoldsAt ε F ρ h`), knowledge
-(`HeapKnowledge.Holds k ε ρ h`), the named facts (`AtomHolds`, `Named`,
-`StoreOk`), the pass's state (`StateHolds … start ε`, its start names
-holding $`\varepsilon.\mathrm{env}\,q`$) and the walk's node and edge
-assertions (`passPre`, `passPreT`, `passPreA`, `passPreU`, …). One
-$`\varepsilon`$ serves every node of a run. A step's, a node's or a check's
-obligation (`Checker.sound`, `ExpressionOk`, `NodeWithin`, `StepOk`, the
-entailments between knowledges) holds for every $`\varepsilon`$.
+(`HeapKnowledge.Holds k ε ρ h`), the named facts, the pass's state
+(`StateHolds … start ε`) and the walk's node and edge assertions. One
+$`\varepsilon`$ serves every node of a run; a step's or a check's obligation
+holds for every $`\varepsilon`$.
 
 **Terms.** A term is $`t=\langle k,s,p\rangle`$ (kind, slot, path) or its
 entry form $`\mathrm{old}(t)`$ (`Term.atEntry`):
@@ -58,78 +56,176 @@ entry form $`\mathrm{old}(t)`$ (`Term.atEntry`):
 [\![\mathrm{old}(t)]\!]_{\varepsilon,\rho,h}=[\![t]\!]_{\varepsilon,\varepsilon.\mathrm{env},\varepsilon.\mathrm{heap}}
 ```
 
-(`termValue`, `termAt`). The slot of $`\mathrm{old}(t)`$ is a position of
-the entry environment; renamings of the current slots leave it as it is
-(`Term.mapM`), and it is no current slot of the fact (`Term.slots`,
-`IndexFact.entrySlots`). Every fact form whose terms are terms (linear
+(`termValue`, `termAt`). Every fact form whose terms are terms (linear
 facts, a quantified fact's bound and free body terms) admits entry terms.
+Invariance (proved, `termValue_entry_invariant`):
+$`[\![\mathrm{old}(t)]\!]_{\varepsilon,\rho,h}=[\![\mathrm{old}(t)]\!]_{\varepsilon,\rho',h'}`$.
 
-**Invariance** (proved, `termValue_entry_invariant`):
-$`[\![\mathrm{old}(t)]\!]_{\varepsilon,\rho,h}=[\![\mathrm{old}(t)]\!]_{\varepsilon,\rho',h'}`$
-for all $`\rho,h,\rho',h'`$. So an entry term is kept by every change
-(`Term.keptBy`, `termValue_kept`, `termValue_grown`, `termValue_viewFramed`,
-`termValue_storeGrown`) and reads no current heap (`Term.envOnly`,
-`termValue_envOnly`): a fact all of whose heap reads are under $`\mathrm{old}`$
-crosses every step and every handler edge (`IndexFact.holdsAt_envOnly`).
+**Two renamings.** Within one invocation the entry is fixed: renaming the
+current slots (reassignment, the pass's names, a push past the result)
+leaves every entry term as it is (`Term.mapM`, `IndexFact.mapM`). A change
+of frame translates both environments, each by its own map:
 
-**The start.** At the start the current state is the entry state:
-$`\varepsilon=\langle\rho,h\rangle`$, and then
-$`\varepsilon;\rho,h\models F \iff \varepsilon;\rho,h\models F[\mathrm{old}(t):=t]`$
-(proved, `IndexFact.holdsAt_toNow`, `HeapKnowledge.holds_toNow`). The pass
-proposes, for each entry term $`\mathrm{old}(t)`$ the postcondition names,
-the facts $`t-\mathrm{old}(t)\le 0`$ and $`\mathrm{old}(t)-t\le 0`$ among the
-start's (`SinglePass.startOldFacts`, `withStartOld`); the entry check reads
-the start's facts at the entry state itself (`entryKnows` checks
-`Knowledge.toNow`), where they are $`t-t\le 0`$, entailed where the entry
-facts state $`t`$ defined. A proposal: nothing about it is trusted.
+```math
+\mathrm{reframe}\,f\,g\,F = F[\,s\mapsto f\,s\ \text{(current)},\ \ s\mapsto g\,s\ \text{(entry)}\,]
+```
+
+(`IndexFact.reframe`, `mapEntry`; proved `holdsAt_reframe`: where $`f`$ and
+$`g`$ carry each slot's value to its image and the entry heaps agree, the
+translated fact holds exactly where the source does). A function declared
+without `this` reads its row's postcondition past the receiver in both
+states (`IndexFact.pastReceiver`: current $`0\mapsto 0`$, $`1\mapsto\bot`$,
+$`i+1\mapsto i`$; entry $`0\mapsto\bot`$, $`p+1\mapsto p`$; proved
+`holdsAt_pastReceiver`), and a row naming the receiver in either state has
+no receiverless request (`not_receiverless_of_oldReceiver`).
+
+**The start.** At the start the current state is the entry state, and
+$`\varepsilon=\langle\rho,h\rangle\Rightarrow(\varepsilon;\rho,h\models F\iff\varepsilon;\rho,h\models F[\mathrm{old}(t):=t])`$
+(proved, `IndexFact.holdsAt_toNow`, every fact form). The pass proposes,
+for each entry term $`\mathrm{old}(t)`$ the postcondition names, the facts
+$`t-\mathrm{old}(t)\le 0`$ and $`\mathrm{old}(t)-t\le 0`$ among the start's
+(`SinglePass.startOldFacts`); the entry check reads them at the entry state,
+where they are $`t-t\le 0`$, entailed where the entry facts state $`t`$
+defined.
 
 **A return.** `EnsuresAt ens ε h' (push v ρ0)`: each fact at the result
 pushed onto the inputs' entry values, its entry terms at $`\varepsilon`$. The
 return check entails the postcondition from the facts at the return
-(`returnEntails`, proved `returnEntails_sound`); the renaming to the
-return's slots leaves its entry terms as they are, and the walk's facts read
-the same $`\varepsilon`$. `EnsuresClause` states it with
-$`\varepsilon=\langle\mathrm{envOf}\,L\,d,h\rangle`$, the run's own entry.
+(`returnEntails`, proved `returnEntails_sound`).
 
-**A call** (rule Call). A callee's post is read with the caller's state at
-the call as the callee's entry: $`\langle\mathrm{callEnv}\,r\,\mathit{args},h_{\mathrm{before}}\rangle`$
-(`Effect.post`); its precondition is one-state (`Effect.below` admits no
-entry term in it), read at $`\langle\mathrm{callEnv}\,r\,\mathit{args},h\rangle`$.
-The caller adds the callee's post facts naming no entry term to its facts
-(`PromiseCalls.ensuresAtoms`); a fact naming one is not added. Stating it
-with the step's own before and after is open work (below).
+**A precondition** is read at the callee's entry, where $`\mathrm{old}(t)`$
+is $`t`$: every check of it reads $`F[\mathrm{old}(t):=t]`$
+(`Effect.below`, `preconditionHolds`, the unit's entry facts; proved
+`Effect.pre_toNow`).
 
-**Module rows** carry the postcondition as stated: `Effect.belowRow`
-bounds its entry slots by the positions the code binds, and
-`ensures_take`, `ensures_frame` read it at the call's and at the frame's
-entry, which agree there (`callEnv_take`, `callEnv_frame`). Entry
-allocation before a call (`Effect.post_prefix`) admits a post naming no
-entry term.
+**A call** (rule Call). The callee's post is read at
+$`\langle\mathrm{callEnv}\,r\,\mathit{args},h_{\mathrm{before}}\rangle`$
+(`Effect.post`). Its facts naming no entry term join the caller's facts at
+the return's slots (`ensuresAtoms`). Its linear facts naming an entry term
+form a relation between the caller's states before and after the call,
+over variables $`\mathrm{before}(t)`$ and $`\mathrm{after}(t)`$
+(`StepVar`, `callRelation`):
 
-**The wire.** A linear term is `{"kind", "slot", "path"}`, an entry term also
-`"atEntry": true` (`EffectJson`, `LinearTerm` in
-`tools/declaration-types.mts`); the front end writes none.
+```math
+\mathrm{old}(\langle k,p,q\rangle)\mapsto\mathrm{before}(\langle k,\sigma_p,q\rangle)\qquad
+\langle k,j,q\rangle\mapsto\mathrm{after}(\langle k,\tau_j,q\rangle)
+```
 
-## What changed in which statements
+with $`\sigma_p`$ the caller's slot holding position $`p`$ (the receiver
+where it is a slot, each actual) and $`\tau_j`$ the return's slot; a fact
+reading a position the call passes nothing at reads `undefined`, which
+denotes no integer, and is $`0\le -1`$. A before-variable is a logical name
+inside one composition, no slot of any environment. The caller's facts
+after the call are composed, all at the caller's own fixed
+$`\varepsilon`$:
 
-- Satisfaction of every fact, knowledge and walk assertion takes
-  $`\varepsilon`$; `GraphGuarantee`, `EntryHolds`, `EnsuresClause`,
-  `AssertionsClause` and `CodeAssertionsClause` instantiate it with the
-  run's entry. The statements of `run_sound_single_pass`,
-  `mode8Accepted_sound` and `crossModule_safe` are the same; where no fact
-  names an entry term their meaning is the one-state meaning.
-- `Effect.Requires` reads the precondition at the callee's entry
-  $`\langle\mathrm{callEnv}\,r\,\mathit{args},h\rangle`$, `Effect.post` the
-  post's facts at $`\langle\mathrm{callEnv}\,r\,\mathit{args},\mathit{before}\rangle`$.
-- `ControlFlow.entryKnows_sound` concludes the start's knowledge at
-  $`\langle\rho,h\rangle`$.
+```math
+\frac{B\ \text{held before}\qquad \mathrm{kept}(t)=t'\Rightarrow [\![t]\!]_{\mathrm{before}}=[\![t']\!]_{\mathrm{after}}\qquad R\ \text{holds of the step}}
+{\mathrm{eliminate}_{\mathrm{before}(\cdot)}\big(B[t\mapsto\mathrm{after}(t')\ \text{kept},\ t\mapsto\mathrm{before}(t)\ \text{else}]\ \cup\ R\big)\ \text{held after}}\ \textsf{compose}
+```
 
-## Open work
+where elimination substitutes a before-variable the relation defines
+($`b+\mathit{rest}\le k`$ and $`-b-\mathit{rest}\le -k`$ give
+$`b=k-\mathit{rest}`$) and eliminates any other by Fourier–Motzkin, and each
+resulting fact names after-terms alone, each defined after the step
+(`HeapKnowledge.compose`, proved `compose_holds`; `ensuresComposed`,
+proved `ensuresComposed_holds` from `callRelation_holds` and
+`callKept_sound`). For $`|x|_{\mathrm{after}}=\mathrm{old}(|x|)+n`$:
+$`b=|x|_{\mathrm{after}}-n`$, so a fact $`a-|x|\le 0`$ before the call
+becomes $`a-|x|+n\le 0`$ after it.
 
-- **Rule Call in the caller's facts.** A callee's post fact naming
-  $`\mathrm{old}(t)`$ relates the caller's terms before and after the call.
-  It is dropped at the call. Stating it needs the step's before-terms in the
-  after-state's facts: an exact change substituted into the before-facts,
-  as `linearAppendKept` does for a push.
-- **The front end** parses `old(…)` in `@ensures` and writes
-  `"atEntry": true`; no pipeline case exercises an entry term.
+The push rule ($`|x|_{\mathrm{after}}=|x|_{\mathrm{before}}+\mathit{count}`$)
+and the write at the length ($`|x|_{\mathrm{after}}=|x|_{\mathrm{before}}+1`$)
+are the same composition at the relation `IndexWrites.lengthGrowth`
+(`linearAppendKept`, `writeCarried`).
+
+**Entry allocation before a call** (`Effect.post_prefix`): a post read at
+the heap after an administrative allocation is read at the call's entry,
+the heap before it, where its entry terms denote the same at both
+(`Effect.EntryAgrees`, read through `holdsAt_congr_entryTerms`); a code
+row states no postcondition (`Effect.below`), so at its one use it holds
+vacuously (`entryAgrees_of_nil`).
+
+**Module rows** carry the postcondition as stated; `Effect.belowRow` bounds
+its current positions by the result, the receiver and the code's
+parameters and its entry positions by the receiver and the parameters.
+
+**The wire.** A linear term is `{"kind", "slot", "path"}`, an entry term
+also `"atEntry": true`, its slot a call position. The front end writes it
+for `old(P)` and `old(P.length)` in `@ensures` (at the call's position of
+the root parameter), in a loop invariant (at the input position of a
+parameter of the function the loop is in) and in `@requires` (read as the
+term itself).
+
+## The statements whose meaning changed
+
+The statements of `run_sound_single_pass`, `mode8Accepted_sound` and
+`crossModule_safe` are the same; these definitions on their paths read the
+entry state, and where no fact names an entry term their meaning is the
+one-state meaning:
+
+- `termValue`, `termValuation`, `IndexFact.HoldsAt`, `IndexHolds`,
+  `HeapKnowledge.Holds`: satisfaction at $`\varepsilon`$.
+- `StateHolds`, the walk's node and edge assertions (`passPre` and its
+  variants), `EntryHolds`: at the run's $`\varepsilon`$, the start names at
+  $`\varepsilon.\mathrm{env}`$.
+- `GraphCode.EnsuresAt`, `GraphGuarantee.ensured` and `asserted`: the post
+  at the run's entry.
+- `PassUnit.EnsuresClause`, `AssertionsClause`, `CodeAssertionsClause`:
+  $`\varepsilon=\langle\mathrm{envOf}\,L\,d,h\rangle`$.
+- `CallEffects.Effect.Requires`: at
+  $`\langle\mathrm{callEnv}\,r\,\mathit{args},h\rangle`$; `Effect.post`: its
+  facts at $`\langle\mathrm{callEnv}\,r\,\mathit{args},\mathit{before}\rangle`$.
+  So every callable's specification (`meaning` of an arrow) and the
+  module's realization (`RowSpec`, `Realizes`) change with them.
+- `PassUnit.UnitIsReceiverless.ensures`: the request's post is the row's
+  read past the receiver in both states (`pastReceiver`).
+- Executable checks: `entryKnows` (reads `toNow`), `startOldFacts`,
+  `Effect.below` and `belowRow`, `preconditionHolds`, `ensuresAtoms`,
+  `ensuresComposed`, `linearAppendKept`, `atLengthAtoms`.
+
+## The named hypotheses
+
+- `ReceiverDropSound` (of `crossModule_safe`):
+  $`\forall\,r\,c,\ \mathrm{RequestSafe}\,r\wedge\mathrm{UnitIsReceiverless}\,r\,c\wedge\mathrm{rowConditions}\,c\Rightarrow\forall\eta,\ \mathrm{RowSpec}\,(\mathrm{reassign}\,G\,\eta)\,(\mathrm{dropReceiver}\,c)\,(\mathrm{receiverSeparation}\,r.\mathrm{entrySeparation})`$,
+  with `UnitIsReceiverless.ensures` stating
+  `row.ensures.mapM pastReceiver = some r.ensures`. By
+  `holdsAt_pastReceiver`, the request's post at its entry
+  $`\langle\mathrm{envOf}\,L\,d,h\rangle`$ and return holds exactly where the
+  row's does at $`\langle\mathrm{envOf}\,(\mathit{recv}::L)\,d,h\rangle`$: the
+  hypothesis's postcondition part is the faithful translation; the
+  hypothesis itself (the prologue's two transitions) is unproved.
+- `RunSound` (H1), `RunKeepsSummaries` (H2), `ModuleLayout`,
+  `InterfaceProvenance`, `EstablishProvenance`: their statements are the
+  same; the specifications they reference read the entry state as above.
+- `StartWrittenImpliesStated` quantifies every $`\varepsilon`$; accepted
+  setup discharges it.
+
+## Limits
+
+Required by the definition:
+
+- A linear fact holds only where each of its terms denotes an integer, an
+  entry term at the entry state included.
+- A precondition is one-state; an entry term in it is its term.
+
+Restrictions of the language, documented in
+[ARITHMETIC.md](../ARITHMETIC.md#two-state-postconditions):
+
+- `old` applies to the clause grammar's terms, `old(P)` and
+  `old(P.length)`, with a parameter as root; not to arbitrary source
+  expressions.
+- An exceptional postcondition is the frame alone (`Effect.excPost`).
+- Code rows (local functions) state no postcondition (`Effect.below`), and
+  a row's postcondition names the result, the receiver and the code's
+  parameters (`belowRow`).
+
+## What the rules do not derive
+
+- The start's $`t=\mathrm{old}(t)`$ is entailed only where the entry facts
+  state $`t`$ defined; the general entry identity during entailment, with
+  definedness from the inputs' types, would remove the precondition the
+  cases state (`0 <= lists.widths.length`) and make
+  `written-ensures-old-refused` verify.
+- A callee post fact naming an entry term under a disjunction, a guard or
+  a quantified fact adds no fact to a caller.

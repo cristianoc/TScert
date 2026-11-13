@@ -70,9 +70,9 @@ structure Term.Root where
   deriving Hashable
 
 /-- A term's hash: its kind's, slot's and path's, with its entry mark mixed
-in for an entry term. It is consistent with equality (equal terms have equal
-fields, so equal hashes); terms differing only in the mark may share none,
-and hash maps compare their keys by equality. -/
+in for an entry term. It is consistent with equality: equal terms have equal
+fields, so equal hashes. A collision identifies no keys: the caches keep
+their keys and compare them by equality. -/
 instance : Hashable Term where
   hash t := let r : UInt64 := hash (Term.Root.mk t.kind t.slot t.path)
     if t.atEntry then mixHash r 1 else r
