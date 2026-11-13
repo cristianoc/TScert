@@ -718,8 +718,11 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // write sets the element's entry of the store of every view over the
     // written bytes to a fresh location holding what that view now reads
     // there, which changes stores alone, keeps their lengths and present
-    // entries and lists no old location they did not list: the store-growth
-    // footprint, values kept, every store's length kept (`elementWrite`).
+    // entries and lists no old location they did not list: within the
+    // store-growth footprint, every location but a view's element store
+    // keeps its contents, and each view's element store keeps its length,
+    // every cell it newly lists fresh (`elementWrite`,
+    // `CallEffects.ElementWrite.Holds`).
     // Then, for each element type, a write at a safe integer `k`,
     // `0 ≤ k < view(b)`, a valid integer index, of a safe integer the
     // element type holds unchanged (0 to 255 of a `Uint8Array`, 0 to 65535

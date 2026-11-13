@@ -1891,8 +1891,11 @@ write changes the elements of every view over the written bytes: in the
 model it replaces the written entries of those views' element stores by
 fresh locations holding what each view then reads there. It changes stores
 alone and keeps their lengths: the store-growth footprint, values kept, with
-`elementWrite` (`CallEffects.ElementWrite`): every location holding no
-store keeps its value and every store its length, so a fact of values,
+`elementWrite` (`CallEffects.ElementWrite.Holds`): every location but a
+view's element store keeps its contents, and each view's element store keeps
+its length, every cell it newly lists fresh. So every location holding no
+store keeps its value and every store its length
+(`ElementWrite.Holds.changes`), and a fact of values,
 paths, lengths and typed-array lengths survives the write, and a quantified
 fact over any array's elements does not (`invalid-typed-array-element-read-after-write`,
 run under Node: a write through a `subarray` view changes the quantified view).

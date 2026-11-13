@@ -26,8 +26,8 @@ its result type, its normal postcondition and its exceptional one.
 **The view-element write** (`ViewWrite`) is the primitive contract of a typed
 array's element write as a relation between the entry world and heap and the
 exit ones. It is a world-indexed postcondition (`ViewWrite.post`), and the
-coarse change of `CallEffects.ElementWrite` is its consequence
-(`ViewWriteOf.holds`).
+active element write of `CallEffects.ElementWrite` is its consequence at the
+entry world's roles (`ViewWriteOf.holds`).
 -/
 namespace Verification.Kinds
 open Verification
@@ -258,10 +258,22 @@ def ViewWriteOf (w : CallEffects.ElementWrite) (args : List Tm) {n n' : Nat} (W 
     (W' : WorldT n') (h' : Heap) : Prop :=
   ViewWrite W h W' h' ∧ (w = .exact → CallEffects.ExactWrite args h h')
 
-/-- **The contract's advertised change follows from the relation.** -/
+/-- **The active element write follows from the relation**: at the entry
+world's roles, which fit every heap meeting it, the relation is the active
+one (`CallEffects.ViewWriteA`), and for the exact form `ExactWrite` holds. -/
 theorem ViewWriteOf.holds {w : CallEffects.ElementWrite} {args : List Tm} {n n' : Nat} {W : WorldT n}
     {h : Heap} {W' : WorldT n'} {h' : Heap} (hw : ViewWriteOf w args W h W' h') (hok : HeapOk n W h) :
-    w.Holds args h h' := ⟨hw.1.changes hok w, hw.2⟩
+    w.Holds args h h' := by
+  have hlen : h.length = (entries W).length := by simpa using hok.1.1
+  have hlen' : h'.length = (entries W').length := by simpa using hw.1.ok.1.1
+  have hge : (entries W).length ≤ (entries W').length := by
+    have := WExt_length hw.1.ext; simpa using this
+  refine ⟨⟨roleAt W, ⟨fun l hl => roleAt_some (by omega), fun l r v hr hv => ?_⟩,
+    ⟨by omega, hw.1.keep, fun l N hr => ?_, hw.1.grow⟩⟩, hw.2⟩
+  · obtain ⟨u, hu, hc, -⟩ := hok.2 l r hr
+    rw [hv] at hu; cases hu; exact hc
+  · obtain ⟨ls', hl', hn, hc⟩ := hw.1.view_store hr
+    exact ⟨ls', hl', hn, fun c h => (hc c h).2⟩
 
 /-- The view-element write as a world-indexed postcondition of a call
 entered at the world `W` and heap `h`: it reads the exit world the safety

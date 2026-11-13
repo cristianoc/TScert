@@ -598,9 +598,10 @@ def RespectsKinds (R : Heap → Heap → Prop) : Prop :=
 /-- **The typed-array element write's coarse change does not respect
 kinds** (`ElementWrite.changes`: every location holding no store, object or
 number may change, and every store keeps its length). A field holding a
-string may come to hold a store. -/
-theorem elementWrite_not_respects (args : List Tm) :
-    ¬ RespectsKinds (CallEffects.ElementWrite.stores.Holds args) := by
+string may come to hold a store; the element write itself excludes that
+(`CallEffects.ElementWrite.Holds.not_string_to_store`). -/
+theorem elementWrite_not_respects :
+    ¬ RespectsKinds (CallEffects.ElementWrite.stores.changes.Holds) := by
   intro H
   let W : WorldT 0 := ofEntries [(.field, fun _ hj _ _ => absurd hj (Nat.not_lt_zero _))]
   have hW : roleAt W 0 = some .field := by simp [W, roleAt, roles]
@@ -610,8 +611,8 @@ theorem elementWrite_not_respects (args : List Tm) :
     subst hl
     rw [hW] at hr; cases hr
     exact ⟨_, rfl, rfl, fun _ h => by simp [refs] at h⟩
-  have hc : CallEffects.ElementWrite.stores.Holds args [.str "a"] [.arr []] := by
-    refine ⟨⟨fun l v hv halt => ?_, fun _ l ls hl => ?_, fun hg => ?_⟩, fun he => by cases he⟩
+  have hc : CallEffects.ElementWrite.stores.changes.Holds [.str "a"] [.arr []] := by
+    refine ⟨fun l v hv halt => ?_, fun _ l ls hl => ?_, fun hg => ?_⟩
     · have : l = 0 := by have := (List.getElem?_eq_some_iff.mp hv).1; simp at this; omega
       subst this; simp at hv; subst hv
       simp [HeapKnowledge.Changes.alters] at halt

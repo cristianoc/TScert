@@ -2340,7 +2340,7 @@ theorem effectKept_holds {views stable : Nat → String → Bool} {eff : Effect}
       split
       · rename_i w hwr
         exact HeapKnowledge.shiftIndices_holds (HeapKnowledge.keptIndicesWith_holds
-          (fun a ha hcd => hk.2.2.2.2.2 a (List.mem_filter.mp ha).1 hcd) (hew w hwr).1 hst hv)
+          (fun a ha hcd => hk.2.2.2.2.2 a (List.mem_filter.mp ha).1 hcd) (hew w hwr).changes hst hv)
       · refine HeapKnowledge.shiftIndices_holds fun a ha hcd => ?_
         obtain ⟨ha, hkeep⟩ := List.mem_filter.mp ha
         simp only [Bool.and_eq_true] at hkeep
@@ -2864,6 +2864,7 @@ theorem writeKept_holds {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h'
   split
   · rename_i f r b i x hw
     obtain ⟨hc, hx⟩ := hew _ hw
+    replace hc := hc.changes .exact
     have hx := hx rfl
     simp only [ExpressionEffects.actualsOf, instantiate, instantiateArgs, Nat.not_lt_zero, if_false,
       Nat.sub_zero] at hx
@@ -3235,7 +3236,7 @@ theorem callChange_holds {stable : Nat → String → Bool} {eff : Effect} {t : 
     · exact ⟨Changes.top_holds h h', hnone⟩
   split
   · rename_i w hwr
-    exact ⟨(hew w hwr).1, hst⟩
+    exact ⟨(hew w hwr).changes, hst⟩
   · exact ⟨Changes.ofClosed_holds (CallEffects.Effect.within_holds hw hs ho), hst⟩
 
 open HeapKnowledge in

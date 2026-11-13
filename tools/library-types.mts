@@ -101,8 +101,11 @@ export const bytesMarker = "node:bytes";
  * `[[viewElements]]`, one location per element, each holding the element:
  * `fill`, `copyWithin` and `set` replace the written entries of the store
  * of every view over the written bytes by fresh locations holding what
- * each view now reads there, within the store-growth footprint, values
- * kept, every store's length kept (`elementWrite`); `subarray` allocates its view, within the empty footprint. `map`,
+ * each view now reads there, within the store-growth footprint: every
+ * location but a view's element store keeps its contents, and each view's
+ * element store keeps its length, every cell it newly lists fresh
+ * (`elementWrite`, `CallEffects.ElementWrite.Holds`); `subarray` allocates
+ * its view, within the empty footprint. `map`,
  * `filter`, `slice` and the other members, a species constructor's or a
  * callback's, are not stated. */
 const bytesIdentity = identity("Uint8Array");
