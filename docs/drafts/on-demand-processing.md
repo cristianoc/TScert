@@ -14,12 +14,12 @@ The processing boundary is one function, including all its offered signatures, o
 | --- | --- |
 | Case | `runCase` calls `checkApart`; `pooled` admits one case per core. The worker pool belongs to `verify-source.mts` and retains TypeScript declaration sessions between checks. `pipeline/run-cases.mts:20`, `pipeline/run-cases.mts:33`, `pipeline/verify-source.mts:543`, `pipeline/verify-source.mts:651`. |
 | Census | `runFile` calls `checkApart`, omits a located failing declaration and retries the file. Outer rounds enlarge the requested dependency closure and revisit files whose selection changes. `dev/census.mts:531`, `dev/census.mts:543`, `dev/census.mts:553`, `dev/census.mts:649`. |
-| Selection | `units.select` reaches `checkUnowned`, but that function passes only `units.omitted` to parsing and calls `singlePass` with every parsed function. `singlePass` requests every name. Thus the census/pretext selection does not select the Lean work on this path. `pipeline/verify-source.mts:255`, `pipeline/verify-source.mts:265`, `pipeline/verify-source.mts:314`, `pipeline/verify-source.mts:338`; `dev/check-functions.mts:39`. |
+| Selection | `units.select` names the request's roots. `singlePass` passes the file's names among them as the pass's `<names>` (empty where they are every name) and as the per-unit fallback's names; the interface plan discovers the modules the roots' code reaches. The verifier checks the groups of the roots and of every unit their code reaches by name (`RequestCli.selectionClosure`). Parsing still has file grain: the whole file is parsed and lowered. `pipeline/verify-source.mts` (`singlePass`); `pipeline/module-interfaces.mts` (`verifyByUnits`); `lean/Verification/Source/RequestCli.lean` (`selectionClosure`, `verifyUnitsFile`). |
 | Parse | The runner snapshots the source, invokes the observed parse stage and checks the fragment’s source digest. Parsing has file grain, project resolution and recorded filesystem observations. `pipeline/verify-source.mts:193`, `pipeline/verify-source.mts:255`; `docs/STAGE-STORE.md:224`. |
 | Interface discovery | `prepareInterfaces` invokes `--module-interface-plan`. `interfacePlan` discovers module dependencies and computes their SCC order. A reached module contributes all its function names and their import closure. `pipeline/module-interfaces.mts:62`; `Claims/ModuleInterfaces.lean:78`; `Claims/FragmentFront.lean:775`, `Claims/FragmentFront.lean:794`. |
 | Interface computation | One `--module-interface` process receives a component’s complete module documents and predecessor results. `interfaceFile` decodes them and calls `establishModules`; its fold plans and checks each module once in component order. `pipeline/module-interfaces.mts:91`; `lean/Verification/Source/RequestCli.lean:248`; `Claims/FragmentFront.lean:1039`, `Claims/FragmentFront.lean:1104`. |
 | Requested-file computation | `--verify-interface-stage 8` decodes interfaces, calls `fragmentPlansFromInterfaces`, prepares head facts and checks each selected group with `passGroupMode8`. `lean/Verification/Source/RequestCli.lean:307`, `lean/Verification/Source/RequestCli.lean:337`, `lean/Verification/Source/RequestCli.lean:359`. |
-| Closure | The runner starts with accepted verdicts and propagates refusal through their dependencies. Missing module verdicts prevent closure; the current loop does not apply the same missing-verdict test to local identities. `pipeline/verify-source.mts:417`. |
+| Closure | The runner starts with accepted verdicts and propagates refusal through their dependencies. A dependency with no verdict, of the file or of a module, prevents closure. `pipeline/verify-source.mts` (`singlePass`). |
 
 A process stage is one explicit invocation with immutable input files and a replayable result. Its manifest contains stage name, adapter identity, executable and libraries, runner, runtime, arguments, environment, refusal protocol, input-role digests and output roles; its key is the digest of that manifest. Limits have separate timeout-observation semantics. `pipeline/stage-execution.mts:688`; `pipeline/stages.mts:188`, `pipeline/stages.mts:225`.
 
@@ -41,23 +41,24 @@ The emitted `depends` is a projection of syntactic group edges and named qualifi
 
 ### Repeated processing in one request
 
-These are the identified repetition sites. A walk at different proposed facts or a different overload is distinct checking work; the table distinguishes it from duplicated orchestration.
+These are the repetition sites, checked against the code (the citations of this table name the inspected worktree; the accounting below measures each). A walk at different proposed facts or a different overload is distinct checking work; the table distinguishes it from duplicated orchestration.
 
 | Site | Repetition |
 | --- | --- |
-| Requested and imported roles | A function checked in its own file can also be checked by an interface component. Their commands and inputs differ, so their results have different keys. `pipeline/stage-execution.mts:654`; `Claims/FragmentFront.lean:1066`. |
-| Whole-file timeout | `checkAll` first runs the whole file, then runs one process per function name and initialization. Completed unit lines from the interrupted attempt are not individual store entries. `pipeline/module-interfaces.mts:144`. |
-| Per-unit fallback preparation | Every fallback process repeats declaration lowering, initialization typing, reachable declaration-effect walks, extraction and freezing. A selected name still selects its entire SCC; selecting several names of one SCC repeats that group. `Claims/FragmentFront.lean:682`; `Claims/Json.lean:99`. |
-| Ordinary-contract attempt | Controls and the performance gate use `verifyWithInterfaces`, which may check once with ordinary imports and again with established interfaces. The normal `verifyByUnits` path prepares interfaces first. `pipeline/module-interfaces.mts:135`, `pipeline/module-interfaces.mts:175`; `dev/perf-gate.mts:114`; `tests/single-pass-controls.mts:72`. |
+| Requested and imported roles | A module read by an importer is prepared again by its interface component: lowered, its initialization typed and every function's proposal walked (`fragmentPlansCore` over all its names, with closure). The component checks the groups `establishChecked` selects: the functions whose claims propose more than the ordinary effect, and the groups they reach; a function checked in its own file is checked again there. Their commands and inputs differ, so their results have different keys. At the parse level, an imported module is lowered by TypeScript in a stage of its own (`module`), apart from its own file's parse; that in-process stage takes no execution claim, so concurrent workers can execute one module key more than once. `pipeline/stage-execution.mts:654`; `Claims/FragmentFront.lean:850`, `Claims/FragmentFront.lean:1066`; `pipeline/parse-stage.mts:53`. |
+| Whole-file timeout | `checkAll` first runs the whole file (the selection), then runs one process per name, one after the other. Completed unit lines from the interrupted attempt are not individual store entries. `pipeline/module-interfaces.mts:144`. |
+| Per-unit fallback preparation | Every fallback process repeats declaration lowering, initialization typing, the declaration-effect walks of the name's reach, and freezing, and extracts and checks the name's closure. A name selects its entire SCC; the several names of one SCC each check that group. `Claims/FragmentFront.lean:682`; `Claims/Json.lean:99`. |
+| Ordinary-contract attempt | Controls and the performance gate use `verifyWithInterfaces`, which may check once with ordinary imports and again with established interfaces. The normal `verifyByUnits` path prepares interfaces first, so cases, the census and the pretext tier have no such attempt. `pipeline/module-interfaces.mts:135`, `pipeline/module-interfaces.mts:175`; `dev/perf-gate.mts:114`; `tests/single-pass-controls.mts:72`. |
 | Census omission rounds | Each changed omission list reparses and rechecks the remaining file. `dev/census.mts:543`, `dev/census.mts:553`. |
-| Census dependency rounds | Enlarging a file’s selected set invokes it again; current selection plumbing checks the whole parsed file. Exact stages may replay. `dev/census.mts:649`; `pipeline/verify-source.mts:314`. |
+| Census dependency rounds | Enlarging a file’s selected set invokes it again. With the whole file checked for every selection, the second invocation replayed every stage; with exact selection, a larger selection is another pass key, and the units of the earlier selection are checked again. `dev/census.mts:649`; `pipeline/verify-source.mts` (`singlePass`). |
 | Declaration proposal and body extraction | `declarationWalks` walks eligible bodies; `retypeFromFragment` walks them for extraction. Generic-call instantiation adds `instancesFromWalk` before retyping. `Claims/FragmentFront.lean:247`, `Claims/FragmentFront.lean:419`, `Claims/FragmentFront.lean:544`; `Claims/Extraction.lean:552`, `Claims/Extraction.lean:600`. |
 | Initialization and returned callables | Initialization is typed before declaration effects and again afterwards; a returned-callable proposal used by initialization triggers another declaration-effect round. Initialization extraction also retypes its body. `Claims/FragmentFront.lean:710`, `Claims/FragmentFront.lean:719`, `Claims/FragmentFront.lean:724`; `Claims/Extraction.lean:600`. |
-| Recursive effect proposals | A self-recursive declaration receives up to three proposal walks. This contradicts D5’s first-version policy. `Claims/FragmentFront.lean:587`. |
+| Recursive effect proposals | A self-recursive declaration receives up to three proposal walks, inside its own walk: the function is its own dependency, one unit of work (D5 keeps this). `Claims/FragmentFront.lean:587`. |
 | Multiple signature/body checks | Each overload checks the implementation at its signature. Nested code bodies are checked within their containing member. These obligations remain, with shared preparation where possible. `Claims/Extraction.lean:93`; `Claims/Json.lean:349`. |
 | Diagnostic/refinement runs | Head-candidate removal retries a member; regional fallback, comparison, repetition and observation can run additional checks. These are internal processing costs, counted separately. `Claims/FragmentFront.lean:1678`; `Claims/Json.lean:379`, `Claims/Json.lean:514`, `Claims/Json.lean:538`. |
+| Settled run computed twice | `settleInferred` evaluates a member's last run twice: once as the scrutinee of `refusal (run f g)` and again as the result it returns, in both branches that end the runs. The compiled code applies the `run` closure twice to the same arguments; nothing shares the first result. Every member's final pass run is executed twice. `Claims/FragmentFront.lean` (`settleInferred`). |
 
-Exact-key contenders already coordinate through store claims; multiple requests for the same existing stage do not imply multiple executions. `pipeline/stages.mts:198`, `pipeline/stages.mts:236`.
+Exact-key contenders of a process stage coordinate through store claims; multiple requests for the same existing process stage do not imply multiple executions. In-process stages (`parse`, `module`) take no claim. `pipeline/stages.mts` (`invokeProcess`, `invokeInProcess`).
 
 ## 2. The interface
 
@@ -148,7 +149,7 @@ The front resolves callable dependencies through these actual lookups before fre
 
 Independent ready work runs across files, at most one executing unit per file and one executing worker per core. One task owns each unit/pre-key during a request. Waiting for a dependency occupies no execution slot or store lock.
 
-On a demand cycle, unwritten interface components use their conservative values: unrestricted changes, unbounded throws, no freshness or returned-callable strengthening. Written contracts remain obligations. There is no recursive interface iteration.
+On a demand cycle of two or more functions, a member's unwritten interface components use their conservative values: unrestricted changes, unbounded throws, no freshness or returned-callable strengthening. Written contracts remain obligations. There is no joint iteration over a cycle's members; the cycle verifies when every member's own check passes. A function that reads its own interface keeps the front's self-recursive proposal (at most three walks of its own body, `declarationWalks`), which stays inside its one unit of work. A cycle is one of the front's name-mention relation (`Front.edgesOf`) until recorded reads replace it.
 
 The scheduler records these conservative cycle views separately from eventual entries. Their keys depend on the written contract and conservative-view policy; their establishment edges point to the corresponding body checks. This avoids recursively hashing verdict dependencies.
 
@@ -224,6 +225,65 @@ Only executed attempts count; a replay is the result of an execution. An attempt
 - Within an attempt's check of a function: the first member run is the processing; each diagnosing walk and the rerun it leads to, and each main graph run beyond the member runs (a regional check beside a run), site 11; one more member run than the reruns is site 12, the settled run computed twice (`settleInferred`), at the mean member run's time.
 - Units of one function name beyond the first (overloads) are site 10.
 
+### Baseline
+
+Measured 2026-11-13 on branch `on-demand` at the commit that adds exact selection, on a 12-core machine shared with other agents, each corpus on a fresh stage store, profiled (`TSCERT_PROFILE`), with `node dev/work-report.mts report`. Stage CPU is the user and system time of every executed stage attempt; a share is of that total. Profiling costs little: pretext's unprofiled stages took 61.9 s of CPU against 60.1 s profiled, by the two stores' measurements. The verdict lines of pretext and of the cases with projects are identical to those of the commit before this accounting (`dev/work-report.mts pretext` and `cases`, paths normalized).
+
+| | pretext, 12 files of `src/` (ba09794f) | 722 pipeline cases with projects | census slice of tools/, shallow |
+| --- | --- | --- | --- |
+| load (1-minute average) at start, end | 4.7, 6.5 | 15.7, 24.8 | 13.0, 7.1 |
+| wall time | 19 s | 98 s (86 s unprofiled) | 2,364 s |
+| stage CPU | 70.2 s | 574.9 s | 7,389.9 s |
+| work done more than once | 45.0 s, 64.1% | 61.5 s, 10.7% | 3,584.4 s, 48.5% |
+| stages working on one function, max / mean | 2 / 1.74 | 1 / 1.00 | 85 / 2.54 |
+| body traversals (walks and member runs) of one function, max / mean | 20 / 6.44 | 7 / 2.64 | 262 / 9.34 |
+| functions and initializations worked on | 307 | 1,707 | 259 |
+
+The census slice is declaration-graph.mts, fragment-parse.mts, fragment-statements.mts, fragment-expressions.mts (the four largest by lines) and namespace-members.mts, shadow-contracts.mts, every stage limited to 300 s: 122 of 213 units verified, 74 refused at a timeout. Its stages over their limit: 4 whole-file passes (1,178.1 s, site 2), 6 unit passes (1,754.4 s) and 4 interface components (1,100.0 s); the last two are work no repetition explains. Its parse and module stages took 212.1 s.
+
+Work done more than once, by site (s, share of the corpus's stage CPU):
+
+| Site | pretext | cases | census slice |
+| --- | --- | --- | --- |
+| 1 requested and imported roles: interface components | 13.0 (18.5%) | 0 | 7.3 (0.1%) |
+| 1 requested and imported roles: module lowering beside the file's parse | 16.8 (24.0%) | 4.5 (0.8%) | 0 |
+| 2 whole-file timeout | 0 | 0 | 1,178.1 (15.9%) |
+| 3 per-unit fallback preparation | 0 | 0 | 1,417.1 (19.2%) |
+| 4, 5, 6 ordinary attempt, omission and dependency rounds | 0 | 0 | 0 |
+| 7 proposal walk and extraction walks | 1.8 (2.5%) | 12.1 (2.1%) | 158.5 (2.1%) |
+| 8 initialization and returned callables | 0.3 (0.4%) | 1.4 (0.2%) | 24.6 (0.3%) |
+| 9 recursive proposals | 0.0 | 0.5 (0.1%) | 0.9 (0.0%) |
+| 11 diagnostic and refinement runs | 9.1 (13.0%) | 2.2 (0.4%) | 210.6 (2.9%) |
+| 12 settled run computed twice | 4.0 (5.7%) | 40.7 (7.1%) | 587.4 (7.9%) |
+
+Site 10 (overloads) is counted only where a function name has several checked units: none in these corpora. The census slice's omission rounds (two of fragment-parse.mts, one of declaration-graph.mts) answer refusals at the parse, before any pass, so they repeat parses alone, within the slice's 52.3 s of parse CPU; a shallow census has no dependency rounds. The functions with the most repeated work in the slice are initializations reached by every per-unit stage: fragment-parse.mts's (379.1 of 388.5 s, in 16 stages) and fragment-statements.mts's (178.6 of 184.2 s, in 62 stages).
+
+### Edit experiments, today
+
+- **pretext**, `isCollapsibleSpaceCode` of analysis.ts edited (two operands of `||` swapped: its type, effect and verdict unchanged), the request run again on its store: 41.0 s of stage CPU against 76.7 s cold (53%). Every file is parsed again (13 parses, 24 module lowerings: 29.2 s), since each parse observes the files its imports read; 3 passes execute (analysis.ts and the two files whose interfaces input changed, 59 units) and analysis.ts's interface component (8.2 s and 2.9 s). The verdicts are those of the unedited run.
+- **tools/**, `collect` of fragment-statements.mts edited (one letter of an error message's text: its type, effect and verdict unchanged), the census slice run again on its store: 2,557.3 s of stage CPU against 7,389.9 s cold (35%), 1,502 s of wall time against 2,364 s. 95 functions are processed again: all 62 units of fragment-statements.mts and all 33 of fragment-expressions.mts, which imports it and whose pass reads the changed module document; 97 pass stages execute, among them the whole-file pass of each file over its limit again (598.4 s) and the per-unit fallback after it. 1,773.3 s of the 2,557.3 s (69.3%) is work done more than once. The verdicts are those of the unedited run.
+
+The steps after this one must bring both experiments to one function processed (unchanged interface), its file's preparation and validation (section 6).
+
+### Expected gains
+
+"Every item processed once" removes the work done more than once. Bounds, from the baseline:
+
+| | today | every item once | |
+| --- | --- | --- | --- |
+| census slice, stage CPU | 7,389.9 s | ≤ 3,805.5 s | −48.5% |
+| pretext, stage CPU | 70.2 s | ≤ 25.2 s | −64.1% |
+| cases with projects, stage CPU | 574.9 s | ≤ 513.4 s | −10.7% |
+| census slice edit, stage CPU | 2,557.3 s | one function, its file's preparation | |
+
+By step (each the sites it removes, measured; a conjecture where marked):
+
+- **The settled run computed twice (site 12)**, one shared result in `settleInferred`, independent of the steps: −587.4 s on the census slice (7.9%), −4.0 s on pretext (5.7%), −40.7 s on the cases (7.1%). It is the largest gain on the cases and needs no design.
+- **Step 3 and step 4 (unit results, file workers)** remove sites 2 and 3: −2,595.2 s on the census slice (35.1%); and site 7's walks where one walk serves proposal and extraction, −158.5 s (2.1%). Their wall time is bounded by the units over their limit, not by repetition: the slice's 6 unit passes and 4 interface components over 300 s take 2,854.4 s of CPU, a stopped unit costing its limit; one worker per file runs fragment-parse.mts's 4 over-limit stages in sequence. **Conjectured:** the slice's wall time falls from 2,364 s to the longest file's own work plus its stopped units, about 1,200 s for fragment-parse.mts at a 300 s limit; a unit over its limit today includes repeated preparation, so some may finish once preparation is shared, which no measurement here shows.
+- **Steps 2 and 5 (one interface representation, one request mechanism)** remove site 1: −29.8 s on pretext (42.5%: 13.0 s of interface components, 16.8 s of module lowering beside the files' own parses), −7.3 s on the census slice and −4.5 s on the cases. Pretext is where a request holds both a module and its importers; a full census is too.
+- **Noise**: sites 8 and 9 (≤ 0.4% in each corpus), and sites 4, 5, 6 (0 in these corpora: the census slice's omission rounds repeat parses only, and exact selection removes the replays of dependency rounds while a growing selection becomes a new pass key).
+- **Not repetition by the design's measure**: site 11, the diagnostic and refinement runs (13.0% of pretext, 2.9% of the slice), is work of inference within one unit and stays until inference proposes fewer facts that fail; site 9's self-recursive walks stay by D5. The cases' CPU is 56% parsing (322.2 s), one parse per case, which none of the steps changes.
+
 ## 7. Useful implementation steps
 
 | Step | Build and remove | Evidence of completion |
@@ -234,6 +294,20 @@ Only executed attempts count; a replay is the result of an execution. An attempt
 | 4. File workers | Immutable shared preparation, resumable demand, unit resource supervision and immediate publication. Remove whole-file timeout fallback and sequentially accumulated unit stores. | One preparation per loaded snapshot; one unit execution per input; killed-worker recovery preserves siblings; cold CPU and peak memory measured. |
 | 5. One request mechanism | Route cases, census, pretext and controls through the scheduler. Remove component stages, duplicate file roles and census omission rounds. | Identical root sets have identical results/read manifests across clients; targeted timeout losses inspected individually; full suites pass. |
 
+### Step 2, as commits
+
+Each commit is reviewed by Astra before the next starts; each states its proof obligation, its pipeline cases (a form moved across a file boundary keeps its contract and verdict) and its forged-input controls. Guards are done (`rowSpec_plain_of_promise`, guard entries); the rest, in order:
+
+1. **Entry-local row tables.** Publication encodes each entry's own table rooted at its complete callable type (`rowRegion`, `encodeRowTable` at one entry's roots) with deterministic numbering, replacing the module-wide `rows`; decoding checks each entry's table on its own. Obligation: `signatureAgrees_of_checks` and `signatureAgrees_of_checks_back` per entry, their premises unchanged (a realized source entry, empty graph environments, membership-preserving canonicalizers, two `matchStores` results). Control: an entry's table forged (a row dropped, a field changed) is refused at decoding or at the store-map check.
+2. **The complete callable contract on the wire.** The entry carries the whole callable type, every signature with every effect field, and the importer's slot is checked against it (the consumer's store-map check), replacing `importedArrow`'s reconstruction from the importer's declaration and the footprint triple. `fresh` is carried with it: realization already compares a member's `fresh` with the row's (`layoutOwn`'s frame check), so no new lemma; `crossModule_safe`'s established slots (`ChosenSlots`, `EstablishedSlots`) quote the entry's type. Obligation: `entries_realized` and `crossModule_safe` at the new `Established` (entry type and table in place of the triple). Effect: an origin signature stronger than the importer's declaration (freshness) is accepted.
+3. **Same-file entry reads.** A call within a file reads the callee's entry through the same consumer check, replacing `ordinarySlots`' footprint and `ensures` reads (`Front.withStandIns`, head inference's reads of `fr.units`) for the migrated forms; a callee not laid out is read at its declared contract, as across files. Obligation: `passFile_safe`'s layout with `layout.iface` the entry's type (`layoutOwn` one interface type per read); no new hypothesis. A unit verified today through a stand-in read of a callee `laidOut` leaves out becomes a measured loss, each a row in WORK.md.
+4. **Regions.** The entry keeps `regions` (`keepingType` and `moduleArrow` stop erasing them); realization of a regional row. Obligation: a lemma deriving `RowSpec` for a row with regions from `RequestSafe`'s regional clause (docs/SINGLE-PASS-THEOREM.md, the regional clause), and `layoutOwn` comparing the member's regions with the row's. Control: forged regions refused.
+5. **Rest parameters.** Eligibility admits a rest signature (`Claims/Imports.lean` eligibility), its row the code's packed calling convention. Obligation: `RowSpec` for a rest row from the member's request over the packed frame (`codeFrame` with the argument pack, which holds values and has no holes).
+6. **Overloads.** One identity, every offered row, each realized by its own unit's check; publication requires every overload unit accepted. Obligation: `layoutOwn`'s rows loop over all `offerRows`, each with a realizing member (present); a new control publishing an entry with an overload's row omitted, refused.
+7. **Constants holding functions** ([module constant entries](module-constant-entries.md)): the constant's literal laid out as a module function; the entry is the function unit's contract and the initialization's establishment of the binding. Obligation: the layout lemma for the literal's code; H5b stays the stated hypothesis (`KindMet` at `moduleCell`).
+8. **Generics.** A scheme entry: binders, kinds, bounds and resolution in the entry's table (scheme rows), `layoutOwn`'s scheme exclusion lifted. Obligation, the largest: a theorem that a generic body checked once at its scheme's binders realizes `RowSpec` at every instance the consumer's store-map check admits. May split into binder-free instances first.
+9. **Removal.** `importedArrow` for established reads, the `(footprint, onThrow, resultFootprint)` triple of `Established`, `qualified` stand-ins for migrated forms. Gate: every retained same-file form has its cross-file case with the same verdict (D6).
+
 Every step keeps `make test` green. Boundary changes receive pipeline cases and forged-input controls; proof-covered facts need no duplicate tests. Full census comparison follows the project’s main-branch census policy.
 
 ## 8. Decisions
@@ -243,4 +317,4 @@ The owner's decisions on the questions this design raised:
 1. **Acceptance target.** The redesign is judged by the same verdicts, every item processed once, much faster, and each change in a count explained. Reaching the old route's census count (596/755) is no criterion.
 2. **Module initialization (H5b).** H5b stays a stated hypothesis; its typed-finish/world-extension proof is a separate obligation.
 3. **Entries for functions held in module constants** are part of this redesign, in step 2 (one interface representation). Their design is [module constant entries](module-constant-entries.md).
-4. **Recursion** is left out of the first version: on a demand cycle, the unwritten interface part is read at its conservative value (section 3, "Demand and scheduling"), unless a measurement shows the cost of that reading calls for more.
+4. **Recursion (D5).** No joint iteration over mutual cycles: a member of a cycle of two or more functions reads the others' unwritten interface parts at the worst case, and the cycle verifies when every member's own check passes. A self-recursive function keeps today's proposal, inside its own unit of work (section 3, "Demand and scheduling"). Basis (measured 2026-11-13 over the pipeline cases, a 22-file slice of tools/ and pretext, on `Front.edgesOf`'s cycles): reading every cyclic function's unwritten part at the ordinary effect loses 3, 2 and 2 verdicts, each from a self-recursive function whose walks find a footprint below the ordinary effect that a caller needs; reading only mutual cycles so loses none in any of the three corpora. No cycle crosses modules; in tools/, 49 of 88 cyclic functions state their effect.
