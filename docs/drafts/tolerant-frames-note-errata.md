@@ -9,9 +9,9 @@ the definitions). The theorems are in
 `lean/Verification/Programs/TolerantFramesModelLoop.lean`,
 `TolerantFramesModelTyped.lean` and `TolerantFramesModelRules.lean` (namespace
 `Verification.TolerantFrames`), beside the modules
-[the Lean reading of the note](tolerant-frames-lean.md) owns. The
+[the Lean reading of the note](../SINGLE-PASS-PROOF.md) owns. The
 differences in the model's states and transitions themselves are listed in
-[what the model requires beyond the note](tolerant-frames-lean.md#what-the-model-requires-beyond-the-note).
+[what the model requires beyond the note](../SINGLE-PASS-PROOF.md#what-the-model-requires-beyond-the-note).
 
 ## Well-formed states
 

@@ -20,7 +20,7 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 - **Measured**: a number, before and after, with what produced it and when ([the record](../.claude/skills/review/SKILL.md#the-record)).
 - **object** (of a change): the stage and the concept a change block names in parentheses, such as `type reader: the members of a union` ([the record](../.claude/skills/review/SKILL.md#the-record)).
 - **Outcome**: the trailer giving the change's result, `verified`, `refused`, `gap` or `no-behaviour-change` ([the record](../.claude/skills/review/SKILL.md#the-record)).
-- **Parts**: the trailer listing the layers a change touches, such as `lean-rules`, `producer`, `parser`, `wire`, `trust` ([the record](../.claude/skills/review/SKILL.md#the-record)).
+- **Parts**: the trailer listing the layers a change touches, such as `lean-rules`, `parser`, `wire`, `trust` ([the record](../.claude/skills/review/SKILL.md#the-record)).
 - **record page**: a commit record rendered as a page (`make semantic-diff`, `node dev/commit-records.mts`) ([rendering](../.claude/skills/review/SKILL.md#rendering)).
 - **semantic diff**: the delta on the high-level objects code implements (a rule, a lowering, a trust assumption), rendered as a page by `make semantic-diff` ([principles](../.claude/skills/review/SKILL.md#principles)).
 - **Soundness**: the section saying why a change is sound, or where it is proved ([the record](../.claude/skills/review/SKILL.md#the-record)).
@@ -32,53 +32,51 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 
 - **calculus**: the small formal language, defined in Lean, into which a function is translated and whose execution and safety are defined ([operational language](SEMANTICS.md#operational-language)).
 - **calculus graph**: the translated program, a graph of calculus code over which typing and safety are defined ([stages](DESIGN.md#stages)).
-- **candidate** (at a statement entry): a fact the producer supplies at a statement entry, which the search keeps there where every edge into the entry establishes it and no check requires ([source observation checkpoints](PROGRAM-TYPING.md#source-observation-checkpoints)).
-- **certificate**: a finite description of the typing and subtype derivations for a request, which search proposes and the checker validates ([stages](DESIGN.md#stages)).
+- **candidate** (at a statement entry): a fact proposed at a statement entry, which the pass keeps there where every edge into the entry establishes it and no check requires ([source observation checkpoints](PROGRAM-TYPING.md#source-observation-checkpoints)).
+- **certificate**: a finite description of a derivation the checker validates, such as a subtype comparison's dependencies or a qualified binder's resolution ([incompleteness](DESIGN.md#incompleteness)).
 - **checker** / **verifier**: the Lean program that validates a certificate against the exact translated program; its success is what acceptance means ([stages](DESIGN.md#stages), [the CLI](REQUEST-PROTOCOL.md#run-the-verifier)).
-- **claim**: a type or state description the producer proposes at a program point; it becomes an obligation where extraction uses it ([claims](DESIGN.md#claims-and-the-claim-reader)).
-- **claims document** / **SourceClaims**: the producer's output, every claim with its identity ([source claims](SOURCE-CLAIMS.md)).
+- **claim**: a type or state description proposed at a program point; it becomes an obligation where extraction uses it ([source claims](SOURCE-CLAIMS.md)).
 - **code unit** / **unit**: a function, a group of functions that reach each other by name, or a module's initialization body, certified together and given one verdict ([modules and code units](DESIGN.md#modules-and-code-units), [what "verified" means](DESIGN.md#what-verified-means)).
 - **declaration graph** / **declaration document**: the types and external values a source uses, as the front end collects them ([stages](DESIGN.md#stages)).
 - **declaration reader**: the type reader's part that reads the declarations a type reaches ([source contracts](SOURCE-CONTRACTS.md)).
 - **elaboration** / **extraction**: Lean's translation of a function, with the proposed types, into a calculus graph and its obligations ([stages](DESIGN.md#stages)).
 - **environment**: the proposed types of the local bindings at a program point, with facts about their current contents ([stages](DESIGN.md#stages)).
 - **equation lowering**: Lean's translation of declarations, annotations and claim labels into recursive type equations ([implementation map](DESIGN.md#implementation-map)).
-- **evidence**: the certificate and the facts it cites, as the verifier receives them ([evidence](REQUEST-PROTOCOL.md#evidence)).
+- **evidence**: a node's derivations and the facts they cite, as the pass builds and checks them ([evidence](REQUEST-PROTOCOL.md#evidence)).
 - **execution plans**: the statement graph and the evaluation and binding schedules Lean derives from the source before types are known ([stages](DESIGN.md#stages)).
-- **execution point** / **program point**: a node of a body's statement graph, where entry claims attach ([claims](DESIGN.md#claims-and-the-claim-reader)).
+- **execution point** / **program point**: a node of a body's statement graph, where entry claims attach ([types at program points](DESIGN.md#types-at-program-points)).
 - **Fragment**: the parser's output, a syntax tree of the supported source constructs ([stages](DESIGN.md#stages), [format](FRAGMENT-FORMAT.md)).
 - **front end**: the TypeScript program on the compiler's API (`tools/`) that reads the source and the declarations it uses ([stages](DESIGN.md#stages)).
 - **gate** (the parser's gate): the parser's admission of a source form only where it is lowered faithfully, with a located refusal elsewhere ([adding a source form](SOURCE-ELABORATION.md#adding-a-source-form)).
 - **lowering**: a translation into a simpler program representation; the parser's fixes execution order, Lean's builds the typed calculus program ([architecture](DESIGN.md#architecture)).
-- **obligation**: a typing or subtype judgment the extracted program must meet for acceptance ([claims](DESIGN.md#claims-and-the-claim-reader)).
+- **obligation**: a typing or subtype judgment the extracted program must meet for acceptance ([types at program points](DESIGN.md#types-at-program-points)).
 - **parser**: the front end's part that emits the Fragment (`tools/fragment-parse.mts` and its parts) ([stages](DESIGN.md#stages)).
-- **pipeline**: parse, plan, propose, elaborate, search, check, run by `pipeline/verify-source.mts` ([the entry point](DESIGN.md#the-pipeline-entry-point)).
-- **producer**: the OCaml program that proposes the type of every expression and variable; nothing it says is trusted ([stages](DESIGN.md#stages), the producer).
-- **request**: the translated program with the obligations it must meet, which search and the checker read ([stages](DESIGN.md#stages)).
-- **search**: Lean's untrusted procedure that looks for a certificate; its failure shows nothing about safety ([search](DESIGN.md#search)).
-- **source map**: diagnostic metadata linking calculus nodes to source descriptions; it supplies no evidence ([claims](DESIGN.md#claims-and-the-claim-reader)).
-- **source span**: a pair of offsets locating syntax in the source file ([claims](DESIGN.md#claims-and-the-claim-reader)).
-- **type label**: a name of a type in the graph of recursive type equations; its spelling has no meaning of its own ([claims](DESIGN.md#claims-and-the-claim-reader)).
+- **pipeline**: parse, plan, compute types, elaborate, propose loop-head facts, check in one pass, run by `pipeline/verify-source.mts` ([the entry point](DESIGN.md#the-pipeline-entry-point)).
+- **request**: the translated program with the obligations it must meet, which the pass checks ([stages](DESIGN.md#stages)).
+- **search**: the untrusted choice among derivations a step or a subtype comparison makes; its failure shows nothing about safety ([incompleteness](DESIGN.md#incompleteness)).
+- **source map**: diagnostic metadata linking calculus nodes to source descriptions; it supplies no evidence ([types at program points](DESIGN.md#types-at-program-points)).
+- **source span**: a pair of offsets locating syntax in the source file ([types at program points](DESIGN.md#types-at-program-points)).
+- **type label**: a name of a type in the graph of recursive type equations; its spelling has no meaning of its own ([types at program points](DESIGN.md#types-at-program-points)).
 - **type reader**: the translation of annotations, declarations and library contracts into graph types ([source contracts](SOURCE-CONTRACTS.md)).
-- **wire**: the JSON documents passed between stages (Fragment, claims, request, evidence), each one declared type ([languages](LANGUAGES.md)).
+- **wire**: the JSON documents passed between stages (Fragment, module interfaces, execution graphs, diagnostics), each one declared type ([languages](LANGUAGES.md)).
 
 ## Outcomes and acceptance
 
 - **binding-annotation** (obligation): a refusal's obligation kind for a binding whose initializer must meet its annotation ([node and expression obligations](OBLIGATION-DIAGNOSTICS.md#node-and-expression-obligations)).
-- **checkUnitJson_safe**: the one headline theorem, whose premise is the verifier's exact success condition and whose conclusion is safety of every accepted function ([acceptance invariant](../AGENTS.md#acceptancesoundness-invariant)).
+- **mode8Accepted_sound**: the one headline theorem, whose premise is the verifier's exact success condition at either of mode 8's print sites and whose conclusion is safety of every accepted function ([acceptance invariant](../AGENTS.md#acceptancesoundness-invariant)).
 - **error** / **tool failure**: an outcome certifying nothing: a crashed, killed or timed-out stage, or a failed file-system or compiler request ([tool failures](OBLIGATION-DIAGNOSTICS.md#tool-failures)).
 - **exhausted**: a verification budget was reached before the obligation was decided ([the entry point](DESIGN.md#the-pipeline-entry-point)).
 - **gap**: a case or a construct that stays unsupported for a reason open work states, not a principled refusal ([the record](../.claude/skills/review/SKILL.md#the-record)).
 - **refused**: rejected by the pipeline, at the source (unsupported) or for want of a derivation (unverified) ([the record](../.claude/skills/review/SKILL.md#the-record)).
 - **safety**: an accepted unit, given inputs meeting their types, returns a value of its type, steps or throws; it never gets stuck or returns a wrong value ([principles](DESIGN.md#principles)).
 - **unsupported**: source processing or proposal refused a construct (`unsupported/source`, `unsupported/proposal`) ([the entry point](DESIGN.md#the-pipeline-entry-point)).
-- **unverified**: search or checking did not establish a required derivation (`unverified/search`) ([the entry point](DESIGN.md#the-pipeline-entry-point)).
+- **unverified**: the pass did not establish a required derivation (`unverified/search`) ([the entry point](DESIGN.md#the-pipeline-entry-point)).
 - **verified**: certificate checking accepted the extracted request ([the entry point](DESIGN.md#the-pipeline-entry-point)).
 
 ## Cases, controls and tests
 
 - **case** / **pipeline case**: a source file with its expected outcome, run through the whole pipeline (`pipeline/cases.mts`) ([which tests to keep](../AGENTS.md#which-tests-to-keep), [test index](../tests/README.md)).
-- **control**: a check on an input no case can make, such as a forged document or a mutated verifier (`pipeline/test.mts`) ([controls](STAGE-STORE.md#controls)).
+- **control**: a check on an input no case can make, such as a forged document, a forced proposal or a mutated verifier (`tests/single-pass-controls.mts`) ([controls](STAGE-STORE.md#controls)).
 - **forged claim** / **forged document**: a claim or document a control writes by hand to show the verifier refuses it ([controls](STAGE-STORE.md#controls)).
 - **mutation verifier**: a test-only verifier build in which a control disables a selected check (`TSCERT_TEST_MUTATIONS`), to show that check is load-bearing ([controls](STAGE-STORE.md#controls)).
 - **negative case**: a case expected to be refused ([the record](../.claude/skills/review/SKILL.md#the-record)).
@@ -112,7 +110,7 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 - **shard** (`SHARD=i/n`): one of n processes splitting a census by files ([measuring coverage](../AGENTS.md#measuring-coverage-once-on-main)).
 - **shared work**: front-end work served again within a process at the lifetime its inputs fix: attempt answers, resolutions, query answers ([shared work](STAGE-STORE.md#shared-work)).
 - **snapshot**: a state of a compiler's program that queries are asked of, held until the front end releases it ([retained declaration sessions](STAGE-STORE.md#retained-declaration-sessions), [shared work](STAGE-STORE.md#shared-work)).
-- **stage**: one step of the pipeline (parse, propose, search, check) or one operation of a control, run through one invocation mechanism ([the stage store](DESIGN.md#the-stage-store)).
+- **stage**: one step of the pipeline (parse, module, interface plan, module interface, pass) or one operation of a control, run through one invocation mechanism ([the stage store](DESIGN.md#the-stage-store)).
 - **stage store**: the content-addressed store from which every stage replays ([the stage store](STAGE-STORE.md)).
 - **statement coverage**: the percentage of executable statements inside the census functions' bodies that the census verifies ([statement coverage](DESIGN.md#statement-coverage)).
 - **step limit** / **timeout**: the time after which a stage is killed, and the observation recording it at that limit ([the stage store](../AGENTS.md#the-stage-store), [entries and timeouts](STAGE-STORE.md#entries-and-timeouts)).
@@ -130,7 +128,7 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 - **intrinsic** (`%Name%`): a trusted value no source name spells, by which the parser lowers a host operation such as `await` or iteration ([async and iteration](SOURCE-MODEL.md#async-and-iteration)).
 - **location**: an address in the heap, with a fixed storage contract in the world ([heap and contracts](SOURCE-MODEL.md#heap-and-contracts)).
 - **slot**: a binding held in its activation rather than on the heap, because no closure can observe a write to it ([slot or cell](SOURCE-ELABORATION.md#slot-or-cell)).
-- **storage contract**: the type every value written to a location or a mutable binding must meet ([claims](DESIGN.md#claims-and-the-claim-reader), [heap and contracts](SOURCE-MODEL.md#heap-and-contracts)).
+- **storage contract**: the type every value written to a location or a mutable binding must meet ([types at program points](DESIGN.md#types-at-program-points), [heap and contracts](SOURCE-MODEL.md#heap-and-contracts)).
 - **store** (array store): the list of optional element locations an array holds under the reserved key `[]` ([the fact](FOOTPRINTS.md#the-fact)).
 - **tag test**: the calculus's primitive runtime test of a value's kind; every guard is one ([operational language](SEMANTICS.md#operational-language), [guards](SOURCE-ELABORATION.md#guards)).
 - **trusted step**: an operation assumed to return a value of its result type or throw, never a wrong value ([lasting decisions](DESIGN.md#lasting-decisions)).
@@ -167,7 +165,7 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 - **guard**: a test that narrows a value's type on each edge; every guard is a tag test ([guards](SOURCE-ELABORATION.md#guards)).
 - **linear fact** / **linear certificate**: an integer inequality $`c\cdot x\le d`$ or disequality over terms (values, field paths, array and typed-array lengths), and the checked list of combination steps deriving one from known facts ([linear facts](ARITHMETIC.md#linear-facts)).
 - **locations a fact reads**: the field, store and typed-array-length locations a fact's terms read, which a step must preserve for the fact to hold after it ([linear facts](ARITHMETIC.md#linear-facts)).
-- **loop invariant**: the facts at a loop's head, inferred by the producer and checked by Lean on every incoming edge ([reads below the length](PROGRAM-TYPING.md#reads-below-the-length)).
+- **loop invariant**: the facts at a loop's head, inferred and checked by the pass on every incoming edge ([reads below the length](PROGRAM-TYPING.md#reads-below-the-length)).
 - **narrowing** / **refinement**: the type a tested binding has on an edge, within its type and consistent with the observed outcome ([refinement](PROGRAM-TYPING.md#refinement-under-an-observed-outcome)).
 - **path**: a root binding followed by member reads, `x.f.g`, whose narrowing stable members keep ([stable members](HOST-FAMILIES.md#stable-members)).
 - **point claim**: the environment claimed at an execution point, which every incoming edge must justify ([point claims](PROGRAM-TYPING.md#supplied-point-claims-and-incoming-edges)).

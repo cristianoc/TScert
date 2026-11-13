@@ -358,7 +358,7 @@ unselected branches and empty-overload bodies.
 about the same objects. `letE a b` is an explicit binding: it evaluates `a`,
 then substitutes the resulting value into `b` in one step without changing the
 heap. Only `b` is under the new binder. `HasTyUsing.letE`, source lowering, and the
-certificate producer and consumer all use that constructor. `Step_det` proves
+single pass all use that constructor. `Step_det` proves
 that a term and heap have at most one successor.
 
 A read of a named property on an object with no such own field continues at
@@ -439,8 +439,8 @@ the Boolean dictionary view, while a read of any key yields `undefined`, which
 is not Boolean. An arbitrary indexed read therefore needs a result including
 `undefined`. The positive graph has a `dict` clause whose operands are guarded
 recursive labels, and the checked covering rule can compare dictionary views.
-The source parser and OCaml producer lower inline index annotations into that
-clause. A key the clause names as a field or view is read at that member's
+The source parser reads inline index annotations as source type terms, and
+Lean's equation lowering interns them into that clause. A key the clause names as a field or view is read at that member's
 contract by `read` or `readView`, whose premise `namedMembers` accepts a
 dictionary's named members as a record's. Any other named key read uses the
 proved `readDict` rule, through an index whose class surely admits the key; a
@@ -465,7 +465,7 @@ it, and covering keeps it invariant. Imported recursive declarations remain outs
 
 Term and descriptor equality use explicit structural comparisons, each returning
 a kernel-checked `Decidable` result and recurring only on strict subterms. This
-keeps certificate equality executable for list-valued
+keeps term equality executable for list-valued
 applications: Lean's `DecidableEq` deriving handler does not support nested
 mutually recursive types. The comparisons inspect every constructor field,
 including descriptor arity.
@@ -484,7 +484,7 @@ value renumbers everything already there. Rules in these documents write names
 for bindings anyway, which reads better and matches the source they describe.
 The two views agree, and `shift_holds` is the theorem that says so: renumbering
 on a push preserves every fact. Positions surface again only where something
-genuinely carries them — a certificate's binding transfer, and the wire format.
+genuinely carries them — a control-flow edge's slot map, and the wire format.
 
 Assertions are attached to bindings, because bindings are what a checker can
 name; locations arise only during execution and never appear in a program. So
@@ -761,11 +761,12 @@ fixed signatures; `restsT_adm` does the same for argument-pack rests.
 `PromiseWith.weaken` and the fixed/rest congruence and conjunction lemmas
 justify effect-aware contract operations. `call_safe` proves application from
 the qualified promise without access to the body.
-[GraphCode.lean](../lean/Verification/Programs/GraphCode.lean) checks ordinary
-graph evidence and the effect together in `codeCheckedUsing`; `codeChecked_sound`
-establishes the semantic contract used by fixed and variadic closure introduction.
-The positive type graph carries the effect on every signature; the source
-side proposes and certifies effects as
+The pass runs a code's graph at its signature's bound and conditions
+(`PassUnitCodes.codeConditions`); `PassUnitCodes.codeSpec_of_guarantee`
+establishes from that run the semantic contract used by fixed and variadic
+closure introduction.
+The positive type graph carries the effect on every signature; Lean computes a
+source function's effect (`declarationEffects`) and certifies it as
 [inferred call effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)
 states.
 
@@ -1064,15 +1065,14 @@ apply to, top aside, has no plain object among its members
 (`SourceValues.exc`), and a handler binding its exception at `unknown`
 binds a value of it (`admitsAll_sound`).
 
-**The premise.** The safety theorem (`checkUnitJson_safe`) quantifies over
+**The premise.** The safety theorem (`mode8Accepted_sound`) quantifies over
 environments meeting the unit's inputs at their types (`EnvOk`), so a value
 the unit receives at a record, a dictionary or `unknown` meets the invariant:
 an object owning an array's store is a possibly sparse array of `unknown`
 values holding `Array.prototype` (meeting `ArrayProto`) and owning none of
 its keys; and a function the unit receives throws only such values. That is
 an assumption about the host and the unit's callers, stated in the
-[trust surface](DESIGN.md#trust-surface). The heap premise `HeapOk` is
-unchanged.
+[trust surface](DESIGN.md#trust-surface). The heap premise is `HeapOk`.
 
 **Type parameters and classes.** A type parameter's row asks what its
 assignment gives: an assignment within a bound of `unknown`, a record or a
@@ -1115,7 +1115,7 @@ including the whole number family and exact numeric singletons, and
 the nullish exclusions in the [assertion grammar](POSITIVE-TYPES.md#state-assertion-grammar),
 which apply to values of any shape. These assertions are duplicable facts, not exclusive write
 permissions. This is a chosen plain-cell interpretation, not a theorem equating
-a producer's internal types with heap assertions.
+the types the walk computes with heap assertions.
 
 ### What is asserted, and what a heap change can touch
 

@@ -89,7 +89,7 @@ colour never carries a meaning alone.
 | result | `--ok` | rounded box | `42`, the narrowed type | checked, with a proved consequence |
 | hazard | `--neg` | the hazard mark on the step | a hole, a branch that says NO | refused |
 | takeaway | `--brand-gold` | the rule bar | the card's moral | — |
-| proposed | `--gap` | dashed border | — | untrusted proposals (producer, search) |
+| proposed | `--gap` | dashed border | — | untrusted proposals (computed types, loop-head candidates, a step's search) |
 | trusted | `--trust` | solid border, trust word | an assumed contract | translation and contracts trusted on review |
 
 Arrows are `--brand-ink` at 3 px on cards and `--ink` elsewhere: solid for

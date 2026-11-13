@@ -1,99 +1,76 @@
 # Stateful calculus request protocol
 
-The verifier reconstructs, from a source's Fragment tree and a producer's
-claims, one request of the stateful calculus per code unit, and checks it
-against its derivation certificate. This is a consumer boundary for extracted
-programs; it does not certify TypeScript text by itself.
+The verifier reconstructs, from a source's Fragment tree and the types the
+front computes, one request of the stateful calculus per code unit, and the
+single pass checks it. This is a consumer boundary for extracted programs; it
+does not certify TypeScript text by itself.
 
-This document owns the request and evidence formats and the verifier's
-command line; [FRAGMENT](FRAGMENT-FORMAT.md) owns the source AST encoding,
-[SOURCE-CLAIMS](SOURCE-CLAIMS.md) the producer-independent claim schemas, and
-[diagnostics](OBLIGATION-DIAGNOSTICS.md) the failure metadata. The decoders
-are [RequestJson.lean](../lean/Verification/Source/RequestJson.lean), the JSON
-boundary of the stateful consumer, over the constructors of
+This document owns the verifier's command line, the wire text every document
+uses, and the request and node-evidence structures in their JSON spelling;
+[FRAGMENT](FRAGMENT-FORMAT.md) owns the source AST encoding,
+[SOURCE-CLAIMS](SOURCE-CLAIMS.md) the claims' shape and the execution graph
+document, [certified imports](SOURCE-CONTRACTS.md#certified-imports) and
+[the stage store](STAGE-STORE.md#single-pass-module-interfaces) the module
+interfaces, and [diagnostics](OBLIGATION-DIAGNOSTICS.md) the failure
+metadata. The codecs are [RequestJson.lean](../lean/Verification/Source/RequestJson.lean),
+over the constructors of
 [Calculus.lean](../lean/Verification/Semantics/Calculus.lean); the tables
-below list every constructor they decode.
+below list every constructor they spell.
 
 ## Run the verifier
 
 Build from `lean` with `lake build`; the executable is
-`.lake/build/bin/verifier`. Its modes:
+`.lake/build/bin/verifier`. Its modes (`lean/Main.lean`):
 
 ```sh
-verifier --produce-unit       <slice.json> <slice-claims.json> <qualified.json> <evidence.json> <depth> [<names>]
-verifier --check-units        <ast.json> <source-claims.json> <file-key> <evidence.json> [<names>]
-verifier --plan-imports       <ast.json> <plan.json>
-verifier --module-runs        <ast.json> <source-claims.json>
-verifier --check-module       <module-run.json> <evidence.json>
-verifier --lower-program      <ast.json> <source-claims.json> <file-key>
-verifier --lower-control-flow <ast.json>
+verifier --verify-interface-stage 8 <ast.json> <interfaces.json> <file-key> <depth> <names>
+verifier --module-interface-plan    <ast.json> <selection.json>
+verifier --module-interface         <request.json>
+verifier --lower-control-flow       <ast.json>
 ```
 
-- `<file-key>` is the identity of the checked file: the key the claims and
-  the requests are reconstructed under, the Fragment's `file`.
+- `<file-key>` is the identity of the checked file: the key the requests
+  are reconstructed under, the Fragment's `file`.
 - A file's **units** are the groups of its functions that reach each other
   by name, its initialization among them where its mentions place it
   ([units](DESIGN.md#function-coverage-and-release-thresholds)). A group is
   named by its first member, `name@offset` for a function and `init` for the
   initialization. `<names>` selects the groups with a member of one of the
   comma-separated names (a function's name, `:init` for the
-  initialization); every unit without it. Each module run of the file's
-  certified imports is a unit of its own, `module:<location>`, searched and
-  checked by `--check-module`; its selected units use `--produce-unit`.
-- `--produce-unit` searches the evidence of a unit over its slice
-  ([units of a check](STAGE-STORE.md)): the selected groups
-  of the slice's front, built at the slice's claims and at the qualified
-  reads `<qualified.json>` lists, each `{"footprint","name","onThrow"}`. It
-  writes the evidence document to `<evidence.json>`, which must differ from
-  every input, a line per unit, `{"anchors","evidence","heads","unit"}`, `heads` the
-  slice's store as `EquationStore.State` spells it, and `anchors` each
-  type union of the unit's requests at its position, with labels
-  marked, but its point claims', which its evidence states as its nodes'
-  sequents ([unit anchors](STAGE-STORE.md)). It prints each unit its
-  search refuses on a line `refused: {"refusal","unit"}`; with any, the
-  first is the command's refusal, the document written still. Claims that
-  are the producer's refusal, `{"refusal"}`, are its refusal. `<depth>`
-  limits expression proof-search depth; it is not an execution budget and
-  is not part of the request, evidence or safety theorem. The search is
-  untrusted: a document given as its own slice is searched the same way.
-- `--check-units` never invokes the producer: it checks each selected unit's
-  certified requests at the evidence its line gives, reading one line at a
-  time; a line with `heads` is first written over the document's store
-  (`SourceClaimJson.Translate.translate`, untrusted), and prints a verdict per unit, `{"accepted","depends","members","unit"}`
-  or `{"members","refusal","unit"}`, whose acceptance `checkUnitJson_safe`
-  states; a selected unit no line gives is refused. With every unit accepted
-  it prints
-  `accept: stateful source <file-key>`; otherwise the first refusal is the
-  command's.
-- `--plan-imports` plans the
-  [certified imports](SOURCE-CONTRACTS.md#certified-imports) a plan document
-  names (`SourceClaimJson.planImports`) and prints nothing; a plan it
-  refuses is its refusal, each other read it refuses on a line of its own.
-- `--module-runs` prints each module run the claims plan
-  (`SourceClaimJson.planImports`), one per line,
-  `{"ast","claims","location","qualified"}`: the module's document and
-  claims restricted to the read closure of the functions read qualified of
-  it, its initialization kept, and its own qualified reads, each
-  `{"footprint","name","onThrow"}`. A plan refused is its refusal.
-- `--check-module` reads an array of slice evidence lines, relocates and
-  assembles their responses in module extraction order, checks the complete
-  bundle against the restricted module document, and
-  prints its verdict, `{"accepted","depends","members","unit"}` or
-  `{"members","refusal","unit"}`, whose acceptance `checkUnitJson_safe`
-  states (`DocumentSafe` of the restricted document).
-- `--lower-program` prints the program graph each unit lowers to, with the
-  graph code it creates (`SourceClaimJson.lowerJson`), for inspection;
-  `make lowering` runs it.
-- `--lower-control-flow` prints the claim-independent graphs the producer
-  analyzes (`SourceFlow.document`).
+  initialization); empty, every unit.
+- `--verify-interface-stage 8` checks each selected unit by the single pass
+  (`RequestCli.verifyUnitsFile`, `FilePlans.passGroupMode8`): its types
+  computed by the walk, every loop head's candidates inferred
+  (`HeadInference`), its imports read at the entries `<interfaces.json>`
+  establishes. It prints each module unit the interfaces establish, and
+  then each selected unit's verdict, one line each,
+  `{"unit","members","accepted","depends"}` or `{"unit","members","refusal"}`,
+  whose acceptance `SourceClaimJson.PassUnit.mode8Accepted_sound` states.
+  With every unit accepted it exits 0; otherwise the first refusal is the
+  command's. `<depth>` limits a step's expression proof-search depth; it is
+  not an execution budget and is not part of the request or the safety
+  theorem. A refusal names the obligation at its source span, the pass's own
+  text on the next line (`TSCERT_PASS_REFUSALS=raw`: the pass's text
+  alone). `TSCERT_FORCE` (comma-separated) forces adversarial proposals, for
+  the controls; `TSCERT_COUNTS`, `TSCERT_OBSERVE` and `TSCERT_PROFILE` print
+  the pass's counts, its state at a point and its timings on standard error.
+- `--module-interface-plan` discovers the component DAG of the module graph
+  for a selection (function names and explicit own-module roots) and prints
+  it; `--module-interface` checks one component's request
+  (`{modules, dependencies, force, fuel, mode}`) and prints its closed
+  interfaces ([certified imports](SOURCE-CONTRACTS.md#certified-imports)).
+- `--lower-control-flow` prints the execution graphs Lean builds from the
+  Fragment (`SourceFlow.document`,
+  [the execution graph](SOURCE-CLAIMS.md#execution-graph)); `make lowering`
+  runs it.
 
 `--subtype-rounds <n>` before any mode sets the frontier-unfolding budget of
 every subtype comparison, including declared bounds and instance-image
-equality during lowering and frozen checking; the default is 4096 rounds. A
+equality during lowering and checking; the default is 4096 rounds. A
 frontier may contain any finite number of comparisons. The budget is
-execution policy, absent from the equation and evidence documents. The
-acceptance soundness theorem quantifies over every budget, so a smaller
-budget can prevent verification and cannot authorize a typing step.
+execution policy, absent from every document. The acceptance soundness
+theorem quantifies over every budget, so a smaller budget can prevent
+verification and cannot authorize a typing step.
 
 Exit status: 0 on success; 1 on a refusal, which prints `reject: <reason>`
 and then `end of refusal` on standard error (`RequestCli.refuse`); 2 on a
@@ -103,15 +80,15 @@ any exception), with a first line `error: `.
 ## Wire text
 
 Every document the tools exchange (the parser's fragment and declarations,
-the producer's claims, the flow, the evidence, a diagnostic record) is JSON
+the module interfaces and their requests, the flow, a diagnostic record) is JSON
 text in UTF-8, and every string it holds, key or value, is well-formed
 Unicode: a `\u` escape of a surrogate is one of a pair. Each reader refuses a
 document breaking either before it reads a value: Lean (`RequestCli.readJson`
 refuses bytes that are not UTF-8, and `RequestCli.loneSurrogate` a lone
 surrogate escape, which Lean's JSON parser would read as U+FFFD; it reads the
 text's characters only where its bytes hold a backslash, `u` and `d` or `D`
-in a row, the start of every surrogate escape, `RequestCli.wireSurrogate_eq`), the
-producer (`Json.parse`), and the TypeScript tools (`wireText` for the bytes,
+in a row, the start of every surrogate escape, `RequestCli.wireSurrogate_eq`)
+and the TypeScript tools (`wireText` for the bytes,
 `requireWellFormed` for the strings). A writer refuses such a string before
 writing it: the parser's gate a source string holding a lone surrogate
 ([source fragment](SOURCE-FRAGMENT.md#refused-on-principle)).
@@ -211,7 +188,7 @@ quantified signature to instantiate.
 
 A clause row is a union of clauses (`PositiveNormalization.Clause`). The
 request holds normalized clauses: the grammar has no conjunction above the
-clause level, and a producer holding positive formulas normalizes them
+clause level, and a writer holding positive formulas normalizes them
 itself ([normal form](POSITIVE-TYPES.md#recursive-normalization)). No string,
 generic or unsupported-type fallback is supplied by this protocol. Operands
 (`[4]` below) are types, lists of labels; references and arrow operands may
@@ -254,7 +231,7 @@ identify would be two singletons, which costs completeness and never
 soundness. A tag set lists two or more elements, sorted and distinct, its one
 spelling ([tag sets](HOST-FAMILIES.md#tag-sets)). Tuple contracts require
 `presence` with exactly `"dense"`, `"readable"` or `"sparse"`; for argument
-packs it has no semantic effect, and producers write `"dense"` and
+packs it has no semantic effect, and lowering writes `"dense"` and
 `readonly: false`.
 
 ### Contracts and effects
@@ -418,11 +395,10 @@ once; the codes then, in order, each at its entry `[store, receiver,
 parameters…, captures…]` (no store without a rest) and its row's result,
 each seeing the codes before it; the program is then checked seeing them
 all. The request's expression obligations in the
-[bundle](#source-evidence-bundle) use the same summaries.
+unit use the same summaries.
 
 A node's evidence (`NodeEvidence`) has the fields below, given here as the
-values they denote; the [evidence document](#evidence-document) writes each
-sequent, derivation and heap knowledge by reference to its tables:
+values they denote:
 
 - `ordinary`: the ordinary typing derivation of its expression, whose root
   is the node's sequent: `{"proof": {"tree": d}}`, a derivation tree `d`,
@@ -436,9 +412,7 @@ sequent, derivation and heap knowledge by reference to its tables:
   The steps carrying a proof at the node's sequent are `ordinary`, `pure`,
   `reading`, `created`, `typedRead`, `allocated` and `written`
   ([step evidence](#step-evidence)); a `slicedRead`'s proof is at the
-  location's contract. A node spelling its sequent otherwise is refused,
-  and every consumer reads a node as the one with its derivation written
-  out (`ControlFlow.checkGraphResult_explicit`);
+  location's contract. A node spelling its sequent otherwise is refused;
 - `edges`: one subtype-evidence list per outgoing edge, one entry per
   destination slot;
 - `knowledge`, `effect`, `output`: the [heap facts](#heap-facts) at entry,
@@ -678,7 +652,7 @@ establish the destination's
 `knowledge` (`knowledge-edge`), in addition to ordinary type coverage.
 Effect-only continuations drop the result slot before transferring facts.
 External entry requires empty knowledge. Within a source statement, the
-producer derives checked facts along administrative paths, and the source
+pass derives checked facts along administrative paths, and the source
 consumer enforces the exact entry interfaces.
 
 ### Step evidence
@@ -737,21 +711,12 @@ A type can also be read from recursive equations
 labels are trees over the equations' heads. The source path checks every
 request over them.
 
-**Source path.** `--check-units` and `--produce-unit` never
-read equations from the wire. Lean lowers the declarations and the claims to
-heads, grows them while it extracts every unit of the file, and validates
-them with `Equations.ofRaw` once extraction is done
-(`EquationStore.freeze`). Each request is then checked over the equations'
-`Equations.graph`. The evidence bundle spells every label as a tree over
-those heads and names them by index, so evidence is valid only for the
-claims and the declarations it was produced for. Over other ones it fails to
-decode (for example `head 65 takes 1 arguments, given 0`) or fails its
-check. A slice's evidence names the heads of the slice's store; its line
-carries them and its unit's anchors, and the check renames each head to the
-document head its unit's requests pair it with
-([units of a check](STAGE-STORE.md), `Translate.translate`)
-before decoding it. A tree is decoded through the validator (`Label.ofTree?`), and no
-checked request holds a name placeholder.
+**Source path.** The pass reads no equations from the wire. Lean lowers
+the declarations and the claims to heads, grows them while it extracts every
+unit of the file, and validates them with `Equations.ofRaw` once extraction
+is done (`EquationStore.freeze`). Each request is then checked over the
+equations' `Equations.graph`. A tree is decoded through the validator
+(`Label.ofTree?`), and no checked request holds a name placeholder.
 
 **Tree spelling.** Each tree form has exactly one spelling
 (`Tree.toJson`, `Tree.fromJson` in `Types/EquationJson.lean`):
@@ -788,8 +753,8 @@ presence is not a proof.
 The source path accepts an instance image when either proved image check
 holds: the finite table check, or the substitution check
 `EquationStore.exactImages`, which requires every claimed image to be the
-structural substitution image (`EquationStore.eitherImages`). Search
-proposes the substitution images (`CertificateProducer.Instantiates`); a
+structural substitution image (`EquationStore.eitherImages`). A step's
+search proposes the substitution images (`CertificateProducer.Instantiates`); a
 target signature the claim spells otherwise is related to its image by the
 instance rule's inclusion premises.
 
@@ -804,116 +769,17 @@ Diagnostics show labels through a projection onto a finite table, bounded by
 depth, with names for applications
 ([the label projection](OBLIGATION-DIAGNOSTICS.md#the-label-projection)).
 
-## Source evidence bundle
-
-The evidence file of the source commands holds a line per unit, each
-`{"unit": u, "evidence": bundle}` (`SourceClaimJson.unitLine`): for a group
-of the checked file, its bundle; for a module run of its
-[certified imports](SOURCE-CONTRACTS.md#certified-imports), `u` its
-`module:<location>`, the bundle of the module's document. Each module run is
-checked as a document of its own, over its own store; each group at its own
-line, the other lines unread meanwhile.
-
-A bundle is a strict object with `functions` and `obligations` arrays. In a
-group's bundle, `functions` contains one response per member, in the
-group's order, and `obligations` one evidence list per member, including
-empty lists, in the same order; in a document's, one per reconstructed code
-unit in source order. Each evidence tree must establish the corresponding
-expression or annotation judgment reconstructed by extraction. Counts, graph
-claims and root judgments must agree exactly with those reconstructed
-requests. The order of functions in the producer's claims document does not
-determine this evidence order.
-
-[SourceExtraction.Bundle](../lean/Verification/Source/SourceRequests.lean)
-declares the bundle and checks its graph interfaces and expression
-obligations.
-[SourceClaimJson.filePlans](../lean/Verification/Source/Claims/Json.lean)
-reconstructs the plans from Fragment and SourceClaims over one front;
-`SourceClaimJson.unitVerdict` decodes a unit's bundle (`EvidenceWire.decode`)
-and checks the unit's certified requests at it, one verdict per unit.
-
-### Evidence document
-
-A bundle is written as typed tables and the responses and obligations that
-name their entries by position
-(EvidenceWire.lean):
-
-```json
-{ "types": [T, …], "contexts": [[t, …], …], "terms": [M, …], "links": [link, …], "separations": [fact, …],
-  "valueSets": [V, …],
-  "knowledge": [{"cells": [F, …], "values": [F, …], "links": [l, …], "depth": d, "separation": [s, …],
-                  "elems": [E, …]}, …],
-  "proofs": [{"claim": {"context": c, "term": m, "type": t}, "rule": r, "premises": [p, …]}, …],
-  "edges": [[choices, …], …], "functions": [response, …], "obligations": [[p, …], …] }
-```
-
-`T` is a type (a list of labels), `M` a term, `link` a [heap link](#heap-facts), `fact`
-a [separation fact](#heap-facts), `V` a value set (a fact's
-[contents](#heap-facts)) and `r` a [rule](#rules); a fact reference `F` is
-`{"slot": i, "contents": v, "field": f}`, the heap fact on slot `i` and field
-`f` whose contents are `valueSets[v]`; `E` is an
-[elements fact](#heap-facts), written in full; an entry of `edges` is an
-edge's subtype-evidence list, one `choices` per destination slot; `t`, `c`,
-`m`, `l`, `s`, `p` and `e` are positions in `types`, `contexts`, `terms`,
-`links`, `separations`, `proofs` and `edges`. A response is as in [evidence](#evidence),
-its nodes written with references: `ordinary` is `{"proof": {"tree": p}}`,
-`"effect"` or `null`; `sequent` is `{"context": c, "term": m, "type": t}` or
-`null`; `knowledge` and `output` are positions in `knowledge`; a step's
-`proof` is a position in `proofs`, and the value set `contents` of an
-`observedRead`, a `knownValue` or a `written` step a position in
-`valueSets` (`null` for a `written` step's unknown value); `edges` is a
-list of positions `e` in `edges`, and a handler `[T, e]`, its edge's
-evidence a position in `edges`. Promise facts and read summaries are
-written in full. An obligation list names its derivations in
-`proofs`.
-
-A document $`D`$ denotes the bundle its references unfold to, each
-derivation's premises earlier entries of `proofs`:
-
-```math
-\begin{aligned}
-\mathit{type}(t) &= D.\mathit{types}[t] \qquad
-\mathit{context}(c) = [\,\mathit{type}(t) \mid t \in D.\mathit{contexts}[c]\,] \\
-\mathit{fact}(\langle i, v, f\rangle) &= \langle i, D.\mathit{valueSets}[v], f\rangle \\
-\mathit{knowledge}(k) &= \langle [\,\mathit{fact}(F) \mid F \in \vec f\,], [\,\mathit{fact}(F) \mid F \in \vec g\,], [\,D.\mathit{links}[l] \mid l \in \vec l\,],
-  \langle d, [\,D.\mathit{separations}[s] \mid s \in \vec s\,]\rangle, \vec e\rangle
-  \quad\text{where } D.\mathit{knowledge}[k] = \langle \vec f, \vec g, \vec l, d, \vec s, \vec e\rangle \\
-\mathit{proof}(k) &= \mathsf{node}(\langle \mathit{context}(c), D.\mathit{terms}[m], \mathit{type}(t)\rangle, r,
-  [\,\mathit{proof}(p) \mid p \in \vec p\,])
-  \quad\text{where } D.\mathit{proofs}[k] = \langle \langle c, m, t\rangle, r, \vec p\rangle
-  \text{ and } p < k \text{ for every } p \in \vec p
-\end{aligned}
-```
-
-A document is refused when its shape is not this one (strictly, as every
-document), when a reference is no entry of its table, and when a
-derivation names a premise at or after its own position, so a document has
-no cycle. A document may state an entry twice or not use it: the bundle it
-denotes is the same. The decoder builds each table in order, each entry
-from the entries it names, so an entry named twice is one value of the
-decoded bundle (`EvidenceWire.decode`). Given the types and contexts it
-built and its terms, the derivations table satisfies the equation of $`\mathit{proof}`$
-above (`EvidenceWire.proofs_unfold`), which has one solution
-(`EvidenceWire.unfold_unique`); the other tables and the nodes are read by
-direct lookups, trusted code. Search writes each type, context, term, link,
-separation fact, value set, knowledge, derivation and edge's evidence once (`EvidenceWire.encode`), an untrusted
-choice.
-
 ## Proved boundary and validation
 
-`checkUnitJson_safe` proves that a unit's acceptance yields, for a unit of
-functions, the bundle decoded from its group's evidence and a successful
-`checkRequests` over the group's requests reconstructed from the source and
-claims, and for a module unit its document's check
-([its statement](SOURCE-ELABORATION.md#exceptional-footprints)). Each request's check is `verify`, which binds the
-certificate to the requested point annotations (`verify_eq`, through
-`acceptUsing_eq`). It establishes global modeled safety at every observation
-budget and every admitted assignment of the parameter rows
-(`verify_safe_at`, `verify_qualified_safe_at`), for **any** argument
-environment satisfying `inputs`, admissible world and satisfying heap. The
-theorem reuses graph safety, including cycles, heap changes and explicit slot
-maps.
-
-`produceJson` serializes generated evidence and submits it through the same
-JSON consumer before returning it. The safety theorem does not require using
-this producer. Search is incomplete; failure is not a proof of untypability.
+`SourceClaimJson.PassUnit.mode8Accepted_sound` (`PassUnitRun.lean`) proves
+that a unit `--verify-interface-stage 8` prints accepted (`Mode8Accepted`)
+is safe (`PassUnitSafe`): every member's plan crosses the exhaustive
+conversion to `CertifiedPlan` (`FunctionPlan.certify`), and its request
+is safe (`RequestSafe`): at every admitted assignment of the parameter rows,
+for **any** argument environment satisfying `inputs`, admissible world and
+satisfying heap, its graph is safe, and it meets its footprint, fresh
+result, postcondition, regional bound and stated assertions ([its statement](SOURCE-ELABORATION.md#what-mode8acceptedsound-states)).
+It rests on the graph theorem `run_sound_single_pass`
+(`TolerantFramesSinglePassSound.lean`), which reuses graph safety,
+including cycles, heap changes and explicit slot maps. The pass is
+incomplete; a refusal is not a proof of untypability.

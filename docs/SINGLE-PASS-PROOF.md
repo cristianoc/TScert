@@ -1,24 +1,28 @@
-# Draft: tolerant frames in the indexed model
+# The single pass's graph proof
 
-The Lean reading of the working note "Tolerant frames" (11 November 2026),
-the proof organisation of the [single forward pass](single-pass.md)'s
-soundness theorem. Its definitions and theorems are in
+Tolerant frames in the indexed model: the Lean reading of the working note
+"Tolerant frames" (11 November 2026, with its
+[errata](drafts/tolerant-frames-note-errata.md)), and the proof of the
+[single pass](SINGLE-PASS.md)'s graph theorem, `run_sound_single_pass`: an
+accepted call of `SinglePass.run` guarantees its graph (`RunSound`, the
+interface [the unit theorem](SINGLE-PASS-THEOREM.md#2-the-hypotheses)
+reads). Its definitions and theorems are in
 `lean/Verification/Semantics/TolerantFrames.lean` and
 `lean/Verification/Programs/TolerantFramesRuns.lean` (and the modules each section names), namespace
 `Verification.TolerantFrames`. Each claim below is labelled **proved** (with
 its Lean name) or **not proved**.
 
-## The existing mechanism this extends
+## The mechanism it extends
 
-[Footprints](../FOOTPRINTS.md#changes-and-footprints): a footprint is a list
+[Footprints](FOOTPRINTS.md#changes-and-footprints): a footprint is a list
 of regions with changes, its meaning $`\mathrm{Post}\ \Phi\ \rho\ h\ h'`$
 relating the heap its regions are read at to a later heap, and the
 stability check accepts a fact under a footprint when each footprint entry
 changes the fact's support within its tolerance or is apart from it
-([the stable set for density](../FOOTPRINTS.md#the-stable-set-for-density),
-[index facts](../FOOTPRINTS.md#index-facts)). The modality below quantifies
+([the stable set for density](FOOTPRINTS.md#the-stable-set-for-density),
+[index facts](FOOTPRINTS.md#index-facts)). The modality below quantifies
 over the transitions those footprints bound; its atom theorems are the
-existing support and stability lemmas (`stable_sound`, `holdsAt_kept`,
+support and stability lemmas (`stable_sound`, `holdsAt_kept`,
 `stableDenseClosed_sound`) stated against that quantifier.
 
 ## States and admissible transitions
@@ -319,9 +323,9 @@ the checked rule's (`Checker.select` agreeing with `run`).
 
 Module `lean/Verification/Programs/TolerantFramesSteps.lean`. The pass frames
 a step (`applyDelta … true`) when it is preserving: a call its own predicates
-find keeping the heap (`callKeepsHeap`, `SinglePass.lean` lines 1289–1296), or
+find keeping the heap (`callKeepsHeap`), or
 a step of a kind other than `ordinary`, `written` and `boundedWrite`
-(`kindPreserving`, lines 1307–1309); `passPreserving` is their disjunction.
+(`kindPreserving`); `passPreserving` is their disjunction.
 $`\mathrm{KeepsPost}`$ is the normal exit within
 $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$. Proved:
 
@@ -351,7 +355,7 @@ $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{stores}:\mathsf{keep}\}`$. Proved:
   of $`S`$.
 
 `ownCall` and `ensuresCall` steps are not preserving: the first only
-excludes `keepsCall` (line 1296), the second is an `ordinary` step taking the
+excludes `keepsCall`, the second is an `ordinary` step taking the
 writing path.
 
 The theorems above take the output of a checker's `run` (`hr`); the pass's
@@ -360,9 +364,9 @@ own conditions discharge it ([the selected output](#the-selected-output-under-th
 ### The selected output under the pass's tree check
 
 Module `lean/Verification/Programs/TolerantFramesSelect.lean`. The pass takes a
-step's output from `Checker.select` of the step's evidence (`SinglePass.lean`
-1302 for a direct call, 1313 for a searched step, 1390 over every fact for a
-writing step), and checks the step's derivation once (1318–1333) where its
+step's output from `Checker.select` of the step's evidence (for a direct
+call, for a searched step, and over every fact for a writing step), and
+checks the step's derivation once where its
 checker's `select` checks nothing:
 
 ```
@@ -413,14 +417,14 @@ $`b`$ (`Checker.ordinary = ordinaryOver (Checker.steps …)`, by definition);
 - a tree `checkTreeUsing` accepts passes the check at every knowledge
   (`passTreeOk_of_tree`).
 
-The pass's checker (`SinglePass.PassChecker`, `SinglePass.lean` 819–840) is
+The pass's checker (`SinglePass.PassChecker`) is
 `ordinary` (`Checker.ordinary`, whose `select` takes a derivation as given,
 the pass checking its tree) or `qualified` (`Checker.withSubtyping`, whose
 `select` is its `run`). The pass's tree check at the step's facts
-$`k_E`$ (lines 1325–1333) is `passTreeCheck`: refused, or accepted with the
+$`k_E`$ is `passTreeCheck`: refused, or accepted with the
 tree only `requiresTree` accepted (`preconditioned`); before a writing step's
 `select` over every fact $`k_E'`$ that tree is checked again at $`k_E'`$
-(lines 1386–1388, `passWholeCheck`). `passRunChecker` is `passOrdinary` for
+(`passWholeCheck`). `passRunChecker` is `passOrdinary` for
 the ordinary checker and the qualified body's checker itself. Proved:
 
 - `passTreeCheck` accepting gives `passTreeOk` at $`k_E`$
@@ -429,9 +433,9 @@ the ordinary checker and the qualified body's checker itself. Proved:
 - (`pass_select_run`) where the checker's `select` checks nothing,
   `passTreeOk` at $`k`$, $`\mathrm{select}\ j\ k\ e=\mathit{out}\Rightarrow
   \mathrm{passRunChecker.run}\ j\ k\ e=\mathit{out}`$; so the output the pass
-  applies over the step's facts (lines 1302 for a direct call, 1313 for a
-  searched step, both `select` of the step's evidence) is its checker's `run`
-  (`pass_select_narrow`), and the output over every fact (line 1390) too
+  applies over the step's facts (for a direct call and for a searched step,
+  both `select` of the step's evidence) is its checker's `run`
+  (`pass_select_narrow`), and the output over every fact too
   (`pass_select_whole`); it is sound (`pass_select_sound`);
 - the preserving steps at either checker: `passPreserving_keeps_pass`,
   `pass_preserving_frame_pass`, `preserving_judgment_pass`.
@@ -445,7 +449,7 @@ safety does not.
 ### The writing steps
 
 Module `lean/Verification/Programs/TolerantFramesWrites.lean`. A step the pass
-does not frame reads every fact (line 1322) and the store keeps what its rule's
+does not frame reads every fact and the store keeps what its rule's
 output states. A named fact $`a`$ is kept by a closed effect $`c`$ when it reads
 no heap or is an index fact $`c`$'s change keeps (`Atom.keptBy`). Proved:
 
@@ -460,7 +464,7 @@ no heap or is an index fact $`c`$'s change keeps (`Atom.keptBy`). Proved:
 - the judgments, in the form `NodesChecked` takes, each with `run`'s output
   $`\mathit{out}`$ on the normal exit (`judgment_with_output`): a write the
   pass's footprint check admits within $`c`$ (`write_judgment`, from
-  `writeWithin`, line 1360), a typed field write within
+  `writeWithin`), a typed field write within
   $`\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{keep}\}`$
   (`field_write_judgment`), an element write within
   $`\{\mathsf{values}:\mathsf{any},\ \mathsf{stores}:\mathsf{grow}\}`$
@@ -511,7 +515,7 @@ field writes keep them through their rules' outputs (`IndexWrites.writeAtoms`,
 ### The footprint check at a node
 
 Module `lean/Verification/Programs/TolerantFramesFootprint.lean`. Where the
-invocation states a bound $`\Phi`$ (`SinglePass.lean` 1416–1451), the pass
+invocation states a bound $`\Phi`$ (`SinglePass.footprintCheck`), the pass
 evaluates at a node with sequent $`j`$, step knowledge $`k_S`$ (`stepK`), step
 derivation $`d`$ (`stepDeriv`) and fresh receiver slots $`F`$:
 `passWrites` (`writes`, 1431–1432: `writeWithin` or `initWriteWithin` at
@@ -555,14 +559,14 @@ What the check does not give:
 2. Where no bound is stated (`bound = none`) the pass checks no footprint; a
    writing step's judgment is then `top_judgment`'s.
 3. `FreshOk F b ρ`, the receiver slots the pass records fresh (`entry.fresh`)
-   holding stores allocated at or after the invocation's entry, is a premise:
-   the pass's freshness tracking is not connected.
+   holding stores allocated at or after the invocation's entry, is a premise
+   of these lemmas; `footprintCheck_sound` discharges it ([the step](#the-step)).
 
 **The facts a writing step is not handed.** A step that may write
-materializes every fact (`materialize … true`, `SinglePass.lean` 1370), and a
+materializes every fact (`materialize … true`), and a
 fact naming a name no slot holds fails to rename and is not among `pairs`.
 Before the step's delta the pass removes each such fact that reads the heap
-and keeps the heap-free ones (lines 1375–1380, the handler's filter): a
+and keeps the heap-free ones (`Store.dropHeap`, the handler's filter): a
 writing step's effect does not tolerate a heap fact it is not handed (a cell
 fact over a name fails after an action of $`\top`$, proved:
 `slotless_not_framed`).
@@ -625,10 +629,10 @@ new cells may coincide.
 ## The pass's named state
 
 Module `lean/Verification/Programs/TolerantFramesState.lean`. The pass's state
-at a point (`SinglePass.State`, `SinglePass.lean` lines 165–170) is its slots'
-names $`N`$, a store $`S`$ of facts over names (`Store`, lines 88–162) and the
+at a point (`SinglePass.State`) is its slots'
+names $`N`$, a store $`S`$ of facts over names (`Store`) and the
 names $`F`$ holding stores the invocation allocated; the walk keeps the
-implications $`I`$ over names beside it (lines 961, 1767). The store's facts
+implications $`I`$ over names beside it. The store's facts
 are its live set's and those its index by name lists
 ($`\mathrm{all}(S)`$, `storeAll`).
 
@@ -656,7 +660,7 @@ fresh name), separate from the meaning:
 | --- | --- | --- |
 | `store` | the store's well-formedness `StoreWF`: live facts canonical (`Atom.canon`); each fact the index lists under a name live, mentioning that name, listed there once | every insertion and removal (proved: `addRaw_wf`, `remove_wf`, `addBound_wf`, `add_wf`) |
 | `below` | every name of the slots, the facts and $`F`$ is below $`\mathit{next}`$, so a result name is fresh (proved: `StateWF.fresh_result`) | each store operation (proved: the store operations' table below) |
-| `freshHeld` | every fresh name is held by a slot | edges (line 1758 filters the names an edge drops); a merge keeps a predecessor's name beside its fresh renames (lines 1142–1146), held or not; freshness reads no heap, so the meaning does not need it |
+| `freshHeld` | every fresh name is held by a slot | edges (an edge filters the names it drops); a merge keeps a predecessor's name beside its fresh renames, held or not; freshness reads no heap, so the meaning does not need it |
 
 Soundness reads `below` (through `fresh_result`) and `store` (through
 `removedLeave`).
@@ -741,12 +745,11 @@ every fact it returns is listed by `Store.about` of some name (proved:
 ### A step's delta
 
 Module `lean/Verification/Programs/TolerantFramesDelta.lean`. `applyDelta`
-(`SinglePass.lean` lines 373–403) is three loops (`applyDelta_eq`, by
+is three loops (`applyDelta_eq`, by
 definition): `deltaRemove` removes each handed fact whose image over the
 pushed slots the output lost, `deltaAdd` adds each output fact not among the
 images, renamed by `back`, and `deltaRestate` restates each added linear fact
-over a read's name over the read's path. The pass's `back` (lines 1316–1317,
-1331–1332) is `passBack`: slot 0 the result's name, a slot the table's
+over a read's name over the read's path. The pass's `back` is `passBack`: slot 0 the result's name, a slot the table's
 inverse gives its name, else the slot's name. Proved:
 
 - `deltaRemove_sub`: the removal loop keeps only facts the store held;
@@ -771,14 +774,14 @@ The state after a step, proved:
   admissible transition and the output at the pushed slots, the pushed state
   holds at $`\mathrm{push}\ v\ \rho`$ (implications carried by
   admissibility of every type's meaning, `impliesOk_admissible`);
-- a preserving step with a fresh result name (line 1309):
+- a preserving step with a fresh result name:
   $`\eta'=\eta[r\mapsto v]`$ with $`r`$ new (`ResultFresh`), from the frame's
   $`\mathrm{Named}\ \mathrm{all}(S)\ \eta[r\mapsto v]`$, which
   `pass_preserving_frame_select` gives with `StateWF.fresh_result`
   (`stateHolds_fresh_result`);
-- a read of a slot keeping its name (line 1307): $`\eta'=\eta`$, the result
+- a read of a slot keeping its name: $`\eta'=\eta`$, the result
   slot $`i`$'s value (`stateHolds_reused_name`);
-- a copy (lines 1203–1220): no step, the store unchanged, slot 0 named as
+- a copy: no step, the store unchanged, slot 0 named as
   slot $`i`$ (`stateHolds_copy`).
 
 The writing case, proved (`applyDelta_writing`, module
@@ -1210,7 +1213,9 @@ retreating edge of a complete depth-first walk (every cycle of a graph
 contains a retreating edge of any complete depth-first walk, a standard fact
 of depth-first search, not proved here); and a node other than a head
 processed after every edge into it from a reached node (the in-degree
-order), so that a merge's incoming list is complete.
+order), so that a merge's incoming list is complete. Both are proved of the
+driver ([the driver's record](#the-drivers-record-read-as-the-walk),
+[the walk's premises](#the-walks-premises-from-the-driver)).
 
 ## The guarantee
 
@@ -1250,7 +1255,7 @@ separation fact carries no level bound): `assertsAt_of_edge`
 (`assertion_query_sound`), `assertsAt_of_head`, `assertsAt_start`,
 `exitDeliversA_of`.
 
-**The fields.** `GraphGuarantee` is the unit lane's record field by field
+**The fields.** `GraphGuarantee` is the unit level's record field by field
 (`GraphGuarantee.toTarget`, `transitions_of_reachesIn`). `PassWalkSound`
 holds `WalkSound` at every entry value and mark; the start's `passPreA` at
 every entry meeting the inputs, the separation and the index facts
@@ -1340,10 +1345,10 @@ each admitted assignment); `Traversed.reassign`; `StartEntered.entered`.
 ## The graph theorem
 
 Modules `lean/Verification/Programs/TolerantFramesGuaranteeTarget.lean` (the
-unit lane's definitions, copied from `PassUnit.lean` at c99647d3 on
-`engine-proof-unit`) and `TolerantFramesRunSound.lean`.
+unit level's definitions of `RunSound` and `RunKeepsSummaries`) and
+`TolerantFramesRunSound.lean`.
 
-`RunWalk G I c` (`RunWalkA` with `TraversedA`, Leg 18b), what the driver records of an accepted call: a walk, the
+`RunWalk G I c` (`RunWalkA` with `TraversedA`, [the driver's record](#the-drivers-record-read-as-the-walk)), what the driver records of an accepted call: a walk, the
 label contexts, each merge's edges and counter, the loop heads, the written
 assertions by label (`stated`); every visited node `NodeChecked` at `G`;
 `Traversed`; each edge state into a head the head's entry; `StartEntered`
@@ -1351,10 +1356,11 @@ assertions by label (`stated`); every visited node `NodeChecked` at `G`;
 entry `headEntry` over `startGiven` as the start or as any head, its
 context the inputs).
 
-The graph theorem is `run_sound_pass` (Leg 18a); its premises are those
-of "Open premises".
+The graph theorem is `run_sound_pass` ([the per-node side](#the-per-node-side-of-the-graph-theorem));
+`run_sound_single_pass` discharges its premises
+([the graph theorem's premises](#the-graph-theorems-premises)).
 
-`RunSound` is the unit lane's statement: for an accepted `RunCall`, under
+`RunSound` is the unit level's statement: for an accepted `RunCall`, under
 its `CheckerScope`, with `CodesSound` and `SummariesSound` of the summaries
 it leaves and the regions' entry fields check, `GraphGuarantee` of its
 options at its inputs. The proof carries each checked node to every
@@ -1368,11 +1374,13 @@ the walk's construction (`Traversed.reassign`), and assembles the guarantee
 of `TolerantFramesRunSound.lean`, quantified over every call the premises of
 `RunSound` hold of and every walk it records.
 
-## Open premises
+## The graph theorem's premises
 
 The graph theorem `run_sound_single_pass : Target.RunSound ι`
 (`TolerantFramesSinglePassSound.lean`) has no hypothesis beyond its label
-type class. There are no open premises of this theorem.
+type class. It composes `run_sound_pass` with the walk side's record
+soundness and checks (`recordsSound_of`, `recordsChecked_of`) and
+`exitsYield_of_kept`.
 
 `WalkChecked.startWrittenImpliesStated` supplies the start projection to
 `exitsYield_of_kept`: accepted setup supplies `SetupOk.startKept` and
@@ -1426,7 +1434,7 @@ using `regionalAt_header` and the successful derivation check.
 
 `returnedWalk_regional_no_start` proves start-target exclusion from setup.
 `SinglePass.setup` rejects every continuation or handler edge into the start
-when regional checking is enabled (`SinglePass.lean:2066–2069`). The start's
+when regional checking is enabled . The start's
 fixed regional entry therefore needs no third target case in accepted runs.
 
 For non-head targets, `sparseFold_pick` and `sparse_region_target` prove
@@ -1553,9 +1561,9 @@ states a boundary of projection for arbitrary proposals: a depth-zero fact
 at slot zero with no partners has a slot-bound obligation that normalization
 removes. The entry check `startSeparationKept` excludes this case. The checked
 projection is proved by `startWrittenImpliesStated`, as described in
-[Open premises](#open-premises).
+[the graph theorem's premises](#the-graph-theorems-premises).
 
-[`TolerantFramesExitHeadExtraction.lean`](../../lean/Verification/Programs/TolerantFramesExitHeadExtraction.lean)
+[`TolerantFramesExitHeadExtraction.lean`](../lean/Verification/Programs/TolerantFramesExitHeadExtraction.lean)
 proves `exitChecks_head`, `exitChecks_handler_edges`, and
 `exitChecks_handler_of_records` under explicit leaves: `r.given = passHeads c`,
 `r.ctx = passCtx c`, and `HeadEntryContract` for each given head contract
@@ -1570,7 +1578,7 @@ setup's `startNames` and `argName` equations, supplied by `EnvFacts` in
 input, argument, heap-query, and handler assertion checks.
 
 
-[`TolerantFramesExitStructural.lean`](../../lean/Verification/Programs/TolerantFramesExitStructural.lean)
+[`TolerantFramesExitStructural.lean`](../lean/Verification/Programs/TolerantFramesExitStructural.lean)
 proves `givenCorrespondence` and `contextCorrespondence` from `RunWalkA.given_eq`
 and `ctx_eq`, established at both walk constructors. `NodeExitTrace` and
 `Site.facts` retain setup provenance and the input-name bound at the visit's
@@ -1582,7 +1590,7 @@ targets: a head with no incoming edge has no incoming pair in `ofPass`.
 `exitStep_handler_arrays` and `Site.handler_record` identify the handler's
 transferred pair, merge record, indexed computation and final-walk extension.
 The handler's structural extraction is proved by `handlerRecords_of_checked`.
-The checked start projection is proved as stated in "Open premises".
+The checked start projection is proved as stated in [the graph theorem's premises](#the-graph-theorems-premises).
 `ExitChecks.exitChecks_nonHead` in
 `TolerantFramesExitNonHeadExtraction.lean` proves `NonHead` from a checked
 walk and its execution site.
@@ -1605,7 +1613,7 @@ allocation and `EnvFacts.merging` equation at the chosen node.
 ## Exit checks from the trace
 
 `ExitChecks.Site` in
-[`TolerantFramesExitsYield.lean`](../../lean/Verification/Programs/TolerantFramesExitsYield.lean)
+[`TolerantFramesExitsYield.lean`](../lean/Verification/Programs/TolerantFramesExitsYield.lean)
 contains exactly the witnesses and conjuncts of `NodeExitTrace` for the
 chosen checked node. `ExitChecks.site_of_trace` proves that the trace
 supplies such a site. The extraction witnesses are fixed:
@@ -1624,7 +1632,7 @@ Execution equations concern the original graph. `NodeExitsChecked.reassign`
 transports the checks to each reassigned graph and preserves the yield
 equalities.
 
-| `NodeExitsChecked` field | Trace source or remaining obligation |
+| `NodeExitsChecked` field | Source |
 | --- | --- |
 | `hereEmpty` | Proved by `exitChecks_here`, using the trace's empty-context witness, claim equation, and `HereEmpty.reassign`. |
 | `yieldsRead` | `ysA = ys`, proved by `Site.ysA_eq` from `exitsYields` and the trace's kept-yield equation. |
@@ -1646,14 +1654,14 @@ preserves that equality, and `visitExits_records_yields` supplies it for
 each indexed exit. `Site.kept_yields` identifies the step cache with the
 node's kept list.
 
-| `NonHeadExitChecked` field | Trace source or remaining obligation |
+| `NonHeadExitChecked` field | Source |
 | --- | --- |
 | `typed` | The nonvacuous type branch of the recorded `exitStep`; `exitTypes_checked` extracts `ExitTyped` with the exit cache's refined context. |
 | `asserted` | The recorded `assertionExit` equation and `assertionExit_checked`, with the initial `ysA` slot translation in its context thunk and the trace's `env.stated` equation. |
 | `pushedIn` | `IncomingRecorded`: the paired state and implications in the post-exit arrays, their `WalkExtends` relation to `raw`, and `w = ofPass raw heads` with a non-head target. `ExitRecordsChecked` supplies the successful computation and extension to `ex`; the trace extends `ex` to `raw`. `exitStep_nonHead_checked` and `Site.arrayAllocation` supply insertion and array bounds. `IncomingRecorded.mem` proves final membership using `WalkExtends.incoming_mem`. |
 | `merged` | `MergeRecorded`: the refined context, slot implications and mapping in post-exit `incomingEdges`, with extension to `raw` and `edgesIn = passEdgesIn raw`. `MergeRecorded.mem` uses `WalkExtends.merge_mem`. `Site.mergingOfIncoming` supplies the merge flag from the checked walk and the trace's table equation. |
 
-| `HeadExitChecked` field | Trace source or remaining obligation |
+| `HeadExitChecked` field | Source |
 | --- | --- |
 | `typed` | `exitTypes_checked` at the exit's `ysE`, as for a non-head exit. |
 | `implied` | The first conjunct of `headExit_checked`, with `en.implies ++ freshImplOf … ysE …` as the carried implications. |
@@ -1669,13 +1677,13 @@ The head membership field directly names the constructed state used by
 uses that member as its incoming-state witness. The handler's head branch
 uses the same formulation.
 
-| `HandlerExitChecked` field | Trace source or remaining obligation |
+| `HandlerExitChecked` field | Source |
 | --- | --- |
 | `admits` | Accepted `visitStep` checks that a handler has a `thrownTy`; `thrownTyOf` selects a type satisfying `ControlFlow.admitsAll`. Extracting that selection proves the obligation at `sd.thrownTy.getD []`. |
 | `typed` | `exitTypes_handler_checked` on the nonvacuous handler computation; it gives exactly the subtype or unrefined edge-evidence alternatives. |
 | `asserted` | `assertionExit_checked` at `handlerCtx c TT`, with the handler's materialized facts and no observation. |
 | `pushedIn` | `IncomingRecorded` for the handler transfer; handler fresh implications are empty. The paired arrays and their extension come from the same sources as the normal non-head transfer. |
-| `merged` | `MergeRecorded` at `handlerCtx c TT`; the merge-flag/indegree connection has the same remaining obligation as the normal merge. |
+| `merged` | `MergeRecorded` at `handlerCtx c TT`; the merge flag and in-degree read as for the normal merge. |
 | `head.implied` | `headExit_checked` with carried implications `en.implies`; `freshImplOf_handler` eliminates fresh implications. |
 | `head.inputs` | `headExit_checked`'s input-slot conjunct with source names `thrown :: entry.names`. |
 | `head.args` | `headExit_checked`'s argument-slot conjunct with the same source names. |
@@ -1699,7 +1707,7 @@ start-projection hypothesis and applies `exitsYield_of_checks`;
 `WalkChecked.startWrittenImpliesStated` discharges that hypothesis.
 The field proofs and composition theorems are checked by `AxiomCheck`.
 
-## Leg 17a: the per-node hypotheses from the pass's checks
+## The per-node hypotheses from the pass's checks
 
 Modules `lean/Verification/Programs/TolerantFramesNodeBound.lean` (the
 values `run` reads at the footprint check), `TolerantFramesNodeCallFresh.lean`,
@@ -1745,7 +1753,7 @@ admitted reassigned graph) and `returnsEnsured_of_walk` (⟹
 
 **The merges' joined implications at the exits** (module
 `TolerantFramesNodeJoined.lean`). The walk side's `joinedAt` and
-`ExitsJoined` (Leg 18b) state the obligation. Proved: (`joinedAt_of_exit`)
+`ExitsJoined` ([the driver's record](#the-drivers-record-read-as-the-walk)) state the obligation. Proved: (`joinedAt_of_exit`)
 an edge recorded into $`t`$ as
 $`(\Gamma_e, \mathrm{atSlotsOf}\ \mathit{names}\ \mathit{carried}, m)`$,
 its source environment $`\rho_s`$ typed by $`\Gamma_e`$, its slots holding
@@ -1775,8 +1783,8 @@ yields `ys` read at the implications `xs`. Proved:
   `YieldsOk ys` (`yieldFollows_sound`);
 - `nodeObligations_of_partsY`: a node's obligations from its step's parts
   with the judgment's values meeting the yields, which each normal exit
-  receives at the state after the step (`stepEdgesSound_of_yields`, Leg
-  18a, composes it);
+  receives at the state after the step (`stepEdgesSound_of_yields`,
+  [the per-node side](#the-per-node-side-of-the-graph-theorem), composes it);
 - `exitDeliversY_of_edge`: `exitDelivers_of_edge` with the yields read at
   the step's value and the target's types from the edge's check where they
   hold, so an exit's `YieldsOk` premise and a refined context's typing come
@@ -1791,31 +1799,8 @@ the claim's, with no derivation and no step evidence, gives the regional
 evidence's context the node's and `RegionalTyped`: the term's value is the
 slot's, of the claim's type, with no yields and no output facts.
 
-Premises this leg discharges / leaves:
 
-- discharges the footprint and return fields of the guarantee (into
-  `NodePassChecked` at the record's steps) and `CallFreshBelow`;
-- leaves `RecordsChecked` to the visit.
-- leaves `ExitsJoined`
-  per exit to `joinedAt_of_exit` with the driver's record and the typing of
-  the refined context.
-- discharges the yields premise of the exits and the return (`YieldsOk`
-  at every value) into `NodeYielded`, whose `follows` field is
-  `checkedYields_follows` outside a promise call; leaves: a promise call's
-  kept yields (`checkedYields`' promise branch keeps them by
-  `promiseYields` and the output, where `promiseCall_sound` needs the
-  derivation's tree, which `run` checks of the step's evidence, not of
-  `stepDeriv`: a pass change), `xs` holding at the entry (`slotImplOf`
-  over the state's implications, a proof to write), the head edge's
-  version of `exitDeliversY_of_edge`, and the walk's predicates over
-  `StepEdgesSoundAt` at `edgePreAJ`.
-- discharges `RegionalTyped` at a copy (`regionalTyped_copy`, where the
-  copy's `stepDeriv` and `stepEffect` are none, which `StepChecked`'s copy
-  case does not yet state); leaves `RegionalTyped` at a step with step
-  evidence alone (the rule's judgment at every state where the evidence's
-  facts hold) and with a derivation (D11, `regionalTyped_of_tree`).
-
-## Leg 17b: the walk side of the graph theorem
+## The walk side of the graph theorem
 
 Modules `lean/Verification/Programs/TolerantFramesMergeExits.lean` and
 `TolerantFramesMergeNearRounds.lean`.
@@ -1861,19 +1846,8 @@ by $`|s|`$ (`NearInv.out_le`); a round leaving a non-empty next frontier
 lists one more (`nearRound_progress`); so the loop has ended once its fuel
 exceeds the facts left unlisted (`nearLoop_stable`).
 
-Premises this leg discharges / leaves:
 
-- `MergesImpliesHold`: left, and replaced in the decomposition by what the
-  exits deliver: `NodeMeaning`'s exits and handler into a merge deliver
-  `edgePreJ` (per edge, `joined_of_exit` at the exit's source environment,
-  the per-node side), the walk records `MergeEdgeRecorded`; then
-  `entries_of_traversedJ` takes the place of `MergesSound`'s second
-  conjunct.
-- `LinearNearFuelEq`: discharged (`linearNearFuelEq`, the pass's
-  definition; the rounds bound `linearNearFuel_rounds`); left: the terms an
-  entailment reads named by the facts it reads.
-
-## Leg 18b: the driver's record read as the walk
+## The driver's record read as the walk
 
 Modules `lean/Verification/Programs/TolerantFramesMergeWritten.lean` and
 `TolerantFramesDriverWalk.lean`.
@@ -1972,48 +1946,23 @@ frame's node is in state 1, the frames' nodes distinct. Proved:
 `dfsStep_inv`, `dfsLoop_inv`, `dfsInit_inv`; (`dfs_cuts`) on an empty
 stack every reached node is done, so each non-head edge between reached
 nodes goes to an earlier time ($`f(b) < f(a)`$, `Path.rank_lt`) and no such
-path is a cycle; `loopHeads_cuts` (Leg 19b: the marks `loopHeads` returns
-cut every cycle of the nodes it reaches);
+path is a cycle; `loopHeads_cuts` (the marks `loopHeads` returns cut every
+cycle of the nodes it reaches, [the pass's loop heads](#the-walks-premises-from-the-driver));
 `HeadsCutCycles.mono`; `passHeads_cuts` (the call's heads, the start
 marked besides). No depth-first path theorem is used.
 
-**What the record lacks for `RecordsSound`** (pass changes, each a field
-or a definition the proof reads):
+**What the proof reads of the driver.** The visit and the setup are
+top-level functions (`visitEntry`, `visitStep`, `visitExits`, the setup),
+so each visit's effect on the record is a theorem over the visit and
+`Drives.inv` carries it to the walk's end; per label the record keeps the
+fresh counter the step starts from, the answers it starts from and its
+`Stepped` result (`NodeChecked`'s `fresh`, `answers`, `st`), and the
+counter on entry (the start's `StartEntered` counter); the setup exposes
+the loop heads (`passHeads` restates them); a stop has a type without
+acceptance (`WalkStopsRefuse` by its type); and `Store.linearNear` runs on
+fuel as `linearNearFuel` (`LinearNearFuelEq`).
 
-- `runWalk`'s visit and setup as top-level functions (the visit is a local
-  `fun` of `runWalk`, which no statement can name), so that each visit's
-  effect on the record is a theorem over the visit and `Drives.inv` carries
-  it to the walk's end;
-- per label, the fresh counter the step starts from, the answers it starts
-  from and its `Stepped` result (`NodeChecked`'s `fresh`, `answers`, `st`),
-  and the counter on entry (the start's `StartEntered` counter);
-- the loop heads (`isHead`) in the record, or exposed by the setup
-  (`passHeads` restates them);
-- a stop type without acceptance (`WalkStopsRefuse` by its type);
-- `Store.linearNear` on fuel as `linearNearFuel` (`LinearNearFuelEq`).
-
-Premises this leg discharges / leaves:
-
-- `RunTraversed`: restated as `RunTraversedA` (the record's entries hold
-  the written facts, which `Traversed` did not state) and reduced by
-  `run_traversedA` to `WalkStopsRefuse` and `RecordsSound`; the heads'
-  records discharged by the reading (`ofPass_heads`). Left: `RecordsSound`
-  (each visited node `NodeChecked`, `TraversedA`, `StartEntered`, read off
-  the visit once it is a function); `WalkStopsRefuse` is proved
-  (`walkStopsRefuse`, Leg 19b).
-- `HeadsCutCycles`: discharged (`passHeads_cuts`),
-  for the proof of `TraversedA`'s merges; left: the in-degree order (a
-  node other than a head visited after every edge into it from a reached
-  node) and `TablesAgree` from it, both over the visit.
-- `MergesImpliesHold`: replaced by `MergeExitsJoined`, the exits into a
-  merge delivering its joined implications (`ExitsJoined`, the per-node
-  side's, by `joined_of_exit` at the source environment meeting the edge's
-  refined context); the pass's per-edge check does not give them at an
-  edge state alone.
-- `LinearNearFuelEq`, `RunKeepsSummaries`: discharged (`linearNearFuelEq`,
-  `runKeepsSummaries`, Leg 19b).
-
-## Leg 18a: the per-node side of the graph theorem
+## The per-node side of the graph theorem
 
 Modules `lean/Verification/Programs/TolerantFramesNodeLabels.lean`,
 `TolerantFramesComposeShape.lean`, `TolerantFramesRegionalRuns.lean`,
@@ -2039,7 +1988,7 @@ returns only where the assertions' labels are distinct (`setup_labels`).
 
 **The regional derivation.** `regionalTyped_of_tree` is stated over the
 pass's `SinglePass.regionalDerivChecked` with the derivation's tree
-accepted by `checkTreeUsing`, the check's first disjunct (D14).
+accepted by `checkTreeUsing`, the check's first disjunct.
 
 **The context the yields refine.** `run` refines a normal edge's context
 by the kept yields restated at every slot holding their targets' names,
@@ -2084,21 +2033,12 @@ written assertion and a merge's joined implications). `NodesYield` is
 records a checked walk) for `RecordsSound` and `RecordsChecked`;
 `run_traversedC` builds that walk as `run_traversedA` does, its nodes the
 checked steps `RecordsChecked` gives. `RecordsSound` and `RecordsChecked`
-follow from `SetupRecords` and `VisitsRecord` (Leg 19b); the other
-premises are those of "Open premises".
+follow from `SetupRecords` and `VisitsRecord`
+([the record from its visits](#the-walks-premises-from-the-driver)); the
+other premises are discharged as [the graph theorem's premises](#the-graph-theorems-premises) states.
 
-Premises this leg discharges / leaves:
 
-- `NodesMean`, `MergeExitsJoined`: replaced by `NodesYield`; its judgment
-  and return discharged into `NodeYieldChecks` (the visit's checks); left:
-  each exit and the handler from the visit's edge checks; the promise
-  call's derivation from the pass's own check (`promiseDerivChecked_of`).
-- `AssertionsLabelled`: discharged (`labelsChecked`, the setup's check).
-- `FootprintsKept`, `ReturnsKept`: into `RecordsChecked` (`NodePassChecked`).
-- `RegionsHeld`: the regional derivation's typing over the pass's check
-  under D14; the rest left.
-
-## Leg 19b: the walk's premises from the driver
+## The walk's premises from the driver
 
 **The depth-first walk ends within its fuel.** Module
 `lean/Verification/Programs/TolerantFramesDriverHeadsFuel.lean`. The
@@ -2251,7 +2191,7 @@ named by the step's counter, below the visit's at a node with a handler
 ```
 
 (`exitsPushOk_of`), `ExitsWidth` stating each exit's mapping of its
-target's width (queue entry W9). A state an exit
+target's width. A state an exit
 carries into its target (`edgeTransfer` over `edgeStoreOf`) meets
 `PushOk` where the mapping reads the source's slots and gives the
 target's width, the entry's and the step's stores are well-formed and
@@ -2294,8 +2234,7 @@ $`n`$ and hold the start where it is below $`n`$ (proved:
 `loopHeads_closed`). So `EnvFacts` holds of a setup whose nodes are the
 call's, whose reached flags are `loopHeads`', whose heads are `passHeads`
 and whose start is below $`n`$ (proved: `envFacts_of_loopHeads`); these
-four equations are what `SetupRecords` still reads off the setup (queue
-entry W4).
+four equations are what `SetupRecords` reads off the setup.
 
 **A node's yield checks at every reassignment.** Module
 `lean/Verification/Programs/TolerantFramesNodeYieldChecks.lean`. What the
@@ -2353,30 +2292,3 @@ entry facts by `regionNodeEntry_of`):
 the evidence is typed at every reassigned graph (proved:
 `regionsTyped_of_tree`).
 
-Premises this leg discharges / leaves:
-
-- `WalkStopsRefuse`: discharged (`walkStopsRefuse`).
-- `RunKeepsSummaries`, `VisitsKeepSummaries`: discharged
-  (`runKeepsSummaries`, `visitsKeepSummaries`).
-- `RecordsSound`, `RecordsChecked`: reduced to `SetupRecords` and
-  `VisitsRecord` (`recordsSound_of`, `recordsChecked_of`); the in-degree
-  order is part of the invariant (`RecInv`), proved along the walk. Left:
-  `SetupRecords` (over the setup's environment and first state, queue
-  entry W4, with `dfsLoop_init_closed` for the reached labels) and
-  `VisitsRecord`, reduced to `VisitsRest` (`visitsRecord_of`) and that
-  to `ExitsPushOk` and `VisitsSettle` (`visitsRest_of`, the exits' fold
-  `ExitsFold`, `stepFresh`, implication bounds by `visitsImplications`).
-  `VisitsSettle` follows from `DirectKeepsSummaries` and
-  `SearchKeepsSummaries` (`visitsSettle_of`); the entry, start, bound,
-  return and yield checks are proved from the visit's parts. The setup's
-  equations are fields of `EnvFacts`, and its initial incoming implication
-  bound is `RecInv.impBelow`. `ExitsPushOk` reduces to `ExitsWidth`
-  (queue entry W9, `exitsPushOk_of`).
-- `LoopHeadsFuelEq`, `MapNamesLength`: discharged (`loopHeads_cuts`,
-  `loopHeads_closed`, `envFacts_of_loopHeads`; `mapNames_length`).
-- `NodesYield`: reduced to `SubtypeAnswersAll` (pass change D5) and
-  `ExitsYield` (`nodesYield_of`), the yield checks a field of
-  `NodePassChecked` and so part of `VisitsRecord`.
-- `RegionsHeld`: reduced to `RegionsRecorded` (the visit's regional check
-  and the graph's tables, queue entries W6 and R4) and `RegionsTyped` (the
-  cases no proof covers, queue entry R3) (`regionsHeld_of`).

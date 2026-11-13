@@ -1,7 +1,7 @@
 # The stage store
 
-Every stage the pipeline's entry point runs, imported modules and repeated
-proposal and search attempts included, and every operation a control runs,
+Every stage the pipeline's entry point runs, imported modules and module
+interfaces included, and every operation a control runs,
 goes through one invocation mechanism ([`pipeline/stages.mts`](../pipeline/stages.mts))
 and one content-addressed store. Each invocation has an explicit input
 description, immutable inputs and a recorded result, and replays a stored
@@ -176,39 +176,42 @@ execution of a replay-eligible invocation retains its complete stage key.
 
 ## Single-pass module interfaces
 
-The pass uses `interface-plan`, `module-interface`
-and `pass` process stages (`verifierCall`). Discovery consumes the whole
-fragment and a selection document and returns a dependency-ordered SCC DAG
-for the requested roots and their complete module dependencies. The orchestrator resolves
-each outgoing dependency before invoking its parent's stage, and therefore
-before acquiring its execution claim. Each component request contains its
-complete module documents, normalized given lines, dependency result bytes
-and keys, mode, depth, forced proposals and `ALL_CUTS`; subtype rounds are
-an explicit argument. The standard process manifest binds the request file
-by content, alongside executable, libraries, runner, runtime and adapter.
+A check uses the `interface-plan`, `module-interface` and `pass` process
+stages (`verifierCall`). Discovery (`--module-interface-plan`) consumes the
+whole fragment and a selection document (function names and explicit
+own-module roots) and returns a dependency-ordered DAG of the strongly
+connected components of the module graph for the requested roots and their
+complete module dependencies; a component's members are ordered by module
+location, ready components by their first location. The orchestrator
+(`prepareInterfaces`, `pipeline/module-interfaces.mts`) resolves each
+outgoing dependency before invoking its parent's stage, and therefore
+before acquiring its execution claim. Each component request
+(`--module-interface`) contains its complete module documents, its
+dependencies' result bytes and keys, the forced proposals, the fuel and the
+mode; subtype rounds are an explicit argument. The standard process
+manifest binds the request file by content, alongside executable,
+libraries, runner, runtime and adapter. Changes propagate through the
+component DAG. An own-file publication supplies the parser's canonical
+module document (`ownModule`), with the imported path's location and
+declaration identities.
 
 `module-interface` has a success-only exit protocol. Completed semantic
 refusals give ordinary entries; malformed requests, timeouts and operational
-failures give no interface. No interface stage reuses evidence. A caller
-consumes only the output returned by `invokeProcess`, which validates a
-replay's manifest and payload integrity. An interface file supplied outside
-that boundary is not an authenticated module check. The importer adapter
-binds its fragment, interfaces, given lines and measurement stand-ins as
-explicit input files; component requests contain no measurement stand-ins.
-The importer stage suppresses measurement output so repeated executions
-have the same payload; the direct measurement command retains that output.
-The canonical computation and its dependency closure are specified in
-[module interfaces](drafts/module-interfaces.md).
+failures give no interface. A caller consumes only the output returned by
+`invokeProcess`, which validates a replay's manifest and payload integrity.
+An interface file supplied outside that boundary is not an authenticated
+module check. The importer stage binds its fragment and interfaces as
+explicit input files, and suppresses measurement output so repeated
+executions have the same payload. What an interface contains, what
+establishes an entry and how an importer binds one are
+[certified imports](SOURCE-CONTRACTS.md#certified-imports)'.
 
-`TSCERT_ROUTE=single-pass` makes a check (`pipeline/verify-source.mts`,
-and the case runner and every caller through it) take the single-pass
-route: the parse stage, then the `pass` stage of mode 8 and the interface
-stages it needs, over an empty given file and empty stand-ins; no
-producer, plan, search or check stage runs. A unit counts as verified only
-with every unit it depends on accepted; a unit the pass refuses has the
-outcome of a failed search (`unverified`, phase `search`), a refusal of the
-pass's front the producer's (`unsupported`, phase `proposal`). Unset, a
-check takes the pipeline's route.
+A check (`pipeline/verify-source.mts`, the case runner and every caller
+through it) runs the parse stage, then the `pass` stage
+(`--verify-interface-stage 8`) and the interface stages it needs
+(`verifyWithInterfaces`). A unit counts as verified only with every unit it
+depends on accepted; a unit the pass refuses is `unverified` (phase
+`search`), a refusal of the pass's front `unsupported` (phase `proposal`).
 
 ## Observed stages
 
@@ -616,8 +619,8 @@ The source snapshot lives at a store location named by its bytes and its
 configuration's; its path is the Fragment's file identity, which every
 later document embeds. A process stage runs in a fresh directory holding
 its input files under fixed role names, with relative arguments and an
-explicit environment. The audited programs, the repository's builds of the
-verifier and the producer and the controls' mutation verifier, read only the
+explicit environment. The audited programs, the repository's build of the
+verifier and the controls' mutation verifier, read only the
 files their arguments name and do not observe that directory's path, which
 is excluded from the key. Any other program executes without replay.
 
@@ -729,9 +732,9 @@ shared among that user's cooperating processes. Digests detect accidental
 corruption; they do not authenticate results supplied by an untrusted
 writer.
 
-`SourceClaimJson.checkUnitJson_safe` establishes safety from the corresponding
-accepted `unitVerdict` evaluation. The memoizer must preserve that premise
-when replaying a check. This is an additional implementation obligation,
+`SourceClaimJson.PassUnit.mode8Accepted_sound` establishes safety from the
+corresponding accepted verdict of the pass. The memoizer must preserve that
+premise when replaying a pass stage. This is an additional implementation obligation,
 outside that theorem.
 
 The production check's pure computation supports a deterministic judgment
@@ -744,9 +747,10 @@ observations rather than deterministic judgments.
 
 ## Controls
 
-A control tests the verifier, the producer or the pipeline on
-an input no case makes: a forged or tampered document, a mutation of the
-verifier, an injected tool failure, a host-family override. The controls of
+A control tests the verifier or the pipeline on
+an input no case makes: a forged or tampered document, a forced proposal,
+a mutation of the verifier, an injected tool failure, a host-family
+override. The controls of
 `tests/single-pass-controls.mts` run in `make test-checks`, in a pool of processes. Every
 operation a control runs is a stage invocation of the common mechanism and
 replays from the store like any other: its key binds the executable by
@@ -755,14 +759,16 @@ file, so the operation executes again exactly when one of these changes. A
 control's own code (its forgery and its assertions) runs every time, over
 the operation's result, executed or replayed.
 
-- *Executables.* The repository's verifier and producer builds, and the
-  mutation verifier. The mutation verifier is built at each run of the
-  controls from the current build's generated C and Lake's link response,
-  and is audited as the verifier is: its identity is its executable's digest
-  and linked libraries, and it reads, beyond the verifier's I/O, only the
-  variable `TSCERT_TEST_MUTATIONS`, which its invocation's environment
-  fixes. A mutation selection is therefore part of the key, and a rebuild
-  giving the same bytes replays its entries.
+- *Executables.* The repository's verifier build, and the mutation
+  verifier (`tests/single-pass-mutations.mts`). The mutation verifier is
+  built at each run of the controls from the current build's generated C of
+  the pass's modules and Lake's link response, and is audited as the
+  verifier is: its identity is its executable's digest and linked
+  libraries, and it reads, beyond the verifier's I/O, only the variable
+  `TSCERT_TEST_MUTATIONS`, which its invocation's environment fixes. A
+  mutation selection, like a forced proposal (`TSCERT_FORCE`), is therefore
+  part of the key, and a rebuild giving the same bytes replays its
+  entries.
 - *Protocol.* The exit protocol that decides whether an exit is a finished
   result (the refusal's status and prefix) is part of the key.
 - *Settings.* A host-family override is an input of the parse (the active
@@ -844,8 +850,8 @@ unavailable, with its reason.
   left the group (`setsid`, `setpgid`) is not killed, and neither is a
   program that left the group when the runner itself dies. Such a
   descendant may still write to the output files after the adapter reads
-  them; what it writes then is not part of the result. TScert's process stages, the Lean verifier and the
-  OCaml producer, start no process.
+  them; what it writes then is not part of the result. TScert's process stages, the Lean verifier's,
+  start no process.
 - The runner's report, the `RUSAGE_CHILDREN` CPU time and peak resident set
   (`ru_maxrss`) of the program and the descendants it waited for, whether
   the limit expired, and any failure of its own system calls, goes to its
@@ -887,8 +893,8 @@ refers to a historical producing execution, so those sums describe recorded
 costs, rather than CPU consumed by the current census. Peak memory is a maximum, not a sum. The census record's
 elapsed time measures that run's wall time, including replay and scheduling.
 
-A fixed-input performance comparison states the source or request, claims,
-mode and arguments it holds fixed, the executable for each run, and their
+A fixed-input performance comparison states the source, mode and
+arguments it holds fixed, the executable for each run, and their
 outcomes. A source change that passes an earlier refusal can expose more
 proof work; aggregate census costs alone do not establish the cost of the
 same proof obligation.

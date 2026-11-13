@@ -592,8 +592,8 @@ admissibility. The type meanings are read at the graph's assignment:
 $`⟦A⟧_G=⟦A⟧^{G.\mathit{env}}`$ for values
 (`meaning`) and its list component for argument lists (`argMeaning`). No check
 reads `env`, so every theorem proved for all graphs holds at every
-reassignment; for the whole graph checker this is a theorem,
-`Parametricity.accept_reassign`, and a generic body checked with its binders
+reassignment; for the pass this is a theorem at each node,
+`TolerantFrames.nodeChecked_reassign`, and a generic body checked with its binders
 as parameter rows is safe at every assignment of them
 ([Reynolds 1983](REFERENCES.md#reynolds-1983))
 ([CALLABLES](CALLABLES.md#overloads-polymorphism-and-binding)). A member of a scheme row meets each instance's signatures,
@@ -1383,8 +1383,8 @@ without end, and a context carrying every scheme entered would never recur,
 while one restricted to free rows alternates between two.
 
 The table is checked when its rows lie in a domain with a free-variable
-certificate and every entry is one of these. The producer (`matchRow`, not
-trusted) builds a scheme entry's table by matching the bounds $`\beta'`$ under
+certificate and every entry is one of these. `CertificateProducer.matchRow`
+(not trusted) builds a scheme entry's table by matching the bounds $`\beta'`$ under
 $`\kappa`$, where they are read, and the signatures under $`\kappa'`$, so a generic
 method whose result is its own interface at a bounded binder, such as
 `map<V2, P extends readonly number[]>(m: new (...p: P) => Mapper<V, V2>, ...p: P): Box<V2>`,
@@ -1478,7 +1478,7 @@ prototype-member instantiation choices. Each choice includes its substitution
 images, type arguments, domain and free-variable information. The checker
 validates an instance before using it.
 
-The producer infers prototype-member instances with either the source or
+Instance inference (not trusted) proposes prototype-member instances with either the source or
 target host as receiver. It also infers from arguments and results alone,
 then substitutes the resulting arguments into the complete signature; this
 supplies an inherited method's base receiver. A binder occurring through a
@@ -1491,8 +1491,8 @@ before pruning its candidate relation.
 The common operation selects among the rules of
 [RECURSIVE-EQUATIONS §4](RECURSIVE-EQUATIONS.md#4-subtyping): identity,
 validated variance, quantified instantiation and guarded structural coverage.
-It validates the resulting family justification. Evidence production supplies candidate instances
-to that operation; evidence checking supplies the recorded choices.
+It validates the resulting family justification. The subtype search supplies candidate instances
+to that operation; a certificate's check supplies its recorded choices.
 
 A checked certificate is a semantic inclusion:
 

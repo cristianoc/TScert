@@ -1,9 +1,18 @@
 # Source claims
 
-A source-claims document proposes types for one parsed TypeScript file. The
-verifier checks those proposals against the source's declarations and runtime
-operations. Evidence is a separate document: supplying a claim does not establish
-that it holds.
+A unit's **claims** are the types it is stated at: each function's
+signature and footprint, the entry environment at each execution point, the
+type of each expression occurrence, each mutable declaration's storage
+contract, and the facts proposed at loop heads. The front
+([`FragmentFront.lean`](../lean/Verification/Source/Claims/FragmentFront.lean))
+builds them inside Lean in the shape of
+[`Claims/Wire.lean`](../lean/Verification/Source/Claims/Wire.lean)
+(`fragmentClaims`: each function's identity, parameters and written
+footprint, its types left to its annotations and its points to the walk)
+and decodes them into the front once (`fileFront`); the walk
+(`Synthesis.retypeUnit`) then states every expression's and statement
+entry's type there. A claim is a proposal: the pass checks every claim an
+obligation uses, and supplying one does not establish that it holds.
 
 A **source span** is `[start,end]`, a half-open interval of UTF-16 offsets in
 the source. An **execution point** identifies a node of the shared execution
@@ -13,42 +22,23 @@ source site. A **type label** names a row of a type table or a type constructed
 from the source's declarations. A list of labels denotes their union;
 `[]` denotes the empty type, `never`.
 
-The protocol has three documents:
-
-- The Fragment document describes parsed source syntax and declarations.
-- The execution document describes statement edges, expression evaluation,
-  and lexical binding order. Lean derives it from the Fragment.
-- The source-claims document proposes entry environments, expression results,
-  and fixed storage contracts. Any producer can write it.
-
-The verifier reads the three documents in [its modes](REQUEST-PROTOCOL.md#run-the-verifier):
-`--lower-control-flow` prints the execution document, `--lower-program` the
-program graph each unit lowers to under the claims (`make lowering`), and
-`--produce-unit` and `--check-units` search for and check the evidence of
-the obligations the claims reconstruct, a verdict per unit.
-`SourceClaimJson.checkUnitJson_safe` proves calculus safety for every function
-of an accepted unit, at every permitted interpretation of its type
-parameters. The
-theorem concerns the extracted calculus graph; correspondence with the source
-is a separate boundary, specified below.
+This document owns the claims' shape and meaning and the execution graph
+document (`verifier --lower-control-flow`, [below](#execution-graph)).
+`SourceClaimJson.PassUnit.mode8Accepted_sound` proves calculus safety for
+every function of a unit the pass accepts, at every permitted
+interpretation of its type parameters. The theorem concerns the extracted
+calculus graph; correspondence with the source is a separate boundary,
+specified below.
 
 ## Encoding
 
 The top-level object has required fields `file`, `sourceSha256`, `types`,
 `functions`, `modules` and `qualified`, and optional `init`. Unknown fields
-are rejected. `qualified` lists the imports the document's functions read at
-a [certified import](SOURCE-CONTRACTS.md#certified-imports)'s signature, each by
-its declaration identity (`module`, `name`, `span`). `modules` holds claims
-documents of fragment modules, each over the module's own `types`, its
-`file` the module's `location` and its `sourceSha256` the module's, with
-`modules` empty and `qualified` the module's own reads at certified
-imports. Evidence is a line per unit, `{"unit": u, "evidence": e}`: each
-group of the main document with its evidence, then each module a planned
-qualified read names, `u` its `module:<location>`, with its document's
-evidence ([the evidence file](REQUEST-PROTOCOL.md#source-evidence-bundle)).
-`file` identifies
+are rejected; `modules` is empty, and imports read at a
+[certified import](SOURCE-CONTRACTS.md#certified-imports)'s entry are read
+from the module interfaces apart from it. `file` identifies
 the source; `sourceSha256` is its lowercase SHA-256 digest. `types` is the
-producer's type table. Each ordinary row is a list of clauses, also interpreted
+claims' type table. Each ordinary row is a list of clauses, also interpreted
 as a union. Row operands contain label lists, so recursive rows can refer to
 one another without expanding them into trees. The first four rows are
 `["nul"]`, `[{"boolLit":{"value":true}}]`,
@@ -109,8 +99,8 @@ own value), what `term` reads of the value they end at (`value`, `length` or
 term denotes an integer and the sum of the terms is at most the bound, which
 the entry's knowledge states and every edge into it checks; a fact whose
 coefficients are all zero states only that its terms denote integers
-([linear facts](ARITHMETIC.md#linear-facts)). The producer proposes them
-by a must-analysis of the statement graph: an integer literal or a sum
+([linear facts](ARITHMETIC.md#linear-facts)). Head inference
+(`HeadInference.lean`) proposes them at loop heads by a must-analysis of the statement graph: an integer literal or a sum
 of known ranges assigned states an equality, an increment restates the facts
 of the old value, a comparison states each answer's fact on its branch, and
 `j < xs.length` before a body writing `xs[j]`, with `0 ≤ j` known, the bound
@@ -298,7 +288,7 @@ Where the frame states store regions, the effect has, besides,
 fields `p` read from the call position `i` select at the call's entry may
 change arbitrarily, the footprint `f` bounding every other location
 ([stated effects](SOURCE-ELABORATION.md#stated-effects)).
-Each requires corresponding evidence.
+Each is an obligation the pass checks.
 
 A call expression can propose an instance with:
 
@@ -335,7 +325,7 @@ value is its complete assertion at that site, including `null`. These
 per-signature rows apply to ground closures; quantified schemes have their
 own binder-based certification.
 
-## Execution graph supplied to the producer
+## Execution graph
 
 The execution document describes the order of runtime operations independently
 of proposed types. `verifier --lower-control-flow ast.json` emits an array of executable-body
@@ -369,10 +359,9 @@ The action's `kind` determines its fields:
 
 A `statement` is a source span identifying syntax in the Fragment. A `binding`
 or `element` is a scope-binding descriptor. Every normal and handler target
-names a node in its graph. The producer analyzes these edges; the verifier
-reconstructs the graph from the Fragment for claim association and typed
-elaboration. A supplied graph carries proposal data, with no acceptance
-authority.
+names a node in its graph. The verifier builds the graph from the Fragment
+for claim association and typed elaboration; the printed document is for
+inspection (`make lowering`) and carries no acceptance authority.
 
 Each node's `executions` array contains `{source, plan}` for its expressions
 ([ExecutionRoots.lean](../lean/Verification/Source/ExecutionRoots.lean),
@@ -450,13 +439,13 @@ the progressive scope supplied by the schedule. Each `readField` requires an
 expression claim at `source`; the graph checks that type for the field read
 with the observations live at that step, then saves its result for `next`.
 
-Effects describe what the producer must update in its knowledge of mutable
-contents. `none` preserves that knowledge; `havoc` forgets it; `cellWrite`
+Effects describe what a forward analysis of the graph must update in its
+knowledge of mutable contents. `none` preserves that knowledge; `havoc` forgets it; `cellWrite`
 sets a named cell's contents to the assigned expression type; `cellUpdate`
 uses the update expression's type. An effect is `{kind: "none"}`, `{kind: "havoc"}`, `{kind: "cellWrite", name,
 value}` or `{kind: "cellUpdate", name, source}`. A write's `value` is the
 assigned expression's span, and an update's `source` is its expression's span.
-Sequence and choice plans state execution order separately from the producer's
+Sequence and choice plans state execution order separately from
 source-oriented typing choices.
 
 ## Conjunction
@@ -597,18 +586,15 @@ cell currently containing true need not be a cell whose world type is true.
 
 ## Source identity and trust
 
-The claims document's file identity and digest must match the Fragment.
-The pipeline compares the source bytes with that digest.
-The Lean commands take a file identity as their third argument; they check
-that identity and the supplied digests, without reading or hashing the source
-file. Parsing and hashing form the reviewed source boundary: the parser
+The claims' file identity and digest are the Fragment's. The pipeline
+compares the source bytes with that digest. The pass takes a file identity
+as an argument; it checks that identity and the supplied digests, without
+reading or hashing the source file. Parsing and hashing form the reviewed source boundary: the parser
 determines which Fragment represents those bytes. Source offsets use UTF-16; the digest uses the exact
 source bytes. Editing the source requires corresponding identity and span
 updates.
 
 The verifier derives execution ownership, source annotations and type-directed
-operations from the Fragment. The exported execution document guides the
-producer; acceptance reconstructs the schedule and checks evidence for its
-obligations. A producer's successful analysis or supplied evidence cannot
-replace those checks. Calculus safety is the guarantee of the checked model,
+operations from the Fragment, and the pass checks every obligation of the
+schedule it reconstructs; no computed type replaces those checks. Calculus safety is the guarantee of the checked model,
 subject to its parser and external primitive trust boundary.

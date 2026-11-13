@@ -171,17 +171,28 @@ method's among them, and a class's claimed construct signatures need only be
 within the source's, parameter by parameter
 ([source closures](SOURCE-ELABORATION.md#source-closures-and-their-annotations)). The body is
 checked at each claimed signature, so this comparison is not what makes a
-claim sound; it keeps a producer from advertising a signature the source does
-not state.
+claim sound; it keeps a computed signature within the one the source
+states.
 
 ## Imported, ambient and global values
 
 A value the module does not define joins its scope at the type its
-declaration states. These rules are assumptions a result is relative to:
+declaration states. These rules are assumptions a result is relative to.
+What a function's declaration states of a call beyond its precondition (a
+footprint, a postcondition, a guard's promise, a throw bound, store
+regions, a fresh result: $`\epsilon`$) is assumed only of a declaration
+with no body; an import from a module with a body states it only where its
+module's check establishes it, at the import's
+[interface entry](SINGLE-PASS.md#10-module-linking), and is read otherwise at
+the ordinary effect $`\epsilon_\bot`$, its precondition kept
+(`ordinaryImport`):
 
 ```math
 \frac{x\ \text{imported, declared at}\ T\ \text{with no binders}}
      {\Gamma(x)=⟦T⟧}\ \textsf{import}
+\qquad
+\frac{x\ \text{imported from a module with a body, declared at}\ T,\ \text{no entry}}
+     {\Gamma(x)=⟦T[\epsilon:=\epsilon_\bot]⟧}\ \textsf{import-body}
 \qquad
 \frac{\begin{array}{c}
 x\ \text{declared at}\ \forall\vec p\le\vec B.\,T\quad
@@ -495,162 +506,195 @@ written one stays refused
 An imported function of the program is read at its declaration's ordinary
 signature, which states the effect its [statement](SOURCE-ELABORATION.md#stated-effects)
 states and none without one. A **certified import** is read at an
-effect-qualified signature that the same run certifies from the imported
-declaration's code, its claim within its statement. This is the checked evidence
+**established entry** of its module's interface: a footprint, an on-throw
+flag and a returned footprint that the check of the imported declaration's
+own module establishes from its code. This is the checked evidence
 [inferred call effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)
 require; the import's TypeScript declaration supplies none.
 
-**Eligibility.** A read may be qualified only where its binding's value is
+**Eligibility.** A read may be certified only where its binding's value is
 stable: a named import of an exported function declaration that no code of
 its module reassigns, or a default import of an `export default function`,
 which is the named import of `default`
 ([default imports](SOURCE-ELABORATION.md#default-imports)). Its terminal
 declaration identity is the one TypeScript resolves the import to, through
 re-exports; a re-exporting module's own execution is part of the runtime
-module graph below. Any other import is read at its ordinary signature. Lean refuses a unit whose module's document writes
-its binding, and the parser lists no module whose code it leaves unlowered
-writes one.
+module graph below. The read resolves, by that identity alone, to a
+function of a module the fragment lists, its name the declaration's and
+lying in the declaration's span, with no binders, no rest parameter, no
+receiver and no guard, whose module's document writes its binding nowhere;
+the import is a function of one call signature with no rest, receiver,
+binders or promise, stating the precondition and postcondition the
+function states (`eligibleRead`, `Imports.lean`). Any other import, and
+one whose local name another import also binds, is read at its ordinary
+signature. The parser lists no module whose code it leaves unlowered writes
+the binding of one of its function declarations.
 
-**Two graphs.** The **qualified-dependency graph** has an edge from a unit to
-each unit it reads at a qualified signature; it is acyclic. The pipeline
-proposes a module after the modules it imports from, so a read that would
-close a cycle is read at its ordinary signature, and Lean refuses a cycle
-among the modules the planned reads name. The **runtime
-module graph** is the modules' import relation as the host evaluates it,
-ordinary imports and re-exports included; it may have cycles. Qualification
-reasons about the first; the second bears on initialisation and binding,
-below.
+**Two graphs.** The **module graph** has a node for each implementation
+module the fragment lists and an edge for each resolved implementation
+import; its strongly connected components form a DAG, checked in dependency
+order, and a component's members are checked in the order of their
+locations (`interfaceComponents`). Each member's step reads only the
+entries published before it, so an import of a later member of its own
+component is read at its ordinary signature, and the reads at established
+entries form an acyclic graph. The **runtime module graph** is the modules'
+import relation as the host evaluates it, ordinary imports and re-exports
+included; it may have cycles. Certification reasons about the first; the
+second bears on initialisation and binding, below.
 
-**The documents.** The parser lowers its documents before any claim exists,
-so it lowers every module the qualified-dependency graph may need: every
-program module the checked file imports a function from, transitively,
-each under the checked file's TypeScript program and options and the run's
+**The documents.** The parser lowers every module the module graph may
+need before any check runs: every program module the checked file imports a
+function from (a value of one signature, of a guard's beside it, or of
+overloads, declared by a function declaration with a body), transitively,
+each under the checked file's TypeScript
+program and options and the run's
 [tag selection](HOST-FAMILIES.md#the-runs-selection), so that both readings
-of a declaration resolve alike. The fragment's required `modules`
-array ([the wire](FRAGMENT-FORMAT.md)) lists each once: its **artifact**,
-the module identity its declarations carry (`location`) and the `sha256` of
-the exact bytes lowered, then its declarations, top-level code and
-functions, as a file's own fragment holds them, its own identity written as
+of a declaration resolve alike. The fragment's required `modules` array
+([the wire](FRAGMENT-FORMAT.md)) lists each once: its **artifact**, the
+module identity its declarations carry (`location`) and the `sha256` of the
+exact bytes lowered, then its declarations, top-level code and functions,
+as a file's own fragment holds them, its own identity written as
 `location`. A function of such a module is a **unit**, named by its origin:
 the module's artifact, the declaration's span and its name. Origins come
-from the parser's resolution and snapshot, never from a claim of the
-producer's. The claims document's required `modules` array holds one claims
-document per fragment module, over that module's own type table, and the
-importer's claims list the imports it reads qualified (`qualified`), each by
-its declaration identity. A module run certifies its module's units for
-the importer's check; the census certifies each module's units in that
-module's own check.
+from the parser's resolution and snapshot.
 
 **Failure boundary.** A module function the parser cannot lower is absent
 from its module, with the parser's reason, and its module's other functions
 stay, but for those reading an absent function, which are absent with it,
 the read as their reason, until no function left reads one. A module whose
-declarations or top-level code cannot be lowered, or whose top-level code
-reads an absent function, is absent: its imports are read at their ordinary
-signatures. An absent function's code is checked by no run: an import of
-it is safe under the assumption that an imported value meets its
-declaration ([imported values](#imported-ambient-and-global-values), the
-[trust surface](DESIGN.md#trust-surface)). An import read
-at its ordinary signature is refused where that signature is not
-representable in full.
+top-level code cannot be lowered, or reads an absent function, has its
+top-level code left out: each name that code binds is absent, with that
+refusal as its reason, and so is each function reading one, and the
+document's initialization is empty. A refusal located in a function's code
+outside its lowering (a scan of the whole module, such as the globals it
+reads) leaves that function absent the same way, and the module is lowered
+again (`lowerModule`). A module refused elsewhere (its declarations, an
+import) is absent: its imports are read at their ordinary signatures. An
+absent function's code, and top-level code left out, is checked by no run:
+an import of an absent function is safe under the assumption that an
+imported value meets its declaration, and a function kept reads no name
+the code left out binds, so its own check establishes its entry whatever
+that code does to values beyond the module, which the same assumption
+covers ([imported values](#imported-ambient-and-global-values), the
+[trust surface](DESIGN.md#trust-surface); `absent-init-value-import`). A unit reading an import whose
+module's document leaves a name the read reaches unbound is refused, at
+`unbound name x in M, read through the import 'n'` (`unboundImports`). An
+import read at its ordinary signature is refused where that signature is
+not representable in full.
 
-**What a unit's certification covers.** A unit is checked in its module's
-run, as a run of that file alone checks it but for the run's tag selection,
-over that module's own type table: its module's initialisation (the existing initialisation unit and
-order, `Extraction.lean`), its own code at its claimed signature, the
-module's functions its code reads, and, recursively, every unit it reads
-at a qualified signature. So the certified set is the closure of the units
-the claims read qualified under the module functions they read, together with
-the module's initialisation, and, recursively, the same of every unit a
-module run's own claims read qualified; the module's other functions are not
-checked. Every other fact of its environment is an
-explicit assumption, the
-[import assumption](SOURCE-CONTRACTS.md#imported-ambient-and-global-values)
+**What establishes an entry.** One step per module
+(`establishStep`, `FragmentFront.lean`) plans the module over its own
+document and type table, reading the entries published before it, and
+gives each of its functions the footprint, on-throw flag and returned
+footprint its body's walk finds (`declarationEffects`, as for a file's own
+functions, [footprints](FOOTPRINTS.md#the-checked-callback-contract)). It checks with
+the single pass every group that the functions whose footprint is more than
+the ordinary effect reach, the module's initialisation where they reach a
+name it binds (the initialisation unit and order, `Extraction.lean`). A
+function's footprint is established where its group and, transitively,
+every group it depends on are accepted (`establishedUnits`); an
+established footprint is published as an entry where its function is laid
+out (`FilePlans.laidOut`) and the store-map check accepts the entry's
+interface rows (`moduleRowsAgree`). Every other function's entry is
+`ordinary`. Every other fact of a unit's environment is an explicit
+assumption, the [import assumption](#imported-ambient-and-global-values)
 its module's own run also makes. An initialiser that is not checked never
-supplies a qualified signature. Lean computes the closure and restricts
-each module's document and claims to it itself, whatever the producer
-chose.
+supplies an established entry.
 
-**Binding.** Lean reads an import at a qualified signature only where the
-importer's claims list it qualified and the documents hold a unit of its
-origin: the import's declaration identity names a module whose artifact
-the fragment lists, and a function of it whose name is the declaration's
-and whose name lies in the declaration's span. The unit is eligible: one
-declaration, binders of its own none, no rest parameter, no receiver, no
-guard and no promise. The two readings of
-its ordinary signature, the importer's declaration document's and the
-module's own annotation, are compared structurally, a mismatch refused:
-the parameter and result terms, and recursively every declaration either
-reaches, under the identity mapping of declaration identities: its equation,
-parameters and heritage, and the written applications listed in it, in the
-unit's own declaration alike, with their scopes, arguments and bounds. A
-declaration lowering reads by identity rather than through a reference
-(`ImplicitDependency`, the one list lowering selects them through) is
-reached as a reference's target is where a term reached needs it:
-`ArrayProto` for an array or tuple term, `%Stable%` and native `Promise` for
-a resolution-qualified binder. Symbol keys compare by the identity of their
-symbol's declaration rather than a document's index, and a visited set
-closes recursive definitions. Every field of a term takes part, array presence and host
-classification among them. Each of the following is refused, named by the
-unit's origin: a qualified read naming no unit, a unit of another origin, a
-unit not eligible, a structural mismatch, a module's claims about other bytes
-than its document's, and a module run whose check fails. The
-importer's evidence and the units' are checked by one `--check-units` run,
-whose module-run units are the module documents, so the evidence that
-certifies the effect is evidence about that declaration's code, not about a
-name.
+**Binding.** Lean reads an import at an established entry only where the
+read is eligible and its module's interface, over the same module document,
+publishes an entry for the read's function. The two readings of its
+ordinary signature, the importer's declaration document's and the module's
+own annotation, are compared structurally, a mismatch refused
+(`sameReading`): the parameter and result terms, and recursively every
+declaration either reaches, under the identity mapping of declaration
+identities: its equation, parameters and heritage, and the written
+applications listed in it, in the unit's own declaration alike, with their
+scopes, arguments and bounds. A declaration lowering reads by identity
+rather than through a reference (`ImplicitDependency`, the one list
+lowering selects them through) is reached as a reference's target is where
+a term reached needs it: `ArrayProto` for an array or tuple term,
+`%Stable%` and native `Promise` for a resolution-qualified binder. Symbol
+keys compare by the identity of their symbol's declaration rather than a
+document's index, and a visited set closes recursive definitions. Every
+field of a term takes part, array presence and host classification among
+them. The entry carries its function's interface type as rows of its
+module's store; the importer reads the entry only where the store-map
+check from those rows to the type its own store reads the import at
+accepts, and a refused read refuses each unit reading the import, at
+`signature rows differ` (`FilePlans.refuseRows`). So the footprint the
+importer reads is the one its declaration's code establishes in its own
+module's check. A store map relates two stores' built-ins only where both
+state them, so a module's document, and the document of a file importing
+one, list `ArrayProto` whatever their code writes. Both stores read every
+symbol key at its canonical number, a function of the `unique symbol`
+declaration's identity (`Fragment.canonicalSymbols`): a component's request
+and an importer's fragment are renumbered as they are read, each module
+document with its own symbol list, and documents read together in which two
+identities share a number are refused (`Fragment.symbolNumbersApart`). So a
+symbol has one key in every store, and one key is one symbol. The check
+relates a clause to an image clause up to the order of a record's or a
+dictionary's conjunctions, which a meet lists in its parts' order, and up to
+the order of an operand's members (`StoreMaps.Reordered`,
+`semWithArgs_reordered`;
+[store maps](SINGLE-PASS-THEOREM.md#signature-agreement-across-two-stores)).
+The row check is incomplete for unions with two members of one row shape,
+for qualified schemes, and for two conjuncts of one key paired in the other
+order: such a read is refused at `signature rows differ`. Measured 2026-11-12 (CPU, best of 5 alternating
+runs at load 18–22, without and with the rows): the cases' module stages
+563 → 908 ms over 22 components, their interface documents 2.36 → 5.65 MB.
 
-**The ordinary signature is kept.** The unit is checked at its annotation's
-signature with the effect added, its annotation obligations retained, as
-[elaboration](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification) states
-for a module function. The importer reads the import as the unit's module
-reads it (`moduleArrow` of the unit's annotation, with the footprint and
-on-throw flag its claim states), which the structural comparison makes its
-own declaration's signature with that effect. Its code is then known to
-discard further actuals, so it may be passed where a signature binding more
+**The ordinary signature is kept.** The function is checked at its
+annotation's signature with the effect added, its annotation obligations
+retained, as
+[elaboration](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)
+states for a module function. The importer reads the import at its
+declared signature with the entry's footprint, on-throw flag and returned
+footprint (`importedArrow`), which the structural comparison makes the
+module's own signature with that effect. Its code is then known to discard
+further actuals, so it may be passed where a signature binding more
 parameters is expected.
 
-**Inference.** OCaml proposes each module's effects as it proposes a
-file's own (the greatest fixpoint over that module), then the importer's
-claims at them. No effect
-follows from a comment, a name or a module's role. The pipeline lists
-qualified each eligible read whose unit has claims. Where a unit's search or a module's check refuses a read or a module run, its footprint refuted or its
-initialisation unchecked, the pipeline withdraws the refused reads or module runs, proposes the importer again, and the import is read at its
-ordinary signature. A module run's refusal at a span within a function of
-the module that the round reads withdraws that read alone, the module's
-other reads kept (`functionAt` in `pipeline/verify-source.mts`); a refusal
-at no such function withdraws the module's every read. Each unit of the importer and its modules is searched over its own slice
-(`--produce-unit`), a refusal of each unit its own.
-Before proposing the importer at its
-reads, the pipeline plans them (`--plan-imports` over the reads and the
-modules' claims) and withdraws every read the plan refuses in one round:
-a refused plan states, after its first refusal, each other read of the
-importer, and of each module an admitted read names, whose two readings it
-refuses (`planRefusals`), a line each. Each read is checked on its own, at
-that round's documents and claims, as `planImports` checks it. The plan reads of the importer's claims only the list of its
-qualified reads, so its answer is the search's at those reads. The final check is one
-`--check-units` run over the whole document, a verdict per unit. Dense `map` needs a callback
+**The run.** The pipeline first checks the importer with every import at
+its ordinary signature (`verifyWithInterfaces`,
+`pipeline/module-interfaces.mts`); a unit that verifies so needs no
+module's entry. Where that check refuses a unit, it computes the
+interfaces of the components the importer's reads reach, each a process
+stage of [the stage store](STAGE-STORE.md#replay-and-trust)
+(`--module-interface-plan`, `--module-interface`), and checks the importer
+again over them (`--verify-interface-stage`). An entry not established
+leaves its import at the ordinary signature. Dense `map` needs a callback
 footprint that keeps dense prefixes
 ([FOOTPRINTS](FOOTPRINTS.md#the-stable-set-for-density)).
 
-**What the theorem states.** `SourceClaimJson.checkUnitJson_safe` states, for
-each unit the check accepts, over its document's frozen store: for a module
-run, safety and its footprint for every certified unit of that document's
-certified set; for a unit of the importer, safety and its footprint for its
-certified requests; each under `EnvOk` of its own inputs, the qualified
-import among the importer's, and under `WorldAdm` and `HeapOk`.
-It does not construct a module's environment, prove that initialisation
-succeeds, or prove that the value an import binds at run time meets the
-qualified signature: those are the linking obligation's.
+**What the theorems state.** `SourceClaimJson.PassUnit.mode8Accepted_sound`
+(`PassUnitRun.lean`) states, for each group a mode 8 check accepts, the
+importer's and each module step's alike, that every member's plan crosses
+the exhaustive certification and its request is safe (`PassUnitSafe`):
+safety, its footprint and its stated assertions, from every entry meeting
+its inputs, a certified import's slot at its entry's type among them. The
+interface's entries and rows are free inputs of that theorem. The
+cross-module theorem `crossModule_safe` (`PassUnitCross.lean`) states that
+an importer's laid-out functions meet their interfaces, each import read at
+an established entry discharged by its module's step, under the hypotheses
+it names: the publication order (`ReadsEarlier`), each published entry's
+step and layouts, the chosen slots, and the declared, stand-in, host and
+module-cell slots met; `established_of_provenance` gives the steps from the
+replay's provenance (`InterfaceProvenance`, a trusted boundary of the
+[stage store](STAGE-STORE.md#replay-and-trust)) and the steps' fold
+(`EstablishProvenance`). Neither theorem constructs a module's environment,
+proves that initialisation succeeds, or proves that the value an import
+binds at run time is the module's function value: those are the linking
+obligation's.
 
 **The linking obligation.** The conclusions combine into safety of the
-linked program under a runtime invariant: at every qualified read, the
-binding holds the certified unit's closure, whose captures meet its input
-contracts in the current heap and world, and the module's initialisation and
-all execution after it preserve that. The eligibility rule makes the first
-half a property of the parser's resolution and of the host's module loader
-(an exported declaration never reassigned holds its closure once its module
-is evaluated); the second is the obligation of
+linked program under a runtime invariant: at every certified read, the
+binding holds the unit's closure, whose captures meet its input contracts
+in the current heap and world, and the module's initialisation and all
+execution after it preserve that. The eligibility rule makes the first half
+a property of the parser's resolution and of the host's module loader (an
+exported declaration never reassigned holds its closure once its module is
+evaluated); the second is the obligation of
 [module composition](../WORK.md#module-composition) for units certified
 against each other's signatures, on which the units of one module rely too.
 A dependency whose initialisation throws stops the importer's evaluation:
@@ -659,7 +703,7 @@ review obligation, listed with the import assumption and in the
 [parser, extraction, declared-types and host bridges](TRUST-REDUCTION.md#the-bridges).
 
 **A catch.** A certified import's footprint holds on normal return, and on
-a throw where its effect states `onThrow`
+a throw where its entry states `onThrow`
 ([exceptional footprints](SOURCE-ELABORATION.md#exceptional-footprints)).
 
 ## One equation per declaration
@@ -708,7 +752,7 @@ binders and a bounded binder's meet each become a head whose template lifts
 the owned parameters it names to arguments. Every unit of a file grows the
 one store in turn, and once extraction is done the heads are validated
 (`Equations.ofRaw`) and every request is checked over their
-`Equations.graph` (`SourceClaimJson.freezePlans`).
+`Equations.graph` (`fragmentPlansWithModules` in `FragmentFront.lean`).
 
 ### Block-scoped type declarations
 
@@ -858,7 +902,7 @@ keys ([literals a spread copies](SOURCE-ELABORATION.md#literals-a-spread-copies)
 which the closure's code is then checked at
 ([generic closures](CALLABLES.md#overloads-polymorphism-and-binding)). In
 **module-scheme**, $`g`$ is a generic module function, certified at every
-assignment of its binders (`Parametricity.accept_reassign`), or an import,
+assignment of its binders (`TolerantFrames.nodeChecked_reassign`), or an import,
 assumed at its declaration: either way it meets $`\vec A\to R`$ at each
 instance within $`\vec\beta`$, which is membership in the scheme row. Its slot
 reads each binder as its meet with its bound, as a closure's scheme does
@@ -893,7 +937,7 @@ a union of schemes is met by a member of either arm. So `identity<T>` meets
 returning a string at every type argument meets only the second.
 
 **Admitted instantiations.** A call of a scheme-typed value is typed at one
-instance $`\vec p\mapsto\vec\theta`$ the claims name, each $`\theta_p`$ a type
+instance $`\vec p\mapsto\vec\theta`$ the walk computes, each $`\theta_p`$ a type
 of the graph of its binder's kind and within its bound, checked by the
 instance rule ([instances](POSITIVE-TYPES.md#instances-of-a-scheme-row),
 [claims](SOURCE-CLAIMS.md#quantified-callables-and-their-eliminations)): a
@@ -910,8 +954,9 @@ row equations, the body's operands read below the level, and it exists
 whatever the families range over (`QInv`, admissibility of
 `schemeSemWithArgs`); every type's meaning, a scheme row's included, is such a
 family (`mixedMeaning_valid`), so it is an instance. Decidability comes from
-the checker comparing the instance a claim names, never searching instances
-over schemes. A construct scheme has no instance rule: a value of a generic
+the checker comparing the one instance the walk computes for the call
+(`instancesFromWalk`), never searching instances over schemes. A construct
+scheme has no instance rule: a value of a generic
 constructor type is stored and compared, not constructed
 ([model limits](SOURCE-FRAGMENT.md#model-limits)).
 
@@ -940,7 +985,7 @@ signatures. The field's own signature is not added to the method: TypeScript
 admits a method where a function-typed field is expected with its parameters
 compared bivariantly, so the field's parameter types do not bound what the
 method accepts. The meet is a row of its own where it differs from the
-model's (`meetOf`), so a producer's `{"meet": ...}` label is read the same
+model's (`meetOf`), so a `{"meet": ...}` label is read the same
 way. An intersection mentioning a type parameter is the model's meet at each
 instance, which owns such a field; one whose operands' rows show a key both
 as a method and as a field is refused (`invalid-spread-intersection-method-generic`,
@@ -998,9 +1043,9 @@ waiting. A meet row is below each of its parameters, so
 it establishes what each does. At an instance $`p_1:=U_1,\ldots,p_k:=U_k`$ it
 means $`\mathsf{meetLists}(G(U_1),\ldots,G(U_k),\vec c)`$ (`meetOk`, the meet
 folded left to right, or in the reverse order), which is exactly what lowering
-the intersection at $`\vec U`$ gives. A producer names a meet it does not compute by
-an intersection label in its claims ([`{"meet": ...}`](SOURCE-CLAIMS.md#encoding)),
-whose row Lean fills with `meetRow`.
+the intersection at $`\vec U`$ gives. A meet named by an intersection label
+([`{"meet": ...}`](SOURCE-CLAIMS.md#encoding)) has its row filled by
+`meetRow`.
 
 A generic body's bounded binder is interpreted as the intersection of its
 parameter row and its declared bound. The bound may contain other parameters
@@ -1175,8 +1220,8 @@ $`B`$:
 since every admitted $`T`$ lies within $`N`$ and exactness applies
 (`SourceResolution.stableAliases_sound`). The body check reads $`O_T`$ and
 $`R_T`$ as the row a body reads $`T`$ at, the meet of $`T`$ and $`B`$, when it
-compares two types (`ProgramCertificates.lexicalBodyCheck`), and proof search
-proposes such comparisons. `Awaited<T>` and $`T`$ are then interchangeable in
+compares two types (`ProgramCertificates.lexicalBodyCheck`). `Awaited<T>`
+and $`T`$ are then interchangeable in
 the body of `back<T extends number>(v: Awaited<T>): T`, while a bound admitting
 a promise, or no bound, keeps them apart, and a call still checks the bound
 (`generic-promise-bounded-result` and its negatives in
@@ -2004,7 +2049,7 @@ An intersection whose meet is empty (`string & { a: number }`, a function and
 an array, `number[] & { map: number }`) has no value, though TypeScript keeps
 such a type (a branded primitive). As an arm of a union it adds nothing:
 emptiness is decided for the union as written, its arms read together
-(`unionOfArms`, for annotations and producer claims alike), so
+(`unionOfArms`, for annotations and computed types alike), so
 `number | (number & { brand: symbol })` is `number`. A type with no value as a whole
 is refused rather than verified vacuously:
 
@@ -2355,8 +2400,7 @@ read at the arguments before it, $`\sigma_j=\delta_j[\vec X:=\vec\sigma]`$. A
 reference in a declaration's equation, in the client's annotations, in a
 library overlay and in each entry carries every argument so completed; a
 definition states only whether each parameter has a default, and the
-verifier and the producer read a reference at exactly its declaration's
-arity.
+verifier reads a reference at exactly its declaration's arity.
 
 An entry states, per parameter, its completed argument and its bound read at
 the arguments, $`\beta_i[\vec X:=\vec\sigma]`$: the front end reads the
@@ -2877,9 +2921,7 @@ argument order, holes and mutation of fresh removed storage.
 A reviewed signature's optional rest element passes through the same
 `TypeTerm` function contract as declared variadic functions. Its fixed
 parameters, receiver, result and effect travel with it through instantiation
-and checking. Forged claims widening splice's rest or erasing its
-receiver-store exception are refused in evidence production and consumption.
-The standard constructor/species, numeric-data and prototype restrictions
+and checking. The standard constructor/species, numeric-data and prototype restrictions
 below apply to both overloads.
 
 Native array results rely on the ordinary-construction invariant: an array owns
@@ -3271,14 +3313,13 @@ collected bounds only which calls it serves. A call of a string's `split`,
 its receiver's type deciding as for a primitive's prototype, collects the
 array prototype its result's members need; a structural `split` does not
 (`tests/trusted-inputs.mts`). Its result's store contract has
-a required position, which forbids a removal, so the producer proposes the
-form only for a call whose result nothing shrinks (`Source.unshrunk`): read
-by index at once, or bound to an unannotated constant every use of which
-reads it (an element, its `length`, a member that reads, an iteration),
-directly or as a conditional's arm; any other call takes the general form,
-and Lean checks whichever is proposed: a shrunk, aliased or annotated result
-forged at the non-empty form is refused in search and in checking
-(`pipeline/test.mts`). It has no limit parameter, so a
+a required position, which forbids a removal, so the walk types a call at
+the overloads without a required result position where a later statement
+aliases the unannotated constant holding its result or calls a member that
+mutates it (`Synthesis.generalArrayUse`, `generalArrayCallee`), a result
+held at an annotation is read at it, and the pass checks whichever form a
+call is typed at (`split-non-empty`'s `popped`, `aliasShrunk` and
+`annotated`). It has no limit parameter, so a
 call passing a limit takes the general form: a limit is not stated, since a
 numeric literal of at least `1` does not exclude `[]`, `ToUint32` reducing it
 modulo $`2^{32}`$ (`split(",", 4294967296)` is `[]`). A `RegExp` separator
@@ -3289,8 +3330,7 @@ literals, a conditional's arm, results popped, aliased and annotated),
 `invalid-split-empty-separator`, `invalid-split-limit` (beside a stated form
 for the same separator), `invalid-split-string-separator`,
 `invalid-split-alias-shrink`, `invalid-split-element-write`, each with a Node
-run, and a separator forged at `string`, refused in search and in
-checking (`pipeline/test.mts`).
+run.
 
 What is proved and what is audited:
 
@@ -4848,8 +4888,7 @@ through `process` or through the process a registration returns
   the checked callable type $`(\mathtt{number})\Rightarrow\mathtt{unknown}`$ or
   $`(\mathtt{string})\Rightarrow\mathtt{unknown}`$, stating no effect; a
   listener of another parameter type is refused
-  (`invalid-collections-process-listener`, and with borrowed claims and
-  evidence in `pipeline/test.mts`). Registering emits `newListener`, and
+  (`invalid-collections-process-listener`). Registering emits `newListener`, and
   `once`'s removal `removeListener`, synchronously: the call states no
   effect, its throw included, and returns the process. An event known only as
   a string, a meta-event, or an event no entry lists (`message`) is refused
@@ -5436,7 +5475,7 @@ under Node). A message is stated at `string`.
   $`\forall T.\ (\mathtt{unknown},\ T,\ M)\Rightarrow\mathtt{void}`$, the empty
   footprint on normal return. `Object.is(a, e)` makes $`a`$ the value $`e`$, of
   type $`T`$; that promise, $`(\mathtt{unknown},\ T,\ M)\to T\,[\mathsf{asserts}\ 0]`$,
-  is not stated, as the producer encodes no generic promise signature. `notEqual`:
+  is not stated. `notEqual`:
   $`(\mathtt{unknown},\ \mathtt{unknown},\ M)\Rightarrow\mathtt{void}`$, the empty
   footprint on normal return.
 - `assert.deepEqual(a, e, m)` (`deepStrictEqual`) and `notDeepEqual` compare
@@ -5821,14 +5860,13 @@ non-thenable bound.
 A `Promise` or `PromiseLike` argument of an imported, ambient or library
 signature implies the bound $`N`$ on the type parameters it names, and
 `Awaited<T>` in a source signature qualifies $`T`$
-([implied bounds](#implied-bounds)). The producer proposes intrinsic
-arguments from the operand, receiver and expected result. Its union inference
-assigns operand parts to matching structured arms or the bare binder; an
-unused arm contributes `never`. When comparing named result types, context
-supplies missing candidates while retaining those supplied by arguments,
-including `never` for an unused arm. This proposal heuristic assumes no
-variance of the named type: Lean checks the complete substituted parameter,
-result and binder bounds before accepting an instance.
+([implied bounds](#implied-bounds)). The walk proposes intrinsic
+arguments from the operand, receiver and expected result
+(`instancesFromWalk`, each binder matched by `Synthesis.matchBinder`): in a
+union, each operand label goes to the first member mentioning the binder
+that it matches, the bare binder last. This proposal assumes no variance of
+the named type: Lean checks the complete substituted parameter, result and
+binder bounds before accepting an instance.
 A `Promise` method's binder written beside a promise of itself is inferred
 the same way: `then`'s callback returns `TResult1 | Promise<TResult1>` and
 `catch`'s `TResult | Promise<TResult>` (each a `PromiseLike` in TypeScript's
@@ -5840,7 +5878,7 @@ primitive $`V`$, instantiates the binder at $`U`$ or $`V`$:
      {\mathit{TResult}:=U\mid V\ \ \text{at}\ \ (\vec A)\Rightarrow\mathit{TResult}\mid\mathsf{Promise}\langle\mathit{TResult}\rangle}
 ```
 
-The instance is the producer's proposal, checked as any instance of a
+The instance is the walk's proposal, checked as any instance of a
 scheme ([`compareInstArrsState`](POSITIVE-TYPES.md#instances-of-a-scheme-row)).
 Background: [promises and flattened types](REFERENCES.md#promises-and-flattened-types).
 
@@ -5910,7 +5948,7 @@ for every $`A`$. The argument:
 - a class's base is a class of the same file (`invalid-tag-ambient-base`
   refuses a declared one), so the chain holds only such prototypes.
 
-`checkUnitJson_safe` does not depend on it: the theorem gives the modeled safety
+`mode8Accepted_sound` does not depend on it: the theorem gives the modeled safety
 of every accepted unit under its premises, and the exclusion is part of the
 correspondence between that model and JavaScript, beside the native-promise
 invariant on the [trust surface](DESIGN.md#trust-surface). Promises come from
@@ -5972,13 +6010,12 @@ qualifies its binder through an alias as written ([implied bounds](#implied-boun
 This reading covers the native `Promise` declaration; it is no audit of the
 `PromiseLike` positions of imported signatures.
 
-The forged controls (`pipeline/test.mts`) refuse a document whose tag is
-renamed or dropped, stated of another prototype or of a base's, whose
-native `then` names `PromiseLike`, or whose allocation is keyed by the tag; a
-declaration given the native methods without the tag; claims putting a
-thenable at each resolving operation's instance, claiming an allocation with
-a callable `then` as a `Promise<number>`, or a key-adding write's key at
-`symbol`.
+The forged controls (`tests/single-pass-controls.mts`, "forged
+declarations: the Promise tag") refuse a document whose tag is renamed or
+dropped, stated of another prototype, of a base's or of a callable
+prototype, whose native `then` names `PromiseLike`, or whose allocation is
+keyed by the tag, and a declaration given the native methods without the
+tag.
 
 ## Enums
 
@@ -6106,8 +6143,7 @@ enum object's index signature `[x: number]: string` (`string | undefined`
 under `noUncheckedIndexedAccess`). A string member has no reverse key
 (`invalid-string-enum-reverse`). Each negative but the declaration file's
 runs under Node, the ambient one over an object without the reverse
-mapping; claims bypassing the producer that read a reverse key at `number`
-or of an ambient enum are refused (`pipeline/test.mts`).
+mapping.
 
 ## Const assertions
 

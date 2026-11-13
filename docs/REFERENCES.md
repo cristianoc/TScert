@@ -95,7 +95,7 @@ John C. Reynolds. *Types, abstraction and parametric polymorphism.*
 Information Processing 83, Proceedings of the IFIP 9th World Computer
 Congress, pp. 513–523. North-Holland, 1983.
 
-**Used for** the idea behind `Parametricity.accept_reassign`: a checker that
+**Used for** the idea behind `TolerantFrames.nodeChecked_reassign`: a checker that
 never inspects how a type parameter is interpreted accepts a generic body at
 every interpretation, so one derivation covers every instantiation.
 **Discussed in** [DESIGN: generic bodies](DESIGN.md#generic-bodies),
@@ -809,7 +809,7 @@ programming language.* CADE-28, LNCS 12699, pp. 625–635, Springer, 2021.
 [doi:10.1007/978-3-030-79876-5_37](https://doi.org/10.1007/978-3-030-79876-5_37).
 
 **Used as** the authority: the model, the rules, their soundness proofs and
-the checker that consumes producer evidence.
+the type computation and the single pass that checks each unit.
 **Discussed in** [DESIGN: what "verified" means](DESIGN.md#what-verified-means).
 
 ## TScert issues

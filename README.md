@@ -43,7 +43,7 @@ Abridged output (offsets refer to the example file):
 ```text
 "status": "unverified"
 reject: source expression obligation at [219,228): evidence search failed: no derivation of its return-contract claim
-obligation: The available claim for xs[n - 1] is undefined | string. This return requires string.
+obligation: its operands' claims are undefined | string; its claim is string
 ```
 
 With the result type stated honestly, `string | undefined`, TScert accepts it.
@@ -87,13 +87,13 @@ Each is a pipeline case:
 </picture>
 
 A front end on TypeScript's compiler API reads the source and the
-declarations it uses, and Lean plans its execution. An OCaml program, the
-*producer*, proposes the type of every expression and variable; its answers
-are *claims*, and none is trusted. Lean translates the function, with those
-types, into a small formal language (the *calculus*) whose execution and
-safety are defined in Lean. An untrusted search proposes a *certificate*, a
-derivation that the program meets its types, and the checker validates it
-against the same translation. [The stages](docs/DESIGN.md#stages) describe
+declarations it uses, and Lean plans its execution. Lean translates each
+function into a small formal language (the *calculus*) whose execution and
+safety are defined in Lean. A single forward pass over the translation
+computes the type of every expression and variable and the facts at each
+loop head (its *proposals*, none trusted) and checks, at every step, that the
+program meets them; a theorem states that a unit the pass accepts is safe
+([the single pass](docs/SINGLE-PASS.md)). [The stages](docs/DESIGN.md#stages) describe
 each step.
 
 ## What acceptance means
@@ -102,7 +102,7 @@ Acceptance proves, of the function's translation into the calculus, that for
 inputs and a heap meeting their declared types it does not get stuck and does
 not return a value outside its result type. It may throw or run forever. The
 theorem is
-[`checkUnitJson_safe`](lean/Verification/Source/Claims/Json.lean). Some things are
+[`mode8Accepted_sound`](lean/Verification/Source/Claims/PassUnitRun.lean). Some things are
 trusted rather than proved:
 
 - that the translation from TypeScript to the calculus is faithful (reviewed and
@@ -129,11 +129,10 @@ with the unsafe read, and a function that every flag accepts and that throws
 under Node. Bivariant method parameters are another unsound rule no flag closes
 ([`invalid-set-covariant.ts`](pipeline/examples/invalid-set-covariant.ts)).
 
-**What does a proof look like?** A certificate, checked by a program proved
-sound once. The front end lowers each function to a program graph, a producer
-proposes a type for each program point, a search derives those claims from the
-calculus's typing rules, and the checker validates the derivation
-([How it works](#how-it-works)). Nobody writes a proof by hand: a person or an
+**What does a proof look like?** A run of a program proved sound once. The
+front end lowers each function to a program graph, and the single pass
+computes a type for each program point and checks each step against the
+calculus's typing rules ([How it works](#how-it-works)). Nobody writes a proof by hand: a person or an
 agent runs TScert as they run `tsc`.
 
 **What does the proof assume about JavaScript?** No object is a proxy, standard
@@ -215,7 +214,7 @@ make check FILE=pipeline/examples/array-last-element.ts
 ```
 
 `make check` prints the outcome and the directory holding the run's documents:
-the source, the parser's output, the producer's claims and the certificate.
+the source, the parser's output and the pass's log.
 
 ## Develop
 
@@ -233,6 +232,8 @@ make help     # every target
 - [SEMANTICS](docs/SEMANTICS.md), [POSITIVE-TYPES](docs/POSITIVE-TYPES.md),
   [PROGRAM-TYPING](docs/PROGRAM-TYPING.md): the calculus, its types and its
   typing rules.
+- [SINGLE-PASS](docs/SINGLE-PASS.md): the single pass: what it checks, how
+  it walks a unit, the facts it proposes at loop heads, and its theorems.
 - [ARITHMETIC](docs/ARITHMETIC.md): the integer facts over values, lengths
   and bounds, and the clauses that state them.
 - [ANNOTATIONS](docs/ANNOTATIONS.md): every annotation TScert reads, with an

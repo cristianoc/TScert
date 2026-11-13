@@ -1,9 +1,9 @@
 # Fragment source format
 
-Fragment is the source syntax exchanged between the TypeScript parser, the
-OCaml claim producer and Lean. It carries expressions, statements, annotations
-and source identities. Execution plans specify their evaluation order;
-SourceClaims supplies proposed types at points in those plans.
+Fragment is the source syntax the TypeScript parser writes and Lean reads. It
+carries expressions, statements, annotations and source identities. Execution
+plans specify their evaluation order; Lean computes the types at points in
+those plans and checks them.
 
 This document owns the source wire format's conventions and its document
 fields. The constructor union, with every constructor's fields and its
@@ -13,8 +13,7 @@ evaluation order, is declared and commented in
 justified by calculus rules; [source contracts](SOURCE-CONTRACTS.md)
 interprets declarations and annotations. [SOURCE-CLAIMS](SOURCE-CLAIMS.md)
 owns the execution-plan and claim formats, and
-[REQUEST-PROTOCOL](REQUEST-PROTOCOL.md) owns extracted calculus requests and
-their certificates. [The fragment boundary](SOURCE-FRAGMENT.md) lists source
+[REQUEST-PROTOCOL](REQUEST-PROTOCOL.md) owns extracted calculus requests. [The fragment boundary](SOURCE-FRAGMENT.md) lists source
 restrictions.
 
 ## Source mode
@@ -23,7 +22,7 @@ The document (`Ast` in `fragment.mts`) has these fields:
 
 | Field          | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `file`         | Source file identity used by the claims and verification request.                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `file`         | Source file identity used by the verification request.                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `sourceSha256` | Digest of the source text parsed to obtain this document.                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | `declarations` | Resolved source type declarations and their dependencies, in the declaration-document format.                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `init`         | Module-initialization statements, in source order, run once after the function declarations exist.                                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -94,16 +93,21 @@ the required initialization order and available names.
 
 A mutable binding's storage contract is fixed for its allocated lifetime.
 For an annotated binding, the annotation supplies that contract. For an
-unannotated binding, the producer supplies a declaration contract keyed by its
-initializer span and name, which Lean checks against initialization and
-writes. Point-entry claims describe current contents within that contract.
+unannotated binding, the walk
+([Synthesis.lean](../lean/Verification/Source/Lowering/Synthesis.lean))
+computes a declaration contract keyed by its initializer span and name: the
+initializer's type widened as TypeScript widens a `let`, grown in at most four
+rounds where its writes need more. Lean checks it against initialization and
+writes. The types at a point's entry describe current contents within that
+contract.
 The [source elaboration rules](SOURCE-ELABORATION.md#mutable-bindings-and-module-constants)
 own the translation of `assign` and the field writes, and their obligations.
 A source span alone is insufficient to identify a point-specific contents
-claim.
+type.
 
-Expression annotations and proposed claim types have different encodings.
-Fragment annotations are source type terms. Bounded record atoms in claims
+Expression annotations and the types Lean states at points have different
+encodings. Fragment annotations are source type terms. Bounded record atoms in
+those types
 state read and write permissions; their encoding and invariant-arm absorption
 law belong to [SOURCE-CLAIMS](SOURCE-CLAIMS.md#record-alternative-absorption).
 An unsupported operand or union arm is refused, never discarded. The decoder
@@ -112,7 +116,8 @@ checks the complete contract before elaboration can use it.
 ## Expression closures and calls
 
 A `lambda`'s `result` is a source annotation or `null`; an absent annotation
-leaves the result type to a checked producer proposal, and `guard` carries a
+leaves the result type to the type the walk computes, which the pass checks,
+and `guard` carries a
 guard's promise as a function's does, `stated` its result annotation's
 statement, which a signature its code is checked at covers over the
 annotation's whole domain, and `completion` its completion kind as a
@@ -153,21 +158,22 @@ equality (`bin`), `typeofTest`, `arrayTest`, `inTest`, `instanceTest`, and
 `tagMember`, a family guard's call
 ([a guard on any argument](HOST-FAMILIES.md#a-guard-on-any-argument)). The
 execution plan evaluates their operands and selects the control-flow edge.
-The exported expression claim and each destination's entry claim are
-independently checked. An observation justifies only the refinements
-supported by the corresponding rule; a producer claim cannot establish a test
-result.
+The test's type and each destination's entry types are checked independently.
+An observation justifies only the refinements supported by the corresponding
+rule; a computed type cannot establish a test result.
 
 ## Verification boundary
 
-The [source commands](REQUEST-PROTOCOL.md#run-the-verifier) consume Fragment,
-SourceClaims and evidence. Lean reconstructs execution plans and extracted
-requests from the supplied syntax and claims. Source identity, declaration
-dependencies, claim sites, inputs, outputs and required obligations are checked
-before acceptance.
+The [source commands](REQUEST-PROTOCOL.md#run-the-verifier) consume the
+Fragment and the module interfaces of its imports. Lean computes the execution
+plans, the types at their points and the extracted requests from the syntax.
+Source identity, declaration dependencies, inputs, outputs and required
+obligations are checked before acceptance.
 
-The acceptance theorem proves safety of the extracted calculus programs under
-their input contracts. Faithful parsing, source evaluation order and the
+The acceptance theorem (`mode8Accepted_sound`) proves each member of an
+accepted unit safe: its extracted calculus program is safe from every entry
+meeting its input contracts and meets its stated footprint, result and
+assertions. Faithful parsing, source evaluation order and the
 interpretation of external declarations remain the review obligations named
 in [the trust surface](DESIGN.md#trust-surface). A well-formed Fragment document
 alone establishes neither source correspondence nor program safety.

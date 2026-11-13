@@ -1,10 +1,10 @@
 # Claim language and boundaries
 
-Diagnostics display producer claims and failed obligations, never trusted
-assertions. Source identity, claim identity, and proof checking remain separate.
+Diagnostics display the types the verifier computed and the obligations that
+failed, never trusted assertions. Source identity, claim identity, and proof checking remain separate.
 There are two explicitly typed representations: the structural claim text a
 diagnostic prints, which can state TypeScript shapes outside the calculus, and
-the native graph the claims document and the verifier use. Lifting a graph into
+the native graph the declaration document and the verifier use. Lifting a graph into
 the text fails rather than erasing a requirement.
 
 ## Structural claim text
@@ -45,8 +45,8 @@ modes. For example:
 Metadata holds only the mode fields `call`, `construct`, `array` and
 `indexes`, and `and` (a list of structural atoms for simultaneous
 requirements). The printer writes every nondefault mode, including `and`.
-Unknown producer shapes are shown as their exact JSON. `(unavailable)` marks
-an atom the producer could not express; it is not a type.
+An unknown shape is shown as its exact JSON. `(unavailable)` marks an atom
+its writer could not express; it is not a type.
 
 The text grammar is a claim language, not all TypeScript syntax. Syntactic
 expressibility is distinct from verification support: optional or multiple
@@ -62,11 +62,12 @@ shown by its name, and a label the table has no row for is shown as
 ## Native graph and term language
 
 `tools/type-graph.mts` declares the complete native `Clause`, `Arrow`, `Row`, and
-`TypeGraph` types, shared by the claims document and its producers. It mirrors
+`TypeGraph` types, shared by the declaration document's readers and the
+diagnostics. It mirrors
 `PositiveNormalization.Clause` as serialized by `RequestJson.lean`. Both rows and
 label lists denote unions; clauses retain all simultaneous field contracts and
 all ordered arrow domains/results. Labels have no implicit meaning in a general
-request graph. The claims document separately requires its primitive prefix.
+request graph.
 
 `decodeGraph` validates every constructor, field, and reference of the exact
 JSON syntax.
@@ -92,5 +93,4 @@ record is validated as program data rather than inferred from its expression;
 claim text; [OBLIGATION-DIAGNOSTICS](OBLIGATION-DIAGNOSTICS.md) owns the
 record and [its presentation](OBLIGATION-DIAGNOSTICS.md#presentation).
 TypeScript compilation (the `Front-end types` suite) checks these shared
-declarations against source extraction, the claims document and the
-diagnostic presentation.
+declarations against source extraction and the diagnostic presentation.

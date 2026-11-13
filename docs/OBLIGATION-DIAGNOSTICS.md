@@ -1,8 +1,8 @@
 # Obligation diagnostics
 
 This is explanatory metadata about an unsuccessful verification attempt, not
-proof evidence and not a judgement that a source claim is false. It plays no
-part in certificate checking.
+proof evidence and not a judgement that a computed type is false. It plays no
+part in the pass's verdict.
 
 ## Transport and identity
 
@@ -13,7 +13,8 @@ then one line on stderr:
 obligation-diagnostic: {"phase":"proof-search","outcome":{"kind":"not-established"},...}
 ```
 
-The human sentence of a failed graph search names the obligation: `source
+The human sentence of a refused graph obligation names it, at the source
+span the pass locates it at (`FilePlans.locatedRefusal`): `source
 expression obligation at [s,e): evidence search failed: no derivation of its
 <role> claim` for a node, `source incoming edge obligation at [s,e): … the
 edge from node N does not establish the claims at this point` for an edge.
@@ -21,60 +22,19 @@ edge from node N does not establish the claims at this point` for an edge.
 source-term account of the record below (which claim was available and what
 was required, or, for a term that is not a slot, its form and the claims of
 the slots it reads), so a refusal read in a log or a coverage row says why
-without opening the record.
+without opening the record. A line `single pass: refused: …` follows, the
+pass's own text (`TSCERT_PASS_REFUSALS=raw` prints it alone).
 
-### A failed search refused by name
+### A refusal named by TypeScript
 
-Where the cause of a failed search is known, `verify-source.mts` puts it first, as a
-line `reject: <reason>` before the verifier's own, which follow unchanged.
-The outcome stays the unverified search Lean decided on the ordinary
-proposal; the line only names why it found no derivation. Two sources give
-it, in this order:
-
-- The producer's explanation: `producer --explain` runs the ordinary
-  inference of the unit holding the failed obligation and prints, instead
-  of claims, the forms it met whose failure has a stated reason, each at
-  its source span
-  (`Proposal_diagnostics.explain`). The innermost one whose span meets the
-  failed obligation's names it. The forms and their reasons:
-  - a `for...of` loop or a spread over an iterable an arm of which is no
-    array: a host kind's iteration is stated (`%Iterate:K%`), and a loop over
-    a union of host kinds steps their union's iteration; a spread over such a
-    union, or a loop over a value of no host kind, has no intrinsic; an
-    iterable the program defines, or a union with one, runs the iterator
-    protocol;
-  - an open record or `unknown` that `Array.isArray` or `instanceof Array`
-    found an array, used as one: the object owns an array's store, which is
-    no proof that it is an array of `Array.prototype`;
-  - an array used as a record naming `length`, and a mutable tuple's
-    `length` at its arity;
-  - where a signature binding more parameters is expected: a function value
-    known only by its type, whose type states no rest, a module function
-    with a rest parameter, or a generic one;
-  - a named function where a signature indifferent to the receiver it
-    requires is expected: its type is its annotated signature;
-  - an instance of a declaration with generic methods at an instance of
-    another declaring them otherwise: quantified signatures are related
-    binding the same rows;
-  - a record at an index signature (TypeScript's implicit index signature);
-  - a mutable array or a writable field at a wider one (invariance);
-  - a `typeof` test, `??` or strict equality on a value of a type parameter
-    or `unknown`;
-  - a cell read at its contract: contents are stated only for primitives,
-    and forgotten across a step that may write them;
-  - a write adding a dictionary's key, a spread of a dictionary, and a read
-    of a key `in` found in a dictionary;
-  - an optional key found `undefined`, read at `undefined`;
-  - a non-null assertion on a read at a `for...in` key.
-- With `verify-source.mts --typescript-errors` (it loads the project
-  again), for code TypeScript refuses, the TypeScript error nearest the
-  failed obligation: `reject: TypeScript refuses this code too (line L, col
-  C: <message>); the pipeline follows TypeScript's types`. A refusal of the
-  parser's gate or of the producer, which names no obligation, is named the
-  same way by the file's first TypeScript error.
-
-Neither is a premise of anything: the explanation run's claims are
-discarded, and a failure no source names keeps the verifier's lines alone.
+With `verify-source.mts --typescript-errors` (it loads the project again),
+for code TypeScript refuses, `verify-source.mts` puts the TypeScript error
+nearest the refused obligation first, as a line `reject: TypeScript refuses
+this code too (line L, col C: <message>); the pipeline follows TypeScript's
+types`, before the verifier's own lines, which follow unchanged. A refusal of
+the parser's gate or of the front, which names no obligation, is named the
+same way by the file's first TypeScript error. The line is a premise of
+nothing, and the outcome stays the one the pass decided.
 
 `tools/diagnostic.mts` reads the record without parsing the
 human sentence. A record it cannot decode field by field, and a duplicate
@@ -90,43 +50,18 @@ IDs (`node:L`, `edge:L:I`, `expression:I`) are local to one function and
 attempt. A saved diagnostic is untrusted display data; it cannot establish
 verification status.
 
-### Where a proposal drops facts
-
-`producer --explain` also prints, for the unit it runs, each place where
-the proposal states fewer facts than before it, and each place that makes
-the unit's inferred footprint `store: any`. Every explanation has a `kind`:
-
-- `form`: a form whose failure has a stated reason, as above.
-- `facts`: a statement or expression past which the proposal states none
-  of the listed facts, and what dropped them: the change the statement was
-  given (which classes of locations it may alter, and whether stores are
-  kept, grown or changed), or the innermost expression for which the fact
-  analysis computes no change, a call with its callee's footprint. In this
-  run the dropped facts are carried on, so every later place that drops
-  them is listed too.
-- `footprint`: an expression for which no footprint is inferred, or a call
-  whose callee's footprint has `store: any`.
-
-A unit's check asked for them (`UnitSelection.losses`) attaches the `facts`
-and `footprint` explanations to the unit's result, and
-`dev/check-functions.mts` prints them under each refused unit, or under
-every selected unit with `--explain`. They describe the proposal: Lean
-decides each proposed fact, and a place listed here is where a fact a later
-obligation needs stops being proposed.
-
 ### Candidates left out
 
-A fact the producer supplies at a statement entry is a candidate, which the
-evidence search keeps where every edge into the entry establishes it
+A fact proposed at a loop head is a candidate, kept where every edge into
+the head establishes it
 ([source observation checkpoints](PROGRAM-TYPING.md#source-observation-checkpoints)).
-A refused graph's record lists in `candidatesLeftOut` every candidate the
-search left out of it: `{ "label", "sourceMap", "edgeFrom", "edgeSourceMap",
+A refused graph's record lists in `candidatesLeftOut` every candidate left
+out of it: `{ "label", "sourceMap", "edgeFrom", "edgeSourceMap",
 "fact" }`, the entry's node and source map, the node whose edge into the entry
 does not establish the fact and its source map (the entry's own, at the
 graph's entry, whose assumed knowledge does not), and the fact, an index atom
 over the entry's slots. `dev/check-functions.mts` prints each under the
-refused unit, with the edge. They are stated by the search about Lean's
-rules, where the explanations above describe the producer's proposal.
+refused unit, with the edge.
 
 ## Common fields
 
@@ -139,7 +74,7 @@ rules, where the explanations above describe the producer's proposal.
 | `types` | Finite table of rows, the store's projection onto the labels the record mentions (below); type lists in the record index this table. |
 | `names` | `[[row, spelling], …]`: a source-like spelling of each row that stands for an application, such as `Promise<number \| R>`, in row order, each row once. Absent when no row is named. |
 | `requiredResult` | Whole-function result type on graph diagnostics; absent on standalone expression obligations. |
-| `candidatesLeftOut` | On a graph search's diagnostics, each fact the producer supplied at a statement entry that the search left out ([below](#candidates-left-out)); absent on records no graph search makes. |
+| `candidatesLeftOut` | On a graph obligation's diagnostics, each candidate proposed at a loop head that was left out ([above](#candidates-left-out)); absent on other records. |
 | `id` | Local obligation identity, where available. |
 
 An exhausted subtype comparison is inconclusive. Generic module-call bound
@@ -157,9 +92,9 @@ inclusions; a failure carries the direction being checked. Explicit instance
 arguments use `scheme-elimination`. Both source spans in the record are derived
 from the located comparison by `SourceExtraction.subtypeFailure`.
 
-Coverage measurements count exhausted attempts separately. Proposal search
-retains this outcome through failed alternatives; an established alternative
-supplies the requested derivation.
+Coverage measurements count exhausted attempts separately. A step's search
+among alternative derivations retains this outcome through failed
+alternatives; an established alternative supplies the requested derivation.
 
 ### The label projection
 
@@ -218,8 +153,8 @@ in user-facing judgments.
 The decoder checks the record rather than trusting it: the labels lie in the
 record's graph, and the source map has exactly the judgment's span and no
 context. An unknown judgment variant is rejected. Displayed text, including the
-turnstile, is derived by one printer from the structured sides; no producer or
-call site can store arbitrary prose as a judgment. Unsupported source remains a
+turnstile, is derived by one printer from the structured sides; no call site
+can store arbitrary prose as a judgment. Unsupported source remains a
 separate `source-refusal`, with a mandatory source map and reason, and cannot be
 rendered as a failed semantic obligation or with a turnstile.
 
@@ -314,9 +249,8 @@ owns their interpretation.
 
 No recursive proof-search trace, minimal failing premise, or complete dependency
 graph is promised. Extraction, type-decoding and missing-claim failures use typed
-source locations. An independent certificate rejection is an internal error,
-because the producer just emitted evidence that its consumer rejects. A source map entry
-does not identify every contributing source claim or prove any premise separately.
+source locations. A source map entry does not identify every contributing
+computed type or prove any premise separately.
 There are no retained mutable-heap observations. A form with obligations of its
 own, as generics and overloads have, gets its own obligation roles rather than
 an `in / claim / out` triple or a role inferred by a reader.
@@ -329,11 +263,9 @@ certifies nothing. It is any of:
 
 - a subprocess killed by a signal, past its time limit, or exiting without
   its complete refusal record. A refusal record is the verifier's exit
-  status 1 or the producer's 2, with a first line `reject: …` or
-  `unsupported: …` and a last line `end of refusal`; each tool exits 3 with
-  a first line `error: …` on an operational failure, a file it cannot read
-  or write among them;
-- the producer's `--explain` failing or printing no explanations;
+  status 1, with a first line `reject: …` and a last line `end of refusal`;
+  the verifier exits 3 with a first line `error: …` on an operational
+  failure, a file it cannot read or write among them;
 - a failure of a file-system operation of the front end, each made in one
   module (`tools/files.mts`), other than a path naming nothing where that
   absence has a meaning;
@@ -358,8 +290,8 @@ panic](COMPILER-API.md#the-package-at-run-time).
 
 `presentObligation` (`tools/diagnostic-view.mts`) turns a decoded record into
 two strings: `summary`, a source-named sentence where the record supports
-one, and `searchOutcome`, whether the search was not established or
-exhausted, with the depth or the budget. A summary names the obligation
+one, and `searchOutcome`, whether the obligation was not established or
+its comparison exhausted, with the depth or the budget. A summary names the obligation
 from the record's structured fields, never from the human sentence:
 
 - a node or expression obligation on a slot: the slot's available claim and
@@ -376,4 +308,4 @@ from the record's structured fields, never from the human sentence:
 Types are printed in the claim language ([CLAIM-LANGUAGE](CLAIM-LANGUAGE.md)),
 lifted from the record's table to depth 3, a row the record's `names` lists
 shown by its name. The presentation describes the failed requirement, not a
-counterexample: search failure means not established, not refuted.
+counterexample: a refusal means not established, not refuted.

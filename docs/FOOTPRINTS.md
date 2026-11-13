@@ -152,8 +152,8 @@ A body is certified within a closed footprint $`\Phi`$ when every node outside
 a checked region with no normal exit runs within $`\Phi`$, from the heap the node starts in, on the
 locations below the heap the body started in; the runs compose by
 `Closed.Holds.trans_on` into the body's (`GraphCode.BoundState`,
-`goto_bounded`). Lean accepts a node (`compositionalChecked`,
-`nodeWithin_of_checked`) when it is:
+`goto_bounded`). The pass accepts a node (`SinglePass.footprintCheck`; proved:
+`TolerantFrames.footprintCheck_sound`, `nodeWithin_of_checked`) when it is:
 
 - an **inspection**: a read, test, arithmetic or allocation, an array
   literal's spread parts included, which read their stores' elements in
@@ -232,8 +232,8 @@ A signature stating `onThrow` bounds the throws leaving the invocation too
 ([effect-qualified contracts](SEMANTICS.md#effect-qualified-call-contracts)).
 A function's guarantee comes only from its checked body: a declaration's
 claimed footprint is checked against its graph (proved:
-`SourceExtraction.checkRequests_footprint_at`), a closure's against its code
-entry (`codeChecked_sound`), a class's construct signatures against its
+`PassUnit.ordinary_requestSafe`), a closure's against its code
+entry (`PassUnitCodes.codeSpec_of_guarantee`), a class's construct signatures against its
 constructor's code (`ctorGraph`); a [statement](SOURCE-ELABORATION.md#stated-effects)
 in a definition's annotation is certified from its code at the definition. A callable value carries its footprint
 through ordinary signature checking, substitution and application; an unknown
@@ -255,32 +255,39 @@ proved: `SourceExtraction.checkRequests_async`):
      {\Phi=\{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{store}{:}\,\mathsf{any}\}}\ \textsf{async-effect}
 ```
 
-The producer proposes each footprint, untrusted: a body's is the join of its
-nodes' (`footprint_expr`, `footprint_stmts` in `ocaml-producer/source.ml`),
-a variable write `{value: any, store: keep}`, the empty footprint in a
-declaration's body where the variable is a local its activation holds in a
-slot, which no location holds (a parameter or a binding of the body, no cell
-of it, `cellLocals`, and no name the module declares; `Source.slot_local`),
-and a field write `{value: any, store: keep}` where its
-object's claim gives every alternative the field as a required writable one
-holding source values (`Type_queries.source_field_write`, as Lean's typed
-write reads it), a call or construction the join
-of every signature its callee may take, a call its own typing claims at
-`never` the empty footprint, a `throw` in a closure not proposed on a throw
-the empty footprint, outside a `try` whose handler may return normally (the
-throw and its operand's nodes lie in the checked region with no normal
-exit; `map-throw-operand-footprint`, `invalid-map-throw-operand-caught`),
-an async definition none, and a method call,
-in a function's or a closure's body, on an object whose claim has several
+The walk proposes each footprint, untrusted (`declarationWalks`,
+`FragmentFront.lean`): a body's is the join of the changes its writes and
+its calls' instances make, by class of location (`Walk.valueChange`,
+`Walk.storeChange` in `Synthesis.lean`, as a function literal's effect is
+found): an assignment of a binding a cell holds `{value: any, store:
+keep}`, a binding its activation holds in a slot none (`cellLocals`); a
+field write `{value: any, store: keep}` where the field is a source field
+(`ExpressionEffects.sourceField`), a `length` write `{value: any, store:
+any}`; an element write `{value: any, store: grow}` (`targetWrite`); a call
+or construction its selected instance's footprint, everything where the
+instance excepts a receiver's store that is not fresh, and none where the
+instance's result is the empty type, outside a handler and an async body: on
+a normal return it changes nothing, its throw its signature's
+(`Synthesis.callChanges`; proposed so under a handler too,
+`TSCERT_FORCE=no-return`, refused over the `invalid-async-throw-only-*`
+cases and `invalid-method-effect-throw-caught`); a call of an unknown
+callee, an iteration and a finalizer change anything or bound no throw. It
+bounds the throws where none of
+its calls, iterations or finalizers leaves one unbounded. Callees are
+walked first, each caller reading the footprint found for it; a
+self-recursive function is walked with itself at `{value: keep, store:
+keep}`, then at what that walk found, until a walk finds no more than it
+assumed, three walks at most. An async function, a generic one, one with a
+rest parameter and one with a written effect keep what `fragmentClaims`
+gives them. A method call on an object whose type has several
 alternatives once each declaration it names is unfolded, with actuals that
-are names or literals none: the lowering may read and invoke its member in one
-node dispatched on the object (`Lowering.dispatchesCall`), which no bounded node rule above admits.
-A method call on a union of arrays none of which owns the member, the member
-claimed at one type, is not dispatched (each alternative reads it from the
-array prototype), nor is one on a union of hosts each holding the member as a
-method, generic (a scheme whose signatures take the declaration as receiver,
-as `forEachChild`) or not (`unionMemberHosts`); each is proposed as a call; declarations are proposed at the least
-fixpoint from the empty footprint (`ocaml-producer/proposal.ml`). Lean decides
+are names or literals, may be lowered to one node dispatched on the object
+(`Lowering.dispatchesCall`), which no bounded node rule above admits; a
+method call on a union of arrays none of which owns the member, the member
+at one type, is not dispatched (each alternative reads it from the array
+prototype), nor is one on a union of hosts each holding the member as a
+method, generic (a scheme whose signatures take the declaration as
+receiver, as `forEachChild`) or not (`unionMemberHosts`). Lean decides
 every node.
 
 ## Natives
@@ -335,7 +342,8 @@ object's fields are fixed at its allocation.
   `Closed.Holds.trans_on`.
 - **Fresh results.** Code claiming a fresh result is checked node by node,
   whatever its footprint, and each return returns a fresh value; its
-  postcondition then states it (`effectChecked`, `codeChecked_sound`). A
+  postcondition then states it (`SinglePass.footprintCheck`'s `outFresh`,
+`PassUnitCodes.codeSpec_of_guarantee`). A
   declaration states no fresh result.
 
 **In a regional body.** A body certified at stated store regions
@@ -435,8 +443,8 @@ under Node).
 **The regional check as a second certificate.** A unit's claimed footprint
 $`\Phi_c`$ has one entry point (`effectResult`), which tries its
 certificates in order: $`\Phi_c = \mathsf{top}`$ with no throw or fresh
-result promised; a pure graph; the node-by-node bound check
-(`compositionalChecked`); and, for a unit promising no fresh result, the
+result promised; a pure graph; the pass's walk at the bound, node by node
+(`SinglePass.footprintCheck`); and, for a unit promising no fresh result, the
 regional check with no regions at $`\Phi_c`$ (`regionalChecked`), its
 throws bounded where the unit claims $`\Phi_c`$ on a throw. A frame stating
 a store region is `top` to the node-by-node check (`Effect.footprint`); the
@@ -450,7 +458,7 @@ is the closed footprint itself:
 ```
 
 (proved: `ArgumentStoreRegionsWithin.nil_holds`; acceptance:
-`regionalChecked_at`, `checkRequests_footprint_at`). A unit an earlier
+`PassUnit.ordinary_requestSafe`). A unit an earlier
 certificate accepts runs no regional traversal. A record the body receives
 holds no fresh fact, so a region on its field is no store the body
 allocated (`invalid-stated-fresh-parameter`, run under Node).
@@ -510,26 +518,22 @@ that is not `@stable` is refused at the callee's entry
 (`invalid-stated-fresh-reassigned`, `invalid-stated-fresh-reassigned-throw`;
 Node prints `NaN` for `console.log(total([1, 2, 3]))` in each).
 
-The forged-table controls in `pipeline/test.mts` select those cases' caller
-`drain` alone, whose call uses the callee's declared region. They retain
-freshness across replacement of the mutable field by the parameter's array,
-also through a throwing call inside `try` and the subsequent `catch`.
-The transport check (`fieldsKept` in `checkNode`) refuses the retained fact
-in search and in evidence checking. With that check bypassed and the forged
-table retained, the same evidence is accepted; bypassing transport alone
-supplies no fresh-field fact. These mutations affect only the separate
-control executable (`pipeline/evidence-mutations.mts`).
+The transport check (`fieldsKept` in `checkNode`) refuses a fresh-field
+fact retained across replacement of the mutable field by the parameter's
+array, also through a throwing call inside `try` and the subsequent
+`catch`.
 
 `pop`, `shift`, `reverse` and `splice` change only their receiver's store and element
 contents, and `filter`, `map`, `flatMap`, `flat`, `slice`, `splice` and `split` allocate their
 result's store (audited: [native footprints](SOURCE-CONTRACTS.md#native-footprints)).
-Controls (`map-stable-fresh-store`'s negatives and `pipeline/test.mts`): an
-alias of the mapped array, a join of a fresh and an old array, a reassigned
-variable and a helper's parameter, each also at a result type admitting holes
-(`map-fresh-controls-sparse`), where a callback forged within
-`{value: any, store: keep}` is refused in search and in checking; a pop of the
-mapped array before a throw its handler catches (`invalid-map-handler-after-pop`);
-and a fresh result forged onto code returning its parameter. A fresh array
+Controls: `map-stable-fresh-store`'s negatives, an alias of the mapped
+array, a join of a fresh and an old array, a reassigned variable and a
+helper's parameter, each also at a result type admitting holes
+(`map-fresh-controls-sparse`); a pop of the mapped array before a throw its
+handler catches (`invalid-map-handler-after-pop`); and a fresh result
+stated of an identity function, refused at its unit
+("forged fragment: a fresh result stated of an identity function" in
+`tests/single-pass-controls.mts`). A fresh array
 popped inside `try` is refused with every node a handler covers, though its
 result is dense (`map-fresh-handler-refused`, a gap).
 
@@ -599,13 +603,8 @@ lower bounds of every length, the written array's included
 ([index facts](#index-facts), `IndexWrites.growOutput`, proved:
 `ExpressionEffects.writeStep_grow`).
 
-The producer proposes `{value: any, store: grow}` for an element write at a
-literal index or at a computed key every claim types as a number
-(`element_key`), and for a compound or logical assignment
-of a variable `{value: any, store: keep}` (`footprint_expr`). `map-stable-element-write`
-is the case; controls in `pipeline/test.mts` certify `keep` claimed at a
-required position, through search and checking, and refuse it at an
-optional one.
+The walk proposes `{value: any, store: grow}` for an element write
+(`Synthesis.targetWrite`). `map-stable-element-write` is the case.
 
 ## Element regions
 
@@ -657,14 +656,16 @@ fact too.
      {\Sigma\vdash a[k]:=v\dashv\Sigma',\ \mathrm{every}(z,t,\Phi)}\ \textsf{every-apart-write}
 ```
 
-The producer states $`\mathrm{apart}(x,y)`$ at a declaration of an array
-literal for every older array binding of the unit, and carries it across a
-statement writing no heap, a bounded write and a push of actuals writing no
-heap, as the rules keep it; Lean checks each entry's region facts on every
-edge into it. A fact naming a binding the statement assigns is dropped.
-Across a push, the producer translates a linear fact by the append relation
-where each other length it names is of an array apart from the receiver
-(`growFirst`). Cases: positives
+The separations at a unit's loop heads are inferred (`freshApartAt`,
+`RegionInference.lean`): the pairs of slots whose regions an allocation
+states apart, a literal's store apart from every array slot, carried along
+every edge to the slots whose mappings read them, those every predecessor
+carries; at each loop head, the pairs of array slots of an allocation whose
+array the loop writes an element of. Each is a proposal: Lean checks each
+loop head's region facts on every edge into it. A fact naming a binding the
+statement assigns is dropped. Across a push, a linear fact is translated by
+the append relation where each other length it names is of an array apart
+from the receiver (`growFirst`). Cases: positives
 `quantified-freshness-write` and `quantified-freshness-builder` (a fresh
 array written and pushed while a precondition's quantified fact is kept),
 `push-keeps-apart-lengths` (pretext's texts loop: `count === flags.length`
@@ -672,8 +673,10 @@ across `texts.push(…)`);
 negatives, run under Node, `invalid-quantified-freshness-field-alias`,
 `invalid-quantified-freshness-free-term` and
 `invalid-push-keeps-apart-lengths-alias` (a push into a parameter that may
-be the counted array); a forged control claims an alias
-apart from its array and is refused at the first entry claiming it.
+be the counted array); a forced proposal stating each side of such a pair
+apart from itself (`TSCERT_FORCE=head-apart` over
+`quantified-freshness-builder`, `tests/single-pass-control-inputs.mts`) is
+refused at that unit.
 
 **Store fields apart.** A constant holding an array literal's object has
 its store field apart from the store field of every older slot's array, a
@@ -721,7 +724,7 @@ only where both state the same parts (`PromiseWith.combine`); an ordinary
 arrow erases only a signature without a precondition (`Effect.plain`,
 `PromiseWith.erase`); binding keeps neither part (`Effect.keeps`), since a
 bound call does not pass the receiver the parts are about; graph code stating
-either is refused (`effectChecked`). `Array.prototype`'s members are invoked
+either is refused (`PassUnitCodes.codeConditions`). `Array.prototype`'s members are invoked
 with the array as their receiver (`xs.every(g)` reads the member and calls it
 with `xs`), so the parts are about the array.
 
@@ -761,17 +764,16 @@ within $`R`$ (`call-requires`, proved: `requiresTree_sound`, through
 the call's values its signature states follows from the knowledge at the call
 ([reads below the length](PROGRAM-TYPING.md#reads-below-the-length)); a write, a call beyond the empty
 footprint and a throw drop every atom, as they drop every heap fact. The
-search carries the atoms along edges, meets them at merges and seeds a cut
-with the atoms every entering edge carries; Lean checks every edge.
+pass carries the atoms along edges and meets them at merges; a loop head's
+atoms are inferred candidates (`HeadInference.lean`), each an obligation
+checked on every edge into the head.
 
 **Cases.** Positive: `blocker-every-promise`, `every-elements-map-join`,
 `every-elements-number`, `every-elements-sparse` (a receiver admitting
 holes, its result keeping them, run under Node). Negative, each run under Node: `invalid-every-elements-callback-call` and
 `invalid-every-elements-guard-call` (a callback or a guard beyond the empty
 footprint) and `invalid-every-elements-escape` (the fact gives the array no
-type). Forged controls in `pipeline/test.mts`: the declarations without the
-elements promise or at another predicate, a guard closure's claim stating
-either part, and the atom forged unconditional in the evidence.
+type).
 
 ## Index facts
 
@@ -829,22 +831,21 @@ without holes. Each is a pipeline case, with its Node run in
 | 6. a captured outer counter | `map-stable-outer-cell` | verified | a cell holding a number, `{value: any, store: keep}` |
 | 7. `xs.pop()` on the mapped array | `invalid-map-unstable-pop` | refused | `pop`, `{value: any, store: any}`: only the signature with holes applies, refused at the return contract |
 
-Forged-claim controls run through evidence production and consumption
-(`pipeline/test.mts`): a callback claimed within a footprint its body leaves,
-a declaration claimed within one its loop leaves, a class's construct
-signature claimed within one its constructor leaves, a dispatch claimed below
-its member's footprint, and an exhausted check reported as exhausted.
+A footprint check that runs out of subtype rounds is reported as exhausted
+("exhausted footprint check" in `tests/single-pass-controls.mts`).
 
 ## The acceptance theorem
 
-`SourceClaimJson.checkUnitJson_safe` keeps its premise (the CLI success
-condition) and its conclusion (safety of every accepted function), and states
-that each unit whose declaration claims a footprint other than
-`{value: any, store: any}`, run as its graph, returns with a heap its
-footprint relates to its entry heap and a value meeting its goal, a guard's
-promise included (proved:
-`SourceExtraction.checkRequests_footprint_at`). Footprints reach it through
-certified code entries (`ProgramCertificates.CodesSound`, `codeChecked_sound`)
+`SourceClaimJson.PassUnit.mode8Accepted_sound` (`PassUnitRun.lean`) takes
+the condition under which mode 8 accepts a unit's group and concludes
+`PassUnitSafe` of the group: each member's request is safe, and, where its
+declaration claims a footprint other than `{value: any, store: any}`, an
+on-throw bound or a fresh result, its graph, run from every entry meeting its
+inputs, returns with a heap its footprint relates to its entry heap and a
+value meeting its goal, a guard's promise included, and throws with a heap
+its footprint relates where it claims `onThrow` (`FootprintClause`,
+`PassUnit.lean`). Footprints reach it through
+certified code entries (`ProgramCertificates.CodesSound`, `PassUnitCodes.codesAccepted_sound`)
 and through trusted native contracts (audited).
 
 ## Deferred: extra precision
@@ -1000,9 +1001,8 @@ source diagnostics.
 
 The regional graph check is part of CLI acceptance: a function
 declaration's stated regions, `"x[*]"` and `"x.f[*]"` through a `@stable`
-field, are certified by it (`checkRequests_regional_at`, reached from
-`checkUnitJson_safe`), and the call effect on the claims wire carries them
-(`regions`).
+field, are certified by it (`RegionalClause` of `mode8Accepted_sound`'s
+conclusion), and a call effect carries them (`regions`).
 
 `GraphCodeSpec` states a code's effect at the receiver and actuals matching
 its entry frame (`FrameValues`), including the optional rest-store slot.

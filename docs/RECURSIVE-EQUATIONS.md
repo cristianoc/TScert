@@ -135,9 +135,9 @@ a proof that it computes correct images. Substitution is one instance of it,
 and the closure check of a finite table another. The interface also carries
 inclusions already proved in the graph, each with its proof at every
 parameter assignment; a comparison of one of them is established without
-comparing (`InstanceImageCheck.known`, `compareUsing_sound`). The check of a
-document holds none; the producer's own checks hold those its search
-established.
+comparing (`InstanceImageCheck.known`, `compareUsing_sound`). The single
+pass's checks hold those its earlier subtype requests established
+(`Answered.images`).
 
 ## 4. Subtyping
 
@@ -184,7 +184,7 @@ which is consistent with a linear bound but does not establish one. The
 steps are not one per argument: five questions of size 5 to 8 take 19 to 48
 steps, all by $`\textsf{Var}`$, while variances of components of 8 to 36
 members are computed. The measurement covers the checker's questions and
-the fallback searches, not the producer's proof search.
+its fallback searches.
 
 The source-value universe $`J`$ also supports the checked intersection rule:
 
@@ -502,8 +502,8 @@ Lowering turns the parser's declarations into definitions:
   its body.
 - **Generic members:** a generic method becomes a quantified signature in
   that body. A binder's declared default is no part of the signature: it
-  names the instance a producer proposes where nothing constrains the
-  binder, and a claim states every instance, which the checker checks
+  names the instance the walk computes where nothing constrains the
+  binder, and the pass states every instance, which the checker checks
   against the bounds.
 - **Units:** a generic function, closure, class or imported generic value
   is typed by a quantified signature of its own.
@@ -567,9 +567,9 @@ verifier.
 Every semantic premise of a rule is discharged by Lemmas 1–3 and Theorem 1
 from the definitions themselves.
 
-The acceptance theorem's premise is the exact success condition of the
-command-line checker. Its conclusion, safety of every accepted unit, is
-stated over the unit's definitions. A finite type graph is the case where
+The acceptance theorem, `mode8Accepted_sound`, has as its premise a unit's
+accepted verdict in the single pass (`Mode8Accepted`). Its conclusion, safety
+of every member of the accepted unit, is stated over the unit's definitions. A finite type graph is the case where
 no definition has parameters. The trusted boundary is the parser and the
 reading of declared types.
 
@@ -634,8 +634,8 @@ to parameters and quantified variables by position.
 
 The pipeline cases `non-regular-alias` and `invalid-non-regular-alias` lower an
 alias applied to a longer tuple at each level to one invariant head.
-`pipeline/test.mts` refuses by name, in forged declarations the parser
-does not write, a binder used both as an argument pack and as a value and an
+A control of [single-pass-controls.mts](../tests/single-pass-controls.mts)
+refuses by name, in forged declarations the parser does not write, a binder used both as an argument pack and as a value and an
 unguarded alias, where a nested method's own binder of the same name is
 accepted.
 

@@ -144,7 +144,7 @@ because another alias could store `false`.
 The semantic model handles recursive types using a **step index**, a natural
 number bounding how much execution an approximation describes. The safety
 result holds at every index. This mathematical index is separate from the
-resource budget used by proof search.
+checker's resource budgets, such as the subtype comparison's rounds.
 [Worlds and recursive types](SEMANTICS.md#computations-and-recursive-types)
 give the definitions and their relation to the cited step-indexed models.
 
@@ -447,9 +447,8 @@ contracts are separate signatures of one quantified callable; passing undefined
 selects the conversion-requiring contract. Existing subtyping and application
 rules suffice. Native conformance remains audited, not proved against ECMA-262.
 
-The native regression sources are also executed under Node. Source-contract
-erasure is tested against both verifier entry points using a forged producer
-proposal. These tests exercise premises and translation that the calculus
+The native regression sources are also executed under Node. These executions
+exercise premises and translation that the calculus
 safety theorem does not prove. Intrinsics are collected on demand from the operations the source uses.
 
 ## Calls

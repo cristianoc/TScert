@@ -1,19 +1,20 @@
 # Source elaboration
 
-Source verification requires evidence for the core judgments and a lowering of
-source operations that preserves their meaning. This document specifies that
-evidence search and the lowering of every source form: derived forms,
-statements, guards, iteration, patterns, mutable bindings, closures, the
-certification of inferred call effects and parameter initialization.
+Source verification checks the core judgments at every point of a unit's
+lowered program, and requires a lowering of source operations that preserves
+their meaning. This document specifies how a unit is checked and the
+lowering of every source form: derived forms, statements, guards, iteration,
+patterns, mutable bindings, closures, the certification of inferred call
+effects and parameter initialization.
 
 The prerequisites are the expression, graph and heap judgments in
 [Program typing](PROGRAM-TYPING.md), the operational language and worlds in
 [Semantics](SEMANTICS.md), and graph types and checked subsumption in
 [Positive types](POSITIVE-TYPES.md). Types are finite unions of graph labels;
 $`\Gamma`$ assigns types to variables, and $`\Gamma\vdash_G t:A`$ is the core
-judgment for a term $`t`$ in graph $`G`$. Supplied point claims fix a graph node's
-entry context and expression result type; every incoming edge must justify that
-context. Declaration and library contracts used by lowering are specified in
+judgment for a term $`t`$ in graph $`G`$. The types the walk computes at a
+graph node fix its entry context and expression result type; every incoming
+edge must justify that context. Declaration and library contracts used by lowering are specified in
 [Source contracts](SOURCE-CONTRACTS.md). The source fragment and refusal
 boundaries are specified in [Source fragment](SOURCE-FRAGMENT.md).
 
@@ -34,72 +35,80 @@ following, in one change:
    rather than adding an approximate one. A new
    executable field on an existing constructor is audited on every lowering
    and certification path: each path executes it or refuses it, located.
-4. **Claims and labels.** Whatever the producer claims about the form is
-   in [the claims wire](SOURCE-CLAIMS.md), and Lean checks it.
+4. **Types and labels.** The walk computes the types the form's
+   expressions and bindings take
+   ([checking a unit](#checking-a-unit-in-one-pass)), and the pass checks
+   each of them.
 5. **The refusal index.** Each part of the form that stays refused has a row
    in [the fragment boundary](SOURCE-FRAGMENT.md#fragment-boundary): the
    construct, the reason, the owning section and the cases.
 6. **Cases and controls.** Positive and negative pipeline cases
-   (`pipeline/cases.mts`), and forged-claim controls (`pipeline/test.mts`)
-   for which program point a claim attaches to, which no proof covers.
+   (`pipeline/cases.mts`), and controls (`tests/single-pass-controls.mts`)
+   forcing a wrong proposal of the walk (`TSCERT_FORCE`) or forging the
+   Fragment, for which program point a type attaches to, which no proof
+   covers.
 7. **A Node counterexample.** Each negative case whose refusal guards
    JavaScript behaviour runs under Node (`tests/node-runs.mts`) and shows
    the behaviour the refusal excludes.
 
-## Producing evidence from supplied claims
+## Checking a unit in one pass
 
-The producer selects checked effects and propagates their postconditions along
-single-predecessor administrative paths within a statement. A source entry is
-seeded with its required knowledge and the facts the producer supplies there,
-without waiting for its predecessors; a supplied fact is a candidate, which
-leaves the entry where an incoming edge does not establish it, the search then
-run again ([source observation checkpoints](PROGRAM-TYPING.md#source-observation-checkpoints)).
-External entry starts at its precondition. No loop invariant is inferred:
-the candidates are the only facts an entry holds beyond what it requires. The
-independent source consumer checks that every incoming edge establishes the
-entry's knowledge and that this knowledge entails what the entry requires.
+The Lean verifier checks a unit over its Fragment alone. The walk
+([Synthesis.lean](../lean/Verification/Source/Lowering/Synthesis.lean),
+`retypeUnit`, run over a file by `retypeFromFragment`) computes the type of
+each expression and binding of a function; a generic call's instance comes
+from the walk (`instancesFromWalk`), and a declaration's footprint from
+its statement or from its body (`declarationEffects`).
+[FragmentFront.lean](../lean/Verification/Source/Claims/FragmentFront.lean)
+states these types per unit as the front. They are proposals: each is
+checked where it is used, and a wrong one is refused.
 
-[CertificateProducer.lean](../lean/Verification/Programs/CertificateProducer.lean) accepts an actual graph, its declared result type and
-start label, and one `PointClaim` per node. Each claim fixes both the entry
-context and the expression result type. These are annotations in this Lean
-interface. The source adapter supplies them for the supported
-fragment; new source forms require the corresponding extraction obligations.
-[DirectProof.lean](../lean/Verification/Programs/DirectProof.lean) holds the recipes for source closures: untrusted plans fixing rule structure and intermediate types.
+The unit lowers to a program graph, and one forward pass
+([SinglePass.lean](../lean/Verification/Programs/SinglePass.lean)) checks it.
+The pass cuts the graph at its statement entries and visits every node
+once, in a topological order of the graph without the edges into cuts. A
+cut holds exactly its required knowledge and the candidates inferred for it
+([HeadInference.lean](../lean/Verification/Source/Claims/HeadInference.lean));
+every incoming edge, a back edge included, must establish them, and this
+knowledge must entail what the entry requires. A candidate an edge does not
+establish is dropped and the pass runs again (`FilePlans.passGroupInferred`,
+[source observation checkpoints](PROGRAM-TYPING.md#source-observation-checkpoints)).
+External entry starts at its precondition. The candidates are the only facts
+an entry holds beyond what it requires.
 
-`produceUsing` builds expression derivation trees and per-slot subtype evidence for
-every actual edge. It does not infer or repair point invariants. Its inputs also
-include an enumeration of type labels, a search-depth limit, and optional
-intermediate type hints. The vocabulary includes singleton labels, their
-reference/arrow operands, bottom, and the supplied context/result types. Omitting
-labels or useful intermediate types can prevent success, but cannot make an
-incorrect certificate pass.
+Each step is applied by its proved rule (`HeapExpressionRules.Checker`)
+over the facts held by the names its expression mentions. The pass builds a
+step's derivation with `CertificateProducer.expressionWithUsing` (with an
+effect, `expressionEffectUsing`), an edge's slot evidence with `edgeUsing`,
+and checks every derivation (`ProgramCertificates.checkTreeUsing`). The
+derivation vocabulary includes singleton labels, their reference and arrow
+operands, bottom, and the walk's types at the point. Expression derivations
+cover the ordinary rules: variables, constants, overloaded lambdas,
+application, lets, allocation, reads, writes, known shape answers and
+subsumption. A subtype comparison first tries union inclusion, then builds
+a finite candidate cyclic relation and removes unsupported rows. It
+generates arrow evidence for source selection, splitting union domains at
+any parameter position, and pairwise compatible codomain combination. The
+subtype checker validates the resulting table and all arrow evidence. The
+comparison is incomplete: it does not enumerate arbitrary intermediate
+types, transitivity derivations, or arbitrary nested arrow-combination
+proofs.
 
-Expression search covers the current ordinary rules: variables, constants,
-overloaded lambdas, application, lets, allocation, reads, writes, known shape
-answers and subsumption. Subtype search first tries union inclusion, then builds
-a finite candidate cyclic relation and removes unsupported rows. It generates
-arrow evidence for source selection, splitting union domains, and pairwise
-compatible codomain combination. The existing subtype checker validates the
-resulting table and all arrow evidence. This search is deliberately incomplete:
-it does not enumerate arbitrary intermediate types, transitivity derivations,
-or arbitrary nested arrow-combination proofs.
-
-For a fresh object literal, the producer uses the expected record's named
-fields and index signatures as allocation hints. A union's hint is the
-unique arm its written keys and literal-valued members admit. An
-intersection combines one record arm from each operand when their named
-fields are pairwise disjoint, retaining every index signature. Named
-declarations substitute their type arguments before their arms are considered.
-Candidate combinations can grow as the product of the operands' union sizes.
+For a fresh object literal, the walk takes its contract from the expected
+type (`recordContext`): the expected type's one record arm, or the one arm
+the literal's keys and literal-valued members select; several compatible
+arms give no contract. Each field is walked at the type the selected arm
+states at its key (`fieldExpected`), an optional field at its value
+contract.
 
 Each initializer must meet its field's full type, and the resulting record
 must meet the complete written contract through the existing
 [allocation rules](SOURCE-MODEL.md#object-literals). A read-only dictionary
 bound uses the literal's exact own keys; a writable index requires
-allocation at its store contract. This hint lookup requires each member to
-have no call signatures or array store. Overlapping fields receive no
-combined hint, and their constraints remain in the written contract.
-An existing object gains no own-key bound from a construction hint.
+allocation at its store contract. The contract lookup requires each member
+to have no call signatures or array store. Overlapping fields receive no
+combined contract, and their constraints remain in the written contract.
+An existing object gains no own-key bound from a construction contract.
 `blocker-gap-round-scheme-binder-map` exercises a binder whose bound and
 resolution fields belong to one member and whose default and span belong
 to another. `invalid-gap-round-scheme-binder-map` keeps the object in a
@@ -113,120 +122,69 @@ its prefix and suffix. An empty type at any position makes the domain
 uninhabited; an empty parameter list itself still admits a zero-argument call.
 Result combination uses the same compatibility check and shared-execution
 argument as unary overloads. Graph signatures use domain lists directly,
-and `checkArrowWith` checks `CallArrow` derivations (`checkArrowWith_sound`). Search splits unions at any parameter position. Function-creation rules
-check that every signature offers at least the descriptor's arity and type the
-body under the parameters the code takes, followed by captures.
+and `checkArrowWith` checks `CallArrow` derivations (`checkArrowWith_sound`).
+Function-creation rules check that every signature offers at least the
+descriptor's arity and type the body under the parameters the code takes,
+followed by captures.
 
-The final `acceptUsing` check binds the evidence to **all the requested point claims**
-as well as calling `checkEntryUsing` on the actual program and external input context. Thus a valid certificate
-for different annotations is rejected. `acceptUsing_eq` states its acceptance condition:
-
-```math
-\mathrm{acceptUsing}(G,\mathit{images},R,P,Q,C,p,\Gamma_0)=\mathsf{true}
-\iff
-\mathrm{claims}(C)=Q
-\;\land\;
-\mathrm{checkEntryUsing}(G,\mathit{images},R,P,C,p,\Gamma_0)=\mathsf{true}.
-```
-
-Here $`Q`$ contains the supplied point annotations and $`\Gamma_0`$ is the
-independent input contract. Search fuel is not an execution budget and never
-occurs in the typing rules or certificates. `accepted_from_inputs` obtains
-safety for arbitrary typed arguments from the consumer alone. The producer
-can be replaced without changing the soundness argument.
-
-Expression evidence validation uses `ProgramCertificates.checkTreeResult` in a
-single traversal. Its coercion and member-coverage checks retain the requested
-subtype judgment and resource exhaustion in `CheckResult`, the result shared
-with proposal search.
+Expression derivations are checked by `ProgramCertificates.checkTreeResult`
+in a single traversal. Its coercion and member-coverage checks retain the
+requested subtype judgment and resource exhaustion in `CheckResult`.
 `checkTreeUsing_eq` proves that the acceptance projection has exactly the
-declarative rule premises. `ExpressionClaims.checkResult` additionally checks
-label validity, the requested root judgment and term scope. Member coverage checks parameter, rest, result
-and receiver comparisons through the common subtype operation and checks effects
-and arity directly. `checkCallProofs_accepted`, `checkRestProofs_accepted` and
-`checkMemberProofs_accepted` prove agreement with the declarative coverage premises.
-Signature alternatives retain exhaustion when none succeeds. These results
-concern expression evidence; program acceptance and its safety implication
-([what "verified" means](DESIGN.md#what-verified-means)) remain the semantic
-boundary.
+declarative rule premises. Member coverage checks parameter, rest, result
+and receiver comparisons through the common subtype operation and checks
+effects and arity directly. `checkCallProofs_accepted`,
+`checkRestProofs_accepted` and `checkMemberProofs_accepted` prove agreement
+with the declarative coverage premises. Signature alternatives retain
+exhaustion when none succeeds.
 
 `HeapExpressionRules.checkStepResult` combines expression validation with the
 step's heap-fact premises and returns its guaranteed postcondition together with
 any unfinished subtype comparison. `checkStepUsing` is its postcondition
 projection. `checkStepUsing_eq` proves that the projection has exactly the
-step premises and postconditions used by `checkStep_sound`. Effect-candidate
-search retains unfinished step validation when no candidate succeeds.
+step premises and postconditions used by `checkStep_sound`.
 
-`PointClaims` validates plain and mapped edges through `CheckResult`;
-each required slot comparison uses the common subtype operation.
+`PointClaims` validates plain and mapped edges (`checkMappedUsing`); each
+required slot comparison uses the common subtype operation.
 `BranchRefinement.checkObservedResult` additionally checks the observed slot and
 admits ordinary, field-slice and structural refinement alternatives. A successful
 alternative establishes the edge; otherwise unfinished comparisons are retained.
 The modules' `*_eq` theorems prove that their acceptance projections have the
 premises consumed by the environment-transport and refinement soundness proofs.
-
 `ControlFlow.checkNodeResult` composes handler, expression-postcondition and
-continuation checks. `checkGraphResult` enumerates the program's nodes and
-checks source coherence; `checkEntryResult` additionally checks the external
-input environment. Their results retain unfinished comparisons from expressions,
-heap steps and outgoing edges. Their `*_eq` theorems identify the acceptance
-conditions used by graph safety and parameter-reassignment proofs.
+continuation checks. The pass checks a code's definition and its effect
+(`PassUnitCodes.codeSpec_of_guarantee`).
 
-`GraphCode` composes definition-effect and graph-entry results. Code admission
-extends the checked table in declaration order through `extendTableResult`;
-`checkCodesResult` starts from the empty table. An unfinished comparison prevents
-admission and retains its resource outcome. `codeCheckedUsing_eq` and
-`extendTable_eq` prove the acceptance and table projections used by
-`codeChecked_sound` and `checkCodes_sound`.
+`SourceClaimJson.PassUnit.mode8Accepted_sound`
+([PassUnitRun.lean](../lean/Verification/Source/Claims/PassUnitRun.lean)) is
+the safety implication of an accepted unit
+([what "verified" means](DESIGN.md#what-verified-means)), from the graph
+theorem `run_sound_single_pass`
+([TolerantFramesSinglePassSound.lean](../lean/Verification/Programs/TolerantFramesSinglePassSound.lean)).
+A refusal names the first refused obligation at its source span: an
+expression or return (`source expression obligation at [a,b): evidence
+search failed: no derivation of its <role> claim`), an edge at its target
+(`source incoming edge obligation at [a,b)`), a postcondition or a
+footprint. A construct the pass does not handle is a `not handled` result.
+A refusal means unsupported or unjustified by these derivations, not a
+proof that the program is untypable.
 
-`RequestJson.verifyResult` returns the code table justified by request validation.
-`verifyResult_hasTable` proves that its successful value is exactly the checked
-table. `SourceExtraction.checkRequestResult` validates source assertions and
-uses that table for supplemental expression obligations. `checkRequestsResult`
-requires exact bundle lengths and checks every unit. `checkRequestResult_accepted_iff`
-proves the graph, assertion and supplemental premises of a unit, and
-`checkRequests_eq` of every requested unit; these premises justify the source safety and supplemental-typing theorems.
-
-An `Exhaustion` carries `CheckFrame` scopes for the node, code entry, supplemental
-obligation and source unit enclosing its comparison. `CheckResult.at` and
-`allLocated` add these scopes; `accepted_at` and `accepted_allLocated`
-prove that they preserve acceptance. Source reporting uses
-these scopes to select the corresponding source map or obligation span. A
-synthetic node is reported at its enclosing graph's source region.
-`SourceExtraction.validationFailure` reports the retained subtype judgment and
-resource outcome. Source evidence production and consumption use this reporting
-boundary. `RequestJson.validationFailure` selects the graph or code entry named
-by a request check's scopes. JSON checking and final response validation report
-its retained result at the certificate-check phase. Code admission also reports
-unfinished validation before a later expression can depend on that code.
-`CertificateProducer.produceUsing` consumes the same retained acceptance result;
-its failed-edge diagnostic inspects heap entailment after a completed refusal.
-
-Failure reports a claim-count mismatch, an expression label, an edge's source
-and destination, or final consumer rejection. Failure means unsupported or
-unjustified within this search, not a proof that the program is untypable.
-No evidence is returned as successful unless the consumer accepts it.
-
-The [serialized request protocol](REQUEST-PROTOCOL.md) exposes this path from a
-program and its annotations to checked evidence through the verifier binary.
-Source extraction correctness, producer completeness and integration of
-extended source claims are outside these results.
+The source's correspondence with the lowered program and the completeness
+of the walk are outside these results.
 
 ## Derived source forms
 
 ### Known conditions, ternaries and nullish coalescing
 
 A condition of a Boolean literal type takes only its arm (`ifKnown`): the
-pipeline case `known-condition` reaches the rule, and `pipeline/test.mts`
-claims its result at that arm alone, a claim refused for
-`invalid-known-condition`, whose condition a closure resets. [ExecutionModelTests.lean](../lean/Verification/Tests/ExecutionModelTests.lean) shows the
+pipeline case `known-condition` reaches the rule, and
+`invalid-known-condition`, whose condition a closure resets, is refused. [ExecutionModelTests.lean](../lean/Verification/Tests/ExecutionModelTests.lean) shows the
 machine keeping a known condition's write. Source closure blocks support
 terminal branches with both arms returning, including nested branches and
 checked entry refinements.
 Source ternaries reuse these rules and the existing primitive-tag union elimination.
-Their own expression claim supplies the result type; both arm claims are checked
-under the corresponding refined context. This introduces no additional rule or
-trusted proof-search step.
+The walk's type of the ternary is its result type; both arms' types are checked
+under the corresponding refined context. This introduces no additional rule.
 Null coalescing is likewise a derived form: a let saves the left value, and
 `unionVar` with known nullish-tag conditionals selects the fallback or saved value.
 No truthiness rule is involved; false remains a result of the left operand.
@@ -885,7 +843,7 @@ at `xs`'s array type (`coalesce-missing-and-arm`).
 expression or statement condition whose test it is, and a statement's
 outcomes at the empty span where its condition starts, which no source
 expression and no claim has. A plan observes a nonempty span exactly at the
-entry of the source expression owning it, and the producer types that
+entry of the source expression owning it, and the walk types that
 expression in the state found there. So in `rest && rest.kind === 1 &&
 rest.dot`, the first read of `rest` is typed where `rest` is still untested
 (`logical-chain-entry`, `invalid-logical-chain-entry`).
@@ -898,7 +856,7 @@ compilation of a dispatch's continuation has
 
 **Entries of an arm.** A slice of the labels cannot refine `unknown`, which
 no label decomposes. An arm's entry therefore takes, for each binding its
-operand reads, the producer's claim at that read as a candidate, which the
+operand reads, the walk's type at that read as a candidate, which the
 incoming dispatch edge checks under the edge's own observation, as it checks
 a statement entry. The read is the binding's first in the arm before any
 choice. For a binding that may change, it is the first before any other
@@ -908,9 +866,8 @@ and positions, effect-free evaluations, and calls of native intrinsics,
 which state no promise. A call of a source function ends the search, since
 an assertion function's promise may narrow the binding there. So
 `typeof v === "number" && Number.isSafeInteger(v)` reads `v` at `number`
-(`logical-narrowing-past-reads`). A read claimed narrower than the edge
-establishes is refused when evidence is produced and when it is checked
-(the forged operand entry in `pipeline/test.mts`).
+(`logical-narrowing-past-reads`). A read typed narrower than the edge
+establishes is refused at that edge.
 
 A negation of tests, `!(a || b)`, is $`\mathcal{C}[\![a\mathbin{\Vert}b]\!](f,t)`$
 in a condition: where `k.name === "a"` failed, the fact that `k.name` holds
@@ -920,11 +877,10 @@ the true branch (`negated-disjunction-test`, each function run under Node).
 Where the negation fails, one of the tests held, and where a call, the
 test's own operand or a getter may have written the field, its read is not
 narrowed (`invalid-negated-disjunction-else`, `-arm`, `-write`, `-operand`,
-`-getter` and `invalid-negated-conjunction`, run under Node; a forged claim
-of a re-read refused in search and in checking, `pipeline/test.mts`). As a
+`-getter` and `invalid-negated-conjunction`, run under Node). As a
 value, `!a` is $`\mathsf{if}\ \mathsf{truthy}(a)\ \mathsf{then}\ \mathsf{false}\ \mathsf{else}\ \mathsf{true}`$
 of $`a`$'s value; a negation whose operand's type answers its truthiness one
-way, $`q`$, proposes the part of its claim $`A`$ answering the other way as
+way, $`q`$, proposes the part of its type $`A`$ answering the other way as
 the node's type (`decidedNegation`):
 
 ```math
@@ -934,14 +890,12 @@ the node's type (`decidedNegation`):
 ```
 
 The node `if a then false else true` must derive this proposed type under
-the existing typing rules; the following effect node checks the claim
-$`A`$ separately (a negation as `&&`'s left operand in a value position,
-forged claims of it refused in search and in checking,
-`pipeline/test.mts`).
+the existing typing rules; the following effect node checks the type
+$`A`$ separately (a negation as `&&`'s left operand in a value position).
 
 Pure dispatch of a leaf can read a saved [path witness](HOST-FAMILIES.md#entries).
 The internal variable uses its slot's type in the current checked graph
-context. Its empty source span needs no expression claim: ordinary variable
+context. Its empty source span needs no expression type: ordinary variable
 typing checks the read, and the graph's incoming-edge and read-link checks
 establish the slot's type and its relation to the source member. The type is
 available during predicate compilation; subsequent effects use their resulting
@@ -967,7 +921,7 @@ statement `if` narrows; returning the joined value would check it where the
 test's answers have joined. An arrow's expression body is such a `return`.
 The parser writes the literals at the first two code units of the `return`
 keyword (an arrow's `=>`), which no expression has, each the span of its own
-`return` (`booleanReturn`), and the producer claims them as it claims any
+`return` (`booleanReturn`), and the walk types them as it types any
 literal (`guard-boolean-return`, `invalid-guard-boolean-return`).
 
 ### Closure branches
@@ -1181,9 +1135,7 @@ Observations that agree:
   message and `stack` are not enumerable in JavaScript, `name` is inherited,
   and none is own in the model.
 - `Object.values(e)` and `Object.entries(e)` hand over the values of the
-  same own enumerable fields, by the overlay's obligated contracts; evidence
-  search finds no derivation of either at an instance holding a prototype
-  (observed 2026-10-19).
+  same own enumerable fields, by the overlay's obligated contracts.
 
 Observations that differ, abstracted by a broad result type, also admitted:
 
@@ -1195,8 +1147,7 @@ Observations that differ, abstracted by a broad result type, also admitted:
 - `Object.getOwnPropertyDescriptor(e, k)` exposes JavaScript's descriptor of
   the own `message` or `stack`; its reviewed contract
   (`library-globals.mts`) is `undefined` or a fresh descriptor whose value,
-  getter and setter are `unknown`, which either placement meets; evidence
-  search finds no derivation of it at an instance (observed 2026-10-19).
+  getter and setter are `unknown`, which either placement meets.
 
 Operations excluded, refused with a location:
 
@@ -1240,8 +1191,8 @@ $`R = \{\texttt{"message"}, \texttt{"stack"}, \texttt{"cause"}\}`$, and an exclu
 receivers that may hold them, here every object owning the prototype key.
 `name` is not in $`R`$: an error inherits it, and an assignment creates an own
 enumerable `name` in JavaScript, as the model's write does.
-Lean's lowering decides it on the claims evidence establishes, at every
-write it emits. Notation: $`\mathrm{cl}(T)`$ is the clause list of a claim
+Lean's lowering decides it on the types the pass checks at the receiver and
+the key, at every write it emits. Notation: $`\mathrm{cl}(T)`$ is the clause list of a claim
 $`T`$ when $`T`$ is of clause rows (`plainTy`), its declared names expanded
 (`PositiveRules.expand`, then `splitSets`), and undefined for a type with a
 parameter or scheme row, which no clause describes.
@@ -1283,9 +1234,9 @@ arrays (whose objects own `[[proto]]` where the graph states the built-ins),
 packs and callable clauses are never proto-free; optional fields and
 readonly views constrain no absent key and do not make a record proto-free;
 a union is proto-free when every alternative is, and an intersection as its
-normalization's clauses are. $`T`$ and $`K`$ are the claims at the receiver's
-and the key's spans, expression obligations evidence must establish, so the
-premise reads certified facts and no TypeScript type or narrowing.
+normalization's clauses are. $`T`$ and $`K`$ are the types at the receiver's
+and the key's spans, expression obligations the pass checks, so the premise
+reads checked facts and no TypeScript type or narrowing.
 
 - **Where.** `reservedWriteCheck` (`Lowering/Types.lean`) is called where a
   write is emitted: every graph node whose term is a field write
@@ -1304,7 +1255,7 @@ premise reads certified facts and no TypeScript type or narrowing.
   proto-free clause owns `[[proto]]`, at every interpretation of the
   clause's operands (any `Ξ`, `X`, `P` of `semWithArgs`), and
   `ProtoFree.list_sound` lifts it to a union of clauses. Refusing more keeps
-  `checkUnitJson_safe`; it does not by itself establish that a source write
+  `mode8Accepted_sound`; it does not by itself establish that a source write
   corresponds to the model's, which is what the next item argues.
 - **Why the premise excludes an instance of the family.** In the model an
   instance owns `[[proto]]` where the fragment builds it: an instance a
@@ -1328,11 +1279,12 @@ premise reads certified facts and no TypeScript type or narrowing.
   the constructor follows arrows, which keep its `this`, and stops at a
   function, a method, an accessor or a class, which bind their own: their
   writes are writes, the rule's (`invalid-error-subclass-nested-function-write`). Lean reads no class
-  declaration, and accepts a fragment, claims and evidence with a member
-  renamed `stack` throughout (`pipeline/test.mts`, "forged stack member").
-  Each write form of `reserved-write-twin`, its key renamed `stack` in the
-  three documents, is a valid document only the rule refuses, located at the
-  write, in search and in check ("forged reserved writes").
+  declaration, and accepts a Fragment with a member renamed `stack`
+  throughout (`tests/single-pass-controls.mts`, "forged fragment: a
+  reserved member name"). Each write form of `reserved-write-twin`, its key
+  renamed `stack` in the Fragment, is a valid document only the rule
+  refuses, located at the write ("forged fragment: writes renamed to a
+  reserved key").
 
 External code reaching an instance of the family is required to keep the
 message contract the model represents and to create no enumerable own
@@ -1352,9 +1304,7 @@ the model's type allows, and keys, copies and entries see the declared
 fields alone; `e.stack` is refused.
 
 The pipeline cases `error-subclass` and `error-subclass-methods` (run under
-Node) and the cases each row names hold it, and forged claims of a
-constructed instance owning `message` or holding `stack` are refused in
-search and check (`pipeline/test.mts`).
+Node) and the cases each row names hold it.
 
 ### A class declared in a block
 
@@ -1442,7 +1392,7 @@ signatures ([generic methods](SOURCE-CONTRACTS.md#generic-methods)), and its clo
 generic closure, checked once at a scheme received by the instance
 (`funScheme`), which the prototype holds. The parser names the closure's
 binder $`k`$ by the member's key and the position (`"m"#k`,
-the parser's `lambda` in `fragment-expressions.mts`), and the producer's scheme row for the
+the parser's `lambda` in `fragment-expressions.mts`), and the front's scheme row for the
 prototype's field binds those names; the member's scheme binds the
 declaration's. The prototype's scheme covers the member bound to the
 instance up to renaming the member's binders to its own
@@ -1554,34 +1504,33 @@ a record or primitive the copy reads, or refused. An empty meet contributes
 no arm; a refused meet refuses the whole spread, whatever the other meets
 of the union are; and the spread is refused where no arm remains.
 
-For each product, the producer gathers every record operand before choosing
-fields. For a key $`k`$, let $`I_k`$ index the operands stating it, with read
+For each product, the walk (`checkCopyFields`, `copiesOf` in
+[Synthesis.lean](../lean/Verification/Source/Lowering/Synthesis.lean))
+gathers every record operand before choosing fields. For a key $`k`$, let $`I_k`$ index the operands stating it, with read
 type $`T_i`$ and optionality $`o_i`$ ($`1`$ means optional). If any operand
 states $`k`$ as a method, $`k`$ is a method of the arm, the copy does not
 state it, and no field is selected for it; Lean's reading of the
 intersection states no field at $`k`$ either
 ([methods met with fields](SOURCE-CONTRACTS.md#methods-met-with-fields)), so a
-copy claimed with $`k`$ is refused (`invalid-spread-intersection-method` and
-its forged-claim control in `pipeline/test.mts`). Otherwise a candidate must itself
-supply the required presence. The proposal selects an existing field
+copy typed with $`k`$ is refused (`invalid-spread-intersection-method`).
+Otherwise a candidate must itself supply the required presence. Where
+several operands state $`k`$, the walk selects an existing required field
 $`j\in I_k`$ satisfying
 
 ```math
-\forall i\in I_k,\ H(T_j,T_i)
+o_j=0
 \qquad\text{and}\qquad
-\bigl(\forall i\in I_k,\ o_i=1\bigr)\ \lor\ o_j=0.
+\forall i\in I_k,\ T_j\le T_i,
 ```
 
-Its proposed field is $`k{:}T_j`$, optional exactly when every $`o_i=1`$.
-Here $`H`$ is the producer's `plausible_subtype`
-(`type_queries.ml`), a proposal
-heuristic for inclusion: equality, literals within their primitive, members
-of unions, and shapes with equal fields; it compares named types as written,
-without expanding their declarations. Lean decides inclusion.
+and refuses the spread where none does. Its proposed field is $`k{:}T_j`$;
+a key one operand states keeps that operand's field and optionality. Here
+$`\le`$ is the walk's inclusion test over its type table (`within`), the
+subtype comparison the pass uses.
 
 Thus `{ k: string | number } & { k: string | boolean } & { k: string }`
 selects the third field, independently of operand order. An optional field
-cannot supply a required key merely because its read type passes the test.
+cannot supply a required key, whatever its read type.
 
 Products with incompatible primitive atoms, or both a primitive and a
 record, contribute no arm, as Lean's clause meet drops them. Emptiness is
@@ -1589,20 +1538,19 @@ decided over the enclosing union: an empty intersection arm contributes
 nothing, and the whole spread source is refused only when no alternatives
 remain. A product with an unsupported field selection is refused even when
 another product succeeds: `({ k: "a" } | { k: "b" }) & { k: "a" }` has such
-a product. The heuristic does not decide that contradictory field
+a product. The selection does not decide that contradictory field
 constraints make a record empty.
 
 The copy of each surviving arm states its own enumerable string-keyed
-fields, optional ones optional. The copy's type is the producer's proposal.
-Lean checks the merge against the clauses it normalizes the operand's claim
+fields, optional ones optional. The copy's type is the walk's proposal.
+The pass checks the merge against the clauses it normalizes the operand's claim
 to, where several fields of a key are constraints on its value
 ([allocation from parts](PROGRAM-TYPING.md#allocation-from-parts)), and
 refuses a copy's field that no field of the source gives
-(`spread-intersection-meet` and its forged-claim control in
-`pipeline/test.mts`).
+(`spread-intersection-meet`).
 
-Refused at the spread's operand: a data key with no candidate recognized by
-$`H`$ at the required presence (`{ k: "a" } & { k: "b" }`,
+Refused at the spread's operand: a data key with no required candidate
+within every constraint (`{ k: "a" } & { k: "b" }`,
 `{ k: string } & { k?: "a" }`); two operands with index signatures; a
 callable met with a record with readonly or optional fields, methods or an
 index; an intersection operand that is an array, a
@@ -1611,7 +1559,7 @@ source with no surviving alternative. A callable is met with a record only where
 record's fields are required writable data fields, whether the intersection
 is written in an annotation or reached through a declaration. Every callable
 operand in a product contributes all its signatures to one overloaded
-callable, so the producer's proposal is the same whether they are written
+callable, so the walk's proposal is the same whether they are written
 flat or grouped through an alias; Lean's clause meet keeps both signature
 lists of two callables. Lean reads an alias of function types met with a
 record as an empty intersection, so
@@ -2005,9 +1953,12 @@ with that promise, and its body is checked at it with the promise goal. The
 reviewed `every` states no guard overload (`every<S>`), so a call passing a
 guard does not narrow its receiver.
 
-An imported guard is read at its declared type, both signatures; its promise
-is the import assumption of [the trust surface](DESIGN.md#trust-surface),
-discharged where the imported module's own run verifies the guard. A guard
+An imported guard is read at its declared type, both signatures, where its
+declaration has no body, its promise the import assumption of [the trust
+surface](DESIGN.md#trust-surface); an imported guard with a body is read at
+its promise where its module's check establishes it (its interface entry)
+and at the ordinary effect otherwise
+([`import-body`](SOURCE-CONTRACTS.md#imported-ambient-and-global-values)). A guard
 of a host family is read instead from its audited table entry
 ([guard recognition](HOST-FAMILIES.md#guard-recognition)), never at its
 declared predicate; the entry rests on the host assumption that the
@@ -2020,8 +1971,11 @@ check at a return; [PromiseCalls.lean](../lean/Verification/Programs/PromiseCall
 holds the yields of a returned value (`yieldFollows_sound`) and the promise
 call (`promiseCall_sound`); `Lowering.Control.promiseNarrowing` places the
 narrowed claim after a call, which the edge check verifies. Pipeline cases:
-`type-guards`, `type-guard-objects`, `type-guard-methods`,
-`type-guard-value-import` and `type-guard-overload-value-import` verify;
+`type-guards`, `type-guard-objects` and `type-guard-methods` verify;
+`type-guard-value-import` and `type-guard-overload-value-import` are gaps:
+an imported guard has no entry (`eligibleRead` takes no guard, and the
+layout realizes a guard's plain signature by no request), and an overloaded
+guard is outside the fragment;
 `invalid-type-guard-promise`, `invalid-type-guard-undefined`,
 `invalid-type-guard-default`, `invalid-type-guard-object`,
 `invalid-type-guard-field-test`,
@@ -2029,21 +1983,16 @@ narrowed claim after a call, which the edge check verifies. Pipeline cases:
 `invalid-assertion-promise` are refused at the return where the argument is
 not a $`T`$, each run under Node by `node-runs.mts`.
 
-For contextual callback inference, the OCaml producer substitutes the
-receiver's inferred type arguments into each candidate receiver and groups
-candidates by that receiver contract. It uses the first group whose
-receiver the actual plausibly meets, retaining all groups if none matches.
-The group's callback parameters supply the context, with footprints set
-aside and promises retained. A shared parameter supplies a context once its
-candidate-owned type parameters are resolved; a named callback can supply
-its own result contract through arity adaptation. This distinguishes
-readable and sparse third array arguments (`native-filter-sparse`). Every
-advertised overload stays available for the call proposal. Receiver
-preference uses the presence-aware comparison and declaration-aware
-readonly element comparison; an exact record can propose its open record
-view. Both comparisons share the same array-presence check. Lean checks
-the selected instance, receiver and callback. A closure's
-offered signature has its body checked through the existing rules.
+For contextual callback inference, the walk (`applyCall` in
+[Synthesis.lean](../lean/Verification/Source/Lowering/Synthesis.lean))
+selects the signature the actuals' count and the walked actuals' types
+select, solves each binder from the receiver and the walked actuals
+(`matchBinder`), then walks each callback with its parameters at the
+selected signature's, under those binders, its result binding what remains.
+This distinguishes readable and sparse third array arguments
+(`native-filter-sparse`). The pass checks the selected instance, receiver
+and callback. A closure's offered signature has its body checked through
+the existing rules.
 
 ## Loops and spreads over iterables
 
@@ -2157,11 +2106,12 @@ of a trusted value, and the array an ordinary spread into a variadic
 callee. A spread of a program's iterable is collected by the
 [protocol](#the-iterator-protocol).
 
-A tuple meets `Iterable<T>` through the readonly array of its positions: the
-producer claims a tuple expected at an iterable other than an array at
-$`\mathsf{readonly}\ (A_0\cup\ldots\cup A_{n-1})[\,]`$, which Lean derives from
-the tuple ($`\mathsf{list}`$ inclusion) and relates to the iterable through
-`Array.prototype[Symbol.iterator]`, as for any array. A compiler-API node
+An array literal meets `Iterable<T>` through a readonly array: where it is
+expected at an iterable other than an array, the walk types it at
+$`\mathsf{readonly}\ E[\,]`$, with $`E`$ what the iterable's iterator
+yields (`iteratedElement`), each position within $`E`$; the pass relates
+that array to the iterable through `Array.prototype[Symbol.iterator]`, as
+for any array. A compiler-API node
 list is read as a dense readonly array of its elements
 ([node lists in the model](COMPILER-API.md#node-lists-in-the-model)): its own
 `Symbol.iterator` yields what indexing reads, which T4 states and C4 runs, so
@@ -2333,17 +2283,17 @@ observe. A default or a nested pattern, which run code between the steps, is
 refused.
 
 An array literal with element contract `E` keeps a spread operand's own
-claim when its elements fit `E`. For an array whose elements need a view,
-the producer proposes `readonly E[]`; other iterables keep their iterator
+type when its elements fit `E`; other iterables keep their iterator
 contract. The existing array subtyping check establishes
 this view from the operand's storage contract, including its presence mode;
 the spread rule copies values at `E` into the literal's fresh store.
 This admits mapped records at a union's element type
 (`blocker-census-spread-map-records`). A map whose callback removes future
 input elements can produce holes, so its sparse result fails a readable
-view excluding `undefined` (`invalid-spread-map-records`). The mapped
-operand's forged string-array view is refused in evidence production and
-checking by a control in `pipeline/test.mts`.
+view excluding `undefined` (`invalid-spread-map-records`). A literal
+proposed at its store contract whatever its operands' elements is refused at
+the literal (`TSCERT_FORCE=array-spreads` over `invalid-array-literal-spread`
+and `invalid-dense-spread-element`, `tests/single-pass-controls.mts`).
 
 ## Patterns
 
@@ -2462,8 +2412,8 @@ in [TypingBasics.lean](../lean/Verification/Programs/TypingBasics.lean).
 This specializes the existing conditional semantics. The read occurs once,
 and its preceding effects are retained; the default contributes neither
 execution nor a type claim. The condition uses the read type derived by the
-verifier from its current context. Missing producer claims alone never justify
-skipping a default. If the condition is unproved, the default's claims and
+verifier from its current context. A missing type alone never justifies
+skipping a default. If the condition is unproved, the default's typing and
 execution remain required.
 
 An array rest $`\ldots p`$ at index $`s`$ over $`A`$ whose store is one tuple of
@@ -2531,7 +2481,7 @@ the [restriction on interleaved array mutation](SOURCE-FRAGMENT.md#model-limits)
 applies to both fixed and slice rests. Each initializer and default retains
 its own effect obligation (`array-rest-footprints`,
 `invalid-array-rest-default-effect`). A default may read an earlier binding;
-an omitted producer claim cannot erase its execution.
+an omitted type cannot erase its execution.
 
 The parameter says nothing of the first $`k`$ positions, so a union of tuples
 of different lengths meets it arm by arm: `[number] | [number, string]` from
@@ -2623,7 +2573,7 @@ activation or to a private cell ([slot or cell](#slot-or-cell)): a slot is
 rebound at each write, and no call, closure run or throw changes it; a
 closure holds a cell's identity. Its
 contract $`C`$ is fixed where it is declared, the annotation or the
-producer's proposal; the initializer and every write
+walk's proposal; the initializer and every write
 are checked against it (`storage-contract`). A point claim for the name is
 the slot's type there, checked on every incoming edge as any slot's is, or
 describes the cell's current contents, which the
@@ -2688,8 +2638,8 @@ of an expression left to right, statements in order, every part of a choice
 (a superset of either arm), and a loop's parts twice, so that a write in one
 iteration follows a closure the iteration before created. The decision is
 syntactic and selects a lowering; the graph checker checks what either
-lowering states. The flow graph exported to the producer lists each body's
-cells (`cells`), so the producer and the lowering read one decision.
+lowering states. The walk reads the same decision (`cellLocals`), so the
+walk and the lowering read one decision.
 
 A closure's parameter is decided by the same rule over the closure's own
 activation: for a parameter $`x`$ of $`\lambda\overline{y}.\,b`$,
@@ -2730,13 +2680,13 @@ value facts survive a call, a closure run and a throw. A `catch` is entered
 from each node that may throw (a node whose expression is a value or a slot
 names no handler), with what the slot holds at that node. A cell's contract
 is what a closure reads it at; a slot's contract only checks its writes.
-After its initialization or a write of a value of type $`V`$, the producer
-claims a slot at $`V`$ where $`V`$ is primitive, and otherwise at the arms of
+After its initialization or a write of a value of type $`V`$, the walk
+types a slot at $`V`$ where $`V`$ is primitive, and otherwise at the arms of
 $`C`$ that $`V`$ may be of, those a written literal rules out dropped and a
 nullish arm dropped where $`V`$ excludes it (TypeScript's narrowing on
 assignment): a read then sees $`C`$'s members, an optional field included,
-on every path, and Lean checks $`V`$ below that claim on the edge out of the
-write. The contract is:
+on every path, and the pass checks $`V`$ below that type on the edge out of
+the write. The contract is:
 
 ```math
 \mathrm{contract}(\mathtt{let}\ x{:}T=e)=T
@@ -2750,10 +2700,10 @@ Q(e) & \text{no statement follows in its block}
 
 with $`Q(e)`$ the claimed type of the initializer. A declaration ending its block
 has no statement after it to read the binding, and the initializer meets its
-own claim, so any choice every write is checked against is sound. The producer
-proposes TypeScript's declared type, the initializer's type widened
+own claim, so any choice every write is checked against is sound. The walk
+(`declarationHint`) proposes TypeScript's declared type, the initializer's type widened
 (`let x = 1` stores $`\mathsf{Num}`$). A `null` or `undefined` initializer
-has no declared type in TypeScript (an evolving `any`): the producer proposes
+has no declared type in TypeScript (an evolving `any`): the walk proposes
 the union of what is written into the binding, its evolved type,
 
 ```math
@@ -2763,8 +2713,8 @@ the union of what is written into the binding, its evolved type,
 
 over the initializer and every assignment of $`x`$ in its scope, closures
 included, each read at the contract where it reads $`x`$. Where no fixed
-union exists (a value consed onto $`x`$ grows with it), the producer proposes
-a contract from the statements after the declaration. In each it examines
+union exists (a value consed onto $`x`$ grows with it), the walk proposes
+a contract from the statements after the declaration (`useHints`). In each it examines
 the first mention of $`x`$ only, and keeps it where it is a use of the whole
 value at a type: a returned value at the result type, an annotated
 initializer at its annotation, an argument of a function of one signature
@@ -2962,8 +2912,7 @@ a write of a `const` outside its declaration, an assignment, an update or a
 logical assignment's writing arm, throws a `TypeError` in JavaScript, which
 the model does not state, and is refused at its location
 (`invalid-early-const-update`, `invalid-early-const-assign`, run under
-Node; a control of `pipeline/test.mts` reads a `let`'s cell as a `const`'s
-under the claims for the `let`). An update's and a logical assignment's
+Node). An update's and a logical assignment's
 order, a right side writing the same cell included, is
 `early-cell-update-order`'s (run under Node).
 
@@ -3002,12 +2951,12 @@ lowers a marked binding as above, allocating the cells at the list's entry
 every closure that mentions the binding, and lowering every mention as a
 checked access, in graph code and in closure term code. A mention of an
 unmarked binding before its initialization has no binding in scope there and
-is refused by the lowering. The producer proposes $`T`$ and the claims at
-the checked accesses; no claim can omit a check, replace the cell by a
+is refused by the lowering. The walk proposes $`T`$ and the types at
+the checked accesses; no type can omit a check, replace the cell by a
 value, or make an initialization an unchecked write
-(`early-bindings`, `invalid-early-binding-stale`, run under Node; the forged
-claims of `pipeline/test.mts`: a dropped contract, a contract narrower than
-the annotation, a checked access claimed past the contract). The stated
+(`early-bindings`, `invalid-early-binding-stale`, run under Node; in
+`tests/single-pass-controls.mts`, the binding proposed at its initializer's
+type, `TSCERT_FORCE=early` over `early-bindings`, is refused). The stated
 type $`T`$ is the annotation; for a `let` of the source whose initializer
 the source writes as a literal naming nothing (a Boolean, number, string
 or bigint literal, a template with no substitution, a number or bigint
@@ -3016,9 +2965,9 @@ literal's primitive type, `boolean`, `number`, `string` or `bigint`,
 TypeScript's declared type for it, which the parser states as the
 binding's annotation (`literalDeclaredType`; `early-let-literal`, run
 under Node, a `let` nothing assigns included; a later write at another
-type is refused, `invalid-early-let-literal-write`, run under Node; a
-control of `pipeline/test.mts` claims the contract at a string, at the
-literal itself and at `number | string`); or a function literal's
+type is refused, `invalid-early-let-literal-write`, run under Node; the
+initialized cell proposed at its initializer's type,
+`TSCERT_FORCE=early-contracts` over `early-let-literal`, is refused); or a function literal's
 parameter and result annotations. A `const` enum member's read, which the
 fragment holds as its value, is no literal of the source: its declared type
 is the enum (`invalid-early-let-enum-member`). An early binding with none
@@ -3058,7 +3007,7 @@ signature binding more parameters, as `some`'s callback in `const binder =
 (t: Term): boolean => t.k === "union" && t.parts.some(binder)`, the closure
 is offered that signature ([offers](SOURCE-ELABORATION.md#source-closures-and-their-annotations))
 and its claim holds it; the read meets it as a conjunct of the claim
-(`recursive-constant-callback`). The producer types the body's reads at the
+(`recursive-constant-callback`). The walk types the body's reads at the
 constant's annotation or the literal's own signature, which its result
 annotation completes, beside the signatures it is offered, with the
 footprint it proposes for the closure:
@@ -3070,9 +3019,8 @@ a recursive constant whose body changes nothing is therefore within the
 empty footprint, its element `T` (`find-recursive-constant`); one whose
 body shrinks the array is the unrestricted callback
 (`invalid-find-recursive-constant-mutation`, run under Node), and a
-closure whose body writes, claimed at the empty footprint, its self entry
-with it, is refused in search and in checking (a control over
-`recursive-constants`). A `let` read by its own initializer's closure is a
+closure whose body writes, typed at the empty footprint, its self entry
+with it, is refused. A `let` read by its own initializer's closure is a
 cell, which a later assignment may rebind, never a self entry
 (`invalid-find-recursive-cell`, run under Node). Every
 other read of a binding in its own initializer is refused at its location
@@ -3144,9 +3092,7 @@ TypeScript keeps a `let` narrowed across a call of a declaration writing it;
 the `let` is a cell the declaration captures, so after the call it is at its
 contract (`invalid-function-declaration-stale`, run under Node). Cases:
 `function-declarations-in-body`, `function-declaration-before-initialization`
-(run under Node: a `ReferenceError`), `function-declaration-sloppy-block-refused`;
-the forged contracts of `pipeline/test.mts` (an early declaration's contract
-dropped, or claimed at a string).
+(run under Node: a `ReferenceError`), `function-declaration-sloppy-block-refused`.
 
 ### Module cells
 
@@ -3200,7 +3146,8 @@ mentions, each cell's `value` apart from every other's, beside their types:
 ```
 
 A unit's request states it (`entrySeparation`), its safety theorem assumes
-it of the environment beside the inputs' types (`RequestsSafe`), its entry
+it of the environment beside the inputs' types (`EntryHolds` in
+`PassUnit.RequestSafe`), its entry
 knows it (`ControlFlow.entryKnows`) and every statement entry restates it
 ([separation facts](PROGRAM-TYPING.md#separation-facts)). So a write of one
 cell keeps what is known of another's contents (`module-cells-written-in-turn`,
@@ -3223,12 +3170,10 @@ logical assignment of a cell, `blocker-module-assignment`,
 `invalid-module-cell-update-stale`; run under Node;
 `certified-module-cell-value-import`; a cycle of modules whose
 initialization reads a cell of a module not yet evaluated throws at the
-checked access, `certified-cell-cycle-value-import`, run under Node; the
-forged claims of `pipeline/test.mts`: a dropped or narrowed contract, a
-narrowed entry claim, a read after a writing call claimed at the earlier
-value, a logical assignment's read claimed without `null`, an increment's
-result claimed at the literal `1`, the value a logical assignment writes
-claimed wider than the contract).
+checked access, `certified-cell-cycle-value-import`, run under Node; in
+`tests/single-pass-controls.mts`, a cell's contents kept across a write
+or a throw, `TSCERT_FORCE=cells` over `module-cells-written-in-turn` and
+`module-cache-keeps-lengths`, are refused).
 
 ### Module functions
 
@@ -3263,7 +3208,8 @@ conjunction under the shared binders
 ([call schemes](PROGRAM-TYPING.md#call-schemes)). The verifier refuses units
 of one name that do not run one code: their parameters' names, body, type
 parameters, completion and strictness are the same (`sameCodeOverloads`;
-the forged control of `pipeline/test.mts`). `overloaded-function` holds a
+"forged fragment: overload units at another function's code" in
+`tests/single-pass-controls.mts`). `overloaded-function` holds a
 generic and a plain declaration; `invalid-overloaded-function` refuses an
 overload the code does not meet, which TypeScript checks at the
 implementation's signature alone (a `TypeError` under Node). A statement
@@ -3451,7 +3397,7 @@ closure's. This is `funGraphSelf` at a claim holding offered rows:
 constant, a bound wrapper and a variadic row
 (`recursive-constant-callback`); a self read at a longer signature does not
 carry the closure's preservation onto its exceptional edge
-(`invalid-recursive-constant-exceptional`, run under Node). The producer
+(`invalid-recursive-constant-exceptional`, run under Node). The walk
 proposes the offered rows for the self entry of a plain closure, without
 type parameters, a rest or a written promise; the self entry of any other
 is read at its own signature, so its self read at a longer signature meets
@@ -3478,30 +3424,19 @@ narrows each branch differently than at $`\vec D`$, so each signature's
 interior claims are its own (`closure-offer-narrower-element`).
 
 <a id="closure-offers"></a>
-The producer proposes an offer where each offered parameter is plausibly
-within the closure's, by a proposal heuristic modelled on Lean's relation
-and read up to the declarations: a union
-arm by arm, and a record by width and depth as the
-[record rule](POSITIVE-TYPES.md#clause-coverage) reads it, each member of
-the parameter met by the element's member of its key, an invariant field by
-an equal invariant field, a view by a required member within it, an optional
-member by a slot within it, excluding required readonly `length` views,
-a writable one by an equal writable slot, a
-method by a method within it, with contravariant receiver requirements
-and every target stable key stable in the source. A value with call
-signatures is never within a record without any, and width and depth apply
-within one clause kind: a record without call signatures within such a
-record, a callable value with fields within one with fields or within
-signatures alone, signatures alone within signatures alone, an array within
-an array. Each writable target index
-also preserves every overlapping source index contract and optional field
-or optional readonly view; the heuristic conservatively treats every string
-key as potentially numeric for this check. An interface extending
-another is within its base where its overriding members are within the
-base's (`closure-offer-extends`), and a compiler-API `Expression`, whose
+The walk proposes an offer where each offered parameter is within the
+closure's by its inclusion test over its type table (`within`, in
+`offerSig` and `offerUse` of
+[Synthesis.lean](../lean/Verification/Source/Lowering/Synthesis.lean)), the
+subtype comparison the pass uses, the record rule of
+[clause coverage](POSITIVE-TYPES.md#clause-coverage) included. An interface
+extending another is within its base where its overriding members are within
+the base's (`closure-offer-extends`), and a compiler-API `Expression`, whose
 residual arm holds a brand beside the members of `Node`'s, is within `Node`
-(`compiler-api-closure-offer-node-list`). Lean
-decides inclusion and checks each offered row. An element whose method
+(`compiler-api-closure-offer-node-list`). The pass checks each offered row;
+an offer proposed whatever its parameters (`TSCERT_FORCE=offers` over
+`invalid-closure-offer-narrower-mutation`, `tests/single-pass-controls.mts`)
+is refused. An element whose method
 requires a stronger receiver or takes a narrower
 parameter, a look-alike of a family shape and a function over a narrower
 parameter widened through a method signature are refused
@@ -3527,9 +3462,9 @@ Of a callee's signatures (`filter`'s plain and guard ones), a guard closure
 literal is expected at those whose callback states its written promise,
 where any does, each binder that promise's type determines read at it; any
 other closure, and a guard closure no signature's callback states the
-promise of, at those whose callback states none. The producer proposes the
-call at a signature stating a guard closure's promise before the others, a
-search order only: Lean checks the selected signature and every argument.
+promise of, at those whose callback states none. The walk tries the rows
+stating a guard closure's written promise before the others, an order
+only: the pass checks the selected signature and every argument.
 A promise signature promising a type meets one promising a larger type
 (`TypePromise.result`), so a result expected at a wider type keeps the guard
 overload (`guard-closure-callback`). A promise at a signature binding more
@@ -3684,7 +3619,7 @@ an assertion function's signatures state, besides, the promises `guards` and
 **effect-qualified signature** is a signature carrying such a guarantee. `CallEffects.lean` defines its semantics; the
 [effect contract](SEMANTICS.md#effect-qualified-call-contracts) and
 [certification rules](#definition-and-application-rules)
-state what a certificate must establish.
+state what a definition's check must establish.
 
 This extends the language of claims beyond TypeScript annotations. Three
 operations must remain distinct:
@@ -3693,7 +3628,7 @@ operations must remain distinct:
    TypeScript arrow imposes no heap-preservation guarantee. It must never become
    an effect-qualified arrow merely because a consumer needs one.
 2. **Inference** proposes a stronger type for a definition, including an effect
-   on each call signature. This is untrusted producer work. It can use bodies
+   on each call signature. This is the walk's untrusted proposal. It can use bodies
    and inferred contracts of callees; it need not change the source annotation.
 3. **Elaboration and verification** attach the proposal to the lowered
    definition and discharge its additional obligation. Lowering emits proof
@@ -3714,7 +3649,7 @@ effect. Built-in contracts remain separately audited assumptions.
 ### Calls through a location
 
 A call consumes the contract established for
-the callee value; a stronger effect needs a certificate, and storage keeps
+the callee value; a stronger effect needs its definition checked at it, and storage keeps
 its checked lifetime contract. A module function declaration no code
 reassigns is read at the signature certified from its body
 ([function declarations](#function-declarations)),
@@ -3772,13 +3707,14 @@ A callback parameter may state its result as `Modifies<P, T>` too:
 `{value: any, store: keep}`, so its caller retains array-length bounds, and
 an analyzed callback writing a captured counter meets the contract.
 `invalid-bounds-callback-footprint` passes a shrinking callback and is
-refused; its Node run reads `undefined`. A forged control claiming heap
-preservation of the counter-writing callback is refused by evidence
-production and consumption.
+refused; its Node run reads `undefined`.
 
-The source acceptance theorem includes effect checking. Pipeline controls
-exercise qualified callbacks passed or returned as values, ordinary-call
-fallbacks, and forged effect claims on bodies that mutate captured storage.
+The acceptance theorem includes effect checking (`FootprintClause` of
+`PassUnit.RequestSafe`). Pipeline cases exercise qualified callbacks passed
+or returned as values and ordinary-call fallbacks; controls of
+`tests/single-pass-controls.mts` force heap-preserving proposals on bodies
+that mutate storage (`TSCERT_FORCE=callees`, `schemes`, `callbacks`,
+`results`, `imports`), each refused.
 
 ### Definition and application rules
 
@@ -3792,7 +3728,7 @@ Write $`\Gamma\vdash e:B\;!\epsilon`$ for safety with the entry-relative
 postcondition $`Q_\epsilon`$ from that equation. Semantically this quantifies over
 every eligible budget, world, heap $`h`$ and environment satisfying $`\Gamma`$, and
 requires `SafePost B (Qε h)` for the instantiated term. It is not a Boolean
-producer judgement and does not mean “no write syntax occurs.”
+judgement of the walk and does not mean “no write syntax occurs.”
 For a fixed-arity closure, the intended introduction rule is schematically
 
 ```math
@@ -3809,8 +3745,8 @@ code arity/binding checks and the ordinary body-safety obligation remain.
 Parameter defaults execute on invocation, so their effects are included; rest
 allocation is allowed. An overload needs the premise for each claimed qualified
 signature, and a scheme needs it for every admissible binder assignment, not
-just observed instances. These are obligations on the eventual graph certificate,
-not permissions to omit those forms from its accounting.
+just observed instances. These are obligations on the graph check, not
+permissions to omit those forms from its accounting.
 
 Application uses that type alone. With callee, receiver and arguments already
 values, its intended rule is
@@ -3856,8 +3792,8 @@ claim must fail with a located obligation rather than silently disappear.
 
 The semantic introduction and elimination rules are proved in
 `ProgramTyping.callsT_of_graph`, `restsT_of_graphRest`, and `CallEffects.call_safe`.
-`GraphCode.codeChecked_sound` checks ordinary safety and the signature's effect
-together; a separate unqualified body check cannot introduce a qualified type.
+`PassUnitCodes.codeSpec_of_guarantee` gives ordinary safety and the
+signature's effect together from the code's run; a separate unqualified body check cannot introduce a qualified type.
 Rest-collecting entries retain their store contract in the checked frame, and
 the entry allocation preserves the input heap before the checked body runs.
 The effect algorithm ([ExpressionEffects.lean](../lean/Verification/Programs/ExpressionEffects.lean))
@@ -3911,34 +3847,31 @@ unrestricted results. `PromiseWith.bound` is the common forwarding proof for
 fixed and variadic binding: saving a receiver and prefix changes the admitted
 arguments, not the forwarded call's heap guarantee.
 
-Source acceptance runs this checker, and `SourceClaimJson.checkUnitJson_safe`
-states its conclusion. One contract record carries receiver,
-arguments, result and required effect through graphs, claims and certificates;
-subtyping checks effect implication and substitution preserves it. Ordinary
-source annotations remain unrestricted; OCaml proposes preservation for
-closure bodies of reads, element reads, fresh allocations, patterns including
-array rests, and fixed calls and method calls whose callee's signatures all state it
-(`footprint_expr` in `source.ml`), retaining it through symbolic claims and
-substitution. A method call on a union of hosts each holding the member is
-such a call, its member bound to the object
+Source acceptance runs this checker, and
+`SourceClaimJson.PassUnit.mode8Accepted_sound` states its conclusion. One
+contract record carries receiver, arguments, result and required effect
+through graphs and the walk's types; subtyping checks effect implication and
+substitution preserves it. Ordinary source annotations remain unrestricted;
+the walk proposes preservation for a function literal whose body changes
+nothing it records (`Walk.valueChange`, `Walk.storeChange`): reads, element
+reads, fresh allocations, patterns including array rests, and fixed calls
+and method calls whose callee's signatures all state it, retaining it
+through substitution. A method call on a union of hosts each holding the
+member is such a call, its member bound to the object
 ([bind-union-host](PROGRAM-TYPING.md#judgments-and-constructor-views)); a call
 the lowering dispatches on its object in one node gets no proposal
 (`compiler-api-find-union-node-method`, `invalid-find-union-method-effect`,
-run under Node). Evidence production adds a
-code entry to its search table only after the complete body/effect check passes.
-A forged effect thus fails at the defining callable's located typing obligation.
-All code certificates remain in the submitted response, and final acceptance
-independently checks every one; withholding a search hint cannot hide a failure. Qualified graph claims are
-submitted and certified through the ordinary source pipeline.
+run under Node). A code entry is admitted to the table only after its
+complete body and effect check passes (`PassUnitCodes.codesAccepted_sound`), so a
+wrong effect fails at the defining callable's located typing obligation.
 
 ### Function declarations
 
-A declaration's claim states the closed
-footprint $`\Phi`$ proposed for its signature (`footprint` in the
-[claims](SOURCE-CLAIMS.md)). The unit of a declaration claiming a footprint
-other than `all: any` is checked as a code entry's graph is: its nodes pure,
-or each node within $`\Phi`$ on normal return (`effectResult`, alongside
-ordinary safety), under the ordinary checker, at the unit's goal: a plain
+A declaration's front states the closed
+footprint $`\Phi`$ proposed for its signature (`declarationEffects`). The
+unit of a declaration stating a footprint other than `all: any` is checked
+as a code entry's graph is: its nodes pure, or each node within $`\Phi`$ on
+normal return (`GraphCode.nodeChecked`, alongside ordinary safety), under the ordinary checker, at the unit's goal: a plain
 result, a guard's promise or an assertion function's. A node is
 within $`\Phi`$ as an inspection, which preserves the heap; as a write of a
 field every alternative of the object's type gives a type of source values,
@@ -3949,8 +3882,8 @@ whose footprint is within $`\Phi`$. The graph's run is then within $`\Phi`$
 return meeting the goal. A guard's or an assertion function's promise
 signature states its footprint beside the promise (`moduleArrow`;
 `guard-footprint`, `invalid-guard-footprint`). A unit qualified by a
-resolution descriptor is refused such a claim. A code entry's signature
-follows the same rule (`GraphCode.effectCheckedResult`): a guard closure's
+resolution descriptor is refused such a footprint. A code entry's signature
+follows the same rule: a guard closure's
 promise signatures, its own and one a longer callback offers it, state the
 footprint its body proposes beside the promise, its graph checked at each
 (`blocker-compiler-api-find-promise`, `guard-closure-footprint`,
@@ -3962,10 +3895,10 @@ inputs and $`B`$ its result,
      {\vdash P:\Gamma\to B\;!\;\Phi}\ \textsf{declaration-effect}
 ```
 
-and `SourceClaimJson.checkUnitJson_safe` states, for each such unit, that its
-graph run as code from inputs it admits returns with a heap its claimed
-footprint relates to its entry heap, and a value meeting its goal
-(`SourceExtraction.checkRequests_footprint_at`).
+and `SourceClaimJson.PassUnit.mode8Accepted_sound` states, for each such
+unit, that its graph run as code from inputs it admits returns with a heap
+its footprint relates to its entry heap, and a value meeting its goal
+(`FootprintClause` of `PassUnit.RequestSafe`).
 Every other unit reads the declaration at its annotation's signature stating
 that effect, its variadic extension included (`moduleArrow`), as it reads the
 declaration's ordinary signature: each unit's theorem holds under `EnvOk` of
@@ -3974,28 +3907,32 @@ that each declaration meets the signature the others read it at is
 [module composition](../WORK.md#module-composition). A parameter default executes in the declaration's graph, so the
 check covers it. An imported function is read at its declaration's type,
 which states the effect its [statement](#stated-effects) states and none
-without one (`invalid-preserving-callback-value-import`). OCaml
-proposes the effect at the greatest fixpoint over the module: every
-declaration whose body could preserve the heap, were its callees to, is
-assumed preserving, recursion included, and rounds of inference withdraw the
-assumption from each whose claims then do not show it; a body calling a
-quantified callee at an instance is not proposed. A forged effect fails at
-the first node that does not preserve the heap, in evidence production and
-in checking (`declaration-preserving-callback`,
-`declaration-field-write-callback`, `invalid-declaration-pop-callback`).
+without one (`invalid-preserving-callback-value-import`). The walk
+proposes the effect callees first (`declarationWalks`): each function a
+unit reaches is walked as its unit is, each callee read at the footprint
+found for it, and its proposal is the join of the changes its writes and its
+calls' instances make; a self-recursive function is walked with itself at
+the empty footprint, then at what that walk found, until a walk finds no
+more than it assumed (three walks at most). An async or generic function,
+one with a rest, a written effect or a written promise keeps the signature
+the front gives it (`fragmentClaims`). A wrong effect fails at the first node that does not preserve
+the heap (`declaration-preserving-callback`,
+`declaration-field-write-callback`, `invalid-declaration-pop-callback`; every
+declaration proposed heap-preserving, `TSCERT_FORCE=callees`, is refused for
+`invalid-declaration-pop-callback`).
 
 ### Returned closures
 
 A declaration whose result annotation is one function type, its signatures
-stating no effect and taking fixed actuals, may claim a closed footprint
-$`\Phi_r`$ for the function it returns (`resultFootprint` in the
-[claims](SOURCE-CLAIMS.md)). Its unit is checked at the annotation's result
+stating no effect and taking fixed actuals, may state a closed footprint
+$`\Phi_r`$ for the function it returns (`resultFootprint` of its front's
+row, `returnedFootprint`). Its unit is checked at the annotation's result
 with each of its signatures stating $`\Phi_r`$, $`B_{\Phi_r}`$
 (`resultWithFootprint`), so every return meets that type: a returned
 closure's code is certified at a row whose effect covers $`\Phi_r`$, as any
 closure flowing to a qualified arrow is. Every other unit reads the
 declaration at its signature with that result (`moduleArrow`), and a
-certified import at its unit's claim (`importedArrow`):
+certified import at its unit's stated type (`importedArrow`):
 
 ```math
 \frac{\vdash P:\Gamma\to B_{\Phi_r}\;!\;\Phi\qquad B=\mathcal F_{\top}(R,\vec A,C)}
@@ -4003,19 +3940,19 @@ certified import at its unit's claim (`importedArrow`):
 ```
 
 The premise is the unit's ordinary check at the stronger result, so
-`SourceClaimJson.checkUnitJson_safe` covers it unchanged; that each
+`SourceClaimJson.PassUnit.mode8Accepted_sound` covers it unchanged; that each
 declaration meets the signature the others read it at is
 [module composition](../WORK.md#module-composition), as for its own
-footprint. OCaml proposes $`\Phi_r`$ at the least fixpoint over the module,
-with the declarations' own footprints: assumed empty, and raised by each
-round to the join of the footprints its returns' claims state. A call of the
+footprint. The walk proposes $`\Phi_r`$ with the declaration's own
+footprint (`returnedFootprint`): the join of the footprints of every
+signature of each function its returns hold, where the result annotation can
+state it (`resultWithFootprint`). A call of the
 returned closure then keeps what a call at $`\Phi_r`$ keeps
 (`returned-closure-footprint`). A closure changing a store gets no
 footprint, and a read after its call is refused
-(`invalid-returned-closure-footprint`, run under Node); a forged
-$`\Phi_r`$ is refused where the claimed return type is compared with the
-annotation, and, forged on the result's row too, at the closure's node
-changing the store, in search and in checking.
+(`invalid-returned-closure-footprint`, run under Node); $`\Phi_r`$ proposed
+at the empty footprint (`TSCERT_FORCE=results`) is refused for
+`invalid-returned-closure-footprint`.
 
 ### Stated effects
 
@@ -4055,8 +3992,8 @@ A type guard or an assertion function states it at its promise's type,
 `x is Modifies<P, T>` (`asserts x is Modifies<P, T>`), which TypeScript reads as
 `x is T`: $`\epsilon(P)`$ is the effect of both signatures of a declared
 guard, the plain one and the promise signature, which run the same code
-(`stated-guard-value-import`; `invalid-stated-guard` is refused at its own
-unit). A guard written as a closure or a class method has $`\epsilon(P)`$ at
+(`stated-guard-value-import`, a gap: an imported guard has no entry;
+`invalid-stated-guard` is refused at its own unit). A guard written as a closure or a class method has $`\epsilon(P)`$ at
 its plain signature only; its promise signature may change every location, a
 weaker reading of the same code.
 
@@ -4097,27 +4034,29 @@ domain:
      {\vdash d:\Gamma\to B\;!\;\epsilon}\ \textsf{stated-declaration}
 ```
 
-(`RequestJson.statedWithin`; proved: `SourceExtraction.effectResult_stated`,
-`SourceExtraction.checkRequests_stated_at`, from `checkRequests_footprint_at`
-by `Closed.Holds.mono`). The premise $`\vdash P:\Gamma\to B\;!\;\Phi`$ is
+(`RequestJson.statedWithin`, which the pass checks first,
+`PassUnit.declaredEffect`; `mode8Accepted_sound` gives the unit's footprint
+$`\Phi`$, `FootprintClause` of `PassUnit.RequestSafe`, and
+$`\Phi\le\epsilon.\mathsf{footprint}`$ gives the stated one by
+`Closed.Holds.mono`). The premise $`\vdash P:\Gamma\to B\;!\;\Phi`$ is
 established by the node-by-node bound check or, where it refuses and no
 fresh result is promised, by the regional check with no regions, which
 rebases a callee's region on a store the body allocated to none
 ([fresh array storage](FOOTPRINTS.md#fresh-array-storage)).
 A unit stating a fresh result is checked node by
 node with its returns fresh, whatever its footprint, the shortcuts of the
-top footprint and of a pure graph excluded (`effectResult`), and on normal
+top footprint and of a pure graph excluded, and on normal
 return its value's store lies at or above the entry heap's length
-(`checkRequests_stated_at`; `stated-fresh`, `stated-fresh-frame`;
-`invalid-stated-fresh-input`, run under Node; the forged control of
-`pipeline/test.mts`: an identity function's statement forged to promise a
-fresh result). A value meets a function type stating `Fresh` only where its
+(`FootprintClause` of `PassUnit.RequestSafe`; `stated-fresh`,
+`stated-fresh-frame`; `invalid-stated-fresh-input`, run under Node; the
+control "forged fragment: a fresh result stated of an identity function" of
+`tests/single-pass-controls.mts`). A value meets a function type stating `Fresh` only where its
 own effect states a fresh result (`Effect.covers`; `stated-fresh-callback`,
 `invalid-stated-fresh-closure`). A fresh result is an array a native call
 the body makes allocates; an array the body's own literal allocates is no
-fresh source of the node-by-node check. A claim may offer a closure at signatures narrower
+fresh source of the node-by-node check. The walk may offer a closure signatures narrower
 than its annotation, so a closure's statement is proved as a written
-promise is, whatever the claim offers: some row $`\rho`$ its code is
+promise is, whatever the walk offers: some row $`\rho`$ its code is
 checked at admits the annotation's whole domain, receiver $`R`$, arguments
 $`\vec A`$ (a defaulted one with `undefined`) at its arity, returns within
 the annotated result, and has an effect covering $`\epsilon`$:
@@ -4128,7 +4067,7 @@ the annotated result, and has an effect covering $`\epsilon`$:
 ```
 
 (`lambdaSetup`'s statement obligation; the code at $`\rho`$ by
-`GraphCode.codeChecked_sound`, the statement by `Effect.covers_sound`). A
+`PassUnitCodes.codeSpec_of_guarantee`, the statement by `Effect.covers_sound`). A
 closure with no such row, one claimed at no call signature included, is a
 located refusal (`invalid-method-effect-unused`). A closure collecting a
 rest array is checked at its annotation's own signature, whose effect is the
@@ -4184,12 +4123,11 @@ gives the field's entry value (the stable-read node rule,
      {\vdash d:\Gamma\to B\;!\;\epsilon}\ \textsf{stated-region}
 ```
 
-(`SourceExtraction.regionalResult`; proved: `checkRequests_regional_at`, a
-conjunct of `RequestsSafe`; `stated-argument-store`,
+(the pass's regional check, `PassUnit.MainAccepted`; proved:
+`RegionalClause` of `PassUnit.RequestSafe`; `stated-argument-store`,
 `stated-argument-path`; `invalid-stated-store-region`, run under Node; the
-forged controls of `pipeline/test.mts` moving a region to another position,
-a path region to its record's own store, and a path through a field the
-type does not state). Across the call, a caller's length and bound facts
+controls "forged fragment: store regions moved", "path regions moved" and
+"rebased regions" of `tests/single-pass-controls.mts`). Across the call, a caller's length and bound facts
 of a slot are kept where the frame's closed bound keeps stores and its
 knowledge separates the slot's store from each region's: for a region at a
 position's own store, a region fact `apart` between the actual's slot and
@@ -4227,12 +4165,10 @@ stores `keptIndicesGrown` grows; proved: `regionGrown_grows`,
 An upper bound of such a length, and every fact about a store a region may
 select, is dropped (`stated-region-grow-keeps-lengths`;
 `invalid-stated-region-grow-region` and
-`invalid-stated-region-grow-upper-bound`, run under Node). The producer
-proposes the facts and bounds it keeps (`Linear_facts.region_separated`),
-reading the
-frame from the callee's type (`Semantic.call_effect.regions`, the claims'
-`CallEffect.regions`); a call's coarse bound for every other purpose is
-`top` (`Semantic.coarse_footprint`, `Effect.footprint`).
+`invalid-stated-region-grow-upper-bound`, run under Node). The pass keeps
+the facts and bounds the rule keeps, reading the frame from the callee's
+type (`Effect.regions`); a call's coarse bound for every other purpose is
+`top` (`Effect.footprint`).
 
 Every other heap fact is kept only as the closed approximation `top` keeps
 it.
@@ -4241,25 +4177,28 @@ it.
 receiver of type `C`, so every call in `m`'s body is at a contract stating
 an effect within it; a call of an unstated member of `C`, which a value of
 `C` may hold any function in, defeats it
-(`invalid-method-effect-unstated-dependency`, run under Node). Lean checks
-each call at its selected signature wherever it certifies the definition.
+(`invalid-method-effect-unstated-dependency`, run under Node). The pass
+checks each call at its selected signature wherever it checks the
+definition.
 
-**Across modules.** A statement read from an imported declaration is part
-of its type, so the importer relies on it under the import assumption
-([trust surface](DESIGN.md#trust-surface)), as on any declared type: the
-importer verifies relative to it whether or not the exporting module's run
-certifies it (`stated-assumed-value-import`, whose control runs the
-exporting module's refusal). A certified import's unit claims within its
+**Across modules.** A statement of an imported declaration with no body is
+part of its type, so the importer relies on it under the import assumption
+([trust surface](DESIGN.md#trust-surface)). A statement of an import with a
+body is read where its module's check certifies it, at its interface
+entry, and at the ordinary effect otherwise
+([`import-body`](SOURCE-CONTRACTS.md#imported-ambient-and-global-values)):
+`invalid-stated-assumed-value-import`'s `drain`, whose module's check
+refuses its statement, is read so, and the importer is refused. A certified import's unit is typed within its
 statement. A census checks each module whole, so an accepted unit certifies
 its definitions' statements relative to the statements of what it imports.
 
-**Producer.** OCaml proposes, for a stated definition, the footprint its
-body shows where that is within the statement, and the statement otherwise,
-which Lean then checks node by node; a stated declaration is assumed at most
-at its statement while the module's footprints are inferred
-(`within_statement` in `ocaml-producer/source.ml`). A statement with store
-regions bounds no claim: OCaml proposes what the body shows (`stated_of`). Callees' statements
-reach it through their types, as natives' footprints do.
+**Proposal.** A stated definition's footprint is its statement's closed
+bound (`fragmentClaims` in
+[FragmentFront.lean](../lean/Verification/Source/Claims/FragmentFront.lean)),
+which its callers read and its own unit is checked against node by node; a
+statement with store regions proposes `top`, the regional check of its own
+regions certifying the statement. Callees' statements reach it through their
+types, as natives' footprints do.
 
 ### Exceptional footprints
 
@@ -4377,28 +4316,37 @@ prefix (`CallEffects.prefix_safe_exc`). A node whose entry has a slot of a
 type no value meets is never entered, so it is within any bound
 (`GraphCode.unreachableEntry`; `never-parameter-calls`).
 
-#### What `checkUnitJson_safe` states
+#### What `mode8Accepted_sound` states
 
-Its premises are the CLI's success
-condition for a unit: the file's front computed (`filePlans … = .ok f`) and
-the unit's verdict at its evidence accepted (`unitVerdict … = .ok deps`). Its
-conclusion, `UnitSafe`, gives a module unit its document's check
-(`DocumentSafe`), and a unit of functions its certified requests with
-`RequestsSafe`:
+`SourceClaimJson.PassUnit.mode8Accepted_sound : Mode8Accepted f i →
+PassUnitSafe f i`
+([PassUnitRun.lean](../lean/Verification/Source/Claims/PassUnitRun.lean)).
+Its premise, `Mode8Accepted`, is the success condition of either of the
+pass's print sites for a unit: the file's plans computed, the unit selected
+and its group's verdict accepted (`passGroupMode8 … = .ok deps`), in the main
+file's check (`--verify-interface-stage 8`) or in a fresh module's check.
+Its conclusion, `PassUnitSafe`
+([PassUnit.lean](../lean/Verification/Source/Claims/PassUnit.lean)), gives
+every member of the unit's group a plan crossing the exhaustive conversion
+(`FunctionPlan.certify`) to a request that is safe (`RequestSafe`):
 
-- `checkRequests` accepts them;
-- each request's run is safe (`SafeGraph`) at its goal, at every assignment
-  $`\eta`$ it admits (`r.Admits η`), from every environment meeting its
-  inputs (`EnvOk`), in an admissible world (`WorldAdm`) and a well-typed heap
-  (`HeapOk`);
-- the run of each request whose footprint is not `top` or whose effect
-  states `onThrow`, at every $`\eta`$, from argument values meeting its inputs
-  under the same premises, satisfies `SafePostExc` at its goal, whose normal
-  postcondition is the footprint from the run's entry heap and whose
-  exceptional postcondition is that footprint where the effect states
-  `onThrow`, and `True` elsewhere;
-- each request's stated heap assertions, and its codes', are entailed by its
-  certificate (`RequestAssertionsEntailed`).
+- its run is safe (`SafeGraph`) at its goal, at every assignment $`\eta`$
+  it admits (`r.Admits η`), from every entry meeting its inputs, entry
+  separation and index facts, in an admissible world and a heap the world
+  types (`EntryHolds`);
+- the run of each request whose footprint is not `top`, whose effect states
+  `onThrow` or which promises a fresh result, at every $`\eta`$, from argument
+  values meeting its inputs under the same premises, satisfies `SafePostExc`
+  at its goal, whose normal postcondition is the footprint from the run's
+  entry heap and a fresh result where promised, and whose exceptional
+  postcondition is that footprint where the effect states `onThrow`, and
+  `True` elsewhere (`FootprintClause`);
+- the run meets the stated postcondition where the declaration states one
+  (`EnsuresClause`), and the stated regional bound where it states regions
+  (`RegionalClause`);
+- each stated heap assertion of its graph, and of each of its codes' graphs,
+  holds at every state reached at its label within the budget
+  (`AssertionsClause`, `CodeAssertionsClause`).
 
 #### Natives
 
@@ -4433,36 +4381,34 @@ footprints, with the [certified import](SOURCE-CONTRACTS.md#certified-imports) o
 for callees that build and throw an error: a declaration, a constant's
 arrow, and a declaration whose handler rethrows.
 
-#### Producer and wire
+#### Proposal
 
-A call effect states `onThrow` in the wire
-([source claims](SOURCE-CLAIMS.md)), and so does a declaration's claim beside
-its footprint. OCaml proposes it for a closure and, at a greatest fixpoint
-over the module, for a declaration whose every node bounds its throw
-(`Source.throws_stmts`); a `try` whose block bounds its throws, with a catch
-and no `finally`, is within the join of the block's and the handler's
-footprints. A handler whose every completion throws permits the guarded
-block's normal-return footprint without including the handler's mutations;
-a `try` with a `finally` and no catch, whose finalizer has no `return`,
-`break` or `continue`, is within the join of the block's and the
-finalizer's footprints, since the finalizer completes normally only where
-the block did (`closure-finally-footprint`,
-`invalid-closure-finally-footprint`). The proposal is of the normal return
-only: a finalizer's change after a throw is no part of it, and a caller
-catching the throw and returning holds no footprint
-(`invalid-closure-finally-throw-footprint`); the graph checker
-independently certifies its region. Implementation:
-`HeapObservations.SafePostExc`,
-`CallEffects.Effect.excPost`, `GraphCode.NodeWithin` (its `thr` flag),
-`GraphCode.throwsWithin`, `GraphCode.handlerFresh`, `GraphCode.BoundState`
-(its `exc` flag) and `SourceExtraction.checkRequests_footprint_at`, whose
-statement `checkUnitJson_safe`'s second conclusion is.
+A call effect states `onThrow` (`Effect.onThrow`), and so does a
+declaration's front row beside its footprint. The walk proposes it for a
+closure and for a declaration none of whose calls, iterations or finalizers
+leaves a throw unbounded (`declarationWalks`); a `try` whose block bounds its
+throws, with a catch and no `finally`, is within the join of the block's and
+the handler's footprints. A handler whose every completion throws permits the
+guarded block's normal-return footprint without including the handler's
+mutations; a `try` with a `finally` and no catch, whose finalizer has no
+`return`, `break` or `continue`, is within the join of the block's and the
+finalizer's footprints, since the finalizer completes normally only where the
+block did (`closure-finally-footprint`, `invalid-closure-finally-footprint`).
+The proposal is of the normal return only: a finalizer's change after a throw
+is no part of it, and a caller catching the throw and returning holds no
+footprint (`invalid-closure-finally-throw-footprint`); the graph checker
+independently checks its region. Implementation:
+`HeapObservations.SafePostExc`, `CallEffects.Effect.excPost`,
+`GraphCode.NodeWithin` (its `thr` flag), `GraphCode.throwsWithin`,
+`GraphCode.handlerFresh`, `GraphCode.BoundState` (its `exc` flag) and
+`FootprintClause` of `PassUnit.RequestSafe`, a conjunct of
+`mode8Accepted_sound`'s conclusion.
 
 ## Parameter initialization order
 
 For an annotated record parameter with an object-literal default, the
-producer proposes the annotation's defined view for the initialized binding.
-The literal keeps its own expression claim, including its exact keys where
+walk proposes the annotation's defined view for the initialized binding.
+The literal keeps its own expression type, including its exact keys where
 it omits optional fields. The default dispatch and binding checks establish
 that either the supplied value or the literal meets the proposed view;
 an optional field read retains its `undefined` alternative

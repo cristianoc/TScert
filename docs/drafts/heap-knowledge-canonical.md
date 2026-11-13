@@ -423,11 +423,8 @@ meets.
 ## 7. The evidence
 
 A knowledge entry carries its links, value facts, cell facts and
-separation facts, each link and separation fact a position in its table. A
-fact's contents are a position in the document's table of value sets, each
-distinct value set written once
-([evidence document](../REQUEST-PROTOCOL.md#evidence-document)); a value set
-is written component by component, and a literal set lists its literals
+separation facts ([heap facts](../REQUEST-PROTOCOL.md#heap-facts)); a value
+set is written component by component, and a literal set lists its literals
 and whether it is *these* or *all but*.
 
 ## 8. Bounds

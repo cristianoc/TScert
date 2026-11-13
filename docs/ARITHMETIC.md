@@ -2,8 +2,8 @@
 
 This document owns the integer facts TScert reasons with: linear facts
 over values, array lengths, typed-array lengths and strings' lengths, read
-through field paths, which the producer proposes at program points and Lean
-checks on every incoming edge; the rules that state, carry and decide them;
+through field paths, which the single pass carries forward through each
+unit's program graph, checking a loop head's facts on every edge into it; the rules that state, carry and decide them;
 and the clauses a source writes to state them at function, record and loop
 boundaries. The facts are index facts of heap knowledge
 ([stored knowledge](PROGRAM-TYPING.md#stored-knowledge-and-how-it-is-read)).
@@ -202,8 +202,7 @@ $`i`$, of value $`i`$; $`r`$ is the result:
 **A literal's value.** A slot whose type is one safe integer's literal
 $`k`$, a module constant `const TEXT = 0` among them, holds $`k`$
 (`IndexWrites.litSlot`, proved: `litSlot_sound`), so a read of it states
-$`\mathrm{int}(r),\ r=k`$; the producer reads such a constant at its value
-where a binding is assigned or declared it
+$`\mathrm{int}(r),\ r=k`$, also where a binding is assigned or declared it
 (`literal-constant-value`; negative `invalid-literal-constant-value`, run
 under Node).
 
@@ -428,26 +427,22 @@ $`r=c.\mathsf{value}-1`$ while the cell holds $`r'`$, and `++at` reads at
 $`r'`$. No rule is added for cells: a cell is an object allocated by the
 lowering, and these steps are the field read, sum and write rules above. A
 cell's facts are preserved across a field write where a separation fact keeps
-the written field apart from the cell's `value` (`first`; the producer
-proposes this for a field of a parameter's object, allocated before the
-cell), and across a call as its frame condition preserves a path's.
+the written field apart from the cell's `value` (`first`), and across a call as its frame condition preserves a path's.
 
 An update of a slot inside an expression is a copy of the slot into $`r`$
 (`int-copy`), the sum $`r'=r\pm d`$ and the slot rebound to $`r'`$, the
-facts of the old value eliminated through $`r=x`$. The producer reads an
-expression updating a cell or a slot against the facts after the update: each fact of the binding restated of its old value, the write's
-change applied, the new value stated the old one plus the step, the old one
-eliminated; a binding the expression updates twice, reads elsewhere, steps
-by a non-literal, or updates on only some of its paths is forgotten; a slot
-an expression assigns otherwise is forgotten with the bindings its statement
-assigns. An entry claim's facts lower to candidate atoms
-each stated once, as two claimed facts over a cell's value can lower to one
-atom.
+facts of the old value eliminated through $`r=x`$. The pass states these
+facts at each node from its predecessors' along the steps: a name an edge's
+slots no longer hold has its facts restated through read links and
+eliminated from the linear facts, and a separation fact keeps the partners
+the edge keeps (`SinglePass.Store.drop`), so an expression updating a binding
+twice, or on some of its paths, keeps what those steps establish. A loop head's proposed
+facts lower to candidate atoms each stated once, as two proposed facts over
+a cell's value can lower to one atom.
 
 **Implementation.** The cell's root is `Lowering.termRoot`, the read's
-restatement `readAtoms`; the producer's reading is
-`Linear_facts.after_cell_updates` and `Linear_facts.nested_slot_writes`, the lowering of entry claims
-`Lowering.Flow`, a cut's check `checkAssertions`.
+restatement `readAtoms`; the lowering of a loop head's proposed facts
+`Lowering.Flow`, a head's given invariant `SinglePass.setupGiven`.
 
 ## The clause language
 
@@ -568,7 +563,8 @@ from the arrow's precondition. Code collecting a rest assumes none.
 
 **Units.** A unit's request carries the index facts it assumes of its inputs,
 as it carries their separation; its entry may know them, and its safety
-assumes them (in the conclusion of `checkUnitJson_safe`):
+assumes them (in the conclusion of `mode8Accepted_sound`, through
+`EntryHolds`):
 
 ```math
 \mathrm{EnvOk}(\Gamma_{\mathit{in}},\rho)\land\mathrm{Sep}(\rho)\land\mathrm{IndexHolds}(\mathit{entryIndices},\rho,h)\Rightarrow\text{the unit runs safely from }\rho,h
@@ -600,34 +596,32 @@ the analyzed sources, an importer's included. A caller outside the analyzed
 sources is trusted to establish it, a stand-in until applications are
 analyzed too ([trust surface](DESIGN.md#trust-surface)).
 
-**Calls the producer types.** A call selects a signature stating a
-precondition where the producer's own facts at the call's statement establish
-it: the bounds and linear facts of its analysis, each actual read as a linear
-expression or as a path, a binding and the fields read from it; in an arm of
-`c ? a : b`, with what the arm's branch of `c` states. Its facts naming a
-length, a typed-array length or a path are preserved by a statement writing
-no heap, a call leaving the heap unchanged
-([`call-keep`](PROGRAM-TYPING.md#a-call-that-keeps-the-heap)) included, as Lean preserves
-them, and forgotten by every other, a test's evaluation, its branches' facts
-included, alike; a binding declared at a path's read (`const b = p.f`,
-`const { f: b } = p`) restates of the binding each fact over a path through
-it. Lean decides at the call (`call-requires`).
+**Calls.** Lean decides a call's precondition at the call
+(`call-requires`) over the knowledge the pass carries to it, each actual
+read as a linear expression or as a path, a binding and the fields read
+from it; in an arm of `c ? a : b`, with what the arm's branch of `c`
+states. Facts naming a length, a typed-array length or a path reach the
+call by the frame conditions of the statements before it, a statement
+writing no heap and a call leaving the heap unchanged
+([`call-keep`](PROGRAM-TYPING.md#a-call-that-keeps-the-heap)) among them;
+a binding declared at a path's read (`const b = p.f`, `const { f: b } = p`)
+restates of the binding each fact over a path through it.
 
 **Implementation.** The arrow's meaning is `PromiseWith` and
 `ConstructPromise`. Graph code's frame is `codeFrame`, with `Effect.below`
 (proved: `Effect.pre_frame`); the entry is `GraphCode.codeEntryIndices` and
 `ControlFlow.entryKnows`, the specification `TypingBasics.PreAt` and
 `GraphCodeSpec`, the invocation `graph_invoke`. A unit's facts are
-`Request.entryIndices`, its safety `RequestsSafe`. The front end's
+`Request.entryIndices`, its safety `PassUnit.RequestSafe`. The front end's
 elaboration is `tools/bound-annotations.mts`, with `fieldType`,
 `recordShape` and `namesView`; Lean reads `Fragment.Fn.requires` into the
 request and into `moduleArrow`. A closure's `requires` bounds the facts each
-claimed signature may assume (`lambdaSetup`, `preCovers`); its body and calls
-use `GraphCode.codeChecked_sound` and `preconditionHolds_sound`. Evidence
-search seeds the same entry facts that graph-code checking consumes
-(`CodeRequest.asRequest`, `produceGraphUsing`). An import's precondition is
-`writtenPrecondition` and `writtenImport`, Lean's certified read
-`importedArrow` and `qualifiedRead`.
+signature computed for it may assume (`lambdaSetup`, `preCovers`); its code's run meets
+its signature by `PassUnitCodes.codeSpec_of_guarantee`, and its calls by
+`preconditionHolds_sound`. A code
+request is checked as `CodeRequest.asRequest`, from the entry facts
+graph-code checking consumes. An import's precondition is the front end's
+`writtenImport`, Lean's read `importedArrow`.
 
 **Cases.** Positive: `closure-precondition` (const-bound and local arrows),
 `precondition`, `precondition-lengths`
@@ -716,7 +710,7 @@ binding a declaration or an assignment binds the result to, in each arm of a
 conditional (`assignment-call-postcondition`; negative
 `invalid-assignment-call-postcondition`, run under Node). A
 caller's accepted unit is safe given its callees' signatures:
-`checkUnitJson_safe` concludes its safety under `EnvOk` of its inputs at
+`mode8Accepted_sound` concludes its safety under `EnvOk` of its inputs at
 their signatures, postconditions included. The caller is
 [deep verified](DESIGN.md#function-coverage-and-release-thresholds) only when
 its callees' units are accepted too. A postcondition adds no trust
@@ -728,14 +722,15 @@ function's `ensures` and every imported signature's `ensures`.
 a string-length allocation and a result path; the builder's explicit length
 check establishes its return fact. `written-ensures-push-refused` records
 the unchecked loop's unproved exact length. `written-ensures-value-import` checks a
-caller across an analyzed import. `invalid-written-ensures-body` returns an
+caller across an analyzed import, reading each postcondition its module's
+check establishes (a gap: `text`'s own unit does not establish its string
+length); `invalid-false-ensures-value-import` reads one the module refuses,
+at the ordinary effect. `invalid-written-ensures-body` returns an
 array shorter than its contract, and `invalid-written-ensures-unstated`
 reads below a count absent from its callee's contract (under Node:
 `undefined` and `NaN`). `written-ensures-reassigned-refused` and
 `written-ensures-old-refused` exercise the entry-value restrictions;
-`written-ensures-default-refused` checks a defaulted parameter reference. A control
-in `pipeline/test.mts` forges the unstated result bound after the call; its
-incoming edge must establish it.
+`written-ensures-default-refused` checks a defaulted parameter reference.
 
 **Implementation.** The positions are `CallEffects.ensuresEnv`, the meaning
 the last conjunct of `CallEffects.Effect.post`, which takes the call's
@@ -848,8 +843,8 @@ a fact naming an input no pair holds is refused:
 Every value a normal run returns then meets the facts in the heap it returns
 in, with the inputs' entry values (proved, by an invariant of the run's
 states beside the safety proof's: at each node the table's pairs hold, and
-each edge's target's pairs hold after it; for units, a conjunct of the
-conclusion of `checkUnitJson_safe`). A literal's allocation states the read
+each edge's target's pairs hold after it; for units, `EnsuresClause`, a
+conjunct of the conclusion of `mode8Accepted_sound`). A literal's allocation states the read
 links of its fields (proved), so the bridge restates a fact over an
 initializer's slot as one over the result's path: a return of
 `{ widths, segmentFlags }` establishes
@@ -874,8 +869,7 @@ renamed by `extractNormalizedFn`; the table is `GraphCode.trackTable`, the
 check `GraphCode.returnsEnsure` with `trackFollows` and `returnEntails` (by
 `indicesCheckBy` through `returnMapping`). Proved: `GraphCode.goto_ensures`,
 by `EnsState`, `TracksAt` and `NextTracks`, with `edgesTrack_sound`; for
-units, `SourceRequests.checkRequests_ensures_at`, a conjunct of
-`RequestsSafe`. A literal's read links are `HeapExpressionRules.freshLinks`
+units, `PassUnit.EnsuresClause`, a conjunct of `RequestSafe`. A literal's read links are `HeapExpressionRules.freshLinks`
 (proved in `alloc_sound`); a failing return's refusal is `ensuresRefusal`.
 
 **Cases.** Positive: `bounds-quantified-invariant` (pretext's `createLine`
@@ -887,9 +881,9 @@ Negative, each run under Node: `invalid-bounds-quantified-invariant` (an
 index at the array length), `invalid-type-invariant-constructor` (a
 return of a view one element short), `invalid-type-invariant-push` (a
 `push` before passing the value on) and `invalid-type-invariant-cast` (a
-value typed by a cast). Forged controls in `pipeline/test.mts`: the
-invariant claimed of the cast value at the call's entry, refused there, and a
-postcondition forged into the parser's document, refused at the return. A
+value typed by a cast). Control (`tests/single-pass-controls.mts`): a
+postcondition forged into `type-invariant-walker`'s fragment, refused at
+the return. A
 parameter's invariant at its returns: positive
 `cursor-invariant-after-writing-call` (pretext's `countSteppedLines` shape:
 a loop calling a cursor-writing helper, then reading at the cursor's index);
@@ -899,7 +893,7 @@ stepping the cursor below 0, refused at its return); positive
 preserved at a number field's write, `view-path-stable`) and negative, run
 under Node, `invalid-view-path-field-replaced` (the field itself replaced); a
 forged control, a parameter's fact the front end does not state forged into
-the document, refused at a return. Sealed handles:
+the fragment, refused at a return. Sealed handles:
 `sealed-handle-value-import` (the handle and its casts in and out, `seal` and
 `open`, in `imports-project/handle.ts`; a builder establishing the
 representation's invariant at `seal`, walkers opening the handle and reading
@@ -914,8 +908,9 @@ object, refused at the cast); a representation by intersection, positive
 `invalid-sealed-handle-intersection-builder` (a view one element short,
 refused at the builder's return); refused gaps
 `sealed-handle-no-representation-refused` and
-`sealed-handle-union-representation-refused`; a forged control: the handle's
-invariant claimed at the walker's entry after the resize, refused there. A
+`sealed-handle-union-representation-refused`; a control: the loop head of
+`invalid-sealed-handle-resize`'s `lastFlag` with its restated facts forced
+false (`head-restated`), refused at the head. A
 cast into or out of a handle is itself an obligation of the operand at the
 handle's or the record's type, which these casts do not meet
 (`blocker-pretext-opaque-handle-cast`).
@@ -960,10 +955,10 @@ permits eight nested case splits and refuses an exhausted search.
 **Implementation of linear disjunctions.** The fact is `IndexFact.either`;
 `caseEntails_sound` proves case splitting and `guardEntails_sound` proves
 introduction. `guardFollows_sound` connects them to the edge and contract
-checks. Entry claims carry recursive `either` arms over guarded linear
-claims. The producer carries these facts across statements, retains common
-facts at joins, and proposes a surviving arm where its linear search refutes
-the other. Each proposed entry is checked by Lean.
+checks. On an edge observing a test's answer or a truthy value, the pass adds
+the arm of each disjunction whose other arm contradicts the known linear
+facts (`HeapKnowledge.releaseEither` through `withElements`, in
+`SinglePass.edgeStoreOf`; proved: `releaseEither_holds`).
 
 **Meaning.** A guard's path reads a value with each field the object's read
 of a string key: the location's value where the object owns the key,
@@ -1025,9 +1020,9 @@ contexts }` after `if (contexts !== null && contexts.length !==
 widths.length) throw …` by its two edges, one entering where `contexts` is
 `null`, the other where the lengths are equal.
 
-**Joins.** A merge of the search, untrusted, retains a guarded candidate,
-each predecessor's guarded atom also restated through its read links, where
-every predecessor's knowledge entails it; each edge is checked. The search
+**Joins.** A merge of the pass retains a guarded candidate, each
+predecessor's guarded atom also restated through its read links, where
+every predecessor's knowledge entails it. The join
 retains the value a slot's type states where it admits `null` alone or
 `undefined` alone, which an edge widening the slot's type would otherwise
 lose. So `const hyphenWidths = items === undefined ? null :
@@ -1051,16 +1046,8 @@ object may lack bridges terms too: where the key is absent, the read gave
 `undefined`, of which no term denotes an integer, as none does of the path
 through the absent key (proved).
 
-**The producer** carries guarded facts as it carries linear facts: from a
-precondition and a call's postcondition; restated at a path's read and a
-destructuring; preserved by a heap change where its guards read slots alone
-and the change preserves its fact; a test's branch excluding a guard's tag
-adds its body, at a statement's edges and in a conditional's arm; the false
-branch of `a && b`, where `a` tests a path against one tag, states `b`'s
-branch guarded by that tag; a conditional with a `null` or `undefined` arm
-states the other arm's restated guarded facts. Entry claims carry each fact's
-ordered guards, each a binding's name, a path and a tag; the lowering wraps
-the fact in them.
+A loop head's proposed guarded fact carries its ordered guards, each a
+binding's name, a path and a tag; the lowering wraps the fact in them.
 
 **Limits.** An object literal with no field `items` has a prototype, so its
 read of `items` is the prototype's, which no rule reads: a builder returning
@@ -1080,14 +1067,14 @@ guard's read `HeapFacts.ReadGave` and `readGuard`, an absent field's term
 `indicesCheckWith_sound`), with `liftGuard` (proved: `liftGuard_eq`),
 `lowerGuard` (proved: `lowerGuard_eq`) and `guardTags` (proved:
 `guardTags_sound`); an edge's typed values are `typeValues` and
-`ControlFlow.withTypedCells`. The join is in `CertificateProducer`, the
-tag values `withTagValues`. Preservation is `guardKept` and
+`ControlFlow.withTypedCells`. The join is `CertificateProducer.joinGuarded`,
+applied by the pass's merge (`SinglePass.mergeState`), the tag values
+`withTagValues`. Preservation is `guardKept` and
 `IndexFact.keptBy` (proved: `readGuard_kept`, `holdsAt_kept`), the
 environment-only fact `IndexFact.envOnly` (proved: `holdsAt_envOnly`), the
-optional-key bridge `readBridge`. The producer is `linear_facts.ml`: each
-guarded fact a pseudo-binding (`gfact_key`), elimination `geliminate` and
-`with_test`, the conjunction's false branch `gtest`; entry claims carry
-`LinearClaim.guards`, which `Lowering/Flow.lean` wraps.
+optional-key bridge `readBridge`. A loop head's proposed guarded fact is
+`HeadInference.Fact.guarded`, carried as `LinearFactClaim.guards`, which
+`Lowering/Flow.lean` wraps.
 
 **Cases.** Positive `guarded-invariant-nullable` (pretext's
 `discretionaryHyphenContexts`: two builders, a destructured walker,
@@ -1098,9 +1085,10 @@ guarded fact a pseudo-binding (`gfact_key`), elimination `geliminate` and
 under Node, `invalid-guarded-invariant-short` (a builder returning untested
 contexts, refused at its return), `invalid-guarded-invariant-other-field`
 (the null test of another field, refused at the read) and
-`invalid-guarded-conditional-other-field` (alike, in a conditional); forged
-controls: the guard removed from a claimed fact, and a guard naming another
-field, each refused at its entry.
+`invalid-guarded-conditional-other-field` (alike, in a conditional); a
+control: the loop head of `invalid-guarded-invariant-short`'s `narrowing`
+with its proposed guarded facts forced false (`head-guards`), refused at
+the head.
 
 ## Quantified clauses
 
@@ -1174,8 +1162,7 @@ requires its own terms to denote. Thus an ordering contract can state:
 The read rule instantiates an offset with a second element read only when
 linear entailment establishes that its index equals the first index plus
 that offset. `offsetSlot_value` and `instantiateEvery_holds` prove that
-substitution preserves the body's meaning. The producer proposes these
-instances for reads within the same expression.
+substitution preserves the body's meaning.
 
 **Frame conditions.** A body containing an element projection or offset is preserved
 across heap extension and unchanged heaps. The growth and element-write
@@ -1214,9 +1201,8 @@ number of elements (proved: `IndexWrites.literalArrayAtoms_holds`). Its
 lowering evaluates each element once, in source order, then the store and
 the object holding it in one inspection. The postcondition records the
 length and the allocation's fresh locations. An empty literal therefore
-states zero length. The producer proposes the zero-length facts at the declaration
-and the written quantified invariant at the loop head; each incoming edge
-checks the invariant, including the entry from the empty literal.
+states zero length. Each edge into a loop head checks the head's quantified
+invariant, written or proposed, including the entry from the empty literal.
 
 **Empty prefixes.** An existing quantified fact witnesses the element store
 of its array or view. Together with a defined bound at most zero, it
@@ -1250,8 +1236,7 @@ a call included. A push into either keeps the other's length
      {\Sigma\vdash x.\mathtt{push}(\vec v)\dashv\Sigma',\ |y|=n}\ \textsf{push-apart}
 ```
 
-and symmetrically for a push into $`y`$. The producer keeps such a length at
-each statement from the constants' declarations in the node's scope. Cases:
+and symmetrically for a push into $`y`$. Cases:
 `push-keeps-fresh-lengths` (pretext's `segmentAtLineBreaks`: two literals
 pushed around a typed array's write stay equally long); negative
 `invalid-push-keeps-fresh-lengths-alias`, run under Node (a constant a
@@ -1317,8 +1302,7 @@ $`k\le n`$, $`m\le k+1`$, and the written value satisfies every body fact
 at $`k`$. The bound and body terms must survive the write. Every index
 below $`m`$ is either $`k`$, holding the written value, or below $`n`$,
 holding its previous element (proved: `PromiseCalls.every_written_prefix`).
-The checker proposes a known term equal to $`k+1`$ as the extended bound;
-the producer carries that fact across a value-binding assignment.
+The checker proposes a known term equal to $`k+1`$ as the extended bound.
 
 **Across a scalar field write.** A field write that keeps stores preserves
 a prefix with a stable bound when its body does not name the index and the
@@ -1341,16 +1325,6 @@ counter write. A strict body may exclude
 the updated counter; preserving it then requires separation between the
 cell and the element locations, a stated limit.
 
-**The producer** carries each precondition's quantified facts to the entries
-it claims (an entry's `quantified`, [SOURCE-CLAIMS](SOURCE-CLAIMS.md)),
-preserves them across a statement writing no heap and naming none of their
-bindings, keeps them across a push as `every-grow` and `every-push` keep
-them, where its own frame analysis keeps their bounds, restates them at a
-path's read, each read of a destructuring in turn, and, at an element read at an index
-its facts bound below the fact's bound, names the read's value with the body
-facts instantiated, for the call typing and the linear facts of the
-statement.
-
 **Implementation.** The quantified fact is `IndexFact.every`, with
 `boundValue` and `elementInt`; the front end's elaboration
 (`tools/bound-annotations.mts`) states the body's variables `Bound.index`,
@@ -1370,9 +1344,8 @@ elements is `HeapKnowledge.elementsOf`. Preservation is
 `boundValue_grown` and `factAt_monotone`; `appendKept_holds`). `every-write`
 is `PromiseCalls.everyWritten`, with `writtenBody`, added by `writeKept` in
 `withEnsures` (proved: `every_written`, `writeKept_holds`), from the exact
-write `CallEffects.ExactWrite`. The producer's
-facts are `Linear_facts.efact`, its element reads `Linear_facts.with_reads`
-and `element_facts`, its facts across a push `Linear_facts.egrown`.
+write `CallEffects.ExactWrite`. A loop head's proposed quantified fact is
+`HeadInference.Fact.every`.
 
 `every-empty` is the `every` branch of `HeapKnowledge.linearFollows`
 (proved: `linearFollows_sound`). `IndexWrites.emptyArrayAtoms` states an
@@ -1388,8 +1361,7 @@ through an alias of the quantified array) and
 Empty entry: positive `quantified-empty-builder` (an empty literal, push
 under a written invariant, and a bounded consumer); negative
 `invalid-quantified-empty` (`[7]` claimed bounded by a one-element array,
-returning `NaN` under Node). Its forged control claims that quantified fact
-at the entry immediately following `[7]`.
+returning `NaN` under Node).
 Across a push: positive `quantified-push-builder` (pretext's builder pushing
 `widths.length`, then its `narrowsLine` consumer); negative, each run under
 Node, `invalid-quantified-push-value` (a push of a value the body excludes),
@@ -1406,14 +1378,13 @@ reads at the written and another index; a loop clamping every element);
 negative, each run under Node, `invalid-typed-array-element-write-int32-wrap`
 (an `Int32Array` write of $`2^{31}`$), `invalid-typed-array-element-write-uint8-truncation`
 (a `Uint8Array` write of 260) and `invalid-typed-array-element-write-value`
-(a write of a value the body excludes), each refused where the fact the
-producer proposes after the write is checked; a gap,
-`typed-array-subarray-facts-gap`. Forged
-controls in `pipeline/test.mts`: the inclusive and alias-write negatives'
-reads claimed at `number` with the strict quantified fact claimed at the
-return's entry, refused there, and alike the two typed-array negatives'; and the
-strict fact claimed at the entry after the push of the value and alias
-negatives, refused there. An array with a hole reaches no `number[]`: a readable store
+(a write of a value the body excludes), each refused at the write's
+quantified fact; a gap, `typed-array-subarray-facts-gap`. Controls
+(`tests/single-pass-controls.mts`): `quantified-element-reads`'s and
+`bounds-quantified-invariant`'s loop heads with their proposed quantified
+fact forced false (`head-every`), refused at the head, and
+`bounds-quantified-invariant`'s fragment without its quantified
+precondition, refused. An array with a hole reaches no `number[]`: a readable store
 holds a hole only where `undefined` meets its element type, and the fragment
 makes none.
 
@@ -1432,8 +1403,10 @@ assumes it; the loop's exit, the false branch of its test, starts from it.
      {\Sigma_{\mathit{head}}=I,\ C}\ \textsf{loop-invariant}
 ```
 
-with $`\Sigma_{\mathit{claimed}}`$ the facts the producer supplies at the
-head, candidates of which the head keeps those $`C`$ every edge establishes
+with $`\Sigma_{\mathit{claimed}}`$ the facts `HeadInference` proposes at
+the head, candidates of which the head keeps those $`C`$ every edge
+establishes (the front drops a refused candidate and runs the pass again,
+`FilePlans.passGroupInferred`)
 ([source observation checkpoints](PROGRAM-TYPING.md#source-observation-checkpoints)),
 and $`I`$ the clause's facts rooted at the bindings it names: a value
 binding's slot, or an initialized cell's `value` field
@@ -1450,21 +1423,19 @@ two counters stepping by 2 and by 1.
 binding's declaration (a static type request), and elaborates the clause
 (`elaborateRequires`) to index facts at positions naming the bindings, the
 `while` node's `invariant` (`LoopInvariant`, `tools/fragment.mts`;
-`Fragment.Stmt.loop`). Lean asserts the facts at the head's cut, required whatever the producer
-supplies, its bindings resolved to the head's value slots or cell paths (`Lowering.Flow.invariantFact`), so the check
-of each edge into the head (`checkAssertions`) decides it whatever the
-producer proposes. The producer adds them to the head's state
-(`Source.loop_invariants`, `Proposal_flow`), so the entries of the body claim
-what follows from them.
+`Fragment.Stmt.loop`). Lean asserts the facts at the head's cut, its
+bindings resolved to the head's value slots or cell paths
+(`Lowering.Flow.invariantFact`); they are part of the head's given
+invariant (`SinglePass.setupGiven`), which the check of each edge into the
+head decides, whatever the proposed candidates.
 
 **Cases.** Positive: `loop-invariant-reads` and `bounds-cell-invariant`
 (an expression-updated counter). Negative, each run under Node:
 `invalid-bounds-cell-invariant` (a false entry over a cell),
 `invalid-loop-invariant-back-edge` (a back edge stepping `j` by 3) and
-`invalid-loop-invariant-entry` (an entry with `j = 2`). Control in
-`pipeline/test.mts`: the back-edge negative's read claimed at `number` with
-every fact the producer proposes removed but the parameters', refused at the
-loop's head.
+`invalid-loop-invariant-entry` (an entry with `j = 2`). Control
+(`tests/single-pass-controls.mts`): a false fact written into
+`bounds-cell-invariant`'s loop invariant, refused.
 
 ## Store separation
 
@@ -1529,13 +1500,7 @@ holds its value in every heap a normal return reaches; a write of a
 
 The element write's outputs pass `stableFirst` to the atoms they keep
 (`IndexWrites.lengthOutput`, `growOutput`), the field write's to its kept
-atoms beside `writeKeeps` (`HeapExpressionRules.writeOutput`). The producer
-keeps such a separation across a statement, a test or an initializer whose
-every heap-writing step is a call of a function, an element write of a
-binding's array, a field write (`??=`, `||=` and `&&=` of a field among
-them) or a method call at a signature keeping the heap or stating a
-footprint and changing neither its receiver's store nor its own locations,
-each of operands writing no heap (`Linear_facts.skept`).
+atoms beside `writeKeeps` (`HeapExpressionRules.writeOutput`).
 
 **Guarded separations.** A separation guarded by a slot's own value,
 $`z = \overline g \lor P\mathrel{\#}Q`$ (a [guarded fact](#guarded-clauses)
@@ -1543,10 +1508,11 @@ whose guard's path is empty), is the clause `z === null || P !== Q`. An
 edge establishes it by its guard's tag (`guard-tag`) or by its body
 (`guard-body`, `guardBodyFollows`), and from the same guarded separation
 (`guard-match`, `factFollows`); a step keeps it where it keeps the body,
-the guard reading a slot alone. At a merge the search proposes, of a
+the guard reading a slot alone. At a merge the pass keeps, of a
 separation one predecessor states of a slot $`x`$ aliasing $`z`$, the
-separation of $`z`$ guarded by the tag another predecessor holds in $`z`$;
-each edge is checked. So `const chosen = use ? runs : null` establishes
+separation of $`z`$ guarded by the tag another predecessor holds in $`z`$,
+where every predecessor's facts entail it (`SinglePass.mergeState`,
+`indicesCheckWith`). So `const chosen = use ? runs : null` establishes
 `chosen === null || xs !== chosen.open` from `xs !== runs.open`:
 
 ```math
@@ -1570,22 +1536,9 @@ proved: `regionSep_out`).
 **Implementation.** The front end elaborates `P !== Q`
 (`elaborateRequires`, `tools/bound-annotations.mts`) to
 `{"storeApart": {slot, path, other, otherPath}}`, inside a guarded fact
-under guards; an entry claim's `storesApart` proposes one at a statement
-entry, with its `guards`. The producer proposes those of a precondition and
-of a loop invariant and of a declaration of an object literal whose field
-holds an empty array literal. A declaration or assignment copying a binding
-restates that binding's separations over the destination, including their
-guards. At a join, a separation on one incoming edge and a null, undefined,
-true or false value of one of its bindings on the other produce the
-separation guarded by that value. Literal assignments and narrowing tests
-supply those values. Conditional expressions use the same copy transfer and
-join as statement control flow: `const z = c ? b : null`,
-`let z: Runs | null = null; if (c) z = b;` and the undefined alternative
-therefore propose guarded separations (`Linear_facts.svalue`, `sjoin`,
-`Proposal_flow`). These statement-entry facts are candidates; Lean retains
-those every incoming edge establishes. Assignments forget facts naming
-the overwritten binding, and heap steps keep separations according to
-`Linear_facts.skept`. Proved:
+under guards. A loop head's proposed separation
+(`HeadInference.Fact.apart`, with its guards) is a candidate; Lean retains
+it where every incoming edge establishes it. Proved:
 `storeFollows_sound`, `guardBodyFollows_sound`, `factFollows_sound`,
 `restateStores_holds`, `stableFirst_frame`, `regionFirst_kept`,
 `regionGrown_grows`, `effectKept_holds`.
@@ -1608,11 +1561,11 @@ separation the declaration establishes on its `null` arm alone, `NaN`) and
 another binding than the region position's, `NaN`) and
 `invalid-stated-region-nullable-reassigned` (the region actual overwritten
 after its guarded separation holds, `undefined`).
-Gap: `stated-distinct-view-refused`. Controls in `pipeline/test.mts`: an unknown guard tag refused by both claims
-decoders, a
-separation forged at a caller's entry, a fact forged across a frame that
-may change its array's store, and a fact forged across a call whose region
-position another binding's guarded separation names, each refused.
+Gap: `stated-distinct-view-refused`. Controls
+(`tests/single-pass-controls.mts`): `invalid-stated-alias`'s fragment
+without `measure`'s separation, refused at the read it kept, and
+`stated-argument-path`'s loop head with its proposed separation forced
+false (`head-separations`), refused at the head.
 
 ## Designs that extend this document
 

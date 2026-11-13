@@ -15,7 +15,7 @@ incoming edge establishes it. Base: local branch `chain1-facts` at
 the mechanism [the general mechanisms](../DESIGN.md#general-mechanisms) list
 for what holds at a program point), with
 [linear facts](../ARITHMETIC.md) as the integer part and
-[evidence produced from supplied claims](../SOURCE-ELABORATION.md#producing-evidence-from-supplied-claims)
+[the single pass](../SOURCE-ELABORATION.md#checking-a-unit-in-one-pass)
 as the division of work. Its parts, all **read**:
 
 - **Cuts.** The lowering makes each statement entry a cut whose assertion
@@ -243,8 +243,7 @@ shows it unused.
 
 A refused obligation's diagnostic lists the candidates left out on the
 paths reaching it, each with the edge that did not establish it:
-[where a proposal drops facts](../OBLIGATION-DIAGNOSTICS.md#where-a-proposal-drops-facts),
-stated by the search about the rules.
+[candidates left out](../OBLIGATION-DIAGNOSTICS.md#candidates-left-out).
 
 ## Costs and risks
 

@@ -379,14 +379,12 @@ Its input type, `Json`, describes JSON values; the return type,
 - **Behaviour:** exact-field checks, validation order, node identities,
   edge bounds and duplicate-owner checks determine admission. For parsed
   JSON, the returned document has the same fields and values as its input,
-  in fresh storage throughout. Both production callers in
-  `pipeline/verify-source.mts` serialize that document immediately. Property
+  in fresh storage throughout. Its caller, `dev/lowering-dump.mts`, prints
+  the graphs `verifier --lower-control-flow` writes. Property
   insertion order follows the decoder's record literals. Mutating an input
   after decoding leaves the returned document unchanged.
 - **Scope:** `blocker-round-decoder-erased-assertion` checks the typed
-  construction and return. A control in `pipeline/test.mts` checks malformed
-  graph documents and the independence of decoded spans from input writes.
-  The repair adds no external assumption.
+  construction and return. The repair adds no external assumption.
 - **Commit:** the introducing commit.
 
 ### Optional prototype bounds looked up by binder name
@@ -584,10 +582,7 @@ its keys. A union's or an intersection's parts were projected by
 compiler through `context`, whose members state no effect, so the native
 `map` may leave a hole, and the result did not meet `union`'s `TypeTerm[]`
 (as in `blocker-round-inferred-map-result`). A record's found fields were
-kept by `parts.filter((p): p is TypeTerm => p !== null)`, whose inferred
-parameter the producer claims at the arms of `TypeTerm | null` without
-selecting `filter`'s guard signature, so `found` was claimed with `null`
-("no derivation of its node-typing claim" at `union(found)`).
+kept by `parts.filter((p): p is TypeTerm => p !== null)`.
 
 - **Avoidance:** each projection pushes into a fresh `TypeTerm[]` in a
   `for...of` loop, which visits the same parts in the same order and
@@ -595,7 +590,9 @@ selecting `filter`'s guard signature, so `found` was claimed with `null`
   type TypeScript infers. Returns, exceptions and effects are those of the
   `map` and `filter` forms on an array without holes.
 - **Scope:** `blocker-last-indexed-access-fields`;
-  `blocker-last-guard-param-inferred` keeps the inferred parameter as a gap.
+  `blocker-last-guard-param-inferred` checks the guard with its parameter
+  inferred, at the arms of `TypeTerm | null`, selecting `filter`'s guard
+  signature.
 - **Commit:** the introducing commit.
 
 ### Mapped arms with a store-preserving callback
@@ -687,8 +684,8 @@ check initialization and reads at that storage contract, and the existing
 
 ### A missing field key printed explicitly
 
-`bareAtomText` in `tools/claim-text.mts` prints malformed producer fields
-as well as valid ones. A JSON dictionary read may yield `undefined` for
+`bareAtomText` in `tools/claim-text.mts` prints malformed fields as well
+as valid ones. A JSON dictionary read may yield `undefined` for
 an absent `name`. The existing [JSON contract](SOURCE-CONTRACTS.md#json-and-error)
 accepts JSON data and returns a string.
 
@@ -916,9 +913,8 @@ also admits client-defined iterators
   `new Set(scope.expandingAliases ?? [])`. The annotation retains the
   host identity established by construction; it changes no execution.
 - **Support:** the existing constructor forms state the array and host-set
-  alternatives in one parameter at the same element type. The producer
-  compares union arms through their declarations when selecting a form;
-  Lean checks each argument against that form. The case
+  alternatives in one parameter at the same element type. Lean checks each
+  argument against the form the call selects. The case
   `blocker-census-set-copy` states the same host identity, while
   `invalid-set-copy-readonly` exercises the structural input's refusal.
 - **Commit:** the introducing commit.
@@ -1189,8 +1185,8 @@ bound the values written there later.
 - **Functions:** `decodeLabels`, `decodeGraph`, `decodeClosedFootprint`,
   `decodeCallEffect` (`tools/type-graph.mts`); `decodeClaimType`, `atom`,
   `recordAtom`, `functionAtom` (`tools/claim.mts`); `isOrdinary`
-  (`tools/claim-text.mts`); the two effect edits in the filter-guard
-  forged-evidence control; `decoder-fresh-result` is the pattern as a case.
+  (`tools/claim-text.mts`); `decoder-fresh-result` is the pattern as a
+  case.
 - **Commits:** `The front end states the contracts its tests establish`,
   which made the effect types readonly, and the introducing commit.
 
@@ -1511,7 +1507,9 @@ which only separating storage an unknown call cannot reach would show
   the printer controls supply object literals. The presence field's value
   stays unchanged during this guard call for these callers. Earlier recursive
   printing calls finish before the saved read. `blocker-next-presence-snapshot`
-  checks the saved value through the real imported guard contract.
+  checks the saved value through the imported guard where its module's
+  check establishes it (a gap while tools/type-graph.mts is not among the
+  run's modules: the guard is then read at the ordinary effect).
 - **Commit:** the introducing commit, `Fields atomText's guards test are read before its callbacks run`;
   for `liftClause`, `A field's narrowing survives a map or forEach call whose callback changes nothing`.
 
@@ -1984,9 +1982,8 @@ at `{ binders: string[]; type: TypeTerm }`. Its key is
 - **JSON data construction:** `blocker-census-nested-field-json` exercises
   the separate construction mechanism for serializing a nested spread:
   its form and term annotations retain readonly JSON data bounds. The
-  producer combines disjoint named fields and indexes in a fresh record's
-  allocation hint; the existing [allocation checks](SOURCE-CLAIMS.md)
-  check every index bound against the named fields too.
+  existing [allocation checks](SOURCE-CLAIMS.md) check a fresh record's
+  every index bound against its named fields too.
   `invalid-census-nested-field-json` checks an existing open record given a
   data intersection: under Node, an additional `toJSON` returns `undefined`
   despite the function's string result.
@@ -2427,7 +2424,7 @@ record whose `result` is a `string`, in a binder's writable
 
 The printers of `tools/claim-text.mts` (`atomText`, `bareAtomText`,
 `typeText`) and its lifter (`cell`, `liftClause`, `liftSignatures`,
-`liftType`, `liftLabels`, `treeAtom`) read producer JSON, write only the
+`liftType`, `liftLabels`, `treeAtom`) read JSON values, write only the
 print state, fresh arrays and records and the table's memo, and map arrays
 with callbacks that call one another. A map result is dense only at a
 callback whose footprint is at most `grow`
@@ -2569,8 +2566,7 @@ contract could not hold the next link.
 `tools/fragment-statements.mts#assignedSteps` held `el`'s test as a Boolean,
 `const assigned = ts.isBinaryExpression(el) && …`, and read `el.left` and
 `el.right` under `assigned` after a test of `el` against `SpreadElement`;
-the producer kept no narrowing of `el` through the constant there
-("missing field left"). Its `before` and `write` arrays were inferred at
+the reads were refused ("missing field left"). Its `before` and `write` arrays were inferred at
 the element types of their literals, which a writable `Node[]` result field
 does not hold.
 
@@ -2606,8 +2602,8 @@ Five sites of the expression and class front ends read a value again where
 its earlier test or construction no longer types it:
 
 - `lambda` held its receiver test as a Boolean, `const stated = !!head &&
-  …`, and read `head` and `head.type` under it after calls; the producer
-  kept no narrowing of `head` through the constant across them.
+  …`, and read `head` and `head.type` under it after calls, reads that
+  were refused.
 
 - `binary`'s field write tested `node.left` against `PropertyAccessExpression`,
   then read `node.left` again after `gate.staticPrivate` and
@@ -2617,8 +2613,8 @@ its earlier test or construction no longer types it:
   : {})`; an element read twice is two reads, the second not narrowed by
   the first. Its parameter loop tested `p !== parameters[parameters.length -
   1]` and read the parameter's `questionToken`, `initializer` and
-  `dotDotDotToken` in nested tests, after which the search kept no
-  knowledge of those fields where the loop's later test reads them again.
+  `dotDotDotToken` in nested tests; the loop's later test reads them
+  again, where no knowledge of those fields reached it.
 - `classBody` built the base read's receiver as `{ ...derivedBase, pos:
   extendsAt }`, a spread of a binding typed `Expr`, which the code had just
   set to `{ k: "id", pos: extendsAt, name: slot }`.
@@ -2819,8 +2815,8 @@ another reference may hold.
 || member.postfixToken`. The graph computes the first two disjuncts' value
 and tests it twice, before the last disjunct and for the `if`; the second
 test's false edge, reachable only at a falsy number, joins the statement
-after the `if` without `postfixToken`'s refinement, which the producer
-claims there ("the edge … does not establish the claims at this point").
+after the `if` without `postfixToken`'s refinement, which the statement
+there requires ("the edge … does not establish the claims at this point").
 
 - **Repair:** the second disjunct is `!!member.typeParameters?.length`, a
   Boolean with the same truthiness, so the value's true test refines it to
@@ -2875,9 +2871,9 @@ iterating the replacements and spreading their keys.
 record or an explanation string under `unobserved`. Its result combines
 that field union with `JsonObject`, retaining the bound on every own string
 key that [JSON serialization](SOURCE-CONTRACTS.md#json-and-error) requires.
-The constructor uses the existing
-[contextual object hints](SOURCE-ELABORATION.md#producing-evidence-from-supplied-claims),
-which retain each field and index contract through the intersection.
+The constructor takes its contract from the expected type
+([a fresh object literal's contract](SOURCE-ELABORATION.md#checking-a-unit-in-one-pass)),
+which retains each field and index contract through the intersection.
 
 `current` keeps that full result as `data` for serialization and reads its
 fields through an `Identification` view. Both bindings hold the same object;
@@ -3254,16 +3250,16 @@ it selects the original type. `computedType` and
 `tools/shadow-contracts.mts#statedSignatures` returned `undefined` where
 `entry.stated === undefined && entry.forms === undefined`, and returned its
 printed list where `printed.every((p): p is string => p !== null)`. Where
-the conjunction is false, the producer claims the entry at the union of its
-record with `stated` present and its record with `forms` present; the
-verifier's evaluation of the conjunction joins the two outcomes before the
-`if` branches and keeps the record as declared, so the incoming edge of the
+the conjunction is false, the entry holds the union of its record with
+`stated` present and its record with `forms` present; the verifier's
+evaluation of the conjunction joins the two outcomes before the `if`
+branches and keeps the record as declared, so the incoming edge of the
 next statement is refused. `every`'s `this is S[]` is no contract of the
 native ([prototype contracts](SOURCE-CONTRACTS.md#prototype-contracts)).
 
 - **Avoided form and cost:** the conjunction of two presence tests of
-  optional fields. Claiming the join the verifier keeps needs the producer
-  to model that join of field refinements; the census shows this one site.
+  optional fields. Supporting it needs the join to keep both outcomes'
+  field refinements; the census shows this one site.
 - **Equivalence:** `if (entry.stated === undefined) { if (entry.forms ===
   undefined) return undefined; }` reads the same fields in the same order
   and returns exactly where both are `undefined`. `printed` is a fresh array
@@ -3563,8 +3559,6 @@ and `astHolds`.
   effect. The [merge proposal](PROGRAM-TYPING.md#allocation-from-parts) retains
   optional fields at the empty type: they state that the key is absent.
   Every proposed merge remains subject to the existing merge checker.
-  A forged-claim control claims that the open spread arm's copy lacks
-  `name`; evidence production and checking both refuse that claim.
   The rewrite adds no external assumption.
 - **Commit:** the introducing commit.
 
@@ -3596,7 +3590,7 @@ fresh record states its complete writable contract through the existing
   the saved checked values. Required-field checks enforce the stated
   result contract on malformed metadata. All diagnostic variants retain
   their fields, optional names and required-result labels. Metadata remains
-  explanatory and does not decide certificate acceptance.
+  explanatory and does not decide a unit's acceptance.
 - **Scope:** `blocker-round-decoder-record-assertion` constructs a fresh
   result from a saved string. `invalid-decoder-record-alias` retains the
   double assertion on an input with an outside writable holder: writing a
@@ -3643,7 +3637,7 @@ save `const node: Node = n` before testing `test(n)`. The guard narrows
 use `node`, and the assignment to `found` uses the guarded `n`.
 
 - **Avoided form and cost:** reading `n.end` after the generic guard and
-  `n.getStart(file)` asks evidence search to read a union of host kinds
+  `n.getStart(file)` asks the pass to read a union of host kinds
   through an intersection with `N`. The existing read summaries consume
   the receiver's named members; generic intersections require a derivation
   exposing their clause restriction before those summaries apply. The two
@@ -4432,9 +4426,9 @@ entry: the loop head's knowledge from the back edge separates the fresh
 record from the loop's iterator, which the entry edge does not state
 (`blocker-for-of-fresh-record`, a gap in WORK.md).
 
-- **Avoided form and cost:** support is a change to how the search
-  generalizes separation knowledge at a loop head; this round writes the
-  one site out.
+- **Avoided form and cost:** support is a change to how loop-head
+  inference (`HeadInference`) generalizes separation knowledge at a loop
+  head; this round writes the one site out.
 - **Equivalence:** `node.templateSpans.reduce((acc, part) => …, head)`
   visits the same spans in order: the span list is a compiler node array,
   dense, which `gate.expr` does not change (the compiler's tree is read
@@ -4449,9 +4443,8 @@ record from the loop's iterator, which the entry edge does not state
 `identify` in `tools/compiler-channel.mts` built its identity as a local
 `{ [field: string]: string | boolean }` from a literal of five fields, wrote
 `profile` on macOS, or `confinement` and `bubblewrap` on Linux, in the two
-arms of an `if`, and returned `{ identity }`. The search found no evidence
-at the return ("the edge from node 98 does not establish the claims at
-this point"); which rule fails there is not established
+arms of an `if`, and returned `{ identity }`. The return was refused
+("the edge from node 98 does not establish the claims at this point"); which rule fails there is not established
 ([investigation](../WORK.md#status)). The function shares one unit with
 `profile`, `current`, `launcher` and the module's initialization, so the
 refusal lost all four functions and the initialization.
@@ -4847,7 +4840,7 @@ may include accessors or a Proxy.
 ## Changes for a tool's defect
 
 The records of a refusal of TScert's code answered by a change of the
-producer or the lowering, the source unchanged, and of a source change
+verifier's type computation or the lowering, the source unchanged, and of a source change
 around a defect of the compiler's API.
 
 ### A primitive member read's saved witness
@@ -4861,7 +4854,7 @@ Reading the primitive field again would refine a different slot while that
 entry requires the saved witness's type and link.
 A single primitive field of the root is tested through its receiver,
 retaining the root's discriminant refinement and its field facts.
-An entry whose claims state no refinement of the path's prefix, as in
+An entry stating no refinement of the path's prefix, as in
 `tools/fragment-classes.mts#ownClass` after `cls !== gate.selfClass?.name`,
 states `unknown` for the witness; the edge covers it by the subtype of the
 tested type, the
@@ -4872,27 +4865,28 @@ Boolean case (`nested-witness-optional-receiver`).
 `invalid-project-after-check-write` checks that a call invalidates a mutable
 nested primitive field's narrowing; under Node a callback setting `strict`
 to `false` makes the fixture return `false` despite its `true` result
-annotation. The forged claims and evidence of `path-witness-controls`
-require a primitive field narrowing before its test and after a call;
-the existing incoming-edge checks refuse them. This lowering uses the
+annotation. `path-witness-controls` holds the accepted neighbours of
+forged witness origins, predecessors and invalidations; a control forces
+a false path narrowing on `invalid-path-witness-alias` (`paths`), refused.
+This lowering uses the
 existing checks and soundness theorems and adds no external assumption.
 
 ### A module arrow's result and rest in callback overload selection
 
 `named` in `tools/compiler-channel.mts` is a module constant holding a
 one-parameter arrow that deduplicates two paths through a `Set` and
-returns `string[]`. Its closure claim includes the signature extended by a
+returns `string[]`. Its closure's signatures include the one extended by a
 rest of `unknown` at the footprint `{ value: "any", store: "keep" }`, and
 `[launcher, directory].flatMap(named)` passes it where `flatMap`'s
 callback parameter expects a `sparse readonly string[]` result at each
 closed footprint ([prototype contracts](SOURCE-CONTRACTS.md#prototype-contracts)).
-The producer's signature plausibility query compares the receiver and
-leading parameters contravariantly, extra target parameters against the
-source's variadic rest element, and the result covariantly, matching
-[function and class coverage](POSITIVE-TYPES.md#function-and-class-coverage),
-so call overload selection picks the `flatMap` signature at
+The callback's signature meets that parameter by
+[function and class coverage](POSITIVE-TYPES.md#function-and-class-coverage)
+(the receiver and leading parameters contravariant, extra target
+parameters against the source's variadic rest element, the result
+covariant), so the call selects the `flatMap` signature at
 `{ value: "any", store: "keep" }`. Lean checks the selected invocation and
-the closure's advertised signatures through the existing certificates.
+each of the closure's signatures.
 `blocker-prep-flat-map-module-function` exercises the deduplicating module
 arrow in `flatMap`, and `invalid-flat-map-module-function` requires a
 field written by the arrow to lose its narrowing across `flatMap`.
@@ -4904,28 +4898,25 @@ when reading a position or collecting an array rest. This uses the same
 [stable-member mechanism](HOST-FAMILIES.md#stable-members) as ordinary calls:
 each member along the path must be stable in every arm of its receiver.
 Other field refinements are forgotten. The existing Lean checks validate
-the proposed read claims and the read links across the binding operations.
+the read types and the read links across the binding operations.
 
 `baseDeclarations` in `tools/declaration-graph.mts#collectDeclarations`
 resolves a base identifier, destructures the resulting declarations, then
 reads the identifier child's `text` in an error.
 `blocker-round-host-member-after-call` exercises that form and child reads
 after array and tuple rest. The source uses the compiler API's existing
-stable field contract; this producer repair adds no external assumption.
+stable field contract and adds no external assumption.
 
 ### A named object in a logical operator's result
 
 `tools/shadow-contracts.mts#print` prints a nullable receiver with
 `term.receiver && print(term.receiver)` and interpolates the returned
-string. The producer uses `truthy_refine` to compute the left operand's
-possible result through its named declaration: every object is truthy,
-so only `null` from that operand can be a result of `&&` here. A named
-union that admits `false` retains that possible result.
-
-This extends the producer's use of its existing declaration-aware
-truthiness query to [logical operators](SOURCE-ELABORATION.md#logical-operators).
-The existing extraction and certificate checks establish the proposed
-expression types. `blocker-gap-round-receiver-template` exercises the
+string. The walk (`Lowering/Synthesis.lean`) types `a && b` as the falsy
+slice of `a`'s type joined with `b`'s (`slice`), the slice read through
+`a`'s named declaration: every object is truthy, so only `null` from that
+operand can be a result of `&&` here. A named union that admits `false`
+retains that possible result
+([logical operators](SOURCE-ELABORATION.md#logical-operators)). `blocker-gap-round-receiver-template` exercises the
 interpolation, and `invalid-gap-round-receiver-template` requires a string
 where the logical operator can return `false`.
 
@@ -4934,19 +4925,17 @@ where the logical operator can return `false`.
 `tools/computed-types.mts#unionMembers` reads a declaration's parameter
 member with `d && params.get(d)`, then finds the first defined result.
 The compiler API's `Node` declaration expands to a union of object types.
-The producer's declaration-aware truthiness query traverses each union
-arm and excludes the declaration from the falsy result only when every
-arm is truthy. An intersection's settled operand establishes its
+The falsy slice of `d`'s type excludes the declaration only when every
+union arm is truthy. An intersection's settled operand establishes its
 truthiness; conflicting answers remain undecided.
 The resulting `Member | undefined` retains the `node`,
 `read` and `params` fields required by the recursive call.
 
 This uses the existing [logical-operator checks](SOURCE-ELABORATION.md#logical-operators).
-Lean checks the proposed expression claims through the same certificates.
 `blocker-round-imported-find-shape` exercises the importing module's
 `map`/`get`/`find` chain; `invalid-round-imported-find-shape` retains `false`
-in a union with host nodes and returns `false` under Node. The producer
-repair takes no external assumption.
+in a union with host nodes and returns `false` under Node. The repair
+takes no external assumption.
 
 ### A recursive callback offered narrower parameters
 
@@ -4954,25 +4943,21 @@ The parent walk `topStatement` in `tools/fragment-parse.mts#lowerFile`
 accepts `Node` and is passed to `map` over compiler identifiers. The
 callback's longer signature keeps `Node` at its first position and adds
 the index and array arguments that the code discards. Its recursive self
-entry carries the same signatures. This uses the existing
-[closure claims](SOURCE-CLAIMS.md) and checks each signature through the
+entry carries the same signatures. Lean checks each signature through the
 same body graph; the call checks that the callback admits its arguments.
 Keeping the declared leading parameters gives the body the same compiler
 node views at each signature. The case `blocker-gap-round-parent-walk`
 exercises the recursive walk, and `invalid-gap-round-parent-walk` requires
-its written result. Forged leading parameters and results are refused by
-evidence production and consumption. This is a producer proposal through
-the existing checks and takes no external assumption.
+its written result. The support takes no external assumption.
 
 ### A callback's signatures and their body claims
 
 An annotated callback passed to `some` on a union of compiler node arrays
 has its own signature and a contextual signature taking the additional
-arguments `some` passes. The producer states body claims at each signature
-([closure claims](SOURCE-CLAIMS.md)). Its call inference retains that claim
-when it has per-signature body claims, contains no generic binders, offers
-the required arity and meets the callback parameter, keeping each signature
-with its body claims. Lean checks every advertised signature and its body.
+arguments `some` passes. The call keeps both signatures where the
+callback has no generic binders, offers the required arity and meets the
+callback parameter. Lean checks every signature against the callback's
+body.
 `blocker-census-annotated-node-union` exercises this support through the
 existing closure mechanism; `invalid-census-annotated-node-union` requires
 the callback's body to meet its written result type.

@@ -137,15 +137,14 @@ So:
   object literal with a `kind`) has no marker. Its types are ordinary
   records, narrowed by the ordinary rules; a test of its `kind` drops the arms
   of a union the program wrote, as R3 does.
-- A **forged claim** stating a program value at a family shape has no
-  derivation, since the marker view admits no program object; a forged
+- A **type stating a program value at a family shape** is refused, since the marker view admits no program object; a forged
   stable view is refused by the decoder; a forged guard call is an ordinary
   call, since recognition is by resolution.
 - An **unidentified installation**, whose manifest or declarations' digest
   differs from its description's, or which Node does not find, refuses every
   run reading a declaration of the description's installation, until the
   description is reviewed again (`tests/compiler-api.mts`, and the
-  stand-in's controls in `pipeline/test.mts`). A guard table that does not
+  string-tagged family's control in `tests/single-pass-controls.mts`). A guard table that does not
   match its installation leaves the family without guards, each read
   without predicate.
 
@@ -215,8 +214,8 @@ and likewise for strings. Every other clause, and every label of a parameter
 or scheme row, is left as it is, so a binder's identity survives. The merge
 applies where a union is formed:
 
-- the producer's claims: a type's labels that are literals of one primitive
-  are one set row;
+- a type the front states at a point (`SourceTypes.translateArm`): its
+  labels that are literals of one primitive are one set row;
 - a source annotation's lowering (`SourceTypes.numberLabels`) and a
   declaration's equation (`mergeLiterals`, at a union's arms and at the
   literal `0`, whose two zeros are one set);
@@ -224,7 +223,7 @@ applies where a union is formed:
 
 Lean's instantiation of an equation at its arguments forms no label, so a
 union a substitution forms (`A | 3` at `A = 1 | 2`) stays a union of
-labels; the producer merges the unions it states, and the element rule
+labels; the front merges the unions it states, and the element rule
 below covers the rest. Wherever a set label is formed, each element's own
 label is formed beside it. The meaning is unchanged (proved:
 `setSem_mergeSets`); the checker's acceptance is not implied by the meaning,
@@ -297,14 +296,14 @@ decoder refuses any other list (`RequestJson`, `type-graph.mts`). Its strings
 are well-formed Unicode, as every wire string is
 ([wire text](REQUEST-PROTOCOL.md#wire-text)). Numbers
 are ordered by their bit patterns as unsigned integers, strings
-lexicographically by Unicode code point: Lean's `String` order, OCaml's byte
-order of UTF-8 and `codePointLess` in TypeScript, whose own `<` compares UTF-16
+lexicographically by Unicode code point: Lean's `String` order and
+`codePointLess` in TypeScript, whose own `<` compares UTF-16
 code units and would order U+10000 below U+E000.
 
 **Cost.** The demonstrated cost is a residual arm's tag
 ([residuals](#residuals)): 20 record arms beside one arm whose tag was a
 union of 330 literals took 9.2 s through `verify-source.mts` (cbe2893,
-2026-10-16). A tag set makes such a union one clause and one evidence node.
+2026-10-16). A tag set makes such a union one clause.
 Sorting, inclusion and slicing still take time proportional to the sets'
 sizes, a split into members as many labels as elements, and the record
 arms' own cost grows with their number (100 record arms exceeded the 30 s
@@ -453,8 +452,8 @@ One selection per run makes two modules' readings of a family declaration
 the same definitions, which the structural comparison of a
 [qualified import](SOURCE-CONTRACTS.md#certified-imports) requires; with
 different selections their residuals would differ in meaning, not only in
-form. A run's own selection is a fact of the front end, so no producer
-proposal and no checker premise states it.
+form. A run's own selection is a fact of the front end, so no checker
+premise states it.
 
 #### Agreement across runs
 
@@ -466,8 +465,8 @@ correspondence between the units' sources and the host's objects (F1′): a
 marked value with the tag $`t`$ meets $`S_t`$. It is an external obligation
 of the import rule's assumption that a separately verified function meets
 its importer's reading. It is no premise of any checker proof, no conjunct of
-`WorldAdm`, and no subtyping between the units' residuals; `checkUnitJson_safe`
-keeps its statement.
+`WorldAdm`, and no subtyping between the units' residuals;
+`mode8Accepted_sound` keeps its statement.
 
 ### Host objects
 
@@ -710,12 +709,12 @@ checker's rules for those steps and parameters require
 $`\mathrm{excludesHost}`$ of the operands' claimed types, proved sound
 against the families. An operation without a certified rule fails
 its plan's certification, so no recognizer's completeness is assumed. The
-headline theorem is `SourceClaimJson.checkUnitJson_safe`, its premise
-a unit's accepted verdict `unitVerdict f budget unit evidence` over the file's plans
-`filePlans ast claims fileKey budget = .ok f`; its
-conclusion, over the classified semantics, gives every certified function
-and closure, at every admissible instantiation of its type parameters,
-safety, so no stuck step, so no host object at an obligated operand,
+headline theorem is `SourceClaimJson.PassUnit.mode8Accepted_sound`, its
+premise `Mode8Accepted f i`, the verifier's mode 8 acceptance of unit
+$`i`$'s group over the file's plans $`f`$; its conclusion `PassUnitSafe f i`,
+over the classified semantics, gives every member of the group, at every
+admitted assignment of its type parameters and from every entry meeting
+its inputs, safety, so no stuck step, so no host object at an obligated operand,
 including the steps a native entry runs on its behalf (a callback's). Certified
 operations use the array and record rules, and their agreement with the
 runtime objects is T4.
@@ -865,7 +864,8 @@ hold, and any other binding are no guard: a declaration TypeScript
 reaches through another subpath (`invalid-compiler-api-guard-subpath`),
 through a re-export whose file Node does not load
 (`invalid-compiler-api-guard-reexport-mismatch`), or through another copy
-of the package in a nested `node_modules` (`pipeline/test.mts`). The
+of the package in a nested `node_modules` (the nested-installations
+control in `tests/single-pass-controls.mts`). The
 fixture projects resolve the package as Node does, through installation
 links (`pipeline/fixture-links.mts`), with no `paths` for it. A
 same-named local function, a re-bound name, or a function wrapping a guard
@@ -873,7 +873,7 @@ is an ordinary call, the wrapper an ordinary verified function. The
 declaration TypeScript binds, the family of its parameter's type (or its
 tag enum's) and the function Node binds are one description's: a guard Node
 binds to another family's function of the same name and domain is an
-ordinary call (`pipeline/test.mts`). A call with
+ordinary call (the string-tagged family's control in `tests/single-pass-controls.mts`). A call with
 a spread or more than one argument is refused.
 
 **A call on an immutable name** $`x`$, a binding no write in its scope
@@ -905,8 +905,8 @@ and throws nothing, so the call's single evaluation of its argument is
 kept, and the tag is read once, as the guard reads it.
 
 **The domain obligation.** Lean emits a `guard-domain` obligation for each
-`tagMember`, checking $`x`$'s claim at $`P`$, the family type with its
-marker, whatever the producer claims; a value the checker cannot type there
+`tagMember`, checking $`x`$'s type at $`P`$, the family type with its
+marker, whatever type the walk computes for $`x`$; a value the checker cannot type there
 (an `unknown`, `null`, an arbitrary object) refuses the call, located at the
 call. Where $`u_g`$ is `throws` or `false`, the obligation is of the
 argument's value other than `undefined` ([undefined arguments](#undefined-arguments)). The Fragment decoder refuses a `tagMember` without its domain, an
@@ -928,8 +928,7 @@ dropped (a `Token` arm of its tag set, under `isToken`'s `false`); an arm
 whose tag set is partly in $`K_g`$ is read at the rest of its set, an
 application of its generic declaration at those tags, where its tag is a
 stable member, and is kept whole otherwise (`compiler-api-guard-false-sets`,
-with its forged claims in `pipeline/test.mts`; `compiler-api-guard-false-branch`,
-`compiler-api-guards`).
+`compiler-api-guard-false-branch`, `compiler-api-guards`).
 
 A tag guard's call on an immutable name $`x`$ is the membership test of
 $`x`$ itself, $`\mathsf{member}(K_g, x)`$, with $`P`$ the tag's primitive,
@@ -1036,15 +1035,9 @@ under Node, refused at the domain obligation);
 `undefined` keeps it); `invalid-compiler-api-guard-undefined-catch` (a
 handler's `parent` may be absent); `invalid-compiler-api-guard-undefined-tag`
 (a compiler-API tag guard's argument that may be `undefined`, refused at
-the domain obligation); and, over the stand-in (`pipeline/test.mts`), a
-`false` guard's `false` edge keeping `undefined`. Forged claims, bypassing
-the producer, are refused by the search and by the checker: that edge's
-value claimed present, `parent` claimed present in a handler of the throw,
-and a guard's argument claimed to hold a string or `null` beside a node,
-refused at the call by the domain obligation; so are a document stating
-every call's behaviour `unadmitted`, at a call's domain obligation, and one
-leaving it out, by the decoder, and the honest evidence against either
-(`pipeline/test.mts`).
+the domain obligation). A document stating every call's behaviour
+`unadmitted` refuses every unit reading through such a guard
+("forged fragment: a guard's undefined behaviour" in `tests/single-pass-controls.mts`).
 
 #### Guards as values
 
@@ -1241,10 +1234,7 @@ type (`field-write-refinement`; `invalid-path-null-test-alias`, a write through
 an alias between the test and the read, run under Node). Controls:
 `compiler-api-entry-path` (two and three members, a loop's backedge, past a
 call), `invalid-compiler-api-entry-path-record` (a middle member a call
-replaces, run under Node), and in `pipeline/test.mts` forged chains of
-`path-chain-controls`: a second segment's link of another receiver or another
-field, an unjustified predecessor and a chain past a call, each refused,
-with the honest document accepted. An assertion of a path of two members or
+replaces, run under Node). An assertion of a path of two members or
 more where the entry holds no witness of it is the premise of nothing.
 
 #### Paths rooted at a slot
@@ -1283,9 +1273,7 @@ after a loop's writes, across statements, a retest after a write, past a
 call through stable members); the negatives `invalid-slot-path-write`,
 `-loop`, `-finally`, `-pattern` (a destructuring's default after its write
 of the root), `-closure`, `-alias` (a member an alias replaces) and
-`-call` (a call through a program record's member), each run under Node; and
-in `pipeline/test.mts` the forged entries `afterRoot` and `backEdge` of
-`path-witness-controls`, refused by the links the write ends.
+`-call` (a call through a program record's member), each run under Node.
 
 #### Stable keys
 
@@ -1346,8 +1334,9 @@ checks split by who can make them:
 - **Lean** accepts stable keys only on an object term carrying a family's
   marker, and only each a readonly member of that term, a view or an
   optional readonly field; a stable key at a writable member or at a key
-  the term does not state is refused by the decoder. The claims wire has
-  no form for them, so a claim states them only by naming a declaration.
+  the term does not state is refused by the decoder. The claims
+  structures (`Source/Claims/Wire.lean`) have no form for them, so a type
+  the front states at a point carries them only by naming a declaration.
 
 No program allocation owns `[[host]]`, so no program object meets a type
 stating a stable key, whatever claim names one.
@@ -1452,7 +1441,8 @@ description excludes no member (its omitted `jsDoc` and
 [reading rule 1](COMPILER-API.md#reading-rules)); the
 [string-tagged stand-in](#a-string-tagged-stand-in) excludes none, and a
 run under a description excluding `Call.callee` refuses the read its run
-without the exclusion verifies (`pipeline/test.mts`).
+without the exclusion verifies (the string-tagged family's control in
+`tests/single-pass-controls.mts`).
 
 #### Stable members: limits
 
@@ -1524,13 +1514,7 @@ exists (`tests/compiler-api.mts`):
   (`invalid-compiler-api-forged-node`); a callback of `forEachChild` whose
   result is asserted a node type it did not receive
   (`invalid-compiler-api-node-callback-result`); a read narrowed only by a
-  guard's wrapper (`invalid-compiler-api-guard-wrapper`);
-- forged claims, bypassing the producer, refused by the search at the
-  forged claim and by the checker against the case's evidence
-  (`pipeline/test.mts`): `{ node }` claimed at the node it holds, a
-  callback's result claimed at the identifier shape it did not receive, and
-  the node on a re-exported guard's `false` edge and where a guard's wrapper
-  answers `true`, each claimed at the identifier shape.
+  guard's wrapper (`invalid-compiler-api-guard-wrapper`).
 
 ## Trust rows
 
@@ -1631,7 +1615,7 @@ Its rows are T1 (F1 and F2), T1′ (F1′), T2 (F3 and F5) and T4, which include
 
 A stand-in package, `string-family-fixture` (`pipeline/string-family-fixture/`),
 shows the mechanism general over the package and the tag's primitive:
-`pipeline/test.mts` activates it beside the compiler API's description by a
+`tests/single-pass-controls.mts` activates it beside the compiler API's description by a
 description of its own (`pipeline/string-family.mts`, its guard table the
 generator's output), which names its package, its installation (the
 package Node finds from `pipeline/string-family-fixture-project/`, through

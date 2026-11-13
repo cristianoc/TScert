@@ -10,7 +10,7 @@ clauses' own syntax excludes the target arms that cannot cover them.
 
 The framework is a [catalogue](#3-the-catalogue) of rules, each with the
 structure it needs, its soundness lemma and its fallback. A new rule is
-chosen by the fallbacks that cost the most search time.
+chosen by the fallbacks that cost the most checking time.
 
 R1–R5 are the structural engine's candidate selection
 ([implementation](#7-the-implementation)); R6 and R7 are the
@@ -165,7 +165,7 @@ pairs:
   candidate, which is the general rule.
 
 So a new rule needs exactly its selection lemma, and its value is how many
-candidates it removes where the search spends its time.
+candidates it removes where comparison spends its time.
 
 ### 2.3 Other kinds of rule
 
@@ -394,13 +394,13 @@ Laws that fail:
 
 ## 5. Evidence
 
-What the checker **recomputes**: the structural table (subtype evidence
+What the checker **recomputes**: the structural table (a subtype derivation
 carries instance choices only, `SubtypeChoices`; the checker reruns table
 growth, the greatest fixed point and its validation, `checkUsing`), the
-candidates (a function of the compared types), and a test's slices. What the
-evidence **stores**: the instance choices, and the program-typing derivation
-node by node. R1–R5 change only the first part; R7 makes a tag set one
-atom, one clause and one evidence node
+candidates (a function of the compared types), and a test's slices. What a
+derivation **records**: the instance choices, and the program-typing
+derivation node by node. R1–R5 change only the first part; R7 makes a tag set
+one atom, one clause and one derivation node
 ([tag sets](HOST-FAMILIES.md#tag-sets)).
 
 ## 6. Prior work
@@ -483,42 +483,34 @@ default:
 **Soundness (proved).** A candidate is a target clause
 (`TargetClauses.candidates` filters the target's clauses), so each covering found is one of the
 general rule's, and `checkEntries_sound`, `compareStructural_sound` and
-`compareStepState_sound` hold with their statements unchanged, as does
-`checkUnitJson_safe`. Completeness of the restricted table search alone is the
+`compareStepState_sound` hold for the selecting check, as does
+`mode8Accepted_sound`. Completeness of the restricted table search alone is the
 open bridge of [§2.2](#22-what-every-rule-inherits); in a check the rerun
 stands in for it.
 
-**Answered requests.** The producer's candidate search asks the same subtype
-requests many times: for an expression it tries the claimed type and then
+**Answered requests.** The single pass derives each node's step by the
+candidate search of `CertificateProducer` (`expressionEffectUsing`), which asks
+the same subtype requests many times: for an expression it tries the claimed type and then
 every type of the unit's pool, coercing each to the target; for a receiver,
 an array or an index it tries first the type the part synthesizes (a
 variable's slot type, a field's type read from a record), then the pool
 (`synthesizedFirst`). Within a rule it establishes the parts (receiver,
 callee, arguments) before comparing the rule's result with the claimed type,
-so a wrong guess fails at its parts. The producer
-answers a request asked again from its first answer: a table from source and
-target to `subtypeSearch`'s whole result, an exhaustion included
-(`CertificateProducer.Answered`), threaded through every search of a
-document. The table is keyed by source and target alone because every
-request of a document reads one graph and one image check, built once from
+so a wrong guess fails at its parts. A request asked again is answered from
+its first answer: a table from source and target to `subtypeSearch`'s whole
+result, an exhaustion included (`CertificateProducer.Answered`), threaded
+through a unit's pass. The table is keyed by source and target alone because
+every request of a unit reads one graph and one image check, built once from
 the frozen store: a checked store's graph is its equations' and its image
 check reads only the equations, the variances and the budget (proved,
 `Checked.graph_eq`, `Checked.images_eq`). The table records each inclusion
 a request established, with its proof (`Answered.proved`, from
-`subtypeSearch_sound`). Search's own check of each graph and code it
-produces reads them as the image check's proved inclusions
-(`Answered.images`), so a comparison search established is not decided
-again there; the final check of the document and the check stage decide
-every comparison. A node's derivation is first sought among the derivations
-known for the request (its obligations' and its plans'), found by a key of
-their claims, the context's length and the claimed type (`KnownIndex`).
-
-**Where the search time sits.** In `statementsOnPath`'s search (macOS
-`sample`, one run, 2026-10-18), about a third of the working thread's
-samples were in the scope check of labels built from trees
-(`EquationGraphs.arityOk` under `Label.ofTree?`), and the structural
-engine's growth and validation took 1.2 s of a 17 s search. That time is
-outside union comparison, and no selection rule addresses it.
+`subtypeSearch_sound`). The check of each graph and code reads them as the
+image check's proved inclusions (`Answered.images`), so an established
+comparison is not decided again there. A node's derivation is first sought
+among the derivations known for the request (its obligations' and its
+plans'), found by a key of their types, the context's length and the stated
+type (`KnownIndex`).
 
 ## Lean
 

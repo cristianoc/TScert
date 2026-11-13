@@ -16,7 +16,7 @@ conditions and soundness scope, and
 [how a rule is added](#lean-files-and-adding-a-rule);
 [arithmetic](ARITHMETIC.md) owns the integer facts these rules read and the
 clauses that state them. Source verification also requires
-[evidence search and source elaboration](SOURCE-ELABORATION.md) and
+[source elaboration](SOURCE-ELABORATION.md) and
 [declaration and library contracts](SOURCE-CONTRACTS.md);
 [Callables](CALLABLES.md) explains the callable model these rules type.
 [Design](DESIGN.md) owns the principles, architecture and trust boundary.
@@ -219,7 +219,7 @@ No actual is invented: the call term keeps the arguments the source writes.
 Optionality is therefore a property of a declared contract, not a separate
 arity record: `x?: T` is carried as `T | undefined`, which is what the body
 reads and what licenses the omission. Declared arity is not observable in this
-fragment, so a call may also omit a trailing position a producer declared as
+fragment, so a call may also omit a trailing position declared as
 `T | undefined` without writing `?`, which TypeScript rejects; the verifier
 proves such a call safe rather than enforcing that surface rule. An empty
 parameter list is a zero-argument call, not an absent one. A tuple rest
@@ -242,8 +242,8 @@ $`R,\vec A_{<m},\vec C`$ is safe at $`B`$. Code with a rest is entered with the
 store of the further actuals first: $`\vec C\vdash_G\kappa:(Q;R;\vec A\to B)`$
 when every run entered from $`Q,R,\vec A_{<m},\vec C`$ is safe at $`B`$
 (`codeFrame`). The [graph checker](#checked-control-flow-graphs) establishes
-either from the code's own certificate at that entry and the result $`B`$
-(`GraphCode.codeChecked_sound`). What code offers depends on whether it
+either from the code's run at that entry and the result $`B`$
+(`PassUnitCodes.codeSpec_of_guarantee`). What code offers depends on whether it
 collects a rest (`CodeOffers`): code without one meets each fixed signature
 and each variadic one's fixed row; code with one offers only variadic
 signatures, each taking exactly its fixed parameters, from a frame whose
@@ -290,8 +290,9 @@ only:
 where $`\kappa[\vec x]`$ is $`\kappa`$, of kind $`k`$, capturing the slots $`\vec x`$. Its evidence
 (`Rule.funGraph`) names each signature as an entry of the unit's code table:
 the codes a request carries, each checked in order against the table of those
-before it (`GraphCode.checkCodesUsing`), so that every entry meets its signature
-(`CodesSound`, `checkCodes_sound`); code created inside code is checked first.
+before it (the pass's code runs, `CodesAccepted`), so that every entry meets
+its signature (`CodesSound`, `PassUnitCodes.codesAccepted_sound`); code created
+inside code is checked first.
 No code check reads the graph's assignment (`Parametricity.checkEntry_reassign`),
 so an entry meets its signature in the graph reassigned at every assignment
 $`\eta`$ of its parameter rows, $`\vec C\vdash_{G[\eta]}\kappa:\sigma`$, which is
@@ -403,8 +404,8 @@ mapped to the meet of its parameters' type arguments with its clauses
 (`meetOk`).
 
 A generic unit's body is checked once, with its binders as parameter rows,
-which no rule reads. Acceptance does not read the assignment
-(`Parametricity.accept_reassign`), so the ordinary safety theorem holds at
+which no rule reads. The pass's acceptance does not read the assignment
+(`TolerantFrames.nodeChecked_reassign`), so the ordinary safety theorem holds at
 every reassignment $`\eta`$ the request admits, the inputs and the result read
 at the same $`\eta`$ (**Generic-Body**). An ordinary body admits every
 $`\eta`$; a qualified body admits the instances of its retained source
@@ -420,19 +421,17 @@ signature that meet its descriptor constraints and its declared bounds
 
 Proved:
 
-- `Parametricity.accepted_at`: from `acceptUsing` and `EnvOk`, `WorldAdm`
-  and `HeapOk` at $`G[\eta]`$, for every $`\eta`$, given that the code table
-  is sound at $`G[\eta]`$ (`CodesSound`) and the read summaries at $`G`$
-  (`SummariesSound`); their defaults discharge only the empty tables;
-- `RequestJson.verify_safe_at`: from `verify` of an ordinary request, for
-  every $`\eta`$, its code table and summaries discharged from the request's
-  checked table;
-- `RequestJson.verify_qualified_safe_at`: from `verify` of a qualified body,
-  at the assignment $`\eta`$ extended with families $`\vec A`$ for the source
-  signature's binders that the graph's domain allows and that meet the
-  binders' bounds;
-- `SourceExtraction.checkRequests_safe_at`: from `checkRequests` of a bundle,
-  for each of its requests at every $`\eta`$ with `r.Admits η`.
+- `TolerantFrames.nodeChecked_reassign`, `codesSound_reassign`: a node the
+  pass checked at $`G`$ is checked at $`G[\eta]`$, and a sound code table is
+  sound at every reassignment;
+- `PassUnit.ordinary_requestSafe`: from an ordinary member's code runs and
+  main run accepted, `RequestSafe` (safety at every $`\eta`$ the request
+  admits), its code table and summaries discharged from the runs;
+- `PassUnit.qualified_requestSafe`: from a qualified body's run accepted, at
+  the assignments extended with families for the source signature's binders
+  that the graph's domain allows and that meet the binders' bounds
+  (`TolerantFrames.passCheckerReassign_lexical`);
+- `PassUnit.member_safe`: for each member of a group the pass accepts.
 
 A bounded binder is read as the meet of its row and its bound, and one bounded
 by another binder as the meet of the two
@@ -689,7 +688,7 @@ result within the claimed one, by checked subtyping proofs the certificate
 carries (`CoveredCallUsing`, `CallProofsUsing`, `CoveredRestUsing`, `RestProofsUsing`).
 The host's type is within each type the member's host must meet, a `this`
 parameter's ($`m.\mathsf{this}`$), by checked proofs the certificate carries
-too. A claim may so name another label for the same type, as a producer's own row
+too. A claim may so name another label for the same type, as a row of its own
 for a declared `[number, number]`, or for a declared rest
 `EagerCollection<K, V>[]` at its instance, which the declaration's literal
 head applied to the instance's arguments names too. With
@@ -762,9 +761,8 @@ certificate is a `unionVar` node over one `bindMember` node per label:
 So each claimed signature is covered by every host's member and its result
 contains every host's result. The lowering writes the term where every label
 of the host holds $`k`$ as a member (`unionMemberHosts`), and the search splits
-the host's slot where the member of its one clause is not found. The producer
-proposes one signature: for each host, the signature it binds for that host
-alone; the hosts' must have the same parameters and effect, and the result is
+the host's slot where the member of its one clause is not found. The claimed
+signature is one: for each host, the signature bound for that host alone; the hosts' must have the same parameters and effect, and the result is
 the union of their results. A union with a host holding $`k`$ as a field, or
 not at all, is not this term, and binding a union of callables has no rule.
 
@@ -773,8 +771,8 @@ them, as JavaScript evaluates the callee reference before the arguments: its
 head, saved before the actuals, is this term on the receiver's saved slot
 (`memberHead`), for one host and for a union of hosts alike, and the call
 invokes the saved head with the saved receiver, which the bound descriptor
-does not read. On a union of hosts the producer claims the head at the one
-signature above. An actual that writes the receiver's binding leaves the call
+does not read. On a union of hosts the head is claimed at the one signature
+above. An actual that writes the receiver's binding leaves the call
 on the object read first.
 
 A variadic target with an element rest (`bindRestE`, `restsT_bound`) gives
@@ -852,7 +850,7 @@ These are `ctorGraph` (`ctorsT_of_graph`, `make_fields_rule`) and `construct`. A
 the construct step binds `undefined` there, so the run entered is the one the
 padded list enters (`construction_pad`), and the source term keeps the actuals it writes. A
 `new` with explicit type arguments, `new C<T>()`, names the instance of a
-generic class it constructs: the producer proposes that instantiation, and it
+generic class it constructs: that instantiation is the claimed one, and it
 is checked as an inferred one is ([explicit type arguments](SOURCE-CONTRACTS.md#explicit-type-arguments)). No arrow meets a construct signature and no
 class a call signature, so `new` on an arrow and a plain call of a class are
 refused, as JavaScript throws. A construct signature is covered by one taking
@@ -901,7 +899,7 @@ its values are $`\eta(T)`$'s values that are **packable** by those lists:
 ```
 
 (`Packable`, `selectParameter`). The relation is in the meaning of the row,
-so a body checked at every assignment (`Parametricity.accepted_at`) needs no
+so a body checked at every assignment (`TolerantFrames.nodeChecked_reassign`) needs no
 assumption about the assignment. A body reads a packed binder at its row,
 without its declared bound, and a scheme quantifying one has no bound for it:
 the bound is checked where an instance is named. A spread of a value of the
@@ -1169,9 +1167,9 @@ members the dictionary names:
      {\Gamma\vdash_G\{\overline{k_i{:}e_i}\}:D}
 ```
 
-which is `alloc` followed by subsumption; the producer states the bounded
-record as the literal's claim wherever its contract has a readonly index or
-an optional field. None of these rules grants a write capability to a
+which is `alloc` followed by subsumption, at the bounded record as the
+literal's claim wherever its contract has a readonly index or an optional
+field. None of these rules grants a write capability to a
 readonly dictionary.
 
 A writable index is never met through an own-key bound (but at a contract no
@@ -1203,8 +1201,8 @@ $`\overline{C}`$ the writable indexes:
      {\Gamma\vdash_G\{\overline{k_i{:}e_i}\}:\mathsf{Dict}(\overline{k_i{:}A_i};\overline{D};\overline{C};\omega)}
 ```
 
-Its evidence is `alloc` at a dictionary type. The producer claims the literal
-so wherever its contract has a writable index.
+Its evidence is `alloc` at a dictionary type, the literal's claim wherever its
+contract has a writable index.
 
 ### Callable objects
 
@@ -1416,15 +1414,13 @@ store field is, so the step carries no observation of the heap past it. Its
 frame condition is the footprint `{value: any, store: grow}`
 ([element writes](FOOTPRINTS.md#element-writes)).
 
-**Across the guard's statement.** A statement entry is an interface
-([decisions](DESIGN.md#lasting-decisions)): the bound reaches the write's
-statement as a claim of its entry ([source claims](SOURCE-CLAIMS.md)), an
-array binding's name and an index binding's, which the lowering states as
-$`\mathrm{bound}(x,k)`$ of their slots, a candidate the entry keeps where
-every edge into it establishes it
+**Across the guard's statement.** The bound reaches the write's statement in
+the pass's state, as facts of an array binding's name and an index binding's,
+which the lowering states as $`\mathrm{bound}(x,k)`$ of their slots; at a loop
+head it is a candidate the head keeps where every edge into it establishes it
 ([source observation checkpoints](#source-observation-checkpoints)).
-The producer claims it at the statement following an `if (c) throw …` whose
-test's false branch states both facts of names `k` and `xs`: the false branch
+The false edge of an `if (c) throw …` carries it to the next statement where
+the test's false branch states both facts of names `k` and `xs`: the false branch
 of `a || b` states what each operand's states; `(k & m) !== k`, with the
 literal `m` and `k` on either side, states that `k` is an index;
 `k > xs.length`, `k >= xs.length`, `xs.length < k` and `xs.length <= k`,
@@ -1444,9 +1440,7 @@ $`q_{\mathit{op}}`$ `IndexNumbers.boundAnswer`; proved:
 `doubleOrder_denotes`, against `Float.Model`. The write's evidence is
 `boundedWrite` (`Checker.boundedWrites`, `IndexWrites.boundedWriteCheck`;
 proved: `IndexWrites.boundedWrite_safe`, through `setElem_store_safe`), its
-output `ordinaryOutput`, its footprint check `elemVarWriteWithin`. The entry
-claim is `EntryClaim.bounds`; the producer reads the guard by `false_facts`
-and `guard_bounds`.
+output `ordinaryOutput`, its footprint check `elemVarWriteWithin`.
 
 The cases `index-write-guard` and `index-write-guard-loop` verify;
 `invalid-index-write-unguarded`, `invalid-index-write-no-mask`,
@@ -1675,11 +1669,10 @@ index `IndexWrites.growOutput` in `Checker.boundedWrites` (proved:
 added by `Checker.ensuringCalls`; an element write's is `CallEffects.ElementWrite.changes` in
 `PromiseCalls.effectKept` (proved in `effectKept_holds`); growth is `PromiseCalls.growChanges` and
 `growFirst` (proved: `receiverGrows_changes`, `growFirst_kept`, in
-`effectKept_holds`), and a definition's code is checked by
-`GraphCode.effectChecked`; the own-location call is `PromiseCalls.ownKept`.
-The producer reads a computed receiver's type from its expression claim and
-looks up a primitive method's footprint on its prototype. It composes that
-footprint with the receiver's and arguments' effects: a string's
+`effectKept_holds`), and a definition's code is checked at its signature's
+conditions (`PassUnitCodes.codeConditions`); the own-location call is `PromiseCalls.ownKept`.
+A computed receiver's primitive method has the footprint its prototype
+states, composed with the receiver's and arguments' effects: a string's
 `charCodeAt` keeps the heap, while an argument that pops an array drops its
 bound (`range-text-branch-bound`, pretext's `buildRangeText`, and
 `invalid-range-text-argument-write`). Lean checks the selected call against
@@ -1733,9 +1726,9 @@ receiver is a slot:
 
 (proved). A construction is accepted alike at a construct signature stating a
 precondition, its positions those of a call whose receiver is `undefined`,
-which no fact may name (proved); the search takes such a signature, in its
-order, where the knowledge at the step establishes it, and the producer
-proposes the postcondition of the signature it would take. For a read in a
+which no fact may name (proved); the step's search (`expressionEffectUsing`)
+takes such a signature, in its order, where the knowledge at the step
+establishes it, and the step gains that signature's postcondition. For a read in a
 loop,
 
 ```ts
@@ -1746,10 +1739,16 @@ for (let j = 0; j < xs.length; j++) s = s + xs[j]!
 branch of the loop's test, the body's entry claims it, and the read selects
 the second signature, so `xs[j]!` is a `number` with no check.
 
-**Inferred loop invariants.** The producer, untrusted, infers the facts at
-each program point, loop invariants included, by a must-analysis over linear
-facts; each is a claim the checker validates on every edge into the entry
-claiming it.
+**Inferred loop invariants.** The pass carries linear facts forward from
+statement to statement; at a loop head, head inference
+([HeadInference.lean](../lean/Verification/Source/Claims/HeadInference.lean),
+untrusted) proposes its facts, each a candidate the pass checks on every edge
+into the head ([source observation checkpoints](#source-observation-checkpoints)).
+A head holds the facts its entry holds over bindings the loop does not
+assign and, of a counter the loop steps by a constant, its integrality, the
+bounds its entry states that a step keeps, the bound the test states shifted
+by the step, and $`2^{32}-1`$ where the test bounds it above. The facts
+reaching a point are these:
 
 - *Tests.* A comparison of an index $`j`$ known $`0\le j`$ with an array
   binding's `length` states a bound on the branch where
@@ -1806,8 +1805,8 @@ claiming it.
   postcondition at each actual that is a binding, as a statement calling it
   does.
 - *Writes and declarations.* At a write of a field the receiver's type
-  states, by a linear expression, the producer states the field's new value,
-  the old value renamed apart and eliminated. It states an object literal's
+  states, by a linear expression, the write states the field's new value,
+  the old value renamed apart and eliminated. A declaration states an object literal's
   named fields at its declaration (`const c = { i: 0 }` states $`c.i=0`$),
   and a conditional's at its declaration, each arm's branch of the test with
   the binding equal to the arm's value, the two joined:
@@ -1815,10 +1814,15 @@ claiming it.
   checks at the declaration's end, where the arms meet (positive
   `conditional-bound`, negative, run under Node,
   `invalid-conditional-bound-past`).
-- *Closure.* After each statement it adds the facts derived by eliminating
-  each path's term that name no path, at most 16, so
+- *Elimination.* A loop head's proposals include each fact carried into it
+  with a field path's term rewritten over bindings, where the entry states
+  the term equal to an expression over bindings
+  (`HeadInference.headFacts`, its `eliminated`), so
   $`n=|p.\mathit{widths}|`$ and $`|b|=|p.\mathit{widths}|`$ give $`n=|b|`$,
-  which a call writing `p`'s fields preserves.
+  which a call writing `p`'s fields preserves
+  (`cursor-invariant-after-writing-call`; forced false,
+  `TSCERT_FORCE=head-eliminated`, refused at its head). At other nodes a name
+  an edge drops has its facts eliminated (`SinglePass.Store.drop`).
 
 **Implementation.** A store's holes are bounded by `Types.StorePresence`.
 The positions are `CallEffects.callEnv`; the meaning is
@@ -1828,13 +1832,8 @@ The positions are `CallEffects.callEnv`; the meaning is
 over `indicesCheckBy`; a construction's is `PromiseCalls.requiresApp`
 (proved through `construct_local_requires_sound` and
 `CallEffects.construct_safe_exc_requires`), the search's choice
-`expressionEffectUsing`, and the producer's proposal
-`Linear_facts.construct_ensures`. The producer's analysis is
-`Linear_facts.bounds`, its tests `Linear_facts.test`, Lean's right-operand
-branch `choose`; statement preservation is `Linear_facts.write_changes`,
-elimination `Linear_facts.forget`, the merge `Linear_facts.join`, field
-writes and declarations `Linear_facts.statement`, the closure
-`Linear_facts.close`.
+`expressionEffectUsing`; Lean's right-operand branch is `choose`, and a
+loop head's proposals are `HeadInference.lean`'s.
 
 A signature's postcondition, the facts a normal return establishes, and
 `call-ensures` are [postconditions](ARITHMETIC.md#postconditions) in ARITHMETIC.
@@ -1873,10 +1872,10 @@ states the test's operand equal to $`\mathrm{view}(b)`$, `int-compare` states
 $`i<\mathrm{view}(b)`$ on the branch entering the body, and the read selects
 the second signature. The bound on a typed array's index is
 $`k<\mathrm{view}(b)`$ alone: a typed-array length is at most $`2^{53}-1`$,
-and no array index ceiling applies. The producer names the term `b.view` of a
-value binding `b` read through `%ByteLength%`, forgets a fact naming it as it
-does a length's, and decides a sum safe as Lean does, by the facts with the
-ranges of the lengths and typed-array lengths they name entailing its bounds.
+and no array index ceiling applies. The term `b.view` names the typed-array
+length of a value binding `b` read through `%ByteLength%`; a fact naming it is
+forgotten as a length's is, and a sum is safe where the facts, with the ranges
+of the lengths and typed-array lengths they name, entail its bounds.
 
 **Cases.** Positive: `bounded-element-read` (a `for` and a `while` loop),
 `pretext-array-element-read`, `logical-guard-reads` (reads in the right
@@ -1913,12 +1912,7 @@ counted array), `invalid-facts-across-for-of-pop` (a `pop` in a `for...of`
 body), `invalid-typed-array-read-at-length` (a loop to `i <= b.length`),
 `invalid-typed-array-read-other-length` (a read of `b` below another view's
 length) and `invalid-typed-array-length-across-field-write-other` (alike, across a
-number field's write). Forged controls in `pipeline/test.mts`: each array
-negative's read claimed at the element type, with and without a strict bound
-claimed at its statement; each typed array negative's read claimed at
-`number` with `i < b.length` claimed at its statement; each facts-across
-negative's read claimed at `number` with the bound its write or call takes
-away claimed at its statement.
+number field's write).
 
 ### Code points
 
@@ -1943,9 +1937,9 @@ body, the read selects the second signature, and each arm's sum is exact:
 $`i+1\le\mathrm{strLength}(\mathit{text})`$, and $`i+2\le\mathrm{strLength}(\mathit{text})`$
 where the code point is past `0xFFFF`, each at most $`2^{53}-1`$. A clause names
 a string parameter's length as `text.length` ([the clause](ARITHMETIC.md#preconditions)).
-The producer names the term `text:strlen` of a value binding `text` whose type
-is a string, keeps a fact naming it as it keeps a slot's value, and selects a
-method's signature and states its postcondition as at a function's.
+The term `text:strlen` names the length of a value binding `text` whose type
+is a string; a fact naming it is kept as a slot's value is, and a method's
+signature is selected and its postcondition stated as at a function's.
 
 **Cases.** Positive: `string-length-code-points` (a loop of code points
 stepping two code units past a pair, a `@requires 0 <= i && i < text.length`
@@ -1956,9 +1950,7 @@ helper and its caller, the lengths of the empty and an astral string, and a
 `invalid-string-code-point-negative` (a read at `i - 1` from `0`),
 `invalid-string-code-point-other` (a read of `b` below `a`'s length) and
 `invalid-string-code-point-pair` (a read at `i + 1` after a code point at most
-`0xFFFF`). Forged controls in `pipeline/test.mts`: the first and third
-negatives' reads claimed at `number`, with `i < text.length` (`b`'s) claimed at
-their statements. A fractional position is no negative case: `codePointAt`
+`0xFFFF`). A fractional position is no negative case: `codePointAt`
 truncates it, and a read at one inside the string gives a number; the
 bounded signature, reading safe integers, does not admit it.
 
@@ -1993,8 +1985,8 @@ call or a return, proves it. A cast to `unknown` is claimed at its operand's
 type, which meets `unknown`, so `e as unknown as H` is the obligation of
 `e`. A binding declared at a cast of a binding
 (`const internal = prepared as InternalPreparedText`) holds the same value:
-the producer restates the operand's facts of the binding it declares, which
-Lean's alias link relates.
+the binding it declares holds the operand's value, and Lean's alias link
+relates their facts.
 
 A handle's meaning is `elaborateDeclaration` in `tools/declaration-graph.mts`.
 
@@ -2121,10 +2113,9 @@ prototype arms. A plain write to a member of a nullish operand is refused
 (`nullish-member-write-refused`). A member reference whose receiver's type
 holds no value (plain rows naming no clause), `missing()`'s result on the path where `x` is nullish in
 `(x ?? missing()).f -= d` with `missing(): never`, names a location holding
-no value; no run reaches it (`coalesce-missing-compound-member`). The producer reads a member at the
+no value; no run reaches it (`coalesce-missing-compound-member`). A member is read at the
 operand's other values (`nullish-member-reads`, `nullish-member-order`,
-`invalid-nullish-member-reads`; a receiver forged without `undefined` is
-refused in `pipeline/test.mts`).
+`invalid-nullish-member-reads`).
 
 <a id="a-completed-read-narrows-its-receiver"></a>
 **A completed read narrows its receiver.** Past a read `x.k` that did not
@@ -2158,9 +2149,9 @@ or a `finally` follows (`invalid-read-narrows-optional`, `-and`, `-branch`,
 same expression, on a loop's back edge or in a branching operand, ends it
 (`-write`, `-expression-write`, `-loop`, `-join`); and a read of a copy
 taken before $`x`$ was rebound narrows the copy (`-alias`). Each is run
-under Node; the claims of each one ending in `return d;`, all but `-closure`
-and `-getter`, forged to narrow $`x`$ there, are refused at that statement's
-incoming edge in `pipeline/test.mts`. A binding held
+under Node. A walk forced to narrow every read's receiver
+(`TSCERT_FORCE=reads`) is refused on `-write` and `-closure`
+([single-pass-controls.mts](../tests/single-pass-controls.mts)). A binding held
 in a cell, which a closure may write, is not narrowed. A getter's write of
 the binding it is read from is excluded with accessors
 (`invalid-read-narrows-getter`).
@@ -2502,7 +2493,7 @@ There is no runtime case split added by this rule and no join computation.
 
 Combined with `ifTag`, this checks a term such as
 `if isNull(x) then true else x` under `x : Null | Bool`, at result `Bool`.
-Proof search uses the rule for tag tests over explicit unions of labels. It does
+The step search uses the rule for tag tests over explicit unions of labels. It does
 not repeatedly split a singleton label whose graph definition itself contains
 mixed shapes; that representation needs additional decomposition rules.
 
@@ -2599,7 +2590,7 @@ frame among them). Reads through a receiver coercion, an ordinary field, a
 callable's bag, an optional or index key, the prototype, and `length` read
 through `lenView`, keep their own rules.
 
-A request's evidence holds its summaries in one table, `readSummaries`, each
+A request's read summaries are one table, `readSummaries`, each
 entry checked once against the request's graph and image check; a
 derivation node `readSummary k` uses entry $`k`$ and checks only its own
 judgment: the term `readAt f (var x)`, the entry's key and result, and the
@@ -2642,7 +2633,7 @@ The rules creating graph code (`funGraph`, `funGraphSelf`, `funScheme`,
 signature it offers (`GraphCodeSpec`, through `CodeOffers` except in
 `ctorGraph`, which takes it directly), a semantic safety statement; the evidence layer discharges it
 for the entries of a checked code table (`CodesSound`,
-`GraphCode.checkCodes_sound`). Every other premise of a constructor rule is
+`PassUnitCodes.codesAccepted_sound`). Every other premise of a constructor rule is
 syntactic.
 
 ### Integration example
@@ -2678,13 +2669,11 @@ the safety of its term. Checker recursion follows the finite evidence tree;
 there is no user-supplied fuel and no semantic level in the evidence. The
 image checker is chosen by Lean code; evidence cannot name one.
 
-In memory each node of an evidence tree repeats its explicit sequent,
-terms and contexts included. The
-[in-memory producer](SOURCE-ELABORATION.md#producing-evidence-from-supplied-claims)
-builds them. The evidence document writes the derivation nodes as one of
-its tables, each node naming its premises among the nodes before it, and
-its types and contexts as other tables, each entry once
-([evidence document](REQUEST-PROTOCOL.md#evidence-document)).
+Each node of an evidence tree repeats its explicit sequent, terms and
+contexts included. The single pass builds a tree for each step
+(`CertificateProducer.expressionEffectUsing`) and checks it by
+`checkTreeUsing`, or by `PromiseCalls.requiresTree` at a call whose
+precondition the step's facts establish.
 
 ### Lean files and adding a rule
 
@@ -2716,8 +2705,12 @@ The expression judgment and its checker live in
   (`SourceExtraction`);
 - [CertificateProducer.lean](../lean/Verification/Programs/CertificateProducer.lean)
   and [DirectProof.lean](../lean/Verification/Programs/DirectProof.lean): the
-  untrusted search that builds evidence trees from supplied claims; search
-  results are checked again by `checkTreeUsing`.
+  untrusted search that builds evidence trees at the types the pass states;
+  its results are checked by `checkTreeUsing`;
+- [SinglePass.lean](../lean/Verification/Programs/SinglePass.lean): the
+  forward pass that checks a unit's graph, its soundness
+  `run_sound_single_pass`
+  ([TolerantFramesSinglePassSound.lean](../lean/Verification/Programs/TolerantFramesSinglePassSound.lean)).
 
 A new expression rule touches each layer once:
 
@@ -2737,28 +2730,28 @@ A new expression rule touches each layer once:
 4. **The search.** The node proposed where the rule applies: in
    `CertificateProducer` or a `DirectProof` recipe, and in the lowering
    (`Source/Lowering/`) where the rule needs a term of its own.
-5. **The producer.** The OCaml producer (`ocaml-producer/`) proposes claims at
-   the types the rule gives, where the source needs them.
+5. **The types.** The walk (`Source/Lowering/Synthesis.lean`) states the
+   types the rule gives, where the source needs them.
 6. **The cases.** A positive and a negative pipeline case in
    `pipeline/cases.mts`, the negative one also run under Node
    (`tests/node-runs.mts`) when it guards a JavaScript behaviour, and a
-   forged-claim control in `pipeline/test.mts` when the rule reads a claim
-   whose program point extraction chooses
+   control in `tests/single-pass-controls.mts` (a forced proposal or a forged
+   fragment) when the rule reads a type whose program point extraction chooses
    ([which tests to keep](../AGENTS.md#which-tests-to-keep)).
 
 ## Control flow
 
 A finite graph over those expressions: one term per node, an edge discipline
-that transfers bindings, and a certificate that checks every node and edge.
+that transfers bindings, and a check of every node and edge.
 
 Every checker in this section takes a proved image checker, as `checkTreeUsing`
 does: edges (`checkEdgeUsing`, `checkMappedUsing`), branch edges
 (`checkObservedUsing`), node steps (`checkStepUsing`), graphs and entries
-(`checkGraphUsing`, `checkEntryUsing`), graph-code tables (`checkCodesUsing`)
-and acceptance (`CertificateProducer.acceptUsing`), as do the evidence
-producers. Coverage and point assertions are semantic, family inclusion
-and `EnvOk`, so each soundness theorem, parametricity (`accept_reassign`,
-`accepted_at`) included, holds for every proved image checker.
+(`checkGraphUsing`, `checkEntryUsing`) and the single pass (`SinglePass.run`).
+Coverage and point assertions are semantic, family inclusion and `EnvOk`, so
+each soundness theorem, the pass's at a reassignment
+(`TolerantFrames.nodeChecked_reassign`) included, holds for every proved
+image checker.
 
 ### Supplied point claims and incoming edges
 
@@ -2807,7 +2800,7 @@ same world. It does not copy or change heap contents. The absent map means
 identity selection, retaining the earlier edge interface.
 
 These are local obligations on the edges given; they do not establish that
-the edges enumerate a graph's actual predecessors. The graph checker below
+the edges enumerate a graph's actual predecessors. The graph's check
 discharges that enumeration obligation.
 
 ### Witness edges
@@ -2833,8 +2826,8 @@ $`m`$ and checks both obligations:
 `ControlFlow.witness_edge_sound` proves that the mapped witness satisfies
 $`A`$ and is the value read from that receiver's field in the current heap,
 including an absent optional field's `undefined`. Branch edges apply their
-observed refinement before these checks (`branch_target_sound`). The graph
-checker checks every actual edge, including backedges and handler edges;
+observed refinement before these checks (`branch_target_sound`). The graph's
+check checks every actual edge, including backedges and handler edges;
 handler edges carry empty heap knowledge. A top-typed administrative slot
 with no asserted link imposes only its ordinary type obligation.
 
@@ -2847,8 +2840,9 @@ alias link between them needs no source link:
 ```
 
 `HeapLinks.check` accepts it, and `HeapLinks.check_sound` proves it, since
-the target environment is $`\rho\circ m`$. The producer states it for every
-pair of a source slot's targets (`HeapKnowledge.project`), and links the
+the target environment is $`\rho\circ m`$. An edge's projection
+(`HeapKnowledge.project`) states it for every pair of a source slot's
+targets, and links the
 targets of the slots of one source alias class, each to the first of them,
 which the check accepts by that class; so a class keeps its equalities where
 a chain of dropped slots joined them, as when one statement evaluates a
@@ -2874,8 +2868,7 @@ The soundness case composes `a`'s safety with the throw's context rule
 (`bind` over `Tm.throw`) and closes with `thrown_safe`: the value `a` produces
 is a closed JavaScript value (`SourceValues.sound`, `meaning_value`). Evidence
 names the rule `throw` with the operand's derivation; the checker also requires
-all its clauses to contain only source values. The producer searches for a
-type satisfying that requirement.
+all its clauses to contain only source values.
 
 ### Allocation from parts
 
@@ -2983,8 +2976,8 @@ in these proposals: they state that the copied result lacks the key. The last
 merge of an object literal is at the literal's claim where the rule admits it: each pair
 of clauses may give a record of the claim's own, so a field written after a
 spread is allocated at the type of the arm each pair gives, as TypeScript
-types the literal per arm of the contextual union. The producer proposes
-each written field at the type agreed by the arms that the literal-valued
+types the literal per arm of the contextual union. Each written field is
+claimed at the type agreed by the arms that the literal-valued
 written fields admit, as TypeScript discriminates a contextual union by a literal's
 properties: `{ k: "alloc", ...s }` at a union whose arms fix `k` builds its
 `k` at `"alloc"`. A literal is admitted by a field type whose members, an
@@ -3188,7 +3181,10 @@ leaves out mentions, an omitted function whole and a statement left out
 `invalid-module-cache-alias`, `invalid-module-cache-omitted-default` and
 `invalid-module-cache-omitted-let` (Node), `module-cache-key-call-refused`,
 `module-cache-update-refused`, `module-cache-dictionary-refused`, and the
-forged claims of `pipeline/test.mts`.
+controls of [single-pass-controls.mts](../tests/single-pass-controls.mts): the
+forced proposal `cells` refused on `module-cache-keeps-lengths` and
+`module-cache-before-initialization`, and the cache's write refused where
+omitted code mentions it.
 
 `Object.assign(t, s_1, …, s_n)` copies each source onto its target as a
 spread copies, one $`\mathsf{merge}_{[]}`$ per source as soon as it is
@@ -3314,8 +3310,8 @@ the input environment, and stays safe through every transition.
 The arguments, world, heap and budget are arbitrary subject to these premises.
 The code table and the read summaries the check reads are sound
 (`CodesSound`, `SummariesSound`); their default arguments discharge only the
-empty tables, and a request's checked tables discharge them
-(`RequestJson.verify_safe_at`). `accepted_entry_safe` is the underlying
+empty tables, and a member's accepted runs discharge them
+(`PassUnit.ordinary_requestSafe`). `accepted_entry_safe` is the underlying
 theorem for a checked point $`c`$ of a graph checked by `checkGraphUsing`, from
 a value $`v_0`$: its premises are the soundness of the code table and the
 summaries, $`\mathrm{EnvOk}`$ of the point's environment,
@@ -3332,10 +3328,16 @@ This is a safety and partial-correctness theorem, not a termination guarantee.
 
 The graph layer does not change the type-family or expression semantics. A
 closure body is a graph as a function body is, run by its own steps
-([graph code](SEMANTICS.md#graph-code)) and typed by `funGraph`. Boolean result refinement is proved as described below. The next section supplies
-an in-memory certificate producer; [REQUEST-PROTOCOL.md](REQUEST-PROTOCOL.md)
-describes its serialized consumer boundary. No completeness theorem is
-claimed for graph, program or edge evidence.
+([graph code](SEMANTICS.md#graph-code)) and typed by `funGraph`. Boolean result refinement is proved as described below.
+
+A unit's graph, and each code's graph of its table, is checked by the single
+pass ([SinglePass.lean](../lean/Verification/Programs/SinglePass.lean)): it
+visits every node once, in a topological order of the graph without the edges
+into loop heads, holds one state of facts between nodes, and checks at each
+node and edge the obligations this section states. `run_sound_single_pass`
+proves that an accepted pass gives the graph's modeled safety property, and
+`mode8Accepted_sound` that every member of an accepted unit is safe. No
+completeness theorem is claimed for graph, program or edge evidence.
 
 #### Refinement under an observed outcome
 
@@ -3426,7 +3428,7 @@ destination: no environment meets both, so the edge is never taken.
 `checkObservedUsing` checks slot existence, map and evidence lengths, and each of
 these obligations. `checkObserved_sound` and `ObservedCovers.env` prove the
 common path. The observation is established by execution, never accepted as a
-producer assertion. Heap contents are not refined.
+proposal. Heap contents are not refined.
 
 Four implementations discharge the tested-slot obligation:
 
@@ -3477,9 +3479,9 @@ Four implementations discharge the tested-slot obligation:
 ```
 
   Source lowering gives a test's arms these narrowed meet rows
-  (`observedSlice`); the producer claims them where the bound states the
-  values (`narrow_rigid`), and keeps `T` where the bound is `unknown`, whose
-  values other than null and undefined no clause row states.
+  (`observedSlice`), claimed where the bound states the values; `T` stays
+  where the bound is `unknown`, whose values other than null and undefined no
+  clause row states.
 - **Array of the built-ins:** a passed `Array.isArray` finds an object owning
   the store key. A member of a record, dictionary or `source` clause meets
   the built-ins' [array invariant](SEMANTICS.md#the-array-invariant), so such a
@@ -3563,7 +3565,7 @@ A Boolean shape test does not establish equality to `true`; these observations
 have separate tests to prevent conflation.
 
 A graph point whose entry claims a binding of the empty type is unreachable:
-every incoming edge establishes that claim, which no value meets. Proof search
+every incoming edge establishes that claim, which no value meets. The step search
 derives any sequent there by `unionVar` on the empty slot, which has no
 premise, and a jump whose entry is so claimed completes the function rather
 than continuing (the exhaustive `switch` in the
@@ -3594,13 +3596,11 @@ it advertises (`overloads`). After `if (!ok(x)) fail(…)` the next statement is
 reached by the condition's `false` edge alone and sees its refinement
 (`never-call-narrowing`, `compiler-api-never-guard`). The claim is the
 call's, checked at the callee's signature: a call of a function returning a
-value, claimed at the empty type, is refused (the forged `never-call` claims
-of `pipeline/test.mts`). A condition whose
+value, claimed at the empty type, is refused. A condition whose
 execution plan excludes an answer, its tested Boolean a constant on every path
 (`if (true)`, `while (true)`, the head of `for (;;)` and of `do`,
 `true || x`), leaves that answer's edge with the tested value at the empty
-type, and the producer proposes that edge's target the same state no value
-meets, slots and cell contents at the empty type (`decided-logical-condition`,
+type, and that edge's target holds the same state no value meets, slots and cell contents at the empty type (`decided-logical-condition`,
 `invalid-loop-exit-unassigned`).
 
 The `branchBind` dispatch uses this common checker and environment
@@ -3743,22 +3743,18 @@ is `onFalse`. A `branchBind` edge on `false` refines its context by the
 edge leaves them out, and an implication on the pushed Boolean is made of a
 conditional yield alone. `memberYield_sound` proves the rule from
 `member_run` and the slices' soundness; `yieldFollows_sound` carries it to
-`checkUnitJson_safe`. The false slice subtracts the tags from what the slot
+`mode8Accepted_sound`. The false slice subtracts the tags from what the slot
 already holds: a broad `number` stays `number`, since no tag test
 contradicts it nor covers it, and a slot is never replaced by a family's
 other tags.
 An edge refines every slot an alias link relates to a yield's target by the
 yield's type (`aliasFacts`), the yields in order, each to the yield's type
-filtered by the slot's ([refinement by a fact](#refinement-by-a-fact)). The search proposes the
-yields it finds and, where an edge leaves a target's claim unmet, also
-one per slot the test speaks of (the tested slot and each object a current
-read link names) at that slot's own slice, unchanged ones included
-(`sliceYields`). The search tries at most eighteen additional selections
-and orderings, then no yields. It prioritizes yields whose alias-expanded
-facts subtype a required slot on the failing edge. Label count does not
-determine semantic precision, and this bounded search is incomplete.
-Each candidate must meet all edge obligations; each yield is checked by
-the rules above. A disjunction's right operand exercises these choices
+filtered by the slot's ([refinement by a fact](#refinement-by-a-fact)). The pass proposes the
+yields `CertificateProducer.nodeYields` finds: of a call at a promise
+signature, its promise; of a slot read, the slot's implications; of a tag
+test read as a Boolean, where it passes, its slot's slice, or, where the
+slice is the slot's whole type, a type of the pool the test decides. Each
+yield is checked by the rules above. A disjunction's right operand exercises these choices
 where a saved read from its left operand holds the node at the left
 guard's arm (`compiler-api-guard-disjunction`).
 
@@ -3774,25 +3770,19 @@ at a singleton is that singleton's tag test, so $`T`$ is the slice the test
 leaves where it passes (`comparisonsExpr`,
 `blocker-pretext-constant-implication-conjunction`). A constant's binding holds the value at
 the type its path through the initializer states where that is a Boolean
-within the claim, so the `false` arm of `g(x) && e` binds `false`. The search
-proposes, at a merge or a cut every edge of which it has produced, the
-implications the edges establish, those on a slot the target claims at both
-Booleans included, where one edge's slot never holds `true` and the union of
-the others' types of the target slot is narrower than the target's claim
-(`meetImplications`). A cut's implications come from further rounds of the
-search, run where the first fails at some node: each seeds a cut with what
-its entering edges met in the round before, at most four rounds. Where these
-fail and some node carried an implication, at most two waiting rounds
-follow, the first from no seed, in which a cut also waits for its entering
-edges and takes what they meet in the round itself. A loop's head, entered by a back edge it precedes,
-goes ahead first and takes, in the first waiting round, what the edges
-produced establish, a guess the back edge confirms or refutes; the second
-runs without the guess. A round succeeding keeps its evidence; where none
-does, the refusal is the first round's, or, where that one is an edge's, a
-later round's at a node's own expression, an obligation no implication
-discharges (`guard-answer-constant`, `blocker-aliased-guard`,
+within the claim, so the `false` arm of `g(x) && e` binds `false`. At a
+merge the pass keeps the implications every incoming edge establishes, those
+on a slot the target claims at both Booleans included, where one edge's slot
+never holds `true` and the union of the others' types of the target slot is
+narrower than the target's claim (`CertificateProducer.meetImplications`, over
+each edge's refined context); an implication no edge establishes discharges
+no obligation (`guard-answer-constant`, `blocker-aliased-guard`,
 `blocker-pretext-constant-implication-statements`,
-`invalid-guard-constant-across-loops`). A `let` holding the
+`invalid-guard-constant-across-loops`). At a loop head the implications are
+proposals of its computed line (`FilePlans.computedGiven`), each checked on
+every edge into the head and left out of the next run where an edge lacks it
+(forced false, `TSCERT_FORCE=head-implications` over
+`blocker-pretext-constant-implication-statements`, refused at its head). A `let` holding the
 answer, or a guarded `let` reassigned between the test and the use, carries
 no implication: the edge's mapping binds the new value to the slot
 (`invalid-guard-answer-let-prettier-ignore`,
@@ -3918,9 +3908,9 @@ finite current-content assertions.
 [HeapExpressionRules.lean](../lean/Verification/Programs/HeapExpressionRules.lean)
 checks finite expression evidence, and `checkStep_sound` proves each accepted
 step ([checked expression postconditions](#checked-expression-postconditions)).
-These rules are not `HasTyUsing` constructors. The maintained graph checker accepts the checked effect forms;
-the source adapter binds supplied observations to checked graph checkpoints.
-The producer can also derive facts through supported operations.
+These rules are not `HasTyUsing` constructors. The single pass applies the
+checked effect forms; the source adapter binds stated observations to checked
+graph checkpoints.
 The [semantic reference](SEMANTICS.md#current-content-assertions-and-postconditions)
 defines $`\mathrm{Obs}`$, $`\mathrm{ObservedRef}`$, and `SafePost`; ordinary immutable-value branch
 observations above must not be confused with these mutable-heap assertions.
@@ -4031,7 +4021,7 @@ their graph-level use is source compilation's to supply and check.
 
 `Knowledge` in [HeapKnowledge.lean](../lean/Verification/Semantics/HeapKnowledge.lean) pairs the cell facts above with immutable slot facts
 $`V`$, interpreted as $`\forall(i,R)\in V.\;\rho(i)\in R`$. This distinction is
-necessary when the producer claims a wide type for a read: the ordinary type
+necessary when a read is claimed at a wide type: the ordinary type
 remains unchanged, while a proved fact about the returned value can justify a
 narrower subsequent return contract. Mutation invalidates cell contents and read-to-cell relationships, not
 values already read into immutable slots or equalities between copied values.
@@ -4368,8 +4358,8 @@ write (`field-write-refinement`, `invalid-field-write-call`). A `let` cell
 the unit declares is allocated apart from every older location
 (`fresh-separation`); any other cell, a module's say, is separated by no
 fact but from another module cell (`module-cells-apart`,
-[module cells](SOURCE-ELABORATION.md#module-cells)), so the producer proposes
-its write as a step that may write every location but another module cell:
+[module cells](SOURCE-ELABORATION.md#module-cells)), so its write is a step
+that may write every location but another module cell:
 every other cell and field is known by its contract alone, another module
 cell keeps its contents, and a member path through stable members keeps its
 entry (`module-cells-written-in-turn`).
@@ -4493,7 +4483,7 @@ literal's allocation does (`PromiseCalls.freshCall_sound`, from
 
 where $`r.\star`$ stands for every own location of $`r`$. A code
 definition never states `freshObject`: only an intrinsic's declaration does
-(`effectChecked`).
+(`PassUnitCodes.codeConditions`).
 
 ##### A call changing only its receiver
 
@@ -4761,9 +4751,7 @@ write separated from it keeps them, and a call discards them.
 So after `Array.isArray(t.mapping)` a read of `t.mapping` is of an array
 (`field-tag-read`); past a write through a parameter that may be `t`, or a
 call, it is of the field's type (`invalid-field-tag-alias`,
-`invalid-field-tag-call`, run under Node), and the fact claimed before the
-test, or past the write or the call, is refused (the forged field tag facts
-in `pipeline/test.mts`).
+`invalid-field-tag-call`, run under Node).
 
 The facts also exclude semantic type labels of the object they are about.
 A fact $`x.f\mapsto R`$ is covered by atoms $`\mathsf{cover}(R)`$ (`ValueSet.atomsView`): a
@@ -4801,14 +4789,12 @@ combines them: after `k.kind` fails `"a"` and `"b"`, the label
 label `{ op: 1 | 2 }` (`field-contents-exclusion`; a host node's readonly
 `operator`, `blocker-compiler-api-residual-join`); after a call
 between the tests it is not (`invalid-field-contents-call`, run under
-Node), and an arm claimed excluded before every failed test rules it out is
-refused where evidence is produced and where it is checked (the forged field
-contents in `pipeline/test.mts`). A cover holding `defined` keeps every
+Node). A cover holding `defined` keeps every
 label, as an atom no primitive test answers does.
-The write rule takes no premise about the cell's old contents. These are operation rules within a
-local segment: at the next statement entry, only the entry's knowledge
-survives, its required interface and the candidates every edge into it
-establishes.
+The write rule takes no premise about the cell's old contents. These are
+operation rules over the pass's state: at a loop head, only the head's
+knowledge survives, its required interface and the candidates every edge into
+it establishes.
 
 The `allocated` and `typedRead` evidence constructors serve both plain and
 callable bags. `allocationSlots` selects a `make` whose initializers are
@@ -4905,27 +4891,31 @@ storage contract is insufficient.
 #### Source observation checkpoints
 
 `SourceClaims.Function` retains ordinary types and separately indexed current
-predicates. The OCaml producer supplies claims through this interface, keyed
-by execution point and, for expressions, source span
-([claim identities](SOURCE-CLAIMS.md#execution-graph-supplied-to-the-producer)). **Every source statement entry
-is a local interface**, including entries with no current predicates. The
-compiler reconstructs its ordinary context $`\Gamma_l`$ and splits what the
-entry states by where it comes from:
+predicates, keyed by execution point and, for expressions, source span
+([claim identities](SOURCE-CLAIMS.md#execution-graph)).
+The walk (`Synthesis.retypeUnit`) states a unit's types there, and head
+inference (`HeadInference.lean`) its loop heads' candidates. The compiler
+reconstructs each statement entry's ordinary context $`\Gamma_l`$ and splits
+what the entry states by where it comes from:
 
-- its **required** knowledge $`R_l`$: the supplied current predicates
-  $`\Delta_l`$ of its bindings' contents, its path witnesses' read links, its
-  private cells' [separation](#separation-facts) and a loop's written
+- its **required** knowledge $`R_l`$: the current predicates $`\Delta_l`$ of
+  its bindings' contents, its path witnesses' read links, its private cells'
+  [separation](#separation-facts) and a loop's written
   [invariant](ARITHMETIC.md#loop-invariants);
-- its **candidates** $`C_l`$: the index facts the producer supplies at the
-  entry, its bounds, linear, guarded and quantified facts, element regions
-  and store separations.
+- its **candidates** $`C_l`$, at a loop head: the index facts head inference
+  proposes there, its bounds, linear, guarded and quantified facts, element
+  regions and store separations.
 
 Ordinary reference contracts remain in $`\Gamma_l`$; the calculus always
 assumes environment and heap well-formedness.
 
-The entry's knowledge $`K_l`$ is a certificate's, accepted where it entails
-the required knowledge and every incoming edge establishes it (ordinary
-context coverage is checked alongside each edge):
+A statement entry that is no loop head holds the state its incoming edges
+carry: its one predecessor's, or at a merge the facts every predecessor
+holds. Its required knowledge is an obligation on that state.
+
+A loop head is a cut. Its knowledge $`K_l`$ is accepted where it entails the
+required knowledge and every incoming edge establishes it (ordinary context
+coverage is checked alongside each edge):
 
 ```math
 \frac{\mathrm{checkKnowledge}(K_l,R_l,\mathrm{id})=\mathsf{true}\qquad
@@ -4940,31 +4930,26 @@ with each edge's premise sound by
 \qquad K_{\mathrm{out}}(\rho,h)}{K_l(\mathrm{mapEnv}(m,\rho),h)}.
 ```
 
-`SourceExtraction.checkGraphAssertions` checks the first premise, and the
-graph's check checks each edge. The candidates are not assertions: acceptance states
-that every recorded assertion, the required knowledge, is entailed
-(`checkRequests_assertions_at`), and a fact the producer supplies at an entry
-is not among them. The search takes as the entry's knowledge its required
-knowledge and the candidates every incoming edge establishes:
+The pass checks each edge. The candidates are not assertions: acceptance states
+that every recorded assertion, the required knowledge, holds at every state
+reached at its label (`AssertionsClause` of `PassUnitSafe`), and a candidate
+is not among them. A loop head's knowledge is its required knowledge and the
+candidates every incoming edge establishes:
 
 ```math
 K_l = R_l \cup \{\, a\in C_l \mid \forall (n\to l).\ \mathrm{checkKnowledge}(K_{\mathrm{out}(n)},\{a\},m_{n\to l}) \,\}.
 ```
 
-It starts each entry at $`R_l\cup C_l`$; once a pass over the graph has
-produced the entry's predecessors, each candidate some produced edge does not
-establish leaves the entry, a predecessor not produced establishing and
-refuting nothing, and the pass is run again, nodes whose knowledge is
-unchanged keeping their evidence. Candidates only leave, so a graph of
-$`M`$ candidates takes at most $`M+1`$ passes. At the graph's entry a
-candidate stays where the entry's assumed knowledge entails it; at a
-handler's entry, entered by throws, every candidate stays and the edges of
-the throws are checked against it.
+The pass starts each head at $`R_l\cup C_l`$; a candidate an incoming edge
+does not establish is dropped and the pass runs again
+(`FilePlans.passGroupInferred`). Candidates only leave, so the runs end. At
+the graph's start the entry's assumed knowledge must entail what the start
+states.
 
-The next statement is checked from $`(\Gamma_l,K_l)`$, independently of any
-stronger facts proved by predecessors. Loop heads use the same rule on both
-initial and back edges. Empty knowledge means forget all extra facts; an empty
-_content predicate_ remains an impossible observation, not an absent one.
+The loop body is checked from $`(\Gamma_l,K_l)`$, independently of any
+stronger facts its predecessors prove, by the same rule on initial and back
+edges. Empty knowledge means forget all extra facts; an empty _content
+predicate_ remains an impossible observation, not an absent one.
 
 **Expression claims are local obligations within a statement, not full-state
 interfaces.** Their supplied result type must be justified at the expression;
@@ -4972,19 +4957,18 @@ a supplied current predicate is checked at a no-op result checkpoint, naming
 slot zero before projection, unless every contract of the read object already
 implies it: then it is the persistent-observation obligation below, which
 holds at any point, a closure's entry included, where nothing of the heap is
-known. Within the statement, the checked effect rules may
-retain its entry assumptions and derive postconditions. Calls and writes forget
-facts according to those rules. Administrative copies do not discard facts.
-Thus a Boolean read claim is compatible with locally proving a true result from
-an explicit entry observation; it does not license recovering an observation
-forgotten at an earlier statement boundary.
+known. The checked effect rules may retain the state's facts and derive
+postconditions. Calls and writes forget facts according to those rules.
+Administrative copies do not discard facts. Thus a Boolean read claim is
+compatible with locally proving a true result from an explicit observation; it
+does not license recovering an observation a call or a write forgot.
 
 At an expression checkpoint, required knowledge is checked by entailment,
 $`\mathrm{checkKnowledge}(K_c,K_r,\mathrm{id})=\mathsf{true}`$.
 `HeapKnowledge.check_sound` proves the implication, and acceptance states it
-for every assertion of a unit (`checkRequests_assertions_at`). The independent source consumer
-reconstructs both kinds of boundary and checks them alongside graph acceptance
-and supplemental expression proofs; these are not producer-selected policies.
+for every assertion of a unit (`AssertionsClause`). The verifier reconstructs
+both kinds of boundary and checks them alongside graph acceptance and
+supplemental expression proofs.
 
 Ordinary compositional expression proofs, including lambda bodies, do not carry
 heap contexts. For a point assertion $`\mathrm{ObservedRef}(B,R)`$ there,

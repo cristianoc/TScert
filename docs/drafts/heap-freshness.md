@@ -1,10 +1,8 @@
 # Draft: separation facts for heap knowledge
 
-The design of [certificate sharing's](certificate-sharing.md)
-separation facts; its status and measurements are the Certificate size row of
-[WORK](../../WORK.md#status). The rules are stated formally in
-[separation facts](../PROGRAM-TYPING.md#separation-facts), the wire in the
-[evidence document](../REQUEST-PROTOCOL.md#evidence-document). Claims are
+The design of separation facts. The rules are stated formally in
+[separation facts](../PROGRAM-TYPING.md#separation-facts), their JSON
+spelling in [heap facts](../REQUEST-PROTOCOL.md#heap-facts). Claims are
 labelled **proved** (with the Lean name) or **cited** (with the document
 and its scope).
 
@@ -15,8 +13,7 @@ checked on every incoming edge, whose knowledge holds cell facts, value
 facts and read and alias links
 ([stored knowledge](../PROGRAM-TYPING.md#stored-knowledge-and-how-it-is-read);
 cited). A separation fact is one more kind of entry of that knowledge,
-stated in the [evidence document](../REQUEST-PROTOCOL.md#evidence-document)'s
-tables as the other entries are, and read by a write as the other facts
+spelled as the other entries are ([heap facts](../REQUEST-PROTOCOL.md#heap-facts)), and read by a write as the other facts
 are.
 
 ## 1. The representation

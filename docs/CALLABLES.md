@@ -13,7 +13,7 @@ The prerequisites are the term judgment $`\Gamma\vdash_G t:A`$ of
 [Semantics](SEMANTICS.md), and graph clauses and checked subtyping in
 [Positive types](POSITIVE-TYPES.md). Types are finite unions of graph labels.
 Declaration lowering and native contracts are specified in
-[Reading the source](SOURCE-CONTRACTS.md); source closure evidence in
+[Reading the source](SOURCE-CONTRACTS.md); the source closure rules in
 [Source elaboration](SOURCE-ELABORATION.md#source-closures-and-their-annotations).
 
 ## What a function is
@@ -173,9 +173,10 @@ which no closure is.
 
 **Generic bodies.** A generic function's body is a graph request whose
 binders are parameter rows $`\vec p`$: rows the graph's assignment interprets,
-which no rule reads (a type holding one has no expansion). Acceptance does not
-read the assignment (`accept_reassign` in
-[Parametricity.lean](../lean/Verification/Programs/Parametricity.lean)), so the
+which no rule reads (a type holding one has no expansion). The pass's acceptance does not
+read the assignment (`nodeChecked_reassign` and `codesSound_reassign` in
+[TolerantFramesWalkReassign.lean](../lean/Verification/Programs/TolerantFramesWalkReassign.lean)
+and its companions), so the
 body is certified at every assignment of its binders it admits, the inputs and
 the result read at the same assignment: the rule **Generic-Body**, with its
 premises and proofs, is stated in [call schemes](PROGRAM-TYPING.md#call-schemes).
