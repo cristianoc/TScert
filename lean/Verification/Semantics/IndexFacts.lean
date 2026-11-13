@@ -1616,6 +1616,57 @@ theorem holdsAt_reframe {F F' : IndexFact} {f g : Nat → Option Nat} {ε' : Ent
   rw [holdsAt_mapEntry hE hh (fun s _ => hg s)]
   exact holdsAt_mapM hG hf
 
+/-- **A fact reads the entry state through its entry terms only**: it holds
+at one entry state where it holds at another at which each of its entry
+terms denotes the same. -/
+theorem holdsAt_congr_entryTerms {F : IndexFact} {ε' : EntryState} {ρ : Env} {h : Heap}
+    (ht : ∀ t ∈ F.entryTerms, termAt ε.env ε.heap t = termAt ε'.env ε'.heap t) :
+    F.HoldsAt ε ρ h ↔ F.HoldsAt ε' ρ h := by
+  have hterm : ∀ t : Term, (t.atEntry = true → termAt ε.env ε.heap t = termAt ε'.env ε'.heap t) →
+      termValue ε ρ h t = termValue ε' ρ h t := by
+    intro t h1
+    cases he : t.atEntry
+    · rw [termValue_now he, termValue_now he]
+    · rw [termValue_atEntry he, termValue_atEntry he]; exact h1 he
+  induction F with
+  | either A B ihA ihB =>
+    exact or_congr (ihA fun t h => ht t (List.mem_append_left _ h)) (ihB fun t h => ht t (List.mem_append_right _ h))
+  | guarded s p t B ih => simp only [HoldsAt, ih ht]
+  | linear G =>
+    have heq : ∀ t ∈ G.vars, termValue ε ρ h t = termValue ε' ρ h t := fun t htm =>
+      hterm t fun he => ht t (List.mem_filter.mpr ⟨htm, he⟩)
+    simp only [HoldsAt]
+    rw [Linear.Fact.holds_congr (v' := termValuation ε' ρ h) (fun t htm => by simp only [termValuation, heq t htm])]
+    exact ⟨fun ⟨a, b⟩ => ⟨fun t hm => heq t hm ▸ a t hm, b⟩, fun ⟨a, b⟩ => ⟨fun t hm => (heq t hm).symm ▸ a t hm, b⟩⟩
+  | every s p stop body =>
+    have hst : termValue ε ρ h stop = termValue ε' ρ h stop :=
+      hterm stop fun he => ht stop (List.mem_append_left _ (by simp [he]))
+    have hb : ∀ (ls : List (Option Nat)) (i : Nat), ∀ F ∈ body,
+        ∀ x ∈ F.vars, boundValue ε' ρ h ls i x = boundValue ε ρ h ls i x := by
+      intro ls i F hF x hx
+      cases x with
+      | free t =>
+        simp only [boundValue]
+        exact (hterm t fun he => ht t (List.mem_append_right _ (List.mem_flatMap.mpr ⟨F, hF,
+          List.mem_filterMap.mpr ⟨.free t, hx, by simp [he]⟩⟩))).symm
+      | project k q =>
+        simp only [boundValue]
+        split
+        · rename_i l _
+          cases h[l]? with
+          | none => rfl
+          | some v => simp only [Option.bind_some]; rw [termValue_now rfl, termValue_now rfl]
+        · rfl
+      | _ => rfl
+    simp only [HoldsAt, hst]
+    constructor
+    · rintro ⟨w, st, ls, n, hw, hsto, hls, hn, hall⟩
+      exact ⟨w, st, ls, n, hw, hsto, hls, hn, fun i hi F hF => LinearClause.holdsAt_congr (hb ls i F hF) (hall i hi F hF)⟩
+    · rintro ⟨w, st, ls, n, hw, hsto, hls, hn, hall⟩
+      exact ⟨w, st, ls, n, hw, hsto, hls, hn, fun i hi F hF =>
+        LinearClause.holdsAt_congr (fun x hx => (hb ls i F hF x hx).symm) (hall i hi F hF)⟩
+  | _ => exact Iff.rfl
+
 /-- A postcondition's current position read in a frame with no receiver:
 the result `0` at `0`, the receiver `1` at none, each later position one
 lower. -/

@@ -1204,16 +1204,30 @@ theorem Effect.within_prefix {e : Effect} {r : Tm} {args : List Tm} {before midd
       exact hm
     · cases hm
 
+/-- **Agreement of the entry across allocation**: each entry term of a
+signature's postcondition denotes, at the call's positions, at the heap
+before an allocation what it denotes after it. The call's entry state is
+the heap before the allocation; this is what reading the post at the later
+heap needs to state it there. -/
+def Effect.EntryAgrees (e : Effect) (ρ : Env) (before middle : Heap) : Prop :=
+  ∀ F ∈ e.ensures, ∀ t ∈ F.entryTerms, HeapKnowledge.termAt ρ middle t = HeapKnowledge.termAt ρ before t
+
+/-- A signature stating no postcondition agrees across any allocation. -/
+theorem Effect.entryAgrees_of_nil {e : Effect} (h : e.ensures = []) (ρ : Env) (before middle : Heap) :
+    e.EntryAgrees ρ before middle := by
+  intro F hF; rw [h] at hF; cases hF
+
 /-- Fresh entry allocation composes with the body's frame, where the frame's
-paths agree across it and its postcondition names no entry term. -/
+paths and the postcondition's entry terms agree across it: the post read at
+the call's entry, the heap before the allocation. -/
 theorem Effect.post_prefix (effect : Effect) {r : Tm} {args : List Tm} {before middle after : Heap} {v : Val}
     (hprefix : before.IsPrefix middle) (hagree : effect.PrefixAgrees (callEnv r args) before middle)
-    (hens : ∀ F ∈ effect.ensures, F.entrySlots = []) :
+    (hens : effect.EntryAgrees (callEnv r args) before middle) :
     effect.post r args middle after v → effect.post r args before after v := by
   rintro ⟨hw, hf, ho, hel, hen, hg, hew⟩
   exact ⟨Effect.within_prefix hprefix hagree hw, fun h => (hf h).lower hprefix.length_le,
     fun h => (ho h).lower hprefix.length_le, hel,
-    fun F hF => (HeapKnowledge.IndexFact.holdsAt_entry (hens F hF) _).mp (hen F hF),
+    fun F hF => (HeapKnowledge.IndexFact.holdsAt_congr_entryTerms (hens F hF)).mp (hen F hF),
     fun h => ⟨(hg h).1.prefix_left hprefix, (hg h).2.prefix_left hprefix⟩, fun w h => (hew w h).prefix_left hprefix⟩
 
 /-- Fresh entry allocation composes with the frame on a throw too, where the
