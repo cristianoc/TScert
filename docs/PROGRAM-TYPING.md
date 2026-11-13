@@ -969,7 +969,12 @@ under Node).
 An object is a finite map from field names to heap locations, fixed at
 allocation. Let $`\varphi`$ range over field maps $`\overline{f{:}A}`$ with distinct
 names, and write $`\mathsf{Ref}(\varphi)`$ for the record clause carrying those
-invariants. `alloc` allocates one fresh location per named field, and the names
+invariants. Each field of $`\varphi`$ is a storage position stating the role
+its location is allocated with (`field` for an object literal's property,
+`cell` for a binding's cell, `arrayStore` for an array's store slot;
+[location kinds](drafts/location-kinds.md#4-storage-capabilities)), which the
+rule takes from the claimed record. `alloc` allocates one fresh location per
+named field, and the names
 being distinct is what makes the result a map from them; none is the host
 key `[[host]]`, so the object is ordinary
 ([restricted values](HOST-FAMILIES.md#restricted-values)). The object's own keys
