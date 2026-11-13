@@ -432,6 +432,12 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
   let t1 ← IO.monoNanosNow
   let ms := fun (a b : Nat) => s!"{(b - a) / 1000000}"
   emit s!"stamp: read+lower {ms t0 t1} ms: read JSON {ms t0 tj} ms"
+  -- The bytes of the files it read, with the pass's counts
+  -- (`TSCERT_COUNTS`, `dev/perf-gate.mts`).
+  if (← IO.getEnv "TSCERT_COUNTS").isSome then
+    let size := fun (p : String) => do
+      try pure (← System.FilePath.metadata p).byteSize.toNat catch _ => pure 0
+    emit s!"counts-read: \{\"fragmentBytes\":{← size astPath},\"interfaceBytes\":{← size interfacesPath}}"
   let proposals ← IO.mkRef {}
   let plans ← IO.mkRef {}
   return prepared.map fun (est, tables, front, a) =>
