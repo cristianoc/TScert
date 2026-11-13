@@ -16,7 +16,8 @@ development: [Kinds](../../lean/Verification/Semantics/Kinds.lean),
 [KindsNatives](../../lean/Verification/Semantics/KindsNatives.lean),
 [KindsStates](../../lean/Verification/Semantics/KindsStates.lean),
 [KindsCapabilities](../../lean/Verification/Semantics/KindsCapabilities.lean),
-[KindsContracts](../../lean/Verification/Semantics/KindsContracts.lean) and
+[KindsContracts](../../lean/Verification/Semantics/KindsContracts.lean),
+[KindsCalls](../../lean/Verification/Semantics/KindsCalls.lean) and
 [KindsModelRules](../../lean/Verification/Programs/KindsModelRules.lean),
 each theorem checked by the
 [axiom check](../../lean/Verification/Tests/AxiomCheck.lean) in its block
@@ -236,6 +237,43 @@ of $`U`$, its budget possibly zero (**proved**, `SafeW.run`,
 valid references (`Thrown.refs`). Typing, structural validity and the
 postconditions read one successor world.
 
+**Call preservation** (**proved**, [KindsCalls](../../lean/Verification/Semantics/KindsCalls.lean)):
+a run of a `SafeW` term ending in a value or a throw with budget left ends
+under one extension of the truncated entry world where the heap is
+well-formed, the term valid, and the result type with the normal
+postcondition, or the exception family, the thrown value's valid references
+and the exceptional postcondition, hold (`SafeW.exit`); a term safe in an
+evaluation context's hole is safe in the context when the context continues
+from each normal exit at the world that exit reached (`SafeW.bind`), and a
+context stepping a throw to a handler enters the handler at the throwing
+configuration's world and heap, well-formed whatever the exceptional
+postcondition states (`SafeW.handle`); a callee meeting `NativeContract`
+makes its invocation `SafeW` (`NativeContract.safe`); the condition is
+closed downward (`NativeContract.down`) and a forwarding descriptor meets it
+when its target does (`NativeContract.bound`); world-indexed postconditions
+implying heap-only ones give `SafeW` at the heap-only ones lifted
+(`SafeW.erase`).
+
+**Early evidence** (**proved**): the callback `throw { f: v }` is `SafeW`
+with no exceptional postcondition from every well-formed configuration
+(`allocThrow_safe`), and run in a graph node with a handler it reaches the
+handler's entry at a heap well-formed under one extension of the entry
+world (`callback_throw_handled`); a callback's well-formed exit followed by
+a native's write-back of fresh element cells and an ordinary array's store
+is well-formed under one world extending the callback's
+(`callback_writeback`).
+
+The active safety predicates take world-indexed postconditions:
+`SafePostW` and `SafePostExcW`
+([HeapObservations](../../lean/Verification/Semantics/HeapObservations.lean),
+[ExceptionalPosts](../../lean/Verification/Semantics/ExceptionalPosts.lean))
+read the exit world, `SafePost` and `SafePostExc` are their instances at
+lifted heap-only postconditions, and `PromiseWith` and `ConstructPromise`
+([CallEffects](../../lean/Verification/Semantics/CallEffects.lean)) state
+the call safe at the effect's postconditions lifted (`Effect.postW`,
+`Effect.excPostW`). `SafeWith` and `SafeGraph` state no heap postcondition;
+their result families read the exit world.
+
 The condition applies at callback boundaries recursively: a callback's
 allocations take whatever roles its own typing chooses, and a native's
 element allocation after the callback extends the callback's world with E
@@ -246,8 +284,12 @@ A footprint states where a call may change the heap, not what it may
 write there or allocate. The relations below bound locations only and
 give no well-formed exit by themselves: `ElementWrite.changes`
 (`elementWrite_not_respects`: it lets a field holding a string come to hold
-a store), `array_native_post`, `receiverOwn`, `receiverStore`,
-`fresh`, `freshObject` and an unrestricted `excPost`. `native_shaped`
+a store), `array_native_post`, a change confined to one location and
+arbitrary there, as `receiverOwn`, `receiverStore` and an argument store
+region allow at the locations they name (`confined_not_respects`), an
+allocation whatever the fresh locations hold, as `fresh` and `freshObject`
+allow (`allocation_not_respects`), and an unrestricted `excPost`
+(`unrestricted_not_respects`). `native_shaped`
 proves an array native's element-storage phase preserves kinds under its
 stated premises; a whole native, callbacks included, meets
 `NativeContract`.
@@ -265,6 +307,21 @@ heap $`h`$ to the exit world $`W'`$ and heap $`h'`$ (`ViewWrite`):
 - every old location whose role is no view store keeps its contents;
 - every cell an old view store newly lists is fresh against $`h`$;
 - the exact form adds `ExactWrite` of the designated view, index and value.
+
+Over the active worlds, which hold no roles, the element write's defining
+contract is the same relation read against a role assignment of the entry
+heap (`CallEffects.ViewWriteA`, `ElementWrite.Holds`): a stated hypothesis
+`RolesFit` constrains the assignment by the entry heap's categories, and the
+relation states the domain's growth, the kept contents of every location
+whose role is no view store, each view store's length with its cells
+locations of the exit heap, and the freshness of newly listed cells. Three
+conjuncts read the kinded world and wait for it: the listed cells are E,
+every location has its role's shape, and the exit heap meets the exit world.
+The kinded relation gives the active one at the entry world's roles
+(`ViewWriteOf.holds`), and the coarse change follows from the active one
+(`ViewWriteA.changes`); a location holding a string never comes to hold a
+store (`ElementWrite.Holds.not_string_to_store`). The relation from a heap
+holds from each of its prefixes (`ViewWriteA.prefix_left`).
 
 It constrains every view store, whichever view the call names: an
 overlapping view may change, exactness constraining the designated one. An
@@ -376,6 +433,66 @@ typing rules, through the capabilities of §4.
 The steps that change no heap, the throwing steps and the fresh errors
 preserve kinds for every well-formed state.
 
+## 10. Audit of call contracts
+
+Each path by which a call runs code, and each component of a stated effect,
+against the native-contract condition (§5). A host contract is a trust
+statement the owner reviews.
+
+**Invocation paths** (`CallArguments.Invoke`, `ConstructsTo`, the initial
+environment's values, `EnvOk`
+([TypingBasics](../../lean/Verification/Programs/TypingBasics.lean))):
+
+- **Graph code**, called or constructed (`Invoke.graph`; its signatures by
+  `callsT_of_graph`, `restsT_of_graph`, `restsT_of_graphRest`,
+  `ctorsT_of_graph`), result allocation by its own steps included: the
+  body's steps are the calculus's, and the condition is typed-step
+  preservation along its run (**planned**, the activation's exhaustive
+  preservation over `Step`).
+- **Forwarding descriptors** (`Invoke.bound`): **proved** from the target's
+  condition (`NativeContract.bound`).
+- **Host values of the initial environment**, natives and imported or
+  external arrows alike: **assumed**. The trust statement: every value the
+  initial environment binds meets, at kinded worlds, `NativeContract` at its
+  declared signature's input and result types, with `post` its effect's
+  normal postcondition and `excPost` its exceptional one: every execution
+  prefix of its invocation, the callbacks it runs included, is well-formed
+  under one extension of the entry world, and every exit meets the
+  postconditions at that world.
+
+**Effect components** (`CallEffects.Effect`), each read alone:
+
+- the closed footprint (`closed`, `top` for an undeclared external arrow):
+  **fails** alone (`confined_not_respects` for any footprint letting a
+  location change arbitrarily); repaired by the host assumption above;
+- `receiverStore`, `receiverOwn`, argument store regions (`regions`):
+  **fail** alone, each allowing arbitrary contents at the locations it
+  names (`confined_not_respects`, the inclusion read from
+  `Effect.withinClosed` and `Effect.frame`, unformalized); repaired by the
+  host assumption;
+- `fresh`, `freshObject`: **fail** alone (`allocation_not_respects`);
+  repaired by the host assumption;
+- `receiverGrows` (`ReceiverGrows`, `ReceiverAppends`): the element-storage
+  phase preserves kinds when its fresh locations are element cells holding
+  source values (**proved**, `native_shaped`); the whole call, callbacks
+  included, by the host assumption;
+- `elementWrite`: the defining contract is the view write (§6); its
+  inhabitant from a representative initial host world (`host_viewWrite`)
+  and over overlapping views (`viewWrite_overlap`) are **proved**; the
+  conjuncts reading kinded worlds are part of the host assumption;
+- `onThrow = false`: the exceptional postcondition is unrestricted and
+  **fails** alone (`unrestricted_not_respects`); the structural part comes
+  from safety, which suffices for a handler (`callback_throw_handled`);
+  `onThrow = true` bounds the exceptional heap by the footprint, which fails
+  alone as the closed footprint does;
+- `requires`, `pre`, `elements`, `ensures`, `promise`: preconditions on the
+  entry and promises on values; they change no location.
+
+**Callbacks**: a native running a callback composes the callback's safety
+with its own phases at one world (`SafeW.bind`, `SafeW.handle`,
+`callback_writeback`); the callback's allocations take the roles its own
+typing chose.
+
 ## Activation
 
 The order of the remaining work (**planned**). Each commit builds its
@@ -385,21 +502,11 @@ whole dependency closure.
    semantic capabilities, syntax mappings and certification (§4); callers
    move to explicit object, binding and store capabilities. Calculus steps
    are unchanged.
-2. **Native specifications.** Introduce world-indexed postconditions in
-   `SafePost`
-   ([HeapObservations](../../lean/Verification/Semantics/HeapObservations.lean)),
-   `SafePostExc`, `PromiseWith` and `ConstructPromise`
-   ([CallEffects](../../lean/Verification/Semantics/CallEffects.lean)),
-   `SafeWith` and `SafeGraph`, heap-only postconditions lifted; replace
-   `ElementWrite.changes` as the defining contract by `ViewWrite`, keeping
-   the coarse change as its consequence and reproving `prefix_left`,
-   `.stores`, effect weakening, meeting and invocation transport; prove
-   call preservation on normal and exceptional exits and discharge each
-   native's obligation. The audit follows every contract producer and
-   invocation path: primitives, ordinary mutators, callback operations,
-   constructors and result allocation, `receiverOwn`, argument regions,
-   imported and external arrows, exceptional exits; and the builtin initial
-   worlds (I identities, F properties, store slots).
+2. **Native specifications.** The effect's postconditions read the exit
+   world's roles (`Effect.postW` in place of the lifting): the element
+   write states the kinded view write at the exit world, its role
+   assignment the entry world's, and every host contract of §10 its
+   structural part.
 3. **Activation, atomically.** Replace `Worlds.lean` and `Heaps.lean` by
    the kinded world (`ofEntries_entries` in place of `ofList_toList`, which
    cannot reconstruct roles); strengthen safety and state validity as in

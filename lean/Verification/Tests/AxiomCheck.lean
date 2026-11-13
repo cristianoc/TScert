@@ -1582,3 +1582,12 @@ run_cmd do
   check ``Verification.Kinds.hostBefore_ok
   check ``Verification.Kinds.host_refs
   check ``Verification.Kinds.host_viewWrite
+  check ``Verification.Kinds.NativeContract.down
+  check ``Verification.Kinds.NativeContract.bound
+  check ``Verification.Kinds.not_respects_of_breaks
+  check ``Verification.Kinds.confined_not_respects
+  check ``Verification.Kinds.unrestricted_not_respects
+  check ``Verification.Kinds.allocation_not_respects
+  check ``Verification.CallEffects.ViewWriteA.changes
+  check ``Verification.CallEffects.ViewWriteA.prefix_left
+  check ``Verification.CallEffects.ElementWrite.Holds.not_string_to_store
