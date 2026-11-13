@@ -12,6 +12,7 @@ import Verification.Programs.TolerantFramesDriverExitTrace
 import Verification.Programs.TolerantFramesExitAux
 import Verification.Programs.TolerantFramesMapNames
 import Verification.Programs.SinglePassClose
+import Verification.Semantics.Kinds
 import Lean.Util.CollectAxioms
 import Lean.Elab.Command
 import Lean.Compiler.CSimpAttr
@@ -1448,3 +1449,26 @@ run_cmd do
   check ``Verification.SinglePass.drive_rebound
   check ``Verification.SinglePass.runWalk_rebound
   check ``Verification.SinglePass.run_rebound
+
+-- The kinds of the Tolerant-frames model (docs/drafts/location-kinds.md): the
+-- fixed location kinds, their structural satisfaction and its preservation,
+-- as new definitions the existing proofs do not yet use. Roots of their own.
+open Lean Elab Command in
+run_cmd do
+  let standard := [``propext, ``Classical.choice, ``Quot.sound]
+  let check (decl : Name) : CommandElabM Unit := do
+    for axiom_ in ← liftCoreM <| collectAxioms decl do
+      unless standard.contains axiom_ do
+        throwError "{decl} depends on the axiom {axiom_}"
+  -- kinds disjoint, kept by extension and truncation; shapes monotone
+  check ``Verification.Kinds.kinds_disjoint
+  check ``Verification.Kinds.WExt_kindAt
+  check ``Verification.Kinds.kindAt_trunc
+  check ``Verification.Kinds.Shape_mono
+  check ``Verification.Kinds.Shape_trunc
+  check ``Verification.Kinds.HeapOk_trunc
+  check ``Verification.Kinds.HeapOk.stable_value
+  check ``Verification.Kinds.HeapOk.kinds
+  -- what kinded satisfaction excludes
+  check ``Verification.Kinds.counterheap_excluded
+  check ``Verification.Kinds.dangling_excluded
