@@ -1,0 +1,177 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">3 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-155"><code>adf292a0d145c5a5a9e07239ddbe706260870234..pr-155</code></a><ul><li>3 commits</li><li>changes: 1 Example, 1 Tooling, 1 Check, 1 Docs</li><li>parts: <span class="chip">tests</span> <span class="chip">tools</span> <span class="chip">docs</span></li></ul></li></ul></section>
+<h2 id="g-pr-155"><code>adf292a0d145c5a5a9e07239ddbe706260870234..pr-155</code></h2><article class="card" id="c-cec60cf46"><header><div><div class="sha">cec60cf46 · Cristiano Calcagno · Nov 13, 02:20</div><h3>Add the bounds patterns of pretext's bound rewrites as pipeline cases</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<div class="units"><span>bounds-pattern-visitor-refused.ts#afterWalk</span><span>bounds-pattern-grow-upper-refused.ts#regional</span><span>bounds-pattern-postfix-prefix-refused.ts#fill</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>An agent adding a bounds capability for pretext had no small set of cases that shows whether the capability's target shape verifies and whether its neighbours keep their outcomes. The 422 bound rewrite sites left in pretext (tscert-bounds 9268edb1) fall under 21 patterns, each the smallest program with one missing capability; their programs lived in a scratch directory, outside the suite.</p></div>
+<h4 class="change"><span class="act added">added</span>Example</h4><pre class="code"><span class="ln"><span class="tk-k">for</span> each pattern, bounds-pattern-&lt;name&gt;-refused.ts, the pattern's safe</span><span class="ln">program, a gap with its cause; bounds-pattern-&lt;name&gt;.ts, its supported</span><span class="ln">neighbours; and <span class="tk-k">for</span> <span class="tk-t">P1</span>, <span class="tk-t">P2</span>, <span class="tk-t">P4</span>, <span class="tk-t">P5</span>, <span class="tk-t">P7</span>, <span class="tk-t">P15</span>, <span class="tk-t">P16</span> and <span class="tk-t">P20</span>,</span><span class="ln">invalid-bounds-pattern-&lt;name&gt;.ts, an unsafe neighbour the capability</span><span class="ln">must keep refusing, run under <span class="tk-t">Node</span>. <span class="tk-t">Each</span> header states the pattern,</span><span class="ln">the fact it needs, the pretext functions it stands <span class="tk-k">for</span> and the gap's</span><span class="ln">cause.</span></pre>
+<h4 class="change">Effect</h4><ul class="effect"><li><code>the 21 bounds-pattern-*-refused</code> <span class="why">new gap, each at the refusal the</span></li><li><code>patterns document observed on engine-rows (P9, P12, P17 at the</code></li><li><code>source; the others at the pattern's read, edge or return)</code></li><li><code>the 21 bounds-pattern-*</code> <span class="why">new verified</span></li><li><code>the 8 invalid-bounds-pattern-*</code> <span class="why">new refused; under Node NaN,</span></li><li><code>`undefined` at the asserted type, or a TypeError</code></li></ul>
+<h4 class="change">Gap</h4><div class="prose"><p>Each pattern's capability; the headers state them. The programs the document did not run need a minimal fix to show the pattern: P5's cached table is first blocked by P16, so the table is decoded at each call; P13's <code>charCodeAt</code> needs no bound and its builder stated no postcondition, so the read is <code>codePointAt(…)!</code> and <code>fill</code> states the prefix it fills; P19's <code>offsets</code> was unrelated to <code>segments</code>, which is unsafe, so the view is allocated at the computed sum.</p><p>The feature-gap cases stand for pretext's functions, named in each header: that association is what keeps them under &quot;Feature gaps follow the census&quot; (CLAUDE.md, &quot;Which tests to keep&quot;).</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>the 50 cases as expected on single-pass adf292a0, 37 functions verified, 6.0 s warm (run-cases.mts bounds-pattern), 2026-11-13</dd><dt>Tests</dt><dd><span class="test pos">bounds-pattern-visitor-refused</span> <span class="test pos">bounds-pattern-visitor</span> <span class="test pos">invalid-bounds-pattern-visitor</span> <span class="test pos">bounds-pattern-known-growth-refused</span> <span class="test pos">bounds-pattern-known-growth</span> <span class="test pos">invalid-bounds-pattern-known-growth</span> <span class="test pos">bounds-pattern-fresh-field-write-refused</span> <span class="test pos">bounds-pattern-fresh-field-write</span> <span class="test pos">bounds-pattern-grow-upper-refused</span> <span class="test pos">bounds-pattern-grow-upper</span> <span class="test pos">invalid-bounds-pattern-grow-upper</span> <span class="test pos">bounds-pattern-generated-table-refused</span> <span class="test pos">bounds-pattern-generated-table</span> <span class="test pos">invalid-bounds-pattern-generated-table</span> <span class="test pos">bounds-pattern-values-any-refused</span> <span class="test pos">bounds-pattern-values-any</span> <span class="test pos">bounds-pattern-closure-refused</span> <span class="test pos">bounds-pattern-closure</span> <span class="test pos">invalid-bounds-pattern-closure</span> <span class="test pos">bounds-pattern-write-at-length-refused</span> <span class="test pos">bounds-pattern-write-at-length</span> <span class="test pos">bounds-pattern-product-refused</span> <span class="test pos">bounds-pattern-product</span> <span class="test pos">bounds-pattern-named-count-refused</span> <span class="test pos">bounds-pattern-named-count</span> <span class="test pos">bounds-pattern-string-element-refused</span> <span class="test pos">bounds-pattern-string-element</span> <span class="test pos">bounds-pattern-pointwise-refused</span> <span class="test pos">bounds-pattern-pointwise</span> <span class="test pos">bounds-pattern-postfix-prefix-refused</span> <span class="test pos">bounds-pattern-postfix-prefix</span> <span class="test pos">bounds-pattern-native-length-refused</span> <span class="test pos">bounds-pattern-native-length</span> <span class="test pos">bounds-pattern-module-constant-refused</span> <span class="test pos">bounds-pattern-module-constant</span> <span class="test pos">invalid-bounds-pattern-module-constant</span> <span class="test pos">bounds-pattern-lazy-cell-refused</span> <span class="test pos">bounds-pattern-lazy-cell</span> <span class="test pos">invalid-bounds-pattern-lazy-cell</span> <span class="test pos">bounds-pattern-indexed-path-refused</span> <span class="test pos">bounds-pattern-indexed-path</span> <span class="test pos">bounds-pattern-two-field-guard-refused</span> <span class="test pos">bounds-pattern-two-field-guard</span> <span class="test pos">bounds-pattern-running-sum-refused</span> <span class="test pos">bounds-pattern-running-sum</span> <span class="test pos">bounds-pattern-map-invariant-refused</span> <span class="test pos">bounds-pattern-map-invariant</span> <span class="test pos">invalid-bounds-pattern-map-invariant</span> <span class="test pos">bounds-pattern-shift-or-refused</span> <span class="test pos">bounds-pattern-shift-or</span></dd></dl>
+<details><summary>52 files changed, 1124 insertions(+)</summary><pre class="code"> pipeline/cases.mts                                 | 82 ++++++++++++++++++++++
+ .../examples/bounds-pattern-closure-refused.ts     | 19 +++++
+ pipeline/examples/bounds-pattern-closure.ts        | 12 ++++
+ .../bounds-pattern-fresh-field-write-refused.ts    | 33 +++++++++
+ .../examples/bounds-pattern-fresh-field-write.ts   |  9 +++
+ .../bounds-pattern-generated-table-refused.ts      | 23 ++++++
+ .../examples/bounds-pattern-generated-table.ts     | 17 +++++
+ .../examples/bounds-pattern-grow-upper-refused.ts  | 62 ++++++++++++++++
+ pipeline/examples/bounds-pattern-grow-upper.ts     | 59 ++++++++++++++++
+ .../bounds-pattern-indexed-path-refused.ts         | 13 ++++
+ pipeline/examples/bounds-pattern-indexed-path.ts   | 11 +++
+ .../bounds-pattern-known-growth-refused.ts         | 28 ++++++++
+ pipeline/examples/bounds-pattern-known-growth.ts   | 16 +++++
+ .../examples/bounds-pattern-lazy-cell-refused.ts   | 13 ++++
+ pipeline/examples/bounds-pattern-lazy-cell.ts      |  8 +++
+ .../bounds-pattern-map-invariant-refused.ts        | 29 ++++++++
+ pipeline/examples/bounds-pattern-map-invariant.ts  | 15 ++++
+ .../bounds-pattern-module-constant-refused.ts      | 12 ++++
+ .../examples/bounds-pattern-module-constant.ts     |  8 +++
+ .../examples/bounds-pattern-named-count-refused.ts | 25 +++++++
+ pipeline/examples/bounds-pattern-named-count.ts    | 16 +++++
+ .../bounds-pattern-native-length-refused.ts        | 15 ++++
+ pipeline/examples/bounds-pattern-native-length.ts  | 12 ++++
+ .../examples/bounds-pattern-pointwise-refused.ts   | 16 +++++
+ pipeline/examples/bounds-pattern-pointwise.ts      | 11 +++
+ .../bounds-pattern-postfix-prefix-refused.ts       | 28 ++++++++
+ pipeline/examples/bounds-pattern-postfix-prefix.ts | 15 ++++
+ .../examples/bounds-pattern-product-refused.ts     | 13 ++++
+ pipeline/examples/bounds-pattern-product.ts        |  7 ++
+ .../examples/bounds-pattern-running-sum-refused.ts | 20 ++++++
+ pipeline/examples/bounds-pattern-running-sum.ts    | 12 ++++
+ .../examples/bounds-pattern-shift-or-refused.ts    |  8 +++
+ pipeline/examples/bounds-pattern-shift-or.ts       |  7 ++
+ .../bounds-pattern-string-element-refused.ts       | 10 +++
+ pipeline/examples/bounds-pattern-string-element.ts |  8 +++
+ .../bounds-pattern-two-field-guard-refused.ts      | 42 +++++++++++
+ .../examples/bounds-pattern-two-field-guard.ts     | 21 ++++++
+ .../examples/bounds-pattern-values-any-refused.ts  | 25 +++++++
+ pipeline/examples/bounds-pattern-values-any.ts     | 21 ++++++
+ .../examples/bounds-pattern-visitor-refused.ts     | 40 +++++++++++
+ pipeline/examples/bounds-pattern-visitor.ts        | 49 +++++++++++++
+ .../bounds-pattern-write-at-length-refused.ts      | 41 +++++++++++
+ .../examples/bounds-pattern-write-at-length.ts     | 21 ++++++
+ .../examples/invalid-bounds-pattern-closure.ts     | 16 +++++
+ .../invalid-bounds-pattern-generated-table.ts      | 17 +++++
+ .../examples/invalid-bounds-pattern-grow-upper.ts  | 24 +++++++
+ .../invalid-bounds-pattern-known-growth.ts         | 25 +++++++
+ .../examples/invalid-bounds-pattern-lazy-cell.ts   | 15 ++++
+ .../invalid-bounds-pattern-map-invariant.ts        | 19 +++++
+ .../invalid-bounds-pattern-module-constant.ts      | 14 ++++
+ .../examples/invalid-bounds-pattern-visitor.ts     | 22 ++++++
+ tests/node-runs.mts                                | 20 ++++++</pre></details>
+<div class="sha">with Claude Fable 5.2</div>
+</article>
+<article class="card" id="c-65267a01f"><header><div><div class="sha">65267a01f · Cristiano Calcagno · Nov 13, 02:39</div><h3>Add make test-pretext, the tier for a bounds capability for pretext</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>An agent adding a bounds capability for pretext could check it only with the whole suite (3,317 cases, 183 controls) and the census, or with cases and pretext functions it picked by hand. It needs to know, in minutes, whether the capability's target shape verifies, whether its neighbours keep their outcomes, and whether any pretext function is lost.</p></div>
+<h4 class="change"><span class="act added">added</span>Tooling <span class="target">make test-pretext PRETEXT=&lt;checkout&gt; [FILES=a.ts,…] [UPDATE=1]</span></h4><pre class="code"><span class="ln">builds, then runs tests/pretext-tier.mts: the bounds pattern cases</span><span class="ln">(bounds-pattern-*), the 213 cases of its boundsList (each with the</span><span class="ln">mechanism it stands for: clauses and linear facts, written</span><span class="ln">postconditions, native length contracts, quantified element facts,</span><span class="ln">frames and regions, stable operations, type invariants and guards,</span><span class="ln">cursors and lazy caches, typed arrays, pretext's closed bounds</span><span class="ln">blockers), and the functions of the checkout's src/ files, each file</span><span class="ln">checked unit by unit as dev/check-functions.mts checks it. One summary:</span><span class="ln">each part's outcomes, a gap that verifies named as closed, pretext's</span><span class="ln">functions per file against the record for the checkout's commit, each</span><span class="ln">part's stage invocations executed and replayed, and the wall time.</span></pre>
+<h4 class="change"><span class="act added">added</span>Check <span class="target">the tier's record of pretext's functions</span></h4><div class="obligations"><div class="obligation"><span class="where"><span class="at">at</span> each function of the record for the checkout's commit (tests/pretext-tier-expected.json)</span><span class="tgt"><span class="m-text">one recorded verified and </span><span class="refused">refused</span><span class="m-text"> in the checkout fails the tier; one verified and recorded </span><span class="refused">refused</span><span class="m-text"> is reported as gained</span>; <span class="m-con">UPDATE</span><span class="m-rel">=</span>1 <span class="m-text">records the selected files</span></span></div></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><code>pretext ba09794f (pretext-base) and 9268edb1 (tscert-bounds)</code> <span class="why">recorded 198 of 210 functions verified each, the 11 initializations verified</span></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span> <span class="chip">tools</span> <span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>make test-pretext over pretext 9268edb1, load 16-23 from another agent: on a fresh stage store 112.6 s (the cases done at 37.0 s, pretext at 111.6 s) · warm 8.4 s, 41 stages executed (parse and module), 606 replayed · after a one-line edit of a Lean rule file 213.7 s, the Lean build 114 s and 99.7 s with every pass stage executed again, 2026-11-13</dd><dt>Tests</dt><dd><span class="test pos">make test-pretext</span></dd></dl>
+<details><summary>4 files changed, 845 insertions(+), 2 deletions(-)</summary><pre class="code"> Makefile                         |   6 +-
+ tests/README.md                  |  14 +-
+ tests/pretext-tier-expected.json | 496 +++++++++++++++++++++++++++++++++++++++
+ tests/pretext-tier.mts           | 331 ++++++++++++++++++++++++++</pre></details>
+<div class="sha">with Claude Fable 5.2</div>
+</article>
+<article class="card" id="c-71d117930"><header><div><div class="sha">71d117930 · Cristiano Calcagno · Nov 13, 02:39</div><h3>Name the pretext tier in the iteration table</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The iteration table named no tier for a bounds capability for pretext, so an agent working on one ran the whole suite and the census, or nothing.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">the iteration table of CLAUDE.md</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>rows for one source file, Lean, and the parser, wire and shared tools</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>also &quot;Bounds capability for pretext&quot;: while iterating <code>make test-pretext PRETEXT=&lt;checkout&gt; FILES=&lt;touched&gt;</code>; before merging to <code>single-pass</code>, <code>make test-pretext PRETEXT=&lt;checkout&gt;</code>; the wide suite and the census run in CI on <code>single-pass</code></p></div></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd></dl>
+<details><summary>1 file changed, 1 insertion(+)</summary><pre class="code"> AGENTS.md | 1 +</pre></details>
+<div class="sha">with Claude Fable 5.2</div>
+</article>
+</main></body></html>
