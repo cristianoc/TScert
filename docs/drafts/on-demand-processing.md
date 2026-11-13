@@ -327,21 +327,11 @@ Every place in the front's import, extraction, proposal, publication, row, infer
 
 ### Resolution of an imported binding (C1)
 
+Every value import of a program source file lists its module (`importedModules`), whatever value it holds. Every import of a listed module resolves by its declaration identity to its origin (`resolveRead`): the module's function binding the name within the declaration's span where that binding is stable, else the module's initialization (no callable entry; read at the declared contract); an unlisted module's import is read at its declaration. Stability is established once per module for each function binding (`DecodedModule.stable`). The entry's contract and the importer's reading correspond by the store-map checks (`refuseRows`), a refused check refusing each reader at `signature rows differ`. The form-based decisions that remain on this path:
+
 | Site | Condition | Holds | Fails |
 | --- | --- | --- | --- |
-| `tools/fragment-parse.mts:2738` (`importedModules`) | the imported value is no construct signature, has no type parameters and its type is one signature or an intersection of signatures (`callable`) | its module is a candidate for the fragment's `modules` | its module is not listed through this import |
-| `tools/fragment-parse.mts:2740` | the declaration's module path starts with `typescript/lib/` or `tscert/` | not listed | — |
-| `tools/fragment-parse.mts:2743` | with a project root: the path ends in `.ts`/`.mts`/`.cts`, not `.d.*ts`, no `node_modules` segment | listed | not listed |
-| `tools/fragment-parse.mts:2752` | without a project root: the alias target's last declaration is a `FunctionDeclaration` with a body, in no declaration file and outside `node_modules` | listed | not listed (a `const f = () => …` export is not) |
-| `C/Imports.lean:227` (`eligibleRead`) | the origin unit has no type parameters, no `rest` parameter and no parameter named `this` | continue | the read fails: "not eligible" |
-| `C/Imports.lean:235` | no statement of the origin module's initialization or of any of its function bodies assigns the binding's name (`assignsStmt`), scanned for every read | continue | the read fails: "writes its binding" |
-| `C/Imports.lean:238` | the imported value is no construct signature and has no type parameters | continue | the read fails: "not eligible" |
-| `C/Imports.lean:242–259` | the origin unit states a guard: the declared type is an intersection of exactly a plain and a promise signature of the same actuals, receiver and effect | the plain signature and the promised type are compared | the read fails. The guard pair is admitted: section 2's "eligibility excludes guards/promises" is contradicted by the code, which refuses only a promise on the plain signature (line 264) |
-| `C/Imports.lean:260` | the (plain) declared type is one `function` term with no `rest` and no `receiver` | continue | the read fails: "not eligible" |
-| `C/Imports.lean:264` | the plain signature's effect states no promise | continue | the read fails |
-| `C/Imports.lean:270,275,278,281` | the importer's precondition, postcondition, arity and `sameReading` agree with the origin unit's | the read resolves to the unit | the read fails |
-| `C/Imports.lean:320` (`documentReads`) | `eligibleRead` returns an error | — | the import is silently omitted: no read, no located failure; the importer reads it at `ordinaryImport` |
-| `C/Imports.lean:322` | a local name two imports bind | — | both omitted |
+| `C/Imports.lean` (`documentReads`) | a local name two imports bind | — | both read at their declarations |
 | `C/Imports.lean:377` (`importerReads`) | an importer function is generic, async, of a written effect, of a `rest` parameter, or a stand-in | its body's mentions are not followed when collecting reads | they are |
 | `C/Extraction.lean:49,311` (`bodyModule`) | the declaration's module path ends in a source extension and not in a declaration extension | an import with no entry is read at `ordinaryImport` (ordinary effect, precondition kept) | read at its declared type |
 | `C/Extraction.lean:17` (`importedSignatures`) | the declared type expands to one fixed signature, or a plain one and a promise one of the same actuals | `importedArrow` reconstructs a slot | `importedArrow` fails; with `lenient`, the import is read at its declared contract |
@@ -389,6 +379,6 @@ Every place in the front's import, extraction, proposal, publication, row, infer
 
 `RegionInference.lean` and `InterfaceRows.lean` decide nothing by form beyond the rows above: region names are read from each callee's effect, and the reach of a row table follows its rows.
 
-**Count.** 47 decisions, one per row: `fragment-parse.mts` 4, `Imports.lean` 10, `Extraction.lean` 6, `FragmentFront.lean` 21, `TypeComparison.lean` 1, `ModuleInterfaces.lean` 1, `HeadInference.lean` 4; `PassUnitRealize.lean`'s `rowConditions` is the row of `layoutOwn` that calls it; `RegionInference.lean` and `InterfaceRows.lean` 0.
+**Count.** 47 decisions at `f741ed41`, one per row before C1 replaced 12 of them (the four of `importedModules`, eight of `eligibleRead` and `documentReads`): `fragment-parse.mts` 4, `Imports.lean` 10, `Extraction.lean` 6, `FragmentFront.lean` 21, `TypeComparison.lean` 1, `ModuleInterfaces.lean` 1, `HeadInference.lean` 4; `PassUnitRealize.lean`'s `rowConditions` is the row of `layoutOwn` that calls it; `RegionInference.lean` and `InterfaceRows.lean` 0.
 
 **Where the plan differs.** The plan's typed-array lines (`C/HeadInference.lean:469,666,1312,1335`) are 469, 668, 1320, 1337, and the same functions also decide by the spellings `Array`/`ReadonlyArray` and by method names, which the plan does not list. Eligibility admits guards (above). The plan does not list the ordinary-effect entry omission (`establishEntry`), `withNeverImports`, `bodyModule`, `genericClassNames` or `writtenSchemes`' exclusions.

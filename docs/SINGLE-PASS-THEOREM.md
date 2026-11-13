@@ -1080,17 +1080,15 @@ $`((\ell, n), (\Phi, t, \Phi_r), u)`$ carries the established footprint,
 throw flag, result footprint and unit, and no type (`encodeInterfaces`,
 `decodeInterfaces`). The importer's slot of the import is
 `importedArrow` over its own declaration type $`U`$ of the name (the
-`imported` entry of its equation front): $`U`$'s one arrow, each parameter
-and the result spelled as claims of the importer's labels (`graphClaim`),
-the entry's footprint, lowered by `moduleArrow` into the importer's store.
+`imported` entry of its equation front): $`U`$'s one arrow, its receiver,
+each parameter and the result spelled as claims of the importer's labels
+(`graphClaim`), the entry's footprint, lowered by `moduleArrow` into the
+importer's store.
 So the slot's type $`A`$ is a type of the importer's frozen store
 $`G = \mathrm{graphOf}(f)`$. The module's interface $`I_u`$ is
 `moduleArrow` over its unit's own signature (`ordinarySlots`), a type of
 the module's frozen store $`G_m = \mathrm{graphOf}(f_m)`$. The two
-lowerings share their input text only: `eligibleRead` requires the
-importer's and the module's readings of the declaration equal, recursively
-over the declarations they reach (`sameReading`), and the same
-precondition and postcondition.
+lowerings share their input text only.
 
 **The lowering side.** `StoreMapAgrees` is the syntactic statement per
 read: a store map from the entry's module graph to the importer's graph

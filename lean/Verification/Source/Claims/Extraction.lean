@@ -39,7 +39,11 @@ def importedArrow (T : EquationStore.State) (U : List Tree) (footprint : Footpri
     (result : Footprints.Closed) : Except String Json := do
   let (a, guard) ← importedSignatures T U
   if a.effect.promise.isSome then throw "a certified import's plain signature states no promise"
-  let params : List Fragment.Param := a.arguments.zipIdx.map fun (A, i) => ⟨s!"p{i}", graphClaim A, false⟩
+  -- (a receiver the declaration states is its `this` parameter, as the
+  -- module reads its own function, `moduleArrow`)
+  let receiver : List Fragment.Param := if PositiveRules.expand (SourceTypes.graph T) a.receiver == [.top] then []
+    else [⟨"this", graphClaim a.receiver, false⟩]
+  let params : List Fragment.Param := receiver ++ a.arguments.zipIdx.map fun (A, i) => ⟨s!"p{i}", graphClaim A, false⟩
   let ret ← resultWithFootprint T (graphClaim a.result) result
   moduleArrow ⟨"", (0, 0), params, ret, [], false, guard, false, none, a.effect.pre, a.effect.ensures⟩
     footprint onThrow

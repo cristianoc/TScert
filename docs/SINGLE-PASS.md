@@ -784,8 +784,8 @@ compiled replacements and the stage store's replay
 An import whose declaration has no body is read at its declared type
 (`import`). An import from a module with a body is read at its declared
 type and at what its module's check establishes, its interface entry,
-where the fragment resolves it to an eligible unit of a module the
-fragment lists ([certified imports](SOURCE-CONTRACTS.md#certified-imports),
+where the fragment resolves it to a function of a module the fragment
+lists ([certified imports](SOURCE-CONTRACTS.md#certified-imports),
 [imports](SINGLE-PASS-FRONT.md#imports)); with no entry it is read at its
 declared type with the ordinary effect, its precondition kept
 (`import-body`, `ordinaryImport`): no footprint, postcondition, guard's

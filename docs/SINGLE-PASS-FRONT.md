@@ -375,19 +375,16 @@ Pretext's `x ?? missing()` is the case: with it the functions calling
 ## Imports
 
 An import is read at the footprint its module establishes
-where the fragment alone resolves it to a unit of a module the fragment
-lists (`Claims/Imports.lean`), by the checks of a certified import
-([certified imports](SOURCE-CONTRACTS.md#certified-imports),
-`eligibleRead`): its declaration identity names that module, and the unit
-is the module's function of the declaration's name whose name lies within
-the declaration's span (a default import's declaration names the
-function, a re-export's the module declaring it; a function the parser
-leaves out, `absent`, is no unit); the unit has no binders, rest,
-receiver or guard, and no code of its module writes its binding; the
-import is one fixed call signature of no rest, receiver, binders or
-promise, stating the unit's precondition and postcondition; the two
-readings of the signature agree (`sameReading`); and no other import binds
-its local name. Only the reads the code the selected units reach mentions
+where the fragment alone resolves it to a function of a module the fragment
+lists (`Claims/Imports.lean`, `resolveRead`;
+[certified imports](SOURCE-CONTRACTS.md#certified-imports)): its
+declaration identity names that module, the function is the module's of the
+declaration's name whose name lies within the declaration's span (a default
+import's declaration names the function, a re-export's the module declaring
+it; a function the parser leaves out, `absent`, is none), its binding is
+stable (no code of its module writes it), and no other import binds its
+local name; the entry's rows and the importer's reading of the import
+correspond by the store-map checks (`FilePlans.refuseRows`). Only the reads the code the selected units reach mentions
 are resolved, a module's top-level code counted where its functions read a
 name it binds (`reachMentions`); a module's own imports are resolved the
 same way, recursively. The modules are planned callees first, each from

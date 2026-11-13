@@ -512,33 +512,29 @@ own module establishes from its code. This is the checked evidence
 [inferred call effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)
 require; the import's TypeScript declaration supplies none.
 
-**Eligibility.** A read may be certified only where its binding's value is
-stable: a named import of an exported function declaration that no code of
-its module reassigns, or a default import of an `export default function`,
-which is the named import of `default`
-([default imports](SOURCE-ELABORATION.md#default-imports)). Its terminal
-declaration identity is the one TypeScript resolves the import to, through
-re-exports; a re-exporting module's own execution is part of the runtime
-module graph below. The read resolves, by that identity alone, to a
-function of a module the fragment lists, its name the declaration's and
-lying in the declaration's span, with no binders, no rest parameter and no
-receiver, whose module's document writes its binding nowhere;
-the import is a function of one call signature with no rest, receiver,
-binders or promise, or, for a type guard or an assertion function, of that
-signature and beside it the promise signature of the same actuals,
-receiver and effect stating the function's promise (`guards k`,
-`asserts k`), stating the precondition and postcondition the
-function states (`eligibleRead`, `Imports.lean`); the promised type is
-compared with the function's as its other terms are (`sameReading`, below).
-A guard's entry states both signatures, its one request checked at the
-promise's goal realizing both
-([the module layout](SINGLE-PASS.md#the-module-layout)); a guard whose body
-breaks its promise is refused at its own unit, publishes no entry, and is
-read at the ordinary effect, narrowing nothing
-(`invalid-false-guard-value-import`, run under Node). Any other import, and
-one whose local name another import also binds, is read at its ordinary
-signature. The parser lists no module whose code it leaves unlowered writes
-the binding of one of its function declarations.
+**Origin.** Every import of a module the fragment lists resolves to its
+origin by its terminal declaration identity alone, the one TypeScript
+resolves the import to, through re-exports; a re-exporting module's own
+execution is part of the runtime module graph below. Where a function of
+that module binds the declaration's name, its name lying in the
+declaration's span, and the binding is **stable**, the read resolves to
+that function, whatever its form (`resolveRead`, `Imports.lean`): a default
+import of an `export default function` is the named import of `default`
+([default imports](SOURCE-ELABORATION.md#default-imports)). A binding is
+stable where no code of its module writes it; stability is a property of
+the binding, established once per module for each function binding it
+declares (`DecodedModule.stable`), and the parser lists no module whose code
+it leaves unlowered writes the binding of one of its function declarations.
+Where no function binds the name, or its binding is written, the module's
+initialisation holds the value: no function's entry states it, and the
+import is read at its ordinary signature. A guard's entry states both its
+plain and its promise signature, its one request checked at the promise's
+goal realizing both ([the module layout](SINGLE-PASS.md#the-module-layout));
+a guard whose body breaks its promise is refused at its own unit, publishes
+no entry, and is read at the ordinary effect, narrowing nothing
+(`invalid-false-guard-value-import`, run under Node). An import of a module
+the fragment does not list, and one whose local name another import also
+binds, is read at its ordinary signature.
 
 **Two graphs.** The **module graph** has a node for each implementation
 module the fragment lists and an edge for each resolved implementation
@@ -554,8 +550,8 @@ second bears on initialisation and binding, below.
 
 **The documents.** The parser lowers every module the module graph may
 need before any check runs: every program module the checked file imports a
-function from (a value of one signature, of a guard's beside it, or of
-overloads, declared by a function declaration with a body), transitively,
+value from (declared in a source file of the program, outside declaration
+files and installed packages), transitively,
 each under the checked file's TypeScript
 program and options and the run's
 [tag selection](HOST-FAMILIES.md#the-runs-selection), so that both readings
@@ -611,24 +607,12 @@ assumption, the [import assumption](#imported-ambient-and-global-values)
 its module's own run also makes. An initialiser that is not checked never
 supplies an established entry.
 
-**Binding.** Lean reads an import at an established entry only where the
-read is eligible and its module's interface, over the same module document,
-publishes an entry for the read's function. The two readings of its
-ordinary signature, the importer's declaration document's and the module's
-own annotation, are compared structurally, a mismatch refused
-(`sameReading`): the parameter and result terms, and recursively every
-declaration either reaches, under the identity mapping of declaration
-identities: its equation, parameters and heritage, and the written
-applications listed in it, in the unit's own declaration alike, with their
-scopes, arguments and bounds. A declaration lowering reads by identity
-rather than through a reference (`ImplicitDependency`, the one list
-lowering selects them through) is reached as a reference's target is where
-a term reached needs it: `ArrayProto` for an array or tuple term,
-`%Stable%` and native `Promise` for a resolution-qualified binder. Symbol
-keys compare by the identity of their symbol's declaration rather than a
-document's index, and a visited set closes recursive definitions. Every
-field of a term takes part, array presence and host classification among
-them. The entry carries its function's interface type as rows of its
+**Binding.** Lean reads an import at an established entry where the import
+resolves to a function (its origin, above) and its module's interface, over
+the same module document, publishes an entry for that function. The
+entry's contract and the importer's declaration of the import correspond
+where the store-map checks below relate them; nothing else compares the
+two readings. The entry carries its function's interface type as rows of its
 module's store; the importer reads the entry only where the store-map
 check from those rows to the type its own store reads the import at
 accepts, and a refused read refuses each unit reading the import, at

@@ -2708,18 +2708,12 @@ function lowerFile(file: string, carriesContext: boolean,
   return { ast, module, imported: importedFrom };
 }
 
-/** The program modules a file imports functions from: each named or
- * default value import, read at a function type (one signature, a guard's
- * beside one, or overloads), that TypeScript binds to a function
- * declaration with a body in a source file of the program, outside the
- * standard library, the tool's own declarations and installed packages, with
- * the module identity the declaration document gives it. */
-/** Whether a value's type is a function's: one signature, or an
- * intersection of signatures (a guard's beside its signature, overloads). */
-function callable(type: TypeTerm): boolean {
-  return type.k === "function" || (type.k === "intersection" && type.parts.every((p) => p.k === "function"));
-}
-
+/** The program modules a file imports values from: each named or default
+ * value import that TypeScript binds to a declaration in a source file of the
+ * program, outside the standard library, the tool's own declarations,
+ * declaration files and installed packages, with the module identity the
+ * declaration document gives it. Every such binding resolves to its origin
+ * (`resolveRead`, `Claims/Imports.lean`), whatever value it holds. */
 function importedModules(importNodes: ImportDeclaration[], checker: Checker,
     values: Ast["declarations"]["values"], root: string | null): ImportedModule[] {
   // Each value import's local name: a named import's, and a default
@@ -2737,7 +2731,7 @@ function importedModules(importNodes: ImportDeclaration[], checker: Checker,
   const symbols = checker.getSymbolAtLocation(elements);
   return elements.flatMap((element, i) => {
     const value = values.find((v) => v.binding.local === element.text);
-    if (!value || value.construct || value.typeParams.length > 0 || !callable(value.type)) return [];
+    if (!value) return [];
     const location = value.declaration.module;
     if (location.startsWith("typescript/lib/") || location.startsWith("tscert/")) return [];
     if (root !== null) {
@@ -2749,10 +2743,7 @@ function importedModules(importNodes: ImportDeclaration[], checker: Checker,
     if (!symbol) return [];
     const target = symbol.flags & SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
     const declaration = target.declarations[0]?.resolve();
-    // Overloads are declarations without a body before the one with it.
-    const implementation = target.declarations.at(-1)?.resolve();
-    if (!declaration || !implementation || !ts.isFunctionDeclaration(implementation) || !implementation.body)
-      return [];
+    if (!declaration) return [];
     const source = declaration.getSourceFile();
     if (source.isDeclarationFile || source.fileName.split("/").includes("node_modules")) return [];
     return [{ absolute: source.fileName, location }];

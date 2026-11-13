@@ -1183,7 +1183,8 @@ def unboundReads (sc : ImportScope) (location name : String) : List (String × S
     seen := seen ++ [(l, n)]
     let some m := sc.modules.find? (·.location == l) | continue
     let some decoded := sc.code[l]? | continue
-    let .ok (fs, init) := decoded.get | continue
+    let .ok dm := decoded.get | continue
+    let (fs, init) := (dm.functions, dm.init)
     let values := documentValues m.document
     let owned := init.flatMap Fragment.Stmt.bound
     let own := fs.map (·.name) ++ m.absent.map (·.1) ++ owned

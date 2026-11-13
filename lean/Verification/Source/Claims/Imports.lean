@@ -1,10 +1,9 @@
 import Verification.Source.Claims.Extraction
 import Verification.Source.EffectJson
 
-/-! Certified imports (SOURCE-CONTRACTS.md, "Certified imports"): which module
-units the importer's claims read qualified, the structural correspondence of
-the two readings of each one's signature, and the module documents the one
-check certifies, each restricted to its certified set. -/
+/-! Certified imports (SOURCE-CONTRACTS.md, "Certified imports"): the origin
+each import of a module the fragment lists resolves to, and the module
+documents the one check certifies, each restricted to its certified set. -/
 namespace Verification.SourceClaimJson
 open Lean
 
@@ -30,163 +29,32 @@ structure ImportPlan where
   (`fragmentPlansWithModules`). -/
   depends : List (String × List String)
 
-section correspondence
-
-/-- A term or definition with each symbol key, an index into its document's
-`symbols`, replaced by that symbol's declaration identity. -/
-partial def canonical (symbols : Array Json) : Json → Json
-  | .arr xs => .arr (xs.map (canonical symbols))
-  | .obj kvs => Json.mkObj (kvs.toArray.toList.map fun (k, v) =>
-      (k, match k, v with
-        | "symbol", .num n =>
-          if n.exponent == 0 && n.mantissa ≥ 0 then (symbols[n.mantissa.toNat]?).getD v else v
-        | _, _ => canonical symbols v))
-  | j => j
-
-/-- The declarations a term references, by identity. -/
-partial def referenced : Json → List Json
-  | .arr xs => xs.toList.flatMap referenced
-  | j@(.obj _) =>
-    let here := match j.getObjVal? "reference" with
-      | .ok r => ((r.getObjVal? "target").toOption).toList
-      | .error _ => []
-    here ++ (match j with
-      | .obj kvs => kvs.toArray.toList.flatMap fun (_, v) => referenced v
-      | _ => [])
-  | _ => []
-
-/-- Whether a term or definition holds an array or tuple term, whose
-lowering reads the document's `ArrayProto`. -/
-partial def mentionsArray : Json → Bool
-  | .arr xs => xs.any mentionsArray
-  | j@(.obj kvs) =>
-    (match j.getObjVal? "k" with | .ok (.str "array") | .ok (.str "tuple") => true | _ => false) ||
-      kvs.toArray.any fun (_, v) => mentionsArray v
-  | _ => false
-
-/-- Whether a term or definition holds a resolution-qualified binder, whose
-scheme's domain lowering takes relative to `%Stable%` and native `Promise`. -/
-partial def mentionsResolution : Json → Bool
-  | .arr xs => xs.any mentionsResolution
-  | j@(.obj kvs) =>
-    (match j.getObjVal? "resolution" with | .ok .null | .error _ => false | .ok _ => true) ||
-      kvs.toArray.any fun (_, v) => mentionsResolution v
-  | _ => false
-
-/-- Whether lowering a term or definition reads the implicit dependency `d`. -/
-def triggers : EquationLowering.ImplicitDependency → Json → Bool
-  | .arrayProto, j => mentionsArray j
-  | .stable, j | .promise, j => mentionsResolution j
-
-/-- A declaration document's parts the comparison reads: its definitions,
-its symbols and its written applications. -/
-structure Reading where
-  definitions : List Json
-  symbols : Array Json
-  applications : List Json
-
-def Reading.of (declarations : Json) : Except String Reading := do
-  return ⟨← jArr declarations "definitions", (← jArr declarations "symbols").toArray,
-    ← jArr declarations "applications"⟩
-
-def Reading.definition (r : Reading) (id : Json) : Option Json :=
-  r.definitions.find? fun d => (d.getObjVal? "declaration").toOption == some id
-
-/-- The identities of a reading's definitions lowering reads implicitly as `d`. -/
-def Reading.implicit (r : Reading) (d : EquationLowering.ImplicitDependency) : List Json :=
-  (r.definitions.map (·.getObjValD "declaration")).filter d.selects
-
-/-- The written applications a reading lists in the declaration `site`
-names (`module#name`), each with its symbol keys by identity and without its
-span, which only the document whose own file it is written in has. -/
-def Reading.applicationsAt (r : Reading) (site : String) : List Json :=
-  (r.applications.filter fun a => (a.getObjValAs? String "site").toOption == some site).map fun a =>
-    canonical r.symbols (a.setObjVal! "span" .null)
-
-/-- The site name of a declaration identity. -/
-def siteOf (id : Json) : String :=
-  s!"{(id.getObjValAs? String "module").toOption.getD ""}#{(id.getObjValAs? String "name").toOption.getD ""}"
-
-/-- **The two readings agree.** The terms `a` (the importer's) and `b` (the
-module's) are equal once their symbol keys name declarations, and so,
-recursively, is every declaration either reaches: its definition in each
-reading, both present and equal, or both absent (a declaration neither
-document defines, the standard library's, which both read alike). The
-declarations lowering reads implicitly (`ImplicitDependency`) where a term
-reached triggers them, `ArrayProto` for an array or tuple term, `%Stable%`
-and native `Promise` for a resolution-qualified binder, are reached as an
-explicit reference is, the same identities in both readings. In each declaration reached, and in the
-`sites` given, both readings list the same written applications, whose
-arguments and bounds reach declarations in turn. A visited set closes
-recursive definitions; a mismatch is refused, never proved equivalent. -/
-partial def sameReading (ra rb : Reading) (sites : List String) (pairs : List (Json × Json)) :
-    Except String Unit := do
-  let mut work : List Json := []
-  let mut triggered : List EquationLowering.ImplicitDependency := []
-  let trigger (ts : List EquationLowering.ImplicitDependency) (j : Json) :=
-    ts ++ EquationLowering.ImplicitDependency.all.filter fun d => !ts.contains d && triggers d j
-  for (a, b) in pairs do
-    if canonical ra.symbols a != canonical rb.symbols b then
-      throw "the importer's and the module's readings of an imported signature differ"
-    work := work ++ referenced a ++ referenced b
-    triggered := trigger (trigger triggered a) b
-  let mut seen : List Json := []
-  let mut siteWork := sites
-  let mut seenSites : List String := []
-  for _ in [0:100000] do
-    if let site :: rest := siteWork then
-      siteWork := rest
-      if seenSites.contains site then continue
-      seenSites := site :: seenSites
-      let as := ra.applicationsAt site
-      let bs := rb.applicationsAt site
-      if as.length != bs.length || !as.all (fun x => as.count x == bs.count x) then
-        throw s!"the importer's and the module's readings of the written applications in {site} differ"
-      for x in as do
-        work := work ++ referenced x
-        triggered := trigger triggered x
-      continue
-    match work with
-    | [] =>
-      -- The implicit dependencies the terms reached trigger, by identity in
-      -- each reading: the same declarations in both, reached in turn.
-      let mut more : List Json := []
-      for d in triggered do
-        let ia := ra.implicit d
-        let ib := rb.implicit d
-        if ia.length != ib.length || !ia.all ib.contains then
-          throw s!"a declaration one reading of an imported signature reads implicitly and the other lacks: {repr d}"
-        more := more ++ ia.filter (!seen.contains ·)
-      if more.isEmpty then return ()
-      work := more
-    | id :: rest =>
-      work := rest
-      if seen.contains id then continue
-      seen := id :: seen
-      siteWork := siteWork ++ [siteOf id]
-      match ra.definition id, rb.definition id with
-      | none, none => pure ()
-      | some da, some db =>
-        if canonical ra.symbols da != canonical rb.symbols db then
-          throw s!"the importer's and the module's readings of a declaration differ: {id.compress}"
-        work := work ++ referenced da
-        triggered := trigger triggered da
-      | _, _ => throw s!"a declaration one reading of an imported signature reaches and the other lacks: {id.compress}"
-  throw "the readings of an imported signature reach too many declarations"
-
-end correspondence
 
 /-- Whether a span holds another. -/
 private def within (inner outer : Span) : Bool := outer.1 ≤ inner.1 && inner.2 ≤ outer.2
 
-/-- A module's code, decoded: its functions, then its top-level code. -/
-private def decodeCode (m : Fragment.ModuleAst) : Except String (List Fragment.Fn × List Fragment.Stmt) := do
+/-- A module's code, decoded once: its functions, its top-level code, and
+**the stability of its function bindings**: the names of its functions no
+statement of its top-level code or of any of its function bodies assigns
+(`assignsStmt`). A function binding is stable when no code of its module
+writes it; the parser refuses a module whose code it does not lower writes
+it. Stability is a property of the binding, established once per module
+for every function binding it declares, and read by every read of one. -/
+structure DecodedModule where
+  functions : List Fragment.Fn
+  init : List Fragment.Stmt
+  stable : List String
+
+private def decodeCode (m : Fragment.ModuleAst) : Except String DecodedModule := do
   let functions ← (← jArr m.document "functions").mapM fun f => do return (← Fragment.decodeFn f).1
-  return (functions, ← Fragment.decodeInit m.document)
+  let init ← Fragment.decodeInit m.document
+  let code := init ++ functions.flatMap (·.body)
+  let names := (functions.map (·.name)).eraseDups
+  return ⟨functions, init, names.filter fun n => !code.any (SourceExtraction.assignsStmt n)⟩
 
 /-- Each module's code (`decodeCode`) by its location, the first module of
 that location's, decoded at most once, where a read first asks for it. -/
-abbrev ModuleCode := Std.HashMap String (Thunk (Except String (List Fragment.Fn × List Fragment.Stmt)))
+abbrev ModuleCode := Std.HashMap String (Thunk (Except String DecodedModule))
 
 def ModuleCode.of (fragmentModules : List Fragment.ModuleAst) : ModuleCode :=
   fragmentModules.foldl (init := {}) fun m mod => m.insertIfNew mod.location (Thunk.mk fun _ => decodeCode mod)
@@ -195,95 +63,37 @@ def ModuleCode.of (fragmentModules : List Fragment.ModuleAst) : ModuleCode :=
 private def importedValue (values : List Json) (q : Json) : Option Json :=
   values.find? fun v => (v.getObjVal? "declaration").toOption == some q
 
-/-- A read of an import that names an eligible unit of its origin whose
-two signature readings agree: the importer's binding of it and the unit's
-fragment. The import `q`, a declaration identity, is an imported value of
-the importer's declarations; its module is one the fragment lists; the unit
-is a function of that module, its name the declaration's, its name within
-the declaration's span; it has no binders, no rest and no receiver;
-no code of its module writes its binding; the import is a function of one
-fixed call signature of no rest, receiver, binders or promise, or, for a
-unit with a guard, of that signature and beside it the promise signature
-of the same actuals and effect stating the unit's promise (`guards k`,
-`asserts k`: the pair `importedSignatures` reads); the import's signature
-and the unit state the same precondition and postcondition; and the two
-readings of its signature agree (`sameReading`), the promised type's
-among them. -/
-private def eligibleRead (importer : Reading) (values : List Json) (fragmentModules : List Fragment.ModuleAst)
+/-- **An import's origin** (`resolveRead`): the import `q`, a declaration
+identity, is an imported value of the importer's declarations; its module is
+one the fragment lists. Where a function of that module binds the
+declaration's name within the declaration's span and that binding is stable
+(`DecodedModule.stable`), the import resolves to that function: its unit
+(its first, for overloads). Its declared contract and the function's entry
+correspond where the store-map checks relate the entry's rows and the type
+the importer reads the import at (`FilePlans.refuseRows`); a refused check
+refuses each unit reading it. Where no function binds the name, or its
+binding is written, the module's initialization holds it: no function's
+entry states it, and the import is read at its declared contract. -/
+private def resolveRead (values : List Json) (fragmentModules : List Fragment.ModuleAst)
     (code : ModuleCode) (q : Json) (location name : String) (span : Span) :
-    Except String (String × Json) := do
+    Except String (Option (String × Json)) := do
   let some v := importedValue values q
     | throw s!"a qualified read names no imported value: {q.compress}"
-  let binding ← jField v "binding"
-  let localName ← jStr (← jField binding "local")
+  let localName ← jStr (← jField (← jField v "binding") "local")
   let some m := fragmentModules.find? (·.location == location)
     | throw s!"a qualified read names a module the fragment does not list: {location}"
-  let fs ← jArr m.document "functions"
-  let some unit := fs.find? fun f => (f.getObjValAs? String "name").toOption == some name &&
-      ((f.getObjValAs? Span "namePos").toOption.map (within · span)).getD false
-    | throw s!"a qualified read names no unit of its origin: {location}#{name}"
-  -- Eligible: no binders, no rest and no receiver, on both readings.
-  let params ← jArr unit "params"
-  if !(← jArr unit "typeParams").isEmpty ||
-      params.any (fun p => (p.getObjVal? "rest").isOk || (p.getObjValAs? String "name").toOption == some "this") then
-    throw s!"a qualified read names a unit that is not eligible: {location}#{name}"
-  -- Stable: no code of the module the document holds writes the binding;
-  -- the parser refuses a module whose code it does not lower writes it.
-  let (functions, init) ← match code[location]? with
+  let some unit := (← jArr m.document "functions").find? fun f =>
+      (f.getObjValAs? String "name").toOption == some name &&
+        ((f.getObjValAs? Span "namePos").toOption.map (within · span)).getD false
+    | return none
+  let decoded ← match code[location]? with
     | some decoded => decoded.get
     | none => decodeCode m
-  if (init ++ functions.flatMap (·.body)).any (SourceExtraction.assignsStmt name) then
-    throw s!"a qualified read names a unit whose module writes its binding: {location}#{name}"
-  let declared ← jField v "type"
-  if (v.getObjValD "construct") != .bool false || !(← jArr v "typeParams").isEmpty then
-    throw s!"a qualified read names an import that is not eligible: {location}#{name}"
-  -- The plain signature, and a guard's promise signature beside it: the
-  -- same actuals, receiver and effect, stating the unit's promise.
-  let guard := unit.getObjValD "guard"
-  let (type, promised) ← match guard, declared.getObjValD "k" with
-    | .null, _ => pure (declared, none)
-    | _, .str "intersection" => match declared.getObjValD "parts" with
-      | .arr #[a, g] => do
-        let promise ← jField (← jField g "effect") "promise"
-        let param ← jField guard "param"
-        let asserts ← jField guard "asserts"
-        let stated := Json.mkObj [((if asserts == .bool true then "asserts" else "guards"),
-          Json.mkObj [("param", param)])]
-        let unpromised := (← jField g "effect").setObjVal! "promise" .null
-        if (g.getObjValD "k") != .str "function" || promise != stated || unpromised != (← jField a "effect") ||
-            (g.getObjValD "params") != (a.getObjValD "params") || (g.getObjValD "rest") != (a.getObjValD "rest") ||
-            (g.getObjValD "receiver") != (a.getObjValD "receiver") then
-          throw s!"a qualified read names a guard whose declared signatures are not its plain and promise ones: {location}#{name}"
-        pure (a, some ((← jField g "result"), (← jField guard "type")))
-      | _ => throw s!"a qualified read names a guard whose declared type is not two signatures: {location}#{name}"
-    | _, _ => throw s!"a qualified read names a guard whose declared type is not two signatures: {location}#{name}"
-  if (type.getObjValD "k") != .str "function" || (type.getObjValD "rest") != .null ||
-      (type.getObjValD "receiver") != .null then
-    throw s!"a qualified read names an import that is not eligible: {location}#{name}"
-  let effect ← jField type "effect"
-  if (effect.getObjValD "promise") != .null then
-    throw s!"a qualified read names an import with a promise: {location}#{name}"
-  -- The importer's signature states the precondition the unit is checked
-  -- assuming (`Request.entryIndices`), so each call establishes it.
-  let pre : List HeapKnowledge.IndexFact ← fromJson? (← jField effect "pre")
-  let requires : List HeapKnowledge.IndexFact ← fromJson? (← jField unit "requires")
-  if pre != requires then
-    throw s!"the importer's signature and the module's unit state different preconditions: {location}#{name}"
-  -- Its postcondition too, which the unit certifies at each return.
-  let ensures : List HeapKnowledge.IndexFact ← fromJson? (← jField effect "ensures")
-  let stated : List HeapKnowledge.IndexFact ← fromJson? (← jField unit "ensures")
-  if ensures != stated then
-    throw s!"the importer's signature and the module's unit state different postconditions: {location}#{name}"
-  let ps ← jArr type "params"
-  if ps.length != params.length then
-    throw s!"the importer's and the module's readings of an imported signature differ: {location}#{name}"
-  let module ← Reading.of (← jField m.document "declarations")
-  sameReading importer module [s!"{location}#{name}"] (((← jField type "result"), (← jField unit "retType")) ::
-    promised.toList ++ (← (ps.zip params).mapM fun (a, p) => do return (a, ← jField p "type")))
-  return (localName, unit)
+  if !decoded.stable.contains name then return none
+  return some (localName, unit)
 
-/-- An import the fragment alone resolves to a unit of a module it lists
-(`eligibleRead`): the importer's local name, the module's location, and the
+/-- An import the fragment alone resolves to a function of a module it lists
+(`resolveRead`): the importer's local name, the module's location, and the
 unit's name and name position. -/
 structure FragmentRead where
   localName : String
@@ -294,16 +104,16 @@ structure FragmentRead where
 
 /-- **The fragment's reads of one document** (mode 8): each imported value
 of its declarations whose declaration identity names a module the fragment
-lists, resolved by that identity alone as a qualified read naming it is
-(`eligibleRead`): a function of that module, its name the declaration's,
-its name within the declaration's span, eligible, its two signature
-readings agreeing, of the local names `wanted` holds. An import refused
-there, and a local name two imports bind, resolve to no unit. -/
+lists, of the local names `wanted` holds, resolved by that identity alone
+(`resolveRead`) to a function of that module. An import of a module the
+fragment does not list is
+read at its declaration (its stated contract), and one the module's
+initialization holds at its declared contract; a local name two imports
+bind resolves to neither. -/
 private def documentReads (fragmentModules : List Fragment.ModuleAst) (code : ModuleCode) (declarations : Json)
     (wanted : String → Bool := fun _ => true) : List FragmentRead := Id.run do
   let locations := fragmentModules.map (·.location)
   let some values := (jArr declarations "values").toOption | return []
-  let some importer := (Reading.of declarations).toOption | return []
   let mut out : List FragmentRead := []
   for v in values do
     let some localName := (do (← v.getObjVal? "binding").getObjValAs? String "local").toOption | continue
@@ -313,11 +123,11 @@ private def documentReads (fragmentModules : List Fragment.ModuleAst) (code : Mo
     if !locations.contains location then continue
     let some name := (q.getObjValAs? String "name").toOption | continue
     let some span := (fromJson? (q.getObjValD "span") : Except String Span).toOption | continue
-    match eligibleRead importer values fragmentModules code q location name span with
-    | .ok (localName, unit) =>
+    match resolveRead values fragmentModules code q location name span with
+    | .ok (some (localName, unit)) =>
       let some namePos := (fromJson? (unit.getObjValD "namePos") : Except String Span).toOption | continue
       out := out ++ [⟨localName, location, name, namePos⟩]
-    | .error _ => continue
+    | .ok none | .error _ => continue
   let names := out.map (·.localName)
   return out.filter fun r => names.count r.localName == 1
 
@@ -385,10 +195,10 @@ reads: its imports the code those functions reach mentions, its top-level
 code's where they read a name it binds (`reachMentions`), each resolved as
 the importer's are (`documentReads`). -/
 def moduleReads (sc : ImportScope) (m : Fragment.ModuleAst) (names : List String) : Except String (List FragmentRead) := do
-  let (fs, mi) ← match sc.code[m.location]? with
+  let decoded ← match sc.code[m.location]? with
     | some decoded => decoded.get
     | none => throw s!"a module the fragment does not list: {m.location}"
-  let more := reachMentions fs mi names
+  let more := reachMentions decoded.functions decoded.init names
   return documentReads sc.modules sc.code (← jField m.document "declarations") more.contains
 
 /-- A module whose units an importer reads (`fragmentPlansWithModules`): the
