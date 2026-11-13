@@ -180,21 +180,33 @@ one to the other (`binding_not_le_field`); extension and truncation keep a
 capability's meaning; a write of contents with the target role's shape and
 the paired type keeps `HeapOk` (`Capability.At.write`).
 
-At activation (**planned**) `Fields`, `recT`, `recT_alloc` and `recT_at`
-([Types](../../lean/Verification/Types/Types.lean)) take capabilities in
-place of bare property types; `Clause.refs` and `Clause.dict`
-([PositiveNormalization](../../lean/Verification/Types/PositiveNormalization.lean))
-carry them through mapping, substitution, normalization, equality,
-subtyping and certification; every write-granting capability (`dictCellT`,
-optional writable fields, array storage) states its role; an open record
-grants capabilities for the properties it names; `CellClaims.reference`
-([CellClaims](../../lean/Verification/Programs/CellClaims.lean)) takes the
-capability explicitly, binding lowering
-([Bindings](../../lean/Verification/Source/Lowering/Bindings.lean))
-supplying C; and `AllocationWorlds.next`
-([AllocationWorlds](../../lean/Verification/Semantics/AllocationWorlds.lean))
-takes allocation entries. A field write's effect is confined to F, and a
-binding write's to C, as consequences of capability lookup.
+**Storage typing** (**proved** where named). A type states each storage
+position's role as a tag, $`\mathrm{StorageRole} ::= \mathtt{field} \mid
+\mathtt{cell} \mid \mathtt{arrayStore} \mid \mathtt{viewStore}`$
+([StorageRoles](../../lean/Verification/Semantics/StorageRoles.lean)), whose
+meaning is the capability $`\mathrm{ofRole}(s,k,A)`$ permitting each role
+the tag names with $`A`$ (`Capability.ofRole`). Distinct tags name disjoint
+roles (`StorageRole.permits_unique`), so two positions over one key of one
+object state one tag (`ofRole_exclusive`) and an inclusion keeps the tag
+(`ofRole_le`); an allocation choosing role $`r`$ establishes every position
+whose tag names $`r`$ (`ofRole_holds_alloc`). The positions carrying a tag
+are the write-granting ones: every invariant field of a record operand
+(`Clause.refs`, `dict`, `callable`, `ctors`), every optional field, every
+writable index; a view and a store's element position carry none.
+`Fields`, `recT`, `recT_alloc` and `recT_at`
+([Types](../../lean/Verification/Types/Types.lean)) range over positions;
+mapping and substitution keep every role (`storage_map`,
+`storageOf_famsOf`); normalization concatenates operands; covering requires
+equal roles (`CoversFields`), so no covering takes a binding's storage to an
+ordinary property (`binding_not_covers_field`). The allocation rule
+(`HasTyWith.alloc`) takes each key's role from the claimed type:
+lowering states `field` for an object literal, `cell` for a binding's cell
+and its uninitialized marker (`CellClaims.reference` takes the role), and
+`arrayStore` for an array's store slot; `AllocationWorlds.next` takes the
+allocation's entries. Active worlds record no role, so these typings carry
+the role without checking it; the activation checks it against the kinded
+world, and adds to the allocation rule that each role fits its key (§2) and
+its initializer (§9).
 
 ## 5. The native-contract condition
 
