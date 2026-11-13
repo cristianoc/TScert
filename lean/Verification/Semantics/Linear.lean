@@ -515,8 +515,26 @@ def cheapestVar [BEq V] [Hashable V] (rows : List (Row V)) : Option V := Id.run 
     | none => best := some (x, cost)
   return best.map (·.1)
 
+/-- The rows with each subsumed row left out: of the rows of one form and
+one multiple of the goal's negation, the one of least bound, the first such
+(each other row of that form and multiple is its consequence); and every row
+of no variable and a bound at least `0`, which states nothing. The rows kept
+are in order of first occurrence. -/
+def subsume [DecidableEq V] [Hashable V] (rows : List (Row V)) : List (Row V) := Id.run do
+  let mut best : Std.HashMap (Form V × Nat) Nat := {}
+  let mut kept : Array (Row V) := #[]
+  for r in rows do
+    if r.form.isEmpty && 0 ≤ r.bound then continue
+    match best[(r.form, r.goal)]? with
+    | some i => if r.bound < kept[i]!.bound then kept := kept.set! i r
+    | none =>
+      best := best.insert (r.form, r.goal) kept.size
+      kept := kept.push r
+  return kept.toList
+
 /-- The steps establishing `c·x ≤ d` from the held facts, where the search
-finds them, within `limit` rows at every stage. -/
+finds them, within `limit` rows at every stage, each stage's subsumed rows
+left out (`subsume`). -/
 def prove [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)] (known : List (Fact V)) (c : Form V) (d : Int) (limit : Nat := 400) : Option (List (Step V)) := Id.run do
   let (pre, facts) := preSteps known
   let rows0 : List (Row V) := facts.zipIdx.filterMap fun
@@ -528,7 +546,7 @@ def prove [DecidableEq V] [Hashable V] [LT V] [DecidableRel (α := V) (· < ·)]
     if rows.any fun r => r.form.isEmpty && r.bound < 0 then break
     match cheapestVar rows with
     | some x =>
-      rows := eliminate x rows
+      rows := subsume (eliminate x rows)
       if rows.length > limit then return none
     | none => break
   match rows.find? fun r => r.form.isEmpty && r.bound < 0 && 0 < r.goal with

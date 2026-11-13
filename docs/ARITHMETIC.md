@@ -366,7 +366,12 @@ postconditions use the [audited string contracts](SOURCE-CONTRACTS.md#string-met
 **Implementation.** Linear facts are `Linear.Fact`, normal forms
 `Linear.normalize`; the certificate check is `Linear.check` (proved:
 `Linear.check_sound`), the search `Linear.entails` (proved:
-`Linear.entails_sound`) and `Linear.entailsWith`, the strict bound
+`Linear.entails_sound`) and `Linear.entailsWith`, whose certificate
+`Linear.prove` finds by Fourier–Motzkin elimination over the facts connected
+to the goal, keeping at each stage, of the rows of one form and one multiple
+of the goal's negation, the one of least bound and no row of no variable and
+a bound at least `0` (`Linear.subsume`): every other is its consequence, and
+`Linear.check` decides the certificate found (`linear-subsumed-rows`), the strict bound
 `Linear.strengthen` (proved: `strengthen_holds`). The index facts are
 `IndexFact.int` and `IndexFact.linear`, terms `HeapKnowledge.Term`, the
 length `lengthOf` (the length `Step.lenV` gives), the typed-array length
