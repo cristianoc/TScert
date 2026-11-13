@@ -122,36 +122,48 @@ a compile error there, and no plan variant is filtered out.
 
 ### The headline
 
-**Theorem** `passUnit_safe` (proved under hypotheses H1 and H2 of section 2). Let
-$`f' = f.\mathrm{withHeadFacts}(\mathit{givenLines}, \mathrm{false})`$. Then
+**Theorem** `passUnit_safe` (proved under hypotheses H1 and H2 of section 2,
+[PassUnitInferred](../../lean/Verification/Source/Claims/PassUnitInferred.lean)). Let
+$`f' = f.\mathrm{withHeadFacts}(\mathit{givenLines}, \mathrm{false}, \mathit{infer})`$. Then
 
 ```math
 \begin{aligned}
 &\mathrm{fragmentPlans}(\mathit{ast}, \mathit{key}, \mathit{budget}, \mathit{sel}, \mathit{standIns}, \mathit{force}) = \mathrm{ok}\ f
   \;\wedge\; i \in f.\mathrm{selected}(\mathit{sel}) \\
-&\wedge\; (f'.\mathrm{passGroup}(\mathit{fuel}, f.\mathrm{group}(i), \ldots)).2 = \mathrm{ok}\ \mathit{deps}
+&\wedge\; (f'.\mathrm{passGroupMode8}(\mathit{infer}, \mathit{force}, \mathit{keep}, \mathit{fuel}, f.\mathrm{group}(i), \ldots)).2.1 = \mathrm{ok}\ \mathit{deps}
   \;\Longrightarrow\; \mathrm{PassUnitSafe}(f', i)
 \end{aligned}
 ```
 
 The premise is the condition under which mode 8 prints the unit's line
 `"accepted": true` (`Source/RequestCli.lean`, the mode 8 branch), every
-argument of `passGroup` free: the CLI's comparison, observation, repetition,
-counting and given-file inputs range over all their values.
+argument of `passGroupMode8` free: the inference flag, the given file's
+facts kept, the CLI's comparison, observation, repetition, counting and
+given-file inputs range over all their values. `passGroupMode8` is
+`passGroup` at the given lines, or, with $`\mathit{infer}`$, the inferred
+route: the region separations proposed (`withFreshApart`), then each member
+run until accepted or its refusal stands, a refused proposal left out
+between runs (`passGroupInferred`). Inference changes only candidates
+(`Recandidated`), a request's safety reads none
+(`requestSafe_recandidated`), and the route accepts a group only where
+each member's last run is `passMember`'s accepted run over plans with other
+candidates (`passGroupInferred_members`), so `member_safe` applies to that
+run's plans (`passGroupMode8_safe`).
 
 ### The final statement
 
 **Theorem** `passUnitVerdict_safe` (proved under H1 and H2,
 [PassUnitVerdict](../../lean/Verification/Source/Claims/PassUnitVerdict.lean)). With
-$`f = \mathrm{preparedMode8}(\mathit{force}, \mathit{givenLines}, f_0)`$, the
-plans with the given head facts, and the false start fact where
+$`f = \mathrm{preparedMode8}(\mathit{force}, \mathit{givenLines}, \mathit{infer}, f_0)`$, the
+plans with the given head facts (with $`\mathit{infer}`$, beside the
+proposals inference recorded), and the false start fact where
 `TSCERT_FORCE` names `start-facts`:
 
 ```math
 \begin{aligned}
 &\big(\exists\, \mathit{est}\, \mathit{rows}.\; \mathrm{fragmentPlansFromInterfaces}(\mathit{ast}, \ldots, \mathit{est}, \mathit{rows}) = \mathrm{ok}\ f_0
  \;\vee\; \exists\, \mathit{ms}\, \mathit{ns}.\; \mathrm{fragmentPlansWithModules}(\mathit{ast}, \ldots) = \mathrm{ok}\ (f_0, \mathit{ms}, \mathit{ns})\big) \\
-&\wedge\; (f.\mathrm{passGroup}(\mathit{fuel}, f.\mathrm{group}(i), \ldots)).2 = \mathrm{ok}\ \mathit{deps}
+&\wedge\; (f.\mathrm{passGroupMode8}(\mathit{infer}, \mathit{force}, \mathit{keep}, \mathit{fuel}, f.\mathrm{group}(i), \ldots)).2.1 = \mathrm{ok}\ \mathit{deps}
  \;\Longrightarrow\; \forall j \in f.\mathrm{group}(i).\; \mathrm{MemberSafe}(f, j)
 \end{aligned}
 ```

@@ -299,7 +299,8 @@ each node. A label's regional facts (the slots holding an entry argument
 path, the fresh values and cells, the fresh fields) are, at the start, the
 regions' input slots; at a loop head, given (from the existing search's
 tables, `SourceExtraction.regionTable` and `freshTables`, with the field
-names fresh fields range over); elsewhere what every edge into it
+names fresh fields range over, or [inferred](#9-the-claims-free-front) with
+no given file); elsewhere what every edge into it
 establishes. At each node: the cells it keeps (`cellsKept`), the fields its
 types keep stable, its origins and fresh outputs (`nodeOrigins`,
 `freshOut`, `cellOut`, `fieldOut`), and on each edge what it establishes at
@@ -386,11 +387,10 @@ process the bytes of the files read (`counts-read:`).
 
 `node dev/perf-gate.mts <pretext checkout at ba09794f>` runs the pass over a
 fixed set of units: pretext's `measureAnalysis`, `prepareRichInline` and
-`buildEngineProfile`, also from the fragment alone (section 9), and ten
-pipeline case units of different shapes. Each
-unit's fragment and claims are captured through the pipeline, its given facts
-written by `--verify-units 6`, and the pass run three times. Each unit is
-compared with `dev/perf-baseline.json`:
+`buildEngineProfile`, and ten pipeline case units of different shapes. Each
+unit's fragment is captured through the single-pass route, and the pass
+(`--verify-interface-stage 8`, nothing supplied) run three times. Each unit
+is compared with `dev/perf-baseline.json`:
 
 - its verdict equals the baseline's;
 - each count is at most the baseline's, and the nodes visited equal the nodes
@@ -405,9 +405,7 @@ naming each regression. The counts do not depend on the machine's load and
 are the gate's primary measure. The baseline changes only by
 `node dev/perf-gate.mts <checkout> --update`, which writes the measured
 values; a lower count or time is kept by that command, run on purpose. The
-correctness half is `dev/single-pass-agreement.mts`, which exits 0 exactly
-when no unit disagrees with the pipeline, none is not handled and every case
-ran; a unit whose pipeline check did not finish is counted apart.
+correctness half is the pipeline cases.
 
 ## 8. What the pass reads from the claims document
 
@@ -976,7 +974,14 @@ removal works through:
   function's `toString` among them: its lowered call tests the receiver and
   calls a value's own `toString` where it is no function) and a call without
   `onThrow` a handler catches change everything; a call without `onThrow`, an iteration and a finalizer leave a throw
-  unbounded. A function passed to a call changes what its own signatures'
+  unbounded. A finalizer catches its block's throws only where it may
+  complete otherwise than by falling through or a throw (a `return`,
+  `break` or `continue` in it, the producer's `leaves_stmts`): one that
+  only falls through or throws throws again after a throw, so the block's
+  calls are graded as outside it (source.ml:1162-1167).
+  `TSCERT_FORCE=finalizers` proposes keep/keep for a function holding such
+  a finalizer: pretext's `getExtraSpacings` (`measurement.ts`, on the
+  single-pass route), accepted unforced, is refused at its footprint. A function passed to a call changes what its own signatures'
   effects state; where the call's instance is a generic module function's,
   or the passed function has no known type,
   it changes everything, and so does a generic function literal the
@@ -1063,7 +1068,9 @@ removal works through:
   line as the unit `module:<location>#<unit>`, its loop heads' facts the
   given file's lines of that name, which mode 6 writes from the module runs
   the claims plan (`ModuleRun.givenLines`) and mode 8 reads only for a module
-  whose groups it checks. A read is at its proposal where
+  whose groups it checks; with no given file, its inferred lines (input
+  slots, implications, regional tables, `computedGiven`) and region
+  separations (`withFreshApart`) as for the file's own units. A read is at its proposal where
   the function's group and every group it depends on, of its module and of
   the modules it reads, was accepted there; the importer's units that
   mention the read list that group in `depends`. Every other import, one
@@ -1525,6 +1532,259 @@ removal works through:
   A callback's code request uses its own indexed `codes` row (implications,
   promise arguments and input identities) and `headFactsOfCodes` row
   (source start, context width and index atoms).
+- **Loop heads' proposals.** Where no given file is read (or with
+  `TSCERT_INFER_HEADS=1`, beside it), a loop head's candidates are also the
+  facts the front proposes for it from the fragment's statements
+  (`HeadInference.proposals`), over source names: each is an entry claim at
+  the loop's execution point, as the producer writes its facts, which the
+  lowering records as the head's candidates, each naming only bindings in
+  scope at the head and no early binding. The pass checks them as it checks
+  the given file's: on every edge into the head. A member the pass refuses
+  at an edge into a statement entry for facts it lacks is run again with
+  those of its proposals there that the refusal names left out (all of them
+  where its text is cut before naming any; none where it names only facts
+  no run leaves out, which stands), at most `4·h + 4` runs for `h` statement entries
+  holding candidates (`FilePlans.passGroupInferred`); each run is the pass
+  over the facts it states, so an accepted run's verdict needs no other
+  (`passGroupMode8_safe`, [the unit theorem](pass-unit-theorem.md#the-headline)).
+  A fact left out at a head is left out, over the same bindings (each
+  slot's descriptor), at the heads that read that head's facts too: those
+  nested in its loop, and those after it inside the loop holding it (the
+  walk carries a head's facts past its loop), the given file's kept. A
+  forced proposal (`TSCERT_FORCE=head-…`) is never left out, and is stated
+  beside a given file's facts too.
+  A loop's counter, a binding every write of which in the loop (its body,
+  update and nested statements, closures included) steps it by one
+  constant `c` (`x++`, `x += c`, `x = x + c`, their decrements), is proposed
+  an integer; each of the entry's facts a step keeps (a bound below an
+  increasing counter, above a decreasing one), over bindings the loop does
+  not assign; each bound the test's `true` answer states on it, shifted by
+  `c`; for a step of one towards a disequality the test states
+  (`e !== n`), `e ≤ n`; and below `2^32 - 1` for an increasing counter the
+  test bounds above, where the test's bound with the step taken is at
+  most `0`; a counter the test bounds by no comparison on its step's side
+  (`while (f(s.charCodeAt(x))) x++`) is no safe integer and is proposed
+  nothing (the producer's join of the entry with the back edge,
+  linear_facts.ml:1574, at its candidate bounds). The last three only where
+  the entry entails them, the counter's entry value substituted: by a fact
+  of the entry whose terms differ by lengths alone, each length's range
+  (`0 ≤ n.length ≤ 2^32 - 1`) making up the difference (the join's `bound`
+  of the entry's side, linear_facts.ml:`entails`, `term_ranges`); likewise a
+  linearly written binding's `2^32 - 1`. `TSCERT_FORCE=head-entails` also
+  states a counter at most `-1` where one of its candidates is left out so:
+  `logical-guard-reads` `nonzeroPrefix` (`e < to` from `e = 0`, `to`
+  unbounded below), accepted unforced, is refused at an edge into its loop's
+  head.
+  The entry's facts are a
+  forward walk's over the statements before the loop: a declaration or
+  assignment of a linear value states its equality, a step restates each
+  fact, a test states its comparisons on each arm, an arm that leaves
+  states the other's after the test, an assignment of a choice (`x += c ?
+  p : q`, `x = a ± (c ? p : q)`) is each arm's assignment under what its
+  answer of `c` states, the two joined (each fact of one whose terms the
+  other bounds, at the larger bound: `i += c ? 2 : 1` keeps `0 <= i` and
+  takes `i <= n + 1` from `i < n`), a write of a binding forgets its
+  facts and a heap write those of lengths and paths
+  (linear_facts.ml:`assign`, `declaration`, `test`, `distribute`,
+  `assign_arms`). A declaration or assignment of a call of the file's
+  function stating a postcondition (`@ensures`) states its facts, the result
+  the binding and each parameter the actual where that is a binding
+  (`breaks = lineBreaks(s)` under `@ensures result.length === s.length + 1`:
+  `breaks.length = s.length + 1`); one of a choice `c ? a : b` states, on
+  each arm under what its answer of `c` states, the binding equal to a
+  linear arm or a call's postcondition, the two joined
+  (linear_facts.ml:`call_expression_facts`, `declaration`'s conditional).
+  An imported function's postcondition is its signature's
+  (`Effect.ensures`), a parameter's type invariant its body keeps among
+  them. A declaration of an object literal of named fields states each
+  linear field's value its path's (`const cursor = { segmentIndex: 0 }`:
+  `cursor.segmentIndex = 0`); the literal, as an array literal without
+  spreads, writes only its own fresh locations, so the walk keeps the facts
+  of paths across it (linear_facts.ml:`heap_free`, `declaration`'s
+  `Alloc`). At a loop head, each fact a call in the loop states of its
+  actuals' fields at its return (its postcondition at the actuals'
+  positions), where the entry entails it and the loop assigns no binding it
+  names: `0 ≤ cursor.segmentIndex` of a call `step(prepared, cursor)` whose
+  parameter's type states it, the producer's join of the two edges. Across
+  a loop that may write a field, each carried fact also with a field path's
+  term replaced by the value over bindings an entry equality gives it
+  (`segmentCount = prepared.widths.length` and `segmentFlags.length =
+  prepared.widths.length` give `segmentCount = segmentFlags.length`).
+  `TSCERT_FORCE=head-called` and `head-eliminated` also state the first
+  term of each such fact at most `-1`: `cursor-invariant-after-writing-call`
+  `countMarked`, accepted unforced, is refused at an edge into its loop's
+  head.
+  `TSCERT_FORCE=head-ensures` also states each term of the binding a call's
+  postcondition names at most `-1`: `assignment-call-postcondition`
+  `sumBreaks`, accepted unforced, is refused at an edge into its loop's
+  head. `TSCERT_FORCE=head-arms` also states a binding assigned a
+  choice at most `-1` after the assignment: pretext's `needsComplexTextPath`
+  (`prepare.ts`, on the single-pass route), accepted unforced, is refused at
+  an edge into its inner loop's head.
+  `TSCERT_FORCE=head-counters` also states each counter at most `-1`:
+  `adjacent-pair-reads` `pairProducts`, accepted unforced, is refused at an
+  edge into its loop's head.
+  The facts a loop's entry holds over bindings the loop does not assign
+  are proposed at its head too, and those of the bindings it assigns that
+  enter as integers and that each of its writes sets to a linear value
+  (`i = j`, `i += c ? 2 : 1`): their integrality, their entry's lower
+  bounds and `2^32 - 1` below a test's bound (the join's candidates). The
+  entry holds the precondition's linear facts and integralities over the
+  parameters (`@requires`), the written invariant of each loop around it,
+  a choice's bounds (`x = a < b ? a : b` is at most both), a typed array's
+  construction's length (`new Int32Array(n)`) and a test's comparisons only
+  where each binding they name is an integer there (the producer's linear
+  operands); a test's comparison of a counter only so too, and a counter the
+  test does not read is proposed nothing. A length is an array's, a typed
+  array's (`%ByteLength%`) or a string's by a parameter's type, read in the
+  type store (a string's where each of its clauses but `null` and
+  `undefined` is a string, an array's where each holds an array store, a
+  typed array's where each states a view length), and by a declaration's
+  written type or initializer; a parameter whose type says none of them, or
+  says two, has an array's. `TSCERT_FORCE=head-kinds` also states each
+  string's or typed array's length a head's proposal names at most `-1`:
+  `blocker-pretext-code-point-at-assertion` `astral`, accepted unforced, is refused
+  at an edge into its loop's head. A heap write keeps a length but where it resizes the array
+  by name (`push`, `pop`, `shift`, `unshift`, `splice`, an element or
+  `length` write), and a path's facts only across quiet expressions. A
+  `for...of` head is a loop head whose test reads nothing.
+  A counter's or a linearly written binding's `2^32 - 1` is proposed only
+  below a test's bound by arrays' or typed arrays' lengths (or by a binding
+  the entry bounds by one), and a test's bound on a field path's length only
+  across a loop of quiet expressions (linear_facts.ml:`term_kept`).
+  A binding the test does not read, written by a step of `c` once at most
+  an iteration (one step, in no nested loop) and equal to a linear value at
+  entry, beside a counter the update steps by `c`, is proposed its
+  integrality, its entry value as a bound and its difference from the
+  counter at entry: `n - i <= 0` for `n++` under a test in `for (let i = 0;
+  …; i++)`, both ways where the update steps both (`for (…; i++, j++)`:
+  `j - i = at`). `TSCERT_FORCE=head-paired` also states each such binding at
+  most `-1`: `element-write-keeps-lengths` `f`, accepted unforced, is refused
+  at an edge into its loop's head.
+  `TSCERT_FORCE=head-carried` also states each term of a carried fact at
+  most `-1`: `precondition-lengths` `dot`, accepted unforced, is refused at
+  an edge into its loop's head.
+  A store separation is proposed for a fresh empty array field
+  (`{ f: [] }`) against every binding of the function that may hold an
+  array (by its written type or initializer, or bound by a destructuring),
+  for a copy (`x = o`) as `o`'s, and for a choice of a value and `null`
+  (`c ? o : null`) guarded by `x === null`; the precondition's and the
+  written invariants' separations are entry facts too. A separation is kept
+  but across a write of a field its paths read (linear_facts.ml:`sstatement`,
+  `skept`). A separation names value bindings alone, and at a loop head
+  only bindings whose type there, where the walk types it, makes them
+  arrays (no string, no `null`): a destructured string or a nullable
+  parameter is no store a separation could keep apart.
+  A quantified fact (`forall i in xs: B`) of the precondition, of a loop's
+  written invariant or of a loop's exit (where the written invariant holds)
+  is carried to the heads after it over bindings the loop does not assign,
+  across expressions that write no element and resize none of its arrays
+  by name; a step of a binding it names forgets it; `xs.push(a)` keeps one
+  over `xs`'s whole array whose body the facts state of `a` at the index
+  `xs.length`; a read of a path (`const w = d.widths`, `const { widths } =
+  d`) restates it, and a linear fact, through the path
+  (linear_facts.ml:`estatement`, `egrown`, `erestate_read`). An element
+  read `xs[k]` at an index the facts place in `xs`'s range is bounded by
+  such a fact's body at `k`: a binding it sets is proposed its integrality
+  and the bounds, and a test comparing it bounds a counter
+  (`element_facts`, `instantiate`). `TSCERT_FORCE=head-every` also states
+  each carried quantified fact with the body `xs[i] <= -1`:
+  `quantified-element-reads` `sumUpTo`, accepted unforced, is refused at an
+  edge into its loop's head.
+  A path read (`const x = o.f`) whose path a fact names is a safe integer
+  equal to it (a path term's fact holds only where the path reads a safe
+  integer: `linear_facts.ml:linear`'s `Read`, `is_int`). A test-free loop
+  (`while (true)`) bounds a counter by each exit test after its last step
+  (`if (x >= n) return`, `if (++x >= n) return`), the test's failure
+  unshifted, where no `continue` goes back earlier and the entry entails it
+  (the head's fixpoint of the producer's `join`). An alias or a cast
+  (`const r = o as T`) restates every linear fact of `o`'s paths over `r`
+  (`erestate_read` of the empty path). A guarded fact (`x.f === null || K`,
+  a type invariant's) is carried and restated as a linear one is, and a test
+  failing its guard (`x.f !== null`) gives `K` on that arm.
+  An array's element read (`%ElementAt%`) writes nothing: a fact of a path
+  is kept across it (`linear_facts.ml:heap_free`). An element read `xs[k]`
+  (a typed array's too) below a quantified fact's stop, its array's length
+  or a prefix's bound (`forall i < n of xs`), is bounded by the fact's body.
+  `TSCERT_FORCE=head-elements` also states a binding an element read bounds
+  at most `-1`: `typed-array-prefix-write` `buildPostfixPrefix`, accepted
+  unforced, is refused at an edge into its inner loop's head; the control
+  of quantified facts (`head-every`) is shown on
+  `bounds-quantified-invariant` `read` too, its parameter's invariant kept
+  across the element reads.
+  `TSCERT_FORCE=head-exits` also states a counter an exit test bounds at most
+  `-1`: `cursor-invariant-loop-write` `nextMarked`, accepted unforced, is
+  refused at an edge into its loop's head. `TSCERT_FORCE=head-restated` also
+  states each restated linear fact's first term at most `-1`:
+  `invalid-sealed-handle-resize` `lastFlag`, accepted unforced, is refused at
+  an edge into its loop's head. `TSCERT_FORCE=head-guards` also states a
+  discharged guarded fact's first term at most `-1`:
+  `invalid-guarded-invariant-short` `narrowing`, accepted unforced, is refused at
+  an edge into its loop's head.
+  `TSCERT_FORCE=head-separations` also states a carried separation's first
+  store apart from itself: `stated-argument-path` `measure`, accepted
+  unforced, is refused at an edge into its loop's head.
+- **Input slots.** For a unit whose postcondition names inputs (`@ensures`),
+  where no given line states them, the slots holding each input's entry
+  value at its statement entries are computed from its plan
+  (`FilePlans.computedGiven`): the input's own slot at the start, carried
+  along every edge to each slot whose mapping reads a slot holding it, those
+  every predecessor carries (`GraphCode.trackTable`'s propagation over the
+  claimed contexts' widths). The pass reads them as it reads the given
+  file's `inputs` rows: each an obligation on every edge into a head.
+  `TSCERT_FORCE=head-inputs` also restates each pair at a cut at the next
+  slot: `written-ensures` `zeros`, accepted unforced, is refused at an edge
+  into its loop's head.
+- **Implications at statement entries.** Where no given line states them,
+  a statement entry is proposed the implications its branches read
+  (`branchImplications`, the rows' `implies`): of each test on a constant
+  holding a comparison's value (`const p = x === "a"; … if (p)`) whose
+  `true` arm's claim narrows a binding (`x : "a"`), `p = true ⟹ x : "a"`
+  at each statement entry whose span holds the test or ends before it and
+  whose context describes both bindings: a branch inside the loop reads
+  them, and one after a loop reads them across its head
+  (`invalid-guard-constant-across-loops`: `const has = v !== undefined`,
+  forty loops, then `if (has) total += v`). The search guesses a loop
+  head's implications from its entry edge in its first waiting round
+  (`meetImplications` over the stating edges).
+  The pass checks each on every edge into the entry; a member an edge
+  refuses one for is run again without that entry's.
+  `TSCERT_FORCE=head-implications` also states each at `undefined`:
+  `blocker-pretext-constant-implication-statements` `advances`, accepted
+  unforced, is refused at an edge into its loop's head.
+- **Regional tables.** For a unit with store regions or a footprint's
+  regional fallback, where no given line states them, the regional facts
+  at its statement entries ([store regions](#store-regions)) are computed
+  from its plan (`regionalLines`): the slots holding entry argument paths
+  (`SourceExtraction.regionTable`), the fresh values and cells and the
+  fresh fields, each the greatest fixed point the existing search computes
+  from its certificate (`freshTables`), over the evidence the claims give
+  (`claimedCertificate`: a call of a slot its derivation read off the
+  callee's signatures, any other node its sequent). A call is taken to
+  keep its cells, its step's own evidence deciding it in the pass. The field
+  names are those the callees' store regions read through one field
+  (`calleeRegionNames`). The pass checks each loop head's tables on every
+  edge into it; a member it refuses at its store regions is run again
+  without them. `TSCERT_FORCE=head-region-values`, `head-region-cells`,
+  `head-region-facts` and `head-region-fields` each add at every statement
+  entry one entry of that kind no edge establishes (the next slot as a fresh
+  value or cell, an argument path `forced` of slot 0, a fresh field of the
+  first name): `stated-region-fresh` `marks`, `stated-region-lazy` `longer`,
+  `stated-region-steps` `scan` and `stated-slot-collect` `collect`, accepted
+  unforced, are refused at their store regions on an edge into a loop's
+  head.
+- **Region separations.** At each loop head, the pairs of array bindings
+  an allocation states apart (`IndexWrites.regionAtoms`: a literal's store
+  apart from every array slot), carried along every edge to the slots whose
+  mappings read them and kept where every predecessor carries them, of an
+  allocation whose array the loop writes an element of outside every loop
+  it holds (`freshApartAt`), as `IndexFact.apart`: an element write keeps a
+  quantified fact over an array apart from the written one
+  (`IndexWrites.writeAtoms`, `every-apart-write`). The pass checks each on
+  every edge into the head; a member an edge refuses one for is run again
+  without it. `TSCERT_FORCE=head-apart` also states each written side apart
+  from itself: `quantified-freshness-builder` `build`, accepted unforced, is
+  refused at an edge into its loop's head.
 - **Written-footprint stand-ins.** For a measurement, `TSCERT_STANDINS`
   names a file of footprints the file's functions and imports would write
   (`{"functions": […], "imports": […]}`, each a name, footprint, on-throw

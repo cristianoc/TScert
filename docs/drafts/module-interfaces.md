@@ -73,7 +73,9 @@ and the built-ins' types), numbered from `0`, with the built-ins
 (`types`, `builtins`). Each established entry states its interface type as
 positions in that table (`interface`): the type its function's callers
 read it at in its module's store, lowered there at planning. The module
-publishes an entry only where the store-map check
+publishes an entry only where its function is in the module's laid-out
+set (`FilePlans.laidOut`, the set $`D`$ of [the unit
+theorem](pass-unit-theorem.md)'s module layout) and the store-map check
 (`StoreMaps.matchStores`) from its store's interface type to the decoded
 table's accepts, and the importer reads an entry only where the check from
 the table's type to the type its own store reads the import at accepts,
@@ -85,8 +87,17 @@ so a module's document, and the document of a file importing one, list
 it states the built-ins (its arrays, their prototype and their `unknown`).
 The two accepted checks give the importer's slot type the meaning of the
 module's interface type (`signatureAgrees_of_checks`, proved on the
-unit-level proof's branch). The check is incomplete for unions with two
-members of one row shape and for qualified schemes.
+unit-level proof's branch), which the cross-module theorem reads, so the
+rows are kept at their cost. Measured (2026-11-12, CPU best of 5
+alternating runs at load 18–22, without and with the rows): the cases'
+module stages 563 → 908 ms over 22 components, their interface documents
+2.36 → 5.65 MB; pretext's `prepare` module stage 2,924 → 2,924 ms, its
+importer 657 → 593 ms; `rich-inline`'s 5,270 → 4,987 ms, importer 1,282 →
+1,226 ms. The check is incomplete for unions with two members of one row
+shape, for qualified schemes, for two stores numbering a unique symbol
+differently, and for a meet whose clause lists its fields in another order
+(pretext's imports `missing` and `isCollapsibleSpaceCode`, refused at
+`signature rows differ`).
 
 The importer resolves a read using the existing declaration-identity,
 eligibility and signature-agreement checks. It reads the matching module
