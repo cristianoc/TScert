@@ -146,4 +146,30 @@ const equationReaders = [
   expectSubset("Worker line fields Lean omits", ts, both, {});
 }
 
+// The type graph's storage positions: a field's or a writable index's
+// `[key, role, labels]`, the role spelled as the name of a `StorageRole`
+// constructor, and an optional field's members. Lean's derived JSON writes
+// both; tools/type-graph.mts declares and reads them.
+{
+  const graph = read("tools/type-graph.mts");
+  const tsRoles = new Set([...(graph.match(/type StorageRole = ([^;]*);/)?.[1] ?? "").matchAll(/"(\w+)"/g)].flatMap(captured));
+  const leanRoles = new Set([...(read("lean/Verification/Semantics/StorageRoles.lean")
+    .match(/inductive StorageRole where\n\s*\|([^\n]*)/)?.[1] ?? "").matchAll(/(\w+)/g)].flatMap(captured));
+  assert.ok(tsRoles.size > 0 && leanRoles.size > 0, "both sides' storage roles are found");
+  expectSubset("Storage roles Lean writes", leanRoles, tsRoles, {});
+  expectSubset("Storage roles TypeScript reads", tsRoles, leanRoles, {});
+  const tsOptional = new Set([...(graph.match(/type OptionalField<L = number> = \{([^}]*)\}/)?.[1] ?? "")
+    .matchAll(/(\w+)\??\s*:/g)].flatMap(captured));
+  const leanOptional = new Set([...(read("lean/Verification/Types/Types.lean")
+    .match(/structure OptionalField \(α : Type\) where\n((?:[ \t]+.*\n)+)/)?.[1] ?? "")
+    .replace(/\/-[\s\S]*?-\//g, "").matchAll(/^[ \t]+(\w+)\s*:/gm)].flatMap(captured));
+  assert.ok(tsOptional.size > 0 && leanOptional.size > 0, "both sides' optional fields are found");
+  expectSubset("Optional field members Lean writes", leanOptional, tsOptional, {});
+  expectSubset("Optional field members TypeScript reads", tsOptional, leanOptional, {});
+  // The position's arity and order: Lean's instance writes `[key, role, contents]`.
+  assert.match(read("lean/Verification/Source/RequestJson.lean"), /\.arr #\[toJson p\.1, toJson p\.2\.1, toJson p\.2\.2\]/);
+  assert.match(graph, /type Stored<L = number> = \[name: PropertyKey, role: StorageRole, labels: Labels<L>\]\[\];/);
+  assert.match(graph, /type CellEntry<L = number> = \[IndexClass, StorageRole, Labels<L>\];/);
+}
+
 process.stdout.write(`JSON field names: ${checked} comparisons agree across TypeScript and Lean\n`);
