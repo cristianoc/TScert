@@ -136,6 +136,49 @@ theorem rowSpec_of_graphCodeSpec {G : NormalGraph ι} {arity E K start Cs row}
   ⟨hs.1, CallEffects.Effect.belowRow_of_below hs.2.1,
     fun n W h L he hw hh hv hpre _ r args hf => hs.2.2 n W h L he hw hh hv hpre r args hf⟩
 
+/-- A promise's results meet a plain result admitting them (proved). -/
+theorem promiseAdmits_result [DecidableEq ι] {G : NormalGraph ι} {R T : Ty ι} {π : CallEffects.TypePromise}
+    (h : promiseAdmits G R π = true) (a : Tm) :
+    ∀ k W u, π.result (meaning G T) a k W u → meaning G R k W u := by
+  intro k W u hu
+  cases π with
+  | guards q =>
+    simp only [promiseAdmits, Bool.and_eq_true] at h
+    rcases hu with ⟨rfl, -⟩ | rfl
+    · simpa using BranchRefinement.booleanMember_sound h.1 k W
+    · simpa using BranchRefinement.booleanMember_sound h.2 k W
+  | asserts q =>
+    obtain ⟨rfl, -⟩ := hu
+    exact PromiseCalls.admitsUndef_sound h k W
+
+/-- Dropping a promise keeps an effect one module code realizes (proved). -/
+theorem belowRow_promise_none {e : CallEffects.Effect} {n : Nat} (h : e.belowRow n = true) :
+    ({ e with promise := none } : CallEffects.Effect).belowRow n = true := by
+  simp only [CallEffects.Effect.belowRow, CallEffects.Effect.below, CallEffects.Effect.promiseBelow,
+    Bool.and_eq_true] at h ⊢
+  exact ⟨⟨⟨⟨⟨⟨trivial, h.1.1.1.1.1.2⟩, h.1.1.1.1.2⟩, h.1.1.1.2⟩, h.1.1.2⟩, h.1.2⟩, h.2⟩
+
+/-- **A promise row's code meets its plain row** (proved): code meeting a
+signature stating the promise `π` as a module row meets, at the same
+separation, the plain row beside it (`promisePlain`) whose result admits
+the promise's results. The frame, the precondition and both postconditions
+read no promise; a run's normal value, `true` or `false` for a guard,
+`undefined` for an assertion, is in the plain result. -/
+theorem rowSpec_plain_of_promise [DecidableEq ι] {G : NormalGraph ι} {arity E K start Cs}
+    {p : CallEffects.Arrow (Ty ι)} {sep : HeapSeparation.Separation} {π : CallEffects.TypePromise} {R : Ty ι}
+    (hp : p.effect.promise = some π) (hR : promiseAdmits G R π = true)
+    (hs : RowSpec G arity E K start Cs p sep) : RowSpec G arity E K start Cs (promisePlain p R) sep := by
+  refine ⟨hs.1, belowRow_promise_none hs.2.1, ?_⟩
+  intro n W h L he hw hh hv hpre hsep r args hf
+  have hrun := hs.2.2 n W h L he hw hh hv hpre hsep r args hf
+  have hres : ∀ a, p.effect.result (meaning G p.result) a = π.result (meaning G p.result) a := by
+    intro a; simp [CallEffects.Effect.result, hp]
+  rw [hres] at hrun
+  show HeapObservations.SafePostExc (excOf G) (meaning G R) (p.effect.post r args h) (p.effect.excPost r args h)
+    n W h _
+  exact HeapObservations.SafePostExc.consequence_below' (fun _ _ _ _ h => h)
+    (fun j _ W' u hu => promiseAdmits_result hR _ j W' u hu) (fun _ _ h => h) (fun _ h => h) hrun
+
 /-- **Invoking a module row's code from a frame at the call's own level**
 (proved): as `graph_invoke_at`, the frame's separation given. -/
 theorem row_invoke_at {G : NormalGraph ι} {arity E K start Cs row vs sep}

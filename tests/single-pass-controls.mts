@@ -288,6 +288,69 @@ control("module interfaces: rows of another signature", async (): Promise<void> 
   say("rows of another signature: a result of another type and a key of another symbol refused at the read");
 });
 
+control("module interfaces: a guard's promise rows forged", async (): Promise<void> => {
+  // An imported guard's entry states its plain and promise signatures as
+  // rows of its module's table. Rows stating another promise (another
+  // parameter, an assertion's) or another promised type than the guard's
+  // module established are refused at the importer's read, its store-map
+  // check comparing them with the guard's declared type.
+  const artifacts = run("guard-value-import");
+  const fragment = fragmentOf(artifacts);
+  const ast: unknown = JSON.parse(readFileSync(fragment, "utf8"));
+  assert.ok(isObject(ast) && typeof ast.file === "string");
+  const key = ast.file;
+  const original: unknown = JSON.parse(readFileSync(join(artifacts, "interfaces", "interfaces.json"), "utf8"));
+  const stage = (name: string, interfaces: unknown): Pass => {
+    const path = join(artifacts, `${name}.json`);
+    const text = JSON.stringify(interfaces);
+    assert.ok(text !== undefined);
+    writeFileSync(path, text);
+    return passOf(counted(invokeProcess(verifierCall(verifierBuild, ["--subtype-rounds", "4096",
+      "--verify-interface-stage", "8", fragment, path, key, "12", ""]), { limitMs: 60_000, force: false, recorder: null })));
+  };
+  accepted(stage("interfaces-as-published", original), "size@267", "the published rows");
+  // Each promise signature of `isName`'s interface row, changed by `change`.
+  const forge = (change: (signature: Record<string, unknown>, types: unknown[]) => void): unknown => {
+    const forged: unknown = structuredClone(original);
+    assert.ok(isObject(forged) && Array.isArray(forged.modules) && forged.modules.length === 1);
+    const m: unknown = forged.modules[0];
+    assert.ok(isObject(m) && Array.isArray(m.entries) && isObject(m.rows) && Array.isArray(m.rows.types));
+    const types: unknown[] = m.rows.types;
+    const entry: unknown = m.entries.find((e: unknown) => isObject(e) && e.name === "isName");
+    assert.ok(isObject(entry) && isObject(entry.established) && Array.isArray(entry.established.interface));
+    const root: unknown = entry.established.interface[0];
+    assert.ok(typeof root === "number");
+    const row: unknown = types[root];
+    assert.ok(Array.isArray(row) && row.length === 1 && isObject(row[0]) && isObject(row[0].arrs));
+    const arrs = row[0].arrs;
+    assert.ok(Array.isArray(arrs.arrows) && Array.isArray(arrs.variadic));
+    let promises = 0;
+    for (const a of [...arrs.arrows, ...arrs.variadic]) {
+      assert.ok(isObject(a) && isObject(a.effect));
+      if (a.effect.promise === null) continue;
+      change(a, types);
+      promises++;
+    }
+    assert.ok(promises > 0, "isName's interface states a promise signature");
+    return forged;
+  };
+  const at = /source refusal at \[\d+,\d+\): signature rows differ: the import 'isName', its module's interface rows refused by the store-map check/;
+  const effectOf = (a: Record<string, unknown>): Record<string, unknown> => {
+    assert.ok(isObject(a.effect));
+    return a.effect;
+  };
+  refused(stage("interfaces-other-parameter", forge((a) => { effectOf(a).promise = { guards: { param: 1 } }; })),
+    "size@267", "a promise about another parameter", at);
+  refused(stage("interfaces-assertion", forge((a) => { effectOf(a).promise = { asserts: { param: 0 } }; })),
+    "size@267", "an assertion's promise", at);
+  refused(stage("interfaces-other-promised-type", forge((a, types) => {
+    const number = types.findIndex((r) => JSON.stringify(r) === '["num"]');
+    assert.ok(number >= 0);
+    a.result = [number];
+  })), "size@267", "another promised type", at);
+  say("a guard's promise rows forged: another parameter, an assertion and another promised type refused at the read");
+});
+
 // ---------------------------------------------------------------------------
 // Forged fragments: the parser's document forged, refused by the pass.
 

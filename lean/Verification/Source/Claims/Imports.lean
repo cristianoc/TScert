@@ -200,11 +200,15 @@ two signature readings agree: the importer's binding of it and the unit's
 fragment. The import `q`, a declaration identity, is an imported value of
 the importer's declarations; its module is one the fragment lists; the unit
 is a function of that module, its name the declaration's, its name within
-the declaration's span; it has no binders, no rest, no receiver, no guard;
+the declaration's span; it has no binders, no rest and no receiver;
 no code of its module writes its binding; the import is a function of one
-fixed call signature of no rest, receiver, binders or promise; the import's
-signature and the unit state the same precondition and postcondition; and
-the two readings of its signature agree (`sameReading`). -/
+fixed call signature of no rest, receiver, binders or promise, or, for a
+unit with a guard, of that signature and beside it the promise signature
+of the same actuals and effect stating the unit's promise (`guards k`,
+`asserts k`: the pair `importedSignatures` reads); the import's signature
+and the unit state the same precondition and postcondition; and the two
+readings of its signature agree (`sameReading`), the promised type's
+among them. -/
 private def eligibleRead (importer : Reading) (values : List Json) (fragmentModules : List Fragment.ModuleAst)
     (code : ModuleCode) (q : Json) (location name : String) (span : Span) :
     Except String (String × Json) := do
@@ -218,10 +222,9 @@ private def eligibleRead (importer : Reading) (values : List Json) (fragmentModu
   let some unit := fs.find? fun f => (f.getObjValAs? String "name").toOption == some name &&
       ((f.getObjValAs? Span "namePos").toOption.map (within · span)).getD false
     | throw s!"a qualified read names no unit of its origin: {location}#{name}"
-  -- Eligible: no binders, no rest, no receiver, no guard and no promise,
-  -- on both readings.
+  -- Eligible: no binders, no rest and no receiver, on both readings.
   let params ← jArr unit "params"
-  if !(← jArr unit "typeParams").isEmpty || (unit.getObjValD "guard") != .null ||
+  if !(← jArr unit "typeParams").isEmpty ||
       params.any (fun p => (p.getObjVal? "rest").isOk || (p.getObjValAs? String "name").toOption == some "this") then
     throw s!"a qualified read names a unit that is not eligible: {location}#{name}"
   -- Stable: no code of the module the document holds writes the binding;
@@ -231,9 +234,30 @@ private def eligibleRead (importer : Reading) (values : List Json) (fragmentModu
     | none => decodeCode m
   if (init ++ functions.flatMap (·.body)).any (SourceExtraction.assignsStmt name) then
     throw s!"a qualified read names a unit whose module writes its binding: {location}#{name}"
-  let type ← jField v "type"
-  if (v.getObjValD "construct") != .bool false || !(← jArr v "typeParams").isEmpty ||
-      (type.getObjValD "k") != .str "function" || (type.getObjValD "rest") != .null ||
+  let declared ← jField v "type"
+  if (v.getObjValD "construct") != .bool false || !(← jArr v "typeParams").isEmpty then
+    throw s!"a qualified read names an import that is not eligible: {location}#{name}"
+  -- The plain signature, and a guard's promise signature beside it: the
+  -- same actuals, receiver and effect, stating the unit's promise.
+  let guard := unit.getObjValD "guard"
+  let (type, promised) ← match guard, declared.getObjValD "k" with
+    | .null, _ => pure (declared, none)
+    | _, .str "intersection" => match declared.getObjValD "parts" with
+      | .arr #[a, g] => do
+        let promise ← jField (← jField g "effect") "promise"
+        let param ← jField guard "param"
+        let asserts ← jField guard "asserts"
+        let stated := Json.mkObj [((if asserts == .bool true then "asserts" else "guards"),
+          Json.mkObj [("param", param)])]
+        let unpromised := (← jField g "effect").setObjVal! "promise" .null
+        if (g.getObjValD "k") != .str "function" || promise != stated || unpromised != (← jField a "effect") ||
+            (g.getObjValD "params") != (a.getObjValD "params") || (g.getObjValD "rest") != (a.getObjValD "rest") ||
+            (g.getObjValD "receiver") != (a.getObjValD "receiver") then
+          throw s!"a qualified read names a guard whose declared signatures are not its plain and promise ones: {location}#{name}"
+        pure (a, some ((← jField g "result"), (← jField guard "type")))
+      | _ => throw s!"a qualified read names a guard whose declared type is not two signatures: {location}#{name}"
+    | _, _ => throw s!"a qualified read names a guard whose declared type is not two signatures: {location}#{name}"
+  if (type.getObjValD "k") != .str "function" || (type.getObjValD "rest") != .null ||
       (type.getObjValD "receiver") != .null then
     throw s!"a qualified read names an import that is not eligible: {location}#{name}"
   let effect ← jField type "effect"
@@ -255,7 +279,7 @@ private def eligibleRead (importer : Reading) (values : List Json) (fragmentModu
     throw s!"the importer's and the module's readings of an imported signature differ: {location}#{name}"
   let module ← Reading.of (← jField m.document "declarations")
   sameReading importer module [s!"{location}#{name}"] (((← jField type "result"), (← jField unit "retType")) ::
-    (← (ps.zip params).mapM fun (a, p) => do return (a, ← jField p "type")))
+    promised.toList ++ (← (ps.zip params).mapM fun (a, p) => do return (a, ← jField p "type")))
   return (localName, unit)
 
 /-- An import the fragment alone resolves to a unit of a module it lists

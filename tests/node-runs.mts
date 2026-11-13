@@ -1466,6 +1466,8 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
   // refuses; and a precondition the importer's call violates.
   assert.equal(runImporting("invalid-false-ensures-value-import", 'typeof last("ab")'), "undefined",
     "invalid-false-ensures-value-import: the read past the result's length");
+  assert.equal(runImporting("invalid-false-guard-value-import", "typeof size(3)"), "undefined",
+    "invalid-false-guard-value-import: the length of a number the guard admits");
   assert.equal(runImporting("invalid-stated-assumed-value-import", "2 in drained([1, 2, 3])"), false,
     "invalid-stated-assumed-value-import: the popping callback leaves a hole");
   assert.equal(runImporting("invalid-interface-precondition-value-import", "typeof past([1])"), "undefined",

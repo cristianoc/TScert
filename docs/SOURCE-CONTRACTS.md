@@ -521,11 +521,21 @@ declaration identity is the one TypeScript resolves the import to, through
 re-exports; a re-exporting module's own execution is part of the runtime
 module graph below. The read resolves, by that identity alone, to a
 function of a module the fragment lists, its name the declaration's and
-lying in the declaration's span, with no binders, no rest parameter, no
-receiver and no guard, whose module's document writes its binding nowhere;
+lying in the declaration's span, with no binders, no rest parameter and no
+receiver, whose module's document writes its binding nowhere;
 the import is a function of one call signature with no rest, receiver,
-binders or promise, stating the precondition and postcondition the
-function states (`eligibleRead`, `Imports.lean`). Any other import, and
+binders or promise, or, for a type guard or an assertion function, of that
+signature and beside it the promise signature of the same actuals,
+receiver and effect stating the function's promise (`guards k`,
+`asserts k`), stating the precondition and postcondition the
+function states (`eligibleRead`, `Imports.lean`); the promised type is
+compared with the function's as its other terms are (`sameReading`, below).
+A guard's entry states both signatures, its one request checked at the
+promise's goal realizing both
+([the module layout](SINGLE-PASS.md#the-module-layout)); a guard whose body
+breaks its promise is refused at its own unit, publishes no entry, and is
+read at the ordinary effect, narrowing nothing
+(`invalid-false-guard-value-import`, run under Node). Any other import, and
 one whose local name another import also binds, is read at its ordinary
 signature. The parser lists no module whose code it leaves unlowered writes
 the binding of one of its function declarations.

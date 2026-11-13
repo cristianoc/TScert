@@ -901,6 +901,19 @@ def receiverlessGoal {ι : Type} (c : CodeEntry ι) : ControlFlow.Goal ι :=
   | some (.asserts p) => .asserts c.row.result p
   | none => .plain c.row.result
 
+/-- **The plain row beside a promise row**: the signature `p` with the
+result `R` and no promise, its receiver, actuals and every other part of its
+effect kept. A guard's interface states it beside its promise row, both run
+by the same code. -/
+def promisePlain {ι : Type} (p : CallEffects.Arrow (Ty ι)) (R : Ty ι) : CallEffects.Arrow (Ty ι) :=
+  { p with result := R, effect := { p.effect with promise := none } }
+
+/-- **A plain result admits a promise's results**: `true` and `false` for a
+guard's, `undefined` for an assertion's (`booleanMember`, `admitsUndef`). -/
+def promiseAdmits {ι : Type} [DecidableEq ι] (G : PositiveGraphs.NormalGraph ι) (R : Ty ι) : CallEffects.TypePromise → Bool
+  | .guards _ => BranchRefinement.booleanMember G R true && BranchRefinement.booleanMember G R false
+  | .asserts _ => PromiseCalls.admitsUndef G R
+
 /-- The slot map from a frame with a receiver in front to the frame past it
 (the unit lane's `PassUnit.pastReceiver`). -/
 def layoutPastReceiver (s : Nat) : Option Nat := if s = 0 then none else some (s - 1)
@@ -975,7 +988,17 @@ def FilePlans.layoutOwn (f : FilePlans) (i : Nat) : LayoutOwn := Id.run do
       if q.start == r.start && q.program.map (·.expression) == exprs &&
           q.program.map (fun n => (n.continuation, n.handler)) == conts then some q else none
     | _ => none
-  for p in offerRows L Sg do
+  -- A row is realized at its own goal, or, where it is the plain row beside
+  -- a promise row of the clause (`promisePlain`) whose result admits the
+  -- promise's results (`promiseAdmits`), through that promise row
+  -- (`RowRealized`, `rowSpec_plain_of_promise`).
+  let rows := (offerRows L Sg).map fun p =>
+    match (offerRows L Sg).find? fun p' => match p'.effect.promise with
+        | some π => p.effect.promise.isNone && promisePlain p' p.result == p && promiseAdmits G p.result π
+        | none => false with
+    | some p' => p'
+    | none => p
+  for p in rows do
     let e : CodeEntry _ := ⟨arity, exprs, conts, r.start, captures, p, none⟩
     let eff := p.effect
     if !(decide (arity ≤ p.arguments.length) && eff.belowRow arity && !eff.freshObject && eff.requires.isNone &&

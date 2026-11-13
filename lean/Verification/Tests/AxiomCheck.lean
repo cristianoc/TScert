@@ -163,6 +163,8 @@ run_cmd do
   check ``Verification.SourceClaimJson.PassUnit.closure_meets_below
   check ``Verification.SourceClaimJson.PassUnit.rowSpec_of_requestSafe
   check ``Verification.SourceClaimJson.PassUnit.rowSpec_of_clauses
+  check ``Verification.SourceClaimJson.PassUnit.rowSpec_plain_of_promise
+  check ``Verification.SourceClaimJson.PassUnit.promiseAdmits_result
   check ``Verification.SourceClaimJson.PassUnit.codeRun_of_clauses
   check ``Verification.SourceClaimJson.PassUnit.row_invoke_at
   check ``Verification.SourceClaimJson.PassUnit.safePostExc_and

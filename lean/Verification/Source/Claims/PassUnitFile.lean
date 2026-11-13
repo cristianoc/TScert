@@ -46,12 +46,16 @@ def CodeOf (f : FilePlans) (r : Req f) (e e' : CodeEntry (Lab f)) (sep : HeapSep
 /-- **A signature realized by a member**: the member `j`'s plan is a graph
 request that is a code's (`CodeOf`) at the module function's separation,
 meeting the row conditions, and that code is the module function's code `c`
-at the signature `p`. -/
+at the signature `p`, or at a promise row whose plain row is `p`
+(`promisePlain`), `p`'s result admitting the promise's results
+(`promiseAdmits`): a guard's one request realizes both of its rows. -/
 def RowRealized (f : FilePlans) (c : ModuleCode (Lab f) String) (j : Nat) (p : CallEffects.Arrow (Ty (Lab f))) :
     Prop :=
   ∃ (name : String) (pos : Span) (r : Req f) (e e' : CodeEntry (Lab f)), PlanAt f j name pos r ∧
     CodeOf f r e e' c.sep ∧ rowConditions e = true ∧ e'.arity = c.arity ∧ e'.exprs = c.exprs ∧ e'.conts = c.conts ∧ e'.start = c.start ∧
-    e'.captures = c.captures ∧ e'.store = none ∧ e'.row = p
+    e'.captures = c.captures ∧ e'.store = none ∧
+    (e'.row = p ∨ ∃ π, e'.row.effect.promise = some π ∧ p = promisePlain e'.row p.result ∧
+      promiseAdmits (graphOf f) p.result π = true)
 
 /-- **A realized signature is met by the module function's code** (proved,
 under `ReceiverDropSound` for a function declared without `this`): where
@@ -74,8 +78,12 @@ theorem rowRealized_spec (hdrop : ReceiverDropSound) {f : FilePlans} (hover : Ov
   rw [hG] at hspec
   have he := hspec (graphOf f).env
   rw [reassign_env] at he
-  rw [ha, hex, hco, hst, hca, hrow] at he
-  exact he
+  rw [ha, hex, hco, hst, hca] at he
+  rcases hrow with hrow | ⟨π, hπ, hp, hadm⟩
+  · rw [hrow] at he
+    exact he
+  · rw [hp]
+    exact rowSpec_plain_of_promise hπ hadm he
 
 /-- **The module's layout** (H5a, the extraction's frame layout): the
 functions `D` laid out (any set of the file's functions, a mutually

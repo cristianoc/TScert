@@ -1972,10 +1972,10 @@ holds the yields of a returned value (`yieldFollows_sound`) and the promise
 call (`promiseCall_sound`); `Lowering.Control.promiseNarrowing` places the
 narrowed claim after a call, which the edge check verifies. Pipeline cases:
 `type-guards`, `type-guard-objects` and `type-guard-methods` verify;
-`type-guard-value-import` and `type-guard-overload-value-import` are gaps:
-an imported guard has no entry (`eligibleRead` takes no guard, and the
-layout realizes a guard's plain signature by no request), and an overloaded
-guard is outside the fragment;
+`guard-value-import` verifies, an imported guard read at its entry;
+`type-guard-value-import` is a gap, its module's plans refused at another
+function, so no entry is published; `type-guard-overload-value-import` is a
+gap: an overloaded guard is outside the fragment;
 `invalid-type-guard-promise`, `invalid-type-guard-undefined`,
 `invalid-type-guard-default`, `invalid-type-guard-object`,
 `invalid-type-guard-field-test`,
@@ -3992,7 +3992,7 @@ A type guard or an assertion function states it at its promise's type,
 `x is Modifies<P, T>` (`asserts x is Modifies<P, T>`), which TypeScript reads as
 `x is T`: $`\epsilon(P)`$ is the effect of both signatures of a declared
 guard, the plain one and the promise signature, which run the same code
-(`stated-guard-value-import`, a gap: an imported guard has no entry;
+(`stated-guard-value-import`, the imported one read at its entry;
 `invalid-stated-guard` is refused at its own unit). A guard written as a closure or a class method has $`\epsilon(P)`$ at
 its plain signature only; its promise signature may change every location, a
 weaker reading of the same code.

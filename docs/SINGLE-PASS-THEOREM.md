@@ -594,7 +594,12 @@ signature $`p`$ of its interface realized (`RowRealized`) by a member $`j`$
 of the group of some unit of $`S`$: $`j`$'s plan is a request that is a code
 $`e`$'s (`CodeOf`: `UnitIsCode` with $`e`$ the module code, or
 `UnitIsReceiverless` with $`\mathrm{dropReceiver}(e)`$ the module code)
-meeting the code conditions. The realizing member is any member of any
+meeting the code conditions, $`e`$'s row $`p`$ itself or a promise row whose
+plain row is $`p`$ (`promisePlain`), $`p`$'s result admitting the promise's
+results (`promiseAdmits`), where `rowSpec_plain_of_promise` (proved,
+[the module layout](SINGLE-PASS.md#the-module-layout)) gives $`p`$ from the
+promise row: a guard's one request, at the promise's goal, realizes both
+rows. The realizing member is any member of any
 group of $`S`$: a member of its own group, or, for an overload, of the
 group whose request is at that signature. The file-level theorem's value
 claims are about $`D`$; the units of $`S`$ are safe from their verdicts
@@ -632,7 +637,10 @@ groups:
    or $`\mathrm{UnitIsReceiverless}(r, e)`$ for
    $`e = \langle a, \mathit{exprs}, \mathit{conts}, \ell_0, C, p, \mathrm{none}\rangle`$
    ($`x`$'s node lists, start and captures), the receiverless entry facts
-   by `receiverless_indices`, and $`\mathrm{codeConditions}(e)`$;
+   by `receiverless_indices`, and $`\mathrm{codeConditions}(e)`$; a plain
+   row $`p`$ beside a promise row $`p'`$ of the clause with
+   $`p = \mathrm{plain}(p', p.\mathrm{result})`$ and
+   $`\mathrm{promiseAdmits}(p.\mathrm{result}, \pi')`$ is asked at $`p'`$;
 
 and $`D`$ is the greatest set of such functions closed under linked
 callees (a function whose callee fails leaves $`D`$). `StepLayouts` asks

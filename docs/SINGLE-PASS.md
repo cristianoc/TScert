@@ -817,6 +817,26 @@ $`\Sigma = \{\}`$ with no postcondition (`rowSpec_of_graphCodeSpec`).
 separation from a unit request's safety
 ([H5: the realization](SINGLE-PASS-THEOREM.md#h5-the-realization)).
 
+- **A guard's plain row through its promise row.** A type guard's or an
+  assertion function's interface is a clause of a promise row $`p`$, of
+  result $`T`$ and promise $`\pi`$ (`guards k`, `asserts k`), and beside it
+  its plain row $`\mathrm{plain}(p, R)`$ (`promisePlain`): $`p`$ with the
+  result $`R`$ and no promise, its receiver, actuals and effect otherwise
+  $`p`$'s. Its one request is at the promise's goal, so it realizes $`p`$;
+  the plain row follows where $`R`$ admits the promise's results
+  (`promiseAdmits`: `true` and `false` for a guard, by `booleanMember`;
+  `undefined` for an assertion, by `admitsUndef`).
+
+**Lemma** `rowSpec_plain_of_promise` (proved). Where $`p`$ states the
+promise $`\pi`$ and $`R`$ admits its results,
+$`\mathrm{RowSpec}_G(c, p, \Sigma) \Rightarrow \mathrm{RowSpec}_G(c, \mathrm{plain}(p, R), \Sigma)`$:
+the frame, the precondition and both postconditions read no promise, and a
+run's normal value, `true` or `false` for a guard, `undefined` for an
+assertion, is in $`⟦R⟧`$ at every budget and world. `RowRealized` admits a
+row so realized, and the layout check (`FilePlans.layoutOwn`) realizes a
+plain row through the clause's promise row of the same receiver, actuals
+and effect, at the promise's goal.
+
 - **A postcondition over the call's values.** A unit request states its
   postcondition at its entry frame (`EnsuresClause`), each call position
   read at the input slot holding it on entry, so a reassigned parameter
@@ -845,7 +865,8 @@ separation from a unit request's safety
 The module-layout conditions are `ModuleLayout` (H5a) at the importer and
 `StepLayouts` at each module step: each laid-out function's interface one
 clause, one slot per capture, each linked slot's callee laid out at its
-interface, each signature realized by a member's request at `RowSpec`, and
+interface, each signature realized by a member's request at `RowSpec` (a
+guard's plain row through its promise row), and
 the module cells apart (`apart`). They are hypotheses; their decidable part
 is the layout check. `ReceiverDropSound` (a named hypothesis) gives
 `RowSpec` of a receiverless request's code with the receiver dropped, at
