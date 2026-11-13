@@ -173,6 +173,23 @@ def mapM' (f : Nat → Nat) (t : Term) : Term := if t.atEntry then t else { t wi
 theorem mapM_eq (f : Nat → Nat) : Term.mapM (some ∘ f) = some ∘ mapM' f := by
   funext t; obtain ⟨k, s, p, a⟩ := t; cases a <;> rfl
 
+/-- **The term with its entry slot translated**, where the map names one: the
+change of entry frame (a call substitution, a frame with a receiver in front
+read past it). A current term is left as it is; renaming current slots
+within one invocation is `mapM`, which leaves every entry term as it is. -/
+def mapEntry (g : Nat → Option Nat) (t : Term) : Option Term :=
+  if t.atEntry then (g t.slot).map fun s => { t with slot := s } else some t
+
+theorem mapEntry_cases {g : Nat → Option Nat} {t t' : Term} (h : t.mapEntry g = some t') :
+    (t.atEntry = false ∧ t' = t) ∨ (t.atEntry = true ∧ g t.slot = some t'.slot ∧ t' = { t with slot := t'.slot }) := by
+  unfold mapEntry at h
+  cases he : t.atEntry
+  · simp only [he, Bool.false_eq_true, if_false, Option.some.injEq] at h
+    exact .inl ⟨rfl, h.symm⟩
+  · simp only [he, if_true, Option.map_eq_some_iff] at h
+    obtain ⟨s, hs, rfl⟩ := h
+    exact .inr ⟨rfl, hs, rfl⟩
+
 end Term
 
 /-- **The read bridge, one field.** Where the object `o` owns `f` at a location
@@ -483,6 +500,18 @@ theorem termValue_mapM {f : Nat → Option Nat} {ρ ρ' : Env} {h : Heap} {t t' 
   · exact termValue_entry_invariant he
   · rw [h3]; exact termValue_slot (hf he _ hs) he
 
+/-- **An entry term translated to another entry frame denotes what it did**
+where each translated entry slot holds its source slot's value there and the
+entry heaps agree; a current term is not translated. -/
+theorem termValue_mapEntry {ε' : EntryState} {g : Nat → Option Nat} {ρ : Env} {h : Heap} {t t' : Term}
+    (hm : t.mapEntry g = some t') (hh : ε'.heap = ε.heap)
+    (hg : t.atEntry = true → ∀ j, g t.slot = some j → ε'.env j = ε.env t.slot) :
+    termValue ε' ρ h t' = termValue ε ρ h t := by
+  rcases Term.mapEntry_cases hm with ⟨he, rfl⟩ | ⟨he, hs, h3⟩
+  · rw [termValue_now he, termValue_now he]
+  · rw [h3]
+    simp only [termValue, he, if_true, termAt, hh, hg he _ hs]
+
 theorem termValue_isSome {ρ : Env} {h : Heap} {t : Term} (ht : (termValue ε ρ h t).isSome) (he : t.atEntry = false) :
     ∃ v n, readPath h (ρ t.slot) t.path = some v ∧ kindValue h t.kind v = some n ∧ termValue ε ρ h t = some n := by
   obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp ht
@@ -705,6 +734,12 @@ def inst (k r : Nat) : Bound → Term
 def slots : Bound → List Nat
   | .free t => t.slots
   | _ => []
+
+/-- The variable with a term's entry slot translated, where the map names
+one (`Term.mapEntry`). -/
+def mapEntry (g : Nat → Option Nat) : Bound → Option Bound
+  | .free t => (t.mapEntry g).map .free
+  | b => some b
 
 end Bound
 
@@ -1379,6 +1414,179 @@ theorem holdsAt_entry {F : IndexFact} (hF : F.entrySlots = []) (ε' : EntryState
       exact ⟨w, st, ls, n, hw, hsto, hls, hn, fun i hi F hF =>
         LinearClause.holdsAt_congr (fun x hx => (hb ls i F hF x hx).symm) (hall i hi F hF)⟩
   | _ => exact Iff.rfl
+
+/-- A quantified fact's body with each variable translated by `m`, where it
+translates every one. -/
+def mapBodyWith (m : Bound → Option Bound) : List (LinearClause Bound) → Option (List (LinearClause Bound))
+  | [] => some []
+  | F :: t => do pure ((← F.mapVars m) :: (← mapBodyWith m t))
+
+theorem mapBodyWith_pairs {m : Bound → Option Bound} :
+    ∀ {body body' : List (LinearClause Bound)}, mapBodyWith m body = some body' →
+      (∀ F' ∈ body', ∃ F ∈ body, F.mapVars m = some F') ∧
+      (∀ F ∈ body, ∃ F' ∈ body', F.mapVars m = some F')
+  | [], body', h => by simp only [mapBodyWith, Option.some.injEq] at h; subst h; simp
+  | F :: t, body', h => by
+    simp only [mapBodyWith, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at h
+    obtain ⟨G, hG, t', ht, rfl⟩ := h
+    obtain ⟨h1, h2⟩ := mapBodyWith_pairs ht
+    refine ⟨fun F' hF' => ?_, fun F0 hF0 => ?_⟩
+    · rcases List.mem_cons.mp hF' with rfl | hF'
+      · exact ⟨F, List.mem_cons_self .., hG⟩
+      · obtain ⟨F1, hF1, hm⟩ := h1 F' hF'; exact ⟨F1, List.mem_cons_of_mem _ hF1, hm⟩
+    · rcases List.mem_cons.mp hF0 with rfl | hF0
+      · exact ⟨G, List.mem_cons_self .., hG⟩
+      · obtain ⟨F1, hF1, hm⟩ := h2 F0 hF0; exact ⟨F1, List.mem_cons_of_mem _ hF1, hm⟩
+
+/-- **The fact with each entry slot translated** to another entry frame,
+where the map names every one (`Term.mapEntry`): its current slots are left
+as they are. With `mapM` it makes a change of frame (`reframe`). -/
+def mapEntry (g : Nat → Option Nat) : IndexFact → Option IndexFact
+  | .linear F => (F.mapVars (Term.mapEntry g)).map .linear
+  | .either A B => do pure (.either (← A.mapEntry g) (← B.mapEntry g))
+  | .guarded s p t B => do pure (.guarded s p t (← B.mapEntry g))
+  | .every s p stop body => do pure (.every s p (← stop.mapEntry g) (← mapBodyWith (Bound.mapEntry g) body))
+  | F => some F
+
+/-- **A fact with its entry slots translated holds at the translated entry
+state where it held at the source one**: each translated entry slot holds
+its source slot's value, and the entry heaps agree. -/
+theorem holdsAt_mapEntry {F F' : IndexFact} {g : Nat → Option Nat} {ε' : EntryState} {ρ : Env} {h : Heap}
+    (hm : F.mapEntry g = some F') (hh : ε'.heap = ε.heap)
+    (hg : ∀ s ∈ F.entrySlots, ∀ j, g s = some j → ε'.env j = ε.env s) :
+    F'.HoldsAt ε' ρ h ↔ F.HoldsAt ε ρ h := by
+  induction F generalizing F' with
+  | either A B ihA ihB =>
+    simp only [mapEntry, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
+    obtain ⟨A', hA, B', hB, rfl⟩ := hm
+    exact or_congr (ihA hA fun s hs => hg s (List.mem_append_left _ hs))
+      (ihB hB fun s hs => hg s (List.mem_append_right _ hs))
+  | guarded s p t B ih =>
+    simp only [mapEntry, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
+    obtain ⟨B', hB, rfl⟩ := hm
+    simp only [HoldsAt, ih hB hg]
+  | linear G =>
+    simp only [mapEntry, Option.map_eq_some_iff] at hm
+    obtain ⟨G', hG, rfl⟩ := hm
+    have hterm : ∀ x ∈ G.vars, ∀ y, x.mapEntry g = some y → termValue ε' ρ h y = termValue ε ρ h x :=
+      fun x hx y hy => termValue_mapEntry hy hh fun he j hj =>
+        hg x.slot (List.mem_flatMap.mpr ⟨x, hx, by simp [Term.entrySlots, he]⟩) j hj
+    have hv : ∀ x ∈ G.vars, ∀ y, x.mapEntry g = some y → termValuation ε' ρ h y = termValuation ε ρ h x := by
+      intro x hx y hy; simp only [termValuation, hterm x hx y hy]
+    simp only [HoldsAt]
+    rw [Linear.Fact.holds_mapVars hG hv]
+    constructor
+    · rintro ⟨hi, hh'⟩
+      refine ⟨fun x hx => ?_, hh'⟩
+      obtain ⟨y, hy, hfy⟩ := Linear.Fact.mapVars_vars_fwd hG x hx
+      rw [← hterm x hx y hfy]; exact hi y hy
+    · rintro ⟨hi, hh'⟩
+      refine ⟨fun y hy => ?_, hh'⟩
+      obtain ⟨x, hx, hfx⟩ := Linear.Fact.mapVars_vars hG y hy
+      rw [hterm x hx y hfx]; exact hi x hx
+  | every s p stop body =>
+    simp only [mapEntry, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
+    obtain ⟨stop', hstop, body', hbody, rfl⟩ := hm
+    have hst : termValue ε' ρ h stop' = termValue ε ρ h stop :=
+      termValue_mapEntry hstop hh fun he j hj => hg stop.slot (List.mem_append_left _ (by simp [Term.entrySlots, he])) j hj
+    obtain ⟨hb1, hb2⟩ := mapBodyWith_pairs hbody
+    have hval : ∀ (ls : List (Option Nat)) (i : Nat), ∀ F ∈ body, ∀ F', F.mapVars (Bound.mapEntry g) = some F' →
+        (F'.HoldsAt (boundValue ε' ρ h ls i) ↔ F.HoldsAt (boundValue ε ρ h ls i)) := by
+      intro ls i F hF F' hm
+      refine LinearClause.holdsAt_mapVars hm fun x hx y hy => ?_
+      cases x with
+      | free t =>
+        simp only [Bound.mapEntry, Option.map_eq_some_iff] at hy
+        obtain ⟨t', ht', rfl⟩ := hy
+        simp only [boundValue]
+        refine termValue_mapEntry ht' hh fun he j hj => hg t.slot ?_ j hj
+        exact List.mem_append_right _ (List.mem_flatMap.mpr ⟨F, hF,
+          List.mem_flatMap.mpr ⟨.free t, hx, by simp [Term.entrySlots, he]⟩⟩)
+      | project k q =>
+        cases hy; simp only [boundValue]
+        split
+        · rename_i l _
+          cases h[l]? with
+          | none => rfl
+          | some v => simp only [Option.bind_some]; rw [termValue_now rfl, termValue_now rfl]
+        · rfl
+      | _ => cases hy; rfl
+    simp only [HoldsAt, hst]
+    constructor
+    · rintro ⟨w, st, ls, n, hw, hsto, hls, hn, hall⟩
+      refine ⟨w, st, ls, n, hw, hsto, hls, hn, fun i hi F hF => ?_⟩
+      obtain ⟨F', hF', hm⟩ := hb2 F hF
+      exact (hval ls i F hF F' hm).mp (hall i hi F' hF')
+    · rintro ⟨w, st, ls, n, hw, hsto, hls, hn, hall⟩
+      refine ⟨w, st, ls, n, hw, hsto, hls, hn, fun i hi F' hF' => ?_⟩
+      obtain ⟨F, hF, hm⟩ := hb1 F' hF'
+      exact (hval ls i F hF F' hm).mpr (hall i hi F hF)
+  | index k => cases hm; exact Iff.rfl
+  | length x n => cases hm; exact Iff.rfl
+  | bound x k st => cases hm; exact Iff.rfl
+  | int k => cases hm; exact Iff.rfl
+  | pastSafe k => cases hm; exact Iff.rfl
+  | element v x k => cases hm; exact Iff.rfl
+  | apart a b => cases hm; exact Iff.rfl
+  | storeApart a p b q => cases hm; exact Iff.rfl
+
+/-- **A change of frame**: the fact with its current slots renamed by `f`
+(`mapM`) and its entry slots translated by `g` (`mapEntry`), each by its own
+map, where both name every slot. -/
+def reframe (f g : Nat → Option Nat) (F : IndexFact) : Option IndexFact :=
+  (F.mapM f).bind (·.mapEntry g)
+
+/-- **A fact read in another frame** (proved): where `reframe f g` translates
+`F` to `F'`, each current slot `s` renamed to `t` holds at `ρ'` what `s`
+holds at `ρ`, each entry slot translated likewise holds at `ε'` what it holds
+at `ε`, and the entry heaps agree, `F'` holds at `ε'`, `ρ'` exactly where `F`
+holds at `ε`, `ρ`. -/
+theorem holdsAt_reframe {F F' : IndexFact} {f g : Nat → Option Nat} {ε' : EntryState} {ρ ρ' : Env} {h : Heap}
+    (hm : F.reframe f g = some F') (hf : ∀ s ∈ F.slots, ∀ t, f s = some t → ρ' t = ρ s)
+    (hh : ε'.heap = ε.heap) (hg : ∀ s j, g s = some j → ε'.env j = ε.env s) :
+    F'.HoldsAt ε' ρ' h ↔ F.HoldsAt ε ρ h := by
+  obtain ⟨G, hG, hE⟩ := Option.bind_eq_some_iff.mp hm
+  rw [holdsAt_mapEntry hE hh (fun s _ => hg s)]
+  exact holdsAt_mapM hG hf
+
+/-- A postcondition's current position read in a frame with no receiver:
+the result `0` at `0`, the receiver `1` at none, each later position one
+lower. -/
+def postPastReceiver (i : Nat) : Option Nat := if i = 0 then some 0 else if i = 1 then none else some (i - 1)
+
+/-- A call position of the entry frame read in a frame with no receiver:
+the receiver `0` at none, each later position one lower. -/
+def entryPastReceiver (p : Nat) : Option Nat := if p = 0 then none else some (p - 1)
+
+/-- **A postcondition read past the receiver**: its current positions by
+`postPastReceiver`, its entry positions by `entryPastReceiver`; none where
+it names the receiver in either state. -/
+def pastReceiver (F : IndexFact) : Option IndexFact := F.reframe postPastReceiver entryPastReceiver
+
+/-- **A postcondition read past the receiver means what it meant** (proved):
+at a return of a frame `L` whose code was entered at `recv :: L`, the
+translated fact holds at the entry `⟨envOf L d, h⟩` and the return's
+positions `push v (envOf L d)` exactly where the fact holds at
+`⟨envOf (recv :: L) d, h⟩` and `push v (envOf (recv :: L) d)`. -/
+theorem holdsAt_pastReceiver {F F' : IndexFact} (hm : F.pastReceiver = some F') (L : List Tm) (recv d v : Tm)
+    (h h' : Heap) :
+    F'.HoldsAt ⟨envOf L d, h⟩ (push v (envOf L d)) h' ↔
+      F.HoldsAt ⟨envOf (recv :: L) d, h⟩ (push v (envOf (recv :: L) d)) h' := by
+  refine holdsAt_reframe hm (fun s _ t hst => ?_) rfl (fun s t hst => ?_)
+  · unfold postPastReceiver at hst
+    split at hst
+    · cases hst; subst s; rfl
+    · split at hst
+      · cases hst
+      · cases hst
+        obtain ⟨k, rfl⟩ : ∃ k, s = k + 2 := ⟨s - 2, by omega⟩
+        simp [push, envOf]
+  · unfold entryPastReceiver at hst
+    split at hst
+    · cases hst
+    · cases hst
+      obtain ⟨k, rfl⟩ : ∃ k, s = k + 1 := ⟨s - 1, by omega⟩
+      simp [envOf]
 
 /-- A linear fact over slots' values holds where its slots hold safe integers
 meeting it. -/

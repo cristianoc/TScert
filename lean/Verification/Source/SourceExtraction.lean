@@ -299,11 +299,11 @@ did not mention grow it, and the request carries the result. -/
   -- The postcondition its unit proves at each return: position `0` the
   -- result, each call position `p` (`i + 1` of the signature's `ensures`)
   -- at `q + 1` for the input slot `q` that holds it on entry.
+  -- An entry term `old(t)` reads the call position its slot names in the
+  -- entry state, at the input slot that holds it on entry: the same frame
+  -- change in both states (`IndexFact.pastReceiver`).
   let receiverInput := (f.params.head?.map (·.name == "this")).getD false
-  let ensuresSlot : Nat → Option Nat := fun i =>
-    if i = 0 then some 0
-    else if receiverInput then some i else if i = 1 then none else some (i - 1)
-  let some ensures := f.ensures.mapM (·.mapM ensuresSlot)
+  let some ensures := f.ensures.mapM (fun F => if receiverInput then some F else F.pastReceiver)
     | throw "a result fact names the receiver, which the function does not declare"
   -- The stores a stated frame excepts, each call position at the input slot
   -- that holds it on entry.

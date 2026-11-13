@@ -887,11 +887,6 @@ def establishEntry (location : String) (fm : FilePlans) (ok : List String) (n : 
       | none => .error ""
     | _, _ => .error ""
 
-/-- A postcondition position of a function declared without `this`, read in
-its request's frame past the receiver: the result at `0`, each call position
-`i + 1` of a parameter at `i` (`SourceExtraction`'s `ensuresSlot`). -/
-def ensuresPast (i : Nat) : Nat := if i = 0 then 0 else i - 1
-
 /-- The goal of a code entry whose function is declared without `this`: the
 signature's result, under its promise where it states one (the unit lane's
 `PassUnit.receiverlessGoal`). -/
@@ -935,7 +930,7 @@ realized by some member `j` of the file (`RowRealized`): `j`'s plan is
 unqualified, runs this function's code from its start at the row's frame
 with its captures (`codeFrame`, or past the receiver for a function without
 `this`), at the row's goal, postcondition (past the receiver,
-`ensuresPast`), footprint, fresh and throw flags, with an entry separation
+`IndexFact.pastReceiver`), footprint, fresh and throw flags, with an entry separation
 naming only captures that are no function of the file, the module cells
 (`ModuleLayout.apart`), and the code's entry facts (renamed past the
 receiver, each fact of the request one of `mapIndices pastReceiver`), and
@@ -1005,8 +1000,9 @@ def FilePlans.layoutOwn (f : FilePlans) (i : Nat) : LayoutOwn := Id.run do
         eff.elements.isNone && !eff.receiverGrows && eff.elementWrite.isNone) then
       return .outside "the code's conditions"
     -- A function declared without `this` states no postcondition of its
-    -- receiver (`UnitIsReceiverless.noReceiver`).
-    if receiverless && eff.ensures.any (·.slots.contains 1) then
+    -- receiver, in either state (`IndexFact.pastReceiver`).
+    let receiverlessEnsures := eff.ensures.mapM HeapKnowledge.IndexFact.pastReceiver
+    if receiverless && receiverlessEnsures.isNone then
       return .outside "a postcondition of the receiver"
     let goal := if receiverless then receiverlessGoal e else e.goal
     let facts := GraphCode.codeEntryIndices e
@@ -1021,7 +1017,7 @@ def FilePlans.layoutOwn (f : FilePlans) (i : Nat) : LayoutOwn := Id.run do
       q.entrySeparation.depth == q.inputs.length &&
         q.entrySeparation.facts.all fun a => cellLevel a.slot && a.partners.all fun pt => cellLevel pt.1
     let ensuresOk := fun (q : SourceRequest _ _) =>
-      q.ensures == (if receiverless then eff.ensures.map (·.map ensuresPast) else eff.ensures)
+      (if receiverless then receiverlessEnsures == some q.ensures else q.ensures == eff.ensures)
     let frameOk := fun (q : SourceRequest _ _) =>
       q.qualification.isNone &&
       q.inputs == (if receiverless then p.arguments.take arity ++ captures else codeFrame arity p captures none) &&

@@ -500,9 +500,10 @@ behind the receiver's prologue**: unqualified, collecting no rest, its
 inputs the code's frame past the receiver (the parameters, then the
 captures), its program, start and goal the code's at that frame, its entry
 facts implied by the code's at every frame with a receiver in front, the
-signature's postcondition, which names no receiver, as its own, each
-position past the receiver (`ensuresPast`), and the code's footprint, fresh
-flag and throw flag. -/
+signature's postcondition, which names the receiver in neither state, read
+past the receiver as its own (`IndexFact.pastReceiver`: each current and
+each entry position one lower, the result kept), and the code's footprint,
+fresh flag and throw flag. -/
 structure UnitIsReceiverless (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop where
   unqualified : r.qualification = none
   store : c.store = none
@@ -514,13 +515,48 @@ structure UnitIsReceiverless (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop
   indices : ∀ (L : List Tm) (recv : Tm) h,
     HeapKnowledge.IndexHolds ⟨envOf (recv :: L) .nul, h⟩ (GraphCode.codeEntryIndices c) (envOf (recv :: L) .nul) h →
     HeapKnowledge.IndexHolds ⟨envOf L .nul, h⟩ r.entryIndices (envOf L .nul) h
-  noReceiver : ∀ F ∈ c.row.effect.ensures, 1 ∉ F.slots
-  ensures : r.ensures = c.row.effect.ensures.map (·.map ensuresPast)
+  ensures : c.row.effect.ensures.mapM HeapKnowledge.IndexFact.pastReceiver = some r.ensures
   footprint : r.footprint = c.row.effect.footprint
   fresh : r.fresh = c.row.effect.fresh
   onThrow : r.onThrow = c.row.effect.onThrow
 
 end
+
+/-- The row fact `result = old(receiver)`, as `result - old(receiver) ≤ 0`:
+a postcondition of a function's receiver at its entry. -/
+def resultIsOldReceiver : HeapKnowledge.IndexFact :=
+  .linear (.le [(HeapKnowledge.Term.value 0, 1), (⟨.value, 0, [], true⟩, -1)] 0)
+
+/-- Read past the receiver it names nothing: it names the receiver's entry
+value (proved by evaluation). -/
+theorem resultIsOldReceiver_pastReceiver : resultIsOldReceiver.pastReceiver = none := rfl
+
+/-- Its neighbour `result = old(first parameter)` (entry position `1`) reads
+past the receiver as `result = old(slot 0)`, the request's first input. -/
+theorem resultIsOldFirst_pastReceiver :
+    (HeapKnowledge.IndexFact.linear (.le [(HeapKnowledge.Term.value 0, 1), (⟨.value, 1, [], true⟩, -1)] 0)).pastReceiver =
+      some (.linear (.le [(HeapKnowledge.Term.value 0, 1), (⟨.value, 0, [], true⟩, -1)] 0)) := rfl
+
+theorem mapM_some_mem {α β : Type} {f : α → Option β} :
+    ∀ {l : List α} {l' : List β}, l.mapM f = some l' → ∀ x ∈ l, ∃ y, f x = some y
+  | [], _, _, x, hx => by cases hx
+  | a :: t, l', h, x, hx => by
+    simp only [List.mapM_cons, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
+      Option.some.injEq] at h
+    obtain ⟨b, hb, t', ht, -⟩ := h
+    rcases List.mem_cons.mp hx with rfl | hx
+    · exact ⟨b, hb⟩
+    · exact mapM_some_mem ht x hx
+
+/-- **A row stating `result = old(receiver)` has no receiverless request**
+(proved): the mistranslation that read it as `result = old(first parameter)`
+is not a request of the row. -/
+theorem not_receiverless_of_oldReceiver {σ ι : Type} [Labels ι] [StoreView σ ι] {r : SourceRequest σ ι}
+    {c : CodeEntry ι} (hm : resultIsOldReceiver ∈ c.row.effect.ensures) : ¬ UnitIsReceiverless r c := by
+  intro hu
+  obtain ⟨y, hy⟩ := mapM_some_mem hu.ensures _ hm
+  rw [resultIsOldReceiver_pastReceiver] at hy
+  cases hy
 
 /-- The slot map from a frame with a receiver in front to the frame past
 it: slot `s + 1` to `s`, the receiver's slot to none. -/
@@ -560,8 +596,11 @@ no receiver slot is a code's behind the prologue (`UnitIsReceiverless`) and
 the code meets the row conditions, the request's safety makes the code with
 the prologue (`dropReceiver`) meet its signature as a module row at every
 assignment, at the request's entry separation read with the receiver in
-front (`receiverSeparation`), its postcondition at the request's past the
-receiver. The
+front (`receiverSeparation`). The row's postcondition is the request's read
+with the receiver in front in both states (`UnitIsReceiverless.ensures`):
+by `holdsAt_pastReceiver` the request's post at its entry `⟨envOf L d, h⟩`
+and return `push v (envOf L d)` holds exactly where the row's does at
+`⟨envOf (recv :: L) d, h⟩` and `push v (envOf (recv :: L) d)`. The
 argument: the prologue's two transitions (entering it, then its `effect`
 continuation) lead from the frame `recv :: L ++ [self]` to the request's
 start at `L ++ [self]` with the receiver as the default slot value, and
