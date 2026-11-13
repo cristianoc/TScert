@@ -541,9 +541,7 @@ assignment of a linear value states its equality, a step restates each
 fact, a test states its comparisons on each arm, an arm that leaves
 states the other's after the test, an assignment of a choice (`x += c ?
 p : q`, `x = a ± (c ? p : q)`) is each arm's assignment under what its
-answer of `c` states, the two joined (each fact of one whose terms the
-other bounds, at the larger bound: `i += c ? 2 : 1` keeps `0 <= i` and
-takes `i <= n + 1` from `i < n`), a write of a binding forgets its
+answer of `c` states, the two joined, a write of a binding forgets its
 facts and a heap write those of lengths and paths
 (`declaration`, `test`, `distribute`,
 `assign_arms`). A declaration or assignment of a call of the file's
@@ -552,8 +550,18 @@ the binding and each parameter the actual where that is a binding
 (`breaks = lineBreaks(s)` under `@ensures result.length === s.length + 1`:
 `breaks.length = s.length + 1`); one of a choice `c ? a : b` states, on
 each arm under what its answer of `c` states, the binding equal to a
-linear arm or a call's postcondition, the two joined
-(`declaration`'s conditional).
+linear arm (a length among its terms: `t = c ? f(s) : s.length`) or a
+call's postcondition, the two joined (`declaration`'s conditional). An
+assignment states of its binding what a declaration of it to the same
+value states (`Ctx.bindTo`). Two arms are joined into the facts both
+establish: each fact `Σ cᵢ·tᵢ ≤ d` of one arm is kept where the other arm,
+with the facts before the choice, has a fact of the same terms (kept at
+the larger bound), or entails it by a fact whose terms differ by lengths
+alone, each length's range making up the difference, or does so with a
+binding it states equal to a linear value replaced by that value
+(`Ctx.join`): `i += c ? 2 : 1` keeps `0 <= i` and takes `i <= n + 1` from
+`i < n`; `from = c ? trailing : 0` keeps `0 <= from` where `0 <=
+trailing`.
 An imported function's postcondition is its signature's
 (`Effect.ensures`), a parameter's type invariant its body keeps among
 them. A declaration of an object literal of named fields states each
@@ -639,8 +647,9 @@ is carried to the heads after it over bindings the loop does not assign,
 across expressions that write no element and resize none of its arrays
 by name; a step of a binding it names forgets it; `xs.push(a)` keeps one
 over `xs`'s whole array whose body the facts state of `a` at the index
-`xs.length`; a read of a path (`const w = d.widths`, `const { widths } =
-d`) restates it, and a linear fact, through the path
+`xs.length`; a read of a path (`const w = d.widths`, `w = d.widths` of a
+`let w`, `const { widths } = d`) restates it, and a linear fact, through
+the path: `w` and `d.widths` denote one value there
 (`egrown`, `erestate_read`). An element
 read `xs[k]` at an index the facts place in `xs`'s range is bounded by
 such a fact's body at `k`: a binding it sets is proposed its integrality

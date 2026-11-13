@@ -833,14 +833,44 @@ def Ctx.pushed (K : String → HeapKnowledge.Term.Kind) (ctx : Ctx) : Expr → L
       | _ => false
   | _ => []
 
-/-- Two states joined: each fact of `a` that `b` holds, and each linear fact
-of `a` whose terms a linear fact of `b` bounds, at the larger bound. -/
+/-- A binding's value as a linear form of others where the facts state it
+(`x - Σ ≤ k ∧ Σ - x ≤ -k`): `x = Σ + k`. -/
+def Ctx.equalOf (ctx : Ctx) (x : String) : Option (List (Key × Int) × Int) :=
+  let xt : Key := (x, [], .value)
+  ctx.findSome? fun
+    | .lin l =>
+      if (l.terms.lookup xt) != some 1 then none else
+      let rest := l.terms.filter (·.1 != xt)
+      if rest.any (·.1.1 == x) then none else
+      if ctx.contains (.lin ⟨addTerms [(xt, -1)] (scale (-1) rest), -l.bound⟩) then some (scale (-1) rest, l.bound) else none
+    | _ => none
+
+/-- A fact with the binding `x` replaced by its value where the facts state
+it (`Ctx.equalOf`). -/
+def Ctx.substitute (ctx : Ctx) (x : String) (l : Lin) : Lin :=
+  let xt : Key := (x, [], .value)
+  match l.terms.lookup xt, ctx.equalOf x with
+  | some a, some (v, k) => ⟨addTerms (l.terms.filter (·.1 != xt)) (scale a v), l.bound - a * k⟩
+  | _, _ => l
+
+/-- The facts two arms both establish (a merge's knowledge, the note's
+"a merge retains facts established by every incoming edge"): of each
+arm's linear fact, the other arm's fact of the same terms at the larger
+bound, or the fact itself where the other arm entails it
+(`Ctx.entails`); any other fact both state. -/
 def Ctx.join (a b : Ctx) : Ctx :=
-  a.filterMap fun
-    | .lin l => (b.filterMap fun
+  let kept := fun (x y : Ctx) => x.filterMap fun
+    | .lin l => match (y.filterMap fun
         | .lin l' => if l'.terms == l.terms then some (Fact.lin { l with bound := max l.bound l'.bound }) else none
-        | _ => none).head?
-    | f => if b.contains f then some f else none
+        | _ => none).head? with
+      | some f => some f
+      | none =>
+        -- (entailed as it stands, or with a binding the other arm
+        -- states equal to a linear value replaced by it, `Ctx.substitute`)
+        let byValue := l.terms.any fun ((n, p, k), _) => p.isEmpty && k == .value && y.entails (y.substitute n l)
+        if y.entails l || byValue then some (.lin l) else none
+    | f => if y.contains f then some f else none
+  Ctx.add (kept a b) (kept b a)
 
 /-- The facts a call of a function stating a postcondition gives the
 binding `x` it sets: each of its `@ensures` facts (position `0` its result,
@@ -867,17 +897,14 @@ call's postcondition (`callEnsures`), the two joined
 def valueArms (K : String → HeapKnowledge.Term.Kind) (ensures : String → List HeapKnowledge.IndexFact)
     (ctx : Ctx) (x : String) (forced : Bool := false) : Expr → List Fact
   | .ifBody _ c a b =>
-    -- (an arm reading a length states nothing of the choice's value: the
-    -- pass's merge of the arms keeps a fact of the value where each arm
-    -- states it of its own, which a length's link does not carry)
     let arm := fun (answer : Bool) (e : Expr) =>
       let ctx' := ctx.add (ctx.tested (atomsOf K c answer))
       match linOf K e with
-      | some v => if v.1.all (·.1.2.2 == .value) then equalTo ctx' x v else []
+      | some v => equalTo ctx' x v
       | none => callEnsures ensures x forced e
     let l := arm true a
     let r := arm false b
-    if l.isEmpty || r.isEmpty then [] else (Ctx.join l r).filter fun f => f.names.contains x
+    if l.isEmpty || r.isEmpty then [] else (Ctx.join (ctx.add l) (ctx.add r)).filter fun f => f.names.contains x
   | .cast _ _ e => valueArms K ensures ctx x forced e
   | _ => []
 
@@ -961,26 +988,6 @@ def Ctx.constOf (ctx : Ctx) (x : String) : Option Int :=
     | .lin ⟨[((n, [], .value), 1)], k⟩ =>
       if n == x && ctx.contains (.lin ⟨[((x, [], .value), -1)], -k⟩) then some k else none
     | _ => none
-
-/-- A binding's value as a linear form of others where the facts state it
-(`x - Σ ≤ k ∧ Σ - x ≤ -k`): `x = Σ + k`. -/
-def Ctx.equalOf (ctx : Ctx) (x : String) : Option (List (Key × Int) × Int) :=
-  let xt : Key := (x, [], .value)
-  ctx.findSome? fun
-    | .lin l =>
-      if (l.terms.lookup xt) != some 1 then none else
-      let rest := l.terms.filter (·.1 != xt)
-      if rest.any (·.1.1 == x) then none else
-      if ctx.contains (.lin ⟨addTerms [(xt, -1)] (scale (-1) rest), -l.bound⟩) then some (scale (-1) rest, l.bound) else none
-    | _ => none
-
-/-- A fact with the binding `x` replaced by its value where the facts state
-it (`Ctx.equalOf`). -/
-def Ctx.substitute (ctx : Ctx) (x : String) (l : Lin) : Lin :=
-  let xt : Key := (x, [], .value)
-  match l.terms.lookup xt, ctx.equalOf x with
-  | some a, some (v, k) => ⟨addTerms (l.terms.filter (·.1 != xt)) (scale a v), l.bound - a * k⟩
-  | _, _ => l
 
 /-- A loop's head facts (`rules`): over the bindings it does not assign,
 the facts its entry holds (`carried`); of each counter (`counters`), its
@@ -1194,6 +1201,46 @@ def headFacts (rules : Rules) (ctx : Ctx) (cond : Expr) (loop : List Stmt) (upda
   (carried ++ eliminated ++ counterFacts ++ joined ++ paired ++ called ++ falseCarried ++ falseSeparations ++ falseEvery ++
     falseCalled ++ falseEliminated).foldl (fun acc f => if acc.any (same f) then acc else acc ++ [f]) []
 
+/-- The facts a binding `x` set to `init` gains, whether a declaration or an
+assignment sets it (its earlier facts already forgotten): a linear value's
+or a field path's read's equality; else a choice's bounds, a constructed
+length, an allocation's fields, a call's postcondition, a choice's arms and
+an element read's bounds; a fresh field's separations; and of a read of a
+path `o.p` (an alias where `p` is empty), every fact through `o.p`
+restated over `x` (`Fact.restate`): `x` and `o.p` denote one value there. -/
+def Ctx.bindTo (rules : Rules) (ctx : Ctx) (x : String) (init : Expr) : Ctx := Id.run do
+  let mut ctx := ctx
+  -- (a field path's read, `x = o.f`: its value term, where a fact
+  -- names it, `linear_facts.ml:linear`'s `Read`)
+  let pathRead := match init with
+    | .read _ (.str f) o => if f == "length" then none else
+        (pathOf o).map fun (r, p) => ([((r, p ++ [f], HeapKnowledge.Term.Kind.value), (1 : Int))], (0 : Int))
+    | _ => none
+  match (linOf rules.kind init).orElse fun _ => pathRead with
+  | some v => ctx := ctx.add (equalTo ctx x v)
+  | none => ctx := ctx.add (choiceBounds rules.kind x init ++ constructedLength rules.kind x init ++
+      allocFields rules.kind ctx x init ++
+      callEnsures rules.ensuresOf x rules.falseEnsures init ++
+      valueArms rules.kind rules.ensuresOf ctx x rules.falseEnsures init ++
+      ctx.elemFacts rules.kind x init rules.falseElements)
+  if rules.separations then ctx := ctx.add (separations rules.arrays ctx x init)
+  -- (a read of a path: its quantified facts restated, `Fact.restate`;
+  -- of the empty path, an alias `x = o` or a cast `o as T`, every
+  -- fact of `o`'s paths)
+  if let some (root, p) := pathOf init then
+    if root != x then
+      -- (of an alias, the facts of the object's paths and lengths:
+      -- its own value is the equality's, `equalTo`)
+      let restated := (ctx.filterMap (Fact.restate x root p)).filter fun
+        | .lin l => !p.isEmpty || !l.terms.any fun ((n, q, k), _) => n == x && q.isEmpty && k == .value
+        | _ => true
+      -- (forced: each restated linear fact's first term at most `-1`)
+      let false_ := if !rules.falseRestated then [] else restated.filterMap fun
+        | .lin ⟨(t, _) :: _, _⟩ => some (Fact.lin ⟨[(t, 1)], -1⟩)
+        | _ => none
+      ctx := ctx.add (restated ++ false_)
+  return ctx
+
 mutual
 /-- The walk: each loop's head facts by its statement's start, and the facts
 after the statements. -/
@@ -1208,38 +1255,16 @@ partial def walkStmt (rules : Rules) (ctx : Ctx) : Stmt → StateM (List (Nat ×
       let mut ctx := ctx
       for b in bs do
         ctx := Ctx.kill (ctx.across (allExprs b.init)) [b.name]
-        if !b.early then
-          -- (a field path's read, `x = o.f`: its value term, where a fact
-          -- names it, `linear_facts.ml:linear`'s `Read`)
-          let pathRead := match b.init with
-            | .read _ (.str f) o => if f == "length" then none else
-                (pathOf o).map fun (r, p) => ([((r, p ++ [f], HeapKnowledge.Term.Kind.value), (1 : Int))], (0 : Int))
-            | _ => none
-          match (linOf rules.kind b.init).orElse fun _ => pathRead with
-          | some v => ctx := ctx.add (equalTo ctx b.name v)
-          | none => ctx := ctx.add (choiceBounds rules.kind b.name b.init ++ constructedLength rules.kind b.name b.init ++
-              allocFields rules.kind ctx b.name b.init ++
-              callEnsures rules.ensuresOf b.name rules.falseEnsures b.init ++
-              valueArms rules.kind rules.ensuresOf ctx b.name rules.falseEnsures b.init ++
-              ctx.elemFacts rules.kind b.name b.init rules.falseElements)
-          if rules.separations then ctx := ctx.add (separations rules.arrays ctx b.name b.init)
-          -- (a read of a path: its quantified facts restated, `Fact.restate`;
-          -- of the empty path, an alias `x = o` or a cast `o as T`, every
-          -- fact of `o`'s paths)
-          if let some (root, p) := pathOf b.init then
-            if root != b.name then
-              -- (of an alias, the facts of the object's paths and lengths:
-              -- its own value is the equality's, `equalTo`)
-              let restated := (ctx.filterMap (Fact.restate b.name root p)).filter fun
-                | .lin l => !p.isEmpty || !l.terms.any fun ((n, q, k), _) => n == b.name && q.isEmpty && k == .value
-                | _ => true
-              -- (forced: each restated linear fact's first term at most `-1`)
-              let false_ := if !rules.falseRestated then [] else restated.filterMap fun
-                | .lin ⟨(t, _) :: _, _⟩ => some (Fact.lin ⟨[(t, 1)], -1⟩)
-                | _ => none
-              ctx := ctx.add (restated ++ false_)
+        if !b.early then ctx := ctx.bindTo rules b.name b.init
       return ctx
-    | .effect _ e => pure (ctx.effect rules.kind e rules.falseArms rules.ensuresOf rules.falseEnsures)
+    | .effect _ e => match e with
+      -- (an assignment other than a step or a choice's arms: the facts a
+      -- declaration of its binding to its value states, `Ctx.bindTo`)
+      | .assign _ x _ rhs =>
+        if (stepOf x e).join.isNone && (armsOf x e).isNone then
+          pure ((((ctx.across (allExprs e)).add (ctx.pushed rules.kind e)).kill [x]).bindTo rules x rhs)
+        else pure (ctx.effect rules.kind e rules.falseArms rules.ensuresOf rules.falseEnsures)
+      | _ => pure (ctx.effect rules.kind e rules.falseArms rules.ensuresOf rules.falseEnsures)
     | .ite _ c t e => do
       let tOut ← walk rules (ctx.add (ctx.tested (atomsOf rules.kind c true) ++ ctx.unguarded c true rules.falseGuards)) t
       let eOut ← walk rules (ctx.add (ctx.tested (atomsOf rules.kind c false) ++ ctx.unguarded c false rules.falseGuards)) (e.getD [])
