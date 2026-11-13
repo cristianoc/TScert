@@ -1201,6 +1201,14 @@ def headFacts (rules : Rules) (ctx : Ctx) (cond : Expr) (loop : List Stmt) (upda
   (carried ++ eliminated ++ counterFacts ++ joined ++ paired ++ called ++ falseCarried ++ falseSeparations ++ falseEvery ++
     falseCalled ++ falseEliminated).foldl (fun acc f => if acc.any (same f) then acc else acc ++ [f]) []
 
+/-- The bindings statements declare at their own level, which leave scope
+after them. -/
+def declaredIn (ss : List Stmt) : List String :=
+  ss.flatMap fun
+    | .constants _ bs | .mutables _ bs => bs.map (·.name)
+    | .destructure _ t _ _ => t.names
+    | _ => []
+
 /-- The facts a binding `x` set to `init` gains, whether a declaration or an
 assignment sets it (its earlier facts already forgotten): a linear value's
 or a field path's read's equality; else a choice's bounds, a constructed
@@ -1268,12 +1276,12 @@ partial def walkStmt (rules : Rules) (ctx : Ctx) : Stmt → StateM (List (Nat ×
     | .ite _ c t e => do
       let tOut ← walk rules (ctx.add (ctx.tested (atomsOf rules.kind c true) ++ ctx.unguarded c true rules.falseGuards)) t
       let eOut ← walk rules (ctx.add (ctx.tested (atomsOf rules.kind c false) ++ ctx.unguarded c false rules.falseGuards)) (e.getD [])
-      let both := t ++ e.getD []
-      let changed := (ctx.flatMap Fact.names).eraseDups.filter (assigns both ·)
+      let tOut := tOut.kill (declaredIn t)
+      let eOut := eOut.kill (declaredIn (e.getD []))
       if exits t && !exits (e.getD []) then return eOut
       if exits (e.getD []) && !exits t then return tOut
-      let base := ctx.kill changed
-      return base.across (exprsOf both)
+      -- (the facts both arms establish after them, `Ctx.join`)
+      return Ctx.join tOut eOut
     | .loop pos c body update (names, inv) => do
       let all := body ++ update
       -- The written invariant (`@invariant`) holds at the head: its facts
@@ -1293,10 +1301,9 @@ partial def walkStmt (rules : Rules) (ctx : Ctx) : Stmt → StateM (List (Nat ×
       -- (at the exit, the written invariant too: it holds at the head)
       return if breaks body then base else base.add (written ++ head ++ Ctx.tested (head ++ written) (atomsOf rules.kind c false))
     | .block _ _ body => do
-      let _ ← walk rules ctx body
-      let changed := (ctx.flatMap Fact.names).eraseDups.filter (assigns body ·)
-      let base := ctx.kill changed
-      return base.across (exprsOf body)
+      -- (the facts after its statements, its own bindings forgotten)
+      let out ← walk rules ctx body
+      return out.kill (declaredIn body)
     | .forOf pos _ _ _ i body => do
       -- A `for...of` head: its iterable once, then the facts of a loop
       -- whose test is its iterator's step.

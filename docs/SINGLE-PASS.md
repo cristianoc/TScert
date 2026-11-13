@@ -541,7 +541,9 @@ assignment of a linear value states its equality, a step restates each
 fact, a test states its comparisons on each arm, an arm that leaves
 states the other's after the test, an assignment of a choice (`x += c ?
 p : q`, `x = a ± (c ? p : q)`) is each arm's assignment under what its
-answer of `c` states, the two joined, a write of a binding forgets its
+answer of `c` states, the two joined, an `if` is joined from what its two
+arms state after them (an arm that leaves aside), a block states what its
+statements state after them, its own bindings forgotten, a write of a binding forgets its
 facts and a heap write those of lengths and paths
 (`declaration`, `test`, `distribute`,
 `assign_arms`). A declaration or assignment of a call of the file's
