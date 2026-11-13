@@ -174,18 +174,18 @@ def ImportScope.of (ast : Json) : Except String ImportScope := do
 the importer's document the code `start` names reaches mentions (every
 function's where none is given, `reachMentions`). The importer's reads of
 the names `given` are left out (a stand-in states them). Of the importer's
-functions reached, only those whose footprint the walk proposes
+functions reached, those whose footprint the walk proposes
 (`declarationEffects`) add the names their bodies mention: a function the
-stand-ins name (`fixed`), or one keeping its footprint (async, generic, of a
-rest or of a written effect), is read at that footprint, its body neither
-walked nor checked for the selected units. -/
+stand-ins name (`fixed`), or an async one (its footprint `top` by the
+language), is read at that footprint, its body neither walked nor checked
+for the selected units. -/
 def importerReads (sc : ImportScope) (ast : Json) (start : Option (List String)) (given : List String := [])
     (fixed : List String := []) : Except String (List FragmentRead) := do
   if sc.modules.isEmpty then return []
   let decoded ← (← jArr ast "functions").mapM Fragment.decodeFn
   let functions := decoded.map (·.1)
-  let kept := (decoded.filter fun (f, tps) => !tps.isEmpty || f.async || f.stated.isSome ||
-    f.params.any (·.rest) || fixed.contains f.name).map (·.1.name)
+  let kept := (decoded.filter fun (f, tps) => f.async || !tps.isEmpty || f.params.any (·.rest) ||
+    fixed.contains f.name).map (·.1.name)
   let init ← Fragment.decodeInit ast
   let own := reachMentions functions init (start.getD (functions.map (·.name))) (!kept.contains ·.name)
   return documentReads sc.modules sc.code (← jField ast "declarations") fun n => own.contains n && !given.contains n

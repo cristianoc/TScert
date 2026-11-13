@@ -3913,9 +3913,10 @@ unit reaches is walked as its unit is, each callee read at the footprint
 found for it, and its proposal is the join of the changes its writes and its
 calls' instances make; a self-recursive function is walked with itself at
 the empty footprint, then at what that walk found, until a walk finds no
-more than it assumed (three walks at most). An async or generic function,
-one with a rest, a written effect or a written promise keeps the signature
-the front gives it (`fragmentClaims`). A wrong effect fails at the first node that does not preserve
+more than it assumed (three walks at most). An async or generic function
+and one with a rest keep the signature the front gives it
+(`fragmentClaims`); one with a written effect keeps its written footprint
+and throw bound, its walk proposing its returned function's footprint. A wrong effect fails at the first node that does not preserve
 the heap (`declaration-preserving-callback`,
 `declaration-field-write-callback`, `invalid-declaration-pop-callback`; every
 declaration proposed heap-preserving, `TSCERT_FORCE=callees`, is refused for

@@ -355,9 +355,10 @@ and stores, the adversarial proposal (the controls
 `invalid-returned-closure-footprint` `lastRead`). Where the initialization
 calls a function so proposed, the walks run once more, the
 initialization's walk typing the module values at the proposals. A guard or an
-assertion function is proposed like any other, its promise kept. An
-async, generic or rest function, or one with a written effect, keeps its
-footprint. The front states each proposal at the function's claim and
+assertion function is proposed like any other, its promise kept. A function
+with a written effect keeps its footprint and throw bound, its walk
+proposing its returned function's footprint; an async, generic or rest
+function keeps its footprint. The front states each proposal at the function's claim and
 slot (`Front.withStandIns`): its callers read it and its own unit
 establishes it.
 

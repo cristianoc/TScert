@@ -277,9 +277,13 @@ its calls, iterations or finalizers leaves one unbounded. Callees are
 walked first, each caller reading the footprint found for it; a
 self-recursive function is walked with itself at `{value: keep, store:
 keep}`, then at what that walk found, until a walk finds no more than it
-assumed, three walks at most. An async function, a generic one, one with a
-rest parameter and one with a written effect keep what `fragmentClaims`
-gives them. A method call on an object whose type has several
+assumed, three walks at most. A function with a written effect keeps its
+footprint and throw bound whole, its walk proposing its returned
+function's footprint. An async function keeps `top`, the language's
+restriction ([the fragment](SOURCE-FRAGMENT.md)); a generic function and
+one with a rest parameter keep what `fragmentClaims` gives them, their
+walks' proposals not ones the pass establishes
+([form-based decisions](drafts/on-demand-processing.md#9-form-based-decisions-today)). A method call on an object whose type has several
 alternatives once each declaration it names is unfolded, with actuals that
 are names or literals, may be lowered to one node dispatched on the object
 (`Lowering.dispatchesCall`), which no bounded node rule above admits; a

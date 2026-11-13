@@ -535,9 +535,10 @@ effect. It bounds the throws where none of its calls, iterations or
 finalizers leaves one unbounded. A self-recursive function is walked with
 itself at keep/keep, then at what that walk found, until a walk finds no
 more than it assumed, three walks at most (the least fixed point over a
-lattice of twelve footprints). Any other function, an async one, a generic
-one, one with a rest, a written effect, a written promise or a stand-in
-keeps what `fragmentClaims` gives it. Each proposal is a stand-in: its
+lattice of twelve footprints). A function with a written effect keeps its
+footprint and throw bound whole, the walk proposing its returned function's
+footprint. An async function keeps `top`, the language's restriction, and a
+stand-in its control's footprint. Each proposal is a stand-in: its
 callers read it and its own unit establishes it. Beside the proposals, the
 functions walked to the ordinary effect.
  -/
@@ -562,8 +563,11 @@ def declarationWalks (fr : Front) (wanted : List Nat) (standIns : StandIns) (for
   let mut tops : List String := []
   for i in order do
     let some (f, tps, none) := fr.units[i]? | continue
-    if !tps.isEmpty || f.async || f.stated.isSome || f.params.any (·.rest) ||
-        standIns.functions.any (·.name == f.name) then continue
+    -- (an async function's footprint is `top` by the language,
+    -- SOURCE-FRAGMENT.md: "A footprint other than `top` claimed for an async
+    -- function"; a stand-in's is the control's; a generic function's and a
+    -- function's of a rest parameter are open obligations of the walk: on-demand-processing.md, "Proposal (C2)")
+    if f.async || !tps.isEmpty || f.params.any (·.rest) || standIns.functions.any (·.name == f.name) then continue
     let walkAt (kind : String) (own : Option (Footprints.Closed × Bool)) :
         Option ((Footprints.Closed × Bool) × Footprints.Closed) := SinglePass.work kind (fr.fnItem f) fun _ =>
       let at_ := match own with
@@ -585,8 +589,15 @@ def declarationWalks (fr : Front) (wanted : List Nat) (standIns : StandIns) (for
       | .error _ => none
     let within (a b : Footprints.Closed × Bool) : Bool := a.1.le b.1 && (a.2 || !b.2)
     -- (a self-recursive function's own reads of its result at `top`)
+    -- A written effect's footprint and throw bound are kept whole, its own
+    -- reads of itself at them; the walk proposes its returned function's
+    -- footprint alone (a statement with store regions at `top`, its regional
+    -- check certifying the statement, as `fragmentClaims` reads it).
+    let written : Option (Footprints.Closed × Bool) := f.stated.map fun s =>
+      if s.regions.isEmpty then (s.closed, s.onThrow) else (top, false)
     let r : Option ((Footprints.Closed × Bool) × Footprints.Closed) :=
-      if (fr.mentions i).contains f.name then Id.run do
+      if let some w := written then (walkAt round (some w)).map fun (_, R) => (w, R)
+      else if (fr.mentions i).contains f.name then Id.run do
         let mut assumed : Footprints.Closed × Bool := (⟨.keep, .keep⟩, true)
         for k in List.range 3 do
           match walkAt (if k == 0 then round else "walk: proposal, recursive again") (some assumed) with

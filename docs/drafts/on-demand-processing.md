@@ -323,7 +323,7 @@ The owner's decisions on the questions this design raised:
 
 ## 9. Form-based decisions today
 
-Every place in the front's import, extraction, proposal, publication, row, inference and realization code where a function's form, a class's name, a property's spelling or a value's shape decides whether it is read, proposed for, published, or how it is treated. Read from the code at `f741ed41`; `C/` is `lean/Verification/Source/Claims/`. Each row gives the condition and both sides. Where the plan of step 2 or section 2 of this document says otherwise, the code is what this table states and the row says so.
+Every place in the front's import, extraction, proposal, publication, row, inference and realization code where a function's form, a class's name, a property's spelling or a value's shape decides whether it is read, proposed for, published, or how it is treated. Read from the code at `795ba048` (the leg's base on `b7c8a559`); `C/` is `lean/Verification/Source/Claims/`. Each row gives the condition and both sides. Where the plan of step 2 or section 2 of this document says otherwise, the code is what this table states and the row says so.
 
 ### Resolution of an imported binding (C1)
 
@@ -332,18 +332,23 @@ Every value import of a program source file lists its module (`importedModules`)
 | Site | Condition | Holds | Fails |
 | --- | --- | --- | --- |
 | `C/Imports.lean` (`documentReads`) | a local name two imports bind | — | both read at their declarations |
-| `C/Imports.lean:377` (`importerReads`) | an importer function is generic, async, of a written effect, of a `rest` parameter, or a stand-in | its body's mentions are not followed when collecting reads | they are |
 | `C/Extraction.lean:49,311` (`bodyModule`) | the declaration's module path ends in a source extension and not in a declaration extension | an import with no entry is read at `ordinaryImport` (ordinary effect, precondition kept) | read at its declared type |
 | `C/Extraction.lean:17` (`importedSignatures`) | the declared type expands to one fixed signature, or a plain one and a promise one of the same actuals | `importedArrow` reconstructs a slot | `importedArrow` fails; with `lenient`, the import is read at its declared contract |
 | `C/Extraction.lean:68` (`ordinaryImport`) | every signature assumes nothing (`assumesNothing`); else a variadic signature or an empty clause states something | read as written; else at the ordinary effect | refused: "read only at its module's entry" |
 | `C/FragmentFront.lean:641` (`withNeverImports`) | the value's name starts with `%`, is `arrayPrototypeName`, is the file's own or qualified | skipped | an import of one fixed signature with an empty result and no promise is read at keep/keep |
-| `C/FragmentFront.lean:1199` (`unboundReads`) | a name starts with `%` or `?`, or is `this` | not a module binding (an intrinsic) | followed |
+| `C/FragmentFront.lean:1195` (`unboundReads`) | a name starts with `%` or `?`, or is `this` | not a module binding (an intrinsic) | followed |
 
 ### Proposal (C2)
 
+Every function's body is walked for the components it does not write (`declarationWalks`); a written effect's footprint and throw bound are kept whole, its walk proposing the returned function's footprint, and the importer's reads follow the bodies of the functions walked (`importerReads`). The decisions that remain:
+
 | Site | Condition | Holds | Fails |
 | --- | --- | --- | --- |
-| `C/FragmentFront.lean:565` (`declarationWalks`) | a function is generic, async, of a written effect (`stated`), of a `rest` parameter, or a stand-in | no walk: it keeps the claim `fragmentClaims` gives (the ordinary effect unless written) | its body is walked and a footprint proposed |
+| `C/FragmentFront.lean` (`declarationWalks`), `C/Imports.lean` (`importerReads`) | a function is async | no walk: `top`, by the language (`SOURCE-FRAGMENT.md`, "A footprint other than `top` claimed for an async function") | walked |
+| same | a function is a stand-in | no walk: the control's footprint | walked |
+| same | a function is generic, or has a `rest` parameter | no walk: the ordinary effect | walked |
+
+**Open obligation (generic and rest functions).** Walking them proposes footprints the pass does not establish, so the exclusion stays until the walk computes one it does; measured on the pattern cases, walking them refuses 9 cases that verify (`generic-graph-bodies`, `generic-structural-bounds`, `generic-promise-resolution`, `generic-promise-associated-result`, `generic-promise-bounded-result`, the three `invalid-generic-promise-bounded-*` with another failure, `module-functions`). Two causes are observed. A generic body writing a field of a binder-typed record (`set<T>(b: Box<T>, x: T)`, `b.value = x`) is proposed a footprint the pass refuses at `footprint by store regions`, and a generic promise-result body at `the declared effect`. A caller of a rest function proposed `keep/keep` (`spread` calling `discard(...xs)`) is refused at `footprint by store regions` at the call: the call allocates the callee's argument pack in the caller's store, which the walk does not count. The obligation: for every function $`f`$ and every footprint $`\Phi`$ the walk proposes for it, $`\mathrm{RequestSafe}(r_f[\mathit{footprint} := \Phi])`$ is decidable by the pass and the walk's $`\Phi`$ is at least the change of every node of $`f`$'s graph, the argument-pack allocation of a rest call and a write through a binder-typed operand included (`Synthesis.walkUnit`'s `valueChange`/`storeChange` against the pass's footprint clause, `docs/SINGLE-PASS-THEOREM.md`, the footprint clause). This is a property of the proposal, which the pass checks; no new theorem is needed once the walk meets it.
 | `C/FragmentFront.lean:589` | the function mentions its own name | up to three walks at the assumed footprint | one walk |
 | `C/FragmentFront.lean:583` | `resultWithFootprint` accepts the result annotation | a returned function's footprint proposed | `top` |
 | `C/FragmentFront.lean:74` (`writtenSchemes`) | a generic closure is a guard, async, or of a resolution-qualified binder; or a nested scheme annotation without a written result; or a rest that is no array | claimed at no scheme | claimed at its written scheme |
@@ -358,16 +363,16 @@ Every value import of a program source file lists its module (`importedModules`)
 | Site | Condition | Holds | Fails |
 | --- | --- | --- | --- |
 | `C/FragmentFront.lean:893` (`establishEntry`) | the claim is the ordinary effect and the function states no postcondition or guard | no entry: "the ordinary effect" | entry candidate |
-| `C/FragmentFront.lean:967` (`layoutOwn`) | the unit is the initialization | outside | — |
-| `C/FragmentFront.lean:968` | the function has type parameters | outside: "a scheme" | — |
-| `C/FragmentFront.lean:970` | its request is qualified | outside | — |
-| `C/FragmentFront.lean:975–982` | a captured file function read at other than one type; its own interface read at several types or none | outside | — |
-| `C/FragmentFront.lean:985` | its interface expands to one clause of signatures | continue | outside |
-| `C/FragmentFront.lean:987` | the code's invocation kind (`convertsReceiver`: sloppy, else call) offers each row's receiver | continue | outside |
-| `C/FragmentFront.lean:1014` (= `PassUnit.rowConditions`, `C/PassUnitRealize.lean:294`) | arity within the arguments, `belowRow`, no `freshObject`, no `requires`, no `elements`, no `receiverGrows`, no `elementWrite` | continue | outside: "the code's conditions" |
-| `C/FragmentFront.lean:1019` | receiverless and a postcondition names slot 1 | outside | — |
-| `C/FragmentFront.lean:1037` | the member's inputs equal `codeFrame arity p captures none` (no rest store, `C/PassUnitRealize.lean:436` assumes `c.store = none`) | continue | outside: a rest function is never laid out |
-| `C/FragmentFront.lean:1050,1120` (`laidOut`) | the function is in the greatest set closed under captured callees | published | "not laid out" |
+| `C/FragmentFront.lean:962` (`layoutOwn`) | the unit is the initialization | outside | — |
+| `C/FragmentFront.lean:963` | the function has type parameters | outside: "a scheme" | — |
+| `C/FragmentFront.lean:965` | its request is qualified | outside | — |
+| `C/FragmentFront.lean:970–977` | a captured file function read at other than one type; its own interface read at several types or none | outside | — |
+| `C/FragmentFront.lean:980` | its interface expands to one clause of signatures | continue | outside |
+| `C/FragmentFront.lean:982` | the code's invocation kind (`convertsReceiver`: sloppy, else call) offers each row's receiver | continue | outside |
+| `C/FragmentFront.lean:1009` (= `PassUnit.rowConditions`, `C/PassUnitRealize.lean:295`) | arity within the arguments, `belowRow`, no `freshObject`, no `requires`, no `elements`, no `receiverGrows`, no `elementWrite` | continue | outside: "the code's conditions" |
+| `C/FragmentFront.lean:1014` | receiverless and a postcondition names the receiver, in either state (`IndexFact.pastReceiver`) | outside | — |
+| `C/FragmentFront.lean:1033` | the member's inputs equal `codeFrame arity p captures none` (no rest store, `C/PassUnitRealize.lean:437` assumes `c.store = none`) | continue | outside: a rest function is never laid out |
+| `C/FragmentFront.lean:1046,1116` (`laidOut`) | the function is in the greatest set closed under captured callees | published | "not laid out" |
 | `C/ModuleInterfaces.lean:22` (`encodeInterfaces`) | the document's `functions` | one entry per function | a callable held in a constant or class has none |
 | `C/TypeComparison.lean:17–33` (`moduleValueType`) | an annotated constant: some signature of the initializer's type has the keep/keep effect (throws aside) and the same receiver, result and arguments as an annotated signature | that signature takes the initializer's effect | the annotation's effect |
 | `C/Extraction.lean:295–304` (`freshConstructors`) | a global binding named `Error` declared as `Error` in `typescript/lib/lib.es5.d.ts` | its constructions allocate an unpublished identity | ordinary construction |
@@ -379,6 +384,6 @@ Every value import of a program source file lists its module (`importedModules`)
 
 `RegionInference.lean` and `InterfaceRows.lean` decide nothing by form beyond the rows above: region names are read from each callee's effect, and the reach of a row table follows its rows.
 
-**Count.** 47 decisions at `f741ed41`, one per row before C1 replaced 12 of them (the four of `importedModules`, eight of `eligibleRead` and `documentReads`): `fragment-parse.mts` 4, `Imports.lean` 10, `Extraction.lean` 6, `FragmentFront.lean` 21, `TypeComparison.lean` 1, `ModuleInterfaces.lean` 1, `HeadInference.lean` 4; `PassUnitRealize.lean`'s `rowConditions` is the row of `layoutOwn` that calls it; `RegionInference.lean` and `InterfaceRows.lean` 0.
+**Count.** 47 decisions at `795ba048`, one per row before C1 replaced 12 of them (the four of `importedModules`, eight of `eligibleRead` and `documentReads`): `fragment-parse.mts` 4, `Imports.lean` 10, `Extraction.lean` 6, `FragmentFront.lean` 21, `TypeComparison.lean` 1, `ModuleInterfaces.lean` 1, `HeadInference.lean` 4; `PassUnitRealize.lean`'s `rowConditions` is the row of `layoutOwn` that calls it; `RegionInference.lean` and `InterfaceRows.lean` 0.
 
 **Where the plan differs.** The plan's typed-array lines (`C/HeadInference.lean:469,666,1312,1335`) are 469, 668, 1320, 1337, and the same functions also decide by the spellings `Array`/`ReadonlyArray` and by method names, which the plan does not list. Eligibility admits guards (above). The plan does not list the ordinary-effect entry omission (`establishEntry`), `withNeverImports`, `bodyModule`, `genericClassNames` or `writtenSchemes`' exclusions.
