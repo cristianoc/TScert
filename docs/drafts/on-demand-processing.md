@@ -18,7 +18,7 @@ The processing boundary is one function, including all its offered signatures, o
 | Parse | The runner snapshots the source, invokes the observed parse stage and checks the fragment’s source digest. Parsing has file grain, project resolution and recorded filesystem observations. `pipeline/verify-source.mts:193`, `pipeline/verify-source.mts:255`; `docs/STAGE-STORE.md:224`. |
 | Interface discovery | `prepareInterfaces` invokes `--module-interface-plan`. `interfacePlan` discovers module dependencies and computes their SCC order. A reached module contributes all its function names and their import closure. `pipeline/module-interfaces.mts:62`; `Claims/ModuleInterfaces.lean:78`; `Claims/FragmentFront.lean:775`, `Claims/FragmentFront.lean:794`. |
 | Interface computation | One `--module-interface` process receives a component’s complete module documents and predecessor results. `interfaceFile` decodes them and calls `establishModules`; its fold plans and checks each module once in component order. `pipeline/module-interfaces.mts:91`; `lean/Verification/Source/RequestCli.lean:248`; `Claims/FragmentFront.lean:1039`, `Claims/FragmentFront.lean:1104`. |
-| Requested-file computation | `--verify-interface-stage 8` decodes interfaces, calls `fragmentPlansFromInterfaces`, prepares head facts and checks each selected group with `passGroupMode8`. `lean/Verification/Source/RequestCli.lean:307`, `lean/Verification/Source/RequestCli.lean:337`, `lean/Verification/Source/RequestCli.lean:359`. |
+| Requested-file computation | `--file-worker 8` decodes interfaces, calls `fragmentPlansFromInterfaces` and prepares head facts, once (`prepareUnitsFile`), then checks each selected group with `passGroupMode8` (`PreparedFile.check`), one verdict line per unit as its check ends. `lean/Verification/Source/RequestCli.lean:370`, `lean/Verification/Source/RequestCli.lean:434`, `lean/Verification/Source/RequestCli.lean:512`. |
 | Closure | The runner starts with accepted verdicts and propagates refusal through their dependencies. A dependency with no verdict, of the file or of a module, prevents closure. `pipeline/verify-source.mts` (`singlePass`). |
 
 A process stage is one explicit invocation with immutable input files and a replayable result. Its manifest contains stage name, adapter identity, executable and libraries, runner, runtime, arguments, environment, refusal protocol, input-role digests and output roles; its key is the digest of that manifest. Limits have separate timeout-observation semantics. `pipeline/stage-execution.mts:688`; `pipeline/stages.mts:188`, `pipeline/stages.mts:225`.
@@ -46,8 +46,8 @@ These are the repetition sites, checked against the code (the citations of this 
 | Site | Repetition |
 | --- | --- |
 | Requested and imported roles | A module read by an importer is prepared again by its interface component: lowered, its initialization typed and every function's proposal walked (`fragmentPlansCore` over all its names, with closure). The component checks the groups `establishChecked` selects: the functions whose claims propose more than the ordinary effect, and the groups they reach; a function checked in its own file is checked again there. Their commands and inputs differ, so their results have different keys. At the parse level, an imported module is lowered by TypeScript in a stage of its own (`module`), apart from its own file's parse; that in-process stage takes no execution claim, so concurrent workers can execute one module key more than once. `pipeline/stage-execution.mts:654`; `Claims/FragmentFront.lean:850`, `Claims/FragmentFront.lean:1066`; `pipeline/parse-stage.mts:53`. |
-| Whole-file timeout | `checkAll` first runs the whole file (the selection), then runs one process per name, one after the other. Completed unit lines from the interrupted attempt are not individual store entries. `pipeline/module-interfaces.mts:144`. |
-| Per-unit fallback preparation | Every fallback process repeats declaration lowering, initialization typing, the declaration-effect walks of the name's reach, and freezing, and extracts and checks the name's closure. A name selects its entire SCC; the several names of one SCC each check that group. `Claims/FragmentFront.lean:682`; `Claims/Json.lean:99`. |
+| Whole-file timeout | None: the file's check is one [worker stage](../STAGE-STORE.md#worker-stages) (`--file-worker 8`), each unit's result an entry of its own, published as its line arrives, and a unit over its limit that unit's timeout alone. `pipeline/stages.mts` (`invokeWorker`). |
+| Per-unit fallback preparation | A worker started again after a unit over its limit prepares the file again (site 14): once per worker start, never once per unit. `pipeline/stages.mts` (`invokeWorker`); `lean/Verification/Source/RequestCli.lean` (`fileWorker`). |
 | Ordinary-contract attempt | Controls and the performance gate use `verifyWithInterfaces`, which may check once with ordinary imports and again with established interfaces. The normal `verifyByUnits` path prepares interfaces first, so cases, the census and the pretext tier have no such attempt. `pipeline/module-interfaces.mts:135`, `pipeline/module-interfaces.mts:175`; `dev/perf-gate.mts:114`; `tests/single-pass-controls.mts:72`. |
 | Census omission rounds | Each changed omission list reparses and rechecks the remaining file. `dev/census.mts:543`, `dev/census.mts:553`. |
 | Census dependency rounds | Enlarging a file’s selected set invokes it again. With the whole file checked for every selection, the second invocation replayed every stage; with exact selection, a larger selection is another pass key, and the units of the earlier selection are checked again. `dev/census.mts:649`; `pipeline/verify-source.mts` (`singlePass`). |
@@ -259,6 +259,45 @@ Work done more than once, by site (s, share of the corpus's stage CPU):
 With the settled run shared (`settleInferred` makes each run once, reads its refusal and returns it), measured 2026-11-13 on fresh stores, load at start 5.0 to 9.6, against the parent commit measured the same way: pretext's stage CPU 68.7 s → 60.4 s (pass stages 25.4 s → 21.2 s), the cases' 572.8 s → 545.7 s (pass stages 76.0 s → 57.8 s), the verdict lines identical. The performance gate's units, against the parent commit's verifier: every counter equal, CPU 9,549 ms → 8,736 ms in all.
 
 Site 10 (overloads) is counted only where a function name has several checked units: none in these corpora. The census slice's omission rounds (two of fragment-parse.mts, one of declaration-graph.mts) answer refusals at the parse, before any pass, so they repeat parses alone, within the slice's 52.3 s of parse CPU; a shallow census has no dependency rounds. The functions with the most repeated work in the slice are initializations reached by every per-unit stage: fragment-parse.mts's (379.1 of 388.5 s, in 16 stages) and fragment-statements.mts's (178.6 of 184.2 s, in 62 stages).
+
+With the traversals inside one walk counted (site 13) and units named by lexical identity, measured 2026-11-13 on fresh stores, profiled; the census columns are the slice's files shadow-contracts.mts, namespace-members.mts and fragment-statements.mts, at 300 s per stage:
+
+| | pretext, 12 files | 723 pipeline cases with projects | three census files |
+| --- | --- | --- | --- |
+| load (1-minute average) at start, end | 5.5, 5.3 | 6.1, 12.6 | 35.7, 6.6 |
+| wall time | 16 s | 84 s | 1,572 s |
+| stage CPU | 58.5 s | 583.0 s | 1,471.6 s |
+| work done more than once | 33.8 s, 57.9% | 8.1 s, 1.4% | 630.1 s, 42.8% |
+| site 2 whole-file timeout | 0 | 0 | 252.1 s (17.1%), 1 pass |
+| site 3 per-unit fallback preparation | 0 | 0 | 315.4 s (21.4%) |
+| site 13 rounds within one walk | 0 rounds | 0.5 s, 45 rounds | 4.0 s, 11 rounds |
+| stages working on one function, max / mean | 2 / 1.74 | 1 / 1.00 | 62 / 2.16 |
+| body traversals of one function, max / mean | 18 / 5.13 | 9 / 2.04 | 148 / 6.94 |
+| functions and initializations worked on | 307 | 1,712 | 93 |
+
+The same day's counts with a walk counted as one traversal: pretext 18 / 5.15 (35.2 s, 58.6% of 60.1 s), the 722 cases 6 / 2.01 (10.6 s, 1.8% of 584.5 s). No overloaded function's signature obligations are checked in these corpora.
+
+With one [worker stage](../STAGE-STORE.md#worker-stages) per file, each unit's result an entry of its own, measured 2026-11-13 on fresh stores, profiled, against the table above (pretext, cases, three census files) and the baseline (the six-file slice):
+
+| | pretext | cases | three census files | census slice, six files |
+| --- | --- | --- | --- | --- |
+| load at start, end | 5.3, 6.1 | 12.6, 14.7 | 2.4, 2.8 | 6.9, 3.4 |
+| wall time | 16 s → 15 s | 84 s → 84 s | 1,572 s → 963 s | 2,364 s → 1,003 s |
+| stage CPU | 58.5 s → 57.5 s | 583.0 s → 583.3 s | 1,471.6 s → 1,023.1 s | 7,389.9 s → 3,294.9 s |
+| pass stage CPU | 18.1 s → 18.3 s | 56.1 s → 56.9 s | 1,154.2 s → 665.1 s | 1,908.0 s after |
+| work done more than once | 33.8 s → 32.6 s | 8.1 s → 8.3 s | 630.1 s → 108.3 s (10.6%) | 3,584.4 s → 446.1 s (13.5%) |
+| site 2 whole-file timeout | 0 | 0 | 252.1 s → 0 | 1,178.1 s → 0 |
+| site 3 per-unit fallback preparation | 0 | 0 | 315.4 s → 0 | 1,417.1 s → 0 |
+| site 14 preparation at a worker's restart | 0 | 0 | 48.2 s | 52.5 s |
+| site 13 rounds within one walk | 0 | 0.6 s | 5.6 s | 21.8 s |
+| worker starts, files, most for one file | 13, 13, 1 | 601, 601, 1 | 4, 3, 2 | 6, 5, 2 |
+| stages working on one function, max / mean | 2 / 1.74 | 1 / 1.00 | 62 / 2.16 → 1 / 1.00 | 85 / 2.54 → 2 / 1.05 |
+| body traversals of one function, max / mean | 18 / 5.13 | 9 / 2.04 | 148 / 6.94 → 19 / 4.61 | 262 / 9.34 → 19 / 3.83 |
+| units verified | identical lines | identical lines | 42 of 76, identical lines | 122 → 119 of 213 |
+
+The verdict lines of pretext, of the cases and of the three census files are byte-identical before and after. The one restart in each census column is fragment-statements.mts's, after `switchStmt` exceeds 300 s. The six-file slice's remaining stages over their limit are that unit, 4 module-interface components (1,189.5 s of module-interface CPU) and the preparation of fragment-parse.mts.
+
+fragment-parse.mts has no unit verdict in the six-file slice: its worker's preparation exceeds 300 s, so its 20 units are without a verdict, where a pass per name verified `callable`, `hasEarlyBindingReference`, `keyAddedConstant` and `qualifiedSpelling` (the census of 2ecc334f; the baseline's own unit lines are not kept). A file's plans are a list built whole (`FilePlans.plans`, `fragmentPlansCore`): the preparation of a selection runs the proposal walk and the extraction of every unit in the selection's closure, so a unit whose walk or extraction exceeds the limit is inside the preparation of every selection that reaches it; a pass naming `callable` alone prepares and checks it in 24.5 s. declaration-graph.mts's `globalFunction` and `writtenMember`, refused at a timeout in that census, are verified. A module-interface component's result is one interface document folded from the verdicts of all its groups (`establishStep`), each module of a component reading the entries of those before it; its check is a piece of a worker only once a component's result is defined per group, which is C13.
 
 ### Edit experiments, today
 

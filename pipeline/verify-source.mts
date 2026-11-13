@@ -324,8 +324,8 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
     };
   }
 }
-/** The single pass over a parsed file (`verifier --verify-interface-stage
- * 8`, with the module-interface stages it needs), and its outcome. Each
+/** The single pass over a parsed file (`verifier --file-worker 8`, with
+ * the module-interface stages it needs), and its outcome. Each
  * unit's verdict is a line `{unit, members, accepted, depends}` or `{unit,
  * members, refusal}`; a unit counts as verified only with every unit it
  * depends on verified, a module unit (`module:<location>#<unit>`) only where
