@@ -361,4 +361,524 @@ theorem compose_holds {kept : Term → Option Term} {before : List (Linear.Fact 
       exact hdefd u (List.contains_iff_mem.mp hc)
     · simp only [definedAfter, hc, Bool.false_eq_true, if_false, reduceCtorEq] at hx
 
+
+/-! ## Composing a fact of every form
+
+A callee's post fact of any form is composed into the caller's facts after
+the call by the same principle as a linear one, constructor by constructor:
+a linear fact by `compose`, its before-variables substituted or eliminated
+together with the post's own linear facts and the caller's; a disjunction,
+a guard and a quantified fact by composing their parts, which the
+elimination commutes with: `(∃b. C ∧ (A ∨ B)) ⇒ (∃b. C ∧ A) ∨ (∃b. C ∧ B)`,
+`(∃b. C ∧ (g ∨ B)) ⇒ g ∨ ∃b. C ∧ B` for a guard `g` read after the step,
+and, the variable `b` read outside the quantifier,
+`(∃b. C ∧ ∀i<n. φ) ⇒ ∀i<n'. ∃b. C ∧ φ` for every `n' ≤ n`. A fact naming no
+before-variable is its renaming. -/
+
+/-- What a step variable denotes, where it denotes an integer. -/
+def StepVar.val (ε : EntryState) (ρ : Env) (h : Heap) (ρ' : Env) (h' : Heap) : StepVar → Option Int
+  | .before t => termValue ε ρ h t
+  | .after t => termValue ε ρ' h' t
+
+theorem StepVar.value_eq {ρ ρ' : Env} {h h' : Heap} (x : StepVar) :
+    StepVar.value ε ρ h ρ' h' x = (StepVar.val ε ρ h ρ' h' x).getD 0 := by
+  cases x <;> rfl
+
+/-- A relation with one more fact, its after-terms stated defined. -/
+def StepRelation.with (R : StepRelation) (G : Linear.Fact StepVar) : StepRelation :=
+  { facts := R.facts ++ [G], defined := R.defined ++ G.vars.filterMap fun
+      | .after u => some u
+      | .before _ => none }
+
+/-- A variable of the body of a quantified fact read across a step: the
+bound index, element or projection, or a step variable. -/
+inductive BodyVar where
+  | bound (b : Bound)
+  | step (x : StepVar)
+  deriving DecidableEq
+
+namespace BodyVar
+
+/-- An order on body variables, the bound ones first. -/
+def lt : BodyVar → BodyVar → Bool
+  | .bound _, .step _ => true
+  | .step a, .step b => a.lt b
+  | _, _ => false
+
+instance : LT BodyVar := ⟨fun a b => a.lt b = true⟩
+
+instance : DecidableRel (α := BodyVar) (· < ·) := fun a b => inferInstanceAs (Decidable (a.lt b = true))
+
+end BodyVar
+
+/-- **What a composition reads** (rule Call): the terms the step keeps, the
+linear facts before it, the relation the post's linear facts state, and how
+the post's terms and current slots read across the step: an entry term as
+a before-variable, a current term as an after-variable, a current slot as
+the slot after the step holding it. -/
+structure Composer where
+  kept : Term → Option Term
+  before : List (Linear.Fact Term)
+  rel : StepRelation
+  term : Term → Option StepVar
+  slot : Nat → Option Nat
+
+namespace Composer
+
+variable (P : Composer)
+
+/-- A post's term as a variable of the step, read after it where the step
+keeps it. -/
+def var (t : Term) : Option StepVar := (P.term t).map (keptRelVar P.kept)
+
+/-- The linear facts both states meet, over the step's variables: the facts
+before, each kept term read after the step, and the relation's facts naming
+only before-terms the facts before name. -/
+def context : List (Linear.Fact StepVar) :=
+  P.before.filterMap (·.mapVars (some ∘ keptVar P.kept)) ++ relOf P.kept P.before P.rel
+
+/-- A linear post fact naming an entry term composed with the relation
+(`compose`); a fact reading a term no slot of the step holds enters no
+fact. -/
+def linear (G : Linear.Fact Term) : List IndexFact :=
+  match G.mapVars P.term with
+  | some G' => (compose P.kept P.before (P.rel.with G')).map .linear
+  | none => []
+
+/-- The terms after the step a quantified fact's bound `stop` may be read
+as: itself after the step where the step keeps it, and otherwise each term
+after it the linear facts both states meet bound it below by. -/
+def stops (stop : Term) : List Term :=
+  match P.var stop with
+  | some (.after u) => [u]
+  | some (.before u) => (definedOf P.kept P.before P.rel).eraseDups.filter fun t' =>
+      Linear.entails P.context (.le [(.after t', 1), (.before u, -1)] 0)
+  | none => []
+
+/-- A body variable as a variable of the step. -/
+def bodyVar : Bound → Option BodyVar
+  | .free t => (P.var t).map .step
+  | b => some (.bound b)
+
+/-- A step's body variable read back after the step: a bound variable of
+`locals`, an after-term of `allowed`. -/
+def back (locals : List Bound) (allowed : List Term) : BodyVar → Option Bound
+  | .bound b => if locals.contains b then some b else none
+  | .step (.after u) => if allowed.contains u then some (.free u) else none
+  | .step (.before _) => none
+
+/-- Whether a body variable is a before-variable. -/
+def BodyVar.isBefore : BodyVar → Bool
+  | .step (.before _) => true
+  | _ => false
+
+/-- A body atom composed: its before-variables eliminated with the linear
+facts both states meet, which name no bound variable, for each index alike;
+the facts naming its own bound variables and after-terms known defined. -/
+def atom (F : Linear.Fact Bound) : List (Linear.Fact Bound) :=
+  match F.mapVars P.bodyVar with
+  | none => []
+  | some F' =>
+    let locals := F.vars.filter fun | .free _ => false | _ => true
+    let allowed := definedOf P.kept P.before P.rel ++ F'.vars.filterMap fun
+      | .step (.after u) => some u
+      | _ => none
+    let known := P.context.filterMap (·.mapVars (some ∘ BodyVar.step)) ++ [F']
+    let names := ((known.flatMap (·.vars)).filter BodyVar.isBefore).eraseDups
+    (Linear.eliminateAll known names).filterMap (·.mapVars (back locals allowed))
+
+/-- A body clause composed: an atom's facts, and a disjunction of each two
+facts its alternatives compose to. -/
+def clause : LinearClause Bound → List (LinearClause Bound)
+  | .atom F => (P.atom F).map .atom
+  | .either A B => (clause A).flatMap fun a => (clause B).map (.either a ·)
+
+/-- The disjunction of two facts, where it is one: two bounds on one linear
+form are the larger bound; two bounds on opposite forms covering every
+integer state nothing. -/
+def orFacts : IndexFact → IndexFact → Option IndexFact
+  | .linear (.le G c), .linear (.le G' c') =>
+    if G = G' then some (.linear (.le G (max c c')))
+    else if Linear.normalize G' == Linear.normalize (G.scale (-1)) && decide (-c' ≤ c + 1) then none
+    else some (.either (.linear (.le G c)) (.linear (.le G' c')))
+  | a, b => some (.either a b)
+
+/-- **A post fact composed** (rule Call): by structural recursion over
+every form of fact. -/
+def fact : IndexFact → List IndexFact
+  | .linear G => if G.vars.any (·.atEntry) then P.linear G else ((IndexFact.linear G).mapM P.slot).toList
+  | .either A B => (fact A).flatMap fun a => (fact B).filterMap (orFacts a)
+  | .guarded s p tag B => match P.slot s with
+    | some s' => (fact B).map (.guarded s' p tag)
+    | none => []
+  | .every s p stop body => match P.slot s with
+    | some s' => (P.stops stop).map fun st => .every s' p st (body.flatMap P.clause)
+    | none => []
+  | F@(.index _) | F@(.length _ _) | F@(.bound _ _ _) | F@(.int _) | F@(.pastSafe _)
+  | F@(.element _ _ _) | F@(.apart _ _) | F@(.storeApart _ _ _ _) => (F.mapM P.slot).toList
+
+end Composer
+
+section ComposeSound
+
+variable {kept : Term → Option Term} {before : List (Linear.Fact Term)} {R : StepRelation}
+  {ρ ρ' : Env} {h h' : Heap}
+
+theorem keptVar_value
+    (hk : ∀ t t' n, kept t = some t' → termValue ε ρ h t = some n → termValue ε ρ' h' t' = some n)
+    {t : Term} (ht : (termValue ε ρ h t).isSome) :
+    StepVar.value ε ρ h ρ' h' (keptVar kept t) = termValuation ε ρ h t := by
+  obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp ht
+  unfold keptVar
+  split
+  · rename_i t' ht'
+    simp only [StepVar.value, termValuation, hk t t' n ht' hn, hn]
+  · rfl
+
+theorem val_keptRelVar
+    (hk : ∀ t t' n, kept t = some t' → termValue ε ρ h t = some n → termValue ε ρ' h' t' = some n)
+    {x : StepVar} {n : Int} (hx : StepVar.val ε ρ h ρ' h' x = some n) :
+    StepVar.val ε ρ h ρ' h' (keptRelVar kept x) = some n := by
+  cases x with
+  | after t => exact hx
+  | before t =>
+    simp only [keptRelVar, keptVar]
+    split
+    · rename_i t' ht'; exact hk t t' n ht' hx
+    · exact hx
+
+theorem definedOf_defined (hb : ∀ F ∈ before, (IndexFact.linear F).HoldsAt ε ρ h)
+    (hk : ∀ t t' n, kept t = some t' → termValue ε ρ h t = some n → termValue ε ρ' h' t' = some n)
+    (hR : R.Holds ε ρ h ρ' h') : ∀ t ∈ definedOf kept before R, (termValue ε ρ' h' t).isSome := by
+  have hbdef : ∀ t ∈ beforeTerms before, (termValue ε ρ h t).isSome := by
+    intro t ht
+    obtain ⟨F, hF, ht⟩ := List.mem_flatMap.mp ht
+    exact (hb F hF).1 t ht
+  intro t ht
+  unfold definedOf at ht
+  rcases List.mem_append.mp ht with ht | ht
+  · obtain ⟨u, hu, hut⟩ := List.mem_filterMap.mp ht
+    obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hbdef u hu)
+    simp [hk u t n hut hn]
+  · split at ht
+    · rename_i hall
+      refine hR.2 (fun F hF x hx => ?_) t ht
+      have := List.all_eq_true.mp (List.all_eq_true.mp hall F hF) _ hx
+      exact hbdef x (by simpa using this)
+    · cases ht
+
+theorem context_holds (hb : ∀ F ∈ before, (IndexFact.linear F).HoldsAt ε ρ h)
+    (hk : ∀ t t' n, kept t = some t' → termValue ε ρ h t = some n → termValue ε ρ' h' t' = some n)
+    (hR : R.Holds ε ρ h ρ' h') :
+    ∀ G ∈ (Composer.mk kept before R term slot).context, G.Holds (StepVar.value ε ρ h ρ' h') := by
+  show ∀ G ∈ before.filterMap (·.mapVars (some ∘ keptVar kept)) ++ relOf kept before R, _
+  have hbdef : ∀ t ∈ beforeTerms before, (termValue ε ρ h t).isSome := by
+    intro t ht
+    obtain ⟨F, hF, ht⟩ := List.mem_flatMap.mp ht
+    exact (hb F hF).1 t ht
+  intro G hG
+  rcases List.mem_append.mp hG with hG | hG
+  · obtain ⟨F0, hF0, hm⟩ := List.mem_filterMap.mp hG
+    refine (Linear.Fact.holds_mapVars hm fun x hx y hy => ?_).mpr (hb F0 hF0).2
+    cases hy
+    exact keptVar_value hk ((hb F0 hF0).1 x hx)
+  · obtain ⟨F0, hF0, hm⟩ := List.mem_filterMap.mp hG
+    obtain ⟨hF0, hbv⟩ := List.mem_filter.mp hF0
+    have hdef : ∀ t, StepVar.before t ∈ F0.vars → (termValue ε ρ h t).isSome := fun t ht =>
+      hbdef t (by simpa using List.all_eq_true.mp hbv _ ht)
+    refine (Linear.Fact.holds_mapVars hm fun x hx y hy => ?_).mpr (hR.1 F0 hF0 hdef)
+    cases hy
+    cases x with
+    | before t => exact keptVar_value hk (hdef t hx)
+    | after t => rfl
+
+theorem fact_mapVars_none {V W : Type} {f : V → Option W} {F : Linear.Fact V} (h : F.mapVars f = none) :
+    ∃ x ∈ F.vars, f x = none := by
+  have hform : ∀ G : Linear.Form V, Linear.Form.mapVars f G = none → ∃ x ∈ G.map (·.1), f x = none := by
+    intro G
+    induction G with
+    | nil => intro h; simp [Linear.Form.mapVars] at h
+    | cons a t ih =>
+      intro h
+      obtain ⟨x, c⟩ := a
+      cases hx : f x with
+      | none => exact ⟨x, by simp, hx⟩
+      | some y =>
+        cases ht : Linear.Form.mapVars f t with
+        | none => obtain ⟨z, hz, hfz⟩ := ih ht; exact ⟨z, by simp [hz], hfz⟩
+        | some t' => simp [Linear.Form.mapVars, hx, ht] at h
+  cases F with
+  | le G d =>
+    simp only [Linear.Fact.mapVars, Option.map_eq_none_iff] at h
+    exact hform G h
+  | ne G d =>
+    simp only [Linear.Fact.mapVars, Option.map_eq_none_iff] at h
+    exact hform G h
+
+end ComposeSound
+
+
+section ComposeFacts
+
+variable {P : Composer} {ε₀ : EntryState} {ρ ρ' τ : Env} {h h' : Heap}
+
+theorem StepRelation.with_holds {R : StepRelation} (hR : R.Holds ε ρ h ρ' h') {G : Linear.Fact StepVar}
+    (hd : ∀ x ∈ G.vars, (StepVar.val ε ρ h ρ' h' x).isSome) (hG : G.Holds (StepVar.value ε ρ h ρ' h')) :
+    (R.with G).Holds ε ρ h ρ' h' := by
+  refine ⟨fun F hF hdef => ?_, fun hall t ht => ?_⟩
+  · rcases List.mem_append.mp hF with hF | hF
+    · exact hR.1 F hF hdef
+    · simp only [List.mem_singleton] at hF; subst hF; exact hG
+  · rcases List.mem_append.mp ht with ht | ht
+    · exact hR.2 (fun F hF => hall F (List.mem_append_left _ hF)) t ht
+    · obtain ⟨x, hx, hxt⟩ := List.mem_filterMap.mp ht
+      cases x with
+      | before _ => cases hxt
+      | after u => cases hxt; exact hd _ hx
+
+/-- **What a composition assumes** of a step from `ρ, h` to `ρ', h'`, the
+post read at the callee's entry `ε₀` and its environment `τ` after the
+step: the facts before hold before it, each kept term denotes after the step
+what it denoted before, the relation holds of the step, each post term's
+variable denotes what the term denotes, and each current slot's image holds
+its value. -/
+structure Composer.Sound (P : Composer) (ε ε₀ : EntryState) (ρ : Env) (h : Heap) (ρ' τ : Env) (h' : Heap) : Prop where
+  before : ∀ F ∈ P.before, (IndexFact.linear F).HoldsAt ε ρ h
+  kept : ∀ t t' n, P.kept t = some t' → termValue ε ρ h t = some n → termValue ε ρ' h' t' = some n
+  rel : P.rel.Holds ε ρ h ρ' h'
+  term : ∀ t x, P.term t = some x → StepVar.val ε ρ h ρ' h' x = termValue ε₀ τ h' t
+  slot : ∀ s s', P.slot s = some s' → ρ' s' = τ s
+
+theorem Composer.var_val (hs : P.Sound ε ε₀ ρ h ρ' τ h') {t : Term} {y : StepVar} {n : Int}
+    (hy : P.var t = some y) (hn : termValue ε₀ τ h' t = some n) : StepVar.val ε ρ h ρ' h' y = some n := by
+  obtain ⟨x, hx, rfl⟩ := Option.map_eq_some_iff.mp hy
+  exact val_keptRelVar hs.kept (by rw [hs.term t x hx]; exact hn)
+
+theorem Composer.linear_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') {G : Linear.Fact Term}
+    (hG : (IndexFact.linear G).HoldsAt ε₀ τ h') : ∀ F ∈ P.linear G, F.HoldsAt ε ρ' h' := by
+  intro F hF
+  unfold Composer.linear at hF
+  split at hF
+  · rename_i G' hm
+    obtain ⟨F0, hF0, rfl⟩ := List.mem_map.mp hF
+    have hval : ∀ x ∈ G.vars, ∀ y, P.term x = some y → StepVar.value ε ρ h ρ' h' y = termValuation ε₀ τ h' x := by
+      intro x _ y hy; rw [StepVar.value_eq, hs.term x y hy]; rfl
+    have hd : ∀ y ∈ G'.vars, (StepVar.val ε ρ h ρ' h' y).isSome := by
+      intro y hy
+      obtain ⟨x, hx, hxy⟩ := Linear.Fact.mapVars_vars hm y hy
+      rw [hs.term x y hxy]; exact hG.1 x hx
+    have hG' := (Linear.Fact.holds_mapVars hm hval).mpr hG.2
+    exact compose_holds hs.before hs.kept (StepRelation.with_holds hs.rel hd hG') F0 hF0
+  · cases hF
+
+theorem Composer.stops_bound (hs : P.Sound ε ε₀ ρ h ρ' τ h') {stop : Term} {n : Int}
+    (hn : termValue ε₀ τ h' stop = some n) :
+    ∀ st ∈ P.stops stop, ∃ n', termValue ε ρ' h' st = some n' ∧ n' ≤ n := by
+  intro st hst
+  unfold Composer.stops at hst
+  split at hst
+  · rename_i u hu
+    simp only [List.mem_singleton] at hst; subst hst
+    exact ⟨n, P.var_val hs hu hn, Int.le_refl _⟩
+  · rename_i u hu
+    obtain ⟨hmem, hent⟩ := List.mem_filter.mp hst
+    obtain ⟨n', hn'⟩ := Option.isSome_iff_exists.mp
+      (definedOf_defined hs.before hs.kept hs.rel st (List.mem_eraseDups.mp hmem))
+    have hle := Linear.entails_sound hent (context_holds (term := P.term) (slot := P.slot) hs.before hs.kept hs.rel)
+    have hb : termValue ε ρ h u = some n := P.var_val hs hu hn
+    simp only [Linear.Fact.Holds, Linear.Form.eval, StepVar.value, termValuation, hn', hb] at hle
+    exact ⟨n', hn', by simp at hle; omega⟩
+  · cases hst
+
+theorem boundValue_local {ε ε' : EntryState} {ρ ρ' : Env} {h : Heap} {ls : List (Option Nat)} {i : Nat}
+    {b : Bound} (hb : ∀ t, b ≠ .free t) : boundValue ε ρ h ls i b = boundValue ε' ρ' h ls i b := by
+  cases b with
+  | free t => exact absurd rfl (hb t)
+  | _ => rfl
+
+/-- What a body variable denotes at an index of a store, after the step. -/
+def BodyVar.val (ε : EntryState) (ρ : Env) (h : Heap) (ρ' : Env) (h' : Heap) (ls : List (Option Nat)) (i : Nat) :
+    BodyVar → Option Int
+  | .bound b => boundValue ε ρ' h' ls i b
+  | .step x => StepVar.val ε ρ h ρ' h' x
+
+theorem Composer.atom_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') {ls : List (Option Nat)} {i : Nat}
+    {F : Linear.Fact Bound} (hF : FactAt (boundValue ε₀ τ h' ls i) F) :
+    ∀ D ∈ P.atom F, FactAt (boundValue ε ρ' h' ls i) D := by
+  intro D hD
+  unfold Composer.atom at hD
+  split at hD
+  · cases hD
+  · rename_i F' hm
+    let bv := BodyVar.val ε ρ h ρ' h' ls i
+    have hmap : ∀ x ∈ F.vars, ∀ y, P.bodyVar x = some y → bv y = boundValue ε₀ τ h' ls i x := by
+      intro x hx y hy
+      cases x with
+      | free t =>
+        simp only [Composer.bodyVar, Option.map_eq_some_iff] at hy
+        obtain ⟨z, hz, rfl⟩ := hy
+        obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hF.1 _ hx)
+        exact (P.var_val hs hz hn).trans hn.symm
+      | _ =>
+        simp only [Composer.bodyVar, Option.some.injEq] at hy
+        subst hy
+        rfl
+    have hF' : F'.Holds fun y => (bv y).getD 0 :=
+      (Linear.Fact.holds_mapVars hm fun x hx y hy => by rw [hmap x hx y hy]).mpr hF.2
+    have hknown : ∀ G ∈ P.context.filterMap (·.mapVars (some ∘ BodyVar.step)) ++ [F'],
+        G.Holds fun y => (bv y).getD 0 := by
+      intro G hG
+      rcases List.mem_append.mp hG with hG | hG
+      · obtain ⟨G0, hG0, hm0⟩ := List.mem_filterMap.mp hG
+        refine (Linear.Fact.holds_mapVars hm0 fun x _ y hy => ?_).mpr
+          (context_holds (term := P.term) (slot := P.slot) hs.before hs.kept hs.rel G0 hG0)
+        cases hy
+        exact (StepVar.value_eq x).symm
+      · simp only [List.mem_singleton] at hG; subst hG; exact hF'
+    obtain ⟨D0, hD0, hback⟩ := List.mem_filterMap.mp hD
+    have hD0h := Linear.eliminateAll_sound hknown D0 hD0
+    refine ⟨fun z hz => ?_, (Linear.Fact.holds_mapVars hback fun y _ z hz => ?_).mpr hD0h⟩
+    · obtain ⟨y, -, hyz⟩ := Linear.Fact.mapVars_vars hback z hz
+      cases y with
+      | bound b =>
+        simp only [Composer.back] at hyz
+        split at hyz
+        · rename_i hc
+          cases hyz
+          obtain ⟨hbF, hloc⟩ := List.mem_filter.mp (List.contains_iff_mem.mp hc)
+          have hnf : ∀ t, z ≠ .free t := by intro t ht; subst ht; simp at hloc
+          rw [boundValue_local (ε' := ε₀) (ρ' := τ) hnf]
+          exact hF.1 z hbF
+        · cases hyz
+      | step x =>
+        cases x with
+        | before _ => simp [Composer.back] at hyz
+        | after u =>
+          simp only [Composer.back] at hyz
+          split at hyz
+          · rename_i hc
+            cases hyz
+            show (termValue ε ρ' h' u).isSome
+            rcases List.mem_append.mp (List.contains_iff_mem.mp hc) with hu | hu
+            · exact definedOf_defined hs.before hs.kept hs.rel u hu
+            · obtain ⟨y', hy', hy'u⟩ := List.mem_filterMap.mp hu
+              have hy'eq : y' = .step (.after u) := by
+                cases y' with
+                | bound _ => cases hy'u
+                | step x' => cases x' with
+                  | before _ => cases hy'u
+                  | after u' => cases hy'u; rfl
+              subst hy'eq
+              obtain ⟨x, hx, hxy⟩ := Linear.Fact.mapVars_vars hm _ hy'
+              have := hmap x hx _ hxy
+              simp only [bv, BodyVar.val, StepVar.val] at this
+              rw [this]; exact hF.1 x hx
+          · cases hyz
+    · cases y with
+      | bound b =>
+        simp only [Composer.back] at hz
+        split at hz
+        · cases hz; rfl
+        · cases hz
+      | step x =>
+        cases x with
+        | before _ => simp [Composer.back] at hz
+        | after u =>
+          simp only [Composer.back] at hz
+          split at hz
+          · cases hz; rfl
+          · cases hz
+
+theorem Composer.clause_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') {ls : List (Option Nat)} {i : Nat} :
+    ∀ {C : LinearClause Bound}, C.HoldsAt (boundValue ε₀ τ h' ls i) →
+      ∀ D ∈ P.clause C, D.HoldsAt (boundValue ε ρ' h' ls i)
+  | .atom F, hC, D, hD => by
+    simp only [Composer.clause, List.mem_map] at hD
+    obtain ⟨D0, hD0, rfl⟩ := hD
+    exact P.atom_holds hs hC D0 hD0
+  | .either A B, hC, D, hD => by
+    simp only [Composer.clause, List.mem_flatMap, List.mem_map] at hD
+    obtain ⟨a, ha, b, hb, rfl⟩ := hD
+    rcases hC with hA | hB
+    · exact .inl (Composer.clause_holds hs hA a ha)
+    · exact .inr (Composer.clause_holds hs hB b hb)
+
+theorem orFacts_holds {ρ : Env} {h : Heap} {a b D : IndexFact} (hD : Composer.orFacts a b = some D)
+    (hab : a.HoldsAt ε ρ h ∨ b.HoldsAt ε ρ h) : D.HoldsAt ε ρ h := by
+  unfold Composer.orFacts at hD
+  split at hD
+  · rename_i G c G' c'
+    split at hD
+    · rename_i he
+      cases hD; subst he
+      rcases hab with ⟨hd, hc⟩ | ⟨hd, hc⟩ <;>
+        exact ⟨hd, by simp only [Linear.Fact.Holds] at hc ⊢; omega⟩
+    · split at hD
+      · cases hD
+      · cases hD; exact hab
+  · cases hD; exact hab
+
+/-- **Composition is sound for every form of fact** (proved): where a post
+fact holds at the callee's states and the composition's assumptions hold of
+the step, every fact it composes to holds after the step, at the caller's
+entry state. -/
+theorem Composer.fact_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') :
+    ∀ {F : IndexFact}, F.HoldsAt ε₀ τ h' → ∀ G ∈ P.fact F, G.HoldsAt ε ρ' h' := by
+  have hmapped : ∀ {F G : IndexFact}, F.entrySlots = [] → F.HoldsAt ε₀ τ h' → G ∈ (F.mapM P.slot).toList →
+      G.HoldsAt ε ρ' h' := by
+    intro F G he hF hG
+    have hm : F.mapM P.slot = some G := by simpa using hG
+    exact (IndexFact.holdsAt_mapM hm fun s _ t ht => hs.slot s t ht).mpr ((IndexFact.holdsAt_entry he ε₀).mpr hF)
+  intro F
+  induction F with
+  | linear G =>
+    intro hF D hD
+    simp only [Composer.fact] at hD
+    split at hD
+    · exact P.linear_holds hs hF D hD
+    · rename_i hany
+      refine hmapped ?_ hF hD
+      simp only [IndexFact.entrySlots, List.flatMap_eq_nil_iff]
+      intro t ht
+      have : t.atEntry = false := by simpa using List.any_eq_false.mp (by simpa using hany) t ht
+      simp [Term.entrySlots, this]
+  | either A B ihA ihB =>
+    intro hF D hD
+    simp only [Composer.fact, List.mem_flatMap, List.mem_filterMap] at hD
+    obtain ⟨a, ha, b, hb, hab⟩ := hD
+    rcases hF with hA | hB
+    · exact orFacts_holds hab (.inl (ihA hA a ha))
+    · exact orFacts_holds hab (.inr (ihB hB b hb))
+  | guarded s p tag B ih =>
+    intro hF D hD
+    simp only [Composer.fact] at hD
+    split at hD
+    · rename_i s' hs'
+      obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hD
+      obtain ⟨v, hv, hor⟩ := hF
+      refine ⟨v, by rw [hs.slot s s' hs']; exact hv, hor.imp id fun hB => ih hB b hb⟩
+    · cases hD
+  | every s p stop body =>
+    intro hF D hD
+    simp only [Composer.fact] at hD
+    split at hD
+    · rename_i s' hs'
+      obtain ⟨st, hst, rfl⟩ := List.mem_map.mp hD
+      obtain ⟨w, sto, ls, n, hw, hsto, hls, hn, hall⟩ := hF
+      obtain ⟨n', hn', hle⟩ := P.stops_bound hs hn st hst
+      refine ⟨w, sto, ls, n', by rw [hs.slot s s' hs']; exact hw, hsto, hls, hn', fun i hi C hC => ?_⟩
+      obtain ⟨C0, hC0, hC⟩ := List.mem_flatMap.mp hC
+      exact P.clause_holds hs (hall i (by omega) C0 hC0) C hC
+    · cases hD
+  | index _ => intro hF D hD; exact hmapped rfl hF hD
+  | length _ _ => intro hF D hD; exact hmapped rfl hF hD
+  | bound _ _ _ => intro hF D hD; exact hmapped rfl hF hD
+  | int _ => intro hF D hD; exact hmapped rfl hF hD
+  | pastSafe _ => intro hF D hD; exact hmapped rfl hF hD
+  | element _ _ _ => intro hF D hD; exact hmapped rfl hF hD
+  | apart _ _ => intro hF D hD; exact hmapped rfl hF hD
+  | storeApart _ _ _ _ => intro hF D hD; exact hmapped rfl hF hD
+
+end ComposeFacts
+
 end Verification.HeapKnowledge

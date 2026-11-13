@@ -3018,6 +3018,35 @@ theorem ensuresSlot_env {t : Tm} {recv : Bool} {slots : List Nat} (hs : callSlot
     · cases hj
 
 open HeapKnowledge in
+/-- A post term's variable at a call denotes what the term denotes at the
+callee's entry and return (proved): an entry term the caller's term before
+the call at the slot holding its position, a current term the caller's after
+it. -/
+theorem callVar_val {t : Tm} {recv : Bool} {slots : List Nat} (hs : callSlots t = some (recv, slots))
+    {ρ : Env} {h h' : Heap} {v : Tm} {x : Term} {y : StepVar} (hy : callVar recv slots x = some y) :
+    StepVar.val ε ρ h (push v ρ) h' y =
+      termValue ⟨CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t))
+        (ExpressionEffects.actualsOf (instantiate 0 ρ t)), h⟩ (CallEffects.ensuresEnv v
+        (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h' x := by
+  unfold callVar at hy
+  split at hy
+  · rename_i he
+    obtain ⟨s', hs', rfl⟩ := Option.map_eq_some_iff.mp hy
+    unfold entryPositionSlot at hs'
+    split at hs'
+    · rename_i hc
+      cases hs'
+      have henv := callSlots_env hs ρ x.slot hc.1 hc.2
+      simp only [PointClaims.mapEnv] at henv
+      simp only [StepVar.val, termValue, he, if_true, Bool.false_eq_true, if_false, termAt, henv]
+    · cases hs'
+  · rename_i he
+    have he : x.atEntry = false := by simpa using he
+    obtain ⟨s', hs', rfl⟩ := Option.map_eq_some_iff.mp hy
+    have henv := ensuresSlot_env (v := v) (ρ := ρ) hs hs'
+    simp only [StepVar.val, termValue, he, Bool.false_eq_true, if_false, termAt, henv]
+
+open HeapKnowledge in
 /-- **The relation a call's postcondition states holds of the call's step**
 (proved): where its facts hold at the callee's entry `⟨callEnv r args, h⟩`
 and return, the relation holds from `ρ, h` to `push v ρ, h'` at the caller's
@@ -3185,11 +3214,20 @@ theorem callKept_sound {stable : Nat → String → Bool} {eff : Effect} {t : Tm
 open HeapKnowledge in
 /-- **Rule Call's composition in the caller**: the caller's facts after the
 call composed from its unconditional linear facts before it and the
-relation its callee's two-state postcondition states (`callRelation`). -/
+relation its callee's two-state postcondition states (`callRelation`), and
+each other post fact naming an entry term composed with them form by form
+(`Composer.fact`). -/
 def ensuresComposed (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k0 : Knowledge) : List IndexAtom :=
-  if (callRelation eff t).facts.isEmpty then [] else
+  (if (callRelation eff t).facts.isEmpty then [] else
   (compose (callKept stable eff t k0) (IndexWrites.unconditionalLinear k0.indices) (callRelation eff t)).map
-    fun F => { fact := .linear F }
+    fun F => { fact := .linear F }) ++
+  match callSlots t with
+  | some (recv, slots) =>
+    let P : Composer := ⟨callKept stable eff t k0, IndexWrites.unconditionalLinear k0.indices,
+      callRelation eff t, callVar recv slots, ensuresSlot recv slots⟩
+    ((eff.ensures.filter fun F => !F.entrySlots.isEmpty && match F with | .linear _ => false | _ => true).flatMap
+      P.fact).map fun F => { fact := F }
+  | none => []
 
 open HeapKnowledge in
 theorem ensuresComposed_holds {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k0 : Knowledge} {ρ : Env}
@@ -3205,11 +3243,25 @@ theorem ensuresComposed_holds {stable : Nat → String → Bool} {eff : Effect} 
     IndexHolds ε (ensuresComposed stable eff t k0) (push v ρ) h' := by
   intro a ha _
   unfold ensuresComposed at ha
-  split at ha
-  · cases ha
-  · obtain ⟨F, hF, rfl⟩ := List.mem_map.mp ha
-    exact compose_holds (IndexWrites.unconditionalLinear_holds hk0.2.2.2.2.2)
-      (callKept_sound hk0 hw hg hew hstable) (callRelation_holds hp) F hF
+  rcases List.mem_append.mp ha with ha | ha
+  · split at ha
+    · cases ha
+    · obtain ⟨F, hF, rfl⟩ := List.mem_map.mp ha
+      exact compose_holds (IndexWrites.unconditionalLinear_holds hk0.2.2.2.2.2)
+        (callKept_sound hk0 hw hg hew hstable) (callRelation_holds hp) F hF
+  · split at ha
+    · rename_i recv slots hs
+      obtain ⟨G, hG, rfl⟩ := List.mem_map.mp ha
+      obtain ⟨F, hF, hGF⟩ := List.mem_flatMap.mp hG
+      have hsound : Composer.Sound ⟨callKept stable eff t k0, IndexWrites.unconditionalLinear k0.indices,
+          callRelation eff t, callVar recv slots, ensuresSlot recv slots⟩ ε
+          ⟨CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)), h⟩
+          ρ h (push v ρ) (CallEffects.ensuresEnv v (ExpressionEffects.receiverOf (instantiate 0 ρ t))
+            (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h' :=
+        ⟨IndexWrites.unconditionalLinear_holds hk0.2.2.2.2.2, callKept_sound hk0 hw hg hew hstable,
+          callRelation_holds hp, fun _ _ hx => callVar_val hs hx, fun _ _ hx => ensuresSlot_env hs hx⟩
+      exact Composer.fact_holds hsound (hp F (List.mem_filter.mp hF).1) G hGF
+    · cases ha
 
 /-- Knowledge with a call's result-fact atoms added, the atoms of its entry
 `k0` its footprint keeps (`effectKept`) and the quantified atoms its growth
