@@ -782,6 +782,29 @@ proved `compose_holds`). The push rule
 (`|x| = old(|x|) + count`) and the write at the length
 (`|x| = old(|x|) + 1`) are instances of the same composition.
 
+The relational context of each composition is the post's relation, the
+facts before, and what the step's effect itself states of each term between
+the two states: with $`\delta`$ the change the step makes to the locations
+$`t`$ reads,
+
+```math
+\frac{\delta\ \text{keeps}\ t}{[\![t]\!]_{\mathrm{after}}=[\![t]\!]_{\mathrm{before}}}
+\qquad
+\frac{t=|p|\qquad\delta\ \text{keeps the path}\ p\ \text{and grows every store}}
+{[\![t]\!]_{\mathrm{before}}\le[\![t]\!]_{\mathrm{after}}}
+```
+
+and nothing where $`\delta`$ may change $`t`$ otherwise (`Term.keptBy`,
+`Term.grownBy`; the relation `growth`, proved `growth_holds` from
+`termValue_grown`). The change is the effect's (`callChange` at a call, by
+the mode its effect states, proved `callChange_holds`; the growth of the
+receiver at a push; a growing write at the length), and the same context
+composes every linear and every other post fact (`callContext`). From
+$`|w|\le|s|`$ before a call growing every store whose post states
+$`|w|=\mathrm{old}(|w|)+2`$, the caller reads $`|w|-2\le|s|`$ after it:
+`two-state-effect-relation`, and its unsafe neighbour
+`invalid-two-state-effect-relation`.
+
 ```ts
 type Lists = { /** @stable */ readonly widths: number[] };
 /**

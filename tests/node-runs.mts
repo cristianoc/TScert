@@ -27,6 +27,8 @@ assert.equal(runExample("invalid-two-state-ensures-body", "(() => { const l = { 
   "the body grows the list by 3 where its two-state postcondition states old(length) + 2");
 assert.equal(runExample("invalid-two-state-invariant-after-statement", "(() => { const p = { widths: [] }; measure(0, 2, p); return p.widths.length; })()"), 3,
   "after the statement before the loop, the body grows the list by 3 where its postcondition states old(length) + 2");
+assert.equal(runExample("invalid-two-state-effect-relation", 'typeof lastBefore({ widths: [1] }, ["s"])'), "undefined",
+  "a grown store bounds the list's old length only: segs[n - 1] reads past it");
 assert.equal(runExample("invalid-two-state-guarded-call", "typeof lastAppended([], false)"), "undefined",
   "without the branch on its guard the caller reads an empty array at -1");
 assert.equal(runExample("invalid-two-state-every-call", "typeof pickOne([1], 1, 0, [5])"), "undefined",

@@ -386,6 +386,67 @@ and, the variable `b` read outside the quantifier,
 `(∃b. C ∧ ∀i<n. φ) ⇒ ∀i<n'. ∃b. C ∧ φ` for every `n' ≤ n`. A fact naming no
 before-variable is its renaming. -/
 
+/-! ## The change's own relation
+
+A step's effect relates each term's value before it and after it by the
+change it makes to the locations the term reads (`Changes`): equal where it
+keeps them (`Term.keptBy`, read by `compose`'s `kept`), at most where it
+grows the store a length term reads and keeps its path (`Term.grownBy`),
+nothing otherwise. The relational context of a composition is the post's
+relation, the facts before, and this one (`R.join (growth grown before)`). -/
+
+/-- Two relations of one step, both stated. -/
+def StepRelation.join (R S : StepRelation) : StepRelation :=
+  { facts := R.facts ++ S.facts, defined := R.defined ++ S.defined,
+    definedBefore := R.definedBefore ++ S.definedBefore }
+
+theorem StepRelation.join_holds {R S : StepRelation} {ρ ρ' : Env} {h h' : Heap}
+    (hR : R.Holds ε ρ h ρ' h') (hS : S.Holds ε ρ h ρ' h') : (R.join S).Holds ε ρ h ρ' h' := by
+  refine ⟨fun F hF hd => ?_, fun hall t ht => ?_, fun t ht => ?_⟩
+  · rcases List.mem_append.mp hF with hF | hF
+    · exact hR.1 F hF hd
+    · exact hS.1 F hF hd
+  · rcases List.mem_append.mp ht with ht | ht
+    · exact hR.2.1 (fun F hF => hall F (List.mem_append_left _ hF)) t ht
+    · exact hS.2.1 (fun F hF => hall F (List.mem_append_right _ hF)) t ht
+  · rcases List.mem_append.mp ht with ht | ht
+    · exact hR.2.2 t ht
+    · exact hS.2.2 t ht
+
+/-- **The relation a step's growth states**: for each term the facts before
+name that the step grows (`grown t = some t'`, `t'` the term read after the
+step), `before(t) ≤ after(t')`, with `t'` defined after the step. -/
+def growth (grown : Term → Option Term) (before : List (Linear.Fact Term)) : StepRelation :=
+  let ts := (beforeTerms before).eraseDups.filterMap fun t => (grown t).map (t, ·)
+  { facts := ts.map fun (t, t') => .le [(.before t, 1), (.after t', -1)] 0,
+    defined := ts.map (·.2) }
+
+/-- **The growth relation holds of a step** (proved) where each grown term
+denotes after the step at least what it denoted before. -/
+theorem growth_holds {grown : Term → Option Term} {before : List (Linear.Fact Term)} {ρ ρ' : Env} {h h' : Heap}
+    (hg : ∀ t t' n, grown t = some t' → termValue ε ρ h t = some n →
+      ∃ n', termValue ε ρ' h' t' = some n' ∧ n ≤ n') :
+    (growth grown before).Holds ε ρ h ρ' h' := by
+  -- Each pair is a term before and its grown image.
+  have hpair : ∀ p ∈ (beforeTerms before).eraseDups.filterMap (fun t => (grown t).map (t, ·)),
+      grown p.1 = some p.2 := by
+    intro p hp
+    obtain ⟨t, -, ht⟩ := List.mem_filterMap.mp hp
+    obtain ⟨t', h1, rfl⟩ := Option.map_eq_some_iff.mp ht
+    exact h1
+  refine ⟨fun F hF hd => ?_, fun hall u hu => ?_, fun _ hu => by simp [growth] at hu⟩
+  · obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hF
+    obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hd p.1 (by simp [Linear.Fact.vars]))
+    obtain ⟨n', hn', hle⟩ := hg _ _ _ (hpair p hp) hn
+    simp only [Linear.Fact.Holds, Linear.Form.eval, StepVar.value, termValuation, hn, hn',
+      Option.getD_some]
+    omega
+  · obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hu
+    have hd := hall _ (List.mem_map.mpr ⟨p, hp, rfl⟩) p.1 (by simp [Linear.Fact.vars])
+    obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp hd
+    obtain ⟨n', hn', -⟩ := hg _ _ _ (hpair p hp) hn
+    simp [hn']
+
 /-- What a step variable denotes, where it denotes an integer. -/
 def StepVar.val (ε : EntryState) (ρ : Env) (h : Heap) (ρ' : Env) (h' : Heap) : StepVar → Option Int
   | .before t => termValue ε ρ h t

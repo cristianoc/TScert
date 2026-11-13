@@ -183,7 +183,10 @@ $`|y|_{\mathrm{after}}=b+1,\ r=b\ \vdash\ |y|_{\mathrm{after}}=r+1`$.
 The push rule ($`|x|_{\mathrm{after}}=|x|_{\mathrm{before}}+\mathit{count}`$)
 and the write at the length ($`|x|_{\mathrm{after}}=|x|_{\mathrm{before}}+1`$)
 are the same composition at the relation `IndexWrites.lengthGrowth`
-(`linearAppendKept`, `writeCarried`).
+(`linearAppendKept`, `writeCarried`). Each composition's relation is joined
+with the one the step's change states of each term it grows
+(`StepRelation.join`, `growth`; [two-state
+postconditions](../ARITHMETIC.md#two-state-postconditions)).
 
 **Entry allocation before a call** (`Effect.post_prefix`): a post read at
 the heap after an administrative allocation is read at the call's entry,

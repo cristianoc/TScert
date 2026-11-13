@@ -2616,6 +2616,20 @@ theorem keptOf_sound {c : Changes} {first : Nat → String → Bool} {ρ : Env} 
   · rename_i hk; cases ht; exact termValue_kept hc hf hk hn
   · cases ht
 
+/-- A term a change grows (`Term.grownBy`), read after it at its own slot. -/
+def grownOf (c : Changes) (first : Nat → String → Bool) (t : Term) : Option Term :=
+  if t.grownBy c first then some t else none
+
+theorem grownOf_sound {c : Changes} {first : Nat → String → Bool} {ρ : Env} {h h' : Heap}
+    (hc : c.Holds h h') (hf : FirstKept first ρ h h') :
+    ∀ t t' n, grownOf c first t = some t' → termValue ε ρ h t = some n →
+      ∃ n', termValue ε ρ h' t' = some n' ∧ n ≤ n' := by
+  intro t t' n ht hn
+  unfold grownOf at ht
+  split at ht
+  · rename_i hg; cases ht; exact termValue_grown hc hf hg hn
+  · cases ht
+
 /-- **The exact growth of a store's length**: the length of the slot `a`'s
 array after the step is its length before it plus `count`, as two facts over
 the before- and after-lengths; the length after defined. -/
@@ -2650,9 +2664,12 @@ theorem lengthGrowth_holds {a count : Nat} {ρ ρ' : Env} {h h' : Heap}
 /-- **The facts a write at the length carries** (`write-append`, an instance
 of the composition): the unconditional linear facts of the write's entry
 over the written array's length, each term the write keeps read after it,
-with the length one longer (`lengthGrowth a 1`). -/
+with the length one longer (`lengthGrowth a 1`) and each length it grows at
+least what it was (`growth`). -/
 def writeCarried (a : Nat) (first : Nat → String → Bool) (k : Knowledge) : List IndexAtom :=
-  (compose (keptOf (Changes.ofClosed ⟨.any, .grow⟩) first) (unconditionalLinear k.indices) (lengthGrowth a 1)).map
+  (compose (keptOf (Changes.ofClosed ⟨.any, .grow⟩) first) (unconditionalLinear k.indices)
+    ((lengthGrowth a 1).join (growth (grownOf (Changes.ofClosed ⟨.any, .grow⟩) first)
+      (unconditionalLinear k.indices)))).map
     fun F => { fact := .linear F }
 
 /-- The facts a write at a checked index states of its store, at the entry's
@@ -2745,7 +2762,8 @@ theorem atLengthAtoms_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
         simp
       intro atom hm _
       obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hm
-      exact compose_holds (unconditionalLinear_holds hk.2.2.2.2.2) (keptOf_sound hch hfirst) hR F hF
+      exact compose_holds (unconditionalLinear_holds hk.2.2.2.2.2) (keptOf_sound hch hfirst)
+        (StepRelation.join_holds hR (growth_holds (grownOf_sound hch hfirst))) F hF
     · rw [if_neg hcond]
       exact weaken (fun _ _ _ => indexHolds_nil _ _) hst
   refine weaken (fun h' _ hq => ?_) (safePost_and hst happ)

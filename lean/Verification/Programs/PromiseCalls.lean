@@ -2600,7 +2600,8 @@ def linearAppendKept (n : Nat) (eff : Effect) (t : Tm) (k : Knowledge) : List In
   | .invoke _ (.var i) args =>
     if eff.receiverGrows && IndexWrites.appendSlots n args then
       shiftIndices ((compose (IndexWrites.keptOf growChanges (growFirst k t)) (IndexWrites.unconditionalLinear k.indices)
-          (IndexWrites.lengthGrowth i args.length)).map (fun F => { fact := .linear F }) ++
+          ((IndexWrites.lengthGrowth i args.length).join (growth (IndexWrites.grownOf growChanges (growFirst k t))
+            (IndexWrites.unconditionalLinear k.indices)))).map (fun F => { fact := .linear F }) ++
         if termDefined k.indices (.length i) then
           [{ fact := .linear (.le [(.length i, -1)] (-(args.length : Int))) }] else []) else []
   | _ => []
@@ -2629,7 +2630,8 @@ theorem linearAppendKept_holds {n : Nat} {eff : Effect} {t : Tm} {k : Knowledge}
       · obtain ⟨F, hF, rfl⟩ := List.mem_map.mp ha
         refine compose_holds (IndexWrites.unconditionalLinear_holds hk.2.2.2.2.2)
           (IndexWrites.keptOf_sound (receiverGrows_changes hgrow) hf)
-          (IndexWrites.lengthGrowth_holds fun m hm => ?_) F hF
+          (StepRelation.join_holds (IndexWrites.lengthGrowth_holds fun m hm => ?_)
+            (growth_holds (IndexWrites.grownOf_sound (receiverGrows_changes hgrow) hf))) F hF
         have hl := appended_length hgrow happ (IndexWrites.appendSlots_values hv hs) hm
         simpa [instantiateArgs_eq_map] using hl
       · split at ha
@@ -3197,26 +3199,69 @@ theorem callRelation_holds {eff : Effect} {t : Tm} {ρ : Env} {h h' : Heap} {v :
   · exact ⟨fun F hF => (by cases hF), fun _ u hu => (by cases hu), fun u hu => (by cases hu)⟩
 
 open HeapKnowledge in
-/-- Whether a call keeps the value of a term of the caller (the term
-classes `effectKept` keeps atoms by): a term reading no current heap; with
-`receiverGrows`, one its growth keeps; with no receiver mode, one its store
-regions' frame keeps; one its element write's change keeps; one its closed
-bound keeps. -/
-def callKeeps (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : Knowledge) (u : Term) : Bool :=
-  u.envOnly ||
-  if eff.receiverGrows then u.keptBy growChanges (fun s g => growFirst k t s g || stable s g)
-  else if eff.receiverStore || eff.receiverOwn then false
+/-- **The change a call makes to the caller's heap** (`Changes`), with the
+fields of slots' objects it keeps (`first`), by the mode its effect states:
+with `receiverGrows`, its growth; with a receiver mode, every change; with
+store regions and no element write, every change but the regions' frame;
+otherwise its element write's change, or its closed footprint's. -/
+def callChange (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : Knowledge) :
+    Changes × (Nat → String → Bool) :=
+  if eff.receiverGrows then (growChanges, fun s g => growFirst k t s g || stable s g)
+  else if eff.receiverStore || eff.receiverOwn then (Changes.top, fun _ _ => false)
   else if !eff.regions.isEmpty then
-    eff.elementWrite.isNone && u.keptBy Changes.top (fun s g => regionFirst k eff t s g || stable s g)
+    if eff.elementWrite.isNone then (Changes.top, fun s g => regionFirst k eff t s g || stable s g)
+    else (Changes.top, fun _ _ => false)
   else match eff.elementWrite with
-    | some w => u.keptBy w.changes stable
-    | none => u.keptBy (Changes.ofClosed eff.footprint) stable
+    | some w => (w.changes, stable)
+    | none => (Changes.ofClosed eff.footprint, stable)
+
+open HeapKnowledge in
+/-- The call's change holds of its step, and the fields it keeps keep their
+contents (proved). -/
+theorem callChange_holds {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h' : Heap}
+    (hk : Holds k ε ρ h)
+    (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
+    (hg : eff.receiverGrows = true →
+      CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h')
+    (hew : ∀ w, eff.elementWrite = some w → w.Holds (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
+    (hst : FirstKept stable ρ h h') :
+    (callChange stable eff t k).1.Holds h h' ∧ FirstKept (callChange stable eff t k).2 ρ h h' := by
+  have hnone : FirstKept (fun _ _ => false) ρ h h' := fun _ _ _ _ _ _ _ hf => by cases hf
+  unfold callChange
+  split
+  · rename_i hgr
+    exact ⟨receiverGrows_changes (hg hgr), firstKept_or (growFirst_kept hk (hg hgr)) hst⟩
+  split
+  · exact ⟨Changes.top_holds h h', hnone⟩
+  rename_i hmode
+  simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at hmode
+  obtain ⟨hs, ho⟩ := hmode
+  split
+  · split
+    · exact ⟨Changes.top_holds h h', firstKept_or (regionFirst_kept hk hs ho hw) hst⟩
+    · exact ⟨Changes.top_holds h h', hnone⟩
+  split
+  · rename_i w hwr
+    exact ⟨(hew w hwr).1, hst⟩
+  · exact ⟨Changes.ofClosed_holds (CallEffects.Effect.within_holds hw hs ho), hst⟩
+
+open HeapKnowledge in
+/-- Whether a call keeps the value of a term of the caller: its change keeps
+it (`Term.keptBy`). -/
+def callKeeps (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : Knowledge) (u : Term) : Bool :=
+  u.keptBy (callChange stable eff t k).1 (callChange stable eff t k).2
 
 open HeapKnowledge in
 /-- A term of the caller the call keeps, read after the return one slot
 higher. -/
 def callKept (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : Knowledge) (u : Term) : Option Term :=
   if callKeeps stable eff t k u then some (u.mapM' (· + 1)) else none
+
+open HeapKnowledge in
+/-- A term of the caller the call grows (`Term.grownBy` of its change),
+read after the return one slot higher. -/
+def callGrown (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : Knowledge) (u : Term) : Option Term :=
+  if u.grownBy (callChange stable eff t k).1 (callChange stable eff t k).2 then some (u.mapM' (· + 1)) else none
 
 open HeapKnowledge in
 theorem callKept_sound {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
@@ -3232,28 +3277,52 @@ theorem callKept_sound {stable : Nat → String → Bool} {eff : Effect} {t : Tm
   split at hu
   · rename_i hc
     cases hu
-    have hshift : termValue ε (push v ρ) h' (u.mapM' (· + 1)) = termValue ε ρ h' u :=
-      termValue_mapM (congrFun (Term.mapM_eq (· + 1)) u) fun _ j hj => by cases hj; rfl
-    rw [hshift]
-    unfold callKeeps at hc
-    rcases Bool.or_eq_true_iff.mp hc with he | hc
-    · rw [← termValue_envOnly he]; exact hn
-    split at hc
-    · rename_i hgr
-      exact termValue_kept (receiverGrows_changes (hg hgr)) (firstKept_or (growFirst_kept hk (hg hgr)) hst) hc hn
-    split at hc
-    · cases hc
-    rename_i hmode
-    simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at hmode
-    obtain ⟨hs, ho⟩ := hmode
-    split at hc
-    · simp only [Bool.and_eq_true] at hc
-      exact termValue_kept (Changes.top_holds h h') (firstKept_or (regionFirst_kept hk hs ho hw) hst) hc.2 hn
-    split at hc
-    · rename_i w hwr
-      exact termValue_kept (hew w hwr).1 hst hc hn
-    · exact termValue_kept (Changes.ofClosed_holds (CallEffects.Effect.within_holds hw hs ho)) hst hc hn
+    rw [termValue_mapM' fun _ => rfl]
+    obtain ⟨hch, hf⟩ := callChange_holds hk hw hg hew hst
+    exact termValue_kept hch hf hc hn
   · cases hu
+
+open HeapKnowledge in
+theorem callGrown_sound {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
+    (hk : Holds k ε ρ h)
+    (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
+    (hg : eff.receiverGrows = true →
+      CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h')
+    (hew : ∀ w, eff.elementWrite = some w → w.Holds (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
+    (hst : FirstKept stable ρ h h') :
+    ∀ u u' n, callGrown stable eff t k u = some u' → termValue ε ρ h u = some n →
+      ∃ n', termValue ε (push v ρ) h' u' = some n' ∧ n ≤ n' := by
+  intro u u' n hu hn
+  unfold callGrown at hu
+  split at hu
+  · rename_i hc
+    cases hu
+    rw [termValue_mapM' fun _ => rfl]
+    obtain ⟨hch, hf⟩ := callChange_holds hk hw hg hew hst
+    exact termValue_grown hch hf hc hn
+  · cases hu
+
+open HeapKnowledge in
+/-- **The relational context of a call's composition**: the relation its
+callee's two-state postcondition states (`callRelation`) and the one its
+change states of each term of the caller's facts it grows (`growth`); the
+terms it keeps are read after it by `callKept`. -/
+def callContext (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k0 : Knowledge) : StepRelation :=
+  (callRelation eff t).join (growth (callGrown stable eff t k0) (IndexWrites.unconditionalLinear k0.indices))
+
+open HeapKnowledge in
+theorem callContext_holds {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k0 : Knowledge} {ρ : Env}
+    {h h' : Heap} {v : Tm} (hk0 : Holds k0 ε ρ h)
+    (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
+    (hp : ∀ F ∈ eff.ensures, F.HoldsAt ⟨CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t))
+      (ExpressionEffects.actualsOf (instantiate 0 ρ t)), h⟩ (CallEffects.ensuresEnv v (ExpressionEffects.receiverOf (instantiate 0 ρ t))
+      (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h')
+    (hg : eff.receiverGrows = true →
+      CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h')
+    (hew : ∀ w, eff.elementWrite = some w → w.Holds (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
+    (hstable : FirstKept stable ρ h h') :
+    (callContext stable eff t k0).Holds ε ρ h (push v ρ) h' :=
+  StepRelation.join_holds (callRelation_holds hp) (growth_holds (callGrown_sound hk0 hw hg hew hstable))
 
 open HeapKnowledge in
 /-- **Rule Call's composition in the caller**: the caller's facts after the
@@ -3265,12 +3334,12 @@ a linear one naming an entry term (`callRelation`'s) and one naming none
 whose every slot the return holds (`ensuresAtoms`'). -/
 def ensuresComposed (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k0 : Knowledge) : List IndexAtom :=
   (if (callRelation eff t).facts.isEmpty then [] else
-  (compose (callKept stable eff t k0) (IndexWrites.unconditionalLinear k0.indices) (callRelation eff t)).map
+  (compose (callKept stable eff t k0) (IndexWrites.unconditionalLinear k0.indices) (callContext stable eff t k0)).map
     fun F => { fact := .linear F }) ++
   match callSlots t with
   | some (recv, slots) =>
     let P : Composer := ⟨callKept stable eff t k0, IndexWrites.unconditionalLinear k0.indices,
-      callRelation eff t, callVar recv slots, ensuresSlot recv slots, absentAt slots, absentSlot slots⟩
+      callContext stable eff t k0, callVar recv slots, ensuresSlot recv slots, absentAt slots, absentSlot slots⟩
     ((eff.ensures.filter fun F => match F with
       | .linear G => !G.vars.any (·.atEntry) && (F.mapM (ensuresSlot recv slots)).isNone
       | _ => !F.entrySlots.isEmpty || (F.mapM (ensuresSlot recv slots)).isNone).flatMap
@@ -3296,18 +3365,18 @@ theorem ensuresComposed_holds {stable : Nat → String → Bool} {eff : Effect} 
     · cases ha
     · obtain ⟨F, hF, rfl⟩ := List.mem_map.mp ha
       exact compose_holds (IndexWrites.unconditionalLinear_holds hk0.2.2.2.2.2)
-        (callKept_sound hk0 hw hg hew hstable) (callRelation_holds hp) F hF
+        (callKept_sound hk0 hw hg hew hstable) (callContext_holds hk0 hw hp hg hew hstable) F hF
   · split at ha
     · rename_i recv slots hs
       obtain ⟨G, hG, rfl⟩ := List.mem_map.mp ha
       obtain ⟨F, hF, hGF⟩ := List.mem_flatMap.mp hG
       have hsound : Composer.Sound ⟨callKept stable eff t k0, IndexWrites.unconditionalLinear k0.indices,
-          callRelation eff t, callVar recv slots, ensuresSlot recv slots, absentAt slots, absentSlot slots⟩ ε
+          callContext stable eff t k0, callVar recv slots, ensuresSlot recv slots, absentAt slots, absentSlot slots⟩ ε
           ⟨CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)), h⟩
           ρ h (push v ρ) (CallEffects.ensuresEnv v (ExpressionEffects.receiverOf (instantiate 0 ρ t))
             (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h' :=
         ⟨IndexWrites.unconditionalLinear_holds hk0.2.2.2.2.2, callKept_sound hk0 hw hg hew hstable,
-          callRelation_holds hp, fun _ _ hx => callVar_val hs hx, fun _ _ hx => ensuresSlot_env hs hx,
+          callContext_holds hk0 hw hp hg hew hstable, fun _ _ hx => callVar_val hs hx, fun _ _ hx => ensuresSlot_env hs hx,
           fun _ hx => absentAt_none hs hx, fun _ hx => absentSlot_undef hs hx⟩
       exact Composer.fact_holds hsound (hp F (List.mem_filter.mp hF).1) G hGF
     · cases ha
