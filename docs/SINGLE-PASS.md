@@ -131,9 +131,12 @@ predecessor's view the bound is a fact or each of its terms is defined by
 the facts near its names (`entailDefinedCheck`, `HeapKnowledge.termDefined`); the guarded facts
 `CertificateProducer.joinGuarded` keeps are kept, each predecessor's guards
 first also lowered once through its read links (`lowerGuards`); and a fact
-one predecessor states of a slot another holds `null` or `undefined` in is
-kept guarded by that tag where every predecessor's facts entail it
-(`indicesCheckWith`), as the join guards a store separation. Everywhere, one linear bound
+one predecessor states where another holds a slot at a guard tag's value
+(`null`, `undefined`, `true` or `false`) is kept guarded by that tag
+(`z === false || F`) where every predecessor's facts entail it
+(`indicesCheckWith`), as the join guards a store separation: after `const b
+= i > from && f(xs[i - 1])`, `b === false || from < i`, which a test of `b`
+releases (`and-binding-fact`). Everywhere, one linear bound
 is kept per normalized form and condition, the strongest, and a length atom
 is also stated as the linear facts it means (`HeapKnowledge.atomLinear`).
 

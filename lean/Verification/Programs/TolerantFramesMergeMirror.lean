@@ -137,7 +137,7 @@ def mergeEntailed (live : Std.HashSet Nat) (diffs : List (List Atom)) (views : L
 /-- The guarded facts a join keeps, at slots. -/
 def mergeGuarded (width : Nat) (mergedNames : List Nat) (met0 : Store) (diffs : List (List Atom))
     (views : List State) : List HeapKnowledge.IndexAtom :=
-  let tags : List HeapKnowledge.GuardTag := [.null, .undef]
+  let tags : List HeapKnowledge.GuardTag := [.null, .undef, .tru, .fls]
   let tagged := diffs.flatMap fun d => d.filterMap fun a => match a with
     | .value f => if tags.any (fun g => HeapKnowledge.guardTags { values := [f] } f.slot [] g) then some f.slot else none
     | _ => none
@@ -145,7 +145,9 @@ def mergeGuarded (width : Nat) (mergedNames : List Nat) (met0 : Store) (diffs : 
     | .index ⟨.guarded .., _, _⟩ | .index ⟨.storeApart .., _, _⟩ | .link _ => a.names
     | _ => [])
   let seeds := if tagged.isEmpty then seeds else seeds ++ tagged ++
-    (diffs.flatMap fun d => d.flatMap fun a => if a.names.any tagged.contains then a.names else [])
+    (diffs.flatMap fun d => d.flatMap fun a => match a with
+      | .index _ => a.names
+      | _ => if a.names.any tagged.contains then a.names else [])
   let seedSlots := (CertificateProducer.keepFirst {} (seeds.filterMap mergedNames.idxOf?)).2.toList
   if seedSlots.isEmpty then [] else Id.run do
     let projections := views.map fun ps => (SinglePass.materialize ps width seedSlots false).1
@@ -161,7 +163,7 @@ def mergeGuarded (width : Nat) (mergedNames : List Nat) (met0 : Store) (diffs : 
       let candidates := (projections.flatMap fun (p : HeapKnowledge.Knowledge) => p.indices.flatMap fun a =>
         if a.cond.isSome || common.indices.contains a then [] else match a.fact with
         | .guarded .. => []
-        | F => (nullish.filter fun (z, _) => F.slots.contains z).map fun (z, g) =>
+        | F => nullish.map fun (z, g) =>
             ({ fact := .guarded z [] g F } : HeapKnowledge.IndexAtom)).eraseDups
       candidates.filter fun a => projections.all fun (p : HeapKnowledge.Knowledge) =>
         HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags p) (HeapLinks.aliases p.links) p.links
