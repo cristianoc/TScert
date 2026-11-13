@@ -73,6 +73,7 @@ that covers what changed, and the wider tier once before committing:
 | One source file | `node pipeline/verify-source.mts <file.ts> [--project dir]` | — |
 | Lean | `(cd lean && lake build)`, then `node pipeline/run-cases.mts <pattern>` for the affected cases (cases whose file names contain the pattern) | `make test` (the pipeline cases, and the controls: forged fragments and forced proposals no case can make) |
 | Parser, Fragment wire, shared tools | `(cd tools && npx tsc -p tsconfig.json)`, `node tests/json-field-names.mts` (instant: TypeScript and Lean use the same JSON field names), then `run-cases.mts` | `make test` |
+| Bounds capability for pretext | `make test-pretext PRETEXT=<checkout> FILES=<touched>` | before merging to `single-pass`, `make test-pretext PRETEXT=<checkout>`; the wide suite and the census run in CI on `single-pass` |
 
 `run-cases.mts` with no pattern runs every case (26 s on 12 cores, measured
 2026-10-16) and is `make test-cases` after its build. Cases run in one worker
