@@ -337,7 +337,11 @@ A definition, a rule or a theorem is stated at the generality of its notion,
 as a type-theory paper states it: over every expression, every command,
 every write, every step, every transition, every effect, every function.
 For a notion the [Tolerant frames note](docs/REFERENCES.md#the-tolerant-frames-note)
-defines, the Lean represents it as the note defines it, in full.
+defines, the Lean and the note state the same definition, in full. Where
+the model shows the note wrong or incomplete (a counter-model, a notion the
+model has and the note omits), the note is corrected and the Lean follows
+the corrected definition; the Lean is never bent to a wrong sentence, and a
+difference between the two is never left standing.
 
 - **A list of supported cases is a defect.** An enumeration of members of an
   open class (native operations, kinds of write, kinds of fact, eligible
