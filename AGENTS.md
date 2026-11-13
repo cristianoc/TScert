@@ -331,6 +331,38 @@ safety property for every function of that unit. Preserve this by construction:
 
 ## Source and host soundness boundaries
 
+### General statements, no lists of special cases
+
+A definition, a rule or a theorem is stated at the generality of its notion,
+as a type-theory paper states it: over every expression, every command,
+every write, every step, every transition, every effect, every function.
+For a notion the [Tolerant frames note](docs/REFERENCES.md#the-tolerant-frames-note)
+defines, the Lean represents it as the note defines it, in full.
+
+- **A list of supported cases is a defect.** An enumeration of members of an
+  open class (native operations, kinds of write, kinds of fact, eligible
+  functions, forms that have an entry) that stands for a property is
+  replaced by the property. A restricted encoding of a general notion, a
+  fallback that gives less without saying so, and a side condition of the
+  form "X is not read by Y" are the same defect.
+- **An exhaustive case analysis is a proof.** Cases over an inductive
+  definition of the language, which Lean checks exhaustive, prove a general
+  statement.
+- **A special case states its reason.** One kept for a property a specific
+  rule relies on says which property, where it is defined.
+- **A restriction of the language is explicit.** It is chosen by the
+  behaviour it excludes, documented in SOURCE-FRAGMENT.md and enforced at the
+  source boundary ([engineering trade-offs](#engineering-trade-offs)).
+- **Touching a special case removes it first.** A change to code that holds
+  such a list starts by replacing the list with its general statement, in
+  its own commit; then the change is made. A report or a review that says
+  "covers only", "for these forms", "eligible" or "supported cases" names
+  which of the three above it is.
+
+Every review of a design, a rule or a proof asks first: is this the notion
+as its definition states it, and is the statement general. Size and the
+smallest change come after.
+
 ### Designs start from an existing mechanism
 
 A design draft (`docs/drafts/`) opens with a section **The existing

@@ -102,6 +102,23 @@ every interpretation, so one derivation covers every instantiation.
 [DESIGN: lasting decisions](DESIGN.md#lasting-decisions),
 [POSITIVE-TYPES: parameter and scheme rows](POSITIVE-TYPES.md#parameter-and-scheme-rows).
 
+### The Tolerant frames note
+
+*Tolerant frames: a modal account of fact preservation without ownership.*
+TScert working note, 11 November 2026, with its follow-on note on the bound
+proofs of a text-layout library. Source: `docs/drafts/tolerant-frames-note/`
+on the branch `tolerant-frames-draft`
+([pull request 151](https://github.com/cristianoc/TScert/pull/151)).
+
+The project takes from it the definitions of its logic of fact preservation:
+locations by kind, changes, regions, effects and their action, the modality,
+support and respect, the tolerant frame theorem, its axioms and rules, and
+two-state postconditions. Its model rules are the theorems of
+`lean/Verification/Semantics/TolerantFrames*.lean`, checked in their own
+block of `lean/Verification/Tests/AxiomCheck.lean`. The rule that the Lean
+states each of its notions as the note defines it is in
+[AGENTS.md](../AGENTS.md#general-statements-no-lists-of-special-cases).
+
 ## Objects and self types
 
 ### Abadi and Cardelli 1996
