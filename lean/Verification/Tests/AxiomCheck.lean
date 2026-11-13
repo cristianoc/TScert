@@ -16,6 +16,7 @@ import Verification.Semantics.Kinds
 import Verification.Semantics.KindsAllocation
 import Verification.Semantics.KindsWrites
 import Verification.Semantics.KindsNatives
+import Verification.Programs.KindsModelRules
 import Lean.Util.CollectAxioms
 import Lean.Elab.Command
 import Lean.Compiler.CSimpAttr
@@ -1507,3 +1508,28 @@ run_cmd do
   check ``Verification.Kinds.Arr.natives_within
   check ``Verification.Kinds.native_shaped
   check ``Verification.Kinds.elementWrite_not_respects
+  -- well-formed states over an environment; admissibility keeps them
+  check ``Verification.Kinds.Admissible.trans
+  check ``Verification.Kinds.Admissible.roleAt
+  check ``Verification.Kinds.Admissible.refsOk
+  check ``Verification.Kinds.RootsOk.admissible
+  check ``Verification.Kinds.RootsOk.set
+  check ``Verification.Kinds.State.next
+  check ``Verification.Kinds.Invariant.box
+  -- (View): a typed array's length is immutable
+  check ``Verification.Kinds.viewLengthOf_kept
+  check ``Verification.Kinds.viewLength_invariant
+  check ``Verification.Kinds.view_box
+  check ``Verification.Kinds.view_change_excluded
+  -- allocated cells at every budget and state
+  check ``Verification.Kinds.HeapOk.store_cells
+  check ``Verification.Kinds.storeCells
+  check ``Verification.Kinds.storeCells_invariant
+  check ``Verification.Kinds.Admissible.elem_kept
+  check ``Verification.Kinds.rootCells
+  check ``Verification.Kinds.rootCells_invariant
+  check ``Verification.Kinds.rootCells_box
+  -- allocation separation from a well-formed entry heap
+  check ``Verification.Kinds.alloc_apart
+  check ``Verification.Kinds.alloc_post
+  check ``Verification.Kinds.alloc_wellformed
