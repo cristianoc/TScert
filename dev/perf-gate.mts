@@ -7,7 +7,7 @@
 //   node dev/perf-gate.mts <pretext checkout at ba09794f> [--update | --add]
 // `--add` writes the baseline of the units it lacks, keeping the others'.
 // A regression is a verdict other than the baseline's, a counter above its
-// baseline, a unit whose visited nodes differ from its reached nodes, or the
+// baseline, an accepted unit whose visited nodes differ from its reached nodes, or the
 // pass's CPU time (user and system of the verifier process, best of 3) above
 // its baseline by more than the baseline's tolerance (a fraction of the
 // baseline, at least its slack in milliseconds). Prints one table and
@@ -196,7 +196,9 @@ try {
     const with_ = (v: number | string, w: number | string | undefined): string => (w === undefined ? `${v}` : `${v}/${w}`);
     rows.push([u.name, with_(m.verdict, b?.verdict), with_(m.cpuMs, b?.cpuMs),
       ...gated.map((k) => with_(m.counters[k], b?.counters[k])), `${m.wallMs}`]);
-    if (m.counters.visited !== m.counters.reached)
+    // A refused unit's walk stops at its refusal, before reaching what it
+    // visits: it is compared on its verdict and counters alone.
+    if (m.verdict !== "refused" && m.counters.visited !== m.counters.reached)
       regressions.push(`${u.name}: visited ${m.counters.visited} nodes of ${m.counters.reached} reached`);
     if (b === undefined) {
       if (!update) regressions.push(`${u.name}: no baseline`);
