@@ -23,6 +23,13 @@ import { readInvocationLog, type AttemptRecord } from "../pipeline/stages.mts";
 
 /** One line of a verifier stage's work table (`RequestCli.writeWork`). */
 type WorkLine = { kind: string; item: string; count: number; ns: number; selfNs: number };
+/** The entries of a map as a record keyed by each key's text. */
+function recordOf<K extends string | number, V>(m: Map<K, V>): Record<string, V> {
+  const out: Record<string, V> = {};
+  for (const [k, v] of m) out[String(k)] = v;
+  return out;
+}
+
 function readWork(path: string): WorkLine[] {
   if (!existsSync(path)) return [];
   return readFileSync(path, "utf8").split("\n").filter((l) => l !== "").map((l) => {
@@ -333,10 +340,10 @@ function report(directory: string, sourceList: string[], jsonOut: string | null)
   process.stdout.write(out.join("\n") + "\n");
   if (jsonOut !== null)
     writeFileSync(jsonOut, JSON.stringify({ totalMs, attributedMs, repeatedMs, timedOutWholeMs, timedOutUnitMs,
-      sites: Object.fromEntries(bySite), byClass: Object.fromEntries(byClass),
-      stages: Object.fromEntries(stageCpu),
-      functions: Object.fromEntries(units.map(([item, f]) => [label(item),
-        { attempts: f.attempts.size, traversals: f.traversals, ms: f.ms, repeatedMs: f.repeatedMs }])) }, null, 1) + "\n");
+      sites: recordOf(bySite), byClass: recordOf(byClass),
+      stages: recordOf(stageCpu),
+      functions: recordOf(new Map(units.map(([item, f]) => [label(item),
+        { attempts: f.attempts.size, traversals: f.traversals, ms: f.ms, repeatedMs: f.repeatedMs }] as const))) }, null, 1) + "\n");
 }
 
 /** The sources a `--sources` value names: files, or every `.ts`/`.mts` file of a directory. */
