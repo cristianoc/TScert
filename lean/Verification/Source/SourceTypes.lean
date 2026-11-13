@@ -100,6 +100,16 @@ private def clauseName : Clause (List ι) → String
   | .numIn _ => "numeric literal"
   | .strIn _ => "string literal"
 
+/-- A type of any graph by its clauses' kinds, as `render` names them, an
+array's as `array`. -/
+def renderIn {ι : Type} [Labels ι] (G : NormalGraph ι) (A : Ty ι) : String :=
+  match expand G A with
+  | [] => "never"
+  | [.boolLit true, .boolLit false] | [.boolLit false, .boolLit true] => "boolean"
+  | cs => String.intercalate " | " (cs.map fun c => match c with
+      | .refs fs _ vs .. => if ((fs ++ vs).lookup storeField).isSome then "array" else clauseName c
+      | _ => clauseName c).eraseDups
+
 def render (T : State) (A : Ty Tree) : String :=
   match expand (graph T) A with
   | [] => "never"

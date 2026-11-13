@@ -131,14 +131,15 @@ theorem closedUnits_selected_safe
     (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
     {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {selection : Option (List String)} {standIns : StandIns} {force : List String} {f : FilePlans}
-    {givenLines : Std.HashMap String Json} {fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
+    {givenLines : Std.HashMap String Json} {infer : Bool}
+    {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)} {fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
     {given : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool}
     (hplans : fragmentPlans ast fileKey budget selection standIns force = .ok f) {u : String}
-    (hu : u ∈ closedUnits (fileVerdicts f selection givenLines fuel compare debugNode repeats given observe counting located)) :
-    ∃ i ∈ f.fr.selected selection, f.fr.unitId i = u ∧ PassUnitSafe (f.withHeadFacts givenLines false) i := by
+    (hu : u ∈ closedUnits (fileVerdicts f selection givenLines infer force keep fuel compare debugNode repeats given observe counting located)) :
+    ∃ i ∈ f.fr.selected selection, f.fr.unitId i = u ∧ PassUnitSafe (f.withHeadFacts givenLines false infer) i := by
   obtain ⟨ds, ha, -⟩ := closedUnits_closed _ u hu
   unfold Verdicts.accepted at ha
-  cases hl : (fileVerdicts f selection givenLines fuel compare debugNode repeats given observe counting located).lookup u with
+  cases hl : (fileVerdicts f selection givenLines infer force keep fuel compare debugNode repeats given observe counting located).lookup u with
   | none => rw [hl] at ha; cases ha
   | some v =>
     rw [hl] at ha
@@ -147,8 +148,8 @@ theorem closedUnits_selected_safe
     have hm := lookup_mem hl
     simp only [fileVerdicts, List.mem_map, Prod.mk.injEq] at hm
     obtain ⟨i, hi, hid, hv⟩ := hm
-    cases hp : ((f.withHeadFacts givenLines false).passGroup fuel (f.fr.group i) compare debugNode repeats given
-        observe counting located).2 with
+    cases hp : ((f.withHeadFacts givenLines false infer).passGroupMode8 infer force keep fuel (f.fr.group i) compare
+        debugNode repeats given observe counting located).2.1 with
     | error e => rw [hp] at hv; cases hv
     | ok d => exact ⟨i, hi, hid, passUnit_safe hrun hkeep hplans hi hp⟩
 
@@ -166,22 +167,23 @@ theorem passFile_safe
     (hdrop : ReceiverDropSound)
     {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {selection : Option (List String)} {standIns : StandIns} {force : List String} {f : FilePlans}
-    {givenLines : Std.HashMap String Json} {fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
+    {givenLines : Std.HashMap String Json} {infer : Bool}
+    {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)} {fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
     {given : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool}
     (hplans : fragmentPlans ast fileKey budget selection standIns force = .ok f)
-    (layout : ModuleLayout (f.withHeadFacts givenLines false) selection
-      (closedUnits (fileVerdicts f selection givenLines fuel compare debugNode repeats given observe counting located)))
+    (layout : ModuleLayout (f.withHeadFacts givenLines false infer) selection
+      (closedUnits (fileVerdicts f selection givenLines infer force keep fuel compare debugNode repeats given observe counting located)))
     (hout : OutsideContracts layout) :
-    let S := closedUnits (fileVerdicts f selection givenLines fuel compare debugNode repeats given observe counting located)
-    (∀ u ∈ S, ∃ i ∈ f.fr.selected selection, f.fr.unitId i = u ∧ PassUnitSafe (f.withHeadFacts givenLines false) i) ∧
+    let S := closedUnits (fileVerdicts f selection givenLines infer force keep fuel compare debugNode repeats given observe counting located)
+    (∀ u ∈ S, ∃ i ∈ f.fr.selected selection, f.fr.unitId i = u ∧ PassUnitSafe (f.withHeadFacts givenLines false infer) i) ∧
     (∀ x ∈ layout.D, ∀ n, ∀ m ≤ n, ∀ W : WorldT m,
-      meaning (graphOf (f.withHeadFacts givenLines false)) (layout.iface x) m W (approx layout.code n x)) ∧
-    (∀ x ∈ layout.D, ∀ n (W : WorldT n), EnvOk (graphOf (f.withHeadFacts givenLines false)) (layout.code x).captures
+      meaning (graphOf (f.withHeadFacts givenLines false infer)) (layout.iface x) m W (approx layout.code n x)) ∧
+    (∀ x ∈ layout.D, ∀ n (W : WorldT n), EnvOk (graphOf (f.withHeadFacts givenLines false infer)) (layout.code x).captures
       (envOf ((layout.code x).captured (approx layout.code n) n) .nul) n W) := by
   intro S
   have hsafe := fun u (hu : u ∈ S) =>
     closedUnits_selected_safe hrun hkeep hplans hu
-  have hover := withHeadFacts_overStore (given := givenLines) (entries := false) (fragmentPlans_overStore hplans)
+  have hover := withHeadFacts_overStore (given := givenLines) (entries := false) (inferred := infer) (fragmentPlans_overStore hplans)
   have hreal := layout_realizes hdrop hover hsafe layout hout
   exact ⟨fun u hu => hsafe u hu,
     fun x hx n => approx_meets hreal layout.values n x hx,

@@ -124,8 +124,8 @@ theorem fragmentPlans_modules {ast : Json} {fileKey : String} {budget : Positive
 
 /-- The plans with the given head facts are those plans, each request with
 other candidates and code sources and every other field kept. -/
-theorem withHeadFacts_plan {f : FilePlans} {given : Std.HashMap String Json} {entries : Bool} {i name pos}
-    {r : Req f} (h : PlanAt (f.withHeadFacts given entries) i name pos r) :
+theorem withHeadFacts_plan {f : FilePlans} {given : Std.HashMap String Json} {entries inferred : Bool} {i name pos}
+    {r : Req f} (h : PlanAt (f.withHeadFacts given entries inferred) i name pos r) :
     ∃ r₀ : Req f, PlanAt f i name pos r₀ ∧ ∃ cands cs, r = { r₀ with candidates := cands, codeSources := cs } := by
   unfold PlanAt FilePlans.withHeadFacts at h
   simp only [List.getElem?_map, List.getElem?_zipIdx, Option.map_eq_some_iff] at h
@@ -142,8 +142,8 @@ theorem withHeadFacts_plan {f : FilePlans} {given : Std.HashMap String Json} {en
       exact ⟨r₀, hp', _, _, rfl⟩
 
 /-- Head facts keep the store every plan is over (proved). -/
-theorem withHeadFacts_overStore {f : FilePlans} {given : Std.HashMap String Json} {entries : Bool}
-    (h : OverStore f) : OverStore (f.withHeadFacts given entries) := by
+theorem withHeadFacts_overStore {f : FilePlans} {given : Std.HashMap String Json} {entries inferred : Bool}
+    (h : OverStore f) : OverStore (f.withHeadFacts given entries inferred) := by
   intro i name pos r hi
   obtain ⟨r₀, h₀, _, _, rfl⟩ := withHeadFacts_plan hi
   exact h i name pos r₀ h₀

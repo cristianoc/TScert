@@ -27,16 +27,18 @@ theorem passUnitVerdict_safe
     {selection : Option (List String)} {standIns : StandIns} {force : List String} {f₀ : FilePlans}
     {prepare : String → FilePlans → FilePlans}
     {check : FilePlans → List Nat → List String × Except String (List String)}
-    {givenLines : Std.HashMap String Json} {i fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
+    {givenLines : Std.HashMap String Json} {infer : Bool}
+    {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)} {i fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
     {given : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool}
     {deps : List String}
     (hplanned : (∃ est tables, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables =
         .ok f₀) ∨
       (∃ ms notes, fragmentPlansWithModules ast fileKey budget selection standIns force prepare check =
         .ok (f₀, ms, notes)))
-    (haccepted : ((preparedMode8 force givenLines f₀).passGroup fuel ((preparedMode8 force givenLines f₀).fr.group i)
-      compare debugNode repeats given observe counting located).2 = .ok deps) :
-    PassUnitSafe (preparedMode8 force givenLines f₀) i :=
+    (haccepted : ((preparedMode8 force givenLines infer f₀).passGroupMode8 infer force keep fuel
+      ((preparedMode8 force givenLines infer f₀).fr.group i) compare debugNode repeats given observe counting
+      located).2.1 = .ok deps) :
+    PassUnitSafe (preparedMode8 force givenLines infer f₀) i :=
   passUnitCli_safe hrun hkeep hplanned haccepted
 
 end Verification.SourceClaimJson.PassUnit

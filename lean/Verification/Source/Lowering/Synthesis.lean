@@ -193,6 +193,9 @@ structure Walk where
   strict : Bool := false
   /-- Whether a handler catches what the statements being walked throw. -/
   caught : Bool := false
+  /-- Whether a statement walked is a `try` with a finalizer that only
+  falls through or throws (`TSCERT_FORCE=finalizers` reads it). -/
+  quietFinalizer : Bool := false
   /-- Whether the body being walked is an async literal's: a throw in it
   rejects the promise its call returns normally. -/
   asyncBody : Bool := false
@@ -637,7 +640,7 @@ def readField (vars : List (String × Ty Tree)) (A : Ty Tree) (fld : PropKey) : 
       -- Plans.primitiveArms (Plans.lean:646-648) refuses the same missing
       -- prototype; it is a located read refusal, not an unknown construct.
       let P ← tryCatch (protoFor vars tag) fun m => throw (readRefusal m)
-      let some B := fieldRow G P fld | throw (readRefusal s!"a primitive's prototype names no field '{reprStr fld}'")
+      let some B := fieldRow G P fld | throw (readRefusal s!"a primitive's prototype names no field '{fld}'")
       out := out ++ B
   if !funs.isEmpty then
     let some P := vars.lookup SourceTypes.functionPrototypeName
@@ -2826,6 +2829,18 @@ partial def fallsOrThrows : List Stmt → Bool
     | .block _ none body => fallsOrThrows body
     | _ => false) && fallsOrThrows rest
 
+/-- Statements that may complete otherwise than by falling through or a
+throw: a `return`, `break` or `continue` anywhere in them, a nested loop's
+included (the producer's `leaves_stmts`, source.ml:996-1006). -/
+partial def leaves (ss : List Stmt) : Bool := ss.any fun
+  | .ret .. | .brk .. | .cont .. => true
+  | .ite _ _ a b => leaves a || leaves (b.getD [])
+  | .loop _ _ b u _ => leaves (b ++ u)
+  | .block _ _ b | .forOf _ _ _ _ _ b => leaves b
+  | .tryStmt _ b h f => leaves (b ++ ((h.map (·.2)).getD []) ++ f.getD [])
+  | .closing _ c b => leaves (b ++ c)
+  | _ => false
+
 /-- A handler that has no normal exit: it completes only by a throw (the
 producer's `throw_only_stmts`, source.ml:975-993). -/
 partial def throwOnly : List Stmt → Bool
@@ -3779,9 +3794,12 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
       | _ => pure O
     let narrowed := (memberPath e).bind fun p => e1.paths.lookup p
     if let (some p, some _) := (memberPath e, narrowed) then modify fun w => { w with readPaths := w.readPaths.insert p }
+    -- (`TSCERT_FORCE=optional-reads`: the read proposed without `undefined`)
+    let dropUndefined := (← get).force.contains "optional-reads"
     let r ← attempt e do
       if let some P := narrowed then return P
-      readField e1.vars (← need O "the receiver") fld
+      let R ← readField e1.vars (← need O "the receiver") fld
+      return if dropUndefined then R.filter (· != Labels.undef) else R
     -- A completed read narrows its receiver held in a slot: past it, not
     -- `null` or `undefined` (`readNarrowing`, Atoms.lean:93-104).
     let e1 ← match x, O, r with
@@ -6210,12 +6228,18 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     -- a normal return; a throw it leaves may change what they change (the
     -- producer's `Try` of a `throw_only_stmts` handler, source.ml:1168-1169).
     let rethrows := finalizer.isNone && (handler.any fun (_, hs) => throwOnly hs)
-    if (handler.isSome || finalizer.isSome) && !rethrows then modify fun w => { w with caught := true }
+    -- A finalizer that only falls through or throws completes normally only
+    -- where the guarded block did: after a throw it throws again, so it
+    -- catches nothing (the producer's `Try` of a finalizer that does not
+    -- leave, source.ml:1162-1167).
+    let finalizerLeaves := finalizer.any leaves
+    if finalizer.isSome && !finalizerLeaves then modify fun w => { w with quietFinalizer := true }
+    if (handler.isSome || finalizerLeaves) && !rethrows then modify fun w => { w with caught := true }
     -- The jumps and returns the statement's body and handler leave by (each
     -- through the finalizer: a copy of it per route, `SourceFlow.sequence`).
     let w0 ← get
     let b ← stmts (some env) body
-    modify fun w => { w with caught := outer || finalizer.isSome }
+    modify fun w => { w with caught := outer || finalizerLeaves }
     -- A handler's entry: each binding the body assigns at its declared
     -- type, and each cell (a throw keeps no current-content fact).
     let reset := cellsDeclared (← get) (loopHead env body)
@@ -6402,7 +6426,8 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
       | none => pure ()
     for p in f.params do
       match ← tryCatch (some <$> lower (Fragment.translate p.ty)) fun _ => pure none with
-      | some A => vars := upd vars p.name A
+      -- (`TSCERT_FORCE=annotations`: each parameter proposed at `undefined`)
+      | some A => vars := upd vars p.name (if force.contains "annotations" then [Labels.undef] else A)
       | none => pure ()
     let unitCells := (cellLocals (f.params.map (·.name)) f.body f.name.isEmpty).map (·.1)
     let env : Env := { vars := vars, decl := vars, cells := unitCells }

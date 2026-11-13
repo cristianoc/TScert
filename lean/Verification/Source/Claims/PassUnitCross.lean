@@ -26,12 +26,15 @@ theorem moduleUnitId_inj {loc a b : String} (h : moduleUnitId loc a = moduleUnit
 
 /-- Mode 8's preparation of a module in the interface computation. -/
 def mode8Prepare (given : Std.HashMap String Json) : String → FilePlans → FilePlans :=
-  fun location f => f.withHeadFacts (RequestCli.forModule location given) false
+  fun location f => f.withHeadFacts (RequestCli.forModule location given) false given.isEmpty
 
 /-- Mode 8's check of a module's group in the interface computation. -/
-def mode8Check (fuel : Nat) (given : Std.HashMap String Json) :
+def mode8Check (fuel : Nat) (force : List String) (given : Std.HashMap String Json) :
     FilePlans → List Nat → List String × Except String (List String) :=
-  fun f group => f.passGroup fuel group (given := some (RequestCli.moduleGiven f.fr.ast given))
+  fun f group =>
+    let r := f.passGroupMode8 given.isEmpty force (fun _ => []) fuel group
+      (given := some (RequestCli.moduleGiven f.fr.ast given))
+    (r.1, r.2.1)
 
 /-- **A module's layout at its established units** (H5a at the module): a
 set `Sm` of the module's units, each with its wire identity in the step's
@@ -60,7 +63,7 @@ def entryRealized_of_step
     {ok : List String} {incoming : Established} {reads : List FragmentRead} {tables : List (String × RowTable)}
     (hok : ∀ u ∈ ok, ∃ l ∈ (stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables).fr.leaders,
         moduleUnitId m.module.location ((stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables).fr.unitId l) = u ∧
-        ∃ lines deps, mode8Check fuel given (stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables)
+        ∃ lines deps, mode8Check fuel force given (stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables)
           ((stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables).fr.group l) = (lines, .ok deps) ∧
           ∀ d ∈ deps, d ∈ ok ∨ d ∈ incoming.map (·.2.2))
     {e : Entry} (L : StepLayout (stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables) m.module.location ok e) :
@@ -92,7 +95,7 @@ def StepLayouts (budget : PositiveCertificates.SearchBudget) (force : List Strin
     (ok : List String) (incoming : Established) (reads : List FragmentRead) (tables : List (String × RowTable))
     (hok : ∀ u ∈ ok, ∃ l ∈ (stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables).fr.leaders,
         moduleUnitId m.module.location ((stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables).fr.unitId l) = u ∧
-        ∃ lines deps, mode8Check fuel given (stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables)
+        ∃ lines deps, mode8Check fuel force given (stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables)
           ((stepPlans (mode8Prepare given) m.module.location fm₀ reads incoming tables).fr.group l) = (lines, .ok deps) ∧
           ∀ d ∈ deps, d ∈ ok ∨ d ∈ incoming.map (·.2.2)),
     e.2.2 ∈ ok →
@@ -107,7 +110,7 @@ theorem realized_of_established
     {budget : PositiveCertificates.SearchBudget} {force : List String} {fuel : Nat}
     {given : Std.HashMap String Json} {Chosen : (e : Entry) → EntryRealized e → Prop}
     {needs : List ModuleNeed} {incoming : Established} {e : Entry}
-    (hstep : EstablishedStep budget force (mode8Prepare given) (mode8Check fuel given) needs incoming e)
+    (hstep : EstablishedStep budget force (mode8Prepare given) (mode8Check fuel force given) needs incoming e)
     (hlay : StepLayouts budget force fuel given Chosen e) : ∃ src : EntryRealized e, Chosen e src := by
   obtain ⟨m, -, -, -, fm₀, forced, imported, depends, reads, tables, hplan, ok, he, -, hok⟩ := hstep
   obtain ⟨L, hL⟩ := hlay hrun hkeep m fm₀ forced imported depends hplan ok incoming reads tables hok he
@@ -125,7 +128,7 @@ theorem entries_realized
     {given : Std.HashMap String Json} {Chosen : (e : Entry) → EntryRealized e → Prop}
     {M : Type} (order : List M) (est reads : M → List Entry) (hord : ReadsEarlier order est reads)
     (hstep : ∀ m ∈ order, (∀ e ∈ reads m, ∃ src : EntryRealized e, Chosen e src) → ∀ e ∈ est m,
-      (∃ needs incoming, EstablishedStep budget force (mode8Prepare given) (mode8Check fuel given) needs incoming e) ∧
+      (∃ needs incoming, EstablishedStep budget force (mode8Prepare given) (mode8Check fuel force given) needs incoming e) ∧
       StepLayouts budget force fuel given Chosen e) :
     ∀ m ∈ order, ∀ e ∈ est m, ∃ src : EntryRealized e, Chosen e src :=
   linkModules order est reads (fun e => ∃ src : EntryRealized e, Chosen e src) hord fun m hm hreads e he => by
@@ -140,7 +143,7 @@ theorem established_of_provenance {budget : PositiveCertificates.SearchBudget} {
     {fuel : Nat} {given : Std.HashMap String Json} {est : Established}
     (hprov : InterfaceProvenance budget force fuel given est) (hest : EstablishProvenance) :
     ∀ e ∈ est, ∃ needs incoming,
-      EstablishedStep budget force (mode8Prepare given) (mode8Check fuel given) needs incoming e := by
+      EstablishedStep budget force (mode8Prepare given) (mode8Check fuel force given) needs incoming e := by
   intro e he
   obtain ⟨needs, incoming, tables, vs, ns, ts, est', hrun, he', hnot⟩ := hprov e he
   rcases hest needs budget force incoming _ _ est' vs ns tables ts hrun e he' with hin | ⟨est₀, hstep⟩
@@ -185,7 +188,7 @@ theorem crossModule_safe
     {given : Std.HashMap String Json} {Chosen : (e : Entry) → EntryRealized e → Prop}
     {M : Type} (order : List M) (est reads : M → List Entry) (hord : ReadsEarlier order est reads)
     (hstep : ∀ m ∈ order, (∀ e ∈ reads m, ∃ src : EntryRealized e, Chosen e src) → ∀ e ∈ est m,
-      (∃ needs incoming, EstablishedStep budget force (mode8Prepare given) (mode8Check fuel given) needs incoming e) ∧
+      (∃ needs incoming, EstablishedStep budget force (mode8Prepare given) (mode8Check fuel force given) needs incoming e) ∧
       StepLayouts budget force fuel given Chosen e)
     {f : FilePlans} {selection : Option (List String)} {S : List String} (hover : OverStore f)
     (hsafe : ∀ u ∈ S, ∃ i ∈ f.fr.selected selection, f.fr.unitId i = u ∧ PassUnitSafe f i)

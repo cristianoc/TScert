@@ -168,7 +168,9 @@ held in a slot. -/
 @[nospecialize] private partial def executionClaim (fc : SourceClaims.Function Tree)
     (source : Span) (fallback : Compiler (Ty Tree)) : Compiler (Ty Tree) :=
   match fc.exprs.lookup source with
-  | some candidate => do SourceClaims.resolve (← table) candidate
+  | some candidate => do
+    (SourceClaims.resolve (← table) candidate).mapError fun msg =>
+      s!"source expression obligation at [{source.1},{source.2}): {msg}"
   | none => fallback
 
 /-- Synthetic operation results are derived from their operand contracts.

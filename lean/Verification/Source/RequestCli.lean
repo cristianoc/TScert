@@ -421,12 +421,18 @@ def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) :
     let fuel ← j.getObjValAs? Nat "fuel"
     let mode ← j.getObjValAs? Nat "mode"
     if mode != 8 && mode != 9 then throw "interface mode must be 8 or 9"
+    -- The loop heads' proposals (`HeadInference`) where no given line is.
+    let infer := given.isEmpty
     let prepare := fun location (f : SourceClaimJson.FilePlans) =>
-      let f := f.withHeadFacts (forModule location given) (mode == 9)
+      let f := f.withHeadFacts (forModule location given) (mode == 9) (inferred := infer)
       if mode == 9 && !allCuts then f.headCuts else f
     let check := fun (f : SourceClaimJson.FilePlans) group =>
       if mode == 9 then (([] : List String), f.verifyGroup fuel group false)
-      else f.passGroup fuel group (given := some (moduleGiven f.fr.ast given))
+      else
+        -- With inference, the given lines it computes and the region
+        -- separations, as for the file's own units (`passGroupMode8`).
+        let r := f.passGroupMode8 infer force (fun _ => []) fuel group (given := some (moduleGiven f.fr.ast given))
+        (r.1, r.2.1)
     let (est, _, _, tables) ← SourceClaimJson.establishModules
       (own.mergeSort (fun a b => a.module.location ≤ b.module.location)) budget force incoming prepare check incomingTables
     SourceClaimJson.encodeInterfaces modules est tables
@@ -491,6 +497,15 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
   let located := (← IO.getEnv "TSCERT_PASS_REFUSALS") != some "raw"
   -- Adversarial proposals forced, for the referee (`TSCERT_FORCE`, comma-separated).
   let force := ((← IO.getEnv "TSCERT_FORCE").getD "").splitOn "," |>.filter (!·.isEmpty)
+  -- The loop heads' proposals (`HeadInference`): where no given line is
+  -- read, beside the given file's with `TSCERT_INFER_HEADS=1`, none with `=0`.
+  -- A forced head proposal (`head-…`) is the pass's to refuse: no rerun
+  -- drops it, and it is stated beside a given file's facts too.
+  let fixedHeads := force.any (·.startsWith "head-")
+  let infer := match (← IO.getEnv "TSCERT_INFER_HEADS") with
+    | some "0" => false
+    | some "1" => true
+    | _ => givenText.isEmpty || fixedHeads
   -- The referee's statement entries all the search's cuts (`TSCERT_ALL_CUTS`).
   let allCuts := (← IO.getEnv "TSCERT_ALL_CUTS").isSome
   let interfaces ← match interfacesPath with
@@ -508,16 +523,23 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
     -- given file.
     else if mode == 8 || mode == 9 then
       let prepare := fun (given : Std.HashMap String Json) (f : SourceClaimJson.FilePlans) =>
-        let f := f.withHeadFacts given (mode == 9)
+        let f := f.withHeadFacts given (mode == 9) (inferred := infer)
         let f := if force.contains "start-facts" then f.withFalseStartFact else f
         if mode == 9 && !allCuts then f.headCuts else f
       -- The module units an import's footprint rests on, checked here by the
       -- same mode (`fragmentPlansWithModules`), each at the given lines of
       -- its wire identity (`module:<location>#<unit>`).
       let check := fun (f : SourceClaimJson.FilePlans) (group : List Nat) =>
-        if mode == 9 then (([] : List String), f.verifyGroup fuel group false)
-        else f.passGroup fuel group (given := some (moduleGiven f.fr.ast
-          (moduleLines ((f.fr.ast.getObjValAs? String "file").toOption.getD "")))) (located := located)
+        if mode == 9 then
+          -- With inference, the region separations allocations state at the
+          -- group's loop heads (`withFreshApart`).
+          let f := if infer then f.withFreshApart (force.contains "head-apart") group else f
+          (([] : List String), f.verifyGroup fuel group false)
+        else
+          let lines := moduleLines ((f.fr.ast.getObjValAs? String "file").toOption.getD "")
+          let r := f.passGroupMode8 infer force (f.givenAt lines) fuel group
+            (given := some (moduleGiven f.fr.ast lines)) (located := located)
+          (r.1, r.2.1)
       if let some cached := interfaces then
         let cached ← cached
         let sc ← if (← jArr cached "modules").isEmpty then
@@ -570,7 +592,9 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
           | some reason => .error reason
           | none => SourceClaimJson.unitVerdict f budget unit evidence
         -- Mode 9: the search and the proved check over mode 8's plans.
-        | 1 | 9 => IO.lazyPure fun _ => f.verifyGroup fuel (f.fr.group i) false
+        | 1 | 9 => IO.lazyPure fun _ =>
+          let f := if mode == 9 && infer then f.withFreshApart (force.contains "head-apart") (f.fr.group i) else f
+          f.verifyGroup fuel (f.fr.group i) false
         | 3 | 8 => do
           let p0 ← SinglePass.passNanos.get
           let compare := (← IO.getEnv "TSCERT_COMPARE").isSome
@@ -608,7 +632,9 @@ def verifyUnitsFile (astPath : String) (claimsPath : Option String) (fileKey : S
               | none => pure 0
             emit s!"counts-read: \{\"fragmentBytes\":{← size astPath},\"claimsBytes\":{claimsBytes},\"givenBytes\":{given},\"standInBytes\":{standInBytes},\"interfaceBytes\":{interfaceBytes}}"
           let (lines, v) ← IO.lazyPure fun _ =>
-            f.passGroup fuel (f.fr.group i) compare debugNode repeats given observe counting located
+            let (ls, v, dropped, runs) := f.passGroupMode8 infer force (f.givenAt givenLines) fuel (f.fr.group i)
+              compare debugNode repeats given observe counting located
+            (ls ++ (if dropped > 0 then [s!"inferred heads: {dropped} proposals dropped, {runs} runs"] else []), v)
           let p1 ← SinglePass.passNanos.get
           let s1 ← IO.monoNanosNow
           for line in lines do emit line

@@ -36,12 +36,13 @@ def command (args : List String) : IO UInt32 := do
       Verification.RequestCli.interfacePlanFile astPath selection
   | ["--module-interface", request] =>
       Verification.RequestCli.interfaceFile request budget
-  | ["--verify-interfaces", mode, ast, interfaces, given, stand, key, depth, names]
-  | ["--verify-interface-stage", mode, ast, interfaces, given, stand, key, depth, names] =>
+  | ["--verify-interface-stage", mode, ast, interfaces, key, depth, names] =>
       match mode.toNat?, depth.toNat? with
       | some m, some fuel =>
         if m != 8 && m != 9 then return 2
-        Verification.RequestCli.verifyUnitsFile ast none key fuel (if names.isEmpty then none else some names) m budget (some interfaces) (some given) (some stand) (args.head? == some "--verify-interface-stage")
+        -- Quiet but where its counts are asked (`TSCERT_COUNTS`, dev/perf-gate.mts).
+        let quiet := (← IO.getEnv "TSCERT_COUNTS").isNone
+        Verification.RequestCli.verifyUnitsFile ast none key fuel (if names.isEmpty then none else some names) m budget (some interfaces) none none quiet
       | _, _ => return 2
   | ["--lower-control-flow", astPath] =>
       Verification.RequestCli.flowFile astPath

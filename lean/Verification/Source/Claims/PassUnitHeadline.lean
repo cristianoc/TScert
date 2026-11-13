@@ -2,7 +2,8 @@ import Verification.Source.Claims.PassUnitSafe
 
 /-! # The single pass's unit theorem: the headline
 
-`member_safe`: a member `passGroup` accepts is safe. `passUnit_safe`: from
+`member_safe`: a member `passGroup` accepts is safe. `passUnit_safe`
+(PassUnitInferred): from
 mode 8's exact acceptance condition of a unit, every member of its group is
 safe, under the graph-level hypotheses `RunSound` and `RunKeepsSummaries`
 (H3, `PassGroupChecks`, proved in PassUnitMemberRun;
@@ -185,25 +186,5 @@ theorem member_safe {f : FilePlans} {j : Nat}
       hcodes hmain⟩
   | qualified name pos r q c a₀ after hplan hq _ hfp hot hfr hens hreg hcodes hm _ hregc hacc hs =>
     exact ⟨_, _, hplan, rfl, qualified_requestSafe hrun hq hfp hot hfr hens hreg hcodes hm hregc hacc hs⟩
-
-/-- **The headline** (proved, under the graph-level hypotheses `RunSound`
-and `RunKeepsSummaries`): when mode 8 prints a unit
-accepted, its plans are those `fragmentPlans` gives with the given head
-facts, the unit is selected and `passGroup` accepts its group, then every
-member of its group is safe (`PassUnitSafe`). -/
-theorem passUnit_safe
-    (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
-    {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
-    {selection : Option (List String)} {standIns : StandIns} {force : List String} {f : FilePlans} {i : Nat}
-    {givenLines : Std.HashMap String Json} {fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
-    {given : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool} {deps : List String}
-    (hplans : fragmentPlans ast fileKey budget selection standIns force = .ok f)
-    (_hselected : i ∈ f.fr.selected selection)
-    (haccepted : ((f.withHeadFacts givenLines false).passGroup fuel (f.fr.group i) compare debugNode repeats
-      given observe counting located).2 = .ok deps) :
-    PassUnitSafe (f.withHeadFacts givenLines false) i := by
-  intro j hj
-  exact member_safe (hrun _) (hkeep _) (withHeadFacts_overStore (fragmentPlans_overStore hplans))
-    (passGroupChecks _ _ _ _ _ _ _ _ _ _ _ haccepted j hj)
 
 end Verification.SourceClaimJson.PassUnit

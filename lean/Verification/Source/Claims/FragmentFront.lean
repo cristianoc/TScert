@@ -1,5 +1,7 @@
 import Verification.Source.Claims.Json
 import Verification.Source.Claims.TypeComparison
+import Verification.Source.Claims.HeadInference
+import Verification.Source.Claims.RegionInference
 import Verification.Source.Claims.InterfaceRows
 
 /-! The claims-free front of the single pass (mode 8): a file's units
@@ -192,6 +194,51 @@ def Front.flowGraphs (fr : Front) (f : Fragment.Fn) (init : Bool) :
   let prologues ← prologueSites (raw.getD .null)
   return (graph :: nested, prologues)
 
+/-- The rules of the loop heads' proposals (`HeadInference.Rules`). -/
+def headRules (force : List String) : HeadInference.Rules :=
+  { counters := true, carried := true, falseCounters := force.contains "head-counters",
+    falseCarried := force.contains "head-carried", falseSeparations := force.contains "head-separations",
+    falsePaired := force.contains "head-paired", falseKinds := force.contains "head-kinds",
+    falseArms := force.contains "head-arms", falseEnsures := force.contains "head-ensures",
+    falseEntails := force.contains "head-entails", falseEvery := force.contains "head-every",
+    falseExits := force.contains "head-exits", falseGuards := force.contains "head-guards",
+    falseRestated := force.contains "head-restated", falseElements := force.contains "head-elements",
+    falseCalled := force.contains "head-called", falseEliminated := force.contains "head-eliminated" }
+
+/-- The names of a statement list's early bindings (`Fragment.Binding.early`),
+nested statements' included: a term rooted at one reads no initialized
+binding (`termRoot`). -/
+partial def earlyNames (ss : List Fragment.Stmt) : List String :=
+  ss.flatMap fun
+    | .constants _ bs | .mutables _ bs => (bs.filter (·.early)).map (·.name)
+    | .ite _ _ t e => earlyNames t ++ earlyNames (e.getD [])
+    | .loop _ _ b u _ => earlyNames b ++ earlyNames u
+    | .block _ _ b | .forOf _ _ _ _ _ b => earlyNames b
+    | .tryStmt _ b h f => earlyNames b ++ earlyNames ((h.map (·.2)).getD []) ++ earlyNames (f.getD [])
+    | .closing _ c b => earlyNames c ++ earlyNames b
+    | _ => []
+
+/-- The kind of the `length` of a value of a type in claim form, its labels
+read in the store `T`: a string's where each of its clauses but `null` and
+`undefined` is a string, an array's where each holds an array store, a typed
+array's where each states a view length; a type in the parser's form by its
+written type (`HeadInference.kindOfType`). -/
+def lengthKindIn (T : EquationStore.State) (j : Json) : Option HeapKnowledge.Term.Kind :=
+  match (Fragment.translate j).run T with
+  | .error _ => HeadInference.kindOfType j
+  | .ok (A, T) =>
+    let field := fun (fs vs : List (PropKey × List Tree)) (k : PropKey) => (fs.lookup k <|> vs.lookup k).isSome
+    let kinds := (PositiveRules.expand (SourceTypes.graph T) A).filterMap fun c => match c with
+      | .nul | .undef => none
+      | .str | .strLit _ | .strIn _ => some (some HeapKnowledge.Term.Kind.strLength)
+      | .refs fs _ vs .. =>
+        some (if field fs vs SourceTypes.storeField then some .length
+          else if field fs vs viewLengthKey then some .view else none)
+      | _ => some none
+    match kinds with
+    | some k :: ks => if ks.all (· == some k) then some k else none
+    | _ => none
+
 /-- **A unit's claims from its fragment** (mode 8): the walk's types
 (`retypeByWalk`) at each execution point (`SourceFlow.pointId`) of its flow
 graphs, each point holding its node's sites' expressions and its statement
@@ -218,6 +265,63 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
     return twice
   let currentMap : Std.HashMap Nat (List (String × List (List PropKey × Ty Tree))) :=
     fc.entryCurrent.foldl (fun m (pos, cs) => m.insert pos cs) {}
+  -- The loop heads' proposals (`HeadInference.proposals`), by each loop
+  -- statement's start: the producer's door, its entry claims at the loop's
+  -- execution point, each fact naming only bindings in scope at the head
+  -- and initialized there (no early binding).
+  let lengthKind := lengthKindIn T
+  -- (each function's postcondition by its name, a call's facts)
+  -- (an imported function's or another module value's, where no unit of
+  -- the file names it: its signature's, `Effect.ensures`)
+  let ensuresOf := fun (n : String) => match fr.units.find? (·.1.name == n) with
+    | some (g, _, _) => g.ensures
+    | none => match module.find? (·.1 == n) with
+      | some v => match runCompiler T [] (moduleValueType v) with
+        | .ok (A, r) => match PositiveRules.expand (SourceTypes.graph r.types) A with
+          | [.arrs [a] _] => a.effect.ensures
+          | _ => []
+        | .error _ => []
+      | none => []
+  let heads : Std.HashMap Nat (List HeadInference.Fact) :=
+    (HeadInference.proposals
+      { headRules force with
+          kind := HeadInference.kindsOf f lengthKind
+          arrays := HeadInference.arraysOf f lengthKind
+          ensuresOf := ensuresOf } f.body
+      (if (headRules force).carried then HeadInference.entryOf f else [])).foldl (fun m (pos, fs) => m.insert pos fs) {}
+  let early := (earlyNames f.body).eraseDups
+  let headClaims (g : SourceFlow.Graph) (node : SourceFlow.Node) : List (Nat × List HeadInference.Fact) :=
+    let loopPos : Option Nat := match node.action with
+      | .branch (.loop pos ..) _ _ | .iteratorStep (.forOf pos ..) _ _ _ _ => some pos.1
+      | _ => none
+    match loopPos with
+    | some pos =>
+      if g.owner != owner then [] else
+      -- (the parameters are the body's ambient bindings, in no node's scope)
+      let inScope := fun (n : String) =>
+        (node.scope.any (·.name == n) || f.params.any (·.name == n)) && !early.contains n
+      -- (a store separation names value bindings alone: no cell; and a
+      -- binding it names whole, a value its type at the loop's entry makes
+      -- an array, where the walk types it: no string, no null)
+      let typed := (envMap.get? pos).getD []
+      let holdsArray := fun (n : String) => match typed.lookup n with
+        | some (.ok A) =>
+          let field := fun (fs vs : List (PropKey × List Tree)) (k : PropKey) => (fs.lookup k <|> vs.lookup k).isSome
+          let cs := PositiveRules.expand (SourceTypes.graph T) A
+          !cs.isEmpty && cs.all fun
+            | .refs fs _ vs .. => field fs vs SourceTypes.storeField || field fs vs viewLengthKey
+            | _ => false
+        | _ => true
+      let apartFits : HeadInference.Fact → Bool
+        | .apart _ a pa b pb => (!pa.isEmpty || holdsArray a) && (!pb.isEmpty || holdsArray b)
+        | _ => true
+      let fits := fun (F : HeadInference.Fact) => F.names.all inScope && match F with
+        | .apart .. => F.names.all (fun n => !g.cells.any (·.name == n)) && apartFits F
+        | _ => true
+      match (heads.get? pos).map (·.filter fits) with
+      | some (fs@(_ :: _)) => [(node.source.1, fs)]
+      | _ => []
+    | none => []
   let sitesOf (g : SourceFlow.Graph) (node : SourceFlow.Node) (id : Nat) : List Span :=
     (actionSites node.action ++ (if id == g.entry then (prologues.lookup g.owner).getD [] else [])).eraseDups
   -- The spans that are sites of more than one statement (the parts a class's
@@ -266,7 +370,10 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
       entryCurrent := match own, currentMap.get? node.source.1 with
         | some (_, []), _ => []
         | some (_, cs), _ | none, some cs => [(node.source.1, cs)]
-        | none, none => [] }
+        | none, none => []
+      entryFacts := (headClaims g node).map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.claim)
+      entryStoresApart := (headClaims g node).map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.storesClaim)
+      entryEvery := (headClaims g node).map fun (pos, fs) => (pos, fs.filterMap HeadInference.Fact.everyClaim) }
     (SourceFlow.pointId g.owner id, row)
   -- Two graphs of one owner name a point once: its rows joined.
   let joined : Std.HashMap String (SourceClaims.PointData Tree) := points.foldl (fun m (id, row) =>
@@ -274,7 +381,10 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
     | some r => m.insert id { r with
         exprs := r.exprs ++ row.exprs.filter (fun (sp, _) => !r.exprs.any (·.1 == sp))
         envs := r.envs ++ row.envs.filter (fun (pos, _) => !r.envs.any (·.1 == pos))
-        entryCurrent := r.entryCurrent ++ row.entryCurrent.filter (fun (pos, _) => !r.entryCurrent.any (·.1 == pos)) }
+        entryCurrent := r.entryCurrent ++ row.entryCurrent.filter (fun (pos, _) => !r.entryCurrent.any (·.1 == pos))
+        entryFacts := r.entryFacts ++ row.entryFacts.filter (fun (pos, _) => !r.entryFacts.any (·.1 == pos))
+        entryStoresApart := r.entryStoresApart ++
+          row.entryStoresApart.filter (fun (pos, _) => !r.entryStoresApart.any (·.1 == pos)) }
     | none => m.insert id row) {}
   let points := (points.map (·.1)).eraseDups.filterMap fun id => (joined.get? id).map (id, ·)
   -- Its own footprint the one its callers read (`fragmentClaims`): written,
@@ -463,7 +573,11 @@ def declarationWalks (fr : Front) (wanted : List Nat) (standIns : StandIns) (for
         | none => moduleValueType v : Compiler (Ty Tree)))
       match Synthesis.walkUnit fr.d.types f (module ++ schemes) generics force none (strict := true) with
       | .ok (w, T) =>
-        some ((if w.writes then ⟨w.valueChange, w.storeChange⟩ else ⟨.keep, .keep⟩, !w.throwWrites),
+        -- (`TSCERT_FORCE=finalizers`: a function holding a finalizer that
+        -- only falls through or throws proposed keep/keep, the adversarial
+        -- proposal its own unit refuses where it writes)
+        let forced := force.contains "finalizers" && w.quietFinalizer
+        some ((if w.writes && !forced then ⟨w.valueChange, w.storeChange⟩ else ⟨.keep, .keep⟩, !w.throwWrites),
           -- (where the result annotation can state it, `resultWithFootprint`)
           let R := returnedFootprint T w.returns (force.contains "results")
           if (resultWithFootprint fr.d.types f.ret R).isOk then R else .top)
@@ -766,6 +880,127 @@ def establishEntry (location : String) (fm : FilePlans) (ok : List String) (n : 
       | none => .error ""
     | _, _ => .error ""
 
+/-- The goal of a code entry whose function is declared without `this`: the
+signature's result, under its promise where it states one (the unit lane's
+`PassUnit.receiverlessGoal`). -/
+def receiverlessGoal {ι : Type} (c : CodeEntry ι) : ControlFlow.Goal ι :=
+  match c.row.effect.promise with
+  | some (.guards p) => .guards c.row.result p
+  | some (.asserts p) => .asserts c.row.result p
+  | none => .plain c.row.result
+
+/-- The slot map from a frame with a receiver in front to the frame past it
+(the unit lane's `PassUnit.pastReceiver`). -/
+def layoutPastReceiver (s : Nat) : Option Nat := if s = 0 then none else some (s - 1)
+
+/-- A layout's verdict on one function on its own: the functions of its file
+its code captures (`ok`), or why it is outside the laid-out set. -/
+inductive LayoutOwn where
+  | ok (callees : List String)
+  | outside (why : String)
+
+open LabelStore in
+/-- **A function's own layout conditions** (`ModuleLayout`'s `shape`, the
+unit lane's restated U3, but the callees' membership): unit `i`'s function
+has one interface, the type its file's units capture it at, else its
+interface slot; it presents one clause of signatures (`expand`) its code's
+kind offers (`KindOffers`); its captures are its slots, each of a file
+function read at that function's interface; and each signature row is
+realized by some member `j` of the file (`RowRealized`): `j`'s plan is
+unqualified, runs this function's code from its start at the row's frame
+with its captures (`codeFrame`, or past the receiver for a function without
+`this`), at the row's goal, footprint, fresh and throw flags, with no entry
+separation and the code's entry facts (renamed past the receiver, each fact
+of the request one of `mapIndices pastReceiver`), and the code's conditions
+hold (`codeConditions`). -/
+def FilePlans.layoutOwn (f : FilePlans) (i : Nat) : LayoutOwn := Id.run do
+  let G := StoreView.graph f.F.store
+  let fr := f.fr
+  let own : List String := (fr.units.filterMap fun (fn, tps, c) =>
+    if tps.isEmpty && c.isNone then some fn.name else none).eraseDups
+  let captured := fun (j : Nat) => match f.plans[j]? with
+    | some (.ok (.graph _ _ r)) =>
+      let names := fr.captureNames j
+      if names.length > r.inputs.length then none
+      else some (r, names.zip (r.inputs.drop (r.inputs.length - names.length)))
+    | _ => none
+  let readers := (List.range fr.units.length).filterMap captured
+  let ifaceOf := fun (n : String) => (readers.flatMap fun (_, cs) => cs.filter (·.1 == n)).map (·.2) |>.eraseDups
+  let some (fn, tps, initClaims) := fr.units[i]? | return .outside "no unit"
+  if initClaims.isSome then return .outside "the initialization"
+  if !tps.isEmpty then return .outside "a generic function's interface is a scheme"
+  let some (r, caps) := captured i | return .outside "its plan or its captures"
+  if r.qualification.isSome then return .outside "a qualified request"
+  let mut callees : List String := []
+  for (n, A) in caps do
+    if own.contains n then
+      match ifaceOf n with
+      | [B] => if A != B then return .outside s!"capture '{n}' at another type than its interface"
+      | _ => return .outside s!"'{n}' read at {(ifaceOf n).length} types"
+      callees := callees ++ [n]
+  let iface ← match ifaceOf fn.name, f.slots.lookup fn.name with
+    | [A], _ => pure A
+    | [], some A => pure A
+    | [], none => return .outside "no interface type"
+    | _, _ => return .outside s!"'{fn.name}' read at {(ifaceOf fn.name).length} types"
+  let some (L, Sg) := (match PositiveRules.expand G iface with
+      | [.arrs L Sg] => some (L, Sg)
+      | _ => none) | return .outside "its interface is not one clause of signatures"
+  let kind := if fn.convertsReceiver then Invoke.sloppy else Invoke.call
+  if !(offerRows L Sg).all (fun p => kindOffers G kind p.receiver) then
+    return .outside "its code's kind does not offer its signatures"
+  let captures := caps.map (·.2)
+  let before := r.inputs.take (r.inputs.length - captures.length)
+  let receiverless := !(fn.params.head?.any (·.name == "this"))
+  let arity := if receiverless then before.length else before.length - 1
+  let exprs := r.program.map (·.expression)
+  let conts := r.program.map fun n => (n.continuation, n.handler)
+  -- The members whose plans run this code: the candidates of each row.
+  let members := (List.range fr.units.length).filterMap fun (j : Nat) => match f.plans[j]? with
+    | some (.ok (.graph _ _ q)) =>
+      if q.start == r.start && q.program.map (·.expression) == exprs &&
+          q.program.map (fun n => (n.continuation, n.handler)) == conts then some q else none
+    | _ => none
+  for p in offerRows L Sg do
+    let e : CodeEntry _ := ⟨arity, exprs, conts, r.start, captures, p, none⟩
+    let eff := p.effect
+    if !(decide (arity ≤ p.arguments.length) && eff.below arity && !eff.freshObject && eff.requires.isNone &&
+        eff.elements.isNone && !eff.receiverGrows && eff.elementWrite.isNone) then
+      return .outside "the code's conditions"
+    let goal := if receiverless then receiverlessGoal e else e.goal
+    let facts := GraphCode.codeEntryIndices e
+    let past := HeapKnowledge.mapIndices layoutPastReceiver facts
+    let frameOk := fun (q : SourceRequest _ _) =>
+      q.qualification.isNone &&
+      q.inputs == (if receiverless then p.arguments.take arity ++ captures else codeFrame arity p captures none) &&
+      q.entrySeparation.facts.isEmpty && q.entrySeparation.depth == 0 &&
+      (if receiverless then q.entryIndices.all past.contains else q.entryIndices == facts) &&
+      q.footprint == eff.footprint && q.fresh == eff.fresh && q.onThrow == eff.onThrow
+    if !members.any fun q => frameOk q && q.toRequest.goal == goal then
+      if members.any frameOk then return .outside "its goal"
+      return .outside "no member realizes a signature row (its frame, entry facts or effect)"
+  return .ok callees
+
+/-- **The laid-out set** `D` (`ModuleLayout.D`): the greatest set of the
+file's functions meeting their own conditions (`layoutOwn`) whose every
+captured file function is in it, by unit; and each function outside it
+with why. It refuses nothing: the units' verdicts do not depend on it. -/
+def FilePlans.laidOut (f : FilePlans) : List String × List (String × String) :=
+  let own := (List.range f.fr.units.length).filterMap fun i => match f.fr.units[i]? with
+    | some (fn, _, none) => some (fn.name, f.layoutOwn i)
+    | _ => none
+  let start := own.filterMap fun (n, o) => match o with | .ok cs => some (n, cs) | .outside .. => none
+  let rec shrink : Nat → List (String × List String) → List (String × List String)
+    | 0, d => d
+    | k + 1, d =>
+      let d' := d.filter fun (_, cs) => cs.all fun c => d.any (·.1 == c)
+      if d'.length == d.length then d else shrink k d'
+  let D := (shrink (start.length + 1) start).map (·.1)
+  let outside := own.filterMap fun (n, o) => match o with
+    | .outside w => some (n, w)
+    | .ok _ => if D.contains n then none else some (n, "a callee outside the laid-out set")
+  (D.eraseDups, outside)
+
 /-- **One module's step of the interface computation**: the module planned
 over its document at its names, reading the entries `established` before it
 (`fragmentPlansCore`), prepared (`prepare`); each group its proposals reach
@@ -818,7 +1053,12 @@ def establishStep (budget : PositiveCertificates.SearchBudget) (force : List Str
     let candidates := entries.filterMap (·.toOption)
     let ifaces := candidates.filterMap fun e => (fm.slots.lookup e.1.2).map (e.1.2, ·)
     let table := let (rows, ifs) := encodeRowTable fm.F.store ifaces; decodeRowTable rows ifs
-    let checked := candidates.map fun e => match fm.slots.lookup e.1.2, table with
+    -- An entry is published where its function is laid out (`laidOut`):
+    -- the cross-module theorem's step layouts are about those.
+    let (laid, outsideD) := fm.laidOut
+    let checked := candidates.map fun e => if !laid.contains e.1.2 then
+        Except.error s!"{location}#{e.1.2}: not laid out: {((outsideD.find? (·.1 == e.1.2)).map (·.2)).getD ""}"
+      else match fm.slots.lookup e.1.2, table with
       | some I, .ok t => if moduleRowsAgree fm.F.store t e.1.2 I then Except.ok e
         else .error s!"{location}#{e.1.2}: its interface rows refused by the store-map check"
       | none, _ => .error s!"{location}#{e.1.2}: no interface type"
@@ -1001,7 +1241,8 @@ own graph's and each code request's: the search's and the single pass's
 given invariants, in place of the claims'. With `entries` (the referee,
 mode 9), the other statement entries' facts too (`entryFacts`): the search
 holds at each statement entry only what its candidates there give. -/
-def FilePlans.withHeadFacts (f : FilePlans) (given : Std.HashMap String Json) (entries : Bool := false) : FilePlans :=
+def FilePlans.withHeadFacts (f : FilePlans) (given : Std.HashMap String Json) (entries : Bool := false)
+    (inferred : Bool := false) : FilePlans :=
   { f with plans := f.plans.zipIdx.map fun (p, i) => p.map fun
     | .graph name pos r =>
       let line := given.get? (f.fr.unitId i)
@@ -1011,12 +1252,443 @@ def FilePlans.withHeadFacts (f : FilePlans) (given : Std.HashMap String Json) (e
       let ofCodes := fun (k : String) (ci : Nat) =>
         (((field k).bind fun cs => (cs.getArr?).toOption).bind (·[ci]?)).getD (Json.arr #[])
       .graph name pos { r with
-        candidates := facts "headFacts" r.sourceMap (r.start :: r.cuts) ++
+        -- With `inferred`, the loop heads' proposals the lowering recorded
+        -- (`HeadInference`) kept beside the given file's.
+        candidates := (if inferred then r.candidates else []) ++ facts "headFacts" r.sourceMap (r.start :: r.cuts) ++
           (if entries then facts "entryFacts" r.sourceMap (r.start :: r.cuts) else [])
         codeSources := r.codeSources.zipIdx.map fun (c, ci) =>
           let start := ((r.codes[ci]?).map fun q => (q.asRequest r.toRequest).start).getD 0
           { c with candidates := headFactsFromJson c.sourceMap (start :: c.cuts) (ofCodes "headFactsOfCodes" ci) ++
             (if entries then headFactsFromJson c.sourceMap (start :: c.cuts) (ofCodes "entryFactsOfCodes" ci) else []) } } }
+
+/-- **The slots holding an input's entry value** at each node: the pairs
+`(slot, input)` the seed states at the entry, carried along every edge to
+each slot whose mapping reads a slot holding the input, those every
+predecessor carries (`GraphCode.trackTable`'s propagation, each node's width
+its claimed context's). Untrusted: the pass checks every edge into a head
+against the pairs there. -/
+def inputsTable (P : ControlFlow.Program) (widths : Array Nat) (start : Nat) (seed : GraphCode.Tracked) :
+    List (Option GraphCode.Tracked) := Id.run do
+  let mut table : Array (Option GraphCode.Tracked) := Array.replicate P.length none
+  table := table.set! start (some seed)
+  for _ in List.range (2 * P.length + 2) do
+    let mut changed := false
+    for (node, l) in P.zipIdx do
+      let some here := table.getD l none | continue
+      for e in GraphCode.edgesOf node.continuation node.handler do
+        let sources := if e.2 then GraphCode.shiftTracked here else here
+        let carried := (List.range (widths.getD e.1.label 0)).flatMap fun i =>
+          sources.filterMap fun p => if p.1 == PointClaims.slot e.1.mapping i then some (i, p.2) else none
+        let current := table.getD e.1.label none
+        let merged := match current with
+          | none => some carried
+          | some old => some (old.filter carried.contains)
+        if merged != current then
+          table := table.set! e.1.label merged
+          changed := true
+    if !changed then break
+  return table.toList
+
+/-- **The implications a statement entry is proposed to hold**
+(`PromiseCalls.Implication`, the given lines' `implies`): of each
+`branchBind` whose `true` edge's target claims a slot at a type other than
+the one the edge's source context holds there (a binding the test narrows
+through a constant holding its value: `const p = x === 'a'; … if (p)`
+claims `x : 'a'` on the `true` arm), `p = true ⟹ x : T`, `T` the target's
+claim, at each statement entry whose source span holds the test's or ends
+before it and whose context describes both bindings, by descriptor. The search guesses at a
+loop's head, in its first waiting round, the implications its entry edge
+establishes (`CertificateProducer`'s `meetImplications` over the stating
+edges); these are the ones a branch inside the loop reads. Untrusted: the
+pass checks each on every edge into the entry (`SinglePass.run`, "an
+implication"), and the front drops those an edge refuses
+(`passGroupInferred`). -/
+def branchImplications {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreView σ ι] (r : SourceRequest σ ι) :
+    List (Nat × List (PromiseCalls.Implication ι)) :=
+  let entryAt := fun (l : Nat) => ((r.sourceMap[l]?).bind id : Option RequestJson.SourceMapEntry)
+  let narrowed := r.program.zipIdx.flatMap fun (node, l) => match node.continuation with
+    | .branchBind y _ => match r.claims[l]?, r.claims[y.label]?, entryAt l, entryAt y.label with
+      | some c, some cy, some e, some ey =>
+        let Γ := c.type :: c.context
+        let width := cy.context.length
+        match (List.range width).find? (PointClaims.slot y.mapping · == 0) with
+        | none => []
+        | some tested => match ey.context[tested]? with
+          | some dt => if !dt.describes then [] else
+            (List.range width).filterMap fun a => do
+              guard (a != tested)
+              let B ← cy.context[a]?
+              let da ← ey.context[a]?
+              guard da.describes
+              guard (Γ[PointClaims.slot y.mapping a]? != some B)
+              pure (e.pos, dt, da, B)
+          | none => []
+      | _, _, _, _ => []
+    | _ => []
+  let within := fun (a b : Nat × Nat) => b.1 ≤ a.1 && a.2 ≤ b.2
+  if narrowed.isEmpty then [] else
+  r.cuts.filterMap fun h => do
+    let eh ← entryAt h
+    let xs := narrowed.filterMap fun (p, dt, da, B) => do
+      -- (a head holding the branch, or one before it whose context holds
+      -- both bindings: the cut the implication crosses to reach the branch)
+      guard (within p eh.pos || eh.pos.2 ≤ p.1)
+      let t ← eh.context.findIdx? (· == dt)
+      let a ← eh.context.findIdx? (· == da)
+      pure (⟨t, a, B⟩ : PromiseCalls.Implication ι)
+    -- (one per tested and narrowed slot: the first branch's)
+    let xs := xs.foldl (fun (acc : List (PromiseCalls.Implication ι)) x =>
+      if acc.any fun y => y.test == x.test && y.target == x.target then acc else acc ++ [x]) []
+    if xs.isEmpty then none else some (h, xs)
+
+/-- Each unit's given line computed from its plan where `given` has none: for
+a unit whose postcondition names inputs (`@ensures`), the slots holding each
+input's entry value at its statement entries (`inputsTable` from
+`GraphCode.namedInputs`), the `graph` rows' `inputs` the pass reads; at its
+statement entries, the implications its branches read
+(`branchImplications`), the rows' `implies`; with `falseImplications`
+(`TSCERT_FORCE=head-implications`), each also stated at `undefined`
+(`p = true ⟹ x : undefined`), the adversarial implication the pass's edge
+check refuses. With
+`falseInputs` (`TSCERT_FORCE=head-inputs`), each pair also restated at the
+next slot (`(s + 1, q)` beside `(s, q)`), the adversarial pair the pass's
+edge check refuses, in place of a given line's. The regional checks'
+tables at its statement entries (`regionalLines`), its `regional` and
+`footprintRegional`; with `falseRegional` (`TSCERT_FORCE=head-region-…`),
+an entry of that kind no edge establishes added at each. -/
+def FilePlans.computedGiven (f : FilePlans) (given : Std.HashMap String Json) (falseInputs : Bool := false)
+    (falseImplications : Bool := false) (falseRegional : Option String := none) :
+    Std.HashMap String Json :=
+  f.plans.zipIdx.foldl (init := given) fun m (p, i) =>
+    let u := f.fr.unitId i
+    -- (forced, the given file's line replaced: the control holds beside it too)
+    if m.contains u && !falseInputs && !falseImplications && falseRegional.isNone then m else match p with
+    | .ok (.graph _ _ r) =>
+      let implied := (branchImplications r).map fun (l, xs) =>
+        (l, if falseImplications then xs ++ xs.map fun (x : PromiseCalls.Implication _) =>
+          ({ x with type := [LabelStore.Labels.undef] } : PromiseCalls.Implication _) else xs)
+      -- The regional checks' tables at the statement entries
+      -- (`regionalLines`).
+      let regional := regionalLines r falseRegional
+      if r.ensures.isEmpty && implied.isEmpty && regional.isEmpty then m else
+      let widths := (r.claims.map (·.context.length)).toArray
+      let table := if r.ensures.isEmpty then [] else inputsTable r.program widths r.start (GraphCode.namedInputs r.ensures)
+      let inputs := table.zipIdx.filterMap fun (t, l) => match t with
+        | some ps@(_ :: _) => if l == r.start || r.cuts.contains l then
+            let ps := if falseInputs && l != r.start then
+              ps ++ ps.filterMap fun (s, q) => if s + 1 < widths.getD l 0 && !ps.contains (s + 1, q) then some (s + 1, q) else none
+              else ps
+            some (l, ps) else none
+        | _ => none
+      let rows := ((inputs.map (·.1)) ++ implied.map (·.1)).eraseDups.map fun l =>
+        let ps := ((inputs.find? (·.1 == l)).map (·.2)).getD []
+        let xs := ((implied.find? (·.1 == l)).map (·.2)).getD []
+        Json.mkObj [("label", toJson l), ("implies", Json.arr (xs.map fun x => Json.mkObj [("test", toJson x.test),
+            ("target", toJson x.target), ("type", toJson x.type)]).toArray), ("arguments", Json.arr #[]),
+          ("inputs", toJson (ps.map fun (a, b) => [a, b]))]
+      m.insert u (Json.mkObj ([("unit", toJson u), ("graph", Json.arr rows.toArray), ("codes", Json.arr #[])] ++ regional))
+    | .error _ => m
+
+/-- The given file's loop-head facts of plan `i` (`headFacts`), by label:
+the candidates no rerun drops. -/
+def FilePlans.givenAt (f : FilePlans) (given : Std.HashMap String Json) (i : Nat) :
+    List (Nat × List HeapKnowledge.IndexAtom) :=
+  match f.plans[i]?, given.get? (f.fr.unitId i) with
+  | some (.ok (.graph _ _ r)), some line =>
+    headFactsFromJson r.sourceMap (r.start :: r.cuts) ((line.getObjVal? "headFacts").toOption.getD (Json.arr #[]))
+  | _, _ => []
+
+/-- Plan `i`'s candidates at label `l` less `drop`. -/
+def FilePlans.dropCandidates (f : FilePlans) (i l : Nat) (drop : List HeapKnowledge.IndexAtom) : FilePlans :=
+  { f with plans := f.plans.zipIdx.map fun (p, j) => if j != i then p else p.map fun
+    | .graph name pos r => .graph name pos { r with candidates := r.candidates.map fun (l', as) =>
+        if l' == l then (l', as.filter (!drop.contains ·)) else (l', as) } }
+
+/-- The candidates of plan `i` at the heads that read the facts of the head
+at label `l` (each a label whose source span lies inside `l`'s, or after it
+inside the loop holding `l`'s, the walk carrying a head's facts past its
+loop) that state a fact of `drop` over the same bindings: each atom's slots
+carried by their descriptors from `l`'s context to the other head's, by
+label. -/
+def FilePlans.laterDrops (f : FilePlans) (i l : Nat) (drop : List HeapKnowledge.IndexAtom) :
+    List (Nat × List HeapKnowledge.IndexAtom) :=
+  match f.plans[i]? with
+  | some (.ok (.graph _ _ r)) =>
+    let entryAt := fun (l : Nat) => ((r.sourceMap[l]?).bind id : Option RequestJson.SourceMapEntry)
+    match entryAt l with
+    | none => []
+    | some e =>
+      let within := fun (a b : Nat × Nat) => b.1 ≤ a.1 && a.2 ≤ b.2 && a != b
+      -- (the innermost head's span holding `l`'s)
+      let outer := (r.candidates.filterMap fun (l', _) => (entryAt l').bind fun e' =>
+        if within e.pos e'.pos then some e'.pos else none).foldl (fun (acc : Option (Nat × Nat)) p =>
+          match acc with
+          | some q => if within p q then some p else some q
+          | none => some p) none
+      r.candidates.filterMap fun (l', as) =>
+        if l' == l || as.isEmpty then none else match entryAt l' with
+        | none => none
+        | some e' =>
+          let after := e.pos.2 ≤ e'.pos.1 && (outer.map fun q => within e'.pos q).getD true
+          if !(within e'.pos e.pos || after) then none else
+          let σ := fun (s : Nat) => do
+            let d ← e.context[s]?
+            if !d.describes then none else e'.context.findIdx? (· == d)
+          let moved := drop.filterMap fun (a : HeapKnowledge.IndexAtom) => do
+            pure { a with fact := ← a.fact.mapM σ, cond := ← a.cond.mapM σ }
+          match moved.filter as.contains with
+          | [] => none
+          | ds => some (l', ds)
+  | _ => []
+
+/-- An edge's refusal into a statement entry for an implication it does not
+establish (`SinglePass.run`): the entry's label. -/
+def implicationAt (why : String) : Option Nat :=
+  match why.splitOn "into statement entry " with
+  | _ :: rest :: _ => match rest.splitOn ": an implication" with
+    | t :: _ :: _ => t.toNat?
+    | _ => none
+  | _ => none
+
+/-- The given line of unit `u` with the implications at label `l` left out. -/
+def withoutImplications (given : Std.HashMap String Json) (u : String) (l : Nat) : Option (Std.HashMap String Json) := do
+  let line ← given.get? u
+  let rows ← ((line.getObjVal? "graph").bind Json.getArr?).toOption
+  let at_ := fun (row : Json) => (row.getObjValAs? Nat "label").toOption == some l
+  let held := rows.any fun row => at_ row &&
+    (((row.getObjVal? "implies").bind Json.getArr?).toOption.map (!·.isEmpty)).getD false
+  guard held
+  let rows := rows.map fun row => if at_ row then row.setObjVal! "implies" (Json.arr #[]) else row
+  pure (given.insert u (line.setObjVal! "graph" (Json.arr rows)))
+
+/-- The given line of unit `u` with its regional checks' tables
+(`regional`, `footprintRegional`) left out, where it states any. -/
+def withoutRegional (given : Std.HashMap String Json) (u : String) : Option (Std.HashMap String Json) := do
+  let line ← given.get? u
+  let .obj kvs := line | none
+  guard (kvs.contains "regional" || kvs.contains "footprintRegional")
+  pure (given.insert u (.obj ((kvs.erase "regional").erase "footprintRegional")))
+
+/-- An edge's refusal into a statement entry for the facts it lacks
+(`SinglePass.run`): the entry's label and the facts' text. -/
+def lacksAt (why : String) : Option (Nat × String) :=
+  match why.splitOn "into statement entry " with
+  | _ :: rest :: _ => match rest.splitOn ": lacks " with
+    | t :: x :: _ => t.toNat?.map (·, x)
+    | _ => none
+  | _ => none
+
+/-- A member's run as the inferred route reads it (`passGroup`'s wording):
+its line, its refusal where refused, and its failure, the refusal's text
+located with `located` (`FilePlans.locatedRefusal`). -/
+def FilePlans.inferredRun (g : FilePlans) (fuel : Nat) (compare : Bool) (debugNode repeats : Nat)
+    (observe : Option String) (counting located : Bool) (given : Option (Std.HashMap String Json)) (i : Nat) :
+    String × Option String × Option String :=
+  match g.passMember fuel i compare debugNode repeats given observe counting with
+  | .ok m =>
+    let failure := match m.outcome with
+      | .accepted => none
+      | .refused w =>
+        let raw := s!"single pass: {m.outcome} ({w.length})"
+        some (if !located then raw else match g.locatedRefusal i w with
+          | some l => s!"{l}\n{raw}"
+          | none => raw)
+      | .notHandled w => some s!"single pass: {m.outcome} ({w.length})"
+      | o => some s!"single pass: {o} ({(toString o).length})"
+    let why := match m.outcome with
+      | .refused w => some w
+      | _ => none
+    (s!"{m.name}: {m.outcome}; {m.line}", why, failure)
+  | .error reason =>
+    let reason := if !located || (reason.splitOn " at [").length > 1 then reason else
+      match g.fr.units[i]? with
+      | some (fn, _, _) => s!"source refusal at [{fn.namePos.1},{fn.namePos.2}): {reason}"
+      | none => reason
+    (s!"refused before the pass: {reason.take 200}", none, some reason)
+
+/-- What a refusal `w` of member `i`'s run calls for: the plans and given
+lines of its next run, the lines saying what was left out and how many facts,
+or none where the refusal stands. An implication an edge refuses: the entry's
+proposed ones left out. A regional check refused at the tables inferred for
+it (`regionalLines`): the member without them, as with no given line. An edge
+into a statement entry lacking facts: the candidates there the refusal names
+(all of them where its text is cut before naming any) left out, the given
+file's (`protect`) kept, and the same facts at the heads that read that
+head's facts (`laterDrops`). With `fixed` (an adversarial proposal forced)
+the forced fact is never left out, nor an implication or a regional table. -/
+def FilePlans.inferredNext (f : FilePlans) (fixed : Bool) (protect : List (Nat × List HeapKnowledge.IndexAtom))
+    (given : Option (Std.HashMap String Json)) (i : Nat) (w : String) :
+    Option (FilePlans × Option (Std.HashMap String Json) × List String × Nat) :=
+  if let some l := implicationAt w then
+    if fixed then none else do
+    let g ← given.bind (withoutImplications · (f.fr.unitId i) l)
+    pure (f, some g, [s!"inferred heads: dropped at {l}: its implications"], 1)
+  else if (w.splitOn "store regions").length > 1 then
+    if fixed then none else do
+    let g ← given.bind (withoutRegional · (f.fr.unitId i))
+    pure (f, some g, ["inferred heads: dropped the regional tables"], 0)
+  else do
+    let (l, text) ← lacksAt w
+    let candidates := match f.plans[i]? with
+      | some (.ok (.graph _ _ r)) => r.candidates
+      | _ => []
+    let held := (candidates.filter (·.1 == l)).flatMap (·.2)
+    let kept := (protect.filter (·.1 == l)).flatMap (·.2)
+    -- (forced: the adversarial fact, a term at most `-1`, a store or a
+    -- region apart from itself or every element at most `-1`, kept)
+    let forced := fun (a : HeapKnowledge.IndexAtom) => fixed && match a.fact with
+      | .linear (.le [(_, 1)] (-1)) => true
+      | .storeApart a p b q => a == b && p == q
+      | .apart a b => a == b
+      | .every _ _ _ [.atom (.le [(.elem, 1)] (-1))] => true
+      | _ => false
+    let open_ := held.filter fun a => !kept.contains a && !forced a
+    guard !open_.isEmpty
+    -- The refusal's text writes each fact as `reprStr` does, inside the
+    -- `reprStr` of a list of strings.
+    let names := fun (a : HeapKnowledge.IndexAtom) =>
+      let s := reprStr (reprStr a)
+      (text.splitOn (((s.drop 1).toString.dropEnd 1).toString)).length > 1
+    let named := open_.filter names
+    -- A refusal naming only facts no rerun leaves out stands; one naming
+    -- none of the held facts, its text whole (`SinglePass.run` keeps 1500
+    -- characters), is of written facts.
+    guard !(named.isEmpty && (held.any names || text.length < 1400))
+    let drop := if named.isEmpty then open_ else named
+    let shown := fun (a : HeapKnowledge.IndexAtom) => (reprStr a.fact).replace "\n" " " |>.replace "  " ""
+    let f₁ := f.dropCandidates i l drop
+    -- A fact an edge into a head refuses is left out at the heads that
+    -- read that head's facts too (`laterDrops`: nested in its loop, or
+    -- after it in the loop holding it), over the same bindings, the given
+    -- file's kept: the pass would refuse it there in turn, a run each.
+    let later := (f₁.laterDrops i l drop).filterMap fun (l', ds) =>
+      let kept' := (protect.filter (·.1 == l')).flatMap (·.2)
+      let ds := ds.filter fun a => !kept'.contains a && !forced a
+      if ds.isEmpty then none else some (l', ds)
+    let f₂ := later.foldl (fun (g : FilePlans) (l', ds) => g.dropCandidates i l' ds) f₁
+    let lines := drop.map (fun a => s!"inferred heads: dropped at {l}: {shown a}") ++
+      later.flatMap fun (l', ds) => ds.map fun a => s!"inferred heads: dropped at {l'} (later): {shown a}"
+    let dropped := drop.length + (later.map (·.2.length)).sum
+    pure (f₂, given, lines, dropped)
+
+/-- What `settleInferred` ends with: the last state and given lines, the
+lines saying what was left out, the facts dropped, the runs made, and the
+last run. -/
+structure Settled (S G R : Type) where
+  state : S
+  given : G
+  lines : List String
+  dropped : Nat
+  runs : Nat
+  last : R
+
+/-- A member's runs until one is accepted or its refusal stands, at most
+`n + 1`: each run `run` of the current plans and given lines, a refusal's
+next state from `next`. -/
+def settleInferred {S G R : Type} (run : S → G → R) (refusal : R → Option String)
+    (next : S → G → String → Option (S × G × List String × Nat)) :
+    Nat → S → G → List String → Nat → Nat → Settled S G R
+  | 0, f, g, ls, d, runs => ⟨f, g, ls, d, runs + 1, run f g⟩
+  | n + 1, f, g, ls, d, runs =>
+    match refusal (run f g) with
+    | none => ⟨f, g, ls, d, runs + 1, run f g⟩
+    | some w => match next f g w with
+      | none => ⟨f, g, ls, d, runs + 1, run f g⟩
+      | some (f', g', ls', d') => settleInferred run refusal next n f' g' (ls ++ ls') (d + d') (runs + 1)
+
+/-- Member `i`'s runs (`settleInferred`): each `inferredRun`, a refusal's
+next state from `inferredNext`, at most `4·h + 4` of a member with `h`
+statement entries holding candidates. -/
+def FilePlans.inferredSettle (f : FilePlans) (fuel : Nat) (keep : Nat → List (Nat × List HeapKnowledge.IndexAtom))
+    (fixed compare : Bool) (debugNode repeats : Nat) (observe : Option String) (counting located : Bool)
+    (given : Option (Std.HashMap String Json)) (i : Nat) :
+    Settled FilePlans (Option (Std.HashMap String Json)) (String × Option String × Option String) :=
+  let candidates : List (Nat × List HeapKnowledge.IndexAtom) := match f.plans[i]? with
+    | some (.ok (.graph _ _ r)) => r.candidates
+    | _ => []
+  let heads := (candidates.filter fun (c : Nat × List HeapKnowledge.IndexAtom) => !c.2.isEmpty).length
+  settleInferred
+    (fun (g : FilePlans) gv => g.inferredRun fuel compare debugNode repeats observe counting located gv i)
+    (fun res => res.2.1)
+    (fun (g : FilePlans) gv w => g.inferredNext fixed (keep i) gv i w)
+    (4 * heads + 3) f given [] 0 0
+
+/-- The state `passGroupInferred` carries across a group's members: the
+plans, the given lines, the lines printed, the first failure, the facts
+dropped and the runs made. -/
+structure InferredAcc where
+  plans : FilePlans
+  given : Option (Std.HashMap String Json)
+  lines : List String
+  failed : Option String
+  dropped : Nat
+  runs : Nat
+
+/-- One member `i` of `passGroupInferred`'s fold: its runs until accepted
+or its refusal stands (`settleInferred`, `inferredNext`), at most `4·h + 4`
+of a member with `h` statement entries holding candidates. -/
+def FilePlans.inferredStep (fuel : Nat) (keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)) (fixed compare : Bool)
+    (debugNode repeats : Nat) (observe : Option String) (counting located : Bool) (acc : InferredAcc) (i : Nat) :
+    InferredAcc :=
+  let observe' := if observe == some "heads" then none else observe
+  let f := acc.plans
+  let candidates : List (Nat × List HeapKnowledge.IndexAtom) := match f.plans[i]? with
+    | some (.ok (.graph _ _ r)) => r.candidates
+    | _ => []
+  let shown : List String := if observe != some "heads" then [] else
+    let names := fun (l : Nat) => match f.plans[i]? with
+      | some (.ok (.graph _ _ r)) =>
+        ((((r.sourceMap[l]?).bind id).map fun (e : RequestJson.SourceMapEntry) =>
+          e.context.map RequestJson.Descriptor.name).getD [])
+      | _ => []
+    let span := fun (l : Nat) => match f.plans[i]? with
+      | some (.ok (.graph _ _ r)) => (((r.sourceMap[l]?).bind id).map (RequestJson.SourceMapEntry.pos))
+      | _ => none
+    candidates.flatMap fun (l, as) =>
+      s!"inferred heads: span at {l}: {span l}" :: s!"inferred heads: slots at {l}: {names l}" :: as.map fun a =>
+        s!"inferred heads: at {l}: {(reprStr a.fact).replace "\n" " " |>.replace "  " ""}"
+  let s := f.inferredSettle fuel keep fixed compare debugNode repeats observe' counting located acc.given i
+  { plans := s.state, given := s.given, lines := acc.lines ++ shown ++ s.lines ++ [s.last.1],
+    failed := acc.failed.orElse fun _ => s.last.2.2, dropped := acc.dropped + s.dropped, runs := acc.runs + s.runs }
+
+/-- **The pass over a group with proposed loop-head facts dropped where an
+edge refuses them** (`passGroup`'s verdicts and lines): each member run
+until accepted or its refusal stands (`inferredStep`). Each run is the pass
+over the member's plan, so its verdict is the pass's on the facts that run
+states: an accepted run needs no other. Beside the lines and the verdict,
+the facts dropped and the runs made. -/
+def FilePlans.passGroupInferred (f : FilePlans) (fuel : Nat) (group : List Nat)
+    (keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)) (fixed : Bool := false) (compare : Bool := false)
+    (debugNode : Nat := 1000000000) (repeats : Nat := 1) (given : Option (Std.HashMap String Json) := none)
+    (observe : Option String := none) (counting : Bool := false) (located : Bool := false) :
+    List String × Except String (List String) × Nat × Nat :=
+  let acc := group.foldl (FilePlans.inferredStep fuel keep fixed compare debugNode repeats observe counting located)
+    ⟨f, given, [], none, 0, 0⟩
+  (acc.lines, (match acc.failed with
+    | some reason => .error reason
+    | none => .ok (acc.plans.dependencies group)), acc.dropped, acc.runs)
+
+/-- **Mode 8's check of a group**: with `infer` (no given file, or a forced
+head proposal), the given lines inference computes (`computedGiven`) and the
+region separations allocations state at the group's loop heads
+(`withFreshApart`), the pass run with proposed facts dropped where an edge
+refuses them (`passGroupInferred`, the given file's facts `keep` kept);
+else the pass at the given lines (`passGroup`). Beside the lines and the
+verdict, the facts dropped and the runs made. -/
+def FilePlans.passGroupMode8 (f : FilePlans) (infer : Bool) (force : List String)
+    (keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)) (fuel : Nat) (group : List Nat)
+    (compare : Bool := false) (debugNode : Nat := 1000000000) (repeats : Nat := 1)
+    (given : Option (Std.HashMap String Json) := none) (observe : Option String := none)
+    (counting : Bool := false) (located : Bool := false) :
+    List String × Except String (List String) × Nat × Nat :=
+  if infer then
+    let given := some (f.computedGiven (given.getD {}) (force.contains "head-inputs")
+      (force.contains "head-implications") (force.find? (·.startsWith "head-region-")))
+    (f.withFreshApart (force.contains "head-apart") group).passGroupInferred fuel group keep
+      (force.any (·.startsWith "head-")) compare debugNode repeats given observe counting located
+  else
+    let r := f.passGroup fuel group compare debugNode repeats given observe counting located
+    (r.1, r.2, 0, 0)
 
 /-- The plans with a false fact (`x - x ≤ -1` over slot 0) supplied at each
 graph's start, the adversarial proposal of `TSCERT_FORCE=start-facts`: the

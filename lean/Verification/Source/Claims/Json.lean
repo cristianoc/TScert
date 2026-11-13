@@ -1281,10 +1281,12 @@ def refusalLabel (w key : String) : Option Nat :=
 /-- **A pass refusal, located** (the verdict's text): the obligation a
 refusal of the single pass names (`expression at node l`, `return at node
 l`, an edge into node `t`, `footprint at node l`, `store regions at node l`,
-in the unit's graph or, after `code i: `, in its code `i`'s) at the source
+`handler of node l`, in the unit's graph or, after `code i: `, in its code `i`'s) at the source
 span of its node, in the wording the search's refusal of the same
 obligation has (`produceGraphUsing`, `footprintRefusal`, `ensuresRefusal`);
-none where the refusal names no node with a source span. -/
+a statement's store regions refused at their entry conditions (`store
+regions`) at the declaration; none where the refusal names no node with a
+source span. -/
 def FilePlans.locatedRefusal (f : FilePlans) (i : Nat) (w : String) : Option String := do
   let .ok (.graph name _ r) := (f.plans[i]?).getD (.error "") | none
   let (ci, w) : Option Nat × String := if w.startsWith "code " then
@@ -1298,8 +1300,22 @@ def FilePlans.locatedRefusal (f : FilePlans) (i : Nat) (w : String) : Option Str
   let at_ := fun (l : Nat) => (sourceMap[l]?).bind id
   let what := if ci.isSome then s!"a closure in '{name}'" else s!"'{name}'"
   if w.startsWith "expression at node " then
-    let o ← at_ (← refusalLabel w "expression at node ")
-    return s!"source expression obligation at [{o.pos.1},{o.pos.2}): evidence search failed: no derivation of its {o.role} claim"
+    let l ← refusalLabel w "expression at node "
+    let o ← at_ l
+    -- The types the node's claim states (its operands' slots, which the
+    -- refused term names as `Tm.var k`, and its result), named by kind
+    -- (`SourceTypes.renderIn`); of the unit's own graph only.
+    let claimed : String := if ci.isSome then "" else
+      match r.claims[l]? with
+      | none => ""
+      | some c =>
+        let G := RequestJson.graph r.toRequest
+        let term := ((w.splitOn " with ").head?.getD "")
+        let slots := ((term.splitOn "Tm.var ").drop 1).filterMap (fun t => (t.takeWhile Char.isDigit).toNat?) |>.eraseDups
+        let operands := slots.filterMap fun k => c.context[k]?.map (SourceTypes.renderIn G)
+        let ops := if operands.isEmpty then "" else s!"its operands' claims are {", ".intercalate operands}; "
+        s!"\nobligation: {ops}its claim is {SourceTypes.renderIn G c.type}"
+    return s!"source expression obligation at [{o.pos.1},{o.pos.2}): evidence search failed: no derivation of its {o.role} claim{claimed}"
   if w.startsWith "return at node " then
     let o ← at_ (← refusalLabel w "return at node ")
     if (w.splitOn ": the promise").length > 1 then
@@ -1320,6 +1336,17 @@ def FilePlans.locatedRefusal (f : FilePlans) (i : Nat) (w : String) : Option Str
   if w.startsWith "store regions at node " then
     let o ← at_ (← refusalLabel w "store regions at node ")
     return s!"source effect refusal at [{o.pos.1},{o.pos.2}): the frame stated for {what} is not established by its body: a step changes a location outside its store regions beyond the statement's bound"
+  -- The regions' entry conditions, refused before the walk (`passMember`),
+  -- at the declaration, as `effectRefusal` words them.
+  if w == "store regions" then
+    let (_, regions) ← r.regional
+    let pos := f.fr.units[i]?.map (·.1.namePos) |>.getD (0, 0)
+    if !GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions then
+      return s!"source effect refusal at [{pos.1},{pos.2}): the frame stated for {what} reads a store region through a field that is no present stable field of its parameter's type, or through more than one field"
+    return s!"source effect refusal at [{pos.1},{pos.2}): the frame stated for {what} is not established by its body"
+  if w.startsWith "handler of node " then
+    let o ← at_ (← refusalLabel w "handler of node ")
+    return s!"source expression obligation at [{o.pos.1},{o.pos.2}): evidence search failed: no derivation of its {o.role} claim"
   none
 
 /-- The single forward pass over each member of a group

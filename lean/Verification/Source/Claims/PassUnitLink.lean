@@ -1,4 +1,4 @@
-import Verification.Source.Claims.PassUnitHeadline
+import Verification.Source.Claims.PassUnitInferred
 
 /-! # The single pass's unit theorem: linking a file's units
 
@@ -70,14 +70,15 @@ theorem closedUnits_closed (vs : Verdicts) : ClosedIn vs (closedUnits vs) := by
 /-! ## The closure of mode 8's verdicts -/
 
 /-- **Mode 8's verdicts of a file**, as its CLI loop prints them: per
-selected unit, its identity and, where `passGroup` accepts its group, the
-dependencies it prints. -/
+selected unit, its identity and, where mode 8's check (`passGroupMode8`)
+accepts its group, the dependencies it prints. -/
 def fileVerdicts (f : FilePlans) (selection : Option (List String)) (givenLines : Std.HashMap String Json)
+    (infer : Bool) (force : List String) (keep : Nat → List (Nat × List HeapKnowledge.IndexAtom))
     (fuel : Nat) (compare : Bool) (debugNode repeats : Nat) (given : Option (Std.HashMap String Json))
     (observe : Option String) (counting located : Bool) : Verdicts :=
   (f.fr.selected selection).map fun i => (f.fr.unitId i,
-    ((f.withHeadFacts givenLines false).passGroup fuel (f.fr.group i) compare debugNode repeats given observe
-      counting located).2.toOption)
+    ((f.withHeadFacts givenLines false infer).passGroupMode8 infer force keep fuel (f.fr.group i) compare debugNode
+      repeats given observe counting located).2.1.toOption)
 
 theorem lookup_mem {vs : Verdicts} {u : String} {v : Option (List String)} (h : vs.lookup u = some v) :
     (u, v) ∈ vs := by
@@ -102,14 +103,15 @@ theorem closedUnits_safe
     (hrun : ∀ (ι : Type) [Labels ι], RunSound ι) (hkeep : ∀ (ι : Type) [Labels ι], RunKeepsSummaries ι)
     {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {selection : Option (List String)} {standIns : StandIns} {force : List String} {f : FilePlans}
-    {givenLines : Std.HashMap String Json} {fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
+    {givenLines : Std.HashMap String Json} {infer : Bool}
+    {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)} {fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
     {given : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool}
     (hplans : fragmentPlans ast fileKey budget selection standIns force = .ok f) {u : String}
-    (hu : u ∈ closedUnits (fileVerdicts f selection givenLines fuel compare debugNode repeats given observe counting located)) :
-    ∃ i, f.fr.unitId i = u ∧ PassUnitSafe (f.withHeadFacts givenLines false) i := by
+    (hu : u ∈ closedUnits (fileVerdicts f selection givenLines infer force keep fuel compare debugNode repeats given observe counting located)) :
+    ∃ i, f.fr.unitId i = u ∧ PassUnitSafe (f.withHeadFacts givenLines false infer) i := by
   obtain ⟨ds, ha, -⟩ := closedUnits_closed _ u hu
   unfold Verdicts.accepted at ha
-  cases hl : (fileVerdicts f selection givenLines fuel compare debugNode repeats given observe counting located).lookup u with
+  cases hl : (fileVerdicts f selection givenLines infer force keep fuel compare debugNode repeats given observe counting located).lookup u with
   | none => rw [hl] at ha; cases ha
   | some v =>
     rw [hl] at ha
@@ -118,8 +120,8 @@ theorem closedUnits_safe
     have hm := lookup_mem hl
     simp only [fileVerdicts, List.mem_map, Prod.mk.injEq] at hm
     obtain ⟨i, hi, hid, hv⟩ := hm
-    cases hp : ((f.withHeadFacts givenLines false).passGroup fuel (f.fr.group i) compare debugNode repeats given
-        observe counting located).2 with
+    cases hp : ((f.withHeadFacts givenLines false infer).passGroupMode8 infer force keep fuel (f.fr.group i) compare
+        debugNode repeats given observe counting located).2.1 with
     | error e => rw [hp] at hv; cases hv
     | ok d => exact ⟨i, hid, passUnit_safe hrun hkeep hplans hi hp⟩
 
