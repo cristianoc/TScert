@@ -2147,4 +2147,83 @@ theorem selected_sound_exc [DecidableEq ι] {G : NormalGraph ι}
             (fun _ _ hp => hp) (fun _ hp => hp) ih
 termination_by sizeOf e
 
+/-! ## A write's local effect
+
+Each write rule above admits a bound `Φ` exactly where one of the closed
+footprints its side conditions grant is below `Φ`: the rule's own grade,
+which reads no bound. `writeGrades` lists them; `writeWithin_eq_grades`
+and `initWriteWithin_eq_grades` state the equality. -/
+
+/-- The grade `g` where the side condition `c` holds, else none. -/
+def grantIf (c : Bool) (g : Footprints.Closed) : List Footprints.Closed := if c then [g] else []
+
+theorem grantIf_any (c : Bool) (g : Footprints.Closed) (p : Footprints.Closed → Bool) :
+    (grantIf c g).any p = (c && p g) := by
+  cases c <;> simp [grantIf]
+
+/-- The grades a typed write's rules grant (`fieldWriteWithin`,
+`elemWriteWithin`, `elemVarWriteWithin`), each with its side condition. -/
+def writeGrades (G : NormalGraph ι) (Γ : List (Ty ι)) (t : Tm) : List Footprints.Closed :=
+  (match HeapExpressionRules.writeSlots t with
+    | some (f, i, k) => grantIf (decide (k < Γ.length) && match Γ[i]? with
+        | some Ref => sourceField G (expand G Ref) f
+        | none => false) ⟨.any, .keep⟩
+    | none => []) ++
+  (match elemWriteSlots t with
+    | some (f, i, b, k) => match Γ[i]?, indexOfBits b with
+        | some Ref, some idx =>
+          grantIf (decide (k < Γ.length) && storeField G (expand G Ref) f idx true) ⟨.any, .keep⟩ ++
+          grantIf (decide (k < Γ.length) && storeField G (expand G Ref) f idx false) ⟨.any, .grow⟩
+        | _, _ => []
+    | none => []) ++
+  (match elemVarWriteSlots t with
+    | some (f, i, j, k) => grantIf (decide (k < Γ.length) && decide (j < Γ.length) && match Γ[i]? with
+        | some Ref => storeFieldEvery G (expand G Ref) f
+        | none => false) ⟨.any, .grow⟩
+    | none => [])
+
+/-- **A typed write's check is its grades' below the bound** (proved). -/
+theorem writeWithin_eq_grades (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Footprints.Closed) (t : Tm) :
+    writeWithin G Γ Φ t = (writeGrades G Γ t).any (·.le Φ) := by
+  simp only [writeWithin, writeGrades, List.any_append]
+  congr 1
+  · congr 1
+    · unfold fieldWriteWithin
+      split
+      · rw [grantIf_any]
+        split <;> simp [Bool.and_assoc, Bool.and_comm, Bool.and_left_comm]
+      · rfl
+    · unfold elemWriteWithin
+      split
+      · split <;> simp [grantIf_any, List.any_append, Bool.and_assoc, Bool.and_comm, Bool.and_or_distrib_left]
+      · rfl
+  · unfold elemVarWriteWithin
+    split
+    · rw [grantIf_any]
+      split <;> simp [Bool.and_assoc, Bool.and_comm]
+    · rfl
+
+/-- The grade an initializing write's rule grants (`initWriteWithin`). -/
+def initWriteGrades (G : NormalGraph ι) (Γ : List (Ty ι)) (k : HeapKnowledge.Knowledge) (t : Tm) :
+    List Footprints.Closed :=
+  match HeapExpressionRules.writeSlots t with
+  | some (f, i, j) => grantIf (nullishAt k i f &&
+      (match Γ[j]? with
+      | some B => sourceTy G B
+      | none => false) &&
+      match Γ[i]? with
+      | some Ref => sourceField G (expand G Ref) f
+      | none => false) ⟨.init, .keep⟩
+  | none => []
+
+/-- **An initializing write's check is its grade below the bound** (proved). -/
+theorem initWriteWithin_eq_grades (G : NormalGraph ι) (Γ : List (Ty ι)) (k : HeapKnowledge.Knowledge)
+    (Φ : Footprints.Closed) (t : Tm) :
+    initWriteWithin G Γ k Φ t = (initWriteGrades G Γ k t).any (·.le Φ) := by
+  unfold initWriteWithin initWriteGrades
+  split
+  · rw [grantIf_any]
+    simp only [Bool.and_assoc, Bool.and_comm, Bool.and_left_comm]
+  · rfl
+
 end Verification.ExpressionEffects

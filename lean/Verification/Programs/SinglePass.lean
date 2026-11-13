@@ -253,6 +253,19 @@ the time now; `at` orders the call after what computed it. -/
 @[implemented_by timedKindImpl] def timedKind {α : Type} (_kind : String) (f : Unit → α) : α := f ()
 
 
+/-- **A step's local effect** as its footprint check reads it: the closed
+footprints the check's rules grant the step on normal return (`within`)
+and on a throw (`throws`), each read from the step's evidence and none from
+a bound, and whether its term is in scope. An inspection, an empty type,
+or an empty context's type keeps everything; a typed write, an
+initializing write and a call at its selected signature grant their own
+grades (`ExpressionEffects.writeGrades`, `initWriteGrades`,
+`GraphCode.selectedGrades`). -/
+structure StepGrades where
+  within : List Footprints.Closed
+  throws : List Footprints.Closed
+  scope : Bool
+
 /-- What the pass counts. -/
 structure Counts where
   visited : Nat := 0
@@ -278,6 +291,9 @@ structure Counts where
   store lacks. -/
   merges : Nat := 0
   mergeDiffs : Nat := 0
+  /-- Under `grading` (`run`), each visited label's local effect
+  (`stepGrades`); empty otherwise. -/
+  grades : Array (Option StepGrades) := #[]
 
 /-- The counts as one JSON object (`TSCERT_COUNTS`, `dev/perf-gate.mts`). -/
 def Counts.json (c : Counts) : String :=
@@ -1396,6 +1412,63 @@ def footprintCheck (G : NormalGraph ι) (images : InstanceImageCheck G) (codes :
     | .ret => !ret || outFresh
     | _ => true
   within && throws && returns && ProgramCertificates.checkScope c.context.length node.expression
+
+/-- A step's local effect (`StepGrades`), at its claim `c`, node, facts
+`stepK` and derivation `deriv`, its fresh receiver slots `F`; the
+derivation checked once, where a call's grade needs it. -/
+def stepGrades (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
+    (sums : List (ReadSummary ι)) (F : List Nat) (c : PointClaim ι) (node : Node)
+    (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι) : StepGrades :=
+  let writes := ExpressionEffects.writeGrades G c.context node.expression ++
+    ExpressionEffects.initWriteGrades G c.context stepK node.expression
+  let selected := GraphCode.selectedGrades F deriv
+  let inspection := ExpressionEffects.check G c.context node.expression
+  let emptyContext := c.context.any (ExpressionEffects.emptyType G ·)
+  let checked : Thunk (List Footprints.Closed) := Thunk.mk fun _ =>
+    if selected.isEmpty then [] else if derivChecked G images codes sums c node stepK deriv then selected else []
+  let throwing := ExpressionEffects.selectedThrows deriv &&
+    (match ExpressionEffects.selectedEffect deriv with | some eff => eff.onThrow | none => false)
+  { within := if inspection || ExpressionEffects.emptyType G c.type || emptyContext then [⟨.keep, .keep⟩]
+      else writes ++ checked.get
+    throws := if inspection || emptyContext then [⟨.keep, .keep⟩]
+      else writes ++ (if throwing then checked.get else [])
+    scope := ProgramCertificates.checkScope c.context.length node.expression }
+
+/-- Whether a step's local effect `g` is within the bound `Φ`: a grade on
+normal return below it; where a live handler catches its throw or the bound
+covers throws (`exc`), a throw's grade below it; a return under a fresh
+result (`ret`) returning a fresh value; the term in scope. -/
+def StepGrades.admits (g : StepGrades) (Φ : Footprints.Closed) (liveHandler exc ret outFresh : Bool)
+    (k : Continuation) : Bool :=
+  g.within.any (·.le Φ) && (!(liveHandler || exc) || g.throws.any (·.le Φ)) &&
+    (match k with
+      | .ret => !ret || outFresh
+      | _ => true) && g.scope
+
+omit [Hashable ι] [Instantiates ι] in
+/-- **The footprint check is the step's local effect within the bound**
+(proved): every disjunct of `footprintCheck` reading the bound is a rule's
+grade below it, so the check at any bound is `admits` of the grades
+`stepGrades` reads off the step once. -/
+theorem footprintCheck_eq_admits (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
+    (sums : List (ReadSummary ι)) (Φ : Footprints.Closed) (F : List Nat) (c : PointClaim ι) (node : Node)
+    (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι) (liveHandler exc ret outFresh : Bool) :
+    footprintCheck G images codes sums Φ F c node stepK deriv liveHandler exc ret outFresh =
+      (stepGrades G images codes sums F c node stepK deriv).admits Φ liveHandler exc ret outFresh
+        node.continuation := by
+  simp only [footprintCheck, stepGrades, StepGrades.admits, Thunk.get, ExpressionEffects.writeWithin_eq_grades,
+    ExpressionEffects.initWriteWithin_eq_grades, GraphCode.selectedWithinAt_eq_grades]
+  have hk : ∀ Φ : Footprints.Closed, (⟨.keep, .keep⟩ : Footprints.Closed).le Φ = true :=
+    Footprints.Closed.empty_le
+  generalize ExpressionEffects.check G c.context node.expression = a
+  generalize ExpressionEffects.emptyType G c.type = b
+  generalize c.context.any (ExpressionEffects.emptyType G ·) = d
+  generalize derivChecked G images codes sums c node stepK deriv = dc
+  generalize ExpressionEffects.selectedThrows deriv = th
+  generalize (match ExpressionEffects.selectedEffect deriv with | some eff => eff.onThrow | none => false) = ot
+  generalize GraphCode.selectedGrades F deriv = sel
+  cases a <;> cases b <;> cases d <;> cases dc <;> cases th <;> cases ot <;> cases hsel : sel.isEmpty <;>
+    simp_all [List.any_append, List.isEmpty_iff, Bool.and_assoc, Bool.or_assoc]
 
 /-- **A return's checks** (`GraphCode.returnOk`, `checkReturnResult`), at
 node `l` returning its result's name `result` from `entry` with the output
@@ -3275,6 +3348,19 @@ def runWalk (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (T
   let _ := clock σ.lastKind σ.lastStamp σ.walk.visited
   let reachable := (env.reached.toList.filter id).length
   return (σ, reachable)
+/-- **Each visited step's local effect** (`stepGrades`) from a walk's
+record: at its entry, its checked step and the read summaries the walk
+ended with. -/
+def walkGrades (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
+    (P : Program) (claims : List (PointClaim ι)) (σ : WalkState ι G) : Array (Option StepGrades) :=
+  let nodes := P.toArray
+  let claimed := claims.toArray
+  let sums := σ.answers.summaries.toList
+  σ.walk.labels.mapIdx fun l lw => match lw.visited, lw.entry, lw.stepped, nodes[l]?, claimed[l]? with
+    | true, some entry, some st, some node, some c =>
+      some (stepGrades G images codes sums (recvFresh node entry) c node st.stepK (derivOf c node st))
+    | _, _, _, _, _ => none
+
 /-- The pass over one graph: its verdict a function of the walk's record
 (`Walk.outcome`). -/
 def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
@@ -3289,12 +3375,14 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     (givenArgs : Array (List Nat) := #[])
     (ensures : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
     (entrySeparation : HeapSeparation.Separation := {}) (observe : Option Nat := none) (tracing : Bool := false) (observeEntry : Bool := false)
-    (regional : Option Regional := none) : Outcome ι × Counts × Answered G × Trace :=
+    (regional : Option Regional := none) (grading : Bool := false) : Outcome ι × Counts × Answered G × Trace :=
   match runWalk G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
       codes aliases passChecker answers reference debugNode bound givenImplies givenArgs ensures givenInputs
       entrySeparation observe tracing observeEntry regional with
   | .error stop => (stop.outcome.outcome, stop.counts, stop.answers, stop.trace)
-  | .ok (σ, reachable) => (σ.walk.outcome reachable, { σ.counts with reached := reachable }, σ.answers, σ.trace)
+  | .ok (σ, reachable) =>
+    let grades := if grading then walkGrades G images codes P claims σ else #[]
+    (σ.walk.outcome reachable, { σ.counts with reached := reachable, grades }, σ.answers, σ.trace)
 
 
 /-- Where a fact over names, absent on entry of node `p`, was last present,

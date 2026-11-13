@@ -203,6 +203,29 @@ theorem Closed.empty_le (c : Closed) : Closed.empty.le c = true := by
   cases c with
   | mk v s => cases v <;> cases s <;> rfl
 
+/-- The join of two closed footprints: each component's larger change. -/
+def Closed.join (a b : Closed) : Closed := ⟨a.value.max b.value, a.store.max b.store⟩
+
+/-- **The join is below a footprint exactly where both are** (proved). -/
+private theorem Change.max_onValue_le (a b c : Change) :
+    (a.max b).onValue.le c.onValue = (a.onValue.le c.onValue && b.onValue.le c.onValue) := by
+  cases a <;> cases b <;> cases c <;> rfl
+
+private theorem Change.max_onStore_le (a b c : Change) :
+    (a.max b).onStore.le c.onStore = (a.onStore.le c.onStore && b.onStore.le c.onStore) := by
+  cases a <;> cases b <;> cases c <;> rfl
+
+theorem Closed.join_le (a b c : Closed) : (a.join b).le c = (a.le c && b.le c) := by
+  simp only [Closed.join, Closed.le, Change.max_onValue_le, Change.max_onStore_le]
+  cases a.value.onValue.le c.value.onValue <;> cases b.value.onValue.le c.value.onValue <;> simp
+
+theorem Closed.le_top (a : Closed) : a.le Closed.top = true := by
+  cases a with | mk v s => cases v <;> cases s <;> rfl
+
+/-- `top` is below exactly itself (proved). -/
+theorem Closed.top_le (c : Closed) : Closed.top.le c = (c == Closed.top) := by
+  cases c with | mk v s => cases v <;> cases s <;> rfl
+
 /-- On contents a change other than `any` keeps, a closed footprint allows
 the same change. -/
 private theorem Closed.at_of_holds {c : Closed} {b v v'} (h : (c.at v).Holds b v v')

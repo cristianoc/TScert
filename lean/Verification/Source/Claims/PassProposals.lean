@@ -76,23 +76,19 @@ side condition the bound does not enter (an inspection, a typed write, an
 initializing write, a call at its selected signature, an unreachable
 type), so the footprints it accepts are those above the least of them. -/
 
-/-- A step's local effects on the direct route (`footprintCheck` at its
-fresh receivers): where no live handler catches its throw and the bound
-states no throw bound (`normal`), where a live handler catches it
-(`handled`), and where the bound bounds every throw (`raised`); none where
-the check accepts no bound. -/
+/-- A step's local effects on the direct route, read from its grades
+(`SinglePass.stepGrades`, the footprint check at any bound,
+`SinglePass.footprintCheck_eq_admits`): where no live handler catches its
+throw and the bound states no throw bound (`normal`), where a live handler
+catches it (`handled`), and where the bound bounds every throw (`raised`);
+none where no bound admits it. -/
 structure Direct where
   normal : Option Closed
   handled : Option Closed
   raised : Option Closed
 
-def direct (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
-    (sums : List (ReadSummary ι)) (c : PointClaim ι) (node : Node) (entry : SinglePass.State)
-    (st : SinglePass.Stepped ι) : Direct :=
-  let deriv := SinglePass.derivOf c node st
-  let F := SinglePass.recvFresh node entry
-  let at_ := fun (live exc : Bool) => leastAccepted fun Φ =>
-    SinglePass.footprintCheck G images codes sums Φ F c node st.stepK deriv live exc false false
+def direct (g : SinglePass.StepGrades) (k : Continuation) : Direct :=
+  let at_ := fun (live exc : Bool) => leastAccepted fun Φ => g.admits Φ live exc false false k
   { normal := at_ false false, handled := at_ true false, raised := at_ false true }
 
 /-- A step's local effect on the regional route, its throw bounded where
@@ -128,78 +124,29 @@ structure Established where
 /-- The labels of a file's plans. -/
 abbrev Label (f : FilePlans) : Type := EquationStore.CheckedLabel f.F.equations f.F.primitive
 
-/-- **A member's interface from its own steps** (`passMember`'s runs with
-the footprint open): its code requests run as `passMember` runs them, its
-graph walked with no bound (the direct route) and with the regional
-fallback at `top` (its tables `regionalInferred` there); the join of every
-visited step's local effect on each route, the less of the two routes'
-footprints, the throw bound where that route's throws are within it; the
-returned value's checked type's footprint at every return. None where a run
-stops: the pass establishes nothing of the member. A qualified or async body
-is `top` by the language (`passMember`, `RequestJson.asyncEffects`). -/
-def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMap String Json)) :
-    Option Established := Id.run do
-  let G : NormalGraph (Label f) := StoreView.graph f.F.store
-  let I : PositiveCertificates.InstanceImageCheck G := StoreView.images f.F.store
-  let answers : CertificateProducer.Answered G := {}
-  let some (.ok plan) := f.plans[i]? | return none
-  let .ok (.graph _ _ r) := plan.certify | return none
-  if r.qualification.isSome || r.async then return some ⟨.top, false, .top, 0⟩
-  let labels := r.searchLabels
-  let .ok (e, next) := ExpressionClaims.produceUsing G I labels (StoreView.valid r.types)
-    (StoreView.projection r.types) fuel r.obligations { answers with summaries := #[], summaryAnswers := {} }
-    | return none
-  let (rendered, next) := ExpressionClaims.renderKnownUsing G I labels (StoreView.valid r.types) r.nodePlans next
-  let pool := CertificateProducer.vocabulary G labels r.claims r.inputs
-  let line := given.bind fun m => m.get? (f.fr.unitId i)
-  let main : GivenHeads _ := match line with
-    | some l => match (l.getObjVal? "graph").bind (GivenHeads.fromJson r.program.length) with
-      | Except.ok g => g
-      | Except.error _ => {}
-    | none => {}
-  -- The code requests, in order, as `passMember` checks them.
-  let codeStep := fun (table : List (CodeEntry _)) (sumsAnswers : CertificateProducer.Answered G)
-      ((q, ci) : CodeRequest _ × Nat) =>
-    let hints := (r.codeHints[ci]?).getD {}
-    let rq := q.asRequest r.toRequest
-    let eff := q.entry.row.effect
-    let conditions := decide (q.entry.arity ≤ q.entry.row.arguments.length) && eff.below q.entry.arity &&
-      !eff.freshObject && eff.requires.isNone && eff.elements.isNone && !eff.receiverGrows && eff.elementWrite.isNone
-    if !conditions || !RequestJson.asyncEffects q.async eff.footprint then
-      ({ index := ci, outcome := .refused s!"code {ci}", answers := sumsAnswers, line := "" } : CodeRun _ _)
-    else
-    let codeBound := if eff.footprint == .top && !eff.fresh && !eff.onThrow then none
-      else if !eff.fresh && q.entry.exprs.all Purity.pureTerm then none
-      else some (eff.footprint, eff.fresh, eff.onThrow)
-    let codePool := CertificateProducer.vocabulary G labels rq.claims rq.inputs
-    let codeGiven : GivenHeads _ := match line with
-      | some l => match (l.getObjVal? "codes").bind fun cs => do
-          let arr ← cs.getArr?
-          GivenHeads.fromJson rq.program.length ((arr[ci]?).getD (Json.arr #[])) with
-        | Except.ok g => g
-        | Except.error _ => {}
-      | none => {}
-    let (o, _, a, _) := SinglePass.run G I codePool fuel rq.program rq.claims rq.start rq.inputs q.entry.goal
-      hints.requirements hints.cuts hints.candidates rq.entryIndices [] (e ++ rendered) (GraphCode.admits table)
-      r.aliases .ordinary sumsAnswers #[] 1000000000 codeBound codeGiven.implies codeGiven.args
-    { index := ci, outcome := o.asRefusal, answers := a, line := "" }
-  let (codeRuns, table, sumsAnswers) := codesInOrder (·.1.entry) codeStep [] next r.codes.zipIdx
-  if codeRuns.any fun c => !(c.outcome matches .accepted) then return none
-  let codes := GraphCode.admits table
-  let walk := fun (rg : Option SinglePass.Regional) =>
-    SinglePass.work "propose: member run" (f.fr.workItem i) fun _ =>
-    SinglePass.runWalk G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
-      r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers #[] 1000000000 none
-      main.implies main.args r.ensures main.inputs r.entrySeparation none false false rg
-  let nodes := r.program.toArray
-  let claimed := r.claims.toArray
+/-- What the direct route reads of a member's visited steps (`directRead`):
+the join of their local effects on normal return, outside the region from
+which no normal return is possible (none where a step of that region is not
+`deadNode`), and on a throw; the returned values' functions' footprint, and
+whether any return was visited. -/
+structure DirectRead where
+  normal : Option Closed
+  thrown : Option Closed
+  result : Closed
+  returns : Bool
+
+section
+variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
+
+/-- **The direct route's footprint of a member** from each visited step's
+local effect (`grades`, `SinglePass.walkGrades`): the join over the steps
+outside the region with no normal return (`deadRegion`), each at its live
+handler; the throws' join; at each return the returned value's checked
+type's footprint (the join of its signatures', `top` for a value of no
+function type). -/
+def directRead (G : NormalGraph ι) (nodes : Array Node) (claimed : Array (PointClaim ι))
+    (grades : Array (Option SinglePass.StepGrades)) : DirectRead := Id.run do
   let n := nodes.size
-  -- The direct route: the walk with no bound.
-  let .ok (σ, reach) := walk none | return none
-  if σ.walk.visited < reach then return none
-  let sums := σ.answers.summaries.toList
-  -- The region from which no normal return is possible, as a bound with no
-  -- throw bound reads it (`deadRegion`).
   let dead := GraphCode.deadIterate ((nodes.zip claimed).map fun (node, c) => (node, ExpressionEffects.emptyType G c.type))
     (n + 1) (Array.replicate n true)
   let mut normal : Option Closed := some keepAll
@@ -207,11 +154,10 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
   let mut result : Closed := keepAll
   let mut returns := false
   for l in List.range n do
-    let some (lw : SinglePass.LabelWalk _) := σ.walk.labels[l]? | continue
-    let (true, some entry, some st) := (lw.visited, lw.entry, lw.stepped) | continue
+    let some (some g) := grades[l]? | continue
     let node := nodes[l]!
     let c := claimed[l]!
-    let d := direct G I codes sums c node entry st
+    let d := direct g node.continuation
     thrown := joinOpt thrown d.raised
     if dead.getD l false then
       if !GraphCode.deadNode G dead.toList node (SinglePass.deadEvidence c node) then normal := none
@@ -222,8 +168,6 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
       normal := joinOpt normal (if live then d.handled else d.normal)
       if node.continuation == .ret then
         returns := true
-        -- The returned value's checked type: the join of its signatures'
-        -- footprints, `top` for a value of no function type.
         let T := match node.expression with
           | .var j => (c.context[j]?).getD c.type
           | _ => c.type
@@ -231,10 +175,100 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
           | [.arrs L S] => if L.isEmpty && S.isEmpty then .top else
             ((L.map (·.effect)) ++ S.map (·.effect)).foldl (init := keepAll) fun acc e => join acc e.footprint
           | _ => .top)
+  return ⟨normal, thrown, result, returns⟩
+
+end
+
+/-- **A member's interface from its own steps**, given its plans and given
+lines settled with its footprint open (`settledInterface`) and, where its
+last settling run was the walk with no bound, that run's steps' local
+effects (`grades`): the direct route's footprint from them
+(`directRead`), else from a walk with no bound; and the regional route's,
+where the direct route's footprint is more than keep/keep (no footprint is
+below it): the walk under the regional fallback at `top` (its tables
+`regionalInferred` there), each visited step's least regional
+alternative (`regional`). The less of the two routes' footprints, the
+throw bound where that route's throws are within it; the returned value's
+checked type's footprint at every return. None where a run stops: the pass
+establishes nothing of the member. A qualified or async body is `top` by
+the language (`passMember`, `RequestJson.asyncEffects`). -/
+def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMap String Json))
+    (grades : Option (Array (Option SinglePass.StepGrades))) (visitsA : Nat) : Option Established := Id.run do
+  let G : NormalGraph (Label f) := StoreView.graph f.F.store
+  let I : PositiveCertificates.InstanceImageCheck G := StoreView.images f.F.store
+  let answers : CertificateProducer.Answered G := {}
+  let some (.ok plan) := f.plans[i]? | return none
+  let .ok (.graph _ _ r) := plan.certify | return none
+  if r.qualification.isSome || r.async then return some ⟨.top, false, .top, 0⟩
+  let nodes := r.program.toArray
+  let claimed := r.claims.toArray
+  let n := nodes.size
+  -- The walk the regional route (and, with no grades, the direct route)
+  -- runs: the code requests run first, as `passMember` checks them.
+  let prepared : Unit → Option ((Option SinglePass.Regional →
+      Except (SinglePass.WalkStop (Label f) G) (SinglePass.WalkState (Label f) G × Nat)) × (CodeEntry (Label f) → Bool)) := fun _ => do
+    let labels := r.searchLabels
+    let .ok (e, next) := ExpressionClaims.produceUsing G I labels (StoreView.valid r.types)
+      (StoreView.projection r.types) fuel r.obligations { answers with summaries := #[], summaryAnswers := {} }
+      | none
+    let (rendered, next) := ExpressionClaims.renderKnownUsing G I labels (StoreView.valid r.types) r.nodePlans next
+    let pool := CertificateProducer.vocabulary G labels r.claims r.inputs
+    let line := given.bind fun m => m.get? (f.fr.unitId i)
+    let main : GivenHeads _ := match line with
+      | some l => match (l.getObjVal? "graph").bind (GivenHeads.fromJson r.program.length) with
+        | Except.ok g => g
+        | Except.error _ => {}
+      | none => {}
+    let codeStep := fun (table : List (CodeEntry _)) (sumsAnswers : CertificateProducer.Answered G)
+        ((q, ci) : CodeRequest _ × Nat) =>
+      let hints := (r.codeHints[ci]?).getD {}
+      let rq := q.asRequest r.toRequest
+      let eff := q.entry.row.effect
+      let conditions := decide (q.entry.arity ≤ q.entry.row.arguments.length) && eff.below q.entry.arity &&
+        !eff.freshObject && eff.requires.isNone && eff.elements.isNone && !eff.receiverGrows && eff.elementWrite.isNone
+      if !conditions || !RequestJson.asyncEffects q.async eff.footprint then
+        ({ index := ci, outcome := .refused s!"code {ci}", answers := sumsAnswers, line := "" } : CodeRun _ _)
+      else
+      let codeBound := if eff.footprint == .top && !eff.fresh && !eff.onThrow then none
+        else if !eff.fresh && q.entry.exprs.all Purity.pureTerm then none
+        else some (eff.footprint, eff.fresh, eff.onThrow)
+      let codePool := CertificateProducer.vocabulary G labels rq.claims rq.inputs
+      let codeGiven : GivenHeads _ := match line with
+        | some l => match (l.getObjVal? "codes").bind fun cs => do
+            let arr ← cs.getArr?
+            GivenHeads.fromJson rq.program.length ((arr[ci]?).getD (Json.arr #[])) with
+          | Except.ok g => g
+          | Except.error _ => {}
+        | none => {}
+      let (o, _, a, _) := SinglePass.run G I codePool fuel rq.program rq.claims rq.start rq.inputs q.entry.goal
+        hints.requirements hints.cuts hints.candidates rq.entryIndices [] (e ++ rendered) (GraphCode.admits table)
+        r.aliases .ordinary sumsAnswers #[] 1000000000 codeBound codeGiven.implies codeGiven.args
+      { index := ci, outcome := o.asRefusal, answers := a, line := "" }
+    let (codeRuns, table, sumsAnswers) := codesInOrder (·.1.entry) codeStep [] next r.codes.zipIdx
+    if codeRuns.any fun c => !(c.outcome matches .accepted) then none
+    let codes := GraphCode.admits table
+    pure (fun (rg : Option SinglePass.Regional) =>
+      SinglePass.work "propose: member run" (f.fr.workItem i) fun _ =>
+      SinglePass.runWalk G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
+        r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers #[] 1000000000 none
+        main.implies main.args r.ensures main.inputs r.entrySeparation none false false rg, codes)
+  -- The direct route: the settling run's steps, else a walk with no bound.
+  let (read, visits) ← match grades with
+    | some gs => pure (directRead G nodes claimed gs, visitsA)
+    | none =>
+      let some (walk, codes) := prepared () | return none
+      let .ok (σ, reach) := walk none | return none
+      if σ.walk.visited < reach then return none
+      pure (directRead G nodes claimed (SinglePass.walkGrades G I codes r.program r.claims σ), σ.walk.visited)
+  let normal := read.normal
+  let thrown := read.thrown
   -- The regional route: the walk under the regional fallback at `top`, run
   -- where the direct route's footprint is more than keep/keep (no footprint
   -- is below it).
   let (regionalΦ, regionalThrown, visitsB) := if normal == some keepAll then (none, none, 0) else
+    match prepared () with
+    | none => (none, none, 0)
+    | some (walk, _) =>
     let tables := regionalInferred r .top [] none
     let (names, heads) := (regionalFromJson r.program.length tables).toOption.getD ([], #[])
     let rgTop : SinglePass.Regional := { Φ := .top, regions := [], exc := false, names, heads }
@@ -269,23 +303,56 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
     | some a, none => (a, within normal thrown)
     | none, some b => (b, within regionalΦ regionalThrown)
     | none, none => (.top, false)
-  return some ⟨Φ, ot, if returns then result else .top, σ.walk.visited + visitsB⟩
+  return some ⟨Φ, ot, if read.returns then read.result else .top, visits + visitsB⟩
 
 /-- A plan's request at `top` with no throw bound: its walk unbounded. -/
 def openAt (f : FilePlans) (i : Nat) : FilePlans :=
   { f with plans := f.plans.zipIdx.map fun (p, j) => if j != i then p else p.map fun
     | .graph name pos r => .graph name pos { r with footprint := .top, onThrow := false } }
 
+/-- Whether member `i`'s plan runs its main graph with no bound when open
+(`passMember`'s `bounded`): no fresh result stated. -/
+def openUnbounded (f : FilePlans) (i : Nat) : Bool :=
+  match f.plans[i]? with
+  | some (.ok (.graph _ _ r)) => !r.fresh && r.regional.isNone
+  | _ => false
+
 /-- Member `i`'s plans and given lines settled with its footprint open, as
-`passGroupMode8` settles them (`inferredSettle`), then its interface from its
-steps there. -/
+`passGroupMode8` settles them (`inferredSettle`'s runs and next states),
+each run reporting its steps' local effects (`passMember`'s `grading`),
+then its interface from its steps there: from the last run's, where that
+run walked its graph with no bound. -/
 def settledInterface (f : FilePlans) (fuel : Nat) (i : Nat) : Option Established :=
   let f := openAt f i
   let group := f.fr.group i
   let given := some (f.computedGiven {} false false none group)
-  let s := (f.withFreshApart false group).inferredSettle fuel (fun _ => []) false false 1000000000 1 none false
-    false given i
-  SinglePass.work "propose: member interface" (f.fr.workItem i) fun _ => interface s.state fuel i s.given
+  let f := f.withFreshApart false group
+  let candidates : List (Nat × List HeapKnowledge.IndexAtom) := match f.plans[i]? with
+    | some (.ok (.graph _ _ r)) => r.candidates
+    | _ => []
+  let heads := (candidates.filter fun (c : Nat × List HeapKnowledge.IndexAtom) => !c.2.isEmpty).length
+  let s := settleInferred
+    (fun (g : FilePlans) gv => SinglePass.work "check: member run" (f.fr.workItem i) fun _ =>
+      match g.passMember fuel i false 1000000000 1 gv none false true with
+      | .ok m =>
+        let why : Option (String × Option (Nat × List HeapKnowledge.IndexAtom)) := match m.outcome with
+          | .refused w lacks => some (w, lacks)
+          | _ => none
+        let grades : Option (Array (Option SinglePass.StepGrades) × Nat) :=
+          if m.accepted && openUnbounded g i then match m.main with
+            | some mr => if mr.route matches FootprintRoute.direct then
+                some ((MainRun.counts mr).grades, (MainRun.counts mr).visited) else none
+            | none => none
+          else none
+        ((why, grades.filter (!·.1.isEmpty)) : Option (String × Option (Nat × List HeapKnowledge.IndexAtom)) ×
+          Option (Array (Option SinglePass.StepGrades) × Nat))
+      | .error _ => (none, none))
+    (fun (res : Option (String × Option (Nat × List HeapKnowledge.IndexAtom)) ×
+          Option (Array (Option SinglePass.StepGrades) × Nat)) => res.1)
+    (fun (g : FilePlans) gv w => g.inferredNextAll fuel false [] gv i w)
+    (4 * heads + 3) f given [] 0 0
+  SinglePass.work "propose: member interface" (f.fr.workItem i) fun _ =>
+    interface s.state fuel i s.given (s.last.2.map (·.1)) ((s.last.2.map (·.2)).getD 0)
 
 /-- The search depth of a proposal's runs: the pipeline's
 (`pipeline/verify-source.mts`, `searchDepth`), which every check is given. -/

@@ -333,6 +333,40 @@ def selectedWithinAt (Φ : Footprints.Closed) (F : List Nat) (e : ProgramCertifi
         (!eff.receiverStore || Φ == .top || receiverFresh F (ProgramCertificates.claim e).term))
     | none => false
 
+/-- **A selected call's local effect**: the closed footprint its rule
+grants, which reads no bound: its signature's footprint with its
+receiver's own change, or, where the signature excepts its receiver's
+store and the receiver is not fresh, `top`. -/
+def selectedGrades (F : List Nat) (e : ProgramCertificates.Evidence ι) : List Footprints.Closed :=
+  if ExpressionEffects.selectedOperands e then match ExpressionEffects.selectedEffect e with
+    | some eff => [if eff.receiverOwn then eff.footprint.join eff.ownChange
+        else if !eff.receiverStore || receiverFresh F (ProgramCertificates.claim e).term then eff.footprint
+        else Footprints.Closed.top]
+    | none => []
+  else []
+
+/-- **A selected call's check is its grade below the bound** (proved). -/
+theorem selectedWithinAt_eq_grades (Φ : Footprints.Closed) (F : List Nat) (e : ProgramCertificates.Evidence ι) :
+    selectedWithinAt Φ F e = (selectedGrades F e).any (·.le Φ) := by
+  unfold selectedWithinAt selectedGrades
+  cases ExpressionEffects.selectedOperands e
+  · simp
+  · cases ExpressionEffects.selectedEffect e with
+    | none => simp
+    | some eff =>
+      simp only [Bool.true_and, if_true, List.any_cons, List.any_nil, Bool.or_false]
+      split
+      · rw [Footprints.Closed.join_le]
+      · cases hr : (!eff.receiverStore || receiverFresh F (ProgramCertificates.claim e).term)
+        · simp only [Bool.false_eq_true, if_false, Footprints.Closed.top_le]
+          cases hΦ : Φ == Footprints.Closed.top
+          · simp_all
+          · have : Φ = Footprints.Closed.top := by simpa using hΦ
+            subst this
+            simp [Footprints.Closed.le_top]
+        · simp only [if_true]
+          cases h1 : eff.receiverStore <;> cases h2 : receiverFresh F (ProgramCertificates.claim e).term <;> simp_all
+
 /-- A node's run is within a closed bound `Φ` on the locations below `b`, on
 normal return, from the heap it starts in, where the slots `F` hold stores
 allocated at or after `b`; and its value has such a store where `out`. Where

@@ -346,10 +346,11 @@ its plan through the exhaustive conversion (`FunctionPlan.certify`), the
 request's own conditions, each code request's run against the codes
 admitted before it, the main graph's runs and the read summaries' and
 expression obligations' checks; with the diagnostics asked for (`observe`,
-`counting`) as its line. -/
+`counting`) as its line; with `grading`, the main graph's runs report each
+visited step's local effect in their counts (`SinglePass.walkGrades`). -/
 def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool := false)
     (debugNode : Nat := 1000000000) (repeats : Nat := 1) (given : Option (Std.HashMap String Json) := none)
-    (observe : Option String := none) (counting : Bool := false) :
+    (observe : Option String := none) (counting : Bool := false) (grading : Bool := false) :
     Except String (MemberRun (EquationStore.CheckedLabel f.F.equations f.F.primitive)
       (CertificateProducer.Answered (StoreView.graph f.F.store))) := do
   let G : NormalGraph (EquationStore.CheckedLabel f.F.equations f.F.primitive) := StoreView.graph f.F.store
@@ -538,7 +539,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
     SinglePass.work "check: main graph run" (f.fr.workItem i) fun _ =>
     SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
       r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers reference debugNode bound
-      givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed tracing false regional
+      givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed tracing false regional grading
   let (o, counts, after, trace) := CertificateProducer.timed SinglePass.passNanos fun _ => walk bound regional
   -- A footprint the walk refuses node by node, checked regionally with no
   -- regions where the result is not fresh; then the unit's own regions,
