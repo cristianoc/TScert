@@ -43,6 +43,25 @@ abbrev ParameterKind.Closed : (k : ParameterKind) → k.Carrier → Prop
   | .arguments => fun (vs : List Val) => ∀ v ∈ vs, isVal v = true ∧ Scoped 0 v
   | .packed => fun (v : Val) => isVal v = true ∧ Scoped 0 v
 
+/-- The sort of the value component a binder of each kind observes; an
+argument binder observes none. -/
+def ParameterKind.valueSort : ParameterKind → Option ValueSort
+  | .value => some .source
+  | .arguments => none
+  | .packed => some .source
+
+/-- The kinds whose binders observe argument lists. -/
+def ParameterKind.lists : ParameterKind → Bool
+  | .arguments | .packed => true
+  | .value => false
+
+/-- **A binder's sort** on the shared carrier of value and argument-list
+components: its value component in its kind's sort, its argument-list
+component in `L`. -/
+def ParameterKind.MixedSort (k : ParameterKind) : Val ⊕ List Val → Prop
+  | .inl v => ∃ q, k.valueSort = some q ∧ q.Holds v
+  | .inr vs => k.lists = true ∧ SourceList vs
+
 /-- **Packable values.** Arrays whose elements, read from the store any
 satisfying heap of any future world holds, form a list `P` admits two levels
 down, its contents being typed one level down: reading the store and
@@ -99,6 +118,22 @@ abbrev ParameterSpace.mixed : ParameterSpace :=
 membership is at the current level; changing sorts does not insert a guard. -/
 def ParameterValid (k : ParameterSpace) (A : WorldFamily k.Carrier) : Prop :=
   Adm A ∧ ∀ n W v, A n W v → k.Closed v
+
+/-- **Validity at a sort** `q`: `Valid_q(A) ⟺ Adm(A) ∧ ∀ n W x, A n W x → q x`. -/
+abbrev SortValid {α : Type} (q : α → Prop) (A : WorldFamily α) : Prop := ParameterValid ⟨α, q⟩ A
+
+/-- The family of empty stores. -/
+def emptyStores : WorldFamily Val := fun _ _ v => v = .arr []
+
+/-- **Counter-model: a value binder's family may hold stores.** A `.value`
+family is machine-closed (`isVal`), and the empty store is closed, so
+validity at `.value` does not give the sort `V`. -/
+theorem valueValid_not_source :
+    ParameterValid .value emptyStores ∧ ¬ SortValid ValueSort.source.Holds emptyStores := by
+  refine ⟨⟨⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩, fun _ _ v h => by subst h; exact ⟨rfl, by simp [Scoped]⟩⟩, ?_⟩
+  rintro ⟨-, h⟩
+  have := (h 0 (ofList []) (.arr []) rfl).1
+  simp [isSourceVal] at this
 
 abbrev ParameterFamily (k : ParameterSpace) := { A : WorldFamily k.Carrier // ParameterValid k A }
 abbrev ParameterAssignment (k : ParameterSpace) (ι : Type) :=
@@ -394,6 +429,11 @@ structure NormalGraph (ι : Type) where
   (`BranchRefinement.factFilter`): any function serves, since keeping a
   label is sound, and meaning reads none. -/
   overlapping : ι → Bool := fun _ => false
+
+/-- **A sorted assignment**: each parameter row's selected family lies in its
+binder's sort (`ParameterKind.MixedSort`). -/
+def NormalGraph.Sorted (G : NormalGraph ι) (η : MixedAssignment ι) : Prop :=
+  ∀ i k, G.parameterKinds i = some k → ∀ n W x, selectParameter (some k) (η.1 i) n W x → k.MixedSort x
 
 /-- Whether a row is a parameter is derived from its kind, never maintained
 separately. -/
@@ -1426,6 +1466,32 @@ theorem mixedMeaning_valid (G : NormalGraph ι) (η : MixedAssignment ι) (S : L
   cases x with
   | inl v => exact (hX S).2 n W v h
   | inr vs => exact (graphArguments_valid G η X hX S).2 n W vs h
+
+/-- A graph of one row, the empty-store type: a store clause with no position. -/
+def emptyStoreGraph : NormalGraph Nat := { rows := fun _ => [.list ⟨[], [], none, false, .dense⟩ []] }
+
+/-- **Counter-model: a type's meaning may hold stores**, so the shared
+carrier's value component is machine-closed: a store type's meaning holds the
+empty store, and `mixedMeaning_valid` is false under a source-only closedness. -/
+theorem mixedMeaning_not_sourceValid :
+    ¬ ∀ (G : NormalGraph Nat) (η : MixedAssignment Nat) (S : List Nat),
+      SortValid (fun x : Val ⊕ List Val => match x with
+        | .inl v => ValueSort.source.Holds v | .inr vs => SourceList vs) (mixedMeaning G η S) := by
+  intro h
+  have hm : mixedMeaning emptyStoreGraph (ParameterAssignment.empty .mixed) [0] 0 (ofList [])
+      (.inl (.arr [])) := by
+    refine ⟨0, List.mem_singleton_self _, ?_⟩
+    show qDenoteWithArgs _ _ _ _ _ _
+    rw [qDenoteWithArgs_unfold]
+    simp only [qLayerWithArgs, NormalGraph.params, emptyStoreGraph, Option.isSome_none,
+      Bool.false_eq_true]
+    refine ⟨.list ⟨[], [], none, false, .dense⟩ [], by simp [NormalGraph.clauses, NormalGraph.plain,
+      NormalGraph.params], ⟨⟨[], rfl, fun _ h => absurd h (Nat.not_lt_zero _), by simp [tupleFams],
+      by simp [maxArrayLength], by simp [tupleFams], by simp [tupleFams], by simp [tupleFams],
+      by simp [tupleFams]⟩, by simp⟩, ?_⟩
+    simp [builtinInvariant, Clause.carriesInvariant]
+  have := ((h emptyStoreGraph _ [0]).2 0 (ofList []) _ hm).1
+  simp [isSourceVal] at this
 
 /-- A parameter's two-component row meaning is exactly its selected component,
 not the whole (potentially mixed) family assigned to that binder. -/

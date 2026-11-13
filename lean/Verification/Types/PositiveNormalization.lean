@@ -138,6 +138,50 @@ def topT : Fam := fun _ _ v => isVal v = true ∧ Scoped 0 v
 
 def sourceT : Fam := fun _ _ v => isSourceVal v = true ∧ Scoped 0 v
 
+/-! ### The semantic sorts
+
+The Tolerant frames note, §2: a value is a scalar or an object; a store is
+not a value. Field, cell and element locations hold source values (`V`),
+store locations hold element stores (`S`), and an argument list is a list of
+source values (`L = V*`). A family is valid at a sort when it is admissible
+and holds members of the sort only (`PositiveGraphs.SortValid`). -/
+
+/-- The two sorts of runtime contents: source values `V` and element stores `S`. -/
+inductive ValueSort where
+  | source
+  | store
+  deriving DecidableEq, Repr
+
+/-- The members of a sort: closed scalars and objects, or closed element stores. -/
+def ValueSort.Holds : ValueSort → Val → Prop
+  | .source, v => isSourceVal v = true ∧ Scoped 0 v
+  | .store, v => (∃ ls, v = .arr ls) ∧ Scoped 0 v
+
+/-- The sort `L`: lists of source values. -/
+def SourceList (vs : List Val) : Prop := ∀ v ∈ vs, ValueSort.source.Holds v
+
+/-- `V` is `sourceT`'s members. -/
+theorem ValueSort.source_iff {n : Nat} {W : WorldT n} {v : Val} :
+    ValueSort.source.Holds v ↔ sourceT n W v := Iff.rfl
+
+/-- **A closed machine value is of exactly one sort**: `topT` is `V ∪ S`, and
+the two are disjoint (`ValueSort.disjoint`). -/
+theorem topT_iff_sort {n : Nat} {W : WorldT n} {v : Val} :
+    topT n W v ↔ ValueSort.source.Holds v ∨ ValueSort.store.Holds v := by
+  constructor
+  · rintro ⟨hv, hs⟩
+    cases v <;> simp_all [isVal, isSourceVal, ValueSort.Holds]
+  · rintro (⟨hv, hs⟩ | ⟨⟨ls, rfl⟩, hs⟩)
+    · exact ⟨sourceVal_isVal hv, hs⟩
+    · exact ⟨rfl, hs⟩
+
+theorem ValueSort.disjoint {v : Val} (h : ValueSort.source.Holds v) : ¬ ValueSort.store.Holds v := by
+  rintro ⟨⟨ls, rfl⟩, -⟩
+  simp [ValueSort.Holds, isSourceVal] at h
+
+theorem ValueSort.Holds.closed {q : ValueSort} {v : Val} (h : q.Holds v) : isVal v = true ∧ Scoped 0 v :=
+  (topT_iff_sort (n := 0) (W := ofList [])).mpr (by cases q <;> simp_all)
+
 def semWithArgs (Ξ : Fam) (X : α → Fam) (P : α → ArgFam) : Clause α → Fam
   | .top => topT
   | .source => sourceT
@@ -640,6 +684,24 @@ def sourceClause : Clause α → Bool
 theorem sourceClause_sound {X : α → Fam} {P : α → ArgFam} {c : Clause α} {n W v}
     (hc : sourceClause c = true) (h : semWithArgs Ξ X P c n W v) : sourceT n W v := by
   apply semWithArgs_source (by intro e; subst c; cases hc) (by intros a bs e; subst c; cases hc) h
+
+/-- **A clause's category**: its members are of sort `q`. A source clause's
+are source values; a store clause's (`list`) are stores; a pack clause has
+no value members; `top` holds both sorts. -/
+def clauseIn : ValueSort → Clause α → Bool
+  | .source, c => sourceClause c
+  | .store, .list .. | .store, .pack .. => true
+  | .store, _ => false
+
+theorem clauseIn_sound {X : α → Fam} {P : α → ArgFam} {q : ValueSort} {c : Clause α} {n W v}
+    (hc : clauseIn q c = true) (h : semWithArgs Ξ X P c n W v) : q.Holds v := by
+  cases q with
+  | source => exact sourceClause_sound hc h
+  | store =>
+    cases c <;> simp [clauseIn] at hc
+    · obtain ⟨ls, rfl, -⟩ := h.1
+      exact ⟨⟨ls, rfl⟩, (semWithArgs_value h).2⟩
+    · exact h.elim
 
 private theorem meet_source (X : α → Fam) (P : α → ArgFam) (c : Clause α) (n W v) :
     semList Ξ X P (meet .source c) n W v ↔ sourceT n W v ∧ semWithArgs Ξ X P c n W v := by

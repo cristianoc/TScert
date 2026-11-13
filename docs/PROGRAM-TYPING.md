@@ -931,6 +931,67 @@ nothing. A declaration's packed parameter's argument at an application is
 its instance's value and lists (`packOf`), and a packed binder's lists are
 spelled with its packed name, `T#pack`.
 
+### Sorts and categories
+
+A value is a scalar or an object; a store is not a value
+([the Tolerant frames note](REFERENCES.md#the-tolerant-frames-note), §2). The
+semantic **sorts** are sets of closed terms:
+
+```math
+V=\{v\mid \mathrm{isSourceVal}(v)\land\mathrm{Scoped}_0(v)\}\qquad
+S=\{\mathsf{arr}(\vec\ell)\mid \mathrm{Scoped}_0(\mathsf{arr}(\vec\ell))\}\qquad
+L=V^{*}
+```
+
+(`ValueSort.Holds`, `SourceList`). A closed machine value is in exactly one
+of $`V`$ and $`S`$ (`topT_iff_sort`, `ValueSort.disjoint`). A family is
+**valid at a sort** $`q`$ when it is admissible and holds members of $`q`$
+only (`SortValid`):
+
+```math
+\mathrm{Valid}_q(A)\iff\mathrm{Adm}(A)\land\forall n\,W\,x.\ A_n(W,x)\Rightarrow x\in q
+```
+
+A binder's **sort** on the shared carrier $`\mathsf{Val}\uplus\mathsf{Val}^{*}`$
+is its value component in its kind's sort ($`V`$ for a value or packed
+binder; an argument binder has none) and its list component in $`L`$ for an
+argument or packed binder (`ParameterKind.MixedSort`). An assignment is
+**sorted** when each parameter row's selected family is in its binder's sort
+(`NormalGraph.Sorted`).
+
+A type's **category** $`A\subseteq q`$ is checked by cases over its rows
+(`tyIn`, `rowIn`, `partIn`, `clauseIn`):
+
+```math
+\frac{G(i)=\mathsf{param}_k\quad k.\mathrm{valueSort}\in\{q,\bot\}}{i\subseteq q}
+\qquad
+\frac{G(i)=\forall\vec p.\,\sigma}{i\subseteq V}
+\qquad
+\frac{G(i)=\vec c\quad\forall c\in\vec c.\ c\subseteq q}{i\subseteq q}
+\qquad
+\frac{G(i)=p\sqcap\vec r\sqcap\vec c\quad(\forall c\in\vec c.\ c\subseteq q)\lor\exists r\in p,\vec r.\ r\subseteq q}{i\subseteq q}
+```
+
+with a clause in $`V`$ when it is neither $`\top`$ nor $`\mathsf{list}`$
+(`sourceClause`), in $`S`$ when it is $`\mathsf{list}`$, and a pack clause in
+both, having no value members. At a sorted assignment every member of a type
+in $`q`$ is in $`q`$ (`tyIn_sound`).
+
+The category is weaker than the exception guarantee of `sourceTy`
+(`sourceTy_exc`), which also gives the built-ins' invariant and so refuses
+parameter rows; `sourceTy` implies $`A\subseteq V`$ (`sourceTy_tyIn`). Three
+counter-models fix these definitions, each a theorem:
+
+- `valueValid_not_source`: validity at a value binder's carrier, machine
+  closedness, admits the family of empty stores, so it does not give $`V`$.
+- `mixedMeaning_not_sourceValid`: a store type's meaning holds the empty
+  store, so a type's meaning is not $`V`$-valid in general, and the shared
+  carrier's value component is $`V\cup S`$.
+- `sourceCategory_not_exc`: a value binder at a sorted assignment is in
+  $`V`$, yet its member, an object owning the store key at a location no
+  world holds, is outside the exception family; a classification admitting
+  parameter rows does not give `sourceTy_exc`.
+
 ### Variadic construct signatures
 
 A variadic construct signature $`\mathsf{new}(\vec Q,\ {\ldots}P)\Rightarrow^{\varepsilon} B`$,

@@ -3529,6 +3529,177 @@ theorem sourceTy_sound {G : NormalGraph ι} {A : List ι}
     FamLe (mixedValues G η A) sourceT :=
   fun n W v hv => (sourceTy_exc checked η n W v hv).1
 
+/-! ### The category of a type
+
+A type's **category**: every inhabitant is of one sort (`ValueSort`), at
+every sorted assignment (`NormalGraph.Sorted`). It is what a location's role
+asks of its contents (`Kinds.Cat`), and it is weaker than `sourceTy`'s
+exception guarantee, which adds the built-ins' invariant
+(`sourceCategory_not_exc`). The check is by cases over the row kinds: a
+parameter row is in its binder's sort, a scheme row's members are callables,
+a meet row is within its clauses and within each of its parts, and a clause
+row is its clauses' (`clauseIn`). -/
+
+/-- A meet part in sort `q`: a parameter in that sort, or a scheme row. -/
+@[nospecialize] def partIn (G : NormalGraph ι) (q : ValueSort) (r : ι) : Bool :=
+  match G.parameterKinds r with
+  | some k => match k.valueSort with
+    | some q' => decide (q' = q)
+    | none => true
+  | none => (G.schemes r).isSome && decide (q = .source)
+
+/-- A row in sort `q`. -/
+@[nospecialize] def rowIn (G : NormalGraph ι) (q : ValueSort) (i : ι) : Bool :=
+  match G.parameterKinds i with
+  | some _ => partIn G q i
+  | none => match G.schemes i with
+    | some _ => decide (q = .source)
+    | none => match G.meets i with
+      | some (p, cs) => cs.all (clauseIn q) || (p :: G.meetParams i).any (partIn G q)
+      | none => (G i).all (clauseIn q)
+
+/-- **A type in sort `q`**: each of its rows is. -/
+@[nospecialize] def tyIn (G : NormalGraph ι) (q : ValueSort) (A : List ι) : Bool :=
+  A.all (rowIn G q)
+
+/-- A part in sort `q` holds members of `q`, at a sorted assignment. -/
+theorem partIn_sound {G : NormalGraph ι} {η : MixedAssignment ι} (hη : G.Sorted η) {q : ValueSort}
+    {r : ι} (h : partIn G q r = true) {X : MixedAssignment ι × ι → Fam} {n W v}
+    (hv : partSemWithArgs G (mixedParameters G) X η r n W v) : q.Holds v := by
+  unfold partIn at h
+  cases hk : G.parameterKinds r with
+  | some k =>
+    have hp : G.params r = true := by simp [NormalGraph.params, hk]
+    rw [partSemWithArgs_param hp] at hv
+    change selectParameter (G.parameterKinds r) (η.1 r) n W (.inl v) at hv
+    rw [hk] at hv
+    obtain ⟨q', hq', hv'⟩ := hη r k hk n W (.inl v) hv
+    simp only [hk, hq', decide_eq_true_eq] at h
+    exact h ▸ hv'
+  | none =>
+    simp only [hk, Bool.and_eq_true, Option.isSome_iff_exists, decide_eq_true_eq] at h
+    obtain ⟨⟨s, hs⟩, rfl⟩ := h
+    have hp : G.params r = false := by simp [NormalGraph.params, hk]
+    simp only [partSemWithArgs, hp, Bool.false_eq_true, ite_false, hs] at hv
+    obtain ⟨fs, code, oid, rfl, hsc⟩ := hv.1.obj
+    exact ⟨rfl, hsc⟩
+
+/-- **A row in sort `q` holds members of `q`**, at a sorted assignment. -/
+theorem rowIn_sound {G : NormalGraph ι} {η : MixedAssignment ι} (hη : G.Sorted η) {q : ValueSort}
+    {i : ι} (h : rowIn G q i = true) {n W v}
+    (hv : qDenoteWithArgs G (mixedParameters G) (η, i) n W v) : q.Holds v := by
+  rw [qDenoteWithArgs_unfold] at hv
+  unfold rowIn at h
+  cases hk : G.parameterKinds i with
+  | some k =>
+    simp only [hk] at h
+    have hp : G.params i = true := by simp [NormalGraph.params, hk]
+    rw [qLayer_part (.inl hp)] at hv
+    exact partIn_sound hη h hv
+  | none =>
+    have hp : G.params i = false := by simp [NormalGraph.params, hk]
+    simp only [hk] at h
+    cases hs : G.schemes i with
+    | some s =>
+      simp only [hs, decide_eq_true_eq] at h
+      subst h
+      simp only [qLayerWithArgs, hp, Bool.false_eq_true, ite_false, hs] at hv
+      obtain ⟨fs, code, oid, rfl, hsc⟩ := hv.1.obj
+      exact ⟨rfl, hsc⟩
+    | none =>
+      simp only [hs] at h
+      simp only [qLayerWithArgs, hp, Bool.false_eq_true, ite_false, hs] at hv
+      cases hm : G.meets i with
+      | some pc =>
+        obtain ⟨p, cs⟩ := pc
+        simp only [hm, Bool.or_eq_true, List.all_eq_true, List.any_eq_true] at h hv
+        rcases h with hc | ⟨r, hr, hr'⟩
+        · obtain ⟨c, hc', hcv⟩ := hv.2
+          exact clauseIn_sound (hc c hc') hcv.1
+        · rcases List.mem_cons.mp hr with rfl | hr
+          · exact partIn_sound hη hr' hv.1.1
+          · exact partIn_sound hη hr' (hv.1.2 r hr)
+      | none =>
+        simp only [hm, List.all_eq_true] at h hv
+        obtain ⟨c, hc', hcv⟩ := hv
+        exact clauseIn_sound (h c hc') hcv.1
+
+/-- **A type in sort `q` holds members of `q`**, at a sorted assignment. -/
+theorem tyIn_sound {G : NormalGraph ι} {η : MixedAssignment ι} (hη : G.Sorted η) {q : ValueSort}
+    {A : List ι} (h : tyIn G q A = true) {n W v} (hv : mixedValues G η A n W v) : q.Holds v := by
+  obtain ⟨i, hi, hv⟩ := hv
+  exact rowIn_sound hη (List.all_eq_true.mp h i hi) hv
+
+/-- `sourceTy`'s exception guarantee includes the category `V`. -/
+theorem sourceRow_rowIn {G : NormalGraph ι} {i : ι} (h : sourceRow G i = true) :
+    rowIn G .source i = true := by
+  unfold sourceRow at h
+  unfold rowIn
+  by_cases hp : G.params i = true
+  · simp [hp] at h
+  · have hk : G.parameterKinds i = none := by simpa [NormalGraph.params] using hp
+    simp only [hp, Bool.false_eq_true, ite_false] at h
+    simp only [hk]
+    cases hs : G.schemes i with
+    | some s => rfl
+    | none =>
+      simp only [hs, Option.isSome_none, Bool.false_eq_true, ite_false] at h
+      cases hm : G.meets i with
+      | some pc =>
+        obtain ⟨p, cs⟩ := pc
+        simp only [hm] at h
+        simp only [Bool.or_eq_true]
+        exact .inl (by simpa [clauseIn] using h)
+      | none => simp only [hm] at h; simpa [clauseIn] using h
+
+theorem sourceTy_tyIn {G : NormalGraph ι} {A : List ι} (h : sourceTy G A = true) :
+    tyIn G .source A = true :=
+  List.all_eq_true.mpr fun i hi => sourceRow_rowIn (List.all_eq_true.mp h i hi)
+
+/-- A one-row graph: a value binder. -/
+def valueParamGraph : NormalGraph Nat := { rows := fun _ => [], parameterKinds := fun _ => some .value }
+
+/-- An array object whose store key names a location no world holds. -/
+def danglingArray : Val := .objAt [(CallArguments.arrayStoreField, 0)] .absent 0
+
+/-- The assignment giving every binder the one dangling array. -/
+def danglingAssignment : MixedAssignment Nat :=
+  ⟨fun _ _ _ x => x = .inl danglingArray,
+   fun _ => ⟨⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩, fun _ _ x h => by
+     subst h; exact ⟨rfl, by simp [danglingArray, Scoped]⟩⟩⟩
+
+/-- **Counter-model: the category `V` does not give the exception
+guarantee.** A value binder at a sorted assignment is in `V` (`tyIn`), but
+its member need not meet the built-ins' invariant: a source value that owns
+the store key at a location no world holds. So `sourceTy_exc` is false of a
+classification admitting parameter rows, and the category is a separate
+check. -/
+theorem sourceCategory_not_exc :
+    valueParamGraph.Sorted danglingAssignment ∧ tyIn valueParamGraph .source [0] = true ∧
+      ¬ FamLe (mixedValues valueParamGraph danglingAssignment [0]) (excOf valueParamGraph) := by
+  refine ⟨?_, by decide, ?_⟩
+  · intro i k hk n W x hx
+    simp only [valueParamGraph, Option.some.injEq] at hk
+    subst hk
+    cases x with
+    | inl v =>
+      obtain ⟨-, hv⟩ | ⟨h, -⟩ := hx
+      · cases (show Sum.inl v = Sum.inl danglingArray from hv)
+        exact ⟨.source, rfl, rfl, by simp [danglingArray, Scoped]⟩
+      · cases h
+    | inr vs => exact absurd hx.2 (by simp [danglingAssignment])
+  · intro h
+    have hm : mixedValues valueParamGraph danglingAssignment [0] 0 (ofList []) danglingArray := by
+      refine ⟨0, List.mem_singleton_self _, ?_⟩
+      show qDenoteWithArgs _ _ _ _ _ _
+      rw [qDenoteWithArgs_unfold]
+      simp [qLayerWithArgs, NormalGraph.params, valueParamGraph, mixedParameters, selectParameter,
+        danglingAssignment]
+    obtain ⟨-, hinv⟩ := h 0 (ofList []) _ hm
+    simp only [builtinInvariant, valueParamGraph, Clause.carriesInvariant] at hinv
+    obtain ⟨flds, l, c, oid, he, hf, hl, -⟩ := hinv _ _ rfl (by simp) _ _ (List.mem_singleton_self _)
+    simp [lookup] at hl
+
 /-- **A meet target, read part by part**: each part of a target meet row is
 the source row, one of the source meet's parts, or a scheme the source row or
 one of its scheme parts covers; its clauses admit every value or are the
