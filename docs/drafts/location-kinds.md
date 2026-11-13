@@ -1,17 +1,29 @@
 # Draft: fixed location kinds
 
-The design of location kinds for the model of the note *Tolerant frames*
-(§§2–3): every location of a heap has a kind, fixed for its life, and a fact
+The design of location kinds for the model of the
+[Tolerant frames note](../REFERENCES.md#the-tolerant-frames-note) (§§2–3):
+every location of a heap has a kind, fixed for its life, and a fact
 supported by locations of one kind survives an effect confined to another
-by kinds alone. Claims are labelled **proved** (with the Lean name, in
-[Kinds](../../lean/Verification/Semantics/Kinds.lean),
+by kinds alone. With kinds in every well-formed state, three statements of
+the note hold with no premise beyond the state: a typed array's length is
+immutable (View), every store lists allocated element cells, and an
+allocated array is apart from every older one (Alloc).
+
+Claims are labelled **proved**, with the Lean name, in the kinded
+development: [Kinds](../../lean/Verification/Semantics/Kinds.lean),
 [KindsAllocation](../../lean/Verification/Semantics/KindsAllocation.lean),
-[KindsWrites](../../lean/Verification/Semantics/KindsWrites.lean) and
-[KindsNatives](../../lean/Verification/Semantics/KindsNatives.lean), each
-checked by the [axiom check](../../lean/Verification/Tests/AxiomCheck.lean)
-in its block for the kinds of the Tolerant-frames model) or **planned**. The
-existing proofs use the world of `Worlds.lean`; [the activation](#activation)
-replaces it by the kinded one.
+[KindsWrites](../../lean/Verification/Semantics/KindsWrites.lean),
+[KindsNatives](../../lean/Verification/Semantics/KindsNatives.lean),
+[KindsStates](../../lean/Verification/Semantics/KindsStates.lean),
+[KindsCapabilities](../../lean/Verification/Semantics/KindsCapabilities.lean),
+[KindsContracts](../../lean/Verification/Semantics/KindsContracts.lean) and
+[KindsModelRules](../../lean/Verification/Programs/KindsModelRules.lean),
+each theorem checked by the
+[axiom check](../../lean/Verification/Tests/AxiomCheck.lean) in its block
+for the kinds of the Tolerant-frames model. That development is inactive:
+the active proofs use the world of `Worlds.lean`, and
+[the activation](#activation) replaces it by the kinded one. Claims about
+the activation are labelled **planned**.
 
 ## The existing mechanism this extends
 
@@ -20,78 +32,261 @@ regions, changes, support and respect; the world of
 [Worlds](../../lean/Verification/Semantics/Worlds.lean) owns each location's
 contract, fixed at allocation and kept by extension, and `HeapOk`
 ([Heaps](../../lean/Verification/Semantics/Heaps.lean)) relates a heap to
-it. A kind is one more fixed part of a world entry, beside the contract, and
-kinded satisfaction is one more conjunct of `HeapOk`. The frame mechanism
-then reads kinds from the world as it reads contracts.
+it; semantic typing gives each allocation its world entries; safety
+([Safety](../../lean/Verification/Semantics/Safety.lean),
+[ExceptionalPosts](../../lean/Verification/Semantics/ExceptionalPosts.lean))
+states what a call guarantees on its normal and exceptional exits. A kind
+is one more fixed part of a world entry, beside the contract; structural
+satisfaction is one more conjunct of `HeapOk`; a storage capability is the
+typing's grant of a location, carrying its role; and a native's contract is
+a safety statement whose postconditions may read the exit world. No second
+effect system is introduced: the frame mechanism reads kinds from the world
+as it reads contracts.
 
-## 1. Design decisions
+## 1. Roles and worlds
 
-1. **The calculus and the lowering are unchanged.** Kinds organise the model
-   and the proof rules only: no term form, value form or step is added, and
-   no lowering changes. A role is assigned to a location when the world is
-   extended at an allocation, by the typing rule that justifies that
-   allocation. The calculus step is the same whatever roles the rule
-   chooses.
-2. **A world entry is a role beside a contract.** The kinded world
-   `Kinds.WorldT n` is the stratified construction of `WorldT`, each entry a
-   pair of a role and a contract inspecting kinded worlds below `n`.
-   Truncation keeps the roles and weakens the contracts; extension appends
-   entries; `appendW` takes a role with its contract. Its interface keeps
-   every name of the existing one (`Ctr`, `toList` for the contracts,
-   `lookup`, `trunc`, `WExt`, `appendW`, `appendWs`, `CtrAdm`, `WorldAdm`,
-   `HeapOk`) and adds `entries`, `roles`, `roleAt` and `kindAt`. This form
-   was chosen because the activation then replaces the definitions of
-   `Worlds.lean` and `Heaps.lean` by these, the type and lemma names
-   unchanged, and edits only the places that build an entry (each
-   allocation, which now states a role) and those that destructure
-   `HeapOk`; a pair of a role list with the existing world would instead
-   change the type of every world in every statement. Contracts see roles,
-   so a type's contract can require them (step 5 of the plan).
-3. **Five kinds and two store forms.**
+A role refines a kind:
 
-   ```math
-   \mathrm{Role} ::= F \mid C \mid E \mid S_{\mathrm{array}} \mid S_{\mathrm{view}(N)} \mid I
-   ```
+```math
+\mathrm{Role} ::= F \mid C \mid E \mid S_{\mathrm{array}} \mid S_{\mathrm{view}(N)} \mid I
+```
 
-   F holds an object's ordinary property, C a binding cell's, E an
-   element, S a store, I an object's identity (a location holding `null`
-   that every object allocation adds; the note's four kinds cannot classify
-   it). An ordinary array's store and a typed array's view store of fixed
-   length $`N`$ are two forms of S, distinguished by role, since a fixed
-   length alone does not distinguish them.
-4. **A binding cell is recognised by the role of its property's location.**
-   In the calculus a binding cell is the allocation of an object with one
-   field `value` and its identity; an object literal `{ value: v }` is the
-   same allocation. The rule allocating a binding gives the field's
-   location the role C; the rule for an object literal gives F. So the
-   object-shape condition is: each ordinary property maps to a location of
-   role F or C. A region `o.*` denotes whatever roles those locations have,
-   and the sets of all cells and of all fields are disjoint, as the note
-   requires (**proved**, `kinds_disjoint`).
-5. **Reference validity.** $`\mathrm{RefsOk}(W,t)`$ holds when every location
-   a term refers to has the role its position demands: an object's identity
-   is in I; its slot under `[]` is in $`S_{\mathrm{array}}`$; under
-   `[[viewElements]]` it is in $`S_{\mathrm{view}(N)}`$ for some $`N`$, and
-   the object's `[[viewLength]]` field is in F with a contract admitting
-   $`N`$ alone; under every other key it is in F or C; every cell a store
-   lists is in E. It covers every subterm, the captures, bound targets,
-   receivers and prefixes of call descriptors, and a graph's node
-   expressions, and it reads the world only.
-6. **Shapes and kinded satisfaction.** The structural part is unindexed, so
-   it holds at every budget, zero included:
+F holds an object's ordinary property, C a binding's storage, E an element,
+S a store, I an object's identity (a location holding `null` that every
+object allocation adds). An ordinary array's store and a typed array's view
+store of fixed length $`N`$ are two forms of S, distinguished by role.
 
-   ```math
-   \begin{aligned}
-   \mathrm{Shape}(W,F|C|E,u) &\iff u\text{ is a source value}\land\mathrm{RefsOk}(W,u)\\
-   \mathrm{Shape}(W,S_{\mathrm{array}},u) &\iff u\text{ is a store}\land\mathrm{RefsOk}(W,u)\\
-   \mathrm{Shape}(W,S_{\mathrm{view}(N)},u) &\iff u\text{ is a store of length }N\land\mathrm{RefsOk}(W,u)\\
-   \mathrm{Shape}(W,I,u) &\iff u=\mathtt{null}\\
-   \mathrm{HeapOk}(n,W,h) &\iff h\text{ meets }W\text{'s contracts below }n\land
-     \forall l.\ W(l)=(r,c)\Rightarrow\mathrm{Shape}(W,r,h(l))
-   \end{aligned}
-   ```
+A world entry is a pair of a role and a contract. The kinded world
+`Kinds.WorldT n` is the stratified construction of `WorldT`, each entry's
+contract inspecting kinded worlds below `n`, so a contract can read roles.
+Extension appends entries and keeps every old pair; truncation keeps every
+role and restricts the contracts. The world records a location's role
+permanently, at the allocation that justifies it: the typing derivation of
+that allocation chooses the role (§4), and no later type can relabel the
+location.
 
-## 2. What is proved
+The calculus's terms and steps are those of `Semantics/Calculus.lean`:
+roles live in worlds, which are proof-level. The typing's storage
+capabilities and the lowering's metadata carry roles (§4), so typing and
+lowering metadata change at the activation; calculus terms and steps do
+not.
+
+## 2. Reference validity and view metadata
+
+$`\mathrm{RefsOk}(W,t)`$ holds when every location a term refers to has the
+role its position demands: an object's identity is in I; its slot under
+`[]` is in $`S_{\mathrm{array}}`$; under `[[viewElements]]` it is in
+$`S_{\mathrm{view}(N)}`$ for some $`N`$; under every other key it is in F
+or C; every cell a store lists is in E; and every object's field map has
+valid view metadata. `RefsOk` covers every subterm, the captures, bound
+targets, receivers and prefixes of call descriptors, and a graph's node
+expressions, and it reads the world only.
+
+**View metadata validity** of a field map $`fs`$, wherever the metadata
+occurs (`ViewMetaOk`):
+
+- every location $`fs`$ gives `[[viewLength]]` is a **length metadata
+  location** of some $`N`$: a location of role F whose contract admits the
+  value $`N`$ alone (`LengthMeta`);
+- every location $`fs`$ gives `[[viewElements]]` has role
+  $`S_{\mathrm{view}(N)}`$, and $`fs`$'s `[[viewLength]]` location is a
+  length metadata location of that same $`N`$.
+
+The first clause covers a host object that holds its length alone, which
+the length observation `viewLengthOf`
+([IndexFacts](../../lean/Verification/Semantics/IndexFacts.lean)) reads as
+a typed array. It is the validity of the representation that observation
+reads.
+
+## 3. Well-formed states
+
+The structural part of satisfaction is unindexed, so it holds at every
+budget, zero included:
+
+```math
+\begin{aligned}
+\mathrm{Shape}(W,F|C|E,u) &\iff u\text{ is a source value}\land\mathrm{RefsOk}(W,u)\\
+\mathrm{Shape}(W,S_{\mathrm{array}},u) &\iff u\text{ is a store}\land\mathrm{RefsOk}(W,u)\\
+\mathrm{Shape}(W,S_{\mathrm{view}(N)},u) &\iff u\text{ is a store of length }N\land\mathrm{RefsOk}(W,u)\\
+\mathrm{Shape}(W,I,u) &\iff u=\mathtt{null}\\
+\mathrm{HeapOk}(n,W,h) &\iff h\text{ meets }W\text{'s contracts below }n\land
+  \forall l.\ W(l)=(r,c)\Rightarrow\mathrm{Shape}(W,r,h(l))
+\end{aligned}
+```
+
+A **state** is a positive budget $`n`$, a world $`W`$ at $`n`$ whose
+contracts survive allocation, and a heap $`h`$ with
+$`\mathrm{HeapOk}(n,W,h)`$. A transition $`s \rightsquigarrow s'`$ is
+admissible when $`n' \le n`$ and $`W'`$ extends $`W`$ truncated to $`n'`$.
+
+The environment is inside the well-formed state. A **state over** $`\rho`$
+is a state whose world validates every root of $`\rho`$:
+
+```math
+\mathrm{RootsOk}(W,\rho) \iff \forall x.\ \mathrm{RefsOk}(W,\rho(x))
+```
+
+Assertions and modalities range over states over their environment. An
+admissible transition keeps every role, every valid reference and every
+length metadata location with its length, so it takes a state over
+$`\rho`$ to a state over $`\rho`$ (**proved**, `Admissible.roleAt`,
+`Admissible.refsOk`, `Admissible.lengthMeta`, `RootsOk.admissible`,
+`State.next`); extending $`\rho`$ by a value valid in the world keeps every
+existing binding (`RootsOk.set`). At activation the typed entry obtains
+$`\mathrm{RootsOk}`$ from `EnvOk`
+([TypingBasics](../../lean/Verification/Programs/TypingBasics.lean)),
+strengthened by reference validity (**planned**).
+
+The running term is valid too: safety requires $`\mathrm{RefsOk}(W,t)`$ of
+the running term at every budget (§5).
+
+## 4. Storage capabilities
+
+Roles belong to allocation provenance. An object literal `{ value: v }`
+and a binding cell holding `v` are the same calculus allocation; an
+array's store slot is one more of its kind. What tells their locations'
+roles apart is the typing derivation that justified the allocation, through
+the capability it grants.
+
+A **storage capability** is a key and a family of permitted pairs of a
+role and a contents type. Its meaning at a field map $`fs`$ is that the key
+denotes a location with one of those roles and a contract agreeing with the
+paired type:
+
+```math
+\mathrm{cap}=(k,P)\qquad
+\mathrm{cap}\models_W fs \iff \exists l.\ fs(k)=l\land W(l)=(r,c)\land(r,T)\in P\land c\simeq T
+```
+
+where $`c \simeq T`$ is agreement at every budget below the world's. The
+constructions:
+
+- an ordinary property of type $`A`$: $`(f,\{(F,A)\})`$;
+- a binding's storage of type $`A`$: $`(\mathtt{value},\{(C,A)\})`$;
+- an ordinary array's store: $`([\,],\{(S_{\mathrm{array}},A)\})`$;
+- a typed array's element store, over every length:
+  $`(\mathtt{[[viewElements]]},\{(S_{\mathrm{view}(N)},A_N)\mid N\})`$.
+
+**Proved** (`KindsCapabilities`): an allocation choosing role $`r_i`$ and
+type $`A_i`$ for its $`i`$-th key establishes every capability over that
+key permitting $`(r_i,A_i)`$ (`Capability.holds_alloc`), with the object
+literal, the binding cell and the array store as instances
+(`field_holds_literal`, `binding_holds_cell`, `arrayStore_holds_array`); a
+holding capability exposes its target's role (`Capability.Holds.role`);
+two capabilities over one key of one object share a role
+(`Capability.Holds.common`), so a binding capability and a field capability
+never both hold of one object (`binding_not_field`) and no inclusion takes
+one to the other (`binding_not_le_field`); extension and truncation keep a
+capability's meaning; a write of contents with the target role's shape and
+the paired type keeps `HeapOk` (`Capability.At.write`).
+
+At activation (**planned**) `Fields`, `recT`, `recT_alloc` and `recT_at`
+([Types](../../lean/Verification/Types/Types.lean)) take capabilities in
+place of bare property types; `Clause.refs` and `Clause.dict`
+([PositiveNormalization](../../lean/Verification/Types/PositiveNormalization.lean))
+carry them through mapping, substitution, normalization, equality,
+subtyping and certification; every write-granting capability (`dictCellT`,
+optional writable fields, array storage) states its role; an open record
+grants capabilities for the properties it names; `CellClaims.reference`
+([CellClaims](../../lean/Verification/Programs/CellClaims.lean)) takes the
+capability explicitly, binding lowering
+([Bindings](../../lean/Verification/Source/Lowering/Bindings.lean))
+supplying C; and `AllocationWorlds.next`
+([AllocationWorlds](../../lean/Verification/Semantics/AllocationWorlds.lean))
+takes allocation entries. A field write's effect is confined to F, and a
+binding write's to C, as consequences of capability lookup.
+
+## 5. The native-contract condition
+
+A **world-indexed postcondition** receives the exit world as well as the
+budget, the heap and the result; an exceptional one the exit world, the
+budget and the heap. A postcondition of the heap and result alone lifts by
+ignoring the world (`WPost.lift`, `WExc.lift`).
+
+**Safety with world-indexed postconditions** (`SafeW`) is the safety
+predicate of `ExceptionalPosts` over kinded worlds with one structural
+component: the running term's references are valid in the world at every
+budget, zero included. At a positive budget the term is a value of the
+result type meeting the postcondition at the current world and heap, or
+throws a value of the exception family meeting the exceptional
+postcondition there, or steps to a heap meeting an admissible extension of
+the truncated world, where safety continues.
+
+The one condition on every native and every call contract
+(`NativeContract`): from every well-formed entry configuration below the
+budget (a heap meeting an admissible extension $`U`$ of the truncated
+world; callee, receiver and actuals valid in $`U`$ and of their input
+types; the precondition) the invocation is `SafeW` at its result type, its
+normal postcondition and its exceptional one. Every execution prefix of
+such a call then ends in a well-formed configuration under one extension
+of $`U`$, its budget possibly zero (**proved**, `SafeW.run`,
+`NativeContract.run`), and a thrown value is of the exception family with
+valid references (`Thrown.refs`). Typing, structural validity and the
+postconditions read one successor world.
+
+The condition applies at callback boundaries recursively: a callback's
+allocations take whatever roles its own typing chooses, and a native's
+element allocation after the callback extends the callback's world with E
+entries. An effect without `onThrow` bounds no exceptional heap; the
+structural component of safety still holds there.
+
+A footprint states where a call may change the heap, not what it may
+write there or allocate. The relations below bound locations only and
+give no well-formed exit by themselves: `ElementWrite.changes`
+(`elementWrite_not_respects`: it lets a field holding a string come to hold
+a store), `array_native_post`, `receiverOwn`, `receiverStore`,
+`fresh`, `freshObject` and an unrestricted `excPost`. `native_shaped`
+proves an array native's element-storage phase preserves kinds under its
+stated premises; a whole native, callbacks included, meets
+`NativeContract`.
+
+## 6. The view-element write
+
+The primitive contract of a typed array's element write (`%ByteSet%`,
+`fill`, `copyWithin`, `set`) is a relation from the entry world $`W`$ and
+heap $`h`$ to the exit world $`W'`$ and heap $`h'`$ (`ViewWrite`):
+
+- $`W'`$ extends $`W`$ truncated to the exit budget, and
+  $`\mathrm{HeapOk}(n',W',h')`$: the domain grows with the world, every
+  location, fresh ones included, has its role's shape and meets its
+  contract;
+- every old location whose role is no view store keeps its contents;
+- every cell an old view store newly lists is fresh against $`h`$;
+- the exact form adds `ExactWrite` of the designated view, index and value.
+
+It constrains every view store, whichever view the call names: an
+overlapping view may change, exactness constraining the designated one. An
+updated view store lists fresh cells, so old element cells keep their
+contents. The relation is a world-indexed postcondition
+(`ViewWrite.post`). **Proved**: an ordinary array's store is kept
+(`ViewWrite.keeps_array`); an old $`S_{\mathrm{view}(N)}`$ location holds a
+store of length $`N`$ listing element cells of $`h'`$
+(`ViewWrite.view_store`); from a well-formed entry heap, the coarse change
+of `ElementWrite` follows (`ViewWrite.changes`, `ViewWriteOf.holds`). Two
+views over the same bytes both change under one exact write while an
+ordinary array's store is kept, between two well-formed heaps
+(`viewWrite_overlap`). The numerical correspondence between overlapping
+views' elements and their shared bytes is part of the host contract's
+audit; kinds do not state it.
+
+## 7. Allocated cells
+
+Every cell a store of a well-formed heap lists has role E and is a
+location of the heap, at every budget, zero included (**proved**,
+`HeapOk.store_cells`, from `HeapOk.kinds`). This structural consequence is
+what every consumer of allocated cells needs: `RootCells` holds at every
+state and after every action (`rootCells`, `rootCells_box`), every store of
+every state lists allocated cells (`storeCells`, `storeCells_invariant`),
+and the dangling store `[[5], null, null]` meets no kinded world at any
+budget (`dangling_excluded`).
+
+`CellsCtr` quantifies over other worlds and every store a contract admits
+there, which structural validity of the current heap does not give; at
+activation it is removed with `StoreCells`, their establishment machinery
+and `rootCells_not_invariant`, and each consumer uses the structural
+consequence (**planned**).
+
+## 8. What is proved
 
 - **Kinds are fixed.** Kinds are disjoint (`kinds_disjoint`), kept by
   extension (`WExt_kindAt`) and by truncation to any level (`kindAt_trunc`);
@@ -102,18 +297,29 @@ then reads kinds from the world as it reads contracts.
   store lists only element cells, all locations of the heap.
 - **The audit's counter-heap is excluded** (`counterheap_excluded`): no
   world satisfies `[[1], 0, null]` with the array `{[]: 0}` and the object
-  `{f: 1}` both valid, since location 1 would be in F or C and in E. **The
-  dangling store of `rootCells_not_invariant` is excluded**
-  (`dangling_excluded`): no kinded world is satisfied by
-  `[[5], null, null]`.
-- **Allocation** (`HeapOk_appendWs` for both parts;
-  `makeFields_shaped` for any object, with `objectLiteral_shaped`,
-  `bindingCell_shaped`, `closure_shaped`, `arrayObject_shaped`,
-  `typedArray_shaped`; `arrAlloc_shaped` for a store literal's elements;
-  `thrownError_shaped` for a fresh error).
-- **Writes** (`write_sound` for both parts; `writeField_shaped`,
-  `writeOrdinary_shaped`, `bindingWrite_shaped`, `storeWrite_shaped`,
-  `lengthStore_refs`; `setPresent_shaped`, `setGrow_shaped`).
+  `{f: 1}` both valid, since location 1 would be in F or C and in E.
+- **(View)**: the length a value with valid references reads through
+  `viewLengthOf`, as defined, is kept by every admissible transition, with
+  no stability premise (`viewLengthOf_kept`); the length of a root is
+  invariant (`viewLength_invariant`); a linear fact whose current terms are
+  roots' integers and view lengths holds after every action of the top
+  footprint (`view_box`); no admissible transition changes a valid typed
+  array's length from 1 to 2 (`view_change_excluded`).
+- **Allocated cells**: §7.
+- **Alloc**: an array allocated past a well-formed heap is apart from every
+  store of that heap the later heap keeps, with no premise on the old
+  store's cells (`alloc_apart`); the allocated empty array is fresh, of
+  length 0 and apart from every array of the entry heap (`alloc_post`), and
+  the extended heap is well-formed with the array valid
+  (`alloc_wellformed`).
+- **Allocation** (`HeapOk_appendWs`; `makeFields_shaped` for any object,
+  with `objectLiteral_shaped`, `bindingCell_shaped`, `closure_shaped`,
+  `arrayObject_shaped`, `typedArray_shaped`, `hostLength_shaped`;
+  `arrAlloc_shaped` for a store literal's elements; `thrownError_shaped`
+  for a fresh error).
+- **Writes** (`write_sound`; `writeField_shaped`, `writeOrdinary_shaped`,
+  `bindingWrite_shaped`, `storeWrite_shaped`, `lengthStore_refs`;
+  `setPresent_shaped`, `setGrow_shaped`).
 - **Steps that change no heap keep references valid** (`step_refs`):
   congruences, substitution, a graph's entry, a node's instantiation, every
   continuation's environment map, handlers and raises, reads, spreads,
@@ -123,104 +329,86 @@ then reads kinds from the world as it reads contracts.
 - **Array natives** (`Arr.natives_within`, `Arr.Within.refs`,
   `native_shaped`): `Set`, `Delete`, a length change, `push`, `pop`,
   `shift`, `unshift`, `reverse` and `sort`'s writeback keep a store's cells
-  among the original and fresh ones, and the native preserves kinds when
-  its fresh locations are element cells holding source values and the old
-  locations it changes are element cells holding source values.
-- **Host contracts** stated as heap relations have the obligation
-  `RespectsKinds` (and `ResultRespectsKinds` with a result). The
-  typed-array element write's contract as stated does not meet it
-  (`elementWrite_not_respects`): it lets a field holding a string come to
-  hold a store.
+  among the original and fresh ones, and their element-storage phase
+  preserves kinds when the fresh locations are element cells holding
+  source values and the old locations changed are element cells holding
+  source values.
+- **States, capabilities, native contracts and the view write**: §§3–6.
 
-## 3. The typing premises
+## 9. The typing premises
 
 Each step below preserves kinded satisfaction only under the premise
-listed; the raw step admits more. These are what the activation discharges
-from the typing rules.
+listed; the raw step admits more. The activation discharges them from the
+typing rules, through the capabilities of §4.
 
 - **Object allocation** (`Step.makeFields`): the rule's role for each key
   fits it (a store slot's under `[]`, a view's under `[[viewElements]]`, F
   or C under any other key); each initializer has its role's category (a
-  source value in F or C, a store in S); and the field map meets the
-  view-length condition, which holds where no key is `[[viewElements]]`. A
-  source allocation names no `[[viewElements]]` key (a reserved spelling);
-  a binding allocation chooses C, an object literal F.
+  source value in F or C, a store in S); the field map has valid view
+  metadata, which holds where it names neither metadata key. A source
+  allocation names neither key (reserved spellings); a binding allocation
+  chooses C, an object literal F.
 - **Store literal** (`Step.arrAlloc`): each initializer is a source value.
 - **Field write** (`Step.writeField`): the payload has the category of its
-  target's role: a source value in F or C (an ordinary key, a binding
-  update), a store under `[]` (a grown store's writeback, a length write).
+  target's role: a source value in F or C, a store under `[]` (a grown
+  store's writeback, a length write).
 - **Present element write** (`Step.setPresent`) and **hole or past-end
   write** (`Step.setGrow`): the payload is a source value.
-- **Array natives**: the audited heap side of each native's row
-  (`array_native_post`), with the contents it writes and allocates source
-  values.
+- **Natives**: `NativeContract` (§5).
 - **Copies** (`Step.mergeV`): an ordinary accumulator owns no
   `[[viewElements]]` slot, or the copy's allocating rule gives that key a
-  view role with its length field's singleton contract.
-- **Every step**: the term's references are valid in the world
-  (`RefsOk`), which the activation adds to the state's well-formedness
-  together with the environment's values.
+  view role with its length metadata.
+- **Every step**: the running term's references are valid (`SafeW`'s
+  structural component), and the environment's (`RootsOk`).
 
-No other step needs a premise: the steps that change no heap, the throwing
-steps and the fresh errors preserve kinds for every well-formed state.
-
-## 4. Contracts that need a kinds audit
-
-The obligation is `RespectsKinds`, or `ResultRespectsKinds` for a contract
-with a result.
-
-- The typed-array element writes `%ByteSet%`, `fill`, `copyWithin` and
-  `set` ([`ElementWrite.changes`](../../lean/Verification/Semantics/CallEffects.lean)):
-  the change must keep each changed location's shape, and a view store's
-  new entries must be element cells.
-- Host constructors, typed arrays' among them: the allocation must be that
-  of `typedArray_shaped` (a view store of the array's length, its length
-  field's contract admitting that length alone).
-- Result-producing natives and calls with `fresh`, `freshObject`,
-  `receiverGrows` or argument store regions in their effect
-  ([call effects](../../lean/Verification/Semantics/CallEffects.lean)),
-  `splice` and `map`'s results among them.
-- The builtin initial worlds: prototypes and builtin objects need I
-  identities, F properties and the store slots that apply.
-
-## 5. Gaps found
-
-- **An object value alone does not say whether a property location is F or
-  C.** A field write's target is in F only when the object is no binding
-  cell, which `RefsOk` cannot tell. So "a field write's effect is confined
-  to F" is not a consequence of a well-formed state alone: the frame rule
-  for a field write must obtain the target's role from the object's type.
-  This needs a record type's contract to require the role F of each of its
-  property locations, and a binding cell's type the role C (plan step 5).
-- **The typed-array element write's contract** as stated does not respect
-  kinds (`elementWrite_not_respects`); its audit is a prerequisite of
-  framing a typed-array write by kinds.
+The steps that change no heap, the throwing steps and the fresh errors
+preserve kinds for every well-formed state.
 
 ## Activation
 
-The plan for the commit that activates kinded worlds. It follows the
-addition of the function's entry state to fact satisfaction, which changes
-the same statements.
+The order of the remaining work (**planned**). Each commit builds its
+whole dependency closure.
 
-1. Replace `WorldT`, `Ctr`, `toList`, `lookup`, `trunc`, `WExt`, `appendW`,
-   `appendWs`, `CtrAdm`, `WorldAdm` and `HeapOk` of
-   [Worlds](../../lean/Verification/Semantics/Worlds.lean) and
-   [Heaps](../../lean/Verification/Semantics/Heaps.lean) by the kinded ones;
-   `write_sound`, `heap_alloc` and `heap_allocs` by `write_sound` and
-   `HeapOk_appendWs`.
-2. Give each allocation its roles: `AllocationWorlds.next` (its fields by
-   key, its identity I), the binding and module-binding allocations (C),
-   store literals (E), arrays' store slots ($`S_{\mathrm{array}}`$), the
-   fresh errors (I); discharge each premise of §3 from its typing rule.
-3. Add $`\mathrm{RefsOk}(W,t)`$ for the active term and the environment's
-   values to `EnvOk` and the safety predicates' state well-formedness, and
-   prove it preserved along every step by induction on the step:
-   `step_refs` for the steps that change no heap, the lemmas of §2 for the
-   rest, `RefsOk_mono` for the unchanged context.
-4. Establish kinded satisfaction of the initial worlds: the builtin
-   objects' and the host families'.
-5. Require roles in the contracts that look up locations: `listT`'s cells
-   in E, `recT`'s properties in F, a binding cell's in C; `StoreCells`,
-   `CellsCtr` and `RootCells` then follow from `HeapOk.kinds`, and
-   `ElemsValueOk` and the `elemsValue` evidence become consequences.
-6. Audit the contracts of §4 against `RespectsKinds`.
+1. **Storage typing.** Carry roles through allocation specifications,
+   semantic capabilities, syntax mappings and certification (§4); callers
+   move to explicit object, binding and store capabilities. Calculus steps
+   are unchanged.
+2. **Native specifications.** Introduce world-indexed postconditions in
+   `SafePost`
+   ([HeapObservations](../../lean/Verification/Semantics/HeapObservations.lean)),
+   `SafePostExc`, `PromiseWith` and `ConstructPromise`
+   ([CallEffects](../../lean/Verification/Semantics/CallEffects.lean)),
+   `SafeWith` and `SafeGraph`, heap-only postconditions lifted; replace
+   `ElementWrite.changes` as the defining contract by `ViewWrite`, keeping
+   the coarse change as its consequence and reproving `prefix_left`,
+   `.stores`, effect weakening, meeting and invocation transport; prove
+   call preservation on normal and exceptional exits and discharge each
+   native's obligation. The audit follows every contract producer and
+   invocation path: primitives, ordinary mutators, callback operations,
+   constructors and result allocation, `receiverOwn`, argument regions,
+   imported and external arrows, exceptional exits; and the builtin initial
+   worlds (I identities, F properties, store slots).
+3. **Activation, atomically.** Replace `Worlds.lean` and `Heaps.lean` by
+   the kinded world (`ofEntries_entries` in place of `ofList_toList`, which
+   cannot reconstruct roles); strengthen safety and state validity as in
+   §§3 and 5; migrate every allocation and write; prove typed-step
+   preservation, exhaustive over `Step`, and its run consequences. The
+   modal theorems take the statements of `KindsStates` and
+   `KindsModelRules`: `view_box` without `ViewStable`, `alloc_post` and
+   `alloc_apart` from a well-formed entry heap. `view_not_invariant` and
+   `rootCells_not_invariant` are deleted: their heaps meet no kinded
+   world. `apart_not_kept_fresh` is kept, rebuilt over distinct I
+   locations: freshness does not keep separation.
+4. **Removal.** Delete the parallel worlds, `CellsCtr`, `StoreCells` and
+   their establishment, and the element-value evidence that the state
+   gives; the elementary separation lemma takes the name of separation
+   from explicit bounds. The note's correspondence statements follow:
+   roles in world entries, structural validity in every state, binding
+   handles and store slots apart from ordinary properties.
+
+The headline acceptance theorems keep their statements:
+`passUnitVerdict_sound` and `PassUnit.mode8Accepted_sound`
+([PassUnitRun](../../lean/Verification/Source/Claims/PassUnitRun.lean))
+and `run_sound_single_pass`
+([TolerantFramesSinglePassSound](../../lean/Verification/Programs/TolerantFramesSinglePassSound.lean));
+their semantic dependencies become stronger.
