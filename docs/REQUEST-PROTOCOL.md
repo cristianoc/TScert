@@ -93,25 +93,28 @@ any exception), with a first line `error: `.
 
 `--file-worker 8` prepares the file as `--verify-interface-stage 8` does
 (`RequestCli.prepareUnitsFile`: the fragment and interfaces decoded, the
-file planned at the selection's closure and prepared), or refuses as it
-does, before any line. It then prints its preparation line, and reads
+file's claims and front lowered), or refuses as it does, before any line.
+It then prints its preparation line, and reads
 request lines from standard input until it ends; for each it checks the
 units it names, one after another, each by the check
-`--verify-interface-stage 8` makes of it (`PreparedFile.check`), and prints
+`--verify-interface-stage 8` makes of it (`PreparedFile.check`: the unit's
+group planned, then checked), and prints
 each unit's verdict line as its check ends, flushed. It exits 0 at the end
 of its input. The lines (`lean/Verification/Source/WorkerWire.lean`; the
 same types in `pipeline/stage-execution.mts`, `WorkerPrepared`,
 `VerdictLine`, `WorkerRequest`):
 
-- the preparation line `{"selected","established","extraction"}`: the units
+- the preparation line `{"selected","established"}`: the units
   the selection checks in the order their checks run, each
-  `{"unit","members"}`; the module units the interfaces establish; and the
-  first extraction refusal among the selected groups, or `null`, which
-  `--verify-interface-stage 8` reports as its refusal;
+  `{"unit","members"}`; and the module units the interfaces establish;
 - a request line `{"units"}`: the identities of the units to check, each one
   the preparation line names, or `null` for every one in order;
-- a verdict line, `{"unit","members","accepted","depends"}` or
-  `{"unit","members","refusal"}`, as `--verify-interface-stage 8` prints it.
+- a verdict line, `{"unit","members","accepted","depends","extraction"}` or
+  `{"unit","members","refusal","extraction"}`, as `--verify-interface-stage 8`
+  prints it; `extraction` the first extraction refusal among the unit's
+  group, or `null`. The first non-null one in the order the checks run is
+  the file's refusal, which `--verify-interface-stage 8` reports as its
+  refusal.
 
 A line of another shape, or a unit the selection does not check, is an
 operational failure (exit 3). A unit's verdict line is a function of the

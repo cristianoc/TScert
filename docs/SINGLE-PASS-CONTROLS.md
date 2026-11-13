@@ -104,6 +104,9 @@ forced units is `tests/single-pass-control-inputs.mts`. Among them:
 - `head-entry`, `head-entails`, `head-counters`, `head-every` and the other
   `head-*` forces: loop-head proposals;
 - `start-facts`: a false fact at every start, refused by the entry check;
+- `preparation-limit`: the file worker's preparation held past every
+  stage's limit, so no unit has a verdict and each is recorded with the
+  timeout (the control `worker preparation over its limit`);
 - `point@<start>-<end>` (`Synthesis.forcedPoint`): at the expression of
   that source span alone, the first of its type's members, else `true`
   (`false` for `true`), the walk going on with the computed type. Thirteen

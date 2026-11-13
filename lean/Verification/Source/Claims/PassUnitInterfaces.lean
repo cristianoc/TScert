@@ -334,8 +334,10 @@ rows check (`refuseRows`) and the unbound-import check (`refuseUnbound`)
 refusing plans and keeping the rest. -/
 theorem fragmentPlansFromInterfaces_overStore {ast : Json} {fileKey : String}
     {budget : PositiveCertificates.SearchBudget} {names : Option (List String)} {standIns : StandIns}
-    {force : List String} {est : Established} {tables : List (String × RowTable)} {f : FilePlans}
-    (h : fragmentPlansFromInterfaces ast fileKey budget names standIns force est tables = .ok f) : OverStore f := by
+    {force : List String} {est : Established} {tables : List (String × RowTable)}
+    {front : Option (Json × Front)} {known : List (String × Option StandIn)} {f : FilePlans}
+    (h : fragmentPlansFromInterfaces ast fileKey budget names standIns force est tables front known = .ok f) :
+    OverStore f := by
   unfold fragmentPlansFromInterfaces at h
   obtain ⟨_, -, h⟩ := except_bind_ok h
   obtain ⟨f₁, h₁, h⟩ := except_bind_ok h
@@ -408,7 +410,7 @@ theorem passUnitCli_safe
     {givenLines : Std.HashMap String Json} {infer : Bool}
     {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)} {i fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
     {given : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool} {deps : List String}
-    (hplanned : (∃ est tables, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables = .ok f₀) ∨
+    (hplanned : (∃ est tables front known, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables front known = .ok f₀) ∨
       (∃ ms notes, fragmentPlansWithModules ast fileKey budget selection standIns force prepare check =
         .ok (f₀, ms, notes)))
     (haccepted : ((preparedMode8 force givenLines infer f₀).passGroupMode8 infer force keep fuel
@@ -416,7 +418,7 @@ theorem passUnitCli_safe
       located).2.1 = .ok deps) :
     PassUnitSafe (preparedMode8 force givenLines infer f₀) i := by
   have h0 : OverStore f₀ := by
-    rcases hplanned with ⟨est, tables, h⟩ | ⟨ms, notes, h⟩
+    rcases hplanned with ⟨est, tables, front, known, h⟩ | ⟨ms, notes, h⟩
     · exact fragmentPlansFromInterfaces_overStore h
     · exact fragmentPlansWithModules_overStore h
   have hover : OverStore (preparedMode8 force givenLines infer f₀) := by

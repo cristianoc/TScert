@@ -692,12 +692,34 @@ identity otherwise. The request line is outside `W`: it chooses which
 pieces a process computes, never what a piece is.
 
 *Why the key determines the result.* The file worker
-(`--file-worker 8`, `RequestCli.fileWorker`) computes its preparation, the
-file's plans `P` (`prepareUnitsFile`), from its inputs alone: the fragment,
-the interfaces, the file key, the depth, the selection and the environment,
-all in `W`. Its preparation line is a function of `P`. A unit's line is
-`check(P, i)` (`PreparedFile.check`), a function of `P` and the unit `i`,
-which the part names. The verifier's only state carried from one unit's
+(`--file-worker 8`, `RequestCli.fileWorker`) computes its preparation `P`
+(`prepareUnitsFile`) from its inputs alone: the fragment, the interfaces,
+the file key, the depth, the selection and the environment, all in `W`.
+`P` holds what every unit's check reads and nothing computed for one unit:
+
+- the fragment, decoded, which every unit is planned from;
+- the module interfaces, decoded (their entries and row tables), which
+  every unit's import reads are checked against, and the module units they
+  establish, which the preparation line names;
+- the file's claims and front (`fragmentClaims`, `fileFront`, no import
+  read at an interface): its lowering, its type store and its units with
+  their groups, which every unit's planning starts from and which name the
+  parts;
+- the selection's units, which the preparation line names in order.
+
+Its preparation line is a function of `P`. A unit's line is
+`check(P, i)` (`PreparedFile.check`): unit `i`'s group planned in its own
+check (`PreparedFile.plan`: the plans of that group alone, its import reads,
+proposals and extraction, over `P`'s front), then the group checked. The
+planning reads the proposals of the groups `i`'s group reaches outside
+itself, each computed by that group's own planning, callees first
+(`PreparedFile.known`). A group's proposals are a function of the file and
+of the group: they read only the proposals of the groups below it, and a
+member of a group of two or more functions reads the others at their
+written effect or `top` (`PassProposals.proposeOne`). The worker keeps each
+group's plans and proposals once computed (`PreparedFile.plans`,
+`PreparedFile.proposals`); a later unit reads them, the values its own
+planning would compute. The verifier's other state carried from one unit's
 check to the next is measurement (the work table, the per-kind timings,
 which reach standard error only where profiling, never a line) and the
 memoized values of `P`'s thunks, which are `P`'s own values whichever check
@@ -707,7 +729,8 @@ restarted worker prepares from the same inputs and computes the same `P`.
 The control `worker order` (`tests/single-pass-controls.mts`) checks it: one file's
 units in two orders and through a resumed worker give the same bytes. The
 key is coarser than one naming only what a unit reads: any change of the
-file or of its inputs misses every piece.
+file or of its inputs misses every piece. A unit whose planning or check is
+slow costs its own limit: the work of one unit lies in its own piece.
 
 *Limits.* The driver reads the worker's output as it is written and
 publishes each piece as its line arrives. Each piece has the stage's limit,
@@ -718,8 +741,10 @@ timeout observation under its key, with its limit and the policy
 finished ones replayed. A part over the memory limit stops the worker
 likewise; it is a tool failure published nowhere, its unit without a
 verdict. The preparation over either limit, or refused, ends the stage with
-no part: a preparation is repeated once per worker start, never once per
-unit. The CPU time of a piece is the worker program's between the line
+no part, and each unit of the file is then recorded with that timeout or
+refusal as the reason it has no verdict (`dev/census.mts`, `runFile`; the
+control `worker preparation over its limit`): a preparation is repeated
+once per worker start, never once per unit. The CPU time of a piece is the worker program's between the line
 before it and its own, as the runner reads it (`stage-runner --cpu`); each
 piece is its own attempt record.
 

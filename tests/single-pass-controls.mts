@@ -244,6 +244,39 @@ control("worker order: a unit's line whatever units the worker checked before it
   say(`worker order: ${units.length} units' lines identical in order, reversed and through a resumed worker`);
 });
 
+control("worker preparation over its limit: every unit recorded with its reason", async (): Promise<void> => {
+  // The census's file run with the worker's preparation held past its limit
+  // (`TSCERT_FORCE=preparation-limit`): no unit has a verdict, and each
+  // selected unit of the file is recorded with the preparation's timeout as
+  // its reason.
+  const work = runDirectory("single-pass-preparation-limit-");
+  const driver = join(work, "driver.mts");
+  const census = join(import.meta.dirname, "../dev/census.mts");
+  const examples = join(import.meta.dirname, "../pipeline/examples");
+  writeFileSync(driver, `
+const { runFile, sourceModel } = await import(${JSON.stringify(census)});
+const m = sourceModel(${JSON.stringify(examples)}, "evolving-bindings.ts");
+const select = [...m.functions.keys()];
+const run = await runFile(${JSON.stringify(examples)}, ${JSON.stringify(examples)}, () => m, m, select, new Map());
+process.stdout.write(JSON.stringify({ select, units: run.units }));
+process.exit(0);
+`);
+  const p = spawnSync(process.execPath, [driver], { encoding: "utf8", timeout: 170_000,
+    env: { ...process.env, TSCERT_FORCE: "preparation-limit", TSCERT_STEP_LIMIT: "10",
+      TSCERT_STAGE_STORE: join(work, "store") } });
+  assert.equal(p.status, 0, p.stderr);
+  const out: unknown = JSON.parse(p.stdout);
+  assert.ok(isObject(out) && Array.isArray(out.select) && Array.isArray(out.units), "the driver's record");
+  const select: unknown[] = out.select, units: unknown[] = out.units;
+  assert.ok(select.length >= 3, "a file of several functions");
+  assert.deepEqual(units.map((u) => isObject(u) ? u.unit : null).sort(), [...select].sort(), "one unit per function");
+  for (const u of units)
+    assert.ok(isObject(u) && u.status !== "verified" && typeof u.detail === "string" &&
+      u.detail.startsWith("no verdict: the file was refused before its units' checks: ") && /timeout/.test(u.detail),
+      `a unit with the preparation's timeout as its reason: ${JSON.stringify(u)}`);
+  say(`worker preparation over its limit: ${units.length} units recorded, each with the timeout`);
+});
+
 // ---------------------------------------------------------------------------
 // Module interfaces: the store boundary of the interface stages.
 

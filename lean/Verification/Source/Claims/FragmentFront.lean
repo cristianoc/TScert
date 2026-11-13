@@ -542,7 +542,8 @@ type, at its stand-in's footprint, or at the footprint `qualified` gives it
 (an import whose module's units establish it, `fragmentPlansWithModules`),
 the module values typed by the initialization's walk, and each selected
 group's units extracted over their computed types (`retypeFromFragment`),
-the functions' footprints their own steps give (`PassProposals.proposals`). With
+the functions' footprints their own steps give (`PassProposals.proposals`),
+those `known` names taken as given. With
 `closure`, the selected groups and every group they reach; with
 `proposed`, of the selected functions those whose footprint is more than
 the ordinary effect. -/
@@ -550,7 +551,8 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
     (names : Option (List String)) (standIns : StandIns := {}) (force : List String := [])
     (imported : List (String × Footprints.Closed × Bool × Footprints.Closed) := [])
     (depends : List (String × List String) := []) (closure : Bool := false) (proposed : Bool := false)
-    (front : Option (Json × Front) := none) (interfaceSlots : Bool := false) :
+    (front : Option (Json × Front) := none) (interfaceSlots : Bool := false)
+    (known : List (String × Option StandIn) := []) :
     Except String FilePlans := do
   let ast := ast.setObjVal! "modules" (Json.arr #[])
   -- A stand-in's footprint first; then the footprint the module's units
@@ -596,7 +598,7 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
   -- is found.
   let computed := if force.contains "callees" || force.contains "throws" then [] else
     SinglePass.timedKind "lower: declarations' footprints" fun _ =>
-      PassProposals.proposals fr (wantedOf fr names) standIns force [] planOf
+      PassProposals.proposals fr (wantedOf fr names) standIns force [] planOf known
   -- Where the initialization calls a function proposed a returned
   -- function's footprint, the module values it types hold such functions:
   -- the proposals once more, every function not yet proposed again read
@@ -1125,16 +1127,30 @@ def FilePlans.refuseUnbound (f : FilePlans) (unbound : List (String × List (Str
         | some (a, b) => s!"source refusal at [{a},{b}): {reason}"
         | none => reason) }
 
+/-- **The proposals a group's planning gave its members** (`fragmentPlansCore`'s
+`PassProposals.proposals`): each function member, async ones aside, at the
+footprint its claims state where more than the ordinary effect, else none
+(read at its written effect or `top`). -/
+def FilePlans.groupProposals (f : FilePlans) (i : Nat) : List (String × Option StandIn) :=
+  (f.fr.group i).filterMap fun j => match f.fr.units[j]? with
+    | some (g, _, none) => if g.async then none else
+      some (g.name, (f.fr.d.functions.find? (·.name == g.name)).bind fun c =>
+        if c.footprint == .top && !c.onThrow && c.resultFootprint == .top then none
+        else some { name := g.name, footprint := c.footprint, onThrow := c.onThrow, resultFootprint := c.resultFootprint })
+    | _ => none
+
 /-- Importer planning from closed interfaces. No module is planned here. -/
 def fragmentPlansOfInterfaces (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
     (names : Option (List String)) (standIns : StandIns) (force : List String) (established : Established)
-    (tables : List (String × RowTable)) : Except String FilePlans := do
+    (tables : List (String × RowTable)) (front : Option (Json × Front) := none)
+    (known : List (String × Option StandIn) := []) : Except String FilePlans := do
   if established.isEmpty then
-    return ← fragmentPlansCore ast fileKey budget names standIns force
+    return ← fragmentPlansCore ast fileKey budget names standIns force (front := front) (known := known)
   let sc ← ImportScope.of ast
   let reads ← importerReads sc ast names (standIns.imports.map StandIn.name) (standIns.functions.map StandIn.name)
   let rs := readsOf reads established
-  let f ← fragmentPlansCore ast fileKey budget names standIns force (rs.map (·.1)) (rs.map (·.2))
+  let f ← fragmentPlansCore ast fileKey budget names standIns force (rs.map (·.1)) (rs.map (·.2)) (front := front)
+    (known := known)
   return f.refuseRows reads established tables
 
 /-- Importer planning from closed interfaces (`fragmentPlansOfInterfaces`),
@@ -1144,10 +1160,12 @@ are the interfaces' (`decodeInterfaces` refuses another), so a module's
 missing function is told from an entry not established on both paths. -/
 def fragmentPlansFromInterfaces (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
     (names : Option (List String)) (standIns : StandIns) (force : List String) (established : Established)
-    (tables : List (String × RowTable) := []) :
+    (tables : List (String × RowTable) := []) (front : Option (Json × Front) := none)
+    (known : List (String × Option StandIn) := []) :
     Except String FilePlans := do
   let unbound := unboundImports (← ImportScope.of ast) ast
-  return (← fragmentPlansOfInterfaces ast fileKey budget names standIns force established tables).refuseUnbound unbound
+  return (← fragmentPlansOfInterfaces ast fileKey budget names standIns force established tables front known).refuseUnbound
+    unbound
 
 /-- Direct invocation uses the same canonical component computation as
 stored interfaces. Its result is local to this invocation. -/

@@ -360,21 +360,69 @@ def proposalDepth : Nat := 12
 
 /-! ## The fold over a file's functions -/
 
-/-- **The declarations' proposals by the pass**: each function a wanted
-unit reaches, callees first (async functions `top` by the language,
-stand-ins at their controls' footprints), its member planned by `planOf`
-with every function already proposed at its proposal, every other at
-`prior`'s, else at its written effect, else `top` (a member of a cycle reads
-the others at the worst case), its interface from its own steps
-(`settledInterface`). A written effect's footprint and throw bound are kept
-whole, its steps proposing its returned function's footprint. A
+/-- What the functions of a file read of each other while proposed: a
+function's written effect where it states one without regions, `top` where
+it states one with regions. -/
+def written (f : Fragment.Fn) : Option (Closed × Bool) :=
+  f.stated.map fun s => if s.regions.isEmpty then ((s.closed, s.onThrow) : Closed × Bool) else (.top, false)
+
+/-- **One function's proposal by the pass** (function `i`, of name and
+position `f`): its member planned by `planOf` with each function `found`
+names at its proposal, every other at `prior`'s, else at its written
+effect, else `top`; a member of its own group (a cycle of two or more
+functions) at its written effect or `top` whatever was found of it, so
+the proposal is a function of the function and of the proposals of the
+functions it reaches outside its group; its interface from its own steps
+(`settledInterface`); the functions `controls` names at their stand-ins.
+A written effect's footprint and throw bound are kept whole, its steps proposing its returned function's footprint. A
 self-recursive function's own reads start at keep/keep with its throws
-bounded and are joined with what its steps establish until they establish no
-more, at most once per step of the lattice's height. The proposals that
-state more than the ordinary effect. With `results` (`TSCERT_FORCE`, the
-adversarial proposal), each returned function's footprint keep/keep. -/
-def proposals (fr : Front) (wanted : List Nat) (standIns : StandIns) (force : List String) (prior : List StandIn)
-    (planOf : List StandIn → String → Except String FilePlans) : List StandIn := Id.run do
+bounded and are joined with what its steps establish until they establish
+no more, at most once per step of the lattice's height. None where the pass
+establishes nothing of it (callers read it at its written effect or `top`).
+With `results` (`TSCERT_FORCE`, the adversarial proposal), each returned
+function's footprint keep/keep. -/
+def proposeOne (fr : Front) (controls : List String) (force : List String) (prior : List StandIn)
+    (found : List StandIn) (planOf : List StandIn → String → Except String FilePlans) (i : Nat) (f : Fragment.Fn) :
+    Option StandIn :=
+  let cycle := (fr.group i).filterMap fun j => match fr.units[j]? with
+    | some (g, _, none) => if j != i && (fr.group i).length > 1 then some g.name else none
+    | _ => none
+  let declared : List (String × Option (Closed × Bool)) := fr.units.filterMap fun (g, _, c) =>
+    if c.isNone && !controls.contains g.name then some (g.name, written g) else none
+  let reads := fun (own : Option StandIn) => (found.filter (!cycle.contains ·.name)) ++ declared.filterMap fun (nm, w) =>
+    if nm == f.name then own
+    else if !cycle.contains nm && found.any (·.name == nm) then none
+    else match (if cycle.contains nm then none else prior.find? (·.name == nm)), w with
+      | some p, _ => some p
+      | none, some (Φ, ot) => some { name := nm, footprint := Φ, onThrow := ot }
+      | none, none => some { name := nm, footprint := .top }
+  let establish := fun (own : Option StandIn) => (do
+    let fp ← (planOf (reads own) f.name).toOption
+    let j ← (List.range fp.fr.units.length).find? fun j => match fp.fr.units[j]? with
+      | some (g, _, none) => g.name == f.name && g.namePos == f.namePos
+      | _ => false
+    settledInterface fp proposalDepth j : Option Established)
+  let r : Option Established := if let some (Φ, ot) := written f then
+      (establish (some { name := f.name, footprint := Φ, onThrow := ot })).map fun got => { got with footprint := Φ, onThrow := ot }
+    else if (fr.mentions i).contains f.name then Id.run do
+      let mut assumed : Closed × Bool := (keepAll, true)
+      for _ in List.range 8 do
+        match establish (some { name := f.name, footprint := assumed.1, onThrow := assumed.2 }) with
+        | none => return none
+        | some got =>
+          if got.footprint.le assumed.1 && (got.onThrow || !assumed.2) then
+            return some { got with footprint := assumed.1, onThrow := assumed.2 }
+          assumed := (join assumed.1 got.footprint, assumed.2 && got.onThrow)
+      return none
+    else establish none
+  r.map fun got =>
+    let R := if force.contains "results" then keepAll else got.result
+    let R := if (resultWithFootprint fr.d.types f.ret R).isOk then R else .top
+    { name := f.name, footprint := got.footprint, onThrow := got.onThrow && got.footprint != .top, resultFootprint := R }
+
+/-- The functions a wanted unit reaches, callees first: each after every
+function it reaches outside its group (a depth-first walk of `Front.edges`). -/
+def calleesFirst (fr : Front) (wanted : List Nat) : List Nat := Id.run do
   let mut order : List Nat := []
   let mut seen : Std.HashSet Nat := {}
   let mut stack : List (Nat × Bool) := wanted.reverse.map (·, false)
@@ -387,47 +435,36 @@ def proposals (fr : Front) (wanted : List Nat) (standIns : StandIns) (force : Li
       else
         seen := seen.insert i
         stack := (fr.edges i).filter (!seen.contains ·) |>.map (·, false) |>.append ((i, true) :: rest)
+  return order
+
+/-- **The declarations' proposals by the pass**: each function a wanted
+unit reaches, callees first (`calleesFirst`; async functions `top` by the
+language, stand-ins at their controls' footprints), proposed by
+`proposeOne`; a function `known` names taken as known (`none`: nothing
+proposed, read at its written effect or `top`). Every function proposed
+and known, with its proposal. -/
+def proposalsOf (fr : Front) (wanted : List Nat) (standIns : StandIns) (force : List String) (prior : List StandIn)
+    (planOf : List StandIn → String → Except String FilePlans) (known : List (String × Option StandIn) := []) :
+    List (String × Option StandIn) := Id.run do
   let controls := standIns.functions.map (·.name)
-  let written := fun (f : Fragment.Fn) => f.stated.map fun s =>
-    if s.regions.isEmpty then ((s.closed, s.onThrow) : Closed × Bool) else (.top, false)
-  let declared : List (String × Option (Closed × Bool)) := fr.units.filterMap fun (g, _, c) =>
-    if c.isNone && !controls.contains g.name then some (g.name, written g) else none
-  let mut found : List StandIn := []
-  for i in order do
+  let mut out : List (String × Option StandIn) := []
+  for i in calleesFirst fr wanted do
     let some (f, _, none) := fr.units[i]? | continue
-    if f.async || controls.contains f.name then continue
-    let reads := fun (own : Option StandIn) => found ++ declared.filterMap fun (nm, w) =>
-      if nm == f.name then own
-      else if found.any (·.name == nm) then none
-      else match prior.find? (·.name == nm), w with
-        | some p, _ => some p
-        | none, some (Φ, ot) => some { name := nm, footprint := Φ, onThrow := ot }
-        | none, none => some { name := nm, footprint := .top }
-    let establish := fun (own : Option StandIn) => (do
-      let fp ← (planOf (reads own) f.name).toOption
-      let j ← (List.range fp.fr.units.length).find? fun j => match fp.fr.units[j]? with
-        | some (g, _, none) => g.name == f.name && g.namePos == f.namePos
-        | _ => false
-      settledInterface fp proposalDepth j : Option Established)
-    let r : Option Established := if let some (Φ, ot) := written f then
-        (establish (some { name := f.name, footprint := Φ, onThrow := ot })).map fun got => { got with footprint := Φ, onThrow := ot }
-      else if (fr.mentions i).contains f.name then Id.run do
-        let mut assumed : Closed × Bool := (keepAll, true)
-        for _ in List.range 8 do
-          match establish (some { name := f.name, footprint := assumed.1, onThrow := assumed.2 }) with
-          | none => return none
-          | some got =>
-            if got.footprint.le assumed.1 && (got.onThrow || !assumed.2) then
-              return some { got with footprint := assumed.1, onThrow := assumed.2 }
-            assumed := (join assumed.1 got.footprint, assumed.2 && got.onThrow)
-        return none
-      else establish none
-    if let some got := r then
-      let R := if force.contains "results" then keepAll else got.result
-      let R := if (resultWithFootprint fr.d.types f.ret R).isOk then R else .top
-      let si : StandIn := { name := f.name, footprint := got.footprint, onThrow := got.onThrow && got.footprint != .top, resultFootprint := R }
-      found := found ++ [si]
-  return found.filter fun s => s.footprint != .top || s.resultFootprint != .top
+    if f.async || controls.contains f.name || out.any (·.1 == f.name) then continue
+    if let some (_, k) := known.find? (·.1 == f.name) then
+      out := out ++ [(f.name, k)]
+      continue
+    let found := out.filterMap (·.2)
+    out := out ++ [(f.name, proposeOne fr controls force prior found planOf i f)]
+  return out
+
+/-- The proposals that state more than the ordinary effect
+(`proposalsOf`). -/
+def proposals (fr : Front) (wanted : List Nat) (standIns : StandIns) (force : List String) (prior : List StandIn)
+    (planOf : List StandIn → String → Except String FilePlans) (known : List (String × Option StandIn) := []) :
+    List StandIn :=
+  (proposalsOf fr wanted standIns force prior planOf known).filterMap (·.2) |>.filter fun s =>
+    s.footprint != .top || s.resultFootprint != .top
 
 end PassProposals
 

@@ -346,12 +346,21 @@ def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) :
   | .error e => refuse e
   | .ok j => IO.println j.compress; return 0
 
-/-- A file prepared for mode 8 (`prepareUnitsFile`): its plans, prepared
-(`preparedMode8`); the module units the interfaces establish, each printed
-accepted (`decodeInterfaces`); the selection; and the settings each unit's
-check reads. -/
+/-- A file prepared for mode 8 (`prepareUnitsFile`): what is a function of
+the file and its inputs alone and every unit's check reads: the fragment,
+the module interfaces decoded (their entries and row tables, the module
+units they establish, each printed accepted), the file's claims and front
+(its lowering, its type store and its units' groups, no import read at an
+interface), the selection, and the settings each unit's check reads; and the
+proposals and plans of the groups planned so far (`proposals`, `plans`),
+which a later unit reads instead of computing them again. -/
 structure PreparedFile where
-  f : SourceClaimJson.FilePlans
+  ast : Json
+  fileKey : String
+  budget : PositiveCertificates.SearchBudget
+  est : SourceClaimJson.Established
+  tables : List (String × SourceClaimJson.RowTable)
+  front : Json × SourceClaimJson.Front
   modules : List String
   selected : Option (List String)
   force : List String
@@ -360,13 +369,19 @@ structure PreparedFile where
   located : Bool
   quiet : Bool
   t0 : Nat
+  proposals : IO.Ref (Std.HashMap Nat (List (String × Option SourceClaimJson.StandIn)))
+  plans : IO.Ref (Std.HashMap Nat (Except String SourceClaimJson.FilePlans))
+
+/-- The prepared file's front: its units, their identities and groups. -/
+def PreparedFile.fr (p : PreparedFile) : SourceClaimJson.Front := p.front.2
 
 /-- Mode 8's preparation of a file's fragment and the module interfaces its
-imports read: the fragment and interfaces decoded, the file planned from them
-(`fragmentPlansFromInterfaces`) at the selection's closure
-(`selectionClosure`), and prepared (`preparedMode8`); or the refusal of the
-fragment or of its planning. Everything a unit's check reads is fixed here:
-the checks of its units are functions of this value alone. -/
+imports read: the fragment and interfaces decoded, the file's claims and
+front lowered (`fragmentClaims`, `fileFront`, no import read at an interface:
+each unit's planning gives the front its own reads), the selection's closure
+(`selectionClosure`); or the refusal of the fragment or of its lowering.
+No unit is planned here: each unit's plans are computed in its own check
+(`PreparedFile.plan`). -/
 def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names : Option String)
     (budget : PositiveCertificates.SearchBudget) (interfacesPath : String) (quiet : Bool := false) :
     IO (Except String PreparedFile) := do
@@ -388,7 +403,9 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
   let located := (← IO.getEnv "TSCERT_PASS_REFUSALS") != some "raw"
   -- Adversarial proposals forced, for the controls (`TSCERT_FORCE`, comma-separated).
   let force := ((← IO.getEnv "TSCERT_FORCE").getD "").splitOn "," |>.filter (!·.isEmpty)
-  let infer := true
+  -- (`TSCERT_FORCE=preparation-limit`, a control's: the preparation held
+  -- past any stage's limit)
+  if force.contains "preparation-limit" then IO.sleep 600000
   let interfaces ← readJson interfacesPath
   -- A selection names its roots: the units checked are those and every unit
   -- their verdicts rest on (`selectionClosure`).
@@ -396,12 +413,9 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
     | .ok a, some roots => some (selectionClosure a roots)
     | _, s => s
   let tj ← IO.monoNanosNow
-  -- The plans, and the module units the interfaces establish, each printed
-  -- accepted (`decodeInterfaces`).
-  let planned : Except String (SourceClaimJson.FilePlans × List String) ← IO.lazyPure fun _ => do
-    let prepare := fun (given : Std.HashMap String Json) (f : SourceClaimJson.FilePlans) =>
-      let f := f.withHeadFacts given false (inferred := infer)
-      if force.contains "start-facts" then f.withFalseStartFact else f
+  -- The interfaces decoded, and the file's claims and front.
+  let prepared : Except String (SourceClaimJson.Established × List (String × SourceClaimJson.RowTable) ×
+      (Json × SourceClaimJson.Front) × Json) ← IO.lazyPure fun _ => do
     let cached ← interfaces
     let sc ← if (← jArr cached "modules").isEmpty then
         pure (⟨[], {}⟩ : SourceClaimJson.ImportScope)
@@ -409,33 +423,96 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
     let a ← ast
     let item := SourceClaimJson.fileItem a
     let (est, tables) ← SinglePass.work "rows: decode interfaces" item fun _ => SourceClaimJson.decodeInterfaces sc cached
-    let f ← SinglePass.work "prepare: importer plans" item fun _ =>
-      SourceClaimJson.fragmentPlansFromInterfaces a fileKey budget selected {} force est tables
-    return (SinglePass.work "prepare: head facts" item fun _ => prepare givenLines f, (est.map (·.2.2)).eraseDups)
+    -- (as `fragmentPlansCore` lowers a file: its module documents apart)
+    let a' := a.setObjVal! "modules" (Json.arr #[])
+    let claims ← SinglePass.work "prepare: claims" item fun _ => SourceClaimJson.fragmentClaims a' fileKey {} force
+    let fr ← SinglePass.work "prepare: file lowering" item fun _ =>
+      SourceClaimJson.fileFront a' claims fileKey budget [] (lenient := true)
+    return (est, tables, (claims, fr), a)
   let t1 ← IO.monoNanosNow
   let ms := fun (a b : Nat) => s!"{(b - a) / 1000000}"
-  let phases := (← SinglePass.kindNanos.get).toList.filter (·.1.startsWith "lower: ")
-  emit s!"stamp: read+lower {ms t0 t1} ms: read JSON {ms t0 tj} ms, {", ".intercalate (phases.map fun (k, t, _) => s!"{k.drop 7} {t / 1000000} ms")}"
-  -- Profiling: each import read at a footprint, and that footprint.
-  if let .ok (f, _) := planned then
-    if (← SinglePass.profiling.get) then
-      for (n, Φ, ot, r) in f.p.qualified do
-        emit s!"import: {n} {(toJson Φ).compress} onThrow {ot} result {(toJson r).compress}"
-  return planned.map fun (f, modules) =>
-    { f, modules, selected, force, givenLines, fuel, located, quiet, t0 }
+  emit s!"stamp: read+lower {ms t0 t1} ms: read JSON {ms t0 tj} ms"
+  let proposals ← IO.mkRef {}
+  let plans ← IO.mkRef {}
+  return prepared.map fun (est, tables, front, a) =>
+    { ast := a, fileKey, budget, est, tables, front, modules := (est.map (·.2.2)).eraseDups, selected, force,
+      givenLines, fuel, located, quiet, t0, proposals, plans }
 
-/-- The units a prepared file's selection checks, in the order its checks
+/-- The units a prepared file's selection checks, in the order their checks
 run: the leaders of the groups the selection names (`Front.selected`). -/
-def PreparedFile.units (p : PreparedFile) : List Nat := p.f.fr.selected p.selected
+def PreparedFile.units (p : PreparedFile) : List Nat := p.fr.selected p.selected
 
-/-- Unit `i`'s check (`FilePlans.passGroupMode8` over its group): its
-verdict line (`WorkerWire.verdictLine`), accepted with its dependencies or
-refused, and its refusal. A function of the prepared file and `i`. -/
+/-- Unit `i`'s group planned alone (`fragmentPlansFromInterfaces` at the
+names of `i`'s group, over the prepared front), each function its group
+reaches outside it read at the proposal `known` gives, and prepared
+(`preparedMode8`). -/
+def PreparedFile.plan (p : PreparedFile) (i : Nat) (known : List (String × Option SourceClaimJson.StandIn)) :
+    Except String SourceClaimJson.FilePlans := do
+  let f ← SinglePass.work "prepare: unit plans" (p.fr.workItem i) fun _ =>
+    SourceClaimJson.fragmentPlansFromInterfaces p.ast p.fileKey p.budget
+      (some [SourceClaimJson.memberName (p.fr.unitId i)]) {} p.force p.est p.tables (some p.front) known
+  let f := SinglePass.work "prepare: head facts" (p.fr.workItem i) fun _ =>
+    f.withHeadFacts p.givenLines false (inferred := true)
+  return if p.force.contains "start-facts" then f.withFalseStartFact else f
+
+/-- The groups a group reaches outside itself, by their first members,
+each after those it reaches (`Front.edges` over the groups). -/
+def groupsBelow (fr : SourceClaimJson.Front) (i : Nat) : List Nat := Id.run do
+  let leader := fun (j : Nat) => ((fr.group j).head?).getD j
+  let mut order : List Nat := []
+  let mut seen : Std.HashSet Nat := ({} : Std.HashSet Nat).insert (leader i)
+  let mut stack : List (Nat × Bool) := ((fr.group i).flatMap fr.edges).map (leader ·, false)
+  for _ in List.range (4 * fr.units.length * (fr.units.length + 1) + 4) do
+    match stack with
+    | [] => break
+    | (g, true) :: rest => stack := rest; order := order ++ [g]
+    | (g, false) :: rest =>
+      if seen.contains g then stack := rest
+      else
+        seen := seen.insert g
+        stack := ((fr.group g).flatMap fr.edges).map (leader ·, false) |>.filter (!seen.contains ·.1)
+          |>.append ((g, true) :: rest)
+  return order
+
+/-- **The proposals unit `i`'s planning reads**: for each group `i`'s group
+reaches outside itself (`groupsBelow`, callees first), its members'
+proposals as that group's own planning gives them (`PreparedFile.plan`,
+`FilePlans.groupProposals`), each group's computed once in the worker and
+kept (`PreparedFile.proposals`). A group's proposals are a function of the
+file and of the group: they read only the proposals of the groups below
+it, and a member of a group of two or more functions reads the others at
+their written effect or `top` (`PassProposals.proposeOne`), so they do not
+depend on the units checked before. -/
+def PreparedFile.known (p : PreparedFile) (i : Nat) : IO (List (String × Option SourceClaimJson.StandIn)) := do
+  let fr := p.fr
+  let below := groupsBelow fr i
+  for g in below do
+    if (← p.proposals.get).contains g then continue
+    let memo ← p.proposals.get
+    let known := (groupsBelow fr g).flatMap fun h => (memo.get? h).getD []
+    let planned ← IO.lazyPure fun _ => p.plan g known
+    p.plans.modify (·.insert g planned)
+    let got : List (String × Option SourceClaimJson.StandIn) := match planned with
+      | .ok f => f.groupProposals g
+      | .error _ => (fr.group g).filterMap fun j => match fr.units[j]? with
+        | some (u, _, none) => some (u.name, none)
+        | _ => none
+    p.proposals.modify (·.insert g got)
+  let memo ← p.proposals.get
+  return below.flatMap fun h => (memo.get? h).getD []
+
+/-- Unit `i`'s check: its group planned in its check (`PreparedFile.plan`,
+the proposals below it read through `PreparedFile.known`; the plans a
+later unit's proposals planned it at, where kept), then
+`FilePlans.passGroupMode8` over its group: its verdict line
+(`WorkerWire.verdictLine`), accepted with its dependencies or refused, with
+its group's first extraction refusal; and its refusal. A function of the
+prepared file and `i`. -/
 def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option String) := do
   let emit := fun (s : String) => if p.quiet then pure () else IO.eprintln s
-  let f := p.f
-  let unit := f.fr.unitId i
-  let members := (f.fr.group i).map f.fr.unitId
+  let fr := p.fr
+  let unit := fr.unitId i
+  let members := (fr.group i).map fr.unitId
   let s0 ← IO.monoNanosNow
   let p0 ← SinglePass.passNanos.get
   let compare := (← IO.getEnv "TSCERT_COMPARE").isSome
@@ -445,11 +522,21 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
   let observe ← IO.getEnv "TSCERT_OBSERVE"
   -- The pass's counts as JSON lines (`TSCERT_COUNTS`, `dev/perf-gate.mts`).
   let counting := (← IO.getEnv "TSCERT_COUNTS").isSome
-  let (lines, verdict) ← IO.lazyPure fun _ =>
-    let (ls, v, dropped, runs) := SinglePass.work "check: group" (f.fr.workItem i) fun _ =>
-      f.passGroupMode8 true p.force (f.givenAt p.givenLines) p.fuel (f.fr.group i)
-      compare debugNode repeats none observe counting p.located
-    (ls ++ (if dropped > 0 then [s!"inferred heads: {dropped} proposals dropped, {runs} runs"] else []), v)
+  let known ← p.known i
+  let planned ← match (← p.plans.get).get? i with
+    | some planned => pure planned
+    | none => IO.lazyPure fun _ => p.plan i known
+  let (lines, verdict, extraction) ← match planned with
+    | .error reason => pure ([], .error reason, some reason)
+    | .ok f => do
+      if (fr.group i).head? == some i then
+        p.proposals.modify (·.insert i (f.groupProposals i))
+      IO.lazyPure fun _ =>
+        let (ls, v, dropped, runs) := SinglePass.work "check: group" (f.fr.workItem i) fun _ =>
+          f.passGroupMode8 true p.force (f.givenAt p.givenLines) p.fuel (f.fr.group i)
+          compare debugNode repeats none observe counting p.located
+        (ls ++ (if dropped > 0 then [s!"inferred heads: {dropped} proposals dropped, {runs} runs"] else []), v,
+          f.extractionRefusal (some [SourceClaimJson.memberName unit]))
   let p1 ← SinglePass.passNanos.get
   let s1 ← IO.monoNanosNow
   let ms := fun (a b : Nat) => s!"{(b - a) / 1000000}"
@@ -457,7 +544,7 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
   let kinds ← SinglePass.kindNanos.get
   emit s!"rule time by term kind (ms, applications): {kinds.toList.map fun (k, t, n) => s!"{k} {t / 1000000} {n}"}"
   emit s!"stamp: {unit} pass {ms p0 p1} ms, with obligations and vocabulary {ms s0 s1} ms, total {ms p.t0 s1} ms"
-  return (WorkerWire.verdictLine unit members verdict, match verdict with | .ok _ => none | .error r => some r)
+  return (WorkerWire.verdictLine unit members verdict extraction, match verdict with | .ok _ => none | .error r => some r)
 
 /-- A line on standard output, flushed: a reader of the stream sees it as
 soon as it is written. -/
@@ -479,12 +566,15 @@ def verifyUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names : 
   | .error e => refuse e
   | .ok p =>
     let mut refused : Option String := none
-    for u in p.modules do printFlushed (WorkerWire.verdictLine u [u] (.ok []))
+    let mut extraction : Option String := none
+    for u in p.modules do printFlushed (WorkerWire.verdictLine u [u] (.ok []) none)
     for i in p.units do
       let (line, refusal) ← p.check i
       printFlushed line
       if refused.isNone then refused := refusal
-    match p.f.extractionRefusal p.selected with
+      if extraction.isNone then
+        extraction := (WorkerWire.lineExtraction line).toOption.join
+    match extraction with
     | some reason => refuse reason
     | none =>
       match refused with
@@ -515,10 +605,9 @@ def fileWorker (astPath : String) (fileKey : String) (fuel : Nat) (names : Optio
   | .error e => refuse e
   | .ok p =>
     let units := p.units
-    let f := p.f
+    let fr := p.fr
     writeWorkNow start
-    printFlushed (WorkerWire.preparedLine (units.map fun i => (f.fr.unitId i, (f.fr.group i).map f.fr.unitId))
-      p.modules (f.extractionRefusal p.selected))
+    printFlushed (WorkerWire.preparedLine (units.map fun i => (fr.unitId i, (fr.group i).map fr.unitId)) p.modules)
     let stdin ← IO.getStdin
     repeat
       let text ← stdin.getLine
@@ -528,7 +617,7 @@ def fileWorker (astPath : String) (fileKey : String) (fuel : Nat) (names : Optio
       | .ok requested =>
         let chosen ← match requested with
           | none => pure units
-          | some ids => ids.mapM fun id => match units.find? (f.fr.unitId · == id) with
+          | some ids => ids.mapM fun id => match units.find? (fr.unitId · == id) with
             | some i => pure i
             | none => throw (IO.userError s!"file worker: {id} is no unit the selection checks")
         for i in chosen do

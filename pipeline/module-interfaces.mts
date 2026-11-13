@@ -148,6 +148,9 @@ export function verifyByUnits(fragment: string, key: string, names: string, opti
   mkdirSync(options.work, { recursive: true });
   const environment: Record<string, string> = {};
   if (process.env.TSCERT_PASS_REFUSALS === "raw") environment.TSCERT_PASS_REFUSALS = "raw";
+  // An adversarial proposal the caller's environment forces (a control's):
+  // part of the stage's environment, so its key.
+  if (process.env.TSCERT_FORCE !== undefined) environment.TSCERT_FORCE = process.env.TSCERT_FORCE;
   const check = (path: string): WorkerRun => invokeWorker(verifierCall(verifier,
     ["--subtype-rounds", String(options.rounds), "--file-worker", String(options.mode),
       fragment, path, key, String(options.fuel), names], environment), fileWorkerProtocol, options.invocation);

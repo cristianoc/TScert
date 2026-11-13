@@ -21,7 +21,7 @@ import { resolvableDeclaration } from "../tools/intrinsics.mts";
 import { currentStore, invokeInProcess, invokeProcess, Recorder, readInvocationLog, type AttemptRecord } from "./stages.mts";
 import { verifyByUnits } from "./module-interfaces.mts";
 import type { CheckedUnits } from "./module-interfaces.mts";
-import { decodeWorkerPrepared } from "./stage-execution.mts";
+import { decodeVerdictLine, decodeWorkerPrepared } from "./stage-execution.mts";
 import type { WorkerPart } from "./stages.mts";
 import { refusalEnd, verifier, verifierProtocol, type ProcessCall, type Protocol } from "./stage-execution.mts";
 
@@ -383,14 +383,15 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
       : { status: "unsupported", artifacts, phase: "proposal", detail: named(refused), units: null };
   }
   const prepared = decodeWorkerPrepared(wireText(Buffer.from(preparation.stdout), "verifier --file-worker").trim());
-  const lines: string[] = prepared.established.map((u) => JSON.stringify({ unit: u, members: [u], accepted: true, depends: [] }));
+  const lines: string[] = prepared.established.map((u) =>
+    JSON.stringify({ unit: u, members: [u], accepted: true, depends: [], extraction: null }));
   const log: string[] = [];
   for (const part of checked.run.parts) {
     const unit = prepared.selected.find((u) => u.unit === part.part);
     if (unit === undefined) throw Error(`tool failure: verifier --file-worker answered ${part.part ?? "its preparation"}, no unit it selects`);
     if (part.execution === "timed-out" || part.execution === "timeout-replayed") {
       // A unit over its limit: its own refusal.
-      lines.push(JSON.stringify({ unit: unit.unit, members: unit.members, refusal: over(part.execution) }));
+      lines.push(JSON.stringify({ unit: unit.unit, members: unit.members, refusal: over(part.execution), extraction: null }));
       log.push(`unit ${unit.unit}: ${over(part.execution)}`);
       continue;
     }
@@ -406,8 +407,10 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
   }
   writeFileSync(join(artifacts, "pass.log"), log.join("\n"));
   // The file's refusal beside its units': the first extraction refusal
-  // among the selected groups.
-  const refusal = prepared.extraction === null ? null : `reject: ${prepared.extraction}`;
+  // among the selected groups, as their units' lines state it, in the order
+  // their checks run.
+  const extraction = lines.map((l) => decodeVerdictLine(l).extraction).find((e) => e !== null) ?? null;
+  const refusal = extraction === null ? null : `reject: ${extraction}`;
   // Where the module interfaces were not established, a unit refused at
   // ordinary contracts is refused for that first.
   const unestablished = checked.interfaceFailure === null ? null :

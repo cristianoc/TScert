@@ -912,12 +912,13 @@ export type WorkerRequest = { units: readonly string[] | null };
 export type WorkerUnit = { unit: string; members: readonly string[] };
 /** The file worker's first line (`WorkerWire.preparedLine`): the units its
  * selection checks, in the order their checks run; the module units the
- * interfaces establish; the first extraction refusal among the selected
- * groups, or null. */
-export type WorkerPrepared = { selected: readonly WorkerUnit[]; established: readonly string[]; extraction: string | null };
-/** A unit's verdict line (`WorkerWire.verdictLine`), as mode 8 prints it. */
-export type VerdictLine = { unit: string; members: readonly string[]; accepted: true; depends: readonly string[] } |
-  { unit: string; members: readonly string[]; refusal: string };
+ * interfaces establish. */
+export type WorkerPrepared = { selected: readonly WorkerUnit[]; established: readonly string[] };
+/** A unit's verdict line (`WorkerWire.verdictLine`), as mode 8 prints it,
+ * with the first extraction refusal among its group's members, or null. */
+export type VerdictLine =
+  { unit: string; members: readonly string[]; accepted: true; depends: readonly string[]; extraction: string | null } |
+  { unit: string; members: readonly string[]; refusal: string; extraction: string | null };
 
 /** A parsed JSON value's own fields, exactly `fields`, or a refusal. */
 function exactFields(value: unknown, fields: readonly string[], what: string): { [key: string]: unknown } {
@@ -934,28 +935,29 @@ export function decodeVerdictLine(text: string): VerdictLine {
   const what = "a unit's verdict line";
   const value: unknown = JSON.parse(text);
   const accepted = typeof value === "object" && value !== null && "accepted" in value;
-  const v = exactFields(value, accepted ? ["unit", "members", "accepted", "depends"] : ["unit", "members", "refusal"], what);
-  const { unit, members, depends, refusal } = v;
+  const v = exactFields(value, accepted ? ["unit", "members", "accepted", "depends", "extraction"]
+    : ["unit", "members", "refusal", "extraction"], what);
+  const { unit, members, depends, refusal, extraction } = v;
   if (typeof unit !== "string" || !isStrings(members)) throw Error(`${what}: no unit and members`);
+  if (!(extraction === null || typeof extraction === "string")) throw Error(`${what}: a malformed extraction refusal`);
   if (accepted) {
     if (v["accepted"] !== true || !isStrings(depends)) throw Error(`${what}: no dependencies`);
-    return { unit, members, accepted: true, depends };
+    return { unit, members, accepted: true, depends, extraction };
   }
   if (typeof refusal !== "string") throw Error(`${what}: no refusal`);
-  return { unit, members, refusal };
+  return { unit, members, refusal, extraction };
 }
 /** The file worker's preparation line, read field by field. */
 export function decodeWorkerPrepared(text: string): WorkerPrepared {
   const what = "the file worker's preparation line";
   const parsed: unknown = JSON.parse(text);
-  const { selected, established, extraction } = exactFields(parsed, ["selected", "established", "extraction"], what);
-  if (!Array.isArray(selected) || !isStrings(established) || !(extraction === null || typeof extraction === "string"))
-    throw Error(`${what}: malformed`);
+  const { selected, established } = exactFields(parsed, ["selected", "established"], what);
+  if (!Array.isArray(selected) || !isStrings(established)) throw Error(`${what}: malformed`);
   return { selected: selected.map((u: unknown): WorkerUnit => {
     const { unit, members } = exactFields(u, ["unit", "members"], `${what}'s unit`);
     if (typeof unit !== "string" || !isStrings(members)) throw Error(`${what}: a unit without its members`);
     return { unit, members };
-  }), established, extraction };
+  }), established };
 }
 
 /** A process stage started under the runner, read while it runs

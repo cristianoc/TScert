@@ -61,9 +61,10 @@ plans over its frozen store. -/
 theorem fragmentPlansCore_shape {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {names : Option (List String)} {standIns : StandIns} {force : List String}
     {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)} {depends : List (String × List String)}
-    {closure proposed : Bool} {front : Option (Json × Front)} {interfaceSlots : Bool} {f : FilePlans}
+    {closure proposed : Bool} {front : Option (Json × Front)} {interfaceSlots : Bool}
+    {known : List (String × Option StandIn)} {f : FilePlans}
     (h : fragmentPlansCore ast fileKey budget names standIns force imported depends closure proposed front
-      interfaceSlots = .ok f) :
+      interfaceSlots known = .ok f) :
     f.p.modules = [] ∧ ∃ plans₀ : List (Except String (FunctionPlan EquationStore.State EquationGraphs.Tree)),
       f.plans = plans₀.map fun e => e.bind (FunctionPlan.over f.F) := by
   unfold fragmentPlansCore at h
@@ -88,9 +89,10 @@ every value of its arguments. -/
 theorem fragmentPlansCore_overStore {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {names : Option (List String)} {standIns : StandIns} {force : List String}
     {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)} {depends : List (String × List String)}
-    {closure proposed : Bool} {front : Option (Json × Front)} {interfaceSlots : Bool} {f : FilePlans}
+    {closure proposed : Bool} {front : Option (Json × Front)} {interfaceSlots : Bool}
+    {known : List (String × Option StandIn)} {f : FilePlans}
     (h : fragmentPlansCore ast fileKey budget names standIns force imported depends closure proposed front
-      interfaceSlots = .ok f) :
+      interfaceSlots known = .ok f) :
     OverStore f := by
   obtain ⟨-, plans₀, hp⟩ := fragmentPlansCore_shape h
   intro i name pos r hi
@@ -109,9 +111,10 @@ its arguments. -/
 theorem fragmentPlansCore_modules {ast : Json} {fileKey : String} {budget : PositiveCertificates.SearchBudget}
     {names : Option (List String)} {standIns : StandIns} {force : List String}
     {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)} {depends : List (String × List String)}
-    {closure proposed : Bool} {front : Option (Json × Front)} {interfaceSlots : Bool} {f : FilePlans}
+    {closure proposed : Bool} {front : Option (Json × Front)} {interfaceSlots : Bool}
+    {known : List (String × Option StandIn)} {f : FilePlans}
     (h : fragmentPlansCore ast fileKey budget names standIns force imported depends closure proposed front
-      interfaceSlots = .ok f) :
+      interfaceSlots known = .ok f) :
     f.p.modules = [] :=
   (fragmentPlansCore_shape h).1
 

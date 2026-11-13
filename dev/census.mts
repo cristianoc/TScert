@@ -88,7 +88,7 @@ type ImportTarget = { file: string; imported: string } | null;
 /** A census file read for its units: its statements, its functions' recursive
  * groups by the names their code mentions, its imports, and the modules of
  * the directory it loads. */
-type SourceModel = {
+export type SourceModel = {
   file: string;
   text: string;
   statements: Statement[];
@@ -118,7 +118,7 @@ function runsInInit(s: ts.Statement): boolean {
     (ts.isExportDeclaration(s) && s.moduleSpecifier !== undefined));
 }
 
-function sourceModel(root: string, file: string): SourceModel {
+export function sourceModel(root: string, file: string): SourceModel {
   const text = readFileSync(join(root, file), "utf8");
   const tree = openText(join(root, file), text);
   const target = (specifier: ts.Expression | undefined, imported: string): ImportTarget => {
@@ -326,7 +326,7 @@ function progress(run: FileRun, omitted: Map<string, OwnResult>): string {
     (init ? `; initialization ${init.status === "verified" ? "accepted" : "rejected"}` : "") +
     (statements ? `, ${statements} statement${statements === 1 ? "" : "s"} left out` : "");
 }
-type FileRun = {
+export type FileRun = {
   file: string;
   sourceSha256: string;
   rounds: { omitted: string[]; refusal: OwnResult }[];
@@ -527,7 +527,7 @@ function reference(r: AttemptRecord): InvocationReference {
 
 /** A file checked by units, round by round: a refusal located in a unit
  * omits it, and the file is checked again. */
-async function runFile(root: string, project: string, models: (file: string) => SourceModel, m: SourceModel,
+export async function runFile(root: string, project: string, models: (file: string) => SourceModel, m: SourceModel,
     select: string[], omitted: Map<string, OwnResult>): Promise<FileRun> {
   const rounds: FileRun["rounds"] = [];
   const invocations: InvocationReference[] = [];
@@ -569,7 +569,14 @@ async function runFile(root: string, project: string, models: (file: string) => 
     // A file whose every unit is omitted has nothing left to check.
     if (outcome.detail.includes("no functions in file")) return done(null, []);
     const next = outcome.status === "error" ? [] : omissionsFor(m, outcome.detail).filter((n) => !omitted.has(n));
-    if (next.length === 0) return done(refusal, []);
+    // A file refused before any unit's verdict (its worker's preparation
+    // over its limit, or refused): each selected unit recorded, the file's
+    // refusal as the reason it has no verdict.
+    if (next.length === 0) return done(refusal, model.filter((u) => select.includes(u.name) && !omitted.has(u.name) &&
+        (u.name !== initOmission || m.hasInit)).map((u): UnitResult => ({
+      unit: u.name, members: u.group,
+      status: outcome.status === "unverified" || outcome.status === "exhausted" ? outcome.status : "error",
+      phase: "check", detail: `no verdict: the file was refused before its units' checks: ${outcome.detail}`, depends: [] })));
     for (const n of next) omitted.set(n, refusal);
     rounds.push({ omitted: next, refusal });
   }
