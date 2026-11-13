@@ -387,9 +387,9 @@ assignment in \code{c ??= build()} changes the contents of $l$ from
 \code{undefined} to the value $v$ that \code{build()} returns, and
 $\init_b(\code{undefined},v)$ holds. The assignment \code{o.n = 3}
 changes the contents of the field location of \code{n} from 1 to 3, and
-$\kw{scalar}_b(1,3)$ holds. With $b=6$, $\grow_6$ relates the store
-$\langle 4,\circ,5\rangle$ to $\langle 4,\circ,5,6\rangle$ (a
-\code{push}) and to $\langle 4,6,5\rangle$ (a write at the hole). It
+$\kw{scalar}_b(1,3)$ holds. With $b=9$, $\grow_9$ relates the store
+$\langle 4,\circ,5\rangle$ to $\langle 4,\circ,5,9\rangle$ (a
+\code{push}) and to $\langle 4,9,5\rangle$ (a write at the hole). It
 does not relate it to $\langle 4\rangle$, which fails (i), nor to
 $\langle 4,\circ,5,0\rangle$, which fails (iv): 0 is an old location.
 
@@ -496,8 +496,8 @@ unchanged. Locations at or above $\len h$ are allocated by the
 transition and are unconstrained.
 
 For example, let $h$ be the heap of Section~2 and let $h'$ be $h$ after
-\code{a.push(40)}: $h'(3)=\langle 4,\circ,5,6\rangle$, $h'(6)=40$, and $h'$ agrees with $h$ on 0, 1, 2, 4 and 5. Then $h\tr{\{\st:\grow\}}_\rho h'$:
-location 3 is in $\st(\rho,h)$ and changed within $\grow_6$, the locations 0, 1, 2, 4 and 5 are unchanged, and 6 is new. After
+\code{a.push(40)}: $h'(3)=\langle 4,\circ,5,9\rangle$, $h'(9)=40$, and $h'$ agrees with $h$ on every location of $h$ but 3. Then $h\tr{\{\st:\grow\}}_\rho h'$:
+location 3 is in $\st(\rho,h)$ and changed within $\grow_9$, the other locations of $h$ are unchanged, and 9 is new. After
 \code{a.length = 1} the store is $\langle 4\rangle$, a change that is
 not within $\grow$; that transition is bounded by
 $\{a.\kw{store}:\any\}$ and is not bounded by $\{\st:\grow\}$.
@@ -520,9 +520,10 @@ rigid on the states where $\pi$ is rigid (Section~4): the path then
 reads the same store in $h$ and in $h'$.
 \item[Not rigid: cells of a store changed at $\any$]
 $\{x[\ast]:\any\}$ is not rigid. A first change may make the store of
-$x$ list a location that existed before, such as location 0 in the heap
-of Section~2. A second change, whose region is read in the new heap, may
-then change location 0, which the region read in $h$ does not contain.
+$x$ list an element cell that existed before and that it did not list,
+such as a cell $l$ of another array. A second change, whose region is
+read in the new heap, may then change $l$, which the region read in $h$
+does not contain.
 \end{description}
 
 \paragraph{The effect of a command.} The judgment $c:\Phi\mid\Phi^{e}$
