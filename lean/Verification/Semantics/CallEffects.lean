@@ -1339,6 +1339,16 @@ theorem Effect.meet_same {a b : Effect} (hs : a.sameResult b = true) :
   · funext R x; simp [Effect.result, hs]
   · funext args; simp [Effect.promised, hs]
 
+/-- A signature's normal-return postcondition as a world-indexed one: its
+heap postcondition (`Effect.post`) lifted. -/
+abbrev Effect.postW (e : Effect) (r : Tm) (args : List Tm) (before : Heap) : HeapObservations.WPost :=
+  HeapObservations.WPost.lift (e.post r args before)
+
+/-- A signature's throw postcondition as a world-indexed one: its heap
+postcondition (`Effect.excPost`) lifted. -/
+abbrev Effect.excPostW (e : Effect) (r : Tm) (args : List Tm) (before : Heap) : HeapObservations.WExc :=
+  HeapObservations.WExc.lift (e.excPost r args before)
+
 /-- The arrow equation, with a heap postcondition relative to this call's
 entry heap. The input and result contracts are exactly those of `Promise`.
 The effect is per signature: one overload may preserve its input heap while
@@ -1350,8 +1360,8 @@ def PromiseWith (Ξ : Fam) (effect : Effect)
     WorldAdm U → ∀ (heap : Heap), HeapOk j U heap → ∀ r, isVal r = true → Rc j U r →
       ∀ args, CallArguments.Values args → Acc j U args → effect.Requires r args heap →
         ∃ result, CallArguments.Invoke ⟨v, r, args⟩ result ∧
-          SafePostExc Ξ (effect.result R (effect.promised args)) (effect.post r args heap)
-            (effect.excPost r args heap) j U heap result
+          SafePostExcW Ξ (effect.result R (effect.promised args)) (effect.postW r args heap)
+            (effect.excPostW r args heap) j U heap result
 
 /-- A heap effect's signature is an ordinary arrow once its postcondition is
 forgotten. A promise's is not: its result operand is not the result's type;
@@ -1604,8 +1614,8 @@ def ConstructPromise (Ξ : Fam) (effect : Effect) (P : ArgFam) (R : Fam) (k : Na
     WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U → ∀ (heap : Heap), HeapOk j U heap →
       ∀ args, CallArguments.Values args → P j U args → effect.Requires .undef args heap →
         ∃ result, ConstructsTo v args result ∧
-          SafePostExc Ξ (effect.result R (effect.promised args)) (effect.post .undef args heap)
-            (effect.excPost .undef args heap) j U heap result
+          SafePostExcW Ξ (effect.result R (effect.promised args)) (effect.postW .undef args heap)
+            (effect.excPostW .undef args heap) j U heap result
 
 theorem ConstructPromise.down {effect P R n W v}
     (h : ConstructPromise Ξ effect P R (n + 1) W v) :

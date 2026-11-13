@@ -14,20 +14,35 @@ def Observes (h : Heap) (l : Nat) (v : Val) : Prop := h[l]? = some v
 
 def exact (v : Val) : Fam := fun _ _ u => u = v
 
+/-- A postcondition of a normal exit that reads the exit world as well: the
+budget left, the world the safety derivation reached there, the heap and the
+result. -/
+abbrev WPost := (k : Nat) → WorldT k → Heap → Val → Prop
+
+/-- **The lifting** of a heap-only postcondition: it ignores the budget and
+the world. Every postcondition of the heap and the result is world-indexed
+through it. -/
+abbrev WPost.lift (Q : Post) : WPost := fun _ _ h v => Q h v
+
 /-- At budget zero there is no observation, just as in `Safe`. At positive
-budget, termination establishes both the value type and a fact about that heap.
-A throw, as in `Safe`, is an outcome with no postcondition: the facts `Q`
-describe the heap a value is produced in, and a thrown value is not one.
-Divergence remains permitted; this is safety with partial correctness. -/
-def SafePost (Ξ : Fam) (T : Fam) (Q : Post) : (n : Nat) → WorldT n → Heap → Tm → Prop
+budget, termination establishes both the value type and a fact about the
+exit: the world reached there, its heap and the value. A throw, as in
+`Safe`, is an outcome with no postcondition: the facts `Q` describe the heap
+a value is produced in, and a thrown value is not one. Divergence remains
+permitted; this is safety with partial correctness. -/
+def SafePostW (Ξ : Fam) (T : Fam) (Q : WPost) : (n : Nat) → WorldT n → Heap → Tm → Prop
   | 0, _, _, _ => True
   | n + 1, W, h, t =>
-      ((isVal t = true ∧ T (n + 1) W t ∧ Q h t) ∨ Thrown Ξ (n + 1) W t) ∨
+      ((isVal t = true ∧ T (n + 1) W t ∧ Q (n + 1) W h t) ∨ Thrown Ξ (n + 1) W t) ∨
       (∃ (U : WorldT n) (h' : Heap) (t' : Tm),
         WExt (trunc n (Nat.le_succ n) W) U ∧ WorldAdm U ∧ Step h t h' t' ∧
-          HeapOk n U h' ∧ SafePost Ξ T Q n U h' t')
+          HeapOk n U h' ∧ SafePostW Ξ T Q n U h' t')
 
-theorem erase {T Q} : ∀ {n W h t}, SafePost Ξ T Q n W h t → Safe Ξ T n W h t := by
+/-- `SafePostW` at a heap-only postcondition, lifted. -/
+abbrev SafePost (Ξ : Fam) (T : Fam) (Q : Post) : (n : Nat) → WorldT n → Heap → Tm → Prop :=
+  SafePostW Ξ T (WPost.lift Q)
+
+theorem SafePostW.erase {T} {Q : WPost} : ∀ {n W h t}, SafePostW Ξ T Q n W h t → Safe Ξ T n W h t := by
   intro n; induction n with
   | zero => intros; trivial
   | succ n ih =>
@@ -36,6 +51,8 @@ theorem erase {T Q} : ∀ {n W h t}, SafePost Ξ T Q n W h t → Safe Ξ T n W h
     · exact Or.inl (Or.inl ⟨hv,ht⟩)
     · exact Or.inl (Or.inr hr)
     · exact Or.inr ⟨U,h',t',hx,hu,step,hh,ih hs⟩
+
+theorem erase {T Q} {n W h t} (hs : SafePost Ξ T Q n W h t) : Safe Ξ T n W h t := SafePostW.erase hs
 
 /-- A safe term meets the postcondition that holds of every heap. -/
 theorem of_safe {T} : ∀ {n W h t}, Safe Ξ T n W h t → SafePost Ξ T (fun _ _ => True) n W h t := by
@@ -118,21 +135,27 @@ theorem of_value_property {T Q} (hq : ∀ n W h v, T n W v → Q h v) :
 /-- Consequence at the budgets an execution can reach. This bounded form is
 what recursive call contracts need: their operands agree only below the
 caller's current approximation level. -/
-theorem consequence_below' {Ξ Ξ' T U : Fam} {Q R : Post} : ∀ {n},
+theorem SafePostW.consequence_below' {Ξ Ξ' T U : Fam} {Q R : WPost} : ∀ {n},
     (∀ j, j ≤ n → ∀ W v, Ξ j W v → Ξ' j W v) →
     (∀ j, j ≤ n → ∀ W v, T j W v → U j W v) →
-    (∀ h v, Q h v → R h v) →
-    ∀ {W h t}, SafePost Ξ T Q n W h t → SafePost Ξ' U R n W h t := by
+    (∀ j, j ≤ n → ∀ W h v, Q j W h v → R j W h v) →
+    ∀ {W h t}, SafePostW Ξ T Q n W h t → SafePostW Ξ' U R n W h t := by
   intro n
   induction n with
   | zero => intros; trivial
   | succ n ih =>
     intro hexc hsub hpost W h t hs
     rcases hs with (⟨hv, ht, hq⟩ | hth) | ⟨U, h', t', hx, hu, step, hh, hs⟩
-    · exact .inl (.inl ⟨hv, hsub _ (Nat.le_refl _) _ _ ht, hpost _ _ hq⟩)
+    · exact .inl (.inl ⟨hv, hsub _ (Nat.le_refl _) _ _ ht, hpost _ (Nat.le_refl _) _ _ _ hq⟩)
     · exact .inl (.inr (hth.mono (hexc _ (Nat.le_refl _) _)))
     · exact .inr ⟨U, h', t', hx, hu, step, hh,
-        ih (fun j hj => hexc j (by omega)) (fun j hj => hsub j (by omega)) hpost hs⟩
+        ih (fun j hj => hexc j (by omega)) (fun j hj => hsub j (by omega)) (fun j hj => hpost j (by omega)) hs⟩
+
+theorem consequence_below' {Ξ Ξ' T U : Fam} {Q R : Post} {n}
+    (hexc : ∀ j, j ≤ n → ∀ W v, Ξ j W v → Ξ' j W v)
+    (hsub : ∀ j, j ≤ n → ∀ W v, T j W v → U j W v)
+    (hpost : ∀ h v, Q h v → R h v) {W h t} (hs : SafePost Ξ T Q n W h t) : SafePost Ξ' U R n W h t :=
+  SafePostW.consequence_below' hexc hsub (fun _ _ _ h v hq => hpost h v hq) hs
 
 theorem consequence_below {Ξ T U : Fam} {Q R : Post} {n}
     (hsub : ∀ j, j ≤ n → ∀ W v, T j W v → U j W v)
