@@ -549,6 +549,60 @@ run_cmd do
   check ``Verification.TolerantFrames.mergeEqual_holds
   -- the model-side supports (TolerantFramesModel*)
   check ``Verification.TolerantFrames.alloc_step
+  -- The model rules of the note "Tolerant frames", which cites them: its
+  -- atoms' axioms, its rules and its worked loop stated in the indexed model,
+  -- or a counter-model where the note's statement needs a premise
+  -- (Semantics/TolerantFrames, Programs/TolerantFramesModel*). Roots of
+  -- their own, kept whether or not the verifier reaches them.
+  -- (Dense)
+  check ``Verification.TolerantFrames.dense
+  -- (View)
+  check ``Verification.TolerantFrames.view_box
+  check ``Verification.TolerantFrames.viewStable_invariant
+  check ``Verification.TolerantFrames.viewStable_of_typed
+  check ``Verification.TolerantFrames.view_not_invariant
+  -- (Init)
+  check ``Verification.TolerantFrames.init_box
+  check ``Verification.TolerantFrames.init_path
+  -- (Rigid) and fresh(x)
+  check ``Verification.TolerantFrames.stableAt_invariant
+  check ``Verification.TolerantFrames.stableAt_of_stableField
+  check ``Verification.TolerantFrames.stableAt_of_stableFirst
+  check ``Verification.TolerantFrames.stableAt_cons
+  check ``Verification.TolerantFrames.grow_path_typed
+  check ``Verification.TolerantFrames.fresh_invariant
+  -- well-formed states and law (c) from a typed state
+  check ``Verification.TolerantFrames.storeCells_of_typed
+  check ``Verification.TolerantFrames.storeCells_of_storeField
+  check ``Verification.TolerantFrames.storeCells_of_builtins
+  check ``Verification.TolerantFrames.apart_grow_keep_typed
+  check ``Verification.TolerantFrames.valueClass_ok
+  check ``Verification.TolerantFrames.storeClass_ok
+  check ``Verification.TolerantFrames.action_le_valueClass
+  -- Call
+  check ``Verification.TolerantFrames.call_rule
+  -- Alloc
+  check ``Verification.TolerantFrames.alloc_post
+  check ``Verification.TolerantFrames.alloc_apart_typed
+  check ``Verification.TolerantFrames.apart_not_kept_fresh
+  -- Seq-Eff
+  check ``Verification.TolerantFrames.seq_eff
+  check ``Verification.TolerantFrames.rebaseAll_labels
+  check ``Verification.TolerantFrames.rebase_elems
+  -- Fresh-Eff
+  check ``Verification.TolerantFrames.fresh_eff
+  check ``Verification.TolerantFrames.fresh_eff_bound
+  check ``Verification.TolerantFrames.fresh_cells_not_erased
+  -- Loop and Transfer: the worked loop of the note's example in full
+  check ``Verification.TolerantFrames.loop_safe
+  check ``Verification.TolerantFrames.loop_done
+  check ``Verification.TolerantFrames.loop_no_raise
+  check ``Verification.TolerantFrames.loop_checked
+  check ``Verification.TolerantFrames.read_safe
+  check ``Verification.TolerantFrames.write_safe
+  check ``Verification.TolerantFrames.arrAt_invariant
+  check ``Verification.TolerantFrames.alias_entry
+  check ``Verification.TolerantFrames.alias_loop_safe
   -- Leg 8: the merge and forgetting names (TolerantFramesMerge*, TolerantFramesStoreOps*)
   check ``Verification.TolerantFrames.mergeState_state
   check ``Verification.TolerantFrames.mergeState_implies

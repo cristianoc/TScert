@@ -388,10 +388,24 @@ theorem action_throw_top {Ξ T : Fam} {Q : Post} {ρ : Env} {s : IndexedHeap} {t
 
 /-! ## Invariant and rigid assertions -/
 
+/-- An assertion reading no state is invariant: a fact about the name
+valuation and the entry mark alone. -/
+theorem invariant_const (P : Env → Nat → Prop) : Invariant (fun ρ m _ => P ρ m) :=
+  fun _ _ _ _ _ hp => hp
+
+/-- The store of `x` was allocated at or after the entry mark: `fresh(x)`. It
+reads no heap. -/
+def Fresh (x : Nat) : Assertion := fun ρ m _ => FreshAt m (ρ x)
+
+theorem fresh_invariant (x : Nat) : Invariant (Fresh x) := invariant_const _
+
 /-- The path `p` from `x` passes only locations whose contracts admit one
 value, reading `v`: a fact of the world. -/
 def StableAt (x : Nat) (p : List String) (v : Val) : Assertion :=
   fun ρ _ s => StablePath s.W (ρ x) p v
+
+theorem stableAt_invariant (x : Nat) (p : List String) (v : Val) : Invariant (StableAt x p v) :=
+  fun _ _ _ _ ha hp => ha.stablePath hp
 
 /-- The path `p` from `x` reads `v`: `π ≐ v`. -/
 def ReadsAs (x : Nat) (p : List String) (v : Val) : Assertion :=
@@ -553,5 +567,13 @@ theorem grow_path_fact {y x : Nat} {p : List String} {v : Val} {ρ : Env} {m : N
     (hp : StableAt x p v ρ m s) (hb : (pathLowerBoundFact y x p).HoldsAt ρ s.h) :
     Box growEffect.fp (fun ρ _ s => (pathLowerBoundFact y x p).HoldsAt ρ s.h) ρ m s :=
   fun s' ha => pathLowerBound_iff.mp (grow_path hp (pathLowerBound_iff.mpr hb) s' ha)
+
+/-- `dense(x, k)`: the first `k` indices of `x`'s store are present. -/
+def DenseAt (x k : Nat) : Assertion := fun ρ _ s => Dense x k ρ s.h
+
+/-- **(Dense)** `dense(x, k) ⊢ □_{values: any, stores: grow} dense(x, k)`. -/
+theorem dense {x k : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} (hd : DenseAt x k ρ m s) :
+    Box growEffect.fp (DenseAt x k) ρ m s :=
+  fun _ ha => stableDenseClosed_sound (by decide) hd ha.2
 
 end Verification.TolerantFrames
