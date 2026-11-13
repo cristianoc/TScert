@@ -1559,6 +1559,18 @@ run_cmd do
   check ``Verification.Kinds.Capability.ofRole_le
   check ``Verification.Kinds.Capability.ofRole_holds_alloc
   check ``Verification.storageOf_mapStored
+  check ``Verification.StorageRole.concrete_permits
+  check ``Verification.StorageRole.concrete_cat
+  check ``Verification.StorageRole.concrete_of_holds
+  check ``Verification.StorageRole.concrete_view
+  check ``Verification.StorageRole.slotRole_of_fitsKey
+  check ``Verification.Kinds.MetaFit.of_not_mem
+  check ``Verification.Kinds.viewMetaOk_alloc
+  check ``Verification.Kinds.concreteRoles_spec
+  check ``Verification.Kinds.concreteRoles_of_holds
+  check ``Verification.Kinds.concrete_shaped
+  check ``Verification.Kinds.Capability.Holds.weakenBelow
+  check ``Verification.Kinds.Capability.ofRole_leBelow_iff
   -- world-indexed postconditions, the native-contract condition, the view write
   check ``Verification.Kinds.SafeW.refs
   check ``Verification.Kinds.SafeW.mono

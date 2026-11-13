@@ -227,8 +227,9 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   the clause states, which a key added at a writable index's contract keeps
   (the field at that contract, or none meets it). No own-key bound is stated,
   since code holding the dictionary may add keys. The clause states each
-  field's and each writable index's role, which the rule leaves free, as
-  `alloc` does. -/
+  field's and each writable index's role: a named field and a writable
+  optional field state the role of every writable index whose class may
+  admit their key, since one location is granted by both. -/
   | allocDict {parts : List (PropKey × Ty ι × Tm)} {fs : List (Stored (Ty ι))}
       {ix : List (IndexKeys × Ty ι)} {cs : List (IndexKeys × StorageRole × Ty ι)}
       {os : List (OptionalField (Ty ι))} :
@@ -240,6 +241,8 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       (∀ p ∈ parts, ∀ y ∈ ix ++ cellViews cs, y.1.may p.1 = true → p.2.1 = y.2) →
       (∀ o ∈ os, o.key ∉ parts.map Prod.fst) →
       (∀ o ∈ os, ∀ y ∈ cs, y.1.may o.key = true → o.type = y.2.2 ∨ PositiveRules.Uninhabited G y.2.2) →
+      (∀ f ∈ fs, ∀ y ∈ cs, y.1.may f.1 = true → f.2.1 = y.2.1) →
+      (∀ o ∈ os, o.readonly = false → ∀ y ∈ cs, y.1.may o.key = true → o.role = y.2.1) →
       HasTyWith G images subtyping Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
   /-- A named field, of a record or of a dictionary, reads at its contract. -/
   | read : HasTyWith G images subtyping Γ a Ref → Represents G Ref c → namedMembers c = some (fs, vs) →
@@ -1220,7 +1223,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           (by simpa [List.map_map, Function.comp_def] using hrecZ)
         simpa [List.map_map, Function.comp_def] using hinv
       · exact builtinInvariant_of_lookup (slots_lookup_none hstore)
-  | @allocDict Γ Ref parts fs ix cs os hnd hproto hstore hhostp hp hfs hr hix habs _ ih =>
+  | @allocDict Γ Ref parts fs ix cs os hnd hproto hstore hhostp hp hfs hr hix habs _ _ _ ih =>
     intro n W h ρ he hw hh
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
     have hmap : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.snd

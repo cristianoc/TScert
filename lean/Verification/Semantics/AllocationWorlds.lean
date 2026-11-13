@@ -1,5 +1,6 @@
 -- OperationWorlds.lean fixes the world annotations of a modeled execution; without it an allocation's successor world is not determined independently of its result bound.
 import Verification.Semantics.OperationWorlds
+import Verification.Semantics.KindsCapabilities
 
 namespace Verification.AllocationWorlds
 open OperationResults OperationWorlds
@@ -7,14 +8,23 @@ open OperationResults OperationWorlds
 /-- The allocation's entries, a role and a contents type per field, determine
 the successor world: each field's contract is its entry's type. The result
 bound Q does not participate in the choice. The world of this development
-records contracts only; an entry's role is what the kinded world records
-beside it (`Kinds.objectEntries`). -/
+records contracts only; the role the kinded world records beside each
+contract (`Kinds.objectEntries`) is the entry's tag's concrete role at the
+value allocated there (`roles`), a view store's of that store's length. -/
 def next (Es : List (StorageRole × Fam)) : Config → Config
   | ⟨n+1,W,h,.makeAt code ns vs⟩ =>
       ⟨n, appendWs (trunc n (Nat.le_succ n) W)
         (Es.map (fun e => (res e.2 : Ctr n)) ++ [res nulT]),
         h ++ vs ++ [.nul], .objAt (slots h.length ns) code (h.length + vs.length)⟩
   | c => c
+
+/-- **The roles an allocation's entries record**, at the values it
+allocates: each entry's tag's concrete role at its value
+(`Kinds.concreteRoles`; `StorageRole.concrete_permits`,
+`StorageRole.concrete_cat`, `StorageRole.concrete_view`), none where a value
+is not of its tag's category. -/
+def roles (Es : List (StorageRole × Fam)) (vs : List Val) : Option (List Kinds.Role) :=
+  Kinds.concreteRoles (Es.map Prod.fst) vs
 
 def policy (Es : List (StorageRole × Fam)) : Policy :=
   ⟨fun c d => next Es c = d, fun h₁ h₂ => h₁.symm.trans h₂⟩

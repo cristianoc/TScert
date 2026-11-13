@@ -986,15 +986,18 @@ declared bounds. -/
         (∀ K ∈ ks, ∀ n ∈ ns, K.admits n = true) ∧ allocBuiltinsUsing images (ns.zip (ps.map Sequent.type)) = true ∧
         (st = [] ∨ CallArguments.arrayStoreField ∉ ns) ∧ (∀ k ∈ st, k ∈ ns)
       -- A literal allocated directly at a dictionary: each field an index's
-      -- class may admit at exactly that index's type, each optional field
-      -- absent (`HasTyUsing.allocDict`).
+      -- class may admit at exactly that index's type and, with each
+      -- writable optional field, at that writable index's role; each
+      -- optional field absent (`HasTyUsing.allocDict`).
       | [.dict fs [] [] ix os [] [] cs] =>
         ns.Nodup ∧ CallArguments.protoField ∉ ns ∧ CallArguments.arrayStoreField ∉ ns ∧ hostKey ∉ ns ∧
         ns.length = ps.length ∧ ps.map Sequent.term = inits ∧
         (∀ p ∈ ps, p.context = j.context) ∧ Stored.views fs = ns.zip (ps.map Sequent.type) ∧
         (∀ f ∈ fs, ∀ y ∈ ix ++ cellViews cs, y.1.may f.1 = true → f.2.2 = y.2) ∧
         (∀ o ∈ os, o.key ∉ ns) ∧
-        (∀ o ∈ os, ∀ y ∈ cs, y.1.may o.key = true → o.type = y.2.2 ∨ PositiveRules.Uninhabited G y.2.2)
+        (∀ o ∈ os, ∀ y ∈ cs, y.1.may o.key = true → o.type = y.2.2 ∨ PositiveRules.Uninhabited G y.2.2) ∧
+        (∀ f ∈ fs, ∀ y ∈ cs, y.1.may f.1 = true → f.2.1 = y.2.1) ∧
+        (∀ o ∈ os, o.readonly = false → ∀ y ∈ cs, y.1.may o.key = true → o.role = y.2.1)
       | _ => False
     | _, _ => False
   | .read =>
@@ -1977,7 +1980,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
       rw [hfst, hsnd] at this
       exact this
     · rename_i fs ix os cs he
-      obtain ⟨hnd, hnp, hns, hnh, hlen, hterms, hctx, hfsv, hix, habs, hos⟩ := hl
+      obtain ⟨hnd, hnp, hns, hnh, hlen, hterms, hctx, hfsv, hix, habs, hos, hrole, horole⟩ := hl
       have hfst : ((ns.zip ps).map fun r => (r.1, r.2.type, r.2.term)).map Prod.fst = ns := by
         simp only [List.map_map, Function.comp_def]
         exact List.map_fst_zip (by omega)
@@ -2014,7 +2017,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
             rw [hfsv, ← htyp]; exact List.mem_map_of_mem hq
           obtain ⟨s, hs⟩ := Stored.mem_views.mp this
           exact hix _ hs y hy hm)
-        (by rw [hfst]; exact habs) hos
+        (by rw [hfst]; exact habs) hos hrole horole
       rw [hfst, hsnd] at this
       exact this
     · contradiction

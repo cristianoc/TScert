@@ -213,6 +213,65 @@ the role without checking it; the activation checks it against the kinded
 world, and adds to the allocation rule that each role fits its key (§2) and
 its initializer (§9).
 
+**Concrete roles** (**proved**, `KindsCapabilities`). The role an
+allocation records for a position is its tag's role chosen by the contents
+allocated there (`StorageRole.concrete`): `field`, `cell` and `arrayStore`
+their role, `viewStore` the view store of the length of the store it is
+allocated holding; none where the contents are not of the tag's category
+(`StorageRole.Holds`). The recorded role is one the tag names
+(`StorageRole.concrete_permits`), the contents have its category, a view
+store's of its length (`StorageRole.concrete_cat`,
+`StorageRole.concrete_view`), and contents of their tags' categories
+determine every recorded role (`concreteRoles_of_holds`). A tag fits its
+key (`StorageRole.fitsKey`: `arrayStore` under `[]`, `viewStore` under
+`[[viewElements]]`, `field` or `cell` under any other key) exactly so that
+every role it names is the slot's role (`StorageRole.slotRole_of_fitsKey`).
+An allocation whose `[[viewLength]]` locations are fields admitting one
+length alone and whose `[[viewElements]]` locations are view stores of that
+length (`MetaFit`) gives a field map with valid view metadata
+(`viewMetaOk_alloc`). Together: an allocation at concrete roles, each tag
+fitting its key and its metadata fitting, keeps kinds
+(`concrete_shaped`). `AllocationWorlds.next`'s entries record, beside each
+contract, its tag's concrete role at the allocated value
+(`AllocationWorlds.roles`).
+
+**Overlapping capabilities agree.** One location is granted by every
+storage position over its key. An allocation at a dictionary
+(`HasTyWith.allocDict`) requires each named field's role, and each writable
+optional field's, to be that of every writable index whose class may admit
+its key; the certificate check decides the same conjuncts. A readonly
+optional field is a view of whatever location holds the key and states no
+role: covering requires a role of a writable optional target only
+(`CoversOptional`), and the storage a clause grants lists writable optional
+fields only (`Clause.storage`). A key-adding write's proposal
+(`Synthesis.growth`) takes the role every applicable declaration states (the
+optional field of each arm, each writable index admitting the key), `field`
+where none does, and proposes nothing where they differ.
+
+**Inclusion up to agreement** (**proved**). Covering proves contents types
+equivalent, not equal; one position grants no more than another below a
+budget exactly when key and tag are the same and the contents agree below
+it (`Capability.ofRole_leBelow_iff`), which keeps a capability's meaning
+(`Capability.Holds.weakenBelow`); `ofRole_le` is the instance at equal
+types.
+
+**The premises the role choices rest on** (**planned**, for the
+activation to establish where each is chosen):
+
+- a stable key, absent from the claim's positions, gets `field`
+  (`allocRole`): its key is an ordinary key, which the rule reads from
+  typing today (no reserved key: `hostKey` and, with stable keys, `[]` are
+  excluded), and its contents are a source value, which the activation
+  derives from the part's typing;
+- a fresh array's and a primitive wrapper's prototype slot gets `field`:
+  the prototype reference is an ordinary property, a source value;
+- a key-adding write's new location gets the agreed role above, or `field`
+  for an own property the write makes on an ordinary object: the write's
+  typing must establish that the object is ordinary (it owns no store slot
+  and no metadata key) and that the written value is a source value;
+- every initializer's category (`StorageRole.Holds`) is derived from the
+  checked typing premise of its part, not from its being a value.
+
 ## 5. The native-contract condition
 
 A **world-indexed postcondition** receives the exit world as well as the

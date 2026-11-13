@@ -276,11 +276,263 @@ instance of `ofRole_le`). -/
 theorem binding_not_le_field (A B : Fam) : ¬ (binding A).le (field valueField B) := fun h =>
   nomatch (ofRole_le (s := .cell) (s' := .field) h).2.1
 
+/-- `a` grants no more than `b` below the budget `k`: the same key, and each
+pair `a` permits `b` permits with a contents type agreeing below `k`. This
+is inclusion up to the semantic equivalence covering proves. -/
+def leBelow (k : Nat) (a b : Capability) : Prop :=
+  a.key = b.key ∧ ∀ r T, a.permits r T → ∃ T', b.permits r T' ∧
+    ∀ (j : Nat), j < k → ∀ (W : WorldT j) (v : Val), T j W v ↔ T' j W v
+
+/-- **Inclusion up to agreement keeps a capability's meaning.** -/
+theorem Holds.weakenBelow {a b : Capability} {k : Nat} {W : WorldT k} {flds : List (PropKey × Nat)}
+    (hle : leBelow k a b) (h : a.Holds W flds) : b.Holds W flds :=
+  let ⟨l, hl, r, c, T, hr, hc, hp, hag⟩ := h
+  let ⟨T', hp', hTT⟩ := hle.2 r T hp
+  ⟨l, hle.1 ▸ hl, r, c, T', hr, hc, hp', fun j hj W' u => (hag j hj W' u).trans (hTT j hj W' u)⟩
+
+/-- **Inclusion of storage positions up to agreement**: one position grants
+no more than another below `k` exactly when they state the same key and the
+same tag, and their contents types agree below `k`. The literal equality of
+`ofRole_le` is its instance at equal types. -/
+theorem ofRole_leBelow_iff {s s' : StorageRole} {key key' : PropKey} {A B : Fam} {k : Nat} :
+    (ofRole s key A).leBelow k (ofRole s' key' B) ↔
+      key = key' ∧ s = s' ∧ ∀ (j : Nat), j < k → ∀ (W : WorldT j) (v : Val), A j W v ↔ B j W v := by
+  constructor
+  · rintro ⟨hk, h⟩
+    obtain ⟨r, hr⟩ := s.inhabited
+    obtain ⟨T', ⟨hs', rfl⟩, hag⟩ := h r A ⟨hr, rfl⟩
+    exact ⟨hk, StorageRole.permits_unique hr hs', hag⟩
+  · rintro ⟨hk, rfl, hag⟩
+    exact ⟨hk, fun r T ⟨hs, hT⟩ => ⟨B, ⟨hs, rfl⟩, by subst hT; exact hag⟩⟩
+
 /-- A binding's storage and an ordinary property are distinct tags, so of
 one object at most one holds over a key (`binding_not_field`), and neither
 grants the other. -/
 theorem cell_ne_field : StorageRole.cell ≠ StorageRole.field := by decide
 
 end Capability
+
+/-! ## Concrete allocation roles
+
+An allocation's claim states each storage position's role as a tag; the
+world entry the allocation appends records a role, a view store's with its
+length. The role is the tag's, chosen by the allocated contents
+(`StorageRole.concrete`): a view store's length is the length of the store
+it is allocated holding. -/
+
+/-- **The contents a tag's location holds**, by category: a source value
+under a field or a cell, a store under a store slot. -/
+def _root_.Verification.StorageRole.Holds : StorageRole → Val → Prop
+  | .field, v | .cell, v => isSourceVal v = true
+  | .arrayStore, v | .viewStore, v => ∃ ls, v = .arr ls
+
+/-- **The role an allocation records** for a location whose position
+states the tag `s`, allocated holding `v`: the tag's role, a view store's of
+the length of the store `v`; none where `v` is not of the tag's category. -/
+def _root_.Verification.StorageRole.concrete : StorageRole → Val → Option Role
+  | .field, v => if isSourceVal v = true then some .field else none
+  | .cell, v => if isSourceVal v = true then some .cell else none
+  | .arrayStore, .arr _ => some (.store .array)
+  | .viewStore, .arr ls => some (.store (.view ls.length))
+  | _, _ => none
+
+/-- **Tag to role**: the recorded role is one the tag names. -/
+theorem _root_.Verification.StorageRole.concrete_permits {s : StorageRole} {v : Val} {r : Role}
+    (h : s.concrete v = some r) : s.permits r := by
+  unfold StorageRole.concrete at h
+  split at h
+  · split at h <;> cases h; rfl
+  · split at h <;> cases h; rfl
+  · cases h; rfl
+  · cases h; exact ⟨_, rfl⟩
+  · cases h
+
+/-- **Initializer shape**: the allocated contents have the recorded role's
+category, a view store's of its length. -/
+theorem _root_.Verification.StorageRole.concrete_cat {s : StorageRole} {v : Val} {r : Role}
+    (h : s.concrete v = some r) : Cat r v := by
+  unfold StorageRole.concrete at h
+  split at h
+  · split at h
+    · cases h; assumption
+    · cases h
+  · split at h
+    · cases h; assumption
+    · cases h
+  · cases h; exact ⟨_, rfl⟩
+  · cases h; exact ⟨_, rfl, rfl⟩
+  · cases h
+
+/-- Contents of the tag's category determine a recorded role. -/
+theorem _root_.Verification.StorageRole.concrete_of_holds {s : StorageRole} {v : Val}
+    (h : s.Holds v) : ∃ r, s.concrete v = some r := by
+  cases s with
+  | field => exact ⟨.field, by simp [StorageRole.concrete, show isSourceVal v = true from h]⟩
+  | cell => exact ⟨.cell, by simp [StorageRole.concrete, show isSourceVal v = true from h]⟩
+  | arrayStore => obtain ⟨ls, rfl⟩ := h; exact ⟨_, rfl⟩
+  | viewStore => obtain ⟨ls, rfl⟩ := h; exact ⟨_, rfl⟩
+
+/-- **A view store's recorded length is its store's.** -/
+theorem _root_.Verification.StorageRole.concrete_view {ls : List (Option Nat)} :
+    StorageRole.viewStore.concrete (.arr ls) = some (.store (.view ls.length)) := rfl
+
+/-- **Key fit** of a tag: an array store under `[]`, a view store under
+`[[viewElements]]`, a field or a cell under every other key. -/
+def _root_.Verification.StorageRole.fitsKey (s : StorageRole) (key : PropKey) : Bool :=
+  if key = arrayStoreKey then s == .arrayStore
+  else if key = viewElementsKey then s == .viewStore
+  else s == .field || s == .cell
+
+/-- **A tag fitting its key gives every role it names the slot's role.** -/
+theorem _root_.Verification.StorageRole.slotRole_of_fitsKey {s : StorageRole} {key : PropKey} {r : Role}
+    (hf : s.fitsKey key = true) (hp : s.permits r) : SlotRole key (some r) := by
+  unfold StorageRole.fitsKey at hf
+  by_cases h1 : key = arrayStoreKey
+  · rw [if_pos h1] at hf
+    have hs : s = .arrayStore := by simpa using hf
+    subst hs
+    simp only [StorageRole.permits] at hp
+    subst hp
+    exact h1
+  · rw [if_neg h1] at hf
+    by_cases h2 : key = viewElementsKey
+    · rw [if_pos h2] at hf
+      have hs : s = .viewStore := by simpa using hf
+      subst hs
+      obtain ⟨N, rfl⟩ := hp
+      exact h2
+    · rw [if_neg h2] at hf
+      have hs : s = .field ∨ s = .cell := by simpa using hf
+      rcases hs with rfl | rfl <;>
+        (simp only [StorageRole.permits] at hp; subst hp; exact ⟨h1, h2⟩)
+
+/-- **Metadata fit** of an allocation of the keys `ns` with roles `rs` and
+contracts `cs`: each `[[viewLength]]` location is a field whose contract
+admits one length `N` alone, and each `[[viewElements]]` location a view
+store of a length `N` that the allocation's `[[viewLength]]` location
+admits alone. -/
+def MetaFit {k : Nat} (ns : List PropKey) (rs : List Role) (cs : List (Ctr k)) : Prop :=
+  (∀ i : Nat, ns[i]? = some viewLengthKey →
+    ∃ (N : Nat) (c : Ctr k), rs[i]? = some Role.field ∧ cs[i]? = some c ∧ CtrStable c (.num (bitsOfNat N))) ∧
+  (∀ j : Nat, ns[j]? = some viewElementsKey → ∃ (N i : Nat) (c : Ctr k), rs[j]? = some (Role.store (.view N)) ∧
+    ns[i]? = some viewLengthKey ∧ rs[i]? = some Role.field ∧ cs[i]? = some c ∧
+      CtrStable c (.num (bitsOfNat N)))
+
+/-- An allocation naming neither metadata key fits trivially. -/
+theorem MetaFit.of_not_mem {k : Nat} {ns : List PropKey} {rs : List Role} {cs : List (Ctr k)}
+    (hl : viewLengthKey ∉ ns) (he : viewElementsKey ∉ ns) : MetaFit ns rs cs :=
+  ⟨fun _ hi => absurd (List.mem_of_getElem? hi) hl, fun _ hj => absurd (List.mem_of_getElem? hj) he⟩
+
+/-- **View metadata of an allocated object**: an allocation whose roles and
+contracts fit its metadata keys gives a field map with valid view
+metadata. -/
+theorem viewMetaOk_alloc {k : Nat} (W : WorldT k) {ns : List PropKey} {rs : List Role}
+    {cs : List (Ctr k)} (cid : Ctr k) (hnd : ns.Nodup) (hrs : rs.length = ns.length)
+    (hcs : cs.length = ns.length) (hfit : MetaFit ns rs cs) :
+    ViewMetaOk (appendWs W (objectEntries rs cs cid)) (slots (entries W).length ns) := by
+  have hfst := objectEntries_fst (cid := cid) (show rs.length = cs.length by omega)
+  have hsnd := Capability.objectEntries_snd (cid := cid) (show rs.length = cs.length by omega)
+  have hmeta : ∀ i N c, i < ns.length → rs[i]? = some .field → cs[i]? = some c →
+      CtrStable c (.num (bitsOfNat N)) →
+      LengthMeta (appendWs W (objectEntries rs cs cid)) ((entries W).length + i) N := by
+    intro i N c hi hr hc hst
+    refine ⟨c, ?_, ?_, hst⟩
+    · rw [roleAt_appendWs', hfst, List.getElem?_append_left (by omega)]; exact hr
+    · rw [lookup_appendWs_ge, hsnd, List.getElem?_append_left (by omega)]; exact hc
+  refine ⟨fun m hm => ?_, fun e he => ?_⟩
+  · obtain ⟨i, hi, hp⟩ := mem_slots hm
+    simp only [Prod.mk.injEq] at hp
+    obtain ⟨hk, rfl⟩ := hp
+    obtain ⟨N, c, hr, hc, hst⟩ := hfit.1 i (by rw [List.getElem?_eq_getElem hi, hk])
+    exact ⟨N, hmeta i N c hi hr hc hst⟩
+  · obtain ⟨j, hj, hp⟩ := mem_slots he
+    simp only [Prod.mk.injEq] at hp
+    obtain ⟨hk, rfl⟩ := hp
+    obtain ⟨N, i, c, hr, hni, hri, hc, hst⟩ := hfit.2 j (by rw [List.getElem?_eq_getElem hj, hk])
+    have hi : i < ns.length := (List.getElem?_eq_some_iff.mp hni).1
+    have hki : ns[i] = viewLengthKey := by
+      have := List.getElem?_eq_getElem hi; rw [hni] at this; exact (Option.some.inj this).symm
+    refine ⟨N, (entries W).length + i, ?_, ?_, hmeta i N c hi hri hc hst⟩
+    · rw [roleAt_appendWs', hfst, List.getElem?_append_left (by omega)]; exact hr
+    · rw [← hki]; exact lookup_slots hnd hi
+
+/-- **The roles an allocation records**, one per position: each tag's
+concrete role at its contents (`StorageRole.concrete`); none where a
+contents is not of its tag's category. -/
+def concreteRoles : List StorageRole → List Val → Option (List Role)
+  | s :: ss, v :: vs => do
+      let r ← s.concrete v
+      let rs ← concreteRoles ss vs
+      pure (r :: rs)
+  | [], [] => some []
+  | _, _ => none
+
+theorem concreteRoles_spec : ∀ {ss : List StorageRole} {vs : List Val} {rs : List Role},
+    concreteRoles ss vs = some rs →
+      ss.length = vs.length ∧ rs.length = ss.length ∧
+        ∀ (i : Nat) (s : StorageRole) (v : Val), ss[i]? = some s → vs[i]? = some v → ∃ r, rs[i]? = some r ∧ s.concrete v = some r
+  | [], [], rs, h => by
+    simp [concreteRoles] at h; subst h; exact ⟨rfl, rfl, fun i s v hs => by simp at hs⟩
+  | [], _ :: _, _, h => by simp [concreteRoles] at h
+  | _ :: _, [], _, h => by simp [concreteRoles] at h
+  | s :: ss, v :: vs, rs, h => by
+    simp only [concreteRoles, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
+      Option.some.injEq] at h
+    obtain ⟨r, hr, rs', hrs', rfl⟩ := h
+    obtain ⟨h1, h2, h3⟩ := concreteRoles_spec hrs'
+    refine ⟨by simp [h1], by simp [h2], fun i s' v' hs hv => ?_⟩
+    cases i with
+    | zero => simp at hs hv; subst hs hv; exact ⟨r, rfl, hr⟩
+    | succ i => simpa using h3 i s' v' (by simpa using hs) (by simpa using hv)
+
+/-- Contents each of its tag's category determine the recorded roles. -/
+theorem concreteRoles_of_holds : ∀ {ss : List StorageRole} {vs : List Val},
+    ss.length = vs.length → (∀ (i : Nat) (s : StorageRole) (v : Val), ss[i]? = some s → vs[i]? = some v → s.Holds v) →
+      ∃ rs, concreteRoles ss vs = some rs
+  | [], [], _, _ => ⟨[], rfl⟩
+  | [], _ :: _, h, _ => by simp at h
+  | _ :: _, [], h, _ => by simp at h
+  | s :: ss, v :: vs, hl, h => by
+    obtain ⟨r, hr⟩ := StorageRole.concrete_of_holds (h 0 s v rfl rfl)
+    obtain ⟨rs, hrs⟩ := concreteRoles_of_holds (ss := ss) (vs := vs) (by simpa using hl)
+      (fun i s' v' hs hv => h (i + 1) s' v' (by simpa using hs) (by simpa using hv))
+    exact ⟨r :: rs, by simp [concreteRoles, hr, hrs]⟩
+
+/-- **An allocation at concrete roles keeps kinds.** An object allocated
+with keys `ns`, each position's tag `ss[i]` fitting its key and its
+initializer of the tag's category, records for each key the role its tag
+and its contents choose (`StorageRole.concrete`), and with contracts fitting
+its metadata keys the extended heap is well-formed in its structural part
+and the object's references are valid. -/
+theorem concrete_shaped {k : Nat} {W : WorldT k} {h : Heap} {c : CallCode} {ns : List PropKey}
+    {vs : List Tm} {ss : List StorageRole} {rs : List Role} (cs : List (Ctr k)) (cid : Ctr k)
+    (hlen : h.length = (entries W).length) (hsh : Shaped W h) (hnd : ns.Nodup)
+    (hss : ss.length = ns.length) (hcs : cs.length = ns.length) (hns : ns.length = vs.length)
+    (hrs : concreteRoles ss vs = some rs)
+    (href : RefsOk W (.makeAt c ns vs))
+    (hfits : ∀ (i : Nat) (s : StorageRole), ss[i]? = some s → ∀ key : PropKey, ns[i]? = some key → s.fitsKey key = true)
+    (hmeta : MetaFit ns rs cs) :
+    Shaped (appendWs W (objectEntries rs cs cid)) (h ++ vs ++ [.nul]) ∧
+      RefsOk (appendWs W (objectEntries rs cs cid)) (.objAt (slots h.length ns) c (h.length + vs.length)) := by
+  obtain ⟨_, hrl', hri⟩ := concreteRoles_spec hrs
+  have hrl : rs.length = ns.length := by omega
+  have hat : ∀ i (hi : i < ns.length), ∃ s, ss[i]? = some s ∧
+      s.concrete (vs[i]'(by omega)) = some (rs[i]'(by omega)) := by
+    intro i hi
+    obtain ⟨r, hr, hc⟩ := hri i (ss[i]'(by omega)) (vs[i]'(by omega)) (List.getElem?_eq_getElem _)
+      (List.getElem?_eq_getElem _)
+    rw [List.getElem?_eq_getElem (by omega)] at hr
+    cases hr
+    exact ⟨_, List.getElem?_eq_getElem _, hc⟩
+  refine makeFields_shaped rs cs cid hlen hsh hrl hcs hns href
+    (fun i hi => by
+      obtain ⟨s, hs, hc⟩ := hat i hi
+      exact StorageRole.slotRole_of_fitsKey (hfits i s hs _ (List.getElem?_eq_getElem hi))
+        (StorageRole.concrete_permits hc))
+    (fun i hi => by
+      obtain ⟨s, hs, hc⟩ := hat i hi
+      exact StorageRole.concrete_cat hc) ?_
+  rw [hlen]
+  exact viewMetaOk_alloc W cid hnd hrl hcs hmeta
 
 end Verification.Kinds

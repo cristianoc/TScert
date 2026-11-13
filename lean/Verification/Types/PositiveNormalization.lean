@@ -1356,12 +1356,13 @@ theorem semWithArgs_not_plain {X : α → Fam} {P : α → ArgFam} {c : Clause �
   cases c <;> simp_all [valueShape, shape, Clause.carriesInvariant]
 
 /-- **The storage a clause grants**: each storage position's key with its
-role (invariant fields of every operand, optional fields), and each writable
+role (invariant fields of every operand, writable optional fields; a
+readonly optional field is a view and grants none), and each writable
 index's key class with its role. -/
 def Clause.storage : Clause α → List (PropKey × StorageRole) × List (IndexKeys × StorageRole)
-  | .refs a bs _ os _ _ _ => (storageOf (a ++ bs.flatten) ++ os.map (fun o => (o.key, o.role)), [])
+  | .refs a bs _ os _ _ _ => (storageOf (a ++ bs.flatten) ++ (os.filter (!·.readonly)).map (fun o => (o.key, o.role)), [])
   | .dict a bs _ _ os _ _ cs _ =>
-      (storageOf (a ++ bs.flatten) ++ os.map (fun o => (o.key, o.role)), cs.map fun c => (c.1, c.2.1))
+      (storageOf (a ++ bs.flatten) ++ (os.filter (!·.readonly)).map (fun o => (o.key, o.role)), cs.map fun c => (c.1, c.2.1))
   | .callable a bs _ _ _ => (storageOf (a ++ bs.flatten), [])
   | .ctors _ _ a bs _ => (storageOf (a ++ bs.flatten), [])
   | _ => ([], [])
@@ -1370,7 +1371,7 @@ def Clause.storage : Clause α → List (PropKey × StorageRole) × List (IndexK
 renamed grants the same storage. -/
 theorem storage_map (f : α → β) (c : Clause α) : (c.map f).storage = c.storage := by
   cases c <;> simp [Clause.map, Clause.storage, storageOf, mapStored, mapCells, OptionalField.map,
-    List.map_flatten, Function.comp_def]
+    List.map_flatten, Function.comp_def, List.filter_map]
 
 /-- Every operand of a clause. -/
 def Clause.operands : Clause α → List α

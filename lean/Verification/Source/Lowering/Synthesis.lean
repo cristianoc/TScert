@@ -810,6 +810,12 @@ def narrowTo (env : Env) (target : Expr) (R : Ty Tree) : Compiler Env := do
   | some (root, path) => narrowPath env root path fun A => pure (at_ A)
   | _ => return env
 
+/-- The one role a list of declared roles states, `field` for none, and
+none where two differ. -/
+def agreedRole : List StorageRole → Option StorageRole
+  | [] => some .field
+  | r :: rs => if rs.all (· == r) then some r else none
+
 /-- A write of key `k` at a value of type `R` on a constant of type `O` whose
 records may lack it: the contract the key is added at (the optional field's
 where a record states one, else the value's type, a literal's widened), and
@@ -829,10 +835,14 @@ def growth (O : Ty Tree) (k : PropKey) (R : Ty Tree) (literal_ : Bool) : Compile
         os.any (fun o => o.key == k && o.readonly) || bs.any (fun b => !b.among && b.keys.contains k)) then return none
     let D := rows.findSome? fun (_, _, _, os, _, _, _, _) => (os.find? (·.key == k))
     let C ← match D with | some D => pure D.type | none => if literal_ then widen R else pure R
-    -- The key's location: the declared optional field's, with its role, or
-    -- the own property the key-adding write makes on this ordinary object,
-    -- role `field`.
-    let S := (D.map (·.role)).getD .field
+    -- The key's location: one location every declaration that grants it
+    -- names, so the role every arm's optional field for the key and every
+    -- writable index admitting it state, all the same; with none, the own
+    -- property the key-adding write makes on this ordinary object, role
+    -- `field`; declarations disagreeing propose nothing.
+    let roles := rows.flatMap fun (_, _, _, os, _, _, cells, _) =>
+      (os.filter (·.key == k)).map (·.role) ++ (cells.filter (·.1.may k)).map (·.2.1)
+    let some S := agreedRole roles | return none
     let grown ← rows.mapM fun (fs, vs, ix, os, ms, bs, cells, st) =>
       prim (.dict (fs.filter (·.1 != k) ++ [(k, S, C)]) [] (vs.filter (·.1 != k)) ix (os.filter (·.key != k)) ms bs cells st)
     return some (C, norm grown.flatten)
@@ -850,10 +860,12 @@ def growth (O : Ty Tree) (k : PropKey) (R : Ty Tree) (literal_ : Bool) : Compile
   let c ← match declared with
     | some D => pure D.type
     | none => if literal_ then widen R else pure R
-  -- The key's location: the declared optional field's, with its role, or
-  -- the own property the key-adding write makes on this ordinary object,
-  -- role `field`.
-  let S := (declared.map (·.role)).getD .field
+  -- The key's location: the role every arm's writable optional field for
+  -- the key states, all the same; with none, the own property the
+  -- key-adding write makes on this ordinary object, role `field`;
+  -- declarations disagreeing propose nothing.
+  let some S := agreedRole (arms.flatMap fun (_, _, os, _, _, _) =>
+    (os.filter fun o => o.key == k && !o.readonly).map (·.role)) | return none
   let mut grown : Ty Tree := []
   for (fs, vs, os, ms, bs, st) in arms do
     let bs := bs.map fun b => if b.among && !b.keys.contains k then { b with keys := b.keys ++ [k] } else b
