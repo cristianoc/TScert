@@ -22,3 +22,11 @@ leanOptions = { warningAsError = true }
 # directory, where Lake runs. Lake traces the arguments, not the file: after
 # editing the C file, remove .lake/build/bin/verifier to relink.
 moreLinkArgs = ["c/runtime_init.c"]
+
+# MEASUREMENT (docs/drafts/proposals-by-the-pass.md, section 8): the
+# proposals-by-the-pass experiment, a separate executable; droppable.
+[[lean_exe]]
+name = "proposals-experiment"
+root = "ProposalsExperiment"
+leanOptions = { warningAsError = true }
+moreLinkArgs = ["c/runtime_init.c"]
