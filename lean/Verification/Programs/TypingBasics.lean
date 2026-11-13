@@ -175,6 +175,36 @@ theorem SourceValues.exc {G : NormalGraph ι} {A : Ty ι} (h : SourceValues G A)
     {n W v} (hv : meaning G A n W v) : excOf G n W v :=
   sourceTy_exc h G.env n W v hv
 
+/-- The roles a typed allocation or write gives contents: a storage
+position's tag (`StorageRole`), or an element of a store, whose cell is an
+element cell (E). -/
+inductive PayloadRole where
+  | stored (s : StorageRole)
+  | element
+  deriving DecidableEq, Repr
+
+/-- **The sort of a role's contents** (the Tolerant frames note, §2): a
+field, a cell and an element hold source values, a store slot a store. -/
+def PayloadRole.sort : PayloadRole → ValueSort
+  | .stored .field | .stored .cell | .element => .source
+  | .stored .arrayStore | .stored .viewStore => .store
+
+/-- **Payload compatibility**: `Payload(F|C|E, A) ⟺ A ⊆ V`,
+`Payload(S, A) ⟺ A ⊆ S`, the category checked by `tyIn`. -/
+def Payload (G : NormalGraph ι) (r : PayloadRole) (A : Ty ι) : Prop := tyIn G r.sort A = true
+
+instance (G : NormalGraph ι) (r : PayloadRole) (A : Ty ι) : Decidable (Payload G r A) := by
+  unfold Payload; infer_instance
+
+/-- A compatible payload's values are of its role's sort. -/
+theorem Payload.sound {G : NormalGraph ι} {r : PayloadRole} {A : Ty ι} (h : Payload G r A)
+    {n W v} (hv : meaning G A n W v) : r.sort.Holds v :=
+  tyIn_sound (G.sorted G.env) h hv
+
+/-- A type's category reads no assignment. -/
+theorem tyIn_reassign {G : NormalGraph ι} (η : MixedAssignment ι) {q : ValueSort} {A : Ty ι} :
+    tyIn (reassign G η) q A = tyIn G q A := rfl
+
 /-- A type whose every clause is a store's. -/
 def storeTy (G : NormalGraph ι) (S : Ty ι) : Bool :=
   G.plainTy S && (expand G S).all fun c => match c with

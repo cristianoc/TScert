@@ -1759,14 +1759,15 @@ theorem writableElement_sound {G : NormalGraph ι} {R E : Ty ι} (h : writableEl
 
 /-- Whether the write of a step's evidence is admitted (`setElem-bounded`):
 its term `x.[] := x.[]⟦k ↦ v⟧` at the evidence's slots, `x` a homogeneous
-writable array whose element type the value's type is below by `sub`, the
-knowledge bounding `k` by `x`'s store, and its type `null`. -/
+writable array whose element type the value's type is below by `sub` and is
+an element's payload (`Payload`), the knowledge bounding `k` by `x`'s store,
+and its type `null`. -/
 @[nospecialize] def boundedWriteCheck [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (j : Sequent ι) (k : Knowledge) (a i v : Nat) (sub : PositiveCertificates.SubtypeChoices ι) : Bool :=
   boundedSlots j.term == some (a, i, v) && decide (i < j.context.length) &&
     (match j.context[a]?, j.context[v]? with
      | some R, some V => match writableElement G R with
-       | some E => PositiveCertificates.checkUsing G images V E sub
+       | some E => PositiveCertificates.checkUsing G images V E sub && PositiveRules.tyIn G .source E
        | none => false
      | _, _ => false) &&
     bounded k a i false && (expand G j.type == [.nul])
@@ -1786,7 +1787,7 @@ theorem boundedWrite_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
     · rename_i E hE
       obtain ⟨fs, vs, os, ms, ks, st, _, S, pr, hrep, hm, hS⟩ := writableElement_sound hE
       obtain ⟨s, ls, b, idx, hs, hl, hb, hidx, hle⟩ := bounded_sound hbd hk
-      have hv : meaning G E n W (ρ v) := PositiveCertificates.acceptedUsing htypes n W _ (he.2 v V hV)
+      have hv : meaning G E n W (ρ v) := PositiveCertificates.acceptedUsing (Bool.and_eq_true _ _ |>.mp htypes).1 n W _ (he.2 v V hV)
       have hsafe := boundedWrite_safe (Ξ := excOf G) hrep hm hS (he.2 a R hR) hs hl hidx (by simpa using hle) hv hw hh
       simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hb]
       apply HeapObservations.of_value_property (fun _ _ _ u _ => ?_)
@@ -2558,7 +2559,7 @@ theorem boundedWrite_store [DecidableEq ι] {G : NormalGraph ι} {images : Insta
     · rename_i E hE
       obtain ⟨fs, vs, os, ms, ks, st, _, S, pr, hrep, hm, hS⟩ := writableElement_sound hE
       obtain ⟨s, ls, b, idx, hs, hl, hb, hidx, hle⟩ := bounded_sound hbd hk
-      have hv : meaning G E n W (ρ v) := PositiveCertificates.acceptedUsing htypes n W _ (he.2 v V hV)
+      have hv : meaning G E n W (ρ v) := PositiveCertificates.acceptedUsing (Bool.and_eq_true _ _ |>.mp htypes).1 n W _ (he.2 v V hV)
       have hsafe := boundedWrite_safe (Ξ := excOf G) hrep hm hS (he.2 a R hR) hs hl hidx (by simpa using hle) hv hw hh
       have hsafe' := Safe_mono n (fun m _ X u hu => (represents_back (c := .nul) hnul m X u) hu) W h _ hsafe
       obtain ⟨flds, cd, oid, hoi⟩ : ∃ flds cd oid, ρ a = .objAt flds cd oid := by

@@ -934,6 +934,7 @@ declared bounds. -/
       (∀ q ∈ ps, q.context = j.context) ∧
       (ps.drop ns.length).map Sequent.term = caps ∧ capSlotsBelow caps j.context.length = true ∧
       Represents G U .undef ∧
+      (∀ q ∈ ps.take ns.length, Payload G (.stored .field) q.type) ∧
       ctorCodesChecked G j.type U codes arity E K start ((ps.drop ns.length).map Sequent.type)
         (ns.zip ((ps.take ns.length).map Sequent.type)) = true
     | _, _ => False
@@ -947,6 +948,7 @@ declared bounds. -/
         (ps.take ns.length).map Sequent.term = inits ∧
         (∀ p ∈ ps, p.context = j.context) ∧
         P = withRole .field (ns.zip ((ps.take ns.length).map Sequent.type)) ∧
+        (∀ q ∈ ps.take ns.length, Payload G (.stored .field) q.type) ∧
         (ps.drop ns.length).map Sequent.term = caps ∧ capSlotsBelow caps j.context.length = true ∧
         offersChecked G codes arity E K start ((ps.drop ns.length).map Sequent.type) rest L S As = true
       | _ => False
@@ -984,7 +986,8 @@ declared bounds. -/
         Stored.views fs = stablePart st false (ns.zip (ps.map Sequent.type)) ∧
         vs = stablePart st true (ns.zip (ps.map Sequent.type)) ∧
         (∀ K ∈ ks, ∀ n ∈ ns, K.admits n = true) ∧ allocBuiltinsUsing images (ns.zip (ps.map Sequent.type)) = true ∧
-        (st = [] ∨ CallArguments.arrayStoreField ∉ ns) ∧ (∀ k ∈ st, k ∈ ns)
+        (st = [] ∨ CallArguments.arrayStoreField ∉ ns) ∧ (∀ k ∈ st, k ∈ ns) ∧
+        (∀ q ∈ ns.zip (ps.map Sequent.type), Payload G (.stored (allocRole fs q.1)) q.2)
       -- A literal allocated directly at a dictionary: each field an index's
       -- class may admit at exactly that index's type and, with each
       -- writable optional field, at that writable index's role; each
@@ -997,7 +1000,8 @@ declared bounds. -/
         (∀ o ∈ os, o.key ∉ ns) ∧
         (∀ o ∈ os, ∀ y ∈ cs, y.1.may o.key = true → o.type = y.2.2 ∨ PositiveRules.Uninhabited G y.2.2) ∧
         (∀ f ∈ fs, ∀ y ∈ cs, y.1.may f.1 = true → f.2.1 = y.2.1) ∧
-        (∀ o ∈ os, o.readonly = false → ∀ y ∈ cs, y.1.may o.key = true → o.role = y.2.1)
+        (∀ o ∈ os, o.readonly = false → ∀ y ∈ cs, y.1.may o.key = true → o.role = y.2.1) ∧
+        (∀ q ∈ ns.zip (ps.map Sequent.type), Payload G (.stored (allocRole fs q.1)) q.2)
       | _ => False
     | _, _ => False
   | .read =>
@@ -1063,7 +1067,7 @@ declared bounds. -/
       ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
       Represents G j.type .nul ∧
       (match expand G ja.type with
-       | [.refs fs [] _ _ _ _ _] => (f, jb.type) ∈ Stored.views fs
+       | [.refs fs [] _ _ _ _ _] => ∃ x ∈ fs, x.1 = f ∧ x.2.2 = jb.type ∧ Payload G (.stored x.2.1) jb.type
        | _ => False)
     | _, _ => False
   | .arith =>
@@ -1086,7 +1090,8 @@ declared bounds. -/
         ps.map Sequent.term = inits ∧ (∀ p ∈ ps, p.context = j.context) ∧
         T.required.length ≤ ps.length ∧
         (T.rest = none → ps.length ≤ T.required.length + T.optional.length) ∧
-        ∀ q ∈ ps.zipIdx, positionTy T q.2 = some q.1.type
+        (∀ q ∈ ps.zipIdx, positionTy T q.2 = some q.1.type) ∧
+        ∀ p ∈ ps, Payload G .element p.type
       | _ => False
     | _, _ => False
   | .elem =>
@@ -1124,7 +1129,7 @@ declared bounds. -/
        | [.list T []], [.numLit b] =>
          -- At most the required length: in bounds or appending, never a hole.
          namedAt T b = some jv.type ∧ (indexOfBits b).getD 0 ≤ T.required.length ∧
-           T.readonly = false
+           T.readonly = false ∧ Payload G .element jv.type
        | _, _ => False)
     | _, _ => False
   | .len =>
@@ -1224,7 +1229,7 @@ declared bounds. -/
       ja.context = j.context ∧ ja.term = a ∧ jb.context = j.context ∧ jb.term = b ∧
       Represents G j.type .nul ∧
       match expand G ja.type with
-      | [c] => (f, jb.type) ∈ Stored.views c.bagFields
+      | [c] => ∃ x ∈ c.bagFields, x.1 = f ∧ x.2.2 = jb.type ∧ Payload G (.stored x.2.1) jb.type
       | _ => False
     | _, _ => False
   -- One premise per part: the entry itself, at the element type, or, for a
@@ -1236,6 +1241,7 @@ declared bounds. -/
       (∀ jp ∈ ps, jp.context = j.context) ∧ ps.length = flags.length ∧
       args = (flags.zip ps).map (fun q => spreadTerm (q.1, q.2.term)) ∧
       (∀ q ∈ flags.zip ps, if q.1 then SpreadsInto G q.2.type E else q.2.type = E) ∧
+      Payload G .element E ∧
       match expand G j.type with
       | [.list ⟨[], [], some E', _, _⟩ []] => E = E'
       | _ => False
@@ -1359,7 +1365,7 @@ declared bounds. -/
     match j.term, ps with
     | .makeKey k a, [jk, ja] =>
       jk.context = j.context ∧ jk.term = k ∧ ja.context = j.context ∧ ja.term = a ∧
-      ComputedKey.KeyedOk G jk.type ja.type j.type = true
+      ComputedKey.KeyedOk G jk.type ja.type j.type = true ∧ Payload G (.stored .field) ja.type
     | _, _ => False
   | .lenView i =>
     match ps, j.context[i]? with
@@ -1794,7 +1800,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     subst caps
     exact funGraphSelf_of_local hcodes hctx hslots hok hp
   · rename_i U ps _ _ arity E K start caps kind rest f ns inits
-    obtain ⟨rfl, rfl, rfl, hnd, hlen, hterms, hctx, hcaps, hslots, hu, hok⟩ := hl
+    obtain ⟨rfl, rfl, rfl, hnd, hlen, hterms, hctx, hcaps, hslots, hu, hpay, hok⟩ := hl
     have hctxd : ∀ q ∈ ps.drop ns.length, q.context = Γ :=
       fun q hq => hctx q (List.mem_of_mem_drop hq)
     have hpd : ∀ q ∈ ps.drop ns.length, HasTyUsing G images (subtyping := subtyping) q.context q.term q.type :=
@@ -1848,12 +1854,15 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
             exact ⟨hpl, El, hel, by rw [hfst]; exact hcodes _ h G.env⟩
           · contradiction)
         hlt hcap
+        (fun p hm => by
+          obtain ⟨r, hr, rfl⟩ := List.mem_map.mp hm
+          exact hpay r.2 (List.of_mem_zip hr).2)
       rw [hfst', hsnd] at this
       exact this
     · contradiction
   · split at hl
     · rename_i _ As ps _ _ arity E K start caps kind rest ns inits _ P L S hF
-      obtain ⟨hkind, hnd, hlen, hterms, hctx, rfl, hcaps, hslots, hok⟩ := hl
+      obtain ⟨hkind, hnd, hlen, hterms, hctx, rfl, hpay, hcaps, hslots, hok⟩ := hl
       have hctxd : ∀ q ∈ ps.drop ns.length, q.context = Γ :=
         fun q hq => hctx q (List.mem_of_mem_drop hq)
       have hpd : ∀ q ∈ ps.drop ns.length, HasTyUsing G images (subtyping := subtyping) q.context q.term q.type :=
@@ -1894,6 +1903,9 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
         (E := E) (K := K) (start := start) (arity := arity) (rest := rest) (As := As)
         (by rw [hP]; exact hF) (by rw [hfst']; exact hnd) hpart hkind
         (by rw [hfst]; exact offersChecked_sound hcodes hok G.env) hlt hcap
+        (fun p hm => by
+          obtain ⟨r, hr, rfl⟩ := List.mem_map.mp hm
+          exact hpay r.2 (List.of_mem_zip hr).2)
       rw [hfst', hsnd] at this
       exact this
     · contradiction
@@ -1937,7 +1949,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
   · rename_i _ ps _ _ ns inits
     split at hl
     · rename_i fs vs ks st he
-      obtain ⟨hnd, hnh, hlen, hterms, hctx, hfsv, rfl, hk, hreal, hstore, hst⟩ := hl
+      obtain ⟨hnd, hnh, hlen, hterms, hctx, hfsv, rfl, hk, hreal, hstore, hst, hpay⟩ := hl
       have hzl : (ns.zip ps).length = ns.length := by simp [hlen]
       have hfst : ((ns.zip ps).map fun r => (r.1, r.2.type, r.2.term)).map Prod.fst = ns := by
         simp only [List.map_map, Function.comp_def]
@@ -1977,10 +1989,11 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
           exact hk K hK q.1 this)
         (by rw [htyp]; exact allocBuiltins_of_using hreal)
         (by rw [hfst]; exact hstore) (by rw [hfst]; exact hst)
+        (fun q hq => hpay (q.1, q.2.1) (by rw [← htyp]; exact List.mem_map_of_mem hq))
       rw [hfst, hsnd] at this
       exact this
     · rename_i fs ix os cs he
-      obtain ⟨hnd, hnp, hns, hnh, hlen, hterms, hctx, hfsv, hix, habs, hos, hrole, horole⟩ := hl
+      obtain ⟨hnd, hnp, hns, hnh, hlen, hterms, hctx, hfsv, hix, habs, hos, hrole, horole, hpay⟩ := hl
       have hfst : ((ns.zip ps).map fun r => (r.1, r.2.type, r.2.term)).map Prod.fst = ns := by
         simp only [List.map_map, Function.comp_def]
         exact List.map_fst_zip (by omega)
@@ -2018,6 +2031,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
           obtain ⟨s, hs⟩ := Stored.mem_views.mp this
           exact hix _ hs y hy hm)
         (by rw [hfst]; exact habs) hos hrole horole
+        (fun q hq => hpay (q.1, q.2.1) (by rw [← htyp]; exact List.mem_map_of_mem hq))
       rw [hfst, hsnd] at this
       exact this
     · contradiction
@@ -2097,8 +2111,8 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     rw [hΓb, htb] at hb
     split at hr
     · rename_i fs vs os ms ks st he
-      obtain ⟨_, hr⟩ := Stored.mem_views.mp hr
-      exact .write ha he hr hb hn
+      obtain ⟨⟨_, _, _⟩, hr, rfl, rfl, hpay⟩ := hr
+      exact .write ha he hr hb hn hpay
     · contradiction
   · rename_i op a b ja jb
     rcases hl with ⟨hΓa, hta, hΓb, htb, hops⟩
@@ -2115,13 +2129,13 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
   · rename_i _ psl x ps' inits
     split at hl
     · rename_i T hT
-      obtain ⟨hterms, hctx, hreq, hbound, hpos⟩ := hl
+      obtain ⟨hterms, hctx, hreq, hbound, hpos, hpay⟩ := hl
       subst hterms
       have hmap : psl.map Sequent.term = (psl.map fun p => (p.type, p.term)).map Prod.snd := by
         simp [List.map_map, Function.comp_def]
       rw [hmap]
       refine HasTyUsing.arrLit (xs := psl.map fun p => (p.type, p.term)) hT
-        (by simpa using hreq) (by simpa using hbound) ?_ ?_
+        (by simpa using hreq) (by simpa using hbound) ?_ ?_ ?_
       · intro q hq
         rw [List.zipIdx_map] at hq
         obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
@@ -2131,6 +2145,9 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
         have := hp q hq
         rw [hctx q hq] at this
         exact this
+      · intro p hmem
+        obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hmem
+        exact hpay q hq
     · contradiction
   · rename_i a i ja ji
     rcases hl with ⟨hΓa, hta, hΓi, hti, hr⟩
@@ -2183,11 +2200,11 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     rw [hty]
     split at hr
     · rename_i T b hT hI
-      obtain ⟨hr, hkle, hro⟩ := hr
+      obtain ⟨hr, hkle, hro, hpay⟩ := hr
       simp only [namedAt, Option.bind_eq_some_iff] at hr
       obtain ⟨k, hk, hA⟩ := hr
       rw [hk] at hkle
-      exact .setElem ha hT hi hI hk hA hkle hro hv
+      exact .setElem ha hT hi hI hk hA hkle hro hv hpay
     · contradiction
   · rename_i a ja
     rcases hl with ⟨hΓ, hta, hn, hr⟩
@@ -2311,12 +2328,12 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
       unfold Clause.bagFields at hL
       split at hL
       · rename_i P Ps hc
-        obtain ⟨_, hL⟩ := Stored.mem_views.mp hL
-        exact .writeCallable ha he hc hL hb hn
-      · simp [Stored.views] at hL
+        obtain ⟨⟨_, _, _⟩, hL, rfl, rfl, hpay⟩ := hL
+        exact .writeCallable ha he hc hL hb hn hpay
+      · simp at hL
     · contradiction
   · rename_i E flags _ args
-    rcases hl with ⟨hctx, hlen, rfl, hparts, hr⟩
+    rcases hl with ⟨hctx, hlen, rfl, hparts, hpay, hr⟩
     split at hr
     · rename_i ro presence hT
       subst hr
@@ -2332,7 +2349,7 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
           intro p hm
           obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
           exact hparts q hq)
-        hT
+        hT hpay
       simpa [List.map_map, Function.comp_def] using this
     · contradiction
   · rename_i k u flags P _ _ f r args jf jr jas
@@ -2501,12 +2518,12 @@ theorem local_sound [DecidableEq ι] {G : NormalGraph ι}
     rw [hΓb, htb] at hb
     exact .merge ha hb hm
   · rename_i k a jk ja
-    rcases hl with ⟨hΓk, htk, hΓa, hta, hm⟩
+    rcases hl with ⟨hΓk, htk, hΓa, hta, hm, hpay⟩
     have hk := hp jk (by simp)
     have ha := hp ja (by simp)
     rw [hΓk, htk] at hk
     rw [hΓa, hta] at ha
-    exact .makeKey hk ha hm
+    exact .makeKey hk ha hm hpay
   · rename_i i R hR
     obtain ⟨rfl, hnum, hr⟩ := hl
     split at hr

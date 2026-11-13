@@ -1018,6 +1018,29 @@ fitting its tuples, whose elements lie at their positions; from a parameter
 row, its binder's lists. The check reads the argument's rows and their pack
 positions, one level: a category reads no operand of a record or callable.
 
+**Payload compatibility.** Every typed allocation and write gives its
+contents a role: a storage position's tag (field, cell, array store, view
+store) or an element cell (`PayloadRole`). Its contents' type is in the
+role's sort (`Payload`):
+
+```math
+\mathrm{Payload}(F,A)\iff\mathrm{Payload}(C,A)\iff\mathrm{Payload}(E,A)\iff A\subseteq V
+\qquad
+\mathrm{Payload}(S,A)\iff A\subseteq S
+```
+
+Each rule that allocates or writes a location takes it as a premise, the role
+read off the rule: `alloc` and `allocDict` at each part's position's tag
+(`allocRole`: the clause's tag, `field` for a stable key, which states no
+storage position), `ctorGraph` and `callableGraph` at `field` for each static
+or bag field, `write` and `writeCallable` at the written position's tag,
+`makeKey` at `field`, and `arrLit`, `arrParts`, `setElem` and `setElem-bounded`
+at $`E`$ for each element. A copy (`merge`) types no payload: its values are
+fields' contents, of their category by the state ([location kinds,
+§9](drafts/location-kinds.md#9-the-typing-premises)). A payload's values are
+then of its role's sort (`Payload.sound`), and so of a kinded role's category
+(`Kinds.payload_stored`, `Kinds.payload_element`).
+
 The category is weaker than the exception guarantee of `sourceTy`
 (`sourceTy_exc`), which also gives the built-ins' invariant and so refuses
 parameter rows; `sourceTy` implies $`A\subseteq V`$ (`sourceTy_tyIn`). Three
@@ -1393,7 +1416,7 @@ leaves a hole:
 ```math
 \frac{\Gamma\vdash_G a:L\quad L\equiv_G\mathsf{list}(\tau)\quad
       \Gamma\vdash_G i:\mathsf{numLit}(k)\quad \tau(k)=A\quad
-      k\le|\vec R_\tau|\quad \tau\ \text{writable}\quad \Gamma\vdash_G v:A}
+      k\le|\vec R_\tau|\quad \tau\ \text{writable}\quad \Gamma\vdash_G v:A\quad \mathrm{Payload}(E,A)}
      {\Gamma\vdash_G a[i]=v:L}\ \textsf{setElem}
 ```
 
@@ -1516,7 +1539,7 @@ $`2^{31}`$ and above fail it.
 
 ```math
 \frac{\Gamma(x)\ \text{a record whose invariant}\ \mathtt{[]}\ \text{holds}\ \mathsf{list}(\langle[\,],[\,],E,\mathrm{writable}\rangle)\quad
-      \mathrm{bound}(x',k')\in\Sigma\quad x'\in[x],\ k'\in[k]\quad \Gamma(v)\le E}
+      \mathrm{bound}(x',k')\in\Sigma\quad x'\in[x],\ k'\in[k]\quad \Gamma(v)\le E\quad \mathrm{Payload}(E,E)}
      {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow x.\mathtt{[]}:=x.\mathtt{[]}⟦k\mapsto v⟧:\mathsf{Null}\dashv\Pi;\ \emptyset}\ \textsf{setElem-bounded}
 ```
 
@@ -2194,7 +2217,7 @@ is in $`E`$, each spread a store whose elements are:
 
 ```math
 \frac{\forall p\in\vec p.\;\Gamma\vdash_G p:E\ \lor\ (p={\ldots}s\land\Gamma\vdash_G s:S\land\mathrm{Spreads}_G(S,E))
-      \qquad L\equiv_G\mathsf{list}([\,],[\,],E)_{\pi,\rho}}
+      \qquad L\equiv_G\mathsf{list}([\,],[\,],E)_{\pi,\rho}\qquad \mathrm{Payload}(E,E)}
      {\Gamma\vdash_G \mathsf{arrLit}(\vec p):L}\ \textsf{arrParts}
 ```
 
@@ -3191,7 +3214,7 @@ clause of the key's type, the object that clause's keys make
 
 ```math
 \frac{\Gamma\vdash_G k:K\quad\Gamma\vdash_G a:A\quad
-      \forall c\in\mathrm{expand}_G(K).\ \mathrm{keyed}(c,A)\in\mathrm{expand}_G(R)}
+      \forall c\in\mathrm{expand}_G(K).\ \mathrm{keyed}(c,A)\in\mathrm{expand}_G(R)\quad \mathrm{Payload}(F,A)}
      {\Gamma\vdash_G\mathsf{makeKey}(k,a):R}\ \textsf{makeKey}
 ```
 

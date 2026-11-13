@@ -359,4 +359,23 @@ theorem host_viewWrite (n : Nat) :
     · exact absurd rfl hj
     · simp
 
+/-! ## Payload compatibility over kinded roles
+
+The typing's payload statement (`ProgramTyping.Payload`) gives the category a
+kinded role asks of its contents: a storage tag's (`StorageRole.Holds`), from
+which an allocation's concrete role follows (`StorageRole.concrete_of_holds`),
+and an element cell's (`Cat .elem`). -/
+
+theorem payload_stored {ι : Type} {G : PositiveGraphs.NormalGraph ι} {s : StorageRole}
+    {A : List ι} (h : ProgramTyping.Payload G (.stored s) A) {n W v}
+    (hv : PositiveRules.meaning G A n W v) : s.Holds v := by
+  have := h.sound hv
+  cases s <;> simp_all [ProgramTyping.PayloadRole.sort, PositiveNormalization.ValueSort.Holds,
+    StorageRole.Holds]
+
+theorem payload_element {ι : Type} {G : PositiveGraphs.NormalGraph ι} {A : List ι}
+    (h : ProgramTyping.Payload G .element A) {n W v}
+    (hv : PositiveRules.meaning G A n W v) : Cat .elem v :=
+  (h.sound hv).1
+
 end Verification.Kinds
