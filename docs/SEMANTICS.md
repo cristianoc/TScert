@@ -766,7 +766,7 @@ The pass runs a code's graph at its signature's bound and conditions
 establishes from that run the semantic contract used by fixed and variadic
 closure introduction.
 The positive type graph carries the effect on every signature; Lean computes a
-source function's effect (`declarationEffects`) and certifies it as
+source function's effect (`PassProposals.proposals`) and certifies it as
 [inferred call effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)
 states.
 

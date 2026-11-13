@@ -592,7 +592,7 @@ not representable in full.
 (`establishStep`, `FragmentFront.lean`) plans the module over its own
 document and type table, reading the entries published before it, and
 gives each of its functions the footprint, on-throw flag and returned
-footprint its body's walk finds (`declarationEffects`, as for a file's own
+footprint its steps establish (`PassProposals.proposals`, as for a file's own
 functions, [footprints](FOOTPRINTS.md#the-checked-callback-contract)). It checks with
 the single pass every group that the functions whose footprint is more than
 the ordinary effect reach, the module's initialisation where they reach a

@@ -255,35 +255,21 @@ proved: `SourceExtraction.checkRequests_async`):
      {\Phi=\{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{store}{:}\,\mathsf{any}\}}\ \textsf{async-effect}
 ```
 
-The walk proposes each footprint, untrusted (`declarationWalks`,
-`FragmentFront.lean`): a body's is the join of the changes its writes and
-its calls' instances make, by class of location (`Walk.valueChange`,
-`Walk.storeChange` in `Synthesis.lean`, as a function literal's effect is
-found): an assignment of a binding a cell holds `{value: any, store:
-keep}`, a binding its activation holds in a slot none (`cellLocals`); a
-field write `{value: any, store: keep}` where the field is a source field
-(`ExpressionEffects.sourceField`), a `length` write `{value: any, store:
-any}`; an element write `{value: any, store: grow}` (`targetWrite`); a call
-or construction its selected instance's footprint, everything where the
-instance excepts a receiver's store that is not fresh, and none where the
-instance's result is the empty type, outside a handler and an async body: on
-a normal return it changes nothing, its throw its signature's
-(`Synthesis.callChanges`; proposed so under a handler too,
-`TSCERT_FORCE=no-return`, refused over the `invalid-async-throw-only-*`
-cases and `invalid-method-effect-throw-caught`); a call of an unknown
-callee, an iteration and a finalizer change anything or bound no throw. It
-bounds the throws where none of
-its calls, iterations or finalizers leaves one unbounded. Callees are
-walked first, each caller reading the footprint found for it; a
-self-recursive function is walked with itself at `{value: keep, store:
-keep}`, then at what that walk found, until a walk finds no more than it
-assumed, three walks at most. A function with a written effect keeps its
-footprint and throw bound whole, its walk proposing its returned
-function's footprint. An async function keeps `top`, the language's
-restriction ([the fragment](SOURCE-FRAGMENT.md)); a generic function and
-one with a rest parameter keep what `fragmentClaims` gives them, their
-walks' proposals not ones the pass establishes
-([form-based decisions](drafts/on-demand-processing.md#9-form-based-decisions-today)). A method call on an object whose type has several
+The front proposes each footprint, untrusted (`PassProposals.proposals`,
+`PassProposals.lean`): a body's is the join of its checked steps' local
+effects, each the least closed footprint the pass's own footprint check
+accepts at the step
+([declarations](SINGLE-PASS-FRONT.md#declarations) states the rule). It
+bounds the throws where the join of the steps' effects with their throws
+checked is within the footprint. Callees are proposed first, each caller
+reading the footprint found for it; a self-recursive function reads itself
+at `{value: keep, store: keep}`, then at the join of that and what its
+steps establish, until they establish no more. A function with a written
+effect keeps its footprint and throw bound whole, its steps proposing its
+returned function's footprint. An async function keeps `top`, the language's
+restriction ([the fragment](SOURCE-FRAGMENT.md)). A function literal's
+effect is found by the walk's grades (`Walk.valueChange`,
+`Walk.storeChange`, `Synthesis.callChanges` in `Synthesis.lean`). A method call on an object whose type has several
 alternatives once each declaration it names is unfolded, with actuals that
 are names or literals, may be lowered to one node dispatched on the object
 (`Lowering.dispatchesCall`), which no bounded node rule above admits; a

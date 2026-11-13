@@ -58,7 +58,7 @@ The Lean verifier checks a unit over its Fragment alone. The walk
 `retypeUnit`, run over a file by `retypeFromFragment`) computes the type of
 each expression and binding of a function; a generic call's instance comes
 from the walk (`instancesFromWalk`), and a declaration's footprint from
-its statement or from its body (`declarationEffects`).
+its statement or from its checked steps (`PassProposals.proposals`).
 [FragmentFront.lean](../lean/Verification/Source/Claims/FragmentFront.lean)
 states these types per unit as the front. They are proposals: each is
 checked where it is used, and a wrong one is refused.
@@ -3868,7 +3868,7 @@ wrong effect fails at the defining callable's located typing obligation.
 ### Function declarations
 
 A declaration's front states the closed
-footprint $`\Phi`$ proposed for its signature (`declarationEffects`). The
+footprint $`\Phi`$ proposed for its signature (`PassProposals.proposals`). The
 unit of a declaration stating a footprint other than `all: any` is checked
 as a code entry's graph is: its nodes pure, or each node within $`\Phi`$ on
 normal return (`GraphCode.nodeChecked`, alongside ordinary safety), under the ordinary checker, at the unit's goal: a plain
@@ -3907,16 +3907,17 @@ that each declaration meets the signature the others read it at is
 [module composition](../WORK.md#module-composition). A parameter default executes in the declaration's graph, so the
 check covers it. An imported function is read at its declaration's type,
 which states the effect its [statement](#stated-effects) states and none
-without one (`invalid-preserving-callback-value-import`). The walk
-proposes the effect callees first (`declarationWalks`): each function a
-unit reaches is walked as its unit is, each callee read at the footprint
-found for it, and its proposal is the join of the changes its writes and its
-calls' instances make; a self-recursive function is walked with itself at
-the empty footprint, then at what that walk found, until a walk finds no
-more than it assumed (three walks at most). An async or generic function
-and one with a rest keep the signature the front gives it
-(`fragmentClaims`); one with a written effect keeps its written footprint
-and throw bound, its walk proposing its returned function's footprint. A wrong effect fails at the first node that does not preserve
+without one (`invalid-preserving-callback-value-import`). The front
+proposes the effect callees first (`PassProposals.proposals`,
+[declarations](SINGLE-PASS-FRONT.md#declarations)): each function a
+unit reaches is run by the pass with its footprint open, each callee read at
+the footprint found for it, and its proposal is the join of its checked
+steps' local effects; a self-recursive function reads itself at
+the empty footprint, then at the join of that and what its steps establish,
+until they establish no more. An async function keeps the signature the
+front gives it (`fragmentClaims`); one with a written effect keeps its
+written footprint and throw bound, its steps proposing its returned
+function's footprint. A wrong effect fails at the first node that does not preserve
 the heap (`declaration-preserving-callback`,
 `declaration-field-write-callback`, `invalid-declaration-pop-callback`; every
 declaration proposed heap-preserving, `TSCERT_FORCE=callees`, is refused for
@@ -3927,7 +3928,7 @@ declaration proposed heap-preserving, `TSCERT_FORCE=callees`, is refused for
 A declaration whose result annotation is one function type, its signatures
 stating no effect and taking fixed actuals, may state a closed footprint
 $`\Phi_r`$ for the function it returns (`resultFootprint` of its front's
-row, `returnedFootprint`). Its unit is checked at the annotation's result
+row). Its unit is checked at the annotation's result
 with each of its signatures stating $`\Phi_r`$, $`B_{\Phi_r}`$
 (`resultWithFootprint`), so every return meets that type: a returned
 closure's code is certified at a row whose effect covers $`\Phi_r`$, as any
@@ -3944,10 +3945,10 @@ The premise is the unit's ordinary check at the stronger result, so
 `SourceClaimJson.PassUnit.mode8Accepted_sound` covers it unchanged; that each
 declaration meets the signature the others read it at is
 [module composition](../WORK.md#module-composition), as for its own
-footprint. The walk proposes $`\Phi_r`$ with the declaration's own
-footprint (`returnedFootprint`): the join of the footprints of every
-signature of each function its returns hold, where the result annotation can
-state it (`resultWithFootprint`). A call of the
+footprint. The front proposes $`\Phi_r`$ with the declaration's own
+footprint (`PassProposals.interface`): the join of the footprints of every
+signature of the checked type of the value each return returns, where the
+result annotation can state it (`resultWithFootprint`). A call of the
 returned closure then keeps what a call at $`\Phi_r`$ keeps
 (`returned-closure-footprint`). A closure changing a store gets no
 footprint, and a read after its call is refused
@@ -4385,9 +4386,10 @@ arrow, and a declaration whose handler rethrows.
 #### Proposal
 
 A call effect states `onThrow` (`Effect.onThrow`), and so does a
-declaration's front row beside its footprint. The walk proposes it for a
-closure and for a declaration none of whose calls, iterations or finalizers
-leaves a throw unbounded (`declarationWalks`); a `try` whose block bounds its
+declaration's front row beside its footprint. The front proposes it for a
+declaration where the join of its steps' effects with their throws checked
+is within its footprint (`PassProposals.interface`), and the walk for a
+closure none of whose calls or iterations leaves a throw unbounded; a `try` whose block bounds its
 throws, with a catch and no `finally`, is within the join of the block's and
 the handler's footprints. A handler whose every completion throws permits the
 guarded block's normal-return footprint without including the handler's

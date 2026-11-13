@@ -185,16 +185,8 @@ structure Walk where
   one's parameters and declarations no cell holds, `cellLocals`): a closure
   they hold sees each at the value it held when the closure was made. -/
   literalSlots : List String := []
-  /-- Whether the walk reads its own record of changes as a declaration's
-  footprint (`declarationEffects`): a call of an unknown callee, an
-  iteration and a finalizer then change anything or bound no throw, and an
-  assignment of a binding held in a cell changes the values. -/
-  strict : Bool := false
   /-- Whether a handler catches what the statements being walked throw. -/
   caught : Bool := false
-  /-- Whether a statement walked is a `try` with a finalizer that only
-  falls through or throws (`TSCERT_FORCE=finalizers` reads it). -/
-  quietFinalizer : Bool := false
   /-- Whether the body being walked is an async literal's: a throw in it
   rejects the promise its call returns normally. -/
   asyncBody : Bool := false
@@ -1825,31 +1817,6 @@ def wrote (value store : Footprints.Change := .any) : W Unit := do
   modify fun w => { w with writes := true, valueChange := w.valueChange.max value, storeChange := w.storeChange.max store }
   if value != .keep then modify fun w => { w with valueWrites := w.valueWrites + 1 }
 
-/-- For a declaration's footprint, a call's change of the heap at one of its
-callee's signatures, graded as the producer's `effects_footprint`
- grades it: the signature's footprint; with the values
-where it changes its receiver's own locations; everything where it changes
-its receiver's store and the receiver's store is not one the run allocated
-(`receiverFresh`). A typed array's element write (`elementWrite`) is a
-change within the footprint (`Effect.Holds`). -/
-def callChange (eff : CallEffects.Effect) (receiverFresh : Bool := false) : W Unit := do
-  if eff.footprint != ⟨.keep, .keep⟩ then wrote eff.footprint.value eff.footprint.store
-  if eff.receiverOwn then wrote .any eff.footprint.store
-  if eff.receiverStore && !receiverFresh then wrote .any .any
-
-/-- The change of an update (`x.f += v`, `x[k]++`) or a logical assignment
-(`x.f ??= v`) of a target other than a binding: for a declaration's
-footprint, a field's as a field write grades it (the values; a `length`'s
-the stores too) and an element's as an element write does (the values and
-a store's growth), the producer's `cell_write` and `element_write`
-(source.ml:924-935, 1082-1107); else everything. -/
-def targetWrite (t : Expr) : W Unit := do
-  if !(← get).strict then wrote else
-  match t with
-  | .read _ fld _ => wrote .any (if fld == lengthKey then .any else .keep)
-  | .index .. => wrote .any .grow
-  | _ => wrote
-
 /-- An assignment of `n`: a change of the heap where the function literal
 being walked does not declare `n`, of its values (`value`: an initializing
 write's `init`). -/
@@ -3010,12 +2977,11 @@ def methodBinders (args : List Expr) (Ps : List (Ty Tree)) (As : List (Option (T
         | none => pure ()
   return fromActuals
 
-/-- What a call at instance `inst` changes, recorded for the walk's footprints:
-its instance's footprint, a declaration's passed functions' effects, a change
-of its receiver's store or elements, its fresh result and its throws
-(`applyCall`'s effects, read after the actuals are walked). -/
-def callChanges (c : Callee) (inst : CallEffects.Arrow (Ty Tree)) (As : List (Option (Ty Tree)))
-    (args : List Expr) (receiverFresh : Bool) (dispatched : List CallEffects.Effect := []) : W Unit := do
+/-- What a call at instance `inst` changes, recorded for a function
+literal's effect: its instance's footprint, a change of its receiver's store
+or elements, its fresh result and its throws (`applyCall`'s effects, read
+after the actuals are walked). -/
+def callChanges (inst : CallEffects.Arrow (Ty Tree)) (receiverFresh : Bool) : W Unit := do
   -- A call whose instance's result is the empty type never returns
   -- normally: on a normal return it changes nothing; its throw is its
   -- signature's (the producer's `no_return`,
@@ -3031,31 +2997,6 @@ def callChanges (c : Callee) (inst : CallEffects.Arrow (Ty Tree)) (As : List (Op
     return
   -- A call changing the heap, by its instance's footprint.
   if inst.effect.footprint != ⟨.keep, .keep⟩ then wrote inst.effect.footprint.value inst.effect.footprint.store
-  -- For a declaration's footprint, a call passing a function may run it:
-  -- the function's own effect at each of its signatures, read after the
-  -- actuals are walked; one of no known type is the ordinary effect's.
-  if (← get).strict then
-    let Gn := SourceTypes.graph (← StateT.lift table)
-    -- (a generic module function's instance is not yet read off the
-    -- function passed: the ordinary effect)
-    -- (but a callback whose binder an actual's method takes, walked at
-    -- that method's callable: the method's effect, which the instance
-    -- dispatches to, and the callback's own, as the producer reads the
-    -- call's member at its claimed type)
-    let unread := (!c.names.isEmpty || !c.explicit.isEmpty) && dispatched.isEmpty
-    for e in dispatched do
-      callChange e
-      if !e.onThrow then modify fun w => { w with throwWrites := true }
-    for (A, x) in As.zip args do
-      match (if unread then none else A) with
-      | some A =>
-        for p in ProgramTyping.callSigs Gn A do
-          callChange p.effect
-          if !p.effect.onThrow then modify fun w => { w with throwWrites := true }
-      | none =>
-        if callback x || (A.any fun A => !(ProgramTyping.callSigs Gn A).isEmpty) then
-          wrote .any .any
-          modify fun w => { w with throwWrites := true }
   if inst.effect.footprint.value != .keep || inst.effect.receiverOwn || inst.effect.receiverStore ||
       inst.effect.elementWrite.isSome then
     modify fun w => { w with changedValues := true }
@@ -3067,13 +3008,10 @@ def callChanges (c : Callee) (inst : CallEffects.Arrow (Ty Tree)) (As : List (Op
   -- (but a change of a receiver's store the run allocated, a constant
   -- holding one, which its frame bounds: the producer's `receiver_fresh`,
   -- source.ml:953-956, the checker's `Effect.within_below`)
-  if (inst.effect.receiverStore && !receiverFresh) || (inst.effect.elementWrite.isSome && !(← get).strict) then
+  if (inst.effect.receiverStore && !receiverFresh) || inst.effect.elementWrite.isSome then
     wrote .any .any
   modify fun w => { w with lastFresh := inst.effect.fresh }
   if !inst.effect.onThrow then modify fun w => { w with throwWrites := true }
-  -- For a declaration's footprint, a throw no footprint bounds that a
-  -- handler catches leaves the bound.
-  if (← get).strict && (← get).caught && !inst.effect.onThrow then wrote .any .any
 
 /-- A literal of no binders, rest or guard passed where the instance's
 parameter is one fixed signature binding more parameters than it, of
@@ -3108,9 +3046,6 @@ def armsCall (c : Callee) (callbacks : List Bool) (As : List (Option (Ty Tree)))
   if c.arms.isEmpty then return .ok c
   let T ← StateT.lift table
   let w ← get
-  if w.strict then
-    wrote .any .any
-    modify fun w => { w with throwWrites := true }
   return armsCallee (SourceTypes.graph T) T c callbacks As (w.force.contains "arms")
 
 /-- The narrowing a condition answering `q` makes. -/
@@ -3991,11 +3926,9 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
   | .update _ op target rhs _ =>
     match target with
     | .var _ n => assigns n
-    -- For a declaration's footprint, the target's grade (`targetWrite`);
-    -- else source.ml:1086-1087: only a numeric literal index has the
-    -- producer's compound element-write footprint.
+    -- (source.ml:1086-1087: only a numeric literal index has the
+    -- producer's compound element-write footprint)
     | t =>
-      if (← get).strict then targetWrite t else
       match t with
       | .index _ _ _ (.lit _ (.vnum _)) => wrote .any .grow
       | _ => wrote
@@ -4021,7 +3954,6 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     match target with
     | .var _ n => assigns n
     | t =>
-      if (← get).strict then targetWrite t else
       match t with
       | .read _ fld recv =>
         let O := (memberPath recv).bind fun (n, path) =>
@@ -4290,17 +4222,6 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
       | .var _ n => gs.lookup n
       | _ => none
     let (F, e1) ← expr env callee
-    -- For a declaration's footprint, a call of a local binding is at its
-    -- declared type's effect.
-    if (← get).strict then
-      if let .var _ n := callee then
-        if let some D := env.decl.lookup n then
-          let G ← StateT.lift graphNow
-          -- (graded as the producer grades a call at its callee's
-          -- signatures, `callChange`)
-          for a in ProgramTyping.callSigs G D do
-            callChange a.effect
-            if !a.effect.onThrow then modify fun w => { w with throwWrites := true }
     let (As, e2) ← actuals e1 args
     -- Spread actuals as the call reads them (`spreadCall`).
     let c ← StateT.lift (tryCatch (do
@@ -4382,23 +4303,10 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
         if eff.footprint.value != .keep || eff.receiverOwn || eff.receiverStore || eff.elementWrite.isSome then
           modify fun w => { w with changedValues := true }
         if eff.receiverOwn then wrote .any eff.footprint.store
-        if eff.receiverStore || (eff.elementWrite.isSome && !(← get).strict) then wrote .any .any
+        if eff.receiverStore || eff.elementWrite.isSome then wrote .any .any
         if !eff.onThrow then modify fun w => { w with throwWrites := true }
-        if (← get).strict && (← get).caught && !eff.onThrow then wrote .any .any
-        -- For a declaration's footprint, a list holding a function may pass it.
-        if (← get).strict then
-          if let some (some T) := Lt then
-            let G ← StateT.lift graphNow
-            let E ← StateT.lift (tryCatch (elementAt T none (missing := false)) fun _ => pure [])
-            if E.any fun l => !(ProgramTyping.callSigs G [l]).isEmpty then
-              wrote .any .any
-              modify fun w => { w with throwWrites := true }
         pure (Except.ok R)
-      | .error m => do
-        if (← get).strict then
-          wrote .any .any
-          modify fun w => { w with throwWrites := true }
-        pure (Except.error m)
+      | .error m => pure (Except.error m)
     let v ← record e r
     return (v, ← afterCall e3 ((fun R => (R, R)) <$> r))
   | .bindWithReceiver _ callee recv args =>
@@ -4506,9 +4414,6 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
     let some o := obj | do
       let (_, e1) ← expr env callee
       let (_, e2) ← exprs e1 args
-      if (← get).strict then
-        wrote .any .any
-        modify fun w => { w with throwWrites := true }
       return (← record e (.error "a method call of an unknown form"), e2)
     let (O, e1) ← expr env o
     let (K, e1) ← match keyE with
@@ -4566,15 +4471,6 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
     -- (`Plans.primitiveArms`' `.isFun` arm, Plans.lean:631-643), a callee
     -- the walk does not know; a declaration's footprint reads that call as a
     -- call of an unknown callee.
-    if (← get).strict && fld == some (PropKey.str "toString") then
-      if let some O := O then
-        let G ← StateT.lift graphNow
-        let isFunction (l : Tree) : Bool := match PositiveRules.expand G [l] with
-          | [.arrs ..] | [.callable ..] | [.ctors ..] => true
-          | _ => false
-        if O.any isFunction then
-          wrote .any .any
-          modify fun w => { w with throwWrites := true }
     let e2 ← afterCall e2 r
     let _ ← record callee ((·.1) <$> r)
     let r ← record e ((·.2) <$> r)
@@ -4615,10 +4511,6 @@ partial def called (env : Env) (c : Except String Callee) (args : List Expr) (As
     applyCall env c args As (exp <|> (← get).hints.lookup at_) receiverFresh
   | .error m =>
     for x in args do if callback x then let _ ← walkLambda env x none
-    -- A call of an unknown callee may change anything, and its throw too.
-    if (← get).strict then
-      wrote .any .any
-      modify fun w => { w with throwWrites := true }
     return .error m
 
 /-- The actuals of a call with those at a parameter placing the call's
@@ -5097,7 +4989,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   if !c.names.isEmpty || !c.explicit.isEmpty then
     modify fun w => { w with lastInstance := some (c.explicit ++
       c.names.zip (c.binders.map fun b => (σ.lookup b).getD [])), lastResolution := certificates }
-  callChanges c inst As args receiverFresh (fromActuals.map (·.2.2))
+  callChanges inst receiverFresh
   -- A fresh result where a type is expected: made at the expected array.
   let mut result := inst.result
   if let some H := hint then
@@ -5121,11 +5013,6 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let expectedResult := sig.map (·.result)
   let .lambda _ receiver tps params defaults rest result guard stated async requires body := e
     | return none
-  -- For a declaration's footprint, a generic function literal is walked
-  -- with no scheme of its own: the declaration is at the ordinary effect.
-  if !tps.isEmpty && (← get).strict then
-    wrote .any .any
-    modify fun w => { w with throwWrites := true }
   -- A captured binding held in a cell at its declared type (a cell holds
   -- whatever its contract admits when the body runs); one held in a slot at
   -- its type here: no write of it follows the closure's creation
@@ -5837,9 +5724,6 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       conditions := (bs.filter (fun b => implicationForm b.init || w.force.contains "implications")).map (fun b => (b.name, b.init)) ++
         w.conditions.filter fun (n, _) => !bs.any (·.name == n)
       allocated := (bs.filter fun b => match b.init with | .alloc .. | .arrayLit .. => true | _ => false).map (·.name) ++ w.allocated }
-    -- An early binding's declaration writes its cell (a declaration's
-    -- footprint).
-    if (← get).strict && bs.any (·.early) then wrote .any .keep
     for b in bs do
       modify fun w => { w with holders := w.holders.filter (fun (a, c) => a != b.name && c != b.name) }
       if let .var _ n := b.init then
@@ -5922,7 +5806,6 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       consts := w.consts.filter (fun n => !bs.any (·.name == n))
       conditions := w.conditions.filter fun (n, _) => !bs.any (·.name == n) }
     modify fun w => { w with freshConsts := w.freshConsts.filter fun n => !bs.any (·.name == n) }
-    if (← get).strict && bs.any (·.early) then wrote .any .keep
     for b in bs do
       modify fun w => { w with holders := w.holders.filter (fun (a, c) => a != b.name && c != b.name) }
       modify fun w => { w with declarations := w.declarations.insert (p.1, b.name) env.vars }
@@ -6051,9 +5934,6 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     -- one binder kept as a fallback where no stepper is available.
     let mut stepper : Option (Ty Tree) := none
     let mut bound : Option (Ty Tree) := none
-    -- An iteration's throw is bounded by no footprint here.
-    if (← get).strict then
-      modify fun w => { w with throwWrites := true }
     if let some g := (← get).generics.lookup it then
       let c? : Except String Callee ← StateT.lift (tryCatch (Except.ok <$> genericCallee g []) fun m => pure (Except.error m))
       if let .ok c := c? then
@@ -6083,22 +5963,7 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     -- own locations, the iterator the call made, else its footprint (the
     -- producer's `iteration_footprint`); an iteration
     -- whose stepper the walk does not determine may change anything.
-    if (← get).strict then
-      match stepper with
-      | some N =>
-        let G ← StateT.lift graphNow
-        let steps := (ProgramTyping.callSigs G N).map (·.effect) ++ (ProgramTyping.restSigs G N).map (·.effect)
-        if steps.isEmpty then wrote .any .any
-        for eff in steps do
-          if eff.receiverOwn then wrote .any eff.footprint.store
-          else if eff.footprint != ⟨.keep, .keep⟩ then wrote eff.footprint.value eff.footprint.store
-      | none => wrote .any .any
-    -- For a function literal's effect, each step a call of the stepper,
-    -- changing what its signature's footprint states and, where it changes
-    -- its receiver's own locations (a native iterator's position), the
-    -- values and its store's change (`callChanges`).
-    -- (`TSCERT_FORCE=steps` leaves them out, the adversarial proposal)
-    else if !(← get).force.contains "steps" then
+    if !(← get).force.contains "steps" then
       if let some N := stepper then
         let G ← StateT.lift graphNow
         if let some eff := ((ProgramTyping.callSigs G N).map (·.effect)).head? then
@@ -6153,7 +6018,6 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     let keep := keepPaths kept
     return join (some (keep exit)) (out.map fun o => keep { o with vars := o.vars.filter (·.1 != s!"%next@{p.1}%") })
   | .tryStmt p body handler finalizer =>
-    if finalizer.isSome && (← get).strict then modify fun w => { w with throwWrites := true }
     let outer := (← get).caught
     -- A handler with no normal exit, and no finalizer: what the body's
     -- throws leave reaches no normal return, so the body is walked as
@@ -6166,7 +6030,6 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     -- catches nothing (the producer's `Try` of a finalizer that does not
     -- leave).
     let finalizerLeaves := finalizer.any leaves
-    if finalizer.isSome && !finalizerLeaves then modify fun w => { w with quietFinalizer := true }
     if (handler.isSome || finalizerLeaves) && !rethrows then modify fun w => { w with caught := true }
     -- The jumps and returns the statement's body and handler leave by (each
     -- through the finalizer: a copy of it per route, `SourceFlow.sequence`).
@@ -6288,7 +6151,7 @@ store. -/
 def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
     (module : List (String × Compiler (Ty Tree))) (generics : List (String × Generic) := [])
     (force : List String := []) (scope : Option (PositiveGraphs.SchemeRow Tree × List String) := none)
-    (strict : Bool := false) (schemes : List (Span × Ty Tree) := []) :
+    (schemes : List (Span × Ty Tree) := []) :
     Except String (Walk × EquationStore.State) := do
   let action : Compiler (Walk × EquationStore.State) := do
     let mut vars : List (String × Ty Tree) := []
@@ -6306,17 +6169,14 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
     let expected ← tryCatch (some <$> lower (Fragment.translate f.ret)) fun _ => pure none
     -- Its own parameters and declarations are its locals: assigning one
     -- changes no heap location.
-    -- (but one held in a cell, which a closure shares, for a declaration's
-    -- footprint)
-    let cells := if strict then (cellLocals (f.params.map (·.name)) f.body).map (·.1) else []
-    let locals := (f.params.map (·.name) ++ declaredIn f.body).filter (!cells.contains ·)
+    let locals := f.params.map (·.name) ++ declaredIn f.body
     -- (computed where a read first narrows one)
     let slots := Thunk.mk fun _ => (f.params.map (·.name) ++ declaredIn f.body).filter fun n =>
       !(cellLocals (f.params.map (·.name)) f.body f.name.isEmpty).any (·.1 == n)
     let values := (f.params.map (·.name)).filter fun n =>
       !(cellLocals (f.params.map (·.name)) f.body f.name.isEmpty).any (·.1 == n)
     let heldCells := (cellLocals (f.params.map (·.name)) f.body f.name.isEmpty).map (·.1)
-    let start : Walk := { generics, expected, force, scope, locals, strict, slots, schemes, values, heldCells, moduleInit := f.name.isEmpty, entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
+    let start : Walk := { generics, expected, force, scope, locals, slots, schemes, values, heldCells, moduleInit := f.name.isEmpty, entries := (({} : Std.HashMap Nat _).insert 0 vars).insert f.namePos.1 vars }
     let settle (start : Walk) (initial : List (Span × Ty Tree)) :
         Compiler ((Option Env × Walk) × List (Span × Ty Tree)) := do
       let mut assumed := initial

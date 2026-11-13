@@ -52,14 +52,29 @@ keep is an entry the edge into the head does not establish. -/
     let cells := cells.set! l C
     let outF := GraphCode.ArgumentRegionGraph.freshOut G images [] F C c node.expression
     let outC := GraphCode.ArgumentRegionGraph.cellOut F C node.expression
+    -- (a target's slot map read by position in constant time: `PointClaims.slot`)
+    let slotOf := fun (m : Option (Array Nat)) (i : Nat) => match m with
+      | none => i
+      | some a => a.getD i 0
+    -- (`GraphCode.freshSlot` over a set read in constant time: it reads of
+    -- the set the one slot `q`)
+    let mask := fun (S : List Nat) => S.foldl (fun (a : Array Bool) i => a.set! i true)
+      (Array.replicate (S.foldl max 0 + 1) false)
+    let freshAt := fun (S : Array Bool) (pushed out : Bool) (j : Nat) =>
+      let q := if pushed then j - 1 else j
+      GraphCode.freshSlot (if S.getD q false then [q] else []) pushed out j
     let edge := fun (D : List Nat) (S : List Nat) (out : Bool) (t : ControlFlow.Target) =>
-      D.filter fun i => GraphCode.freshSlot S (GraphCode.pushes node.continuation) out (PointClaims.slot t.mapping i)
+      let m := t.mapping.map List.toArray
+      let S := mask S
+      D.filter fun i => freshAt S (GraphCode.pushes node.continuation) out (slotOf m i)
     let (values, cells) := (CertificateProducer.successors node.continuation).foldl (fun (values, cells) t =>
       (values.modify t.label fun D => edge D F outF t, cells.modify t.label fun D => edge D C outC t)) (values, cells)
     match node.handler with
     | some t =>
+      let m := t.mapping.map List.toArray
       let handle := fun (D : List Nat) (S : List Nat) =>
-        D.filter fun i => GraphCode.freshSlot S true false (PointClaims.slot t.mapping i)
+        let S := mask S
+        D.filter fun i => freshAt S true false (slotOf m i)
       (values.modify t.label fun D => handle D F, cells.modify t.label fun D => handle D C)
     | none => (values, cells)) tables
 

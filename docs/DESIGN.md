@@ -124,8 +124,8 @@ calculus program that the pass checks.
    occurrence and of each binding at each statement entry, from the types the
    source writes and the typing of each construct; a generic call's instance
    is read off its actuals (`instancesFromWalk`), and a function's footprint
-   is the one its declaration states or its body's walk finds
-   (`declarationEffects`). Each is a proposal.
+   is the one its declaration states or its checked steps establish
+   (`PassProposals.proposals`). Each is a proposal.
 4. **Elaborate the typed program in Lean.** Lean reads annotations and the
    computed types at the execution plans' points (the **front**,
    `FragmentFront.lean`) and elaborates operations into a **calculus graph**:

@@ -4,7 +4,8 @@ The rules by which the [single pass](SINGLE-PASS.md)'s front computes what
 it proposes: the store and signatures it lowers, each expression's and
 statement entry's type, each function's footprint, and how imports, cells,
 classes and narrowing read. The walk is `Synthesis.retypeUnit` over a
-unit's flow graphs, its declarations' footprints `declarationEffects`.
+unit's flow graphs; its declarations' footprints are the pass's own steps'
+(`PassProposals.proposals`).
 Every result is a proposal: the pass checks each at its node
 ([steps and obligations](SINGLE-PASS.md#5-steps-and-obligations)), so no
 rule here is trusted, and a rule that proposes too little costs coverage
@@ -303,62 +304,61 @@ the finalizer may replace a throw with a normal return.
 
 ## Declarations
 
-Each function a wanted unit reaches, callees first,
-is walked as its unit is, each callee read at the footprint found for it
-(`declarationEffects`). A walk proposes the join, by class of location,
-of the changes its writes and its calls' instances make (the grades a
-function literal's effect is found with): keep/keep where it changes nothing, and nothing where
-the join is the ordinary effect. It bounds its throws where nothing in it
-leaves a throw unbounded. The grades: an
-assignment of a binding held in a cell or of one it does not declare, and
-an early binding's declaration, change the values; `x ??= v` of such a
-binding whose `v` changes nothing initializes it (`init`); a field write, update or logical assignment changes the
-values, a `length`'s the stores too; an element write or update the values
-and a store's growth; a call, at its instance and, for a call of a local
-binding, at each signature of its declared type, changes its signature's
-footprint, the values too where it changes its receiver's own locations,
-and everything where it changes its receiver's store and the receiver is
-no constant holding a store the run allocated (`effects_footprint`); a
-typed array's element write (`elementWrite`) is within its footprint; a
-`for...of` changes what its intrinsic's call states and, of each signature
-of the stepper it gives, the values where the step changes its receiver's
-own locations, the iterator, else the step's footprint
-(`iteration_footprint`), everything where the walk determines no stepper;
-a call of an unknown callee (a
-function's `toString` among them: its lowered call tests the receiver and
-calls a value's own `toString` where it is no function) and a call without
-`onThrow` a handler catches change everything; a call without `onThrow`, an iteration and a finalizer leave a throw
-unbounded. A finalizer catches its block's throws only where it may
-complete otherwise than by falling through or a throw (a `return`,
-`break` or `continue` in it): one that
-only falls through or throws throws again after a throw, so the block's
-calls are graded as outside it.
-`TSCERT_FORCE=finalizers` proposes keep/keep for a function holding such
-a finalizer: pretext's `getExtraSpacings` (`measurement.ts`), accepted
-unforced, is refused at its footprint. A function passed to a call changes what its own signatures'
-effects state; where the call's instance is a generic module function's,
-or the passed function has no known type,
-it changes everything, and so does a generic function literal the
-declaration creates, which this walk reads with no scheme. A
-self-recursive function is walked with itself at keep/keep bounding its
-throws, then at the join of that and what the walk found, until a walk
-finds no more than it assumed, three walks at most. A function whose
+Each function a wanted unit reaches, callees first, is proposed what its
+own checked steps establish (`PassProposals.proposals`,
+[proposals by the pass](drafts/proposals-by-the-pass.md)). Its member is
+planned with every function proposed before it at its proposal and every
+other at its written effect, else at the ordinary effect, and run by the
+single pass with its footprint open, its loop heads' facts settled as its
+check settles them (`inferredSettle`). Each visited step $`n`$ has a local
+effect $`\ell_r(n)`$ on each of the two routes $`r`$ the pass checks a
+footprint by. On the direct route it is the least closed footprint
+`SinglePass.footprintCheck` accepts at the step. On the regional route it is
+the least of the step's alternatives (the closed check, a call's frame, an
+element write's frame: `ArgumentRegionGraph.checkClosedNode`, `callStep`,
+`writeStep`), each frame rebased to the entry through the regional facts
+(`Footprints.rebaseAll`) and read in the closed language. A route's
+footprint is the join of its steps' local effects, and the proposal is the
+regional route's where that is strictly below the direct route's:
+
+```math
+\frac{\ell_r(n)=\min\{\Phi \mid \mathsf{check}_r(n,\Phi)\}\qquad
+      \Phi_r=\bigsqcup_{n\in\mathrm{visited}(f)}\ell_r(n)\qquad r\in\{\mathsf{direct},\mathsf{regional}\}}
+     {\mathrm{propose}(f)=\begin{cases}\Phi_{\mathsf{regional}} & \Phi_{\mathsf{regional}}\sqsubset\Phi_{\mathsf{direct}}\\
+       \Phi_{\mathsf{direct}} & \text{otherwise}\end{cases}}\ \textsf{steps-footprint}
+```
+
+The regional route is run where the direct route's footprint is more than
+keep/keep, the least footprint. The proposal bounds the throws where the
+join of the steps' effects with their throws checked is within the
+footprint and the footprint is less than the ordinary effect. A step in the
+region from which no normal return is possible (`GraphCode.deadIterate`)
+contributes its throw alone. A function is proposed nothing where its
+footprint is the ordinary effect or one of its runs stops. The same rule
+covers a generic function and one with a rest parameter.
+
+A self-recursive function's own reads start at keep/keep bounding its
+throws and are joined with what its steps establish until they establish no
+more, $`I_0=\bot,\ I_{n+1}=I_n\sqcup T_f(I_n)`$, at most one run per step of
+the lattice's height. A member of a cycle of two or more functions reads
+the members not yet proposed at their written effect, else at the ordinary
+effect. A function whose
 result annotation can state a returned function's footprint
 (`resultWithFootprint`: one function type of fixed signatures stating no
-effect, throw bound or promise), and whose returns each hold a function
-of fixed and variadic signatures, is proposed,
-beside its footprint, the join of those signatures' footprints as the
-footprint of the function it returns; its callers read it, its returns establish it
+effect, throw bound or promise) is proposed, beside its footprint, the join
+of the footprints of the signatures of the checked type of the value each
+of its returns returns, as the footprint of the function it returns; its
+callers read it, its returns establish it
 (`resultWithFootprint`); `TSCERT_FORCE=results` proposes it keeping values
 and stores, the adversarial proposal (the controls
 `returned-closure-footprint` `countLetters`, accepted unforced, and
 `invalid-returned-closure-footprint` `lastRead`). Where the initialization
-calls a function so proposed, the walks run once more, the
-initialization's walk typing the module values at the proposals. A guard or an
+calls a function so proposed, the proposals are computed once more, the
+initialization's walk typing the module values at the first proposals. A guard or an
 assertion function is proposed like any other, its promise kept. A function
-with a written effect keeps its footprint and throw bound, its walk
-proposing its returned function's footprint; an async, generic or rest
-function keeps its footprint. The front states each proposal at the function's claim and
+with a written effect keeps its footprint and throw bound, its steps
+proposing its returned function's footprint; an async function keeps the
+ordinary effect, by the language. The front states each proposal at the function's claim and
 slot (`Front.withStandIns`): its callers read it and its own unit
 establishes it.
 
@@ -392,18 +392,17 @@ same way, recursively. The modules are planned callees first, each from
 its own fragment (`fragmentPlansWithModules`): its imports at what the
 modules planned before establish, a module on a cycle with its reads of
 the modules not yet planned at the ordinary effect; each function read
-proposed its walk's footprint (`declarationEffects`) or the one it writes.
-Of the importer's functions reached, one read at a footprint the walk does
-not propose (the one an async, generic, rest or written-effect function
-keeps) adds no names: its body is neither walked nor checked for the
-selected units. Before the modules are planned,
+proposed the footprint its steps establish (`PassProposals.proposals`) or
+the one it writes. Of the importer's functions reached, an async one, read
+at the ordinary effect by the language, adds no names: its body is neither
+run nor checked for the selected units. Before the modules are planned,
 the reads are resolved from the importer down, a round at a time, each
 module's front built once and kept for its plans (`Front.withQualified`):
 a function read whose walk with every import at the least footprint
 (keeping values and stores, bounding its throws) proposes the ordinary
 effect is at the ordinary effect, and its module is planned for it no
 further, nor are the modules only its code reads (first its own walk with
-every module value at that footprint, then the walks of what it reaches, `declarationWalks` with `least`, each function
+every module value at that footprint, then the walks of what it reaches, each function
 returned at the least footprint too); nothing is so decided in a module
 whose initialization calls a function returning one, whose values hold
 the returned functions at the ordinary effect there. That its walk

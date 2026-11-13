@@ -423,7 +423,7 @@ alone.
 
 `RequestSafe` is local: its entry premise $`\rho \models \Gamma`$ includes the
 slots holding the values of the functions the unit calls, at the types its
-callers read for them: the footprints `declarationEffects` proposes, a
+callers read for them: the footprints `PassProposals.proposals` proposes, a
 recursive function's self-assumption, the module values the
 initialization's walk types. A caller's theorem holds of the program once
 those values meet those types.
