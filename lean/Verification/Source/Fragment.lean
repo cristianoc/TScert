@@ -564,7 +564,14 @@ partial def stmtsFreeNames : List Stmt → List String
 
 partial def Stmt.freeNames : Stmt → List String
   | .ret _ e | .effect _ e | .throw _ e => e.freeNames
-  | .constants _ bs | .mutables _ bs =>
+  | .constants _ bs =>
+    -- Each initializer sees the earlier declarators, and a function literal
+    -- that is a constant's whole initializer its own binding: creating it
+    -- runs nothing, so its reads of the constant are the recursive
+    -- constant's self entry.
+    (bs.zipIdx.flatMap fun (b, i) =>
+      b.init.freeNames.filter fun n => !((bs.take (if b.init matches .lambda .. then i + 1 else i)).map (·.name)).contains n)
+  | .mutables _ bs =>
     -- Each initializer sees the earlier declarators.
     (bs.zipIdx.flatMap fun (b, i) =>
       b.init.freeNames.filter fun n => !((bs.take i).map (·.name)).contains n)
