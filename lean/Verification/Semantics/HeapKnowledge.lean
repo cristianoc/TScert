@@ -1218,6 +1218,73 @@ theorem withReadAtoms_holds {k : Knowledge} {ρ h} (hk : Holds k ε ρ h) : Hold
       (fun ha => (List.mem_append.mp ha).elim (hk.2.2.2.2.2 a) (readAtoms_holds hk.2.2.1 hk.2.2.2.2.2 a))
       (liftedEvery_holds hk.2.2.1 hk.2.2.2.2.2 a)⟩
 
+/-- A term restated by read links toward the end of its path, field by
+field (`lowerTerm`), at most `n` times: where a read link gives slot `v` as
+field `f` read from slot `c`, the term rooted at `c` with path `f :: p` is
+the term rooted at `v` with path `p`. Each restatement shortens the path, so
+`n` the path's length restates it as far as the links reach. -/
+def lowerStar (reads : List (Nat × String × Nat)) : Nat → Term → Term
+  | 0, t => t
+  | n + 1, t => let t' := lowerTerm reads t; if t' == t then t else lowerStar reads n t'
+
+theorem lowerStar_eq {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h)
+    {reads : List (Nat × String × Nat)} (hr : ∀ g ∈ reads, g ∈ bridgeReads ls) :
+    ∀ n t, termValue ε ρ h (lowerStar reads n t) = termValue ε ρ h t := by
+  intro n
+  induction n with
+  | zero => intro t; rfl
+  | succ n ih =>
+    intro t
+    simp only [lowerStar]
+    split
+    · rfl
+    · rw [ih]; exact lowerTerm_eq hl hr t
+
+/-- A term restated by every read link toward the end of its path
+(`lowerStar`, as far as the links reach). -/
+def lowerByLinks (reads : List (Nat × String × Nat)) (t : Term) : Term := lowerStar reads t.path.length t
+
+/-- **Facts read modulo the read links.** Each linear atom naming a term
+some read link restates (`lowerByLinks`) is restated with every term so
+restated; a quantified atom's array, bound and body through one read
+(`readEvery`): what the knowledge states of a path it states of the value a
+link holds for it, whenever the fact entered the knowledge. -/
+def lowerAtoms (ls : HeapLinks.Links) (as : List IndexAtom) : List IndexAtom :=
+  let reads := bridgeReads ls
+  if reads.isEmpty then [] else
+  as.filterMap fun a => match a.fact with
+    | .linear F => if F.vars.any (fun t => lowerByLinks reads t != t) then
+        some { a with fact := .linear (renameFact (lowerByLinks reads) F) } else none
+    | .every .. => readEvery reads a
+    | _ => none
+
+theorem lowerAtoms_holds {ls : HeapLinks.Links} {as : List IndexAtom} {ρ h}
+    (hl : HeapLinks.Holds ls ρ h) (he : IndexHolds ε as ρ h) : IndexHolds ε (lowerAtoms ls as) ρ h := by
+  have hr : ∀ g ∈ bridgeReads ls, g ∈ bridgeReads ls := fun _ hg => hg
+  simp only [lowerAtoms]
+  split
+  · intro a ha; cases ha
+  · intro a ha hc
+    obtain ⟨b, hb, hab⟩ := List.mem_filterMap.mp ha
+    split at hab
+    · rename_i F hF
+      split at hab
+      · cases hab
+        have hbF := he b hb hc
+        rw [hF] at hbF
+        exact (IndexFact.holdsAt_linear_mapVars (renameFact_mapVars (lowerByLinks (bridgeReads ls)) F)
+          fun x _ y hy => by cases hy; exact lowerStar_eq hl hr _ x).mpr hbF
+      · cases hab
+    · have hc' : ∀ c, b.cond = some c → tagHolds .truthy (ρ c) = !b.negated := by
+        unfold readEvery at hab
+        split at hab
+        · split at hab
+          · simp only [Option.some.injEq] at hab; subst hab; exact hc
+          · cases hab
+        · cases hab
+      exact readEvery_holds hl hr hab (he b hb hc')
+    · cases hab
+
 /-- Whether a linear atom names a term with a nonempty path. -/
 def namesPath (a : IndexAtom) : Bool :=
   match a.fact with
@@ -3403,10 +3470,68 @@ theorem observedAtoms_sound {G : NormalGraph ι} {A : Ty ι} {tag q R n W v}
     exact ⟨.strLit _, by simp, rfl⟩
   · exact (atoms_sem h n W v).mp (BranchRefinement.tagSlice_sound hm ho)
 
-/-- Each slot's type as the value set its predicates admit, where it is of
-finitely many primitive predicates: each computed when first read, once. -/
+/-- The strongest supported nullish exclusion implied by a value type. -/
+def nullishAtoms (G : NormalGraph ι) (A : Ty ι) : Option (List Atom) :=
+  if G.plainTy A then
+    let nn := (expand G A).all (fun c => tagClause .isNul c == some false)
+    let nu := (expand G A).all (fun c => tagClause .isUndef c == some false)
+    if nn && nu then some [.nonNullish]
+    else if nu then some [.defined]
+    else if nn then some [.nonNull]
+    else none
+  else none
+
+theorem nullishAtoms_sound {G : NormalGraph ι} {A R n W v}
+    (hr : nullishAtoms G A = some R) (hv : meaning G A n W v) :
+    ∃ a ∈ R, a.holds v := by
+  unfold nullishAtoms at hr
+  split at hr
+  · rename_i hp
+    have hn : (expand G A).all (fun c => tagClause .isNul c == some false) = true → v ≠ .nul := by
+      intro h he
+      have hq : Answers G A .isNul false := ⟨hp, by simpa only [List.all_eq_true, beq_iff_eq] using h⟩
+      have := answers_sound hq hv
+      rw [he] at this; simp [tagHolds] at this
+    have hu : (expand G A).all (fun c => tagClause .isUndef c == some false) = true → v ≠ .undef := by
+      intro h he
+      have hq : Answers G A .isUndef false := ⟨hp, by simpa only [List.all_eq_true, beq_iff_eq] using h⟩
+      have := answers_sound hq hv
+      rw [he] at this; simp [tagHolds] at this
+    dsimp only at hr
+    split at hr
+    · rename_i hb; cases hr
+      simp only [Bool.and_eq_true] at hb
+      exact ⟨.nonNullish, by simp, (meaning_value hv).1, hn hb.1, hu hb.2⟩
+    · split at hr
+      · rename_i h; cases hr
+        exact ⟨.defined, by simp, (meaning_value hv).1, hu h⟩
+      · split at hr
+        · rename_i h; cases hr
+          exact ⟨.nonNull, by simp, (meaning_value hv).1, hn h⟩
+        · cases hr
+  · cases hr
+
+/-- **The values a type admits**, as atoms: its finitely many primitive
+predicates where it is of them (`atoms`), else the nullish values it
+excludes (`nullishAtoms`). -/
+def typeAtoms (G : NormalGraph ι) (A : Ty ι) : Option (List Atom) :=
+  (atoms G A).orElse fun _ => nullishAtoms G A
+
+theorem typeAtoms_sound {G : NormalGraph ι} {A R n W v} (hr : typeAtoms G A = some R)
+    (hv : meaning G A n W v) : ∃ a ∈ R, a.holds v := by
+  unfold typeAtoms at hr
+  cases ha : atoms G A with
+  | some S =>
+    rw [ha] at hr; cases hr
+    exact (atoms_sem ha n W v).mp hv
+  | none =>
+    rw [ha] at hr
+    exact nullishAtoms_sound hr hv
+
+/-- Each slot's type as the value set it admits (`typeAtoms`): each computed
+when first read, once. -/
 def typeSets (G : NormalGraph ι) (Γ : List (Ty ι)) : Array (Thunk (Option ValueSets.ValueSet)) :=
-  Γ.toArray.map fun A => Thunk.mk fun _ => (atoms G A).map ValueSets.ofAtoms
+  Γ.toArray.map fun A => Thunk.mk fun _ => (typeAtoms G A).map ValueSets.ofAtoms
 
 /-- The contexts read from computed type sets, slot `i` at index `i - shift`
 (below `shift`, none). Kept out of line, so the sets are computed once by
@@ -3416,7 +3541,7 @@ the caller and only read here. -/
   fun i => if i < shift then none else (ts[i - shift]?).bind (·.get)
 
 theorem typeSets_get (G : NormalGraph ι) (Γ : List (Ty ι)) (i : Nat) :
-    ((typeSets G Γ)[i]?).bind (·.get) = (Γ[i]?).bind fun A => (atoms G A).map ValueSets.ofAtoms := by
+    ((typeSets G Γ)[i]?).bind (·.get) = (Γ[i]?).bind fun A => (typeAtoms G A).map ValueSets.ofAtoms := by
   simp only [typeSets, Array.getElem?_map, List.getElem?_toArray]
   cases Γ[i]? <;> rfl
 
@@ -3428,7 +3553,7 @@ theorem typeSets_mem {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W} (he : Env
   | some A =>
     rw [hA] at h
     obtain ⟨R, hR, rfl⟩ := Option.map_eq_some_iff.mp h
-    exact ValueSets.ofAtoms_holds ((atoms_sem hR n W (ρ i)).mp (he.2 i A hA))
+    exact ValueSets.ofAtoms_holds (typeAtoms_sound hR (he.2 i A hA))
 
 /-- What every live read link states of its cell where its value's slot has
 a type denoting finitely many primitive predicates (`link-fact`,

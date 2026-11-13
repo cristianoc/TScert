@@ -43,7 +43,7 @@ theorem regionalStepFacts_of_relations {G : NormalGraph ι} {ev : NodeEvidence �
   · intro f hf
     exact hs.2.2.2.2.1 f (right_mem a.elems b.elems hf)
   · intro f hf
-    exact hs.2.2.2.2.2 f (right_mem a.indices b.indices hf)
+    exact hs.2.2.2.2.2 f (List.mem_append_left _ (List.mem_append_left _ (right_mem a.indices b.indices hf)))
 
 /-- The requirements branch gives regional typing when the regional entry supplies the step facts. -/
 theorem regionalTyped_of_requires {G : NormalGraph ι} {I : InstanceImageCheck G} {codes : CodeEntry ι → Bool}

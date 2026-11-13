@@ -387,7 +387,13 @@ with `lengthRange` and `viewRange` (a string's length's too, `strRange_holds`); 
 `linearFollows_sound`). The read link is `HeapLinks.Holds` and the bridge
 `HeapKnowledge.readBridge`; restating toward the root is `liftTerm` (proved:
 `liftTerm_eq`), with `bridgedDefined` and `lengthBoundVia`; the read's
-restatement is `readAtoms` (proved: `readAtoms_holds`) and
+restatement is `readAtoms` (proved: `readAtoms_holds`), and every check
+reads its knowledge with each linear and quantified atom restated by every
+read link toward the ends of its paths (`lowerAtoms`, as far as the links
+reach; proved: `lowerAtoms_holds`), so a fact a call's postcondition states of
+`lists.widths` is read of the local `widths` the link `lists.widths ≐ widths`
+relates to it, whenever either entered the knowledge (`linked-path-fact`,
+in `KnowledgeExpand.expandLinks`, with `released` for `guard-typed`), and
 `HeapExpressionRules.linkedOutput` (proved in `linkedRead_sound`); the
 dropped slot's is `restateReads` (proved: `restateReads_holds`). The steps
 are a layer of `Checker.indexing` (`IndexWrites.linearAtoms`; proved:
@@ -1176,6 +1182,21 @@ not, gives as one (proved):
 \frac{\mathrm{guarded}(x.p,g,B)\in\Sigma\qquad \mathrm{reads}_\Sigma(x.p)=y\qquad o\ \text{excludes}\ \overline g\ \text{of}\ y}
      {\Sigma\vdash y\ \text{observed}\ o\dashv\Sigma,\ B}\ \textsf{guard-eliminate}
 ```
+
+The context's types eliminate a guard alike: every check reads the
+knowledge with each guarded atom on a slot whose alias class's types admit no
+value equal to the tag's (`typeAtoms`: the type's primitive predicates, or
+the nullish values it excludes) restated as its body, under the atom's own
+condition (proved):
+
+```math
+\frac{\mathrm{guarded}(x,g,B)\in\Sigma\qquad \overline g\notin⟦\Gamma([x])⟧}
+     {\Gamma;\Sigma\vdash B}\ \textsf{guard-typed}
+```
+
+So a precondition `p === null || 1 <= p.xs.length` of a parameter typed
+without `null` reads `p.xs[0]` (`guard-typed-parameter`), as does a call's
+guarded postcondition at an argument whose type excludes `null`.
 
 So `const { contexts } = prepared; if (contexts !== null) … contexts[i]!`
 reads below the length the invariant states: the destructuring's read link

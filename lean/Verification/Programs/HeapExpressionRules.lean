@@ -105,47 +105,6 @@ theorem copy_holds {k i ρ h} (hk : HeapKnowledge.Holds k ε ρ h) :
         · have hv := List.mem_singleton.mp hv; subst v; rfl)
       exact hp g hg
 
-/-- The strongest supported nullish exclusion implied by a value type. -/
-def nullishAtoms (G : NormalGraph ι) (A : Ty ι) : Option (List Atom) :=
-  if G.plainTy A then
-    let nn := (expand G A).all (fun c => tagClause .isNul c == some false)
-    let nu := (expand G A).all (fun c => tagClause .isUndef c == some false)
-    if nn && nu then some [.nonNullish]
-    else if nu then some [.defined]
-    else if nn then some [.nonNull]
-    else none
-  else none
-
-theorem nullishAtoms_sound {G : NormalGraph ι} {A R n W v}
-    (hr : nullishAtoms G A = some R) (hv : meaning G A n W v) :
-    ∃ a ∈ R, a.holds v := by
-  unfold nullishAtoms at hr
-  split at hr
-  · rename_i hp
-    have hn : (expand G A).all (fun c => tagClause .isNul c == some false) = true → v ≠ .nul := by
-      intro h he
-      have hq : Answers G A .isNul false := ⟨hp, by simpa only [List.all_eq_true, beq_iff_eq] using h⟩
-      have := answers_sound hq hv
-      rw [he] at this; simp [tagHolds] at this
-    have hu : (expand G A).all (fun c => tagClause .isUndef c == some false) = true → v ≠ .undef := by
-      intro h he
-      have hq : Answers G A .isUndef false := ⟨hp, by simpa only [List.all_eq_true, beq_iff_eq] using h⟩
-      have := answers_sound hq hv
-      rw [he] at this; simp [tagHolds] at this
-    dsimp only at hr
-    split at hr
-    · rename_i hb; cases hr
-      simp only [Bool.and_eq_true] at hb
-      exact ⟨.nonNullish, by simp, (meaning_value hv).1, hn hb.1, hu hb.2⟩
-    · split at hr
-      · rename_i h; cases hr
-        exact ⟨.defined, by simp, (meaning_value hv).1, hu h⟩
-      · split at hr
-        · rename_i h; cases hr
-          exact ⟨.nonNull, by simp, (meaning_value hv).1, hn h⟩
-        · cases hr
-  · cases hr
-
 /-- Every value is null, undefined, or neither. This observation alone
 restricts no read; a guard can refine it through a live read link. -/
 theorem nullish_partition {v : Tm} (hv : isVal v = true) :
@@ -159,8 +118,7 @@ theorem nullish_partition {v : Tm} (hv : isVal v = true) :
 /-- The values a slot's type admits, as a value set; a type with no
 primitive description still gives its nullish exclusions. -/
 def typeValues (G : NormalGraph ι) (Γ : List (Ty ι)) (i : Nat) : Option ValueSets.ValueSet :=
-  (Γ[i]?).map fun B => ValueSets.ofAtoms
-    (((HeapKnowledge.atoms G B).orElse fun _ => nullishAtoms G B).getD [.nul,.undef,.nonNullish])
+  (Γ[i]?).map fun B => ValueSets.ofAtoms ((HeapKnowledge.typeAtoms G B).getD [.nul,.undef,.nonNullish])
 
 theorem typeValues_sound {G : NormalGraph ι} {Γ i R ρ n W}
     (hr : typeValues G Γ i = some R) (he : EnvOk G Γ ρ n W) : R.mem (ρ i) = true := by
@@ -169,20 +127,14 @@ theorem typeValues_sound {G : NormalGraph ι} {Γ i R ρ n W}
   | none => simp [hb] at hr
   | some B =>
     simp only [hb,Option.map_some, Option.some.injEq] at hr
-    cases ha : HeapKnowledge.atoms G B with
+    cases ha : HeapKnowledge.typeAtoms G B with
     | some S =>
-      simp only [ha, Option.orElse_some, Option.getD_some] at hr
+      simp only [ha, Option.getD_some] at hr
       subst R
-      exact ValueSets.ofAtoms_holds ((atoms_sem ha n W (ρ i)).mp (he.2 i B hb))
+      exact ValueSets.ofAtoms_holds (HeapKnowledge.typeAtoms_sound ha (he.2 i B hb))
     | none =>
-      simp only [ha, Option.orElse_none] at hr
-      cases hn : nullishAtoms G B with
-      | some S =>
-        simp only [hn, Option.getD_some] at hr; subst R
-        exact ValueSets.ofAtoms_holds (nullishAtoms_sound hn (he.2 i B hb))
-      | none =>
-        simp only [hn, Option.getD_none] at hr; subst R
-        exact ValueSets.ofAtoms_holds (nullish_partition (meaning_value (he.2 i B hb)).1)
+      simp only [ha, Option.getD_none] at hr; subst R
+      exact ValueSets.ofAtoms_holds (nullish_partition (meaning_value (he.2 i B hb)).1)
 
 /-- What the knowledge states of a slot's value, gathered over its aliases
 (`HeapKnowledge.valueBy`), met with what its type admits; the type alone

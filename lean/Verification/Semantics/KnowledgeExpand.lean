@@ -109,6 +109,42 @@ theorem links_holds (hk : HeapKnowledge.Holds k ε ρ h) : HeapLinks.Holds (link
       rw [members_eq hl hcm, members_eq hl hvm]
       exact hgl
 
+/-- **A guard the context refutes.** Each guarded atom `x === t || B` whose
+guard reads the slot `x` itself, where the context of `x`'s class in the
+closure `cs` (`classCtxIn`) holds no value equal to the tag's, restated as
+its body `B`, under the atom's own condition: no value the context admits
+reads the tag, so the body holds. -/
+def released (ctx : Ctx) (cs : Partitions.Partition) (as : List IndexAtom) : List IndexAtom :=
+  as.filterMap fun a => match a.fact with
+    | .guarded s [] t B => match classCtxIn ctx cs s with
+      | some C => if C.mem t.val then none else some { a with fact := B }
+      | none => none
+    | _ => none
+
+theorem released_holds {ctx : Ctx} {cs : Partitions.Partition} {as : List IndexAtom} {ρ : Env} {h : Heap}
+    (hc : CtxOk ctx ρ) (hs : ∀ x, ∀ y ∈ Partitions.cls cs x, ρ y = ρ x) (he : IndexHolds ε as ρ h) :
+    IndexHolds ε (released ctx cs as) ρ h := by
+  intro a ha hcond
+  obtain ⟨b, hb, hab⟩ := List.mem_filterMap.mp ha
+  split at hab
+  · rename_i s t B hfact
+    split at hab
+    · rename_i C hC
+      split at hab
+      · cases hab
+      · rename_i hmem
+        cases hab
+        have hbF := he b hb hcond
+        rw [hfact] at hbF
+        obtain ⟨v, hv, hor⟩ := hbF
+        simp only [readGuard, Option.some.injEq] at hv
+        subst hv
+        rcases hor with heq | hB
+        · exact absurd (heq ▸ classCtxIn_mem hc (hs s) hC) hmem
+        · exact hB
+    · cases hab
+  · cases hab
+
 /-- What readers need of a knowledge whose facts are stored once per class:
 its value facts restricted to their classes' contexts, and each read's value
 class's context as a value fact; behind each stored read link
@@ -122,8 +158,9 @@ def expandLinks (ctx : Ctx) (k : Knowledge) : Knowledge :=
   let vs := (k.values.map fun F => { F with contents := restrict (classCtxIn ctx cs F.slot) F.contents }) ++
     (k.links.filter fun g => !g.alias).filterMap fun g =>
       (classCtxIn ctx cs g.value).map fun C => ⟨g.value, C, valueField⟩
+  let rel := released ctx cs k.indices
   ⟨k.cells ++ vs.flatMap (fun F => linkFacts ⟨[], [], k.links, {}, [], []⟩ F.slot F.contents), vs, ls, k.separation, k.elems,
-    k.indices⟩
+    k.indices ++ rel ++ HeapKnowledge.lowerAtoms ls (k.indices ++ rel)⟩
 
 theorem expandLinks_holds {ctx : Ctx} {k : Knowledge} {ρ : Env} {h : Heap} (hc : CtxOk ctx ρ)
     (hk : HeapKnowledge.Holds k ε ρ h) : HeapKnowledge.Holds (expandLinks ctx k) ε ρ h := by
@@ -141,7 +178,11 @@ theorem expandLinks_holds {ctx : Ctx} {k : Knowledge} {ρ : Env} {h : Heap} (hc 
       obtain ⟨C, hC, rfl⟩ := Option.map_eq_some_iff.mp hF
       exact classCtxIn_mem hc (hs g.value) hC
   have hl := links_holds hk
-  refine ⟨fun F hF => ?_, hv, hl, hk.2.2.2⟩
+  have hrel := released_holds (ε := ε) hc hs hk.2.2.2.2.2
+  have hall : HeapKnowledge.IndexHolds ε (k.indices ++ released ctx (LinkClasses.closure k.links) k.indices) ρ h :=
+    fun a ha hcond => (List.mem_append.mp ha).elim (fun ha => hk.2.2.2.2.2 a ha hcond) (fun ha => hrel a ha hcond)
+  refine ⟨fun F hF => ?_, hv, hl, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hcond => (List.mem_append.mp ha).elim
+    (fun ha => hall a ha hcond) (fun ha => HeapKnowledge.lowerAtoms_holds hl hall a ha hcond)⟩
   rcases List.mem_append.mp hF with hF | hF
   · exact hk.1 F hF
   · obtain ⟨V, hV, hF⟩ := List.mem_flatMap.mp hF

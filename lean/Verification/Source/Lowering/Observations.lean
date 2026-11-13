@@ -281,7 +281,7 @@ nullish exclusions `A` implies. -/
       if ← [Tag.isUndef, .isNul, .isNullish].anyM (fun tag => withinAt T gen (BranchRefinement.tagSlice G C tag false) A)
       then pure none else answerAtoms C A
     | none => pure none
-  return answer.orElse fun _ => HeapExpressionRules.nullishAtoms G A
+  return answer.orElse fun _ => HeapKnowledge.nullishAtoms G A
 
 /-- A statement witness asserts the origin of its saved value: read from the
 root binding through the path's one field, or from the witness of the path's
@@ -335,7 +335,7 @@ must follow from the stable storage contract; no claim is silently dropped. -/
         match HeapKnowledge.atoms G A with
         | some atoms => facts := facts ++ [⟨i,ValueSets.ofAtoms atoms,valueField⟩]
         | none =>
-          match HeapExpressionRules.nullishAtoms G A with
+          match HeapKnowledge.nullishAtoms G A with
           | some atoms => facts := facts ++ [⟨i,ValueSets.ofAtoms atoms,valueField⟩]
           | none =>
             if early then throw s!"the claim for the early binding '{b.source.name}' at {pos} is no primitive fact of its contents"

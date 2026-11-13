@@ -267,6 +267,10 @@ run_cmd do
   check ``Verification.HeapKnowledge.storeFollows_sound
   check ``Verification.HeapKnowledge.restateStores_holds
   check ``Verification.HeapKnowledge.indicesCheckWith_sound
+  check ``Verification.HeapKnowledge.lowerAtoms_holds
+  check ``Verification.KnowledgeExpand.released_holds
+  check ``Verification.KnowledgeExpand.expandLinks_holds
+  check ``Verification.HeapKnowledge.typeAtoms_sound
   check ``Verification.HeapExpressionRules.stableFirst_frame
   check ``Verification.Footprints.rebase_sound
   check ``Verification.Footprints.Post.compose_at
