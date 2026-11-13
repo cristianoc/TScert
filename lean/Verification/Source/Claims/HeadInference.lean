@@ -502,10 +502,9 @@ partial def Fact.keptAcross (es : List Expr) : Fact → Bool
     | _ => false
   | .guarded gs l => Fact.keptAcross es (.lin l) && (es.all quiet || gs.all (·.2.1.isEmpty))
   | .lin l =>
-    let quietAll := es.all quiet
     let t := touched es
     l.terms.all fun ((n, p, k), _) =>
-      if !p.isEmpty then quietAll
+      if !p.isEmpty then true
       else match k with
         | .value | .strLength => true
         | .length | .view => !t.contains n
