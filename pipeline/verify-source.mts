@@ -19,7 +19,8 @@ import { initOmission } from "../tools/fragment-parse.mts";
 import { requireWellFormed, wireText } from "../tools/wire-strings.mts";
 import { resolvableDeclaration } from "../tools/intrinsics.mts";
 import { currentStore, invokeInProcess, invokeProcess, Recorder, readInvocationLog, type AttemptRecord } from "./stages.mts";
-import { verifyWithInterfaces } from "./module-interfaces.mts";
+import { verifyByUnits } from "./module-interfaces.mts";
+import type { CheckedUnits } from "./module-interfaces.mts";
 import { refusalEnd, verifier, verifierProtocol, type ProcessCall, type Protocol } from "./stage-execution.mts";
 
 /** The file of a run's directory holding its stage invocations' attempts. */
@@ -294,6 +295,13 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
         throw Error("invalid function identity");
       return f.name;
     });
+    // Each function's unit as the pass names it (`name@offset`).
+    const unitIds = parsedData.functions.map((f: unknown): [string, string] => {
+      const pos = field(f, "namePos"), name = field(f, "name");
+      const at: unknown = Array.isArray(pos) ? pos[0] : undefined;
+      if (typeof at !== "number" || typeof name !== "string") throw Error("invalid function identity");
+      return [name, `${name}@${at}`];
+    });
     if (!("init" in parsedData) || !Array.isArray(parsedData.init))
       throw Error("parser omitted the module initialization");
     const initialization = parsedData.init.map((s: unknown): [number, number] => {
@@ -303,7 +311,7 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
       return [s.pos[0], s.pos[1]];
     });
     phase = "proposal";
-    return singlePass(recorder, artifacts, ast, snapshot, subtypeRounds, functions, initialization,
+    return singlePass(recorder, artifacts, ast, snapshot, subtypeRounds, functions, unitIds, initialization,
       (detail) => refusedByTypeScript(detail, refusedErrors));
   } catch (e) {
     return {
@@ -328,38 +336,69 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
  * not established or exhausted, which is a refused unit's; a stage over its
  * limit is an error. */
 function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey: string, subtypeRounds: number | undefined,
-    functions: string[], initialization: [number, number][], named: (detail: string) => string): Outcome {
-  let run: StepRun;
+    functions: string[], unitIds: [string, string][], initialization: [number, number][], named: (detail: string) => string): Outcome {
+  // The names a check of one unit selects: each function's, and the
+  // initialization's where it runs code.
+  const names = [...new Set(functions), ...(initialization.length > 0 ? [":init"] : [])];
+  let checked: CheckedUnits;
   try {
-    const invoked = verifyWithInterfaces(ast, fileKey, "", {
+    checked = verifyByUnits(ast, fileKey, names, {
       mode: 8, fuel: searchDepth, rounds: subtypeRounds ?? 4096, force: [],
       work: join(artifacts, "interfaces"), invocation: { limitMs: stepTimeoutMs, force: false, recorder },
-    }).run;
-    const execution = invoked.record.execution;
-    if (execution === "timed-out" || execution === "timeout-replayed")
-      return { status: "error", artifacts, phase: "check", units: null,
-        detail: `timeout: verifier --verify-interface-stage did not finish within ${stepTimeoutMs / 1000} s` +
-          (execution === "timeout-replayed" ? " (an earlier attempt; TSCERT_RETRY_TIMEOUTS=1 runs it again)" : "") };
-    if (invoked.error || invoked.signal || invoked.status === null)
-      return { status: "error", artifacts, phase: "check", units: null,
-        detail: `tool failure: verifier --verify-interface-stage ${invoked.signal ? `was killed by ${invoked.signal}` : "did not run"}: ` +
-          `${invoked.error?.message ?? (invoked.stderr.trim().split("\n")[0] || "no exit status")}` };
-    const out = wireText(invoked.stdoutBytes, "verifier --verify-interface-stage");
-    const err = wireText(invoked.stderrBytes, "verifier --verify-interface-stage");
-    run = { code: invoked.status, out, detail: err.trim() || out.trim(), record: invoked.record };
+    });
   } catch (error) {
     const message = messageOf(error);
     return { status: "error", artifacts, phase: "check", units: null,
       detail: /timed-out|timeout-replayed/.test(message)
         ? `timeout: a module-interface stage did not finish within ${stepTimeoutMs / 1000} s: ${message}` : message };
   }
-  writeFileSync(join(artifacts, "pass.log"), run.detail);
-  const lines = run.out.split("\n").filter((l) => l.startsWith("{"));
-  const refusal = verifierRefusal(run, "--verify-interface-stage");
-  if (refusal !== null && lines.length === 0)
-    return readDiagnostic(refusal)?.kind === "direct-obligation"
-      ? { status: refusalStatus(refusal), artifacts, phase: "search", detail: named(refusal), units: null }
-      : { status: "unsupported", artifacts, phase: "proposal", detail: named(refusal), units: null };
+  const over = (execution: string): string =>
+    `timeout: verifier --verify-interface-stage did not finish within ${stepTimeoutMs / 1000} s` +
+      (execution === "timeout-replayed" ? " (an earlier attempt; TSCERT_RETRY_TIMEOUTS=1 runs it again)" : "");
+  const steps: { names: string | null; run: StepRun | null; over: string }[] = [];
+  for (const { names: selected, run: invoked } of checked.runs) {
+    const execution = invoked.record.execution;
+    if (execution === "timed-out" || execution === "timeout-replayed") {
+      if (selected === null) return { status: "error", artifacts, phase: "check", units: null, detail: over(execution) };
+      steps.push({ names: selected, run: null, over: over(execution) });
+      continue;
+    }
+    if (invoked.error || invoked.signal || invoked.status === null)
+      return { status: "error", artifacts, phase: "check", units: null,
+        detail: `tool failure: verifier --verify-interface-stage ${invoked.signal ? `was killed by ${invoked.signal}` : "did not run"}: ` +
+          `${invoked.error?.message ?? (invoked.stderr.trim().split("\n")[0] || "no exit status")}` };
+    const out = wireText(invoked.stdoutBytes, "verifier --verify-interface-stage");
+    const err = wireText(invoked.stderrBytes, "verifier --verify-interface-stage");
+    steps.push({ names: selected, run: { code: invoked.status, out, detail: err.trim() || out.trim(), record: invoked.record },
+      over: "" });
+  }
+  writeFileSync(join(artifacts, "pass.log"), steps.map((s) =>
+    (s.names === null ? "" : `unit ${s.names}:\n`) + (s.run?.detail ?? s.over)).join("\n"));
+  const lines: string[] = [];
+  let refusal: string | null = null;
+  for (const step of steps) {
+    if (step.run === null) {
+      // A unit over its limit: its own refusal, each unit the name selects.
+      const ids = step.names === ":init" ? ["init"] : unitIds.filter(([n]) => n === step.names).map(([, id]) => id);
+      for (const id of ids) lines.push(JSON.stringify({ unit: id, members: [id], refusal: step.over }));
+      continue;
+    }
+    const own = step.run.out.split("\n").filter((l) => l.startsWith("{"));
+    const refused = verifierRefusal(step.run, "--verify-interface-stage");
+    if (refused !== null && own.length === 0)
+      return readDiagnostic(refused)?.kind === "direct-obligation"
+        ? { status: refusalStatus(refused), artifacts, phase: "search", detail: named(refused), units: null }
+        : { status: "unsupported", artifacts, phase: "proposal", detail: named(refused), units: null };
+    refusal = refusal ?? refused;
+    lines.push(...own);
+  }
+  // Where the module interfaces were not established, a unit refused at
+  // ordinary contracts is refused for that first.
+  const unestablished = checked.interfaceFailure === null ? null :
+    `the module interfaces its imports read were not established: ${
+      /timed-out|timeout-replayed/.test(checked.interfaceFailure)
+        ? `timeout: a module-interface stage did not finish within ${stepTimeoutMs / 1000} s: ` : ""}${
+      checked.interfaceFailure.split("\n")[0] ?? ""}`;
   const strings = (value: unknown): string[] => {
     if (!Array.isArray(value) || !value.every((x): x is string => typeof x === "string"))
       throw Error("tool failure: the single pass printed a unit without its members or dependencies");
@@ -372,8 +411,9 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
     const accepted = field(value, "accepted") === true;
     if (!accepted && typeof reason !== "string") throw Error("tool failure: the single pass printed a verdict without its refusal");
     return { unit, members: strings(field(value, "members")), accepted, depends: accepted ? strings(field(value, "depends")) : [],
-      refusal: typeof reason === "string" ? reason : "" };
-  });
+      refusal: typeof reason === "string" ? (unestablished === null ? reason : `${unestablished}\nat ordinary contracts: ${reason}`)
+        : "" };
+  }).filter((v, i, all) => all.findIndex((w) => w.unit === v.unit) === i);
   // A unit is closed when it and every unit it depends on are accepted.
   const byUnit = new Map(verdicts.map((v) => [v.unit, v]));
   const closed = new Map(verdicts.map((v) => [v.unit, v.accepted]));

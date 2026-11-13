@@ -115,6 +115,57 @@ export function prepareInterfaces(fragmentPath: string, options: InterfaceOption
   return { path, records };
 }
 
+/** One check of the importer: the selection it names (`null`, the file's
+ * every unit) and its stage's run. */
+export type UnitsRun = { names: string | null; run: Invoked };
+/** The importer's checks, a stage per unit where the file's stage exceeds its
+ * limit, and, where the module interfaces its imports read could not be
+ * established, why: the checks are then those at ordinary contracts. */
+export type CheckedUnits = { runs: UnitsRun[]; interfaceFailure: string | null };
+const overLimit = (run: Invoked): boolean =>
+  run.record.execution === "timed-out" || run.record.execution === "timeout-replayed";
+
+/** The importer's check by units: the file's stage, as `verifyWithInterfaces`
+ * runs it; where that stage exceeds its limit, a stage for each name of
+ * `units` (a function's name, `:init`), each with its own limit and its own
+ * key, so a unit over its limit costs only its own verdict and its
+ * dependents'. Where the module-interface stages fail (a timeout, a
+ * refusal), the checks at ordinary contracts stand, with that failure: a unit
+ * accepted there is accepted with no stronger module fact. */
+export function verifyByUnits(fragment: string, key: string, units: readonly string[],
+    options: InterfaceOptions): CheckedUnits {
+  mkdirSync(options.work, { recursive: true });
+  const environment: Record<string, string> = {};
+  if (process.env.TSCERT_PASS_REFUSALS === "raw") environment.TSCERT_PASS_REFUSALS = "raw";
+  const check = (path: string, names: string): Invoked => invokeProcess(verifierCall(verifier,
+    ["--subtype-rounds", String(options.rounds), "--verify-interface-stage", String(options.mode),
+      fragment, path, key, String(options.fuel), names], environment),
+    options.invocation);
+  const checkAll = (path: string): UnitsRun[] => {
+    const whole = check(path, "");
+    if (!overLimit(whole) || units.length < 2) return [{ names: null, run: whole }];
+    return units.map((u) => ({ names: u, run: check(path, u) }));
+  };
+  // A refusal (1) or a unit over its limit; anything else is a tool failure.
+  const settled = (r: UnitsRun): boolean => r.run.status === 0 || r.run.status === 1 || (r.names !== null && overLimit(r.run));
+  const ordinary = join(options.work, "ordinary-interfaces.json");
+  writeFileSync(ordinary, canonical({ modules: [] }));
+  const attempt = checkAll(ordinary);
+  if (attempt.every((r) => r.run.status === 0)) return { runs: attempt, interfaceFailure: null };
+  const failed = attempt.find((r) => !settled(r));
+  if (failed !== undefined) throw Error(`importer stage ${failed.run.record.execution}: ${failed.run.stderr}`);
+  if (array(object(json(readFileSync(fragment, "utf8"))).modules).length === 0) return { runs: attempt, interfaceFailure: null };
+  let interfaces: PreparedInterfaces;
+  try {
+    interfaces = prepareInterfaces(fragment, { ...options, names: "" });
+  } catch (error) {
+    return { runs: attempt, interfaceFailure: error instanceof Error ? error.message : String(error) };
+  }
+  if (array(object(json(readFileSync(interfaces.path, "utf8"))).modules).length === 0)
+    return { runs: attempt, interfaceFailure: null };
+  return { runs: checkAll(interfaces.path), interfaceFailure: null };
+}
+
 /** The importer is one process stage, with every file it reads an explicit
  * input role. */
 export function verifyWithInterfaces(fragment: string, key: string, names: string,
