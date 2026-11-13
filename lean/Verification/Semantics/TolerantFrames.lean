@@ -539,13 +539,13 @@ open HeapKnowledge in
 /-- `y ≤ |x.p|` as the pass states it: a linear index fact over the value of
 slot `y` and the length term at `x`'s path `p`. -/
 def pathLowerBoundFact (y x : Nat) (p : List String) : IndexFact :=
-  .linear (.le [(.value y, 1), (⟨.length, x, p, false⟩, -1)] 0)
+  .linear (.le [(.value y, 1), ((HeapKnowledge.Term.now .length x p), -1)] 0)
 
 /-- **`PathLowerBound` is the pass's path-term index fact.** -/
 theorem pathLowerBound_iff {y x : Nat} {p : List String} {ρ : Env} {m : Nat} {s : IndexedHeap} :
     PathLowerBound y x p ρ m s ↔ (pathLowerBoundFact y x p).HoldsAt ε ρ s.h := by
   have e1 : HeapKnowledge.termValue ε ρ s.h (.value y) = HeapKnowledge.intValue (ρ y) := rfl
-  have e2 : HeapKnowledge.termValue ε ρ s.h ⟨.length, x, p, false⟩ =
+  have e2 : HeapKnowledge.termValue ε ρ s.h (HeapKnowledge.Term.now .length x p) =
       (HeapKnowledge.readPath s.h (ρ x) p).bind (HeapKnowledge.lengthOf s.h) := rfl
   simp only [PathLowerBound, pathLowerBoundFact, HeapKnowledge.IndexFact.HoldsAt, Linear.Fact.vars,
     Linear.Fact.Holds, Linear.Form.eval, List.map, List.mem_cons, List.not_mem_nil, or_false,

@@ -216,6 +216,11 @@ private structure GraphFrame where
   /-- While a constant's function-literal initializer is compiled: the
   constant, which the literal's body may read as its self entry. -/
   selfConstant : Option String := none
+  /-- The entry frame of the function whose body is compiled: at call
+  position `p` (`0` the receiver, `i + 1` the `i`-th parameter), the slot of
+  the graph's start environment holding it, which an entry term `old(t)`
+  reads (ARITHMETIC.md, "Two-state postconditions"). -/
+  entryFrame : List (Option Nat) := []
   /-- The graph's constants holding a condition's value, by name (the
   fragment admits no shadowing), with the condition: where one is `true`,
   the lowering proposes what the condition narrows, which the checker
@@ -497,6 +502,15 @@ def withSelfConstant (name : Option String) (action : Compiler α) : Compiler α
     (fun saved after => { after with selfConstant := saved }) action
 
 def currentSelfConstant : Compiler (Option String) := readBuilt (·.selfConstant)
+
+/-- The body compiled in the scope is a function's whose entry frame holds
+call position `p` at slot `frame[p]`. -/
+def withEntryFrame (frame : List (Option Nat)) (action : Compiler α) : Compiler α :=
+  scopeState (·.entryFrame) (fun s => { s with entryFrame := frame })
+    (fun saved after => { after with entryFrame := saved }) action
+
+/-- The entry frame of the function compiled. -/
+def currentEntryFrame : Compiler (List (Option Nat)) := readBuilt (·.entryFrame)
 
 def recordConditionConstant (name : String) (init : Fragment.Expr) : Compiler Unit :=
   updateBuilt fun s => { s with conditionConstants := (name, init) :: s.conditionConstants }

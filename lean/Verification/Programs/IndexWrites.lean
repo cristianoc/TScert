@@ -2224,10 +2224,11 @@ theorem apartFrom_sound {k : Knowledge} {a e : Nat} {ρ h} (hc : apartFrom k a e
   all_goals (rw [hfact] at hf; cases hf)
 
 /-- Whether a term reads, through the heap, only locations apart from the
-region of `a`'s class: a slot's value, a string's length, or the length of
-an array whose region a fact keeps apart. -/
+region of `a`'s class: an entry term, which reads the entry state; a slot's
+value, a string's length, or the length of an array whose region a fact
+keeps apart. -/
 def termApart (k : Knowledge) (a : Nat) (t : Term) : Bool :=
-  t.path.isEmpty && match t.kind with
+  t.atEntry || t.path.isEmpty && match t.kind with
     | .value | .strLength => true
     | .length => apartFrom k a t.slot
     | .view => false
@@ -2286,7 +2287,7 @@ theorem termApart_kept {k : Knowledge} {a : Nat} {t : Term} {ρ : Env} {h h' : H
   obtain ⟨kind, x, p, e⟩ := t
   cases e
   case true => exact termValue_entry_some rfl ht
-  simp only [termApart, Bool.and_eq_true, List.isEmpty_iff] at hc
+  simp only [termApart, Bool.false_or, Bool.and_eq_true, List.isEmpty_iff] at hc
   obtain ⟨rfl, hc⟩ := hc
   simp only [termValue_nil] at ht ⊢
   cases kind with

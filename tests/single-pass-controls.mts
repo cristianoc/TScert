@@ -606,6 +606,29 @@ control("forged fragment: an old array at a slot's join", async (): Promise<void
   say("forged slot join: an old array on the nullish path of `acc ??= …`, refused at its unit");
 });
 
+control("forged fragment: a loop invariant's entry term at another call position", async (): Promise<void> => {
+  // `atEntry` names the entry state's namespace: the term's slot is a call
+  // position of the function's entry frame, read there whatever the loop's
+  // current bindings are. Moved to `from`'s position, the invariant states
+  // the length of a number's field, which no edge establishes; moved past the
+  // frame, the lowering refuses it.
+  const artifacts = run("two-state-invariant-after-statement");
+  const unit = unitOf(fragmentAst(artifacts), "measure");
+  honest("two-state-invariant-after-statement", unit);
+  const moved = (to: number, name: string): string => {
+    const ast = fragmentAst(artifacts);
+    let entries = 0;
+    visitAll(must(ast.functions.find((f) => f.name === "measure"), "measure").body, (value) => {
+      if (value.atEntry === true && typeof value.slot === "number") { value.slot = to; entries++; }
+    });
+    assert.ok(entries > 0, "the loop invariant's entry term");
+    return forged(artifacts, name, ast);
+  };
+  refused(pass(moved(1, "entry-term-at-from")), unit, "forged");
+  refused(pass(moved(9, "entry-term-past-frame")), unit, "forged", /reads in the entry state a position the function's entry frame does not hold/);
+  say("two-state invariants: an entry term moved to another call position or past the entry frame, refused");
+});
+
 control("forged fragment: a false postcondition", async (): Promise<void> => {
   const artifacts = run("type-invariant-walker");
   const ast = fragmentAst(artifacts);

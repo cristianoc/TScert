@@ -782,16 +782,12 @@ theorem pickSlot_eq {M : Nat → List Nat} {m : PointClaims.Mapping} {a : List I
 a slot of the class of the mapped slot whose term the source states defined,
 where there is one. -/
 def pickTerm (M : Nat → List Nat) (m : PointClaims.Mapping) (a : List IndexAtom) (t : Term) : Term :=
-  if t.atEntry then t else
-    { t with slot := pick M (fun x => termDefined a { t with slot := x }) (PointClaims.slot m t.slot) }
+  t.mapM' fun s => pick M (fun x => termDefined a (.now t.kind x t.path)) (PointClaims.slot m s)
 
 theorem pickTerm_eq {M : Nat → List Nat} {m : PointClaims.Mapping} {a : List IndexAtom} {ρ : Env} {h : Heap}
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (t : Term) :
     termValue ε ρ h (pickTerm M m a t) = termValue ε (PointClaims.mapEnv m ρ) h t := by
-  unfold pickTerm
-  split
-  · rename_i he; exact termValue_entry_invariant he
-  · rename_i he; exact termValue_slot (by rw [pick_eq hM]; rfl) (by simpa using he)
+  exact termValue_mapM' fun _ => by rw [pick_eq hM]; rfl
 
 /-- Whether the source's facts `K` (`knownOf a`) bound slot `k` by the length
 of the store of `x`'s class (`M`): `k` stated a safe integer, the facts
@@ -889,7 +885,7 @@ through the absent key. -/
 theorem readBridge {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h)
     {g : HeapLinks.Link} (hg : g ∈ ls) (ha : g.alias = false) {f : String}
     (hf : g.field = .str f) (k : Term.Kind) (p : List String) :
-    termValue ε ρ h ⟨k, g.cell, f :: p, false⟩ = termValue ε ρ h ⟨k, g.value, p, false⟩ := by
+    termValue ε ρ h (HeapKnowledge.Term.now k g.cell (f :: p)) = termValue ε ρ h (HeapKnowledge.Term.now k g.value p) := by
   have := hl g hg
   simp only [ha, Bool.false_eq_true, ite_false] at this
   cases ho : g.optional
@@ -923,7 +919,7 @@ def bridgeReads (ls : HeapLinks.Links) : List (Nat × String × Nat) :=
 
 theorem bridgeReads_term {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h)
     {c v : Nat} {f : String} (hm : (c, f, v) ∈ bridgeReads ls) (k : Term.Kind) (p : List String) :
-    termValue ε ρ h ⟨k, c, f :: p, false⟩ = termValue ε ρ h ⟨k, v, p, false⟩ := by
+    termValue ε ρ h (HeapKnowledge.Term.now k c (f :: p)) = termValue ε ρ h (HeapKnowledge.Term.now k v p) := by
   obtain ⟨g, hg, hgm⟩ := List.mem_filterMap.mp hm
   split at hgm
   · cases hgm
@@ -973,10 +969,10 @@ of its class (`r`); where a read gives the slot's value as field `f` read from
 slot `c`, the term rooted at `c` with `f` before its path, at most `n`
 times. -/
 def liftTerm (r : Nat → Nat) (reads : List (Nat × String × Nat)) : Nat → Term → Term
-  | 0, t => if t.atEntry then t else { t with slot := r t.slot }
+  | 0, t => t.mapM' r
   | n + 1, t => if t.atEntry then t else match reads.find? (fun g => r g.2.2 == r t.slot) with
-    | some (c, f, _) => liftTerm r reads n ⟨t.kind, c, f :: t.path, false⟩
-    | none => { t with slot := r t.slot }
+    | some (c, f, _) => liftTerm r reads n (HeapKnowledge.Term.now t.kind c (f :: t.path))
+    | none => t.mapM' r
 
 theorem liftTerm_eq {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h)
     {r : Nat → Nat} (hr : ∀ x, ρ (r x) = ρ x) :
@@ -985,9 +981,7 @@ theorem liftTerm_eq {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks
   induction n with
   | zero =>
     intro t; simp only [liftTerm]
-    split
-    · rfl
-    · rename_i he; exact termValue_slot (hr _) (by simpa using he)
+    exact termValue_mapM' fun _ => hr _
   | succ n ih =>
     intro t
     simp only [liftTerm]
@@ -999,18 +993,15 @@ theorem liftTerm_eq {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks
       have hm := List.mem_of_find?_eq_some hfind
       have hrv : r v = r t.slot := by simpa using List.find?_some hfind
       rw [ih, bridgeReads_term hl hm]
-      obtain ⟨k, s0, p0, a0⟩ := t
-      simp only at he hrv ⊢
-      simp only [Bool.not_eq_true] at he; subst he
-      exact termValue_slot (t := ⟨k, s0, p0, false⟩) (by rw [← hr v, hrv, hr]) rfl
-    · exact termValue_slot (hr _) (by simpa using he)
+      exact termValue_now_slot (by rw [← hr v, hrv, hr]) (by simpa using he)
+    · exact termValue_mapM' fun _ => hr _
 
 /-- A term restated through a read of slot `0` (`reads`): rooted at the
 read's value where it is rooted at the read object with the read field first. -/
 def lowerTerm (reads : List (Nat × String × Nat)) (t : Term) : Term :=
   if t.atEntry then t else match t.path with
   | f :: p => match reads.find? (fun g => g.1 == t.slot && g.2.1 == f) with
-    | some g => ⟨t.kind, g.2.2, p, false⟩
+    | some g => (HeapKnowledge.Term.now t.kind g.2.2 p)
     | none => t
   | [] => t
 
@@ -1380,8 +1371,8 @@ def linearFollowsIn (K : Linear.Known Term) (M : Nat → List Nat) (m : PointCla
         let known := linearRaw a ++ condFacts a c t.negated
         linearEntailed M m a B (Linear.Known.build known (rangesRaw a)) known F
   | .every s p stop _ =>
-      (stop == ⟨.length, s, p, false⟩ &&
-        linearEntailed M m a B K (linearRaw a) (.le [(⟨.length, s, p, false⟩, 1)] 0)) ||
+      (stop == (HeapKnowledge.Term.now .length s p) &&
+        linearEntailed M m a B K (linearRaw a) (.le [((HeapKnowledge.Term.now .length s p), 1)] 0)) ||
       (elementsKnown M m a s p && linearEntailed M m a B K (linearRaw a) (.le [(stop, 1)] 0))
   | .bound x k st =>
       t.cond.isNone && (lengthBoundIn K (M (PointClaims.slot m x)) a (pickSlot M m a k) st ||
@@ -1500,7 +1491,7 @@ theorem linearFollowsIn_sound {K : Linear.Known Term} {M : Nat → List Nat} {m 
     · simp only [Bool.and_eq_true, beq_iff_eq] at hf
       obtain ⟨rfl, hf⟩ := hf
       have hlin := linearEntailed_sound hM hB hf ha hK (linearRaw_holds ha)
-      have hd := hlin.1 ⟨.length, s, p, false⟩ (by simp [Linear.Fact.vars])
+      have hd := hlin.1 (HeapKnowledge.Term.now .length s p) (by simp [Linear.Fact.vars])
       obtain ⟨w, n, hw, hn, hterm⟩ := termValue_isSome hd rfl
       obtain ⟨sto, ls, hsto, hls, rfl, -⟩ := lengthOf_store hn
       have hle := hlin.2
@@ -2177,7 +2168,7 @@ each guard's path and each term rooted at `c` starting with `f`, rooted at
 `v` with the rest. A candidate a check decides (`guardedMeet`). -/
 def IndexFact.lowerRead (c : Nat) (f : String) (v : Nat) : IndexFact → IndexFact
   | .linear F => .linear ((F.mapVars fun t => some (match t.path with
-      | g :: q => if t.slot == c && g == f && !t.atEntry then ⟨t.kind, v, q, false⟩ else t
+      | g :: q => if t.slot == c && g == f && !t.atEntry then (HeapKnowledge.Term.now t.kind v q) else t
       | [] => t)).getD F)
   | .guarded s p t B => match p with
     | g :: q => if s == c && g == f then .guarded v q t (B.lowerRead c f v) else .guarded s p t (B.lowerRead c f v)
@@ -2354,13 +2345,13 @@ they were derived under. -/
 def eliminateLinear (drop : List Nat) (as : List IndexAtom) : List IndexAtom :=
   -- No linear or length atom names a slot of `drop`: no term of `linearTerms` does.
   if !as.any (fun a => match a.fact with
-    | .linear F => F.vars.any fun t => drop.contains t.slot
+    | .linear F => F.vars.any fun t => t.slots.any drop.contains
     | .length x n => drop.contains x || drop.contains n
     | _ => false) then as else
-  let used := (linearTerms as).filter fun t => drop.contains t.slot
+  let used := (linearTerms as).filter fun t => t.slots.any drop.contains
   if used.isEmpty then as else
   let keep := fun (known : List (Linear.Fact Term)) (F : Linear.Fact Term) =>
-    !known.contains F && F.vars.all (fun t => !drop.contains t.slot && termDefined as t)
+    !known.contains F && F.vars.all (fun t => !t.slots.any drop.contains && termDefined as t)
   let groups := (as.filterMap fun a => match a.cond, a.fact with
     | some c, .linear _ => if drop.contains c then none else some (c, a.negated)
     | _, _ => none).eraseDups
@@ -2454,7 +2445,7 @@ where no read reaches a kept root within `n` steps. -/
 def liftDropped (dropped : Nat → Bool) (reads : List (Nat × String × Nat)) : Nat → Term → Option Term
   | 0, t => if dropped t.slot && !t.atEntry then none else some t
   | n + 1, t => if dropped t.slot && !t.atEntry then match reads.find? (·.2.2 == t.slot) with
-      | some (c, f, _) => liftDropped dropped reads n ⟨t.kind, c, f :: t.path, false⟩
+      | some (c, f, _) => liftDropped dropped reads n (HeapKnowledge.Term.now t.kind c (f :: t.path))
       | none => none
     else some t
 

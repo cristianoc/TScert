@@ -525,7 +525,7 @@ end
 /-- The row fact `result = old(receiver)`, as `result - old(receiver) ≤ 0`:
 a postcondition of a function's receiver at its entry. -/
 def resultIsOldReceiver : HeapKnowledge.IndexFact :=
-  .linear (.le [(HeapKnowledge.Term.value 0, 1), (⟨.value, 0, [], true⟩, -1)] 0)
+  .linear (.le [(HeapKnowledge.Term.value 0, 1), ((HeapKnowledge.Term.old .value 0 []), -1)] 0)
 
 /-- Read past the receiver it names nothing: it names the receiver's entry
 value (proved by evaluation). -/
@@ -534,8 +534,8 @@ theorem resultIsOldReceiver_pastReceiver : resultIsOldReceiver.pastReceiver = no
 /-- Its neighbour `result = old(first parameter)` (entry position `1`) reads
 past the receiver as `result = old(slot 0)`, the request's first input. -/
 theorem resultIsOldFirst_pastReceiver :
-    (HeapKnowledge.IndexFact.linear (.le [(HeapKnowledge.Term.value 0, 1), (⟨.value, 1, [], true⟩, -1)] 0)).pastReceiver =
-      some (.linear (.le [(HeapKnowledge.Term.value 0, 1), (⟨.value, 0, [], true⟩, -1)] 0)) := rfl
+    (HeapKnowledge.IndexFact.linear (.le [(HeapKnowledge.Term.value 0, 1), ((HeapKnowledge.Term.old .value 1 []), -1)] 0)).pastReceiver =
+      some (.linear (.le [(HeapKnowledge.Term.value 0, 1), ((HeapKnowledge.Term.old .value 0 []), -1)] 0)) := rfl
 
 theorem mapM_some_mem {α β : Type} {f : α → Option β} :
     ∀ {l : List α} {l' : List β}, l.mapM f = some l' → ∀ x ∈ l, ∃ y, f x = some y

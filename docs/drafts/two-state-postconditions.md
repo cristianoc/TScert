@@ -61,6 +61,13 @@ facts, a quantified fact's bound and free body terms) admits entry terms.
 Invariance (proved, `termValue_entry_invariant`):
 $`[\![\mathrm{old}(t)]\!]_{\varepsilon,\rho,h}=[\![\mathrm{old}(t)]\!]_{\varepsilon,\rho',h'}`$.
 
+**Two namespaces.** A term's slot is a slot of the current environment or,
+for an entry term, of the entry environment. A term is built by `Term.now`
+or `Term.old`, which name the namespace (its constructor is private), and its
+slot is renamed only by maps that take the namespace (`Term.mapM`,
+`Term.mapEntry`, `Term.reroot`), so a map of one namespace is never applied
+to a slot of the other.
+
 **Two renamings.** Within one invocation the entry is fixed: renaming the
 current slots (reassignment, the pass's names, a push past the result)
 leaves every entry term as it is (`Term.mapM`, `IndexFact.mapM`). A change
@@ -192,8 +199,8 @@ parameters and its entry positions by the receiver and the parameters.
 **The wire.** A linear term is `{"kind", "slot", "path"}`, an entry term
 also `"atEntry": true`, its slot a call position. The front end writes it
 for `old(P)` and `old(P.length)` in `@ensures` (at the call's position of
-the root parameter), in a loop invariant (at the input position of a
-parameter of the function the loop is in) and in `@requires` (read as the
+the root parameter), in a loop invariant (at the call position of a
+parameter of the invocation the loop runs in) and in `@requires` (read as the
 term itself).
 
 ## The statements whose meaning changed

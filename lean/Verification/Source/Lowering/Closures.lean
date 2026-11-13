@@ -46,7 +46,12 @@ state resume afterwards. -/
     (defaults : List (Nat × Fragment.Expr)) (order : List Nat)
     (captures : List (ScopeBinding Tree)) (Cs : List (Ty Tree)) (Rt R : Ty Tree) (bodyExpr : Fragment.Expr)
     (answers : Bool) (selfEntry : Option (ScopeBinding Tree × Ty Tree) := none) :
-    Compiler (Program × Nat × List (PointClaim Tree) × CodeSource) := withFreshGraph <| withAnswers answers do
+    Compiler (Program × Nat × List (PointClaim Tree) × CodeSource) := withFreshGraph <| withAnswers answers <|
+    -- The entry frame (`codeFrame`): the receiver at slot 0, each parameter
+    -- after it, past the store of the further actuals where the code collects
+    -- a rest into one.
+    withEntryFrame ((List.range (params.length + 1)).map fun p =>
+      some (match rest with | some (_, .store _ _) => p + 1 | _ => p)) do
   -- The layout the rest's array is bound in: the receiver, the parameters,
   -- the array, then the captures. While an expression body has defaults, its
   -- parameters are named where the schedule reaches them.

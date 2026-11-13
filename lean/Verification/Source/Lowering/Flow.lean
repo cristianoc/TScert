@@ -13,37 +13,34 @@ namespace LoweringFlow
 
 set_option maxHeartbeats 1000000
 
-/-- A clause term rooted at a value binding or its initialized cell. -/
-def invariantTerm (root : Nat → Option (Nat × List String)) (t : HeapKnowledge.Term) :
-    Option HeapKnowledge.Term := do
-  let (slot, path) ← root t.slot
-  pure { t with slot, path := path ++ t.path }
-
-/-- A loop clause read through the same roots as producer index facts.
+/-- A loop clause read through the same roots as producer index facts: each
+current term at the value binding or initialized cell its name holds at the
+loop's head (`now`), each entry term at the slot of the function's entry
+frame holding its call position (`entry`; `Term.reroot`).
 A cell's integer fact is a path term, whose definedness states safe integrality;
 the upper bound is the range every such term already has. -/
-def invariantFact (root : Nat → Option (Nat × List String)) :
+def invariantFact (now entry : Nat → Option (Nat × List String)) :
     HeapKnowledge.IndexFact → Option HeapKnowledge.IndexFact
   | .int p => do
-    let (slot, path) ← root p
-    pure (if path.isEmpty then .int slot else .linear (.le [(⟨.value, slot, path, false⟩, 1)] (2 ^ 53 - 1)))
-  | .linear f => (f.mapVars (invariantTerm root)).map .linear
-  | .either A B => do pure (.either (← invariantFact root A) (← invariantFact root B))
+    let (slot, path) ← now p
+    pure (if path.isEmpty then .int slot else .linear (.le [((HeapKnowledge.Term.now .value slot path), 1)] (2 ^ 53 - 1)))
+  | .linear f => (f.mapVars (·.reroot now entry)).map .linear
+  | .either A B => do pure (.either (← invariantFact now entry A) (← invariantFact now entry B))
   | .guarded p path tag body => do
-    let (slot, pre) ← root p
-    pure (.guarded slot (pre ++ path) tag (← invariantFact root body))
+    let (slot, pre) ← now p
+    pure (.guarded slot (pre ++ path) tag (← invariantFact now entry body))
   | .every p path stop body => do
-    let (slot, pre) ← root p
-    let stop ← invariantTerm root stop
+    let (slot, pre) ← now p
+    let stop ← stop.reroot now entry
     let body ← body.mapM fun f => f.mapVars fun
-      | .free t => (invariantTerm root t).map HeapKnowledge.Bound.free
+      | .free t => (t.reroot now entry).map HeapKnowledge.Bound.free
       | .index => some .index
       | .elem => some .elem
       | .offset d => some (.offset d)
       | .project k p => some (.project k p)
     pure (.every slot (pre ++ path) stop body)
   | f => f.mapM fun p => do
-    let (slot, path) ← root p
+    let (slot, path) ← now p
     if path.isEmpty then some slot else none
 
 /-- Project lexical graph identities onto typed slots. Ambient parameters and
@@ -94,7 +91,7 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
     pure (left.flatMap fun a => right.map fun b => { fact := .either a.fact b.fact })
   | .linear guards terms bound => do
     let form ← terms.mapM fun (name, path, kind, c) => match termRoot scope name with
-      | some (x, pre) => pure ((⟨kind, x, pre ++ path, false⟩ : HeapKnowledge.Term), c)
+      | some (x, pre) => pure (((HeapKnowledge.Term.now kind x (pre ++ path)) : HeapKnowledge.Term), c)
       | none => do throw (locatedRefusal (← table) source .entryClaim
           s!"a linear fact names '{name}', which is no value binding or cell")
     let guards ← guards.mapM fun (name, path, tag) => match termRoot scope name with
@@ -389,7 +386,7 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
           | .elem => pure .elem
           | .offset d => pure (.offset d)
           | .project k p => pure (.project k p)
-          | .term n path kind => do let (z, r) ← root n path; pure (.free ⟨kind, z, r, false⟩)
+          | .term n path kind => do let (z, r) ← root n path; pure (.free (HeapKnowledge.Term.now kind z r))
         pure (b, c)
       pure (.atom (.le form bound))
     | .either A B => do pure (.either (← bodyClause A) (← bodyClause B))
@@ -397,7 +394,7 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
     let (x, p) ← root name path
     let (y, q) ← root sn sp
     let body ← body.mapM bodyClause
-    pure ({ fact := .every x p ⟨sk, y, q, false⟩ body } : HeapKnowledge.IndexAtom)
+    pure ({ fact := .every x p (HeapKnowledge.Term.now sk y q) body } : HeapKnowledge.IndexAtom)
   -- The region facts the producer proposes (FOOTPRINTS.md, "Element
   -- regions"): both sides value bindings; a claim naming any other is
   -- refused rather than dropped.
@@ -428,12 +425,13 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
   -- A loop's invariant (ARITHMETIC.md, "Loop invariants"): at its head,
   -- each fact rooted at the value bindings or initialized cells it names, which every edge
   -- into the head establishes.
+  let frame ← currentEntryFrame
   let invariant ← match node.action with
     | .branch (.loop _ _ _ _ (names, facts)) _ _ => facts.mapM fun F => do
-      match invariantFact (fun p => names[p]? >>= termRoot scope) F with
+      match invariantFact (fun p => names[p]? >>= termRoot scope) (fun p => frame[p]?.join.map (·, [])) F with
       | some G => pure ({ fact := G } : HeapKnowledge.IndexAtom)
       | none => throw (locatedRefusal (← table) node.source .entryClaim
-          "a loop invariant names a binding that is no value binding or initialized cell at the loop's head")
+          "a loop invariant names a binding that is no value binding or initialized cell at the loop's head, or reads in the entry state a position the function's entry frame does not hold")
     | _ => pure []
   -- By provenance (PROGRAM-TYPING.md, "Heap state and assertions"): the
   -- entry's assertion is what it requires, the bindings' contents, the

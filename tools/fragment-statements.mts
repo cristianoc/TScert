@@ -2288,6 +2288,13 @@ export function postcondition(gate: Gate, clauses: readonly string[], requires: 
   return "refused" in elaborated ? `a postcondition (\`@ensures\`): ${elaborated.refused}` : elaborated.facts;
 }
 
+/** The call position of a parameter of a function-like declaration: `0` a
+ * declared `this`, the receiver; `i + 1` the `i`-th other parameter. */
+function callPosition(f: ts.FunctionLikeDeclaration, p: ts.ParameterDeclaration): number {
+  const declaresThis = f.parameters[0] !== undefined && ts.isIdentifier(f.parameters[0].name) && f.parameters[0].name.text === "this";
+  return f.parameters.indexOf(p) + (declaresThis ? 0 : 1);
+}
+
 /** A loop's invariant (`@invariant` in the JSDoc before it; ARITHMETIC.md,
  * "Loop invariants"): its clauses elaborated to index facts at positions, the
  * i-th the i-th name its clauses' paths start at, each a binding in scope at
@@ -2302,16 +2309,18 @@ function loopInvariant(gate: Gate, loop: ts.Statement): LoopInvariant | null {
     const id = bindings.get(name);
     if (id === undefined) gate.fail(loop, `a loop invariant (\`@invariant\`) names ${name}, which no binding in scope at the loop declares`);
     const answered = gate.staticTypes.get(gate.span(id).join(":"));
-    // `old(p)` of a parameter of the function the loop is in: its value at
-    // that function's entry, at its input position (the parameters in
-    // order, a declared `this` first).
+    // `old(p)` of a parameter of the function the loop runs in: its value at
+    // that function's entry, at its call position (`0` the receiver, a
+    // declared `this`; `i + 1` the `i`-th other parameter), as a
+    // postcondition reads it. The invocation the loop runs in is the nearest
+    // function-like node or class static block around it; a parameter of an
+    // enclosing invocation has no entry here.
     let enclosing: ts.Node | undefined = loop.parent;
-    while (enclosing !== undefined && !(ts.isFunctionDeclaration(enclosing) || ts.isFunctionExpression(enclosing) ||
-        ts.isArrowFunction(enclosing) || ts.isMethodDeclaration(enclosing) || ts.isConstructorDeclaration(enclosing)))
+    while (enclosing !== undefined && !ts.isFunctionLikeDeclaration(enclosing) && !ts.isClassStaticBlockDeclaration(enclosing))
       enclosing = enclosing.parent;
     const declaration = id.parent;
-    const entry = enclosing !== undefined && ts.isParameterDeclaration(declaration) && declaration.parent === enclosing ?
-      enclosing.parameters.indexOf(declaration) : undefined;
+    const entry = enclosing !== undefined && ts.isFunctionLikeDeclaration(enclosing) && ts.isParameterDeclaration(declaration) &&
+        declaration.parent === enclosing ? callPosition(enclosing, declaration) : undefined;
     return { ...clauseParameter(gate, name, i, answered?.ok ? answered.value : undefined), ...(entry === undefined ? {} : { entry }) };
   });
   const elaborated = elaborateRequires(clauses, params);

@@ -25,6 +25,8 @@ assert.equal(runExample("invalid-written-ensures-body", "typeof short(1)[0]"), "
   "a false written result length returns an absent element");
 assert.equal(runExample("invalid-two-state-ensures-body", "(() => { const l = { widths: [] }; measure(l, 2); return l.widths.length; })()"), 3,
   "the body grows the list by 3 where its two-state postcondition states old(length) + 2");
+assert.equal(runExample("invalid-two-state-invariant-after-statement", "(() => { const p = { widths: [] }; measure(0, 2, p); return p.widths.length; })()"), 3,
+  "after the statement before the loop, the body grows the list by 3 where its postcondition states old(length) + 2");
 assert.equal(runExample("invalid-two-state-guarded-call", "typeof lastAppended([], false)"), "undefined",
   "without the branch on its guard the caller reads an empty array at -1");
 assert.equal(runExample("invalid-two-state-every-call", "typeof pickOne([1], 1, 0, [5])"), "undefined",

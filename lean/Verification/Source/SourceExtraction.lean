@@ -234,7 +234,13 @@ did not mention grow it, and the request carries the result. -/
     let bodyScope := paramScope ++ siblingScope
     let slotTypes := bindings ++ siblingTypes
     let fullScope := scope ++ siblingScope
-    let mut first ← withAnswers (f.guard.any (!·.asserts))
+    -- The entry frame: each call position at the input slot that holds it on
+    -- entry, the receiver at slot 0 where a `this` parameter declares it,
+    -- each parameter after it (the frame change `IndexFact.pastReceiver`
+    -- reads the postcondition through).
+    let frame := (List.range (f.params.length + 1)).map fun p =>
+      if receiver then (if p < f.params.length then some p else none) else if p = 0 then none else some (p - 1)
+    let mut first ← withAnswers (f.guard.any (!·.asserts)) <| withEntryFrame frame
       (body (if f.name.isEmpty then (0,0) else f.namePos) fc returned bodyScope stmts)
     -- Each assigned parameter gets one fresh private cell at function entry.
     -- Replace its slot in place; the caller still supplies the original value

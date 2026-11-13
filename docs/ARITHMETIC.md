@@ -749,6 +749,22 @@ $`[\![\mathrm{old}(t)]\!]_{\varepsilon,\rho,h}=[\![t]\!]_{\varepsilon,\varepsilo
 On the wire an entry term is a linear term with `"atEntry": true`, its slot a
 call position (`0` the receiver, $`i+1`$ the $`i`$-th parameter).
 
+An entry term is read in the entry state of the invocation whose assertion
+contains it, at every program point and in every assertion form (a
+postcondition, a loop invariant): with $`\mathrm{frame}(p)`$ the slot of
+that invocation's start environment holding call position $`p`$,
+
+```math
+[\![\mathrm{old}(\langle k,p,q\rangle)]\!]_{\varepsilon,\rho,h}
+=[\![\langle k,\mathrm{frame}(p),q\rangle]\!]_{\varepsilon,\varepsilon.\mathrm{env},\varepsilon.\mathrm{heap}}
+```
+
+whatever the current bindings at the point are (`Term.reroot`; the frame of
+a unit is `IndexFact.pastReceiver`'s, that of a closure's code its
+`codeFrame`). A statement before a loop moves the current slots and no entry
+slot: `two-state-invariant-after-statement`, and its unsafe neighbour
+`invalid-two-state-invariant-after-statement`.
+
 At a call, the callee's entry state is the caller's state just before the
 call, at the call's positions (rule Call). A post fact naming an entry term
 relates the caller's states before and after the call, so it enters the

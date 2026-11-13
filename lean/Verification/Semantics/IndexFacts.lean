@@ -54,8 +54,16 @@ it is; the length of its array store, as the calculus's `lenOf` gives it
 array it is, the safe integer at least `0` the location of its
 `viewLengthKey` holds (`viewLengthOf`); or the count of UTF-16 code units of
 the string it is, at most `maxStringLength` (`strLengthOf`). The empty path
-reads the slot's value itself. -/
+reads the slot's value itself.
+
+A term's slot is a slot of one of two environments, the current one or, for
+an entry term, the entry state's: two namespaces. The constructor is private:
+a term is built by `Term.now` or `Term.old`, which name its namespace, and its
+slot renamed only by maps that take the namespace (`Term.mapM` for current
+slots, `Term.mapEntry` for entry slots, `Term.reroot` for both), so a map of
+one namespace is never applied to a slot of the other. -/
 structure Term where
+  private mk ::
   kind : Term.Kind
   slot : Nat
   path : List String
@@ -78,6 +86,30 @@ instance : Hashable Term where
     if t.atEntry then mixHash r 1 else r
 
 namespace Term
+
+/-- The term of kind `k` reading path `p` from slot `s` of the current
+environment. -/
+abbrev now (k : Kind) (s : Nat) (p : List String) : Term := ⟨k, s, p, false⟩
+
+/-- The term of kind `k` reading path `p` from slot `s` of the entry
+environment: `old(t)`. -/
+abbrev old (k : Kind) (s : Nat) (p : List String) : Term := ⟨k, s, p, true⟩
+
+@[simp] theorem now_kind (k : Kind) (s : Nat) (p : List String) : (now k s p).kind = k := rfl
+@[simp] theorem now_slot (k : Kind) (s : Nat) (p : List String) : (now k s p).slot = s := rfl
+@[simp] theorem now_path (k : Kind) (s : Nat) (p : List String) : (now k s p).path = p := rfl
+@[simp] theorem now_atEntry (k : Kind) (s : Nat) (p : List String) : (now k s p).atEntry = false := rfl
+@[simp] theorem old_kind (k : Kind) (s : Nat) (p : List String) : (old k s p).kind = k := rfl
+@[simp] theorem old_slot (k : Kind) (s : Nat) (p : List String) : (old k s p).slot = s := rfl
+@[simp] theorem old_path (k : Kind) (s : Nat) (p : List String) : (old k s p).path = p := rfl
+@[simp] theorem old_atEntry (k : Kind) (s : Nat) (p : List String) : (old k s p).atEntry = true := rfl
+
+/-- A current term is `now` of its fields, an entry term `old` of them. -/
+theorem eta (t : Term) : t = if t.atEntry then old t.kind t.slot t.path else now t.kind t.slot t.path := by
+  obtain ⟨k, s, p, a⟩ := t; cases a <;> rfl
+
+theorem eq_now {t : Term} (h : t.atEntry = false) : t = now t.kind t.slot t.path := by
+  obtain ⟨k, s, p, a⟩ := t; cases h; rfl
 
 /-- The safe integer a slot holds. -/
 def value (s : Nat) : Term := ⟨.value, s, [], false⟩
@@ -184,6 +216,14 @@ theorem mapEntry_cases {g : Nat → Option Nat} {t t' : Term} (h : t.mapEntry g 
   · simp only [he, if_true, Option.map_eq_some_iff] at h
     obtain ⟨s, hs, rfl⟩ := h
     exact .inr ⟨rfl, hs, rfl⟩
+
+/-- **A term re-rooted, each state by its own map.** A root is a slot and a
+path read from it before the term's own. A current term at slot `s` is read
+from the root `now s` names in the current environment; an entry term at
+slot `s` from the root `entry s` names in the entry environment. The two
+environments are two namespaces: a slot of one is no slot of the other. -/
+def reroot (now entry : Nat → Option (Nat × List String)) (t : Term) : Option Term :=
+  ((if t.atEntry then entry else now) t.slot).map fun (s, p) => { t with slot := s, path := p ++ t.path }
 
 end Term
 
@@ -470,6 +510,24 @@ theorem termValue_slot {ρ ρ' : Env} {h : Heap} {t : Term} {s : Nat} (hs : ρ' 
     (he : t.atEntry = false) :
     termValue ε ρ' h { t with slot := s } = termValue ε ρ h t := by
   simp only [termValue, he, Bool.false_eq_true, if_false, termAt, hs]
+
+/-- **A term renamed by a total map of current slots denotes what it did**
+where each current slot's image holds its value. -/
+theorem termValue_mapM' {f : Nat → Nat} {ρ ρ' : Env} {h : Heap} {t : Term}
+    (hf : t.atEntry = false → ρ' (f t.slot) = ρ t.slot) :
+    termValue ε ρ' h (t.mapM' f) = termValue ε ρ h t := by
+  obtain ⟨k, s, p, a⟩ := t
+  cases a
+  · exact termValue_slot (t := ⟨k, s, p, false⟩) (hf rfl) rfl
+  · exact termValue_entry_invariant rfl
+
+/-- A current term re-rooted at a slot holding its slot's value denotes what
+it did. -/
+theorem termValue_now_slot {ρ ρ' : Env} {h : Heap} {t : Term} {s : Nat} (hs : ρ' s = ρ t.slot)
+    (he : t.atEntry = false) : termValue ε ρ' h (.now t.kind s t.path) = termValue ε ρ h t := by
+  obtain ⟨k, s', p, a⟩ := t
+  cases he
+  exact termValue_slot (t := ⟨k, s', p, false⟩) hs rfl
 
 /-- A term reads the current environment at its current slot only. -/
 theorem termValue_congr {ρ ρ' : Env} {h : Heap} {t : Term} (hs : t.atEntry = false → ρ t.slot = ρ' t.slot) :

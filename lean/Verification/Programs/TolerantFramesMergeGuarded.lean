@@ -68,7 +68,7 @@ theorem lowerRead_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapL
   | linear F =>
     intro ⟨hd, hF⟩
     let g' : Term → Term := fun t => match t.path with
-      | g :: q => if t.slot == c && g == f && !t.atEntry then ⟨t.kind, v, q, false⟩ else t
+      | g :: q => if t.slot == c && g == f && !t.atEntry then (HeapKnowledge.Term.now t.kind v q) else t
       | [] => t
     have heq : ∀ t ∈ F.vars, termValue ε ρ h (g' t) = termValue ε ρ h t := by
       intro t ht
@@ -81,7 +81,7 @@ theorem lowerRead_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapL
       cases path with
       | nil => exact hn
       | cons g q =>
-        show termValue ε ρ h (if s == c && g == f && !false then ⟨kind, v, q, false⟩ else ⟨kind, s, g :: q, false⟩) = some n
+        show termValue ε ρ h (if s == c && g == f && !false then (HeapKnowledge.Term.now kind v q) else (HeapKnowledge.Term.now kind s (g :: q))) = some n
         split
         · rename_i hc
           simp only [Bool.not_false, Bool.and_true, Bool.and_eq_true, beq_iff_eq] at hc

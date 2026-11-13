@@ -2419,7 +2419,7 @@ def appendTerm (i a : Nat) : HeapKnowledge.Bound → HeapKnowledge.Term
   | .index => .length i
   | .elem => .value a
   | .offset _ => .value a
-  | .project k p => ⟨k, a, p, false⟩
+  | .project k p => (HeapKnowledge.Term.now k a p)
   | .free t => t
 
 open HeapKnowledge in
@@ -2942,8 +2942,8 @@ open HeapKnowledge in
 slot holding position `p`; a current term the caller's after it, at the
 return's slot. -/
 def callVar (recv : Bool) (slots : List Nat) (t : Term) : Option StepVar :=
-  if t.atEntry then (entryPositionSlot recv slots t.slot).map fun s => .before { t with slot := s, atEntry := false }
-  else (ensuresSlot recv slots t.slot).map fun s => .after { t with slot := s }
+  if t.atEntry then (entryPositionSlot recv slots t.slot).map fun s => .before (.now t.kind s t.path)
+  else (ensuresSlot recv slots t.slot).map fun s => .after (.now t.kind s t.path)
 
 /-- A call's actuals are its positions past the receiver. -/
 theorem callSlots_length {t : Tm} {recv : Bool} {slots : List Nat} (hs : callSlots t = some (recv, slots)) (ρ : Env) :
@@ -3133,7 +3133,7 @@ theorem callRelation_holds {eff : Effect} {t : Tm} {ρ : Env} {h h' : Heap} {v :
         have he : x.atEntry = false := by simpa using he
         obtain ⟨s', hs', rfl⟩ := Option.map_eq_some_iff.mp hy
         have henv := ensuresSlot_env (v := v) (ρ := ρ) hs hs'
-        have heq : termValue ε (push v ρ) h' { x with slot := s' } =
+        have heq : termValue ε (push v ρ) h' (.now x.kind s' x.path) =
             termValue ⟨CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t))
               (ExpressionEffects.actualsOf (instantiate 0 ρ t)), h⟩ (CallEffects.ensuresEnv v
               (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h' x := by

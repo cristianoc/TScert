@@ -98,7 +98,7 @@ instance : FromJson HeapKnowledge.Term where
     let atEntry ← match j.getObjVal? "atEntry" with
       | .ok v => fromJson? v
       | .error _ => pure false
-    return ⟨kind, slot, path, atEntry⟩
+    return if atEntry then .old kind slot path else .now kind slot path
 deriving instance ToJson, FromJson for HeapKnowledge.Bound
 deriving instance ToJson, FromJson for Linear.Fact
 private def clauseJson [ToJson V] : HeapKnowledge.LinearClause V → Json

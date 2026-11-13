@@ -153,7 +153,7 @@ theorem init_box {F : Linear.Fact HeapKnowledge.Term} {ρ : Env} {m : Nat} {s : 
 theorem init_path {y x : Nat} {p : List String} {ρ : Env} {m : Nat} {s : IndexedHeap}
     (hb : PathLowerBound y x p ρ m s) : Box initEffect.fp (PathLowerBound y x p) ρ m s := by
   intro s' ha
-  refine pathLowerBound_iff.mpr (init_box (ε := ⟨ρ, s.h⟩) (m := m) (F := .le [(.value y, 1), (⟨.length, x, p, false⟩, -1)] 0)
+  refine pathLowerBound_iff.mpr (init_box (ε := ⟨ρ, s.h⟩) (m := m) (F := .le [(.value y, 1), ((HeapKnowledge.Term.now .length x p), -1)] 0)
     (fun t ht _ => ?_) (pathLowerBound_iff.mp hb) s' ha)
   simp only [Linear.Fact.vars, List.map, List.mem_cons, List.not_mem_nil, or_false] at ht
   rcases ht with rfl | rfl <;> simp [HeapKnowledge.Term.value]

@@ -612,9 +612,10 @@ def choiceBounds (K : String → HeapKnowledge.Term.Kind) (x : String) : Expr �
   | .cast _ _ e => choiceBounds K x e
   | _ => []
 
-/-- A precondition's fact (`Fragment.Fn.requires`, at the function's
-positions: `0` the receiver, `i + 1` the `i`-th parameter) over the
-parameters' names, where it is a linear fact or an integrality. -/
+/-- An index fact over the names `nameAt` gives the current state's slots,
+where it is a linear fact or an integrality. A name denotes its binding's
+value in the current state: an entry term `old(t)` has no name, and a fact
+naming one has no form here. -/
 partial def ofIndexFact (nameAt : Nat → Option String) : HeapKnowledge.IndexFact → Option Fact
   | .int p => (nameAt p).map .int
   | .storeApart a pa b pb => do pure (.apart [] (← nameAt a) pa (← nameAt b) pb)
@@ -625,7 +626,7 @@ partial def ofIndexFact (nameAt : Nat → Option String) : HeapKnowledge.IndexFa
     | .guarded gs l => pure (.guarded ((← nameAt g, p, t) :: gs) l)
     | _ => none
   | .linear (.le form d) => do
-    let ts ← form.mapM fun (t, c) => do pure (((← nameAt t.slot), t.path, t.kind), c)
+    let ts ← form.mapM fun (t, c) => do pure (((← termName t), t.path, t.kind), c)
     let ts := addTerms [] ts
     if ts.isEmpty then none else pure (.lin ⟨ts, d⟩)
   | .every s path stop body => do
@@ -635,15 +636,21 @@ partial def ofIndexFact (nameAt : Nat → Option String) : HeapKnowledge.IndexFa
       | .elem => some .elem
       | .offset d => some (.offset d)
       | .project k p => some (.project k p)
-      | .free t => (nameAt t.slot).map fun n => .term (n, t.path, t.kind)
+      | .free t => (termName t).map fun n => .term (n, t.path, t.kind)
     let body ← body.mapM fun
       | .atom (.le form d) => do pure (← form.mapM fun (b, c) => do pure (← var b, c), d)
       | .either .. | .atom (.ne ..) => none
-    pure (.every a path (← nameAt stop.slot, stop.path, stop.kind) body)
+    pure (.every a path (← termName stop, stop.path, stop.kind) body)
   | _ => none
+where
+  /-- The name of a current term's slot; an entry term has none. -/
+  termName (t : HeapKnowledge.Term) : Option String := if t.atEntry then none else nameAt t.slot
 
-def ofRequires (params : List String) : HeapKnowledge.IndexFact → Option Fact :=
-  ofIndexFact fun p => if p == 0 then none else params[p - 1]?
+/-- A precondition's fact (`Fragment.Fn.requires`, at the function's
+positions: `0` the receiver, `i + 1` the `i`-th parameter) over the
+parameters' names, read at the entry, where `old(t)` is `t` (`toNow`). -/
+def ofRequires (params : List String) (F : HeapKnowledge.IndexFact) : Option Fact :=
+  ofIndexFact (fun p => if p == 0 then none else params[p - 1]?) F.toNow
 
 /-- The fields an object literal of named fields gives the binding `x` it
 initializes, `const x = { f: e, … }`: each linear field's value the path's
