@@ -209,14 +209,14 @@ establishes an entry and how an importer binds one are
 A check (`pipeline/verify-source.mts`, the case runner and every caller
 through it) runs the parse stage, then the `pass` stage
 (`--verify-interface-stage 8`) and the interface stages it needs
-(`verifyByUnits`): the file's stage at ordinary contracts (no module
-interface), and, where a unit is refused there and the file reads modules,
-the interface stages and the file's stage again at their interfaces. Where
+(`verifyByUnits`): for a file that reads no module, the file's stage at
+ordinary contracts (no module interface); for one that does, the interface
+stages, then the file's stage at their interfaces. Where
 the file's stage exceeds its limit, the check runs a `pass` stage per name
 (each function's, `:init`), each with its own key and limit: a unit over
 its limit is that unit's refusal, a timeout, and its dependents'. Where the
-interface stages fail (a timeout, a refusal), the verdicts at ordinary
-contracts stand, each refused unit's refusal naming that failure first. A
+interface stages fail (a timeout, a refusal), the file's stage runs at
+ordinary contracts, each refused unit's refusal naming that failure first. A
 unit counts as verified only with every unit it depends on accepted; a unit
 the pass refuses is `unverified` (phase `search`), a refusal of the pass's
 front `unsupported` (phase `proposal`).
