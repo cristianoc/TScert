@@ -30,6 +30,7 @@ where the note's statement does not hold:
   the entry heap (`fresh_eff`, `fresh_eff_bound`); its listed cells are not
   erased (`fresh_cells_not_erased`). -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations ControlFlow PointClaims
 open ProgramTyping PositiveGraphs PositiveRules ExpressionEffects HeapExpressionRules
 
@@ -68,12 +69,14 @@ views' lengths holds after every admissible transition: `a(view(w)) ⊢ □_⊤
 a(view(w))`. -/
 theorem view_box {F : Linear.Fact HeapKnowledge.Term} {ρ : Env} {m : Nat} {s : IndexedHeap}
     (hv : ∀ t ∈ F.vars, t.path = [] ∧ (t.kind = .value ∨ (t.kind = .view ∧ ViewStable t.slot ρ m s)))
-    (hF : (HeapKnowledge.IndexFact.linear F).HoldsAt ρ s.h) :
-    Box Footprints.Closed.top.fp (fun ρ _ s => (HeapKnowledge.IndexFact.linear F).HoldsAt ρ s.h) ρ m s := by
+    (hF : (HeapKnowledge.IndexFact.linear F).HoldsAt ε ρ s.h) :
+    Box Footprints.Closed.top.fp (fun ρ _ s => (HeapKnowledge.IndexFact.linear F).HoldsAt ε ρ s.h) ρ m s := by
   intro s' ha
-  have he : ∀ t ∈ F.vars, HeapKnowledge.termValue ρ s'.h t = HeapKnowledge.termValue ρ s.h t := by
+  have he : ∀ t ∈ F.vars, HeapKnowledge.termValue ε ρ s'.h t = HeapKnowledge.termValue ε ρ s.h t := by
     intro t ht
-    obtain ⟨k, slot, p⟩ := t
+    obtain ⟨k, slot, p, e⟩ := t
+    cases e
+    case true => exact HeapKnowledge.termValue_entry_invariant rfl
     obtain ⟨hp, hk⟩ := hv _ ht
     simp only at hp hk
     subst hp
@@ -122,7 +125,9 @@ theorem view_not_invariant :
 
 theorem initTerm_kept (t : HeapKnowledge.Term) (hk : t.kind ≠ .strLength) :
     t.keptBy (HeapKnowledge.Changes.ofClosed initEffect) (fun _ _ => false) = true := by
-  obtain ⟨k, slot, p⟩ := t
+  obtain ⟨k, slot, p, e⟩ := t
+  cases e
+  case true => simp [HeapKnowledge.Term.keptBy]
   cases k <;> cases p <;>
     simp_all [HeapKnowledge.Term.keptBy, HeapKnowledge.Term.pathKeptBy, HeapKnowledge.Changes.ofClosed,
       initEffect, HeapKnowledge.Changes.keepsLength, Footprints.Change.le, Footprints.Change.rank,
@@ -133,8 +138,8 @@ any paths holds after every action of the initialisation write's
 `{values: init, stores: keep}`. The note's side condition, paths through
 fields holding objects, is what a defined path read already is. -/
 theorem init_box {F : Linear.Fact HeapKnowledge.Term} {ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hk : ∀ t ∈ F.vars, t.kind ≠ .strLength) (hF : (HeapKnowledge.IndexFact.linear F).HoldsAt ρ s.h) :
-    Box initEffect.fp (fun ρ _ s => (HeapKnowledge.IndexFact.linear F).HoldsAt ρ s.h) ρ m s :=
+    (hk : ∀ t ∈ F.vars, t.kind ≠ .strLength) (hF : (HeapKnowledge.IndexFact.linear F).HoldsAt ε ρ s.h) :
+    Box initEffect.fp (fun ρ _ s => (HeapKnowledge.IndexFact.linear F).HoldsAt ε ρ s.h) ρ m s :=
   kept_box initEffect (by
     simp only [HeapKnowledge.IndexFact.keptBy, Bool.or_eq_true, List.all_eq_true]
     exact .inl fun t ht => initTerm_kept t (hk t ht)) hF
@@ -143,7 +148,7 @@ theorem init_box {F : Linear.Fact HeapKnowledge.Term} {ρ : Env} {m : Nat} {s : 
 theorem init_path {y x : Nat} {p : List String} {ρ : Env} {m : Nat} {s : IndexedHeap}
     (hb : PathLowerBound y x p ρ m s) : Box initEffect.fp (PathLowerBound y x p) ρ m s := by
   intro s' ha
-  refine pathLowerBound_iff.mpr (init_box (m := m) (F := .le [(.value y, 1), (⟨.length, x, p⟩, -1)] 0)
+  refine pathLowerBound_iff.mpr (init_box (ε := ⟨ρ, s.h⟩) (m := m) (F := .le [(.value y, 1), (⟨.length, x, p, false⟩, -1)] 0)
     (fun t ht => ?_) (pathLowerBound_iff.mp hb) s' ha)
   simp only [Linear.Fact.vars, List.map, List.mem_cons, List.not_mem_nil, or_false] at ht
   rcases ht with rfl | rfl <;> simp [HeapKnowledge.Term.value]
@@ -163,10 +168,10 @@ theorem call_rule {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Qr
     {ρc ρ : Env} {s : IndexedHeap} (hpre : pre l ρc m s) {Φ : Footprint} {σ : Nat → Nat}
     (hQ : ∀ h, Qres h → Post Φ ρc s.h h) (hσ : ∀ i, ρ (σ i) = ρc i)
     {S : List SinglePass.Atom} {η : Env} {y : Nat} (hy : ∀ a ∈ S, y ∉ a.names)
-    (hR : Box (Φ.rename σ) (Named S η) ρ m s)
+    (hR : Box (Φ.rename σ) (Named ε S η) ρ m s)
     {k : Nat} {h' : Heap} {v : Tm} (hrun : Transitions P k s.h (.at l ρc) h' (.done v)) (hk : k < s.n) :
     ∃ s' : IndexedHeap, Action (Φ.rename σ) ρ s s' ∧ s'.h = h' ∧ s'.n + k = s.n ∧ isVal v = true ∧
-      Tres s'.n s'.W v ∧ Qres h' ∧ Named S (Env.set η y v) ρ m s' := by
+      Tres s'.n s'.W v ∧ Qres h' ∧ Named ε S (Env.set η y v) ρ m s' := by
   obtain ⟨s', ha, he, hn, hv, hT, hq⟩ := invocation_done hnodes hdown hpre hrun hk
   have hact : Action (Φ.rename σ) ρ s s' := ⟨ha, Post.rename hσ (he ▸ hQ h' hq)⟩
   exact ⟨s', hact, he, hn, hv, hT, hq, named_set v hy (hR s' hact)⟩

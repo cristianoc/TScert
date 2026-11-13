@@ -14,6 +14,7 @@ graph: from every state where `0 ≤ from`, `to ≤ |xs|` and `xs`, `out` are
 such arrays, the loop's run never gets stuck and returns `null`, raising
 nothing. -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations ControlFlow PointClaims
 
 /-! ## The world of the loop: arrays of source values -/
@@ -107,13 +108,13 @@ def SrcAt (x : Nat) : Assertion := fun ρ _ _ => isSourceVal (ρ x) = true
 
 /-- `y ≤ |x|` read at slots one higher, after a push. -/
 theorem lowerBound_push {y x : Nat} {v : Tm} {ρ : Env} {m m' : Nat} {s : IndexedHeap}
-    (h : LowerBound y x ρ m s) : LowerBound (y + 1) (x + 1) (push v ρ) m' s :=
+    (h : LowerBound ε y x ρ m s) : LowerBound ε (y + 1) (x + 1) (push v ρ) m' s :=
   (HeapKnowledge.IndexFact.holdsAt_mapM (f := fun i => some (i + 1)) (F := lowerBoundFact y x) rfl
     (fun _ _ _ hg => by cases hg; rfl)).mpr h
 
 /-- `y ≤ |x|` at another heap with the same contents. -/
 theorem lowerBound_heap {y x : Nat} {ρ : Env} {m : Nat} {s s' : IndexedHeap} (hh : s'.h = s.h)
-    (h : LowerBound y x ρ m s) : LowerBound y x ρ m s' := by
+    (h : LowerBound ε y x ρ m s) : LowerBound ε y x ρ m s' := by
   unfold LowerBound at h ⊢
   rw [hh]
   exact h
@@ -364,16 +365,16 @@ theorem read_safe {Ξ : Fam} {ce : Footprints.Closed} {Qe : Heap → Prop} {ρ :
 /-- `y ≤ |x|` as integers: the integer slot `y` holds is at most the length of
 the store slot `x` holds. -/
 theorem lowerBound_iff {y x : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} :
-    LowerBound y x ρ m s ↔ ∃ a len, HeapKnowledge.intValue (ρ y) = some a ∧
+    LowerBound ε y x ρ m s ↔ ∃ a len, HeapKnowledge.intValue (ρ y) = some a ∧
       HeapKnowledge.lengthOf s.h (ρ x) = some len ∧ a ≤ len := by
-  have e : LowerBound y x ρ m s ↔ PathLowerBound y x [] ρ m s := pathLowerBound_iff.symm
+  have e : LowerBound ε y x ρ m s ↔ PathLowerBound y x [] ρ m s := pathLowerBound_iff.symm
   rw [e]
   exact ⟨fun ⟨w, a, len, hw, ha, hl, hle⟩ => by cases hw; exact ⟨a, len, ha, hl, hle⟩,
     fun ⟨a, len, ha, hl, hle⟩ => ⟨ρ x, a, len, rfl, ha, hl, hle⟩⟩
 
 /-- `y ≤ |x|` read at other slots holding the same values. -/
 theorem lowerBound_env {y x y' x' : Nat} {ρ ρ' : Env} {m m' : Nat} {s : IndexedHeap}
-    (hy : ρ' y' = ρ y) (hx : ρ' x' = ρ x) (h : LowerBound y x ρ m s) : LowerBound y' x' ρ' m' s := by
+    (hy : ρ' y' = ρ y) (hx : ρ' x' = ρ x) (h : LowerBound ε y x ρ m s) : LowerBound ε y' x' ρ' m' s := by
   rw [lowerBound_iff] at h ⊢
   rw [hy, hx]
   exact h
@@ -398,42 +399,42 @@ def loopGraph : Program :=
 
 /-- The head's facts at `j, to, xs, out`: `0 ≤ j`, `to ≤ |xs|`, and `xs`,
 `out` arrays of source values. -/
-def HeadAt : Assertion := fun ρ m s =>
-  NonNeg 0 ρ m s ∧ LowerBound 1 2 ρ m s ∧ ArrAt 2 ρ m s ∧ ArrAt 3 ρ m s
+def HeadAt (ε : HeapKnowledge.EntryState) : Assertion := fun ρ m s =>
+  NonNeg 0 ρ m s ∧ LowerBound ε 1 2 ρ m s ∧ ArrAt 2 ρ m s ∧ ArrAt 3 ρ m s
 
 /-- The body's facts at `v, j, to, xs, out`: the head's, one slot up, and the
 guard's `j < to`. -/
-def BodyAt : Assertion := fun ρ m s =>
-  NonNeg 1 ρ m s ∧ LowerBound 2 3 ρ m s ∧ ArrAt 3 ρ m s ∧ ArrAt 4 ρ m s ∧ Below 1 2 ρ m s
+def BodyAt (ε : HeapKnowledge.EntryState) : Assertion := fun ρ m s =>
+  NonNeg 1 ρ m s ∧ LowerBound ε 2 3 ρ m s ∧ ArrAt 3 ρ m s ∧ ArrAt 4 ρ m s ∧ Below 1 2 ρ m s
 
 /-- The node assertions. The entry's is the head's, at `from, to, xs, out`. -/
-def loopPre : Nat → Assertion
-  | 0 => HeadAt
-  | 1 => HeadAt
-  | 2 => fun ρ m s => HeadAt ρ m s ∧ Below 0 1 ρ m s
-  | 3 => fun ρ m s => SrcAt 0 ρ m s ∧ BodyAt ρ m s
-  | 4 => BodyAt
+def loopPre (ε : HeapKnowledge.EntryState) : Nat → Assertion
+  | 0 => HeadAt ε
+  | 1 => HeadAt ε
+  | 2 => fun ρ m s => HeadAt ε ρ m s ∧ Below 0 1 ρ m s
+  | 3 => fun ρ m s => SrcAt 0 ρ m s ∧ BodyAt ε ρ m s
+  | 4 => BodyAt ε
   | 5 => fun _ _ _ => True
   | _ => fun _ _ _ => False
 
 /-- The head's facts survive every action of an effect within
 `{values: any, stores: grow}`. -/
 theorem headAt_action {c : Footprints.Closed} (hc : c.le growEffect = true) {ρ : Env} {m : Nat}
-    {s₀ s : IndexedHeap} (ha : Action c.fp ρ s₀ s) (h : HeadAt ρ m s₀) : HeadAt ρ m s :=
+    {s₀ s : IndexedHeap} (ha : Action c.fp ρ s₀ s) (h : HeadAt ε ρ m s₀) : HeadAt ε ρ m s :=
   ⟨h.1, grow h.2.1 s (action_le_closed hc ha), arrAt_invariant 2 ρ m s₀ s ha.1 h.2.2.1,
     arrAt_invariant 3 ρ m s₀ s ha.1 h.2.2.2⟩
 
 theorem bodyAt_action {c : Footprints.Closed} (hc : c.le growEffect = true) {ρ : Env} {m : Nat}
-    {s₀ s : IndexedHeap} (ha : Action c.fp ρ s₀ s) (h : BodyAt ρ m s₀) : BodyAt ρ m s :=
+    {s₀ s : IndexedHeap} (ha : Action c.fp ρ s₀ s) (h : BodyAt ε ρ m s₀) : BodyAt ε ρ m s :=
   ⟨h.1, grow h.2.1 s (action_le_closed hc ha), arrAt_invariant 3 ρ m s₀ s ha.1 h.2.2.1,
     arrAt_invariant 4 ρ m s₀ s ha.1 h.2.2.2.1, h.2.2.2.2⟩
 
 /-- The node assertions survive the administrative steps. -/
-theorem loopPre_admin (m : Nat) : AdminClosed loopPre m := by
-  have head : ∀ {ρ s s'}, Admissible s s' → s'.h = s.h → HeadAt ρ m s → HeadAt ρ m s' :=
+theorem loopPre_admin (m : Nat) : AdminClosed (loopPre ε) m := by
+  have head : ∀ {ρ s s'}, Admissible s s' → s'.h = s.h → HeadAt ε ρ m s → HeadAt ε ρ m s' :=
     fun ha hh h => ⟨h.1, lowerBound_heap hh h.2.1, arrAt_invariant 2 _ m _ _ ha h.2.2.1,
       arrAt_invariant 3 _ m _ _ ha h.2.2.2⟩
-  have body : ∀ {ρ s s'}, Admissible s s' → s'.h = s.h → BodyAt ρ m s → BodyAt ρ m s' :=
+  have body : ∀ {ρ s s'}, Admissible s s' → s'.h = s.h → BodyAt ε ρ m s → BodyAt ε ρ m s' :=
     fun ha hh h => ⟨h.1, lowerBound_heap hh h.2.1, arrAt_invariant 3 _ m _ _ ha h.2.2.1,
       arrAt_invariant 4 _ m _ _ ha h.2.2.2.1, h.2.2.2.2⟩
   intro l ρ s s' ha hh hp
@@ -453,7 +454,7 @@ theorem above_noFam {s : IndexedHeap} {e : Tm} (h : Above noFam s e) : False := 
 /-- **Every node of the loop is checked**, from the semantics: its local
 judgment and its exit obligations, at every state its assertion holds. -/
 theorem loop_checked (m : Nat) :
-    NodesChecked loopGraph loopPre noFam nulT (fun _ => True) (fun _ => True) m := by
+    NodesChecked loopGraph (loopPre ε) noFam nulT (fun _ => True) (fun _ => True) m := by
   intro l ρ s hp
   match l, hp with
   | 0, hp =>
@@ -488,11 +489,11 @@ theorem loop_checked (m : Nat) :
     refine ⟨fun _ _ _ _ _ _ _ _ => trivial, fun s' v ha' _ ⟨_, _, hT⟩ _ => ?_,
       fun _ _ _ _ hab _ => (above_noFam hab).elim⟩
     have hh := headAt_action (by decide) ha' hp.1
-    show SrcAt 0 (push v ρ) m s' ∧ BodyAt (push v ρ) m s'
+    show SrcAt 0 (push v ρ) m s' ∧ BodyAt ε (push v ρ) m s'
     exact ⟨hT, hh.1, lowerBound_push hh.2.1, arrAt_congr (ρ := ρ) rfl hh.2.2.1, arrAt_congr (ρ := ρ) rfl hh.2.2.2, hp.2⟩
   | 3, hp =>
     -- the write `out[j] = v`
-    have hp3 : BodyAt ρ m s := hp.2
+    have hp3 : BodyAt ε ρ m s := hp.2
     obtain ⟨hv, ⟨a, ha, h0⟩, hlb, -, hout, ⟨a', b, ha', hb, hab⟩⟩ := hp
     rw [ha] at ha'; cases ha'
     obtain ⟨b', len, hb', hlen, hle⟩ := lowerBound_iff.mp hlb
@@ -507,7 +508,7 @@ theorem loop_checked (m : Nat) :
     exact bodyAt_action (by decide) ha' hp3
   | 4, hp =>
     -- the increment `j = j + 1`, back to the guard
-    have hp4 : BodyAt ρ m s := hp
+    have hp4 : BodyAt ε ρ m s := hp
     obtain ⟨⟨a, ha, h0⟩, -, -, -, ⟨a', b, ha', hb, hab⟩⟩ := hp
     rw [ha] at ha'; cases ha'
     refine ⟨_, rfl, noFam, numT, .empty, .empty, _, fun _ => True,
@@ -517,7 +518,7 @@ theorem loop_checked (m : Nat) :
     obtain ⟨a', ha', hv⟩ := hq
     rw [ha] at ha'; cases ha'
     have hb' := bodyAt_action (by decide) ha'' hp4
-    show HeadAt (mapEnv (some [0, 3, 4, 5]) (push v ρ)) m s'
+    show HeadAt ε (mapEnv (some [0, 3, 4, 5]) (push v ρ)) m s'
     refine ⟨⟨a + 1, by simpa [mapEnv, slot, push] using hv, by omega⟩,
       lowerBound_env (mapEnv_push_slot rfl) (mapEnv_push_slot rfl) hb'.2.1,
       arrAt_congr (mapEnv_push_slot rfl) hb'.2.2.1, arrAt_congr (mapEnv_push_slot rfl) hb'.2.2.2.1⟩
@@ -532,23 +533,23 @@ theorem loop_checked (m : Nat) :
 every state where `0 ≤ from`, `to ≤ |xs|` and `xs`, `out` are arrays of source
 values, aliased or not, the loop never gets stuck, returns `null` and raises
 nothing. -/
-theorem loop_safe (m : Nat) {ρ : Env} {s : IndexedHeap} (hpre : HeadAt ρ m s) :
+theorem loop_safe (m : Nat) {ρ : Env} {s : IndexedHeap} (hpre : HeadAt ε ρ m s) :
     SafeGraph noFam loopGraph nulT s.n s.W s.h (.at 0 ρ) :=
-  graph_safe_at (pre := loopPre) (Qres := fun _ => True) (Rres := fun _ => True) (l := 0)
-    (loop_checked m) (loopPre_admin m) hpre
+  graph_safe_at (pre := loopPre ε) (Qres := fun _ => True) (Rres := fun _ => True) (l := 0)
+    (loop_checked (ε := ε) m) (loopPre_admin m) hpre
 
 /-- A run of the loop to its end, with budget left, returns `null`. -/
-theorem loop_done (m : Nat) {ρ : Env} {s : IndexedHeap} (hpre : HeadAt ρ m s) {k : Nat} {h' : Heap} {v : Tm}
+theorem loop_done (m : Nat) {ρ : Env} {s : IndexedHeap} (hpre : HeadAt ε ρ m s) {k : Nat} {h' : Heap} {v : Tm}
     (hrun : Transitions loopGraph k s.h (.at 0 ρ) h' (.done v)) (hk : k < s.n) : v = .nul := by
-  obtain ⟨_, -, -, -, -, hT, -⟩ := invocation_done (pre := loopPre) (Qres := fun _ => True)
-    (Rres := fun _ => True) (l := 0) (loop_checked m) (loopPre_admin m) hpre hrun hk
+  obtain ⟨_, -, -, -, -, hT, -⟩ := invocation_done (pre := loopPre ε) (Qres := fun _ => True)
+    (Rres := fun _ => True) (l := 0) (loop_checked (ε := ε) m) (loopPre_admin m) hpre hrun hk
   exact hT
 
 /-- No run of the loop with budget left raises. -/
-theorem loop_no_raise (m : Nat) {ρ : Env} {s : IndexedHeap} (hpre : HeadAt ρ m s) {k : Nat} {h' : Heap}
+theorem loop_no_raise (m : Nat) {ρ : Env} {s : IndexedHeap} (hpre : HeadAt ε ρ m s) {k : Nat} {h' : Heap}
     {e : Tm} (hrun : Transitions loopGraph k s.h (.at 0 ρ) h' (.raised e)) (hk : k < s.n) : False := by
-  obtain ⟨_, -, -, -, -, hΞ, -⟩ := invocation_raised (pre := loopPre) (Qres := fun _ => True)
-    (Rres := fun _ => True) (l := 0) (loop_checked m) (loopPre_admin m) hpre hrun hk
+  obtain ⟨_, -, -, -, -, hΞ, -⟩ := invocation_raised (pre := loopPre ε) (Qres := fun _ => True)
+    (Rres := fun _ => True) (l := 0) (loop_checked (ε := ε) m) (loopPre_admin m) hpre hrun hk
   exact hΞ
 
 
@@ -635,7 +636,7 @@ theorem aliasArray_arrayF (n : Nat) : arrayF n (aliasWorld n) aliasArray := by
     exact ⟨0, res storeF, by simp [List.lookup], by simp [lookup, aliasWorld], fun _ _ _ _ => Iff.rfl⟩
 
 /-- **The entry assertion holds with `xs` and `out` aliased.** -/
-theorem alias_entry (m n : Nat) : HeadAt aliasEnv m (aliasState n) ∧ aliasEnv 2 = aliasEnv 3 := by
+theorem alias_entry (m n : Nat) : HeadAt ε aliasEnv m (aliasState n) ∧ aliasEnv 2 = aliasEnv 3 := by
   have zero : SafeIntegers.SafeInt (bitsOfNat 0) 0 := ⟨by decide, .inl ⟨by decide, rfl⟩⟩
   refine ⟨⟨⟨0, HeapKnowledge.intValue_num zero, Int.le_refl _⟩, ?_, aliasArray_arrayF _, aliasArray_arrayF _⟩, rfl⟩
   refine lowerBound_iff.mpr ⟨1, 1, HeapKnowledge.intValue_num oneBits_safe, ?_, Int.le_refl _⟩
@@ -645,6 +646,6 @@ theorem alias_entry (m n : Nat) : HeadAt aliasEnv m (aliasState n) ∧ aliasEnv 
 /-- The loop is safe from the aliased entry state. -/
 theorem alias_loop_safe (m n : Nat) :
     SafeGraph noFam loopGraph nulT (n + 1) (aliasWorld (n + 1)) aliasHeap (.at 0 aliasEnv) :=
-  loop_safe (s := aliasState n) m (alias_entry m n).1
+  loop_safe (ε := ⟨aliasEnv, aliasHeap⟩) (s := aliasState n) m (alias_entry m n).1
 
 end Verification.TolerantFrames
