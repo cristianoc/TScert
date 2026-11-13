@@ -46,9 +46,30 @@ fewer than `searchLimit`, as `readsFrom` gives them, else the nearest. -/
     frontier := fresh.reverse
   return seen
 
-/-- A free map over `D`, iterated to its fixed point. -/
-@[nospecialize] def searchFree [DecidableEq ι] (G : NormalGraph ι) (D : List ι) : FreeMap ι :=
-  freeMapOf G D (D.length + 1) []
+/-- `freeMapOf`'s iteration, each row's free rows read from a hash map of
+the previous map (its first entry for a row, as `fv` reads it) rather than
+by a scan of the list. -/
+@[nospecialize] def freeMapHashed [DecidableEq ι] [Hashable ι] (G : NormalGraph ι) (D : List ι) :
+    Nat → FreeMap ι → FreeMap ι
+  | 0, V => V
+  | fuel + 1, V =>
+    let H : Std.HashMap ι (List ι) := V.foldr (fun (k, v) m => m.insert k v) {}
+    let f := fun (i : ι) => H.getD i []
+    let step (i : ι) : List ι :=
+      let bound := match G.schemes i with
+        | some s => s.binders
+        | none => []
+      ((if G.params i then [i] else []) ++
+        (PositiveRules.meetParts G i).flatMap (fun q => if G.params q then [q] else f q) ++ f i ++
+        (PositiveRules.reads G i).flatMap fun l => (f l).filter (fun p => !bound.contains p)).eraseDups
+    let V' := D.map fun i => (i, step i)
+    if D.all (fun i => (step i).length == (f i).length) then V' else freeMapHashed G D fuel V'
+
+/-- A free map over `D`, iterated to its fixed point: `freeMapOf`'s, its
+lookups hashed (`freeMapHashed`). Untrusted: the instance's checks read
+it. -/
+@[nospecialize] def searchFree [DecidableEq ι] [Hashable ι] (G : NormalGraph ι) (D : List ι) : FreeMap ι :=
+  freeMapHashed G D (D.length + 1) []
 
 /-- What a label representation proposes for an instance of a scheme row at
 given arrows: the binders' instances, and a table of the images of the

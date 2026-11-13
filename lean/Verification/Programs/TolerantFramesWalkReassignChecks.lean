@@ -37,10 +37,18 @@ theorem unifiedInstance_reassign (sub : Option (Renaming G)) (s : SchemeRow ι) 
 omit [Hashable ι] [Instantiates ι] in
 theorem searchReads_reassign (S : List ι) : searchReads (reassign G η) S = searchReads G S := rfl
 
-omit [Hashable ι] [Instantiates ι] in
+omit [Instantiates ι] in
+theorem freeMapHashed_reassign (D : List ι) :
+    ∀ fuel (V : FreeMap ι), freeMapHashed (reassign G η) D fuel V = freeMapHashed G D fuel V
+  | 0, _ => rfl
+  | fuel + 1, V => by
+    simp only [freeMapHashed, reads_reassign, freeMapHashed_reassign D fuel]
+    rfl
+
+omit [Instantiates ι] in
 theorem searchFree_reassign (D : List ι) : searchFree (reassign G η) D = searchFree G D := by
   unfold searchFree
-  rw [freeMapOf_reassign]
+  rw [freeMapHashed_reassign]
 
 omit [Hashable ι] in
 theorem matchRow_reassign (bs : List ι) (V : FreeMap ι) (fuel : Nat) :
