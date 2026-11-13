@@ -578,9 +578,13 @@ export function nodeIdentity(): { identity: Canonical } | { unidentified: string
 // Process stages
 
 /** One argument of a process stage: literal text, an input file bound by
- * content under the name of its role, or an output file the stage writes
- * under the name of its role and the caller receives at `path`. */
-export type Argument = { text: string } | { input: string; path: string } | { output: string; path: string };
+ * content under the name of its role, an output file the stage writes
+ * under the name of its role and the caller receives at `path`, or an output
+ * file the stage writes under the name of its role in its directory without
+ * its command line naming it, kept with its result and delivered nowhere
+ * (`written`: the work table of a profiled verifier stage). */
+export type Argument = { text: string } | { input: string; path: string } | { output: string; path: string } |
+  { written: string };
 
 /** A stage's exit protocol: success is status 0; a refusal is `status` with
  * a record whose first line starts with `prefix` and whose last line is
@@ -640,6 +644,19 @@ export function readOrAbsent(path: string): Buffer | null {
 /** The verifier's refusal. */
 export const verifierProtocol: Protocol = { refusal: { status: 1, prefix: "reject: " } };
 
+/** The directory of a profiled request (docs/drafts/on-demand-processing.md,
+ * "Accounting"): `TSCERT_PROFILE` in the request's environment, inherited by
+ * every process of the request; null where it is unset. Every stage attempt
+ * of the request is appended to its `invocations.jsonl`, and each verifier
+ * stage's work table, executed or replayed, is kept there by attempt
+ * (`profileAttempt`, stages.mts). */
+export function profileDirectory(): string | null {
+  const named = process.env["TSCERT_PROFILE"];
+  return named ? resolve(named) : null;
+}
+/** The output role of a profiled verifier stage's work table. */
+export const workRole = "work.jsonl";
+
 /** A verifier invocation, its command line read by its modes:
  * `[--subtype-rounds n] --module-interface-plan <fragment> <selection>`,
  * `… --module-interface <request>`,
@@ -649,8 +666,13 @@ export function verifierCall(program: string, args: readonly string[],
     environment: Readonly<Record<string, string>> = {}): ProcessCall {
   const budget = args[0] === "--subtype-rounds" ? args.slice(0, 2).map((t) => ({ text: t })) : [];
   const [mode, ...rest] = args.slice(budget.length);
+  // A profiled request (`TSCERT_PROFILE`, `profileDirectory`): the verifier
+  // records its work table (`TSCERT_PROFILE` in its environment, so in the
+  // stage's key) and writes it as the output `work.jsonl`.
+  const profiled = profileDirectory() !== null;
   const call = (stage: StageName, list: Argument[]): ProcessCall =>
-    ({ stage, program, arguments: [...budget, { text: mode }, ...list], environment, protocol: verifierProtocol });
+    ({ stage, program, arguments: [...budget, { text: mode }, ...list, ...(profiled ? [{ written: workRole }] : [])],
+      environment: profiled ? { ...environment, TSCERT_PROFILE: "1" } : environment, protocol: verifierProtocol });
   if (mode === "--module-interface-plan" && rest.length === 2)
     return call("interface-plan", [{ input: "fragment.json", path: rest[0] }, { input: "selection.json", path: rest[1] }]);
   if (mode === "--module-interface" && rest.length === 1)
@@ -674,7 +696,7 @@ export type BoundProcess = {
   environment: Readonly<Record<string, string>>;
   protocol: Protocol;
   inputFiles: readonly (readonly [string, Buffer])[];
-  outputs: readonly { role: string; path: string }[];
+  outputs: readonly { role: string; path: string | null }[];
   manifest: Canonical;
   input: string;
   ineligible: string | null;
@@ -690,13 +712,20 @@ export function bindProcess(call: ProcessCall): BoundProcess {
   const argv: string[] = [];
   const inputs: Canonical[] = [];
   const inputFiles: [string, Buffer][] = [];
-  const outputs: { role: string; path: string }[] = [];
+  const outputs: { role: string; path: string | null }[] = [];
   const roles = new Set<string>();
   const inputRoles = new Map<string, string>();
   for (const a of call.arguments) if ("input" in a) inputRoles.set(resolve(a.path), a.input);
   for (const a of call.arguments) {
     if ("text" in a) {
       argv.push(a.text);
+      continue;
+    }
+    if ("written" in a) {
+      if (roles.has(a.written) || a.written !== basename(a.written))
+        throw Error(`stage ${call.stage}: role ${a.written} is not one file name`);
+      roles.add(a.written);
+      outputs.push({ role: a.written, path: null });
       continue;
     }
     const role = "input" in a ? a.input : a.output;
@@ -857,6 +886,6 @@ export function deliver(bound: BoundProcess, produced: readonly (readonly [strin
   const byRole = new Map(produced);
   for (const o of bound.outputs) {
     const bytes = byRole.get(o.role);
-    if (bytes !== undefined) writeFileSync(o.path, bytes);
+    if (bytes !== undefined && o.path !== null) writeFileSync(o.path, bytes);
   }
 }

@@ -53,7 +53,9 @@ verifier --lower-control-flow       <ast.json>
   text on the next line (`TSCERT_PASS_REFUSALS=raw`: the pass's text
   alone). `TSCERT_FORCE` (comma-separated) forces adversarial proposals, for
   the controls; `TSCERT_COUNTS`, `TSCERT_OBSERVE` and `TSCERT_PROFILE` print
-  the pass's counts, its state at a point and its timings on standard error.
+  the pass's counts, its state at a point and its timings on standard error;
+  `TSCERT_PROFILE` also writes, in every mode, the work table
+  `work.jsonl` in the working directory ([work](SINGLE-PASS.md#work)).
 - `--module-interface-plan` discovers the component DAG of the module graph
   for a selection (function names and explicit own-module roots) and prints
   it; `--module-interface` checks one component's request

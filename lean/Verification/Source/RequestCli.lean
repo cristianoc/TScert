@@ -215,6 +215,23 @@ def flowFile (astPath : String) : IO UInt32 := do
   | .ok graph => IO.println graph.compress; return 0
   | .error reason => refuse reason
 
+/-- The work table, where profiling (`TSCERT_PROFILE`), written to
+`work.jsonl` in the working directory, a stage's output
+(docs/drafts/on-demand-processing.md, "Accounting"): one line per kind and
+item, `{"kind","item","count","ns","selfNs"}`, and a line of kind `process`
+with the nanoseconds since `start`. -/
+def writeWork (start : Nat) : IO Unit := do
+  if !(← SinglePass.profiling.get) then return
+  let t ← IO.monoNanosNow
+  let m ← SinglePass.workTable.get
+  let rows := m.toList.mergeSort fun a b => a.1.1 < b.1.1 || (a.1.1 == b.1.1 && a.1.2 ≤ b.1.2)
+  let lines := rows.map fun ((k, i), (c, n, own)) =>
+    (Json.mkObj [("kind", toJson k), ("item", toJson i), ("count", toJson c), ("ns", toJson n),
+      ("selfNs", toJson own)]).compress
+  let total := (Json.mkObj [("kind", toJson "process"), ("item", toJson ""), ("count", toJson 1),
+    ("ns", toJson (t - start)), ("selfNs", toJson (t - start))]).compress
+  IO.FS.writeFile "work.jsonl" (String.intercalate "\n" (lines ++ [total]) ++ "\n")
+
 /-- A selection of units by their members' names, comma-separated; every
 unit without one. -/
 def selection : Option String → Option (List String)
@@ -271,7 +288,8 @@ def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) :
           throw "component dependency overlaps"
         imported := imported ++ [m]
     let sc : SourceClaimJson.ImportScope := ⟨modules ++ imported, SourceClaimJson.ModuleCode.of (modules ++ imported)⟩
-    let decoded ← ds.mapM fun (d : Json) => SourceClaimJson.decodeInterfaces sc (d.getObjValD "interface")
+    let decoded ← ds.mapM fun (d : Json) => SinglePass.work "rows: decode interfaces" "" fun _ =>
+      SourceClaimJson.decodeInterfaces sc (d.getObjValD "interface")
     let incoming := decoded.flatMap (·.1)
     let incomingTables := decoded.flatMap (·.2)
     let needs ← SourceClaimJson.interfaceNeeds sc
@@ -285,8 +303,10 @@ def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) :
     if mode != 8 then throw "interface mode must be 8"
     let infer := true
     let prepare := fun location (f : SourceClaimJson.FilePlans) =>
+      SinglePass.work "prepare: head facts" (SourceClaimJson.fileItem f.fr.ast) fun _ =>
       f.withHeadFacts (forModule location given) false (inferred := infer)
     let check := fun (f : SourceClaimJson.FilePlans) group =>
+      SinglePass.work "check: group" (f.fr.workItem (group.headD 0)) fun _ =>
       -- The given lines inference computes and the region separations, as
       -- for the file's own units (`passGroupMode8`).
       let r := f.passGroupMode8 infer force (fun _ => []) fuel group (given := some (moduleGiven f.fr.ast given))
@@ -337,9 +357,12 @@ def verifyUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names : 
     let sc ← if (← jArr cached "modules").isEmpty then
         pure (⟨[], {}⟩ : SourceClaimJson.ImportScope)
       else SourceClaimJson.ImportScope.of (← ast)
-    let (est, tables) ← SourceClaimJson.decodeInterfaces sc cached
-    let f ← SourceClaimJson.fragmentPlansFromInterfaces (← ast) fileKey budget (selection names) {} force est tables
-    return (prepare givenLines f, (est.map (·.2.2)).eraseDups)
+    let (est, tables) ← SinglePass.work "rows: decode interfaces" "" fun _ => SourceClaimJson.decodeInterfaces sc cached
+    let a ← ast
+    let item := SourceClaimJson.fileItem a
+    let f ← SinglePass.work "prepare: importer plans" item fun _ =>
+      SourceClaimJson.fragmentPlansFromInterfaces a fileKey budget (selection names) {} force est tables
+    return (SinglePass.work "prepare: head facts" item fun _ => prepare givenLines f, (est.map (·.2.2)).eraseDups)
   let t1 ← IO.monoNanosNow
   let ms := fun (a b : Nat) => s!"{(b - a) / 1000000}"
   let phases := (← SinglePass.kindNanos.get).toList.filter (·.1.startsWith "lower: ")
@@ -373,7 +396,8 @@ def verifyUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names : 
           try pure (← System.FilePath.metadata p).byteSize.toNat catch _ => pure 0
         emit s!"counts-read: \{\"fragmentBytes\":{← size astPath},\"interfaceBytes\":{← size interfacesPath}}"
       let (lines, verdict) ← IO.lazyPure fun _ =>
-        let (ls, v, dropped, runs) := f.passGroupMode8 infer force (f.givenAt givenLines) fuel (f.fr.group i)
+        let (ls, v, dropped, runs) := SinglePass.work "check: group" (f.fr.workItem i) fun _ =>
+          f.passGroupMode8 infer force (f.givenAt givenLines) fuel (f.fr.group i)
           compare debugNode repeats none observe counting located
         (ls ++ (if dropped > 0 then [s!"inferred heads: {dropped} proposals dropped, {runs} runs"] else []), v)
       let p1 ← SinglePass.passNanos.get

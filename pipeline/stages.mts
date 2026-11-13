@@ -16,13 +16,13 @@
 //   node pipeline/stages.mts evict    one eviction pass within TSCERT_STORE_BUDGET, its summary printed
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { appendFileSync, rmSync } from "node:fs";
+import { appendFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { readMeasurement, Store, type Cpu, type Measurement, type StoredResult } from "./stage-store.mts";
 import { inputRead, isOperation, observationsHold, type Observation } from "../tools/files.mts";
 import { liveCompilers, observeCompilers, type LiveCompiler } from "../tools/compiler-processes.mts";
-import { bindProcess, codeFailure, deliver, executeProcess, executionDirectory, processCode, isStageName, readOrAbsent, resourcePolicy, runnerBuild, sha256, stageNames, text,
+import { bindProcess, codeFailure, deliver, executeProcess, executionDirectory, processCode, isStageName, profileDirectory, readOrAbsent, resourcePolicy, runnerBuild, sha256, stageNames, text, workRole,
   type Canonical, type ProcessCall, type StageName } from "./stage-execution.mts";
 import { bindInProcess, observedInput, runInProcess, type InProcessCall } from "./in-process-execution.mts";
 
@@ -91,6 +91,18 @@ export class Recorder {
     this.records.push(record);
     if (this.file) appendFileSync(this.file, JSON.stringify({ event: "end", record }) + "\n");
   }
+}
+
+/** A profiled request's record of an attempt (`profileDirectory`): the
+ * attempt appended to the request's `invocations.jsonl`, and its work table
+ * among `outputs` written to `work/<attempt>.jsonl`. Off, nothing. */
+function profileAttempt(record: AttemptRecord, outputs: readonly (readonly [string, Buffer])[]): void {
+  const directory = profileDirectory();
+  if (directory === null) return;
+  mkdirSync(join(directory, "work"), { recursive: true });
+  const work = outputs.find(([role]) => role === workRole);
+  if (work) writeFileSync(join(directory, "work", `${record.attempt}.jsonl`), work[1]);
+  appendFileSync(join(directory, "invocations.jsonl"), JSON.stringify({ event: "end", record }) + "\n");
 }
 
 /** The store setting: `TSCERT_STAGE_STORE` names the store's directory, or is
@@ -217,6 +229,7 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
           validationMs: found.validationMs, materializationMs: performance.now() - materializing,
           stored: found.result.measurement }, found.result.measurement.cpu);
         options.recorder?.finish(done);
+        profileAttempt(done, found.result.outputs);
         return { status: found.result.exitStatus, signal: null, error: undefined, stdoutBytes: found.result.stdout,
           stderrBytes: found.result.stderr, stdout: text(found.result.stdout), stderr: text(found.result.stderr),
           record: done };
@@ -229,6 +242,7 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
           materializationMs: 0, stored: { attempt: observation.attempt, elapsedMs: observation.elapsedMs,
             limitMs: observation.limitMs, cpu: observation.cpu } }, observation.cpu);
         options.recorder?.finish(done);
+        profileAttempt(done, []);
         return { status: null, signal: null, error: undefined, stdoutBytes: Buffer.alloc(0), stderrBytes: Buffer.alloc(0),
           stdout: "", stderr: "", record: done };
       }
@@ -257,6 +271,7 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
     release?.();
     release = null;
     options.recorder?.finish(done);
+    profileAttempt(done, run.produced);
     return { status: run.status, signal: run.signal, error: run.error, stdoutBytes: run.stdoutBytes,
       stderrBytes: run.stderrBytes, stdout: run.stdout, stderr: run.stderr, record: done };
   } finally {
@@ -517,6 +532,7 @@ function attemptInProcess<T>(call: InProcessCall<T>, options: { force: boolean; 
       const done = record("replayed", { lookupMs: found.lookupMs, validationMs,
         materializationMs: performance.now() - materializing, stored: found.result.measurement });
       options.recorder?.finish(done);
+      profileAttempt(done, []);
       return { value, record: done };
     }
   }
@@ -548,6 +564,7 @@ function attemptInProcess<T>(call: InProcessCall<T>, options: { force: boolean; 
     if (call.observed) replaying.store.reference("observed", call.stage, replaying.key, key);
   }
   options.recorder?.finish(done);
+  profileAttempt(done, []);
   return { value, record: done };
 }
 

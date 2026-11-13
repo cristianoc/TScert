@@ -248,7 +248,7 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
   let init := f.name.isEmpty
   let (schemes, generics) := fr.genericValues
   let (T, fc, completion, declarations, spanEntries, exprsAt) ← SinglePass.timedKind "lower: of extractAll, the walk" fun _ =>
-    Synthesis.retypeUnitWith T f fc (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics "xec" force scope
+    SinglePass.work "walk: retype" (fr.fnItem f) fun _ => Synthesis.retypeUnitWith T f fc (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics "xec" force scope
   let (graphs, prologues) ← fr.flowGraphs f init
   let owner := if init then (0, 0) else f.namePos
   let exprMap : Std.HashMap Span (SourceClaims.Candidate Tree) := fc.exprs.foldl (fun m (sp, c) => m.insert sp c) {}
@@ -422,7 +422,7 @@ def instancesFromWalk (force : List String := []) : Instances := fun fr T f c mo
   if used.isEmpty then return (T, c)
   let (schemes, generics) := fr.genericValues
   let (w, T) ← SinglePass.timedKind "lower: of extractAll, the walk" fun _ =>
-    Synthesis.walkUnit T f (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics force scope
+    SinglePass.work "walk: instances" (fr.fnItem f) fun _ => Synthesis.walkUnit T f (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics force scope
       (schemes := c.expressions.filterMap fun e => match e.type with
         | .labels A => some (e.pos, A)
         | _ => none)
@@ -541,7 +541,8 @@ keeps what `fragmentClaims` gives it. Each proposal is a stand-in: its
 callers read it and its own unit establishes it. Beside the proposals, the
 functions walked to the ordinary effect.
  -/
-def declarationWalks (fr : Front) (wanted : List Nat) (standIns : StandIns) (force : List String) : List StandIn × List String := Id.run do
+def declarationWalks (fr : Front) (wanted : List Nat) (standIns : StandIns) (force : List String)
+    (round : String := "walk: proposal") : List StandIn × List String := Id.run do
   -- Callees first: the wanted units' reach in post-order.
   let mut order : List Nat := []
   let mut seen : Std.HashSet Nat := {}
@@ -563,7 +564,8 @@ def declarationWalks (fr : Front) (wanted : List Nat) (standIns : StandIns) (for
     let some (f, tps, none) := fr.units[i]? | continue
     if !tps.isEmpty || f.async || f.stated.isSome || f.params.any (·.rest) ||
         standIns.functions.any (·.name == f.name) then continue
-    let walkAt (own : Option (Footprints.Closed × Bool)) : Option ((Footprints.Closed × Bool) × Footprints.Closed) :=
+    let walkAt (kind : String) (own : Option (Footprints.Closed × Bool)) :
+        Option ((Footprints.Closed × Bool) × Footprints.Closed) := SinglePass.work kind (fr.fnItem f) fun _ =>
       let at_ := match own with
         | some o => (f.name, o, Footprints.Closed.top) :: found
         | none => found
@@ -586,22 +588,22 @@ def declarationWalks (fr : Front) (wanted : List Nat) (standIns : StandIns) (for
     let r : Option ((Footprints.Closed × Bool) × Footprints.Closed) :=
       if (fr.mentions i).contains f.name then Id.run do
         let mut assumed : Footprints.Closed × Bool := (⟨.keep, .keep⟩, true)
-        for _ in List.range 3 do
-          match walkAt (some assumed) with
+        for k in List.range 3 do
+          match walkAt (if k == 0 then round else "walk: proposal, recursive again") (some assumed) with
           | none => return none
           | some (got, R) =>
             if within got assumed then return some (assumed, R)
             assumed := (⟨assumed.1.value.max got.1.value, assumed.1.store.max got.1.store⟩, assumed.2 && got.2)
         return none
-      else walkAt none
+      else walkAt round none
     if let some ((Φ, ot), R) := r then
       if Φ != top || R != top then found := found ++ [(f.name, (Φ, ot && Φ != top), R)] else tops := tops ++ [f.name]
   return (found.map fun (n, (Φ, ot), R) => { name := n, footprint := Φ, onThrow := ot, resultFootprint := R }, tops)
 
 /-- The proposals of `declarationWalks`. -/
-def declarationEffects (fr : Front) (wanted : List Nat) (standIns : StandIns) (force : List String) :
-    List StandIn :=
-  (declarationWalks fr wanted standIns force).1
+def declarationEffects (fr : Front) (wanted : List Nat) (standIns : StandIns) (force : List String)
+    (round : String := "walk: proposal") : List StandIn :=
+  (declarationWalks fr wanted standIns force round).1
 
 /-- The front with the functions the stand-ins name at their footprints:
 their claims' and their slots', as `fragmentClaims` and `fileFront` state a
@@ -697,13 +699,18 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
     | some (claims, fr) =>
       if standIns.functions.isEmpty && standIns.imports.isEmpty then pure (claims, fr.withQualified qualified)
       else do
-        let claims ← fragmentClaims ast fileKey standIns force
-        pure (claims, ← fileFront ast claims fileKey budget qualified (lenient := true))
+        let claims ← SinglePass.work "prepare: claims" (fileItem ast) fun _ => fragmentClaims ast fileKey standIns force
+        pure (claims, ← SinglePass.work "prepare: file lowering" (fileItem ast) fun _ =>
+          fileFront ast claims fileKey budget qualified (lenient := true))
     | none => do
-      let claims ← fragmentClaims ast fileKey standIns force
+      let claims ← SinglePass.work "prepare: claims" (fileItem ast) fun _ => fragmentClaims ast fileKey standIns force
       pure (claims, ← SinglePass.timedKind "lower: fileFront" fun _ =>
+        SinglePass.work "prepare: file lowering" (fileItem ast) fun _ =>
         fileFront ast claims fileKey budget qualified (lenient := true))
   let fr := fr.withNeverImports
+  -- (each typing of the initialization recorded as one, `SinglePass.work`)
+  let initTyped := fun (g : Front) => SinglePass.work "prepare: initialization typing" s!"{fileItem ast}#init" fun _ =>
+    g.withInitTypes force
   let wantedOf (fr : Front) (names : Option (List String)) : List Nat :=
     let selected := (fr.selected names).flatMap fr.group
     if closure then (selected ++ selected.flatMap fr.reach).eraseDups.flatMap fr.group |>.eraseDups else selected
@@ -711,16 +718,17 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
   -- and the front again where any is found.
   let computed := if force.contains "callees" || force.contains "throws" then [] else
     SinglePass.timedKind "lower: declarations' footprints" fun _ =>
-      declarationEffects (fr.withInitTypes force) (wantedOf fr names) standIns force
+      declarationEffects (initTyped fr) (wantedOf fr names) standIns force
   -- Where the initialization calls a function proposed a returned
   -- function's footprint, the module values it types hold such functions:
   -- the walks once more, the initialization's walk reading the proposals.
   let returning := (computed.filter (·.resultFootprint != .top)).map (·.name)
   let computed := if returning.isEmpty || !(fr.init.flatMap stmtNames).any returning.contains then computed else
     SinglePass.timedKind "lower: declarations' footprints" fun _ =>
-      declarationEffects ((fr.withStandIns computed).withInitTypes force) (wantedOf fr names) standIns force
+      declarationEffects (initTyped (fr.withStandIns computed)) (wantedOf fr names) standIns force
+        "walk: proposal, returned-callable round"
   let (claims, fr) := if computed.isEmpty then (claims, fr) else (withStandIns claims computed, fr.withStandIns computed)
-  let fr := SinglePass.timedKind "lower: initialization's walk" fun _ => fr.withInitTypes force
+  let fr := SinglePass.timedKind "lower: initialization's walk" fun _ => initTyped fr
   -- With `proposed`, the selected functions whose footprint is more than
   -- the ordinary effect alone, and what they reach.
   let names := if !proposed then names else names.map (·.filter fr.proposes)
@@ -737,8 +745,10 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
       match runCompiler T [] (moduleValueType v) with
       | .ok (A, r) => (r.types, acc ++ [(v.1, A)])
       | .error _ => (T, acc)
-  let F ← SinglePass.timedKind "lower: freeze" fun _ => EquationStore.freeze T
-  let plans := SinglePass.timedKind "lower: plans over the store" fun _ => plans.map fun e => e.bind (FunctionPlan.over F)
+  let F ← SinglePass.timedKind "lower: freeze" fun _ => SinglePass.work "prepare: freeze" (fileItem ast) fun _ =>
+    EquationStore.freeze T
+  let plans := SinglePass.timedKind "lower: plans over the store" fun _ =>
+    SinglePass.work "prepare: plans over the store" (fileItem ast) fun _ => plans.map fun e => e.bind (FunctionPlan.over F)
   let slots := slotTypes.filterMap fun (n, A) =>
     ((fromJson? (toJson A) : Except String (Ty (EquationStore.CheckedLabel F.equations F.primitive))).toOption).map (n, ·)
   return ⟨⟨ast, claims, qualified, [], depends⟩, fr, F, plans, slots⟩
@@ -839,7 +849,7 @@ def FilePlans.refuseRows (f : FilePlans) (reads : List FragmentRead) (establishe
   { f with plans := f.plans.zipIdx.map fun (p, j) => p.bind fun plan =>
     match (f.captures j).find? fun (n, A) => atEntry.any fun r => r.localName == n &&
         !(match tables.lookup r.location with
-          | some t => importerRowsAgree f.F.store t r.name A
+          | some t => SinglePass.work "rows: importer check" (f.fr.nameItem n) fun _ => importerRowsAgree f.F.store t r.name A
           | none => false) with
     | some (n, _) => .error s!"signature rows differ: the import '{n}', its module's interface rows refused by the store-map check"
     | none => .ok plan }
@@ -1107,7 +1117,8 @@ def establishStep (budget : PositiveCertificates.SearchBudget) (force : List Str
     let checked := candidates.map fun e => if !laid.contains e.1.2 then
         Except.error s!"{location}#{e.1.2}: not laid out: {((outsideD.find? (·.1 == e.1.2)).map (·.2)).getD ""}"
       else match fm.slots.lookup e.1.2, table with
-      | some I, .ok t => if moduleRowsAgree fm.F.store t e.1.2 I then Except.ok e
+      | some I, .ok t => if SinglePass.work "rows: publication check" (fm.fr.nameItem e.1.2) fun _ =>
+          moduleRowsAgree fm.F.store t e.1.2 I then Except.ok e
         else .error s!"{location}#{e.1.2}: its interface rows refused by the store-map check"
       | none, _ => .error s!"{location}#{e.1.2}: no interface type"
       | _, .error w => .error s!"{location}#{e.1.2}: its interface rows: {w}"
@@ -1632,7 +1643,8 @@ def FilePlans.inferredNextAll (f : FilePlans) (fuel : Nat) (fixed : Bool)
     let droppable := fun (l : Nat) =>
       let kept := (protect.filter (·.1 == l)).flatMap (·.2)
       ((candidates.filter (·.1 == l)).flatMap (·.2)).filter (!kept.contains ·)
-    let all := SinglePass.timedKind "inferred heads: diagnosing walk" fun _ => f₁.lackingAt fuel i g₁ droppable
+    let all := SinglePass.timedKind "inferred heads: diagnosing walk" fun _ =>
+      SinglePass.work "check: diagnosing walk" (f₁.fr.workItem i) fun _ => f₁.lackingAt fuel i g₁ droppable
     let lacking := all.filterMap fun (l, x) => x.map (l, ·)
     let implied := (all.filterMap fun (l, x) => if x.isNone then some l else none).eraseDups
     let g₂ := implied.foldl (fun (g : Option (Std.HashMap String Json)) l =>
@@ -1690,7 +1702,8 @@ def FilePlans.inferredSettle (f : FilePlans) (fuel : Nat) (keep : Nat → List (
     | _ => []
   let heads := (candidates.filter fun (c : Nat × List HeapKnowledge.IndexAtom) => !c.2.isEmpty).length
   settleInferred
-    (fun (g : FilePlans) gv => g.inferredRun fuel compare debugNode repeats observe counting located gv i)
+    (fun (g : FilePlans) gv => SinglePass.work "check: member run" (f.fr.workItem i) fun _ =>
+      g.inferredRun fuel compare debugNode repeats observe counting located gv i)
     (fun res => res.2.1)
     (fun (g : FilePlans) gv w => g.inferredNextAll fuel fixed (keep i) gv i w)
     (4 * heads + 3) f given [] 0 0

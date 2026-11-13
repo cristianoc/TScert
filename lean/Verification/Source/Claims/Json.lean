@@ -108,7 +108,8 @@ def Front.extractSome (fr : Front) (wanted : Std.HashSet Nat) (retype : Option R
     EquationStore.State × List (Except String (FunctionPlan EquationStore.State Tree)) :=
   (fr.units.zipIdx.foldl (init := (fr.d.types, #[])) fun (T, plans) (u, i) =>
     if !wanted.contains i then (T, plans.push (.error "not extracted")) else
-    match extractMember fr T u retype instances closureSchemes with
+    match SinglePass.work "prepare: extraction" (fr.workItem i) fun _ =>
+        extractMember fr T u retype instances closureSchemes with
     | .ok (next, plan) => (next, plans.push (.ok plan))
     | .error reason => (T, plans.push (.error reason))).map id (·.toList)
 
@@ -532,6 +533,9 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
     if r.async || r.fresh || !GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions then
       return { name, codes := codeRuns, outcome := .refused "store regions" }
   let walk := fun (bound : Option (Footprints.Closed × Bool × Bool)) (regional : Option SinglePass.Regional) =>
+    -- (each run recorded: more than one per member run is a regional
+    -- check beside the first, `mainRun`)
+    SinglePass.work "check: main graph run" (f.fr.workItem i) fun _ =>
     SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
       r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers reference debugNode bound
       givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed tracing false regional

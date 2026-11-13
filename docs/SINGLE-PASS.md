@@ -393,6 +393,32 @@ state that the met store lacks, the facts per state (sum and largest), the
 facts given at loop heads; and once per process the bytes of the files read
 (`counts-read:`).
 
+### Work
+
+`TSCERT_PROFILE` in a request's environment names the request's profile
+directory. Each verifier stage of the request then runs with
+`TSCERT_PROFILE=1` in its environment, which is part of its stage key, so a
+profiled stage shares no entry with an unprofiled one. The verifier records
+its work by kind and item, an item being a function
+(`<sha256 prefix>#<unit>`) or a file (`<sha256 prefix>`): preparation
+(`prepare:` the claims, the file lowering, the initialization typing, each
+function's extraction, the freezing, the plans over the store, the head
+facts, an importer's plans), body walks (`walk:` a proposal walk, the
+returned-callable round's, a recursive function's walks after its first,
+the retype walk, the instance walk), checks (`check:` a group, each member
+run, each main graph run, each diagnosing walk) and interface rows (`rows:`
+the decoding of interfaces, an importer's and a publication's store-map
+check). It writes, as the stage's output `work.jsonl`, one line per kind and
+item with the times the work was done, its nanoseconds and its nanoseconds
+outside the work nested in it, and a line of kind `process` with the
+process's nanoseconds. Stage execution appends every attempt of the request,
+from every process, to the directory's `invocations.jsonl`, and keeps each
+verifier attempt's work table as `work/<attempt>.jsonl`.
+`node dev/work-report.mts report <directory>` reports, from that directory
+alone, the work of each function and file, its CPU time, and the work done
+more than once by repetition site
+([processing functions on demand](drafts/on-demand-processing.md#accounting)).
+
 ### The performance gate
 
 `node dev/perf-gate.mts <pretext checkout at ba09794f>` runs the pass over a

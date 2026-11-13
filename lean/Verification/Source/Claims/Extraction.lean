@@ -164,6 +164,26 @@ def Front.unitId (fr : Front) (i : Nat) : String :=
   | some (f, _, none) => s!"{f.name}@{f.namePos.1}"
   | none => ""
 
+/-- A source's item in the work table (`SinglePass.work`): the first twelve
+digits of its `sourceSha256`. -/
+def fileItem (ast : Json) : String := ((ast.getObjValAs? String "sourceSha256").toOption.getD "").take 12 |>.toString
+
+/-- A function's item in the work table: its source's, then its unit's
+identity (`init` for the initialization, whose function has no name). -/
+def Front.fnItem (fr : Front) (f : Fragment.Fn) : String :=
+  s!"{fileItem fr.ast}#{if f.name.isEmpty then "init" else s!"{f.name}@{f.namePos.1}"}"
+
+/-- Unit `i`'s item in the work table. -/
+def Front.workItem (fr : Front) (i : Nat) : String := s!"{fileItem fr.ast}#{fr.unitId i}"
+
+/-- The item of the function named `n` in the work table: its first unit's. -/
+def Front.nameItem (fr : Front) (n : String) : String :=
+  match (List.range fr.units.length).find? fun i => match fr.units[i]? with
+      | some (f, _, none) => f.name == n
+      | _ => false with
+  | some i => fr.workItem i
+  | none => s!"{fileItem fr.ast}#{n}"
+
 /-- Every name a unit's code mentions, bound or not: its body's, its
 parameter defaults' and its closures' (`stmtNames`). -/
 def Front.mentions (fr : Front) (i : Nat) : List String :=

@@ -210,6 +210,20 @@ Gate on executed/replayed units, distinct processed identities, preparation exec
 
 Required edit experiments: unchanged request executes zero units; unchanged-interface body edit executes one; unrelated same-file edit leaves other keys stable; declaration/interface change invalidates exactly its recorded readers; a diamond processes its shared dependency once; a killed unit preserves completed siblings; a cycle uses conservative views without iteration.
 
+### Accounting
+
+The instrument for "every item processed once" is the [work table](../SINGLE-PASS.md#work) of a profiled request (`TSCERT_PROFILE=<directory>`) and its report, `node dev/work-report.mts report <directory>`, a function of the directory alone. Profiling sets `TSCERT_PROFILE=1` in each verifier stage's environment and adds the output `work.jsonl`, so a profiled stage's key differs from the unprofiled one; an unprofiled request's keys and verdicts are those of a request with no accounting.
+
+An item is a function, `<sha256 prefix of its source>#<unit>`, or a file, `<sha256 prefix>`, so one function has one item in every process of a request, in its own file's pass and in an importer's interface component alike. A class of work is one of: a file's lowering (claims and declarations), its freezing (store and plans over it), its head facts, an importer's plans, the initialization typing, a function's extraction, a body walk (proposal, retype, instance), a check (group, member runs, main graph runs, diagnosing walks), an importer's or a publication's store-map check. The ideal is each class done once on each item per request.
+
+Only executed attempts count; a replay is the result of an execution. An attempt's CPU time (the stage runner's user and system time) outside its recorded work (reading, decoding, encoding) is shared among its work in proportion to the recorded time. Work done more than once is attributed as follows.
+
+- Across attempts, the occurrence in the item's own file's pass (else the first) is the processing. Another occurrence is site 1 when the two stages differ (a pass and an interface component, or two components); between two passes, site 5 when their fragments differ (another omission list), site 3 when their selections differ after a whole-file timeout, site 6 when their selections differ otherwise, site 4 when only their interface files differ.
+- A whole-file pass over its limit is site 2, its CPU time whole.
+- Within an attempt: the first body walk is the processing, a second proposal walk of the returned-callable round site 8, a recursive function's later walks site 9, the retype and instance walks site 7 (site 8 for the initialization's), each typing of the initialization after the first site 8.
+- Within an attempt's check of a function: the first member run is the processing; each diagnosing walk and the rerun it leads to, and each main graph run beyond the member runs (a regional check beside a run), site 11; one more member run than the reruns is site 12, the settled run computed twice (`settleInferred`), at the mean member run's time.
+- Units of one function name beyond the first (overloads) are site 10.
+
 ## 7. Useful implementation steps
 
 | Step | Build and remove | Evidence of completion |

@@ -282,7 +282,7 @@ theorem passMember_sound : PassMemberSound := by
             entrySeparation := r.entrySeparation, observe := observed, tracing := tracing, observeEntry := false,
             regional := rg },
           ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, hcodesEq, rfl, rfl, rfl, rfl⟩, rfl, rfl,
-          by simp only [RunCall.result, walk]⟩
+          by simp only [RunCall.result, walk, SinglePass.work]⟩
       have hrof : ∀ k Φ R ex, regionOf (some (regionalOf k Φ R ex)) = some (Φ, R, ex) := by
         intro k Φ R ex; simp only [regionOf, regionalOf, Option.map_some]
       have hspec : regionOf regional = regionalSpec r := by

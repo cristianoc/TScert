@@ -39,8 +39,14 @@ where
     return 2
 
 def main (args : List String) : IO UInt32 := do
+  -- The work table recorded where profiling (`TSCERT_PROFILE`), written at
+  -- the end (`RequestCli.writeWork`).
+  Verification.SinglePass.profiling.set (← IO.getEnv "TSCERT_PROFILE").isSome
+  let start ← IO.monoNanosNow
   try
-    command args
+    let code ← command args
+    Verification.RequestCli.writeWork start
+    return code
   catch e =>
     IO.eprintln s!"error: {e}"
     return 3
