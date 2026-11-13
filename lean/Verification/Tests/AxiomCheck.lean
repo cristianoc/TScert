@@ -13,6 +13,7 @@ import Verification.Programs.TolerantFramesExitAux
 import Verification.Programs.TolerantFramesMapNames
 import Verification.Programs.SinglePassClose
 import Verification.Semantics.Kinds
+import Verification.Semantics.KindsAllocation
 import Lean.Util.CollectAxioms
 import Lean.Elab.Command
 import Lean.Compiler.CSimpAttr
@@ -1472,3 +1473,14 @@ run_cmd do
   -- what kinded satisfaction excludes
   check ``Verification.Kinds.counterheap_excluded
   check ``Verification.Kinds.dangling_excluded
+  -- allocation preserves kinds
+  check ``Verification.Kinds.HeapOk_appendWs
+  check ``Verification.Kinds.makeFields_shaped
+  check ``Verification.Kinds.objectLiteral_shaped
+  check ``Verification.Kinds.bindingCell_shaped
+  check ``Verification.Kinds.bindingRead_shape
+  check ``Verification.Kinds.closure_shaped
+  check ``Verification.Kinds.arrAlloc_shaped
+  check ``Verification.Kinds.arrayObject_shaped
+  check ``Verification.Kinds.typedArray_shaped
+  check ``Verification.Kinds.thrownError_shaped
