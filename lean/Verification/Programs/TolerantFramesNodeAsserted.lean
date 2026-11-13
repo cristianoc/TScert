@@ -10,6 +10,7 @@ cells and links it reads, and under the edge's observation of the result
 where it has one. `assertion_query_sound` proves that check gives `req` at
 the target's environment, as `head_query_sound` proves the head query. -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
 open PositiveRules HeapExpressionRules
@@ -35,9 +36,9 @@ theorem assertion_query_sound {G : NormalGraph ι} {Γe Δ : List (Ty ι)} {req 
     {θ : PointClaims.Mapping} {observed : Option BranchRefinement.Observation} {ρ : Env} {n : Nat}
     {W : WorldT (n + 1)} {h : Heap}
     (hq : KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G Δ) (assertionSource G Γe req k θ observed) req θ = true)
-    (hk : HeapKnowledge.Holds k ρ h) (he : EnvOk G Γe ρ (n + 1) W) (hh : HeapOk (n + 1) W h)
+    (hk : HeapKnowledge.Holds k ε ρ h) (he : EnvOk G Γe ρ (n + 1) W) (hh : HeapOk (n + 1) W h)
     (ho : ∀ o, observed = some o → o.holds (ρ 0))
-    (htc : EnvOk G Δ (PointClaims.mapEnv θ ρ) (n + 1) W) : HeapKnowledge.Holds req (PointClaims.mapEnv θ ρ) h := by
+    (htc : EnvOk G Δ (PointClaims.mapEnv θ ρ) (n + 1) W) : HeapKnowledge.Holds req ε (PointClaims.mapEnv θ ρ) h := by
   have hc := withTypedCells_holds (k := req) (m := θ) (fun _ => HeapExpressionRules.typedCells_holds he hh)
     (fun _ _ hr => HeapExpressionRules.typeValues_sound hr he) hk
   refine KnowledgeExpand.checkIn_sound hq (KnowledgeExpand.ctxOf_ok htc) ?_

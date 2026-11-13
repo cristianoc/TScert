@@ -72,7 +72,7 @@ def EnsuresClause (r : SourceRequest σ ι) : Prop :=
       (envOf L d) n W h →
     HeapObservations.SafePost (excOf (reassign (RequestJson.graph r.toRequest) η))
       (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
-      (fun h' v => GraphCode.EnsuresAt r.ensures h' (push v (envOf L d))) n W h (gotoOf r.program r.start L d)
+      (fun h' v => GraphCode.EnsuresAt r.ensures ⟨envOf L d, h⟩ h' (push v (envOf L d))) n W h (gotoOf r.program r.start L d)
 
 /-- Within the stated regional bound where the declaration states regions. -/
 def RegionalClause (r : SourceRequest σ ι) : Prop :=
@@ -92,7 +92,7 @@ def AssertionsClause (r : SourceRequest σ ι) : Prop :=
   ∀ η, r.Admits η → ∀ n W h ρ,
     EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices ρ n W h →
     ∀ l k, (l, k) ∈ r.assertions → ∀ j h' ρ', j < n → ReachesIn r.program j h (.at r.start ρ) h' (.at l ρ') →
-      HeapKnowledge.Holds k ρ' h'
+      HeapKnowledge.Holds k ⟨ρ, h⟩ ρ' h'
 
 /-- Each stated assertion of each code's graph true at every state reached
 at its label within the budget, from every frame meeting its signature. -/
@@ -102,7 +102,7 @@ def CodeAssertionsClause (r : SourceRequest σ ι) : Prop :=
       (codeRequest r q).entryIndices ρ n W h →
     ∀ l k, (l, k) ∈ (codeHintsAt r ci).requirements → ∀ j h' ρ', j < n →
       ReachesIn (codeRequest r q).program j h (.at (codeRequest r q).start ρ) h' (.at l ρ') →
-      HeapKnowledge.Holds k ρ' h'
+      HeapKnowledge.Holds k ⟨ρ, h⟩ ρ' h'
 
 /-- **A request is safe** (`RequestsSafe`'s semantic conjuncts, no
 certificate): at every admitted assignment its graph is safe from every

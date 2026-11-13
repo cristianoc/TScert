@@ -19,6 +19,7 @@ check gives. The write `x.[] := x.[]⟦k ↦ v⟧` on a homogeneous writable arr
 is safe where `bound(x, k)` holds (`setElem-bounded`): it lands on a present
 element or appends, and leaves no hole. -/
 namespace Verification.IndexWrites
+variable {ε : Verification.HeapKnowledge.EntryState}
 open ProgramTyping PositiveRules PositiveGraphs PositiveNormalization Tower
 open HeapObservations HeapKnowledge ProgramCertificates
 open PositiveCertificates (InstanceImageCheck)
@@ -155,12 +156,12 @@ def literalArrayAtoms (n : Nat) (t : Tm) : List IndexAtom :=
   | _ => []
 
 theorem literalArrayAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {Ξ T : Fam} {Q : Post} {ρ n W h t k}
-    (he : EnvOk G Γ ρ n W) (hk : Holds k ρ h) (hh : HeapOk n W h) (hs : SafePost Ξ T Q n W h (instantiate 0 ρ t)) :
-    SafePost Ξ T (fun h' u => Q h' u ∧ IndexHolds (literalArrayAtoms Γ.length t) (push u ρ) h' ∧
+    (he : EnvOk G Γ ρ n W) (hk : Holds k ε ρ h) (hh : HeapOk n W h) (hs : SafePost Ξ T Q n W h (instantiate 0 ρ t)) :
+    SafePost Ξ T (fun h' u => Q h' u ∧ IndexHolds ε (literalArrayAtoms Γ.length t) (push u ρ) h' ∧
       (if (literalArrayAtoms Γ.length t).isEmpty then True else
         HeapSeparation.Holds (HeapSeparation.allocate k.separation Γ.length
           (HeapExpressionRules.contractFields G Γ)) (push u ρ) ∧
-        IndexHolds (shiftIndices k.indices) (push u ρ) h'))
+        IndexHolds ε (shiftIndices k.indices) (push u ρ) h'))
       n W h (instantiate 0 ρ t) := by
   unfold literalArrayAtoms
   split
@@ -200,7 +201,7 @@ theorem literalArrayAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List
       refine weaken (fun heap' u hq => ?_) (steps_run run rfl hs)
       obtain ⟨hq, rfl, rfl⟩ := hq
       refine ⟨hq, ?_, ?_⟩
-      · have hl : termValue (push (.objAt (slots heap.length [arrayStoreKey, CallArguments.protoField]) .absent (heap.length + 2)) ρ)
+      · have hl : termValue ε (push (.objAt (slots heap.length [arrayStoreKey, CallArguments.protoField]) .absent (heap.length + 2)) ρ)
             (heap ++ [store, (push store ρ) proto] ++ [.nul]) (.length 0) = some (es.length : Int) := by
           simp [termValue_length, push, lengthOf, Footprints.storeOf, Footprints.fieldsOf, slots,
             store, elemSlots, hlen, hmax, arrayStoreKey, CallArguments.protoField]
@@ -252,7 +253,7 @@ def indexed (k : Knowledge) (a : Nat) : Bool :=
     | .index i => (HeapLinks.aliases k.links a).contains i
     | _ => false
 
-theorem indexed_sound {k : Knowledge} {a : Nat} {ρ h} (hc : indexed k a = true) (hk : Holds k ρ h) :
+theorem indexed_sound {k : Knowledge} {a : Nat} {ρ h} (hc : indexed k a = true) (hk : Holds k ε ρ h) :
     ∃ b i, ρ a = .num b ∧ indexOfBits b = some i := by
   obtain ⟨atom, ha, hm⟩ := List.any_eq_true.mp hc
   simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
@@ -278,7 +279,7 @@ def lengthsOf (k : Knowledge) (n : Nat) : List Nat :=
     | _ => none
   else none
 
-theorem lengthsOf_sound {k : Knowledge} {n x : Nat} {ρ h} (hx : x ∈ lengthsOf k n) (hk : Holds k ρ h) :
+theorem lengthsOf_sound {k : Knowledge} {n x : Nat} {ρ h} (hx : x ∈ lengthsOf k n) (hk : Holds k ε ρ h) :
     ∃ s ls, Footprints.storeOf (ρ x) = some s ∧ h[s]? = some (.arr ls) ∧ ρ n = .num (bitsOfNat ls.length) ∧
       ls.length ≤ maxArrayLength := by
   obtain ⟨atom, ha, hm⟩ := List.mem_filterMap.mp hx
@@ -310,7 +311,7 @@ def storeReaders (k : Knowledge) (s : Nat) : List Nat :=
   k.links.filterMap fun g => if !g.alias && !g.optional && g.field == arrayStoreKey &&
     (HeapLinks.aliases k.links s).contains g.value then some g.cell else none
 
-theorem storeReaders_sound {k : Knowledge} {s x : Nat} {ρ h} (hx : x ∈ storeReaders k s) (hk : Holds k ρ h) :
+theorem storeReaders_sound {k : Knowledge} {s x : Nat} {ρ h} (hx : x ∈ storeReaders k s) (hk : Holds k ε ρ h) :
     ∃ l, Footprints.storeOf (ρ x) = some l ∧ h[l]? = some (ρ s) := by
   obtain ⟨g, hg, hm⟩ := List.mem_filterMap.mp hx
   split at hm
@@ -338,7 +339,7 @@ def maskSlot [DecidableEq ι] (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Know
   | none => false
 
 theorem maskSlot_sound [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {m : Nat} {ρ n W h}
-    (hc : maskSlot G Γ k m = true) (he : EnvOk G Γ ρ n W) (hk : Holds k ρ h) :
+    (hc : maskSlot G Γ k m = true) (he : EnvOk G Γ ρ n W) (hk : Holds k ε ρ h) :
     ∃ (b : UInt64) (M : Nat), ρ m = .num b ∧ toInt32 b = (M : Int) ∧ M < 2 ^ 31 := by
   unfold maskSlot at hc
   split at hc
@@ -508,8 +509,8 @@ theorem stepAtoms_shape [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
 
 theorem stepAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {t : Tm}
     {Ξ T : Fam} {Q : Post} {ρ n W h}
-    (he : EnvOk G Γ ρ n W) (hk : Holds k ρ h) (hs : SafePost Ξ T Q n W h (instantiate 0 ρ t)) :
-    SafePost Ξ T (fun h' u => Q h' u ∧ IndexHolds (stepAtoms G Γ k t) (push u ρ) h') n W h
+    (he : EnvOk G Γ ρ n W) (hk : Holds k ε ρ h) (hs : SafePost Ξ T Q n W h (instantiate 0 ρ t)) :
+    SafePost Ξ T (fun h' u => Q h' u ∧ IndexHolds ε (stepAtoms G Γ k t) (push u ρ) h') n W h
       (instantiate 0 ρ t) := by
   have hval : ∀ i, i < Γ.length → isVal (ρ i) = true := fun i hi =>
     (meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1
@@ -648,7 +649,7 @@ def knownConstant (k : Knowledge) (a : Nat) : Option Int :=
       entailsKnown k.indices (valueFact (.le [(a, -1)] (-c))) then some c else none
 
 theorem knownConstant_sound {k : Knowledge} {a : Nat} {c : Int} {ρ h}
-    (hc : knownConstant k a = some c) (hk : Holds k ρ h) : valuation ρ a = c := by
+    (hc : knownConstant k a = some c) (hk : Holds k ε ρ h) : valuation ρ a = c := by
   simp only [knownConstant] at hc
   split at hc
   · cases hc
@@ -743,8 +744,8 @@ def copiedAtoms (k : Knowledge) (a : Nat) : List IndexAtom :=
   (k.indices.filter (·.cond == some a)).filterMap fun atom =>
     (atom.fact.mapM (fun i => some (i + 1))).map fun F => { atom with fact := F, cond := some 0 }
 
-theorem copiedAtoms_holds {k : Knowledge} {a : Nat} {ρ h} (hk : Holds k ρ h) :
-    IndexHolds (copiedAtoms k a) (push (ρ a) ρ) h := by
+theorem copiedAtoms_holds {k : Knowledge} {a : Nat} {ρ h} (hk : Holds k ε ρ h) :
+    IndexHolds ε (copiedAtoms k a) (push (ρ a) ρ) h := by
   intro atom' hat hc
   obtain ⟨atom, hat0, hm⟩ := List.mem_filterMap.mp hat
   obtain ⟨hat0, hcond⟩ := List.mem_filter.mp hat0
@@ -765,8 +766,8 @@ def pastCopies (k : Knowledge) (a : Nat) : List IndexAtom :=
       else none
     | _, _ => none
 
-theorem pastCopies_holds {k : Knowledge} {a : Nat} {ρ h} (hk : Holds k ρ h) :
-    IndexHolds (pastCopies k a) (push (ρ a) ρ) h := by
+theorem pastCopies_holds {k : Knowledge} {a : Nat} {ρ h} (hk : Holds k ε ρ h) :
+    IndexHolds ε (pastCopies k a) (push (ρ a) ρ) h := by
   intro atom' hat hc
   obtain ⟨atom, hat0, hm⟩ := List.mem_filterMap.mp hat
   split at hm
@@ -783,7 +784,7 @@ theorem pastCopies_holds {k : Knowledge} {a : Nat} {ρ h} (hk : Holds k ρ h) :
   · cases hm
 
 theorem indexHolds_cat {as bs : List IndexAtom} {ρ h}
-    (ha : IndexHolds as ρ h) (hb : IndexHolds bs ρ h) : IndexHolds (as ++ bs) ρ h := fun a hm hc =>
+    (ha : IndexHolds ε as ρ h) (hb : IndexHolds ε bs ρ h) : IndexHolds ε (as ++ bs) ρ h := fun a hm hc =>
   (List.mem_append.mp hm).elim (fun hm => ha a hm hc) (fun hm => hb a hm hc)
 
 /-- The checked range in which signed bitwise conversion preserves an operand. -/
@@ -892,7 +893,7 @@ theorem scale_vars (k : Int) (F : Linear.Form Nat) : (F.scale k).map (·.1) = F.
 
 /-- What an operand denotes: a value whose safe integer is `F + c` at the input slots. -/
 theorem operandForm_sound {k : Knowledge} {constants : Bool} {t : Tm} {F : Linear.Form Nat} {c : Int} {ρ h}
-    (ho : operandForm k constants t = some (F, c)) (hk : Holds k ρ h) :
+    (ho : operandForm k constants t = some (F, c)) (hk : Holds k ε ρ h) :
     (∀ x ∈ F.map (·.1), (intValue (ρ x)).isSome) ∧
       ∃ b, instantiate 0 ρ t = .num b ∧ SafeIntegers.SafeInt b (Linear.Form.eval (valuation ρ) F + c) := by
   cases t with
@@ -925,7 +926,7 @@ theorem operandForm_sound {k : Knowledge} {constants : Bool} {t : Tm} {F : Linea
 theorem valueAtoms_holds {F : Linear.Form Nat} {c : Int} {ρ h} {b : UInt64}
     (hF : ∀ x ∈ F.map (·.1), (intValue (ρ x)).isSome)
     (hb : SafeIntegers.SafeInt b (Linear.Form.eval (valuation ρ) F + c)) :
-    IndexHolds (valueAtoms F c) (push (.num b) ρ) h := by
+    IndexHolds ε (valueAtoms F c) (push (.num b) ρ) h := by
   have h0 : valuation (push (.num b) ρ) 0 = Linear.Form.eval (valuation ρ) F + c := by
     simp [valuation, push, intValue_num hb]
   have hi0 : (intValue (push (.num b) ρ 0)).isSome := by simp [push, intValue_num hb]
@@ -1005,7 +1006,7 @@ theorem compareAtoms_holds {op : Arith} {D : Linear.Form Nat} {c : Int} {ρ h} {
     (hD : ∀ z ∈ D.map (·.1), (intValue (ρ z)).isSome)
     (hdiff : Linear.Form.eval (valuation ρ) D + c = i - j)
     (hx : SafeIntegers.SafeInt x i) (hy : SafeIntegers.SafeInt y j) :
-    IndexHolds (compareAtoms op D c) (push (boolVal (relationHolds op (doubleOrder x y))) ρ) h := by
+    IndexHolds ε (compareAtoms op D c) (push (boolVal (relationHolds op (doubleOrder x y))) ρ) h := by
   rw [SafeIntegers.doubleOrder_safe hx hy]
   generalize hr : relationHolds op (some (compare i j)) = r
   have hans : answerHolds op r (i - j) := hr ▸ answer_sound op i j
@@ -1042,7 +1043,7 @@ theorem equalAtoms_holds {D : Linear.Form Nat} {c : Int} {ρ h} {x y : UInt64} {
     (hD : ∀ z ∈ D.map (·.1), (intValue (ρ z)).isSome)
     (hdiff : Linear.Form.eval (valuation ρ) D + c = i - j)
     (hx : SafeIntegers.SafeInt x i) (hy : SafeIntegers.SafeInt y j) :
-    IndexHolds (equalAtoms D c) (push (boolVal (numberEqual x y)) ρ) h := by
+    IndexHolds ε (equalAtoms D c) (push (boolVal (numberEqual x y)) ρ) h := by
   have hvars : ∀ (F : Linear.Form Nat), F.map (·.1) = D.map (·.1) →
       ∀ z ∈ (shiftForm F).map (·.1), (intValue (push (boolVal (numberEqual x y)) ρ z)).isSome := by
     intro F hF z hz
@@ -1088,7 +1089,7 @@ theorem binop_num_relational {op : Arith} {x y : UInt64} {u : Tm} (hop : op.rela
   binop_relational hop h
 
 theorem smallOperand_sound {k : Knowledge} {F : Linear.Form Nat} {c : Int} {ρ h}
-    (hc : smallOperand k F c = true) (hk : Holds k ρ h) :
+    (hc : smallOperand k F c = true) (hk : Holds k ε ρ h) :
     0 ≤ Linear.Form.eval (valuation ρ) F + c ∧ Linear.Form.eval (valuation ρ) F + c < 2 ^ 31 := by
   simp only [smallOperand, Bool.and_eq_true] at hc
   have hlo := holds_valueFact.mp (entailsKnown_sound hk.2.2.2.2.2 hc.1)
@@ -1099,7 +1100,7 @@ theorem smallOperand_sound {k : Knowledge} {F : Linear.Form Nat} {c : Int} {ρ h
 theorem resultLinear_holds {F : Linear.Form Nat} {c a r : Int} {ρ h} {b : UInt64}
     (hF : ∀ x ∈ F.map (·.1), (intValue (ρ x)).isSome)
     (hb : SafeIntegers.SafeInt b r) (hle : a * r + Linear.Form.eval (valuation ρ) F ≤ c) :
-    IndexFact.HoldsAt (.linear (valueFact (.le ((0, a) :: shiftForm F) c))) (push (.num b) ρ) h := by
+    IndexFact.HoldsAt ε (.linear (valueFact (.le ((0, a) :: shiftForm F) c))) (push (.num b) ρ) h := by
   have h0 : intValue (push (.num b) ρ 0) = some r := intValue_num hb
   refine IndexFact.holdsAt_valueFact.mpr ⟨?_, ?_⟩
   · intro x hx
@@ -1118,7 +1119,7 @@ theorem bitAtoms_holds {op : Arith} {F : Linear.Form Nat} {c d : Int} {ρ h} {x 
     (hi : 0 ≤ Linear.Form.eval (valuation ρ) F + c)
     (hlt : Linear.Form.eval (valuation ρ) F + c < 2 ^ 31)
     (hd : 0 ≤ d) (hop : (op = .shr ∧ d < 32) ∨ (op = .bitAnd ∧ d < 2 ^ 31)) :
-    IndexHolds (bitAtoms op F c d) (push (.num (arithBits op x y)) ρ) h := by
+    IndexHolds ε (bitAtoms op F c d) (push (.num (arithBits op x y)) ρ) h := by
   have hneg : ∀ a ∈ (F.scale (-1)).map (·.1), (intValue (ρ a)).isSome := by
     simpa only [scale_vars] using hF
   rcases hop with ⟨rfl, hdk⟩ | ⟨rfl, hdm⟩
@@ -1151,12 +1152,12 @@ theorem bitAtoms_holds {op : Arith} {F : Linear.Form Nat} {c d : Int} {ρ h} {x 
 /-- **The linear atoms a step states hold of its result.** -/
 theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {t : Tm}
     {Ξ T : Fam} {Q : Post} {ρ n W h}
-    (he : EnvOk G Γ ρ n W) (hk : Holds k ρ h) (hs : SafePost Ξ T Q n W h (instantiate 0 ρ t)) :
-    SafePost Ξ T (fun h' u => Q h' u ∧ IndexHolds (linearAtoms G Γ k t) (push u ρ) h') n W h
+    (he : EnvOk G Γ ρ n W) (hk : Holds k ε ρ h) (hs : SafePost Ξ T Q n W h (instantiate 0 ρ t)) :
+    SafePost Ξ T (fun h' u => Q h' u ∧ IndexHolds ε (linearAtoms G Γ k t) (push u ρ) h') n W h
       (instantiate 0 ρ t) := by
   have hval : ∀ i, i < Γ.length → isVal (ρ i) = true := fun i hi =>
     (meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1
-  have none_case : SafePost Ξ T (fun h' u => Q h' u ∧ IndexHolds [] (push u ρ) h') n W h (instantiate 0 ρ t) :=
+  have none_case : SafePost Ξ T (fun h' u => Q h' u ∧ IndexHolds ε [] (push u ρ) h') n W h (instantiate 0 ρ t) :=
     weaken (fun _ _ hq => ⟨hq, indexHolds_nil _ _⟩) hs
   cases t with
   | num b =>
@@ -1227,12 +1228,12 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
             ⟨by simp [maxStringLength] at hmax ⊢; omega, .inl ⟨by simp [maxStringLength] at hmax; omega, by simp⟩⟩
           have h0 : intValue (push (.num (bitsOfNat (utf16Units str).length)) ρ 0) =
               some ((utf16Units str).length : Int) := intValue_num hsafe
-          have hl : termValue (push (.num (bitsOfNat (utf16Units str).length)) ρ) h' (.strLength (s + 1)) =
+          have hl : termValue ε (push (.num (bitsOfNat (utf16Units str).length)) ρ) h' (.strLength (s + 1)) =
               some ((utf16Units str).length : Int) := by
             simp [push, hstr, strLengthOf, hmax]
-          have hv0 : termValuation (push (.num (bitsOfNat (utf16Units str).length)) ρ) h' (.value 0) =
+          have hv0 : termValuation ε (push (.num (bitsOfNat (utf16Units str).length)) ρ) h' (.value 0) =
               (utf16Units str).length := by simp [termValuation, h0]
-          have hv1 : termValuation (push (.num (bitsOfNat (utf16Units str).length)) ρ) h' (.strLength (s + 1)) =
+          have hv1 : termValuation ε (push (.num (bitsOfNat (utf16Units str).length)) ρ) h' (.strLength (s + 1)) =
               (utf16Units str).length := by simp only [termValuation, hl, Option.getD_some]
           intro atom hat _
           simp only [List.mem_cons, List.not_mem_nil, or_false] at hat
@@ -1268,13 +1269,13 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
         · contradiction
         · rename_i hn; simpa using hn
       obtain rfl := concatString_eq hu'
-      have h0 : termValue (push (.str (s ++ t)) ρ) h' (.strLength 0) =
+      have h0 : termValue ε (push (.str (s ++ t)) ρ) h' (.strLength 0) =
           some ((utf16Units s).length + (utf16Units t).length : Int) := by
         simp [push, strLengthOf, hlen, hmax]
-      have hx' : termValue (push (.str (s ++ t)) ρ) h' (.strLength (x + 1)) =
+      have hx' : termValue ε (push (.str (s ++ t)) ρ) h' (.strLength (x + 1)) =
           some ((utf16Units s).length : Int) := by
         simp [push, hs0, strLengthOf, show (utf16Units s).length ≤ maxStringLength by omega]
-      have hy' : termValue (push (.str (s ++ t)) ρ) h' (.strLength (y + 1)) =
+      have hy' : termValue ε (push (.str (s ++ t)) ρ) h' (.strLength (y + 1)) =
           some ((utf16Units t).length : Int) := by
         simp [push, ht0, strLengthOf, show (utf16Units t).length ≤ maxStringLength by omega]
       intro atom hat _
@@ -1308,7 +1309,7 @@ theorem linearAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
               (∀ x ∈ F.map (·.1), (intValue (ρ x)).isSome) →
               Linear.Form.eval (valuation ρ) F + c = v →
               ((v.natAbs < 2 ^ 53) → SafeIntegers.SafeInt bits v) →
-              IndexHolds ((if entailsKnown k.indices (valueFact (.le F (maxSafe - c))) &&
+              IndexHolds ε ((if entailsKnown k.indices (valueFact (.le F (maxSafe - c))) &&
                 entailsKnown k.indices (valueFact (.le (F.scale (-1)) (maxSafe + c))) then valueAtoms F c else []))
                 (push (.num bits) ρ) h'' := by
             intro F c v bits h'' hF hv hsafe
@@ -1466,11 +1467,11 @@ def lengthAtoms (k : Knowledge) (Γ : List (Ty ι)) : Tm → List IndexAtom
   | _ => []
 
 theorem lengthPair_holds {k : Knowledge} {i n : Nat} {q : Bool} {ρ h} {u : Val} {j : Int}
-    (hk : Holds k ρ h) (hj : valuation ρ i = j)
+    (hk : Holds k ε ρ h) (hj : valuation ρ i = j)
     (below : ∀ (ls : List (Option Nat)), ρ n = .num (bitsOfNat ls.length) →
       ls.length ≤ maxArrayLength → tagHolds .truthy u = q → j - ls.length ≤ -1)
     (hb : ∃ bj, ρ i = .num bj ∧ SafeIntegers.SafeInt bj j) :
-    IndexHolds (lengthPair k i n q) (push u ρ) h := by
+    IndexHolds ε (lengthPair k i n q) (push u ρ) h := by
   unfold lengthPair
   split
   · exact indexHolds_nil _ _
@@ -1518,8 +1519,8 @@ theorem lengthAtoms_shape {k : Knowledge} {Γ : List (Ty ι)} {t : Tm} (h : leng
 
 theorem lengthAtoms_holds {k : Knowledge} {Γ : List (Ty ι)} {G : NormalGraph ι} {t : Tm}
     {Ξ T : Fam} {Q : Post} {ρ n W h}
-    (he : EnvOk G Γ ρ n W) (hk : Holds k ρ h) (hs : SafePost Ξ T Q n W h (instantiate 0 ρ t)) :
-    SafePost Ξ T (fun h' u => Q h' u ∧ IndexHolds (lengthAtoms k Γ t) (push u ρ) h') n W h
+    (he : EnvOk G Γ ρ n W) (hk : Holds k ε ρ h) (hs : SafePost Ξ T Q n W h (instantiate 0 ρ t)) :
+    SafePost Ξ T (fun h' u => Q h' u ∧ IndexHolds ε (lengthAtoms k Γ t) (push u ρ) h') n W h
       (instantiate 0 ρ t) := by
   have hval : ∀ i, i < Γ.length → isVal (ρ i) = true := fun i hi =>
     (meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1
@@ -1664,7 +1665,7 @@ def boundAtom (k : Knowledge) (a i : Nat) (strict : Bool) : Bool :=
     | _ => false
 
 theorem boundAtom_sound {k : Knowledge} {a i : Nat} {strict : Bool} {ρ h} (hc : boundAtom k a i strict = true)
-    (hk : Holds k ρ h) :
+    (hk : Holds k ε ρ h) :
     ∃ s ls b idx, Footprints.storeOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧ ρ i = .num b ∧
       indexOfBits b = some idx ∧ idx + (if strict then 1 else 0) ≤ ls.length := by
   obtain ⟨atom, ha, hm⟩ := List.any_eq_true.mp hc
@@ -1691,7 +1692,7 @@ def linearBound (k : Knowledge) (a i : Nat) (strict : Bool) : Bool :=
   lengthBound (HeapLinks.aliases k.links a) k.indices i strict
 
 theorem linearBound_sound {k : Knowledge} {a i : Nat} {strict : Bool} {ρ h} (hc : linearBound k a i strict = true)
-    (hk : Holds k ρ h) :
+    (hk : Holds k ε ρ h) :
     ∃ s ls b idx, Footprints.storeOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧ ρ i = .num b ∧
       indexOfBits b = some idx ∧ idx + (if strict then 1 else 0) ≤ ls.length :=
   lengthBound_sound (fun _ hy => HeapLinks.aliases_eq hk.2.2.1 hy) hc hk.2.2.2.2.2
@@ -1701,7 +1702,7 @@ store of an array of `a`'s class: a bound atom states it, or the linear facts do
 def bounded (k : Knowledge) (a i : Nat) (strict : Bool) : Bool := boundAtom k a i strict || linearBound k a i strict
 
 theorem bounded_sound {k : Knowledge} {a i : Nat} {strict : Bool} {ρ h} (hc : bounded k a i strict = true)
-    (hk : Holds k ρ h) :
+    (hk : Holds k ε ρ h) :
     ∃ s ls b idx, Footprints.storeOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧ ρ i = .num b ∧
       indexOfBits b = some idx ∧ idx + (if strict then 1 else 0) ≤ ls.length := by
   rcases Bool.or_eq_true_iff.mp hc with hc | hc
@@ -1770,9 +1771,9 @@ knowledge bounding `k` by `x`'s store, and its type `null`. -/
 theorem boundedWrite_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
     (hc : boundedWriteCheck G images j k a i v sub = true) {ρ n W h}
-    (he : EnvOk G j.context ρ n W) (hk : Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (excOf G) (meaning G j.type)
-      (fun h' u => Holds (HeapExpressionRules.ordinaryOutput k) (push u ρ) h') n W h (instantiate 0 ρ j.term) := by
+      (fun h' u => Holds (HeapExpressionRules.ordinaryOutput k) ε (push u ρ) h') n W h (instantiate 0 ρ j.term) := by
   simp only [boundedWriteCheck, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hc
   obtain ⟨⟨⟨⟨hslots, -⟩, htypes⟩, hbd⟩, hnul⟩ := hc
   rw [boundedSlots_eq hslots]
@@ -1811,9 +1812,9 @@ def keepsLengths [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (k : Kno
 theorem boundedLength_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
     (hc : boundedWriteCheck G images j k a i v sub = true) (hkeep : keepsLengths G j k a i = true) {ρ n W h}
-    (he : EnvOk G j.context ρ n W) (hk : Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (excOf G) (meaning G j.type)
-      (fun h' u => Holds (lengthOutput (HeapExpressionRules.stableFirst G j.context) k) (push u ρ) h') n W h
+      (fun h' u => Holds (lengthOutput (HeapExpressionRules.stableFirst G j.context) k) ε (push u ρ) h') n W h
         (instantiate 0 ρ j.term) := by
   have hs := boundedWrite_sound hc he hk hw hh
   simp only [boundedWriteCheck, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hc
@@ -1988,7 +1989,7 @@ def rawPartners (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : List 
     else none
 
 theorem rawPartners_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {y : Nat} {ρ h}
-    (hy : y ∈ rawPartners G Γ k) (hk : Holds k ρ h) :
+    (hy : y ∈ rawPartners G Γ k) (hk : Holds k ε ρ h) :
     arraySlot G Γ y = true ∧ RegionsApart h (ρ 0) (ρ y) := by
   obtain ⟨a, ha, hm⟩ := List.mem_filterMap.mp hy
   split at hm
@@ -2051,7 +2052,7 @@ theorem freshApart_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W h} {u 
     {s : Option Nat} {xs : List (Option Nat)}
     (he : EnvOk G Γ ρ (n + 1) W) (hh : HeapOk (n + 1) W h)
     (hu : RegionOf (h ++ vs) u s xs) (habove : ∀ l, InRegion s xs l → h.length ≤ l) :
-    IndexHolds (freshApart G Γ) (push u ρ) (h ++ vs) := by
+    IndexHolds ε (freshApart G Γ) (push u ρ) (h ++ vs) := by
   intro a ha _
   obtain ⟨j, hj, rfl⟩ := List.mem_map.mp ha
   have hc : arraySlot G Γ j = true := (List.mem_filter.mp hj).2
@@ -2060,16 +2061,16 @@ theorem freshApart_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W h} {u 
 
 theorem regionAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {Ξ T : Fam} {Q : Post}
     {ρ n W h t k}
-    (he : EnvOk G Γ ρ n W) (hk : Holds k ρ h) (hh : HeapOk n W h)
+    (he : EnvOk G Γ ρ n W) (hk : Holds k ε ρ h) (hh : HeapOk n W h)
     (hs : SafePost Ξ T Q n W h (instantiate 0 ρ t)) :
-    SafePost Ξ T (fun h' u => Q h' u ∧ IndexHolds (regionAtoms G Γ k t) (push u ρ) h')
+    SafePost Ξ T (fun h' u => Q h' u ∧ IndexHolds ε (regionAtoms G Γ k t) (push u ρ) h')
       n W h (instantiate 0 ρ t) := by
   cases n with
   | zero => trivial
   | succ n =>
   have hval : ∀ i, i < Γ.length → isVal (ρ i) = true :=
     fun i hi => (meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1
-  have none_holds : SafePost Ξ T (fun h' u => Q h' u ∧ IndexHolds [] (push u ρ) h') (n + 1) W h
+  have none_holds : SafePost Ξ T (fun h' u => Q h' u ∧ IndexHolds ε [] (push u ρ) h') (n + 1) W h
       (instantiate 0 ρ t) := weaken (fun _ _ hq => ⟨hq, indexHolds_nil _ _⟩) hs
   unfold regionAtoms
   split
@@ -2190,7 +2191,7 @@ theorem regionAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
         · rw [show h ++ (vs ++ [store, (push store ρ) proto] ++ [.nul]) =
               heap ++ [store, (push store ρ) proto] ++ [.nul] by simp [heap, List.append_assoc]]
           simp [store]
-      have hf := freshApart_holds he hh hr (fun l hl => by
+      have hf := freshApart_holds (ε := ε) he hh hr (fun l hl => by
         rcases hl with hl | hl
         · cases hl; simp [heap]
         · exact elemSlots_above _ _ l hl)
@@ -2206,7 +2207,7 @@ def apartFrom (k : Knowledge) (a e : Nat) : Bool :=
         ((HeapLinks.aliases k.links a).contains y && x == e)
     | _ => false
 
-theorem apartFrom_sound {k : Knowledge} {a e : Nat} {ρ h} (hc : apartFrom k a e = true) (hk : Holds k ρ h) :
+theorem apartFrom_sound {k : Knowledge} {a e : Nat} {ρ h} (hc : apartFrom k a e = true) (hk : Holds k ε ρ h) :
     RegionsApart h (ρ a) (ρ e) := by
   obtain ⟨atom, ha, hm⟩ := List.any_eq_true.mp hc
   simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
@@ -2278,9 +2279,9 @@ theorem untouched {h h' : Heap} {target : Nat} {xs : List (Option Nat)} {written
 /-- A term `termApart` admits denotes after the write what it denoted. -/
 theorem termApart_kept {k : Knowledge} {a : Nat} {t : Term} {ρ : Env} {h h' : Heap} {target : Nat}
     {xs : List (Option Nat)} {written : Option Nat} {z : Int}
-    (hw : WriteHeap h h' target xs written) (hk : Holds k ρ h)
+    (hw : WriteHeap h h' target xs written) (hk : Holds k ε ρ h)
     (hu : RegionOf h (ρ a) (some target) xs) (hc : termApart k a t = true)
-    (ht : termValue ρ h t = some z) : termValue ρ h' t = some z := by
+    (ht : termValue ε ρ h t = some z) : termValue ε ρ h' t = some z := by
   obtain ⟨kind, x, p⟩ := t
   simp only [termApart, Bool.and_eq_true, List.isEmpty_iff] at hc
   obtain ⟨rfl, hc⟩ := hc
@@ -2302,9 +2303,9 @@ theorem termApart_kept {k : Knowledge} {a : Nat} {t : Term} {ρ : Env} {h h' : H
 
 theorem writeAtoms_after [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {a : Nat}
     {ρ n W h h'} {target : Nat} {xs : List (Option Nat)} {written : Option Nat}
-    (he : EnvOk G Γ ρ (n + 1) W) (hk : Holds k ρ h) (hh : HeapOk (n + 1) W h)
+    (he : EnvOk G Γ ρ (n + 1) W) (hk : Holds k ε ρ h) (hh : HeapOk (n + 1) W h)
     (hu : RegionOf h (ρ a) (some target) xs) (hw : WriteHeap h h' target xs written) :
-    IndexHolds (writeAtoms G Γ k a) ρ h' := by
+    IndexHolds ε (writeAtoms G Γ k a) ρ h' := by
   intro atom hm hcond
   obtain ⟨hmem, hsel⟩ := List.mem_filter.mp hm
   simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hsel
@@ -2354,7 +2355,7 @@ theorem writeAtoms_after [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
     | nil =>
     simp only [Bool.and_eq_true, List.all_eq_true] at hsel
     obtain ⟨⟨hs, hstop⟩, hbody⟩ := hsel
-    show (IndexFact.every s [] stop body).HoldsAt ρ h'
+    show (IndexFact.every s [] stop body).HoldsAt ε ρ h'
     obtain ⟨w, st, ls, z, hwp, hst, hls, hz, hall⟩ := hat
     simp only [readPath, Option.some.injEq] at hwp
     subst hwp
@@ -2398,12 +2399,12 @@ theorem writeAtoms_after [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
 theorem writeAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {Ξ T : Fam} {k : Knowledge}
     {a : Nat} {ρ n W h} {flds : List (PropKey × Nat)} {cd : CallCode} {oid target : Nat}
     {xs : List (Option Nat)} {b : UInt64} {value : Val}
-    (he : EnvOk G Γ ρ n W) (hk : Holds k ρ h) (hh : HeapOk n W h)
+    (he : EnvOk G Γ ρ n W) (hk : Holds k ε ρ h) (hh : HeapOk n W h)
     (hobj : ρ a = .objAt flds cd oid) (hfield : flds.lookup arrayStoreKey = some target)
     (hxs : h[target]? = some (.arr xs)) (hv : isVal value = true)
     (hs : Safe Ξ T n W h (.writeAt arrayStoreKey (.objAt flds cd oid)
       (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) (.num b) value))) :
-    SafePost Ξ T (fun h' _ => IndexHolds (writeAtoms G Γ k a) ρ h') n W h
+    SafePost Ξ T (fun h' _ => IndexHolds ε (writeAtoms G Γ k a) ρ h') n W h
       (.writeAt arrayStoreKey (.objAt flds cd oid)
         (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) (.num b) value)) := by
   cases n with
@@ -2490,18 +2491,18 @@ def appendFact (i count : Nat) : Linear.Fact Term → Linear.Fact Term
 open HeapKnowledge in
 /-- A linear fact translated by the exact change of its terms. -/
 theorem append_fact_holds {i count : Nat} {ρ : Env} {h h' : Heap} {F : Linear.Fact Term}
-    (terms : ∀ t ∈ F.vars, ∀ n, termValue ρ h t = some n →
-      termValue ρ h' t = some (n + appendDelta i count t))
-    (hF : (IndexFact.linear F).HoldsAt ρ h) :
-    (IndexFact.linear (appendFact i count F)).HoldsAt ρ h' := by
+    (terms : ∀ t ∈ F.vars, ∀ n, termValue ε ρ h t = some n →
+      termValue ε ρ h' t = some (n + appendDelta i count t))
+    (hF : (IndexFact.linear F).HoldsAt ε ρ h) :
+    (IndexFact.linear (appendFact i count F)).HoldsAt ε ρ h' := by
   obtain ⟨hd, hF⟩ := hF
-  have hd' : ∀ t ∈ F.vars, (termValue ρ h' t).isSome := by
+  have hd' : ∀ t ∈ F.vars, (termValue ε ρ h' t).isSome := by
     intro t ht
     obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hd t ht)
     simp [terms t ht n hn]
   have eval : ∀ G : Linear.Form Term, (∀ t ∈ G.map (·.1), t ∈ F.vars) →
-      Linear.Form.eval (termValuation ρ h') G =
-        Linear.Form.eval (termValuation ρ h) G + Linear.Form.eval (appendDelta i count) G := by
+      Linear.Form.eval (termValuation ε ρ h') G =
+        Linear.Form.eval (termValuation ε ρ h) G + Linear.Form.eval (appendDelta i count) G := by
     intro G
     induction G with
     | nil => intro _; simp [Linear.Form.eval]
@@ -2534,7 +2535,7 @@ longer. -/
 theorem boundedWrite_store [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
     (hc : boundedWriteCheck G images j k a i v sub = true) {ρ n W h}
-    (he : EnvOk G j.context ρ n W) (hk : Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (excOf G) (meaning G j.type)
       (fun h' _ => ∃ s ls ls' b idx, Footprints.storeOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧
         h'[s]? = some (.arr ls') ∧ ρ i = .num b ∧ indexOfBits b = some idx ∧ idx < ls'.length ∧
@@ -2610,15 +2611,15 @@ def atLengthAtoms [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (k : Kn
 theorem atLengthAtoms_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
     (hc : boundedWriteCheck G images j k a i v sub = true) {ρ n W h}
-    (he : EnvOk G j.context ρ n W) (hk : Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (excOf G) (meaning G j.type)
-      (fun h' _ => IndexHolds (atLengthAtoms G j k a i) ρ h') n W h (instantiate 0 ρ j.term) := by
+      (fun h' _ => IndexHolds ε (atLengthAtoms G j k a i) ρ h') n W h (instantiate 0 ρ j.term) := by
   have hst := boundedWrite_store hc he hk hw hh
   -- `write-bound`, and its linear fact where the entry's length is defined.
   have hbound : ∀ h', (∃ s ls ls' b idx, Footprints.storeOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧
       h'[s]? = some (.arr ls') ∧ ρ i = .num b ∧ indexOfBits b = some idx ∧ idx < ls'.length ∧
       ls'.length ≤ max ls.length (idx + 1) ∧ (ls.length ≤ idx → ls'.length = ls.length + 1)) →
-      IndexHolds ({ fact := .bound a i true } :: if termDefined k.indices (Term.length a) then
+      IndexHolds ε ({ fact := .bound a i true } :: if termDefined k.indices (Term.length a) then
         [{ fact := .linear (.le [(Term.value i, 1), (Term.length a, -1)] (-1)) }] else []) ρ h' := by
     intro h' ⟨s, ls, ls', b, idx, hs, hl, hl', hb, hidx, hlt, hmx, _⟩ atom hm _
     rcases List.mem_cons.mp hm with rfl | hm
@@ -2649,7 +2650,7 @@ theorem atLengthAtoms_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
       · cases hm
   -- `write-append`.
   have happ : SafePost (excOf G) (meaning G j.type)
-      (fun h' _ => IndexHolds (if !(k.indices.filterMap (writeAppended a (HeapExpressionRules.stableFirst G j.context))).isEmpty &&
+      (fun h' _ => IndexHolds ε (if !(k.indices.filterMap (writeAppended a (HeapExpressionRules.stableFirst G j.context))).isEmpty &&
         (ExpressionEffects.writeStep G j.context j.term).isSome &&
         entailsKnown k.indices (.le [(Term.length a, 1), (Term.value i, -1)] 0) then
           k.indices.filterMap (writeAppended a (HeapExpressionRules.stableFirst G j.context)) else []) ρ h')
@@ -2677,7 +2678,7 @@ theorem atLengthAtoms_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
           rw [hfact] at h0
           -- The index at least the length, at the entry.
           have hge := entailsKnown_sound hk.2.2.2.2.2 hent
-          have hiv : termValuation ρ h (Term.value i) = idx := by
+          have hiv : termValuation ε ρ h (Term.value i) = idx := by
             simp [termValuation, hb, HeapKnowledge.intValue_num (index_safeInt hidx)]
           refine append_fact_holds (fun t ht m hm' => ?_) h0
           have hkt := List.all_eq_true.mp hall t ht
@@ -2687,7 +2688,7 @@ theorem atLengthAtoms_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
             obtain ⟨s0, ls0, hs0, hls0, rfl, -⟩ := lengthOf_store hm'
             rw [hs] at hs0; cases hs0
             rw [hl] at hls0; cases hls0
-            have hlv : termValuation ρ h (Term.length a) = ls.length := by
+            have hlv : termValuation ε ρ h (Term.length a) = ls.length := by
               simp [termValuation, hm']
             simp only [Linear.Fact.Holds, Linear.Form.eval, hlv, hiv] at hge
             have hlen := hgr (by omega)
@@ -2718,9 +2719,9 @@ def withWritten (out : Knowledge) (kept : List IndexAtom) : Knowledge :=
   { out with indices := out.indices ++ shiftIndices kept }
 
 theorem withWritten_sound {Ξ T : Fam} {out : Knowledge} {kept : List IndexAtom} {ρ n W h t}
-    (hk : SafePost Ξ T (fun h' _ => IndexHolds kept ρ h') n W h t)
-    (ho : SafePost Ξ T (fun h' u => Holds out (push u ρ) h') n W h t) :
-    SafePost Ξ T (fun h' u => Holds (withWritten out kept) (push u ρ) h') n W h t :=
+    (hk : SafePost Ξ T (fun h' _ => IndexHolds ε kept ρ h') n W h t)
+    (ho : SafePost Ξ T (fun h' u => Holds out ε (push u ρ) h') n W h t) :
+    SafePost Ξ T (fun h' u => Holds (withWritten out kept) ε (push u ρ) h') n W h t :=
   weaken (fun _ u hq => ⟨hq.1.1, hq.1.2.1, hq.1.2.2.1, hq.1.2.2.2.1, hq.1.2.2.2.2.1,
     indexHolds_cat hq.1.2.2.2.2.2 (shiftIndices_holds (v := u) hq.2)⟩) (safePost_and ho hk)
 
@@ -2736,9 +2737,9 @@ def growOutput [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (k out : K
   else out
 
 theorem growOutput_sound [DecidableEq ι] {G : NormalGraph ι} {j : Sequent ι} {k out : Knowledge} {T : Fam}
-    {ρ n W h} (he : EnvOk G j.context ρ n W) (hk : Holds k ρ h) (hh : HeapOk n W h)
-    (hs : SafePost (excOf G) T (fun h' u => Holds out (push u ρ) h') n W h (instantiate 0 ρ j.term)) :
-    SafePost (excOf G) T (fun h' u => Holds (growOutput G j k out) (push u ρ) h') n W h
+    {ρ n W h} (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hh : HeapOk n W h)
+    (hs : SafePost (excOf G) T (fun h' u => Holds out ε (push u ρ) h') n W h (instantiate 0 ρ j.term)) :
+    SafePost (excOf G) T (fun h' u => Holds (growOutput G j k out) ε (push u ρ) h') n W h
       (instantiate 0 ρ j.term) := by
   unfold growOutput
   split
@@ -2753,9 +2754,9 @@ theorem growOutput_sound [DecidableEq ι] {G : NormalGraph ι} {j : Sequent ι} 
 theorem boundedRegions_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
     (hc : boundedWriteCheck G images j k a i v sub = true) {ρ n W h}
-    (he : EnvOk G j.context ρ n W) (hk : Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePost (excOf G) (meaning G j.type)
-      (fun h' _ => IndexHolds (writeAtoms G j.context k a) ρ h') n W h (instantiate 0 ρ j.term) := by
+      (fun h' _ => IndexHolds ε (writeAtoms G j.context k a) ρ h') n W h (instantiate 0 ρ j.term) := by
   have hs := boundedWrite_sound hc he hk hw hh
   simp only [boundedWriteCheck, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hc
   obtain ⟨⟨⟨⟨hslots, -⟩, htypes⟩, hbd⟩, -⟩ := hc
@@ -2835,11 +2836,11 @@ theorem grown_region {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ n W h h'} {r :
       appended_cells ha hv hr hzs hls' hp⟩⟩
 
 theorem grownRegions_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowledge} {t : Tm} {ρ n W h h'}
-    (he : EnvOk G Γ ρ (n + 1) W) (hh : HeapOk (n + 1) W h) (hk : Holds k ρ h)
+    (he : EnvOk G Γ ρ (n + 1) W) (hh : HeapOk (n + 1) W h) (hk : Holds k ε ρ h)
     (hg : CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h')
     (ha : CallEffects.ReceiverAppends (ExpressionEffects.receiverOf (instantiate 0 ρ t))
       (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h') :
-    IndexHolds (grownRegions G Γ k t) ρ h' := by
+    IndexHolds ε (grownRegions G Γ k t) ρ h' := by
   unfold grownRegions
   split
   case h_2 => exact indexHolds_nil _ _
@@ -2919,12 +2920,13 @@ theorem grownRegions_holds {G : NormalGraph ι} {Γ : List (Ty ι)} {k : Knowled
 end Verification.IndexWrites
 
 namespace Verification.HeapExpressionRules
+variable {ε : Verification.HeapKnowledge.EntryState}
 open ProgramCertificates PositiveGraphs HeapObservations
 open PositiveCertificates (InstanceImageCheck)
 
 theorem indexHolds_append {as bs : List HeapKnowledge.IndexAtom} {ρ h}
-    (ha : HeapKnowledge.IndexHolds as ρ h) (hb : HeapKnowledge.IndexHolds bs ρ h) :
-    HeapKnowledge.IndexHolds (as ++ bs) ρ h := fun a hm hc =>
+    (ha : HeapKnowledge.IndexHolds ε as ρ h) (hb : HeapKnowledge.IndexHolds ε bs ρ h) :
+    HeapKnowledge.IndexHolds ε (as ++ bs) ρ h := fun a hm hc =>
   (List.mem_append.mp hm).elim (fun hm => ha a hm hc) (fun hm => hb a hm hc)
 
 /-- Literal allocation states its length and fresh locations and frames old index facts. -/
@@ -2943,7 +2945,7 @@ theorem indexHolds_append {as bs : List HeapKnowledge.IndexAtom} {ρ h}
                separation := if (IndexWrites.literalArrayAtoms j.context.length j.term).isEmpty then out.separation
         else HeapSeparation.allocate k.separation j.context.length (contractFields G j.context) }
   sound := by
-    intro j k e out codes sums hc hcodes hsums ρ n W h he hk hw hh
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh
     simp only [CheckResult.map, Option.map_eq_some_iff] at hc
     obtain ⟨out0, hrun, rfl⟩ := hc
     have hs := base.sound hrun hcodes hsums he hk hw hh
@@ -2974,7 +2976,7 @@ theorem indexHolds_append {as bs : List HeapKnowledge.IndexAtom} {ρ h}
     { out with indices := out.indices ++ (IndexWrites.stepAtoms G j.context k j.term ++
         IndexWrites.linearAtoms G j.context k j.term ++ IndexWrites.lengthAtoms k j.context j.term) }
   sound := by
-    intro j k e out codes sums hc hcodes hsums ρ n W h he hk hw hh
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh
     simp only [CheckResult.map, Option.map_eq_some_iff] at hc
     obtain ⟨out0, hrun, rfl⟩ := hc
     have hs := base.emptyArrays.sound hrun hcodes hsums he hk hw hh
@@ -3005,7 +3007,7 @@ every other step is `base`'s. -/
       else failure
     | _ => (base.select j k e codes sums).map (IndexWrites.growOutput G j k)
   sound := by
-    intro j k e out codes sums hc hcodes hsums ρ n W h he hk hw hh
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh
     split at hc
     · split at hc
       · rename_i hck

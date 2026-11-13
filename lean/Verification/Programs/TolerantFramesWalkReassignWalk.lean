@@ -94,9 +94,9 @@ omit [DecidableEq ι] [Hashable ι] [Instantiates ι] in
 node assertion, the node's local judgment and every exit `pre` of its
 target (`StepEdgesSoundA` at `pre`). -/
 def StepEdgesSoundAt (pre : Nat → Assertion) (P : ControlFlow.Program) (G : NormalGraph ι) (w : Walk ι)
-    (startNames : List Nat) (ρ0 : Env) (ctx : Nat → List (Ty ι)) (Ξres Tres : Fam) (Qres Rres : Heap → Prop)
+    (startNames : List Nat) (ε : HeapKnowledge.EntryState) (ctx : Nat → List (Ty ι)) (Ξres Tres : Fam) (Qres Rres : Heap → Prop)
     (m : Nat) : Prop :=
-  ∀ l ρ (s : IndexedHeap), passPreT G w startNames ρ0 ctx l ρ m s → ∃ node, P[l]? = some node ∧
+  ∀ l ρ (s : IndexedHeap), passPreT G w startNames ε ctx l ρ m s → ∃ node, P[l]? = some node ∧
     ∃ (Ξ T : Fam) (cn ce : Footprints.Closed) (Qn : Post) (Qe : Heap → Prop),
       SafePostExc Ξ T (fun h' v => cn.Holds s.h h' ∧ Qn h' v) (fun h' => ce.Holds s.h h' ∧ Qe h')
         s.n s.W s.h (instantiate 0 ρ node.expression) ∧
@@ -106,9 +106,9 @@ omit [DecidableEq ι] [Hashable ι] [Instantiates ι] in
 /-- Each visited node delivers its targets when the entry mark is bounded
 by the initial heap. -/
 @[nospecialize] def StepEdgesSoundMarked (pre : Nat → Assertion) (P : ControlFlow.Program) (G : NormalGraph ι) (w : Walk ι)
-    (startNames : List Nat) (ρ0 : Env) (ctx : Nat → List (Ty ι)) (Ξres Tres : Fam) (Qres Rres : Heap → Prop)
+    (startNames : List Nat) (ε : HeapKnowledge.EntryState) (ctx : Nat → List (Ty ι)) (Ξres Tres : Fam) (Qres Rres : Heap → Prop)
     (m : Nat) : Prop :=
-  ∀ l ρ (s : IndexedHeap), passPreT G w startNames ρ0 ctx l ρ m s → m ≤ s.h.length → ∃ node, P[l]? = some node ∧
+  ∀ l ρ (s : IndexedHeap), passPreT G w startNames ε ctx l ρ m s → m ≤ s.h.length → ∃ node, P[l]? = some node ∧
     ∃ (Ξ T : Fam) (cn ce : Footprints.Closed) (Qn : Post) (Qe : Heap → Prop),
       SafePostExc Ξ T (fun h' v => cn.Holds s.h h' ∧ Qn h' v) (fun h' => ce.Holds s.h h' ∧ Qe h')
         s.n s.W s.h (instantiate 0 ρ node.expression) ∧
@@ -125,12 +125,12 @@ post on the heap at the graph's exits (`stepChecked_parts` in place of
 `checkedStep_parts` in `stepEdgesSound_of`). -/
 theorem stepEdgesSound_of_checkedAt {pre : Nat → Assertion} {G : NormalGraph ι} {images : InstanceImageCheck G}
     {codes : CodeEntry ι → Bool}
-    {pc : PassChecker G images} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat} {ρ0 : Env}
+    {pc : PassChecker G images} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat} 
     {ctx : Nat → List (Ty ι)} {Tres : Fam} {m : Nat}
     (hacc : ∀ l, w.visited l → ∃ r : NodeChecked G images codes pc P w startNames ctx l,
-      NodeMeaningAt pre G w startNames ρ0 ctx Tres m l r.node r.c r.entry r.st)
+      NodeMeaningAt pre G w startNames ε ctx Tres m l r.node r.c r.entry r.st)
     (hcodes : CodesSound G codes) :
-    StepEdgesSoundAt pre P G w startNames ρ0 ctx (excOf G) Tres (fun _ => True) (fun _ => True) m := by
+    StepEdgesSoundAt pre P G w startNames ε ctx (excOf G) Tres (fun _ => True) (fun _ => True) m := by
   intro l ρ s hp
   obtain ⟨na, hm⟩ := hacc l hp.1.1
   have hS := hm.entered ρ s hp
@@ -152,12 +152,12 @@ omit [Instantiates ι] in
 `stepEdgesSound_of_checkedAt` at `edgePreA`, the targets' typed and written
 assertions. -/
 theorem stepEdgesSound_of_checked {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
-    {pc : PassChecker G images} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat} {ρ0 : Env}
+    {pc : PassChecker G images} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat} 
     {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge} {Tres : Fam} {m : Nat}
     (hacc : ∀ l, w.visited l → ∃ r : NodeChecked G images codes pc P w startNames ctx l,
-      NodeMeaning G w startNames ρ0 ctx stated Tres m l r.node r.c r.entry r.st)
+      NodeMeaning G w startNames ε ctx stated Tres m l r.node r.c r.entry r.st)
     (hcodes : CodesSound G codes) :
-    StepEdgesSoundA P G w startNames ρ0 ctx stated (excOf G) Tres (fun _ => True) (fun _ => True) m :=
+    StepEdgesSoundA P G w startNames ε ctx stated (excOf G) Tres (fun _ => True) (fun _ => True) m :=
   stepEdgesSound_of_checkedAt hacc hcodes
 
 end Nodes

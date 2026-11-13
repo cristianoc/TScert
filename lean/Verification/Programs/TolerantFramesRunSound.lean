@@ -160,8 +160,8 @@ theorem StartEntered.entered {G : NormalGraph ι} {I : InstanceImageCheck G} {c 
     {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge} (h : StartEntered c w ctx stated)
     (η : MixedAssignment ι) :
     ∀ ρ m (s : IndexedHeap), EnvOk (reassign G η) c.inputs ρ s.n s.W → HeapSeparation.Holds c.entrySeparation ρ →
-      HeapKnowledge.IndexHolds c.entryIndices ρ s.h →
-      passPreA (reassign G η) w (List.range c.inputs.length) ρ ctx stated c.start ρ m s := by
+      HeapKnowledge.IndexHolds ⟨ρ, s.h⟩ c.entryIndices ρ s.h →
+      passPreA (reassign G η) w (List.range c.inputs.length) ⟨ρ, s.h⟩ ctx stated c.start ρ m s := by
   obtain ⟨supplied, givenImplies, givenArgs, givenInputs, fresh, reentered, hacc, hv, hfr, hentry, himp,
     hctx⟩ := h
   have hacc' := (entryRefusal_reassign G η c.inputs c.claims c.start c.goal (stated c.start) supplied givenImplies

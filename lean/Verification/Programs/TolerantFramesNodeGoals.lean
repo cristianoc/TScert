@@ -198,8 +198,8 @@ omit [DecidableEq ι] [Hashable ι] [Instantiates ι] in
 /-- A slot holding the start name of the input `q` in a holding state reads
 the input's entry value. -/
 theorem slot_start {G : NormalGraph ι} {st : SinglePass.State} {I : List (PromiseCalls.Implication ι)}
-    {start : List Nat} {E ρ : Env} {m : Nat} {s : IndexedHeap} (hS : StateHolds G st I start E ρ m s) {j q x : Nat}
-    (hj : st.names[j]? = some x) (hq : start[q]? = some x) : ρ j = E q := by
+    {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} (hS : StateHolds G st I start ε ρ m s) {j q x : Nat}
+    (hj : st.names[j]? = some x) (hq : start[q]? = some x) : ρ j = ε.env q := by
   obtain ⟨η, hn, -, -, -, hst⟩ := hS
   exact (hn _ _ hj).trans (hst q x hq)
 
@@ -208,10 +208,10 @@ omit [DecidableEq ι] [Hashable ι] [Instantiates ι] in
 argument**: a slot of the entry's names holding `argName`, the start name
 of the goal's slot, reads that input's entry value. -/
 theorem passHeld_argument {G : NormalGraph ι} {entry : SinglePass.State} {I : List (PromiseCalls.Implication ι)}
-    {start : List Nat} {E ρ : Env} {m : Nat} {s : IndexedHeap} (hS : StateHolds G entry I start E ρ m s)
+    {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} (hS : StateHolds G entry I start ε ρ m s)
     {goal : Goal ι} {sl : Nat} (hsl : goal.slot = some sl) {argName : Option Nat}
     (harg : argName = goal.slot.bind (start[·]?)) :
-    PromiseCalls.ArgumentsOk (passHeld entry argName) ρ (goal.argument E) := by
+    PromiseCalls.ArgumentsOk (passHeld entry argName) ρ (goal.argument ε.env) := by
   intro p hp
   rw [hsl] at harg
   simp only [Option.bind_some] at harg
@@ -305,16 +305,16 @@ theorem goalHolds_of_return {G : NormalGraph ι} {images : InstanceImageCheck G}
     {ensures : List HeapKnowledge.IndexFact} {c : PointClaim ι} {l : Nat} {entry : SinglePass.State}
     {store : Store} {result start : Nat} {startNames : List Nat} {argName : Option Nat}
     {yields : List (PromiseCalls.Yield ι)} {debugNode : Nat} {answers : Answered G} {goal : Goal ι}
-    {I : List (PromiseCalls.Implication ι)} {ρ0 ρ : Env} {m : Nat} {s' : IndexedHeap} {v : Tm}
+    {I : List (PromiseCalls.Implication ι)} {ρ : Env} {m : Nat} {s' : IndexedHeap} {v : Tm}
     (hsub : SubtypeAnswersSound G images)
     (h : (returnCheck G images goal ensures c l entry store result start startNames argName yields
       debugNode answers).1 = none)
     (harg : argName = goal.slot.bind (startNames[·]?))
-    (hS : StateHolds G ⟨result :: entry.names, store, entry.fresh⟩ I startNames ρ0 (push v ρ) m s')
+    (hS : StateHolds G ⟨result :: entry.names, store, entry.fresh⟩ I startNames ε (push v ρ) m s')
     (he : EnvOk G (c.type :: c.context) (push v ρ) s'.n s'.W)
     (hY : PromiseCalls.YieldsOk G (passReturnYields entry yields) ρ s'.n s'.W v)
     (hplain : ∀ R, goal = .plain R → ∀ n (W : WorldT n) v, meaning G c.type n W v → meaning G R n W v) :
-    GoalHolds G goal (goal.argument ρ0) s'.n s'.W v := by
+    GoalHolds G goal (goal.argument ε.env) s'.n s'.W v := by
   obtain ⟨n, W, h', pos, adm, ok⟩ := s'
   cases n with
   | zero => exact absurd pos (Nat.lt_irrefl 0)

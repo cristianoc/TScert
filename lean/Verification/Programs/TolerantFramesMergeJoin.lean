@@ -11,6 +11,7 @@ adds (`mergeBounds_inv`, `mergeEntailed_inv`, `mergeAddGuarded_inv`), and on
 the path through one predecessor the facts it adds hold at the merge's
 valuation. -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations
 open Verification.SinglePass (Atom Store State)
 
@@ -55,14 +56,14 @@ theorem normalize_vars : ∀ (f : Linear.Form HeapKnowledge.Term), ∀ y ∈ (Li
 
 /-- **A bound in normal form, weakened, holds** where the bound does. -/
 theorem linear_weaken {F : Linear.Form HeapKnowledge.Term} {k w : Int} {c : Option Nat} {neg : Bool}
-    {η : Env} {h : Heap} (ha : AtomHolds (.index ⟨.linear (.le F k), c, neg⟩) η h) (hkw : k ≤ w) :
-    AtomHolds (.index ⟨.linear (.le (Linear.normalize F) w), c, neg⟩) η h := by
+    {η : Env} {h : Heap} (ha : AtomHolds ε (.index ⟨.linear (.le F k), c, neg⟩) η h) (hkw : k ≤ w) :
+    AtomHolds ε (.index ⟨.linear (.le (Linear.normalize F) w), c, neg⟩) η h := by
   intro y hy hcond
   simp only [List.mem_singleton] at hy; subst hy
   obtain ⟨hd, hv⟩ := ha _ (List.mem_singleton_self _) hcond
   refine ⟨fun t ht => hd t (normalize_vars F t ht), ?_⟩
-  have hv' : Linear.Form.eval (HeapKnowledge.termValuation η h) F ≤ k := hv
-  show Linear.Form.eval (HeapKnowledge.termValuation η h) (Linear.normalize F) ≤ w
+  have hv' : Linear.Form.eval (HeapKnowledge.termValuation ε η h) F ≤ k := hv
+  show Linear.Form.eval (HeapKnowledge.termValuation ε η h) (Linear.normalize F) ≤ w
   rw [Linear.eval_normalize]; omega
 
 /-! ## The weakest bounds -/
@@ -174,8 +175,8 @@ theorem linearKey_some {a : Atom} {key : Linear.Form HeapKnowledge.Term × Optio
   · cases h
 
 /-- An unconditional fact holds where its fact does. -/
-theorem index_none_holds {f : HeapKnowledge.IndexFact} {neg : Bool} {η : Env} {h : Heap} (hf : f.HoldsAt η h) :
-    AtomHolds (.index ⟨f, none, neg⟩) η h := by
+theorem index_none_holds {f : HeapKnowledge.IndexFact} {neg : Bool} {η : Env} {h : Heap} (hf : f.HoldsAt ε η h) :
+    AtomHolds ε (.index ⟨f, none, neg⟩) η h := by
   intro y hy _
   simp only [List.mem_singleton] at hy; subst hy
   exact hf
@@ -184,9 +185,9 @@ theorem index_none_holds {f : HeapKnowledge.IndexFact} {neg : Bool} {η : Env} {
 defined**: the store holds it as it is, or a bound of its normal form at
 least as strong. -/
 theorem holds_sound {s : Store} {F : Linear.Fact HeapKnowledge.Term} {neg : Bool} {η : Env} {h : Heap}
-    (hs : StoreOk s η h) (hh : s.holds (.index ⟨.linear F, none, neg⟩) = true)
-    (hd : ∀ t ∈ F.vars, (HeapKnowledge.termValue η h t).isSome) :
-    AtomHolds (.index ⟨.linear F, none, neg⟩) η h := by
+    (hs : StoreOk ε s η h) (hh : s.holds (.index ⟨.linear F, none, neg⟩) = true)
+    (hd : ∀ t ∈ F.vars, (HeapKnowledge.termValue ε η h t).isSome) :
+    AtomHolds ε (.index ⟨.linear F, none, neg⟩) η h := by
   have hc : (Atom.index ⟨.linear F, none, neg⟩).canon = .index ⟨.linear F, none, false⟩ := by
     cases neg <;> rfl
   unfold Store.holds at hh
@@ -210,8 +211,8 @@ theorem holds_sound {s : Store} {F : Linear.Fact HeapKnowledge.Term} {neg : Bool
         obtain ⟨F'', rfl, hn'⟩ := linearKey_some hkey'
         have hbh := hs _ (about_storeAll hb) _ (List.mem_singleton_self _) (fun _ h => by
           simp only at h; rw [← hc1] at h; cases h)
-        have hv : Linear.Form.eval (HeapKnowledge.termValuation η h) F'' ≤ d' := hbh.2
-        show Linear.Form.eval (HeapKnowledge.termValuation η h) F' ≤ d
+        have hv : Linear.Form.eval (HeapKnowledge.termValuation ε η h) F'' ≤ d' := hbh.2
+        show Linear.Form.eval (HeapKnowledge.termValuation ε η h) F' ≤ d
         rw [← Linear.eval_normalize, hn, ← hn', Linear.eval_normalize]; omega
       · cases hbk
     · cases hk

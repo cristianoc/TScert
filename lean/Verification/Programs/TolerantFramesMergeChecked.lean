@@ -115,17 +115,17 @@ implications the merge keeps (`joinedChecked`) hold at the slot environment `hI`
 merge's implications holds at the merge's valuation `mVal`. -/
 theorem mergeState_holdsAt_checked {G : NormalGraph ι} {context : List (Ty ι)} {preds : List State}
     {edgesIn : List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)} {fresh : Nat}
-    {start : List Nat} {entry : Env} {implies : List (PromiseCalls.Implication ι)} {p : Nat} {η ρ : Env}
+    {start : List Nat}  {implies : List (PromiseCalls.Implication ι)} {p : Nat} {η ρ : Env}
     {mark : Nat} {s : IndexedHeap} (hp : p < preds.length)
     (hlen : ∀ q ∈ preds, q.names.length = context.length) (hwf : ∀ q ∈ preds, StoreWF q.store)
     (hbel : ∀ q ∈ preds, StateBelow q fresh) (hstart : ∀ x ∈ start, x < fresh) (hnear : LinearNearFuelEq)
     (hI : PromiseCalls.ImpliesOk G (joinedChecked G context edgesIn) ρ s.n s.W)
-    (hS : StateHoldsAt G preds[p] implies start entry η ρ mark s) :
+    (hS : StateHoldsAt G preds[p] implies start ε η ρ mark s) :
     StateHoldsAt G (SinglePass.mergeState G context preds edgesIn fresh).state
-      (SinglePass.mergeState G context preds edgesIn fresh).implies start entry
+      (SinglePass.mergeState G context preds edgesIn fresh).implies start ε
       (mVal preds context.length fresh ρ η) ρ mark s := by
   obtain ⟨hslots, hstore, -, hfresh, hst⟩ := hS
-  have P : OnPath preds context.length fresh p ρ η s.h :=
+  have P : OnPath preds context.length fresh p ε ρ η s.h :=
     { hp, len := hlen, bel := fun q hq => (hbel q hq).1, facts := fun q hq => (hbel q hq).2.1, wf := hwf,
       slots := hslots, store := hstore }
   have hn := linearNearSound_of_eq hnear
@@ -141,14 +141,14 @@ does, from its theorems and the premises `LinearNearFuelEq` and the joined
 implications. -/
 theorem mergeState_holds_checked {G : NormalGraph ι} {context : List (Ty ι)} {preds : List State}
     {edgesIn : List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)} {fresh : Nat}
-    {start : List Nat} {entry : Env} {implies : List (PromiseCalls.Implication ι)} {p : Nat} {ρ : Env}
+    {start : List Nat}  {implies : List (PromiseCalls.Implication ι)} {p : Nat} {ρ : Env}
     {mark : Nat} {s : IndexedHeap} (hp : p < preds.length)
     (hlen : ∀ q ∈ preds, q.names.length = context.length) (hwf : ∀ q ∈ preds, StoreWF q.store)
     (hbel : ∀ q ∈ preds, StateBelow q fresh) (hstart : ∀ x ∈ start, x < fresh) (hnear : LinearNearFuelEq)
     (hI : PromiseCalls.ImpliesOk G (joinedChecked G context edgesIn) ρ s.n s.W)
-    (hS : StateHolds G preds[p] implies start entry ρ mark s) :
+    (hS : StateHolds G preds[p] implies start ε ρ mark s) :
     StateHolds G (SinglePass.mergeState G context preds edgesIn fresh).state
-      (SinglePass.mergeState G context preds edgesIn fresh).implies start entry ρ mark s := by
+      (SinglePass.mergeState G context preds edgesIn fresh).implies start ε ρ mark s := by
   obtain ⟨η, hη⟩ := hS
   exact ⟨_, mergeState_holdsAt_checked hp hlen hwf hbel hstart hnear hI hη⟩
 

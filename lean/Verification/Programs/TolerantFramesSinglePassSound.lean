@@ -37,7 +37,7 @@ theorem WalkChecked.startWrittenImpliesStated {G : NormalGraph ι} {I : Instance
   have kept := hE.startKept
   unfold passStated at kept
   rw [← r.stated_eq] at kept
-  exact fun _ _ h => Verification.TolerantFrames.startWrittenImpliesStated kept h
+  exact fun _ _ _ h => Verification.TolerantFrames.startWrittenImpliesStated kept h
 
 /-- An accepted single pass gives the graph's modeled safety property. -/
 theorem run_sound_single_pass : Target.RunSound ι :=

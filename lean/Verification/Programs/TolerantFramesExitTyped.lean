@@ -24,6 +24,7 @@ form the same at every reassigned graph (`subtypeUsing_reassign`,
   the subtype answers sound;
 - `vacuous_false`: an exit the pass finds vacuous meets no environment. -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
 open PositiveRules HeapExpressionRules
@@ -148,7 +149,7 @@ where the edge observes the result (`edgeEvidenceChecked_env`). -/
 theorem edgeFound_env {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ Δ : List (Ty ι)} {t : Target}
     {observed : Option BranchRefinement.Observation} {k : HeapKnowledge.Knowledge}
     (hf : EdgeFound G images Δ Γ t observed k) {ρ : Env} {n : Nat} {W : WorldT (n + 1)} {h : Heap}
-    (hk : observed.isSome = true → HeapKnowledge.Holds k ρ h) (he : EnvOk G Γ ρ (n + 1) W)
+    (hk : observed.isSome = true → HeapKnowledge.Holds k ε ρ h) (he : EnvOk G Γ ρ (n + 1) W)
     (hh : HeapOk (n + 1) W h) (ho : ∀ o, observed = some o → o.holds (ρ 0)) :
     EnvOk G Δ (PointClaims.mapEnv t.mapping ρ) (n + 1) W := by
   obtain ⟨p, hp⟩ := hf
@@ -168,8 +169,8 @@ theorem ExitTyped.env {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ �
     {observed : Option BranchRefinement.Observation} {ko : HeapKnowledge.Knowledge} {Γr : List (Ty ι)}
     {outL : HeapKnowledge.Knowledge} (h : ExitTyped G images Γ Δ t observed ko Γr outL)
     (hsub : SubtypeAnswersSound G images) {ρ : Env} {n : Nat} {W : WorldT (n + 1)} {hp : Heap}
-    (he : EnvOk G Γ ρ (n + 1) W) (hk : HeapKnowledge.Holds ko ρ hp) (her : EnvOk G Γr ρ (n + 1) W)
-    (hout : observed.isSome = true → HeapKnowledge.Holds outL ρ hp) (hh : HeapOk (n + 1) W hp)
+    (he : EnvOk G Γ ρ (n + 1) W) (hk : HeapKnowledge.Holds ko ε ρ hp) (her : EnvOk G Γr ρ (n + 1) W)
+    (hout : observed.isSome = true → HeapKnowledge.Holds outL ε ρ hp) (hh : HeapOk (n + 1) W hp)
     (ho : ∀ o, observed = some o → o.holds (ρ 0)) :
     EnvOk G Δ (PointClaims.mapEnv t.mapping ρ) (n + 1) W := by
   rcases h with h | h | h | ⟨Γm, hm, h⟩

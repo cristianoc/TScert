@@ -7,6 +7,7 @@ slot's context; each cell fact on every slot of its receiver's class; behind
 each read link, the value facts of its value as cell facts; each link and
 each atomic separation pair between every two slots of its classes. -/
 namespace Verification.KnowledgeExpand
+variable {ε : Verification.HeapKnowledge.EntryState}
 open ProgramTyping PositiveRules PositiveGraphs PositiveNormalization Tower HeapFacts HeapKnowledge ValueSets
   KnowledgeNormal SeparationNormal CanonicalLists
 
@@ -81,7 +82,7 @@ theorem restrict_mem {o : Option ValueSet} {v : Tm} (ho : ∀ C, o = some C → 
   · rename_i C
     rw [ValueSet.mem_meet, hv, ho C rfl]; rfl
 
-theorem links_holds (hk : HeapKnowledge.Holds k ρ h) : HeapLinks.Holds (links k (LinkClasses.closure k.links)) ρ h := by
+theorem links_holds (hk : HeapKnowledge.Holds k ε ρ h) : HeapLinks.Holds (links k (LinkClasses.closure k.links)) ρ h := by
   have hl := hk.2.2.1
   intro L hL
   rcases List.mem_append.mp hL with hL | hL
@@ -125,7 +126,7 @@ def expandLinks (ctx : Ctx) (k : Knowledge) : Knowledge :=
     k.indices⟩
 
 theorem expandLinks_holds {ctx : Ctx} {k : Knowledge} {ρ : Env} {h : Heap} (hc : CtxOk ctx ρ)
-    (hk : HeapKnowledge.Holds k ρ h) : HeapKnowledge.Holds (expandLinks ctx k) ρ h := by
+    (hk : HeapKnowledge.Holds k ε ρ h) : HeapKnowledge.Holds (expandLinks ctx k) ε ρ h := by
   have hs : ∀ x, ∀ y ∈ Partitions.cls (LinkClasses.closure k.links) x, ρ y = ρ x :=
     fun _ _ hy => members_eq hk.2.2.1 hy
   have hv : ValueHolds ((k.values.map fun F =>
@@ -144,7 +145,7 @@ theorem expandLinks_holds {ctx : Ctx} {k : Knowledge} {ρ : Env} {h : Heap} (hc 
   rcases List.mem_append.mp hF with hF | hF
   · exact hk.1 F hF
   · obtain ⟨V, hV, hF⟩ := List.mem_flatMap.mp hF
-    have hk' : HeapKnowledge.Holds ⟨[], [], k.links, {}, [], []⟩ ρ h :=
+    have hk' : HeapKnowledge.Holds ⟨[], [], k.links, {}, [], []⟩ ε ρ h :=
       ⟨holds_nil ρ h, by simp [ValueHolds], hk.2.2.1, HeapSeparation.empty_holds ρ, elemsHolds_nil ρ h,
         indexHolds_nil ρ h⟩
     exact linkFacts_holds hk' (hv V hV) F hF
@@ -178,8 +179,8 @@ def checkIn (ctx : Ctx) (a b : Knowledge) (m : PointClaims.Mapping) : Bool :=
         HeapKnowledge.indicesCheckWith (HeapKnowledge.guardTags a) (Partitions.cls cs) a.links a.indices b.indices m))))
 
 theorem checkIn_sound {ctx a b m ρ h} (hc : checkIn ctx a b m = true)
-    (hctx : CtxOk ctx (PointClaims.mapEnv m ρ)) (ha : HeapKnowledge.Holds a ρ h) :
-    HeapKnowledge.Holds b (PointClaims.mapEnv m ρ) h := by
+    (hctx : CtxOk ctx (PointClaims.mapEnv m ρ)) (ha : HeapKnowledge.Holds a ε ρ h) :
+    HeapKnowledge.Holds b ε (PointClaims.mapEnv m ρ) h := by
   have hs : ∀ x, ∀ y ∈ Partitions.cls (LinkClasses.closure a.links) x, ρ y = ρ x :=
     fun _ _ hy => members_eq ha.2.2.1 hy
   simp only [checkIn, cellsCheck, valuesCheck, Bool.and_eq_true] at hc

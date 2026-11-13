@@ -46,24 +46,24 @@ theorem joined_of_exit {G : NormalGraph ι} {context : List (Ty ι)}
 /-- **What an exit into a node delivers, at a merge with its joined
 implications**: an edge state into `t` holds, and where `t` is a merge the
 implications it keeps (`joinedChecked`) hold at the target environment. -/
-def edgePreJ (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0 : Env) (given : Nat → Bool)
+def edgePreJ (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε : HeapKnowledge.EntryState) (given : Nat → Bool)
     (ctx : Nat → List (Ty ι))
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)) :
     Nat → Assertion :=
-  fun t ρ m s => edgePre G w startNames ρ0 t ρ m s ∧
+  fun t ρ m s => edgePre G w startNames ε t ρ m s ∧
     (given t = false → 2 ≤ (w.incoming t).length →
       PromiseCalls.ImpliesOk G (joinedChecked G (ctx t) (edgesIn t)) ρ s.n s.W)
 
 /-- **Entry states hold where the exits into them deliver** (`edgePreJ`),
 from the walk's construction, the heads entered and `LinearNearFuelEq`
 (`entry_of_edge`): the merges' joined implications come with the exit. -/
-theorem entries_of_traversedJ {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat} {ρ0 : Env}
+theorem entries_of_traversedJ {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat} 
     {given : Nat → Bool} {ctx : Nat → List (Ty ι)}
     {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
     {fresh : Nat → Nat} {m : Nat} (hT : Traversed G w startNames given ctx edgesIn fresh)
-    (hheads : HeadsEntered G w startNames ρ0 given m) (hnear : LinearNearFuelEq) :
-    ∀ t ρ (s : IndexedHeap), edgePreJ G w startNames ρ0 given ctx edgesIn t ρ m s →
-      passPre G w startNames ρ0 t ρ m s :=
+    (hheads : HeadsEntered G w startNames ε given m) (hnear : LinearNearFuelEq) :
+    ∀ t ρ (s : IndexedHeap), edgePreJ G w startNames ε given ctx edgesIn t ρ m s →
+      passPre G w startNames ε t ρ m s :=
   fun _ _ _ h => entry_of_edge hT hheads hnear h.1 h.2
 
 end Joined

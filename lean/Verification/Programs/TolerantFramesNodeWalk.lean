@@ -34,7 +34,7 @@ gives the target's types (`htc`). -/
 theorem exitDelivers_of_edge {G : NormalGraph ι} {w : Walk ι} {ctx : Nat → List (Ty ι)} {A : Ty ι}
     {Γ : List (Ty ι)} {entry : SinglePass.State} {store : Store} {result width : Nat} {pushed outFresh : Bool}
     {observed : Option BranchRefinement.Observation} {promote : Option Bool} {t : Target}
-    {I : List (PromiseCalls.Implication ι)} {ys : List (PromiseCalls.Yield ι)} {start : List Nat} {E : Env}
+    {I : List (PromiseCalls.Implication ι)} {ys : List (PromiseCalls.Yield ι)} {start : List Nat} 
     {m : Nat}
     (hpo : observed.isSome = true → pushed = true) (hpp : promote.isSome = true → pushed = false)
     (hmap : MapNamesSound (if pushed then result :: entry.names else entry.names) t.mapping)
@@ -47,7 +47,7 @@ theorem exitDelivers_of_edge {G : NormalGraph ι} {w : Walk ι} {ctx : Nat → L
     (htc : ∀ ρ (s' : IndexedHeap) v, EnvOk G (A :: Γ) (push v ρ) s'.n s'.W → ObservedOk observed promote v →
       EnvOk G (ctx t.label) (PointClaims.mapEnv t.mapping (if pushed then push v ρ else ρ)) s'.n s'.W)
     (ρ : Env) :
-    ExitDelivers (edgePreT G w start E ctx) G A Γ (StateHolds G ⟨result :: entry.names, store, entry.fresh⟩ I start E)
+    ExitDelivers (edgePreT G w start ε ctx) G A Γ (StateHolds G ⟨result :: entry.names, store, entry.fresh⟩ I start ε)
       ρ m t pushed observed promote := by
   intro s' v _ hF he ho
   refine normal_edge_delivers hF ho hpo hpp (fun hs => ?_) (hY ρ s' v) hmap (hfo v) hrec (htc ρ s' v he ho)
@@ -62,7 +62,7 @@ environment meets the edge's context (`hvac`). -/
 theorem exitDelivers_head {G : NormalGraph ι} {w : Walk ι} {ctx : Nat → List (Ty ι)} {A : Ty ι}
     {Γ : List (Ty ι)} {entry : SinglePass.State} {store : Store} {result width : Nat} {pushed : Bool}
     {observed : Option BranchRefinement.Observation} {promote : Option Bool} {t : Target}
-    {I : List (PromiseCalls.Implication ι)} {ys : List (PromiseCalls.Yield ι)} {startNames : List Nat} {ρ0 : Env}
+    {I : List (PromiseCalls.Implication ι)} {ys : List (PromiseCalls.Yield ι)} {startNames : List Nat} 
     {m : Nat} {req : HeapKnowledge.Knowledge} {gimp : List (PromiseCalls.Implication ι)} {argName : Option Nat}
     {argSlots : List Nat} {inputSlots : List (Nat × Nat)} {hwidth hfresh : Nat} {V : Bool}
     (hpo : observed.isSome = true → pushed = true) (hpp : promote.isSome = true → pushed = false)
@@ -96,8 +96,8 @@ theorem exitDelivers_head {G : NormalGraph ι} {w : Walk ι} {ctx : Nat → List
     (htc : ∀ ρ (s' : IndexedHeap) v, EnvOk G (A :: Γ) (push v ρ) s'.n s'.W → ObservedOk observed promote v →
       EnvOk G (ctx t.label) (PointClaims.mapEnv t.mapping (if pushed then push v ρ else ρ)) s'.n s'.W)
     (ρ : Env) :
-    ExitDelivers (edgePreT G w startNames ρ0 ctx) G A Γ
-      (StateHolds G ⟨result :: entry.names, store, entry.fresh⟩ I startNames ρ0) ρ m t pushed observed promote := by
+    ExitDelivers (edgePreT G w startNames ε ctx) G A Γ
+      (StateHolds G ⟨result :: entry.names, store, entry.fresh⟩ I startNames ε) ρ m t pushed observed promote := by
   intro s' v _ hF he ho
   cases hV : V with
   | true => exact (hvac hV ρ s' v he ho).elim
@@ -119,7 +119,7 @@ the step's throw state, the thrown value at the name `x` above every name
 theorem handlerDelivers_of_edge {G : NormalGraph ι} {w : Walk ι} {ctx : Nat → List (Ty ι)}
     {Γ : List (Ty ι)} {thrownTy : Ty ι} {entry : SinglePass.State} {store : Store} {result width x : Nat}
     {outFresh : Bool} {t : Target} {I : List (PromiseCalls.Implication ι)} {ys : List (PromiseCalls.Yield ι)}
-    {start : List Nat} {E : Env} {m : Nat}
+    {start : List Nat}  {m : Nat}
     (w' : StoreWF entry.store) (hb : NamesBelow entry I start x)
     (hmap : MapNamesSound (x :: entry.names) t.mapping)
     (hrec : (edgeTransfer (x :: entry.names) t.mapping true true outFresh entry result
@@ -129,9 +129,9 @@ theorem handlerDelivers_of_edge {G : NormalGraph ι} {w : Walk ι} {ctx : Nat �
       EnvOk G (ctx t.label) (PointClaims.mapEnv t.mapping (push e ρ)) s'.n s'.W)
     (hadm : ControlFlow.admitsAll G thrownTy = true)
     (ρ : Env) (s' : IndexedHeap) (e : Tm)
-    (hS : StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start E ρ m s')
+    (hS : StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start ε ρ m s')
     (he : EnvOk G Γ ρ s'.n s'.W) (_hsc : Scoped 0 e) (hx : excOf G s'.n s'.W e) :
-    edgePreT G w start E ctx t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s' :=
+    edgePreT G w start ε ctx t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s' :=
   handler_edge_delivers hS w' hb hmap hrec (htc ρ s' e (he.push (ControlFlow.admitsAll_sound hadm hx)))
 
 end Exits
@@ -156,14 +156,14 @@ the handler delivering from the throw state (`handler`, by
 structure NodeAccepted (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
     (suggestions : List (Sequent ι)) (index : KnownIndex ι) (codes : CodeEntry ι → Bool) (aliases : List (ι × ι))
     (pc : PassChecker G images) (undefTy : Option (Ty ι)) (P : ControlFlow.Program) (w : Walk ι)
-    (startNames : List Nat) (ρ0 : Env) (ctx : Nat → List (Ty ι)) (Tres : Fam) (m : Nat) (l : Nat) where
+    (startNames : List Nat) (ε : HeapKnowledge.EntryState) (ctx : Nat → List (Ty ι)) (Tres : Fam) (m : Nat) (l : Nat) where
   node : Node
   hP : P[l]? = some node
   c : PointClaim ι
   hctx : ctx l = c.context
   entry : SinglePass.State
-  stated : ∀ ρ (s : IndexedHeap), passPreT G w startNames ρ0 ctx l ρ m s →
-    StateHolds G entry (w.implies l) startNames ρ0 ρ m s
+  stated : ∀ ρ (s : IndexedHeap), passPreT G w startNames ε ctx l ρ m s →
+    StateHolds G entry (w.implies l) startNames ε ρ m s
   ms : List Nat
   fresh : Nat
   answers : Answered G
@@ -179,13 +179,13 @@ structure NodeAccepted (G : NormalGraph ι) (images : InstanceImageCheck G) (poo
   shape : ∀ n (W : WorldT n) v, meaning G c.type n W v → ShapeOk v node.continuation
   ret : node.continuation = .ret → ∀ n (W : WorldT n) v, meaning G c.type n W v → Tres n W v
   exits : ∀ t pushed observed promote, Exit.normal t pushed observed promote ∈ Exit.ofNode node → ∀ ρ,
-    ExitDelivers (edgePreT G w startNames ρ0 ctx) G c.type c.context
-      (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ρ0) ρ m t pushed
+    ExitDelivers (edgePreT G w startNames ε ctx) G c.type c.context
+      (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ε) ρ m t pushed
       observed promote
   handler : ∀ t, node.handler = some t → ∀ ρ (s' : IndexedHeap) e,
-    StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ (w.implies l) startNames ρ0 ρ m s' →
+    StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ (w.implies l) startNames ε ρ m s' →
     EnvOk G c.context ρ s'.n s'.W → Scoped 0 e → excOf G s'.n s'.W e →
-    edgePreT G w startNames ρ0 ctx t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s'
+    edgePreT G w startNames ε ctx t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s'
 
 /-- **Every node of the pass delivers** (`StepEdgesSoundT`): where the pass
 accepted every visited node (`NodeAccepted`), the codes are sound and the
@@ -195,19 +195,19 @@ family `excOf G` and no post on the heap at the graph's exits. -/
 theorem stepEdgesSound_of {G : NormalGraph ι} {images : InstanceImageCheck G} {pool : List (Ty ι)} {fuel : Nat}
     {suggestions : List (Sequent ι)} {index : KnownIndex ι} {codes : CodeEntry ι → Bool}
     {aliases : List (ι × ι)} {pc : PassChecker G images} {undefTy : Option (Ty ι)} {P : ControlFlow.Program}
-    {w : Walk ι} {startNames : List Nat} {ρ0 : Env} {ctx : Nat → List (Ty ι)} {Tres : Fam} {m : Nat}
+    {w : Walk ι} {startNames : List Nat} {ctx : Nat → List (Ty ι)} {Tres : Fam} {m : Nat}
     (hacc : ∀ l, w.visited l →
-      Nonempty (NodeAccepted G images pool fuel suggestions index codes aliases pc undefTy P w startNames ρ0 ctx Tres m l))
+      Nonempty (NodeAccepted G images pool fuel suggestions index codes aliases pc undefTy P w startNames ε ctx Tres m l))
     (hcodes : CodesSound G codes) (hdir : DirectKeepsSummaries G images undefTy)
     (hsrch : SearchKeepsSummaries G images pool fuel suggestions index codes aliases pc.checker) :
-    StepEdgesSoundT P G w startNames ρ0 ctx (excOf G) Tres (fun _ => True) (fun _ => True) m := by
+    StepEdgesSoundT P G w startNames ε ctx (excOf G) Tres (fun _ => True) (fun _ => True) m := by
   intro l ρ s hp
   obtain ⟨na⟩ := hacc l hp.1.1
   have hS := na.stated ρ s hp
   have he : EnvOk G na.c.context ρ s.n s.W := na.hctx ▸ hp.2
   obtain ⟨-, -, -, cn, ce, hparts⟩ :=
     checkedStep_parts na.hstep hS na.wf na.below na.width he hcodes na.sums hdir hsrch
-  obtain ⟨hj, ho⟩ := nodeObligations_of_parts (pre := edgePreT G w startNames ρ0 ctx) (Ξres := excOf G)
+  obtain ⟨hj, ho⟩ := nodeObligations_of_parts (pre := edgePreT G w startNames ε ctx) (Ξres := excOf G)
     (Tres := Tres) (Qres := fun _ => True) (Rres := fun _ => True) (x := na.node.handler) hparts he
     (fun j U v hv => na.shape (j + 1) U v hv)
     (fun s' v _ hv hF he' _ => normalTarget_of_exits (fun t p o q hm => na.exits t p o q hm ρ) na.ret

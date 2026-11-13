@@ -34,12 +34,12 @@ theorem freshImplOf_handler (pushed : Bool) (ys : List (PromiseCalls.Yield ι)) 
 /-- **The state after a step carries the edge's implications**: where the
 step's yields hold of its value on a pushed edge (`YieldsOk`). -/
 theorem stateHolds_freshImpl [DecidableEq ι] {G : NormalGraph ι} {entry : SinglePass.State} {store : Store}
-    {result : Nat} {I : List (PromiseCalls.Implication ι)} {start : List Nat} {E ρ : Env} {v : Tm} {m : Nat}
+    {result : Nat} {I : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {v : Tm} {m : Nat}
     {s : IndexedHeap} {pushed : Bool} {ys : List (PromiseCalls.Yield ι)}
-    (hS : StateHolds G ⟨result :: entry.names, store, entry.fresh⟩ I start E (push v ρ) m s)
+    (hS : StateHolds G ⟨result :: entry.names, store, entry.fresh⟩ I start ε (push v ρ) m s)
     (hY : pushed = true → PromiseCalls.YieldsOk G ys ρ s.n s.W v) :
     StateHolds G ⟨result :: entry.names, store, entry.fresh⟩ (I ++ freshImplOf pushed false ys entry.names result)
-      start E (push v ρ) m s := by
+      start ε (push v ρ) m s := by
   refine stateHolds_addImplies hS fun η hn => ?_
   cases pushed with
   | false => simp [freshImplOf, PromiseCalls.ImpliesOk]
@@ -50,14 +50,14 @@ state with the observation's or the promoted truthiness's facts. -/
 theorem edgeStore_normal [DecidableEq ι] [Hashable ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
     {entry : SinglePass.State} {store : Store} {result width : Nat} {v : Tm} {ρ : Env}
     {pushed : Bool} {observed : Option BranchRefinement.Observation} {promote : Option Bool}
-    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {E : Env} {m : Nat} {s : IndexedHeap}
-    (hS : StateHolds G ⟨result :: entry.names, store, entry.fresh⟩ I start E (push v ρ) m s)
+    {I : List (PromiseCalls.Implication ι)} {start : List Nat}  {m : Nat} {s : IndexedHeap}
+    (hS : StateHolds G ⟨result :: entry.names, store, entry.fresh⟩ I start ε (push v ρ) m s)
     (hobs : ObservedOk observed promote v)
     (hpo : observed.isSome = true → pushed = true) (hpp : promote.isSome = true → pushed = false)
     (he : observed.isSome = true → EnvOk G Γ (push v ρ) s.n s.W) :
     StateHolds G ⟨if pushed then result :: entry.names else entry.names,
       edgeStoreOf G Γ entry.store store (if pushed then result :: entry.names else entry.names)
-        (result :: entry.names) width pushed false observed promote, entry.fresh⟩ I start E
+        (result :: entry.names) width pushed false observed promote, entry.fresh⟩ I start ε
       (if pushed then push v ρ else ρ) m s := by
   cases pushed with
   | true =>
@@ -87,8 +87,8 @@ theorem normal_edge_delivers [DecidableEq ι] [Hashable ι] {G : NormalGraph ι}
     {Γ : List (Ty ι)} {entry : SinglePass.State} {store : Store} {result width : Nat} {v : Tm} {ρ : Env}
     {pushed outFresh : Bool} {observed : Option BranchRefinement.Observation} {promote : Option Bool}
     {t : Target} {I : List (PromiseCalls.Implication ι)} {ys : List (PromiseCalls.Yield ι)} {start : List Nat}
-    {E : Env} {m : Nat} {s : IndexedHeap}
-    (hS : StateHolds G ⟨result :: entry.names, store, entry.fresh⟩ I start E (push v ρ) m s)
+     {m : Nat} {s : IndexedHeap}
+    (hS : StateHolds G ⟨result :: entry.names, store, entry.fresh⟩ I start ε (push v ρ) m s)
     (hobs : ObservedOk observed promote v)
     (hpo : observed.isSome = true → pushed = true) (hpp : promote.isSome = true → pushed = false)
     (he : observed.isSome = true → EnvOk G Γ (push v ρ) s.n s.W)
@@ -100,7 +100,7 @@ theorem normal_edge_delivers [DecidableEq ι] [Hashable ι] {G : NormalGraph ι}
         (result :: entry.names) width pushed false observed promote)
       (I ++ freshImplOf pushed false ys entry.names result)) ∈ w.incoming t.label)
     (htc : EnvOk G (ctx t.label) (PointClaims.mapEnv t.mapping (if pushed then push v ρ else ρ)) s.n s.W) :
-    edgePreT G w start E ctx t.label (PointClaims.mapEnv t.mapping (if pushed then push v ρ else ρ)) m s :=
+    edgePreT G w start ε ctx t.label (PointClaims.mapEnv t.mapping (if pushed then push v ρ else ρ)) m s :=
   ⟨⟨_, hrec, edge_normal_sound (stateHolds_freshImpl hS hY) hobs hpo hpp he hmap hfo⟩, htc⟩
 
 /-- **A handler edge into a node other than a loop head delivers its
@@ -108,22 +108,22 @@ recorded state**: the thrown value at the name `x` above every name. -/
 theorem handler_edge_delivers [DecidableEq ι] [Hashable ι] {G : NormalGraph ι} {w : Walk ι}
     {ctx : Nat → List (Ty ι)} {Γ : List (Ty ι)} {entry : SinglePass.State} {store : Store} {result width x : Nat}
     {e : Tm} {ρ : Env} {outFresh : Bool} {t : Target} {I : List (PromiseCalls.Implication ι)}
-    {ys : List (PromiseCalls.Yield ι)} {start : List Nat} {E : Env} {m : Nat} {s : IndexedHeap}
-    (hS : StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start E ρ m s)
+    {ys : List (PromiseCalls.Yield ι)} {start : List Nat}  {m : Nat} {s : IndexedHeap}
+    (hS : StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start ε ρ m s)
     (w' : StoreWF entry.store) (hb : NamesBelow entry I start x) (hmap : MapNamesSound (x :: entry.names) t.mapping)
     (hrec : (edgeTransfer (x :: entry.names) t.mapping true true outFresh entry result
       (edgeStoreOf G Γ entry.store store (x :: entry.names) (result :: entry.names) width true true none none)
       (I ++ freshImplOf true true ys entry.names result)) ∈ w.incoming t.label)
     (htc : EnvOk G (ctx t.label) (PointClaims.mapEnv t.mapping (push e ρ)) s.n s.W) :
-    edgePreT G w start E ctx t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s := by
+    edgePreT G w start ε ctx t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s := by
   rw [freshImplOf_handler, List.append_nil] at hrec
   exact ⟨⟨_, hrec, edge_handler_sound hS w' hb hmap⟩, htc⟩
 
 /-- The edge's store state, its fresh names left out, at the materialization
 the pass reads (`{ names, store := edgeStore }`). -/
 theorem stateHolds_edge {G : NormalGraph ι} {names : List Nat} {S : Store} {F : List Nat}
-    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {E ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hS : StateHolds G ⟨names, S, F⟩ I start E ρ m s) : StateHolds G { names, store := S } I start E ρ m s :=
+    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
+    (hS : StateHolds G ⟨names, S, F⟩ I start ε ρ m s) : StateHolds G { names, store := S } I start ε ρ m s :=
   stateHolds_noFresh hS
 
 /-- **An edge into a loop head establishes the head's entry**
@@ -139,10 +139,10 @@ typed by the edge's context `Γe`; the head's types hold at the mapped
 environment (`htc`). -/
 theorem headEstablishes_of_edge [DecidableEq ι] {G : NormalGraph ι} {Γe tc : List (Ty ι)} {names : List Nat}
     {edgeStore : Store} {F : List Nat} {I : List (PromiseCalls.Implication ι)} {startNames : List Nat}
-    {ρ0 ρx : Env} {m : Nat} {s : IndexedHeap} {θ : PointClaims.Mapping} {req : HeapKnowledge.Knowledge}
+    {ρx : Env} {m : Nat} {s : IndexedHeap} {θ : PointClaims.Mapping} {req : HeapKnowledge.Knowledge}
     {gimp : List (PromiseCalls.Implication ι)} {argName : Option Nat} {argSlots : List Nat}
     {inputSlots : List (Nat × Nat)} {d : Nat}
-    (hS : StateHolds G ⟨names, edgeStore, F⟩ I startNames ρ0 ρx m s)
+    (hS : StateHolds G ⟨names, edgeStore, F⟩ I startNames ε ρx m s)
     (he : EnvOk G Γe ρx s.n s.W) (htc : EnvOk G tc (PointClaims.mapEnv θ ρx) s.n s.W)
     (hq : KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G tc)
       (HeapKnowledge.withTypedLinks G Γe (ControlFlow.withTypedCells G Γe req θ
@@ -153,7 +153,7 @@ theorem headEstablishes_of_edge [DecidableEq ι] {G : NormalGraph ι} {Γe tc : 
       ∀ n (W : WorldT n) v, meaning G y.type n W v → meaning G x.type n W v)
     (hin : ∀ p ∈ inputSlots, names[PointClaims.slot θ p.1]? = startNames[p.2]?)
     (harg : ∀ j ∈ argSlots, names[PointClaims.slot θ j]? = argName) :
-    HeadEstablishes G req gimp startNames argName argSlots inputSlots ρ0 (PointClaims.mapEnv θ ρx) s := by
+    HeadEstablishes G req gimp startNames argName argSlots inputSlots ε (PointClaims.mapEnv θ ρx) s := by
   have hk := stateHolds_materialize_whole (stateHolds_edge hS) d
     (((atomsOf req).flatMap Atom.names).map (PointClaims.slot θ)) true
   obtain ⟨η, hn, -, hI, -, hst⟩ := hS

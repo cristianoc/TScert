@@ -2,6 +2,7 @@ import Verification.Programs.TolerantFramesRegionalRuns
 
 /-! # The knowledge carried by regional evidence -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification SinglePass HeapKnowledge PositiveRules
 
 /-- Joining separations preserves their meaning when both inputs hold. -/
@@ -25,7 +26,7 @@ theorem separation_union_holds {S T : HeapSeparation.Separation} {ρ : Env}
 
 /-- Regional knowledge holds whenever its two sources hold. -/
 theorem regionalFacts_holds {a b : Knowledge} {ρ : Env} {h : Heap}
-    (ha : Holds a ρ h) (hb : Holds b ρ h) : Holds (regionalFacts a b) ρ h := by
+    (ha : Holds a ε ρ h) (hb : Holds b ε ρ h) : Holds (regionalFacts a b) ε ρ h := by
   have join {α : Type} [BEq α] {xs ys : List α} {P : α → Prop}
       (hx : ∀ x ∈ xs, P x) (hy : ∀ x ∈ ys, P x) :
       ∀ x ∈ xs ++ ys.filter (!xs.contains ·), P x := by
@@ -80,7 +81,7 @@ theorem regionalJoin_right {α : Type} [BEq α] [LawfulBEq α] (xs ys : List α)
 
 /-- The expanded regional entry supplies all step links. -/
 theorem regionalLinks_recover {ctx : KnowledgeNormal.Ctx} {a b : Knowledge} {ρ : Env} {h : Heap}
-    (hh : Holds (KnowledgeExpand.expandLinks ctx (regionalFacts a b)) ρ h) :
+    (hh : Holds (KnowledgeExpand.expandLinks ctx (regionalFacts a b)) ε ρ h) :
     HeapLinks.Holds b.links ρ h := by
   have hl := expandedLinks_recover hh.2.2.1
   exact fun g hg => hl g (regionalJoin_right a.links b.links hg)

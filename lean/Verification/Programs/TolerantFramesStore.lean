@@ -11,6 +11,7 @@ leaves the store; so the removal loop of a step's delta removes each handed
 fact the output lost (`removedLeave`), and a writing step's delta keeps every
 fact holding (`applyDelta_writing`). -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification
 open Verification.SinglePass (Atom Store State)
 
@@ -269,10 +270,10 @@ table. -/
 theorem applyDelta_writing {s : Store} {pairs : List (Atom × Atom)}
     {out : HeapKnowledge.Knowledge} {back f : Nat → Option Nat} {η ρ : Env} {v : Tm} {h : Heap}
     (w : StoreWF s)
-    (hcov : ∀ x ∈ storeAll s, AtomHolds x η h ∨ ∃ b, (x, b) ∈ pairs ∧ x.rename f = some b)
-    (hf : ∀ x i, f x = some i → ρ i = η x) (hout : HeapKnowledge.Holds out (push v ρ) h)
+    (hcov : ∀ x ∈ storeAll s, AtomHolds ε x η h ∨ ∃ b, (x, b) ∈ pairs ∧ x.rename f = some b)
+    (hf : ∀ x i, f x = some i → ρ i = η x) (hout : HeapKnowledge.Holds out ε (push v ρ) h)
     (hback : ∀ i x, back i = some x → η x = push v ρ i) :
-    StoreOk (SinglePass.applyDelta s pairs out true back) η h := by
+    StoreOk ε (SinglePass.applyDelta s pairs out true back) η h := by
   refine applyDelta_ok (fun x hx => ?_) hout hback
   obtain ⟨hxs, hne⟩ := removedLeave w pairs out true x hx
   rcases hcov x hxs with hh | ⟨b, hp, hr⟩
@@ -281,8 +282,8 @@ theorem applyDelta_writing {s : Store} {pairs : List (Atom × Atom)}
       Classical.byContradiction fun hn => hne (x, b) hp hn rfl
     obtain ⟨c, hc⟩ := rename_succ_total b
     have hci : deltaImage true b = c := by simp [deltaImage, hc]
-    have hcb : AtomHolds c (push v ρ) h := hci ▸ atomsOf_holds hout _ himg
-    have hb : AtomHolds b ρ h := atomHolds_rename_rev (f := fun i => some (i + 1))
+    have hcb : AtomHolds ε c (push v ρ) h := hci ▸ atomsOf_holds hout _ himg
+    have hb : AtomHolds ε b ρ h := atomHolds_rename_rev (f := fun i => some (i + 1))
       (fun x i hx => by simp only [Option.some.injEq] at hx; subst hx; rfl) hc hcb
     exact atomHolds_rename_rev hf hr hb
 
@@ -381,11 +382,11 @@ well-formed. -/
 theorem applyDelta_dropHeap {s : Store} {pairs : List (Atom × Atom)}
     {out : HeapKnowledge.Knowledge} {back f : Nat → Option Nat} {η ρ : Env} {v : Tm} {h : Heap}
     (w : StoreWF s)
-    (hfree : ∀ x ∈ storeAll s, x.heapFree = true → AtomHolds x η h)
+    (hfree : ∀ x ∈ storeAll s, x.heapFree = true → AtomHolds ε x η h)
     (hpairs : ∀ x b, (x, b) ∈ pairs → x.rename f = some b)
-    (hf : ∀ x i, f x = some i → ρ i = η x) (hout : HeapKnowledge.Holds out (push v ρ) h)
+    (hf : ∀ x i, f x = some i → ρ i = η x) (hout : HeapKnowledge.Holds out ε (push v ρ) h)
     (hback : ∀ i x, back i = some x → η x = push v ρ i) :
-    StoreOk (SinglePass.applyDelta (s.dropHeap (handedSet pairs).contains) pairs out true back) η h := by
+    StoreOk ε (SinglePass.applyDelta (s.dropHeap (handedSet pairs).contains) pairs out true back) η h := by
   obtain ⟨w', hcov⟩ := dropHeap_cover w (handedSet pairs).contains
   refine applyDelta_writing w' (fun x hx => ?_) hf hout hback
   obtain ⟨hxs, hk | hfr⟩ := hcov x hx

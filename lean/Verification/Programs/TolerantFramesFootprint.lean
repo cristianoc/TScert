@@ -21,6 +21,7 @@ The call case reads the step's derivation `d`, which the pass checks beside
 `selectedWithinAt` (`passDerivChecked`: claimed at the node's term and
 context, its tree accepted). -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations
 
 section Footprint
@@ -72,7 +73,7 @@ def passThrows (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : Cod
 theorem passWrites_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {kS : HeapKnowledge.Knowledge}
     {Φ : Footprints.Closed} {t : Tm} {T : Fam} {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
     (hc : passWrites G Γ kS Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
-    (hkS : HeapKnowledge.Holds kS ρ h) (hs : Safe (excOf G) T n W h (instantiate 0 ρ t)) :
+    (hkS : HeapKnowledge.Holds kS ε ρ h) (hs : Safe (excOf G) T n W h (instantiate 0 ρ t)) :
     SafePostExc (excOf G) T (fun h' _ => Φ.Holds h h') (fun h' => Φ.Holds h h') n W h (instantiate 0 ρ t) := by
   simp only [passWrites, Bool.or_eq_true] at hc
   rcases hc with hc | hc
@@ -111,7 +112,7 @@ theorem pass_within_normal {G : NormalGraph ι} {images : InstanceImageCheck G} 
     (hscope : checkScope j.context.length j.term = true)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} {b : Nat} (hF : GraphCode.FreshOk F b ρ)
-    (he : EnvOk G j.context ρ n W) (hkS : HeapKnowledge.Holds kS ρ h)
+    (he : EnvOk G j.context ρ n W) (hkS : HeapKnowledge.Holds kS ε ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h)
     (hsafe : Safe (excOf G) (meaning G j.type) n W h (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type) (fun h' _ => Φ.HoldsOn (· < b) h h') n W h (instantiate 0 ρ j.term) := by
@@ -160,7 +161,7 @@ theorem pass_within_throw {G : NormalGraph ι} {images : InstanceImageCheck G} {
     (hscope : checkScope j.context.length j.term = true)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} {b : Nat} (hF : GraphCode.FreshOk F b ρ)
-    (he : EnvOk G j.context ρ n W) (hkS : HeapKnowledge.Holds kS ρ h)
+    (he : EnvOk G j.context ρ n W) (hkS : HeapKnowledge.Holds kS ε ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h)
     (hsafe : Safe (excOf G) (meaning G j.type) n W h (instantiate 0 ρ j.term)) :
     SafePostExc (excOf G) (meaning G j.type) (fun _ _ => True) (fun h' => Φ.HoldsOn (· < b) h h') n W h
@@ -223,9 +224,9 @@ theorem pass_write_judgment {G : NormalGraph ι} {images : InstanceImageCheck G}
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums) {Φ : Footprints.Closed}
     (hc : passWrites G j.context kS Φ j.term = true)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hkS : HeapKnowledge.Holds kS ρ h)
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hkS : HeapKnowledge.Holds kS ε ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePostExc (excOf G) (meaning G j.type) (fun h' v => Φ.Holds h h' ∧ HeapKnowledge.Holds out (push v ρ) h')
+    SafePostExc (excOf G) (meaning G j.type) (fun h' v => Φ.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => Φ.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) :=
   judgment_with_output checker hr hcodes hsums he hk hw hh
     (passWrites_sound hc he hh hkS (erase (checker.sound hr hcodes hsums he hk hw hh)))

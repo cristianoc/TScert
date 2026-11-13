@@ -18,6 +18,7 @@ node's term. Proved:
   context types the environment, the implications the yields read hold and
   the step's facts' links hold (`yieldFollows_sound`). -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
 open PositiveRules HeapExpressionRules
@@ -94,7 +95,7 @@ refine). -/
 theorem exitDeliversY_of_edge {G : NormalGraph ι} {w : Walk ι} {ctx : Nat → List (Ty ι)} {A : Ty ι}
     {Γ : List (Ty ι)} {entry : SinglePass.State} {store : Store} {result width : Nat} {pushed outFresh : Bool}
     {observed : Option BranchRefinement.Observation} {promote : Option Bool} {t : Target}
-    {I : List (PromiseCalls.Implication ι)} {ys : List (PromiseCalls.Yield ι)} {start : List Nat} {E : Env}
+    {I : List (PromiseCalls.Implication ι)} {ys : List (PromiseCalls.Yield ι)} {start : List Nat} 
     {m : Nat}
     (hpo : observed.isSome = true → pushed = true) (hpp : promote.isSome = true → pushed = false)
     (hmap : MapNamesSound (if pushed then result :: entry.names else entry.names) t.mapping)
@@ -107,8 +108,8 @@ theorem exitDeliversY_of_edge {G : NormalGraph ι} {w : Walk ι} {ctx : Nat → 
     (htc : ∀ (s' : IndexedHeap) v, EnvOk G (A :: Γ) (push v ρ) s'.n s'.W → ObservedOk observed promote v →
       PromiseCalls.YieldsOk G ys ρ s'.n s'.W v →
       EnvOk G (ctx t.label) (PointClaims.mapEnv t.mapping (if pushed then push v ρ else ρ)) s'.n s'.W) :
-    ExitDelivers (edgePreT G w start E ctx) G A Γ
-      (fun ρ' m' s' => StateHolds G ⟨result :: entry.names, store, entry.fresh⟩ I start E ρ' m' s' ∧
+    ExitDelivers (edgePreT G w start ε ctx) G A Γ
+      (fun ρ' m' s' => StateHolds G ⟨result :: entry.names, store, entry.fresh⟩ I start ε ρ' m' s' ∧
         PromiseCalls.YieldsOk G ys ρ s'.n s'.W (ρ' 0)) ρ m t pushed observed promote := by
   intro s' v _ hF he ho
   obtain ⟨hF, hy⟩ := hF
@@ -129,25 +130,25 @@ theorem nodeObligations_of_partsY {G : NormalGraph ι} {A : Ty ι} {Γ : List (T
     {t : Tm} {out : HeapKnowledge.Knowledge} {Fn Fe : Assertion} {ρ : Env} {m : Nat} {s : IndexedHeap}
     {ys : List (PromiseCalls.Yield ι)}
     {pre : Nat → Assertion} {Ξres Tres : Fam} {Qres Rres : Heap → Prop} {k : Continuation} {x : Option Target}
-    (hp : StepParts G A cn ce t out Fn Fe ρ m s) (he : EnvOk G Γ ρ s.n s.W)
+    (hp : StepParts G A cn ce t out ε Fn Fe ρ m s) (he : EnvOk G Γ ρ s.n s.W)
     (hjY : SafePostExc (excOf G) (fun j U u => meaning G A j U u ∧ PromiseCalls.YieldsOk G ys ρ j U u)
-      (fun h' v => cn.Holds s.h h' ∧ HeapKnowledge.Holds out (push v ρ) h') (fun h' => ce.Holds s.h h' ∧ True)
+      (fun h' v => cn.Holds s.h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h') (fun h' => ce.Holds s.h h' ∧ True)
       s.n s.W s.h (instantiate 0 ρ t))
     (hshape : ∀ j (U : WorldT (j + 1)) v, meaning G A (j + 1) U v → ShapeOk v k)
     (hnormal : ∀ (s' : IndexedHeap) v, Admissible s s' → isVal v = true → Fn (push v ρ) m s' →
       PromiseCalls.YieldsOk G ys ρ s'.n s'.W v →
-      EnvOk G (A :: Γ) (push v ρ) s'.n s'.W → HeapKnowledge.Holds out (push v ρ) s'.h →
+      EnvOk G (A :: Γ) (push v ρ) s'.n s'.W → HeapKnowledge.Holds out ε (push v ρ) s'.h →
       (∃ j, j < s.n ∧ Steps j s.h (instantiate 0 ρ t) s'.h v) →
       NormalTarget pre Tres Qres ρ m s' v k)
     (hraise : ∀ (s' : IndexedHeap) e, Admissible s s' → Fe ρ m s' → EnvOk G Γ ρ s'.n s'.W → Scoped 0 e →
       excOf G s'.n s'.W e → RaiseTarget pre Ξres Rres ρ m s' e x) :
     SafePostExc (excOf G) (fun j U u => meaning G A j U u ∧ PromiseCalls.YieldsOk G ys ρ j U u)
-      (fun h' v => cn.Holds s.h h' ∧ (HeapKnowledge.Holds out (push v ρ) h' ∧
+      (fun h' v => cn.Holds s.h h' ∧ (HeapKnowledge.Holds out ε (push v ρ) h' ∧
         ∃ k, k < s.n ∧ Steps k s.h (instantiate 0 ρ t) h' v))
       (fun h' => ce.Holds s.h h' ∧ True) s.n s.W s.h (instantiate 0 ρ t) ∧
     NodeObligations pre Ξres Tres Qres Rres (excOf G)
       (fun j U u => meaning G A j U u ∧ PromiseCalls.YieldsOk G ys ρ j U u) cn ce
-      (fun h' v => HeapKnowledge.Holds out (push v ρ) h' ∧ ∃ k, k < s.n ∧ Steps k s.h (instantiate 0 ρ t) h' v)
+      (fun h' v => HeapKnowledge.Holds out ε (push v ρ) h' ∧ ∃ k, k < s.n ∧ Steps k s.h (instantiate 0 ρ t) h' v)
       (fun _ => True) ρ m s k x := by
   obtain ⟨-, hn, hx⟩ := hp
   refine ⟨SafePostExc.weaken (fun _ _ ⟨⟨hc, ho⟩, hk⟩ => ⟨hc, ho, hk⟩) (fun _ h => h) (safePostExc_trace_lt hjY),
@@ -170,10 +171,10 @@ where the entry state `entry` holds, the context types the environment and
 the step's facts `stepK` hold, the step's judgment at the claim's type `A`
 holds with each value also meeting `YieldsOk ys`. -/
 def YieldsJudged (G : NormalGraph ι) (A : Ty ι) (Γ : List (Ty ι)) (t : Tm) (entry : SinglePass.State)
-    (I : List (PromiseCalls.Implication ι)) (startNames : List Nat) (ρ0 : Env) (m : Nat)
+    (I : List (PromiseCalls.Implication ι)) (startNames : List Nat) (ε : HeapKnowledge.EntryState) (m : Nat)
     (stepK : HeapKnowledge.Knowledge) (ys : List (PromiseCalls.Yield ι)) : Prop :=
-  ∀ ρ (s : IndexedHeap) (Q : Post) (R : Heap → Prop), StateHolds G entry I startNames ρ0 ρ m s →
-    EnvOk G Γ ρ s.n s.W → HeapKnowledge.Holds stepK ρ s.h →
+  ∀ ρ (s : IndexedHeap) (Q : Post) (R : Heap → Prop), StateHolds G entry I startNames ε ρ m s →
+    EnvOk G Γ ρ s.n s.W → HeapKnowledge.Holds stepK ε ρ s.h →
     SafePostExc (excOf G) (meaning G A) Q R s.n s.W s.h (instantiate 0 ρ t) →
     SafePostExc (excOf G) (fun k U u => meaning G A k U u ∧ PromiseCalls.YieldsOk G ys ρ k U u) Q R
       s.n s.W s.h (instantiate 0 ρ t)
@@ -184,11 +185,11 @@ where every yield passes `yieldFollows` at the implications `xs` and the
 step's links, and `xs` holds wherever the entry state does. -/
 theorem yieldsJudged_of_follows {G : NormalGraph ι} {images : InstanceImageCheck G} {A : Ty ι}
     {Γ : List (Ty ι)} {t : Tm} {entry : SinglePass.State} {I : List (PromiseCalls.Implication ι)}
-    {startNames : List Nat} {ρ0 : Env} {m : Nat} {stepK : HeapKnowledge.Knowledge}
+    {startNames : List Nat} {m : Nat} {stepK : HeapKnowledge.Knowledge}
     {xs : List (PromiseCalls.Implication ι)} {ys : List (PromiseCalls.Yield ι)}
     (hc : ys.all (PromiseCalls.yieldFollows G images Γ xs stepK.links t) = true)
-    (hx : ∀ ρ (s : IndexedHeap), StateHolds G entry I startNames ρ0 ρ m s → PromiseCalls.ImpliesOk G xs ρ s.n s.W) :
-    YieldsJudged G A Γ t entry I startNames ρ0 m stepK ys :=
+    (hx : ∀ ρ (s : IndexedHeap), StateHolds G entry I startNames ε ρ m s → PromiseCalls.ImpliesOk G xs ρ s.n s.W) :
+    YieldsJudged G A Γ t entry I startNames ε m stepK ys :=
   fun ρ s _ _ hS he hk hj => stepYields_judgment hc he (hx ρ s hS) hk.2.2.1 hj
 
 /-- **What a node's step means with its kept yields** `ys`: the step's
@@ -200,28 +201,28 @@ handler delivering from the throw state (`handler`), each at `edgePreAJ`. `NodeM
 `exits`, stated for every value of the claim's type, restated at the values
 the step returns. -/
 structure NodeYielded (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
-    (ρ0 : Env) (ctx : Nat → List (Ty ι)) (stated : Nat → Option HeapKnowledge.Knowledge) (given : Nat → Bool)
+    (ε : HeapKnowledge.EntryState) (ctx : Nat → List (Ty ι)) (stated : Nat → Option HeapKnowledge.Knowledge) (given : Nat → Bool)
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
     (Tres : Fam) (m : Nat) (l : Nat) (node : Node) (c : PointClaim ι) (entry : SinglePass.State) (st : Stepped ι)
     (ys : List (PromiseCalls.Yield ι)) : Prop where
-  judged : YieldsJudged G c.type c.context node.expression entry (w.implies l) startNames ρ0 m st.stepK ys
+  judged : YieldsJudged G c.type c.context node.expression entry (w.implies l) startNames ε m st.stepK ys
   ret : node.continuation = .ret → ∀ ρ (s' : IndexedHeap) v, isVal v = true →
-    StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ρ0 (push v ρ) m s' →
+    StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ε (push v ρ) m s' →
     EnvOk G (c.type :: c.context) (push v ρ) s'.n s'.W → PromiseCalls.YieldsOk G ys ρ s'.n s'.W v →
     Tres s'.n s'.W v
   exits : ∀ t pushed observed promote, Exit.normal t pushed observed promote ∈ Exit.ofNode node → ∀ ρ (s : IndexedHeap),
-    StateHolds G entry (w.implies l) startNames ρ0 ρ m s →
-    EnvOk G c.context ρ s.n s.W → HeapKnowledge.Holds st.stepK ρ s.h → m ≤ s.h.length →
-    ExitDelivers (edgePreAJ G w startNames ρ0 ctx stated given edgesIn) G c.type c.context
-      (fun ρ' m' s' => StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ρ0
-        ρ' m' s' ∧ PromiseCalls.YieldsOk G ys ρ s'.n s'.W (ρ' 0) ∧ HeapKnowledge.Holds st.stepOut ρ' s'.h ∧
+    StateHolds G entry (w.implies l) startNames ε ρ m s →
+    EnvOk G c.context ρ s.n s.W → HeapKnowledge.Holds st.stepK ε ρ s.h → m ≤ s.h.length →
+    ExitDelivers (edgePreAJ G w startNames ε ctx stated given edgesIn) G c.type c.context
+      (fun ρ' m' s' => StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ε
+        ρ' m' s' ∧ PromiseCalls.YieldsOk G ys ρ s'.n s'.W (ρ' 0) ∧ HeapKnowledge.Holds st.stepOut ε ρ' s'.h ∧
           ∃ k, k < s.n ∧ Steps k s.h (instantiate 0 ρ node.expression) s'.h (ρ' 0))
       ρ m t pushed observed promote
   handler : ∀ t, node.handler = some t → ∀ ρ (s' : IndexedHeap) e,
-    StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ (w.implies l) startNames ρ0
+    StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ (w.implies l) startNames ε
       ρ m s' →
     EnvOk G c.context ρ s'.n s'.W → Scoped 0 e → excOf G s'.n s'.W e →
-    edgePreAJ G w startNames ρ0 ctx stated given edgesIn t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s'
+    edgePreAJ G w startNames ε ctx stated given edgesIn t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s'
 
 end Obligations
 

@@ -9,6 +9,7 @@ composition is `regionsHeld_of`. The evidence uses `regionalFacts kHere
 stepK`, whose meaning follows from the node's entry state and checked step
 (`regionNodeEntry_checked`). -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
 open PositiveRules HeapExpressionRules LabelStore
@@ -59,14 +60,14 @@ def passRegionalEvidenceOf {G : NormalGraph ι} {I : InstanceImageCheck G} {code
 theorem regionNodeEntry_checked {G : NormalGraph ι} {I : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
     {pc : PassChecker G I} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat}
     {ctx : Nat → List (Ty ι)} {l : Nat} (r : NodeChecked G I codes pc P w startNames ctx l)
-    (hc : CodesSound G codes) {ρ0 : Env} {m : Nat}
+    (hc : CodesSound G codes) {m : Nat}
     (hent : ControlFlow.entry (passRegionalEvidenceOf r) = r.c.context)
-    (ρ : Env) (s : IndexedHeap) (hp : passPreT G w startNames ρ0 ctx l ρ m s) :
+    (ρ : Env) (s : IndexedHeap) (hp : passPreT G w startNames ε ctx l ρ m s) :
     EnvOk G (ControlFlow.entry (passRegionalEvidenceOf r)) ρ s.n s.W ∧
       PromiseCalls.ImpliesOk G (passRegionalEvidenceOf r).implies ρ s.n s.W ∧
-      HeapKnowledge.Holds (entryFacts G (passRegionalEvidenceOf r)) ρ s.h := by
+      HeapKnowledge.Holds (entryFacts G (passRegionalEvidenceOf r)) ε ρ s.h := by
   have he : EnvOk G r.c.context ρ s.n s.W := r.hctx ▸ hp.2
-  have hS : StateHolds G r.entry (w.implies l) startNames ρ0 ρ m s := r.hentry ▸ hp.1.2
+  have hS : StateHolds G r.entry (w.implies l) startNames ε ρ m s := r.hentry ▸ hp.1.2
   have hk := (stepChecked_parts r.hstep hS r.wf r.below r.width he hc r.sums).2.1
   refine ⟨hent ▸ he, PromiseCalls.ImpliesOk.nil G ρ s.n s.W, entryFacts_holds (hent ▸ he) ?_⟩
   exact regionalFacts_holds (stateHolds_materialize_whole hS _ _ true) hk
@@ -130,7 +131,7 @@ facts holding where the node assertion does, `regionNodeEntry_of`). -/
 theorem regionsHeld_of (hrec : RegionsRecorded ι) (htyped : RegionsTyped ι) : RegionsHeld ι := by
   intro G I c after admits hp r hchk η hη Φ regions exc hreg
   obtain ⟨table, ft, hs1, hs2, hs3, hnodes⟩ := hrec G I c after admits hp r hchk Φ regions exc hreg
-  refine ⟨fun ρ0 h₀ => RegionX Φ regions table ft ρ0 h₀, fun ρ0 h₀ => ⟨regionX_start hs1 hs2 hs3 ρ0 h₀, ?_⟩⟩
+  refine ⟨fun ε h₀ => RegionX Φ regions table ft ε h₀, fun ε h₀ => ⟨regionX_start hs1 hs2 hs3 ε h₀, ?_⟩⟩
   refine regionsKept_of fun l hl => ?_
   obtain ⟨T, ftl, sums, hsums, hc, ha⟩ := hnodes l hl
   obtain ⟨hent, hty⟩ := htyped G I c after admits hp r hchk Φ regions exc hreg l hl

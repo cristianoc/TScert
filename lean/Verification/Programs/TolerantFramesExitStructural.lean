@@ -6,6 +6,7 @@ import Verification.Programs.TolerantFramesExitStart
 
 /-! # Structural facts for head and handler exit extraction -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
 open PositiveRules HeapExpressionRules LabelStore
@@ -226,8 +227,8 @@ theorem headEntryContract_of_checked (s : Site c r l hl) (checked : WalkChecked 
     (hm : e ∈ Exit.ofNode (r.node l hl).node) (hh : r.given e.target.label = true)
     {req : HeapKnowledge.Knowledge} (hg : s.env.given[e.target.label]! = some req)
     (writtenCoherent : ∃ written cf,
-      (∀ ρ h, HeapKnowledge.Holds written ρ h →
-        HeapKnowledge.Holds ((r.stated e.target.label).getD {}) ρ h) ∧
+      (∀ ε ρ h, HeapKnowledge.Holds written ε ρ h →
+        HeapKnowledge.Holds ((r.stated e.target.label).getD {}) ε ρ h) ∧
       req = { written with indices := written.indices ++ cf }) :
     HeadEntryContract s e.target.label req := by
   have hin := s.head_incoming hm hh
@@ -257,13 +258,13 @@ theorem headEntryContract_nonstart (s : Site c r l hl) (checked : WalkChecked c 
     {req : HeapKnowledge.Knowledge} (hg : s.env.given[e.target.label]! = some req)
     (notStart : e.target.label ≠ c.start) : HeadEntryContract s e.target.label req := by
   obtain ⟨cf, hcf⟩ := s.head_written hg notStart
-  exact headEntryContract_of_checked s checked hm hh hg ⟨_, cf, fun _ _ h => h, hcf⟩
+  exact headEntryContract_of_checked s checked hm hh hg ⟨_, cf, fun _ _ _ h => h, hcf⟩
 
 /-- The semantic projection needed when an exit targets the start.
 The pass's separation union does not establish this implication for arbitrary proposals. -/
 @[nospecialize] def StartWrittenImpliesStated (r : RunWalkA G I c) : Prop :=
-  ∀ ρ h, HeapKnowledge.Holds (startWritten (r.stated c.start) c.entryIndices c.entrySeparation) ρ h →
-    HeapKnowledge.Holds ((r.stated c.start).getD {}) ρ h
+  ∀ ε ρ h, HeapKnowledge.Holds (startWritten (r.stated c.start) c.entryIndices c.entrySeparation) ε ρ h →
+    HeapKnowledge.Holds ((r.stated c.start).getD {}) ε ρ h
 
 /-- The start's given contract is `startWritten` with the supplied index facts. -/
 theorem Site.start_given (s : Site c r l hl) {req : HeapKnowledge.Knowledge}
@@ -290,14 +291,14 @@ theorem Site.head_written_coherent (s : Site c r l hl) {t : Nat}
     {req : HeapKnowledge.Knowledge} (hg : s.env.given[t]! = some req)
     (startWrittenSound : StartWrittenImpliesStated r) :
     ∃ written cf,
-      (∀ ρ h, HeapKnowledge.Holds written ρ h → HeapKnowledge.Holds ((r.stated t).getD {}) ρ h) ∧
+      (∀ ε ρ h, HeapKnowledge.Holds written ε ρ h → HeapKnowledge.Holds ((r.stated t).getD {}) ε ρ h) ∧
       req = { written with indices := written.indices ++ cf } := by
   by_cases ht : t = c.start
   · subst t
     exact ⟨startWritten (r.stated c.start) c.entryIndices c.entrySeparation,
       ((byLabel c.P.toArray.size c.candidates)[c.start]!).getD [], startWrittenSound, s.start_given hg⟩
   · obtain ⟨cf, hcf⟩ := s.head_written hg ht
-    exact ⟨_, cf, fun _ _ h => h, hcf⟩
+    exact ⟨_, cf, fun _ _ _ h => h, hcf⟩
 
 /-- All targeted heads have their contract at the final walk. -/
 theorem headEntries_of_checked (s : Site c r l hl) (checked : WalkChecked c r)

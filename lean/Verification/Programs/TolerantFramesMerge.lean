@@ -11,6 +11,7 @@ only where the predecessor's unconditional facts make `x` an integer
 (`Store.integral`). This module proves those facts hold at a predecessor's
 valuation extended to the fresh names by its own names' values. -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations
 open Verification.SinglePass (Atom Store State)
 
@@ -22,7 +23,7 @@ theorem index_int {x : UInt64} {i : Nat} (h : indexOfBits x = some i) : (HeapKno
 /-- **`Store.integral` is sound**: where every fact of the store holds at
 `η`, a name the store's unconditional facts make an integer holds a safe
 integer. -/
-theorem integral_int {s : Store} {η : Env} {h : Heap} (hS : StoreOk s η h) {x : Nat}
+theorem integral_int {s : Store} {η : Env} {h : Heap} (hS : StoreOk ε s η h) {x : Nat}
     (hi : s.integral x = true) : (HeapKnowledge.intValue (η x)).isSome := by
   obtain ⟨a, ha, hp⟩ := List.any_eq_true.mp hi
   have hh := hS a (about_storeAll ha)
@@ -32,7 +33,7 @@ theorem integral_int {s : Store} {η : Env} {h : Heap} (hS : StoreOk s η h) {x 
     cases c with
     | some _ => simp at hp
     | none =>
-      have hf : f.HoldsAt η h := hh _ (List.mem_singleton_self _) (fun b hb => by cases hb)
+      have hf : f.HoldsAt ε η h := hh _ (List.mem_singleton_self _) (fun b hb => by cases hb)
       cases f with
       | int k =>
         simp only [beq_iff_eq] at hp; subst hp; exact hf
@@ -69,7 +70,7 @@ def mergeEqAtoms (int : Bool) (φ x : Nat) : List Atom :=
 hold one value, the alias link holds, and where `x` holds a safe integer the
 two linear facts too. -/
 theorem mergeEqAtoms_holds {int : Bool} {φ x : Nat} {η : Env} {h : Heap} (heq : η φ = η x)
-    (hint : int = true → (HeapKnowledge.intValue (η x)).isSome) : ∀ a ∈ mergeEqAtoms int φ x, AtomHolds a η h := by
+    (hint : int = true → (HeapKnowledge.intValue (η x)).isSome) : ∀ a ∈ mergeEqAtoms int φ x, AtomHolds ε a η h := by
   intro a ha
   simp only [mergeEqAtoms, List.mem_cons] at ha
   rcases ha with rfl | ha
@@ -80,7 +81,7 @@ theorem mergeEqAtoms_holds {int : Bool} {φ x : Nat} {η : Env} {h : Heap} (heq 
     | false => simp at ha
     | true =>
       obtain ⟨k, hk⟩ := Option.isSome_iff_exists.mp (hint rfl)
-      have hv : ∀ y, η y = η x → HeapKnowledge.termValue η h (.value y) = some k := by
+      have hv : ∀ y, η y = η x → HeapKnowledge.termValue ε η h (.value y) = some k := by
         intro y hy; simp [hy, hk]
       simp only [Bool.not_true, Bool.false_eq_true, if_false, List.mem_cons, List.mem_nil_iff, or_false] at ha
       rcases ha with rfl | rfl <;>
@@ -122,13 +123,13 @@ and `η'` holds at each fresh name `φ` of `x` the value `η` holds at `x`, and
 agrees with `η` at every renamed name, every equality the merge states for
 that predecessor holds at `η'`. -/
 theorem mergeEqual_holds {st : State} {names : Array Nat} {m : Std.HashMap Nat (List Nat)} {η η' : Env}
-    {h : Heap} (hS : StoreOk st.store η h)
+    {h : Heap} (hS : StoreOk ε st.store η h)
     (hφ : ∀ x φs, m[x]? = some φs → ∀ φ ∈ φs, η' φ = η x)
     (hx : ∀ x φs, m[x]? = some φs → η' x = η x) :
-    ∀ a ∈ mergeEqual st names m, AtomHolds a η' h := by
+    ∀ a ∈ mergeEqual st names m, AtomHolds ε a η' h := by
   unfold mergeEqual
   rw [Std.HashMap.fold_eq_foldl_toList]
-  refine foldl_inv (fun (acc : List Atom) => ∀ a ∈ acc, AtomHolds a η' h) _ _ _ (fun _ h => by cases h) ?_
+  refine foldl_inv (fun (acc : List Atom) => ∀ a ∈ acc, AtomHolds ε a η' h) _ _ _ (fun _ h => by cases h) ?_
   intro ⟨x, φs⟩ hp acc hacc a ha
   have hm : m[x]? = some φs := Std.HashMap.mem_toList_iff_getElem?_eq_some.mp hp
   have hint : st.store.integral x = true → (HeapKnowledge.intValue (η' x)).isSome := fun hi => by

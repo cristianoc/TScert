@@ -15,6 +15,7 @@ merged by `mergeState`, a loop head's given state), the merges' premises
 and edges delivering, `run_sound_of_walk_typed` instantiates
 `graph_safe_at` with the typed node assertion. -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations
 open ProgramTyping PositiveGraphs
 
@@ -31,17 +32,17 @@ structure Walk (ι : Type) where
   incoming : Nat → List (SinglePass.State × List (PromiseCalls.Implication ι))
 
 /-- **The pass's node assertion**: at a visited label, its entry state
-holds, the start names `startNames` holding the entry values `ρ0`. -/
-def passPre (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0 : Env) : Nat → Assertion :=
-  fun l ρ m s => w.visited l ∧ StateHolds G (w.entry l) (w.implies l) startNames ρ0 ρ m s
+holds, the start names `startNames` holding the entry values `ε.env`. -/
+def passPre (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε : HeapKnowledge.EntryState) : Nat → Assertion :=
+  fun l ρ m s => w.visited l ∧ StateHolds G (w.entry l) (w.implies l) startNames ε ρ m s
 
 /-- An edge state into `t` holds. -/
-def edgePre (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0 : Env) : Nat → Assertion :=
-  fun t ρ m s => ∃ e ∈ w.incoming t, StateHolds G e.1 e.2 startNames ρ0 ρ m s
+def edgePre (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε : HeapKnowledge.EntryState) : Nat → Assertion :=
+  fun t ρ m s => ∃ e ∈ w.incoming t, StateHolds G e.1 e.2 startNames ε ρ m s
 
 /-- **A node's entry state holds wherever an edge state into it holds.** -/
-def EntriesFromEdges (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0 : Env) (m : Nat) : Prop :=
-  ∀ t ρ (s : IndexedHeap), edgePre G w startNames ρ0 t ρ m s → passPre G w startNames ρ0 t ρ m s
+def EntriesFromEdges (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε : HeapKnowledge.EntryState) (m : Nat) : Prop :=
+  ∀ t ρ (s : IndexedHeap), edgePre G w startNames ε t ρ m s → passPre G w startNames ε t ρ m s
 
 /-- The node obligations are monotone in the node assertions. -/
 theorem nodeObligations_mono {pre pre' : Nat → Assertion} {Ξres Tres Ξ T : Fam} {Qres Rres : Heap → Prop}
@@ -72,8 +73,8 @@ omit [DecidableEq ι] [Hashable ι] in
 /-- **The pass's node assertions survive the administrative steps**: a
 state's meaning reads the heap, and the world only through the
 implications' types, which admissibility keeps (`impliesOk_admissible`). -/
-theorem passPre_adminClosed {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat} {ρ0 : Env} {m : Nat} :
-    AdminClosed (passPre G w startNames ρ0) m := by
+theorem passPre_adminClosed {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat} {m : Nat} :
+    AdminClosed (passPre G w startNames ε) m := by
   intro l ρ s s' ha hh ⟨hv, η, hsl, hn, hi, hf, hst⟩
   refine ⟨hv, η, hsl, fun a ha' => ?_, impliesOk_admissible ha hi, hf, hst⟩
   rw [hh]; exact hn a ha'
@@ -105,10 +106,10 @@ structure Traversed (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (
 /-- **(Named hypothesis) A head's given state holds where an edge state
 into it holds**: the head entry's theorem from the edge check
 (`HeadEstablishes`, Leg 8's interface with the edge check). -/
-def HeadsEntered (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0 : Env) (given : Nat → Bool)
+def HeadsEntered (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε : HeapKnowledge.EntryState) (given : Nat → Bool)
     (m : Nat) : Prop :=
-  ∀ t ρ (s : IndexedHeap), given t = true → edgePre G w startNames ρ0 t ρ m s →
-    StateHolds G (w.entry t) (w.implies t) startNames ρ0 ρ m s
+  ∀ t ρ (s : IndexedHeap), given t = true → edgePre G w startNames ε t ρ m s →
+    StateHolds G (w.entry t) (w.implies t) startNames ε ρ m s
 
 /-- **The merges' premises**: the pass's `linearNear` is its search on fuel
 (`LinearNearFuelEq`), and at each merge the joined implications it keeps
@@ -116,7 +117,7 @@ def HeadsEntered (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0
 def MergesSound (G : NormalGraph ι) (w : Walk ι) (given : Nat → Bool) (ctx : Nat → List (Ty ι))
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)) : Prop :=
   LinearNearFuelEq ∧ ∀ t, given t = false → 2 ≤ (w.incoming t).length →
-    ∀ startNames ρ0 m ρ (s : IndexedHeap), edgePre G w startNames ρ0 t ρ m s →
+    ∀ startNames ε m ρ (s : IndexedHeap), edgePre G w startNames ε t ρ m s →
       PromiseCalls.ImpliesOk G (joinedChecked G (ctx t) (edgesIn t)) ρ s.n s.W
 
 /-- **A node's entry state holds where an edge state into it holds and, at
@@ -124,15 +125,15 @@ a merge, the joined implications it keeps hold** (`joinedChecked`), from the
 walk's construction: a head by `HeadsEntered`, one predecessor as it is,
 several by the merge theorem (`mergeState_holds_checked`) with its
 premises. -/
-theorem entry_of_edge {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat} {ρ0 : Env}
+theorem entry_of_edge {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat} 
     {given : Nat → Bool} {ctx : Nat → List (Ty ι)}
     {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
     {fresh : Nat → Nat} {m : Nat} (hT : Traversed G w startNames given ctx edgesIn fresh)
-    (hheads : HeadsEntered G w startNames ρ0 given m) (hnear : LinearNearFuelEq) {t : Nat} {ρ : Env}
-    {s : IndexedHeap} (he : edgePre G w startNames ρ0 t ρ m s)
+    (hheads : HeadsEntered G w startNames ε given m) (hnear : LinearNearFuelEq) {t : Nat} {ρ : Env}
+    {s : IndexedHeap} (he : edgePre G w startNames ε t ρ m s)
     (hJ : given t = false → 2 ≤ (w.incoming t).length →
       PromiseCalls.ImpliesOk G (joinedChecked G (ctx t) (edgesIn t)) ρ s.n s.W) :
-    passPre G w startNames ρ0 t ρ m s := by
+    passPre G w startNames ε t ρ m s := by
   obtain ⟨e, hein, heh⟩ := he
   have hne : w.incoming t ≠ [] := List.ne_nil_of_mem hein
   refine ⟨hT.visited t hne, ?_⟩
@@ -159,12 +160,12 @@ theorem entry_of_edge {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat}
 
 /-- **Entry states hold where edge states into them do**, from the walk's
 construction and the merges' premises (`entry_of_edge`). -/
-theorem entries_of_traversed {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat} {ρ0 : Env}
+theorem entries_of_traversed {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat} 
     {given : Nat → Bool} {ctx : Nat → List (Ty ι)}
     {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
     {fresh : Nat → Nat} {m : Nat} (hT : Traversed G w startNames given ctx edgesIn fresh)
-    (hheads : HeadsEntered G w startNames ρ0 given m) (hmerges : MergesSound G w given ctx edgesIn) :
-    EntriesFromEdges G w startNames ρ0 m := fun _ _ _ he =>
+    (hheads : HeadsEntered G w startNames ε given m) (hmerges : MergesSound G w given ctx edgesIn) :
+    EntriesFromEdges G w startNames ε m := fun _ _ _ he =>
   entry_of_edge hT hheads hmerges.1 he fun hg h2 => hmerges.2 _ hg h2 _ _ _ _ _ he
 
 omit [Hashable ι] in
@@ -188,8 +189,8 @@ theorem start_passPre {G : NormalGraph ι} {w : Walk ι} {inputs : List (Ty ι)}
       inputs.length fresh (List.range inputs.length) (goal.slot.bind ((List.range inputs.length)[·]?)) givenArgs
       givenInputs givenImplies).2.1)
     {ρ : Env} {m : Nat} {s : IndexedHeap} (he : EnvOk G inputs ρ s.n s.W)
-    (hs : HeapSeparation.Holds entrySeparation ρ) (hi : HeapKnowledge.IndexHolds entryIndices ρ s.h) :
-    passPre G w (List.range inputs.length) ρ start ρ m s := by
+    (hs : HeapSeparation.Holds entrySeparation ρ) (hi : HeapKnowledge.IndexHolds ⟨ρ, s.h⟩ entryIndices ρ s.h) :
+    passPre G w (List.range inputs.length) ⟨ρ, s.h⟩ start ρ m s := by
   refine ⟨hv, ?_⟩
   rw [hentry, himp]
   exact (entry_stateHolds hacc he hs hi fresh).1

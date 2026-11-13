@@ -94,12 +94,13 @@ each slot holds its name's value, every fact the store holds holds
 (`Named`), every implication holds (`PromiseCalls.ImpliesOk`: where the
 test's name holds `true`, the target's value has the type), every name of
 `st.fresh` holds a store at or past the mark, and each start name `start[q]`
-holds the invocation's entry value `entry q`. -/
+holds the invocation's entry value `ε.env q`, its facts read at the
+invocation's entry state `ε`. -/
 def StateHolds (G : NormalGraph ι) (st : State) (implies : List (PromiseCalls.Implication ι)) (start : List Nat)
-    (entry : Env) : Assertion := fun ρ m s =>
-  ∃ η : Env, SlotsNamed st.names ρ η ∧ Named (storeAll st.store) η ρ m s ∧
+    (ε : HeapKnowledge.EntryState) : Assertion := fun ρ m s =>
+  ∃ η : Env, SlotsNamed st.names ρ η ∧ Named ε (storeAll st.store) η ρ m s ∧
     PromiseCalls.ImpliesOk G implies η s.n s.W ∧ (∀ x ∈ st.fresh, FreshAt m (η x)) ∧
-    ∀ q x, start[q]? = some x → η x = entry q
+    ∀ q x, start[q]? = some x → η x = ε.env q
 
 /-- **The store's well-formedness**: its live facts are canonical
 (`Atom.canon`), and each fact its index lists under a name is live, mentions
@@ -187,7 +188,7 @@ theorem mapM_mem {α β : Type} {g : α → Option β} :
 
 /-- **A fact's canonical form holds where the fact does**: clearing an
 unconditional fact's `negated` changes nothing a condition reads. -/
-theorem atomHolds_canon {a : Atom} {η : Env} {h : Heap} : AtomHolds a.canon η h ↔ AtomHolds a η h := by
+theorem atomHolds_canon {a : Atom} {η : Env} {h : Heap} : AtomHolds ε a.canon η h ↔ AtomHolds ε a η h := by
   cases a with
   | index x =>
     rcases x with ⟨f, c, neg⟩
@@ -200,8 +201,8 @@ theorem atomHolds_canon {a : Atom} {η : Env} {h : Heap} : AtomHolds a.canon η 
 /-- **A fact renamed holds at the renamed valuation**: where `f` maps a name
 to a slot, the slot holds the name's value. -/
 theorem atomHolds_rename {a b : Atom} {f : Nat → Option Nat} {η ρ : Env} {h : Heap}
-    (hf : ∀ x i, f x = some i → ρ i = η x) (hr : a.rename f = some b) (ha : AtomHolds a η h) :
-    AtomHolds b ρ h := by
+    (hf : ∀ x i, f x = some i → ρ i = η x) (hr : a.rename f = some b) (ha : AtomHolds ε a η h) :
+    AtomHolds ε b ρ h := by
   cases a with
   | cell x =>
     simp only [Atom.rename, Option.map_eq_some_iff] at hr
@@ -259,7 +260,7 @@ theorem atomHolds_rename {a b : Atom} {f : Nat → Option Nat} {η ρ : Env} {h 
 /-! ## The store's operations -/
 
 /-- The facts of a store hold at `η` and `h`. -/
-def StoreOk (s : Store) (η : Env) (h : Heap) : Prop := ∀ a ∈ storeAll s, AtomHolds a η h
+def StoreOk (ε : HeapKnowledge.EntryState) (s : Store) (η : Env) (h : Heap) : Prop := ∀ a ∈ storeAll s, AtomHolds ε a η h
 
 theorem vals_foldl {β : Type} (P : Atom → Prop) (g : Std.HashMap Nat (List Atom) → β → Std.HashMap Nat (List Atom))
     (hg : ∀ m n, (∀ y ∈ valsOf m, P y) → ∀ x ∈ valsOf (g m n), P x) :
@@ -268,16 +269,16 @@ theorem vals_foldl {β : Type} (P : Atom → Prop) (g : Std.HashMap Nat (List At
   | n :: l, m, hm => vals_foldl P g hg l (g m n) (hg m n hm)
 
 theorem storeOk_of {s' : Store} {η : Env} {h : Heap}
-    (hk : ∀ x ∈ s'.toList, AtomHolds x η h) (hv : ∀ x ∈ valsOf s'.byName, AtomHolds x η h) : StoreOk s' η h := by
+    (hk : ∀ x ∈ s'.toList, AtomHolds ε x η h) (hv : ∀ x ∈ valsOf s'.byName, AtomHolds ε x η h) : StoreOk ε s' η h := by
   intro x hx
   rcases List.mem_append.mp hx with hx | hx
   · exact hk x hx
   · exact hv x hx
 
 /-- A fact added raw keeps the store's facts holding, where it holds. -/
-theorem addRaw_ok {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk s η h)
-    (ha : AtomHolds a η h) : StoreOk (s.addRaw a) η h := by
-  have hc : AtomHolds a.canon η h := atomHolds_canon.mpr ha
+theorem addRaw_ok {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk ε s η h)
+    (ha : AtomHolds ε a η h) : StoreOk ε (s.addRaw a) η h := by
+  have hc : AtomHolds ε a.canon η h := atomHolds_canon.mpr ha
   unfold Store.addRaw
   dsimp only
   split
@@ -294,8 +295,8 @@ theorem addRaw_ok {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk s �
       · exact hm x hx
 
 /-- A fact removed keeps the store's facts holding. -/
-theorem remove_ok {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk s η h) :
-    StoreOk (s.remove a) η h := by
+theorem remove_ok {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk ε s η h) :
+    StoreOk ε (s.remove a) η h := by
   unfold Store.remove
   dsimp only
   split
@@ -307,15 +308,15 @@ theorem remove_ok {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk s �
   · exact hs
 
 theorem foldl_remove_ok {η : Env} {h : Heap} :
-    ∀ (as : List Atom) (s : Store), StoreOk s η h → StoreOk (as.foldl Store.remove s) η h
+    ∀ (as : List Atom) (s : Store), StoreOk ε s η h → StoreOk ε (as.foldl Store.remove s) η h
   | [], _, hs => hs
   | _ :: as, _, hs => foldl_remove_ok as _ (remove_ok hs)
 
 /-- **A bound added keeps the store's facts holding**, a stronger bound
 replacing weaker ones. -/
-theorem addBound_ok {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk s η h)
-    (ha : AtomHolds a η h) : StoreOk (s.addBound a) η h := by
-  have hc : AtomHolds a.canon η h := atomHolds_canon.mpr ha
+theorem addBound_ok {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk ε s η h)
+    (ha : AtomHolds ε a η h) : StoreOk ε (s.addBound a) η h := by
+  have hc : AtomHolds ε a.canon η h := atomHolds_canon.mpr ha
   unfold Store.addBound
   dsimp only
   split
@@ -327,18 +328,18 @@ theorem addBound_ok {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk s
     · exact addRaw_ok hs hc
 
 theorem foldl_addBound_ok {η : Env} {h : Heap} {c : Option Nat} {neg : Bool} :
-    ∀ (Fs : List (Linear.Fact HeapKnowledge.Term)) (s : Store), StoreOk s η h →
-      (∀ F ∈ Fs, AtomHolds (.index ⟨.linear F, c, neg⟩) η h) →
-      StoreOk (Fs.foldl (fun (s : Store) F => s.addBound (.index ⟨.linear F, c, neg⟩)) s) η h
+    ∀ (Fs : List (Linear.Fact HeapKnowledge.Term)) (s : Store), StoreOk ε s η h →
+      (∀ F ∈ Fs, AtomHolds ε (.index ⟨.linear F, c, neg⟩) η h) →
+      StoreOk ε (Fs.foldl (fun (s : Store) F => s.addBound (.index ⟨.linear F, c, neg⟩)) s) η h
   | [], _, hs, _ => hs
   | F :: Fs, _, hs, hx => foldl_addBound_ok Fs _ (addBound_ok hs (hx F (List.mem_cons_self ..)))
       fun G hG => hx G (List.mem_cons_of_mem _ hG)
 
 /-- **A fact added (`Store.add`) keeps the store's facts holding**: a length
 fact also as the linear facts it means (`HeapKnowledge.atomLinear_holds`). -/
-theorem add_ok {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk s η h)
-    (ha : AtomHolds a η h) : StoreOk (s.add a) η h := by
-  have hc : AtomHolds a.canon η h := atomHolds_canon.mpr ha
+theorem add_ok {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk ε s η h)
+    (ha : AtomHolds ε a η h) : StoreOk ε (s.add a) η h := by
+  have hc : AtomHolds ε a.canon η h := atomHolds_canon.mpr ha
   unfold Store.add
   dsimp only
   split
@@ -346,7 +347,7 @@ theorem add_ok {s : Store} {a : Atom} {η : Env} {h : Heap} (hs : StoreOk s η h
   · refine addBound_ok ?_ hc
     split
     · rename_i _ x n c neg heq
-      have hx : ∀ F ∈ HeapKnowledge.atomLinear (.length x n), AtomHolds (.index ⟨.linear F, c, neg⟩) η h := by
+      have hx : ∀ F ∈ HeapKnowledge.atomLinear (.length x n), AtomHolds ε (.index ⟨.linear F, c, neg⟩) η h := by
         intro F hF y hy hcond
         simp only [List.mem_singleton] at hy; subst hy
         rw [heq] at hc

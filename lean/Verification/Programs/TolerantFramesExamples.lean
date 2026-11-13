@@ -10,6 +10,7 @@ the raise target is the graph's exception family (`escaping_safe`), and a run
 to the raised state is an action of every exceptional effect the post bounds
 (`escaping_raised`). -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations ControlFlow PointClaims
 
 /-- The family holding `null` alone. -/
@@ -167,9 +168,9 @@ facts `0 ≤ j`, `to ≤ |xs|` and the guard's `j < to` at the node's entry. -/
 theorem increment_checked {pre : Nat → Assertion} {Ξres Tres Ξ T : Fam} {Qres Rres : Heap → Prop}
     {ce : Footprints.Closed} {Qe : Heap → Prop} {ρ : Env} {m : Nat} {s₀ : IndexedHeap} {hd : Nat}
     (hT : ∀ n W b, T n W (.num b))
-    (hhead : ∀ ρ' s, NonNeg 0 ρ' m s → LowerBound 1 2 ρ' m s → pre hd ρ' m s)
+    (hhead : ∀ ρ' s, NonNeg 0 ρ' m s → LowerBound ε 1 2 ρ' m s → pre hd ρ' m s)
     (hΞ : ∀ s e, Above Ξ s e → Ξres s.n s.W e ∧ Rres s.h)
-    (hj : NonNeg 1 ρ m s₀) (hb : LowerBound 2 3 ρ m s₀)
+    (hj : NonNeg 1 ρ m s₀) (hb : LowerBound ε 2 3 ρ m s₀)
     (hguard : ∃ a b, HeapKnowledge.intValue (ρ 1) = some a ∧ HeapKnowledge.intValue (ρ 2) = some b ∧ a < b) :
     SafePostExc Ξ T
       (fun h' v => Footprints.Closed.empty.Holds s₀.h h' ∧

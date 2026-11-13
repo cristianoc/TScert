@@ -3,6 +3,7 @@ import Verification.Programs.HeapExpressionRules
 /-! Definition-side effect checks over lowered expressions. Safety comes from
 ordinary evidence; this layer establishes the additional heap postcondition. -/
 namespace Verification.ExpressionEffects
+variable {ε : Verification.HeapKnowledge.EntryState}
 open ProgramTyping ProgramCertificates PositiveGraphs PositiveRules HeapObservations
 
 /-- The receiver of an invocation, and `undefined` for any other term: what a
@@ -186,7 +187,7 @@ def nullishAt (k : HeapKnowledge.Knowledge) (i : Nat) (f : PropKey) : Bool :=
 
 theorem nullishAt_sound {k : HeapKnowledge.Knowledge} {i : Nat} {f : PropKey} {ρ : Env} {h : Heap}
     {flds : List (PropKey × Nat)} {c : CallCode} {oid l : Nat}
-    (hn : nullishAt k i f = true) (hk : HeapKnowledge.Holds k ρ h)
+    (hn : nullishAt k i f = true) (hk : HeapKnowledge.Holds k ε ρ h)
     (hi : ρ i = .objAt flds c oid) (hl : flds.lookup f = some l) :
     ∃ v, h[l]? = some v ∧ Footprints.nullish v = true := by
   simp only [nullishAt, Bool.or_eq_true, List.any_eq_true, Bool.and_eq_true, beq_iff_eq,
@@ -226,7 +227,7 @@ def initWriteWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (k : HeapKnowledge.
 /-- **An initializing write is within `{value: init, store: keep}`.** -/
 theorem init_write_within [DecidableEq ι] {G : NormalGraph ι} {Γ k Φ t T ρ n W h}
     (hc : initWriteWithin G Γ k Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
-    (hk : HeapKnowledge.Holds k ρ h) (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
+    (hk : HeapKnowledge.Holds k ε ρ h) (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
     SafePost Ξ T (fun h' _ => Φ.Holds h h') n W h (instantiate 0 ρ t) := by
   unfold initWriteWithin at hc
   split at hc
@@ -274,7 +275,7 @@ theorem init_write_within [DecidableEq ι] {G : NormalGraph ι} {Γ k Φ t T ρ 
 /-- An initializing write raises, where it does, before it writes. -/
 theorem init_write_within_exc [DecidableEq ι] {G : NormalGraph ι} {Γ k Φ t T ρ n W h}
     (hc : initWriteWithin G Γ k Φ t = true) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
-    (hk : HeapKnowledge.Holds k ρ h) (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
+    (hk : HeapKnowledge.Holds k ε ρ h) (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
     SafePostExc Ξ T (fun h' _ => Φ.Holds h h') (fun h' => Φ.Holds h h') n W h (instantiate 0 ρ t) := by
   have hpost := init_write_within hc he hh hk hs
   unfold initWriteWithin at hc

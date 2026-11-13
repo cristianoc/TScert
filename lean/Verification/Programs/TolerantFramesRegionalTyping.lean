@@ -3,28 +3,29 @@ import Verification.Programs.TolerantFramesDriverVisitRest
 
 /-! # Regional typing from the derivation's checked requirements -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification SinglePass ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
 open ProgramTyping PositiveRules HeapObservations LabelStore GraphCode GraphCode.ArgumentRegionGraph
 variable {ι : Type} [Labels ι]
 
 /-- The regional evidence supplies the facts read by the step's requirements check. -/
 def RegionalStepFacts (G : NormalGraph ι) (ev : NodeEvidence ι) (stepK : HeapKnowledge.Knowledge) : Prop :=
-  ∀ ρ h, HeapKnowledge.Holds (entryFacts G ev) ρ h → HeapKnowledge.Holds stepK ρ h
+  ∀ ε ρ h, HeapKnowledge.Holds (entryFacts G ev) ε ρ h → HeapKnowledge.Holds stepK ε ρ h
 
 omit [Labels ι] in
 /-- The combined entry supplies every nonrelational step fact. Only links
 and separation need a recovery premise after expansion and normalization. -/
 theorem regionalStepFacts_of_relations {G : NormalGraph ι} {ev : NodeEvidence ι}
     {a b : HeapKnowledge.Knowledge} (hknowledge : ev.knowledge = regionalFacts a b)
-    (hrel : ∀ ρ h, HeapKnowledge.Holds (entryFacts G ev) ρ h →
+    (hrel : ∀ ε ρ h, HeapKnowledge.Holds (entryFacts G ev) ε ρ h →
       HeapLinks.Holds b.links ρ h ∧ HeapSeparation.Holds b.separation ρ) : RegionalStepFacts G ev b := by
   have right_mem {α : Type} [BEq α] [LawfulBEq α] (xs ys : List α) {x : α} (hx : x ∈ ys) :
       x ∈ xs ++ ys.filter (!xs.contains ·) := by
     by_cases hm : x ∈ xs
     · exact List.mem_append_left _ hm
     · exact List.mem_append_right _ (List.mem_filter.mpr ⟨hx, by simpa using hm⟩)
-  intro ρ h hs
-  have hr := hrel ρ h hs
+  intro ε ρ h hs
+  have hr := hrel ε ρ h hs
   unfold entryFacts at hs
   rw [hknowledge] at hs
   refine ⟨?_, ?_, hr.1, hr.2, ?_, ?_⟩
@@ -57,10 +58,10 @@ theorem regionalTyped_of_requires {G : NormalGraph ι} {I : InstanceImageCheck G
   simp only [regionalDerivChecked, derivChecked, Bool.and_eq_true, beq_iff_eq] at hd
   obtain ⟨⟨hterm, hctx⟩, -⟩ := hd
   refine ⟨by simpa [ControlFlow.entry, passRegionalEvidence, NodeEvidence.expression] using hctx, ?_⟩
-  intro n W h ρ he _ hf hw hh
+  intro ε n W h ρ he _ hf hw hh
   obtain ⟨_, _, hs⟩ := PromiseCalls.requiresTree_sound hcodes hsums d hr
   have hs := erase (hs (by simpa [ControlFlow.entry, passRegionalEvidence, NodeEvidence.expression] using he)
-    (hk ρ h hf) hw hh)
+    (hk ε ρ h hf) hw hh)
   rw [hterm] at hs
   have hs' : Safe (excOf G) (fun k U u => meaning G (result (passRegionalEvidence c node (some d) se kHere)) k U u ∧
       PromiseCalls.YieldsOk G (passRegionalEvidence c node (some d) se kHere).yields ρ k U u) n W h
@@ -89,7 +90,7 @@ theorem stepChecked_safe {G : NormalGraph ι} {I : InstanceImageCheck G} {codes 
     {pc : PassChecker G I} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat}
     {ctx : Nat → List (Ty ι)} {l : Nat} (r : NodeChecked G I codes pc P w startNames ctx l)
     (hc : CodesSound G codes) {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G r.c.context ρ n W) (hk : HeapKnowledge.Holds r.st.stepK ρ h)
+    (he : EnvOk G r.c.context ρ n W) (hk : HeapKnowledge.Holds r.st.stepK ε ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) :
     Safe (excOf G) (meaning G r.c.type) n W h (instantiate 0 ρ r.node.expression) := by
   rcases r.hstep with ⟨x, hcopy, _⟩ | ⟨_, effect, a0, ha, hsum⟩
@@ -121,8 +122,8 @@ theorem regionalTyped_of_step {G : NormalGraph ι} {I : InstanceImageCheck G} {c
       RegionalTyped G (passRegionalEvidenceOf r) r.node := by
   obtain ⟨hent, hres⟩ := hshape
   refine ⟨hent, ?_⟩
-  intro n W h ρ he _ hf hw hh
-  have hs := stepChecked_safe r hc (hent ▸ he) (hk ρ h hf) hw hh
+  intro ε n W h ρ he _ hf hw hh
+  have hs := stepChecked_safe r hc (hent ▸ he) (hk ε ρ h hf) hw hh
   apply of_value_property (fun _ _ _ v _ => outFacts_holds he (HeapKnowledge.empty _ _))
   apply Safe_mono n (fun _ _ _ v hv => ?_) W h _ hs
   exact ⟨hres.symm ▸ hv, fun y hy => by simp [passRegionalEvidenceOf, passRegionalEvidence] at hy⟩
@@ -139,7 +140,7 @@ the regional evidence reads the node's claimed context and result type. -/
     let ev := passRegionalEvidence env.claimed[l]! env.nodes[l]! sd.st.stepDeriv sd.st.stepEffect
       (regionalFacts (materialize en.entry (env.claimed[l]!).context.length
         (List.range (env.claimed[l]!).context.length) true).1 sd.st.stepK)
-    (∀ ρ h, HeapKnowledge.Holds (entryFacts (reassign G η) ev) ρ h →
+    (∀ ε ρ h, HeapKnowledge.Holds (entryFacts (reassign G η) ev) ε ρ h →
       HeapLinks.Holds sd.st.stepK.links ρ h ∧ HeapSeparation.Holds sd.st.stepK.separation ρ) ∧
       (sd.st.stepDeriv = none → ControlFlow.entry ev = (env.claimed[l]!).context ∧
         result ev = (env.claimed[l]!).type)
@@ -200,12 +201,12 @@ theorem regionalAt_header {G : NormalGraph ι} {I : InstanceImageCheck G}
 theorem visitStep_regional_relations {G : NormalGraph ι} {I : InstanceImageCheck G}
     {env : WalkEnv ι G I} {σ : WalkState ι G} {l : Nat} {en : Entered ι} {sd : StepDone ι G}
     (hv : visitStep G I env σ l en = .ok sd) (η : MixedAssignment ι) :
-    ∀ ρ h, HeapKnowledge.Holds (entryFacts (reassign G η)
+    ∀ ε ρ h, HeapKnowledge.Holds (entryFacts (reassign G η)
       (passRegionalEvidence env.claimed[l]! env.nodes[l]! sd.st.stepDeriv sd.st.stepEffect
         (regionalFacts (materialize en.entry (env.claimed[l]!).context.length
-          (List.range (env.claimed[l]!).context.length) true).1 sd.st.stepK))) ρ h →
+          (List.range (env.claimed[l]!).context.length) true).1 sd.st.stepK))) ε ρ h →
       HeapLinks.Holds sd.st.stepK.links ρ h ∧ HeapSeparation.Holds sd.st.stepK.separation ρ := by
-  intro ρ h hh
+  intro ε ρ h hh
   exact ⟨regionalLinks_recover hh,
     regionalSeparation_recover (visitStep_separation_partners hv) hh.2.2.2.1⟩
 

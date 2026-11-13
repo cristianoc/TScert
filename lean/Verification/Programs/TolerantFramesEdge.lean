@@ -17,6 +17,7 @@ slot by the name of the source slot the mapping reads (`MapNamesSound`).
 `mapNames` reads the mapping's ordered suffix by `orderedSuffix`, a `while`
 loop, which no proof unfolds. -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
 
@@ -47,17 +48,17 @@ theorem keepFirst_mem {α : Type} [BEq α] [Hashable α] {l : List α} {s : Std.
 
 /-! ## Dropping names -/
 
-theorem storeOk_bind {η : Env} {h : Heap} {m : Id Store} {k : Store → Id Store} (hm : StoreOk m η h)
-    (hk : ∀ a, StoreOk a η h → StoreOk (k a) η h) : StoreOk (m >>= k) η h := hk m hm
+theorem storeOk_bind {η : Env} {h : Heap} {m : Id Store} {k : Store → Id Store} (hm : StoreOk ε m η h)
+    (hk : ∀ a, StoreOk ε a η h → StoreOk ε (k a) η h) : StoreOk ε (m >>= k) η h := hk m hm
 
 theorem storeOk_forIn {α : Type} {η : Env} {h : Heap} (l : List α) (init : Store)
-    (f : α → Store → Id (ForInStep Store)) (h0 : StoreOk init η h)
-    (hf : ∀ a ∈ l, ∀ b, StoreOk b η h → StoreOk (f a b).value η h) : StoreOk (forIn l init f) η h :=
-  forIn_inv l init f (fun b => StoreOk b η h) h0 hf
+    (f : α → Store → Id (ForInStep Store)) (h0 : StoreOk ε init η h)
+    (hf : ∀ a ∈ l, ∀ b, StoreOk ε b η h → StoreOk ε (f a b).value η h) : StoreOk ε (forIn l init f) η h :=
+  forIn_inv l init f (fun b => StoreOk ε b η h) h0 hf
 
 /-- A separation fact with fewer partners holds where the fact does. -/
-theorem sep_partners {f : HeapSeparation.Fact} {η : Env} {h : Heap} (hf : AtomHolds (.sep f) η h)
-    (P : Nat × List PropKey → Bool) : AtomHolds (.sep { f with partners := f.partners.filter P }) η h :=
+theorem sep_partners {f : HeapSeparation.Fact} {η : Env} {h : Heap} (hf : AtomHolds ε (.sep f) η h)
+    (P : Nat × List PropKey → Bool) : AtomHolds ε (.sep { f with partners := f.partners.filter P }) η h :=
   fun p hp g hg => hf p (List.mem_filter.mp hp).1 g hg
 
 /-- The alias table `Store.drop` builds sends a name to one its alias links
@@ -102,15 +103,15 @@ theorem keptAlias_ok {links : List HeapLinks.Link} {η : Env} {h : Heap} (hl : H
         · exact ins _ _ (hg ha)
         · exact hacc
 
-theorem index_filterMap_holds {xs : List Atom} {η : Env} {h : Heap} (ha : ∀ a ∈ xs, AtomHolds a η h) :
-    HeapKnowledge.IndexHolds (xs.filterMap fun a => match a with | .index x => some x | _ => none) η h := by
+theorem index_filterMap_holds {xs : List Atom} {η : Env} {h : Heap} (ha : ∀ a ∈ xs, AtomHolds ε a η h) :
+    HeapKnowledge.IndexHolds ε (xs.filterMap fun a => match a with | .index x => some x | _ => none) η h := by
   intro y hy
   obtain ⟨a, haa, hay⟩ := List.mem_filterMap.mp hy
   split at hay
   · cases hay; exact ha _ haa y (List.mem_singleton_self _)
   · cases hay
 
-theorem link_filterMap_holds {xs : List Atom} {η : Env} {h : Heap} (ha : ∀ a ∈ xs, AtomHolds a η h) :
+theorem link_filterMap_holds {xs : List Atom} {η : Env} {h : Heap} (ha : ∀ a ∈ xs, AtomHolds ε a η h) :
     HeapLinks.Holds (xs.filterMap fun a => match a with | .link g => some g | _ => none) η h := by
   intro g hg
   obtain ⟨a, haa, hag⟩ := List.mem_filterMap.mp hg
@@ -129,8 +130,8 @@ theorem getD_self_ok {m : Std.HashMap Nat Nat} {η : Env} (hm : ∀ x y, m.get? 
 removed facts leave, and each fact added (a separation with fewer partners,
 a fact restated through an alias link, a derived linear fact) holds where
 the store's facts do. -/
-theorem drop_ok {s : Store} {D : List Nat} {η : Env} {h : Heap} (hs : StoreOk s η h) :
-    StoreOk (s.drop D) η h := by
+theorem drop_ok {s : Store} {D : List Nat} {η : Env} {h : Heap} (hs : StoreOk ε s η h) :
+    StoreOk ε (s.drop D) η h := by
   unfold Store.drop
   simp only [Id.run, timedKind]
   split
@@ -138,7 +139,7 @@ theorem drop_ok {s : Store} {D : List Nat} {η : Env} {h : Heap} (hs : StoreOk s
   split
   · exact hs
   -- Every fact `Store.drop` reads is a stored fact.
-  have hat : ∀ a ∈ (keepFirst ∅ (D.flatMap s.about)).2.toList, AtomHolds a η h := fun a ha => by
+  have hat : ∀ a ∈ (keepFirst ∅ (D.flatMap s.about)).2.toList, AtomHolds ε a η h := fun a ha => by
     obtain ⟨n, -, hn⟩ := List.mem_flatMap.mp (keepFirst_mem ha)
     exact hs a (about_storeAll hn)
   have hread : ∀ a ∈ (keepFirst ∅ (D.flatMap s.about)).2.toList ++ ((keepFirst ∅
@@ -147,7 +148,7 @@ theorem drop_ok {s : Store} {D : List Nat} {η : Env} {h : Heap} (hs : StoreOk s
           match a with
           | .index x => match x.fact with | .linear _ => true | _ => false
           | .link _ => true
-          | _ => false), AtomHolds a η h := by
+          | _ => false), AtomHolds ε a η h := by
     intro a ha
     rcases List.mem_append.mp ha with ha | ha
     · exact hat a ha
@@ -221,8 +222,8 @@ theorem edgeBack_ok {names : List Nat} {want : Std.HashSet Nat} {whole : Bool} {
 
 /-- A state's meaning does not read its fresh names' absence. -/
 theorem stateHolds_noFresh {G : NormalGraph ι} {N : List Nat} {S : Store} {F : List Nat}
-    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {E ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hS : StateHolds G ⟨N, S, F⟩ I start E ρ m s) : StateHolds G ⟨N, S, []⟩ I start E ρ m s := by
+    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
+    (hS : StateHolds G ⟨N, S, F⟩ I start ε ρ m s) : StateHolds G ⟨N, S, []⟩ I start ε ρ m s := by
   obtain ⟨η, hn, hst, hI, -, hs⟩ := hS
   exact ⟨η, hn, hst, hI, (fun _ h => absurd h (List.not_mem_nil)), hs⟩
 
@@ -230,13 +231,13 @@ theorem stateHolds_noFresh {G : NormalGraph ι} {N : List Nat} {S : Store} {F : 
 (`HeapKnowledge.observeTyped`, an alternative it contradicts released,
 `withElements`) added to the store by the delta. -/
 theorem edgeStore_observed [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {N : List Nat} {S : Store}
-    {F : List Nat} {I : List (PromiseCalls.Implication ι)} {start : List Nat} {E ρ : Env} {m : Nat}
+    {F : List Nat} {I : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {m : Nat}
     {s : IndexedHeap} {o : BranchRefinement.Observation} (d : Nat)
-    (hS : StateHolds G ⟨N, S, F⟩ I start E ρ m s) (he : EnvOk G Γ ρ s.n s.W) (ho : o.holds (ρ 0)) :
+    (hS : StateHolds G ⟨N, S, F⟩ I start ε ρ m s) (he : EnvOk G Γ ρ s.n s.W) (ho : o.holds (ρ 0)) :
     StateHolds G ⟨N, applyDelta S (materialize ⟨N, S, []⟩ d [0] false).2.1
       (HeapKnowledge.withElements (HeapKnowledge.observeTyped G Γ (materialize ⟨N, S, []⟩ d [0] false).1 0 o)) false
       (fun i => ((Std.HashMap.fold (fun acc nm s => acc.insert s nm) ({} : Std.HashMap Nat Nat)
-        (materialize ⟨N, S, []⟩ d [0] false).2.2).get? i).orElse fun _ => N[i]?), F⟩ I start E ρ m s := by
+        (materialize ⟨N, S, []⟩ d [0] false).2.2).get? i).orElse fun _ => N[i]?), F⟩ I start ε ρ m s := by
   have hk := stateHolds_materialize (stateHolds_noFresh hS) d [0] true
   obtain ⟨η, hn, hst, hI, hF, hs⟩ := hS
   obtain ⟨want, hT⟩ := materialize_table ⟨N, S, []⟩ d [0] false
@@ -248,13 +249,13 @@ theorem edgeStore_observed [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty 
 /-- **A promoted Boolean's store holds**: a branch's answer `q` promotes the
 facts guarded by the truthiness of slot 0 (`HeapKnowledge.promoteTruthy`). -/
 theorem edgeStore_promote {G : NormalGraph ι} {N : List Nat} {S : Store} {F : List Nat}
-    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {E ρ : Env} {m : Nat} {s : IndexedHeap}
+    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
     {q : Bool} (d : Nat)
-    (hS : StateHolds G ⟨N, S, F⟩ I start E ρ m s) (hq : tagHolds .truthy (ρ 0) = q) :
+    (hS : StateHolds G ⟨N, S, F⟩ I start ε ρ m s) (hq : tagHolds .truthy (ρ 0) = q) :
     StateHolds G ⟨N, applyDelta S (materialize ⟨N, S, []⟩ d [0] false).2.1
       (HeapKnowledge.withElements (HeapKnowledge.promoteTruthy (materialize ⟨N, S, []⟩ d [0] false).1 0 q)) false
       (fun i => ((Std.HashMap.fold (fun acc nm s => acc.insert s nm) ({} : Std.HashMap Nat Nat)
-        (materialize ⟨N, S, []⟩ d [0] false).2.2).get? i).orElse fun _ => N[i]?), F⟩ I start E ρ m s := by
+        (materialize ⟨N, S, []⟩ d [0] false).2.2).get? i).orElse fun _ => N[i]?), F⟩ I start ε ρ m s := by
   have hk := stateHolds_materialize (stateHolds_noFresh hS) d [0] true
   obtain ⟨η, hn, hst, hI, hF, hs⟩ := hS
   obtain ⟨want, hT⟩ := materialize_table ⟨N, S, []⟩ d [0] false
@@ -266,17 +267,17 @@ theorem edgeStore_promote {G : NormalGraph ι} {N : List Nat} {S : Store} {F : L
 /-- A state at the pushed environment holds, without its first slot, at the
 node's environment. -/
 theorem stateHolds_tail {G : NormalGraph ι} {r : Nat} {N : List Nat} {S : Store} {F : List Nat}
-    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {E ρ : Env} {v : Tm} {m : Nat} {s : IndexedHeap}
-    (hS : StateHolds G ⟨r :: N, S, F⟩ I start E (push v ρ) m s) : StateHolds G ⟨N, S, F⟩ I start E ρ m s := by
+    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {v : Tm} {m : Nat} {s : IndexedHeap}
+    (hS : StateHolds G ⟨r :: N, S, F⟩ I start ε (push v ρ) m s) : StateHolds G ⟨N, S, F⟩ I start ε ρ m s := by
   obtain ⟨η, hn, hst, hI, hF, hs⟩ := hS
   exact ⟨η, fun i x hx => by simpa [push] using hn (i + 1) x (by simpa using hx), hst, hI, hF, hs⟩
 
 /-- **A handler edge's state**: the thrown value at a new name `e` pushed on
 the entry's heap-free state. -/
 theorem stateHolds_handler {G : NormalGraph ι} {st : SinglePass.State} {I : List (PromiseCalls.Implication ι)}
-    {start : List Nat} {E ρ : Env} {m : Nat} {s : IndexedHeap} {x : Nat} {v : Tm}
-    (hS : StateHolds G st I start E ρ m s) (hb : NamesBelow st I start x) :
-    StateHolds G ⟨x :: st.names, st.store, st.fresh⟩ I start E (push v ρ) m s := by
+    {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} {x : Nat} {v : Tm}
+    (hS : StateHolds G st I start ε ρ m s) (hb : NamesBelow st I start x) :
+    StateHolds G ⟨x :: st.names, st.store, st.fresh⟩ I start ε (push v ρ) m s := by
   obtain ⟨η, hn, hst, hI, hF, hs⟩ := hS
   obtain ⟨-, g2, -⟩ := set_agree (v := v) (η := η) (.inl hb)
   exact stateHolds_pushed hn hI hF hs (Admissible.refl s) (.inl hb)
@@ -301,12 +302,12 @@ names it keeps, the result among them where it holds a fresh store; the
 implications naming no dropped name. -/
 theorem edgeTransfer_ok [DecidableEq ι] [Hashable ι] {G : NormalGraph ι} {names : List Nat} {m : PointClaims.Mapping}
     {pushed isHandler outFresh : Bool} {entry : SinglePass.State} {result : Nat} {edgeStore : Store}
-    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {E ρ : Env} {mk : Nat} {s : IndexedHeap}
-    (hS : StateHolds G ⟨names, edgeStore, entry.fresh⟩ I start E ρ mk s) (hmap : MapNamesSound names m)
+    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {mk : Nat} {s : IndexedHeap}
+    (hS : StateHolds G ⟨names, edgeStore, entry.fresh⟩ I start ε ρ mk s) (hmap : MapNamesSound names m)
     (hfo : pushed = true → isHandler = false → outFresh = true → result ∉ entry.fresh →
       names[0]? = some result ∧ FreshAt mk (ρ 0)) :
     StateHolds G (edgeTransfer names m pushed isHandler outFresh entry result edgeStore I).1
-      (edgeTransfer names m pushed isHandler outFresh entry result edgeStore I).2 start E
+      (edgeTransfer names m pushed isHandler outFresh entry result edgeStore I).2 start ε
       (PointClaims.mapEnv m ρ) mk s := by
   obtain ⟨η, hn, hst, hI, hF, hs⟩ := hS
   simp only [edgeTransfer, timedKind]
@@ -358,9 +359,9 @@ edge, a promotion of an unpushed one (`Exit.ofNode`). -/
 theorem edge_normal_sound [DecidableEq ι] [Hashable ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
     {entry : SinglePass.State} {store : Store} {result width : Nat} {v : Tm} {ρ : Env}
     {pushed outFresh : Bool} {observed : Option BranchRefinement.Observation} {promote : Option Bool}
-    {θ : PointClaims.Mapping} {I : List (PromiseCalls.Implication ι)} {start : List Nat} {E : Env} {m : Nat}
+    {θ : PointClaims.Mapping} {I : List (PromiseCalls.Implication ι)} {start : List Nat}  {m : Nat}
     {s : IndexedHeap}
-    (hS : StateHolds G ⟨result :: entry.names, store, entry.fresh⟩ I start E (push v ρ) m s)
+    (hS : StateHolds G ⟨result :: entry.names, store, entry.fresh⟩ I start ε (push v ρ) m s)
     (hobs : ObservedOk observed promote v)
     (hpo : observed.isSome = true → pushed = true) (hpp : promote.isSome = true → pushed = false)
     (he : observed.isSome = true → EnvOk G Γ (push v ρ) s.n s.W)
@@ -372,7 +373,7 @@ theorem edge_normal_sound [DecidableEq ι] [Hashable ι] {G : NormalGraph ι} {�
       (edgeTransfer (if pushed then result :: entry.names else entry.names) θ pushed false outFresh entry
         result (edgeStoreOf G Γ entry.store store (if pushed then result :: entry.names else entry.names)
           (result :: entry.names) width pushed false observed promote) I).2
-      start E (PointClaims.mapEnv θ (if pushed then push v ρ else ρ)) m s := by
+      start ε (PointClaims.mapEnv θ (if pushed then push v ρ else ρ)) m s := by
   have hfo' : ∀ ρx : Env, ρx 0 = v → pushed = true → false = false → outFresh = true → result ∉ entry.fresh →
       (if pushed then result :: entry.names else entry.names)[0]? = some result ∧ FreshAt m (ρx 0) :=
     fun ρx h0 hp _ ho hn => by simp only [hp, if_true, List.getElem?_cons_zero]; exact ⟨trivial, h0 ▸ hfo hp ho hn⟩
@@ -405,23 +406,23 @@ the handler's environment under its mapping. -/
 theorem edge_handler_sound [DecidableEq ι] [Hashable ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
     {entry : SinglePass.State} {store : Store} {result width x : Nat} {e : Tm} {ρ : Env}
     {outFresh : Bool} {θ : PointClaims.Mapping} {I : List (PromiseCalls.Implication ι)} {start : List Nat}
-    {E : Env} {m : Nat} {s : IndexedHeap}
-    (hS : StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start E ρ m s)
+     {m : Nat} {s : IndexedHeap}
+    (hS : StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start ε ρ m s)
     (w : StoreWF entry.store) (hb : NamesBelow entry I start x) (hmap : MapNamesSound (x :: entry.names) θ) :
     StateHolds G (edgeTransfer (x :: entry.names) θ true true outFresh entry result
         (edgeStoreOf G Γ entry.store store (x :: entry.names) (result :: entry.names) width true true none none) I).1
       (edgeTransfer (x :: entry.names) θ true true outFresh entry result
         (edgeStoreOf G Γ entry.store store (x :: entry.names) (result :: entry.names) width true true none none) I).2
-      start E (PointClaims.mapEnv θ (push e ρ)) m s :=
+      start ε (PointClaims.mapEnv θ (push e ρ)) m s :=
   edgeTransfer_ok (stateHolds_handler (v := e) hS (namesBelow_dropHeap w _ hb)) hmap (fun _ h => by cases h)
 
 /-! ## The implications an edge adds -/
 
 /-- Implications holding at every valuation naming the slots join the state. -/
 theorem stateHolds_addImplies {G : NormalGraph ι} {st : SinglePass.State} {I J : List (PromiseCalls.Implication ι)}
-    {start : List Nat} {E ρ : Env} {m : Nat} {s : IndexedHeap} (hS : StateHolds G st I start E ρ m s)
+    {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} (hS : StateHolds G st I start ε ρ m s)
     (hJ : ∀ η, SlotsNamed st.names ρ η → PromiseCalls.ImpliesOk G J η s.n s.W) :
-    StateHolds G st (I ++ J) start E ρ m s := by
+    StateHolds G st (I ++ J) start ε ρ m s := by
   obtain ⟨η, hn, hst, hI, hF, hs⟩ := hS
   refine ⟨η, hn, hst, fun y hy => ?_, hF, hs⟩
   rcases List.mem_append.mp hy with hy | hy
@@ -462,9 +463,9 @@ theorem head_query_sound [DecidableEq ι] {G : NormalGraph ι} {Γ Δ : List (Ty
     {θ : PointClaims.Mapping} {ρ : Env} {n : Nat} {W : WorldT (n + 1)} {h : Heap}
     (hq : KnowledgeExpand.checkIn (KnowledgeExpand.ctxOf G Δ)
       (HeapKnowledge.withTypedLinks G Γ (ControlFlow.withTypedCells G Γ req θ k)) req θ = true)
-    (hk : HeapKnowledge.Holds k ρ h) (he : EnvOk G Γ ρ (n + 1) W) (hh : HeapOk (n + 1) W h)
+    (hk : HeapKnowledge.Holds k ε ρ h) (he : EnvOk G Γ ρ (n + 1) W) (hh : HeapOk (n + 1) W h)
     (htc : EnvOk G Δ (PointClaims.mapEnv θ ρ) (n + 1) W) :
-    HeapKnowledge.Holds req (PointClaims.mapEnv θ ρ) h ∧ EnvOk G Δ (PointClaims.mapEnv θ ρ) (n + 1) W :=
+    HeapKnowledge.Holds req ε (PointClaims.mapEnv θ ρ) h ∧ EnvOk G Δ (PointClaims.mapEnv θ ρ) (n + 1) W :=
   ⟨KnowledgeExpand.checkIn_sound hq (KnowledgeExpand.ctxOf_ok htc)
     (HeapKnowledge.withTypedLinks_holds he (withTypedCells_holds (fun _ => HeapExpressionRules.typedCells_holds he hh)
       (fun _ _ hr => HeapExpressionRules.typeValues_sound hr he) hk)), htc⟩

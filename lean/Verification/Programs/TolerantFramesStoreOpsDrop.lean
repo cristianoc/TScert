@@ -10,6 +10,7 @@ the facts over `D` and their neighbours, restated through read links. This
 module proves that every fact of the result holds wherever every fact of `s`
 holds (`drop_holds`): each added fact is derived from facts of `s`. -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations
 open Verification.SinglePass (Atom Store State)
 
@@ -102,11 +103,11 @@ its index facts restated through its read links, past the index facts
 themselves. -/
 theorem dropDerived_holds {indices : List HeapKnowledge.IndexAtom} {links : HeapLinks.Links}
     {isOut : Nat → Bool} {D : List Nat} {η : Env} {h : Heap}
-    (hi : HeapKnowledge.IndexHolds indices η h) (hl : HeapLinks.Holds links η h) :
-    HeapKnowledge.IndexHolds ((HeapKnowledge.eliminateIndices D (indices ++
+    (hi : HeapKnowledge.IndexHolds ε indices η h) (hl : HeapLinks.Holds links η h) :
+    HeapKnowledge.IndexHolds ε ((HeapKnowledge.eliminateIndices D (indices ++
       HeapKnowledge.restateReads links isOut indices ++ HeapKnowledge.restateStores links isOut indices)).drop
         indices.length) η h := by
-  have hr : HeapKnowledge.IndexHolds (indices ++ HeapKnowledge.restateReads links isOut indices ++
+  have hr : HeapKnowledge.IndexHolds ε (indices ++ HeapKnowledge.restateReads links isOut indices ++
       HeapKnowledge.restateStores links isOut indices) η h := by
     intro a ha
     rcases List.mem_append.mp ha with ha | ha
@@ -119,7 +120,7 @@ theorem dropDerived_holds {indices : List HeapKnowledge.IndexAtom} {links : Heap
 
 /-- A separation fact with fewer partners holds where the fact does. -/
 theorem sep_filter_holds {f : HeapSeparation.Fact} {keep : Nat × List PropKey → Bool} {η : Env} {h : Heap}
-    (hf : AtomHolds (.sep f) η h) : AtomHolds (.sep { f with partners := f.partners.filter keep }) η h :=
+    (hf : AtomHolds ε (.sep f) η h) : AtomHolds ε (.sep { f with partners := f.partners.filter keep }) η h :=
   fun p hp g hg => hf p ((List.mem_filter.mp hp).1) g hg
 
 /-- **Forgetting names keeps every fact holding** (`Store.drop`): where every
@@ -129,31 +130,31 @@ dropped name restated at the name an alias link relates it to holds by the
 link; the derived facts hold by `eliminateIndices_holds`, `restateReads_holds`
 and `restateStores_holds` over the facts naming `D` and their linear and link
 neighbours, all facts of `s`. -/
-theorem drop_holds {s : Store} {D : List Nat} {η : Env} {h : Heap} (hs : StoreOk s η h) :
-    StoreOk (s.drop D) η h := by
+theorem drop_holds {s : Store} {D : List Nat} {η : Env} {h : Heap} (hs : StoreOk ε s η h) :
+    StoreOk ε (s.drop D) η h := by
   unfold Store.drop SinglePass.timedKind
   simp only [Id.run]
   have habout : ∀ (L : List Nat), ∀ a ∈ (CertificateProducer.keepFirst ∅ (L.flatMap s.about)).2.toList,
-      AtomHolds a η h := by
+      AtomHolds ε a η h := by
     intro L a ha
     obtain ⟨n, -, ha⟩ := List.mem_flatMap.mp (keepFirst_sub ha)
     exact hs a (about_storeAll ha)
   generalize (List.foldl (fun x1 x2 => x1.insert x2) (∅ : Std.HashSet Nat) D) = dset
   have hnear := habout
   generalize hA : (CertificateProducer.keepFirst ∅ (List.flatMap s.about D)).snd.toList = atoms
-  have hatoms : ∀ a ∈ atoms, AtomHolds a η h := hA ▸ habout D
+  have hatoms : ∀ a ∈ atoms, AtomHolds ε a η h := hA ▸ habout D
   clear hA habout
   generalize (CertificateProducer.keepFirst ∅ (List.filter (fun x => !dset.contains x)
     (List.flatMap Atom.names atoms))).snd.toList = others
   generalize hN : List.filter _ (CertificateProducer.keepFirst ∅ (List.flatMap s.about others)).snd.toList = near
-  have hnear : ∀ a ∈ near, AtomHolds a η h := by
+  have hnear : ∀ a ∈ near, AtomHolds ε a η h := by
     intro a ha; rw [← hN] at ha; exact hnear others a ((List.mem_filter.mp ha).1)
   clear hN
-  have hboth : ∀ a ∈ atoms ++ near, AtomHolds a η h := fun a ha => by
+  have hboth : ∀ a ∈ atoms ++ near, AtomHolds ε a η h := fun a ha => by
     rcases List.mem_append.mp ha with ha | ha
     · exact hatoms a ha
     · exact hnear a ha
-  have hi : HeapKnowledge.IndexHolds ((atoms ++ near).filterMap fun a => match a with
+  have hi : HeapKnowledge.IndexHolds ε ((atoms ++ near).filterMap fun a => match a with
       | .index x => some x | _ => none) η h := by
     intro x hx
     obtain ⟨a, ha, hax⟩ := List.mem_filterMap.mp hx
@@ -181,7 +182,7 @@ theorem drop_holds {s : Store} {D : List Nat} {η : Env} {h : Heap} (hs : StoreO
   split
   · exact hs
   have h0 := foldl_remove_ok atoms s hs
-  refine id_bind_inv _ _ (fun st => StoreOk st η h) (fun st => StoreOk st η h) (forIn_inv (P := fun st => StoreOk st η h) _ _ _ h0 ?_) ?_
+  refine id_bind_inv _ _ (fun st => StoreOk ε st η h) (fun st => StoreOk ε st η h) (forIn_inv (P := fun st => StoreOk ε st η h) _ _ _ h0 ?_) ?_
   · intro a ha b hb
     split
     · rename_i f
@@ -192,16 +193,16 @@ theorem drop_holds {s : Store} {D : List Nat} {η : Env} {h : Heap} (hs : StoreO
       · exact hb
     · exact hb
   intro b hb
-  have hlast : ∀ b, StoreOk b η h → StoreOk (forIn derived b fun x r =>
+  have hlast : ∀ b, StoreOk ε b η h → StoreOk ε (forIn derived b fun x r =>
       if (Atom.index x).names.all (fun x => !dset.contains x) = true then ForInStep.yield (r.add (Atom.index x))
       else ForInStep.yield r : Id Store) η h := by
     intro b hb
-    refine forIn_inv (P := fun st => StoreOk st η h) _ _ _ hb fun x hx b hb => ?_
+    refine forIn_inv (P := fun st => StoreOk ε st η h) _ _ _ hb fun x hx b hb => ?_
     split
     · exact add_ok hb (fun y hy => (List.mem_singleton.mp hy) ▸ hd x hx)
     · exact hb
   split
-  · refine id_bind_inv _ _ (fun st => StoreOk st η h) (fun st => StoreOk st η h) (forIn_inv (P := fun st => StoreOk st η h) _ _ _ hb ?_) (fun b hb => hlast b hb)
+  · refine id_bind_inv _ _ (fun st => StoreOk ε st η h) (fun st => StoreOk ε st η h) (forIn_inv (P := fun st => StoreOk ε st η h) _ _ _ hb ?_) (fun b hb => hlast b hb)
     intro a ha b hb
     split
     · rename_i b' hb'

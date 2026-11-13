@@ -36,16 +36,16 @@ def joinedAt (G : NormalGraph ι) (w : Walk ι) (given : Nat → Bool) (ctx : Na
 enter** (`joinedAt`): each normal exit from the state after the step at the
 pushed environment, and the handler from the throw state, as `NodeMeaning`
 states the exits' other obligations. -/
-structure ExitsJoined (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0 : Env) (ctx : Nat → List (Ty ι))
+structure ExitsJoined (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε : HeapKnowledge.EntryState) (ctx : Nat → List (Ty ι))
     (given : Nat → Bool)
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
     (m : Nat) (l : Nat) (node : Node) (c : PointClaim ι) (entry : SinglePass.State) (st : Stepped ι) : Prop where
   exits : ∀ t pushed observed promote, Exit.normal t pushed observed promote ∈ Exit.ofNode node → ∀ ρ,
     ExitDelivers (joinedAt G w given ctx edgesIn) G c.type c.context
-      (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ρ0) ρ m t
+      (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ε) ρ m t
       pushed observed promote
   handler : ∀ t, node.handler = some t → ∀ ρ (s' : IndexedHeap) e,
-    StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ (w.implies l) startNames ρ0
+    StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ (w.implies l) startNames ε
       ρ m s' →
     EnvOk G c.context ρ s'.n s'.W → Scoped 0 e → excOf G s'.n s'.W e →
     joinedAt G w given ctx edgesIn t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s'
@@ -53,13 +53,13 @@ structure ExitsJoined (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
 omit [Hashable ι] in
 /-- **A node's meaning with its exits' joined implications** is its meaning
 at `edgePreAJ`. -/
-theorem NodeMeaning.withJoined {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat} {ρ0 : Env}
+theorem NodeMeaning.withJoined {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat} 
     {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge} {given : Nat → Bool}
     {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
     {Tres : Fam} {m l : Nat} {node : Node} {c : PointClaim ι} {entry : SinglePass.State} {st : Stepped ι}
-    (hm : NodeMeaning G w startNames ρ0 ctx stated Tres m l node c entry st)
-    (hj : ExitsJoined G w startNames ρ0 ctx given edgesIn m l node c entry st) :
-    NodeMeaningAt (edgePreAJ G w startNames ρ0 ctx stated given edgesIn) G w startNames ρ0 ctx Tres m l node c entry st
+    (hm : NodeMeaning G w startNames ε ctx stated Tres m l node c entry st)
+    (hj : ExitsJoined G w startNames ε ctx given edgesIn m l node c entry st) :
+    NodeMeaningAt (edgePreAJ G w startNames ε ctx stated given edgesIn) G w startNames ε ctx Tres m l node c entry st
     where
   entered := hm.entered
   shape := hm.shape
@@ -74,12 +74,12 @@ heads entered and `LinearNearFuelEq` (`passPreA_of_edgeAJ`). -/
 theorem nodesChecked_of_walkJ {P : ControlFlow.Program} {G : NormalGraph ι} {w : Walk ι} {startNames : List Nat}
     {given : Nat → Bool} {ctx : Nat → List (Ty ι)}
     {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
-    {fresh : Nat → Nat} {Ξres Tres : Fam} {ρ0 : Env} {m : Nat} {stated : Nat → Option HeapKnowledge.Knowledge}
+    {fresh : Nat → Nat} {Ξres Tres : Fam} {m : Nat} {stated : Nat → Option HeapKnowledge.Knowledge}
     (hT : TraversedA G w startNames given ctx edgesIn fresh stated)
-    (hstep : StepEdgesSoundMarked (edgePreAJ G w startNames ρ0 ctx stated given edgesIn) P G w startNames ρ0 ctx Ξres
+    (hstep : StepEdgesSoundMarked (edgePreAJ G w startNames ε ctx stated given edgesIn) P G w startNames ε ctx Ξres
       Tres (fun _ => True) (fun _ => True) m)
-    (hheads : HeadsEntered G w startNames ρ0 given m) (hnear : LinearNearFuelEq) :
-    NodesChecked P (marked (passPreA G w startNames ρ0 ctx stated)) Ξres Tres (fun _ => True) (fun _ => True) m := by
+    (hheads : HeadsEntered G w startNames ε given m) (hnear : LinearNearFuelEq) :
+    NodesChecked P (marked (passPreA G w startNames ε ctx stated)) Ξres Tres (fun _ => True) (fun _ => True) m := by
   intro l ρ s ⟨hp, hm⟩
   obtain ⟨node, hn, Ξ, T, cn, ce, Qn, Qe, hsafe, ho⟩ := hstep l ρ s hp.1 hm
   exact ⟨node, hn, Ξ, T, cn, ce, Qn, Qe, hsafe,

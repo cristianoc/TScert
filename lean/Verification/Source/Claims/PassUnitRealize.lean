@@ -15,6 +15,7 @@ environment (`approx_envOk`). The definitions and the residue are presented in
 docs/SINGLE-PASS-THEOREM.md, section 4. -/
 
 namespace Verification.SourceClaimJson.PassUnit
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
 
 /-! ## The module's environment -/
@@ -186,7 +187,7 @@ theorem row_invoke_at {G : NormalGraph ι} {arity E K start Cs row vs sep}
     (hvs : EnvOk G Cs (envOf vs .nul) j U) (hvalues : CallArguments.Values vs)
     (hu : WorldAdm U) {heap : Heap} (hh : HeapOk j U heap) {r : Tm} (hr : meaning G row.receiver j U r)
     {args : List Tm} (ha : ArgsShort (row.arguments.map (meaning G)) j U args)
-    (hq : ∀ F ∈ row.effect.pre, F.HoldsAt (CallEffects.callEnv r args) heap)
+    (hq : ∀ F ∈ row.effect.pre, F.HoldsAt ⟨CallEffects.callEnv r args, heap⟩ (CallEffects.callEnv r args) heap)
     (hsep : HeapSeparation.Holds sep (envOf (r :: CallArguments.parameters arity args ++ vs) .nul)) :
     HeapObservations.SafePostExc (excOf G) (row.effect.result (meaning G row.result) (row.effect.promised args))
       (row.effect.post r args heap) (row.effect.excPost r args heap) j U heap
@@ -388,7 +389,7 @@ theorem rowSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
         (envOf L d) n W h →
       HeapObservations.SafePost (excOf (reassign G η))
         (GoalHolds (reassign G η) c.goal (c.goal.argument (envOf L d)))
-        (fun h' v => GraphCode.EnsuresAt c.row.effect.ensures h' (push v (envOf L d))) n W h
+        (fun h' v => GraphCode.EnsuresAt c.row.effect.ensures ⟨envOf L d, h⟩ h' (push v (envOf L d))) n W h
         (.goto c.exprs c.conts c.start L d)) :
     ∀ η, RowSpec (reassign G η) c.arity c.exprs c.conts c.start c.captures c.row sep := by
   intro η
@@ -419,7 +420,7 @@ theorem rowSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
     refine HeapObservations.SafePostExc.weaken (fun h' v hq => ?_) (fun _ h => h) (safePostExc_and hrun hens)
     obtain ⟨⟨h1, h2, h3, h4, -, h6, h7⟩, hq⟩ := hq
     refine ⟨h1, h2, h3, h4, fun F hF => ?_, h6, h7⟩
-    exact (CallEffects.Effect.ensures_frame hrow hF v r args vs .nul h').mpr (by simpa using hq F hF)
+    exact (CallEffects.Effect.ensures_frame hrow hF v r args vs .nul heap h').mpr (by simpa using hq F hF)
 
 end
 
@@ -511,8 +512,8 @@ structure UnitIsReceiverless (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop
   start : r.start = c.start
   goal : r.goal = receiverlessGoal c
   indices : ∀ (L : List Tm) (recv : Tm) h,
-    HeapKnowledge.IndexHolds (GraphCode.codeEntryIndices c) (envOf (recv :: L) .nul) h →
-    HeapKnowledge.IndexHolds r.entryIndices (envOf L .nul) h
+    HeapKnowledge.IndexHolds ⟨envOf (recv :: L) .nul, h⟩ (GraphCode.codeEntryIndices c) (envOf (recv :: L) .nul) h →
+    HeapKnowledge.IndexHolds ⟨envOf L .nul, h⟩ r.entryIndices (envOf L .nul) h
   noReceiver : ∀ F ∈ c.row.effect.ensures, 1 ∉ F.slots
   ensures : r.ensures = c.row.effect.ensures.map (·.map ensuresPast)
   footprint : r.footprint = c.row.effect.footprint
@@ -533,8 +534,8 @@ frame with a receiver in front imply the request's at the frame past it:
 theorem receiverless_indices {ι : Type} {c : CodeEntry ι} {facts : List HeapKnowledge.IndexAtom}
     (hsub : ∀ a ∈ facts, a ∈ HeapKnowledge.mapIndices pastReceiver (GraphCode.codeEntryIndices c)) :
     ∀ (L : List Tm) (recv : Tm) h,
-      HeapKnowledge.IndexHolds (GraphCode.codeEntryIndices c) (envOf (recv :: L) .nul) h →
-      HeapKnowledge.IndexHolds facts (envOf L .nul) h := by
+      HeapKnowledge.IndexHolds ε (GraphCode.codeEntryIndices c) (envOf (recv :: L) .nul) h →
+      HeapKnowledge.IndexHolds ε facts (envOf L .nul) h := by
   intro L recv h he a ha
   have hf : ∀ s t, pastReceiver s = some t → envOf L .nul t = envOf (recv :: L) .nul s := by
     intro s t hs

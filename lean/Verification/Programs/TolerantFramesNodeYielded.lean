@@ -81,8 +81,8 @@ theorem slotImplOf_ok {G : NormalGraph ι} {names : List Nat} {xs : List (Promis
 the entry's names over implications among the entry's (`I'` ⊆ `I`), wherever
 the entry state holds. -/
 theorem slotImplOf_entry {G : NormalGraph ι} {entry : SinglePass.State} {I I' : List (PromiseCalls.Implication ι)}
-    {start : List Nat} {E ρ : Env} {m : Nat} {s : IndexedHeap} (hsub : ∀ x ∈ I', x ∈ I)
-    (hS : StateHolds G entry I start E ρ m s) : PromiseCalls.ImpliesOk G (slotImplOf entry.names I') ρ s.n s.W := by
+    {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} (hsub : ∀ x ∈ I', x ∈ I)
+    (hS : StateHolds G entry I start ε ρ m s) : PromiseCalls.ImpliesOk G (slotImplOf entry.names I') ρ s.n s.W := by
   obtain ⟨η, hn, -, hI, -⟩ := hS
   exact slotImplOf_ok hn fun x hx => hI x (hsub x hx)
 
@@ -141,12 +141,12 @@ step's judgment (`SafePostExc.conj_post`). -/
 theorem yieldsJudged_of_promise {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
     {sums : List (ReadSummary ι)} {c : PointClaim ι} {node : Node} {stepK : HeapKnowledge.Knowledge}
     {deriv : ProgramCertificates.Evidence ι} {entry : SinglePass.State} {I : List (PromiseCalls.Implication ι)}
-    {startNames : List Nat} {ρ0 : Env} {m : Nat} {ys : List (PromiseCalls.Yield ι)} {effect a T}
+    {startNames : List Nat} {m : Nat} {ys : List (PromiseCalls.Yield ι)} {effect a T}
     (hp : PromiseCalls.promiseOf G deriv = some (effect, a, T))
     (hy : PromiseCalls.promiseYields G c.type effect a T ys = true)
     (hpd : PromiseDerivChecked G images codes sums c node stepK deriv)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums) :
-    YieldsJudged G c.type c.context node.expression entry I startNames ρ0 m stepK ys := by
+    YieldsJudged G c.type c.context node.expression entry I startNames ε m stepK ys := by
   intro ρ s Q R _ he hk hj
   obtain ⟨hdc, hty⟩ := hpd (by rw [hp]; rfl)
   simp only [derivChecked, Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true] at hdc
@@ -157,8 +157,8 @@ theorem yieldsJudged_of_promise {G : NormalGraph ι} {images : InstanceImageChec
 omit [DecidableEq ι] [Hashable ι] in
 /-- No yields are judged. -/
 theorem yieldsJudged_nil {G : NormalGraph ι} {A : Ty ι} {Γ : List (Ty ι)} {t : Tm} {entry : SinglePass.State}
-    {I : List (PromiseCalls.Implication ι)} {startNames : List Nat} {ρ0 : Env} {m : Nat}
-    {stepK : HeapKnowledge.Knowledge} : YieldsJudged G A Γ t entry I startNames ρ0 m stepK [] :=
+    {I : List (PromiseCalls.Implication ι)} {startNames : List Nat} {m : Nat}
+    {stepK : HeapKnowledge.Knowledge} : YieldsJudged G A Γ t entry I startNames ε m stepK [] :=
   fun _ _ _ _ _ _ _ hj => SafePostExc.conj_post hj
     (consequence (fun _ _ _ hv => ⟨hv, fun _ hy => absurd hy List.not_mem_nil⟩) (fun _ _ h => h) hj.post)
 
@@ -172,11 +172,11 @@ check `promiseDerivChecked` accepts the derivation
 theorem yieldsJudged_of_checked {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
     {sums : List (ReadSummary ι)} {c : PointClaim ι} {node : Node} {stepK out : HeapKnowledge.Knowledge}
     {deriv : ProgramCertificates.Evidence ι} {entry : SinglePass.State} {I : List (PromiseCalls.Implication ι)}
-    {startNames : List Nat} {ρ0 : Env} {m : Nat} {xs : List (PromiseCalls.Implication ι)}
+    {startNames : List Nat} {m : Nat} {xs : List (PromiseCalls.Implication ι)}
     {ys : List (PromiseCalls.Yield ι)}
-    (hx : ∀ ρ (s : IndexedHeap), StateHolds G entry I startNames ρ0 ρ m s → PromiseCalls.ImpliesOk G xs ρ s.n s.W)
+    (hx : ∀ ρ (s : IndexedHeap), StateHolds G entry I startNames ε ρ m s → PromiseCalls.ImpliesOk G xs ρ s.n s.W)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums) :
-    YieldsJudged G c.type c.context node.expression entry I startNames ρ0 m stepK
+    YieldsJudged G c.type c.context node.expression entry I startNames ε m stepK
       (checkedYields G images c.context c.type xs stepK out deriv node.expression
         (fun _ => SinglePass.promiseDerivChecked G images codes sums c node stepK deriv) ys) := by
   cases hp : PromiseCalls.promiseOf G deriv with
@@ -214,15 +214,15 @@ theorem goalHolds_of_returnY {G : NormalGraph ι} {images : InstanceImageCheck G
     {ensures : List HeapKnowledge.IndexFact} {c : PointClaim ι} {l : Nat} {entry : SinglePass.State}
     {store : Store} {result start : Nat} {startNames : List Nat} {argName : Option Nat}
     {ys : List (PromiseCalls.Yield ι)} {debugNode : Nat} {answers : Answered G} {goal : Goal ι}
-    {I : List (PromiseCalls.Implication ι)} {ρ0 : Env} {m : Nat}
+    {I : List (PromiseCalls.Implication ι)} {m : Nat}
     (hsub : SubtypeAnswersSound G images)
     (h : (returnCheck G images goal ensures c l entry store result start startNames argName ys
       debugNode answers).1 = none)
     (harg : argName = goal.slot.bind (startNames[·]?)) :
     ∀ ρ (s' : IndexedHeap) v, isVal v = true →
-      StateHolds G ⟨result :: entry.names, store, entry.fresh⟩ I startNames ρ0 (push v ρ) m s' →
+      StateHolds G ⟨result :: entry.names, store, entry.fresh⟩ I startNames ε (push v ρ) m s' →
       EnvOk G (c.type :: c.context) (push v ρ) s'.n s'.W → PromiseCalls.YieldsOk G ys ρ s'.n s'.W v →
-      GoalHolds G goal (goal.argument ρ0) s'.n s'.W v := by
+      GoalHolds G goal (goal.argument ε.env) s'.n s'.W v := by
   intro ρ s' v _ hS he hy
   obtain ⟨η, hn, -⟩ := id hS
   have hs : SlotsNamed entry.names ρ η := fun i x hx => by simpa [push] using hn (i + 1) x (by simpa using hx)

@@ -19,6 +19,7 @@ across the modality. A fact whose support an effect respects enters the
 modality (`tolerant_frame`), and two atoms, a length lower bound and density,
 enter that of `{values: any, stores: grow}`. -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations
 
 /-! ## States and admissible transitions -/
@@ -486,8 +487,8 @@ open HeapKnowledge in
 /-- **An index fact a closed footprint's change keeps holds after every
 action of the footprint** (`holdsAt_kept`, `Changes.ofClosed_holds`). -/
 theorem kept_box (c : Footprints.Closed) {F : IndexFact} {ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hk : F.keptBy (Changes.ofClosed c) (fun _ _ => false) = true) (hF : F.HoldsAt ρ s.h) :
-    Box c.fp (fun ρ _ s => F.HoldsAt ρ s.h) ρ m s := by
+    (hk : F.keptBy (Changes.ofClosed c) (fun _ _ => false) = true) (hF : F.HoldsAt ε ρ s.h) :
+    Box c.fp (fun ρ _ s => F.HoldsAt ε ρ s.h) ρ m s := by
   intro s' ha
   have hc : (Changes.ofClosed c).Holds s.h s'.h :=
     Changes.ofClosed_holds (Footprints.Closed.holds_iff.mpr (Footprints.Closed.post_iff.mp ha.2))
@@ -504,11 +505,11 @@ open HeapKnowledge in
 def lowerBoundFact (y x : Nat) : IndexFact := .linear (.le [(.value y, 1), (.length x, -1)] 0)
 
 /-- `y ≤ |x|` as an assertion. -/
-def LowerBound (y x : Nat) : Assertion := fun ρ _ s => (lowerBoundFact y x).HoldsAt ρ s.h
+def LowerBound (ε : HeapKnowledge.EntryState) (y x : Nat) : Assertion := fun ρ _ s => (lowerBoundFact y x).HoldsAt ε ρ s.h
 
 /-- **(Grow)** `y ≤ |x| ⊢ □_{values: any, stores: grow} (y ≤ |x|)`. -/
-theorem grow {y x : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} (hb : LowerBound y x ρ m s) :
-    Box growEffect.fp (LowerBound y x) ρ m s :=
+theorem grow {y x : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} (hb : LowerBound ε y x ρ m s) :
+    Box growEffect.fp (LowerBound ε y x) ρ m s :=
   kept_box growEffect rfl hb
 
 /-- `y ≤ |x.p|`: the value the path `p` reads from `x` has a store at least as
@@ -542,9 +543,9 @@ def pathLowerBoundFact (y x : Nat) (p : List String) : IndexFact :=
 
 /-- **`PathLowerBound` is the pass's path-term index fact.** -/
 theorem pathLowerBound_iff {y x : Nat} {p : List String} {ρ : Env} {m : Nat} {s : IndexedHeap} :
-    PathLowerBound y x p ρ m s ↔ (pathLowerBoundFact y x p).HoldsAt ρ s.h := by
-  have e1 : HeapKnowledge.termValue ρ s.h (.value y) = HeapKnowledge.intValue (ρ y) := rfl
-  have e2 : HeapKnowledge.termValue ρ s.h ⟨.length, x, p⟩ =
+    PathLowerBound y x p ρ m s ↔ (pathLowerBoundFact y x p).HoldsAt ε ρ s.h := by
+  have e1 : HeapKnowledge.termValue ε ρ s.h (.value y) = HeapKnowledge.intValue (ρ y) := rfl
+  have e2 : HeapKnowledge.termValue ε ρ s.h ⟨.length, x, p⟩ =
       (HeapKnowledge.readPath s.h (ρ x) p).bind (HeapKnowledge.lengthOf s.h) := rfl
   simp only [PathLowerBound, pathLowerBoundFact, HeapKnowledge.IndexFact.HoldsAt, Linear.Fact.vars,
     Linear.Fact.Holds, Linear.Form.eval, List.map, List.mem_cons, List.not_mem_nil, or_false,
@@ -564,8 +565,8 @@ theorem pathLowerBound_iff {y x : Nat} {p : List String} {ρ : Env} {m : Nat} {s
 
 /-- (Grow) at a rigid path for the pass's path-term fact. -/
 theorem grow_path_fact {y x : Nat} {p : List String} {v : Val} {ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hp : StableAt x p v ρ m s) (hb : (pathLowerBoundFact y x p).HoldsAt ρ s.h) :
-    Box growEffect.fp (fun ρ _ s => (pathLowerBoundFact y x p).HoldsAt ρ s.h) ρ m s :=
+    (hp : StableAt x p v ρ m s) (hb : (pathLowerBoundFact y x p).HoldsAt ε ρ s.h) :
+    Box growEffect.fp (fun ρ _ s => (pathLowerBoundFact y x p).HoldsAt ε ρ s.h) ρ m s :=
   fun s' ha => pathLowerBound_iff.mp (grow_path hp (pathLowerBound_iff.mpr hb) s' ha)
 
 /-- `dense(x, k)`: the first `k` indices of `x`'s store are present. -/

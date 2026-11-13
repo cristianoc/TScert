@@ -10,11 +10,12 @@ local judgment of the node's term, and on each exit the action of the step's
 effect, the residual budget, the value's type, the rule's output and the
 state after the step (`checkedStep_sound`).
 
-Named hypotheses, stated as definitions: the search keeps its table of read
+Named ε hypotheses, stated as definitions: the search keeps its table of read
 summaries checked (`DirectKeepsSummaries`, `SearchKeepsSummaries`), and the
 pass's next fresh name is above every name of the entry state
 (`NamesBelow`). -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
 open PositiveRules HeapExpressionRules
@@ -82,12 +83,12 @@ theorem set_agree {st : SinglePass.State} {I : List (PromiseCalls.Implication ι
 valuation naming the result: the pushed slots named, the implications, fresh
 and start names carried along an admissible transition. -/
 theorem stateHolds_pushed {G : NormalGraph ι} {st : SinglePass.State} {I : List (PromiseCalls.Implication ι)}
-    {start : List Nat} {E ρ η : Env} {m : Nat} {s s' : IndexedHeap} {r : Nat} {v : Tm} {store : Store}
+    {start : List Nat} {ρ η : Env} {m : Nat} {s s' : IndexedHeap} {r : Nat} {v : Tm} {store : Store}
     (hn : SlotsNamed st.names ρ η) (hI : PromiseCalls.ImpliesOk G I η s.n s.W)
-    (hF : ∀ x ∈ st.fresh, FreshAt m (η x)) (hst : ∀ q x, start[q]? = some x → η x = E q)
+    (hF : ∀ x ∈ st.fresh, FreshAt m (η x)) (hst : ∀ q x, start[q]? = some x → η x = ε.env q)
     (ha : Admissible s s') (hk : NamesBelow st I start r ∨ η r = v)
-    (hstore : StoreOk store (Env.set η r v) s'.h) :
-    StateHolds G ⟨r :: st.names, store, st.fresh⟩ I start E (push v ρ) m s' := by
+    (hstore : StoreOk ε store (Env.set η r v) s'.h) :
+    StateHolds G ⟨r :: st.names, store, st.fresh⟩ I start ε (push v ρ) m s' := by
   obtain ⟨g1, -, g3, g4, g5⟩ := set_agree hk
   refine ⟨Env.set η r v, fun i x hx => ?_, hstore, ?_, ?_, ?_⟩
   · cases i with
@@ -106,9 +107,9 @@ theorem stateHolds_pushed {G : NormalGraph ι} {st : SinglePass.State} {I : List
 (`Store.dropHeap` keeping nothing, the store the handler edge starts from), at
 the entry environment, after an admissible transition. -/
 theorem stateHolds_throw {G : NormalGraph ι} {st : SinglePass.State} {I : List (PromiseCalls.Implication ι)}
-    {start : List Nat} {E ρ : Env} {m : Nat} {s s' : IndexedHeap} (hS : StateHolds G st I start E ρ m s)
+    {start : List Nat} {ρ : Env} {m : Nat} {s s' : IndexedHeap} (hS : StateHolds G st I start ε ρ m s)
     (w : StoreWF st.store) (ha : Admissible s s') :
-    StateHolds G ⟨st.names, st.store.dropHeap (fun _ => false), st.fresh⟩ I start E ρ m s' := by
+    StateHolds G ⟨st.names, st.store.dropHeap (fun _ => false), st.fresh⟩ I start ε ρ m s' := by
   obtain ⟨η, hn, hst, hI, hF, hs⟩ := hS
   refine ⟨η, hn, fun a ha' => ?_, impliesOk_admissible ha hI, hF, hs⟩
   obtain ⟨-, hcov⟩ := dropHeap_cover w (fun _ => false)
@@ -127,8 +128,8 @@ the result; the delta adds the rule's output read back to names. -/
 theorem preserving_store {st : SinglePass.State} {I : List (PromiseCalls.Implication ι)} {start : List Nat}
     {ρ η : Env} {h' : Heap} {r : Nat} {v : Tm} {d : Nat} {ms : List Nat} {whole : Bool}
     {out : HeapKnowledge.Knowledge} (hn : SlotsNamed st.names ρ η) (hk : NamesBelow st I start r ∨ η r = v)
-    (hS : StoreOk st.store η h') (hout : HeapKnowledge.Holds out (push v ρ) h') :
-    StoreOk (applyDelta st.store (materialize st d ms whole).2.1 out true
+    (hS : StoreOk ε st.store η h') (hout : HeapKnowledge.Holds out ε (push v ρ) h') :
+    StoreOk ε (applyDelta st.store (materialize st d ms whole).2.1 out true
       (passBack (materialize st d ms whole).2.2 st.names r)) (Env.set η r v) h' := by
   obtain ⟨g1, g2, -⟩ := set_agree hk
   obtain ⟨want, hT⟩ := materialize_table st d ms whole
@@ -144,8 +145,8 @@ theorem writing_store {st : SinglePass.State} {I : List (PromiseCalls.Implicatio
     {ρ η : Env} {h h' : Heap} {r : Nat} {v : Tm} {d : Nat} {ms : List Nat}
     {out : HeapKnowledge.Knowledge} (w : StoreWF st.store) (hn : SlotsNamed st.names ρ η)
     (hk : NamesBelow st I start r ∨ η r = v)
-    (hS : StoreOk st.store η h) (hout : HeapKnowledge.Holds out (push v ρ) h') :
-    StoreOk (applyDelta (st.store.dropHeap (handedSet (materialize st d ms true).2.1).contains)
+    (hS : StoreOk ε st.store η h) (hout : HeapKnowledge.Holds out ε (push v ρ) h') :
+    StoreOk ε (applyDelta (st.store.dropHeap (handedSet (materialize st d ms true).2.1).contains)
       (materialize st d ms true).2.1 out true
       (passBack (materialize st d ms true).2.2 st.names r)) (Env.set η r v) h' := by
   obtain ⟨g1, g2, -⟩ := set_agree hk
@@ -170,7 +171,7 @@ theorem passPreserving_keeps_two {G : NormalGraph ι} {images : InstanceImageChe
     (hok : pc.selectChecks = false → passTreeOk G images kE codes sums e = true)
     (hsel : (pc.checker.select j kE e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums₀ : SummariesSound G images sums₀) (hsums : SummariesSound G images sums)
-    {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ρ h)
+    {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) : KeepsPost G j ρ n W h := by
   simp only [passPreserving, Bool.or_eq_true] at hpres
   rcases hpres with hc | hp
@@ -187,9 +188,9 @@ theorem preserving_judgment_two {G : NormalGraph ι} {images : InstanceImageChec
     (hsel : (pc.checker.select j kE e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums₀ : SummariesSound G images sums₀) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePostExc (excOf G) (meaning G j.type)
-      (fun h' v => Footprints.Closed.empty.Holds h h' ∧ HeapKnowledge.Holds out (push v ρ) h')
+      (fun h' v => Footprints.Closed.empty.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => Footprints.Closed.top.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) := by
   have hboth := cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh
     (passPreserving_keeps_two hpres hok hsel hcodes hsums₀ hsums he hk hw hh)
@@ -213,7 +214,7 @@ theorem copiedOf_some {G : NormalGraph ι} {c : PointClaim ι} {entry : SinglePa
     · cases h
   · cases h
 
-theorem holds_empty {ρ : Env} {h : Heap} : HeapKnowledge.Holds {} ρ h := by
+theorem holds_empty {ρ : Env} {h : Heap} : HeapKnowledge.Holds {} ε ρ h := by
   refine ⟨?_, ?_, ?_, ?_, HeapKnowledge.elemsHolds_nil _ _, HeapKnowledge.indexHolds_nil _ _⟩ <;>
     simp [HeapFacts.Holds, HeapKnowledge.ValueHolds, HeapLinks.Holds, HeapSeparation.Holds]
 
@@ -236,13 +237,13 @@ and, on each run with budget left, the normal exit an action of `cn` with the
 residual budget, the value's type, `out` and the assertion `Fn` at the pushed
 environment, the throw an action of `ce` with the raised value closed and of
 the exception family and `Fe` at the node's environment. -/
-def StepExits (G : NormalGraph ι) (A : Ty ι) (cn ce : Footprints.Closed) (t : Tm) (out : HeapKnowledge.Knowledge)
+def StepExits (G : NormalGraph ι) (A : Ty ι) (cn ce : Footprints.Closed) (t : Tm) (out : HeapKnowledge.Knowledge) (ε : HeapKnowledge.EntryState)
     (Fn Fe : Assertion) (ρ : Env) (m : Nat) (s : IndexedHeap) : Prop :=
-  SafePostExc (excOf G) (meaning G A) (fun h' v => cn.Holds s.h h' ∧ HeapKnowledge.Holds out (push v ρ) h')
+  SafePostExc (excOf G) (meaning G A) (fun h' v => cn.Holds s.h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => ce.Holds s.h h' ∧ True) s.n s.W s.h (instantiate 0 ρ t) ∧
     ∀ k h' t', Steps k s.h (instantiate 0 ρ t) h' t' → k < s.n →
       (isVal t' = true → ∃ s' : IndexedHeap, Action cn.fp ρ s s' ∧ s'.h = h' ∧ s'.n + k = s.n ∧
-        meaning G A s'.n s'.W t' ∧ HeapKnowledge.Holds out (push t' ρ) h' ∧ Fn (push t' ρ) m s') ∧
+        meaning G A s'.n s'.W t' ∧ HeapKnowledge.Holds out ε (push t' ρ) h' ∧ Fn (push t' ρ) m s') ∧
       (∀ x, Raises t' x → ∃ s' : IndexedHeap, Action ce.fp ρ s s' ∧ s'.h = h' ∧ s'.n + k = s.n ∧
         Scoped 0 x ∧ excOf G s'.n s'.W x ∧ Fe ρ m s')
 
@@ -250,23 +251,23 @@ def StepExits (G : NormalGraph ι) (A : Ty ι) (cn ce : Footprints.Closed) (t : 
 the pushed environment after every run to a value whose endpoint is an action
 of `cn` with the rule's output, and `Fe` at the node's environment after every
 action of `ce`. -/
-def StepParts (G : NormalGraph ι) (A : Ty ι) (cn ce : Footprints.Closed) (t : Tm) (out : HeapKnowledge.Knowledge)
+def StepParts (G : NormalGraph ι) (A : Ty ι) (cn ce : Footprints.Closed) (t : Tm) (out : HeapKnowledge.Knowledge) (ε : HeapKnowledge.EntryState)
     (Fn Fe : Assertion) (ρ : Env) (m : Nat) (s : IndexedHeap) : Prop :=
-  SafePostExc (excOf G) (meaning G A) (fun h' v => cn.Holds s.h h' ∧ HeapKnowledge.Holds out (push v ρ) h')
+  SafePostExc (excOf G) (meaning G A) (fun h' v => cn.Holds s.h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => ce.Holds s.h h' ∧ True) s.n s.W s.h (instantiate 0 ρ t) ∧
     (∀ k h' v (s' : IndexedHeap), Steps k s.h (instantiate 0 ρ t) h' v → isVal v = true →
-      Action cn.fp ρ s s' → s'.h = h' → HeapKnowledge.Holds out (push v ρ) h' → Fn (push v ρ) m s') ∧
+      Action cn.fp ρ s s' → s'.h = h' → HeapKnowledge.Holds out ε (push v ρ) h' → Fn (push v ρ) m s') ∧
     ∀ s' : IndexedHeap, Action ce.fp ρ s s' → Fe ρ m s'
 
 omit [DecidableEq ι] in
 theorem stepExits_of {G : NormalGraph ι} {A : Ty ι} {cn ce : Footprints.Closed} {t : Tm}
     {out : HeapKnowledge.Knowledge} {Fn Fe : Assertion} {ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hj : SafePostExc (excOf G) (meaning G A) (fun h' v => cn.Holds s.h h' ∧ HeapKnowledge.Holds out (push v ρ) h')
+    (hj : SafePostExc (excOf G) (meaning G A) (fun h' v => cn.Holds s.h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => ce.Holds s.h h' ∧ True) s.n s.W s.h (instantiate 0 ρ t))
     (hn : ∀ k h' v (s' : IndexedHeap), Steps k s.h (instantiate 0 ρ t) h' v → isVal v = true →
-      Action cn.fp ρ s s' → s'.h = h' → HeapKnowledge.Holds out (push v ρ) h' → Fn (push v ρ) m s')
+      Action cn.fp ρ s s' → s'.h = h' → HeapKnowledge.Holds out ε (push v ρ) h' → Fn (push v ρ) m s')
     (he : ∀ s' : IndexedHeap, Action ce.fp ρ s s' → Fe ρ m s') :
-    StepExits G A cn ce t out Fn Fe ρ m s := by
+    StepExits G A cn ce t out ε Fn Fe ρ m s := by
   refine ⟨hj, fun k h' t' hst hk => ⟨fun hv => ?_, fun x hx => ?_⟩⟩
   · obtain ⟨s', ha, hh, hnk, hT, hq⟩ := action_normal (ρ := ρ) hj hst hv hk
     exact ⟨s', ha, hh, hnk, hT, hq, hn k h' t' s' hst hv ha hh hq⟩
@@ -346,16 +347,16 @@ theorem stepChecked_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
     {pc : PassChecker G images} {node : Node} {c : PointClaim ι} {entry : SinglePass.State} {ms : List Nat}
     {fresh : Nat} {answers : Answered G} {st : Stepped ι} {ans : Answered G}
     (h : StepChecked G images pc codes c node entry ms fresh answers ans st)
-    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {E ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hS : StateHolds G entry I start E ρ m s) (w : StoreWF entry.store) (hnb : NamesBelow entry I start fresh)
+    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
+    (hS : StateHolds G entry I start ε ρ m s) (w : StoreWF entry.store) (hnb : NamesBelow entry I start fresh)
     (hwidth : entry.names.length ≤ c.context.length)
     (he : EnvOk G c.context ρ s.n s.W) (hcodes : CodesSound G codes)
     (hsum : SummariesSound G images answers.summaries.toList) :
-    SummariesSound G images ans.summaries.toList ∧ HeapKnowledge.Holds st.stepK ρ s.h ∧
+    SummariesSound G images ans.summaries.toList ∧ HeapKnowledge.Holds st.stepK ε ρ s.h ∧
     ((st.result ∈ entry.names ∧ st.fresh = fresh) ∨ (st.result = fresh ∧ st.fresh = fresh + 1)) ∧
-    ∃ cn ce : Footprints.Closed, StepParts G c.type cn ce node.expression st.stepOut
-      (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ I start E)
-      (StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start E) ρ m s := by
+    ∃ cn ce : Footprints.Closed, StepParts G c.type cn ce node.expression st.stepOut ε
+      (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ I start ε)
+      (StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start ε) ρ m s := by
   have hS' := hS
   obtain ⟨η, hn, hst, hI, hF, hstart⟩ := hS'
   have hk := stateHolds_stepKnowledge hS he c.context.length ms (wholeOf node.expression)
@@ -436,16 +437,16 @@ theorem stepChecked_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
     {pc : PassChecker G images} {node : Node} {c : PointClaim ι} {entry : SinglePass.State} {ms : List Nat}
     {fresh : Nat} {answers : Answered G} {st : Stepped ι} {ans : Answered G}
     (h : StepChecked G images pc codes c node entry ms fresh answers ans st)
-    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {E ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hS : StateHolds G entry I start E ρ m s) (w : StoreWF entry.store) (hnb : NamesBelow entry I start fresh)
+    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
+    (hS : StateHolds G entry I start ε ρ m s) (w : StoreWF entry.store) (hnb : NamesBelow entry I start fresh)
     (hwidth : entry.names.length ≤ c.context.length)
     (he : EnvOk G c.context ρ s.n s.W) (hcodes : CodesSound G codes)
     (hsum : SummariesSound G images answers.summaries.toList) :
-    SummariesSound G images ans.summaries.toList ∧ HeapKnowledge.Holds st.stepK ρ s.h ∧
+    SummariesSound G images ans.summaries.toList ∧ HeapKnowledge.Holds st.stepK ε ρ s.h ∧
     ((st.result ∈ entry.names ∧ st.fresh = fresh) ∨ (st.result = fresh ∧ st.fresh = fresh + 1)) ∧
-    ∃ cn ce : Footprints.Closed, StepExits G c.type cn ce node.expression st.stepOut
-      (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ I start E)
-      (StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start E) ρ m s := by
+    ∃ cn ce : Footprints.Closed, StepExits G c.type cn ce node.expression st.stepOut ε
+      (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ I start ε)
+      (StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start ε) ρ m s := by
   obtain ⟨h1, h2, h3, cn, ce, hj, hn, hx⟩ := stepChecked_parts h hS w hnb hwidth he hcodes hsum
   exact ⟨h1, h2, h3, cn, ce, stepExits_of hj hn hx⟩
 
@@ -475,18 +476,18 @@ theorem checkedStep_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
     {answers : Answered G} {st : Stepped ι} {stats : StepStats} {ans : Answered G}
     (h : checkedStep G images pool fuel suggestions index codes aliases pc undefTy l node c entry ms fresh
       answers = (Except.ok st, stats, ans))
-    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {E ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hS : StateHolds G entry I start E ρ m s) (w : StoreWF entry.store) (hnb : NamesBelow entry I start fresh)
+    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
+    (hS : StateHolds G entry I start ε ρ m s) (w : StoreWF entry.store) (hnb : NamesBelow entry I start fresh)
     (hwidth : entry.names.length ≤ c.context.length)
     (he : EnvOk G c.context ρ s.n s.W) (hcodes : CodesSound G codes)
     (hsum : SummariesSound G images answers.summaries.toList)
     (hdir : DirectKeepsSummaries G images undefTy)
     (hsrch : SearchKeepsSummaries G images pool fuel suggestions index codes aliases pc.checker) :
-    SummariesSound G images ans.summaries.toList ∧ HeapKnowledge.Holds st.stepK ρ s.h ∧
+    SummariesSound G images ans.summaries.toList ∧ HeapKnowledge.Holds st.stepK ε ρ s.h ∧
     ((st.result ∈ entry.names ∧ st.fresh = fresh) ∨ (st.result = fresh ∧ st.fresh = fresh + 1)) ∧
-    ∃ cn ce : Footprints.Closed, StepParts G c.type cn ce node.expression st.stepOut
-      (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ I start E)
-      (StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start E) ρ m s :=
+    ∃ cn ce : Footprints.Closed, StepParts G c.type cn ce node.expression st.stepOut ε
+      (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ I start ε)
+      (StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start ε) ρ m s :=
   stepChecked_parts (stepChecked_of_step h hdir hsrch) hS w hnb hwidth he hcodes hsum
 
 /-- **THE STEP THEOREM.** Where `checkedStep` accepts node `l` (its claim
@@ -505,18 +506,18 @@ theorem checkedStep_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
     {answers : Answered G} {st : Stepped ι} {stats : StepStats} {ans : Answered G}
     (h : checkedStep G images pool fuel suggestions index codes aliases pc undefTy l node c entry ms fresh
       answers = (Except.ok st, stats, ans))
-    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {E ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hS : StateHolds G entry I start E ρ m s) (w : StoreWF entry.store) (hnb : NamesBelow entry I start fresh)
+    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
+    (hS : StateHolds G entry I start ε ρ m s) (w : StoreWF entry.store) (hnb : NamesBelow entry I start fresh)
     (hwidth : entry.names.length ≤ c.context.length)
     (he : EnvOk G c.context ρ s.n s.W) (hcodes : CodesSound G codes)
     (hsum : SummariesSound G images answers.summaries.toList)
     (hdir : DirectKeepsSummaries G images undefTy)
     (hsrch : SearchKeepsSummaries G images pool fuel suggestions index codes aliases pc.checker) :
-    SummariesSound G images ans.summaries.toList ∧ HeapKnowledge.Holds st.stepK ρ s.h ∧
+    SummariesSound G images ans.summaries.toList ∧ HeapKnowledge.Holds st.stepK ε ρ s.h ∧
     ((st.result ∈ entry.names ∧ st.fresh = fresh) ∨ (st.result = fresh ∧ st.fresh = fresh + 1)) ∧
-    ∃ cn ce : Footprints.Closed, StepExits G c.type cn ce node.expression st.stepOut
-      (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ I start E)
-      (StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start E) ρ m s :=
+    ∃ cn ce : Footprints.Closed, StepExits G c.type cn ce node.expression st.stepOut ε
+      (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ I start ε)
+      (StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start ε) ρ m s :=
   stepChecked_sound (stepChecked_of_step h hdir hsrch) hS w hnb hwidth he hcodes hsum
 
 end StepTheorem

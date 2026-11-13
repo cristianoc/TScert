@@ -12,6 +12,7 @@ exits (`checkedStep_sound`):
   invocation's bound from the invocation's entry heap, normal and
   exceptional (`pass_footprint_exits`). -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
 open PositiveRules HeapExpressionRules
@@ -50,16 +51,16 @@ tracked slot `j` holding the name of the start's input `q`, the state after
 the step gives `ensures` at the result and the invocation's entry values `E`. -/
 theorem pass_return_ensures {G : NormalGraph ι} {Γ : List (Ty ι)} {entry : SinglePass.State} {store : Store}
     {result width : Nat} {tracked : GraphCode.Tracked} {ens : List HeapKnowledge.IndexFact}
-    {I : List (PromiseCalls.Implication ι)} {startNames : List Nat} {E ρ : Env} {v : Tm} {m : Nat}
+    {I : List (PromiseCalls.Implication ι)} {startNames : List Nat} {ρ : Env} {v : Tm} {m : Nat}
     {s : IndexedHeap}
-    (hS : StateHolds G ⟨result :: entry.names, store, entry.fresh⟩ I startNames E (push v ρ) m s)
+    (hS : StateHolds G ⟨result :: entry.names, store, entry.fresh⟩ I startNames ε (push v ρ) m s)
     (he : EnvOk G Γ ρ s.n s.W)
     (htr : ∀ p ∈ tracked, ∃ nm, startNames[p.2]? = some nm ∧ entry.names[p.1]? = some nm)
     (hc : GraphCode.returnEntails (KnowledgeExpand.expandLinks
       (HeapKnowledge.setsCtx (HeapKnowledge.typeSets G Γ) 1)
       (materialize ⟨result :: entry.names, store, []⟩ (width + 1) (0 :: tracked.map (·.1 + 1)) false).1)
       tracked ens = true) :
-    GraphCode.EnsuresAt ens s.h (push v E) := by
+    GraphCode.EnsuresAt ens ε s.h (push v ε.env) := by
   have hk := stateHolds_materialize (stateHolds_noFresh hS) (width + 1) (0 :: tracked.map (·.1 + 1)) true
   obtain ⟨η, hn, -, -, -, hst⟩ := hS
   refine GraphCode.returnEntails_sound hc (KnowledgeExpand.expandLinks_holds (setsCtx_push_ok he v) hk) ?_
@@ -84,7 +85,7 @@ theorem pass_footprint_exits [DecidableEq ι] {G : NormalGraph ι} {images : Ins
     (hscope : checkScope j.context.length j.term = true)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {s : IndexedHeap} {h₀ : Heap} (hF : GraphCode.FreshOk F h₀.length ρ)
-    (he : EnvOk G j.context ρ s.n s.W) (hkS : HeapKnowledge.Holds kS ρ s.h)
+    (he : EnvOk G j.context ρ s.n s.W) (hkS : HeapKnowledge.Holds kS ε ρ s.h)
     (hsafe : Safe (excOf G) (meaning G j.type) s.n s.W s.h (instantiate 0 ρ j.term))
     (h₁ : Φ.Holds h₀ s.h) {k : Nat} {h' : Heap} {t' : Tm}
     (hst : Steps k s.h (instantiate 0 ρ j.term) h' t') (hk : k < s.n) :
@@ -134,7 +135,7 @@ theorem footprint_exits [DecidableEq ι] {G : NormalGraph ι} {images : Instance
     (hfc : footprintCheck G images codes sums Φ F c node kS d liveHandler exc ret outFresh = true)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {s : IndexedHeap} {h₀ : Heap} (hF : GraphCode.FreshOk F h₀.length ρ)
-    (he : EnvOk G c.context ρ s.n s.W) (hkS : HeapKnowledge.Holds kS ρ s.h)
+    (he : EnvOk G c.context ρ s.n s.W) (hkS : HeapKnowledge.Holds kS ε ρ s.h)
     (hsafe : Safe (excOf G) (meaning G c.type) s.n s.W s.h (instantiate 0 ρ node.expression))
     (h₁ : Φ.Holds h₀ s.h) {k : Nat} {h' : Heap} {t' : Tm}
     (hst : Steps k s.h (instantiate 0 ρ node.expression) h' t') (hk : k < s.n) :

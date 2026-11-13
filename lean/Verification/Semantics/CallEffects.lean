@@ -215,7 +215,7 @@ theorem callEnv_pad (r : Tm) (args : List Tm) {pad : List Tm} (hpad : ∀ a ∈ 
 /-- A signature's precondition on a call with receiver `r` and actuals `args`
 and the heap it starts in. -/
 def Effect.Requires (e : Effect) (r : Tm) (args : List Tm) (h : Heap) : Prop :=
-  (∀ R, e.requires = some R → ElemsAt R r h) ∧ ∀ F ∈ e.pre, F.HoldsAt (callEnv r args) h
+  (∀ R, e.requires = some R → ElemsAt R r h) ∧ ∀ F ∈ e.pre, F.HoldsAt ⟨callEnv r args, h⟩ (callEnv r args) h
 
 theorem Effect.requires_none {e : Effect} (h : e.requires = none) (hp : e.pre = []) (r : Tm) (args : List Tm)
     (heap : Heap) : e.Requires r args heap :=
@@ -427,7 +427,7 @@ def Effect.post (e : Effect) (r : Tm) (args : List Tm) : Heap → Post := fun be
   e.within r args before after ∧ (e.fresh = true → Footprints.FreshAt before.length v) ∧
     (e.freshObject = true → Footprints.FreshObjectAt before.length v) ∧
     (∀ R, e.elements = some R → v = .tru → ElemsAt R r after) ∧
-    (∀ F ∈ e.ensures, F.HoldsAt (ensuresEnv v r args) after) ∧
+    (∀ F ∈ e.ensures, F.HoldsAt ⟨callEnv r args, before⟩ (ensuresEnv v r args) after) ∧
     (e.receiverGrows = true → ReceiverGrows r before after ∧ ReceiverAppends r args before after) ∧
     (∀ w, e.elementWrite = some w → w.Holds args before after)
 
@@ -902,8 +902,10 @@ theorem Effect.promised_take {e : Effect} {n m : Nat} (h : e.below n = true) (hm
 frame as the call passed them: the receiver, then each actual it binds. -/
 theorem Effect.pre_frame {e : Effect} {n : Nat} (h : e.below n = true) {F : HeapKnowledge.IndexFact}
     (hF : F ∈ e.pre) (r : Tm) (args vs : List Tm) (d : Tm) (heap : Heap) :
-    F.HoldsAt (callEnv r args) heap ↔ F.HoldsAt (envOf (r :: CallArguments.parameters n args ++ vs) d) heap := by
-  refine HeapKnowledge.IndexFact.holdsAt_congr fun s hs => ?_
+    F.HoldsAt ⟨callEnv r args, heap⟩ (callEnv r args) heap ↔
+      F.HoldsAt ⟨envOf (r :: CallArguments.parameters n args ++ vs) d, heap⟩
+        (envOf (r :: CallArguments.parameters n args ++ vs) d) heap := by
+  refine (HeapKnowledge.IndexFact.holdsAt_entry _).trans (HeapKnowledge.IndexFact.holdsAt_congr fun s hs => ?_)
   have hle := Effect.below_pre h F hF s hs
   simp only [callEnv, envOf]
   cases s with
@@ -921,8 +923,9 @@ theorem Effect.pre_frame {e : Effect} {n : Nat} (h : e.below n = true) {F : Heap
 /-- Actuals past those code binds do not change what its precondition reads. -/
 theorem Effect.pre_take {e : Effect} {n m : Nat} (h : e.below n = true) (hm : n ≤ m) {F : HeapKnowledge.IndexFact}
     (hF : F ∈ e.pre) (r : Tm) (args : List Tm) (heap : Heap) :
-    F.HoldsAt (callEnv r (args.take m)) heap ↔ F.HoldsAt (callEnv r args) heap := by
-  refine HeapKnowledge.IndexFact.holdsAt_congr fun s hs => ?_
+    F.HoldsAt ⟨callEnv r (args.take m), heap⟩ (callEnv r (args.take m)) heap ↔
+      F.HoldsAt ⟨callEnv r args, heap⟩ (callEnv r args) heap := by
+  refine (HeapKnowledge.IndexFact.holdsAt_entry _).trans (HeapKnowledge.IndexFact.holdsAt_congr fun s hs => ?_)
   have hle := Effect.below_pre h F hF s hs
   simp only [callEnv]
   cases s with
@@ -957,9 +960,10 @@ theorem Effect.belowRow_of_below {e : Effect} {n : Nat} (h : e.below n = true) :
 /-- Actuals past those code binds do not change what its postcondition
 reads. -/
 theorem Effect.ensures_take {e : Effect} {n m : Nat} (h : e.belowRow n = true) (hm : n ≤ m)
-    {F : HeapKnowledge.IndexFact} (hF : F ∈ e.ensures) (v r : Tm) (args : List Tm) (heap : Heap) :
-    F.HoldsAt (ensuresEnv v r (args.take m)) heap ↔ F.HoldsAt (ensuresEnv v r args) heap := by
-  refine HeapKnowledge.IndexFact.holdsAt_congr fun s hs => ?_
+    {F : HeapKnowledge.IndexFact} (hF : F ∈ e.ensures) (v r : Tm) (args : List Tm) (before heap : Heap) :
+    F.HoldsAt ⟨callEnv r (args.take m), before⟩ (ensuresEnv v r (args.take m)) heap ↔
+      F.HoldsAt ⟨callEnv r args, before⟩ (ensuresEnv v r args) heap := by
+  refine (HeapKnowledge.IndexFact.holdsAt_entry _).trans (HeapKnowledge.IndexFact.holdsAt_congr fun s hs => ?_)
   have hle := Effect.belowRow_ensures h F hF s hs
   simp only [ensuresEnv, callEnv]
   rcases s with _ | _ | i
@@ -971,10 +975,11 @@ theorem Effect.ensures_take {e : Effect} {n m : Nat} (h : e.belowRow n = true) (
 /-- Code binding `n` parameters reads its postcondition's positions in its
 entry frame, the result pushed, as the call passed them. -/
 theorem Effect.ensures_frame {e : Effect} {n : Nat} (h : e.belowRow n = true) {F : HeapKnowledge.IndexFact}
-    (hF : F ∈ e.ensures) (v r : Tm) (args vs : List Tm) (d : Tm) (heap : Heap) :
-    F.HoldsAt (ensuresEnv v r args) heap ↔
-      F.HoldsAt (push v (envOf (r :: CallArguments.parameters n args ++ vs) d)) heap := by
-  refine HeapKnowledge.IndexFact.holdsAt_congr fun s hs => ?_
+    (hF : F ∈ e.ensures) (v r : Tm) (args vs : List Tm) (d : Tm) (before heap : Heap) :
+    F.HoldsAt ⟨callEnv r args, before⟩ (ensuresEnv v r args) heap ↔
+      F.HoldsAt ⟨envOf (r :: CallArguments.parameters n args ++ vs) d, before⟩
+        (push v (envOf (r :: CallArguments.parameters n args ++ vs) d)) heap := by
+  refine (HeapKnowledge.IndexFact.holdsAt_entry _).trans (HeapKnowledge.IndexFact.holdsAt_congr fun s hs => ?_)
   have hle := Effect.belowRow_ensures h F hF s hs
   rcases s with _ | _ | i
   · rfl
@@ -999,7 +1004,7 @@ theorem Effect.post_take_row {e : Effect} {n m : Nat} (h : e.belowRow n = true) 
   have hg : e.receiverGrows = false := Effect.below_grows (e := { e with ensures := [] }) hb
   have hx : e.elementWrite = none := Effect.below_write (e := { e with ensures := [] }) hb
   exact ⟨Effect.within_args hreg hp.1, hp.2.1, hp.2.2.1, hp.2.2.2.1,
-    fun F hF => (Effect.ensures_take h hm hF v r args after).mp (hp.2.2.2.2.1 F hF),
+    fun F hF => (Effect.ensures_take h hm hF v r args before after).mp (hp.2.2.2.2.1 F hF),
     (fun h' => by rw [hg] at h'; cases h'), fun w hw => (by rw [hx] at hw; cases hw)⟩
 
 theorem Effect.result_drop (e : Effect) (n : Nat) (R : Fam) (a : Tm) :
@@ -1087,7 +1092,7 @@ theorem Effect.post_pad {e : Effect} {r : Tm} (hr : Footprints.storeOf r = none)
   have := h.2.2.2.2.1 F hF
   have he : ensuresEnv v r (args ++ pad) = ensuresEnv v r args := by
     funext i; simp only [ensuresEnv, callEnv_pad r args hpad]
-  rwa [he] at this
+  rwa [he, callEnv_pad r args hpad] at this
 
 /-- A throw's postcondition at actuals padded with `undefined` is the one at
 the actuals. -/
@@ -1172,7 +1177,8 @@ theorem Effect.post_prefix (effect : Effect) {r : Tm} {args : List Tm} {before m
     effect.post r args middle after v → effect.post r args before after v := by
   rintro ⟨hw, hf, ho, hel, hen, hg, hew⟩
   exact ⟨Effect.within_prefix hprefix hagree hw, fun h => (hf h).lower hprefix.length_le,
-    fun h => (ho h).lower hprefix.length_le, hel, hen,
+    fun h => (ho h).lower hprefix.length_le, hel,
+    fun F hF => (HeapKnowledge.IndexFact.holdsAt_entry _).mp (hen F hF),
     fun h => ⟨(hg h).1.prefix_left hprefix, (hg h).2.prefix_left hprefix⟩, fun w h => (hew w h).prefix_left hprefix⟩
 
 /-- Fresh entry allocation composes with the frame on a throw too, where the

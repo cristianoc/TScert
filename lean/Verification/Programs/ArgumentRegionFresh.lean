@@ -24,6 +24,7 @@ value (`keepsValues`), or writes a fresh value. The facts are
 GraphCode's slot facts (`edgesFresh`, `handlerFresh`) at these
 properties. -/
 namespace Verification.GraphCode.ArgumentRegionFresh
+variable {ε : Verification.HeapKnowledge.EntryState}
 open ControlFlow PointClaims ProgramTyping PositiveGraphs PositiveRules Footprints
 
 /-- The field a cell holds its contents in. -/
@@ -450,9 +451,9 @@ fresh cell where `outC`; where `thr`, a throw keeps every cell at `C`
 fresh. -/
 def FreshWithin [DecidableEq ι] (G : NormalGraph ι) (c : NodeEvidence ι) (t : Tm) (F C : List Nat)
     (outF outC thr : Bool) : Prop :=
-  ∀ n W h ρ (b : Nat), b ≤ h.length → FreshHold F C b ρ h →
+  ∀ ε n W h ρ (b : Nat), b ≤ h.length → FreshHold F C b ρ h →
     EnvOk G (entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W →
-    HeapKnowledge.Holds (entryFacts G c) ρ h → WorldAdm W → HeapOk n W h →
+    HeapKnowledge.Holds (entryFacts G c) ε ρ h → WorldAdm W → HeapOk n W h →
     HeapObservations.SafePostExc (excOf G) (meaning G (result c))
       (fun h' v => (outF = true → FreshValue b v) ∧ (outC = true → CellFresh b h' v) ∧ CellsHold C b ρ h')
       (fun h' => thr = true → CellsHold C b ρ h') n W h (instantiate 0 ρ t)

@@ -3,6 +3,7 @@ import Verification.Programs.TolerantFramesExitVacuity
 
 /-! # Names and freshness used by the exit interpretation -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations PositiveRules HeapExpressionRules
 open Verification ControlFlow PositiveGraphs PositiveCertificates LabelStore ProgramTyping ProgramCertificates
 open CertificateProducer SinglePass
@@ -64,10 +65,10 @@ theorem passOutFreshChecked_fresh {codes : CodeEntry ι → Bool} {sums : List (
     {stepK : HeapKnowledge.Knowledge} {deriv : ProgramCertificates.Evidence ι}
     (hf : passOutFreshChecked G I codes sums c node entry stepK deriv = true)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G I sums)
-    {imp : List (PromiseCalls.Implication ι)} {start : List Nat} {E ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hS : StateHolds G entry imp start E ρ m s) (he : EnvOk G c.context ρ s.n s.W)
+    {imp : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
+    (hS : StateHolds G entry imp start ε ρ m s) (he : EnvOk G c.context ρ s.n s.W)
     (hwidth : entry.names.length ≤ c.context.length) (hm : m ≤ s.h.length)
-    (hkS : HeapKnowledge.Holds stepK ρ s.h) {k : Nat} {h' : Heap} {v : Tm}
+    (hkS : HeapKnowledge.Holds stepK ε ρ s.h) {k : Nat} {h' : Heap} {v : Tm}
     (hk : k < s.n) (hst : Steps k s.h (instantiate 0 ρ node.expression) h' v)
     (hv : isVal v = true) : FreshAt m v := by
   rcases passOutFreshChecked_cases hf with hc | ⟨hcf, hdc⟩

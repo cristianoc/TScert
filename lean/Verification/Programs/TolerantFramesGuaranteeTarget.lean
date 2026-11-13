@@ -8,7 +8,9 @@ The definitions below are copied from the unit lane, branch
 c99647d3 (`ReachesIn`, `EntryHolds`, `GraphGuarantee`, `CheckerScope`,
 `RunCall`, `RunCall.result`, `RunCall.Accepts`, `regionOf`, `RunSound`,
 `RunKeepsSummaries`), each declaration syntactically identical to its
-source; that module is not on this branch, so it cannot be imported. The
+source but `EntryHolds` and `GraphGuarantee`, which read their facts at the
+run's entry state (`HeapKnowledge.EntryState`: the environment and heap the
+run starts in); that module is not on this branch, so it cannot be imported. The
 namespace is this lane's, and the opened namespaces are the source's but
 `SourceExtraction`, which no copied declaration reads. `run_sound`
 (`TolerantFramesRunSound`) proves `RunSound` from the graph-level proof's
@@ -37,7 +39,7 @@ types at budget `n` and world `W`, its entry separation and index facts, an
 admissible world and a heap the world types. -/
 def EntryHolds (G : NormalGraph ι) (inputs : List (Ty ι)) (sep : HeapSeparation.Separation)
     (idx : List HeapKnowledge.IndexAtom) (ρ : Env) (n : Nat) (W : WorldT n) (h : Heap) : Prop :=
-  EnvOk G inputs ρ n W ∧ HeapSeparation.Holds sep ρ ∧ HeapKnowledge.IndexHolds idx ρ h ∧
+  EnvOk G inputs ρ n W ∧ HeapSeparation.Holds sep ρ ∧ HeapKnowledge.IndexHolds ⟨ρ, h⟩ idx ρ h ∧
     WorldAdm W ∧ HeapOk n W h
 
 /-- **What an accepted run of a graph guarantees**, at every assignment
@@ -65,7 +67,7 @@ structure GraphGuarantee (G : NormalGraph ι) (admits : MixedAssignment ι → P
     EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h →
     HeapObservations.SafePost (excOf (reassign G η))
       (GoalHolds (reassign G η) goal (goal.argument (envOf L d)))
-      (fun h' v => GraphCode.EnsuresAt ensures h' (push v (envOf L d))) n W h (.goto E K start L d)
+      (fun h' v => GraphCode.EnsuresAt ensures ⟨envOf L d, h⟩ h' (push v (envOf L d))) n W h (.goto E K start L d)
   regionally : ∀ Φ regions exc, regional = some (Φ, regions, exc) → ∀ E K, GraphCode.program E K = P →
     ∀ η, admits η → ∀ n W h L d,
     EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h →
@@ -76,7 +78,7 @@ structure GraphGuarantee (G : NormalGraph ι) (admits : MixedAssignment ι → P
       n W h (.goto E K start L d)
   asserted : ∀ η, admits η → ∀ n W h ρ, EntryHolds (reassign G η) inputs sep idx ρ n W h →
     ∀ l k, (l, k) ∈ assertions → ∀ j h' ρ', j < n → ReachesIn P j h (.at start ρ) h' (.at l ρ') →
-      HeapKnowledge.Holds k ρ' h'
+      HeapKnowledge.Holds k ⟨ρ, h⟩ ρ' h'
 
 /-- The assignments a pass checker's acceptance covers: every one for the
 ordinary checker, a qualified body's admitted instances for its checker

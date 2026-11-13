@@ -14,6 +14,7 @@ types at the mapped environment, as `ControlFlow.target_sound` and
 `branch_target_sound` give them for the checker: the "target types"
 premise (`htc`) of the edge lemmas. -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
 open PositiveRules HeapExpressionRules
@@ -35,7 +36,7 @@ theorem edgeEvidenceChecked_env {G : NormalGraph ι} {images : InstanceImageChec
       (match observed with
         | some o => HeapKnowledge.aliasCells (HeapKnowledge.observeTyped G Γ k 0 o)
         | none => []) p = true)
-    (hk : HeapKnowledge.Holds k ρ h) (he : EnvOk G Γ ρ (n + 1) W) (hh : HeapOk (n + 1) W h)
+    (hk : HeapKnowledge.Holds k ε ρ h) (he : EnvOk G Γ ρ (n + 1) W) (hh : HeapOk (n + 1) W h)
     (ho : ∀ o, observed = some o → o.holds (ρ 0)) :
     EnvOk G Δ (PointClaims.mapEnv t.mapping ρ) (n + 1) W := by
   unfold edgeEvidenceChecked at hc
@@ -55,7 +56,7 @@ theorem checkedEdge_env {G : NormalGraph ι} {images : InstanceImageCheck G} {cl
     {Γ Δ : List (Ty ι)} {t : Target} {observed : Option BranchRefinement.Observation} {k : HeapKnowledge.Knowledge}
     {answers : Answered G} {ρ : Env} {n : Nat} {W : WorldT (n + 1)} {h : Heap}
     (hce : (checkedEdge G images claimed Δ Γ t observed k answers).1 = true)
-    (hk : HeapKnowledge.Holds k ρ h) (he : EnvOk G Γ ρ (n + 1) W) (hh : HeapOk (n + 1) W h)
+    (hk : HeapKnowledge.Holds k ε ρ h) (he : EnvOk G Γ ρ (n + 1) W) (hh : HeapOk (n + 1) W h)
     (ho : ∀ o, observed = some o → o.holds (ρ 0)) :
     EnvOk G Δ (PointClaims.mapEnv t.mapping ρ) (n + 1) W := by
   unfold checkedEdge at hce
@@ -103,11 +104,11 @@ theorem start_entered_passPreT {G : NormalGraph ι} {w : Walk ι} {inputs : List
       givenInputs givenImplies).2.1)
     (hctx : ctx start = inputs)
     {ρ : Env} {m : Nat} {s : IndexedHeap} (he : EnvOk G inputs ρ s.n s.W)
-    (hs : HeapSeparation.Holds entrySeparation ρ) (hi : HeapKnowledge.IndexHolds entryIndices ρ s.h) :
-    passPreT G w (List.range inputs.length) ρ ctx start ρ m s := by
+    (hs : HeapSeparation.Holds entrySeparation ρ) (hi : HeapKnowledge.IndexHolds ⟨ρ, s.h⟩ entryIndices ρ s.h) :
+    passPreT G w (List.range inputs.length) ⟨ρ, s.h⟩ ctx start ρ m s := by
   obtain ⟨-, -, hnoimp, hargs, hinputs, hk⟩ := entryRefusal_ok hacc
   have hest : HeadEstablishes G (startGiven written entryIndices entrySeparation supplied) givenImplies
-      (List.range inputs.length) (goal.slot.bind ((List.range inputs.length)[·]?)) givenArgs givenInputs ρ ρ s :=
+      (List.range inputs.length) (goal.slot.bind ((List.range inputs.length)[·]?)) givenArgs givenInputs ⟨ρ, s.h⟩ ρ s :=
     { facts := startGiven_holds hk he hs hi
       implies := by subst hnoimp; intro x hx; cases hx
       inputs := fun j q _ hjq _ => by have := hinputs _ hjq; simp only at this; rw [this]

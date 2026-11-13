@@ -73,23 +73,23 @@ theorem NodeExitsChecked.reassign {G : NormalGraph ι} {images : InstanceImageCh
 /-- **A node's exits and handler deliver** (`NodeExitsY` with the step's
 result's freshness in the state after the step, `AfterStep`). -/
 structure NodeExitsYF (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
-    (ρ0 : Env) (ctx : Nat → List (Ty ι)) (stated : Nat → Option HeapKnowledge.Knowledge) (given : Nat → Bool)
+    (ε : HeapKnowledge.EntryState) (ctx : Nat → List (Ty ι)) (stated : Nat → Option HeapKnowledge.Knowledge) (given : Nat → Bool)
     (edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
     (m : Nat) (l : Nat) (node : Node) (c : PointClaim ι) (entry : SinglePass.State) (st : Stepped ι)
     (ys : List (PromiseCalls.Yield ι)) (outFresh : Bool) : Prop where
   exits : ∀ t pushed observed promote, Exit.normal t pushed observed promote ∈ Exit.ofNode node → ∀ ρ,
-    ExitDelivers (edgePreAJ G w startNames ρ0 ctx stated given edgesIn) G c.type c.context
-      (AfterStep G w startNames ρ0 l entry st ys outFresh ρ) ρ m t pushed observed promote
+    ExitDelivers (edgePreAJ G w startNames ε ctx stated given edgesIn) G c.type c.context
+      (AfterStep G w startNames ε l entry st ys outFresh ρ) ρ m t pushed observed promote
   handler : ∀ t, node.handler = some t → ∀ ρ (s' : IndexedHeap) e,
-    StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ (w.implies l) startNames ρ0
+    StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ (w.implies l) startNames ε
       ρ m s' →
     EnvOk G c.context ρ s'.n s'.W → Scoped 0 e → excOf G s'.n s'.W e →
-    edgePreAJ G w startNames ρ0 ctx stated given edgesIn t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s'
+    edgePreAJ G w startNames ε ctx stated given edgesIn t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s'
 
 /-- Exit checks, sound subtype answers and the kept exit yields deliver
 at the graph of the checks. Mapping bounds supply `MapNamesSound`. -/
 theorem nodeExitsYF_of_checks {G : NormalGraph ι} {images : InstanceImageCheck G} {w : Walk ι}
-    {startNames : List Nat} {ρ0 : Env} {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge}
+    {startNames : List Nat} {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge}
     {given : Nat → Bool}
     {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
     {l : Nat} {node : Node} {c : PointClaim ι} {entry : SinglePass.State} {st : Stepped ι}
@@ -100,7 +100,7 @@ theorem nodeExitsYF_of_checks {G : NormalGraph ι} {images : InstanceImageCheck 
     (hshape : SinglePass.passShapeCheck' G c.type node.continuation = true) (wf : StoreWF entry.store)
     (hnd : startNames.Nodup)
     (hsub : SubtypeAnswersSound G images) (m : Nat) :
-    NodeExitsYF G w startNames ρ0 ctx stated given edgesIn m l node c entry st ys outFresh where
+    NodeExitsYF G w startNames ε ctx stated given edgesIn m l node c entry st ys outFresh where
   exits t pushed observed promote hmem ρ := by
     obtain ⟨i, hm⟩ := List.mem_iff_getElem?.mp hmem
     obtain ⟨ysE, hE, hnh, hhd⟩ := hc.normal i t pushed observed promote hm

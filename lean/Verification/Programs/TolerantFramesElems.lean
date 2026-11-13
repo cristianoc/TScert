@@ -40,7 +40,7 @@ theorem keptBy_keptByElems {c : Footprints.Closed} {a : Atom} (hk : a.keptBy c =
 
 /-- **An element fact kept by atom survives an action of its effect.** -/
 theorem atom_keptByElems {c : Footprints.Closed} {a : Atom} (hk : a.keptByElems c = true) {η ρ : Env}
-    {s s' : IndexedHeap} (hact : Action c.fp ρ s s') (ha : AtomHolds a η s.h) : AtomHolds a η s'.h := by
+    {s s' : IndexedHeap} (hact : Action c.fp ρ s s') (ha : AtomHolds ε a η s.h) : AtomHolds ε a η s'.h := by
   have hc : c.Holds s.h s'.h := Footprints.Closed.holds_iff.mpr (Footprints.Closed.post_iff.mp hact.2)
   cases a with
   | index x =>
@@ -64,10 +64,10 @@ theorem atom_keptByElems {c : Footprints.Closed} {a : Atom} (hk : a.keptByElems 
     exact atomHolds_extend vs ha
   | _ => exact atomHolds_heapFree (by simpa only [Atom.keptByElems] using hk) ha s'.h
 
-/-- **(Keep by atom), element facts included**: `Named S η ⊢ □_c Named S η`
+/-- **(Keep by atom), element facts included**: `Named ε S η ⊢ □_c Named ε S η`
 for `S` kept by `c` (`Atom.keptByElems`). -/
 theorem named_keptByElems_box {c : Footprints.Closed} {S : List Atom} (hk : ∀ a ∈ S, a.keptByElems c = true)
-    {η ρ : Env} {m : Nat} {s : IndexedHeap} (hS : Named S η ρ m s) : Box c.fp (Named S η) ρ m s :=
+    {η ρ : Env} {m : Nat} {s : IndexedHeap} (hS : Named ε S η ρ m s) : Box c.fp (Named ε S η) ρ m s :=
   fun _ ha a hm => atom_keptByElems (hk a hm) ha (hS a hm)
 
 /-- An elements atom is kept by `{values: keep, stores: keep}`. -/

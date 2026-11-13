@@ -6,7 +6,7 @@ import Verification.Programs.TolerantFramesWalkReassignWalk
 `ReturnsEnsured` (`TolerantFramesGuarantee`) asks, at every node entry where
 the pass's typed assertion holds, that every run of the node's term with
 budget left to a value at a return meets `ensures` at the value and the
-entry values `ρ0`. The pass's return check (`SinglePass.returnCheck`, at a
+entry values `ε.env`. The pass's return check (`SinglePass.returnCheck`, at a
 node whose continuation is a return) accepts where the postcondition is
 empty, the claim's type or a context slot's is empty, or `returnEntails`
 accepts the output's facts over the result and the tracked inputs
@@ -125,13 +125,13 @@ value and the entry values: the state after the step
 `passTracked_names`); an empty result type admits no value; an empty
 context type no environment. -/
 theorem returnsEnsured_of {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
-    {pc : PassChecker G images} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat} {ρ0 : Env}
+    {pc : PassChecker G images} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat} 
     {ctx : Nat → List (Ty ι)} {m : Nat} {goal : Goal ι} {ens : List HeapKnowledge.IndexFact}
     (hacc : ∀ l, w.visited l → ∃ r : NodeChecked G images codes pc P w startNames ctx l,
-      (∀ ρ (s : IndexedHeap), passPreT G w startNames ρ0 ctx l ρ m s →
-        StateHolds G r.entry (w.implies l) startNames ρ0 ρ m s) ∧ ReturnChecked r goal ens)
+      (∀ ρ (s : IndexedHeap), passPreT G w startNames ε ctx l ρ m s →
+        StateHolds G r.entry (w.implies l) startNames ε ρ m s) ∧ ReturnChecked r goal ens)
     (hcodes : CodesSound G codes) :
-    ReturnsEnsured P G w startNames ρ0 ctx ens m := by
+    ReturnsEnsured P G w startNames ε ctx ens m := by
   intro l ρ s hp _
   obtain ⟨na, hent, hrc⟩ := hacc l hp.1.1
   have hS := hent ρ s hp

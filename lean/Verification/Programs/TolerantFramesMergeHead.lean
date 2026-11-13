@@ -12,6 +12,7 @@ that where an edge establishes them, the head's state holds
 (`headEntry_holds`), at the valuation `headVal`: a start name its entry
 value, a fresh name the value of its slot. -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations
 open ProgramTyping PositiveGraphs
 
@@ -19,25 +20,25 @@ section Head
 variable {ι : Type}
 
 /-- **What an edge into a loop head establishes** at the head's
-environment `ρ'` and the state `s`, its entry values `ρ0`: the head's given
+environment `ρ'` and the state `s`, its entry values `ε.env`: the head's given
 facts `g` hold at its slots; its given implications hold; a slot `j` a given
 input `(j, q)` names holds the entry value of `q`; a slot the promised input
 names holds the entry value of the start name the promised input is. -/
 structure HeadEstablishes (G : NormalGraph ι) (g : HeapKnowledge.Knowledge)
     (implies : List (PromiseCalls.Implication ι)) (startNames : List Nat) (argName : Option Nat)
-    (argSlots : List Nat) (inputSlots : List (Nat × Nat)) (ρ0 ρ' : Env) (s : IndexedHeap) : Prop where
-  facts : HeapKnowledge.Holds g ρ' s.h
+    (argSlots : List Nat) (inputSlots : List (Nat × Nat)) (ε : HeapKnowledge.EntryState) (ρ' : Env) (s : IndexedHeap) : Prop where
+  facts : HeapKnowledge.Holds g ε ρ' s.h
   implies : PromiseCalls.ImpliesOk G implies ρ' s.n s.W
-  inputs : ∀ j q x, (j, q) ∈ inputSlots → startNames[q]? = some x → ρ' j = ρ0 q
-  arg : ∀ j a q, j ∈ argSlots → argName = some a → startNames[q]? = some a → ρ' j = ρ0 q
+  inputs : ∀ j q x, (j, q) ∈ inputSlots → startNames[q]? = some x → ρ' j = ε.env q
+  arg : ∀ j a q, j ∈ argSlots → argName = some a → startNames[q]? = some a → ρ' j = ε.env q
 
 /-- The head's valuation: a start name its entry value, any other name
 `fresh + i` the value of slot `i`. -/
-noncomputable def headVal (startNames : List Nat) (ρ0 ρ' : Env) (fresh : Nat) : Env := fun y =>
-  open Classical in if h : ∃ q, startNames[q]? = some y then ρ0 (Classical.choose h) else ρ' (y - fresh)
+noncomputable def headVal (startNames : List Nat) (ε : HeapKnowledge.EntryState) (ρ' : Env) (fresh : Nat) : Env := fun y =>
+  open Classical in if h : ∃ q, startNames[q]? = some y then ε.env (Classical.choose h) else ρ' (y - fresh)
 
-theorem headVal_start {startNames : List Nat} {ρ0 ρ' : Env} {fresh q y : Nat} (hnd : startNames.Nodup)
-    (hq : startNames[q]? = some y) : headVal startNames ρ0 ρ' fresh y = ρ0 q := by
+theorem headVal_start {startNames : List Nat} {ρ' : Env} {fresh q y : Nat} (hnd : startNames.Nodup)
+    (hq : startNames[q]? = some y) : headVal startNames ε ρ' fresh y = ε.env q := by
   have hex : ∃ q, startNames[q]? = some y := ⟨q, hq⟩
   simp only [headVal, dif_pos hex]
   have hc := Classical.choose_spec hex
@@ -46,8 +47,8 @@ theorem headVal_start {startNames : List Nat} {ρ0 ρ' : Env} {fresh q y : Nat} 
   congr 1
   exact (List.getElem_inj hnd).mp (h1.2.trans h2.2.symm)
 
-theorem headVal_fresh {startNames : List Nat} {ρ0 ρ' : Env} {fresh i : Nat} (hlt : ∀ x ∈ startNames, x < fresh) :
-    headVal startNames ρ0 ρ' fresh (i + fresh) = ρ' i := by
+theorem headVal_fresh {startNames : List Nat} {ρ' : Env} {fresh i : Nat} (hlt : ∀ x ∈ startNames, x < fresh) :
+    headVal startNames ε ρ' fresh (i + fresh) = ρ' i := by
   have hne : ¬∃ q : Nat, startNames[q]? = some (i + fresh) := by
     rintro ⟨q, hq⟩
     have := hlt _ (List.mem_of_getElem? hq); omega
@@ -57,12 +58,12 @@ theorem headVal_fresh {startNames : List Nat} {ρ0 ρ' : Env} {fresh i : Nat} (h
 the edge establishes the given inputs and the promised input. -/
 theorem headEntry_slots {G : NormalGraph ι} {g : HeapKnowledge.Knowledge} {width fresh : Nat}
     {startNames : List Nat} {argName : Option Nat} {argSlots : List Nat} {inputSlots : List (Nat × Nat)}
-    {implies : List (PromiseCalls.Implication ι)} {ρ0 ρ' : Env} {s : IndexedHeap}
+    {implies : List (PromiseCalls.Implication ι)} {ρ' : Env} {s : IndexedHeap}
     (hnd : startNames.Nodup) (hlt : ∀ x ∈ startNames, x < fresh)
     (harg : ∀ a, argName = some a → ∃ q : Nat, startNames[q]? = some a)
-    (he : HeadEstablishes G g implies startNames argName argSlots inputSlots ρ0 ρ' s) :
+    (he : HeadEstablishes G g implies startNames argName argSlots inputSlots ε ρ' s) :
     SlotsNamed (SinglePass.headEntry g false width fresh startNames argName argSlots inputSlots implies).1.names
-      ρ' (headVal startNames ρ0 ρ' fresh) := by
+      ρ' (headVal startNames ε ρ' fresh) := by
   intro i x hx
   simp only [SinglePass.headEntry, Bool.false_eq_true, if_false, List.getElem?_map] at hx
   by_cases hi : i < width
@@ -94,19 +95,19 @@ at the head's environment `ρ'`, the head's state with its implications holds
 at `ρ'`, each start name holding its entry value; its store is well-formed. -/
 theorem headEntry_holds {G : NormalGraph ι} {g : HeapKnowledge.Knowledge} {width fresh : Nat}
     {startNames : List Nat} {argName : Option Nat} {argSlots : List Nat} {inputSlots : List (Nat × Nat)}
-    {implies : List (PromiseCalls.Implication ι)} {ρ0 ρ' : Env} {m : Nat} {s : IndexedHeap}
+    {implies : List (PromiseCalls.Implication ι)} {ρ' : Env} {m : Nat} {s : IndexedHeap}
     (hnd : startNames.Nodup) (hlt : ∀ x ∈ startNames, x < fresh)
     (harg : ∀ a, argName = some a → ∃ q : Nat, startNames[q]? = some a)
-    (he : HeadEstablishes G g implies startNames argName argSlots inputSlots ρ0 ρ' s) :
+    (he : HeadEstablishes G g implies startNames argName argSlots inputSlots ε ρ' s) :
     StateHolds G (SinglePass.headEntry g false width fresh startNames argName argSlots inputSlots implies).1
       (SinglePass.headEntry g false width fresh startNames argName argSlots inputSlots implies).2.1
-      startNames ρ0 ρ' m s ∧
+      startNames ε ρ' m s ∧
     StoreWF (SinglePass.headEntry g false width fresh startNames argName argSlots inputSlots implies).1.store := by
   have hsl := headEntry_slots (width := width) hnd hlt harg he
   have hst := headStore_ok
     (f := fun i => (SinglePass.headEntry g false width fresh startNames argName argSlots inputSlots implies).1.names[i]?)
     he.facts (fun i x hx => (hsl i x hx).symm)
-  refine ⟨⟨headVal startNames ρ0 ρ' fresh, hsl, hst.1, ?_, ⟨fun x hx => ?_, fun q x hq => headVal_start hnd hq⟩⟩,
+  refine ⟨⟨headVal startNames ε ρ' fresh, hsl, hst.1, ?_, ⟨fun x hx => ?_, fun q x hq => headVal_start hnd hq⟩⟩,
     hst.2⟩
   · intro x hx htest
     obtain ⟨y, hy, hyx⟩ := List.mem_filterMap.mp hx

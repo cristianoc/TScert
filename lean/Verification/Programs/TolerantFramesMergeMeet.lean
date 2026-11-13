@@ -129,8 +129,8 @@ theorem lookup_mem : ∀ (c : List (Nat × Nat)) (x φ : Nat), c.lookup x = some
 /-- **A fact restated at fresh names holds** (`Atom.renameEach`) at a
 valuation under which each fresh name denotes the name it renames. -/
 theorem renameEach_holds {m : Std.HashMap Nat (List Nat)} {a b : Atom} {η : Env} {h : Heap}
-    (hm : ∀ x φs, m[x]? = some φs → ∀ φ ∈ φs, η φ = η x) (ha : AtomHolds a η h)
-    (hb : b ∈ Atom.renameEach m a) : AtomHolds b η h := by
+    (hm : ∀ x φs, m[x]? = some φs → ∀ φ ∈ φs, η φ = η x) (ha : AtomHolds ε a η h)
+    (hb : b ∈ Atom.renameEach m a) : AtomHolds ε b η h := by
   unfold Atom.renameEach at hb
   obtain ⟨c, hc, hr⟩ := List.mem_filterMap.mp hb
   have inv : ∀ c ∈ a.names.eraseDups.foldl (fun (acc : List (List (Nat × Nat))) x => match m.get? x with
@@ -173,41 +173,41 @@ noncomputable abbrev mVal (preds : List State) (width fresh0 : Nat) (ρ η : Env
 fresh names start at `fresh0`: every predecessor has `width` slots, its
 slots' and facts' names below `fresh0` and a well-formed store; `p`'s slots
 hold their names' values under `η` and its facts hold at `η` and `h`. -/
-structure OnPath (preds : List State) (width fresh0 p : Nat) (ρ η : Env) (h : Heap) : Prop where
+structure OnPath (preds : List State) (width fresh0 p : Nat) (ε : HeapKnowledge.EntryState) (ρ η : Env) (h : Heap) : Prop where
   hp : p < preds.length
   len : ∀ q ∈ preds, q.names.length = width
   bel : ∀ q ∈ preds, ∀ x ∈ q.names, x < fresh0
   facts : ∀ q ∈ preds, ∀ a ∈ storeAll q.store, ∀ x ∈ a.names, x < fresh0
   wf : ∀ q ∈ preds, StoreWF q.store
   slots : SlotsNamed (preds[p]'hp).names ρ η
-  store : StoreOk (preds[p]'hp).store η h
+  store : StoreOk ε (preds[p]'hp).store η h
 
 section Path
 variable {preds : List State} {width fresh0 p : Nat} {ρ η : Env} {h : Heap}
 
-theorem OnPath.ren_len (P : OnPath preds width fresh0 p ρ η h) : p < (mRen preds width fresh0).length := by
+theorem OnPath.ren_len (P : OnPath preds width fresh0 p ε ρ η h) : p < (mRen preds width fresh0).length := by
   rw [(mergeSlots_inv preds width fresh0).len]; exact P.hp
 
 /-- `p`'s facts hold at the merge's valuation: their names are below the
 counter. -/
-theorem OnPath.pred_ok (P : OnPath preds width fresh0 p ρ η h) :
-    StoreOk (preds[p]'P.hp).store (mVal preds width fresh0 ρ η) h := by
+theorem OnPath.pred_ok (P : OnPath preds width fresh0 p ε ρ η h) :
+    StoreOk ε (preds[p]'P.hp).store (mVal preds width fresh0 ρ η) h := by
   intro a ha
   refine (atomHolds_congr fun x hx => ?_).mp (P.store a ha)
   exact (mergeVal_below (P.facts _ (List.getElem_mem P.hp) a ha x hx)).symm
 
-theorem OnPath.rename (P : OnPath preds width fresh0 p ρ η h) :
+theorem OnPath.rename (P : OnPath preds width fresh0 p ε ρ η h) :
     ∀ x φs, ((mRen preds width fresh0)[p]'P.ren_len)[x]? = some φs → ∀ φ ∈ φs,
       mVal preds width fresh0 ρ η φ = η x := by
   intro x φs hm φ hφ
   refine mergeVal_rename P.hp P.len P.bel P.slots P.ren_len ?_
   rw [Std.HashMap.getD_eq_getD_getElem?, hm]; exact hφ
 
-theorem OnPath.key (P : OnPath preds width fresh0 p ρ η h) :
+theorem OnPath.key (P : OnPath preds width fresh0 p ε ρ η h) :
     ∀ x φs, ((mRen preds width fresh0)[p]'P.ren_len)[x]? = some φs → mVal preds width fresh0 ρ η x = η x :=
   fun _ _ hm => mergeVal_below (rename_key_below P.hp P.len P.bel P.ren_len hm)
 
-theorem OnPath.slotsNamed (P : OnPath preds width fresh0 p ρ η h) :
+theorem OnPath.slotsNamed (P : OnPath preds width fresh0 p ε ρ η h) :
     SlotsNamed (mNames preds width fresh0).toList ρ (mVal preds width fresh0 ρ η) :=
   mergeVal_slots P.hp P.len P.bel P.slots
 
@@ -217,9 +217,9 @@ theorem zip_get {α β : Type} {l : List α} {l' : List β} {p : Nat} (hp : p < 
 
 /-- **`p`'s restatements hold** at the merge's valuation: its facts about
 the names it renames, restated at their fresh names, and its equalities. -/
-theorem OnPath.variants_ok (P : OnPath preds width fresh0 p ρ η h) {v : Std.HashSet Atom}
+theorem OnPath.variants_ok (P : OnPath preds width fresh0 p ε ρ η h) {v : Std.HashSet Atom}
     (hv : (mergeVariants preds (mNames preds width fresh0) (mRen preds width fresh0))[p]? = some v) :
-    ∀ a ∈ v, AtomHolds a (mVal preds width fresh0 ρ η) h := by
+    ∀ a ∈ v, AtomHolds ε a (mVal preds width fresh0 ρ η) h := by
   unfold mergeVariants at hv
   rw [List.getElem?_map, zip_get P.hp P.ren_len] at hv
   simp only [Option.map_some, Option.some.injEq] at hv
@@ -230,7 +230,7 @@ theorem OnPath.variants_ok (P : OnPath preds width fresh0 p ρ η h) {v : Std.Ha
   intro a ha
   rcases Std.HashSet.mem_insertMany_list.mp ha with ha | ha
   · revert ha
-    refine foldl_inv (fun (acc : Std.HashSet Atom) => ∀ a ∈ acc, AtomHolds a (mVal preds width fresh0 ρ η) h) _ _ _
+    refine foldl_inv (fun (acc : Std.HashSet Atom) => ∀ a ∈ acc, AtomHolds ε a (mVal preds width fresh0 ρ η) h) _ _ _
       (fun a ha => by simp at ha) ?_ a
     intro b hb acc hacc a ha
     rcases Std.HashSet.mem_insertMany_list.mp ha with ha | ha
@@ -303,7 +303,7 @@ theorem mergeMet0_wf {preds : List State} {width fresh0 : Nat} (hwf : ∀ q ∈ 
 section Path
 variable {preds : List State} {width fresh0 p : Nat} {ρ η : Env} {h : Heap}
 
-theorem OnPath.variants_len (P : OnPath preds width fresh0 p ρ η h) :
+theorem OnPath.variants_len (P : OnPath preds width fresh0 p ε ρ η h) :
     p < (mergeVariants preds (mNames preds width fresh0) (mRen preds width fresh0)).length := by
   rw [mergeVariants_length _ _ _ (mergeSlots_inv _ width fresh0).len]; exact P.hp
 
@@ -311,11 +311,11 @@ theorem OnPath.variants_len (P : OnPath preds width fresh0 p ρ η h) :
 valuation: the common facts are `p`'s, the restated facts every predecessor
 states are `p`'s restatements, and forgetting names keeps facts holding
 (`drop_holds`). -/
-theorem OnPath.met0_ok (P : OnPath preds width fresh0 p ρ η h) :
-    StoreOk (mergeMet0 preds (mNames preds width fresh0) (mRen preds width fresh0)) (mVal preds width fresh0 ρ η) h := by
+theorem OnPath.met0_ok (P : OnPath preds width fresh0 p ε ρ η h) :
+    StoreOk ε (mergeMet0 preds (mNames preds width fresh0) (mRen preds width fresh0)) (mVal preds width fresh0 ρ η) h := by
   unfold mergeMet0
-  refine drop_holds (mergeMeet_inv (fun s => StoreOk s (mVal preds width fresh0 ρ η) h)
-    (fun a => AtomHolds a (mVal preds width fresh0 ρ η) h) (fun _ _ hs ha => add_ok hs ha) P.variants_len
+  refine drop_holds (mergeMeet_inv (fun s => StoreOk ε s (mVal preds width fresh0 ρ η) h)
+    (fun a => AtomHolds ε a (mVal preds width fresh0 ρ η) h) (fun _ _ hs ha => add_ok hs ha) P.variants_len
     (P.variants_ok (List.getElem?_eq_getElem P.variants_len)) ?_)
   obtain ⟨w, hsub⟩ := mergeCommon_live P.wf
   intro a ha
@@ -323,10 +323,10 @@ theorem OnPath.met0_ok (P : OnPath preds width fresh0 p ρ η h) :
 
 /-- **What `p` states beyond the met store holds** at the merge's
 valuation: its facts the met store lacks and its restatements. -/
-theorem OnPath.diffs_ok (P : OnPath preds width fresh0 p ρ η h) {met0 : Store} {d : List Atom}
+theorem OnPath.diffs_ok (P : OnPath preds width fresh0 p ε ρ η h) {met0 : Store} {d : List Atom}
     (hd : (mergeDiffs preds (mRen preds width fresh0)
       (mergeVariants preds (mNames preds width fresh0) (mRen preds width fresh0)) met0)[p]? = some d) :
-    ∀ a ∈ d, AtomHolds a (mVal preds width fresh0 ρ η) h := by
+    ∀ a ∈ d, AtomHolds ε a (mVal preds width fresh0 ρ η) h := by
   unfold mergeDiffs at hd
   rw [List.getElem?_map, zip_get (l := preds.zip _) (by simp only [List.length_zip]; exact Nat.lt_min.mpr ⟨P.hp, P.ren_len⟩) P.variants_len,
     List.getElem_zip] at hd
@@ -339,7 +339,7 @@ theorem OnPath.diffs_ok (P : OnPath preds width fresh0 p ρ η h) {met0 : Store}
     exact P.pred_ok a (toList_storeAll (List.mem_filter.mp ha).1)
   · rw [Std.HashSet.fold_eq_foldl_toList] at ha
     revert ha
-    refine foldl_inv (fun (acc : List Atom) => a ∈ acc → AtomHolds a (mVal preds width fresh0 ρ η) h) _ _ _
+    refine foldl_inv (fun (acc : List Atom) => a ∈ acc → AtomHolds ε a (mVal preds width fresh0 ρ η) h) _ _ _
       (fun h => by cases h) ?_
     intro b hb acc hacc ha
     split at ha

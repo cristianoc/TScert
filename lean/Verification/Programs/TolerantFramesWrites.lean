@@ -25,6 +25,7 @@ step:
   the residual budget, the type, the rule's output and the kept named
   facts. -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations
 open Verification.SinglePass (Atom)
 
@@ -39,7 +40,7 @@ def _root_.Verification.SinglePass.Atom.keptBy (c : Footprints.Closed) : Atom �
 
 /-- **A kept named fact survives an action of its effect.** -/
 theorem atom_kept {c : Footprints.Closed} {a : Atom} (hk : a.keptBy c = true) {η ρ : Env} {s s' : IndexedHeap}
-    (hact : Action c.fp ρ s s') (ha : AtomHolds a η s.h) : AtomHolds a η s'.h := by
+    (hact : Action c.fp ρ s s') (ha : AtomHolds ε a η s.h) : AtomHolds ε a η s'.h := by
   cases a with
   | index x =>
     simp only [Atom.keptBy, Bool.or_eq_true] at hk
@@ -54,9 +55,9 @@ theorem atom_kept {c : Footprints.Closed} {a : Atom} (hk : a.keptBy c = true) {�
         (ha x' (List.mem_singleton_self _) hcnd)
   | _ => exact atomHolds_heapFree (by simpa only [Atom.keptBy] using hk) ha s'.h
 
-/-- **(Keep by atom)** `Named S η ⊢ □_c Named S η` for `S` kept by `c`. -/
+/-- **(Keep by atom)** `Named ε S η ⊢ □_c Named ε S η` for `S` kept by `c`. -/
 theorem named_kept_box {c : Footprints.Closed} {S : List Atom} (hk : ∀ a ∈ S, a.keptBy c = true) {η ρ : Env}
-    {m : Nat} {s : IndexedHeap} (hS : Named S η ρ m s) : Box c.fp (Named S η) ρ m s :=
+    {m : Nat} {s : IndexedHeap} (hS : Named ε S η ρ m s) : Box c.fp (Named ε S η) ρ m s :=
   fun _ ha a hm => atom_kept (hk a hm) ha (hS a hm)
 
 /-- (Grow) as a named fact: a length lower bound over names is kept by the
@@ -100,10 +101,10 @@ theorem judgment_with_output {G : NormalGraph ι} {images : InstanceImageCheck G
     {sums : List (ReadSummary ι)} (hr : (checker.run j k e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {cn ce : Footprints.Closed} {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hexc : SafePostExc (excOf G) (meaning G j.type) (fun h' _ => cn.Holds h h') (fun h' => ce.Holds h h') n W h
       (instantiate 0 ρ j.term)) :
-    SafePostExc (excOf G) (meaning G j.type) (fun h' v => cn.Holds h h' ∧ HeapKnowledge.Holds out (push v ρ) h')
+    SafePostExc (excOf G) (meaning G j.type) (fun h' v => cn.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => ce.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) :=
   SafePostExc.weaken (fun _ _ hq => hq) (fun _ hq => ⟨hq.1, trivial⟩)
     (SafePostExc.cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh hexc
@@ -116,9 +117,9 @@ theorem top_judgment {G : NormalGraph ι} {images : InstanceImageCheck G} (check
     {sums : List (ReadSummary ι)} (hr : (checker.run j k e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePostExc (excOf G) (meaning G j.type)
-      (fun h' v => Footprints.Closed.top.Holds h h' ∧ HeapKnowledge.Holds out (push v ρ) h')
+      (fun h' v => Footprints.Closed.top.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => Footprints.Closed.top.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) := by
   exact SafePostExc.weaken (fun _ _ hq => ⟨Footprints.Closed.holds_top.mpr hq.1, hq.2⟩)
     (fun _ hq => ⟨Footprints.Closed.holds_top.mpr hq, trivial⟩)
@@ -134,8 +135,8 @@ theorem write_judgment {G : NormalGraph ι} {images : InstanceImageCheck G} (che
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums) {c : Footprints.Closed}
     (hc : ExpressionEffects.writeWithin G j.context c j.term = true)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePostExc (excOf G) (meaning G j.type) (fun h' v => c.Holds h h' ∧ HeapKnowledge.Holds out (push v ρ) h')
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePostExc (excOf G) (meaning G j.type) (fun h' v => c.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => c.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) :=
   judgment_with_output checker hr hcodes hsums he hk hw hh
     (ExpressionEffects.write_within_exc hc he hh (erase (checker.sound hr hcodes hsums he hk hw hh)))
@@ -148,9 +149,9 @@ theorem field_write_judgment {G : NormalGraph ι} {images : InstanceImageCheck G
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     (hc : ExpressionEffects.fieldWriteWithin G j.context fieldWriteEffect j.term = true)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePostExc (excOf G) (meaning G j.type)
-      (fun h' v => fieldWriteEffect.Holds h h' ∧ HeapKnowledge.Holds out (push v ρ) h')
+      (fun h' v => fieldWriteEffect.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => fieldWriteEffect.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) :=
   judgment_with_output checker hr hcodes hsums he hk hw hh
     (ExpressionEffects.field_write_within_exc hc he hh (erase (checker.sound hr hcodes hsums he hk hw hh)))
@@ -164,9 +165,9 @@ theorem element_write_judgment {G : NormalGraph ι} {images : InstanceImageCheck
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     (hc : ExpressionEffects.writeWithin G j.context growEffect j.term = true)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePostExc (excOf G) (meaning G j.type)
-      (fun h' v => growEffect.Holds h h' ∧ HeapKnowledge.Holds out (push v ρ) h')
+      (fun h' v => growEffect.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => growEffect.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) :=
   write_judgment checker hr hcodes hsums hc he hk hw hh
 
@@ -180,9 +181,9 @@ theorem preserving_judgment {G : NormalGraph ι} {images : InstanceImageCheck G}
     (hr : ((Checker.ordinary G images).run j kE e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePostExc (excOf G) (meaning G j.type)
-      (fun h' v => Footprints.Closed.empty.Holds h h' ∧ HeapKnowledge.Holds out (push v ρ) h')
+      (fun h' v => Footprints.Closed.empty.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => Footprints.Closed.top.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) := by
   have hboth := cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh
     (passPreserving_keeps hpres hr hcodes hsums he hk hw hh) ((Checker.ordinary G images).sound hr hcodes hsums he hk hw hh)
@@ -205,11 +206,11 @@ theorem writing_frame {Ξ T : Fam} {cn ce : Footprints.Closed} {Qn : Post} {Sn S
       s.n s.W s.h t)
     (hst : Steps k s.h t h' t') (hk : k < s.n)
     (hn : ∀ a ∈ Sn, a.keptBy cn = true) (he : ∀ a ∈ Se, a.keptBy ce = true)
-    (hSn : Named Sn η ρ m s) (hSe : Named Se η ρ m s) (hr : ∀ a ∈ Sn, r ∉ a.names) :
+    (hSn : Named ε Sn η ρ m s) (hSe : Named ε Se η ρ m s) (hr : ∀ a ∈ Sn, r ∉ a.names) :
     (isVal t' = true → ∃ s' : IndexedHeap, Action cn.fp ρ s s' ∧ s'.h = h' ∧ s'.n + k = s.n ∧
-        T s'.n s'.W t' ∧ Qn h' t' ∧ Named Sn (Env.set η r t') ρ m s') ∧
+        T s'.n s'.W t' ∧ Qn h' t' ∧ Named ε Sn (Env.set η r t') ρ m s') ∧
       (∀ x, Raises t' x → ∃ s' : IndexedHeap, Action ce.fp ρ s s' ∧ s'.h = h' ∧ s'.n + k = s.n ∧
-        Scoped 0 x ∧ Ξ s'.n s'.W x ∧ Named Se η ρ m s') := by
+        Scoped 0 x ∧ Ξ s'.n s'.W x ∧ Named ε Se η ρ m s') := by
   refine ⟨fun hv => ?_, fun x hx => ?_⟩
   · obtain ⟨s', ha, he', hn', hT, hq⟩ := action_normal (ρ := ρ) hsafe hst hv hk
     exact ⟨s', ha, he', hn', hT, hq, named_set t' hr (named_kept_box hn hSn s' ha)⟩

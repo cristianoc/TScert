@@ -9,6 +9,16 @@ a checked index"; ARITHMETIC.md, "Linear facts"). Heap knowledge carries them as
 (`CallEffects.Effect.pre`). -/
 namespace Verification.HeapKnowledge
 
+/-- **The entry state** of a run (the note "Tolerant frames", §6,
+"Triples"): the environment and the heap the command started in. Facts are
+satisfied relative to it (`IndexFact.HoldsAt`), and it is the same at every
+state of one run. -/
+structure EntryState where
+  env : Env
+  heap : Heap
+
+variable {ε : EntryState}
+
 /-- The safe integer a value is, where it is one (`SafeIntegers.safeIntOfBits`). -/
 def intValue : Val → Option Int
   | .num b => SafeIntegers.safeIntOfBits b
@@ -354,22 +364,22 @@ def kindValue (h : Heap) : Term.Kind → Val → Option Int
 
 /-- The integer a term denotes, where it denotes one: what its kind reads of
 the value its path reads from its slot's value. -/
-def termValue (ρ : Env) (h : Heap) (t : Term) : Option Int :=
+def termValue (_ε : EntryState) (ρ : Env) (h : Heap) (t : Term) : Option Int :=
   (readPath h (ρ t.slot) t.path).bind (kindValue h t.kind)
 
 theorem termValue_nil {ρ : Env} {h : Heap} {k : Term.Kind} {s : Nat} :
-    termValue ρ h ⟨k, s, []⟩ = kindValue h k (ρ s) := rfl
+    termValue ε ρ h ⟨k, s, []⟩ = kindValue h k (ρ s) := rfl
 
-@[simp] theorem termValue_value {ρ : Env} {h : Heap} {s : Nat} : termValue ρ h (.value s) = intValue (ρ s) := rfl
-@[simp] theorem termValue_length {ρ : Env} {h : Heap} {s : Nat} : termValue ρ h (.length s) = lengthOf h (ρ s) := rfl
-@[simp] theorem termValue_strLength {ρ : Env} {h : Heap} {s : Nat} : termValue ρ h (.strLength s) = strLengthOf (ρ s) := rfl
+@[simp] theorem termValue_value {ρ : Env} {h : Heap} {s : Nat} : termValue ε ρ h (.value s) = intValue (ρ s) := rfl
+@[simp] theorem termValue_length {ρ : Env} {h : Heap} {s : Nat} : termValue ε ρ h (.length s) = lengthOf h (ρ s) := rfl
+@[simp] theorem termValue_strLength {ρ : Env} {h : Heap} {s : Nat} : termValue ε ρ h (.strLength s) = strLengthOf (ρ s) := rfl
 
 theorem termValue_slot {ρ ρ' : Env} {h : Heap} {t : Term} {s : Nat} (hs : ρ' s = ρ t.slot) :
-    termValue ρ' h { t with slot := s } = termValue ρ h t := by
+    termValue ε ρ' h { t with slot := s } = termValue ε ρ h t := by
   simp only [termValue, hs]
 
-theorem termValue_isSome {ρ : Env} {h : Heap} {t : Term} (ht : (termValue ρ h t).isSome) :
-    ∃ v n, readPath h (ρ t.slot) t.path = some v ∧ kindValue h t.kind v = some n ∧ termValue ρ h t = some n := by
+theorem termValue_isSome {ρ : Env} {h : Heap} {t : Term} (ht : (termValue ε ρ h t).isSome) :
+    ∃ v n, readPath h (ρ t.slot) t.path = some v ∧ kindValue h t.kind v = some n ∧ termValue ε ρ h t = some n := by
   obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp ht
   simp only [termValue, Option.bind_eq_some_iff] at hn
   obtain ⟨v, hv, hk⟩ := hn
@@ -377,7 +387,7 @@ theorem termValue_isSome {ρ : Env} {h : Heap} {t : Term} (ht : (termValue ρ h 
 
 /-- The integers terms denote, `0` where one denotes none: the valuation the
 linear facts are read at. -/
-def termValuation (ρ : Env) (h : Heap) (t : Term) : Int := (termValue ρ h t).getD 0
+def termValuation (ε : EntryState) (ρ : Env) (h : Heap) (t : Term) : Int := (termValue ε ρ h t).getD 0
 
 /-- A linear form over slots' values as one over value terms. -/
 def valueForm (F : Linear.Form Nat) : Linear.Form Term := F.map fun p => (.value p.1, p.2)
@@ -388,13 +398,13 @@ def valueFact : Linear.Fact Nat → Linear.Fact Term
   | .ne F d => .ne (valueForm F) d
 
 theorem eval_valueForm (ρ : Env) (h : Heap) (F : Linear.Form Nat) :
-    Linear.Form.eval (termValuation ρ h) (valueForm F) = Linear.Form.eval (valuation ρ) F := by
+    Linear.Form.eval (termValuation ε ρ h) (valueForm F) = Linear.Form.eval (valuation ρ) F := by
   induction F with
   | nil => rfl
   | cons p t ih => simp only [valueForm, List.map_cons, Linear.Form.eval] at ih ⊢; rw [ih]; rfl
 
 theorem holds_valueFact {ρ : Env} {h : Heap} {F : Linear.Fact Nat} :
-    (valueFact F).Holds (termValuation ρ h) ↔ F.Holds (valuation ρ) := by
+    (valueFact F).Holds (termValuation ε ρ h) ↔ F.Holds (valuation ρ) := by
   cases F <;> simp only [valueFact, Linear.Fact.Holds, eval_valueForm]
 
 theorem vars_valueFact (F : Linear.Fact Nat) : (valueFact F).vars = F.vars.map .value := by
@@ -409,7 +419,7 @@ theorem lengthOf_extend {h : Heap} (vs : List Val) {v : Val} {n : Int} (hl : len
 
 /-- A term reading the environment alone denotes the same in every heap. -/
 theorem termValue_envOnly {ρ : Env} {h h' : Heap} {t : Term} (ht : t.envOnly = true) :
-    termValue ρ h t = termValue ρ h' t := by
+    termValue ε ρ h t = termValue ε ρ h' t := by
   obtain ⟨k, s, p⟩ := t
   simp only [Term.envOnly, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, List.isEmpty_iff] at ht
   obtain ⟨rfl | rfl, rfl⟩ := ht <;> rfl
@@ -422,8 +432,8 @@ theorem kindValue_extend {h : Heap} (vs : List Val) {k : Term.Kind} {v : Val} {n
   | view => exact viewLengthOf_extend vs hk
   | strLength => exact hk
 
-theorem termValue_extend {ρ : Env} {h : Heap} (vs : List Val) {t : Term} {n : Int} (ht : termValue ρ h t = some n) :
-    termValue ρ (h ++ vs) t = some n := by
+theorem termValue_extend {ρ : Env} {h : Heap} (vs : List Val) {t : Term} {n : Int} (ht : termValue ε ρ h t = some n) :
+    termValue ε ρ (h ++ vs) t = some n := by
   simp only [termValue, Option.bind_eq_some_iff] at ht ⊢
   obtain ⟨v, hv, hk⟩ := ht
   exact ⟨v, readPath_extend vs hv, kindValue_extend vs hk⟩
@@ -624,14 +634,14 @@ theorem elementInt_frame {h h' : Heap} {ls : List (Option Nat)} {i : Nat} {z : I
   · cases he
 
 /-- What a body variable denotes at the index `i` of the store elements `ls`. -/
-def boundValue (ρ : Env) (h : Heap) (ls : List (Option Nat)) (i : Nat) : Bound → Option Int
+def boundValue (ε : EntryState) (ρ : Env) (h : Heap) (ls : List (Option Nat)) (i : Nat) : Bound → Option Int
   | .index => some (i : Int)
   | .elem => elementInt h ls i
   | .offset d => elementInt h ls (i + d)
   | .project k p => match ls[i]? with
-    | some (some l) => h[l]?.bind fun v => termValue (fun _ => v) h ⟨k, 0, p⟩
+    | some (some l) => h[l]?.bind fun v => termValue ε (fun _ => v) h ⟨k, 0, p⟩
     | _ => none
-  | .free t => termValue ρ h t
+  | .free t => termValue ε ρ h t
 
 /-- The region of a value (FOOTPRINTS.md, "Element regions"): a raw store
 lists its element cells and has no store cell; an array object has its store
@@ -806,7 +816,7 @@ def mapM (f : Nat → Option Nat) : IndexFact → Option IndexFact
 /-- The fact with each slot renamed. -/
 def map (f : Nat → Nat) (F : IndexFact) : IndexFact := (F.mapM (some ∘ f)).getD F
 
-def HoldsAt : IndexFact → Env → Heap → Prop
+def HoldsAt (ε : EntryState) : IndexFact → Env → Heap → Prop
   | .index k, ρ, _ => ∃ b i, ρ k = .num b ∧ indexOfBits b = some i
   | .length x n, ρ, h => ∃ s ls, Footprints.storeOf (ρ x) = some s ∧ h[s]? = some (.arr ls) ∧
       ρ n = .num (bitsOfNat ls.length) ∧ ls.length ≤ maxArrayLength
@@ -814,15 +824,15 @@ def HoldsAt : IndexFact → Env → Heap → Prop
       ρ k = .num b ∧ indexOfBits b = some i ∧ i + (if st then 1 else 0) ≤ ls.length
   | .int k, ρ, _ => (intValue (ρ k)).isSome
   | .pastSafe k, ρ, _ => ρ k = .num SafeIntegers.pastSafeBits
-  | .linear F, ρ, h => (∀ t ∈ F.vars, (termValue ρ h t).isSome) ∧ F.Holds (termValuation ρ h)
-  | .either A B, ρ, h => A.HoldsAt ρ h ∨ B.HoldsAt ρ h
-  | .guarded s p t B, ρ, h => ∃ v, readGuard h (ρ s) p = some v ∧ (v = t.val ∨ B.HoldsAt ρ h)
+  | .linear F, ρ, h => (∀ t ∈ F.vars, (termValue ε ρ h t).isSome) ∧ F.Holds (termValuation ε ρ h)
+  | .either A B, ρ, h => A.HoldsAt ε ρ h ∨ B.HoldsAt ε ρ h
+  | .guarded s p t B, ρ, h => ∃ v, readGuard h (ρ s) p = some v ∧ (v = t.val ∨ B.HoldsAt ε ρ h)
   | .element v x k, ρ, h => ∃ s ls b, ∃ i : Nat, elementsOf (ρ x) = some s ∧ h[s]? = some (.arr ls) ∧
       ρ k = .num b ∧ SafeIntegers.SafeInt b (i : Int) ∧ i < ls.length ∧
       (∀ l, ls[i]? = some (some l) → h[l]? = some (ρ v)) ∧ (ls[i]? = some none → ρ v = .undef)
   | .every s p stop body, ρ, h => ∃ w st ls n, readPath h (ρ s) p = some w ∧ elementsOf w = some st ∧
-      h[st]? = some (.arr ls) ∧ termValue ρ h stop = some n ∧
-      ∀ i : Nat, (i : Int) < n → ∀ F ∈ body, F.HoldsAt (boundValue ρ h ls i)
+      h[st]? = some (.arr ls) ∧ termValue ε ρ h stop = some n ∧
+      ∀ i : Nat, (i : Int) < n → ∀ F ∈ body, F.HoldsAt (boundValue ε ρ h ls i)
   | .apart a b, ρ, h => RegionsApart h (ρ a) (ρ b)
   | .storeApart a p b q, ρ, h => PathStoresApart h (ρ a) p (ρ b) q
 
@@ -830,15 +840,15 @@ def HoldsAt : IndexFact → Env → Heap → Prop
 
 /-- A quantified clause is framed by its array path, store, bound and body values. -/
 theorem every_frame {s p stop body ρ h h'}
-    (he : (IndexFact.every s p stop body).HoldsAt ρ h)
+    (he : (IndexFact.every s p stop body).HoldsAt ε ρ h)
     (hp : ∀ w, readPath h (ρ s) p = some w → readPath h' (ρ s) p = some w)
     (hs : ∀ w st ls, readPath h (ρ s) p = some w → elementsOf w = some st →
       h[st]? = some (.arr ls) → h'[st]? = some (.arr ls))
-    (hn : ∀ z, termValue ρ h stop = some z → termValue ρ h' stop = some z)
+    (hn : ∀ z, termValue ε ρ h stop = some z → termValue ε ρ h' stop = some z)
     (hb : ∀ w st ls, readPath h (ρ s) p = some w → elementsOf w = some st →
       h[st]? = some (.arr ls) → ∀ F ∈ body, ∀ i b, b ∈ F.vars → ∀ z,
-      boundValue ρ h ls i b = some z → boundValue ρ h' ls i b = some z) :
-    (IndexFact.every s p stop body).HoldsAt ρ h' := by
+      boundValue ε ρ h ls i b = some z → boundValue ε ρ h' ls i b = some z) :
+    (IndexFact.every s p stop body).HoldsAt ε ρ h' := by
   obtain ⟨w, st, ls, z, hw, hst, hls, hz, hall⟩ := he
   exact ⟨w, st, ls, z, hp w hw, hst, hs w st ls hw hst hls, hn z hz,
     fun i hi F hF => LinearClause.holdsAt_extend (hb w st ls hw hst hls F hF i) (hall i hi F hF)⟩
@@ -846,7 +856,7 @@ theorem every_frame {s p stop body ρ h h'}
 
 theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} {h : Heap}
     (hm : F.mapM f = some F') (hf : ∀ s ∈ F.slots, ∀ t, f s = some t → ρ' t = ρ s) :
-    F'.HoldsAt ρ' h ↔ F.HoldsAt ρ h := by
+    F'.HoldsAt ε ρ' h ↔ F.HoldsAt ε ρ h := by
   induction F generalizing F' with
   | either A B ihA ihB =>
     simp only [mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
@@ -874,12 +884,12 @@ theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} 
     simp only [mapM, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hm
     obtain ⟨s', hs, stop', hstop, body', hbody, rfl⟩ := hm
     have hs' := hf s (by simp [slots]) s' hs
-    have hst : termValue ρ' h stop' = termValue ρ h stop := by
+    have hst : termValue ε ρ' h stop' = termValue ε ρ h stop := by
       rw [Term.mapM_eq_some hstop]
       exact termValue_slot (hf stop.slot (by simp [slots]) stop'.slot (Term.mapM_slot hstop))
     obtain ⟨hb1, hb2⟩ := mapBody_pairs hbody
     have hval : ∀ (ls : List (Option Nat)) (i : Nat), ∀ F ∈ body, ∀ F', F.mapVars (Bound.mapM f) = some F' →
-        (F'.HoldsAt (boundValue ρ' h ls i) ↔ F.HoldsAt (boundValue ρ h ls i)) := by
+        (F'.HoldsAt (boundValue ε ρ' h ls i) ↔ F.HoldsAt (boundValue ε ρ h ls i)) := by
       intro ls i F hF F' hm
       refine LinearClause.holdsAt_mapVars hm fun x hx y hy => ?_
       cases x with
@@ -931,12 +941,12 @@ theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} 
     obtain ⟨G', hG, rfl⟩ := hm
     simp only [HoldsAt]
     -- A renamed term denotes what its source denotes: its slot holds the same value.
-    have hterm : ∀ x ∈ G.vars, ∀ y, x.mapM f = some y → termValue ρ' h y = termValue ρ h x := by
+    have hterm : ∀ x ∈ G.vars, ∀ y, x.mapM f = some y → termValue ε ρ' h y = termValue ε ρ h x := by
       intro x hx y hy
       have hs := hf x.slot (List.mem_map_of_mem hx) y.slot (Term.mapM_slot hy)
       rw [Term.mapM_eq_some hy]
       exact termValue_slot hs
-    have hv : ∀ x ∈ G.vars, ∀ y, x.mapM f = some y → termValuation ρ' h y = termValuation ρ h x := by
+    have hv : ∀ x ∈ G.vars, ∀ y, x.mapM f = some y → termValuation ε ρ' h y = termValuation ε ρ h x := by
       intro x hx y hy; simp only [termValuation, hterm x hx y hy]
     rw [Linear.Fact.holds_mapVars hG hv]
     constructor
@@ -952,9 +962,9 @@ theorem holdsAt_mapM {F F' : IndexFact} {f : Nat → Option Nat} {ρ ρ' : Env} 
 /-- A linear fact with its terms restated, each by a term denoting the same,
 holds where the fact does. -/
 theorem holdsAt_linear_mapVars {F F' : Linear.Fact Term} {f : Term → Option Term} {ρ : Env} {h : Heap}
-    (hm : F.mapVars f = some F') (hf : ∀ x ∈ F.vars, ∀ y, f x = some y → termValue ρ h y = termValue ρ h x) :
-    (linear F').HoldsAt ρ h ↔ (linear F).HoldsAt ρ h := by
-  have hv : ∀ x ∈ F.vars, ∀ y, f x = some y → termValuation ρ h y = termValuation ρ h x := by
+    (hm : F.mapVars f = some F') (hf : ∀ x ∈ F.vars, ∀ y, f x = some y → termValue ε ρ h y = termValue ε ρ h x) :
+    (linear F').HoldsAt ε ρ h ↔ (linear F).HoldsAt ε ρ h := by
+  have hv : ∀ x ∈ F.vars, ∀ y, f x = some y → termValuation ε ρ h y = termValuation ε ρ h x := by
     intro x hx y hy; simp only [termValuation, hf x hx y hy]
   simp only [HoldsAt]
   rw [Linear.Fact.holds_mapVars hm hv]
@@ -994,14 +1004,14 @@ theorem mapM_total (f : Nat → Nat) : ∀ F : IndexFact, ∃ G, F.mapM (some �
 
 /-- A fact reads its slots' values alone. -/
 theorem holdsAt_map {F : IndexFact} {f : Nat → Nat} {ρ ρ' : Env} {h : Heap}
-    (hf : ∀ s ∈ F.slots, ρ' (f s) = ρ s) : (F.map f).HoldsAt ρ' h ↔ F.HoldsAt ρ h := by
+    (hf : ∀ s ∈ F.slots, ρ' (f s) = ρ s) : (F.map f).HoldsAt ε ρ' h ↔ F.HoldsAt ε ρ h := by
   obtain ⟨G, hG⟩ := mapM_total f F
   simp only [map, hG, Option.getD_some]
   exact holdsAt_mapM hG (fun s hs t ht => by cases ht; exact hf s hs)
 
 /-- A heap extension preserves a fact: the store lies in the old heap. -/
-theorem holdsAt_extend {F : IndexFact} {ρ : Env} {h : Heap} (vs : List Val) (hF : F.HoldsAt ρ h) :
-    F.HoldsAt ρ (h ++ vs) := by
+theorem holdsAt_extend {F : IndexFact} {ρ : Env} {h : Heap} (vs : List Val) (hF : F.HoldsAt ε ρ h) :
+    F.HoldsAt ε ρ (h ++ vs) := by
   induction F with
   | either A B ihA ihB => exact hF.imp ihA ihB
   | apart a b => exact regionsApart_extend vs hF
@@ -1042,7 +1052,7 @@ theorem holdsAt_extend {F : IndexFact} {ρ : Env} {h : Heap} (vs : List Val) (hF
           rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hv).1]; exact hv,
           termValue_extend vs ht⟩
       · cases hm
-    | free t => exact termValue_extend vs hm
+    | free t => exact termValue_extend (ε := ε) vs hm
   | index k => exact hF
   | length x n =>
     obtain ⟨s, ls, hs, hl, hn⟩ := hF
@@ -1055,17 +1065,17 @@ theorem holdsAt_extend {F : IndexFact} {ρ : Env} {h : Heap} (vs : List Val) (hF
   | pastSafe k => exact hF
   | linear G =>
     obtain ⟨hi, hh⟩ := hF
-    have heq : ∀ t ∈ G.vars, termValue ρ (h ++ vs) t = termValue ρ h t := by
+    have heq : ∀ t ∈ G.vars, termValue ε ρ (h ++ vs) t = termValue ε ρ h t := by
       intro t ht
       obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hi t ht)
       rw [hn, termValue_extend vs hn]
     refine ⟨fun t ht => by rw [heq t ht]; exact hi t ht, ?_⟩
-    rw [Linear.Fact.holds_congr (v' := termValuation ρ h) (fun t ht => by simp only [termValuation, heq t ht])]
+    rw [Linear.Fact.holds_congr (v' := termValuation ε ρ h) (fun t ht => by simp only [termValuation, heq t ht])]
     exact hh
 
 /-- A fact reads the values of the slots it names alone. -/
 theorem holdsAt_congr {F : IndexFact} {ρ ρ' : Env} {h : Heap} (hs : ∀ s ∈ F.slots, ρ s = ρ' s) :
-    F.HoldsAt ρ h ↔ F.HoldsAt ρ' h := by
+    F.HoldsAt ε ρ h ↔ F.HoldsAt ε ρ' h := by
   induction F with
   | either A B ihA ihB =>
     exact or_congr (ihA (fun x hx => hs x (by simp [slots, hx])))
@@ -1084,10 +1094,10 @@ theorem holdsAt_congr {F : IndexFact} {ρ ρ' : Env} {h : Heap} (hs : ∀ s ∈ 
     simp only [HoldsAt, hs.1, hs.2.1, hs.2.2]
   | every s p stop body =>
     have h0 : ρ s = ρ' s := hs s (by simp [slots])
-    have hst : termValue ρ h stop = termValue ρ' h stop := by
+    have hst : termValue ε ρ h stop = termValue ε ρ' h stop := by
       simp only [termValue, hs stop.slot (by simp [slots])]
     have hb : ∀ (ls : List (Option Nat)) (i : Nat), ∀ F ∈ body,
-        ∀ x ∈ F.vars, boundValue ρ' h ls i x = boundValue ρ h ls i x := by
+        ∀ x ∈ F.vars, boundValue ε ρ' h ls i x = boundValue ε ρ h ls i x := by
       intro ls i F hF x hx
       cases x with
       | index => rfl
@@ -1117,35 +1127,44 @@ theorem holdsAt_congr {F : IndexFact} {ρ ρ' : Env} {h : Heap} (hs : ∀ s ∈ 
   | linear G =>
     simp only [slots] at hs
     simp only [HoldsAt]
-    have heq : ∀ t ∈ G.vars, termValue ρ h t = termValue ρ' h t := by
+    have heq : ∀ t ∈ G.vars, termValue ε ρ h t = termValue ε ρ' h t := by
       intro t ht
       have := hs t.slot (List.mem_map_of_mem ht)
       simp only [termValue, this]
-    rw [Linear.Fact.holds_congr (v' := termValuation ρ' h) (fun t ht => by simp only [termValuation, heq t ht])]
+    rw [Linear.Fact.holds_congr (v' := termValuation ε ρ' h) (fun t ht => by simp only [termValuation, heq t ht])]
     exact ⟨fun ⟨a, b⟩ => ⟨fun t hm => heq t hm ▸ a t hm, b⟩, fun ⟨a, b⟩ => ⟨fun t hm => (heq t hm).symm ▸ a t hm, b⟩⟩
+
+/-- **No fact reads the entry state**: a fact holds at one entry state where
+it holds at another. -/
+theorem holdsAt_entry {F : IndexFact} (ε' : EntryState) {ρ : Env} {h : Heap} :
+    F.HoldsAt ε ρ h ↔ F.HoldsAt ε' ρ h := by
+  induction F with
+  | either A B ihA ihB => exact or_congr ihA ihB
+  | guarded s p t B ih => simp only [HoldsAt, ih]
+  | _ => exact Iff.rfl
 
 /-- A linear fact over slots' values holds where its slots hold safe integers
 meeting it. -/
 theorem holdsAt_valueFact {F : Linear.Fact Nat} {ρ : Env} {h : Heap} :
-    (IndexFact.linear (valueFact F)).HoldsAt ρ h ↔ (∀ x ∈ F.vars, (intValue (ρ x)).isSome) ∧ F.Holds (valuation ρ) := by
+    (IndexFact.linear (valueFact F)).HoldsAt ε ρ h ↔ (∀ x ∈ F.vars, (intValue (ρ x)).isSome) ∧ F.Holds (valuation ρ) := by
   simp only [HoldsAt, vars_valueFact, List.mem_map, forall_exists_index, and_imp, forall_apply_eq_imp_iff₂,
     termValue_value, holds_valueFact]
 
 /-- A linear fact whose terms read the environment alone holds in every heap. -/
 theorem holdsAt_linear_heap {F : Linear.Fact Term} {ρ : Env} {h h' : Heap} (hv : F.vars.all Term.envOnly = true)
-    (hF : (IndexFact.linear F).HoldsAt ρ h) : (IndexFact.linear F).HoldsAt ρ h' := by
-  have heq : ∀ t ∈ F.vars, termValue ρ h t = termValue ρ h' t :=
+    (hF : (IndexFact.linear F).HoldsAt ε ρ h) : (IndexFact.linear F).HoldsAt ε ρ h' := by
+  have heq : ∀ t ∈ F.vars, termValue ε ρ h t = termValue ε ρ h' t :=
     fun t ht => termValue_envOnly (List.all_eq_true.mp hv t ht)
   refine ⟨fun t ht => heq t ht ▸ hF.1 t ht, ?_⟩
-  exact (Linear.Fact.holds_congr (v' := termValuation ρ h') (fun t ht => by simp only [termValuation, heq t ht])).mp hF.2
+  exact (Linear.Fact.holds_congr (v' := termValuation ε ρ h') (fun t ht => by simp only [termValuation, heq t ht])).mp hF.2
 
 /-- A linear fact holds in a heap where each of its terms denotes what it
 denoted in the heap the fact held in. -/
 theorem holdsAt_linear_terms {F : Linear.Fact Term} {ρ : Env} {h h' : Heap}
-    (heq : ∀ t ∈ F.vars, termValue ρ h' t = termValue ρ h t)
-    (hF : (IndexFact.linear F).HoldsAt ρ h) : (IndexFact.linear F).HoldsAt ρ h' := by
+    (heq : ∀ t ∈ F.vars, termValue ε ρ h' t = termValue ε ρ h t)
+    (hF : (IndexFact.linear F).HoldsAt ε ρ h) : (IndexFact.linear F).HoldsAt ε ρ h' := by
   refine ⟨fun t ht => by rw [heq t ht]; exact hF.1 t ht, ?_⟩
-  exact (Linear.Fact.holds_congr (v' := termValuation ρ h')
+  exact (Linear.Fact.holds_congr (v' := termValuation ε ρ h')
     (fun t ht => by simp only [termValuation, heq t ht])).mp hF.2
 
 end IndexFact
@@ -1157,7 +1176,7 @@ def toIndexFact : LinearClause Term → IndexFact
   | .either A B => .either A.toIndexFact B.toIndexFact
 
 theorem toIndexFact_holds {F : LinearClause Term} {ρ : Env} {h : Heap} :
-    F.toIndexFact.HoldsAt ρ h ↔ F.HoldsAt (termValue ρ h) := by
+    F.toIndexFact.HoldsAt ε ρ h ↔ F.HoldsAt (termValue ε ρ h) := by
   induction F with
   | atom F => rfl
   | either A B ihA ihB => exact or_congr ihA ihB
@@ -1446,7 +1465,7 @@ theorem pathRead_kept {c : Changes} {first : Nat → String → Bool} {ρ : Env}
 /-- **A change keeps a term it keeps** (`Term.keptBy`). -/
 theorem termValue_kept {c : Changes} {first : Nat → String → Bool} {ρ : Env} {h h' : Heap} {t : Term} {n : Int}
     (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hk : t.keptBy c first = true)
-    (ht : termValue ρ h t = some n) : termValue ρ h' t = some n := by
+    (ht : termValue ε ρ h t = some n) : termValue ε ρ h' t = some n := by
   obtain ⟨kind, s, p⟩ := t
   simp only [termValue, Option.bind_eq_some_iff] at ht ⊢
   obtain ⟨w, hw, hkw⟩ := ht
@@ -1515,7 +1534,7 @@ def Term.grownBy (c : Changes) (first : Nat → String → Bool) (t : Term) : Bo
 (`Term.grownBy`). -/
 theorem termValue_grown {c : Changes} {first : Nat → String → Bool} {ρ : Env} {h h' : Heap} {t : Term} {n : Int}
     (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hg : t.grownBy c first = true)
-    (ht : termValue ρ h t = some n) : ∃ n', termValue ρ h' t = some n' ∧ n ≤ n' := by
+    (ht : termValue ε ρ h t = some n) : ∃ n', termValue ε ρ h' t = some n' ∧ n ≤ n' := by
   obtain ⟨kind, s, p⟩ := t
   simp only [Term.grownBy, Bool.and_eq_true, beq_iff_eq] at hg
   obtain ⟨⟨rfl, hs⟩, hpath⟩ := hg
@@ -1540,19 +1559,19 @@ def Term.formKeptBy (c : Changes) (first : Nat → String → Bool) (F : Linear.
 theorem formKept_eval {c : Changes} {first : Nat → String → Bool} {ρ : Env} {h h' : Heap}
     (hc : c.Holds h h') (hf : FirstKept first ρ h h') :
     ∀ {F : Linear.Form Term}, Term.formKeptBy c first F = true →
-      (∀ t ∈ F.map (·.1), (termValue ρ h t).isSome) →
-      (∀ t ∈ F.map (·.1), (termValue ρ h' t).isSome) ∧
-        Linear.Form.eval (termValuation ρ h') F ≤ Linear.Form.eval (termValuation ρ h) F
+      (∀ t ∈ F.map (·.1), (termValue ε ρ h t).isSome) →
+      (∀ t ∈ F.map (·.1), (termValue ε ρ h' t).isSome) ∧
+        Linear.Form.eval (termValuation ε ρ h') F ≤ Linear.Form.eval (termValuation ε ρ h) F
   | [], _, _ => ⟨by simp, Int.le_refl _⟩
   | (t, a) :: F, hk, hd => by
     simp only [Term.formKeptBy, List.all_cons, Bool.and_eq_true] at hk
     obtain ⟨hk1, hk2⟩ := hk
     obtain ⟨hdr, hev⟩ := formKept_eval hc hf (F := F) hk2 (fun u hu => hd u (by simp [hu]))
     obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hd t (by simp))
-    have hv : termValuation ρ h t = n := by simp [termValuation, hn]
+    have hv : termValuation ε ρ h t = n := by simp [termValuation, hn]
     rcases Bool.or_eq_true_iff.mp hk1 with hkt | hgt
     · have hn' := termValue_kept hc hf hkt hn
-      have hv' : termValuation ρ h' t = n := by simp [termValuation, hn']
+      have hv' : termValuation ε ρ h' t = n := by simp [termValuation, hn']
       refine ⟨fun u hu => ?_, ?_⟩
       · simp only [List.map_cons, List.mem_cons] at hu
         rcases hu with rfl | hu
@@ -1562,7 +1581,7 @@ theorem formKept_eval {c : Changes} {first : Nat → String → Bool} {ρ : Env}
     · simp only [Bool.and_eq_true, decide_eq_true_eq] at hgt
       obtain ⟨ha, hg⟩ := hgt
       obtain ⟨n', hn', hle⟩ := termValue_grown hc hf hg hn
-      have hv' : termValuation ρ h' t = n' := by simp [termValuation, hn']
+      have hv' : termValuation ε ρ h' t = n' := by simp [termValuation, hn']
       refine ⟨fun u hu => ?_, ?_⟩
       · simp only [List.map_cons, List.mem_cons] at hu
         rcases hu with rfl | hu
@@ -1681,7 +1700,7 @@ def everyKept (c : Changes) (first : Nat → String → Bool) : IndexFact → Bo
 
 theorem everyKept_sound {c : Changes} {first : Nat → String → Bool} {F : IndexFact} {ρ h h'}
     (hc : c.Holds h h') (hf : FirstKept first ρ h h')
-    (hk : F.everyKept c first = true) (hF : F.HoldsAt ρ h) : F.HoldsAt ρ h' := by
+    (hk : F.everyKept c first = true) (hF : F.HoldsAt ε ρ h) : F.HoldsAt ε ρ h' := by
   cases F <;> simp only [everyKept] at hk
   all_goals try contradiction
   rename_i s p stop body
@@ -1705,7 +1724,7 @@ theorem everyKept_sound {c : Changes} {first : Nat → String → Bool} {F : Ind
     exact hc.1 l _ hv (by simp [Changes.alters, hnum])
   cases x with
   | index => exact ha
-  | free t => exact termValue_kept hc hf (hbody F hm (.free t) hx) ha
+  | free t => exact termValue_kept (ε := ε) hc hf (hbody F hm (.free t) hx) ha
   | elem => exact elem i ha
   | offset d => exact elem (i + d) ha
   | project k p => have := hbody F hm (.project k p) hx; contradiction
@@ -1739,8 +1758,8 @@ def keptBy (c : Changes) (first : Nat → String → Bool) : IndexFact → Bool
   | .storeApart a p b q => guardKept first a p && guardKept first b q
 
 theorem holdsAt_kept {c : Changes} {first : Nat → String → Bool} {F : IndexFact} {ρ : Env} {h h' : Heap}
-    (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hk : F.keptBy c first = true) (hF : F.HoldsAt ρ h) :
-    F.HoldsAt ρ h' := by
+    (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hk : F.keptBy c first = true) (hF : F.HoldsAt ε ρ h) :
+    F.HoldsAt ε ρ h' := by
   have store : ∀ {x s : Nat} {ls : List (Option Nat)}, (c.store != .any || first x "[]") = true →
       Footprints.storeOf (ρ x) = some s → h[s]? = some (.arr ls) →
       ∃ ls' : List (Option Nat), h'[s]? = some (.arr ls') ∧ ls.length ≤ ls'.length ∧
@@ -1803,12 +1822,12 @@ theorem holdsAt_kept {c : Changes} {first : Nat → String → Bool} {F : IndexF
     simp only [keptBy, Bool.or_eq_true, List.all_eq_true] at hk
     rcases hk with hk | hk
     · obtain ⟨hi, hh⟩ := hF
-      have heq : ∀ t ∈ G.vars, termValue ρ h' t = termValue ρ h t := by
+      have heq : ∀ t ∈ G.vars, termValue ε ρ h' t = termValue ε ρ h t := by
         intro t ht
         obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hi t ht)
         rw [hn, termValue_kept hc hf (hk t ht) hn]
       refine ⟨fun t ht => by rw [heq t ht]; exact hi t ht, ?_⟩
-      rw [Linear.Fact.holds_congr (v' := termValuation ρ h) (fun t ht => by simp only [termValuation, heq t ht])]
+      rw [Linear.Fact.holds_congr (v' := termValuation ε ρ h) (fun t ht => by simp only [termValuation, heq t ht])]
       exact hh
     · cases G with
       | ne _ _ => simp at hk
@@ -1836,7 +1855,7 @@ def Term.viewFramed (c : Changes) (first views : Nat → String → Bool) (t : T
 
 theorem termValue_viewFramed {c : Changes} {first views : Nat → String → Bool} {ρ : Env} {h h' : Heap}
     {t : Term} {n : Int} (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hv : ViewsKept views ρ h h')
-    (hk : t.viewFramed c first views = true) (ht : termValue ρ h t = some n) : termValue ρ h' t = some n := by
+    (hk : t.viewFramed c first views = true) (ht : termValue ε ρ h t = some n) : termValue ε ρ h' t = some n := by
   obtain ⟨kind, s, p⟩ := t
   simp only [Term.viewFramed, Bool.and_eq_true, beq_iff_eq] at hk
   obtain ⟨rfl, hp⟩ := hk
@@ -1879,7 +1898,7 @@ def keptWith (c : Changes) (first views : Nat → String → Bool) : IndexFact �
 
 theorem holdsAt_keptWith {c : Changes} {first views : Nat → String → Bool} {F : IndexFact} {ρ : Env} {h h' : Heap}
     (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hv : ViewsKept views ρ h h')
-    (hk : F.keptWith c first views = true) (hF : F.HoldsAt ρ h) : F.HoldsAt ρ h' := by
+    (hk : F.keptWith c first views = true) (hF : F.HoldsAt ε ρ h) : F.HoldsAt ε ρ h' := by
   cases F with
   | linear G =>
     simp only [keptWith, Bool.or_eq_true] at hk
@@ -1921,8 +1940,8 @@ def Term.storeGrown (grown : Nat → Bool) (t : Term) : Bool :=
 /-- **A grown store's length is defined and at least as large**
 (`Term.storeGrown`). -/
 theorem termValue_storeGrown {grown : Nat → Bool} {ρ : Env} {h h' : Heap} {t : Term} {n : Int}
-    (hg : StoresGrown grown ρ h h') (ht : t.storeGrown grown = true) (hn : termValue ρ h t = some n) :
-    ∃ n', termValue ρ h' t = some n' ∧ n ≤ n' := by
+    (hg : StoresGrown grown ρ h h') (ht : t.storeGrown grown = true) (hn : termValue ε ρ h t = some n) :
+    ∃ n', termValue ε ρ h' t = some n' ∧ n ≤ n' := by
   obtain ⟨kind, s, p⟩ := t
   simp only [Term.storeGrown, Bool.and_eq_true, beq_iff_eq, List.isEmpty_iff] at ht
   obtain ⟨⟨rfl, rfl⟩, hs⟩ := ht
@@ -1948,13 +1967,13 @@ def grownWith (c : Changes) (first views : Nat → String → Bool) (grown : Nat
 theorem holdsAt_grownWith {c : Changes} {first views : Nat → String → Bool} {grown : Nat → Bool}
     {F : IndexFact} {ρ : Env} {h h' : Heap}
     (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hv : ViewsKept views ρ h h')
-    (hg : StoresGrown grown ρ h h') (hk : F.grownWith c first views grown = true) (hF : F.HoldsAt ρ h) :
-    F.HoldsAt ρ h' := by
+    (hg : StoresGrown grown ρ h h') (hk : F.grownWith c first views grown = true) (hF : F.HoldsAt ε ρ h) :
+    F.HoldsAt ε ρ h' := by
   cases F with
   | linear G =>
     simp only [grownWith, Bool.or_eq_true] at hk
     rcases hk with hk | hk
-    · refine factAt_monotone (val := termValue ρ h) (val' := termValue ρ h') (fun t n ht hn => ?_)
+    · refine factAt_monotone (val := termValue ε ρ h) (val' := termValue ε ρ h') (fun t n ht hn => ?_)
         (fun t n ht hn => termValue_storeGrown hg ht hn) hk hF
       rcases Bool.or_eq_true_iff.mp ht with ht | ht
       · exact termValue_kept hc hf ht hn

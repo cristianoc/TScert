@@ -24,6 +24,7 @@ as long as `h₀`. `footprintKept_of` composes these with the step theorem
 (`stepChecked_parts`) into `FootprintKept`; `BoundChecked.reassign` carries
 the check to every reassigned graph. -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
 open PositiveRules HeapExpressionRules
@@ -82,7 +83,7 @@ theorem callFresh_of_checked {G : NormalGraph ι} {images : InstanceImageCheck G
     (hdc : passDerivChecked G images codes sums kS ⟨c.context, node.expression, c.type⟩ d = true)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {s : IndexedHeap} {m : Nat} (hm : m ≤ s.h.length)
-    (he : EnvOk G c.context ρ s.n s.W) (hkS : HeapKnowledge.Holds kS ρ s.h) :
+    (he : EnvOk G c.context ρ s.n s.W) (hkS : HeapKnowledge.Holds kS ε ρ s.h) :
     ∀ k h' v, k < s.n → Steps k s.h (instantiate 0 ρ node.expression) h' v → isVal v = true → FreshAt m v := by
   simp only [passCallFresh, Bool.and_eq_true, beq_iff_eq] at hcf
   obtain ⟨⟨hfr, hops⟩, hterm⟩ := hcf
@@ -171,12 +172,12 @@ empty result type, or a continuation into `dead`), and a throw a handler of
 `dead`, or escapes with no throw bound. -/
 theorem footprintKept_of {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
     {pc : SinglePass.PassChecker G images} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat}
-    {ρ0 : Env} {ctx : Nat → List (Ty ι)} {Φ : Footprints.Closed} {h₀ : Heap} {dead : List Bool} {ret exc : Bool}
+    {ctx : Nat → List (Ty ι)} {Φ : Footprints.Closed} {h₀ : Heap} {dead : List Bool} {ret exc : Bool}
     (hacc : ∀ l, w.visited l → ∃ r : NodeChecked G images codes pc P w startNames ctx l,
-      (∀ ρ (s : IndexedHeap), passPreT G w startNames ρ0 ctx l ρ h₀.length s →
-        StateHolds G r.entry (w.implies l) startNames ρ0 ρ h₀.length s) ∧ BoundChecked r Φ dead ret exc)
+      (∀ ρ (s : IndexedHeap), passPreT G w startNames ε ctx l ρ h₀.length s →
+        StateHolds G r.entry (w.implies l) startNames ε ρ h₀.length s) ∧ BoundChecked r Φ dead ret exc)
     (hcodes : CodesSound G codes) :
-    FootprintKept P G w startNames ρ0 ctx Φ h₀ dead ret exc := by
+    FootprintKept P G w startNames ε ctx Φ h₀ dead ret exc := by
   intro l ρ s hp hX
   obtain ⟨na, hent, hb⟩ := hacc l hp.1.1
   have hS := hent ρ s hp

@@ -29,6 +29,7 @@ no codes, the pass with codes; its output is sound with the codes
 (`typedRead_optional_sound`), and no theorem here depends on `run` accepting
 it. -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations
 open Verification.SinglePass (Atom)
 
@@ -270,8 +271,8 @@ theorem typedRead_optional_sound {G : NormalGraph ι} {images : InstanceImageChe
     (hopt : optionalOperand (expand G Ref) fld = true) (htree : checkTreeUsing G images p codes sums = true)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (excOf G) (meaning G j.type) (fun h' v => HeapKnowledge.Holds (readFrame k i fld true) (push v ρ) h') n W h
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (excOf G) (meaning G j.type) (fun h' v => HeapKnowledge.Holds (readFrame k i fld true) ε (push v ρ) h') n W h
       (instantiate 0 ρ j.term) := by
   have typed := checkTreeUsing_sound p htree hcodes hsums
   rw [hj, ht] at typed
@@ -286,8 +287,8 @@ theorem passSteps_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
     (hc : (checkStepResult G images j k e codes sums (tree := false)).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (excOf G) (meaning G j.type) (fun h' v => HeapKnowledge.Holds out (push v ρ) h') n W h
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (excOf G) (meaning G j.type) (fun h' v => HeapKnowledge.Holds out ε (push v ρ) h') n W h
       (instantiate 0 ρ j.term) := by
   rcases passSteps_value hok hc with hu | ⟨p, rfl, hj, rfl, hreq⟩ | ⟨i, p, fld, Ref, rfl, hj, ht, hi, hopt, htree, rfl⟩
   · exact checkStep_sound hu hcodes hsums he hk hw hh
@@ -309,7 +310,7 @@ pass's tree check holds. -/
   run := fun j k e codes sums =>
     if passTreeOk G images k codes sums e then checkStepResult G images j k e codes sums (tree := false) else failure
   sound := by
-    intro j k e out codes sums hc hcodes hsums ρ n W h he hk hw hh
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh
     split at hc
     · exact passSteps_sound ‹_› hc hcodes hsums he hk hw hh
     · cases hc
@@ -353,8 +354,8 @@ theorem ordinary_select_sound {G : NormalGraph ι} {images : InstanceImageCheck 
     (hsel : ((Checker.ordinary G images).select j k e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (excOf G) (meaning G j.type) (fun h' v => HeapKnowledge.Holds out (push v ρ) h') n W h
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (excOf G) (meaning G j.type) (fun h' v => HeapKnowledge.Holds out ε (push v ρ) h') n W h
       (instantiate 0 ρ j.term) :=
   (passOrdinary G images).sound (select_run hok hsel) hcodes hsums he hk hw hh
 
@@ -417,7 +418,7 @@ theorem passSteps_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
     {k out : HeapKnowledge.Knowledge} {e : StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
     (hc : ((passSteps G images).run j k e codes sums).value = some out) (hp : kindPreserving e = true)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
-    {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ρ h)
+    {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) : KeepsPost G j ρ n W h := by
   have hs := erase ((passSteps G images).sound hc hcodes hsums he hk hw hh)
   simp only [passSteps] at hc
@@ -440,7 +441,7 @@ theorem passPreserving_keeps_select {G : NormalGraph ι} {images : InstanceImage
     (hok : passTreeOk G images kE codes sums e = true)
     (hsel : ((Checker.ordinary G images).select j kE e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
-    {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ρ h)
+    {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) : KeepsPost G j ρ n W h := by
   simp only [passPreserving, Bool.or_eq_true] at hpres
   rcases hpres with hc | hp
@@ -460,14 +461,14 @@ theorem pass_preserving_frame_select {G : NormalGraph ι} {images : InstanceImag
     (hsel : ((Checker.ordinary G images).select j kE e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ η : Env} {r m : Nat} {s : IndexedHeap} {S : List Atom}
-    (he : EnvOk G j.context ρ s.n s.W) (hkE : HeapKnowledge.Holds kE ρ s.h)
-    (hS : Named S η ρ m s) (hfr : ∀ a ∈ S, r ∉ a.names)
+    (he : EnvOk G j.context ρ s.n s.W) (hkE : HeapKnowledge.Holds kE ε ρ s.h)
+    (hS : Named ε S η ρ m s) (hfr : ∀ a ∈ S, r ∉ a.names)
     {k : Nat} {h' : Heap} {t' : Tm} (hst : Steps k s.h (instantiate 0 ρ j.term) h' t') (hk : k < s.n) :
     (isVal t' = true → ∃ s' : IndexedHeap, Action Footprints.Closed.empty.fp ρ s s' ∧ s'.h = h' ∧
         s'.n + k = s.n ∧ meaning G j.type s'.n s'.W t' ∧
-        HeapKnowledge.Holds out (push t' ρ) h' ∧ Named S (Env.set η r t') ρ m s') ∧
+        HeapKnowledge.Holds out ε (push t' ρ) h' ∧ Named ε S (Env.set η r t') ρ m s') ∧
       (∀ x, Raises t' x → ∃ s' : IndexedHeap, Action Footprints.Closed.top.fp ρ s s' ∧ s'.h = h' ∧
-        s'.n + k = s.n ∧ Scoped 0 x ∧ excOf G s'.n s'.W x ∧ Named (S.filter (·.heapFree)) η ρ m s') :=
+        s'.n + k = s.n ∧ Scoped 0 x ∧ excOf G s'.n s'.W x ∧ Named ε (S.filter (·.heapFree)) η ρ m s') :=
   preserving_step_frame (passOrdinary G images) (select_run hok hsel) hcodes hsums he hkE
     (passPreserving_keeps_select hpres hok hsel hcodes hsums he hkE s.adm s.ok) hS hfr hst hk
 
@@ -481,9 +482,9 @@ theorem preserving_judgment_select {G : NormalGraph ι} {images : InstanceImageC
     (hsel : ((Checker.ordinary G images).select j kE e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePostExc (excOf G) (meaning G j.type)
-      (fun h' v => Footprints.Closed.empty.Holds h h' ∧ HeapKnowledge.Holds out (push v ρ) h')
+      (fun h' v => Footprints.Closed.empty.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => Footprints.Closed.top.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) := by
   have hboth := cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh
     (passPreserving_keeps_select hpres hok hsel hcodes hsums he hk hw hh)
@@ -614,8 +615,8 @@ theorem pass_select_sound {pc : SinglePass.PassChecker G images} {j : Sequent ι
     (hsel : (pc.checker.select j k e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
-    SafePost (excOf G) (meaning G j.type) (fun h' v => HeapKnowledge.Holds out (push v ρ) h') n W h
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (excOf G) (meaning G j.type) (fun h' v => HeapKnowledge.Holds out ε (push v ρ) h') n W h
       (instantiate 0 ρ j.term) :=
   (passRunChecker pc).sound (pass_select_run hok hsel) hcodes hsums he hk hw hh
 
@@ -627,7 +628,7 @@ theorem passPreserving_keeps_pass {pc : SinglePass.PassChecker G images} {j : Se
     (hok : pc.selectChecks = false → passTreeOk G images kE codes sums e = true)
     (hsel : (pc.checker.select j kE e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
-    {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ρ h)
+    {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) : KeepsPost G j ρ n W h := by
   cases pc with
   | ordinary => exact passPreserving_keeps_select hpres (hok rfl) hsel hcodes hsums he hk hw hh
@@ -648,14 +649,14 @@ theorem pass_preserving_frame_pass {pc : SinglePass.PassChecker G images}
     (hsel : (pc.checker.select j kE e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ η : Env} {r m : Nat} {s : IndexedHeap} {S : List Atom}
-    (he : EnvOk G j.context ρ s.n s.W) (hkE : HeapKnowledge.Holds kE ρ s.h)
-    (hS : Named S η ρ m s) (hfr : ∀ a ∈ S, r ∉ a.names)
+    (he : EnvOk G j.context ρ s.n s.W) (hkE : HeapKnowledge.Holds kE ε ρ s.h)
+    (hS : Named ε S η ρ m s) (hfr : ∀ a ∈ S, r ∉ a.names)
     {k : Nat} {h' : Heap} {t' : Tm} (hst : Steps k s.h (instantiate 0 ρ j.term) h' t') (hk : k < s.n) :
     (isVal t' = true → ∃ s' : IndexedHeap, Action Footprints.Closed.empty.fp ρ s s' ∧ s'.h = h' ∧
         s'.n + k = s.n ∧ meaning G j.type s'.n s'.W t' ∧
-        HeapKnowledge.Holds out (push t' ρ) h' ∧ Named S (Env.set η r t') ρ m s') ∧
+        HeapKnowledge.Holds out ε (push t' ρ) h' ∧ Named ε S (Env.set η r t') ρ m s') ∧
       (∀ x, Raises t' x → ∃ s' : IndexedHeap, Action Footprints.Closed.top.fp ρ s s' ∧ s'.h = h' ∧
-        s'.n + k = s.n ∧ Scoped 0 x ∧ excOf G s'.n s'.W x ∧ Named (S.filter (·.heapFree)) η ρ m s') :=
+        s'.n + k = s.n ∧ Scoped 0 x ∧ excOf G s'.n s'.W x ∧ Named ε (S.filter (·.heapFree)) η ρ m s') :=
   preserving_step_frame (passRunChecker pc) (pass_select_run hok hsel) hcodes hsums he hkE
     (passPreserving_keeps_pass hpres hok hsel hcodes hsums he hkE s.adm s.ok) hS hfr hst hk
 
@@ -670,9 +671,9 @@ theorem preserving_judgment_pass {pc : SinglePass.PassChecker G images}
     (hsel : (pc.checker.select j kE e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
     SafePostExc (excOf G) (meaning G j.type)
-      (fun h' v => Footprints.Closed.empty.Holds h h' ∧ HeapKnowledge.Holds out (push v ρ) h')
+      (fun h' v => Footprints.Closed.empty.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => Footprints.Closed.top.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) := by
   have hboth := cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh
     (passPreserving_keeps_pass hpres hok hsel hcodes hsums he hk hw hh)

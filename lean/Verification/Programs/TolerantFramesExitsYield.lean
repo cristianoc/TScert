@@ -221,7 +221,7 @@ end ExitChecks
 
 /-- The exit obligation from the explicit local extraction premise. -/
 theorem exitsYield_of_checks (checks : ExitChecks.Extraction ι) : ExitsYield ι := by
-  intro G I c after admits hp r hchecked η ha ρ0 m l hl
+  intro G I c after admits hp r hchecked η ha ε m l hl
   obtain ⟨dead, hnodes, hgiven, hmerging, hrecord⟩ := hchecked
   obtain ⟨s⟩ := ExitChecks.site_of_trace (hnodes l hl).2
   obtain ⟨hc, hf⟩ := checks G I c after admits hp r ⟨dead, hnodes, hgiven, hmerging, hrecord⟩ η ha l hl s

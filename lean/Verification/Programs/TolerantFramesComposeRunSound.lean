@@ -77,8 +77,8 @@ def RegionsHeld : Prop :=
   ∀ (G : NormalGraph ι) (I : InstanceImageCheck G) (c : Target.RunCall G I) after admits,
     RunPremises G I c after admits → ∀ r : RunWalkA G I c, WalkChecked c r → ∀ η, admits η →
       ∀ Φ regions exc, Target.regionOf c.regional = some (Φ, regions, exc) →
-        ∃ X : Env → Heap → Nat → Env → Heap → Prop, ∀ ρ0 h₀, X ρ0 h₀ c.start ρ0 h₀ ∧
-          RegionsKeptS c.P (reassign G η) r.w (List.range c.inputs.length) ρ0 r.ctx (X ρ0 h₀) Φ regions h₀ exc
+        ∃ X : HeapKnowledge.EntryState → Heap → Nat → Env → Heap → Prop, ∀ ε h₀, X ε h₀ c.start ε.env h₀ ∧
+          RegionsKeptS c.P (reassign G η) r.w (List.range c.inputs.length) ε r.ctx (X ε h₀) Φ regions h₀ exc
 
 end Checked
 

@@ -11,6 +11,7 @@ transitions. A typed field write's effect judgment
 with budget left, an action of `{values: any, stores: keep}`, and every length
 lower bound survives it by antitonicity and (Grow). -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations
 
 /-! ## Graph runs -/
@@ -339,13 +340,13 @@ open HeapKnowledge in
 /-- The retained index facts `K`, read at `ρ`, hold at every target
 environment `ρ'` under every renaming `g` that maps each slot they name to a
 slot of `ρ'` holding the same value. -/
-def Transported (K : List IndexFact) (ρ ρ' : Env) (h : Heap) : Prop :=
+def Transported (ε : EntryState) (K : List IndexFact) (ρ ρ' : Env) (h : Heap) : Prop :=
   ∀ F ∈ K, ∀ (g : Nat → Option Nat) (F' : IndexFact), F.mapM g = some F' →
-    (∀ i ∈ F.slots, ∀ j, g i = some j → ρ' j = ρ i) → F'.HoldsAt ρ' h
+    (∀ i ∈ F.slots, ∀ j, g i = some j → ρ' j = ρ i) → F'.HoldsAt ε ρ' h
 
 open HeapKnowledge in
-theorem transported_of {K : List IndexFact} {ρ : Env} {h : Heap} (hK : ∀ F ∈ K, F.HoldsAt ρ h)
-    (ρ' : Env) : Transported K ρ ρ' h :=
+theorem transported_of {K : List IndexFact} {ρ : Env} {h : Heap} (hK : ∀ F ∈ K, F.HoldsAt ε ρ h)
+    (ρ' : Env) : Transported ε K ρ ρ' h :=
   fun F hF _ _ hm hg => (IndexFact.holdsAt_mapM hm hg).mpr (hK F hF)
 
 /-- With the exit's value bound, a target slot mapped to source slot `i + 1`
@@ -367,12 +368,12 @@ theorem transfer {pre : Nat → Assertion} {Ξres Tres Ξ T : Fam} {Qres Rres : 
     {Kn Ke : List IndexFact}
     (hshape : ∀ (j : Nat) (U : WorldT (j + 1)) (h : Heap) (v : Tm), isVal v = true → T (j + 1) U v →
       cn.Holds s₀.h h → Qn h v → ShapeOk v k)
-    (hkeepN : ∀ F ∈ Kn, Box cn.fp (fun ρ _ s => F.HoldsAt ρ s.h) ρ m s₀)
-    (hkeepE : ∀ F ∈ Ke, Box ce.fp (fun ρ _ s => F.HoldsAt ρ s.h) ρ m s₀)
+    (hkeepN : ∀ F ∈ Kn, Box cn.fp (fun ρ _ s => F.HoldsAt ε ρ s.h) ρ m s₀)
+    (hkeepE : ∀ F ∈ Ke, Box ce.fp (fun ρ _ s => F.HoldsAt ε ρ s.h) ρ m s₀)
     (hentN : ∀ (s : IndexedHeap) (v : Tm), Action cn.fp ρ s₀ s → isVal v = true → Above T s v → Qn s.h v →
-      (∀ ρ', Transported Kn ρ ρ' s.h) → NormalTarget pre Tres Qres ρ m s v k)
+      (∀ ρ', Transported ε Kn ρ ρ' s.h) → NormalTarget pre Tres Qres ρ m s v k)
     (hentE : ∀ (s : IndexedHeap) (e : Tm), Action ce.fp ρ s₀ s → Scoped 0 e → Above Ξ s e → Qe s.h →
-      (∀ ρ', Transported Ke ρ ρ' s.h) → RaiseTarget pre Ξres Rres ρ m s e x) :
+      (∀ ρ', Transported ε Ke ρ ρ' s.h) → RaiseTarget pre Ξres Rres ρ m s e x) :
     NodeObligations pre Ξres Tres Qres Rres Ξ T cn ce Qn Qe ρ m s₀ k x :=
   ⟨hshape,
     fun s v ha hv hT hq => hentN s v ha hv hT hq (transported_of fun F hF => hkeepN F hF s ha),
@@ -392,15 +393,15 @@ theorem field_write_keeps_bound {ι : Type} [DecidableEq ι] {G : PositiveGraphs
     {h' : Heap} {t' : Tm}
     (hc : ExpressionEffects.fieldWriteWithin G Γ fieldWriteEffect t = true)
     (he : ProgramTyping.EnvOk G Γ ρ s.n s.W) (hs : Safe Ξ T s.n s.W s.h (instantiate 0 ρ t))
-    (hst : Steps k s.h (instantiate 0 ρ t) h' t') (hk : k < s.n) (hb : LowerBound y x ρ m s) :
+    (hst : Steps k s.h (instantiate 0 ρ t) h' t') (hk : k < s.n) (hb : LowerBound ε y x ρ m s) :
     (isVal t' = true → ∃ s' : IndexedHeap, Action fieldWriteEffect.fp ρ s s' ∧ s'.h = h' ∧
-        s'.n + k = s.n ∧ T s'.n s'.W t' ∧ LowerBound y x ρ m s') ∧
+        s'.n + k = s.n ∧ T s'.n s'.W t' ∧ LowerBound ε y x ρ m s') ∧
       (∀ e, Raises t' e → ∃ s' : IndexedHeap, Action fieldWriteEffect.fp ρ s s' ∧ s'.h = h' ∧
-        s'.n + k = s.n ∧ Scoped 0 e ∧ Ξ s'.n s'.W e ∧ LowerBound y x ρ m s') := by
+        s'.n + k = s.n ∧ Scoped 0 e ∧ Ξ s'.n s'.W e ∧ LowerBound ε y x ρ m s') := by
   have hp := HeapObservations.SafePostExc.weaken (Q' := fun h' _ => fieldWriteEffect.Holds s.h h' ∧ True)
     (R' := fun h' => fieldWriteEffect.Holds s.h h' ∧ True) (fun _ _ h => ⟨h, trivial⟩) (fun _ h => ⟨h, trivial⟩)
     (ExpressionEffects.field_write_within_exc hc he s.ok hs)
-  have hgrow : ∀ s', Action fieldWriteEffect.fp ρ s s' → LowerBound y x ρ m s' :=
+  have hgrow : ∀ s', Action fieldWriteEffect.fp ρ s s' → LowerBound ε y x ρ m s' :=
     fun s' ha => grow hb s' (action_le_closed (by decide) ha)
   refine ⟨fun hv => ?_, fun e hr => ?_⟩
   · obtain ⟨s', ha, he', hn, hT, -⟩ := action_normal (ρ := ρ) hp hst hv hk
@@ -427,9 +428,9 @@ the graph's exception family where the node's family does one level up. -/
 theorem loop_write_obligations {pre : Nat → Assertion} {Ξres Tres Ξ T : Fam} {Qres Rres : Heap → Prop} {ρ : Env}
     {m : Nat}
     {s₀ : IndexedHeap} {l : Nat}
-    (hinc : ∀ s, NonNeg 1 ρ m s → LowerBound 2 3 ρ m s → pre l ρ m s)
+    (hinc : ∀ s, NonNeg 1 ρ m s → LowerBound ε 2 3 ρ m s → pre l ρ m s)
     (hΞ : ∀ s e, Above Ξ s e → Ξres s.n s.W e ∧ Rres s.h)
-    (hj : NonNeg 1 ρ m s₀) (hb : LowerBound 2 3 ρ m s₀) :
+    (hj : NonNeg 1 ρ m s₀) (hb : LowerBound ε 2 3 ρ m s₀) :
     NodeObligations pre Ξres Tres Qres Rres Ξ T growEffect growEffect (fun _ _ => True) (fun _ => True) ρ m s₀
       (.effect ⟨l, none⟩) none :=
   transfer (Kn := [lowerBoundFact 2 3]) (Ke := [])
@@ -437,7 +438,7 @@ theorem loop_write_obligations {pre : Nat → Assertion} {Ξres Tres Ξ T : Fam}
     (fun F hF => by simp only [List.mem_singleton] at hF; subst hF; exact grow hb)
     (fun F hF => by simp at hF)
     (fun s _ _ _ _ _ htr => by
-      have hb' : LowerBound 2 3 ρ m s :=
+      have hb' : LowerBound ε 2 3 ρ m s :=
         htr ρ _ (List.mem_singleton_self _) some _ rfl (fun _ _ _ hg => by cases hg; rfl)
       exact hinc s hj hb')
     (fun s e _ _ hab _ _ => hΞ s e hab)
@@ -462,9 +463,9 @@ the increment's post. -/
 theorem loop_back_edge {pre : Nat → Assertion} {Ξres Tres Ξ T : Fam} {Qres Rres : Heap → Prop} {ce : Footprints.Closed}
     {Qe : Heap → Prop}
     {ρ : Env} {m : Nat} {s₀ : IndexedHeap} {hd : Nat}
-    (hhead : ∀ ρ' s, NonNeg 0 ρ' m s → LowerBound 1 2 ρ' m s → pre hd ρ' m s)
+    (hhead : ∀ ρ' s, NonNeg 0 ρ' m s → LowerBound ε 1 2 ρ' m s → pre hd ρ' m s)
     (hΞ : ∀ s e, Above Ξ s e → Ξres s.n s.W e ∧ Rres s.h)
-    (hj : NonNeg 1 ρ m s₀) (hb : LowerBound 2 3 ρ m s₀) :
+    (hj : NonNeg 1 ρ m s₀) (hb : LowerBound ε 2 3 ρ m s₀) :
     NodeObligations pre Ξres Tres Qres Rres Ξ T Footprints.Closed.empty ce
       (fun _ v => ∃ a, HeapKnowledge.intValue (ρ 1) = some a ∧ HeapKnowledge.intValue v = some (a + 1)) Qe
       ρ m s₀ (.bind ⟨hd, some [0, 3, 4, 5]⟩) none :=

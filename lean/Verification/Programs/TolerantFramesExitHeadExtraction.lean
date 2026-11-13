@@ -4,6 +4,7 @@ import Verification.Programs.TolerantFramesExitYieldCache
 
 /-! # Head contracts extracted from successful exit computations -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
 open PositiveRules HeapExpressionRules LabelStore
@@ -225,7 +226,7 @@ variable {c : Target.RunCall G I} {r : RunWalkA G I c} {l : Nat} {hl : r.w.visit
      (headEntry req false width fresh (List.range c.inputs.length) s.env.argName
       ((s.env.givenArgs[t]?).getD []) ((s.env.givenInputs[t]?).getD [])
       ((s.env.givenImplies[t]?).getD [])).2.1) ∈ r.w.incoming t ∧
-    ((∀ ρ h, HeapKnowledge.Holds written ρ h → HeapKnowledge.Holds ((r.stated t).getD {}) ρ h) ∧
+    ((∀ ε ρ h, HeapKnowledge.Holds written ε ρ h → HeapKnowledge.Holds ((r.stated t).getD {}) ε ρ h) ∧
       req = { written with indices := written.indices ++ cf }) ∧
     ∀ y ∈ List.range c.inputs.length, y < fresh
 

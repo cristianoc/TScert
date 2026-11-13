@@ -13,6 +13,7 @@ written facts with the request's entry facts and the supplied facts
 and entry facts, that state holds (`StateHolds`) at the start environment,
 each slot named by itself. -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations
 open Verification.SinglePass (Atom Store State)
 
@@ -113,8 +114,8 @@ theorem startGiven_holds {G : NormalGraph ι} {inputs : List (Ty ι)} {written :
     (hk : ControlFlow.entryKnows G inputs entrySeparation entryIndices
       { written.getD {} with indices := (written.getD {}).indices ++ supplied } = true)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G inputs ρ n W)
-    (hs : HeapSeparation.Holds entrySeparation ρ) (hi : HeapKnowledge.IndexHolds entryIndices ρ h) :
-    HeapKnowledge.Holds (startGiven written entryIndices entrySeparation supplied) ρ h := by
+    (hs : HeapSeparation.Holds entrySeparation ρ) (hi : HeapKnowledge.IndexHolds ε entryIndices ρ h) :
+    HeapKnowledge.Holds (startGiven written entryIndices entrySeparation supplied) ε ρ h := by
   obtain ⟨h1, h2, h3, h4, h5, h6⟩ := ControlFlow.entryKnows_sound hk he hs hi
   refine ⟨h1, h2, h3, union_holds h4 hs, h5, fun a ha => ?_⟩
   simp only [startGiven, List.append_assoc, List.mem_append] at ha
@@ -161,7 +162,7 @@ theorem headEntry_start_names {g : HeapKnowledge.Knowledge} {w fresh : Nat} {goa
       · rfl
     · rfl
 
-theorem storeOk_empty {η : Env} {h : Heap} : StoreOk {} η h := by
+theorem storeOk_empty {η : Env} {h : Heap} : StoreOk ε {} η h := by
   intro x hx
   rcases List.mem_append.mp hx with hx | hx
   · exact absurd (mem_keysOf.mp hx) (Std.HashSet.not_mem_empty)
@@ -176,10 +177,10 @@ theorem storeWF_empty : StoreWF {} :=
 and the renaming sends each slot to a name holding its value; it is
 well-formed. -/
 theorem headStore_ok {g : HeapKnowledge.Knowledge} {f : Nat → Option Nat} {ρ η : Env} {h : Heap}
-    (hg : HeapKnowledge.Holds g ρ h) (hf : ∀ i x, f i = some x → η x = ρ i) :
-    StoreOk ((SinglePass.atomsOf g).foldl (fun s a => match a.rename f with | some b => s.add b | none => s) {}) η h ∧
+    (hg : HeapKnowledge.Holds g ε ρ h) (hf : ∀ i x, f i = some x → η x = ρ i) :
+    StoreOk ε ((SinglePass.atomsOf g).foldl (fun s a => match a.rename f with | some b => s.add b | none => s) {}) η h ∧
       StoreWF ((SinglePass.atomsOf g).foldl (fun s a => match a.rename f with | some b => s.add b | none => s) {}) := by
-  refine foldl_inv (fun s => StoreOk s η h ∧ StoreWF s) _ _ _ ⟨storeOk_empty, storeWF_empty⟩ ?_
+  refine foldl_inv (fun s => StoreOk ε s η h ∧ StoreWF s) _ _ _ ⟨storeOk_empty, storeWF_empty⟩ ?_
   intro a ha s ⟨hs, ws⟩
   split
   · rename_i b hb
@@ -199,14 +200,14 @@ theorem entry_stateHolds {G : NormalGraph ι} {inputs : List (Ty ι)} {claims : 
     (hacc : SinglePass.entryRefusal G inputs claims start goal written supplied givenImplies givenArgs givenInputs
       entryIndices entrySeparation = none)
     {ρ : Env} {m : Nat} {s : IndexedHeap} (he : EnvOk G inputs ρ s.n s.W)
-    (hs : HeapSeparation.Holds entrySeparation ρ) (hi : HeapKnowledge.IndexHolds entryIndices ρ s.h) (fresh : Nat) :
+    (hs : HeapSeparation.Holds entrySeparation ρ) (hi : HeapKnowledge.IndexHolds ⟨ρ, s.h⟩ entryIndices ρ s.h) (fresh : Nat) :
     StateHolds G (SinglePass.headEntry (startGiven written entryIndices entrySeparation supplied) true inputs.length
         fresh (List.range inputs.length) (goal.slot.bind ((List.range inputs.length)[·]?)) givenArgs givenInputs
         givenImplies).1
       (SinglePass.headEntry (startGiven written entryIndices entrySeparation supplied) true inputs.length
         fresh (List.range inputs.length) (goal.slot.bind ((List.range inputs.length)[·]?)) givenArgs givenInputs
         givenImplies).2.1
-      (List.range inputs.length) ρ ρ m s ∧
+      (List.range inputs.length) ⟨ρ, s.h⟩ ρ m s ∧
     StoreWF (SinglePass.headEntry (startGiven written entryIndices entrySeparation supplied) true inputs.length
         fresh (List.range inputs.length) (goal.slot.bind ((List.range inputs.length)[·]?)) givenArgs givenInputs
         givenImplies).1.store ∧

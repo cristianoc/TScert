@@ -9,6 +9,7 @@ name and the facts derived for names no slot holds. This module proves that
 knowledge holds at the node's environment wherever the state holds
 (`StateHolds`). -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations
 open Verification.SinglePass (Atom Store State)
 
@@ -121,12 +122,12 @@ theorem slotTable_get {names : List Nat} {want : Std.HashSet Nat} {whole : Bool}
 holding one name. -/
 theorem aliasLinksOf_holds {names : List Nat} {d : Nat} {want : Std.HashSet Nat} {whole : Bool} {ρ η : Env}
     {h : Heap} (hs : SlotsNamed names ρ η) :
-    ∀ a ∈ aliasLinksOf names d (SinglePass.slotTable names want whole), AtomHolds a ρ h := by
+    ∀ a ∈ aliasLinksOf names d (SinglePass.slotTable names want whole), AtomHolds ε a ρ h := by
   unfold aliasLinksOf
   simp only [Id.run]
-  refine forIn_idx_bind (R := fun (t : List Atom) => ∀ a ∈ t, AtomHolds a ρ h)
-    (Q := fun (b : List Atom × Nat) => ∀ a ∈ b.1, AtomHolds a ρ h) names _ _
-    (fun k b => b.2 = k ∧ ∀ a ∈ b.1, AtomHolds a ρ h) _ ⟨rfl, fun _ h => by cases h⟩ ?_ ?_ ?_ ?_
+  refine forIn_idx_bind (R := fun (t : List Atom) => ∀ a ∈ t, AtomHolds ε a ρ h)
+    (Q := fun (b : List Atom × Nat) => ∀ a ∈ b.1, AtomHolds ε a ρ h) names _ _
+    (fun k b => b.2 = k ∧ ∀ a ∈ b.1, AtomHolds ε a ρ h) _ ⟨rfl, fun _ h => by cases h⟩ ?_ ?_ ?_ ?_
   · intro k n b b' hk ⟨hi, hb⟩ hf
     split at hf
     · cases hf
@@ -156,12 +157,12 @@ theorem aliasLinksOf_holds {names : List Nat} {d : Nat} {want : Std.HashSet Nat}
 from do. -/
 theorem derivedOf_holds {indices : List HeapKnowledge.IndexAtom} {links : HeapLinks.Links}
     {table : Std.HashMap Nat Nat} {out : List Nat} {η : Env} {h : Heap}
-    (hi : HeapKnowledge.IndexHolds indices η h) (hl : HeapLinks.Holds links η h) :
-    HeapKnowledge.IndexHolds (derivedOf indices links table out) η h := by
+    (hi : HeapKnowledge.IndexHolds ε indices η h) (hl : HeapLinks.Holds links η h) :
+    HeapKnowledge.IndexHolds ε (derivedOf indices links table out) η h := by
   unfold derivedOf
   split
   · exact HeapKnowledge.indexHolds_nil η h
-  · have hr : HeapKnowledge.IndexHolds (indices ++ HeapKnowledge.restateReads links (fun s => !table.contains s) indices ++
+  · have hr : HeapKnowledge.IndexHolds ε (indices ++ HeapKnowledge.restateReads links (fun s => !table.contains s) indices ++
         HeapKnowledge.restateStores links (fun s => !table.contains s) indices) η h := by
       intro a ha
       rcases List.mem_append.mp ha with ha | ha
@@ -207,8 +208,8 @@ theorem ofStep_mem : ∀ (as : List Atom),
 
 /-- **Facts at slots holding make the knowledge `ofAtoms` builds hold**, its
 separation read at depth `d`. -/
-theorem ofAtoms_holds {as : List Atom} {d : Nat} {ρ : Env} {h : Heap} (ha : ∀ b ∈ as, AtomHolds b ρ h) :
-    HeapKnowledge.Holds (SinglePass.ofAtoms as d) ρ h := by
+theorem ofAtoms_holds {as : List Atom} {d : Nat} {ρ : Env} {h : Heap} (ha : ∀ b ∈ as, AtomHolds ε b ρ h) :
+    HeapKnowledge.Holds (SinglePass.ofAtoms as d) ε ρ h := by
   rw [ofAtoms_eq]
   obtain ⟨h1, h2, h3, h4, h5, h6⟩ := ofStep_mem as
   refine ⟨fun f hf => ha _ (h1 f hf) f (List.mem_singleton_self _), fun f hf => ha _ (h2 f hf) f (List.mem_singleton_self _),
@@ -233,8 +234,8 @@ theorem ofAtoms_holds {as : List Atom} {d : Nat} {ρ : Env} {h : Heap} (ha : ∀
 
 /-- **A knowledge's facts hold as named facts at its slots** (`atomsOf`, its
 separation read from levels to slots). -/
-theorem atomsOf_holds {k : HeapKnowledge.Knowledge} {ρ : Env} {h : Heap} (hk : HeapKnowledge.Holds k ρ h) :
-    ∀ a ∈ SinglePass.atomsOf k, AtomHolds a ρ h := by
+theorem atomsOf_holds {k : HeapKnowledge.Knowledge} {ρ : Env} {h : Heap} (hk : HeapKnowledge.Holds k ε ρ h) :
+    ∀ a ∈ SinglePass.atomsOf k, AtomHolds ε a ρ h := by
   obtain ⟨h1, h2, h3, h4, h5, h6⟩ := hk
   intro a ha
   simp only [SinglePass.atomsOf, List.mem_append, List.mem_map] at ha
@@ -259,8 +260,8 @@ theorem table_named {names : List Nat} {want : Std.HashSet Nat} {whole : Bool} {
 `atoms` lists holds at `η` and each slot holds its name's value, the
 knowledge `materializeFrom` builds holds at the slots. -/
 theorem materializeFrom_holds {st : State} {d : Nat} {given : List Nat} {atoms : List Atom} {whole : Bool}
-    {ρ η : Env} {h : Heap} (hs : SlotsNamed st.names ρ η) (ha : ∀ a ∈ atoms, AtomHolds a η h) :
-    HeapKnowledge.Holds (materializeFrom st d given atoms whole).1 ρ h := by
+    {ρ η : Env} {h : Heap} (hs : SlotsNamed st.names ρ η) (ha : ∀ a ∈ atoms, AtomHolds ε a η h) :
+    HeapKnowledge.Holds (materializeFrom st d given atoms whole).1 ε ρ h := by
   simp only [materializeFrom]
   apply ofAtoms_holds
   intro b hb
@@ -275,7 +276,7 @@ theorem materializeFrom_holds {st : State} {d : Nat} {given : List Nat} {atoms :
       exact atomHolds_rename hf hr (ha _ ha')
     · obtain ⟨x, hx, hr⟩ := List.mem_filterMap.mp hb
       refine atomHolds_rename hf hr ?_
-      have hi : HeapKnowledge.IndexHolds (atoms.filterMap fun a => match a with | .index x => some x | _ => none) η h := by
+      have hi : HeapKnowledge.IndexHolds ε (atoms.filterMap fun a => match a with | .index x => some x | _ => none) η h := by
         intro y hy
         obtain ⟨a, haa, hay⟩ := List.mem_filterMap.mp hy
         split at hay
@@ -370,9 +371,9 @@ open ProgramTyping PositiveGraphs
 meaning, the knowledge `materialize … true` hands a writing step holds at the
 node's environment and heap. -/
 theorem stateHolds_materialize_whole {G : NormalGraph ι} {st : State} {implies : List (PromiseCalls.Implication ι)}
-    {start : List Nat} {entry ρ : Env} {m : Nat} {s : IndexedHeap} (hS : StateHolds G st implies start entry ρ m s)
+    {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} (hS : StateHolds G st implies start ε ρ m s)
     (d : Nat) (slots : List Nat) (chain : Bool) :
-    HeapKnowledge.Holds (SinglePass.materialize st d slots true chain).1 ρ s.h := by
+    HeapKnowledge.Holds (SinglePass.materialize st d slots true chain).1 ε ρ s.h := by
   obtain ⟨η, hn, hst, -⟩ := hS
   rw [materialize_eq, selectedAtoms_whole]
   exact materializeFrom_holds hn fun a ha => hst a (toList_storeAll ha)
@@ -380,9 +381,9 @@ theorem stateHolds_materialize_whole {G : NormalGraph ι} {st : State} {implies 
 /-- **The selective materialization holds at the slots**: its facts are
 drawn from the index by name (`selectedFromIndex`). -/
 theorem stateHolds_materialize {G : NormalGraph ι} {st : State} {implies : List (PromiseCalls.Implication ι)}
-    {start : List Nat} {entry ρ : Env} {m : Nat} {s : IndexedHeap} 
-    (hS : StateHolds G st implies start entry ρ m s) (d : Nat) (slots : List Nat) (chain : Bool) :
-    HeapKnowledge.Holds (SinglePass.materialize st d slots false chain).1 ρ s.h := by
+    {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} 
+    (hS : StateHolds G st implies start ε ρ m s) (d : Nat) (slots : List Nat) (chain : Bool) :
+    HeapKnowledge.Holds (SinglePass.materialize st d slots false chain).1 ε ρ s.h := by
   obtain ⟨η, hn, hst, -⟩ := hS
   rw [materialize_eq]
   refine materializeFrom_holds hn fun a ha => ?_
@@ -394,13 +395,13 @@ theorem stateHolds_materialize {G : NormalGraph ι} {st : State} {implies : List
 node's context, where the environment meets that context. Both hold at
 once; so a precondition decided at `kE` holds where the step reads `kE'`. -/
 theorem stateHolds_stepKnowledge {G : NormalGraph ι} {Γ : List (Ty ι)} {st : State}
-    {implies : List (PromiseCalls.Implication ι)} {start : List Nat} {entry ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hS : StateHolds G st implies start entry ρ m s) (he : EnvOk G Γ ρ s.n s.W)
+    {implies : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
+    (hS : StateHolds G st implies start ε ρ m s) (he : EnvOk G Γ ρ s.n s.W)
     (d : Nat) (ms : List Nat) (wholeStep : Bool) :
     HeapKnowledge.Holds (KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G Γ)
-        (SinglePass.materialize st d ms wholeStep).1) ρ s.h ∧
+        (SinglePass.materialize st d ms wholeStep).1) ε ρ s.h ∧
       HeapKnowledge.Holds (KnowledgeExpand.expandLinks (KnowledgeExpand.ctxOf G Γ)
-        (SinglePass.materialize st d ms true).1) ρ s.h := by
+        (SinglePass.materialize st d ms true).1) ε ρ s.h := by
   have hc := KnowledgeExpand.ctxOf_ok he
   refine ⟨KnowledgeExpand.expandLinks_holds hc ?_,
     KnowledgeExpand.expandLinks_holds hc (stateHolds_materialize_whole hS d ms true)⟩

@@ -19,6 +19,7 @@ pass's terms: the footprint check's (`FootprintKept`), the return check's
 (`ReturnsEnsured`) and the regional check's (`RegionsKept`); `run_guarantee`
 (`TolerantFramesRunSound`) assembles the fields. -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations ControlFlow PointClaims ProgramTyping PositiveGraphs PositiveRules
 
 section Guarantee
@@ -27,7 +28,7 @@ variable {ι : Type} [DecidableEq ι] [Hashable ι]
 /-- What a request assumes of its entry (the unit lane's `EntryHolds`). -/
 def EntryHolds (G : NormalGraph ι) (inputs : List (Ty ι)) (sep : HeapSeparation.Separation)
     (idx : List HeapKnowledge.IndexAtom) (ρ : Env) (n : Nat) (W : WorldT n) (h : Heap) : Prop :=
-  EnvOk G inputs ρ n W ∧ HeapSeparation.Holds sep ρ ∧ HeapKnowledge.IndexHolds idx ρ h ∧
+  EnvOk G inputs ρ n W ∧ HeapSeparation.Holds sep ρ ∧ HeapKnowledge.IndexHolds ⟨ρ, h⟩ idx ρ h ∧
     WorldAdm W ∧ HeapOk n W h
 
 /-- **What an accepted run of a graph guarantees** (the unit lane's
@@ -50,7 +51,7 @@ structure GraphGuarantee (G : NormalGraph ι) (admits : MixedAssignment ι → P
     EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h →
     SafePost (excOf (reassign G η))
       (GoalHolds (reassign G η) goal (goal.argument (envOf L d)))
-      (fun h' v => GraphCode.EnsuresAt ensures h' (push v (envOf L d))) n W h (.goto E K start L d)
+      (fun h' v => GraphCode.EnsuresAt ensures ⟨envOf L d, h⟩ h' (push v (envOf L d))) n W h (.goto E K start L d)
   regionally : ∀ Φ regions exc, regional = some (Φ, regions, exc) → ∀ E K, GraphCode.program E K = P →
     ∀ η, admits η → ∀ n W h L d,
     EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h →
@@ -61,7 +62,7 @@ structure GraphGuarantee (G : NormalGraph ι) (admits : MixedAssignment ι → P
       n W h (.goto E K start L d)
   asserted : ∀ η, admits η → ∀ n W h ρ, EntryHolds (reassign G η) inputs sep idx ρ n W h →
     ∀ l k, (l, k) ∈ assertions → ∀ j h' ρ', j < n → Transitions P j h (.at start ρ) h' (.at l ρ') →
-      HeapKnowledge.Holds k ρ' h'
+      HeapKnowledge.Holds k ⟨ρ, h⟩ ρ' h'
 
 /-! ## The per-node hypotheses, in the pass's terms -/
 
@@ -87,31 +88,31 @@ dead or the heap within `Φ` from `h₀`, every run of its term with budget
 left reaches an exit whose target is dead or within `Φ`, a return within
 `Φ` with a fresh result where `fresh`, an escaping throw within `Φ` where
 `onThrow`. -/
-def FootprintKept (P : Program) (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0 : Env)
+def FootprintKept (P : Program) (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε : HeapKnowledge.EntryState)
     (ctx : Nat → List (Ty ι)) (Φ : Footprints.Closed) (h₀ : Heap) (dead : List Bool) (fresh onThrow : Bool) : Prop :=
-  NodesKeep P (passPreT G w startNames ρ0 ctx) (BoundX Φ h₀ dead) (BoundQ Φ h₀ fresh) (BoundR Φ h₀ onThrow) h₀.length
+  NodesKeep P (passPreT G w startNames ε ctx) (BoundX Φ h₀ dead) (BoundQ Φ h₀ fresh) (BoundR Φ h₀ onThrow) h₀.length
 
 /-- A return meets `ensures` at the returned value and the entry values. -/
-def EnsuresQ (ens : List HeapKnowledge.IndexFact) (ρ0 : Env) : Heap → Tm → Prop :=
-  fun h v => GraphCode.EnsuresAt ens h (push v ρ0)
+def EnsuresQ (ens : List HeapKnowledge.IndexFact) (ε : HeapKnowledge.EntryState) : Heap → Tm → Prop :=
+  fun h v => GraphCode.EnsuresAt ens ε h (push v ε.env)
 
 /-- **(Named hypothesis) The return check establishes `ensures`**: from a
 node entry where the pass's assertion holds, every run of its term with
 budget left to a value at a return continuation meets `ensures` at the value
-and the entry values `ρ0`. -/
-def ReturnsEnsured (P : Program) (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0 : Env)
+and the entry values `ε.env`. -/
+def ReturnsEnsured (P : Program) (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε : HeapKnowledge.EntryState)
     (ctx : Nat → List (Ty ι)) (ens : List HeapKnowledge.IndexFact) (m : Nat) : Prop :=
-  NodesKeep P (passPreT G w startNames ρ0 ctx) (fun _ _ _ => True) (EnsuresQ ens ρ0) (fun _ => True) m
+  NodesKeep P (passPreT G w startNames ε ctx) (fun _ _ _ => True) (EnsuresQ ens ε) (fun _ => True) m
 
 /-- A return within the regional bound from the entry heap `h₀`. -/
-def RegionQ (Φ : Footprints.Closed) (regions : List Footprints.ArgumentStoreRegion) (ρ0 : Env) (h₀ : Heap) :
+def RegionQ (Φ : Footprints.Closed) (regions : List Footprints.ArgumentStoreRegion) (ε : HeapKnowledge.EntryState) (h₀ : Heap) :
     Heap → Tm → Prop :=
-  fun h _ => Footprints.ArgumentStoreRegionsWithin Φ regions ρ0 h₀ h
+  fun h _ => Footprints.ArgumentStoreRegionsWithin Φ regions ε.env h₀ h
 
 /-- An escaping throw within the regional bound where it covers throws. -/
-def RegionR (Φ : Footprints.Closed) (regions : List Footprints.ArgumentStoreRegion) (ρ0 : Env) (h₀ : Heap)
+def RegionR (Φ : Footprints.Closed) (regions : List Footprints.ArgumentStoreRegion) (ε : HeapKnowledge.EntryState) (h₀ : Heap)
     (exc : Bool) : Heap → Prop :=
-  fun h => exc = true → Footprints.ArgumentStoreRegionsWithin Φ regions ρ0 h₀ h
+  fun h => exc = true → Footprints.ArgumentStoreRegionsWithin Φ regions ε.env h₀ h
 
 omit [Hashable ι] in
 /-- **The start entered, typed**: `start_passPre` with the start's context
@@ -132,8 +133,8 @@ theorem start_passPreT {G : NormalGraph ι} {w : Walk ι} {inputs : List (Ty ι)
       givenInputs givenImplies).2.1)
     (hctx : ctx start = inputs)
     {ρ : Env} {m : Nat} {s : IndexedHeap} (he : EnvOk G inputs ρ s.n s.W)
-    (hs : HeapSeparation.Holds entrySeparation ρ) (hi : HeapKnowledge.IndexHolds entryIndices ρ s.h) :
-    passPreT G w (List.range inputs.length) ρ ctx start ρ m s :=
+    (hs : HeapSeparation.Holds entrySeparation ρ) (hi : HeapKnowledge.IndexHolds ⟨ρ, s.h⟩ entryIndices ρ s.h) :
+    passPreT G w (List.range inputs.length) ⟨ρ, s.h⟩ ctx start ρ m s :=
   ⟨start_passPre hacc hv hentry himp he hs hi, hctx ▸ he⟩
 
 end Guarantee

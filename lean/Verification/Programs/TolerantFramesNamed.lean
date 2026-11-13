@@ -21,6 +21,7 @@ is fresh, so naming it keeps every stored fact (`named_set`). A fact the
 effect does not tolerate is not kept by any action of a writing effect
 (`slotless_not_framed`). -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations
 open Verification.SinglePass (Atom)
 
@@ -29,12 +30,12 @@ open Verification.SinglePass (Atom)
 /-- A named fact at the name valuation `η` and the heap `h`: the fact read
 with each name for a slot. A separation fact relates the fields of its
 subject's value to its partners' (its slots are names, not levels). -/
-def AtomHolds : Atom → Env → Heap → Prop
+def AtomHolds (ε : HeapKnowledge.EntryState) : Atom → Env → Heap → Prop
   | .cell f, η, h => HeapFacts.Holds [f] η h
   | .value f, η, _ => HeapKnowledge.ValueHolds [f] η
   | .link g, η, h => HeapLinks.Holds [g] η h
   | .elem a, η, h => HeapKnowledge.ElemsHolds [a] η h
-  | .index a, η, h => HeapKnowledge.IndexHolds [a] η h
+  | .index a, η, h => HeapKnowledge.IndexHolds ε [a] η h
   | .sep f, η, _ => ∀ p ∈ f.partners, ∀ g ∈ p.2, HeapSeparation.Apart η f.slot f.fields p.1 g
 
 /-- The facts the pass keeps at a handler edge (`SinglePass`'s edge store of
@@ -48,8 +49,8 @@ def _root_.Verification.SinglePass.Atom.heapFree : Atom → Bool
 
 /-- **Every named fact survives an extension of the heap**, whether or not
 its names have slots. -/
-theorem atomHolds_extend {a : Atom} {η : Env} {h : Heap} (vs : List Val) (ha : AtomHolds a η h) :
-    AtomHolds a η (h ++ vs) := by
+theorem atomHolds_extend {a : Atom} {η : Env} {h : Heap} (vs : List Val) (ha : AtomHolds ε a η h) :
+    AtomHolds ε a η (h ++ vs) := by
   cases a with
   | cell f =>
     intro f' hf
@@ -62,8 +63,8 @@ theorem atomHolds_extend {a : Atom} {η : Env} {h : Heap} (vs : List Val) (ha : 
   | sep f => exact ha
 
 /-- **A fact reading no heap holds in every heap.** -/
-theorem atomHolds_heapFree {a : Atom} {η : Env} {h : Heap} (hf : a.heapFree = true) (ha : AtomHolds a η h)
-    (h' : Heap) : AtomHolds a η h' := by
+theorem atomHolds_heapFree {a : Atom} {η : Env} {h : Heap} (hf : a.heapFree = true) (ha : AtomHolds ε a η h)
+    (h' : Heap) : AtomHolds ε a η h' := by
   cases a with
   | cell f => simp [Atom.heapFree] at hf
   | elem e => simp [Atom.heapFree] at hf
@@ -86,7 +87,7 @@ theorem atomHolds_heapFree {a : Atom} {η : Env} {h : Heap} (hf : a.heapFree = t
 
 /-- A named fact reads only the values of its names. -/
 theorem atomHolds_congr {a : Atom} {η η' : Env} {h : Heap} (hs : ∀ x ∈ a.names, η x = η' x) :
-    AtomHolds a η h ↔ AtomHolds a η' h := by
+    AtomHolds ε a η h ↔ AtomHolds ε a η' h := by
   cases a with
   | cell f =>
     have e : η f.slot = η' f.slot := hs _ (by simp [Atom.names])
@@ -128,11 +129,11 @@ def Env.set (η : Env) (r : Nat) (v : Tm) : Env := fun x => if x = r then v else
 
 /-- The facts `S` hold at the name valuation `η`: an assertion of the state's
 heap alone, its slots and entry mark unread. -/
-def Named (S : List Atom) (η : Env) : Assertion := fun _ _ s => ∀ a ∈ S, AtomHolds a η s.h
+def Named (ε : HeapKnowledge.EntryState) (S : List Atom) (η : Env) : Assertion := fun _ _ s => ∀ a ∈ S, AtomHolds ε a η s.h
 
 /-- **Naming a step's result keeps every stored fact**, its name fresh. -/
 theorem named_set {S : List Atom} {η : Env} {r : Nat} (v : Tm) (hr : ∀ a ∈ S, r ∉ a.names) {ρ : Env}
-    {m : Nat} {s : IndexedHeap} (hS : Named S η ρ m s) : Named S (Env.set η r v) ρ m s := by
+    {m : Nat} {s : IndexedHeap} (hS : Named ε S η ρ m s) : Named ε S (Env.set η r v) ρ m s := by
   intro a ha
   refine (atomHolds_congr fun x hx => ?_).mp (hS a ha)
   have : x ≠ r := fun e => hr a ha (e ▸ hx)
@@ -143,7 +144,7 @@ theorem named_set {S : List Atom} {η : Env} {r : Nat} (v : Tm) (hr : ∀ a ∈ 
 /-- **(Keep) Every named fact survives every action of an effect within
 `{values: keep, stores: keep}`**, its names held by slots or not. -/
 theorem named_keep_box {c : Footprints.Closed} (hle : c.le Footprints.Closed.empty = true) {S : List Atom}
-    {η ρ : Env} {m : Nat} {s : IndexedHeap} (hS : Named S η ρ m s) : Box c.fp (Named S η) ρ m s := by
+    {η ρ : Env} {m : Nat} {s : IndexedHeap} (hS : Named ε S η ρ m s) : Box c.fp (Named ε S η) ρ m s := by
   intro s' ha a hm
   have hc : c.Holds s.h s'.h := Footprints.Closed.holds_iff.mpr (Footprints.Closed.post_iff.mp ha.2)
   obtain ⟨vs, hvs⟩ := Footprints.Closed.holds_empty.mp (hc.mono hle)
@@ -153,12 +154,12 @@ theorem named_keep_box {c : Footprints.Closed} (hle : c.le Footprints.Closed.emp
 /-- **The facts reading no heap survive every admissible transition**: under
 the effect `{values: any, stores: any}` of an exceptional exit. -/
 theorem named_any_box {Φ : Footprint} {S : List Atom} (hf : ∀ a ∈ S, a.heapFree = true) {η ρ : Env} {m : Nat}
-    {s : IndexedHeap} (hS : Named S η ρ m s) : Box Φ (Named S η) ρ m s :=
+    {s : IndexedHeap} (hS : Named ε S η ρ m s) : Box Φ (Named ε S η) ρ m s :=
   fun s' _ a hm => atomHolds_heapFree (hf a hm) (hS a hm) s'.h
 
 /-- The pass's handler store: the facts of the entry's that read no heap. -/
-theorem named_filter_heapFree {S : List Atom} {η ρ : Env} {m : Nat} {s : IndexedHeap} (hS : Named S η ρ m s) :
-    Named (S.filter (·.heapFree)) η ρ m s :=
+theorem named_filter_heapFree {S : List Atom} {η ρ : Env} {m : Nat} {s : IndexedHeap} (hS : Named ε S η ρ m s) :
+    Named ε (S.filter (·.heapFree)) η ρ m s :=
   fun a ha => hS a (List.mem_filter.mp ha).1
 
 /-- An effect within another by class evidence valid at the step's first heap
@@ -166,8 +167,8 @@ keeps what the other keeps: the frame of a syntactic weakening reads its
 class evidence at the action's source state (`action_le`). -/
 theorem named_le_box {cl : ClassEvidence} {Φ : Footprint} {c : Footprints.Closed}
     (hle : Footprint.le cl Φ c.fp = true) (hcE : c.le Footprints.Closed.empty = true) {S : List Atom}
-    {η ρ : Env} {m : Nat} {s : IndexedHeap} (hc : ClassOk cl ρ s.h) (hS : Named S η ρ m s) :
-    Box Φ (Named S η) ρ m s :=
+    {η ρ : Env} {m : Nat} {s : IndexedHeap} (hc : ClassOk cl ρ s.h) (hS : Named ε S η ρ m s) :
+    Box Φ (Named ε S η) ρ m s :=
   box_anti (fun _ ha => action_le hle hc ha) (named_keep_box hcE hS)
 
 /-! ## The step: both exits -/
@@ -183,9 +184,9 @@ theorem preserving_normal {Ξ T : Fam} {cn : Footprints.Closed} {Qn : Post} {S :
     (hle : cn.le Footprints.Closed.empty = true)
     (hsafe : SafePost Ξ T (fun h' v => cn.Holds s.h h' ∧ Qn h' v) s.n s.W s.h t)
     (hst : Steps k s.h t h' v) (hv : isVal v = true) (hk : k < s.n)
-    (hS : Named S η ρ m s) (hr : ∀ a ∈ S, r ∉ a.names) :
+    (hS : Named ε S η ρ m s) (hr : ∀ a ∈ S, r ∉ a.names) :
     ∃ s' : IndexedHeap, Action cn.fp ρ s s' ∧ s'.h = h' ∧ s'.n + k = s.n ∧ T s'.n s'.W v ∧ Qn h' v ∧
-      Named S (Env.set η r v) ρ m s' := by
+      Named ε S (Env.set η r v) ρ m s' := by
   obtain ⟨s', ha, he, hn, hT, hc, hq⟩ :=
     run_normal (SafePostExc.of_post (R := fun _ => True) (fun _ => trivial) hsafe) hst hv hk
   subst he
@@ -198,9 +199,9 @@ facts the pass keeps at a handler edge (`Atom.heapFree`) hold at the
 endpoint, with the raised value closed and of the exception family. -/
 theorem preserving_throw {Ξ T : Fam} {Q : Post} {S : List Atom} {η ρ : Env} {m : Nat} {s : IndexedHeap}
     {t t' e : Tm} {h' : Heap} {k : Nat} (hsafe : SafePost Ξ T Q s.n s.W s.h t) (hst : Steps k s.h t h' t')
-    (hr : Raises t' e) (hk : k < s.n) (hS : Named S η ρ m s) :
+    (hr : Raises t' e) (hk : k < s.n) (hS : Named ε S η ρ m s) :
     ∃ s' : IndexedHeap, Action Footprints.Closed.top.fp ρ s s' ∧ s'.h = h' ∧ s'.n + k = s.n ∧
-      Scoped 0 e ∧ Ξ s'.n s'.W e ∧ Named (S.filter (·.heapFree)) η ρ m s' := by
+      Scoped 0 e ∧ Ξ s'.n s'.W e ∧ Named ε (S.filter (·.heapFree)) η ρ m s' := by
   obtain ⟨s', ha, he, hn, hsc, hΞ⟩ := action_throw_top (ρ := ρ) hsafe hst hr hk
   exact ⟨s', ha, he, hn, hsc, hΞ,
     named_any_box (fun a ha => (List.mem_filter.mp ha).2) (named_filter_heapFree hS) s' ha⟩
@@ -276,13 +277,13 @@ theorem keepsCall_frame {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
     (hc : PromiseCalls.keepsCall G images j e codes sums = true) (hcodes : CodesSound G codes)
     (hsums : SummariesSound G images sums) {ρ η : Env} {r m : Nat} {s : IndexedHeap}
     {kn : HeapKnowledge.Knowledge} {S : List Atom} (he : EnvOk G j.context ρ s.n s.W)
-    (hkn : HeapKnowledge.Holds kn ρ s.h) (hS : Named S η ρ m s) (hr : ∀ a ∈ S, r ∉ a.names)
+    (hkn : HeapKnowledge.Holds kn ε ρ s.h) (hS : Named ε S η ρ m s) (hr : ∀ a ∈ S, r ∉ a.names)
     {k : Nat} {h' : Heap} {t' : Tm} (hst : Steps k s.h (instantiate 0 ρ j.term) h' t') (hk : k < s.n) :
     (isVal t' = true → ∃ s' : IndexedHeap, Action Footprints.Closed.empty.fp ρ s s' ∧ s'.h = h' ∧
         s'.n + k = s.n ∧ meaning G j.type s'.n s'.W t' ∧
-        HeapKnowledge.Holds (HeapKnowledge.shift kn) (push t' ρ) h' ∧ Named S (Env.set η r t') ρ m s') ∧
+        HeapKnowledge.Holds (HeapKnowledge.shift kn) ε (push t' ρ) h' ∧ Named ε S (Env.set η r t') ρ m s') ∧
       (∀ x, Raises t' x → ∃ s' : IndexedHeap, Action Footprints.Closed.top.fp ρ s s' ∧ s'.h = h' ∧
-        s'.n + k = s.n ∧ Scoped 0 x ∧ excOf G s'.n s'.W x ∧ Named (S.filter (·.heapFree)) η ρ m s') := by
+        s'.n + k = s.n ∧ Scoped 0 x ∧ excOf G s'.n s'.W x ∧ Named ε (S.filter (·.heapFree)) η ρ m s') := by
   have hj := keepsCall_keeps hc hcodes hsums he s.adm s.ok
   refine ⟨fun hv => ?_, fun x hx => preserving_throw hj hst hx hk hS⟩
   obtain ⟨s', ha, he', hn, hT, -, hS'⟩ := preserving_normal (Footprints.Closed.empty_le _) hj hst hv hk hS hr
@@ -320,8 +321,8 @@ holds an object whose field `f` is location 0; the fact that the field holds
 `null` holds before an action of `{values: any, stores: any}` and not after. -/
 theorem slotless_not_framed :
     ¬ ∀ (η ρ : Env) (m : Nat) (s : IndexedHeap),
-      Named [.cell ⟨0, { nul := true }, "f"⟩] η ρ m s →
-        Box Footprints.Closed.top.fp (Named [.cell ⟨0, { nul := true }, "f"⟩] η) ρ m s := by
+      Named ε [.cell ⟨0, { nul := true }, "f"⟩] η ρ m s →
+        Box Footprints.Closed.top.fp (Named ε [.cell ⟨0, { nul := true }, "f"⟩] η) ρ m s := by
   intro H
   let η : Env := fun _ => .objAt [("f", 0)] .absent 0
   have hb := H η η 0 (oneState .nul rfl) (fun a ha => by

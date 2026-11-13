@@ -17,6 +17,7 @@ Proved:
   yields holding of it and the step's output holding at the pushed
   environment ⟹ `SinglePass.refinedContext` types the edge's environment. -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
 open PositiveRules HeapExpressionRules
@@ -43,7 +44,7 @@ theorem passRefined_env {G : NormalGraph ι} {c : PointClaim ι} {node : Node} {
     {ρ : Env} {s : IndexedHeap} {v : Tm}
     (he : EnvOk G (c.type :: c.context) (push v ρ) s.n s.W) (hshape : ShapeOk v node.continuation)
     (ho : ObservedOk observed promote v) (hy : PromiseCalls.YieldsOk G ysAll ρ s.n s.W v)
-    (hout : HeapKnowledge.Holds stepOut (push v ρ) s.h) :
+    (hout : HeapKnowledge.Holds stepOut ε (push v ρ) s.h) :
     EnvOk G (SinglePass.refinedContext G c node.continuation ysAll (SinglePass.outAllOf G c stepOut) (i == 0))
       (if pushed then push v ρ else ρ) s.n s.W := by
   cases s with
@@ -138,7 +139,7 @@ theorem refinedEdge_env [Hashable ι] [Instantiates ι] {G : NormalGraph ι} {im
     {ρ : Env} {s : IndexedHeap} {v : Tm}
     (he : EnvOk G (c.type :: c.context) (push v ρ) s.n s.W) (hshape : ShapeOk v node.continuation)
     (ho : ObservedOk observed promote v) (hy : PromiseCalls.YieldsOk G ysAll ρ s.n s.W v)
-    (hout : HeapKnowledge.Holds stepOut (push v ρ) s.h) :
+    (hout : HeapKnowledge.Holds stepOut ε (push v ρ) s.h) :
     EnvOk G Δ (PointClaims.mapEnv t.mapping (if pushed then push v ρ else ρ)) s.n s.W := by
   have hr := passRefined_env hm he hshape ho hy hout
   have hpo := (ofNode_flags (List.mem_of_getElem? hm)).1

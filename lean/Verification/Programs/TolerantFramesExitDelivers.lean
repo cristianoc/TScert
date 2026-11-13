@@ -15,6 +15,7 @@ sound, the exit delivers `edgePreAJ` from the state after the step, its
 kept yields, its output and, where the step's result is fresh, its
 freshness (`FreshAt`). -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification SinglePass Footprints HeapObservations
 open ProgramTyping ControlFlow CertificateProducer PositiveCertificates PositiveGraphs ProgramCertificates
 open PositiveRules HeapExpressionRules
@@ -150,10 +151,10 @@ theorem NonHeadExitChecked.reassign {G : NormalGraph ι} {images : InstanceImage
 freshness**: `NodeExitsY`'s state, kept yields and output, and, where the
 step states its result fresh and the result's name is not already fresh,
 the result fresh at the mark. -/
-def AfterStep (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0 : Env) (l : Nat) (entry : SinglePass.State)
+def AfterStep (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε : HeapKnowledge.EntryState) (l : Nat) (entry : SinglePass.State)
     (st : Stepped ι) (ys : List (PromiseCalls.Yield ι)) (outFresh : Bool) (ρ : Env) : Assertion :=
-  fun ρ' m' s' => StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ρ0 ρ' m' s' ∧
-    PromiseCalls.YieldsOk G ys ρ s'.n s'.W (ρ' 0) ∧ HeapKnowledge.Holds st.stepOut ρ' s'.h ∧
+  fun ρ' m' s' => StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ε ρ' m' s' ∧
+    PromiseCalls.YieldsOk G ys ρ s'.n s'.W (ρ' 0) ∧ HeapKnowledge.Holds st.stepOut ε ρ' s'.h ∧
     (outFresh = true → st.result ∉ entry.fresh → FreshAt m' (ρ' 0))
 
 omit [DecidableEq ι] [Hashable ι] [Instantiates ι] in
@@ -169,7 +170,7 @@ the subtype answers sound, the mapping's names sound, the node's `here`
 answer stating its context empty and the read yields holding at the
 final world. The type check and fresh implications share `ysE`. -/
 theorem nonHeadExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G} {w : Walk ι}
-    {startNames : List Nat} {ρ0 : Env} {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge}
+    {startNames : List Nat} {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge}
     {given : Nat → Bool}
     {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
     {l : Nat} {node : Node} {c : PointClaim ι} {entry : SinglePass.State} {st : Stepped ι}
@@ -180,13 +181,13 @@ theorem nonHeadExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
       observed promote)
     (hshape : SinglePass.passShapeCheck' G c.type node.continuation = true)
     (hsub : SubtypeAnswersSound G images) (hmap : MapNamesSound (normalNames entry st pushed) t.mapping)
-    (hhere : here = true → HereEmpty G c.context) (hA : ∀ ρ m s' v, AfterStep G w startNames ρ0 l entry st ys outFresh ρ (push v ρ) m s' →
+    (hhere : here = true → HereEmpty G c.context) (hA : ∀ ρ m s' v, AfterStep G w startNames ε l entry st ys outFresh ρ (push v ρ) m s' →
       PromiseCalls.YieldsOk G ysA ρ s'.n s'.W v)
-    (hE : ∀ ρ m s' v, AfterStep G w startNames ρ0 l entry st ys outFresh ρ (push v ρ) m s' →
+    (hE : ∀ ρ m s' v, AfterStep G w startNames ε l entry st ys outFresh ρ (push v ρ) m s' →
       PromiseCalls.YieldsOk G ysE ρ s'.n s'.W v)
     (ρ : Env) (m : Nat) :
-    ExitDelivers (edgePreAJ G w startNames ρ0 ctx stated given edgesIn) G c.type c.context
-      (AfterStep G w startNames ρ0 l entry st ys outFresh ρ) ρ m t pushed observed promote := by
+    ExitDelivers (edgePreAJ G w startNames ε ctx stated given edgesIn) G c.type c.context
+      (AfterStep G w startNames ε l entry st ys outFresh ρ) ρ m t pushed observed promote := by
   intro s' v _ hF he ho
   have hYA := hA ρ m s' v hF
   have hYE := hE ρ m s' v hF
@@ -219,12 +220,12 @@ theorem nonHeadExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
   -- The target's types from the exit's checks.
   have hr := passRefined_env (s := ⟨n + 1, W, h, pos, adm, hh⟩) hm he hshv ho (yieldsOk_atSlots hnames hYE) hout
   have hko : HeapKnowledge.Holds (exitSearchFacts G c entry st pushed observed promote (ctx t.label) t.mapping)
-      (if pushed then push v ρ else ρ) h := by
+      ε (if pushed then push v ρ else ρ) h := by
     unfold exitSearchFacts
     exact KnowledgeExpand.expandLinks_holds (KnowledgeExpand.ctxOf_ok hΓ)
       (edgeFacts_holds (s := ⟨n + 1, W, h, pos, adm, hh⟩) (width := c.context.length) hS ho hpo hpp heo)
   have houtL : observed.isSome = true →
-      HeapKnowledge.Holds (SinglePass.outAllOf G c st.stepOut) (if pushed then push v ρ else ρ) h := fun hs => by
+      HeapKnowledge.Holds (SinglePass.outAllOf G c st.stepOut) ε (if pushed then push v ρ else ρ) h := fun hs => by
     have hp : pushed = true := hpo hs
     subst hp
     exact KnowledgeExpand.expandLinks_holds (setsCtx_push_ok (envOk_tail he) v) hout
@@ -235,7 +236,7 @@ theorem nonHeadExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
   -- The written assertion at the context the yields `ysA` refine.
   have hrA := passRefined_env (s := ⟨n + 1, W, h, pos, adm, hh⟩) hm he hshv ho
     (yieldsOk_atSlots hnames hYA) hout
-  have hAs : AssertsAt stated t.label (PointClaims.mapEnv t.mapping (if pushed then push v ρ else ρ))
+  have hAs : AssertsAt ε stated t.label (PointClaims.mapEnv t.mapping (if pushed then push v ρ else ρ))
       ⟨n + 1, W, h, pos, adm, hh⟩ := fun req hreq =>
     assertion_query_sound (hc.asserted hvac req hreq)
       (edgeFacts_holds (s := ⟨n + 1, W, h, pos, adm, hh⟩) (width := c.context.length) hS ho hpo hpp heo) hrA hh ho' htc
@@ -292,7 +293,7 @@ structure HeadExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (
       req t.mapping = true
   entered : ((SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp).1,
     (SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp).2.1) ∈ w.incoming t.label
-  written : (∀ ρ h, HeapKnowledge.Holds written ρ h → HeapKnowledge.Holds ((stated t.label).getD {}) ρ h) ∧
+  written : (∀ ε ρ h, HeapKnowledge.Holds written ε ρ h → HeapKnowledge.Holds ((stated t.label).getD {}) ε ρ h) ∧
     req = { written with indices := written.indices ++ cf }
 
 /-- **The head checks at a reassigned graph** (`ExitTyped.reassign`,
@@ -328,7 +329,7 @@ theorem HeadExitChecked.reassign {G : NormalGraph ι} {images : InstanceImageChe
 `HeadExitChecked.written`, its types from the exit's checks; a head joins no
 implications. -/
 theorem headExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G} {w : Walk ι}
-    {startNames : List Nat} {ρ0 : Env} {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge}
+    {startNames : List Nat} {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge}
     {given : Nat → Bool}
     {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
     {l : Nat} {node : Node} {c : PointClaim ι} {entry : SinglePass.State} {st : Stepped ι}
@@ -343,13 +344,13 @@ theorem headExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G} {
     (hgiven : given t.label = true)
     (hshape : SinglePass.passShapeCheck' G c.type node.continuation = true)
     (hsub : SubtypeAnswersSound G images)
-    (hhere : here = true → HereEmpty G c.context) (hE : ∀ ρ m s' v, AfterStep G w startNames ρ0 l entry st ys outFresh ρ (push v ρ) m s' →
+    (hhere : here = true → HereEmpty G c.context) (hE : ∀ ρ m s' v, AfterStep G w startNames ε l entry st ys outFresh ρ (push v ρ) m s' →
       PromiseCalls.YieldsOk G ysE ρ s'.n s'.W v)
     (hnd : startNames.Nodup) (hlt : ∀ x ∈ startNames, x < hfresh)
     (hargs : ∀ a, argName = some a → ∃ q : Nat, startNames[q]? = some a)
     (ρ : Env) (m : Nat) :
-    ExitDelivers (edgePreAJ G w startNames ρ0 ctx stated given edgesIn) G c.type c.context
-      (AfterStep G w startNames ρ0 l entry st ys outFresh ρ) ρ m t pushed observed promote := by
+    ExitDelivers (edgePreAJ G w startNames ε ctx stated given edgesIn) G c.type c.context
+      (AfterStep G w startNames ε l entry st ys outFresh ρ) ρ m t pushed observed promote := by
   intro s' v _ hF he ho
   have hYE := hE ρ m s' v hF
   obtain ⟨hS, _, hout, -⟩ := hF
@@ -380,12 +381,12 @@ theorem headExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G} {
     subst hp; simpa [exitCtx] using he
   have hr := passRefined_env (s := ⟨n + 1, W, h, pos, adm, hh⟩) hm he hshv ho (yieldsOk_atSlots hnames hYE) hout
   have hko : HeapKnowledge.Holds (exitSearchFacts G c entry st pushed observed promote (ctx t.label) t.mapping)
-      (if pushed then push v ρ else ρ) h := by
+      ε (if pushed then push v ρ else ρ) h := by
     unfold exitSearchFacts
     exact KnowledgeExpand.expandLinks_holds (KnowledgeExpand.ctxOf_ok hΓ)
       (edgeFacts_holds (s := ⟨n + 1, W, h, pos, adm, hh⟩) (width := c.context.length) hS ho hpo hpp heo)
   have houtL : observed.isSome = true →
-      HeapKnowledge.Holds (SinglePass.outAllOf G c st.stepOut) (if pushed then push v ρ else ρ) h := fun hs => by
+      HeapKnowledge.Holds (SinglePass.outAllOf G c st.stepOut) ε (if pushed then push v ρ else ρ) h := fun hs => by
     have hp : pushed = true := hpo hs
     subst hp
     exact KnowledgeExpand.expandLinks_holds (setsCtx_push_ok (envOk_tail he) v) hout
@@ -405,7 +406,7 @@ theorem headExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G} {
   · obtain ⟨hw, hreq⟩ := hc.written
     subst hreq
     intro assertion ha
-    have hh := hw _ _ (holds_of_indices_append hest.facts)
+    have hh := hw _ _ _ (holds_of_indices_append hest.facts)
     simpa [ha] using hh
 
 /-- The handler edge's context: the thrown value's type `TT` pushed. -/
@@ -481,7 +482,7 @@ structure HandlerExitChecked (G : NormalGraph ι) (images : InstanceImageCheck G
     (((SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp).1,
       (SinglePass.headEntry req false hwidth hfresh startNames argName argSlots inputSlots gimp).2.1) ∈
         w.incoming t.label) ∧
-    ((∀ ρ h, HeapKnowledge.Holds written ρ h → HeapKnowledge.Holds ((stated t.label).getD {}) ρ h) ∧
+    ((∀ ε ρ h, HeapKnowledge.Holds written ε ρ h → HeapKnowledge.Holds ((stated t.label).getD {}) ε ρ h) ∧
       req = { written with indices := written.indices ++ cf }) ∧
     (∀ y ∈ startNames, y < hfresh) ∧ (∀ a, argName = some a → ∃ q : Nat, startNames[q]? = some a)
 
@@ -492,7 +493,7 @@ by `assertion_query_sound`, a merge's joined implications by
 `joinedAt_of_exit` at the state with the thrown value pushed
 (`stateHolds_handler`); into a loop head by `headEstablishes_of_edge`. -/
 theorem handlerExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G} {w : Walk ι}
-    {startNames : List Nat} {ρ0 : Env} {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge}
+    {startNames : List Nat} {ctx : Nat → List (Ty ι)} {stated : Nat → Option HeapKnowledge.Knowledge}
     {given : Nat → Bool}
     {edgesIn : Nat → List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping)}
     {l : Nat} {c : PointClaim ι} {entry : SinglePass.State} {st : Stepped ι} {here outFresh : Bool} {TT : Ty ι}
@@ -502,10 +503,10 @@ theorem handlerExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
     (hhere : here = true → HereEmpty G c.context) (wf : StoreWF entry.store)
     (hb : NamesBelow entry (w.implies l) startNames x) (hnd : startNames.Nodup)
     (ρ : Env) (m : Nat) (s' : IndexedHeap) (e : Tm)
-    (hS : StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ (w.implies l) startNames ρ0
+    (hS : StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ (w.implies l) startNames ε
       ρ m s')
     (he : EnvOk G c.context ρ s'.n s'.W) (hsc : Scoped 0 e) (hx : excOf G s'.n s'.W e) :
-    edgePreAJ G w startNames ρ0 ctx stated given edgesIn t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s' := by
+    edgePreAJ G w startNames ε ctx stated given edgesIn t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s' := by
   have hTT : meaning G TT s'.n s'.W e := ControlFlow.admitsAll_sound hc.admits hx
   have heh : EnvOk G (handlerCtx c TT) (push e ρ) s'.n s'.W := he.push hTT
   cases hvac : (here || ControlFlow.unsatisfiable G [TT]) with
@@ -524,9 +525,9 @@ theorem handlerExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
   | succ n =>
   simp only at he hTT heh hx ⊢
   have hSh := stateHolds_handler (v := e) hS (namesBelow_dropHeap wf _ hb)
-  have hSe : StateHolds G ⟨x :: entry.names, handlerStore G c TT entry st x, entry.fresh⟩ (w.implies l) startNames ρ0
+  have hSe : StateHolds G ⟨x :: entry.names, handlerStore G c TT entry st x, entry.fresh⟩ (w.implies l) startNames ε
       (push e ρ) m ⟨n + 1, W, h, pos, adm, hh⟩ := hSh
-  have hko : HeapKnowledge.Holds (handlerSearchFacts G c TT entry st x (ctx t.label) t.mapping) (push e ρ) h :=
+  have hko : HeapKnowledge.Holds (handlerSearchFacts G c TT entry st x (ctx t.label) t.mapping) ε (push e ρ) h :=
     KnowledgeExpand.expandLinks_holds (KnowledgeExpand.ctxOf_ok heh)
       (stateHolds_materialize (stateHolds_edge hSe) _ _ true)
   have hty : ExitTyped G images (handlerCtx c TT) (ctx t.label) t none
@@ -542,7 +543,7 @@ theorem handlerExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
     have hT := handler_edge_delivers (w := w) (ctx := ctx) (ys := ([] : List (PromiseCalls.Yield ι)))
       (s := ⟨n + 1, W, h, pos, adm, hh⟩) hS wf hb hmap
       (by rw [freshImplOf_handler, List.append_nil]; exact hrec) htc
-    have hAs : AssertsAt stated t.label (PointClaims.mapEnv t.mapping (push e ρ)) ⟨n + 1, W, h, pos, adm, hh⟩ :=
+    have hAs : AssertsAt ε stated t.label (PointClaims.mapEnv t.mapping (push e ρ)) ⟨n + 1, W, h, pos, adm, hh⟩ :=
       fun req hreq => assertion_query_sound (hc.asserted hg hvac req hreq)
         (stateHolds_materialize (stateHolds_edge hSe) _ _ true) heh hh (fun o ho => by cases ho) htc
     obtain ⟨η', hn', -, hI', -⟩ := hSh
@@ -565,7 +566,7 @@ theorem handlerExit_delivers {G : NormalGraph ι} {images : InstanceImageCheck G
     · obtain ⟨hw, hreq⟩ := hwr
       subst hreq
       intro assertion ha
-      have hh := hw _ _ (holds_of_indices_append hest.facts)
+      have hh := hw _ _ _ (holds_of_indices_append hest.facts)
       simpa [ha] using hh
 
 theorem SubtypesPass.reassign {G : NormalGraph ι} {images : InstanceImageCheck G} {Γ Δ : List (Ty ι)}

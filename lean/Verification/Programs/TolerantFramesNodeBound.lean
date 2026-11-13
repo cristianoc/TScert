@@ -72,8 +72,8 @@ variable {ι : Type}
 lists holds a fresh name of the entry state, whose value the state gives a
 store allocated at or past the mark. -/
 theorem freshOk_recv {G : NormalGraph ι} {node : Node} {entry : SinglePass.State}
-    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {E ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hS : StateHolds G entry I start E ρ m s) : GraphCode.FreshOk (passRecvFresh node entry) m ρ := by
+    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
+    (hS : StateHolds G entry I start ε ρ m s) : GraphCode.FreshOk (passRecvFresh node entry) m ρ := by
   obtain ⟨η, hn, -, -, hF, -⟩ := hS
   intro i hi
   simp only [passRecvFresh] at hi
@@ -91,8 +91,8 @@ theorem freshOk_recv {G : NormalGraph ι} {node : Node} {entry : SinglePass.Stat
 slot holding a fresh name, every run of it to a value returns that slot's
 value, whose store the state gives fresh at the mark. -/
 theorem copyFresh {G : NormalGraph ι} {node : Node} {entry : SinglePass.State}
-    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {E ρ : Env} {m : Nat} {s : IndexedHeap}
-    {Γ : List (Ty ι)} (hS : StateHolds G entry I start E ρ m s) (he : EnvOk G Γ ρ s.n s.W)
+    {I : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
+    {Γ : List (Ty ι)} (hS : StateHolds G entry I start ε ρ m s) (he : EnvOk G Γ ρ s.n s.W)
     (hwidth : entry.names.length ≤ Γ.length)
     (hc : (match node.expression with
       | .var i => (entry.names[i]?).any entry.fresh.contains

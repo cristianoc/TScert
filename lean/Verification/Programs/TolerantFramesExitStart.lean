@@ -2,6 +2,7 @@ import Verification.Programs.TolerantFramesNodeAsserts
 
 /-! # Projection of the checked start contract -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification ProgramTyping PositiveGraphs
 
 /-- Projection for arbitrary proposals can fail: normalization removes a
@@ -10,8 +11,8 @@ theorem startWritten_projection_counterexample {ι : Type} [DecidableEq ι]
     (G : NormalGraph ι) (ρ : Env) (h : Heap) :
     ∃ written : HeapKnowledge.Knowledge,
       ControlFlow.entryKnows G [] written.separation [] written = true ∧
-      HeapKnowledge.Holds (SinglePass.startWritten (some written) [] written.separation) ρ h ∧
-      ¬HeapKnowledge.Holds written ρ h := by
+      HeapKnowledge.Holds (SinglePass.startWritten (some written) [] written.separation) ε ρ h ∧
+      ¬HeapKnowledge.Holds written ε ρ h := by
   let written : HeapKnowledge.Knowledge :=
     { separation := { depth := 0, facts := [{ slot := 0, partners := [] }] } }
   refine ⟨written, ?_, ?_, ?_⟩
@@ -57,8 +58,8 @@ theorem union_keeps_left {S T : HeapSeparation.Separation} {ρ : Env}
 theorem startWrittenImpliesStated {w : Option HeapKnowledge.Knowledge}
     {idx : List HeapKnowledge.IndexAtom} {sep : HeapSeparation.Separation}
     (kept : SinglePass.startSeparationKept w sep = true) {ρ : Env} {h : Heap}
-    (hw : HeapKnowledge.Holds (SinglePass.startWritten w idx sep) ρ h) :
-    HeapKnowledge.Holds (w.getD {}) ρ h := by
+    (hw : HeapKnowledge.Holds (SinglePass.startWritten w idx sep) ε ρ h) :
+    HeapKnowledge.Holds (w.getD {}) ε ρ h := by
   simp only [SinglePass.startSeparationKept, Bool.and_eq_true] at kept
   obtain ⟨hp, hd⟩ := kept
   exact ⟨hw.1, hw.2.1, hw.2.2.1, union_keeps_left hp hd hw.2.2.2.1,

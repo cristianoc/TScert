@@ -11,6 +11,7 @@ machines agree: a run of graph code simulates `ControlFlow.Transition`
 step for step, so the graph checker's safety theorem (`accepted_inputs_safe`)
 is safety of the term that runs the code. -/
 namespace Verification.GraphCode
+variable {ε : Verification.HeapKnowledge.EntryState}
 open ControlFlow PointClaims ProgramTyping PositiveGraphs PositiveRules
 open PositiveCertificates (InstanceImageCheck finiteInstanceImages)
 open CertificateProducer (successors)
@@ -113,7 +114,7 @@ theorem goto_safe {G : NormalGraph ι} [DecidableEq ι] {images : InstanceImageC
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
     (hh : HeapOk n W h)
     (hsep : HeapSeparation.Holds entrySeparation (envOf L d) := by exact HeapSeparation.empty_holds _)
-    (hidx : HeapKnowledge.IndexHolds entryIndices (envOf L d) h := by exact HeapKnowledge.indexHolds_nil _ _) :
+    (hidx : HeapKnowledge.IndexHolds ⟨envOf L d, h⟩ entryIndices (envOf L d) h := by exact HeapKnowledge.indexHolds_nil _ _) :
     Safe (excOf G) (GoalHolds G Rty (Rty.argument (envOf L d))) n W h (.goto E K start L d) :=
   safe_of_sim n W h .goto (accepted_inputs_safe hc n W h (envOf L d) he hw hh hcodes hsums hsep hidx)
 
@@ -340,8 +341,8 @@ the same point context and knowledge that ordinary graph checking
 established. -/
 def NodeWithin [DecidableEq ι] (G : NormalGraph ι) (Φ : Footprints.Closed) (c : NodeEvidence ι) (t : Tm)
     (F : List Nat) (out thr : Bool) : Prop :=
-  ∀ n W h ρ (b : Nat), b ≤ h.length → FreshOk F b ρ →
-    EnvOk G (entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W → HeapKnowledge.Holds (entryFacts G c) ρ h →
+  ∀ ε n W h ρ (b : Nat), b ≤ h.length → FreshOk F b ρ →
+    EnvOk G (entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W → HeapKnowledge.Holds (entryFacts G c) ε ρ h →
     WorldAdm W → HeapOk n W h →
     HeapObservations.SafePostExc (excOf G) (meaning G (result c))
       (fun h' v => Φ.HoldsOn (· < b) h h' ∧ (out = true → FreshAt b v))
@@ -428,7 +429,7 @@ theorem bounded_step [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
     (hcodes : ProgramCertificates.CodesSound G codes) (hsums : ProgramCertificates.SummariesSound G images sums)
     (hnodes : NodesWithin G Φ P C facts dead ret exc)
     {initial n W h s h' s'} (hw : WorldAdm W) (hh : HeapOk (n+1) W h)
-    (hs : StateOk G Rty C v0 (n+1) W h s) (hp : BoundState Φ facts dead ret exc initial (n+1) h s)
+    (hs : StateOk G Rty C v0 ε (n+1) W h s) (hp : BoundState Φ facts dead ret exc initial (n+1) h s)
     (st : Transition P h s h' s') : BoundState Φ facts dead ret exc initial n h' s' := by
   cases st with
   | @enter l node _ ρ hn =>
@@ -445,7 +446,7 @@ theorem bounded_step [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
           cases hn.symm.trans hactual
           have hsafe := HeapObservations.erase (HeapObservations.consequence
             (fun _ _ _ hu => hu.1) (fun _ _ h => h)
-            (hterm n _ h ρ (he.transfer n (Nat.le_succ n) _ (WExt_refl _))
+            (hterm ε n _ h ρ (he.transfer n (Nat.le_succ n) _ (WExt_refl _))
               (hi.transfer n (Nat.le_succ n) _ (WExt_refl _)) (entryFacts_holds he hf)
               (WorldAdm_trunc _ hw) (HeapOk_trunc n W h hh)))
           exact returnsPost_of_safePost (ExpressionEffects.noReturn_sound hempty hsafe)
@@ -457,7 +458,7 @@ theorem bounded_step [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
     | false =>
       have hp := hp.resolve_left (by simp [hd])
       obtain ⟨hx, out, ht, hedge⟩ := hlive hd
-      have hrun := ht n _ h _ initial.length (Footprints.Closed.holds_iff.mp hp.1).1 hp.2
+      have hrun := ht ε n _ h _ initial.length (Footprints.Closed.holds_iff.mp hp.1).1 hp.2
         (he.transfer n (Nat.le_succ n) _ (WExt_refl _))
         (hi.transfer n (Nat.le_succ n) _ (WExt_refl _)) (entryFacts_holds he hf)
         (WorldAdm_trunc _ hw) (HeapOk_trunc n W h hh)
@@ -535,7 +536,7 @@ theorem bounded_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : Inst
     (hcodes : ProgramCertificates.CodesSound G codes) (hsums : ProgramCertificates.SummariesSound G images sums)
     (hnodes : NodesWithin G Φ (program E K) C facts dead ret exc) (hv0 : isVal v0 = true) :
     ∀ n W h ts s initial, Sim E K ts s → WorldAdm W → HeapOk n W h →
-      StateOk G Rty C v0 n W h s → BoundState Φ facts dead ret exc initial n h s →
+      StateOk G Rty C v0 ε n W h s → BoundState Φ facts dead ret exc initial n h s →
       HeapObservations.SafePostExc (excOf G) (GoalHolds G Rty v0)
         (fun h' v => Φ.Holds initial h' ∧ (ret = true → FreshAt initial.length v))
         (fun h' => exc = true → Φ.Holds initial h') n W h ts := by
@@ -566,7 +567,7 @@ theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
     (hh : HeapOk n W h)
     (hsep : HeapSeparation.Holds entrySeparation (envOf L d) := by exact HeapSeparation.empty_holds _)
-    (hidx : HeapKnowledge.IndexHolds entryIndices (envOf L d) h := by exact HeapKnowledge.indexHolds_nil _ _) :
+    (hidx : HeapKnowledge.IndexHolds ⟨envOf L d, h⟩ entryIndices (envOf L d) h := by exact HeapKnowledge.indexHolds_nil _ _) :
     HeapObservations.SafePostExc (excOf G) (GoalHolds G Rty (Rty.argument (envOf L d)))
       (fun h' v => Φ.Holds h h' ∧ (ret = true → FreshAt h.length v))
       (fun h' => exc = true → Φ.Holds h h') n W h (.goto E K start L d) := by
@@ -770,8 +771,8 @@ theorem returnMapping_eq {t : Tracked} {ens : List HeapKnowledge.IndexFact} {F :
 
 /-- What a return meets in the heap `h` it returns in: each fact, at `ρ`, the
 result pushed onto the inputs' entry values. -/
-def EnsuresAt (ens : List HeapKnowledge.IndexFact) (h : Heap) (ρ : Env) : Prop :=
-  ∀ F ∈ ens, F.HoldsAt ρ h
+def EnsuresAt (ens : List HeapKnowledge.IndexFact) (ε : HeapKnowledge.EntryState) (h : Heap) (ρ : Env) : Prop :=
+  ∀ F ∈ ens, F.HoldsAt ε ρ h
 
 /-- Whether a knowledge, its result at slot `0`, entails the facts, each
 input's position read at the slot after the result its pair names. -/
@@ -781,8 +782,8 @@ def returnEntails (k : HeapKnowledge.Knowledge) (t : Tracked) (ens : List HeapKn
 
 theorem returnEntails_sound {k : HeapKnowledge.Knowledge} {t : Tracked} {ens : List HeapKnowledge.IndexFact}
     {ρ ρ0 : Env} {h : Heap} {v : Tm}
-    (hc : returnEntails k t ens = true) (hk : HeapKnowledge.Holds k (push v ρ) h) (ht : TracksAt t ρ ρ0) :
-    EnsuresAt ens h (push v ρ0) := by
+    (hc : returnEntails k t ens = true) (hk : HeapKnowledge.Holds k ε (push v ρ) h) (ht : TracksAt t ρ ρ0) :
+    EnsuresAt ens ε h (push v ρ0) := by
   simp only [returnEntails, Bool.and_eq_true] at hc
   intro F hF
   have hheld := HeapKnowledge.indicesCheckWith_sound (HeapKnowledge.guardTags_sound hk)
@@ -855,24 +856,24 @@ theorem returnsEnsure_at {G : NormalGraph ι} {P : Program} {C : Certificate ι}
 entry values: at a node, its pairs hold; a return's expression returns
 values meeting the facts, and each edge's target holds its pairs; a
 finished run's value meets them in its heap. -/
-def EnsState (T : List (Option Tracked)) (ens : List HeapKnowledge.IndexFact) (ρ0 : Env) (n : Nat) (h : Heap) :
+def EnsState (T : List (Option Tracked)) (ens : List HeapKnowledge.IndexFact) (ε : HeapKnowledge.EntryState) (n : Nat) (h : Heap) :
     State → Prop
-  | .at l ρ => ∃ t, trackedAt T l = some t ∧ TracksAt t ρ ρ0
-  | .eval t ρ k x => (k = Continuation.ret → ReturnsPost (fun h' v => EnsuresAt ens h' (push v ρ0)) n h t) ∧
-      NextTracks T k x ρ ρ0
-  | .done v => EnsuresAt ens h (push v ρ0)
+  | .at l ρ => ∃ t, trackedAt T l = some t ∧ TracksAt t ρ ε.env
+  | .eval t ρ k x => (k = Continuation.ret → ReturnsPost (fun h' v => EnsuresAt ens ε h' (push v ε.env)) n h t) ∧
+      NextTracks T k x ρ ε.env
+  | .done v => EnsuresAt ens ε h (push v ε.env)
   | _ => True
 
 theorem ensures_step [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {sums : List (ProgramCertificates.ReadSummary ι)} {Rty : Goal ι} {v0 : Tm} {P : Program}
     {C : Certificate ι} {ens : List HeapKnowledge.IndexFact} {codes} {start : Nat}
-    {T : List (Option Tracked)} {ρ0 : Env}
+    {T : List (Option Tracked)}
     (hg : checkGraphUsing (sums := sums) G images Rty P C codes = true)
     (hcodes : ProgramCertificates.CodesSound G codes) (hsums : ProgramCertificates.SummariesSound G images sums)
     (hens : returnsEnsureWith G P C ens start T = true)
     {n W h s h' s'} (hw : WorldAdm W) (hh : HeapOk (n+1) W h)
-    (hs : StateOk G Rty C v0 (n+1) W h s) (hp : EnsState T ens ρ0 (n+1) h s)
-    (st : Transition P h s h' s') : EnsState T ens ρ0 n h' s' := by
+    (hs : StateOk G Rty C v0 ε (n+1) W h s) (hp : EnsState T ens ε (n+1) h s)
+    (st : Transition P h s h' s') : EnsState T ens ε n h' s' := by
   cases st with
   | @enter l node _ ρ hn =>
     obtain ⟨c, hc, he, hi, -, hf⟩ := hs
@@ -881,7 +882,7 @@ theorem ensures_step [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
     refine ⟨fun hk => ?_, edgesTrack_sound hedges htl htr⟩
     obtain ⟨actual, hactual, hterm, -⟩ := graph_node hg hcodes hsums hc
     cases hn.symm.trans hactual
-    have hrun := hterm n _ h ρ (he.transfer n (Nat.le_succ n) _ (WExt_refl _))
+    have hrun := hterm ε n _ h ρ (he.transfer n (Nat.le_succ n) _ (WExt_refl _))
       (hi.transfer n (Nat.le_succ n) _ (WExt_refl _)) (entryFacts_holds he hf)
       (WorldAdm_trunc _ hw) (HeapOk_trunc n W h hh)
     simp only [returnOk, hk, htl, Bool.or_eq_true] at hret
@@ -913,13 +914,13 @@ returns in. -/
 theorem ensures_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {sums : List (ProgramCertificates.ReadSummary ι)} {Rty : Goal ι} {v0 : Tm} {E : List Tm}
     {K : List (Continuation × Option Target)} {C : Certificate ι} {ens : List HeapKnowledge.IndexFact}
-    {codes : CodeEntry ι → Bool} {start : Nat} {T : List (Option Tracked)} {ρ0 : Env}
+    {codes : CodeEntry ι → Bool} {start : Nat} {T : List (Option Tracked)}
     (hg : checkGraphUsing (sums := sums) G images Rty (program E K) C codes = true)
     (hcodes : ProgramCertificates.CodesSound G codes) (hsums : ProgramCertificates.SummariesSound G images sums)
     (hens : returnsEnsureWith G (program E K) C ens start T = true) (hv0 : isVal v0 = true) :
     ∀ n W h ts s, Sim E K ts s → WorldAdm W → HeapOk n W h →
-      StateOk G Rty C v0 n W h s → EnsState T ens ρ0 n h s →
-      HeapObservations.SafePost (excOf G) (GoalHolds G Rty v0) (fun h' v => EnsuresAt ens h' (push v ρ0))
+      StateOk G Rty C v0 ε n W h s → EnsState T ens ε n h s →
+      HeapObservations.SafePost (excOf G) (GoalHolds G Rty v0) (fun h' v => EnsuresAt ens ε h' (push v ε.env))
         n W h ts := by
   intro n
   induction n with
@@ -950,9 +951,9 @@ theorem goto_ensures [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
     (hh : HeapOk n W h)
     (hsep : HeapSeparation.Holds entrySeparation (envOf L d) := by exact HeapSeparation.empty_holds _)
-    (hidx : HeapKnowledge.IndexHolds entryIndices (envOf L d) h := by exact HeapKnowledge.indexHolds_nil _ _) :
+    (hidx : HeapKnowledge.IndexHolds ⟨envOf L d, h⟩ entryIndices (envOf L d) h := by exact HeapKnowledge.indexHolds_nil _ _) :
     HeapObservations.SafePost (excOf G) (GoalHolds G Rty (Rty.argument (envOf L d)))
-      (fun h' v => EnsuresAt ens h' (push v (envOf L d))) n W h (.goto E K start L d) := by
+      (fun h' v => EnsuresAt ens ⟨envOf L d, h⟩ h' (push v (envOf L d))) n W h (.goto E K start L d) := by
   simp only [checkEntryUsing_eq, Bool.and_eq_true] at hc
   have hx := hc.2
   have hstartT : startTracks (trackTable (program E K) C start (namedInputs ens)) start = true := by
@@ -1000,7 +1001,7 @@ def writeWithinAt (G : NormalGraph ι) (Φ : Footprints.Closed) (c : NodeEvidenc
 
 theorem writeWithinAt_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Closed} {c : NodeEvidence ι}
     {t : Tm} {T ρ n W h} (hc : writeWithinAt G Φ c t = true) (he : EnvOk G (entry c) ρ n W) (hh : HeapOk n W h)
-    (hk : HeapKnowledge.Holds (entryFacts G c) ρ h) (hs : Safe (excOf G) T n W h (instantiate 0 ρ t)) :
+    (hk : HeapKnowledge.Holds (entryFacts G c) ε ρ h) (hs : Safe (excOf G) T n W h (instantiate 0 ρ t)) :
     HeapObservations.SafePostExc (excOf G) T (fun h' _ => Φ.Holds h h') (fun h' => Φ.Holds h h') n W h
       (instantiate 0 ρ t) := by
   simp only [writeWithinAt, Bool.or_eq_true] at hc
@@ -1024,14 +1025,14 @@ theorem nodePost_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : Inst
         selectedWithinAt Φ F c.expression) || ExpressionEffects.emptyType G (result c)) = true)
     (hterm : ExpressionOk G c t) (hsums : ProgramCertificates.SummariesSound G images sums) :
     ∀ n W h ρ (b : Nat), b ≤ h.length → FreshOk F b ρ →
-      EnvOk G (entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W → HeapKnowledge.Holds (entryFacts G c) ρ h →
+      EnvOk G (entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W → HeapKnowledge.Holds (entryFacts G c) ε ρ h →
       WorldAdm W → HeapOk n W h →
       HeapObservations.SafePost (excOf G) (meaning G (result c))
         (fun h' v => Φ.HoldsOn (· < b) h h' ∧ ((varFresh F t || callFresh G images sums c t) = true → FreshAt b v))
         n W h (instantiate 0 ρ t) := by
   intro j V h' ρ b hb hF henv himp hknowledge hworld hheap
   have hsafe := HeapObservations.erase (HeapObservations.consequence (fun _ _ _ hu => hu.1) (fun _ _ h => h)
-    (hterm j V h' ρ henv himp hknowledge hworld hheap))
+    (hterm ε j V h' ρ henv himp hknowledge hworld hheap))
   -- A slot copy returns the slot's value.
   by_cases hvar : varFresh F t = true
   · cases t <;> simp only [varFresh, reduceCtorEq] at hvar
@@ -1132,13 +1133,13 @@ theorem throwsWithin_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
     (hthrows : throwsWithin G images sums Φ F c t = true)
     (hterm : ExpressionOk G c t) (hsums : ProgramCertificates.SummariesSound G images sums) :
     ∀ n W h ρ (b : Nat), b ≤ h.length → FreshOk F b ρ →
-      EnvOk G (entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W → HeapKnowledge.Holds (entryFacts G c) ρ h →
+      EnvOk G (entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W → HeapKnowledge.Holds (entryFacts G c) ε ρ h →
       WorldAdm W → HeapOk n W h →
       HeapObservations.SafePostExc (excOf G) (meaning G (result c)) (fun _ _ => True)
         (fun h' => Φ.HoldsOn (· < b) h h') n W h (instantiate 0 ρ t) := by
   intro j V h' ρ b _ hF henv himp hknowledge hworld hheap
   have hsafe := HeapObservations.erase (HeapObservations.consequence (fun _ _ _ hu => hu.1) (fun _ _ h => h)
-    (hterm j V h' ρ henv himp hknowledge hworld hheap))
+    (hterm ε j V h' ρ henv himp hknowledge hworld hheap))
   simp only [throwsWithin, Bool.or_eq_true] at hthrows
   rcases hthrows with ((hexpr | hwrite) | hcall) | hempty
   rotate_right
@@ -1202,7 +1203,7 @@ theorem nodeWithin_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : In
     (hthrows : thr = true → throwsWithin G images sums Φ F c t = true)
     (hterm : ExpressionOk G c t) (hsums : ProgramCertificates.SummariesSound G images sums) :
     NodeWithin G Φ c t F (varFresh F t || callFresh G images sums c t) thr := by
-  intro j V h' ρ b hb hF henv himp hknowledge hworld hheap
+  intro ε j V h' ρ b hb hF henv himp hknowledge hworld hheap
   have hpost := nodePost_of_checked hscope hcases hterm hsums j V h' ρ b hb hF henv himp hknowledge hworld hheap
   cases thr with
   | false =>
@@ -1353,7 +1354,7 @@ def codeEntryIndices (c : CodeEntry ι) : List HeapKnowledge.IndexAtom :=
   if c.store = none then c.row.effect.pre.map fun F => { fact := F } else []
 
 theorem codeEntryIndices_holds {c : CodeEntry ι} {L : List Tm} {h : Heap}
-    (hp : PreAt c.row.effect c.store L h) : HeapKnowledge.IndexHolds (codeEntryIndices c) (envOf L .nul) h := by
+    (hp : PreAt c.row.effect c.store L h) : HeapKnowledge.IndexHolds ⟨envOf L .nul, h⟩ (codeEntryIndices c) (envOf L .nul) h := by
   intro a ha _
   unfold codeEntryIndices at ha
   split at ha

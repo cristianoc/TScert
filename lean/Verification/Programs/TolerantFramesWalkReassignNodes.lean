@@ -25,19 +25,19 @@ about the node `node` at `l`, its claim `c`, its entry state `entry` and its
 step's result `st`: the entry state holding where the node assertion does,
 the claim's type giving each continuation's shape and a return's result
 type, and each normal exit and the handler delivering the target's `pre`. -/
-structure NodeMeaningAt (pre : Nat → Assertion) (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0 : Env)
+structure NodeMeaningAt (pre : Nat → Assertion) (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε : HeapKnowledge.EntryState)
     (ctx : Nat → List (Ty ι)) (Tres : Fam) (m : Nat) (l : Nat) (node : Node)
     (c : PointClaim ι) (entry : SinglePass.State) (st : Stepped ι) : Prop where
-  entered : ∀ ρ (s : IndexedHeap), passPreT G w startNames ρ0 ctx l ρ m s →
-    StateHolds G entry (w.implies l) startNames ρ0 ρ m s
+  entered : ∀ ρ (s : IndexedHeap), passPreT G w startNames ε ctx l ρ m s →
+    StateHolds G entry (w.implies l) startNames ε ρ m s
   shape : ∀ n (W : WorldT n) v, meaning G c.type n W v → ShapeOk v node.continuation
   ret : node.continuation = .ret → ∀ n (W : WorldT n) v, meaning G c.type n W v → Tres n W v
   exits : ∀ t pushed observed promote, Exit.normal t pushed observed promote ∈ Exit.ofNode node → ∀ ρ,
     ExitDelivers pre G c.type c.context
-      (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ρ0) ρ m t
+      (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ε) ρ m t
       pushed observed promote
   handler : ∀ t, node.handler = some t → ∀ ρ (s' : IndexedHeap) e,
-    StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ (w.implies l) startNames ρ0
+    StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ (w.implies l) startNames ε
       ρ m s' →
     EnvOk G c.context ρ s'.n s'.W → Scoped 0 e → excOf G s'.n s'.W e →
     pre t.label (PointClaims.mapEnv t.mapping (push e ρ)) m s'
@@ -45,16 +45,16 @@ structure NodeMeaningAt (pre : Nat → Assertion) (G : NormalGraph ι) (w : Walk
 /-- **What a node's step means at a graph**: `NodeMeaningAt` with each
 normal exit and the handler delivering the target's typed assertion with
 its written assertion (`edgePreA`), the written assertions `stated`. -/
-abbrev NodeMeaning (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ρ0 : Env) (ctx : Nat → List (Ty ι))
+abbrev NodeMeaning (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε : HeapKnowledge.EntryState) (ctx : Nat → List (Ty ι))
     (stated : Nat → Option HeapKnowledge.Knowledge) (Tres : Fam) (m : Nat) (l : Nat) (node : Node)
     (c : PointClaim ι) (entry : SinglePass.State) (st : Stepped ι) : Prop :=
-  NodeMeaningAt (edgePreA G w startNames ρ0 ctx stated) G w startNames ρ0 ctx Tres m l node c entry st
+  NodeMeaningAt (edgePreA G w startNames ε ctx stated) G w startNames ε ctx Tres m l node c entry st
 
 section Split
 variable {G : NormalGraph ι} {images : InstanceImageCheck G} {pool : List (Ty ι)} {fuel : Nat}
   {suggestions : List (Sequent ι)} {index : KnownIndex ι} {codes : CodeEntry ι → Bool} {aliases : List (ι × ι)}
   {pc : PassChecker G images} {undefTy : Option (Ty ι)} {P : ControlFlow.Program} {w : Walk ι}
-  {startNames : List Nat} {ρ0 : Env} {ctx : Nat → List (Ty ι)} {Tres : Fam} {m : Nat} {l : Nat}
+  {startNames : List Nat} {ctx : Nat → List (Ty ι)} {Tres : Fam} {m : Nat} {l : Nat}
 
 end Split
 

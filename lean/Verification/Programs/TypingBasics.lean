@@ -447,7 +447,7 @@ frame: code collecting no rest finds the receiver and its parameters at the
 call's positions (`CallEffects.Effect.pre_frame`); code collecting one
 assumes none. -/
 def PreAt (e : CallEffects.Effect) (store : Option (Ty ι)) (L : List Tm) (h : Heap) : Prop :=
-  store = none → ∀ F ∈ e.pre, F.HoldsAt (envOf L .nul) h
+  store = none → ∀ F ∈ e.pre, F.HoldsAt ⟨envOf L .nul, h⟩ (envOf L .nul) h
 
 /-- The receiver and bound parameters of a call occur in its entry frame,
 following the optional rest store and preceding the captures. Actuals past
@@ -621,7 +621,7 @@ theorem graph_invoke {G : NormalGraph ι} {arity E K start Cs row vs n W}
     {j : Nat} (hj : j < n) {U : WorldT j} (hx : WExt (trunc j (Nat.le_of_lt hj) W) U)
     (hu : WorldAdm U) {heap : Heap} (hh : HeapOk j U heap) {r : Tm} (hr : meaning G row.receiver j U r)
     {args : List Tm} (ha : ArgsShort (row.arguments.map (meaning G)) j U args)
-    (hq : ∀ F ∈ row.effect.pre, F.HoldsAt (CallEffects.callEnv r args) heap) :
+    (hq : ∀ F ∈ row.effect.pre, F.HoldsAt ⟨CallEffects.callEnv r args, heap⟩ (CallEffects.callEnv r args) heap) :
     HeapObservations.SafePostExc (excOf G) (row.effect.result (meaning G row.result) (row.effect.promised args))
       (row.effect.post r args heap) (row.effect.excPost r args heap) j U heap
       (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul) := by
@@ -649,7 +649,7 @@ theorem graph_invoke_at {G : NormalGraph ι} {arity E K start Cs row vs}
     (hvs : EnvOk G Cs (envOf vs .nul) j U) (hvalues : CallArguments.Values vs)
     (hu : WorldAdm U) {heap : Heap} (hh : HeapOk j U heap) {r : Tm} (hr : meaning G row.receiver j U r)
     {args : List Tm} (ha : ArgsShort (row.arguments.map (meaning G)) j U args)
-    (hq : ∀ F ∈ row.effect.pre, F.HoldsAt (CallEffects.callEnv r args) heap) :
+    (hq : ∀ F ∈ row.effect.pre, F.HoldsAt ⟨CallEffects.callEnv r args, heap⟩ (CallEffects.callEnv r args) heap) :
     HeapObservations.SafePostExc (excOf G) (row.effect.result (meaning G row.result) (row.effect.promised args))
       (row.effect.post r args heap) (row.effect.excPost r args heap) j U heap
       (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul) := by

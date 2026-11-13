@@ -4,6 +4,7 @@ import Verification.Programs.ArgumentRegionFresh
 checking supplies progress and typing; regional node obligations supply effects
 and result provenance. This module does not decode or check those obligations. -/
 namespace Verification.GraphCode.ArgumentRegionGraph
+variable {ε : Verification.HeapKnowledge.EntryState}
 open ControlFlow PointClaims ProgramTyping PositiveGraphs PositiveRules Footprints
 open PositiveCertificates (InstanceImageCheck)
 open CertificateProducer (successors)
@@ -13,11 +14,11 @@ def NodeWithin [DecidableEq ι] (G : NormalGraph ι) (Φ : Footprints.Closed)
     (regions : List ArgumentStoreRegion) (c : NodeEvidence ι) (t : Tm)
     (facts : List ArgumentPathTracking.Fact) (F : List Nat) (Fs : List (Nat × String))
     (origins : List ArgumentStoreRegion) (thr : Bool) : Prop :=
-  ∀ n W h ρ initial entry,
+  ∀ ε n W h ρ initial entry,
     ArgumentStoreRegionsWithin Φ regions entry initial h → ArgumentPathTracking.Holds facts ρ entry initial →
     (∀ i ∈ F, FreshValue initial.length (ρ i)) → FieldsHold Fs initial.length ρ h →
     EnvOk G (ControlFlow.entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W →
-    HeapKnowledge.Holds (entryFacts G c) ρ h → WorldAdm W → HeapOk n W h →
+    HeapKnowledge.Holds (entryFacts G c) ε ρ h → WorldAdm W → HeapOk n W h →
     (0 < n → ArgumentPathTracking.StableNow (ArgumentPathTracking.stableFields regions) entry initial W) →
     HeapObservations.SafePostExc (excOf G) (meaning G (result c))
       (fun h' v => ArgumentStoreRegionsWithin Φ regions entry initial h' ∧
@@ -50,8 +51,8 @@ normal return, and where `thr` its throw, meets the frame from the heap the
 step starts in. -/
 def StepOk [DecidableEq ι] (G : NormalGraph ι) (c : NodeEvidence ι) (t : Tm) (se : StepEffect) (thr : Bool) :
     Prop :=
-  ∀ n W h ρ, EnvOk G (ControlFlow.entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W →
-    HeapKnowledge.Holds (entryFacts G c) ρ h → WorldAdm W → HeapOk n W h →
+  ∀ ε n W h ρ, EnvOk G (ControlFlow.entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W →
+    HeapKnowledge.Holds (entryFacts G c) ε ρ h → WorldAdm W → HeapOk n W h →
     ∃ σ : Env, (∀ p s, se.slot p = some s → σ p = ρ s) ∧
       HeapObservations.SafePostExc (excOf G) (meaning G (result c))
         (fun h' _ => Post se.normal σ h h') (fun h' => thr = true → Post se.raised σ h h')
@@ -156,12 +157,12 @@ theorem nodeWithin_of_step [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprint
     {thr : Bool}
     (hs : StepOk G c t se thr) (hc : stepWithin Φ regions facts F Fs se thr = true) :
     NodeWithin G Φ regions c t facts F Fs [] thr := by
-  intro n W h ρ initial entry hb hf hF hFs he hi hk hw hh hst
+  intro ε n W h ρ initial entry hb hf hF hFs he hi hk hw hh hst
   cases n with
   | zero => trivial
   | succ n =>
     simp only [stepWithin, Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at hc
-    obtain ⟨σ, hσ, hrun⟩ := hs (n + 1) W h ρ he hi hk hw hh
+    obtain ⟨σ, hσ, hrun⟩ := hs ε (n + 1) W h ρ he hi hk hw hh
     have hp := ArgumentStoreRegionsWithin.iff_post.mp hb
     have hok := nodeRebase_ok (regions := regions) hσ hf hF hFs (hst (Nat.succ_pos n)) (Nat.succ_pos n) hh
     apply HeapObservations.SafePostExc.weaken _ _ hrun
@@ -237,9 +238,9 @@ fields at `Fs`, its normal return and its throw keep every field of `Fs`,
 and its value has a fresh field `f` for each `f ∈ out`. -/
 def FieldsWithin [DecidableEq ι] (G : NormalGraph ι) (c : NodeEvidence ι) (t : Tm) (F : List Nat)
     (Fs : List (Nat × String)) (out : List String) : Prop :=
-  ∀ n W h ρ (b : Nat), b ≤ h.length → (∀ i ∈ F, FreshValue b (ρ i)) → FieldsHold Fs b ρ h →
+  ∀ ε n W h ρ (b : Nat), b ≤ h.length → (∀ i ∈ F, FreshValue b (ρ i)) → FieldsHold Fs b ρ h →
     EnvOk G (ControlFlow.entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W →
-    HeapKnowledge.Holds (entryFacts G c) ρ h → WorldAdm W → HeapOk n W h →
+    HeapKnowledge.Holds (entryFacts G c) ε ρ h → WorldAdm W → HeapOk n W h →
     HeapObservations.SafePostExc (excOf G) (meaning G (result c))
       (fun h' v => FieldsHold Fs b ρ h' ∧ ∀ f ∈ out, FieldFresh b h' v f)
       (fun h' => FieldsHold Fs b ρ h') n W h (instantiate 0 ρ t)
@@ -300,7 +301,7 @@ theorem bounded_step [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Clos
     (hnodes : NodesWithin G Φ regions P C table ft exc)
     {initial entry n W h s h' s'} (hw : WorldAdm W) (hh : HeapOk (n+1) W h)
     (hst : 0 < n + 1 → ArgumentPathTracking.StableNow (ArgumentPathTracking.stableFields regions) entry initial W)
-    (hs : StateOk G Rty C v0 (n+1) W h s)
+    (hs : StateOk G Rty C v0 ε (n+1) W h s)
     (hp : BoundState Φ regions table ft exc initial entry (n+1) h s)
     (st : Transition P h s h' s') :
     BoundState Φ regions table ft exc initial entry n h' s' := by
@@ -313,12 +314,12 @@ theorem bounded_step [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.Clos
     have hi' := hi.transfer n (Nat.le_succ n) _ (WExt_refl _)
     have hk := entryFacts_holds he hf
     have hh' := HeapOk_trunc n W h hh
-    have hrun := ht n _ h ρ initial entry hp.1 hp.2.1 hp.2.2.1.values hp.2.2.2 he' hi' hk
+    have hrun := ht ε n _ h ρ initial entry hp.1 hp.2.1 hp.2.2.1.values hp.2.2.2 he' hi' hk
       (WorldAdm_trunc _ hw) hh'
       (fun _ => (hst (Nat.succ_pos n)).transfer (Nat.le_succ n) (WExt_refl _))
-    have hfresh := hfr n _ h ρ initial.length (ArgumentStoreRegionsWithin.iff_post.mp hp.1).1 hp.2.2.1 he' hi' hk
+    have hfresh := hfr ε n _ h ρ initial.length (ArgumentStoreRegionsWithin.iff_post.mp hp.1).1 hp.2.2.1 he' hi' hk
       (WorldAdm_trunc _ hw) hh'
-    have hfld := hfl n _ h ρ initial.length (ArgumentStoreRegionsWithin.iff_post.mp hp.1).1 hp.2.2.1.values
+    have hfld := hfl ε n _ h ρ initial.length (ArgumentStoreRegionsWithin.iff_post.mp hp.1).1 hp.2.2.1.values
       hp.2.2.2 he' hi' hk (WorldAdm_trunc _ hw) hh'
     have hboth0 := HeapObservations.SafePostExc.cross_upto n (fun _ _ _ _ _ _ _ _ hu _ => hu) _ _ h _ hh' hh'
       hrun hfresh
@@ -384,7 +385,7 @@ theorem bounded_safe_of_sim [DecidableEq ι] {G : NormalGraph ι} {images : Inst
     (hnodes : NodesWithin G Φ regions (program E K) C table ft exc) (hv0 : isVal v0 = true) :
     ∀ n W h ts s initial entry, Sim E K ts s → WorldAdm W → HeapOk n W h →
       (0 < n → ArgumentPathTracking.StableNow (ArgumentPathTracking.stableFields regions) entry initial W) →
-      StateOk G Rty C v0 n W h s → BoundState Φ regions table ft exc initial entry n h s →
+      StateOk G Rty C v0 ε n W h s → BoundState Φ regions table ft exc initial entry n h s →
       HeapObservations.SafePostExc (excOf G) (GoalHolds G Rty v0)
         (fun h' _ => ArgumentStoreRegionsWithin Φ regions entry initial h')
         (fun h' => exc = true → ArgumentStoreRegionsWithin Φ regions entry initial h') n W h ts := by
@@ -419,7 +420,7 @@ theorem goto_bounded [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W)
     (hh : HeapOk n W h)
     (hsep : HeapSeparation.Holds entrySeparation (envOf L d) := by exact HeapSeparation.empty_holds _)
-    (hidx : HeapKnowledge.IndexHolds entryIndices (envOf L d) h := by exact HeapKnowledge.indexHolds_nil _ _) :
+    (hidx : HeapKnowledge.IndexHolds ⟨envOf L d, h⟩ entryIndices (envOf L d) h := by exact HeapKnowledge.indexHolds_nil _ _) :
     HeapObservations.SafePostExc (excOf G) (GoalHolds G Rty (Rty.argument (envOf L d)))
       (fun h' _ => ArgumentStoreRegionsWithin Φ regions (envOf L d) h h')
       (fun h' => exc = true → ArgumentStoreRegionsWithin Φ regions (envOf L d) h h') n W h (.goto E K start L d) := by

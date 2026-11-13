@@ -5,6 +5,8 @@ import Verification.Programs.BranchRefinement
 /-! Primitive heap and immutable-value facts for expression postconditions. Facts
 are execution-state assertions, not extra world contracts or source type labels. -/
 namespace Verification.HeapKnowledge
+
+variable {ε : EntryState}
 open ProgramTyping PositiveRules PositiveGraphs PositiveNormalization Tower HeapFacts
 
 /-- An elements atom: every present element of the array the slot `slot`
@@ -44,19 +46,19 @@ def ValueHolds (facts : Facts) (ρ : Env) : Prop :=
 def ElemsHolds (as : List ElemAtom) (ρ : Env) (h : Heap) : Prop :=
   ∀ a ∈ as, (∀ b, a.cond = some b → tagHolds .truthy (ρ b) = !a.negated) → CallEffects.ElemsAt a.pred (ρ a.slot) h
 
-def IndexHolds (as : List IndexAtom) (ρ : Env) (h : Heap) : Prop :=
-  ∀ a ∈ as, (∀ b, a.cond = some b → tagHolds .truthy (ρ b) = !a.negated) → a.fact.HoldsAt ρ h
+def IndexHolds (ε : EntryState) (as : List IndexAtom) (ρ : Env) (h : Heap) : Prop :=
+  ∀ a ∈ as, (∀ b, a.cond = some b → tagHolds .truthy (ρ b) = !a.negated) → a.fact.HoldsAt ε ρ h
 
-def Holds (k : Knowledge) (ρ : Env) (h : Heap) : Prop :=
+def Holds (k : Knowledge) (ε : EntryState) (ρ : Env) (h : Heap) : Prop :=
   HeapFacts.Holds k.cells ρ h ∧ ValueHolds k.values ρ ∧ HeapLinks.Holds k.links ρ h ∧
-    HeapSeparation.Holds k.separation ρ ∧ ElemsHolds k.elems ρ h ∧ IndexHolds k.indices ρ h
+    HeapSeparation.Holds k.separation ρ ∧ ElemsHolds k.elems ρ h ∧ IndexHolds ε k.indices ρ h
 
 theorem elemsHolds_nil (ρ h) : ElemsHolds [] ρ h := by simp [ElemsHolds]
 
-theorem indexHolds_nil (ρ h) : IndexHolds [] ρ h := by simp [IndexHolds]
+theorem indexHolds_nil (ρ h) : IndexHolds ε [] ρ h := by simp [IndexHolds]
 
-theorem indexHolds_extend {as : List IndexAtom} {ρ h} (vs : List Val) (he : IndexHolds as ρ h) :
-    IndexHolds as ρ (h ++ vs) := fun a ha hc => IndexFact.holdsAt_extend vs (he a ha hc)
+theorem indexHolds_extend {as : List IndexAtom} {ρ h} (vs : List Val) (he : IndexHolds ε as ρ h) :
+    IndexHolds ε as ρ (h ++ vs) := fun a ha hc => IndexFact.holdsAt_extend vs (he a ha hc)
 
 /-- An atom renamed by a partial map, where it maps every slot the atom names. -/
 def mapIndex (f : Nat → Option Nat) (a : IndexAtom) : Option IndexAtom :=
@@ -71,8 +73,8 @@ def mapIndices (f : Nat → Option Nat) (as : List IndexAtom) : List IndexAtom :
 
 /-- Renaming keeps the atoms where each renamed slot holds its source slot's value. -/
 theorem mapIndices_holds {as : List IndexAtom} {f : Nat → Option Nat} {ρ ρ' : Env} {h : Heap}
-    (hf : ∀ s t, f s = some t → ρ' t = ρ s) (he : IndexHolds as ρ h) :
-    IndexHolds (mapIndices f as) ρ' h := by
+    (hf : ∀ s t, f s = some t → ρ' t = ρ s) (he : IndexHolds ε as ρ h) :
+    IndexHolds ε (mapIndices f as) ρ' h := by
   intro a ha hc
   obtain ⟨b, hb, hab⟩ := List.mem_filterMap.mp ha
   unfold mapIndex at hab
@@ -91,7 +93,7 @@ theorem mapIndices_holds {as : List IndexAtom} {f : Nat → Option Nat} {ρ ρ' 
     exact hc t rfl
   · cases hab
 
-theorem empty (ρ h) : Holds {} ρ h :=
+theorem empty (ρ h) : Holds {} ε ρ h :=
   ⟨holds_nil ρ h,by simp [ValueHolds],by simp [HeapLinks.Holds],HeapSeparation.empty_holds ρ,elemsHolds_nil ρ h,
     indexHolds_nil ρ h⟩
 
@@ -139,7 +141,7 @@ theorem dropElems_holds {as : List ElemAtom} {ρ h v} (he : ElemsHolds as (push 
   simpa [hs] using this
 
 /-- A fresh allocation preserves every assertion about existing cells and aliases. -/
-theorem alloc_frame {k ρ h v} (hk : Holds k ρ h) : Holds k ρ (h ++ [v]) := by
+theorem alloc_frame {k ρ h v} (hk : Holds k ε ρ h) : Holds k ε ρ (h ++ [v]) := by
   refine ⟨?_, hk.2.1, HeapLinks.alloc_frame hk.2.2.1, hk.2.2.2.1, elemsHolds_extend [v] hk.2.2.2.2.1,
     indexHolds_extend [v] hk.2.2.2.2.2⟩
   intro f hf
@@ -147,7 +149,7 @@ theorem alloc_frame {k ρ h v} (hk : Holds k ρ h) : Holds k ρ (h ++ [v]) := by
   exact ⟨flds,c,oid,u,he,hr.alloc_frames [v],hm⟩
 
 /-- The same across a whole object's worth of fresh locations. -/
-theorem alloc_frames {k ρ h} (vs : List Val) (hk : Holds k ρ h) : Holds k ρ (h ++ vs) := by
+theorem alloc_frames {k ρ h} (vs : List Val) (hk : Holds k ε ρ h) : Holds k ε ρ (h ++ vs) := by
   refine ⟨?_, hk.2.1, HeapLinks.alloc_frames vs hk.2.2.1, hk.2.2.2.1, elemsHolds_extend vs hk.2.2.2.2.1,
     indexHolds_extend vs hk.2.2.2.2.2⟩
   intro f hf
@@ -219,7 +221,7 @@ def termFollows (M : Nat → List Nat) (m : PointClaims.Mapping) (s t : Term) : 
 
 theorem termFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ρ : Env} {h : Heap}
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) {s t : Term} (hf : termFollows M m s t = true) :
-    termValue ρ h s = termValue (PointClaims.mapEnv m ρ) h t := by
+    termValue ε ρ h s = termValue ε (PointClaims.mapEnv m ρ) h t := by
   obtain ⟨k, x, p⟩ := s
   obtain ⟨k', y, p'⟩ := t
   simp only [termFollows, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at hf
@@ -240,8 +242,8 @@ def formFollows (M : Nat → List Nat) (m : PointClaims.Mapping) : Linear.Fact T
 theorem termsFollow_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ρ : Env} {h : Heap}
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) :
     ∀ {F F' : Linear.Form Term}, termsFollow M m F F' = true →
-      Linear.Form.eval (termValuation (PointClaims.mapEnv m ρ) h) F' = Linear.Form.eval (termValuation ρ h) F ∧
-      ∀ y ∈ F'.map (·.1), ∃ x ∈ F.map (·.1), termValue ρ h x = termValue (PointClaims.mapEnv m ρ) h y := by
+      Linear.Form.eval (termValuation ε (PointClaims.mapEnv m ρ) h) F' = Linear.Form.eval (termValuation ε ρ h) F ∧
+      ∀ y ∈ F'.map (·.1), ∃ x ∈ F.map (·.1), termValue ε ρ h x = termValue ε (PointClaims.mapEnv m ρ) h y := by
   intro F
   induction F with
   | nil => intro F' h; cases F' with
@@ -257,7 +259,7 @@ theorem termsFollow_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ρ :
       simp only [termsFollow, Bool.and_eq_true, beq_iff_eq] at hf
       obtain ⟨⟨rfl, hx⟩, ht⟩ := hf
       obtain ⟨he, hv⟩ := ih ht
-      have hxy := termFollows_sound (h := h) hM hx
+      have hxy := termFollows_sound (ε := ε) (h := h) hM hx
       refine ⟨?_, ?_⟩
       · simp only [Linear.Form.eval, he, termValuation, ← hxy]
       · intro z hz
@@ -269,8 +271,8 @@ theorem termsFollow_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ρ :
 
 theorem formFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ρ : Env} {h : Heap}
     {F F' : Linear.Fact Term} (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hf : formFollows M m F F' = true) :
-    (F'.Holds (termValuation (PointClaims.mapEnv m ρ) h) ↔ F.Holds (termValuation ρ h)) ∧
-      ∀ y ∈ F'.vars, ∃ x ∈ F.vars, termValue ρ h x = termValue (PointClaims.mapEnv m ρ) h y := by
+    (F'.Holds (termValuation ε (PointClaims.mapEnv m ρ) h) ↔ F.Holds (termValuation ε ρ h)) ∧
+      ∀ y ∈ F'.vars, ∃ x ∈ F.vars, termValue ε ρ h x = termValue ε (PointClaims.mapEnv m ρ) h y := by
   cases F <;> cases F' <;> simp only [formFollows, Bool.and_eq_true, beq_iff_eq, Bool.false_eq_true] at hf
   all_goals
     obtain ⟨rfl, ht⟩ := hf
@@ -289,7 +291,7 @@ def boundFollows (M : Nat → List Nat) (m : PointClaims.Mapping) : Bound → Bo
 
 theorem boundFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ρ : Env} {h : Heap}
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) {ls : List (Option Nat)} {i : Nat} {x y : Bound}
-    (hf : boundFollows M m x y = true) : boundValue ρ h ls i x = boundValue (PointClaims.mapEnv m ρ) h ls i y := by
+    (hf : boundFollows M m x y = true) : boundValue ε ρ h ls i x = boundValue ε (PointClaims.mapEnv m ρ) h ls i y := by
   cases x <;> cases y <;> simp only [boundFollows, Bool.false_eq_true] at hf
   · rfl
   · rfl
@@ -297,7 +299,7 @@ theorem boundFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ρ 
   · simp only [Bool.and_eq_true, beq_iff_eq] at hf
     obtain ⟨rfl, rfl⟩ := hf
     rfl
-  · exact termFollows_sound hM hf
+  · exact termFollows_sound (ε := ε) hM hf
 
 theorem lookup_mem' {α β : Type} [BEq α] [LawfulBEq α] : ∀ {l : List (α × β)} {a : α} {b : β},
     l.lookup a = some b → (a, b) ∈ l
@@ -354,8 +356,8 @@ theorem every_follows {M : Nat → List Nat} {m : PointClaims.Mapping} {ρ : Env
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) {s s' : Nat} {p : List String} {st st' : Term}
     {b b' : List (LinearClause Bound)} (hs : (M (PointClaims.slot m s')).contains s = true)
     (hst : termFollows M m st st' = true) (hb : b'.all (fun F' => b.any fun F => bodyFactFollows M m F F') = true)
-    (hF : (IndexFact.every s p st b).HoldsAt ρ h) :
-    (IndexFact.every s' p st' b').HoldsAt (PointClaims.mapEnv m ρ) h := by
+    (hF : (IndexFact.every s p st b).HoldsAt ε ρ h) :
+    (IndexFact.every s' p st' b').HoldsAt ε (PointClaims.mapEnv m ρ) h := by
   obtain ⟨w, sto, ls, n, hw, hsto, hls, hn, hall⟩ := hF
   have hs' : PointClaims.mapEnv m ρ s' = ρ s := (hM _ _ (List.contains_iff_mem.mp hs)).symm
   refine ⟨w, sto, ls, n, by rw [hs']; exact hw, hsto, hls, by rw [← termFollows_sound hM hst]; exact hn,
@@ -367,8 +369,8 @@ theorem every_follows {M : Nat → List Nat} {m : PointClaims.Mapping} {ρ : Env
   exact boundFollows_sound hM (hps _ (lookup_mem' hx))
 
 theorem factFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {s t : IndexFact} {ρ h}
-    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hf : factFollows M m s t = true) (hs : s.HoldsAt ρ h) :
-    t.HoldsAt (PointClaims.mapEnv m ρ) h := by
+    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hf : factFollows M m s t = true) (hs : s.HoldsAt ε ρ h) :
+    t.HoldsAt ε (PointClaims.mapEnv m ρ) h := by
   induction s generalizing t with
   | guarded s0 p0 g0 B ih =>
     cases t <;> simp only [factFollows, Bool.and_eq_true, List.contains_iff_mem, beq_iff_eq, reduceCtorEq] at hf
@@ -501,49 +503,49 @@ theorem intValue_length {ls : List (Option Nat)} (hm : ls.length ≤ maxArrayLen
     intValue (.num (bitsOfNat ls.length)) = some (ls.length : Int) :=
   intValue_num ⟨by simp [maxArrayLength] at hm ⊢; omega, .inl ⟨by omega, by simp⟩⟩
 
-theorem lengthRange_holds {ρ h} {t : Term} (hk : t.kind = .length) (hx : (termValue ρ h t).isSome) :
-    ∀ F ∈ lengthRange t, F.Holds (termValuation ρ h) := by
+theorem lengthRange_holds {ρ h} {t : Term} (hk : t.kind = .length) (hx : (termValue ε ρ h t).isSome) :
+    ∀ F ∈ lengthRange t, F.Holds (termValuation ε ρ h) := by
   obtain ⟨v, n, -, hkv, hn⟩ := termValue_isSome hx
   rw [hk] at hkv
   obtain ⟨s, ls, -, -, rfl, hm⟩ := lengthOf_store (h := h) (v := v) hkv
-  have hv : termValuation ρ h t = ls.length := by simp [termValuation, hn]
+  have hv : termValuation ε ρ h t = ls.length := by simp [termValuation, hn]
   have hm' : (ls.length : Int) ≤ (maxArrayLength : Int) := by exact_mod_cast hm
   intro F hF
   simp only [lengthRange, List.mem_cons, List.not_mem_nil, or_false] at hF
   rcases hF with rfl | rfl <;> simp only [Linear.Fact.Holds, Linear.Form.eval, hv] <;> omega
 
-theorem viewRange_holds {ρ h} {t : Term} (hk : t.kind = .view) (hx : (termValue ρ h t).isSome) :
-    ∀ F ∈ viewRange t, F.Holds (termValuation ρ h) := by
+theorem viewRange_holds {ρ h} {t : Term} (hk : t.kind = .view) (hx : (termValue ε ρ h t).isSome) :
+    ∀ F ∈ viewRange t, F.Holds (termValuation ε ρ h) := by
   obtain ⟨v, n, -, hkv, hn⟩ := termValue_isSome hx
   rw [hk] at hkv
   obtain ⟨h0, h1⟩ := viewLengthOf_range (h := h) (v := v) hkv
-  have hv : termValuation ρ h t = n := by simp [termValuation, hn]
+  have hv : termValuation ε ρ h t = n := by simp [termValuation, hn]
   intro F hF
   simp only [viewRange, List.mem_cons, List.not_mem_nil, or_false] at hF
   rcases hF with rfl | rfl <;> simp only [Linear.Fact.Holds, Linear.Form.eval, hv] <;> omega
 
-theorem strRange_holds {ρ h} {t : Term} (hk : t.kind = .strLength) (hx : (termValue ρ h t).isSome) :
-    ∀ F ∈ viewRange t, F.Holds (termValuation ρ h) := by
+theorem strRange_holds {ρ h} {t : Term} (hk : t.kind = .strLength) (hx : (termValue ε ρ h t).isSome) :
+    ∀ F ∈ viewRange t, F.Holds (termValuation ε ρ h) := by
   obtain ⟨v, n, -, hkv, hn⟩ := termValue_isSome hx
   rw [hk] at hkv
   obtain ⟨h0, h1⟩ := strLengthOf_range (v := v) hkv
-  have hv : termValuation ρ h t = n := by simp [termValuation, hn]
+  have hv : termValuation ε ρ h t = n := by simp [termValuation, hn]
   intro F hF
   simp only [viewRange, List.mem_cons, List.not_mem_nil, or_false] at hF
   rcases hF with rfl | rfl <;> simp only [Linear.Fact.Holds, Linear.Form.eval, hv] <;> omega
 
-theorem valueRange_holds {ρ h} {t : Term} (hk : t.kind = .value) (hx : (termValue ρ h t).isSome) :
-    ∀ F ∈ valueRange t, F.Holds (termValuation ρ h) := by
+theorem valueRange_holds {ρ h} {t : Term} (hk : t.kind = .value) (hx : (termValue ε ρ h t).isSome) :
+    ∀ F ∈ valueRange t, F.Holds (termValuation ε ρ h) := by
   obtain ⟨v, n, -, hkv, hn⟩ := termValue_isSome hx
   rw [hk] at hkv
   obtain ⟨b, -, hs, -⟩ := intValue_safe hkv
-  have hv : termValuation ρ h t = n := by simp [termValuation, hn]
+  have hv : termValuation ε ρ h t = n := by simp [termValuation, hn]
   intro F hF
   simp only [valueRange, List.mem_cons, List.not_mem_nil, or_false] at hF
   rcases hF with rfl | rfl <;> simp only [Linear.Fact.Holds, Linear.Form.eval, hv] <;> omega
 
-theorem termRange_holds {ρ h} {t : Term} (hx : (termValue ρ h t).isSome) :
-    ∀ F ∈ termRange t, F.Holds (termValuation ρ h) := by
+theorem termRange_holds {ρ h} {t : Term} (hx : (termValue ε ρ h t).isSome) :
+    ∀ F ∈ termRange t, F.Holds (termValuation ε ρ h) := by
   unfold termRange
   split
   · exact lengthRange_holds (by assumption) hx
@@ -551,8 +553,8 @@ theorem termRange_holds {ρ h} {t : Term} (hx : (termValue ρ h t).isSome) :
   · exact strRange_holds (by assumption) hx
   · simp
 
-theorem factLinear_holds {f : IndexFact} {ρ h} (hf : f.HoldsAt ρ h) :
-    ∀ F ∈ factLinear f, F.Holds (termValuation ρ h) := by
+theorem factLinear_holds {f : IndexFact} {ρ h} (hf : f.HoldsAt ε ρ h) :
+    ∀ F ∈ factLinear f, F.Holds (termValuation ε ρ h) := by
   intro F hF
   cases f with
   | linear G =>
@@ -562,11 +564,11 @@ theorem factLinear_holds {f : IndexFact} {ρ h} (hf : f.HoldsAt ρ h) :
     · exact termRange_holds (hf.1 _ ht) F hF
   | length x n =>
     obtain ⟨s, ls, hs, hl, hnv, hm⟩ := hf
-    have hlen : termValue ρ h (.length x) = some (ls.length : Int) := lengthOf_of_store hs hl hm
-    have hval : termValue ρ h (.value n) = some (ls.length : Int) := by
+    have hlen : termValue ε ρ h (.length x) = some (ls.length : Int) := lengthOf_of_store hs hl hm
+    have hval : termValue ε ρ h (.value n) = some (ls.length : Int) := by
       simp only [termValue_value, hnv, intValue_length hm]
-    have v1 : termValuation ρ h (.length x) = ls.length := by simp [termValuation, hlen]
-    have v2 : termValuation ρ h (.value n) = ls.length := by simp [termValuation, hval]
+    have v1 : termValuation ε ρ h (.length x) = ls.length := by simp [termValuation, hlen]
+    have v2 : termValuation ε ρ h (.value n) = ls.length := by simp [termValuation, hval]
     simp only [factLinear, List.mem_cons] at hF
     rcases hF with rfl | rfl | hF
     · simp only [Linear.Fact.Holds, Linear.Form.eval, v1, v2]; omega
@@ -574,8 +576,8 @@ theorem factLinear_holds {f : IndexFact} {ρ h} (hf : f.HoldsAt ρ h) :
     · exact lengthRange_holds rfl (by rw [hlen]; rfl) F hF
   | index _ | bound _ _ _ | int _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | storeApart _ _ _ _ => simp [factLinear] at hF
 
-theorem linearFacts_holds {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) :
-    ∀ F ∈ linearFacts as, F.Holds (termValuation ρ h) := by
+theorem linearFacts_holds {as : List IndexAtom} {ρ h} (he : IndexHolds ε as ρ h) :
+    ∀ F ∈ linearFacts as, F.Holds (termValuation ε ρ h) := by
   intro F hF
   obtain ⟨a, ha, hm⟩ := List.mem_flatMap.mp (List.mem_eraseDups.mp hF)
   split at hm
@@ -583,11 +585,11 @@ theorem linearFacts_holds {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h)
     exact factLinear_holds (he a ha fun b hb => by rw [Option.isNone_iff_eq_none.mp hn] at hb; cases hb) F hm
   · cases hm
 
-theorem linearRaw_holds {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) :
-    ∀ F ∈ linearRaw as, F.Holds (termValuation ρ h) :=
+theorem linearRaw_holds {as : List IndexAtom} {ρ h} (he : IndexHolds ε as ρ h) :
+    ∀ F ∈ linearRaw as, F.Holds (termValuation ε ρ h) :=
   fun F hF => linearFacts_holds he F (List.mem_eraseDups.mpr hF)
 
-theorem intSlot_sound {as : List IndexAtom} {ρ h s} (he : IndexHolds as ρ h) (hs : intSlot as s = true) :
+theorem intSlot_sound {as : List IndexAtom} {ρ h s} (he : IndexHolds ε as ρ h) (hs : intSlot as s = true) :
     (intValue (ρ s)).isSome := by
   obtain ⟨a, ha, hm⟩ := List.any_eq_true.mp hs
   simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
@@ -602,8 +604,8 @@ theorem intSlot_sound {as : List IndexAtom} {ρ h s} (he : IndexHolds as ρ h) (
   | linear G => rw [hfa] at hf hat; exact hat.1 (.value s) (List.contains_iff_mem.mp hf)
   | index _ | bound _ _ _ | pastSafe _ | either _ _ | guarded _ _ _ _ | element _ _ _ | every _ _ _ _ | apart _ _ | storeApart _ _ _ _ => rw [hfa] at hf; cases hf
 
-theorem termDefined_sound {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) {t : Term}
-    (ht : termDefined as t = true) : (termValue ρ h t).isSome := by
+theorem termDefined_sound {as : List IndexAtom} {ρ h} (he : IndexHolds ε as ρ h) {t : Term}
+    (ht : termDefined as t = true) : (termValue ε ρ h t).isSome := by
   unfold termDefined at ht
   rcases Bool.or_eq_true_iff.mp ht with ht | ht
   · obtain ⟨k, s, p⟩ := t
@@ -643,8 +645,8 @@ def definedTerms (as : List IndexAtom) : List Term :=
     | .length x n => [.length x, .value n]
     | _ => [] else []
 
-theorem definedTerms_sound {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) {t : Term}
-    (ht : t ∈ definedTerms as) : (termValue ρ h t).isSome := by
+theorem definedTerms_sound {as : List IndexAtom} {ρ h} (he : IndexHolds ε as ρ h) {t : Term}
+    (ht : t ∈ definedTerms as) : (termValue ε ρ h t).isSome := by
   obtain ⟨a, ha, hm⟩ := List.mem_flatMap.mp ht
   split at hm
   · rename_i hn
@@ -680,15 +682,15 @@ as its term is stated defined. -/
 def rangesRaw (as : List IndexAtom) : List (Linear.Fact Term) :=
   ((definedTerms as).filter (·.kind == .value)).flatMap valueRange
 
-theorem valueRanges_holds {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) :
-    ∀ F ∈ valueRanges as, F.Holds (termValuation ρ h) := by
+theorem valueRanges_holds {as : List IndexAtom} {ρ h} (he : IndexHolds ε as ρ h) :
+    ∀ F ∈ valueRanges as, F.Holds (termValuation ε ρ h) := by
   intro F hF
   obtain ⟨t, ht, hF⟩ := List.mem_flatMap.mp hF
   obtain ⟨ht, hk⟩ := List.mem_filter.mp (List.mem_eraseDups.mp ht)
   exact valueRange_holds (by simpa using hk) (definedTerms_sound he ht) F hF
 
-theorem rangesRaw_holds {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) :
-    ∀ F ∈ rangesRaw as, F.Holds (termValuation ρ h) := by
+theorem rangesRaw_holds {as : List IndexAtom} {ρ h} (he : IndexHolds ε as ρ h) :
+    ∀ F ∈ rangesRaw as, F.Holds (termValuation ε ρ h) := by
   intro F hF
   obtain ⟨t, ht, hF⟩ := List.mem_flatMap.mp hF
   exact valueRanges_holds he F (List.mem_flatMap.mpr ⟨t, List.mem_eraseDups.mpr ht, hF⟩)
@@ -698,8 +700,8 @@ prepared once for every query against them (`Linear.Known`). -/
 def knownOf (as : List IndexAtom) : Linear.Known Term :=
   Linear.Known.build (linearRaw as) (rangesRaw as)
 
-theorem knownOf_holds {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) :
-    (knownOf as).Holds (termValuation ρ h) :=
+theorem knownOf_holds {as : List IndexAtom} {ρ h} (he : IndexHolds ε as ρ h) :
+    (knownOf as).Holds (termValuation ε ρ h) :=
   Linear.Known.build_holds (linearRaw_holds he) (rangesRaw_holds he)
 
 /-- Whether the atoms' linear facts entail a goal, alone or with the range of
@@ -707,8 +709,8 @@ each safe integer they name. -/
 @[inline] def entailsKnown (as : List IndexAtom) (goal : Linear.Fact Term) : Bool :=
   (knownOf as).entails goal
 
-theorem entailsKnown_sound {as : List IndexAtom} {ρ h} {goal : Linear.Fact Term} (he : IndexHolds as ρ h)
-    (hg : entailsKnown as goal = true) : goal.Holds (termValuation ρ h) :=
+theorem entailsKnown_sound {as : List IndexAtom} {ρ h} {goal : Linear.Fact Term} (he : IndexHolds ε as ρ h)
+    (hg : entailsKnown as goal = true) : goal.Holds (termValuation ε ρ h) :=
   Linear.Known.entails_sound (knownOf_holds he) hg
 
 /-- The first slot of `M z` meeting `p`, or `z`. -/
@@ -738,7 +740,7 @@ def pickTerm (M : Nat → List Nat) (m : PointClaims.Mapping) (a : List IndexAto
 
 theorem pickTerm_eq {M : Nat → List Nat} {m : PointClaims.Mapping} {a : List IndexAtom} {ρ : Env} {h : Heap}
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (t : Term) :
-    termValue ρ h (pickTerm M m a t) = termValue (PointClaims.mapEnv m ρ) h t :=
+    termValue ε ρ h (pickTerm M m a t) = termValue ε (PointClaims.mapEnv m ρ) h t :=
   termValue_slot (by rw [pick_eq hM]; rfl)
 
 /-- Whether the source's facts `K` (`knownOf a`) bound slot `k` by the length
@@ -769,8 +771,8 @@ theorem indexOfBits_safe {b : UInt64} {j : Int} (hb : SafeIntegers.SafeInt b j) 
     subst this; rfl
 
 theorem lengthBoundIn_sound {K : Linear.Known Term} {M : List Nat} {a : List IndexAtom} {k : Nat} {strict : Bool}
-    {ρ h} {v : Val} (hK : K.Holds (termValuation ρ h))
-    (hM : ∀ y ∈ M, ρ y = v) (hc : lengthBoundIn K M a k strict = true) (ha : IndexHolds a ρ h) :
+    {ρ h} {v : Val} (hK : K.Holds (termValuation ε ρ h))
+    (hM : ∀ y ∈ M, ρ y = v) (hc : lengthBoundIn K M a k strict = true) (ha : IndexHolds ε a ρ h) :
     ∃ s ls b idx, Footprints.storeOf v = some s ∧ h[s]? = some (.arr ls) ∧ ρ k = .num b ∧
       indexOfBits b = some idx ∧ idx + (if strict then 1 else 0) ≤ ls.length := by
   simp only [lengthBoundIn, Bool.and_eq_true] at hc
@@ -784,17 +786,17 @@ theorem lengthBoundIn_sound {K : Linear.Known Term} {M : List Nat} {a : List Ind
   simp only [Linear.Fact.Holds, Linear.Form.eval] at f1 f2 f3
   obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (termDefined_sound ha hd)
   obtain ⟨s, ls, hs, hl, rfl, -⟩ := lengthOf_store hn
-  have hvn : termValuation ρ h (.length y) = ls.length := by simp [termValuation, hn]
+  have hvn : termValuation ε ρ h (.length y) = ls.length := by simp [termValuation, hn]
   obtain ⟨j, hj⟩ := Option.isSome_iff_exists.mp (intSlot_sound ha hi)
   obtain ⟨b, hb, hsafe⟩ := intValue_safe hj
-  have hvi : termValuation ρ h (.value k) = j := by simp [termValuation, termValue_value, hj]
+  have hvi : termValuation ε ρ h (.value k) = j := by simp [termValuation, termValue_value, hj]
   rw [hvi, hvn] at f2; rw [hvi] at f1 f3
   have hm : ((maxArrayLength : Nat) : Int) = 4294967295 := rfl
   refine ⟨s, ls, b, j.toNat, by rw [← hM y hy]; exact hs, hl, hb,
     indexOfBits_safe hsafe (by omega) (by omega), by cases strict <;> simp at f2 ⊢ <;> omega⟩
 
 theorem lengthBound_sound {M : List Nat} {a : List IndexAtom} {k : Nat} {strict : Bool} {ρ h} {v : Val}
-    (hM : ∀ y ∈ M, ρ y = v) (hc : lengthBound M a k strict = true) (ha : IndexHolds a ρ h) :
+    (hM : ∀ y ∈ M, ρ y = v) (hc : lengthBound M a k strict = true) (ha : IndexHolds ε a ρ h) :
     ∃ s ls b idx, Footprints.storeOf v = some s ∧ h[s]? = some (.arr ls) ∧ ρ k = .num b ∧
       indexOfBits b = some idx ∧ idx + (if strict then 1 else 0) ≤ ls.length :=
   lengthBoundIn_sound (knownOf_holds ha) hM hc ha
@@ -805,8 +807,8 @@ def condFacts (as : List IndexAtom) (c : Nat) (neg : Bool) : List (Linear.Fact T
     | .linear F => some F
     | _ => none else none
 
-theorem condFacts_holds {as : List IndexAtom} {c : Nat} {neg : Bool} {ρ h} (he : IndexHolds as ρ h)
-    (hc : tagHolds .truthy (ρ c) = !neg) : ∀ F ∈ condFacts as c neg, F.Holds (termValuation ρ h) := by
+theorem condFacts_holds {as : List IndexAtom} {c : Nat} {neg : Bool} {ρ h} (he : IndexHolds ε as ρ h)
+    (hc : tagHolds .truthy (ρ c) = !neg) : ∀ F ∈ condFacts as c neg, F.Holds (termValuation ε ρ h) := by
   intro F hF
   obtain ⟨a, ha, hm⟩ := List.mem_filterMap.mp hF
   split at hm
@@ -837,7 +839,7 @@ through the absent key. -/
 theorem readBridge {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h)
     {g : HeapLinks.Link} (hg : g ∈ ls) (ha : g.alias = false) {f : String}
     (hf : g.field = .str f) (k : Term.Kind) (p : List String) :
-    termValue ρ h ⟨k, g.cell, f :: p⟩ = termValue ρ h ⟨k, g.value, p⟩ := by
+    termValue ε ρ h ⟨k, g.cell, f :: p⟩ = termValue ε ρ h ⟨k, g.value, p⟩ := by
   have := hl g hg
   simp only [ha, Bool.false_eq_true, ite_false] at this
   cases ho : g.optional
@@ -871,7 +873,7 @@ def bridgeReads (ls : HeapLinks.Links) : List (Nat × String × Nat) :=
 
 theorem bridgeReads_term {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h)
     {c v : Nat} {f : String} (hm : (c, f, v) ∈ bridgeReads ls) (k : Term.Kind) (p : List String) :
-    termValue ρ h ⟨k, c, f :: p⟩ = termValue ρ h ⟨k, v, p⟩ := by
+    termValue ε ρ h ⟨k, c, f :: p⟩ = termValue ε ρ h ⟨k, v, p⟩ := by
   obtain ⟨g, hg, hgm⟩ := List.mem_filterMap.mp hm
   split at hgm
   · cases hgm
@@ -928,7 +930,7 @@ def liftTerm (r : Nat → Nat) (reads : List (Nat × String × Nat)) : Nat → T
 
 theorem liftTerm_eq {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h)
     {r : Nat → Nat} (hr : ∀ x, ρ (r x) = ρ x) :
-    ∀ n t, termValue ρ h (liftTerm r (bridgeReads ls) n t) = termValue ρ h t := by
+    ∀ n t, termValue ε ρ h (liftTerm r (bridgeReads ls) n t) = termValue ε ρ h t := by
   intro n
   induction n with
   | zero => intro t; exact termValue_slot (hr _)
@@ -954,7 +956,7 @@ def lowerTerm (reads : List (Nat × String × Nat)) (t : Term) : Term :=
 
 theorem lowerTerm_eq {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h)
     {reads : List (Nat × String × Nat)} (hr : ∀ g ∈ reads, g ∈ bridgeReads ls) (t : Term) :
-    termValue ρ h (lowerTerm reads t) = termValue ρ h t := by
+    termValue ε ρ h (lowerTerm reads t) = termValue ε ρ h t := by
   obtain ⟨k, s, p⟩ := t
   cases p with
   | nil => rfl
@@ -1041,7 +1043,7 @@ def readEvery (reads : List (Nat × String × Nat)) (a : IndexAtom) : Option Ind
 
 theorem readEvery_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h)
     {reads : List (Nat × String × Nat)} (hr : ∀ g ∈ reads, g ∈ bridgeReads ls) {a b : IndexAtom}
-    (hab : readEvery reads a = some b) (ha : a.fact.HoldsAt ρ h) : b.fact.HoldsAt ρ h := by
+    (hab : readEvery reads a = some b) (ha : a.fact.HoldsAt ε ρ h) : b.fact.HoldsAt ε ρ h := by
   unfold readEvery at hab
   split at hab
   · rename_i s p st body hfa
@@ -1061,7 +1063,7 @@ theorem readEvery_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapL
       | elem => rfl
       | offset _ => rfl
       | project _ _ => rfl
-      | free t => exact lowerTerm_eq hl hr t
+      | free t => exact lowerTerm_eq (ε := ε) hl hr t
     · cases hab
   · cases hab
 
@@ -1081,7 +1083,7 @@ def readAtoms (ls : HeapLinks.Links) (as : List IndexAtom) : List IndexAtom :=
     | _ => none
 
 theorem readAtoms_holds {ls : HeapLinks.Links} {as : List IndexAtom} {ρ h}
-    (hl : HeapLinks.Holds ls ρ h) (he : IndexHolds as ρ h) : IndexHolds (readAtoms ls as) ρ h := by
+    (hl : HeapLinks.Holds ls ρ h) (he : IndexHolds ε as ρ h) : IndexHolds ε (readAtoms ls as) ρ h := by
   have hr : ∀ g ∈ (bridgeReads ls).filter (·.2.2 == 0), g ∈ bridgeReads ls := fun g hg => (List.mem_filter.mp hg).1
   simp only [readAtoms]
   split
@@ -1111,7 +1113,7 @@ def liftReadTerm (ls : HeapLinks.Links) (t : Term) : Term :=
   if t.path.isEmpty && t.kind == .value then liftTerm id (bridgeReads ls) 1 t else t
 
 theorem liftReadTerm_eq {ls : HeapLinks.Links} {ρ : Env} {h : Heap} (hl : HeapLinks.Holds ls ρ h) (t : Term) :
-    termValue ρ h (liftReadTerm ls t) = termValue ρ h t := by
+    termValue ε ρ h (liftReadTerm ls t) = termValue ε ρ h t := by
   unfold liftReadTerm; split
   · exact liftTerm_eq (r := id) hl (fun _ => rfl) 1 t
   · rfl
@@ -1132,7 +1134,7 @@ def liftEvery (ls : HeapLinks.Links) (a : IndexAtom) : IndexAtom :=
   unfold liftEvery; split <;> rfl
 
 theorem liftEvery_holds {ls : HeapLinks.Links} {ρ : Env} {h : Heap} {a : IndexAtom}
-    (hl : HeapLinks.Holds ls ρ h) (ha : a.fact.HoldsAt ρ h) : (liftEvery ls a).fact.HoldsAt ρ h := by
+    (hl : HeapLinks.Holds ls ρ h) (ha : a.fact.HoldsAt ε ρ h) : (liftEvery ls a).fact.HoldsAt ε ρ h := by
   unfold liftEvery
   split
   · rename_i s p st body hfact
@@ -1149,7 +1151,7 @@ def liftedEvery (ls : HeapLinks.Links) (as : List IndexAtom) : List IndexAtom :=
   (as.filter fun a => match a.fact with | .every .. | .linear .. => liftEvery ls a != a | _ => false).map (liftEvery ls)
 
 theorem liftedEvery_holds {ls : HeapLinks.Links} {as : List IndexAtom} {ρ : Env} {h : Heap}
-    (hl : HeapLinks.Holds ls ρ h) (ha : IndexHolds as ρ h) : IndexHolds (liftedEvery ls as) ρ h := by
+    (hl : HeapLinks.Holds ls ρ h) (ha : IndexHolds ε as ρ h) : IndexHolds ε (liftedEvery ls as) ρ h := by
   intro a hm hc
   obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hm
   exact liftEvery_holds hl (ha b (List.mem_filter.mp hb).1 (by simpa only [liftEvery_cond, liftEvery_negated] using hc))
@@ -1157,7 +1159,7 @@ theorem liftedEvery_holds {ls : HeapLinks.Links} {as : List IndexAtom} {ρ : Env
 /-- A knowledge with its read atoms (`readAtoms`) added. -/
 def withReadAtoms (k : Knowledge) : Knowledge := { k with indices := k.indices ++ readAtoms k.links k.indices ++ liftedEvery k.links k.indices }
 
-theorem withReadAtoms_holds {k : Knowledge} {ρ h} (hk : Holds k ρ h) : Holds (withReadAtoms k) ρ h :=
+theorem withReadAtoms_holds {k : Knowledge} {ρ h} (hk : Holds k ε ρ h) : Holds (withReadAtoms k) ε ρ h :=
   ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha =>
     (List.mem_append.mp ha).elim
       (fun ha => (List.mem_append.mp ha).elim (hk.2.2.2.2.2 a) (readAtoms_holds hk.2.2.1 hk.2.2.2.2.2 a))
@@ -1181,7 +1183,7 @@ def bridgeOf (ls : HeapLinks.Links) (as bs : List IndexAtom) : Option (Term → 
 
 theorem bridgeOf_eq {ls : HeapLinks.Links} {as bs : List IndexAtom} {c : Term → Term} {ρ : Env} {h : Heap}
     (hl : HeapLinks.Holds ls ρ h) (hc : bridgeOf ls as bs = some c) (t : Term) :
-    termValue ρ h (c t) = termValue ρ h t := by
+    termValue ε ρ h (c t) = termValue ε ρ h t := by
   simp only [bridgeOf] at hc
   split at hc
   · cases hc
@@ -1193,8 +1195,8 @@ def bridgeFacts (c : Term → Term) (known : List (Linear.Fact Term)) : List (Li
   known.filterMap (·.mapVars (some ∘ c))
 
 theorem bridgeFacts_holds {c : Term → Term} {known : List (Linear.Fact Term)} {ρ : Env} {h : Heap}
-    (hc : ∀ t, termValue ρ h (c t) = termValue ρ h t) (hk : ∀ G ∈ known, G.Holds (termValuation ρ h)) :
-    ∀ G ∈ bridgeFacts c known, G.Holds (termValuation ρ h) := by
+    (hc : ∀ t, termValue ε ρ h (c t) = termValue ε ρ h t) (hk : ∀ G ∈ known, G.Holds (termValuation ε ρ h)) :
+    ∀ G ∈ bridgeFacts c known, G.Holds (termValuation ε ρ h) := by
   intro G hG
   obtain ⟨G₀, hG₀, hm⟩ := List.mem_filterMap.mp hG
   refine (Linear.Fact.holds_mapVars hm fun x _ y hy => ?_).mpr (hk G₀ hG₀)
@@ -1207,8 +1209,8 @@ def bridgedDefined (c : Term → Term) (a : List IndexAtom) (t : Term) : Bool :=
   termDefined a t || ((definedTerms a).map c).contains t
 
 theorem bridgedDefined_sound {c : Term → Term} {a : List IndexAtom} {t : Term} {ρ : Env} {h : Heap}
-    (hc : ∀ t, termValue ρ h (c t) = termValue ρ h t) (ha : IndexHolds a ρ h) (hd : bridgedDefined c a t = true) :
-    (termValue ρ h t).isSome := by
+    (hc : ∀ t, termValue ε ρ h (c t) = termValue ε ρ h t) (ha : IndexHolds ε a ρ h) (hd : bridgedDefined c a t = true) :
+    (termValue ε ρ h t).isSome := by
   rcases Bool.or_eq_true_iff.mp hd with hd | hd
   · exact termDefined_sound ha hd
   · obtain ⟨u, hu, rfl⟩ := List.mem_map.mp (List.contains_iff_mem.mp hd)
@@ -1226,8 +1228,8 @@ def lengthBoundVia (c : Term → Term) (M : List Nat) (a : List IndexAtom) (k : 
       bridgedDefined c a n && K.entails (.le [(i, 1), (n, -1)] (if strict then -1 else 0))
 
 theorem lengthBoundVia_sound {c : Term → Term} {M : List Nat} {a : List IndexAtom} {k : Nat} {strict : Bool}
-    {ρ h} {v : Val} (hc : ∀ t, termValue ρ h (c t) = termValue ρ h t)
-    (hM : ∀ y ∈ M, ρ y = v) (hb : lengthBoundVia c M a k strict = true) (ha : IndexHolds a ρ h) :
+    {ρ h} {v : Val} (hc : ∀ t, termValue ε ρ h (c t) = termValue ε ρ h t)
+    (hM : ∀ y ∈ M, ρ y = v) (hb : lengthBoundVia c M a k strict = true) (ha : IndexHolds ε a ρ h) :
     ∃ s ls b idx, Footprints.storeOf v = some s ∧ h[s]? = some (.arr ls) ∧ ρ k = .num b ∧
       indexOfBits b = some idx ∧ idx + (if strict then 1 else 0) ≤ ls.length := by
   simp only [lengthBoundVia, Bool.and_eq_true] at hb
@@ -1246,13 +1248,13 @@ theorem lengthBoundVia_sound {c : Term → Term} {M : List Nat} {a : List IndexA
   obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp hdn
   simp only [termValue_length] at hn
   obtain ⟨s, ls, hs, hl, rfl, -⟩ := lengthOf_store hn
-  have hvn : termValuation ρ h (c (.length y)) = ls.length := by simp [termValuation, hc, hn]
+  have hvn : termValuation ε ρ h (c (.length y)) = ls.length := by simp [termValuation, hc, hn]
   have hdi := bridgedDefined_sound hc ha hi
   rw [hc] at hdi
   obtain ⟨j, hj⟩ := Option.isSome_iff_exists.mp hdi
   simp only [termValue_value] at hj
   obtain ⟨b, hb, hsafe⟩ := intValue_safe hj
-  have hvi : termValuation ρ h (c (.value k)) = j := by simp [termValuation, hc, termValue_value, hj]
+  have hvi : termValuation ε ρ h (c (.value k)) = j := by simp [termValuation, hc, termValue_value, hj]
   rw [hvi, hvn] at f2; rw [hvi] at f1 f3
   have hm : ((maxArrayLength : Nat) : Int) = 4294967295 := rfl
   refine ⟨s, ls, b, j.toNat, by rw [← hM y hy]; exact hs, hl, hb,
@@ -1284,7 +1286,7 @@ def elementsKnown (M : Nat → List Nat) (m : PointClaims.Mapping) (as : List In
 
 theorem elementsKnown_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {as : List IndexAtom}
     {s : Nat} {p : List String} {ρ : Env} {h : Heap}
-    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (ha : IndexHolds as ρ h)
+    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (ha : IndexHolds ε as ρ h)
     (hk : elementsKnown M m as s p = true) :
     ∃ w sto ls, readPath h (PointClaims.mapEnv m ρ s) p = some w ∧
       elementsOf w = some sto ∧ h[sto]? = some (.arr ls) := by
@@ -1337,10 +1339,10 @@ def linearFollows (M : Nat → List Nat) (m : PointClaims.Mapping) (a : List Ind
 
 theorem linearEntailed_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {a : List IndexAtom}
     {B : Option (Term → Term)} {known : List (Linear.Fact Term)} {F : Linear.Fact Term} {ρ h}
-    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hB : ∀ c, B = some c → ∀ t, termValue ρ h (c t) = termValue ρ h t)
-    {K : Linear.Known Term} (hf : linearEntailed M m a B K known F = true) (ha : IndexHolds a ρ h)
-    (hK : K.Holds (termValuation ρ h)) (hk : ∀ G ∈ known, G.Holds (termValuation ρ h)) :
-    (IndexFact.linear F).HoldsAt (PointClaims.mapEnv m ρ) h := by
+    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hB : ∀ c, B = some c → ∀ t, termValue ε ρ h (c t) = termValue ε ρ h t)
+    {K : Linear.Known Term} (hf : linearEntailed M m a B K known F = true) (ha : IndexHolds ε a ρ h)
+    (hK : K.Holds (termValuation ε ρ h)) (hk : ∀ G ∈ known, G.Holds (termValuation ε ρ h)) :
+    (IndexFact.linear F).HoldsAt ε (PointClaims.mapEnv m ρ) h := by
   unfold linearEntailed at hf
   split at hf
   · split at hf
@@ -1348,7 +1350,7 @@ theorem linearEntailed_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {a
       simp only [Bool.and_eq_true, List.all_eq_true] at hf
       obtain ⟨hv, he⟩ := hf
       have hv' : ∀ x ∈ F.vars, ∀ y, (fun t => some (pickTerm M m a t)) x = some y →
-          termValuation ρ h y = termValuation (PointClaims.mapEnv m ρ) h x := by
+          termValuation ε ρ h y = termValuation ε (PointClaims.mapEnv m ρ) h x := by
         intro x _ y hy; cases hy; simp only [termValuation, pickTerm_eq hM]
       refine ⟨fun x hx => ?_, (Linear.Fact.holds_mapVars hF' hv').mp
         (Linear.Known.entails_sound hK he)⟩
@@ -1365,7 +1367,7 @@ theorem linearEntailed_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {a
       simp only [Bool.and_eq_true, List.all_eq_true] at hf
       obtain ⟨hv, he⟩ := hf
       have hv' : ∀ x ∈ F.vars, ∀ y, (fun t => some (c (pickTerm M m a t))) x = some y →
-          termValuation ρ h y = termValuation (PointClaims.mapEnv m ρ) h x := by
+          termValuation ε ρ h y = termValuation ε (PointClaims.mapEnv m ρ) h x := by
         intro x _ y hy; cases hy; simp only [termValuation, hc, pickTerm_eq hM]
       refine ⟨fun x hx => ?_, (Linear.Fact.holds_mapVars hF' hv').mp
         (Linear.entailsWith_sound he (bridgeFacts_holds hc hk) (bridgeFacts_holds hc (rangesRaw_holds ha)))⟩
@@ -1377,11 +1379,11 @@ theorem linearEntailed_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {a
     · cases hf
 
 theorem linearFollowsIn_sound {K : Linear.Known Term} {M : Nat → List Nat} {m : PointClaims.Mapping} {a : List IndexAtom}
-    {B : Option (Term → Term)} {t : IndexAtom} {ρ h} (hK : K.Holds (termValuation ρ h))
-    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hB : ∀ c, B = some c → ∀ t, termValue ρ h (c t) = termValue ρ h t)
-    (hf : linearFollowsIn K M m a B t = true) (ha : IndexHolds a ρ h)
+    {B : Option (Term → Term)} {t : IndexAtom} {ρ h} (hK : K.Holds (termValuation ε ρ h))
+    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hB : ∀ c, B = some c → ∀ t, termValue ε ρ h (c t) = termValue ε ρ h t)
+    (hf : linearFollowsIn K M m a B t = true) (ha : IndexHolds ε a ρ h)
     (hcond : ∀ c, t.cond = some c → tagHolds .truthy (PointClaims.mapEnv m ρ c) = !t.negated) :
-    t.fact.HoldsAt (PointClaims.mapEnv m ρ) h := by
+    t.fact.HoldsAt ε (PointClaims.mapEnv m ρ) h := by
   unfold linearFollowsIn at hf
   cases ht : t.fact with
   | int k =>
@@ -1408,7 +1410,7 @@ theorem linearFollowsIn_sound {K : Linear.Known Term} {M : Nat → List Nat} {m 
       obtain ⟨c, hc, hf⟩ := List.any_eq_true.mp hf
       have hcv : tagHolds .truthy (ρ c) = !t.negated := by
         rw [hM _ _ hc]; exact hcond c' hc'
-      have hkn : ∀ G ∈ linearRaw a ++ condFacts a c t.negated, G.Holds (termValuation ρ h) := by
+      have hkn : ∀ G ∈ linearRaw a ++ condFacts a c t.negated, G.Holds (termValuation ε ρ h) := by
         intro G hG
         rcases List.mem_append.mp hG with hG | hG
         · exact linearRaw_holds ha G hG
@@ -1456,10 +1458,10 @@ theorem linearFollowsIn_sound {K : Linear.Known Term} {M : Nat → List Nat} {m 
 
 theorem linearFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {a : List IndexAtom}
     {B : Option (Term → Term)} {t : IndexAtom} {ρ h}
-    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hB : ∀ c, B = some c → ∀ t, termValue ρ h (c t) = termValue ρ h t)
-    (hf : linearFollows M m a B t = true) (ha : IndexHolds a ρ h)
+    (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hB : ∀ c, B = some c → ∀ t, termValue ε ρ h (c t) = termValue ε ρ h t)
+    (hf : linearFollows M m a B t = true) (ha : IndexHolds ε a ρ h)
     (hcond : ∀ c, t.cond = some c → tagHolds .truthy (PointClaims.mapEnv m ρ c) = !t.negated) :
-    t.fact.HoldsAt (PointClaims.mapEnv m ρ) h :=
+    t.fact.HoldsAt ε (PointClaims.mapEnv m ρ) h :=
   linearFollowsIn_sound (knownOf_holds ha) hM hB hf ha hcond
 
 /-! ## Guarded facts (ARITHMETIC.md, "Guarded clauses")
@@ -1573,8 +1575,8 @@ def pastLefts (as : List IndexAtom) (k : Nat) : List IndexAtom :=
     | none, .either A (.pastSafe k') => if k' == k then some { fact := A } else none
     | _, _ => none
 
-theorem pastLefts_holds {as : List IndexAtom} {ρ h k} (he : IndexHolds as ρ h)
-    (hk : ¬ (IndexFact.pastSafe k).HoldsAt ρ h) : IndexHolds (pastLefts as k) ρ h := by
+theorem pastLefts_holds {as : List IndexAtom} {ρ h k} (he : IndexHolds ε as ρ h)
+    (hk : ¬ (IndexFact.pastSafe k).HoldsAt ε ρ h) : IndexHolds ε (pastLefts as k) ρ h := by
   intro b hb _
   obtain ⟨a, ha, hm⟩ := List.mem_filterMap.mp hb
   split at hm
@@ -1598,8 +1600,8 @@ def releasePast (as : List IndexAtom) : List IndexAtom :=
     | none, .either A (.pastSafe k) => if intSlot as k then some { fact := A } else none
     | _, _ => none
 
-theorem releasePast_holds {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) :
-    IndexHolds (releasePast as) ρ h := by
+theorem releasePast_holds {as : List IndexAtom} {ρ h} (he : IndexHolds ε as ρ h) :
+    IndexHolds ε (releasePast as) ρ h := by
   intro b hb _
   obtain ⟨a, ha, hm⟩ := List.mem_filterMap.mp hb
   split at hm
@@ -1647,12 +1649,12 @@ def guardEntails (lt : Term → Term) (lg ld : Nat → List String → Nat × Li
 
 theorem guardEntails_sound {lt : Term → Term} {lg ld : Nat → List String → Nat × List String}
     {tags : Nat → List String → GuardTag → Bool} {ρ : Env} {h : Heap}
-    (hlt : ∀ t, termValue ρ h (lt t) = termValue ρ h t)
+    (hlt : ∀ t, termValue ε ρ h (lt t) = termValue ε ρ h t)
     (hlg : ∀ s p, readGuard h (ρ (lg s p).1) (lg s p).2 = readGuard h (ρ s) p)
     (hld : ∀ s p, readGuard h (ρ (ld s p).1) (ld s p).2 = readGuard h (ρ s) p)
     (htags : ∀ s p t, tags s p t = true → readGuard h (ρ s) p = some t.val) :
-    ∀ (F : IndexFact) (as : List IndexAtom), guardEntails lt lg ld tags as F = true → IndexHolds as ρ h →
-      F.HoldsAt ρ h := by
+    ∀ (F : IndexFact) (as : List IndexAtom), guardEntails lt lg ld tags as F = true → IndexHolds ε as ρ h →
+      F.HoldsAt ε ρ h := by
   intro F
   induction F with
   | either A B ihA ihB =>
@@ -1665,7 +1667,7 @@ theorem guardEntails_sound {lt : Term → Term} {lg ld : Nat → List String →
     · split at hP
       · rename_i k
         obtain ⟨hA, -⟩ := Bool.and_eq_true_iff.mp hP
-        by_cases hk : (IndexFact.pastSafe k).HoldsAt ρ h
+        by_cases hk : (IndexFact.pastSafe k).HoldsAt ε ρ h
         · exact .inr hk
         · refine .inl (ihA _ hA fun b hb hc => ?_)
           rcases List.mem_append.mp hb with hb | hb
@@ -1679,7 +1681,7 @@ theorem guardEntails_sound {lt : Term → Term} {lg ld : Nat → List String →
     · rename_i F' hF'
       simp only [Bool.and_eq_true, List.all_eq_true] at hf
       obtain ⟨hv, he⟩ := hf
-      have hv' : ∀ x ∈ F.vars, ∀ y, (some ∘ lt) x = some y → termValuation ρ h y = termValuation ρ h x := by
+      have hv' : ∀ x ∈ F.vars, ∀ y, (some ∘ lt) x = some y → termValuation ε ρ h y = termValuation ε ρ h x := by
         intro x _ y hy; cases hy; simp only [termValuation, hlt]
       refine ⟨fun x hx => ?_, (Linear.Fact.holds_mapVars hF' hv').mp
         (Linear.entailsWith_sound he (bridgeFacts_holds hlt (linearRaw_holds ha))
@@ -1734,7 +1736,7 @@ def pastClash (as : List IndexAtom) : Bool :=
     | .pastSafe k => intSlot as k
     | _ => false
 
-theorem pastClash_sound {as : List IndexAtom} {ρ h} (hc : pastClash as = true) (ha : IndexHolds as ρ h) : False := by
+theorem pastClash_sound {as : List IndexAtom} {ρ h} (hc : pastClash as = true) (ha : IndexHolds ε as ρ h) : False := by
   obtain ⟨a, haa, hm⟩ := List.any_eq_true.mp hc
   simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at hm
   obtain ⟨hn, hm⟩ := hm
@@ -1760,8 +1762,8 @@ def caseEntails (check : List IndexAtom → IndexFact → Bool) : Nat → List I
     | _ => false
 
 theorem caseEntails_sound {check : List IndexAtom → IndexFact → Bool} {ρ : Env} {h : Heap}
-    (hcheck : ∀ as F, check as F = true → IndexHolds as ρ h → F.HoldsAt ρ h) :
-    ∀ n as F, caseEntails check n as F = true → IndexHolds as ρ h → F.HoldsAt ρ h := by
+    (hcheck : ∀ as F, check as F = true → IndexHolds ε as ρ h → F.HoldsAt ε ρ h) :
+    ∀ n as F, caseEntails check n as F = true → IndexHolds ε as ρ h → F.HoldsAt ε ρ h := by
   intro n
   induction n with
   | zero =>
@@ -1792,7 +1794,7 @@ theorem caseEntails_sound {check : List IndexAtom → IndexFact → Bool} {ρ : 
         obtain ⟨hA, hB⟩ := Bool.and_eq_true_iff.mp ht
         have hab := ha a haa (fun b hb => by rw [hc] at hb; cases hb)
         rw [he] at hab
-        have extend : ∀ C : IndexFact, C.HoldsAt ρ h → IndexHolds (as.erase a ++ [{ fact := C }]) ρ h := by
+        have extend : ∀ C : IndexFact, C.HoldsAt ε ρ h → IndexHolds ε (as.erase a ++ [{ fact := C }]) ρ h := by
           intro C hC b hb hbcond
           rcases List.mem_append.mp hb with hb | hb
           · exact ha b (List.mem_of_mem_erase hb) hbcond
@@ -1823,8 +1825,8 @@ theorem guardFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ls 
     {tags : Nat → List String → GuardTag → Bool} {a : List IndexAtom} {t : IndexAtom} {ρ h}
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hl : HeapLinks.Holds ls ρ h)
     (htags : ∀ s p t, tags s p t = true → readGuard h (ρ s) p = some t.val)
-    (hf : guardFollows M m ls tags a t = true) (ha : IndexHolds a ρ h) :
-    t.fact.HoldsAt (PointClaims.mapEnv m ρ) h := by
+    (hf : guardFollows M m ls tags a t = true) (ha : IndexHolds ε a ρ h) :
+    t.fact.HoldsAt ε (PointClaims.mapEnv m ρ) h := by
   simp only [guardFollows, Bool.and_eq_true] at hf
   obtain ⟨-, hf⟩ := hf
   split at hf <;> try { cases hf }
@@ -1900,8 +1902,8 @@ def storeFollows (M : Nat → List Nat) (m : PointClaims.Mapping) (ls : HeapLink
 theorem storeFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ls : HeapLinks.Links}
     {a : List IndexAtom} {t : IndexAtom} {ρ h}
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hl : HeapLinks.Holds ls ρ h)
-    (hf : storeFollows M m ls a t = true) (ha : IndexHolds a ρ h) :
-    t.fact.HoldsAt (PointClaims.mapEnv m ρ) h := by
+    (hf : storeFollows M m ls a t = true) (ha : IndexHolds ε a ρ h) :
+    t.fact.HoldsAt ε (PointClaims.mapEnv m ρ) h := by
   simp only [storeFollows, Bool.and_eq_true] at hf
   obtain ⟨-, hf⟩ := hf
   split at hf
@@ -1916,7 +1918,7 @@ theorem storeFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {ls 
   have reach : ∀ u w, (∀ s t, Footprints.storeOf (ρ u) = some s → Footprints.storeOf (ρ w) = some t → s ≠ t) →
       (pathReaches M ls (PointClaims.slot m x) p u && pathReaches M ls (PointClaims.slot m y) q w ||
         pathReaches M ls (PointClaims.slot m x) p w && pathReaches M ls (PointClaims.slot m y) q u) = true →
-      (IndexFact.storeApart x p y q).HoldsAt (PointClaims.mapEnv m ρ) h := by
+      (IndexFact.storeApart x p y q).HoldsAt ε (PointClaims.mapEnv m ρ) h := by
     intro u w hne hr
     simp only [Bool.or_eq_true, Bool.and_eq_true] at hr
     rcases hr with ⟨hx, hy⟩ | ⟨hx, hy⟩
@@ -1945,8 +1947,8 @@ def guardBodyFollows (M : Nat → List Nat) (m : PointClaims.Mapping) (a : List 
 
 theorem guardBodyFollows_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {a : List IndexAtom}
     {t : IndexAtom} {ρ h} (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x)
-    (hf : guardBodyFollows M m a t = true) (ha : IndexHolds a ρ h) :
-    t.fact.HoldsAt (PointClaims.mapEnv m ρ) h := by
+    (hf : guardBodyFollows M m a t = true) (ha : IndexHolds ε a ρ h) :
+    t.fact.HoldsAt ε (PointClaims.mapEnv m ρ) h := by
   simp only [guardBodyFollows, Bool.and_eq_true] at hf
   obtain ⟨-, hf⟩ := hf
   split at hf
@@ -2000,7 +2002,7 @@ def guardTags (k : Knowledge) (s : Nat) : List String → GuardTag → Bool
       onlyTag f.contents t
   | _, _ => false
 
-theorem guardTags_sound {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds k ρ h) :
+theorem guardTags_sound {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds k ε ρ h) :
     ∀ s p t, guardTags k s p t = true → readGuard h (ρ s) p = some t.val := by
   intro s p t ht
   match p, ht with
@@ -2048,8 +2050,8 @@ theorem indicesCheckWith_sound {tags : Nat → List String → GuardTag → Bool
     {ls : HeapLinks.Links} {a b : List IndexAtom} {m ρ h}
     (htags : ∀ s p t, tags s p t = true → readGuard h (ρ s) p = some t.val)
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hl : HeapLinks.Holds ls ρ h) (hc : indicesCheckWith tags M ls a b m = true)
-    (ha : IndexHolds a ρ h) :
-    IndexHolds b (PointClaims.mapEnv m ρ) h := by
+    (ha : IndexHolds ε a ρ h) :
+    IndexHolds ε b (PointClaims.mapEnv m ρ) h := by
   intro t ht hcond
   rcases Bool.or_eq_true_iff.mp (List.all_eq_true.mp hc t ht) with hc' | hgb
   case inr => exact guardBodyFollows_sound hM hgb ha
@@ -2076,15 +2078,15 @@ theorem indicesCheckWith_sound {tags : Nat → List String → GuardTag → Bool
 
 theorem indicesCheckBy_sound {M : Nat → List Nat} {ls : HeapLinks.Links} {a b : List IndexAtom} {m ρ h}
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (hl : HeapLinks.Holds ls ρ h) (hc : indicesCheckBy M ls a b m = true)
-    (ha : IndexHolds a ρ h) :
-    IndexHolds b (PointClaims.mapEnv m ρ) h :=
+    (ha : IndexHolds ε a ρ h) :
+    IndexHolds ε b (PointClaims.mapEnv m ρ) h :=
   indicesCheckWith_sound (fun _ _ _ hf => by cases hf) hM hl hc ha
 
 /-- Atoms about slots past the pushed one. -/
 def shiftIndices (as : List IndexAtom) : List IndexAtom := mapIndices (fun i => some (i + 1)) as
 
-theorem shiftIndices_holds {as : List IndexAtom} {ρ h v} (he : IndexHolds as ρ h) :
-    IndexHolds (shiftIndices as) (push v ρ) h :=
+theorem shiftIndices_holds {as : List IndexAtom} {ρ h v} (he : IndexHolds ε as ρ h) :
+    IndexHolds ε (shiftIndices as) (push v ρ) h :=
   mapIndices_holds (fun s t hst => by cases hst; rfl) he
 
 /-- Whether a fact reads the environment alone: `index`, `int`, and a linear
@@ -2099,7 +2101,7 @@ def IndexFact.envOnly : IndexFact → Bool
 
 /-- A fact reading the environment alone holds in every heap. -/
 theorem IndexFact.holdsAt_envOnly {F : IndexFact} {ρ : Env} {h : Heap} (henv : F.envOnly = true)
-    (hF : F.HoldsAt ρ h) (h' : Heap) : F.HoldsAt ρ h' := by
+    (hF : F.HoldsAt ε ρ h) (h' : Heap) : F.HoldsAt ε ρ h' := by
   induction F with
   | either A B ihA ihB =>
     simp only [IndexFact.envOnly, Bool.and_eq_true] at henv
@@ -2121,8 +2123,8 @@ theorem IndexFact.holdsAt_envOnly {F : IndexFact} {ρ : Env} {h : Heap} (henv : 
 /-- The atoms whose facts read the environment alone, kept by any heap change. -/
 def envIndices (as : List IndexAtom) : List IndexAtom := as.filter (·.fact.envOnly)
 
-theorem envIndices_holds {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) (h' : Heap) :
-    IndexHolds (envIndices as) ρ h' := by
+theorem envIndices_holds {as : List IndexAtom} {ρ h} (he : IndexHolds ε as ρ h) (h' : Heap) :
+    IndexHolds ε (envIndices as) ρ h' := by
   intro a ha hc
   obtain ⟨ha, henv⟩ := List.mem_filter.mp ha
   exact IndexFact.holdsAt_envOnly henv (he a ha hc) h'
@@ -2133,8 +2135,8 @@ def keptIndices (c : Changes) (first : Nat → String → Bool) (as : List Index
   as.filter (fun a => a.fact.keptBy c first || a.fact.everyKept c first)
 
 theorem keptIndices_holds {c : Changes} {first : Nat → String → Bool} {as : List IndexAtom} {ρ h h'}
-    (he : IndexHolds as ρ h) (hc : c.Holds h h') (hf : FirstKept first ρ h h') :
-    IndexHolds (keptIndices c first as) ρ h' := by
+    (he : IndexHolds ε as ρ h) (hc : c.Holds h h') (hf : FirstKept first ρ h h') :
+    IndexHolds ε (keptIndices c first as) ρ h' := by
   intro a ha hcd
   obtain ⟨ha, hk⟩ := List.mem_filter.mp ha
   exact (Bool.or_eq_true_iff.mp hk).elim
@@ -2147,8 +2149,8 @@ def keptIndicesWith (c : Changes) (first views : Nat → String → Bool) (as : 
   as.filter (fun a => a.fact.keptWith c first views || a.fact.everyKept c first)
 
 theorem keptIndicesWith_holds {c : Changes} {first views : Nat → String → Bool} {as : List IndexAtom} {ρ h h'}
-    (he : IndexHolds as ρ h) (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hv : ViewsKept views ρ h h') :
-    IndexHolds (keptIndicesWith c first views as) ρ h' := by
+    (he : IndexHolds ε as ρ h) (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hv : ViewsKept views ρ h h') :
+    IndexHolds ε (keptIndicesWith c first views as) ρ h' := by
   intro a ha hcd
   obtain ⟨ha, hk⟩ := List.mem_filter.mp ha
   exact (Bool.or_eq_true_iff.mp hk).elim
@@ -2163,9 +2165,9 @@ def keptIndicesGrown (c : Changes) (first views : Nat → String → Bool) (grow
 
 theorem keptIndicesGrown_holds {c : Changes} {first views : Nat → String → Bool} {grown : Nat → Bool}
     {as : List IndexAtom} {ρ h h'}
-    (he : IndexHolds as ρ h) (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hv : ViewsKept views ρ h h')
+    (he : IndexHolds ε as ρ h) (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hv : ViewsKept views ρ h h')
     (hg : StoresGrown grown ρ h h') :
-    IndexHolds (keptIndicesGrown c first views grown as) ρ h' := by
+    IndexHolds ε (keptIndicesGrown c first views grown as) ρ h' := by
   intro a ha hcd
   obtain ⟨ha, hk⟩ := List.mem_filter.mp ha
   exact (Bool.or_eq_true_iff.mp hk).elim
@@ -2225,8 +2227,8 @@ def eliminateLinear (drop : List Nat) (as : List IndexAtom) : List IndexAtom :=
       let known := linearFacts as ++ condFacts as c neg
       ((Linear.eliminateAll (Linear.strengthen known) used).filter (keep known)).map fun F => ⟨.linear F, some c, neg⟩
 
-theorem eliminateLinear_holds {drop : List Nat} {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) :
-    IndexHolds (eliminateLinear drop as) ρ h := by
+theorem eliminateLinear_holds {drop : List Nat} {as : List IndexAtom} {ρ h} (he : IndexHolds ε as ρ h) :
+    IndexHolds ε (eliminateLinear drop as) ρ h := by
   simp only [eliminateLinear]
   split
   · exact he
@@ -2259,8 +2261,8 @@ def eliminateIndices (drop : List Nat) (as : List IndexAtom) : List IndexAtom :=
   eliminateLinear drop (as ++ if drop.any (fun d => as.any fun a => a.fact == .pastSafe d ||
     match a.fact with | .either _ (.pastSafe k) => k == d | _ => false) then releasePast as else [])
 
-theorem eliminateIndices_holds {drop : List Nat} {as : List IndexAtom} {ρ h} (he : IndexHolds as ρ h) :
-    IndexHolds (eliminateIndices drop as) ρ h :=
+theorem eliminateIndices_holds {drop : List Nat} {as : List IndexAtom} {ρ h} (he : IndexHolds ε as ρ h) :
+    IndexHolds ε (eliminateIndices drop as) ρ h :=
   eliminateLinear_holds fun a ha hc => by
     rcases List.mem_append.mp ha with ha | ha
     · exact he a ha hc
@@ -2276,19 +2278,19 @@ def atomLinear : IndexFact → List (Linear.Fact Term)
   | .length x n => [.le [(.value n, 1), (.length x, -1)] 0, .le [(.value n, -1), (.length x, 1)] 0]
   | _ => []
 
-theorem atomLinear_holds {f : IndexFact} {ρ h} (hf : f.HoldsAt ρ h) :
-    ∀ F ∈ atomLinear f, (IndexFact.linear F).HoldsAt ρ h := by
+theorem atomLinear_holds {f : IndexFact} {ρ h} (hf : f.HoldsAt ε ρ h) :
+    ∀ F ∈ atomLinear f, (IndexFact.linear F).HoldsAt ε ρ h := by
   intro F hF
   cases f with
   | linear G => simp only [atomLinear, List.mem_singleton] at hF; subst hF; exact hf
   | length x n =>
     obtain ⟨s, ls, hs, hl, hnv, hm⟩ := hf
-    have hlen : termValue ρ h (.length x) = some (ls.length : Int) := lengthOf_of_store hs hl hm
-    have hval : termValue ρ h (.value n) = some (ls.length : Int) := by
+    have hlen : termValue ε ρ h (.length x) = some (ls.length : Int) := lengthOf_of_store hs hl hm
+    have hval : termValue ε ρ h (.value n) = some (ls.length : Int) := by
       simp only [termValue_value, hnv, intValue_length hm]
-    have v1 : termValuation ρ h (.length x) = ls.length := by simp [termValuation, hlen]
-    have v2 : termValuation ρ h (.value n) = ls.length := by simp [termValuation, hval]
-    have hdef : ∀ t ∈ [Term.value n, Term.length x], (termValue ρ h t).isSome := by
+    have v1 : termValuation ε ρ h (.length x) = ls.length := by simp [termValuation, hlen]
+    have v2 : termValuation ε ρ h (.value n) = ls.length := by simp [termValuation, hval]
+    have hdef : ∀ t ∈ [Term.value n, Term.length x], (termValue ε ρ h t).isSome := by
       intro t ht
       simp only [List.mem_cons, List.not_mem_nil, or_false] at ht
       rcases ht with rfl | rfl
@@ -2315,7 +2317,7 @@ def liftDropped (dropped : Nat → Bool) (reads : List (Nat × String × Nat)) :
 
 theorem liftDropped_eq {ls : HeapLinks.Links} {dropped : Nat → Bool} {ρ : Env} {h : Heap}
     (hl : HeapLinks.Holds ls ρ h) {reads : List (Nat × String × Nat)} (hr : ∀ g ∈ reads, g ∈ bridgeReads ls) :
-    ∀ n t t', liftDropped dropped reads n t = some t' → termValue ρ h t' = termValue ρ h t := by
+    ∀ n t t', liftDropped dropped reads n t = some t' → termValue ε ρ h t' = termValue ε ρ h t := by
   intro n
   induction n with
   | zero => intro t t' ht; simp only [liftDropped] at ht; split at ht <;> simp_all
@@ -2343,7 +2345,7 @@ def restateReads (ls : HeapLinks.Links) (dropped : Nat → Bool) (as : List Inde
     else none
 
 theorem restateReads_holds {ls : HeapLinks.Links} {dropped : Nat → Bool} {as : List IndexAtom} {ρ h}
-    (hl : HeapLinks.Holds ls ρ h) (he : IndexHolds as ρ h) : IndexHolds (restateReads ls dropped as) ρ h := by
+    (hl : HeapLinks.Holds ls ρ h) (he : IndexHolds ε as ρ h) : IndexHolds ε (restateReads ls dropped as) ρ h := by
   simp only [restateReads]
   split
   · intro a ha; cases ha
@@ -2428,7 +2430,7 @@ def restateStores (ls : HeapLinks.Links) (dropped : Nat → Bool) (as : List Ind
     else none
 
 theorem restateStores_holds {ls : HeapLinks.Links} {dropped : Nat → Bool} {as : List IndexAtom} {ρ h}
-    (hl : HeapLinks.Holds ls ρ h) (he : IndexHolds as ρ h) : IndexHolds (restateStores ls dropped as) ρ h := by
+    (hl : HeapLinks.Holds ls ρ h) (he : IndexHolds ε as ρ h) : IndexHolds ε (restateStores ls dropped as) ρ h := by
   simp only [restateStores]
   split
   · intro a ha; cases ha
@@ -2443,7 +2445,7 @@ theorem restateStores_holds {ls : HeapLinks.Links} {dropped : Nat → Bool} {as 
           let (y, q) ← liftPath dropped ((plainReads ls).filter fun g => dropped g.2.2)
             ((plainReads ls).filter fun g => dropped g.2.2).length (w, q)
           pure ({ fact := .storeApart x p y q } : IndexAtom)
-          else none) = some c → c.fact.HoldsAt ρ h := by
+          else none) = some c → c.fact.HoldsAt ε ρ h := by
       intro u w p q hap c hc
       split at hc
       · simp only [Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def, Option.some.injEq] at hc
@@ -2476,14 +2478,14 @@ def dropIndices (ls : HeapLinks.Links) (as : List IndexAtom) : List IndexAtom :=
   mapIndices (fun i => if i = 0 then none else some (i - 1)) restated
 
 theorem dropIndices_holds {ls : HeapLinks.Links} {as : List IndexAtom} {ρ h v}
-    (hl : HeapLinks.Holds ls (push v ρ) h) (he : IndexHolds as (push v ρ) h) :
-    IndexHolds (dropIndices ls as) ρ h := by
+    (hl : HeapLinks.Holds ls (push v ρ) h) (he : IndexHolds ε as (push v ρ) h) :
+    IndexHolds ε (dropIndices ls as) ρ h := by
   have he := eliminateIndices_holds (drop := [0]) (as := as ++ restateReads ls (· == 0) as ++ restateStores ls (· == 0) as)
     fun a ha => (List.mem_append.mp ha).elim
       (fun ha => (List.mem_append.mp ha).elim (he a) (restateReads_holds hl he a)) (restateStores_holds hl he a)
   unfold dropIndices
   generalize eliminateIndices [0] (as ++ restateReads ls (· == 0) as ++ restateStores ls (· == 0) as) = as at he ⊢
-  have hr : IndexHolds (match HeapLinks.neighbors ls 0 with
+  have hr : IndexHolds ε (match HeapLinks.neighbors ls 0 with
       | y :: _ => as ++ mapIndices (fun i => some (if i = 0 then y else i)) as
       | [] => as) (push v ρ) h := by
     split
@@ -2511,8 +2513,8 @@ def promoteIndices (ls : HeapLinks.Links) (as : List IndexAtom) (slot : Nat) (q 
     a.cond.any fun c => (HeapLinks.aliases ls slot).contains c).map ({ · with cond := none })
 
 theorem promoteIndices_holds {ls : HeapLinks.Links} {as : List IndexAtom} {slot : Nat} {q : Bool} {ρ h}
-    (hl : HeapLinks.Holds ls ρ h) (he : IndexHolds as ρ h) (ht : tagHolds .truthy (ρ slot) = q) :
-    IndexHolds (promoteIndices ls as slot q) ρ h := by
+    (hl : HeapLinks.Holds ls ρ h) (he : IndexHolds ε as ρ h) (ht : tagHolds .truthy (ρ slot) = q) :
+    IndexHolds ε (promoteIndices ls as slot q) ρ h := by
   intro a ha hc
   rcases List.mem_append.mp ha with ha | ha
   · exact he a ha hc
@@ -2529,8 +2531,8 @@ def check (a b : Knowledge) (m : PointClaims.Mapping) : Bool :=
     (HeapLinks.check a.links b.links m && (HeapSeparation.check a.separation b.separation m &&
       (elemsCheckBy (fun x => [x]) a.elems b.elems m && indicesCheckBy (fun x => [x]) a.links a.indices b.indices m))))
 
-theorem check_sound {a b m ρ h} (hc : check a b m = true) (ha : Holds a ρ h) :
-    Holds b (PointClaims.mapEnv m ρ) h := by
+theorem check_sound {a b m ρ h} (hc : check a b m = true) (ha : Holds a ε ρ h) :
+    Holds b ε (PointClaims.mapEnv m ρ) h := by
   simp only [check,Bool.and_eq_true] at hc
   refine ⟨HeapFacts.check_sound hc.1 ha.1,?_,HeapLinks.check_sound hc.2.2.1 ha.2.2.1,
     HeapSeparation.check_sound hc.2.2.2.1 ha.2.2.2.1,
@@ -2545,7 +2547,7 @@ def shift (k : Knowledge) : Knowledge :=
   ⟨HeapFacts.shift k.cells,HeapFacts.shift k.values,HeapLinks.pull k.links (fun i => [i+1]),
     HeapSeparation.shift k.separation, shiftElems k.elems, shiftIndices k.indices⟩
 
-theorem shift_holds {k ρ h v} (hk : Holds k ρ h) : Holds (shift k) (push v ρ) h := by
+theorem shift_holds {k ρ h v} (hk : Holds k ε ρ h) : Holds (shift k) ε (push v ρ) h := by
   refine ⟨HeapFacts.shift_holds hk.1,?_,?_,HeapSeparation.shift_holds hk.2.2.2.1,shiftElems_holds hk.2.2.2.2.1,
     shiftIndices_holds hk.2.2.2.2.2⟩
   · intro f hf
@@ -2582,8 +2584,8 @@ theorem aliasZero_mem {ls : HeapLinks.Links} {fs : Facts} {ρ : Env} {h : Heap} 
     have h0 : f.slot = 0 := by simpa using (List.mem_filter.mp hf).2
     exact ⟨f, (List.mem_filter.mp hf).1, by rw [h0]; exact HeapLinks.aliases_eq hl hy, rfl, rfl⟩
 
-theorem dropResult_holds {k ρ h v} (hk : Holds k (push v ρ) h) :
-    Holds (dropResult k) ρ h := by
+theorem dropResult_holds {k ρ h v} (hk : Holds k ε (push v ρ) h) :
+    Holds (dropResult k) ε ρ h := by
   constructor
   · intro f hf
     obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
@@ -2793,7 +2795,7 @@ theorem foldl_min_eq (x : Nat) : ∀ (l : List Nat) (d : Nat), ρ d = ρ x → (
     · rw [Nat.min_eq_left hdy]; exact hd
     · rw [Nat.min_eq_right hyd]; exact hl y (List.mem_cons_self ..)
 
-theorem valueBy_mem (ha : Holds a ρ h) (hs : ∀ x, ∀ y ∈ M x, ρ y = ρ x) {s : Nat} {V : ValueSets.ValueSet}
+theorem valueBy_mem (ha : Holds a ε ρ h) (hs : ∀ x, ∀ y ∈ M x, ρ y = ρ x) {s : Nat} {V : ValueSets.ValueSet}
     (hV : valueBy a M s = some V) : V.mem (ρ s) = true := by
   refine meetSome_mem hV fun x hx => ?_
   rcases List.mem_append.mp hx with hx | hx
@@ -2821,7 +2823,7 @@ theorem valueBy_mem (ha : Holds a ρ h) (hs : ∀ x, ∀ y ∈ M x, ρ y = ρ x)
     rw [← hs s g.value hgs.2, ← ReadGave.unique hr hr']
     exact hm
 
-theorem cellBy_holds (ha : Holds a ρ h) (hs : ∀ x, ∀ y ∈ M x, ρ y = ρ x) {s : Nat} {f : PropKey}
+theorem cellBy_holds (ha : Holds a ε ρ h) (hs : ∀ x, ∀ y ∈ M x, ρ y = ρ x) {s : Nat} {f : PropKey}
     {V : ValueSets.ValueSet} (hV : cellBy a M s f = some V) :
     ∃ flds c oid u, ρ s = .objAt flds c oid ∧ ReadGave flds f h u ∧ V.mem u = true := by
   refine meetSome_read hV fun x hx => ?_
@@ -2862,7 +2864,7 @@ slot needs where facts are stored once per class. -/
 def aliasCells (k : Knowledge) : Facts :=
   k.cells.flatMap fun F => (HeapLinks.aliases k.links F.slot).map fun y => { F with slot := y }
 
-theorem aliasCells_holds {k : Knowledge} {ρ h} (hk : Holds k ρ h) : HeapFacts.Holds (aliasCells k) ρ h := by
+theorem aliasCells_holds {k : Knowledge} {ρ h} (hk : Holds k ε ρ h) : HeapFacts.Holds (aliasCells k) ρ h := by
   intro F hF
   obtain ⟨G, hG, hF⟩ := List.mem_flatMap.mp hF
   obtain ⟨y, hy, rfl⟩ := List.mem_map.mp hF
@@ -2875,7 +2877,7 @@ def linkFacts (k : Knowledge) (slot : Nat) (R : ValueSets.ValueSet) : Facts :=
   (k.links.filter (fun g => !g.alias && g.value == slot)).map
     (fun g => ⟨g.cell,R,g.field⟩)
 
-theorem linkFacts_holds {k slot R ρ h} (hk : Holds k ρ h) (hv : R.mem (ρ slot) = true) :
+theorem linkFacts_holds {k slot R ρ h} (hk : Holds k ε ρ h) (hv : R.mem (ρ slot) = true) :
     HeapFacts.Holds (linkFacts k slot R) ρ h := by
   intro f hf
   obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hf
@@ -2901,8 +2903,8 @@ def observeBoolean (k : Knowledge) (slot : Nat) (q : Bool) : Knowledge :=
       a.cond.any fun c => (HeapLinks.aliases k.links slot).contains c).map ({ · with cond := none }),
     promoteIndices k.links k.indices slot q⟩
 
-theorem observeBoolean_holds {k slot q ρ h} (hk : Holds k ρ h)
-    (hq : ρ slot = if q then .tru else .fls) : Holds (observeBoolean k slot q) ρ h := by
+theorem observeBoolean_holds {k slot q ρ h} (hk : Holds k ε ρ h)
+    (hq : ρ slot = if q then .tru else .fls) : Holds (observeBoolean k slot q) ε ρ h := by
   have hv : (if q then ({ tru := true } : ValueSets.ValueSet) else { fls := true }).mem (ρ slot) = true := by
     cases q <;> simp only [Bool.false_eq_true, ite_false, ite_true] at hq ⊢ <;> rw [hq] <;> rfl
   have ht : tagHolds .truthy (ρ slot) = q := by cases q <;> simp only [Bool.false_eq_true, ite_false, ite_true] at hq <;> rw [hq] <;> rfl
@@ -2936,9 +2938,9 @@ def observeTag (k : Knowledge) (slot : Nat) (tag : Tag) (q : Bool) : Knowledge :
     let R := V.meet (ValueSets.ofTag tag q)
     ⟨linkFacts k slot R ++ k.cells,⟨slot,R,valueField⟩ :: k.values,k.links,k.separation,k.elems,k.indices⟩
 
-theorem observeTag_holds {k slot tag q ρ h} (hk : Holds k ρ h)
+theorem observeTag_holds {k slot tag q ρ h} (hk : Holds k ε ρ h)
     (hq' : tagHolds tag (ρ slot) = q ∨ protoFree tag (ρ slot) = false) :
-    Holds (observeTag k slot tag q) ρ h := by
+    Holds (observeTag k slot tag q) ε ρ h := by
   unfold observeTag
   split
   · exact hk
@@ -2964,8 +2966,8 @@ def promoteTruthy (k : Knowledge) (slot : Nat) (q : Bool) : Knowledge :=
       a.cond.any fun c => (HeapLinks.aliases k.links slot).contains c).map ({ · with cond := none }))
     indices := promoteIndices k.links k.indices slot q }
 
-theorem promoteTruthy_holds {k slot q ρ h} (hk : Holds k ρ h) (ht : tagHolds .truthy (ρ slot) = q) :
-    Holds (promoteTruthy k slot q) ρ h := by
+theorem promoteTruthy_holds {k slot q ρ h} (hk : Holds k ε ρ h) (ht : tagHolds .truthy (ρ slot) = q) :
+    Holds (promoteTruthy k slot q) ε ρ h := by
   refine ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, ?_, promoteIndices_holds hk.2.2.1 hk.2.2.2.2.2 ht⟩
   intro a ha hc
   rcases List.mem_append.mp ha with ha | ha
@@ -3038,8 +3040,8 @@ def unguardIndices (ls : HeapLinks.Links) (as : List IndexAtom) (slot : Nat) (o 
     | _ => none
 
 theorem unguardIndices_holds {ls : HeapLinks.Links} {as : List IndexAtom} {slot : Nat}
-    {o : BranchRefinement.Observation} {ρ h} (hl : HeapLinks.Holds ls ρ h) (he : IndexHolds as ρ h)
-    (ho : o.holds (ρ slot)) : IndexHolds (unguardIndices ls as slot o) ρ h := by
+    {o : BranchRefinement.Observation} {ρ h} (hl : HeapLinks.Holds ls ρ h) (he : IndexHolds ε as ρ h)
+    (ho : o.holds (ρ slot)) : IndexHolds ε (unguardIndices ls as slot o) ρ h := by
   intro a ha hc
   obtain ⟨b, hb, hab⟩ := List.mem_filterMap.mp ha
   split at hab
@@ -3077,7 +3079,7 @@ def numEqIndices (ls : HeapLinks.Links) (as : List IndexAtom) (slot : Nat) :
 
 theorem numEqIndices_holds {ls : HeapLinks.Links} {as : List IndexAtom} {slot : Nat}
     {o : BranchRefinement.Observation} {ρ h} (hl : HeapLinks.Holds ls ρ h)
-    (he : IndexHolds as ρ h) (ho : o.holds (ρ slot)) : IndexHolds (numEqIndices ls as slot o) ρ h := by
+    (he : IndexHolds ε as ρ h) (ho : o.holds (ρ slot)) : IndexHolds ε (numEqIndices ls as slot o) ρ h := by
   intro a ha _
   unfold numEqIndices at ha
   split at ha
@@ -3131,8 +3133,8 @@ def observe (k : Knowledge) (slot : Nat) (o : BranchRefinement.Observation) : Kn
   let k' := observeCore k slot o
   { k' with indices := k'.indices ++ unguardIndices k'.links k'.indices slot o ++ numEqIndices k'.links k'.indices slot o }
 
-theorem observeCore_holds {k slot o ρ h} (hk : Holds k ρ h)
-    (ho : o.holds (ρ slot)) : Holds (observeCore k slot o) ρ h := by
+theorem observeCore_holds {k slot o ρ h} (hk : Holds k ε ρ h)
+    (ho : o.holds (ρ slot)) : Holds (observeCore k slot o) ε ρ h := by
   cases o with
   | boolean q => exact observeBoolean_holds hk ho
   | tag t q =>
@@ -3148,8 +3150,8 @@ theorem observeCore_holds {k slot o ρ h} (hk : Holds k ρ h)
       exact promoteTruthy_holds (observeTag_holds hk ho) ht
     · exact observeTag_holds hk ho
 
-theorem observe_holds {k slot o ρ h} (hk : Holds k ρ h)
-    (ho : o.holds (ρ slot)) : Holds (observe k slot o) ρ h := by
+theorem observe_holds {k slot o ρ h} (hk : Holds k ε ρ h)
+    (ho : o.holds (ρ slot)) : Holds (observe k slot o) ε ρ h := by
   have hk' := observeCore_holds hk ho
   refine ⟨hk'.1, hk'.2.1, hk'.2.2.1, hk'.2.2.2.1, hk'.2.2.2.2.1, fun a ha => ?_⟩
   rcases List.mem_append.mp ha with ha | ha
@@ -3306,7 +3308,7 @@ def withTypedLinks (G : NormalGraph ι) (Γ : List (Ty ι)) (k : Knowledge) : Kn
   { k with cells := typedLinkFacts G Γ k ++ k.cells }
 
 theorem withTypedLinks_holds {G : NormalGraph ι} {Γ k ρ n W h}
-    (he : EnvOk G Γ ρ n W) (hk : Holds k ρ h) : Holds (withTypedLinks G Γ k) ρ h := by
+    (he : EnvOk G Γ ρ n W) (hk : Holds k ε ρ h) : Holds (withTypedLinks G Γ k) ε ρ h := by
   refine ⟨fun f hf => ?_, hk.2.1, hk.2.2⟩
   rcases List.mem_append.mp hf with hf | hf
   · obtain ⟨g, hg, hf⟩ := List.mem_filterMap.mp hf
@@ -3344,8 +3346,8 @@ undefined, whose broad saved nullish predicate alone is insufficient. -/
   | _, _ => out
 
 theorem observeTyped_holds {G : NormalGraph ι} {Γ k slot o ρ n W h}
-    (he : EnvOk G Γ ρ n W) (hk : Holds k ρ h) (ho : o.holds (ρ slot)) :
-    Holds (observeTyped G Γ k slot o) ρ h := by
+    (he : EnvOk G Γ ρ n W) (hk : Holds k ε ρ h) (ho : o.holds (ρ slot)) :
+    Holds (observeTyped G Γ k slot o) ε ρ h := by
   have hout := observe_holds (withTypedLinks_holds he hk) ho
   unfold observeTyped
   split
@@ -3368,7 +3370,7 @@ theorem observeTyped_holds {G : NormalGraph ι} {Γ k slot o ρ n W h}
           (observe (withTypedLinks G Γ k) slot (.tag tag q)).values, (observe (withTypedLinks G Γ k) slot (.tag tag q)).links,
           (observe (withTypedLinks G Γ k) slot (.tag tag q)).separation,
           (observe (withTypedLinks G Γ k) slot (.tag tag q)).elems,
-          (observe (withTypedLinks G Γ k) slot (.tag tag q)).indices⟩ ρ h := by
+          (observe (withTypedLinks G Γ k) slot (.tag tag q)).indices⟩ ε ρ h := by
         refine ⟨?_, hout.2.1, hout.2.2⟩
         intro f hf
         rcases List.mem_append.mp hf with hf | hf
@@ -3437,10 +3439,10 @@ def offsetSlot (as : List IndexAtom) (cls : List Nat) (k d : Nat) : Option Nat :
 
 theorem offsetSlot_value {as : List IndexAtom} {cls : List Nat} {k d r x sto i : Nat}
     {ls : List (Option Nat)} {ρ : Env} {h : Heap}
-    (ha : IndexHolds as ρ h) (hcls : ∀ y ∈ cls, ρ y = ρ x)
+    (ha : IndexHolds ε as ρ h) (hcls : ∀ y ∈ cls, ρ y = ρ x)
     (hsto : elementsOf (ρ x) = some sto) (hls : h[sto]? = some (.arr ls))
     (hki : intValue (ρ k) = some (i : Int)) (hm : offsetSlot as cls k d = some r) :
-    termValue ρ h (.value r) = elementInt h ls (i + d) := by
+    termValue ε ρ h (.value r) = elementInt h ls (i + d) := by
   simp only [offsetSlot, Option.bind_eq_bind, Option.bind_eq_some_iff] at hm
   obtain ⟨a, hfind, hm⟩ := hm
   have hc := List.find?_some hfind
@@ -3498,8 +3500,8 @@ def elementFacts (k : Knowledge) : List IndexAtom :=
 def elementInstances (k : Knowledge) : Knowledge := { k with indices := k.indices ++ elementFacts k }
 
 theorem instantiateEvery_holds {as : List IndexAtom} {cls : List Nat} {r x k : Nat} {ρ : Env} {h : Heap}
-    (ha : IndexHolds as ρ h) (hcls : ∀ y ∈ cls, ρ y = ρ x) (he : (IndexFact.element r x k).HoldsAt ρ h)
-    {a : IndexAtom} (hm : a ∈ as) : IndexHolds (instantiateEvery as cls r k a) ρ h := by
+    (ha : IndexHolds ε as ρ h) (hcls : ∀ y ∈ cls, ρ y = ρ x) (he : (IndexFact.element r x k).HoldsAt ε ρ h)
+    {a : IndexAtom} (hm : a ∈ as) : IndexHolds ε (instantiateEvery as cls r k a) ρ h := by
   obtain ⟨sto, ls, b, i, hsto, hls, hk, hbi, hlt, hpres, hhole⟩ := he
   intro c hc _
   match a, hm, hc with
@@ -3564,8 +3566,8 @@ theorem instantiateEvery_holds {as : List IndexAtom} {cls : List Nat} {r x k : N
   | ⟨.either _ _, _, _⟩, _, hc
   | ⟨.element _ _ _, _, _⟩, _, hc => simp [instantiateEvery] at hc
 
-theorem elementInstances_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds k ρ h) :
-    Holds (elementInstances k) ρ h := by
+theorem elementInstances_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds k ε ρ h) :
+    Holds (elementInstances k) ε ρ h := by
   refine ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => ?_⟩
   rcases List.mem_append.mp ha with ha | ha
   · exact hk.2.2.2.2.2 a ha hc
@@ -3591,10 +3593,10 @@ def releaseEither (as : List IndexAtom) (a : IndexAtom) : List IndexAtom :=
   | _ => []
 
 theorem releaseEither_holds {as : List IndexAtom} {a : IndexAtom} {ρ : Env} {h : Heap}
-    (ha : IndexHolds as ρ h) (hm : a ∈ as) : IndexHolds (releaseEither as a) ρ h := by
-  have bad (F : IndexFact) (hF : F.HoldsAt ρ h)
+    (ha : IndexHolds ε as ρ h) (hm : a ∈ as) : IndexHolds ε (releaseEither as a) ρ h := by
+  have bad (F : IndexFact) (hF : F.HoldsAt ε ρ h)
       (hc : entailsKnown (as ++ [{ fact := F }]) (.le [] (-1)) = true) : False := by
-    have he : IndexHolds (as ++ [{ fact := F }]) ρ h := by
+    have he : IndexHolds ε (as ++ [{ fact := F }]) ρ h := by
       intro b hb hbcond
       rcases List.mem_append.mp hb with hb | hb
       · exact ha b hb hbcond
@@ -3627,8 +3629,8 @@ def withElements (k : Knowledge) : Knowledge :=
   let k := elementInstances k
   { k with indices := k.indices ++ k.indices.flatMap (releaseEither k.indices) }
 
-theorem withElements_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds k ρ h) :
-    Holds (withElements k) ρ h := by
+theorem withElements_holds {k : Knowledge} {ρ : Env} {h : Heap} (hk : Holds k ε ρ h) :
+    Holds (withElements k) ε ρ h := by
   have hk := elementInstances_holds hk
   refine ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => ?_⟩
   rcases List.mem_append.mp ha with ha | ha

@@ -11,6 +11,7 @@ and the fresh names (`OnPath.fresh_ok`); the merge theorem composing them is
 `mergeState_holdsAt_checked`. The merged store is well-formed and its names
 and fresh names are below the merge's next fresh name (`mergeState_wf`). -/
 namespace Verification.TolerantFrames
+variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints HeapObservations
 open Verification.SinglePass (Atom Store State)
 open ProgramTyping PositiveGraphs
@@ -21,10 +22,10 @@ variable {ι : Type} [DecidableEq ι]
 /-- The state's meaning at a given valuation `η`: `StateHolds` is its
 existential (`stateHolds_iff`). -/
 def StateHoldsAt (G : NormalGraph ι) (st : State) (implies : List (PromiseCalls.Implication ι)) (start : List Nat)
-    (entry : Env) (η : Env) : Assertion := fun ρ m s =>
-  SlotsNamed st.names ρ η ∧ Named (storeAll st.store) η ρ m s ∧
+    (ε : HeapKnowledge.EntryState) (η : Env) : Assertion := fun ρ m s =>
+  SlotsNamed st.names ρ η ∧ Named ε (storeAll st.store) η ρ m s ∧
     PromiseCalls.ImpliesOk G implies η s.n s.W ∧ (∀ x ∈ st.fresh, FreshAt m (η x)) ∧
-    ∀ q x, start[q]? = some x → η x = entry q
+    ∀ q x, start[q]? = some x → η x = ε.env q
 
 end Holds
 
@@ -37,21 +38,21 @@ def StateBelow (st : State) (next : Nat) : Prop :=
 fact `mergeGuarded` keeps, at slots, holds at the slot environment. Its
 tagged candidates are checked against every view (`indicesCheckWith`); its
 joined facts are `CertificateProducer.joinGuarded`'s, a search function. -/
-def GuardedHolds (preds : List State) (width fresh0 : Nat) (ρ : Env) (h : Heap) : Prop :=
+def GuardedHolds (preds : List State) (width fresh0 : Nat) (ε : HeapKnowledge.EntryState) (ρ : Env) (h : Heap) : Prop :=
   let variants := mergeVariants preds (mNames preds width fresh0) (mRen preds width fresh0)
   let met0 := mergeMet0 preds (mNames preds width fresh0) (mRen preds width fresh0)
   let diffs := mergeDiffs preds (mRen preds width fresh0) variants met0
   let views := mergeViews (mNames preds width fresh0).toList diffs met0
-  ∀ x ∈ mergeGuarded width (mNames preds width fresh0).toList met0 diffs views, HeapKnowledge.IndexHolds [x] ρ h
+  ∀ x ∈ mergeGuarded width (mNames preds width fresh0).toList met0 diffs views, HeapKnowledge.IndexHolds ε [x] ρ h
 
 section Path
 variable {preds : List State} {width fresh0 p : Nat} {ρ η : Env} {h : Heap}
 
-theorem OnPath.diffs_get (P : OnPath preds width fresh0 p ρ η h) :
+theorem OnPath.diffs_get (P : OnPath preds width fresh0 p ε ρ η h) :
     let diffs := mergeDiffs preds (mRen preds width fresh0)
       (mergeVariants preds (mNames preds width fresh0) (mRen preds width fresh0))
       (mergeMet0 preds (mNames preds width fresh0) (mRen preds width fresh0))
-    ∃ hd : p < diffs.length, ∀ a ∈ diffs[p], AtomHolds a (mVal preds width fresh0 ρ η) h := by
+    ∃ hd : p < diffs.length, ∀ a ∈ diffs[p], AtomHolds ε a (mVal preds width fresh0 ρ η) h := by
   intro diffs
   have hl : p < diffs.length := by
     rw [mergeDiffs_length _ _ _ _ (mergeSlots_inv _ width fresh0).len
@@ -60,55 +61,55 @@ theorem OnPath.diffs_get (P : OnPath preds width fresh0 p ρ η h) :
   exact ⟨hl, P.diffs_ok (List.getElem?_eq_getElem hl)⟩
 
 /-- **The weakest bounds hold** on the path. -/
-theorem OnPath.bounds_ok (P : OnPath preds width fresh0 p ρ η h) {met : Store}
-    (hm : StoreOk met (mVal preds width fresh0 ρ η) h) :
-    StoreOk (mergeBounds (mergeDiffs preds (mRen preds width fresh0)
+theorem OnPath.bounds_ok (P : OnPath preds width fresh0 p ε ρ η h) {met : Store}
+    (hm : StoreOk ε met (mVal preds width fresh0 ρ η) h) :
+    StoreOk ε (mergeBounds (mergeDiffs preds (mRen preds width fresh0)
       (mergeVariants preds (mNames preds width fresh0) (mRen preds width fresh0))
       (mergeMet0 preds (mNames preds width fresh0) (mRen preds width fresh0))) met) (mVal preds width fresh0 ρ η) h := by
   obtain ⟨hl, hd⟩ := P.diffs_get
-  refine mergeBounds_inv (fun s => StoreOk s (mVal preds width fresh0 ρ η) h)
-    (fun a => AtomHolds a (mVal preds width fresh0 ρ η) h) (fun _ _ hs ha => add_ok hs ha) ?_ hm
+  refine mergeBounds_inv (fun s => StoreOk ε s (mVal preds width fresh0 ρ η) h)
+    (fun a => AtomHolds ε a (mVal preds width fresh0 ρ η) h) (fun _ _ hs ha => add_ok hs ha) ?_ hm
   intro key w hall
   obtain ⟨d', hd', hle⟩ := hall _ (List.mem_map.mpr ⟨_, List.getElem_mem hl, rfl⟩)
   obtain ⟨F0, hF0, hn⟩ := boundsOf_get hd'
   have := linear_weaken (hd _ hF0) hle
   rw [hn] at this; exact this
 
-theorem OnPath.view_ok (P : OnPath preds width fresh0 p ρ η h) :
+theorem OnPath.view_ok (P : OnPath preds width fresh0 p ε ρ η h) :
     let met0 := mergeMet0 preds (mNames preds width fresh0) (mRen preds width fresh0)
     let diffs := mergeDiffs preds (mRen preds width fresh0)
       (mergeVariants preds (mNames preds width fresh0) (mRen preds width fresh0)) met0
     ∃ v ∈ mergeViews (mNames preds width fresh0).toList diffs met0,
-      StoreOk v.store (mVal preds width fresh0 ρ η) h ∧
+      StoreOk ε v.store (mVal preds width fresh0 ρ η) h ∧
       ∀ (f : State → Bool), (mergeViews (mNames preds width fresh0).toList diffs met0).all f = true → f v = true := by
   intro met0 diffs
   obtain ⟨hl, hd⟩ := P.diffs_get
   refine ⟨{ names := (mNames preds width fresh0).toList, store := diffs[p].foldl Store.add met0 }, ?_, ?_, ?_⟩
   · exact List.mem_map.mpr ⟨_, List.getElem_mem hl, rfl⟩
-  · show StoreOk (diffs[p].foldl Store.add met0) _ h
-    exact foldl_inv (fun s => StoreOk s (mVal preds width fresh0 ρ η) h) _ _ _ P.met0_ok
+  · show StoreOk ε (diffs[p].foldl Store.add met0) _ h
+    exact foldl_inv (fun s => StoreOk ε s (mVal preds width fresh0 ρ η) h) _ _ _ P.met0_ok
       fun a ha s hs => add_ok hs (hd a ha)
   · intro f hall
     exact List.all_eq_true.mp hall _ (List.mem_map.mpr ⟨_, List.getElem_mem hl, rfl⟩)
 
 /-- **The guarded facts hold** on the path, renamed to the merge's names,
 with `GuardedHolds`. -/
-theorem OnPath.guarded_ok (P : OnPath preds width fresh0 p ρ η h) (hguard : GuardedHolds preds width fresh0 ρ h)
-    {met : Store} (hm : StoreOk met (mVal preds width fresh0 ρ η) h) :
+theorem OnPath.guarded_ok (P : OnPath preds width fresh0 p ε ρ η h) (hguard : GuardedHolds preds width fresh0 ε ρ h)
+    {met : Store} (hm : StoreOk ε met (mVal preds width fresh0 ρ η) h) :
     let met0 := mergeMet0 preds (mNames preds width fresh0) (mRen preds width fresh0)
     let diffs := mergeDiffs preds (mRen preds width fresh0)
       (mergeVariants preds (mNames preds width fresh0) (mRen preds width fresh0)) met0
-    StoreOk (mergeAddGuarded (mNames preds width fresh0).toList (mergeGuarded width (mNames preds width fresh0).toList
+    StoreOk ε (mergeAddGuarded (mNames preds width fresh0).toList (mergeGuarded width (mNames preds width fresh0).toList
       met0 diffs (mergeViews (mNames preds width fresh0).toList diffs met0)) met) (mVal preds width fresh0 ρ η) h := by
   intro met0 diffs
-  refine mergeAddGuarded_inv (fun s => StoreOk s (mVal preds width fresh0 ρ η) h)
-    (fun a => AtomHolds a (mVal preds width fresh0 ρ η) h) (fun _ _ hs ha => add_ok hs ha) ?_ hm
+  refine mergeAddGuarded_inv (fun s => StoreOk ε s (mVal preds width fresh0 ρ η) h)
+    (fun a => AtomHolds ε a (mVal preds width fresh0 ρ η) h) (fun _ _ hs ha => add_ok hs ha) ?_ hm
   intro x hx a hr
   exact atomHolds_rename (fun i y hy => (P.slotsNamed i y hy).symm) hr (hguard x hx)
 
 /-- **The merged fresh names hold fresh stores** on the path: each is a
 fresh name of `p` or a fresh name `p` renames one to. -/
-theorem OnPath.fresh_ok (P : OnPath preds width fresh0 p ρ η h) {mark : Nat}
+theorem OnPath.fresh_ok (P : OnPath preds width fresh0 p ε ρ η h) {mark : Nat}
     (hfb : ∀ x ∈ (preds[p]'P.hp).fresh, x < fresh0) (hf : ∀ x ∈ (preds[p]'P.hp).fresh, FreshAt mark (η x)) :
     ∀ x ∈ mergeFresh preds (mRen preds width fresh0), FreshAt mark (mVal preds width fresh0 ρ η x) := by
   intro x hx
