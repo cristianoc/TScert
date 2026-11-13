@@ -1,7 +1,7 @@
 // A module whose functions state their effects (`Modifies<P, T>`), which the
 // stated-import examples import: `keep` meets its statement; `drain` pops
 // the array it is handed, so its own run refuses it, and an importer reads
-// it at its declaration, the import assumption (`stated-assumed-value-import`).
+// it at the ordinary effect (`invalid-stated-assumed-value-import`).
 export function keep(n: number): Modifies<{}, number> {
   return n;
 }

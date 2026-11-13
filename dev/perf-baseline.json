@@ -4,51 +4,51 @@
   "units": {
     "pretext measureAnalysis": {
       "verdict": "refused",
-      "cpuMs": 556,
+      "cpuMs": 4566,
       "counters": {
-        "nodes": 0,
-        "edges": 0,
+        "nodes": 1430,
+        "edges": 1561,
         "reached": 0,
-        "visited": 0,
-        "rules": 0,
-        "wholeStoreRules": 0,
-        "queries": 0,
-        "queryFacts": 0,
-        "merges": 0,
-        "mergeDiffs": 0,
-        "stateFactsSum": 0,
-        "stateFactsMax": 0,
-        "headsWritten": 0,
-        "headsFromClaims": 0,
+        "visited": 972,
+        "rules": 896,
+        "wholeStoreRules": 43,
+        "queries": 7,
+        "queryFacts": 332,
+        "merges": 48,
+        "mergeDiffs": 579,
+        "stateFactsSum": 47054,
+        "stateFactsMax": 92,
+        "headsWritten": 27,
+        "headsFromClaims": 130,
         "headsSupplied": 0,
-        "bytesRead": 4662910
+        "bytesRead": 4745954
       }
     },
     "pretext prepareRichInline": {
       "verdict": "refused",
-      "cpuMs": 1186,
+      "cpuMs": 1898,
       "counters": {
-        "nodes": 0,
-        "edges": 0,
+        "nodes": 3055,
+        "edges": 3298,
         "reached": 0,
-        "visited": 0,
-        "rules": 0,
-        "wholeStoreRules": 0,
-        "queries": 0,
-        "queryFacts": 0,
-        "merges": 0,
-        "mergeDiffs": 0,
-        "stateFactsSum": 0,
-        "stateFactsMax": 0,
-        "headsWritten": 0,
-        "headsFromClaims": 0,
+        "visited": 116,
+        "rules": 106,
+        "wholeStoreRules": 1,
+        "queries": 9,
+        "queryFacts": 153,
+        "merges": 4,
+        "mergeDiffs": 71,
+        "stateFactsSum": 2597,
+        "stateFactsMax": 40,
+        "headsWritten": 166,
+        "headsFromClaims": 306,
         "headsSupplied": 0,
-        "bytesRead": 8996013
+        "bytesRead": 9173310
       }
     },
     "pretext buildEngineProfile": {
       "verdict": "verified",
-      "cpuMs": 217,
+      "cpuMs": 181,
       "counters": {
         "nodes": 265,
         "edges": 280,
@@ -65,12 +65,12 @@
         "headsWritten": 0,
         "headsFromClaims": 0,
         "headsSupplied": 0,
-        "bytesRead": 1457941
+        "bytesRead": 1455336
       }
     },
     "loop with bounds": {
       "verdict": "verified",
-      "cpuMs": 30,
+      "cpuMs": 29,
       "counters": {
         "nodes": 24,
         "edges": 24,
@@ -92,7 +92,7 @@
     },
     "loop over a parent chain": {
       "verdict": "verified",
-      "cpuMs": 98,
+      "cpuMs": 96,
       "counters": {
         "nodes": 25,
         "edges": 27,
@@ -114,7 +114,7 @@
     },
     "call in a loop": {
       "verdict": "verified",
-      "cpuMs": 116,
+      "cpuMs": 110,
       "counters": {
         "nodes": 32,
         "edges": 33,
@@ -136,7 +136,7 @@
     },
     "union narrowing": {
       "verdict": "verified",
-      "cpuMs": 24,
+      "cpuMs": 23,
       "counters": {
         "nodes": 16,
         "edges": 16,
@@ -158,7 +158,7 @@
     },
     "logical narrowing": {
       "verdict": "verified",
-      "cpuMs": 27,
+      "cpuMs": 26,
       "counters": {
         "nodes": 14,
         "edges": 13,
@@ -180,7 +180,7 @@
     },
     "class": {
       "verdict": "verified",
-      "cpuMs": 8,
+      "cpuMs": 7,
       "counters": {
         "nodes": 12,
         "edges": 11,
@@ -202,7 +202,7 @@
     },
     "promise": {
       "verdict": "verified",
-      "cpuMs": 33,
+      "cpuMs": 31,
       "counters": {
         "nodes": 6,
         "edges": 5,
@@ -224,7 +224,7 @@
     },
     "async": {
       "verdict": "verified",
-      "cpuMs": 130,
+      "cpuMs": 126,
       "counters": {
         "nodes": 9,
         "edges": 8,

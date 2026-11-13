@@ -17,8 +17,8 @@
  * - refused: the fragment does not admit the form.
  *
  * The classification is the reviewed record, read by no check; Lean
- * enforces the obligated ones by their steps and rules, whatever the
- * producer claims. */
+ * enforces the obligated ones by their steps and rules, whatever types the
+ * walk computes. */
 import type { Expr, PatternAst, Stmt } from "./fragment.mts";
 import {
   asyncCompleteName, asyncReturnName, awaitName, elementAtName, forInName, hasPropertyName, iterateForInName,

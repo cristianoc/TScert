@@ -23,10 +23,10 @@ export function expr(this: Gate, node: Expression): Modifies<{ values: "any"; st
   // As in `atomsOf`: Expression is one base interface, so each form of
   // expression is recognized by its own predicate.
   if (ts.isParenthesizedExpression(node))
-    // Parentheses carry no meaning of their own, but the producer records
-    // the type of a parenthesized expression at the span of the outermost
-    // parenthesis. Unwrap, and widen the span to match, so the two agree
-    // on the key. Nested parentheses widen again at each level.
+    // Parentheses carry no meaning of their own: a parenthesized
+    // expression's type is keyed by the span of the outermost parenthesis.
+    // Unwrap, and widen the span to match, so the two agree on the key.
+    // Nested parentheses widen again at each level.
     return { ...this.expr(node.expression), pos: gate.span(node) };
 
   // A read in an enum member's initializer of a member of its enum.
@@ -131,13 +131,13 @@ export function expr(this: Gate, node: Expression): Modifies<{ values: "any"; st
     // `new Promise(e)`, which the overlay reads as a call of the intrinsic
     // stating the same step, read at the constructor's name. Its type
     // arguments, if written, are TypeScript's: the intrinsic's instance is
-    // the producer's to propose and Lean's to check.
+    // the walk's to propose (`instancesFromWalk`) and the pass's to check.
     const intrinsic = gate.globalIntrinsics.get(gate.span(node).join(":"));
     if (intrinsic)
       return gate.intrinsic(intrinsic, gate.span(node), gate.span(node.expression),
         (node.arguments ?? []).map(a => gate.expr(a)));
-    // Explicit type arguments name the instantiation the producer proposes;
-    // Lean validates that instantiation like any other. The callee is any
+    // Explicit type arguments name a proposed instantiation; Lean validates
+    // that instantiation like any other. The callee is any
     // value; its type decides whether it has construct-only code.
     const spreads: number[] = [];
     const args = (node.arguments ?? []).map((arg, i) => {
@@ -2267,7 +2267,7 @@ export function lambda(this: Gate,
   }
   // A class's generic method is the instance's member with quantified
   // signatures. Its closure's binders are named by the member's key and
-  // the binder's position, so the producer's claims and the closure's
+  // the binder's position, so the walk's types and the closure's
   // annotations name them alike; the closure's scheme binds them.
   const typeParams = !node.typeParameters?.length && member === undefined && instance === undefined
     ? gate.enterContextualTypeParams(node) : gate.enterTypeParams(node.typeParameters, member === undefined ? undefined :
@@ -2319,9 +2319,9 @@ export function lambda(this: Gate,
         gate.fail(p, "shadowing undefined is outside the fragment");
     }
 
-    // A closure without a result annotation leaves its result to the
-    // producer: the claim at the closure states it, and the body is checked
-    // against that claim. A class method's result is its instance type's
+    // A closure without a result annotation leaves its result to the walk
+    // (`Synthesis.lean`): the type it computes at the closure states it, and
+    // the body is checked against that type. A class method's result is its instance type's
     // member, which states it, so a method still needs the annotation.
     // A guard closure's annotation is its plain result and its promise.
     const guard = gate.guardOf(node);

@@ -172,8 +172,8 @@ export type Expr =
   /* `new callee(args)`: the callee, then the arguments left to right, then
      the callee's construct-only code runs. A plain function cannot be one.
      `spreads` marks tuple operands whose required elements supply actuals.
-     `typeArgs`, when written, are the explicit type arguments: the
-     instantiation the producer proposes, which Lean checks as any other. */
+     `typeArgs`, when written, are the explicit type arguments: a
+     proposed instantiation, which Lean checks as any other. */
   | { k: "new"; pos: Span; callee: Expr; args: Expr[]; spreads?: number[]; typeArgs?: TypeTerm[] }
   /* A class value: its constructor lambda as construct-only code, which only
      `new` runs. */
@@ -228,7 +228,7 @@ export type Expr =
          assumes. */
       receiver: { type: TypeTerm; strict: boolean } | null;
       /* The result annotation; null where the source states none, and the
-         producer's claim at the closure proposes the result instead. */
+         walk's type at the closure proposes the result instead. */
       result: TypeTerm | null;
       /* A guard's promise, where the result annotation is `x is T` or
          `asserts x is T`; `result` is then its plain result. */
@@ -297,12 +297,12 @@ export type Stmt =
       finalizer: Stmt[] | null;
     }
   /* A declaration statement binds one or more names, left to right, each
-     initializer seeing the earlier bindings. The statement is the entry; the
-     producer states no cut between its declarators. */
+     initializer seeing the earlier bindings. The statement is the entry, and
+     no cut lies between its declarators. */
   | { k: "const"; pos: Span; bindings: BindingAst[] }
   /* Mutable locals. A binding's `annot` is the storage contract every
-     assignment is checked against. Absent, the producer supplies one and the
-     adapter checks it; an initializer's type is what the binding happens to
+     assignment is checked against. Absent, the walk (`Synthesis.lean`) proposes
+     one and the pass checks it; an initializer's type is what the binding happens to
      hold first, not what it may hold, so it is never taken for the contract. */
   | { k: "let"; pos: Span; bindings: BindingAst[] }
   /* A pattern on a `const`, `const target = init`: the initializer once,

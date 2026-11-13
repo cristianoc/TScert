@@ -36,9 +36,8 @@ export function isArrayPresence(value: unknown): value is Modifies<{}, ArrayPres
 export function presencePrefix(value: ArrayPresence): Modifies<{}, string> {
   return value === "readable" ? "" : `${value} `;
 }
-/** A union of labels. A table's labels are its row indices; the source
- * claims wire also writes label trees (`source-claims.mts`), so each row
- * type below is generic in its label. */
+/** A union of labels. A table's labels are its row indices; each row type
+ * below is generic in its label. */
 export type Labels<L = number> = L[];
 /** A signature: the receiver a call may pass, then the parameters and the
  * result. A signature indifferent to its receiver names an unknown row. */
@@ -369,7 +368,7 @@ type Arrow<L = number> = CallContract<Labels<L>, Labels<L>[], L>;
 type MethodArrow<L = number> = CallContract<Record<string, never>, Labels<L>[], L>;
 type MethodRestArrow<L = number> = CallContract<Record<string, never>, [Labels<L>[], Labels<L>], L>;
 /** An object contract: one label list per named field, in the order the
- * producer wrote them. Fields a contract does not name are unconstrained. */
+ * row lists them. Fields a contract does not name are unconstrained. */
 type Fields<L = number> = [name: PropertyKey, labels: Labels<L>][];
 /** An optional field: constrains its key only where the object has it; a
  * readonly one is a view there. */
@@ -481,7 +480,7 @@ export type Clause<L = number> =
       };
     };
 type RestArrow<L = number> = CallContract<Labels<L>, [Labels<L>[], Labels<L>], L>;
-/** A producer's row: a union of clauses. */
+/** An ordinary row: a union of clauses. */
 export type Row<L = number> = Clause<L>[];
 /** A verifier graph's row also may be a parameter, a binder a scheme
  * quantifies or a graph's assignment gives a family, a scheme, one
@@ -580,8 +579,7 @@ function isParamKind(v: unknown): v is ParamRow["kind"] {
 const keyText = (name: PropertyKey): string =>
   typeof name === "string" ? name : `[symbol ${name.symbol}]`;
 /** The decoders of a row, and of its clauses, whose labels `label` and
- * `labels` read: the graph's row references, or the claims document's
- * labels. */
+ * `labels` read: the graph's row references. */
 type ClauseDecoders<L> = {
   clauses: (row: JsonRead) => Row<L>;
   row: (row: JsonRead) => Row<L> | SchemeRow<L>;

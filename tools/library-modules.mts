@@ -142,8 +142,8 @@ const assertEntries: ModuleEntry[] = [
   ...assertEntry(["ok"], "function ok(value: unknown, message?: string | Error): asserts value;", asserted),
   // `equal` is `strictEqual`: `Object.is(actual, expected)`, after which
   // `actual` is the value `expected` is, of its type. That promise, a generic
-  // one, is not stated: the producer encodes no generic promise signature
-  // (WORK.md), so `equal` narrows nothing.
+  // one, is not stated: no generic promise signature is encoded (WORK.md),
+  // so `equal` narrows nothing.
   ...assertEntry(["equal", "strictEqual"],
     "function strictEqual<T>(actual: unknown, expected: T, message?: string | Error): asserts actual is T;",
     { effect: emptyEffect,

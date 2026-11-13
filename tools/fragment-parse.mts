@@ -9,7 +9,7 @@
  * it describes exactly.
  *
  * This program is TRUSTED. It defines what the source text means; the verifier
- * never sees the producer's own parse. The gate's methods for enums and classes,
+ * reads the source through its Fragment alone. The gate's methods for enums and classes,
  * expressions, user-defined guards, and patterns and statements are in
  * fragment-classes.mts, fragment-expressions.mts, fragment-guards.mts and
  * fragment-statements.mts; the helpers they share are in fragment-support.mts.
@@ -1207,8 +1207,9 @@ export type ModuleText = { text: string; illFormed: string | null };
  * The fragment of `file`, with every program module it imports a function
  * from, directly or through another such module, lowered as a run of that
  * module alone lowers it, under the same project (`modules`). A module whose
- * declarations or top-level code the gate refuses is left out: its imports
- * stay at their declared types. After a tool failure the parser's compiler
+ * top-level code the gate refuses has that code left out (`lowerModule`); a
+ * module refused elsewhere is left out: its imports stay at their declared
+ * types. After a tool failure the parser's compiler
  * is released: its channel's next reply may be unreadable, and the next
  * parse opens another.
  */
@@ -1258,6 +1259,30 @@ function failingAsTool<T>(file: string, run: () => T): T {
   }
 }
 
+/** What an imported module's lowering leaves out: its top-level code, with
+ * the refusal of it, and each function the gate refused, with its refusal. */
+type ModuleLeftOut = { init: string | null; functions: ReadonlyMap<string, string> };
+const noneLeftOut: ModuleLeftOut = { init: null, functions: new Map() };
+
+/** The top-level statement of `absolute` a gate refusal is located in: a
+ * function declaration, by its name; another statement of the module's
+ * top-level code; or another place (a declaration, an import, no place). */
+function refusedPlace(absolute: string, tsconfigPath: string | undefined, refusal: string):
+    { kind: "function"; name: string } | { kind: "init" } | { kind: "other" } {
+  const at = /\(line (\d+), col (\d+)\)$/.exec(refusal);
+  if (!at) return { kind: "other" };
+  const line = Number(at[1]) - 1, col = Number(at[2]) - 1;
+  const { file } = openFile(absolute, readText(absolute), tsconfigPath);
+  const before = (p: { line: number; character: number }): boolean =>
+    p.line < line || (p.line === line && p.character <= col);
+  const s = file.statements.find((st) => before(file.getLineAndCharacterOfPosition(st.getStart(file))) &&
+    !before(file.getLineAndCharacterOfPosition(st.end)));
+  if (!s || isImport(s) || isTypeAlias(s) || ts.isInterfaceDeclaration(s) || ts.isExportDeclaration(s) ||
+      ts.isModuleDeclaration(s)) return { kind: "other" };
+  if (ts.isFunctionDeclaration(s)) return s.name && s.body ? { kind: "function", name: s.name.text } : { kind: "other" };
+  return { kind: "init" };
+}
+
 /** The lowering of an imported module as a run of that module alone lowers
  * it, in a parser compiler of its own, opened at the module's directory and
  * released after it; the gate's refusal of it, or, on a tool failure, that
@@ -1270,12 +1295,36 @@ export function lowerModule(request: ModuleRequest): LoweredModule<ModuleAst> {
     // Each read of the run's selection, by family, is a read of the stage's
     // named input (STAGE-STORE.md, "Shared work").
     // Its declarations are read in the project rooted at the module.
-    lowered = rootedAtModule(request.absolute, () => lowerFile(request.absolute, false, request.tsconfigPath,
-      request.absolute, undefined, request.location, selection ? { given: (marker) => {
-        const tags = selection.get(marker);
-        noteInput(selectionRead(marker), JSON.stringify(tags ?? null) ?? "null");
-        return tags;
-      } } : {}));
+    const lowering = (leftOut: ModuleLeftOut): Lowered => rootedAtModule(request.absolute, () =>
+      lowerFile(request.absolute, false, request.tsconfigPath,
+        request.absolute, undefined, request.location, selection ? { given: (marker) => {
+          const tags = selection.get(marker);
+          noteInput(selectionRead(marker), JSON.stringify(tags ?? null) ?? "null");
+          return tags;
+        } } : {}, new Set(), leftOut));
+    // A refusal located in a function declaration leaves that function
+    // out, and one located in the module's top-level code leaves that code
+    // out; the module is lowered again, until it lowers or a refusal is
+    // located elsewhere (a declaration, an import), which refuses it.
+    let leftOut: ModuleLeftOut = noneLeftOut;
+    let first: string | null = null;
+    for (;;) {
+      try {
+        lowered = lowering(leftOut);
+        break;
+      } catch (error) {
+        if (toolFailureOf(error)) throw error;
+        release(null);
+        const refusal = messageOf(error);
+        first ??= refusal;
+        const place = rootedAtModule(request.absolute, () => refusedPlace(request.absolute, request.tsconfigPath, refusal));
+        release(null);
+        if (place.kind === "function" && !leftOut.functions.has(place.name))
+          leftOut = { ...leftOut, functions: new Map([...leftOut.functions, [place.name, refusal]]) };
+        else if (place.kind === "init" && leftOut.init === null) leftOut = { ...leftOut, init: refusal };
+        else return { refused: first };
+      }
+    }
   } catch (error) {
     // The gate's refusal leaves the module out; a tool failure is no
     // refusal, and is reported in that module.
@@ -1441,7 +1490,8 @@ function lowerFile(file: string, carriesContext: boolean,
   seen: ((diagnostic: SeenDiagnostic) => void) | undefined, location: string | null,
   family: { given?: (marker: string) => readonly TagValue[] | undefined;
     selected?: (selection: ReadonlyMap<string, readonly TagValue[]>) => void },
-  omitted: ReadonlySet<string> = new Set()): Lowered {
+  omitted: ReadonlySet<string> = new Set(), moduleLeftOut: ModuleLeftOut = noneLeftOut): Lowered {
+  const initRefused = moduleLeftOut.init;
   const absolute = resolve(file);
   const text = readText(absolute);
   // An imported module's lowering reads its project rooted at the module.
@@ -1461,7 +1511,7 @@ function lowerFile(file: string, carriesContext: boolean,
   // value. The scans over binding facts (`eval`, `arguments`, shadowing, the
   // names bound) still read every omitted body.
   const isOmitted = (s: Node): s is FunctionDeclaration & { name: Identifier } =>
-    ts.isFunctionDeclaration(s) && !!s.name && omitted.has(s.name.text);
+    ts.isFunctionDeclaration(s) && !!s.name && (omitted.has(s.name.text) || moduleLeftOut.functions.has(s.name.text));
   const omittedSteps = new Set([...omitted].flatMap(n => n.startsWith(`${initOmission}@`)
     ? [Number(n.slice(initOmission.length + 1))] : []));
   const unchangeable = (e: Expression | undefined): boolean => {
@@ -1495,7 +1545,10 @@ function lowerFile(file: string, carriesContext: boolean,
   const running = source.statements.some(s => omittedSteps.has(s.getStart(source)) && !functionConstant(s));
   // A statement left out: an omitted statement, or, once one runs code, a module constant whose value a step may
   // change.
-  const stepLeftOut = (s: Statement): boolean => omittedSteps.size > 0 && isInitStatement(s) &&
+  // An imported module whose top-level code the gate refused
+  // (`initRefused`) has every statement of its initialization left out.
+  const stepLeftOut = (s: Statement): boolean => (initRefused !== null && isInitStatement(s)) ||
+    omittedSteps.size > 0 && isInitStatement(s) &&
     (omittedSteps.has(s.getStart(source)) || (running && ts.isVariableStatement(s) &&
       !!(s.declarationList.flags & ts.NodeFlags.Const) &&
       !s.declarationList.declarations.every(d => unchangeable(d.initializer))));
@@ -2541,6 +2594,28 @@ function lowerFile(file: string, carriesContext: boolean,
   const leftOut = (s: FunctionDeclaration, reason: string): void => {
     absent.push({ name: s.name?.text ?? "", namePos: s.name ? gate.span(s.name) : gate.span(s), reason });
   };
+  // An imported module whose top-level code is left out binds none of the
+  // names that code binds: each is absent, and a function reading one is
+  // left out with it.
+  for (const [name, reason] of moduleLeftOut.functions) {
+    const node = source.statements.find((st) => isOmitted(st) && st.name.text === name);
+    if (node && ts.isFunctionDeclaration(node) && node.name)
+      absent.push({ name, namePos: gate.span(node.name), reason });
+  }
+  if (initRefused !== null) {
+    const reason = `the module's top-level code is left out: ${initRefused}`;
+    const bindsIn = (name: ts.BindingName): void => {
+      if (ts.isIdentifier(name)) absent.push({ name: name.text, namePos: gate.span(name), reason });
+      else for (const e of name.elements) if (ts.isBindingElement(e) && e.name) bindsIn(e.name);
+    };
+    for (const s of source.statements) {
+      if (!isInitStatement(s)) continue;
+      if (ts.isVariableStatement(s)) for (const d of s.declarationList.declarations) bindsIn(d.name);
+      else if ((ts.isClassDeclaration(s) || ts.isEnumDeclaration(s)) && s.name)
+        absent.push({ name: s.name.text, namePos: gate.span(s.name), reason });
+      else if (ts.isExportAssignment(s)) absent.push({ name: "default", namePos: gate.span(s), reason });
+    }
+  }
   // A declaration's overloads, the declarations without a body TypeScript
   // places right before its implementation, are units of it
   // (`overloadedDecl`); any other declaration without a body is refused
@@ -2633,11 +2708,18 @@ function lowerFile(file: string, carriesContext: boolean,
   return { ast, module, imported: importedFrom };
 }
 
-/** The program modules a file imports functions from: each named value
- * import TypeScript binds to a function declaration with a body in a source
- * file of the program, outside the standard library, the tool's own
- * declarations and installed packages, with the module identity the
- * declaration document gives it. */
+/** The program modules a file imports functions from: each named or
+ * default value import, read at a function type (one signature, a guard's
+ * beside one, or overloads), that TypeScript binds to a function
+ * declaration with a body in a source file of the program, outside the
+ * standard library, the tool's own declarations and installed packages, with
+ * the module identity the declaration document gives it. */
+/** Whether a value's type is a function's: one signature, or an
+ * intersection of signatures (a guard's beside its signature, overloads). */
+function callable(type: TypeTerm): boolean {
+  return type.k === "function" || (type.k === "intersection" && type.parts.every((p) => p.k === "function"));
+}
+
 function importedModules(importNodes: ImportDeclaration[], checker: Checker,
     values: Ast["declarations"]["values"], root: string | null): ImportedModule[] {
   // Each value import's local name: a named import's, and a default
@@ -2655,7 +2737,7 @@ function importedModules(importNodes: ImportDeclaration[], checker: Checker,
   const symbols = checker.getSymbolAtLocation(elements);
   return elements.flatMap((element, i) => {
     const value = values.find((v) => v.binding.local === element.text);
-    if (!value || value.construct || value.typeParams.length > 0 || value.type.k !== "function") return [];
+    if (!value || value.construct || value.typeParams.length > 0 || !callable(value.type)) return [];
     const location = value.declaration.module;
     if (location.startsWith("typescript/lib/") || location.startsWith("tscert/")) return [];
     if (root !== null) {
@@ -2667,8 +2749,10 @@ function importedModules(importNodes: ImportDeclaration[], checker: Checker,
     if (!symbol) return [];
     const target = symbol.flags & SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
     const declaration = target.declarations[0]?.resolve();
-    if (target.declarations.length !== 1 || !declaration || !ts.isFunctionDeclaration(declaration) ||
-        !declaration.body) return [];
+    // Overloads are declarations without a body before the one with it.
+    const implementation = target.declarations.at(-1)?.resolve();
+    if (!declaration || !implementation || !ts.isFunctionDeclaration(implementation) || !implementation.body)
+      return [];
     const source = declaration.getSourceFile();
     if (source.isDeclarationFile || source.fileName.split("/").includes("node_modules")) return [];
     return [{ absolute: source.fileName, location }];

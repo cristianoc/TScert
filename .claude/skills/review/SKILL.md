@@ -66,7 +66,7 @@ Counterexample:  (for a refusal) the program, then what Node prints
 
 Units: <file.ts#unit …>
 Outcome: verified | refused | gap | no-behaviour-change
-Parts: <lean-semantics lean-rules lean-proofs lean-lowering producer parser wire trust docs tests format tools>
+Parts: <lean-semantics lean-rules lean-proofs lean-lowering parser wire trust docs tests format tools>
 Lean: <theorems and definitions, separated by "; ">
 Wire: <the wire change>
 Trust: <the new trust sentence, or none>
@@ -95,7 +95,7 @@ Co-Authored-By: <attribution>
   line is, `<TypeScript form> ⇒ <the type or effect proposed>`, with its side
   conditions as `label: …` lines. A proposal decides nothing: the record's
   `Soundness:` names the check that refuses a wrong one (a `Check` of the
-  pass, or a `Control`). Where the rule restates one of the producer's, a
+  pass, or a `Control`). Where the rule restates an existing one, a
   `Mirrors:` section names it by file and lines; a `Typing` is reserved for
   a rule of the calculus the proofs are about.
 - **A `Check` is an obligation acceptance depends on**: what the single
@@ -117,7 +117,7 @@ Co-Authored-By: <attribution>
 - **A `Proposal`'s body has a `⇒` line and a `Check`'s an `at <where>:`
   line**; prose may follow. A line that continues one is indented deeper.
 - **The object names its stage and its concept:** the parser's gate, the type
-  reader, the producer, a lowering, a Lean rule, the verifier's CLI, tooling.
+  reader, the pass's front, a lowering, a Lean rule, the verifier's CLI, tooling.
   `Definition modified (type reader: the members of a union)`, not
   `Definition modified (members of a decided union)`.
 - **A `Definition` is a concept stated formally:** `name(args) ⟺ …` or
@@ -131,7 +131,7 @@ Co-Authored-By: <attribution>
   defined in words or written in the standard notation (`ρ, h ⊨ K`). A commit that changes what a theorem states, its premise or
   its conclusion, directly or through a definition the statement goes
   through, records `Theorem modified (<name>)` with the statement before and
-  after; a change to what `checkUnitJson_safe` states always does, since it
+  after; a change to what `mode8Accepted_sound` states always does, since it
   is what acceptance means. A proof changed under the same statement is no
   theorem change, and a new theorem that is the conclusion of the commit's
   argument is `Theorem added`.
@@ -186,8 +186,8 @@ Co-Authored-By: <attribution>
   unit named goes in `Validation:`. The case exists at the commit.
   A unit the pass accepts where the pipeline refuses is marked `⚠` after
   the new verdict unless the record's `Soundness:` reviews it.
-- **`Mirrors:`** (optional) names the rule of the producer or of the
-  existing lowering a `Proposal` restates, by file and lines.
+- **`Mirrors:`** (optional) names the existing rule or lowering a
+  `Proposal` restates, by file and lines.
   **`Validation:`** (optional) states what was run on the commit and what it
   showed: the suite, whether the run was complete, the units compared. The
   one number a range's summary shows goes in the `Measured:` trailer.

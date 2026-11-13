@@ -2,8 +2,8 @@ import type { ArrayPresence } from "./type-graph.mts";
 /** The declaration document shared by the source parser, the Fragment AST
  * and readers. TypeScript's checker, under the source's configured project,
  * decides which declaration each name denotes; the document records the source
- * equations of the declarations reached. They are not evidence that a
- * producer's claim follows from them. This module has no runtime dependencies,
+ * equations of the declarations reached. They are not evidence that a type
+ * stated at a point follows from them. This module has no runtime dependencies,
  * so importing its types does not pull the compiler into a reader's project. */
 import type { Span } from "./span.mts";
 /** A closed footprint (`Footprints.Closed`): the change a call may make, on

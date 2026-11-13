@@ -86,9 +86,8 @@ export const forcedProposals: readonly ForcedProposal[] = [
   { file: "blocker-census-options-default", unit: "config@148", force: "optional-reads", positive: true,
     at: /expression at node \d+: Verification\.Tm\.readAt/ },
   // Each parameter proposed at `undefined`, narrower than its annotation: refused at the edge into the
-  // unit's entry. An `unknown` parameter; a `void` one (old control: a singleton claimed of it); a
-  // dictionary with a named view (old: the view dropped); a `keyof` naming a unique symbol (old: another
-  // symbol or every symbol in its place).
+  // unit's entry. An `unknown` parameter; a `void` one; a dictionary with a named view; a `keyof`
+  // naming a unique symbol.
   { file: "type-guards", unit: "describe@1103", force: "annotations", positive: true, at: /edge from node \d+ to node 0/ },
   { file: "void-source-values", unit: "compareArguments@169", force: "annotations", positive: true,
     at: /edge from node \d+ to node 0/ },
@@ -122,7 +121,48 @@ export const forcedProposals: readonly ForcedProposal[] = [
   { file: "stated-slot-collect", unit: "collect@696", force: "head-region-fields", positive: true },
   { file: "quantified-freshness-builder", unit: "build@303", force: "head-apart", positive: true },
   { file: "cursor-invariant-after-writing-call", unit: "countMarked@1378", force: "head-called", positive: true },
-  { file: "cursor-invariant-after-writing-call", unit: "countMarked@1378", force: "head-eliminated", positive: true }
+  { file: "cursor-invariant-after-writing-call", unit: "countMarked@1378", force: "head-eliminated", positive: true },
+  // One program point's proposal forced (`point@<start>-<end>`, its source span): the first of its
+  // type's members, else `true` (`false` for `true`); the walk goes on with the computed type.
+  // A parameter read in `&&`'s right operand, `v` of `Number.isSafeInteger(v)`: refused at the edge into
+  // the call's statement, whose state the proposal must hold.
+  { file: "logical-narrowing-past-reads", unit: "untested@879", force: "point@968-969", positive: true,
+    at: /source incoming edge obligation at \[931,970\)/ },
+  // `n` of `return n.x` where `n.kind === 1 || b.kind === 2` holds, proposed at the arm owning `x`
+  // (one of three): the read of `x` is still refused, at the arms the pass holds for `n`.
+  { file: "invalid-field-test-disjunction", unit: "either@238", force: "point@389-390",
+    at: /source expression obligation at \[389,392\): refused at a read: read of a field 'x' the contract does not name/ },
+  // The second test's read `k.name` past the first test's failure, and the negation
+  // `!(k.name === "a" || k.name === "b")` as `&&`'s left operand.
+  { file: "negated-disjunction-test", unit: "rest@426", force: "point@485-491", positive: true,
+    at: /source expression obligation at \[485,491\): evidence search failed: no derivation of its node-typing claim/ },
+  { file: "negated-disjunction-test", unit: "operand@1555", force: "point@1607-1642", positive: true,
+    at: /source expression obligation at \[1607,1642\): evidence search failed: no derivation of its node-typing claim/ },
+  // `new Decline()`, a constructed error: its member read is then refused at the type proposed.
+  { file: "error-subclass", unit: "omitted@902", force: "point@931-944", positive: true,
+    at: /a member of a primitive is read from \[\[Boolean\.prototype\]\]/ },
+  // `k` at the test for "b" after `k.kind` failed "a", and `o` at the test for 2 after `o.op` failed 1.
+  { file: "field-contents-exclusion", unit: "chained@869", force: "point@936-937", positive: true,
+    at: /source expression obligation at \[936,937\): evidence search failed: no derivation of its node-typing claim/ },
+  { file: "field-contents-exclusion", unit: "numbered@1144", force: "point@1204-1205", positive: true,
+    at: /source expression obligation at \[1204,1205\): evidence search failed: no derivation of its node-typing claim/ },
+  // A module cell's checked access in an update and a logical assignment: `reason` of `reason ??= why`,
+  // `label` of `label ||= why`, the result of `++generation`.
+  { file: "blocker-module-assignment", unit: "retire@1026", force: "point@1058-1064", positive: true,
+    at: /source expression obligation at \[1058,1064\): evidence search failed: no derivation of its node-typing claim/ },
+  { file: "blocker-module-assignment", unit: "name@1271", force: "point@1309-1314", positive: true,
+    at: /source expression obligation at \[1309,1314\): evidence search failed: no derivation of its node-typing claim/ },
+  { file: "blocker-module-assignment", unit: "next@751", force: "point@807-819", positive: true,
+    at: /source expression obligation at \[807,819\): evidence search failed: no derivation of its expression-claim claim/ },
+  // An enum's reverse key read, `Open[k]`.
+  { file: "enum-reverse-keys", unit: "openName@708", force: "point@756-763", positive: true,
+    at: /source expression obligation at \[756,763\): evidence search failed: no derivation of its node-typing claim/ },
+  // The receiver `b` of `b.n`, a parameter that may be `undefined`.
+  { file: "nullish-member-reads", unit: "size@534", force: "point@646-647", positive: true,
+    at: /source expression obligation at \[646,647\): evidence search failed: no derivation of its node-typing claim/ },
+  // `value.toString()`, read from `Function.prototype`.
+  { file: "blocker-function-member-read", unit: "runs@561", force: "point@647-663", positive: true,
+    at: /source expression obligation at \[647,663\): evidence search failed: no derivation of its node-typing claim/ }
 ];
 
 function record(v: unknown): Record<string, unknown> {

@@ -60,8 +60,8 @@ function recordType(table: Table, labels: JsonRead): string {
 // name, or the expression whose value it holds. Extraction guarantees one of the
 // two for every binding and fails rather than emit a context it cannot describe,
 // so a position should never reach a reader. The `slot N` fallback below is for
-// a record that arrives without a source map at all; seeing one means the
-// producer broke that invariant.
+// a record that arrives without a source map at all; seeing one means
+// extraction broke that invariant.
 function bindingText(descriptor: Descriptor, source: string): string {
   if (descriptor.name) return descriptor.name;
   const span = descriptor.span;

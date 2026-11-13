@@ -1,9 +1,9 @@
 import { isArrayPresence, type ArrayPresence } from "./type-graph.mts";
-/** Structural claim language at the producer/report boundary, mirroring
+/** Structural claim language at the verifier/report boundary, mirroring
  * Claim.lean. Source annotations are type terms (declaration-types.mts); Lean
  * converts them to these types for its source readers. Runtime data is decoded
- * before it is printed as text; unsupported producer shapes are shown as
- * their raw JSON. Its surface text is in claim-text.mts.
+ * before it is printed as text; unsupported shapes are shown as their raw
+ * JSON. Its surface text is in claim-text.mts.
  */
 import type { PropertyKey } from "./declaration-types.mts";
 import {
@@ -29,8 +29,8 @@ type RecordAtom = {
   a: "record";
   fields: Field[];
   indexes: { string: string; number: string; symbol: string };
-  /** A real string index contract, distinct from the producer's synthetic
-   * index markers above. A readonly signature has a never write type. */
+  /** A real string index contract, distinct from the synthetic index
+   * markers above. A readonly signature has a never write type. */
   indexSignature?: { read: ClaimType; write: ClaimType };
   call: string;
   construct: string;

@@ -73,10 +73,10 @@ const equationReaders = [
     "lean/Verification/Source/FragmentTypes.lean",
     ...equationReaders]), ...lean(["lean/Verification/Source/ResolutionWire.lean"], false, "inductive Certificate")]);
   expectSubset("Lean reads of the Fragment", leanNames, ts, {
-    binder: "a source-claims label, read by equation lowering",
-    decl: "a source-claims label, read by equation lowering",
-    meet: "a source-claims label, read by equation lowering",
-    types: "the source-claims document's rows, read by equation lowering",
+    binder: "a type label, read by equation lowering",
+    decl: "a type label, read by equation lowering",
+    meet: "a type label, read by equation lowering",
+    types: "a store's rows, read by equation lowering",
   });
   expectSubset("Fragment fields Lean ignores", ts, leanNames, {
     arguments: "a reference's argument spans are provenance",
@@ -118,8 +118,8 @@ const equationReaders = [
   expectSubset("Source flow fields Lean omits", ts, writes, {});
 }
 
-// The equation tree's spelling: Lean alone writes and reads it (the evidence
-// bundle's labels), and REQUEST-PROTOCOL.md states it for every other reader.
+// The equation tree's spelling: Lean alone writes and reads it, and
+// REQUEST-PROTOCOL.md states it for every other reader.
 {
   const protocol = read("docs/REQUEST-PROTOCOL.md");
   const table = protocol.slice(protocol.indexOf("**Tree spelling.**"), protocol.indexOf("Decoding refuses an unknown"));

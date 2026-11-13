@@ -1,4 +1,4 @@
-// The single pass's performance gate (docs/drafts/single-pass.md, "The
+// The single pass's performance gate (docs/SINGLE-PASS.md, "The
 // performance gate"): a fixed set of units, each captured through the
 // single-pass route (its fragment kept), then the pass (`verifier
 // --verify-interface-stage 8`, over the fragment alone, nothing supplied)

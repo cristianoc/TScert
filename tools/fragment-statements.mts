@@ -1745,8 +1745,8 @@ export function declarationsOf(this: Gate, list: ts.VariableDeclarationList, ds:
       };
     }
     // For `let`, the storage contract is what every later assignment is
-    // checked against. Written, it is the annotation; unwritten, the
-    // producer states one for the binding and the adapter checks that,
+    // checked against. Written, it is the annotation; unwritten, the walk
+    // (`Synthesis.lean`) proposes one for the binding and the pass checks it,
     // rather than this taking the initializer's type for the contract.
     // A binding its own initializer reads, as a function calling the
     // constant it initializes does (`const visit = (n) => … visit(…)`): the

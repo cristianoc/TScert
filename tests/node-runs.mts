@@ -1461,6 +1461,15 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
   // An imported function popping the array `map` visits leaves holes in its
   // result: the import's footprint lets the heap change, as its module's
   // check establishes (the control under `TSCERT_FORCE=imports`).
+  // Imports read at the ordinary effect where no entry establishes what
+  // their declarations state: a false postcondition, a statement a module
+  // refuses; and a precondition the importer's call violates.
+  assert.equal(runImporting("invalid-false-ensures-value-import", 'typeof last("ab")'), "undefined",
+    "invalid-false-ensures-value-import: the read past the result's length");
+  assert.equal(runImporting("invalid-stated-assumed-value-import", "2 in drained([1, 2, 3])"), false,
+    "invalid-stated-assumed-value-import: the popping callback leaves a hole");
+  assert.equal(runImporting("invalid-interface-precondition-value-import", "typeof past([1])"), "undefined",
+    "invalid-interface-precondition-value-import: the call at the length reads past it");
   assert.equal(runImporting("invalid-certified-write-value-import", "Object.keys(zeros([1, 2, 3])).length"), 2,
     "invalid-certified-write-value-import: the result has three positions, two present");
   assert.equal(runImporting("instanceof-class-value-import",

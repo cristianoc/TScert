@@ -22,7 +22,7 @@ import {
   type StringClause,
 } from "./type-graph.mts";
 
-/* What reaches the printers is the producer's, not this file's: a report shows
+/* What reaches the printers is the verifier's, not this file's: a report shows
  * a claim that did not decode, and the lifter below names parts of a graph the
  * surface has no syntax for. Each is a value of `JsonValue`'s shape, so a read
  * here narrows what arrived rather than assuming a claim. */
@@ -200,7 +200,7 @@ function bareAtomText(
       "{ " +
       [
         ...atom.fields.map((field) => {
-          // A field the producer sent malformed is shown as it is.
+          // A field that arrives malformed is shown as it is.
           if (!isJsonObject(field))
             return "(invalid field " + JSON.stringify(field) + ")";
           // A name the surface can write is written, anything else quoted,
@@ -782,7 +782,7 @@ function liftLabels(
   )
     return { top: true, atoms: [] };
   // Recognize literals by their definitions, not their row numbers: native
-  // request graphs need not use the claims document's primitive prefix.
+  // request graphs need not place their primitives at a fixed prefix.
   const literalLabel = (value: boolean): JsonRead =>
     labels.find((label) => {
       const row = rowAt(types, label);
@@ -836,7 +836,7 @@ function liftLabels(
   return { top: false, atoms: arms.flatMap((arm) => arm.lift()) };
 }
 
-// A source-claims label tree names a row only the verifier builds, so it is
+// A label tree names a row only the verifier builds, so it is
 // shown by what it names: a binder by its name, an array over its store, an
 // application by its declaration's position and its arguments, and an
 // intersection as text, as an intersection of contracts is.

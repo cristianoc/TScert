@@ -178,8 +178,8 @@ function diagnosticOutcome(value: Json | undefined): DiagnosticOutcome {
   }
 }
 
-/** A fact the producer supplied at a statement entry that the search left
- * out: the entry, the node whose edge into it does not establish the fact
+/** A fact proposed at a statement entry that the check of the refused graph
+ * left out: the entry, the node whose edge into it does not establish the fact
  * (the entry itself at the graph's entry), and the fact over the entry's
  * slots. */
 export interface LeftOutCandidate {
@@ -212,9 +212,8 @@ interface Common {
    * omission to paper over.
    */
   requiredResult?: Labels;
-  /** The facts the producer supplied at statement entries that the evidence
-   * search of the refused graph left out. Absent from a record no graph
-   * search makes. */
+  /** The facts proposed at statement entries that the check of the refused
+   * graph left out. Absent from a record no graph check makes. */
   candidatesLeftOut?: LeftOutCandidate[];
   /** Attached by the report writer, not by the verifier. */
   input?: {

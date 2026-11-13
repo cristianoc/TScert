@@ -581,7 +581,7 @@ function give(worker: ChildProcess, job: Job): void {
   const died = () => settle(() => fail(timedOut
     ? `timeout: ${basename(job.request.source)} did not finish within ${checkTimeoutMs / 1000} s`
     : `no outcome: the worker for ${job.request.source} exited: ${logs.get(worker)?.trim() ?? ""}`));
-  // A check whose search runs each unit on its own is bounded by its steps' limits alone.
+  // A check that runs each unit on its own is bounded by its steps' limits alone.
   const timer = job.request.units.select !== null ? undefined : setTimeout(() => {
     timedOut = true;
     stopWorker(worker);

@@ -145,9 +145,9 @@ const controls: { name: string; body: () => Promise<void> }[] = [];
 const control = (name: string, body: () => Promise<void>): void => {
   controls.push({ name, body });
 };
-/** Controls the route accepts where the old route refused the same forged
- * input: kept as written, run only with TSCERT_SINGLE_PASS_STOPS=1, listed
- * by every run, until the route refuses them or they are decided. */
+/** Controls of a forged input the route accepts, each an open decision:
+ * kept as written, run only with TSCERT_SINGLE_PASS_STOPS=1 and listed by
+ * every run. */
 const stops = new Set<number>();
 const stop = (name: string, body: () => Promise<void>): void => {
   stops.add(controls.push({ name: `stop: ${name}`, body }) - 1);
@@ -227,10 +227,69 @@ control("module interfaces: a module's store stating no built-ins", async (): Pr
   say("a module's store stating no built-ins: the importer's read of it refused at the read");
 });
 
+control("module interfaces: rows of another signature", async (): Promise<void> => {
+  // The importer and its module list their unique symbols in different
+  // orders, and the rows agree at the symbols' canonical numbers. Interface
+  // rows stating another signature are still refused at the read: `count`
+  // returning `string` where the importer reads `number`, and the built-ins
+  // keyed by a symbol number neither store gives a symbol.
+  const artifacts = run("interface-rows-symbol-order-value-import");
+  const fragment = fragmentOf(artifacts);
+  const ast: unknown = JSON.parse(readFileSync(fragment, "utf8"));
+  assert.ok(isObject(ast) && typeof ast.file === "string");
+  const key = ast.file;
+  const original: unknown = JSON.parse(readFileSync(join(artifacts, "interfaces", "interfaces.json"), "utf8"));
+  const stage = (name: string, interfaces: unknown): Pass => {
+    const path = join(artifacts, `${name}.json`);
+    const text = JSON.stringify(interfaces);
+    assert.ok(text !== undefined);
+    writeFileSync(path, text);
+    return passOf(counted(invokeProcess(verifierCall(verifierBuild, ["--subtype-rounds", "4096",
+      "--verify-interface-stage", "8", fragment, path, key, "12", ""]), { limitMs: 60_000, force: false, recorder: null })));
+  };
+  accepted(stage("interfaces-as-published", original), "widest@912", "the published rows");
+  const rowsOf = (j: unknown): { entry: Record<string, unknown>; rows: Record<string, unknown> } => {
+    assert.ok(isObject(j) && Array.isArray(j.modules) && j.modules.length === 1);
+    const m: unknown = j.modules[0];
+    assert.ok(isObject(m) && Array.isArray(m.entries) && isObject(m.rows));
+    const entry: unknown = m.entries[0];
+    assert.ok(isObject(entry) && entry.name === "count");
+    return { entry, rows: m.rows };
+  };
+  const at = /source refusal at \[912,918\): signature rows differ: the import 'count', its module's interface rows refused by the store-map check/;
+  // `count`'s interface row, its results the table's `string` row.
+  const strings: unknown = structuredClone(original);
+  const { entry, rows } = rowsOf(strings);
+  assert.ok(isObject(entry.established) && Array.isArray(entry.established.interface) && Array.isArray(rows.types));
+  const types: unknown[] = rows.types;
+  const string = types.findIndex((r) => JSON.stringify(r) === '["str"]');
+  const at290 = entry.established.interface[0];
+  assert.ok(string >= 0 && typeof at290 === "number");
+  const row: unknown = types[at290];
+  assert.ok(Array.isArray(row) && row.length === 1 && isObject(row[0]) && isObject(row[0].arrs));
+  const arrs = row[0].arrs;
+  assert.ok(Array.isArray(arrs.arrows) && Array.isArray(arrs.variadic));
+  let results = 0;
+  for (const a of [...arrs.arrows, ...arrs.variadic]) {
+    assert.ok(isObject(a));
+    a.result = [string];
+    results++;
+  }
+  assert.ok(results > 0);
+  refused(stage("interfaces-string-result", strings), "widest@912", "`count` returning `string`", at);
+  // The built-ins' symbol keys, one renumbered to a number no store gives.
+  const renumbered: unknown = structuredClone(original);
+  const builtins = rowsOf(renumbered).rows.builtins;
+  assert.ok(isObject(builtins) && Array.isArray(builtins.keys));
+  const symbolKey = builtins.keys.findIndex((k: unknown) => isObject(k) && typeof k.symbol === "number");
+  assert.ok(symbolKey >= 0);
+  builtins.keys[symbolKey] = { symbol: 1 };
+  refused(stage("interfaces-other-symbol", renumbered), "widest@912", "the built-ins keyed by another symbol", at);
+  say("rows of another signature: a result of another type and a key of another symbol refused at the read");
+});
+
 // ---------------------------------------------------------------------------
-// Forged fragments: the parser's document forged, refused by the pass. Each
-// is a control of pipeline/test.mts's whose forgery the old route searched
-// and checked, run through the pass.
+// Forged fragments: the parser's document forged, refused by the pass.
 
 /** A case's fragment, parsed. */
 const fragmentAst = (artifacts: string): Ast => readFragmentFile(fragmentOf(artifacts));
@@ -656,8 +715,8 @@ control("forged fragment: binder roles, an unguarded alias, written applications
     entry.bounds = entry.bounds.map(() => null);
   });
   // The bounds a written application is checked at are the document's
-  // (the front end supplies every one): nulled, the application is accepted,
-  // as the old route's search accepts it.
+  // (the front end supplies every one): nulled, the application is
+  // accepted.
   acceptedFile(relaxed, "the written bounds nulled");
   for (const [name, argument] of [["number", { k: "atom", name: "number", span }],
       ["callable", { k: "callable", span }]] as const)
@@ -680,8 +739,8 @@ control("forged fragment: binder roles, an unguarded alias, written applications
     assert.ok(found, "a reference to Keys");
   }), "a short reference", /Keys applied to 1 type arguments of 2/);
   using exhausted = checkSource(join(root, "pipeline/examples/written-recursive-bound.ts"), undefined, false, 0, true);
-  // Refused at the application, exhausted. (The route reports the front's
-  // refusal as unsupported, where the old route's status is `exhausted`.)
+  // Refused at the application, exhausted; the route reports the front's
+  // refusal as unsupported.
   assert.ok(exhausted.status !== "verified" && exhausted.status !== "error", JSON.stringify(exhausted));
   assert.match("detail" in exhausted ? exhausted.detail : "", /source direct obligation at \[202,212\): subtype search exhausted/);
   say("binder roles, an unguarded alias, written arguments, scopes and references forged: each refused; a written obligation out of rounds exhausted");
@@ -691,8 +750,8 @@ control("forged declarations: the Promise tag", async (): Promise<void> => {
   // `Symbol.toStringTag` is the native `Promise` contract's: the declaration
   // document lists it by its identity, only that contract's prototype holds
   // it, its `then` names no `PromiseLike`, and no object the source makes is
-  // keyed by it. A document tampered with in any of these is refused where
-  // evidence is produced and where it is checked.
+  // keyed by it. A document tampered with in any of these is refused by the
+  // pass.
   const tagged = (good: string, name: string, edit: (ast: Ast) => string, refusal: RegExp): void => {
     const path = join(good, `${name}.fragment.json`);
     writeFileSync(path, edit(readFragmentFile(fragmentOf(good))));
@@ -732,14 +791,10 @@ control("forged declarations: the Promise tag", async (): Promise<void> => {
   // `Fake` given the native contract's members at `number`, its methods
   // compatible with the native ones. As an exact copy its prototype is the
   // native record, and it verifies. With the tag dropped from its prototype,
-  // its value returned as a `Promise<number>` is refused at the return where
-  // evidence is produced, and the exact copy's evidence, justifying the
-  // return by the tag, is refused where it is checked: dropping the tag makes
-  // the prototype a record of its own, a head the exact copy's store lacks,
-  // so that evidence's labels name other rows and it is refused as it is
-  // read. With the tag on a prototype of one more field, on Fake or on
-  // a base, or on a prototype that is a callable object, the document is
-  // refused in both.
+  // its value returned as a `Promise<number>` is refused at the return:
+  // dropping the tag makes the prototype a record of its own. With the tag
+  // on a prototype of one more field, on Fake or on a base, or on a
+  // prototype that is a callable object, the document is refused.
   const inherited = run("tag-fake-holder");
   // The copied contract with its prototype a callable object: every
   // prototype field writable, and a call signature.
@@ -784,8 +839,7 @@ control("forged declarations: the Promise tag", async (): Promise<void> => {
     const produced = pass(exact);
     assert.ok(produced.status === 0 && [...produced.verdicts.values()].every((v) => v.closed), words(produced).slice(0, 1500));
   }
-  // Refused at the read of `f` in `return f` (the old route: `source
-  // expression obligation at [at,at+1)`; the route names the node).
+  // Refused at the read of `f` in `return f`, the refusal naming the node.
   tagged(inherited, "tag-fake-untagged", ast => fakeAt(ast, "untagged"), /expression at node \d+: Verification\.Tm\.var 0 /);
   assert.ok(at > 0);
   const otherPrototype = /a prototype holding `Symbol.toStringTag` other than the native Promise's/;
@@ -960,16 +1014,19 @@ control("forged fragment: a method's statement dropped", async (): Promise<void>
 });
 
 control("stated import: the exporting module refused", async (): Promise<void> => {
-  using importer = checkSource(join(root, "pipeline/examples/stated-assumed-value-import.ts"),
+  // An import with a body is read at what its declaration states only where
+  // its module's check establishes it; `drain`'s statement is refused there,
+  // so the importer reads it at the ordinary effect and is refused.
+  using importer = checkSource(join(root, "pipeline/examples/invalid-stated-assumed-value-import.ts"),
     tsconfigOf(join(root, "pipeline/imports-project")), false, undefined, true);
   const project = join(root, "pipeline/imports-project");
   using outcome = checkSource(join(project, "stated.ts"), tsconfigOf(project), false, undefined, true);
-  assert.equal(importer.status, "verified", JSON.stringify(importer).slice(0, 1500));
+  assert.notEqual(importer.status, "verified", JSON.stringify(importer).slice(0, 1500));
   if (outcome.status === "verified") assert.fail("drain's module verified");
   const drain = must((outcome.units ?? []).find((u) => u.unit.startsWith("drain@")), "drain's unit");
   assert.notEqual(drain.status, "verified");
   assert.match(drain.detail, /footprint/);
-  say("stated import: the importer verified relative to the import assumption, the exporting module's drain refused at its footprint");
+  say("stated import: the exporting module's drain refused at its footprint, the importer refused at the ordinary effect");
 });
 
 control("exhausted footprint check", async (): Promise<void> => {
@@ -1079,7 +1136,7 @@ control("host reading on a stand-in host", async (): Promise<void> => {
     using kept = checkSource(example("host-fixture-jsdoc-other-reads"), project, false, undefined, true);
     assert.equal(kept.status, "verified", JSON.stringify(kept));
     using lookalike = checkSource(example("host-fixture-lookalike"), project, false, undefined, true);
-    // Refused at the read of jsDoc (the old route refuses it in the producer, unsupported).
+    // Refused at the read of jsDoc.
     assert.ok(lookalike.status !== "verified" && "detail" in lookalike && jsDocRead.test(lookalike.detail), JSON.stringify(lookalike));
   } finally {
     useFamiliesForTests(null);
@@ -1149,7 +1206,7 @@ for (const copy of [false, true]) control(`nested installations: ${copy ? "a cop
     : "nested installations: the audited package linked narrows");
 });
 
-/** The pipeline directory, as pipeline/test.mts's controls name it. */
+/** The pipeline directory. */
 const here = join(root, "pipeline");
 /** A source checked on the route, its artifacts retained. */
 function check(source: string, project?: string, typescriptErrors: boolean = false, subtypeRounds?: number): Outcome {
@@ -1178,7 +1235,7 @@ control("declared-optional method on a stand-in family", async (): Promise<void>
     const file = example("invalid-family-fixture-optional-method");
     const refused = check(file, project);
     const at = readFileSync(file, "utf8").indexOf("n.describe");
-    assert.ok(refused.status !== "verified" && refused.detail.includes(`at [${at},`) /* the route refuses at a unit, the old route in the producer */, JSON.stringify(refused));
+    assert.ok(refused.status !== "verified" && refused.detail.includes(`at [${at},`) /* refused at a span starting at the call */, JSON.stringify(refused));
   } finally {
     useFamiliesForTests(null);
   }
@@ -1192,8 +1249,7 @@ control("a compiler-API method a correction makes absent", async (): Promise<voi
   // selected generic arm, a residual holding the tag), so each call is
   // refused at its read; under the compiler API's own description each
   // verifies. The route reads only the document of the description it runs
-  // under, so the old control's other half (the plain run's claims offered
-  // with the corrected document) has no counterpart.
+  // under.
   const project = tsconfigOf(join(here, "compiler-api-project"));
   const getText = (kind: string) => ({ kind, owner: "Node", member: "getText", text: "getText(sourceFile?: SourceFile): string;" });
   const corrected = [
@@ -1257,7 +1313,7 @@ control("a string-tagged family", async (): Promise<void> => {
     const file = example("invalid-loose");
     const refused = check(file, project);
     const at = readFileSync(file, "utf8").lastIndexOf("n.name");
-    // Refused at a span holding the read, reading `name` (the old route: at the read's own span, in the producer).
+    // Refused at a span holding the read, reading `name`.
     const spans = [...("detail" in refused ? refused.detail : "").matchAll(/at \[(\d+),(\d+)\)/g)].map((m) => [Number(m[1]), Number(m[2])]);
     assert.ok(refused.status !== "verified" && spans.some(([a, b]) => a <= at && at < b) &&
       /read of a field 'name'|missing field name/.test(refused.detail), JSON.stringify(refused));
@@ -1369,8 +1425,8 @@ control("a string-tagged family", async (): Promise<void> => {
         assert.equal(verified.status, "verified", JSON.stringify(verified));
         const refused = check(join(crossed, "tag-of.ts"), tsconfigOf(crossed));
         const returned = source.indexOf("isName(n) ?");
-        // Refused; the route names the node (`expression at node N`) where
-        // the old route names the return's span and the tag set it fails.
+        // Refused, at the return's span with the tag set it fails or at the
+        // node (`expression at node N`).
         assert.ok(refused.status !== "verified" && "detail" in refused && (refused.detail.includes(`at [${returned},`) &&
           refused.detail.includes('"" | "call" | "literal" | "name"') ||
           /single pass: refused: expression at node \d+: Verification\.Tm\.var 0 /.test(refused.detail)), JSON.stringify(refused));
@@ -1519,9 +1575,8 @@ control("forged declarations: a stable link's key dropped", async (): Promise<vo
   // Stable links (HOST-FAMILIES.md, "Stable links"): a read link through a
   // member every arm states stable survives a call. The positive case's
   // document with the tested member's stable key dropped from its shape,
-  // the one thing the rule reads, is refused in search with the case's own
-  // claims and in checking with its own evidence, at the read past the call;
-  // the honest document is accepted.
+  // the one thing the rule reads, is refused by the pass at the read past
+  // the call; the honest document is accepted.
   const artifacts = run("compiler-api-stable-link");
   const forged = (file: string, keys: (stable: readonly string[]) => string[] | undefined): string => {
     const fragment: Ast = fragmentAst(artifacts);
@@ -1553,9 +1608,8 @@ control("forged declarations: stable optional members' keys dropped", async (): 
   // an optional member past a call, absent or present, rests on the member's
   // stable key alone. The positive case's document with `initializer` and
   // `expression` dropped from the stable keys of the shapes stating them, the
-  // one thing the rule reads, is refused in search with the case's own
-  // claims and in checking with its own evidence; the honest document is
-  // accepted.
+  // one thing the rule reads, is refused by the pass; the honest document
+  // is accepted.
   const artifacts = run("compiler-api-stable-optional");
   const forged = (file: string, keep: (key: string) => boolean): string => {
     const fragment: Ast = fragmentAst(artifacts);
@@ -1585,8 +1639,7 @@ control("forged declarations: stable optional members' keys dropped", async (): 
 // The stage store on the route: in a fresh store of the control's own.
 
 control("forged fragment: a store separation removed", async (): Promise<void> => {
-  // Old control "forged store separations" (pipeline/test.mts at 4ecb0149,
-  // line 1223), its fragment half: `measure`'s precondition
+  // A store separation forged away in the fragment: `measure`'s precondition
   // `flags !== runs.openBrackets` removed, so `i < flags.length` is not kept
   // across `readRuns`, whose frame may change `runs.openBrackets`'s store,
   // and the read `flags[i]` is refused.
@@ -1602,8 +1655,7 @@ control("forged fragment: a store separation removed", async (): Promise<void> =
 });
 
 control("forged fragment: the rest intrinsic's effect widened", async (): Promise<void> => {
-  // Old control "array rests" (line 1673), its fragment half: rest
-  // collection consumes the intrinsic's stated effect, so the intrinsic at an
+  // Rest collection consumes the intrinsic's stated effect, so the intrinsic at an
   // ordinary arrow's effect leaves the defining unit's growth footprint
   // unestablished.
   const artifacts = run("blocker-next-array-rest-footprint");
@@ -1621,7 +1673,7 @@ control("forged fragment: the rest intrinsic's effect widened", async (): Promis
 });
 
 control("units: each listed with its dependencies, a names list selecting", async (): Promise<void> => {
-  // Old control "units" (line 2241), its unit-list half: the pass lists each
+  // The pass lists each
   // unit of module-cells with the units it depends on, the module's
   // initialization among them, and a names list checks those units alone.
   const artifacts = run("module-cells");
@@ -1645,8 +1697,7 @@ control("units: each listed with its dependencies, a names list selecting", asyn
 });
 
 control("forged fragment: a guard's undefined behaviour", async (): Promise<void> => {
-  // Old control "guards on undefined" (line 8785), its fragment half: a node
-  // guard on a `parent` that may be absent throws there, so both its edges
+  // A node guard on a `parent` that may be absent throws there, so both its edges
   // hold a present `parent`. Its behaviour on undefined forged unadmitted,
   // the test then reading `kind` of a value that may be absent, refuses
   // every unit reading through such a guard.
@@ -1668,8 +1719,7 @@ control("forged fragment: a guard's undefined behaviour", async (): Promise<void
 });
 
 control("forged fragment: a lone surrogate and bytes that are no UTF-8", async (): Promise<void> => {
-  // Old control "wire strings" (line 8986), its fragment half: a lone
-  // surrogate, which JSON writes as an escape, and bytes that are not UTF-8,
+  // A lone surrogate, which JSON writes as an escape, and bytes that are not UTF-8,
   // refused by Lean before it reads a value, and by TypeScript's reader.
   const artifacts = run("tag-set-code-points");
   const text = readFileSync(fragmentOf(artifacts), "utf8");
@@ -1690,7 +1740,7 @@ control("forged fragment: a lone surrogate and bytes that are no UTF-8", async (
 });
 
 control("step failures: the pass's exit without a complete refusal is a tool failure", async (): Promise<void> => {
-  // Old control "step failures" (line 9460) on the route: the pass's exit
+  // The pass's exit
   // other than its complete refusal record (exit 1, a first line `reject: …`
   // and a last line `end of refusal`) is a tool failure, no verdict: no
   // output, an exception's text, and a record cut short. The injected failure
@@ -1851,7 +1901,8 @@ control("imported functions left out with a function they read", async (): Promi
   // `jumped` is refused, and each function reading it, directly, through
   // another, as a value, in a closure or in a parameter default, is left out
   // with it; a parameter of the same name is no read of it. A module whose
-  // top-level code reads a function left out is not listed.
+  // top-level code reads a function left out is listed with that code left
+  // out: each name it binds absent, with the functions reading one.
   const partial = fragmentAst(run("invalid-absent-callee-value-import"));
   const [module] = partial.modules;
   assert.ok(module && partial.modules.length === 1 && module.location === "./partial.ts");
@@ -1866,8 +1917,15 @@ control("imported functions left out with a function they read", async (): Promi
     ["defaulted", leftOut("jumped", 24, 50)],
     ["chained", leftOut("relayed", 16, 10)],
   ]);
-  assert.deepEqual(fragmentAst(run("invalid-absent-init-value-import")).modules, []);
-  say("an imported module's functions reading a function left out: left out with it, transitively; a module whose top-level code reads one: not listed");
+  const [initModule] = fragmentAst(run("absent-init-value-import")).modules;
+  assert.ok(initModule && initModule.location === "./partial-init.ts");
+  assert.deepEqual(initModule.functions.map((f) => f.name), ["kept"]);
+  assert.deepEqual(initModule.init, []);
+  assert.deepEqual(initModule.absent.map((a) => [a.name, a.reason]), [
+    ["start", "the module's top-level code is left out: gate: the module's top-level code reads jumped, a function of its module left out (line 13, col 30)"],
+    ["jumped", "gate: statement outside the fragment (LastStatement) (line 6, col 3)"],
+  ]);
+  say("an imported module's functions reading a function left out: left out with it, transitively; a module whose top-level code reads one: listed with that code left out");
 });
 
 control("guard binding: a closure's write keeps the guard an ordinary call", async (): Promise<void> => {
