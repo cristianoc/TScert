@@ -845,7 +845,7 @@ theorem packedBy_sound {G : NormalGraph ι} {A : Ty ι} {t : ι} (hp : PackedBy 
     intro m U u h
     simp only [mixedParameters, hk, selectParameter] at h
     rcases h with ⟨h, _⟩ | ⟨_, _, h⟩
-    · cases h
+    · rcases h with h | h <;> cases h
     · refine Packable_mono ?_ h
       intro j U' vs hvs
       exact ⟨t, List.mem_singleton_self t, by simpa [NormalGraph.listParam, hk] using hvs⟩

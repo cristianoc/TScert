@@ -305,7 +305,7 @@ def arrayHead (readonly : Bool) (proto : Tree) : M Nat := do
   -- The built-ins' `unknown`, the type of an array's elements.
   let _ ← ground "unknown" [.source]
   alloc s!"array|{readonly}"
-    { name := if readonly then "ReadonlyArray" else "Array", kind := .array readonly, kinds := [.value],
+    { name := if readonly then "ReadonlyArray" else "Array", kind := .array readonly, kinds := [.store],
       body := some (.clauses [arrayClauseOf [.argument 0] [proto] excluded readonly]) } fun _ => none
 
 /-! ### Heads added after the declarations

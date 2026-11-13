@@ -136,14 +136,16 @@ instance (priority := high) [FromJson α] : FromJson (Clause α) :=
 instance : ToJson ParameterKind := ⟨fun
   | .value => .str "value"
   | .arguments => .str "arguments"
-  | .packed => .str "packed"⟩
+  | .packed => .str "packed"
+  | .store => .str "store"⟩
 
 instance : FromJson ParameterKind := ⟨fun j => do
   match ← j.getStr? with
   | "value" => return .value
   | "arguments" => return .arguments
   | "packed" => return .packed
-  | _ => throw "expected parameter kind value, arguments or packed"⟩
+  | "store" => return .store
+  | _ => throw "expected parameter kind value, arguments, packed or store"⟩
 
 /-- Resolution groups retain positions among the scheme's binders. -/
 instance : ToJson ResolutionSlots := ⟨fun s => Json.mkObj [
@@ -158,7 +160,7 @@ instance : FromJson ResolutionSlots := ⟨fun j => do
 scheme rows; a scheme row as
 `{"scheme": {"binders", "signatures", "bounds", "variadic", "resolution"}}`,
 its bounds, variadic signatures and resolution groups left out when empty, a parameter row as
-`{"param": label, "name": name, "kind": "value" | "arguments"}`, and a meet
+`{"param": label, "name": name, "kind": "value" | "arguments" | "packed" | "store"}`, and a meet
 row as `{"meet": binder, "clauses": [...]}`, whatever the labels are. -/
 instance [ToJson ι] [ToJson α] : ToJson (GraphRow ι α) := ⟨fun
   | .clauses cs => toJson cs

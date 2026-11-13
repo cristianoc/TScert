@@ -23,25 +23,24 @@ instances, needs. -/
 
 /-- Semantic binders distinguish a runtime value from an argument list. A
 packed binder is both: a value binder whose values are arrays, and the
-argument lists their elements form (`Packable`). -/
+argument lists their elements form (`Packable`). A store binder is an
+internal one whose values are element stores: the store an array type is
+applied to (`Interning.arrayHead`); no source binder is one. -/
 inductive ParameterKind where
   | value
   | arguments
   | packed
+  | store
   deriving DecidableEq, BEq, Repr, Inhabited
 
 deriving instance ReflBEq for ParameterKind
 deriving instance LawfulBEq for ParameterKind
 
-abbrev ParameterKind.Carrier : ParameterKind → Type
-  | .value => Val
-  | .arguments => List Val
-  | .packed => Val
-
-abbrev ParameterKind.Closed : (k : ParameterKind) → k.Carrier → Prop
-  | .value => fun (v : Val) => isVal v = true ∧ Scoped 0 v
-  | .arguments => fun (vs : List Val) => ∀ v ∈ vs, isVal v = true ∧ Scoped 0 v
-  | .packed => fun (v : Val) => isVal v = true ∧ Scoped 0 v
+/-- **Machine closedness**: a closed term that is a value, of either sort
+(`topT_iff_sort`: `V ∪ S`). It is the closedness of every type's meaning,
+store types' included (`mixedMeaning_not_sourceValid`), so it is the shared
+carrier's; a binder's own sort is its kind's (`ParameterKind.MixedSort`). -/
+abbrev MachineClosed (v : Val) : Prop := isVal v = true ∧ Scoped 0 v
 
 /-- The sort of the value component a binder of each kind observes; an
 argument binder observes none. -/
@@ -49,11 +48,22 @@ def ParameterKind.valueSort : ParameterKind → Option ValueSort
   | .value => some .source
   | .arguments => none
   | .packed => some .source
+  | .store => some .store
 
 /-- The kinds whose binders observe argument lists. -/
 def ParameterKind.lists : ParameterKind → Bool
   | .arguments | .packed => true
-  | .value => false
+  | .value | .store => false
+
+/-- The kinds whose binders observe a runtime value and no argument list: the
+outer sort of a type of clause rows other than packs (`valued_iff`). -/
+@[simp] def ParameterKind.valued : ParameterKind → Bool
+  | .value | .store => true
+  | .arguments | .packed => false
+
+theorem ParameterKind.valued_iff (k : ParameterKind) :
+    k.valued = true ↔ k.valueSort.isSome = true ∧ k.lists = false := by
+  cases k <;> simp [ParameterKind.valueSort, ParameterKind.lists]
 
 /-- **A binder's sort** on the shared carrier of value and argument-list
 components: its value component in its kind's sort, its argument-list
@@ -102,17 +112,19 @@ structure ParameterSpace where
   Carrier : Type
   Closed : Carrier → Prop
 
-abbrev ParameterSpace.value : ParameterSpace :=
-  ⟨ParameterKind.Carrier .value, ParameterKind.Closed .value⟩
-abbrev ParameterSpace.arguments : ParameterSpace :=
-  ⟨ParameterKind.Carrier .arguments, ParameterKind.Closed .arguments⟩
+/-- Machine-closed values: the space of every type's meaning. -/
+abbrev ParameterSpace.value : ParameterSpace := ⟨Val, MachineClosed⟩
+/-- Lists of machine-closed values. -/
+abbrev ParameterSpace.arguments : ParameterSpace := ⟨List Val, fun vs => ∀ v ∈ vs, MachineClosed v⟩
 
 /-- A semantic sum, not a calculus value constructor. It permits a single
-substitution to contain both ordinary types and whole argument-list types. -/
+substitution to contain both ordinary types and whole argument-list types,
+and its value component holds every type's members, sources and stores alike;
+the sort a binder observes is its kind's (`ParameterKind.MixedSort`). -/
 abbrev ParameterSpace.mixed : ParameterSpace :=
   ⟨Val ⊕ List Val, fun
-    | .inl v => ParameterKind.Closed .value v
-    | .inr vs => ParameterKind.Closed .arguments vs⟩
+    | .inl v => MachineClosed v
+    | .inr vs => ∀ v ∈ vs, MachineClosed v⟩
 
 /-- Both sorts obey the same approximation and world-extension laws. List
 membership is at the current level; changing sorts does not insert a guard. -/
@@ -175,7 +187,7 @@ def ParameterAssignment.empty (k : ParameterSpace) : ParameterAssignment k ι :=
 The other component of a mixed semantic family cannot constrain its meaning. -/
 def selectParameter (kind : Option ParameterKind) (A : WorldFamily ParameterSpace.mixed.Carrier) :
     WorldFamily ParameterSpace.mixed.Carrier := fun n W x => match x with
-  | .inl v => (kind = some .value ∧ A n W (.inl v)) ∨
+  | .inl v => ((kind = some .value ∨ kind = some .store) ∧ A n W (.inl v)) ∨
       (kind = some .packed ∧ A n W (.inl v) ∧ Packable (fun j U vs => A j U (.inr vs)) n W v)
   | .inr vs => (kind = some .arguments ∨ kind = some .packed) ∧ A n W (.inr vs)
 
@@ -468,16 +480,19 @@ def NormalGraph.clauses (G : NormalGraph ι) (i : ι) : List (Clause (List ι)) 
 
 instance : CoeFun (NormalGraph ι) (fun _ => ι → List (Clause (List ι))) := ⟨NormalGraph.clauses⟩
 
-/-- The sort of a type reference comes from its parameter or clause rows.
-The empty union is bottom at either sort; a union cannot mix value and pack
-rows. This checks only the outer sort, not recursive operand well-formedness. -/
+/-- The outer sort of a type reference comes from its parameter or clause rows:
+a parameter row's is its kind, a scheme, meet or non-pack clause row's is
+valued (`ParameterKind.valued`: a value or a store binder's), a pack row's an
+argument binder's. The empty union is bottom at every sort; a union cannot mix
+value and pack rows. This checks only the outer sort, not the category of the
+members (`tyIn`) nor recursive operand well-formedness. -/
 def NormalGraph.hasKind (G : NormalGraph ι) (kind : ParameterKind) (S : List ι) : Bool :=
   S.all fun i => match G.parameterKinds i with
     | some k => k == kind
-    | none => if (G.schemes i).isSome || (G.meets i).isSome then kind == .value else
+    | none => if (G.schemes i).isSome || (G.meets i).isSome then kind.valued else
       (G.rows i).all fun c => match c with
         | .pack .. => kind == .arguments
-        | _ => kind == .value
+        | _ => kind.valued
 
 /-- A label with clauses is a clause row. -/
 theorem NormalGraph.plain_of_clauses {G : NormalGraph ι} {i : ι} {c}
@@ -1540,14 +1555,17 @@ theorem mixedMeaning_noValues (G : NormalGraph ι) (η : MixedAssignment ι) (S 
         (fun c => match c with | .pack .. => true | _ => false) = true by simpa [hp, hq, hm, (show (ParameterKind.arguments == ParameterKind.value) = false from rfl)] using hk) c hr
       cases c <;> simp_all [rowSem, semWithArgs]
 
-/-- A sorted value type cannot contribute argument-list members. -/
-theorem mixedMeaning_noArguments (G : NormalGraph ι) (η : MixedAssignment ι) (S : List ι)
-    (hs : G.hasKind .value S = true) (n : Nat) (W : WorldT n) (vs : List Val) :
+/-- A type of a valued sort (a value or store type) cannot contribute
+argument-list members. -/
+theorem mixedMeaning_noArguments_of (G : NormalGraph ι) (η : MixedAssignment ι) (S : List ι)
+    {kind : ParameterKind} (hval : kind.valued = true)
+    (hs : G.hasKind kind S = true) (n : Nat) (W : WorldT n) (vs : List Val) :
     ¬ mixedMeaning G η S n W (.inr vs) := by
   rintro ⟨i, hi, hv⟩
   have hk := List.all_eq_true.mp hs i hi
   by_cases hp : G.listParam i = true
-  · rcases NormalGraph.listParam_iff.mp hp with hp | hp <;> simp [hp] at hk
+  · rcases NormalGraph.listParam_iff.mp hp with hp | hp <;> simp only [hp, beq_iff_eq] at hk <;>
+      subst hk <;> simp at hval
   · simp only [hp, if_false, Bool.false_eq_true] at hv
     obtain ⟨c, hc, hv⟩ := hv
     have hplain := NormalGraph.plain_of_clauses hc
@@ -1555,10 +1573,16 @@ theorem mixedMeaning_noArguments (G : NormalGraph ι) (η : MixedAssignment ι) 
     have hn : G.parameterKinds i = none := by
       simpa [NormalGraph.params] using hparts.1
     have hr : c ∈ G.rows i := by simpa [NormalGraph.clauses, hplain] using hc
-    have ht := List.all_eq_true.mp (show (G.rows i).all
-      (fun c => match c with | .pack .. => false | _ => true) = true by
-        simpa [hn, hparts.2.1, hparts.2.2, (show (ParameterKind.value == ParameterKind.arguments) = false from rfl)] using hk) c hr
-    cases c <;> simp_all [clauseArguments]
+    simp only [hn, hparts.2.1, hparts.2.2, Option.isSome_none, Bool.or_false, Bool.false_eq_true,
+      ite_false, List.all_eq_true] at hk
+    have ht := hk c hr
+    cases c <;> try simp_all [clauseArguments]
+
+/-- A sorted value type cannot contribute argument-list members. -/
+theorem mixedMeaning_noArguments (G : NormalGraph ι) (η : MixedAssignment ι) (S : List ι)
+    (hs : G.hasKind .value S = true) (n : Nat) (W : WorldT n) (vs : List Val) :
+    ¬ mixedMeaning G η S n W (.inr vs) :=
+  mixedMeaning_noArguments_of G η S rfl hs n W vs
 
 /-- The existing sort check guarantees that a type image equals its selected
 component. This connects the wire's kind check to semantic correspondence. -/
@@ -1578,7 +1602,7 @@ theorem mixedMeaning_selected (G : NormalGraph ι) (η : MixedAssignment ι) (S 
     simp only [selectParameter]
     constructor
     · rintro (⟨hk, _⟩ | ⟨_, h, _⟩)
-      · cases hk
+      · rcases hk with hk | hk <;> cases hk
       · exact h
     · intro h
       refine Or.inr ⟨by simp, h, ?_⟩
@@ -1609,6 +1633,8 @@ theorem mixedMeaning_selected (G : NormalGraph ι) (η : MixedAssignment ι) (S 
           have := hk c hr
           cases c <;> simp at this
   · simp [selectParameter]
+  · simp [selectParameter]
+  · simp [selectParameter, mixedMeaning_noArguments_of G η S (kind := .store) rfl hs]
 
 /-- A graph's meaning reads its parameter rows at its own assignment. -/
 noncomputable def normalDenote (G : NormalGraph ι) (i : ι) : Fam :=

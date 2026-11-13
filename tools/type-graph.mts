@@ -497,7 +497,7 @@ export type Row<L = number> = Clause<L>[];
  * callable meeting its signatures at every instance of its binders, or a
  * meet, a value parameter within clauses (`V & DepSafe`)
  * (`POSITIVE-TYPES.md`, "Parameter and scheme rows"). */
-type ParamRow = { kind: "value" | "arguments"; name: string; param: number };
+type ParamRow = { kind: "value" | "arguments" | "packed" | "store"; name: string; param: number };
 export type SchemeRow<L = number> = { scheme: { binders: L[]; signatures: Arrow<L>[];
   bounds?: [binder: L, bound: Labels<L>][]; variadic?: RestArrow<L>[];
   resolution?: { input: number; observation: number; result: number | null }[];
@@ -586,7 +586,7 @@ function isIndexClass(v: unknown): v is IndexClass {
   return v === "strings" || v === "numeric" || v === "symbols";
 }
 function isParamKind(v: unknown): v is ParamRow["kind"] {
-  return v === "value" || v === "arguments";
+  return v === "value" || v === "arguments" || v === "packed" || v === "store";
 }
 /** A key as TypeScript writes it: a string plainly, a symbol by its index. */
 const keyText = (name: PropertyKey): string =>

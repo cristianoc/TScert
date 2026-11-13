@@ -954,8 +954,16 @@ only (`SortValid`):
 
 A binder's **sort** on the shared carrier $`\mathsf{Val}\uplus\mathsf{Val}^{*}`$
 is its value component in its kind's sort ($`V`$ for a value or packed
-binder; an argument binder has none) and its list component in $`L`$ for an
-argument or packed binder (`ParameterKind.MixedSort`). An assignment is
+binder, $`S`$ for a store binder; an argument binder has none) and its list
+component in $`L`$ for an argument or packed binder (`ParameterKind.MixedSort`).
+A **store binder** is internal: the parameter of the array heads, applied to
+an array type's store type (`Interning.arrayHead`), and the family variables
+a variance check generates for it; no source binder is one. The shared
+carrier's own closedness is machine closedness, $`V\cup S`$
+(`MachineClosed`), since every type's meaning, a store type's included, is a
+family on it. The outer sort a substitution checks (`hasKind`) groups value
+and store binders: a type of clause rows other than packs, of schemes or of
+meets has the outer sort of both (`ParameterKind.valued`). An assignment is
 **sorted** when each parameter row's selected family is in its binder's sort
 (`NormalGraph.Sorted`).
 
