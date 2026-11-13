@@ -3020,7 +3020,9 @@ theorem absentSlot_undef {t : Tm} {recv : Bool} {slots : List Nat} (hs : callSlo
 open HeapKnowledge in
 /-- **The relation a call's postcondition states** between the caller's
 state before the call and after it: each linear post fact naming an entry
-term, its terms read by `callVar`; each after-term it names defined. A fact
+term, its terms read by `callVar`; each term it names defined, before the
+call and after it (a post fact that holds defines its terms,
+`IndexFact.defines_holds`). A fact
 reading a position the call passes nothing at reads `undefined` there,
 which denotes no integer: it never holds, and its relation is `0 ≤ -1`. -/
 def callRelation (eff : Effect) (t : Tm) : StepRelation :=
@@ -3031,9 +3033,12 @@ def callRelation (eff : Effect) (t : Tm) : StepRelation :=
           if G.vars.any (absentAt slots) then some (.le [] (-1)) else G.mapVars (callVar recv slots)
         else none
       | _ => none
-    { facts, defined := (facts.flatMap (·.vars)).filterMap fun
+    { facts, defined := (facts.flatMap (·.vars)).filterMap (fun
         | .after u => some u
-        | .before _ => none }
+        | .before _ => none),
+      definedBefore := (facts.flatMap (·.vars)).filterMap fun
+        | .before u => some u
+        | .after _ => none }
   | none => { facts := [] }
 
 open HeapKnowledge in
@@ -3161,7 +3166,7 @@ theorem callRelation_holds {eff : Effect} {t : Tm} {ρ : Env} {h h' : Heap} {v :
           · exact ⟨G, hF0, .inl hm⟩
         · cases hm
       · cases hm
-    refine ⟨fun F hF _ => ?_, fun _ u hu => ?_⟩
+    refine ⟨fun F hF _ => ?_, fun _ u hu => ?_, fun u hu => ?_⟩
     · obtain ⟨G, hG, hm | ha⟩ := hfact F hF
       · exact (Linear.Fact.holds_mapVars hm fun x _ y hy => (hvar x y hy).1).mpr (hp _ hG).2
       · exact (habsent G hG ha).elim
@@ -3176,7 +3181,20 @@ theorem callRelation_holds {eff : Effect} {t : Tm} {ρ : Env} {h h' : Heap} {v :
           rw [(hvar x _ hxy).2 _ rfl]
           exact (hp _ hG).1 x hx
         · exact (habsent G hG ha).elim
-  · exact ⟨fun F hF => (by cases hF), fun _ u hu => (by cases hu)⟩
+    · obtain ⟨y, hy, hyu⟩ := List.mem_filterMap.mp hu
+      obtain ⟨F, hF, hy⟩ := List.mem_flatMap.mp hy
+      cases y with
+      | after _ => cases hyu
+      | before u' =>
+        cases hyu
+        obtain ⟨G, hG, hm | ha⟩ := hfact F hF
+        · obtain ⟨x, hx, hxy⟩ := Linear.Fact.mapVars_vars hm _ hy
+          have hval := callVar_val (ε := ε) (ρ := ρ) (h := h) (h' := h') (v := v) hs hxy
+          simp only [StepVar.val] at hval
+          rw [hval]
+          exact IndexFact.defines_holds (hp _ hG) x hx
+        · exact (habsent G hG ha).elim
+  · exact ⟨fun F hF => (by cases hF), fun _ u hu => (by cases hu), fun u hu => (by cases hu)⟩
 
 open HeapKnowledge in
 /-- Whether a call keeps the value of a term of the caller (the term

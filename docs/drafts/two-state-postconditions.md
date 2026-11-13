@@ -162,6 +162,17 @@ proved `ensuresComposed_holds` from `callRelation_holds` and
 $`b=|x|_{\mathrm{after}}-n`$, so a fact $`a-|x|\le 0`$ before the call
 becomes $`a-|x|+n\le 0`$ after it.
 
+A relation's fact holds where its before-terms denote integers; a relation
+states the before-terms it defines (`StepRelation.definedBefore`). A fact
+that holds defines its terms (`IndexFact.defines`, proved
+`defines_holds`, every form: a linear fact's terms, an `int` atom's value, a
+`length` atom's length and value, an element's index, a quantified fact's
+bound), so a call's relation defines every term its facts name, before the
+call and after it, and every fact of it composes, whether or not the
+caller's facts before the call name its before-terms. Two equalities through
+one entry value compose into an equality after the call:
+$`|y|_{\mathrm{after}}=b+1,\ r=b\ \vdash\ |y|_{\mathrm{after}}=r+1`$.
+
 The push rule ($`|x|_{\mathrm{after}}=|x|_{\mathrm{before}}+\mathit{count}`$)
 and the write at the length ($`|x|_{\mathrm{after}}=|x|_{\mathrm{before}}+1`$)
 are the same composition at the relation `IndexWrites.lengthGrowth`

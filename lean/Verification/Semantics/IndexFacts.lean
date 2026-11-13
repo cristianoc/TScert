@@ -1270,6 +1270,47 @@ theorem identity_holds {t : Term} {ρ : Env} {h : Heap} (hρ : ε.env = ρ) (hh 
     · simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, he]
       omega
 
+/-- **The terms a fact states defined** (the note "Tolerant frames",
+section 6: an atom's paths are defined), by every form: a linear fact's
+terms; an `int` atom's slot's value; a `length` atom's array's length and
+its slot's value; an element atom's index; a quantified fact's bound. -/
+def defines : IndexFact → List Term
+  | .linear F => F.vars
+  | .int k => [.value k]
+  | .length x n => [.length x, .value n]
+  | .element _ _ k => [.value k]
+  | .every _ _ stop _ => [stop]
+  | .index _ | .bound _ _ _ | .pastSafe _ | .either _ _ | .guarded _ _ _ _ | .apart _ _
+  | .storeApart _ _ _ _ => []
+
+/-- **A fact that holds defines its terms** (proved, by every form): each
+term `defines` names denotes an integer wherever the fact holds. -/
+theorem defines_holds {F : IndexFact} {ρ : Env} {h : Heap} (hF : F.HoldsAt ε ρ h) :
+    ∀ t ∈ F.defines, (termValue ε ρ h t).isSome := by
+  intro t ht
+  cases F with
+  | linear G => exact hF.1 t ht
+  | int k =>
+    simp only [defines, List.mem_singleton] at ht; subst ht
+    simp only [termValue_value]; exact hF
+  | length x n =>
+    obtain ⟨s, ls, hs, hl, hn, hm⟩ := hF
+    simp only [defines, List.mem_cons, List.not_mem_nil, or_false] at ht
+    rcases ht with rfl | rfl
+    · simp only [termValue_length, lengthOf_of_store hs hl hm, Option.isSome_some]
+    · simp only [termValue_value, hn]
+      rw [intValue_num (i := (ls.length : Int)) ⟨by simp [maxArrayLength] at hm ⊢; omega, .inl ⟨by omega, by simp⟩⟩]; rfl
+  | element v x k =>
+    obtain ⟨s, ls, b, i, -, -, hk, hsafe, -⟩ := hF
+    simp only [defines, List.mem_singleton] at ht; subst ht
+    simp only [termValue_value, hk, intValue_num hsafe, Option.isSome_some]
+  | every s p stop body =>
+    obtain ⟨w, sto, ls, n, -, -, -, hn, -⟩ := hF
+    simp only [defines, List.mem_singleton] at ht; subst ht
+    simp [hn]
+  | index _ | bound _ _ _ | pastSafe _ | either _ _ | guarded _ _ _ _ | apart _ _ | storeApart _ _ _ _ =>
+    simp [defines] at ht
+
 /-- A total renaming renames every fact. -/
 theorem mapM_total (f : Nat → Nat) : ∀ F : IndexFact, ∃ G, F.mapM (some ∘ f) = some G
   | .index k => ⟨_, rfl⟩

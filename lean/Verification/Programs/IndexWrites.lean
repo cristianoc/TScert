@@ -2633,7 +2633,7 @@ theorem lengthGrowth_holds {a count : Nat} {ρ ρ' : Env} {h h' : Heap}
     intro hs
     obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp hs
     exact ⟨n, hn, hg n hn⟩
-  refine ⟨fun F hF hdef => ?_, fun hall t ht => ?_⟩
+  refine ⟨fun F hF hdef => ?_, fun hall t ht => ?_, fun t ht => by simp [lengthGrowth] at ht⟩
   · obtain ⟨n, hn, hn'⟩ := hd (hdef _ (by
       simp only [lengthGrowth, List.mem_cons, List.not_mem_nil, or_false] at hF
       rcases hF with rfl | rfl <;> simp [Linear.Fact.vars]))

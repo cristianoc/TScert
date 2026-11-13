@@ -51,20 +51,25 @@ def isBefore : StepVar → Bool
 
 end StepVar
 
-/-- **A step's relation**: linear facts over before- and after-terms, and
-after-terms the step states defined. -/
+/-- **A step's relation**: linear facts over before- and after-terms,
+after-terms the step states defined, and before-terms it states defined
+before it (a callee's post that holds defines its terms,
+`IndexFact.defines_holds`). -/
 structure StepRelation where
   facts : List (Linear.Fact StepVar)
   defined : List Term := []
+  definedBefore : List Term := []
 
 /-- A relation holds of a step from `ρ, h` to `ρ', h'`: each fact holds
-wherever its before-terms denote integers, and each `defined` term denotes
-one after the step wherever all its facts' before-terms do. -/
+wherever its before-terms denote integers, each `defined` term denotes
+one after the step wherever all its facts' before-terms do, and each
+`definedBefore` term denotes one before it. -/
 def StepRelation.Holds (R : StepRelation) (ε : EntryState) (ρ : Env) (h : Heap) (ρ' : Env) (h' : Heap) : Prop :=
   (∀ F ∈ R.facts, (∀ t, StepVar.before t ∈ F.vars → (termValue ε ρ h t).isSome) →
     F.Holds (StepVar.value ε ρ h ρ' h')) ∧
   ((∀ F ∈ R.facts, ∀ t, StepVar.before t ∈ F.vars → (termValue ε ρ h t).isSome) →
-    ∀ t ∈ R.defined, (termValue ε ρ' h' t).isSome)
+    ∀ t ∈ R.defined, (termValue ε ρ' h' t).isSome) ∧
+  (∀ t ∈ R.definedBefore, (termValue ε ρ h t).isSome)
 
 /-! ## Substituting a defined variable -/
 
@@ -232,6 +237,11 @@ def definedAfter (defined : List Term) : StepVar → Option Term
 before it. -/
 def beforeTerms (before : List (Linear.Fact Term)) : List Term := before.flatMap (·.vars)
 
+/-- The before-terms known defined: those the facts before name and those
+the relation states defined. -/
+def knownBefore (before : List (Linear.Fact Term)) (R : StepRelation) : List Term :=
+  beforeTerms before ++ R.definedBefore
+
 /-- Whether a relation's fact names only before-terms the facts before
 name. -/
 def namesBefore (bvars : List Term) (F : Linear.Fact StepVar) : Bool :=
@@ -239,11 +249,11 @@ def namesBefore (bvars : List Term) (F : Linear.Fact StepVar) : Bool :=
     | .before t => bvars.contains t
     | .after _ => true
 
-/-- The relation's facts naming only before-terms the facts before name,
-each before-term the step keeps read after it. -/
+/-- The relation's facts naming only before-terms known defined
+(`knownBefore`), each before-term the step keeps read after it. -/
 def relOf (kept : Term → Option Term) (before : List (Linear.Fact Term)) (R : StepRelation) :
     List (Linear.Fact StepVar) :=
-  (R.facts.filter (namesBefore (beforeTerms before))).filterMap (·.mapVars (some ∘ keptRelVar kept))
+  (R.facts.filter (namesBefore (knownBefore before R))).filterMap (·.mapVars (some ∘ keptRelVar kept))
 
 /-- The before-variables those facts name. -/
 def namesOf (rel : List (Linear.Fact StepVar)) : List StepVar :=
@@ -256,10 +266,9 @@ def preOf (kept : Term → Option Term) (before : List (Linear.Fact Term)) (name
   (before.filterMap (·.mapVars (some ∘ keptVar kept))).filter fun F => F.vars.any names.contains
 
 /-- The after-terms known defined: each a kept term before, and the
-relation's own where all its facts name only before-terms the facts before
-name. -/
+relation's own where all its facts name only before-terms known defined. -/
 def definedOf (kept : Term → Option Term) (before : List (Linear.Fact Term)) (R : StepRelation) : List Term :=
-  (beforeTerms before).filterMap kept ++ (if R.facts.all (namesBefore (beforeTerms before)) then R.defined else [])
+  (beforeTerms before).filterMap kept ++ (if R.facts.all (namesBefore (knownBefore before R)) then R.defined else [])
 
 /-- **The facts after a step** (rule Call's composition): the facts
 `before`, each term the step keeps read after it (`kept`), with the facts of
@@ -301,11 +310,13 @@ theorem compose_holds {kept : Term → Option Term} {before : List (Linear.Fact 
     · rename_i t' ht'
       simp only [v, StepVar.value, termValuation, hk t t' n ht' hn, hn]
     · rfl
-  have hnb : ∀ F, namesBefore (beforeTerms before) F = true → ∀ t, StepVar.before t ∈ F.vars →
+  have hnb : ∀ F, namesBefore (knownBefore before R) F = true → ∀ t, StepVar.before t ∈ F.vars →
       (termValue ε ρ h t).isSome := by
     intro F hF t ht
     have := List.all_eq_true.mp hF _ ht
-    exact hbdef t (by simpa using this)
+    rcases List.mem_append.mp (by simpa [knownBefore] using this) with hm | hm
+    · exact hbdef t hm
+    · exact hR.2.2 t hm
   intro F hF
   unfold compose at hF
   obtain ⟨G, hG, hGF⟩ := List.mem_filterMap.mp hF
@@ -338,7 +349,7 @@ theorem compose_holds {kept : Term → Option Term} {before : List (Linear.Fact 
       simp [hk u t n hut hn]
     · split at ht
       · rename_i hall
-        exact hR.2 (fun F hF => hnb F (List.all_eq_true.mp hall F hF)) t ht
+        exact hR.2.1 (fun F hF => hnb F (List.all_eq_true.mp hall F hF)) t ht
       · cases ht
   have hval : ∀ x ∈ G.vars, ∀ y, definedAfter (definedOf kept before R) x = some y →
       termValuation ε ρ' h' y = v x := by
@@ -386,9 +397,12 @@ theorem StepVar.value_eq {ρ ρ' : Env} {h h' : Heap} (x : StepVar) :
 
 /-- A relation with one more fact, its after-terms stated defined. -/
 def StepRelation.with (R : StepRelation) (G : Linear.Fact StepVar) : StepRelation :=
-  { facts := R.facts ++ [G], defined := R.defined ++ G.vars.filterMap fun
+  { facts := R.facts ++ [G], defined := R.defined ++ G.vars.filterMap (fun
       | .after u => some u
-      | .before _ => none }
+      | .before _ => none),
+    definedBefore := R.definedBefore ++ G.vars.filterMap fun
+      | .before u => some u
+      | .after _ => none }
 
 /-- A variable of the body of a quantified fact read across a step: the
 bound index, element or projection, or a step variable. -/
@@ -602,9 +616,11 @@ theorem definedOf_defined (hb : ∀ F ∈ before, (IndexFact.linear F).HoldsAt �
     simp [hk u t n hut hn]
   · split at ht
     · rename_i hall
-      refine hR.2 (fun F hF x hx => ?_) t ht
+      refine hR.2.1 (fun F hF x hx => ?_) t ht
       have := List.all_eq_true.mp (List.all_eq_true.mp hall F hF) _ hx
-      exact hbdef x (by simpa using this)
+      rcases List.mem_append.mp (by simpa [knownBefore] using this) with hm | hm
+      · exact hbdef x hm
+      · exact hR.2.2 x hm
     · cases ht
 
 theorem context_holds (hb : ∀ F ∈ before, (IndexFact.linear F).HoldsAt ε ρ h)
@@ -624,8 +640,10 @@ theorem context_holds (hb : ∀ F ∈ before, (IndexFact.linear F).HoldsAt ε ρ
     exact keptVar_value hk ((hb F0 hF0).1 x hx)
   · obtain ⟨F0, hF0, hm⟩ := List.mem_filterMap.mp hG
     obtain ⟨hF0, hbv⟩ := List.mem_filter.mp hF0
-    have hdef : ∀ t, StepVar.before t ∈ F0.vars → (termValue ε ρ h t).isSome := fun t ht =>
-      hbdef t (by simpa using List.all_eq_true.mp hbv _ ht)
+    have hdef : ∀ t, StepVar.before t ∈ F0.vars → (termValue ε ρ h t).isSome := fun t ht => by
+      rcases List.mem_append.mp (by simpa [knownBefore] using List.all_eq_true.mp hbv _ ht) with hm | hm
+      · exact hbdef t hm
+      · exact hR.2.2 t hm
     refine (Linear.Fact.holds_mapVars hm fun x hx y hy => ?_).mpr (hR.1 F0 hF0 hdef)
     cases hy
     cases x with
@@ -665,16 +683,22 @@ variable {P : Composer} {ε₀ : EntryState} {ρ ρ' τ : Env} {h h' : Heap}
 theorem StepRelation.with_holds {R : StepRelation} (hR : R.Holds ε ρ h ρ' h') {G : Linear.Fact StepVar}
     (hd : ∀ x ∈ G.vars, (StepVar.val ε ρ h ρ' h' x).isSome) (hG : G.Holds (StepVar.value ε ρ h ρ' h')) :
     (R.with G).Holds ε ρ h ρ' h' := by
-  refine ⟨fun F hF hdef => ?_, fun hall t ht => ?_⟩
+  refine ⟨fun F hF hdef => ?_, fun hall t ht => ?_, fun t ht => ?_⟩
   · rcases List.mem_append.mp hF with hF | hF
     · exact hR.1 F hF hdef
     · simp only [List.mem_singleton] at hF; subst hF; exact hG
   · rcases List.mem_append.mp ht with ht | ht
-    · exact hR.2 (fun F hF => hall F (List.mem_append_left _ hF)) t ht
+    · exact hR.2.1 (fun F hF => hall F (List.mem_append_left _ hF)) t ht
     · obtain ⟨x, hx, hxt⟩ := List.mem_filterMap.mp ht
       cases x with
       | before _ => cases hxt
       | after u => cases hxt; exact hd _ hx
+  · rcases List.mem_append.mp ht with ht | ht
+    · exact hR.2.2 t ht
+    · obtain ⟨x, hx, hxt⟩ := List.mem_filterMap.mp ht
+      cases x with
+      | after _ => cases hxt
+      | before u => cases hxt; exact hd _ hx
 
 /-- **What a composition assumes** of a step from `ρ, h` to `ρ', h'`, the
 post read at the callee's entry `ε₀` and its environment `τ` after the
