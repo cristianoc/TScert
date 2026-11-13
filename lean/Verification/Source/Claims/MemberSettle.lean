@@ -73,8 +73,10 @@ def inputsTable (P : ControlFlow.Program) (widths : Array Nat) (start : Nat) (se
 the one the edge's source context holds there (a binding the test narrows
 through a constant holding its value: `const p = x === 'a'; … if (p)`
 claims `x : 'a'` on the `true` arm), `p = true ⟹ x : T`, `T` the target's
-claim, at each statement entry whose source span holds the test's or ends
-before it and whose context describes both bindings, by descriptor. The search guesses at a
+claim, at each statement entry from which the test is reached (whose source
+span holds the test's, ends before it, or lies in the span of one that holds
+it: a loop around the test reaches it again from after it) and whose
+context describes both bindings, by descriptor. The search guesses at a
 loop's head, in its first waiting round, the implications its entry edge
 establishes (`CertificateProducer`'s `meetImplications` over the stating
 edges); these are the ones a branch inside the loop reads. Untrusted: the
@@ -105,12 +107,14 @@ def branchImplications {σ ι : Type} [LabelStore.Labels ι] [LabelStore.StoreVi
     | _ => []
   let within := fun (a b : Nat × Nat) => b.1 ≤ a.1 && a.2 ≤ b.2
   if narrowed.isEmpty then [] else
+  let spans := r.cuts.filterMap fun h => (entryAt h).map (·.pos)
   r.cuts.filterMap fun h => do
     let eh ← entryAt h
     let xs := narrowed.filterMap fun (p, dt, da, B) => do
-      -- (a head holding the branch, or one before it whose context holds
-      -- both bindings: the cut the implication crosses to reach the branch)
-      guard (within p eh.pos || eh.pos.2 ≤ p.1)
+      -- (a head holding the branch, one before it, or one inside an entry
+      -- holding it, whose context holds both bindings: a cut the
+      -- implication crosses to reach the branch)
+      guard (within p eh.pos || eh.pos.2 ≤ p.1 || spans.any fun q => within p q && within eh.pos q)
       let t ← eh.context.findIdx? (· == dt)
       let a ← eh.context.findIdx? (· == da)
       pure (⟨t, a, B⟩ : PromiseCalls.Implication ι)

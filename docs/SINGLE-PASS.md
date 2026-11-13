@@ -711,13 +711,18 @@ A statement entry is proposed the implications its branches read
 (`branchImplications`, the rows' `implies`): of each test on a constant
 holding a comparison's value (`const p = x === "a"; … if (p)`) whose
 `true` arm's claim narrows a binding (`x : "a"`), `p = true ⟹ x : "a"`
-at each statement entry whose span holds the test or ends before it and
-whose context describes both bindings: a branch inside the loop reads
-them, and one after a loop reads them across its head
+at each statement entry from which the test is reached: whose span holds
+the test, ends before it, or lies in the span of an entry that holds it
+(a loop around the test reaches it again from after it), and whose context
+describes both bindings: a branch inside the loop reads them, one after a
+loop reads them across its head
 (`invalid-guard-constant-across-loops`: `const has = v !== undefined`,
-forty loops, then `if (has) total += v`).
+forty loops, then `if (has) total += v`), and a loop after the branch in
+the loop holding it carries them back to it
+(`loop-implication-after-branch`).
 The pass checks each on every edge into the entry; a member an edge
-refuses one for is run again without that entry's.
+refuses one for is run again without that one (each implication a
+proposal of its own, [the diagnosing walk](#the-diagnosing-walk)).
 `TSCERT_FORCE=head-implications` also states each at `undefined`:
 `blocker-pretext-constant-implication-statements` `advances`, accepted
 unforced, is refused at an edge into its loop's head.
