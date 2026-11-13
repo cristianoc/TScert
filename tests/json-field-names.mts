@@ -136,7 +136,7 @@ const equationReaders = [
 // its request lines.
 {
   const tsText = read("pipeline/stage-execution.mts");
-  const section = tsText.slice(tsText.indexOf("// Worker stages"), tsText.indexOf("/** A parsed JSON line's own fields"));
+  const section = tsText.slice(tsText.indexOf("// Worker stages"), tsText.indexOf("/** A parsed JSON value's own fields"));
   const ts = new Set([...section.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/(?<![\w.])([A-Za-z_]\w*)\??\s*:(?!:)/g)]
     .flatMap(captured));
   const wire = "lean/Verification/Source/WorkerWire.lean";

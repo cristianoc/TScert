@@ -1873,7 +1873,7 @@ control("step failures: the pass's exit without a complete refusal is a tool fai
     mkdirSync(at);
     const stand = join(at, "verifier.sh");
     const quoted = `'${text.replaceAll("'", `'\\''`)}'`;
-    writeFileSync(stand, `#!/bin/sh\nfor a in "$@"; do\n  if [ "$a" = "--verify-interface-stage" ]; then\n` +
+    writeFileSync(stand, `#!/bin/sh\nfor a in "$@"; do\n  if [ "$a" = "--file-worker" ]; then\n` +
       `    [ -n ${quoted} ] && echo ${quoted} >&2\n    exit 1\n  fi\ndone\nexec "${real}" "$@"\n`);
     chmodSync(stand, 0o755);
     const ran = spawnSync(process.execPath, [join(root, "pipeline/verify-source.mts"), join(root, "pipeline/examples/optional-chain-element-receiver.ts")],
@@ -1887,7 +1887,7 @@ control("step failures: the pass's exit without a complete refusal is a tool fai
     const outcome = outcomeOf(text);
     assert.equal(outcome.status, "error", `${JSON.stringify(text)}: ${JSON.stringify(outcome)}`);
     assert.equal(outcome.detail,
-      `tool failure: verifier --verify-interface-stage exited with status 1 without a complete refusal: ${text || "no output"}`);
+      `tool failure: verifier --file-worker failed preparing the file: exited with status 1: ${text || "no output"}`);
   }
   // An operational failure of the verifier is its own exit status, 3.
   const unread = spawnSync(real, ["--verify-interface-stage", "8", join(dir, "absent.json"), join(dir, "absent.json"),
