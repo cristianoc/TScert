@@ -611,39 +611,111 @@ typing chose.
 
 ## Activation
 
-The order of the remaining work (**planned**). Each commit builds its
-whole dependency closure.
+The order of the remaining work (**planned**). The preparatory additions
+(storage roles, concrete allocation roles and their agreement, signatures
+over kinded worlds and their composition, §§4–6) build with the active
+worlds; from step 3 the switch is one commit whose dependency closure is
+rebuilt as a whole. Each step names its files, the bridging lemmas that
+exist, and what it must establish.
 
-1. **Storage typing.** Carry roles through allocation specifications,
-   semantic capabilities, syntax mappings and certification (§4); callers
-   move to explicit object, binding and store capabilities. Calculus steps
-   are unchanged.
-2. **Native specifications.** The effect's postconditions read the exit
-   world's roles (`Effect.postW` in place of the lifting): the element
-   write states the kinded view write at the exit world, its role
-   assignment the entry world's, and every host contract of §10 its
-   structural part.
-3. **Activation, atomically.** Replace `Worlds.lean` and `Heaps.lean` by
-   the kinded world (`ofEntries_entries` in place of `ofList_toList`, which
-   cannot reconstruct roles); strengthen safety and state validity as in
-   §§3 and 5; migrate every allocation and write; prove typed-step
-   preservation, exhaustive over `Step`, and its run consequences. The
-   modal theorems take the statements of `KindsStates` and
-   `KindsModelRules`: `view_box` without `ViewStable`, `alloc_post` and
-   `alloc_apart` from a well-formed entry heap. `view_not_invariant` and
-   `rootCells_not_invariant` are deleted: their heaps meet no kinded
-   world. `apart_not_kept_fresh` is kept, rebuilt over distinct I
-   locations: freshness does not keep separation.
-4. **Removal.** Delete the parallel worlds, `CellsCtr`, `StoreCells` and
-   their establishment, and the element-value evidence that the state
-   gives; the elementary separation lemma takes the name of separation
-   from explicit bounds. The note's correspondence statements follow:
-   roles in world entries, structural validity in every state, binding
-   handles and store slots apart from ordinary properties.
+3. **The foundational world.** Replace `Worlds.lean` and `Heaps.lean` by the
+   kinded world: role-bearing entries, truncation keeping roles, extension
+   (`Kinds.WorldT`, `trunc`, `WExt`, `ofEntries_entries` in place of
+   `ofList_toList`, which cannot reconstruct roles); `HeapMeets`, `RefsOk`,
+   `Shape` and the strengthened `HeapOk` in their owning layers, safety and
+   effects depending on them. Files: `Semantics/Worlds.lean`, `Heaps.lean`,
+   `Kinds.lean`, `KindsStates.lean`. Bridges: `HeapOk.kinds`,
+   `HeapOk.store_cells`, `Admissible.refsOk`, `State.next`.
+4. **Storage meanings.** `recT`, writable `optT`, `dictCellT` (which gains
+   the index's role) and callable property bags state
+   `roleAt W l` named by the position's tag (`Capability.ofRole`); readonly
+   views stay role-free. Files: `Types/Types.lean`,
+   `Types/PositiveNormalization.lean`, `Types/PositiveRules.lean`. Bridges:
+   `Capability.ofRole_holds_alloc`, `Capability.Holds.common`,
+   `ofRole_exclusive`, `Capability.At.write`, `Capability.ofRole_leBelow_iff`
+   and `Capability.Holds.weakenBelow` for covering's equivalence.
+5. **Allocation and writes.** `AllocationWorlds.next` appends
+   `objectEntries rs (Es.map res)` for `AllocationWorlds.roles Es vs = some
+   rs`; the allocation rules gain key fit (`StorageRole.fitsKey`), the
+   initializer's category from the part's checked typing
+   (`StorageRole.Holds`), and metadata fit (`MetaFit`), shape established at
+   budget zero as well. Store literals, grow, set and length writes, copies,
+   closures, wrappers and fresh errors follow §9. Files:
+   `Semantics/AllocationWorlds.lean`, `Semantics/Rules.lean`,
+   `Programs/ProgramTyping.lean`, `Programs/ProgramCertificates.lean`.
+   Bridges: `concrete_shaped`, `viewMetaOk_alloc`, `makeFields_shaped`,
+   `write_sound`, `setPresent_shaped`, `setGrow_shaped`, `mergeParts_cat`,
+   `thrownError_shaped`.
+6. **Safety, call contracts and environments together.** Reference validity
+   at every budget enters `Safe`, `SafePostW`, `SafePostExcW`, `SafeWith`
+   and graph safety (`SafeW`'s structural component); `Effect.postW` becomes
+   `Effect.postK` (entry and exit worlds), `PromiseWith` and
+   `ConstructPromise` become `PromiseK` and `ConstructK`, and
+   `PromiseWith.combine`, `.weaken`, `.bound` and the prefix lemmas become
+   `PromiseK.combine`, `PromiseK.weaken`, `NativeContract.bound` and
+   `Effect.postK_prefix`. `EnvOk` gains root validity (`RootsOk`); push,
+   prepend, map and transfer of environments are repaired (`RootsOk.set`).
+   Arrow and constructor meanings require valid callees, receivers and
+   actuals at their call boundary and contain the kinded contract
+   (`NativeContract`, `NativeConstruct`). Files: `Semantics/Safety.lean`,
+   `HeapObservations.lean`, `ExceptionalPosts.lean`, `CallEffects.lean`
+   (the general relation `ViewWrite` is below it, in `ElementWrites.lean`,
+   so no cycle arises), `Programs/TypingBasics.lean`. Bridges: `SafeW.bind`,
+   `SafeW.handle`, `SafeW.exit`, `SafeW.run`, `SafeW.cross`, `SafeW.world`,
+   `SafeW.consequence`, `NativeContract.safe`, `NativeConstruct.safe`, and
+   the gate `gate_write`, `gate_handled`.
+7. **Preservation through the existing proof structure.** Typed-step
+   preservation by induction on the typing derivation
+   (`HasTyUsing.sound`), exhaustive over `Step` for the structural part
+   (`step_refs` extended from the steps that change no heap to the
+   allocating and writing ones, their premises discharged by typing), state
+   progress and graph safety by induction on the budget over every
+   `Transition`, handler entry and raised states included
+   (`ControlFlow.state_progress`, `state_safe`), and finite runs by
+   determinism (`SafeW.run`). A theorem assuming each step preserves shape
+   does not close this step.
+8. **States, modalities and acceptance.** The kinded View and Alloc
+   statements replace the active ones (`view_box` with no `ViewStable`,
+   `alloc_post`, `alloc_apart`); consumers of cell establishment use
+   `HeapOk.store_cells`; the strengthened graph guarantees reach
+   `RequestSafe`, `MemberSafe` and `PassUnitSafe`.
+9. **Removal.** `view_not_invariant` and `rootCells_not_invariant` are
+   deleted (their heaps meet no kinded world); `apart_not_kept_fresh` is
+   rebuilt over distinct I locations; the parallel worlds, `CellsCtr`,
+   `StoreCells` and their establishment, and `ViewWriteA` with `RolesFit`
+   (the weaker pre-activation relation, §6) are removed once every consumer
+   reads the kinded relation.
 
-The headline acceptance theorems keep their statements:
-`passUnitVerdict_sound` and `PassUnit.mode8Accepted_sound`
-([PassUnitRun](../../lean/Verification/Source/Claims/PassUnitRun.lean))
-and `run_sound_single_pass`
-([TolerantFramesSinglePassSound](../../lean/Verification/Programs/TolerantFramesSinglePassSound.lean));
-their semantic dependencies become stronger.
+**Non-vacuity.** The activation exhibits, at positive budgets, initial
+worlds compatible with the actual builtin objects and host families:
+identities (`idCtr`), prototype properties, binding cells, array stores and
+their elements, view metadata, captures and descriptors, with every
+overload and alias of one value satisfied simultaneously (`PromiseK.combine`
+at each pair of its signatures). An assumed contract whose input domain is
+empty is no witness. `hostBefore_ok`, `host_refs` and `host_viewWrite` are a
+representative world and transition, not this obligation.
+
+**The host assumption.** Callable and constructor meanings contain the
+kinded contract; the owner-approved assumption is that every host value of
+the initial environment, native or imported, and every callable member
+reachable through a host object meets it (§10); checked graph code meets it
+by proof (step 7). `Mode8Accepted f i → PassUnitSafe f i`
+(`PassUnit.mode8Accepted_sound`) keeps its statement, `Mode8Accepted`
+untouched (the CLI's acceptance condition); its conclusion quantifies over
+entries meeting the strengthened contracts. A concrete host-execution
+corollary takes host-environment contract satisfaction, root validity,
+world admissibility and heap satisfaction as explicit premises. The
+headline statements `passUnitVerdict_sound` and `run_sound_single_pass` keep
+theirs.
+
+**Two implementers.** One owns `Semantics/` (steps 3, 6 and the semantic
+half of 5 and 7: worlds, safety, allocation and call composition); the
+other owns `Types/`, `Programs/`, `Source/` and the certificate and wire
+consumers (steps 4, the typing half of 5 and 7, and 8). They agree first on
+the concrete allocation entries (`AllocationWorlds.roles`,
+`objectEntries`, `MetaFit`), the signatures of `recT`, `optT` and
+`dictCellT` with their roles, the call contract (`PromiseK`,
+`ConstructK`, `Effect.postK`) and the preservation interface
+(`SafeW.run`'s statement). Each shared document and test file has one
+owner: this draft and `AxiomCheck.lean` the `Semantics/` implementer, the
+cases and controls the other.
