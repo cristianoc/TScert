@@ -84,10 +84,47 @@ export const forcedProposals: readonly ForcedProposal[] = [
   { file: "blocker-census-options-default", unit: "config@148", force: "objects", positive: true, at: /expression at node \d+: Verification\.Tm\.makeAt/ },
   // An element read typed without its missing arm, refused at the read.
   { file: "native-length-literal", unit: "order@440", force: "elements", positive: true, at: /expression at node \d+: Verification\.Tm\.elemAt/ },
+  // An optional field's read proposed without `undefined`: refused at the read.
+  { file: "blocker-census-options-default", unit: "config@148", force: "optional-reads", positive: true,
+    at: /expression at node \d+: Verification\.Tm\.readAt/ },
+  // Each parameter proposed at `undefined`, narrower than its annotation: refused at the edge into the
+  // unit's entry. An `unknown` parameter; a `void` one (old control: a singleton claimed of it); a
+  // dictionary with a named view (old: the view dropped); a `keyof` naming a unique symbol (old: another
+  // symbol or every symbol in its place).
+  { file: "type-guards", unit: "describe@1103", force: "annotations", positive: true, at: /edge from node \d+ to node 0/ },
+  { file: "void-source-values", unit: "compareArguments@169", force: "annotations", positive: true,
+    at: /edge from node \d+ to node 0/ },
+  { file: "index-signature-uninherited-key", unit: "preserveMixed@877", force: "annotations", positive: true,
+    at: /edge from node \d+ to node 0/ },
+  { file: "keyof-unique-symbol", unit: "nameOf@901", force: "annotations", positive: true,
+    at: /edge from node \d+ to node 0/ },
   // An array literal's spread of strings proposed at its number[] contract, refused at the literal
   // (no positive unit: the force skips a check that compatible operands pass).
   { file: "invalid-array-literal-spread", unit: "mixed@16", force: "array-spreads", at: /expression at node \d+: Verification\.Tm\.arrLit/ },
   { file: "invalid-dense-spread-element", unit: "wrong@16", force: "array-spreads", at: /expression at node \d+: Verification\.Tm\.arrLit/ },
+  // Loop-head proposals the pass infers with nothing supplied, each forced false: refused at the head.
+  { file: "adjacent-pair-reads", unit: "pairProducts@382", force: "head-counters", positive: true },
+  { file: "precondition-lengths", unit: "dot@1056", force: "head-carried", positive: true },
+  { file: "written-ensures", unit: "zeros@185", force: "head-inputs", positive: true },
+  { file: "stated-argument-path", unit: "measure@1234", force: "head-separations", positive: true },
+  { file: "element-write-keeps-lengths", unit: "f@364", force: "head-paired", positive: true },
+  { file: "blocker-pretext-code-point-at-assertion", unit: "astral@478", force: "head-kinds", positive: true },
+  { file: "assignment-call-postcondition", unit: "sumBreaks@578", force: "head-ensures", positive: true },
+  { file: "logical-guard-reads", unit: "nonzeroPrefix@277", force: "head-entails", positive: true },
+  { file: "quantified-element-reads", unit: "sumUpTo@875", force: "head-every", positive: true },
+  { file: "blocker-pretext-constant-implication-statements", unit: "advances@698", force: "head-implications", positive: true },
+  { file: "cursor-invariant-loop-write", unit: "nextMarked@694", force: "head-exits", positive: true },
+  { file: "invalid-sealed-handle-resize", unit: "lastFlag@693", force: "head-restated", positive: true },
+  { file: "invalid-guarded-invariant-short", unit: "narrowing@988", force: "head-guards", positive: true },
+  { file: "typed-array-prefix-write", unit: "buildPostfixPrefix@1463", force: "head-elements", positive: true },
+  { file: "bounds-quantified-invariant", unit: "read@286", force: "head-every", positive: true },
+  { file: "stated-region-fresh", unit: "marks@424", force: "head-region-values", positive: true },
+  { file: "stated-region-lazy", unit: "longer@595", force: "head-region-cells", positive: true },
+  { file: "stated-region-steps", unit: "scan@828", force: "head-region-facts", positive: true },
+  { file: "stated-slot-collect", unit: "collect@696", force: "head-region-fields", positive: true },
+  { file: "quantified-freshness-builder", unit: "build@303", force: "head-apart", positive: true },
+  { file: "cursor-invariant-after-writing-call", unit: "countMarked@1378", force: "head-called", positive: true },
+  { file: "cursor-invariant-after-writing-call", unit: "countMarked@1378", force: "head-eliminated", positive: true }
 ];
 
 function record(v: unknown): Record<string, unknown> {
@@ -157,11 +194,9 @@ export function interfaceControls(fragment: string, given: string, scratch: stri
     module.sourceSha256 = "0".repeat(64);
     const edited = join(work, "edited.json");
     writeFileSync(edited, JSON.stringify(ast));
-    const empty = join(work, "standins.json");
-    writeFileSync(empty, '{"functions":[],"imports":[]}');
     assert.equal(typeof ast.file, "string");
     const stale = invoke(verifierCall(verifierBuild, ["--verify-interface-stage", "8", edited, first.path,
-      given, empty, String(ast.file), "12", ""]), options.invocation);
+      String(ast.file), "12", ""]), options.invocation);
     assert.equal(stale.status, 1);
     assert(stale.stderr.includes("stale interface:"));
     const changed = prepare(edited, { ...options, work: join(work, "changed") });
@@ -231,7 +266,7 @@ export function interfaceControls(fragment: string, given: string, scratch: stri
     const importerSource = parsed(fragment);
     const firstFunction = record(list(importerSource.functions)[0]);
     const deterministic = verifierCall(verifierBuild, ["--verify-interface-stage", "8", fragment, first.path,
-      given, empty, String(importerSource.file), "12", String(firstFunction.name)]);
+      String(importerSource.file), "12", String(firstFunction.name)]);
     const once = invoke(deterministic, options.invocation);
     const twice = invoke(deterministic, { ...options.invocation, force: true });
     assert.equal(once.stdout, twice.stdout);
@@ -278,7 +313,7 @@ export function interfaceControls(fragment: string, given: string, scratch: stri
     const forgedRows = join(work, "forged-rows.json");
     writeFileSync(forgedRows, JSON.stringify(published));
     const rowsRun = invoke(verifierCall(verifierBuild, ["--verify-interface-stage", "8", fragment, forgedRows,
-      given, empty, String(ast.file), "12", ""]), options.invocation);
+      String(ast.file), "12", ""]), options.invocation);
     assert(rowsRun.stdout.includes("signature rows differ"), rowsRun.stdout + rowsRun.stderr);
     log("forged interface rows: the importer's store-map check refuses the units reading them");
   } finally {

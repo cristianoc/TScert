@@ -2,7 +2,7 @@
 // interfaces: every replay validates its exact manifest and payload digest.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { canonical, verifierBuild, verifierCall } from "./stage-execution.mts";
+import { canonical, verifier, verifierCall } from "./stage-execution.mts";
 import type { Canonical } from "./stage-execution.mts";
 import { invokeProcess } from "./stages.mts";
 import type { Invoked, InvokeOptions } from "./stages.mts";
@@ -46,7 +46,10 @@ export type InterfaceOptions = {
   rounds: number;
   force: readonly string[];
   allCuts: boolean;
-  given: string;
+  /** A measurement's given lines (statement and loop-head facts by unit):
+   * read by the verifier from `TSCERT_GIVEN`, so its stages execute rather
+   * than replay. */
+  given?: string;
   work: string;
   invocation: InvokeOptions;
   /** The parser's canonical ModuleAst for an own-file publication. Its
@@ -66,7 +69,8 @@ export function prepareInterfaces(fragmentPath: string, options: InterfaceOption
   mkdirSync(options.work, { recursive: true });
   let ast = object(json(readFileSync(fragmentPath, "utf8")));
   let source = fragmentPath;
-  const rawGiven = readFileSync(options.given, "utf8").split("\n").filter((s) => s.trim() !== "").map(json);
+  const rawGiven = options.given === undefined ? [] :
+    readFileSync(options.given, "utf8").split("\n").filter((s) => s.trim() !== "").map(json);
   if (options.ownModule !== undefined) {
     const own = object(json(readFileSync(options.ownModule, "utf8")));
     if (own.sourceSha256 !== ast.sourceSha256) throw Error("own module source differs from the checked file");
@@ -88,7 +92,7 @@ export function prepareInterfaces(fragmentPath: string, options: InterfaceOption
   }
   const records: Invoked[] = [];
   const invoke = (args: string[]): Invoked => {
-    const run = invokeProcess(verifierCall(verifierBuild, ["--subtype-rounds", String(options.rounds), ...args]),
+    const run = invokeProcess(verifierCall(verifier, ["--subtype-rounds", String(options.rounds), ...args]),
       { ...options.invocation, reuse: false });
     records.push(run);
     if (run.status !== 0) throw Error(`interface stage ${run.record.execution}: ${run.stderr}`);
@@ -135,20 +139,25 @@ export function prepareInterfaces(fragmentPath: string, options: InterfaceOption
 }
 
 /** The importer is one process stage, with every file it reads an explicit
- * input role. Stand-ins are importer-only measurement inputs. */
-export function verifyWithInterfaces(fragment: string, key: string, names: string, standins: string,
+ * input role. A measurement's given lines and stand-ins (`options.given`,
+ * `options.standins`) reach the verifier through `TSCERT_GIVEN` and
+ * `TSCERT_STANDINS`, and the stage executes. */
+export function verifyWithInterfaces(fragment: string, key: string, names: string,
     options: InterfaceOptions): { run: Invoked; interfaces: PreparedInterfaces } {
   mkdirSync(options.work, { recursive: true });
   const environment: Record<string, string> = {};
+  const measured = options.given !== undefined || options.standins !== undefined;
+  if (options.given !== undefined) environment.TSCERT_GIVEN = options.given;
+  if (options.standins !== undefined) environment.TSCERT_STANDINS = options.standins;
   if (options.force.length > 0) environment.TSCERT_FORCE = options.force.join(",");
   if (options.allCuts) environment.TSCERT_ALL_CUTS = "1";
   // The pass's own refusal text, unlocated (`TSCERT_PASS_REFUSALS=raw`): part
   // of the stage's environment, so its key.
   if (process.env.TSCERT_PASS_REFUSALS === "raw") environment.TSCERT_PASS_REFUSALS = "raw";
-  const check = (path: string): Invoked => invokeProcess(verifierCall(verifierBuild,
+  const check = (path: string): Invoked => invokeProcess(verifierCall(verifier,
     ["--subtype-rounds", String(options.rounds), "--verify-interface-stage", String(options.mode),
-      fragment, path, options.given, standins, key, String(options.fuel), names], environment),
-    { ...options.invocation, reuse: false });
+      fragment, path, key, String(options.fuel), names], environment),
+    { ...options.invocation, reuse: false, force: options.invocation.force || measured });
   // A completed importer check at ordinary contracts needs no stronger
   // module facts. This publishes only that check, never a module interface.
   // Explicit own-module publication always runs the canonical computation.
@@ -161,7 +170,7 @@ export function verifyWithInterfaces(fragment: string, key: string, names: strin
     throw Error(`importer stage ${attempt.record.execution}: ${attempt.stderr}`);
   if (attempt !== undefined && array(object(json(readFileSync(fragment, "utf8"))).modules).length === 0)
     return { run: attempt, interfaces: { path: ordinary, records: [] } };
-  const interfaces = prepareInterfaces(fragment, { ...options, names, standins });
+  const interfaces = prepareInterfaces(fragment, { ...options, names });
   if (attempt !== undefined && array(object(json(readFileSync(interfaces.path, "utf8"))).modules).length === 0)
     return { run: attempt, interfaces };
   let importerInterfaces = interfaces.path;

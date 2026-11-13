@@ -1,15 +1,11 @@
 // The single pass's performance gate (docs/drafts/single-pass.md, "The
-// performance gate"): a fixed set of units, each captured through the pipeline
-// (its fragment and claims kept), its given statement-entry facts written
-// (`verifier --verify-units 6`), then the pass (`--verify-units 3`) run over
-// them with its counts (`TSCERT_COUNTS`), compared with dev/perf-baseline.json.
+// performance gate"): a fixed set of units, each captured through the
+// single-pass route (its fragment kept), then the pass (`verifier
+// --verify-interface-stage 8`, over the fragment alone, nothing supplied)
+// run over it with its counts (`TSCERT_COUNTS`), compared with
+// dev/perf-baseline.json.
 //   node dev/perf-gate.mts <pretext checkout at ba09794f> [--update | --add]
-// The pretext units are also gated in mode 8 (`--verify-units 8`, the pass
-// over the fragment alone, its types computed by the verifier): its given
-// file also states the loop heads' facts (`TSCERT_GIVEN_FACTS`), and the
-// footprints its unit's callees would write, stand-ins named per unit, are
-// read from the captured claims (dev/single-pass-standins.mts). `--add`
-// writes the baseline of the units it lacks, keeping the others'.
+// `--add` writes the baseline of the units it lacks, keeping the others'.
 // A regression is a verdict other than the baseline's, a counter above its
 // baseline, a unit whose visited nodes differ from its reached nodes, or the
 // pass's CPU time (user and system of the verifier process, best of 3) above
@@ -22,10 +18,9 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { cases } from "../pipeline/cases.mts";
-import { checkApart } from "../pipeline/verify-source.mts";
+import { checkApart, sourceKey } from "../pipeline/verify-source.mts";
 import { withoutEvidenceReuse } from "../pipeline/stages.mts";
 import { verifyWithInterfaces } from "../pipeline/module-interfaces.mts";
-import { standIns } from "./single-pass-standins.mts";
 
 const root = resolve(import.meta.dirname, "..");
 const verifier = join(root, "lean/.lake/build/bin/verifier");
@@ -33,7 +28,7 @@ const baselinePath = join(root, "dev/perf-baseline.json");
 withoutEvidenceReuse();
 
 /** A unit of the gate: a function of a pretext file or of a pipeline case. */
-type GateUnit = { name: string; unit: string; mode?: string; standIns?: string[] } & ({ pretext: string } | { case: string });
+type GateUnit = { name: string; unit: string } & ({ pretext: string } | { case: string });
 const units: GateUnit[] = [
   { name: "pretext measureAnalysis", pretext: "prepare.ts", unit: "measureAnalysis" },
   { name: "pretext prepareRichInline", pretext: "rich-inline.ts", unit: "prepareRichInline" },
@@ -48,17 +43,6 @@ const units: GateUnit[] = [
   { name: "async", case: "async-await", unit: "chained" },
   { name: "handler", case: "try-catch", unit: "handled" },
   { name: "exceptional footprint", case: "exceptional-footprint-handler", unit: "largest" },
-  { name: "pretext measureAnalysis, from the fragment", pretext: "prepare.ts", unit: "measureAnalysis", mode: "8",
-    standIns: ["countRenderedSpacingGraphemes", "addInternalLetterSpacing", "needsComplexTextPath", "isSpaceKind",
-      "mayHoldCursive", "getFollowingSpaceTail", "getTailKerning", "getJoinedNarrowing", "getTextSegmentWidth",
-      "getHanKerningTrims", "textMayHanKern", "lazyRegExp", "getEmojiCorrection", "getExtraSpacings",
-      "getFollowingSpaceMetrics", "getFontMeasurement", "getFontSpaceKerning", "getHyphenText", "getSegmentFit",
-      "getSegmentMetrics", "getSpaceKerning", "getSpaceWidth", "getTextWidth", "textMayContainEmoji", "zeros"] },
-  { name: "pretext prepareRichInline, from the fragment", pretext: "rich-inline.ts", unit: "prepareRichInline", mode: "8",
-    standIns: ["getHyphenRooms", "setEmptyObjectFacts", "zeroList", "getOpeningFit", "isCollapsibleSpaceCode",
-      "readLetterSpacing"] },
-  { name: "pretext buildEngineProfile, from the fragment", pretext: "measurement.ts", unit: "buildEngineProfile", mode: "8",
-    standIns: [] },
 ];
 
 /** The counters the gate compares, by the name the pass prints them. */
@@ -101,7 +85,7 @@ function readBaseline(): Baseline | null {
   return out;
 }
 
-/** A unit's fragment, claims and file key, captured through the pipeline. */
+/** A unit's fragment and file key, captured through the single-pass route. */
 async function capture(u: GateUnit, pretextRoot: string, work: string): Promise<{ dir: string; key: string }> {
   let source: string;
   let project: string | undefined;
@@ -117,33 +101,24 @@ async function capture(u: GateUnit, pretextRoot: string, work: string): Promise<
     typescriptErrors = c.typescriptErrors ?? false;
   }
   using outcome = await checkApart(source, project, typescriptErrors, undefined, true, { omitted: [], select: [u.unit] });
-  const log = readFileSync(join(outcome.artifacts, "invocations.jsonl"), "utf8");
-  const match = /"--check-units","fragment\.json","claims\.json","([^"]+)"/.exec(log);
-  if (match === null) throw Error(`${u.name}: the pipeline ran no check (${outcome.status})`);
   const dir = join(work, u.name.replace(/[^A-Za-z0-9]+/g, "-"));
   mkdirSync(dir, { recursive: true });
-  for (const f of ["fragment.json", "claims.json"]) copyFileSync(join(outcome.artifacts, f), join(dir, f));
-  return { dir, key: match[1] };
+  copyFileSync(join(outcome.artifacts, "fragment.json"), join(dir, "fragment.json"));
+  return { dir, key: sourceKey(outcome.artifacts) };
 }
 
 /** The verifier run over a captured unit, its CPU time read by the shell
  * (`times`: the children's user and system time, its last line). */
-function verify(mode: string, dir: string, key: string, unit: string, env: NodeJS.ProcessEnv):
+function verify(dir: string, key: string, unit: string, env: NodeJS.ProcessEnv):
     { stdout: string; stderr: string; cpuMs: number; wallMs: number } {
   // Warm importer measurements exclude component preparation; the stage
   // records retain cold component CPU and wall time separately.
-  writeFileSync(join(dir, "empty-standins.json"), '{"functions":[],"imports":[]}');
-  const interfaces = mode === "8" ? verifyWithInterfaces(join(dir, "fragment.json"), key, unit, env.TSCERT_STANDINS ?? join(dir, "empty-standins.json"), {
+  const interfaces = verifyWithInterfaces(join(dir, "fragment.json"), key, unit, {
     mode: 8, fuel: 12, rounds: 4096, force: (env.TSCERT_FORCE ?? "").split(",").filter(Boolean),
-    allCuts: env.TSCERT_ALL_CUTS !== undefined, given: env.TSCERT_GIVEN ?? "", work: join(dir, "interfaces"),
-    invocation: { limitMs: 60_000, force: false, recorder: null },
-  }).interfaces : null;
+    allCuts: false, work: join(dir, "interfaces"), invocation: { limitMs: 60_000, force: false, recorder: null },
+  }).interfaces;
   const started = performance.now();
-  // Mode 8 reads the fragment alone.
-  const documents = mode === "8" ? [join(dir, "fragment.json")] : [join(dir, "fragment.json"), join(dir, "claims.json")];
-  const args = interfaces === null ? ["--verify-units", mode, ...documents, key, "12", unit]
-    : ["--verify-interfaces", mode, ...documents, interfaces.path, env.TSCERT_GIVEN ?? "",
-      env.TSCERT_STANDINS ?? "", key, "12", unit];
+  const args = ["--verify-interface-stage", "8", join(dir, "fragment.json"), interfaces.path, key, "12", unit];
   const run = spawnSync("/bin/sh", ["-c", '"$@"; status=$?; times >&2; exit $status', "sh", verifier, ...args],
     { encoding: "utf8", maxBuffer: 1 << 28, env });
   const wallMs = performance.now() - started;
@@ -155,15 +130,8 @@ function verify(mode: string, dir: string, key: string, unit: string, env: NodeJ
 
 /** The pass over a captured unit, three times: its verdict, counters and best CPU time. */
 function measure(u: GateUnit, dir: string, key: string): Measured {
-  const given = join(dir, `given-${u.mode ?? "3"}.jsonl`);
-  const facts = u.mode === "8" ? { TSCERT_GIVEN_FACTS: "1" } : {};
-  const lines = verify("6", dir, key, u.unit, { ...process.env, ...facts }).stdout.split("\n").filter((l) => l.startsWith("{\"codes\""));
-  writeFileSync(given, lines.join("\n") + "\n");
-  const standInsPath = join(dir, "standins.json");
-  if (u.standIns !== undefined) writeFileSync(standInsPath, standIns(join(dir, "claims.json"), u.standIns) + "\n");
-  const env = { ...process.env, TSCERT_GIVEN: given, TSCERT_COUNTS: "1",
-    ...(u.standIns === undefined ? {} : { TSCERT_STANDINS: standInsPath }) };
-  const runs = [0, 1, 2].map(() => verify(u.mode ?? "3", dir, key, u.unit, env));
+  const env = { ...process.env, TSCERT_COUNTS: "1" };
+  const runs = [0, 1, 2].map(() => verify(dir, key, u.unit, env));
   const first = runs[0];
   let verdict = "missing", refusal = "";
   for (const line of first.stdout.split("\n").filter((l) => l.startsWith("{"))) {
@@ -187,8 +155,7 @@ function measure(u: GateUnit, dir: string, key: string): Measured {
     const read = /^counts-read: (\{.*\})$/.exec(line);
     if (read) {
       const v: unknown = JSON.parse(read[1]);
-      counters.bytesRead = numberField(v, "fragmentBytes") + numberField(v, "claimsBytes") + numberField(v, "givenBytes") +
-        numberField(v, "standInBytes") + numberField(v, "interfaceBytes");
+      counters.bytesRead = numberField(v, "fragmentBytes") + numberField(v, "interfaceBytes");
     }
   }
   const best = runs.reduce((a, b) => (b.cpuMs < a.cpuMs ? b : a));

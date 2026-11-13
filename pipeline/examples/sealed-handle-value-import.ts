@@ -11,6 +11,11 @@
 // (`PreparedText & PreparedLineBreakData`), is passed on; so are a parameter's
 // default and a literal's allocation. A result of a union each of whose arms
 // names the handle states its invariant.
+// On the single pass, a gap: the single pass verifies prepare, countBreaks
+// and counted; labelled and reopened read the imported `open`, whose
+// `@ensures` postcondition puts it outside the laid-out set the cross-module
+// theorem covers (`Effect.below`), so its interface entry is not published
+// and the postcondition is not established at their returns.
 import { open, seal, type PreparedLineBreakData, type PreparedText } from "@fixture/handle";
 
 export function prepare(texts: string[]): PreparedText {

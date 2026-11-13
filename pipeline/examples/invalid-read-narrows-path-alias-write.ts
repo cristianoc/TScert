@@ -2,6 +2,8 @@
 // object, between the test and the read: TypeScript keeps `d.initializer`
 // narrowed, and `wrong([{ initializer: "a" }])` returns `undefined` where a
 // string is returned.
+// On the single pass, a gap: the single pass refuses the write
+// `list[0].initializer = undefined` before the return.
 
 type Declaration = { kind?: string; initializer: string | undefined };
 

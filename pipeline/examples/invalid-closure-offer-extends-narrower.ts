@@ -2,6 +2,9 @@
 // method signature, which TypeScript compares bivariantly: `map` hands it a
 // `Base` without `size`, and its `size` reads `undefined` into the
 // `number[]`.
+// On the single pass, a gap: the single pass refuses `wide.of`, a method read
+// as a function value (a stated restriction), before the binding that narrows
+// the parameter.
 interface Base {
   readonly label: string;
 }

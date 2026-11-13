@@ -31,6 +31,9 @@ export const isStageName = (value: unknown): value is StageName => stageNames.so
  * locations: the Lean verifier and the OCaml producer. */
 export const verifierBuild: string = resolve(here, "../lean/.lake/build/bin/verifier");
 export const producerBuild: string = resolve(here, "../ocaml-producer/_build/default/producer.exe");
+/** The verifier every stage runs: `VERIFIER` names a stand-in for it (a
+ * control's injected failure), the build otherwise. */
+export const verifier: string = process.env.VERIFIER ?? verifierBuild;
 /** The runner every process stage's program runs under
  * (`runner/stage-runner.c`, built by `make build-runner`), which reports the
  * CPU time of the stage's processes. */
@@ -658,10 +661,9 @@ export function verifierCall(program: string, args: readonly string[],
     return call("interface-plan", [{ input: "fragment.json", path: rest[0] }, { input: "selection.json", path: rest[1] }]);
   if (mode === "--module-interface" && rest.length === 1)
     return { ...call("module-interface", [{ input: "request.json", path: rest[0] }]), protocol: { refusal: null } };
-  if (mode === "--verify-interface-stage" && rest.length === 8)
+  if (mode === "--verify-interface-stage" && rest.length === 6)
     return call("pass", [{ text: rest[0] }, { input: "fragment.json", path: rest[1] },
-      { input: "interfaces.json", path: rest[2] }, { input: "given.jsonl", path: rest[3] },
-      { input: "standins.json", path: rest[4] }, ...rest.slice(5).map((text) => ({ text }))]);
+      { input: "interfaces.json", path: rest[2] }, ...rest.slice(3).map((text) => ({ text }))]);
   if (mode === "--lower-control-flow" && rest.length === 1)
     return call("lower", [{ input: "fragment.json", path: rest[0] }]);
   if (mode === "--plan-imports" && rest.length === 2)

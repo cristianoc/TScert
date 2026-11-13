@@ -6,6 +6,8 @@
 // absent. The census function type-probe.mts#makeProbe uses compiler
 // declarations, whose host contract states resolve's effect
 // (blocker-gap-round-locations-map).
+// On the single pass, a gap: the single pass refuses `JSON.stringify(d)` of a
+// declaration before the `map` call.
 type Declaration = { resolve: () => { file: string; offset: number } | null };
 type Symbol = { declarations?: readonly Declaration[] };
 export function locations(symbol: Symbol | undefined): string[] {

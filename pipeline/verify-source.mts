@@ -28,7 +28,7 @@ import { canonicalDocument, decodeUnitFacts, proposalUnits, replaceNumbers, slic
 import { currentStore, invokeInProcess, invokeProcess, Recorder, readInvocationLog, referenceProposal, reusingEvidence,
   type AttemptRecord } from "./stages.mts";
 import { verifyWithInterfaces } from "./module-interfaces.mts";
-import { producerBuild, producerCall, producerProtocol, refusalEnd, verifierBuild, verifierCall, verifierProtocol, type ProcessCall, type Protocol } from "./stage-execution.mts";
+import { producerBuild, producerCall, producerProtocol, refusalEnd, verifier, verifierCall, verifierProtocol, type ProcessCall, type Protocol } from "./stage-execution.mts";
 
 /** The file of a run's directory holding its stage invocations' attempts. */
 export const invocationLog = "invocations.jsonl";
@@ -65,7 +65,7 @@ const here = import.meta.dirname;
 // `../ocaml-producer/dune-project` makes that directory the root `dune build --root` builds into `_build/`.
 export const producerExecutable: string = process.env.PRODUCER ?? producerBuild;
 const repo = resolve(here, "..");
-export const verifier: string = process.env.VERIFIER ?? verifierBuild;
+export { verifier };
 function refusalStatus(detail: string): "exhausted" | "unverified" {
   const diagnostic = readDiagnostic(detail);
   if (!diagnostic) return "unverified";
@@ -1189,15 +1189,15 @@ function checkUnowned(artifacts: string, source: string, tsconfigPath?: string, 
     };
   }
 }
-/** Whether a check takes the single-pass route (`TSCERT_ROUTE=single-pass`):
- * the parse, then the single pass over the fragment alone (`verifier
- * --verify-interface-stage 8`, docs/drafts/single-pass.md, "The claims-free
- * front"), with the module-interface stages it needs; no producer, claims
- * document, search or check stage. Unset, the route is the pipeline's. */
+/** Whether a check takes the single-pass route: the parse, then the single
+ * pass over the fragment alone (`verifier --verify-interface-stage 8`,
+ * docs/drafts/single-pass.md, "The claims-free front"), with the
+ * module-interface stages it needs; no producer, claims document, search or
+ * check stage. `TSCERT_ROUTE=pipeline` takes the pipeline's route. */
 export function singlePassRoute(): boolean {
   const route = process.env["TSCERT_ROUTE"];
-  if (route === undefined || route === "" || route === "pipeline") return false;
-  if (route === "single-pass") return true;
+  if (route === "pipeline") return false;
+  if (route === undefined || route === "" || route === "single-pass") return true;
   throw Error(`TSCERT_ROUTE names no route: ${route} (single-pass or pipeline)`);
 }
 
@@ -1213,16 +1213,15 @@ export function singlePassRoute(): boolean {
  * has the outcome of a failed search (`unverified`, phase `search`), where
  * the pipeline refuses an obligation; a refusal before any unit's verdict
  * (the pass's front, which computes the types) has the producer's
- * (`unsupported`, phase `proposal`); a stage over its limit is an error. */
+ * (`unsupported`, phase `proposal`), but a direct obligation the front
+ * finds not established or exhausted, which has a failed search's; a stage
+ * over its limit is an error. */
 function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey: string, subtypeRounds: number | undefined,
     functions: string[], initialization: [number, number][], named: (detail: string) => string): Outcome {
-  const given = join(artifacts, "given.jsonl"), standins = join(artifacts, "standins.json");
-  writeFileSync(given, "");
-  writeFileSync(standins, '{"functions":[],"imports":[]}');
   let run: StepRun;
   try {
-    const invoked = verifyWithInterfaces(ast, fileKey, "", standins, {
-      mode: 8, fuel: searchDepth, rounds: subtypeRounds ?? 4096, force: [], allCuts: false, given,
+    const invoked = verifyWithInterfaces(ast, fileKey, "", {
+      mode: 8, fuel: searchDepth, rounds: subtypeRounds ?? 4096, force: [], allCuts: false,
       work: join(artifacts, "interfaces"), invocation: { limitMs: stepTimeoutMs, force: false, recorder },
     }).run;
     const execution = invoked.record.execution;
@@ -1247,7 +1246,9 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
   const lines = run.out.split("\n").filter((l) => l.startsWith("{"));
   const refusal = verifierRefusal(run, "--verify-interface-stage");
   if (refusal !== null && lines.length === 0)
-    return { status: "unsupported", artifacts, phase: "proposal", detail: named(refusal), units: null };
+    return readDiagnostic(refusal)?.kind === "direct-obligation"
+      ? { status: refusalStatus(refusal), artifacts, phase: "search", detail: named(refusal), units: null }
+      : { status: "unsupported", artifacts, phase: "proposal", detail: named(refusal), units: null };
   const strings = (value: unknown): string[] => {
     if (!Array.isArray(value) || !value.every((x): x is string => typeof x === "string"))
       throw Error("tool failure: the single pass printed a unit without its members or dependencies");

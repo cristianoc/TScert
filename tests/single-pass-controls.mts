@@ -9,7 +9,7 @@
 // the unit it names refused. The store-boundary controls of the interface
 // stages name a fresh store.
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { join, resolve } from "node:path";
@@ -18,7 +18,7 @@ import { fork, spawn } from "node:child_process";
 import { controlOperations, invokeProcess, ran as ranStage, readInvocationLog, startEviction, type Invoked } from "../pipeline/stages.mts";
 import { verifierBuild, verifierCall, verifierProtocol } from "../pipeline/stage-execution.mts";
 import { usePassMutationVerifier } from "./single-pass-mutations.mts";
-import { check as checkSource, invocationLog, readFragmentFile, sourceKey, type Outcome } from "../pipeline/verify-source.mts";
+import { check as checkSource, invocationLog, readFragmentFile, readOutcome, sourceKey, type Outcome } from "../pipeline/verify-source.mts";
 import { stringFamily } from "../pipeline/string-family.mts";
 import type { FamilyDescription } from "../tools/host-families.mts";
 import { createHash } from "node:crypto";
@@ -64,13 +64,10 @@ type Verdict = { accepted: boolean; closed: boolean; refusal: string };
 type Pass = { status: number | null; stdout: string; stderr: string; verdicts: Map<string, Verdict> };
 function pass(fragment: string, force: readonly string[] = [], names: string = ""): Pass {
   const work = runDirectory("single-pass-control-");
-  const given = join(work, "given.jsonl"), standins = join(work, "standins.json");
-  writeFileSync(given, "");
-  writeFileSync(standins, '{"functions":[],"imports":[]}');
   const ast: unknown = JSON.parse(readFileSync(fragment, "utf8"));
   const key = isObject(ast) && typeof ast.file === "string" ? ast.file : "";
-  const { run, interfaces } = verifyWithInterfaces(fragment, key, names, standins, { mode: 8, fuel: 12, rounds: 4096,
-    force, allCuts: false, given, work: join(work, "interfaces"),
+  const { run, interfaces } = verifyWithInterfaces(fragment, key, names, { mode: 8, fuel: 12, rounds: 4096,
+    force, allCuts: false, work: join(work, "interfaces"),
     invocation: { limitMs: 60_000, force: false, recorder: null } });
   for (const r of interfaces.records) counted(r);
   counted(run);
@@ -164,9 +161,7 @@ let mutated: string | null = null;
 function mutatedPass(fragment: string, name: string, force: readonly string[] = []): Pass {
   const program = must(mutated, "the mutation verifier");
   const work = runDirectory("single-pass-mutation-");
-  const given = join(work, "given.jsonl"), standins = join(work, "standins.json"), interfaces = join(work, "interfaces.json");
-  writeFileSync(given, "");
-  writeFileSync(standins, '{"functions":[],"imports":[]}');
+  const interfaces = join(work, "interfaces.json");
   writeFileSync(interfaces, '{"modules":[]}');
   const ast: unknown = JSON.parse(readFileSync(fragment, "utf8"));
   assert.ok(isObject(ast) && typeof ast.file === "string" && Array.isArray(ast.modules) && ast.modules.length === 0,
@@ -174,7 +169,7 @@ function mutatedPass(fragment: string, name: string, force: readonly string[] = 
   const environment: Record<string, string> = { TSCERT_TEST_MUTATIONS: name };
   if (force.length > 0) environment.TSCERT_FORCE = force.join(",");
   return passOf(counted(invokeProcess(verifierCall(program, ["--subtype-rounds", "4096", "--verify-interface-stage", "8",
-    fragment, interfaces, given, standins, ast.file, "12", ""], environment), { limitMs: 60_000, force: false, recorder: null })));
+    fragment, interfaces, ast.file, "12", ""], environment), { limitMs: 60_000, force: false, recorder: null })));
 }
 const serving: boolean = process.argv[2] === "--controls";
 const say = (line: string): void => {
@@ -251,25 +246,10 @@ function visitAll(value: unknown, at: (node: Record<string, unknown>) => void): 
   at(value);
 }
 
-/** Units of a control's case the route refuses unforced for want of a
- * loop-head fact (the 78 cases of the single-pass route that need given
- * loop-head facts): a forged refusal there shows nothing until the unit
- * verifies, so the control requires the unit refused unforced, and fails
- * once it is accepted, when its honest baseline is to be required. */
-const lostBaselines: ReadonlySet<string> = new Set([
-  "bounds-cell-invariant walk@143", "stated-slot-collect collect@696", "type-invariant-walker countBreaks@1414",
-  "stated-region-steps scan@828", "bounds-quantified-invariant read@286",
-]);
 /** The honest baseline of a forged-fragment control: the case's `unit`
- * accepted unforced, or refused where `lostBaselines` lists it. */
+ * accepted unforced. */
 function honest(file: string, unit: string, p: Pass = pass(fragmentOf(run(file)))): void {
-  if (!lostBaselines.has(`${file} ${unit}`)) {
-    accepted(p, unit, `${file} honest`);
-    return;
-  }
-  assert.notEqual(p.verdicts.get(unit)?.closed, true,
-    `${file} ${unit}: accepted unforced: require its honest baseline (remove it from lostBaselines)`);
-  say(`${file} ${unit}: honest baseline refused on the route (no loop-head fact); the forged refusal shows nothing until it verifies`);
+  accepted(p, unit, `${file} honest`);
 }
 
 control("forged fragment: a false bound in a Boolean postcondition", async (): Promise<void> => {
@@ -1214,6 +1194,46 @@ control("declared-optional method on a stand-in family", async (): Promise<void>
   }
   process.stdout.write("declared-optional method: each shape's own optional member, the required one shared, its call refused\n");
 });
+control("a compiler-API method a correction makes absent", async (): Promise<void> => {
+  // A correction of a method to absent (HOST-FAMILIES.md, "The family
+  // contract"): under a description correcting `getText` at one tag, the
+  // method is an optional member of every reading covering that tag (the
+  // tag's own shape, a generic declaration applied at any of its tags, a
+  // selected generic arm, a residual holding the tag), so each call is
+  // refused at its read; under the compiler API's own description each
+  // verifies. The route reads only the document of the description it runs
+  // under, so the old control's other half (the plain run's claims offered
+  // with the corrected document) has no counterpart.
+  const project = tsconfigOf(join(here, "compiler-api-project"));
+  const getText = (kind: string) => ({ kind, owner: "Node", member: "getText", text: "getText(sourceFile?: SourceFile): string;" });
+  const corrected = [
+    ["SourceFile", "compiler-api-corrected-method", "f.getText"],
+    ["SourceFile", "compiler-api-corrected-residual", "n.getText"],
+    ["QuestionToken", "compiler-api-corrected-token", "t.getText"],
+    ["QuestionToken", "compiler-api-corrected-arm", "n.getText"],
+    ["QuestionToken", "compiler-api-corrected-residual", "n.getText"],
+  ] as const;
+  const example = (file: string): string => join(here, "examples", `${file}.ts`);
+  for (const name of new Set(corrected.map(([, file]) => file))) {
+    const plain = check(example(name), project);
+    assert.equal(plain.status, "verified", `${name}: ${JSON.stringify(plain)}`);
+  }
+  for (const [kind, name, read] of corrected) {
+    useFamiliesForTests([{ ...compilerApiFamily, corrections: [...compilerApiFamily.corrections, getText(kind)] }]);
+    try {
+      const file = example(name);
+      const outcome = check(file, project);
+      const at = readFileSync(file, "utf8").indexOf(read);
+      const located = outcome.status !== "verified" &&
+        [...outcome.detail.matchAll(/at \[(\d+),(\d+)\)/g)].some((m) => Number(m[1]) <= at && at < Number(m[2]));
+      assert.ok(located, `${name} with getText corrected at ${kind}: refused at ${read}: ${JSON.stringify(outcome)}`);
+    } finally {
+      useFamiliesForTests(null);
+    }
+  }
+  process.stdout.write("corrected method: each call of a method a correction makes absent refused at its read, each verified uncorrected\n");
+});
+
 control("a string-tagged family", async (): Promise<void> => {
   // A second family (HOST-FAMILIES.md, "Instances"): a stand-in package of
   // string-tagged units, activated beside the compiler API's by a
@@ -1574,6 +1594,151 @@ control("forged declarations: stable optional members' keys dropped", async (): 
 // ---------------------------------------------------------------------------
 // The stage store on the route: in a fresh store of the control's own.
 
+control("forged fragment: a store separation removed", async (): Promise<void> => {
+  // Old control "forged store separations" (pipeline/test.mts at 4ecb0149,
+  // line 1223), its fragment half: `measure`'s precondition
+  // `flags !== runs.openBrackets` removed, so `i < flags.length` is not kept
+  // across `readRuns`, whose frame may change `runs.openBrackets`'s store,
+  // and the read `flags[i]` is refused.
+  const artifacts = run("invalid-stated-alias");
+  const ast = fragmentAst(artifacts);
+  const measure = must(ast.functions.find((f) => f.name === "measure"), "measure");
+  const unit = unitOf(ast, "measure");
+  honest("invalid-stated-alias", unit);
+  assert.ok(measure.requires.some((f) => "storeApart" in f), "measure states its separation");
+  measure.requires = [];
+  refused(pass(forged(artifacts, "forged-unseparated", ast)), unit, "forged");
+  say("store separations: the fragment without the callee's separation refused at the read it kept");
+});
+
+control("forged fragment: the rest intrinsic's effect widened", async (): Promise<void> => {
+  // Old control "array rests" (line 1673), its fragment half: rest
+  // collection consumes the intrinsic's stated effect, so the intrinsic at an
+  // ordinary arrow's effect leaves the defining unit's growth footprint
+  // unestablished.
+  const artifacts = run("blocker-next-array-rest-footprint");
+  const ast = fragmentAst(artifacts);
+  const rest = must(ast.declarations.values.find((v) => v.binding.local === "%RestFrom:1%"), "the rest intrinsic");
+  assert.ok(rest.type.k === "function");
+  const before = pass(fragmentOf(artifacts));
+  const units = [...before.verdicts].filter(([, v]) => v.closed).map(([u]) => u);
+  assert.ok(units.length > 0, "the honest fragment accepts a unit");
+  rest.type.effect = ordinaryEffect;
+  const p = pass(forged(artifacts, "array-rest-unrestricted", ast));
+  const lost = units.filter((u) => p.verdicts.get(u)?.closed !== true);
+  assert.ok(lost.length > 0 || p.status !== 0 && p.verdicts.size === 0, `forged: no unit refused: ${words(p).slice(0, 2000)}`);
+  say(`array rests: the rest intrinsic at an ordinary effect refuses ${lost.join(", ") || "the file"}`);
+});
+
+control("units: each listed with its dependencies, a names list selecting", async (): Promise<void> => {
+  // Old control "units" (line 2241), its unit-list half: the pass lists each
+  // unit of module-cells with the units it depends on, the module's
+  // initialization among them, and a names list checks those units alone.
+  const artifacts = run("module-cells");
+  const all = pass(fragmentOf(artifacts));
+  const listed = [...all.verdicts.keys()];
+  const id = (name: string): string => must(listed.find((u) => u.startsWith(`${name}@`)), `${name} listed: ${listed.join(", ")}`);
+  for (const name of ["bump", "cached", "limited", "afterCall"]) accepted(all, id(name), "module-cells");
+  const depends = (p: Pass, unit: string): string[] => {
+    for (const line of p.stdout.split("\n").filter((l) => l.startsWith("{"))) {
+      const v: unknown = JSON.parse(line);
+      if (isObject(v) && v.unit === unit && Array.isArray(v.depends)) return v.depends.filter((d) => typeof d === "string");
+    }
+    return [];
+  };
+  const after = depends(all, id("afterCall"));
+  assert.ok(after.includes(id("bump")), `afterCall depends on bump: ${after.join(", ")}`);
+  assert.ok(depends(all, id("bump")).some((d) => !d.includes("@")), `bump depends on the initialization: ${depends(all, id("bump")).join(", ")}`);
+  const one = pass(fragmentOf(artifacts), [], "bump");
+  assert.deepEqual([...one.verdicts.keys()].filter((u) => u.includes("@")), [id("bump")], `bump alone: ${one.stdout}`);
+  say("units: module-cells' units listed with their dependencies, the initialization among them; a names list checks bump alone");
+});
+
+control("forged fragment: a guard's undefined behaviour", async (): Promise<void> => {
+  // Old control "guards on undefined" (line 8785), its fragment half: a node
+  // guard on a `parent` that may be absent throws there, so both its edges
+  // hold a present `parent`. Its behaviour on undefined forged unadmitted,
+  // the test then reading `kind` of a value that may be absent, refuses
+  // every unit reading through such a guard.
+  const artifacts = run("compiler-api-guard-undefined");
+  const before = pass(fragmentOf(artifacts));
+  const units = [...before.verdicts].filter(([, v]) => v.closed).map(([u]) => u);
+  assert.ok(units.length > 0, "the honest fragment accepts a unit");
+  const ast = fragmentAst(artifacts);
+  let forgedGuards = 0;
+  visitAll(ast, (value) => {
+    if (value.k === "tagMember" && value.onUndefined === "throws") { value.onUndefined = "unadmitted"; forgedGuards++; }
+  });
+  assert.ok(forgedGuards > 0, "a guard throwing on undefined");
+  const p = pass(forged(artifacts, "guard-undefined-unadmitted", ast));
+  const lost = units.filter((u) => p.verdicts.get(u)?.closed !== true);
+  assert.ok(lost.length > 0 || p.status !== 0 && p.verdicts.size === 0,
+    `forged: no unit refused: ${words(p).slice(0, 2000)}`);
+  say(`guards on undefined: ${forgedGuards} guards forged unadmitted, refusing ${lost.join(", ") || "the file"}`);
+});
+
+control("forged fragment: a lone surrogate and bytes that are no UTF-8", async (): Promise<void> => {
+  // Old control "wire strings" (line 8986), its fragment half: a lone
+  // surrogate, which JSON writes as an escape, and bytes that are not UTF-8,
+  // refused by Lean before it reads a value, and by TypeScript's reader.
+  const artifacts = run("tag-set-code-points");
+  const text = readFileSync(fragmentOf(artifacts), "utf8");
+  assert.ok(text.includes(""), "the fragment holds U+E000");
+  const lone = join(artifacts, "forged-lone-surrogate-fragment.json");
+  writeFileSync(lone, text.replace("", "\\ud800"));
+  assert.throws(() => readFragmentFile(lone), /not well-formed Unicode/);
+  refusedFile(pass(lone), "a lone surrogate", /not well-formed Unicode/);
+  const bytes = Buffer.from(text.replace("", "\u0001"), "utf8");
+  const at = bytes.indexOf(0x01);
+  assert.ok(at >= 0);
+  bytes[at] = 0xff;
+  const raw = join(artifacts, "forged-invalid-utf8-fragment.json");
+  writeFileSync(raw, bytes);
+  assert.throws(() => readFragmentFile(raw), /not valid UTF-8/);
+  refusedFile(pass(raw), "bytes that are no UTF-8", /not valid UTF-8/);
+  say("wire strings: the fragment with a lone surrogate or bytes that are no UTF-8 refused by Lean and TypeScript");
+});
+
+control("step failures: the pass's exit without a complete refusal is a tool failure", async (): Promise<void> => {
+  // Old control "step failures" (line 9460) on the route: the pass's exit
+  // other than its complete refusal record (exit 1, a first line `reject: …`
+  // and a last line `end of refusal`) is a tool failure, no verdict: no
+  // output, an exception's text, and a record cut short. The injected failure
+  // is written into a stand-in the route runs (`VERIFIER`), so it is part of
+  // the executable the invocation runs; a stand-in is no audited program, so
+  // its invocation executes without a key.
+  const dir = runDirectory("single-pass-step-failures-");
+  const real = verifierBuild;
+  let runs = 0;
+  const outcomeOf = (text: string): Outcome => {
+    const at = join(dir, `run-${runs++}`);
+    mkdirSync(at);
+    const stand = join(at, "verifier.sh");
+    const quoted = `'${text.replaceAll("'", `'\\''`)}'`;
+    writeFileSync(stand, `#!/bin/sh\nfor a in "$@"; do\n  if [ "$a" = "--verify-interface-stage" ]; then\n` +
+      `    [ -n ${quoted} ] && echo ${quoted} >&2\n    exit 1\n  fi\ndone\nexec "${real}" "$@"\n`);
+    chmodSync(stand, 0o755);
+    const ran = spawnSync(process.execPath, [join(root, "pipeline/verify-source.mts"), join(root, "pipeline/examples/optional-chain-element-receiver.ts")],
+      { encoding: "utf8", timeout: 120_000, env: { ...process.env, TSCERT_ROUTE: "single-pass", VERIFIER: stand } });
+    const outcome = readOutcome(JSON.parse(ran.stdout.slice(ran.stdout.indexOf("{"))));
+    const failing = readInvocationLog(join(outcome.artifacts, invocationLog)).filter((r) => r.stage === "pass").at(-1);
+    assert.ok(failing !== undefined && ranStage(failing) && failing.key === null, "the failing stage ran, without a key");
+    return outcome;
+  };
+  for (const text of ["", "uncaught exception: forced by tests/single-pass-controls.mts", "reject: a record cut short"]) {
+    const outcome = outcomeOf(text);
+    assert.equal(outcome.status, "error", `${JSON.stringify(text)}: ${JSON.stringify(outcome)}`);
+    assert.equal(outcome.detail,
+      `tool failure: verifier --verify-interface-stage exited with status 1 without a complete refusal: ${text || "no output"}`);
+  }
+  // An operational failure of the verifier is its own exit status, 3.
+  const unread = spawnSync(real, ["--verify-interface-stage", "8", join(dir, "absent.json"), join(dir, "absent.json"),
+    "absent.ts", "12", ""], { encoding: "utf8" });
+  assert.equal(unread.status, 3, unread.stderr);
+  assert.match(unread.stderr, /^error: /);
+  say("step failures: the pass's exit without a complete refusal is a tool failure; an unreadable input is the verifier's status 3");
+});
+
 control("store: cold and warm runs, an importer's edit, over the interface stages", async (): Promise<void> => {
   const previous = process.env.TSCERT_STAGE_STORE;
   const scratch = runDirectory("single-pass-store-");
@@ -1607,12 +1772,9 @@ control("store: cold and warm runs, an importer's edit, over the interface stage
     // The interface stages, forced to run (`imports`): warm, replayed.
     const forcedRecords = (fragment: string): Invoked[] => {
       const work = runDirectory("single-pass-store-pass-");
-      const given = join(work, "given.jsonl"), standins = join(work, "standins.json");
-      writeFileSync(given, "");
-      writeFileSync(standins, '{"functions":[],"imports":[]}');
       const ast: unknown = JSON.parse(readFileSync(fragment, "utf8"));
       const { run, interfaces } = verifyWithInterfaces(fragment, isObject(ast) && typeof ast.file === "string" ? ast.file : "", "",
-        standins, { mode: 8, fuel: 12, rounds: 4096, force: ["imports"], allCuts: false, given, work: join(work, "interfaces"),
+        { mode: 8, fuel: 12, rounds: 4096, force: ["imports"], allCuts: false, work: join(work, "interfaces"),
           invocation: { limitMs: 60_000, force: false, recorder: null } });
       return [...interfaces.records, run];
     };

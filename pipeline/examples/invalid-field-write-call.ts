@@ -2,6 +2,8 @@
 // field again, so the read is of the field's declared type. TypeScript keeps
 // the narrowing. Under Node the callback clears the field and `null` is
 // returned where the slots are.
+// On the single pass, a gap: the single pass refuses the field's `??=` write
+// before the read after the call.
 type Slots = { observation: string; result: string | null };
 type Binder = { name: string; resolution: Slots | null };
 
