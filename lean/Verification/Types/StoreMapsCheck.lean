@@ -74,23 +74,47 @@ abbrev Shape := Option ParameterKind × Bool × Bool × List (Clause Nat)
 @[nospecialize] def memberShapes {α : Type} (G : NormalGraph α) (i : α) : List Shape :=
   (G.rows i).flatMap fun c => c.operands.flatMap (·.map (shapeKey G))
 
+/-- A row's shape to depth two: its shape and its operands' members'
+shapes. -/
+@[nospecialize] def deepShape {α : Type} (G : NormalGraph α) (i : α) : Shape × List Shape :=
+  (shapeKey G i, memberShapes G i)
+
 /-- Two rows of one shape to depth two: the same shape, and their operands'
 members of the same shapes as sets (an operand's order is the store's). -/
-@[nospecialize] def sameDeepShape {α β : Type} (G : NormalGraph α) (H : NormalGraph β) (i : α) (j : β) : Bool :=
-  decide (shapeKey H j = shapeKey G i) &&
-    (memberShapes G i).all (fun x => (memberShapes H j).contains x) &&
-    (memberShapes H j).all (fun x => (memberShapes G i).contains x)
+@[nospecialize] def sameDeepShape (d d' : Shape × List Shape) : Bool :=
+  decide (d'.1 = d.1) && d.2.all (fun x => d'.2.contains x) && d'.2.all (fun x => d.2.contains x)
+
+/-- A shape's fingerprint: whether it is a scheme or a meet and its
+clauses' operand sizes, equal for equal shapes. -/
+@[nospecialize] def shapePrint (d : Shape) : UInt64 :=
+  hash (d.2.1, d.2.2.1, d.2.2.2.map (·.operands))
+
+/-- A deep shape's fingerprint: its shape's, and its members' shapes' as a
+sorted set, equal for two deep shapes `sameDeepShape` relates. -/
+@[nospecialize] def deepFingerprint (d : Shape × List Shape) : UInt64 :=
+  hash (shapePrint d.1, ((d.2.map shapePrint).mergeSort (· ≤ ·)).eraseReps)
 
 /-- Pairs of a union's members with an image union's: each member with the
-first unused image member of the same row shape to depth two. -/
+first unused image member of the same row shape to depth two. Each member's
+shape is computed once, and the image members are looked up among those of
+its fingerprint, in order. -/
 @[nospecialize] def pairUnion (G : NormalGraph ι) (H : NormalGraph κ) (S : List ι) (S' : List κ) :
     List (ι × κ) :=
   match S, S' with
   | [j], [j'] => [(j, j')]
-  | _, _ => (S.foldl (fun (acc : List (ι × κ) × List κ) j =>
-      match acc.2.find? (fun j' => sameDeepShape G H j j') with
-      | some j' => ((j, j') :: acc.1, acc.2.erase j')
-      | none => acc) ([], S')).1
+  | _, _ =>
+    let buckets : Std.HashMap UInt64 (List (κ × (Shape × List Shape))) :=
+      S'.reverse.foldl (fun m j' =>
+        let d := deepShape H j'
+        let k := deepFingerprint d
+        m.insert k ((j', d) :: m.getD k [])) {}
+    (S.foldl (fun (acc : List (ι × κ) × Std.HashMap UInt64 (List (κ × (Shape × List Shape)))) j =>
+      let d := deepShape G j
+      let k := deepFingerprint d
+      let bucket := acc.2.getD k []
+      match bucket.find? (fun (_, d') => sameDeepShape d d') with
+      | some (j', _) => ((j, j') :: acc.1, acc.2.insert k (bucket.eraseP (·.1 == j')))
+      | none => acc) ([], buckets)).1
 
 /-- Pairs of related operand lists, position by position. -/
 @[nospecialize] def pairOps (G : NormalGraph ι) (H : NormalGraph κ) (ops : List (List ι))
