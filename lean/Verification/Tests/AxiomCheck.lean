@@ -17,6 +17,7 @@ import Verification.Semantics.KindsAllocation
 import Verification.Semantics.KindsWrites
 import Verification.Semantics.KindsNatives
 import Verification.Programs.KindsModelRules
+import Verification.Semantics.KindsCalls
 import Lean.Util.CollectAxioms
 import Lean.Elab.Command
 import Lean.Compiler.CSimpAttr
@@ -1569,3 +1570,15 @@ run_cmd do
   check ``Verification.Kinds.ViewWrite.changes
   check ``Verification.Kinds.ViewWriteOf.holds
   check ``Verification.Kinds.viewWrite_overlap
+  -- call preservation and the early evidence of the native specifications
+  check ``Verification.Kinds.SafeW.bind
+  check ``Verification.Kinds.SafeW.handle
+  check ``Verification.Kinds.SafeW.exit
+  check ``Verification.Kinds.SafeW.erase
+  check ``Verification.Kinds.NativeContract.safe
+  check ``Verification.Kinds.allocThrow_safe
+  check ``Verification.Kinds.callback_throw_handled
+  check ``Verification.Kinds.callback_writeback
+  check ``Verification.Kinds.hostBefore_ok
+  check ``Verification.Kinds.host_refs
+  check ``Verification.Kinds.host_viewWrite
