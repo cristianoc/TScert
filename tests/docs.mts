@@ -213,7 +213,7 @@ for (const file of files) {
 // bare `§n` naming no document, whether an existing anchor or section is the
 // one a citation means, and the Lean and code names a document's code spans
 // hold are not checked here.
-const codeRoots = ["tools", "pipeline", "dev", "tests", "lean/Verification", "ocaml-producer"];
+const codeRoots = ["tools", "pipeline", "dev", "tests", "lean/Verification"];
 const codeFile = /\.(mts|ts|lean|ml|mli|sh|c)$/;
 function codeFiles(dir: string): string[] {
   const found: string[] = [];

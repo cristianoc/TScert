@@ -40,13 +40,6 @@ jobs:
             | sh -s -- -y --default-toolchain none
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
 
-      - uses: ocaml/setup-ocaml@v3
-        with:
-          ocaml-compiler: "5.3"
-
-      - name: Install Dune
-        run: opam install -y dune
-
       - name: Restore the Lean build
         id: lake
         uses: actions/cache/restore@v4
@@ -60,7 +53,7 @@ jobs:
         run: make setup
 
       - name: Build
-        run: opam exec -- make build
+        run: make build
 
       - name: Save the Lean build
         if: steps.lake.outputs.cache-hit != 'true'
@@ -70,7 +63,7 @@ jobs:
           key: ${{ steps.lake.outputs.cache-primary-key }}
 
       - name: Fast checks and controls
-        run: opam exec -- make test-checks
+        run: make test-checks
 
       # C3 and C4 over the corpus (tests/compiler-api-shapes.mts): about a
       # minute, outside the fast checks.
@@ -82,4 +75,4 @@ jobs:
       - name: Pipeline cases
         env:
           TSCERT_STEP_LIMIT: "180"
-        run: opam exec -- make test-cases
+        run: make test-cases

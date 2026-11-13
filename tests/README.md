@@ -55,7 +55,7 @@ pipeline. `test-all.sh` runs each but `compiler-api-shapes.mts`, which
 | Tests | Coverage |
 | --- | --- |
 | [`docs.mts`](docs.mts) | Documents: links, anchors and math GitHub renders. |
-| [`json-field-names.mts`](json-field-names.mts) | TypeScript, Lean and OCaml use the same JSON field names. |
+| [`json-field-names.mts`](json-field-names.mts) | TypeScript and Lean use the same JSON field names. |
 | [`node-runs.mts`](node-runs.mts) | The examples and native-contract counterexamples run under Node with the outcomes the cases state. |
 | [`trusted-inputs.mts`](trusted-inputs.mts) | The front end's trusted inputs: the Node version, pinned declarations, resolved files, imports, the array overlay. |
 | [`tool-failures.mts`](tool-failures.mts), with [`force-tool-failure.mts`](force-tool-failure.mts) | A failure of the compiler's API forced at each kind of site that catches what a query throws (a read refused into a value or a located error, a lookup made an absence, a computed type refused when generic, an imported module left out, `unchecked.mts`'s uninspected nodes) is reported as a tool failure, also when it strikes after a request was sent, a native read failure included; no request follows on a damaged channel, and the next parse opens a fresh compiler; a failure releasing the compiler is a tool failure naming the refusal in flight; an abandoned compiler's process ends; `unchecked.mts` reports every panic, retried or not; a step killed by a signal is a tool failure. |

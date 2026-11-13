@@ -1,7 +1,7 @@
 # Callables
 
 Source examples for callable contracts, each a pipeline case run through the
-parser, the OCaml producer and the Lean checker.
+parser and the Lean verifier's single pass.
 
 Add coverage for a distinct semantic obligation or an interaction that could
 fail even when its components pass separately. Minor syntax variations alone

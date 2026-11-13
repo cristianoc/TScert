@@ -156,7 +156,7 @@ uses the plans Lean reconstructs from the Fragment.
 
 Implementation entry points are [the parser](../tools/fragment-parse.mts),
 [the execution-plan writer](../lean/Verification/Source/FlowJson.lean),
-[the OCaml producer](../ocaml-producer/README.md),
+the OCaml producer,
 [typed extraction](../lean/Verification/Source/SourceExtraction.lean) and
 [claim checking](../lean/Verification/Source/Claims/Json.lean).
 [LANGUAGES](LANGUAGES.md) maps each representation to its definitions.
@@ -791,7 +791,6 @@ owner; other documents link to them and give only the context their readers need
 | [LANGUAGES](LANGUAGES.md) | Every representation data crosses, which file owns each on both sides, the naming convention, and where it does not hold. |
 | [OBLIGATION-DIAGNOSTICS](OBLIGATION-DIAGNOSTICS.md) | Failure records, source maps, outcome classification and reason vocabulary. |
 | [CLAIM-LANGUAGE](CLAIM-LANGUAGE.md) | The claim text language diagnostics print: its two typed representations. |
-| [OCaml producer](../ocaml-producer/README.md) | The producer: its inputs and output, how it infers, its implementation map and how to extend it. |
 | [Test index](../tests/README.md) and the [callable examples](../pipeline/examples/callables/README.md) | Regression coverage, the pipeline cases and their runnable witnesses. |
 | [REFERENCES](REFERENCES.md) | Every cited paper, specification, tool and issue, with what the project uses from it and where. Other documents link to its anchors. |
 | [GLOSSARY](GLOSSARY.md) | The established terms a commit record may use without defining, each linked to its owner. |
@@ -878,7 +877,7 @@ may import. The main Lean entry points are:
 | Semantic families and graph types | [Types](../lean/Verification/Types/Types.lean), [PositiveGraphs](../lean/Verification/Types/PositiveGraphs.lean), [PositiveRules](../lean/Verification/Types/PositiveRules.lean) |
 | Program typing and checked evidence | [ProgramTyping](../lean/Verification/Programs/ProgramTyping.lean), [ProgramCertificates](../lean/Verification/Programs/ProgramCertificates.lean), [CertificateProducer](../lean/Verification/Programs/CertificateProducer.lean) |
 | Source boundary and CLI | [Fragment](../lean/Verification/Source/Fragment.lean), [SourceExtraction](../lean/Verification/Source/SourceExtraction.lean), [SourceClaimJson](../lean/Verification/Source/Claims/Json.lean), [RequestCli](../lean/Verification/Source/RequestCli.lean) |
-| Other code and tests | [OCaml producer](../ocaml-producer/README.md), [trusted Node front end](../tools/), [development tools](../dev/), [regression index](../tests/README.md) |
+| Other code and tests | [trusted Node front end](../tools/), [development tools](../dev/), [regression index](../tests/README.md) |
 
 [tools/package.json](../tools/package.json) pins what the node side installs: the
 TypeScript compiler the parser runs on, and KaTeX, which

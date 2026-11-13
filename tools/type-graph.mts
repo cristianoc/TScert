@@ -19,8 +19,8 @@ export type { CallEffect, CallPromise, ClosedFootprint } from "./declaration-typ
 export type ArrayPresence = "dense" | "readable" | "sparse";
 
 /** The wire's order of strings, a string set's (HOST-FAMILIES.md, "Tag
- * sets"): lexicographic by Unicode code point, as Lean's `String` order and
- * OCaml's byte order of UTF-8 are. JavaScript's `<` compares UTF-16 code
+ * sets"): lexicographic by Unicode code point, as Lean's `String` order
+ * is. JavaScript's `<` compares UTF-16 code
  * units, which orders a code point past U+FFFF below one in U+E000–U+FFFF. */
 export function codePointLess(a: string, b: string): boolean {
   const xs = [...a], ys = [...b];

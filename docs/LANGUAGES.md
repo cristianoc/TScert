@@ -32,7 +32,7 @@ languages.
 | **Fragment** — the subset of TypeScript this pipeline accepts, as a tree; its required `declarations` slot is emptied once Lean has interpreted its equations | [Fragment.lean](../lean/Verification/Source/Fragment.lean) | [fragment.mts](../tools/fragment.mts), parsed by [fragment-parse.mts](../tools/fragment-parse.mts) | the parser |
 | **Declaration graph** — the source type equations of every local and imported declaration a file reaches, with the declaration TypeScript binds each name to; function annotations are written in the same source type terms | [Equations/Lowering.lean](../lean/Verification/Source/Equations/Lowering.lean) | [declaration-types.mts](../tools/declaration-types.mts), read by [type-term.mts](../tools/type-term.mts) and collected by [declaration-graph.mts](../tools/declaration-graph.mts) | the parser, with TypeScript's checker |
 | **Claim expressions** — structural type expressions used by diagnostics and internal source-type conversion | [Claim.lean](../lean/Verification/Types/Claim.lean) | [claim.mts](../tools/claim.mts), printed by [claim-text.mts](../tools/claim-text.mts) | claim parsing and type conversion |
-| **Source execution plans** — claim-independent control-flow graphs with expression and binding schedules | [FlowJson.lean](../lean/Verification/Source/FlowJson.lean) writes [FlowGraph.lean](../lean/Verification/Source/FlowGraph.lean), [ExpressionPlan.lean](../lean/Verification/Source/ExpressionPlan.lean) and [BindingPlan.lean](../lean/Verification/Source/BindingPlan.lean); [ExecutionRoots.lean](../lean/Verification/Source/ExecutionRoots.lean) selects each node's expressions | [source-flow.mts](../tools/source-flow.mts); OCaml readers [flow.ml](../ocaml-producer/flow.ml) and [execution.ml](../ocaml-producer/execution.ml) | Lean source lowering |
+| **Source execution plans** — claim-independent control-flow graphs with expression and binding schedules | [FlowJson.lean](../lean/Verification/Source/FlowJson.lean) writes [FlowGraph.lean](../lean/Verification/Source/FlowGraph.lean), [ExpressionPlan.lean](../lean/Verification/Source/ExpressionPlan.lean) and [BindingPlan.lean](../lean/Verification/Source/BindingPlan.lean); [ExecutionRoots.lean](../lean/Verification/Source/ExecutionRoots.lean) selects each node's expressions | [source-flow.mts](../tools/source-flow.mts); OCaml readers flow.ml and execution.ml | Lean source lowering |
 | **Resolution metadata** — a qualified type parameter's owned names (`resolution` in the Fragment's `typeParams`) | [ResolutionWire.lean](../lean/Verification/Source/ResolutionWire.lean) | [declaration-types.mts](../tools/declaration-types.mts) (`ResolutionSlots`) | the parser |
 | **Calculus** — terms, tags, call codes: the operational language | [Calculus.lean](../lean/Verification/Semantics/Calculus.lean) | [calculus.mts](../tools/calculus.mts) | extraction |
 | **ControlFlow** — the program graph over those terms | [ControlFlow.lean](../lean/Verification/Programs/ControlFlow.lean) | [control-flow.mts](../tools/control-flow.mts) | extraction |
@@ -50,7 +50,7 @@ Diagnostic explains an outcome and has no role in acceptance.
 
 The OCaml producer has internal inference types and environments as well as
 these external documents. Those internal data structures are not additional
-protocols. The [producer guide](../ocaml-producer/README.md) explains their roles.
+protocols. The producer guide explains their roles.
 
 Exact callable fields and effect contracts belong to the
 [request protocol](REQUEST-PROTOCOL.md), declaration terms to

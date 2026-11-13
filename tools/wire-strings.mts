@@ -2,7 +2,7 @@
  * surrogate, in a key or a value (HOST-FAMILIES.md, "Tag sets", and the rule
  * each decoder states). A JavaScript string may hold one, which
  * `JSON.stringify` writes as a `\ud800` escape; Lean's JSON parser would read
- * it as U+FFFD, a different string, and OCaml's refuses it. So the writers
+ * it as U+FFFD, a different string. So the writers
  * refuse such a string and every reader refuses a document holding one,
  * before reading any value. */
 

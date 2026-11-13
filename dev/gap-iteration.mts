@@ -45,7 +45,7 @@
  * the command runs from the owner's terminal. A codex author runs
  * `codex exec --approve-for-me`: its commands
  * run in codex's sandbox, without network, writing its worktree, the run's
- * `work/` directory and the stage and Dune caches; a command that needs more
+ * `work/` directory and the stage cache; a command that needs more
  * (the pipeline's own sandbox-exec, a commit) runs outside it on codex's
  * automatic approval. Reviews and the report run read-only.
  * The script runs every gate, commit rewrite and merge itself, with the
@@ -239,7 +239,7 @@ async function codex(r: Run, c: Ask): Promise<string> {
   mkdirSync(tmp, { recursive: true });
   const args = ["exec", "-m", c.model.id, "--skip-git-repo-check", "-C", c.cwd, "-o", c.out];
   if (c.write) {
-    const roots = [join(r.run, "work"), join(homedir(), ".cache", "tscert"), join(homedir(), ".cache", "dune")];
+    const roots = [join(r.run, "work"), join(homedir(), ".cache", "tscert")];
     args.push("--approve-for-me", "-c", "sandbox_workspace_write.exclude_slash_tmp=true",
       "-c", `sandbox_workspace_write.writable_roots=${JSON.stringify(roots)}`);
   } else args.push("-s", "read-only");
@@ -600,7 +600,7 @@ function recordCommit(record: string): { commit: string; status: string } {
 
 /** Whether `commit` has main's code: the directories every stage and the census read, this command aside. */
 const mainsCode = (commit: string): boolean =>
-  gitOk(repository, "diff", "--quiet", commit, "main", "--", "tools", "pipeline", "lean", "ocaml-producer", "dev", ":(exclude)dev/gap-iteration.mts");
+  gitOk(repository, "diff", "--quiet", commit, "main", "--", "tools", "pipeline", "lean", "dev", ":(exclude)dev/gap-iteration.mts");
 
 async function rank(r: Run): Promise<void> {
   if (!r.state.census) {

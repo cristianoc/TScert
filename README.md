@@ -205,12 +205,12 @@ every work, with what TScert takes from it and where.
 
 ## Try it
 
-Prerequisites: Node at the version [`.nvmrc`](.nvmrc) pins, the pinned [Lean toolchain](lean/lean-toolchain), OCaml
-and Dune ([the producer guide](ocaml-producer/README.md#try-it)). Then:
+Prerequisites: Node at the version [`.nvmrc`](.nvmrc) pins and the pinned
+[Lean toolchain](lean/lean-toolchain). Then:
 
 ```sh
 make setup                                   # node dependencies
-make build                                   # the Lean verifier and the OCaml producer
+make build                                   # the Lean verifier and the stage runner
 make check FILE=pipeline/examples/array-last-element.ts
 ```
 

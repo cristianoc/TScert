@@ -57,13 +57,6 @@ jobs:
             | sh -s -- -y --default-toolchain none
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
 
-      - uses: ocaml/setup-ocaml@v3
-        with:
-          ocaml-compiler: "5.3"
-
-      - name: Install Dune
-        run: opam install -y dune
-
       # CI's workflow saves the Lean build; the census only reads it.
       - name: Restore the Lean build
         uses: actions/cache/restore@v4
@@ -77,7 +70,7 @@ jobs:
         run: make setup
 
       - name: Build
-        run: opam exec -- make build
+        run: make build
 
       - name: Census
         run: |
@@ -86,7 +79,7 @@ jobs:
           mkdir -p "$CENSUS"
           # Progress shows in the step's log as the census runs.
           set -o pipefail
-          opam exec -- node dev/census.mts --dir tools --out "$CENSUS/tools" --record "$CENSUS/record.json" 2>&1 \
+          node dev/census.mts --dir tools --out "$CENSUS/tools" --record "$CENSUS/record.json" 2>&1 \
             | tee "$CENSUS/run.log"
 
       - uses: actions/upload-artifact@v4

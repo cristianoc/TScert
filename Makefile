@@ -4,7 +4,7 @@
 OUT ?= $(or $(TMPDIR),/tmp)/semantic-diff.html
 REV ?= HEAD
 
-.PHONY: help setup build build-lean build-producer test test-checks test-cases cases check lowering compiler-api-shapes semantic-diff deck fmt \
+.PHONY: help setup build build-lean test test-checks test-cases cases check lowering compiler-api-shapes semantic-diff deck fmt \
   check-fmt setup-git-hooks clean-store census build-runner
 
 help: ## list the targets
@@ -16,7 +16,7 @@ setup: ## install the node dependencies (tools, the library fixture's Node types
 	npm install --no-save
 	node pipeline/fixture-links.mts
 
-build: build-lean build-producer build-runner ## build the Lean verifier, the OCaml producer and the stage runner
+build: build-lean build-runner ## build the Lean verifier and the stage runner
 
 RUNNER := pipeline/runner/_build/stage-runner
 
@@ -28,9 +28,6 @@ $(RUNNER): pipeline/runner/stage-runner.c
 
 build-lean: ## build the Lean verifier
 	cd lean && lake build --log-level=warning
-
-build-producer: ## build the OCaml producer
-	dune build --root ocaml-producer
 
 test: test-checks test-cases ## build, then the fast checks and the controls, then the pipeline cases
 
@@ -52,7 +49,7 @@ clean-store: ## remove stage entries, timeouts and the source snapshots no runni
 census: ## the census of a directory's units: DIR=tools, FILES=a.mts,…, FUNCTIONS=f,… (with their dependency closure; SHALLOW=1 without it), SHARD=i/n; a record per run; each stage limited to 300 s unless TSCERT_STEP_LIMIT says otherwise; TSCERT_RETRY_TIMEOUTS=1 runs recorded timeouts again
 	TSCERT_STEP_LIMIT=$${TSCERT_STEP_LIMIT:-300} node dev/census.mts --dir $(or $(DIR),tools) $(if $(FILES),--files $(FILES)) $(if $(FUNCTIONS),--functions $(FUNCTIONS)) $(if $(SHARD),--shard $(SHARD)) $(if $(SHALLOW),--shallow)
 
-lowering: ## the program graph a source lowers to: FILE=path.ts [FN=function]
+lowering: ## the execution graphs a source's functions lower to: FILE=path.ts [FN=function]
 	node dev/lowering-dump.mts $(FILE) $(FN)
 
 compiler-api-shapes: ## C3 and C4: every node of the corpus holds the members its shape states required, or a correction covers them, each read stable

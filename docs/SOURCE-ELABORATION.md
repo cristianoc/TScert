@@ -1574,7 +1574,7 @@ $`j\in I_k`$ satisfying
 
 Its proposed field is $`k{:}T_j`$, optional exactly when every $`o_i=1`$.
 Here $`H`$ is the producer's `plausible_subtype`
-([`type_queries.ml`](../ocaml-producer/type_queries.ml)), a proposal
+(`type_queries.ml`), a proposal
 heuristic for inclusion: equality, literals within their primitive, members
 of unions, and shapes with equal fields; it compares named types as written,
 without expanding their declarations. Lean decides inclusion.

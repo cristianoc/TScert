@@ -53,7 +53,7 @@ it. Areas follow the pipeline's order; terms are alphabetical within each.
 - **obligation**: a typing or subtype judgment the extracted program must meet for acceptance ([claims](DESIGN.md#claims-and-the-claim-reader)).
 - **parser**: the front end's part that emits the Fragment (`tools/fragment-parse.mts` and its parts) ([stages](DESIGN.md#stages)).
 - **pipeline**: parse, plan, propose, elaborate, search, check, run by `pipeline/verify-source.mts` ([the entry point](DESIGN.md#the-pipeline-entry-point)).
-- **producer**: the OCaml program that proposes the type of every expression and variable; nothing it says is trusted ([stages](DESIGN.md#stages), [the producer](../ocaml-producer/README.md)).
+- **producer**: the OCaml program that proposes the type of every expression and variable; nothing it says is trusted ([stages](DESIGN.md#stages), the producer).
 - **request**: the translated program with the obligations it must meet, which search and the checker read ([stages](DESIGN.md#stages)).
 - **search**: Lean's untrusted procedure that looks for a certificate; its failure shows nothing about safety ([search](DESIGN.md#search)).
 - **source map**: diagnostic metadata linking calculus nodes to source descriptions; it supplies no evidence ([claims](DESIGN.md#claims-and-the-claim-reader)).

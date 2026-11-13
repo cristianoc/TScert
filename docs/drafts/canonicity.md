@@ -247,7 +247,7 @@ as a join does. Requirements: a field fact and the path fact of length one;
 a fact equal to its contract.
 
 **M · Flow metadata.** The analysis state's lists
-([analysis_state.ml](../../ocaml-producer/analysis_state.ml)):
+(analysis_state.ml):
 `record_growth`, `mark_exact_local`, `record_holder` and
 `mark_exact_allocations` prepend entries, so a repeated mark makes a state
 of a different spelling with the same content. At joins
@@ -258,7 +258,7 @@ repetitions delay its convergence is *conjectured*, with no trace or case
 showing it. Requirements: the lists as sets.
 
 **Q · Producer declaration memo.** `definitions`
-([type_queries.ml](../../ocaml-producer/type_queries.ml)), keyed by the
+(type_queries.ml), keyed by the
 declaration and its arguments `(id, args)`. Requirements: P's, on the
 arguments.
 
