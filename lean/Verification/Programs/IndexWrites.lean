@@ -3,6 +3,7 @@ import Verification.Semantics.StringPostconditions
 import Verification.Programs.HeapExpressionRules
 import Verification.Programs.ExpressionEffects
 import Verification.Semantics.IndexNumbers
+import Verification.Semantics.StepRelations
 
 /-! # Writes at a checked index
 
@@ -2583,29 +2584,86 @@ theorem boundedWrite_store [DecidableEq ι] {G : NormalGraph ι} {images : Insta
     · cases htypes
   · cases htypes
 
-/-- A linear fact of a write's entry carried across a write at the length
-(`write-append`): over the written array's length and terms the write
-keeps, with the length one longer. -/
-def writeAppended (a : Nat) (first : Nat → String → Bool) (atom : IndexAtom) : Option IndexAtom :=
-  match atom.cond, atom.fact with
-  | none, .linear F =>
-    if F.vars.contains (Term.length a) &&
-        F.vars.all (fun t => t == Term.length a || t.keptBy (Changes.ofClosed ⟨.any, .grow⟩) first) then
-      some { fact := .linear (appendFact a 1 F) }
-    else none
-  | _, _ => none
+/-- The unconditional linear facts among atoms: the facts before a step a
+composition reads (`HeapKnowledge.compose`). -/
+def unconditionalLinear (as : List IndexAtom) : List (Linear.Fact Term) :=
+  as.filterMap fun a => match a.cond, a.fact with
+    | none, .linear F => some F
+    | _, _ => none
+
+theorem unconditionalLinear_holds {as : List IndexAtom} {ρ : Env} {h : Heap} (he : IndexHolds ε as ρ h) :
+    ∀ F ∈ unconditionalLinear as, (IndexFact.linear F).HoldsAt ε ρ h := by
+  intro F hF
+  obtain ⟨a, ha, hm⟩ := List.mem_filterMap.mp hF
+  split at hm
+  · rename_i G hc hf
+    cases hm
+    have := he a ha (fun b hb => by rw [hc] at hb; cases hb)
+    rwa [hf] at this
+  · cases hm
+
+/-- A term a change keeps, read after it at its own slot. -/
+def keptOf (c : Changes) (first : Nat → String → Bool) (t : Term) : Option Term :=
+  if t.keptBy c first then some t else none
+
+theorem keptOf_sound {c : Changes} {first : Nat → String → Bool} {ρ : Env} {h h' : Heap}
+    (hc : c.Holds h h') (hf : FirstKept first ρ h h') :
+    ∀ t t' n, keptOf c first t = some t' → termValue ε ρ h t = some n → termValue ε ρ h' t' = some n := by
+  intro t t' n ht hn
+  unfold keptOf at ht
+  split at ht
+  · rename_i hk; cases ht; exact termValue_kept hc hf hk hn
+  · cases ht
+
+/-- **The exact growth of a store's length**: the length of the slot `a`'s
+array after the step is its length before it plus `count`, as two facts over
+the before- and after-lengths; the length after defined. -/
+def lengthGrowth (a count : Nat) : StepRelation :=
+  { facts := [.le [(.before (Term.length a), 1), (.after (Term.length a), -1)] (-(count : Int)),
+      .le [(.before (Term.length a), -1), (.after (Term.length a), 1)] count]
+    defined := [Term.length a] }
+
+/-- The growth relation holds of a step that leaves the array's store one
+`count` longer wherever it was defined. -/
+theorem lengthGrowth_holds {a count : Nat} {ρ ρ' : Env} {h h' : Heap}
+    (hg : ∀ n, termValue ε ρ h (Term.length a) = some n → termValue ε ρ' h' (Term.length a) = some (n + count)) :
+    (lengthGrowth a count).Holds ε ρ h ρ' h' := by
+  have hd : (termValue ε ρ h (Term.length a)).isSome → ∃ n, termValue ε ρ h (Term.length a) = some n ∧
+      termValue ε ρ' h' (Term.length a) = some (n + count) := by
+    intro hs
+    obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp hs
+    exact ⟨n, hn, hg n hn⟩
+  refine ⟨fun F hF hdef => ?_, fun hall t ht => ?_⟩
+  · obtain ⟨n, hn, hn'⟩ := hd (hdef _ (by
+      simp only [lengthGrowth, List.mem_cons, List.not_mem_nil, or_false] at hF
+      rcases hF with rfl | rfl <;> simp [Linear.Fact.vars]))
+    simp only [lengthGrowth, List.mem_cons, List.not_mem_nil, or_false] at hF
+    rcases hF with rfl | rfl <;>
+      simp only [Linear.Fact.Holds, Linear.Form.eval, StepVar.value, termValuation, hn, hn', Option.getD_some] <;> omega
+  · simp only [lengthGrowth, List.mem_cons, List.not_mem_nil, or_false] at ht
+    subst ht
+    obtain ⟨n, -, hn'⟩ := hd (hall (.le [(.before (Term.length a), 1), (.after (Term.length a), -1)] (-(count : Int)))
+      (by simp [lengthGrowth]) _ (by simp [Linear.Fact.vars]))
+    simp [hn']
+
+/-- **The facts a write at the length carries** (`write-append`, an instance
+of the composition): the unconditional linear facts of the write's entry
+over the written array's length, each term the write keeps read after it,
+with the length one longer (`lengthGrowth a 1`). -/
+def writeCarried (a : Nat) (first : Nat → String → Bool) (k : Knowledge) : List IndexAtom :=
+  (compose (keptOf (Changes.ofClosed ⟨.any, .grow⟩) first) (unconditionalLinear k.indices) (lengthGrowth a 1)).map
+    fun F => { fact := .linear F }
 
 /-- The facts a write at a checked index states of its store, at the entry's
 slots (`write-bound`, `write-append`): the index below the length; and, where
 the write grows the stores (`ExpressionEffects.writeStep`) and the facts
-entail the index at least the length, each linear fact `writeAppended`
-carries. -/
+entail the index at least the length, the facts `writeCarried` composes. -/
 def atLengthAtoms [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (k : Knowledge) (a i : Nat) :
     List IndexAtom :=
   { fact := .bound a i true } ::
     ((if termDefined k.indices (Term.length a) then
         [{ fact := .linear (.le [(Term.value i, 1), (Term.length a, -1)] (-1)) }] else []) ++
-    let carried := k.indices.filterMap (writeAppended a (HeapExpressionRules.stableFirst G j.context))
+    let carried := writeCarried a (HeapExpressionRules.stableFirst G j.context) k
     if !carried.isEmpty && (ExpressionEffects.writeStep G j.context j.term).isSome &&
         entailsKnown k.indices (.le [(Term.length a, 1), (Term.value i, -1)] 0) then carried
     else [])
@@ -2650,14 +2708,14 @@ theorem atLengthAtoms_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
             hiv, hlv, Option.getD_some]
           omega
       · cases hm
-  -- `write-append`.
+  -- `write-append`: the composition with the length one longer.
   have happ : SafePost (excOf G) (meaning G j.type)
-      (fun h' _ => IndexHolds ε (if !(k.indices.filterMap (writeAppended a (HeapExpressionRules.stableFirst G j.context))).isEmpty &&
+      (fun h' _ => IndexHolds ε (if !(writeCarried a (HeapExpressionRules.stableFirst G j.context) k).isEmpty &&
         (ExpressionEffects.writeStep G j.context j.term).isSome &&
         entailsKnown k.indices (.le [(Term.length a, 1), (Term.value i, -1)] 0) then
-          k.indices.filterMap (writeAppended a (HeapExpressionRules.stableFirst G j.context)) else []) ρ h')
+          writeCarried a (HeapExpressionRules.stableFirst G j.context) k else []) ρ h')
       n W h (instantiate 0 ρ j.term) := by
-    by_cases hcond : (!(k.indices.filterMap (writeAppended a (HeapExpressionRules.stableFirst G j.context))).isEmpty &&
+    by_cases hcond : (!(writeCarried a (HeapExpressionRules.stableFirst G j.context) k).isEmpty &&
         (ExpressionEffects.writeStep G j.context j.term).isSome &&
         entailsKnown k.indices (.le [(Term.length a, 1), (Term.value i, -1)] 0)) = true
     · rw [if_pos hcond]
@@ -2667,43 +2725,26 @@ theorem atLengthAtoms_sound [DecidableEq ι] {G : NormalGraph ι} {images : Inst
         (ExpressionEffects.writeStep_grow hwi he hh (HeapObservations.erase hst))
       refine weaken (fun h' _ hq => ?_) (safePost_and hst hgrow)
       obtain ⟨⟨s, ls, ls', b, idx, hs, hl, hl', hb, hidx, hlt, -, hgr⟩, hch, hfirst⟩ := hq
-      intro atom hm hcd
-      obtain ⟨atom0, hm0, hw0⟩ := List.mem_filterMap.mp hm
-      unfold writeAppended at hw0
-      split at hw0
-      · rename_i F hcond0 hfact
-        split at hw0
-        · rename_i hall
-          cases hw0
-          have hall := (Bool.and_eq_true_iff.mp hall).2
-          have h0 := hk.2.2.2.2.2 atom0 hm0 (fun b' hb' => by rw [hcond0] at hb'; cases hb')
-          rw [hfact] at h0
-          -- The index at least the length, at the entry.
-          have hge := entailsKnown_sound hk.2.2.2.2.2 hent
-          have hiv : termValuation ε ρ h (Term.value i) = idx := by
-            simp [termValuation, hb, HeapKnowledge.intValue_num (index_safeInt hidx)]
-          refine append_fact_holds (fun t ht m hm' => ?_) h0
-          have hkt := List.all_eq_true.mp hall t ht
-          by_cases htl : t = Term.length a
-          · subst htl
-            simp only [termValue_length] at hm' ⊢
-            obtain ⟨s0, ls0, hs0, hls0, rfl, -⟩ := lengthOf_store hm'
-            rw [hs] at hs0; cases hs0
-            rw [hl] at hls0; cases hls0
-            have hlv : termValuation ε ρ h (Term.length a) = ls.length := by
-              simp [termValuation, hm']
-            simp only [Linear.Fact.Holds, Linear.Form.eval, hlv, hiv] at hge
-            have hlen := hgr (by omega)
-            have hmax : ls'.length ≤ maxArrayLength := by
-              have := indexOfBits_lt hidx; omega
-            rw [lengthOf_of_store hs hl' hmax, hlen]
-            simp [appendDelta]
-          · have hk' : t.keptBy (Changes.ofClosed ⟨.any, .grow⟩) (HeapExpressionRules.stableFirst G j.context) = true := by
-              simpa [htl] using hkt
-            rw [termValue_kept hch hfirst hk' hm']
-            simp [appendDelta, htl]
-        · cases hw0
-      · cases hw0
+      -- The index at least the length, at the entry.
+      have hge := entailsKnown_sound hk.2.2.2.2.2 hent
+      have hiv : termValuation ε ρ h (Term.value i) = idx := by
+        simp [termValuation, hb, HeapKnowledge.intValue_num (index_safeInt hidx)]
+      have hR : (lengthGrowth a 1).Holds ε ρ h ρ h' := lengthGrowth_holds fun m hm' => by
+        simp only [termValue_length] at hm' ⊢
+        obtain ⟨s0, ls0, hs0, hls0, rfl, -⟩ := lengthOf_store hm'
+        rw [hs] at hs0; cases hs0
+        rw [hl] at hls0; cases hls0
+        have hlv : termValuation ε ρ h (Term.length a) = ls.length := by
+          simp [termValuation, hm']
+        simp only [Linear.Fact.Holds, Linear.Form.eval, hlv, hiv] at hge
+        have hlen := hgr (by omega)
+        have hmax : ls'.length ≤ maxArrayLength := by
+          have := indexOfBits_lt hidx; omega
+        rw [lengthOf_of_store hs hl' hmax, hlen]
+        simp
+      intro atom hm _
+      obtain ⟨F, hF, rfl⟩ := List.mem_map.mp hm
+      exact compose_holds (unconditionalLinear_holds hk.2.2.2.2.2) (keptOf_sound hch hfirst) hR F hF
     · rw [if_neg hcond]
       exact weaken (fun _ _ _ => indexHolds_nil _ _) hst
   refine weaken (fun h' _ hq => ?_) (safePost_and hst happ)
