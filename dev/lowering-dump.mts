@@ -1,18 +1,20 @@
-/* Prints the program a source function lowers to: the graph the verifier
- * checks, as the verifier itself reports it (`verifier --lower-program`). One
- * line per node: its label, its term, and where control goes next. A record's
- * author starts from this output when writing a `Lowering` block.
+/* Prints the execution graphs a source's functions lower to, as the verifier
+ * itself reports them (`verifier --lower-control-flow`), the graphs the
+ * single pass walks. One line per node: its id, its action with the source
+ * it covers, and where control goes next; under it, the source each of its
+ * executions evaluates. A record's author starts from this output when
+ * writing a `Lowering` block.
  *
  *   node dev/lowering-dump.mts <file.ts> [function]
  *
- * A function the pipeline refuses before the producer's claims exist has no
- * graph; the command then prints the refusal. */
+ * A source the parser refuses has no graph; the command then prints the
+ * refusal. */
 import { spawnSync } from "node:child_process";
-import { present } from "../tools/files.mts";
+import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { fields, nat, showTag, showTerm, unmatched, type Json } from "../tools/calculus.mts";
-import { decodeNode, type Continuation, type ProgramNode, type Target } from "../tools/control-flow.mts";
-import { readOutcome, sourceKey, verifier } from "../pipeline/verify-source.mts";
+import type { Json } from "../tools/calculus.mts";
+import { decodeFlowDocument } from "../tools/source-flow.mts";
+import { readOutcome, verifier } from "../pipeline/verify-source.mts";
 import { runRoot } from "../pipeline/run-directory.mts";
 
 const [file, wanted] = process.argv.slice(2);
@@ -24,61 +26,37 @@ runRoot();
 // verify-source exits non-zero on a refusal; its outcome is on stdout either way.
 const out = spawnSync("node", [join(here, "../pipeline/verify-source.mts"), resolve(file)], { encoding: "utf8" }).stdout;
 const outcome = readOutcome(JSON.parse(out.slice(out.indexOf("{"))));
-const artifacts: string = outcome.artifacts;
-const claims = join(artifacts, "claims.json");
-const firstLine = (s: unknown): string => String(s).split("\n")[0];
+const firstLine = (s: unknown): string => String(s).split("\n")[0] ?? "";
 console.log(`outcome: ${outcome.status}${outcome.status === "verified" ? "" : `: ${firstLine(outcome.detail)}`}`);
-if (!present(claims)) process.exit(0);
-
-const lowered = spawnSync(verifier, ["--lower-program", join(artifacts, "fragment.json"), claims, sourceKey(artifacts)], { encoding: "utf8" });
-if (lowered.status !== 0) throw new Error(lowered.stderr);
-
-interface Unit { name: string; start: number; program: Json[]; codes: { arity: number; start: number; program: Json[] }[] }
-/** The verifier's lowerJson output: per unit its name, entry node and nodes,
- * and per code its arity, entry node and nodes; the nodes are decoded where
- * they are printed. */
-function decodeUnits(v: Json): Unit[] {
-  if (!Array.isArray(v)) throw Error("invalid lowering: units expected");
-  return v.map((u: Json): Unit => {
-    const o = fields(u, ["name", "start", "program", "codes"]);
-    const name = o.name, program = o.program, codes = o.codes;
-    if (typeof name !== "string" || !Array.isArray(program) || !Array.isArray(codes)) throw Error("invalid lowering unit");
-    return { name, start: nat(o.start), program, codes: codes.map((c: Json) => {
-      const k = fields(c, ["arity", "start", "program"]);
-      const nodes = k.program;
-      if (!Array.isArray(nodes)) throw Error("invalid lowering code");
-      return { arity: nat(k.arity), start: nat(k.start), program: nodes };
-    }) };
-  });
+const fragment = join(outcome.artifacts, "fragment.json");
+const lowered = spawnSync(verifier, ["--lower-control-flow", fragment], { encoding: "utf8" });
+if (lowered.status !== 0) {
+  console.log(firstLine(lowered.stderr));
+  process.exit(0);
 }
-const units = decodeUnits(JSON.parse(lowered.stdout));
+const source = readFileSync(join(outcome.artifacts, "source.ts"), "utf8");
+const parsed: Json = JSON.parse(lowered.stdout);
+const graphs = decodeFlowDocument(parsed);
+/** A span's source text on one line, shortened. */
+const text = ([start, end]: readonly [number, number]): string => {
+  const t = source.slice(start, end).replace(/\s+/g, " ").trim();
+  return t.length > 60 ? `${t.slice(0, 60)}…` : t;
+};
 
-const to = (t: Target): string => `n${t.label}`;
-function showStep(k: Continuation): string {
-  switch (k.kind) {
-    case "ret": return "return";
-    case "bind": return `→ ${to(k.next)}`;
-    case "effect": return `→ ${to(k.next)} (value dropped)`;
-    case "branch": return `if true → ${to(k.yes)}, else → ${to(k.no)}`;
-    case "branchBind": return `if true → ${to(k.yes)}, else → ${to(k.no)} (value kept)`;
-    case "tagBind": return `if ${showTag(k.test)} → ${to(k.yes)}, else → ${to(k.no)}`;
-    default: return unmatched(k);
+for (const g of graphs) {
+  const name = text(g.owner);
+  if (wanted !== undefined && name !== wanted) continue;
+  console.log(`\n${name}:${g.cells.length === 0 ? "" : `  cells ${g.cells.map((c) => c.name).join(", ")}`}`);
+  for (const n of g.nodes) {
+    const a = n.action;
+    const step = a.kind === "end" ? "end"
+      : a.kind === "jump" ? `→ n${a.target}`
+      : a.kind === "branch" || a.kind === "iteratorStep" ? `if true → n${a.yes}, else → n${a.no}`
+      : a.kind === "return" || a.kind === "returnHeld" || a.kind === "rethrow" ? "exit"
+      : `→ n${a.next}`;
+    const at = "statement" in a ? `  «${text(a.statement)}»` : "binding" in a ? `  ${a.binding.name}` : "";
+    const handler = n.handler === null ? "" : `   throws → n${n.handler.target}`;
+    console.log(`${n.id === g.entry ? "▸" : " "} n${String(n.id).padEnd(3)} ${a.kind}${at}   ${step}${handler}`);
+    for (const e of n.executions) console.log(`        evaluates «${text(e.source)}»`);
   }
-}
-function printGraph(start: number, program: Json[]): void {
-  const nodes: ProgramNode[] = program.map(decodeNode);
-  const width = Math.max(...nodes.map(n => showTerm(n.expression).length));
-  nodes.forEach((n, i) => {
-    const handler = n.handler ? `   throws → ${to(n.handler)}` : "";
-    console.log(`${i === start ? "▸" : " "} n${String(i).padEnd(3)} ${showTerm(n.expression).padEnd(width)}   ${showStep(n.continuation)}${handler}`);
-  });
-}
-
-for (const u of units.filter(u => wanted === undefined || u.name === wanted)) {
-  console.log(`\n${u.name}:`);
-  printGraph(u.start, u.program);
-  u.codes.forEach((c, i) => {
-    console.log(`  code ${i} (${c.arity} parameters):`);
-    printGraph(c.start, c.program);
-  });
 }

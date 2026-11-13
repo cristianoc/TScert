@@ -21,16 +21,14 @@ import type { Cpu } from "./stage-store.mts";
 const here = import.meta.dirname;
 
 /** The stages of the pipeline's entry point (STAGE-STORE.md). */
-export type StageName = "parse" | "module" | "lower" | "facts" | "propose" | "assemble" | "plan" | "search" | "check" |
-  "module-search" | "module-check" | "interface-plan" | "module-interface" | "pass" | "explain" | "diagnostics";
-export const stageNames: readonly StageName[] = ["parse", "module", "lower", "facts", "propose", "assemble", "plan",
-  "search", "check", "module-search", "module-check", "interface-plan", "module-interface", "pass", "explain", "diagnostics"];
+export type StageName = "parse" | "module" | "lower" | "interface-plan" | "module-interface" | "pass" | "diagnostics";
+export const stageNames: readonly StageName[] = ["parse", "module", "lower", "interface-plan", "module-interface", "pass",
+  "diagnostics"];
 export const isStageName = (value: unknown): value is StageName => stageNames.some((s) => s === value);
 
-/** The repository's builds of the two audited programs, at their build
- * locations: the Lean verifier and the OCaml producer. */
+/** The repository's build of the audited program, the Lean verifier, at its
+ * build location. */
 export const verifierBuild: string = resolve(here, "../lean/.lake/build/bin/verifier");
-export const producerBuild: string = resolve(here, "../ocaml-producer/_build/default/producer.exe");
 /** The verifier every stage runs: `VERIFIER` names a stand-in for it (a
  * control's injected failure), the build otherwise. */
 export const verifier: string = process.env.VERIFIER ?? verifierBuild;
@@ -86,13 +84,13 @@ const repository = resolve(here, "..");
 export const unkeyed: readonly string[] = [
   "pipeline/stages.mts", "pipeline/stage-store.mts", "pipeline/module-interfaces.mts", "pipeline/verify-source.mts", "pipeline/run-cases.mts",
   "pipeline/cases.mts",
-  "pipeline/run-example.mts", "pipeline/fixture-links.mts", "pipeline/unit-slices.mts", "pipeline/unit-documents.mts", "tools/diagnostic.mts", "tools/diagnostic-view.mts",
+  "pipeline/run-example.mts", "pipeline/fixture-links.mts", "tools/diagnostic.mts", "tools/diagnostic-view.mts",
   "tools/claim-text.mts", "tools/unchecked.mts", "tools/shadow-contracts.mts", "tools/strip-types.mts",
   "tools/compiler-processes.mts", "tools/child-output.mts",
 ];
 /** The in-process stages' own modules, which no process stage executes. */
 export const inProcessOnly: readonly string[] = [
-  "pipeline/parse-stage.mts", "pipeline/claims-assembly.mts", "pipeline/in-process-execution.mts",
+  "pipeline/parse-stage.mts", "pipeline/in-process-execution.mts",
 ];
 
 /** The digests, by sorted repository path, of the `.mts` files directly in
@@ -478,11 +476,11 @@ function heldIdentity(key: string, named: readonly string[],
 }
 /** The identity of an audited program's executable: its digest, its linked
  * libraries and the platform it runs on; or why it has none. Only the
- * repository's builds of the verifier and the producer are audited: their
+ * repository's build of the verifier and its mutation builds are audited: their
  * I/O is the files their arguments name, standard output and standard error;
  * they start no process, do not read their working directory's path, and
  * read no environment variable the invocation does not fix (the Lean
- * runtime's and OCaml's are unset). Any other program (a test's stand-in,
+ * runtime's are unset). Any other program (a test's stand-in,
  * a stand-in for an injected failure) has dependencies that are not
  * identified. A mutation verifier (`auditMutationVerifier`) is audited as
  * the verifier is, beside the one variable that selects its mutations. */
@@ -503,7 +501,7 @@ function computedExecutableIdentity(program: string, environment: Readonly<Recor
   } catch {
     return { unidentified: `${program} does not resolve` };
   }
-  const builds = mutationBuilds.has(real) || [verifierBuild, producerBuild].some((b) => {
+  const builds = mutationBuilds.has(real) || [verifierBuild].some((b) => {
     try {
       return realpathSync(b) === real;
     } catch {
@@ -639,17 +637,14 @@ export function readOrAbsent(path: string): Buffer | null {
   }
 }
 
-/** The verifier's refusal and the producer's. */
+/** The verifier's refusal. */
 export const verifierProtocol: Protocol = { refusal: { status: 1, prefix: "reject: " } };
-export const producerProtocol: Protocol = { refusal: { status: 2, prefix: "unsupported: " } };
 
 /** A verifier invocation, its command line read by its modes:
- * `[--subtype-rounds n] --lower-control-flow <fragment>`,
- * `… --plan-imports <fragment> <plan>`,
- * `… --produce-unit <slice> <slice-claims> <qualified> <evidence-out> <depth> [<names>]`,
- * `… --check-units <fragment> <claims> <file-key> <evidence> [<names>]`,
- * `… --module-runs <fragment> <claims>`,
- * `… --check-module <module-run> <evidence>`. */
+ * `[--subtype-rounds n] --module-interface-plan <fragment> <selection>`,
+ * `… --module-interface <request>`,
+ * `… --verify-interface-stage <mode> <fragment> <interfaces> <file-key> <depth> <names>`,
+ * `… --lower-control-flow <fragment>`. */
 export function verifierCall(program: string, args: readonly string[],
     environment: Readonly<Record<string, string>> = {}): ProcessCall {
   const budget = args[0] === "--subtype-rounds" ? args.slice(0, 2).map((t) => ({ text: t })) : [];
@@ -665,44 +660,7 @@ export function verifierCall(program: string, args: readonly string[],
       { input: "interfaces.json", path: rest[2] }, ...rest.slice(3).map((text) => ({ text }))]);
   if (mode === "--lower-control-flow" && rest.length === 1)
     return call("lower", [{ input: "fragment.json", path: rest[0] }]);
-  if (mode === "--plan-imports" && rest.length === 2)
-    return call("plan", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] }]);
-  if (mode === "--produce-unit" && (rest.length === 5 || rest.length === 6))
-    return call("search", [{ input: "slice.json", path: rest[0] }, { input: "claims.json", path: rest[1] },
-      { input: "qualified.json", path: rest[2] }, { output: "evidence.json", path: rest[3] },
-      ...rest.slice(4).map((text) => ({ text }))]);
-  if (mode === "--check-units" && (rest.length === 4 || rest.length === 5))
-    return call("check", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] },
-      { text: rest[2] }, { input: "evidence.json", path: rest[3] }, ...rest.slice(4).map((text) => ({ text }))]);
-  if (mode === "--module-runs" && rest.length === 2)
-    return call("plan", [{ input: "fragment.json", path: rest[0] }, { input: "claims.json", path: rest[1] }]);
-  if (mode === "--check-module" && rest.length === 2)
-    return call("module-check", [{ input: "module-run.json", path: rest[0] }, { input: "evidence.json", path: rest[1] }]);
   throw Error(`not a verifier stage: ${args.join(" ")}`);
-}
-
-/** A producer invocation (STAGE-STORE.md, "Units of a check"):
- * `--units <fragment>` lists a document's units, `--unit <slice> <flow>
- * <reads> <proposal> <slice-claims>` proposes one, `--assemble <fragment> <qualified>
- * <assembly> <proposal>...` assembles the document's claims, and `--explain
- * <slice> <flow> <reads>` explains one unit. */
-export function producerCall(program: string, args: readonly string[]): ProcessCall {
-  const stageOf = (stage: StageName, list: Argument[], protocol: Protocol): ProcessCall =>
-    ({ stage, program, arguments: [{ text: args[0] ?? "" }, ...list], environment: {}, protocol });
-  if (args[0] === "--units" && args.length === 2)
-    return stageOf("facts", [{ input: "fragment.json", path: args[1] }], producerProtocol);
-  if (args[0] === "--unit" && args.length === 6)
-    return stageOf("propose", [{ input: "slice.json", path: args[1] }, { input: "flow.json", path: args[2] },
-      { input: "reads.json", path: args[3] }, { output: "proposal.bin", path: args[4] },
-      { output: "claims.json", path: args[5] }], producerProtocol);
-  if (args[0] === "--assemble" && args.length >= 4)
-    return stageOf("assemble", [{ input: "fragment.json", path: args[1] }, { input: "qualified.json", path: args[2] },
-      { input: "assembly.json", path: args[3] }, ...args.slice(4).map((path, i) => ({ input: `unit-${i}.bin`, path }))],
-      producerProtocol);
-  if (args[0] === "--explain" && args.length === 4)
-    return stageOf("explain", [{ input: "slice.json", path: args[1] }, { input: "flow.json", path: args[2] },
-      { input: "reads.json", path: args[3] }], { refusal: null });
-  throw Error(`not a producer stage: ${args.join(" ")}`);
 }
 
 /** A process invocation as bound: the program as the caller's working

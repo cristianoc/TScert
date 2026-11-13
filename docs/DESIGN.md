@@ -444,7 +444,7 @@ initialization order check relies on. Each module run of a certified import
 is a unit of its own: its document restricted to the read closure of the
 functions read qualified of it, checked on its own (`--check-module`), whose acceptance
 `checkUnitJson_safe` states. Each unit's evidence is searched over its own
-slice (`--produce-unit`, [units of a check](STAGE-STORE.md#units-of-a-check)),
+slice (`--produce-unit`, [units of a check](STAGE-STORE.md)),
 untrusted; one check (`--check-units`) builds the file's front and gives
 each selected unit its verdict at that evidence, written over the file's
 store, accepted with its dependencies or refused

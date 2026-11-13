@@ -16,7 +16,8 @@ import { basename, dirname, join, resolve } from "node:path";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import { Store, StoreError, pausePublicationForTests, pauseLockForTests, type StoredResult } from "../pipeline/stage-store.mts";
 import { claimWaitMs, invokeProcess, readInvocationLog, Recorder, startEviction, type Invoked } from "../pipeline/stages.mts";
-import { auditForTests, canonical, pauseIdentificationForTests, linkedLibraries, runnerBuild, sha256, verifierCall, type ProcessCall }
+import { auditForTests, canonical, pauseIdentificationForTests, linkedLibraries, runnerBuild, sha256, verifierCall, verifierProtocol,
+  type ProcessCall }
   from "../pipeline/stage-execution.mts";
 
 const dir = runDirectory("tscert-stage-store-");
@@ -37,10 +38,12 @@ function file(name: string, text: string): string {
 }
 /** A lowering by `program` of `input`. */
 const lower = (program: string, input: string): ProcessCall => verifierCall(program, ["--lower-control-flow", input]);
-/** A search by `program`, its evidence written to `out`. */
-const search = (program: string, out: string): ProcessCall =>
-  verifierCall(program, ["--produce-unit", file("f.json", "fragment"), file("c.json", "claims"), file("q.json", "[]"), out,
-    "12"]);
+/** A stage of `program` writing an output file, `out`: the adapter's output
+ * roles, which a call may name beside its inputs. */
+const search = (program: string, out: string): ProcessCall => ({ stage: "pass", program, arguments: [{ text: "--write" },
+  { input: "f.json", path: file("f.json", "fragment") }, { input: "c.json", path: file("c.json", "claims") },
+  { input: "q.json", path: file("q.json", "[]") }, { output: "out.json", path: out }, { text: "12" }],
+  environment: {}, protocol: verifierProtocol });
 const invoke = (call: ProcessCall, limitMs: number = 10_000, force: boolean = false, recorder: Recorder | null = null): Invoked =>
   invokeProcess(call, { limitMs, force, recorder });
 /** A fresh store, the one the mechanism uses from now on. */
@@ -528,13 +531,13 @@ if (eligible) {
   // digest, including the refusal status and the stored measurement.
   const store = freshStore("manifest-integrity");
   const program = script("refusal.sh", 'echo "reject: control"; echo "end of refusal"; exit 1');
-  const call = verifierCall(program, ["--check-units", file("integrity-fragment.json", "fragment"),
-    file("integrity-claims.json", "claims"), "key", file("integrity-evidence.json", "evidence")]);
+  const call = verifierCall(program, ["--verify-interface-stage", "8", file("integrity-fragment.json", "fragment"),
+    file("integrity-interfaces.json", "interfaces"), "key", "12", ""]);
   const first = invoke(call);
   assert.equal(first.status, 1);
   assert.ok(first.record.key !== null);
   assert.equal(invoke(call).record.execution, "replayed");
-  const path = join(store.root, "entries", "check", first.record.key, "manifest.json");
+  const path = join(store.root, "entries", "pass", first.record.key, "manifest.json");
   const original = readFileSync(path, "utf8");
   chmodSync(path, 0o644);
   for (const corrupted of [
@@ -792,12 +795,12 @@ if (platform() === "darwin") {
   // by name) or a new module makes the stage execute without a key; an edit
   // of the replay policy or the store, which no key covers, replays the
   // entry at the same key.
-  const keyed = new Map([["claims-assembly.mts", true], ["in-process-execution.mts", true],
+  const keyed = new Map([["echo-stage.mts", true], ["in-process-execution.mts", true],
     ["stage-execution.mts", true], ["hidden.mts", true], ["new-module.mts", true], ["stages.mts", false],
     ["stage-store.mts", false]]);
   const scenarios = ["in-process", "process"].flatMap((kind) => [
     ...[...keyed].map(([name, eligible]) => ({ kind, name, mode: eligible &&
-      !(kind === "process" && ["claims-assembly.mts", "in-process-execution.mts"].includes(name)) ? "keyed" : "policy", off: false })),
+      !(kind === "process" && name === "in-process-execution.mts") ? "keyed" : "policy", off: false })),
     ...[false, true].flatMap((off) => (kind === "process" ? ["during", "timeout"] : ["during"])
       .map((mode) => ({ kind, name: "hidden.mts", mode, off }))),
   ]);
@@ -806,9 +809,14 @@ if (platform() === "darwin") {
     const copied = join(root, "pipeline");
     mkdirSync(copied, { recursive: true });
     symlinkSync(resolve(import.meta.dirname, "../tools"), join(root, "tools"));
-    for (const module of ["claims-assembly.mts", "stages.mts", "stage-store.mts", "run-directory.mts",
-      "stage-execution.mts", "in-process-execution.mts"])
+    for (const module of ["stages.mts", "stage-store.mts", "run-directory.mts", "stage-execution.mts", "in-process-execution.mts"])
       copyFileSync(resolve(import.meta.dirname, "../pipeline", module), join(copied, module));
+    // A stand-in in-process stage of its own, a keyed module of the copy.
+    writeFileSync(join(copied, "echo-stage.mts"), `import { textCodec, type InProcessCall } from "./in-process-execution.mts";
+export function echoCall(text: string): InProcessCall<string> {
+  return { stage: "diagnostics", codec: textCodec, inputs: [{ role: "text", bytes: text }], run: () => text };
+}
+`);
     symlinkSync(resolve(import.meta.dirname, "../pipeline/runner"), join(copied, "runner"));
     // A module loaded only by a name the code computes.
     writeFileSync(join(copied, "hidden.mts"), 'const n = 1 / "/"; await import(name); const s = "//";\n');
@@ -817,7 +825,7 @@ if (platform() === "darwin") {
 import assert from "node:assert/strict";
 import { appendFileSync, chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { assemblyCall } from "./claims-assembly.mts";
+import { echoCall } from "./echo-stage.mts";
 import { invokeInProcess, invokeProcess, Recorder } from "./stages.mts";
 import { auditForTests, verifierCall } from "./stage-execution.mts";
 const target = new URL(process.argv[2], import.meta.url);
@@ -849,7 +857,7 @@ const run = (): ReturnType<typeof invokeInProcess<string>> => {
       { limitMs: timeout ? 5_000 : 10_000, force: false, recorder });
     return { value: result.stdout, record: result.record };
   }
-  const call = assemblyCall('{"modules":[]}', []);
+  const call = echoCall('{"modules":[]}');
   return invokeInProcess({ ...call, run: () => {
     if (edit) {
       appendFileSync(target, "\n// edited during execution\n");

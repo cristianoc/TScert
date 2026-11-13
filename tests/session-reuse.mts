@@ -519,7 +519,7 @@ released("a document of the project left open", { kind: "document-left", documen
       records.push(...nested.records);
       // Read independently around the non-observed attempt: its own time.
       const plainNode = process.cpuUsage(), plainSession = reading();
-      records.push(invokeInProcess({ stage: "assemble", inputs: [{ role: "control", bytes: "plain" }], codec: textCodec,
+      records.push(invokeInProcess({ stage: "lower", inputs: [{ role: "control", bytes: "plain" }], codec: textCodec,
         run: (): string => JSON.stringify(clientErrors(join(base.examples, `${names[0]}.ts`), base.config)) },
         { force: true, recorder: null }).record);
       const used = process.cpuUsage(plainNode);

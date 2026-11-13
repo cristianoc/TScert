@@ -7,9 +7,6 @@
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# The checks test the search: no stage reuses another verifier's evidence
-# (docs/STAGE-STORE.md, "Evidence proposals").
-export TSCERT_EVIDENCE_REUSE=0
 cd "$REPO" || exit 1
 
 if [ $# -gt 0 ]; then
@@ -97,7 +94,7 @@ typecheck() {
 }
 
 run_test "Front-end types" typecheck
-run_test "JSON field names agree (TS, Lean, OCaml)" node tests/json-field-names.mts
+run_test "JSON field names agree (TS, Lean)" node tests/json-field-names.mts
 # tools/unchecked.mts enforces the node side's typing conventions: every unit boundary annotated, no value typed `any`,
 # and every `as` and `!` carrying its reason.
 run_test "Boundaries annotated, no any, assertions with reasons" node tools/unchecked.mts
@@ -199,7 +196,7 @@ run_test "Host family interpreter" node tests/host-families.mts
 run_test "RegExp shapes" node tests/regexp-shapes.mts
 # tests/diagnostic.mts checks the decoder of diagnostic records, apart from proof acceptance.
 run_test "Diagnostic decoder" node tests/diagnostic.mts
-# tests/claim-text.mts checks the claim printer on malformed producer output.
+# tests/claim-text.mts checks the claim printer on malformed input.
 run_test "Claim text of malformed input" node tests/claim-text.mts
 # tests/rule-inventory.mts checks that the rules REQUEST-PROTOCOL documents are the rules Lean declares.
 run_test "Rule inventory" node tests/rule-inventory.mts

@@ -1,4 +1,4 @@
-/** Claim-independent execution graphs supplied by Lean to the producer. */
+/** The execution graphs Lean lowers a fragment's functions to (`verifier --lower-control-flow`). */
 import { hasExactly, nat, type Json } from "./calculus.mts";
 import type { Span } from "./span.mts";
 import { requireWellFormed } from "./wire-strings.mts";

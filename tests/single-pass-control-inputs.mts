@@ -1,7 +1,5 @@
 // The single pass's controls' inputs, read by the suite of its controls
-// (tests/single-pass-controls.mts) and by the agreement measure
-// (dev/single-pass-agreement.mts) from this one list, so the two cannot
-// drift: the forced proposals, and the store-boundary controls of the
+// (tests/single-pass-controls.mts): the forced proposals, and the store-boundary controls of the
 // module-interface stages (dev/module-interface-controls.mts runs them alone).
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

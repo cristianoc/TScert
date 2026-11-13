@@ -957,11 +957,6 @@ function clauseDecoders<L>(label: (v: JsonRead) => L, labels: (v: JsonRead) => L
   };
   return { clauses, row };
 }
-/** The rows of a claims document's table, each a scheme or a union of
- * clauses whose labels `label` reads, as fresh rows. */
-export function decodeRows<L>(v: JsonRead, label: (v: JsonRead) => L): (Row<L> | SchemeRow<L>)[] {
-  return each(v, clauseDecoders(label, (x) => each(x, label)).row);
-}
 /** The type graph a parsed document states, as fresh rows of the clauses it
  * checked. */
 export function decodeGraph(value: Json | undefined): TypeGraph {

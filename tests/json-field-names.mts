@@ -1,9 +1,8 @@
-// The parser, the OCaml producer and the Lean verifier exchange JSON documents:
-// the Fragment tree with its declaration document, SourceClaims, the source
-// flow, and the producer's qualified reads and explanations; Lean's equation
+// The parser and the Lean verifier exchange JSON documents: the Fragment
+// tree with its declaration document, and the source flow; Lean's equation
 // trees are compared with their spelling in REQUEST-PROTOCOL.md. Each
-// document's fields are written three times: as TypeScript types, as Lean
-// decoders, and as the OCaml producer's reads and writes. Nothing compiles one against another, so
+// document's fields are written twice: as TypeScript types and as Lean
+// decoders. Nothing compiles one against the other, so
 // this compares, by text, the field names each one uses, and fails when a
 // consumer reads a name no TypeScript type declares, or TypeScript declares a
 // name Lean never reads. It checks names only; the suites still decide whether
@@ -39,13 +38,6 @@ const lean = (files: string[], structures: boolean = false, before?: string): Se
     .flatMap((m) => [...(m[1] ?? "").matchAll(/^[ \t]+(\w+)\s*:/gm)].flatMap(captured));
   return [...exact, ...reads, ...fields];
 }));
-
-/** Field names the OCaml producer reads from a document. */
-const ocamlReads = (file: string): Set<string> => new Set([...read(file)
-  .matchAll(/\b(?:field|text|items|List\.mem_assoc|List\.assoc_opt)\s+"(\w+)"/g)].flatMap(captured));
-
-/** Field names the OCaml producer writes into an object. */
-const ocamlWrites = (file: string): Set<string> => new Set([...read(file).matchAll(/"(\w+)",/g)].flatMap(captured));
 
 const missing = (names: Set<string>, from: Set<string>, allowed: Record<string, string>): string[] =>
   [...names].filter((n) => !from.has(n) && !(n in allowed)).sort();
@@ -86,7 +78,6 @@ const equationReaders = [
     meet: "a source-claims label, read by equation lowering",
     types: "the source-claims document's rows, read by equation lowering",
   });
-  expectSubset("OCaml reads of the Fragment", ocamlReads("ocaml-producer/source.ml"), ts, {});
   expectSubset("Fragment fields Lean ignores", ts, leanNames, {
     arguments: "a reference's argument spans are provenance",
     kind: "a root binding's kind is provenance",
@@ -115,26 +106,6 @@ const equationReaders = [
   });
 }
 
-// The SourceClaims document and its type table.
-{
-  const ts = declared(["tools/source-claims.mts", "tools/type-graph.mts", "tools/declaration-types.mts"]);
-  const leanNames = lean(["lean/Verification/Source/Claims/Wire.lean",
-    "lean/Verification/Source/ResolutionWire.lean", ...equationReaders], true);
-  expectSubset("OCaml writes of SourceClaims", ocamlWrites("ocaml-producer/claims.ml"), ts, {});
-  // The claims decoder's explicit reads: the other files' structures are
-  // the verifier's own state, which the set above also holds.
-  expectSubset("Lean reads of SourceClaims", lean(["lean/Verification/Source/Claims/Wire.lean"], true), ts, {});
-  // The description's types, above its decoder.
-  expectSubset("SourceClaims fields Lean ignores",
-    declared(["tools/source-claims.mts"], "export function decodeSourceClaims"), leanNames, {
-    labels: "a tuple element's label, not a field",
-    ref: "a body variable's term, read by the instance Wire.lean derives for the inductive BodyVariable",
-    offset: "an element offset, read by derived quantified-body variable instances",
-    delta: "an element offset, read by derived quantified-body variable instances",
-    project: "an element projection, read by the derived Wire.BodyVariable instance",
-  });
-}
-
 // The claim-independent source execution graphs.
 {
   const ts = declared(["tools/source-flow.mts"], "const invalid");
@@ -144,33 +115,7 @@ const equationReaders = [
     read("lean/Verification/Source/ExpressionPlan.lean") + keys)
     .matchAll(/\("(\w+)",/g)].flatMap(captured));
   expectSubset("Lean writes of source flow", writes, ts, {});
-  expectSubset("OCaml reads of source flow", new Set([...ocamlReads("ocaml-producer/flow.ml"),
-    ...ocamlReads("ocaml-producer/execution.ml")]), ts, {});
   expectSubset("Source flow fields Lean omits", ts, writes, {});
-}
-
-// The producer's side documents: the reads documents the pipeline writes for
-// it (`unit-documents.mts`), and what `producer --units`, `--unit` and
-// `--explain` print.
-{
-  const source = read("pipeline/verify-source.mts");
-  // The documents of a proposal a unit at a time (`unit-documents.mts`).
-  const units = read("pipeline/unit-documents.mts");
-  const typeFields = (name: string): Set<string> => new Set([...(units.match(new RegExp(`export type ${name} = \\{([\\s\\S]*?)\\};`))?.[1] ?? "")
-    .replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/(?<![\w.])([A-Za-z_]\w*)\??\s*:(?!:)/g)].flatMap(captured));
-  const written = new Set<string>();
-  for (const t of ["UnitReads", "Interface", "QualifiedEntry", "AssemblyEntry"]) for (const n of typeFields(t)) written.add(n);
-  assert.ok(written.has("onThrow"), "the qualified-read document's type is found");
-  const reads = ocamlReads("ocaml-producer/producer.ml");
-  expectSubset("OCaml reads of the producer's input documents", reads, written, {});
-  expectSubset("Input-document fields OCaml ignores", written, reads, {});
-  const explanation = declared([], undefined);
-  for (const n of (source.match(/interface Explanation \{([^}]*)\}/)?.[1] ?? "").matchAll(/(\w+)\s*:/g)) explanation.add(n[1] ?? "");
-  assert.ok(explanation.size > 0, "the explanation's declared type is found");
-  for (const t of ["UnitFacts", "Interface", "SliceClaimsRefusal"]) for (const n of typeFields(t)) explanation.add(n);
-  const explained = ocamlWrites("ocaml-producer/producer.ml");
-  expectSubset("OCaml writes of the producer's output documents", explained, explanation, {});
-  expectSubset("Output-document fields OCaml omits", explanation, explained, {});
 }
 
 // The equation tree's spelling: Lean alone writes and reads it (the evidence
@@ -189,4 +134,4 @@ const equationReaders = [
   expectSubset("Tree fields Lean does not read", documented, reads, {});
 }
 
-process.stdout.write(`JSON field names: ${checked} comparisons agree across TypeScript, Lean and OCaml\n`);
+process.stdout.write(`JSON field names: ${checked} comparisons agree across TypeScript and Lean\n`);

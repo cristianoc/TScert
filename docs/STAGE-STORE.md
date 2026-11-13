@@ -61,10 +61,6 @@ Excluded from every key (`unkeyed`), by role:
   cleanup;
 - `pipeline/verify-source.mts`: the orchestration of one check, passing
   values to the stages' calls, and its outcome;
-- `pipeline/unit-slices.mts` and `pipeline/unit-documents.mts`: a
-  document's units of proposal and each unit's slice, inputs of the stages
-  that read them ([units of a proposal](#units-of-a-check)), and the
-  documents' types;
 - `pipeline/run-cases.mts`, `pipeline/cases.mts`: the case runner and the
   case inventory;
 - `pipeline/run-example.mts`, `pipeline/fixture-links.mts`: running an
@@ -80,7 +76,7 @@ Excluded from every key (`unkeyed`), by role:
   compiler processes' CPU time and peak memory.
 
 Excluded from process keys, beside those: the in-process stages' own
-modules (`inProcessOnly`), `pipeline/parse-stage.mts`, `pipeline/claims-assembly.mts` and
+modules (`inProcessOnly`), `pipeline/parse-stage.mts` and
 `pipeline/in-process-execution.mts`, and every module of `tools/`, the front
 end, which a process stage's binding and run in `pipeline/stage-execution.mts`
 do not execute.
@@ -123,15 +119,13 @@ import declaration, an export-from declaration or `import(…)`), which
 observes what each read.
 
 *Cost.* An edit of any keyed file misses every entry of the kinds it keys:
-an edit of a front-end module misses every parse, diagnostics and assembly
-entry, and an edit of a keyed pipeline module every entry. An edit of an
+an edit of a front-end module misses every parse and diagnostics entry, and an edit of a keyed pipeline module every entry. An edit of an
 excluded file replays everything.
 
 Each in-process stage's call is constructed by its own module: the input
 description, execution over exactly those inputs, codec and, for an
 observed stage, compiler identity. `pipeline/parse-stage.mts` owns the parse
-and TypeScript diagnostics calls; `pipeline/claims-assembly.mts` owns
-assembly. The orchestration passes values only.
+and TypeScript diagnostics calls. The orchestration passes values only.
 
 Replay policy (`pipeline/stages.mts`), store lookup, validation and
 publication (`pipeline/stage-store.mts`), and outcome presentation are outside
@@ -174,156 +168,15 @@ execution of a replay-eligible invocation retains its complete stage key.
 | --- | --- |
 | parse | source bytes and logical identity; project and resolution context; active host-family descriptions; the functions read at their declared signatures (`omitted`); the complete filesystem observations of parsing, declaration collection and host activation, its imported modules' stages' included |
 | module | an imported module's path and identity in the importer's documents; the project; active host-family descriptions; whether the run gives a tag selection; its observations, its reads of the selection by family among them ([shared work](#shared-work)) |
-| lower | the exact Fragment document, or a unit's slice |
-| facts | the exact Fragment ([units of a proposal](#units-of-a-check)) |
-| propose | a unit's slice, its flow and its reads document ([units of a proposal](#units-of-a-check)) |
-| assemble | the units' proposals, each with the intervals its slice leaves out; the Fragment with its own declarations named canonically; the qualified-read document |
-| assemble claims | the assembled proposal and ordered transitive module-claim documents selected by the reads |
-| plan | the exact Fragment and assembled claims |
-| module search | the same inputs and executable mode as search, for a unit of an imported module |
-| module check | the same module run and its evidence; subtype rounds |
-| search | a unit's slice, its claims and the qualified reads it is searched at; search depth and subtype rounds; the unit's members |
-| check | the exact Fragment, assembled claims and the units' evidence, each slice's line with its store's heads; explicit file identity; source snapshot binding; subtype rounds; the selected units |
-| explain | a unit's slice, its flow and its reads document, the imports read at their ordinary signatures |
+| lower | the exact Fragment document |
+| interface plan | the exact Fragment and the selection document |
+| module interface | the component request: its module documents, dependency results and keys, mode, depth, forced proposals; subtype rounds |
+| pass | the exact Fragment and the interfaces document; mode, explicit file identity, depth, names, subtype rounds; forced proposals |
 | TypeScript diagnostics | source identity, project context and the complete compiler dependency observations |
-
-## Units of a check
-
-A document, the checked file's or an imported module's, is proposed a unit
-at a time, and its units are searched through the same slices, so an
-edit of one function proposes and searches again only the units whose
-inputs it changes. The check reads the whole document.
-
-- *Units.* `producer --units` reads the whole document and prints, for each
-  function name, the module functions its code mentions, whether it
-  mentions a name the initialization declares, and every name it mentions;
-  the initialization's mentions and names; and the constants of the
-  initialization the document reads as values anywhere, which decide the
-  signatures the initialization offers its closures. A unit of proposal is a strongly connected component of the
-  graph of these mentions, the initialization one of its nodes
-  (`pipeline/unit-slices.mts`); units are proposed after the units they
-  read.
-- *Slices.* A unit's slice is the document with the unit's members whole,
-  each function its members (and the initialization, where the slice holds
-  it) mention with its body left out, the initialization where a member
-  mentions a name it declares, and every other function and top-level
-  statement left out. The positions after each interval left out move back
-  by its length, an interval holding kept code is kept, a name the parser
-  makes at a position (`%…@N`) names the moved position, and the document's
-  own declarations are named by module `local`, their name and their index
-  among the declarations of that name. Another module's definition and
-  an imported value's type hold that module's spans and spans of the
-  document's reads of its members alike; a slice holds them with every
-  span zero, each declaration's identity kept, a reference's type
-  arguments at their mapped spans, and no written application, which the
-  check alone reads. An edit of a function's body that keeps the
-  functions and initialization names it mentions, and its transitive declaration
-  dependencies, leaves unchanged the slice of every unit that neither holds it whole nor holds the
-  initialization: a changed mention changes the units and the slices that
-  hold the function by its signature, and an edit of the initialization, or
-  of what it mentions, changes the slice of every unit that holds it.
-  A slice's declaration document holds the roots and values its retained
-  syntax reads, the transitive closure of their definitions, and their
-  symbols with indices compacted throughout the slice (`projectDeclarations`).
-  Lowering supplies each body's module reads in its execution graph, through
-  `moduleReadNames`, the same function extraction uses to select module
-  values. These reads include iteration and rest intrinsics, prototype
-  bindings and the early-binding throw intrinsic. The store's implicit
-  declaration inputs (the array prototype and resolution families) also
-  seed the closure.
-  Assembly restores symbol indices throughout the proposed contracts;
-  evidence relocation restores symbol literals and property keys to the
-  document's indices before label translation.
-  Each retained definition and value contract is complete, including every
-  member and nested reference. Written applications remain obligations of
-  the whole-document check.
-  The producer's unit facts identify mutable module bindings initialized to
-  an empty object whose objects escape. A slice carries those names its own
-  code mentions in `omittedMentions`: the ownership facts its reads and writes
-  can use. Removing a function therefore preserves the escape facts each
-  unit needs. The whole-document check computes ownership from the complete
-  source.
-
-- *Reads.* A unit's reads document holds its members, whether the
-  initialization is one, the footprint and on-throw flag each function the
-  slice holds by its signature settled on in its own unit's proposal
-  (`producer --unit` prints them); where the slice holds the
-  initialization, the constants read as values; and the qualified reads of
-  the imports its code names. The producer solves footprints and on-throw
-  flags for the unit's members alone, its neighbours fixed at those values.
-- *Slice claims.* `producer --unit` also writes the slice's claims: its
-  members' claims, and each function the slice holds by its signature
-  proposed at the footprint and on-throw flag its reads document gives.
-- *Assembly.* `producer --assemble` reads the units' proposals, maps each
-  position, binding name and refusal span of a slice back to the document,
-  and writes the document's claims as one proposal of the whole document
-  would. A unit the producer refuses refuses the document's proposal, the
-  initialization's refusal first, then in source order.
-
-- *Search.* Each unit of the checked file is searched over its slice
-  (`verifier --produce-unit`) at the slice's claims and the qualified reads
-  of its code the importer's plan admits, its evidence written over the
-  slice's store, with that store's heads and the unit's anchors beside it:
-  each type union of the member's requests at its position (node and
-  slot), and the member's search hints (`FilePlans.anchors`). Inputs,
-  results, code signatures and obligation sequents supply those positions
-  on the line; point claims supply theirs from the evidence, each node's
-  sequent the claim at that node (`Translate.withClaimAnchors`). Its spans and its unit's
-  name are mapped back to the document's positions outside every key.
-- *Check.* One check (`verifier --check-units`) builds the document's front,
-  extracts every member into one accumulated store and freezes its plans
-  (`filePlans`). Certification and checking consume the selected groups.
-  One translation target and its document refinement rounds are shared across
-  the selected evidence lines. The acceptance theorem quantifies over that
-  target; every relocated candidate passes the document's checker.
-  `Translate.translate` compares the two stores by joint partition
-  refinement on complete JSON row keys, with union clauses sorted for
-  comparison. Corresponding request positions
-  choose head representatives; paired templates propagate them. Remaining
-  heads use a representative of their exact equation class. Every label in
-  the typed evidence wire is relocated, including labels inside rules,
-  handlers, summaries and instantiations. Unions use their corresponding
-  request or template position's order; concatenations preserve their
-  longest anchored parts in that order. Other canonical unions use the
-  document's anchor and row order. Distinct slice heads mapped to one
-  document head coalesce. A changed contract with no exact class uses a
-  candidate at its anchor position; missing candidates refuse. The document
-  graph's `members` operation determines both union-elimination premise
-  order and read-summary arm order. Value sets inherit their literal order
-  from corresponding type expansions.
-  Relocation touches the wire's label-bearing fields: types, proof rules,
-  edges' evidence, handlers, implications, yields, effects, promises and read
-  summaries. Table references and label-free tables pass through to the
-  complete document decoder. A slice whose store equals the document's,
-  head for head with its names, and whose anchors equal the document's, is
-  checked as written.
-  `checkedUnit` checks the relocated evidence against the whole document.
-  Relocation is untrusted and acceptance assumes no correctness property
-  of it. The check executes after an edit of the document.
-- *Imported checks.* The imported module's existing proposals search its
-  selected units through `--produce-unit`. Their evidence lines form an
-  array for `--check-module`. `moduleLines` relocates those lines against
-  the restricted module, requires a response and obligation list for every
-  member, and assembles them in extraction order. `moduleLineVerdict`
-  passes that complete bundle to the whole-module checker. The single
-  headline theorem `checkUnitJson_safe` covers both acceptance operations,
-  including relocation.
-- *One store per equation.* The pairing renames heads, one document head
-  for each slice head: the document's store holds one head for equal
-  templates where the slice's does. Every producer row has its head before
-  the lowering's heads are hash-consed, and the hash-consing compares
-  templates with their unions normalized after renaming (`hashCons`,
-  `lean/Verification/Source/Equations/Finishing.lean`), so a row equal to a
-  declaration's literal is one head whether or not a unit's extraction
-  names it first.
-
-The slices, the reads documents, the slice claims and the assembly's inputs
-are stage inputs, keyed by their content; `pipeline/unit-slices.mts`, which
-computes them, is outside every key.
 
 ## Single-pass module interfaces
 
-The experimental claims-free pass uses `interface-plan`, `module-interface`
+The pass uses `interface-plan`, `module-interface`
 and `pass` process stages (`verifierCall`). Discovery consumes the whole
 fragment and a selection document and returns a dependency-ordered SCC DAG
 for the requested roots and their complete module dependencies. The orchestrator resolves
@@ -496,19 +349,8 @@ before and after its read. A replayed entry is the stage's result for the
 file system its observations describe, which agrees with the present one on
 everything the stage reads.
 
-Each imported module is proposed by the same units, slices and stages. Each
-withdrawal recomputes the eligible reads and transitive claims assembly.
-The plan of a document with qualified reads (`--module-runs`) prints each
-module run: an imported module's document restricted to the read closure
-of the functions the importer reads qualified of it, its initialization
-kept. Each run is searched and checked in stages of its own, keyed on that
-restricted document, so an edit of the importer that keeps the closure and
-the module's lowered document replays them, and importers asking for the
-same closure share their entries. The file's search and check cover its own
-units only.
-A replayed plan or search refusal drives the same withdrawal decision as a fresh
-refusal. The orchestration and diagnostic presentation run under their
-current implementation; a stored raw refusal is not a stored final Outcome.
+The orchestration and diagnostic presentation run under their current
+implementation; a stored raw refusal is not a stored final Outcome.
 
 ## Retained declaration sessions
 
@@ -900,94 +742,6 @@ documents and diagnostics. These checks support the implementation audit;
 they are not a proof of executable determinism. Resource timeouts are
 observations rather than deterministic judgments.
 
-## Evidence proposals
-
-A search's key binds the verifier's executable, so after any change of the
-verifier every search misses. Unless `TSCERT_EVIDENCE_REUSE=0`, a search
-whose key misses may reuse the evidence another build of the verifier found
-for the same inputs, and the current build's check decides it. Search is
-replaceable and untrusted ([search](DESIGN.md#search)); the check is not
-replaced.
-
-- *The proposal key.* For a stage `search` or `module-search`, the digest
-  of its manifest without the four fields that identify the program that
-  computed it: `implementation`, `code`, `runtime` and `runner`. It keeps
-  the stage, the argument vector (the role names, the depth, the unit's
-  members), the environment (which separates the mutation verifier's
-  searches), the exit protocol, the inputs by digest (the slice, its
-  claims, the qualified reads) and the output roles.
-- *Publication.* Under the mode, once a check accepts a unit, the
-  orchestration (`pipeline/verify-source.mts`) references the entry of that
-  unit's search, executed or replayed, in the `proposed` index under its
-  proposal key ([location and size](#location-and-size)); once a module
-  check accepts a module run, the entry of each of the run's searches. A
-  search that refused, ended at a limit, or whose unit a check refused
-  references nothing, and a reused result is published under no key.
-- *Lookup.* Under the mode, a search whose key holds neither a finished
-  entry nor a timeout observation reads the candidates of its proposal key,
-  newest first, and takes the first whose entry is valid and whose stored
-  manifest is the invocation's but for the four fields. Its outputs are
-  delivered as a replay's. Its attempt's execution is `reused`, its
-  `replay` the entry's measurement, and `reusedFrom` the entry's key and
-  the identity of the implementation that computed it. With no valid
-  candidate the search executes. A control's operation (`tested`) never
-  reuses.
-- *Fallback.* The pipeline uses a reused result only where it is a
-  complete success: exit 0, no `refused:` line, and every evidence line
-  naming its unit and relocating to the document's symbols, with exactly one
-  line per unit. Any other is a
-  miss, and the unit is searched with reuse off; the candidate raises no
-  tool failure. A check has exactly one verdict for every requested unit,
-  naming exactly that unit's members; a reused unit counts as accepted only
-  when its complete verdict accepts. Missing, duplicated or unexpected
-  verdicts fail the check as a whole; mixed acceptance and refusal for a
-  unit therefore triggers fallback too. A module check has exactly one
-  verdict naming its requested module. Where the file's check refuses units whose evidence was
-  reused, those units are searched with reuse off and the check runs
-  again; a later refusal of a reused unit, or a check with a reused line
-  that fails as a whole (a refusal with no verdicts, a timeout, a memory
-  limit or another tool failure), searches every unit still reused for one
-  more check. A file's round thus runs at most three checks, the last with
-  no reused evidence where it runs. A module check that refuses or fails
-  while any line of its run is reused searches the run's reused units with
-  reuse off and checks the run once more: at most two module checks per
-  run. A search refused or ended at its limit on fallback is that unit's
-  outcome, phase `search`. Every fallback of a round completes before the
-  round's withdrawal decision, so a refusal that withdraws a certified
-  import comes from searched evidence.
-- *Visibility.* `invocations.jsonl` records each search's attempt as
-  `reused`, with `reusedFrom`, or as executed or replayed; a fallback is
-  an executed search of the same manifest after a reused one. The outcome
-  of a check under the mode states `reused`: how many of its units were
-  accepted over reused evidence, a module run counting as one unit.
-  `dev/check-functions.mts` prints `reused <n> of <m> units`.
-- *The mode.* Reuse is on; `TSCERT_EVIDENCE_REUSE=0` turns it off, and off
-  nothing is read from or written to the `proposed` index. The variable is
-  outside every key. `test-all.sh` (and so `make test-checks`),
-  and `pipeline/run-cases.mts` set it to `0` in their
-  environment, so their checks search: they are where a search that no
-  longer finds its evidence shows. The census runs with reuse on: its
-  counts are of what the current check accepts. The controls of reuse
-  set it to `1` on the runs they start, each over a store of its own. A
-  check of one source or of a pretext file (`verify-source.mts`,
-  `dev/check-functions.mts`) runs with reuse on and states `reused`.
-
-*The guarantee.* An accepted verdict is the current checker's on the
-current claims and source: a unit is verified only from an accepting
-verdict of `--check-units` or `--check-module`, whose key binds the current
-executable and the evidence document's digest; the checker checks the
-current relocation of the supplied evidence, which `checkUnitJson_safe`
-covers. A refusal that reaches the user comes from searched evidence. A
-run with reused evidence may still differ from one with the mode off: it
-may accept a unit for which the current search finds no evidence, and it
-may keep a certified import that a run with the mode off withdraws, after
-which the claims proposed differ. Its `reused` count says where. One
-unit's verdict in `--check-units` does not depend on the lines before it,
-by a review of `lean/Verification/Source/Claims/Translate.lean` (not a
-proof): the translation target threaded through the lines holds what
-the document determines, a slice's own refinements are discarded after it,
-and earlier lines change only the cost.
-
 ## Controls
 
 A control tests the verifier, the producer or the pipeline on
@@ -1052,24 +806,6 @@ passes a miss or the entry's own result, and a pass an orchestrator starts
 leaving the store within its budget. The replay control evicts its store
 whole and runs again: every stage executes, to the same outcome, documents
 and logs.
-
-The controls of evidence reuse ([evidence proposals](#evidence-proposals))
-name fresh stores too, and set `TSCERT_EVIDENCE_REUSE=1` on the runs they
-start. Another identity of the verifier is its build with bytes appended
-past its end, audited as the mutation verifier is, or a stand-in script
-audited with the programs it runs; a proposal of another implementation is
-a search's entry republished with its manifest's implementation replaced
-and referenced as its proposal key's only candidate. Evidence one identity
-found is reused by another, whose check accepts it with no search, and
-with reuse off nothing is read from or written to the index and the reused
-searches execute; a reused result the check refuses, one that is no JSON,
-one naming an absent symbol and one naming no unit of the slice are each
-searched again, the others reused, in one round; units reused and searched
-are checked together; a module run whose reused evidence its check
-refuses is searched again and checked once more, with no withdrawal; a
-check over reused evidence that fails as a whole searches every reused
-unit again; and a stand-in whose search refuses accepts with reuse on and
-reports the search's refusal with reuse off.
 
 ## Timing
 
@@ -1173,7 +909,8 @@ the entry it names. The reference index has two roots, each
 `<root>/<stage>/<pre-key>/<key>` and written and listed by one
 implementation (`Store.reference`, `Store.candidates`): `observed`, an
 observed stage's entries by pre-key ([observed stages](#observed-stages)),
-and `proposed`, searches' entries by proposal key. An item's size is the bytes
+and `proposed`, which another checkout's verifier search writes in a
+store it shares. An item's size is the bytes
 its files take in whole 4 KiB blocks, the allocation unit of the volume:
 most of the store's files are smaller than one block.
 

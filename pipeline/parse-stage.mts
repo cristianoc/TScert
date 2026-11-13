@@ -3,7 +3,7 @@
 // parser and declaration compilers fresh or retained (STAGE-STORE.md,
 // "Retained declaration sessions"), their values stored as text and decoded
 // field by field.
-// ../tools/fragment-parse.mts is the trusted parser and syntactic gate: without it no source becomes the Fragment the producer and Lean read.
+// ../tools/fragment-parse.mts is the trusted parser and syntactic gate: without it no source becomes the Fragment Lean reads.
 import { close as closeParser, lowerModuleText, parseFragment, selectionMarker, type ImportedModule, type LoweredModule,
   type ModuleRequest, type ModuleText } from "../tools/fragment-parse.mts";
 import { clientErrors, type SeenDiagnostic } from "../tools/declaration-graph.mts";

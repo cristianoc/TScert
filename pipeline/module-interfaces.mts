@@ -93,7 +93,7 @@ export function prepareInterfaces(fragmentPath: string, options: InterfaceOption
   const records: Invoked[] = [];
   const invoke = (args: string[]): Invoked => {
     const run = invokeProcess(verifierCall(verifier, ["--subtype-rounds", String(options.rounds), ...args]),
-      { ...options.invocation, reuse: false });
+      options.invocation);
     records.push(run);
     if (run.status !== 0) throw Error(`interface stage ${run.record.execution}: ${run.stderr}`);
     return run;
@@ -157,7 +157,7 @@ export function verifyWithInterfaces(fragment: string, key: string, names: strin
   const check = (path: string): Invoked => invokeProcess(verifierCall(verifier,
     ["--subtype-rounds", String(options.rounds), "--verify-interface-stage", String(options.mode),
       fragment, path, key, String(options.fuel), names], environment),
-    { ...options.invocation, reuse: false, force: options.invocation.force || measured });
+    { ...options.invocation, force: options.invocation.force || measured });
   // A completed importer check at ordinary contracts needs no stronger
   // module facts. This publishes only that check, never a module interface.
   // Explicit own-module publication always runs the canonical computation.

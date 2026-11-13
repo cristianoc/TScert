@@ -19,13 +19,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { cases } from "../pipeline/cases.mts";
 import { checkApart, sourceKey } from "../pipeline/verify-source.mts";
-import { withoutEvidenceReuse } from "../pipeline/stages.mts";
 import { verifyWithInterfaces } from "../pipeline/module-interfaces.mts";
 
 const root = resolve(import.meta.dirname, "..");
 const verifier = join(root, "lean/.lake/build/bin/verifier");
 const baselinePath = join(root, "dev/perf-baseline.json");
-withoutEvidenceReuse();
 
 /** A unit of the gate: a function of a pretext file or of a pipeline case. */
 type GateUnit = { name: string; unit: string } & ({ pretext: string } | { case: string });

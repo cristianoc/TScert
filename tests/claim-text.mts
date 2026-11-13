@@ -1,4 +1,4 @@
-// The claim printer (`tools/claim-text.mts`) on malformed producer output, which
+// The claim printer (`tools/claim-text.mts`) on malformed input, which
 // no source can make: a report shows what arrived, its malformed parts
 // included, and marks the text as not the claim language's. No build needed.
 import assert from "node:assert/strict";

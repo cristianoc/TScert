@@ -1,8 +1,8 @@
 // The census of a directory's units (docs/DESIGN.md, "Function coverage and
 // release thresholds"): each module of the directory checked whole through
 // the pipeline, one front per file, each unit (a function, a group of
-// functions that reach each other, the initialization) searched and checked
-// on its own. A function the parser, the lowering or the producer refuses,
+// functions that reach each other, the initialization) checked by the
+// single pass. A function the parser or the pass's front refuses,
 // with its recursive group, and a refused statement of the initialization
 // are omitted and the file checked again (`omitted`). A function is shallow
 // verified when its unit is accepted, and deep verified when every unit of

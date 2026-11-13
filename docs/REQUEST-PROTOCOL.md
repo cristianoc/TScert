@@ -41,7 +41,7 @@ verifier --lower-control-flow <ast.json>
   certified imports is a unit of its own, `module:<location>`, searched and
   checked by `--check-module`; its selected units use `--produce-unit`.
 - `--produce-unit` searches the evidence of a unit over its slice
-  ([units of a check](STAGE-STORE.md#units-of-a-check)): the selected groups
+  ([units of a check](STAGE-STORE.md)): the selected groups
   of the slice's front, built at the slice's claims and at the qualified
   reads `<qualified.json>` lists, each `{"footprint","name","onThrow"}`. It
   writes the evidence document to `<evidence.json>`, which must differ from
@@ -49,7 +49,7 @@ verifier --lower-control-flow <ast.json>
   slice's store as `EquationStore.State` spells it, and `anchors` each
   type union of the unit's requests at its position, with labels
   marked, but its point claims', which its evidence states as its nodes'
-  sequents ([unit anchors](STAGE-STORE.md#units-of-a-check)). It prints each unit its
+  sequents ([unit anchors](STAGE-STORE.md)). It prints each unit its
   search refuses on a line `refused: {"refusal","unit"}`; with any, the
   first is the command's refusal, the document written still. Claims that
   are the producer's refusal, `{"refusal"}`, are its refusal. `<depth>`
@@ -749,7 +749,7 @@ decode (for example `head 65 takes 1 arguments, given 0`) or fails its
 check. A slice's evidence names the heads of the slice's store; its line
 carries them and its unit's anchors, and the check renames each head to the
 document head its unit's requests pair it with
-([units of a check](STAGE-STORE.md#units-of-a-check), `Translate.translate`)
+([units of a check](STAGE-STORE.md), `Translate.translate`)
 before decoding it. A tree is decoded through the validator (`Label.ofTree?`), and no
 checked request holds a name placeholder.
 

@@ -40,7 +40,6 @@ import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
 import { emptyEffect, ordinaryEffect } from "../tools/type-graph.mts";
 import { forcedProposals, interfaceControls } from "./single-pass-control-inputs.mts";
 
-process.env.TSCERT_ROUTE = "single-pass";
 const root = resolve(import.meta.dirname, "..");
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 function must<T>(value: T | null | undefined, message: string): T {
@@ -1723,7 +1722,7 @@ control("step failures: the pass's exit without a complete refusal is a tool fai
       `    [ -n ${quoted} ] && echo ${quoted} >&2\n    exit 1\n  fi\ndone\nexec "${real}" "$@"\n`);
     chmodSync(stand, 0o755);
     const ran = spawnSync(process.execPath, [join(root, "pipeline/verify-source.mts"), join(root, "pipeline/examples/optional-chain-element-receiver.ts")],
-      { encoding: "utf8", timeout: 120_000, env: { ...process.env, TSCERT_ROUTE: "single-pass", VERIFIER: stand } });
+      { encoding: "utf8", timeout: 120_000, env: { ...process.env, VERIFIER: stand } });
     const outcome = readOutcome(JSON.parse(ran.stdout.slice(ran.stdout.indexOf("{"))));
     const failing = readInvocationLog(join(outcome.artifacts, invocationLog)).filter((r) => r.stage === "pass").at(-1);
     assert.ok(failing !== undefined && ranStage(failing) && failing.key === null, "the failing stage ran, without a key");
@@ -1811,9 +1810,6 @@ control("store: cold and warm runs, an importer's edit, over the interface stage
 // under Node, a negative case, refused on the route. (Its Node half is that
 // suite's.)
 
-/** The negative cases the route accepts, each reviewed as a safe program
- * the old route's producer lost (dev/single-pass-agreement.mts, `reviewed`). */
-const reviewedAcceptances: ReadonlySet<string> = new Set(["invalid-native-promise-invariant-result"]);
 const counterexamples: readonly string[] = [...new Set([...readFileSync(join(root, "tests/node-runs.mts"), "utf8")
   .matchAll(/run(?:Example|Importing|Emitted)\("(invalid-[a-z0-9-]+)"/g)].map((m) => m[1] ?? ""))]
   .filter((file) => cases.some((c) => c.file === file && c.kind === "negative")).sort();
@@ -1825,7 +1821,6 @@ for (let start = 0; start < counterexamples.length; start += 25) {
       using outcome = checkSource(join(root, "pipeline/examples", `${file}.ts`),
         test.project ? tsconfigOf(resolve(root, test.project)) : undefined, test.typescriptErrors, undefined, true);
       assert.notEqual(outcome.status, "error", `${file}: ${outcome.status === "verified" ? "" : outcome.detail.slice(0, 600)}`);
-      if (reviewedAcceptances.has(file)) continue;
       assert.notEqual(outcome.status, "verified", `${file}: a program Node shows unsafe accepted on the route`);
     }
     say(`native contracts: ${chunk.length} Node counterexamples (${chunk[0]} … ${chunk.at(-1)}) refused on the route`);
@@ -2272,7 +2267,7 @@ if (serving) {
     if (ran.status !== 0) failures.push(ran.stdout + ran.stderr);
     else process.stdout.write(ran.stdout);
   }
-  process.stdout.write(`single-pass controls: ${total} in ${((performance.now() - started) / 1000).toFixed(1)} s on ${width} ` +
+  process.stdout.write(`controls: ${total} in ${((performance.now() - started) / 1000).toFixed(1)} s on ${width} ` +
     `lanes (${processes} processes); their operations ${tally.executed} executed (${(tally.elapsedMs / 1000).toFixed(1)} s ` +
     `in all), ${tally.replayed} replayed\n`);
   assert.deepEqual(failures, [], failures.join("\n"));
