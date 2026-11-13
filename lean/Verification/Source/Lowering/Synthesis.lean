@@ -6180,7 +6180,12 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
     let settle (start : Walk) (initial : List (Span × Ty Tree)) :
         Compiler ((Option Env × Walk) × List (Span × Ty Tree)) := do
       let mut assumed := initial
-      let mut result ← (stmts (some env) f.body).run { start with assumed }
+      -- Each traversal of the body after the walk's first is counted on its
+      -- function (`Compiler.within`): a round at grown contracts, and the
+      -- walk again with offered rows.
+      let first := (stmts (some env) f.body).run { start with assumed }
+      let mut result ← if start.offers.isEmpty && start.ctorOffers.isEmpty && start.restOffers.isEmpty then first
+        else Compiler.within "walk: offers round" first
       -- Four growth rounds and one unique-use fallback, exactly the bound of
       -- proposal.ml:23-47. The final pass checks all writes at these contracts.
       for round in List.range 5 do
@@ -6193,7 +6198,7 @@ def walkUnit (T : EquationStore.State) (f : Fragment.Fn)
           for (key, _) in grown do assumed := upd assumed key ((w.evolvedUses.lookup key).getD [])
         else
           for (key, A) in grown do assumed := upd assumed key (norm ((assumed.lookup key).getD [] ++ A))
-        result ← (stmts (some env) f.body).run { start with assumed }
+        result ← Compiler.within "walk: growth round" ((stmts (some env) f.body).run { start with assumed })
       return (result, assumed)
     let (result, assumed) ← settle start []
     let (done, w) := result

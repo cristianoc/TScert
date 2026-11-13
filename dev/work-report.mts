@@ -54,7 +54,7 @@ const sites = {
   walks: "7 declaration proposal and body extraction",
   init: "8 initialization and returned callables",
   recursive: "9 recursive effect proposals",
-  overloads: "10 multiple signature/body checks",
+  retries: "13 synthesis rounds within one walk",
   refinement: "11 diagnostic/refinement runs",
   settled: "12 settled run computed twice",
   sameKey: "0 one key executed twice",
@@ -208,8 +208,14 @@ function report(directory: string, sourceList: string[], jsonOut: string | null)
         // One walk of a body is the processing: the proposal walk where
         // there is one; the returned-callable round, recursive walks and
         // the extraction's walks are repetitions.
+        // A walk's own rounds over the body after its first (an evolving
+        // binding's growth, offered rows) are counted apart, nested in it.
         let first = true;
         for (const w of total) {
+          if (w.kind === "walk: growth round" || w.kind === "walk: offers round") {
+            push(sites.retries, o, w.count, w.selfNs);
+            continue;
+          }
           const site = w.kind === "walk: proposal, returned-callable round" ? sites.init
             : w.kind === "walk: proposal, recursive again" ? sites.recursive
             : o.item.endsWith("#init") ? sites.init : sites.walks;
@@ -231,17 +237,10 @@ function report(directory: string, sourceList: string[], jsonOut: string | null)
       }
     }
   }
-  // Overloads: units of one function name in one file, each checked.
-  const unitsByName = new Map<string, Set<string>>();
-  for (const [, list] of occurrences) {
-    const item = list[0].item;
-    const m = /^([^#]+)#(.+)@\d+$/.exec(item);
-    if (!m || list[0].cls !== "check") continue;
-    const key = `${m[1]}#${m[2]}`;
-    unitsByName.set(key, new Set([...(unitsByName.get(key) ?? []), item]));
-  }
-  const overloadUnits = new Set([...unitsByName.values()].filter((s) => s.size > 1).flatMap((s) => [...s].sort().slice(1)));
-  for (const r of rows) if (r.site === "once" && r.cls === "check" && overloadUnits.has(r.item)) r.site = sites.overloads;
+  // Signature obligations: an overloaded function's units are its
+  // signatures, each its own item (`name~k`, `Front.lexicalId`), checked once.
+  const signatures = new Set<string>();
+  for (const [, list] of occurrences) if (list[0].cls === "check" && /#[^#]+~\d+$/.test(list[0].item)) signatures.add(list[0].item);
   // The parses: a file's lowering by TypeScript, as itself (`parse`) and as
   // a module an importer reads (`module`, nested in the importer's parse),
   // each keyed by its path; the paths' digests are told by `--sources`.
@@ -322,6 +321,7 @@ function report(directory: string, sourceList: string[], jsonOut: string | null)
   out.push(`work done more than once: ${s(repeatedMs)} s, ${(100 * repeatedMs / Math.max(1, totalMs)).toFixed(1)}% of stage CPU`);
   for (const [site, x] of [...bySite].sort((a, b) => b[1].ms - a[1].ms))
     out.push(`  ${site}: ${s(x.ms)} s (${(100 * x.ms / Math.max(1, totalMs)).toFixed(1)}%), ${x.count} times`);
+  out.push(`signature obligations of overloaded functions checked: ${signatures.size}`);
   out.push(`functions and initializations worked on: ${units.length}; stages working on each: max ${Math.max(0, ...attemptsPer)}, ` +
     `mean ${mean(attemptsPer).toFixed(2)}; body traversals (walks and runs) of each: max ${Math.max(0, ...traversalsPer)}, ` +
     `mean ${mean(traversalsPer).toFixed(2)}`);

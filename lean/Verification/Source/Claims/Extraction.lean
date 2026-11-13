@@ -172,13 +172,26 @@ def Front.unitId (fr : Front) (i : Nat) : String :=
 digits of its `sourceSha256`. -/
 def fileItem (ast : Json) : String := ((ast.getObjValAs? String "sourceSha256").toOption.getD "").take 12 |>.toString
 
+/-- A function unit's lexical identity in its file: its name, and where
+several units share the name (an overloaded function's signatures), `~k`
+for the `k`-th of them in source order, each its own signature obligation;
+`init` for the initialization, whose function has no name. It names the
+same unit before and after an edit elsewhere in the file. -/
+def Front.lexicalId (fr : Front) (f : Fragment.Fn) : String :=
+  if f.name.isEmpty then "init" else
+  let same := fr.units.filterMap fun (g, _, i) => if i.isNone && g.name == f.name then some g.namePos.1 else none
+  if same.length ≤ 1 then f.name else s!"{f.name}~{(same.filter (· < f.namePos.1)).length}"
+
 /-- A function's item in the work table: its source's, then its unit's
-identity (`init` for the initialization, whose function has no name). -/
+lexical identity (`lexicalId`). -/
 def Front.fnItem (fr : Front) (f : Fragment.Fn) : String :=
-  s!"{fileItem fr.ast}#{if f.name.isEmpty then "init" else s!"{f.name}@{f.namePos.1}"}"
+  s!"{fileItem fr.ast}#{fr.lexicalId f}"
 
 /-- Unit `i`'s item in the work table. -/
-def Front.workItem (fr : Front) (i : Nat) : String := s!"{fileItem fr.ast}#{fr.unitId i}"
+def Front.workItem (fr : Front) (i : Nat) : String :=
+  match fr.units[i]? with
+  | some (f, _, _) => fr.fnItem f
+  | none => s!"{fileItem fr.ast}#"
 
 /-- The item of the function named `n` in the work table: its first unit's. -/
 def Front.nameItem (fr : Front) (n : String) : String :=

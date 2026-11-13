@@ -1,3 +1,4 @@
+import Verification.Programs.WorkTable
 import Verification.Programs.CertificateProducer
 import Verification.Programs.GraphCode
 import Verification.Programs.SinglePassStats
@@ -222,8 +223,6 @@ initialize passNanos : IO.Ref Nat ← IO.mkRef 0
 /-- Nanoseconds and applications per term kind: a measurement. -/
 initialize kindNanos : IO.Ref (Std.HashMap String (Nat × Nat)) ← IO.mkRef {}
 
-/-- Whether `timedKind` measures (`TSCERT_PROFILE`): off, it runs `f` alone. -/
-initialize profiling : IO.Ref Bool ← IO.mkRef false
 
 private unsafe def timedKindImpl {α : Type} (kind : String) (f : Unit → α) : α :=
   if !(unsafeBaseIO profiling.get) then f () else
@@ -253,35 +252,6 @@ the time now; `at` orders the call after what computed it. -/
 /-- `f ()`, its time added to `kind`'s. -/
 @[implemented_by timedKindImpl] def timedKind {α : Type} (_kind : String) (f : Unit → α) : α := f ()
 
-/-- The work of the process by kind and item (`TSCERT_PROFILE`,
-docs/drafts/on-demand-processing.md, "Accounting"): for each `kind` and
-`item` (a function or file of a source, `<sha256 prefix>#<unit>`), how many
-times it was done, its nanoseconds, and its nanoseconds outside the work
-nested in it: a measurement. -/
-initialize workTable : IO.Ref (Std.HashMap (String × String) (Nat × Nat × Nat)) ← IO.mkRef {}
-
-/-- The nanoseconds of the work nested in each open work, innermost first. -/
-initialize workNested : IO.Ref (List Nat) ← IO.mkRef []
-
-private unsafe def workImpl {α : Type} (kind item : String) (f : Unit → α) : α :=
-  if !(unsafeBaseIO profiling.get) then f () else
-  match unsafeIO (do
-      workNested.modify (0 :: ·)
-      let t0 ← IO.monoNanosNow
-      let a ← IO.lazyPure f
-      let t1 ← IO.monoNanosNow
-      let inner ← workNested.modifyGet fun | n :: rest => (n, rest) | [] => (0, [])
-      let d := t1 - t0
-      workNested.modify fun | n :: rest => (n + d) :: rest | [] => []
-      workTable.modify fun m =>
-        let (c, t, s) := m.getD (kind, item) (0, 0, 0)
-        m.insert (kind, item) (c + 1, t + d, s + (d - inner))
-      pure a) with
-  | .ok a => a
-  | .error _ => f ()
-
-/-- `f ()`, recorded as one `kind` of work on `item` where profiling. -/
-@[implemented_by workImpl] def work {α : Type} (_kind _item : String) (f : Unit → α) : α := f ()
 
 /-- What the pass counts. -/
 structure Counts where

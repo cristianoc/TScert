@@ -400,12 +400,15 @@ directory. Each verifier stage of the request then runs with
 `TSCERT_PROFILE=1` in its environment, which is part of its stage key, so a
 profiled stage shares no entry with an unprofiled one. The verifier records
 its work by kind and item, an item being a function
-(`<sha256 prefix>#<unit>`) or a file (`<sha256 prefix>`): preparation
+(`<sha256 prefix>#<unit>`, the unit by its lexical identity: its name,
+`<name>~<k>` for an overloaded function's `k`-th signature, `init`) or a
+file (`<sha256 prefix>`): preparation
 (`prepare:` the claims, the file lowering, the initialization typing, each
 function's extraction, the freezing, the plans over the store, the head
 facts, an importer's plans), body walks (`walk:` a proposal walk, the
 returned-callable round's, a recursive function's walks after its first,
-the retype walk, the instance walk), checks (`check:` a group, each member
+the retype walk, the instance walk, and within any of them each further
+traversal of the body, a growth round or an offers round), checks (`check:` a group, each member
 run, each main graph run, each diagnosing walk) and interface rows (`rows:`
 the decoding of interfaces, an importer's and a publication's store-map
 check). It writes, as the stage's output `work.jsonl`, one line per kind and

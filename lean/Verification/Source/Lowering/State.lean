@@ -4,6 +4,7 @@ import Verification.Source.SourceClaims
 import Verification.Source.Fragment
 import Verification.Source.ExpressionPlan
 import Verification.Source.SourceFacts
+import Verification.Programs.WorkTable
 
 /-! Owns lexical slots and the mutable graph construction state. -/
 namespace Verification.SourceExtraction
@@ -313,6 +314,11 @@ private def scopeState (save : Built → σ) (enter : Built → Built) (restore 
   let saved := save before
   let (value,after) ← action.run (enter before)
   return (value,restore saved after)⟩
+
+/-- `action`, recorded as one `kind` of work on the item of the work open
+around it (`SinglePass.workWithin`), where profiling: a measurement. -/
+def Compiler.within (kind : String) (action : Compiler α) : Compiler α :=
+  ⟨fun s => SinglePass.workWithin kind fun _ => action.run s⟩
 
 /-- Compile a graph in a fresh frame and resume the enclosing graph frame. -/
 def withFreshGraph (action : Compiler α) : Compiler α :=
