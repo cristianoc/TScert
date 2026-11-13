@@ -5,7 +5,7 @@ OUT ?= $(or $(TMPDIR),/tmp)/semantic-diff.html
 REV ?= HEAD
 
 .PHONY: help setup build build-lean test test-checks test-cases cases check lowering compiler-api-shapes semantic-diff deck fmt \
-  check-fmt setup-git-hooks clean-store census build-runner
+  check-fmt setup-git-hooks clean-store census build-runner test-pretext
 
 help: ## list the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/' | expand -t 16
@@ -39,6 +39,10 @@ test-cases: build ## build, then the pipeline cases
 
 cases: ## the pipeline cases whose file names contain P (all of them when P is empty)
 	node pipeline/run-cases.mts $(P)
+
+test-pretext: build ## the pretext tier: the bounds pattern cases, the bounds cases of tests/pretext-tier.mts and pretext's functions: PRETEXT=checkout [FILES=a.ts,…] [UPDATE=1 records the functions for its commit]
+	@test -n "$(PRETEXT)" || { echo "make test-pretext needs PRETEXT=<pretext checkout>"; exit 2; }
+	node tests/pretext-tier.mts --pretext $(PRETEXT) $(if $(FILES),--files $(FILES)) $(if $(UPDATE),--update)
 
 check: ## one source file through the pipeline: FILE=path.ts [PROJECT=dir]
 	node pipeline/verify-source.mts $(FILE) $(if $(PROJECT),--project $(PROJECT))

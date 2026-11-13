@@ -19,6 +19,17 @@ make are `single-pass-controls.mts`'s. Two families in
 
 Lean tests build alongside the implementation in `lean/Verification/Tests/`.
 
+`make test-pretext PRETEXT=<checkout> [FILES=a.ts,…]` builds, then runs
+[`pretext-tier.mts`](pretext-tier.mts), the tier for a bounds capability
+for pretext: the bounds pattern cases (`bounds-pattern-*`, one gap per
+pattern of pretext's bound rewrites, with its supported and unsafe
+neighbours), the existing cases its `boundsList` names, each with the
+mechanism it stands for, and the functions of the checkout's `src/` files,
+each file checked unit by unit, against
+[`pretext-tier-expected.json`](pretext-tier-expected.json), the record for
+the checkout's commit: a function recorded verified and refused here fails
+the tier, and `UPDATE=1` records the functions for the commit.
+
 A case naming a project reads its imports and declarations from it:
 
 | Project | Holds, for which cases |
@@ -47,7 +58,8 @@ creates.
 
 This directory holds the suites that check the repository around the
 pipeline. `test-all.sh` runs each but `compiler-api-shapes.mts`, which
-`make compiler-api-shapes` and CI run, and `session-reuse.mts`, which
+`make compiler-api-shapes` and CI run, `pretext-tier.mts`, which
+`make test-pretext` runs, and `session-reuse.mts`, which
 `single-pass-controls.mts` runs beside its controls, as it runs the full
 `observed-stages.mts` (`test-all.sh` runs it with `--reads`);
 `force-tool-failure.mts` is the forced failure `tool-failures.mts` imports:
