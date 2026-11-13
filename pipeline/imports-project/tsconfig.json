@@ -71,6 +71,7 @@
     "./module-cells.ts",
     "./postcondition-row.ts",
     "./false-ensures.ts",
+    "./two-state.ts",
     "./guards.ts",
     "./recursive-local.ts",
     "../examples/invalid-interface-precondition-value-import.ts",

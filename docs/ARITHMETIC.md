@@ -473,7 +473,7 @@ K &::= G\ \texttt{||}\ K \mid C\\
 G &::= P\ \texttt{===}\ \mathtt{null} \mid P\ \texttt{===}\ \mathtt{undefined} \mid P\ \texttt{===}\ \mathtt{true} \mid P\ \texttt{===}\ \mathtt{false}\\
 C &::= A \mid C\ \texttt{\&\&}\ C \mid C\ \texttt{||}\ C \mid \texttt{!}C \mid (C) \mid \mathtt{forall}\ x\ \mathtt{in}\ P\texttt{:}\ B \mid \mathtt{forall}\ x\ \texttt{<}\ P\ \mathtt{of}\ P\texttt{:}\ B\\
 A &::= \mathtt{safeInteger}(P) \mid E\ \mathit{rel}\ E \mid P\ \texttt{!==}\ P\\
-E &::= n \mid P \mid P.\mathtt{length} \mid n\cdot P \mid n\cdot P.\mathtt{length} \mid E + E \mid E - E \mid -E \mid (E)\\
+E &::= n \mid P \mid P.\mathtt{length} \mid \mathtt{old}(P) \mid \mathtt{old}(P.\mathtt{length}) \mid n\cdot P \mid n\cdot P.\mathtt{length} \mid E + E \mid E - E \mid -E \mid (E)\\
 P &::= x \mid P.f\\
 B &::= A' \mid B\ \texttt{\&\&}\ B \mid B\ \texttt{||}\ B\\
 E' &::= E \mid x \mid P[x] \mid P[x+d] \mid P[x].p \mid P[x].p.\mathtt{length} \mid n\cdot E'
@@ -533,9 +533,16 @@ integers is refused.
 **`result` and entry values.** In an `@ensures`, `result` names the
 returned value and its paths, read in the heap of the normal return; a
 parameter names its entry value ([postconditions](#postconditions)).
+`old(P)` and `old(P.length)` are the term $`P`$ or $`P.\mathtt{length}`$
+read in the entry state: the environment and heap the function's run
+started in ([two-state postconditions](#two-state-postconditions)), its
+root a parameter (in an `@ensures`) or a parameter of the function the loop
+is in (in a loop invariant). `old` applies to these terms of the grammar,
+not to arbitrary source expressions.
 
 **Refused forms**, each with the clause's location: a form outside the
-grammar, a computed key among them, and `old(…)` ([postconditions](#postconditions)); a parameter named
+grammar, a computed key among them, and `old(…)` of a name with no entry
+value (`result`, a binding other than a parameter); a parameter named
 `undefined` in a clause testing `undefined`; a quantified atom's index
 named as a parameter; more than 64 alternatives, or a distribution into more
 than 1024 facts. Written contracts beyond this language (entry values of
@@ -691,11 +698,11 @@ export function zeros(count: number): number[] {
 }
 ```
 
-A named parameter denotes its entry value; the clause may name it only when
-it is a plain required parameter and its binding is unchanged throughout the
-body (`parameterKept`). Its paths
-read the heap at normal return. `old(...)` is refused: the written language
-has no entry-heap snapshots. `result` is reserved, so a function with a
+A named parameter denotes its entry value; the clause may name it outside
+`old(…)` only when it is a plain required parameter and its binding is
+unchanged throughout the body (`parameterKept`). Its paths read the heap at
+normal return; under `old(…)` they read the entry state
+([two-state postconditions](#two-state-postconditions)). `result` is reserved, so a function with a
 parameter of that name cannot state a postcondition. Async, nested and
 overloaded declarations, rest parameters and parameter patterns are refused.
 Defaulted and optional parameters may occur when the clause does not name them.
@@ -728,9 +735,62 @@ length); `invalid-false-ensures-value-import` reads one the module refuses,
 at the ordinary effect. `invalid-written-ensures-body` returns an
 array shorter than its contract, and `invalid-written-ensures-unstated`
 reads below a count absent from its callee's contract (under Node:
-`undefined` and `NaN`). `written-ensures-reassigned-refused` and
-`written-ensures-old-refused` exercise the entry-value restrictions;
+`undefined` and `NaN`). `written-ensures-reassigned-refused` exercises the entry-value restriction;
 `written-ensures-default-refused` checks a defaulted parameter reference.
+
+### Two-state postconditions
+
+A postcondition relates the state a function's run starts in and the state
+it returns in (the note "Tolerant frames", section 6, "Triples"). A term
+$`\mathrm{old}(t)`$ denotes $`t`$ in the entry state
+$`\varepsilon=\langle\varepsilon.\mathrm{env},\varepsilon.\mathrm{heap}\rangle`$,
+fixed for the run:
+$`[\![\mathrm{old}(t)]\!]_{\varepsilon,\rho,h}=[\![t]\!]_{\varepsilon,\varepsilon.\mathrm{env},\varepsilon.\mathrm{heap}}`$.
+On the wire an entry term is a linear term with `"atEntry": true`, its slot a
+call position (`0` the receiver, $`i+1`$ the $`i`$-th parameter).
+
+At a call, the callee's entry state is the caller's state just before the
+call, at the call's positions (rule Call). A post fact naming an entry term
+relates the caller's states before and after the call, so it enters the
+caller's facts by composition: with $`b`$ a logical name of a before-value,
+
+```math
+\frac{B(b)\qquad |x|_{\mathrm{after}} = b + n\qquad b\ \text{read}\ |x|_{\mathrm{before}}}
+{B(|x|_{\mathrm{after}} - n)}\ \textsf{compose}
+```
+
+each fact $`B`$ before the call over a term the call changes rewritten
+through the relation the callee's post states, the terms the call keeps read
+after it, and every before-name eliminated (`HeapKnowledge.compose`,
+proved `compose_holds`). The push rule
+(`|x| = old(|x|) + count`) and the write at the length
+(`|x| = old(|x|) + 1`) are instances of the same composition.
+
+```ts
+type Lists = { /** @stable */ readonly widths: number[] };
+/**
+ * @requires safeInteger(n) && 0 <= n && n <= 1000 && 0 <= lists.widths.length
+ * @ensures lists.widths.length === old(lists.widths.length) + n
+ */
+function measure(lists: Lists, n: number): Modifies<{ values: "any"; stores: "grow" }, void> {
+  /** @invariant safeInteger(k) && safeInteger(n) && 0 <= k && k <= n && lists.widths.length === old(lists.widths.length) + k */
+  for (let k = 0; k < n; k++) lists.widths.push(k);
+}
+```
+
+The start of a run proposes $`t=\mathrm{old}(t)`$ for each entry term its
+postcondition names; the entry check reads it at the entry state, where it is
+$`t=t`$, entailed where the entry facts state $`t`$ defined (here
+`0 <= lists.widths.length`). A post fact naming an entry term under a
+disjunction, a guard or a quantified fact adds no fact to a caller. An
+exceptional postcondition is the frame alone.
+
+**Cases.** `bounds-pattern-known-growth-refused` (a caller bounding a list
+grown by a callee), its unsafe neighbour `invalid-bounds-pattern-known-growth`,
+`invalid-two-state-ensures-body` (a body whose two-state postcondition is
+false, run under Node) and `two-state-ensures-value-import` (an importer
+reading the postcondition at its established entry);
+`written-ensures-old-refused` is a gap at the entry check.
 
 **Implementation.** The positions are `CallEffects.ensuresEnv`, the meaning
 the last conjunct of `CallEffects.Effect.post`, which takes the call's

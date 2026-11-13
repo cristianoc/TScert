@@ -23,6 +23,8 @@ assert.throws(() => runExample("invalid-native-length-indexof", 'absent(["a"], "
 assert.throws(() => runExample("invalid-native-length-filled", 'past(1)'), /TypeError/);
 assert.equal(runExample("invalid-written-ensures-body", "typeof short(1)[0]"), "undefined",
   "a false written result length returns an absent element");
+assert.equal(runExample("invalid-two-state-ensures-body", "(() => { const l = { widths: [] }; measure(l, 2); return l.widths.length; })()"), 3,
+  "the body grows the list by 3 where its two-state postcondition states old(length) + 2");
 assert.equal(runExample("invalid-written-ensures-unstated", "Number.isNaN(read(1))"), true,
   "a caller cannot obtain a result bound from an unstated postcondition");
 assert.equal(runExample("invalid-bounds-callback-footprint", "typeof broken([1])"), "undefined",

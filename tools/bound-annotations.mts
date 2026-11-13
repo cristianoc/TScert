@@ -72,7 +72,9 @@ export type Excluded = (depth: number) => readonly GuardTag[];
  * prefix's type without the tags `excluded` names, an optional field read
  * where `undefined` is excluded of it, or, at the path's end, where
  * `optionalLast`. */
-export type ClauseParameter = { name: string; position: number;
+/** A name a clause reads: its position, and, where the clause may read it in
+ * the entry state (`old(…)`), the entry's position holding it. */
+export type ClauseParameter = { name: string; position: number; entry?: number;
   at: (path: readonly string[], excluded?: Excluded, optionalLast?: boolean) => PathType };
 
 /** The text of each `@requires` tag of the last JSDoc comment (`/** … *\/`)
@@ -412,6 +414,14 @@ class Parser {
       }
       return { terms: new Map(), constant: t.v, steps: [] };
     }
+    // `old(p)`: the term `p` in the entry state (ARITHMETIC.md, "Two-state
+    // postconditions"), a path or its length.
+    if (t.k === "name" && t.v === "old" && this.ts[this.at + 1]?.k === "op" && this.ts[this.at + 1]?.v === "(") {
+      this.at += 2;
+      const inner = this.variable();
+      this.expect(")");
+      return { terms: new Map([[`old(${inner})`, 1]]), constant: 0, steps: [] };
+    }
     if (t.k === "name") return { terms: new Map([[this.element(this.variable()), 1]]), constant: 0, steps: [] };
     throw new ClauseError(`the clause has ${t.v} where a term is expected`);
   }
@@ -460,14 +470,34 @@ export function indexFactPositions(f: IndexFact): number[] {
 read as a field, a `forall`'s index or the clause's own words. A loop
 invariant's clause names the bindings in scope at the loop's head. */
 export function clauseRoots(text: string): string[] {
+  return rootsOf(text, false);
+}
+
+/** The names a clause's paths start at in the current state: outside
+ * `old(…)`. */
+export function clauseCurrentRoots(text: string): string[] {
+  return rootsOf(text, true);
+}
+
+function rootsOf(text: string, current: boolean): string[] {
   const ts = tokens(text);
   if (typeof ts === "string") return [];
   const words = new Set(["forall", "in", "safeInteger", "null", "undefined", "true", "false"]);
   const binders = new Set<string>();
   const roots: string[] = [];
+  /** The tokens inside `old(…)`, which read the entry state. */
+  const inOld = new Set<number>();
+  ts.forEach((t, i) => {
+    if (t.k === "name" && t.v === "old" && ts[i + 1]?.k === "op" && ts[i + 1]?.v === "(") {
+      inOld.add(i);
+      for (let j = i + 2; j < ts.length && !(ts[j]?.k === "op" && ts[j]?.v === ")"); j++) inOld.add(j);
+    }
+  });
   ts.forEach((t, i) => {
     const before = ts[i - 1];
     if (t.k !== "name") return;
+    if (t.v === "old" && inOld.has(i) && !inOld.has(i - 1)) return;
+    if (current && inOld.has(i)) return;
     if (before?.k === "name" && before.v === "forall") { binders.add(t.v); return; }
     if (before?.k === "op" && before.v === ".") return;
     if (t.v === "of" && before?.k === "name" && ts[i + 1]?.k === "name") return;
@@ -579,6 +609,14 @@ export function elaborateRequires(clauses: readonly string[], params: readonly C
       const ints = new Set([...unguarded,
         ...atoms.flatMap(a => a.k === "safeInteger" ? [JSON.stringify(value(a.of))] : [])]);
       const term = (key: string): LinearTerm => {
+        // `old(p)`: the term `p` read in the entry state, at the entry's
+        // position holding `p`'s root.
+        if (key.startsWith("old(") && key.endsWith(")")) {
+          const inner = term(key.slice(4, -1));
+          const root = param(key.slice(4, -1).split(".")[0] ?? "");
+          if (root.entry === undefined) throw new ClauseError(`\`old(…)\` reads ${root.name} in the entry state, which the clause has none of`);
+          return { ...inner, slot: root.entry, atEntry: true };
+        }
         const names = key.split(".");
         // `p.length` of an array, a typed array or a string path is its
         // length; of any other, the field `length` read from it.

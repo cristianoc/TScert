@@ -15,7 +15,7 @@ import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstO
 import type { Gate } from "./fragment-parse.mts";
 import { guardResult } from "./fragment-guards.mts";
 import { literalDefaultName } from "./type-term.mts";
-import { clauseRoots, elaborateRequires, ensuresTags, indexFactPositions, loopBindings, loopInvariantTags, parameterKept, plainParameter,
+import { clauseCurrentRoots, clauseRoots, elaborateRequires, ensuresTags, indexFactPositions, loopBindings, loopInvariantTags, parameterKept, plainParameter,
   requiresTags, type ClauseParameter } from "./bound-annotations.mts";
 import { namesView } from "./library-types.mts";
 import { aliasMeaning, definitionKey, recordShape } from "./named-record.mts";
@@ -2268,18 +2268,20 @@ export function precondition(gate: Gate, clauses: readonly string[],
 }
 
 /** Written normal-return facts, over the result and unchanged parameter
- * bindings. Parameter paths read the return heap; entry-heap snapshots are
- * outside this clause language. Preconditions supply integrality only. */
+ * bindings. Parameter paths read the return heap; `old(p)` reads `p` in the
+ * call's entry state, at the call's position of `p`'s root (ARITHMETIC.md,
+ * "Two-state postconditions"). Preconditions supply integrality only. */
 export function postcondition(gate: Gate, clauses: readonly string[], requires: readonly string[],
     parameters: readonly { name: string; type: TypeTerm | undefined; kept: boolean }[],
     receiver: boolean, result: TypeTerm | undefined): IndexFact[] | string {
   if (parameters.some(p => p.name === "result")) return "a postcondition (`@ensures`) reserves the name result";
-  const roots = clauses.flatMap(clauseRoots);
+  const roots = clauses.flatMap(clauseCurrentRoots);
   for (const p of parameters)
     if (roots.includes(p.name) && !p.kept)
       return `a postcondition (\`@ensures\`) names reassigned parameter or nonplain parameter ${p.name}; entry values require an unchanged plain parameter binding`;
   const named = [clauseParameter(gate, "result", 0, result),
-    ...parameters.map(({ name, type }, i) => clauseParameter(gate, name, receiver ? i + 1 : i + 2, type))];
+    ...parameters.map(({ name, type }, i) => ({ ...clauseParameter(gate, name, receiver ? i + 1 : i + 2, type),
+      entry: receiver ? i : i + 1 }))];
   const elaborated = elaborateRequires(clauses, named, requires);
   return "refused" in elaborated ? `a postcondition (\`@ensures\`): ${elaborated.refused}` : elaborated.facts;
 }
@@ -2298,7 +2300,17 @@ function loopInvariant(gate: Gate, loop: ts.Statement): LoopInvariant | null {
     const id = bindings.get(name);
     if (id === undefined) gate.fail(loop, `a loop invariant (\`@invariant\`) names ${name}, which no binding in scope at the loop declares`);
     const answered = gate.staticTypes.get(gate.span(id).join(":"));
-    return clauseParameter(gate, name, i, answered?.ok ? answered.value : undefined);
+    // `old(p)` of a parameter of the function the loop is in: its value at
+    // that function's entry, at its input position (the parameters in
+    // order, a declared `this` first).
+    let enclosing: ts.Node | undefined = loop.parent;
+    while (enclosing !== undefined && !(ts.isFunctionDeclaration(enclosing) || ts.isFunctionExpression(enclosing) ||
+        ts.isArrowFunction(enclosing) || ts.isMethodDeclaration(enclosing) || ts.isConstructorDeclaration(enclosing)))
+      enclosing = enclosing.parent;
+    const declaration = id.parent;
+    const entry = enclosing !== undefined && ts.isParameterDeclaration(declaration) && declaration.parent === enclosing ?
+      enclosing.parameters.indexOf(declaration) : undefined;
+    return { ...clauseParameter(gate, name, i, answered?.ok ? answered.value : undefined), ...(entry === undefined ? {} : { entry }) };
   });
   const elaborated = elaborateRequires(clauses, params);
   if ("refused" in elaborated) gate.fail(loop, `a loop invariant (\`@invariant\`): ${elaborated.refused}`);

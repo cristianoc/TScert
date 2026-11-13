@@ -49,8 +49,10 @@ function measure(flags: number[], runs: Runs): number { … }
 
 On a synchronous module function declaration. A postcondition: the body
 establishes it at each return, and each caller assumes it after the call;
-`result` names the returned value.
-[Postconditions](ARITHMETIC.md#postconditions).
+`result` names the returned value, and `old(P)` or `old(P.length)` the term
+in the state the call started in.
+[Postconditions](ARITHMETIC.md#postconditions),
+[two-state postconditions](ARITHMETIC.md#two-state-postconditions).
 
 ```ts
 /** @ensures result.length === 2 */
