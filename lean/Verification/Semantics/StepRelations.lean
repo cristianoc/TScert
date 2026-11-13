@@ -422,6 +422,10 @@ structure Composer where
   rel : StepRelation
   term : Term → Option StepVar
   slot : Nat → Option Nat
+  /-- A post term reading a value the step's states give `undefined` at. -/
+  absent : Term → Bool
+  /-- A current slot of the post holding `undefined`. -/
+  absentSlot : Nat → Bool
 
 namespace Composer
 
@@ -436,6 +440,25 @@ before, each kept term read after the step, and the relation's facts naming
 only before-terms the facts before name. -/
 def context : List (Linear.Fact StepVar) :=
   P.before.filterMap (·.mapVars (some ∘ keptVar P.kept)) ++ relOf P.kept P.before P.rel
+
+/-- The fact that never holds, `0 ≤ -1`. -/
+def falsum : IndexFact := .linear (.le [] (-1))
+
+/-- Whether a fact is a linear bound of the empty form below zero, which
+never holds. -/
+def isFalsum : IndexFact → Bool
+  | .linear (.le [] c) => decide (c < 0)
+  | _ => false
+
+/-- Whether an atom of the forms reading a slot's value as a number, an
+array or an index reads a slot holding `undefined` there, where it never
+holds. -/
+def readsAbsent : IndexFact → Bool
+  | .index k | .int k | .pastSafe k => P.absentSlot k
+  | .length x n => P.absentSlot x || P.absentSlot n
+  | .bound x k _ => P.absentSlot x || P.absentSlot k
+  | .element _ x k => P.absentSlot x || P.absentSlot k
+  | _ => false
 
 /-- A linear post fact naming an entry term composed with the relation
 (`compose`); a fact reading a term no slot of the step holds enters no
@@ -476,6 +499,7 @@ def BodyVar.isBefore : BodyVar → Bool
 facts both states meet, which name no bound variable, for each index alike;
 the facts naming its own bound variables and after-terms known defined. -/
 def atom (F : Linear.Fact Bound) : List (Linear.Fact Bound) :=
+  if F.vars.any (fun | .free t => P.absent t | _ => false) then [.le [] (-1)] else
   match F.mapVars P.bodyVar with
   | none => []
   | some F' =>
@@ -493,29 +517,45 @@ def clause : LinearClause Bound → List (LinearClause Bound)
   | .atom F => (P.atom F).map .atom
   | .either A B => (clause A).flatMap fun a => (clause B).map (.either a ·)
 
-/-- The disjunction of two facts, where it is one: two bounds on one linear
-form are the larger bound; two bounds on opposite forms covering every
-integer state nothing. -/
-def orFacts : IndexFact → IndexFact → Option IndexFact
+/-- The disjunction of two facts neither of which is `isFalsum`. -/
+def orPair : IndexFact → IndexFact → Option IndexFact
   | .linear (.le G c), .linear (.le G' c') =>
     if G = G' then some (.linear (.le G (max c c')))
     else if Linear.normalize G' == Linear.normalize (G.scale (-1)) && decide (-c' ≤ c + 1) then none
     else some (.either (.linear (.le G c)) (.linear (.le G' c')))
   | a, b => some (.either a b)
 
+/-- The disjunction of two facts, where it is one: an arm that never holds
+(`isFalsum`) is the other; otherwise `orPair`'s, where two bounds on one
+linear form are the larger bound and two bounds on opposite forms covering
+every integer state nothing. -/
+def orFacts (a b : IndexFact) : Option IndexFact :=
+  if isFalsum a then some b else if isFalsum b then some a else orPair a b
+
 /-- **A post fact composed** (rule Call): by structural recursion over
-every form of fact. -/
+every form of fact, each value the step's states give `undefined` read as
+`undefined`: a term reading one denotes no integer, so a linear fact or a
+quantified fact's bound naming it never holds (`falsum`); a guard reading
+one with the empty path reads `undefined`, which is the guard's tag or the
+body holds, and with a path reads nothing; an atom reading one as a number,
+an array or an index never holds (`readsAbsent`); a disjunction with an arm
+that never holds is its other arm (`orFacts`). -/
 def fact : IndexFact → List IndexFact
-  | .linear G => if G.vars.any (·.atEntry) then P.linear G else ((IndexFact.linear G).mapM P.slot).toList
+  | .linear G => if G.vars.any P.absent then [falsum]
+    else if G.vars.any (·.atEntry) then P.linear G else ((IndexFact.linear G).mapM P.slot).toList
   | .either A B => (fact A).flatMap fun a => (fact B).filterMap (orFacts a)
-  | .guarded s p tag B => match P.slot s with
+  | .guarded s p tag B => if P.absentSlot s then
+      (if p.isEmpty then (if tag = .undef then [] else fact B) else [falsum])
+    else match P.slot s with
     | some s' => (fact B).map (.guarded s' p tag)
     | none => []
-  | .every s p stop body => match P.slot s with
+  | .every s p stop body => if P.absentSlot s || P.absent stop then [falsum] else
+    match P.slot s with
     | some s' => (P.stops stop).map fun st => .every s' p st (body.flatMap P.clause)
     | none => []
   | F@(.index _) | F@(.length _ _) | F@(.bound _ _ _) | F@(.int _) | F@(.pastSafe _)
-  | F@(.element _ _ _) | F@(.apart _ _) | F@(.storeApart _ _ _ _) => (F.mapM P.slot).toList
+  | F@(.element _ _ _) | F@(.apart _ _) | F@(.storeApart _ _ _ _) =>
+    if P.readsAbsent F then [falsum] else (F.mapM P.slot).toList
 
 end Composer
 
@@ -570,7 +610,7 @@ theorem definedOf_defined (hb : ∀ F ∈ before, (IndexFact.linear F).HoldsAt �
 theorem context_holds (hb : ∀ F ∈ before, (IndexFact.linear F).HoldsAt ε ρ h)
     (hk : ∀ t t' n, kept t = some t' → termValue ε ρ h t = some n → termValue ε ρ' h' t' = some n)
     (hR : R.Holds ε ρ h ρ' h') :
-    ∀ G ∈ (Composer.mk kept before R term slot).context, G.Holds (StepVar.value ε ρ h ρ' h') := by
+    ∀ G ∈ (Composer.mk kept before R term slot absent absentSlot).context, G.Holds (StepVar.value ε ρ h ρ' h') := by
   show ∀ G ∈ before.filterMap (·.mapVars (some ∘ keptVar kept)) ++ relOf kept before R, _
   have hbdef : ∀ t ∈ beforeTerms before, (termValue ε ρ h t).isSome := by
     intro t ht
@@ -648,6 +688,8 @@ structure Composer.Sound (P : Composer) (ε ε₀ : EntryState) (ρ : Env) (h : 
   rel : P.rel.Holds ε ρ h ρ' h'
   term : ∀ t x, P.term t = some x → StepVar.val ε ρ h ρ' h' x = termValue ε₀ τ h' t
   slot : ∀ s s', P.slot s = some s' → ρ' s' = τ s
+  absent : ∀ t, P.absent t = true → termValue ε₀ τ h' t = none
+  absentSlot : ∀ s, P.absentSlot s = true → τ s = .undef
 
 theorem Composer.var_val (hs : P.Sound ε ε₀ ρ h ρ' τ h') {t : Term} {y : StepVar} {n : Int}
     (hy : P.var t = some y) (hn : termValue ε₀ τ h' t = some n) : StepVar.val ε ρ h ρ' h' y = some n := by
@@ -684,7 +726,7 @@ theorem Composer.stops_bound (hs : P.Sound ε ε₀ ρ h ρ' τ h') {stop : Term
     obtain ⟨hmem, hent⟩ := List.mem_filter.mp hst
     obtain ⟨n', hn'⟩ := Option.isSome_iff_exists.mp
       (definedOf_defined hs.before hs.kept hs.rel st (List.mem_eraseDups.mp hmem))
-    have hle := Linear.entails_sound hent (context_holds (term := P.term) (slot := P.slot) hs.before hs.kept hs.rel)
+    have hle := Linear.entails_sound hent (context_holds (term := P.term) (slot := P.slot) (absent := P.absent) (absentSlot := P.absentSlot) hs.before hs.kept hs.rel)
     have hb : termValue ε ρ h u = some n := P.var_val hs hu hn
     simp only [Linear.Fact.Holds, Linear.Form.eval, StepVar.value, termValuation, hn', hb] at hle
     exact ⟨n', hn', by simp at hle; omega⟩
@@ -707,6 +749,15 @@ theorem Composer.atom_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') {ls : List (O
     ∀ D ∈ P.atom F, FactAt (boundValue ε ρ' h' ls i) D := by
   intro D hD
   unfold Composer.atom at hD
+  split at hD
+  · rename_i ha
+    obtain ⟨x, hx, hxa⟩ := List.any_eq_true.mp ha
+    cases x with
+    | free t =>
+      have := hF.1 _ hx
+      simp only [boundValue, hs.absent t hxa] at this
+      cases this
+    | _ => cases hxa
   split at hD
   · cases hD
   · rename_i F' hm
@@ -731,7 +782,7 @@ theorem Composer.atom_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') {ls : List (O
       rcases List.mem_append.mp hG with hG | hG
       · obtain ⟨G0, hG0, hm0⟩ := List.mem_filterMap.mp hG
         refine (Linear.Fact.holds_mapVars hm0 fun x _ y hy => ?_).mpr
-          (context_holds (term := P.term) (slot := P.slot) hs.before hs.kept hs.rel G0 hG0)
+          (context_holds (term := P.term) (slot := P.slot) (absent := P.absent) (absentSlot := P.absentSlot) hs.before hs.kept hs.rel G0 hG0)
         cases hy
         exact (StepVar.value_eq x).symm
       · simp only [List.mem_singleton] at hG; subst hG; exact hF'
@@ -803,9 +854,22 @@ theorem Composer.clause_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') {ls : List 
     · exact .inl (Composer.clause_holds hs hA a ha)
     · exact .inr (Composer.clause_holds hs hB b hb)
 
-theorem orFacts_holds {ρ : Env} {h : Heap} {a b D : IndexFact} (hD : Composer.orFacts a b = some D)
+theorem isFalsum_not {ρ : Env} {h : Heap} {a : IndexFact} (ha : Composer.isFalsum a = true) :
+    ¬ a.HoldsAt ε ρ h := by
+  intro hh
+  unfold Composer.isFalsum at ha
+  split at ha
+  · rename_i c
+    have := hh.2
+    simp only [Linear.Fact.Holds, Linear.Form.eval, decide_eq_true_eq] at this ha
+    omega
+  · cases ha
+
+theorem falsum_not {ρ : Env} {h : Heap} : ¬ Composer.falsum.HoldsAt ε ρ h := isFalsum_not rfl
+
+theorem orPair_holds {ρ : Env} {h : Heap} {a b D : IndexFact} (hD : Composer.orPair a b = some D)
     (hab : a.HoldsAt ε ρ h ∨ b.HoldsAt ε ρ h) : D.HoldsAt ε ρ h := by
-  unfold Composer.orFacts at hD
+  unfold Composer.orPair at hD
   split at hD
   · rename_i G c G' c'
     split at hD
@@ -817,6 +881,45 @@ theorem orFacts_holds {ρ : Env} {h : Heap} {a b D : IndexFact} (hD : Composer.o
       · cases hD
       · cases hD; exact hab
   · cases hD; exact hab
+
+theorem orFacts_holds {ρ : Env} {h : Heap} {a b D : IndexFact} (hD : Composer.orFacts a b = some D)
+    (hab : a.HoldsAt ε ρ h ∨ b.HoldsAt ε ρ h) : D.HoldsAt ε ρ h := by
+  unfold Composer.orFacts at hD
+  split at hD
+  · rename_i ha; cases hD; exact hab.resolve_left (isFalsum_not ha)
+  split at hD
+  · rename_i hb; cases hD; exact hab.resolve_right (isFalsum_not hb)
+  exact orPair_holds hD hab
+
+/-- An atom reading `undefined` as a number, an array or an index never
+holds. -/
+theorem readsAbsent_not (hs : P.Sound ε ε₀ ρ h ρ' τ h') {F : IndexFact} (ha : P.readsAbsent F = true) :
+    ¬ F.HoldsAt ε₀ τ h' := by
+  have hst : ∀ x, P.absentSlot x = true → Footprints.storeOf (τ x) = none := fun x hx => by
+    rw [hs.absentSlot x hx]; simp [Footprints.storeOf, Footprints.fieldsOf]
+  have hel : ∀ x, P.absentSlot x = true → elementsOf (τ x) = none := fun x hx => by
+    rw [hs.absentSlot x hx]; simp [elementsOf, Footprints.storeOf, Footprints.fieldsOf]
+  intro hF
+  cases F with
+  | index k => obtain ⟨b, i, hb, -⟩ := hF; rw [hs.absentSlot k ha] at hb; cases hb
+  | int k => simp only [IndexFact.HoldsAt, hs.absentSlot k ha] at hF; simp [intValue] at hF
+  | pastSafe k => simp only [IndexFact.HoldsAt, hs.absentSlot k ha] at hF; cases hF
+  | length x n =>
+    obtain ⟨s, ls, hx, -, hn, -⟩ := hF
+    rcases Bool.or_eq_true_iff.mp ha with ha | ha
+    · rw [hst x ha] at hx; cases hx
+    · rw [hs.absentSlot n ha] at hn; cases hn
+  | bound x k st =>
+    obtain ⟨s, ls, b, i, hx, -, hk, -⟩ := hF
+    rcases Bool.or_eq_true_iff.mp ha with ha | ha
+    · rw [hst x ha] at hx; cases hx
+    · rw [hs.absentSlot k ha] at hk; cases hk
+  | element v x k =>
+    obtain ⟨s, ls, b, i, hx, -, hk, -⟩ := hF
+    rcases Bool.or_eq_true_iff.mp ha with ha | ha
+    · rw [hel x ha] at hx; cases hx
+    · rw [hs.absentSlot k ha] at hk; cases hk
+  | _ => simp [Composer.readsAbsent] at ha
 
 /-- **Composition is sound for every form of fact** (proved): where a post
 fact holds at the callee's states and the composition's assumptions hold of
@@ -835,6 +938,12 @@ theorem Composer.fact_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') :
     intro hF D hD
     simp only [Composer.fact] at hD
     split at hD
+    · rename_i ha
+      obtain ⟨x, hx, hxa⟩ := List.any_eq_true.mp ha
+      have := hF.1 x hx
+      rw [hs.absent x hxa] at this
+      cases this
+    split at hD
     · exact P.linear_holds hs hF D hD
     · rename_i hany
       refine hmapped ?_ hF hD
@@ -852,32 +961,58 @@ theorem Composer.fact_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') :
   | guarded s p tag B ih =>
     intro hF D hD
     simp only [Composer.fact] at hD
+    obtain ⟨v, hv, hor⟩ := hF
+    split at hD
+    · rename_i habs
+      rw [hs.absentSlot s habs] at hv
+      split at hD
+      · rename_i hp
+        have hp : p = [] := by simpa using hp
+        subst hp
+        simp only [readGuard, Option.some.injEq] at hv
+        subst hv
+        split at hD
+        · cases hD
+        · rename_i htag
+          refine ih (hor.resolve_left fun he => htag ?_) D hD
+          cases tag <;> first | rfl | (simp only [GuardTag.val] at he; cases he)
+      · cases p with
+        | nil => simp at *
+        | cons f q => simp [readGuard] at hv
     split at hD
     · rename_i s' hs'
       obtain ⟨b, hb, rfl⟩ := List.mem_map.mp hD
-      obtain ⟨v, hv, hor⟩ := hF
       refine ⟨v, by rw [hs.slot s s' hs']; exact hv, hor.imp id fun hB => ih hB b hb⟩
     · cases hD
   | every s p stop body =>
     intro hF D hD
     simp only [Composer.fact] at hD
+    obtain ⟨w, sto, ls, n, hw, hsto, hls, hn, hall⟩ := hF
+    split at hD
+    · rename_i habs
+      rcases Bool.or_eq_true_iff.mp habs with ha | ha
+      · rw [hs.absentSlot s ha] at hw
+        cases p with
+        | nil =>
+          simp only [readPath, Option.some.injEq] at hw
+          subst hw
+          simp [elementsOf, Footprints.storeOf, Footprints.fieldsOf] at hsto
+        | cons f q => simp [readPath] at hw
+      · rw [hs.absent stop ha] at hn; cases hn
     split at hD
     · rename_i s' hs'
       obtain ⟨st, hst, rfl⟩ := List.mem_map.mp hD
-      obtain ⟨w, sto, ls, n, hw, hsto, hls, hn, hall⟩ := hF
       obtain ⟨n', hn', hle⟩ := P.stops_bound hs hn st hst
       refine ⟨w, sto, ls, n', by rw [hs.slot s s' hs']; exact hw, hsto, hls, hn', fun i hi C hC => ?_⟩
       obtain ⟨C0, hC0, hC⟩ := List.mem_flatMap.mp hC
       exact P.clause_holds hs (hall i (by omega) C0 hC0) C hC
     · cases hD
-  | index _ => intro hF D hD; exact hmapped rfl hF hD
-  | length _ _ => intro hF D hD; exact hmapped rfl hF hD
-  | bound _ _ _ => intro hF D hD; exact hmapped rfl hF hD
-  | int _ => intro hF D hD; exact hmapped rfl hF hD
-  | pastSafe _ => intro hF D hD; exact hmapped rfl hF hD
-  | element _ _ _ => intro hF D hD; exact hmapped rfl hF hD
-  | apart _ _ => intro hF D hD; exact hmapped rfl hF hD
-  | storeApart _ _ _ _ => intro hF D hD; exact hmapped rfl hF hD
+  | _ =>
+    intro hF D hD
+    simp only [Composer.fact] at hD
+    split at hD
+    · rename_i ha; exact absurd hF (readsAbsent_not hs ha)
+    · exact hmapped rfl hF hD
 
 end ComposeFacts
 

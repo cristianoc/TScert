@@ -128,9 +128,21 @@ over variables $`\mathrm{before}(t)`$ and $`\mathrm{after}(t)`$
 ```
 
 with $`\sigma_p`$ the caller's slot holding position $`p`$ (the receiver
-where it is a slot, each actual) and $`\tau_j`$ the return's slot; a fact
-reading a position the call passes nothing at reads `undefined`, which
-denotes no integer, and is $`0\le -1`$. A before-variable is a logical name
+where it is a slot, each actual) and $`\tau_j`$ the return's slot. A position the call passes nothing at holds
+`undefined`, and every post fact reads it as `undefined`, by structural
+recursion over every form (`Composer.fact`): a term reading it denotes no
+integer, so a linear fact, a quantified fact's bound or body atom naming one
+never holds and is $`0\le -1`$; an atom reading it as a number, an array or
+an index never holds; a guard reading it with the empty path reads
+`undefined`, and with a path reads nothing; a disjunction with an arm that
+never holds is its other arm:
+
+```math
+\frac{\mathrm{old}(m)\le 0\ \lor\ r\le 0\qquad [\![m]\!]=\mathtt{undefined}}{r\le 0}
+```
+
+A region or store separation reading it, and an element fact whose value
+is it, state nothing after the call. A before-variable is a logical name
 inside one composition, no slot of any environment. The caller's facts
 after the call are composed, all at the caller's own fixed
 $`\varepsilon`$:

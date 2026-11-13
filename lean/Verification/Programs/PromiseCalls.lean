@@ -2976,6 +2976,47 @@ at: an entry term's position, or a current term's past the result. -/
 def absentAt (slots : List Nat) (t : Term) : Bool :=
   (t.atEntry || t.slot != 0) && decide (slots.length ≤ (if t.atEntry then t.slot else t.slot - 1))
 
+/-- Whether a post's current slot is a position past the call's, which the
+return gives `undefined`. -/
+def absentSlot (slots : List Nat) (s : Nat) : Bool := s != 0 && decide (slots.length ≤ s - 1)
+
+open HeapKnowledge in
+/-- A post term reading a position the call passes nothing at denotes no
+integer at the callee's entry and return (proved). -/
+theorem absentAt_none {t : Tm} {recv : Bool} {slots : List Nat} (hs : callSlots t = some (recv, slots))
+    {ρ : Env} {h h' : Heap} {v : Tm} {x : Term} (hxa : absentAt slots x = true) :
+    termValue ⟨CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t))
+      (ExpressionEffects.actualsOf (instantiate 0 ρ t)), h⟩ (CallEffects.ensuresEnv v
+      (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h' x = none := by
+  have hlen := callSlots_length hs ρ
+  simp only [absentAt, Bool.and_eq_true, Bool.or_eq_true, bne_iff_ne, ne_eq, decide_eq_true_eq] at hxa
+  obtain ⟨hne, hle⟩ := hxa
+  cases he : x.atEntry
+  · rw [termValue_now he, termAt_undef]
+    have h0 : x.slot ≠ 0 := by rcases hne with h | h <;> simp_all
+    simp only [he, Bool.false_eq_true, if_false] at hle
+    simp only [CallEffects.ensuresEnv, h0, if_false, CallEffects.callEnv]
+    rw [if_neg (by omega), List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]
+    rfl
+  · rw [termValue_atEntry he, termAt_undef]
+    simp only [he, if_true] at hle
+    simp only [CallEffects.callEnv]
+    rw [if_neg (by omega), List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]
+    rfl
+
+/-- A post's current slot past the call's positions holds `undefined` at the
+return (proved). -/
+theorem absentSlot_undef {t : Tm} {recv : Bool} {slots : List Nat} (hs : callSlots t = some (recv, slots))
+    {ρ : Env} {v : Tm} {s : Nat} (ha : absentSlot slots s = true) :
+    CallEffects.ensuresEnv v (ExpressionEffects.receiverOf (instantiate 0 ρ t))
+      (ExpressionEffects.actualsOf (instantiate 0 ρ t)) s = .undef := by
+  have hlen := callSlots_length hs ρ
+  simp only [absentSlot, Bool.and_eq_true, bne_iff_ne, ne_eq, decide_eq_true_eq] at ha
+  obtain ⟨h0, hle⟩ := ha
+  simp only [CallEffects.ensuresEnv, h0, if_false, CallEffects.callEnv]
+  rw [if_neg (by omega), List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]
+  rfl
+
 open HeapKnowledge in
 /-- **The relation a call's postcondition states** between the caller's
 state before the call and after it: each linear post fact naming an entry
@@ -3101,23 +3142,8 @@ theorem callRelation_holds {eff : Effect} {t : Tm} {ρ : Env} {h h' : Heap} {v :
       intro G hG ha
       obtain ⟨x, hx, hxa⟩ := List.any_eq_true.mp ha
       have hd := (hp _ hG).1 x hx
-      have hlen := callSlots_length hs ρ
-      simp only [absentAt, Bool.and_eq_true, Bool.or_eq_true, bne_iff_ne, ne_eq, decide_eq_true_eq] at hxa
-      obtain ⟨hne, hle⟩ := hxa
-      cases he : x.atEntry
-      · rw [termValue_now he, termAt_undef] at hd
-        · cases hd
-        · have h0 : x.slot ≠ 0 := by rcases hne with h | h <;> simp_all
-          simp only [he, Bool.false_eq_true, if_false] at hle
-          simp only [CallEffects.ensuresEnv, h0, if_false, CallEffects.callEnv]
-          rw [if_neg (by omega), List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]
-          rfl
-      · rw [termValue_atEntry he, termAt_undef] at hd
-        · cases hd
-        · simp only [he, if_true] at hle
-          simp only [CallEffects.callEnv]
-          rw [if_neg (by omega), List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega)]
-          rfl
+      rw [absentAt_none hs hxa] at hd
+      cases hd
     -- Each relation fact is a post fact's image, or `0 ≤ -1` of one that never holds.
     have hfact : ∀ F ∈ eff.ensures.filterMap (fun F => match F with
         | .linear G => if G.vars.any (·.atEntry) then
@@ -3215,8 +3241,10 @@ open HeapKnowledge in
 /-- **Rule Call's composition in the caller**: the caller's facts after the
 call composed from its unconditional linear facts before it and the
 relation its callee's two-state postcondition states (`callRelation`), and
-each other post fact naming an entry term composed with them form by form
-(`Composer.fact`). -/
+each other post fact composed with them form by form (`Composer.fact`), each
+position the call passes nothing at read as `undefined`: every post fact but
+a linear one naming an entry term (`callRelation`'s) and one naming none
+whose every slot the return holds (`ensuresAtoms`'). -/
 def ensuresComposed (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k0 : Knowledge) : List IndexAtom :=
   (if (callRelation eff t).facts.isEmpty then [] else
   (compose (callKept stable eff t k0) (IndexWrites.unconditionalLinear k0.indices) (callRelation eff t)).map
@@ -3224,8 +3252,10 @@ def ensuresComposed (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (
   match callSlots t with
   | some (recv, slots) =>
     let P : Composer := ⟨callKept stable eff t k0, IndexWrites.unconditionalLinear k0.indices,
-      callRelation eff t, callVar recv slots, ensuresSlot recv slots⟩
-    ((eff.ensures.filter fun F => !F.entrySlots.isEmpty && match F with | .linear _ => false | _ => true).flatMap
+      callRelation eff t, callVar recv slots, ensuresSlot recv slots, absentAt slots, absentSlot slots⟩
+    ((eff.ensures.filter fun F => match F with
+      | .linear G => !G.vars.any (·.atEntry) && (F.mapM (ensuresSlot recv slots)).isNone
+      | _ => !F.entrySlots.isEmpty || (F.mapM (ensuresSlot recv slots)).isNone).flatMap
       P.fact).map fun F => { fact := F }
   | none => []
 
@@ -3254,12 +3284,13 @@ theorem ensuresComposed_holds {stable : Nat → String → Bool} {eff : Effect} 
       obtain ⟨G, hG, rfl⟩ := List.mem_map.mp ha
       obtain ⟨F, hF, hGF⟩ := List.mem_flatMap.mp hG
       have hsound : Composer.Sound ⟨callKept stable eff t k0, IndexWrites.unconditionalLinear k0.indices,
-          callRelation eff t, callVar recv slots, ensuresSlot recv slots⟩ ε
+          callRelation eff t, callVar recv slots, ensuresSlot recv slots, absentAt slots, absentSlot slots⟩ ε
           ⟨CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)), h⟩
           ρ h (push v ρ) (CallEffects.ensuresEnv v (ExpressionEffects.receiverOf (instantiate 0 ρ t))
             (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h' :=
         ⟨IndexWrites.unconditionalLinear_holds hk0.2.2.2.2.2, callKept_sound hk0 hw hg hew hstable,
-          callRelation_holds hp, fun _ _ hx => callVar_val hs hx, fun _ _ hx => ensuresSlot_env hs hx⟩
+          callRelation_holds hp, fun _ _ hx => callVar_val hs hx, fun _ _ hx => ensuresSlot_env hs hx,
+          fun _ hx => absentAt_none hs hx, fun _ hx => absentSlot_undef hs hx⟩
       exact Composer.fact_holds hsound (hp F (List.mem_filter.mp hF).1) G hGF
     · cases ha
 
