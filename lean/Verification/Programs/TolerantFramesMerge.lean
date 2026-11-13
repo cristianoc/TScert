@@ -14,39 +14,8 @@ namespace Verification.TolerantFrames
 open Verification Footprints HeapObservations
 open Verification.SinglePass (Atom Store State)
 
-/-! ## An index's bits denote an integer -/
-
-/-- **A double an index reads is a safe integer**: the bits `indexOfBits`
-reads as `i` are `±0` or `bitsOfNat i`. -/
-theorem index_safeInt {x : UInt64} {i : Nat} (h : indexOfBits x = some i) : SafeIntegers.SafeInt x i := by
-  obtain ⟨hd, hi⟩ := IndexNumbers.indexOfBits_denotes h
-  have hx := x.toNat_lt
-  rcases hd with ⟨hz, rfl⟩ | ⟨hs, h1, h2, hv⟩
-  · have h0 : (bitsOfNat 0).toNat = 0 := SafeIntegers.bitsOfNat_zero
-    refine ⟨by decide, ?_⟩
-    rcases hz with hz | hz
-    · exact .inl ⟨by decide, by show x.toNat = (bitsOfNat 0).toNat; rw [hz, h0]⟩
-    · exact .inr ⟨by decide, by show x.toNat = (bitsOfNat 0).toNat + 2 ^ 63; rw [hz, h0]⟩
-  · have hpos := IndexNumbers.denotes_pos hv
-    rcases IndexNumbers.denotes_bitsOfNat (L := i) (by omega) with ⟨-, h0⟩ | ⟨hs', h1', h2', hv'⟩
-    · omega
-    have hc := IndexNumbers.lex_scaled (m1 := x.toNat % 2 ^ 52 + 2 ^ 52) (m2 := (bitsOfNat i).toNat % 2 ^ 52 + 2 ^ 52)
-      (E1 := x.toNat / 2 ^ 52 % 2 ^ 11) (E2 := (bitsOfNat i).toNat / 2 ^ 52 % 2 ^ 11) (by omega) (by omega) h1 h1'
-    have hsc : IndexNumbers.scaled x = IndexNumbers.scaled (bitsOfNat i) := by rw [hv, hv']
-    unfold IndexNumbers.scaled at hsc
-    rw [hsc, Nat.compare_eq_eq.mpr rfl] at hc
-    have hy := (bitsOfNat i).toNat_lt
-    have key : ∀ o1 o2 : Ordering, o1.then o2 = .eq → o1 = .eq ∧ o2 = .eq := by decide
-    obtain ⟨he1, he2⟩ := key _ _ hc
-    have hE := Int.compare_eq_eq.mp he1
-    have hm := Nat.compare_eq_eq.mp he2
-    have d1 := Nat.div_add_mod x.toNat (2 ^ 52)
-    have d2 := Nat.div_add_mod (bitsOfNat i).toNat (2 ^ 52)
-    have heq : x.toNat = (bitsOfNat i).toNat := by omega
-    refine ⟨by rw [Int.natAbs_natCast]; omega, .inl ⟨Int.natCast_nonneg _, by rw [Int.natAbs_natCast]; exact heq⟩⟩
-
 theorem index_int {x : UInt64} {i : Nat} (h : indexOfBits x = some i) : (HeapKnowledge.intValue (.num x)).isSome := by
-  rw [HeapKnowledge.intValue_num (index_safeInt h)]; rfl
+  rw [HeapKnowledge.intValue_num (IndexWrites.index_safeInt h)]; rfl
 
 /-! ## The store's integers -/
 

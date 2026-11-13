@@ -1414,6 +1414,31 @@ store field is, so the step carries no observation of the heap past it. Its
 frame condition is the footprint `{value: any, store: grow}`
 ([element writes](FOOTPRINTS.md#element-writes)).
 
+**The length after the write.** At $`0\le k\le|x|`$ the write leaves
+$`|x|=\max(|x|_{\mathrm{before}},k+1)`$ with the index $`k`$ present: a
+present cell keeps the store, and a fresh cell is placed at $`k`$
+(`placeAt`). The step states, beside its output:
+
+```math
+\frac{\mathrm{bound}(x',k')\in\Sigma\quad x'\in[x],\ k'\in[k]}
+     {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow x.\mathtt{[]}:=x.\mathtt{[]}⟦k\mapsto v⟧\dashv\ldots,\ \mathrm{bound}_<(x,k)}\ \textsf{write-bound}
+```
+
+```math
+\frac{\Sigma\vdash|x|\le k\qquad F\in\Sigma\ \text{linear, over}\ |x|\ \text{and terms}\ \{\mathsf{value}:\mathsf{any},\ \mathsf{store}:\mathsf{grow}\}\ \text{keeps}}
+     {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow x.\mathtt{[]}:=x.\mathtt{[]}⟦k\mapsto v⟧\dashv\ldots,\ F[\,|x|\mapsto|x|-1\,]}\ \textsf{write-append}
+```
+
+`write-append` applies where the write is an element write of that
+footprint (`ExpressionEffects.writeStep`); a term kept is one the change
+keeps exactly (`Term.keptBy`), so the length of another array, which may be
+$`x`$'s, is not. A builder appending by index (`widths[at] = w` at
+$`\mathit{at}\le|\mathit{widths}|`$) keeps $`\mathit{at}\le|\mathit{widths}|`$
+across `at++`, and at $`\mathit{at}=|\mathit{widths}|`$ the equality.
+Proved: `IndexWrites.boundedWrite_store`, from `elementWrite_post`'s two
+cases and `placeAt_length`; `atLengthAtoms_sound`, `write-append` being
+`append_fact_holds` at the change 1.
+
 **Across the guard's statement.** The bound reaches the write's statement in
 the pass's state, as facts of an array binding's name and an index binding's,
 which the lowering states as $`\mathrm{bound}(x,k)`$ of their slots; at a loop
@@ -1442,7 +1467,10 @@ $`q_{\mathit{op}}`$ `IndexNumbers.boundAnswer`; proved:
 proved: `IndexWrites.boundedWrite_safe`, through `setElem_store_safe`), its
 output `ordinaryOutput`, its footprint check `elemVarWriteWithin`.
 
-The cases `index-write-guard` and `index-write-guard-loop` verify;
+The cases `index-write-guard`, `index-write-guard-loop` and
+`bounds-pattern-write-at-length-refused` (a read at the written index, and
+builders appending by index) verify; `invalid-facts-across-write-at-length`
+(a length equality with another array across a write at the length) and
 `invalid-index-write-unguarded`, `invalid-index-write-no-mask`,
 `invalid-index-write-no-compare`, `invalid-index-write-other-array`,
 `invalid-index-write-call-shrinks`, `invalid-index-write-pop` and

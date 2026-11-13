@@ -541,7 +541,7 @@ run_cmd do
     for axiom_ in ← liftCoreM <| collectAxioms decl do
       unless standard.contains axiom_ do
         throwError "{decl} depends on the axiom {axiom_}"
-  check ``Verification.TolerantFrames.index_safeInt
+  check ``Verification.IndexWrites.index_safeInt
   check ``Verification.TolerantFrames.index_int
   check ``Verification.TolerantFrames.integral_int
   check ``Verification.TolerantFrames.mergeEqAtoms_holds

@@ -4,9 +4,9 @@
 // Pretext: prepare.ts measureAnalysis (9 sites: widths, breakableFitAdvances,
 // segments, discretionaryHyphenContexts appended by index);
 // rich-inline.ts prepareRichInline (1).
-// Gap: the write rule keeps lower bounds of the written array's length and
-// states no length past the index, so `readWritten` refuses the read and the
-// builders (`append`, `appendNoCall`) lose at <= widths.length at the loop head.
+// The write states the index below the length (`write-bound`) and, at the
+// length, the length one longer (`write-append`), so `readWritten` reads at
+// the written index and the builders keep at <= widths.length at the loop head.
 function note(out: number[], v: number): Modifies<{ values: "any"; stores: "grow" }, void> {
   out.push(v);
 }

@@ -2582,61 +2582,11 @@ theorem appended_length {ρ : Env} {h h' : Heap} {i : Nat} {args : List Tm} {n :
   simpa [hlen] using hl
 
 open HeapKnowledge in
-/-- The change of a term: the receiver's length grows by the actual count. -/
-def appendDelta (i count : Nat) (t : Term) : Int :=
-  if t == Term.length i then count else 0
-
-open HeapKnowledge in
-def appendFact (i count : Nat) : Linear.Fact Term → Linear.Fact Term
-  | .le F d => .le F (d + Linear.Form.eval (appendDelta i count) F)
-  | .ne F d => .ne F (d + Linear.Form.eval (appendDelta i count) F)
-
-open HeapKnowledge in
-/-- A linear fact translated by the exact change of its terms. -/
-theorem append_fact_holds {i count : Nat} {ρ : Env} {h h' : Heap} {F : Linear.Fact Term}
-    (terms : ∀ t ∈ F.vars, ∀ n, termValue ρ h t = some n →
-      termValue ρ h' t = some (n + appendDelta i count t))
-    (hF : (IndexFact.linear F).HoldsAt ρ h) :
-    (IndexFact.linear (appendFact i count F)).HoldsAt ρ h' := by
-  obtain ⟨hd, hF⟩ := hF
-  have hd' : ∀ t ∈ F.vars, (termValue ρ h' t).isSome := by
-    intro t ht
-    obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hd t ht)
-    simp [terms t ht n hn]
-  have eval : ∀ G : Linear.Form Term, (∀ t ∈ G.map (·.1), t ∈ F.vars) →
-      Linear.Form.eval (termValuation ρ h') G =
-        Linear.Form.eval (termValuation ρ h) G + Linear.Form.eval (appendDelta i count) G := by
-    intro G
-    induction G with
-    | nil => intro _; simp [Linear.Form.eval]
-    | cons tc G ih =>
-      obtain ⟨t,c⟩ := tc
-      intro hm
-      have ht := hm t (by simp)
-      obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hd t ht)
-      have hn' := terms t ht n hn
-      have hi := ih (fun t ht => hm t (by simp [ht]))
-      simp only [Linear.Form.eval, termValuation, hn, hn', Option.getD_some, Int.mul_add, hi]
-      omega
-  cases F with
-  | le G d =>
-    refine ⟨hd', ?_⟩
-    have he := eval G (fun _ ht => ht)
-    simp only [appendFact, Linear.Fact.Holds] at hF ⊢
-    omega
-  | ne G d =>
-    refine ⟨hd', ?_⟩
-    have he := eval G (fun _ ht => ht)
-    simp only [appendFact, Linear.Fact.Holds] at hF ⊢
-    omega
-
-
-open HeapKnowledge in
 def linearAppended (i count : Nat) (first : Nat → String → Bool) (a : IndexAtom) : Option IndexAtom :=
   match a.cond, a.fact with
   | none, .linear F =>
     if F.vars.all (fun t => t == Term.length i || t.keptBy growChanges first) then
-      some { fact := .linear (appendFact i count F) }
+      some { fact := .linear (IndexWrites.appendFact i count F) }
     else none
   | _, _ => none
 
@@ -2678,18 +2628,18 @@ theorem linearAppendKept_holds {n : Nat} {eff : Effect} {t : Tm} {k : Knowledge}
           split at hab
           · rename_i hvars
             cases hab
-            apply append_fact_holds (fun t ht m hm => ?_)
+            apply IndexWrites.append_fact_holds (fun t ht m hm => ?_)
               (by simpa [hfact] using hk.2.2.2.2.2 b hb (by simp [hcond]))
             rcases Bool.or_eq_true_iff.mp (List.all_eq_true.mp hvars t ht) with heq | hkeep
             · have heq : t = Term.length i := of_decide_eq_true heq
               subst t
               have hl := appended_length hgrow happ (IndexWrites.appendSlots_values hv hs) hm
-              simpa [appendDelta, instantiateArgs_eq_map] using hl
+              simpa [IndexWrites.appendDelta, instantiateArgs_eq_map] using hl
             · by_cases heq : t = Term.length i
               · subst t
                 have hl := appended_length hgrow happ (IndexWrites.appendSlots_values hv hs) hm
-                simpa [appendDelta, instantiateArgs_eq_map] using hl
-              · simpa [appendDelta, heq] using termValue_kept (receiverGrows_changes hgrow) hf hkeep hm
+                simpa [IndexWrites.appendDelta, instantiateArgs_eq_map] using hl
+              · simpa [IndexWrites.appendDelta, heq] using termValue_kept (receiverGrows_changes hgrow) hf hkeep hm
           · cases hab
         · cases hab
       · split at ha

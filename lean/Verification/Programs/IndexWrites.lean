@@ -2438,6 +2438,281 @@ theorem writeAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
     · rw [List.getElem?_set_ne (Ne.symm hl), List.getElem?_append_left hlt]
     · intro c hc'; cases hc'
 
+/-! ## The length after a write at the length (PROGRAM-TYPING.md, "Writes at a checked index")
+
+A write `x[k] = v` at `0 ≤ k ≤ |x|` leaves `|x| = max(|x|_before, k + 1)`
+with the index `k` present: a present cell keeps the store, and a fresh
+cell is placed at `k` (`placeAt`). So `k < |x|` after it (`write-bound`), and
+where `k = |x|` before it, every linear fact over `|x|` and terms the write
+keeps holds with `|x|` one longer (`write-append`). -/
+
+/-! ## An index's bits denote an integer -/
+
+/-- **A double an index reads is a safe integer**: the bits `indexOfBits`
+reads as `i` are `±0` or `bitsOfNat i`. -/
+theorem index_safeInt {x : UInt64} {i : Nat} (h : indexOfBits x = some i) : SafeIntegers.SafeInt x i := by
+  obtain ⟨hd, hi⟩ := IndexNumbers.indexOfBits_denotes h
+  have hx := x.toNat_lt
+  rcases hd with ⟨hz, rfl⟩ | ⟨hs, h1, h2, hv⟩
+  · have h0 : (bitsOfNat 0).toNat = 0 := SafeIntegers.bitsOfNat_zero
+    refine ⟨by decide, ?_⟩
+    rcases hz with hz | hz
+    · exact .inl ⟨by decide, by show x.toNat = (bitsOfNat 0).toNat; rw [hz, h0]⟩
+    · exact .inr ⟨by decide, by show x.toNat = (bitsOfNat 0).toNat + 2 ^ 63; rw [hz, h0]⟩
+  · have hpos := IndexNumbers.denotes_pos hv
+    rcases IndexNumbers.denotes_bitsOfNat (L := i) (by omega) with ⟨-, h0⟩ | ⟨hs', h1', h2', hv'⟩
+    · omega
+    have hc := IndexNumbers.lex_scaled (m1 := x.toNat % 2 ^ 52 + 2 ^ 52) (m2 := (bitsOfNat i).toNat % 2 ^ 52 + 2 ^ 52)
+      (E1 := x.toNat / 2 ^ 52 % 2 ^ 11) (E2 := (bitsOfNat i).toNat / 2 ^ 52 % 2 ^ 11) (by omega) (by omega) h1 h1'
+    have hsc : IndexNumbers.scaled x = IndexNumbers.scaled (bitsOfNat i) := by rw [hv, hv']
+    unfold IndexNumbers.scaled at hsc
+    rw [hsc, Nat.compare_eq_eq.mpr rfl] at hc
+    have hy := (bitsOfNat i).toNat_lt
+    have key : ∀ o1 o2 : Ordering, o1.then o2 = .eq → o1 = .eq ∧ o2 = .eq := by decide
+    obtain ⟨he1, he2⟩ := key _ _ hc
+    have hE := Int.compare_eq_eq.mp he1
+    have hm := Nat.compare_eq_eq.mp he2
+    have d1 := Nat.div_add_mod x.toNat (2 ^ 52)
+    have d2 := Nat.div_add_mod (bitsOfNat i).toNat (2 ^ 52)
+    have heq : x.toNat = (bitsOfNat i).toNat := by omega
+    refine ⟨by rw [Int.natAbs_natCast]; omega, .inl ⟨Int.natCast_nonneg _, by rw [Int.natAbs_natCast]; exact heq⟩⟩
+
+open HeapKnowledge in
+/-- The change of a term: the receiver's length grows by the actual count. -/
+def appendDelta (i count : Nat) (t : Term) : Int :=
+  if t == Term.length i then count else 0
+
+open HeapKnowledge in
+def appendFact (i count : Nat) : Linear.Fact Term → Linear.Fact Term
+  | .le F d => .le F (d + Linear.Form.eval (appendDelta i count) F)
+  | .ne F d => .ne F (d + Linear.Form.eval (appendDelta i count) F)
+
+open HeapKnowledge in
+/-- A linear fact translated by the exact change of its terms. -/
+theorem append_fact_holds {i count : Nat} {ρ : Env} {h h' : Heap} {F : Linear.Fact Term}
+    (terms : ∀ t ∈ F.vars, ∀ n, termValue ρ h t = some n →
+      termValue ρ h' t = some (n + appendDelta i count t))
+    (hF : (IndexFact.linear F).HoldsAt ρ h) :
+    (IndexFact.linear (appendFact i count F)).HoldsAt ρ h' := by
+  obtain ⟨hd, hF⟩ := hF
+  have hd' : ∀ t ∈ F.vars, (termValue ρ h' t).isSome := by
+    intro t ht
+    obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hd t ht)
+    simp [terms t ht n hn]
+  have eval : ∀ G : Linear.Form Term, (∀ t ∈ G.map (·.1), t ∈ F.vars) →
+      Linear.Form.eval (termValuation ρ h') G =
+        Linear.Form.eval (termValuation ρ h) G + Linear.Form.eval (appendDelta i count) G := by
+    intro G
+    induction G with
+    | nil => intro _; simp [Linear.Form.eval]
+    | cons tc G ih =>
+      obtain ⟨t,c⟩ := tc
+      intro hm
+      have ht := hm t (by simp)
+      obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hd t ht)
+      have hn' := terms t ht n hn
+      have hi := ih (fun t ht => hm t (by simp [ht]))
+      simp only [Linear.Form.eval, termValuation, hn, hn', Option.getD_some, Int.mul_add, hi]
+      omega
+  cases F with
+  | le G d =>
+    refine ⟨hd', ?_⟩
+    have he := eval G (fun _ ht => ht)
+    simp only [appendFact, Linear.Fact.Holds] at hF ⊢
+    omega
+  | ne G d =>
+    refine ⟨hd', ?_⟩
+    have he := eval G (fun _ ht => ht)
+    simp only [appendFact, Linear.Fact.Holds] at hF ⊢
+    omega
+
+
+/-- **The store after a write at an index at most its length**: the written
+array's store, at its location, lists a cell at the index, so the index is
+below its length; where the index was at the length, the store is one
+longer. -/
+theorem boundedWrite_store [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
+    (hc : boundedWriteCheck G images j k a i v sub = true) {ρ n W h}
+    (he : EnvOk G j.context ρ n W) (hk : Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (excOf G) (meaning G j.type)
+      (fun h' _ => ∃ s ls ls' b idx, Footprints.storeOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧
+        h'[s]? = some (.arr ls') ∧ ρ i = .num b ∧ indexOfBits b = some idx ∧ idx < ls'.length ∧
+        ls'.length ≤ max ls.length (idx + 1) ∧ (ls.length ≤ idx → ls'.length = ls.length + 1))
+      n W h (instantiate 0 ρ j.term) := by
+  simp only [boundedWriteCheck, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hc
+  obtain ⟨⟨⟨⟨hslots, -⟩, htypes⟩, hbd⟩, hnul⟩ := hc
+  rw [boundedSlots_eq hslots]
+  split at htypes
+  · rename_i R V hR hV
+    split at htypes
+    · rename_i E hE
+      obtain ⟨fs, vs, os, ms, ks, st, S, pr, hrep, hm, hS⟩ := writableElement_sound hE
+      obtain ⟨s, ls, b, idx, hs, hl, hb, hidx, hle⟩ := bounded_sound hbd hk
+      have hv : meaning G E n W (ρ v) := PositiveCertificates.acceptedUsing htypes n W _ (he.2 v V hV)
+      have hsafe := boundedWrite_safe (Ξ := excOf G) hrep hm hS (he.2 a R hR) hs hl hidx (by simpa using hle) hv hw hh
+      have hsafe' := Safe_mono n (fun m _ X u hu => (represents_back (c := .nul) hnul m X u) hu) W h _ hsafe
+      obtain ⟨flds, cd, oid, hoi⟩ : ∃ flds cd oid, ρ a = .objAt flds cd oid := by
+        cases hra : ρ a
+        case objAt => exact ⟨_, _, _, rfl⟩
+        all_goals rw [hra] at hs; simp [Footprints.storeOf, Footprints.fieldsOf] at hs
+      have hfl : flds.lookup arrayStoreKey = some s := by
+        simpa [Footprints.storeOf, Footprints.fieldsOf, hoi] using hs
+      have hval : isVal (ρ v) = true := (meaning_value hv).1
+      have hslt : s < h.length := (List.getElem?_eq_some_iff.mp hl).1
+      have hle' : idx ≤ ls.length := by simpa using hle
+      simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hb]
+      rw [hoi] at hsafe' ⊢
+      refine elementWrite_post hfl hl hval (fun cell hcell => ?_) (fun i' hi' _ => ?_) hsafe'
+      · have hlt : idx < ls.length := by
+          simp only [elemLoc, hidx, Option.bind_some] at hcell
+          cases hq : ls[idx]? with
+          | none => simp [hq] at hcell
+          | some o => exact (List.getElem?_eq_some_iff.mp hq).1
+        refine ⟨s, ls, ls, b, idx, hoi ▸ hs, hl, ?_, rfl, hidx, hlt, by omega, fun h1 => absurd h1 (by omega)⟩
+        rw [List.getElem?_set_self (by simpa using hslt)]
+      · rw [hidx] at hi'; cases hi'
+        refine ⟨s, ls, placeAt ls idx h.length, b, idx, hoi ▸ hs, hl, ?_, rfl, hidx, ?_, ?_, fun h1 => ?_⟩
+        · rw [List.getElem?_set_self (by simp; omega)]
+        · rw [placeAt_length]; omega
+        · rw [placeAt_length]; omega
+        · rw [placeAt_length]; omega
+    · cases htypes
+  · cases htypes
+
+/-- A linear fact of a write's entry carried across a write at the length
+(`write-append`): over the written array's length and terms the write
+keeps, with the length one longer. -/
+def writeAppended (a : Nat) (first : Nat → String → Bool) (atom : IndexAtom) : Option IndexAtom :=
+  match atom.cond, atom.fact with
+  | none, .linear F =>
+    if F.vars.contains (Term.length a) &&
+        F.vars.all (fun t => t == Term.length a || t.keptBy (Changes.ofClosed ⟨.any, .grow⟩) first) then
+      some { fact := .linear (appendFact a 1 F) }
+    else none
+  | _, _ => none
+
+/-- The facts a write at a checked index states of its store, at the entry's
+slots (`write-bound`, `write-append`): the index below the length; and, where
+the write grows the stores (`ExpressionEffects.writeStep`) and the facts
+entail the index at least the length, each linear fact `writeAppended`
+carries. -/
+def atLengthAtoms [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (k : Knowledge) (a i : Nat) :
+    List IndexAtom :=
+  { fact := .bound a i true } ::
+    ((if termDefined k.indices (Term.length a) then
+        [{ fact := .linear (.le [(Term.value i, 1), (Term.length a, -1)] (-1)) }] else []) ++
+    let carried := k.indices.filterMap (writeAppended a (HeapExpressionRules.stableFirst G j.context))
+    if !carried.isEmpty && (ExpressionEffects.writeStep G j.context j.term).isSome &&
+        entailsKnown k.indices (.le [(Term.length a, 1), (Term.value i, -1)] 0) then carried
+    else [])
+
+theorem atLengthAtoms_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
+    (hc : boundedWriteCheck G images j k a i v sub = true) {ρ n W h}
+    (he : EnvOk G j.context ρ n W) (hk : Holds k ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    SafePost (excOf G) (meaning G j.type)
+      (fun h' _ => IndexHolds (atLengthAtoms G j k a i) ρ h') n W h (instantiate 0 ρ j.term) := by
+  have hst := boundedWrite_store hc he hk hw hh
+  -- `write-bound`, and its linear fact where the entry's length is defined.
+  have hbound : ∀ h', (∃ s ls ls' b idx, Footprints.storeOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧
+      h'[s]? = some (.arr ls') ∧ ρ i = .num b ∧ indexOfBits b = some idx ∧ idx < ls'.length ∧
+      ls'.length ≤ max ls.length (idx + 1) ∧ (ls.length ≤ idx → ls'.length = ls.length + 1)) →
+      IndexHolds ({ fact := .bound a i true } :: if termDefined k.indices (Term.length a) then
+        [{ fact := .linear (.le [(Term.value i, 1), (Term.length a, -1)] (-1)) }] else []) ρ h' := by
+    intro h' ⟨s, ls, ls', b, idx, hs, hl, hl', hb, hidx, hlt, hmx, _⟩ atom hm _
+    rcases List.mem_cons.mp hm with rfl | hm
+    · exact ⟨s, ls', b, idx, hs, hl', hb, hidx, by simp; omega⟩
+    · split at hm
+      · rename_i hdef
+        simp only [List.mem_singleton] at hm
+        subst hm
+        obtain ⟨n0, hn0⟩ := Option.isSome_iff_exists.mp (termDefined_sound hk.2.2.2.2.2 hdef)
+        simp only [termValue_length] at hn0
+        obtain ⟨s0, ls0, hs0, hls0, -, hmax0⟩ := lengthOf_store hn0
+        rw [hs] at hs0; cases hs0
+        rw [hl] at hls0; cases hls0
+        have hmax : ls'.length ≤ maxArrayLength := by
+          have := indexOfBits_lt hidx; omega
+        have hlv := lengthOf_of_store hs hl' hmax
+        have hiv : intValue (ρ i) = some (idx : Int) := by
+          rw [hb]; exact HeapKnowledge.intValue_num (index_safeInt hidx)
+        refine ⟨fun t ht => ?_, ?_⟩
+        · simp only [Linear.Fact.vars, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+            or_false] at ht
+          rcases ht with rfl | rfl
+          · simp [hiv]
+          · simp [hlv]
+        · simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, termValue_value, termValue_length,
+            hiv, hlv, Option.getD_some]
+          omega
+      · cases hm
+  -- `write-append`.
+  have happ : SafePost (excOf G) (meaning G j.type)
+      (fun h' _ => IndexHolds (if !(k.indices.filterMap (writeAppended a (HeapExpressionRules.stableFirst G j.context))).isEmpty &&
+        (ExpressionEffects.writeStep G j.context j.term).isSome &&
+        entailsKnown k.indices (.le [(Term.length a, 1), (Term.value i, -1)] 0) then
+          k.indices.filterMap (writeAppended a (HeapExpressionRules.stableFirst G j.context)) else []) ρ h')
+      n W h (instantiate 0 ρ j.term) := by
+    by_cases hcond : (!(k.indices.filterMap (writeAppended a (HeapExpressionRules.stableFirst G j.context))).isEmpty &&
+        (ExpressionEffects.writeStep G j.context j.term).isSome &&
+        entailsKnown k.indices (.le [(Term.length a, 1), (Term.value i, -1)] 0)) = true
+    · rw [if_pos hcond]
+      obtain ⟨⟨-, hws⟩, hent⟩ := Bool.and_eq_true_iff.mp hcond |>.imp_left Bool.and_eq_true_iff.mp
+      obtain ⟨wi, hwi⟩ := Option.isSome_iff_exists.mp hws
+      have hgrow := HeapExpressionRules.stableFirst_frame he hh
+        (ExpressionEffects.writeStep_grow hwi he hh (HeapObservations.erase hst))
+      refine weaken (fun h' _ hq => ?_) (safePost_and hst hgrow)
+      obtain ⟨⟨s, ls, ls', b, idx, hs, hl, hl', hb, hidx, hlt, -, hgr⟩, hch, hfirst⟩ := hq
+      intro atom hm hcd
+      obtain ⟨atom0, hm0, hw0⟩ := List.mem_filterMap.mp hm
+      unfold writeAppended at hw0
+      split at hw0
+      · rename_i F hcond0 hfact
+        split at hw0
+        · rename_i hall
+          cases hw0
+          have hall := (Bool.and_eq_true_iff.mp hall).2
+          have h0 := hk.2.2.2.2.2 atom0 hm0 (fun b' hb' => by rw [hcond0] at hb'; cases hb')
+          rw [hfact] at h0
+          -- The index at least the length, at the entry.
+          have hge := entailsKnown_sound hk.2.2.2.2.2 hent
+          have hiv : termValuation ρ h (Term.value i) = idx := by
+            simp [termValuation, hb, HeapKnowledge.intValue_num (index_safeInt hidx)]
+          refine append_fact_holds (fun t ht m hm' => ?_) h0
+          have hkt := List.all_eq_true.mp hall t ht
+          by_cases htl : t = Term.length a
+          · subst htl
+            simp only [termValue_length] at hm' ⊢
+            obtain ⟨s0, ls0, hs0, hls0, rfl, -⟩ := lengthOf_store hm'
+            rw [hs] at hs0; cases hs0
+            rw [hl] at hls0; cases hls0
+            have hlv : termValuation ρ h (Term.length a) = ls.length := by
+              simp [termValuation, hm']
+            simp only [Linear.Fact.Holds, Linear.Form.eval, hlv, hiv] at hge
+            have hlen := hgr (by omega)
+            have hmax : ls'.length ≤ maxArrayLength := by
+              have := indexOfBits_lt hidx; omega
+            rw [lengthOf_of_store hs hl' hmax, hlen]
+            simp [appendDelta]
+          · have hk' : t.keptBy (Changes.ofClosed ⟨.any, .grow⟩) (HeapExpressionRules.stableFirst G j.context) = true := by
+              simpa [htl] using hkt
+            rw [termValue_kept hch hfirst hk' hm']
+            simp [appendDelta, htl]
+        · cases hw0
+      · cases hw0
+    · rw [if_neg hcond]
+      exact weaken (fun _ _ _ => indexHolds_nil _ _) hst
+  refine weaken (fun h' _ hq => ?_) (safePost_and hst happ)
+  have hb0 := hbound h' hq.1
+  intro atom hm hcd
+  unfold atLengthAtoms at hm
+  rcases List.mem_cons.mp hm with rfl | hm
+  · exact hb0 _ (List.mem_cons_self ..) hcd
+  rcases List.mem_append.mp hm with hm | hm
+  · exact hb0 _ (List.mem_cons_of_mem _ hm) hcd
+  · exact hq.2 _ hm hcd
+
 /-- The output of a write, with the facts it keeps one push deeper. -/
 def withWritten (out : Knowledge) (kept : List IndexAtom) : Knowledge :=
   { out with indices := out.indices ++ shiftIndices kept }
@@ -2717,14 +2992,16 @@ every other step is `base`'s. -/
     | .boundedWrite a i v p =>
       if IndexWrites.boundedWriteCheck G images j k a i v p then
         pure (IndexWrites.withWritten (if IndexWrites.keepsLengths G j k a i then IndexWrites.lengthOutput (stableFirst G j.context) k
-          else IndexWrites.growOutput G j k (ordinaryOutput k)) (IndexWrites.writeAtoms G j.context k a))
+          else IndexWrites.growOutput G j k (ordinaryOutput k))
+          (IndexWrites.writeAtoms G j.context k a ++ IndexWrites.atLengthAtoms G j k a i))
       else failure
     | _ => (base.run j k e codes sums).map (IndexWrites.growOutput G j k)
   select := fun j k e codes sums => match e with
     | .boundedWrite a i v p =>
       if IndexWrites.boundedWriteCheck G images j k a i v p then
         pure (IndexWrites.withWritten (if IndexWrites.keepsLengths G j k a i then IndexWrites.lengthOutput (stableFirst G j.context) k
-          else IndexWrites.growOutput G j k (ordinaryOutput k)) (IndexWrites.writeAtoms G j.context k a))
+          else IndexWrites.growOutput G j k (ordinaryOutput k))
+          (IndexWrites.writeAtoms G j.context k a ++ IndexWrites.atLengthAtoms G j k a i))
       else failure
     | _ => (base.select j k e codes sums).map (IndexWrites.growOutput G j k)
   sound := by
@@ -2733,7 +3010,9 @@ every other step is `base`'s. -/
     · split at hc
       · rename_i hck
         cases hc
-        apply IndexWrites.withWritten_sound (IndexWrites.boundedRegions_sound hck he hk hw hh)
+        apply IndexWrites.withWritten_sound (weaken (fun _ _ hq => indexHolds_append hq.1 hq.2)
+          (IndexWrites.safePost_and (IndexWrites.boundedRegions_sound hck he hk hw hh)
+            (IndexWrites.atLengthAtoms_sound hck he hk hw hh)))
         split
         · rename_i hkeep
           exact IndexWrites.boundedLength_sound hck hkeep he hk hw hh
