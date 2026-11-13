@@ -531,18 +531,18 @@ def clause : LinearClause Bound → List (LinearClause Bound)
   | .atom F => (P.atom F).map .atom
   | .either A B => (clause A).flatMap fun a => (clause B).map (.either a ·)
 
-/-- The disjunction of two facts neither of which is `isFalsum`. -/
+/-- The disjunction of two facts neither of which is `isFalsum`: two bounds
+on one linear form are the larger bound; any other two are their
+disjunction, which states, of two bounds on opposite forms covering every
+integer, that the form's terms denote integers. -/
 def orPair : IndexFact → IndexFact → Option IndexFact
   | .linear (.le G c), .linear (.le G' c') =>
     if G = G' then some (.linear (.le G (max c c')))
-    else if Linear.normalize G' == Linear.normalize (G.scale (-1)) && decide (-c' ≤ c + 1) then none
     else some (.either (.linear (.le G c)) (.linear (.le G' c')))
   | a, b => some (.either a b)
 
-/-- The disjunction of two facts, where it is one: an arm that never holds
-(`isFalsum`) is the other; otherwise `orPair`'s, where two bounds on one
-linear form are the larger bound and two bounds on opposite forms covering
-every integer state nothing. -/
+/-- The disjunction of two facts: an arm that never holds (`isFalsum`) is the
+other; otherwise `orPair`'s. -/
 def orFacts (a b : IndexFact) : Option IndexFact :=
   if isFalsum a then some b else if isFalsum b then some a else orPair a b
 
@@ -901,9 +901,7 @@ theorem orPair_holds {ρ : Env} {h : Heap} {a b D : IndexFact} (hD : Composer.or
       cases hD; subst he
       rcases hab with ⟨hd, hc⟩ | ⟨hd, hc⟩ <;>
         exact ⟨hd, by simp only [Linear.Fact.Holds] at hc ⊢; omega⟩
-    · split at hD
-      · cases hD
-      · cases hD; exact hab
+    · cases hD; exact hab
   · cases hD; exact hab
 
 theorem orFacts_holds {ρ : Env} {h : Heap} {a b D : IndexFact} (hD : Composer.orFacts a b = some D)
