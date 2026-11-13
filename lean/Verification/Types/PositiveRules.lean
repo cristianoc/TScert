@@ -3700,6 +3700,87 @@ theorem sourceCategory_not_exc :
     obtain ⟨flds, l, c, oid, he, hf, hl, -⟩ := hinv _ _ rfl (by simp) _ _ (List.mem_singleton_self _)
     simp [lookup] at hl
 
+/-! ### A substitution argument in its binder's sort
+
+The check every substitution runs on each argument (`SchemeInstances.substitutionKind`):
+the argument has its binder's outer sort (`hasKind`), its value members are in
+the binder's value sort (`tyIn`), and the elements of its argument lists are
+source values. A pack row's lists are its pack clauses' fitting lists, whose
+elements are at the tuples' positions; a parameter row's lists are its binder's. -/
+
+/-- The positions of every pack clause of a type's rows are of source values. -/
+@[nospecialize] def listsIn (G : NormalGraph ι) (U : List ι) : Bool :=
+  U.all fun i => (G i).all fun c => match c with
+    | .pack a bs => (a :: bs).all fun t => (t.required ++ t.optional ++ t.rest.toList).all (tyIn G .source)
+    | _ => true
+
+/-- **A substitution argument in its binder's sort** `k`. -/
+@[nospecialize] def sortTy (G : NormalGraph ι) (k : ParameterKind) (U : List ι) : Bool :=
+  G.hasKind k U && (match k.valueSort with | some q => tyIn G q U | none => true) &&
+    (!k.lists || listsIn G U)
+
+/-- A store type is refused at a value binder and admitted at a store binder. -/
+theorem sortTy_store_type : sortTy emptyStoreGraph .value [0] = false ∧
+    sortTy emptyStoreGraph .store [0] = true := by decide
+
+theorem sortTy_hasKind {G : NormalGraph ι} {k : ParameterKind} {U : List ι}
+    (h : sortTy G k U = true) : G.hasKind k U = true := by
+  simp only [sortTy, Bool.and_eq_true] at h
+  exact h.1.1
+
+/-- **A sorted argument's meaning is in its binder's sort**, at a sorted
+assignment: `Valid_{sort(k)}` of the argument's two-component meaning. -/
+theorem sortTy_sound {G : NormalGraph ι} {η : MixedAssignment ι} (hη : G.Sorted η)
+    {k : ParameterKind} {U : List ι} (h : sortTy G k U = true) :
+    SortValid k.MixedSort (mixedMeaning G η U) := by
+  refine ⟨(mixedMeaning_valid G η U).1, ?_⟩
+  simp only [sortTy, Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at h
+  obtain ⟨⟨hk, hq⟩, hl⟩ := h
+  intro n W x hx
+  cases x with
+  | inl v =>
+    cases hs : k.valueSort with
+    | some q =>
+      rw [hs] at hq
+      exact ⟨q, hs, tyIn_sound hη hq hx⟩
+    | none =>
+      have hk' : k = .arguments := by cases k <;> simp_all [ParameterKind.valueSort]
+      subst hk'
+      exact absurd hx (mixedMeaning_noValues G η U hk n W v)
+  | inr vs =>
+    cases hlk : k.lists with
+    | false =>
+      have hv : k.valued = true := by cases k <;> simp_all [ParameterKind.lists]
+      exact absurd hx (mixedMeaning_noArguments_of G η U hv hk n W vs)
+    | true =>
+      refine ⟨hlk, ?_⟩
+      replace hl : listsIn G U = true := hl.resolve_left (by simp [hlk])
+      obtain ⟨i, hi, hx⟩ := hx
+      by_cases hp : G.listParam i = true
+      · simp only [hp, if_true] at hx
+        obtain ⟨k', hk'⟩ : ∃ k', G.parameterKinds i = some k' := by
+          rcases NormalGraph.listParam_iff.mp hp with h | h <;> exact ⟨_, h⟩
+        have hsel : selectParameter (some k') (η.1 i) n W (.inr vs) := by
+          rcases NormalGraph.listParam_iff.mp hp with h | h <;> rw [h] at hk' <;> cases hk' <;>
+            exact ⟨by simp, hx⟩
+        exact (hη i k' hk' n W _ hsel).2
+      · simp only [hp, if_false, Bool.false_eq_true] at hx
+        obtain ⟨c, hc, hx⟩ := hx
+        have hpos := List.all_eq_true.mp (List.all_eq_true.mp (show listsIn G U = true from hl) i hi) c hc
+        cases c <;> try exact hx.elim
+        rename_i a bs
+        simp only [List.all_eq_true] at hpos
+        refine ArgumentContracts.fits_bound (E := fun _ _ v => ValueSort.source.Holds v) ?_
+          (hx a List.mem_cons_self)
+        intro j A hA m W' u hu
+        rw [positionFam_tupleFams] at hA
+        cases hpj : a.position j with
+        | none => simp [hpj] at hA
+        | some S =>
+          simp only [hpj, Option.map_some, Option.some.injEq] at hA
+          subst hA
+          exact tyIn_sound hη (hpos a List.mem_cons_self S (Tuple.position_mem hpj)) hu
+
 /-- **A meet target, read part by part**: each part of a target meet row is
 the source row, one of the source meet's parts, or a scheme the source row or
 one of its scheme parts covers; its clauses admit every value or are the

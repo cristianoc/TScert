@@ -271,10 +271,11 @@ own assignment, not under its binders). -/
   | some [q] => (tyImg tbl κ b.2).map (q, ·)
   | _ => none
 
-/-- The image of a parameter must have its declared sort. -/
+/-- The image of a parameter must be in its binder's sort (`sortTy`): its
+outer sort, the category of its values and its lists' elements. -/
 @[nospecialize] def substitutionKind (G : NormalGraph ι) (b : ι) (U : List ι) : Bool :=
   match G.parameterKinds b with
-  | some k => G.hasKind k U
+  | some k => PositiveRules.sortTy G k U
   | none => false
 
 /-- One kind check is shared by instantiation and table substitution. -/
@@ -1733,7 +1734,7 @@ theorem mixed_assignment_substitution [DecidableEq ι] (G : NormalGraph ι) (η 
     | some kind =>
       change selectParameter (G.parameterKinds b) _ = mixedMeaning G η U
       rw [hp, he, hU]
-      exact mixedMeaning_selected G η U kind (by simpa [substitutionKind, hp] using hkind)
+      exact mixedMeaning_selected G η U kind (PositiveRules.sortTy_hasKind (by simpa [substitutionKind, hp] using hkind))
 
 /-- The semantic obligation of an instantiation witness: its named type
 images mean substitution, for values and argument packs together. Only images

@@ -1451,7 +1451,8 @@ obligation is
 
 `InstanceImages` states this obligation for the images named by a witness.
 `table_instanceImages` proves it using the checked finite table, including its
-closure, free-variable and kind checks. `inst_covers_sound` then proves
+closure, free-variable and sort checks (a substitution argument in its
+binder's sort, [PROGRAM-TYPING](PROGRAM-TYPING.md#sorts-and-categories)). `inst_covers_sound` then proves
 elimination from those equalities and the existing bound/signature premises;
 fixed and rest arguments, effects and receiver weakening use this one proof.
 `compareInstArrsState_sound_at` composes the two. The default checker discharges the obligation with

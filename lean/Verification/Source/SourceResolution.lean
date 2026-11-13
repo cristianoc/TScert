@@ -191,7 +191,7 @@ private def empty (c : ResolutionContext E) (scope : List (Binding E)) : Checked
 ordinary semantic subtype checker. -/
 def stable (c : ResolutionContext E) (scope : List (Binding E)) (A : Ty E)
     (images : InstanceImageCheck E.graph) : Option (Checked c scope A) :=
-  if E.graph.hasKind .value A then
+  if sortTy E.graph .value A then
     if accepted : (CertificateProducer.comparisonUsing E.graph images A c.stable).accepted = true then
       some {
         observation := some A
@@ -206,7 +206,7 @@ def stable (c : ResolutionContext E) (scope : List (Binding E)) (A : Ty E)
 scope's checked descriptor assignment. -/
 def stableInScope (c : ResolutionContext E) (scope : List (Binding E)) (A : Ty E)
     (images : InstanceImageCheck E.graph) : Option (Checked c scope A) := do
-  if !E.graph.hasKind .value A then none else
+  if !sortTy E.graph .value A then none else
     scope.findSome? fun b =>
       if member : b ∈ scope then
         match result : b.result with
@@ -231,7 +231,7 @@ def stableInScope (c : ResolutionContext E) (scope : List (Binding E)) (A : Ty E
 /-- A native promise is observed at its literal payload. -/
 private theorem promise_observed (c : ResolutionContext E) (η : MixedAssignment (Label E.signature))
     (l : Label E.signature)
-    (payload : { A : Ty E // l = (c.promise.application A).label ∧ E.graph.hasKind .value A = true })
+    (payload : { A : Ty E // l = (c.promise.application A).label ∧ sortTy E.graph .value A = true })
     (source : FamLe (valueMeaning E η payload.1) (excOf E.graph)) :
     ∃ o : Observation c, o.input = valueMeaning E η [l] ∧
       ∀ x, some payload.1 = some x → o.observation = valueMeaning E η x := by
@@ -242,7 +242,7 @@ private theorem promise_observed (c : ResolutionContext E) (η : MixedAssignment
 
 /-- Native lifting observes the literal payload and retains its stable result. -/
 def native (c : ResolutionContext E) (scope : List (Binding E)) (l : Label E.signature)
-    (payload : { A : Ty E // l = (c.promise.application A).label ∧ E.graph.hasKind .value A = true })
+    (payload : { A : Ty E // l = (c.promise.application A).label ∧ sortTy E.graph .value A = true })
     (child : Checked c scope payload.1) : Checked c scope [l] where
   observation := some payload.1
   result := child.result
@@ -257,7 +257,7 @@ def native (c : ResolutionContext E) (scope : List (Binding E)) (l : Label E.sig
 
 /-- A native promise of any payload is observed at that payload. -/
 def promise (c : ResolutionContext E) (scope : List (Binding E)) (l : Label E.signature)
-    (payload : { A : Ty E // l = (c.promise.application A).label ∧ E.graph.hasKind .value A = true })
+    (payload : { A : Ty E // l = (c.promise.application A).label ∧ sortTy E.graph .value A = true })
     (source : ∀ η, FamLe (valueMeaning E η payload.1) (excOf E.graph)) :
     Checked c scope [l] where
   observation := some payload.1
@@ -339,7 +339,7 @@ def check (c : ResolutionContext E) (scope : List (Binding E))
     | .binder name => do
       let b ← scope.find? (fun b => b.name == name)
       if member : b ∈ scope then
-        if E.graph.hasKind .value A then
+        if sortTy E.graph .value A then
           let input : Checked c scope b.input := {
             observation := some b.observation
             result := b.result

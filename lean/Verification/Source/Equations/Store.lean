@@ -443,7 +443,7 @@ theorem constructor_valid (p : NativePromise E) (A : Fam) (h : ValueFam A) :
 its argument's value meaning. The sort check excludes argument packs. -/
 theorem application_meaning (p : NativePromise E)
     (η : MixedAssignment (Label E.signature)) (A : List (Label E.signature))
-    (kind : E.graph.hasKind .value A = true) :
+    (kind : sortTy E.graph .value A = true) :
     (fun n W v => mixedMeaning E.graph η [(p.application A).label] n W (.inl v)) =
       p.constructor (fun n W v => mixedMeaning E.graph η A n W (.inl v)) := by
   classical
@@ -461,7 +461,7 @@ theorem application_meaning (p : NativePromise E)
     funext n W x
     cases x with
     | inl v => simp [selectParameter, MixedFamily.ofValue, V, MixedFamily.value]
-    | inr vs => simp [selectParameter, mixedMeaning_noArguments E.graph η A kind]
+    | inr vs => simp [selectParameter, mixedMeaning_noArguments E.graph η A (sortTy_hasKind kind)]
   have same := E.application_congr (p.application A) (p.application [parameter E]) η θ
     rfl rfl (by
       intro i hi hj
@@ -515,10 +515,10 @@ theorem constructor_domain (p : NativePromise E)
 payload sort. The certificate cannot substitute a structural lookalike. -/
 def payload (p : NativePromise E) (l : Label E.signature) :
     Option { A : List (Label E.signature) //
-      l = (p.application A).label ∧ E.graph.hasKind .value A = true } :=
+      l = (p.application A).label ∧ sortTy E.graph .value A = true } :=
   match l.view with
   | .application scope => match scope.arguments with
-    | [A] => if h : l = (p.application A).label ∧ E.graph.hasKind .value A = true then
+    | [A] => if h : l = (p.application A).label ∧ sortTy E.graph .value A = true then
         some ⟨A, h⟩ else none
     | _ => none
   | _ => none
@@ -535,7 +535,7 @@ theorem descriptor_input (p : NativePromise E) {N U : Fam}
     (h : ResolutionCapabilities.NativeSeparation p.constructor N U)
     (η : MixedAssignment (Label E.signature)) (l : Label E.signature)
     (A : { A : List (Label E.signature) //
-      l = (p.application A).label ∧ E.graph.hasKind .value A = true })
+      l = (p.application A).label ∧ sortTy E.graph .value A = true })
     (d : ResolutionDescriptors.Descriptor (ResolutionCapabilities.capabilities h))
     (child : d.input = fun n W v => mixedMeaning E.graph η A.1 n W (.inl v)) :
     (p.descriptor h d).input =

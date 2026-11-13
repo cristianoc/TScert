@@ -985,6 +985,25 @@ with a clause in $`V`$ when it is neither $`\top`$ nor $`\mathsf{list}`$
 both, having no value members. At a sorted assignment every member of a type
 in $`q`$ is in $`q`$ (`tyIn_sound`).
 
+**A substitution argument in its binder's sort.** Every substitution of a
+type $`U`$ for a binder of kind $`k`$ (an instance, a table or equation
+family entry, a variance proposal, a qualified promise payload) checks, at
+the one boundary they share (`substitutionKind`, `sortTy`):
+
+```math
+\frac{\mathrm{outer}_G(U)=\mathrm{outer}(k)\qquad
+      k.\mathrm{valueSort}=q\Rightarrow U\subseteq q\qquad
+      k.\mathrm{lists}\Rightarrow\forall\,\mathsf{pack}(\vec\tau)\in G(U).\ \forall\tau\in\vec\tau.\ \forall S\in\mathrm{positions}(\tau).\ S\subseteq V}
+     {U:_G k}\ \textsf{SortTy}
+```
+
+and at a sorted assignment its two-component meaning is valid at the
+binder's sort, $`\mathrm{Valid}_{\mathrm{sort}(k)}(⟦U⟧^{\eta})`$
+(`sortTy_sound`). An argument binder's lists from a pack row are lists
+fitting its tuples, whose elements lie at their positions; from a parameter
+row, its binder's lists. The check reads the argument's rows and their pack
+positions, one level: a category reads no operand of a record or callable.
+
 The category is weaker than the exception guarantee of `sourceTy`
 (`sourceTy_exc`), which also gives the built-ins' invariant and so refuses
 parameter rows; `sourceTy` implies $`A\subseteq V`$ (`sourceTy_tyIn`). Three
