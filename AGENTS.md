@@ -1,9 +1,9 @@
 # Working in TScert
 
 An independent verifier for type claims about TypeScript programs: a calculus
-with a semantic model and soundness proofs in Lean, a checker that validates
-certificates, and a pipeline that parses a TypeScript source, has the OCaml
-producer propose its claims, and asks whether they are derivable.
+with a semantic model and soundness proofs in Lean, a single pass that
+computes and checks each unit's types and facts, and a pipeline that parses a
+TypeScript source and asks the pass whether each unit is safe.
 [README.md](README.md) is the entry point; [DESIGN.md](docs/DESIGN.md) holds the
 decisions. Everything below is what an agent needs to change things here
 without breaking the suite's shape.
@@ -17,9 +17,9 @@ make test-checks # build, then the fast checks and the controls, replayed from t
 make test-cases  # build, then the pipeline cases
 make cases P=x   # the pipeline cases whose file names contain x
 make check FILE=f.ts [PROJECT=dir]  # one source file through the pipeline
-make lowering FILE=f.ts [FN=name]   # the program graph a source lowers to
+make lowering FILE=f.ts [FN=name]   # the execution graphs a source's functions lower to
 make semantic-diff REV=rev          # render the commit records of a commit or range
-make build       # build-lean, build-producer and build-runner: the Lean verifier, the OCaml producer and the stage runner
+make build       # build-lean and build-runner: the Lean verifier and the stage runner
 make setup       # the node dependencies
 make clean-store # remove stage entries, timeout observations and the source snapshots no running process holds
 make census [DIR=tools] [FILES=…] [FUNCTIONS=…] [SHARD=i/n]  # the census of a directory's functions
@@ -56,12 +56,6 @@ replay as [observed stages](docs/STAGE-STORE.md#observed-stages) on macOS.
   `TSCERT_STEP_LIMIT=<seconds>` sets a stage's limit. A timeout is recorded with its limit and reported
   again at that limit or a smaller one; `TSCERT_RETRY_TIMEOUTS=1` executes
   it again at the same limit.
-- A search whose key misses reuses the evidence an earlier verifier build
-  found, the current check deciding
-  ([evidence proposals](docs/STAGE-STORE.md#evidence-proposals));
-  `TSCERT_EVIDENCE_REUSE=0` turns that off, and the suites (`make test`)
-  run with it off: they are where a search that no longer finds its
-  evidence shows.
 - Each process stage is also stopped once its program's memory exceeds
   8 GiB, a tool failure that is never published;
   `TSCERT_STAGE_MEMORY=<gibibytes>` sets that limit
@@ -76,18 +70,17 @@ that covers what changed, and the wider tier once before committing:
 
 | Changed | While iterating | Before committing |
 | --- | --- | --- |
-| OCaml producer (`ocaml-producer/*.ml`) | `dune build --root ocaml-producer`, then `node pipeline/run-cases.mts <pattern>` (cases whose file names contain the pattern; about a second for a handful) | `make test` (the pipeline cases, and the controls: forged documents and claims no case can make) |
 | One source file | `node pipeline/verify-source.mts <file.ts> [--project dir]` | — |
-| Lean | `(cd lean && lake build)`, then `run-cases.mts` for the affected cases | `make test` |
-| Parser, Fragment or SourceClaims wire, shared tools | `(cd tools && npx tsc -p tsconfig.json)`, `node tests/json-field-names.mts` (instant: TypeScript, Lean and OCaml use the same JSON field names), then `run-cases.mts` | `make test` |
+| Lean | `(cd lean && lake build)`, then `node pipeline/run-cases.mts <pattern>` for the affected cases (cases whose file names contain the pattern) | `make test` (the pipeline cases, and the controls: forged fragments and forced proposals no case can make) |
+| Parser, Fragment wire, shared tools | `(cd tools && npx tsc -p tsconfig.json)`, `node tests/json-field-names.mts` (instant: TypeScript and Lean use the same JSON field names), then `run-cases.mts` | `make test` |
 
 `run-cases.mts` with no pattern runs every case (26 s on 12 cores, measured
 2026-10-16) and is `make test-cases` after its build. Cases run in one worker
 process per core, each keeping its TypeScript compiler between cases;
 progress goes to standard error.
 
-The wider tier runs once for each change of producer, Lean, parser or
-shared-tool code. A later edit of cases, examples or docs alone reruns only
+The wider tier runs once for each change of Lean, parser or shared-tool
+code. A later edit of cases, examples or docs alone reruns only
 the cases it touches (`run-cases.mts <pattern>`), and a doc edit runs
 `node tests/docs.mts`. A case that fails on a timeout while the machine is
 loaded is rerun by its pattern, not with the whole suite.
@@ -121,9 +114,9 @@ Work on coverage follows two steps, both from the census of main
 1. **Where proofs fail:** `node dev/census.mts refusals <record>` groups
    the refused functions by the blocker their unit's refusal names, with
    the statements each group blocks. Every reason
-   that names one construct counts, whatever stage refuses it, the
-   producer's included; a reason that may stand for several causes (a
-   failed search, an expression with no claimed type) is first split into
+   that names one construct counts, whatever stage refuses it; a reason
+   that may stand for several causes (a refused obligation, an expression
+   with no computed type) is first split into
    its causes by the functions it meets. A reason blocking much code that
    no pipeline case shows gets a case example: the smallest source with
    that refusal, its header naming the census functions it stands for.
@@ -211,13 +204,12 @@ timestamps or paths, so the clone stays valid in the new directory. A build
 at the same commit then rebuilds nothing, and an edit rebuilds only the
 changed module and its dependents. The link step is the exception: the
 copied `verifier.rsp` names the main checkout's object files by absolute
-path, and `pipeline/evidence-mutations.mts` relinks a mutated verifier from
+path, and `tests/single-pass-mutations.mts` relinks a mutated verifier from
 it, so removing the copied executable makes Lake relink it (about 1 s) from
 the worktree's own objects. The saving is complete when the main
 checkout's cache is built at or near the worktree's commit; otherwise Lake
 rebuilds just the modules that differ. Each worktree keeps its own `.lake`,
-so builds in different worktrees may run in parallel. Dune restores OCaml
-builds from its shared cache. Each `node_modules` directory is copied from the
+so builds in different worktrees may run in parallel. Each `node_modules` directory is copied from the
 main checkout with `cp -c -R` (never committed): the root's, `tools/`'s and
 every `pipeline/*/` one, `pipeline/library-project/node_modules` included. A
 symbolic link resolves type declarations from the main checkout's path, and
@@ -225,9 +217,7 @@ the cases reading `@types/node` then fail.
 
 
 `make test-cases` includes the pipeline cases, including those importing from
-`pipeline/imports-project/` and `pipeline/library-project/`. Install OCaml and
-Dune as described in [the producer guide](ocaml-producer/README.md#try-it)
-before running it.
+`pipeline/imports-project/` and `pipeline/library-project/`.
 
 One file end to end, with `$F` a repository-relative path:
 
@@ -236,8 +226,8 @@ node pipeline/verify-source.mts $F
 ```
 
 It prints the outcome and the directory holding what the run wrote: the
-source snapshot, the parser's `fragment.json`, the producer's `claims.json`
-and the verifier's `evidence.json`.
+source snapshot, the parser's `fragment.json` and the pass's log
+`pass.log`.
 
 A refusal of TScert's own code is answered by the first of the seven routes
 [source rewrites](docs/SOURCE-REWRITES.md#deciding-what-a-refusal-of-tscerts-code-calls-for)
@@ -251,9 +241,9 @@ requires.
 ## Which tests to keep
 
 The end-to-end pipeline cases are the primary signal: a source file through
-the parser, the OCaml producer and Lean (`pipeline/cases.mts`, run by
+the parser and the single pass (`pipeline/cases.mts`, run by
 `run-cases.mts`). They exercise the unproved parts together (parser,
-extraction, producer, wire), and what Lean proves needs no test.
+extraction, the pass's front, wire), and what Lean proves needs no test.
 
 - **Prefer a pipeline case.** A new feature's test is a source file with its
   expected outcome, positive and negative, not a unit test of an
@@ -271,17 +261,17 @@ extraction, producer, wire), and what Lean proves needs no test.
   while researching it. Once a pipeline case covers the behaviour, retire
   them in the same or the next commit.
 - **Keep a test only for what the pipeline cannot show:** a refusal no source
-  can reach (forged evidence, a tampered declaration), a boundary of a
+  can reach (a forged fragment, a forced proposal, a tampered declaration), a boundary of a
   trusted input (the `ArrayProto` overlay), or a speed-critical check.
 - **Remove what adds no signal.** A test a proof already covers, or one that
   repeats another's inputs through the same path, goes. Before removing a
-  forged-claim test, check it does not test extraction: which program point a
-  claim is attached to is unproved.
+  forged-fragment control, check it does not test extraction: the lowering
+  of the fragment to the graphs the pass checks is unproved.
 
 ## The suite's shape, and the rules that keep it
 
 `make test-checks` builds (a no-op when nothing changed), then runs `test-all.sh`:
-the fast checks and the controls (`pipeline/test.mts`). `make test-cases` builds,
+the fast checks and the controls (`tests/single-pass-controls.mts`). `make test-cases` builds,
 then runs the pipeline cases (`pipeline/run-cases.mts`). Three rules decide
 where a check goes.
 
@@ -290,15 +280,17 @@ where a check goes.
   fatal.
 - **A case is a source with its expected outcome; anything else is a
   control.** A check of a source through the pipeline is a case of
-  `pipeline/cases.mts`. A check of the verifier, the producer or the
-  pipeline on an input no case makes (a forged document, a mutation, an
-  injected failure, a family override) is a control of `pipeline/test.mts`;
+  `pipeline/cases.mts`. A check of the verifier or the pipeline on an
+  input no case makes (a forged fragment, a forced proposal, a mutation, an
+  injected failure, a family override) is a control of
+  `tests/single-pass-controls.mts`;
   a check running no stage is a suite of `test-all.sh`.
-- **Controls replay like stages.** Each control block of `pipeline/test.mts`
-  registers with `control(…)` (`mutationControl(…)` where it runs the
-  mutation verifier); a pool of control processes, one per core, runs them.
-  Every operation a control runs goes through `tested` (`pipeline/stages.mts`)
-  and replays from the store when its executable, inputs and environment are
+- **Controls replay like stages.** Each control block of
+  `tests/single-pass-controls.mts` registers with `control(name, …)`
+  (`mutationControl(name, …)` where it runs the mutation verifier); a pool
+  of control processes, one per core, runs them. Every operation a control
+  runs is a stage invocation (`invokeProcess`, `pipeline/stages.mts`) and
+  replays from the store when its executable, inputs and environment are
   unchanged ([controls](docs/STAGE-STORE.md#controls)). A control is
   independent of the others: it reads its cases' artifacts through
   `run(…)`, the case checked through the pipeline in its own process, and
@@ -315,22 +307,26 @@ A unit's accepted verdict from the verifier's CLI must imply the modeled
 safety property for every function of that unit. Preserve this by construction:
 
 - The acceptance path consumes the complete `FunctionPlan` sum through one
-  exhaustive conversion to `CertifiedPlan`. It must never use `filterMap`, an
+  exhaustive conversion to `CertifiedPlan` (`FunctionPlan.certify`, which
+  `PassUnit.MemberSafe` states). It must never use `filterMap`, an
   `Option`, or a projection that can discard a plan variant.
 - A new plan constructor must make that conversion fail to compile. It may
   become a certified constructor only with a checker and a theorem connecting
   its successful check to the semantic property. Until then it is a located
   gap, never `verified`.
-- Keep one headline theorem, `SourceClaimJson.checkUnitJson_safe`, whose
-  premise is the exact CLI condition for a unit's accepted verdict and whose
-  conclusion gives safety for every function of that unit. A theorem about a retained subset, decoded
+- Keep one headline theorem, `SourceClaimJson.PassUnit.mode8Accepted_sound`,
+  whose premise (`Mode8Accepted`) is the exact CLI condition for a unit's
+  accepted verdict, at either print site (`--verify-interface-stage 8` and a
+  module's check in `--module-interface`), and whose conclusion
+  (`PassUnitSafe`) gives safety for every function of that unit. A theorem about a retained subset, decoded
   bundle, or Boolean alone is not an acceptance soundness theorem.
 - The axiom check checks how a theorem was proved, not whether it proves the
   required statement. Review the theorem's premise and conclusion whenever the
   accepted plan type or CLI path changes.
-- Search output, direct-check success and compiled ground consequences are
-  intermediate artifacts. The runner and diagnostics must not label them verified
-  before the corresponding plan reaches `CertifiedPlan`.
+- The front's proposals (types, loop-head facts, effects), inference's runs
+  and compiled ground consequences are intermediate artifacts. The runner and
+  diagnostics must not label them verified before the corresponding plan
+  reaches `CertifiedPlan`.
 
 ## Source and host soundness boundaries
 
@@ -390,9 +386,9 @@ separate review obligations, even when every Lean proof and suite passes.
   numeric elements alone do not justify implicit conversion. The recursive
   conversion contract and the rationale for excluding custom hooks live in
   [prototype contracts](docs/SOURCE-CONTRACTS.md#prototype-contracts).
-- **Test the unproved boundary independently.** A producer-side refusal needs
-  a verifier test bypassing that producer when annotation interpretation is
-  involved. For native-contract repairs, execute the actual negative source
+- **Test the unproved boundary independently.** A refusal of the pass's
+  front needs a control forging the fragment when annotation interpretation
+  is involved. For native-contract repairs, execute the actual negative source
   fixture under Node as well as refusing it in the pipeline. This is a small
   contract counterexample, not a test of a proved Lean typing rule.
 - **Keep dependencies exact.** Collect only intrinsics a source uses; do not
@@ -413,13 +409,13 @@ packs, which hold values and have no holes.
 
 For inferred callable effects, follow the
 [elaboration/certification boundary](docs/SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification).
-Annotation translation must not strengthen an ordinary arrow. Producer inference
-proposes a qualified signature; definition evidence must prove both safety and
-the effect before application consumes it. Never recognize callback syntax at
+Annotation translation must not strengthen an ordinary arrow. The front's
+inference proposes a qualified signature; the definition's check must establish
+both safety and the effect before an application consumes it. Never recognize callback syntax at
 native call sites as a substitute for that proof. Audit every signature mapping,
 substitution, overload and certificate path for the effect field; exhaustive
 constructor matching does not detect a discarded field. Qualified claims need
-located failures and forged-evidence controls, and imported effects require an
+located failures and forced-proposal controls, and imported effects require an
 explicit checked contract or documented external assumption.
 An effect without `onThrow` guarantees preservation only on normal return. Do
 not carry it onto a call's exceptional edge or infer preservation for a caller
@@ -427,8 +423,8 @@ that catches the exception without checking its handler against the changed
 heap; an effect with `onThrow` also bounds the heap a throw leaves
 ([exceptional footprints](docs/SOURCE-ELABORATION.md#exceptional-footprints)).
 
-Agreement between the OCaml producer and the Lean checker does not catch a
-specification mistake they share, such as reading an unsupported generic method
+The pass's proof does not catch a specification mistake in what it reads,
+such as reading an unsupported generic method
 as `unknown`, or copying a native array contract from TypeScript's signature
 without accounting for reentrancy and coercion. Keep the refusals and controls
 that guard these when extending the fragment; do not gain acceptance by
@@ -443,14 +439,10 @@ increasing trust silently.
   one fully strict configuration, `noImplicitAny` and `strictNullChecks`
   included. A new file lands in that project by being
   where it belongs; nothing is exempt.
-- `tools/source-claims.mts` describes the claims document wire format. Every
-  TypeScript tool that writes or reads that document is typed against that
-  description, so a field added or removed there is a compile error at every
-  TypeScript site that touches it. The OCaml producer and the Lean decoder are
-  held to it by three checks: `decodeSourceClaims` decodes every document the
-  producer writes, field by field, on every pipeline run; the field-name check
-  (`tests/json-field-names.mts`) compares the three languages' field names;
-  and Lean's decoder refuses any document of another shape.
+- `tools/fragment.mts` and `tools/declaration-types.mts` describe the
+  parser's document. Lean's decoder refuses any document of another shape,
+  and the field-name check (`tests/json-field-names.mts`) compares the field
+  names TypeScript and Lean use.
 - The trusted front end is TypeScript on the compiler's own API
   (`typescript/unstable/sync` for the checker, `typescript/unstable/ast` for
   the tree), type-checked by the `Front-end types` suite. A member that API
@@ -502,7 +494,7 @@ increasing trust silently.
   outside reads them, and there is no older document to keep working.
 - Lean: no `sorry`, no project axioms.
   [AxiomCheck.lean](lean/Verification/Tests/AxiomCheck.lean) fails the build
-  when `checkUnitJson_safe`, or a `@[csimp]` lemma whose right-hand side the
+  when `PassUnit.mode8Accepted_sound`, or a `@[csimp]` lemma whose right-hand side the
   compiled verifier runs, depends on an axiom other than `propext`,
   `Classical.choice` and `Quot.sound`. No warnings: `lakefile.toml` sets
   `warningAsError`, so a warning fails the build; fix it (a deprecated name's
@@ -530,7 +522,7 @@ increasing trust silently.
   execution or refuse it with a located diagnostic. In particular, a lambda
   body certificate does not cover parameter-default execution. Lowering tests
   must exercise source evaluation order and binding scope, including forged
-  producer claims against both evidence production and consumption; calculus
+  fragments and forced proposals against the pass; calculus
   safety alone does not prove correspondence with JavaScript execution.
 - Annotations: a change adding, removing or changing an annotation TScert
   reads updates [ANNOTATIONS.md](docs/ANNOTATIONS.md) in the same commit;
