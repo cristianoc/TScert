@@ -3,7 +3,7 @@
  * A row and a label list both denote unions. Contracts within one clause are
  * simultaneous requirements (including all arrows of an overload).
  */
-import type { CallEffect, CallPromise, ClosedFootprint, ElementKind, ElementKinds, BodyFact, BodyVariable, IndexFact, LinearTerm, PropertyKey, StoreRegion } from "./declaration-types.mts";
+import type { CallEffect, CallPromise, ClosedFootprint, ElementKind, ElementKinds, ElementWrite, BodyFact, BodyVariable, IndexFact, LinearTerm, PropertyKey, StoreRegion } from "./declaration-types.mts";
 import { requireWellFormed } from "./wire-strings.mts";
 import {
   hasExactly,
@@ -338,7 +338,9 @@ export function decodeCallEffect(v: JsonRead): Modifies<{ values: "any"; stores:
   const freshObject = v.freshObject;
   const receiverGrows = v.receiverGrows;
   const elementWrite = v.elementWrite;
-  if (elementWrite !== null && elementWrite !== "stores" && elementWrite !== "exact") return undefined;
+  const writes: readonly ElementWrite[] = ["stores", "exactUint8", "exactUint16", "exactInt32", "exactFloat64"];
+  const write = elementWrite === null ? null : writes.find(w => w === elementWrite);
+  if (write === undefined) return undefined;
   if (footprint === undefined || typeof fresh !== "boolean" || typeof receiverStore !== "boolean" ||
       typeof onThrow !== "boolean" || typeof receiverOwn !== "boolean" ||
       typeof freshObject !== "boolean" || typeof receiverGrows !== "boolean") return undefined;
@@ -354,7 +356,7 @@ export function decodeCallEffect(v: JsonRead): Modifies<{ values: "any"; stores:
     promise = guards ? { guards: { param } } : { asserts: { param } };
   }
   const effect: CallEffect = { footprint, promise, fresh, receiverStore, onThrow, receiverOwn, freshObject, requires,
-    elements, pre, ensures, receiverGrows, elementWrite };
+    elements, pre, ensures, receiverGrows, elementWrite: write };
   return regions === undefined ? effect : { ...effect, regions };
 }
 /** One contract representation; every operand mapping must retain its effect. */

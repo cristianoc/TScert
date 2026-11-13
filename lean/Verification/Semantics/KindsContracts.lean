@@ -256,7 +256,7 @@ exact form the designated view's store changed at the index alone
 other view store may change. -/
 def ViewWriteOf (w : CallEffects.ElementWrite) (args : List Tm) {n n' : Nat} (W : WorldT n) (h : Heap)
     (W' : WorldT n') (h' : Heap) : Prop :=
-  ViewWrite W h W' h' ∧ (w = .exact → CallEffects.ExactWrite args h h')
+  ViewWrite W h W' h' ∧ (∀ k, w = .exact k → CallEffects.ExactWrite k args h h')
 
 /-- **The active element write follows from the relation**: at the entry
 world's roles, which fit every heap meeting it, the relation is the active

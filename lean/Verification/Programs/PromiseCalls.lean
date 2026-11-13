@@ -2653,7 +2653,7 @@ theorem linearAppendKept_holds {n : Nat} {eff : Effect} {t : Tm} {k : Knowledge}
 
 /-- The change of a typed array's element write: stores keep their lengths,
 nothing else changes. -/
-def writeChanges : HeapKnowledge.Changes := CallEffects.ElementWrite.changes .exact
+def writeChanges : HeapKnowledge.Changes := CallEffects.ElementWrite.changes .stores
 
 open HeapKnowledge in
 /-- Whether the atoms `as` state a body fact of the value of the slot `x`
@@ -2699,7 +2699,7 @@ def writtenPrefix (k : Knowledge) (b i x : Nat) (a : IndexAtom) (next : Term) : 
 (`everyWritten`), renamed past the result; none of any other call. -/
 def writeKept (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) : List HeapKnowledge.IndexAtom :=
   match eff.elementWrite, t with
-  | some .exact, .invoke _ _ [.var b, .var i, .var x] =>
+  | some (.exact _), .invoke _ _ [.var b, .var i, .var x] =>
     let i := HeapKnowledge.pick (HeapLinks.aliases k.links) (HeapKnowledge.intSlot k.indices) i
     let x := HeapKnowledge.pick (HeapLinks.aliases k.links) (HeapKnowledge.intSlot k.indices) x
     HeapKnowledge.shiftIndices (k.indices.filter (everyWritten k b i x) ++
@@ -2716,7 +2716,7 @@ the same number; the element at the index is the written value, which meets
 the body or lies past the bound. -/
 theorem every_written {ρ : Env} {h h' : Heap} {b i x s : Nat} {st : Term} {body : List (LinearClause Bound)}
     {as : List IndexAtom} (he : IndexHolds ε as ρ h) (hs : ρ s = ρ b)
-    (hc : writeChanges.Holds h h') (hx : CallEffects.ExactWrite [ρ b, ρ i, ρ x] h h')
+    (hc : writeChanges.Holds h h') {k : CallEffects.ElementKind} (hx : CallEffects.ExactWrite k [ρ b, ρ i, ρ x] h h')
     (hst : st.keptBy writeChanges (fun _ _ => false) = true)
     (hb : body.all (bodyKeptBy writeChanges (fun _ _ => false)) = true)
     (hnew : entailsKnown as (.le [(st, 1), (.value i, -1)] 0) = true ∨ body.all (writtenBody as i x) = true)
@@ -2758,9 +2758,11 @@ theorem every_written {ρ : Env} {h h' : Heap} {b i x s : Nat} {st : Term} {body
           subst ht
           cases y with
           | index => simp only [Bound.inst, termValue_value, hki, boundValue]
-          | elem => simp only [Bound.inst, termValue_value, boundValue, elementInt, hl, hlv, Option.bind_some]
+          | elem => simp only [Bound.inst, termValue_value, boundValue, elementInt, hl, hlv, Option.bind_some,
+            CallEffects.ElementKind.intValue_convert]
           | offset d => have := List.all_eq_true.mp hvalid (.offset d) hy; simp at this
-          | project k p => simp only [Bound.inst, boundValue, hl, hlv, Option.bind_some, termValue, termAt, Bool.false_eq_true, if_false]
+          | project kd p => simp only [Bound.inst, boundValue, hl, hlv, Option.bind_some, termValue, termAt, Bool.false_eq_true, if_false,
+            CallEffects.ElementKind.readPath_convert]
           | free t => rfl
         | none => simp [hG] at hwb
   · refine LinearClause.holdsAt_monotone (fun y m hky hy => ?_) (fun y m hgy hy => ?_) hbF (hall j hj' F hF)
@@ -2787,7 +2789,7 @@ Every target index other than the written index belongs to the old prefix;
 the written index holds the value checked against the body. -/
 theorem every_written_prefix {ρ : Env} {h h' : Heap} {b i x s : Nat} {st next : Term} {body : List (LinearClause Bound)}
     {as : List IndexAtom} (he : IndexHolds ε as ρ h) (hs : ρ s = ρ b)
-    (hc : writeChanges.Holds h h') (hx : CallEffects.ExactWrite [ρ b, ρ i, ρ x] h h')
+    (hc : writeChanges.Holds h h') {k : CallEffects.ElementKind} (hx : CallEffects.ExactWrite k [ρ b, ρ i, ρ x] h h')
     (hnext : termDefined as next = true)
     (hcover : entailsKnown as (.le [(next, 1), (.value i, -1)] 1) = true)
     (hstart : entailsKnown as (.le [(.value i, 1), (st, -1)] 0) = true)
@@ -2832,9 +2834,11 @@ theorem every_written_prefix {ρ : Env} {h h' : Heap} {b i x s : Nat} {st next :
         subst ht
         cases y with
         | index => simp only [Bound.inst, termValue_value, hki, boundValue]
-        | elem => simp only [Bound.inst, termValue_value, boundValue, elementInt, hl, hlv, Option.bind_some]
+        | elem => simp only [Bound.inst, termValue_value, boundValue, elementInt, hl, hlv, Option.bind_some,
+            CallEffects.ElementKind.intValue_convert]
         | offset d => have := List.all_eq_true.mp hvalid (.offset d) hy; simp at this
-        | project k p => simp only [Bound.inst, boundValue, hl, hlv, Option.bind_some, termValue, termAt, Bool.false_eq_true, if_false]
+        | project kd p => simp only [Bound.inst, boundValue, hl, hlv, Option.bind_some, termValue, termAt, Bool.false_eq_true, if_false,
+            CallEffects.ElementKind.readPath_convert]
         | free t => rfl
       | none => simp [hG] at hwb
   · refine LinearClause.holdsAt_monotone (fun y m hky hy => ?_) (fun y m hgy hy => ?_) hbF (hall j (by omega) F hF)
@@ -2862,17 +2866,17 @@ theorem writeKept_holds {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h'
     IndexHolds ε (writeKept eff t k) (push v ρ) h' := by
   unfold writeKept
   split
-  · rename_i f r b i x hw
+  · rename_i ek f r b i x hw
     obtain ⟨hc, hx⟩ := hew _ hw
-    replace hc := hc.changes .exact
-    have hx := hx rfl
+    replace hc := hc.changes .stores
+    have hx := hx _ rfl
     simp only [ExpressionEffects.actualsOf, instantiate, instantiateArgs, Nat.not_lt_zero, if_false,
       Nat.sub_zero] at hx
     have hi := pick_eq (fun a b hab => HeapLinks.aliases_eq hk.2.2.1 hab)
       (p := intSlot k.indices) i
     have hv := pick_eq (fun a b hab => HeapLinks.aliases_eq hk.2.2.1 hab)
       (p := intSlot k.indices) x
-    have hx' : CallEffects.ExactWrite [ρ b,
+    have hx' : CallEffects.ExactWrite ek [ρ b,
         ρ (pick (HeapLinks.aliases k.links) (intSlot k.indices) i),
         ρ (pick (HeapLinks.aliases k.links) (intSlot k.indices) x)] h h' := by
       simpa only [hi, hv] using hx

@@ -11,7 +11,7 @@
  * against the host's code, which the declarations' bodies do not describe.
  * The declarations are not read, so the types they name (`ArrayBufferLike`,
  * `ImplicitArrayBuffer`) are not collected. */
-import type { DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
+import type { DeclarationIdentity, ExactElementWrite, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
 import type { CallEffect } from "./type-graph.mts";
 
@@ -96,8 +96,11 @@ export const bytesMarker = "node:bytes";
  * `Symbol.species`, the standard constructor and `%TypedArray%`'s getter
  * under the host assumption below, and constructs a fresh view over the
  * same memory. `fill` and `copyWithin` return the receiver. Each writes the
- * view's elements alone, and throws a `RangeError` where an index is out of
- * range. The model holds a view's elements as a store under the model key
+ * view's elements alone. `fill`, `copyWithin` and `subarray` clamp each
+ * index to the view's bounds, a negative one counted from the end, and
+ * throw no `RangeError`; `set` throws a `RangeError`, writing nothing,
+ * where its offset is negative or the source does not fit from it. None
+ * states a guarantee of a throw (no `onThrow`). The model holds a view's elements as a store under the model key
  * `[[viewElements]]`, one location per element, each holding the element:
  * `fill`, `copyWithin` and `set` replace the written entries of the store
  * of every view over the written bytes by fresh locations holding what
@@ -145,13 +148,14 @@ const int32Definition = viewDefinition(int32Identity, int32, `${bytesMarker}:int
 const float64Definition = viewDefinition(float64Identity, float64, `${bytesMarker}:float64`);
 /** The definitions of the views of bytes, each naming the others (`set`). */
 export const viewDefinitions: readonly TypeDefinition[] = [bytesDefinition, uint16Definition, int32Definition, float64Definition];
-/** A view's element type, by its standard name: the integers it stores
- * unchanged (`%ByteSet%`'s exact signature), `null` for every safe integer. */
-export const viewKinds: readonly { name: string; type: TypeTerm; range: [number, number] | null }[] = [
-  { name: "Uint8Array", type: bytes, range: [0, 255] },
-  { name: "Uint16Array", type: uint16, range: [0, 65535] },
-  { name: "Int32Array", type: int32, range: [-2147483648, 2147483647] },
-  { name: "Float64Array", type: float64, range: null }];
+/** A view's element type, by its standard name: the safe integers within
+ * its range (`%ByteSet%`'s exact signature), `null` for every safe integer,
+ * and its exact element write (`CallEffects.ElementKind`). */
+export const viewKinds: readonly { name: string; type: TypeTerm; range: [number, number] | null; write: ExactElementWrite }[] = [
+  { name: "Uint8Array", type: bytes, range: [0, 255], write: "exactUint8" },
+  { name: "Uint16Array", type: uint16, range: [0, 65535], write: "exactUint16" },
+  { name: "Int32Array", type: int32, range: [-2147483648, 2147483647], write: "exactInt32" },
+  { name: "Float64Array", type: float64, range: null, write: "exactFloat64" }];
 
 /** A `Buffer`, a view of bytes with the methods of `Buffer.prototype` the
  * overlay states (Node 26.13.0's `lib/buffer.js`),

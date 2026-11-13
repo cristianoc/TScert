@@ -8,7 +8,8 @@ closed `footprint`, `{"value", "store"}`; a `promise`, `null` or
 `fresh`, `receiverStore`, `onThrow`, `receiverOwn` and `freshObject`; and the
 element predicates `requires` and `elements`, each `null` or its kinds in
 order; the index-fact lists `pre` and `ensures`; the Boolean
-`receiverGrows`; and `elementWrite`, `null`, `"stores"` or `"exact"`. Each decoder
+`receiverGrows`; and `elementWrite`, `null`, `"stores"` or the exact write of an element type,
+`"exactUint8"`, `"exactUint16"`, `"exactInt32"` or `"exactFloat64"`. Each decoder
 re-encodes what it read and refuses a document that differs, so a field
 outside these, a `grow` on `value` or an `init` or `scalar` on `store`, is refused. -/
 namespace Verification.EffectJson
@@ -17,10 +18,14 @@ open Lean CallEffects
 /-- An element write's wire name. -/
 def elementWriteName : ElementWrite → String
   | .stores => "stores"
-  | .exact => "exact"
+  | .exact .uint8 => "exactUint8"
+  | .exact .uint16 => "exactUint16"
+  | .exact .int32 => "exactInt32"
+  | .exact .float64 => "exactFloat64"
 
 private def elementWriteOf (name : String) : Except String ElementWrite :=
-  match [ElementWrite.stores, .exact].find? (elementWriteName · == name) with
+  match [ElementWrite.stores, .exact .uint8, .exact .uint16, .exact .int32, .exact .float64].find?
+      (elementWriteName · == name) with
   | some w => pure w
   | none => throw s!"invalid element write '{name}'"
 

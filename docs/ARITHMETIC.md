@@ -1495,15 +1495,17 @@ the quantified one, keeps no fact over the whole quantified array. A push of
 several actuals extends none (`every-push` reads one).
 
 **Across a typed array's element write.** `b[k] = v` of a view at a safe
-integer $`0\le k<\mathrm{view}(b)`$ of a safe integer $`v`$ the view's
-element type holds unchanged (from $`0`$ to $`255`$ of a `Uint8Array`, to
+integer $`0\le k<\mathrm{view}(b)`$ of a safe integer $`v`$ within the
+view's element type's range (from $`0`$ to $`255`$ of a `Uint8Array`, to
 $`65535`$ of a `Uint16Array`, from $`-2^{31}`$ to $`2^{31}-1`$ of an
 `Int32Array`, any of a `Float64Array`) is `%ByteSet%`'s exact signature
 ([typed arrays](SOURCE-CONTRACTS.md#stated-library-types)): the view's element
 store lists the same entries after it but at $`k`$, where it lists a location
-holding $`v`$, and every other location holding no store keeps its value,
-every store its length. So each index but $`k`$ keeps its element, and the
-element at $`k`$ is $`v`$ (proved):
+holding the element type's conversion of $`v`$, a number denoting $`v`$'s
+integer, and every other location holding no store keeps its value, every
+store its length. So each index but $`k`$ keeps its element, and the
+element at $`k`$ denotes $`v`$'s integer, which every body fact reads
+(proved):
 
 ```math
 \frac{\mathrm{every}(x,t,\Phi)\in\Sigma\quad x\in[b]\quad \mathrm{int}(k)\quad

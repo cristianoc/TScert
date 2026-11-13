@@ -1591,3 +1591,6 @@ run_cmd do
   check ``Verification.CallEffects.ViewWriteA.changes
   check ``Verification.CallEffects.ViewWriteA.prefix_left
   check ``Verification.CallEffects.ElementWrite.Holds.not_string_to_store
+  check ``Verification.CallEffects.ElementKind.intValue_convert
+  check ``Verification.CallEffects.ElementKind.readPath_convert
+  check ``Verification.CallEffects.ElementKind.convert_negZero

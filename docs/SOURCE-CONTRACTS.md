@@ -1802,8 +1802,12 @@ The entries:
   its `Symbol.species`, which the host assumption below makes the standard
   constructor and `%TypedArray%`'s getter, and constructs a fresh view over
   the same memory. `fill` and `copyWithin` return the receiver. Each
-  writes the view's elements alone, and throws a `RangeError` at an index
-  out of range: `fill`, `copyWithin` and `set` change the heap as an
+  writes the view's elements alone. `fill`, `copyWithin` and `subarray`
+  clamp each index to the view's bounds, a negative one counted from the
+  end (ToIntegerOrInfinity, then the clamp of a relative index), and throw
+  no `RangeError`; `set` throws a `RangeError`, writing nothing, where its
+  offset is negative or the source does not fit from it; no member states a
+  guarantee of a throw. `fill`, `copyWithin` and `set` change the heap as an
   element write does (`%ByteSet%` below), `subarray` within the empty
   footprint, each returning a view of its own type and `set` taking any
   view. Every member holds of each of the four alike; the members
@@ -1904,24 +1908,33 @@ its view.
 
 **An exact element write.** `%ByteSet%` has, after that signature, one for
 each element type, a write at a safe integer $`0\le k<\mathrm{view}(b)`$, a
-valid integer index, of a safe integer $`v`$ the element type holds
-unchanged, from $`0`$ to $`255`$ of a `Uint8Array`, to $`65535`$ of a
+valid integer index, of a safe integer $`v`$ within the element type's
+range, from $`0`$ to $`255`$ of a `Uint8Array`, to $`65535`$ of a
 `Uint16Array`, from $`-2^{31}`$ to $`2^{31}-1`$ of an `Int32Array`, any of a
 `Float64Array`:
 
 ```math
-\%\mathrm{ByteSet}\%\colon(V_\mathit{Int32Array},\ \mathtt{number},\ \mathtt{number})\Rightarrow_{\{\mathsf{value}:\mathsf{keep},\ \mathsf{store}:\mathsf{grow}\},\ \mathsf{elementWrite}\ \mathsf{exact}}^{\ \mathrm{int}(2),\ 0\le 2\le\mathrm{view}(1)-1,\ \mathrm{int}(3),\ -2^{31}\le 3\le 2^{31}-1}\mathtt{number}
+\%\mathrm{ByteSet}\%\colon(V_\mathit{Int32Array},\ \mathtt{number},\ \mathtt{number})\Rightarrow_{\{\mathsf{value}:\mathsf{keep},\ \mathsf{store}:\mathsf{grow}\},\ \mathsf{elementWrite}\ \mathsf{exact}_\mathit{Int32}}^{\ \mathrm{int}(2),\ 0\le 2\le\mathrm{view}(1)-1,\ \mathrm{int}(3),\ -2^{31}\le 3\le 2^{31}-1}\mathtt{number}
 ```
 
-and alike of the others. There ToNumber of a number is the number, the
-conversion to the element type (ToInt32, ToUint8, ToUint16, the double
-itself) is the identity, and TypedArraySetElement writes the element's own
-bytes of the buffer, at the view's byte offset plus $`k`$ times the
-element size: no other element of the view reads them. So a normal return
-leaves the view's element store listing the same entries but at $`k`$, where
-it lists a location holding $`v`$ (`CallEffects.ExactWrite`), beside the
-change every write makes; other views over the bytes may change, as above.
-Outside the range the conversion is not the identity: an `Int32Array` write
+and alike of the others, $`\mathsf{exact}_t`$ naming the element type $`t`$
+(`CallEffects.ElementKind`). There ToNumber of a number is the number, and
+TypedArraySetElement writes the element's own bytes of the buffer, at the
+view's byte offset plus $`k`$ times the element size: no other element of
+the view reads them. A later read of the element gives the element type's
+conversion of $`v`$, $`\mathrm{conv}_t(v)`$ (`ElementKind.convert`): for an
+integer type, the conversion (ToUint8, ToUint16, ToInt32) followed by the
+read gives the number denoting $`v`$'s integer, $`+0`$ where $`v`$ is
+$`-0`$; for `Float64Array`, $`v`$ itself, $`-0`$ included. So a normal
+return leaves the view's element store listing the same entries but at
+$`k`$, where it lists a location holding $`\mathrm{conv}_t(v)`$
+(`CallEffects.ExactWrite`), beside the change every write makes; other
+views over the bytes may change, as above. $`\mathrm{conv}_t(v)`$ and
+$`v`$ denote the same integer (`ElementKind.intValue_convert`), which is
+what every index fact reads; the two differ only at $`-0`$ of an integer type
+(`ElementKind.convert_negZero`), which no index fact distinguishes
+(`typed-array-element-write-negative-zero`).
+Outside the range the conversion changes the integer: an `Int32Array` write
 of $`2^{31}`$ stores $`-2^{31}`$ (`invalid-typed-array-element-write-int32-wrap`,
 run under Node) and a `Uint8Array` write of 260 stores 4
 (`invalid-typed-array-element-write-uint8-truncation`, run under Node), and

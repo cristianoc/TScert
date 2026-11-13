@@ -173,13 +173,13 @@ and 1) change, the designated one at the written index alone, and the
 ordinary array's store (location 4) is kept. -/
 theorem viewWrite_overlap (n : Nat) :
     HeapOk n (roleWorld overlapRoles) overlapBefore ∧
-      ViewWriteOf .exact [overlapView, .num 0, .num oneBits] (roleWorld (k := n) overlapRoles)
+      ViewWriteOf (.exact .uint8) [overlapView, .num 0, .num oneBits] (roleWorld (k := n) overlapRoles)
         overlapBefore (roleWorld (k := n) (overlapRoles ++ [.elem, .elem])) overlapAfter ∧
       overlapAfter[0]? ≠ overlapBefore[0]? ∧ overlapAfter[1]? ≠ overlapBefore[1]? ∧
       roleAt (roleWorld (k := n) overlapRoles) 4 = some (.store .array) ∧
       overlapAfter[4]? = overlapBefore[4]? := by
   refine ⟨overlapBefore_ok n, ⟨⟨Nat.le_refl n, by rw [trunc_id]; exact roleWorld_ext _ _,
-    overlapAfter_ok n, fun l r hr hne => ?_, fun l N ls ls' hr hl hl' c hc => ?_⟩, fun _ => ?_⟩,
+    overlapAfter_ok n, fun l r hr hne => ?_, fun l N ls ls' hr hl hl' c hc => ?_⟩, fun _ hk => ?_⟩,
     by simp [overlapAfter, overlapBefore], by simp [overlapAfter, overlapBefore],
     by simp [overlapRoles], rfl⟩
   · rw [roleAt_roleWorld] at hr
@@ -189,7 +189,8 @@ theorem viewWrite_overlap (n : Nat) :
     rcases l with _ | _ | _ | _ | _ | _ | l <;> simp [overlapRoles] at hr <;>
       simp [overlapAfter] at hl' <;> subst hl' <;> simp at hc <;> subst hc <;>
       exact .inr (by simp [overlapBefore])
-  · intro s ls hs hls
+  · cases hk
+    intro s ls hs hls
     have h0 : SafeIntegers.SafeInt (0 : UInt64) (0 : Int) := ⟨by decide, .inl ⟨by decide, rfl⟩⟩
     have he : HeapKnowledge.elementsOf overlapView = some 0 := by decide
     have hg : ([overlapView, Tm.num 0, Tm.num oneBits] : List Tm).getD 0 .undef = overlapView := rfl
@@ -197,7 +198,9 @@ theorem viewWrite_overlap (n : Nat) :
     cases hs
     have hls' : ls = [some 2] := by simpa [overlapBefore] using hls.symm
     subst hls'
-    refine ⟨[some 6], 0, 0, rfl, rfl, h0, by simp, fun j hj => ?_, 6, rfl, rfl⟩
+    refine ⟨[some 6], 0, 0, rfl, rfl, h0, by simp, fun j hj => ?_, 6, rfl, by
+      rw [show ([_, Tm.num 0, Tm.num oneBits] : List Tm).getD 2 .undef = .num oneBits from rfl, oneBits,
+        CallEffects.ElementKind.convert_bitsOfNat _ (by decide)]; rfl⟩
     rcases j with _ | j
     · exact absurd rfl hj
     · simp
@@ -324,10 +327,10 @@ world**: at every budget the exact write of `1` at index 0 through the typed
 array is a `ViewWriteOf` transition between the two well-formed heaps,
 changing the view store and keeping the ordinary array's store. -/
 theorem host_viewWrite (n : Nat) :
-    ViewWriteOf .exact [hostView, .num 0, .num oneBits] (hostWorld (k := n)) hostBefore
+    ViewWriteOf (.exact .uint8) [hostView, .num 0, .num oneBits] (hostWorld (k := n)) hostBefore
       (hostWorld' (k := n)) hostAfter ∧ hostAfter[0]? ≠ hostBefore[0]? ∧ hostAfter[5]? = hostBefore[5]? := by
   refine ⟨⟨⟨Nat.le_refl n, by rw [trunc_id]; exact ⟨[(.elem, anyCtr)], by simp [hostWorld, hostWorld']⟩,
-    hostAfter_ok n, fun l r hr hne => ?_, fun l N ls ls' hr hl hl' c hc => ?_⟩, fun _ => ?_⟩,
+    hostAfter_ok n, fun l r hr hne => ?_, fun l N ls ls' hr hl hl' c hc => ?_⟩, fun _ hk => ?_⟩,
     by simp [hostAfter, hostBefore], rfl⟩
   · simp only [hostWorld, roleAt_ofEntries] at hr
     rcases l with _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | l <;> simp [hostEntries] at hr <;> subst hr <;>
@@ -336,7 +339,8 @@ theorem host_viewWrite (n : Nat) :
     rcases l with _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | l <;> simp [hostEntries] at hr <;>
       simp [hostAfter] at hl' <;> subst hl' <;> simp at hc <;> subst hc <;>
       exact .inr (by simp [hostBefore])
-  · intro s ls hs hls
+  · cases hk
+    intro s ls hs hls
     have h0 : SafeIntegers.SafeInt (0 : UInt64) (0 : Int) := ⟨by decide, .inl ⟨by decide, rfl⟩⟩
     have he : HeapKnowledge.elementsOf hostView = some 0 := by decide
     have hg : ([hostView, Tm.num 0, Tm.num oneBits] : List Tm).getD 0 .undef = hostView := rfl
@@ -344,7 +348,9 @@ theorem host_viewWrite (n : Nat) :
     cases hs
     have hls' : ls = [some 1] := by simpa [hostBefore] using hls.symm
     subst hls'
-    refine ⟨[some 10], 0, 0, rfl, rfl, h0, by simp, fun j hj => ?_, 10, rfl, rfl⟩
+    refine ⟨[some 10], 0, 0, rfl, rfl, h0, by simp, fun j hj => ?_, 10, rfl, by
+      rw [show ([_, Tm.num 0, Tm.num oneBits] : List Tm).getD 2 .undef = .num oneBits from rfl, oneBits,
+        CallEffects.ElementKind.convert_bitsOfNat _ (by decide)]; rfl⟩
     rcases j with _ | j
     · exact absurd rfl hj
     · simp

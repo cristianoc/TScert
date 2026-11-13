@@ -61,9 +61,15 @@ export type CallEffect = {
 };
 /** What a typed array's element write keeps (`CallEffects.ElementWrite`):
  * every location holding no store and every store's length (`"stores"`);
- * and besides, the view at position 1 holds the value at position 3 at the
- * index at position 2 and its other elements unchanged (`"exact"`). */
-export type ElementWrite = "stores" | "exact";
+ * and besides, for a view of the named element type at position 1, the
+ * element at the index at position 2 holds that type's conversion of the
+ * value at position 3 (`CallEffects.ElementKind.convert`: the number
+ * denoting the value's integer for an integer type, the value itself for
+ * `Float64Array`), its other elements unchanged (`"exactUint8"`,
+ * `"exactUint16"`, `"exactInt32"`, `"exactFloat64"`). */
+export type ElementWrite = "stores" | ExactElementWrite;
+/** The exact element write of each element type (`ElementWrite`). */
+export type ExactElementWrite = "exactUint8" | "exactUint16" | "exactInt32" | "exactFloat64";
 /** An index fact at numbered positions (`HeapKnowledge.IndexFact`, its
  * constructor's name holding its fields): an array index; the length of an
  * array's store; an index at most that length, below it where `strict`; a

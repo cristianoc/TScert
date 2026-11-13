@@ -306,7 +306,9 @@ heap $`h`$ to the exit world $`W'`$ and heap $`h'`$ (`ViewWrite`):
   contract;
 - every old location whose role is no view store keeps its contents;
 - every cell an old view store newly lists is fresh against $`h`$;
-- the exact form adds `ExactWrite` of the designated view, index and value.
+- the exact form adds `ExactWrite` of the designated view's element type,
+  view, index and value: the cell at the index holds the type's conversion
+  of the value (`ElementKind.convert`).
 
 Over the active worlds, which hold no roles, the element write's defining
 contract is the same relation read against a role assignment of the entry

@@ -724,13 +724,15 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // every cell it newly lists fresh (`elementWrite`,
     // `CallEffects.ElementWrite.Holds`).
     // Then, for each element type, a write at a safe integer `k`,
-    // `0 ≤ k < view(b)`, a valid integer index, of a safe integer the
-    // element type holds unchanged (0 to 255 of a `Uint8Array`, 0 to 65535
-    // of a `Uint16Array`, −2^31 to 2^31 − 1 of an `Int32Array`, any of a
-    // `Float64Array`: the conversion is the identity there), which sets the
-    // view's element at `k` to the value and no other element of the view:
-    // each element is its own bytes of the buffer (`elementWrite` "exact",
-    // at the call's positions: 1 the view, 2 the index, 3 the value).
+    // `0 ≤ k < view(b)`, a valid integer index, of a safe integer within the
+    // element type's range (0 to 255 of a `Uint8Array`, 0 to 65535 of a
+    // `Uint16Array`, −2^31 to 2^31 − 1 of an `Int32Array`, any of a
+    // `Float64Array`), which sets the view's element at `k` to the element
+    // type's conversion of the value (`CallEffects.ElementKind.convert`: the
+    // number denoting its integer, +0 of −0, for an integer type; the value
+    // for `Float64Array`) and no other element of the view: each element is
+    // its own bytes of the buffer (`elementWrite` of the element type, at
+    // the call's positions: 1 the view, 2 the index, 3 the value).
     [byteSetName]: () => {
       const value = (slot: number): LinearTerm => ({ kind: "value", slot, path: [] });
       const le = (form: [LinearTerm, number][], bound: number): IndexFact => ({ linear: { fact: { le: { form, bound } } } });
@@ -739,8 +741,8 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
       return { typeParams: [], type: { k: "intersection", span, parts: [
         { ...fn([views, atom("number"), atom("number")], atom("number")),
           effect: footprintEffect({ value: "keep", store: "grow" }, { elementWrite: "stores" }) },
-        ...viewKinds.map(({ type, range }): TypeTerm => ({ ...fn([type, atom("number"), atom("number")], atom("number")),
-          effect: footprintEffect({ value: "keep", store: "grow" }, { elementWrite: "exact", pre: [...index,
+        ...viewKinds.map(({ type, range, write }): TypeTerm => ({ ...fn([type, atom("number"), atom("number")], atom("number")),
+          effect: footprintEffect({ value: "keep", store: "grow" }, { elementWrite: write, pre: [...index,
             ...(range === null ? [] : [le([[value(3), -1]], -range[0]), le([[value(3), 1]], range[1])])] }) })),
       ] } };
     },
