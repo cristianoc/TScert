@@ -296,21 +296,305 @@ By step (each the sites it removes, measured; a conjecture where marked):
 | 4. File workers | Immutable shared preparation, resumable demand, unit resource supervision and immediate publication. Remove whole-file timeout fallback and sequentially accumulated unit stores. | One preparation per loaded snapshot; one unit execution per input; killed-worker recovery preserves siblings; cold CPU and peak memory measured. |
 | 5. One request mechanism | Route cases, census, pretext and controls through the scheduler. Remove component stages, duplicate file roles and census omission rounds. | Identical root sets have identical results/read manifests across clients; targeted timeout losses inspected individually; full suites pass. |
 
-### Step 2, as commits
+### Plan for step 2
 
-Each commit is reviewed by Astra before the next starts; each states its proof obligation, its pipeline cases (a form moved across a file boundary keeps its contract and verdict) and its forged-input controls. Guards are done (`rowSpec_plain_of_promise`, guard entries); the rest, in order:
+#### The existing mechanism this extends
 
-1. **Entry-local row tables.** Publication encodes each entry's own table rooted at its complete callable type (`rowRegion`, `encodeRowTable` at one entry's roots) with deterministic numbering, replacing the module-wide `rows`; decoding checks each entry's table on its own. Obligation: `signatureAgrees_of_checks` and `signatureAgrees_of_checks_back` per entry, their premises unchanged (a realized source entry, empty graph environments, membership-preserving canonicalizers, two `matchStores` results). Control: an entry's table forged (a row dropped, a field changed) is refused at decoding or at the store-map check.
-2. **The complete callable contract on the wire.** The entry carries the whole callable type, every signature with every effect field, and the importer's slot is checked against it (the consumer's store-map check), replacing `importedArrow`'s reconstruction from the importer's declaration and the footprint triple. `fresh` is carried with it: realization already compares a member's `fresh` with the row's (`layoutOwn`'s frame check), so no new lemma; `crossModule_safe`'s established slots (`ChosenSlots`, `EstablishedSlots`) quote the entry's type. Obligation: `entries_realized` and `crossModule_safe` at the new `Established` (entry type and table in place of the triple). Effect: an origin signature stronger than the importer's declaration (freshness) is accepted.
-3. **Same-file entry reads.** A call within a file reads the callee's entry through the same consumer check, replacing `ordinarySlots`' footprint and `ensures` reads (`Front.withStandIns`, head inference's reads of `fr.units`) for the migrated forms; a callee not laid out is read at its declared contract, as across files. Obligation: `passFile_safe`'s layout with `layout.iface` the entry's type (`layoutOwn` one interface type per read); no new hypothesis. A unit verified today through a stand-in read of a callee `laidOut` leaves out becomes a measured loss, each a row in WORK.md.
-4. **Regions.** The entry keeps `regions` (`moduleArrow` stops erasing them); realization of a regional row. Obligation: a lemma deriving `RowSpec` for a row with regions from `RequestSafe`'s regional clause (docs/SINGLE-PASS-THEOREM.md, the regional clause), and `layoutOwn` comparing the member's regions with the row's. Control: forged regions refused.
-5. **Rest parameters.** Eligibility admits a rest signature (`Claims/Imports.lean` eligibility), its row the code's packed calling convention. Obligation: `RowSpec` for a rest row from the member's request over the packed frame (`codeFrame` with the argument pack, which holds values and has no holes).
-6. **Overloads.** One identity, every offered row, each realized by its own unit's check; publication requires every overload unit accepted. Obligation: `layoutOwn`'s rows loop over all `offerRows`, each with a realizing member (present); a new control publishing an entry with an overload's row omitted, refused.
-7. **Constants holding functions** ([module constant entries](module-constant-entries.md)): the constant's literal laid out as a module function; the entry is the function unit's contract and the initialization's establishment of the binding. Obligation: the layout lemma for the literal's code; H5b stays the stated hypothesis (`KindMet` at `moduleCell`).
-8. **Generics.** A scheme entry: binders, kinds, bounds and resolution in the entry's table (scheme rows), `layoutOwn`'s scheme exclusion lifted. Obligation, the largest: a theorem that a generic body checked once at its scheme's binders realizes `RowSpec` at every instance the consumer's store-map check admits. May split into binder-free instances first.
-9. **Removal.** `importedArrow` for established reads, the `(footprint, onThrow, resultFootprint)` triple of `Established`, `qualified` stand-ins for migrated forms. Gate: every retained same-file form has its cross-file case with the same verdict (D6).
+The interface is everything another unit may read about a function. Processing a function computes that interface and checks its body against it. The same publication and read operations serve calls within a file and across files. Module initialization is one additional unit whose interface states the contracts of the bindings it establishes.
 
-Every step keeps `make test` green. Boundary changes receive pipeline cases and forged-input controls; proof-covered facts need no duplicate tests. Full census comparison follows the project’s main-branch census policy.
+This extends the [front](../SINGLE-PASS-FRONT.md), the [single pass](../SINGLE-PASS.md), [realization and linking](../SINGLE-PASS-THEOREM.md), and [recorded-input replay](../STAGE-STORE.md). A function’s interface and the evidence establishing it have separate identities.
+
+References below use `C/` for `lean/Verification/Source/Claims/`, `L/` for `lean/Verification/Source/Lowering/`, and `P/` for `lean/Verification/Programs/`. Code observations concern the inspected worktree at `f741ed41`. Proposed definitions, algorithms and theorem statements are obligations of this plan. Performance figures are the measurements in this document’s baseline.
+
+The form inventory is an audit of the language’s constructors and their combinations. It does not define which functions receive entries. Every admitted callable receives an interface or a located construction failure; such a failure blocks a reader.
+
+#### The theorem statements
+
+**One unit, conditional on its reads.** For every function or initialization unit, acceptance of its processing result establishes:
+
+1. Exhaustive certification of every body/signature obligation belonging to that unit.
+2. Safety of those obligations under the precise interface environment recorded by the result.
+3. Realization of its complete published contract under that environment.
+4. Agreement between that contract, the serialized entry, and every consumer representation used in its processing.
+
+The assumptions name the content actually consumed, including conservative recursion views, binding contracts, and file projections. They also state capture/value correspondence, invocation kind, frame separation, and the applicable external-contract and initialization hypotheses.
+
+The conclusion quantifies over every advertised signature, every admitted type-parameter assignment, and every environment satisfying the capture contract. A missing signature or plan constructor prevents acceptance.
+
+The existing basis is `mode8Accepted_sound`, whose conclusion covers every member of the accepted group (`C/PassUnitRun.lean:140`), `requestSafe_of_member` (`C/PassUnitFile.lean:24`), and row realization (`C/PassUnitRealize.lean:435`). The new result needs its own acceptance predicate: the current predicate has constructors for the main-file and fresh-module computations, and no constructor for a cached worker result (`C/PassUnitRun.lean:99`).
+
+**Closure of conditional results.** Let a finite set of results satisfy their conditional theorems. Suppose every consumed source interface has a corresponding producer in that set, every consumed view agrees with the producer’s established contract, and every external leaf satisfies its stated hypothesis. Then every member is safe and every published interface is established.
+
+For cycles, this requires a simultaneous induction on the semantic step index. Its local realization lemma must expose the smaller-budget assumptions used when invoking a captured function. The proposition “each member is safe if the others are safe” alone is insufficient to prove the closure theorem.
+
+Mutually recursive members consume the conservative values of unwritten interface components. Written components remain obligations. Each producer establishes the conservative view used by its cyclic readers as well as its published interface. Self-recursive proposal iteration remains inside the function’s own processing task. The measured no-loss result for this policy concerns the name-mention cycles described in this document’s decisions; preservation under the actual read relation is a separate measurement.
+
+**Relation to the existing linking theorems.**
+
+| Existing statement | Required relation |
+| --- | --- |
+| `mode8Accepted_sound`, `C/PassUnitRun.lean:140` | Retain exhaustive member certification. Add the worker acceptance case and prove that every accepted worker obligation satisfies the corresponding member safety statement. The final `verified` emission additionally requires closure. |
+| `ModuleLayout`, `C/PassUnitFile.lean:91` | Generalize its code/interface/capture correspondence to entries over independent stores, every invocation kind and every admitted callable. The domain is the requested closed set. The present independently selected `D` is not an entry-eligibility policy. |
+| `layout_realizes`, `C/PassUnitFile.lean:118` | Factor out the local realization implication used by the conditional theorem. Its premises include complete signature realization and capture separation. |
+| `passFile_safe`, `C/PassUnitFile.lean:172` | Recover its safety, interface meaning and capture-environment conclusions when all entries use one file store and the existing layout hypotheses hold. |
+| `entries_realized` and `crossModule_safe`, `C/PassUnitCross.lean:132,184` | Recover the existing results when dependencies satisfy `ReadsEarlier`. Prove the new cycle result separately; `ReadsEarlier` does not justify an independently stored recursive component. |
+| `signatureAgrees_of_checks`, `C/PassUnitSignatures.lean:64` | Transport the conditional producer contract through the serialized table into the consumer store. Discharge producer realization at closure. Equality transport alone establishes no producer body. |
+| `init_asserted`, `C/PassUnitInit.lean:23` | Retain its conclusion about assertions at reached finish states. It does not supply the full typed initialization postcondition. |
+
+**H5b remains explicit.** The top-level interface states each binding’s value or cell contract, its identity, and its initialization availability. Its interpretation assumes that the values and cells supplied by module initialization meet those contracts at the budgets and worlds required by consumers, with the required allocation separation and world extension. Callable bindings additionally identify the function value whose body result supplies the callable contract.
+
+This is the module-cell part of `KindMet` and the outside-slot meaning premise, not a consequence of printing an accepted initialization verdict (`C/PassUnitCross.lean:200`; `C/PassUnitFile.lean:110`; `C/PassUnitInit.lean:23`). Checking closure construction, capture layout, defaults and binding identity remains part of this work. Proving the full initialization/world-extension hypothesis is outside it.
+
+**Trusted orchestration.** Replay assumes that a stored payload is the exact result of the execution identified by its manifest. The scheduler marks a result verified exactly when its conditional check succeeds and all establishment dependencies close. It checks content/provenance correspondence, including for an unchanged entry whose producer has a new body result.
+
+This retains the stage store’s execution-and-input binding trust boundary. Complete read recording, projection independence, candidate validation and closure implementation are additional obligations inside that boundary. Current process execution already coordinates identical keys through claims (`pipeline/stages.mts:186,250`); current closure propagates missing or refused dependencies (`pipeline/verify-source.mts:423`). Neither mechanism proves that a new read manifest is complete.
+
+#### One interface type
+
+The wire carries one declared type. The following is a Lean definition sketch; the supporting types require definitions and exact decoders.
+
+```lean
+structure EntryGraph where
+  rows     : Array (GraphRow Nat)
+  builtins : Option (ArrayBuiltins Nat)
+
+structure CallableContract where
+  type        : Ty Nat
+  invocation  : InvocationContract
+  captures    : CaptureContract Nat
+  elaboration : ElaborationContract Nat
+
+structure BindingContract where
+  binding      : BindingId
+  type         : Ty Nat
+  storage      : BindingStorage
+  availability : InitializationRequirement
+  callable     : Option UnitId
+
+inductive UnitContract where
+  | callable       (contract : CallableContract)
+  | initialization (bindings : Array BindingContract)
+
+structure Interface where
+  identity : UnitId
+  graph    : EntryGraph
+  contract : UnitContract
+```
+
+`type` roots the **complete type**: fixed and variadic signatures, overload conjunctions, schemes, callable records, construct signatures, receiver and argument types, result types, and every reachable contract. Returned callables occur in that result type. Their contracts require no separate footprint reconstruction.
+
+Every signature retains the complete `CallEffects.Effect`:
+
+- `closed`, `promise`, `fresh`, `receiverStore`, `onThrow`, `receiverOwn`, `freshObject`;
+- `requires`, `elements`, `pre`, `ensures`;
+- `receiverGrows`, `elementWrite`, `regions`.
+
+These are the fields of the inspected definition (`lean/Verification/Semantics/CallEffects.lean:153`). Throw behavior includes the graph’s exception family and the effect’s exceptional preservation guarantee; `onThrow` alone is not a thrown-value type.
+
+The normal and exceptional two-state postconditions are the meanings of the signature’s effect. `Effect.post` relates the entry heap, exit heap and returned value; `Effect.excPost` relates the entry and exceptional exit heaps (`lean/Verification/Semantics/CallEffects.lean:424,437`). Transport preserves those meanings in full.
+
+There is a source-language limit to distinguish from that semantic postcondition: written `@ensures` currently elaborates post-state index facts, and `old(...)` is explicitly excluded (`tools/fragment-statements.mts:2273`; `docs/SOURCE-FRAGMENT.md:236`). This plan retains an explicit restriction against source postconditions requiring entry-heap snapshots. The source gate and forged-fragment boundary must refuse them at their location. Supporting arbitrary two-state written clauses requires a snapshot-bearing clause language, call instantiation and return proofs; adding an interface field cannot establish them. Existing two-state effect guarantees remain complete in every entry.
+
+`elaboration` contains all information a reader uses beyond semantic type meaning: binder kinds and bounds, resolution groups, widening policy, contextual offers and any ordering relevant to signature selection. It is declared data, not an executable closure into the producer’s store. The present generic description contains `instantiate` and `bounds` functions closing over lowering data (`L/Synthesis.lean:54`; `C/TypeComparison.lean:41`).
+
+`captures` describes the environment required to construct a closure, with stable binding identities, value/cell distinctions and contracts. An enclosing unit checks the actual captured environment against it. Capture types that depend on an enclosing type parameter remain quantified. Their instantiation consumes the same interface operation as other scheme instantiation.
+
+The initialization entry contains every established binding contract. A reader records the named binding answer, with an establishment edge to initialization. A callable constant has both a callable body obligation and a binding-value obligation.
+
+**Entry-local graphs.** Each table contains the closure of its contract roots, capture and elaboration roots, scheme binders and bounds, meet operands, and required built-in roots. The current reach operation already includes row reads, meet parts and scheme binders/bounds (`C/InterfaceRows.lean:33`); its numbering follows first traversal (`C/InterfaceRows.lean:42`).
+
+Canonical numbering must depend on the rooted entry graph alone. Normalize unordered operands according to their semantics; preserve argument positions, binders, resolution positions and semantically significant ordering. Canonically label recursive components using structural refinement and a deterministic tie resolution independent of original labels. Deduplicate identical rows consistently. Hash the exact canonical contract and metadata.
+
+Publication decodes the exact bytes to be stored and checks producer-to-table agreement. Consumption imports the entry and checks table-to-consumer agreement. The reverse consumer map remains available. The premises of `signatureAgrees_of_checks` and `_back` remain: realized source contract, empty graph environments, membership-preserving canonicalizers and successful checked maps (`C/PassUnitSignatures.lean:64,82`).
+
+When reprocessing a producer, a successful comparison against the previous entry permits retaining its representative, provided identity and all elaboration/capture/binding metadata also agree. The new body result supplies fresh provenance. A refused producer with unchanged interface content prevents closure of its readers.
+
+The required stability controls are:
+
+- An unchanged-interface body edit preserves entry content identity.
+- Inserting an unrelated declaration preserves existing identities and entries.
+- Reordering independent declarations preserves them.
+- Permuting dependency-demand order produces identical entries and read manifests.
+- Different internal sharing or numbering either passes checked representative reuse or produces a conservative miss; it never produces unchecked equality.
+
+Store-map soundness does not establish matching completeness or the cost of canonical labeling. Both require measurement.
+
+#### Read matrix
+
+A read includes a failed lookup, an inference lookup and a lookup used only to choose a proposal. Internal reads of a unit’s own immutable working graph need no separate dependency once that graph’s external inputs are accounted for.
+
+The projections below have separate **production keys** and **answer identities**. A production key includes the source facts needed to compute the projection. A unit records the query and canonical answer content. Thus a body edit may recompute ownership analysis without invalidating a reader whose ownership answer is unchanged.
+
+| Current site | What it reads | Destination under D-read | Commit |
+| --- | --- | --- | --- |
+| `C/Extraction.lean:258` | Other declarations’ parameters, result, stated effect, claims, returned-callable footprint, freshness and regions | Complete callable entry. Construct the slot from that entry. | C5–C8, C10 |
+| `C/FragmentFront.lean:544,558,575` | Reachable callees’ bodies, proposal order and the accumulating `found` effects | Demand their interfaces. Walk only the current function’s body; retain its self-iteration locally. Delete the neighbouring-body traversal. | C2, C10 |
+| `C/FragmentFront.lean:611`; `C/Extraction.lean:414` | Stand-ins installed into claims and module slots | Own proposal belongs to the producer result; foreign proposals are interface answers with establishment obligations. Forced proposals remain explicit control inputs. | C2, C5, C10 |
+| `C/FragmentFront.lean:275` | A same-file function’s `ensures` through `fr.units.find?` | Selected signature’s complete postcondition through the entry reader. | C5 |
+| `C/FragmentFront.lean:277` | A module value’s postcondition through separately translated type data | The same entry or initialization binding-contract read. Signature selection uses the complete callable type. | C5, C8 |
+| `C/Extraction.lean:189,204,218,247`; `C/Json.lean:131` | Every name mentioned, transitive name reach and SCC membership | `Resolve(scope, name)` projection followed by actual interface/projection reads. Delete name-mention dependencies from acceptance and replay manifests. Syntax reach may serve discovery only, without implying establishment. | C10, C11 |
+| `C/Imports.lean:331,372,387`; `C/ModuleInterfaces.lean:78` | Other functions’ free names to discover modules and component order | Actual read demands and their establishment graph. Delete recursive body-based module discovery and component planning. | C1, C10, C13 |
+| `tools/fragment-parse.mts:2719,2723` | Callable shape and declaration form used to decide which source modules exist for interface processing | `Origin(binding)` projection: source unit, declared external contract or located failure, for every binding. Key by resolution inputs and normalized binding/export identity. | C1 |
+| `C/Imports.lean:212,225,239,260` | Origin AST and importer signature to decide eligibility | Resolve the binding, obtain its complete contract, and check correspondence. Delete form eligibility and silent omission of failed reads (`C/Imports.lean:302`). | C1, C5–C9 |
+| `C/Imports.lean:230` | Every module body for assignment to an imported binding | `BindingStability(binding)`. Production key covers initialization, all assignment summaries and omitted-code evidence; answer states stability or its located violation. | C1, C4 |
+| `C/Imports.lean:88,92,96,102,120` | Declaration definitions, symbol identities, implicit dependencies and written applications | `Declaration(id)`, `Symbol(id)`, `Application(site)` and `Intrinsic(id)` projections, keyed by normalized declaration components and required recursive dependencies. Absence is an answer. | C4, C9 |
+| `C/Preparation.lean:230,255` | Whole-file source gates, annotation/declaration lowering and duplicate-root checks | Immutable preparation plus named `SourceAdmissibility(unit)` and declaration projections. Global consistency failures remain explicit file facts; located failures attach to their owning unit or projection. | C4, C12 |
+| `C/Preparation.lean:273`; `C/TypeComparison.lean:41`; `C/Extraction.lean:521,590` | Generic binders, bounds, resolution and instance construction | Callable entry’s scheme and elaboration data; declaration projections for referenced named types. Instantiate inside the consumer’s fresh store. | C7 |
+| `C/FragmentFront.lean:419` | Generic descriptions during the extra instance walk | The same scheme entry reads in the unit’s shared proposal computation. Delete the separate instance traversal. | C7, C10 |
+| `C/Extraction.lean:350,359`; `C/FragmentFront.lean:445` | Initializer types, annotations and mutable-cell storage contracts | Named binding contracts of the initialization interface, including inferred facts retained with annotations. | C8 |
+| `C/TypeComparison.lean:12` | Initializer claim plus annotation, with a special keeping-effect retention rule | Complete binding contract established by initialization, using the general contract relation. Delete importer-side effect retention by signature shape. | C3, C8 |
+| `C/Extraction.lean:350,365,628` | Generic-class names, class self bindings and source class identities | `Class(id)` projection for declaration facts; initialization binding contracts for runtime class values; callable entries for constructor and method bodies. Production key covers class declaration structure and referenced contracts. | C4, C8 |
+| `C/Extraction.lean:294` | Identity of the standard `Error` constructor to attach allocation freshness | Reviewed constructor contract reached through `Intrinsic(id)`, with the allocation property stated in that contract. Delete name-based inference of the property. | C3, C9 |
+| `C/Extraction.lean:407`; `lean/Verification/Source/SourceFacts.lean:540` | Initialization, all bodies and omitted mentions to infer module-cell ownership | `ModuleOwnership(binding)`. Production key covers initialization and every contributing escape summary, including omitted code. Answer carries the property used by extraction. | C4 |
+| `C/Extraction.lean:391` | Initialization ordering over declarations and top-level code | Initialization’s own check plus `BindingAvailability(binding)` answers for readers. Key by binding/order facts and initialization contract. | C4, C8 |
+| `C/Json.lean:106`; `C/FragmentFront.lean:737,744` | The equation store grown by preceding units | Remove the channel. Each unit has a fresh working store seeded from immutable declaration components and imported entry graphs. Freeze its own result. | C4, C10 |
+| `L/Synthesis.lean:6288,6295` | Eager translation of every supplied module value | Lazy recorded entry/binding lookup on demand. Failed translation remains a recorded failure; unrelated values are not eagerly evaluated. | C10 |
+| `L/Synthesis.lean:523,572,1186,1216,1601,1629` | Prototype types, member contracts, ordinary/generic/method/construct signatures | Entry graph reads or named declaration/intrinsic projections. All referenced operands retain their complete row closure. | C5–C9 |
+| `L/Synthesis.lean:2223,2237,2331,6340` | Uses that offer additional signatures to literals and constructors | Explicit contextual-offer data in the callable interface computation. Collect obligations before finalizing the entry; delete the second enclosing-body traversal. | C8, C10 |
+| `C/Extraction.lean:473,489`; `L/ClosureSetup.lean:130,183,257`; `L/Closures.lean:150` | Nested callable bodies, contextual signatures, captures, defaults and code identity | Separate callable tasks. Enclosing code reads the child’s interface and checks construction/capture correspondence. Defaults belong to the child’s source and check. | C8 |
+| `C/InterfaceRows.lean:140,153`; `C/FragmentFront.lean:948` | Capture names/types and other readers’ slot types to infer a function’s interface | Producer-owned interface and explicit capture schema. Delete `ifaceOf`’s scan of other units’ plans. | C3, C5, C8 |
+| `C/HeadInference.lean:469,666,1312,1335` | Typed-array spellings to infer length kind and constructor postconditions | Type/prototype and constructor contracts, reached through entries or intrinsic projections. State the length relation as a contract property. | C3, C5 |
+| `C/HeadInference.lean:842,860,1306`; `C/FragmentFront.lean:287` | Callee postconditions and parameter/declaration type kinds while proposing heads | Entry/postcondition and declaration/type-graph reads through the recorder. Proposal output remains checked by the pass. | C5 |
+| `C/RegionInference.lean:24,78,94` | Call-context types, selected effects, region paths and graph claims | Imported entry graphs and the unit’s own graph/claims. Record their originating interface reads. Preserve complete regional effects. | C6 |
+| `P/SinglePass.lean:764,1779`; `P/ExpressionEffects.lean:327,394` | Callee signatures, preconditions, selected effects and their postconditions | Consumer slots imported from entries, or locally established values. The pass reads the frozen graph assembled from recorded inputs. | C5–C9 |
+| `C/InterfaceRows.lean:33,71,115,128` | Reachable rows, built-ins and producer/consumer stores | Entry-local graph and checked maps. Built-in roots and exception-family agreement are part of the content. | C5 |
+| `C/ModuleInterfaces.lean:8,38,48` | Complete origin document and source digest when checking staleness | Separate producer provenance plus interface/projection content validation. Delete body-bearing module documents from consumer manifests. | C11, C13 |
+| `C/FragmentFront.lean:1069,1115` | Other units’ accepted results, layouts and publication decisions | Establishment graph over conditional results. Delete proposal-based selection and `laidOut` publication filtering. | C3, C11 |
+| `C/FragmentFront.lean:1178,1228,1239` | Transitive unbound-name searches through module bodies | Recorded `Resolve`/`Origin` answers, including absent and refused bindings. A reader’s closure reports the originating failure. | C4, C10 |
+| `pipeline/module-interfaces.mts:139,148,168` | Whole-file results and interface preparation failure, followed by ordinary-contract fallback | One requested-unit result and explicit blocked dependencies. Delete whole-file fallback and fallback to ordinary imports. | C12, C13 |
+| `pipeline/verify-source.mts:423` | Accepted dependency names | Exact consumed-entry identities and current establishment evidence. Closure validates provenance as well as graph membership. | C11 |
+| `pipeline/stages.mts:458,474` | Nested parse/module execution and replay context | One preparation request keyed by source snapshot, project observations and adapter identity, shared across file roles. | C12, C13 |
+
+The matrix is an input-boundary inventory. C10 makes these boundaries executable: unit processing receives its own source, an immutable local graph and the recording reader, rather than a `Front` exposing other bodies and mutable file state. Searches, proposal failures and negative lookups use that reader too.
+
+#### Callable form inventory
+
+The rows below compose. A generic asynchronous method, for example, receives the obligations of its invocation kind, scheme, capture environment and asynchronous result contract. There is one publication operation and one reader.
+
+| Admitted form and current source | Interface and own realization obligation | Consumption |
+| --- | --- | --- |
+| Module function declaration, including named default export: `tools/fragment-statements.mts:2061` | Complete offered type, invocation kind and capture schema. Use `rowSpec_of_requestSafe`; establish frame, goal, pre/postconditions, footprint, freshness and exceptional behavior. `layoutOwn` is an executable check, not itself that theorem (`C/FragmentFront.lean:948`). | Import its complete type into a slot and check agreement. Export aliases resolve to the same binding. |
+| Explicit receiver and receiverless declaration: `tools/fragment-statements.mts:2087`; `L/Types.lean:803` | Preserve receiver contract and strict/sloppy invocation behavior. Receiver-bearing code uses `UnitIsCode`; receiverless code needs the existing `ReceiverDropSound` premise or its proof, with postcondition positions preserved (`C/PassUnitRealize.lean:306,505,570`). | The call supplies/checks its receiver against the entry’s signature. |
+| Optional/defaulted/pattern parameters: `tools/fragment-statements.mts:2127`; `tools/fragment-expressions.mts:2281,2349` | Offered arguments include optionality. The child’s code includes the binding prologue, defaults, their evaluation order and scope. Realization connects that prologue to the public calling convention (`L/Closures.lean:20,42`). | Consume the same signature; omitted arguments and defaults follow the checked calling convention. |
+| Array, tuple and packed-binder rest parameters: `L/ClosureSetup.lean:155,183`; `L/Types.lean:803` | Fixed/variadic offers and packed frame. Extend row realization to a rest store: the current theorem assumes `c.store = none` (`C/PassUnitRealize.lean:436`). Prove allocation and argument-pack correspondence; packs contain values without holes. | Instantiate the entry’s fixed or variadic row; preserve pack/binder restrictions. |
+| Overloaded declarations: `tools/fragment-statements.mts:2037` | One function identity, every offered row and every required implementation check. Compare publication against the complete producer contract, so omitting an offer fails. Shared code identity is checked (`C/Extraction.lean:93`). | Read the conjunction and retain elaboration ordering where relevant. |
+| Generic and resolution-qualified functions: `C/Extraction.lean:521`; `C/Preparation.lean:273` | Scheme, binder kinds/bounds, resolution, packed binders and widening policy. Prove realization at every admitted instance from the parameterized body check. Existing parametricity is an ingredient, not the publication theorem (`P/Parametricity.lean:12`; `C/Extraction.lean:524`). | Instantiate from entry data in the consumer store; record the entry and any declaration projections used. |
+| Guards and assertion functions, including closures: `L/Types.lean:821`; `L/Closures.lean:165` | Preserve promised type, promise argument and guard/assertion kind, together with the plain signature. Realize the promised row and derive the plain row through `rowSpec_plain_of_promise` (`C/PassUnitRealize.lean:167`). | Ordinary calls and promise-consuming calls select rows from the same entry. |
+| Arrow functions, expression/block bodies, anonymous and admitted named function expressions: `tools/fragment-expressions.mts:2182` | One task per literal identity, with inferred/contextual result, complete effect, lexical receiver and capture contract. New local-result-to-closure-realization theorem replaces checking its code inside every enclosing member. | Closure construction checks captures and produces a value at the entry type; subsequent reads use that type. |
+| Nested function declarations and recursive local closures: `tools/fragment-statements.mts:729`; `L/Closures.lean:157,206` | Same literal interface, with hoisting/availability and self-entry obligations. Preserve current source restrictions; self iteration belongs to the child task. | Resolve the lexical binding and consume the child entry. Parent/child establishment edges preserve construction requirements. |
+| Functions held in module/local constants, mutable cells, fields, returned values or conditional expressions: `C/Extraction.lean:350`; `L/Synthesis.lean:2223`; `tools/fragment-expressions.mts:260,881` | The callable has its own interface regardless of the expression holding it. The producing unit establishes the binding/field/result contract and value correspondence. A choice between values preserves the complete resulting type. | Read the binding/value contract; follow its callable contract without inspecting the initializer body. |
+| Object-literal methods: `tools/fragment-expressions.mts:881,2182` | Closure contract with receiver, captures and every offered signature. Realization includes method-value construction and host receiver correspondence. | Member lookup obtains the complete method type; invocation uses the common call rule. |
+| Instance, static and generic class methods; callable class-field initializers: `tools/fragment-classes.mts:529,574,635` | Separate callable tasks. Class projection supplies declaration facts; initialization/construction establishes member values. Generic methods require scheme realization and receiver/capture correspondence. | Read the class/instance contract and the method’s complete callable entry. |
+| Explicit, implicit and derived constructors; admitted local classes: `tools/fragment-classes.mts:223,336,451,814`; `L/ClosureSetup.lean:212` | Construct signature, result instance contract, allocation/field initialization and capture requirements. New constructor realization connects the checked constructor code to its construct offers. Existing call-row realization is insufficient by itself. | Construction consumes the complete constructor type and its effect; instance/member contracts follow its checked result. |
+| Async declarations, arrows, expressions and methods: `tools/fragment-statements.mts:2077`; `tools/fragment-expressions.mts:2191`; `L/Closures.lean:155,192` | Preserve promise result and the existing asynchronous lowering contract. Prove entry realization through that lowering. Preserve the restriction against a non-top inferred async footprint (`docs/SOURCE-FRAGMENT.md:131`). | Consume the promise-valued callable type. Rejection and normal-return effects retain their distinct meanings. |
+| Callable records, intersections and method-bearing values: `P/SinglePass.lean:772`; `docs/SOURCE-FRAGMENT.md:287` | Publish the whole admitted type graph, including fields and callable clauses. Realization establishes all parts supplied by source construction. | Member and call rules consume the same graph; no footprint-only projection. |
+| Imported source callables, aliases and re-exports: `tools/fragment-parse.mts:2723`; `C/Imports.lean:212` | Resolve to the source producer and its complete entry, regardless of declaration form. Source bodies remain establishment dependencies. | Exactly the same read as a same-file binding. |
+| Ambient, declared and reviewed library callables, including native methods/constructors: `tools/fragment-parse.mts:1677`; `C/PassUnitCross.lean:200` | Complete contract with an explicit declared/host assumption as establishment evidence. Preserve every effect field and existing audit boundary. | The common entry reader distinguishes the evidence origin, not the contract representation. |
+| Intrinsic callable adapters, including binding a receiver or constructing a callable value | The containing operation establishes the resulting complete callable contract through its existing typing rule; captured callable dependencies are entries. Source-generated executable bodies receive unit identities. | Callers read the resulting contract. They do not reconstruct the original callable’s effect. |
+| Module top-level code: `C/Extraction.lean:378` | One initialization interface containing all binding contracts, availability and callable identities. Own check establishes its modeled execution and assertions; H5b supplies the stated typed binding interpretation. | Named binding-contract reads, with an initialization establishment edge. |
+
+The existing exclusions remain language restrictions, with their source diagnostics: generators and suspended `yield` (`docs/SOURCE-FRAGMENT.md:205`; `tools/fragment-expressions.mts:2197`), accessors (`docs/SOURCE-FRAGMENT.md:188`), unsupported constructor behavior (`docs/SOURCE-FRAGMENT.md:247`), and the documented overload combinations (`docs/SOURCE-FRAGMENT.md:229`; `tools/fragment-statements.mts:2037`). They do not justify excluding admitted receivers, rest parameters, schemes or closures from entries.
+
+A new restriction requires a behavior-level statement in `SOURCE-FRAGMENT.md`, enforcement at the source boundary and a located refusal through forged input too. It cannot be introduced as a way to preserve a partial interface implementation.
+
+#### Head and region inference
+
+The minimal change belongs **inside this plan, before per-function replay**. `HeadInference` obtains callee postconditions and type kinds through recorded interface/projection reads. `RegionInference` consumes the same imported graph and complete regional effects. Their candidates remain untrusted inputs checked by the pass.
+
+`HeadInference` maintains a separate source-name context and interprets statements (`C/HeadInference.lean:474,1306`). `RegionInference` constructs claimed evidence and iterates graph facts (`C/RegionInference.lean:24,64,94`). They are not both source-statement interpreters, but both duplicate transfer work beside the pass.
+
+Their replacement belongs **after the on-demand cutover**, as the next inference change. This ordering exposes the measured file-role and fallback gains without making them depend on an unmeasured inference-precision change. It does not declare the duplicate transfer mechanisms satisfactory.
+
+The replacement follows the earlier head-inference design: use the pass’s entry, step, merge and edge operations; discover a finite candidate vocabulary; project entry facts to head slots; remove candidates that back edges fail to establish; and rerun only affected regions before the final proved pass. Regional facts, implications and input identities require the same treatment. The proposal must preserve every gate verdict before deleting the old interpreter.
+
+The general property replacing typed-array spelling recognition belongs in C3. Keeping the spelling list until the larger inference replacement would violate the cleanup rule.
+
+There is another repetition obligation: `Synthesis.walkUnit` repeats source walks for evolving bindings and for additional offers discovered at uses (`L/Synthesis.lean:6320,6340`). C10 instruments those traversals and replaces whole-body retries with shared constraint/proposal computation. They are not silently counted as one traversal because one outer `walkUnit` call encloses them.
+
+#### Commit order
+
+Every commit builds and keeps the suite green. Verdict comparison uses stable unit identities and records both conditional acceptance and closed verification. A changed verdict is named, its cause explained and its source preserved; changing an expected classification does not satisfy the unchanged-verdict gate.
+
+Cleanups replace each semantic selection list in its own commit before later changes build on it. If a cleanup requires a more general proof to preserve verdicts, that proof belongs in the cleanup before it lands. Merely renaming a filter to an obligation is insufficient.
+
+For every commit, retain `dev/work-report.mts` output by repetition site and run both edit experiments as soon as that commit affects their path. Before function replay exists, record their remaining work rather than claiming the one-function target.
+
+| Commit | Build and delete | Proof and validation obligation | Measure |
+| --- | --- | --- | --- |
+| **C0 — Accounting and fixed comparison inputs** | Stable unit identities, signature-obligation identities and counters inside nested synthesis retries. Retain the shared settled result already present at `C/FragmentFront.lean:1700`. | Demonstrate that accounting preserves verdicts; distinguish task execution, proposal traversal, signature checking, replay validation and resource attempts. | Establish site 12 at zero on the slice too. Preserve the original baseline and record the immediate-parent baseline. Run both edit experiments. |
+| **C1 — General origin and binding resolution** | Replace `importedModules`’ callable-form filters, `eligibleRead` and silent failed-read omission with origin resolution, stability and complete contract-correspondence obligations. | Every value binding resolves to source, a stated external contract or a located failure. Preserve aliases, overload identity and negative lookups. | Count resolved origins and stability computations; report effects on sites 1 and 4 and both edits. |
+| **C2 — General interface proposal obligation** | Replace the exclusions in `declarationWalks` and `importerReads` with one obligation for every callable: written components plus inferred components checked by its own body. Delete form-based decisions about whether dependencies matter. | Conservative proposal components have their semantic meanings; written contracts remain whole. Async restrictions remain source restrictions. No weakening fallback for a failed source interface. | Count proposals by function and component; preserve self-walk counts separately. |
+| **C3 — General realization and contract properties** | Replace `laidOut` as a publication subset with a realization obligation over every advertised contract. Replace shape-specific keeping-effect retention, typed-array constructor names and allocation-freshness recognition with the corresponding contract properties. | State and check realization for the complete type, invocation and frame. Required row/region/rest/scheme lemmas land before their former exclusions disappear. Preserve the explicit host assumptions. | Count every function requiring realization and every located failure; compare all existing verdicts. No acceptance gain from omitted obligations. |
+| **C4 — Immutable preparation and named projections** | Construct declaration, resolution, class, ownership, stability, availability and admissibility projections. Give units private equation/search state. Delete dependence on a predecessor unit’s grown store. | Equal projection answers yield equal processing inputs. Preserve recursive declaration components, negative answers and ownership evidence from omitted code. | One computation of each preparation/projection per snapshot; order-permutation tests. Track preparation CPU and both edits. |
+| **C5 — Complete entries and ordinary same-file reads** | Add the single interface type, entry-local rows, canonical encoding and both store-map checks. Route declaration, receiver, guard, freshness, pre/postcondition and head-proposal reads through entries. Delete corresponding slot and `ensures` reconstruction. | Conditional realization for ordinary rows and promise/plain pairs; exact producer contract comparison; metadata agreement; both receiver paths. | Cross-file relocation preserves complete contracts and verdicts. Body-edit, declaration-insertion/reordering and demand-order controls. Measure serialization/map CPU. |
+| **C6 — Regional and variadic reads** | Route regions and rest signatures through the same entries, with no erased effect fields or reconstructed argument contract. | Regional realization on ordinary and receiverless paths; packed-frame realization, separation and allocation/calling-convention correspondence. | Same-file/cross-file positive and negative cases; forged regions and packs; count each offered-row obligation once. |
+| **C7 — Scheme reads** | Serialize generic elaboration data; instantiate from entries in private stores. Delete generic access through producer closures and separate generic-instance body walks. | Universal scheme-instance realization, including bounds, resolution, packed binders and store-map transport. Binder-free examples do not discharge this obligation. | Permute instantiation and demand order; compare verdicts and site 7. No extra producer processing for another consumer instance. |
+| **C8 — Closures, classes and initialization** | Separate every nested callable task; publish capture schemas and top-level binding contracts. Route constants, methods, constructors, async callables and returned/field-held callables through the common operation. Delete nested-body checking inside enclosing members and repeated initialization typing. | Closure-construction link; defaults and captures; complete offers; constructor and async realization; initialization binding-value correspondence under H5b. | Nested-body edit preserves the parent result when the child interface is unchanged. Count every callable independently. Reduce site 8; test unchanged binding contracts and changed availability. |
+| **C9 — External contracts and complete boundary coverage** | Route declared/host callables and intrinsic contracts through the same entry reader. Delete `importedArrow`, the established footprint triple and `ordinaryImport` fallback. | Preserve existing trust assumptions and every effect field. All inventory combinations use the general entry operation. | Complete source/library boundary cases; forged metadata, omitted overloads, wrong receiver, wrong promise and changed built-ins. Both edits retain verdicts. |
+| **C10 — One demand computation and recorded reads** | Replace neighbouring-body walks with suspend/resume demands. Share proposal, instance and extraction results; remove whole-body retries identified in C0. Delete name-mention acceptance edges and eager module-value translation. | Every external observation appears in the manifest. Resolve cycles without consuming a stronger provisional interface and later restarting the unit. Check every mutual-cycle view against its producer. | Sites 7 and 8 reach zero; no restarted caller after a newly discovered dependency. Diamonds and repeated roots process their shared dependency once. Audit actual cycles against the measured recursion policy. |
+| **C11 — Conditional results, closure and per-function keys** | Publish individual results immediately; validate candidate read manifests; separate content from establishment provenance. Remove whole-file result keys for unit work. | Prove the conditional theorem, store transport and step-indexed closure theorem; connect the exact emission predicate to `mode8Accepted_sound`. | Both supplied body edits process exactly one function. Unchanged request processes zero. Failed producer with unchanged entry blocks cached readers without rerunning them. |
+| **C12 — One worker per loaded file** | Retain immutable preparation; execute/resume units with private state. Add per-unit resource accounting and recovery. Delete whole-file timeout attempts and repeated fallback preparation. | Worker eviction, resumption and restart preserve manifests and completed results. Waiting consumes neither execution budget nor an execution slot. | Sites 2 and 3 reach zero. This targets the slice’s measured 2,595.2 s, 35.1%, of repeated work. Measure cold CPU, peak memory, preparation reloads and killed-worker recovery. |
+| **C13 — One request mechanism** | Route cases, census, pretext, controls and `make check` through root requests. Unify requested/imported preparation. Delete interface components, duplicate file roles and census omission/dependency retries. | Identical roots/options produce identical conditional results, manifests and closure across clients. Preserve located failures without reparsing successively omitted files. | Site 1 reaches zero: pretext’s measured 29.8 s, 42.5%, is the principal target. Sites 0, 4, 5 and 6 also reach zero. Repeat cold, warm and edit measurements. |
+
+The form commits develop the obligations of one general interface definition. They do not authorize a production mode that chooses entries for some forms and weaker contracts for others. The cutover requires all callable forms reached by the request to use the complete operation; a missing realization is an explicit failure.
+
+C12 and C13 follow the sound per-function result boundary immediately. Their gains do not wait for replacement of head inference. The settled-run saving is already represented by the shared `r` in `settleInferred`, and must not be claimed again as new work (`C/FragmentFront.lean:1700`; this document’s baseline at line 259).
+
+#### Keys, demand and publication
+
+A unit’s pre-key contains its stable lexical identity, normalized own source, annotations/defaults, verifier and adapter identities, and every option affecting processing. Nested callable bodies are replaced in the enclosing unit’s source representation by their identities and construction syntax; their contracts are reads.
+
+The final key adds the canonical answers of every recorded interface and projection query. It contains no other function’s body, processing key or verdict. Source spans remain diagnostic mappings.
+
+Replay validates every query, including absence, against the current snapshot. A matching entry with stale producer provenance cannot establish closure. Source failures remain source dependencies; they cannot become declared leaves.
+
+Demand suspends the current computation while the requested interface is computed. Resumption continues its saved work. Mutual-cycle detection supplies conservative views of unwritten components; those views have explicit content and establishment identities. No provisional stronger view may escape into a result that later requires restarting under a weaker one.
+
+The scheduler owns one task for each unit/pre-key in the request. Preparation has one shared identity regardless of requested/imported role. Worker unloading may reload stored immutable preparation; it must not recompute it or reprocess completed functions.
+
+#### Completion
+
+Completion requires all of the following:
+
+- Every admitted callable and initialization unit has the interface and realization obligation in the inventory. No source reader succeeds through an eligibility omission or weakened fallback.
+- Every matrix row has its stated destination. Unit processing has no direct access to another unit’s body or mutable preparation state.
+- The conditional theorem covers the exact accepted worker result. The closure theorem establishes every verified member, including mutually recursive members over independent stores.
+- `dev/work-report.mts` reports zero repeated orchestration, preparation, proposal/extraction and result-processing work at sites 0–8 and 12. Site 9 records only the stated self-recursive walks. Site 11 records the diagnosing/refinement work retained until head inference is replaced.
+- Distinct signature obligations are counted separately and each executes once. A second check of the same function at another required overload is not hidden, and a duplicate check of the same obligation is not excused as an overload.
+- Internal synthesis retries are visible in the accounting. Any remaining repetition there prevents the zero-repetition claim.
+- An unchanged request processes zero functions. Both supplied edits—`isCollapsibleSpaceCode` in pretext and `collect` in `fragment-statements.mts`—process exactly the changed function, with unchanged entry content and verdicts. Preparation and read validation are reported separately.
+- Declaration insertion/reordering and demand-order permutations preserve unrelated entry identities and keys. A changed ownership, stability, declaration or binding-contract answer invalidates exactly its recorded readers.
+- Unsafe and forged-input controls retain their refusals. Every verdict difference has a named cause; reclassification does not count as preservation.
+
+The cold comparison uses the same corpus, revisions, limits, profiling settings and stage-store conditions as the recorded baseline:
+
+| Corpus | Recorded stage CPU | Recorded repeated work | Required comparison |
+| --- | ---: | ---: | --- |
+| Pretext, 12 files | 70.2 s | 45.0 s | Report total CPU, removed work by site and new interface/validation overhead. |
+| Six-file census slice | 7,389.9 s | 3,584.4 s | Report total CPU, timeouts by unit, removed fallback work and final verdicts. |
+| 722 cases with projects | 574.9 s | 61.5 s | Report total CPU and preserve the parsing denominator. |
+
+These figures are recorded at `docs/drafts/on-demand-processing.md:232,246`. Subtracting repeated work gives a performance hypothesis, not a measured result. The claims “much faster” and “every item once” require both the accounting gate and repeated paired CPU measurements. Report ratios and dispersion against the original baseline and the immediate parent. A lower total caused by checking fewer obligations fails the gate.
+
+The full census follows the main-branch policy. The supplied slice and targeted function/dependent experiments provide the branch comparisons.
+
+#### Questions requiring evidence before their dependent commits
+
+1. **Complete realization coverage.** The inspected row theorem excludes rest collection, and `rowConditions` excludes several effect properties (`C/PassUnitRealize.lean:294,436`). Before C3–C9, map every actual source-produced contract to a realization proof, including qualified schemes, constructors and async code. The cost of those generalizations is not established by reading.
+
+2. **Capture and contextual-offer independence.** Closure setup uses the enclosing scope and contextual offers (`L/ClosureSetup.lean:130,257`; `L/Synthesis.lean:2223,6340`). Before C8, demonstrate that a capture-parameterized interface preserves the existing inferred contracts and verdicts without checking the same body again for each construction or later offer. This is a feasibility gate, not an assumed property.
+
+3. **Demand cycles.** The supplied recursion measurement uses `Front.edgesOf`. Before C10, measure cycles of the actual read relation, including initialization, capture contracts and contextual offers. Demonstrate order-independent conservative views without caller restarts. Any precision loss is named before cutover.
+
+4. **Hidden synthesis work.** The outer `walkUnit` accounting does not by itself distinguish the internal traversals at `L/Synthesis.lean:6323,6336,6344`. C0 measures them before C10 claims to remove repeated walks.
+
+5. **Canonicalization cost and cutoff completeness.** Before C5/C11, measure recursive graph labeling, sharing differences and matching-fuel failures. Require all four stability experiments. No inspected theorem proves those experiments will pass.
+
+6. **Preparation locality.** Whole-file gates and declaration lowering occur in `equationFront` (`C/Preparation.lean:230`). Before C4/C12, identify which failures can be attached to a unit/projection and which are genuinely global consistency failures. Measure the projection recomputation required by the two supplied edits.
+
+7. **Intrinsic adapters and generated code.** Before C9, complete an exhaustive audit of generated callable adapters and every parser/lowering constructor, including callable values produced without a source function declaration. The inventory gives their destination; the precise set of generated bodies requiring independent task identities needs that audit.
+
+8. **Performance.** No builds, checks or timing experiments accompany this read-only plan. The baseline supplies opportunities, not evidence of the proposed implementation’s speed or verdict preservation.
 
 ## 8. Decisions
 
