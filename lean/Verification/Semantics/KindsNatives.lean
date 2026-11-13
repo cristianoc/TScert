@@ -6,14 +6,18 @@ import Verification.Semantics.CallEffects
 
 The array natives are modelled as steps on a store's list of element
 locations (`Footprints.Arr`); each keeps the store's cells among the original
-ones and fresh ones (`Arr.Within`), and a native preserves kinds when its world
-extension makes the fresh cells element cells and the contents it writes are
-source values. A copy (`Tm.merge`) reads only values the heap holds; the
+ones and fresh ones (`Arr.Within`), and a native's element-storage phase
+preserves kinds when its world extension makes the fresh cells element cells
+and the contents it writes are source values (`native_shaped`); a whole
+native, callbacks included, has the obligation of every call contract
+(`NativeContract`, `Semantics/KindsContracts.lean`). A copy (`Tm.merge`) reads only values the heap holds; the
 administrative steps (substitution, a run's entry, its environment maps, its
 handlers, reads, comparisons) refer to no location the term or the heap did
-not. A host contract that is no step of the calculus respects kinds when every
-transition it admits from a well-formed heap reaches one (`RespectsKinds`);
-the typed-array element write's contract as stated does not (`elementWrite_not_respects`).
+not. A contract stated as a relation between heaps can meet that obligation
+only if every transition it admits from a structurally well-formed heap
+reaches one (`RespectsKinds`); the typed-array element write's coarse change
+admits one that does not (`elementWrite_not_respects`), and the relation
+`ViewWrite` of `Semantics/KindsContracts.lean` is its contract.
 -/
 namespace Verification.Kinds
 
@@ -527,14 +531,16 @@ theorem Arr.natives_within {b} {a : Arr} (h : b ≤ a.next) (k n c len : Nat) :
     Arr.push_within h, Arr.pop_within h, Arr.shift_within h, Arr.unshift_within h,
     Arr.reverse_within h, Arr.writeback_within c len (Arr.Within.refl h)⟩
 
-/-- **An array native preserves kinds.** From a well-formed heap `h`, a native
-on the array store at `s` reaches `h'`: the store holds the native's result
-`a.ls`, every other old location keeps its contents or is an element cell
-now holding a source value, and every fresh location holds a source value.
-The world extension makes the fresh locations element cells.
+/-- **An array native's element-storage phase preserves kinds.** From a
+well-formed heap `h`, the phase of a native that rewrites the array store at
+`s` reaches `h'`: the store holds the native's result `a.ls`, every other old
+location keeps its contents or is an element cell now holding a source
+value, and every fresh location holds a source value. The world extension
+makes the fresh locations element cells.
 
-Premises the native's audited row states (`array_native_post`'s heap side):
-the store's change, the element contents, and the fresh locations'. -/
+The premises are stated here: the store's change, the element contents and
+the fresh locations' contents. `array_native_post` bounds which locations
+change and gives none of them. -/
 theorem native_shaped {k : Nat} {W : WorldT k} {h h' : Heap} {s : Nat} {orig : List (Option Nat)}
     {a : Arr} (cs : List (Ctr k)) (hlen : h.length = (entries W).length) (hsh : Shaped W h)
     (hs : roleAt W s = some (.store .array)) (hso : h[s]? = some (.arr orig))
@@ -583,28 +589,16 @@ end natives
 
 /-- **A heap relation respects kinds**: every transition it admits from a
 heap meeting a world's structural part reaches a heap meeting the structural
-part of an extension of that world. A host contract stated as a relation
-between heaps (an element write, a constructor's heap effect) has this
-obligation. -/
+part of an extension of that world. A contract stated as a relation between
+heaps meets the native-contract condition only if it has this property. -/
 def RespectsKinds (R : Heap → Heap → Prop) : Prop :=
   ∀ (k : Nat) (W : WorldT k) (h h' : Heap), h.length = (entries W).length → Shaped W h → R h h' →
     ∃ W' : WorldT k, WExt W W' ∧ h'.length = (entries W').length ∧ Shaped W' h'
 
-/-- **A result-producing contract respects kinds**: besides the heap, the
-result it admits for actuals with valid references is a source value with
-valid references in the extended world. -/
-def ResultRespectsKinds (R : Heap → List Val → Heap → Val → Prop) : Prop :=
-  ∀ (k : Nat) (W : WorldT k) (h : Heap) (args : List Val) (h' : Heap) (v : Val),
-    h.length = (entries W).length → Shaped W h → (∀ a ∈ args, RefsOk W a) → R h args h' v →
-    ∃ W' : WorldT k, WExt W W' ∧ h'.length = (entries W').length ∧ Shaped W' h' ∧
-      isSourceVal v = true ∧ RefsOk W' v
-
-/-- **The typed-array element write's contract, as stated, does not respect
+/-- **The typed-array element write's coarse change does not respect
 kinds** (`ElementWrite.changes`: every location holding no store, object or
 number may change, and every store keeps its length). A field holding a
-string may come to hold a store. Its audit must add that a changed location
-keeps its role's shape: a source value in F, C and E, a store listing
-element cells in S. -/
+string may come to hold a store. -/
 theorem elementWrite_not_respects (args : List Tm) :
     ¬ RespectsKinds (CallEffects.ElementWrite.stores.Holds args) := by
   intro H

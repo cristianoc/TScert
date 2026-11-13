@@ -1533,3 +1533,27 @@ run_cmd do
   check ``Verification.Kinds.alloc_apart
   check ``Verification.Kinds.alloc_post
   check ``Verification.Kinds.alloc_wellformed
+  -- role-bearing storage capabilities
+  check ``Verification.Kinds.Capability.At.mono
+  check ``Verification.Kinds.Capability.At.trunc
+  check ``Verification.Kinds.Capability.Holds.role
+  check ``Verification.Kinds.Capability.Holds.common
+  check ``Verification.Kinds.Capability.Holds.weaken
+  check ``Verification.Kinds.Capability.At.write
+  check ``Verification.Kinds.Capability.holds_alloc
+  check ``Verification.Kinds.Capability.field_holds_literal
+  check ``Verification.Kinds.Capability.binding_holds_cell
+  check ``Verification.Kinds.Capability.arrayStore_holds_array
+  check ``Verification.Kinds.Capability.binding_not_field
+  check ``Verification.Kinds.Capability.binding_not_le_field
+  -- world-indexed postconditions, the native-contract condition, the view write
+  check ``Verification.Kinds.SafeW.refs
+  check ``Verification.Kinds.SafeW.mono
+  check ``Verification.Kinds.SafeW.run
+  check ``Verification.Kinds.Thrown.refs
+  check ``Verification.Kinds.NativeContract.run
+  check ``Verification.Kinds.ViewWrite.keeps_array
+  check ``Verification.Kinds.ViewWrite.view_store
+  check ``Verification.Kinds.ViewWrite.changes
+  check ``Verification.Kinds.ViewWriteOf.holds
+  check ``Verification.Kinds.viewWrite_overlap
