@@ -1,0 +1,703 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">11 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-154"><code>9980485bd1728522609a3cfa34d3f8d2a24cf0c4..pr-154</code></a><ul><li>11 commits, units 9 verified</li><li>changes: 2 Proposal, 3 Theorem, 3 Check, 5 Wire, 12 Tooling, 8 Docs, 2 Control, 5 Definition, 1 Typing, 2 Lowering</li><li>parts: <span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">tests</span> <span class="chip">tools</span> <span class="chip">docs</span> <span class="chip strong">wire</span> <span class="chip">lean-lowering</span> <span class="chip strong">trust</span> <span class="chip">parser</span> <span class="chip">pipeline</span></li><li>new trust: <span class="trust">an import from a module with a body is read only at its module's checked interface entry, else at its declared type with the ordinary effect, its precondition kept (owner-approved 2026-11-12); ModuleLayout.apart states the module cells of a laid-out function apart at every depth of the module's environment (a named hypothesis); ReceiverDropSound restated at RowSpec (a named hypothesis)</span></li><li>new trust: <span class="trust">new, not yet owner-reviewed: a module whose top-level code the gate refuses is listed with that code left out, and keeps the functions that read none of the left-out bindings; that code's effects on imported values are under the import assumption</span></li><li>wire: --verify-interface-stage takes no given or stand-ins file</li><li>wire: the pipeline calls --verify-interface-stage with no given or stand-ins file</li><li>wire: the claims document and the producer's side documents removed; attempt records without <code>reusedFrom</code></li><li>wire: the verifier's commands are --verify-interface-stage 8, --module-interface-plan, --module-interface and --lower-control-flow</li><li>wire: single-pass symbol keys carry canonical numbers</li></ul></li></ul></section>
+<h2 id="g-pr-154"><code>9980485bd1728522609a3cfa34d3f8d2a24cf0c4..pr-154</code></h2><article class="card" id="c-96edec793"><header><div><div class="sha">96edec793 · Cristiano Calcagno · Nov 13, 01:05</div><h3>Check a source file by the single pass with nothing supplied, in Lean</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The single pass reached a verdict only from the claims the producer supplied. With its loop heads' proposals computed from the fragment and every module's interface computed by the same pass, it checks a file from its fragment alone.</p></div>
+<h4 class="change"><span class="act added">added</span>Proposal <span class="target">loop heads' candidates, HeadInference, RegionInference</span></h4><div class="prose"><p>a loop head's proposed facts are computed from the fragment: counters and their bounds, the facts the loop's entry holds, store separations, implications at statement entries, regional tables and the facts calls restate; a candidate is kept where every edge into the head establishes it, the written invariant and the bindings' contents staying required</p></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">mode 8's inferred route, PassUnitInferred</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">an accepted group of the inferred route is safe at the plans it</span></span></div><div class="row"><span><span class="m-text">started from</span> (<span class="m-op">passGroupMode8</span><sub><span class="m-text">safe</span></sub>)<span class="m-rel">:</span> <span class="m-text">its runs differ only in their</span></span></div><div class="row"><span><span class="m-text">candidates, which no request's safety reads</span></span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">module interfaces, FragmentFront, PassUnitInterfaces</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>a module's entries from the producer's claims</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>a fold of one step per module, each module's reached groups checked by mode 8, an entry published where its function is laid out and its rows agree with the module's store (moduleRowsAgree), read where they agree with the importer's slot (importerRowsAgree)</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Wire <span class="target">the pass's command line</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>verifier --verify-interface-stage &lt;mode&gt; &lt;ast&gt; &lt;interfaces&gt; &lt;given&gt; &lt;stand-ins&gt; &lt;key&gt; &lt;depth&gt; &lt;names&gt;</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>verifier --verify-interface-stage &lt;mode&gt; &lt;ast&gt; &lt;interfaces&gt; &lt;key&gt; &lt;depth&gt; &lt;names&gt;</p></div></figure></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span></dd><dt>Lean</dt><dd>HeadInference · RegionInference · PassUnitInferred · passGroupMode8_safe · establishModules · moduleRowsAgree · importerRowsAgree · FilePlans.laidOut · Main.command</dd><dt>Wire</dt><dd>--verify-interface-stage takes no given or stand-ins file</dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>18 files changed, 2924 insertions(+), 148 deletions(-)</summary><pre class="code"> lean/Main.lean                                     |    7 +-
+ lean/Verification/Source/Claims/FragmentFront.lean |  684 +++++++++-
+ lean/Verification/Source/Claims/HeadInference.lean | 1396 ++++++++++++++++++++
+ lean/Verification/Source/Claims/Json.lean          |   35 +-
+ lean/Verification/Source/Claims/PassUnitCross.lean |   21 +-
+ lean/Verification/Source/Claims/PassUnitFile.lean  |   30 +-
+ .../Source/Claims/PassUnitHeadline.lean            |   23 +-
+ .../Source/Claims/PassUnitInferred.lean            |  323 +++++
+ .../Source/Claims/PassUnitInterfaces.lean          |   75 +-
+ lean/Verification/Source/Claims/PassUnitLink.lean  |   24 +-
+ lean/Verification/Source/Claims/PassUnitPlans.lean |    8 +-
+ lean/Verification/Source/Claims/PassUnitRun.lean   |   61 +-
+ .../Source/Claims/PassUnitVerdict.lean             |   10 +-
+ .../Source/Claims/RegionInference.lean             |  284 ++++
+ lean/Verification/Source/Lowering/Execution.lean   |    4 +-
+ lean/Verification/Source/Lowering/Synthesis.lean   |   35 +-
+ lean/Verification/Source/RequestCli.lean           |   42 +-
+ lean/Verification/Source/SourceTypes.lean          |   10 +</pre></details>
+<div class="sha">with Claude Fable 5.2</div>
+</article>
+<article class="card" id="c-51b033da0"><header><div><div class="sha">51b033da0 · Cristiano Calcagno · Nov 13, 01:05</div><h3>Check every source by the single pass with nothing supplied, its cases restated</h3></div><span class="pill ok">verified</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The single pass is proved sound with nothing supplied (passGroupMode8_safe), so it is the route every check takes; the cases expected the old search's refusal texts.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">the default route</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">TSCERT_ROUTE unset: the producer's claims, searched and checked</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">TSCERT_ROUTE unset: verifier --verify-interface-stage 8 over the</span><span class="ln">fragment and the module interfaces it needs, nothing supplied;</span><span class="ln">TSCERT_ROUTE=pipeline: the old route, until it is removed</span></pre></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Wire <span class="target">the pipeline's call of the pass</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>verifier --verify-interface-stage &lt;mode&gt; &lt;ast&gt; &lt;interfaces&gt; &lt;given&gt; &lt;stand-ins&gt; &lt;key&gt; &lt;depth&gt; &lt;names&gt;</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>verifier --verify-interface-stage &lt;mode&gt; &lt;ast&gt; &lt;interfaces&gt; &lt;key&gt; &lt;depth&gt; &lt;names&gt;; a measurement's given lines and stand-ins reach it through TSCERT_GIVEN and TSCERT_STANDINS</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">the performance gate</span></h4><pre class="code"><span class="ln">every unit is mode 8 over its fragment, nothing supplied; the baseline</span><span class="ln">re-measured</span></pre>
+<h4 class="change">Effect</h4><ul class="effect"><li><code>653 cases</code> <span class="why">their refusal's text, span, status or phase restated to what the pass prints</span></li><li><code>blocker-gap-round-cache-answer-inferred, invalid-native-promise-invariant-result</code> <span class="was">negative</span> <span class="arrow">→</span> <span class="now">positive</span> <span class="why">safe under Node</span></li><li><code>blocker-pretext-equality-conjunction, blocker-last-guard-param-inferred</code> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">positive</span></li><li><code>10 negative cases</code> <span class="was">negative</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">the pass refuses before their own obligation, the cause in each example's header</span></li><li><details><summary><code>sealed-handle-value-import</code> <span class="kind gap">gap</span> <span class="was">positive</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">its readers read an import stating @ensures, outside the laid-out set</span></summary><pre class="code"><span class="tk-c">// A sealed handle's invariant (ARITHMETIC.md, &quot;Type invariants&quot;),</span>
+<span class="tk-c">// pretext's `PreparedText`, across an import: `@fixture/handle` declares the</span>
+<span class="tk-c">// branded handle, its representation `PreparedLineBreakData` and its</span>
+<span class="tk-c">// invariant over the representation's fields (`@representation`), and `seal`</span>
+<span class="tk-c">// and `open`, its casts in and out. Each function taking the handle assumes</span>
+<span class="tk-c">// `segmentFlags.length === widths.length` of it; `open` states it of the</span>
+<span class="tk-c">// record it returns, so `countBreaks` reads `segmentFlags[i]!` below</span>
+<span class="tk-c">// `widths.length`. The builder establishes the representation's invariant at</span>
+<span class="tk-c">// its call of `seal`; a write of the field `label` of the opened record,</span>
+<span class="tk-c">// which the invariant does not read, keeps it, and the record, a handle too</span>
+<span class="tk-c">// (`PreparedText &amp; PreparedLineBreakData`), is passed on; so are a parameter's</span>
+<span class="tk-c">// default and a literal's allocation. A result of a union each of whose arms</span>
+<span class="tk-c">// names the handle states its invariant.</span>
+<span class="tk-c">// On the single pass, a gap: the single pass verifies prepare, countBreaks</span>
+<span class="tk-c">// and counted; labelled and reopened read the imported `open`, whose</span>
+<span class="tk-c">// `@ensures` postcondition puts it outside the laid-out set the cross-module</span>
+<span class="tk-c">// theorem covers (`Effect.below`), so its interface entry is not published</span>
+<span class="tk-c">// and the postcondition is not established at their returns.</span>
+<span class="tk-k">import</span> { open, seal, <span class="tk-k">type</span> <span class="tk-t">PreparedLineBreakData</span>, <span class="tk-k">type</span> <span class="tk-t">PreparedText</span> } <span class="tk-k">from</span> <span class="tk-s">&quot;@fixture/handle&quot;</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> prepare(texts: string[]): <span class="tk-t">PreparedText</span> {
+  <span class="tk-k">const</span> widths: number[] = [];
+  <span class="tk-k">for</span> (<span class="tk-k">const</span> t <span class="tk-k">of</span> texts) widths.push(t.length);
+  <span class="tk-k">const</span> segmentFlags = <span class="tk-k">new</span> <span class="tk-t">Uint8Array</span>(widths.length);
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; widths.length; i++)
+    segmentFlags[i] = widths[i]! === <span class="tk-n">0</span> ? <span class="tk-n">1</span> : <span class="tk-n">0</span>;
+  <span class="tk-k">return</span> seal({ widths, segmentFlags, label: <span class="tk-s">&quot;&quot;</span> });
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> countBreaks(prepared: <span class="tk-t">PreparedText</span>): number {
+  <span class="tk-k">const</span> internal = open(prepared);
+  <span class="tk-k">let</span> n = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; internal.widths.length; i++) {
+    <span class="tk-k">if</span> (internal.segmentFlags[i]! === <span class="tk-n">1</span>) n++;
+  }
+  <span class="tk-k">return</span> n;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> labelled(prepared: <span class="tk-t">PreparedText</span>): number {
+  <span class="tk-k">const</span> internal = open(prepared);
+  internal.label = <span class="tk-s">&quot;counted&quot;</span>;
+  <span class="tk-k">return</span> <mark>countBreaks(internal)</mark>;
+}
+
+<span class="tk-c">// A parameter with a default beside the handle, and a literal allocated</span>
+<span class="tk-c">// before the handle is passed on: neither changes a location the invariant</span>
+<span class="tk-c">// reads.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> counted(prepared: <span class="tk-t">PreparedText</span>, <span class="tk-k">from</span>: number = <span class="tk-n">0</span>): number {
+  <span class="tk-k">const</span> stats = { lines: <span class="tk-k">from</span> };
+  <span class="tk-k">return</span> countBreaks(prepared) + stats.lines;
+}
+
+<span class="tk-c">// A result of a union each of whose arms names the handle: the handle's</span>
+<span class="tk-c">// invariant is a fact of the result, which each return establishes.</span>
+<span class="tk-k">function</span> reopened(prepared: <span class="tk-t">PreparedText</span>, again: boolean):
+    (<span class="tk-t">PreparedText</span> &amp; <span class="tk-t">PreparedLineBreakData</span>) | (<span class="tk-t">PreparedText</span> &amp; { <span class="tk-k">readonly</span> label: string }) {
+  <span class="tk-k">return</span> again ? open(open(prepared)) : open(prepared);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> layout(texts: string[]): number {
+  <span class="tk-k">return</span> labelled(reopened(prepare(texts), texts.length &gt; <span class="tk-n">1</span>)) + counted(prepare(texts));
+}</pre></details></li></ul>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span> <span class="chip">tools</span></dd><dt>Wire</dt><dd>the pipeline calls --verify-interface-stage with no given or stand-ins file</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>cases on the default route 3,312 of 3,312 as expected, 4,198 functions verified · mode 8 with nothing supplied against the pipeline 6,299 of 6,302 units agree (2026-11-12)</dd></dl>
+<details><summary>21 files changed, 1093 insertions(+), 1654 deletions(-)</summary><pre class="code"> dev/perf-baseline.json                             |  262 +--
+ dev/perf-gate.mts                                  |   71 +-
+ dev/single-pass-agreement.mts                      |   72 +-
+ pipeline/cases.mts                                 | 1965 +++++++-------------
+ pipeline/examples/invalid-array-assign-rest.ts     |    2 +
+ .../invalid-closure-finally-throw-footprint.ts     |    3 +
+ .../invalid-closure-offer-extends-narrower.ts      |    3 +
+ .../invalid-closure-offer-narrower-parameter.ts    |    3 +
+ pipeline/examples/invalid-field-write-call.ts      |    2 +
+ .../invalid-gap-round-locations-map-shrinking.ts   |    2 +
+ pipeline/examples/invalid-read-narrows-catch.ts    |    3 +
+ .../invalid-read-narrows-path-alias-write.ts       |    2 +
+ ...invalid-recursive-constant-callback-mutation.ts |    4 +
+ pipeline/examples/invalid-split-element-write.ts   |    3 +
+ pipeline/examples/sealed-handle-value-import.ts    |    5 +
+ pipeline/module-interfaces.mts                     |   29 +-
+ pipeline/stage-execution.mts                       |    8 +-
+ pipeline/verify-source.mts                         |   33 +-
+ test-all.sh                                        |    4 +-
+ tests/single-pass-control-inputs.mts               |   45 +-
+ tests/single-pass-controls.mts                     |  226 ++-</pre></details>
+<div class="sha">with Claude Fable 5.2</div>
+</article>
+<article class="card" id="c-0e6d4aa34"><header><div><div class="sha">0e6d4aa34 · Cristiano Calcagno · Nov 13, 01:05</div><h3>State the single pass as the default route in the design and the stage store</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The design, the stage store, the compiler API's notes and the drafts described the claims route as the default.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">DESIGN.md, STAGE-STORE.md, COMPILER-API.md, WORK.md, the single-pass drafts</span></h4><div class="prose"><p>the default route is the single pass over the fragment alone; the stage store's interface stages are mode 8's; the status rows state the route's measurements</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd></dl>
+<details><summary>5 files changed, 628 insertions(+), 47 deletions(-)</summary><pre class="code"> WORK.md                             |   3 +-
+ docs/drafts/module-interfaces.md    |  17 +-
+ docs/drafts/pass-unit-theorem.md    |  28 ++-
+ docs/drafts/single-pass-controls.md | 345 +++++++++++++++++++++++++++++++++---
+ docs/drafts/single-pass.md          | 282 +++++++++++++++++++++++++++--</pre></details>
+<div class="sha">with Claude Fable 5.2</div>
+</article>
+<article class="card" id="c-a658d4b6d"><header><div><div class="sha">a658d4b6d · Cristiano Calcagno · Nov 13, 01:05</div><h3>Run the controls in one suite and remove the claims route's controls</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The checks take the single pass, so a control of claims, evidence or the old checker tests a route no check takes; the controls that test the parser's document, a native counterexample, run retention and the store's replay hold on the pass's route and join its control suite.</p></div>
+<h4 class="change"><span class="act added">added</span>Control <span class="target">the parser's document and the driver</span></h4><div class="control"><p>imported functions left out with a function they read: invalid-absent-callee-value-import, invalid-absent-init-value-import guard binding: a closure's write keeps the guard an ordinary call (compiler-api-guard-own-binding, compiler-api-guard-closure-write) tag selection: one per run (compiler-api-units, compiler-api-project/node-names.ts) string object hook: invalid-string-object-hook's counterexample under Node run retention: only requested runs are kept, a failed request write and a timed-out worker leave nothing, a full disk stops a run replay: cold, warm and evicted runs agree on outcome, fragment, parse and pass logs and TypeScript's diagnostics; the warm run replays parse, interface-plan, module-interface and pass</p></div>
+<h4 class="change"><span class="act removed">removed</span>Control <span class="target">the claims route's controls</span></h4><div class="control"><p>pipeline/test.mts's 281 registrations; each is placed in docs/drafts/single-pass-controls.md, &quot;Every old control&quot;: 158 covered by a single-pass control, 54 in part, 68 gone with the claims and the old checker's mutation verifier, the 5 route-independent ones above Their forgers: default-parameters, generic-rest, overload-claims, rest-pack-instance; the old checker's mutation verifier (pipeline/evidence-mutations.mts)</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">the suite</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">&quot;Controls&quot;: TSCERT_ROUTE=pipeline node pipeline/test.mts, the observed</span><span class="ln">stages' replay controls and the declaration sessions' controls beside it;</span><span class="ln">&quot;Single-pass controls&quot;: node tests/single-pass-controls.mts</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">&quot;Controls&quot;: node tests/single-pass-controls.mts, the observed stages'</span><span class="ln">replay controls and the declaration sessions' controls beside it when</span><span class="ln">no pattern is given</span></pre></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">the Node runs</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">a case whose program Node shows unsafe must be a negative case</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">a negative or a gap case: the ten negative cases the pass refuses</span><span class="ln">before their own obligation are gaps, their programs still unsafe</span></pre></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">STAGE-STORE.md, Keys and Controls; tests/README.md</span></h4><div class="prose"><p>the removed files leave the unkeyed list; the controls are tests/single-pass-controls.mts's; the mutation section of the old checker goes</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Measured</dt><dd>make test-checks: 23 suites passed, 0 failed · the controls 169 in 63.4 s on 12 lanes, 18 operations executed, 422 replayed (2026-11-12)</dd></dl>
+<details><summary>18 files changed, 359 insertions(+), 12210 deletions(-)</summary><pre class="code"> docs/COMPILER-API.md            |     4 +-
+ docs/DESIGN.md                  |     2 +-
+ docs/STAGE-STORE.md             |    30 +-
+ pipeline/default-parameters.mts |   232 -
+ pipeline/evidence-mutations.mts |   229 -
+ pipeline/generic-rest.mts       |   176 -
+ pipeline/overload-claims.mts    |   120 -
+ pipeline/rest-pack-instance.mts |    32 -
+ pipeline/run-cases.mts          |     2 +-
+ pipeline/stage-execution.mts    |     5 +-
+ pipeline/test.mts               | 11319 --------------------------------------
+ test-all.sh                     |     9 +-
+ tests/README.md                 |    38 +-
+ tests/node-runs.mts             |    41 +-
+ tests/observed-stages.mts       |     4 +-
+ tests/single-pass-controls.mts  |   321 +-
+ tests/single-pass-mutations.mts |     3 +-
+ tests/stage-store.mts           |     2 +-</pre></details>
+<div class="sha">with Claude Fable 5.2</div>
+</article>
+<article class="card" id="c-a653d8009"><header><div><div class="sha">a653d8009 · Cristiano Calcagno · Nov 13, 01:05</div><h3>Remove the claims route from the node side</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Every check takes the single pass over the fragment; the producer's stages, the claims document, the search and check stages and evidence reuse serve only the route no check takes.</p></div>
+<h4 class="change"><span class="act removed">removed</span>Tooling <span class="target">the claims route of a check</span></h4><pre class="code"><span class="ln">the producer's stages (facts, propose, assemble, explain), the plan,</span><span class="ln">search, check, module-search and module-check stages, their calls and</span><span class="ln">the producer's exit protocol; the per-unit proposal and its slices</span><span class="ln">(pipeline/unit-slices.mts, unit-documents.mts), the claims assembly</span><span class="ln">(pipeline/claims-assembly.mts); TSCERT_ROUTE</span></pre>
+<h4 class="change"><span class="act removed">removed</span>Wire <span class="target">the claims document's description</span></h4><div class="prose"><p>tools/source-claims.mts, decodeSourceClaims and the field-name comparisons of SourceClaims and of the producer's side documents</p></div>
+<h4 class="change"><span class="act removed">removed</span>Tooling <span class="target">evidence reuse</span></h4><pre class="code"><span class="ln">TSCERT_EVIDENCE_REUSE, a search's reuse of another build's evidence, the</span><span class="ln">attempt record's `reused` execution and `reusedFrom`, an outcome's</span><span class="ln">`reused` count. The store keeps its `proposed` reference index, which a</span><span class="ln">checkout on the claims route still writes in the shared default store.</span></pre>
+<h4 class="change"><span class="act removed">removed</span>Tooling <span class="target">the comparisons with the claims route</span></h4><pre class="code"><span class="ln">dev/single-pass-agreement, single-pass-given, single-pass-standins,</span><span class="ln">single-pass-state, single-pass-invariants, type-comparison, route-timing</span></pre>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">make lowering</span></h4><div class="versions"><figure><figcaption>Before</figcaption><pre class="code"><span class="ln">the program graph over the producer's claims (verifier --lower-program)</span></pre></figure><figure><figcaption>After</figcaption><pre class="code"><span class="ln">the execution graphs the pass walks (verifier --lower-control-flow):</span><span class="ln">each node's action, its successors and the sources it evaluates</span></pre></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">dev/check-functions.mts</span></h4><pre class="code"><span class="ln">a unit's refusal and its places; the producer's fact losses and the</span><span class="ln">reuse count go</span></pre>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">the store's tests</span></h4><pre class="code"><span class="ln">a stand-in in-process stage of the test's own in place of the claims</span><span class="ln">assembly; an output role and the integrity of a refusal's manifest over</span><span class="ln">the pass's stage</span></pre>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">STAGE-STORE.md, LANGUAGES.md, WORK.md</span></h4><div class="prose"><p>the sections Units of a check and Evidence proposals go; the stage table lists the parse, module, lower, interface-plan, module-interface, pass and diagnostics stages; LANGUAGES.md's SourceClaims row goes; the status rows of evidence reuse and per-unit stages go; the draft of evidence hints goes</p></div>
+<h4 class="change">Gap</h4><p>three citations stay broken until the commits that remove or restate</p><div class="prose"><p>their documents: ocaml-producer/README.md (the producer's removal), Translate.lean (the Lean claims route's), CLAUDE.md (its own commit).</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tools</span> <span class="chip">tests</span> <span class="chip">docs</span> <span class="chip strong">wire</span></dd><dt>Wire</dt><dd>the claims document and the producer's side documents removed · attempt records without <code>reusedFrom</code></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>make test-checks: 22 suites passed, 1 failed (Documents: the three citations above) · the controls 169 of 169 · cases matching &quot;import&quot; 205 of 205 as expected, 148 functions verified (2026-11-12)</dd></dl>
+<details><summary>36 files changed, 156 insertions(+), 3531 deletions(-)</summary><pre class="code"> WORK.md                              |   2 -
+ dev/census.mts                       |   4 +-
+ dev/check-functions.mts              |  26 +-
+ dev/lowering-dump.mts                | 104 ++--
+ dev/perf-gate.mts                    |   2 -
+ dev/route-timing.mts                 |  76 ---
+ dev/single-pass-agreement.mts        | 334 ------------
+ dev/single-pass-given.mts            |  54 --
+ dev/single-pass-invariants.mts       |  70 ---
+ dev/single-pass-standins.mts         |  48 --
+ dev/single-pass-state.mts            | 158 ------
+ dev/type-comparison.mts              | 101 ----
+ docs/DESIGN.md                       |   2 +-
+ docs/LANGUAGES.md                    |   3 +-
+ docs/REQUEST-PROTOCOL.md             |   6 +-
+ docs/STAGE-STORE.md                  | 287 +----------
+ docs/drafts/evidence-hints.md        |  29 --
+ pipeline/claims-assembly.mts         |  24 -
+ pipeline/module-interfaces.mts       |   4 +-
+ pipeline/parse-stage.mts             |   2 +-
+ pipeline/run-cases.mts               |   5 +-
+ pipeline/stage-execution.mts         |  72 +--
+ pipeline/stages.mts                  | 128 +----
+ pipeline/unit-documents.mts          |  45 --
+ pipeline/unit-slices.mts             | 446 ----------------
+ pipeline/verify-source.mts           | 967 ++---------------------------------
+ test-all.sh                          |   7 +-
+ tests/claim-text.mts                 |   2 +-
+ tests/json-field-names.mts           |  65 +--
+ tests/session-reuse.mts              |   2 +-
+ tests/single-pass-control-inputs.mts |   4 +-
+ tests/single-pass-controls.mts       |   9 +-
+ tests/stage-store.mts                |  36 +-
+ tools/source-claims.mts              | 556 --------------------
+ tools/source-flow.mts                |   2 +-
+ tools/type-graph.mts                 |   5 -</pre></details>
+<div class="sha">with Claude Fable 5.2</div>
+</article>
+<article class="card" id="c-9924e450b"><header><div><div class="sha">9924e450b · Cristiano Calcagno · Nov 13, 01:05</div><h3>Remove the OCaml producer</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>No check runs the producer: the single pass computes every type and fact it proposed, inside the verifier.</p></div>
+<h4 class="change"><span class="act removed">removed</span>Tooling <span class="target">the producer</span></h4><pre class="code"><span class="ln">ocaml-producer/ (its sources, dune project and README); the Makefile's</span><span class="ln">build-producer and its place in build; CI's and the census workflow's</span><span class="ln">OCaml and Dune setup and their `opam exec` prefixes; the docs check's</span><span class="ln">and the gap iteration's reads of the directory</span></pre>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">README.md, DESIGN.md, GLOSSARY.md, LANGUAGES.md, SOURCE-ELABORATION.md</span></h4><div class="prose"><p>the prerequisites are Node and the Lean toolchain; the links into the producer's files go, their prose restated in the docs commit</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">tools</span> <span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Measured</dt><dd>make test-checks: 22 suites passed, 1 failed (Documents: CLAUDE.md's two links and Translate.lean's citation, restated in their own commits) · the controls 169 of 169 (2026-11-12)</dd></dl>
+<details><summary>53 files changed, 28 insertions(+), 15356 deletions(-)</summary><pre class="code"> .github/workflows/census.yml            |   11 +-
+ .github/workflows/ci.yml                |   13 +-
+ Makefile                                |    9 +-
+ README.md                               |    6 +-
+ dev/gap-iteration.mts                   |    6 +-
+ docs/DESIGN.md                          |    5 +-
+ docs/GLOSSARY.md                        |    2 +-
+ docs/LANGUAGES.md                       |    4 +-
+ docs/SOURCE-ELABORATION.md              |    2 +-
+ docs/drafts/canonicity.md               |    4 +-
+ ocaml-producer/README.md                |  355 -----
+ ocaml-producer/analysis_capabilities.ml |  164 ---
+ ocaml-producer/analysis_context.ml      |   66 -
+ ocaml-producer/analysis_pass.ml         |   49 -
+ ocaml-producer/analysis_state.ml        |  357 -----
+ ocaml-producer/analysis_state.mli       |   37 -
+ ocaml-producer/binding_analysis.ml      |  138 --
+ ocaml-producer/claim_collection.ml      |   73 -
+ ocaml-producer/claims.ml                |  734 ----------
+ ocaml-producer/closure_offers.ml        |   92 --
+ ocaml-producer/dune                     |   21 -
+ ocaml-producer/dune-project             |    2 -
+ ocaml-producer/environment.ml           |  167 ---
+ ocaml-producer/execution.ml             |  133 --
+ ocaml-producer/execution_analysis.ml    |  326 -----
+ ocaml-producer/expression_calls.ml      | 1144 ---------------
+ ocaml-producer/expression_closures.ml   |  474 -------
+ ocaml-producer/expression_objects.ml    |  311 ----
+ ocaml-producer/expression_properties.ml |  168 ---
+ ocaml-producer/expression_support.ml    |  151 --
+ ocaml-producer/expression_typing.ml     |   60 -
+ ocaml-producer/expression_values.ml     |  495 -------
+ ocaml-producer/flow.ml                  |  138 --
+ ocaml-producer/inference.ml             |  646 ---------
+ ocaml-producer/json.ml                  |  111 --
+ ocaml-producer/linear_facts.ml          | 2335 -------------------------------
+ ocaml-producer/module_contract.ml       |   58 -
+ ocaml-producer/object_spread.ml         |  265 ----
+ ocaml-producer/producer.ml              |  297 ----
+ ocaml-producer/proposal.ml              |  387 -----
+ ocaml-producer/proposal_diagnostics.ml  |  133 --
+ ocaml-producer/proposal_flow.ml         |  602 --------
+ ocaml-producer/proposal_types.ml        |   26 -
+ ocaml-producer/refinement.ml            |  656 ---------
+ ocaml-producer/semantic.ml              |  535 -------
+ ocaml-producer/source.ml                | 1647 ----------------------
+ ocaml-producer/statement_analysis.ml    |  800 -----------
+ ocaml-producer/type_queries.ml          | 1157 ---------------
+ pipeline/examples/callables/README.md   |    2 +-
+ tests/README.md                         |    2 +-
+ tests/docs.mts                          |    2 +-
+ tools/type-graph.mts                    |    4 +-
+ tools/wire-strings.mts                  |    2 +-</pre></details>
+<div class="sha">with Claude Fable 5.2</div>
+</article>
+<article class="card" id="c-bedaf09b0"><header><div><div class="sha">bedaf09b0 · Cristiano Calcagno · Nov 13, 01:05</div><h3>Remove the Lean claims route: its commands, the old checker and its theorem</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The verifier's command line serves the single pass and its module interfaces; the search over claims, the old checker and their evidence wire serve commands no check runs.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Wire <span class="target">the verifier's command line</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>--lower-control-flow, --lower-program, --plan-imports, --produce-unit, --check-units, --verify-units &lt;mode 0–9&gt;, --module-runs, --check-module, --module-interface-plan, --module-interface, --verify-interface-stage 8|9 (given lines and stand-ins from TSCERT_GIVEN, TSCERT_STANDINS)</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>--verify-interface-stage 8 &lt;ast&gt; &lt;interfaces&gt; &lt;file-key&gt; &lt;depth&gt; &lt;names&gt; --module-interface-plan &lt;ast&gt; &lt;selection&gt; --module-interface &lt;request&gt;, the request {modules, dependencies, force, fuel, mode} --lower-control-flow &lt;ast&gt;</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Theorem <span class="target">the headline AxiomCheck guards</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-con">SourceClaimJson</span>.<span class="m-op">checkUnitJson</span><sub><span class="m-text">safe</span></sub><span class="m-rel">:</span> <span class="m-text">the old checker's accepted verdict</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-con">SourceClaimJson</span>.<span class="m-con">PassUnit</span>.<span class="m-op">mode8Accepted</span><sub><span class="m-text">sound</span></sub><span class="m-rel">:</span> <span class="m-con">Mode8Accepted</span> <var>f</var> <var>i</var> → <span class="m-con">PassUnitSafe</span> <var>f</var> <var>i</var>,</span></div><div class="row"><span><span class="m-text">where</span> <span class="m-con">Mode8Accepted</span> <span class="m-text">is a unit printed accepted at either of mode</span> 8'<var>s</var></span></div><div class="row"><span><span class="m-text">print sites, the file's own check over the interfaces it reads and a</span></span></div><div class="row"><span><span class="m-text">module's check in the interface stage</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act removed">removed</span>Definition <span class="target">the old checker and its wire</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-con">Claims</span>/<span class="m-con">Translate</span>.<span class="m-text">lean (evidence relocation, checkUnitJson</span>, <span class="m-op">checkUnitJson</span><sub><span class="m-text">safe</span></sub>),</span></div><div class="row"><span><span class="m-con">EvidenceWire</span>.<span class="m-text">lean (the evidence document), Tests</span>/<span class="m-con">DiagnosticControls</span>.<span class="m-text">lean</span></span></div><div class="row"><span><span class="m-text">(controls of the certificate search's diagnostics); in Claims</span>/<span class="m-con">Json</span>.<span class="m-text">lean</span></span></div><div class="row"><span><span class="m-text">the claims document's plans and the old check (filePlans, unitPlans</span>,</span></div><div class="row"><span><span class="m-text">produceGroup, checkGroup, verifyGroup, unitVerdict and</span> <span class="m-op">unitVerdict</span><sub><span class="m-text">safe</span></sub>,</span></div><div class="row"><span><span class="m-text">checkDocument and</span> <span class="m-op">checkDocument</span><sub><span class="m-text">safe</span></sub>, <span class="m-text">lowerJson, givenLines, the module</span></span></div><div class="row"><span><span class="m-text">runs' wire and verdict); in Claims</span>/<span class="m-con">Imports</span>.<span class="m-text">lean the claims' import plan</span></span></div><div class="row"><span><span class="m-text">(planImports, planRefusals); TypeComparison's comparison with the claims</span></span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Check <span class="target">the interface stage's inputs</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>a component request's given lines and cuts; modes 8 and 9</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>every loop head's proposal inferred; mode 8</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">the interfaces driver</span></h4><pre class="code"><span class="ln">InterfaceOptions without given lines, stand-ins, cuts or mode 9; the</span><span class="ln">controls of the one-process path (--verify-units 8) go with it</span></pre>
+<h4 class="change">Gap</h4><p>about 13,000 declarations of the Lean tree are reached neither from</p><div class="prose"><p>the verifier's main nor from the mode-8 theorems (a reachability over types, values, csimp lemmas and partial definitions' implementations); most are theory not on the headline's path or generated lemmas; the claims decoder (Claims/Wire.lean), the search's producer (CertificateProducer.lean) and RequestJson.lean hold the rest, which other modules' theorems still use. They are pruned in later commits.</p></div>
+<h4 class="change">Soundness</h4><p>mode8Accepted_sound's statement is unchanged; the command line's</p><div class="prose"><p>two print sites still match its constructors (preparedMode8 at no given lines, inference on, the interfaces' plans), and AxiomCheck fails the build on any axiom beyond propext, Classical.choice and Quot.sound.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-proofs</span> <span class="chip strong">wire</span> <span class="chip">tools</span> <span class="chip">tests</span> <span class="chip">docs</span></dd><dt>Lean</dt><dd>SourceClaimJson.PassUnit.mode8Accepted_sound · RequestCli.verifyUnitsFile · RequestCli.interfaceFile</dd><dt>Wire</dt><dd>the verifier's commands are --verify-interface-stage 8, --module-interface-plan, --module-interface and --lower-control-flow</dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Measured</dt><dd>lake build of every module, no warning · make test-checks: 21 suites passed, 2 failed (Documents: CLAUDE.md's two links, restated in its own commit · Stage store: a 10 s stand-in timed out at load 30, and passes alone) · the controls 169 of 169 · cases matching &quot;certified&quot; 10 of 10 as expected (2026-11-12)</dd></dl>
+<details><summary>23 files changed, 127 insertions(+), 2860 deletions(-)</summary><pre class="code"> dev/module-interface-controls.mts                  |   8 +-
+ dev/perf-gate.mts                                  |   3 +-
+ docs/LANGUAGES.md                                  |   2 +-
+ docs/REQUEST-PROTOCOL.md                           |   2 +-
+ docs/drafts/canonicity.md                          |   2 +-
+ lean/Main.lean                                     |  64 +-
+ lean/Verification/Source/Claims/Extraction.lean    |  11 -
+ lean/Verification/Source/Claims/FragmentFront.lean |   4 +-
+ lean/Verification/Source/Claims/HeadInference.lean |  12 +-
+ lean/Verification/Source/Claims/Imports.lean       | 210 ------
+ lean/Verification/Source/Claims/Json.lean          | 707 -------------------
+ .../Source/Claims/PassUnitInterfaces.lean          |   4 +-
+ lean/Verification/Source/Claims/Translate.lean     | 778 ---------------------
+ .../Verification/Source/Claims/TypeComparison.lean |  24 +-
+ lean/Verification/Source/EvidenceWire.lean         | 515 --------------
+ lean/Verification/Source/RequestCli.lean           | 486 ++-----------
+ lean/Verification/Tests/AxiomCheck.lean            |   8 +-
+ lean/Verification/Tests/DiagnosticControls.lean    |  44 --
+ lean/Verification/Tests/FootprintControls.lean     |   2 +-
+ pipeline/module-interfaces.mts                     |  45 +-
+ pipeline/verify-source.mts                         |   2 +-
+ tests/single-pass-control-inputs.mts               |  21 +-
+ tests/single-pass-controls.mts                     |  33 +-</pre></details>
+<div class="sha">with Claude Fable 5.2</div>
+</article>
+<article class="card" id="c-300f0282c"><header><div><div class="sha">300f0282c · Cristiano Calcagno · Nov 13, 01:05</div><h3>Restate CLAUDE.md for the single pass as the one route</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The producer, the claims document, the search's evidence reuse and the old controls are removed; CLAUDE.md named them as the route, its commands, its tests and its headline theorem.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">CLAUDE.md</span></h4><div class="prose"><p>the opening states the single pass; Commands: make build and make lowering; the stage store's evidence-reuse bullet goes; the iteration table's producer row goes, the Lean and wire rows name what they run; the worktree section's Dune and OCaml notes go; a run's directory holds fragment.json and pass.log; Which tests to keep: forged fragments and forced proposals; The suite's shape: tests/single-pass-controls.mts; the acceptance invariant's headline is SourceClaimJson.PassUnit.mode8Accepted_sound, its premise Mode8Accepted at both print sites; the soundness boundaries' producer-side tests, producer inference and the producer/checker agreement are restated for the pass's front; Conventions: the parser's document and its field-name check, AxiomCheck's headline</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Measured</dt><dd>node tests/docs.mts: 60 documents, 0 problems (2026-11-12)</dd></dl>
+<details><summary>1 file changed, 59 insertions(+), 67 deletions(-)</summary><pre class="code"> AGENTS.md | 126 +++++++++++++++++++++++++++++---------------------------------</pre></details>
+<div class="sha">with Claude Fable 5.2</div>
+</article>
+<article class="card" id="c-64373475c"><header><div><div class="sha">64373475c · Cristiano Calcagno · Nov 13, 01:05</div><h3>Prune the Lean the single pass does not reach; lay out module rows; read imports at their entries</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>interface-module-cells-value-import.ts#widest;</span><span>interface-postcondition-value-import.ts#lastBreaks;</span><span>invalid-false-ensures-value-import.ts#last;</span><span>pretext</span><span>prepare.ts#measureAnalysis</span><span>and</span><span>10</span><span>more</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>With the claims route removed, Lean declarations reached neither from the verifier nor from mode 8's theorems remained; module functions stating a postcondition or reading two module cells were outside the laid-out set, so their importers read them at the ordinary effect; and an import of a module with a body was read at its declaration, a false @ensures included (counterexample below). This commit holds five parts.</p></div>
+<h4 class="change"><span class="act removed">removed</span>Definition <span class="target">part 1, pruning: the request checker, the code-table check, the claims search's leftovers, the heap knowledge's reference normal forms, every declaration nothing of the single pass reaches</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-con">SourceExtraction</span>.<span class="m-text">checkRequests, RequestJson</span>.<span class="m-text">verify</span>,</span></div><div class="row"><span><span class="m-con">GraphCode</span>.<span class="m-op">codeChecked</span><sub><span class="m-text">sound</span></sub>, <span class="m-con">GraphCode</span>.<span class="m-op">checkCodes</span><sub><span class="m-text">sound</span></sub>,</span></div><div class="row"><span><span class="m-con">CertificateProducer</span>.<span class="m-text">acceptUsing, KnowledgeNormal</span>.<span class="m-text">norm and its lemmas</span>,</span></div><div class="row"><span><span class="m-con">LinkClasses</span>.<span class="m-text">norm, SeparationNormal</span>.<span class="m-text">encode, KnowledgeExpand</span>.<span class="m-text">expand and</span></span></div><div class="row"><span><span class="m-text">about</span> 140 <span class="m-text">further declarations; Lean lines</span> 148,931 -&gt; 147,243, <span class="m-text">named</span></span></div><div class="row"><span><span class="m-text">declarations</span> 12,040 -&gt; 11,902, <span class="m-text">AxiomCheck checks</span> 1,186 -&gt; 1,101</span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Definition <span class="target">part 2, the module row's specification, RowSpec</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">RowSpec</span><sub><var>G</var></sub><span class="m-text">(code</span>, <var>p</var>, <var>Σ</var>) ⟺ <span class="m-text">arity</span> <span class="m-rel">≤</span> |<var>p</var>.<span class="m-text">arguments</span>| ∧ <span class="m-op">belowRow</span><span class="m-text">(arity</span>, <var>p</var>.<span class="m-text">effect</span>)</span></div><div class="row cont"><span>∧ <span class="m-text">every run of the code from a frame meeting p's frame, p's</span></span></div><div class="row cont"><span><span class="m-text">precondition and the separation</span> <var>Σ</var> <span class="m-text">is safe at p's result and post</span></span></div><div class="row"><span><span class="m-op">belowRow</span>(<var>n</var>, <var>e</var>) ⟺ <span class="m-op">below</span>(<var>n</var>, <var>e</var> <span class="m-text">without its postcondition</span>)</span></div><div class="row cont"><span>∧ <span class="m-text">every postcondition fact names only positions</span> <span class="m-rel">≤</span> <var>n</var> + 1</span></div></div></div>
+<h4 class="change"><span class="act added">added</span>Theorem <span class="target">part 2, a unit request is module code at its signature</span></h4><div class="rules"><div class="formulas"><div class="row"><span><span class="m-op">RequestSafe</span>(<var>r</var>) ∧ <span class="m-op">UnitIsCode</span>(<var>r</var>, <var>c</var>) ∧ <span class="m-op">rowConditions</span>(<var>c</var>) ∧ <var>c</var> <span class="m-text">collects no rest</span></span></div><div class="row cont"><span>⟹ <span class="m-bind">∀</span> <var>η</var>. <span class="m-op">RowSpec</span><sub><span class="m-con">Gη</span></sub>(<var>c</var>, <var>c</var>.<span class="m-text">row</span>, <var>r</var>.<span class="m-op">entrySeparation</span>)</span></div><div class="row"><span>(<span class="m-op">rowSpec</span><sub><span class="m-op">of</span></sub><sub><span class="m-op">requestSafe</span></sub>, <span class="m-text">through</span> <span class="m-op">codeRun</span><sub><span class="m-op">of</span></sub><sub><span class="m-text">clauses</span></sub> <span class="m-text">and</span> <span class="m-op">rowSpec</span><sub><span class="m-op">of</span></sub><sub><span class="m-text">clauses</span></sub>)</span></div></div></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">part 2, the module layout, H5a</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">each member request with no entry separation, rows at GraphCodeSpec</span></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">rows at RowSpec with the function's frame separation (ModuleCode</span>.<span class="m-text">sep</span>),</span></div><div class="row"><span><span class="m-text">and apart</span><span class="m-rel">:</span> <span class="m-text">every frame a call of a laid-out function enters meets its</span></span></div><div class="row"><span><span class="m-text">separation, the module cells apart (ModuleLayout</span>.<span class="m-text">apart</span>)</span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Definition <span class="target">part 2, store maps</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><var>φ</var> <span class="m-text">injective on the region</span> <var>D</var></span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><span class="m-text">no label of</span> <var>D</var> <span class="m-text">shares the image of a parameter or of a binder of a</span></span></div><div class="row"><span><span class="m-text">scheme of</span> <var>D</var> (<span class="m-con">StoreMap</span>.<span class="m-text">inj, bindsOf); the importer's row check accepts</span></span></div><div class="row"><span><span class="m-text">either direction</span> (<span class="m-op">signatureAgrees</span><sub><span class="m-op">of</span></sub><sub><span class="m-text">checks</span></sub><sub><span class="m-text">back</span></sub>)</span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Typing <span class="target">part 2, an imported value, import-body</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="rules"><div class="formulas"><div class="row"><span><var>x</var> <span class="m-text">imported, declared at</span> <var>T</var></span><span>⟹</span><span><var>Γ</var>(<var>x</var>) <span class="m-rel">=</span> ⟦<var>T</var>⟧</span></div></div></div></figure><figure><figcaption>After</figcaption><div class="rules"><div class="formulas"><div class="row"><span><var>x</var> <span class="m-text">imported, declared at</span> <var>T</var>, <span class="m-text">its declaration with no body</span></span><span>⟹</span><span><var>Γ</var>(<var>x</var>) <span class="m-rel">=</span> ⟦<var>T</var>⟧</span></div><div class="row"><span><var>x</var> <span class="m-text">imported from a module with a body, declared at</span> <var>T</var>, <span class="m-text">no entry</span></span></div><div class="row cont"><span>⟹</span><span><var>Γ</var>(<var>x</var>) <span class="m-rel">=</span> ⟦<var>T</var>[<var>ε</var> <span class="m-rel">:</span><span class="m-rel">=</span> <var>ε</var>⊥]⟧, <span class="m-text">its precondition kept (ordinaryImport)</span></span></div></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Proposal <span class="target">part 3, the diagnosing walk</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>a refused run leaves out one lacking loop-head proposal and runs again</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>a refused run's diagnosing walk leaves out every lacking proposal it finds (FilePlans.inferredNextAll, dropAll), each rerun recandidated (inferredNextAll_recandidated, dropAll_recandidated); the region inference indexes the program graph as an array</p></div></figure></div>
+<h4 class="change"><span class="act added">added</span>Check <span class="target">part 4, forced points</span></h4><div class="prose"><p>TSCERT_FORCE forces one program point's proposal, and the proposal of a receiver that may be undefined, for the controls</p></div>
+<h4 class="change"><span class="act modified">modified</span>Wire <span class="target">part 5, canonical symbol keys</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>a symbol key at the number its document gave it</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>single-pass symbol keys carry canonical numbers (2^40 + identity hash mod 2^40, Fragment.canonicalSymbols); interface rows are related up to conjunction order (StoreMaps.Reordered, reorderedB_sound, clauseRelB_sound)</p></div></figure></div>
+<h4 class="change">Counterexample</h4><pre class="code"><span class="ln"><span class="tk-c">/** @ensures result.length === source.length + 1 */</span></span><span class="ln"><span class="tk-k">export</span> <span class="tk-k">function</span> breaksOf(source: string): <span class="tk-t">Uint8Array</span> { <span class="tk-k">return</span> <span class="tk-k">new</span> <span class="tk-t">Uint8Array</span>(source.length); }</span><span class="ln"><span class="tk-c">// importer: return breaksOf(source)[source.length]!</span></span><span class="ln"><span class="tk-c">// node: typeof last(&quot;ab&quot;) === &quot;undefined&quot;</span></span></pre>
+<h4 class="change">Soundness</h4><div class="prose"><p>The pruned declarations are reached from no theorem AxiomCheck checks and from no code the verifier runs. RowSpec is proved from the request's safety; crossModule_safe, mode8Accepted_sound and passFile_safe keep their statements over ModuleLayout (one field more, apart) and ReceiverDropSound (restated at RowSpec). The ordinary reading of an import assumes less than its declaration. The reordered row relation is proved to preserve each row's meaning.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">lean-rules</span> <span class="chip">lean-proofs</span> <span class="chip">lean-lowering</span> <span class="chip strong">trust</span></dd><dt>Lean</dt><dd>RowSpec · rowSpec_of_requestSafe · rowSpec_of_clauses · codeRun_of_clauses · ModuleLayout.apart · ModuleCode.sep · ReceiverDropSound · StoreMaps.StoreMap.inj · signatureAgrees_of_checks_back · ordinaryImport · Front.statesMore · importedSignatures · FilePlans.inferredNextAll · FilePlans.dropAll · inferredNextAll_recandidated · Fragment.canonicalSymbols · StoreMaps.reorderedB_sound · StoreMaps.clauseRelB_sound</dd><dt>Wire</dt><dd>single-pass symbol keys carry canonical numbers</dd><dt>Trust</dt><dd><span class="trust">an import from a module with a body is read only at its module's checked interface entry, else at its declared type with the ordinary effect, its precondition kept (owner-approved 2026-11-12); ModuleLayout.apart states the module cells of a laid-out function apart at every depth of the module's environment (a named hypothesis); ReceiverDropSound restated at RowSpec (a named hypothesis)</span></dd><dt>Measured</dt><dd>Lean lines 148,931 -&gt; 147,243 (1ace2a7c) · pretext on the single pass 157 -&gt; 198 of 210 (7eb0da7a), 198 -&gt; 202 (7202116c), 202 -&gt; 198 (8b9a0f57), node pipeline/verify-source.mts per file, 2026-11-13</dd></dl>
+<details><summary>102 files changed, 1505 insertions(+), 5696 deletions(-)</summary><pre class="code"> .../Programs/ArgumentPathTracking.lean             |  21 -
+ .../Verification/Programs/ArgumentRegionFresh.lean |   9 -
+ .../Verification/Programs/CertificateProducer.lean |  43 --
+ lean/Verification/Programs/ControlFlow.lean        |  91 ---
+ lean/Verification/Programs/ExpressionClaims.lean   |   4 -
+ lean/Verification/Programs/ExpressionEffects.lean  |  10 -
+ lean/Verification/Programs/GraphCode.lean          | 296 ----------
+ lean/Verification/Programs/Parametricity.lean      |  71 ---
+ .../Verification/Programs/ProgramCertificates.lean |   5 -
+ lean/Verification/Programs/SinglePass.lean         |  18 +-
+ .../Verification/Programs/SinglePassDiagnosis.lean | 165 ++++++
+ lean/Verification/Programs/SinglePassStats.lean    |  97 ----
+ .../Programs/TolerantFramesDriverEntry.lean        |   4 -
+ .../Programs/TolerantFramesDriverSettle.lean       |   7 -
+ .../Programs/TolerantFramesExitDelivers.lean       |   6 -
+ .../Programs/TolerantFramesExitFresh.lean          |  35 --
+ .../Programs/TolerantFramesExitStructural.lean     |   7 -
+ .../Programs/TolerantFramesExitTypes.lean          |  39 --
+ .../Programs/TolerantFramesExitYieldCache.lean     |  15 -
+ .../Programs/TolerantFramesGuarantee.lean          |   9 -
+ .../Programs/TolerantFramesMergeExits.lean         |  11 -
+ .../Programs/TolerantFramesMergeHead.lean          |  22 -
+ .../Programs/TolerantFramesMergeHolds.lean         |   5 -
+ .../Programs/TolerantFramesMergeMeet.lean          |   6 -
+ .../Programs/TolerantFramesModelLoop.lean          | 610 ---------------------
+ .../Programs/TolerantFramesModelRules.lean         | 273 ---------
+ .../Programs/TolerantFramesModelTyped.lean         | 272 ---------
+ .../Verification/Programs/TolerantFramesNamed.lean |   7 -
+ .../Programs/TolerantFramesNodeAsserts.lean        |  13 -
+ .../Programs/TolerantFramesNodeYielded.lean        |  61 ---
+ .../Programs/TolerantFramesRegionalAlignment.lean  |  40 --
+ .../Programs/TolerantFramesRegionalFacts.lean      |  16 -
+ .../Programs/TolerantFramesRegionalNode.lean       |   8 -
+ .../Programs/TolerantFramesRegionalRecorded.lean   |  38 --
+ .../Programs/TolerantFramesRegionalRuns.lean       |   5 -
+ lean/Verification/Programs/TolerantFramesRuns.lean |   4 -
+ .../Programs/TolerantFramesSelect.lean             |   3 -
+ .../Programs/TolerantFramesStoreOpsEdge.lean       |   2 -
+ .../Programs/TolerantFramesWalkReassignNodes.lean  |  30 -
+ .../Programs/TolerantFramesWalkReassignStep.lean   |   3 -
+ .../Programs/TolerantFramesWalkReassignWalk.lean   |  15 -
+ lean/Verification/Programs/TypingBasics.lean       |   4 -
+ .../Semantics/ArgumentStoreRegions.lean            | 124 -----
+ lean/Verification/Semantics/CallEffects.lean       |  75 ++-
+ lean/Verification/Semantics/ClosedFootprints.lean  |  28 -
+ lean/Verification/Semantics/FootprintNatives.lean  |  30 -
+ .../Semantics/FootprintProvenance.lean             | 138 -----
+ lean/Verification/Semantics/FootprintRebase.lean   |   3 -
+ lean/Verification/Semantics/Footprints.lean        |  24 -
+ lean/Verification/Semantics/HeapKnowledge.lean     |   3 -
+ lean/Verification/Semantics/HeapLinks.lean         |  19 -
+ lean/Verification/Semantics/IndexFacts.lean        |  15 -
+ lean/Verification/Semantics/KnowledgeExpand.lean   | 125 -----
+ lean/Verification/Semantics/KnowledgeNormal.lean   | 564 -------------------
+ lean/Verification/Semantics/Linear.lean            |   9 -
+ lean/Verification/Semantics/LinkClasses.lean       | 247 ---------
+ lean/Verification/Semantics/Partitions.lean        |  24 -
+ lean/Verification/Semantics/SafeIntegers.lean      |   3 -
+ lean/Verification/Semantics/SeparationNormal.lean  |  56 --
+ lean/Verification/Semantics/TolerantFrames.lean    |  30 -
+ lean/Verification/Semantics/ValueSets.lean         | 484 ----------------
+ lean/Verification/Source/Claims/Extraction.lean    |  95 +++-
+ lean/Verification/Source/Claims/FragmentFront.lean | 115 +++-
+ lean/Verification/Source/Claims/HeadDiagnosis.lean |  85 +++
+ lean/Verification/Source/Claims/HeadInference.lean |   2 +-
+ lean/Verification/Source/Claims/InterfaceRows.lean |  10 +-
+ lean/Verification/Source/Claims/PassUnit.lean      |   6 +-
+ lean/Verification/Source/Claims/PassUnitCodes.lean |  97 +++-
+ lean/Verification/Source/Claims/PassUnitCross.lean |   2 +-
+ lean/Verification/Source/Claims/PassUnitFile.lean  |  50 +-
+ .../Source/Claims/PassUnitHeadline.lean            |   2 +-
+ .../Source/Claims/PassUnitInferred.lean            |  38 +-
+ lean/Verification/Source/Claims/PassUnitInit.lean  |   2 +-
+ .../Source/Claims/PassUnitInterfaces.lean          |   2 +-
+ .../Source/Claims/PassUnitMemberRun.lean           |   2 +-
+ .../Source/Claims/PassUnitModules.lean             |   2 +-
+ .../Source/Claims/PassUnitObligations.lean         |   2 +-
+ .../Source/Claims/PassUnitRealize.lean             | 317 +++++++++--
+ lean/Verification/Source/Claims/PassUnitSafe.lean  |   6 -
+ .../Source/Claims/PassUnitSignatures.lean          |  59 +-
+ .../Source/Claims/PassUnitVerdict.lean             |   2 +-
+ .../Source/Claims/PassUnitWrapper.lean             |   2 +-
+ lean/Verification/Source/Claims/Plans.lean         |  23 -
+ .../Source/Claims/RegionInference.lean             |  11 +-
+ lean/Verification/Source/Claims/Schemes.lean       |   2 +-
+ lean/Verification/Source/Claims/Wire.lean          |   1 -
+ .../Source/Equations/Declarations.lean             |  10 +-
+ lean/Verification/Source/Equations/State.lean      |   2 +-
+ lean/Verification/Source/Equations/Store.lean      |  53 --
+ lean/Verification/Source/Fragment.lean             |  61 +++
+ lean/Verification/Source/Lowering/Synthesis.lean   | 390 ++++---------
+ lean/Verification/Source/RequestCli.lean           |  20 +-
+ lean/Verification/Source/RequestJson.lean          | 214 +-------
+ lean/Verification/Source/SourceRequests.lean       | 540 ------------------
+ lean/Verification/Tests/AxiomCheck.lean            |  93 +---
+ lean/Verification/Types/Claim.lean                 |   9 +
+ lean/Verification/Types/ClauseSelection.lean       |   6 -
+ lean/Verification/Types/MethodMembers.lean         |  11 -
+ lean/Verification/Types/PositiveNormalization.lean |  77 ---
+ lean/Verification/Types/StoreMaps.lean             | 152 ++++-
+ lean/Verification/Types/StoreMapsBuiltins.lean     |   2 +-
+ lean/Verification/Types/StoreMapsCheck.lean        | 225 ++++++--</pre></details>
+<div class="sha">with Claude Fable 5.2</div>
+</article>
+<article class="card" id="c-17e710a04"><header><div><div class="sha">17e710a04 · Cristiano Calcagno · Nov 13, 01:05</div><h3>Restate cases and controls for module rows and imports; list every module a run imports from</h3></div><span class="pill ok">verified</span></header>
+<div class="units"><span>absent-init-value-import.ts#incremented</span></div>
+<h4 class="change">Why</h4><div class="prose"><p>The cases and controls follow C9's rules; and a run left out a module for an import of a guard or of overloads, and a whole module for one refusal of its top-level code, so its importer read every import of it at the ordinary effect.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">the modules a fragment lists, importedModules</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">a value import read at one function signature</span></span></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">one signature, a guard's beside one, or overloads</span></span><span class="note">(callable)</span></div></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Lowering <span class="target">an imported module's document, lowerModule</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">a gate refusal of the module's top-level code, or of a scan of its</span></span></div><div class="cond"><span class="tgt"><span class="m-text">code, refuses the module</span><span class="m-rel">:</span> <span class="m-text">it is not listed</span></span></div></div></figure><figure><figcaption>After</figcaption><div class="lowering"><div class="cond"><span class="tgt"><span class="m-text">a refusal located in a function declaration leaves that function out</span>;</span></div><div class="cond"><span class="tgt"><span class="m-text">one located in the top-level code leaves that code out</span><span class="m-rel">:</span> <span class="m-text">each name it</span></span></div><div class="cond"><span class="tgt"><span class="m-text">binds absent, the functions reading one absent with it, the</span></span></div><div class="cond"><span class="tgt"><span class="m-text">document's initialization empty; a refusal elsewhere refuses the</span></span></div><div class="cond"><span class="tgt"><span class="m-text">module</span></span><span class="note">(refusedPlace)</span></div></div></figure></div>
+<h4 class="change">Effect</h4><ul class="effect"><li><code>interface-module-cells-value-import, interface-postcondition-value-import</code> <span class="why">new verified</span></li><li><code>invalid-interface-precondition-value-import, invalid-false-ensures-value-import</code> <span class="why">new refused</span></li><li><details><summary><code>invalid-stated-assumed-value-import</code> <span class="kind negative">negative</span> <span class="was">positive</span> <span class="arrow">→</span> <span class="now">negative</span> <span class="why">renamed from stated-assumed-value-import</span></summary><pre class="code"><span class="tk-c">// An imported function whose statement its own module's run refuses (it</span>
+<span class="tk-c">// pops the array it is handed): no interface entry establishes the</span>
+<span class="tk-c">// statement, so the importer reads it at the ordinary effect, and the</span>
+<span class="tk-c">// `map` callback calling it is within no footprint: the result may be</span>
+<span class="tk-c">// sparse. Under Node `drained([1, 2, 3])` has no element at 2.</span>
+<span class="tk-k">import</span> { drain } <span class="tk-k">from</span> <span class="tk-s">&quot;@fixture/stated&quot;</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> drained(xs: number[]): number[] {
+  <span class="tk-k">const</span> r: number[] = <mark>xs.map((x) =&gt; drain(xs, x))</mark>;
+  <span class="tk-k">return</span> r;
+}</pre></details></li><li><details><summary><code>sealed-handle-value-import</code> <span class="kind positive">positive</span> <span class="was">gap</span> <span class="arrow">→</span> <span class="now">positive</span></summary><pre class="code"><span class="tk-c">// A sealed handle's invariant (ARITHMETIC.md, &quot;Type invariants&quot;),</span>
+<span class="tk-c">// pretext's `PreparedText`, across an import: `@fixture/handle` declares the</span>
+<span class="tk-c">// branded handle, its representation `PreparedLineBreakData` and its</span>
+<span class="tk-c">// invariant over the representation's fields (`@representation`), and `seal`</span>
+<span class="tk-c">// and `open`, its casts in and out. Each function taking the handle assumes</span>
+<span class="tk-c">// `segmentFlags.length === widths.length` of it; `open` states it of the</span>
+<span class="tk-c">// record it returns, so `countBreaks` reads `segmentFlags[i]!` below</span>
+<span class="tk-c">// `widths.length`. The builder establishes the representation's invariant at</span>
+<span class="tk-c">// its call of `seal`; a write of the field `label` of the opened record,</span>
+<span class="tk-c">// which the invariant does not read, keeps it, and the record, a handle too</span>
+<span class="tk-c">// (`PreparedText &amp; PreparedLineBreakData`), is passed on; so are a parameter's</span>
+<span class="tk-c">// default and a literal's allocation. A result of a union each of whose arms</span>
+<span class="tk-c">// names the handle states its invariant. The imported `open`, whose</span>
+<span class="tk-c">// `@ensures` postcondition names its parameter, is laid out as a module row</span>
+<span class="tk-c">// (`Effect.belowRow`), so its interface entry is published and its</span>
+<span class="tk-c">// postcondition holds at `labelled`'s and `reopened`'s calls.</span>
+<span class="tk-k">import</span> { open, seal, <span class="tk-k">type</span> <span class="tk-t">PreparedLineBreakData</span>, <span class="tk-k">type</span> <span class="tk-t">PreparedText</span> } <span class="tk-k">from</span> <span class="tk-s">&quot;@fixture/handle&quot;</span>;
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> prepare(texts: string[]): <span class="tk-t">PreparedText</span> {
+  <span class="tk-k">const</span> widths: number[] = [];
+  <span class="tk-k">for</span> (<span class="tk-k">const</span> t <span class="tk-k">of</span> texts) widths.push(t.length);
+  <span class="tk-k">const</span> segmentFlags = <span class="tk-k">new</span> <span class="tk-t">Uint8Array</span>(widths.length);
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; widths.length; i++)
+    segmentFlags[i] = widths[i]! === <span class="tk-n">0</span> ? <span class="tk-n">1</span> : <span class="tk-n">0</span>;
+  <span class="tk-k">return</span> seal({ widths, segmentFlags, label: <span class="tk-s">&quot;&quot;</span> });
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> countBreaks(prepared: <span class="tk-t">PreparedText</span>): number {
+  <span class="tk-k">const</span> internal = open(prepared);
+  <span class="tk-k">let</span> n = <span class="tk-n">0</span>;
+  <span class="tk-k">for</span> (<span class="tk-k">let</span> i = <span class="tk-n">0</span>; i &lt; internal.widths.length; i++) {
+    <span class="tk-k">if</span> (internal.segmentFlags[i]! === <span class="tk-n">1</span>) n++;
+  }
+  <span class="tk-k">return</span> n;
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> labelled(prepared: <span class="tk-t">PreparedText</span>): number {
+  <span class="tk-k">const</span> internal = open(prepared);
+  internal.label = <span class="tk-s">&quot;counted&quot;</span>;
+  <span class="tk-k">return</span> countBreaks(internal);
+}
+
+<span class="tk-c">// A parameter with a default beside the handle, and a literal allocated</span>
+<span class="tk-c">// before the handle is passed on: neither changes a location the invariant</span>
+<span class="tk-c">// reads.</span>
+<span class="tk-k">export</span> <span class="tk-k">function</span> counted(prepared: <span class="tk-t">PreparedText</span>, <span class="tk-k">from</span>: number = <span class="tk-n">0</span>): number {
+  <span class="tk-k">const</span> stats = { lines: <span class="tk-k">from</span> };
+  <span class="tk-k">return</span> countBreaks(prepared) + stats.lines;
+}
+
+<span class="tk-c">// A result of a union each of whose arms names the handle: the handle's</span>
+<span class="tk-c">// invariant is a fact of the result, which each return establishes.</span>
+<span class="tk-k">function</span> reopened(prepared: <span class="tk-t">PreparedText</span>, again: boolean):
+    (<span class="tk-t">PreparedText</span> &amp; <span class="tk-t">PreparedLineBreakData</span>) | (<span class="tk-t">PreparedText</span> &amp; { <span class="tk-k">readonly</span> label: string }) {
+  <span class="tk-k">return</span> again ? open(open(prepared)) : open(prepared);
+}
+
+<span class="tk-k">export</span> <span class="tk-k">function</span> layout(texts: string[]): number {
+  <span class="tk-k">return</span> labelled(reopened(prepare(texts), texts.length &gt; <span class="tk-n">1</span>)) + counted(prepare(texts));
+}</pre></details></li><li><code>written-ensures-value-import, type-guard-value-import, type-guard-overload-value-import, stated-guard-value-import, blocker-next-presence-snapshot, blocker-compiler-api-token-subtype</code> <span class="was">positive</span> <span class="arrow">→</span> <span class="now">gap</span> <span class="why">each cause in its case header</span></li><li><details><summary><code>absent-init-value-import</code> <span class="kind positive">positive</span> <span class="was">negative</span> <span class="arrow">→</span> <span class="now">positive</span> <span class="why">renamed from invalid-absent-init-value-import; under Node the result is dense</span></summary><pre class="code"><span class="tk-c">// An imported function of a module whose top-level code calls a function the</span>
+<span class="tk-c">// gate refuses: the module is lowered with its top-level code left out, and</span>
+<span class="tk-c">// `kept`, which reads none of the names that code binds, is read at the</span>
+<span class="tk-c">// entry its own unit establishes. The `map` callback calling it keeps the</span>
+<span class="tk-c">// array, and the result is dense.</span>
+<span class="tk-k">import</span> { kept } <span class="tk-k">from</span> <span class="tk-s">&quot;@fixture/partial-init&quot;</span>;
+<span class="tk-k">export</span> <span class="tk-k">function</span> incremented(xs: number[]): number[] {
+  <span class="tk-k">return</span> xs.map((x) =&gt; kept(x));
+}</pre></details></li><li><code>the forced-point controls (867c71fe, 581b321e); the performance gate's baseline re-recorded</code></li></ul>
+<h4 class="change">Soundness</h4><div class="prose"><p>A function kept in a module whose top-level code is left out reads no name that code binds, so its own unit establishes its entry; that code's effects on values beyond the module fall under the import assumption, as the reads of a module the run did not list did.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">parser</span> <span class="chip">pipeline</span> <span class="chip">tests</span></dd><dt>Trust</dt><dd><span class="trust">new, not yet owner-reviewed: a module whose top-level code the gate refuses is listed with that code left out, and keeps the functions that read none of the left-out bindings; that code's effects on imported values are under the import assumption</span></dd><dt>Measured</dt><dd>pipeline cases 3,317 of 3,317 as expected, 4,201 functions verified · the 719 cases with projects on a fresh store 49.6 -&gt; 57.0 s wall, stage CPU 430.4 -&gt; 464.6 s, warm 6.0 s with every stage replayed · pretext 198 of 210 · the performance gate's baseline with the base's speed fixes: measureAnalysis 5,415 -&gt; 4,566 ms, prepareRichInline 2,056 -&gt; 1,898 ms, buildEngineProfile 215 -&gt; 181 ms CPU, every counter equal, 2026-11-13</dd><dt>Tests</dt><dd><span class="test pos">interface-module-cells-value-import</span> <span class="test pos">interface-postcondition-value-import</span> <span class="test pos">invalid-false-ensures-value-import</span> <span class="test pos">absent-init-value-import</span> <span class="test neg">invalid-absent-init-value-import</span></dd></dl>
+<details><summary>42 files changed, 602 insertions(+), 288 deletions(-)</summary><pre class="code"> .claude/skills/bounds-chain/SKILL.md               |  13 +-
+ .claude/skills/review/SKILL.md                     |  12 +-
+ dev/perf-baseline.json                             |  80 +++++-----
+ dev/perf-gate.mts                                  |   2 +-
+ pipeline/cases.mts                                 | 135 ++++++++---------
+ pipeline/examples/absent-init-value-import.ts      |   9 ++
+ .../interface-module-cells-value-import.ts         |  18 +++
+ .../interface-postcondition-value-import.ts        |  17 +++
+ .../interface-rows-symbol-order-value-import.ts    |  27 ++++
+ .../examples/invalid-absent-init-value-import.ts   |   8 -
+ .../examples/invalid-false-ensures-value-import.ts |  11 ++
+ .../invalid-interface-precondition-value-import.ts |   9 ++
+ .../invalid-stated-assumed-value-import.ts         |  11 ++
+ pipeline/examples/sealed-handle-value-import.ts    |  10 +-
+ pipeline/examples/stated-assumed-value-import.ts   |  12 --
+ pipeline/imports-project/false-ensures.ts          |   7 +
+ pipeline/imports-project/module-cells.ts           |  11 ++
+ pipeline/imports-project/partial-init.ts           |   4 +-
+ pipeline/imports-project/postcondition-row.ts      |  11 ++
+ pipeline/imports-project/stated.ts                 |   2 +-
+ pipeline/imports-project/symbol-order.ts           |   6 +
+ pipeline/imports-project/tsconfig.json             |   9 ++
+ pipeline/run-example.mts                           |   2 +-
+ pipeline/verify-source.mts                         |   2 +-
+ tests/README.md                                    |   8 +-
+ tests/json-field-names.mts                         |  12 +-
+ tests/node-runs.mts                                |   9 ++
+ tests/single-pass-control-inputs.mts               |  48 +++++-
+ tests/single-pass-controls.mts                     | 162 ++++++++++++++-------
+ tools/claim-text.mts                               |   8 +-
+ tools/claim.mts                                    |  10 +-
+ tools/declaration-types.mts                        |   4 +-
+ tools/diagnostic-view.mts                          |   4 +-
+ tools/diagnostic.mts                               |   9 +-
+ tools/fragment-expressions.mts                     |  22 +--
+ tools/fragment-parse.mts                           | 124 +++++++++++++---
+ tools/fragment-statements.mts                      |   4 +-
+ tools/fragment.mts                                 |  14 +-
+ tools/host-operations.mts                          |   4 +-
+ tools/library-modules.mts                          |   4 +-
+ tools/span.mts                                     |   4 +-
+ tools/type-graph.mts                               |  12 +-</pre></details>
+<div class="sha">with Claude Fable 5.2</div>
+</article>
+<article class="card" id="c-adf292a0d"><header><div><div class="sha">adf292a0d · Cristiano Calcagno · Nov 13, 01:05</div><h3>Make the single pass's documents a root and restate the docs for the one route</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The documents named the claims route, the producer and the deleted checker as the route; the single pass's design lived in drafts.</p></div>
+<h4 class="change"><span class="act added">added</span>Docs <span class="target">the single pass's documents</span></h4><div class="prose"><p>SINGLE-PASS.md (the root), SINGLE-PASS-THEOREM.md (from drafts/pass-unit-theorem.md), SINGLE-PASS-PROOF.md (from drafts/tolerant-frames-lean.md), SINGLE-PASS-FRONT.md, SINGLE-PASS-CONTROLS.md; module linking and the module layout are SINGLE-PASS.md section 10</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">the route's other documents</span></h4><div class="prose"><p>README, GLOSSARY, DESIGN, the source, contract and theory documents, the stage store and WORK.md's status rows restated for the single pass as the one route, its theorems cited where the deleted checker's were</p></div>
+<h4 class="change"><span class="act removed">removed</span>Docs <span class="target">drafts the root and its documents own</span></h4><div class="prose"><p>drafts/single-pass.md, drafts/single-pass-controls.md, drafts/module-interfaces.md and drafts/certificate-sharing.md</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd></dl>
+<details><summary>41 files changed, 4038 insertions(+), 5261 deletions(-)</summary><pre class="code"> README.md                                          |   31 +-
+ WORK.md                                            |  112 +-
+ docs/ARITHMETIC.md                                 |  263 ++-
+ docs/CALLABLES.md                                  |    9 +-
+ docs/CLAIM-LANGUAGE.md                             |   18 +-
+ docs/DESIGN.md                                     |  359 ++--
+ docs/FOOTPRINTS.md                                 |  176 +-
+ docs/FRAGMENT-FORMAT.md                            |   56 +-
+ docs/GLOSSARY.md                                   |   42 +-
+ docs/HOST-FAMILIES.md                              |   88 +-
+ docs/LANGUAGES.md                                  |   60 +-
+ docs/OBLIGATION-DIAGNOSTICS.md                     |  140 +-
+ docs/POSITIVE-TYPES.md                             |   14 +-
+ docs/PROGRAM-TYPING.md                             |  444 +++--
+ docs/RECURSIVE-EQUATIONS.md                        |   22 +-
+ docs/REFERENCES.md                                 |    4 +-
+ docs/REQUEST-PROTOCOL.md                           |  296 +---
+ docs/SEMANTICS.md                                  |   28 +-
+ docs/SINGLE-PASS-CONTROLS.md                       |  132 ++
+ docs/SINGLE-PASS-FRONT.md                          |  930 ++++++++++
+ ...olerant-frames-lean.md =&gt; SINGLE-PASS-PROOF.md} |  280 +--
+ ...pass-unit-theorem.md =&gt; SINGLE-PASS-THEOREM.md} |  600 +++----
+ docs/SINGLE-PASS.md                                |  859 +++++++++
+ docs/SOURCE-CLAIMS.md                              |   94 +-
+ docs/SOURCE-CONTRACTS.md                           |  404 +++--
+ docs/SOURCE-ELABORATION.md                         |  858 +++++----
+ docs/SOURCE-FRAGMENT.md                            |    6 +-
+ docs/SOURCE-MODEL.md                               |    7 +-
+ docs/SOURCE-REWRITES.md                            |  161 +-
+ docs/STAGE-STORE.md                                |  110 +-
+ docs/STYLE.md                                      |    2 +-
+ docs/TRUST-REDUCTION.md                            |    4 +-
+ docs/UNION-SHAPES.md                               |   54 +-
+ docs/drafts/certificate-sharing.md                 |  117 --
+ docs/drafts/forward-facts.md                       |    5 +-
+ docs/drafts/heap-freshness.md                      |   11 +-
+ docs/drafts/heap-knowledge-canonical.md            |    7 +-
+ docs/drafts/module-interfaces.md                   |  166 --
+ docs/drafts/single-pass-controls.md                |  469 -----
+ docs/drafts/single-pass.md                         | 1857 --------------------
+ docs/drafts/tolerant-frames-note-errata.md         |    4 +-</pre></details>
+<div class="sha">with Claude Fable 5.2</div>
+</article>
+</main></body></html>
