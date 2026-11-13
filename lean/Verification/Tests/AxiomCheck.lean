@@ -1546,6 +1546,14 @@ run_cmd do
   check ``Verification.Kinds.Capability.arrayStore_holds_array
   check ``Verification.Kinds.Capability.binding_not_field
   check ``Verification.Kinds.Capability.binding_not_le_field
+  check ``Verification.StorageRole.permits_unique
+  check ``Verification.StorageRole.inhabited
+  check ``Verification.Kinds.Capability.ofRole_viewStore
+  check ``Verification.Kinds.Capability.ofRole_role
+  check ``Verification.Kinds.Capability.ofRole_exclusive
+  check ``Verification.Kinds.Capability.ofRole_le
+  check ``Verification.Kinds.Capability.ofRole_holds_alloc
+  check ``Verification.storageOf_mapStored
   -- world-indexed postconditions, the native-contract condition, the view write
   check ``Verification.Kinds.SafeW.refs
   check ``Verification.Kinds.SafeW.mono

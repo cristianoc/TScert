@@ -1,4 +1,5 @@
 import Verification.Semantics.KindsWrites
+import Verification.Semantics.StorageRoles
 /-!
 # Role-bearing storage capabilities
 
@@ -172,19 +173,6 @@ theorem arrayStore_holds_array {k : Nat} (W : WorldT k) (A : Fam) (cid : Ctr k) 
   holds_alloc W (ns := [arrayStoreKey]) (rs := [.store .array]) (As := [A]) cid (by simp) rfl rfl
     (i := 0) (by simp) rfl ⟨rfl, rfl⟩
 
-/-- **A binding capability cannot be read as a field capability**: of one
-object, at any world, not both hold. -/
-theorem binding_not_field {A B : Fam} {k : Nat} {W : WorldT k} {flds : List (PropKey × Nat)}
-    (hb : (binding A).Holds W flds) : ¬ (field valueField B).Holds W flds := fun hf => by
-  obtain ⟨r, _, _, ⟨hc, -⟩, ⟨hfld, -⟩⟩ :=
-    Holds.common (a := binding A) (b := field valueField B) rfl hb hf
-  rw [hc] at hfld; cases hfld
-
-/-- No inclusion takes a binding capability to a field capability. -/
-theorem binding_not_le_field (A B : Fam) : ¬ (binding A).le (field valueField B) := fun h => by
-  have := (h.2 .cell A ⟨rfl, rfl⟩).1
-  cases this
-
 /-- A field write's target is a field location, a binding write's a cell. -/
 theorem field_role {f : PropKey} {A : Fam} {k : Nat} {W : WorldT k} {flds : List (PropKey × Nat)}
     (h : (field f A).Holds W flds) : ∃ l, flds.lookup f = some l ∧ roleAt W l = some .field := by
@@ -195,6 +183,103 @@ theorem binding_role {A : Fam} {k : Nat} {W : WorldT k} {flds : List (PropKey ×
     (h : (binding A).Holds W flds) : ∃ l, flds.lookup valueField = some l ∧ roleAt W l = some .cell := by
   obtain ⟨l, r, T, hl, hr, rfl, -⟩ := h.role
   exact ⟨l, hl, hr⟩
+
+/-! ## The meaning of a storage role
+
+A type's storage position states a role tag (`StorageRole`); its meaning is
+the capability permitting the roles the tag names, each with the position's
+contents type. -/
+
+end Capability
+
+/-- The roles a storage role tag names. -/
+def _root_.Verification.StorageRole.permits : StorageRole → Role → Prop
+  | .field, r => r = .field
+  | .cell, r => r = .cell
+  | .arrayStore, r => r = .store .array
+  | .viewStore, r => ∃ N, r = .store (.view N)
+
+/-- **Distinct tags name disjoint roles**: a role determines the tag naming it. -/
+theorem _root_.Verification.StorageRole.permits_unique {s s' : StorageRole} {r : Role}
+    (h : s.permits r) (h' : s'.permits r) : s = s' := by
+  cases s <;> cases s' <;> simp only [StorageRole.permits] at h h' <;>
+    first | rfl | (subst h; simp_all) | (obtain ⟨N, rfl⟩ := h; simp_all)
+
+/-- Every tag names some role. -/
+theorem _root_.Verification.StorageRole.inhabited (s : StorageRole) : ∃ r, s.permits r := by
+  cases s
+  · exact ⟨.field, rfl⟩
+  · exact ⟨.cell, rfl⟩
+  · exact ⟨.store .array, rfl⟩
+  · exact ⟨.store (.view 0), 0, rfl⟩
+
+namespace Capability
+
+/-- **The capability a storage position states**: its key, and each role its
+tag names paired with its contents type. -/
+def ofRole (s : StorageRole) (k : PropKey) (A : Fam) : Capability :=
+  ⟨k, fun r T => s.permits r ∧ T = A⟩
+
+/-- The constructions are the capabilities of their tags. -/
+theorem ofRole_field (f : PropKey) (A : Fam) : ofRole .field f A = field f A := rfl
+theorem ofRole_cell (A : Fam) : ofRole .cell valueField A = binding A := rfl
+theorem ofRole_arrayStore (A : Fam) : ofRole .arrayStore arrayStoreKey A = arrayStore A := rfl
+theorem ofRole_viewStore (A : Fam) : ofRole .viewStore viewElementsKey A = viewStore (fun _ => A) := by
+  simp only [ofRole, viewStore, StorageRole.permits]
+  congr; funext r T; apply propext
+  constructor
+  · rintro ⟨⟨N, rfl⟩, rfl⟩; exact ⟨N, rfl, rfl⟩
+  · rintro ⟨N, rfl, rfl⟩; exact ⟨⟨N, rfl⟩, rfl⟩
+
+/-- **A storage position's lookup exposes a role its tag names.** -/
+theorem ofRole_role {s : StorageRole} {key : PropKey} {A : Fam} {k : Nat} {W : WorldT k}
+    {flds : List (PropKey × Nat)} (h : (ofRole s key A).Holds W flds) :
+    ∃ l r, flds.lookup key = some l ∧ roleAt W l = some r ∧ s.permits r := by
+  obtain ⟨l, r, T, hl, hr, hp, -⟩ := h.role
+  exact ⟨l, r, hl, hr, hp⟩
+
+/-- **One key of one object has one tag**: two storage positions over the
+same key that both hold state the same role tag. -/
+theorem ofRole_exclusive {s s' : StorageRole} {key : PropKey} {A B : Fam} {k : Nat}
+    {W : WorldT k} {flds : List (PropKey × Nat)}
+    (h : (ofRole s key A).Holds W flds) (h' : (ofRole s' key B).Holds W flds) : s = s' := by
+  obtain ⟨r, _, _, ⟨hs, -⟩, ⟨hs', -⟩⟩ := Holds.common (a := ofRole s key A) (b := ofRole s' key B) rfl h h'
+  exact StorageRole.permits_unique hs hs'
+
+/-- **Inclusion keeps the tag**: a storage position grants no more than
+another only with the same key, the same tag and the same contents type. -/
+theorem ofRole_le {s s' : StorageRole} {k k' : PropKey} {A B : Fam}
+    (h : (ofRole s k A).le (ofRole s' k' B)) : k = k' ∧ s = s' ∧ A = B := by
+  obtain ⟨r, hr⟩ := s.inhabited
+  obtain ⟨hs', hAB⟩ := h.2 r A ⟨hr, rfl⟩
+  exact ⟨h.1, StorageRole.permits_unique hr hs', hAB⟩
+
+/-- **Allocation establishes each storage position whose tag names the role
+the allocation chose**: the `i`-th key of an object allocated with roles `rs`
+and types `As`. -/
+theorem ofRole_holds_alloc {k : Nat} (W : WorldT k) {ns : List PropKey} {rs : List Role}
+    {As : List Fam} (cid : Ctr k) (hnd : ns.Nodup) (hrs : rs.length = ns.length)
+    (hAs : As.length = ns.length) {i : Nat} (hi : i < ns.length) {s : StorageRole}
+    (hs : s.permits (rs[i]'(by omega))) :
+    (ofRole s ns[i] (As[i]'(by omega))).Holds (appendWs W (objectEntries rs (As.map res) cid))
+      (slots (entries W).length ns) :=
+  holds_alloc W cid hnd hrs hAs hi rfl ⟨hs, rfl⟩
+
+/-- **A binding capability cannot be read as a field capability**: of one
+object, at any world, not both hold (an instance of `ofRole_exclusive`). -/
+theorem binding_not_field {A B : Fam} {k : Nat} {W : WorldT k} {flds : List (PropKey × Nat)}
+    (hb : (binding A).Holds W flds) : ¬ (field valueField B).Holds W flds := fun hf =>
+  nomatch ofRole_exclusive (s := .cell) (s' := .field) hb hf
+
+/-- No inclusion takes a binding capability to a field capability (an
+instance of `ofRole_le`). -/
+theorem binding_not_le_field (A B : Fam) : ¬ (binding A).le (field valueField B) := fun h =>
+  nomatch (ofRole_le (s := .cell) (s' := .field) h).2.1
+
+/-- A binding's storage and an ordinary property are distinct tags, so of
+one object at most one holds over a key (`binding_not_field`), and neither
+grants the other. -/
+theorem cell_ne_field : StorageRole.cell ≠ StorageRole.field := by decide
 
 end Capability
 
