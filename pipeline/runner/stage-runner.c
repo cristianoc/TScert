@@ -15,10 +15,11 @@
  *     descendant that left the group (setsid) is not signalled, nor is the
  *     program once the runner itself has died. When the program ends, what remains of its
  *     group is killed, and the runner writes to file descriptor 3, which the
- *     program does not inherit, `deadline` where the time limit expired,
+ *     program does not inherit, after a first line `child <pid>` naming the
+ *     program's process id as it starts, `deadline` where the time limit expired,
  *     `memory <bytes>` where the memory limit was exceeded, with the memory
- *     read, and
- *     `cpu <user µs> <system µs> <peak bytes>`: the CPU time of the program
+ *     read, `exit <status>` or `signal <number>` as the program ended, and
+ *     `cpu <user µs> <system µs> <peak bytes>`, the report's last line: the CPU time of the program
  *     and of every descendant it waited for, and the largest peak resident
  *     set among them (RUSAGE_CHILDREN). It then ends as the program did:
  *     the same exit status, or the same signal. A program that cannot be
@@ -332,6 +333,10 @@ int main(int argc, char **argv) {
     dprintf(3, "exec %d\n", errno);
     _exit(127);
   }
+  /* The program's process id, first in the report, so that a caller
+   * reading the report while the stage runs can read the program's CPU time
+   * (`--cpu`). */
+  if (dprintf(3, "child %ld\n", (long)child) < 0) fail("dprintf");
   /* The child joins the group itself before it executes the program, or
    * exits with 125. Before it has joined, the program is reached by its
    * process id, which every signal of the stage also goes to. */
@@ -409,6 +414,7 @@ int main(int argc, char **argv) {
     if (sig != SIGKILL && signal(sig, SIG_DFL) == SIG_ERR) fail("signal");
   }
   if ((expired && dprintf(3, "deadline\n") < 0) || (exceeded >= 0 && dprintf(3, "memory %lld\n", exceeded) < 0) ||
+      (sig ? dprintf(3, "signal %d\n", sig) : dprintf(3, "exit %d\n", WIFEXITED(status) ? WEXITSTATUS(status) : 125)) < 0 ||
       dprintf(3, "cpu %lld %lld %lld\n", micros(used.ru_utime), micros(used.ru_stime), peak) < 0)
     fail("dprintf");
   if (close(3) != 0) fail("close");

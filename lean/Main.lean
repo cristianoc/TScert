@@ -4,10 +4,10 @@ import Verification.Source.RequestCli
 
 open Verification Lean
 
-/-- The command: a refusal exits 1 with its record (`RequestCli.refuse`), a
+/-- The command (`start`, the process's start, for its work table): a refusal exits 1 with its record (`RequestCli.refuse`), a
 usage error 2, and an operational failure (a file it cannot read or write,
 any exception) 3, with a first line `error: `. -/
-def command (args : List String) : IO UInt32 := do
+def command (start : Nat) (args : List String) : IO UInt32 := do
   let (budget, args) ← match args with
     | "--subtype-rounds" :: rounds :: rest => do
       match rounds.toNat? with
@@ -26,12 +26,18 @@ def command (args : List String) : IO UInt32 := do
         let quiet := (← IO.getEnv "TSCERT_COUNTS").isNone
         Verification.RequestCli.verifyUnitsFile ast key fuel (if names.isEmpty then none else some names) budget interfaces quiet
       | _, _ => usage
+  | ["--file-worker", mode, ast, interfaces, key, depth, names] =>
+      match mode, depth.toNat? with
+      | "8", some fuel =>
+        Verification.RequestCli.fileWorker ast key fuel (if names.isEmpty then none else some names) budget interfaces start
+      | _, _ => usage
   | ["--lower-control-flow", astPath] =>
       Verification.RequestCli.flowFile astPath
   | _ => usage
 where
   usage : IO UInt32 := do
     IO.eprintln "usage: verifier --verify-interface-stage 8 <ast.json> <interfaces.json> <file-key> <depth> <names>"
+    IO.eprintln "       verifier --file-worker 8 <ast.json> <interfaces.json> <file-key> <depth> <names>   (requests on standard input)"
     IO.eprintln "       verifier --module-interface-plan <ast.json> <selection.json>"
     IO.eprintln "       verifier --module-interface <request.json>"
     IO.eprintln "       verifier --lower-control-flow <ast.json>"
@@ -44,7 +50,7 @@ def main (args : List String) : IO UInt32 := do
   Verification.SinglePass.profiling.set (← IO.getEnv "TSCERT_PROFILE").isSome
   let start ← IO.monoNanosNow
   try
-    let code ← command args
+    let code ← command start args
     Verification.RequestCli.writeWork start
     return code
   catch e =>

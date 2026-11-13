@@ -16,17 +16,17 @@ import { pathToFileURL } from "node:url";
 import { join, resolve } from "node:path";
 import { availableParallelism } from "node:os";
 import { fork, spawn } from "node:child_process";
-import { controlOperations, invokeProcess, ran as ranStage, readInvocationLog, startEviction, type AttemptRecord, type Invoked }
+import { controlOperations, invokeProcess, invokeWorker, ran as ranStage, readInvocationLog, startEviction, type AttemptRecord, type Invoked }
   from "../pipeline/stages.mts";
 import { Store } from "../pipeline/stage-store.mts";
 import { runExample } from "../pipeline/run-example.mts";
-import { verifierBuild, verifierCall } from "../pipeline/stage-execution.mts";
+import { decodeVerdictLine, decodeWorkerPrepared, verifierBuild, verifierCall } from "../pipeline/stage-execution.mts";
 import { usePassMutationVerifier } from "./single-pass-mutations.mts";
 import { check as checkSource, invocationLog, readFragmentFile, readOutcome, sourceKey, type Outcome } from "../pipeline/verify-source.mts";
 import { stringFamily } from "../pipeline/string-family.mts";
 import type { FamilyDescription } from "../tools/host-families.mts";
 import { createHash } from "node:crypto";
-import { verifyWithInterfaces } from "../pipeline/module-interfaces.mts";
+import { fileWorkerProtocol, verifyWithInterfaces } from "../pipeline/module-interfaces.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import { tsconfigOf } from "../tools/declaration-graph.mts";
 import { processInconsistency, processRetirement } from "../tools/files.mts";
@@ -193,6 +193,56 @@ for (const k of forcedProposals) {
     say(`forced ${k.force}: ${k.file} ${k.unit} ${k.positive ? "accepted unforced, " : ""}refused forced`);
   });
 }
+
+// ---------------------------------------------------------------------------
+// The file worker: a unit's line is a function of the file's check and the
+// unit (STAGE-STORE.md, "Worker stages").
+
+control("worker order: a unit's line whatever units the worker checked before it", async (): Promise<void> => {
+  const fragment = fragmentOf(run("evolving-bindings"));
+  const ast: unknown = JSON.parse(readFileSync(fragment, "utf8"));
+  const key = isObject(ast) && typeof ast.file === "string" ? ast.file : "";
+  const work = runDirectory("single-pass-worker-");
+  const interfaces = join(work, "interfaces.json");
+  writeFileSync(interfaces, '{"modules":[]}');
+  const worker = (request: string): string[] => {
+    const p = spawnSync(verifierBuild, ["--subtype-rounds", "4096", "--file-worker", "8", fragment, interfaces, key, "12", ""],
+      { input: request + "\n", encoding: "utf8", cwd: work });
+    assert.equal(p.status, 0, `the file worker: ${p.stderr}`);
+    return p.stdout.split("\n").filter((l) => l !== "");
+  };
+  const [prepared, ...inOrder] = worker('{"units":null}');
+  const units = decodeWorkerPrepared(prepared).selected.map((u) => u.unit);
+  assert.ok(units.length >= 3, "a file of several units");
+  assert.deepEqual(inOrder.map((l) => decodeVerdictLine(l).unit), units, "every unit, in order");
+  const byUnit = new Map(inOrder.map((l) => [decodeVerdictLine(l).unit, l]));
+  // Reversed, in one worker.
+  const [again, ...reversed] = worker(JSON.stringify({ units: [...units].reverse() }));
+  assert.equal(again, prepared, "the same preparation");
+  for (const l of reversed) assert.equal(l, byUnit.get(decodeVerdictLine(l).unit), "a unit's line, the units reversed");
+  // Through the driver: a first worker answers the first half, then a
+  // resumed worker the rest, the first half replayed.
+  const store = join(work, "store");
+  const enclosing = process.env.TSCERT_STAGE_STORE;
+  process.env.TSCERT_STAGE_STORE = store;
+  try {
+    const call = verifierCall(verifierBuild, ["--subtype-rounds", "4096", "--file-worker", "8", fragment, interfaces, key, "12", ""]);
+    const half = units.slice(0, Math.floor(units.length / 2));
+    const first = invokeWorker(call, { ...fileWorkerProtocol, parts: () => half,
+      request: () => JSON.stringify({ units: half }) }, { limitMs: 60_000, force: false, recorder: null });
+    assert.deepEqual(first.parts.map((p) => p.execution), half.map(() => "executed"), "the first half executed");
+    const resumed = invokeWorker(call, fileWorkerProtocol, { limitMs: 60_000, force: false, recorder: null });
+    assert.equal(resumed.starts, 1, "one worker resumed");
+    assert.equal(resumed.preparation.execution, "replayed", "the preparation's result replayed");
+    assert.deepEqual(resumed.parts.map((p) => p.execution),
+      units.map((u) => half.includes(u) ? "replayed" : "executed"), "the first half replayed, the rest executed");
+    for (const p of resumed.parts) assert.equal(p.stdout.trim(), byUnit.get(p.part ?? ""), `${p.part}: its line, resumed`);
+  } finally {
+    if (enclosing === undefined) delete process.env.TSCERT_STAGE_STORE;
+    else process.env.TSCERT_STAGE_STORE = enclosing;
+  }
+  say(`worker order: ${units.length} units' lines identical in order, reversed and through a resumed worker`);
+});
 
 // ---------------------------------------------------------------------------
 // Module interfaces: the store boundary of the interface stages.

@@ -132,4 +132,18 @@ const equationReaders = [
   expectSubset("Tree fields Lean does not read", documented, reads, {});
 }
 
+// The file worker's lines: mode 8's verdict lines, its preparation line and
+// its request lines.
+{
+  const tsText = read("pipeline/stage-execution.mts");
+  const section = tsText.slice(tsText.indexOf("// Worker stages"), tsText.indexOf("/** A parsed JSON line's own fields"));
+  const ts = new Set([...section.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/(?<![\w.])([A-Za-z_]\w*)\??\s*:(?!:)/g)]
+    .flatMap(captured));
+  const wire = "lean/Verification/Source/WorkerWire.lean";
+  const writes = new Set([...read(wire).matchAll(/\("(\w+)",/g)].flatMap(captured));
+  const both = new Set([...writes, ...lean([wire])]);
+  expectSubset("Lean's worker lines", both, ts, {});
+  expectSubset("Worker line fields Lean omits", ts, both, {});
+}
+
 process.stdout.write(`JSON field names: ${checked} comparisons agree across TypeScript and Lean\n`);

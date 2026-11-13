@@ -3,6 +3,7 @@ import Verification.Source.FlowJson
 import Verification.Source.Claims.Json
 -- Claims/ModuleInterfaces.lean computes and reads the module interfaces of mode 8.
 import Verification.Source.Claims.ModuleInterfaces
+import Verification.Source.WorkerWire
 
 /-! File interface to the source adapter. Source parsing remains external;
 the single pass computes each unit's types from the fragment alone. -/
@@ -220,7 +221,7 @@ def flowFile (astPath : String) : IO UInt32 := do
 (docs/drafts/on-demand-processing.md, "Accounting"): one line per kind and
 item, `{"kind","item","count","ns","selfNs"}`, and a line of kind `process`
 with the nanoseconds since `start`. -/
-def writeWork (start : Nat) : IO Unit := do
+def writeWork (start : Nat) (path : String := "work.jsonl") : IO Unit := do
   if !(← SinglePass.profiling.get) then return
   let t ← IO.monoNanosNow
   let m ← SinglePass.workTable.get
@@ -230,7 +231,7 @@ def writeWork (start : Nat) : IO Unit := do
       ("selfNs", toJson own)]).compress
   let total := (Json.mkObj [("kind", toJson "process"), ("item", toJson ""), ("count", toJson 1),
     ("ns", toJson (t - start)), ("selfNs", toJson (t - start))]).compress
-  IO.FS.writeFile "work.jsonl" (String.intercalate "\n" (lines ++ [total]) ++ "\n")
+  IO.FS.writeFile path (String.intercalate "\n" (lines ++ [total]) ++ "\n")
 
 /-- A selection of units by their members' names, comma-separated; every
 unit without one. -/
@@ -345,14 +346,30 @@ def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) :
   | .error e => refuse e
   | .ok j => IO.println j.compress; return 0
 
-/-- Mode 8, the single pass, over a file's fragment and the module
-interfaces its imports read (`--verify-interface-stage 8`): each selected
-unit's group checked by `FilePlans.passGroupMode8`, its types computed by the
-walk, every loop head's proposal inferred (`HeadInference`); each unit's
-verdict on a line `{"unit","members","accepted","depends"}` or
-`{"unit","members","refusal"}`. -/
-def verifyUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names : Option String)
-    (budget : PositiveCertificates.SearchBudget) (interfacesPath : String) (quiet : Bool := false) : IO UInt32 := do
+/-- A file prepared for mode 8 (`prepareUnitsFile`): its plans, prepared
+(`preparedMode8`); the module units the interfaces establish, each printed
+accepted (`decodeInterfaces`); the selection; and the settings each unit's
+check reads. -/
+structure PreparedFile where
+  f : SourceClaimJson.FilePlans
+  modules : List String
+  selected : Option (List String)
+  force : List String
+  givenLines : Std.HashMap String Json
+  fuel : Nat
+  located : Bool
+  quiet : Bool
+  t0 : Nat
+
+/-- Mode 8's preparation of a file's fragment and the module interfaces its
+imports read: the fragment and interfaces decoded, the file planned from them
+(`fragmentPlansFromInterfaces`) at the selection's closure
+(`selectionClosure`), and prepared (`preparedMode8`); or the refusal of the
+fragment or of its planning. Everything a unit's check reads is fixed here:
+the checks of its units are functions of this value alone. -/
+def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names : Option String)
+    (budget : PositiveCertificates.SearchBudget) (interfacesPath : String) (quiet : Bool := false) :
+    IO (Except String PreparedFile) := do
   let emit := fun (s : String) => if quiet then pure () else IO.eprintln s
   -- Per-kind timings only where asked (`TSCERT_PROFILE`).
   SinglePass.profiling.set (← IO.getEnv "TSCERT_PROFILE").isSome
@@ -399,52 +416,75 @@ def verifyUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names : 
   let ms := fun (a b : Nat) => s!"{(b - a) / 1000000}"
   let phases := (← SinglePass.kindNanos.get).toList.filter (·.1.startsWith "lower: ")
   emit s!"stamp: read+lower {ms t0 t1} ms: read JSON {ms t0 tj} ms, {", ".intercalate (phases.map fun (k, t, _) => s!"{k.drop 7} {t / 1000000} ms")}"
-  match planned with
-  | .error e => refuse e
-  | .ok (f, modules) =>
-    let mut refused : Option String := none
-    for u in modules do
-      IO.println (Json.mkObj [("unit", toJson u), ("members", toJson [u]), ("accepted", toJson true),
-        ("depends", toJson ([] : List String))]).compress
-    -- Profiling: each import read at a footprint, and that footprint.
+  -- Profiling: each import read at a footprint, and that footprint.
+  if let .ok (f, _) := planned then
     if (← SinglePass.profiling.get) then
       for (n, Φ, ot, r) in f.p.qualified do
         emit s!"import: {n} {(toJson Φ).compress} onThrow {ot} result {(toJson r).compress}"
-    for i in f.fr.selected selected do
-      let unit := f.fr.unitId i
-      let members := (f.fr.group i).map f.fr.unitId
-      let s0 ← IO.monoNanosNow
-      let p0 ← SinglePass.passNanos.get
-      let compare := (← IO.getEnv "TSCERT_COMPARE").isSome
-      let debugNode := ((← IO.getEnv "TSCERT_NODE").bind String.toNat?).getD 1000000000
-      let repeats := ((← IO.getEnv "TSCERT_REPEAT").bind String.toNat?).getD 1
-      -- Observing: the state at `TSCERT_OBSERVE` (`node:L` or `offset:K`).
-      let observe ← IO.getEnv "TSCERT_OBSERVE"
-      -- The pass's counts as JSON lines (`TSCERT_COUNTS`, `dev/perf-gate.mts`),
-      -- with the bytes of the files it read.
-      let counting := (← IO.getEnv "TSCERT_COUNTS").isSome
-      if counting then
-        let size := fun (p : String) => do
-          try pure (← System.FilePath.metadata p).byteSize.toNat catch _ => pure 0
-        emit s!"counts-read: \{\"fragmentBytes\":{← size astPath},\"interfaceBytes\":{← size interfacesPath}}"
-      let (lines, verdict) ← IO.lazyPure fun _ =>
-        let (ls, v, dropped, runs) := SinglePass.work "check: group" (f.fr.workItem i) fun _ =>
-          f.passGroupMode8 infer force (f.givenAt givenLines) fuel (f.fr.group i)
-          compare debugNode repeats none observe counting located
-        (ls ++ (if dropped > 0 then [s!"inferred heads: {dropped} proposals dropped, {runs} runs"] else []), v)
-      let p1 ← SinglePass.passNanos.get
-      let s1 ← IO.monoNanosNow
-      for line in lines do emit line
-      let kinds ← SinglePass.kindNanos.get
-      emit s!"rule time by term kind (ms, applications): {kinds.toList.map fun (k, t, n) => s!"{k} {t / 1000000} {n}"}"
-      emit s!"stamp: {unit} pass {ms p0 p1} ms, with obligations and vocabulary {ms s0 s1} ms, total {ms t0 s1} ms"
-      IO.println (match verdict with
-        | .ok deps => Json.mkObj [("unit", toJson unit), ("members", toJson members), ("accepted", toJson true),
-            ("depends", toJson deps)]
-        | .error reason => Json.mkObj [("unit", toJson unit), ("members", toJson members),
-            ("refusal", toJson reason)]).compress
-      if let .error reason := verdict then refused := refused.orElse fun _ => some reason
-    match f.extractionRefusal selected with
+  return planned.map fun (f, modules) =>
+    { f, modules, selected, force, givenLines, fuel, located, quiet, t0 }
+
+/-- The units a prepared file's selection checks, in the order its checks
+run: the leaders of the groups the selection names (`Front.selected`). -/
+def PreparedFile.units (p : PreparedFile) : List Nat := p.f.fr.selected p.selected
+
+/-- Unit `i`'s check (`FilePlans.passGroupMode8` over its group): its
+verdict line (`WorkerWire.verdictLine`), accepted with its dependencies or
+refused, and its refusal. A function of the prepared file and `i`. -/
+def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option String) := do
+  let emit := fun (s : String) => if p.quiet then pure () else IO.eprintln s
+  let f := p.f
+  let unit := f.fr.unitId i
+  let members := (f.fr.group i).map f.fr.unitId
+  let s0 ← IO.monoNanosNow
+  let p0 ← SinglePass.passNanos.get
+  let compare := (← IO.getEnv "TSCERT_COMPARE").isSome
+  let debugNode := ((← IO.getEnv "TSCERT_NODE").bind String.toNat?).getD 1000000000
+  let repeats := ((← IO.getEnv "TSCERT_REPEAT").bind String.toNat?).getD 1
+  -- Observing: the state at `TSCERT_OBSERVE` (`node:L` or `offset:K`).
+  let observe ← IO.getEnv "TSCERT_OBSERVE"
+  -- The pass's counts as JSON lines (`TSCERT_COUNTS`, `dev/perf-gate.mts`).
+  let counting := (← IO.getEnv "TSCERT_COUNTS").isSome
+  let (lines, verdict) ← IO.lazyPure fun _ =>
+    let (ls, v, dropped, runs) := SinglePass.work "check: group" (f.fr.workItem i) fun _ =>
+      f.passGroupMode8 true p.force (f.givenAt p.givenLines) p.fuel (f.fr.group i)
+      compare debugNode repeats none observe counting p.located
+    (ls ++ (if dropped > 0 then [s!"inferred heads: {dropped} proposals dropped, {runs} runs"] else []), v)
+  let p1 ← SinglePass.passNanos.get
+  let s1 ← IO.monoNanosNow
+  let ms := fun (a b : Nat) => s!"{(b - a) / 1000000}"
+  for line in lines do emit line
+  let kinds ← SinglePass.kindNanos.get
+  emit s!"rule time by term kind (ms, applications): {kinds.toList.map fun (k, t, n) => s!"{k} {t / 1000000} {n}"}"
+  emit s!"stamp: {unit} pass {ms p0 p1} ms, with obligations and vocabulary {ms s0 s1} ms, total {ms p.t0 s1} ms"
+  return (WorkerWire.verdictLine unit members verdict, match verdict with | .ok _ => none | .error r => some r)
+
+/-- A line on standard output, flushed: a reader of the stream sees it as
+soon as it is written. -/
+def printFlushed (line : String) : IO Unit := do
+  let out ← IO.getStdout
+  out.putStrLn line
+  out.flush
+
+/-- Mode 8, the single pass, over a file's fragment and the module
+interfaces its imports read (`--verify-interface-stage 8`): the file prepared
+once (`prepareUnitsFile`), then each selected unit's group checked in turn
+(`PreparedFile.check`), its types computed by the walk, every loop head's
+proposal inferred (`HeadInference`); each unit's verdict on a line
+`{"unit","members","accepted","depends"}` or `{"unit","members","refusal"}`,
+flushed as its check ends. -/
+def verifyUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names : Option String)
+    (budget : PositiveCertificates.SearchBudget) (interfacesPath : String) (quiet : Bool := false) : IO UInt32 := do
+  match ← prepareUnitsFile astPath fileKey fuel names budget interfacesPath quiet with
+  | .error e => refuse e
+  | .ok p =>
+    let mut refused : Option String := none
+    for u in p.modules do printFlushed (WorkerWire.verdictLine u [u] (.ok []))
+    for i in p.units do
+      let (line, refusal) ← p.check i
+      printFlushed line
+      if refused.isNone then refused := refusal
+    match p.f.extractionRefusal p.selected with
     | some reason => refuse reason
     | none =>
       match refused with
@@ -452,5 +492,49 @@ def verifyUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names : 
       | none =>
         IO.println s!"accept: stateful source {fileKey}"
         return 0
+
+/-- The work table, where profiling, written as `work.jsonl` whole, by a
+rename: a reader of the file sees the table as of a finished unit. -/
+def writeWorkNow (start : Nat) : IO Unit := do
+  if !(← SinglePass.profiling.get) then return
+  writeWork start "work.jsonl.next"
+  IO.FS.rename "work.jsonl.next" "work.jsonl"
+
+/-- **The file worker** (`--file-worker 8`, docs/REQUEST-PROTOCOL.md, "The
+file worker"): the file prepared once (`prepareUnitsFile`), its preparation's
+line printed (`WorkerWire.preparedLine`: the selected units with their
+members, the established module units, the extraction refusal), then, for
+each request line read from standard input (`WorkerWire.decodeRequest`: the
+units to check, `null` for every selected unit), each named unit checked
+(`PreparedFile.check`) and its verdict line printed and flushed as its check
+ends, until standard input ends. A refusal of the preparation is the
+command's refusal, before any line. -/
+def fileWorker (astPath : String) (fileKey : String) (fuel : Nat) (names : Option String)
+    (budget : PositiveCertificates.SearchBudget) (interfacesPath : String) (start : Nat) : IO UInt32 := do
+  match ← prepareUnitsFile astPath fileKey fuel names budget interfacesPath true with
+  | .error e => refuse e
+  | .ok p =>
+    let units := p.units
+    let f := p.f
+    writeWorkNow start
+    printFlushed (WorkerWire.preparedLine (units.map fun i => (f.fr.unitId i, (f.fr.group i).map f.fr.unitId))
+      p.modules (f.extractionRefusal p.selected))
+    let stdin ← IO.getStdin
+    repeat
+      let text ← stdin.getLine
+      if text.isEmpty then break
+      match WorkerWire.decodeRequest text with
+      | .error e => throw (IO.userError s!"file worker: {e}")
+      | .ok requested =>
+        let chosen ← match requested with
+          | none => pure units
+          | some ids => ids.mapM fun id => match units.find? (f.fr.unitId · == id) with
+            | some i => pure i
+            | none => throw (IO.userError s!"file worker: {id} is no unit the selection checks")
+        for i in chosen do
+          let (line, _) ← p.check i
+          writeWorkNow start
+          printFlushed line
+    return 0
 
 end Verification.RequestCli

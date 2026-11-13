@@ -9,7 +9,7 @@
 // runtime. The replay policy and the store
 // (`stages.mts`, `stage-store.mts`) choose between running an invocation
 // here and returning an entry whose stored description is its own.
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { closeSync, fstatSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync, unlinkSync, writeFileSync }
   from "node:fs";
@@ -661,6 +661,7 @@ export const workRole = "work.jsonl";
  * `[--subtype-rounds n] --module-interface-plan <fragment> <selection>`,
  * `… --module-interface <request>`,
  * `… --verify-interface-stage <mode> <fragment> <interfaces> <file-key> <depth> <names>`,
+ * `… --file-worker <mode> <fragment> <interfaces> <file-key> <depth> <names>` (a worker stage, `startProcess`),
  * `… --lower-control-flow <fragment>`. */
 export function verifierCall(program: string, args: readonly string[],
     environment: Readonly<Record<string, string>> = {}): ProcessCall {
@@ -677,7 +678,7 @@ export function verifierCall(program: string, args: readonly string[],
     return call("interface-plan", [{ input: "fragment.json", path: rest[0] }, { input: "selection.json", path: rest[1] }]);
   if (mode === "--module-interface" && rest.length === 1)
     return { ...call("module-interface", [{ input: "request.json", path: rest[0] }]), protocol: { refusal: null } };
-  if (mode === "--verify-interface-stage" && rest.length === 6)
+  if ((mode === "--verify-interface-stage" || mode === "--file-worker") && rest.length === 6)
     return call("pass", [{ text: rest[0] }, { input: "fragment.json", path: rest[1] },
       { input: "interfaces.json", path: rest[2] }, ...rest.slice(3).map((text) => ({ text }))]);
   if (mode === "--lower-control-flow" && rest.length === 1)
@@ -798,12 +799,15 @@ export type ProcessRun = {
  * limit expired, the memory read where the memory limit was exceeded, and
  * the CPU time and peak memory of the stage's processes. */
 function readReport(report: string):
-    { execErrno: number | null; runnerFailure: string | null; expired: boolean; exceeded: number | null; cpu: Cpu } {
+    { execErrno: number | null; runnerFailure: string | null; expired: boolean; exceeded: number | null; cpu: Cpu;
+      exit: number | null; signal: NodeJS.Signals | null } {
   const exec = /^exec (\d+)$/m.exec(report);
   const failed = /^runner (\S+) (\d+)$/m.exec(report);
   const used = /^cpu (\d+) (\d+) (\d+)$/m.exec(report);
   const memory = /^memory (\d+)$/m.exec(report);
-  return { execErrno: exec ? Number(exec[1]) : null,
+  const exited = /^exit (\d+)$/m.exec(report), signalled = /^signal (\d+)$/m.exec(report);
+  return { exit: exited ? Number(exited[1]) : null, signal: signalled ? signalNames.get(Number(signalled[1])) ?? null : null,
+    execErrno: exec ? Number(exec[1]) : null,
     runnerFailure: failed ? `${failed[1]} ${errnoNames.get(Number(failed[2])) ?? failed[2]}` : null,
     expired: /^deadline$/m.test(report),
     exceeded: memory ? Number(memory[1]) : null,
@@ -819,6 +823,11 @@ function readDescriptor(fd: number): Buffer {
   return bytes.subarray(0, read);
 }
 const errnoNames = new Map(Object.entries(constants.errno).map(([name, n]) => [n, name]));
+const signalNames = new Map<number, NodeJS.Signals>(Object.entries(constants.signals)
+  .flatMap(([name, n]): [number, NodeJS.Signals][] => isSignal(name) ? [[n, name]] : []));
+function isSignal(name: string): name is NodeJS.Signals {
+  return name in constants.signals;
+}
 /** Run a bound process stage in `directory`, a fresh empty directory: its
  * inputs written there under their roles' names, the program run there with
  * the argument vector and the call's environment under the runner, which
@@ -888,4 +897,167 @@ export function deliver(bound: BoundProcess, produced: readonly (readonly [strin
     const bytes = byRole.get(o.role);
     if (bytes !== undefined && o.path !== null) writeFileSync(o.path, bytes);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Worker stages
+
+/** A request the file worker reads, one line on its standard input
+ * (docs/REQUEST-PROTOCOL.md, "The file worker"; `WorkerWire.decodeRequest`):
+ * the units to check by identity, or null for every unit its selection
+ * checks, in order. */
+export type WorkerRequest = { units: readonly string[] | null };
+/** A unit the file worker's selection checks: its identity and its group's
+ * members. */
+export type WorkerUnit = { unit: string; members: readonly string[] };
+/** The file worker's first line (`WorkerWire.preparedLine`): the units its
+ * selection checks, in the order their checks run; the module units the
+ * interfaces establish; the first extraction refusal among the selected
+ * groups, or null. */
+export type WorkerPrepared = { selected: readonly WorkerUnit[]; established: readonly string[]; extraction: string | null };
+/** A unit's verdict line (`WorkerWire.verdictLine`), as mode 8 prints it. */
+export type VerdictLine = { unit: string; members: readonly string[]; accepted: true; depends: readonly string[] } |
+  { unit: string; members: readonly string[]; refusal: string };
+
+/** A parsed JSON value's own fields, exactly `fields`, or a refusal. */
+function exactFields(value: unknown, fields: readonly string[], what: string): { [key: string]: unknown } {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw Error(`${what}: not an object`);
+  const v: { [key: string]: unknown } = { ...value };
+  const keys = Object.keys(v);
+  if (keys.length !== fields.length || keys.some((k) => !fields.includes(k)))
+    throw Error(`${what}: expected the fields ${fields.join(", ")}, got ${keys.join(", ")}`);
+  return v;
+}
+const isStrings = (x: unknown): x is string[] => Array.isArray(x) && x.every((e) => typeof e === "string");
+/** A verdict line, read field by field. */
+export function decodeVerdictLine(text: string): VerdictLine {
+  const what = "a unit's verdict line";
+  const value: unknown = JSON.parse(text);
+  const accepted = typeof value === "object" && value !== null && "accepted" in value;
+  const v = exactFields(value, accepted ? ["unit", "members", "accepted", "depends"] : ["unit", "members", "refusal"], what);
+  const { unit, members, depends, refusal } = v;
+  if (typeof unit !== "string" || !isStrings(members)) throw Error(`${what}: no unit and members`);
+  if (accepted) {
+    if (v["accepted"] !== true || !isStrings(depends)) throw Error(`${what}: no dependencies`);
+    return { unit, members, accepted: true, depends };
+  }
+  if (typeof refusal !== "string") throw Error(`${what}: no refusal`);
+  return { unit, members, refusal };
+}
+/** The file worker's preparation line, read field by field. */
+export function decodeWorkerPrepared(text: string): WorkerPrepared {
+  const what = "the file worker's preparation line";
+  const parsed: unknown = JSON.parse(text);
+  const { selected, established, extraction } = exactFields(parsed, ["selected", "established", "extraction"], what);
+  if (!Array.isArray(selected) || !isStrings(established) || !(extraction === null || typeof extraction === "string"))
+    throw Error(`${what}: malformed`);
+  return { selected: selected.map((u: unknown): WorkerUnit => {
+    const { unit, members } = exactFields(u, ["unit", "members"], `${what}'s unit`);
+    if (typeof unit !== "string" || !isStrings(members)) throw Error(`${what}: a unit without its members`);
+    return { unit, members };
+  }), established, extraction };
+}
+
+/** A process stage started under the runner, read while it runs
+ * (`startProcess`). */
+export type Started = {
+  /** The bytes of its standard output written since the last call. */
+  readOutput(): Buffer;
+  /** Whether the runner has ended: its report's last line is written. */
+  ended(): boolean;
+  /** The program's CPU time and peak memory so far, as the runner reads
+   * them (`stage-runner --cpu`), or null where they are not read. */
+  cpu(): { userMs: number; systemMs: number; peakBytes: number } | null;
+  /** Signal the runner (SIGTERM: it signals the program's group and kills it
+   * after its grace; SIGKILL: its watchdog kills the group). */
+  signal(signal: "SIGTERM" | "SIGKILL"): void;
+  /** Its output file of `role` as written so far, or null. */
+  output(role: string): Buffer | null;
+  /** Once ended: how the program ended, its standard error, the runner's
+   * account of its CPU time, its output files, and the descriptors closed. */
+  finish(): { status: number | null; signal: NodeJS.Signals | null; error: Error | undefined; expired: boolean;
+    exceeded: number | null; stderrBytes: Buffer; cpu: Cpu; produced: [string, Buffer][] };
+};
+
+/** Start a bound process stage in `directory`, a fresh empty directory, as
+ * `executeProcess` runs one, with `stdin` as its standard input, and return
+ * at once: its standard output, standard error and the runner's report are
+ * files, unlinked, read while it runs. The runner's own limit is `limitMs`;
+ * a caller enforcing a finer clock signals the runner (`Started.signal`). */
+export function startProcess(bound: BoundProcess, directory: string, limitMs: number, stdin: Buffer): Started {
+  for (const [role, bytes] of bound.inputFiles) writeFileSync(join(directory, role), bytes);
+  const files: number[] = [];
+  for (const name of ["stdin", "stdout", "stderr", "report"]) {
+    const path = `${directory}.${name}`;
+    if (name === "stdin") writeFileSync(path, stdin);
+    files.push(openSync(path, name === "stdin" ? "r" : "w+"));
+    unlinkSync(path);
+  }
+  const [stdinFile, stdoutFile, stderrFile, reportFile] = files;
+  const child = spawn(runnerBuild, [String(limitMs), String(memoryLimitBytes), bound.program, ...bound.argv], {
+    cwd: directory, env: { ...bound.environment }, stdio: [stdinFile, stdoutFile, stderrFile, reportFile] });
+  let spawnError: Error | undefined;
+  child.on("error", (error) => { spawnError = error; });
+  closeSync(stdinFile);
+  let read = 0;
+  let closed = false;
+  const report = (): string => readDescriptor(reportFile).toString("utf8");
+  const runnerPid = child.pid;
+  return {
+    readOutput(): Buffer {
+      const size = fstatSync(stdoutFile).size;
+      if (size <= read) return Buffer.alloc(0);
+      const bytes = Buffer.alloc(size - read);
+      let n = 0;
+      while (n < bytes.length) {
+        const got = readSync(stdoutFile, bytes, n, bytes.length - n, read + n);
+        if (got <= 0) break;
+        n += got;
+      }
+      read += n;
+      return bytes.subarray(0, n);
+    },
+    ended(): boolean {
+      if (runnerPid === undefined) return true;
+      return /^(cpu \d+ \d+ \d+|runner \S+ \d+)$/m.test(report());
+    },
+    cpu(): { userMs: number; systemMs: number; peakBytes: number } | null {
+      const pid = /^child (\d+)$/m.exec(report())?.[1];
+      if (pid === undefined) return null;
+      const p = spawnSync(runnerBuild, ["--cpu", pid], { encoding: "utf8" });
+      const used = p.status === 0 ? /^cpu (\d+) (\d+) (\d+)\n$/.exec(p.stdout) : null;
+      return used ? { userMs: Number(used[1]) / 1000, systemMs: Number(used[2]) / 1000, peakBytes: Number(used[3]) } : null;
+    },
+    signal(signal: "SIGTERM" | "SIGKILL"): void {
+      try {
+        if (runnerPid !== undefined) process.kill(runnerPid, signal);
+      } catch {
+        // (the runner has ended)
+      }
+    },
+    output(role: string): Buffer | null {
+      return readOrAbsent(join(directory, role));
+    },
+    finish() {
+      const text = report();
+      const stderrBytes = readDescriptor(stderrFile);
+      if (!closed) for (const fd of files.slice(1)) closeSync(fd);
+      closed = true;
+      const r = readReport(text);
+      const error = spawnError ?? (r.execErrno !== null
+        ? Object.assign(Error(`spawn ${bound.program} ${errnoNames.get(r.execErrno) ?? r.execErrno}`),
+          { code: errnoNames.get(r.execErrno) ?? String(r.execErrno), errno: -r.execErrno })
+        : r.runnerFailure !== null ? Error(`the stage runner failed: ${r.runnerFailure}`)
+        : r.exceeded !== null ? Error(`memory limit: its footprint reached ${(r.exceeded / 2 ** 30).toFixed(1)} GiB, over ` +
+          `the limit of ${(memoryLimitBytes / 2 ** 30).toFixed(1)} GiB (TSCERT_STAGE_MEMORY)`)
+        : runnerPid === undefined ? Error("the stage runner did not start") : undefined);
+      const produced: [string, Buffer][] = [];
+      for (const o of bound.outputs) {
+        const bytes = readOrAbsent(join(directory, o.role));
+        if (bytes !== null) produced.push([o.role, bytes]);
+      }
+      return { status: r.execErrno === null && r.runnerFailure === null ? r.exit : null, signal: r.signal, error,
+        expired: r.expired, exceeded: r.exceeded, stderrBytes, cpu: r.cpu, produced };
+    },
+  };
 }

@@ -2,10 +2,10 @@
 // interfaces: every replay validates its exact manifest and payload digest.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { canonical, verifier, verifierCall } from "./stage-execution.mts";
-import type { Canonical } from "./stage-execution.mts";
-import { invokeProcess } from "./stages.mts";
-import type { Invoked, InvokeOptions } from "./stages.mts";
+import { canonical, decodeVerdictLine, decodeWorkerPrepared, verifier, verifierCall } from "./stage-execution.mts";
+import type { Canonical, WorkerRequest } from "./stage-execution.mts";
+import { invokeProcess, invokeWorker } from "./stages.mts";
+import type { Invoked, InvokeOptions, WorkerProtocol, WorkerRun } from "./stages.mts";
 
 /** JSON data carried between audited processes. */
 type ObjectWire = { [key: string]: Canonical };
@@ -116,62 +116,56 @@ export function prepareInterfaces(fragmentPath: string, options: InterfaceOption
   return { path, records };
 }
 
-/** One check of the importer: the selection it names (`null`, the file's
- * every unit) and its stage's run. */
-export type UnitsRun = { names: string | null; run: Invoked };
-/** The importer's checks, a stage per unit where the file's stage exceeds its
- * limit, and, where the module interfaces its imports read could not be
+/** The importer's check by units (`invokeWorker`): its worker stage's
+ * result, and, where the module interfaces its imports read could not be
  * established, why: the checks are then those at ordinary contracts. */
-export type CheckedUnits = { runs: UnitsRun[]; interfaceFailure: string | null };
-const overLimit = (run: Invoked): boolean =>
-  run.record.execution === "timed-out" || run.record.execution === "timeout-replayed";
+export type CheckedUnits = { run: WorkerRun; interfaceFailure: string | null };
 
-/** The importer's check by units: the file's stage at its modules'
- * interfaces, or at ordinary contracts where it reads no module, of the units
- * `names` selects (comma-separated, `""` every unit) and those their
- * verdicts rest on; where that stage exceeds its limit, a stage for each
- * name of `units` (a function's name, `:init`), each with its own limit and
- * its own key, so a unit over its limit costs only its own verdict and its
- * dependents'. The module interfaces are those the selected units' code
- * reaches. Where the module-interface stages fail (a timeout, a
- * refusal), the checks at ordinary contracts stand, with that failure: a unit
- * accepted there is accepted with no stronger module fact. */
-export function verifyByUnits(fragment: string, key: string, units: readonly string[], names: string,
-    options: InterfaceOptions): CheckedUnits {
+/** The file worker's protocol (`WorkerProtocol`): the parts are the units
+ * its preparation line names, in order; a request names units, or null for
+ * every one; an answer is a unit's verdict line. */
+export const fileWorkerProtocol: WorkerProtocol = {
+  parts: (prepared: string): string[] => decodeWorkerPrepared(prepared.trim()).selected.map((u) => u.unit),
+  request: (parts: readonly string[] | null): string => {
+    const request: WorkerRequest = { units: parts };
+    return JSON.stringify(request);
+  },
+  partOf: (answer: string): string => decodeVerdictLine(answer.trim()).unit,
+};
+
+/** The importer's check by units: the file worker (`--file-worker 8`) at
+ * its modules' interfaces, or at ordinary contracts where it reads no
+ * module, of the units `names` selects (comma-separated, `""` every unit)
+ * and those their verdicts rest on. The worker prepares the file once and
+ * checks its units one after another, each unit's result an entry of its
+ * own and each with its own limit, so a unit over its limit costs only its
+ * own verdict and its dependents' (`invokeWorker`). The module interfaces
+ * are those the selected units' code reaches. Where the module-interface
+ * stages fail (a timeout, a refusal), the checks at ordinary contracts
+ * stand, with that failure: a unit accepted there is accepted with no
+ * stronger module fact. */
+export function verifyByUnits(fragment: string, key: string, names: string, options: InterfaceOptions): CheckedUnits {
   mkdirSync(options.work, { recursive: true });
   const environment: Record<string, string> = {};
   if (process.env.TSCERT_PASS_REFUSALS === "raw") environment.TSCERT_PASS_REFUSALS = "raw";
-  const check = (path: string, names: string): Invoked => invokeProcess(verifierCall(verifier,
-    ["--subtype-rounds", String(options.rounds), "--verify-interface-stage", String(options.mode),
-      fragment, path, key, String(options.fuel), names], environment),
-    options.invocation);
-  const checkAll = (path: string): UnitsRun[] => {
-    const whole = check(path, names);
-    if (!overLimit(whole) || units.length < 2) return [{ names: null, run: whole }];
-    return units.map((u) => ({ names: u, run: check(path, u) }));
-  };
-  // A refusal (1) or a unit over its limit; anything else is a tool failure.
-  const settled = (r: UnitsRun): boolean => r.run.status === 0 || r.run.status === 1 || (r.names !== null && overLimit(r.run));
+  const check = (path: string): WorkerRun => invokeWorker(verifierCall(verifier,
+    ["--subtype-rounds", String(options.rounds), "--file-worker", String(options.mode),
+      fragment, path, key, String(options.fuel), names], environment), fileWorkerProtocol, options.invocation);
   const ordinary = join(options.work, "ordinary-interfaces.json");
   writeFileSync(ordinary, canonical({ modules: [] }));
-  const checked = (runs: UnitsRun[], interfaceFailure: string | null): CheckedUnits => {
-    const failed = runs.find((r) => !settled(r));
-    if (failed !== undefined) throw Error(`importer stage ${failed.run.record.execution}: ${failed.run.stderr}`);
-    return { runs, interfaceFailure };
-  };
   // A file that reads no module needs no interface; one that does is
   // checked at its modules' interfaces, and at ordinary contracts only
   // where they are not established.
-  if (array(object(json(readFileSync(fragment, "utf8"))).modules).length === 0) return checked(checkAll(ordinary), null);
+  if (array(object(json(readFileSync(fragment, "utf8"))).modules).length === 0) return { run: check(ordinary), interfaceFailure: null };
   let interfaces: PreparedInterfaces;
   try {
     interfaces = prepareInterfaces(fragment, { ...options, names });
   } catch (error) {
-    return checked(checkAll(ordinary), error instanceof Error ? error.message : String(error));
+    return { run: check(ordinary), interfaceFailure: error instanceof Error ? error.message : String(error) };
   }
   if (array(object(json(readFileSync(interfaces.path, "utf8"))).modules).length === 0)
-    return checked(checkAll(ordinary), null);
-  return checked(checkAll(interfaces.path), null);
+    return { run: check(ordinary), interfaceFailure: null };
+  return { run: check(interfaces.path), interfaceFailure: null };
 }
 
 /** The importer is one process stage, with every file it reads an explicit

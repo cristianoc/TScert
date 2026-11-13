@@ -21,6 +21,8 @@ import { resolvableDeclaration } from "../tools/intrinsics.mts";
 import { currentStore, invokeInProcess, invokeProcess, Recorder, readInvocationLog, type AttemptRecord } from "./stages.mts";
 import { verifyByUnits } from "./module-interfaces.mts";
 import type { CheckedUnits } from "./module-interfaces.mts";
+import { decodeWorkerPrepared } from "./stage-execution.mts";
+import type { WorkerPart } from "./stages.mts";
 import { refusalEnd, verifier, verifierProtocol, type ProcessCall, type Protocol } from "./stage-execution.mts";
 
 /** The file of a run's directory holding its stage invocations' attempts. */
@@ -348,7 +350,7 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
   const names = roots.length === all.length ? "" : roots.join(",");
   let checked: CheckedUnits;
   try {
-    checked = verifyByUnits(ast, fileKey, roots, names, {
+    checked = verifyByUnits(ast, fileKey, names, {
       mode: 8, fuel: searchDepth, rounds: subtypeRounds ?? 4096, force: [],
       work: join(artifacts, "interfaces"), invocation: { limitMs: stepTimeoutMs, force: false, recorder },
     });
@@ -359,45 +361,53 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
         ? `timeout: a module-interface stage did not finish within ${stepTimeoutMs / 1000} s: ${message}` : message };
   }
   const over = (execution: string): string =>
-    `timeout: verifier --verify-interface-stage did not finish within ${stepTimeoutMs / 1000} s` +
+    `timeout: verifier --file-worker did not finish within ${stepTimeoutMs / 1000} s` +
       (execution === "timeout-replayed" ? " (an earlier attempt; TSCERT_RETRY_TIMEOUTS=1 runs it again)" : "");
-  const steps: { names: string | null; run: StepRun | null; over: string }[] = [];
-  for (const { names: selected, run: invoked } of checked.runs) {
-    const execution = invoked.record.execution;
-    if (execution === "timed-out" || execution === "timeout-replayed") {
-      if (selected === null) return { status: "error", artifacts, phase: "check", units: null, detail: over(execution) };
-      steps.push({ names: selected, run: null, over: over(execution) });
+  const failure = (part: WorkerPart, what: string): Outcome => ({ status: "error", artifacts, phase: "check", units: null,
+    detail: `tool failure: verifier --file-worker ${what}: ${part.error?.message ?? (part.stderr.trim().split("\n")[0] || "no output")}` });
+  // The preparation: over its limit, failed, refused (the pass's front),
+  // or the units the selection checks.
+  const { preparation } = checked.run;
+  const preparationExecution = preparation.execution;
+  if (preparationExecution === "timed-out" || preparationExecution === "timeout-replayed")
+    return { status: "error", artifacts, phase: "check", units: null,
+      detail: `${over(preparationExecution)}: its preparation of the file` };
+  if (preparationExecution === "failed" || preparation.status === null) return failure(preparation, "failed preparing the file");
+  if (preparation.status !== 0) {
+    const refused = verifierRefusal({ code: preparation.status, out: preparation.stdout,
+      detail: preparation.stderr.trim() || preparation.stdout.trim(), record: preparation.record }, "--file-worker");
+    writeFileSync(join(artifacts, "pass.log"), preparation.stderr);
+    if (refused === null) throw Error("tool failure: verifier --file-worker exited with status 0 and no preparation");
+    return readDiagnostic(refused)?.kind === "direct-obligation"
+      ? { status: refusalStatus(refused), artifacts, phase: "search", detail: named(refused), units: null }
+      : { status: "unsupported", artifacts, phase: "proposal", detail: named(refused), units: null };
+  }
+  const prepared = decodeWorkerPrepared(wireText(Buffer.from(preparation.stdout), "verifier --file-worker").trim());
+  const lines: string[] = prepared.established.map((u) => JSON.stringify({ unit: u, members: [u], accepted: true, depends: [] }));
+  const log: string[] = [];
+  for (const part of checked.run.parts) {
+    const unit = prepared.selected.find((u) => u.unit === part.part);
+    if (unit === undefined) throw Error(`tool failure: verifier --file-worker answered ${part.part ?? "its preparation"}, no unit it selects`);
+    if (part.execution === "timed-out" || part.execution === "timeout-replayed") {
+      // A unit over its limit: its own refusal.
+      lines.push(JSON.stringify({ unit: unit.unit, members: unit.members, refusal: over(part.execution) }));
+      log.push(`unit ${unit.unit}: ${over(part.execution)}`);
       continue;
     }
-    if (invoked.error || invoked.signal || invoked.status === null)
-      return { status: "error", artifacts, phase: "check", units: null,
-        detail: `tool failure: verifier --verify-interface-stage ${invoked.signal ? `was killed by ${invoked.signal}` : "did not run"}: ` +
-          `${invoked.error?.message ?? (invoked.stderr.trim().split("\n")[0] || "no exit status")}` };
-    const out = wireText(invoked.stdoutBytes, "verifier --verify-interface-stage");
-    const err = wireText(invoked.stderrBytes, "verifier --verify-interface-stage");
-    steps.push({ names: selected, run: { code: invoked.status, out, detail: err.trim() || out.trim(), record: invoked.record },
-      over: "" });
-  }
-  writeFileSync(join(artifacts, "pass.log"), steps.map((s) =>
-    (s.names === null ? "" : `unit ${s.names}:\n`) + (s.run?.detail ?? s.over)).join("\n"));
-  const lines: string[] = [];
-  let refusal: string | null = null;
-  for (const step of steps) {
-    if (step.run === null) {
-      // A unit over its limit: its own refusal, each unit the name selects.
-      const ids = step.names === ":init" ? ["init"] : unitIds.filter(([n]) => n === step.names).map(([, id]) => id);
-      for (const id of ids) lines.push(JSON.stringify({ unit: id, members: [id], refusal: step.over }));
+    if (part.execution === "failed" && part.error?.message.startsWith("memory limit") === true) {
+      // A unit over the memory limit: no verdict, its failure said.
+      log.push(`unit ${unit.unit}: tool failure: ${part.error.message}`);
       continue;
     }
-    const own = step.run.out.split("\n").filter((l) => l.startsWith("{"));
-    const refused = verifierRefusal(step.run, "--verify-interface-stage");
-    if (refused !== null && own.length === 0)
-      return readDiagnostic(refused)?.kind === "direct-obligation"
-        ? { status: refusalStatus(refused), artifacts, phase: "search", detail: named(refused), units: null }
-        : { status: "unsupported", artifacts, phase: "proposal", detail: named(refused), units: null };
-    refusal = refusal ?? refused;
-    lines.push(...own);
+    if (part.execution === "failed") return failure(part, `failed checking ${unit.unit}`);
+    const line = wireText(Buffer.from(part.stdout), "verifier --file-worker").trim();
+    lines.push(line);
+    log.push(line);
   }
+  writeFileSync(join(artifacts, "pass.log"), log.join("\n"));
+  // The file's refusal beside its units': the first extraction refusal
+  // among the selected groups.
+  const refusal = prepared.extraction === null ? null : `reject: ${prepared.extraction}`;
   // Where the module interfaces were not established, a unit refused at
   // ordinary contracts is refused for that first.
   const unestablished = checked.interfaceFailure === null ? null :

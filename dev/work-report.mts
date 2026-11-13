@@ -55,6 +55,7 @@ const sites = {
   init: "8 initialization and returned callables",
   recursive: "9 recursive effect proposals",
   retries: "13 synthesis rounds within one walk",
+  restart: "14 preparation at a worker's restart",
   refinement: "11 diagnostic/refinement runs",
   settled: "12 settled run computed twice",
   sameKey: "0 one key executed twice",
@@ -75,9 +76,19 @@ const cpuMs = (r: AttemptRecord): number => "userMs" in r.cpu ? r.cpu.userMs + r
 const ranOf = (r: AttemptRecord): boolean => r.execution === "executed" || r.execution === "timed-out" ||
   r.execution === "failed";
 
-type Manifest = { argv: string[]; inputs: Map<string, string | null> };
+/** An attempt's description: its argument vector and input digests, and,
+ * for a part of a worker stage (`invokeWorker`), the part: null for the
+ * worker's preparation, a unit's identity, or undefined for any other
+ * stage. */
+type Manifest = { argv: string[]; inputs: Map<string, string | null>; part: string | null | undefined };
 function manifestOf(r: AttemptRecord): Manifest {
-  const m = r.manifest;
+  let m = r.manifest;
+  let part: string | null | undefined = undefined;
+  if (m !== null && typeof m === "object" && !Array.isArray(m) && "worker" in m && "part" in m) {
+    const p = new Map<string, unknown>(Object.entries(m)).get("part");
+    part = typeof p === "string" ? p : null;
+    m = new Map(Object.entries(m)).get("worker") ?? null;
+  }
   const argv: string[] = [];
   const inputs = new Map<string, string | null>();
   if (m !== null && typeof m === "object") {
@@ -87,12 +98,13 @@ function manifestOf(r: AttemptRecord): Manifest {
     if (Array.isArray(i)) for (const p of i)
       if (Array.isArray(p) && typeof p[0] === "string" && (typeof p[1] === "string" || p[1] === null)) inputs.set(p[0], p[1]);
   }
-  return { argv, inputs };
+  return { argv, inputs, part };
 }
 
 /** An executed verifier attempt with its work. */
 type Attempt = { index: number; record: AttemptRecord; work: WorkLine[]; names: string | null; fragment: string | null;
-  interfaces: string | null; own: string | null; cpuNs: number; processNs: number; selfNs: number };
+  interfaces: string | null; own: string | null; part: string | null | undefined; cpuNs: number; processNs: number;
+  selfNs: number };
 
 /** One occurrence of work: a class of work on an item in one attempt. */
 type Occurrence = { attempt: Attempt; cls: string; item: string; kinds: Map<string, WorkLine> };
@@ -111,6 +123,8 @@ function report(directory: string, sourceList: string[], jsonOut: string | null)
   const attempts: Attempt[] = [];
   const stageCpu = new Map<string, { executed: number; replayed: number; cpuMs: number; timedOut: number }>();
   let timedOutWholeMs = 0, timedOutUnitMs = 0, totalMs = 0;
+  /** The worker processes started for each fragment: its preparations executed. */
+  const workerStarts = new Map<string, number>();
   for (const [index, r] of records.entries()) {
     const s = stageCpu.get(r.stage) ?? { executed: 0, replayed: 0, cpuMs: 0, timedOut: 0 };
     stageCpu.set(r.stage, s);
@@ -122,7 +136,7 @@ function report(directory: string, sourceList: string[], jsonOut: string | null)
     const names = r.stage === "pass" ? (m.argv.at(-1) ?? null) : null;
     if (r.execution === "timed-out") {
       s.timedOut++;
-      if (r.stage === "pass" && names === "") timedOutWholeMs += cpuMs(r);
+      if (r.stage === "pass" && names === "" && m.part === undefined) timedOutWholeMs += cpuMs(r);
       else timedOutUnitMs += cpuMs(r);
       continue;
     }
@@ -130,11 +144,17 @@ function report(directory: string, sourceList: string[], jsonOut: string | null)
     if (work.length === 0) continue;
     const process = work.find((w) => w.kind === "process");
     const own = work.find((w) => w.kind === "prepare: importer plans")?.item ?? null;
+    if (m.part === null) workerStarts.set(m.inputs.get("fragment.json") ?? "", (workerStarts.get(m.inputs.get("fragment.json") ?? "") ?? 0) + 1);
     attempts.push({ index, record: r, work, names, fragment: m.inputs.get("fragment.json") ?? null,
-      interfaces: m.inputs.get("interfaces.json") ?? null, own,
+      interfaces: m.inputs.get("interfaces.json") ?? null, own, part: m.part,
       cpuNs: cpuMs(r) * 1e6, processNs: process?.ns ?? 0,
       selfNs: work.filter((w) => w.kind !== "process").reduce((a, w) => a + w.selfNs, 0) });
   }
+  // A worker's unit parts are of the file whose preparation is the
+  // worker's: its own file's item, from the preparation of the same fragment.
+  const ownOf = new Map<string, string>();
+  for (const a of attempts) if (a.own !== null && a.fragment !== null) ownOf.set(a.fragment, a.own);
+  for (const a of attempts) if (a.own === null && a.part !== undefined && a.fragment !== null) a.own = ownOf.get(a.fragment) ?? null;
   // Each attempt's occurrences: a class of work on an item, its kinds.
   const occurrences = new Map<string, Occurrence[]>();
   for (const a of attempts) {
@@ -164,6 +184,7 @@ function report(directory: string, sourceList: string[], jsonOut: string | null)
     if (first.names !== other.names) return first.names !== "" && other.names !== "" || attemptsTimedOut.has(other.fragment ?? "")
       ? sites.unitFallback : sites.dependency;
     if (first.interfaces !== other.interfaces) return sites.ordinary;
+    if (first.part === null && other.part === null) return sites.restart;
     return sites.sameKey;
   };
   // The fragments whose whole-file pass timed out: their unit stages are
@@ -291,11 +312,14 @@ function report(directory: string, sourceList: string[], jsonOut: string | null)
   if (timedOutWholeMs > 0) bySite.set(sites.wholeTimeout, { count: [...records].filter((r) => r.stage === "pass" &&
     r.execution === "timed-out" && manifestOf(r).argv.at(-1) === "").length, ms: timedOutWholeMs });
   // Per function: the attempts that worked on it and its traversals.
-  const fns = new Map<string, { attempts: Set<number>; traversals: number; ms: number; repeatedMs: number }>();
+  // (a worker's pieces one stage: its preparations and its units' checks)
+  const stageOf = (a: Attempt): string => a.part === undefined ? String(a.index)
+    : `worker ${a.fragment ?? ""} ${a.interfaces ?? ""} ${a.names ?? ""}`;
+  const fns = new Map<string, { attempts: Set<string>; traversals: number; ms: number; repeatedMs: number }>();
   for (const [, list] of occurrences) for (const o of list) {
     if (!o.item.includes("#")) continue;
-    const f = fns.get(o.item) ?? { attempts: new Set<number>(), traversals: 0, ms: 0, repeatedMs: 0 };
-    f.attempts.add(o.attempt.index);
+    const f = fns.get(o.item) ?? { attempts: new Set<string>(), traversals: 0, ms: 0, repeatedMs: 0 };
+    f.attempts.add(stageOf(o.attempt));
     for (const [k, w] of o.kinds) if (k.startsWith("walk: ") || k === "check: member run" || k === "check: diagnosing walk")
       f.traversals += w.count;
     fns.set(o.item, f);
@@ -322,6 +346,9 @@ function report(directory: string, sourceList: string[], jsonOut: string | null)
   for (const [site, x] of [...bySite].sort((a, b) => b[1].ms - a[1].ms))
     out.push(`  ${site}: ${s(x.ms)} s (${(100 * x.ms / Math.max(1, totalMs)).toFixed(1)}%), ${x.count} times`);
   out.push(`signature obligations of overloaded functions checked: ${signatures.size}`);
+  const starts = [...workerStarts.values()];
+  if (starts.length > 0)
+    out.push(`file workers: ${starts.length} files, ${starts.reduce((a, b) => a + b, 0)} worker starts, max ${Math.max(...starts)} per file`);
   out.push(`functions and initializations worked on: ${units.length}; stages working on each: max ${Math.max(0, ...attemptsPer)}, ` +
     `mean ${mean(attemptsPer).toFixed(2)}; body traversals (walks and runs) of each: max ${Math.max(0, ...traversalsPer)}, ` +
     `mean ${mean(traversalsPer).toFixed(2)}`);
@@ -340,6 +367,7 @@ function report(directory: string, sourceList: string[], jsonOut: string | null)
   process.stdout.write(out.join("\n") + "\n");
   if (jsonOut !== null)
     writeFileSync(jsonOut, JSON.stringify({ totalMs, attributedMs, repeatedMs, timedOutWholeMs, timedOutUnitMs,
+      workerStarts: recordOf(workerStarts),
       sites: recordOf(bySite), byClass: recordOf(byClass),
       stages: recordOf(stageCpu),
       functions: recordOf(new Map(units.map(([item, f]) => [label(item),

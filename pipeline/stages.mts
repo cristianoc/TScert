@@ -22,7 +22,7 @@ import { join, resolve } from "node:path";
 import { readMeasurement, Store, type Cpu, type Measurement, type StoredResult } from "./stage-store.mts";
 import { inputRead, isOperation, observationsHold, type Observation } from "../tools/files.mts";
 import { liveCompilers, observeCompilers, type LiveCompiler } from "../tools/compiler-processes.mts";
-import { bindProcess, codeFailure, deliver, executeProcess, executionDirectory, processCode, isStageName, profileDirectory, readOrAbsent, resourcePolicy, runnerBuild, sha256, stageNames, text, workRole,
+import { bindProcess, canonical, codeFailure, deliver, executeProcess, executionDirectory, processCode, isStageName, profileDirectory, readOrAbsent, resourcePolicy, runnerBuild, sha256, stageNames, startProcess, text, workRole,
   type Canonical, type ProcessCall, type StageName } from "./stage-execution.mts";
 import { bindInProcess, observedInput, runInProcess, type InProcessCall } from "./in-process-execution.mts";
 
@@ -277,6 +277,361 @@ export function invokeProcess(call: ProcessCall, options: InvokeOptions): Invoke
   } finally {
     release?.();
     if (directory !== null) rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Worker stages
+
+/** A worker stage's protocol (STAGE-STORE.md, "Worker stages"): the parts
+ * its preparation line names, in the order the worker answers them; the
+ * request line asking for some parts (null: every part); and the part an
+ * answer line answers. */
+export type WorkerProtocol = {
+  parts(prepared: string): string[];
+  request(parts: readonly string[] | null): string;
+  partOf(answer: string): string;
+};
+/** One part of a worker stage's result: the preparation (`part` null) or a
+ * part it names; how it was obtained; its exit status (the preparation's
+ * as the program exited where it ended there, 0 for an answered part), its
+ * line and standard error; and its attempt's record. */
+export type WorkerPart = {
+  part: string | null;
+  execution: Execution;
+  status: number | null;
+  stdout: string;
+  stderr: string;
+  error: Error | undefined;
+  record: AttemptRecord;
+};
+/** A worker stage's result: its preparation, then each part its
+ * preparation names that has a result, in order; and how many worker
+ * processes it started. */
+export type WorkerRun = { preparation: WorkerPart; parts: WorkerPart[]; starts: number };
+
+/** What decides whether a worker stage's part times out, beside its limit:
+ * the process stage's policy, the worker started with `spawn` and each part
+ * timed from the line before it. */
+export const workerPolicy: string = canonical({ process: resourcePolicy, spawn: "spawn", clock: "each part from the line before" });
+/** How often the driver of a worker reads its output and clock. */
+const workerPollMs = 5;
+
+/** A part's description, whose canonical text its key is the digest of:
+ * the worker's own description and the part, null for the preparation. */
+const partInput = (manifest: Canonical, part: string | null): string => canonical({ worker: manifest, part });
+
+/** The difference of two of a verifier's work tables (`RequestCli.writeWork`):
+ * the work recorded in `now` and not in `before`, and a `process` line of
+ * `ns`. */
+function workBetween(before: Buffer | null, now: Buffer | null, ns: number): Buffer {
+  const rows = (b: Buffer | null): Map<string, { kind: string; item: string; count: number; ns: number; selfNs: number }> => {
+    const m = new Map<string, { kind: string; item: string; count: number; ns: number; selfNs: number }>();
+    for (const line of (b?.toString("utf8") ?? "").split("\n")) {
+      if (line === "") continue;
+      const v: unknown = JSON.parse(line);
+      if (typeof v !== "object" || v === null || !("kind" in v) || !("item" in v) || !("count" in v) || !("ns" in v) ||
+          !("selfNs" in v) || typeof v.kind !== "string" || typeof v.item !== "string" || typeof v.count !== "number" ||
+          typeof v.ns !== "number" || typeof v.selfNs !== "number" || v.kind === "process") continue;
+      m.set(`${v.kind}\t${v.item}`, { kind: v.kind, item: v.item, count: v.count, ns: v.ns, selfNs: v.selfNs });
+    }
+    return m;
+  };
+  const old = rows(before);
+  const out: string[] = [];
+  for (const [k, w] of rows(now)) {
+    const o = old.get(k);
+    const d = { kind: w.kind, item: w.item, count: w.count - (o?.count ?? 0), ns: w.ns - (o?.ns ?? 0),
+      selfNs: w.selfNs - (o?.selfNs ?? 0) };
+    if (d.count > 0 || d.ns > 0) out.push(JSON.stringify(d));
+  }
+  out.push(JSON.stringify({ kind: "process", item: "", count: 1, ns: Math.round(ns), selfNs: Math.round(ns) }));
+  return Buffer.from(out.join("\n") + "\n");
+}
+
+/** Run a worker stage (STAGE-STORE.md, "Worker stages"): a process that
+ * prepares once, prints its preparation line, then answers each part its
+ * request names with one line, in order. Each part's result is an entry of
+ * its own, keyed by the worker's description and the part
+ * (`partInput`), replayed where the store holds it and otherwise
+ * published as its line arrives. A part over `limitMs`, timed from the line
+ * before it, stops the worker; that part alone is recorded as a timeout,
+ * and a new worker answers the parts after it. A part over the memory limit
+ * stops it likewise, its failure published nowhere. The preparation over
+ * its limit or the memory limit, or refused, ends the stage with no part. */
+export function invokeWorker(call: ProcessCall, protocol: WorkerProtocol, options: InvokeOptions): WorkerRun {
+  if (!Number.isSafeInteger(options.limitMs) || options.limitMs <= 0)
+    throw Error("a process stage limit must be a positive integer number of milliseconds");
+  const store = currentStore();
+  const forced = options.force || store === null;
+  const bound = bindProcess(call);
+  let ineligible = bound.ineligible;
+  const replaying = ineligible === null && store !== null && replayedStages.has(call.stage) ? store : null;
+  const keyOf = (part: string | null): string => sha256(partInput(bound.manifest, part));
+  const record = (part: string | null, attempt: string, directory: string | null, execution: Execution,
+      exitStatus: number | null, elapsedMs: number, cpu: Cpu, replay: Replay | null): AttemptRecord => ({
+    attempt, stage: call.stage, key: ineligible === null ? keyOf(part) : null, ineligible,
+    manifest: { worker: bound.manifest, part }, context: directory === null ? null : { program: bound.program, directory },
+    forced, limitMs: options.limitMs, execution, exitStatus, elapsedMs, cpu: replay ? replay.stored.cpu : cpu, replay });
+  const finishRecord = (r: AttemptRecord, work: Buffer | null): void => {
+    options.recorder?.start(r, Date.now() - r.elapsedMs);
+    options.recorder?.finish(r);
+    profileAttempt(r, work === null ? [] : [[workRole, work]]);
+  };
+  const publish = (part: string | null, attempt: string, exitStatus: number, stdout: Buffer, stderr: Buffer,
+      work: Buffer | null, elapsedMs: number, cpu: Cpu): void => {
+    if (replaying !== null && ineligible === null)
+      replaying.publishFinished(call.stage, keyOf(part), { input: partInput(bound.manifest, part), exitStatus, stdout,
+        stderr, outputs: work === null ? [] : [[workRole, work]], measurement: { attempt, elapsedMs, limitMs: options.limitMs, cpu } });
+  };
+  // A part's stored result or timeout observation.
+  const lookup = (part: string | null): WorkerPart | null => {
+    if (replaying === null || forced) return null;
+    const input = partInput(bound.manifest, part);
+    const started = performance.now();
+    const found = replaying.finished(call.stage, keyOf(part), input);
+    if (found) {
+      const r = record(part, randomUUID(), null, "replayed", found.result.exitStatus, performance.now() - started,
+        found.result.measurement.cpu, { lookupMs: found.lookupMs, validationMs: found.validationMs,
+          materializationMs: 0, stored: found.result.measurement });
+      finishRecord(r, found.result.outputs.find(([role]) => role === workRole)?.[1] ?? null);
+      return { part, execution: "replayed", status: found.result.exitStatus, stdout: text(found.result.stdout),
+        stderr: text(found.result.stderr), error: undefined, record: r };
+    }
+    const observed = retryingTimeouts() ? null
+      : replaying.timeout(call.stage, keyOf(part), input, options.limitMs, workerPolicy);
+    if (!observed) return null;
+    const { observation } = observed;
+    const r = record(part, randomUUID(), null, "timeout-replayed", null, performance.now() - started, observation.cpu,
+      { lookupMs: observed.lookupMs, validationMs: 0, materializationMs: 0, stored: { attempt: observation.attempt,
+        elapsedMs: observation.elapsedMs, limitMs: observation.limitMs, cpu: observation.cpu } });
+    finishRecord(r, null);
+    return { part, execution: "timeout-replayed", status: null, stdout: "", stderr: "", error: undefined, record: r };
+  };
+  const state: { preparation: WorkerPart | null; parts: string[] | null; results: Map<string, WorkerPart> } =
+    { preparation: null, parts: null, results: new Map() };
+  // Everything the store holds: the preparation, then the parts it names.
+  const lookUpAll = (): void => {
+    state.preparation ??= lookup(null);
+    const p = state.preparation;
+    if (state.parts === null && p !== null && p.execution === "replayed" && p.status === 0) state.parts = protocol.parts(p.stdout);
+    for (const part of state.parts ?? []) if (!state.results.has(part)) {
+      const found = lookup(part);
+      if (found) state.results.set(part, found);
+    }
+  };
+  const done = (): boolean => state.preparation !== null &&
+    (state.preparation.status !== 0 || (state.parts ?? []).every((p) => state.results.has(p)) && state.parts !== null);
+  const result = (starts: number): WorkerRun => {
+    if (state.preparation === null) throw Error("a worker stage ended without its preparation");
+    return { preparation: state.preparation, parts: (state.parts ?? []).flatMap((p) => state.results.get(p) ?? []), starts };
+  };
+  const progress = (): number => (state.preparation === null ? 0 : 1) + state.results.size;
+  lookUpAll();
+  if (done()) return result(0);
+  // One process at a time executes a worker within the store: another's
+  // execution is waited for while it publishes parts, and they replay.
+  let release: (() => void) | null = null;
+  try {
+    if (replaying !== null && !forced) {
+      const workerKey = sha256(canonical({ worker: bound.manifest }));
+      let seen = progress(), since = performance.now();
+      for (;;) {
+        const claimed = replaying.claim(call.stage, workerKey);
+        // Recheck after acquiring: the preceding owner may have published.
+        lookUpAll();
+        if (done()) return result(0);
+        if (claimed !== "held") {
+          release = claimed;
+          break;
+        }
+        if (progress() !== seen) {
+          seen = progress();
+          since = performance.now();
+        }
+        if (performance.now() - since > claimWaitMs(options.limitMs))
+          throw Error(`stage claim deadline exceeded for ${call.stage}: no part published within ${claimWaitMs(options.limitMs)} ms`);
+        Atomics.wait(pause, 0, 0, claimPollMs);
+      }
+    }
+    ineligible ??= codeFailure(processCode);
+    // The parts to request: those without a result, in order; null where
+    // the preparation is not known, every part.
+    let pending: string[] | null = state.parts === null ? null : state.parts.filter((p) => !state.results.has(p));
+    for (let starts = 1; ; starts++) {
+      const outcome = runWorker(pending);
+      if (outcome === "ended") return result(starts);
+      pending = outcome;
+    }
+  } finally {
+    release?.();
+  }
+
+  /** One worker process asked for `pending`: "ended" where the stage's
+   * result is complete or failed, or the parts still to request after a part
+   * over its limit. */
+  function runWorker(pending: string[] | null): "ended" | string[] {
+    const directory = executionDirectory(call.stage);
+    const started = performance.now();
+    // The runner's own limit, a bound the driver's clock stays within: the
+    // preparation and every part requested at the limit each.
+    const backstop = Math.min(options.limitMs * ((pending?.length ?? 1000) + 2), 2 ** 31 - 1);
+    const running = startProcess(bound, directory, backstop, Buffer.from(protocol.request(pending) + "\n"));
+    let ended = false;
+    try {
+      let asked = pending;
+      let prepared = false, index = 0, pieceStart = started, buffered = "", stopped = false, killAt = Infinity;
+      let lastCpu = { userMs: 0, systemMs: 0 };
+      let lastWork: Buffer | null = null;
+      // A piece whose program was not read as its line arrived (the program
+      // ending at once after its last line): its record waits for the
+      // runner's account at the end.
+      const held: { unread: { r: AttemptRecord; work: Buffer | null; publish: (cpu: Cpu) => void } | null } = { unread: null };
+      /** The piece the worker is in: the preparation (null), a requested
+       * part, or none (undefined) once every one is answered. */
+      const current = (): string | null | undefined => !prepared ? null : asked !== null && index < asked.length ? asked[index] : undefined;
+      const measure = (now: number, end: Cpu | null): { cpu: Cpu; work: Buffer | null } => {
+        const c = end === null ? running.cpu() : "userMs" in end ? end : null;
+        const cpu: Cpu = c === null ? end ?? { unavailable: "the worker's program was not read" }
+          : { userMs: Math.max(0, c.userMs - lastCpu.userMs), systemMs: Math.max(0, c.systemMs - lastCpu.systemMs),
+            peakBytes: c.peakBytes, covers: "the worker's program over this part" };
+        if (c !== null) lastCpu = c;
+        const output = profileDirectory() === null ? null : running.output(workRole);
+        const work = output === null ? null : workBetween(lastWork, output, (now - pieceStart) * 1e6);
+        lastWork = output;
+        return { cpu, work };
+      };
+      const answer = (line: string): void => {
+        const part = current();
+        if (part === undefined) throw Error("a worker answered more parts than it was asked");
+        const now = performance.now();
+        const { cpu, work } = measure(now, null);
+        const attempt = randomUUID();
+        const r = record(part, attempt, directory, "executed", 0, now - pieceStart, cpu, null);
+        if (part === null) {
+          const named = protocol.parts(line);
+          if (state.parts !== null && canonical(state.parts) !== canonical(named))
+            throw Error("a worker's preparation names other parts than the stored preparation");
+          state.parts = named;
+          asked ??= named.filter((p) => !state.results.has(p));
+          prepared = true;
+          if (state.preparation !== null && state.preparation.status === 0 && state.preparation.stdout !== line + "\n")
+            throw Error("a worker's preparation line differs from the stored preparation");
+          state.preparation ??= { part: null, execution: "executed", status: 0, stdout: line + "\n", stderr: "",
+            error: undefined, record: r };
+        } else {
+          if (protocol.partOf(line) !== part) throw Error(`a worker answered ${protocol.partOf(line)} for ${part}`);
+          state.results.set(part, { part, execution: "executed", status: 0, stdout: line + "\n", stderr: "",
+            error: undefined, record: r });
+          index++;
+        }
+        const elapsedMs = now - pieceStart;
+        // A restarted worker prepares again: its preparation is published
+        // once, by the worker that first computed it, and checked equal here.
+        const again = part === null && state.preparation !== null && state.preparation.record.attempt !== attempt;
+        const publishAt = (measured: Cpu): void => {
+          if (!again) publish(part, attempt, 0, Buffer.from(line + "\n"), Buffer.alloc(0), work, elapsedMs, measured);
+        };
+        if (held.unread !== null) {
+          held.unread.publish(held.unread.r.cpu);
+          finishRecord(held.unread.r, held.unread.work);
+        }
+        held.unread = null;
+        if ("unavailable" in cpu) held.unread = { r, work, publish: publishAt };
+        else {
+          publishAt(cpu);
+          finishRecord(r, work);
+        }
+        pieceStart = now;
+      };
+      // Read lines as they arrive; stop the worker where a piece outlasts
+      // its limit.
+      for (;;) {
+        ended = running.ended();
+        buffered += running.readOutput().toString("utf8");
+        for (let nl = buffered.indexOf("\n"); nl >= 0; nl = buffered.indexOf("\n")) {
+          const line = buffered.slice(0, nl);
+          buffered = buffered.slice(nl + 1);
+          if (!stopped) answer(line);
+        }
+        if (ended) break;
+        const now = performance.now();
+        if (!stopped && current() !== undefined && now - pieceStart > options.limitMs) {
+          stopped = true;
+          running.signal("SIGTERM");
+          killAt = now + 2_000;
+        } else if (now > killAt) {
+          running.signal("SIGKILL");
+          killAt = Infinity;
+        }
+        Atomics.wait(pause, 0, 0, workerPollMs);
+      }
+      const end = running.finish();
+      const now = performance.now();
+      const part = current();
+      if (held.unread !== null) {
+        // The runner's account of the program's CPU time beyond the last
+        // piece read.
+        const late = held.unread;
+        const total = end.cpu;
+        late.r.cpu = "userMs" in total ? { userMs: Math.max(0, total.userMs - lastCpu.userMs),
+          systemMs: Math.max(0, total.systemMs - lastCpu.systemMs), peakBytes: total.peakBytes,
+          covers: "the worker's program over this part and its end" } : total;
+        if ("userMs" in total) lastCpu = total;
+        late.publish(late.r.cpu);
+        finishRecord(late.r, late.work);
+        held.unread = null;
+      }
+      const { cpu, work } = measure(now, end.cpu);
+      const stderr = text(end.stderrBytes);
+      if (part === undefined && end.status === 0 && end.error === undefined && end.signal === null) return "ended";
+      const attempt = randomUUID();
+      if (stopped || end.exceeded !== null) {
+        // A piece over its time or memory limit: that piece alone; a timeout
+        // is published, a memory failure nowhere.
+        const execution: Execution = stopped ? "timed-out" : "failed";
+        const r = record(part ?? null, attempt, directory, execution, null, now - pieceStart, cpu, null);
+        if (stopped && replaying !== null && ineligible === null)
+          replaying.publishTimeout(call.stage, keyOf(part ?? null), { input: partInput(bound.manifest, part ?? null), attempt,
+            elapsedMs: now - pieceStart, limitMs: options.limitMs, policy: workerPolicy, cpu });
+        finishRecord(r, work);
+        const over: WorkerPart = { part: part ?? null, execution, status: null, stdout: "", stderr,
+          error: stopped ? undefined : end.error, record: r };
+        if (part === null || part === undefined) {
+          state.preparation ??= over;
+          return "ended";
+        }
+        state.results.set(part, over);
+        const rest = (asked ?? []).slice(index + 1);
+        return rest.length === 0 ? "ended" : rest;
+      }
+      const refusal = bound.protocol.refusal;
+      if (part === null && refusal !== null && end.status === refusal.status && end.error === undefined &&
+          end.signal === null && stderr.startsWith(refusal.prefix) && stderr.trim().split("\n").at(-1) === "end of refusal") {
+        // The preparation refused: its refusal record is its result.
+        const r = record(null, attempt, directory, "executed", end.status, now - pieceStart, cpu, null);
+        publish(null, attempt, end.status, Buffer.alloc(0), end.stderrBytes, work, now - pieceStart, cpu);
+        finishRecord(r, work);
+        state.preparation = { part: null, execution: "executed", status: end.status, stdout: "", stderr, error: undefined, record: r };
+        return "ended";
+      }
+      // Any other end: an operational failure of the piece it was in.
+      const r = record(part ?? null, attempt, directory, "failed", end.status, now - pieceStart, cpu, null);
+      finishRecord(r, work);
+      const failure: WorkerPart = { part: part ?? null, execution: "failed", status: end.status, stdout: "", stderr,
+        error: end.error ?? Error(end.signal !== null ? `killed by ${end.signal}` : `exited with status ${end.status}` +
+          `${part === undefined ? " after its parts" : ""}: ${stderr.trim().split("\n")[0] || "no output"}`), record: r };
+      if (part === null || part === undefined) state.preparation = failure;
+      else state.results.set(part, failure);
+      return "ended";
+    } finally {
+      if (!ended) {
+        running.signal("SIGKILL");
+        for (let waited = 0; !running.ended() && waited < 400; waited++) Atomics.wait(pause, 0, 0, workerPollMs);
+        running.finish();
+      }
+      rmSync(directory, { recursive: true, force: true });
+    }
   }
 }
 

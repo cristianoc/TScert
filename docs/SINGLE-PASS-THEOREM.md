@@ -176,9 +176,11 @@ proposals inference recorded), and the false start fact where
 H3 is proved (`passGroupChecks`, section 3), so `passUnitVerdict_safe`
 has H1 and H2 as its only hypotheses; it is `passUnitCli_safe`.
 
-The premise is the condition under which `verifyUnitsFile` prints unit
-$`i`$'s line `"accepted": true` in mode 8, with an interface file
-(`--verify-interface-stage`, its entries and rows decoded) or with its
+The premise is the condition under which `PreparedFile.check` gives unit
+$`i`$'s line `"accepted": true` in mode 8, which `verifyUnitsFile`
+(`--verify-interface-stage`) and the file worker (`--file-worker`) print
+for a unit the selection checks, with an interface file (its entries and
+rows decoded) or with its
 modules checked in the invocation; every other argument is free: the
 comparison, node, repetition, observation (`TSCERT_OBSERVE`), given lines,
 counting and location (`TSCERT_PASS_REFUSALS`) inputs, the modules' check
@@ -195,8 +197,8 @@ its only premises are the file's plans and the accepted verdict.
 **Theorem** `mode8Accepted_sound` (proved, PassUnitRun, the theorem
 `AxiomCheck` names as the acceptance theorem). `Mode8Accepted f i` holds at
 either of mode 8's print sites: the file's own check
-(`--verify-interface-stage 8`, the case `main`, whose premises are
-`passUnitVerdict_sound`'s) and a module's group checked in the interface
+(`--verify-interface-stage 8` and `--file-worker 8`, one preparation and one
+unit check, the case `main`, whose premises are `passUnitVerdict_sound`'s) and a module's group checked in the interface
 stage (`--module-interface`, the case `freshModule`: the module planned by
 `fragmentPlansCore`, prepared by `preparedModuleMode8`, its group accepted
 by `passGroupMode8`). Then $`\mathrm{PassUnitSafe}(f, i)`$:

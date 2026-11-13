@@ -207,19 +207,19 @@ establishes an entry and how an importer binds one are
 [certified imports](SOURCE-CONTRACTS.md#certified-imports)'.
 
 A check (`pipeline/verify-source.mts`, the case runner and every caller
-through it) runs the parse stage, then the `pass` stage
-(`--verify-interface-stage 8`) and the interface stages it needs
-(`verifyByUnits`): for a file that reads no module, the file's stage at
-ordinary contracts (no module interface); for one that does, the interface
-stages, then the file's stage at their interfaces. Where
-the file's stage exceeds its limit, the check runs a `pass` stage per name
-(each function's, `:init`), each with its own key and limit: a unit over
-its limit is that unit's refusal, a timeout, and its dependents'. Where the
-interface stages fail (a timeout, a refusal), the file's stage runs at
-ordinary contracts, each refused unit's refusal naming that failure first. A
-unit counts as verified only with every unit it depends on accepted; a unit
-the pass refuses is `unverified` (phase `search`), a refusal of the pass's
-front `unsupported` (phase `proposal`).
+through it) runs the parse stage, then the file's `pass` stage, a
+[worker stage](#worker-stages) (`--file-worker 8`), and the interface stages
+it needs (`verifyByUnits`): for a file that reads no module, the file's
+stage at ordinary contracts (no module interface); for one that does, the
+interface stages, then the file's stage at their interfaces. The worker
+prepares the file once and checks its selected units one after another;
+each unit's result is an entry of its own, and a unit over its limit is that
+unit's refusal, a timeout, and its dependents'. Where the interface stages
+fail (a timeout, a refusal), the file's stage runs at ordinary contracts,
+each refused unit's refusal naming that failure first. A unit counts as
+verified only with every unit it depends on accepted; a unit the pass
+refuses is `unverified` (phase `search`), a refusal of the pass's front
+`unsupported` (phase `proposal`).
 
 ## Observed stages
 
@@ -673,6 +673,59 @@ enforced limit expired; identifying the active stage alone is insufficient.
 Completed entries remain reusable. Readers check for a finished entry before
 returning a timeout observation; a finished entry visible at that check
 takes precedence.
+
+## Worker stages
+
+A worker stage (`invokeWorker`, `pipeline/stages.mts`) is a process that
+prepares once, prints a preparation line naming its parts in order, and
+then answers, one line each and in order, the parts a request line on its
+standard input names (all of them, where the request is null). Its result
+is one entry per piece: the preparation, and each part.
+
+*The key.* The description `W` of a worker invocation is the description
+of a process stage ([keys](#keys)): the stage, the adapter's code, the
+runtime, the executable with its libraries, the runner, the argument
+vector, the environment, the exit protocol, every input file by role and
+content, and the output roles. A piece's key is the digest of
+`{worker: W, part: p}`, with `p` null for the preparation and a part's
+identity otherwise. The request line is outside `W`: it chooses which
+pieces a process computes, never what a piece is.
+
+*Why the key determines the result.* The file worker
+(`--file-worker 8`, `RequestCli.fileWorker`) computes its preparation, the
+file's plans `P` (`prepareUnitsFile`), from its inputs alone: the fragment,
+the interfaces, the file key, the depth, the selection and the environment,
+all in `W`. Its preparation line is a function of `P`. A unit's line is
+`check(P, i)` (`PreparedFile.check`), a function of `P` and the unit `i`,
+which the part names. The verifier's only state carried from one unit's
+check to the next is measurement (the work table, the per-kind timings,
+which reach standard error only where profiling, never a line) and the
+memoized values of `P`'s thunks, which are `P`'s own values whichever check
+forces them. So every piece is a function of `W` and `p`, whichever units a
+process checked before it, in whichever order, in whichever worker; a
+restarted worker prepares from the same inputs and computes the same `P`.
+The control `worker order` (`tests/single-pass-controls.mts`) checks it: one file's
+units in two orders and through a resumed worker give the same bytes. The
+key is coarser than one naming only what a unit reads: any change of the
+file or of its inputs misses every piece.
+
+*Limits.* The driver reads the worker's output as it is written and
+publishes each piece as its line arrives. Each piece has the stage's limit,
+timed from the line before it (the preparation from the start). A piece
+over its limit stops the worker; that piece alone is published as a
+timeout observation under its key, with its limit and the policy
+`workerPolicy`, and a new worker is started for the parts after it, the
+finished ones replayed. A part over the memory limit stops the worker
+likewise; it is a tool failure published nowhere, its unit without a
+verdict. The preparation over either limit, or refused, ends the stage with
+no part: a preparation is repeated once per worker start, never once per
+unit. The CPU time of a piece is the worker program's between the line
+before it and its own, as the runner reads it (`stage-runner --cpu`); each
+piece is its own attempt record.
+
+*Claims.* One process at a time executes a worker for `W`: it claims
+`{worker: W}`. A waiter replays the pieces as they are published and
+reports a tool failure when none is published within `claimWaitMs`.
 
 ## Publication
 
