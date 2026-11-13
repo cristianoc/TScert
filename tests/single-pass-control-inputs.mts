@@ -142,7 +142,7 @@ function manifestInput(v: Canonical): string {
 }
 
 /** The store-boundary controls of the module-interface stages over a
- * fragment with implementation imports and its given facts: a forged stored
+ * fragment with implementation imports: a forged stored
  * interface is recomputed, an interface stale for an edited module is
  * refused, forced proposals and selected roots key apart, own-file and
  * reordered requests reach the same keys, an importer's forced execution
@@ -150,7 +150,7 @@ function manifestInput(v: Canonical): string {
  * nothing. Run over a fresh store of their own under `scratch`
  * (`TSCERT_STAGE_STORE`, restored after); each line they print is passed to
  * `log`; every operation they run is passed to `ran`. */
-export function interfaceControls(fragment: string, given: string, scratch: string, log: (line: string) => void,
+export function interfaceControls(fragment: string, scratch: string, log: (line: string) => void,
     ran: (invoked: Invoked) => void = () => {}): void {
   mkdirSync(scratch, { recursive: true });
   const work = mkdtempSync(join(scratch, "interface-controls-"));
@@ -168,7 +168,7 @@ export function interfaceControls(fragment: string, given: string, scratch: stri
       ran(invoked);
       return invoked;
     };
-    const options: InterfaceOptions = { mode: 8, fuel: 12, rounds: 4096, force: [], allCuts: false, given,
+    const options: InterfaceOptions = { mode: 8, fuel: 12, rounds: 4096, force: [],
       work: join(work, "first"), invocation: { limitMs: 60_000, force: false, recorder: null } };
     const first = prepare(fragment, options);
     const original = readFileSync(first.path, "utf8");
@@ -218,20 +218,11 @@ export function interfaceControls(fragment: string, given: string, scratch: stri
     const ownAst = { file: own.location, sourceSha256: own.sourceSha256, declarations: own.declarations,
       init: own.init, functions: own.functions, omittedMentions: [],
       modules: list(source.modules).filter((m) => record(m).location !== own.location) };
-    const ownPath = join(work, "own.json"), ownGiven = join(work, "own-given.jsonl");
+    const ownPath = join(work, "own.json");
     const ownModule = join(work, "own-module.json");
     writeFileSync(ownModule, JSON.stringify(own));
     writeFileSync(ownPath, JSON.stringify(ownAst));
-    const prefix = `module:${String(own.location)}#`;
-    const lines = readFileSync(given, "utf8").split("\n").filter(Boolean).map((s) => {
-      const value: unknown = JSON.parse(s), line = record(value);
-      if (typeof line.unit !== "string") throw Error("missing unit");
-      if (line.unit.startsWith(prefix)) line.unit = line.unit.slice(prefix.length);
-      else if (!line.unit.startsWith("module:")) return null;
-      return line;
-    }).filter((l) => l !== null);
-    writeFileSync(ownGiven, lines.map((l) => JSON.stringify(l)).join("\n"));
-    const ownResult = prepare(ownPath, { ...options, ownModule, given: ownGiven, work: join(work, "own") });
+    const ownResult = prepare(ownPath, { ...options, ownModule, work: join(work, "own") });
     assert.deepEqual(ownResult.records.filter((r) => r.record.stage === "module-interface").map((r) => r.record.key),
       first.records.filter((r) => r.record.stage === "module-interface").map((r) => r.record.key));
     assert.equal(readFileSync(ownResult.path, "utf8"), original);
@@ -253,7 +244,7 @@ export function interfaceControls(fragment: string, given: string, scratch: stri
     assert.deepEqual(parsed(noRoots.path), { modules: [] });
     assert(noRoots.records.every((r) => r.record.stage === "interface-plan"));
     const selectedOwn = prepare(ownPath, { ...options, names: "%absent-interface-control",
-      ownModule, given: ownGiven, work: join(work, "selected-own") });
+      ownModule, work: join(work, "selected-own") });
     assert.equal(readFileSync(selectedOwn.path, "utf8"), readFileSync(ownResult.path, "utf8"));
     assert.deepEqual(selectedOwn.records.filter((r) => r.record.stage === "module-interface").map((r) => r.record.key),
       ownResult.records.filter((r) => r.record.stage === "module-interface").map((r) => r.record.key));

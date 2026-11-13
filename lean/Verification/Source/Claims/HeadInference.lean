@@ -12,13 +12,11 @@ obligation the pass checks on every edge into the head. A wrong proposal
 costs a refusal, never an acceptance; the front drops the proposals an edge
 refuses and runs the pass again (`FilePlans.passGroupInferred`).
 
-The rules mirror the producer's (ocaml-producer/linear_facts.ml): a
-declaration or assignment of a linear value states its equality
-(`linear_facts.ml:assign`, `declaration`); a test states its comparisons
-on each arm (`atom_comparison`, `test`); an increment restates each fact at
-its shifted bound (`assign`'s `Add(Id x, c)`); a loop's head holds the
-facts its entry holds over bindings the loop does not assign (`join` of
-facts both edges define), and of a counter the loop steps by a constant,
+The rules: a
+declaration or assignment of a linear value states its equality; a test
+states its comparisons on each arm; an increment `x + c` restates each fact
+at its shifted bound; a loop's head holds the facts its entry holds over
+bindings the loop does not assign (the join of facts both edges define), and of a counter the loop steps by a constant,
 its integrality, the bounds its entry states that a step keeps, the bound
 the test states shifted by the step, and `2^32 - 1` where the test bounds
 it above (the join's candidates `{d, 0, 2^32-1, 2^53-1}`). -/

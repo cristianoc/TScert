@@ -29,7 +29,7 @@ abbrev Entry := (String × String) × (Footprints.Closed × Bool × Footprints.C
 /-- **What an outside slot holds**: an import read at an entry of its
 module's interface (`established`); an import read at its declared
 contract, which a declaration-only import always is (`declared`); an import
-stand-in's footprint (`standIn`, `TSCERT_STANDINS`); a host value
+stand-in's footprint (`standIn`); a host value
 (`host`); a module constant or cell, typed by the initialization's walk
 (`moduleCell`). -/
 inductive OutsideKind where
@@ -68,7 +68,7 @@ theorem outsideContracts_of_kinds {f : FilePlans} {selection : Option (List Stri
   | moduleCell => exact hcell u hu k v A hs hA hk
 
 /-- **No stand-in slot, no stand-in contract** (proved): where no outside
-slot is a stand-in's, as with no `TSCERT_STANDINS` file, the stand-ins'
+slot is a stand-in's, as with no stand-ins supplied, the stand-ins'
 contracts hold vacuously. -/
 theorem standIns_vacuous {f : FilePlans} {selection : Option (List String)} {S : List String}
     {m : ModuleLayout f selection S} {kinds : String → Nat → OutsideKind}

@@ -216,7 +216,7 @@ yield lists, which `ImpliesOk` and `YieldsOk` quantify over; an implication
 stated once per alias class.
 
 **X · Evidence documents.** The interned tables of the evidence
-(`Interned`, [EvidenceWire.lean](../../lean/Verification/Source/EvidenceWire.lean)):
+(`Interned`, EvidenceWire.lean):
 types, contexts, links, separations, value sets, knowledge, proofs, numbered in order
 of first encounter. Meaning of a document: the tree its roots unfold to,
 so that two identical entries and one shared entry mean the same.

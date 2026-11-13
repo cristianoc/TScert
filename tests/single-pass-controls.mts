@@ -20,7 +20,7 @@ import { controlOperations, invokeProcess, ran as ranStage, readInvocationLog, s
   from "../pipeline/stages.mts";
 import { Store } from "../pipeline/stage-store.mts";
 import { runExample } from "../pipeline/run-example.mts";
-import { verifierBuild, verifierCall, verifierProtocol } from "../pipeline/stage-execution.mts";
+import { verifierBuild, verifierCall } from "../pipeline/stage-execution.mts";
 import { usePassMutationVerifier } from "./single-pass-mutations.mts";
 import { check as checkSource, invocationLog, readFragmentFile, readOutcome, sourceKey, type Outcome } from "../pipeline/verify-source.mts";
 import { stringFamily } from "../pipeline/string-family.mts";
@@ -70,7 +70,7 @@ function pass(fragment: string, force: readonly string[] = [], names: string = "
   const ast: unknown = JSON.parse(readFileSync(fragment, "utf8"));
   const key = isObject(ast) && typeof ast.file === "string" ? ast.file : "";
   const { run, interfaces } = verifyWithInterfaces(fragment, key, names, { mode: 8, fuel: 12, rounds: 4096,
-    force, allCuts: false, work: join(work, "interfaces"),
+    force, work: join(work, "interfaces"),
     invocation: { limitMs: 60_000, force: false, recorder: null } });
   for (const r of interfaces.records) counted(r);
   counted(run);
@@ -199,9 +199,7 @@ for (const k of forcedProposals) {
 
 control("module interfaces: the store boundary", async (): Promise<void> => {
   const artifacts = run("certified-value-import");
-  const given = join(artifacts, "control-given.jsonl");
-  writeFileSync(given, "");
-  interfaceControls(fragmentOf(artifacts), given, join(artifacts, "interface-controls"), say, counted);
+  interfaceControls(fragmentOf(artifacts), join(artifacts, "interface-controls"), say, counted);
 });
 
 control("module interfaces: a module's store stating no built-ins", async (): Promise<void> => {
@@ -554,20 +552,10 @@ control("forged fragment: overload units at another function's code", async (): 
 control("forged fragment: a module's document leaving out a function an import reaches", async (): Promise<void> => {
   // The module document is the front's: a source cannot leave a function
   // out of it. An import whose module's document binds no name a read of it
-  // reaches refuses each unit reading the import, on the interface path
-  // (`--verify-interface-stage`) and the one-process path (`--verify-units`):
+  // reaches refuses each unit reading the import (`--verify-interface-stage`):
   // a function the import's code calls (`describe`, which `label` reads),
   // and the imported function itself (`label`).
   const certified = run("certified-value-import");
-  const direct = (path: string): Pass => {
-    const ast: unknown = JSON.parse(readFileSync(path, "utf8"));
-    assert.ok(isObject(ast) && typeof ast.file === "string");
-    // (the importer's one process: the module units checked in it, as the
-    // pass stage's interfaces are, `fragmentPlansWithModules`)
-    return passOf(counted(invokeProcess({ stage: "pass", program: verifierBuild, arguments: [{ text: "--subtype-rounds" },
-      { text: "4096" }, { text: "--verify-units" }, { text: "8" }, { input: "fragment.json", path }, { text: ast.file },
-      { text: "12" }], environment: {}, protocol: verifierProtocol }, { limitMs: 60_000, force: false, recorder: null })));
-  };
   for (const name of ["describe", "label"]) {
     const ast = fragmentAst(certified);
     const module = must(ast.modules.find((m) => m.location.endsWith("certified.ts")), "certified.ts's module");
@@ -575,13 +563,12 @@ control("forged fragment: a module's document leaving out a function an import r
     module.functions = module.functions.filter((f) => f.name !== name);
     const path = forged(certified, `forged-absent-${name}`, ast);
     const at = new RegExp(`source refusal at \\[\\d+,\\d+\\): unbound name ${name} in \\./certified\\.ts, read through the import 'label'`);
-    for (const [p, route] of [[pass(path), "interface"], [direct(path), "one-process"]] as const) {
-      refused(p, "labels@744", `${name} absent, ${route} path`, at);
-      for (const unit of ["doubled@658", "tallies@829", "values@937", "innerValues@1032"])
-        accepted(p, unit, `${name} absent, ${route} path, a unit not reading label`);
-    }
+    const p = pass(path);
+    refused(p, "labels@744", `${name} absent`, at);
+    for (const unit of ["doubled@658", "tallies@829", "values@937", "innerValues@1032"])
+      accepted(p, unit, `${name} absent, a unit not reading label`);
   }
-  say("a module's document leaving out a function an import reaches (the imported one, or one it calls): the units reading the import refused at the read, on both paths");
+  say("a module's document leaving out a function an import reaches (the imported one, or one it calls): the units reading the import refused at the read");
 });
 
 control("forged fragment: unbound names", async (): Promise<void> => {
@@ -1777,7 +1764,7 @@ control("store: cold and warm runs, an importer's edit, over the interface stage
       const work = runDirectory("single-pass-store-pass-");
       const ast: unknown = JSON.parse(readFileSync(fragment, "utf8"));
       const { run, interfaces } = verifyWithInterfaces(fragment, isObject(ast) && typeof ast.file === "string" ? ast.file : "", "",
-        { mode: 8, fuel: 12, rounds: 4096, force: ["imports"], allCuts: false, work: join(work, "interfaces"),
+        { mode: 8, fuel: 12, rounds: 4096, force: ["imports"], work: join(work, "interfaces"),
           invocation: { limitMs: 60_000, force: false, recorder: null } });
       return [...interfaces.records, run];
     };

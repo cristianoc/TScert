@@ -38,7 +38,7 @@ languages.
 | **ControlFlow** — the program graph over those terms | [ControlFlow.lean](../lean/Verification/Programs/ControlFlow.lean) | [control-flow.mts](../tools/control-flow.mts) | extraction |
 | **TypeGraph** — positive types as labelled rows | [PositiveNormalization.lean](../lean/Verification/Types/PositiveNormalization.lean) | [type-graph.mts](../tools/type-graph.mts) | extraction |
 | **Request** — the whole verification request | [RequestJson.lean](../lean/Verification/Source/RequestJson.lean) | — | extraction |
-| **Evidence** — certificates the checker validates, written as tables with backward references | [ProgramCertificates.lean](../lean/Verification/Programs/ProgramCertificates.lean), [PositiveCertificates.lean](../lean/Verification/Types/PositiveCertificates.lean); the document, [EvidenceWire.lean](../lean/Verification/Source/EvidenceWire.lean) | — | proof search |
+| **Evidence** — certificates the checker validates, written as tables with backward references | [ProgramCertificates.lean](../lean/Verification/Programs/ProgramCertificates.lean), [PositiveCertificates.lean](../lean/Verification/Types/PositiveCertificates.lean); the document, EvidenceWire.lean | — | proof search |
 | **Diagnostic** — why an attempt did not succeed | in [RequestJson.lean](../lean/Verification/Source/RequestJson.lean) | [diagnostic.mts](../tools/diagnostic.mts), rendered by [diagnostic-view.mts](../tools/diagnostic-view.mts) | the verifier |
 
 A representation's syntax does not establish the truth of what it says.

@@ -1,8 +1,8 @@
 import Verification.Source.Claims.Extraction
 import Verification.Source.Lowering.Synthesis
 
-/-! The comparison of a unit's computed types with its claims
-(`Synthesis.compareUnit`), a measurement only. -/
+/-! A module value's type as a unit reads it, and a front's generic
+values (`Front.genericValues`), as the single pass's front computes them. -/
 namespace Verification.SourceClaimJson
 open Lean ProgramTyping SourceExtraction
 open EquationGraphs (Tree)
@@ -48,25 +48,5 @@ def Front.genericValues (fr : Front) :
        widenBinders := g.widenBinders,
        instantiate := (fun θ => (·.1) <$> g.instantiate θ),
        resolution := g.resolution, bounds := (fun θ => Prod.snd <$> g.instantiate θ) } : Synthesis.Generic)))
-
-/-- A unit's claims retyped by the walk (`Synthesis.retypeUnit`): the
-extraction of the single pass without a producer's types (mode 8). -/
-def retypeByWalk (parts : String := "xec") (force : List String := []) : Retype := fun fr T f fc module scope =>
-  let (schemes, generics) := fr.genericValues
-  Synthesis.retypeUnit T f fc (module.map (fun v => (v.1, moduleValueType v)) ++ schemes) generics parts force scope
-
-/-- Unit `i`'s computed types against its claims. -/
-def Front.compareTypes (fr : Front) (i : Nat) : Except String Json := do
-  let some (f, _, initClaims) := fr.units[i]? | throw s!"no unit {i}"
-  let c ← match initClaims with
-    | some c => pure c
-    | none => match fr.d.functions.find? (fun c => c.name == f.name && c.namePos == f.namePos) with
-      | some c => pure c
-      | none => throw s!"missing claims for '{f.name}'"
-  let module := if initClaims.isSome then fr.moduleFunctions ++ fr.classSelves
-    else fr.moduleFunctions ++ fr.moduleConstants
-  let (schemes, generics) := fr.genericValues
-  Synthesis.compareUnit fr.d.types f c.normalized (module.map (fun v => (v.1, moduleValueType v)) ++ schemes)
-    generics
 
 end Verification.SourceClaimJson

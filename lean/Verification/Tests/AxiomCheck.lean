@@ -108,8 +108,11 @@ Acceptance rests on Lean's standard axioms alone. The build fails when any of
 the following depends on an axiom other than `propext`, `Classical.choice` and `Quot.sound`
 (`sorryAx`, or one the project declares):
 
-- `SourceClaimJson.checkUnitJson_safe`, the acceptance theorem, of which every
-  accepted function's and module run's safety is a consequence;
+- `SourceClaimJson.PassUnit.mode8Accepted_sound`, the acceptance theorem: a
+  unit printed accepted at either of mode 8's print sites (the file's own
+  check, `--verify-interface-stage 8`, and a module's in the interface stage,
+  `--module-interface`) has every member of its group safe, of which every
+  accepted function's safety is a consequence;
 - the single pass's unit theorem at mode 8's verdict,
   `SourceClaimJson.PassUnit.passUnitVerdict_safe`, `passUnit_safe` and
   the wrapper, code-table, plan, linking and realization theorems it rests on,
@@ -133,7 +136,6 @@ run_cmd do
     for axiom_ in ← liftCoreM <| collectAxioms decl do
       unless standard.contains axiom_ do
         throwError "{decl} depends on the axiom {axiom_}"
-  check ``Verification.SourceClaimJson.checkUnitJson_safe
   check ``Verification.SourceClaimJson.PassUnit.passUnitVerdict_safe
   check ``Verification.SourceClaimJson.PassUnit.passUnit_safe
   check ``Verification.SourceClaimJson.PassUnit.member_safe

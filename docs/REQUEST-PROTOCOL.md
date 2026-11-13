@@ -836,7 +836,7 @@ and checks the unit's certified requests at it, one verdict per unit.
 
 A bundle is written as typed tables and the responses and obligations that
 name their entries by position
-([EvidenceWire.lean](../lean/Verification/Source/EvidenceWire.lean)):
+(EvidenceWire.lean):
 
 ```json
 { "types": [T, …], "contexts": [[t, …], …], "terms": [M, …], "links": [link, …], "separations": [fact, …],

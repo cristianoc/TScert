@@ -112,8 +112,7 @@ function verify(dir: string, key: string, unit: string, env: NodeJS.ProcessEnv):
   // Warm importer measurements exclude component preparation; the stage
   // records retain cold component CPU and wall time separately.
   const interfaces = verifyWithInterfaces(join(dir, "fragment.json"), key, unit, {
-    mode: 8, fuel: 12, rounds: 4096, force: (env.TSCERT_FORCE ?? "").split(",").filter(Boolean),
-    allCuts: false, work: join(dir, "interfaces"), invocation: { limitMs: 60_000, force: false, recorder: null },
+    mode: 8, fuel: 12, rounds: 4096, force: (env.TSCERT_FORCE ?? "").split(",").filter(Boolean), work: join(dir, "interfaces"), invocation: { limitMs: 60_000, force: false, recorder: null },
   }).interfaces;
   const started = performance.now();
   const args = ["--verify-interface-stage", "8", join(dir, "fragment.json"), interfaces.path, key, "12", unit];

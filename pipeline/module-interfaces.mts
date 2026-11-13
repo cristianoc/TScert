@@ -41,15 +41,10 @@ function exact(value: Canonical, fields: readonly string[]): ObjectWire {
 
 /** Semantic inputs common to the component checks and their importer. */
 export type InterfaceOptions = {
-  mode: 8 | 9;
+  mode: 8;
   fuel: number;
   rounds: number;
   force: readonly string[];
-  allCuts: boolean;
-  /** A measurement's given lines (statement and loop-head facts by unit):
-   * read by the verifier from `TSCERT_GIVEN`, so its stages execute rather
-   * than replay. */
-  given?: string;
   work: string;
   invocation: InvokeOptions;
   /** The parser's canonical ModuleAst for an own-file publication. Its
@@ -57,9 +52,8 @@ export type InterfaceOptions = {
    * than the own-file snapshot's file key. Supplying it runs its complete
    * component check even when the importer itself selects one function. */
   ownModule?: string;
-  /** Importer roots and measurement inputs affect discovery only. */
+  /** Importer roots affect discovery only. */
   names?: string;
-  standins?: string;
 };
 export type PreparedInterfaces = { path: string; records: Invoked[] };
 
@@ -69,8 +63,6 @@ export function prepareInterfaces(fragmentPath: string, options: InterfaceOption
   mkdirSync(options.work, { recursive: true });
   let ast = object(json(readFileSync(fragmentPath, "utf8")));
   let source = fragmentPath;
-  const rawGiven = options.given === undefined ? [] :
-    readFileSync(options.given, "utf8").split("\n").filter((s) => s.trim() !== "").map(json);
   if (options.ownModule !== undefined) {
     const own = object(json(readFileSync(options.ownModule, "utf8")));
     if (own.sourceSha256 !== ast.sourceSha256) throw Error("own module source differs from the checked file");
@@ -78,17 +70,6 @@ export function prepareInterfaces(fragmentPath: string, options: InterfaceOption
     ast = { ...ast, modules: [...array(ast.modules).filter((m) => string(object(m).location) !== ownLocation), own] };
     source = join(options.work, "own-fragment.json");
     writeFileSync(source, canonical(ast));
-    for (const line of rawGiven) {
-      const row = object(line), u = string(row.unit);
-      if (!u.startsWith("module:")) row.unit = `module:${ownLocation}#${u}`;
-    }
-  }
-  const given = new Map<string, Canonical>();
-  for (const line of rawGiven) {
-    const unit = string(object(line).unit);
-    const old = given.get(unit);
-    if (old !== undefined && canonical(old) !== canonical(line)) throw Error(`conflicting given lines: ${unit}`);
-    given.set(unit, line);
   }
   const records: Invoked[] = [];
   const invoke = (args: string[]): Invoked => {
@@ -98,13 +79,11 @@ export function prepareInterfaces(fragmentPath: string, options: InterfaceOption
     if (run.status !== 0) throw Error(`interface stage ${run.record.execution}: ${run.stderr}`);
     return run;
   };
-  const standins = options.standins === undefined ? { functions: [], imports: [] } :
-    exact(json(readFileSync(options.standins, "utf8")), ["functions", "imports"]);
   const selection = join(options.work, "selection.json");
   writeFileSync(selection, canonical({
     names: options.names ? options.names.split(",").filter(Boolean) : null,
-    imports: array(standins.imports).map((s) => string(object(s).name)),
-    functions: array(standins.functions).map((s) => string(object(s).name)),
+    imports: [],
+    functions: [],
     own: options.ownModule === undefined ? [] : [string(object(json(readFileSync(options.ownModule, "utf8"))).location)],
   }));
   const plan = exact(json(invoke(["--module-interface-plan", source, selection]).stdout), ["components"]);
@@ -119,10 +98,8 @@ export function prepareInterfaces(fragmentPath: string, options: InterfaceOption
       if (dependency === undefined) throw Error(`dependency not established before parent: ${location}`);
       if (!dependencies.includes(dependency)) dependencies.push(dependency);
     }
-    const request = { modules: array(component.modules), dependencies,
-      given: [...given.entries()].filter(([u]) => members.some((m) => u.startsWith(`module:${m}#`)))
-        .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([, v]) => v),
-      force: options.force, allCuts: options.allCuts, fuel: options.fuel, mode: options.mode };
+    const request = { modules: array(component.modules), dependencies, force: options.force, fuel: options.fuel,
+      mode: options.mode };
     const path = join(options.work, `component-${index}.json`);
     writeFileSync(path, canonical(request));
     const run = invoke(["--module-interface", path]);
@@ -139,25 +116,19 @@ export function prepareInterfaces(fragmentPath: string, options: InterfaceOption
 }
 
 /** The importer is one process stage, with every file it reads an explicit
- * input role. A measurement's given lines and stand-ins (`options.given`,
- * `options.standins`) reach the verifier through `TSCERT_GIVEN` and
- * `TSCERT_STANDINS`, and the stage executes. */
+ * input role. */
 export function verifyWithInterfaces(fragment: string, key: string, names: string,
     options: InterfaceOptions): { run: Invoked; interfaces: PreparedInterfaces } {
   mkdirSync(options.work, { recursive: true });
   const environment: Record<string, string> = {};
-  const measured = options.given !== undefined || options.standins !== undefined;
-  if (options.given !== undefined) environment.TSCERT_GIVEN = options.given;
-  if (options.standins !== undefined) environment.TSCERT_STANDINS = options.standins;
   if (options.force.length > 0) environment.TSCERT_FORCE = options.force.join(",");
-  if (options.allCuts) environment.TSCERT_ALL_CUTS = "1";
   // The pass's own refusal text, unlocated (`TSCERT_PASS_REFUSALS=raw`): part
   // of the stage's environment, so its key.
   if (process.env.TSCERT_PASS_REFUSALS === "raw") environment.TSCERT_PASS_REFUSALS = "raw";
   const check = (path: string): Invoked => invokeProcess(verifierCall(verifier,
     ["--subtype-rounds", String(options.rounds), "--verify-interface-stage", String(options.mode),
       fragment, path, key, String(options.fuel), names], environment),
-    { ...options.invocation, force: options.invocation.force || measured });
+    options.invocation);
   // A completed importer check at ordinary contracts needs no stronger
   // module facts. This publishes only that check, never a module interface.
   // Explicit own-module publication always runs the canonical computation.

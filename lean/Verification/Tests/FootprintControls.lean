@@ -12,7 +12,7 @@ definition changed back to the false form fails here. The file ends with the
 axiom check of every footprint theorem. The acceptance path uses the
 closed-footprint theorems (their composition below a cutoff,
 `Closed.Holds.trans_on`, and their order, `Closed.Holds.mono`, through
-`GraphCode.goto_bounded` and `checkUnitJson_safe`), whose axioms
+`GraphCode.goto_bounded`), whose axioms
 `AxiomCheck.lean` also checks. -/
 namespace Verification.Footprints.Controls
 

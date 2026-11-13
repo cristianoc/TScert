@@ -332,7 +332,7 @@ function singlePass(recorder: Recorder, artifacts: string, ast: string, fileKey:
   let run: StepRun;
   try {
     const invoked = verifyWithInterfaces(ast, fileKey, "", {
-      mode: 8, fuel: searchDepth, rounds: subtypeRounds ?? 4096, force: [], allCuts: false,
+      mode: 8, fuel: searchDepth, rounds: subtypeRounds ?? 4096, force: [],
       work: join(artifacts, "interfaces"), invocation: { limitMs: stepTimeoutMs, force: false, recorder },
     }).run;
     const execution = invoked.record.execution;

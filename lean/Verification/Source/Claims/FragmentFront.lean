@@ -19,8 +19,8 @@ open Lean ProgramTyping SourceExtraction
 open EquationGraphs (Tree)
 
 /-- A written-footprint stand-in: the footprint a function or an import would
-state if written, supplied apart from the source for a measurement
-(`TSCERT_STANDINS`). -/
+state if written, supplied apart from the source. The command line
+supplies none. -/
 structure StandIn where
   name : String
   footprint : Footprints.Closed

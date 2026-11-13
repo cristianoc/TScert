@@ -546,17 +546,6 @@ def extractMember (fr : Front) (T : EquationStore.State)
 def Front.readsQualified (fr : Front) (group : List Nat) : Bool :=
   group.any fun i => (fr.mentions i).any fr.qualifiedNames.contains
 
-/-- The plans of a source's units: every unit in turn, one store grown
-through them all. A module run's check reads its document this way. -/
-def extractPlans (ast claims : Json) (fileKey : String)
-    (budget : PositiveCertificates.SearchBudget := {})
-    (qualified : List (String × Footprints.Closed × Bool × Footprints.Closed) := []) :
-    Except String (EquationStore.State × List (FunctionPlan EquationStore.State Tree)) := do
-  let fr ← fileFront ast claims fileKey budget qualified
-  fr.units.foldlM (init := (fr.d.types, [])) fun (T, plans) u => do
-    let (next, plan) ← extractMember fr T u
-    return (next, plans ++ [plan])
-
 end
 
 end Verification.SourceClaimJson
