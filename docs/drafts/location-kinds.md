@@ -265,16 +265,18 @@ activation to establish where each is chosen):
 - a stable key, absent from the claim's positions, gets `field`
   (`allocRole`): its key is an ordinary key, which the rule reads from
   typing today (no reserved key: `hostKey` and, with stable keys, `[]` are
-  excluded), and its contents are a source value, which the activation
-  derives from the part's typing;
+  excluded), and its contents are a source value, which the part's
+  payload premise gives (`Payload`, `Kinds.payload_stored`);
 - a fresh array's and a primitive wrapper's prototype slot gets `field`:
   the prototype reference is an ordinary property, a source value;
 - a key-adding write's new location gets the agreed role above, or `field`
   for an own property the write makes on an ordinary object: the write's
   typing must establish that the object is ordinary (it owns no store slot
   and no metadata key) and that the written value is a source value;
-- every initializer's category (`StorageRole.Holds`) is derived from the
-  checked typing premise of its part, not from its being a value.
+- every initializer's category (`StorageRole.Holds`) follows from the
+  payload premise of its part's rule (`Payload`: a field's, a cell's or an
+  element's contents' type in `V`, a store slot's in `S`;
+  `Kinds.payload_stored`, `Kinds.payload_element`).
 
 ## 5. The native-contract condition
 
@@ -529,16 +531,20 @@ typing rules, through the capabilities of §4.
 - **Object allocation** (`Step.makeFields`): the rule's role for each key
   fits it (a store slot's under `[]`, a view's under `[[viewElements]]`, F
   or C under any other key); each initializer has its role's category (a
-  source value in F or C, a store in S); the field map has valid view
+  source value in F or C, a store in S), which the rule's payload premise
+  gives (`Payload`, PROGRAM-TYPING's
+  [sorts and categories](../PROGRAM-TYPING.md#sorts-and-categories)); the field map has valid view
   metadata, which holds where it names neither metadata key. A source
   allocation names neither key (reserved spellings); a binding allocation
   chooses C, an object literal F.
-- **Store literal** (`Step.arrAlloc`): each initializer is a source value.
+- **Store literal** (`Step.arrAlloc`): each initializer is a source value
+  (`arrLit`'s and `arrParts`' payload premise, `Kinds.payload_element`).
 - **Field write** (`Step.writeField`): the payload has the category of its
   target's role: a source value in F or C, a store under `[]` (a grown
   store's writeback, a length write).
 - **Present element write** (`Step.setPresent`) and **hole or past-end
-  write** (`Step.setGrow`): the payload is a source value.
+  write** (`Step.setGrow`): the payload is a source value (`setElem`'s and
+  `setElem-bounded`'s payload premise).
 - **Natives**: `NativeContract` (§5).
 - **Copies** (`Step.mergeV`): the copied fields are allocated as fields;
   every copied key fits that role and every copied value has its category
@@ -612,12 +618,28 @@ typing chose.
 ## Activation
 
 The order of the remaining work (**planned**). The preparatory additions
-(storage roles, concrete allocation roles and their agreement, signatures
-over kinded worlds and their composition, §§4–6) build with the active
-worlds; from step 3 the switch is one commit whose dependency closure is
-rebuilt as a whole. Each step names its files, the bridging lemmas that
-exist, and what it must establish.
+build with the active worlds; from step 3 the switch is one commit whose
+dependency closure is rebuilt as a whole. Each step names its files, the
+bridging lemmas that exist, and what it must establish.
 
+1. **Roles and their capabilities** (§§4–6): storage roles on every storage
+   position, concrete allocation roles and their agreement, signatures over
+   kinded worlds and their composition. Bridges: `Capability.ofRole_*`,
+   `StorageRole.concrete`, `concrete_shaped`, `SafeW.*`, `gate_write`,
+   `gate_handled`.
+2. **Sorts and payloads** (PROGRAM-TYPING's
+   [sorts and categories](../PROGRAM-TYPING.md#sorts-and-categories)): the
+   sorts `V`, `S`, `L` and validity at a sort; a type's category (`tyIn`,
+   `tyIn_sound`), apart from the exception guarantee
+   (`sourceCategory_not_exc`); internal store binders (the array heads'
+   parameter, `ParameterKind.store`); every substitution argument checked
+   in its binder's sort (`sortTy`, `sortTy_sound`, `sortTy_selected`);
+   every binder restricted to its sort, so every assignment is sorted
+   (`selectParameter_sorted`, `NormalGraph.sorted`); every typed allocation
+   and write checked for payload compatibility with its role (`Payload`,
+   `Payload.sound`, `Kinds.payload_stored`, `Kinds.payload_element`). What
+   these give the switch: the category of every contents a typed rule
+   stores; what they do not: reference validity, which step 6 carries.
 3. **The foundational world.** Replace `Worlds.lean` and `Heaps.lean` by the
    kinded world: role-bearing entries, truncation keeping roles, extension
    (`Kinds.WorldT`, `trunc`, `WExt`, `ofEntries_entries` in place of
@@ -636,11 +658,12 @@ exist, and what it must establish.
    and `Capability.Holds.weakenBelow` for covering's equivalence.
 5. **Allocation and writes.** `AllocationWorlds.next` appends
    `objectEntries rs (Es.map res)` for `AllocationWorlds.roles Es vs = some
-   rs`; the allocation rules gain key fit (`StorageRole.fitsKey`), the
-   initializer's category from the part's checked typing
-   (`StorageRole.Holds`), and metadata fit (`MetaFit`), shape established at
-   budget zero as well. Store literals, grow, set and length writes, copies,
-   closures, wrappers and fresh errors follow §9. Files:
+   rs`; the allocation rules gain key fit (`StorageRole.fitsKey`) and
+   metadata fit (`MetaFit`), shape established at budget zero as well; the
+   initializer's and the payload's category come from the payload premise
+   (step 2: `Kinds.payload_stored` with `StorageRole.concrete_of_holds`,
+   `Kinds.payload_element`). Store literals, grow, set and length writes,
+   copies, closures, wrappers and fresh errors follow §9. Files:
    `Semantics/AllocationWorlds.lean`, `Semantics/Rules.lean`,
    `Programs/ProgramTyping.lean`, `Programs/ProgramCertificates.lean`.
    Bridges: `concrete_shaped`, `viewMetaOk_alloc`, `makeFields_shaped`,
@@ -657,7 +680,9 @@ exist, and what it must establish.
    prepend, map and transfer of environments are repaired (`RootsOk.set`).
    Arrow and constructor meanings require valid callees, receivers and
    actuals at their call boundary and contain the kinded contract
-   (`NativeContract`, `NativeConstruct`). Files: `Semantics/Safety.lean`,
+   (`NativeContract`, `NativeConstruct`). A value's category at a binder,
+   a callback's actual or a promise's payload is step 2's; its references'
+   validity is this step's. Files: `Semantics/Safety.lean`,
    `HeapObservations.lean`, `ExceptionalPosts.lean`, `CallEffects.lean`
    (the general relation `ViewWrite` is below it, in `ElementWrites.lean`,
    so no cycle arises), `Programs/TypingBasics.lean`. Bridges: `SafeW.bind`,
