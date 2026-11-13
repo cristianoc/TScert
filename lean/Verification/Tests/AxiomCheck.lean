@@ -14,6 +14,7 @@ import Verification.Programs.TolerantFramesMapNames
 import Verification.Programs.SinglePassClose
 import Verification.Semantics.Kinds
 import Verification.Semantics.KindsAllocation
+import Verification.Semantics.KindsWrites
 import Lean.Util.CollectAxioms
 import Lean.Elab.Command
 import Lean.Compiler.CSimpAttr
@@ -1484,3 +1485,12 @@ run_cmd do
   check ``Verification.Kinds.arrayObject_shaped
   check ``Verification.Kinds.typedArray_shaped
   check ``Verification.Kinds.thrownError_shaped
+  -- writes preserve kinds
+  check ``Verification.Kinds.write_sound
+  check ``Verification.Kinds.writeField_shaped
+  check ``Verification.Kinds.writeOrdinary_shaped
+  check ``Verification.Kinds.bindingWrite_shaped
+  check ``Verification.Kinds.storeWrite_shaped
+  check ``Verification.Kinds.lengthStore_refs
+  check ``Verification.Kinds.setPresent_shaped
+  check ``Verification.Kinds.setGrow_shaped
