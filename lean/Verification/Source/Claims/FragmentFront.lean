@@ -1576,8 +1576,9 @@ and lacking facts of a refusal of an edge into a statement entry, as data):
 the plans and given lines of its next run, the lines saying what was left
 out and how many facts, or none where the refusal stands. An implication an
 edge refuses: the entry's proposed ones left out. A regional check refused
-at the tables inferred for it (`regionalLines`): the member without them, as
-with no given line. An edge into a statement entry lacking facts: the
+at the tables inferred for it (`regionalLines`), stating no lacking facts:
+the member without them, as with no given line. An edge into a statement
+entry lacking facts, on any route (the regional fallback's included): the
 candidates there among the lacking facts left out, the given file's
 (`protect`) kept, and the same facts at the heads that read that head's
 facts (`laterDrops`); a refusal lacking none of them stands. With `fixed` (an adversarial proposal forced)
@@ -1589,7 +1590,9 @@ def FilePlans.inferredNext (f : FilePlans) (fixed : Bool) (protect : List (Nat �
     if fixed then none else do
     let g ← given.bind (withoutImplications · (f.fr.unitId i) l)
     pure (f, some g, [s!"inferred heads: dropped at {l}: its implications"], 1)
-  else if (w.1.splitOn "store regions").length > 1 then
+  -- (a refusal stating the facts an edge lacks is that edge's, whichever
+  -- route's run made it: the regional fallback's included)
+  else if w.2.isNone && (w.1.splitOn "store regions").length > 1 then
     if fixed then none else do
     let g ← given.bind (withoutRegional · (f.fr.unitId i))
     pure (f, some g, ["inferred heads: dropped the regional tables"], 0)
