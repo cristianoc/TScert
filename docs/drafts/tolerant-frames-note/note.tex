@@ -823,9 +823,14 @@ $Q^{e}$ is $\kw{true}$. For example
 $\hoare{\kw{true}}{x=\code{[]}}{\len x=0}$.
 
 The posts $Q$ and $Q^{e}$ are \emph{two-state} assertions.
-For entry state $(\rho_0,h_0)$ and exit state $(\rho_1,h_1)$,
+For entry state $(\rho_0,h_0,W_0,k_0)$ and exit state
+$(\rho_1,h_1,W_1,k_1)$,
 $\old(B)$ means $\rho_0,m,h_0\models B$; $m$ is the enclosing
 invocation's entry mark. Ordinary assertions use $(\rho_1,m,h_1)$.
+A post may also state the kind and form that a location has in $W_0$ or
+in $W_1$. The exit state is admissible from the entry state, so
+$W_0\sqsubseteq W_1$: a location of $h_0$ has the same kind and form in
+both.
 An $\old$ refers to the command whose triple contains it.
 For example, \code{x.push(v)} has post $\len x=\old(\len x)+1$.
 
@@ -881,6 +886,8 @@ the result $y$. The displayed rule uses assertions independent of
 the invocation mark. Freshness assertions require rebasing between
 the callee's and caller's marks. Exceptional posts and effects
 instantiate in the same way; their defaults are $\kw{true}$ and $\top$.
+The instantiated posts relate the call's entry state and its exit
+state, worlds included.
 Lean: \lean{call\_rule}, \lean{invocation\_throw\_action}.
 \item[\textsc{Alloc}] A new array is fresh, empty, and apart from every
 array $y$ that exists before the step. These separations are
