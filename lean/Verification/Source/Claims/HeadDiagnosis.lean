@@ -66,7 +66,9 @@ def FilePlans.lackingAt (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (
           | Except.ok g => g
           | Except.error _ => {}
         | none => {}
-      let (o, _, a, _) := SinglePass.run G I codePool fuel rq.program rq.claims rq.start rq.inputs q.entry.goal hints.requirements
+      let (o, _, a, _) := SinglePass.runRecorded "code" "direct"
+          (runDigests r line s!"code {ci}" (boundText codeBound none)) (fun x => x.2.1.visited) fun _ =>
+        SinglePass.run G I codePool fuel rq.program rq.claims rq.start rq.inputs q.entry.goal hints.requirements
         hints.cuts hints.candidates rq.entryIndices [] (e ++ rendered) (GraphCode.admits table) r.aliases
         .ordinary sumsAnswers #[] 1000000000 codeBound codeGiven.implies codeGiven.args
       ({ index := ci, outcome := o.asRefusal, answers := a, line := "" } : CodeRun _ _)
@@ -77,6 +79,8 @@ def FilePlans.lackingAt (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (
         | some j => (regionalFromJson r.program.length j).toOption.getD ([], #[])
         | none => ([], #[])
       ({ Φ, regions, exc := r.stated.any (·.onThrow), names, heads } : SinglePass.Regional)
+    SinglePass.runRecorded "diagnose" (if regional.isSome then "regions" else "direct")
+      (runDigests r line "main" (boundText bound regional)) (fun _ => 0) fun _ =>
     SinglePass.lackingFacts G I droppable true pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts
       r.candidates r.entryIndices [] (e ++ rendered) (GraphCode.admits table) r.aliases .ordinary sumsAnswers bound
       main.implies main.args r.ensures main.inputs r.entrySeparation regional

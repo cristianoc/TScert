@@ -57,7 +57,6 @@ const sites = {
   retries: "13 synthesis rounds within one walk",
   restart: "14 preparation at a worker's restart",
   refinement: "11 diagnostic/refinement runs",
-  settled: "12 settled run computed twice",
   sameKey: "0 one key executed twice",
 } as const;
 type Site = (typeof sites)[keyof typeof sites];
@@ -160,7 +159,7 @@ function report(directory: string, sourceList: string[], jsonOut: string | null)
   for (const a of attempts) {
     const here = new Map<string, Occurrence>();
     for (const w of a.work) {
-      if (w.kind === "process") continue;
+      if (w.kind === "process" || w.kind.startsWith("run: ")) continue;
       const cls = classOf(w.kind);
       const key = `${cls}\t${w.item}`;
       const o = here.get(key) ?? { attempt: a, cls, item: w.item, kinds: new Map<string, WorkLine>() };
@@ -209,19 +208,18 @@ function report(directory: string, sourceList: string[], jsonOut: string | null)
         continue;
       }
       if (o.cls === "check") {
-        // Member runs: the first is the processing; a rerun follows each
-        // diagnosing walk; one more is the settled run computed twice
-        // (`settleInferred`); main graph runs beyond the member runs are
-        // regional checks beside a run.
+        // Member runs: the first is the processing; each later one is a
+        // settling round after a refusal (`settleInferred` makes each run
+        // once), with the diagnosing walks; main graph runs beyond the
+        // member runs are regional checks beside a run. Which runs repeat
+        // the same inputs is the run table's (`runsOf`).
         const c = count("check: member run"), d = count("check: diagnosing walk"), m = count("check: main graph run");
         const perRun = c > 0 ? ns("check: member run") / c : 0;
-        const reruns = Math.min(d, Math.max(0, c - 1));
-        const twice = Math.max(0, c - 1 - reruns);
+        const reruns = Math.max(0, c - 1);
         const regional = Math.max(0, m - c);
         const regionalNs = m > 0 ? regional * ns("check: main graph run") / m : 0;
-        push(sites.settled, o, twice, twice * perRun);
         push(sites.refinement, o, reruns + d + regional, reruns * perRun + ns("check: diagnosing walk") + regionalNs);
-        push("once", o, c > 0 ? 1 : count("check: group"), Math.max(0, selfSum - (twice + reruns) * perRun -
+        push("once", o, c > 0 ? 1 : count("check: group"), Math.max(0, selfSum - reruns * perRun -
           ns("check: diagnosing walk") - regionalNs));
         continue;
       }
@@ -364,14 +362,137 @@ function report(directory: string, sourceList: string[], jsonOut: string | null)
   out.push("functions with the most work done more than once (s repeated of s, stages, traversals):");
   for (const [item, f] of units.sort((a, b) => b[1].repeatedMs - a[1].repeatedMs).slice(0, 15))
     out.push(`  ${label(item)}: ${s(f.repeatedMs)} of ${s(f.ms)}, ${f.attempts.size}, ${f.traversals}`);
+  const runTable = runsOf(attempts, label);
+  out.push(...runTable.lines);
   process.stdout.write(out.join("\n") + "\n");
   if (jsonOut !== null)
     writeFileSync(jsonOut, JSON.stringify({ totalMs, attributedMs, repeatedMs, timedOutWholeMs, timedOutUnitMs,
       workerStarts: recordOf(workerStarts),
       sites: recordOf(bySite), byClass: recordOf(byClass),
-      stages: recordOf(stageCpu),
+      stages: recordOf(stageCpu), runs: runTable.rows,
       functions: recordOf(new Map(units.map(([item, f]) => [label(item),
         { attempts: f.attempts.size, traversals: f.traversals, ms: f.ms, repeatedMs: f.repeatedMs }] as const))) }, null, 1) + "\n");
+}
+
+/** One graph run (`SinglePass.runRecorded`): its attempt, function, the role
+of the work it was made in (a proposal's, a unit's check, else the stage's
+own), its purpose, route, digests of its inputs without and with its
+bound, its transfers, its nanoseconds and the works open around it. */
+type Run = { attempt: Attempt; item: string; seq: number; role: string; purpose: string; route: string; body: string;
+  whole: string; visits: number; ns: number; context: string[] };
+
+/** A run's role, from the works open around it: a proposal's (any `propose:`
+ * work), else a unit's check (`check: group`), else the stage's own. */
+function roleOf(context: string[]): string {
+  const kinds = context.map((c) => c.replace(/@\d+$/, ""));
+  if (kinds.some((k) => k === "propose: returned-callable round")) return "propose (returned-callable round)";
+  if (kinds.some((k) => k.startsWith("propose:"))) return "propose";
+  if (kinds.some((k) => k === "check: group")) return "check";
+  return "other";
+}
+
+/** **The graph runs of a request, with their repeats**: each kind of run (its
+ * stage, role, purpose and route), how many, their transfers and time; how
+ * many repeat an earlier run of the same function with the same inputs
+ * (`whole` digest: bound included) and how many differ from an earlier one
+ * only in the bound (`body` digest equal); and for each repeat, the kind of
+ * the earlier run it repeats: why it exists. */
+function runsOf(attempts: Attempt[], label: (item: string) => string): { lines: string[]; rows: unknown[] } {
+  const runs: Run[] = [];
+  for (const a of attempts) for (const w of a.work) {
+    if (!w.kind.startsWith("run: ")) continue;
+    const [seq, purpose, route, body, whole, visits, context] = w.kind.slice(5).split("\t");
+    const ctx = (context ?? "").split("<").filter((c) => c !== "");
+    runs.push({ attempt: a, item: w.item, seq: Number(seq), role: roleOf(ctx), purpose: purpose ?? "", route: route ?? "",
+      body: body ?? "", whole: whole ?? "", visits: Number(visits), ns: w.ns, context: ctx });
+  }
+  runs.sort((x, y) => x.attempt.index - y.attempt.index || x.seq - y.seq);
+  const kindOf = (r: Run): string => `${r.attempt.record.stage}/${r.role}/${r.purpose}/${r.route}`;
+  /** Where an earlier run was made, as seen from a later one. */
+  const where = (earlier: Run, later: Run): string => {
+    const a = earlier.attempt, b = later.attempt;
+    if (a === b) return "";
+    if (a.part !== undefined && b.part !== undefined && a.fragment === b.fragment && a.interfaces === b.interfaces &&
+        a.record.stage === b.record.stage) return " (in an earlier unit of the same worker)";
+    if (a.record.stage !== b.record.stage) return " (in another stage)";
+    return " (in another attempt)";
+  };
+  type K = { count: number; visits: number; ms: number; sameInput: number; sameInputMs: number; boundOnly: number;
+    boundOnlyMs: number; why: Map<string, { n: number; ms: number }> };
+  const kinds = new Map<string, K>();
+  const seenWhole = new Map<string, Run>(), seenBody = new Map<string, Run>(), lastOf = new Map<string, Run>();
+  /** The parts of a run's inputs (`runDigests`) two runs differ in. */
+  const partNames = ["graph", "program", "claims", "result", "start", "inputs", "candidates", "cuts", "entry facts",
+    "code goals", "given line"];
+  const differ = (a: Run, b: Run): string => {
+    const pa = a.body.split("/")[1]?.split(".") ?? [], pb = b.body.split("/")[1]?.split(".") ?? [];
+    return partNames.filter((_, k) => pa[k] !== pb[k]).join(", ");
+  };
+  for (const r of runs) {
+    const k = kinds.get(kindOf(r)) ?? { count: 0, visits: 0, ms: 0, sameInput: 0, sameInputMs: 0, boundOnly: 0, boundOnlyMs: 0,
+      why: new Map<string, { n: number; ms: number }>() };
+    kinds.set(kindOf(r), k);
+    k.count++;
+    k.visits += r.visits;
+    k.ms += r.ns / 1e6;
+    const w = seenWhole.get(`${r.item}\t${r.whole}`), b = seenBody.get(`${r.item}\t${r.body}`);
+    if (w !== undefined) {
+      k.sameInput++;
+      k.sameInputMs += r.ns / 1e6;
+      const why = `same input as ${kindOf(w)}${where(w, r)}`;
+      const x = k.why.get(why) ?? { n: 0, ms: 0 };
+      k.why.set(why, { n: x.n + 1, ms: x.ms + r.ns / 1e6 });
+    } else if (b !== undefined) {
+      k.boundOnly++;
+      k.boundOnlyMs += r.ns / 1e6;
+      const why = `bound differs from ${kindOf(b)}${where(b, r)}`;
+      const x = k.why.get(why) ?? { n: 0, ms: 0 };
+      k.why.set(why, { n: x.n + 1, ms: x.ms + r.ns / 1e6 });
+    }
+    else if (b === undefined) {
+      // A run with other inputs than any earlier one: which parts differ
+      // from the function's last run of the same part (`graph`).
+      const last = lastOf.get(`${r.item}\t${r.body.split("/")[1]?.split(".")[0] ?? ""}`);
+      if (last !== undefined) {
+        const why = `inputs differ from ${kindOf(last)}${where(last, r)} in ${differ(last, r) || "the bound"}`;
+        const x = k.why.get(why) ?? { n: 0, ms: 0 };
+        k.why.set(why, { n: x.n + 1, ms: x.ms + r.ns / 1e6 });
+      }
+    }
+    if (w === undefined) seenWhole.set(`${r.item}\t${r.whole}`, r);
+    if (b === undefined) seenBody.set(`${r.item}\t${r.body}`, r);
+    lastOf.set(`${r.item}\t${r.body.split("/")[1]?.split(".")[0] ?? ""}`, r);
+  }
+  const lines: string[] = [];
+  const total = runs.length, same = [...kinds.values()].reduce((a, k) => a + k.sameInput, 0);
+  const sameMs = [...kinds.values()].reduce((a, k) => a + k.sameInputMs, 0);
+  const allMs = [...kinds.values()].reduce((a, k) => a + k.ms, 0);
+  const fns = new Set(runs.map((r) => r.item)).size;
+  const distinct = new Set(runs.map((r) => `${r.item}\t${r.whole}`)).size;
+  lines.push(`graph runs: ${total} over ${fns} functions, ${(allMs / 1000).toFixed(1)} s; distinct inputs ${distinct}; ` +
+    `same function and input as an earlier run: ${same} (${(sameMs / 1000).toFixed(1)} s)`);
+  lines.push("kind of run (stage/role/purpose/route): count, transfers, s; repeats (same input, s); bound only differs (s); why");
+  for (const [kind, k] of [...kinds].sort((a, b) => b[1].ms - a[1].ms)) {
+    lines.push(`  ${kind}: ${k.count}, ${k.visits}, ${(k.ms / 1000).toFixed(2)}; ${k.sameInput} (${(k.sameInputMs / 1000).toFixed(2)}); ` +
+      `${k.boundOnly} (${(k.boundOnlyMs / 1000).toFixed(2)})`);
+    for (const [why, x] of [...k.why].sort((a, b) => b[1].ms - a[1].ms))
+      lines.push(`      ${x.n} (${(x.ms / 1000).toFixed(2)} s) ${why}`);
+  }
+  // The functions with the most runs of the same input.
+  const perFn = new Map<string, { runs: number; same: number }>();
+  const seen = new Set<string>();
+  for (const r of runs) {
+    const f = perFn.get(r.item) ?? { runs: 0, same: 0 };
+    f.runs++;
+    if (seen.has(`${r.item}\t${r.whole}`)) f.same++; else seen.add(`${r.item}\t${r.whole}`);
+    perFn.set(r.item, f);
+  }
+  lines.push("functions with the most runs (runs, of the same input as an earlier one):");
+  for (const [item, f] of [...perFn].sort((a, b) => b[1].runs - a[1].runs).slice(0, 10))
+    lines.push(`  ${label(item)}: ${f.runs}, ${f.same}`);
+  const rows = [...kinds].map(([kind, k]) => ({ kind, count: k.count, visits: k.visits, ms: k.ms, sameInput: k.sameInput,
+    sameInputMs: k.sameInputMs, boundOnly: k.boundOnly, boundOnlyMs: k.boundOnlyMs, why: recordOf(k.why) }));
+  return { lines, rows };
 }
 
 /** The sources a `--sources` value names: files, or every `.ts`/`.mts` file of a directory. */

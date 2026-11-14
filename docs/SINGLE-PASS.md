@@ -409,18 +409,32 @@ facts, an importer's plans), body walks (`walk:` a proposal walk, the
 returned-callable round's, a recursive function's walks after its first,
 the retype walk, the instance walk, and within any of them each further
 traversal of the body, a growth round or an offers round), checks (`check:` a group, each member
-run, each main graph run, each diagnosing walk) and interface rows (`rows:`
+run, each main graph run, each diagnosing walk), proposals (`propose:` a
+function's member planned, each establishing of it, its settling runs, its
+interface, its preparation, its walks, the regional route's tables and
+local effects, the returned-callable round) and interface rows (`rows:`
 the decoding of interfaces, an importer's and a publication's store-map
-check). It writes, as the stage's output `work.jsonl`, one line per kind and
+check). Each graph run (`SinglePass.runRecorded`: a member's main graph, a
+code request's graph, a diagnosing walk, a proposal's walk) is a line of its
+own, of kind `run: <seq>\t<purpose>\t<route>\t<body>\t<whole>\t<visits>\t<context>`:
+its purpose, route, a digest of its inputs but its bound and one with its
+bound and regional tables (`runDigests`), its transfers and the works open
+around it, innermost first (its role: a proposal's or a unit's check); the
+digests' own time is the work `account: run digest`. It writes, as the
+stage's output `work.jsonl`, one line per kind and
 item with the times the work was done, its nanoseconds and its nanoseconds
 outside the work nested in it, and a line of kind `process` with the
 process's nanoseconds. Stage execution appends every attempt of the request,
 from every process, to the directory's `invocations.jsonl`, and keeps each
 verifier attempt's work table as `work/<attempt>.jsonl`.
 `node dev/work-report.mts report <directory>` reports, from that directory
-alone, the work of each function and file, its CPU time, and the work done
+alone, the work of each function and file, its CPU time, the work done
 more than once by repetition site
-([processing functions on demand](drafts/on-demand-processing.md#accounting)).
+([processing functions on demand](drafts/on-demand-processing.md#accounting)),
+and the graph runs by kind (stage, role, purpose, route): how many repeat an
+earlier run of the same function with the same inputs, how many differ from
+one only in the bound, and the kind and place of the earlier run each
+repeats.
 
 ### The performance gate
 

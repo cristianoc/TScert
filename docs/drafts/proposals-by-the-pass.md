@@ -86,7 +86,7 @@ Self-recursive rounds and loop-invariant refinement can require repeated transfe
 
 Two runs remain: the proposal's (settling runs at the open footprint, plus the regional walk at `top` where the direct footprint is more than keep/keep) and the check's at the proposal.
 
-The measured baseline is 6.44 traversals per function on pretext and 9.34 on the census slice, over 307 and 259 functions and initializations ([on-demand processing, baseline](on-demand-processing.md#baseline)). These measurements include other repetition and do not establish the saving from this change. Measure transfer visits, finalization work and total CPU separately.
+Each graph run is counted by kind with its inputs' digest ([on-demand processing, graph runs by kind](on-demand-processing.md#graph-runs-by-kind)): on pretext the proposals' regional route (the walk at `top`, its tables and its local effects) is the largest share of the cost proposals add, and the check's runs that repeat or only re-bound a proposal's are a smaller one.
 
 ## 5. The proof boundary
 

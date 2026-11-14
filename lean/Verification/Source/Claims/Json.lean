@@ -341,6 +341,38 @@ any run. -/
 def MemberRun.before {ι α : Type} (name : String) (o : SinglePass.Outcome ι) : MemberRun ι α :=
   { name, request := some o, outcome := o }
 
+/-- A graph run's inputs digested, as `SinglePass.runRecorded` records them:
+its body's (`part`: the main graph or which code request; the program,
+claims, result, start, inputs, statement entries' candidates and cuts, entry
+facts, the code requests' goals and the given line but its regional
+tables), followed by each of these parts' own digest, then with its bound
+(`bound`, as text) and those tables. A measurement. -/
+def runDigests {σ ι : Type} [Labels ι] [StoreView σ ι] (r : SourceRequest σ ι) (line : Option Json)
+    (part bound : String) : Unit → String × String := fun _ =>
+  let parts : List UInt64 := [hash part, hash (toJson r.program).compress,
+    hash (r.claims.map fun c => (c.context, c.type)), hash r.result, hash r.start, hash r.inputs,
+    hash (toJson r.candidates).compress, hash r.cuts, hash (toJson r.entryIndices).compress,
+    hash (reprStr (r.codes.map (·.entry.goal))), hash ((line.map fun l => (heads l).compress).getD "")]
+  let h := parts.foldl mixHash 7
+  let hex := fun (x : UInt64) => SinglePass.digestOf (toString x)
+  -- (each part's digest too, its first four digits, `.`-separated: which
+  -- inputs two runs differ in)
+  (hex h ++ "/" ++ ".".intercalate (parts.map fun x => ((hex x).take 4).toString),
+    hex (mixHash h (hash (bound ++ "|" ++ (line.map fun l => (tables l).compress).getD ""))))
+where
+  /-- The given line but its regional tables, which only the regional
+  routes read: the inputs of every route. -/
+  heads (l : Json) : Json := match l with
+    | .obj kvs => .obj ((kvs.erase "regional").erase "footprintRegional")
+    | j => j
+  /-- The given line's regional tables. -/
+  tables (l : Json) : Json := Json.mkObj [("regional", l.getObjValD "regional"),
+    ("footprintRegional", l.getObjValD "footprintRegional")]
+
+/-- A bound and a regional check, as text, for `runDigests`. -/
+def boundText (bound : Option (Footprints.Closed × Bool × Bool)) (regional : Option SinglePass.Regional) : String :=
+  s!"{reprStr bound}|{reprStr (regional.map fun rg => (rg.Φ, rg.exc, rg.names, rg.regions.length))}"
+
 /-- **One member's single pass** (`SinglePass.run`), no certificate built:
 its plan through the exhaustive conversion (`FunctionPlan.certify`), the
 request's own conditions, each code request's run against the codes
@@ -408,6 +440,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
     let I' := StoreView.images r.types
     let pool' := CertificateProducer.vocabulary G' labels r.claims r.inputs
     let (o, counts, after, _) := CertificateProducer.timed SinglePass.passNanos fun _ =>
+      SinglePass.runRecorded "main" "qualified" (runDigests r line "main" "qualified") (fun x => x.2.1.visited) fun _ =>
       SinglePass.run G' I' pool' fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
         r.entryIndices [] (e ++ rendered) (GraphCode.admits []) r.aliases (.qualified q.body q.ordinary)
         { summaries := next.summaries, summaryAnswers := next.summaryAnswers } #[] debugNode none
@@ -459,7 +492,9 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
       | none => {}
     let codeImplies := codeGiven.implies
     let codeArgs := codeGiven.args
-    let (o, _, a, _) := SinglePass.run G I codePool fuel rq.program rq.claims rq.start rq.inputs q.entry.goal hints.requirements
+    let (o, _, a, _) := SinglePass.runRecorded "code" "direct"
+        (runDigests r line s!"code {ci}" (boundText codeBound none)) (fun x => x.2.1.visited) fun _ =>
+      SinglePass.run G I codePool fuel rq.program rq.claims rq.start rq.inputs q.entry.goal hints.requirements
       hints.cuts hints.candidates rq.entryIndices [] (e ++ rendered) (GraphCode.admits table) r.aliases
       .ordinary sumsAnswers #[] 1000000000 codeBound codeImplies codeArgs
     -- A code run makes no observation (it is given none): any outcome
@@ -537,6 +572,10 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
     -- (each run recorded: more than one per member run is a regional
     -- check beside the first, `mainRun`)
     SinglePass.work "check: main graph run" (f.fr.workItem i) fun _ =>
+    SinglePass.runRecorded "main" (match regional with
+        | none => "direct"
+        | some rg => if rg.regions.isEmpty then "fallback" else "regions")
+      (runDigests r line "main" (boundText bound regional)) (fun x => x.2.1.visited) fun _ =>
     SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
       r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers reference debugNode bound
       givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed tracing false regional grading

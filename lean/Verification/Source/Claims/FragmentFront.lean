@@ -606,6 +606,7 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
   let returning := (computed.filter (·.resultFootprint != .top)).map (·.name)
   let computed := if returning.isEmpty || !(fr.init.flatMap stmtNames).any returning.contains then computed else
     SinglePass.timedKind "lower: declarations' footprints" fun _ =>
+      SinglePass.work "propose: returned-callable round" (fileItem ast) fun _ =>
       PassProposals.proposals fr (wantedOf fr names) standIns force computed planOf
   let (claims, fr) := if computed.isEmpty then (claims, fr) else (withStandIns claims computed, fr.withStandIns computed)
   let fr := SinglePass.timedKind "lower: initialization's walk" fun _ => initTyped fr

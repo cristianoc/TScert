@@ -206,7 +206,8 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
   -- The walk the regional route (and, with no grades, the direct route)
   -- runs: the code requests run first, as `passMember` checks them.
   let prepared : Unit → Option ((Option SinglePass.Regional →
-      Except (SinglePass.WalkStop (Label f) G) (SinglePass.WalkState (Label f) G × Nat)) × (CodeEntry (Label f) → Bool)) := fun _ => do
+      Except (SinglePass.WalkStop (Label f) G) (SinglePass.WalkState (Label f) G × Nat)) × (CodeEntry (Label f) → Bool)) :=
+      fun _ => SinglePass.work "propose: preparation" (f.fr.workItem i) fun _ => do
     let labels := r.searchLabels
     let .ok (e, next) := ExpressionClaims.produceUsing G I labels (StoreView.valid r.types)
       (StoreView.projection r.types) fuel r.obligations { answers with summaries := #[], summaryAnswers := {} }
@@ -240,7 +241,9 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
           | Except.ok g => g
           | Except.error _ => {}
         | none => {}
-      let (o, _, a, _) := SinglePass.run G I codePool fuel rq.program rq.claims rq.start rq.inputs q.entry.goal
+      let (o, _, a, _) := SinglePass.runRecorded "code" "direct"
+          (runDigests r line s!"code {ci}" (boundText codeBound none)) (fun x => x.2.1.visited) fun _ =>
+        SinglePass.run G I codePool fuel rq.program rq.claims rq.start rq.inputs q.entry.goal
         hints.requirements hints.cuts hints.candidates rq.entryIndices [] (e ++ rendered) (GraphCode.admits table)
         r.aliases .ordinary sumsAnswers #[] 1000000000 codeBound codeGiven.implies codeGiven.args
       { index := ci, outcome := o.asRefusal, answers := a, line := "" }
@@ -249,12 +252,14 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
     let codes := GraphCode.admits table
     pure (fun (rg : Option SinglePass.Regional) =>
       SinglePass.work "propose: member run" (f.fr.workItem i) fun _ =>
+      SinglePass.runRecorded "propose-walk" (if rg.isSome then "regional-top" else "direct")
+        (runDigests r line "main" (boundText none rg)) (fun x => match x with | .ok (σ, _) => σ.walk.visited | .error _ => 0) fun _ =>
       SinglePass.runWalk G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
         r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers #[] 1000000000 none
         main.implies main.args r.ensures main.inputs r.entrySeparation none false false rg, codes)
   -- The direct route: the settling run's steps, else a walk with no bound.
   let (read, visits) ← match grades with
-    | some gs => pure (directRead G nodes claimed gs, visitsA)
+    | some gs => pure (SinglePass.work "propose: direct read" (f.fr.workItem i) fun _ => directRead G nodes claimed gs, visitsA)
     | none =>
       let some (walk, codes) := prepared () | return none
       let .ok (σ, reach) := walk none | return none
@@ -269,14 +274,15 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
     match prepared () with
     | none => (none, none, 0)
     | some (walk, _) =>
-    let tables := regionalInferred r .top [] none
+    let tables := SinglePass.work "propose: regional tables" (f.fr.workItem i) fun _ => regionalInferred r .top [] none
     let (names, heads) := (regionalFromJson r.program.length tables).toOption.getD ([], #[])
     let rgTop : SinglePass.Regional := { Φ := .top, regions := [], exc := false, names, heads }
     match walk (some rgTop) with
     | .ok (σB, reachB) =>
       if σB.walk.visited < reachB then (none, none, σB.walk.visited) else
       let sumsB := σB.answers.summaries.toList
-      let joined := fun (exc : Bool) => (List.range n).foldl (init := (some keepAll : Option Closed)) fun acc l =>
+      let joined := fun (exc : Bool) => SinglePass.work "propose: regional local effects" (f.fr.workItem i) fun _ =>
+        (List.range n).foldl (init := (some keepAll : Option Closed)) fun acc l =>
         match σB.walk.labels[l]? with
         | some (lw : SinglePass.LabelWalk (Label f)) => match lw.visited, lw.entry, lw.stepped, lw.region with
           | true, some entry, some st, some rs =>
@@ -332,7 +338,7 @@ def settledInterface (f : FilePlans) (fuel : Nat) (i : Nat) : Option Established
     | _ => []
   let heads := (candidates.filter fun (c : Nat × List HeapKnowledge.IndexAtom) => !c.2.isEmpty).length
   let s := settleInferred
-    (fun (g : FilePlans) gv => SinglePass.work "check: member run" (f.fr.workItem i) fun _ =>
+    (fun (g : FilePlans) gv => SinglePass.work "propose: settling run" (f.fr.workItem i) fun _ =>
       match g.passMember fuel i false 1000000000 1 gv none false true with
       | .ok m =>
         let why : Option (String × Option (Nat × List HeapKnowledge.IndexAtom)) := match m.outcome with
@@ -396,7 +402,7 @@ def proposeOne (fr : Front) (controls : List String) (force : List String) (prio
       | some p, _ => some p
       | none, some (Φ, ot) => some { name := nm, footprint := Φ, onThrow := ot }
       | none, none => some { name := nm, footprint := .top }
-  let establish := fun (own : Option StandIn) => (do
+  let establish := fun (own : Option StandIn) => SinglePass.work "propose: establish" (fr.nameItem f.name) fun _ => (do
     let fp ← (planOf (reads own) f.name).toOption
     let j ← (List.range fp.fr.units.length).find? fun j => match fp.fr.units[j]? with
       | some (g, _, none) => g.name == f.name && g.namePos == f.namePos
