@@ -21,6 +21,10 @@ for part in body.split(r'\and'):
     out.append(r'\[\class{rulec}{\text{(%s)}}\quad \dfrac{%s}{%s}\]' % (name,a,c))
 src=src[:m.start()]+'\n\n'.join(out)+src[m.end():]
 src=re.sub(r'\\begin\{description\}\[[^\]]*\]',r'\\begin{description}',src)
+# MathJax has no \textsc: inside display math a rule name is upright text
+def _names(m):
+    return re.sub(r'\\textsc\{([^{}]*)\}', lambda n: r'\class{rulec}{\text{'+n.group(1)+'}}', m.group(0))
+src=re.sub(r'\\\[.*?\\\]', _names, src, flags=re.S)
 src=re.sub(r'\\begin\{figure\}.*?\\end\{figure\}','FIGUREHEAPMARKER\n',src,flags=re.S)
 src=src.replace(r'Figure~\ref{fig:heap}','Figure 1')
 src=src.replace(r'\llbracket','⟦').replace(r'\rrbracket','⟧')
@@ -31,6 +35,7 @@ def swap(old,new):
     assert src.count(old)==1,old
     src=src.replace(old,new)
 swap(r'\newcommand{\bx}[1]{\Box_{#1}}',r'\newcommand{\bx}[1]{\class{boxc}{\Box}_{#1}}')
+swap(r'F\text{ is \emph{invariant}}',r'F\text{ is }\textit{invariant}')
 swap(r'\newcommand{\sep}{\mathrel{\#}}',r'\newcommand{\sep}{\mathrel{\class{asr}{\#}}}')
 for n in ['keep','init','grow','any']: swap(r'\newcommand{\%s}{\kw{%s}}'%(n,n),r'\newcommand{\%s}{\class{chg}{\mathsf{%s}}}'%(n,n))
 for n in ['rigid','fresh','old','dense','every','apart']: swap(r'\newcommand{\%s}{\kw{%s}}'%(n,n),r'\newcommand{\%s}{\class{asr}{\mathsf{%s}}}'%(n,n))
