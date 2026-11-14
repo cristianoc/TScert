@@ -426,6 +426,129 @@ theorem sat_instantiate {arena : AssertionArena} {w : Path} {n : Nat} {a b : Ass
     {s : IndexedHeap} {v : Val} (hw : w.read η s.h = some v) : Sat arena η m s b ↔ Sat arena (push v η) m s a :=
   sat_subst hc (Substitution.instantiate_holds hw)
 
+/-! ## Building a substituted assertion -/
+
+/-- Node `i` of `src` under `θ`, its nodes appended to `acc`: the reference
+of the new node. Shared subterms are rebuilt where they occur. -/
+def substBuild (src : Array AssertionNode) (θ : Substitution) (i : Nat) (acc : Array AssertionNode) :
+    Option (Array AssertionNode × Nat) :=
+  let push := fun (acc : Array AssertionNode) (n : AssertionNode) => some (acc.push n, acc.size)
+  match src[i]? with
+  | some .truth => push acc .truth
+  | some .falsity => push acc .falsity
+  | some (.atom x) => (substAtom θ x).bind fun y => push acc (.atom y)
+  | some (.and l r) =>
+    if _ : l.index < i ∧ r.index < i then do
+      let (acc, l') ← substBuild src θ l.index acc
+      let (acc, r') ← substBuild src θ r.index acc
+      push acc (.and ⟨l'⟩ ⟨r'⟩)
+    else none
+  | some (.guarded l r) =>
+    if _ : l.index < i ∧ r.index < i then do
+      let (acc, l') ← substBuild src θ l.index acc
+      let (acc, r') ← substBuild src θ r.index acc
+      push acc (.guarded ⟨l'⟩ ⟨r'⟩)
+    else none
+  | some (.existsValue b) =>
+    if _ : b.index < i then do
+      let (acc, b') ← substBuild src θ.lift b.index acc
+      push acc (.existsValue ⟨b'⟩)
+    else none
+  | some (.separated p q) => do push acc (.separated (← substPath θ p) (← substPath θ q))
+  | some (.apart p q) => do push acc (.apart (← substPath θ p) (← substPath θ q))
+  | some (.fresh p) => do push acc (.fresh (← substPath θ p))
+  | some (.box Φ b) =>
+    if _ : b.index < i then do
+      let (acc, b') ← substBuild src θ b.index acc
+      push acc (.box Φ ⟨b'⟩)
+    else none
+  | none => none
+termination_by i
+
+/-- `nodes'` extends `nodes`: it has every node of `nodes` at its index. -/
+def AssertionArena.extends (nodes' nodes : Array AssertionNode) : Bool :=
+  decide (nodes.size ≤ nodes'.size) && (List.range nodes.size).all fun j => nodes'[j]? == nodes[j]?
+
+/-- **An extended arena satisfies its old nodes as they were.** -/
+theorem satNode_extend {nodes nodes' : Array AssertionNode} (he : AssertionArena.extends nodes' nodes = true) :
+    ∀ i, i < nodes.size → ∀ η m s, satNode nodes' i η m s ↔ satNode nodes i η m s := by
+  have hj : ∀ j, j < nodes.size → nodes'[j]? = nodes[j]? := by
+    intro j hjs
+    simp only [AssertionArena.extends, Bool.and_eq_true, List.all_eq_true, List.mem_range, beq_iff_eq] at he
+    exact he.2 j hjs
+  intro i
+  induction i using Nat.strongRecOn with
+  | ind i ih =>
+  intro hi η m s
+  rw [satNode, satNode, hj i hi]
+  cases hn : nodes[i]? with
+  | none => exact Iff.rfl
+  | some n =>
+    cases n with
+    | and l r =>
+      dsimp only
+      apply and_congr
+      · by_cases hl : l.index < i
+        · simp only [hl, dite_true]; exact ih _ hl (by omega) η m s
+        · simp only [hl, dite_false]
+      · by_cases hr : r.index < i
+        · simp only [hr, dite_true]; exact ih _ hr (by omega) η m s
+        · simp only [hr, dite_false]
+    | guarded l r =>
+      dsimp only
+      apply or_congr
+      · by_cases hl : l.index < i
+        · simp only [hl, dite_true]; exact ih _ hl (by omega) η m s
+        · simp only [hl, dite_false]
+      · by_cases hr : r.index < i
+        · simp only [hr, dite_true]; exact ih _ hr (by omega) η m s
+        · simp only [hr, dite_false]
+    | existsValue b =>
+      dsimp only
+      by_cases hb : b.index < i
+      · simp only [hb, dite_true]; exact exists_congr fun v => ih _ hb (by omega) _ m s
+      · simp only [hb, dite_false]
+    | box Φ b =>
+      dsimp only
+      by_cases hb : b.index < i
+      · simp only [hb, dite_true]; exact forall_congr' fun s' => imp_congr_right fun _ => ih _ hb (by omega) η m s'
+      · simp only [hb, dite_false]
+    | _ => exact Iff.rfl
+
+/-- **Substitution into an assertion** (I5, `substAssertion`): the arena
+extended by `A` under `θ`, and the new node's reference. The result is
+checked: it extends the arena, it is valid, and its node is `A[θ]`. -/
+def substAssertion (arena : AssertionArena) (θ : Substitution) (A : AssertionRef) :
+    Except String (AssertionArena × AssertionRef) :=
+  match substBuild arena.nodes θ A.index arena.nodes with
+  | some (nodes', r) =>
+    if A.index < arena.nodes.size && AssertionArena.extends nodes' arena.nodes &&
+        substCheck nodes' θ A.index r && AssertionArena.check ⟨nodes'⟩ then
+      .ok (⟨nodes'⟩, ⟨r⟩)
+    else .error "substAssertion: the substituted assertion is not well formed"
+  | none => .error "substAssertion: a slot is outside the substitution"
+
+/-- **Substitution into an assertion is semantic** (I5,
+`substAssertion_sound`): the result is a valid extension in which the new
+node holds at `source` exactly where `A` holds at `target`. -/
+theorem substAssertion_sound {arena arena' : AssertionArena} {θ : Substitution} {A A' : AssertionRef}
+    (hc : substAssertion arena θ A = .ok (arena', A')) {target source : Env} {m : Nat} {s : IndexedHeap}
+    (hθ : θ.Holds target source s.h) :
+    arena'.Valid ∧ (Sat arena' source m s A' ↔ Sat arena target m s A) := by
+  unfold substAssertion at hc
+  split at hc
+  · rename_i nodes' r _
+    split at hc
+    · rename_i hok
+      cases hc
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hok
+      obtain ⟨⟨⟨hA, hext⟩, hsub⟩, hvalid⟩ := hok
+      refine ⟨AssertionArena.check_valid hvalid, ?_⟩
+      have h1 := substCheck_sound nodes' _ A.index r rfl θ target source m s hsub hθ
+      exact h1.trans (satNode_extend hext A.index hA target m s)
+    · cases hc
+  · cases hc
+
 /-! ## Marks -/
 
 /-- **Caller and callee marks** (I5, `MarkEvidence`): the callee's entry

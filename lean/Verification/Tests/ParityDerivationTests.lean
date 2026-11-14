@@ -208,6 +208,11 @@ private def raw : RawDerivation :=
 -- Without the transition the frame does not apply.
 #guard !isOk (checkDerivation arena (Γ.filter (· != .transition Φ)) goal raw)
 
+-- `F` read one binder further builds and checks; a field path for slot `0`
+-- under the boxes of `F` is refused.
+#guard isOk (substAssertion arena (Substitution.shift 2) (ref 8))
+#guard !isOk (substAssertion arena ⟨#[⟨1, ["next"]⟩, .var 1]⟩ (ref 8))
+
 end P18
 
 end Verification.Parity.Tests
