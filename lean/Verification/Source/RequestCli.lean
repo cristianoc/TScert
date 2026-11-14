@@ -352,7 +352,7 @@ the module interfaces decoded (their entries and row tables, the module
 units they establish, each printed accepted), the file's claims and front
 (its lowering, its type store and its units' groups, no import read at an
 interface), the selection, and the settings each unit's check reads; and the
-proposals and plans of the groups planned so far (`proposals`, `plans`),
+proposals of the groups planned so far (`proposals`) and the plans of those the selection checks later, until their check (`plans`),
 which a later unit reads instead of computing them again, and what their
 proposals established (`memo`). -/
 structure PreparedFile where
@@ -506,7 +506,9 @@ def PreparedFile.known (p : PreparedFile) (i : Nat) : IO (List (String × Option
     let memo ← p.memo.get
     let planned ← IO.lazyPure fun _ => p.plan g known memo
     if let .ok f := planned then p.memo.set f.proposed
-    p.plans.modify (·.insert g planned)
+    -- (kept for the group's own check where the selection checks it; its
+    -- proposals alone otherwise)
+    if p.units.contains g then p.plans.modify (·.insert g planned)
     let got : List (String × Option SourceClaimJson.StandIn) := match planned with
       | .ok f => f.groupProposals g
       | .error _ => (fr.group g).filterMap fun j => match fr.units[j]? with
@@ -517,8 +519,8 @@ def PreparedFile.known (p : PreparedFile) (i : Nat) : IO (List (String × Option
   return below.flatMap fun h => (memo.get? h).getD []
 
 /-- Unit `i`'s check: its group planned in its check (`PreparedFile.plan`,
-the proposals below it read through `PreparedFile.known`; the plans a
-later unit's proposals planned it at, where kept), then
+the proposals below it read through `PreparedFile.known`; the plans an
+earlier unit's proposals planned it at, where kept, then released), then
 `FilePlans.passGroupMode8` over its group: its verdict line
 (`WorkerWire.verdictLine`), accepted with its dependencies or refused, with
 its group's first extraction refusal; and its refusal. A function of the
@@ -538,8 +540,10 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
   -- The pass's counts as JSON lines (`TSCERT_COUNTS`, `dev/perf-gate.mts`).
   let counting := (← IO.getEnv "TSCERT_COUNTS").isSome
   let known ← p.known i
+  -- (a group's plans kept from a later unit's proposals read once, here:
+  -- no unit checked after this one reads them, only their proposals)
   let planned ← match (← p.plans.get).get? i with
-    | some planned => pure planned
+    | some planned => do p.plans.modify (·.erase i); pure planned
     | none => do
       let memo ← p.memo.get
       let planned ← IO.lazyPure fun _ => p.plan i known memo
