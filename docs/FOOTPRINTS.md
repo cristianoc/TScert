@@ -148,6 +148,49 @@ evidence, provenance stamps, distinct pairs) is one sound query
 (`SepKnowledge.query_sound`), and the five fact kinds' supports below are
 supports in every context (`FactKind.supports`).
 
+### Supports of index facts
+
+The context of an index fact's support is a **read context** $`c`$: the
+first fields of slots' objects whose contents the transition keeps
+($`c.\mathrm{stable}`$, `FirstKept`), and the one-field paths holding typed
+arrays whose length it keeps ($`c.\mathrm{views}`$, `ViewsKept`)
+(`ReadContext`). A path $`x.f_1\ldots f_n`$ reads the field location of
+$`f_i`$ of the object $`x.f_1\ldots f_{i-1}`$ reads, for each $`i`$; its
+support keeps each of them, but a first field $`c`$ states stable
+(`pathReads`):
+
+```math
+\mathrm{reads}_c(x.f_1\ldots f_n) = \{\,x.f_1\ldots f_{i-1}.f_i : \mathsf{keep} \mid 1 \le i \le n,\ \lnot(i = 1 \land c.\mathrm{stable}(x, f_1))\,\}
+```
+
+A term $`t`$ (ARITHMETIC.md, [linear facts](ARITHMETIC.md#linear-facts))
+at the change $`\delta \in \{\mathsf{keep}, \mathsf{grow}\}`$ its store
+tolerates has the support (`Term.support`): none for an entry term, which
+reads the entry state; otherwise $`\mathrm{reads}_c`$ of its path, and for a
+length $`|x.\pi|`$ the store location of the array $`x.\pi`$ reads, where it
+holds a store, at $`\delta`$, for a typed array's length $`\mathrm{view}(x.\pi)`$
+its length location at $`\mathsf{keep}`$, each but where the context keeps
+it. **Proved** (`Term.support_sound`): where the support is kept, the term
+denotes what it denoted, and at $`\delta = \mathsf{grow}`$ a length denotes
+at least as much, at most $`2^{32}-1`$.
+
+A linear fact's support is its terms' (`linearSupport`): in
+$`\sum_t a_t\,t \le d`$ a term with $`a_t \le 0`$ at $`\mathsf{grow}`$, any
+other at $`\mathsf{keep}`$; in a disequality every term at $`\mathsf{keep}`$
+(proved: `linearSupport_supports`). An index fact's support
+(`IndexFact.support?`, proved: `IndexFact.support?_supports`): empty for a
+fact of slots' values; a length fact its store at $`\mathsf{keep}`$, a bound
+its store at $`\mathsf{grow}`$; a disjunction both sides'; a guarded fact its
+guard path's reads and its body's; a store separation its two paths' reads.
+An element fact, a quantified fact and a region fact have no support
+produced: the check keeps none of them.
+
+**The survival check** (`IndexFact.keeps`): a fact survives an effect
+$`\Phi`$ under a query $`q`$ where $`\Phi`$ respects its support under $`q`$.
+Proved (`IndexFact.keeps_sound`): the fact holds after every transition
+within $`\Phi`$ meeting the read context, from a prestate where $`q`$ is
+sound.
+
 ## The stable set for density
 
 Density reads only a store, and only a store change beyond `grow` can remove

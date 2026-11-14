@@ -28,6 +28,7 @@ import Verification.Types.StoreMapsBuiltins
 import Verification.Source.Claims.PassUnitInit
 import Verification.Semantics.ArgumentStoreRegions
 import Verification.Semantics.FootprintNatives
+import Verification.Semantics.Survival
 import Verification.Programs.ArgumentPathTracking
 import Verification.Programs.ArgumentRegionCertificates
 import Verification.Semantics.TolerantFrames
@@ -331,6 +332,9 @@ run_cmd do
   check ``Verification.Footprints.respect_sound
   check ``Verification.Footprints.FactKind.supports
   check ``Verification.Footprints.SepKnowledge.query_sound
+  check ``Verification.Footprints.IndexFact.support?_supports
+  check ``Verification.Footprints.IndexFact.keeps_sound
+  check ``Verification.Footprints.linearSupport_supports
   check ``Verification.TolerantFrames.kept_box
   check ``Verification.TolerantFrames.grow
   check ``Verification.TolerantFrames.grow_path
