@@ -567,7 +567,8 @@ assignment states of its binding what a declaration of it to the same
 value states (`Ctx.bindTo`). Two arms are joined into the facts both
 establish: each fact `Σ cᵢ·tᵢ ≤ d` of one arm is kept where the other arm,
 with the facts before the choice, has a fact of the same terms (kept at
-the larger bound), or entails it by a fact whose terms differ by lengths
+the larger of its bound and the least bound the other arm states of those
+terms: both arms stating `i < n` beside `i <= n` keep `i < n`), or entails it by a fact whose terms differ by lengths
 alone, each length's range making up the difference, or does so with a
 binding it states equal to a linear value replaced by that value
 (`Ctx.join`): `i += c ? 2 : 1` keeps `0 <= i` and takes `i <= n + 1` from

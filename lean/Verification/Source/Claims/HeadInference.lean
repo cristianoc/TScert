@@ -854,15 +854,16 @@ def Ctx.substitute (ctx : Ctx) (x : String) (l : Lin) : Lin :=
 
 /-- The facts two arms both establish (a merge's knowledge, the note's
 "a merge retains facts established by every incoming edge"): of each
-arm's linear fact, the other arm's fact of the same terms at the larger
-bound, or the fact itself where the other arm entails it
-(`Ctx.entails`); any other fact both state. -/
+arm's linear fact, the fact of the same terms at the larger of its bound
+and the least bound the other arm states of those terms, or the fact
+itself where the other arm entails it (`Ctx.entails`); any other fact
+both state. -/
 def Ctx.join (a b : Ctx) : Ctx :=
   let kept := fun (x y : Ctx) => x.filterMap fun
     | .lin l => match (y.filterMap fun
-        | .lin l' => if l'.terms == l.terms then some (Fact.lin { l with bound := max l.bound l'.bound }) else none
-        | _ => none).head? with
-      | some f => some f
+        | .lin l' => if l'.terms == l.terms then some l'.bound else none
+        | _ => none).min? with
+      | some k => some (Fact.lin { l with bound := max l.bound k })
       | none =>
         -- (entailed as it stands, or with a binding the other arm
         -- states equal to a linear value replaced by it, `Ctx.substitute`)
