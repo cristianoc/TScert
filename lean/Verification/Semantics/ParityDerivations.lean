@@ -377,7 +377,7 @@ def shiftFormula (nodes : Array AssertionNode) (p : Phase) (n : Nat) : Formula �
   | .defined v, .defined v' => v' == shiftVar p v
   | .transition Φ, .transition Φ' => if p = .before then Φ' == Footprint.rename (· + 1) Φ else Φ' == Φ
   | .operation q, .operation q' => if p = .after then q' == q.shift else q' == q
-  | .transport θ, .transport θ' => p == .after && θ' == ⟨θ.images.map Witness.shift⟩
+  | .transport θ, .transport θ' => p == .after && !θ.boxed && θ' == ⟨θ.images.map Witness.shift, false⟩
   | .and F G, .and F' G' => shiftFormula nodes p n F F' && shiftFormula nodes p n G G'
   | .truth, .truth => true
   | .falsity, .falsity => true
@@ -1515,18 +1515,20 @@ theorem holds_shiftFormula {arena : AssertionArena} {p : Phase} {n : Nat} {s : T
     · simp only [if_true, beq_iff_eq] at h
       subst h; exact OperationPost.holds_shift s x q
   | .transport θ, .transport θ', h => by
-    simp only [shiftFormula, Bool.and_eq_true, beq_iff_eq] at h
-    obtain ⟨rfl, rfl⟩ := h
+    simp only [shiftFormula, Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at h
+    obtain ⟨⟨rfl, hb⟩, rfl⟩ := h
     show (Substitution.Holds _ _ _ _) ↔ _
     constructor
     · intro hθ i w hi
-      have := hθ i w.shift (by simp [hi])
+      rw [Substitution.image_of_unboxed hb] at hi
+      have := hθ i w.shift (by rw [Substitution.image_of_unboxed rfl]; simp [hi])
       exact (Witness.value_shift w x s.afterEnv s.after.h).symm.trans this
     · intro hθ i w hi
+      rw [Substitution.image_of_unboxed rfl] at hi
       simp only [Array.getElem?_map, Option.map_eq_some_iff] at hi
       obtain ⟨w0, hw0, rfl⟩ := hi
       show w0.shift.value (push x s.afterEnv) s.after.h = some (s.beforeEnv i)
-      rw [Witness.value_shift]; exact hθ i w0 hw0
+      rw [Witness.value_shift]; exact hθ i w0 (by rw [Substitution.image_of_unboxed hb]; exact hw0)
   | .and F G, .and F' G', h => by
     simp only [shiftFormula, Bool.and_eq_true] at h
     exact and_congr (holds_shiftFormula h.1) (holds_shiftFormula h.2)

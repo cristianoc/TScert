@@ -157,6 +157,28 @@ theorem EffectAction.rename_iff (σ : Nat → Nat) :
     refine ⟨v', hv', hal.imp_right fun ⟨e, he, hme, hc⟩ => ?_⟩
     exact ⟨(e.1.rename σ, e.2), List.mem_map.mpr ⟨e, he, rfl⟩, by rw [hm]; exact hme, hc⟩
 
+private theorem region_mem_congr {r : Region} {η η' : Env} (he : ∀ x ∈ regionRoots r, η x = η' x) (hp : Heap)
+    (l : Nat) : r.mem η hp l = r.mem η' hp l := by
+  induction r with
+  | inCls r _ ih => simp only [Region.mem, ih (by simpa [regionRoots] using he)]
+  | cls _ | all | cell _ => rfl
+  | _ => simp only [regionRoots, List.mem_singleton, forall_eq] at he; simp only [Region.mem, he]
+
+/-- **An effect acts alike at valuations agreeing on its roots.** -/
+theorem EffectAction.congr_roots {η' : Env} (he : ∀ x, (∃ e ∈ Φ, x ∈ regionRoots e.1) → η' x = η x) :
+    EffectAction Φ η' s s' ↔ EffectAction Φ η s s' := by
+  have hm : ∀ e ∈ Φ, ∀ l, e.1.mem η' s.h l = e.1.mem η s.h l :=
+    fun e he' l => region_mem_congr (fun x hx => he x ⟨e, he', hx⟩) s.h l
+  constructor
+  · rintro ⟨ha, hl, hp⟩
+    refine ⟨ha, hl, fun l v hv => ?_⟩
+    obtain ⟨v', hv', hal⟩ := hp l v hv
+    exact ⟨v', hv', hal.imp_right fun ⟨e, he', hme, hc⟩ => ⟨e, he', by rw [← hm e he']; exact hme, hc⟩⟩
+  · rintro ⟨ha, hl, hp⟩
+    refine ⟨ha, hl, fun l v hv => ?_⟩
+    obtain ⟨v', hv', hal⟩ := hp l v hv
+    exact ⟨v', hv', hal.imp_right fun ⟨e, he', hme, hc⟩ => ⟨e, he', by rw [hm e he']; exact hme, hc⟩⟩
+
 /-- The class of values and the class of stores share no location. -/
 theorem regionClasses_disjoint {l : Nat} (hl : (Region.cls .value).mem η s.h l = true) :
     (Region.cls .store).mem η s.h l = false := by

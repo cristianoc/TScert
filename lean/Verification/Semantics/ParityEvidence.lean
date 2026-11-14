@@ -51,21 +51,34 @@ theorem Witness.value_shift (w : Witness) (v : Val) (η : Env) (h : Heap) :
 
 /-- **A substitution of slots by witnesses** (I5, `Substitution`): slot `i`
 of the substituted assertion is replaced by the path or the literal
-`images[i]`. Slots past the images are outside its domain. -/
+`images[i]`. Slots past the images are outside its domain. Under a box
+(`boxed`) only the images reading no heap are in its domain: the box's body
+is read at every state an action reaches, where a path image may read
+otherwise. -/
 structure Substitution where
   images : Array Witness
+  boxed : Bool := false
   deriving DecidableEq
 
 namespace Substitution
 
-/-- **The interpretation of names** (I5, `Substitution.Holds`): each image,
-read at `source`, gives the value slot `i` has at `target`. -/
+/-- The image of slot `i`, where it is in the substitution's domain. -/
+def image (θ : Substitution) (i : Nat) : Option Witness :=
+  match θ.images[i]? with
+  | some w => if θ.boxed && !w.heapFree then none else some w
+  | none => none
+
+theorem image_of_unboxed {θ : Substitution} (hb : θ.boxed = false) (i : Nat) : θ.image i = θ.images[i]? := by
+  unfold image; cases θ.images[i]? <;> simp [hb]
+
+/-- **The interpretation of names** (I5, `Substitution.Holds`): each image
+in the domain, read at `source`, gives the value slot `i` has at `target`. -/
 def Holds (θ : Substitution) (target source : Env) (h : Heap) : Prop :=
-  ∀ (i : Nat) (w : Witness), θ.images[i]? = some w → w.value source h = some (target i)
+  ∀ (i : Nat) (w : Witness), θ.image i = some w → w.value source h = some (target i)
 
 /-- The path image of slot `i`, where its image is a path. -/
 def pathAt (θ : Substitution) (i : Nat) : Option Path :=
-  match θ.images[i]? with
+  match θ.image i with
   | some (.path p) => some p
   | _ => none
 
@@ -76,48 +89,63 @@ theorem Holds.path {θ : Substitution} {target source : Env} {h : Heap} (hθ : �
   · rename_i p hp; cases hq; exact hθ i _ hp
   · cases hq
 
-/-- A substitution whose images read no heap. -/
-def isRenaming (θ : Substitution) : Bool := θ.images.toList.all Witness.heapFree
+/-- The substitution read under a box: its heap-free images alone. -/
+def box (θ : Substitution) : Substitution := { θ with boxed := true }
+
+/-- **The substitution under a box holds at every heap.** -/
+theorem Holds.box {θ : Substitution} {target source : Env} {h : Heap} (hθ : θ.Holds target source h) (h' : Heap) :
+    θ.box.Holds target source h' := by
+  intro i w hi
+  simp only [Substitution.box, image] at hi
+  cases hw0 : θ.images[i]? with
+  | none => rw [hw0] at hi; cases hi
+  | some w0 =>
+    rw [hw0] at hi
+    cases hf : w0.heapFree <;> simp [hf] at hi
+    subst hi
+    rw [Witness.value_heap hf]
+    exact hθ i w0 (by unfold image; rw [hw0]; simp [hf])
 
 /-- The substitution under one more logical binder: slot `0` stays, slot
 `i + 1` goes to the image of `i`, one slot further. -/
 def lift (θ : Substitution) : Substitution :=
-  ⟨(.path (Path.var 0) :: θ.images.toList.map Witness.shift).toArray⟩
+  ⟨(.path (Path.var 0) :: θ.images.toList.map Witness.shift).toArray, θ.boxed⟩
 
-/-- The substitution sending each of the slots below `n` one slot further:
-reading an assertion under one more binder. -/
-def shift (n : Nat) : Substitution := ⟨((List.range n).map fun i => .path (Path.var (i + 1))).toArray⟩
-
-/-- The substitution sending slot `0` to a witness and slot `i + 1`, below
-`n + 1`, to slot `i`: instantiating a logical binder. -/
-def instantiate (w : Witness) (n : Nat) : Substitution :=
-  ⟨(w :: (List.range n).map fun i => .path (Path.var i)).toArray⟩
-
-/-- The identity on the slots below `n`: the scope of `n` runtime slots. -/
-def ident (n : Nat) : Substitution := ⟨((List.range n).map fun i => .path (Path.var i)).toArray⟩
-
-theorem image_mem {θ : Substitution} {i : Nat} {w : Witness} (hi : θ.images[i]? = some w) : w ∈ θ.images.toList := by
-  rw [← Array.getElem?_toList] at hi
-  exact List.mem_of_getElem? hi
-
-/-- A renaming holds at every heap where it holds at one. -/
-theorem Holds.heap {θ : Substitution} (hr : θ.isRenaming = true) {target source : Env} {h : Heap}
-    (hθ : θ.Holds target source h) (h' : Heap) : θ.Holds target source h' := by
-  intro i w hi
-  rw [Witness.value_heap (List.all_eq_true.mp hr w (image_mem hi))]; exact hθ i w hi
+theorem heapFree_shift (w : Witness) : w.shift.heapFree = w.heapFree := by cases w <;> rfl
 
 /-- **The lifted substitution holds under the binder.** -/
 theorem Holds.lift {θ : Substitution} {target source : Env} {h : Heap} (hθ : θ.Holds target source h) (v : Val) :
     θ.lift.Holds (push v target) (push v source) h := by
   intro i w hi
-  simp only [Substitution.lift, List.getElem?_toArray] at hi
+  simp only [Substitution.lift, image, List.getElem?_toArray] at hi
   cases i with
-  | zero => simp only [List.getElem?_cons_zero, Option.some.injEq] at hi; subst hi; rfl
+  | zero =>
+    simp [Witness.heapFree, Path.var] at hi
+    subst hi; rfl
   | succ i =>
-    simp only [List.getElem?_cons_succ, List.getElem?_map, Option.map_eq_some_iff] at hi
-    obtain ⟨q, hq, rfl⟩ := hi
-    rw [Witness.value_shift]
-    exact hθ i q (by rw [← Array.getElem?_toList]; exact hq)
+    simp only [List.getElem?_cons_succ, List.getElem?_map] at hi
+    cases hq : θ.images.toList[i]? with
+    | none => rw [hq] at hi; simp at hi
+    | some q =>
+      rw [hq] at hi
+      cases hb : θ.boxed <;> cases hf : q.heapFree <;> simp [heapFree_shift, hf, hb] at hi
+      all_goals
+        subst hi
+        rw [Witness.value_shift]
+        apply hθ i q
+        unfold image; rw [← Array.getElem?_toList, hq]; simp [hb, hf]
+
+/-- The substitution sending each of the slots below `n` one slot further:
+reading an assertion under one more binder. -/
+def shift (n : Nat) : Substitution := ⟨((List.range n).map fun i => .path (Path.var (i + 1))).toArray, false⟩
+
+/-- The substitution sending slot `0` to a witness and slot `i + 1`, below
+`n + 1`, to slot `i`: instantiating a logical binder. -/
+def instantiate (w : Witness) (n : Nat) : Substitution :=
+  ⟨(w :: (List.range n).map fun i => .path (Path.var i)).toArray, false⟩
+
+/-- The identity on the slots below `n`: the scope of `n` runtime slots. -/
+def ident (n : Nat) : Substitution := ⟨((List.range n).map fun i => .path (Path.var i)).toArray, false⟩
 
 private theorem range_image {n i j : Nat} (hj : (List.range n)[i]? = some j) : j = i ∧ i < n := by
   obtain ⟨hlt, hj'⟩ := List.getElem?_eq_some_iff.mp hj
@@ -127,6 +155,7 @@ private theorem range_image {n i j : Nat} (hj : (List.range n)[i]? = some j) : j
 
 theorem shift_holds (n : Nat) (η : Env) (v : Val) (h : Heap) : (shift n).Holds η (push v η) h := by
   intro i w hi
+  rw [image_of_unboxed rfl] at hi
   simp only [shift, List.getElem?_toArray, List.getElem?_map, Option.map_eq_some_iff] at hi
   obtain ⟨j, hj, rfl⟩ := hi
   obtain ⟨rfl, -⟩ := range_image hj
@@ -135,6 +164,7 @@ theorem shift_holds (n : Nat) (η : Env) (v : Val) (h : Heap) : (shift n).Holds 
 /-- The identity holds between two valuations agreeing below `n`. -/
 theorem ident_holds {n : Nat} {η η' : Env} (he : ∀ i < n, η' i = η i) (h : Heap) : (ident n).Holds η η' h := by
   intro i w hi
+  rw [image_of_unboxed rfl] at hi
   simp only [ident, List.getElem?_toArray, List.getElem?_map, Option.map_eq_some_iff] at hi
   obtain ⟨j, hj, rfl⟩ := hi
   obtain ⟨rfl, hlt⟩ := range_image hj
@@ -145,6 +175,7 @@ theorem ident_holds {n : Nat} {η η' : Env} (he : ∀ i < n, η' i = η i) (h :
 theorem instantiate_holds {w : Witness} {n : Nat} {η : Env} {h : Heap} {v : Val} (hw : w.value η h = some v) :
     (instantiate w n).Holds (push v η) η h := by
   intro i w' hi
+  rw [image_of_unboxed rfl] at hi
   simp only [instantiate, List.getElem?_toArray] at hi
   cases i with
   | zero => simp only [List.getElem?_cons_zero, Option.some.injEq] at hi; subst hi; exact hw
@@ -181,7 +212,7 @@ def substBound (θ : Substitution) : Bound → Option Bound
 /-- A witness substituted: a path rooted at a slot whose image is a literal
 is that literal where it reads no field. -/
 def substWitness (θ : Substitution) : Witness → Option Witness
-  | .path p => match θ.images[p.root]? with
+  | .path p => match θ.image p.root with
     | some (.literal v) => if p.fields.isEmpty then some (.literal v) else none
     | _ => (substPath θ p).map .path
   | .literal v => some (.literal v)
@@ -247,7 +278,7 @@ theorem substWitness_value (hθ : θ.Holds target source h) {w w' : Witness} (hs
   cases w with
   | path p =>
     simp only [substWitness] at hs
-    cases hi : θ.images[p.root]? with
+    cases hi : θ.image p.root with
     | none =>
       rw [hi] at hs
       obtain ⟨p', hp, rfl⟩ := Option.map_eq_some_iff.mp hs
@@ -360,11 +391,48 @@ end AtomSubst
 
 /-! ## Substituting into assertions -/
 
+/-- The slot a root is renamed to: its image, where that is a variable. -/
+def rootImage (θ : Substitution) (r : Nat) : Option Nat :=
+  match θ.image r with
+  | some (.path ⟨r', []⟩) => some r'
+  | _ => none
+
+/-- **An effect under a substitution**: its regions' roots renamed to their
+variable images (`Footprints.Footprint.rename`); refused where a root's image
+is no variable. -/
+def renameEffect (θ : Substitution) (Φ : Footprint) : Option Footprint :=
+  if Φ.all fun e => (regionRoots e.1).all fun r => (rootImage θ r).isSome then
+    some (Footprint.rename (fun r => (rootImage θ r).getD r) Φ)
+  else none
+
+theorem renameEffect_action {θ : Substitution} {target source : Env} {h : Heap} (hθ : θ.Holds target source h)
+    {Φ Ψ : Footprint} (hr : renameEffect θ Φ = some Ψ) {s s' : IndexedHeap} :
+    EffectAction Ψ source s s' ↔ EffectAction Φ target s s' := by
+  unfold renameEffect at hr
+  split at hr
+  · rename_i hall
+    cases hr
+    rw [EffectAction.rename_iff]
+    refine EffectAction.congr_roots fun r hr => ?_
+    obtain ⟨e, he, hre⟩ := hr
+    have := List.all_eq_true.mp (List.all_eq_true.mp hall e he) r hre
+    obtain ⟨r', hr'⟩ := Option.isSome_iff_exists.mp this
+    rw [hr', Option.getD_some]
+    unfold rootImage at hr'
+    split at hr'
+    · rename_i w hw
+      cases hr'
+      have := hθ r _ hw
+      simpa [Witness.value, Path.read, readPath] using this
+    · cases hr'
+  · cases hr
+
 /-- **Node `b` is node `a` under the substitution `θ`** (I5,
 `substAssertion`, as a check of two arena nodes): the same connective, atoms
 and paths substituted, the substitution lifted under a logical binder.
-Under a box the substitution is a renaming and the effect reads no slot, so
-the substituted assertion means the same at every state an action reaches. -/
+Under a box the effect's roots are renamed to their variable images, and the
+body is substituted by the heap-free images alone, which mean the same at
+every state an action reaches. -/
 def substCheck (nodes : Array AssertionNode) (θ : Substitution) (a b : Nat) : Bool :=
   match nodes[a]?, nodes[b]? with
   | some .truth, some .truth => true
@@ -385,7 +453,7 @@ def substCheck (nodes : Array AssertionNode) (θ : Substitution) (a b : Nat) : B
   | some (.fresh p), some (.fresh p') => substPath θ p == some p'
   | some (.box Φ x), some (.box Ψ y) =>
     if _ : x.index < a ∧ y.index < b then
-      (Φ == Ψ && effectEnvFree Φ && θ.isRenaming) && substCheck nodes θ x.index y.index
+      renameEffect θ Φ == some Ψ && substCheck nodes θ.box x.index y.index
     else false
   | _, _ => false
 termination_by a + b
@@ -454,15 +522,15 @@ theorem substCheck_sound (nodes : Array AssertionNode) :
     split at hc
     · rename_i hi
       simp only [Bool.and_eq_true, beq_iff_eq] at hc
-      obtain ⟨⟨⟨rfl, henv⟩, hren⟩, hrec⟩ := hc
+      obtain ⟨hren, hrec⟩ := hc
       simp only [hi.1, hi.2, dite_true]
       constructor
       · intro hs s' ha'
-        exact (ih _ (by omega) _ _ rfl θ target source m s' hrec (hθ.heap hren s'.h)).mp
-          (hs s' (ha'.envFree henv))
+        exact (ih _ (by omega) _ _ rfl θ.box target source m s' hrec (hθ.box s'.h)).mp
+          (hs s' ((renameEffect_action hθ hren).mpr ha'))
       · intro hs s' ha'
-        exact (ih _ (by omega) _ _ rfl θ target source m s' hrec (hθ.heap hren s'.h)).mpr
-          (hs s' (ha'.envFree henv))
+        exact (ih _ (by omega) _ _ rfl θ.box target source m s' hrec (hθ.box s'.h)).mpr
+          (hs s' ((renameEffect_action hθ hren).mp ha'))
     · cases hc
 
 /-- **Substitution at the arena level**: `b` is `a[θ]`. -/
@@ -520,8 +588,9 @@ def substBuild (src : Array AssertionNode) (θ : Substitution) (i : Nat) (acc : 
   | some (.fresh p) => do push acc (.fresh (← substPath θ p))
   | some (.box Φ b) =>
     if _ : b.index < i then do
-      let (acc, b') ← substBuild src θ b.index acc
-      push acc (.box Φ ⟨b'⟩)
+      let Ψ ← renameEffect θ Φ
+      let (acc, b') ← substBuild src θ.box b.index acc
+      push acc (.box Ψ ⟨b'⟩)
     else none
   | none => none
 termination_by i

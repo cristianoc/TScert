@@ -218,12 +218,13 @@ private def arena : AssertionArena := ⟨#[
   .atom (.equal ⟨1, ["items"]⟩ (.path (.var 0))), -- 17 p.items ≐ v, under the binder
   .box topEffect (ref 17),                     -- 18
   .existsValue (ref 18),                       -- 19 rigid(p.items)
-  .box Φ (ref 1)]⟩                             -- 20 □_Φ g₁
+  .box Φ (ref 1),                              -- 20 □_Φ g₁
+  .box [(.elems 0, .any)] (ref 0)]⟩            -- 21 □_{p[elements]: any} (p.items ≐ null)
 
 #guard arena.check
 
 /-- The identity transport: the call binds no name. -/
-private def θ : Substitution := ⟨#[.path (.var 0), .path (.var 1)]⟩
+private def θ : Substitution := { images := #[.path (.var 0), .path (.var 1)] }
 
 /-- Before the call `F` and, by the tolerant frame theorem, `□_Φ L` (in the
 case `L`); the call's transition; after it, both null tests failed and
@@ -267,7 +268,13 @@ private def raw : RawDerivation :=
 -- `F` read one binder further builds and checks; a field path for slot `0`
 -- under the boxes of `F` is refused.
 #guard isOk (substAssertion arena (Substitution.shift 2) (ref 8))
-#guard !isOk (substAssertion arena ⟨#[.path ⟨1, ["next"]⟩, .path (.var 1)]⟩ (ref 8))
+#guard !isOk (substAssertion arena { images := #[.path ⟨1, ["next"]⟩, .path (.var 1)] } (ref 8))
+-- A field path for slot `1`, which the boxes of `g₁` do not read, is accepted.
+#guard isOk (substAssertion arena { images := #[.path (.var 0), .path ⟨0, ["next"]⟩] } (ref 1))
+-- A box of a regional effect `{x[elements]: any}` under the identity and
+-- under a renaming of its root.
+#guard isOk (substAssertion arena (Substitution.ident 2) (ref 21))
+#guard isOk (substAssertion arena { images := #[.path (.var 1), .path (.var 0)] } (ref 21))
 
 -- The tolerant frame rule with an invariant's support: `g₁ ⊢ □_Φ g₁`.
 #guard isOk (checkScoped arena ⟨2, 2⟩ [.at .before (ref 1)] (.at .before (ref 20))
