@@ -462,13 +462,20 @@ structure InferredAcc where
   dropped : Nat
   runs : Nat
 
+/-- The observation a member's settling runs make: a refusal's
+(`refusal`), which they settle by; none for the others, made once on the
+settled state (`inferredStep`). -/
+def settlingObservation (observe : Option String) : Option String :=
+  if observe.map observedWhat == some "refusal" then observe else none
+
 /-- One member `i` of `passGroupInferred`'s fold: its runs until accepted
 or its refusal stands (`settleInferred`, `inferredNext`), at most `4·h + 4`
-of a member with `h` statement entries holding candidates. -/
+of a member with `h` statement entries holding candidates; an observation
+of a node or an offset made on the settled state, its line added. -/
 def FilePlans.inferredStep (fuel : Nat) (keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)) (fixed compare : Bool)
     (debugNode repeats : Nat) (observe : Option String) (counting located : Bool) (acc : InferredAcc) (i : Nat) :
     InferredAcc :=
-  let observe' := if observe == some "heads" then none else observe
+  let observe' := settlingObservation observe
   let f := acc.plans
   let candidates : List (Nat × List HeapKnowledge.IndexAtom) := match f.plans[i]? with
     | some (.ok (.graph _ _ r)) => r.candidates
@@ -486,7 +493,11 @@ def FilePlans.inferredStep (fuel : Nat) (keep : Nat → List (Nat × List HeapKn
       s!"inferred heads: span at {l}: {span l}" :: s!"inferred heads: slots at {l}: {names l}" :: as.map fun a =>
         s!"inferred heads: at {l}: {(reprStr a.fact).replace "\n" " " |>.replace "  " ""}"
   let s := f.inferredSettle fuel keep fixed compare debugNode repeats observe' counting located acc.given i
-  { plans := s.state, given := s.given, lines := acc.lines ++ shown ++ s.lines ++ [s.last.1],
+  let observedLine : List String := match observe with
+    | some w => if observedWhat w == "refusal" || w == "heads" then [] else
+      [(s.state.inferredRun fuel compare debugNode repeats observe counting located s.given i).1]
+    | none => []
+  { plans := s.state, given := s.given, lines := acc.lines ++ shown ++ s.lines ++ [s.last.1] ++ observedLine,
     failed := acc.failed.orElse fun _ => s.last.2.2, dropped := acc.dropped + s.dropped, runs := acc.runs + s.runs }
 
 /-- **The pass over a group with proposed loop-head facts dropped where an

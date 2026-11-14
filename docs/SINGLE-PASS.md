@@ -385,6 +385,12 @@ it: a step, an edge, a merge (with the predecessors lacking it, followed in
 turn), or a loop head's given invariant. A refusal in a code request (a
 closure's, a constructor's or a method's own graph) gives its obligation,
 the facts over its names and each fact it lacks, at the code's nodes.
+A prefix `footprint@`, `fallback@` or `regions@` names the walk that
+observes: the walk at the unit's footprint, its footprint's regional
+fallback, or its stated regions' walk after that fallback; without one,
+the first walk to reach the point observes, and a refusal is observed in
+the walk that concluded. With inferred loop heads, a node or an offset is
+observed once on the proposals the runs settle on, which run unobserved.
 
 ### Counts
 

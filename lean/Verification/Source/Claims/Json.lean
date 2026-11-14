@@ -286,6 +286,42 @@ inductive FootprintRoute where
   | fallbackThenRegions
   deriving BEq, Repr
 
+/-- A walk of a member's main graph (`FilePlans.passMember`): at its
+footprint (`footprint`), by the footprint's regional fallback (`fallback`),
+or at the stated regions after that fallback (`regions`). -/
+inductive WalkKind where
+  | footprint
+  | fallback
+  | regions
+  deriving BEq, Repr
+
+/-- The walk whose outcome a route concludes with. -/
+def FootprintRoute.lastWalk : FootprintRoute → WalkKind
+  | .direct => .footprint
+  | .fallback => .fallback
+  | .fallbackThenRegions => .regions
+
+/-- An observation (`TSCERT_OBSERVE=[walk@]what`): what it observes
+(`refusal`, `node:L`, `offset:K`), its walk prefix removed. -/
+def observedWhat (w : String) : String :=
+  match w.splitOn "@" with
+  | [_, what] => what
+  | _ => w
+
+/-- The walk an observation names (`footprint@`, `fallback@`, `regions@`),
+or none: every walk observes. -/
+def observedWalk (w : String) : Option WalkKind :=
+  match w.splitOn "@" with
+  | [k, _] => [("footprint", WalkKind.footprint), ("fallback", .fallback), ("regions", .regions)].lookup k
+  | _ => none
+
+/-- The node walk `k` observes: `observed`, where the observation names no
+walk or names `k`. -/
+def observedIn (observe : Option String) (k : WalkKind) (observed : Option Nat) : Option Nat :=
+  match observe.bind observedWalk with
+  | some k' => if k' == k then observed else none
+  | none => observed
+
 /-- One code request's run, as `FilePlans.passMember` makes it: its position,
 its conclusion (accepted, or the located refusal), the answers its run
 leaves (the answers it was given where its signature's conditions refuse
@@ -514,7 +550,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
     | .refused w lacks =>
       -- A refusal observed in a code request: its obligation, the facts
       -- over its names and those it lacks, as for the unit's own graph.
-      let record := if observe != some "refusal" then "" else
+      let record := if observe.map observedWhat != some "refusal" then "" else
         let (_, _, _, trace) := SinglePass.run G I codePool fuel rq.program rq.claims rq.start rq.inputs q.entry.goal hints.requirements
           hints.cuts hints.candidates rq.entryIndices [] (e ++ rendered) (GraphCode.admits table) r.aliases
           .ordinary a #[] 1000000000 codeBound codeImplies codeArgs [] #[] {}
@@ -545,7 +581,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
   let codes := GraphCode.admits table
   -- Observing (`observe`): the node of that label (`node:L`), or the
   -- innermost node whose source span holds that offset (`offset:K`).
-  let observed : Option Nat := observe.bind fun w =>
+  let observed : Option Nat := (observe.map observedWhat).bind fun w =>
     if w == "refusal" then some 1000000000 else
     if w.startsWith "node:" then (w.drop 5).toString.toNat? else
     if w.startsWith "offset:" then (w.drop 7).toString.toNat?.bind fun k =>
@@ -562,7 +598,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
     let (o, _, _, _) := SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
       r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers #[] (debugNode + k)
     if let .notHandled w := o then throw w
-  let tracing := observe == some "refusal"
+  let tracing := observe.map observedWhat == some "refusal"
   -- The regional checks (`regionalChecked`), made in the walk: the
   -- unit's store regions, and its footprint's regional fallback
   -- (`effectResult`); each loop head's given regional facts read from
@@ -577,7 +613,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
   if let some (_, regions) := r.regional then
     if r.async || r.fresh || !GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions then
       return { name, codes := codeRuns, outcome := .refused "store regions" }
-  let walk := fun (bound : Option (Footprints.Closed × Bool × Bool)) (regional : Option SinglePass.Regional) =>
+  let walk := fun (k : WalkKind) (bound : Option (Footprints.Closed × Bool × Bool)) (regional : Option SinglePass.Regional) =>
     -- (each run recorded: more than one per member run is a regional
     -- check beside the first, `mainRun`)
     SinglePass.work "check: main graph run" (f.fr.workItem i) fun _ =>
@@ -587,17 +623,17 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
       (runDigests r line "main" (boundText bound regional)) (fun x => x.2.1.visited) fun _ =>
     SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
       r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers reference debugNode bound
-      givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed tracing false regional grading
-  let (o, counts, after, trace) := CertificateProducer.timed SinglePass.passNanos fun _ => walk bound regional
+      givenImplies givenArgs r.ensures givenInputs r.entrySeparation (observedIn observe k observed) tracing false regional grading
+  let (o, counts, after, trace) := CertificateProducer.timed SinglePass.passNanos fun _ => walk .footprint bound regional
   -- A footprint the walk refuses node by node, checked regionally with no
   -- regions where the result is not fresh; then the unit's own regions,
   -- the fallback's answers kept for their read summaries' check.
   let mainRun : MainRun _ _ := match o with
     | .outsideBound l => if !r.fresh then
         let fallback := regionalOf "footprintRegional" r.footprint [] r.onThrow
-        match walk none (some fallback) with
+        match walk .fallback none (some fallback) with
         | (.accepted, c, a, t) => match regional with
-          | some rg => let (o', c', a', t') := walk none (some rg)
+          | some rg => let (o', c', a', t') := walk .regions none (some rg)
             { route := .fallbackThenRegions, outcome := o'.asRefusal, counts := c', after := a', trace := t', fallbackAfter := some a }
           | none => { route := .fallback, outcome := .accepted, counts := c, after := a, trace := t, fallbackAfter := none }
         | (.refused w' lacks, c, a, t) =>
@@ -622,13 +658,18 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
       else .accepted
     | o => o
   -- A node observed whose step is refused, or that is not reached past
-  -- the refusal: the walk again, stopping on its entry; the refusal kept
-  -- where that walk accepts.
+  -- the refusal: the walk that concluded again (its route's last), stopping
+  -- on its entry; the refusal kept where that walk accepts.
   let o : SinglePass.Outcome _ := match o, observed with
     | .refused _ _, some _ => if tracing then o else
+      let (bound', regional') := match mainRun.route with
+        | .direct => (bound, regional)
+        | .fallback => (none, some (regionalOf "footprintRegional" r.footprint [] r.onThrow))
+        | .fallbackThenRegions => (none, regional)
       match (SinglePass.run G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
-        r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers #[] debugNode bound
-        givenImplies givenArgs r.ensures givenInputs r.entrySeparation observed false true).1.asRefusal with
+        r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers #[] debugNode bound'
+        givenImplies givenArgs r.ensures givenInputs r.entrySeparation (observedIn observe mainRun.route.lastWalk observed)
+        false true regional').1.asRefusal with
       | .accepted => o
       | o' => o'
     | o, _ => o

@@ -268,10 +268,10 @@ theorem passMember_sound : PassMemberSound := by
           mainRun.fallbackAfter.all (fun a => SourceClaimJson.summariesChecked r a.summaries.toList) = true := by
         simpa only [sumsOk, Bool.and_eq_true] using hsok
       have hcodesEq : codes = GraphCode.admits (r.codes.map (·.entry)) := by simp only [codes, htable']
-      have mk : ∀ bnd rg, ∃ c : RunCall G I,
+      have mk : ∀ k bnd rg, ∃ c : RunCall G I,
           MainCall r c (GraphCode.admits (r.codes.map (·.entry))) .ordinary sumsAnswers ∧
-          c.bound = bnd ∧ c.regional = rg ∧ c.result = walk bnd rg := by
-        intro bnd rg
+          c.bound = bnd ∧ c.regional = rg ∧ c.result = walk k bnd rg := by
+        intro k bnd rg
         refine ⟨
           { pool := pool, fuel := fuel, P := r.program, claims := r.claims, start := r.start, inputs := r.inputs,
             goal := r.goal, assertions := r.assertions, cuts := r.cuts, candidates := r.candidates,
@@ -279,7 +279,7 @@ theorem passMember_sound : PassMemberSound := by
             aliases := r.aliases, passChecker := .ordinary, answers := sumsAnswers, reference := reference, debugNode := debugNode,
             bound := bnd, givenImplies := givenImplies, givenArgs := givenArgs, ensures := r.ensures,
             givenInputs := givenInputs,
-            entrySeparation := r.entrySeparation, observe := observed, tracing := tracing, observeEntry := false,
+            entrySeparation := r.entrySeparation, observe := SourceClaimJson.observedIn observe k observed, tracing := tracing, observeEntry := false,
             regional := rg },
           ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, hcodesEq, rfl, rfl, rfl, rfl⟩, rfl, rfl,
           by simp only [RunCall.result, walk, SinglePass.work, SinglePass.runRecorded]⟩
@@ -290,7 +290,7 @@ theorem passMember_sound : PassMemberSound := by
         cases r.regional with
         | none => rfl
         | some p => obtain ⟨Φ, R⟩ := p; exact hrof _ _ _ _
-      have hrun0 : walk bound regional = (o₀, counts₀, after₀, trace₀) := hwalk
+      have hrun0 : walk .footprint bound regional = (o₀, counts₀, after₀, trace₀) := hwalk
       refine MemberAccepted.ordinary name pos r _ sumsAnswers hplanAt hq' hdecl' hregs hcodesAcc ?_
       have hs1 := hsok'.1
       have hs2 := hsok'.2
@@ -302,10 +302,10 @@ theorem passMember_sound : PassMemberSound := by
         split
         · rename_i hfr
           have hfr' : r.fresh = false := by simpa using hfr
-          obtain ⟨c₁, hm₁, hb₁, hrg₁, hres₁⟩ := mk none (some fallback)
+          obtain ⟨c₁, hm₁, hb₁, hrg₁, hres₁⟩ := mk .fallback none (some fallback)
           have hreg₁ : regionOf c₁.regional = some (r.footprint, [], r.onThrow) := by
             rw [hrg₁]; exact hrof _ _ _ _
-          generalize hw1 : walk none (some fallback) = W1
+          generalize hw1 : walk .fallback none (some fallback) = W1
           obtain ⟨o1, n1, a1, t1⟩ := W1
           cases o1 with
           | accepted =>
@@ -316,9 +316,9 @@ theorem passMember_sound : PassMemberSound := by
               intro hs1 hs2 hmo'
               dsimp only at hs1 hs2 hmo'
               have ho2 := asRefusal_accepted hmo'
-              obtain ⟨c₂, hm₂, hb₂, hrg₂, hres₂⟩ := mk none (some rg)
-              have hw2 : walk none (some rg) = (.accepted, (walk none (some rg)).2.1, (walk none (some rg)).2.2.1,
-                  (walk none (some rg)).2.2.2) := Prod.ext ho2 rfl
+              obtain ⟨c₂, hm₂, hb₂, hrg₂, hres₂⟩ := mk .regions none (some rg)
+              have hw2 : walk .regions none (some rg) = (.accepted, (walk .regions none (some rg)).2.1, (walk .regions none (some rg)).2.2.1,
+                  (walk .regions none (some rg)).2.2.2) := Prod.ext ho2 rfl
               refine MainAccepted.fallback c₁ a1 hfr' hm₁ hb₁ hreg₁ hacc₁ ?_
                 (Or.inr ⟨c₂, _, hm₂, hb₂, by rw [hrg₂, ← hspec], ⟨_, _, by rw [hres₂]; exact hw2⟩,
                   by rw [summariesChecked_eq]; exact hs1⟩)
@@ -337,7 +337,7 @@ theorem passMember_sound : PassMemberSound := by
         intro hs1 _ hmo'
         dsimp only at hs1 hmo'
         have ho := asRefusal_accepted hmo'
-        obtain ⟨c, hm, hb, hrg, hres⟩ := mk bound regional
+        obtain ⟨c, hm, hb, hrg, hres⟩ := mk .footprint bound regional
         exact MainAccepted.direct c after₀ hm (hb.trans rfl) (by rw [hrg]; exact hspec)
           ⟨counts₀, trace₀, by rw [hres, hrun0, ho]⟩ hs1
     split at h

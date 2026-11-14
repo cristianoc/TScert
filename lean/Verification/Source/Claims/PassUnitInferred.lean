@@ -271,7 +271,7 @@ theorem passGroupInferred_members {f : FilePlans} {fuel : Nat} {group : List Nat
       .ok deps) :
     ∀ j ∈ group, ∃ f', Recandidated f f' ∧ MemberAccepted f' j := by
   let step := FilePlans.inferredStep fuel keep fixed compare debugNode repeats observe counting located
-  let observe' := if observe == some "heads" then none else observe
+  let observe' := settlingObservation observe
   have key : ∀ (xs : List Nat) (acc : InferredAcc), Recandidated f acc.plans →
       (xs.foldl step acc).failed = none →
       acc.failed = none ∧ ∀ j ∈ xs, ∃ f' g', Recandidated f f' ∧ ∃ m,
