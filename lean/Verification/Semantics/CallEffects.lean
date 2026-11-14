@@ -14,6 +14,44 @@ always permitted. Throws carry no return postcondition, just as in
 namespace Verification.CallEffects
 open HeapObservations
 
+/-! ## Exits
+
+A callable's specification bounds each of its two completions on its own
+(the note *Tolerant frames*, §6, the judgment $c:\Phi\mid\Phi^{e}$, and Call
+on both exits): a normal return and a throw each have an effect and a
+postcondition, both read from the call's entry state. -/
+
+/-- The two completions of a call. -/
+inductive Completion where
+  | normal
+  | exceptional
+  deriving DecidableEq, Repr
+
+/-- One datum per completion. -/
+structure Exits (α : Type) where
+  normal : α
+  exceptional : α
+  deriving DecidableEq, Repr
+
+def Exits.get {α : Type} (x : Exits α) : Completion → α
+  | .normal => x.normal
+  | .exceptional => x.exceptional
+
+def Exits.map {α β : Type} (f : α → β) (x : Exits α) : Exits β := ⟨f x.normal, f x.exceptional⟩
+
+@[simp] theorem Exits.get_map {α β : Type} (f : α → β) (x : Exits α) (c : Completion) :
+    (x.map f).get c = f (x.get c) := by
+  cases c <;> rfl
+
+/-- A completion's guarantee on shared state (the note, §6): the effect
+bounding the old locations it may change (`frame`), read at the call's
+positions, and the facts it states (`ensures`), the result or the thrown
+value at position `0` and the call's positions one higher. -/
+structure ExitSpec where
+  frame : Footprints.Footprint
+  ensures : List HeapKnowledge.IndexFact
+  deriving DecidableEq, Repr
+
 /-- A promise about the actual at `param`, whose type is then the signature's
 result operand. `guards p` is a type guard's, `(x: A) => x is T`: the result
 is `true` or `false`, and a `true` result leaves the actual at `p` in the

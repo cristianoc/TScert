@@ -203,6 +203,176 @@ theorem Change.Holds.seq {δ₁ δ₂ : Change} {b b' v v' v''} (hb : b ≤ b')
     (h₁ : δ₁.Holds b v v') (h₂ : δ₂.Holds b' v' v'') : (δ₁.max δ₂).Holds b v v'' :=
   (h₁.mono (Change.le_max_left δ₁ δ₂)).trans hb (h₂.mono (Change.le_max_right δ₁ δ₂))
 
+/-! ## Selectors of categories
+
+A class region (the note *Tolerant frames*, §3: $\mathsf{stores}$,
+$\mathsf{views}$, $\mathsf{values}$) selects the locations whose role, in the
+entry world, has a category it names. A selector is a finite set of the
+three categories (`Category`, which partition the locations); the named
+ones are `values`, `arrays`, `views`, `stores` (arrays and views) and `all`.
+Inclusion and disjointness are the set operations on the three categories,
+so two selectors are disjoint exactly when no category is in both: `stores`
+and `views` overlap. -/
+
+/-- The roles of a world's locations, in location order: what a class region
+reads at the entry state (`roles`). -/
+abbrev RoleMap := List Role
+
+/-- A finite set of categories (the note, §3: a class region names one). -/
+structure Selector where
+  value : Bool
+  array : Bool
+  view : Bool
+  deriving DecidableEq, Repr
+
+/-- Whether a selector names a category. -/
+def Selector.has (s : Selector) : Category → Bool
+  | .value => s.value
+  | .array => s.array
+  | .view => s.view
+
+/-- Inclusion of selectors: every category of the first is in the second. -/
+def Selector.sub (a b : Selector) : Bool :=
+  (!a.value || b.value) && (!a.array || b.array) && (!a.view || b.view)
+
+/-- Disjointness of selectors: no category is in both. -/
+def Selector.disjoint (a b : Selector) : Bool :=
+  !(a.value && b.value) && !(a.array && b.array) && !(a.view && b.view)
+
+def Selector.union (a b : Selector) : Selector := ⟨a.value || b.value, a.array || b.array, a.view || b.view⟩
+
+def Selector.inter (a b : Selector) : Selector := ⟨a.value && b.value, a.array && b.array, a.view && b.view⟩
+
+/-- The note's $\mathsf{values}$: field, cell, element and identity locations. -/
+def Selector.values : Selector := ⟨true, false, false⟩
+
+/-- The stores of ordinary arrays. -/
+def Selector.arrays : Selector := ⟨false, true, false⟩
+
+/-- The note's $\mathsf{views}$: the view stores of typed arrays. -/
+def Selector.views : Selector := ⟨false, false, true⟩
+
+/-- The note's $\mathsf{stores}$: array stores and view stores. -/
+def Selector.stores : Selector := ⟨false, true, true⟩
+
+/-- Every location. -/
+def Selector.all : Selector := ⟨true, true, true⟩
+
+/-- The selector of one category. -/
+def Selector.of : Category → Selector
+  | .value => .values
+  | .array => .arrays
+  | .view => .views
+
+theorem Selector.ext_has {a b : Selector} (h : ∀ c, a.has c = b.has c) : a = b := by
+  rcases a with ⟨av, aa, aw⟩
+  rcases b with ⟨bv, ba, bw⟩
+  have h1 := h .value; have h2 := h .array; have h3 := h .view
+  simp only [Selector.has] at h1 h2 h3
+  subst h1 h2 h3; rfl
+
+theorem Selector.sub_iff {a b : Selector} : a.sub b = true ↔ ∀ c, a.has c = true → b.has c = true := by
+  rcases a with ⟨av, aa, aw⟩
+  rcases b with ⟨bv, ba, bw⟩
+  constructor
+  · intro h c; cases c <;> cases av <;> cases aa <;> cases aw <;> cases bv <;> cases ba <;> cases bw <;>
+      simp_all [Selector.sub, Selector.has]
+  · intro h
+    have h1 := h .value; have h2 := h .array; have h3 := h .view
+    cases av <;> cases aa <;> cases aw <;> cases bv <;> cases ba <;> cases bw <;>
+      simp_all [Selector.sub, Selector.has]
+
+theorem Selector.disjoint_iff {a b : Selector} :
+    a.disjoint b = true ↔ ∀ c, a.has c = true → b.has c = false := by
+  rcases a with ⟨av, aa, aw⟩
+  rcases b with ⟨bv, ba, bw⟩
+  constructor
+  · intro h c; cases c <;> cases av <;> cases aa <;> cases aw <;> cases bv <;> cases ba <;> cases bw <;>
+      simp_all [Selector.disjoint, Selector.has]
+  · intro h
+    have h1 := h .value; have h2 := h .array; have h3 := h .view
+    cases av <;> cases aa <;> cases aw <;> cases bv <;> cases ba <;> cases bw <;>
+      simp_all [Selector.disjoint, Selector.has]
+
+/-- **Inclusion is sound**: a category of the first is one of the second. -/
+theorem Selector.sub_sound {a b : Selector} (h : a.sub b = true) {c : Category} (hc : a.has c = true) :
+    b.has c = true :=
+  Selector.sub_iff.mp h c hc
+
+/-- **Disjointness is sound**: no category is in both. -/
+theorem Selector.disjoint_sound {a b : Selector} (h : a.disjoint b = true) {c : Category}
+    (hc : a.has c = true) : b.has c = false :=
+  Selector.disjoint_iff.mp h c hc
+
+@[simp] theorem Selector.has_union (a b : Selector) (c : Category) :
+    (a.union b).has c = (a.has c || b.has c) := by
+  cases c <;> rfl
+
+@[simp] theorem Selector.has_inter (a b : Selector) (c : Category) :
+    (a.inter b).has c = (a.has c && b.has c) := by
+  cases c <;> rfl
+
+@[simp] theorem Selector.has_of (c e : Category) : (Selector.of c).has e = decide (c = e) := by
+  cases c <;> cases e <;> rfl
+
+@[simp] theorem Selector.has_all (c : Category) : Selector.all.has c = true := by
+  cases c <;> rfl
+
+/-- **The three categories partition**: each category is in exactly one of
+`values`, `arrays` and `views`. -/
+theorem Selector.partition (c : Category) :
+    (Selector.values.has c && !Selector.arrays.has c && !Selector.views.has c) ||
+    (!Selector.values.has c && Selector.arrays.has c && !Selector.views.has c) ||
+    (!Selector.values.has c && !Selector.arrays.has c && Selector.views.has c) = true := by
+  cases c <;> rfl
+
+theorem Selector.values_disjoint_arrays : Selector.values.disjoint Selector.arrays = true := rfl
+theorem Selector.values_disjoint_views : Selector.values.disjoint Selector.views = true := rfl
+theorem Selector.arrays_disjoint_views : Selector.arrays.disjoint Selector.views = true := rfl
+theorem Selector.values_disjoint_stores : Selector.values.disjoint Selector.stores = true := rfl
+
+/-- `stores` is the union of `arrays` and `views`. -/
+theorem Selector.stores_eq : Selector.stores = Selector.arrays.union Selector.views := rfl
+
+theorem Selector.arrays_sub_stores : Selector.arrays.sub Selector.stores = true := rfl
+theorem Selector.views_sub_stores : Selector.views.sub Selector.stores = true := rfl
+
+/-- **`stores` and `views` overlap**: different selectors need not be
+disjoint. -/
+theorem Selector.stores_views_overlap : Selector.stores.disjoint Selector.views = false := rfl
+
+/-- `all` is the union of the three categories. -/
+theorem Selector.all_eq : Selector.all = (Selector.values.union Selector.arrays).union Selector.views := rfl
+
+theorem Selector.sub_all (a : Selector) : a.sub Selector.all = true :=
+  Selector.sub_iff.mpr fun c _ => Selector.has_all c
+
+theorem Selector.sub_refl (a : Selector) : a.sub a = true := Selector.sub_iff.mpr fun _ h => h
+
+theorem Selector.sub_trans {a b c : Selector} (h₁ : a.sub b = true) (h₂ : b.sub c = true) : a.sub c = true :=
+  Selector.sub_iff.mpr fun _ hd => Selector.sub_sound h₂ (Selector.sub_sound h₁ hd)
+
+/-- A selector disjoint from another is disjoint from every part of it. -/
+theorem Selector.disjoint_of_sub {a b b' : Selector} (hd : a.disjoint b = true) (hs : b'.sub b = true) :
+    a.disjoint b' = true :=
+  Selector.disjoint_iff.mpr fun c hc => by
+    cases hb' : b'.has c
+    · rfl
+    · have := Selector.sub_sound hs hb'
+      rw [Selector.disjoint_sound hd hc] at this
+      cases this
+
+theorem Selector.disjoint_comm {a b : Selector} (h : a.disjoint b = true) : b.disjoint a = true :=
+  Selector.disjoint_iff.mpr fun c hc => by
+    cases ha : a.has c
+    · rfl
+    · rw [Selector.disjoint_sound h ha] at hc; cases hc
+
+/-- The category a role has is in its category's selector and in no
+selector disjoint from it. -/
+theorem Selector.has_category (r : Role) : (Selector.of r.category).has r.category = true := by
+  simp
+
 /-! ## Classes of contents and regions -/
 
 /-- The two classes of a location's contents: an array store, or anything

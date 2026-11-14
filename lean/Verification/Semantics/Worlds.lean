@@ -62,6 +62,28 @@ def Role.kind : Role → Kind
   | .store _ => .store
   | .identity => .identity
 
+/-- The three categories of a location (the note *Tolerant frames*, §3, the
+class regions): value locations (field, cell, element and identity
+locations), array stores and view stores. They partition the locations: a
+role has exactly one, fixed with the role. -/
+inductive Category where
+  | value
+  | array
+  | view
+  deriving DecidableEq, Repr
+
+/-- A role's category, independent of the location's contents. -/
+def Role.category : Role → Category
+  | .store .array => .array
+  | .store (.view _) => .view
+  | .field | .cell | .elem | .identity => .value
+
+/-- A store location's category is a store's: an array's or a view's. -/
+theorem Role.category_store {r : Role} : r.kind = .store ↔ r.category ≠ .value := by
+  cases r with
+  | store f => cases f <;> simp [Role.kind, Role.category]
+  | _ => simp [Role.kind, Role.category]
+
 /-! ## Kinded worlds -/
 
 /-- A kinded world at level `k`: each location's role and its contract, which
