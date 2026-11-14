@@ -178,6 +178,15 @@ $\langle l_0,\circ,l_2\rangle$. \code{a.push(40)} allocates an element
 cell $l_3$ and changes the store to $\langle l_0,\circ,l_2,l_3\rangle$;
 \code{a.length = 1} changes it to $\langle l_0\rangle$. Class:
 \emph{store}.
+
+A store location has one of two \emph{forms}, fixed with its kind. An
+\emph{array store} belongs to an ordinary array, and its length may
+change, as above. A \emph{view store} belongs to a typed array, such as
+a \code{Uint8Array}. It lists the cells that hold what the typed array
+reads at each index, and its length is fixed: after
+\code{const b = new Uint8Array(4);} the view store of \code{b} has
+length 4 for the life of \code{b}. We write the forms $\mathsf{array}$
+and $\mathsf{view}_N$, with $N$ the length.
 \item[Identity location, kind $\kI$] One for each object, allocated with it.
 It holds \code{null}, and its contract admits \code{null} alone. Two
 objects are the same object when they have the same identity location.
@@ -292,7 +301,8 @@ It states that the field holds, for the object's whole life, the value
 the object was created with; the contract of the field's location is
 that one value. Here the field \code{openBrackets} of a \code{Runs}
 object always holds the same array, whose elements and length may still
-change. The second is a typed array's length. The third is an identity
+change. The second is a typed array's length, the length $N$ of its
+view store. The third is an identity
 location. All three belong to the value
 class, and no admissible transition (Definition~\ref{def:adm}) changes them.
 
@@ -306,7 +316,8 @@ programs make only admissible transitions (Theorem~\ref{thm:pres}).
 \begin{definition}[World]\label{def:world}
 A \emph{world} $W$ is a finite map from locations to pairs
 $(\kappa,T)$ of a kind $\kappa\in\{\kF,\kC,\kE,\kS,\kI\}$ and a \emph{contract}
-$T$. A contract is a type; it denotes a predicate on contents that is
+$T$; for a location of kind $\kS$ the kind includes its form,
+$\mathsf{array}$ or $\mathsf{view}_N$. A contract is a type; it denotes a predicate on contents that is
 step-indexed and world-monotone~\cite{ahmed}. A world $W'$
 \emph{extends} $W$, written $W\sqsubseteq W'$, when
 $\mathrm{dom}\,W\subseteq\mathrm{dom}\,W'$ and $W'(l)=W(l)$ for every
@@ -314,7 +325,7 @@ $l\in\mathrm{dom}\,W$.
 \end{definition}
 \noindent
 Example: for the heap of Section~2, $W(0)=(\kF,\code{number})$,
-$W(3)=(\kS,\text{stores of number cells})$ and $W(6)=(\kI,\{\code{null}\})$.
+$W(3)=(\kS\ \mathsf{array},\text{stores of number cells})$ and $W(6)=(\kI,\{\code{null}\})$.
 After \code{a.push(40)} the world is $W$ with one more entry,
 $10\mapsto(\kE,\code{number})$, and it extends $W$.
 
@@ -325,8 +336,8 @@ when:
 \begin{description}[leftmargin=1.5em,style=sameline]
 \item[(W1) one domain] $\mathrm{dom}\,h=\mathrm{dom}\,W$.
 \item[(W2) contents by kind] For every $l$ with $W(l)=(\kappa,T)$:
-$h(l)$ is a value when $\kappa\in\{\kF,\kC,\kE\}$, a store when $\kappa=\kS$,
-and \code{null} when $\kappa=\kI$.
+$h(l)$ is a value when $\kappa\in\{\kF,\kC,\kE\}$, a store when $\kappa=\kS$, of length $N$ when its form is
+$\mathsf{view}_N$, and \code{null} when $\kappa=\kI$.
 \item[(W3) valid references] Every cell that a store of $h$ lists is a
 location of kind $\kE$. For every object that occurs in $h$ or in $\rho$,
 each field location is of kind $\kF$ or $\kC$, its store location is of kind
@@ -384,7 +395,7 @@ $h'\tr{}_\rho h''$ then $h\tr{}_\rho h''$, the worlds composing through
 the intermediate state's world
 \status{Lean: \lean{Admissible.refl}, \lean{Admissible.trans}}.
 \item[(T2) Growth] If $h\tr{}_\rho h'$ then $\len h\le\len{h'}$, and
-every location of $h$ has in $h'$ the kind it had: a
+every location of $h$ has in $h'$ the kind and form it had: a
 transition allocates and never removes or re-purposes a location
 \status{Lean: \lean{Admissible.length\_le}}.
 \item[(T3) Fixed objects] Let $v:\mathit{Key}\rightharpoonup\LF\cup\LC$ be an
@@ -799,9 +810,7 @@ rigid (\lean{stableAt\_of\_stableField}, \lean{stableAt\_cons},
 \lean{grow\_path\_typed}.
 \item[\textsc{(View)}] A fact about a typed array's length survives
 every change: that length is an immutable location, by (T4). Lean:
-\lean{view\_box}, under the premise that the contract of the length's
-location admits one value, which \lean{viewStable\_of\_typed} gives for a
-value of a typed-array type.
+\lean{view\_box}, \lean{viewLengthOf\_kept}.
 \end{description}
 
 \section{Programs}
@@ -1062,14 +1071,12 @@ path from each element cell the store lists.
 \item[Overlapping typed-array views] Two views are distinct objects over
 one buffer, so $\sep$ on their stores says nothing about their elements.
 They need regions of buffer cells with offsets. TScert's model states a
-write through a view without them. Within the kind $\kS$ a world marks
-the stores of views, each with its fixed length. A write to an element
-of a view has a post over the two states and the entry world: every
-location that the entry world does not mark as a view's store keeps its
-contents, and every view's store keeps its length; a view's store may
-come to list new cells, which hold what the view then reads. So facts
-about values, lengths and other arrays survive the write, and a fact
-about the elements of any view does not
+write through a view without them, by the forms of stores. The write's
+post reads the two states and the entry world: every location that is
+not a view store in the entry world keeps its contents, and a view
+store may come to list new cells, which hold what its typed array then
+reads. So facts about values, lengths and ordinary arrays survive the
+write, and a fact about the elements of any typed array does not
 \status{Lean: \lean{ViewWrite}, \lean{Effect.viewPost}}.
 \item[A callback that writes what it captured] Example:
 \code{walk(xs, v => out.push(v))}. Each use has a closed effect. A
