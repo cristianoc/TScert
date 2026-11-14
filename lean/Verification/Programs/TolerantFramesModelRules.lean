@@ -157,7 +157,7 @@ theorem alloc_post {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h) :
   refine ⟨⟨_, hst, Nat.le_refl _⟩, HeapKnowledge.lengthOf_of_store hst hget (by decide), ?_⟩
   intro u sy ys hsy hys
   have hlt : sy < h.length := (List.getElem?_eq_some_iff.mp hys).1
-  exact alloc_apart_wellformed hok hst hget (Nat.le_refl _) (fun _ hm => by simp at hm) hsy hys
+  exact alloc_apart hok hst hget (Nat.le_refl _) (fun _ hm => by simp at hm) hsy hys
     (by rw [List.append_assoc, List.getElem?_append_left hlt]; exact hys)
 
 /-- The counter-model's world: `y`'s store, its cell, `x`'s store, and the

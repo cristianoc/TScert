@@ -72,7 +72,16 @@ and entry index facts $`X`$ is entered at $`(\rho, n, W, h)`$ when
   \;\wedge\; \mathrm{WorldAdm}(W) \;\wedge\; \mathrm{HeapOk}_n(W, h)
 ```
 
-(`EntryHolds`; $`\rho \models_{n,W}^{G} \Gamma`$ is `EnvOk`).
+(`EntryHolds`; $`\rho \models_{n,W}^{G} \Gamma`$ is `EnvOk`), and its
+bindings have valid references, $`\mathrm{Roots}_W(\rho)`$: every location
+a value of $`\rho`$ refers to has, in $`W`$, the role its position demands
+(`RootsOk`). The entry contract does not give it: an identity at a location
+$`W`$ gives no role meets `unknown`, and a binding past the inputs is only
+closed (`entry_roots_not_derived`). The program's code needs no such
+condition: the pass accepts a graph only when each node expression mentions
+no location (`ObjectCoherence.sourceTerm`, checked by `SinglePass.setup`;
+`GraphGuarantee.source`), and such a term's references are valid in every
+world (`ControlFlow.sourceTerm_refsOk`).
 
 **Reachability.** $`P \vdash (h, s) \to^k (h', s')`$: the graph machine of
 program $`P`$ goes from state $`s`$ on heap $`h`$ to $`s'`$ on $`h'`$ in $`k`$
@@ -85,10 +94,11 @@ qualified one), and $`\mathrm{run}(L, d)`$ the term running $`P`$ from
 $`\ell_0`$ with frame $`L`$ and receiver $`d`$, $`r`$ is safe when, for every
 $`\eta`$:
 
-1. *safety*: $`\eta \in \mathrm{Adm}_r`$ and $`\mathrm{Entry}_{G\eta}(\Gamma, S, X; \rho, n, W, h)`$
-   imply $`\mathrm{SafeGraph}_{n,W}(P, R; h, \ell_0\,\rho)`$ (`SafeClause`);
+1. *safety*: $`\eta \in \mathrm{Adm}_r`$, $`\mathrm{Entry}_{G\eta}(\Gamma, S, X; \rho, n, W, h)`$
+   and $`\mathrm{Roots}_W(\rho)`$ imply $`\mathrm{SafeGraph}_{n,W}(P, R; h, \ell_0\,\rho)`$ (`SafeClause`);
 2. *footprint*: where $`r`$ claims a footprint $`\Phi \ne \top`$, a footprint
-   on a throw, or a fresh result, $`\mathrm{run}(L, d)`$ from such an entry,
+   on a throw, or a fresh result, $`\mathrm{run}(L, d)`$ from such an entry
+   (its environment the frame $`L`$ with default $`d`$, its roots valid),
    with $`L`$ and $`d`$ values, is safe, returns with $`\Phi(h, h')`$ and,
    where fresh, a value whose store is at or above $`|h|`$, and throws with
    $`\Phi(h, h')`$ where it claims the throw (`FootprintClause`);
@@ -207,6 +217,15 @@ by `passGroupMode8`). Then $`\mathrm{PassUnitSafe}(f, i)`$:
 \mathrm{Mode8Accepted}(f, i) \;\Longrightarrow\; \forall j \in f.\mathrm{group}(i).\; \mathrm{MemberSafe}(f, j)
 ```
 
+**What an accepted verdict guarantees.** An accepted unit certifies every
+member's request, and each request is safe from every entry satisfying its
+input contracts, entry separation and index facts, an admissible kinded
+world and a heap that world types (`EntryHolds`), and whose bindings have
+valid references (`RootsOk`). The entry conditions sit inside the
+conclusion: acceptance proves no entry exists, and the guarantee is
+relative to the accuracy of the host model, which is what supplies such
+entries ([native contracts over kinded worlds](SOURCE-CONTRACTS.md#native-contracts-over-kinded-worlds)).
+
 With the file-level part (`passFile_safe_kinds`, section 6) every closed
 unit's value meets its interface, and with `crossModule_safe` (section 7)
 an importer's units meet theirs, their imports discharged by their modules'
@@ -222,8 +241,8 @@ each level's; their statements follow.
 - *The pass is sound per unit* (`mode8Accepted_sound`, every accepted
   verdict line of mode 8): no hypothesis. It needs the observation guard
   (an observed refusal never turns into an acceptance, section 3) and no
-  other front check. Its entry premise assumes every slot's type, imports'
-  and host values' included.
+  other front check. Its entry condition assumes every slot's type, imports'
+  and host values' included, and its bindings' reference validity.
 - *A laid-out function's value meets its interface* (`passFile_safe_kinds`):
   adds `ReceiverDropSound`, the layout (the layout check computing $`D`$,
   section 4), the `:init` postcondition for module cells (section 4, H5b),

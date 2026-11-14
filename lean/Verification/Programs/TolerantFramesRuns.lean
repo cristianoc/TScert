@@ -86,7 +86,7 @@ theorem graph_run {Ξ T : Fam} {P : Program} :
 `SafeGraph` is established, not assumed: an invariant over `.at`, partially
 evaluated `.eval`, `.done` and `.raised` states gives a successor at every
 positive budget. Observations are made only at positive states; at budget zero
-the invariant states nothing. Entering a node and leaving it by a
+the invariant states the state's reference validity alone (`StateRefs`). Entering a node and leaving it by a
 continuation or a handler each spend one level, as in `Transition`. -/
 
 open ControlFlow PointClaims

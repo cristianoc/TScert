@@ -2251,6 +2251,10 @@ def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty 
   let counts : Counts := { nodes := n, edges := edgeCount }
   let trace0 : Trace := {}
   if claimed.size != n then .error (WalkStop.mk (.notHandled "claim count") counts answers trace0) else
+  -- Program syntax holds no location (`ObjectCoherence.sourceTerm`): its
+  -- references are then valid in every world (`ControlFlow.program_source_refsOk`).
+  if !(P.all fun node => ObjectCoherence.sourceTerm node.expression) then
+    .error (WalkStop.mk (.refused "a node expression holding a location") counts answers trace0) else
   let index := KnownIndex.of known
   -- The type of `undefined` alone, among the pool's: a call's omitted
   -- receiver is read at it.

@@ -366,6 +366,7 @@ run_cmd do
   check ``Verification.TolerantFrames.rootCells_box
   check ``Verification.TolerantFrames.rootCells_invariant
   check ``Verification.TolerantFrames.alloc_apart
+  check ``Verification.TolerantFrames.apart_of_mark
   check ``Verification.TolerantFrames.growOne_keeps_store
   check ``Verification.TolerantFrames.apart_grow_keep
   check ``Verification.TolerantFrames.graph_step
@@ -1500,7 +1501,13 @@ run_cmd do
   -- well-formed states over an environment; admissibility keeps them
   check ``Verification.TolerantFrames.Admissible.roleAt
   check ``Verification.TolerantFrames.Admissible.refsOk
-  check ``Verification.TolerantFrames.RootsOk.admissible
+  check ``Verification.RootsOk.admissible
+  check ``Verification.ControlFlow.sourceTerm_refsOk
+  check ``Verification.ControlFlow.program_source_refsOk
+  check ``Verification.TolerantFrames.accepts_source
+  check ``Verification.TolerantFrames.Target.entry_roots_not_derived
+  check ``Verification.SourceClaimJson.PassUnit.gotoOf_refsOk
+  check ``Verification.CallEffects.ViewWriteA.not_entry_roles
   -- (View): a typed array's length is immutable
   check ``Verification.TolerantFrames.viewLengthOf_kept
   check ``Verification.TolerantFrames.viewLength_invariant
@@ -1510,7 +1517,6 @@ run_cmd do
   check ``Verification.TolerantFrames.Admissible.elem_kept
   check ``Verification.TolerantFrames.rootCells_holds
   -- allocation separation from a well-formed entry heap
-  check ``Verification.TolerantFrames.alloc_apart_wellformed
   check ``Verification.Kinds.alloc_wellformed
   -- role-bearing storage capabilities
   check ``Verification.Kinds.Capability.At.mono

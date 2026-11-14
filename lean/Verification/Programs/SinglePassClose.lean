@@ -167,6 +167,14 @@ theorem setup_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) (pool
           (env.rebound (some B) (deadRegion G P.toArray claims.toArray (some B)), σ) := by
   unfold setup
   dsimp only
+  -- (the first two refusals decided by hand: `split`'s simplification of
+  -- the whole setup exceeds its step budget there)
+  by_cases h1 : (claims.toArray.size != (List.toArray P).size) = true
+  · rw [if_pos h1, if_pos h1]; rfl
+  rw [if_neg h1, if_neg h1]
+  by_cases h2 : (!P.all fun node => ObjectCoherence.sourceTerm node.expression) = true
+  · rw [if_pos h2, if_pos h2]; rfl
+  rw [if_neg h2, if_neg h2]
   repeat' (first | rfl | split)
 
 omit [Instantiates ι] in

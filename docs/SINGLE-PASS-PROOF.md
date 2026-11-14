@@ -47,9 +47,18 @@ s \to s' \iff n' \le n \;\wedge\; \mathrm{WExt}\,(\mathrm{trunc}_{n'}\,W)\,W'
   `Admissible.readPath`).
 
 **Budget zero.** States have positive budget throughout. At budget zero
-$`\mathrm{Safe}\ \Xi\ T\ 0\ W\ h\ t`$ holds for every term (`safe_zero`),
-so an execution that has used its budget carries no obligation, and every
-assertion is read where single-value contracts determine contents.
+$`\mathrm{Safe}\ \Xi\ T\ 0\ W\ h\ t`$ is the term's reference validity
+$`\mathrm{RefsOk}\ W\ t`$, so an execution that has used its budget carries
+no other obligation, and every assertion is read where single-value
+contracts determine contents.
+
+**Well-formed endpoints and execution.** Both ends of an admissible
+transition are states, so each heap meets its world (`HeapOk`) by the
+definition of a state; `Admissible` relates their worlds and builds no
+successor. That an execution step reaches a well-formed successor is
+preservation, proved separately: typed steps by `HasTyUsing.sound`, graph
+transitions by `ControlFlow.state_progress`, native and imported calls by
+the meaning of their callable types (their contracts, below).
 
 ## Kinded states
 
@@ -91,7 +100,9 @@ references are valid in the entry world; graph safety is
 `ControlFlow.state_progress` and `state_safe` (induction on the budget over
 every `Transition`), from node expressions and a state whose references are
 valid. A request's semantic clauses (`PassUnit.SafeClause` and the others)
-quantify over entries whose environment and code have valid references.
+quantify over entries whose environment has valid references (`RootsOk`);
+its code's node expressions mention no location, which the pass checks
+(`GraphGuarantee.source`), so their references are valid in every world.
 
 ## Adequacy
 
@@ -627,8 +638,10 @@ heap (`HeapOk.store_cells`). So $`\mathrm{cells}(x)`$ is invariant
 
 Separation, proved:
 
-- allocation: a store whose location and cells are at or past $`b`$ is apart
-  from a store whose location and cells are below $`b`$ (`alloc_apart`);
+- allocation: a store whose location and cells are at or past a
+  well-formed heap's end is apart from a store of that heap a later heap
+  keeps, whose cells lie below its end because it is well-formed
+  (`alloc_apart`; with both bounds stated, `apart_of_mark`);
   freshness against the entry mark (`FreshAt`) is the location half;
 
 The third atom, (Apart, one-sided), proved (`apart_grow_keep`), with
@@ -636,8 +649,10 @@ $`\Phi_x=\{\mathsf{values}:\mathsf{any},\ x.\mathsf{store}:\mathsf{grow}\}`$
 (`growOne`) and $`y`$ an array object:
 
 ```math
-\mathrm{apart}(x,y)\wedge\mathrm{cells}(y)\;\vdash\;\Box_{\Phi_x}\,\mathrm{apart}(x,y)
+\mathrm{apart}(x,y)\;\vdash\;\Box_{\Phi_x}\,\mathrm{apart}(x,y)
 ```
+
+($`\mathrm{cells}(y)`$ holds at every state: `rootCells_holds`.)
 
 $`y`$'s store location is not $`x`$'s, so it is kept (`growOne_keeps_store`),
 and $`x`$'s store gains only cells at or past the heap's end, beyond $`y`$'s

@@ -457,7 +457,7 @@ theorem rowSpec_of_requestSafe {r : SourceRequest σ ι} {c : CodeEntry ι}
     intro L d; simp only [gotoOf, hu.exprs, hu.conts, hu.start]
   apply rowSpec_of_clauses hcond hstore
   · intro η n W h ρ he hP hρ
-    have := hsafe.1 η (hadm η) n W h ρ (by rw [hu.inputs, hu.indices]; exact he) (by rw [hprog]; exact hP) hρ
+    have := hsafe.1 η (hadm η) n W h ρ (by rw [hu.inputs, hu.indices]; exact he) hρ
     rw [hprog, hu.goal, hu.start] at this
     exact this
   · intro Φ fresh onThrow hb η n W h L d he hgo hvals hd
@@ -465,12 +465,12 @@ theorem rowSpec_of_requestSafe {r : SourceRequest σ ι} {c : CodeEntry ι}
     have hpre : r.footprint ≠ .top ∨ r.onThrow = true ∨ r.fresh = true := by
       rw [hu.footprint, hu.onThrow, hu.fresh]; exact hne
     have := hsafe.2.1 hpre η n W h L d (by rw [hu.inputs, hu.indices]; exact he)
-      (by rw [hgoto]; exact hgo) hvals hd
+      (GraphCode.goto_refs hgo).2 hvals hd
     rw [hgoto, hu.goal, hu.footprint, hu.fresh, hu.onThrow] at this
     exact this
   · intro hne η n W h L d he hgo
     have := hsafe.2.2.1 (by rw [hu.ensures]; exact hne) η n W h L d (by rw [hu.inputs, hu.indices]; exact he)
-      (by rw [hgoto]; exact hgo)
+      (GraphCode.goto_refs hgo).2
     rw [hgoto, hu.goal, hu.ensures] at this
     exact this
 

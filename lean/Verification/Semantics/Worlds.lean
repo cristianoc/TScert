@@ -396,6 +396,11 @@ def RefOk {k : Nat} (W : WorldT k) : Ref → Prop
 position demands. It reads the world only, never the heap. -/
 def RefsOk {k : Nat} (W : WorldT k) (t : Tm) : Prop := ∀ r ∈ refs t, RefOk W r
 
+/-- **An environment's roots are valid**: every reference of every value it
+holds has the role its position demands. A graph state's environment is
+(`ControlFlow.StateRefs`). -/
+def RootsOk {k : Nat} (W : WorldT k) (ρ : Env) : Prop := ∀ x, RefsOk W (ρ x)
+
 /-- What each role's contents are, by category: a source value in F, C and E,
 a store (of the view's length) in S, `null` in I. -/
 def Cat : Role → Val → Prop

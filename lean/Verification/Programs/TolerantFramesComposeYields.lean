@@ -276,7 +276,7 @@ theorem run_sound_checked (hrun : RunTraversedC ι) (hyield : NodesYield ι) (hn
   have hp : RunPremises G I c after admits := ⟨hacc, hscope, hcodes, hsums, hfields⟩
   obtain ⟨r, hchk⟩ := hrun G I c after hacc hsums
   obtain ⟨dead, hd, hgiven, hmerging, hrecord⟩ := hchk
-  refine GraphGuarantee.toTarget (run_guarantee fun η hη => ?_)
+  refine GraphGuarantee.toTarget (accepts_source hacc) (run_guarantee fun η hη => ?_)
   obtain ⟨pc', hpc⟩ := scope_reassign hscope hη
   refine ⟨r.w, r.given, r.ctx, r.edgesIn, r.fresh, r.stated,
     { walk := fun ε m => ?_

@@ -4,8 +4,9 @@ import Verification.Semantics.ArgumentStoreRegions
 
 The states of the note "Tolerant frames" read in the indexed model. A
 **state** is a budget, a world at that budget and a heap meeting it, the
-budget positive: the safety predicates state nothing at budget zero
-(`Safe Ξ T 0 W h t` is `True`), so no assertion is read there. An
+budget positive: at budget zero the safety predicates state the running
+term's reference validity alone (`Safe Ξ T 0 W h t` is `RefsOk W t`), so no
+assertion is read there. An
 **admissible transition** drops the budget and extends the truncated world;
 heap growth and the contents of every location whose contract admits one value
 follow from it. A **safe run** of a term from a state, to a point with budget

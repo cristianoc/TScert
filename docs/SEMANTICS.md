@@ -1185,7 +1185,8 @@ for what a source claim may say.
 `SafePost T Q n W h e` strengthens `Safe T n W h e`: at a positive-budget final
 value it additionally requires `Q h e`; its step case uses exactly the same
 operational step, truncated-world extension, admissibility and heap satisfaction.
-At budget zero it is true. Divergence is permitted.
+At budget zero it states the running term's reference validity alone, as
+`Safe` does. Divergence is permitted.
 [HeapObservations.lean](../lean/Verification/Semantics/HeapObservations.lean)
 defines it: `erase` yields ordinary safety.
 

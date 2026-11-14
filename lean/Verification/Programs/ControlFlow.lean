@@ -206,6 +206,64 @@ theorem push_refs {n : Nat} {W : WorldT n} {v : Tm} {ρ : Env} (hv : RefsOk W v)
 theorem mapEnv_refs {n : Nat} {W : WorldT n} {ρ : Env} (m : PointClaims.Mapping) (hρ : ∀ i, RefsOk W (ρ i)) :
     ∀ i, RefsOk W (mapEnv m ρ i) := fun _ => hρ _
 
+mutual
+/-- **A source term mentions no location**: `refs` of a term
+`ObjectCoherence.sourceTerm` admits is empty, by induction on the term. -/
+theorem sourceTerm_refs : ∀ {t : Tm}, ObjectCoherence.sourceTerm t = true → refs t = []
+  | .var _, _ | .nul, _ | .undef, _ | .tru, _ | .fls, _ | .num _, _ | .str _, _ | .bigint _, _
+  | .sym _, _ => rfl
+  | .invoke f r args, h => by
+    simp only [ObjectCoherence.sourceTerm, Bool.and_eq_true] at h
+    simp only [refs, sourceTerm_refs h.1.1, sourceTerm_refs h.1.2, sourceArgs_refs h.2, List.append_nil]
+  | .construct f args, h => by
+    simp only [ObjectCoherence.sourceTerm, Bool.and_eq_true] at h
+    simp only [refs, sourceTerm_refs h.1, sourceArgs_refs h.2, List.append_nil]
+  | .letE a b, h | .writeAt _ a b, h | .arith _ a b, h | .elemAt a b, h | .merge _ a b, h
+  | .indexAt a b, h | .makeKey a b, h => by
+    simp only [ObjectCoherence.sourceTerm, Bool.and_eq_true] at h
+    simp only [refs, sourceTerm_refs h.1, sourceTerm_refs h.2, List.append_nil]
+  | .readAt _ a, h | .test _ a, h | .lenOf a, h | .spread a, h | .throw a, h => by
+    simp only [ObjectCoherence.sourceTerm] at h
+    simp only [refs, sourceTerm_refs h]
+  | .setElem a b c, h => by
+    simp only [ObjectCoherence.sourceTerm, Bool.and_eq_true] at h
+    simp only [refs, sourceTerm_refs h.1.1, sourceTerm_refs h.1.2, sourceTerm_refs h.2, List.append_nil]
+  | .ite c a b, h => by
+    simp only [ObjectCoherence.sourceTerm, Bool.and_eq_true] at h
+    simp only [refs, sourceTerm_refs h.1.1, sourceTerm_refs h.1.2, sourceTerm_refs h.2, List.append_nil]
+  | .arrLit xs, h => by
+    simp only [ObjectCoherence.sourceTerm] at h
+    simp only [refs, sourceArgs_refs h]
+  | .makeAt .absent _ xs, h => by
+    simp only [ObjectCoherence.sourceTerm] at h
+    simp only [refs, sourceArgs_refs h]
+  | .makeAt (.bound t r pre) _ xs, h => by
+    simp only [ObjectCoherence.sourceTerm, Bool.and_eq_true] at h
+    simp only [refs, sourceTerm_refs h.1.1.1, sourceTerm_refs h.1.1.2, sourceArgs_refs h.1.2,
+      sourceArgs_refs h.2, List.append_nil]
+  | .makeAt (.graph _ E _ _ caps _ _) _ xs, h => by
+    simp only [ObjectCoherence.sourceTerm, Bool.and_eq_true] at h
+    simp only [refs, sourceArgs_refs h.1.1, sourceArgs_refs h.1.2, sourceArgs_refs h.2, List.append_nil]
+  | .objAt .., h | .arr _, h | .goto .., h | .frame .., h => by
+    simp [ObjectCoherence.sourceTerm] at h
+
+theorem sourceArgs_refs : ∀ {xs : List Tm}, ObjectCoherence.sourceArgs xs = true → refsArgs xs = []
+  | [], _ => rfl
+  | x :: xs, h => by
+    simp only [ObjectCoherence.sourceArgs, Bool.and_eq_true] at h
+    simp only [refsArgs, sourceTerm_refs h.1, sourceArgs_refs h.2, List.append_nil]
+end
+
+/-- **A source term has valid references in every world**: it mentions no
+location. -/
+theorem sourceTerm_refsOk {t : Tm} (h : ObjectCoherence.sourceTerm t = true) {n : Nat} (W : WorldT n) :
+    RefsOk W t := fun r hr => by rw [sourceTerm_refs h] at hr; cases hr
+
+/-- **A program of source terms has valid node expressions in every world.** -/
+theorem program_source_refsOk {P : Program} (h : P.all (fun node => ObjectCoherence.sourceTerm node.expression) = true)
+    {n : Nat} (W : WorldT n) : ∀ node ∈ P, RefsOk W node.expression :=
+  fun node hn => sourceTerm_refsOk (List.all_eq_true.mp h node hn) W
+
 /-- A node's instantiated expression refers to the node's and the
 environment's references. -/
 theorem node_refs {n : Nat} {W : WorldT n} {e : Tm} {ρ : Env} (he : RefsOk W e) (hρ : ∀ i, RefsOk W (ρ i)) :

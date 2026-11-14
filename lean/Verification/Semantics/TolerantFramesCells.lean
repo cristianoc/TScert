@@ -69,13 +69,8 @@ theorem Admissible.elem_kept {s s' : IndexedHeap} (ha : Admissible s s') {st : N
     {ls : List (Option Nat)} (hs : s.h[st]? = some (.arr ls)) {l : Nat} (hl : some l ∈ ls) :
     Verification.roleAt s'.W l = some .elem := ha.roleAt (s.ok.store_cells hs hl).1
 
-/-- **An environment's roots are valid**: every reference of every value it
-holds has the role its position demands. A graph state's environment is
-(`ControlFlow.StateRefs`). -/
-def RootsOk {k : Nat} (W : WorldT k) (ρ : Env) : Prop := ∀ x, RefsOk W (ρ x)
-
 /-- **Admissibility keeps the roots valid.** -/
-theorem RootsOk.admissible {s s' : IndexedHeap} (ha : Admissible s s') {ρ : Env}
+theorem _root_.Verification.RootsOk.admissible {s s' : IndexedHeap} (ha : Admissible s s') {ρ : Env}
     (h : RootsOk s.W ρ) : RootsOk s'.W ρ := fun x => ha.refsOk (h x)
 
 /-! ## (View): a typed array's length is immutable -/
@@ -124,10 +119,11 @@ theorem rootCells_box {Φ : Footprint} (x : Nat) (ρ : Env) (m : Nat) (s : Index
 
 /-! ## Allocation separation -/
 
-/-- **A store allocated past a mark is apart from an old one**: `x`'s store
+/-- **Two stores on either side of a mark are apart**: `x`'s store
 location and cells at or past `b`, `y`'s store location and cells below
-`b`. -/
-theorem alloc_apart {h : Heap} {u w : Val} {sx sy b : Nat} {xs ys : List (Option Nat)}
+`b`, both bounds stated. `alloc_apart` derives the second from a
+well-formed heap. -/
+theorem apart_of_mark {h : Heap} {u w : Val} {sx sy b : Nat} {xs ys : List (Option Nat)}
     (hx : storeOf u = some sx) (hxv : h[sx]? = some (.arr xs)) (hbx : b ≤ sx) (hax : ElementsAbove b xs)
     (hy : storeOf w = some sy) (hyv : h[sy]? = some (.arr ys)) (hby : sy < b) (hay : ElementsBelow b ys) :
     RegionsApart h u w := by
@@ -149,13 +145,13 @@ theorem alloc_apart {h : Heap} {u w : Val} {sx sy b : Nat} {xs ys : List (Option
 `u`'s store location and its cells are at or past `h`'s end, `w`'s store is a
 store of `h` that `h'` keeps, whose cells are below `h`'s end because `h` is
 well-formed. -/
-theorem alloc_apart_wellformed {n : Nat} {W : WorldT n} {h h' : Heap} (hok : HeapOk n W h) {u w : Val}
+theorem alloc_apart {n : Nat} {W : WorldT n} {h h' : Heap} (hok : HeapOk n W h) {u w : Val}
     {sx sy : Nat} {xs ys : List (Option Nat)}
     (hx : storeOf u = some sx) (hxv : h'[sx]? = some (.arr xs)) (hbx : h.length ≤ sx)
     (hax : ElementsAbove h.length xs)
     (hy : storeOf w = some sy) (hyv : h[sy]? = some (.arr ys)) (hkeep : h'[sy]? = some (.arr ys)) :
     RegionsApart h' u w :=
-  alloc_apart hx hxv hbx hax hy hkeep (List.getElem?_eq_some_iff.mp hyv).1 (hok.elementsBelow hyv)
+  apart_of_mark hx hxv hbx hax hy hkeep (List.getElem?_eq_some_iff.mp hyv).1 (hok.elementsBelow hyv)
 
 /-! ## The third atom: one array grows, the other is kept -/
 
@@ -178,12 +174,12 @@ theorem growOne_keeps_store {x : Nat} {ρ : Env} {h h' : Heap} {st : Nat} {ls : 
     · simp [Region.mem, hst, Cls.has, isArr] at hm
     · simp [Region.mem] at hm; exact absurd hm hne
 
-/-- **(Apart, one-sided)** `apart(x, y) ∧ cells(y) ⊢ □_{growOne x} apart(x, y)`,
+/-- **(Apart, one-sided)** `apart(x, y) ⊢ □_{growOne x} apart(x, y)`,
 for `y` an array object: `x`'s store gains only cells at or past the heap's
-end, beyond every cell `y`'s kept store lists and beyond `y`'s store
-location. -/
+end, beyond every cell `y`'s kept store lists (`cells(y)`, which every
+state's heap gives: `rootCells_holds`) and beyond `y`'s store location. -/
 theorem apart_grow_keep {x y : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hys : (storeOf (ρ y)).isSome = true) (hap : ApartAt x y ρ m s) (hc : RootCells y ρ m s) :
+    (hys : (storeOf (ρ y)).isSome = true) (hap : ApartAt x y ρ m s) :
     Box (growOne x) (ApartAt x y) ρ m s := by
   intro s' ha
   obtain ⟨sa, xs, sb, ys, hx, hy, hab⟩ := hap
@@ -195,7 +191,7 @@ theorem apart_grow_keep {x y : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
     · rw [hsty] at hst; cases hst; exact ⟨rfl, hv⟩
   obtain ⟨rfl, hyv⟩ := hyr
   have hylt : sty < s.h.length := (List.getElem?_eq_some_iff.mp hyv).1
-  have hycells := hc sty ys hsty hyv
+  have hycells := rootCells_holds y ρ m s sty ys hsty hyv
   -- `x`'s region at `s'`: the old one, or its store grown by cells past the heap's end.
   have xNew : ∃ xs', RegionOf s'.h (ρ x) sa xs' ∧
       ∀ l, InRegion sa xs' l → InRegion sa xs l ∨ s.h.length ≤ l := by

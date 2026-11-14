@@ -222,16 +222,61 @@ structure ViewWriteAt (roles : Nat → Option Role) (before after : Heap) : Prop
   grow : ∀ l N ls ls', roles l = some (.store (.view N)) → before[l]? = some (.arr ls) →
     after[l]? = some (.arr ls') → ∀ c, some c ∈ ls' → some c ∈ ls ∨ before.length ≤ c
 
-/-- **The view-element write over the active worlds**: `ViewWriteAt` at a
-role assignment fitting the entry heap. The active worlds hold no roles, so
-the assignment is a stated hypothesis of the relation, constrained by the
-entry heap's categories alone; over kinded worlds it is the entry world's
-(`Kinds.ViewWriteOf.holds`), and three conjuncts of the kinded relation
-(`Kinds.ViewWrite`) read that world: the cells a view store lists are
-element cells, every location, fresh ones included, has its role's shape,
-and the exit heap meets the exit world, which extends the entry one. -/
+/-- **The view-element write read against some role assignment**:
+`ViewWriteAt` at an assignment fitting the entry heap, constrained by the
+entry heap's categories alone, so weaker than the kinded relation
+(`Kinds.ViewWrite`), which reads the entry world's roles
+(`ViewWriteA.not_entry_roles`). -/
 def ViewWriteA (before after : Heap) : Prop :=
   ∃ roles, RolesFit roles before ∧ ViewWriteAt roles before after
+
+/-- **`ViewWriteA` admits a change of an ordinary array's store.** Its
+role assignment is existential: from `[arr [some 1], null]` to
+`[arr [some 2], null, null]` it holds by giving location 0 the role of a
+view store of length 1 and location 1 the identity role, though the roles
+`actual` (location 0 an ordinary array's store, 1 an element) also fit the
+entry heap, and the view write read against them (`ViewWriteAt actual`),
+which keeps every location that is not a view store, fails. The kinded
+relation (`ViewWrite`) reads the entry world's roles. -/
+theorem ViewWriteA.not_entry_roles :
+    let before : Heap := [.arr [some 1], .nul]
+    let after : Heap := [.arr [some 2], .nul, .nul]
+    let actual : Nat → Option Role := fun l =>
+      if l = 0 then some (.store .array) else if l = 1 then some .elem else none
+    ViewWriteA before after ∧ RolesFit actual before ∧ ¬ ViewWriteAt actual before after := by
+  intro before after actual
+  let aux : Nat → Option Role := fun l =>
+    if l = 0 then some (.store (.view 1)) else if l = 1 then some .identity else none
+  refine ⟨⟨aux, ⟨fun l hl => ?_, fun l r v hr hv => ?_⟩, ⟨by decide, fun l r hr hne => ?_,
+      fun l N hr => ?_, fun l N ls ls' hr hl hl' c hc => ?_⟩⟩,
+    ⟨fun l hl => ?_, fun l r v hr hv => ?_⟩, fun hw => ?_⟩
+  · simp only [before, List.length_cons, List.length_nil] at hl
+    rcases (by omega : l = 0 ∨ l = 1) with rfl | rfl <;> simp [aux]
+  · rcases l with _ | _ | l
+    · simp [aux] at hr; subst hr; simp [before] at hv; subst hv; exact ⟨_, rfl, rfl⟩
+    · simp [aux] at hr; subst hr; simp [before] at hv; subst hv; rfl
+    · simp [aux] at hr
+  · rcases l with _ | _ | l
+    · simp [aux] at hr; subst hr; exact absurd rfl (hne 1)
+    · rfl
+    · simp [aux] at hr
+  · rcases l with _ | _ | l
+    · simp [aux] at hr; subst hr; exact ⟨[some 2], rfl, rfl, fun c hc => by simp at hc; subst hc; decide⟩
+    · simp [aux] at hr
+    · simp [aux] at hr
+  · rcases l with _ | _ | l
+    · simp [before] at hl; subst hl; simp [after] at hl'; subst hl'; simp at hc; subst hc
+      exact .inr (by decide)
+    · simp [aux] at hr
+    · simp [aux] at hr
+  · simp only [before, List.length_cons, List.length_nil] at hl
+    rcases (by omega : l = 0 ∨ l = 1) with rfl | rfl <;> simp [actual]
+  · rcases l with _ | _ | l
+    · simp [actual] at hr; subst hr; simp [before] at hv; subst hv; exact ⟨_, rfl⟩
+    · simp [actual] at hr; subst hr; simp [before] at hv; subst hv; rfl
+    · simp [actual] at hr
+  · have := hw.keep 0 (.store .array) (by simp [actual]) (fun N h => by cases h)
+    simp [before, after] at this
 
 /-- What an element write states of a call with actuals `args`: the view
 write, and, where exact, `ExactWrite`. -/

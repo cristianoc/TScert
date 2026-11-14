@@ -18,7 +18,7 @@ designated one, and keeps an ordinary array's store (`viewWrite_overlap`).
 namespace Verification.Kinds
 variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints
-open Verification.TolerantFrames (allocated viewObj viewObj_length oneBits oneBits_safe IndexedHeap Admissible viewLengthOf_kept RootsOk)
+open Verification.TolerantFrames (allocated viewObj viewObj_length oneBits oneBits_safe IndexedHeap Admissible viewLengthOf_kept)
 
 /-! ## (View) -/
 

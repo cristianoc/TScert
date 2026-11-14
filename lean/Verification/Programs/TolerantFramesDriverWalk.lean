@@ -144,6 +144,33 @@ theorem walk_of_accepts (hstop : WalkStopsRefuse ι) {G : NormalGraph ι} {I : I
   · exact (hstop G I c stop hw ha).elim
   · exact h
 
+/-- **A successful setup checked the program's syntax**: each node
+expression of the call's program mentions no location
+(`ObjectCoherence.sourceTerm`). -/
+theorem setup_source {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I} {p} (h : RunCall.setup c = .ok p) :
+    c.P.all (fun node => ObjectCoherence.sourceTerm node.expression) = true := by
+  unfold RunCall.setup SinglePass.setup at h
+  repeat' (first | split at h | extract_lets at h)
+  all_goals first | (cases h; done) | skip
+  all_goals
+    rename_i hsrc
+    first
+      | exact Bool.not_eq_false' _ |>.mp hsrc
+      | (simp only [Bool.not_eq_true'] at *; simp_all)
+
+/-- **An accepted call's program mentions no location** (`setup_source`). -/
+theorem accepts_source {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I}
+    {after : Answered G} (h : c.Accepts after) :
+    c.P.all (fun node => ObjectCoherence.sourceTerm node.expression) = true := by
+  obtain ⟨σ, reach, hw, -, -⟩ := walk_of_accepts walkStopsRefuse h
+  unfold RunCall.walk SinglePass.runWalk at hw
+  cases hr : RunCall.setup c with
+  | error stop =>
+    unfold RunCall.setup at hr
+    simp only [hr, bind, Except.bind] at hw
+    cases hw
+  | ok p => exact setup_source hr
+
 omit [Labels ι] in
 /-- **The record read as the proof's walk**, with the loop heads `heads`: a
 label visited where its record says so; its recorded entry state and

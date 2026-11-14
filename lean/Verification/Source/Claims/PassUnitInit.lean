@@ -24,9 +24,9 @@ theorem init_asserted {r : SourceRequest σ ι} (hsafe : RequestSafe r) {l : Nat
     (hk : (l, K) ∈ r.assertions) :
     ∀ η, r.Admits η → ∀ n W h ρ,
       EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices ρ n W h →
-      (∀ node ∈ r.program, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
+      RootsOk W ρ →
       ∀ j h' ρ', j < n → ReachesIn r.program j h (.at r.start ρ) h' (.at l ρ') → HeapKnowledge.Holds K ⟨ρ, h⟩ ρ' h' :=
-  fun η hη n W h ρ he hP hρ j h' ρ' hj hr => hsafe.2.2.2.2.1 η hη n W h ρ he hP hρ l K hk j h' ρ' hj hr
+  fun η hη n W h ρ he hρ j h' ρ' hj hr => hsafe.2.2.2.2.1 η hη n W h ρ he hρ l K hk j h' ρ' hj hr
 
 end
 

@@ -42,7 +42,23 @@ def EntryHolds (G : NormalGraph ι) (inputs : List (Ty ι)) (sep : HeapSeparatio
   EnvOk G inputs ρ n W ∧ HeapSeparation.Holds sep ρ ∧ HeapKnowledge.IndexHolds ⟨ρ, h⟩ idx ρ h ∧
     WorldAdm W ∧ HeapOk n W h
 
-/-- **What an accepted run of a graph guarantees**, at every assignment
+omit [Labels ι] in
+/-- **The entry contract does not give valid references**: an object
+identity at a location no world entry gives a role meets the type `unknown`
+(`topT`), and an environment binding past the inputs is constrained to be
+closed only (`EnvOk`); its reference is invalid. Reference validity of an
+entry's bindings (`RootsOk`) is a condition of the entry beside
+`EntryHolds`. -/
+theorem entry_roots_not_derived (G : NormalGraph ι) (n : Nat) :
+    let W : WorldT n := ofEntries []
+    let v : Tm := .objAt [] .absent 0
+    PositiveNormalization.topT n W v ∧ EnvOk G [] (fun _ => v) n W ∧ ¬ RootsOk W (fun _ => v) := by
+  refine ⟨⟨rfl, trivial⟩, ⟨fun _ => trivial, fun i A h => by simp at h⟩, fun h => ?_⟩
+  have := h 0 (.ident 0) (by simp [refs, objRefs])
+  simp [RefOk, roleAt, roles] at this
+
+/-- **What an accepted run of a graph guarantees**: its node expressions
+mention no location; at every assignment
 `admits` lets through: safety from every entry meeting `inputs`; within a
 footprint where `bound` names one; the stated postcondition where `ensures`
 is not empty; within the regional bound where `regional` names one (each of
@@ -54,6 +70,10 @@ structure GraphGuarantee (G : NormalGraph ι) (admits : MixedAssignment ι → P
     (idx : List HeapKnowledge.IndexAtom) (assertions : List (Nat × HeapKnowledge.Knowledge))
     (bound : Option (Footprints.Closed × Bool × Bool)) (ensures : List HeapKnowledge.IndexFact)
     (regional : Option (Footprints.Closed × List Footprints.ArgumentStoreRegion × Bool)) : Prop where
+  /-- The graph's node expressions mention no location
+  (`ObjectCoherence.sourceTerm`): their references are valid in every world
+  (`ControlFlow.program_source_refsOk`). -/
+  source : P.all (fun node => ObjectCoherence.sourceTerm node.expression) = true
   safe : ∀ η, admits η → ∀ n W h ρ, EntryHolds (reassign G η) inputs sep idx ρ n W h →
     (∀ node ∈ P, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
     SafeGraph (excOf (reassign G η)) P (GoalHolds (reassign G η) goal (goal.argument ρ)) n W h (.at start ρ)
