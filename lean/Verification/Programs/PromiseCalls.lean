@@ -2294,7 +2294,7 @@ survival check keeps across the call's frame at the caller's slots
 (`IndexFact.keeps`, `callerFrame`, FOOTPRINTS.md "Support and respect"); none
 where its signature keeps the heap, whose output keeps every atom
 (`call-keep`), or excepts its receiver's store or own locations. -/
-def effectKept (views stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) : List HeapKnowledge.IndexAtom :=
+def effectKept (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) : List HeapKnowledge.IndexAtom :=
   if eff.receiverGrows then
     HeapKnowledge.shiftIndices (HeapKnowledge.keptIndices growChanges (fun s g => growFirst k t s g || stable s g)
       (k.indices.filter fun a => !a.fact.envOnly))
@@ -2304,24 +2304,24 @@ def effectKept (views stable : Nat → String → Bool) (eff : Effect) (t : Tm) 
     let q := Footprints.knowledgeQuery k
     let Φ := callerFrame eff t
     HeapKnowledge.shiftIndices (k.indices.filter fun a =>
-      !a.fact.envOnly && a.fact.keeps q { stable, views } Φ)
+      !a.fact.envOnly && a.fact.keeps q { stable } Φ)
   else
   match eff.elementWrite with
-  | some w => HeapKnowledge.shiftIndices (HeapKnowledge.keptIndicesWith w.changes stable views
+  | some w => HeapKnowledge.shiftIndices (HeapKnowledge.keptIndicesWith w.changes stable
       (k.indices.filter fun a => !a.fact.envOnly))
   | none =>
     let q := Footprints.knowledgeQuery k
     let Φ := callerFrame eff t
     HeapKnowledge.shiftIndices (k.indices.filter fun a =>
-      !a.fact.envOnly && a.fact.keeps q { stable, views } Φ)
+      !a.fact.envOnly && a.fact.keeps q { stable } Φ)
 
-theorem effectKept_holds {views stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
+theorem effectKept_holds {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
     (hk : HeapKnowledge.Holds k ε ρ h) (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
     (hg : eff.receiverGrows = true →
       CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h')
     (hew : ∀ w, eff.elementWrite = some w → w.Holds (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
-    (hv : HeapKnowledge.ViewsKept views ρ h h') (hst : HeapKnowledge.FirstKept stable ρ h h') :
-    HeapKnowledge.IndexHolds ε (effectKept views stable eff t k) (push v ρ) h' := by
+    (hst : HeapKnowledge.FirstKept stable ρ h h') :
+    HeapKnowledge.IndexHolds ε (effectKept stable eff t k) (push v ρ) h' := by
   unfold effectKept
   split
   · rename_i hgr
@@ -2341,16 +2341,16 @@ theorem effectKept_holds {views stable : Nat → String → Bool} {eff : Effect}
           obtain ⟨ha, hkeep⟩ := List.mem_filter.mp ha
           simp only [Bool.and_eq_true] at hkeep
           exact Footprints.IndexFact.keeps_sound hkeep.2 (Footprints.knowledgeQuery_sound hk)
-            (callerFrame_post hw) ⟨hst, hv⟩ (hk.2.2.2.2.2 a ha hcd)
+            (callerFrame_post hw) hst (hk.2.2.2.2.2 a ha hcd)
       split
       · rename_i w hwr
         exact HeapKnowledge.shiftIndices_holds (HeapKnowledge.keptIndicesWith_holds
-          (fun a ha hcd => hk.2.2.2.2.2 a (List.mem_filter.mp ha).1 hcd) (hew w hwr).changes hst hv)
+          (fun a ha hcd => hk.2.2.2.2.2 a (List.mem_filter.mp ha).1 hcd) (hew w hwr).changes hst)
       · refine HeapKnowledge.shiftIndices_holds fun a ha hcd => ?_
         obtain ⟨ha, hkeep⟩ := List.mem_filter.mp ha
         simp only [Bool.and_eq_true] at hkeep
         exact Footprints.IndexFact.keeps_sound hkeep.2 (Footprints.knowledgeQuery_sound hk)
-          (callerFrame_post hw) ⟨hst, hv⟩ (hk.2.2.2.2.2 a ha hcd)
+          (callerFrame_post hw) hst (hk.2.2.2.2.2 a ha hcd)
 
 /-! ### Quantified facts across a growth (ARITHMETIC.md, "Quantified clauses") -/
 
@@ -2400,11 +2400,13 @@ theorem every_grown {first : Nat → String → Bool} {ρ : Env} {h h' : Heap} {
   obtain ⟨w, sto, ls, n, hw, hsto, hls, hn, hall⟩ := hF
   have hc := receiverGrows_changes hg
   have hwa : growChanges.alters w = false := by
-    cases w <;> simp_all [elementsOf, Footprints.storeOf, Footprints.fieldsOf, growChanges, Changes.alters]
-  obtain ⟨ls', hls', hp⟩ : ∃ ls', h'[sto]? = some (.arr ls') ∧ ls <+: ls' := by
-    rcases hg sto _ hls with hk | ⟨-, ls0, ls', he, hls', hp, -⟩
-    · exact ⟨ls, hk, List.prefix_refl ls⟩
-    · cases he; exact ⟨ls', hls', hp⟩
+    cases w <;> simp_all [elementsOf, growChanges, Changes.alters]
+  obtain ⟨u, hu, hue⟩ := Option.bind_eq_some_iff.mp hls
+  obtain ⟨ls', hls', hp⟩ : ∃ ls', h'[sto]?.bind storeEntries = some ls' ∧ ls <+: ls' := by
+    rcases hg sto u hu with hk | ⟨-, ls0, ls', rfl, hls', hp, -⟩
+    · exact ⟨ls, by rw [hk]; exact hue, List.prefix_refl ls⟩
+    · simp only [storeEntries, Option.some.injEq] at hue; subst hue
+      exact ⟨ls', by rw [hls']; rfl, hp⟩
   refine ⟨w, sto, ls', n, readPath_kept hc p (ρ s) w hw (Or.inr hwa) (fun _ => rfl), hsto, hls',
     termValue_kept hc hf hst hn, fun i hi F hF => ?_⟩
   obtain ⟨hk, hgr⟩ := boundValue_grown i hg hf hp
@@ -2441,7 +2443,8 @@ theorem every_appended {first : Nat → String → Bool} {ρ : Env} {h h' : Heap
   rw [elementsOf_store hs2] at hsto
   cases hsto
   rw [hls2] at hls
-  cases hls
+  have hll : ls = ls2 := by simpa [storeEntries] using hls.symm
+  subst hll
   have hvx : isVal (ρ x) = true := by
     obtain ⟨b, hb, -⟩ := intValue_safe (Option.get_mem hx)
     rw [hb]; rfl
@@ -2451,7 +2454,7 @@ theorem every_appended {first : Nat → String → Bool} {ρ : Env} {h h' : Heap
     rcases hg sto _ hls2 with hk | ⟨-, ls0, ls1, he, hls1, hp, hm⟩
     · rw [hk] at hls'; cases hls'; simp at hlen
     · cases he; rw [hls1] at hls'; cases hls'; exact ⟨hp, hm⟩
-  refine ⟨ρ i, sto, ls', ls'.length, rfl, elementsOf_store hs2, hls', ?_, fun j hj F hF => ?_⟩
+  refine ⟨ρ i, sto, ls', ls'.length, rfl, elementsOf_store hs2, by rw [hls']; rfl, ?_, fun j hj F hF => ?_⟩
   · simp only [termValue_length]; exact lengthOf_of_store hs2 hls' hmax
   obtain ⟨hk, hgr⟩ := boundValue_grown j hg hf hp
   have hbF := List.all_eq_true.mp hb F hF
@@ -3388,12 +3391,12 @@ theorem ensuresComposed_holds {stable : Nat → String → Bool} {eff : Effect} 
 `k0` its footprint keeps (`effectKept`) and the quantified atoms its growth
 of its receiver's store keeps or extends (`appendKept`), then the instances
 of quantified facts the element reads among them state (`withElements`). -/
-def withEnsures (views stable : Nat → String → Bool) (n : Nat) (eff : Effect) (t : Tm) (k0 k : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
+def withEnsures (stable : Nat → String → Bool) (n : Nat) (eff : Effect) (t : Tm) (k0 k : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
   HeapKnowledge.withElements
-    { k with indices := k.indices ++ ensuresAtoms eff t ++ effectKept views stable eff t k0 ++ appendKept eff t k0 ++
+    { k with indices := k.indices ++ ensuresAtoms eff t ++ effectKept stable eff t k0 ++ appendKept eff t k0 ++
         writeKept eff t k0 ++ linearAppendKept n eff t k0 ++ ensuresComposed stable eff t k0 }
 
-theorem withEnsures_holds {views stable : Nat → String → Bool} {n : Nat} {eff : Effect} {t : Tm} {k0 k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
+theorem withEnsures_holds {stable : Nat → String → Bool} {n : Nat} {eff : Effect} {t : Tm} {k0 k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
     (hv : ∀ i, i < n → isVal (ρ i) = true)
     (hk : HeapKnowledge.Holds k ε (push v ρ) h') (hk0 : HeapKnowledge.Holds k0 ε ρ h)
     (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
@@ -3405,8 +3408,8 @@ theorem withEnsures_holds {views stable : Nat → String → Bool} {n : Nat} {ef
       CallEffects.ReceiverAppends (ExpressionEffects.receiverOf (instantiate 0 ρ t))
         (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
     (hew : ∀ w, eff.elementWrite = some w → w.Holds (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
-    (hviews : HeapKnowledge.ViewsKept views ρ h h') (hstable : HeapKnowledge.FirstKept stable ρ h h') :
-    HeapKnowledge.Holds (withEnsures views stable n eff t k0 k) ε (push v ρ) h' := HeapKnowledge.withElements_holds
+    (hstable : HeapKnowledge.FirstKept stable ρ h h') :
+    HeapKnowledge.Holds (withEnsures stable n eff t k0 k) ε (push v ρ) h' := HeapKnowledge.withElements_holds
   ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => by
     rcases List.mem_append.mp ha with ha | ha
     · rcases List.mem_append.mp ha with ha | ha
@@ -3416,7 +3419,7 @@ theorem withEnsures_holds {views stable : Nat → String → Bool} {n : Nat} {ef
             · rcases List.mem_append.mp ha with ha | ha
               · exact hk.2.2.2.2.2 a ha hc
               · exact ensuresAtoms_holds (fun F hF he => (HeapKnowledge.IndexFact.holdsAt_entry he _).mp (hp F hF)) a ha hc
-            · exact effectKept_holds hk0 hw (fun hgr => (hg hgr).1) hew hviews hstable a ha hc
+            · exact effectKept_holds hk0 hw (fun hgr => (hg hgr).1) hew hstable a ha hc
           · exact appendKept_holds hk0 hg a ha hc
         · exact writeKept_holds hk0 hew a ha hc
       · exact linearAppendKept_holds hv hk0 hg a ha hc
@@ -3464,7 +3467,7 @@ applies to: at the sequent `j`, a call checked as `selected_sound` or as
     if decide (claim p = j) && (ExpressionEffects.selectedOperands p && checkTreeUsing G images p codes sums ||
         requiresTree G images k codes sums p) then
       match ExpressionEffects.selectedEffect p with
-      | some eff => if eff.ensures.isEmpty && (effectKept (HeapExpressionRules.writeViews G j.context)
+      | some eff => if eff.ensures.isEmpty && (effectKept
           (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (appendKept eff j.term k).isEmpty &&
           (writeKept eff j.term k).isEmpty &&
           (linearAppendKept j.context.length eff j.term k).isEmpty &&
@@ -3482,7 +3485,7 @@ def ensuresCallFast (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Se
   match e with
   | .ordinary p =>
     match ExpressionEffects.selectedEffect p with
-    | some eff => if eff.ensures.isEmpty && (effectKept (HeapExpressionRules.writeViews G j.context)
+    | some eff => if eff.ensures.isEmpty && (effectKept
           (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (appendKept eff j.term k).isEmpty &&
           (writeKept eff j.term k).isEmpty &&
           (linearAppendKept j.context.length eff j.term k).isEmpty &&
@@ -3871,13 +3874,13 @@ other step is `base`'s. -/
   run := fun j k e codes sums =>
     match PromiseCalls.ensuresCall G images j k e codes sums with
     | some eff => (base.run j k e codes sums).map fun out => PromiseCalls.withGrown eff
-        (PromiseCalls.withEnsures (HeapExpressionRules.writeViews G j.context) (HeapExpressionRules.stableFirst G j.context) j.context.length eff j.term k out) (IndexWrites.grownRegions G j.context k j.term)
+        (PromiseCalls.withEnsures (HeapExpressionRules.stableFirst G j.context) j.context.length eff j.term k out) (IndexWrites.grownRegions G j.context k j.term)
         (HeapExpressionRules.keptCells (fun _ => true) none k.cells)
     | none => base.run j k e codes sums
   select := fun j k e codes sums =>
     match PromiseCalls.ensuresCall G images j k e codes sums with
     | some eff => (base.select j k e codes sums).map fun out => PromiseCalls.withGrown eff
-        (PromiseCalls.withEnsures (HeapExpressionRules.writeViews G j.context) (HeapExpressionRules.stableFirst G j.context) j.context.length eff j.term k out) (IndexWrites.grownRegions G j.context k j.term)
+        (PromiseCalls.withEnsures (HeapExpressionRules.stableFirst G j.context) j.context.length eff j.term k out) (IndexWrites.grownRegions G j.context k j.term)
         (HeapExpressionRules.keptCells (fun _ => true) none k.cells)
     | none => base.select j k e codes sums
   sound := by
@@ -3892,12 +3895,12 @@ other step is `base`'s. -/
       have hs := base.sound hrun hcodes hsums he hk hw hh href
       have hp := PromiseCalls.ensuresCall_sound hens hcodes hsums he hk hw hh href
       exact HeapObservations.weaken (fun h' v hq' => let hq := hq'.1; PromiseCalls.withGrown_holds
-        (PromiseCalls.withEnsures_holds (fun i hi => (ProgramTyping.meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1) hq.1.1 hk hq.1.2.1 hq.1.2.2.2.2.2.1 hq.1.2.2.2.2.2.2.1 hq.1.2.2.2.2.2.2.2 hq.2 hq'.2)
-        (fun hgr => IndexWrites.grownRegions_holds he hh hk (hq.1.2.2.2.2.2.2.1 hgr).1 (hq.1.2.2.2.2.2.2.1 hgr).2)
-        (fun hgr => HeapExpressionRules.keptCells_holds hk.1 (PromiseCalls.grows_into (hq.1.2.2.2.2.2.2.1 hgr).1)
+        (PromiseCalls.withEnsures_holds (fun i hi => (ProgramTyping.meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1) hq.1 hk hq.2.1 hq.2.2.2.2.2.1 hq.2.2.2.2.2.2.1 hq.2.2.2.2.2.2.2 hq'.2)
+        (fun hgr => IndexWrites.grownRegions_holds he hh hk (hq.2.2.2.2.2.2.1 hgr).1 (hq.2.2.2.2.2.2.1 hgr).2)
+        (fun hgr => HeapExpressionRules.keptCells_holds hk.1 (PromiseCalls.grows_into (hq.2.2.2.2.2.2.1 hgr).1)
           (fun _ _ _ _ _ _ _ _ _ hf => hf)))
-        (HeapExpressionRules.stableFirst_frame he hh (HeapExpressionRules.viewFields_frame he hh
-          (HeapObservations.cross_upto (n + 1) (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh hs hp)))
+        (HeapExpressionRules.stableFirst_frame he hh
+          (HeapObservations.cross_upto (n + 1) (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh hs hp))
     · exact base.sound hc hcodes hsums he hk hw hh href
 
 /-- The steps' rules, a call keeping the heap keeping every heap fact, a call

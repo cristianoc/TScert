@@ -692,12 +692,8 @@ theorem aliasArray_refs (n : Nat) : RefsOk (aliasWorld n) aliasArray := by
   intro r hr
   simp only [aliasArray, refs, objRefs, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
     or_false] at hr
-  rcases hr with rfl | rfl | rfl
+  rcases hr with rfl | rfl
   · simp [RefOk, roleAt, roles, aliasWorld]
-  · refine ⟨fun m hm => ?_, fun e he => ?_, fun e he => ?_⟩
-    · simp [arrayStoreKey, viewLengthKey] at hm
-    · simp [arrayStoreKey, viewElementsKey] at he
-    · simp [arrayStoreKey, viewElementsKey, viewLengthKey] at he
   · simp [RefOk, SlotRole, roleAt, roles, aliasWorld]
 
 theorem aliasHeap_ok (n : Nat) : HeapOk n (aliasWorld n) aliasHeap := by

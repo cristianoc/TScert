@@ -51,8 +51,8 @@ a path of named data fields read in turn from the value it holds, and what
 the term reads of the value the path ends at (`Term.Kind`): the safe integer
 it is; the length of its array store, as the calculus's `lenOf` gives it
 (`Step.lenV`), at most `maxArrayLength`; or the length of the typed
-array it is, the safe integer at least `0` the location of its
-`viewLengthKey` holds (`viewLengthOf`); or the count of UTF-16 code units of
+array it is, the safe integer at least `0` its descriptor states
+(`viewLengthOf`); or the count of UTF-16 code units of
 the string it is, at most `maxStringLength` (`strLengthOf`). The empty path
 reads the slot's value itself.
 
@@ -391,62 +391,31 @@ theorem lengthOf_of_store {h : Heap} {v : Val} {s : Nat} {ls : List (Option Nat)
     (hl : h[s]? = some (.arr ls)) (hm : ls.length ≤ maxArrayLength) : lengthOf h v = some (ls.length : Int) := by
   simp only [lengthOf, hs, hl, hm, ite_true]
 
-/-- The length of the typed array a value is, read in the heap: the
-value is an object owning `hostKey`, a host object, whose field map gives
-`viewLengthKey` a location holding a safe integer at least `0`. -/
-def viewLengthOf (h : Heap) : Val → Option Int
-  | .objAt fs _ _ =>
-    if (fs.lookup hostKey).isSome then
-      match fs.lookup viewLengthKey with
-      | some l => match h[l]? with
-        | some (.num b) => match SafeIntegers.safeIntOfBits b with
-          | some n => if 0 ≤ n then some n else none
-          | none => none
-        | _ => none
-      | none => none
-    else none
+/-- The length of the typed array a value is (the note *Tolerant frames*,
+`view(b)`): its descriptor's fixed length, a safe integer. It reads no
+heap: the length is part of the value. -/
+def viewLengthOf : Val → Option Int
+  | .viewAt _ _ _ _ N => if N < 2 ^ 53 then some N else none
   | _ => none
 
-theorem viewLengthOf_range {h : Heap} {v : Val} {n : Int} (hv : viewLengthOf h v = some n) :
+theorem viewLengthOf_range {v : Val} {n : Int} (hv : viewLengthOf v = some n) :
     0 ≤ n ∧ n ≤ 2 ^ 53 - 1 := by
   unfold viewLengthOf at hv
   split at hv
   · split at hv
-    · split at hv
-      · split at hv
-        · rename_i b _
-          split at hv
-          · rename_i m hm
-            split at hv
-            · cases hv
-              rename_i h0
-              have hb := (SafeIntegers.safeIntOfBits_sound hm).1
-              have : (n.natAbs : Int) = n := Int.natAbs_of_nonneg h0
-              exact ⟨h0, by omega⟩
-            · cases hv
-          · cases hv
-        · cases hv
-      · cases hv
+    · cases hv; omega
     · cases hv
   · cases hv
 
-/-- A heap extension keeps the typed-array length of what a value is: its
-location lies in the old heap. -/
-theorem viewLengthOf_extend {h : Heap} (vs : List Val) {v : Val} {n : Int} (hl : viewLengthOf h v = some n) :
-    viewLengthOf (h ++ vs) v = some n := by
-  unfold viewLengthOf at hl ⊢
-  split at hl
-  · split at hl
-    · split at hl
-      · rename_i l _
-        split at hl
-        · rename_i b hb
-          rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hb).1, hb]
-          simp_all
-        · cases hl
-      · cases hl
-    · cases hl
-  · cases hl
+/-- A typed array's length is its descriptor's. -/
+theorem viewLengthOf_inv {v : Val} {n : Int} (hv : viewLengthOf v = some n) :
+    ∃ fs o s f N, v = .viewAt fs o s f N ∧ n = N ∧ N < 2 ^ 53 := by
+  unfold viewLengthOf at hv
+  split at hv
+  · split at hv
+    · cases hv; exact ⟨_, _, _, _, _, rfl, rfl, by assumption⟩
+    · cases hv
+  · cases hv
 
 /-- The length of the string a value is: its count of UTF-16 code units,
 where that is at most `maxStringLength`, the most a JavaScript string holds. -/
@@ -467,7 +436,7 @@ theorem strLengthOf_range {v : Val} {n : Int} (hv : strLengthOf v = some n) :
 def kindValue (h : Heap) : Term.Kind → Val → Option Int
   | .value, v => intValue v
   | .length, v => lengthOf h v
-  | .view, v => viewLengthOf h v
+  | .view, v => viewLengthOf v
   | .strLength, v => strLengthOf v
 
 /-- The integer a term denotes, where it denotes one: what its kind reads of
@@ -633,7 +602,7 @@ theorem kindValue_extend {h : Heap} (vs : List Val) {k : Term.Kind} {v : Val} {n
   cases k with
   | value => exact hk
   | length => exact lengthOf_extend vs hk
-  | view => exact viewLengthOf_extend vs hk
+  | view => exact hk
   | strLength => exact hk
 
 theorem termValue_extend {ρ : Env} {h : Heap} (vs : List Val) {t : Term} {n : Int} (ht : termValue ε ρ h t = some n) :
@@ -808,19 +777,17 @@ def mapEntry (g : Nat → Option Nat) : Bound → Option Bound
 
 end Bound
 
-/-- The location of the store of elements a value holds, which an element
-fact and a quantified fact read: an array's store (`Footprints.storeOf`), or,
-of a host object owning no store, the location of its `viewElementsKey`, a
-typed array's elements (SOURCE-CONTRACTS.md, "Stated library types"). -/
-def elementsOf : Val → Option Nat
-  | v@(.objAt fs _ _) => match Footprints.storeOf v with
-    | some s => some s
-    | none => if (fs.lookup hostKey).isSome then fs.lookup viewElementsKey else none
-  | v => Footprints.storeOf v
+
+/-- A heap extension keeps what a store location lists. -/
+theorem storeEntries_extend {h : Heap} (vs : List Val) {s : Nat} {ls : List (Option Nat)}
+    (hs : h[s]?.bind storeEntries = some ls) : (h ++ vs)[s]?.bind storeEntries = some ls := by
+  obtain ⟨u, hu, he⟩ := Option.bind_eq_some_iff.mp hs
+  rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hu).1, hu]; exact he
 
 /-- An array's store is the store of elements it holds. -/
 theorem elementsOf_store {v : Val} {s : Nat} (h : Footprints.storeOf v = some s) : elementsOf v = some s := by
-  cases v <;> simp_all [elementsOf]
+  simp only [Footprints.storeOf] at h
+  cases v <;> simp_all [elementsOf, Footprints.fieldsOf]
 
 /-- The safe integer the element at index `i` of the store elements `ls` is,
 where it is present and one. -/
@@ -1064,11 +1031,11 @@ def HoldsAt (ε : EntryState) : IndexFact → Env → Heap → Prop
   | .linear F, ρ, h => (∀ t ∈ F.vars, (termValue ε ρ h t).isSome) ∧ F.Holds (termValuation ε ρ h)
   | .either A B, ρ, h => A.HoldsAt ε ρ h ∨ B.HoldsAt ε ρ h
   | .guarded s p t B, ρ, h => ∃ v, readGuard h (ρ s) p = some v ∧ (v = t.val ∨ B.HoldsAt ε ρ h)
-  | .element v x k, ρ, h => ∃ s ls b, ∃ i : Nat, elementsOf (ρ x) = some s ∧ h[s]? = some (.arr ls) ∧
+  | .element v x k, ρ, h => ∃ s ls b, ∃ i : Nat, elementsOf (ρ x) = some s ∧ h[s]?.bind storeEntries = some ls ∧
       ρ k = .num b ∧ SafeIntegers.SafeInt b (i : Int) ∧ i < ls.length ∧
       (∀ l, ls[i]? = some (some l) → h[l]? = some (ρ v)) ∧ (ls[i]? = some none → ρ v = .undef)
   | .every s p stop body, ρ, h => ∃ w st ls n, readPath h (ρ s) p = some w ∧ elementsOf w = some st ∧
-      h[st]? = some (.arr ls) ∧ termValue ε ρ h stop = some n ∧
+      h[st]?.bind storeEntries = some ls ∧ termValue ε ρ h stop = some n ∧
       ∀ i : Nat, (i : Int) < n → ∀ F ∈ body, F.HoldsAt (boundValue ε ρ h ls i)
   | .apart a b, ρ, h => RegionsApart h (ρ a) (ρ b)
   | .storeApart a p b q, ρ, h => PathStoresApart h (ρ a) p (ρ b) q
@@ -1080,10 +1047,10 @@ theorem every_frame {s p stop body ρ h h'}
     (he : (IndexFact.every s p stop body).HoldsAt ε ρ h)
     (hp : ∀ w, readPath h (ρ s) p = some w → readPath h' (ρ s) p = some w)
     (hs : ∀ w st ls, readPath h (ρ s) p = some w → elementsOf w = some st →
-      h[st]? = some (.arr ls) → h'[st]? = some (.arr ls))
+      h[st]?.bind storeEntries = some ls → h'[st]?.bind storeEntries = some ls)
     (hn : ∀ z, termValue ε ρ h stop = some z → termValue ε ρ h' stop = some z)
     (hb : ∀ w st ls, readPath h (ρ s) p = some w → elementsOf w = some st →
-      h[st]? = some (.arr ls) → ∀ F ∈ body, ∀ i b, b ∈ F.vars → ∀ z,
+      h[st]?.bind storeEntries = some ls → ∀ F ∈ body, ∀ i b, b ∈ F.vars → ∀ z,
       boundValue ε ρ h ls i b = some z → boundValue ε ρ h' ls i b = some z) :
     (IndexFact.every s p stop body).HoldsAt ε ρ h' := by
   obtain ⟨w, st, ls, z, hw, hst, hls, hz, hall⟩ := he
@@ -1413,15 +1380,12 @@ theorem holdsAt_extend {F : IndexFact} {ρ : Env} {h : Heap} (vs : List Val) (hF
     exact ⟨v, readGuard_extend vs hv, hor.imp id ih⟩
   | element v x k =>
     obtain ⟨s, ls, b, i, hs, hl, hk, hi, hlt, hp, hh⟩ := hF
-    have hl' : (h ++ vs)[s]? = some (.arr ls) := by
-      rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hl).1]; exact hl
-    refine ⟨s, ls, b, i, hs, hl', hk, hi, hlt, fun l hli => ?_, hh⟩
+    refine ⟨s, ls, b, i, hs, storeEntries_extend vs hl, hk, hi, hlt, fun l hli => ?_, hh⟩
     have := hp l hli
     rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp this).1]; exact this
   | every s p stop body =>
     obtain ⟨w, st, ls, n, hw, hsto, hls, hn, hall⟩ := hF
-    refine ⟨w, st, ls, n, readPath_extend vs hw, hsto,
-      by rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hls).1]; exact hls,
+    refine ⟨w, st, ls, n, readPath_extend vs hw, hsto, storeEntries_extend vs hls,
       termValue_extend vs hn, fun i hi F hF => ?_⟩
     have hA := hall i hi F hF
     refine LinearClause.holdsAt_extend (fun x hx m hm => ?_) hA
@@ -1901,7 +1865,7 @@ namespace Changes
 def alters (c : Changes) : Val → Bool
   | .objAt .. => c.obj
   | .num _ => c.num
-  | .arr _ => c.store != .keep
+  | .arr _ | .viewStore .. => c.store != .keep
   | _ => true
 
 /-- `h'` meets the change from `h`: every location of `h` holding a value it
@@ -1970,6 +1934,15 @@ theorem ofClosed_holds {Φ : Footprints.Closed} {h h' : Heap} (hp : Φ.Holds h h
         · rw [hst] at hc; exact hc
         · rw [hst] at hc; exact hc.init_store
         · rw [hst] at hc; exact hc.scalar_store
+      case viewStore f cs =>
+        simp only [alters, ofClosed] at ha
+        have hst : Φ.store = .keep ∨ Φ.store = .init ∨ Φ.store = .scalar := by
+          cases hΦ : Φ.store <;> simp_all [Footprints.Change.onStore]
+        simp only [Footprints.Closed.at, Footprints.isArr, ite_true] at hc
+        rcases hst with hst | hst | hst
+        · rw [hst] at hc; exact hc
+        · rw [hst] at hc; exact hc.init_isArr rfl
+        · rw [hst] at hc; exact hc.scalar_isArr rfl
       case objAt =>
         have hva : Φ.value ≠ .any := by
           intro he; simp [alters, ofClosed, he] at ha
@@ -1989,10 +1962,11 @@ theorem ofClosed_holds {Φ : Footprints.Closed} {h h' : Heap} (hp : Φ.Holds h h
       cases hΦ : Φ.store <;> simp [Footprints.Change.onStore]
     obtain ⟨v', hv', hc⟩ := hp.2 l _ hl
     simp only [Footprints.Closed.at, Footprints.isArr, ite_true, hg] at hc
-    rcases hc with rfl | ⟨ls₁, ls', h₁, rfl, -, -, hlen⟩ | hsc
+    rcases hc with rfl | ⟨ls₁, ls', h₁, rfl, -, -, hlen⟩ | hsc | ⟨_, _, _, he, -⟩
     · exact ⟨ls, hv', Nat.le_refl _, id⟩
     · cases h₁; exact ⟨ls', hv', hlen.1, hlen.2⟩
     · exact absurd hsc.2.1 (by simp [Footprints.isArr])
+    · cases he
 
 end Changes
 
@@ -2057,29 +2031,6 @@ theorem readPath_kept {c : Changes} {h h' : Heap} (hc : c.Holds h h') :
       · cases hw
     all_goals simp [readPath] at hw
 
-theorem viewLengthOf_inv {h : Heap} {v : Val} {n : Int} (hv : viewLengthOf h v = some n) :
-    ∃ fs cd o l b, v = .objAt fs cd o ∧ (fs.lookup hostKey).isSome ∧ fs.lookup viewLengthKey = some l ∧
-      h[l]? = some (.num b) ∧ SafeIntegers.safeIntOfBits b = some n ∧ 0 ≤ n := by
-  unfold viewLengthOf at hv
-  split at hv
-  · rename_i fs cd o
-    split at hv
-    · rename_i hhost
-      split at hv
-      · rename_i l hl
-        split at hv
-        · rename_i b hb
-          split at hv
-          · rename_i m hm
-            split at hv
-            · cases hv; exact ⟨fs, cd, o, l, b, rfl, hhost, hl, hb, hm, by assumption⟩
-            · cases hv
-          · cases hv
-        · cases hv
-      · cases hv
-    · cases hv
-  · cases hv
-
 /-- A change keeps what a kind of term reads of a value: a store it keeps or
 keeps the length of, a number it keeps. -/
 theorem kindValue_kept {c : Changes} {h h' : Heap} (hc : c.Holds h h') {k : Term.Kind} {w : Val} {n : Int}
@@ -2098,10 +2049,7 @@ theorem kindValue_kept {c : Changes} {h h' : Heap} (hc : c.Holds h h') {k : Term
       have := lengthOf_of_store hs hls' (by omega)
       simp only [kindValue, this, heq]
     | grow | any => simp [Changes.keepsLength, hcs] at hst
-  | view =>
-    obtain ⟨fs, cd, o, l, b, rfl, hhost, hl, hb, hm, h0⟩ := viewLengthOf_inv hk
-    have hb' := hc.1 l _ hb (by simp [Changes.alters, hview rfl])
-    simp only [kindValue, viewLengthOf, hhost, ite_true, hl, hb', hm, h0]
+  | view => exact hk
 
 /-- A change keeps the value a term's path reads where it keeps the path
 (`Term.pathKeptBy`) and that value is of the class the term's kind reads. -/
@@ -2191,7 +2139,7 @@ theorem termValue_kept {c : Changes} {first : Nat → String → Bool} {ρ : Env
     case objAt fs cd o =>
       rw [hv] at hst
       have hl : fs.lookup (.str "[]") = some st := by
-        simpa [Footprints.storeOf, Footprints.fieldsOf, arrayStoreKey] using hst
+        simpa [Footprints.fieldsOf, arrayStoreKey] using Footprints.storeOf_lookup hst
       exact lengthOf_of_store hst (hf s "[]" fs cd o st _ hfs hv hl hls) hm
     all_goals rw [hv] at hst; simp [Footprints.storeOf, Footprints.fieldsOf] at hst
   have hkind' : (match kind with
@@ -2397,9 +2345,12 @@ theorem everyKept_sound {c : Changes} {first : Nat → String → Bool} {F : Ind
   obtain ⟨⟨⟨⟨hstore, hnum⟩, hpath⟩, hstop⟩, hbody⟩ := hk
   obtain ⟨w, st, ls, z, hw, hst, hls, hz, hall⟩ := hF
   have hobj : c.alters w = c.obj := by
-    cases w <;> simp_all [elementsOf, Footprints.storeOf, Footprints.fieldsOf, Changes.alters]
+    cases w <;> simp_all [elementsOf, Changes.alters]
   have hpath' := pathRead_kept (kind := .length) hc hf hpath hobj hw
-  refine ⟨w, st, ls, z, hpath', hst, hc.1 st _ hls (by simp [Changes.alters, hstore]),
+  have hls' : h'[st]?.bind storeEntries = some ls := by
+    obtain ⟨u, hu, he⟩ := Option.bind_eq_some_iff.mp hls
+    rw [hc.1 st u hu (by cases u <;> simp_all [storeEntries, Changes.alters])]; exact he
+  refine ⟨w, st, ls, z, hpath', hst, hls',
     termValue_kept hc hf hstop hz, fun i hi F hm => ?_⟩
   have hA := hall i hi F hm
   apply LinearClause.holdsAt_extend (fun x hx a ha => ?_) hA
@@ -2459,7 +2410,7 @@ theorem holdsAt_kept {c : Changes} {first : Nat → String → Bool} {F : IndexF
       case objAt fs cd o =>
         rw [hv] at hs
         have hl : fs.lookup (.str "[]") = some s := by
-          simpa [Footprints.storeOf, Footprints.fieldsOf, arrayStoreKey] using hs
+          simpa [Footprints.fieldsOf, arrayStoreKey] using Footprints.storeOf_lookup hs
         exact ⟨ls, hf x "[]" fs cd o s _ hfs hv hl hls, Nat.le_refl _, fun _ => rfl⟩
       all_goals rw [hv] at hs; simp [Footprints.storeOf, Footprints.fieldsOf] at hs
     · simp only [hfs, Bool.or_false] at hk ⊢
@@ -2528,23 +2479,17 @@ theorem holdsAt_kept {c : Changes} {first : Nat → String → Bool} {F : IndexF
 end IndexFact
 
 
-/-- Where `views s g` holds, the view the field `g` of slot `s`'s object held
-preserves its length from `h` to `h'`. -/
-def ViewsKept (views : Nat → String → Bool) (ρ : Env) (h h' : Heap) : Prop :=
-  ∀ s g fs cd o l w, views s g = true → ρ s = .objAt fs cd o → fs.lookup (.str g) = some l →
-    h[l]? = some w → viewLengthOf h' w = viewLengthOf h w
-
-/-- Whether a change keeps the length of a view read through one
+/-- Whether a change keeps the length of a typed array read through one
 field (`view-path-stable`): the field's location is one `first` keeps or holds
-an object the change keeps, and `views` frames the view's length. -/
-def Term.viewFramed (c : Changes) (first views : Nat → String → Bool) (t : Term) : Bool :=
+an object the change keeps; the length is the typed array's descriptor's. -/
+def Term.viewFramed (c : Changes) (first : Nat → String → Bool) (t : Term) : Bool :=
   t.kind == .view && match t.path with
-    | [g] => (first t.slot g || !c.obj) && views t.slot g
+    | [g] => first t.slot g || !c.obj
     | _ => false
 
-theorem termValue_viewFramed {c : Changes} {first views : Nat → String → Bool} {ρ : Env} {h h' : Heap}
-    {t : Term} {n : Int} (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hv : ViewsKept views ρ h h')
-    (hk : t.viewFramed c first views = true) (ht : termValue ε ρ h t = some n) : termValue ε ρ h' t = some n := by
+theorem termValue_viewFramed {c : Changes} {first : Nat → String → Bool} {ρ : Env} {h h' : Heap}
+    {t : Term} {n : Int} (hc : c.Holds h h') (hf : FirstKept first ρ h h')
+    (hk : t.viewFramed c first = true) (ht : termValue ε ρ h t = some n) : termValue ε ρ h' t = some n := by
   obtain ⟨kind, s, p, a⟩ := t
   cases a
   case true => exact termValue_entry_some rfl ht
@@ -2552,8 +2497,8 @@ theorem termValue_viewFramed {c : Changes} {first views : Nat → String → Boo
   obtain ⟨rfl, hp⟩ := hk
   match p, hp with
   | [g], hp =>
-    simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at hp
-    obtain ⟨hfirst, hvs⟩ := hp
+    simp only [Bool.or_eq_true, Bool.not_eq_true'] at hp
+    have hfirst := hp
     simp only [termValue, termAt, Bool.false_eq_true, if_false, Option.bind_eq_some_iff] at ht ⊢
     obtain ⟨w, hw, hkw⟩ := ht
     cases hs : ρ s
@@ -2569,11 +2514,9 @@ theorem termValue_viewFramed {c : Changes} {first views : Nat → String → Boo
           have hu' : h'[l]? = some u := by
             rcases hfirst with hfirst | hobj
             · exact hf s g fs0 cd0 o0 l u hfirst hs hl hu
-            · obtain ⟨fs, cd, o, -, -, rfl, -⟩ := viewLengthOf_inv hkw
+            · obtain ⟨fs, o, st, fm, N, rfl, -⟩ := viewLengthOf_inv hkw
               exact hc.1 l _ hu (by simp [Changes.alters, hobj])
-          refine ⟨u, by simp [hu'], ?_⟩
-          simp only [kindValue] at hkw ⊢
-          rw [hv s g fs0 cd0 o0 l u hvs hs hl hu]; exact hkw
+          exact ⟨u, by simp [hu'], hkw⟩
         · cases hw
       · cases hw
     all_goals rw [hs] at hw; simp [readPath] at hw
@@ -2582,14 +2525,14 @@ namespace IndexFact
 
 /-- Whether a change preserves a fact, each of its terms kept by `Term.keptBy` or
 framed by `Term.viewFramed`, or the fact kept by `keptBy`. -/
-def keptWith (c : Changes) (first views : Nat → String → Bool) : IndexFact → Bool
-  | .linear F => (F.vars.all fun t => t.keptBy c first || t.viewFramed c first views) ||
+def keptWith (c : Changes) (first : Nat → String → Bool) : IndexFact → Bool
+  | .linear F => (F.vars.all fun t => t.keptBy c first || t.viewFramed c first) ||
       (IndexFact.linear F).keptBy c first
   | F => F.keptBy c first
 
-theorem holdsAt_keptWith {c : Changes} {first views : Nat → String → Bool} {F : IndexFact} {ρ : Env} {h h' : Heap}
-    (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hv : ViewsKept views ρ h h')
-    (hk : F.keptWith c first views = true) (hF : F.HoldsAt ε ρ h) : F.HoldsAt ε ρ h' := by
+theorem holdsAt_keptWith {c : Changes} {first : Nat → String → Bool} {F : IndexFact} {ρ : Env} {h h' : Heap}
+    (hc : c.Holds h h') (hf : FirstKept first ρ h h')
+    (hk : F.keptWith c first = true) (hF : F.HoldsAt ε ρ h) : F.HoldsAt ε ρ h' := by
   cases F with
   | linear G =>
     simp only [keptWith, Bool.or_eq_true] at hk
@@ -2602,7 +2545,7 @@ theorem holdsAt_keptWith {c : Changes} {first views : Nat → String → Bool} {
     rw [hm]
     rcases hk t ht with hk | hk
     · exact termValue_kept hc hf hk hm
-    · exact termValue_viewFramed hc hf hv hk hm
+    · exact termValue_viewFramed hc hf hk hm
   | index _ => exact holdsAt_kept hc hf (by simp [keptWith] at hk ⊢; exact hk) hF
   | int _ => exact holdsAt_kept hc hf (by simp [keptWith] at hk ⊢; exact hk) hF
   | pastSafe _ => exact holdsAt_kept hc hf (by simp [keptWith] at hk ⊢; exact hk) hF

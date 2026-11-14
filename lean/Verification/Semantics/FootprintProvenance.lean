@@ -70,7 +70,7 @@ theorem dense_class {x n ρ h l} (hd : Dense x n ρ h)
   obtain ⟨s, ls, hs, hv, -⟩ := hd
   simp only [Region.mem, beq_iff_eq] at hm
   rw [hs] at hm; cases hm
-  simp [Region.mem, hv, Selector.selects, isArr]
+  simp [Region.mem, hv, isArr]
 
 /-- **The support lemma of `Dense`.** It depends only on its store's
 location, and survives any change of it by `grow`. -/
@@ -78,10 +78,11 @@ theorem dense_support {x n ρ h h'} (hd : Dense x n ρ h)
     (hs : Supported [(.field x arrayStoreKey, .grow)] ρ h h') : Dense x n ρ h' := by
   obtain ⟨s, ls, hsl, hv, hn⟩ := hd
   obtain ⟨v', hv', hh⟩ := hs _ (List.mem_singleton_self _) s _ (by simp [Region.mem, hsl]) hv
-  rcases hh with rfl | ⟨ls₁, ls', h₁, rfl, hd, -⟩ | hi
+  rcases hh with rfl | ⟨ls₁, ls', h₁, rfl, hd, -⟩ | hi | ⟨_, _, _, he, -⟩
   · exact ⟨s, ls, hsl, hv', hn⟩
   · cases h₁; exact ⟨s, ls', hsl, hv', hd n hn⟩
   · exact absurd hi.2.1 (by simp [isArr])
+  · cases he
 
 /-- A footprint whose entries covering the store change it at most by `grow`
 supports `Dense`. -/
@@ -113,7 +114,7 @@ theorem stableDenseClosed_sound {x n ρ h h' Φ} (hc : stableDenseClosed Φ = tr
     rw [hcls] at hem
     obtain ⟨s, ls, hs, hv, -⟩ := hd
     simp only [Region.mem] at hst hem
-    split at hst <;> simp_all [Selector.selects]
+    split at hst <;> simp_all
   · exact hle
 
 /-! ## Elements -/

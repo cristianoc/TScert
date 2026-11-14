@@ -6671,7 +6671,7 @@ function elaborateDeclaration(node: TypeDeclaration, identity: DeclarationIdenti
   // body, outside a class, a host type and a view; or an alias of a named
   // type, whose shape is that type's.
   if (!view && !context.hostType(node) && !parts.some(ts.isClassDeclaration) &&
-      ((expression.k === "object" && !expression.prototype && !expression.host) ||
+      ((expression.k === "object" && !expression.prototype && !expression.host && !expression.view) ||
         (isTypeAlias(node) && expression.k === "reference")))
     context.record(identity);
 }

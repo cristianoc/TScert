@@ -36,26 +36,30 @@ theorem readPath_append (h : Heap) (x : Val) (p q : List String) :
 /-! ## Categories of a well-formed heap
 
 The class a location's contents have follows from the reference to it: a
-field location holds contents of its key's class (`keyClass`, the store keys'
-locations hold stores), and a store's listed cell holds no store. On a
+field location holds contents of its key's class (`keyClass`, the array
+store key's location holds an array store), a store's listed cell holds no
+store, and a typed array's descriptor names a view store. On a
 well-formed heap these hold of every value the heap holds (`HeapCategories`,
 `HeapOk.categories`), so of every value read at a nonempty path; a value at
 an empty path is a position's own, whose references the heap does not
 vouch for. -/
 
-/-- The class a field key demands of its location's contents: a store for
-the two store keys, a value otherwise (`SlotRole`). -/
+/-- The class a field key demands of its location's contents: an array
+store for the array store key, a value otherwise (`SlotRole`). -/
 def keyClass (k : PropKey) : Selector :=
-  if k = arrayStoreKey ∨ k = viewElementsKey then .stores else .values
+  if k = arrayStoreKey then .arrays else .values
 
 /-- **Contents categories of a heap's own values**: each field location of
-a value the heap holds has contents of its key's class, and each cell a
-store of the heap lists holds no store. -/
+a value the heap holds has contents of its key's class, each cell a store
+of the heap lists (`storeEntries`) holds no store, and the store a typed
+array's descriptor names holds a view store. -/
 structure HeapCategories (h : Heap) : Prop where
   fields : ∀ (l₀ : Nat) (v : Val) (k : PropKey) (l : Nat) (u : Val), h[l₀]? = some v →
     (fieldsOf v).lookup k = some l → h[l]? = some u → (keyClass k).selects u = true
-  cells : ∀ (s : Nat) (ls : List (Option Nat)) (l : Nat) (u : Val), h[s]? = some (.arr ls) → some l ∈ ls →
-    h[l]? = some u → isArr u = false
+  cells : ∀ (s : Nat) (ls : List (Option Nat)) (l : Nat) (u : Val), h[s]?.bind storeEntries = some ls →
+    some l ∈ ls → h[l]? = some u → isArr u = false
+  views : ∀ (l₀ : Nat) (fs : List (PropKey × Nat)) (i s : Nat) (f : ViewFormat) (n : Nat) (u : Val),
+    h[l₀]? = some (.viewAt fs i s f n) → h[s]? = some u → Selector.views.selects u = true
 
 /-- A well-formed heap's contents have valid references. -/
 theorem HeapOk.contents_refs {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h) {l : Nat} {v : Val}
@@ -104,18 +108,28 @@ theorem HeapOk.categories {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W 
       cases r with
       | store f =>
         cases f with
-        | array => obtain ⟨ls, rfl⟩ := hc; simp [SlotRole] at hs; simp [hs, Selector.selects, isArr]
-        | view N => obtain ⟨ls, rfl, -⟩ := hc; simp [SlotRole] at hs; simp [hs, Selector.selects, isArr]
+        | array =>
+          obtain ⟨ls, rfl⟩ := hc; simp [SlotRole] at hs
+          simp [hs, Selector.selects, Selector.arrays, Selector.has, contentsCategory]
+        | view N => simp [SlotRole] at hs
       | field | cell =>
         simp only [SlotRole] at hs
-        simp only [hs.1, hs.2, or_self, if_false]
-        cases u <;> simp_all [Cat, isSourceVal, Selector.selects, isArr]
+        simp only [hs, if_false]
+        cases u <;> simp_all [Cat, isSourceVal, Selector.selects, Selector.values, Selector.has, contentsCategory]
       | elem | identity => simp [SlotRole] at hs
   cells s ls l u hs hl hu := by
-    have hr := (RefsOk_arr_iff.mp (HeapOk.contents_refs hok hs)) l hl
+    obtain ⟨hr, -⟩ := hok.entries_cells hs hl
     obtain ⟨u', hu', hc, -⟩ := hok.2 l .elem hr
     rw [hu] at hu'; cases hu'
     cases u <;> simp_all [Cat, isSourceVal, isArr]
+  views l₀ fs i s f n u hv hu := by
+    have hr := HeapOk.contents_refs hok hv
+    have hin : Ref.view s f n ∈ refs (.viewAt fs i s f n) := by simp [refs]
+    have hrole : roleAt W s = some (.store (.view f n)) := by simpa [RefOk] using hr _ hin
+    obtain ⟨u', hu', hc, -⟩ := hok.2 s _ hrole
+    rw [hu] at hu'; cases hu'
+    obtain ⟨cs, rfl, -⟩ := hc
+    rfl
 
 /-- A read at a nonempty path is the contents of a heap location. -/
 theorem readPath_contents {h : Heap} : ∀ {p : List String} {x v : Val}, p ≠ [] →
@@ -139,17 +153,18 @@ theorem readPath_contents {h : Heap} : ∀ {p : List String} {x v : Val}, p ≠ 
 /-- The cells a value's store lists hold no store. -/
 theorem HeapCategories.elems {h : Heap} (hc : HeapCategories h) {v : Val} {l : Nat} {u : Val}
     (hm : some l ∈ storeElems h v) (hu : h[l]? = some u) : isArr u = false := by
-  unfold storeElems at hm
-  cases hs : (fieldsOf v).lookup arrayStoreKey with
-  | none => rw [hs] at hm; simp at hm
-  | some s =>
-    rw [hs] at hm
-    simp only at hm
-    cases ht : h[s]? with
-    | none => rw [ht] at hm; simp at hm
-    | some t =>
-      rw [ht] at hm
-      cases t <;> first | exact hc.cells s _ l u ht hm hu | simp at hm
+  have entries : ∀ o, some l ∈ entriesAt h o → isArr u = false := by
+    intro o ho
+    cases o with
+    | none => simp [entriesAt] at ho
+    | some s =>
+      simp only [entriesAt] at ho
+      cases ht : h[s]?.bind storeEntries with
+      | none => rw [ht] at ho; simp at ho
+      | some ls => rw [ht] at ho; exact hc.cells s ls l u ht ho hu
+  rcases List.mem_append.mp hm with hm | hm
+  · exact entries _ hm
+  · exact entries _ hm
 
 /-! ## Rebasing -/
 
@@ -162,15 +177,16 @@ structure RebaseEvidence where
   agree : Nat → List String → Bool
   fresh : Nat → List String → Bool := fun _ _ => false
 
-/-- **Selected-location freshness of a store**: where the value has an array
-store, its location is at least `b`. It reads no heap; a value with no store
-(`null`, a number, an object of no store field) meets it. -/
-def FreshIfStore (b : Nat) (v : Tm) : Prop := ∀ s, storeOf v = some s → b ≤ s
+/-- **Selected-location freshness of a store slot**: where the value has a
+`[]` slot, its location is at least `b`. It reads no heap; a value with no
+such slot (`null`, a number, an object of no store field) meets it. -/
+def FreshIfStore (b : Nat) (v : Tm) : Prop :=
+  ∀ s, (fieldsOf v).lookup arrayStoreKey = some s → b ≤ s
 
 theorem FreshAt.ifStore {b : Nat} {v : Tm} (h : FreshAt b v) : FreshIfStore b v := by
   obtain ⟨s, hs, hle⟩ := h
   intro s' hs'
-  rw [hs] at hs'
+  rw [storeOf_lookup hs] at hs'
   cases hs'
   exact hle
 
@@ -198,7 +214,7 @@ theorem RebaseOk.fresh_path {ev σ ρ₀ h₀ h} (hk : RebaseOk ev σ ρ₀ h₀
   simp only [Region.mem] at hm
   split at hm
   · rename_i v hv
-    exact hk.fresh s p hf v hv l (by simp only [storeOf]; simpa using hm)
+    exact hk.fresh s p hf v hv l (by simpa using hm)
   · cases hm
 
 /-- Whether a step position's path is read at the entry heap as at the
@@ -237,6 +253,9 @@ def rebase (ev : RebaseEvidence) : Region → List Region
   | .elems _ => [.cls .values]
   | .pathElems _ _ => [.cls .values]
   | .all => [.all]
+  | .store s p => match ev.path s p with
+    | some (x, q) => [.store x q]
+    | none => [.all]
 
 def rebaseAll (ev : RebaseEvidence) (Ψ : Footprint) : Footprint :=
   Ψ.flatMap fun e => (rebase ev e.1).map (·, e.2)
@@ -369,15 +388,26 @@ theorem rebase_sound {Φp ρ₀ σ h₀ h ev l} (hp : Post Φp ρ₀ h₀ h) (hk
   | elems s =>
     intro hm
     have harr := hk.categories.elems (by simpa [Region.mem] using hm) hu
-    exact class_back hp hl hu (by rw [show Selector.values = ⟨true, false, false⟩ from rfl]; simp [Selector.selects, harr])
+    exact class_back hp hl hu (by rw [Selector.selects_values, harr]; rfl)
   | pathElems s p =>
     intro hm
     simp only [Region.mem] at hm
     split at hm
     · have harr := hk.categories.elems (by simpa using hm) hu
-      exact class_back hp hl hu (by rw [show Selector.values = ⟨true, false, false⟩ from rfl]; simp [Selector.selects, harr])
+      exact class_back hp hl hu (by rw [Selector.selects_values, harr]; rfl)
     · cases hm
   | all => intro _; exact .inl ⟨.all, by simp [rebase], rfl⟩
+  | store s p =>
+    intro hm
+    cases he : ev.path s p with
+    | none => exact .inl ⟨.all, by simp [rebase, he], rfl⟩
+    | some xq =>
+      obtain ⟨x, q⟩ := xq
+      refine .inl ⟨.store x q, by simp [rebase, he], ?_⟩
+      simp only [Region.mem] at hm ⊢
+      split at hm
+      · rename_i v hv; rw [hk.path he hv]; exact hm
+      · cases hm
 
 /-- **Composition at the step's positions.** An entry frame so far, a step's
 frame at its own positions and heap, the rebasing evidence, and an inclusion

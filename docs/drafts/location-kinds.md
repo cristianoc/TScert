@@ -56,15 +56,18 @@ as it reads contracts.
 A role refines a kind:
 
 ```math
-\mathrm{Role} ::= F \mid C \mid E \mid S_{\mathrm{array}} \mid S_{\mathrm{view}(N)} \mid I
+\mathrm{Role} ::= F \mid C \mid E \mid S_{\mathrm{array}} \mid S_{\mathrm{view}(t,N)} \mid I
 ```
 
 F holds an object's ordinary property, C a binding's storage, E an element,
 S a store, I an object's identity (a location holding `null` that every
 object allocation adds, whose contract admits `null` alone: `idCtr`, the
 contract `objectEntries` gives every identity, and the representative host
-world's). An ordinary array's store and a typed array's view
-store of fixed length $`N`$ are two forms of S, distinguished by role.
+world's). An ordinary array's store, $`S_{\mathrm{array}}`$, and a typed
+array's view store of fixed format $`t`$ and length $`N`$,
+$`S_{\mathrm{view}(t,N)}`$, are two forms of S, distinguished by role and,
+in a well-formed state, by their contents' tags, $`\mathsf{arr}`$ and
+$`\mathsf{viewStore}`$ (§3).
 
 A world entry is a pair of a role and a contract. The kinded world
 `WorldT n` is the stratified construction of `WorldT`, each entry's
@@ -78,36 +81,22 @@ location.
 The calculus's terms and steps are those of `Semantics/Calculus.lean`:
 roles live in worlds, which are proof-level. The typing's storage
 capabilities and the lowering's metadata carry roles (§4); calculus terms
-and steps carry none.
+and steps carry none. A typed array is told by its value alone: an object
+whose descriptor $`\mathsf{view}(s,t,N)`$ names its view store $`s`$, its
+format and its length (`Tm.viewAt`), its view store's contents a
+$`\mathsf{viewStore}(t,\langle c_0,\ldots,c_{N-1}\rangle)`$.
 
-## 2. Reference validity and view metadata
+## 2. Reference validity
 
 $`\mathrm{RefsOk}(W,t)`$ holds when every location a term refers to has the
 role its position demands: an object's identity is in I; its slot under
-`[]` is in $`S_{\mathrm{array}}`$; under `[[viewElements]]` it is in
-$`S_{\mathrm{view}(N)}`$ for some $`N`$; under every other key it is in F
-or C; every cell a store lists is in E; and every object's field map has
-valid view metadata. `RefsOk` covers every subterm, the captures, bound
-targets, receivers and prefixes of call descriptors, and a graph's node
-expressions, and it reads the world only.
-
-**View metadata validity** of a field map $`fs`$, wherever the metadata
-occurs (`ViewMetaOk`):
-
-- every location $`fs`$ gives `[[viewLength]]` is a **length metadata
-  location** of some $`N`$: a location of role F whose contract admits the
-  value $`N`$ alone (`LengthMeta`);
-- every location $`fs`$ gives `[[viewElements]]` has role
-  $`S_{\mathrm{view}(N)}`$, and $`fs`$'s `[[viewLength]]` location is a
-  length metadata location of that same $`N`$;
-- a map naming `[[viewElements]]` names `[[host]]`: a typed array is a host
-  object.
-
-The first clause covers a host object that holds its length alone, which
-the length observation `viewLengthOf`
-([IndexFacts](../../lean/Verification/Semantics/IndexFacts.lean)) reads as
-a typed array. It is the validity of the representation that observation
-reads.
+`[]` is in $`S_{\mathrm{array}}`$; under every other key it is in F or C;
+the view store a typed array's descriptor $`\mathsf{view}(s,t,N)`$ names is
+in $`S_{\mathrm{view}(t,N)}`$ (`Ref.view`); and every cell a store lists,
+an array's or a view store's, is in E. No slot holds a view store. `RefsOk`
+covers every subterm, the captures, bound targets, receivers and prefixes of
+call descriptors, and a graph's node expressions, and it reads the world
+only.
 
 ## 3. Well-formed states
 
@@ -118,7 +107,7 @@ budget, zero included:
 \begin{aligned}
 \mathrm{Shape}(W,F|C|E,u) &\iff u\text{ is a source value}\land\mathrm{RefsOk}(W,u)\\
 \mathrm{Shape}(W,S_{\mathrm{array}},u) &\iff u\text{ is a store}\land\mathrm{RefsOk}(W,u)\\
-\mathrm{Shape}(W,S_{\mathrm{view}(N)},u) &\iff u\text{ is a store of length }N\land\mathrm{RefsOk}(W,u)\\
+\mathrm{Shape}(W,S_{\mathrm{view}(t,N)},u) &\iff u=\mathsf{viewStore}(t,\langle c_0,\ldots,c_{N-1}\rangle)\land\mathrm{RefsOk}(W,u)\\
 \mathrm{Shape}(W,I,u) &\iff u=\mathtt{null}\\
 \mathrm{HeapOk}(n,W,h) &\iff h\text{ meets }W\text{'s contracts below }n\land
   \forall l.\ W(l)=(r,c)\Rightarrow\mathrm{Shape}(W,r,h(l))
@@ -172,9 +161,7 @@ constructions:
 
 - an ordinary property of type $`A`$: $`(f,\{(F,A)\})`$;
 - a binding's storage of type $`A`$: $`(\mathtt{value},\{(C,A)\})`$;
-- an ordinary array's store: $`([\,],\{(S_{\mathrm{array}},A)\})`$;
-- a typed array's element store, over every length:
-  $`(\mathtt{[[viewElements]]},\{(S_{\mathrm{view}(N)},A_N)\mid N\})`$.
+- an ordinary array's store: $`([\,],\{(S_{\mathrm{array}},A)\})`$.
 
 **Proved** (`KindsCapabilities`): an allocation choosing role $`r_i`$ and
 type $`A_i`$ for its $`i`$-th key establishes every capability over that
@@ -219,22 +206,15 @@ category (§9), and the world records the role (`RoleIn`).
 **Concrete roles** (**proved**, `KindsCapabilities`). The role an
 allocation records for a position is its tag's role chosen by the contents
 allocated there (`StorageRole.concrete`): `field`, `cell` and `arrayStore`
-their role, `viewStore` the view store of the length of the store it is
-allocated holding; none where the contents are not of the tag's category
+their role; none where the contents are not of the tag's category
 (`StorageRole.Holds`). The recorded role is one the tag names
-(`StorageRole.concrete_permits`), the contents have its category, a view
-store's of its length (`StorageRole.concrete_cat`,
-`StorageRole.concrete_view`), and contents of their tags' categories
+(`StorageRole.concrete_permits`), the contents have its category
+(`StorageRole.concrete_cat`), and contents of their tags' categories
 determine every recorded role (`concreteRoles_of_holds`). A tag fits its
-key (`StorageRole.fitsKey`: `arrayStore` under `[]`, `viewStore` under
-`[[viewElements]]`, `field` or `cell` under any other key) exactly so that
-every role it names is the slot's role (`StorageRole.slotRole_of_fitsKey`).
-An allocation whose `[[viewLength]]` locations are fields admitting one
-length alone and whose `[[viewElements]]` locations are view stores of that
-length (`MetaFit`) gives a field map with valid view metadata
-(`viewMetaOk_alloc`). Together: an allocation at concrete roles, each tag
-fitting its key and its metadata fitting, keeps kinds
-(`concrete_shaped`). `AllocationWorlds.next`'s entries record, beside each
+key (`StorageRole.fitsKey`: `arrayStore` under `[]`, `field` or `cell` under
+any other key) exactly so that every role it names is the slot's role
+(`StorageRole.slotRole_of_fitsKey`). Together: an allocation at concrete
+roles, each tag fitting its key, keeps kinds (`concrete_shaped`). `AllocationWorlds.next`'s entries record, beside each
 contract, its tag's concrete role at the allocated value
 (`AllocationWorlds.roles`).
 
@@ -427,16 +407,16 @@ number altered and every store's length kept (`ViewWrite.changes`), and
 `ExactWrite` for the exact form. The roles are the entry world's because a
 role assignment chosen only to fit the entry heap's categories may give an
 ordinary array's store the role of a view store, and so let the write change
-it (from `[arr [some 1], null]` to `[arr [some 2], null, null]`, location
-0).
+it. In a well-formed state the contents' tags tell the two apart too
+(`Shaped.category`).
 
 It constrains every view store, whichever view the call names: an
 overlapping view may change, exactness constraining the designated one. An
 updated view store's newly listed cells are fresh, so old element cells keep
 their contents. The relation is a world-indexed postcondition
 (`Effect.viewPost`). **Proved**: an ordinary array's store is kept
-(`ViewWrite.keeps_array`); an old $`S_{\mathrm{view}(N)}`$ location holds a
-store of length $`N`$ listing element cells of $`h'`$
+(`ViewWrite.keeps_array`); an old $`S_{\mathrm{view}(t,N)}`$ location holds a
+view store of format $`t`$ and length $`N`$ listing element cells of $`h'`$
 (`ViewWrite.view_store`); from a well-formed entry heap, the coarse change
 of `ElementWrite` follows (`ViewWrite.changes`, `ViewWriteOf.holds`). Two
 views over the same bytes both change under one exact write while an
@@ -462,18 +442,22 @@ dangling store `[[5], null, null]` meets no kinded world at any budget
   `Shape` is monotone in extension (`Shape_mono`) and survives truncation
   (`Shape_trunc`, `HeapOk_trunc`).
 - **Kinds partition a well-formed heap** (`HeapOk.kinds`): each location has
-  exactly one kind; a location is in S exactly when it holds a store; every
-  store lists only element cells, all locations of the heap.
+  exactly one kind; a location is in S exactly when it holds a store, an
+  array's or a view store; every store lists only element cells, all
+  locations of the heap (`HeapOk.entries_cells`).
+- **Contents tell the category** (`Cat.category`, `Shaped.category`): a
+  well-formed heap's every location holds contents whose category, read from
+  the contents alone (`contentsCategory`: $`\mathsf{arr}`$ an array store,
+  $`\mathsf{viewStore}`$ a view store, anything else a value), is its role's;
+  so every admissible transition keeps it at every old location
+  (`Admissible.contentsCategory`).
 - **The audit's counter-heap is excluded** (`counterheap_excluded`): no
   world satisfies `[[1], 0, null]` with the array `{[]: 0}` and the object
   `{f: 1}` both valid, since location 1 would be in F or C and in E.
-- **(View)**: the length a value with valid references reads through
-  `viewLengthOf`, as defined, is kept by every admissible transition, with
-  no stability premise (`viewLengthOf_kept`); the length of a root is
-  invariant (`viewLength_invariant`); a linear fact whose current terms are
-  roots' integers and view lengths holds after every action of the top
-  footprint (`view_box`); no admissible transition changes a valid typed
-  array's length from 1 to 2 (`view_change_excluded`).
+- **(View)**: a typed array's length is its descriptor's, part of the
+  value: the length of a root is invariant (`viewLength_invariant`); a
+  linear fact whose current terms are roots' integers and view lengths holds
+  after every action of the top footprint (`view_box`).
 - **Allocated cells**: §7.
 - **Alloc**: an array allocated past a well-formed heap is apart from every
   store of that heap the later heap keeps, with no premise on the old
@@ -483,7 +467,8 @@ dangling store `[[5], null, null]` meets no kinded world at any budget
   (`alloc_wellformed`).
 - **Allocation** (`HeapOk_appendWs`; `makeFields_shaped` for any object,
   with `objectLiteral_shaped`, `bindingCell_shaped`, `closure_shaped`,
-  `arrayObject_shaped`, `typedArray_shaped`, `hostLength_shaped`;
+  `arrayObject_shaped`, `viewStore_shaped` and `typedArray_shaped` for a
+  typed array over its view store;
   `arrAlloc_shaped` for a store literal's elements; `thrownError_shaped`
   for a fresh error).
 - **Writes** (`write_sound`; `writeField_shaped`, `writeOrdinary_shaped`,
@@ -493,10 +478,9 @@ dangling store `[[5], null, null]` meets no kinded world at any budget
   congruences, substitution, a graph's entry, a node's instantiation, every
   continuation's environment map, handlers and raises, reads, spreads,
   copies, tests and arithmetic.
-- **Copies** (`mergeParts_cat`): no copied key is `[]` or
-  `[[viewElements]]`, and every copied value is a source value: a copy's
-  accumulator is no host object, an object owning `[[viewElements]]` is one
-  (view metadata validity), and its source copies no internal key.
+- **Copies** (`mergeParts_cat`): no copied key is `[]`, and every copied
+  value is a source value: its source copies no internal key, and a typed
+  array's own properties are copied by no step (`hostOwned`).
 - **Array natives** (`Arr.natives_within`, `Arr.Within.refs`,
   `native_shaped`): `Set`, `Delete`, a length change, `push`, `pop`,
   `shift`, `unshift`, `reverse` and `sort`'s writeback keep a store's cells
@@ -513,14 +497,11 @@ listed; the raw step admits more. The typing rules discharge them, through
 the capabilities of §4.
 
 - **Object allocation** (`Step.makeFields`): the rule's role for each key
-  fits it (a store slot's under `[]`, a view's under `[[viewElements]]`, F
-  or C under any other key); each initializer has its role's category (a
+  fits it (a store slot's under `[]`, F or C under any other key); each initializer has its role's category (a
   source value in F or C, a store in S), which the rule's payload premise
   gives (`Payload`, PROGRAM-TYPING's
-  [sorts and categories](../PROGRAM-TYPING.md#sorts-and-categories)); the field map has valid view
-  metadata, which holds where it names neither metadata key. A source
-  allocation names neither key (reserved spellings); a binding allocation
-  chooses C, an object literal F.
+  [sorts and categories](../PROGRAM-TYPING.md#sorts-and-categories)). A
+  binding allocation chooses C, an object literal F.
 - **Store literal** (`Step.arrAlloc`): each initializer is a source value
   (`arrLit`'s and `arrParts`' payload premise, `Payload.element`).
 - **Field write** (`Step.writeField`): the payload has the category of its
@@ -610,5 +591,5 @@ the entry world's roles (§5).
 budget one heap meets an admissible kinded world with every structural family
 of value valid at once: an object's identity, a property and a prototype
 property, a binding cell, an ordinary array's store and element, a typed
-array's view metadata and view store of its length, a closure's capture and
+array's view store of its format and length, a closure's capture and
 code field, and a forwarding descriptor's target, receiver and prefix.

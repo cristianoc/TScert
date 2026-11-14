@@ -373,9 +373,9 @@ type MethodRestArrow<L = number> = CallContract<Record<string, never>, [Labels<L
  * row lists them. Fields a contract does not name are unconstrained. */
 type Fields<L = number> = [name: PropertyKey, labels: Labels<L>][];
 /** The role a storage position's location was allocated with: an ordinary
- * property, a binding's cell, an array's store or a typed array's view store. */
-type StorageRole = "field" | "cell" | "arrayStore" | "viewStore";
-const storageRoles: readonly StorageRole[] = ["field", "cell", "arrayStore", "viewStore"];
+ * property, a binding's cell or an array's store. */
+type StorageRole = "field" | "cell" | "arrayStore";
+const storageRoles: readonly StorageRole[] = ["field", "cell", "arrayStore"];
 /** An object contract's storage positions: one per named field, with the
  * role its location was allocated with and its label list, in the order the
  * row lists them. */
@@ -488,7 +488,14 @@ export type Clause<L = number> =
         variadic?: RestArrow<L>[];
         methods?: MethodSig<L>[];
       };
-    };
+    }
+  /** The typed arrays of one format (Lean's `Clause.view`): values carrying
+   * a view descriptor of that format, with host-relative `methods`, left
+   * out when there are none. */
+  | { view: { format: ViewFormat; methods?: MethodSig<L>[] } };
+/** A typed array's element format (Lean's `ViewFormat`). */
+export type ViewFormat = "uint8" | "uint16" | "int32" | "float64";
+const viewFormats: readonly ViewFormat[] = ["uint8", "uint16", "int32", "float64"];
 type RestArrow<L = number> = CallContract<Labels<L>, [Labels<L>[], Labels<L>], L>;
 /** An ordinary row: a union of clauses. */
 export type Row<L = number> = Clause<L>[];
@@ -513,7 +520,7 @@ export type StringClause = Extract<Clause, string>;
 /** The object clauses' keys, each once. */
 const CLAUSE_KEYS = [
   "boolLit", "numLit", "strLit", "numIn", "strIn", "bigintLit", "symbolLit",
-  "refs", "dict", "ctors", "list", "pack", "arrs", "callable",
+  "refs", "dict", "ctors", "list", "pack", "arrs", "callable", "view",
 ] as const;
 export type ClauseKey = (typeof CLAUSE_KEYS)[number];
 /** `ClauseKey` is exactly the keys of `Clause`'s object members: a key missing
@@ -921,6 +928,13 @@ function clauseDecoders<L>(label: (v: JsonRead) => L, labels: (v: JsonRead) => L
           ...(members === undefined ? {} : { methods: members }),
         },
       };
+    },
+    view: (b) => {
+      const r = objOptional(b, ["format"], ["methods"]);
+      const format = viewFormats.find((f) => f === r.format);
+      if (format === undefined) throw Error("invalid typed array format");
+      const members = "methods" in r ? methods(r.methods) : undefined;
+      return { view: { format, ...(members === undefined ? {} : { methods: members }) } };
     },
   };
 

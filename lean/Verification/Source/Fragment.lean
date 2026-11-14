@@ -62,6 +62,12 @@ object, which the model's chain holds, or, an error, inherits `name` from
 receives meets the caller contract on its inherited keys. -/
 def functionKeys : List String := ["name", "prototype", "apply", "bind", "call", "arguments", "caller"]
 
+/-- The keys `%TypedArray%.prototype` holds beside those `inKeyRefusal`
+refuses on every object: a typed array inherits them, and the model's view
+owns none. -/
+def typedArrayKeys : List String :=
+  ["buffer", "byteLength", "byteOffset", "set", "subarray", "BYTES_PER_ELEMENT"]
+
 /-- `key in o` looks the key up along `o`'s prototype chain; the model's test
 (`Tag.hasKey`) asks whether the object owns it. The two agree for a key none
 of the built-in prototypes an object of the fragment inherits from holds, and

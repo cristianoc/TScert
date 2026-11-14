@@ -981,7 +981,7 @@ theorem readsAbsent_not (hs : P.Sound ε ε₀ ρ h ρ' τ h') {F : IndexFact} (
   have hst : ∀ x, P.absentSlot x = true → Footprints.storeOf (τ x) = none := fun x hx => by
     rw [hs.absentSlot x hx]; simp [Footprints.storeOf, Footprints.fieldsOf]
   have hel : ∀ x, P.absentSlot x = true → elementsOf (τ x) = none := fun x hx => by
-    rw [hs.absentSlot x hx]; simp [elementsOf, Footprints.storeOf, Footprints.fieldsOf]
+    rw [hs.absentSlot x hx]; simp [elementsOf]
   intro hF
   cases F with
   | index k => obtain ⟨b, i, hb, -⟩ := hF; rw [hs.absentSlot k ha] at hb; cases hb
@@ -1079,7 +1079,7 @@ theorem Composer.fact_holds (hs : P.Sound ε ε₀ ρ h ρ' τ h') :
         | nil =>
           simp only [readPath, Option.some.injEq] at hw
           subst hw
-          simp [elementsOf, Footprints.storeOf, Footprints.fieldsOf] at hsto
+          simp [elementsOf] at hsto
         | cons f q => simp [readPath] at hw
       · rw [hs.absent stop ha] at hn; cases hn
     split at hD

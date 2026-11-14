@@ -14,7 +14,7 @@ store, read at an element by `every-read`, kept across a push, an exact
 typed-array element write and a write apart from its
 [element region](../FOOTPRINTS.md#element-regions), and extended to a
 prefix by an exact write at its bound. A typed array's elements are the
-store at its model key `[[viewElements]]`, one per view
+cells of the view store its descriptor names, one view store per typed array
 ([typed arrays](../SOURCE-CONTRACTS.md#stated-library-types)).
 
 ## Views sharing bytes

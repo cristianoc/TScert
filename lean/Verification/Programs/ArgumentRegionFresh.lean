@@ -42,7 +42,7 @@ theorem freshAt_value {b : Nat} {v : Tm} (h : FreshAt b v) : FreshValue b v := b
 /-- A value of no field: a constant. -/
 theorem freshValue_of_fields {b : Nat} {v : Tm} (ha : isArr v = false) (hf : fieldsOf v = []) :
     FreshValue b v :=
-  ⟨ha, fun s hs => by simp [storeOf, hf] at hs⟩
+  ⟨ha, fun s hs => by simp [hf] at hs⟩
 
 /-- An object whose cell field's location holds a fresh value at `h`. -/
 def CellFresh (b : Nat) (h : Heap) (c : Tm) : Prop :=
@@ -66,11 +66,8 @@ def storeOnly : Region → Bool
 
 /-- A selector naming no value category selects only stores. -/
 theorem Selector.selects_store_only {c : Footprints.Selector} (hc : c.value = false) {v : Tm}
-    (hs : c.selects v = true) : isArr v = true := by
-  unfold Footprints.Selector.selects at hs
-  split at hs
-  · assumption
-  · rw [hc] at hs; cases hs
+    (hs : c.selects v = true) : isArr v = true :=
+  Footprints.Selector.selects_noValue hc hs
 
 theorem storeOnly_mem {r : Region} {σ : Env} {h : Heap} {l : Nat} {v : Tm} (hs : storeOnly r = true)
     (hm : r.mem σ h l = true) (hv : h[l]? = some v) : isArr v = true := by

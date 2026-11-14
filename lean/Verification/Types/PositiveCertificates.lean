@@ -1184,6 +1184,7 @@ and the target's receivers, its signatures against the target's schemes'). -/
     (c :: ds).flatMap fun q => (a :: bs).flatMap fun p =>
       let pos (t : PositiveNormalization.Tuple (List ι)) := t.required ++ t.optional ++ t.rest.toList
       (pos p).flatMap fun x => (pos q).flatMap fun y => [(x, y), (y, x)]
+  | .view _ ms, .view _ ns => recordPairs G known self [] [] [] ms [] [] [] ns
   | _, _ => []
 
 /-- Quantified rows supplied directly or as opaque components of a meet.

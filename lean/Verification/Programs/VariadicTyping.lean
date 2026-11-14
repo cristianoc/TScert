@@ -75,7 +75,7 @@ theorem objectClauses_sem {G : NormalGraph ι} {O : Ty ι}
 /-- The member a clause names by a key, where it is an object clause. -/
 def clauseMember (c : Clause (Ty ι)) (k : PropKey) : Option (MethodMembers.Sig (Ty ι)) :=
   match c with
-  | .refs _ _ _ _ ms _ _ | .dict _ _ _ _ _ ms _ _ _ | .callable _ _ _ _ ms => ms.find? (·.key == k)
+  | .refs _ _ _ _ ms _ _ | .dict _ _ _ _ _ ms _ _ _ | .callable _ _ _ _ ms | .view _ ms => ms.find? (·.key == k)
   | _ => none
 
 /-- A member of a clause's value holds of that value. -/

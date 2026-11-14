@@ -62,14 +62,13 @@ theorem elems_support {x : Nat} {R : CallEffects.ElemPred} {ρ : Env} {h h' : He
     simp only [Change.Holds] at hk
     rw [← hk]; exact hv'
   have hfield : (Region.field x arrayStoreKey).mem ρ h s = true := by
-    simp [Region.mem, Footprints.storeOf] at hst ⊢; exact hst
-  have hstore : storeElems h (ρ x) = ls := by
-    simp only [Footprints.storeOf] at hst
-    simp [storeElems, hst, hl]
+    simpa [Region.mem] using Footprints.storeOf_lookup hst
   refine ⟨s, ls, hst, hkeep _ (List.mem_cons_self ..) s _ hfield hl, fun l hm => ?_⟩
   obtain ⟨v, hv, hr⟩ := hall l hm
   have hel : (Region.elems x).mem ρ h l = true := by
-    simp only [Region.mem, hstore, List.contains_iff_mem]; exact hm
+    simp only [Region.mem, List.contains_iff_mem, storeElems]
+    refine List.mem_append_left _ ?_
+    simpa [entriesAt, Footprints.storeOf_lookup hst, hl, storeEntries] using hm
   exact ⟨v, hkeep (Region.elems x, .keep) (by simp) l v hel hv, hr⟩
 
 /-- A field's contents are unchanged where the support keeps them. -/
@@ -280,7 +279,7 @@ private theorem apart₁_sound {K : SepKnowledge} {μ ρ h l} (hK : K.Holds μ �
       split at h₁
       · rename_i v hv'; rw [hv'] at hs; exact cls_disjoint ha.2 h₁ hs
       · cases h₁
-  | elems | cls | all | pathOwn | cell =>
+  | elems | cls | all | pathOwn | cell | store =>
     intro s ha
     simp [SepKnowledge.apart₁] at ha
 
@@ -436,6 +435,7 @@ def Region.rename (σ : Nat → Nat) : Region → Region
   | .pathElems x p => .pathElems (σ x) p
   | .cell b => .cell b
   | .inCls r c => .inCls (r.rename σ) c
+  | .store x p => .store (σ x) p
 
 theorem Region.mem_rename (σ : Nat → Nat) (ρ : Env) (h : Heap) (l : Nat) :
     ∀ r : Region, (r.rename σ).mem ρ h l = r.mem (fun i => ρ (σ i)) h l := by

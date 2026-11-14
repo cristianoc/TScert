@@ -841,7 +841,7 @@ function expandIdentity(id: Identity, key: TypeTerm, span: Span, fail: (message:
     x = shape;
   }
   if (x.k !== "object") return fail("a mapped type's value names its key, over a type that is no record the reader holds");
-  if (x.calls.length || x.prototype || x.host || x.stable)
+  if (x.calls.length || x.prototype || x.host || x.view || x.stable)
     return fail("a mapped type's value names its key, over a type with call signatures, a prototype or a host's members");
   // A method's receiver is the declaration it is a member of: mapped, the
   // member is a field of another type, of which no receiver is stated.
@@ -1629,7 +1629,7 @@ function sameTerm(a: TypeTerm, b: TypeTerm): Modifies<{}, boolean> {
       }) && sameOptionalIndex(a.stringIndex, b.stringIndex) &&
         sameOptionalIndex(a.numberIndex ?? null, b.numberIndex ?? null) &&
         sameOptionalIndex(a.symbolIndex ?? null, b.symbolIndex ?? null) && sameTerms(a.calls, b.calls) &&
-        sameOptionalTerm(a.prototype ?? null, b.prototype ?? null) && a.host === b.host &&
+        sameOptionalTerm(a.prototype ?? null, b.prototype ?? null) && a.host === b.host && a.view === b.view &&
         sameStrings(a.stable ?? null, b.stable ?? null);
     case "function":
       return b.k === "function" && sameEffect(a.effect, b.effect) && sameOptionalTerm(a.receiver, b.receiver) &&

@@ -1478,7 +1478,12 @@ run_cmd do
   check ``Verification.Kinds.arrAlloc_shaped
   check ``Verification.Kinds.arrayObject_shaped
   check ``Verification.Kinds.typedArray_shaped
-  check ``Verification.Kinds.hostLength_shaped
+  check ``Verification.Kinds.viewStore_shaped
+  check ``Verification.Cat.category
+  check ``Verification.Shaped.category
+  check ``Verification.TolerantFrames.Admissible.contentsCategory
+  check ``Verification.HeapOk.entries_cells
+  check ``Verification.HeapOk.view_cells
   check ``Verification.Kinds.thrownError_shaped
   -- writes preserve kinds
   check ``Verification.write_sound
@@ -1496,7 +1501,6 @@ run_cmd do
   check ``Verification.Kinds.raises_refs
   check ``Verification.Kinds.heap_refs
   check ``Verification.Kinds.mergeParts_cat
-  check ``Verification.Kinds.toString_ne_viewElements
   check ``Verification.Kinds.idCtr_adm
   check ``Verification.Kinds.Arr.Within.refs
   check ``Verification.Kinds.Arr.natives_within
@@ -1514,9 +1518,7 @@ run_cmd do
   check ``Verification.TolerantFrames.Target.entry_roots_not_derived
   check ``Verification.SourceClaimJson.PassUnit.gotoOf_refsOk
   -- (View): a typed array's length is immutable
-  check ``Verification.TolerantFrames.viewLengthOf_kept
   check ``Verification.TolerantFrames.viewLength_invariant
-  check ``Verification.Kinds.view_change_excluded
   -- allocated cells at every budget and state
   check ``Verification.HeapOk.store_cells
   check ``Verification.TolerantFrames.Admissible.elem_kept
@@ -1542,7 +1544,6 @@ run_cmd do
   check ``Verification.ReferenceConjunctions.storageOf_famsOf
   check ``Verification.StorageRole.permits_unique
   check ``Verification.StorageRole.inhabited
-  check ``Verification.Kinds.Capability.ofRole_viewStore
   check ``Verification.Kinds.Capability.ofRole_role
   check ``Verification.Kinds.Capability.ofRole_exclusive
   check ``Verification.Kinds.Capability.ofRole_le
@@ -1551,10 +1552,7 @@ run_cmd do
   check ``Verification.StorageRole.concrete_permits
   check ``Verification.StorageRole.concrete_cat
   check ``Verification.StorageRole.concrete_of_holds
-  check ``Verification.StorageRole.concrete_view
   check ``Verification.StorageRole.slotRole_of_fitsKey
-  check ``Verification.Kinds.MetaFit.of_not_mem
-  check ``Verification.Kinds.viewMetaOk_alloc
   check ``Verification.Kinds.concreteRoles_spec
   check ``Verification.Kinds.concreteRoles_of_holds
   check ``Verification.Kinds.concrete_shaped

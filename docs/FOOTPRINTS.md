@@ -88,11 +88,13 @@ Selector inclusion and disjointness are the set operations on the three
 categories, and they give inclusion and disjointness of class regions
 (proved: `class_subset_sound`, `class_disjoint_sound`); $`\mathsf{stores}`$
 (array and view stores) and $`\mathsf{views}`$ overlap, so distinct
-selectors need not be disjoint. Until a view store's contents are told apart
-from an array store's, a store is selected by a selector naming both store
-categories, such as $`\mathsf{stores}`$. The locations below a heap's length
-fall into two classes by their contents: `class(stores)`, those holding a
-store, and `class(values)`, the others. A
+selectors need not be disjoint. A class region selects a location whose
+contents' category (`contentsCategory`: `.arr` an array store, `.viewStore`
+a view store, anything else a value) its selector names; on a well-formed
+heap that category is the location's role's (proved: `Shaped.category`).
+The locations below a heap's length fall into two classes by their contents:
+`class(stores)`, those holding a store of either category, and
+`class(values)`, the others. A
 **closed footprint** $`\Phi = \{\mathsf{value}{:}\,\delta_v,\ \mathsf{store}{:}\,\delta_s\}`$
 (`Footprints.Closed`) states a change for each class, `keep`, `init`,
 `scalar` or `any` for values (on a non-store, `grow` is `scalar`) and `keep`,
@@ -162,9 +164,8 @@ supports in every context (`FactKind.supports`).
 
 The context of an index fact's support is a **read context** $`c`$: the
 first fields of slots' objects whose contents the transition keeps
-($`c.\mathrm{stable}`$, `FirstKept`), and the one-field paths holding typed
-arrays whose length it keeps ($`c.\mathrm{views}`$, `ViewsKept`)
-(`ReadContext`). A path $`x.f_1\ldots f_n`$ reads the field location of
+($`c.\mathrm{stable}`$, `FirstKept`) (`ReadContext`); a typed array's
+length is its descriptor's, part of the value. A path $`x.f_1\ldots f_n`$ reads the field location of
 $`f_i`$ of the object $`x.f_1\ldots f_{i-1}`$ reads, for each $`i`$. Each
 location the read passes on from holds an object, which every change but
 `any` keeps; the last holds the value the read ends at, at a change $`\lambda`$
@@ -1041,12 +1042,14 @@ $`\mathsf{path}\ x\ (q\,p)\ k`$, $`\mathsf{own}`$ and $`\mathsf{pathOwn}`$
 alike, a class or a cell to itself, and the part of a region of class $`c`$ to
 its image's part of class $`c`$. Without that evidence it widens a region to
 its class: a field at a nonempty path to the class its key demands
-(`keyClass`: `stores` for the two store keys, `values` otherwise) and element
-cells, $`\mathsf{elems}`$ and $`\mathsf{pathElems}`$, to `values`. The
+(`keyClass`: `arrays` for the array store key, `values` otherwise) and element
+cells, $`\mathsf{elems}`$ and $`\mathsf{pathElems}`$, the cells of the store
+the `[]` slot names and of the view store a typed array's descriptor names
+(`storeElems`), to `values`. The
 widening reads the step heap's contents categories (`HeapCategories`, which a
 well-formed heap has: `HeapOk.categories`): a value read at a nonempty path is
-held by the heap, so its fields' and its store's cells' roles fix their
-contents' class; a location whose class differs at the entry heap is one an
+held by the heap, so its fields' roles, its stores' cells' roles
+(`storeEntries`) and its descriptor's view store fix their contents' class; a location whose class differs at the entry heap is one an
 entry of $`\Phi`$ at `any` covers.
 
 Stated limit: a field of a position's own value, $`\mathsf{field}\ s\ k`$ or

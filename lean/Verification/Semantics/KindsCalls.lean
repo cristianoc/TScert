@@ -179,7 +179,7 @@ exception family that admits it, at that world. -/
 theorem allocThrow_safe {Ξ T : Fam} {Q : WPost} {f : PropKey} {v : Tm} {n : Nat} {W : WorldT (n + 2)}
     {h : Heap} (hadm : WorldAdm W) (hok : HeapOk (n + 2) W h) (hsrc : isSourceVal v = true)
     (hvr : RefsOk W v)
-    (hf : f ≠ arrayStoreKey ∧ f ≠ viewElementsKey ∧ f ≠ viewLengthKey)
+    (hf : f ≠ arrayStoreKey)
     (hΞ : ∀ (U : WorldT (n + 1)) u, Ξ (n + 1) U u) :
     SafePostExcW Ξ T Q (fun _ _ _ => True) (n + 2) W h (allocThrow f v) := by
   have hv : isVal v = true := sourceVal_isVal hsrc
@@ -239,7 +239,7 @@ theorem callback_throw_handled {f : PropKey} {v : Tm} {n : Nat} {W : WorldT (n +
     {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {L : List Tm}
     {d : Tm} {k : ControlFlow.Continuation} {l : ControlFlow.Target}
     (hadm : WorldAdm W) (hok : HeapOk (n + 2) W h) (hsrc : isSourceVal v = true)
-    (hf : f ≠ arrayStoreKey ∧ f ≠ viewElementsKey ∧ f ≠ viewLengthKey)
+    (hf : f ≠ arrayStoreKey)
     (hr : RefsOk W (.frame E K (allocThrow f v) L d k (some l))) :
     ∃ (h' : Heap) (t' : Tm) (U : WorldT n),
       HeapObservations.Steps 2 h (.frame E K (allocThrow f v) L d k (some l)) h' t' ∧

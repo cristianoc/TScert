@@ -74,24 +74,6 @@ one, and the field map is fixed at allocation: an object's classification
 never changes. The steps that copy an object's own keys are stuck on one. -/
 def hostKey : PropKey := "[[host]]"
 
-/-- The key a typed array, a host object, holds its typed-array length under
-(SOURCE-CONTRACTS.md, "Stated library types"; `HeapKnowledge.Term.view`): its
-location holds the count, a safe integer, which no step of the program
-changes, every typed array viewing a fixed-size `ArrayBuffer` that is never
-detached (DESIGN.md, "Trust surface"). No source property names it
-(`RequestJson.reservedKey`) and no step copies it (`copiedKey`); it means a
-count only on an object owning `hostKey`. -/
-def viewLengthKey : PropKey := "[[viewLength]]"
-
-/-- The key a typed array, a host object, holds its elements under
-(SOURCE-CONTRACTS.md, "Stated library types"; `HeapKnowledge.elementsOf`):
-its location holds a store listing one location per element, each holding
-the element, a number. The host's element reads and writes are stated over
-it (`%ByteAt%`, `%ByteSet%`); no step of the program reads it, no source
-property names it (`RequestJson.reservedKey`) and no step copies it
-(`copiedKey`). It means the elements only on an object owning `hostKey`. -/
-def viewElementsKey : PropKey := "[[viewElements]]"
-
 /-- The key an early binding's uninitialized marker owns (SOURCE-ELABORATION.md,
 "Lexical bindings before initialization"): a fresh object per entry of the
 binding's statement list, the cell's contents until the declaration writes
@@ -1740,14 +1722,12 @@ theorem tagHolds_of_heap {h : List Tm} {t : Tag} {v : Tm} {q : Bool} (hq : tagHo
 
 /-- A key a spread copies: a string key the model does not keep for itself
 (the prototype, the array store, a function object's code field, the host
-classification, a typed array's length, an early binding's
-uninitialized marker). A
+classification, an early binding's uninitialized marker). A
 symbol-keyed field is never copied: the model's are the library's, whose
 enumerability it does not record, and
 no allocation of the fragment makes one. -/
 def copiedKey : PropKey → Bool
-  | .str s => s != "[[proto]]" && s != "[]" && s != "[[code]]" && s != "[[host]]" && s != "[[viewLength]]" &&
-      s != "[[viewElements]]" &&
+  | .str s => s != "[[proto]]" && s != "[]" && s != "[[code]]" && s != "[[host]]" &&
       s != "[[uninitialized]]"
   | .sym _ => false
 

@@ -1078,6 +1078,30 @@ control("forged declarations: a generic member's result", async (): Promise<void
   say("forged declarations: a generic member's result narrowed in the class's declaration, refused at the construct code");
 });
 
+control("forged declarations: a typed array's view", async (): Promise<void> => {
+  // A typed array's type is a view clause, its format stated by the
+  // declaration's `view` and its members methods alone; the value is a
+  // descriptor and its view store. A record of the source given a `view`
+  // (a user record shaped like a typed array) refuses the unit reading it;
+  // the untampered document is accepted.
+  const artifacts = run("typed-array-length-across-field-write");
+  const text = readFileSync(fragmentOf(artifacts), "utf8");
+  const document = (t: string): Record<string, unknown> => {
+    const value: unknown = JSON.parse(t);
+    assert.ok(isObject(value), "a fragment");
+    return value;
+  };
+  const good = pass(forged(artifacts, "views-kept", document(text)));
+  const marked = must([...good.verdicts.keys()].find((u) => u.startsWith("marked@")), "marked's unit");
+  accepted(good, marked, "the untampered views");
+  const cursor = /("name":"Cursor","span":\[\d+,\d+\]\},"parameters":\[\],"bases":\[\],"expression":\{"k":"object",)/;
+  assert.ok(cursor.test(text), "Cursor's definition");
+  const shaped = pass(forged(artifacts, "forged-record-view", document(text.replace(cursor, '$1"view":"uint8",'))));
+  refused(shaped, marked, "a record of the source given a view",
+    /the declarations required by this unit cannot be interpreted: Cursor: a typed array's type states its methods alone/);
+  say("forged declarations: a record of the source given a view, refused at its declaration");
+});
+
 control("forged declarations: another import closure", async (): Promise<void> => {
   // A fragment's code over another file's declarations. The code names each
   // declaration it reads by its identity (module, name, span): a reference

@@ -87,10 +87,11 @@ def ElementKind.preFacts (k : ElementKind) : List HeapKnowledge.IndexFact :=
     | some (lo, hi) => [.linear (.le [(.value 3, -1)] (-lo)), .linear (.le [(.value 3, 1)] hi)]
 
 /-- A typed array's element write (`%ByteSet%`, a view's `fill`,
-`copyWithin` and `set`; SOURCE-CONTRACTS.md, "Stated library types"). The
-model holds a view's elements as a store (`viewElementsKey`) of fixed
-length, and a write replaces entries of the stores of the views over the
-written bytes by fresh cells (`ElementWrite.Holds`). -/
+`copyWithin` and `set`; SOURCE-CONTRACTS.md, "Stated library types"). A
+typed array's elements are its view store's cells, the view store of fixed
+format and length that its descriptor names, and a write replaces entries of
+the view stores of the typed arrays over the written bytes by fresh cells
+(`ElementWrite.Holds`). -/
 inductive ElementWrite where
   | stores
   /-- Besides, the element store of the view (the first actual), whose
@@ -108,16 +109,18 @@ facts through it. -/
 def ElementWrite.changes : ElementWrite → HeapKnowledge.Changes
   | _ => ⟨false, false, .length⟩
 
-/-- An exact element write of the actuals `args` into a view of element
-type `k`: the value (`args[2]`) is one `k` takes (`ElementKind.Takes`), and
-where the store of elements of `args[0]` held entries `ls`, it lists after
-the call the same entries but at the safe integer `args[1]`, below their
-number, where it lists a location holding `k`'s conversion of the value
-(`ElementKind.convert`, the host's on what `k` takes). -/
+/-- An exact element write of the actuals `args` into a typed array of
+element type `k`: the value (`args[2]`) is one `k` takes
+(`ElementKind.Takes`), and where the store of elements of `args[0]`, its
+view store (`HeapKnowledge.elementsOf`), listed the entries `ls`
+(`storeEntries`), it lists after the call the same entries but at the safe
+integer `args[1]`, below their number, where it lists a location holding
+`k`'s conversion of the value (`ElementKind.convert`, the host's on what `k`
+takes). -/
 def ExactWrite (k : ElementKind) (args : List Tm) (before after : Heap) : Prop :=
   k.Takes (args.getD 2 .undef) ∧
-  ∀ s ls, HeapKnowledge.elementsOf (args.getD 0 .undef) = some s → before[s]? = some (.arr ls) →
-    ∃ ls' b, ∃ i : Nat, after[s]? = some (.arr ls') ∧ args.getD 1 .undef = .num b ∧
+  ∀ s ls, HeapKnowledge.elementsOf (args.getD 0 .undef) = some s → before[s]?.bind storeEntries = some ls →
+    ∃ ls' b, ∃ i : Nat, after[s]?.bind storeEntries = some ls' ∧ args.getD 1 .undef = .num b ∧
       SafeIntegers.SafeInt b (i : Int) ∧ i < ls.length ∧ (∀ j, j ≠ i → ls'[j]? = ls[j]?) ∧
       ∃ l, ls'[i]? = some (some l) ∧ after[l]? = some (k.convert (args.getD 2 .undef))
 
@@ -216,7 +219,7 @@ theorem ExactWrite.prefix_left {k : ElementKind} {args : List Tm} {before middle
   refine ⟨hx.1, fun s ls hs hls => ?_⟩
   apply hx.2 s ls hs
   obtain ⟨t, rfl⟩ := hprefix
-  rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hls).1, hls]
+  exact HeapKnowledge.storeEntries_extend t hls
 
 theorem ElementWrite.Holds.prefix_left {w : ElementWrite} {args : List Tm} {before middle after : Heap}
     (hx : w.Holds args middle after) (hprefix : before.IsPrefix middle) : w.Holds args before after :=
@@ -240,15 +243,15 @@ so its domain is the exit world's, each location has its role's shape and
 its contract's contents, the fresh ones included; every old location whose
 role is no view store keeps its contents; and each cell an old view store
 newly lists is fresh against `h`. The relation constrains every view store,
-whichever view the call names. -/
+whichever typed array the call names. -/
 structure ViewWrite {n n' : Nat} (W : WorldT n) (h : Heap) (W' : WorldT n') (h' : Heap) : Prop where
   le : n' ≤ n
   ext : WExt (trunc n' le W) W'
   ok : HeapOk n' W' h'
-  keep : ∀ (l : Nat) (r : Role), roleAt W l = some r → (∀ N, r ≠ .store (.view N)) → h'[l]? = h[l]?
-  grow : ∀ (l N : Nat) (ls ls' : List (Option Nat)), roleAt W l = some (.store (.view N)) →
-    h[l]? = some (Tm.arr ls) → h'[l]? = some (Tm.arr ls') →
-    ∀ c, some c ∈ ls' → some c ∈ ls ∨ h.length ≤ c
+  keep : ∀ (l : Nat) (r : Role), roleAt W l = some r → (∀ f N, r ≠ .store (.view f N)) → h'[l]? = h[l]?
+  grow : ∀ (l : Nat) (f : ViewFormat) (N : Nat) (cs cs' : List Nat), roleAt W l = some (.store (.view f N)) →
+    h[l]? = some (Tm.viewStore f cs) → h'[l]? = some (Tm.viewStore f cs') →
+    ∀ c ∈ cs', c ∈ cs ∨ h.length ≤ c
 
 namespace ViewWrite
 variable {n n' : Nat} {W : WorldT n} {h : Heap} {W' : WorldT n'} {h' : Heap}
@@ -259,17 +262,17 @@ theorem roleAt (hw : ViewWrite W h W' h') {l : Nat} {r : Role} (hl : Verificatio
 
 /-- **An ordinary array's store is kept.** -/
 theorem keeps_array (hw : ViewWrite W h W' h') {l : Nat} (hl : Verification.roleAt W l = some (.store .array)) :
-    h'[l]? = h[l]? := hw.keep l _ hl (fun N hN => by cases hN)
+    h'[l]? = h[l]? := hw.keep l _ hl (fun f N hN => by cases hN)
 
-/-- **An old view store holds a replacement store of its fixed length, whose
-present entries are element cells of the exit world and locations of the
-exit heap.** -/
-theorem view_store (hw : ViewWrite W h W' h') {l N : Nat}
-    (hl : Verification.roleAt W l = some (.store (.view N))) :
-    ∃ ls', h'[l]? = some (Tm.arr ls') ∧ ls'.length = N ∧
-      ∀ c, some c ∈ ls' → Verification.roleAt W' c = some .elem ∧ c < h'.length := by
-  obtain ⟨u, hu, ⟨ls', rfl, hlen⟩, -⟩ := hw.ok.2 l _ (hw.roleAt hl)
-  exact ⟨ls', hu, hlen, fun c hc => hw.ok.store_cells hu hc⟩
+/-- **An old view store holds a replacement view store of its fixed format
+and length, whose cells are element cells of the exit world and locations of
+the exit heap.** -/
+theorem view_store (hw : ViewWrite W h W' h') {l : Nat} {f : ViewFormat} {N : Nat}
+    (hl : Verification.roleAt W l = some (.store (.view f N))) :
+    ∃ cs', h'[l]? = some (Tm.viewStore f cs') ∧ cs'.length = N ∧
+      ∀ c ∈ cs', Verification.roleAt W' c = some .elem ∧ c < h'.length := by
+  obtain ⟨u, hu, ⟨cs', rfl, hlen⟩, -⟩ := hw.ok.2 l _ (hw.roleAt hl)
+  exact ⟨cs', hu, hlen, fun c hc => hw.ok.view_cells hu hc⟩
 
 /-- **A fresh location has its role's shape.** -/
 theorem fresh (hw : ViewWrite W h W' h') {l : Nat} {r : Role} (hl : Verification.roleAt W' l = some r) :
@@ -292,20 +295,18 @@ theorem changes (hw : ViewWrite W h W' h') (hok : HeapOk n W h) (w : CallEffects
     exact ⟨r, hr, hs⟩
   refine ⟨fun l v hv halt => ?_, fun _ l ls hl => ?_, fun hg => by cases w <;> cases hg⟩
   · obtain ⟨r, hr, hc, -⟩ := role_of hv
-    rw [hw.keep l r hr (fun N hN => ?_), hv]
+    rw [hw.keep l r hr (fun f N hN => ?_), hv]
     subst hN
-    obtain ⟨ls, rfl, -⟩ := hc
+    obtain ⟨cs, rfl, -⟩ := hc
     cases w <;> simp [CallEffects.ElementWrite.changes, HeapKnowledge.Changes.alters] at halt
   · obtain ⟨r, hr, hc, -⟩ := role_of hl
     cases r with
     | store f =>
       cases f with
       | array => exact ⟨ls, by rw [hw.keeps_array hr, hl], rfl⟩
-      | view N =>
-        obtain ⟨ls₀, he, hlen⟩ := hc
+      | view fm N =>
+        obtain ⟨cs, he, -⟩ := hc
         cases he
-        obtain ⟨ls', hl', hlen', -⟩ := hw.view_store hr
-        exact ⟨ls', hl', by omega⟩
     | field | cell | elem => simp [Cat, isSourceVal] at hc
     | identity => simp [Cat] at hc
 
@@ -341,12 +342,12 @@ theorem ViewWrite.prefix_left {n m n' : Nat} {W : WorldT n} {M : WorldT m} {h hm
     intro l r hr
     obtain ⟨t, rfl⟩ := hp
     exact List.getElem?_append_left (by have := roleAt_lt hr; omega)
-  refine ⟨Nat.le_trans hw.le hle, ?_, hw.ok, fun l r hr hne => ?_, fun l N ls ls' hr hl hl' c hc => ?_⟩
+  refine ⟨Nat.le_trans hw.le hle, ?_, hw.ok, fun l r hr hne => ?_, fun l f N cs cs' hr hl hl' c hc => ?_⟩
   · have := WExt_trunc hw.le hx
     rw [trunc_trunc] at this
     exact WExt_trans this hw.ext
   · rw [hw.keep l r (hrole hr) hne, hget hr]
-  · rcases hw.grow l N ls ls' (hrole hr) (by rw [hget hr]; exact hl) hl' c hc with h1 | h1
+  · rcases hw.grow l f N cs cs' (hrole hr) (by rw [hget hr]; exact hl) hl' c hc with h1 | h1
     · exact .inl h1
     · exact .inr (Nat.le_trans hp.length_le h1)
 

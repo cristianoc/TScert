@@ -383,15 +383,19 @@ export const objectProtoKeys: ReadonlySet<string> = new Set(["constructor", "__d
 export const openReadPrefix = "%Read:";
 /** The intrinsic of an open read at `key`. */
 export const openReadName = (key: string): string => `${openReadPrefix}${key}%`;
-/** `%Read:k%(o: {}): unknown` within the empty footprint: the value the
- * lookup of the string key `k` on an object without call code finds, its own
- * or an inherited property's, or `undefined`. The open-read restriction
+/** `%Read:k%(o: {} | typed array): unknown` within the empty footprint: the
+ * value the lookup of the string key `k` on an object without call code
+ * finds, its own or an inherited property's, or `undefined`; a typed array of
+ * any format is such an object. The open-read restriction
  * (SOURCE-CONTRACTS.md, "Open reads") and the cross-family key audit justify
  * its empty effect, including when an audited getter executes. */
 export function openReadIntrinsic(key: string):
     { name: string; typeParams: SourceTypeParameter<TypeTerm>[]; type: Signature } {
+  const typedArrays = (["uint8", "uint16", "int32", "float64"] as const).map((view): TypeTerm =>
+    ({ k: "object", fields: [], stringIndex: null, calls: [], view, span }));
+  const receiver: TypeTerm = { k: "union", parts: [{ k: "object", fields: [], stringIndex: null, calls: [], span }, ...typedArrays], span };
   return { name: openReadName(key), typeParams: [],
-    type: { ...fn([{ k: "object", fields: [], stringIndex: null, calls: [], span }], atom("unknown")), effect: emptyEffect } };
+    type: { ...fn([receiver], atom("unknown")), effect: emptyEffect } };
 }
 
 export const freezePrefix = "%Freeze:";
@@ -677,9 +681,9 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // ToPropertyKey's canonical numeric string). The second states its
     // result the element the view's elements hold at the index
     // (`IndexFact.element`, at the return's positions: 0 the result, 2 the
-    // view, 3 the index): the model holds a view's elements as a store under
-    // `[[viewElements]]`, one location per element below the typed-array
-    // length, each holding the element (DESIGN.md, "Trust surface").
+    // view, 3 the index): a typed array's elements are the cells its view
+    // store lists, the view store its descriptor names, one per index below
+    // its fixed length, each holding the element (DESIGN.md, "Trust surface").
     [byteAtName]: () => {
       const params = [views, atom("number")];
       return { typeParams: [], type: { k: "intersection", span, parts: [
@@ -713,9 +717,9 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // the element at a valid index set to it converted to the view's element
     // type, no element at any other key, the prototype chain never read. It
     // writes the view's element alone, and answers a number, the value the
-    // assignment is. The model holds each view's elements as a store
-    // (`[[viewElements]]`), and the views over one buffer share its bytes: a
-    // write sets the element's entry of the store of every view over the
+    // assignment is. Each typed array's elements are its view store's cells,
+    // and the views over one buffer share its bytes: a write sets the
+    // element's entry of the view store of every typed array over the
     // written bytes to a fresh location holding what that view now reads
     // there, which changes stores alone, keeps their lengths and present
     // entries and lists no old location they did not list: within the

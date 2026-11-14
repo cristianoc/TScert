@@ -146,7 +146,7 @@ Kripke model of general references
 
 - a location's class, `store` or `value`, is fixed;
 - a location whose contract admits one value holds it in every reachable
-  heap (a `@stable` field, a typed array's `[[viewLength]]`);
+  heap (a `@stable` field);
 - an object's own keys and their locations are fixed at its allocation.
 
 A transition $`(\rho,h)\leadsto h'`$ is **admissible** when it is a run of
@@ -338,7 +338,7 @@ of fact needs.
 
 **Bounds at the read location.** The index-fact mechanism carries, beside
 a step's class-level change, direct evidence that one read location holds
-the same value after the step (`FirstKept`, `ViewsKept`). Its sources:
+the same value after the step (`FirstKept`). Its sources:
 the field is `@stable`, an invariant; the step is a field write and the
 read field is apart from it or a sibling; the step changes only its
 receiver's own locations (`call-own`) or its receiver's store
@@ -635,5 +635,5 @@ conjectured.
 | Reliance during callbacks | proved (`rely_chain`, `map_rely`, `elems_rely`) |
 | Preservation of index facts, quantified facts and separations, from a class-level change and local evidence | proved (`keptIndicesWith_holds`, `termValue_grown`, `stableFirst_frame`, `writeAtoms_holds`, `grownRegions_holds`) |
 | Transformer soundness as one statement over one definition of derivation, with both mechanisms as instances | conjectured |
-| Bounds at the read location (`FirstKept`, `ViewsKept`) derived from the frame at the region a step states | conjectured |
+| Bounds at the read location (`FirstKept`) derived from the frame at the region a step states | conjectured |
 | One change lattice containing `length` and the footprint's `grow` | conjectured |

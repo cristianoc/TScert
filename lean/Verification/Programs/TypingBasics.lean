@@ -187,7 +187,7 @@ inductive PayloadRole where
 field, a cell and an element hold source values, a store slot a store. -/
 def PayloadRole.sort : PayloadRole → ValueSort
   | .stored .field | .stored .cell | .element => .source
-  | .stored .arrayStore | .stored .viewStore => .store
+  | .stored .arrayStore => .store
 
 /-- **Payload compatibility**: `Payload(F|C|E, A) ⟺ A ⊆ V`,
 `Payload(S, A) ⟺ A ⊆ S`, the category checked by `tyIn`. -/

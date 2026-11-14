@@ -510,9 +510,13 @@ def atomLabels (term : Json) : M Union := do
   | "unknown" => return [← ground "source" sourceValueClauses]
   | "void" => return [← ground "void" sourceValueClauses]
   | "never" => return []
+  -- Every object: the records, the callables, the classes and the typed
+  -- arrays of each format.
   | "object" =>
     return normUnion [← prim "object" (.refs [] [] []), ← prim "function" (.arrs [] []),
-      ← prim "constructor" (.ctors [])]
+      ← prim "constructor" (.ctors []), ← prim "Uint8Array" (.view .uint8),
+      ← prim "Uint16Array" (.view .uint16), ← prim "Int32Array" (.view .int32),
+      ← prim "Float64Array" (.view .float64)]
   -- Every value but a host object (COMPILER-API.md, "Restricted values"):
   -- the primitives, the callables and the objects owning no `[[host]]`. No
   -- source spells it; the library overlay states it at the parameters of the

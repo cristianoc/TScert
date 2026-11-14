@@ -516,10 +516,6 @@ theorem elementCalls_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledg
   · exact requiringCalls_value_reassign G η images j k e codes sums
 
 omit [DecidableEq ι] in
-theorem writeViews_reassign :
-    HeapExpressionRules.writeViews (reassign G η) = HeapExpressionRules.writeViews G := rfl
-
-omit [DecidableEq ι] in
 theorem stableFirst_reassign :
     HeapExpressionRules.stableFirst (reassign G η) = HeapExpressionRules.stableFirst G := rfl
 
@@ -530,7 +526,7 @@ theorem ensuresCall_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e :
   unfold PromiseCalls.ensuresCall
   split
   · rename_i p
-    rw [checkTree_reassign G η images p codes sums, requiresTree_reassign, writeViews_reassign, stableFirst_reassign]
+    rw [checkTree_reassign G η images p codes sums, requiresTree_reassign, stableFirst_reassign]
   · rfl
 
 omit [DecidableEq ι] in
@@ -543,7 +539,7 @@ theorem ensuringCalls_value_reassign (j : Sequent ι) (k : HeapKnowledge.Knowled
         j k e codes sums).value =
       ((Checker.steps G images).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.ensuringCalls.run
         j k e codes sums).value := by
-  simp only [Checker.ensuringCalls, ensuresCall_reassign, writeViews_reassign, stableFirst_reassign]
+  simp only [Checker.ensuringCalls, ensuresCall_reassign, stableFirst_reassign]
   split
   · simp only [CheckResult.map, grownRegions_reassign]
     rw [elementCalls_value_reassign]

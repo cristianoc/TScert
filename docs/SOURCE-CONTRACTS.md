@@ -1838,11 +1838,11 @@ The entries of [library modules](#library-modules) and
 values name $`D_\theta`$ too. Each $`D_\theta`$ joins the document once,
 where a statement or a name reads it.
 
-A view of bytes $`V_S`$, with $`b`$ the marker `"node:bytes"` and $`n^?`$
-for $`\mathtt{number}\mid\mathtt{undefined}`$, is
+A view of bytes $`V_S`$ of the format $`t`$, with $`n^?`$ for
+$`\mathtt{number}\mid\mathtt{undefined}`$, is
 
 ```math
-V_S=\mathsf{host}_b\,\{\mathtt{fill}\colon(\mathtt{number},\ n^?,\ n^?)\Rightarrow_\emptyset S;\ \mathtt{copyWithin}\colon(\mathtt{number},\ \mathtt{number},\ n^?)\Rightarrow_\emptyset S;\ \mathtt{set}\colon(\mathit{Uint8Array},\ n^?)\Rightarrow_\emptyset\mathtt{undefined};\ \mathtt{subarray}\colon(\mathtt{number},\ n^?)\Rightarrow_\emptyset S\}
+V_S=\mathsf{view}_t\,\{\mathtt{fill}\colon(\mathtt{number},\ n^?,\ n^?)\Rightarrow_\emptyset S;\ \mathtt{copyWithin}\colon(\mathtt{number},\ \mathtt{number},\ n^?)\Rightarrow_\emptyset S;\ \mathtt{set}\colon(\mathit{Uint8Array},\ n^?)\Rightarrow_\emptyset\mathtt{undefined};\ \mathtt{subarray}\colon(\mathtt{number},\ n^?)\Rightarrow_\emptyset S\}
 ```
 
 The entries:
@@ -1851,10 +1851,9 @@ The entries:
   and `Uint16Array`, `Int32Array` and `Float64Array`, the standard
   library's parts: four types, the views of bytes $`V_\mathit{Uint8Array}`$,
   $`V_\mathit{Uint16Array}`$, $`V_\mathit{Int32Array}`$ and
-  $`V_\mathit{Float64Array}`$, each $`\mathsf{host}_m`$ at its own marker,
-  `"node:bytes"`, `"node:bytes:uint16"`, `"node:bytes:int32"` and
-  `"node:bytes:float64"`, so the model's type of a view states its element
-  type; $`V`$ is their union. Its members each a
+  $`V_\mathit{Float64Array}`$, each $`\mathsf{view}_t`$ at its own format,
+  `uint8`, `uint16`, `int32` and `float64`, so the model's type of a view
+  states its element type; $`V`$ is their union. Its members each a
   method of `%TypedArray%.prototype`, called at numbers and views
   alone: ToNumber and ToIntegerOrInfinity of a number run no code, `set`
   of a view copies by SetTypedArrayFromTypedArray, which runs none, and
@@ -1874,7 +1873,7 @@ The entries:
   calling a callback or a species constructor's code (`map`, `filter`,
   `slice`, `every` with a `thisArg`, …) are not stated, so a read of one
   finds no member.
-- `Buffer`: $`V_\mathit{Buffer}`$ with
+- `Buffer`: $`V_\mathit{Buffer}`$, at the format `uint8`, with
   $`\mathtt{toString}\colon(\texttt{"utf8"})\Rightarrow_\emptyset\mathtt{string}`$
   besides, each a method, within the empty footprint. `toString("utf8")`
   reads the view's length from its internal slot and decodes through the
@@ -1907,26 +1906,29 @@ The entries:
   [the DOM's canvas, document and navigator](#the-doms-canvas-document-and-navigator)
   states them.
 
-$`\mathsf{host}_m\,R`$ is the record $`R`$ with a host family's marker
-$`m`$ ([the family contract](HOST-FAMILIES.md#the-family-contract)): a
-required readonly view of the model's `[[host]]` at $`m`$, which no
-allocation of the program owns, so no program object meets a view's type
-(`invalid-node-bytes-program-object`, run under Node: `decode` of such an
-object throws), and the steps that copy an object's own properties or
-expose their values refuse it ([host objects](HOST-FAMILIES.md#host-objects)).
-`Object.keys` and `Object.hasOwn`, which a host object admits, answer a
-view's element keys, which the model does not hold: strings and Booleans,
-at no type that tells them. A view of bytes
+$`\mathsf{view}_t\,\{\ldots\}`$ is the type `Clause.view` of the typed
+arrays of the format $`t`$ with the listed methods
+([the calculus](SEMANTICS.md#operational-language)): the values whose
+descriptor makes them typed arrays of that format, naming their view store
+and their fixed length. The declaration's `view` field, which only these
+overlay entries state, is the representation boundary: no field or
+signature shape makes a value a typed array, and no program object meets a
+view's type (`invalid-node-bytes-program-object`, run under Node: `decode`
+of such an object throws). The steps that copy an object's own properties
+or expose their values refuse a typed array (`hostOwned`).
+`Object.keys` and `Object.hasOwn` answer a view's element keys, which the
+model does not hold: strings and Booleans, at no type that tells them. A
+view of bytes
 is an integer-indexed exotic object (ECMA-262, "TypedArray Objects"): its
 [[Get]] at a canonical numeric key is the element at a valid index, a
 number of the view's element type (an integer in its range, or for a
 `Float64Array` any double, `NaN` included), and `undefined` at any other, never reading the
 prototype chain, and its `length` is `%TypedArray%.prototype`'s getter.
-The model holds a view's elements as a store under the model key
-$`[[\mathrm{viewElements}]]`$ (`Calculus.viewElementsKey`), one location
-per element, each holding the element, which no step of the program reads or
-copies and only the intrinsics' and the view methods' contracts state; it
-holds no `length` of it. An element read at a number and a read of
+A typed array's elements are the cells its view store lists, the view store
+its descriptor names: the value $`\mathsf{viewStore}(t,\langle c_0,\ldots,c_{N-1}\rangle)`$,
+one element cell per index below its fixed length $`N`$, each holding the
+element, which no step of the program reads or copies and only the
+intrinsics' and the view methods' contracts state (`HeapKnowledge.elementsOf`). An element read at a number and a read of
 `length` of a value TypeScript types as views of bytes only are calls of
 the intrinsics stating them, and so is an element write at a number,
 
@@ -2015,13 +2017,12 @@ end). A compound assignment or an update of an element is refused.
 **Reads below the typed-array length.** Every view, the program's or external
 code's, views a fixed-size `ArrayBuffer` that is never detached (a host
 assumption, [trust surface](DESIGN.md#trust-surface)), so its typed-array
-length never changes: the model's view owns the key $`[[\mathrm{viewLength}]]`$
-(`Calculus.viewLengthKey`), whose location, which no other object's field or
-store shares, holds that length, the linear term $`\mathrm{view}(b)`$
+length never changes: it is the length its descriptor holds, part of the
+value, the linear term $`\mathrm{view}(b)`$
 ([linear facts](ARITHMETIC.md#linear-facts)). `%ByteLength%`'s
 postcondition states its result that length, and `%ByteAt%` has a second signature, a read at a safe
 integer below it, whose result is the element, a number, and the element
-the view's element store holds at that index (`IndexFact.element`):
+the view's view store lists at that index (`IndexFact.element`):
 
 ```math
 \%\mathrm{ByteLength}\%\colon(\mathit{Uint8Array})\Rightarrow_\emptyset^{\ \mathsf{ensures}\ \mathrm{int}(0),\ 0=\mathrm{view}(2)}\mathtt{number}
@@ -4197,8 +4198,8 @@ safe integer ([a sum reaching $`2^{53}`$](ARITHMETIC.md#linear-facts),
 run under Node: a read past the last element is `undefined`). At a
 fraction ToIndex truncates (`new Uint8Array(1.5)` has one element under
 Node), which the precondition excludes. The fact lies within the
-owner-approved typed-array trust (the view's typed-array length is the stable
-`[[viewLength]]` the stated type reads). Audited against ECMA-262's
+owner-approved typed-array trust (the view's typed-array length is its
+descriptor's fixed length). Audited against ECMA-262's
 TypedArray constructor with a number argument (ToIndex, AllocateTypedArray)
 and a probe under Node 26.13.0 (2026-11-07).
 

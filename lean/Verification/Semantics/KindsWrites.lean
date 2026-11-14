@@ -30,7 +30,7 @@ theorem fieldTarget_role {k : Nat} {W : WorldT k} {fs : List (PropKey × Nat)} {
     ∃ r, roleAt W l = some r ∧ SlotRole f (some r) := by
   have := hobj (.slot f l) (by
     rw [refs_objAt]; exact List.mem_append_left _
-      (by simp only [objRefs, List.mem_cons, List.mem_map]; exact .inr (.inr ⟨(f, l), lookup_mem hl, rfl⟩)))
+      (by simp only [objRefs, List.mem_cons, List.mem_map]; exact .inr ⟨(f, l), lookup_mem hl, rfl⟩))
   simp only [RefOk] at this
   rcases hr : roleAt W l with _ | r
   · rw [hr] at this; cases this
@@ -52,13 +52,13 @@ theorem writeField_shaped {k : Nat} {W : WorldT k} {h : Heap} {fs : List (PropKe
   obtain ⟨r, hr, -⟩ := fieldTarget_role hobj hl
   exact ⟨Shaped_set hsh hr ⟨hcat r hr, hv⟩, fun _ h => by simp [refs] at h⟩
 
-/-- An ordinary property's write, under a key other than the store slots:
+/-- An ordinary property's write, under a key other than the store slot:
 its target is a field or a cell, so a source value is the payload's
 category. -/
 theorem writeOrdinary_shaped {k : Nat} {W : WorldT k} {h : Heap} {fs : List (PropKey × Nat)}
     {c : CallCode} {oid : Nat} {f : PropKey} {l : Nat} {v : Val}
     (hsh : Shaped W h) (href : RefsOk W (.writeAt f (.objAt fs c oid) v)) (hl : fs.lookup f = some l)
-    (hkey : f ≠ arrayStoreKey ∧ f ≠ viewElementsKey) (hsrc : isSourceVal v = true) :
+    (hkey : f ≠ arrayStoreKey) (hsrc : isSourceVal v = true) :
     Shaped W (h.set l v) := by
   have hobj : RefsOk W (.objAt fs c oid) := fun r hr => href r (by simp [refs, hr])
   refine (writeField_shaped hsh href hl fun r hr => ?_).1
@@ -91,7 +91,7 @@ theorem storeWrite_shaped {k : Nat} {W : WorldT k} {h : Heap} {fs : List (PropKe
   | store fm =>
     cases fm with
     | array => exact ⟨ls, rfl⟩
-    | view N => simp [SlotRole] at hs; exact absurd hs (by decide)
+    | view fm N => simp [SlotRole] at hs
   | field | cell => simp [SlotRole] at hs
   | elem | identity => simp [SlotRole] at hs
 
@@ -494,14 +494,6 @@ theorem toString_ne_store (n : Nat) : toString n ≠ "[]" := by
   have := Nat.isDigit_of_mem_toDigits (by decide) (by decide) hd
   simp at this
 
-theorem toString_ne_viewElements (n : Nat) : toString n ≠ "[[viewElements]]" := by
-  intro h
-  have := congrArg String.toList h
-  simp [toString, Nat.repr] at this
-  have hd : '[' ∈ Nat.toDigits 10 n := by rw [this]; simp
-  have := Nat.isDigit_of_mem_toDigits (by decide) (by decide) hd
-  simp at this
-
 theorem heapVal_src {k : Nat} {W : WorldT k} {h : Heap} {l : Nat} {r : Role}
     (hsh : Shaped W h) (hr : roleAt W l = some r) (hc : r = .field ∨ r = .cell ∨ r = .elem) :
     isSourceVal (heapVal h l) = true := by
@@ -513,10 +505,10 @@ theorem heapVal_src {k : Nat} {W : WorldT k} {h : Heap} {l : Nat} {r : Role}
 
 theorem slot_src {k : Nat} {W : WorldT k} {h : Heap} {fs : List (PropKey × Nat)} {c : CallCode}
     {oid : Nat} (hsh : Shaped W h) (ho : RefsOk W (.objAt fs c oid)) {p : PropKey × Nat} (hp : p ∈ fs)
-    (h1 : p.1 ≠ arrayStoreKey) (h2 : p.1 ≠ viewElementsKey) : isSourceVal (heapVal h p.2) = true := by
+    (h1 : p.1 ≠ arrayStoreKey) : isSourceVal (heapVal h p.2) = true := by
   have := ho (.slot p.1 p.2) (by
     rw [refs_objAt]; exact List.mem_append_left _
-      (by simp only [objRefs, List.mem_cons, List.mem_map]; exact .inr (.inr ⟨p, hp, rfl⟩)))
+      (by simp only [objRefs, List.mem_cons, List.mem_map]; exact .inr ⟨p, hp, rfl⟩))
   simp only [RefOk] at this
   rcases hr : roleAt W p.2 with _ | r
   · rw [hr] at this; cases this
@@ -530,17 +522,15 @@ theorem slot_src {k : Nat} {W : WorldT k} {h : Heap} {fs : List (PropKey × Nat)
     | store fm => cases fm <;> simp [SlotRole] at this <;> simp_all
 
 /-- **A copy allocates source values under ordinary keys**: every property a
-merge reads is under a key other than `[]` and `[[viewElements]]`, and holds
-a source value. A copy's accumulator is no host object (`ownAll`), and an
-object owning `[[viewElements]]` with valid references is one (`ViewMetaOk`);
-its source copies no internal key (`copiedKey`). -/
+merge reads is under a key other than `[]`, and holds a source value. Its
+source copies no internal key (`copiedKey`). -/
 theorem mergeParts_cat {k : Nat} {W : WorldT k} {h : Heap} {d : List PropKey} {a b : Tm}
     {ps : List (PropKey × Tm)} (hsh : Shaped W h)
     (ha : RefsOk W a) (hb : RefsOk W b) (hm : mergeParts h d a b = some ps) :
-    ∀ p ∈ ps, p.1 ≠ arrayStoreKey ∧ p.1 ≠ viewElementsKey ∧ isSourceVal p.2 = true := by
+    ∀ p ∈ ps, p.1 ≠ arrayStoreKey ∧ isSourceVal p.2 = true := by
   simp only [mergeParts, bind, Option.bind_eq_some_iff, pure, Option.some.injEq] at hm
   obtain ⟨p, hp, q, hq, rfl⟩ := hm
-  have hown : ∀ e ∈ p, e.1 ≠ arrayStoreKey ∧ e.1 ≠ viewElementsKey ∧ isSourceVal e.2 = true := by
+  have hown : ∀ e ∈ p, e.1 ≠ arrayStoreKey ∧ isSourceVal e.2 = true := by
     intro e he
     unfold ownAll at hp
     split at hp
@@ -550,14 +540,9 @@ theorem mergeParts_cat {k : Nat} {W : WorldT k} {h : Heap} {d : List PropKey} {a
         have := mem_firstKeys he
         simp only [List.mem_map, List.mem_filter, bne_iff_ne, ne_eq] at this
         obtain ⟨x, ⟨hx, hk⟩, rfl⟩ := this
-        have hv : x.1 ≠ viewElementsKey := by
-          intro hv
-          rename_i fs₀ _ hhost
-          have hmeta : ViewMetaOk W fs₀ := ha (.fields fs₀) (by rw [refs_objAt]; simp [objRefs])
-          exact hhost (hmeta.2.2 x.2 (.inl (by rw [← hv]; exact hx)))
-        exact ⟨hk, hv, slot_src hsh ha hx hk hv⟩
+        exact ⟨hk, slot_src hsh ha hx hk⟩
     · cases hp
-  have hdata : ∀ e ∈ q, e.1 ≠ arrayStoreKey ∧ e.1 ≠ viewElementsKey ∧ isSourceVal e.2 = true := by
+  have hdata : ∀ e ∈ q, e.1 ≠ arrayStoreKey ∧ isSourceVal e.2 = true := by
     intro e he
     unfold ownData at hq
     split at hq
@@ -570,13 +555,13 @@ theorem mergeParts_cat {k : Nat} {W : WorldT k} {h : Heap} {d : List PropKey} {a
         · simp only [List.mem_map, List.mem_filter] at he
           obtain ⟨x, ⟨hx, hk⟩, rfl⟩ := he
           obtain ⟨k1, l1⟩ := x
-          have hne : k1 ≠ arrayStoreKey ∧ k1 ≠ viewElementsKey := by
+          have hne : k1 ≠ arrayStoreKey := by
             cases k1 with
             | sym _ => simp [copiedKey] at hk
             | str s =>
               simp only [copiedKey, Bool.and_eq_true, bne_iff_ne, ne_eq] at hk
-              refine ⟨fun h => ?_, fun h => ?_⟩ <;> cases h <;> simp_all
-          exact ⟨hne.1, hne.2, slot_src hsh hb hx hne.1 hne.2⟩
+              intro h; cases h; simp_all
+          exact ⟨hne, slot_src hsh hb hx hne⟩
         · unfold storeData at he
           split at he
           · rename_i ls0 hls0
@@ -590,13 +575,12 @@ theorem mergeParts_cat {k : Nat} {W : WorldT k} {h : Heap} {d : List PropKey} {a
               | some m =>
                 simp only [Option.map_some, Option.some.injEq] at hxe
                 subst hxe
-                refine ⟨fun h => toString_ne_store i (PropKey.str.inj h),
-                  fun h => toString_ne_viewElements i (PropKey.str.inj h), ?_⟩
+                refine ⟨fun h => toString_ne_store i (PropKey.str.inj h), ?_⟩
                 -- the store slot is an array store, whose cells are element cells
                 have hst := hb (.slot arrayStoreKey ls0) (by
                   rw [refs_objAt]; exact List.mem_append_left _
                     (by simp only [objRefs, List.mem_cons, List.mem_map]
-                        exact .inr (.inr ⟨(arrayStoreKey, ls0), lookup_mem hls0, rfl⟩)))
+                        exact .inr ⟨(arrayStoreKey, ls0), lookup_mem hls0, rfl⟩))
                 simp only [RefOk] at hst
                 rcases hr : roleAt W ls0 with _ | r
                 · rw [hr] at hst; cases hst
@@ -612,8 +596,7 @@ theorem mergeParts_cat {k : Nat} {W : WorldT k} {h : Heap} {d : List PropKey} {a
       have := mem_firstKeys he
       simp only [stringData, List.mem_map] at this
       obtain ⟨x, -, rfl⟩ := this
-      exact ⟨fun h => toString_ne_store x.2 (PropKey.str.inj h),
-        fun h => toString_ne_viewElements x.2 (PropKey.str.inj h), rfl⟩
+      exact ⟨fun h => toString_ne_store x.2 (PropKey.str.inj h), rfl⟩
     all_goals (first | (simp only [Option.some.injEq] at hq; subst hq; simp at he) | cases hq)
   intro e he
   simp only [mergeData, List.mem_append, List.mem_filter] at he
@@ -621,81 +604,5 @@ theorem mergeParts_cat {k : Nat} {W : WorldT k} {h : Heap} {d : List PropKey} {a
   · exact hown e he
   · exact hdata e he
 
-
-theorem toString_ne_viewLength (n : Nat) : toString n ≠ "[[viewLength]]" := by
-  intro h
-  have := congrArg String.toList h
-  simp [toString, Nat.repr] at this
-  have hd : '[' ∈ Nat.toDigits 10 n := by rw [this]; simp
-  have := Nat.isDigit_of_mem_toDigits (by decide) (by decide) hd
-  simp at this
-
-/-- **A copy allocates no view metadata**: no key a merge reads is
-`[[viewLength]]`. The accumulator is no host object, and an object naming
-`[[viewLength]]` with valid references is one (`ViewMetaOk`); the source
-copies no internal key (`copiedKey`), and its store and string entries are
-under index spellings. -/
-theorem mergeParts_noLength {k : Nat} {W : WorldT k} {h : Heap} {d : List PropKey} {a b : Tm}
-    {ps : List (PropKey × Tm)} (ha : RefsOk W a) (hm : mergeParts h d a b = some ps) :
-    ∀ p ∈ ps, p.1 ≠ viewLengthKey := by
-  simp only [mergeParts, bind, Option.bind_eq_some_iff, pure, Option.some.injEq] at hm
-  obtain ⟨p, hp, q, hq, rfl⟩ := hm
-  have hown : ∀ e ∈ p, e.1 ≠ viewLengthKey := by
-    intro e he
-    unfold ownAll at hp
-    split at hp
-    · split at hp
-      · cases hp
-      · simp only [Option.some.injEq] at hp; subst hp
-        have := mem_firstKeys he
-        simp only [List.mem_map, List.mem_filter, bne_iff_ne, ne_eq] at this
-        obtain ⟨x, ⟨hx, -⟩, rfl⟩ := this
-        intro hv
-        rename_i fs₀ _ hhost
-        have hmeta : ViewMetaOk W fs₀ := ha (.fields fs₀) (by rw [refs_objAt]; simp [objRefs])
-        exact hhost (hmeta.2.2 x.2 (.inr (by rw [← hv]; exact hx)))
-    · cases hp
-  have hdata : ∀ e ∈ q, e.1 ≠ viewLengthKey := by
-    intro e he
-    unfold ownData at hq
-    split at hq
-    · split at hq
-      · cases hq
-      · simp only [Option.some.injEq] at hq; subst hq
-        have := mem_firstKeys he
-        rcases List.mem_append.mp this with he | he
-        · simp only [List.mem_map, List.mem_filter] at he
-          obtain ⟨x, ⟨-, hk⟩, rfl⟩ := he
-          obtain ⟨k1, l1⟩ := x
-          cases k1 with
-          | sym _ => simp [copiedKey] at hk
-          | str s =>
-            intro h; cases h
-            simp [copiedKey] at hk
-        · unfold storeData at he
-          split at he
-          · split at he
-            · simp only [List.mem_filterMap] at he
-              obtain ⟨x, -, hxe⟩ := he
-              obtain ⟨o, i⟩ := x
-              cases o with
-              | none => cases hxe
-              | some m =>
-                simp only [Option.map_some, Option.some.injEq] at hxe
-                subst hxe
-                exact fun h => toString_ne_viewLength i (PropKey.str.inj h)
-            · simp at he
-          · simp at he
-    · simp only [Option.some.injEq] at hq; subst hq
-      have := mem_firstKeys he
-      simp only [stringData, List.mem_map] at this
-      obtain ⟨x, -, rfl⟩ := this
-      exact fun h => toString_ne_viewLength x.2 (PropKey.str.inj h)
-    all_goals (first | (simp only [Option.some.injEq] at hq; subst hq; simp at he) | cases hq)
-  intro e he
-  simp only [mergeData, List.mem_append, List.mem_filter] at he
-  rcases he with ⟨he, -⟩ | ⟨he, -⟩
-  · exact hown e he
-  · exact hdata e he
 
 end Verification.Kinds

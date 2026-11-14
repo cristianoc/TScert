@@ -41,11 +41,12 @@ inductive Kind where
   | field | cell | elem | store | identity
   deriving DecidableEq, Repr
 
-/-- The two forms of a store location: an ordinary array's store, or a typed
-array's view store, whose length is fixed. -/
+/-- The two forms of a store location (the note *Tolerant frames*, §2,
+`array` and `view_N`): an ordinary array's store, or a typed array's view
+store, whose format and length are fixed. -/
 inductive StoreForm where
   | array
-  | view (length : Nat)
+  | view (format : ViewFormat) (length : Nat)
   deriving DecidableEq, Repr
 
 /-- A location's role, fixed when the world is extended at its allocation. -/
@@ -75,7 +76,7 @@ inductive Category where
 /-- A role's category, independent of the location's contents. -/
 def Role.category : Role → Category
   | .store .array => .array
-  | .store (.view _) => .view
+  | .store (.view ..) => .view
   | .field | .cell | .elem | .identity => .value
 
 /-- A store location's category is a store's: an array's or a view's. -/
@@ -312,19 +313,17 @@ theorem WorldAdm_appendWs {k : Nat} {W : WorldT k} {es : List (Role × Ctr k)}
 /-! ## References and their validity -/
 
 /-- A location reference a term holds: an object's identity, an object's slot
-under a key, a store's element cell, an object's field map, whose view
-metadata is valid as a whole (`ViewMetaOk`), or a typed array's view store
-of its format and length. -/
+under a key, a store's element cell, or a typed array's view store of its
+format and length. -/
 inductive Ref where
   | ident (l : Nat)
   | slot (key : PropKey) (l : Nat)
   | elem (l : Nat)
-  | fields (fs : List (PropKey × Nat))
   | view (l : Nat) (format : ViewFormat) (length : Nat)
 
 /-- The references of an object's identity and fields. -/
 def objRefs (fs : List (PropKey × Nat)) (i : Nat) : List Ref :=
-  .ident i :: .fields fs :: fs.map (fun p => .slot p.1 p.2)
+  .ident i :: fs.map (fun p => .slot p.1 p.2)
 
 /-- The element cells a store lists. -/
 def storeRefs (ls : List (Option Nat)) : List Ref :=
@@ -384,41 +383,24 @@ end
 @[simp] theorem refsArgs_eq (xs : List Tm) : refsArgs xs = xs.flatMap refs := by
   induction xs <;> simp_all [refsArgs]
 
-/-- The role a slot under `key` must have: an array store under `[]`, a view
-store of some length under `[[viewElements]]`, and a field or a cell under
-every other key. -/
+/-- The role a slot under `key` must have: an array store under `[]`, and a
+field or a cell under every other key. No slot holds a view store: a typed
+array names its view store by its descriptor (`Ref.view`). -/
 def SlotRole (key : PropKey) : Option Role → Prop
   | some (.store .array) => key = arrayStoreKey
-  | some (.store (.view _)) => key = viewElementsKey
-  | some .field => key ≠ arrayStoreKey ∧ key ≠ viewElementsKey
-  | some .cell => key ≠ arrayStoreKey ∧ key ≠ viewElementsKey
+  | some .field => key ≠ arrayStoreKey
+  | some .cell => key ≠ arrayStoreKey
   | _ => False
 
-/-- **A view-length metadata location** of the fixed length `N`: a field
-location whose contract admits the single value `N`. -/
-def LengthMeta {k : Nat} (W : WorldT k) (m N : Nat) : Prop :=
-  ∃ c, roleAt W m = some .field ∧ lookup W m = some c ∧ CtrStable c (.num (bitsOfNat N))
-
-/-- **View metadata validity** of an object's field map. Every location the
-map gives `[[viewLength]]` is a view-length metadata location of some fixed
-length, whether or not the map names `[[viewElements]]` (a host object may
-hold its length alone). Every location the map gives `[[viewElements]]` is a
-view store of some length `N`, and the location the map's `[[viewLength]]`
-finds is a view-length metadata location of that same `N`; and a map
-naming `[[viewElements]]` or `[[viewLength]]` names `[[host]]`: the metadata
-is a host object's (a typed array is one). -/
-def ViewMetaOk {k : Nat} (W : WorldT k) (fs : List (PropKey × Nat)) : Prop :=
-  (∀ m, (viewLengthKey, m) ∈ fs → ∃ N, LengthMeta W m N) ∧
-    (∀ e, (viewElementsKey, e) ∈ fs → ∃ N m, roleAt W e = some (.store (.view N)) ∧
-      fs.lookup viewLengthKey = some m ∧ LengthMeta W m N) ∧
-    ∀ e, ((viewElementsKey, e) ∈ fs ∨ (viewLengthKey, e) ∈ fs) → (fs.lookup hostKey).isSome
-
+/-- A reference's validity (the note *Tolerant frames*, (W3)): an identity
+is an identity location, a slot a location of its key's role, a listed cell
+an element cell, and a typed array's view store a view store of the
+typed array's format and length. -/
 def RefOk {k : Nat} (W : WorldT k) : Ref → Prop
   | .ident l => roleAt W l = some .identity
   | .slot key l => SlotRole key (roleAt W l)
   | .elem l => roleAt W l = some .elem
-  | .fields fs => ViewMetaOk W fs
-  | .view l _ n => roleAt W l = some (.store (.view n))
+  | .view l f n => roleAt W l = some (.store (.view f n))
 
 /-- **Reference validity**: every location a term refers to has the role its
 position demands. It reads the world only, never the heap. -/
@@ -429,12 +411,14 @@ holds has the role its position demands. A graph state's environment is
 (`ControlFlow.StateRefs`). -/
 def RootsOk {k : Nat} (W : WorldT k) (ρ : Env) : Prop := ∀ x, RefsOk W (ρ x)
 
-/-- What each role's contents are, by category: a source value in F, C and E,
-a store (of the view's length) in S, `null` in I. -/
+/-- What each role's contents are (the note *Tolerant frames*, (W2)): a
+source value in F, C and E; an array's store in an array store; in a view
+store of form `view_N`, a view store of its format listing a cell at each of
+its `N` indices, so with no hole; `null` in I. -/
 def Cat : Role → Val → Prop
   | .field, v | .cell, v | .elem, v => isSourceVal v = true
   | .store .array, v => ∃ ls, v = .arr ls
-  | .store (.view N), v => ∃ ls, v = .arr ls ∧ ls.length = N
+  | .store (.view f N), v => ∃ cs, v = .viewStore f cs ∧ cs.length = N
   | .identity, v => v = .nul
 
 /-- **The shape a role demands** of the contents of its location. -/
@@ -445,6 +429,43 @@ contents of that role's shape. -/
 def Shaped {k : Nat} (W : WorldT k) (h : Heap) : Prop :=
   ∀ l r, roleAt W l = some r → ∃ u, h[l]? = some u ∧ Shape W r u
 
+/-! ## The category of contents -/
+
+/-- **The category of a location's contents** (the note *Tolerant frames*,
+§3, the class regions; parity-interfaces I1), read from the contents alone:
+an array's store, a view store, or any other value. Total on contents. -/
+def contentsCategory : Val → Category
+  | .arr _ => .array
+  | .viewStore .. => .view
+  | _ => .value
+
+/-- The entries a store lists, in index order, an array's or a view
+store's, a view store's every one present. -/
+def storeEntries : Val → Option (List (Option Nat))
+  | .arr ls => some ls
+  | .viewStore _ cs => some (cs.map some)
+  | _ => none
+
+/-- **Contents of a role's category**: what a role's shape admits is of the
+role's category (`Cat`). -/
+theorem Cat.category {r : Role} {u : Val} (h : Cat r u) : contentsCategory u = r.category := by
+  cases r with
+  | field | cell | elem => cases u <;> simp_all [Cat, isSourceVal, contentsCategory, Role.category]
+  | identity => subst h; rfl
+  | store f =>
+    cases f with
+    | array => obtain ⟨ls, rfl⟩ := h; rfl
+    | view => obtain ⟨cs, rfl, -⟩ := h; rfl
+
+/-- **The contents category is the role category** of every allocated
+location of a structurally satisfied heap (parity-interfaces I1, the
+connecting theorem). -/
+theorem Shaped.category {k : Nat} {W : WorldT k} {h : Heap} (hs : Shaped W h) {l : Nat} {r : Role}
+    {u : Val} (hr : roleAt W l = some r) (hu : h[l]? = some u) : contentsCategory u = r.category := by
+  obtain ⟨u', hu', hsh⟩ := hs l r hr
+  rw [hu] at hu'; cases hu'
+  exact hsh.1.category
+
 
 /-! ## Validity is world-monotone and survives truncation -/
 
@@ -454,21 +475,10 @@ theorem SlotRole_mono {k} {W W' : WorldT k} (hx : WExt W W') {key : PropKey} {l 
   · rw [hr] at h; cases h
   · rw [WExt_roleAt hx hr]; rw [hr] at h; exact h
 
-theorem LengthMeta.mono {k} {W W' : WorldT k} (hx : WExt W W') {m N : Nat}
-    (h : LengthMeta W m N) : LengthMeta W' m N :=
-  let ⟨c, hr, hl, hs⟩ := h; ⟨c, WExt_roleAt hx hr, WExt_lookup hx hl, hs⟩
-
-theorem LengthMeta.trunc {k j} (hj : j ≤ k) {W : WorldT k} {m N : Nat}
-    (h : LengthMeta W m N) : LengthMeta (trunc j hj W) m N :=
-  let ⟨c, hr, hl, hs⟩ := h; ⟨_, by simpa using hr, lookup_trunc hj W m c hl, hs.restrict hj⟩
-
 theorem RefOk_mono {k} {W W' : WorldT k} (hx : WExt W W') : ∀ {r : Ref}, RefOk W r → RefOk W' r
   | .ident _, h => WExt_roleAt hx h
   | .slot _ _, h => SlotRole_mono hx h
   | .elem _, h => WExt_roleAt hx h
-  | .fields _, h =>
-    ⟨fun m hm => let ⟨N, hN⟩ := h.1 m hm; ⟨N, hN.mono hx⟩,
-      fun e he => let ⟨N, m, hr, hm, hN⟩ := h.2.1 e he; ⟨N, m, WExt_roleAt hx hr, hm, hN.mono hx⟩, h.2.2⟩
   | .view _ _ _, h => WExt_roleAt hx h
 
 theorem RefsOk_mono {k} {W W' : WorldT k} (hx : WExt W W') {t : Tm} (h : RefsOk W t) :
@@ -483,9 +493,6 @@ theorem RefOk_trunc {k j} (hj : j ≤ k) {W : WorldT k} : ∀ {r : Ref}, RefOk W
   | .ident _, h => by simpa [RefOk] using h
   | .slot _ _, h => by simpa [RefOk] using h
   | .elem _, h => by simpa [RefOk] using h
-  | .fields _, h =>
-    ⟨fun m hm => let ⟨N, hN⟩ := h.1 m hm; ⟨N, hN.trunc hj⟩,
-      fun e he => let ⟨N, m, hr, hm, hN⟩ := h.2.1 e he; ⟨N, m, by simpa using hr, hm, hN.trunc hj⟩, h.2.2⟩
   | .view _ _ _, h => by simpa [RefOk] using h
 
 theorem RefsOk_trunc {k j} (hj : j ≤ k) {W : WorldT k} {t : Tm} (h : RefsOk W t) :

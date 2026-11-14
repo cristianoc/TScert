@@ -6,9 +6,10 @@ A well-formed heap's stores list only element cells, locations of the heap
 (`HeapOk.store_cells`), so a root's **allocated cells** (`RootCells`: every
 cell its store lists is below the heap's length,
 `HeapKnowledge.ElementsBelow`) hold at every state (`rootCells_holds`) and
-after every action (`rootCells_box`). Roles, valid references and view-length
-metadata are kept by every admissible transition, so a typed array's length
-read through valid references is immutable (`viewLengthOf_kept`).
+after every action (`rootCells_box`). Roles and valid references are kept by
+every admissible transition, and so is the category of every old location's
+contents (`Admissible.contentsCategory`); a typed array's length is its
+descriptor's, so what it reads is immutable (`viewLength_invariant`).
 
 With allocated cells, two separations hold: a store allocated past a mark is
 apart from an old store whose cells lie below it (`alloc_apart`), and two
@@ -31,20 +32,6 @@ theorem _root_.Verification.HeapOk.elementsBelow {n : Nat} {W : WorldT n} {h : H
     {s : Nat} {ls : List (Option Nat)} (hs : h[s]? = some (Tm.arr ls)) : ElementsBelow h.length ls :=
   fun _ hl => (hok.store_cells hs hl).2
 
-/-- A valid object's `[[viewLength]]` location is a view-length metadata
-location. -/
-theorem _root_.Verification.RefsOk.lengthMeta {k : Nat} {W : WorldT k} {fs : List (PropKey × Nat)}
-    {c : CallCode} {o m : Nat} (h : RefsOk W (.objAt fs c o)) (hm : fs.lookup viewLengthKey = some m) :
-    ∃ N, LengthMeta W m N := by
-  have hf : RefOk W (.fields fs) := h _ (by
-    rw [Kinds.refs_objAt]; exact List.mem_append_left _ (by simp [objRefs]))
-  exact hf.1 m (Kinds.lookup_mem hm)
-
-/-- At positive budget a view-length metadata location holds its length. -/
-theorem _root_.Verification.HeapOk.lengthMeta_value {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h)
-    (hn : 0 < n) {m N : Nat} (hm : LengthMeta W m N) : h[m]? = some (.num (bitsOfNat N)) :=
-  let ⟨_, _, hl, hs⟩ := hm; hok.stable_value hn hl hs
-
 /-- **Roles are fixed**: every location keeps its role along an admissible
 transition. -/
 theorem Admissible.roleAt {s s' : IndexedHeap} (ha : Admissible s s') {l : Nat} {r : Role}
@@ -58,11 +45,18 @@ theorem Admissible.refsOk {s s' : IndexedHeap} (ha : Admissible s s') {t : Tm} (
   obtain ⟨hle, hx⟩ := ha
   exact RefsOk_mono hx (RefsOk_trunc hle ht)
 
-/-- A view-length metadata location stays one, of the same length. -/
-theorem Admissible.lengthMeta {s s' : IndexedHeap} (ha : Admissible s s') {m N : Nat}
-    (hm : LengthMeta s.W m N) : LengthMeta s'.W m N := by
-  obtain ⟨hle, hx⟩ := ha
-  exact (hm.trunc hle).mono hx
+/-- **Contents keep their category** (parity-interfaces I1): an old
+location's contents after an admissible transition are of the category its
+contents had before, an array's store, a view store or a value, since its
+role is kept and a well-formed heap's contents are of their role's category
+(`Shaped.category`). -/
+theorem Admissible.contentsCategory {s s' : IndexedHeap} (ha : Admissible s s') {l : Nat} {u u' : Val}
+    (hu : s.h[l]? = some u) (hu' : s'.h[l]? = some u') :
+    Verification.contentsCategory u' = Verification.contentsCategory u := by
+  have hlen : s.h.length = (entries s.W).length := by simpa using s.ok.1.1
+  have hl : l < (entries s.W).length := by have := (List.getElem?_eq_some_iff.mp hu).1; omega
+  obtain ⟨r, hr⟩ := roleAt_some hl
+  rw [s'.ok.2.category (ha.roleAt hr) hu', s.ok.2.category hr hu]
 
 /-- A listed cell stays an element cell after every admissible transition. -/
 theorem Admissible.elem_kept {s s' : IndexedHeap} (ha : Admissible s s') {st : Nat}
@@ -75,27 +69,10 @@ theorem _root_.Verification.RootsOk.admissible {s s' : IndexedHeap} (ha : Admiss
 
 /-! ## (View): a typed array's length is immutable -/
 
-/-- **The typed-array length a value of valid references reads is kept by
-every admissible transition.** An object owning `[[viewLength]]` reads a
-view-length metadata location, whose contract admits one value; every other
-value reads none. -/
-theorem viewLengthOf_kept {s s' : IndexedHeap} {v : Val} (hv : RefsOk s.W v) (ha : Admissible s s') :
-    HeapKnowledge.viewLengthOf s'.h v = HeapKnowledge.viewLengthOf s.h v := by
-  cases v
-  case objAt fs cd o =>
-    cases hl : fs.lookup viewLengthKey with
-    | none => simp [HeapKnowledge.viewLengthOf, hl]
-    | some m =>
-      obtain ⟨N, hN⟩ := hv.lengthMeta hl
-      simp [HeapKnowledge.viewLengthOf, hl, s.ok.lengthMeta_value s.pos hN,
-        s'.ok.lengthMeta_value s'.pos (ha.lengthMeta hN)]
-  all_goals rfl
-
-/-- **(View)**: what a valid root's typed-array length reads is invariant. -/
+/-- **(View)**: a typed array's length is its descriptor's, part of the
+value, so what a root's typed-array length reads is invariant. -/
 theorem viewLength_invariant (w : Nat) (n : Option Int) :
-    Invariant (fun ρ _ s => RefsOk s.W (ρ w) ∧ HeapKnowledge.viewLengthOf s.h (ρ w) = n) := by
-  intro ρ m s s' ha ⟨hr, h⟩
-  exact ⟨ha.refsOk hr, by rw [viewLengthOf_kept hr ha]; exact h⟩
+    Invariant (fun ρ _ _ => HeapKnowledge.viewLengthOf (ρ w) = n) := fun _ _ _ _ _ h => h
 
 /-! ## Allocated cells hold at every state -/
 
@@ -171,7 +148,7 @@ theorem growOne_keeps_store {x : Nat} {ρ : Env} {h h' : Heap} {st : Nat} {ls : 
   · exact hv'
   · simp only [growOne, List.mem_cons, List.not_mem_nil, or_false] at he
     rcases he with rfl | rfl
-    · simp [Region.mem, hst, Selector.selects, isArr] at hm
+    · simp [Region.mem, hst, isArr] at hm
     · simp [Region.mem] at hm; exact absurd hm hne
 
 /-- **(Apart, one-sided)** `apart(x, y) ⊢ □_{growOne x} apart(x, y)`,
@@ -203,12 +180,13 @@ theorem apart_grow_keep {x y : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
         · exact ⟨xs, rfl, fun l hl => .inl hl⟩
         · simp only [growOne, List.mem_cons, List.not_mem_nil, or_false] at he
           rcases he with rfl | rfl
-          · simp [Region.mem, hv, Selector.selects, isArr] at hm
+          · simp [Region.mem, hv, isArr] at hm
           · simp only [Change.Holds] at hch
-            rcases hch with rfl | ⟨ls, ls', he1, he2, -, hnew, -⟩ | hsc
+            rcases hch with rfl | ⟨ls, ls', he1, he2, -, hnew, -⟩ | hsc | ⟨_, _, _, he1, -⟩
             · exact ⟨xs, rfl, fun l hl => .inl hl⟩
             · cases he1; exact ⟨ls', he2, hnew⟩
             · exact absurd hsc.2.1 (by simp [isArr])
+            · cases he1
       obtain ⟨xs', rfl, hnew⟩ := grown
       refine ⟨xs', .inr ⟨st, rfl, hst, hv'⟩, fun l hl => ?_⟩
       rcases hl with hl | hl

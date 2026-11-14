@@ -93,7 +93,7 @@ theorem ensuringCallsSelect_reassign (j : Sequent ι) (k : HeapKnowledge.Knowled
     (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) :
     (Checker.steps (reassign G η) (images.reassign η)).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.ensuringCalls.select j k e codes sums =
       (Checker.steps G images).keepingCalls.keepingOwnCalls.allocatingCalls.requiringCalls.elementCalls.ensuringCalls.select j k e codes sums := by
-  simp only [Checker.ensuringCalls, elementCallsSelect_reassign, Parametricity.ensuresCall_reassign, Parametricity.writeViews_reassign, Parametricity.stableFirst_reassign, Parametricity.grownRegions_reassign]
+  simp only [Checker.ensuringCalls, elementCallsSelect_reassign, Parametricity.ensuresCall_reassign, Parametricity.stableFirst_reassign, Parametricity.grownRegions_reassign]
   all_goals rfl
 
 theorem negatingSlotsSelect_reassign (j : Sequent ι) (k : HeapKnowledge.Knowledge) (e : StepEvidence ι)

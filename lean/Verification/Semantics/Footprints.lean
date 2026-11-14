@@ -26,6 +26,28 @@ def readPath (h : Heap) : Val → List String → Option Val
     | none => none
   | _, _ :: _ => none
 
+/-- The location of the store of elements a value holds (the note *Tolerant
+frames*, the store a typed array's or an array's element facts read): an
+array's store, which its `[]` slot names and the calculus's array steps
+read, or else a typed array's view store, which its descriptor names. The
+one store selection of both forms. -/
+def elementsOf : Val → Option Nat
+  | .objAt fs c _ => match fs.lookup arrayStoreKey, c with
+    | some s, _ => some s
+    | none, .view s _ _ => some s
+    | none, _ => none
+  | _ => none
+
+/-- **The descriptor selects the store of a typed array owning no `[]` slot.** -/
+theorem elementsOf_view {fs : List (PropKey × Nat)} (hfs : fs.lookup arrayStoreKey = none) (i s : Nat)
+    (f : ViewFormat) (n : Nat) : elementsOf (.viewAt fs i s f n) = some s := by
+  simp [elementsOf, hfs]
+
+/-- The view store a typed array's descriptor names. -/
+def descriptorStore : Val → Option Nat
+  | .objAt _ (.view s _ _) _ => some s
+  | _ => none
+
 end Verification.HeapKnowledge
 
 namespace Verification.Footprints
@@ -38,8 +60,10 @@ def nullish : Val → Bool
   | .nul | .undef => true
   | _ => false
 
+/-- Whether contents are a store: an array's, or a typed array's view store
+(the note *Tolerant frames*, §3, class `store`). -/
 def isArr : Val → Bool
-  | .arr _ => true
+  | .arr _ | .viewStore .. => true
   | _ => false
 
 def isObj : Val → Bool
@@ -97,16 +121,25 @@ theorem LengthGrows.trans {ls ls' ls'' : List (Option Nat)} (h₁ : LengthGrows 
     (h₂ : LengthGrows ls' ls'') : LengthGrows ls ls'' :=
   ⟨Nat.le_trans h₁.1 h₂.1, fun h => h₂.2 (h₁.2 h)⟩
 
+/-- A view store's step (the note *Tolerant frames*, §2, a write through a
+typed array): a view store replaced by a view store of the same format and
+length, every cell it newly lists fresh against the starting heap's length
+`b`. It has no hole before or after, so it keeps every dense prefix. -/
+def ViewStep (b : Nat) (v v' : Val) : Prop :=
+  ∃ f cs cs', v = .viewStore f cs ∧ v' = .viewStore f cs' ∧ cs'.length = cs.length ∧
+    ∀ c ∈ cs', c ∈ cs ∨ b ≤ c
+
 /-- A change's relation on contents. `b` is the length of the heap the change
 starts from: a growing store gains no element location below it that it did
-not already list, and gets no shorter. -/
+not already list, and gets no shorter; a growing view store keeps its format
+and length (`ViewStep`). -/
 def Change.Holds : Change → Nat → Val → Val → Prop
   | .keep, _, v, v' => v' = v
   | .init, _, v, v' => v' = v ∨ InitStep v v'
   | .scalar, _, v, v' => v' = v ∨ ScalarStep v v'
   | .grow, b, v, v' => v' = v ∨ (∃ ls ls', v = .arr ls ∧ v' = .arr ls' ∧
       (∀ n, DensePrefix n ls → DensePrefix n ls') ∧ (∀ l, some l ∈ ls' → some l ∈ ls ∨ b ≤ l) ∧
-      LengthGrows ls ls') ∨ ScalarStep v v'
+      LengthGrows ls ls') ∨ ScalarStep v v' ∨ ViewStep b v v'
   | .any, _, _, _ => True
 
 theorem Change.Holds.refl (δ : Change) (b : Nat) (v : Val) : δ.Holds b v v := by
@@ -116,7 +149,7 @@ theorem Change.Holds.refl (δ : Change) (b : Nat) (v : Val) : δ.Holds b v v := 
 theorem Change.scalar_le_grow {b v v'} (h : Change.scalar.Holds b v v') : Change.grow.Holds b v v' := by
   rcases h with h | h
   · exact .inl h
-  · exact .inr (.inr h)
+  · exact .inr (.inr (.inl h))
 
 theorem Change.init_le_scalar {b v v'} (h : Change.init.Holds b v v') : Change.scalar.Holds b v v' :=
   h.imp id InitStep.scalar
@@ -142,10 +175,11 @@ theorem Change.Holds.lower {δ : Change} {b b' v v'} (hb : b ≤ b')
   cases δ with
   | keep | init | scalar | any => exact h
   | grow =>
-    rcases h with h | ⟨ls, ls', rfl, rfl, hd, hl, hg⟩ | h
+    rcases h with h | ⟨ls, ls', rfl, rfl, hd, hl, hg⟩ | h | ⟨f, cs, cs', rfl, rfl, hn, hc⟩
     · exact .inl h
     · exact .inr (.inl ⟨ls, ls', rfl, rfl, hd, fun l hm => (hl l hm).imp id (Nat.le_trans hb), hg⟩)
-    · exact .inr (.inr h)
+    · exact .inr (.inr (.inl h))
+    · exact .inr (.inr (.inr ⟨f, cs, cs', rfl, rfl, hn, fun c hm => (hc c hm).imp id (Nat.le_trans hb)⟩))
 
 private theorem InitStep.trans {v v' v'' : Val} (h₁ : InitStep v v') (h₂ : v'' = v' ∨ InitStep v' v'') :
     InitStep v v'' := by
@@ -173,9 +207,9 @@ theorem Change.Holds.trans {δ : Change} {b b' v v' v''} (hb : b ≤ b')
     · exact h₂
     · exact .inr (h₁.trans h₂)
   | grow =>
-    rcases h₁ with rfl | ⟨ls, ls', rfl, rfl, hd₁, hl₁, hg₁⟩ | h₁
+    rcases h₁ with rfl | ⟨ls, ls', rfl, rfl, hd₁, hl₁, hg₁⟩ | h₁ | ⟨f, cs, cs', rfl, rfl, hn₁, hc₁⟩
     · exact h₂.lower hb
-    · rcases h₂ with rfl | ⟨ms, ls'', hms, rfl, hd₂, hl₂, hg₂⟩ | h₂
+    · rcases h₂ with rfl | ⟨ms, ls'', hms, rfl, hd₂, hl₂, hg₂⟩ | h₂ | ⟨_, _, _, he, -⟩
       · exact .inr (.inl ⟨ls, ls', rfl, rfl, hd₁, hl₁, hg₁⟩)
       · cases hms
         refine .inr (.inl ⟨ls, ls'', rfl, rfl, fun n h => hd₂ n (hd₁ n h), fun l hm => ?_, hg₁.trans hg₂⟩)
@@ -183,10 +217,21 @@ theorem Change.Holds.trans {δ : Change} {b b' v v' v''} (hb : b ≤ b')
         · exact hl₁ l hm'
         · exact .inr (Nat.le_trans hb hle)
       · exact absurd h₂.2.1 (by simp [isArr])
-    · rcases h₂ with rfl | ⟨ms, ls'', hms, rfl, -, -, -⟩ | h₂
-      · exact .inr (.inr h₁)
+      · cases he
+    · rcases h₂ with rfl | ⟨ms, ls'', hms, rfl, -, -, -⟩ | h₂ | ⟨_, _, _, he, -⟩
+      · exact .inr (.inr (.inl h₁))
       · subst hms; exact absurd h₁.2.2 (by simp [isArr])
-      · exact .inr (.inr (h₁.trans (.inr h₂)))
+      · exact .inr (.inr (.inl (h₁.trans (.inr h₂))))
+      · subst he; exact absurd h₁.2.2 (by simp [isArr])
+    · rcases h₂ with rfl | ⟨_, _, he, -⟩ | h₂ | ⟨g, ds, cs'', he, rfl, hn₂, hc₂⟩
+      · exact .inr (.inr (.inr ⟨f, cs, cs', rfl, rfl, hn₁, hc₁⟩))
+      · cases he
+      · exact absurd h₂.2.1 (by simp [isArr])
+      · cases he
+        refine .inr (.inr (.inr ⟨f, cs, cs'', rfl, rfl, hn₂.trans hn₁, fun c hm => ?_⟩))
+        rcases hc₂ c hm with hm' | hle
+        · exact hc₁ c hm'
+        · exact .inr (Nat.le_trans hb hle)
 
 theorem Change.le_max_left (a b : Change) : a.le (a.max b) = true := by
   cases a <;> cases b <;> rfl
@@ -369,76 +414,94 @@ theorem Selector.has_category (r : Role) : (Selector.of r.category).has r.catego
 
 /-! ## Class regions read the contents
 
-A class region selects locations by their contents in the entry heap, in
-two classes: a store (`.arr`) or anything else. A store is selected exactly
-by a selector naming both store categories, anything else by one naming the
-value category; so `arrays` and `views` alone select nothing, and the
-selector algebra is sound for this selection (`Selector.selects_sub`,
-`Selector.selects_disjoint`). Selecting array stores and view stores apart,
-and the correspondence of the three contents categories with the role
-categories on well-formed states, need view stores tagged apart from array
-stores. -/
+A class region selects locations by their contents in the entry heap: a
+selector selects a location whose contents' category (`contentsCategory`:
+an array store, a view store, or a value) it names. The selector algebra is
+sound for this selection (`Selector.selects_sub`,
+`Selector.selects_disjoint`), and on a well-formed heap a location's
+contents category is its role's (`Shaped.category`). -/
 
-/-- Whether the class region of `S` selects a location holding `v`. -/
+/-- Whether the class region of `S` selects a location holding `v`: whether
+`S` names the category of `v` (`contentsCategory`). -/
 def Selector.selects (S : Selector) (v : Val) : Bool :=
-  if isArr v then S.array && S.view else S.value
+  S.has (contentsCategory v)
 
 /-- **Selector inclusion is inclusion of the locations selected.** -/
 theorem Selector.selects_sub {a b : Selector} (hab : a.sub b = true) {v : Val}
-    (ha : a.selects v = true) : b.selects v = true := by
-  rcases a with ⟨av, aa, aw⟩
-  rcases b with ⟨bv, ba, bw⟩
-  unfold Selector.selects at ha ⊢
-  cases hv : isArr v <;> simp only [hv] at ha ⊢ <;>
-    cases av <;> cases aa <;> cases aw <;> cases bv <;> cases ba <;> cases bw <;>
-    simp_all [Selector.sub]
+    (ha : a.selects v = true) : b.selects v = true :=
+  Selector.sub_sound hab ha
 
 /-- **Disjoint selectors select disjoint locations.** -/
 theorem Selector.selects_disjoint {a b : Selector} (hab : a.disjoint b = true) {v : Val}
-    (ha : a.selects v = true) : b.selects v = false := by
-  rcases a with ⟨av, aa, aw⟩
-  rcases b with ⟨bv, ba, bw⟩
-  unfold Selector.selects at ha ⊢
-  cases hv : isArr v <;> simp only [hv] at ha ⊢ <;>
-    cases av <;> cases aa <;> cases aw <;> cases bv <;> cases ba <;> cases bw <;>
-    simp_all [Selector.disjoint]
+    (ha : a.selects v = true) : b.selects v = false :=
+  Selector.disjoint_sound hab ha
+
+/-- Contents are of the value category exactly when they are no store. -/
+theorem contentsCategory_value (v : Val) : (contentsCategory v = .value) ↔ isArr v = false := by
+  cases v <;> simp [contentsCategory, isArr]
 
 theorem Selector.selects_values (v : Val) : Selector.values.selects v = !isArr v := by
-  unfold Selector.selects; split <;> simp_all [Selector.values]
+  cases v <;> rfl
 
 theorem Selector.selects_stores (v : Val) : Selector.stores.selects v = isArr v := by
-  unfold Selector.selects; split <;> simp_all [Selector.stores]
+  cases v <;> rfl
+
+/-- A selector naming no value category selects stores only. -/
+theorem Selector.selects_noValue {c : Selector} {v : Val} (hc : c.value = false) (h : c.selects v = true) :
+    isArr v = true := by
+  unfold Selector.selects at h
+  cases v <;> simp_all [contentsCategory, Selector.has, isArr]
+
+/-- A selector naming neither store category selects values only. -/
+theorem Selector.selects_valueOnly {c : Selector} {v : Val} (ha : c.array = false) (hw : c.view = false)
+    (h : c.selects v = true) : isArr v = false := by
+  unfold Selector.selects at h
+  cases v <;> simp_all [contentsCategory, Selector.has, isArr]
+
+@[simp] theorem Selector.selects_values' (v : Val) :
+    ({ value := true, array := false, view := false } : Selector).selects v = !isArr v := by
+  cases v <;> rfl
+
+@[simp] theorem Selector.selects_stores' (v : Val) :
+    ({ value := false, array := true, view := true } : Selector).selects v = isArr v := by
+  cases v <;> rfl
+
+/-- Only `any` changes the category of a location's contents. -/
+theorem Change.Holds.same_category {δ : Change} {b v v'} (hδ : δ ≠ .any)
+    (h : δ.Holds b v v') : contentsCategory v' = contentsCategory v := by
+  have scalar_class : ScalarStep v v' → contentsCategory v' = contentsCategory v := fun ⟨_, hv, hv'⟩ => by
+    rw [(contentsCategory_value v').mpr hv', (contentsCategory_value v).mpr hv]
+  cases δ with
+  | any => exact absurd rfl hδ
+  | keep => simp only [Change.Holds] at h; rw [h]
+  | init =>
+    rcases h with rfl | h
+    · rfl
+    · exact scalar_class h.scalar
+  | scalar =>
+    rcases h with rfl | h
+    · rfl
+    · exact scalar_class h
+  | grow =>
+    rcases h with rfl | ⟨_, _, rfl, rfl, _, _⟩ | h | ⟨_, _, _, rfl, rfl, _⟩
+    · rfl
+    · rfl
+    · exact scalar_class h
+    · rfl
 
 /-- Only `any` changes the class of a location's contents. -/
 theorem Change.Holds.same_class {δ : Change} {b v v'} (hδ : δ ≠ .any)
     (h : δ.Holds b v v') (c : Selector) : c.selects v' = c.selects v := by
-  have harr : isArr v' = isArr v := by
-    have scalar_class : ScalarStep v v' → isArr v' = isArr v := fun ⟨_, hv, ha⟩ => by rw [ha, hv]
-    cases δ with
-    | any => exact absurd rfl hδ
-    | keep => simp only [Change.Holds] at h; rw [h]
-    | init =>
-      rcases h with rfl | h
-      · rfl
-      · exact scalar_class h.scalar
-    | scalar =>
-      rcases h with rfl | h
-      · rfl
-      · exact scalar_class h
-    | grow =>
-      rcases h with rfl | ⟨_, _, rfl, rfl, _, _⟩ | h
-      · rfl
-      · rfl
-      · exact scalar_class h
-  simp only [Selector.selects, harr]
+  simp only [Selector.selects, h.same_category hδ]
 
 /-- On contents that are no store, `grow` is `scalar`. -/
 theorem Change.Holds.grow_value {b v v'} (h : Change.grow.Holds b v v') (hv : isArr v = false) :
     Change.scalar.Holds b v v' := by
-  rcases h with h | ⟨_, _, rfl, _, _, _⟩ | h
+  rcases h with h | ⟨_, _, rfl, _, _, _⟩ | h | ⟨_, _, _, rfl, _⟩
   · exact .inl h
   · simp [isArr] at hv
   · exact .inr h
+  · simp [isArr] at hv
 
 /-- On contents that are no store and neither `null` nor `undefined`,
 `init` is `keep`. -/
@@ -478,17 +541,47 @@ theorem Change.Holds.scalar_store {b ls v'} (h : Change.scalar.Holds b (.arr ls)
 theorem Change.Holds.init_store {b ls v'} (h : Change.init.Holds b (.arr ls) v') : v' = .arr ls :=
   h.init_defined rfl
 
+/-- On any store, an array's or a view store, `scalar` is `keep`. -/
+theorem Change.Holds.scalar_isArr {b v v'} (hv : isArr v = true) (h : Change.scalar.Holds b v v') : v' = v :=
+  h.resolve_right fun hs => absurd hs.2.1 (by simp [hv])
+
+/-- On any store, `init` is `keep`. -/
+theorem Change.Holds.init_isArr {b v v'} (hv : isArr v = true) (h : Change.init.Holds b v v') : v' = v :=
+  h.init_defined (by cases v <;> simp_all [isArr, nullish])
+
 def fieldsOf : Tm → List (PropKey × Nat)
   | .objAt fs _ _ => fs
   | _ => []
 
-/-- The element locations a value's store lists, at a heap. -/
-def storeElems (h : Heap) (v : Tm) : List (Option Nat) :=
-  match (fieldsOf v).lookup arrayStoreKey with
-  | some s => match h[s]? with
-    | some (.arr ls) => ls
-    | _ => []
+/-- The entries the store at a location lists, at a heap (`storeEntries`). -/
+def entriesAt (h : Heap) : Option Nat → List (Option Nat)
+  | some s => (h[s]?.bind storeEntries).getD []
   | none => []
+
+/-- The element locations a value's stores list, at a heap: those of the
+store its `[]` slot names, which the calculus's array steps read and write,
+and those of the view store its descriptor names, which a typed array's
+element facts read (`HeapKnowledge.elementsOf`). A value is an array or a
+typed array, so on a well-formed heap one of the two lists nothing. -/
+def storeElems (h : Heap) (v : Tm) : List (Option Nat) :=
+  entriesAt h ((fieldsOf v).lookup arrayStoreKey) ++ entriesAt h (HeapKnowledge.descriptorStore v)
+
+/-- The cells of the store a value selects are among its store cells. -/
+theorem elementsOf_entries_sub {h : Heap} {v : Tm} {s : Nat} (hs : HeapKnowledge.elementsOf v = some s)
+    {o : Option Nat} (ho : o ∈ entriesAt h (some s)) : o ∈ storeElems h v := by
+  cases v with
+  | objAt fs c i =>
+    simp only [HeapKnowledge.elementsOf] at hs
+    cases hl : fs.lookup arrayStoreKey with
+    | some s' =>
+      rw [hl] at hs; cases hs
+      exact List.mem_append_left _ (by simpa [fieldsOf, hl] using ho)
+    | none =>
+      rw [hl] at hs
+      cases c <;> simp at hs
+      cases hs
+      exact List.mem_append_right _ (by simpa [HeapKnowledge.descriptorStore] using ho)
+  | _ => simp [HeapKnowledge.elementsOf] at hs
 
 /-- A region names locations relative to the values of slots and to a heap.
 `field`, `own` are timeless; `elems` and `cls` are read at a heap: `cls S`
@@ -513,6 +606,11 @@ inductive Region where
   | pathElems (x : Nat) (p : List String)
   | cell (b : String)
   | inCls (r : Region) (c : Selector)
+  /-- The store location of the value the path reads (parity-interfaces I1,
+  the selected store): an array's or a typed array's
+  (`HeapKnowledge.elementsOf`); a failed read or a value with no store
+  selects nothing. -/
+  | store (x : Nat) (p : List String)
   deriving DecidableEq, Repr
 
 def Region.mem (ρ : Env) (h : Heap) : Region → Nat → Bool
@@ -537,6 +635,9 @@ def Region.mem (ρ : Env) (h : Heap) : Region → Nat → Bool
     | none => false
   | .inCls r c, l => r.mem ρ h l && match h[l]? with
     | some v => c.selects v
+    | none => false
+  | .store x p, l => match HeapKnowledge.readPath h (ρ x) p with
+    | some v => HeapKnowledge.elementsOf v == some l
     | none => false
 
 @[simp] theorem Region.mem_path_nil (ρ : Env) (h : Heap) (x : Nat) (k : PropKey) (l : Nat) :
@@ -714,7 +815,7 @@ theorem Region.sub_mem {cl : ClassEvidence} {r s : Region} {ρ h l}
         · exact Selector.selects_sub hs.1 hm'.2
         · cases hm'.2
     · exact Region.subBase_mem hs hc hl hm
-  | field | own | elems | cls | all | path | pathOwn | pathElems | cell =>
+  | field | own | elems | cls | all | path | pathOwn | pathElems | cell | store =>
     exact Region.subBase_mem (by simpa [Region.sub] using hs) hc hl hm
 
 /-- Every entry of `Φ` lies in an entry of `Ψ` with at least its change. -/
@@ -746,44 +847,51 @@ def CellsFrom (h₀ h : Heap) (v : Val) : Prop :=
 /-- A store location whose list at `h` keeps only cells of its list at `h₀`
 and cells at or above `h₀`'s length gives cell provenance. -/
 theorem CellsFrom.of_lists {h₀ h : Heap} {v : Val} {s : Nat}
-    (hs : (fieldsOf v).lookup arrayStoreKey = some s)
-    (hl : ∀ ls', h[s]? = some (.arr ls') → ∀ m, some m ∈ ls' → m < h₀.length →
-      ∃ ls, h₀[s]? = some (.arr ls) ∧ some m ∈ ls) : CellsFrom h₀ h v := by
+    (hs : (fieldsOf v).lookup arrayStoreKey = some s) (hd : HeapKnowledge.descriptorStore v = none)
+    (hl : ∀ ls', h[s]?.bind storeEntries = some ls' → ∀ m, some m ∈ ls' → m < h₀.length →
+      ∃ ls, h₀[s]?.bind storeEntries = some ls ∧ some m ∈ ls) : CellsFrom h₀ h v := by
   intro m hm hm₀
-  simp only [storeElems, hs] at hm ⊢
-  split at hm
-  · rename_i ls' hls'
+  simp only [storeElems, hs, hd, entriesAt, List.append_nil] at hm ⊢
+  cases hls' : h[s]?.bind storeEntries with
+  | none => rw [hls'] at hm; simp at hm
+  | some ls' =>
+    rw [hls'] at hm
     obtain ⟨ls, hls, hm'⟩ := hl ls' hls' m hm hm₀
     simpa [hls] using hm'
-  · simp at hm
 
 /-- A change of the store location within `grow` gives cell provenance. -/
 theorem CellsFrom.of_change {δ : Change} {h₀ h : Heap} {v : Val} {s : Nat} {w w' : Val}
     (hδ : δ.le .grow = true) (hs : (fieldsOf v).lookup arrayStoreKey = some s)
+    (hd : HeapKnowledge.descriptorStore v = none)
     (hw : h₀[s]? = some w) (hw' : h[s]? = some w') (hc : δ.Holds h₀.length w w') :
     CellsFrom h₀ h v := by
   have hg : Change.grow.Holds h₀.length w w' := hc.mono hδ
-  refine CellsFrom.of_lists hs fun ls' hls' m hm hm₀ => ?_
+  refine CellsFrom.of_lists hs hd fun ls' hls' m hm hm₀ => ?_
   rw [hw'] at hls'
-  cases hls'
-  rcases hg with rfl | ⟨ls, ls'', rfl, hls'', -, hl, -⟩ | hsc
-  · exact ⟨ls', hw, hm⟩
-  · cases hls''
+  simp only [Option.bind_some] at hls'
+  rcases hg with rfl | ⟨ls, ls'', rfl, rfl, -, hl, -⟩ | hsc | ⟨f, cs, cs', rfl, rfl, -, hl⟩
+  · exact ⟨ls', by rw [hw]; exact hls', hm⟩
+  · cases hls'
     rcases hl m hm with hm' | hle
-    · exact ⟨ls, hw, hm'⟩
+    · exact ⟨ls, by rw [hw]; rfl, hm'⟩
     · omega
-  · exact absurd hsc.2.2 (by simp [isArr])
+  · cases w' <;> simp_all [isArr, storeEntries, ScalarStep]
+  · cases hls'
+    rcases hl m (by simpa using hm) with hm' | hle
+    · exact ⟨cs.map some, by rw [hw]; rfl, by simpa using hm'⟩
+    · omega
 
 /-- A footprint letting the store location of `v`, read at `h₀`, change at
 most within `grow` gives cell provenance. -/
 theorem CellsFrom.of_post {Φ : Footprint} {ρ : Env} {h₀ h : Heap} {v : Val} {s : Nat}
-    (hp : Post Φ ρ h₀ h) (hs : (fieldsOf v).lookup arrayStoreKey = some s) (hs₀ : s < h₀.length)
+    (hp : Post Φ ρ h₀ h) (hs : (fieldsOf v).lookup arrayStoreKey = some s)
+    (hd : HeapKnowledge.descriptorStore v = none) (hs₀ : s < h₀.length)
     (hΦ : ∀ e ∈ Φ, e.1.mem ρ h₀ s = true → e.2.le .grow = true) : CellsFrom h₀ h v := by
   obtain ⟨w, hw⟩ : ∃ w, h₀[s]? = some w := ⟨h₀[s], List.getElem?_eq_getElem hs₀⟩
   obtain ⟨w', hw', ha⟩ := hp.2 s w hw
   rcases ha with rfl | ⟨e, he, hm, hh⟩
-  · exact CellsFrom.of_change (δ := .keep) rfl hs hw hw' rfl
-  · exact CellsFrom.of_change (hΦ e he hm) hs hw hw' hh
+  · exact CellsFrom.of_change (δ := .keep) rfl hs hd hw hw' rfl
+  · exact CellsFrom.of_change (hΦ e he hm) hs hd hw hw' hh
 
 def FreshOk (fresh : Nat → Bool) (ρ : Env) (b : Nat) : Prop :=
   ∀ x, fresh x = true → ∀ l, l ∈ (fieldsOf (ρ x)).map Prod.snd → b ≤ l
@@ -842,17 +950,56 @@ theorem preserves_dense_iff (ls ls' : List (Option Nat)) :
   simp only [densePrefix_iff]
   exact ⟨fun h => h _ (Nat.le_refl _), fun h n hn => Nat.le_trans hn h⟩
 
+/-- `grow` on an array's store, decided. -/
+def arrayGrowB (b : Nat) : Val → Val → Bool
+  | .arr ls, .arr ls' => decide (denseLen ls ≤ denseLen ls') &&
+      ((ls'.all fun o => match o with
+        | some l => ls.contains (some l) || decide (b ≤ l)
+        | none => true) &&
+      (decide (ls.length ≤ ls'.length) && (!decide (ls.length ≤ maxArrayLength) || decide (ls'.length ≤ maxArrayLength))))
+  | _, _ => false
+
+/-- A view store's step, decided (`ViewStep`). -/
+def viewStepB (b : Nat) : Val → Val → Bool
+  | .viewStore f cs, .viewStore f' cs' => f' == f && cs'.length == cs.length &&
+      cs'.all fun c => cs.contains c || decide (b ≤ c)
+  | _, _ => false
+
+theorem arrayGrowB_iff (b : Nat) (v v' : Val) : arrayGrowB b v v' = true ↔
+    ∃ ls ls', v = .arr ls ∧ v' = .arr ls' ∧
+      (∀ n, DensePrefix n ls → DensePrefix n ls') ∧ (∀ l, some l ∈ ls' → some l ∈ ls ∨ b ≤ l) ∧
+      LengthGrows ls ls' := by
+  cases v <;> cases v' <;> simp [arrayGrowB]
+  rename_i ls ls'
+  rw [preserves_dense_iff]
+  apply and_congr Iff.rfl
+  unfold LengthGrows
+  apply and_congr _ (by constructor <;> intro h <;> (try intro h') <;> omega)
+  constructor
+  · intro h l hl
+    have := h (some l) hl
+    simpa using this
+  · intro h o ho
+    cases o with
+    | none => rfl
+    | some l => simpa using h l ho
+
+theorem viewStepB_iff (b : Nat) (v v' : Val) : viewStepB b v v' = true ↔ ViewStep b v v' := by
+  unfold viewStepB ViewStep
+  cases v <;> cases v' <;> simp
+  rename_i f cs f' cs'
+  constructor
+  · rintro ⟨⟨rfl, hn⟩, hall⟩
+    exact ⟨f', cs, ⟨rfl, rfl⟩, cs', ⟨rfl, rfl⟩, hn, fun c hc => by simpa using hall c hc⟩
+  · rintro ⟨g, ds, ⟨rfl, rfl⟩, ds', ⟨rfl, rfl⟩, hn, hall⟩
+    exact ⟨⟨rfl, hn⟩, fun c hc => by simpa using hall c hc⟩
+
 def Change.holdsB : Change → Nat → Val → Val → Bool
   | .keep, _, v, v' => v' == v
   | .init, _, v, v' => v' == v || (nullish v && !isArr v')
   | .scalar, _, v, v' => v' == v || (!isObj v && (!isArr v && !isArr v'))
-  | .grow, b, v, v' => v' == v || ((match v, v' with
-    | .arr ls, .arr ls' => decide (denseLen ls ≤ denseLen ls') &&
-        ((ls'.all fun o => match o with
-          | some l => ls.contains (some l) || decide (b ≤ l)
-          | none => true) &&
-        (decide (ls.length ≤ ls'.length) && (!decide (ls.length ≤ maxArrayLength) || decide (ls'.length ≤ maxArrayLength))))
-    | _, _ => false) || (!isObj v && (!isArr v && !isArr v')))
+  | .grow, b, v, v' => v' == v || (arrayGrowB b v v' ||
+      ((!isObj v && (!isArr v && !isArr v')) || viewStepB b v v'))
   | .any, _, _, _ => true
 
 theorem Change.holdsB_iff (δ : Change) (b : Nat) (v v' : Val) : δ.holdsB b v v' = true ↔ δ.Holds b v v' := by
@@ -862,24 +1009,9 @@ theorem Change.holdsB_iff (δ : Change) (b : Nat) (v v' : Val) : δ.holdsB b v v
   | init => simp [Change.holdsB, Change.Holds, InitStep]
   | scalar => simp [Change.holdsB, Change.Holds, ScalarStep]
   | grow =>
-    simp only [Change.holdsB, Change.Holds, Bool.or_eq_true, beq_iff_eq, Bool.and_eq_true, Bool.not_eq_true',
-      ScalarStep]
-    apply or_congr Iff.rfl
-    apply or_congr _ Iff.rfl
-    cases v <;> cases v' <;> simp
-    rename_i ls ls'
-    rw [preserves_dense_iff]
-    apply and_congr Iff.rfl
-    unfold LengthGrows
-    apply and_congr _ (by constructor <;> intro h <;> (try intro h') <;> omega)
-    constructor
-    · intro h l hl
-      have := h (some l) hl
-      simpa using this
-    · intro h o ho
-      cases o with
-      | none => rfl
-      | some l => simpa using h l ho
+    simp only [Change.holdsB, Change.Holds, Bool.or_eq_true, beq_iff_eq]
+    refine or_congr Iff.rfl (or_congr (arrayGrowB_iff b v v') (or_congr ?_ (viewStepB_iff b v v')))
+    simp [ScalarStep]
 
 def allowedB (Φ : Footprint) (ρ : Env) (h : Heap) (l : Nat) (v v' : Val) : Bool :=
   v' == v || Φ.any fun e => e.1.mem ρ h l && e.2.holdsB h.length v v'

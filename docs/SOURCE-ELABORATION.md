@@ -606,9 +606,10 @@ k\ \mathtt{in}\ o\;\equiv\;\mathsf{let}\ y=k\ \mathsf{in}\ \mathsf{let}\ x=o\ \m
 ```
 
 ```math
-\frac{\Gamma\vdash o:A\quad \forall\gamma\in\mathrm{expand}_G(A).\ \gamma\ \text{a record, dictionary, arrow or callable clause}
-      \quad \kappa_i\notin\mathcal B\quad
-      \kappa_i\in\mathcal F\Rightarrow\forall\gamma\in\mathrm{expand}_G(A).\ \gamma\ \text{a record or dictionary clause}}
+\frac{\begin{aligned}&\Gamma\vdash o:A\quad \forall\gamma\in\mathrm{expand}_G(A).\ \gamma\ \text{a record, dictionary, arrow, callable or view clause}
+      \quad \kappa_i\notin\mathcal B\\
+      &\kappa_i\in\mathcal F\Rightarrow\forall\gamma\in\mathrm{expand}_G(A).\ \gamma\ \text{a record, dictionary or view clause}\quad
+      \kappa_i\in\mathcal T\Rightarrow\forall\gamma\in\mathrm{expand}_G(A).\ \gamma\ \text{no view clause}\end{aligned}}
      {\Gamma\vdash k\ \mathtt{in}\ o:\mathsf{boolean}}
 ```
 
@@ -617,7 +618,10 @@ on any object (`inKeyRefusal`, [guards](#guards)), and $`\mathcal F`$ the
 keys a function owns or inherits from `Function.prototype` that no other
 built-in prototype holds but `Error.prototype`, which holds `name`
 (`functionKeys`: `name`, `prototype`, `call`, `apply`, `bind`, `arguments`,
-`caller`), which the model's function lacks.
+`caller`), which the model's function lacks, and $`\mathcal T`$ the keys
+`%TypedArray%.prototype` holds beside $`\mathcal B`$ (`typedArrayKeys`:
+`buffer`, `byteLength`, `byteOffset`, `set`, `subarray`,
+`BYTES_PER_ELEMENT`), which the model's typed array lacks.
 The operand's clauses are objects because `in` throws on a primitive, where
 the test would answer `false`, and not a class value, which holds its static
 fields but not the keys JavaScript's class owns besides (`name`, `length`,

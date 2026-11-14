@@ -182,7 +182,7 @@ theorem valueClass_ok [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} 
     subst hl
     obtain ⟨w, hw, hcw⟩ := hh.1.2 fl cc hlookup
     have hwsrc := sourceTy_sound hsrc ((hagree 0 (by omega) _ w).mp (hcw 0 (by omega)))
-    simp only [Region.mem, hw, Selector.selects]
+    simp only [Region.mem, hw]
     cases w <;> simp_all [isSourceVal, isArr]
   · cases hc
 
@@ -207,7 +207,7 @@ theorem storeClass_ok [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} 
     obtain ⟨u, hu, hcu⟩ := hh.1.2 st cc hlookup
     obtain ⟨T, hT⟩ := storeListTy_listT hL ((hagree 0 (by omega) _ u).mp (hcu 0 (by omega)))
     obtain ⟨ls, rfl, -⟩ := hT
-    simp [Region.mem, hu, Selector.selects, isArr]
+    simp [Region.mem, hu, isArr]
   · cases hc
 
 /-- Antitonicity from typing: a footprint within another by the value-class

@@ -281,6 +281,7 @@ def Region.renameM (σ : Nat → Option Nat) : Region → Region
   | .all => .all
   | .cell b => .cell b
   | .inCls r c => .inCls (r.renameM σ) c
+  | .store x p => match σ x with | some y => .store y p | none => .all
 
 theorem Region.mem_renameM {σ : Nat → Option Nat} {ρ env : Env} {h : Heap} {l : Nat}
     (hσ : ∀ i j, σ i = some j → ρ j = env i) :
@@ -319,12 +320,13 @@ end Verification.Footprints
 
 namespace Verification.Footprints
 
-/-- **A footprint's class entries as they act on their class**: on a store
-`init` and `scalar` are `keep`, on a value `grow` is `scalar`
-(`Change.onStore`, `Change.onValue`). -/
+/-- **A footprint's class entries as they act on their class**: on a
+selector of store categories alone `init` and `scalar` are `keep`, on one of
+the value category alone `grow` is `scalar` (`Change.onStore`,
+`Change.onValue`); a selector of both kinds keeps its change. -/
 def Footprint.byClass (Φ : Footprint) : Footprint := Φ.map fun e => match e.1 with
   | .cls c => if !c.value then (e.1, e.2.onStore)
-      else if !(c.array && c.view) then (e.1, e.2.onValue) else e
+      else if !c.array && !c.view then (e.1, e.2.onValue) else e
   | _ => e
 
 /-- A transition within a footprint is within its class entries' action on
@@ -343,26 +345,20 @@ theorem Post.byClass {Φ : Footprint} {ρ : Env} {h h' : Heap} (hp : Post Φ ρ 
       simp only
       by_cases hcv : c.value = false
       · simp only [hcv, Bool.not_false, if_true]
-        have harr : isArr v = true := by
-          unfold Selector.selects at hsel; split at hsel
-          · assumption
-          · rw [hcv] at hsel; cases hsel
+        have harr : isArr v = true := Selector.selects_noValue hcv hsel
         refine ⟨hm, ?_⟩
-        cases v <;> simp [isArr] at harr
         cases δ <;> simp only [Change.onStore]
         · exact hh
-        · exact hh.init_store
-        · exact hh.scalar_store
+        · exact hh.init_isArr harr
+        · exact hh.scalar_isArr harr
         · exact hh
         · exact hh
       · simp only [Bool.not_eq_false] at hcv
         simp only [hcv, Bool.not_true, Bool.false_eq_true, if_false]
         split
         · rename_i hst
-          have harr : isArr v = false := by
-            unfold Selector.selects at hsel; split at hsel
-            · simp_all
-            · rename_i ha; simpa using ha
+          simp only [Bool.and_eq_true, Bool.not_eq_true'] at hst
+          have harr : isArr v = false := Selector.selects_valueOnly hst.1 hst.2 hsel
           refine ⟨hm, ?_⟩
           cases δ <;> simp only [Change.onValue]
           all_goals first | exact hh | exact hh.grow_value harr

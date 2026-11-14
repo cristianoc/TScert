@@ -66,8 +66,8 @@ slot $`x`$, a **path** $`p`$ of named data fields read from its value in turn,
 and what the term reads of the value $`v`$ the path ends at: $`x.p`$, the
 safe integer $`v`$ is; $`|x.p|`$, the length of $`v`$'s array store, where
 that is at most $`2^{32}-1`$; and $`\mathrm{view}(x.p)`$, the **typed-array
-length** of $`v`$, the safe integer at least $`0`$ that the location of its
-model key $`[[\mathrm{viewLength}]]`$ holds; and $`\mathrm{strLength}(x.p)`$,
+length** of $`v`$, the fixed length its descriptor holds, where that is a
+safe integer; and $`\mathrm{strLength}(x.p)`$,
 the **string's length** of $`v`$, its count of UTF-16 code units, where that
 is at most $`2^{53}-1`$, the most a JavaScript string holds. The empty path
 reads the slot's value itself, $`x`$, $`|x|`$, $`\mathrm{view}(x)`$ and
@@ -80,7 +80,7 @@ $`\mathrm{strLength}(x)`$:
 \mathrm{int}(k)(\rho,h) &\iff \exists b\,i.\ \rho(k)=\mathsf{num}\,b\land\mathrm{SafeInt}(b,i)\\
 ⟦x.p⟧_{\rho,h} &= i \iff \exists b.\ \mathrm{read}(\rho,h,x.p)=\mathsf{num}\,b\land\mathrm{SafeInt}(b,i)\\
 ⟦|x.p|⟧_{\rho,h} &= n \iff \mathrm{store}(\mathrm{read}(\rho,h,x.p))=s\land h(s)=\mathsf{arr}\,\ell\land n=|\ell|\le 2^{32}-1\\
-⟦\mathrm{view}(x.p)⟧_{\rho,h} &= n \iff \mathrm{read}(\rho,h,x.p)=\mathsf{objAt}\,fs\,c\,i\land fs([[\mathrm{host}]])\ \text{defined}\land fs([[\mathrm{viewLength}]])=\ell\land h(\ell)=\mathsf{num}\,b\land\mathrm{SafeInt}(b,n)\land 0\le n\\
+⟦\mathrm{view}(x.p)⟧_{\rho,h} &= n \iff \mathrm{read}(\rho,h,x.p)=\mathsf{viewAt}\,fs\,i\,s\,t\,n\land n<2^{53}\\
 ⟦\mathrm{strLength}(x.p)⟧_{\rho,h} &= n \iff \mathrm{read}(\rho,h,x.p)=\mathsf{str}\,s\land n=|\mathit{units}(s)|\le 2^{53}-1\\
 \mathrm{linear}(F)(\rho,h) &\iff (\forall t\in\mathrm{vars}(F).\ ⟦t⟧_{\rho,h}\ \text{is defined})\land F\ \text{holds at}\ t\mapsto⟦t⟧_{\rho,h}
 \end{aligned}
@@ -375,7 +375,7 @@ a bound at least `0` (`Linear.subsume`): every other is its consequence, and
 `Linear.strengthen` (proved: `strengthen_holds`). The index facts are
 `IndexFact.int` and `IndexFact.linear`, terms `HeapKnowledge.Term`, the
 length `lengthOf` (the length `Step.lenV` gives), the typed-array length
-`viewLengthOf` at `Calculus.viewLengthKey`, the string's length `strLengthOf`
+`viewLengthOf`, the descriptor's, the string's length `strLengthOf`
 (the length `Step.lenStr` gives, at most `maxStringLength`), the path read
 `IndexFacts.readPath`, the key never copied by `copiedKey`. A fact reading
 only the environment is `IndexFact.envOnly`; the heap extension's proof is
@@ -1315,13 +1315,16 @@ body fact holds, its variables denoting, the element only where it is
 present and a safe integer:
 
 ```math
-\mathrm{every}(x.p,\,t,\,\Phi)(\rho,h) \iff \mathrm{read}(\rho,h,x.p)=v\land\mathrm{elems}(v)=s\land h(s)=\mathsf{arr}\,\ell\land⟦t⟧_{\rho,h}=n\land
+\mathrm{every}(x.p,\,t,\,\Phi)(\rho,h) \iff \mathrm{read}(\rho,h,x.p)=v\land\mathrm{elems}(v)=s\land \mathrm{entries}(h(s))=\ell\land⟦t⟧_{\rho,h}=n\land
 \forall i<n.\ \forall F\in\Phi.\ F\ \text{holds at}\ (i,\ \ell_i,\ ⟦\cdot⟧_{\rho,h})
 ```
 
-with $`\mathrm{elems}(v)`$ an array's store, or, of a host object owning no
-store, the location of its model key `[[viewElements]]`: a typed array's
-elements ([typed arrays](SOURCE-CONTRACTS.md#stated-library-types)). A
+with $`\mathrm{elems}(v)`$ an array's store, or, of a typed array, the view
+store its descriptor names ([typed arrays](SOURCE-CONTRACTS.md#stated-library-types)),
+and $`\mathrm{entries}`$ the cells a store lists, an array's
+$`\mathsf{arr}\,\ell`$ as $`\ell`$ and a view store's
+$`\mathsf{viewStore}\,t\,\langle c_0,\ldots\rangle`$ with every index present
+(`storeEntries`). A
 clause `forall x in P: B` elaborates to it with $`t=|P|`$ of an array,
 $`t=\mathrm{view}(P)`$ of a typed array, each comparison
 of the body to a linear fact over the index, the element and terms, its

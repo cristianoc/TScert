@@ -66,20 +66,22 @@ The model's worlds are the note's kinded ones (§§2–3 of the
 [Tolerant frames note](REFERENCES.md#the-tolerant-frames-note)). A world
 entry is a role and a contract
 ([Worlds](../lean/Verification/Semantics/Worlds.lean)): a field F, a cell C,
-an element cell E, an array's store or a view store of a fixed length S, an
-object's identity I. Extension keeps every entry and truncation every role.
-A term's references are valid (`RefsOk`) when every location it names has the
-role its position demands: an identity under an object, a store under `[]`,
-a view store under `[[viewElements]]`, a field or a cell under any other
-key, an element cell in a store; and an object's view metadata is valid
-(`ViewMetaOk`: a `[[viewLength]]` location is a field admitting one length,
-a `[[viewElements]]` location a view store of that length, and a map naming
-either names `[[host]]`). A heap meets a world (`HeapOk`,
+an element cell E, an array's store or a view store of a fixed format and
+length S, an object's identity I. Extension keeps every entry and truncation
+every role. A term's references are valid (`RefsOk`) when every location it
+names has the role its position demands: an identity under an object, a store
+under `[]`, a field or a cell under any other key, an element cell in a
+store, and, under a typed array's descriptor, a view store of its format and
+length. A heap meets a world (`HeapOk`,
 [Heaps](../lean/Verification/Semantics/Heaps.lean)) in its contracts below
 the level and in its shapes at every level, zero included: each location
-holds contents of its role's category (a source value in F, C and E, a store
-in S, of the view's length for a view store, `null` in I) with valid
-references (`Shaped`).
+holds contents of its role's category (a source value in F, C and E, an
+array's store in an array store, in a view store of form `view_N` a view
+store of its format listing `N` cells, so with no hole, `null` in I) with
+valid references (`Shaped`). The category of a location's contents read from
+the contents alone, an array's store, a view store or a value
+(`contentsCategory`), is its role's (`Shaped.category`), so it is kept by
+every admissible transition (`Admissible.contentsCategory`).
 
 Safety (`Safe`, `SafePostW`, `SafePostExcW`, `SafeWith`, `SafeGraph`)
 requires the running term's, or the graph state's (`StateRefs`), references
@@ -892,10 +894,8 @@ by unfolding the `let`s); the merge theorem reads it there.
   well-formed heap holds lists only element cells of the heap
   (`HeapOk.store_cells`), so the support of $`\mathrm{apart}(x,y)`$ needs no
   further premise ([allocated cells](#allocated-cells-and-separation)).
-- **States carry valid references.** A typed array's length read through a
-  valid reference is immutable (`viewLengthOf_kept`), so (View) holds at a
-  state whose roots are valid (`view_box`); a graph state's roots are
-  (`ControlFlow.StateRefs`).
+- **A typed array's length is part of the value.** Its descriptor holds it,
+  so (View) holds after every admissible transition (`view_box`).
 - **An action from a run needs the effect judgment.** Safety alone gives an
   admissible endpoint; the footprint comes from a postcondition relative
   to the run's first heap, on each exit (`action_normal`, `action_throw`).

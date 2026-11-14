@@ -1042,16 +1042,12 @@ then of its role's sort (`Payload.sound`), and so of a kinded role's category
 (`Payload.stored`, `Payload.element`). A rest store's element positions are
 payloads of element cells (`RestStore`).
 
-**Key and metadata fit.** The role an allocation records must be the one its
-key's slot demands ([kinded states](SINGLE-PASS-PROOF.md#kinded-states)):
-`alloc`, `allocDict`, `ctorGraph` and `callableGraph` take each part's tag to
-fit its key (`StorageRole.fitsKey`: `arrayStore` under `[]`, `viewStore`
-under `[[viewElements]]`, `field` or `cell` under any other key), and that no
-part is `[[viewLength]]` or `[[viewElements]]`: a typed allocation is no host
-object, and view metadata is a host object's (`ViewMetaOk`). `write` and
-`writeCallable` take the written position's tag to be no `viewStore`: a view
-store's length is fixed by its allocation. The checker decides the same
-conjuncts.
+**Key fit.** The role an allocation records must be the one its key's slot
+demands ([kinded states](SINGLE-PASS-PROOF.md#kinded-states)): `alloc`,
+`allocDict`, `ctorGraph` and `callableGraph` take each part's tag to fit its
+key (`StorageRole.fitsKey`: `arrayStore` under `[]`, `field` or `cell` under
+any other key). No slot holds a typed array's view store, which its
+descriptor names. The checker decides the same conjuncts.
 
 The category is weaker than the exception guarantee of `sourceTy`
 (`sourceTy_exc`), which also gives the built-ins' invariant and so refuses
@@ -1826,17 +1822,13 @@ Proved: `HeapExpressionRules.keptCells_holds`, used by `write_sound`
 `growOutput_sound`) and `PromiseCalls.withGrown_holds`.
 Cases: `bounded-write-keeps-cells`, `write-keeps-cells`.
 
-**Typed-array lengths through every step.** A typed array's length is read
-from the location of its `[[viewLength]]`, which the view's type states a
-stable key ([stable keys](HOST-FAMILIES.md#stable-keys)): a location whose
-contract admits one value, which every heap a normally returning execution
-reaches holds. So every step preserves a linear fact whose every term is a
-slot's value or the typed-array length $`\mathrm{view}(x)`$ of a slot $`x`$
-every clause of whose type states $`[[\mathrm{viewLength}]]`$ stable, beside
-the step's own output (proved):
+**Typed-array lengths through every step.** A typed array's length is its
+descriptor's, part of the value. So every step preserves a linear fact whose
+every term is a slot's value or the typed-array length $`\mathrm{view}(x)`$
+of a slot $`x`$, beside the step's own output (proved):
 
 ```math
-\frac{F\in\Sigma\qquad \forall t\in\mathrm{vars}(F).\ t=x\lor\bigl(t=\mathrm{view}(x)\land [[\mathrm{viewLength}]]\in\sigma(\Gamma(x))\bigr)}
+\frac{F\in\Sigma\qquad \forall t\in\mathrm{vars}(F).\ t=x\lor t=\mathrm{view}(x)}
      {\Gamma;\Sigma\vdash r\leftarrow e\dashv\Sigma',\ F}\ \textsf{view-stable}
 ```
 
@@ -1845,31 +1837,25 @@ write preserve `i < b.length` alike.
 
 A field write or a call also preserves the typed-array length of a view read through
 one field $`g`$ of a slot $`z`$, where the write preserves the field's
-location (it alters no object, or $`\mathrm{first}(z,g)`$) and every clause
-of $`\Gamma(z)`$ states $`g`$ a field each of whose types $`B`$ states
-$`[[\mathrm{viewLength}]]`$ stable in every clause (proved, in the truncated
-world the field's contract types its value in):
+location (it alters no object, or $`\mathrm{first}(z,g)`$) (proved):
 
 ```math
 \frac{F\in\Sigma\quad \mathrm{view}(z.g)\in\mathrm{vars}(F)\quad
-      \neg\chi(\mathsf{obj})\lor\mathrm{first}(z,g)\quad
-      \forall B\in\mathrm{fieldTys}(\Gamma(z),g).\ [[\mathrm{viewLength}]]\in\sigma(B)}
+      \neg\chi(\mathsf{obj})\lor\mathrm{first}(z,g)}
      {\Gamma;\Sigma\vdash x.f:=y\dashv\Sigma',\ F}\ \textsf{view-path-stable}
 ```
 
 with every other term of $`F`$ preserved by $`\chi`$. At a call, the same
 rule uses its footprint or element-write change; the field is kept where
-that change preserves objects. The view length is stable on normal return
-(proved: `viewFields_frame`, consumed by `effectKept_holds`).
+that change preserves objects (proved: `termValue_viewFramed`, consumed by
+`effectKept_holds`).
 `call-keeps-view-path` exercises a scalar cache insertion and a view fill;
 `invalid-call-replaces-view-path` replaces the containing field and reads
 `undefined` under Node. So
 `cursor.segmentIndex = i + 1` preserves
 $`i<\mathrm{view}(\mathit{prepared}.\mathit{segmentFlags})`$, and a write of
 `prepared.segmentFlags` itself preserves no fact naming its length. The rule
-reads one field: a field's contract types its value at the levels below its
-record's, and a value read through two fields is typed only two levels below,
-where the stability of its length is not known at every level a run observes.
+reads one field, the one location a step's change and `first` decide.
 
 **Implementation.** A change is `HeapKnowledge.Changes`, its meaning
 `Changes.Holds`; term preservation is `Term.keptBy` (proved:
@@ -1901,12 +1887,10 @@ bound (`range-text-branch-bound`, pretext's `buildRangeText`, and
 `invalid-range-text-argument-write`). Lean checks the selected call against
 the declaration (`PromiseCalls.keepsCall_sound`).
 `view-stable` is `HeapExpressionRules.stableIndices`, added by `withStable`
-and applied by `Checker.keepingStable` (proved: `withStable_sound`, from
-`HeapObservations.stable_frame`); `view-path-stable` is
-`HeapExpressionRules.viewField` and `writeViews`, with `Term.viewFramed`,
-`IndexFact.keptWith` and `HeapKnowledge.keptIndicesWith` (proved in
-`write_sound`, from `fieldOperand_typed`, `stableField_at`,
-`HeapOk.stable_value` and `termValue_viewFramed`).
+and applied by `Checker.keepingStable` (proved: `withStable_sound`);
+`view-path-stable` is `Term.viewFramed`, with `IndexFact.keptWith` and
+`HeapKnowledge.keptIndicesWith` (proved in `write_sound`, from
+`termValue_viewFramed`).
 
 ### Reads below the length
 

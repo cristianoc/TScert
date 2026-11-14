@@ -62,6 +62,7 @@ export function termText(t: TypeTerm): Modifies<{}, string> {
         `,"calls":${termsText(t.calls)}` +
         (t.prototype ? `,"prototype":${termText(t.prototype)}` : "") +
         (t.host !== undefined ? `,"host":${JSON.stringify(t.host)}` : "") +
+        (t.view !== undefined ? `,"view":${JSON.stringify(t.view)}` : "") +
         (t.stable ? `,"stable":[${t.stable.map(s => JSON.stringify(s)).join(",")}]` : "") + "}";
     case "function":
       return `${k},"effect":${effectText(t.effect)},"receiver":${optionalTermText(t.receiver)},` +
@@ -192,7 +193,7 @@ export function recordShape(reference: Reference, records: NamedRecords, fail: F
     }
     if (term.k !== "object") return fail(`${PREFIX} that is no record (${term.k === "atom" ? term.name : `a ${term.k}`}): ${name}`);
     if (term.calls.length) return fail(`${PREFIX} with call signatures: ${name}`);
-    if (term.prototype || term.host) return fail(`${PREFIX} with a prototype or a host's members: ${name}`);
+    if (term.prototype || term.host || term.view) return fail(`${PREFIX} with a prototype or a host's members: ${name}`);
     return term;
   };
   // An interface's own members first, then each base's: one declared by both

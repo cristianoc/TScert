@@ -1422,6 +1422,9 @@ checks over the supplied subtype relation. -/
         ∃ p ∈ L, FixedCoversPack G R p t) ∧ CoversFields R (a :: bs) (c :: ds) ∧ CoversBagViews R (a :: bs) vs ws
   -- Every target contract has a source contract within it.
   | .pack a bs, .pack c ds => ∀ q ∈ c :: ds, ∃ p ∈ a :: bs, CoversPack R p q
+  -- A typed array of one format, each method the target states one the
+  -- source states under its key, with signatures covering the target's.
+  | .view f ms, .view g ns => f = g ∧ ∀ q ∈ ns, ∃ p ∈ ms, p.key = q.key ∧ CoversSig (restElem G) R p q
   | _, _ => False
 
 /-- Declarative coverage supplies derivations for the fixed-arrow obligations. -/
@@ -3359,6 +3362,18 @@ theorem Covers.sound_raw [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Re
     intro hv; cases hv; exact ⟨i, rfl⟩
   · -- symbolLit ≤ symbolLit at equal identities
     cases hc; exact id
+  · -- view ≤ view: one format; each target method by the source's of its key
+    rename_i f ms g ns
+    obtain ⟨rfl, hms⟩ := hc
+    intro hv
+    refine ⟨hv.1, ?_⟩
+    intro mq hmq
+    obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hmq
+    obtain ⟨p, hp, hkey, hpq⟩ := hms q hq
+    exact MethodMembers.memberT_mono (by simpa [MethodMembers.Member.of] using hkey)
+      (fun w j hj U u hu => covers_sig_sound hpq j (fun i hi => hr i (by omega))
+        (fun i hi => hpa i (by omega)) (hr j hj) U w u hu)
+      (MethodMembers.methodT_at (List.mem_map_of_mem hp) hv.2)
 
 /-- Coverage in a row: a record target's invariant is the record source's. -/
 theorem Covers.sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Renaming G)} {η : MixedAssignment ι} {R known self a b}

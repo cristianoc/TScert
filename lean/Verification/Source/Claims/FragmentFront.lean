@@ -207,8 +207,8 @@ partial def earlyNames (ss : List Fragment.Stmt) : List String :=
 /-- The kind of the `length` of a value of a type in claim form, its labels
 read in the store `T`: a string's where each of its clauses but `null` and
 `undefined` is a string, an array's where each holds an array store, a typed
-array's where each states a view length; a type in the parser's form by its
-written type (`HeadInference.kindOfType`). -/
+array's where each is a typed array's (`Clause.view`); a type in the
+parser's form by its written type (`HeadInference.kindOfType`). -/
 def lengthKindIn (T : EquationStore.State) (j : Json) : Option HeapKnowledge.Term.Kind :=
   match (Fragment.translate j).run T with
   | .error _ => HeadInference.kindOfType j
@@ -219,8 +219,8 @@ def lengthKindIn (T : EquationStore.State) (j : Json) : Option HeapKnowledge.Ter
       | .nul | .undef => none
       | .str | .strLit _ | .strIn _ => some (some HeapKnowledge.Term.Kind.strLength)
       | .refs fs _ vs .. =>
-        some (if field fs vs SourceTypes.storeField then some .length
-          else if field fs vs viewLengthKey then some .view else none)
+        some (if field fs vs SourceTypes.storeField then some .length else none)
+      | .view .. => some (some .view)
       | _ => some none
     match kinds with
     | some k :: ks => if ks.all (· == some k) then some k else none
@@ -297,7 +297,8 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
             ((Stored.views fs).lookup k <|> vs.lookup k).isSome
           let cs := PositiveRules.expand (SourceTypes.graph T) A
           !cs.isEmpty && cs.all fun
-            | .refs fs _ vs .. => field fs vs SourceTypes.storeField || field fs vs viewLengthKey
+            | .refs fs _ vs .. => field fs vs SourceTypes.storeField
+            | .view .. => true
             | _ => false
         | _ => true
       let apartFits : HeadInference.Fact → Bool

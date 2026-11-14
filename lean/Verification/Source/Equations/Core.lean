@@ -262,14 +262,18 @@ partial def objectClause (ctx : Ctx) (term : Json) : M (Clause (List Tree)) := d
       let s ← m.getStr?
       pure [(Verification.hostKey, [← prim (Json.str s).compress (.strLit s)])]
     | .error _ => pure []
+  -- A typed array's format (parity-interfaces I3, the explicit
+  -- representation boundary): the declaration states the typed arrays of
+  -- that format, values carrying a view descriptor, by this field alone,
+  -- which only the library overlay's typed-array and `Buffer` readings state.
+  let view : Option ViewFormat ← match term.getObjVal? "view" with
+    | .ok v => do let f : ViewFormat ← (fromJson? v : Except String ViewFormat); pure (some f)
+    | .error _ => pure none
   let mut methods : List (MethodMembers.Sig (List Tree)) := []
   let mut all : Array (PropKey × List Tree × Bool × Bool) := #[]
   for f in ← arr term "fields" do
     let name ← PropKey.decode (← field f "name")
-    -- A marked shape may state the model's `[[viewLength]]`, a typed
-    -- array's length, which the host owns (DESIGN.md, "Trust
-    -- surface"); every other model key is the model's alone.
-    if RequestJson.reservedKey name && !(name == Verification.viewLengthKey && !marker.isEmpty) then
+    if RequestJson.reservedKey name then
       throw s!"{ctx.site}: a declared member cannot use the model's internal key {repr name}"
     let ty ← field f "type"
     let optional ← bool f "optional"
@@ -362,6 +366,11 @@ partial def objectClause (ctx : Ctx) (term : Json) : M (Clause (List Tree)) := d
     throw s!"{ctx.site}: a prototype of hidden members is stated of a plain record only"
   if !marker.isEmpty && (hidden.isSome || !fixed.isEmpty || !variadic.isEmpty || !indexes.isEmpty) then
     throw s!"{ctx.site}: a host family's marker is stated of a plain record only"
+  if let some f := view then
+    if !marker.isEmpty || hidden.isSome || !fixed.isEmpty || !variadic.isEmpty || !indexes.isEmpty ||
+        !all.isEmpty || !stable.isEmpty then
+      throw s!"{ctx.site}: a typed array's type states its methods alone"
+    return .view f methods
   if fixed.isEmpty && variadic.isEmpty then
     if indexes.isEmpty then
       match hidden with

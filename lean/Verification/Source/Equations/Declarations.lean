@@ -88,6 +88,7 @@ def objectMembers (term : Json) : List String :=
     ((indexSignatures term).map (·.1)).filter (· != "stringIndex") ++
     (if (term.getObjVal? "prototype").toOption.isSome then ["prototype"] else []) ++
     (if (term.getObjVal? "host").toOption.isSome then ["host"] else []) ++
+    (if (term.getObjVal? "view").toOption.isSome then ["view"] else []) ++
     if (term.getObjVal? "stable").toOption.isSome then ["stable"] else []
 
 def kindOf (term : Json) : Option String := (term.getObjValAs? String "k").toOption

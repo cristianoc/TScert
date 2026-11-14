@@ -35,7 +35,7 @@ def policy (Es : List (StorageRole × Fam)) : Policy :=
 /-- **An allocation is safe** at the world its entries determine. Beyond the
 contents' types, the typing supplies what the kinded world requires of the
 fresh locations: each initializer is of its tag's category (`hhold`), each
-tag fits its key (`hfits`), the metadata keys fit (`hmeta`), and the
+tag fits its key (`hfits`), and the
 initializers' references are valid (`href`). The continuation sees the record
 whose positions state the allocated roles. -/
 theorem allocation_safe {Q : Fam} {ss : List StorageRole} {As : List Fam} (hss : ss.length = As.length) (hA : ∀ A ∈ As, Adm A) (hV : ∀ A ∈ As, ValOnly A)
@@ -47,7 +47,6 @@ theorem allocation_safe {Q : Fam} {ss : List StorageRole} {As : List Fam} (hss :
     (hv : ∀ p ∈ As.zip vs, ∀ (j : Nat) (hj : j + 1 < n), p.1 j (trunc j (by omega) W) p.2)
     (hhold : ∀ (i : Nat) (s : StorageRole) (v : Val), ss[i]? = some s → vs[i]? = some v → s.Holds v)
     (hfits : ∀ (i : Nat) (s : StorageRole), ss[i]? = some s → ∀ key : PropKey, ns[i]? = some key → s.fitsKey key = true)
-    (hmeta : ∀ (k : Nat) (rs : List Role), concreteRoles ss vs = some rs → MetaFit ns rs (As.map (fun A => (res A : Ctr k))))
     (href : RefsOk W (.makeAt code ns vs))
     (result : ∀ j (hj : j < n) (U : WorldT j),
       WExt (trunc j (Nat.le_of_lt hj) W) U →
@@ -78,8 +77,8 @@ theorem allocation_safe {Q : Fam} {ss : List StorageRole} {As : List Fam} (hss :
         rw [← he2]
         exact ⟨fun i _ U U' hx w hw => (hA A hA').mono i U U' hx w hw, fun i _ U w hw => hV A hA' i U w hw⟩
       · simp only [List.mem_singleton] at h2; rw [h2]; exact idCtr_adm
-    have hsh := concrete_shaped (W := W₀) (c := code) cs hlen (Shaped_trunc _ hok.2) hnd
-      (by omega) hcsl hns hrs (RefsOk_trunc _ href) hfits (hmeta p rs hrs)
+    have hsh := concrete_shaped (W := W₀) (c := code) cs hlen (Shaped_trunc _ hok.2)
+      (by omega) hcsl hns hrs (RefsOk_trunc _ href) hfits
     have hmeets : HeapMeets p (appendWs W₀ (objectEntries rs cs)) (h ++ vs ++ [.nul]) := by
       rw [List.append_assoc]
       refine HeapMeets_appendWs (HeapOk_trunc p W h hok).1 (WorldAdm_trunc _ hadm) hcadm

@@ -1654,7 +1654,6 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
   have href : RefsOk W (.merge d va vb) := by
     intro r hr; simp only [refs, List.mem_append] at hr; exact hr.elim (hra r) (hrb r)
   have hcat := Kinds.mergeParts_cat hok.2 hra hrb hparts
-  have hnol := Kinds.mergeParts_noLength hra hparts
   have hvref : ∀ e ∈ mergeData pa qs, RefsOk W e.2 := by
     intro e he
     rcases Kinds.mergeParts_vals hparts e he with ⟨l, hl⟩ | ⟨s, hs⟩
@@ -1670,7 +1669,7 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
     intro hm
     exact (List.nodup_append.mp hnd).2.2 _ hm _ (List.mem_map_of_mem hq) rfl
   let ix : List (IndexKeys × List ι) := ds ++ cellViews cs
-  generalize mergeData pa qs = ps at hparts hnodup hF hO hP hK hcls hnp hcat hnol hvref
+  generalize mergeData pa qs = ps at hparts hnodup hF hO hP hK hcls hnp hcat hvref
   have hnohost : (slots h.length (ps.map Prod.fst)).lookup hostKey = none := by
     apply lookup_slots_none
     intro hm
@@ -1728,17 +1727,14 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
       obtain ⟨e, he, rfl⟩ := Option.map_eq_some_iff.mp hs
       obtain ⟨e', he', rfl⟩ := Option.map_eq_some_iff.mp hv
       rw [he] at he'; cases he'
-      exact (hcat e (List.mem_of_getElem? he)).2.2)
+      exact (hcat e (List.mem_of_getElem? he)).2)
     (hfits := fun i s hs key hk => by
       simp only [List.getElem?_map] at hs hk
       obtain ⟨e, he, rfl⟩ := Option.map_eq_some_iff.mp hs
       obtain ⟨e', he', rfl⟩ := Option.map_eq_some_iff.mp hk
       rw [he] at he'; cases he'
       have hc := hcat e (List.mem_of_getElem? he)
-      exact StorageRole.fitsKey_field hc.1 hc.2.1)
-    (hmeta := fun _ _ _ => Kinds.MetaFit.of_not_mem
-      (fun hm => by obtain ⟨e, he, hk⟩ := List.mem_map.mp hm; exact hnol e he hk)
-      (fun hm => by obtain ⟨e, he, hk⟩ := List.mem_map.mp hm; exact (hcat e he).2.1 hk))
+      exact StorageRole.fitsKey_field hc.1)
     (href := hmref)
   case hvgoal =>
     intro q hq

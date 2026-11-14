@@ -13,7 +13,7 @@
  * `ImplicitArrayBuffer`) are not collected. */
 import type { DeclarationIdentity, ExactElementWrite, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
-import type { CallEffect } from "./type-graph.mts";
+import type { CallEffect, ViewFormat } from "./type-graph.mts";
 
 export type TypeEntry = {
   /** The type's name, as a client writes it: `Buffer`. */
@@ -52,41 +52,36 @@ const named = (id: DeclarationIdentity): TypeTerm =>
 const definitionOf = (id: DeclarationIdentity, expression: TypeTerm): TypeDefinition =>
   ({ declaration: id, parameters: [], bases: [], expression });
 
-/** The marker of a view of bytes: a host object (HOST-FAMILIES.md, "Host
- * objects"), which the model holds as owning `[[host]]` at this string and
- * no allocation of the program owns, so no program object meets a view's
- * type. */
-export const bytesMarker = "node:bytes";
-
 /** A view of bytes: a `Uint8Array`, a `Uint16Array`, an `Int32Array`, a
- * `Float64Array`, or a `Buffer`, a host object read at what the host gives
- * it (ECMA-262, "TypedArray Objects"), each a typed array whose elements
- * are numbers (a `Float64Array`'s any double, `NaN` included),
+ * `Float64Array`, or a `Buffer`, a typed array (ECMA-262, "TypedArray
+ * Objects"; the note *Tolerant frames*, §2), whose elements are numbers of
+ * its format (a `Float64Array`'s any double, `NaN` included),
  *
- *     type Uint8Array = host "node:bytes" {
- *       readonly [[viewLength]]: number;   // stable
+ *     type Uint8Array = view "uint8" {
  *       fill(value: number, start?: number, end?: number): Uint8Array;
  *       copyWithin(target: number, start: number, end?: number): Uint8Array;
  *       set(source: Uint8Array, offset?: number): undefined;
  *       subarray(begin: number, end?: number): Uint8Array };
  *
- * Each standard name denotes a type of its own, the marker naming its
- * element type (`viewKinds`): `Uint8Array` and `Buffer` at "node:bytes",
- * `Uint16Array`, `Int32Array` and `Float64Array` at "node:bytes:uint16",
- * "node:bytes:int32" and "node:bytes:float64", each with the members
- * below, its own type for `self`; `views` is their union. Its elements and its `length` are read
- * through `%ByteAt%` and `%ByteLength%`, and an element written through
- * `%ByteSet%` (`intrinsics.mts`), which the parser writes for an element
- * read or write at a number and a read of `length` of a value TypeScript
- * types as a view: the host's [[Get]] and [[Set]] of an integer-indexed
- * exotic object at a canonical numeric key, which never read the prototype
- * chain, and `%TypedArray%.prototype`'s `length` getter. The model holds its
- * elements under `[[viewElements]]`, which only those intrinsics' and the
- * methods' contracts read and write, and no `length` of it: a host object
- * refuses the operations
- * copying its own properties or exposing their values, `Object.keys` and
- * `Object.hasOwn` answer strings and Booleans no type tells, and no record
- * type naming `length` admits a view.
+ * The declaration's `view` field is the explicit representation boundary
+ * (parity-interfaces I3): the type is the typed arrays of that format, values
+ * a view descriptor makes typed arrays, naming their view store, format and
+ * fixed length (Lean's `CallCode.view`, `Clause.view`), and no field or
+ * signature shape makes one. Each standard name denotes a type of its own,
+ * its format by `viewKinds`: `Uint8Array` and `Buffer` at "uint8",
+ * `Uint16Array`, `Int32Array` and `Float64Array` at "uint16", "int32" and
+ * "float64", each with the members below, its own type for `self`; `views`
+ * is their union. Its elements and its `length` are read through `%ByteAt%`
+ * and `%ByteLength%`, and an element written through `%ByteSet%`
+ * (`intrinsics.mts`), which the parser writes for an element read or write at
+ * a number and a read of `length` of a value TypeScript types as a view: the
+ * host's [[Get]] and [[Set]] of an integer-indexed exotic object at a
+ * canonical numeric key, which never read the prototype chain, and
+ * `%TypedArray%.prototype`'s `length` getter. A typed array's elements are
+ * its view store's cells, which only those intrinsics' and the methods'
+ * contracts read and write: a typed array refuses the operations copying its
+ * own properties or exposing their values, `Object.keys` and `Object.hasOwn`
+ * answer strings and Booleans no type tells, and no record type admits one.
  *
  * The methods are `%TypedArray%.prototype`'s (ECMA-262, "Properties of the
  * %TypedArray% Prototype Object"), each called at numbers and views alone:
@@ -100,15 +95,13 @@ export const bytesMarker = "node:bytes";
  * index to the view's bounds, a negative one counted from the end, and
  * throw no `RangeError`; `set` throws a `RangeError`, writing nothing,
  * where its offset is negative or the source does not fit from it. None
- * states a guarantee of a throw (no `onThrow`). The model holds a view's elements as a store under the model key
- * `[[viewElements]]`, one location per element, each holding the element:
- * `fill`, `copyWithin` and `set` replace the written entries of the store
- * of every view over the written bytes by fresh locations holding what
- * each view now reads there, within the store-growth footprint: every
- * location but a view's element store keeps its contents, and each view's
- * element store keeps its length, every cell it newly lists fresh
- * (`elementWrite`, `CallEffects.ElementWrite.Holds`); `subarray` allocates
- * its view, within the empty footprint. `map`,
+ * states a guarantee of a throw (no `onThrow`). `fill`, `copyWithin` and
+ * `set` replace the written entries of the view store of every typed array
+ * over the written bytes by fresh cells holding what each now reads there,
+ * within the store-growth footprint: every location but a view store keeps
+ * its contents, and each view store keeps its format and length, every cell
+ * it newly lists fresh (`elementWrite`, `CallEffects.ElementWrite.Holds`);
+ * `subarray` allocates its typed array, within the empty footprint. `map`,
  * `filter`, `slice` and the other members, a species constructor's or a
  * callback's, are not stated. */
 const bytesIdentity = identity("Uint8Array");
@@ -122,8 +115,8 @@ export const float64: TypeTerm = named(float64Identity);
 /** Every view of bytes, of any element type. */
 export const views: TypeTerm = { k: "union", parts: [bytes, uint16, int32, float64], span: at };
 const optionalNumber = union(atom("number"), atom("undefined"));
-/** What a write of a view's elements changes: the element stores of the
- * views over the written bytes, each entry it writes a fresh location
+/** What a write of a view's elements changes: the view stores of the typed
+ * arrays over the written bytes, each entry it writes a fresh location
  * (`%ByteSet%`, `intrinsics.mts`). */
 const elementsWritten: CallEffect = footprintEffect({ value: "keep", store: "grow" }, { elementWrite: "stores" });
 /** The members of `%TypedArray%.prototype` a view states, each returning
@@ -133,19 +126,16 @@ const viewMethods = (self: TypeTerm): Field[] => [
   field("copyWithin", method([atom("number"), atom("number"), optionalNumber], self, elementsWritten)),
   field("set", method([views, optionalNumber], atom("undefined"), elementsWritten)),
   field("subarray", method([atom("number"), optionalNumber], self, emptyEffect))];
-/** The typed-array length a view's model key `[[viewLength]]` holds, a
- * readonly `number` the host owns at a location no other object's field or
- * store shares, one value for the view's life (DESIGN.md, "Trust surface"):
- * a stable key (HOST-FAMILIES.md, "Stable keys"), so every step keeps a
- * fact naming the count (ARITHMETIC.md, "Linear facts"). */
-const viewLength: Field = field("[[viewLength]]", atom("number"));
-const viewDefinition = (id: DeclarationIdentity, self: TypeTerm, marker: string): TypeDefinition => definitionOf(id,
-  { k: "object", fields: [viewLength, ...viewMethods(self)], stringIndex: null, calls: [], host: marker,
-    stable: ["[[viewLength]]"], span: at });
-const bytesDefinition = viewDefinition(bytesIdentity, bytes, bytesMarker);
-const uint16Definition = viewDefinition(uint16Identity, uint16, `${bytesMarker}:uint16`);
-const int32Definition = viewDefinition(int32Identity, int32, `${bytesMarker}:int32`);
-const float64Definition = viewDefinition(float64Identity, float64, `${bytesMarker}:float64`);
+/** A typed array's type: its format and its methods. Its length is its
+ * descriptor's, fixed for the typed array's life, every typed array viewing
+ * a fixed-size `ArrayBuffer` that is never detached (DESIGN.md, "Trust
+ * surface"). */
+const viewDefinition = (id: DeclarationIdentity, self: TypeTerm, format: ViewFormat): TypeDefinition =>
+  definitionOf(id, { k: "object", fields: viewMethods(self), stringIndex: null, calls: [], view: format, span: at });
+const bytesDefinition = viewDefinition(bytesIdentity, bytes, "uint8");
+const uint16Definition = viewDefinition(uint16Identity, uint16, "uint16");
+const int32Definition = viewDefinition(int32Identity, int32, "int32");
+const float64Definition = viewDefinition(float64Identity, float64, "float64");
 /** The definitions of the views of bytes, each naming the others (`set`). */
 export const viewDefinitions: readonly TypeDefinition[] = [bytesDefinition, uint16Definition, int32Definition, float64Definition];
 /** A view's element type, by its standard name: the safe integers within
@@ -160,7 +150,7 @@ export const viewKinds: readonly { name: string; type: TypeTerm; range: [number,
 /** A `Buffer`, a view of bytes with the methods of `Buffer.prototype` the
  * overlay states (Node 26.13.0's `lib/buffer.js`),
  *
- *     type Buffer = host "node:bytes" { toString(encoding: "utf8"): string;
+ *     type Buffer = view "uint8" { toString(encoding: "utf8"): string;
  *       fill(value: number, offset?: number, end?: number): Buffer;
  *       copyWithin(target: number, start: number, end?: number): Buffer;
  *       set(source: Uint8Array, offset?: number): undefined;
@@ -178,12 +168,12 @@ export const viewKinds: readonly { name: string; type: TypeTerm; range: [number,
  * own (SOURCE-CONTRACTS.md, "Stated library types"), none runs code of the
  * client's, and none writes a location the model holds but the element
  * stores `fill`, `copyWithin` and `set` write, as a view's. A `Buffer` is a
- * `Uint8Array`: it has the marker and more. */
+ * `Uint8Array`: a typed array of its format with its methods and more. */
 const bufferIdentity = identity("Buffer");
 export const buffer: TypeTerm = named(bufferIdentity);
 export const bufferDefinition: TypeDefinition = definitionOf(bufferIdentity,
-  { k: "object", stringIndex: null, calls: [], host: bytesMarker, stable: ["[[viewLength]]"], span: at, fields: [
-    viewLength, field("toString", method([text("utf8")], atom("string"), emptyEffect)), ...viewMethods(buffer)] });
+  { k: "object", stringIndex: null, calls: [], view: "uint8", span: at, fields: [
+    field("toString", method([text("utf8")], atom("string"), emptyEffect)), ...viewMethods(buffer)] });
 
 /** The tests a `Stats`, a `BigIntStats` and a `Dirent` dispatch through a
  * prototype other code may change: each `() => unknown`, its effect

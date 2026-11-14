@@ -9,8 +9,8 @@ theorem with the hypotheses the indexed model forces, or a counter-model
 where the note's statement does not hold:
 
 - (View): a linear fact whose current terms are slots' integers and
-  typed-array lengths holds after every admissible transition from a state
-  whose roots are valid (`view_box`); an entry term reads the entry state,
+  typed-array lengths holds after every admissible transition (`view_box`);
+  an entry term reads the entry state,
   which no transition changes;
 - (Init): every linear fact whose current terms are no string lengths
   survives every action of `{values: init, stores: keep}` (`init_box`), with
@@ -36,17 +36,15 @@ open ProgramTyping PositiveGraphs PositiveRules ExpressionEffects HeapExpression
 /-! ## (View) -/
 
 /-- **(View)**: a linear fact whose current terms are slots' integers and
-typed-array lengths holds after every admissible transition, at a state whose
-roots are valid (`RootsOk`, as every graph state's are); its entry terms, of
-any kind and path, read the entry state (`termValue_entry_invariant`). A
-typed array's length read through valid references is immutable
-(`viewLengthOf_kept`). -/
+typed-array lengths holds after every admissible transition; its entry
+terms, of any kind and path, read the entry state
+(`termValue_entry_invariant`). A typed array's length is its descriptor's,
+part of the value. -/
 theorem view_box {F : Linear.Fact HeapKnowledge.Term} {ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hroots : RootsOk s.W ρ)
     (hv : ∀ t ∈ F.vars, t.atEntry = false → t.path = [] ∧ (t.kind = .value ∨ t.kind = .view))
     (hF : (HeapKnowledge.IndexFact.linear F).HoldsAt ε ρ s.h) :
     Box Footprints.Closed.top.fp (fun ρ _ s => (HeapKnowledge.IndexFact.linear F).HoldsAt ε ρ s.h) ρ m s := by
-  intro s' ha
+  intro s' _
   have he : ∀ t ∈ F.vars, HeapKnowledge.termValue ε ρ s'.h t = HeapKnowledge.termValue ε ρ s.h t := by
     intro t ht
     obtain ⟨k, slot, p, e⟩ := t
@@ -58,20 +56,10 @@ theorem view_box {F : Linear.Fact HeapKnowledge.Term} {ρ : Env} {m : Nat} {s : 
     rcases hk with rfl | rfl
     · rfl
     · simp only [HeapKnowledge.termValue_nil, HeapKnowledge.kindValue]
-      exact viewLengthOf_kept (hroots slot) ha.1
   obtain ⟨hd, hh⟩ := hF
   refine ⟨fun t ht => by rw [he t ht]; exact hd t ht, ?_⟩
   refine (Linear.Fact.holds_congr fun t ht => ?_).mpr hh
   simp only [HeapKnowledge.termValuation, he t ht]
-
-/-- A typed array of length 1, its length at location 1. -/
-def viewObj : Val := .objAt [(hostKey, 0), (viewLengthKey, 1)] .absent 2
-
-theorem viewObj_length {b : UInt64} {n : Int} (hb : SafeIntegers.SafeInt b n) (h0 : 0 ≤ n) :
-    HeapKnowledge.viewLengthOf [.nul, .num b, .nul] viewObj = some n := by
-  have hl : SafeIntegers.safeIntOfBits b = some n := SafeIntegers.safeIntOfBits_complete hb
-  have hne : (PropKey.str "[[viewLength]]" == PropKey.str "[[host]]") = false := by decide
-  simp [HeapKnowledge.viewLengthOf, viewObj, List.lookup, hostKey, viewLengthKey, hne, hl, h0]
 
 /-! ## (Init) -/
 
@@ -322,7 +310,7 @@ theorem fresh_cells_not_erased :
     rcases l with _ | _ | _ | l <;> simp at hl ⊢
     · exact .inl hl
     · refine .inr ?_
-      simp [Region.mem, storeElems, ρ, fieldsOf, Footprints.Change.Holds]
+      simp [Region.mem, storeElems, entriesAt, storeEntries, ρ, fieldsOf, Footprints.Change.Holds]
     · exact .inl hl
   have := hall ρ _ _ 2 hp ⟨2, by simp [storeOf, fieldsOf, ρ], Nat.le_refl _⟩ 1 .nul (by omega) rfl
   simp at this

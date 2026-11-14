@@ -1,4 +1,4 @@
-import type { ArrayPresence } from "./type-graph.mts";
+import type { ArrayPresence, ViewFormat } from "./type-graph.mts";
 /** The declaration document shared by the source parser, the Fragment AST
  * and readers. TypeScript's checker, under the source's configured project,
  * decides which declaration each name denotes; the document records the source
@@ -228,6 +228,11 @@ export type TypeTerm =
        * readonly view of the model's `[[host]]` at this string, which no
        * allocation of the program owns. */
       host?: string;
+      /** A typed array's element format, stated by the library overlay's
+       * typed-array and `Buffer` readings only: the type is the typed arrays
+       * of that format (Lean's `Clause.view`), values a view descriptor
+       * makes typed arrays, and the object states their methods alone. */
+      view?: ViewFormat;
       /** The required readonly members stated stable, never empty: a host
        * family's reading's (HOST-FAMILIES.md, "Stable keys"), or a program
        * record's members tagged `@stable` (POSITIVE-TYPES.md, "Records").

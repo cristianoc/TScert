@@ -366,9 +366,13 @@ are objects without call code (`semWithArgs`), so no function. -/
   if cs.any (fun | .ctors .. => true | _ => false) then
     throw (located ++ "`in` on a class value: its static members are bound apart from it")
   unless G.plainTy B && !cs.isEmpty && cs.all (fun
-      | .refs .. | .dict .. | .arrs .. | .callable .. => true
+      | .refs .. | .dict .. | .arrs .. | .callable .. | .view .. => true
       | _ => false) do
     throw (located ++ "`in` needs an object operand: it throws on a primitive")
+  if let .str k := key then
+    if Fragment.typedArrayKeys.contains k && cs.any (fun | .view .. => true | _ => false) then
+      throw (located ++ s!"`in` with the key '{k}' on an operand that may be a typed array, " ++
+        "which inherits it from %TypedArray%.prototype")
   if let .str k := key then
     if Fragment.functionKeys.contains k && cs.any (fun | .arrs .. | .callable .. => true | _ => false) then
       throw (located ++ s!"`in` with the key '{k}' on an operand that may be a function, " ++

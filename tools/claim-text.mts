@@ -457,6 +457,7 @@ const _handled = {
   symbolLit: 1,
   numIn: 1,
   strIn: 1,
+  view: 1,
 } satisfies Record<StringClause | ClauseKey, 1>;
 void _handled;
 
@@ -675,9 +676,19 @@ function liftClause(
     const [arrow] = arrows;
     if (arrow !== undefined) return arrows.length === 1 ? arrow : shown(arrows);
   }
+  // A typed array is shown by its standard name.
+  const view = body("view");
+  if (isJsonObject(view)) {
+    const name = typedArrayNames.find(([f]) => f === view.format);
+    if (name !== undefined) return name[1];
+  }
   // Unknown clauses are shown as their encoding rather than guessed at.
   return encoding(clause);
 }
+
+/** Each typed-array format's standard name. */
+const typedArrayNames: readonly [string, string][] = [
+  ["uint8", "Uint8Array"], ["uint16", "Uint16Array"], ["int32", "Int32Array"], ["float64", "Float64Array"]];
 
 /** A clause's call signatures as function atoms: its fixed arrows, then its
 variadic ones, whose further actuals are at `rest`: an element rest's element,

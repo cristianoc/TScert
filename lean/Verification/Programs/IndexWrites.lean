@@ -1654,15 +1654,15 @@ theorem boundedWrite_safe [DecidableEq ι] {Ξ : Fam} {G : NormalGraph ι} {R S 
       intro r hr
       have hslot : RefOk U (.slot arrayStoreKey l') := hfin _ (by
         simp only [refs, List.mem_append, objRefs, List.mem_cons, List.mem_map]
-        exact .inl (.inr (.inr ⟨(arrayStoreKey, l'), lookup_mem_pair hf', rfl⟩)))
+        exact .inl (.inr ⟨(arrayStoreKey, l'), lookup_mem_pair hf', rfl⟩))
       simp only [RefOk, hr] at hslot
       obtain ⟨ls', rfl, -⟩ := ((represents_raw hS j U av) ha').1
       cases r with
       | store k =>
         cases k with
         | array => exact ⟨ls', rfl⟩
-        | view N => simp [SlotRole, arrayStoreKey, viewElementsKey] at hslot
-      | _ => simp [SlotRole, arrayStoreKey, viewElementsKey] at hslot
+        | view fm N => simp [SlotRole] at hslot
+      | _ => simp [SlotRole] at hslot
     exact write_rule (meaning_adm G S) j U heap l' av hav hu hok hf' hl' hag' ha' hcat hfin
 
 /-- The complete element-write execution consumes a postcondition for
@@ -2427,11 +2427,14 @@ theorem writeAtoms_after [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
     subst hwp
     obtain ⟨se, ys, hre, -, hsep⟩ := untouched hw hu (apartFrom_sound hs hk)
     -- A region is an array's: its elements are its store's.
-    have hst0 : Footprints.storeOf (ρ s) = some st := by
-      rcases hre with ⟨-, hv⟩ | ⟨st0, -, hs0, -⟩
-      · rw [hv] at hst; simp [elementsOf, Footprints.storeOf, Footprints.fieldsOf] at hst
-      · rw [elementsOf_store hs0] at hst; cases hst; exact hs0
-    obtain ⟨e1, e2⟩ := regionOf_unique hre (.inr ⟨st, rfl, hst0, hls⟩)
+    have hst0 : Footprints.storeOf (ρ s) = some st ∧ h[st]? = some (.arr ls) := by
+      rcases hre with ⟨-, hv⟩ | ⟨st0, -, hs0, hys⟩
+      · rw [hv] at hst; simp [elementsOf] at hst
+      · rw [elementsOf_store hs0] at hst; cases hst
+        rw [hys] at hls
+        simp only [Option.bind_some, storeEntries, Option.some.injEq] at hls
+        subst hls; exact ⟨hs0, hys⟩
+    obtain ⟨e1, e2⟩ := regionOf_unique hre (.inr ⟨st, rfl, hst0.1, hst0.2⟩)
     rw [e1, e2] at hsep
     have hkeep : ∀ l, InRegion (some st) ls l → ∀ v, h[l]? = some v → h'[l]? = some v := by
       intro l hl v hv
@@ -2445,7 +2448,8 @@ theorem writeAtoms_after [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
       simp only [readPath, Option.some.injEq] at hw'
       subst hw'
       rw [hst] at hst'; cases hst'
-      exact hkeep st (.inl rfl) _ hls'
+      obtain ⟨u, hu', hue⟩ := Option.bind_eq_some_iff.mp hls'
+      rw [hkeep st (.inl rfl) _ hu']; exact hue
     · intro z' hz'; exact termApart_kept hw hk hu hstop hz'
     · intro w st' ls' hw' hst' hls' F hF i b hb z' hz'
       simp only [readPath, Option.some.injEq] at hw'

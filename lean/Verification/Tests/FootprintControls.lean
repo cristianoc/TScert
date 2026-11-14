@@ -66,8 +66,12 @@ private theorem g_categories : HeapCategories g where
     subst this; simp [fieldsOf] at hl
   cells s ls _ _ hs _ _ := by
     cases s with
-    | zero => simp [g] at hs
+    | zero => simp [g, storeEntries] at hs
     | succ n => simp [g] at hs
+  views l₀ _ _ _ _ _ _ hv _ := by
+    cases l₀ with
+    | zero => simp [g] at hv
+    | succ n => simp [g] at hv
 
 private theorem noLinks_ok (σ ρ₀ : Env) (a : Heap) : RebaseOk noLinks σ ρ₀ a g where
   link := by intro _ _ _ h; simp [noLinks] at h

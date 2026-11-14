@@ -461,7 +461,7 @@ private theorem closed_entry_le {e : Effect} {x : Footprints.Region × Footprint
   simp only [Footprints.Closed.fp, List.mem_cons, List.not_mem_nil, or_false] at hx
   unfold Effect.footprint
   rcases hx with rfl | rfl <;>
-    simp only [Footprints.Region.mem, hv, Footprints.Selector.selects] at hm <;>
+    simp only [Footprints.Region.mem, hv] at hm <;>
     split <;> simp_all [Footprints.Closed.at, Footprints.Closed.top, change_le_refl, change_le_any]
 
 /-- A region entry covers its location at `any`, which the coarse bound
@@ -523,7 +523,7 @@ theorem Effect.within_inside_own {e : Effect} {r : Tm} {args : List Tm} {before 
     simp only [Footprints.Closed.at]
     split <;> simp [change_le_any]
   · rw [hst]; split <;> simp only [Effect.receiverEntries, ho, if_true, List.mem_singleton] at hx <;>
-      subst hx <;> simp_all [Footprints.Region.mem, Footprints.Selector.selects, change_le_any]
+      subst hx <;> simp_all [Footprints.Region.mem, change_le_any]
   · have := region_entry_le (v := v) hq
     rw [hst]
     revert this
@@ -534,7 +534,7 @@ theorem Effect.within_inside_own {e : Effect} {r : Tm} {args : List Tm} {before 
 location but the receiver's store by the coarse bound. -/
 theorem Effect.within_outside_store {e : Effect} {r : Tm} {args : List Tm} {before after : Heap}
     (h : e.within r args before after) (ho : e.receiverOwn = false) :
-    e.footprint.HoldsOn (fun l => Footprints.storeOf r ≠ some l) before after := by
+    e.footprint.HoldsOn (fun l => (Footprints.fieldsOf r).lookup arrayStoreKey ≠ some l) before after := by
   have h0 : callEnv r args 0 = r := rfl
   refine Effect.within_outside h fun x hx l hl => ?_
   cases hs : e.receiverStore
@@ -542,7 +542,7 @@ theorem Effect.within_outside_store {e : Effect} {r : Tm} {args : List Tm} {befo
   · simp only [Effect.receiverEntries, ho, hs, if_true, Bool.false_eq_true, if_false, List.mem_singleton] at hx
     subst hx
     simp only [Footprints.Region.mem, h0]
-    simpa [Footprints.storeOf] using hl
+    simpa using hl
 
 /-- A signature's frame holds where its closed bound holds everywhere. -/
 theorem Effect.within_of_holds {e : Effect} {r : Tm} {args : List Tm} {before after : Heap}
@@ -584,7 +584,7 @@ theorem Effect.within_of_own {e : Effect} (hreg : e.regions = []) (ho : e.receiv
     have ha : Footprints.isArr v = true := by
       replace hl : (Footprints.Region.inCls (.own 0) .values).mem (callEnv r args) before l = false := hl
       rw [hmem, hv] at hl
-      simpa [List.contains_iff_mem, hown, Footprints.Selector.selects] using hl
+      simpa [List.contains_iff_mem, hown] using hl
     refine ⟨v', hv', ?_⟩
     simpa [Footprints.Closed.at, ha, Effect.ownChange] using hc
   · exact hout.2 l v hown hv
@@ -593,7 +593,7 @@ theorem Effect.within_of_own {e : Effect} (hreg : e.regions = []) (ho : e.receiv
 no store regions**, from its coarse bound outside the receiver's store. -/
 theorem Effect.within_of_store {e : Effect} (hreg : e.regions = []) (ho : e.receiverOwn = false)
     (hs : e.receiverStore = true) {r : Tm} {args : List Tm} {before after : Heap}
-    (hout : e.footprint.HoldsOn (fun l => Footprints.storeOf r ≠ some l) before after) :
+    (hout : e.footprint.HoldsOn (fun l => (Footprints.fieldsOf r).lookup arrayStoreKey ≠ some l) before after) :
     e.within r args before after := by
   have hfp : e.footprint = e.closed := Effect.footprint_of_regions hreg
   have h0 : callEnv r args 0 = r := rfl
@@ -602,7 +602,7 @@ theorem Effect.within_of_store {e : Effect} (hreg : e.regions = []) (ho : e.rece
   rw [← hfp, Footprints.Closed.post_extra_any]
   refine (Footprints.Closed.HoldsOn.congr ?_).mp hout
   intro l
-  simp [Footprints.Region.mem, h0, Footprints.storeOf]
+  simp [Footprints.Region.mem, h0]
 
 theorem Effect.within_own {e : Effect} {r : Tm} {args : List Tm} {before after : Heap}
     (h : e.within r args before after) (ho : e.receiverOwn = true) : e.ownChange.Holds before after := by

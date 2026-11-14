@@ -243,7 +243,6 @@ theorem make_fields_rule {Q : Fam} {ss : List StorageRole} {As : List Fam}
     (hv : ∀ p ∈ As.zip vs, p.1 n W p.2)
     (hhold : ∀ (i : Nat) (s : StorageRole) (v : Val), ss[i]? = some s → vs[i]? = some v → s.Holds v)
     (hfits : ∀ (i : Nat) (s : StorageRole), ss[i]? = some s → ∀ key : PropKey, ns[i]? = some key → s.fitsKey key = true)
-    (hmeta : ∀ (k : Nat) (rs : List Role), Kinds.concreteRoles ss vs = some rs → Kinds.MetaFit ns rs (As.map (fun A => (res A : Ctr k))))
     (href : RefsOk W (.makeAt code ns vs))
     (result : ∀ j (hj : j < n) (U : WorldT j),
       WExt (trunc j (Nat.le_of_lt hj) W) U →
@@ -253,7 +252,7 @@ theorem make_fields_rule {Q : Fam} {ss : List StorageRole} {As : List Fam}
   OperationWorlds.erase n W h (.makeAt code ns vs)
     (AllocationWorlds.allocation_safe hss hA hV n W h code ns vs hnd hns hAs hvals hadm hok
       (fun p hp j _ => (hA p.1 (List.of_mem_zip hp).1).down_le n j (by omega) W p.2 (hv p hp))
-      hhold hfits hmeta href result)
+      hhold hfits href result)
 
 /-- **Allocating named fields, from values known below the level.** The
 allocation step spends a level, so each value need meet its family only at
@@ -268,7 +267,6 @@ theorem make_fields_rule_below {Q : Fam} {ss : List StorageRole} {As : List Fam}
     (hv : ∀ p ∈ As.zip vs, ∀ (j : Nat) (hj : j + 1 < n), p.1 j (trunc j (by omega) W) p.2)
     (hhold : ∀ (i : Nat) (s : StorageRole) (v : Val), ss[i]? = some s → vs[i]? = some v → s.Holds v)
     (hfits : ∀ (i : Nat) (s : StorageRole), ss[i]? = some s → ∀ key : PropKey, ns[i]? = some key → s.fitsKey key = true)
-    (hmeta : ∀ (k : Nat) (rs : List Role), Kinds.concreteRoles ss vs = some rs → Kinds.MetaFit ns rs (As.map (fun A => (res A : Ctr k))))
     (href : RefsOk W (.makeAt code ns vs))
     (result : ∀ j (hj : j < n) (U : WorldT j),
       WExt (trunc j (Nat.le_of_lt hj) W) U →
@@ -277,7 +275,7 @@ theorem make_fields_rule_below {Q : Fam} {ss : List StorageRole} {As : List Fam}
     Safe Ξ Q n W h (.makeAt code ns vs) :=
   OperationWorlds.erase n W h (.makeAt code ns vs)
     (AllocationWorlds.allocation_safe hss hA hV n W h code ns vs hnd hns hAs hvals hadm hok hv
-      hhold hfits hmeta href result)
+      hhold hfits href result)
 
 /-- **Allocating an object with no named field**, as `.bind` does: the
 result meets `Q` at whatever identity the allocation gives it. -/
@@ -287,7 +285,7 @@ theorem make_empty_rule {Q : Fam} (hQ : Adm Q) (n : Nat) (W : WorldT n) (h : Hea
     Safe Ξ Q n W h (.makeAt code [] []) :=
   make_fields_rule (ss := []) (As := []) rfl (fun _ h => by simp at h) (fun _ h => by simp at h) n W h code [] [] List.nodup_nil rfl rfl
     (by simp) hadm hok (by simp) (fun _ _ _ h => by simp at h) (fun _ _ h => by simp at h)
-    (fun _ _ _ => Kinds.MetaFit.of_not_mem (by simp) (by simp)) href fun j hj U hx _ =>
+    href fun j hj U hx _ =>
       hQ.mono j _ U hx _ (hQ.down_le n j (Nat.le_of_lt hj) W _ (hv _))
 
 /-- **Creating a function object.** Its one field, which gives it a location
@@ -313,7 +311,7 @@ theorem makeFn_rule {A Q : Fam} (hA : Adm A) (hV : ValOnly A) (n : Nat) (W : Wor
       cases i with
       | zero => simp at hs hk; subst hs hk; decide
       | succ i => simp at hs)
-    (fun _ _ _ => Kinds.MetaFit.of_not_mem (by decide) (by decide)) href
+    href
     (fun j hj U hx _ => result j hj U hx)
 
 /-- **A literal allocates a store.** One fresh location per element, each

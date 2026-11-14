@@ -49,12 +49,12 @@ private theorem value_change {δ δ' : Change} {b v v'} (hv : isArr v = false)
   | grow => exact Change.scalar_le_grow h''
   | _ => exact h''
 
-private theorem store_change {δ δ' : Change} {b ls v'}
-    (hle : δ.onStore.le δ'.onStore = true) (h : δ.Holds b (.arr ls) v') : δ'.Holds b (.arr ls) v' := by
-  have h' : δ.onStore.Holds b (.arr ls) v' := by
+private theorem store_change {δ δ' : Change} {b v v'} (hv : isArr v = true)
+    (hle : δ.onStore.le δ'.onStore = true) (h : δ.Holds b v v') : δ'.Holds b v v' := by
+  have h' : δ.onStore.Holds b v v' := by
     cases δ with
-    | init => exact h.init_store
-    | scalar => exact h.scalar_store
+    | init => exact h.init_isArr hv
+    | scalar => exact h.scalar_isArr hv
     | _ => exact h
   have h'' := h'.mono hle
   cases δ' with
@@ -67,8 +67,7 @@ private theorem class_change {δ δ' : Change} {b v v'}
     (hs : isArr v = true → δ.onStore.le δ'.onStore = true) (h : δ.Holds b v v') : δ'.Holds b v v' := by
   cases ha : isArr v
   · exact value_change ha (hv ha) h
-  · cases v <;> simp [isArr] at ha
-    exact store_change (hs rfl) h
+  · exact store_change ha (hs ha) h
 
 theorem Closed.post_mono {a b : Closed} (hle : a.le b = true) {ρ h h'} (hp : Post a.fp ρ h h') :
     Post b.fp ρ h h' := by
@@ -80,9 +79,9 @@ theorem Closed.post_mono {a b : Closed} (hle : a.le b = true) {ρ h h'} (hp : Po
   · exact .inl rfl
   · simp only [Closed.fp, List.mem_cons, List.not_mem_nil, or_false] at he
     rcases he with rfl | rfl
-    · have hc : isArr v = false := by simpa [Region.mem, hv, Selector.selects] using hm
+    · have hc : isArr v = false := by simpa [Region.mem, hv] using hm
       exact .inr ⟨_, List.mem_cons_self .., hm, value_change hc hle.1 hh⟩
-    · have hc : isArr v = true := by simpa [Region.mem, hv, Selector.selects] using hm
+    · have hc : isArr v = true := by simpa [Region.mem, hv] using hm
       exact .inr ⟨(.cls .stores, b.store), by simp [Closed.fp], hm,
         class_change (fun h => by rw [hc] at h; cases h) (fun _ => hle.2) hh⟩
 
@@ -109,13 +108,13 @@ theorem Closed.allowed_iff {c : Closed} {ρ : Env} {h : Heap} {l : Nat} {v v' : 
     · exact Change.Holds.refl _ _ _
     · simp only [Closed.fp, List.mem_cons, List.not_mem_nil, or_false] at he
       rcases he with rfl | rfl <;> cases ha : isArr v <;>
-        simp_all [Region.mem, Selector.selects, Closed.at]
+        simp_all [Region.mem, Closed.at]
   · intro hh
     refine .inr ?_
     cases ha : isArr v
-    · exact ⟨(.cls .values, c.value), by simp [Closed.fp], by simp [Region.mem, hv, Selector.selects, ha],
+    · exact ⟨(.cls .values, c.value), by simp [Closed.fp], by simp [Region.mem, hv, ha],
         by simpa [Closed.at, ha] using hh⟩
-    · exact ⟨(.cls .stores, c.store), by simp [Closed.fp], by simp [Region.mem, hv, Selector.selects, ha],
+    · exact ⟨(.cls .stores, c.store), by simp [Closed.fp], by simp [Region.mem, hv, ha],
         by simpa [Closed.at, ha] using hh⟩
 
 /-- A closed footprint's postcondition at any assignment of slots: each old
@@ -431,8 +430,14 @@ theorem Closed.HoldsOn.top {c : Closed} {P : Nat → Prop} {h h' : Heap} (hp : c
 
 /-! ## Fresh stores -/
 
-/-- The location of a value's array store, where it has one. -/
+/-- The location of a value's array store, where it has one: its `[]`
+slot's, which the calculus's array steps read and write. A typed array's
+element facts read the store its descriptor selects instead
+(`HeapKnowledge.elementsOf`). -/
 def storeOf (v : Tm) : Option Nat := (fieldsOf v).lookup arrayStoreKey
+
+theorem storeOf_lookup {v : Tm} {s : Nat} (h : storeOf v = some s) :
+    (fieldsOf v).lookup arrayStoreKey = some s := h
 
 /-- A value whose array store was allocated after a heap of length `b`:
 its store's location is at least `b`. It reads no heap: an object's fields
@@ -465,10 +470,10 @@ theorem Closed.HoldsOn.below_fresh_object {c : Closed} {b : Nat} {r : Tm} {h h' 
 /-- A change on every old location but a fresh value's store is a change on
 every location below where it was allocated. -/
 theorem Closed.HoldsOn.below_fresh {c : Closed} {b : Nat} {r : Tm} {h h' : Heap} (hf : FreshAt b r)
-    (hp : c.HoldsOn (fun l => storeOf r ≠ some l) h h') : c.HoldsOn (· < b) h h' := by
+    (hp : c.HoldsOn (fun l => (fieldsOf r).lookup arrayStoreKey ≠ some l) h h') : c.HoldsOn (· < b) h h' := by
   obtain ⟨s, hs, hle⟩ := hf
   refine hp.weaken fun l hl => ?_
-  rw [hs]
+  rw [storeOf_lookup hs]
   intro he
   cases he
   omega

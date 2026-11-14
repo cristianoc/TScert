@@ -62,8 +62,7 @@ deriving instance ToJson, FromJson for StorageRole
 
 /-- A storage position, a field's or a writable index's, is the flat array
 `[key, role, contents]`, the key a property key or an index's key class, the
-role its constructor's name (`"field"`, `"cell"`, `"arrayStore"`,
-`"viewStore"`). -/
+role its constructor's name (`"field"`, `"cell"`, `"arrayStore"`). -/
 instance (priority := high) {κ α : Type} [ToJson κ] [ToJson α] : ToJson (κ × StorageRole × α) :=
   ⟨fun p => .arr #[toJson p.1, toJson p.2.1, toJson p.2.2]⟩
 
@@ -80,8 +79,8 @@ deriving instance ToJson, FromJson for Clause
 
 /-- The clause fields that are left out of JSON when empty: a call clause's
 variadic signatures, a class value's static fields, a record's optional
-fields, methods, key bounds and stable keys, a callable object's methods, and
-a dictionary's writable index contracts.
+fields, methods, key bounds and stable keys, a callable object's methods, a
+dictionary's writable index contracts, and a typed array's methods.
 Absence is the one spelling of none, so strict decoding, which re-encodes and
 compares, still refuses an explicit empty list, and a clause without them reads
 as it always has. -/
@@ -89,7 +88,7 @@ private def omittedWhenEmpty : List (String × String) :=
   [("arrs", "variadic"), ("callable", "variadic"), ("callable", "methods"), ("ctors", "variadic"), ("ctors", "first"),
    ("ctors", "rest"), ("ctors", "views"), ("refs", "optional"),
    ("dict", "optional"), ("refs", "methods"), ("dict", "methods"), ("refs", "bounds"),
-   ("dict", "bounds"), ("dict", "cells"), ("refs", "stable"), ("dict", "stable")]
+   ("dict", "bounds"), ("dict", "cells"), ("refs", "stable"), ("dict", "stable"), ("view", "methods")]
 
 private def withoutEmptyVariadic (j : Json) : Json :=
   omittedWhenEmpty.foldl (fun j (key, name) =>

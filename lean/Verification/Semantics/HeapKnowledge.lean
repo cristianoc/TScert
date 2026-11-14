@@ -561,7 +561,7 @@ theorem viewRange_holds {ρ h} {t : Term} (hk : t.kind = .view) (hx : (termValue
     ∀ F ∈ viewRange t, F.Holds (termValuation ε ρ h) := by
   obtain ⟨H, v, n, hkv, hn⟩ := termValue_kind hx
   rw [hk] at hkv
-  obtain ⟨h0, h1⟩ := viewLengthOf_range (h := H) (v := v) hkv
+  obtain ⟨h0, h1⟩ := viewLengthOf_range (v := v) hkv
   have hv : termValuation ε ρ h t = n := by simp [termValuation, hn]
   intro F hF
   simp only [viewRange, List.mem_cons, List.not_mem_nil, or_false] at hF
@@ -1409,7 +1409,7 @@ theorem elementsKnown_sound {M : Nat → List Nat} {m : PointClaims.Mapping} {as
     (hM : ∀ x, ∀ y ∈ M x, ρ y = ρ x) (ha : IndexHolds ε as ρ h)
     (hk : elementsKnown M m as s p = true) :
     ∃ w sto ls, readPath h (PointClaims.mapEnv m ρ s) p = some w ∧
-      elementsOf w = some sto ∧ h[sto]? = some (.arr ls) := by
+      elementsOf w = some sto ∧ h[sto]?.bind storeEntries = some ls := by
   obtain ⟨a, hm, ha0⟩ := List.any_eq_true.mp hk
   simp only [Bool.and_eq_true] at ha0
   obtain ⟨hc, hf⟩ := ha0
@@ -1563,7 +1563,7 @@ theorem linearFollowsIn_sound {K : Linear.Known Term} {M : Nat → List Nat} {m 
       obtain ⟨sto, ls, hsto, hls, rfl, -⟩ := lengthOf_store hn
       have hle := hlin.2
       simp only [Linear.Fact.Holds, Linear.Form.eval, termValuation, hterm, Option.getD_some, Int.one_mul, Int.add_zero] at hle
-      refine ⟨w, sto, ls, ls.length, hw, elementsOf_store hsto, hls, hterm, ?_⟩
+      refine ⟨w, sto, ls, ls.length, hw, elementsOf_store hsto, by rw [hls]; rfl, hterm, ?_⟩
       intro i hi
       omega
     · simp only [Bool.and_eq_true] at hf
@@ -2388,18 +2388,18 @@ theorem keptIndices_holds {c : Changes} {first : Nat → String → Bool} {as : 
     (fun hk => IndexFact.holdsAt_kept hc hf hk (he a ha hcd))
     (fun hk => IndexFact.everyKept_sound hc hf hk (he a ha hcd))
 
-/-- The atoms a change keeps, a view's count read through a field among them
-where `views` frames it (`IndexFact.keptWith`). -/
-def keptIndicesWith (c : Changes) (first views : Nat → String → Bool) (as : List IndexAtom) : List IndexAtom :=
-  as.filter (fun a => a.fact.keptWith c first views || a.fact.everyKept c first)
+/-- The atoms a change keeps, a typed array's length read through a field
+among them (`IndexFact.keptWith`). -/
+def keptIndicesWith (c : Changes) (first : Nat → String → Bool) (as : List IndexAtom) : List IndexAtom :=
+  as.filter (fun a => a.fact.keptWith c first || a.fact.everyKept c first)
 
-theorem keptIndicesWith_holds {c : Changes} {first views : Nat → String → Bool} {as : List IndexAtom} {ρ h h'}
-    (he : IndexHolds ε as ρ h) (hc : c.Holds h h') (hf : FirstKept first ρ h h') (hv : ViewsKept views ρ h h') :
-    IndexHolds ε (keptIndicesWith c first views as) ρ h' := by
+theorem keptIndicesWith_holds {c : Changes} {first : Nat → String → Bool} {as : List IndexAtom} {ρ h h'}
+    (he : IndexHolds ε as ρ h) (hc : c.Holds h h') (hf : FirstKept first ρ h h') :
+    IndexHolds ε (keptIndicesWith c first as) ρ h' := by
   intro a ha hcd
   obtain ⟨ha, hk⟩ := List.mem_filter.mp ha
   exact (Bool.or_eq_true_iff.mp hk).elim
-    (fun hk => IndexFact.holdsAt_keptWith hc hf hv hk (he a ha hcd))
+    (fun hk => IndexFact.holdsAt_keptWith hc hf hk (he a ha hcd))
     (fun hk => IndexFact.everyKept_sound hc hf hk (he a ha hcd))
 
 /-- Nothing is kept by `first` where it names no location. -/
@@ -3731,7 +3731,7 @@ def offsetSlot (as : List IndexAtom) (cls : List Nat) (k d : Nat) : Option Nat :
 theorem offsetSlot_value {as : List IndexAtom} {cls : List Nat} {k d r x sto i : Nat}
     {ls : List (Option Nat)} {ρ : Env} {h : Heap}
     (ha : IndexHolds ε as ρ h) (hcls : ∀ y ∈ cls, ρ y = ρ x)
-    (hsto : elementsOf (ρ x) = some sto) (hls : h[sto]? = some (.arr ls))
+    (hsto : elementsOf (ρ x) = some sto) (hls : h[sto]?.bind storeEntries = some ls)
     (hki : intValue (ρ k) = some (i : Int)) (hm : offsetSlot as cls k d = some r) :
     termValue ε ρ h (.value r) = elementInt h ls (i + d) := by
   simp only [offsetSlot, Option.bind_eq_bind, Option.bind_eq_some_iff] at hm

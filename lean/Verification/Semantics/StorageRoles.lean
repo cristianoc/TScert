@@ -10,7 +10,8 @@ role** is the syntax of that statement, carried by every storage position of a
 type and compared, ordered and serialized with it. Its meaning is a storage
 capability over kinded worlds (`Kinds.Capability.ofRole`): `field` an
 ordinary property F, `cell` a binding's storage C, `arrayStore` an ordinary
-array's store, `viewStore` a typed array's view store of any fixed length.
+array's store. No position grants a typed array's view store, which its
+descriptor names (`CallCode.view`).
 
 A store's element positions carry none: every cell a store lists is an
 element cell in every well-formed state (`HeapOk.store_cells`).
@@ -18,12 +19,12 @@ element cell in every well-formed state (`HeapOk.store_cells`).
 namespace Verification
 
 inductive StorageRole where
-  | field | cell | arrayStore | viewStore
+  | field | cell | arrayStore
   deriving DecidableEq, Repr, Inhabited
 
 /-- The order roles are compared in, their declaration order. -/
 def StorageRole.rank : StorageRole → Nat
-  | .field => 0 | .cell => 1 | .arrayStore => 2 | .viewStore => 3
+  | .field => 0 | .cell => 1 | .arrayStore => 2
 
 def StorageRole.before (a b : StorageRole) : Bool := a.rank < b.rank
 
@@ -85,13 +86,12 @@ def StorageRole.permits : StorageRole → Role → Prop
   | .field, r => r = .field
   | .cell, r => r = .cell
   | .arrayStore, r => r = .store .array
-  | .viewStore, r => ∃ N, r = .store (.view N)
 
 /-- **Distinct tags name disjoint roles**: a role determines the tag naming it. -/
 theorem StorageRole.permits_unique {s s' : StorageRole} {r : Role}
     (h : s.permits r) (h' : s'.permits r) : s = s' := by
   cases s <;> cases s' <;> simp only [StorageRole.permits] at h h' <;>
-    first | rfl | (subst h; simp_all) | (obtain ⟨N, rfl⟩ := h; simp_all)
+    first | rfl | (subst h; simp_all)
 
 /-- Every tag names some role. -/
 theorem StorageRole.inhabited (s : StorageRole) : ∃ r, s.permits r := by
@@ -99,7 +99,6 @@ theorem StorageRole.inhabited (s : StorageRole) : ∃ r, s.permits r := by
   · exact ⟨.field, rfl⟩
   · exact ⟨.cell, rfl⟩
   · exact ⟨.store .array, rfl⟩
-  · exact ⟨.store (.view 0), 0, rfl⟩
 
 
 end Verification

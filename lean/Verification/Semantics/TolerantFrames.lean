@@ -352,7 +352,7 @@ theorem elems_not_rigid :
   rcases ha with he | ⟨e, he, hm, -⟩
   · cases he
   · simp only [List.mem_cons, List.not_mem_nil, or_false] at he
-    rcases he with rfl | rfl <;> simp [s₁, anyState, Region.mem, storeElems, fieldsOf] at hm
+    rcases he with rfl | rfl <;> simp [s₁, anyState, Region.mem, storeElems, entriesAt, HeapKnowledge.descriptorStore, storeEntries, fieldsOf] at hm
 
 /-! ## Adequacy: effect judgments give actions -/
 
