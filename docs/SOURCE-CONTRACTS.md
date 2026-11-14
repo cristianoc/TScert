@@ -1914,7 +1914,15 @@ and their fixed length. The declaration's `view` field, which only these
 overlay entries state, is the representation boundary: no field or
 signature shape makes a value a typed array, and no program object meets a
 view's type (`invalid-node-bytes-program-object`, run under Node: `decode`
-of such an object throws). The steps that copy an object's own properties
+of such an object throws). The boundary is trusted: the overlay's
+identification of host values with typed arrays and each one's format,
+`Buffer`'s representation as a `Uint8Array` view, values received from
+external code, and the contracts of the constructors, `subarray` and the
+other native methods are stated, not checked. The decoder refuses a
+declaration giving a source record a `view` (the control "forged
+declarations: a typed array's view"), which shows that a record cannot be
+read as a typed array; it does not establish that a library declaration
+is the overlay's. The steps that copy an object's own properties
 or expose their values refuse a typed array (`hostOwned`).
 `Object.keys` and `Object.hasOwn` answer a view's element keys, which the
 model does not hold: strings and Booleans, at no type that tells them. A
