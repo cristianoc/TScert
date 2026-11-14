@@ -589,6 +589,15 @@ theorem bagFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {a : List (S
   cases he
   exact ⟨l, c, hl, hc, fun j hj U u hu => (hag j hj U u).mp hu⟩
 
+omit [DecidableEq ι] in
+/-- A clause with code admits no typed array: its members are functions or
+classes (`semWithArgs_shape`). -/
+theorem codeOf_not_view {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι} (ho : codeOf c = some o)
+    {n : Nat} {W : WorldT n} {fs : List (PropKey × Nat)} {oid s m : Nat} {f : ViewFormat}
+    (hv : clauseSem G c n W (.objAt fs (.view s f m) oid)) : False := by
+  have hs := semWithArgs_shape (c := c) (by cases c <;> simp_all [codeOf]) (by cases c <;> simp_all [codeOf]) hv.1
+  cases c <;> simp_all [codeOf, valueShape, shape]
+
 /-- What the semantics of a function or class clause gives a merge's
 source: an object with code, whose bag's fields hold their contracts. -/
 theorem codeFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι} (ho : codeOf c = some o)
@@ -788,6 +797,7 @@ theorem noStore_sound {G : NormalGraph ι} {T : List ι} (h : noStore G T = true
   | list a bs => simp at hw
   | ctors L S => simp at hw
   | pack a bs => simp at hw
+  | view f ms => simp at hw
   | numIn _ => simp only [semWithArgs] at hs; obtain ⟨_, -, h1⟩ := hs; cases h1
   | strIn _ => simp only [semWithArgs] at hs; obtain ⟨_, -, h1⟩ := hs; cases h1
 
@@ -1981,6 +1991,13 @@ theorem merge_sides {G : NormalGraph ι} {d : List PropKey} {ca cb : Clause (Lis
       have hno : hostOwned (.objAt fb code oidb) = false := by
         cases code with
         | absent => simp [hostOwned, hnb fb oidb rfl]
+        | view =>
+          split at hsrc
+          · rename_i ob' hob'
+            obtain ⟨fb', oidb', he, -⟩ := objFacts_of_sem hob' hsb
+            cases he
+          · obtain ⟨ob', hob', -⟩ := Option.map_eq_some_iff.mp hsrc
+            exact (codeOf_not_view hob' hsb).elim
         | _ => rfl
       simp [ownData, hno]
     exact ⟨_, _, ownAll_nodup hp,

@@ -131,6 +131,13 @@ inductive Clause (α : Type) where
   /-- A finite set of strings, a tag set of strings; kept sorted, distinct and
   of at least two values as `numIn` is. -/
   | strIn (values : List String)
+  /-- The typed arrays of one format (the note *Tolerant frames*, §2, a
+  typed array; parity-interfaces I3): objects carrying a view descriptor of
+  that format (`Tm.viewAt`), each method a host-relative member
+  (`methodT`), read from the typed array and invoked on it. A value is a
+  typed array by its descriptor alone; no field or signature shape makes
+  one. Appended last so every earlier case order holds. -/
+  | view (format : ViewFormat) (methods : List (MethodMembers.Sig α) := [])
   deriving Repr, DecidableEq
 
 /-- Every value. A closed value, as every member of every family is. -/
@@ -164,23 +171,26 @@ def SourceList (vs : List Val) : Prop := ∀ v ∈ vs, ValueSort.source.Holds v
 theorem ValueSort.source_iff {n : Nat} {W : WorldT n} {v : Val} :
     ValueSort.source.Holds v ↔ sourceT n W v := Iff.rfl
 
-/-- **A closed machine value is of exactly one sort**: `topT` is `V ∪ S`, and
-the two are disjoint (`ValueSort.disjoint`). -/
+/-- **A closed machine value is of one sort or a view store**: `topT` is
+`V ∪ S` with the typed arrays' view stores, which no type's sort holds, and
+`V` and `S` are disjoint (`ValueSort.disjoint`). -/
 theorem topT_iff_sort {n : Nat} {W : WorldT n} {v : Val} :
-    topT n W v ↔ ValueSort.source.Holds v ∨ ValueSort.store.Holds v := by
+    topT n W v ↔ (ValueSort.source.Holds v ∨ ValueSort.store.Holds v) ∨
+      ∃ f cs, v = .viewStore f cs := by
   constructor
   · rintro ⟨hv, hs⟩
     cases v <;> simp_all [isVal, isSourceVal, ValueSort.Holds]
-  · rintro (⟨hv, hs⟩ | ⟨⟨ls, rfl⟩, hs⟩)
+  · rintro ((⟨hv, hs⟩ | ⟨⟨ls, rfl⟩, hs⟩) | ⟨f, cs, rfl⟩)
     · exact ⟨sourceVal_isVal hv, hs⟩
     · exact ⟨rfl, hs⟩
+    · exact ⟨rfl, trivial⟩
 
 theorem ValueSort.disjoint {v : Val} (h : ValueSort.source.Holds v) : ¬ ValueSort.store.Holds v := by
   rintro ⟨⟨ls, rfl⟩, -⟩
   simp [ValueSort.Holds, isSourceVal] at h
 
 theorem ValueSort.Holds.closed {q : ValueSort} {v : Val} (h : q.Holds v) : isVal v = true ∧ Scoped 0 v :=
-  (topT_iff_sort (n := 0) (W := ofEntries [])).mpr (by cases q <;> simp_all)
+  (topT_iff_sort (n := 0) (W := ofEntries [])).mpr (.inl (by cases q <;> simp_all))
 
 def semWithArgs (Ξ : Fam) (X : α → Fam) (P : α → ArgFam) : Clause α → Fam
   | .top => topT
@@ -224,6 +234,8 @@ def semWithArgs (Ξ : Fam) (X : α → Fam) (P : α → ArgFam) : Clause α → 
   -- An argument list is not a runtime value: a pack clause's members are
   -- lists, read by `clauseArguments`.
   | .pack _ _ => fun _ _ _ => False
+  | .view f ms => fun n W v => (∃ fs oid s m, v = .viewAt fs oid s f m) ∧
+      methodT Ξ (ms.map (Member.of X P)) n W v
 
 /-- The argument-list component of a clause. Grouping arguments spends no
 approximation step; only a surrounding runtime operation supplies a guard. -/
@@ -459,6 +471,8 @@ def meet : Clause α → Clause α → List (Clause α)
   | .callable a bs L S ms, .callable c ds M T ns => [.callable a (bs ++ c :: ds) (L ++ M) (S ++ T) (ms ++ ns)]
   | .callable a bs L S ms, .arrs M T => [.callable a bs (L ++ M) (S ++ T) ms]
   | .arrs L S, .callable a bs M T ms => [.callable a bs (M ++ L) (T ++ S) ms]
+  -- A typed array of one format, with the members of both.
+  | .view f ms, .view g ns => if f = g then [.view f (ms ++ ns)] else []
   | _, _ => []
 
 /-- The primitive clause whose values a class's keys are the `ToPropertyKey`
@@ -537,12 +551,14 @@ def shape : Clause α → Nat
   | .top => 7 | .list .. => 8 | .bigint | .bigintLit _ => 9 | .symbol | .symbolLit _ => 10 | .ctors .. => 11
   | .pack .. => 12
   | .source => 7
+  | .view .. => 13
 
 def valueShape : Val → Nat
   | .nul => 0 | .tru | .fls => 1 | .objAt _ .absent _ => 2 | .undef => 4
   | .objAt _ (.bound _ _ _) _ | .objAt _ (.graph _ _ _ _ _ .call _) _
   | .objAt _ (.graph _ _ _ _ _ .sloppy _) _ => 3
   | .objAt _ (.graph _ _ _ _ _ .construct _) _ => 11
+  | .objAt _ (.view ..) _ => 13
   | .num _ => 5
   | .str _ => 6
   | .arr _ => 8
@@ -577,6 +593,7 @@ theorem semWithArgs_value {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | pack a bs => exact h.elim
   | numIn bs => obtain ⟨b, -, rfl⟩ := h; exact ⟨rfl, trivial⟩
   | strIn ss => obtain ⟨s, -, rfl⟩ := h; exact ⟨rfl, trivial⟩
+  | view f ms => obtain ⟨⟨_, _, _, _, rfl⟩, -⟩ := h; exact ⟨rfl, trivial⟩
 
 
 /-- A member's shape is its clause's, except under the two value universes. -/
@@ -616,6 +633,7 @@ theorem semWithArgs_shape {X : α → Fam} {P : α → ArgFam} {c : Clause α} {
   | pack a bs => exact h.elim
   | numIn bs => obtain ⟨b, -, rfl⟩ := h; rfl
   | strIn ss => obtain ⟨s, -, rfl⟩ := h; rfl
+  | view f ms => obtain ⟨⟨_, _, _, _, rfl⟩, -⟩ := h; rfl
 
 /-- Every inhabited clause other than calculus top or an element-store clause
 contains only JavaScript values. Argument-pack clauses have no term members. -/
@@ -627,8 +645,7 @@ theorem semWithArgs_source {X : α → Fam} {P : α → ArgFam} {c : Clause α} 
   by_cases hj : c = .source
   · subst c; exact h.1
   have hs := semWithArgs_shape ht hj h
-  cases v <;> simp_all [isSourceVal, isVal, valueShape]
-  cases c <;> simp_all [shape]
+  cases v <;> simp_all [isSourceVal, isVal, valueShape] <;> cases c <;> simp_all [shape]
 
 /-- The property bag a clause states of a value with code: a callable
 object's fields, or a class value's static fields. -/
@@ -1008,6 +1025,19 @@ theorem meet_sound (X : α → Fam) (P : α → ArgFam) (a b : Clause α) (n : N
       · subst hab; simp [singleton_sem, semWithArgs, interT]
       · simp [semList, setSem, semWithArgs, interT, hab]
         intro hv; subst hv; simp [hab]
+    · -- view ∩ view: a typed array of one format, with the members of both
+      rename_i f ms g ns
+      by_cases hfg : f = g
+      · subst hfg
+        show semList Ξ X P (if f = f then [Clause.view f (ms ++ ns)] else []) n W v ↔ _
+        simp only [if_true, singleton_sem, semWithArgs, List.map_append, methodT_append, interT]
+        exact ⟨fun ⟨h, m1, m2⟩ => ⟨⟨h, m1⟩, h, m2⟩, fun ⟨⟨h, m1⟩, _, m2⟩ => ⟨h, m1, m2⟩⟩
+      · show semList Ξ X P (if f = g then [Clause.view f (ms ++ ns)] else []) n W v ↔ _
+        rw [if_neg hfg]
+        constructor
+        · intro h; exact False.elim (nil_sem X P n W v h)
+        · rintro ⟨⟨⟨_, _, _, _, rfl⟩, -⟩, ⟨⟨_, _, _, _, he⟩, -⟩⟩
+          cases he; exact absurd rfl hfg
   · have hm : meet a b = [] := by
       cases a <;> cases b <;> first
         | rfl | exact absurd rfl hs | exact absurd rfl ha | exact absurd rfl hb
@@ -1164,6 +1194,9 @@ theorem semWithArgs_adm (X : α → Fam) (P : α → ArgFam) (c : Clause α) : A
   | strLit _ => exact ⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩
   | bigint => exact bigintT_adm
   | symbol => exact symbolT_adm
+  | view f ms =>
+    exact ⟨fun n W v h => ⟨h.1, (methodT_adm _).down n W v h.2⟩,
+      fun n W U hx v h => ⟨h.1, (methodT_adm _).mono n W U hx v h.2⟩⟩
 
 
 theorem positionFam_tupleFams (X : α → Fam) (t : Tuple α) (i : Nat) :
@@ -1324,6 +1357,7 @@ theorem semWithArgs_congr {Ξ Ξ' : Fam} (X Y : α → Fam) (P Q : α → ArgFam
       (and_congr (CallableConjunctions.props_congr_below X Y a bs n h W v)
         (CallableConjunctions.views_congr_below X Y vs n h W v))
   | pack a bs => rfl
+  | view f ms => exact and_congr Iff.rfl (methodT_congr X Y P Q n hexc h hP ms W v)
 
 /-! ## Renaming operands
 
@@ -1379,6 +1413,7 @@ def Clause.map (f : α → β) : Clause α → Clause β
   | .pack a bs => .pack (a.map f) (bs.map (·.map f))
   | .numIn bs => .numIn bs
   | .strIn ss => .strIn ss
+  | .view fm ms => .view fm (ms.map (Sig.map f))
 
 theorem Clause.carriesInvariant_of_record {c : Clause α} (h : c.record = true) : c.carriesInvariant = true := by
   cases c <;> simp_all [Clause.record, Clause.carriesInvariant]
@@ -1450,6 +1485,7 @@ def Clause.operands : Clause α → List α
   | .ctors L S a bs vs => L.flatMap MethodArrow.operands ++ S.flatMap MethodRestArrow.operands ++
       ((a ++ bs.flatten).map (·.2.2) ++ vs.map (·.2))
   | .pack a bs => a.operands ++ bs.flatMap Tuple.operands
+  | .view _ ms => ms.flatMap Sig.operands
   | _ => []
 
 private theorem famsOf_fun (X : α → Fam) :
@@ -1601,6 +1637,10 @@ theorem map_of_operands {c : Clause α} {f : α → α} (h : ∀ a ∈ c.operand
     simp only [Clause.map, Clause.pack.injEq]
     exact ⟨tuple_self fun x hx => h x (.inl hx),
       map_self fun t ht => tuple_self fun x hx => h x (.inr ⟨t, ht, hx⟩)⟩
+  | view fm ms =>
+    simp only [Clause.operands, List.mem_flatMap] at h
+    simp only [Clause.map, Clause.view.injEq, true_and]
+    exact map_self fun m hm => sig_self fun x hx => h x ⟨m, hm, hx⟩
   | _ => rfl
 
 

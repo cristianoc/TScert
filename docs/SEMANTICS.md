@@ -39,7 +39,14 @@ $`m`$, node expressions $`E`$, each node's continuation and handler $`K`$, an en
 label $`s`$ and the captured values $`\vec c`$, invoked by a call or,
 construct-only, by `new` ($`\kappa`$), collecting a rest or not ($`\varrho`$)
 ([graph code](#graph-code)). Every closure the source creates, a class and a
-callable object included, is graph code; there is no other code. An argument list is not a value: which lists a rest
+callable object included, is graph code; there is no other code. The
+descriptor $`\mathsf{view}(s,t,N)`$ is no code: it makes the object a typed
+array, $`\mathsf{viewAt}(\mathit{fs},i,s,t,N)`$, whose view store is at the
+location $`s`$, whose element format $`t`$ is one of `uint8`, `uint16`, `int32`
+and `float64`, and whose length $`N`$ is fixed. The view store's contents are
+the internal value $`\mathsf{viewStore}(t,\langle c_0,\ldots,c_{N-1}\rangle)`$,
+the element cell of each index in order, with no hole; its tag tells a view
+store from an array's store $`\mathsf{arr}(\ldots)`$ by the contents alone. An argument list is not a value: which lists a rest
 parameter's type admits is a separate contract on lists of values
 ([argument packs](POSITIVE-TYPES.md#argument-packs)).
 `make c a` evaluates its initializer `a`, then appends that value and one

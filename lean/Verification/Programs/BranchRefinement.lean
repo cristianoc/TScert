@@ -1283,6 +1283,7 @@ theorem familyMember_sound {X : α → Fam} {P : α → ArgFam} {cs : List (Clau
     rename_i fs code oid
     cases code with
     | absent => simp at ht
+    | view => simp at ht
     | bound target r pre =>
       have hi : Invocable (.objAt fs (.bound target r pre) oid) := ⟨_, _, _, rfl, rfl, hs⟩
       refine ⟨a, ha, ?_, ?_⟩ <;> (split at hka <;> simp at hka)
@@ -1669,9 +1670,10 @@ universe by tag tests"). -/
 /-- The kinds of a JavaScript value, each as its clause: an object without
 call code is the record of no field (`refs` with no operand), an object
 with call code `arrs [] []` where it is invocable and `ctors []` where it
-is constructible. -/
+is constructible, and a typed array the view of its format. -/
 def sourceKinds : List (Clause α) :=
-  [.nul, .undef, .bool, .num, .str, .bigint, .symbol, .refs [] [] [], .arrs [] [], .ctors []]
+  [.nul, .undef, .bool, .num, .str, .bigint, .symbol, .refs [] [] [], .arrs [] [], .ctors [],
+    .view .uint8, .view .uint16, .view .int32, .view .float64]
 
 /-- **The kinds cover `unknown`**: a member of the `source` clause is in one
 of the kinds' clauses, meeting the built-ins' invariant there. -/
@@ -1707,6 +1709,9 @@ theorem sourceKinds_cover {G : NormalGraph ι} {n W v} (hv : clauseSem G .source
     | bound t r pre => exact family .isFun (by simp [familyMember, sourceKinds]) rfl
     | graph arity E K start caps kind rest =>
       cases kind <;> exact family .isFun (by simp [familyMember, sourceKinds]) rfl
+    | view s f m =>
+      exact ⟨.view f, by cases f <;> simp [sourceKinds],
+        ⟨⟨fs, oid, s, m, rfl⟩, MethodMembers.methodT_nil _ _ _⟩, builtinInvariant_of_withoutInvariant rfl _ _ _⟩
   | _ => simp [isSourceVal] at hsv
 
 /-- Whether the clauses `cs` hold a kind: as one of them, or, the Boolean

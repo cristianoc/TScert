@@ -18,6 +18,7 @@ def Scoped (d : Nat) : Tm → Prop
   | .makeAt (.bound t r pre) _ args =>
       Scoped d t ∧ Scoped d r ∧ ScopedArgs d pre ∧ ScopedArgs d args
   | .makeAt .absent _ args => ScopedArgs d args
+  | .makeAt (.view ..) _ args => ScopedArgs d args
   | .letE a b => Scoped d a ∧ Scoped (d + 1) b
   | .invoke f r args => Scoped d f ∧ Scoped d r ∧ ScopedArgs d args
   | .construct f args => Scoped d f ∧ ScopedArgs d args
@@ -75,6 +76,10 @@ theorem subst_above {t : Tm} {d j : Nat} (h : Scoped d t) (hj : d ≤ j) (a : Tm
   case arith op b c ihb ihc => rw [ihb h.1 hj, ihc h.2 hj]
   case ite c b e ihc ihb ihe => rw [ihc h.1 hj, ihb h.2.1 hj, ihe h.2.2 hj]
   case alloc ns args ihargs =>
+    have hmap : args.map (subst j a) = args := by
+      simpa using (List.map_congr_left (g := id) (fun x hx => ihargs x hx (h x hx) hj))
+    rw [hmap]
+  case makeView s f n ns args ihargs =>
     have hmap : args.map (subst j a) = args := by
       simpa using (List.map_congr_left (g := id) (fun x hx => ihargs x hx (h x hx) hj))
     rw [hmap]
@@ -158,6 +163,12 @@ theorem instantiate_beta (ρ : Env) (hρ : ∀ i, Scoped 0 (ρ i)) (a t : Tm) (d
   case arith op b c ihb ihc => rw [ihb, ihc]
   case ite c b e ihc ihb ihe => rw [ihc, ihb, ihe]
   case alloc ns args ihargs =>
+    rw [List.map_map]
+    congr 1
+    apply List.map_congr_left
+    intro x hx
+    exact ihargs x hx d
+  case makeView s f n ns args ihargs =>
     rw [List.map_map]
     congr 1
     apply List.map_congr_left

@@ -24,6 +24,7 @@ def codeRefs : CallCode → List Ref
   | .absent => []
   | .bound t r pre => refs t ++ refs r ++ refsArgs pre
   | .graph _ E _ _ caps _ _ => refsArgs E ++ refsArgs caps
+  | .view s f n => [.view s f n]
 
 theorem refs_objAt (fs : List (PropKey × Nat)) (c : CallCode) (i : Nat) :
     refs (.objAt fs c i) = objRefs fs i ++ codeRefs c := by

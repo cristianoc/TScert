@@ -1045,7 +1045,7 @@ def clauseChanges (c : PositiveNormalization.Clause α) : Changes :=
   ⟨clauseObj c, clauseNum c, if clauseArr c then .any else .keep⟩
 
 theorem valueShape_objAt (fs : List (PropKey × Nat)) (cd : CallCode) (o : Nat) :
-    valueShape (.objAt fs cd o) ∈ [2, 3, 7, 11] := by
+    valueShape (.objAt fs cd o) ∈ [2, 3, 7, 11, 13] := by
   simp only [valueShape]
   split <;> simp_all
 
@@ -1065,7 +1065,7 @@ theorem clauseChanges_alters {Ξ : Fam} {X : α → Fam} {P : α → ArgFam} {c 
     rw [hsh] at hm
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hm
     simp only [clauseChanges, Changes.alters, clauseObj]
-    rcases hm with hm | hm | hm | hm <;> simp [hm]
+    rcases hm with hm | hm | hm | hm | hm <;> simp [hm]
   case num b =>
     simp only [valueShape] at hsh
     simp [clauseChanges, Changes.alters, clauseNum, ← hsh]

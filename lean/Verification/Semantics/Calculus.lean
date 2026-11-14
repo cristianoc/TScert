@@ -1,4 +1,5 @@
 import Lean.Data.Json
+import Verification.Semantics.ViewFormats
 
 /-!
 # The object language
@@ -272,6 +273,13 @@ inductive Tm where
   hole. The array object holds this value in its store field and replaces it
   when the array grows, so identity, aliasing and holes all live in locations. -/
   | arr (elems : List (Option Nat))
+  /-- A typed array's view store (the note *Tolerant frames*, §2, the view
+  stores; (W2)): the location of each element, in index order, of a store
+  of the format `format`. It lists a cell at every index, so it has no hole,
+  and its tag tells it from an array's store by its contents alone. A typed
+  array's descriptor names the location holding it (`CallCode.view`). An
+  internal machine value: no source term has one. -/
+  | viewStore (format : ViewFormat) (cells : List Nat)
   /-- Allocate one location per initializer, in order, as a store. -/
   | arrLit (inits : List Tm)
   /-- The element a numeric index names in a store: `undefined` at a hole or
@@ -344,14 +352,28 @@ inductive CallCode where
   | graph (arity : Nat) (exprs : List Tm)
       (conts : List (ControlFlow.Continuation × Option ControlFlow.Target))
       (start : Nat) (caps : List Tm) (kind : Invoke := .call) (rest : Bool := false)
+  /-- A typed array's immutable descriptor (the note *Tolerant frames*, §2,
+  a typed array; (W3)): the location of its view store, its element format
+  and its fixed length. An object carrying it is a typed array (`Tm.viewAt`):
+  it has no `[[Call]]`, and its own fields and identity are an object's. -/
+  | view (store : Nat) (format : ViewFormat) (length : Nat)
   deriving Repr
 end
+
+/-- **A typed array** (the note *Tolerant frames*, §2; parity-interfaces I3,
+`Tm.viewAt`): an object with own fields `fields` and identity `identity`
+whose immutable descriptor names its view store `store`, its format and its
+fixed length. Execution tells a typed array by this value alone. -/
+@[match_pattern] abbrev Tm.viewAt (fields : List (PropKey × Nat)) (identity store : Nat)
+    (format : ViewFormat) (length : Nat) : Tm :=
+  .objAt fields (.view store format length) identity
 
 /-- Whether code has `[[Call]]`: all code but a class constructor's. A plain
 object has none. -/
 def CallCode.callable : CallCode → Bool
   | .absent => false
   | .graph _ _ _ _ _ .construct _ => false
+  | .view .. => false
   | _ => true
 
 /-- Whether a call of code of this kind binds the receiver `r` as `this`:
@@ -682,7 +704,8 @@ def primString : Tm → Option String
   | _ => none
 
 def isVal : Tm → Bool
-  | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _ | .objAt .. | .arr _ => true
+  | .nul | .undef | .tru | .fls | .num _ | .str _ | .bigint _ | .sym _ | .objAt .. | .arr _
+  | .viewStore .. => true
   | _ => false
 
 /-- Values exposed to JavaScript. Element stores are internal machine values. -/
@@ -872,6 +895,7 @@ def strictEquals (a b : Tm) : Option Bool :=
   else match a, b with
     | .objAt _ _ i, .objAt _ _ j => some (i == j)
     | .objAt .., .arr _ | .arr _, .objAt .. => some false
+    | .objAt .., .viewStore .. | .viewStore .., .objAt .. => some false
     | _, _ => none
 
 /-- Loose equality runs no client code on primitive pairs, nullish comparisons,
@@ -1110,6 +1134,8 @@ def tmDecEq (a b : Tm) : Decidable (a = b) := by
     exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2) (by simp only [Tm.arith.injEq])
   case arr.arr a0 b0 =>
     exact decidable_of_iff (a0 = b0) (by simp only [Tm.arr.injEq])
+  case viewStore.viewStore a0 a1 b0 b1 =>
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1) (by simp only [Tm.viewStore.injEq])
   case arrLit.arrLit a0 b0 =>
     haveI : Decidable (a0 = b0) := argsDecEq a0 b0
     exact decidable_of_iff (a0 = b0) (by simp only [Tm.arrLit.injEq])
@@ -1167,6 +1193,8 @@ def callCodeDecEq (a b : CallCode) : Decidable (a = b) := by
     haveI : Decidable (a4 = b4) := argsDecEq a4 b4
     exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2 ∧ a3 = b3 ∧ a4 = b4 ∧ a5 = b5 ∧ a6 = b6)
       (by simp only [CallCode.graph.injEq])
+  case view.view a0 a1 a2 b0 b1 b2 =>
+    exact decidable_of_iff (a0 = b0 ∧ a1 = b1 ∧ a2 = b2) (by simp only [CallCode.view.injEq])
 def argsDecEq (a b : List Tm) : Decidable (a = b) := by
   cases a <;> cases b <;> try (solve | apply isFalse; intro h; cases h)
   case nil.nil => exact isTrue rfl
@@ -1298,6 +1326,8 @@ theorem owned_of_nodup {flds : List (PropKey × Nat)} (hnd : (flds.map Prod.snd)
     (makeBound : ∀ t r pre ns args, P t → P r → (∀ a ∈ pre, P a) → (∀ a ∈ args, P a) →
       P (.makeAt (.bound t r pre) ns args))
     (alloc : ∀ ns args, (∀ a ∈ args, P a) → P (.makeAt .absent ns args))
+    (objView : ∀ fs oid s f n, P (.objAt fs (.view s f n) oid))
+    (makeView : ∀ s f n ns args, (∀ a ∈ args, P a) → P (.makeAt (.view s f n) ns args))
     (read : ∀ f a, P a → P (.readAt f a))
     (index : ∀ a key, P a → P key → P (.indexAt a key))
     (write : ∀ f a b, P a → P b → P (.writeAt f a b))
@@ -1305,6 +1335,7 @@ theorem owned_of_nodup {flds : List (PropKey × Nat)} (hnd : (flds.map Prod.snd)
     (ite : ∀ c a b, P c → P a → P b → P (.ite c a b))
     (arith : ∀ op a b, P a → P b → P (.arith op a b))
     (arr : ∀ ls, P (.arr ls))
+    (viewStore : ∀ f cs, P (.viewStore f cs))
     (arrLit : ∀ inits, (∀ a ∈ inits, P a) → P (.arrLit inits))
     (elemAt : ∀ a i, P a → P i → P (.elemAt a i))
     (setElem : ∀ a i v, P a → P i → P v → P (.setElem a i v))
@@ -1325,13 +1356,14 @@ theorem owned_of_nodup {flds : List (PropKey × Nat)} (hnd : (flds.map Prod.snd)
     (motive_2 := fun c => match c with
       | .absent => True
       | .bound t r pre => P t ∧ P r ∧ ∀ a ∈ pre, P a
-      | .graph _ E _ _ caps _ _ => (∀ e ∈ E, P e) ∧ ∀ a ∈ caps, P a)
+      | .graph _ E _ _ caps _ _ => (∀ e ∈ E, P e) ∧ ∀ a ∈ caps, P a
+      | .view .. => True)
     (motive_3 := fun args => ∀ a ∈ args, P a)
-    var invoke construct letE nul undef tru fls num str bigint sym ?_ ?_ read index write test ite arith arr arrLit elemAt setElem lenOf spread throw merge makeKey
+    var invoke construct letE nul undef tru fls num str bigint sym ?_ ?_ read index write test ite arith arr viewStore arrLit elemAt setElem lenOf spread throw merge makeKey
     (fun E K l L d hE hL hd => goto E K l L d hE hL hd)
     (fun E K t L d k x hE ht hL hd => frame E K t L d k x hE ht hL hd)
     True.intro (fun _ _ _ ht hr hp => ⟨ht, hr, hp⟩)
-    (fun _ _ _ _ _ _ _ hE hc => ⟨hE, hc⟩) (by simp) (by
+    (fun _ _ _ _ _ _ _ hE hc => ⟨hE, hc⟩) (fun _ _ _ => True.intro) (by simp) (by
       intro a args ha ih v hv
       rcases List.mem_cons.mp hv with rfl | hv
       · exact ha
@@ -1341,11 +1373,13 @@ theorem owned_of_nodup {flds : List (PropKey × Nat)} (hnd : (flds.map Prod.snd)
     | absent => exact objAbsent fs oid
     | bound t r pre => exact objBound fs oid t r pre ih.1 ih.2.1 ih.2.2
     | graph n E K s caps k r => exact objGraph fs oid n E K s caps k r ih.1 ih.2
+    | view s f n => exact objView fs oid s f n
   · intro c ns args ihc iha
     cases c with
     | absent => exact alloc ns args iha
     | bound t r pre => exact makeBound t r pre ns args ihc.1 ihc.2.1 ihc.2.2 iha
     | graph n E K s caps k r => exact makeGraph n E K s caps k r ns args ihc.1 ihc.2 iha
+    | view s f n => exact makeView s f n ns args iha
 
 
 abbrev Val := Tm
@@ -1537,6 +1571,7 @@ def tagHolds : Tag → Val → Bool
   | .isBigint, .bigint _ => true
   | .isSymbol, .sym _ => true
   | .isRef, .objAt _ .absent _ => true
+  | .isRef, .objAt _ (.view ..) _ => true
   | .isFun, .objAt _ (.bound _ _ _) _ => true
   | .isFun, .objAt _ (.graph ..) _ => true
   | .truthy, .tru => true
@@ -1546,9 +1581,11 @@ def tagHolds : Tag → Val → Bool
   | .truthy, .sym _ => true
   | .truthy, .objAt _ _ _ => true
   | .truthy, .arr _ => true
+  | .truthy, .viewStore .. => true
   | .isArray, .objAt fs .absent _ => (fs.lookup arrayStoreKey).isSome
   | .typeofObject, .nul => true
   | .typeofObject, .objAt _ .absent _ => true
+  | .typeofObject, .objAt _ (.view ..) _ => true
   | .hasKey k, .objAt fs _ _ => (fs.lookup k).isSome
   | _, _ => false
 
@@ -1567,10 +1604,12 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .bigint i => .bigint i
   | .sym i => .sym i
   | .objAt fs .absent oid => .objAt fs .absent oid
+  | .objAt fs (.view s f n) oid => .objAt fs (.view s f n) oid
   | .objAt fs (.bound t r pre) oid => .objAt fs (.bound (subst j a t) (subst j a r) (substArgs j a pre)) oid
   | .makeAt (.bound t r pre) ns xs =>
       .makeAt (.bound (subst j a t) (subst j a r) (substArgs j a pre)) ns (substArgs j a xs)
   | .makeAt .absent ns xs => .makeAt .absent ns (substArgs j a xs)
+  | .makeAt (.view s f n) ns xs => .makeAt (.view s f n) ns (substArgs j a xs)
   | .readAt f x => .readAt f (subst j a x)
   | .indexAt x key => .indexAt (subst j a x) (subst j a key)
   | .writeAt f x y => .writeAt f (subst j a x) (subst j a y)
@@ -1578,6 +1617,7 @@ def subst (j : Nat) (a : Tm) : Tm → Tm
   | .ite c x y => .ite (subst j a c) (subst j a x) (subst j a y)
   | .arith op x y => .arith op (subst j a x) (subst j a y)
   | .arr ls => .arr ls
+  | .viewStore f cs => .viewStore f cs
   | .arrLit xs => .arrLit (substArgs j a xs)
   | .elemAt x y => .elemAt (subst j a x) (subst j a y)
   | .setElem x y z => .setElem (subst j a x) (subst j a y) (subst j a z)
@@ -1731,9 +1771,12 @@ under its index's decimal spelling (`unitString`, as `elemAt` reads it); its
 def stringData (s : String) : List (PropKey × Tm) :=
   (utf16Units s).zipIdx.map fun p => (.str (toString p.2), .str (unitString p.1))
 
-/-- An ordinary object, or no object: not a host object. -/
+/-- A host object or a typed array, whose own properties no step copies: a
+plain object owning `hostKey`, or an object with a view descriptor, whose
+integer-indexed elements are its own properties. -/
 def hostOwned : Tm → Bool
   | .objAt fs .absent _ => (fs.lookup hostKey).isSome
+  | .objAt _ (.view ..) _ => true
   | _ => false
 
 /-- The own enumerable data properties a spread copies from a value: an
@@ -1900,6 +1943,7 @@ def instantiate (d : Nat) (ρ : Env) : Tm → Tm
       .makeAt (.bound (instantiate d ρ t) (instantiate d ρ r) (instantiateArgs d ρ pre)) ns
         (instantiateArgs d ρ args)
   | .makeAt .absent ns args => .makeAt .absent ns (instantiateArgs d ρ args)
+  | .makeAt (.view s f n) ns args => .makeAt (.view s f n) ns (instantiateArgs d ρ args)
   | .readAt f a => .readAt f (instantiate d ρ a)
   | .indexAt a key => .indexAt (instantiate d ρ a) (instantiate d ρ key)
   | .writeAt f a b => .writeAt f (instantiate d ρ a) (instantiate d ρ b)

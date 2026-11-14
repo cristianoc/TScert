@@ -21,6 +21,7 @@ deriving instance ToJson, FromJson for Arith
 deriving instance ToJson, FromJson for Invoke
 deriving instance ToJson, FromJson for Target
 deriving instance ToJson, FromJson for Continuation
+deriving instance ToJson, FromJson for ViewFormat
 deriving instance ToJson, FromJson for Tm, CallCode
 
 /-- A code's kind is left out of its JSON when it is `call`, the kind of every

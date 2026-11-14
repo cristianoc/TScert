@@ -240,6 +240,7 @@ structure ValueSet where
   tru : Bool := false
   fls : Bool := false
   sym : Bool := false
+  /-- The element stores: an array's, or a typed array's view store. -/
   arr : Bool := false
   num : Lit UInt64 := .none
   str : Lit String := .none
@@ -258,7 +259,7 @@ def mem (V : ValueSet) : Tm → Bool
   | .str s => V.str.mem s
   | .bigint i => V.big.mem i
   | .sym _ => V.sym
-  | .arr _ => V.arr
+  | .arr _ | .viewStore .. => V.arr
   | v@(.objAt ..) => V.obj.mem v
   | _ => false
 
@@ -302,6 +303,7 @@ theorem le_sound {a b : ValueSet} {v : Tm} (h : le a b = true) (hv : a.mem v = t
   | fls => simp only [mem] at hv ⊢; rcases hf with h | h <;> simp_all
   | sym => simp only [mem] at hv ⊢; rcases hs with h | h <;> simp_all
   | arr => simp only [mem] at hv ⊢; rcases har with h | h <;> simp_all
+  | viewStore => simp only [mem] at hv ⊢; rcases har with h | h <;> simp_all
   | num => exact Lit.le_sound hnum hv
   | str => exact Lit.le_sound hstr hv
   | bigint => exact Lit.le_sound hbig hv
@@ -715,6 +717,11 @@ theorem ValueSet.answers_sound {V : ValueSet} {t : Tag} {q : Bool} {v : Tm} (h :
     · simp_all
     · rw [← e]; cases t <;> rfl
   | arr x =>
+    simp only [mem] at hv; left
+    rcases ha with e | e
+    · simp_all
+    · rw [← e]; cases t <;> rfl
+  | viewStore f cs =>
     simp only [mem] at hv; left
     rcases ha with e | e
     · simp_all

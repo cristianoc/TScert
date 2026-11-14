@@ -1059,7 +1059,8 @@ theorem call_safe_short {Rc B : Fam} (xs : List (Fam × Tm)) (Us : List Fam)
 singleton bits; the whole number family has no uniform answer. -/
 def tagShape (tag : Tag) (s : Nat) : Option Bool :=
   match tag with
-  | .isNul => some (s == 0) | .isBool => some (s == 1) | .isRef => some (s == 2)
+  -- A typed array (shape 13) is an object, as a plain one is.
+  | .isNul => some (s == 0) | .isBool => some (s == 1) | .isRef => some (s == 2 || s == 13)
   -- A class value (shape 11) is a function to `typeof`, as a callable is.
   | .isFun => some (s == 3 || s == 11) | .isUndef => some (s == 4)
   | .isNullish => some (s == 0 || s == 4) | .isNum => some (s == 5)
@@ -1077,9 +1078,9 @@ def tagShape (tag : Tag) (s : Nat) : Option Bool :=
   -- Only a plain object may be an array: its clause decides (`arrayAnswer`).
   | .isArray => if s == 2 then none else some false
   -- `typeof` answers "object" for null and a plain object, array included.
-  | .typeofObject => some (s == 0 || s == 2)
+  | .typeofObject => some (s == 0 || s == 2 || s == 13)
   -- An object's clause decides its keys (`keyAnswer`); a primitive owns none.
-  | .hasKey _ => if s == 2 || s == 3 || s == 11 then none else some false
+  | .hasKey _ => if s == 2 || s == 3 || s == 11 || s == 13 then none else some false
 
 /-- Whether an object clause's members own the key `k`: a clause stating the
 key present says they do; one whose own-key bound excludes it says they do
@@ -1537,6 +1538,7 @@ theorem tagClause_protoFree {S : α → Fam} {P : α → ArgFam} {c tag q n W v}
         rw [← hs] at hq
         cases code with
         | graph _ _ _ _ _ kind _ => cases kind <;> simp [valueShape, tagShape] at hq
+        | view => simp [valueShape, shape, tagShape] at hs hq
         | _ => simp [valueShape, tagShape] at hq
       | _ => rfl
   all_goals rfl

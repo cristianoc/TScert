@@ -99,6 +99,10 @@ private def clauseName : Clause (List ι) → String
   | .ctors .. => "constructor"
   | .numIn _ => "numeric literal"
   | .strIn _ => "string literal"
+  | .view .uint8 _ => "Uint8Array"
+  | .view .uint16 _ => "Uint16Array"
+  | .view .int32 _ => "Int32Array"
+  | .view .float64 _ => "Float64Array"
 
 /-- A type of any graph by its clauses' kinds, as `render` names them, an
 array's as `array`. -/

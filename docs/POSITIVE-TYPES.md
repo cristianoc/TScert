@@ -65,10 +65,11 @@ The clauses, with what each denotes:
 | `callable` | a function that is also an object with record contracts |
 | `ctors` | a class meeting construct signatures |
 | `pack` | no value: a family of argument lists ([Argument packs](#argument-packs)) |
+| `view t` | a typed array of the format $`t`$, by its descriptor alone, with host-relative methods |
 
 The **shape** of a clause is the kind of value it admits: null, boolean,
 plain object (`refs`, `dict`), function (`arrs`, `callable`), undefined,
-number, string, array, bigint, symbol, class or argument list. A value has
+number, string, array, bigint, symbol, class, argument list or typed array. A value has
 exactly one shape; `top` and `source` each admit multiple shapes.
 
 Singletons sit below their primitive: $`\mathsf{boolLit}\,b\le\mathsf{bool}`$,

@@ -1503,6 +1503,7 @@ def checkScope (d : Nat) : Tm → Bool
   | .makeAt (.bound t r pre) _ args =>
       checkScope d t && checkScope d r && checkScopes d pre && checkScopes d args
   | .makeAt .absent _ args => checkScopes d args
+  | .makeAt (.view ..) _ args => checkScopes d args
   | .letE a b => checkScope d a && checkScope (d+1) b
   | .invoke f r args => checkScope d f && checkScope d r && checkScopes d args
   | .construct f args => checkScope d f && checkScopes d args

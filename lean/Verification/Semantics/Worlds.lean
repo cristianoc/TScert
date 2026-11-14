@@ -312,13 +312,15 @@ theorem WorldAdm_appendWs {k : Nat} {W : WorldT k} {es : List (Role × Ctr k)}
 /-! ## References and their validity -/
 
 /-- A location reference a term holds: an object's identity, an object's slot
-under a key, a store's element cell, or an object's field map, whose view
-metadata is valid as a whole (`ViewMetaOk`). -/
+under a key, a store's element cell, an object's field map, whose view
+metadata is valid as a whole (`ViewMetaOk`), or a typed array's view store
+of its format and length. -/
 inductive Ref where
   | ident (l : Nat)
   | slot (key : PropKey) (l : Nat)
   | elem (l : Nat)
   | fields (fs : List (PropKey × Nat))
+  | view (l : Nat) (format : ViewFormat) (length : Nat)
 
 /-- The references of an object's identity and fields. -/
 def objRefs (fs : List (PropKey × Nat)) (i : Nat) : List Ref :=
@@ -346,9 +348,11 @@ def refs : Tm → List Ref
   | .bigint _ => []
   | .sym _ => []
   | .objAt fs .absent i => objRefs fs i
+  | .objAt fs (.view s f n) i => objRefs fs i ++ [.view s f n]
   | .objAt fs (.bound t r pre) i => objRefs fs i ++ (refs t ++ refs r ++ refsArgs pre)
   | .objAt fs (.graph _ E _ _ caps _ _) i => objRefs fs i ++ (refsArgs E ++ refsArgs caps)
   | .makeAt .absent _ xs => refsArgs xs
+  | .makeAt (.view s f n) _ xs => .view s f n :: refsArgs xs
   | .makeAt (.bound t r pre) _ xs => (refs t ++ refs r ++ refsArgs pre) ++ refsArgs xs
   | .makeAt (.graph _ E _ _ caps _ _) _ xs => (refsArgs E ++ refsArgs caps) ++ refsArgs xs
   | .readAt _ a => refs a
@@ -358,6 +362,7 @@ def refs : Tm → List Ref
   | .ite c a b => refs c ++ refs a ++ refs b
   | .arith _ a b => refs a ++ refs b
   | .arr ls => storeRefs ls
+  | .viewStore _ cs => cs.map Ref.elem
   | .arrLit xs => refsArgs xs
   | .elemAt a i => refs a ++ refs i
   | .setElem a i v => refs a ++ refs i ++ refs v
@@ -413,6 +418,7 @@ def RefOk {k : Nat} (W : WorldT k) : Ref → Prop
   | .slot key l => SlotRole key (roleAt W l)
   | .elem l => roleAt W l = some .elem
   | .fields fs => ViewMetaOk W fs
+  | .view l _ n => roleAt W l = some (.store (.view n))
 
 /-- **Reference validity**: every location a term refers to has the role its
 position demands. It reads the world only, never the heap. -/
@@ -463,6 +469,7 @@ theorem RefOk_mono {k} {W W' : WorldT k} (hx : WExt W W') : ∀ {r : Ref}, RefOk
   | .fields _, h =>
     ⟨fun m hm => let ⟨N, hN⟩ := h.1 m hm; ⟨N, hN.mono hx⟩,
       fun e he => let ⟨N, m, hr, hm, hN⟩ := h.2.1 e he; ⟨N, m, WExt_roleAt hx hr, hm, hN.mono hx⟩, h.2.2⟩
+  | .view _ _ _, h => WExt_roleAt hx h
 
 theorem RefsOk_mono {k} {W W' : WorldT k} (hx : WExt W W') {t : Tm} (h : RefsOk W t) :
     RefsOk W' t := fun r hr => RefOk_mono hx (h r hr)
@@ -479,6 +486,7 @@ theorem RefOk_trunc {k j} (hj : j ≤ k) {W : WorldT k} : ∀ {r : Ref}, RefOk W
   | .fields _, h =>
     ⟨fun m hm => let ⟨N, hN⟩ := h.1 m hm; ⟨N, hN.trunc hj⟩,
       fun e he => let ⟨N, m, hr, hm, hN⟩ := h.2.1 e he; ⟨N, m, by simpa using hr, hm, hN.trunc hj⟩, h.2.2⟩
+  | .view _ _ _, h => by simpa [RefOk] using h
 
 theorem RefsOk_trunc {k j} (hj : j ≤ k) {W : WorldT k} {t : Tm} (h : RefsOk W t) :
     RefsOk (trunc j hj W) t := fun r hr => RefOk_trunc hj (h r hr)
