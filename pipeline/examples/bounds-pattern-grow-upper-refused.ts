@@ -6,9 +6,12 @@
 // addIdeographicSpaceHangs; han-kerning.ts getHanKerningTrims;
 // measurement.ts getSegmentFit, countLigaturesOnFirstLetter,
 // measureFitAdvances; rich-inline.ts prepareRichInline (18 sites).
-// Gap: a length read through a `@stable` path is not kept across a regional
-// store frame (`regional`, `paths`), and a slot's length is not kept across
-// one outside a loop (`straight`), although the arrays are apart from it.
+// `regional` verifies: the survival check keeps a length read through a
+// `@stable` path across a regional store frame whose region the stated
+// separations place apart. Gap: the separation of a fresh literal's array
+// from an array at a parameter's path is not established at the loop's
+// entry (`paths`), and the test i + 1 < flags.length does not bound the
+// read of starts[i + 1] (`straight`).
 export type Analysis = {
   /** @stable */ readonly starts: number[];
   /** @stable */ readonly flags: number[];

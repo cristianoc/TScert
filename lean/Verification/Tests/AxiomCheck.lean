@@ -335,6 +335,9 @@ run_cmd do
   check ``Verification.Footprints.IndexFact.support?_supports
   check ``Verification.Footprints.IndexFact.keeps_sound
   check ``Verification.Footprints.linearSupport_supports
+  check ``Verification.Footprints.knowledgeQuery_sound
+  check ``Verification.Footprints.Post.renameM
+  check ``Verification.PromiseCalls.callerFrame_post
   check ``Verification.TolerantFrames.kept_box
   check ``Verification.TolerantFrames.grow
   check ``Verification.TolerantFrames.grow_path

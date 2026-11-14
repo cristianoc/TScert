@@ -191,6 +191,38 @@ Proved (`IndexFact.keeps_sound`): the fact holds after every transition
 within $`\Phi`$ meeting the read context, from a prestate where $`q`$ is
 sound.
 
+### Separation queries
+
+The query a state's knowledge $`\Sigma`$ answers (`knowledgeQuery`, proved
+sound wherever $`\Sigma`$ holds: `knowledgeQuery_sound`):
+
+- **by class**: the locations of a region holding contents of one class and
+  the locations of the other class;
+- **by a store separation**: each region lies in the store of the value a
+  path reads, $`x.\pi`$ and $`y.\pi'`$ (`storeSite`), and an unconditional
+  fact of $`\Sigma`$ states two paths' values' stores different, each path
+  naming the same value as one of the two up to $`\Sigma`$'s links
+  (`pathViews`, `sameSite`). The facts that state it (`factSeps`): a store
+  separation $`P \mathrel{\#} Q`$, a region fact $`\mathrm{apart}(a, b)`$, and
+  either guarded by $`z = \overline g`$ where one of its paths starts at an
+  alias of $`z`$ (a tag's value reads no object, so that path selects no
+  store).
+
+A path's **views** are the paths reading the same value by alias and read
+links: $`x.f\pi`$ reads what $`y.\pi`$ reads where a read link of an alias of
+$`x`$ through $`f`$ reaches $`y`$ (proved: `pathViews_read`).
+
+### A call's effect at the caller
+
+A call's frame (`Effect.frame`: its closed bound, its receiver's entries and
+its argument store regions) is read at the call's positions. At the caller
+it is read at the caller's slots: a position the call passes a slot at is
+that slot, and the regions at any other position widen to every location
+(`Region.renameM`, `PromiseCalls.callerFrame`; proved:
+`Post.renameM`, `callerFrame_post`). Across a call whose frame states store
+regions, the facts kept are those the survival check keeps under
+$`\Sigma`$'s query (`PromiseCalls.effectKept`).
+
 ## The stable set for density
 
 Density reads only a store, and only a store change beyond `grow` can remove
@@ -1045,8 +1077,8 @@ node, its evidence from the node's facts (`nodeRebase_ok`).
 
 A caller's separation of a region's store from another array is a fact of
 its knowledge, a [store separation](ARITHMETIC.md#store-separation) or a
-region fact, which `region-call-keep` and `region-call-grow` consume
-([stated effects](SOURCE-ELABORATION.md#stated-effects)).
+region fact, which the caller's [separation query](#separation-queries)
+reads ([stated effects](SOURCE-ELABORATION.md#stated-effects)).
 
 [`ArgumentRegionCertificates.lean`](../lean/Verification/Programs/ArgumentRegionCertificates.lean)
 checks a provenance table at entry, every normal edge and every handler.

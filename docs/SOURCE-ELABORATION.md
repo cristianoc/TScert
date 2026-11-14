@@ -4129,40 +4129,14 @@ gives the field's entry value (the stable-read node rule,
 `RegionalClause` of `PassUnit.RequestSafe`; `stated-argument-store`,
 `stated-argument-path`; `invalid-stated-store-region`, run under Node; the
 controls "forged fragment: store regions moved", "path regions moved" and
-"rebased regions" of `tests/single-pass-controls.mts`). Across the call, a caller's length and bound facts
-of a slot are kept where the frame's closed bound keeps stores and its
-knowledge separates the slot's store from each region's: for a region at a
-position's own store, a region fact `apart` between the actual's slot and
-the slot; for a region through a field `f`, a read link from the actual's
-slot through `f` to a slot apart from it; for either, a
-[store separation](ARITHMETIC.md#store-separation) between the region's path
-at the actual's slot and the slot (`!==`), unguarded or guarded by the
-actual's own value (`a === null || y !== a.p`: a region whose position holds
-no object selects no location, `ArgumentStoreRegion.resolve`); and an unconditional atom reads
-the slot's length, so its store location holds an array store (`storeHeld`)
-(`PromiseCalls.regionFirst`, the local observation bound `first s "[]"` of
-`keptIndicesWith`; proved: `regionFirst_kept`, `effectKept_holds`):
-
-```math
-\frac{\epsilon.\mathsf{stores}=\mathsf{keep}\qquad \forall i.\ \Sigma\vdash\mathrm{apart}(\mathrm{sel}(R_i),y)\ \text{or}\ \Sigma\vdash a_{k_i}=\overline g\lor a_{k_i}.p_i\mathrel{\#}y\qquad \Sigma\vdash |y|\ \text{defined}\qquad \Sigma\vdash F(|y|)}
-     {\Sigma\vdash f(\vec a)\dashv\Sigma',\ F(|y|)}\ \textsf{region-call-keep}
-```
-
-with $`R_i = k_i.p_i[*]`$ the frame's regions and $`a_{k_i}=\overline g\lor\ldots`$
-the separation unguarded or guarded by the actual's value (proved:
-`regionSep_out`). Where the closed bound grows
-stores, each store outside the regions is no shorter after the call, and at
-most $`2^{32}-1`$ long where it was, so a slot $`y`$ separated from each
-region as above keeps the lower bounds of its length: a linear fact each of
-whose terms is kept, or is $`|y|`$ of such a slot at a coefficient at most
-$`0`$, and an index bound below $`|y|`$ (`PromiseCalls.regionGrown`, the
-stores `keptIndicesGrown` grows; proved: `regionGrown_grows`,
-`IndexFact.holdsAt_grownWith`, `effectKept_holds`):
-
-```math
-\frac{\epsilon.\mathsf{stores}=\mathsf{grow}\qquad \forall y\in Y.\ \forall i.\ \Sigma\vdash\mathrm{apart}(\mathrm{sel}(R_i),y)\ \text{or}\ \Sigma\vdash a_{k_i}=\overline g\lor a_{k_i}.p_i\mathrel{\#}y\qquad \Sigma\vdash \textstyle\sum_t c_t\,t\le d\qquad \forall t.\ (t=|y|\land y\in Y\land c_t\le 0)\lor t\ \text{kept}}
-     {\Sigma\vdash f(\vec a)\dashv\Sigma',\ \textstyle\sum_t c_t\,t\le d}\ \textsf{region-call-grow}
-```
+"rebased regions" of `tests/single-pass-controls.mts`). Across the call, a caller's fact survives where the call's frame at the
+caller's slots respects its support under the separations the caller's
+knowledge states ([support and respect](FOOTPRINTS.md#support-and-respect),
+[a call's effect at the caller](FOOTPRINTS.md#a-calls-effect-at-the-caller)):
+a length of an array at any path is kept where the closed bound keeps
+stores, and its lower bounds where it grows them, where each region's store
+is separated from the array's and each field location the path reads is
+kept: a first field stated stable by its contract, any other by the frame.
 
 An upper bound of such a length, and every fact about a store a region may
 select, is dropped (`stated-region-grow-keeps-lengths`;

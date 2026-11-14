@@ -1745,17 +1745,12 @@ where every predecessor's facts entail it (`SinglePass.mergeState`,
 \frac{\Sigma\vdash P\mathrel{\#}Q}{\Sigma\vdash z=\overline g\lor P\mathrel{\#}Q}\ \textsf{guard-body}
 ```
 
-**Consuming it.** A call of a frame with store regions keeps the store of
-a slot a separation places outside every region, and with it the facts
-reading the slot's length, where its closed bound keeps stores
-(`region-call-keep`); where it grows stores, the slot's store is no
-shorter after the call, and the facts reading the slot's length at a
-coefficient at most $`0`$ survive (`region-call-grow`,
-[store regions](SOURCE-ELABORATION.md#stated-effects)). A separation of a
-region's path at the actual's slot $`a`$ places the slot outside the region
-unguarded or guarded by $`a`$'s own value: where $`a`$ holds a tag's value,
-no object, the region selects no location (`regionSep`, `storeApartAt`;
-proved: `regionSep_out`).
+**Consuming it.** A store separation, a region fact, and either guarded
+by a slot's tag where one of its paths starts at that slot, answer the
+separation query of a step's prestate
+([separation queries](FOOTPRINTS.md#separation-queries)); a fact survives a
+step whose effect respects its support under that query
+([support and respect](FOOTPRINTS.md#support-and-respect)).
 
 **Implementation.** The front end elaborates `P !== Q`
 (`elaborateRequires`, `tools/bound-annotations.mts`) to
@@ -1764,8 +1759,8 @@ under guards. A loop head's proposed separation
 (`HeadInference.Fact.apart`, with its guards) is a candidate; Lean retains
 it where every incoming edge establishes it. Proved:
 `storeFollows_sound`, `guardBodyFollows_sound`, `factFollows_sound`,
-`restateStores_holds`, `stableFirst_frame`, `regionFirst_kept`,
-`regionGrown_grows`, `effectKept_holds`.
+`restateStores_holds`, `stableFirst_frame`, `knowledgeQuery_sound`,
+`effectKept_holds`.
 
 **Cases.** Positive: `stated-argument-path` (`measure` and its caller),
 `stated-local-runs` (the array allocated in the looping function),
