@@ -1,0 +1,174 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commit Records</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&display=swap"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=STIX+Two+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root { --bg:#fbfcfd; --surface:#ffffff; --ink:#0b1a2e; --muted:#56627a; --rule:#d5dce6; --accent:#8a6410; --code-bg:#eef2f7; --math-bg:#f2f4f8; --ok:#2f6b47; --ok-bg:#e2efe4; --principled:#a0521a; --principled-bg:#f7e6d6; --gap:#6b6f78; --gap-bg:#ecebe6; --neutral:#2c4f7c; --neutral-bg:#e6ebf2; --trust:#7c2f4a; --trust-bg:#f2e1e7; --neg:#9b3524; --neg-bg:#f5e1da; --run:#7a5414; --run-bg:#f3e7cc; --brand-ink:#0b1a2e; --brand-gold:#b8840f;
+  --display:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif; --body:"Inter","Helvetica Neue",Arial,sans-serif; --mono:"Source Code Pro",Menlo,Consolas,monospace; --math:"STIX Two Text","STIX Two Math","STIXGeneral","Cambria Math","Apple Symbols",Georgia,serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark } }
+:root[data-theme="dark"] { --bg:#0e1626; --surface:#16213a; --ink:#efe7d4; --muted:#9aa3b5; --rule:#2a3756; --accent:#e0ac4a; --code-bg:#131d33; --math-bg:#1a2540; --ok:#7fd0a2; --ok-bg:#17322a; --principled:#f0a868; --principled-bg:#3a2a1c; --gap:#9aa3b5; --gap-bg:#1c2639; --neutral:#8fb4e8; --neutral-bg:#1b2b49; --trust:#e79bb6; --trust-bg:#3a2131; --neg:#f0907d; --neg-bg:#3a1f22; --run:#e0ac4a; --run-bg:#2e2a24; --brand-ink:#efe7d4; --brand-gold:#e0ac4a; color-scheme:dark }
+* { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.6 var(--body) }
+main { max-width:900px; margin:0 auto; padding-inline:20px; padding-block:32px 64px; display:flex; flex-direction:column; gap:22px }
+h1 { font:600 32px/1.15 var(--display); margin:0 } h2 { font:600 22px/1.2 var(--display); margin:12px 0 8px; padding-top:12px; border-top:2px solid var(--ink) }
+h3 { font:600 19px/1.3 var(--display); margin:2px 0 0; text-wrap:balance }
+h4 { font:600 11px/1 var(--body); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 4px }
+p { margin:2px 0; max-width:72ch } .lede { color:var(--muted) }
+code { font:13px/1.5 var(--mono); background:var(--code-bg); padding:1px 4px; border-radius:3px }
+pre { margin:4px 0; padding:12px 14px; border-radius:6px; overflow-x:auto }
+pre.code { font:13px/1.55 var(--mono); background:var(--code-bg) }
+.rules { display:flex; flex-direction:column; gap:14px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:14px 18px; overflow-x:auto; font:16px/1.6 var(--math) }
+.rules sub, .rules sup { font-size:.72em; line-height:0 }
+.formulas { display:flex; flex-direction:column; gap:4px }
+.formulas .row { display:flex; flex-wrap:wrap; gap:4px 28px } .formulas .row.cont { padding-left:2em }
+.infer { display:flex; align-items:center; gap:12px }
+.frac { display:inline-flex; flex-direction:column; align-items:center; min-width:0 }
+.premises { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 26px; padding:0 6px 3px }
+.bar { align-self:stretch; border-top:1.5px solid var(--ink) }
+.conclusion { padding:3px 6px 0; text-align:center }
+.rule-name { font:15px/1 var(--math); font-variant:small-caps; letter-spacing:.02em; color:var(--accent); white-space:nowrap }
+.card { background:var(--surface); border:1px solid var(--rule); border-radius:8px; padding:20px 22px; display:flex; flex-direction:column; gap:6px; min-width:0 }
+.card > header { display:flex; justify-content:space-between; gap:12px; align-items:flex-start }
+.sha { font:12px/1.4 var(--mono); color:var(--muted) }
+.pill { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:6px 9px; border-radius:99px; white-space:nowrap }
+.pill.ok { color:var(--ok); background:var(--ok-bg) } .pill.principled { color:var(--principled); background:var(--principled-bg) }
+.pill.gap { color:var(--gap); background:var(--gap-bg) } .pill.neutral { color:var(--neutral); background:var(--neutral-bg) }
+.units { display:flex; flex-wrap:wrap; gap:6px } .units span { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:5px 7px }
+dl.facts { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:6px 16px; margin:12px 0 0; padding-top:12px; border-top:1px solid var(--rule); font-size:13.5px }
+dt { font:600 11px/1.9 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted) }
+dd { margin:0; min-width:0; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline }
+.chip { font:500 12px/1 var(--body); border:1px solid var(--rule); border-radius:4px; padding:4px 7px } .chip.strong { color:var(--accent); border-color:var(--accent) }
+.trust { color:var(--trust); background:var(--trust-bg); padding:2px 6px; border-radius:4px } .none { color:var(--muted) }
+.test { font:12px/1 var(--mono); padding:4px 7px; border-radius:4px }
+.test.pos { color:var(--ok); background:var(--ok-bg) } .test.pos::before { content:"✓ " }
+.test.neg { color:var(--neg); background:var(--neg-bg) } .test.neg::before { content:"✗ " }
+.test.forged { color:var(--principled); background:var(--principled-bg) } .test.forged::before { content:"forged " }
+.test.forced { color:var(--principled); background:var(--principled-bg) } .test.forced::before { content:"forced " }
+details { margin-top:8px; font-size:13px; color:var(--muted) } summary { cursor:pointer }
+.table-wrap { overflow-x:auto; border:1px solid var(--rule); border-radius:8px; background:var(--surface) }
+table { border-collapse:collapse; width:100%; font-size:13px } th, td { text-align:left; vertical-align:top; padding:8px 10px; border-bottom:1px solid var(--rule) }
+th { font:600 11px/1.2 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); white-space:nowrap } td.num { font-variant-numeric:tabular-nums }
+h4.change { display:flex; align-items:center; gap:8px; text-transform:none; letter-spacing:0; font:600 14px/1.3 var(--body); color:var(--ink); margin:16px 0 6px }
+h4.change .target { font-weight:400; color:var(--muted) }
+.act { font:600 10.5px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; padding:4px 7px; border-radius:4px }
+.act.added { color:var(--ok); background:var(--ok-bg) } .act.removed { color:var(--neg); background:var(--neg-bg) }
+.act.modified, .act.replaced { color:var(--principled); background:var(--principled-bg) }
+.versions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px }
+.versions figure { margin:0; min-width:0 } .versions figcaption { font:600 11px/1 var(--body); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px }
+.versions .rules { height:calc(100% - 18px); box-sizing:border-box }
+pre.code .ln { display:block; white-space:pre } pre.code .ln.add { background:var(--ok-bg) } pre.code .ln.del { background:var(--neg-bg) }
+.tk-k { color:#7a3b8c } .tk-s { color:#2f6b47 } .tk-n { color:#a35a12 } .tk-c { color:var(--muted); font-style:italic } .tk-t { color:#2c4f7c }
+.prose p { margin:4px 0 }
+ul.effect, ul.summary { margin:4px 0; padding-left:20px } ul.effect li, ul.summary li { margin:3px 0 } ul.summary ul { padding-left:18px; color:var(--muted) }
+ul.effect .arrow { color:var(--accent); font-weight:600 }
+ul.effect details { margin:0; color:inherit; font-size:inherit } ul.effect summary { list-style-position:outside }
+ul.effect .kind { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:1px 6px; border-radius:4px; background:var(--chip, #eee) }
+ul.effect .kind.negative { color:#8a3b12 } ul.effect .kind.positive { color:#22663a } ul.effect .kind.gap { color:#7a5b00 }
+ul.effect .was.unsound { color:#b3261e; font-weight:600 } ul.effect .now { font-weight:500 } ul.effect .why { color:var(--muted) }
+ul.effect mark { background:#ffe08a; color:inherit; border-radius:2px }
+@media (max-width:720px) { .versions { grid-template-columns:minmax(0,1fr) } }
+.lowering { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.lowering .map, .lowering .cond, .lowering .result { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 10px }
+.lowering .map:not(:has(.sem)) { flex-direction:column; align-items:stretch; gap:4px }
+.lowering .result { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:2px 10px; padding-left:1em } .lowering .result .note { grid-column:2 }
+.m-intr { font:14px/1.5 var(--mono); color:#2c4f7c } .m-lit { font:13px/1.5 var(--mono); color:#7a3b8c }
+.lowering code.src { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:2px 6px; border-radius:4px }
+.lowering .to { color:var(--accent); font-weight:600; font-size:17px }
+.lowering .tgt { font:16px/1.5 var(--math) } .rules .lowering { background:none; border:0; padding:0 } .lowering .sem code.src { margin:0 2px }
+var { font-style:italic } .m-op { color:#2c4f7c; font-style:normal } .m-con { color:#8f6416; font-style:normal; font-variant:small-caps }
+.m-kw { color:#7a3b8c; font-weight:600; font-style:normal } .m-bind { color:#7a3b8c } .m-rel { color:var(--accent); padding:0 .12em }
+.m-text { font:14px/1.5 var(--body); color:var(--muted) } code.m-code { font:13px/1.5 var(--mono); background:var(--surface); border:1px solid var(--rule); padding:1px 5px; border-radius:4px }
+.refused { color:var(--neg); font-weight:600 }
+.lowering .refused { color:var(--neg); font-weight:600 }
+.lowering .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); min-width:7em }
+.lowering .cond { padding-left:1.5em } .lowering .note { color:var(--muted); font:italic 13px/1.4 var(--body) }
+.obligations { display:flex; flex-direction:column; gap:6px; background:var(--math-bg); border-left:3px solid var(--accent); border-radius:6px; padding:12px 16px; overflow-x:auto }
+.obligation { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px } .obligation .tgt { font:16px/1.5 var(--math) } .obligation .m-text { color:var(--ink) }
+.obligation .where { font:500 13px/1.5 var(--body); color:var(--muted) } .obligation .where::after { content:":" } .obligation .at { color:var(--accent); font-weight:600 }
+.control { border:1px solid var(--rule); border-left:3px solid var(--principled); border-radius:6px; padding:10px 14px; display:flex; flex-direction:column; gap:6px; background:var(--surface) }
+.control-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px }
+.control .outcomes { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px } .control .label { font:600 11px/1 var(--body); letter-spacing:.05em; text-transform:uppercase; color:var(--muted) }
+.control .arrow { color:var(--accent); font-weight:600 } .control .why { color:var(--muted) }
+.unit { font:12px/1 var(--mono); border:1px solid var(--rule); border-radius:4px; padding:3px 6px }
+.verdict { font-weight:600 } .verdict.ok { color:var(--ok) } .verdict.principled { color:var(--principled) } .verdict.gap { color:var(--gap) }
+ul.effect .pipeline { color:var(--muted) } ul.effect .now.unsound { color:#b3261e; font-weight:600 }
+a { color:var(--accent) } :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+@media (max-width:520px) { dl.facts { grid-template-columns:minmax(0,1fr) } .card > header { flex-direction:column } }</style></head><body><main><header><h1>Commit Records</h1><p class="lede">6 commits, rendered from their records.</p></header>
+<section><h2>Branches</h2><ul class="summary"><li><a href="#g-pr-163"><code>78367f5bfe485c6215f445e4132c698baace8720..pr-163</code></a><ul><li>6 commits</li><li>changes: 19 Docs, 4 Tooling, 1 Status</li><li>parts: <span class="chip">docs</span></li></ul></li></ul></section>
+<h2 id="g-pr-163"><code>78367f5bfe485c6215f445e4132c698baace8720..pr-163</code></h2><article class="card" id="c-f0eff9876"><header><div><div class="sha">f0eff9876 · Cristiano Calcagno · Nov 12, 11:18</div><h3>Add the Tolerant frames note with its page and PDF builds</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The note that gives the pass's proof its surface language existed only in a session's scratch directory. The owner reviewed it sentence by sentence on a published page and declared this revision done.</p></div>
+<h4 class="change"><span class="act added">added</span>Docs <span class="target">drafts/tolerant-frames-note/note.tex</span></h4><div class="prose"><p>The note, as revised in review. Every set and map is named and typed (Var, Val, Loc, the four kinds of location F, C, E, S, objects as maps from keys to field locations, stores as sequences of cells and holes), each notion is defined by a formula and shown on one worked heap, and Figure 1 draws that heap with what each region denotes. Admissible transitions are defined from worlds and budgets with no reference to programs; safe code enters through the theorem that its runs are admissible. The five changes are formulas that follow <code>Change.Holds</code>. The class regions are written all-stores and all-values.</p></div>
+<h4 class="change"><span class="act added">added</span>Docs <span class="target">drafts/tolerant-frames-note/tolerant-frames.pdf</span></h4><div class="prose"><p>The note compiled in colour: code highlighted, the keywords of the logic coloured by role (changes, regions, assertions, the modality), statements in tinted boxes.</p></div>
+<h4 class="change"><span class="act added">added</span>Tooling <span class="target">drafts/tolerant-frames-note/color.py</span></h4><pre class="code"><span class="ln">Writes note-color.tex from note.tex, the same text with the colour</span><span class="ln">macros and highlighted code, for `latexmk -pdf note-color.tex`.</span></pre>
+<h4 class="change"><span class="act added">added</span>Tooling <span class="target">drafts/tolerant-frames-note/build.py</span></h4><pre class="code"><span class="ln">Writes tolerant-frames.html from note.tex through pandoc and prep.py:</span><span class="ln">the page published for review, one anchor per sentence, the figure</span><span class="ln">from fig-heap.html, the styles and the MathJax loader from head.html.</span></pre>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test plain">latexmk</span> <span class="test neg">pdf note-color.tex (13 pages); python3 build.py, the page rendered in a browser with no MathJax error</span></dd></dl>
+<details><summary>7 files changed, 1401 insertions(+)</summary><pre class="code"> docs/drafts/tolerant-frames-note/build.py          |   71 ++
+ docs/drafts/tolerant-frames-note/color.py          |  136 +++
+ docs/drafts/tolerant-frames-note/fig-heap.html     |    1 +
+ docs/drafts/tolerant-frames-note/head.html         |   86 ++
+ docs/drafts/tolerant-frames-note/note.tex          | 1066 ++++++++++++++++++++
+ docs/drafts/tolerant-frames-note/prep.py           |   41 +
+ .../tolerant-frames-note/tolerant-frames.pdf       |  Bin 0 -&gt; 365157 bytes</pre></details>
+<div class="sha">with Claude Fable 5.2</div>
+</article>
+<article class="card" id="c-3d573f116"><header><div><div class="sha">3d573f116 · Cristiano Calcagno · Nov 13, 14:53</div><h3>Correct the Tolerant frames note where it was wrong and name the Lean theorems that exist</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>An audit of the note against the Lean of the single-pass line found sentences of the note that contradict themselves or the notion they define, and marks that name a theorem which does not state the marked content. The note stays the statement of the intended theory: where the Lean proves less than the note says, the statement is kept and the mark gives the theorem's narrower scope.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/tolerant-frames-note/note.tex, what exists</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>four kinds of location; an object's identity is its map from keys to field locations; a value is a scalar, a function or an object; every const is a variable</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>five kinds, with one identity location per object, holding null and immutable; a function is an object, which the change scalar keeps; a module binding is a cell and every local const is a variable; the example heap lists the identity locations of its three objects</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/tolerant-frames-note/note.tex, rules</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>Fresh-Eff: a change to an array the command allocated is no part of its effect</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>Fresh-Eff erases the fresh store only: a change of an entry-heap cell that a fresh store lists is part of the effect. Alloc says which later changes keep its separations. Call states the frame at the callee's throw.</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/tolerant-frames-note/note.tex, marks</span></h4><div class="prose"><p>The laws are marked proved (box_elim, box_and, box_mono, box_anti, box_or, box_idem). Transfer names transfer, graph_safe and loop_safe, and the Limits entry states what is outside it: exit effects with regions at paths. (Grow), (Init), (View), Call, Alloc and Seq-Eff name grow, init_box, view_box, call_rule, alloc_post and seq_eff; the mark of (View) and of Alloc states the premise the Lean theorem has and the note's statement does not. (Sep), (Every) and the substitution of (Rigid) are marked conjectures in their modal form, each with the theorem for one kind of step. The mark on rebasing states that the Lean widens what it cannot place to every location.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/tolerant-frames-note/tolerant-frames.pdf</span></h4><div class="prose"><p>The note compiled from the corrected source, 14 pages.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">drafts/tolerant-frames-note/build.py</span></h4><pre class="code"><span class="ln">The page's date line reads revised 13 November.</span></pre>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test plain">latexmk</span> <span class="test neg">pdf note-color.tex (14 pages, no error); python3 build.py; each cited theorem name found by grep in lean/Verification at single-pass b7c8a559, the Lean not built</span></dd></dl>
+<details><summary>3 files changed, 72 insertions(+), 51 deletions(-)</summary><pre class="code"> docs/drafts/tolerant-frames-note/build.py          |   2 +-
+ docs/drafts/tolerant-frames-note/note.tex          | 121 ++++++++++++---------
+ .../tolerant-frames-note/tolerant-frames.pdf       | Bin 365157 -&gt; 368488 bytes</pre></details>
+<div class="sha">with Claude Fable 5.2</div>
+</article>
+<article class="card" id="c-ec7331d43"><header><div><div class="sha">ec7331d43 · Cristiano Calcagno · Nov 13, 15:02</div><h3>Number the note's examples after the identity locations, and keep stores listing element cells only</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The example heap holds identity locations at 6, 7 and 8, so a new cell is allocated at 9; and a store lists element cells, so the example of an effect that is not rigid cannot use a field location.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/tolerant-frames-note/note.tex</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>a push on the example heap allocates location 6 and grows within grow_6; the non-rigid example makes a store list location 0, a field</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>the push allocates location 9 and grows within grow_9; the non-rigid example makes a store list an element cell of another array</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/tolerant-frames-note/tolerant-frames.pdf</span></h4><div class="prose"><p>The note compiled from the corrected source.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test plain">latexmk</span> <span class="test neg">pdf note-color.tex (14 pages, no error); python3 build.py</span></dd></dl>
+<details><summary>2 files changed, 9 insertions(+), 8 deletions(-)</summary><pre class="code"> docs/drafts/tolerant-frames-note/note.tex          |  17 +++++++++--------
+ .../tolerant-frames-note/tolerant-frames.pdf       | Bin 368488 -&gt; 368536 bytes</pre></details>
+<div class="sha">with Claude Fable 5.2</div>
+</article>
+<article class="card" id="c-428c8a0e7"><header><div><div class="sha">428c8a0e7 · Cristiano Calcagno · Nov 14, 06:15</div><h3>State once how a fact crosses a command in the Tolerant frames note</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The note stated one idea in three forms: rules Frame and Call carried only the facts that survive an effect, the definition of checked transfer separately used the knowledge read at the node's entry state with a set of kept facts, and a paragraph on exact posts repeated the division. A reader could not tell which was the rule. A review of the whole text against the same question found further repetitions and six statements that were wrong.</p></div>
+<h4 class="change"><span class="act added">added</span>Docs <span class="target">drafts/tolerant-frames-note/note.tex, rule Entry</span></h4><div class="prose"><p>A fact B that holds before a command holds after it of the state the command started in, with the action of the effect between the two states: {P ∧ B} c {Q ∧ old(B) ∧ tr_Φ}, at the normal and the exceptional exit. <code>old</code> is defined once, for assertions, with the entry mark it keeps.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/tolerant-frames-note/note.tex, rules</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>Frame a primitive rule; Call a frame rule at a call; Loop's side condition on the framed fact only; checked transfer with a set K_e of kept facts</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>Frame derived from Entry at both exits; Call the callee's triple and effect at the actual arguments, for assertions independent of the invocation mark; Loop requires that neither the framed fact nor the effect mentions a loop-carried variable; checked transfer one entailment from old(Σ), tr_Φe, the post and the branch condition</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/tolerant-frames-note/note.tex, statements corrected</span></h4><div class="prose"><p>An effect bounds heap changes and a regional effect names variables through paths. The value region includes identity locations. An edge's renaming maps target variables to source variables. In the worked example the empty effect preserves existing locations, the upper bound is lost by the effect and kept by the write's exact semantics, and the regional effect is {values: any, out.store: grow} under a store separation. Reliance covers native steps and callbacks alike. A triple expresses a restored invariant.</p></div>
+<h4 class="change"><span class="act removed">removed</span>Docs <span class="target">drafts/tolerant-frames-note/note.tex</span></h4><div class="prose"><p>The prose paraphrases of the five changes, of the laws and of the action of an effect; the recap of marks before the axioms; the paragraph on the forward pass that restated the check; three Limits entries, each now a pointer to the section that owns the statement. 8,212 words before, 7,656 after.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/tolerant-frames-note/tolerant-frames.pdf</span></h4><div class="prose"><p>The note compiled from this source, 13 pages.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test plain">latexmk</span> <span class="test neg">pdf note-color.tex (13 pages, no error); python3 build.py; one read-only review of the whole text by gpt-6-astra, its repairs and cuts applied</span></dd></dl>
+<details><summary>2 files changed, 93 insertions(+), 129 deletions(-)</summary><pre class="code"> docs/drafts/tolerant-frames-note/note.tex          | 222 +++++++++------------
+ .../tolerant-frames-note/tolerant-frames.pdf       | Bin 368536 -&gt; 364979 bytes</pre></details>
+<div class="sha">with Claude Fable 5.2</div>
+</article>
+<article class="card" id="c-3c55b378d"><header><div><div class="sha">3c55b378d · Cristiano Calcagno · Nov 14, 11:34</div><h3>Define the note's language, states and transitions, and separate lowering from the target language</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>The note used &quot;well-formed&quot; and &quot;admissible&quot; without defining them side by side, named the five kinds of location by single letters that clashed with its names for assertions and supports, reasoned about operations of a language it never defined, and described binding cells as properties of the TypeScript source. The text now states the target language and its model, and says in one paragraph how TypeScript bindings are lowered to it.</p></div>
+<h4 class="change"><span class="act added">added</span>Docs <span class="target">drafts/tolerant-frames-note/note.tex, section 2</span></h4><div class="prose"><p>Definition &quot;Commands&quot;: atoms, the steps (binding, field read and write, element read and write, allocation, native call, function call) and the commands built from them. A paragraph &quot;Lowering&quot;: a TypeScript binding becomes a value variable or a private cell, an object with one field <code>value</code>. A paragraph &quot;Why distinguish fields from cells?&quot;: one location has one kind, so a write to a field keeps a fact about a cell with no separation premise.</p></div>
+<h4 class="change"><span class="act added">added</span>Docs <span class="target">drafts/tolerant-frames-note/note.tex, section 3</span></h4><div class="prose"><p>Definitions &quot;World&quot; (a kind and a contract per location; extension), &quot;Well-formed state&quot; (one domain, contents by kind, valid references, contracts; from there on a state is a well-formed state) and &quot;Admissible transition&quot; (a relation between two states), each with examples; Theorem &quot;Preservation&quot;: typed code makes only admissible transitions, with the Lean theorems for each part.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/tolerant-frames-note/note.tex</span></h4><div class="versions"><figure><figcaption>Before</figcaption><div class="prose"><p>kinds named F, C, E, S, I; a cell a kind of binding of the source; cell read and write as steps of their own; &quot;well-formed&quot; a premise of Transfer, Alloc and the support of apart</p></div></figure><figure><figcaption>After</figcaption><div class="prose"><p>kinds named field, cell, elem, store, id, with Loc_κ the locations of kind κ; a cell the <code>value</code> field of a private object, read and written by the field operations; the example heap holds the cell object <code>r</code> with its identity location; every state is well-formed, so the three premises are gone</p></div></figure></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">drafts/tolerant-frames-note/fig-heap.html, tolerant-frames.pdf</span></h4><div class="prose"><p>The figure names kinds in words and the cell <code>r.value</code>; the note compiled from this source, 14 pages.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Tooling <span class="target">drafts/tolerant-frames-note/build.py, color.py, head.html</span></h4><pre class="code"><span class="ln">Code on the page has a tinted background; call names are coloured;</span><span class="ln">loop, try, catch, throw and break are highlighted, on the page and</span><span class="ln">in the PDF.</span></pre>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd><dt>Tests</dt><dd><span class="test plain">latexmk</span> <span class="test neg">pdf note-color.tex (14 pages, no error); python3 build.py; the lowering and cell paragraphs written by gpt-6-astra (Codex) at the owner's direction, not reviewed against the Lean by a second reader</span></dd></dl>
+<details><summary>6 files changed, 208 insertions(+), 121 deletions(-)</summary><pre class="code"> docs/drafts/tolerant-frames-note/build.py          |   3 +-
+ docs/drafts/tolerant-frames-note/color.py          |   2 +-
+ docs/drafts/tolerant-frames-note/fig-heap.html     |   2 +-
+ docs/drafts/tolerant-frames-note/head.html         |   2 +
+ docs/drafts/tolerant-frames-note/note.tex          | 320 +++++++++++++--------
+ .../tolerant-frames-note/tolerant-frames.pdf       | Bin 364979 -&gt; 391640 bytes</pre></details>
+<div class="sha">with Claude Fable 5.2</div>
+</article>
+<article class="card" id="c-84e3c4044"><header><div><div class="sha">84e3c4044 · Cristiano Calcagno · Nov 11, 07:34</div><h3>Draft the theory of fact preservation as tolerant frames</h3></div><span class="pill neutral">no-behaviour-change</span></header>
+<h4 class="change">Why</h4><div class="prose"><p>Two mechanisms decide that a heap fact survives a step: the footprint and support judgment with its frame theorem, used for the facts <code>map</code> relies on, and the term-by-term preservation of index facts. No document states what they have in common, which patterns of heap reasoning the code needs, or how the result relates to separation logic. The owner asked for a conceptual draft answering those, written with review by Astra.</p></div>
+<h4 class="change"><span class="act added">added</span>Docs <span class="target">drafts/tolerant-frames.md</span></h4><div class="prose"><p>Fifteen patterns from pretext and the cases; facts as depending on observations with tolerances; the two sources of a bound, the frame and an invariant, and exact posts; the tolerant frame theorem (<code>stable_sound</code>) with region logic's frame rule and stability under interference as its two extremes; composition by rebasing, and freshness as a bound on effects only; the forms of separation in use and their depth; each pattern's derivation; the position among dynamic frames, rely/guarantee, monotone state and separation logic; soundness of a node's checked knowledge transformer as the central statement and the forward pass's obligations; limits; which statements are proved and which three are conjectured.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Docs <span class="target">REFERENCES.md</span></h4><div class="prose"><p>Entries for Kassios 2006, Banerjee, Naumann and Rosenberg 2013, Jones 1983, Ahmed, Dreyer and Rossberg 2009, Dreyer, Neis and Birkedal 2010, Calcagno, O'Hearn and Yang 2007, Dinsdale-Young et al. 2013 and Birkedal, Torp-Smith and Yang 2005, each checked against its publication record.</p></div>
+<h4 class="change"><span class="act modified">modified</span>Status <span class="target">WORK.md</span></h4><div class="prose"><p>A row for the draft: open, done when transformer soundness is one Lean statement with both mechanisms as instances.</p></div>
+<dl class="facts"><dt>Parts</dt><dd><span class="chip">docs</span></dd><dt>Trust</dt><dd><span class="none">none</span></dd></dl>
+<details><summary>3 files changed, 728 insertions(+)</summary><pre class="code"> WORK.md                        |   1 +
+ docs/REFERENCES.md             |  88 ++++++
+ docs/drafts/tolerant-frames.md | 639 +++++++++++++++++++++++++++++++++++++++++</pre></details>
+<div class="sha">with Claude Fable 5.2</div>
+</article>
+</main></body></html>
