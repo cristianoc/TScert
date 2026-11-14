@@ -10,19 +10,26 @@ accepts holds by `checkScoped_sound`.
 - The arithmetic of `index[c >> 8]`, with `0 ≤ c < 1114112` and
   `index.length = 4352`, and of `table[x & 255]` with `table.length = 256`
   (I4, "Arithmetic indices and range conditions").
-- P18: the two-field guard `p.items = null ∨ p.items.insideExtras = null ∨
-  |p.items.insideExtras| = |p.widths|` across a call of effect
+- The modal plumbing of P18's two-field guard (not yet P18's parity
+  derivation): the guard `g₁ ∨ g₂ ∨ L` across a call of effect
   `{values: any}`, by law (d), Frame and guard elimination
-  (`astra/parity-plan-out.md`, P18). The preservation of the length
-  equality itself, `K ∧ L ⊢ □_Φ L`, is the tolerant frame theorem at a
-  support the call's effect respects; its checked respect reads region
-  membership and is a premise here. -/
+  (`astra/parity-plan-out.md`, P18). Two premises stand for evidence the
+  rules do not produce yet: the guards are `□_⊤(π ≐ null)`, which P18
+  obtains from the null tests and the fields' stable contracts (stable
+  paths have no introduction rule yet); and the `L` case is framed
+  inside its branch, `g₁ ∨ g₂ ∨ □_Φ L`, which P18 obtains by the
+  tolerant frame rule at the stores' keep support, whose regional
+  support certificate the shared foundation supplies. -/
 namespace Verification.Parity.Tests
 open Verification Footprints HeapKnowledge
 
 private def isOk {α : Type} : Except String α → Bool
   | .ok _ => true
   | .error _ => false
+
+private def errorOf {α : Type} : Except String α → String
+  | .ok _ => ""
+  | .error e => e
 
 /-- The empty arena: the arithmetic derivations name no assertion. -/
 private def empty : AssertionArena := ⟨#[]⟩
@@ -54,7 +61,7 @@ private def bad : AssertionArena := ⟨#[.and ⟨1⟩ ⟨1⟩, .truth]⟩
 private def raw : RawDerivation := .atAndIntro ⟨1⟩ ⟨1⟩ .atTruth .atTruth
 
 #guard isOk (checkDerivation bad [] (.at .after ⟨0⟩) raw)
-#guard !isOk (checkScoped bad ⟨0, 0⟩ [] (.at .after ⟨0⟩) raw)
+#guard errorOf (checkScoped bad ⟨0, 0⟩ [] (.at .after ⟨0⟩) raw) = "the arena is not valid"
 end Invalid
 
 /-! ## `index[c >> 8]` -/
@@ -64,10 +71,6 @@ private def proj : List Formula → Nat → RawDerivation → RawDerivation
   | _ :: t, 0, d => .andLeft (conj t) d
   | F :: t, i + 1, d => proj t i (.andRight F d)
   | [], _, d => d
-
-private def errorOf {α : Type} : Except String α → String
-  | .ok _ => ""
-  | .error e => e
 
 namespace Shift
 private def c : Path := .var 1
@@ -179,7 +182,7 @@ end Mask
 
 /-! ## P18: the two-field guard -/
 
-namespace P18
+namespace P18Plumbing
 private def items : Path := ⟨0, ["items"]⟩
 private def extras : Path := ⟨0, ["items", "insideExtras"]⟩
 private def widths : Path := ⟨0, ["widths"]⟩
@@ -219,18 +222,19 @@ private def arena : AssertionArena := ⟨#[
   .box topEffect (ref 17),                     -- 18
   .existsValue (ref 18),                       -- 19 rigid(p.items)
   .box Φ (ref 1),                              -- 20 □_Φ g₁
-  .box [(.elems 0, .any)] (ref 0)]⟩            -- 21 □_{p[elements]: any} (p.items ≐ null)
+  .box [(.elems 0, .any)] (ref 0),             -- 21 □_{p[elements]: any} (p.items ≐ null)
+  .guarded (ref 1) (ref 10)]⟩                  -- 22 g₁ ∨ g₂ ∨ □_Φ L
 
 #guard arena.check
 
 /-- The identity transport: the call binds no name. -/
 private def θ : Substitution := { images := #[.path (.var 0), .path (.var 1)] }
 
-/-- Before the call `F` and, by the tolerant frame theorem, `□_Φ L` (in the
-case `L`); the call's transition; after it, both null tests failed and
+/-- Before the call `g₁ ∨ g₂ ∨ □_Φ L`: the guard with its `L` case framed;
+the call's transition; after it, both null tests failed and
 `i < |p.widths|`. -/
 private def Γ : List Formula :=
-  [.at .before (ref 8), .at .before (ref 9), .transition Φ, .transport θ,
+  [.at .before (ref 22), .transition Φ, .transport θ,
     .at .after (ref 14), .at .after (ref 15), .at .after (ref 16)]
 
 /-- `i < |p.items.insideExtras|` after the call. -/
@@ -238,11 +242,10 @@ private def goal : Formula := .linear (.le [(.after i, 1), (.after (extras.term 
 
 /-- `□_Φ F` before the call, by law (d) twice. -/
 private def boxF : RawDerivation :=
-  .guardCases .before (ref 8) (ref 1) (ref 7) .assumption
+  .guardCases .before (ref 22) (ref 1) (ref 10) .assumption
     (.boxGuard Φ (ref 12) (ref 1) (ref 11) (ref 7) (ref 8) (.guardLeft (ref 1) (ref 11) .assumption))
     (.boxGuard Φ (ref 12) (ref 1) (ref 11) (ref 7) (ref 8)
-      (.guardRight (ref 1) (ref 11)
-        (.boxGuard Φ (ref 10) (ref 3) (ref 9) (ref 6) (ref 7) (.guardRight (ref 3) (ref 9) .assumption))))
+      (.guardRight (ref 1) (ref 11) (.boxGuard Φ (ref 10) (ref 3) (ref 9) (ref 6) (ref 7) .assumption)))
 
 private def lenFacts : List (Linear.Fact StepVar) :=
   [tagFact .after lenEq₂, tagFact .after below]
@@ -262,13 +265,17 @@ private def raw : RawDerivation :=
 
 #guard isOk (checkScoped arena ⟨2, 2⟩ Γ goal raw)
 
--- Without the transition the frame does not apply.
-#guard !isOk (checkScoped arena ⟨2, 2⟩ (Γ.filter (· != .transition Φ)) goal raw)
+-- Without the transition the frame's premise is missing.
+#guard errorOf (checkScoped arena ⟨2, 2⟩ (Γ.filter (· != .transition Φ)) goal raw) = "assumption: not a premise"
+-- From `F` alone, without the framed `L` case, the cases of `F` have no box
+-- in the `L` branch: the premise `g₁ ∨ g₂ ∨ □_Φ L` is missing.
+#guard errorOf (checkScoped arena ⟨2, 2⟩ (.at .before (ref 8) :: Γ.drop 1) goal raw) = "assumption: not a premise"
 
 -- `F` read one binder further builds and checks; a field path for slot `0`
 -- under the boxes of `F` is refused.
 #guard isOk (substAssertion arena (Substitution.shift 2) (ref 8))
-#guard !isOk (substAssertion arena { images := #[.path ⟨1, ["next"]⟩, .path (.var 1)] } (ref 8))
+#guard errorOf (substAssertion arena { images := #[.path ⟨1, ["next"]⟩, .path (.var 1)] } (ref 8)) =
+  "substAssertion: a slot is outside the substitution"
 -- A field path for slot `1`, which the boxes of `g₁` do not read, is accepted.
 #guard isOk (substAssertion arena { images := #[.path (.var 0), .path ⟨0, ["next"]⟩] } (ref 1))
 -- A box of a regional effect `{x[elements]: any}` under the identity and
@@ -301,9 +308,10 @@ private def belowShifted : Formula := .linear (renameFact (shiftVar .before) (ta
 #guard isOk (checkScoped arena ⟨2, 2⟩ [.at .before (ref 19), belowBefore] belowBefore
   (.existsElim .before (ref 19) (ref 18) 2 [belowShifted] belowShifted .assumption .assumption))
 -- The conclusion read at the eigenvariable's own slot is refused.
-#guard !isOk (checkScoped arena ⟨2, 2⟩ [.at .before (ref 19), belowBefore] belowBefore
-  (.existsElim .before (ref 19) (ref 18) 2 [belowBefore] belowBefore .assumption .assumption))
+#guard errorOf (checkScoped arena ⟨2, 2⟩ [.at .before (ref 19), belowBefore] belowBefore
+  (.existsElim .before (ref 19) (ref 18) 2 [belowBefore] belowBefore .assumption .assumption)) =
+  "existsElim: a premise is not read one slot further"
 
-end P18
+end P18Plumbing
 
 end Verification.Parity.Tests
