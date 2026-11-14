@@ -748,8 +748,11 @@ callee's signatures, any other node its sequent). A call is taken to
 keep its cells, its step's own evidence deciding it in the pass. The field
 names are those the callees' store regions read through one field
 (`calleeRegionNames`). The pass checks each loop head's tables on every
-edge into it; a member it refuses at its store regions is run again
-without them. `TSCERT_FORCE=head-region-values`, `head-region-cells`,
+edge into it; a member the regional check itself refuses (`store regions …`,
+naming no lacking facts) is run again without them, and one a regional walk
+refuses at an edge into a statement entry for facts it lacks is run again with
+those of its proposals left out ([the diagnosing walk](#the-diagnosing-walk)),
+its tables kept (`regional-walk-lacking-head-fact`). `TSCERT_FORCE=head-region-values`, `head-region-cells`,
 `head-region-facts` and `head-region-fields` each add at every statement
 entry one entry of that kind no edge establishes (the next slot as a fresh
 value or cell, an argument path `forced` of slot 0, a fresh field of the
