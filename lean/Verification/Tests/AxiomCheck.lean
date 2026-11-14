@@ -363,12 +363,7 @@ run_cmd do
   check ``Verification.TolerantFrames.freshCall_keeps
   check ``Verification.TolerantFrames.keepsCall_frame
   check ``Verification.TolerantFrames.slotless_not_framed
-  check ``Verification.TolerantFrames.listT_cells
-  check ``Verification.TolerantFrames.cellsCtr_of_listT
-  check ``Verification.TolerantFrames.storeCells_invariant
-  check ``Verification.TolerantFrames.rootCells_of_storeCells
   check ``Verification.TolerantFrames.rootCells_box
-  check ``Verification.TolerantFrames.storeCells_of_listT
   check ``Verification.TolerantFrames.rootCells_invariant
   check ``Verification.TolerantFrames.alloc_apart
   check ``Verification.TolerantFrames.growOne_keeps_store
@@ -423,7 +418,6 @@ run_cmd do
   check ``Verification.TolerantFrames.element_write_judgment
   check ``Verification.TolerantFrames.preserving_judgment
   check ``Verification.TolerantFrames.writing_frame
-  check ``Verification.TolerantFrames.storeCells_of_arrayInvariant
   check ``Verification.TolerantFrames.passTreeOk_of_tree
   check ``Verification.TolerantFrames.requiresApp_term
   check ``Verification.TolerantFrames.requiresTree_term
@@ -586,8 +580,6 @@ run_cmd do
   check ``Verification.TolerantFrames.dense
   -- (View)
   check ``Verification.TolerantFrames.view_box
-  check ``Verification.TolerantFrames.viewStable_invariant
-  check ``Verification.TolerantFrames.viewStable_of_typed
   -- (Init)
   check ``Verification.TolerantFrames.init_box
   check ``Verification.TolerantFrames.init_path
@@ -599,10 +591,6 @@ run_cmd do
   check ``Verification.TolerantFrames.grow_path_typed
   check ``Verification.TolerantFrames.fresh_invariant
   -- well-formed states and law (c) from a typed state
-  check ``Verification.TolerantFrames.storeCells_of_typed
-  check ``Verification.TolerantFrames.storeCells_of_storeField
-  check ``Verification.TolerantFrames.storeCells_of_builtins
-  check ``Verification.TolerantFrames.apart_grow_keep_typed
   check ``Verification.TolerantFrames.valueClass_ok
   check ``Verification.TolerantFrames.storeClass_ok
   check ``Verification.TolerantFrames.action_le_valueClass
@@ -610,7 +598,6 @@ run_cmd do
   check ``Verification.TolerantFrames.call_rule
   -- Alloc
   check ``Verification.TolerantFrames.alloc_post
-  check ``Verification.TolerantFrames.alloc_apart_typed
   check ``Verification.TolerantFrames.apart_not_kept_fresh
   -- Seq-Eff
   check ``Verification.TolerantFrames.seq_eff
@@ -1511,29 +1498,19 @@ run_cmd do
   check ``Verification.Kinds.native_shaped
   check ``Verification.Kinds.elementWrite_not_respects
   -- well-formed states over an environment; admissibility keeps them
-  check ``Verification.Kinds.Admissible.trans
-  check ``Verification.Kinds.Admissible.roleAt
-  check ``Verification.Kinds.Admissible.refsOk
-  check ``Verification.Kinds.RootsOk.admissible
-  check ``Verification.Kinds.RootsOk.set
-  check ``Verification.Kinds.State.next
-  check ``Verification.Kinds.Invariant.box
+  check ``Verification.TolerantFrames.Admissible.roleAt
+  check ``Verification.TolerantFrames.Admissible.refsOk
+  check ``Verification.TolerantFrames.RootsOk.admissible
   -- (View): a typed array's length is immutable
-  check ``Verification.Kinds.viewLengthOf_kept
-  check ``Verification.Kinds.viewLength_invariant
-  check ``Verification.Kinds.view_box
+  check ``Verification.TolerantFrames.viewLengthOf_kept
+  check ``Verification.TolerantFrames.viewLength_invariant
   check ``Verification.Kinds.view_change_excluded
   -- allocated cells at every budget and state
   check ``Verification.HeapOk.store_cells
-  check ``Verification.Kinds.storeCells
-  check ``Verification.Kinds.storeCells_invariant
-  check ``Verification.Kinds.Admissible.elem_kept
-  check ``Verification.Kinds.rootCells
-  check ``Verification.Kinds.rootCells_invariant
-  check ``Verification.Kinds.rootCells_box
+  check ``Verification.TolerantFrames.Admissible.elem_kept
+  check ``Verification.TolerantFrames.rootCells_holds
   -- allocation separation from a well-formed entry heap
-  check ``Verification.Kinds.alloc_apart
-  check ``Verification.Kinds.alloc_post
+  check ``Verification.TolerantFrames.alloc_apart_wellformed
   check ``Verification.Kinds.alloc_wellformed
   -- role-bearing storage capabilities
   check ``Verification.Kinds.Capability.At.mono
@@ -1595,6 +1572,8 @@ run_cmd do
   check ``Verification.Kinds.hostBefore_ok
   check ``Verification.Kinds.host_refs
   check ``Verification.Kinds.host_viewWrite
+  check ``Verification.Kinds.families_refs
+  check ``Verification.Kinds.families_state
   check ``Verification.Kinds.NativeContract.down
   check ``Verification.Kinds.NativeContract.bound
   check ``Verification.Kinds.not_respects_of_breaks

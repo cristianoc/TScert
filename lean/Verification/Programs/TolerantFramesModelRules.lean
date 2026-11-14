@@ -9,18 +9,17 @@ theorem with the hypotheses the indexed model forces, or a counter-model
 where the note's statement does not hold:
 
 - (View): a linear fact whose current terms are slots' integers and
-  typed-array lengths holds after every admissible transition where each
-  view's length location is single-valued (`view_box`), which a type stating
-  `viewLengthKey` stable gives (`viewStable_of_typed`); an entry term reads
-  the entry state, which no transition changes;
+  typed-array lengths holds after every admissible transition from a state
+  whose roots are valid (`view_box`); an entry term reads the entry state,
+  which no transition changes;
 - (Init): every linear fact whose current terms are no string lengths
   survives every action of `{values: init, stores: keep}` (`init_box`), with
   no condition on its paths, its entry terms of every kind;
 - Call: a callee's run is an action of its renamed regional effect at the
   caller's slots, its post holds, and the caller's facts it keeps are named
   at the result's fresh name (`call_rule`);
-- Alloc: an allocated array is fresh, empty and apart from every older array
-  whose cells are allocated (`alloc_post`); a later change of the fresh store
+- Alloc: an array allocated in a well-formed heap is fresh, empty and apart
+  from every older array (`alloc_post`); a later change of the fresh store
   at `any` can break that separation even though the store stays fresh
   (`apart_not_kept_fresh`);
 - Seq-Eff: rebasing keeps each entry's change (`rebaseAll_labels`) and
@@ -36,41 +35,15 @@ open ProgramTyping PositiveGraphs PositiveRules ExpressionEffects HeapExpression
 
 /-! ## (View) -/
 
-/-- `w`'s view length is read at a location whose contract admits one value
-(or `w` owns no such key and has no prototype): a fact of the world. -/
-def ViewStable (w : Nat) : Assertion := fun ρ _ s =>
-  ∃ fs cd o, ρ w = .objAt fs cd o ∧ Verification.StableAt s.W fs viewLengthKey
-
-/-- A stable view's length reads the same after every admissible transition. -/
-theorem viewLengthOf_kept {fs : List (PropKey × Nat)} {cd : CallCode} {o : Nat} {s s' : IndexedHeap}
-    (hst : Verification.StableAt s.W fs viewLengthKey) (ha : Admissible s s') :
-    HeapKnowledge.viewLengthOf s'.h (.objAt fs cd o) = HeapKnowledge.viewLengthOf s.h (.objAt fs cd o) := by
-  unfold Verification.StableAt at hst
-  cases hl : fs.lookup viewLengthKey with
-  | none => simp [HeapKnowledge.viewLengthOf, hl]
-  | some l =>
-    rw [hl] at hst
-    obtain ⟨c, value, hc, hcs⟩ := hst
-    simp [HeapKnowledge.viewLengthOf, hl, s.stable_value hc hcs, ha.stable_value hc hcs]
-
-theorem viewStable_invariant (w : Nat) : Invariant (ViewStable w) := by
-  intro ρ m s s' ha ⟨fs, cd, o, hv, hst⟩
-  refine ⟨fs, cd, o, hv, ?_⟩
-  unfold Verification.StableAt at hst ⊢
-  split at hst
-  · rename_i l hl
-    obtain ⟨c, value, hc, hcs⟩ := hst
-    obtain ⟨hle, hc'⟩ := ha.lookup_ext hc
-    exact ⟨_, value, hc', hcs.restrict hle⟩
-  · exact hst
-
 /-- **(View)**: a linear fact whose current terms are slots' integers and
-stable views' lengths holds after every admissible transition: `a(view(w)) ⊢
-□_⊤ a(view(w))`; its entry terms, of any kind and path, read the entry state
-(`termValue_entry_invariant`). -/
+typed-array lengths holds after every admissible transition, at a state whose
+roots are valid (`RootsOk`, as every graph state's are); its entry terms, of
+any kind and path, read the entry state (`termValue_entry_invariant`). A
+typed array's length read through valid references is immutable
+(`viewLengthOf_kept`). -/
 theorem view_box {F : Linear.Fact HeapKnowledge.Term} {ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hv : ∀ t ∈ F.vars, t.atEntry = false →
-      t.path = [] ∧ (t.kind = .value ∨ (t.kind = .view ∧ ViewStable t.slot ρ m s)))
+    (hroots : RootsOk s.W ρ)
+    (hv : ∀ t ∈ F.vars, t.atEntry = false → t.path = [] ∧ (t.kind = .value ∨ t.kind = .view))
     (hF : (HeapKnowledge.IndexFact.linear F).HoldsAt ε ρ s.h) :
     Box Footprints.Closed.top.fp (fun ρ _ s => (HeapKnowledge.IndexFact.linear F).HoldsAt ε ρ s.h) ρ m s := by
   intro s' ha
@@ -82,21 +55,14 @@ theorem view_box {F : Linear.Fact HeapKnowledge.Term} {ρ : Env} {m : Nat} {s : 
     obtain ⟨hp, hk⟩ := hv _ ht rfl
     simp only at hp hk
     subst hp
-    rcases hk with rfl | ⟨rfl, fs, cd, o, hw, hst⟩
+    rcases hk with rfl | rfl
     · rfl
-    · simp only [HeapKnowledge.termValue_nil, HeapKnowledge.kindValue, hw]
-      exact viewLengthOf_kept hst ha.1
+    · simp only [HeapKnowledge.termValue_nil, HeapKnowledge.kindValue]
+      exact viewLengthOf_kept (hroots slot) ha.1
   obtain ⟨hd, hh⟩ := hF
   refine ⟨fun t ht => by rw [he t ht]; exact hd t ht, ?_⟩
   refine (Linear.Fact.holds_congr fun t ht => ?_).mpr hh
   simp only [HeapKnowledge.termValuation, he t ht]
-
-/-- A type stating `viewLengthKey` stable gives the view's stability. -/
-theorem viewStable_of_typed {ι : Type} {G : NormalGraph ι} {Γ : List (Ty ι)} {ρ : Env} {m : Nat}
-    {s : IndexedHeap} {w : Nat} {A : Ty ι} (he : EnvOk G Γ ρ s.n s.W) (hw : Γ[w]? = some A)
-    (hs : stableField G A viewLengthKey = true) : ViewStable w ρ m s := by
-  obtain ⟨flds, oid, hv, hst⟩ := stableField_at hs (he.2 w A hw)
-  exact ⟨flds, .absent, oid, hv, hst⟩
 
 /-- A typed array of length 1, its length at location 1. -/
 def viewObj : Val := .objAt [(hostKey, 0), (viewLengthKey, 1)] .absent 2
@@ -177,23 +143,22 @@ def allocated (h : Heap) : Val := .objAt [(arrayStoreKey, h.length)] .absent (h.
 theorem alloc_step (h : Heap) : Step h allocTerm (h ++ [.arr []] ++ [.nul]) (allocated h) :=
   .makeFields (by simp [isVal]) rfl
 
-/-- **Alloc**: the allocated array is fresh against the heap it was
-allocated in, has length 0, and is apart from every value whose store is
-below that heap's length and lists only cells below it, at the heap after
-the allocation. -/
-theorem alloc_post (h : Heap) :
+/-- **Alloc**: the array allocated in a well-formed heap is fresh against
+it, has length 0, and is apart, at the heap after the allocation, from every
+value whose store the entry heap holds: that store's cells are allocated
+because the heap is well-formed. -/
+theorem alloc_post {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h) :
     FreshAt h.length (allocated h) ∧
       HeapKnowledge.lengthOf (h ++ [.arr []] ++ [.nul]) (allocated h) = some 0 ∧
       ∀ (u : Val) (sy : Nat) (ys : List (Option Nat)), storeOf u = some sy → h[sy]? = some (.arr ys) →
-        HeapKnowledge.ElementsBelow h.length ys →
         HeapKnowledge.RegionsApart (h ++ [.arr []] ++ [.nul]) (allocated h) u := by
   have hst : storeOf (allocated h) = some h.length := by simp [storeOf, fieldsOf, allocated]
   have hget : (h ++ [.arr []] ++ [.nul])[h.length]? = some (.arr []) := by simp
   refine ⟨⟨_, hst, Nat.le_refl _⟩, HeapKnowledge.lengthOf_of_store hst hget (by decide), ?_⟩
-  intro u sy ys hsy hys hbelow
+  intro u sy ys hsy hys
   have hlt : sy < h.length := (List.getElem?_eq_some_iff.mp hys).1
-  exact alloc_apart hst hget (Nat.le_refl _) (fun _ hm => by simp at hm) hsy
-    (by rw [List.append_assoc, List.getElem?_append_left hlt]; exact hys) hlt hbelow
+  exact alloc_apart_wellformed hok hst hget (Nat.le_refl _) (fun _ hm => by simp at hm) hsy hys
+    (by rw [List.append_assoc, List.getElem?_append_left hlt]; exact hys)
 
 /-- The counter-model's world: `y`'s store, its cell, `x`'s store, and the
 two arrays' identities. -/

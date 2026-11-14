@@ -1,5 +1,5 @@
 import Verification.Semantics.KindsNatives
-import Verification.Semantics.KindsStates
+import Verification.Semantics.TolerantFramesCells
 import Verification.Semantics.KindsCapabilities
 /-!
 # World-indexed postconditions and the native-contract condition

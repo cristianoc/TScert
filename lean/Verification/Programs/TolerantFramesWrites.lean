@@ -226,22 +226,4 @@ theorem writing_frame {Ξ T : Fam} {cn ce : Footprints.Closed} {Qn : Post} {Sn S
   · obtain ⟨s', ha, he', hn', hsc, hΞ, -⟩ := action_throw (ρ := ρ) hsafe hst hx hk
     exact ⟨s', ha, he', hn', hsc, hΞ, named_kept_box he hSe s' ha⟩
 
-/-! ## Allocated cells from the array invariant -/
-
-/-- **A built-in array's store location lists only cells of its world**: the
-array invariant (`PositiveGraphs.arrayInvariant`) gives the store field a
-location whose contract's stores are `builtinStoreT`, a tuple contract, so
-`StoreCells` holds of a slot holding such an array. -/
-theorem storeCells_of_arrayInvariant {P U : Fam} {N : List PropKey} {x : Nat} {ρ : Env} {m : Nat}
-    {s : IndexedHeap} {flds : List (PropKey × Nat)} {oid : Nat} (hv : ρ x = .objAt flds .absent oid)
-    (hs : (flds.lookup CallArguments.arrayStoreField).isSome = true)
-    (hinv : PositiveGraphs.arrayInvariant P U N s.n s.W (ρ x)) : StoreCells x ρ m s := by
-  obtain ⟨hview, -, -⟩ := hinv flds oid hv hs
-  obtain ⟨flds', l, c, oid', he, hl, hc, hag⟩ := hview _ _ (List.mem_cons_self ..)
-  rw [hv] at he
-  cases he
-  refine storeCells_of_listT (st := l) (c := c) ?_ hc
-    (fun j hj U' u hu => ⟨⟨[], [], some U, true, .sparse⟩, hag j hj U' u hu⟩)
-  simpa [storeOf, fieldsOf, hv, CallArguments.arrayStoreField] using hl
-
 end Verification.TolerantFrames

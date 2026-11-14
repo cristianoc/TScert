@@ -618,36 +618,12 @@ fact over a name fails after an action of $`\top`$, proved:
 Module `lean/Verification/Semantics/TolerantFramesCells.lean`. A root's
 allocated cells, $`\mathrm{cells}(x)`$ read at the heap, is
 `HeapKnowledge.ElementsBelow` of the store $`x`$'s store location holds:
-every listed cell below the heap's length (`RootCells`). It is not kept by
-admissibility: in a world whose locations admit every value, a transition may
-replace a store by one listing a cell past the heap (proved:
-`rootCells_not_invariant`). It follows from a fact of the world instead:
-$`x`$'s store location has a contract every store of which lists only cells of
-its world (`StoreCells`, `CellsCtr`). Proved:
-
-- every tuple contract lists cells of its world (`listT_cells`): a required,
-  optional or rest position each states a lookup of its cell; so a location
-  whose contract's stores meet a tuple contract establishes
-  $`\mathrm{StoreCells}`$ (`cellsCtr_of_listT`, `storeCells_of_listT`);
-- $`\mathrm{StoreCells}\ x`$ is invariant (`storeCells_invariant`: the
-  contract persists, restricted, along every admissible transition), and
-  gives $`\mathrm{cells}(x)`$ at the state, the heap meeting the contract one
-  level down (`rootCells_of_storeCells`), so
-  $`\mathrm{StoreCells}\ x\vdash\Box_\Phi\,\mathrm{cells}(x)`$ for every
-  $`\Phi`$ (`rootCells_box`). No step needs to preserve the cells: the world
-  fact covers every state reached.
-
-A built-in array's store location has such a contract, proved
-(`storeCells_of_arrayInvariant`, `TolerantFramesWrites.lean`): the array
-invariant (`PositiveGraphs.arrayInvariant`) gives the store field a location
-whose contract's stores are `builtinStoreT`, a tuple contract. What is not
-connected: that a slot whose type has the `.list` clause meets the array
-invariant (`builtinInvariant` applies it to records, dictionaries and
-`source` clauses where the graph states the built-ins), and that `StableAt`
-follows from the pass's path-preservation evidence. A root whose store location
-admits any value carries no allocated-cell fact, and a step writing a store
-that lists a cell past the heap there (a store value the program holds, not
-an allocation, which reserves fresh cells: `elemSlots_above`) breaks it.
+every listed cell below the heap's length (`RootCells`). It holds at every
+state (`rootCells_holds`): a well-formed heap's stores have valid references,
+so every cell they list is an element cell of the world, a location of the
+heap (`HeapOk.store_cells`). So $`\mathrm{cells}(x)`$ is invariant
+(`rootCells_invariant`) and holds after every action of every footprint
+(`rootCells_box`), with no premise.
 
 Separation, proved:
 
@@ -883,12 +859,11 @@ by unfolding the `let`s); the merge theorem reads it there.
   heap growth and single-valued locations follow from the indexed model at
   positive budget (proved, above); an object's keys and their locations are
   part of the object value, which no transition changes.
-- **The class of a location's contents is not fixed by admissibility.** A
-  contract may admit both a store and another value, so an effect stated by
-  class, such as $`\{\mathsf{values}:\mathsf{any}\}`$, bounds a write only
-  where typing gives the class of what is written over; the field write's
-  judgment obtains it from a type of source values
-  (`ExpressionEffects.field_write_within_exc`).
+- **The class of a location's contents is fixed by its role.** Every
+  location holds contents of its role's category at every well-formed state
+  ([kinded states](#kinded-states)); an effect stated by class, such as
+  $`\{\mathsf{values}:\mathsf{any}\}`$, is still checked where typing gives
+  the class of what is written over (`ExpressionEffects.field_write_within_exc`).
 - **Antitonicity is relative to the start state.** Inclusion of
   footprints whose regions are read through class evidence holds where that
   evidence holds (`action_le`); law (c) for those footprints is
@@ -898,10 +873,14 @@ by unfolding the `let`s); the merge theorem reads it there.
   only where the path resolves to the same store in both heaps
   (`ArgumentStoreRegionsWithin.trans`'s premise), and element regions at
   $`\mathsf{any}`$ are not rigid (proved).
-- **Allocated cells are not a consequence of admissibility.** A store whose
-  contract admits it may list a cell beyond the heap; the support of
-  $`\mathrm{apart}(x,y)`$ needs every listed cell allocated, a well-formedness
-  condition a fact of the world supplies (`StoreCells`, above).
+- **Allocated cells are a consequence of well-formedness.** A store a
+  well-formed heap holds lists only element cells of the heap
+  (`HeapOk.store_cells`), so the support of $`\mathrm{apart}(x,y)`$ needs no
+  further premise ([allocated cells](#allocated-cells-and-separation)).
+- **States carry valid references.** A typed array's length read through a
+  valid reference is immutable (`viewLengthOf_kept`), so (View) holds at a
+  state whose roots are valid (`view_box`); a graph state's roots are
+  (`ControlFlow.StateRefs`).
 - **An action from a run needs the effect judgment.** Safety alone gives an
   admissible endpoint; the footprint comes from a postcondition relative
   to the run's first heap, on each exit (`action_normal`, `action_throw`).

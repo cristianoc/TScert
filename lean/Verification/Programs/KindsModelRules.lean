@@ -1,19 +1,15 @@
 import Verification.Programs.TolerantFramesModelRules
 import Verification.Semantics.KindsContracts
 /-!
-# The note's (View) and Alloc over well-formed states, and a view write
+# Witnesses of (View), Alloc and the view write over kinded worlds
 
-The rules of `Programs/TolerantFramesModelRules.lean` that carry a premise of
-the world there, stated over the well-formed states of
-`Semantics/KindsStates.lean`, where the premise is part of the state:
+The rules of `Programs/TolerantFramesModelRules.lean` (`view_box`,
+`alloc_post`) shown on concrete well-formed heaps:
 
-- **(View)**: a linear fact whose current terms are slots' integers and
-  typed-array lengths holds after every admissible transition (`view_box`);
-  the two heaps of that module's `view_not_invariant` are no admissible
-  transition between states validating the view (`view_change_excluded`);
-- **Alloc**: the allocated array is fresh, empty and apart from every array
-  of the well-formed heap it was allocated in (`alloc_post`), and the heap
-  after the allocation is well-formed with the array valid (`alloc_wellformed`).
+- **(View)**: no admissible transition between states validating a typed
+  array changes its length from 1 to 2 (`view_change_excluded`);
+- **Alloc**: the heap after an array's allocation is well-formed with the
+  array valid (`alloc_wellformed`).
 
 A view-element write (`ViewWrite`) between two concrete well-formed heaps
 changes the stores of two views over the written bytes, exact for the
@@ -22,36 +18,9 @@ designated one, and keeps an ordinary array's store (`viewWrite_overlap`).
 namespace Verification.Kinds
 variable {ε : Verification.HeapKnowledge.EntryState}
 open Verification Footprints
-open Verification.TolerantFrames (allocated viewObj viewObj_length oneBits oneBits_safe)
+open Verification.TolerantFrames (allocated viewObj viewObj_length oneBits oneBits_safe IndexedHeap Admissible viewLengthOf_kept RootsOk)
 
 /-! ## (View) -/
-
-/-- **(View)**: a linear fact whose current terms are slots' integers and
-typed-array lengths holds after every admissible transition; its entry
-terms, of any kind and path, read the entry state. -/
-theorem view_box {F : Linear.Fact HeapKnowledge.Term} {ρ : Env} {m : Nat} {s : State ρ}
-    (hv : ∀ t ∈ F.vars, t.atEntry = false → t.path = [] ∧ (t.kind = .value ∨ t.kind = .view))
-    (hF : (HeapKnowledge.IndexFact.linear F).HoldsAt ε ρ s.h) :
-    Box Footprints.Closed.top.fp
-      (fun ρ _ s => (HeapKnowledge.IndexFact.linear F).HoldsAt ε ρ s.h) ρ m s := by
-  intro s' ha
-  show (HeapKnowledge.IndexFact.linear F).HoldsAt ε ρ s'.h
-  have he : ∀ t ∈ F.vars, HeapKnowledge.termValue ε ρ s'.h t = HeapKnowledge.termValue ε ρ s.h t := by
-    intro t ht
-    obtain ⟨k, slot, p, e⟩ := t
-    cases e
-    case true => exact HeapKnowledge.termValue_entry_invariant rfl
-    obtain ⟨hp, hk⟩ := hv _ ht rfl
-    simp only at hp hk
-    subst hp
-    rcases hk with rfl | rfl
-    · rfl
-    · simp only [HeapKnowledge.termValue_nil, HeapKnowledge.kindValue]
-      exact viewLengthOf_kept (s.roots slot) ha.1
-  obtain ⟨hd, hh⟩ := hF
-  refine ⟨fun t ht => by rw [he t ht]; exact hd t ht, ?_⟩
-  refine (Linear.Fact.holds_congr fun t ht => ?_).mpr hh
-  simp only [HeapKnowledge.termValuation, he t ht]
 
 /-- **No admissible transition changes a valid view's length**: from a state
 validating the typed array `viewObj` whose heap gives it the length 1, no
@@ -65,17 +34,6 @@ theorem view_change_excluded {s s' : IndexedHeap} (ha : Admissible s s') (hv : R
   cases hk
 
 /-! ## Alloc -/
-
-/-- **Alloc**: the array allocated in a well-formed heap is fresh against
-it, has length 0, and is apart, at the heap after the allocation, from every
-value whose store is a store of the entry heap. -/
-theorem alloc_post {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h) :
-    FreshAt h.length (allocated h) ∧
-      HeapKnowledge.lengthOf (h ++ [.arr []] ++ [.nul]) (allocated h) = some 0 ∧
-      ∀ (u : Val) (sy : Nat) (ys : List (Option Nat)), storeOf u = some sy → h[sy]? = some (.arr ys) →
-        HeapKnowledge.RegionsApart (h ++ [.arr []] ++ [.nul]) (allocated h) u :=
-  let ⟨hf, hl, ha⟩ := TolerantFrames.alloc_post h
-  ⟨hf, hl, fun u sy ys hs hy => ha u sy ys hs hy (Kinds.HeapOk.elementsBelow hok hy)⟩
 
 /-- **The allocation keeps the heap well-formed.** The rule gives the store
 slot the role of an array store and the identity its own, with contracts
@@ -358,5 +316,147 @@ theorem host_viewWrite (n : Nat) :
     rcases j with _ | j
     · exact absurd rfl hj
     · simp
+
+/-! ## Every structural family at once, at every budget -/
+
+/-- The host world extended by a binding cell, an object's prototype
+property, a closure's code field and a forwarding descriptor's identity. -/
+def familiesEntries {k : Nat} : List (Role × Ctr k) :=
+  hostEntries ++ [(.cell, anyCtr), (.identity, idCtr), (.field, anyCtr), (.identity, idCtr),
+    (.field, anyCtr), (.identity, idCtr), (.identity, idCtr)]
+
+def familiesWorld {k : Nat} : WorldT k := ofEntries familiesEntries
+
+def familiesHeap : Heap := hostBefore ++ [.num 0, .nul, hostObject, .nul, .nul, .nul, .nul]
+
+/-- A binding's cell holding a number. -/
+def hostCell : Val := .objAt [(valueField, 10)] .absent 11
+/-- An object whose prototype is `hostObject`. -/
+def hostProtoed : Val := .objAt [(CallArguments.protoField, 12)] .absent 13
+/-- Graph code capturing `hostObject`, with its code field. -/
+def hostClosure : Val := .objAt [(codeField, 14)] (.graph 0 [] [] 0 [hostObject] .call false) 15
+/-- A forwarding descriptor of the closure, its receiver `hostObject`, its
+prefix the ordinary array. -/
+def hostBound : Val := .objAt [] (.bound hostClosure hostObject [hostArray]) 16
+
+/-- The environment binding every structural family of host value. -/
+def familiesEnv : Env := fun i =>
+  match i with
+  | 0 => hostView | 1 => hostArray | 2 => hostObject | 3 => hostCell | 4 => hostProtoed
+  | 5 => hostClosure | 6 => hostBound | _ => .undef
+
+theorem familiesWorld_adm {k : Nat} : WorldAdm (familiesWorld (k := k)) := by
+  intro l c hc
+  simp only [lookup, toList, familiesWorld, entries_ofEntries, List.getElem?_map, Option.map_eq_some_iff] at hc
+  obtain ⟨e, he, rfl⟩ := hc
+  rcases l with _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | l <;>
+    simp [familiesEntries, hostEntries] at he <;> subst he <;>
+    first
+      | exact ⟨fun _ _ _ _ _ _ hv => hv, fun _ _ _ _ hv => hv⟩
+      | exact idCtr_adm
+      | exact ⟨fun _ _ _ _ _ _ hv => hv, fun _ _ _ _ hv => by rw [hv]; rfl⟩
+
+theorem lengthMeta_families {k : Nat} : LengthMeta (familiesWorld (k := k)) 2 1 :=
+  ⟨oneCtr, by simp [familiesWorld, familiesEntries, hostEntries], by
+    simp [lookup, toList, familiesWorld, familiesEntries, hostEntries], fun _ _ _ _ h => h⟩
+
+theorem familiesWorld_ext {k : Nat} : WExt (hostWorld (k := k)) (familiesWorld (k := k)) :=
+  ⟨[(.cell, anyCtr), (.identity, idCtr), (.field, anyCtr), (.identity, idCtr), (.field, anyCtr),
+    (.identity, idCtr), (.identity, idCtr)], by simp [hostWorld, familiesWorld, familiesEntries]⟩
+
+/-- **Every family's value is valid in the families' world**: a typed array
+with its view metadata and view store, an ordinary array with its store and
+element, an object, a binding cell, a prototype property, a closure with its
+capture and code field, and a forwarding descriptor of the closure. -/
+theorem families_refs {k : Nat} : RootsOk (familiesWorld (k := k)) familiesEnv := by
+  have hview := RefsOk_mono familiesWorld_ext (host_refs (k := k)).1
+  have harr := RefsOk_mono familiesWorld_ext (host_refs (k := k)).2.1
+  have hobj := RefsOk_mono familiesWorld_ext (host_refs (k := k)).2.2
+  have hcell : RefsOk (familiesWorld (k := k)) hostCell := by
+    intro r hr
+    simp only [hostCell, refs, objRefs, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+      or_false] at hr
+    rcases hr with rfl | rfl | rfl
+    · simp [RefOk, familiesWorld, familiesEntries, hostEntries]
+    · exact ⟨fun m hm => by simp [viewLengthKey, valueField] at hm,
+        fun e he => by simp [viewElementsKey, valueField] at he,
+        fun e he => by simp [viewElementsKey, viewLengthKey, valueField] at he⟩
+    · simp [RefOk, SlotRole, familiesWorld, familiesEntries, hostEntries, valueField, arrayStoreKey,
+        viewElementsKey]
+  have hpro : RefsOk (familiesWorld (k := k)) hostProtoed := by
+    intro r hr
+    simp only [hostProtoed, refs, objRefs, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+      or_false] at hr
+    rcases hr with rfl | rfl | rfl
+    · simp [RefOk, familiesWorld, familiesEntries, hostEntries]
+    · exact ⟨fun m hm => by simp [viewLengthKey, CallArguments.protoField] at hm,
+        fun e he => by simp [viewElementsKey, CallArguments.protoField] at he,
+        fun e he => by simp [viewElementsKey, viewLengthKey, CallArguments.protoField] at he⟩
+    · simp [RefOk, SlotRole, familiesWorld, familiesEntries, hostEntries, CallArguments.protoField,
+        arrayStoreKey, viewElementsKey]
+  have hclo : RefsOk (familiesWorld (k := k)) hostClosure := by
+    intro r hr
+    rw [hostClosure, refs_objAt] at hr
+    rcases List.mem_append.mp hr with hr | hr
+    · simp only [objRefs, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil, or_false] at hr
+      rcases hr with rfl | rfl | rfl
+      · simp [RefOk, familiesWorld, familiesEntries, hostEntries]
+      · exact ⟨fun m hm => by simp [viewLengthKey, codeField] at hm,
+          fun e he => by simp [viewElementsKey, codeField] at he,
+          fun e he => by simp [viewElementsKey, viewLengthKey, codeField] at he⟩
+      · simp [RefOk, SlotRole, familiesWorld, familiesEntries, hostEntries, codeField, arrayStoreKey,
+          viewElementsKey]
+    · simp only [codeRefs, refsArgs_eq, List.flatMap_nil, List.flatMap_cons, List.flatMap_nil,
+        List.append_nil, List.nil_append] at hr
+      exact hobj r hr
+  have hbd : RefsOk (familiesWorld (k := k)) hostBound := by
+    intro r hr
+    rw [hostBound, refs_objAt] at hr
+    rcases List.mem_append.mp hr with hr | hr
+    · simp only [objRefs, List.map_nil, List.mem_cons, List.not_mem_nil, or_false] at hr
+      rcases hr with rfl | rfl
+      · simp [RefOk, familiesWorld, familiesEntries, hostEntries]
+      · exact ⟨fun m hm => by simp at hm, fun e he => by simp at he, fun e he => by simp at he⟩
+    · simp only [codeRefs, refsArgs_eq, List.flatMap_cons, List.flatMap_nil, List.append_nil,
+        List.mem_append] at hr
+      rcases hr with (hr | hr) | hr
+      · exact hclo r hr
+      · exact hobj r hr
+      · exact harr r hr
+  intro x
+  match x with
+  | 0 => exact hview
+  | 1 => exact harr
+  | 2 => exact hobj
+  | 3 => exact hcell
+  | 4 => exact hpro
+  | 5 => exact hclo
+  | 6 => exact hbd
+  | _ + 7 => exact RefsOk_undef
+
+/-- **Non-vacuity of the kinded states for every structural family**: at
+every budget, the families' heap meets the families' world, which is
+admissible, and every family's value is valid in it, all at once: an
+object's identity, a property and a prototype property (F), a binding cell
+(C), an ordinary array's store and its element (S, E), a typed array's view
+metadata and view store of its length, a closure's capture and code field,
+and a forwarding descriptor's target, receiver and prefix. -/
+theorem families_state (n : Nat) :
+    HeapOk n (familiesWorld (k := n)) familiesHeap ∧ WorldAdm (familiesWorld (k := n)) ∧
+      RootsOk (familiesWorld (k := n)) familiesEnv := by
+  have hobj := RefsOk_mono familiesWorld_ext (host_refs (k := n)).2.2
+  refine ⟨⟨entries_meets rfl fun i e v he hv j hj W => ?_, fun l r hr => ?_⟩, familiesWorld_adm, families_refs⟩
+  · rcases i with _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | i <;>
+      simp [familiesEntries, hostEntries, familiesHeap, hostBefore] at he hv <;> subst he hv <;>
+      simp [anyCtr, oneCtr, idCtr, isVal, hostObject]
+  · simp only [familiesWorld, roleAt_ofEntries] at hr
+    rcases l with _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | l <;>
+      simp [familiesEntries, hostEntries] at hr <;> subst hr <;>
+      refine ⟨_, rfl, ?_, ?_⟩ <;>
+      first
+        | exact RefsOk_arr_iff.mpr (fun c hc => by simp at hc; subst hc; simp [familiesWorld, familiesEntries, hostEntries])
+        | exact hobj
+        | exact fun _ hm => by simp [refs] at hm
+        | simp [Cat, isSourceVal, hostObject]
 
 end Verification.Kinds

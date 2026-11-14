@@ -2,15 +2,13 @@ import Verification.Semantics.TolerantFrames
 
 /-! # Tolerant frames: allocated cells and separation
 
-A store lists only cells of its world, each of the element role, so every
-state's roots list allocated cells (`rootCells_holds`). A root's **allocated cells**
-(`RootCells`: every cell its store lists is below the heap's length,
-`HeapKnowledge.ElementsBelow`) follow, at every state an admissible transition
-reaches, from a fact of the world: its store location's contract lists only
-cells of its world (`StoreCells`, `CellsCtr`), as every tuple contract does
-(`listT_cells`). That fact is established by a lookup and kept by every
-admissible transition (`storeCells_invariant`), so no step need preserve the
-cells themselves.
+A well-formed heap's stores list only element cells, locations of the heap
+(`HeapOk.store_cells`), so a root's **allocated cells** (`RootCells`: every
+cell its store lists is below the heap's length,
+`HeapKnowledge.ElementsBelow`) hold at every state (`rootCells_holds`) and
+after every action (`rootCells_box`). Roles, valid references and view-length
+metadata are kept by every admissible transition, so a typed array's length
+read through valid references is immutable (`viewLengthOf_kept`).
 
 With allocated cells, two separations hold: a store allocated past a mark is
 apart from an old store whose cells lie below it (`alloc_apart`), and two
@@ -20,90 +18,89 @@ namespace Verification.TolerantFrames
 open Verification Footprints HeapObservations
 open Verification.HeapKnowledge (ElementsBelow ElementsAbove RegionOf RegionsApart InRegion)
 
-/-! ## Allocated cells from contracts -/
-
-/-- A contract every store of which lists only cells of its world. -/
-def CellsCtr {k : Nat} (c : Ctr k) : Prop :=
-  ∀ (j : Nat) (hj : j < k) (U : WorldT j) (ls : List (Option Nat)), c j hj U (.arr ls) →
-    ElementsBelow (toList U).length ls
-
-/-- **A tuple contract lists cells of its world**: each position is
-required, optional or rest, and each states a lookup of its cell. -/
-theorem listT_cells {T : TupleF} {k : Nat} {W : WorldT k} {ls : List (Option Nat)}
-    (h : listT T k W (.arr ls)) : ElementsBelow (toList W).length ls := by
-  obtain ⟨ls', he, -, -, -, -, hreq, hopt, hrest⟩ := h
-  cases he
-  intro l hm
-  obtain ⟨i, hi, hil⟩ := List.getElem_of_mem hm
-  have hget : ls[i]? = some (some l) := by rw [List.getElem?_eq_getElem hi, hil]
-  have found : ∃ c, lookup W l = some c := by
-    by_cases h1 : i < T.required.length
-    · obtain ⟨A, hA⟩ : ∃ A, T.required[i]? = some A := ⟨_, List.getElem?_eq_getElem h1⟩
-      obtain ⟨l', c, hl', hw, -⟩ := hreq i A hA
-      rw [hget] at hl'; cases hl'
-      exact ⟨c, hw⟩
-    · by_cases h2 : i < T.required.length + T.optional.length
-      · have hi' : i - T.required.length < T.optional.length := by omega
-        obtain ⟨A, hA⟩ : ∃ A, T.optional[i - T.required.length]? = some A := ⟨_, List.getElem?_eq_getElem hi'⟩
-        have hget' : ls[T.required.length + (i - T.required.length)]? = some (some l) := by
-          rw [show T.required.length + (i - T.required.length) = i by omega]; exact hget
-        obtain ⟨c, hw, -⟩ := hopt _ A l hA hget'
-        exact ⟨c, hw⟩
-      · obtain ⟨-, c, -, hw, -⟩ := hrest i l (by omega) hget
-        exact ⟨c, hw⟩
-  obtain ⟨c, hc⟩ := found
-  exact (List.getElem?_eq_some_iff.mp hc).1
-
-/-- A contract whose stores meet a tuple contract lists cells of its world. -/
-theorem cellsCtr_of_listT {k : Nat} {c : Ctr k}
-    (hc : ∀ j hj U u, c j hj U u → ∃ T, listT T j U u) : CellsCtr c :=
-  fun j hj U ls hu => by obtain ⟨T, hT⟩ := hc j hj U _ hu; exact listT_cells hT
-
-/-- Restricting a contract to a lower budget keeps the property. -/
-theorem CellsCtr.restrict {k j : Nat} {c : Ctr k} (hc : CellsCtr c) (hle : j ≤ k) :
-    CellsCtr (fun i hi w => c i (Nat.lt_of_lt_of_le hi hle) w) :=
-  fun i _ U ls hu => hc i _ U ls hu
-
-/-- `cells(x)`, a fact of the world: `x`'s store location has a contract
-listing only cells of its world. -/
-def StoreCells (x : Nat) : Assertion := fun ρ _ s =>
-  ∃ st c, storeOf (ρ x) = some st ∧ lookup s.W st = some c ∧ CellsCtr c
-
 /-- `x`'s store lists only allocated cells: the review's relevant-root
 `ElementsBelow`. -/
 def RootCells (x : Nat) : Assertion := fun ρ _ s =>
   ∀ st ls, storeOf (ρ x) = some st → s.h[st]? = some (.arr ls) → ElementsBelow s.h.length ls
 
-/-- **The store-cells fact is invariant**: a contract persists, restricted,
-along every admissible transition. -/
-theorem storeCells_invariant (x : Nat) : Invariant (StoreCells x) := by
-  intro ρ m s s' ha ⟨st, c, hst, hl, hc⟩
-  obtain ⟨hle, hl'⟩ := ha.lookup_ext hl
-  exact ⟨st, _, hst, hl', hc.restrict hle⟩
+/-! ## Structural consequences of a well-formed heap -/
 
-/-- **The store-cells fact gives allocated cells** at the state, at its
-positive budget: the heap meets the contract one level down. -/
-theorem rootCells_of_storeCells {x : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hs : StoreCells x ρ m s) : RootCells x ρ m s := by
-  obtain ⟨st, c, hst, hl, hc⟩ := hs
-  intro st' ls hst' hv
-  rw [hst] at hst'; cases hst'
-  obtain ⟨v, hv', hall⟩ := s.ok.1.2 st c hl
-  rw [hv] at hv'; cases hv'
-  have h0 := hc 0 s.pos _ ls (hall 0 s.pos)
-  simpa [toList_length, s.ok.1.1] using h0
+/-- A store a well-formed heap holds lists locations of the heap, at every
+budget. -/
+theorem _root_.Verification.HeapOk.elementsBelow {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h)
+    {s : Nat} {ls : List (Option Nat)} (hs : h[s]? = some (Tm.arr ls)) : ElementsBelow h.length ls :=
+  fun _ hl => (hok.store_cells hs hl).2
 
-/-- **Allocated cells hold after every action**, from the store-cells fact. -/
-theorem rootCells_box {Φ : Footprint} {x : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
-    (hs : StoreCells x ρ m s) : Box Φ (RootCells x) ρ m s :=
-  fun s' ha => rootCells_of_storeCells (storeCells_invariant x ρ m s s' ha.1 hs)
+/-- A valid object's `[[viewLength]]` location is a view-length metadata
+location. -/
+theorem _root_.Verification.RefsOk.lengthMeta {k : Nat} {W : WorldT k} {fs : List (PropKey × Nat)}
+    {c : CallCode} {o m : Nat} (h : RefsOk W (.objAt fs c o)) (hm : fs.lookup viewLengthKey = some m) :
+    ∃ N, LengthMeta W m N := by
+  have hf : RefOk W (.fields fs) := h _ (by
+    rw [Kinds.refs_objAt]; exact List.mem_append_left _ (by simp [objRefs]))
+  exact hf.1 m (Kinds.lookup_mem hm)
 
-/-- Establishment: a store location whose contract's stores meet a tuple
-contract. -/
-theorem storeCells_of_listT {x : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} {st : Nat} {c : Ctr s.n}
-    (hst : storeOf (ρ x) = some st) (hl : lookup s.W st = some c)
-    (hc : ∀ j hj U u, c j hj U u → ∃ T, listT T j U u) : StoreCells x ρ m s :=
-  ⟨st, c, hst, hl, cellsCtr_of_listT hc⟩
+/-- At positive budget a view-length metadata location holds its length. -/
+theorem _root_.Verification.HeapOk.lengthMeta_value {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h)
+    (hn : 0 < n) {m N : Nat} (hm : LengthMeta W m N) : h[m]? = some (.num (bitsOfNat N)) :=
+  let ⟨_, _, hl, hs⟩ := hm; hok.stable_value hn hl hs
+
+/-- **Roles are fixed**: every location keeps its role along an admissible
+transition. -/
+theorem Admissible.roleAt {s s' : IndexedHeap} (ha : Admissible s s') {l : Nat} {r : Role}
+    (hl : Verification.roleAt s.W l = some r) : Verification.roleAt s'.W l = some r := by
+  obtain ⟨hle, hx⟩ := ha
+  exact WExt_roleAt hx (by simpa using hl)
+
+/-- **Valid references stay valid**, by truncation and extension. -/
+theorem Admissible.refsOk {s s' : IndexedHeap} (ha : Admissible s s') {t : Tm} (ht : RefsOk s.W t) :
+    RefsOk s'.W t := by
+  obtain ⟨hle, hx⟩ := ha
+  exact RefsOk_mono hx (RefsOk_trunc hle ht)
+
+/-- A view-length metadata location stays one, of the same length. -/
+theorem Admissible.lengthMeta {s s' : IndexedHeap} (ha : Admissible s s') {m N : Nat}
+    (hm : LengthMeta s.W m N) : LengthMeta s'.W m N := by
+  obtain ⟨hle, hx⟩ := ha
+  exact (hm.trunc hle).mono hx
+
+/-- A listed cell stays an element cell after every admissible transition. -/
+theorem Admissible.elem_kept {s s' : IndexedHeap} (ha : Admissible s s') {st : Nat}
+    {ls : List (Option Nat)} (hs : s.h[st]? = some (.arr ls)) {l : Nat} (hl : some l ∈ ls) :
+    Verification.roleAt s'.W l = some .elem := ha.roleAt (s.ok.store_cells hs hl).1
+
+/-- **An environment's roots are valid**: every reference of every value it
+holds has the role its position demands. A graph state's environment is
+(`ControlFlow.StateRefs`). -/
+def RootsOk {k : Nat} (W : WorldT k) (ρ : Env) : Prop := ∀ x, RefsOk W (ρ x)
+
+/-- **Admissibility keeps the roots valid.** -/
+theorem RootsOk.admissible {s s' : IndexedHeap} (ha : Admissible s s') {ρ : Env}
+    (h : RootsOk s.W ρ) : RootsOk s'.W ρ := fun x => ha.refsOk (h x)
+
+/-! ## (View): a typed array's length is immutable -/
+
+/-- **The typed-array length a value of valid references reads is kept by
+every admissible transition.** An object owning `[[viewLength]]` reads a
+view-length metadata location, whose contract admits one value; every other
+value reads none. -/
+theorem viewLengthOf_kept {s s' : IndexedHeap} {v : Val} (hv : RefsOk s.W v) (ha : Admissible s s') :
+    HeapKnowledge.viewLengthOf s'.h v = HeapKnowledge.viewLengthOf s.h v := by
+  cases v
+  case objAt fs cd o =>
+    cases hl : fs.lookup viewLengthKey with
+    | none => simp [HeapKnowledge.viewLengthOf, hl]
+    | some m =>
+      obtain ⟨N, hN⟩ := hv.lengthMeta hl
+      simp [HeapKnowledge.viewLengthOf, hl, s.ok.lengthMeta_value s.pos hN,
+        s'.ok.lengthMeta_value s'.pos (ha.lengthMeta hN)]
+  all_goals rfl
+
+/-- **(View)**: what a valid root's typed-array length reads is invariant. -/
+theorem viewLength_invariant (w : Nat) (n : Option Int) :
+    Invariant (fun ρ _ s => RefsOk s.W (ρ w) ∧ HeapKnowledge.viewLengthOf s.h (ρ w) = n) := by
+  intro ρ m s s' ha ⟨hr, h⟩
+  exact ⟨ha.refsOk hr, by rw [viewLengthOf_kept hr ha]; exact h⟩
 
 /-! ## Allocated cells hold at every state -/
 
@@ -120,6 +117,10 @@ theorem rootCells_holds (x : Nat) (ρ : Env) (m : Nat) (s : IndexedHeap) : RootC
 /-- **`RootCells` is invariant**: it holds at every state. -/
 theorem rootCells_invariant (x : Nat) : Invariant (RootCells x) :=
   fun ρ m _ s' _ _ => rootCells_holds x ρ m s'
+
+/-- **Allocated cells hold after every action.** -/
+theorem rootCells_box {Φ : Footprint} (x : Nat) (ρ : Env) (m : Nat) (s : IndexedHeap) :
+    Box Φ (RootCells x) ρ m s := fun s' _ => rootCells_holds x ρ m s'
 
 /-! ## Allocation separation -/
 
@@ -142,6 +143,19 @@ theorem alloc_apart {h : Heap} {u w : Val} {sx sy b : Nat} {xs ys : List (Option
     · cases hl'; exact hby
     · exact hay l hl'
   omega
+
+/-- **A store allocated past a well-formed heap is apart from an old one**:
+`h` is the entry heap, meeting a world at any budget, `h'` a later heap;
+`u`'s store location and its cells are at or past `h`'s end, `w`'s store is a
+store of `h` that `h'` keeps, whose cells are below `h`'s end because `h` is
+well-formed. -/
+theorem alloc_apart_wellformed {n : Nat} {W : WorldT n} {h h' : Heap} (hok : HeapOk n W h) {u w : Val}
+    {sx sy : Nat} {xs ys : List (Option Nat)}
+    (hx : storeOf u = some sx) (hxv : h'[sx]? = some (.arr xs)) (hbx : h.length ≤ sx)
+    (hax : ElementsAbove h.length xs)
+    (hy : storeOf w = some sy) (hyv : h[sy]? = some (.arr ys)) (hkeep : h'[sy]? = some (.arr ys)) :
+    RegionsApart h' u w :=
+  alloc_apart hx hxv hbx hax hy hkeep (List.getElem?_eq_some_iff.mp hyv).1 (hok.elementsBelow hyv)
 
 /-! ## The third atom: one array grows, the other is kept -/
 
