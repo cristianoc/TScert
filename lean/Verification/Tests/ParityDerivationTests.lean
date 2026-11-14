@@ -34,7 +34,7 @@ private def proveOr (Fs : List (Linear.Fact StepVar)) (f : Linear.Form StepVar) 
 
 /-- A linear consequence of the facts `Fs` by the certificate the search
 finds, each concluded term named by a fact. -/
-private def lin (Fs : List (Linear.Fact StepVar)) (f : Linear.Form StepVar) (d : Int) (raw : RawDerivation) :
+private def linRaw (Fs : List (Linear.Fact StepVar)) (f : Linear.Form StepVar) (d : Int) (raw : RawDerivation) :
     RawDerivation :=
   .linear Fs [] (proveOr Fs f d) raw .truth
 
@@ -59,9 +59,20 @@ end Invalid
 
 /-! ## `index[c >> 8]` -/
 
+/-- The derivation of the `i`-th conjunct of `conj l` from one of `conj l`. -/
+private def proj : List Formula → Nat → RawDerivation → RawDerivation
+  | _ :: t, 0, d => .andLeft (conj t) d
+  | F :: t, i + 1, d => proj t i (.andRight F d)
+  | [], _, d => d
+
+private def errorOf {α : Type} : Except String α → String
+  | .ok _ => ""
+  | .error e => e
+
 namespace Shift
 private def c : Path := .var 1
 private def j : Path := .var 0
+private def k : Path := .var 3
 private def index : StepVar := .after (Term.length 2)
 private def eight : UInt64 := bitsOfNat 8
 
@@ -75,33 +86,53 @@ private def Γ : List Formula :=
 private def goal : Formula :=
   conj [.linear (.le [(av j, -1)] 0), .linear (.le [(av j, 1), (index, -1)] (-1))]
 
-private def shrA : Formula := .linear (.le [(av j, -1)] 0)
-private def shrB : Formula := .linear (.le [(av j, 2 ^ 8), (av c, -1)] 0)
-private def shrC : Formula := .linear (.le [(av c, 1), (av j, -(2 ^ 8))] (2 ^ 8 - 1))
+private def F : Linear.Form Term := [(vt c, 1)]
+private def shr : List Formula :=
+  [safeFact j, lin (.le [(vt j, -1)] 0), lin (.le ((vt j, 2 ^ 8) :: F.scale (-1)) 0),
+    lin (.le ((vt j, -(2 ^ 8)) :: F) (2 ^ 8 - 1 - 0))]
 
 private def boundFacts : List (Linear.Fact StepVar) :=
-  [.le [(av j, 2 ^ 8), (av c, -1)] 0, .le [(av c, 1)] 1114111, .le [(index, -1)] (-4352)]
+  [tagFact .after (.le ((vt j, 2 ^ 8) :: F.scale (-1)) 0), .le [(av c, 1)] 1114111, .le [(index, -1)] (-4352)]
 
-private def raw : RawDerivation :=
-  .cut (smallFacts c)
-    (.andIntro .assumption
-      (.andIntro (lin [.le [(av c, 1)] 1114111] [(av c, 1)] (2 ^ 31 - 1)
-        (premisesRaw 1)) .truth))
-    (.cut (shrFacts c j 8) (.shiftRight c j eight .assumption .assumption)
-      (.andIntro (.andLeft (.and shrB (.and shrC .truth)) .assumption)
+/-- `0 ≤ c ≤ 2^31 − 1` from the premises. -/
+private def small : RawDerivation :=
+  .andIntro .assumption (.andIntro (linRaw [.le [(av c, 1)] 1114111] [(av c, 1)] (2 ^ 31 - 1 - 0) (premisesRaw 1)) .truth)
+
+/-- The shift by `amount`, then the bound. -/
+private def rawWith (amount : Operand) (dk : RawDerivation) (bound : Int) : RawDerivation :=
+  .cut (smallFacts F 0) small
+    (.cut (conj shr) (.shiftRight (.var c) amount j .assumption (.definedOfLinear (.le [(av c, 1)] 1114111) .assumption)
+        dk .assumption)
+      (.andIntro (proj shr 1 .assumption)
         (.andIntro
-          (lin boundFacts [(av j, 1), (index, -1)] (-1)
-            (.andIntro (.andLeft (.and shrC .truth) (.andRight shrA .assumption))
-              (.andIntro .assumption (.andIntro .assumption .truth))))
+          (linRaw boundFacts [(av j, 1), (index, -1)] bound
+            (.andIntro (proj shr 2 .assumption) (.andIntro .assumption (.andIntro .assumption .truth))))
           .truth)))
 
-#guard isOk (checkScoped empty ⟨0, 3⟩ Γ goal raw)
+private def raw : RawDerivation := rawWith (.literal eight) .truth (-1)
 
--- The checker refuses the bound one past the table.
-private def goalPast : Formula :=
+#guard isOk (checkScoped empty ⟨0, 4⟩ Γ goal raw)
+
+-- A bound one tighter than the facts give, `j ≤ |index| − 2`, is refused:
+-- no certificate concludes it.
+private def goalTight : Formula :=
   conj [.linear (.le [(av j, -1)] 0), .linear (.le [(av j, 1), (index, -1)] (-2))]
 
-#guard !isOk (checkScoped empty ⟨0, 3⟩ Γ goalPast raw)
+#guard errorOf (checkScoped empty ⟨0, 4⟩ Γ goalTight (rawWith (.literal eight) .truth (-2))) =
+  "linear: the certificate does not conclude the goal"
+
+-- The shift amount a slot proved equal to 8, as the pass's `knownConstant`
+-- gives it.
+private def Γk : List Formula :=
+  [.operation (.arith .shr (.path c) (.path k) j),
+    .linear (.le [(av c, -1)] 0), .linear (.le [(av c, 1)] 1114111),
+    .linear (.le [(index, 1)] 4352), .linear (.le [(index, -1)] (-4352)),
+    lin (.le [(vt k, 1)] 8), lin (.le [(vt k, -1)] (-8))]
+
+#guard isOk (checkScoped empty ⟨0, 4⟩ Γk goal (rawWith (.const k 8) (premisesRaw 2) (-1)))
+-- Without the evidence the amount is no constant.
+#guard errorOf (checkScoped empty ⟨0, 4⟩ Γk goal (rawWith (.var k) (.definedOfLinear (.le [(av k, 1)] 8) .assumption) (-1))) =
+  "shiftRight: the shift is no constant safe integer"
 
 end Shift
 
@@ -121,27 +152,28 @@ private def Γ : List Formula :=
 private def goal : Formula :=
   conj [.linear (.le [(av y, -1)] 0), .linear (.le [(av y, 1), (table, -1)] (-1))]
 
-private def maskA : Formula := .linear (.le [(av y, -1)] 0)
-private def maskB : Formula := .linear (.le [(av y, 1)] 255)
-private def maskC : Formula := .linear (.le [(av y, 1), (av x, -1)] 0)
+private def F : Linear.Form Term := [(vt x, 1)]
+private def msk : List Formula :=
+  [safeFact y, lin (.le [(vt y, -1)] 0), lin (.le [(vt y, 1)] 255), lin (.le ((vt y, 1) :: F.scale (-1)) 0)]
 
 private def boundFacts : List (Linear.Fact StepVar) := [.le [(av y, 1)] 255, .le [(table, -1)] (-256)]
 
 private def raw : RawDerivation :=
-  .cut (maskFacts x y 255) (.mask x y mask255 .assumption (premisesRaw 2))
-    (.andIntro (.andLeft (.and maskB (.and maskC .truth)) .assumption)
+  .cut (conj msk)
+    (.mask (.var x) (.literal mask255) y .assumption (.definedOfLinear (.le [(av x, -1)] 0) .assumption) .truth
+      (premisesRaw 2))
+    (.andIntro (proj msk 1 .assumption)
       (.andIntro
-        (lin boundFacts [(av y, 1), (table, -1)] (-1)
-          (.andIntro (.andLeft (.and maskC .truth) (.andRight maskA .assumption))
-            (.andIntro .assumption .truth)))
+        (linRaw boundFacts [(av y, 1), (table, -1)] (-1)
+          (.andIntro (proj msk 2 .assumption) (.andIntro .assumption .truth)))
         .truth))
 
 #guard isOk (checkScoped empty ⟨0, 3⟩ Γ goal raw)
 
-/-- Without the operand's range the mask rule does not apply. -/
+-- Without the operand's upper bound the range premise is missing.
 private def Γnarrow : List Formula := Γ.take 2 ++ Γ.drop 3
 
-#guard !isOk (checkScoped empty ⟨0, 3⟩ Γnarrow goal raw)
+#guard errorOf (checkScoped empty ⟨0, 3⟩ Γnarrow goal raw) = "assumption: not a premise"
 
 end Mask
 
@@ -219,7 +251,7 @@ private def afterF : RawDerivation :=
     (.atomClash .after items .nul object (ref 0) (ref 14) (.boxElim topEffect (ref 1) .assumption) .assumption)
     (.guardCases .after (ref 7) (ref 3) (ref 6) .assumption
       (.atomClash .after extras .nul object (ref 2) (ref 15) (.boxElim topEffect (ref 3) .assumption) .assumption)
-      (lin lenFacts [(.after i, 1), (.after (extras.term .length), -1)] (-1)
+      (linRaw lenFacts [(.after i, 1), (.after (extras.term .length), -1)] (-1)
         (.andIntro (.atomToLinear .after (ref 5) lenEq₂ (.atAndRight (ref 6) (ref 4) .assumption))
           (.andIntro (.atomToLinear .after (ref 16) below .assumption) .truth))))
 
