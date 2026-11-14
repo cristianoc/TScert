@@ -61,11 +61,12 @@ differences in the model's states and transitions themselves are listed in
 - **Seq-Eff.** The inclusion $`\Phi\cup\Psi'\sqsubseteq\Phi`$ is
   $`\Phi\cup\Psi'\le_{cl}\Phi`$ with the class evidence $`cl`$ holding at the
   entry heap (proved: `seq_eff`, from `action_compose_at`). Rebasing keeps each
-  entry's change exactly (proved: `rebaseAll_labels`). What it cannot place,
-  element cells and regions at an unlinked position, it widens to every
-  location, not to their class (proved: `rebase_elems`): a cell may hold a
-  store in the model, so widening to the value class needs class evidence for
-  the cells (not formalized).
+  entry's change exactly (proved: `rebaseAll_labels`). Element cells, and a
+  field at a nonempty path the evidence does not link, widen to their class
+  (proved: `rebase_elems`, `rebase_sound`), by the contents categories of the
+  step's well-formed heap (`HeapOk.categories`). A field of a position's own
+  value without a link, and own locations without one, widen to every
+  location: a position's references are not vouched for by its heap.
 - **Fresh-Eff.** An entry $`x.\mathsf{store}:\delta`$ of a step's effect, with
   $`x`$'s store at or past $`b`$, covers no location below $`b`$: the step is
   within the rest of its effect there (proved: `fresh_eff`), so a closed bound

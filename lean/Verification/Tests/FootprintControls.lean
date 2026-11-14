@@ -56,11 +56,24 @@ private def valueK : ClassEvidence := fun x k => if x = 0 ∧ k = "k" then some 
 /-- Rebasing evidence stating nothing. -/
 private def noLinks : RebaseEvidence := { link := fun _ => none, agree := fun _ _ => false }
 
-private theorem noLinks_ok (σ ρ₀ : Env) (a b : Heap) : RebaseOk noLinks σ ρ₀ a b where
+/-- `g` holds no object and no store: its contents categories hold. -/
+private theorem g_categories : HeapCategories g where
+  fields l₀ v _ _ _ hv hl _ := by
+    have : v = .nul := by
+      cases l₀ with
+      | zero => simpa [g] using hv.symm
+      | succ n => simp [g] at hv
+    subst this; simp [fieldsOf] at hl
+  cells s ls _ _ hs _ _ := by
+    cases s with
+    | zero => simp [g] at hs
+    | succ n => simp [g] at hs
+
+private theorem noLinks_ok (σ ρ₀ : Env) (a : Heap) : RebaseOk noLinks σ ρ₀ a g where
   link := by intro _ _ _ h; simp [noLinks] at h
   agree := by intro _ _ h; simp [noLinks] at h
-  fresh := by intro _ h; exact absurd h (by simp [noLinks])
-  freshField := by intro _ _ h; exact absurd h (by simp [noLinks])
+  fresh := by intro _ _ h; exact absurd h (by simp [noLinks])
+  categories := g_categories
 
 theorem valueK_ok_current : ClassOk valueK fieldK g := by
   intro x k c l hc hl _
@@ -88,7 +101,7 @@ theorem current_heap_compose_false :
   intro H
   have h := H Φp [] Φq valueK fieldK fieldK g₀ g g noLinks
     (postB_iff.mp (by decide)) (Post.refl _ _ _)
-    (noLinks_ok _ _ _ _) (by decide) valueK_ok_current
+    (noLinks_ok _ _ _) (by decide) valueK_ok_current
   exact absurd (postB_iff.mpr h) (by decide)
 
 /-- `Post.compose_at` itself cannot be applied to the witness: applied with
@@ -100,7 +113,7 @@ theorem compose_needs_entry_evidence :
   rintro ⟨cl, hle, hc⟩
   have h := Post.compose_at (Ψ := []) (σ := fieldK) (h := g) (h' := g) (postB_iff.mp (by decide))
     (Post.refl _ _ _)
-    (noLinks_ok _ _ _ _) hle hc
+    (noLinks_ok _ _ _) hle hc
   exact absurd (postB_iff.mpr h) (by decide)
 
 /-! ## Freshness of a store says nothing of its elements

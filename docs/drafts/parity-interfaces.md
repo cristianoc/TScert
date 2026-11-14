@@ -160,8 +160,8 @@ Mapping of existing constructors:
 | `elems`, `pathElems` | Cells listed by the selected store; they exclude the store location. |
 | `cls .value` | `cls Selector.values`. |
 | `cls .store` | `cls Selector.stores`. |
-| `all` | Every allocated entry location. |
-| `inCls r c` | Intersection with the role selector. |
+| `all` | Every location (`Region.all.mem` holds outside the heap too); `Post` and `Supported` constrain only the entry heap's allocated locations. |
+| `inCls r c` | Intersection with the class region the selector selects from the entry heap's contents. |
 | `cell binding` | Its existing conservative value-category meaning. Exact module-cell selection is separate work. |
 | `path x p arrayStoreKey` used as a store selector | `store x p`. Ordinary field access to an actual field retains `path`. |
 
@@ -218,7 +218,7 @@ The basic theorem signatures are:
 namespace Verification.Footprints
 
 /-- NEW: an old location keeps its contents category along an
-admissible transition (from `HeapOk.category` and role transport). -/
+admissible transition (from `HeapOk.category` and the admissibility of old roles). -/
 theorem category_admissible {s s' : TolerantFrames.IndexedHeap}
     (ha : TolerantFrames.Admissible s s') {l : Nat} {v v' : Val}
     (hv : s.h[l]? = some v) (hv' : s'.h[l]? = some v') :
@@ -851,7 +851,7 @@ structure TwoState where
   before : TolerantFrames.IndexedHeap
   after : TolerantFrames.IndexedHeap
 
-/-- NEW: `before` interprets Old; transition uses entry roles/environment. -/
+/-- NEW: `before` interprets Old; transition uses the entry heap and environment. -/
 def Holds (arena : AssertionArena) (s : TwoState) : Formula → Prop
 
 end Verification.Parity
@@ -1054,7 +1054,7 @@ Search order, proof compression and invariant proposal heuristics remain open. D
 
 ### The existing mechanism this extends
 
-This interface extends `Footprints.RebaseEvidence`, `RebaseOk`, `transport`, `Post.compose_at`, `Survival.ReadContext`, `Supports C P S`, and `TolerantFrames.RigidOn`.
+This interface extends `Footprints.RebaseEvidence`, `RebaseOk`, `rebase`, `Post.compose_at`, `Survival.ReadContext`, `Supports C P S`, and `TolerantFrames.RigidOn`.
 
 [Footprints](../FOOTPRINTS.md), especially its argument-path regions and support sections, owns these mechanisms. The note counterparts are rebasing, Fresh-Eff, rigid-path substitution, support/respect, and capture-avoiding Call and Transfer.
 
@@ -1112,7 +1112,7 @@ The executable evidence constructors are:
 
 | Constructor | Obligation |
 |---|---|
-| `class` | Old-location role transport. |
+| `class` | Contents-category evidence at the step heap, moved to the entry by the first action's bound (an `any` entry covers a changed category). |
 | `path` | Root link plus arbitrary-depth path agreement. |
 | `rigidPath` | A rigid-path witness and admissibility establish the agreement. |
 | `freshStore` | The selected store’s location is at least the earlier entry length. |
@@ -1137,7 +1137,7 @@ Sequential composition has the signature:
 ```lean
 namespace Verification.Footprints
 
-/-- CHANGED from Post.compose_at: role-aware, arbitrary environments,
+/-- CHANGED from Post.compose_at: arbitrary environments,
 with common semantic rebasing evidence. -/
 theorem Post.compose_at
     (h₁ : TolerantFrames.Action Φ ρ₀ s₀ s)
@@ -1317,7 +1317,7 @@ Both alternative supports for `apart` are available: grow/keep and keep/grow ove
 
 ### Migration and open work
 
-Leg 2 owns role-aware rebasing and its basic coverage lemmas. Leg 4 owns assertion substitution, contextual support and checked evidence. Leg 5 integrates these into actual visits and graph composition.
+Leg 2 owns rebasing to contents-category classes and its basic coverage lemmas. Leg 4 owns assertion substitution, contextual support and checked evidence. Leg 5 integrates these into actual visits and graph composition.
 
 `freshField`, depth-one `nodeAgree`, blanket `.all` fallback, and actual-step contexts used as modal evidence are replaced in their owning legs.
 

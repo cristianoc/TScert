@@ -23,7 +23,7 @@ where the note's statement does not hold:
   at `any` can break that separation even though the store stays fresh
   (`apart_not_kept_fresh`);
 - Seq-Eff: rebasing keeps each entry's change (`rebaseAll_labels`) and
-  widens what it cannot rebase to every location (`rebase_elems`); the rule
+  widens element cells to the value class (`rebase_elems`); the rule
   holds with class evidence at the entry (`seq_eff`);
 - Fresh-Eff: a fresh store's entry in a step's effect covers no location of
   the entry heap (`fresh_eff`, `fresh_eff_bound`); its listed cells are not
@@ -264,9 +264,9 @@ theorem rebaseAll_labels {ev : RebaseEvidence} {Ψ : Footprint} {e : Region × C
   obtain ⟨r, -, rfl⟩ := List.mem_map.mp hm
   exact ⟨e', he', rfl⟩
 
-/-- What rebasing cannot place, it widens to every location: a step's
-element cells, whatever their class. -/
-theorem rebase_elems (ev : RebaseEvidence) (x : Nat) : rebase ev (.elems x) = [.all] := rfl
+/-- Rebasing widens a step's element cells to the value class, which the
+step heap's contents categories justify (`rebase_sound`). -/
+theorem rebase_elems (ev : RebaseEvidence) (x : Nat) : rebase ev (.elems x) = [.cls .values] := rfl
 
 /-- **Seq-Eff**: the entry effect so far, a step's effect at its own
 positions, its rebasing to the entry, and `Φ ∪ Ψ' ⊑_cl Φ` with the class

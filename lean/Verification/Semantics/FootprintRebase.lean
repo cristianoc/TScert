@@ -8,10 +8,12 @@ starts in. The enclosing invocation's frame is read at its entry values
 regions of the entry by checked evidence: a position's value is the value an
 entry path reads (`link`), and a path read from it at the step's heap reads
 the same value at the entry heap (`agree`). A class region and a cell are
-read in themselves, as `transport` reads them. A position's store whose
-location, where the position has one, is at or above the entry heap's
-length (`fresh`, `FreshIfStore`) is no entry location and rebases to none.
-Any other region, or a region without evidence, becomes `all`. `Post.compose_at` composes an entry
+read in themselves. A store at a position's path whose location, where it
+has one, is at or above the entry heap's length (`fresh`, `FreshIfStore`) is
+no entry location and rebases to none. A field at a nonempty path widens to
+its key's class and element cells to the value class, by the step heap's
+contents categories (`HeapCategories`); a field of a position's own value
+and own locations without evidence become `all`. `Post.compose_at` composes an entry
 frame so far with the step's frame through it: the one composition of a
 body's steps (FOOTPRINTS.md, "Argument-path store regions"). -/
 namespace Verification.Footprints
@@ -31,16 +33,134 @@ theorem readPath_append (h : Heap) (x : Val) (p q : List String) :
       · rfl
     · rfl
 
+/-! ## Categories of a well-formed heap
+
+The class a location's contents have follows from the reference to it: a
+field location holds contents of its key's class (`keyClass`, the store keys'
+locations hold stores), and a store's listed cell holds no store. On a
+well-formed heap these hold of every value the heap holds (`HeapCategories`,
+`HeapOk.categories`), so of every value read at a nonempty path; a value at
+an empty path is a position's own, whose references the heap does not
+vouch for. -/
+
+/-- The class a field key demands of its location's contents: a store for
+the two store keys, a value otherwise (`SlotRole`). -/
+def keyClass (k : PropKey) : Selector :=
+  if k = arrayStoreKey ∨ k = viewElementsKey then .stores else .values
+
+/-- **Contents categories of a heap's own values**: each field location of
+a value the heap holds has contents of its key's class, and each cell a
+store of the heap lists holds no store. -/
+structure HeapCategories (h : Heap) : Prop where
+  fields : ∀ (l₀ : Nat) (v : Val) (k : PropKey) (l : Nat) (u : Val), h[l₀]? = some v →
+    (fieldsOf v).lookup k = some l → h[l]? = some u → (keyClass k).selects u = true
+  cells : ∀ (s : Nat) (ls : List (Option Nat)) (l : Nat) (u : Val), h[s]? = some (.arr ls) → some l ∈ ls →
+    h[l]? = some u → isArr u = false
+
+/-- A well-formed heap's contents have valid references. -/
+theorem HeapOk.contents_refs {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h) {l : Nat} {v : Val}
+    (hv : h[l]? = some v) : RefsOk W v := by
+  have hl : l < (roles W).length := by
+    have := (List.getElem?_eq_some_iff.mp hv).1
+    rw [hok.1.1] at this; simpa using this
+  obtain ⟨u, hu, -, hr⟩ := hok.2 l (roles W)[l] (List.getElem?_eq_getElem hl)
+  rw [hv] at hu; cases hu
+  exact hr
+
+/-- A valid value's field location has the role its key demands. -/
+theorem slotRole_of_refs {k' : Nat} {W : WorldT k'} {v : Val} (hr : RefsOk W v) {k : PropKey} {l : Nat}
+    (hl : (fieldsOf v).lookup k = some l) : SlotRole k (roleAt W l) := by
+  cases v <;> simp only [fieldsOf, List.lookup_nil, reduceCtorEq] at hl
+  rename_i fs c i
+  have hmem : Ref.slot k l ∈ objRefs fs i := by
+    simp only [objRefs, List.mem_cons, List.mem_map, reduceCtorEq, false_or]
+    have hkl : (k, l) ∈ fs := by
+      clear hr
+      induction fs with
+      | nil => simp at hl
+      | cons p fs ih =>
+        rcases p with ⟨k', l'⟩
+        by_cases hk : k = k'
+        · subst hk; simp [List.lookup] at hl; subst hl; simp
+        · have : fs.lookup k = some l := by
+            simpa [List.lookup, show (k == k') = false from by simpa using hk] using hl
+          simp [ih this]
+    exact ⟨(k, l), hkl, rfl⟩
+  have hin : Ref.slot k l ∈ refs (.objAt fs c i) := by
+    cases c <;> simp only [refs, List.mem_append] <;> simp [hmem]
+  simpa [RefOk] using hr _ hin
+
+/-- **A well-formed heap's categories.** -/
+theorem HeapOk.categories {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h) : HeapCategories h where
+  fields l₀ v k l u hv hl hu := by
+    have hs := slotRole_of_refs (HeapOk.contents_refs hok hv) hl
+    cases hr : roleAt W l with
+    | none => rw [hr] at hs; cases hs
+    | some r =>
+      rw [hr] at hs
+      obtain ⟨u', hu', hc, -⟩ := hok.2 l r hr
+      rw [hu] at hu'; cases hu'
+      unfold keyClass
+      cases r with
+      | store f =>
+        cases f with
+        | array => obtain ⟨ls, rfl⟩ := hc; simp [SlotRole] at hs; simp [hs, Selector.selects, isArr]
+        | view N => obtain ⟨ls, rfl, -⟩ := hc; simp [SlotRole] at hs; simp [hs, Selector.selects, isArr]
+      | field | cell =>
+        simp only [SlotRole] at hs
+        simp only [hs.1, hs.2, or_self, if_false]
+        cases u <;> simp_all [Cat, isSourceVal, Selector.selects, isArr]
+      | elem | identity => simp [SlotRole] at hs
+  cells s ls l u hs hl hu := by
+    have hr := (RefsOk_arr_iff.mp (HeapOk.contents_refs hok hs)) l hl
+    obtain ⟨u', hu', hc, -⟩ := hok.2 l .elem hr
+    rw [hu] at hu'; cases hu'
+    cases u <;> simp_all [Cat, isSourceVal, isArr]
+
+/-- A read at a nonempty path is the contents of a heap location. -/
+theorem readPath_contents {h : Heap} : ∀ {p : List String} {x v : Val}, p ≠ [] →
+    HeapKnowledge.readPath h x p = some v → ∃ l : Nat, h[l]? = some v := by
+  intro p
+  induction p with
+  | nil => intro _ _ hp; exact absurd rfl hp
+  | cons f p ih =>
+    intro x v _ hr
+    cases x <;> simp only [HeapKnowledge.readPath, reduceCtorEq] at hr
+    split at hr
+    · rename_i l _
+      split at hr
+      · rename_i u hu
+        cases p with
+        | nil => simp only [HeapKnowledge.readPath, Option.some.injEq] at hr; subst hr; exact ⟨l, hu⟩
+        | cons g q => exact ih (by simp) hr
+      · cases hr
+    · cases hr
+
+/-- The cells a value's store lists hold no store. -/
+theorem HeapCategories.elems {h : Heap} (hc : HeapCategories h) {v : Val} {l : Nat} {u : Val}
+    (hm : some l ∈ storeElems h v) (hu : h[l]? = some u) : isArr u = false := by
+  unfold storeElems at hm
+  cases hs : (fieldsOf v).lookup arrayStoreKey with
+  | none => rw [hs] at hm; simp at hm
+  | some s =>
+    rw [hs] at hm
+    simp only at hm
+    cases ht : h[s]? with
+    | none => rw [ht] at hm; simp at hm
+    | some t =>
+      rw [ht] at hm
+      cases t <;> first | exact hc.cells s _ l u ht hm hu | simp at hm
+
+/-! ## Rebasing -/
+
 /-- The evidence of a rebasing: for a step position, the entry position and
-path whose read at the entry heap is its value; and the step position's
-paths whose read at the step's heap is its read at the entry heap. -/
+path whose read at the entry heap is its value; the step position's paths
+whose read at the step's heap is its read at the entry heap; and the
+positions and paths whose value's store, where it has one, is fresh. -/
 structure RebaseEvidence where
   link : Nat → Option (Nat × List String)
   agree : Nat → List String → Bool
-  fresh : Nat → Bool := fun _ => false
-  /-- A position whose field, read at the step's heap, holds a value whose
-  store, where it has one, is fresh. -/
-  freshField : Nat → String → Bool := fun _ _ => false
+  fresh : Nat → List String → Bool := fun _ _ => false
 
 /-- **Selected-location freshness of a store**: where the value has an array
 store, its location is at least `b`. It reads no heap; a value with no store
@@ -55,34 +175,20 @@ theorem FreshAt.ifStore {b : Nat} {v : Tm} (h : FreshAt b v) : FreshIfStore b v 
   exact hle
 
 /-- The evidence holds of the step's positions `σ` at heap `h`, against the
-entry values `ρ₀` at the entry heap `h₀`. -/
+entry values `ρ₀` at the entry heap `h₀`; and the step's heap has its
+contents categories. -/
 structure RebaseOk (ev : RebaseEvidence) (σ ρ₀ : Env) (h₀ h : Heap) : Prop where
   link : ∀ s x q, ev.link s = some (x, q) → HeapKnowledge.readPath h₀ (ρ₀ x) q = some (σ s)
   agree : ∀ s p, ev.agree s p = true → ∀ v, HeapKnowledge.readPath h (σ s) p = some v →
     HeapKnowledge.readPath h₀ (σ s) p = some v
-  fresh : ∀ s, ev.fresh s = true → FreshIfStore h₀.length (σ s)
-  freshField : ∀ s f, ev.freshField s f = true → ∀ v, HeapKnowledge.readPath h (σ s) [f] = some v →
+  fresh : ∀ s p, ev.fresh s p = true → ∀ v, HeapKnowledge.readPath h (σ s) p = some v →
     FreshIfStore h₀.length v
-
-/-- A region that selects the store of a position whose store is fresh. -/
-def RebaseEvidence.freshStore (ev : RebaseEvidence) (s : Nat) (k : PropKey) : Bool :=
-  k == arrayStoreKey && ev.fresh s
-
-/-- A fresh store region selects no location of the entry heap. -/
-theorem RebaseOk.fresh_store {ev σ ρ₀ h₀ h} (hk : RebaseOk ev σ ρ₀ h₀ h) {s k l}
-    (hf : ev.freshStore s k = true) (hm : (fieldsOf (σ s)).lookup k = some l) : h₀.length ≤ l := by
-  simp only [RebaseEvidence.freshStore, Bool.and_eq_true, beq_iff_eq] at hf
-  obtain ⟨rfl, hf⟩ := hf
-  exact hk.fresh s hf l hm
+  categories : HeapCategories h
 
 /-- A region selecting the store at a path of a position, where the
-evidence states that store fresh: the position's own store, or the store a
-fresh field holds. -/
+evidence states that store fresh, at any path depth. -/
 def RebaseEvidence.freshPath (ev : RebaseEvidence) (s : Nat) (p : List String) (k : PropKey) : Bool :=
-  k == arrayStoreKey && match p with
-    | [] => ev.fresh s
-    | [f] => ev.freshField s f
-    | _ => false
+  k == arrayStoreKey && ev.fresh s p
 
 /-- A fresh path's store selects no location of the entry heap. -/
 theorem RebaseOk.fresh_path {ev σ ρ₀ h₀ h} (hk : RebaseOk ev σ ρ₀ h₀ h) {s p k l}
@@ -92,13 +198,7 @@ theorem RebaseOk.fresh_path {ev σ ρ₀ h₀ h} (hk : RebaseOk ev σ ρ₀ h₀
   simp only [Region.mem] at hm
   split at hm
   · rename_i v hv
-    have hl : (fieldsOf v).lookup arrayStoreKey = some l := by simpa using hm
-    match p, hf with
-    | [], hf =>
-      simp only [HeapKnowledge.readPath, Option.some.injEq] at hv
-      subst hv
-      exact hk.fresh s hf l hl
-    | [f], hf => exact hk.freshField s f hf v hv l hl
+    exact hk.fresh s p hf v hv l (by simp only [storeOf]; simpa using hm)
   · cases hm
 
 /-- Whether a step position's path is read at the entry heap as at the
@@ -112,9 +212,14 @@ def RebaseEvidence.path (ev : RebaseEvidence) (s : Nat) (p : List String) : Opti
   if ev.reads s p then (ev.link s).map fun (x, q) => (x, q ++ p) else none
 
 /-- **Rebasing** a region read at the step's positions and heap into regions
-read at the entry's. -/
+read at the entry's (the note, §6, rebasing): a class region and a cell to
+themselves; a field or own locations at a path the evidence links to the
+entry, to that entry path; a fresh selected store to none; a field at a
+nonempty path otherwise to its key's class; element cells to the value
+class; a field of a position's own value without a link, and own locations
+without one, to `all`. -/
 def rebase (ev : RebaseEvidence) : Region → List Region
-  | .field s k => if ev.freshStore s k then [] else match ev.path s [] with
+  | .field s k => if ev.freshPath s [] k then [] else match ev.path s [] with
     | some (x, q) => [.path x q k]
     | none => [.all]
   | .own s => match ev.path s [] with
@@ -122,14 +227,16 @@ def rebase (ev : RebaseEvidence) : Region → List Region
     | none => [.all]
   | .path s p k => if ev.freshPath s p k then [] else match ev.path s p with
     | some (x, q) => [.path x q k]
-    | none => [.all]
+    | none => if p.isEmpty then [.all] else [.cls (keyClass k)]
   | .pathOwn s p => match ev.path s p with
     | some (x, q) => [.pathOwn x q]
     | none => [.all]
   | .cls c => [.cls c]
   | .cell b => [.cell b]
   | .inCls r c => (rebase ev r).map (·.inCls c)
-  | _ => [.all]
+  | .elems _ => [.cls .values]
+  | .pathElems _ _ => [.cls .values]
+  | .all => [.all]
 
 def rebaseAll (ev : RebaseEvidence) (Ψ : Footprint) : Footprint :=
   Ψ.flatMap fun e => (rebase ev e.1).map (·, e.2)
@@ -158,16 +265,27 @@ theorem RebaseOk.path {ev σ ρ₀ h₀ h} (hk : RebaseOk ev σ ρ₀ h₀ h) {s
       simpa using h₀v
   · cases he
 
+/-- A location of the step's heap in a class region by its contents is in
+it at the entry heap, or an entry of the first action at `any` covers it. -/
+private theorem class_back {Φp ρ₀ h₀ h l} (hp : Post Φp ρ₀ h₀ h) (hl : l < h₀.length) {c : Selector}
+    {u : Val} (hu : h[l]? = some u) (hc : c.selects u = true) :
+    (∃ s ∈ [Region.cls c], s.mem ρ₀ h₀ l = true) ∨ ∃ e ∈ Φp, e.1.mem ρ₀ h₀ l = true ∧ e.2 = .any := by
+  rcases cls_back (ρ := ρ₀) hp hl (c := c) (by simp [Region.mem, hu, hc]) with h | h
+  · exact .inl ⟨.cls c, List.mem_singleton_self _, h⟩
+  · exact .inr h
+
 theorem rebase_sound {Φp ρ₀ σ h₀ h ev l} (hp : Post Φp ρ₀ h₀ h) (hk : RebaseOk ev σ ρ₀ h₀ h)
     (hl : l < h₀.length) :
     ∀ {r : Region}, r.mem σ h l = true →
     (∃ s ∈ rebase ev r, s.mem ρ₀ h₀ l = true) ∨ ∃ e ∈ Φp, e.1.mem ρ₀ h₀ l = true ∧ e.2 = .any := by
+  have hlh : l < h.length := Nat.lt_of_lt_of_le hl hp.1
+  obtain ⟨u, hu⟩ : ∃ u, h[l]? = some u := ⟨h[l], List.getElem?_eq_getElem hlh⟩
   intro r
   induction r with
   | field s k =>
     intro hm
-    by_cases hf : ev.freshStore s k = true
-    · have := hk.fresh_store hf (by simpa [Region.mem] using hm)
+    by_cases hf : ev.freshPath s [] k = true
+    · have := hk.fresh_path hf (by simpa using hm)
       omega
     simp only [Bool.not_eq_true] at hf
     cases he : ev.path s [] with
@@ -194,7 +312,20 @@ theorem rebase_sound {Φp ρ₀ σ h₀ h ev l} (hp : Post Φp ρ₀ h₀ h) (hk
       · have := hk.fresh_path hfs hm
         omega
     cases he : ev.path s p with
-    | none => exact .inl ⟨.all, by simp [rebase, he, hf], rfl⟩
+    | none =>
+      by_cases hp0 : p.isEmpty = true
+      · exact .inl ⟨.all, by simp [rebase, he, hf, hp0], rfl⟩
+      · have hne : p ≠ [] := by simpa using hp0
+        simp only [Region.mem] at hm
+        split at hm
+        · rename_i v hv
+          obtain ⟨l₀, hl₀⟩ := readPath_contents hne hv
+          have hsel := hk.categories.fields l₀ v k l u hl₀ (by simpa using hm) hu
+          have hr : rebase ev (.path s p k) = [.cls (keyClass k)] := by
+            simp [rebase, he, hf, show p.isEmpty = false from by simpa using hp0]
+          rw [hr]
+          exact class_back hp hl hu hsel
+        · cases hm
     | some xq =>
       obtain ⟨x, q⟩ := xq
       refine .inl ⟨.path x q k, by simp [rebase, he, hf], ?_⟩
@@ -235,8 +366,18 @@ theorem rebase_sound {Φp ρ₀ σ h₀ h ev l} (hp : Post Φp ρ₀ h₀ h) (hk
         exact ⟨hsm, by simpa [Region.mem] using hc₀⟩
       · exact .inr h
     · exact .inr h
-  | elems | all | pathElems =>
-    intro _; exact .inl ⟨.all, by simp [rebase], rfl⟩
+  | elems s =>
+    intro hm
+    have harr := hk.categories.elems (by simpa [Region.mem] using hm) hu
+    exact class_back hp hl hu (by rw [show Selector.values = ⟨true, false, false⟩ from rfl]; simp [Selector.selects, harr])
+  | pathElems s p =>
+    intro hm
+    simp only [Region.mem] at hm
+    split at hm
+    · have harr := hk.categories.elems (by simpa using hm) hu
+      exact class_back hp hl hu (by rw [show Selector.values = ⟨true, false, false⟩ from rfl]; simp [Selector.selects, harr])
+    · cases hm
+  | all => intro _; exact .inl ⟨.all, by simp [rebase], rfl⟩
 
 /-- **Composition at the step's positions.** An entry frame so far, a step's
 frame at its own positions and heap, the rebasing evidence, and an inclusion

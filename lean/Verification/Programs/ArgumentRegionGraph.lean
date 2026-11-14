@@ -90,7 +90,10 @@ def nodeFreshField (Fs : List (Nat × String)) (se : StepEffect) (p : Nat) (f : 
 
 def nodeRebase (regions : List ArgumentStoreRegion) (facts : List ArgumentPathTracking.Fact) (F : List Nat)
     (Fs : List (Nat × String)) (se : StepEffect) : RebaseEvidence :=
-  ⟨nodeLink facts se, nodeAgree regions facts se, nodeFresh F se, nodeFreshField Fs se⟩
+  ⟨nodeLink facts se, nodeAgree regions facts se, fun p q => match q with
+    | [] => nodeFresh F se p
+    | [f] => nodeFreshField Fs se p f
+    | _ => false⟩
 
 /-- No class evidence: inclusions read regions alone. -/
 def noClasses : ClassEvidence := fun _ _ => none
@@ -126,7 +129,7 @@ theorem nodeRebase_ok {regions : List ArgumentStoreRegion} {facts : List Argumen
     have hslot : f.slot = s := by simpa using List.find?_some hfind
     rw [hσ p s hs, ← hslot]
     exact hf f (List.mem_of_find?_eq_some hfind)
-  refine ⟨hlink, fun p q hq v hv => ?_, fun p hp => ?_, fun p f hp v hv => ?_⟩
+  refine ⟨hlink, fun p q hq v hv => ?_, fun p q hp v hv => ?_, HeapOk.categories hh⟩
   · simp only [nodeRebase] at hq
     unfold nodeAgree at hq
     split at hq
@@ -135,18 +138,24 @@ theorem nodeRebase_ok {regions : List ArgumentStoreRegion} {facts : List Argumen
       rw [← he] at hv ⊢
       exact hst.agree (List.contains_iff_mem.mp hq) hn hh hv
     · cases hq
-  · simp only [nodeRebase, nodeFresh] at hp
-    split at hp
-    · rename_i s hs
-      rw [hσ p s hs]
-      exact (hF s (List.contains_iff_mem.mp hp)).2
-    · cases hp
-  · simp only [nodeRebase, nodeFreshField] at hp
-    split at hp
-    · rename_i s hs
-      rw [hσ p s hs] at hv
-      exact hFs (s, f) (List.contains_iff_mem.mp hp) v hv
-    · cases hp
+  · simp only [nodeRebase] at hp
+    match q, hp with
+    | [], hp =>
+      simp only [nodeFresh] at hp
+      simp only [HeapKnowledge.readPath, Option.some.injEq] at hv
+      subst hv
+      split at hp
+      · rename_i s hs
+        rw [hσ p s hs]
+        exact (hF s (List.contains_iff_mem.mp hp)).2
+      · cases hp
+    | [f], hp =>
+      simp only [nodeFreshField] at hp
+      split at hp
+      · rename_i s hs
+        rw [hσ p s hs] at hv
+        exact hFs (s, f) (List.contains_iff_mem.mp hp) v hv
+      · cases hp
 
 /-- **The step-frame rule.** A step meeting its local effect, whose frames
 the common check includes in the stated frame, keeps the invocation within

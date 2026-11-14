@@ -162,14 +162,14 @@ theorem action_compose_at {Φp Ψ Φq : Footprint} {cl : ClassEvidence} {ρ₀ �
 /-- **Rebasing through stable paths**: evidence that links each step position
 to an entry position and path along which the entry world fixes the
 position's value, and states no agreement or freshness, holds at every heap
-the invocation reaches. -/
+the invocation reaches whose contents categories hold. -/
 theorem rebaseOk_stable {ev : RebaseEvidence} {σ ρ₀ : Env} {sI : IndexedHeap} {h : Heap}
     (hlink : ∀ s x q, ev.link s = some (x, q) → StablePath sI.W (ρ₀ x) q (σ s))
-    (hagree : ∀ s p, ev.agree s p = false) (hfresh : ∀ s, ev.fresh s = false)
-    (hfield : ∀ s f, ev.freshField s f = false) : RebaseOk ev σ ρ₀ sI.h h where
+    (hagree : ∀ s p, ev.agree s p = false) (hfresh : ∀ s p, ev.fresh s p = false)
+    (hc : HeapCategories h) : RebaseOk ev σ ρ₀ sI.h h where
   link s x q he := (hlink s x q he).read sI.pos sI.ok
   agree s p he := by rw [hagree s p] at he; cases he
-  fresh s he := by rw [hfresh s] at he; cases he
-  freshField s f he := by rw [hfield s f] at he; cases he
+  fresh s p he := by rw [hfresh s p] at he; cases he
+  categories := hc
 
 end Verification.TolerantFrames

@@ -1030,17 +1030,32 @@ where $`\sqsubseteq`$ is `Footprint.le`. The evidence $`\mathit{ev}`$ links a
 step position $`s`$ to an entry position and path $`(x,q)`$ with
 $`\mathrm{readPath}\,h_0\,(\rho_0\,x)\,q=\sigma\,s`$, and says which
 path $`p`$ read from $`\sigma\,s`$ at $`h`$ reads the same value at $`h_0`$
-(`RebaseOk`), and which positions hold a fresh value, whose store, where it
-has one, lies at or above $`|h_0|`$ ([fresh array
-storage](#fresh-array-storage)). Rebasing maps the store region of a fresh
-position, $`\mathsf{field}\ s\ \mathtt{[]}`$ or
-$`\mathsf{path}\ s\ []\ \mathtt{[]}`$, to no region: a location it
-selects is no location of $`h_0`$, so `rebase_sound`'s case of a location
-below $`|h_0|`$ contradicts the evidence. It maps $`\mathsf{field}\ s\ k`$ and
-$`\mathsf{path}\ s\ p\ k`$ to $`\mathsf{path}\ x\ (q\,p)\ k`$,
-$`\mathsf{own}`$ and $`\mathsf{pathOwn}`$ alike, a class or a cell to
-itself, the part of a region of class $`c`$ to its image's part of class
-$`c`$, and any other region, or one without evidence, to $`\mathsf{all}`$.
+(`RebaseOk`), and which paths of a position read a value whose store, where
+it has one, lies at or above $`|h_0|`$ ([fresh array
+storage](#fresh-array-storage)), at any path depth. Rebasing maps the store
+region of such a path, $`\mathsf{path}\ s\ p\ \mathtt{[]}`$, to no region:
+a location it selects is no location of $`h_0`$, so `rebase_sound`'s case of a
+location below $`|h_0|`$ contradicts the evidence. It maps
+$`\mathsf{field}\ s\ k`$ and $`\mathsf{path}\ s\ p\ k`$ to
+$`\mathsf{path}\ x\ (q\,p)\ k`$, $`\mathsf{own}`$ and $`\mathsf{pathOwn}`$
+alike, a class or a cell to itself, and the part of a region of class $`c`$ to
+its image's part of class $`c`$. Without that evidence it widens a region to
+its class: a field at a nonempty path to the class its key demands
+(`keyClass`: `stores` for the two store keys, `values` otherwise) and element
+cells, $`\mathsf{elems}`$ and $`\mathsf{pathElems}`$, to `values`. The
+widening reads the step heap's contents categories (`HeapCategories`, which a
+well-formed heap has: `HeapOk.categories`): a value read at a nonempty path is
+held by the heap, so its fields' and its store's cells' roles fix their
+contents' class; a location whose class differs at the entry heap is one an
+entry of $`\Phi`$ at `any` covers.
+
+Stated limit: a field of a position's own value, $`\mathsf{field}\ s\ k`$ or
+$`\mathsf{path}\ s\ []\ k`$, and own locations, without a link, rebase to
+$`\mathsf{all}`$. A position's value is not held by the heap, so its field map
+may name a store location under an ordinary key; widening it to its class
+needs the position's reference validity, which the step's run does not carry
+to the rebasing (the note's rebasing widens every other region to its
+class).
 A location an entry of $`\Phi`$ at `any` covers needs no rebasing
 (`rebase_sound`'s second disjunct). The rule is `Post.compose_at`
 ([FootprintRebase.lean](../lean/Verification/Semantics/FootprintRebase.lean));

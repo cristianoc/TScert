@@ -205,17 +205,12 @@ theorem Change.Holds.seq {δ₁ δ₂ : Change} {b b' v v' v''} (hb : b ≤ b')
 /-! ## Selectors of categories
 
 A class region (the note *Tolerant frames*, §3: $\mathsf{stores}$,
-$\mathsf{views}$, $\mathsf{values}$) selects the locations whose role, in the
-entry world, has a category it names. A selector is a finite set of the
-three categories (`Category`, which partition the locations); the named
+$\mathsf{views}$, $\mathsf{values}$) is named by a selector, a finite set of
+the three categories (`Category`, which partition the roles); the named
 ones are `values`, `arrays`, `views`, `stores` (arrays and views) and `all`.
 Inclusion and disjointness are the set operations on the three categories,
 so two selectors are disjoint exactly when no category is in both: `stores`
 and `views` overlap. -/
-
-/-- The roles of a world's locations, in location order: what a class region
-reads at the entry state (`roles`). -/
-abbrev RoleMap := List Role
 
 /-- A finite set of categories (the note, §3: a class region names one). -/
 structure Selector where
@@ -374,13 +369,15 @@ theorem Selector.has_category (r : Role) : (Selector.of r.category).has r.catego
 
 /-! ## Class regions read the contents
 
-A class region selects the locations whose contents have a category its
-selector names (the note, §3). On a well-formed state a location's contents
-category is its role's (`HeapOk`): a store location holds a store, every
-other location a source value or `null`. Until a view store's contents are
-told apart from an array store's, a store is selected exactly by a selector
-naming both store categories, so the selector algebra stays sound
-(`Selector.selects_sub`, `Selector.selects_disjoint`). -/
+A class region selects locations by their contents in the entry heap, in
+two classes: a store (`.arr`) or anything else. A store is selected exactly
+by a selector naming both store categories, anything else by one naming the
+value category; so `arrays` and `views` alone select nothing, and the
+selector algebra is sound for this selection (`Selector.selects_sub`,
+`Selector.selects_disjoint`). Selecting array stores and view stores apart,
+and the correspondence of the three contents categories with the role
+categories on well-formed states, need view stores tagged apart from array
+stores. -/
 
 /-- Whether the class region of `S` selects a location holding `v`. -/
 def Selector.selects (S : Selector) (v : Val) : Bool :=
