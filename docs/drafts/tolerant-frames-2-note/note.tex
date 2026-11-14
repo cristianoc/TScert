@@ -1,0 +1,1538 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[margin=2.6cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amsthm}
+\usepackage{newtxtext,newtxmath}
+\usepackage{mathpartir,stmaryrd,microtype,booktabs,enumitem,xcolor}
+\usepackage{tikz}
+\usepackage[colorlinks,linkcolor=black,citecolor=black,urlcolor=black]{hyperref}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}[theorem]{Proposition}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+\newcommand{\bx}[1]{\Box_{#1}}
+\newcommand{\sem}[1]{\llbracket #1\rrbracket}
+\newcommand{\sep}{\mathrel{\#}}
+\newcommand{\kw}[1]{\mathsf{#1}}
+\newcommand{\keep}{\kw{keep}}
+\newcommand{\init}{\kw{init}}
+\newcommand{\grow}{\kw{grow}}
+\newcommand{\any}{\kw{any}}
+\newcommand{\val}{\kw{all\text{-}values}}
+\newcommand{\st}{\kw{all\text{-}stores}}
+\newcommand{\rigid}{\kw{rigid}}
+\newcommand{\fresh}{\kw{fresh}}
+\newcommand{\old}{\kw{old}}
+\newcommand{\dense}{\kw{dense}}
+\newcommand{\every}{\kw{every}}
+\newcommand{\apart}{\kw{apart}}
+\newcommand{\fld}{\kw{all\text{-}fields}}
+\newcommand{\cel}{\kw{all\text{-}cells}}
+\newcommand{\elt}{\kw{all\text{-}elements}}
+\newcommand{\slen}{\kw{strLength}}
+\newcommand{\rowt}{\kw{table}}
+\newcommand{\esum}{\kw{sum}}
+\newcommand{\eff}[1]{\varepsilon_{#1}}
+\newcommand{\len}[1]{|#1|}
+\newcommand{\tr}[1]{\xrightarrow{#1}}
+\newcommand{\resp}{\mathrel{\triangleleft}}
+\newcommand{\hoare}[3]{\{#1\}\;#2\;\{#3\}}
+\newcommand{\hoarex}[4]{\{#1\}\;#2\;\{#3\mid #4\}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\lean}[1]{\texttt{\small #1}}
+\newcommand{\status}[1]{\textsf{\small[#1]}}
+\frenchspacing\sloppy
+
+\title{Tolerant frames II\\[2pt]\large What the bound proofs of a text-layout library need}
+\author{TScert working note}
+\date{13 November 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+The text-layout library pretext verifies under TScert only in a rewritten
+form. The rewritten form has 422 sites where an index read carries a
+check that the original source does not have. This note asks, for each
+site, what the proof of its bound needs in the logic of the first paper,
+\emph{Tolerant frames}. The 215 sites that need a capability fall under
+six capabilities. Two are derivable in the first paper: postconditions
+that say by how much a length changed, and a group of rules whose
+instances TScert does not derive. A third, finer regions for what a call
+may touch, is derivable for two of its three patterns and needs regions
+by kind of location for the third. Two need small extensions: bounded
+effect variables for a callback passed in, and contracts that hold of a
+location or of a type for its whole life. The last needs five richer
+term forms. Each extension is a definition with its meaning, one
+example, and the statement that makes it sound. One worked program shows
+four of the capabilities at marked lines. The analysis's classification
+changes for two patterns. Every statement carries one of four marks. \status{paper} names the definition, axiom, rule or theorem of
+the first paper that derives it. \status{observed} names the test program
+on which TScert's verifier gave the stated verdict. \status{proved on
+paper} marks a statement proved in this note. \status{conj.} marks a
+conjecture.
+\end{abstract}
+
+\section{The question}\label{sec:intro}
+
+The library pretext lays out text: it measures segments of a string into
+parallel arrays, and walks those arrays to break lines. Its source
+verifies under TScert only after rewrites. A \emph{bound rewrite site} is
+an index read \code{x[k]} that the rewritten source writes as
+\code{x[k] ?? missing()} or guards by a \code{RangeError}, because no
+proof of $0\le k<\len x$ is found there. This note asks which capability
+of a logic each such proof lacks. The logic is the one of the first paper,
+\emph{Tolerant frames: a modal account of fact preservation without
+ownership} (11 November 2026), written TF below; ``TF §$n$'' names its
+section $n$. The sites and their minimal programs are those of an analysis
+of pretext's rewritten source at commit \code{9268edb1}; every site count below
+comes from that analysis.
+
+\paragraph{The count.} Of the 422 bound rewrite sites, 215 are
+\emph{blocked}: the proof at the site itself needs a capability. 204 are
+\emph{locally supported}: the proof at the site needs nothing new, given
+facts established at a builder or a caller. Of these, 39 have the shape of
+a verified program \status{observed} and 165 are \status{conj.}. 3 sites
+are not placed (Section~\ref{sec:notcovered}). The 215 blocked sites fall
+under six capabilities:
+
+\medskip
+\noindent
+\begin{tabular}{@{}rp{0.36\textwidth}lrp{0.24\textwidth}@{}}
+\toprule
+ & capability & patterns & sites & in TF\\
+\midrule
+1 & the effect of a callback passed in & P1 & 50 & no: bounded effect variables\\
+2 & posts that say by how much a length changed & P2, P8, P14 & 45 & yes: \textsc{Call}, two-state posts\\
+3 & finer regions for what a call may touch & P3, P4, P6 & 49 & P3, P4 yes; P6 no: kind regions\\
+4 & facts of a location or a type for good & P5, P15, P16, P20 & 25 & no: contracts\\
+5 & richer terms & P9, P10, P12, P17, P19 & 24 & no: five term forms\\
+6 & rules TF has and TScert lacks & P7, P11, P13, P18, P21 & 22 & yes\\
+\midrule
+ & total & & 215 & \\
+\bottomrule
+\end{tabular}
+\medskip
+
+\noindent
+A \emph{pattern} P$n$ is the smallest program shape whose bound proof
+lacks one capability. The labels P1 to P21 are the analysis's. Each
+section below takes one capability. For each pattern it gives the minimal
+program, the fact the proof needs in TF's assertion language, where TF
+stops, and the smallest extension. Section~\ref{sec:class} gives the
+class of each pattern as this note finds it. Section~\ref{sec:sound}
+states what makes each extension sound in TF's model.
+
+\section{The notions used}\label{sec:notions}
+
+This section recalls the notions of TF that later sections use, each with
+its definition, one example, and its place in TF.
+
+\begin{description}[leftmargin=1.5em,style=sameline]
+\item[Heaps and kinds (TF §2)] A heap is a finite map
+$h:\mathit{Loc}\rightharpoonup\mathit{Val}\uplus\mathit{Store}$ with
+$\mathit{Loc}=\mathbb{N}$ and $\mathrm{dom}\,h=\{0,\dots,\len h-1\}$.
+Its domain is partitioned by kind: $\mathrm{dom}\,h=F\uplus C\uplus
+E\uplus S$, the field locations, the cells, the element cells and the
+store locations. The first three hold values and form the \emph{value}
+class; $S$ holds stores and forms the \emph{store} class. A cell is the
+location of a module binding, or of a local binding that a closure
+writes or sees change; every other local binding is a variable of the
+environment $\rho:\mathit{Var}\rightharpoonup\mathit{Val}$. Example: after
+\code{const o = \{ n: 1 \};} the object \code{o} is the map
+$\{\code{n}\mapsto l\}$ for one $l\in F$, and \code{o} is a variable.
+\item[Stores and lengths (TF §2)] $\mathit{Store}=(\mathit{Loc}\uplus\{\circ\})^{*}$.
+For $\sigma\in\mathit{Store}$, $\len\sigma$ is its length and
+$\mathit{cells}(\sigma)=\{c_i\mid c_i\ne\circ\}$. An array is an object
+with one distinguished field whose location $s\in S$ holds its store.
+Example: \code{const a = [10, , 30];} gives $h(s)=\langle
+l_0,\circ,l_2\rangle$, length 3, $l_0,l_2\in E$.
+\item[Contracts and immutable locations (TF §2, §3)] A world $W$ maps each
+location to its \emph{contract}, the set of contents it may hold. A
+location is immutable when its contract admits one value. TF has two
+kinds: a field declared \code{@stable}, and a typed array's length,
+written $\kw{view}(w)$. Example: in
+\code{type Runs = \{ /** @stable */ readonly openBrackets: number[] \}}
+the field \code{openBrackets} of each \code{Runs} object always holds the
+same array.
+\item[Admissible transitions (TF §3)] $h\tr{}_\rho h'$ when $h'$ is the
+heap of a state whose world extends that of $h$: every location keeps its
+contract, and $h'$ meets it. Every run of typed code is admissible
+\status{paper: TF §3, \emph{Admissible transitions}}. Its properties are
+(T1) preorder, (T2) growth $\len h\le\len{h'}$, (T3) fixed objects: an
+object's keys and field locations do not depend on the heap, and (T4)
+immutable locations: a location whose contract admits the single value
+$u$ holds $u$ in $h$ and $h'$. Example: \code{o.n = 2} on the object
+above is admissible when the contract of $l$ is ``a number''.
+\item[Changes (TF §3)] A change $\delta$ is a family of preorders
+$\delta_b$ on contents; $\keep\sqsubseteq\init\sqsubseteq\kw{scalar}\sqsubseteq\grow\sqsubseteq\any$.
+$\grow_b$ relates two stores when the second has a length at least the
+first's, keeps every dense prefix, and lists no old location the first
+does not list. Example: $\grow_6$ relates $\langle4,\circ,5\rangle$ to
+$\langle4,\circ,5,6\rangle$ and not to $\langle4\rangle$.
+\item[Regions (TF §3)] A path $\pi=x.f_1\ldots f_k$ is a variable
+followed by field names. A region $r$ denotes a set $r(\rho,h)$ of
+locations: $\st$ denotes $S$; $\val$ denotes $F\cup C\cup E$;
+$\pi.\kw{store}$ denotes the store location of the array $\pi$ reads;
+$\pi[\ast]$ denotes it with the cells its store lists; $\pi.f$ denotes one
+field location. Example: for \code{a} above, $a[\ast]$ denotes
+$\{s,l_0,l_2\}$.
+\item[Effects and their action (TF §3)] An effect $\Phi$ is a finite set
+of entries $r:\delta$. $h\tr{\Phi}_\rho h'$ when $h\tr{}_\rho h'$ and
+every location $l<\len h$ holds what it held or lies in a region
+$r(\rho,h)$ of an entry $r:\delta$ and changed within $\delta_{\len h}$.
+$\top=\{\val:\any,\ \st:\any\}$. $\Phi$ is \emph{rigid} when its action is
+transitive; effects over $\val$ and $\st$ are rigid. Example: the effect
+of \code{out[j] = v} is $\{\val:\any,\ \st:\grow\}$.
+\item[Assertions (TF §4)] Atoms are linear inequalities over variables,
+lengths $\len\pi$ and $\kw{view}(\pi)$; equalities $\pi\doteq v$;
+$\dense(x,n)$; kinds of contents; and $\every(z,t,\varphi)$, each
+element of $z$ below index $t$ satisfies $\varphi$, a formula of that one
+element. Assertions add $\wedge$, $g\vee F$ with $g$ invariant,
+$\exists$, $\pi\sep\pi'$ (different store locations), $\apart(x,y)$ (no
+common element cell), $\fresh(x)$ and the modality. Example:
+$\every(a,1,v>0)$ holds of \code{[10, , 30]}.
+\item[The modality (TF §4)] $\rho,m,h\models\bx{\Phi}F$ when $F$ holds in
+every $h'$ with $h\tr{\Phi}_\rho h'$. $F$ is \emph{invariant} when
+$F\vdash\bx{\top}F$; $\rigid(\pi)\triangleq\exists v.\,\bx{\top}(\pi\doteq
+v)$. Example: $3\le\len a$ entails $\bx{\val:\any,\ \st:\grow}(3\le\len
+a)$, and does not entail $\bx{a.\kw{store}:\any}(3\le\len a)$.
+\item[Support, respect, tolerant frame (TF §5)] A support $S$ of $F$ is a
+set of pairs $r:\delta$ such that $F$ survives every admissible
+transition that changes each location of each $r$ within its $\delta$.
+$\Phi\resp_K S$ when each entry $r':\gamma$ of $\Phi$ and each pair
+$r:\delta$ of $S$ have $\gamma\sqsubseteq\delta$ or regions disjoint
+under $K$. Then $K\wedge F\vdash\bx{\Phi}F$ \status{paper: Theorem
+\emph{Tolerant frame}}. Example: $\{x.\kw{store}:\grow\}$ supports
+$n\le\len x$.
+\item[Axioms (TF §5)] \textsc{(Grow)} keeps a lower bound of a length
+under $\{\val:\any,\ \st:\grow\}$; \textsc{(Dense)} a dense prefix under
+the same effect; \textsc{(Sep)} a fact of $\len x$ under
+$\{\val:\any,\ y.\kw{store}:\any\}$ given $x\sep y$; \textsc{(Every)} an
+$\every$ over $z$ under $\{x[\ast]:\any\}$ given $\apart(x,z)$;
+\textsc{(Init)} a length under $\{\val:\init\}$; \textsc{(Rigid)} a fact
+of a variable's array for the array at a rigid path; \textsc{(View)} a
+fact of $\kw{view}(w)$ under $\top$. Example: \textsc{(Grow)} gives
+$n\le\len x\vdash\bx{\val:\any,\ \st:\grow}(n\le\len x)$.
+\item[Triples and rules (TF §6)] $\hoarex PcQ{Q^e}$ is partial
+correctness; $Q$ is two-state, with $\old(e)$ the value of $e$ where $c$
+started. The rules are \textsc{Frame}, \textsc{Frame}$^{+}$,
+\textsc{Loop}, \textsc{Call}, \textsc{Alloc}, \textsc{Seq-Eff},
+\textsc{Fresh-Eff}. Example: \code{x.push(v)} has the post
+$\len x=\old(\len x)+1$.
+\item[Checked transfer (TF §7)] An edge $e$ of a control-flow graph
+carries an effect $\Phi_e$, a sound two-state post $Q_e$, a condition and
+a renaming. A fact crosses $e$ when it is derivable under
+$\bx{\Phi_e}$; the rest is derived from $Q_e$. Example: the node $j'=j+1$
+has the post $j'=j+1$.
+\end{description}
+
+\noindent
+The sets and maps of the account are these.
+
+\begin{definition}[Sites]\label{def:sites}
+$R$ is the set of bound rewrite sites, $\len R=422$. It is partitioned as
+$R=B\uplus L\uplus U$: the blocked sites $B$, $\len B=215$; the locally
+supported sites $L$, $\len L=204$; the sites not placed $U$, $\len U=3$.
+$\mathcal P=\{\mathrm P1,\ldots,\mathrm P21\}$ is the set of patterns.
+The map $p:B\to\mathcal P$ gives a blocked site its first blocker, the
+first capability its own read lacks. The map
+$\kappa:\mathcal P\to\{1,\ldots,6\}$ gives a pattern its capability.
+\end{definition}
+\noindent
+Example: the read \code{starts[i + 1]} of \code{measureAnalysis} at line
+378 of \code{prepare.ts} is a site $r\in B$ with $p(r)=\mathrm P4$ and
+$\kappa(\mathrm P4)=3$.
+
+\begin{definition}[Classes]\label{def:classes}
+Let $F$ be the fact a pattern's bound proof needs, and $c$ the step it
+must cross. The pattern is in one class:
+\begin{description}[leftmargin=1.5em,style=sameline]
+\item[(a) not stated] No assertion of TF states $F$. Example:
+$\len{\mathit{rows}}=\mathit{states}\cdot\mathit{width}$, a product of two
+variables.
+\item[(b) not kept] $F$ is an assertion, and for no effect $\Phi$ that TF
+can state for $c$ is $\bx{\Phi}F$ derivable. Example: an $\every$ over a
+\code{number[]} across a call that writes a module cell, whose only TF
+effect is $\{\val:\any\}$.
+\item[(c) kept in TF] $F$ is an assertion and its proof across $c$ is
+derivable in TF, from posts sound for the steps involved. Example: a
+length across a call whose two-state post states the length.
+\item[(d) a contract] $F$ holds because of the contract of a location or
+an invariant of a type, beyond the single-value contracts of TF.
+Example: the length of a module constant array literal.
+\end{description}
+\end{definition}
+
+\noindent
+Two notions beyond TF are used throughout.
+
+\begin{definition}[String length]\label{def:slen}
+For a variable $x$ that holds a string, $\slen(x)\in\mathbb{N}$ is the
+number of UTF-16 code units of $\rho(x)$. Linear terms may contain
+$\slen(x)$.
+\end{definition}
+\noindent
+A string is a scalar, so $\slen(x)$ reads no location: its support is
+$\emptyset$, and every atom over variables and string lengths is
+invariant. Example: after \code{const s = "ab"}, $\slen(s)=2$ holds after
+every step. TF's atoms have array lengths and $\kw{view}$ only. TScert
+has this term \status{observed: \code{t08\_strings.ts}, \code{goodCode}
+verified}.
+
+\begin{definition}[Paths from cells]\label{def:cellpath}
+A path may start at a binding $b$ modelled as a cell $l_b\in C$. Its read
+starts from $h(l_b)$.
+\end{definition}
+\noindent
+Example: for the module binding \code{let bmp = null}, the path
+$\mathit{bmp}$ reads $h(l_{\mathit{bmp}})$. TF uses this reading for the
+cell \code{c} of its write-once cache pattern (TF §8) and does not define
+it. A fact through such a path reads $l_b$, so it survives an effect
+disjoint from $l_b$, or any effect when a contract fixes $l_b$
+(Definitions~\ref{def:imm} and~\ref{def:cellinv}).
+
+\section{A worked program}\label{sec:worked}
+
+The program below builds two parallel arrays and walks them. It is this
+note's own, in the shape of pretext's builder and walker. A mark $(n)$
+names the capability whose proof the line needs.
+
+\medskip
+\noindent
+{\small
+\begin{tabular}{@{}r@{\hspace{1em}}l@{\hspace{1em}}l@{}}
+1 & \code{type Lists = \{ /** @stable */ readonly widths: number[];} & \\
+2 & \code{~~~~~~~~~~~~~~~/** @stable */ readonly kinds: number[] \};} & \\
+3 & \code{const KINDS: readonly string[] = ["text", "space", "break"];} & \\
+4 & \code{let calls: number = 0;} & \\
+5 & \code{function measure(text: string): number \{ calls++; return text.length; \}} & \\
+6 & \code{function append(lists: Lists, texts: string[]): void \{} & \\
+7 & \code{~~for (let i = 0; i < texts.length; i++) \{} & \\
+8 & \code{~~~~const w = measure(texts[i]!);} & (3)\\
+9 & \code{~~~~lists.widths.push(w);} & \\
+10 & \code{~~~~lists.kinds.push(texts[i] === " " ? 1 : w === 0 ? 2 : 0);} & (6)\\
+11 & \code{~~\}} & \\
+12 & \code{\}} & \\
+13 & \code{function build(texts: string[]): Lists \{} & \\
+14 & \code{~~const lists: Lists = \{ widths: [], kinds: [] \};} & \\
+15 & \code{~~append(lists, texts);} & (2)\\
+16 & \code{~~return lists;} & \\
+17 & \code{\}} & \\
+18 & \code{function walk(lists: Lists, visit?: (i: number) => void): number \{} & \\
+19 & \code{~~const n = lists.widths.length; let x = 0;} & \\
+20 & \code{~~for (let i = 0; i < n; i++) \{} & \\
+21 & \code{~~~~x = lists.kinds[i]! === 2 ? 0 : x + lists.widths[i]!;} & \\
+22 & \code{~~~~visit?.(i);} & (1)\\
+23 & \code{~~\}} & \\
+24 & \code{~~return x;} & \\
+25 & \code{\}} & \\
+26 & \code{export function lastKind(texts: string[]): string \{} & \\
+27 & \code{~~const lists = build(texts);} & \\
+28 & \code{~~const x = walk(lists, undefined);} & (1)\\
+29 & \code{~~const n = lists.kinds.length;} & \\
+30 & \code{~~return n === 0 ? "" : KINDS[lists.kinds[n - 1]!]! + x;} & (4)\\
+\end{tabular}}
+\medskip
+
+\paragraph{The heap.} Number the locations in allocation order, the
+module first. At line 28 of \code{lastKind(["ab", " "])}, before the call
+of \code{walk}, one heap $h_{28}$ the program can have is:
+\[
+\begin{array}{llll}
+\text{location} & \text{kind} & \text{holds} & \\
+0 & C & k & \text{the cell of \code{KINDS}}\\
+1 & S & \langle 2,3,4\rangle & \text{the store of \code{KINDS}}\\
+2,3,4 & E & \code{"text"},\ \code{"space"},\ \code{"break"} & \text{its elements}\\
+5 & C & 2 & \text{the cell of \code{calls}}\\
+6 & S & \langle 7,8\rangle & \text{the store of \code{texts}}\\
+7,8 & E & \code{"ab"},\ \code{" "} & \text{its elements}\\
+9 & S & \langle 13,15\rangle & \text{the store of \code{lists.widths}}\\
+10 & S & \langle 14,16\rangle & \text{the store of \code{lists.kinds}}\\
+11 & F & W & \text{the field \code{lists.widths}}\\
+12 & F & K & \text{the field \code{lists.kinds}}\\
+13,15 & E & 2,\ 1 & \text{\code{lists.widths[0]}, \code{lists.widths[1]}}\\
+14,16 & E & 0,\ 1 & \text{\code{lists.kinds[0]}, \code{lists.kinds[1]}}
+\end{array}
+\]
+Here $k$, $W$ and $K$ are the arrays whose store locations are 1, 9
+and 10. $C=\{0,5\}$, $S=\{1,6,9,10\}$, $F=\{11,12\}$, and $E$ is the rest.
+The environment holds \code{texts} and
+$\mathit{lists}=\{\code{widths}\mapsto 11,\ \code{kinds}\mapsto 12\}$.
+The fields 11 and 12 are \code{@stable}, so $\rigid(\mathit{lists}.\mathit{widths})$
+and $\rigid(\mathit{lists}.\mathit{kinds})$ hold \status{paper: TF §4,
+\emph{Invariant assertions and rigid paths}}.
+
+\paragraph{The facts.} The read at line 30 needs, at line 28, the three
+facts
+\[
+\begin{array}{ll}
+F_1 = \every(\mathit{lists}.\mathit{kinds},\ \len{\mathit{lists}.\mathit{kinds}},\ 0\le v<3) & \text{the kinds index \code{KINDS}},\\
+F_2 = (\len{\mathit{KINDS}}=3) & \text{the length of the module table},\\
+F_3 = (\len{\mathit{lists}.\mathit{widths}}=\len{\mathit{lists}.\mathit{kinds}}) & \text{the arrays are parallel}.
+\end{array}
+\]
+$F_3$ is \code{walk}'s precondition, and $F_1$ and $F_2$ must survive the
+call at line 28. Each later section returns to its marked line:
+line 22 and line 28 in Section~\ref{sec:cap1}, line 15 in
+Section~\ref{sec:cap2}, line 8 in Section~\ref{sec:cap3}, line 30 in
+Section~\ref{sec:cap4}, and line 10 in Section~\ref{sec:cap6}.
+
+\paragraph{The verdicts.} As printed, with no annotation beyond the
+types, TScert verifies \code{measure}, \code{append} and \code{build}:
+they push and read \code{texts[i]} below its length, and no read of
+theirs needs a fact from elsewhere. It refuses \code{walk} at the read
+\code{lists.kinds[i]} of line 21, which needs $F_3$, a precondition the
+listing does not write. It refuses \code{lastKind} at the read
+\code{KINDS[lists.kinds[n - 1]!]} of line 30, which needs $F_1$ and
+$F_2$ \status{observed: branch \code{single-pass} at \code{b7c8a559},
+13 November 2026}. Line 4 writes the type of \code{calls} because TScert
+requires a module \code{let} to state its type.
+
+\section{The effect of a callback passed in}\label{sec:cap1}
+
+\subsection{P1: a visitor of unknown effect between reads (50 sites)}
+
+\emph{Program.} \code{function walk(xs: number[], visit: Visitor |
+undefined): number} reads \code{xs[i]} in a loop and calls
+\code{visit(s)} when \code{visit !== undefined}. The function \code{bad}
+calls \code{walk(xs, undefined)} and then reads \code{xs[i]} under the
+precondition $0\le i<\len{\mathit{xs}}$ \status{observed:
+\code{t02\_optional\_callback.ts}}.
+
+\emph{Fact.} After the call, $i<\len{\mathit{xs}}$. In pretext's walker
+\code{walkPreparedComplexLines}, with $c$ the segment count read at
+entry, each loop head needs
+$c\le\len{\mathit{widths}}\wedge 0\le\mathit{cursor}.\mathit{segmentIndex}<c$
+across the call \code{onLine?.(\ldots)}.
+
+\emph{Where TF stops.} The parameter's type states no effect, so the
+effect of a call of \code{visit} is $\top$, and so is the effect of
+\code{walk}. The transition that sets \code{xs.length = 0} is bounded by
+$\top$ and breaks the fact. TF states one closed bound per callback
+parameter: an effect has no variables (TF §10, \emph{Effects are
+closed}). A closed bound keeps lower bounds of lengths: with the bound
+$\Psi=\{\val:\any,\ \st:\grow\}$, $i<\len{\mathit{xs}}$ survives
+\status{paper: \textsc{(Grow)}} \status{observed:
+\code{t02\_optional\_callback.ts}, \code{goodBounded} verified}. Two
+things remain out of reach. Inside the walker, the fact
+$0\le\mathit{cursor}.\mathit{segmentIndex}$ reads a field location; every
+closed bound that admits the application's visitors contains
+$\val:\any$, which covers the field, and no TF region excludes one
+object's fields from $\val$. At a caller passing no visitor, the walker
+calls nothing, yet under a closed bound its effect is still $\Psi$, so
+every fact over value locations and every upper bound of a length is lost
+at the call. The first needs a region; the second needs an effect
+variable.
+
+\begin{definition}[Complement and object regions]\label{def:compl}
+For a path $\pi$ that reads an object $v$, the region $\pi.\ast$ denotes
+$\{v(f)\mid f\in\mathrm{dom}\,v\}$, the field locations of $v$. For
+regions $r_1,r_2$, the region $r_1\setminus r_2$ denotes
+$r_1(\rho,h)\setminus r_2(\rho,h)$.
+\end{definition}
+\noindent
+Example: if $\mathit{cursor}=\{\code{segmentIndex}\mapsto 20,\ \code{graphemeIndex}\mapsto 21\}$,
+then $\mathit{cursor}.\ast$ denotes $\{20,21\}$, and
+$\val\setminus\mathit{cursor}.\ast$ denotes every value location but 20
+and 21. Under the bound
+$\Psi_{\mathit{onLine}}=\{\val\setminus\mathit{cursor}.\ast:\any,\ \st:\grow\}$
+the fact $0\le\mathit{cursor}.\mathit{segmentIndex}<c$, of support
+$\{\mathit{cursor}.\mathit{segmentIndex}:\keep\}$, survives by the
+Tolerant frame theorem: one entry is disjoint from the field, and the
+other has the store class.
+
+\begin{definition}[Bounded effect variable]\label{def:effvar}
+Let $p$ be a parameter of function type of a function $f$. An
+\emph{effect variable} $\eff p$ stands for the effect of the value $p$
+holds. A signature of $f$ has the form
+\[
+\forall\eff p\sqsubseteq\Psi.\quad \hoare{P}{f(\vec p)}{Q} : \Phi\cup\eff p ,
+\]
+where the \emph{bound} $\Psi$ is a closed rigid effect over class
+regions and regions at rigid paths of $f$'s parameters. Inside $f$ a call of $p$ has the effect
+$\eff p$. At a call of $f$ the variable is instantiated: to $\emptyset$
+when the argument is \code{undefined}, and to $\Psi'$ when the argument
+is a function of effect $\Psi'$, with the obligation
+$\Psi'\sqsubseteq\Psi$. The effect of the call is
+$\Phi\cup\Psi'[\vec x/\vec p]$.
+\end{definition}
+
+\noindent
+The rule it gives at a call, \textsc{Call-Var}, is \textsc{Call} at the instance:
+\begin{mathpar}
+\inferrule*[left=Call-Var]{f(\vec p):\forall\eff p\sqsubseteq\Psi.\ \hoare PfQ:\Phi\cup\eff p \\ x_p\text{ holds a function of effect }\Psi'\text{, or \code{undefined} and }\Psi'=\emptyset \\ \Psi'\sqsubseteq\Psi}{\hoare{P[\vec x/\vec p]\wedge\bx{(\Phi\cup\Psi')[\vec x/\vec p]}R}{y=f(\vec x)}{Q[\vec x/\vec p]\wedge R}}
+\end{mathpar}
+
+\noindent
+Inside $f$, a fact survives a call of $p$ for every admitted $\eff p$
+exactly when it survives $\Psi$, by law (c) of TF's Proposition
+\emph{Laws} and because $\Psi$ itself is admitted. So the variable adds
+nothing to the walker's own proof; it makes the caller's effect exact.
+
+\emph{The worked program.} At line 22,
+$\code{walk}:\forall\eff{\mathit{visit}}\sqsubseteq\{\val:\any,\ \st:\grow\}.\ \emptyset\cup\eff{\mathit{visit}}$.
+The loop facts $n\le\len{\mathit{lists}.\mathit{widths}}$ and
+$n\le\len{\mathit{lists}.\mathit{kinds}}$ are lower bounds at rigid paths
+and survive $\Psi$ \status{paper: \textsc{(Grow)}, \textsc{(Rigid)},
+\textsc{Loop}}. At line 28 the argument is \code{undefined}, so the call
+has the effect $\emptyset$, and $F_1$ and $F_2$ hold after it by
+\textsc{Frame} \status{proved on paper: Section~\ref{sec:sound}}.
+Without the variable, the effect at line 28 is $\Psi$. The visitor
+\code{i => \{ lists.kinds[0] = 7; \}} is bounded by $\Psi$, it changes
+location 14 of $h_{28}$ to 7, and line 30 then reads
+\code{KINDS[7]}, which is \code{undefined}.
+
+\emph{Sites.} 47 sites lie inside the two walkers that call
+\code{onLine}: \code{walkPreparedLinesRaw} (310) and
+\code{walkPreparedComplexLines} (46 sites, 584 to 1085). They need a
+closed bound with Definition~\ref{def:compl}. 3 sites lie at callers that
+pass no visitor: \code{countSteppedLines} (407) and
+\code{prepareRichInline} (368, 496). They need
+Definition~\ref{def:effvar}.
+
+\emph{Evidence.} \code{bad} is refused at \code{xs[i]}, and
+\code{goodBounded} and \code{goodPlain} are verified \status{observed:
+\code{t02\_optional\_callback.ts}}. \code{flagsWalk}, which reads a
+\code{Uint8Array} below a count taken at entry across a visitor of
+unknown effect, is verified by \textsc{(View)}; \code{widthsWalk}, the
+same loop over a \code{number[]}, is refused \status{observed:
+\code{t13\_view\_callback.ts}}.
+
+\begin{remark}[Classification of P1]
+The analysis gives P1 one definition. This note finds two needs. The 47
+walker sites are class (b) for want of Definition~\ref{def:compl}: the
+fact is stated, and TF can state no bound that admits the application's
+visitors and keeps the cursor's fields. The 3 caller sites are class (b)
+for want of Definition~\ref{def:effvar}. The bound on a visitor that the
+application passes is a trust decision in both (Section~\ref{sec:notcovered}).
+\end{remark}
+
+\section{Posts that say by how much a length changed}\label{sec:cap2}
+
+These patterns are in TF. A step's post may be two-state
+(TF §6, \emph{Triples}), and \textsc{Call} carries the callee's post
+$Q[\vec x/\vec p]$ to the caller \status{paper: \textsc{Call}}. An exact
+post constrains the written location only; every other fact crosses the
+step by \textsc{Frame} (TF §6, \emph{Exact posts}).
+
+\subsection{P2: growth by a known count across a callee (31 sites)}
+
+\emph{Program.} \code{measure(lists, n)} pushes $n$ values onto
+\code{lists.widths}, a \code{@stable} field, with the effect
+$\{\val:\any,\ \mathit{lists}.\mathit{widths}[\ast]:\any\}$. The caller
+calls \code{measure(lists, 10)} in a loop on \code{j += 10} with
+\code{j + 10 <= cap}, and reads \code{flags} at the last index of
+\code{lists.widths}, where \code{flags = new Uint8Array(cap)}.
+The program as TScert verifies it \status{observed: the case
+\code{bounds-pattern-known-growth-refused}, verified on the branch
+\code{single-pass}, 13 November 2026}:
+
+\medskip
+\noindent
+{\small
+\begin{tabular}{@{}r@{\hspace{1em}}l@{}}
+1 & \code{type Lists = \{ /** @stable */ readonly widths: number[] \};} \\
+2 & \code{/** @requires safeInteger(n) \&\& 0 <= n \&\& n <= 1000 \&\& 0 <= lists.widths.length} \\
+3 & \code{~*~ @ensures lists.widths.length === old(lists.widths.length) + n */} \\
+4 & \code{function measure(lists: Lists, n: number):} \\
+5 & \code{~~~~Modifies<\{ values: "any"; stores: "keep"; "lists.widths[*]": "any" \}, void> \{} \\
+6 & \code{~~/** @invariant safeInteger(k) \&\& safeInteger(n) \&\& 0 <= k \&\& k <= n} \\
+7 & \code{~~~*~~~~~~~~~~~~\&\& lists.widths.length === old(lists.widths.length) + k */} \\
+8 & \code{~~for (let k = 0; k < n; k++) lists.widths.push(k);} \\
+9 & \code{\}} \\
+10 & \code{/** @requires safeInteger(cap) \&\& 0 <= cap \&\& cap <= 100000 */} \\
+11 & \code{export function grown(cap: number): number \{} \\
+12 & \code{~~const widths: number[] = [];} \\
+13 & \code{~~const lists: Lists = \{ widths \};} \\
+14 & \code{~~const flags = new Uint8Array(cap);} \\
+15 & \code{~~let s = 0;} \\
+16 & \code{~~/** @invariant safeInteger(j) \&\& 0 <= j \&\& safeInteger(cap)} \\
+17 & \code{~~~*~~~~~~~~~~~~\&\& 0 <= lists.widths.length \&\& lists.widths.length <= j \&\& j <= cap */} \\
+18 & \code{~~for (let j = 0; j + 10 <= cap; j += 10) \{} \\
+19 & \code{~~~~measure(lists, 10);} \\
+20 & \code{~~~~s += flags[lists.widths.length - 1]!;} \\
+21 & \code{~~\}} \\
+22 & \code{~~return s;} \\
+23 & \code{\}} \\
+\end{tabular}}
+\medskip
+
+\noindent
+Line 3 is the two-state postcondition: \code{old(e)} is the value of
+\code{e} where \code{measure} was entered. The read under proof is at
+line 20. Each other annotation is needed, for these reasons.
+\begin{description}[leftmargin=1.5em,style=sameline]
+\item[Line 2, \code{n} a nonnegative safe integer] Without it the
+postcondition is false: \code{measure(lists, 1.5)} pushes two values, and
+a negative \code{n} pushes none.
+\item[Line 2, \code{0 <= lists.widths.length}] It states that the length
+is defined at entry. In TScert's model this does not follow from the type
+\code{Lists}: a value meets its type only to the depth of the step
+budget \status{observed: \code{measure} is refused at its entry without
+it}.
+\item[Line 5, the effect] The caller keeps its facts about \code{flags}
+across the call because the call changes no store but
+\code{lists.widths}.
+\item[Lines 6--7 and 16--17, the loop invariants] Rule \textsc{Loop}
+needs an invariant at each loop head.
+\item[Line 20, the read through \code{lists.widths}] With the read written
+\code{flags[widths.length - 1]}, through the local name, \code{grown} is
+refused at the read \status{observed}. TF derives that form too, from
+$\mathit{lists}.\mathit{widths}\doteq\mathit{widths}$ and
+$\rigid(\mathit{lists}.\mathit{widths})$; why TScert does not is not
+established.
+\end{description}
+
+\emph{Fact.} The loop invariant $\len{\mathit{widths}}=j$, with
+\code{lists.widths} the array \code{widths}. It needs the callee's post
+\[
+\hoare{\kw{true}}{\code{measure}(\mathit{lists},n)}{\len{\mathit{lists}.\mathit{widths}}=\old(\len{\mathit{lists}.\mathit{widths}})+n} .
+\]
+
+\emph{In TF.} \textsc{Call} gives
+$\len{\mathit{lists}.\mathit{widths}}=j+10$ after the call;
+$\rigid(\mathit{lists}.\mathit{widths})$ and
+$\mathit{lists}.\mathit{widths}\doteq\mathit{widths}$ give
+$\len{\mathit{widths}}=j+10\le\mathit{cap}=\kw{view}(\mathit{flags})$,
+and \textsc{(View)} keeps $\kw{view}(\mathit{flags})=\mathit{cap}$. The
+read at $j+10-1$ is in bounds \status{paper: \textsc{Call},
+\textsc{(Rigid)}, \textsc{(View)}, \textsc{Loop}}. Class (c).
+
+\emph{The worked program.} At line 15, \code{append} has the post
+\[
+\len{\mathit{lists}.\mathit{widths}}=\old(\len{\mathit{lists}.\mathit{widths}})+\len{\mathit{texts}}
+\ \wedge\
+\len{\mathit{lists}.\mathit{kinds}}=\old(\len{\mathit{lists}.\mathit{kinds}})+\len{\mathit{texts}} .
+\]
+Both arrays are empty at line 14 \status{paper: \textsc{Alloc}}, so $F_3$
+holds after line 15. A one-state post of \code{append} states lower
+bounds only, and $F_3$ does not follow from them.
+
+\emph{Sites.} 30 in \code{prepareRichInline}, where each read or guarded
+write at \code{at = widths.length} needs
+$\len{\mathit{widths}}\le\kw{view}(\mathit{flags})$ after
+\code{measureAnalysis} appended \code{to - from} segments; 1 in
+\code{measureAnalysis} (631).
+
+\emph{Evidence.} The program above is verified. With the callee growing
+the list by more than the loop's step, the read is refused, and the
+program is unsafe under Node \status{observed: the case
+\code{invalid-bounds-pattern-known-growth}}. With the pushes written in
+the caller's own body, the program is verified, each \code{push} having
+the post $\len{\mathit{widths}}=\old(\len{\mathit{widths}})+1$
+\status{observed: the case \code{bounds-pattern-known-growth}}.
+
+\subsection{P8: the length after a write at the length (10 sites)}
+
+\emph{Program.} \code{xs[k] = 1; return xs[k]!;} under
+$0\le k\le\len{\mathit{xs}}$ \status{observed: \code{t17\_write\_len.ts}}.
+
+\emph{Fact.} After the write, $k<\len{\mathit{xs}}$ and
+$\dense(\mathit{xs},k+1)$ when $\dense(\mathit{xs},k)$ held before.
+
+\begin{proposition}[Write at the length]\label{prop:writelen}\status{proved on paper}
+For an array $x$ and $0\le k\le\len x<N$,
+\[
+\hoare{\kw{true}}{x[k]=v}{\len x=\max(\old(\len x),k+1)\ \wedge\ (\old(\dense(x,k))\Rightarrow\dense(x,k+1))} .
+\]
+\end{proposition}
+\begin{proof}
+By TF's table of writes (TF §2). If index $k$ is present, the write
+changes its element cell and leaves the store. If $k$ is a hole below the
+length, the store is filled at $k$ and keeps its length. If $k=\len x$,
+the store gains one new cell at index $k$. In each case index $k$ is
+present after the write, every other index keeps its presence, and the
+length is $\max(\old(\len x),k+1)$.
+\end{proof}
+
+\noindent
+In TF this post is a sound two-state post of the step, which checked
+transfer admits (TF §7). TF does not state it. Class (c). A builder that
+appends by index, \code{widths[at] = w} with \code{at} the current
+length, keeps $\mathit{at}\le\len{\mathit{widths}}$ at its loop head with
+it.
+
+\emph{Sites.} 9 in \code{measureAnalysis} (\code{prepare.ts}) and 1 in
+\code{prepareRichInline} (646).
+
+\emph{Evidence.} \code{readWritten}, \code{readBefore} and
+\code{readBelow} are verified \status{observed:
+\code{t17\_write\_len.ts}, branch \code{single-pass} at \code{b7c8a559}}.
+\code{append} and \code{appendNoCall}, builders that append by
+\code{widths[at] = mi}, are verified \status{observed:
+\code{t16\_supported.ts}, same branch}. TScert derives this post.
+
+\begin{remark}[The post of P8]
+The analysis writes this post with the conjunct $x[k]\doteq v$. That
+conjunct reads an element at an index, which TF's paths do not express
+(Definition~\ref{def:ipath} adds it). The bound proofs of the 10 sites
+need only the length and the density, which TF states.
+\end{remark}
+
+\subsection{P14: length contracts of string and array natives (4 sites)}
+
+\emph{Program.} \code{const normalized = text.replace(/ +/g, " ");}
+followed by reads of \code{breaks = new Uint8Array(text.length + 1)} at
+indices below \code{normalized.length} \status{observed:
+\code{t08\_strings.ts}}.
+
+\emph{Fact.} $\slen(\mathit{normalized})\le\slen(\mathit{text})$, the post
+of the native step. With Definition~\ref{def:slen} it is invariant once
+stated. What is missing is the post itself. The posts the sites need
+are:
+\[
+\begin{array}{ll}
+\code{r = s.replace(e, t)},\ \text{each match no shorter than }t & \slen(r)\le\slen(s)\\
+\code{r = s.split(d)} & 1\le\len r\\
+\code{r = xs.map(f)} & \len r=\old(\len{\mathit{xs}})\\
+\code{r = w.subarray(b, e)},\ 0\le b\le e\le\kw{view}(w) & \kw{view}(r)=e-b
+\end{array}
+\]
+The post of \code{map} holds whatever \code{f} does: \code{map} reads the
+length once at its start (TF §6, Proposition \emph{Reliance}). Each post
+is an assumption about a native, a trust decision
+(Section~\ref{sec:notcovered}). Class (c).
+
+\emph{Sites.} \code{getGeckoLineBreaks} (684), \code{getWebKitLineRules}
+(784, a \code{split}), and \code{getFontData} (145, 146, a \code{map} of
+a ten-element literal). 33 locally supported sites depend on the
+\code{replace} and \code{slice} posts of \code{analyzeText}.
+
+\emph{Evidence.} \code{bad} is refused at its loop's entry edge;
+\code{goodSlice}, a \code{slice} with an exact length contract, is
+verified \status{observed: \code{t08\_strings.ts}}.
+
+\begin{remark}[String lengths in P11 and P14]
+The facts of P14's minimal program, of site 684 and of P11 are about
+string lengths, which TF's atoms do not express. They are class (c) with
+Definition~\ref{def:slen}, a term of empty support. The other three sites
+of P14 are about array lengths and are class (c) in TF.
+\end{remark}
+
+\section{Finer regions for what a call may touch}\label{sec:cap3}
+
+A fact survives a step when the step's effect respects a support of the
+fact. Two of the three patterns here are instances of the Tolerant frame
+theorem; one needs a new region.
+
+\subsection{P3: a quantified fact across a write outside its array (19 sites)}
+
+\emph{Program.} A loop over \code{items: Int32Array} writes
+\code{fragment.width = s} of a local object and reads
+\code{widths[items[i]!]} \status{observed:
+\code{t03\_every\_fresh\_field.ts}}.
+
+\emph{Fact.} $F=\every(\mathit{items},\kw{view}(\mathit{items}),0\le
+v<\len{\mathit{widths}})$ across the write, whose effect is
+$\{\mathit{fragment}.\mathit{width}:\any\}$.
+
+\emph{In TF.} $S=\{\mathit{items}[\ast]:\keep,\ \mathit{widths}.\kw{store}:\grow\}$
+supports $F$: the fact reads the store and the cells of \code{items}, and
+a lower bound of the length of \code{widths}; $\kw{view}(\mathit{items})$
+is immutable. The region $\mathit{fragment}.\mathit{width}$ denotes a
+location of $F$-kind, and the two regions of $S$ denote locations of
+$S\cup E$. They are disjoint under $K=\kw{true}$, so
+$F\vdash\bx{\mathit{fragment}.\mathit{width}:\any}F$ \status{paper:
+Theorem \emph{Tolerant frame}}. Class (c).
+
+\emph{Sites.} 12 in \code{createLine} (\code{rich-inline.ts}), between a
+field write of \code{fragment} and \code{fragments.push(fragment)}; 7 in
+\code{setEmptyObjectFacts}, across element writes of \code{spaces}, a
+\code{number[]}, and \code{returns}, a \code{Uint8Array}. For the 7, the
+effect is $\{\mathit{spaces}[\ast]:\any\}$, and respect needs
+$K=\apart(\mathit{spaces},z)$ for each array $z$ the facts read. TF gives
+$\apart$ by \textsc{Alloc} at the builder, where the arrays are created;
+the facts must then carry it to these sites \status{conj.}. Different
+element types give no $\apart$ in TF.
+
+\emph{Evidence.} \code{bad} is refused at \code{widths[items[i]!]}, also
+with the fact as a loop invariant; \code{good}, the loop without the
+write, is verified \status{observed: \code{t03\_every\_fresh\_field.ts},
+\code{t03b\_every\_inv.ts}}.
+
+\begin{remark}[Two sites of P3]
+The read at line 1185 of \code{createLine} (2 sites) also needs
+$\every(\mathit{fragments},k,\mathit{fragments}[i].\mathit{itemIndex}<n)$,
+a fact about a field of each element. TF lists that form outside its
+language (TF §8). So these 2 sites are class (a) in TF, and
+Definition~\ref{def:ievery} states the fact. The other 17 sites of P3 are
+class (c).
+\end{remark}
+
+\subsection{P4: an upper bound of a length across a call growing stores (18 sites)}
+
+\emph{Program.} \code{note(out, v)} pushes onto \code{out}. A loop with
+test \code{i + 1 < a.flags.length} calls \code{note(out, i)} and reads
+\code{a.starts[i + 1]}, where \code{a.flags} and \code{a.starts} are
+\code{@stable}. The precondition states
+$\len{a.\mathit{flags}}=\len{a.\mathit{starts}}$,
+$a.\mathit{flags}\sep\mathit{out}$ and $a.\mathit{starts}\sep\mathit{out}$.
+The two separations are part of the pattern. Without them the program is
+unsafe: called with \code{out} the array \code{a.flags}, each push
+lengthens \code{a.flags}, the test stays true, and the read passes the
+end of \code{a.starts} \status{observed: the case
+\code{invalid-bounds-pattern-grow-upper}, under Node}.
+
+\emph{Fact.} $\len{a.\mathit{flags}}\le\len{a.\mathit{starts}}$ across
+the call.
+
+\emph{In TF.} Under the effect $\{\val:\any,\ \st:\grow\}$ the fact is
+lost, since that effect lets every store grow, \code{a.flags} included
+(TF §7, the full version of its Example 1). The callee's writes are
+to one array its parameter names, so TF states for it the effect
+$\{\val:\any,\ \mathit{out}.\kw{store}:\any\}$. With
+$K=a.\mathit{flags}\sep\mathit{out}\wedge a.\mathit{starts}\sep\mathit{out}$
+the fact survives by \textsc{(Sep)} at the rigid paths
+\status{paper: \textsc{(Sep)}, \textsc{(Rigid)}}. Class (c), given the
+callee's regional effect.
+
+\emph{Sites.} 4 in chain 1 (\code{starts[i + 1]} under
+\code{i + 1 < flags.length}), 10 in \code{measurement.ts} (the advances
+list's exact length across measuring calls), 4 in
+\code{prepareRichInline}. Whether each callee's store writes are at
+paths of its parameters, so that a regional effect states them, is not
+tested \status{conj.}.
+
+\emph{Evidence.} \code{goodRegion}, the program above with the regional
+effect and the separations at the paths \code{a.flags} and
+\code{a.starts}, is refused, and \code{goodLower} (a lower bound) is
+verified \status{observed: \code{t01\_grow\_equal.ts}}. The variant with
+no separation stated is refused, and that refusal is correct. \code{slots}, the regional effect with the
+arrays as parameters, is verified \status{observed:
+\code{t01b\_region.ts}}; \code{paths} is refused and \code{slots} verified
+\status{observed: \code{t01c\_lists.ts}}. TScert keeps the fact for
+variables and not for rigid paths.
+
+\begin{remark}[Classification of P4]
+The analysis places P4 in class (b), since the fact is lost under the
+effect \code{stores: "grow"}. In TF a regional effect states the callee
+exactly, and under it the fact is kept. This note places P4 in class (c).
+\end{remark}
+
+\subsection{P6: a fact over value locations across a call changing values (12 sites)}
+
+\emph{Program.} A loop keeps
+$\every(\mathit{starts},\len{\mathit{starts}},0\le v<\kw{view}(\mathit{offsets}))$
+across \code{touch(c)}, stated with the effect $\{\val:\any\}$
+\status{observed: \code{t14\_every\_call.ts}, \code{badAny}}.
+
+\emph{Where TF stops.} $\val$ contains the element cells of
+\code{starts}, and no axiom keeps the fact under $\{\val:\any\}$. The
+function \code{touch} writes \code{c.value}, so TF states for it the
+effect $\{c.\mathit{value}:\any\}$, under which the fact is kept by
+kinds, as for P3. The capability is needed by a callee that writes
+locations no path from its parameters reaches: module cells, and fields
+of objects it does not receive. Its only TF effect is $\{\val:\any\}$ or
+$\top$.
+
+\begin{definition}[Kind regions]\label{def:kinds}
+$\fld(\rho,h)=F$, $\cel(\rho,h)=C$ and $\elt(\rho,h)=E$. So $\val$
+denotes the union of the three. Kind regions may also appear in the
+bound of an effect variable (Definition~\ref{def:effvar}).
+\end{definition}
+\noindent
+Example: \code{let hits = 0; function touch(): void \{ hits++; \}} has the
+effect $\{\cel:\any\}$. That effect respects the support
+$\{\mathit{starts}[\ast]:\keep\}$ under $\kw{true}$, since $C$ is
+disjoint from $S\cup E$, so the $\every$ survives the call
+\status{conj.: this program is not run}.
+
+\emph{The worked program.} At line 8, \code{measure} writes the cell of
+\code{calls}. Its effect in TF is $\{\val:\any\}$, which loses the loop
+invariant $\every(\mathit{lists}.\mathit{kinds},\len{\mathit{lists}.\mathit{kinds}},0\le v<3)$.
+With Definition~\ref{def:kinds} its effect is $\{\cel:\any\}$. The
+invariant's support is $\{\mathit{lists}.\mathit{kinds}:\keep,\ \mathit{lists}.\mathit{kinds}[\ast]:\keep\}$,
+of kinds $F$, $S$ and $E$, so it survives. The lengths in the invariant
+survive too, by the same argument.
+
+\emph{Sites.} 5 in \code{prepareRichInline} (\code{offsets[analysis.starts[\ldots]]}
+across \code{measureAnalysis}), 3 in \code{materializeRichInlineLineRange},
+1 in \code{getFollowingSpaceTail}, 3 in \code{getHanKerningTrims}. The
+facts read \code{analysis.starts} through a field; under an entry
+$\fld:\any$ they also need $\rigid(\mathit{analysis}.\mathit{starts})$,
+which \code{@stable} gives. The 3 sites of \code{getHanKerningTrims} read
+a field of a fresh object \code{out} that the callees do not receive;
+kind regions keep that fact when the callees write no field location
+\status{conj.}. Which locations pretext's measuring callees write is not
+checked \status{conj.}.
+
+\emph{Evidence.} \code{badAny} is refused; \code{badInit}, whose callee
+has the effect $\{\val:\init\}$, is verified, as \textsc{(Init)} predicts
+\status{observed: \code{t14\_every\_call.ts}}.
+
+\begin{remark}[Classification of P6]
+The minimal program of the analysis is class (c) in TF, by the effect
+$\{c.\mathit{value}:\any\}$. The pattern is class (b) for callees whose
+written locations no TF region names, as in the module-cell program
+above. This note keeps P6 in class (b) on the analysis's reading that
+pretext's measuring callees are of that kind \status{conj.}.
+\end{remark}
+
+\section{Facts of a location or of a type for good}\label{sec:cap4}
+
+By (T4) a fact that reads only immutable locations is invariant. TF's
+immutable locations are \code{@stable} fields and typed-array lengths;
+the patterns here need more.
+
+\subsection{P15: a module constant array (4 sites)}
+
+\emph{Program.} \code{const KINDS: readonly string[] = ["a", "b", "c", "d"];}
+read at \code{KINDS[f \& 3]} \status{observed: \code{t06\_const\_table.ts}}.
+
+\emph{Fact.} $\len{\mathit{KINDS}}=4$ at each entry of the function.
+
+\emph{Where TF stops.} The store location of the literal has a contract
+that admits every store of string cells. A transition that shortens it is
+admissible, so the fact is not $\bx\top$. The fact holds because no code
+writes that store, which TF cannot state without ownership.
+
+\begin{definition}[Immutable store and immutable content]\label{def:imm}
+A store location $s$ has an \emph{immutable store} when its contract
+admits one store $\sigma$. It has \emph{immutable content} when, besides,
+each $l\in\mathit{cells}(\sigma)$ has a contract that admits one value.
+The cell of a module \code{const} binding has the contract that admits
+the value it is initialised with. An array literal held in a module
+\code{const} binding of a \code{readonly} array type is allocated with
+immutable content.
+\end{definition}
+\noindent
+Example: in the worked program, cell 0 holds $k$ for good, the store
+location 1 holds $\langle 2,3,4\rangle$ for good, and the locations 2, 3
+and 4 hold their strings for good. So $F_2=(\len{\mathit{KINDS}}=3)$ and
+$\every(\mathit{KINDS},3,v\text{ is a string})$ are $\bx\top$, which is
+what line 30 needs at every entry of \code{lastKind}
+\status{proved on paper: Section~\ref{sec:sound}}.
+
+\emph{Sites.} \code{prepareWithSegments} (142), \code{hasProperty} (234),
+\code{needsComplexTextPath} (89, 90).
+
+\emph{Evidence.} \code{kindName} is refused; \code{kindNameLocal}, the
+same literal declared in the function, is verified \status{observed:
+\code{t06\_const\_table.ts}}.
+
+\subsection{P5: bounds held by the contents of generated tables (16 sites)}
+
+\emph{Program.} A module cell \code{let rows: Uint8Array | null = null}
+is set by \code{rows ??= decode()}, where \code{decode} copies the bytes
+of a packed string into a new \code{Uint8Array}. The function reads
+\code{t[t[state]!]!}. With the table cached in the cell, the read is
+first blocked by P16; with the table decoded at each call, it is refused
+at \code{t[t[state]]} \status{observed: the case
+\code{bounds-pattern-generated-table-refused}}.
+
+\emph{Fact.} $\every(t,\kw{view}(t),0\le v<\kw{view}(t))$ for the decoded
+table $t$.
+
+\emph{Where TF stops.} Two things are missing. First, no step establishes
+the fact: the decoder copies bytes without testing them. A check in the
+decoder establishes it, or an assumption that the generated data meets
+its generator's contract does (Section~\ref{sec:notcovered}). Second, the
+element cells of the table are value locations, written by the decoder
+after allocation, and any later step may write them. Definition~\ref{def:imm}
+fixes content at allocation, and a decoded table gets its content after
+allocation.
+
+\begin{definition}[Sealed content]\label{def:seal}
+A \emph{seal} of an array $z$ at a step is the statement that, from that
+step on, the store location of $z$ and every cell its store lists have
+the contract that admits the contents they hold at that step.
+\end{definition}
+\noindent
+Example: \code{decode} seals \code{out} at its return. From then on
+$\every(\mathit{out},\kw{view}(\mathit{out}),v<\mathit{states})$, once
+checked, is $\bx\top$. A seal changes a location's contract, which TF
+excludes (TF §10, \emph{Fixed contracts}). Its soundness is
+\status{conj.} (Section~\ref{sec:sound}).
+
+\emph{Sites.} In \code{line-breaks.ts} (\code{unpackTable},
+\code{getClass}, \code{unpackClassRuns}, \code{unpackStateRows},
+\code{markRuleBoundaries}), 12 in all; 2 in \code{gecko-line-breaks.ts};
+1 in \code{getWebKitGenericFamilies}; 1 in \code{getScriptFacts}. Each
+index is an entry or the length of a decoded table.
+
+\emph{Evidence.} Constant-stride rows verify \status{observed:
+\code{t09\_arith.ts}, \code{goodStride}}. No program with a decoded table
+is run.
+
+\subsection{P16: a cache location initialised at its first use (4 sites)}
+
+\emph{Program.} \code{let bmp: Uint16Array | null = null;} and
+\code{const table = (bmp ??= new Uint16Array(65536)); return table[cp]!;}
+under $0\le\mathit{cp}<65536$ \status{observed: \code{t07\_lazy\_cell.ts}}.
+
+\emph{Fact.} $\mathit{bmp}\doteq\code{null}\vee\kw{view}(\mathit{bmp})=65536$
+at every entry (Definition~\ref{def:cellpath}).
+
+\emph{Where TF stops.} Within one invocation \textsc{(Init)} keeps facts
+across \code{??=} (TF §8, \emph{Write-once cache}). Across invocations
+the fact is a property of the cell's contents, and the contract
+\code{Uint16Array | null} does not fix it.
+
+\begin{definition}[Refined cell contract]\label{def:cellinv}
+A module binding $b$ may state a \emph{refinement} $I_b(v)$, a formula
+of one value $v$ that reads, besides $v$, only immutable locations. The
+contract of the cell $l_b$ is the set of values of $b$'s type that
+satisfy $I_b$. Each write to $b$ proves $I_b$ of the written value. Each
+read of $b$ assumes it.
+\end{definition}
+\noindent
+Example: $I_{\mathit{bmp}}(v)=(v\doteq\code{null}\vee\kw{view}(v)=65536)$.
+The initial value \code{null} satisfies it, and the write in \code{??=}
+writes a typed array of length 65536. The read \code{table[cp]} follows,
+since a typed array's length is immutable. The same definition applies to
+a field written once by \code{??=}, such as \code{measurement.kanaKerning}.
+
+\emph{Sites.} \code{hasProperty} (232), \code{shouldBreakFast} (492),
+\code{nextBreakablePosition} (722), \code{getKanaKerning} (955). For the
+first three the table comes from \code{unpackTable}, so its length is
+also a P5 fact.
+
+\emph{Evidence.} \code{bitsAt} is refused; \code{bitsFresh}, the table
+allocated where it is read, is verified \status{observed:
+\code{t07\_lazy\_cell.ts}}.
+
+\subsection{P20: a type invariant of a value read back from a Map (1 site)}
+
+\emph{Program.} \code{type ClassTable = \{ readonly index: Uint16Array \}}
+with the invariant \code{this.index.length === 4352}; a function returns
+\code{cache.get(name)} of a \code{Map<string, ClassTable>}, or builds the
+table and sets it \status{observed: \code{t18\_map\_cache.ts}}.
+
+\emph{Fact.} $\kw{view}(t.\mathit{index})=4352$ for the value $t$ that
+\code{cache.get(name)} returns.
+
+\emph{Where TF stops.} TF has no invariant of a type. A value read from a
+native's result carries its type and no further fact.
+
+\begin{definition}[Type contract]\label{def:tcon}
+A type $T$ may state an invariant $I_T(v)$, a formula of one value $v$
+that reads only immutable locations. The contract $T$ is the set of
+values of type $T$ that satisfy $I_T$. Each step that gives a value the
+type $T$ proves $I_T$ of it. Each read of a location of contract $T$
+assumes it.
+\end{definition}
+\noindent
+Example: with the field \code{index} of \code{ClassTable} declared
+\code{@stable}, $I_{\mathit{ClassTable}}(v)=(\kw{view}(v.\mathit{index})=4352)$
+reads only immutable locations. \code{build} gives its object literal the
+type \code{ClassTable} and proves the invariant there. \code{cache.get(name)}
+returns a value of type \code{ClassTable} or \code{undefined}, by the
+contract of \code{Map}, so it returns a value that meets the invariant or
+\code{undefined}.
+
+\emph{Sites.} \code{markRuleBoundaries} (361), reading
+\code{overrides.categories[i]} below \code{overrides.chars.length} of
+rules cached in a \code{Map}.
+
+\emph{Evidence.} \code{tableOf} is refused at its return;
+\code{classOfBuilt}, the record its builder returns, is verified
+\status{observed: \code{t18\_map\_cache.ts}}.
+
+\section{Richer terms}\label{sec:cap5}
+
+TF's atoms are linear, quantify one array at a time, and name elements
+only through $\every$. The five patterns here need five term forms. Each
+is class (a).
+
+\subsection{P9: a product of two variables in an index (7 sites)}
+
+\emph{Program.} \code{rows[state * width]} under
+\code{rows.length === states * width} and $0\le\mathit{state}<\mathit{states}$
+\status{observed: \code{t09b\_product.ts}, refused at the source gate}.
+
+\begin{definition}[Row table]\label{def:row}
+A term may be a product $x\cdot y$ of two variables. The atom
+$\rowt(z,n,w)$ holds when $n,w\in\mathbb{N}$ and $\len z=n\cdot w$ (for a
+typed array, $\kw{view}(z)=n\cdot w$). Its rule \textsc{(Row)} is
+\[
+\rowt(z,n,w)\wedge 0\le r<n\wedge 0\le c<w\ \vdash\ 0\le r\cdot w+c<\len z .
+\]
+\end{definition}
+\noindent
+Example: with $\rowt(\mathit{rows},\mathit{states},\mathit{width})$,
+\code{row = state * width} and $3+\mathit{category}<\mathit{width}$, the
+read \code{rows[row + 3 + category]} is below the length. The support of
+$\rowt(z,n,w)$ is that of $\len z$.
+
+\emph{Sites.} \code{parseGraphemeRules} (46, 47, 48),
+\code{findGraphemeEnds} (85), \code{markRuleBoundaries} (369, 373, 382).
+Each also needs the state read from the table to be below
+\code{states}, a P5 fact.
+
+\subsection{P10: equal counts computed by two functions of one input (7 sites)}
+
+\emph{Program.} \code{ends(text)} and \code{widthsOf(text)} each push one
+entry per non-space code unit of \code{text}; the caller reads
+\code{w[k]} for $k<\len e$ \status{observed: \code{t12\_uf.ts}}.
+
+\emph{Fact.} $\len e=\len w$.
+
+\begin{definition}[Named count]\label{def:count}
+A \emph{count} $g$ is declared by a prefix recurrence on strings:
+$g(x,0)=0$ and $g(x,i+1)=g(x,i)+\beta(x,i)$ for $i<\slen(x)$, where
+$\beta(x,i)\in\{0,1\}$ is a condition on the code unit of $x$ at $i$. It
+names $g(x)=g(x,\slen(x))$. Terms may contain $g(x)$ and $g(x,t)$ for a
+variable $x$ and a linear term $t$.
+\end{definition}
+\noindent
+Example: $\beta(x,i)=1$ when the code unit at $i$ is not 32. Both
+builders prove the loop invariant $\len{\mathit{out}}=g(\mathit{text},i)$,
+and so the post $\len r=g(\mathit{text})$; the caller derives
+$\len e=g(\mathit{text})=\len w$. The support of $g(x)$ is $\emptyset$.
+
+\emph{Sites.} 6 in \code{measureAnalysis}, among them
+\code{fitAdvances[k]} under \code{k < extraSpacings.length}; 1 in
+\code{prepareRichInline} (523). Here $g$ counts graphemes. Whether
+pretext's grapheme count has the form of Definition~\ref{def:count} is
+not checked \status{conj.}.
+
+\subsection{P12: a pointwise relation of two arrays (5 sites)}
+
+\emph{Program.} Under
+\code{forall k in fits: extras[k] === null || extras[k].length === fits[k].length},
+the read \code{e[g]} with \code{e = extras[i]} and
+\code{g < fits[i].length} \status{observed: \code{t04\_pointwise.ts},
+refused at the source gate}.
+
+\begin{definition}[Indexed every]\label{def:ievery}
+The atom $\every_k(t,\varphi)$ holds when, for each $k$ with $0\le k<t$,
+$\varphi$ holds and every read in $\varphi$ is defined. The formula
+$\varphi$ may read, for several arrays $x$, the element $x[k]$, the
+length $\len{x[k]}$ of an element that is an array, a field $x[k].f$, and
+the guard $x[k]\doteq\code{null}$. Two regions name what it reads:
+$z[\ast].f$ denotes the locations $u(f)$ of the objects $u$ held by the
+cells the store of $z$ lists, and $z[\ast].\kw{store}$ denotes the store
+locations of the arrays held by those cells.
+\end{definition}
+\noindent
+Example:
+$\every_k(\len{\mathit{fits}},\ \mathit{extras}[k]\doteq\code{null}\vee\len{\mathit{extras}[k]}=\len{\mathit{fits}[k]})$
+bounds \code{e[g]} by \code{g < fits[i].length}. Its support is
+$\{\mathit{fits}[\ast]:\keep,\ \mathit{extras}[\ast]:\keep,\ \mathit{fits}[\ast].\kw{store}:\keep,\ \mathit{extras}[\ast].\kw{store}:\keep\}$.
+TF's $\every(z,t,\varphi)$ is $\every_k(t,\varphi[z[k]/v])$ with one
+array. The 2 sites of P3 at line 1185 need
+$\every_k(t,\mathit{fragments}[k].\mathit{itemIndex}<n)$, of support
+$\{\mathit{fragments}[\ast]:\keep,\ \mathit{fragments}[\ast].\mathit{itemIndex}:\keep\}$.
+
+\emph{Sites.} \code{countPreparedLines} (376),
+\code{walkPreparedComplexLines} (1027),
+\code{stepPreparedSimpleLineGeometry} (1134), \code{getPartWidth} (1001),
+\code{getWebKitParagraphBreaks} (704). The last relates
+$\mathit{starts}[k+1]-\mathit{starts}[k]$ to
+$\slen(\mathit{items}[k].\mathit{text})$.
+
+\subsection{P17: an index into the element another index selects (3 sites)}
+
+\emph{Program.} \code{fits[c.segment]![c.grapheme]!} under
+\code{c.grapheme < fits[c.segment].length} \status{observed:
+\code{t11\_cursor.ts}, refused at the source gate}.
+
+\begin{definition}[Indexed path]\label{def:ipath}
+Paths are $\pi::=x\mid\pi.f\mid\pi[t]$ with $t$ a linear term. The read
+of $\pi[t]$ is the element at index $t$ of the array that $\pi$ reads; it
+fails at a hole or past the end. The region of the read of $\pi[t]$ is
+the store location of that array with the cell at index $t$.
+\end{definition}
+\noindent
+Example: $c.\mathit{grapheme}<\len{\mathit{fits}[c.\mathit{segment}]}$
+reads the fields of \code{c}, the store of \code{fits}, the cell at
+$c.\mathit{segment}$, and the store of the array that cell holds. Its
+support gives each of these $\keep$, but the last, which tolerates
+$\grow$.
+
+\emph{Sites.} \code{stepPreparedSimpleLineGeometry} (1134, 1134) and
+\code{getPartWidth} (998).
+
+\subsection{P19: a running sum of element lengths (2 sites)}
+
+\emph{Program.} A loop
+\code{for (let i = 0, at = 0; i < segments.length; at += segments[i++]!.length)}
+reads \code{offsets[at]}, with
+$\kw{view}(\mathit{offsets})$ the sum of the segments' lengths, the view
+being allocated at that sum. The read is refused \status{observed: the
+case \code{bounds-pattern-running-sum-refused}}.
+
+\begin{definition}[Element sum]\label{def:sum}
+For an array $z$, terms $i,j$ and a term $\tau$ of one element,
+$\esum(z,i,j,\tau)=\sum_{i\le k<j}\tau(z[k])$. Linear atoms may contain
+it. Its rules are $\esum(z,j,j,\tau)=0$ and
+$\esum(z,i,j,\tau)=\tau(z[i])+\esum(z,i+1,j,\tau)$ for $i<j$.
+\end{definition}
+\noindent
+Example: the loop invariant
+$\mathit{at}+\esum(\mathit{segments},i,\len{\mathit{segments}},\slen)=\kw{view}(\mathit{offsets})$
+with each element nonempty gives $\mathit{at}<\kw{view}(\mathit{offsets})$
+while $i<\len{\mathit{segments}}$. Its support is
+$\{\mathit{segments}[\ast]:\keep\}$: a string element is a value.
+
+\emph{Sites.} \code{findSegmentSources} (1270, 1271).
+
+\section{Rules TF has and TScert lacks}\label{sec:cap6}
+
+Each pattern here is class (c): the fact is stated, and TF derives it,
+from rules TF states or from posts sound for the step.
+
+\subsection{P7: a fact over a local closure's captures (10 sites)}
+
+\emph{Program.} \code{const glyphs = [\ldots 4 objects \ldots];} and a
+closure \code{group(from, to)} that reads \code{glyphs[i]!.advance} for
+$\mathit{from}\le i<\mathit{to}$, called as \code{group(0, 2) + group(2, 4)}
+\status{observed: \code{t19\_closure.ts}}.
+
+\emph{In TF.} \code{glyphs} is a \code{const} that no closure writes, so
+it is a variable (TF §2). The closure's precondition
+$\len{\mathit{glyphs}}=4\wedge0\le\mathit{from}\wedge\mathit{to}\le4$
+names it free, \textsc{Call} substitutes the parameters only, and
+\textsc{Frame} carries $\len{\mathit{glyphs}}=4$ from the closure's
+creation to each call \status{paper: TF §2, \textsc{Call},
+\textsc{Frame}}.
+
+\emph{Sites.} \code{getHanKerningTrims} (212, 213), \code{getFontData}
+(140 four times, 142), \code{prepareRichInline} (577, 586, 620).
+
+\emph{Evidence.} \code{groups} is refused; \code{inline}, the same reads
+in the function's own body, is verified \status{observed:
+\code{t19\_closure.ts}}.
+
+\subsection{P11: a string's element read below its length (5 sites)}
+
+\emph{Program.} \code{for (let i = 0; i < text.length; i++) out = text[i]!;}
+\status{observed: \code{t08\_strings.ts}}.
+
+\emph{In TF.} The fact $0\le i<\slen(\mathit{text})$ is over variables and
+a string length, invariant by Definition~\ref{def:slen}, and the loop
+test establishes it. The step needs its post.
+
+\begin{proposition}[String read]\label{prop:strread}\status{proved on paper}
+$\hoare{0\le i<\slen(s)}{y=s[i]}{y\text{ is a string}\wedge\slen(y)=1}$.
+\end{proposition}
+\begin{proof}
+For a string and an integer index below its length, JavaScript's indexed
+read yields the one-unit string of the code unit at that index.
+\end{proof}
+
+\emph{Sites.} \code{segmentAtLineBreaks} (390, 396),
+\code{getWebKitLineRules} (787), \code{measureKanaKerning} (963, 963).
+
+\emph{Evidence.} \code{badElement} is refused; \code{goodCode}, a
+\code{charCodeAt(i)} in the same loop, is verified \status{observed:
+\code{t08\_strings.ts}}.
+
+
+\subsection{P13: a typed-array prefix filled with a postfix counter (5 sites)}
+
+\emph{Program.} \code{for (let i = 1; i <= n; i++) ends[count++] = i;}
+for \code{ends: Int32Array} with $n\le\kw{view}(\mathit{ends})$, returning
+\code{count}, with the prefix fact stated as the post. The loop's back
+edge is refused: the fact over the parameter \code{ends} is not extended
+across the write. The same loop over a view allocated in the function is
+verified \status{observed: the cases
+\code{bounds-pattern-postfix-prefix-refused} and
+\code{bounds-pattern-postfix-prefix}}.
+
+\emph{Fact.} $\every(\mathit{ends},\mathit{count},0<v\le\slen(\mathit{text}))$,
+established by the writes and returned in a post that names
+\code{count}.
+
+\begin{proposition}[Extending an every]\label{prop:extend}\status{proved on paper}
+Let $\varphi$ be a formula of one element whose other terms are
+invariant, and $t$ a variable.
+\begin{enumerate}[label=(\alph*),itemsep=1pt,topsep=2pt]
+\item For a typed array $z$:
+$\hoare{\every(z,t,\varphi)\wedge0\le t<\kw{view}(z)\wedge\varphi(v)}{z[t]=v}{\every(z,t+1,\varphi)}$.
+\item For an array $z$:
+$\hoare{\every(z,\len z,\varphi)\wedge\dense(z,\len z)\wedge\varphi(v)}{z.\code{push}(v)}{\every(z,\len z,\varphi)\wedge\dense(z,\len z)}$.
+\end{enumerate}
+\end{proposition}
+\begin{proof}
+(a) The write changes the one element cell at index $t$. The cells at the
+indices below $t$ are other cells of the same store, so they keep their
+contents, and the cell at $t$ holds $v$. (b) The push changes the store
+of $z$ by one new cell at index $\old(\len z)$, holding $v$, and leaves
+the other cells. In both cases $\varphi$ reads nothing else that changes.
+\end{proof}
+
+\noindent
+With the renaming $\mathit{count}'=\mathit{count}+1$ of the postfix
+increment, (a) and \textsc{Loop} keep the fact. In the worked program,
+(b) at line 10 keeps
+$\every(\mathit{lists}.\mathit{kinds},\len{\mathit{lists}.\mathit{kinds}},0\le v<3)$,
+since the pushed value is 0, 1 or 2.
+
+\emph{Sites.} \code{setupClusterBoundaries} (353),
+\code{getUnspacedGraphemes} (263), \code{prepareRichInline} (698, 699,
+700).
+
+\begin{remark}[Establishing an every]
+The analysis attributes P13 to \textsc{Loop}. \textsc{Loop} keeps the
+fact; Proposition~\ref{prop:extend} establishes it at each write. TF
+states neither part of that proposition. The pattern is class (c).
+\end{remark}
+
+\subsection{P18: a guarded fact through two fields (2 sites)}
+
+\emph{Program.} A type \code{Prepared} with \code{@stable} fields
+\code{widths} and \code{items: Items | null}, \code{Items} with a
+\code{@stable} field \code{insideExtras: number[] | null}, and the
+invariant
+$g\vee\len{p.\mathit{items}.\mathit{insideExtras}}=\len{p.\mathit{widths}}$
+with $g=(p.\mathit{items}\doteq\code{null}\vee p.\mathit{items}.\mathit{insideExtras}\doteq\code{null})$
+\status{observed: \code{t05\_depth2\_guard.ts}}.
+
+\emph{In TF.} $\rigid(p.\mathit{items})$ holds, and under
+$\neg(p.\mathit{items}\doteq\code{null})$ so does
+$\rigid(p.\mathit{items}.\mathit{insideExtras})$. So $g$ is invariant,
+and law (d) of TF's Proposition \emph{Laws},
+$g\vee\bx\Phi F\vdash\bx\Phi(g\vee F)$, moves the guard under the
+modality. In \code{badNoCall} the loop body only reads, its effect is
+$\emptyset$, and the fact is kept \status{paper: Proposition
+\emph{Laws} (d), \textsc{(Rigid)}, \textsc{Loop}}.
+
+\emph{Sites.} \code{stepPreparedSimpleLineGeometry} (1138, 1138).
+
+\emph{Evidence.} \code{bad} and \code{badNoCall} are refused; \code{good},
+a guard of one field, is verified \status{observed:
+\code{t05\_depth2\_guard.ts}}.
+
+\subsection{P21: shift left and bitwise or (0 sites as first blocker)}
+
+\emph{Program.} \code{values[(hi <{}< 8) | (c \& 0xff)]} under
+$0\le\mathit{hi}<4352$ and $\kw{view}(\mathit{values})=1114112$
+\status{observed: \code{t09\_arith.ts}}.
+
+\begin{proposition}[Shift and or]\label{prop:shift}\status{proved on paper}
+For integers $0\le a<2^{23}$ and $0\le d\le 255$, \code{(a <{}< 8) | d}
+equals $256a+d$.
+\end{proposition}
+\begin{proof}
+$256a<2^{31}$, so the 32-bit shift is exact and its low 8 bits are zero.
+The or with $d<256$ sets those bits to $d$.
+\end{proof}
+
+\noindent
+With $d=c\mathbin{\&}255\in[0,255]$, the index is
+$256\,\mathit{hi}+d<4352\cdot256=1114112$. The post is linear.
+
+\emph{Sites.} None as first blocker; one as second blocker, in
+\code{getClass} (138), first blocked by P5.
+
+\emph{Evidence.} \code{badBits} is refused; \code{goodShift},
+\code{index[c >{}> 8]}, is verified \status{observed:
+\code{t09\_arith.ts}}.
+
+\section{The classification}\label{sec:class}
+
+The table gives, for each pattern, its sites, the analysis's class, the
+class this note finds (Definition~\ref{def:classes}), and what it needs.
+
+\medskip
+\noindent
+{\small
+\begin{tabular}{@{}llrllp{0.36\textwidth}@{}}
+\toprule
+cap. & pattern & sites & analysis & found & needs\\
+\midrule
+1 & P1 & 50 & (b) & (b) & 47: Def.~\ref{def:compl}; 3: Def.~\ref{def:effvar}\\
+2 & P2 & 31 & (c) & (c) & \textsc{Call} with a two-state post\\
+2 & P8 & 10 & (c) & (c) & Prop.~\ref{prop:writelen}\\
+2 & P14 & 4 & (c) & (c) & native posts; Def.~\ref{def:slen} for 1\\
+3 & P3 & 19 & (c) & 17 (c), 2 (a) & Tolerant frame; 2: Def.~\ref{def:ievery}\\
+3 & P4 & 18 & (b) & (c) & a regional callee effect, \textsc{(Sep)}, \textsc{(Rigid)}\\
+3 & P6 & 12 & (b) & (b) & Def.~\ref{def:kinds}\\
+4 & P5 & 16 & (d) & (d) & Def.~\ref{def:seal}, and a check or trust\\
+4 & P15 & 4 & (d) & (d) & Def.~\ref{def:imm}\\
+4 & P16 & 4 & (d) & (d) & Def.~\ref{def:cellinv}\\
+4 & P20 & 1 & (d) & (d) & Def.~\ref{def:tcon}\\
+5 & P9 & 7 & (a) & (a) & Def.~\ref{def:row}\\
+5 & P10 & 7 & (a) & (a) & Def.~\ref{def:count}\\
+5 & P12 & 5 & (a) & (a) & Def.~\ref{def:ievery}\\
+5 & P17 & 3 & (a) & (a) & Def.~\ref{def:ipath}\\
+5 & P19 & 2 & (a) & (a) & Def.~\ref{def:sum}\\
+6 & P7 & 10 & (c) & (c) & TF §2, \textsc{Call}, \textsc{Frame}\\
+6 & P11 & 5 & (c) & (c) & Prop.~\ref{prop:strread}, Def.~\ref{def:slen}\\
+6 & P13 & 5 & (c) & (c) & Prop.~\ref{prop:extend}, \textsc{Loop}\\
+6 & P18 & 2 & (c) & (c) & Laws (d), \textsc{(Rigid)}\\
+6 & P21 & 0 & (c) & (c) & Prop.~\ref{prop:shift}\\
+\bottomrule
+\end{tabular}}
+\medskip
+
+\noindent
+By class, the 215 blocked sites are: (a) 26, (b) 62, (c) 102, (d) 25.
+The analysis's counts are (a) 24, (b) 80, (c) 86, (d) 25. The difference
+is P4 (18 sites from (b) to (c)) and 2 sites of P3 (from (c) to (a)). The
+patterns P11 and P14 are class (c) only with Definition~\ref{def:slen}.
+
+\section{Soundness of the extensions}\label{sec:sound}
+
+Each statement below says what makes one extension sound in TF's model:
+which properties of admissible transitions it uses, and what must be
+checked where. A statement marked \status{proved on paper} carries its
+argument.
+
+\begin{description}[leftmargin=1.5em,style=sameline]
+\item[String length (Def.~\ref{def:slen})] \status{proved on paper} An
+atom over variables and string lengths is invariant. Argument: strings
+are scalars, so $\slen(x)$ depends on $\rho(x)$ alone; a step extends
+$\rho$ and changes none of its bindings (TF §2). No (T$n$) is used.
+\item[Complement and object regions (Def.~\ref{def:compl})]
+\status{proved on paper} For a variable $x$, the effect
+$\{\val\setminus x.\ast:\any,\ \st:\grow\}$ is rigid. Argument: by (T3)
+$x.\ast$ denotes the same set in every heap. By admissibility a location
+keeps its contract, hence its class. A location of $h$ changed by the
+first of two steps and again by the second lies, in both, in
+$\val\setminus x.\ast$ or in $\st$; transitivity follows as for TF's class
+regions, using (T1). For a path $\pi$ that is not rigid, $\pi.\ast$ is
+read in each step's own heap and the effect is not rigid in general.
+\item[Bounded effect variable (Def.~\ref{def:effvar})]
+\status{proved on paper} If a derivation of $f$'s
+triple uses $\eff p$ only as the effect of the calls of $p$ and through
+$\eff p\sqsubseteq\Psi$, then replacing $\eff p$ by a rigid
+$\Psi'\sqsubseteq\Psi$ whose regions rebase to themselves gives a
+derivation of the instance. Argument: by induction on the derivation.
+\textsc{Frame} at a call of $p$ needs $\bx{\eff p}R$, which the
+derivation obtained from $\bx\Psi R$ by law (c); law (c) gives
+$\bx{\Psi'}R$ the same way. \textsc{Loop} and \textsc{Seq-Eff} need the
+effect rigid and its regions rebased to the entry; $\Psi'$ is rigid, and
+its regions are class regions, kind regions, or regions at rigid paths,
+which rebase to themselves (TF §6, \emph{Rebasing}). With the argument
+\code{undefined}, each call of $p$ is skipped by its guard
+(\code{visit !== undefined} or \code{?.}) or throws before any change, so
+the instance $\emptyset$ bounds it. It uses (T1). What must be
+checked: at each call, $\Psi'\sqsubseteq\Psi$; for a visitor passed by
+code outside the analysed sources, this is assumed.
+\item[Kind regions (Def.~\ref{def:kinds})] \status{proved on paper}
+$\fld$, $\cel$, $\elt$ and $\st$ denote pairwise disjoint sets, and an
+effect over them is rigid. Argument: TF partitions $\mathrm{dom}\,h$
+into $F\uplus C\uplus E\uplus S$, and a location's kind is fixed by what
+allocated it: an own key, a binding, an array element or an array. The
+rigidity argument of TF's class regions applies kind by kind. Respect by
+kind needs $K=\kw{true}$. No (T$n$) beyond (T1) is used.
+\item[Immutable store and content (Def.~\ref{def:imm})] Two statements.
+\status{proved on paper} A fact that reads only locations with
+single-value contracts is $\bx\top$: by (T4) each of those locations holds
+the same contents in every admissible successor. \status{conj.} Every
+step of the program respects the contracts given to a module literal:
+the literal is allocated with its contents, so the contracts hold at
+allocation; afterwards, the store or a cell is written only through a
+reference of a mutable array type, and a \code{readonly} array type is
+not assignable to a mutable one. This rests on the absence of casts and
+of \code{any} in the sources, and on natives that receive the array not
+writing it.
+\item[Sealed content (Def.~\ref{def:seal})] \status{conj.} A seal is sound
+when, at the sealing step, no reference to the array or its cells exists
+at a mutable type outside the sealing function's result. A seal narrows a
+location's contract after allocation. TF's worlds keep every contract
+(TF §3), so a seal needs worlds whose extension may narrow a contract,
+and a typing judgment that remains valid under narrowing. Neither is
+given here. After a seal, the statement of Def.~\ref{def:imm} applies by
+(T4).
+\item[Refined cell contract (Def.~\ref{def:cellinv})]
+\status{proved on paper} If every write to $b$ proves $I_b$ and the
+initial value satisfies it, then $I_b(h(l_b))$ holds in every reachable
+heap. Argument: $I_b$ reads besides $v$ only immutable locations, so by
+(T4) its truth for a fixed $v$ does not change. The contract of $l_b$ is
+fixed at allocation, and every admissible successor meets it (TF §3).
+What must be checked: each write to $b$; all of them are in $b$'s module,
+since an ES module's importers cannot assign its bindings.
+\item[Type contract (Def.~\ref{def:tcon})] \status{proved on paper} If
+each step that gives a value the type $T$ proves $I_T$, then every value
+of contract $T$ in a reachable state meets $I_T$. Argument: as for the
+refined cell contract, with (T3) for the field locations $I_T$ reads
+through and (T4) for their contents. What must be checked: each
+construction of a $T$, each assignment that types a value of another
+type at $T$, and each native whose result has type $T$; the last is an
+assumption about the native (here \code{Map.get}).
+\item[Row table (Def.~\ref{def:row})] \status{proved on paper} Argument:
+$r\cdot w+c\le(n-1)w+(w-1)=nw-1<\len z$. The atom reads what $\len z$
+reads, so it inherits that support.
+\item[Named count (Def.~\ref{def:count})] \status{proved on paper} $g$ is a
+function of a string value, defined by recurrence on $i\le\slen(x)$, so
+$g(x)$ reads no location and atoms over it are invariant. A post
+$\len r=g(x)$ is proved by the builder like any linear post. What must be
+checked: that the declared recurrence is the one each builder's loop
+follows.
+\item[Indexed every and element regions (Def.~\ref{def:ievery})]
+\status{proved on paper} The stated support is a support. Argument: the
+truth of $\every_k(t,\varphi)$ is determined by the stores of the arrays
+$x$, the contents of the cells they list, and the field locations and
+element stores those contents lead to; the support keeps each. The
+regions $z[\ast].f$ and $z[\ast].\kw{store}$ are read in the heap a
+change starts from, as TF's regions are. It uses (T3).
+\item[Indexed path (Def.~\ref{def:ipath})] \status{proved on paper} A
+fact through $\pi[t]$ is supported by $\keep$ on each field, store and
+cell its read passes through, and by the change the fact tolerates on the
+last store it reads. Argument: those locations determine the read. A
+growth of a store may list a new cell at a present index: TF's $\preceq$
+bounds the length, the dense prefixes and the newness of listed cells,
+and does not fix the cell at an index. So a store whose cell the read
+selects needs $\keep$.
+\item[Element sum (Def.~\ref{def:sum})] \status{proved on paper} The two
+rules are the definition of a finite sum. The support
+$\{z[\ast]:\keep\}$ and the supports of $\tau$ determine every summand.
+\item[Posts (Props.~\ref{prop:writelen}, \ref{prop:strread},
+\ref{prop:extend}, \ref{prop:shift})] \status{proved on paper} Each is a
+sound two-state post of its step, by the step's semantics, and enters a
+proof as $Q_e$ of checked transfer (TF §7). Every other fact crosses the
+step by \textsc{Frame}.
+\end{description}
+
+\section{What is not covered}\label{sec:notcovered}
+
+\paragraph{The sites not placed.} 3 sites of $U$:
+\begin{description}[leftmargin=1.5em,style=sameline]
+\item[\code{analyzeText} (522, 524)] The reads \code{scanStarts[k]} below
+\code{paragraph.atomic.length} and \code{sourceBreaks[after]} with
+\code{after = scanStarts[k] + 1}. They need
+$\len{\mathit{scanStarts}}=\len{\mathit{paragraph}.\mathit{atomic}}$ after
+a callee pushes into \code{scanStarts}, and
+$\every(\mathit{scanStarts},\len{\mathit{scanStarts}},v<\slen(r))$ for
+the callee's result string $r$. Both are TF assertions with
+Definition~\ref{def:slen}; the first is a P2 post when it needs $\old$.
+Neither is tested.
+\item[\code{readScriptRuns} (193)] The read \code{openBrackets[opened + 1]}
+with \code{opened = openBrackets.lastIndexOf(x)}. It is in bounds because
+the array holds pairs and \code{x} occurs at no odd index. The parity
+$\exists m.\,\len{\mathit{openBrackets}}=2m$ is a TF assertion. The fact
+at odd indices needs Definition~\ref{def:ievery} with a guard on $k$, and
+the post of \code{lastIndexOf} \status{conj.}. Neither is tested.
+\end{description}
+
+\paragraph{Untested programs.} Every pattern's program has an observed
+verdict, each read on the branch \code{single-pass} at \code{b7c8a559}.
+The worked program's verdicts are in Section~\ref{sec:worked}. The
+module-cell program of P6 is this note's and is not run. The 165 locally supported sites without a
+verified shape are \status{conj.}. The assignment of each pretext site to
+a pattern is \status{conj.}, except where the minimal program matches the
+site's shape directly: P1, P2, P3, P11, P15, P16 and P18.
+
+\paragraph{Trust decisions.} Three facts enter as assumptions, not as
+proofs:
+\begin{description}[leftmargin=1.5em,style=sameline]
+\item[The bound on a visitor passed by the application] The walkers are
+exported. The application passes \code{onLine}, and its effect is not
+analysed. The bound $\Psi_{\mathit{onLine}}$ of Section~\ref{sec:cap1}
+is an assumption about it.
+\item[Native length contracts] The posts of \code{replace}, \code{split},
+\code{map}, \code{subarray} and \code{slice} in Section~\ref{sec:cap2},
+the post of \code{lastIndexOf}, and the type of \code{Map.get}'s result
+in Section~\ref{sec:cap4}. Each is a contract of a native, audited and
+assumed.
+\item[Generated tables] The entries of the tables that pretext's
+generator packs meet that generator's contract: a back reference, a run
+length, a class or a state below its bound. The alternative to the
+assumption is a check in each decoder.
+\end{description}
+
+\paragraph{Outside the account.} The 34 rewrite markers whose operand is
+no index read (a nullable binding, a field, a call result), and the
+rewritten source's other changes, are outside this note.
+
+\end{document}
