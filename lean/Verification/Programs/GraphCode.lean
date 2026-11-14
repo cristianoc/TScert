@@ -249,6 +249,20 @@ def freshSlot (F : List Nat) (pushed out : Bool) : Nat → Bool
   | 0 => if pushed then out else F.contains 0
   | j + 1 => if pushed then F.contains j else F.contains (j + 1)
 
+/-- The slots of `D` a destination keeps fresh (`freshSlot` at each slot's
+source through `mapping`), with the source's fresh slots `S` as a set: the
+inference's filter of an edge, each slot found in constant time. -/
+def freshKept (D : List Nat) (S : Std.HashSet Nat) (pushed out : Bool) (mapping : Mapping) : List Nat :=
+  if D.isEmpty then [] else
+  let arr := mapping.map List.toArray
+  D.filter fun i =>
+    match (match arr with | none => i | some a => a[i]?.getD 0) with
+    | 0 => if pushed then out else S.contains 0
+    | j + 1 => if pushed then S.contains j else S.contains (j + 1)
+
+/-- A list of slots as a set. -/
+def slotSet (F : List Nat) : Std.HashSet Nat := F.foldl (·.insert ·) {}
+
 /-- The destinations' facts follow from the source's and from the node's
 value, fresh where `out`; and a return under a fresh-result goal returns a
 fresh value. -/
@@ -1270,12 +1284,12 @@ below decides whether the result holds on every edge. -/
   nodes.foldr (fun ((node, _), l) facts =>
     let F := facts.getD l []
     let out := varFresh F node.expression || calls.getD l false
+    let FS := slotSet F
     let facts := (successors node.continuation).foldl (fun facts t =>
-      facts.modify t.label fun D => D.filter fun i =>
-        freshSlot F (pushes node.continuation) out (slot t.mapping i)) facts
+      facts.modify t.label fun D => freshKept D FS (pushes node.continuation) out t.mapping) facts
     -- A handler binds the thrown value, never fresh, before the node's slots.
     match node.handler with
-    | some t => facts.modify t.label fun D => D.filter fun i => freshSlot F true false (slot t.mapping i)
+    | some t => facts.modify t.label fun D => freshKept D FS true false t.mapping
     | none => facts) facts
 
 @[nospecialize] def freshIterate (nodes : List ((Node × NodeEvidence ι) × Nat)) (calls : Array Bool) :

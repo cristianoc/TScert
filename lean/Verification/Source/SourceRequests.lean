@@ -202,15 +202,16 @@ decides whether the result holds at every node and on every edge. -/
     let cells := cells.set! l C
     let outF := GraphCode.ArgumentRegionGraph.freshOut G images sums F C c node.expression
     let outC := GraphCode.ArgumentRegionGraph.cellOut F C node.expression
-    let edge := fun (D : List Nat) (S : List Nat) (out : Bool) (t : ControlFlow.Target) =>
-      D.filter fun i => GraphCode.freshSlot S (GraphCode.pushes node.continuation) out (PointClaims.slot t.mapping i)
+    let FS := GraphCode.slotSet F
+    let CS := GraphCode.slotSet C
+    let edge := fun (D : List Nat) (S : Std.HashSet Nat) (out : Bool) (t : ControlFlow.Target) =>
+      GraphCode.freshKept D S (GraphCode.pushes node.continuation) out t.mapping
     let (values, cells) := (CertificateProducer.successors node.continuation).foldl (fun (values, cells) t =>
-      (values.modify t.label fun D => edge D F outF t, cells.modify t.label fun D => edge D C outC t)) (values, cells)
+      (values.modify t.label fun D => edge D FS outF t, cells.modify t.label fun D => edge D CS outC t)) (values, cells)
     match node.handler with
     | some t =>
-      let handle := fun (D : List Nat) (S : List Nat) =>
-        D.filter fun i => GraphCode.freshSlot S true false (PointClaims.slot t.mapping i)
-      (values.modify t.label fun D => handle D F, cells.modify t.label fun D => handle D C)
+      (values.modify t.label fun D => GraphCode.freshKept D FS true false t.mapping,
+        cells.modify t.label fun D => GraphCode.freshKept D CS true false t.mapping)
     | none => (values, cells)) tables
 
 @[nospecialize] def freshTablesIterate [DecidableEq ι] (G : PositiveGraphs.NormalGraph ι)
