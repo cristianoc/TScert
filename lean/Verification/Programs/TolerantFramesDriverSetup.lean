@@ -290,7 +290,7 @@ theorem inDegrees_get (nodes : Array Node) (reached isHead : Array Bool) (t : Na
 
 omit [Labels ι] in
 theorem visB_replicate (n t : Nat) :
-    visB (⟨Array.replicate n {}, Array.replicate n [], Array.replicate n [], Array.replicate n [], #[], 0⟩ :
+    visB (⟨Array.replicate n {}, Array.replicate n [], Array.replicate n [], Array.replicate n [], #[], 0, #[]⟩ :
       SinglePass.Walk ι) t = false := by
   simp only [visB, Array.getElem?_replicate]
   split <;> rfl

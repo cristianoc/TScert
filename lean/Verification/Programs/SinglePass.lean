@@ -266,6 +266,15 @@ structure StepGrades where
   throws : List Footprints.Closed
   scope : Bool
 
+/-- **A visit's record of its step's local effect**: the label visited, the
+grades its footprint check reads (`stepGrades`) and its result's freshness
+(`outFreshOf`), each over the read summaries that visit's step left
+(`VisitRecord.of`). -/
+structure VisitRecord where
+  label : Nat
+  grades : StepGrades
+  outFresh : Bool
+
 /-- What the pass counts. -/
 structure Counts where
   visited : Nat := 0
@@ -291,9 +300,9 @@ structure Counts where
   store lacks. -/
   merges : Nat := 0
   mergeDiffs : Nat := 0
-  /-- Under `grading` (`run`), each visited label's local effect
-  (`stepGrades`); empty otherwise. -/
-  grades : Array (Option StepGrades) := #[]
+  /-- Under `grading` (`run`), each visit's record of its step's local
+  effect (`Walk.visits`); empty otherwise. -/
+  grades : Array VisitRecord := #[]
 
 /-- The counts as one JSON object (`TSCERT_COUNTS`, `dev/perf-gate.mts`). -/
 def Counts.json (c : Counts) : String :=
@@ -2043,7 +2052,9 @@ structure EdgeWalk (ι : Type) where
 
 /-- The walk's record: per label what `LabelWalk` states, the states and
 implications every processed edge carried into it, the edges into a merge
-as the merge reads them; the processed edges in order; the nodes visited. -/
+as the merge reads them; the processed edges in order; the nodes visited;
+under `grading`, each visit's record of its step's local effect, in the
+order of the visits (`VisitRecord`). -/
 structure Walk (ι : Type) where
   labels : Array (LabelWalk ι)
   incoming : Array (List State)
@@ -2051,6 +2062,7 @@ structure Walk (ι : Type) where
   incomingEdges : Array (List (List (Ty ι) × List (PromiseCalls.Implication ι) × PointClaims.Mapping))
   edges : Array (EdgeWalk ι) := #[]
   visited : Nat := 0
+  visits : Array VisitRecord := #[]
 
 /-- The walk's state between two nodes: its record, and what it threads. -/
 structure WalkState (ι : Type) [BEq ι] [Hashable ι] (G : NormalGraph ι) where
@@ -2151,6 +2163,8 @@ structure WalkEnv (ι : Type) [DecidableEq ι] [Hashable ι] (G : NormalGraph ι
   deadArr : Array Bool
   startNames : List Nat
   argName : Option Nat
+  /-- Whether each visit records its step's local effect (`Walk.visits`). -/
+  grading : Bool
 
 /-- Under a footprint bound stating no normal return, the region from which
 no normal return is possible (`GraphCode.inferDead`), refined from every
@@ -2220,10 +2234,11 @@ def setupEnv (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (
     (givenInputs : Array (List (Nat × Nat))) (observe : Option Nat) (tracing observeEntry : Bool)
     (regional : Option Regional) (isHead reached : Array Bool) (startEntered : Bool)
     (stated given : Array (Option Knowledge)) (merging deadArr : Array Bool) (startNames : List Nat)
-    (argName : Option Nat) : WalkEnv ι G images :=
+    (argName : Option Nat) (grading : Bool) : WalkEnv ι G images :=
   { pool, fuel, suggestions, index, codes, aliases, passChecker, undefTy, nodes, claimed, n := nodes.size, start,
     goal, ensures, reference, debugNode, bound, givenImplies, givenArgs, givenInputs, observe, tracing,
-    observeEntry, regional, isHead, reached, startEntered, stated, given, merging, deadArr, startNames, argName }
+    observeEntry, regional, isHead, reached, startEntered, stated, given, merging, deadArr, startNames, argName,
+    grading }
 
 /-- The walk's setup over one graph: its checks (the claims' count, the
 loop heads' fuel, store regions with an edge into the start, the entry's
@@ -2242,7 +2257,7 @@ def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty 
     (givenArgs : Array (List Nat) := #[])
     (ensures : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
     (entrySeparation : HeapSeparation.Separation := {}) (observe : Option Nat := none) (tracing : Bool := false) (observeEntry : Bool := false)
-    (regional : Option Regional := none) :
+    (regional : Option Regional := none) (grading : Bool := false) :
     Except (WalkStop ι G) (WalkEnv ι G images × WalkState ι G) :=
   let nodes := P.toArray
   let claimed := claims.toArray
@@ -2314,7 +2329,7 @@ def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty 
     let argName : Option Nat := goal.slot.bind fun sl => startNames[sl]?
     .ok (setupEnv G images pool fuel suggestions index codes aliases passChecker undefTy nodes claimed start goal
         ensures reference debugNode bound givenImplies givenArgs givenInputs observe tracing observeEntry regional
-        isHead reached startEntered stated given merging deadArr startNames argName,
+        isHead reached startEntered stated given merging deadArr startNames argName grading,
       setupState n answers counts trace indeg queue startWidth)
 
 /-- A node's output facts as an edge reads them: the step's output `out`
@@ -2577,6 +2592,57 @@ def boundOk (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEn
           | none => false) exc ret
         (outFreshOf G images codes sums c node entry stepK deriv)
 
+/-- **A visit's record** at label `l`: the grades of its step (`stepGrades`)
+at the fresh receiver slots, over the read summaries `sums` the step left,
+its facts `stepK` and its derivation `deriv`, and its result's freshness
+`outFresh`. -/
+def VisitRecord.of (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
+    (l : Nat) (node : Node) (c : PointClaim ι) (entry : State) (sums : List (ReadSummary ι)) (stepK : Knowledge)
+    (deriv : ProgramCertificates.Evidence ι) (outFresh : Bool) : VisitRecord :=
+  { label := l, grades := stepGrades G images codes sums (recvFresh node entry) c node stepK deriv, outFresh }
+
+/-- **The footprint check read off a visit's record**, at the bound
+$`(\Phi, \mathit{ret}, \mathit{exc})`$ and the no-return region `deadArr`,
+over the graph's nodes and claims: at a label of the region `deadNode` with
+no throw bound, elsewhere the record's grades within the bound
+(`StepGrades.admits`) at the live handler, the bound's throw and return
+conditions and the record's freshness. -/
+def VisitRecord.admits (G : NormalGraph ι) (nodes : Array Node) (claimed : Array (PointClaim ι))
+    (B : Footprints.Closed × Bool × Bool) (deadArr : Array Bool) (r : VisitRecord) : Bool :=
+  let node := nodes[r.label]!
+  let c := claimed[r.label]!
+  if deadArr.getD r.label false then
+    GraphCode.deadNode G deadArr.toList node (deadEvidence c node) && !B.2.2
+  else
+    r.grades.admits B.1
+      (match node.handler with
+        | some t => !deadArr.getD t.label false
+        | none => false) B.2.2 B.2.1 r.outFresh node.continuation
+
+/-- **The footprint checks read off a walk's records** (`VisitRecord.admits`
+of every visit's record): the check that the bound `B` with its no-return
+region `deadArr` admits every visit the records witness. -/
+def recordsAdmit (G : NormalGraph ι) (nodes : Array Node) (claimed : Array (PointClaim ι))
+    (B : Footprints.Closed × Bool × Bool) (deadArr : Array Bool) (visits : Array VisitRecord) : Bool :=
+  visits.all (·.admits G nodes claimed B deadArr)
+
+omit [Hashable ι] [Instantiates ι] in
+/-- **The footprint check at a bound is its record's check** (proved): the
+check `boundOk` makes at a visit of `l` under the bound `B` is
+`VisitRecord.admits` of the record of that visit (`VisitRecord.of`, over the
+same read summaries, at the freshness `outFreshOf` computes over them;
+`footprintCheck_eq_admits`). -/
+theorem boundOk_eq_admits (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
+    (B : Footprints.Closed × Bool × Bool) (deadArr : Array Bool) (nodes : Array Node) (claimed : Array (PointClaim ι))
+    (l : Nat) (entry : State) (sums : List (ReadSummary ι)) (stepK : Knowledge)
+    (deriv : ProgramCertificates.Evidence ι) :
+    boundOk G images codes (some B) deadArr l nodes[l]! claimed[l]! entry sums stepK deriv =
+      (VisitRecord.of G images codes l nodes[l]! claimed[l]! entry sums stepK deriv
+        (outFreshOf G images codes sums claimed[l]! nodes[l]! entry stepK deriv)).admits G nodes claimed B deadArr := by
+  obtain ⟨Φ, ret, exc⟩ := B
+  simp only [boundOk, VisitRecord.admits, VisitRecord.of, footprintCheck_eq_admits]
+  rfl
+
 /-- A step's yields checked (`checkedYields`) at the node's claim, the
 step's facts and derivation, the promise branch's derivation checked over
 the read summaries of `answers`. -/
@@ -2661,6 +2727,15 @@ def returnOk (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv
   | some (refusal, _, _) => refusal.isNone
   | none => true
 
+/-- **The record a visit makes of its step** under `grading`
+(`VisitRecord.of` at the read summaries `sums` the step left, its
+freshness `outFresh` as the visit computed it); none otherwise. -/
+def gradedRecord (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l : Nat)
+    (entry : State) (sums : List (ReadSummary ι)) (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι)
+    (outFresh : Bool) : Option VisitRecord :=
+  if env.grading then some (VisitRecord.of G images env.codes l env.nodes[l]! env.claimed[l]! entry sums stepK deriv outFresh)
+  else none
+
 /-- What a node's step gives its exits and its record: the answers it
 started from (`stepAnswers`), those after `checkedStep` (`steppedAnswers`,
 which the footprint check reads), those the return check started from
@@ -2668,7 +2743,7 @@ which the footprint check reads), those the return check started from
 fresh counter and timer kind after it; the slots it read, its result,
 whether its result holds a fresh store, whether its footprint and return
 checks passed, its yields where computed, the handler's thrown value's type
-and name. -/
+and name, and under `grading` the visit's record (`gradedRecord`). -/
 structure StepDone (ι : Type) [BEq ι] [Hashable ι] (G : NormalGraph ι) where
   stepAnswers : Answered G
   steppedAnswers : Answered G
@@ -2686,6 +2761,7 @@ structure StepDone (ι : Type) [BEq ι] [Hashable ι] (G : NormalGraph ι) where
   yields : Option (List (PromiseCalls.Yield ι))
   thrownTy : Option (Ty ι)
   thrown : Nat
+  record : Option VisitRecord
 
 /-- A node's step (`visit`'s second part), from the walk's state `σ` and the
 node's entry `en`: the checked step (`stepRun`), an observation of it, its
@@ -2719,6 +2795,7 @@ def visitStep (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
       let sums := a.summaries.toList
       let outFresh := outFreshOf G images env.codes sums c node entry st.stepK deriv
       let bounded := boundOk G images env.codes env.bound env.deadArr l node c entry sums st.stepK deriv
+      let record := gradedRecord G images env l entry sums st.stepK deriv outFresh
       if !bounded then .error (WalkStop.mk (.outsideBound l) counts a trace)
       else
         let (yields, a1) := stepYields G images env l entry en.implies st a
@@ -2731,7 +2808,8 @@ def visitStep (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
           match returnRun G images env l entry st (yields.getD []) a1 with
           | none =>
             .ok { stepAnswers := σ.answers, steppedAnswers := a, yieldAnswers := a1, answers := a1, counts, trace,
-                  fresh, lastKind, ms, st, outFresh, bounded, returned := true, yields, thrownTy, thrown }
+                  fresh, lastKind, ms, st, outFresh, bounded, returned := true, yields, thrownTy, thrown,
+                  record }
           | some (refusal, a2, queried) =>
             let counts := match queried with
               | some q => { counts with queries := counts.queries + 1, queryAtoms := counts.queryAtoms + q }
@@ -2740,7 +2818,8 @@ def visitStep (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
             | some why => .error (WalkStop.mk (.refused why) counts a2 trace)
             | none =>
               .ok { stepAnswers := σ.answers, steppedAnswers := a, yieldAnswers := a1, answers := a2, counts, trace,
-                    fresh, lastKind, ms, st, outFresh, bounded, returned := true, yields, thrownTy, thrown }
+                    fresh, lastKind, ms, st, outFresh, bounded, returned := true, yields, thrownTy, thrown,
+                    record }
 
 /-- How an exit's types were established: its context met by no
 environment (`vacuous`); every differing slot's type below the target's
@@ -3247,6 +3326,11 @@ def LabelWalk.ofVisit {G : NormalGraph ι} (entryFresh : Nat) (en : Entered ι) 
     after := some { en.entry with names := sd.st.result :: en.entry.names, store := sd.st.store },
     bounded := sd.bounded, returned := sd.returned, merge := en.merge, region }
 
+/-- The visits' records with a visit's record, where it made one. -/
+def pushRecord (visits : Array VisitRecord) : Option VisitRecord → Array VisitRecord
+  | some r => visits.push r
+  | none => visits
+
 /-- One node's visit, its entry, its step and its exits, from the walk's
 state `σ`: the state after it built here alone, the label's record written
 once (`visit` keeps its read-summary table). -/
@@ -3261,7 +3345,7 @@ def visitBody (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
       | .ok ex =>
         .ok { walk := { labels := σ.walk.labels.set! l (LabelWalk.ofVisit σ.fresh en sd (ex.regional.map (·.state))), incoming := ex.incoming,
                         incomingImpl := ex.incomingImpl, incomingEdges := ex.incomingEdges, edges := ex.edges,
-                        visited := σ.walk.visited + 1 },
+                        visited := σ.walk.visited + 1, visits := pushRecord σ.walk.visits sd.record },
               answers := ex.answers, counts := ex.counts, trace := ex.trace, indeg := ex.indeg, fresh := sd.fresh,
               regionIn := ex.regionIn, incomingFrom := ex.incomingFrom, queue := ex.queue, unsat := ex.unsat,
               lastStamp := en.lastStamp, lastKind := sd.lastKind }
@@ -3291,8 +3375,8 @@ def StepDone.light {G : NormalGraph ι} (sd : StepDone ι G) : StepDone ι G :=
   { sd with stepAnswers := {}, steppedAnswers := {}, yieldAnswers := {} }
 
 theorem visitExits_light (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images)
-    (σ : WalkState ι G) (L : Array (LabelWalk ι)) (l : Nat) (en : Entered ι) (sd : StepDone ι G) :
-    visitExits G images env { σ with walk := { σ.walk with labels := L } } l en sd.light =
+    (σ : WalkState ι G) (L : Array (LabelWalk ι)) (V : Array VisitRecord) (l : Nat) (en : Entered ι) (sd : StepDone ι G) :
+    visitExits G images env { σ with walk := { σ.walk with labels := L, visits := V } } l en sd.light =
       visitExits G images env σ l en sd := by
   rfl
 
@@ -3306,10 +3390,11 @@ def visitBodyFast (G : NormalGraph ι) (images : InstanceImageCheck G) (env : Wa
     | .error stop => .error stop
     | .ok sd =>
       let labels := σ.walk.labels
+      let visits := σ.walk.visits
       let fresh := σ.fresh
       let visited := σ.walk.visited
       let stepSummaries := sd.stepAnswers.summaries.size
-      let σx := { σ with walk := { σ.walk with labels := #[] } }
+      let σx := { σ with walk := { σ.walk with labels := #[], visits := #[] } }
       let sdx := sd.light
       match visitExits G images env σx l en sdx with
       | .error stop => .error stop
@@ -3317,7 +3402,7 @@ def visitBodyFast (G : NormalGraph ι) (images : InstanceImageCheck G) (env : Wa
         .ok { walk := { labels := labels.set! l { LabelWalk.ofVisit fresh en sdx (ex.regional.map (·.state)) with
                           stepSummaries }, incoming := ex.incoming,
                         incomingImpl := ex.incomingImpl, incomingEdges := ex.incomingEdges, edges := ex.edges,
-                        visited := visited + 1 },
+                        visited := visited + 1, visits := pushRecord visits sdx.record },
               answers := ex.answers, counts := ex.counts, trace := ex.trace, indeg := ex.indeg, fresh := sdx.fresh,
               regionIn := ex.regionIn, incomingFrom := ex.incomingFrom, queue := ex.queue, unsat := ex.unsat,
               lastStamp := en.lastStamp, lastKind := sdx.lastKind }
@@ -3347,7 +3432,8 @@ def visitFast (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
   rfl
 
 /-- The walk over one graph: the setup, then `drive` over the visits; the
-walk's state and the nodes the start reaches, or where it stopped. -/
+walk's state and the nodes the start reaches, or where it stopped. Under
+`grading` each visit records its step's local effect (`Walk.visits`). -/
 def runWalk (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
     (P : Program) (claims : List (PointClaim ι)) (start : Nat) (inputs : List (Ty ι)) (goal : Goal ι)
     (assertions : List (Nat × Knowledge)) (cuts : List Nat)
@@ -3360,31 +3446,19 @@ def runWalk (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (T
     (givenArgs : Array (List Nat) := #[])
     (ensures : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
     (entrySeparation : HeapSeparation.Separation := {}) (observe : Option Nat := none) (tracing : Bool := false) (observeEntry : Bool := false)
-    (regional : Option Regional := none) :
+    (regional : Option Regional := none) (grading : Bool := false) :
     Except (WalkStop ι G) (WalkState ι G × Nat) := do
   let (env, σ0) ← setup G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices
     suggestions known codes aliases passChecker answers reference debugNode bound givenImplies givenArgs ensures
-    givenInputs entrySeparation observe tracing observeEntry regional
+    givenInputs entrySeparation observe tracing observeEntry regional grading
   -- Each node enters the queue once: a fuel of the nodes and one never runs out.
   let σ ← drive (visit G images env) (env.n + 1) σ0
   let _ := clock σ.lastKind σ.lastStamp σ.walk.visited
   let reachable := (env.reached.toList.filter id).length
   return (σ, reachable)
-/-- **Each visited step's local effect** (`stepGrades`) from a walk's
-record: at its entry, its checked step and the read summaries the walk
-ended with. -/
-def walkGrades (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
-    (P : Program) (claims : List (PointClaim ι)) (σ : WalkState ι G) : Array (Option StepGrades) :=
-  let nodes := P.toArray
-  let claimed := claims.toArray
-  let sums := σ.answers.summaries.toList
-  σ.walk.labels.mapIdx fun l lw => match lw.visited, lw.entry, lw.stepped, nodes[l]?, claimed[l]? with
-    | true, some entry, some st, some node, some c =>
-      some (stepGrades G images codes sums (recvFresh node entry) c node st.stepK (derivOf c node st))
-    | _, _, _, _, _ => none
 
 /-- The pass over one graph: its verdict a function of the walk's record
-(`Walk.outcome`). -/
+(`Walk.outcome`); under `grading`, the visits' records in its counts. -/
 def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
     (P : Program) (claims : List (PointClaim ι)) (start : Nat) (inputs : List (Ty ι)) (goal : Goal ι)
     (assertions : List (Nat × Knowledge)) (cuts : List Nat)
@@ -3400,11 +3474,10 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     (regional : Option Regional := none) (grading : Bool := false) : Outcome ι × Counts × Answered G × Trace :=
   match runWalk G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
       codes aliases passChecker answers reference debugNode bound givenImplies givenArgs ensures givenInputs
-      entrySeparation observe tracing observeEntry regional with
+      entrySeparation observe tracing observeEntry regional grading with
   | .error stop => (stop.outcome.outcome, stop.counts, stop.answers, stop.trace)
   | .ok (σ, reachable) =>
-    let grades := if grading then walkGrades G images codes P claims σ else #[]
-    (σ.walk.outcome reachable, { σ.counts with reached := reachable, grades }, σ.answers, σ.trace)
+    (σ.walk.outcome reachable, { σ.counts with reached := reachable, grades := σ.walk.visits }, σ.answers, σ.trace)
 
 
 /-- Where a fact over names, absent on entry of node `p`, was last present,

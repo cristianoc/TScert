@@ -424,7 +424,7 @@ request's own conditions, each code request's run against the codes
 admitted before it, the main graph's runs and the read summaries' and
 expression obligations' checks; with the diagnostics asked for (`observe`,
 `counting`) as its line; with `grading`, the main graph's runs report each
-visited step's local effect in their counts (`SinglePass.walkGrades`). -/
+visit's record of its step's local effect in their counts (`SinglePass.Walk.visits`). -/
 def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool := false)
     (debugNode : Nat := 1000000000) (repeats : Nat := 1) (given : Option (Std.HashMap String Json) := none)
     (observe : Option String := none) (counting : Bool := false) (grading : Bool := false) :

@@ -143,6 +143,138 @@ theorem drive_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) (env 
         rw [hvis] at hrest
         exact ih σ' hrest
 
+/-! ### The visits' records
+
+Under `grading` each visit records its step's local effect over the read
+summaries that visit's step left (`gradedRecord`), and the walk keeps every
+record it was given (`Walk.visits`, appended to). So the footprint checks
+read off the records of a walk that returned (`recordsAdmit`) are the checks
+its visits would have made at the bound (`boundOk_eq_admits`): they give
+`DriveAdmits` (`driveAdmits_of_records`). -/
+
+/-- **A returned step and its record** (proved): the step was checked by
+`stepRun` from the visit's entry, leaving the answers the footprint check
+reads (`steppedAnswers`), and the visit's record is `gradedRecord` over
+their read summaries, at the freshness `outFreshOf` computes over them. -/
+theorem visitStep_record (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images)
+    (σ : WalkState ι G) (l : Nat) (en : Entered ι) (sd : StepDone ι G)
+    (h : visitStep G images env σ l en = .ok sd) :
+    (∃ ms stats, stepRun G images env l en.entry en.fresh σ.answers en.counts en.trace =
+        .ok (ms, sd.st, stats, sd.steppedAnswers)) ∧
+      sd.record = gradedRecord G images env l en.entry sd.steppedAnswers.summaries.toList sd.st.stepK
+        (derivOf env.claimed[l]! env.nodes[l]! sd.st)
+        (outFreshOf G images env.codes sd.steppedAnswers.summaries.toList env.claimed[l]! env.nodes[l]! en.entry
+          sd.st.stepK (derivOf env.claimed[l]! env.nodes[l]! sd.st)) := by
+  unfold visitStep at h
+  split at h
+  · cases h
+  rename_i ms st stats a hrun
+  repeat' (first | split at h | extract_lets at h)
+  all_goals first | (cases h; exact ⟨⟨ms, stats, hrun⟩, rfl⟩) | cases h
+
+/-- **A returned visit appends its record** (proved): the visit's entry and
+step returned, and the walk's records after it are those before it with
+the step's record, where it made one. -/
+theorem visit_record (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images)
+    (σ σ' : WalkState ι G) (l : Nat) (h : visit G images env σ l = .ok σ') :
+    ∃ en sd, visitEntry G images env σ l = .ok en ∧ visitStep G images env σ l en = .ok sd ∧
+      σ'.walk.visits = pushRecord σ.walk.visits sd.record := by
+  unfold visit at h
+  split at h
+  · rename_i σ'' hb
+    cases h
+    unfold visitBody at hb
+    split at hb
+    · cases hb
+    rename_i en hen
+    split at hb
+    · cases hb
+    rename_i sd hsd
+    split at hb
+    · cases hb
+    cases hb
+    exact ⟨en, sd, hen, hsd, rfl⟩
+  · cases h
+
+/-- **The walk keeps its records** (proved): a `drive` that returns ends
+with the records it started from, then the ones its visits appended. -/
+theorem drive_visits (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) :
+    ∀ fuel (σ σf : WalkState ι G), drive (visit G images env) fuel σ = .ok σf →
+      ∃ more, σf.walk.visits = σ.walk.visits ++ more := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    intro σ σf h
+    unfold drive at h
+    split at h
+    · cases h; exact ⟨#[], by simp⟩
+    · cases h
+  | succ fuel ih =>
+    intro σ σf h
+    unfold drive at h
+    split at h
+    · cases h; exact ⟨#[], by simp⟩
+    · rename_i l rest _
+      split at h
+      · rename_i σ' hv
+        obtain ⟨more, hm⟩ := ih σ' σf h
+        obtain ⟨en, sd, -, -, hp⟩ := visit_record G images env _ σ' l hv
+        rw [hm, hp]
+        cases sd.record with
+        | none => exact ⟨more, rfl⟩
+        | some r => exact ⟨#[r] ++ more, by simp [pushRecord]⟩
+      · cases h
+
+/-- **The records of a returned walk give `DriveAdmits`** (proved): under
+`grading`, where the footprint check read off every record of the walk a
+`drive` returns admits the bound `B` with the no-return region `d`, every
+visit of that `drive` passes the footprint check at `B` and `d`: its record
+is the one it appended (`visit_record`, `visitStep_record`), kept to the end
+(`drive_visits`), and its check is that record's (`boundOk_eq_admits`). -/
+theorem driveAdmits_of_records (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images)
+    (B : Footprints.Closed × Bool × Bool) (d : Array Bool) (hg : env.grading = true) :
+    ∀ fuel (σ σf : WalkState ι G), drive (visit G images env) fuel σ = .ok σf →
+      recordsAdmit G env.nodes env.claimed B d σf.walk.visits = true →
+      DriveAdmits G images env (some B) d fuel σ := by
+  intro fuel
+  induction fuel with
+  | zero => intro σ σf _ _; trivial
+  | succ fuel ih =>
+    intro σ σf h hall
+    unfold drive at h
+    unfold DriveAdmits
+    split
+    · trivial
+    · rename_i l rest hq
+      rw [hq] at h
+      simp only at h
+      cases hv : visit G images env { σ with queue := rest } l with
+      | error _ => rw [hv] at h; cases h
+      | ok σ' =>
+        rw [hv] at h
+        simp only at h
+        refine ⟨?_, ?_⟩
+        · intro en' hen' ms st stats a hrun
+          obtain ⟨en, sd, hen, hsd, hp⟩ := visit_record G images env _ σ' l hv
+          rw [hen] at hen'
+          injection hen' with he
+          subst he
+          obtain ⟨⟨ms0, stats0, hrun0⟩, hrec⟩ := visitStep_record G images env _ l en sd hsd
+          rw [hrun0] at hrun
+          cases hrun
+          obtain ⟨more, hm⟩ := drive_visits G images env fuel σ' σf h
+          have hmem : VisitRecord.of G images env.codes l env.nodes[l]! env.claimed[l]! en.entry
+              sd.steppedAnswers.summaries.toList sd.st.stepK (derivOf env.claimed[l]! env.nodes[l]! sd.st)
+              (outFreshOf G images env.codes sd.steppedAnswers.summaries.toList env.claimed[l]! env.nodes[l]!
+                en.entry sd.st.stepK (derivOf env.claimed[l]! env.nodes[l]! sd.st)) ∈ σf.walk.visits := by
+            rw [hm, hp, hrec]
+            simp only [gradedRecord, hg, if_true, pushRecord]
+            exact Array.mem_append_left _ (Array.mem_push_self)
+          unfold recordsAdmit at hall
+          rw [boundOk_eq_admits]
+          exact (Array.all_eq_true_iff_forall_mem.mp hall) _ hmem
+        · exact ih σ' σf h hall
+
 omit [Instantiates ι] in
 /-- The setup under a bound is the setup with no bound, its environment at
 that bound and its no-return region (proved). -/
@@ -157,13 +289,13 @@ theorem setup_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) (pool
     (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
     (ensures : List HeapKnowledge.IndexFact) (givenInputs : Array (List (Nat × Nat)))
     (entrySeparation : HeapSeparation.Separation) (observe : Option Nat) (tracing observeEntry : Bool)
-    (regional : Option Regional) :
+    (regional : Option Regional) (grading : Bool) :
     setup G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
         codes aliases passChecker answers reference debugNode (some B) givenImplies givenArgs ensures givenInputs
-        entrySeparation observe tracing observeEntry regional =
+        entrySeparation observe tracing observeEntry regional grading =
       (setup G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
         codes aliases passChecker answers reference debugNode none givenImplies givenArgs ensures givenInputs
-        entrySeparation observe tracing observeEntry regional).map fun (env, σ) =>
+        entrySeparation observe tracing observeEntry regional grading).map fun (env, σ) =>
           (env.rebound (some B) (deadRegion G P.toArray claims.toArray (some B)), σ) := by
   unfold setup
   dsimp only
@@ -178,8 +310,9 @@ theorem setup_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) (pool
   repeat' (first | rfl | split)
 
 omit [Instantiates ι] in
-/-- The setup's environment holds the bound it was given (proved). -/
-theorem setup_bound (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
+/-- The setup's environment holds the bound and the grading it was given,
+and the program's nodes and claims (proved). -/
+theorem setup_env (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
     (P : Program) (claims : List (PointClaim ι)) (start : Nat) (inputs : List (Ty ι)) (goal : Goal ι)
     (assertions : List (Nat × Knowledge)) (cuts : List Nat)
     (candidates : List (Nat × List HeapKnowledge.IndexAtom)) (entryIndices : List HeapKnowledge.IndexAtom)
@@ -189,13 +322,15 @@ theorem setup_bound (G : NormalGraph ι) (images : InstanceImageCheck G) (pool :
     (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
     (ensures : List HeapKnowledge.IndexFact) (givenInputs : Array (List (Nat × Nat)))
     (entrySeparation : HeapSeparation.Separation) (observe : Option Nat) (tracing observeEntry : Bool)
-    (regional : Option Regional) (bnd : Option (Footprints.Closed × Bool × Bool)) (env : WalkEnv ι G images) (σ0 : WalkState ι G)
+    (regional : Option Regional) (grading : Bool) (bnd : Option (Footprints.Closed × Bool × Bool))
+    (env : WalkEnv ι G images) (σ0 : WalkState ι G)
     (h : setup G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
         codes aliases passChecker answers reference debugNode bnd givenImplies givenArgs ensures givenInputs
-        entrySeparation observe tracing observeEntry regional = .ok (env, σ0)) : env.bound = bnd := by
+        entrySeparation observe tracing observeEntry regional grading = .ok (env, σ0)) :
+    env.bound = bnd ∧ env.grading = grading ∧ env.nodes = P.toArray ∧ env.claimed = claims.toArray := by
   unfold setup at h
   dsimp only at h
-  repeat' (first | (cases h; rfl) | (cases h; done) | split at h)
+  repeat' (first | (cases h; exact ⟨rfl, rfl, rfl, rfl⟩) | (cases h; done) | split at h)
 
 /-- **The walk under a bound its every visit admits** (proved): where every
 visit of the walk with no bound passes the footprint check at `B` and the
@@ -211,26 +346,26 @@ theorem runWalk_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) (po
     (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
     (ensures : List HeapKnowledge.IndexFact) (givenInputs : Array (List (Nat × Nat)))
     (entrySeparation : HeapSeparation.Separation) (observe : Option Nat) (tracing observeEntry : Bool)
-    (regional : Option Regional) (B : Footprints.Closed × Bool × Bool)
+    (regional : Option Regional) (grading : Bool) (B : Footprints.Closed × Bool × Bool)
     (hadm : ∀ env σ0, setup G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
         codes aliases passChecker answers reference debugNode none givenImplies givenArgs ensures givenInputs
-        entrySeparation observe tracing observeEntry regional = .ok (env, σ0) →
+        entrySeparation observe tracing observeEntry regional grading = .ok (env, σ0) →
       DriveAdmits G images env (some B) (deadRegion G P.toArray claims.toArray (some B)) (env.n + 1) σ0) :
     runWalk G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
         codes aliases passChecker answers reference debugNode (some B) givenImplies givenArgs ensures givenInputs
-        entrySeparation observe tracing observeEntry regional =
+        entrySeparation observe tracing observeEntry regional grading =
       runWalk G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
         codes aliases passChecker answers reference debugNode none givenImplies givenArgs ensures givenInputs
-        entrySeparation observe tracing observeEntry regional := by
+        entrySeparation observe tracing observeEntry regional grading := by
   unfold runWalk
   rw [setup_rebound]
   cases hs : setup G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
         codes aliases passChecker answers reference debugNode none givenImplies givenArgs ensures givenInputs
-        entrySeparation observe tracing observeEntry regional with
+        entrySeparation observe tracing observeEntry regional grading with
   | error _ => rfl
   | ok x =>
     obtain ⟨env, σ0⟩ := x
-    have hnone := setup_bound _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ none env σ0 hs
+    have hnone := (setup_env _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ none env σ0 hs).1
     simp only [Except.map, bind, Except.bind]
     rw [show (env.rebound (some B) (deadRegion G P.toArray claims.toArray (some B))).n = env.n from rfl,
       drive_rebound G images env _ _ hnone _ σ0 (hadm env σ0 hs)]
@@ -251,7 +386,7 @@ theorem run_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) (pool :
     (regional : Option Regional) (B : Footprints.Closed × Bool × Bool) (grading : Bool)
     (hadm : ∀ env σ0, setup G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
         codes aliases passChecker answers reference debugNode none givenImplies givenArgs ensures givenInputs
-        entrySeparation observe tracing observeEntry regional = .ok (env, σ0) →
+        entrySeparation observe tracing observeEntry regional grading = .ok (env, σ0) →
       DriveAdmits G images env (some B) (deadRegion G P.toArray claims.toArray (some B)) (env.n + 1) σ0) :
     run G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
         codes aliases passChecker answers reference debugNode (some B) givenImplies givenArgs ensures givenInputs
@@ -260,6 +395,48 @@ theorem run_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) (pool :
         codes aliases passChecker answers reference debugNode none givenImplies givenArgs ensures givenInputs
         entrySeparation observe tracing observeEntry regional grading := by
   unfold run
-  rw [runWalk_rebound _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ B hadm]
+  rw [runWalk_rebound _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ grading B hadm]
+
+/-- **The direct run at a bound its records admit** (proved): where the
+pass's walk with no bound under `grading` returns, and the footprint checks
+read off its records (`recordsAdmit`) admit the bound `B` with the no-return
+region `B` gives, the run at `B` is the run with no bound, its verdict,
+counts, answers and trace (`driveAdmits_of_records`, `run_rebound`). -/
+theorem run_rebound_of_records (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
+    (P : Program) (claims : List (PointClaim ι)) (start : Nat) (inputs : List (Ty ι)) (goal : Goal ι)
+    (assertions : List (Nat × Knowledge)) (cuts : List Nat)
+    (candidates : List (Nat × List HeapKnowledge.IndexAtom)) (entryIndices : List HeapKnowledge.IndexAtom)
+    (suggestions : List (Sequent ι)) (known : List (ProgramCertificates.Evidence ι)) (codes : CodeEntry ι → Bool)
+    (aliases : List (ι × ι)) (passChecker : PassChecker G images)
+    (answers : Answered G) (reference : Array Knowledge) (debugNode : Nat)
+    (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
+    (ensures : List HeapKnowledge.IndexFact) (givenInputs : Array (List (Nat × Nat)))
+    (entrySeparation : HeapSeparation.Separation) (observe : Option Nat) (tracing observeEntry : Bool)
+    (regional : Option Regional) (B : Footprints.Closed × Bool × Bool) (σf : WalkState ι G) (reach : Nat)
+    (hw : runWalk G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
+        codes aliases passChecker answers reference debugNode none givenImplies givenArgs ensures givenInputs
+        entrySeparation observe tracing observeEntry regional true = .ok (σf, reach))
+    (hrec : recordsAdmit G P.toArray claims.toArray B (deadRegion G P.toArray claims.toArray (some B))
+        σf.walk.visits = true) :
+    run G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
+        codes aliases passChecker answers reference debugNode (some B) givenImplies givenArgs ensures givenInputs
+        entrySeparation observe tracing observeEntry regional true =
+      run G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
+        codes aliases passChecker answers reference debugNode none givenImplies givenArgs ensures givenInputs
+        entrySeparation observe tracing observeEntry regional true := by
+  apply run_rebound
+  intro env σ0 hs
+  obtain ⟨-, hg, hn, hc⟩ := setup_env _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ none env σ0 hs
+  unfold runWalk at hw
+  rw [hs] at hw
+  simp only [bind, Except.bind] at hw
+  cases hd : drive (visit G images env) (env.n + 1) σ0 with
+  | error _ => rw [hd] at hw; cases hw
+  | ok σ =>
+    rw [hd] at hw
+    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at hw
+    obtain ⟨rfl, -⟩ := hw
+    rw [← hn, ← hc] at hrec ⊢
+    exact driveAdmits_of_records G images env B _ hg _ σ0 σ hd hrec
 
 end Verification.SinglePass

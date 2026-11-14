@@ -1441,6 +1441,8 @@ run_cmd do
   check ``Verification.SinglePass.drive_rebound
   check ``Verification.SinglePass.runWalk_rebound
   check ``Verification.SinglePass.run_rebound
+  check ``Verification.SinglePass.driveAdmits_of_records
+  check ``Verification.SinglePass.run_rebound_of_records
 
 -- The kinds of the Tolerant-frames model (docs/drafts/location-kinds.md): the
 -- fixed location kinds, their structural satisfaction and its preservation,

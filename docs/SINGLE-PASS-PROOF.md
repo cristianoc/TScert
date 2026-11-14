@@ -2173,7 +2173,8 @@ hypotheses over the setup and the visit.
 returns ran `visitEntry`, `visitStep` and `visitExits` and returns the
 state `visitBody` builds from them: the exits' arrays and threaded
 values, the label's record written once (`LabelWalk.ofVisit`), the visited
-count one more, the read-summary table kept (proved: `visit_ok`, the state
+count one more, the step's record of its local effect appended where the
+walk grades (`pushRecord`), the read-summary table kept (proved: `visit_ok`, the state
 `visitResult`). The record has a record per label below the bound
 (`RecInv.size`), so the visit changes the record at its label only, marks
 it visited, counts it once and keeps the record's size

@@ -23,13 +23,13 @@ variable {ι : Type} [Labels ι] {G : NormalGraph ι} {I : InstanceImageCheck G}
 
 /-- The state a visit returns from its parts (`visitBody`): the exits'
 arrays and threaded values, the label's record written once, the visited
-count one more, the step's fresh counter and the read-summary table kept
+count one more, the step's record of its local effect appended, the step's fresh counter and the read-summary table kept
 (`visit`). -/
 def visitResult (σ : SinglePass.WalkState ι G) (l : Nat) (en : SinglePass.Entered ι) (sd : SinglePass.StepDone ι G)
     (ex : SinglePass.ExitsDone ι G) : SinglePass.WalkState ι G :=
   { walk := { labels := σ.walk.labels.set! l (SinglePass.LabelWalk.ofVisit σ.fresh en sd (ex.regional.map (·.state))), incoming := ex.incoming,
               incomingImpl := ex.incomingImpl, incomingEdges := ex.incomingEdges, edges := ex.edges,
-              visited := σ.walk.visited + 1 },
+              visited := σ.walk.visited + 1, visits := SinglePass.pushRecord σ.walk.visits sd.record },
     answers := SinglePass.keepSummaries σ.answers ex.answers, counts := ex.counts, trace := ex.trace,
     indeg := ex.indeg, fresh := sd.fresh, regionIn := ex.regionIn, incomingFrom := ex.incomingFrom,
     queue := ex.queue, unsat := ex.unsat, lastStamp := en.lastStamp, lastKind := sd.lastKind }

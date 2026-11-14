@@ -192,14 +192,14 @@ structure DirectRead where
 section
 variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
 
-/-- **The direct route's footprint of a member** from each visited step's
-local effect (`grades`, `SinglePass.walkGrades`): the join over the steps
-outside the region with no normal return (`deadRegion`), each at its live
-handler; the throws' join; at each return the returned value's checked
-type's footprint (the join of its signatures', `top` for a value of no
-function type). -/
+/-- **The direct route's footprint of a member** from each visit's record
+of its step's local effect (`records`, `SinglePass.Walk.visits`): the join
+over the visits outside the region with no normal return (`deadRegion`),
+each at its live handler; the throws' join; at each return the returned
+value's checked type's footprint (the join of its signatures', `top` for a
+value of no function type). -/
 def directRead (G : NormalGraph ι) (nodes : Array Node) (claimed : Array (PointClaim ι))
-    (grades : Array (Option SinglePass.StepGrades)) : DirectRead := Id.run do
+    (records : Array SinglePass.VisitRecord) : DirectRead := Id.run do
   let n := nodes.size
   let dead := GraphCode.deadIterate ((nodes.zip claimed).map fun (node, c) => (node, ExpressionEffects.emptyType G c.type))
     (n + 1) (Array.replicate n true)
@@ -207,8 +207,10 @@ def directRead (G : NormalGraph ι) (nodes : Array Node) (claimed : Array (Point
   let mut thrown : Option Closed := some keepAll
   let mut result : Closed := keepAll
   let mut returns := false
-  for l in List.range n do
-    let some (some g) := grades[l]? | continue
+  for r in records do
+    let l := r.label
+    if l ≥ n then continue
+    let g := r.grades
     let node := nodes[l]!
     let c := claimed[l]!
     let d := direct g node.continuation
@@ -235,8 +237,8 @@ end
 
 /-- **A member's interface from its own steps**, given its plans and given
 lines settled with its footprint open (`settledInterface`) and, where its
-last settling run was the walk with no bound, that run's steps' local
-effects (`grades`): the direct route's footprint from them
+last settling run was the walk with no bound, that run's visits' records
+(`grades`): the direct route's footprint from them
 (`directRead`), else from a walk with no bound; and the regional route's,
 where the direct route's footprint is more than keep/keep (no footprint is
 below it): the walk under the regional fallback at `top` (its tables
@@ -247,7 +249,7 @@ checked type's footprint at every return. None where a run stops: the pass
 establishes nothing of the member. A qualified or async body is `top` by
 the language (`passMember`, `RequestJson.asyncEffects`). -/
 def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMap String Json))
-    (grades : Option (Array (Option SinglePass.StepGrades))) (visitsA : Nat) : Option Established := Id.run do
+    (grades : Option (Array SinglePass.VisitRecord)) (visitsA : Nat) : Option Established := Id.run do
   let G : NormalGraph (Label f) := StoreView.graph f.F.store
   let I : PositiveCertificates.InstanceImageCheck G := StoreView.images f.F.store
   let answers : CertificateProducer.Answered G := {}
@@ -257,8 +259,9 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
   let nodes := r.program.toArray
   let claimed := r.claims.toArray
   let n := nodes.size
-  -- The walk the regional route (and, with no grades, the direct route)
-  -- runs: the code requests run first, as `passMember` checks them.
+  -- The walk the regional route (and, with no grades, the direct route,
+  -- its visits recording their steps' local effects) runs: the code
+  -- requests run first, as `passMember` checks them.
   let prepared : Unit → Option ((Option SinglePass.Regional →
       Except (SinglePass.WalkStop (Label f) G) (SinglePass.WalkState (Label f) G × Nat)) × (CodeEntry (Label f) → Bool)) :=
       fun _ => SinglePass.work "propose: preparation" (f.fr.workItem i) fun _ => do
@@ -310,7 +313,7 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
         (runDigests r line "main" (boundText none rg)) (fun x => match x with | .ok (σ, _) => σ.walk.visited | .error _ => 0) fun _ =>
       SinglePass.runWalk G I pool fuel r.program r.claims r.start r.inputs r.goal r.assertions r.cuts r.candidates
         r.entryIndices [] (e ++ rendered) codes r.aliases .ordinary sumsAnswers #[] 1000000000 none
-        main.implies main.args r.ensures main.inputs r.entrySeparation none false false rg, codes)
+        main.implies main.args r.ensures main.inputs r.entrySeparation none false false rg rg.isNone, codes)
   -- (prepared once, where a walk needs it)
   let prepared := Thunk.mk prepared
   -- The direct route: the settling run's steps, else a walk with no bound.
@@ -320,7 +323,7 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
       let some (walk, codes) := prepared.get | return none
       let .ok (σ, reach) := walk none | return none
       if σ.walk.visited < reach then return none
-      pure (directRead G nodes claimed (SinglePass.walkGrades G I codes r.program r.claims σ), σ.walk.visited)
+      pure (directRead G nodes claimed σ.walk.visits, σ.walk.visited)
   let normal := read.normal
   let thrown := read.thrown
   -- The regional route: the walk under the regional fallback at `top`, run
@@ -384,7 +387,7 @@ def openUnbounded (f : FilePlans) (i : Nat) : Bool :=
 
 /-- Member `i`'s plans and given lines settled with its footprint open, as
 `passGroupMode8` settles them (`inferredSettle`'s runs and next states),
-each run reporting its steps' local effects (`passMember`'s `grading`),
+each run reporting its visits' records (`passMember`'s `grading`),
 then its interface from its steps there: from the last run's, where that
 run walked its graph with no bound. -/
 def settledInterface (f : FilePlans) (fuel : Nat) (i : Nat) : Option Established :=
@@ -404,9 +407,9 @@ def settledInterface (f : FilePlans) (fuel : Nat) (i : Nat) : Option Established
           | .refused w lacks => some (w, lacks)
           | _ => none
         -- The main graph's walk with no bound, where the run made it
-        -- (`openUnbounded`, the direct route): its steps' local effects
+        -- (`openUnbounded`, the direct route): its visits' records
         -- where it was accepted, its refusal kept (`none`) where not.
-        let walked : Option (Option (Array (Option SinglePass.StepGrades) × Nat)) :=
+        let walked : Option (Option (Array SinglePass.VisitRecord × Nat)) :=
           if openUnbounded g i then match m.main with
             | some mr => if mr.route matches FootprintRoute.direct then
                 (if mr.outcome matches .accepted then
@@ -416,10 +419,10 @@ def settledInterface (f : FilePlans) (fuel : Nat) (i : Nat) : Option Established
             | none => none
           else none
         ((why, walked) : Option (String × Option (Nat × List HeapKnowledge.IndexAtom)) ×
-          Option (Option (Array (Option SinglePass.StepGrades) × Nat)))
+          Option (Option (Array SinglePass.VisitRecord × Nat)))
       | .error _ => (none, none))
     (fun (res : Option (String × Option (Nat × List HeapKnowledge.IndexAtom)) ×
-          Option (Option (Array (Option SinglePass.StepGrades) × Nat))) => res.1)
+          Option (Option (Array SinglePass.VisitRecord × Nat))) => res.1)
     (fun (g : FilePlans) gv w => g.inferredNextAll fuel false [] gv i w)
     (4 * heads + 3) f given [] 0 0
   SinglePass.work "propose: member interface" (f.fr.workItem i) fun _ =>
