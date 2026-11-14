@@ -62,6 +62,41 @@ def regionRoots : Region → List Nat
 /-- An effect reading runtime slots below `n` alone. -/
 def effectScoped (n : Nat) (Φ : Footprint) : Bool := Φ.all fun e => (regionRoots e.1).all (· < n)
 
+/-- **An ordinary array store stays one** along every admissible
+transition: a location holding an array store has the store kind in the
+world, which the transition keeps (`HeapOk.kinds`, `WExt_roleAt`). With
+tagged stores, the store-category correspondence of the shared foundation
+replaces this proof. -/
+theorem _root_.Verification.TolerantFrames.Admissible.arrayStore {s s' : IndexedHeap} (ha : Admissible s s')
+    {l : Nat} {xs : List (Option Nat)} (hl : s.h[l]? = some (.arr xs)) : ∃ ys, s'.h[l]? = some (.arr ys) := by
+  have hk : K s.W .store l := (s.ok.kinds.2.1 l).mpr ⟨xs, hl⟩
+  obtain ⟨hle, hx⟩ := ha
+  have hk' : K s'.W .store l := by
+    unfold K kindAt at hk ⊢
+    obtain ⟨r, hr, hrk⟩ := Option.map_eq_some_iff.mp hk
+    have := WExt_roleAt hx (show roleAt (trunc s'.n hle s.W) l = some r by rw [roleAt_trunc]; exact hr)
+    rw [this]; simp [hrk]
+  exact (s'.ok.kinds.2.1 l).mp hk'
+
+/-- **The cells a typed array lists** (the note, §4, "Atoms", the element
+of a typed array): today's representation, a host object owning no array
+store whose `viewElementsKey` location holds the listing. The tagged view
+store of the primitive views replaces this one definition. An ordinary
+array lists none here. -/
+def viewCells (h : Heap) : Val → Option (List (Option Nat))
+  | v@(.objAt fs _ _) =>
+    if storeOf v = none ∧ (fs.lookup hostKey).isSome = true then
+      match fs.lookup viewElementsKey with
+      | some l => match h[l]? with
+        | some (.arr ls) => some ls
+        | _ => none
+      | none => none
+    else none
+  | _ => none
+
+theorem viewCells_ordinary {h : Heap} {v : Val} {s : Nat} (hs : storeOf v = some s) : viewCells h v = none := by
+  cases v <;> simp_all [viewCells]
+
 section Action
 variable {Φ : Footprint} {η η' : Env} {s s' s'' : IndexedHeap}
 
@@ -220,12 +255,11 @@ def Atom.Holds (η : Env) (h : Heap) : Atom → Prop
   | .dense p n => ∃ w s ls k, p.read η h = some w ∧ storeOf w = some s ∧ h[s]? = some (.arr ls) ∧
       termAt η h n = some k ∧ 0 ≤ k ∧ DensePrefix k.toNat ls
   | .contents p R => ∃ v, p.read η h = some v ∧ R.mem v = true
-  | .every p n body => ∃ w s ls k, p.read η h = some w ∧ elementsOf w = some s ∧ h[s]? = some (.arr ls) ∧
+  | .every p n body => ∃ w s ls k, p.read η h = some w ∧ storeOf w = some s ∧ h[s]? = some (.arr ls) ∧
       termAt η h n = some k ∧ ∀ i : Nat, (i : Int) < k →
         (∃ l, ls[i]? = some (some l)) ∧ ∀ F ∈ body, F.HoldsAt (scalarValue η h ls i)
-  | .element p t w => ∃ u s ls k l v, p.read η h = some u ∧ elementsOf u = some s ∧
-      h[s]? = some (.arr ls) ∧ termAt η h t = some k ∧ 0 ≤ k ∧ ls[k.toNat]? = some (some l) ∧
-      h[l]? = some v ∧ w.value η h = some v
+  | .element p t w => ∃ u ls k l v, p.read η h = some u ∧ viewCells h u = some ls ∧
+      termAt η h t = some k ∧ 0 ≤ k ∧ ls[k.toNat]? = some (some l) ∧ h[l]? = some v ∧ w.value η h = some v
   | .defined t => (termAt η h t).isSome
   | .safeInt p => ∃ v, p.read η h = some v ∧ (intValue v).isSome
   | .pastSafe p => p.read η h = some (.num SafeIntegers.pastSafeBits)
@@ -309,10 +343,11 @@ theorem Atom.holds_envOnly {a : Atom} (ha : a.envOnly = true) {η : Env} {h h' :
 
 /-! ## Separation and freshness -/
 
-/-- `π # π'` (the note, §4, "Satisfaction"): the two paths read arrays with
-different store locations. -/
+/-- `π # π'` (the note, §4, "Satisfaction"): the two paths read ordinary
+arrays, their stores ordinary array stores, at different locations. -/
 def Separated (η : Env) (h : Heap) (p q : Path) : Prop :=
-  ∃ u w s t, p.read η h = some u ∧ q.read η h = some w ∧ storeOf u = some s ∧ storeOf w = some t ∧ s ≠ t
+  ∃ u w s t xs ys, p.read η h = some u ∧ q.read η h = some w ∧ storeOf u = some s ∧ storeOf w = some t ∧
+    h[s]? = some (.arr xs) ∧ h[t]? = some (.arr ys) ∧ s ≠ t
 
 /-- `apart(π, π')` (the note, §4, "Satisfaction"): `π # π'`, and the stores
 of the two arrays list no common element cell. -/
@@ -445,8 +480,11 @@ theorem invNode_sound (nodes : Array AssertionNode) :
   · rename_i p q hn
     rw [hn] at hs ⊢
     simp only [Bool.and_eq_true, List.isEmpty_iff] at hi
-    obtain ⟨u, w, a, b, hu, hw, rest⟩ := hs
-    exact ⟨u, w, a, b, by rw [Path.read_heap hi.1]; exact hu, by rw [Path.read_heap hi.2]; exact hw, rest⟩
+    obtain ⟨u, w, a, b, xs, ys, hu, hw, hsa, hsb, hxa, hyb, hne⟩ := hs
+    obtain ⟨xs', hx'⟩ := ha.arrayStore hxa
+    obtain ⟨ys', hy'⟩ := ha.arrayStore hyb
+    exact ⟨u, w, a, b, xs', ys', by rw [Path.read_heap hi.1]; exact hu, by rw [Path.read_heap hi.2]; exact hw,
+      hsa, hsb, hx', hy', hne⟩
   · rename_i p hn
     rw [hn] at hs ⊢
     simp only [List.isEmpty_iff] at hi
