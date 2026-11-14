@@ -88,7 +88,6 @@ The language below makes that the primitive.
 
 \section{What exists: variables, locations, stores}\label{sec:model}
 
-Everything below rests on a small inventory, so we state it first.
 
 \paragraph{Variables are not in the heap.} Let $\mathit{Var}$ be the set of variables, ranged over by $x,y$, and
 $\mathit{Val}$ the set of values, ranged over by $v$. An environment
@@ -116,9 +115,8 @@ code after it uses in place of \code{x}. For example, the source assignment
 $i_1$ to $i_0+1$; the code after it reads $i_1$. So a step extends $\rho$ and
 changes none of its existing bindings.
 
-Two consequences follow. An effect describes changes to the heap, so no
-effect mentions a variable. A fact that mentions only variables, such as
-$i<n$, holds after every step once it holds.
+Effects bound heap changes. Variables retain their values, so a fact
+about variables alone, such as $i<n$, persists.
 
 \paragraph{Locations.} A heap $h$ is a finite map from locations, ranged over by $l$, to
 contents. Locations are natural numbers, and the domain of $h$ is the
@@ -206,11 +204,7 @@ Here $\mathrm{dom}\,h=\{0,\dots,8\}$, $F=\{0,1\}$, $C=\{2\}$, $S=\{3\}$, $E=\{4,
 The environment $\rho$ holds \code{o}, \code{inc} and \code{a}; the
 binding \code{k} is the cell 2. A call \code{inc()} changes $h(2)$ to 1 and nothing else, and \code{o.m = 7} changes $h(1)$ to 7 and nothing else.
 
-So an array has two layers that change independently: the store
-$h(s)$, and what each element cell holds. In the example,
-\code{a[0] = 11} changes $h(l_0)$ and leaves $h(s)$ as it is, and
-\code{a.push(40)} changes $h(s)$ and leaves $h(l_0)$ and $h(l_2)$ as
-they are. Each operation writes as follows:
+The operations write as follows:
 
 \medskip
 \noindent
@@ -332,15 +326,9 @@ $b\le b'$: a larger $b$ leaves fewer locations new, so it allows less.
 We write $\delta_b(u,u')$ when $\delta_b$ relates the old contents $u$
 to the new contents $u'$.
 
-The parameter is used in two places only. Among the named changes,
-condition (iv) of $\grow$ reads it; $\keep$, $\init$, $\kw{scalar}$ and
-$\any$ are the same relation for every $b$. And the action of an effect
-(below) sets it: a change that starts from a heap $h$ is taken at
-$b=\len h$, so ``new'' means allocated by that change. There are five named changes. Recall that
-$\mathit{Obj}\subseteq\mathit{Val}$ is the set of objects (Section~2).
-Recall that $\mathit{cells}(\sigma)$ is the set of locations a store
-$\sigma$ lists. Write $N$ for the maximal array length. For
-contents $u,u'$:
+The action of an effect sets $b=\len h$ for its entry heap $h$.
+Only condition (iv) of $\grow$ depends on $b$.
+Write $N$ for the maximal array length. For contents $u,u'$:
 \[
 \begin{array}{lcl}
 \keep_b(u,u') &\iff& u'=u\\[2pt]
@@ -360,21 +348,11 @@ where, for two stores, $\sigma\preceq_b\sigma'$ (read: $\sigma'$ is a
 \text{(iv)} & \mathit{cells}(\sigma')\setminus\mathit{cells}(\sigma)\subseteq\{l\mid l\ge b\}.
 \end{array}
 \]
-In words: $\keep$ allows no change. $\init$ lets \code{null} or
-\code{undefined} be replaced by any value. $\kw{scalar}$ lets a scalar
-be replaced by any value; it keeps every object, functions included.
-$\grow$ also lets a store grow. $\any$ allows everything.
 
-A change bounds contents and ignores types. So
-$\kw{scalar}_b(1,\code{"a"})$ holds: a number may become a string as far
-as the change is concerned. What forbids it at a location declared
-\code{number} is the contract. A change bounded by an effect is, by its
-definition below, also an admissible transition, so both bounds apply:
-the new contents are related to the old ones by the change, and they are
-within the location's contract. For a field declared
-\code{n: number | string}, $\kw{scalar}$ allows the step from 1 to
-\code{"a"} and so does the contract. For a field declared
-\code{n: number} the contract forbids it.
+The change and the contract both bound the new contents.
+For example, $\kw{scalar}_b(1,\code{"a"})$ holds.
+A contract \code{number | string} admits this change;
+a contract \code{number} forbids it.
 
 Each change allows all that the one before it allows:
 \[
@@ -442,8 +420,8 @@ of $h$. There are five forms:
 \item[{$\st$}] Every location of class store:
 $\st(\rho,h)=S$. In the heap of Section~2 it denotes $\{3\}$.
 \item[{$\val$}] Every location of class value:
-$\val(\rho,h)=F\cup C\cup E$. In the heap of Section~2 it denotes
-$\{0,1,2,4,5\}$.
+$\val(\rho,h)=F\cup C\cup E\cup I$. In the heap of Section~2 it denotes
+$\{0,1,2,4,5,6,7,8\}$.
 \item[{$\pi.\kw{store}$}] The store location of the one array that $\pi$
 reads: $(\pi.\kw{store})(\rho,h)=\{s\}$, where $s$ is that array's store
 location. Example: $a.\kw{store}$ denotes $\{3\}$.
@@ -487,13 +465,8 @@ $h\tr{\Phi}_\rho h'$:
 \[
 h\tr{\Phi}_\rho h'\iff h\tr{}_\rho h'\ \wedge\ \forall l<\len h.\ \bigl(h'(l)=h(l)\ \vee\ \exists (r:\delta)\in\Phi.\ l\in r(\rho,h)\wedge\delta_{\len h}(h(l),h'(l))\bigr).
 \]
-In words: the transition is admissible; and every location of $h$ either
-holds what it held, or lies in the region of some entry and changed
-within that entry's change. Three points of the definition matter later.
-The regions are read in the heap $h$ the change starts from, as a
-dynamic frame is~\cite{kassios}. A location that no entry covers is
-unchanged. Locations at or above $\len h$ are allocated by the
-transition and are unconstrained.
+Regions are read in the entry heap $h$, as in dynamic frames~\cite{kassios}.
+New locations are constrained by admissibility alone.
 
 For example, let $h$ be the heap of Section~2 and let $h'$ be $h$ after
 \code{a.push(40)}: $h'(3)=\langle 4,\circ,5,9\rangle$, $h'(9)=40$, and $h'$ agrees with $h$ on every location of $h$ but 3. Then $h\tr{\{\st:\grow\}}_\rho h'$:
@@ -634,16 +607,11 @@ stabilisation~\cite{wickerson}, at a rely denoted by an effect.
 \end{enumerate}
 \end{proposition}
 \noindent
-In words: (a) what holds after every change holds now; (b) the modality
-distributes over conjunction and is monotone; (c) a fact that survives a
-larger effect survives a smaller one; (d) an invariant disjunct can be
-moved under the modality; (e) under a rigid effect, a fact that survives
-one change survives a change after a change. Each is immediate: (a) from
-reflexivity of the action, (b), (c) and (d) from the definitions, (e)
-from transitivity. For effects over class regions
-transitivity is \lean{Closed.Holds.trans\_on}; for a store at a path it
-is \lean{ArgumentStoreRegionsWithin.trans}, under that theorem's premise
-that the path resolves to the same store in both heaps.
+Law (a) follows from reflexivity; (b), (c) and (d) from the definitions;
+(e) from transitivity. For class regions, transitivity is
+\lean{Closed.Holds.trans\_on}; for a store at a path it is
+\lean{ArgumentStoreRegionsWithin.trans}, provided the path resolves to
+the same store in both heaps.
 
 \section{Entering the modality}
 
@@ -720,11 +688,7 @@ atom that reads, besides variables, only what is displayed:
 \]
 \end{proposition}
 \noindent
-Each axiom, in words, with its mark. \textsc{(Grow)} and \textsc{(Init)} are Lean theorems about every
-transition bounded by the displayed effect, and so is \textsc{(View)}
-under the premise its mark states. \textsc{(Sep)}, \textsc{(Every)} and the
-substitution of \textsc{(Rigid)} are \status{conj.} in that form; the
-Lean theorem named for each proves it for one kind of step.
+The marks below give each axiom's scope.
 \begin{description}[leftmargin=1.5em,style=nextline]
 \item[\textsc{(Grow)}] A lower bound on a length survives any change
 that only grows arrays. It mentions no separation: it is
@@ -768,23 +732,27 @@ state at its handler satisfies $Q^{e}$. We write $\hoare PcQ$ when
 $Q^{e}$ is $\kw{true}$. For example
 $\hoare{\kw{true}}{x=\code{[]}}{\len x=0}$.
 
-The posts $Q$ and $Q^{e}$ are \emph{two-state}: in them $\old(e)$
-denotes the value of $e$ in the environment and heap that $c$ started
-in. For example \code{x.push(v)} has the post
-$\len x=\old(\len x)+1$.
+The posts $Q$ and $Q^{e}$ are \emph{two-state} assertions.
+For entry state $(\rho_0,h_0)$ and exit state $(\rho_1,h_1)$,
+$\old(B)$ means $\rho_0,m,h_0\models B$; $m$ is the enclosing
+invocation's entry mark. Ordinary assertions use $(\rho_1,m,h_1)$.
+An $\old$ refers to the command whose triple contains it.
+For example, \code{x.push(v)} has post $\len x=\old(\len x)+1$.
 
 The variable that a step binds is fresh (Section~2). So an assertion $R$
 over the variables in scope before $c$ is unaffected by the binding.
 
 \paragraph{Rules.}
 \begin{mathpar}
+\inferrule*[left=Entry]{\hoarex PcQ{Q^{e}} \\ c:\Phi\mid\Phi^{e}}{\hoarex{P\wedge B}{c}{Q\wedge\old(B)\wedge\kw{tr}_{\Phi}}{Q^{e}\wedge\old(B)\wedge\kw{tr}_{\Phi^{e}}}}
+\and
 \inferrule*[left=Frame]{\hoarex PcQ{Q^{e}} \\ c:\Phi\mid\Phi^{e}}{\hoarex{P\wedge\bx{\Phi}R\wedge\bx{\Phi^{e}}R^{e}}{c}{Q\wedge R}{Q^{e}\wedge R^{e}}}
 \and
 \inferrule*[left=Frame$^{+}$]{\hoare PcQ \\ c:\Phi \\ \Phi\text{ rigid}}{\hoare{P\wedge\bx{\Phi}R}{c}{Q\wedge\bx{\Phi}R}}
 \and
 \inferrule*[left=Loop]{\hoare{I}{c}{I} \\ c:\Phi \\ \Phi\text{ rigid}}{\hoare{I\wedge\bx{\Phi}R}{\code{loop}\ c}{I\wedge\bx{\Phi}R}}
 \and
-\inferrule*[left=Call]{f(\vec p):\hoare PfQ:\Phi}{\hoare{P[\vec x/\vec p]\wedge\bx{\Phi[\vec x/\vec p]}R}{y=f(\vec x)}{Q[\vec x/\vec p]\wedge R}}
+\inferrule*[left=Call]{\hoare{P}{y=f(\vec p)}{Q} \\ y=f(\vec p):\Phi}{\hoare{P[\vec x/\vec p]}{y=f(\vec x)}{Q[\vec x/\vec p]}\qquad y=f(\vec x):\Phi[\vec x/\vec p]}
 \and
 \inferrule*[left=Alloc]{x\text{ fresh} \\ y\text{ ranges over the arrays in scope}}{\hoare{\kw{true}}{x=\code{[]}}{\fresh(x)\wedge\len x=0\wedge\textstyle\bigwedge_y\apart(x,y)}}
 \and
@@ -796,25 +764,34 @@ over the variables in scope before $c$ is unaffected by the binding.
 \noindent
 The rules one by one:
 \begin{description}[leftmargin=1.5em,style=nextline]
+\item[\textsc{Entry}] The assertion $\kw{tr}_\Phi$ means
+$h_0\tr{\Phi}_{\rho_0}h_1$, using the action of Section~3.
+The precondition supplies $\old(B)$; the effect judgment supplies the
+action at each exit. For example, $\len z=j$ before a command
+and its post $\len z=\old(\len z)+10$ imply $\len z=j+10$.
+Lean: \lean{compose\_holds}, \lean{Composer.fact\_holds},
+for a call's normal exit and the facts of TScert's checker, without
+$\kw{tr}_\Phi$; a conjecture for an arbitrary $B$.
 \item[\textsc{Frame}] The frame rule, with $\wedge\,\bx{\Phi}$ where
-separation logic has $\ast$: a fact $R$ that survives every change
-bounded by the effect of $c$ holds after $c$. Its soundness is the
-definition of the modality and of $c:\Phi\mid\Phi^{e}$. It holds for a
-compound $c$ whose effect is stated at its entry, with the variables $c$
-binds renamed apart from those of $R$ and $\Phi$.
+separation logic has $\ast$. It is \textsc{Entry} with
+$B=\bx{\Phi}R\wedge\bx{\Phi^{e}}R^{e}$: by the modality's definition,
+$\old(\bx{\Phi}R)\wedge\kw{tr}_\Phi\vdash R$, and the exceptional exit
+uses $\Phi^{e}$ and $R^{e}$. The effect is stated at the command's
+entry. Bound variables are renamed apart from the frame assertions and
+their effects.
 \item[\textsc{Frame}$^{+}$] For a rigid effect the frame keeps its
 modality after $c$, by law (e).
-\item[\textsc{Loop}] As \textsc{Frame}$^{+}$, for any number of
-iterations. Here $c$ is one iteration together with the evaluation of
-its guard; every exit leaves from a state satisfying $I$; the values the
-loop carries from one iteration to the next are variables of $I$; and
-$R$ mentions none of them.
-\item[\textsc{Call}] The frame rule at a call. The actual arguments
-$\vec x$ are variables, hence fixed values. The substitution
-$[\vec x/\vec p]$ is capture-avoiding, and $Q$ may mention the result
-$y$. When the callee throws, the frame crosses under the callee's
-exceptional effect, which is $\top$ unless stated. Lean:
-\lean{call\_rule}, \lean{invocation\_throw\_action}.
+\item[\textsc{Loop}] Induction on normal iterations uses
+\textsc{Frame}$^{+}$. Here $c$ includes the guard evaluation,
+and every normal exit satisfies $I$. Loop-carried variables occur in
+$I$; neither $R$ nor $\Phi$ mentions them.
+\item[\textsc{Call}] Instantiate the callee's specification at the
+actual arguments by capture-avoiding substitution; $Q$ may mention
+the result $y$. The displayed rule uses assertions independent of
+the invocation mark. Freshness assertions require rebasing between
+the callee's and caller's marks. Exceptional posts and effects
+instantiate in the same way; their defaults are $\kw{true}$ and $\top$.
+Lean: \lean{call\_rule}, \lean{invocation\_throw\_action}.
 \item[\textsc{Alloc}] A new array is fresh, empty, and apart from every
 well-formed array $y$ that exists before the step. These separations are
 facts of the state after the step. Later steps keep or lose them like
@@ -867,10 +844,9 @@ modality.
 \end{example}
 
 \begin{proposition}[Reliance]\label{prop:rely}
-Let a native operation alternate its own steps with calls of callbacks,
-every one of effect bounded by a rigid $\Phi$, and observe the heap only
-between them. If $\bx{\Phi}F$ holds when it starts, $F$ holds at each
-observation.
+Let every native step and every callback have effect bounded by
+a rigid $\Phi$. If $\bx{\Phi}F$ holds initially, $F$ holds at every
+observation between these steps and calls.
 \status{Lean: \lean{rely\_chain}; \lean{map\_rely}, \lean{elems\_rely} for \code{map}}
 \end{proposition}
 \noindent
@@ -881,14 +857,11 @@ has an effect bounded by $\Phi$, then by \textsc{(Dense)} and the
 proposition $F$ holds each time \code{map} reads an element. So the
 result of \code{xs.map(f)} is dense when \code{xs} is.
 
-\paragraph{Exact posts.} A step may state an exact two-state relation,
-such as $\len x=\old(\len x)+1$ for \code{x.push(v)}. This is a strong
-update on shared state, and it needs no ownership. The post constrains
-the written location only. Every other fact crosses the step by
-\textsc{Frame}, and that rule accounts for aliasing. For example, let
-$y$ be an array that may be $x$. After \code{x.push(v)} the lower bound
-$n\le\len y$ still holds, by \textsc{(Grow)}. The equality $\len y=n$
-does not: it is false when $y$ is $x$.
+\paragraph{Exact posts.} The post
+$\len x=\old(\len x)+1$ of \code{x.push(v)} specifies a strong update
+on shared state. If $y$ may alias $x$, \textsc{(Grow)} preserves
+$n\le\len y$. The equality $\len y=n$ can become false when $y=x$.
+\textsc{Entry} combines these facts with the post.
 
 \section{Transfer along edges}\label{sec:transfer}
 
@@ -902,8 +875,8 @@ through $e$.
 It includes the binding of the result, or of the thrown value.
 \item[The condition $B_e$] The condition under which a branch is taken;
 $\kw{true}$ on other edges.
-\item[The renaming $\theta_e$] A map from the variables of the node to
-the variables of the target of $e$.
+\item[The renaming $\theta_e$] A map from target variables to
+their source variables on $e$; it induces the target environment.
 \end{description}
 \noindent
 In Example~\ref{ex:full} below, the true exit of the test
@@ -915,11 +888,9 @@ assertions. A state $s$ satisfies it at an entry mark $m$, written
 $s\models_m\Sigma$, when it satisfies each of them.
 
 \begin{definition}[Checked transfer]
-$\mathrm{Check}(c,\Sigma,e,A)$ holds when there is a finite set
-$K_e\subseteq\Sigma$ with a derivation of $\Sigma\vdash\bx{\Phi_e}F$ for
-each $F\in K_e$, and a derivation of
+$\mathrm{Check}(c,\Sigma,e,A)$ holds when there is a derivation of
 \[
-\old(\Sigma)\ \wedge\ Q_e\ \wedge\ B_e\ \wedge\ K_e\ \ \vdash\ \ \theta_e^{*}A ,
+\old(\Sigma)\ \wedge\ \kw{tr}_{\Phi_e}\ \wedge\ Q_e\ \wedge\ B_e\ \ \vdash\ \ \theta_e^{*}A ,
 \]
 where $\old(\Sigma)$ is $\Sigma$ at the node's entry state,
 $\theta_e^{*}A$ is $A$ with the target's variables replaced by the
@@ -933,9 +904,7 @@ through exit $e$ to $s'$, and $\mathrm{Check}(c,\Sigma,e,A)$, then
 $\theta_e(s')\models_m A$.
 \end{theorem}
 \noindent
-The proof is \textsc{Frame} for $K_e$ and consequence for the rest. The
-entry mark $m$ is fixed for the invocation, and $\old$ refers to the
-state at the entry of the node.
+The proof is \textsc{Entry} with $B=\bigwedge\Sigma$, and consequence.
 
 \paragraph{Sound graphs.} Annotate each point of a graph with knowledge.
 The annotated graph is \emph{sound} when its entry state satisfies the
@@ -943,16 +912,16 @@ knowledge at the entry, and $\mathrm{Check}$ holds on every edge against
 the knowledge at the edge's target. Merges and loop heads are targets
 like any other.
 
-\paragraph{The forward pass.} A forward pass is a way of
-\emph{computing} annotations that satisfy these checks. At a node it
-keeps the facts it can derive under the modality, and adds what the post
-gives. At a merge it keeps what every incoming edge establishes. At a
-loop head one pass cannot compute the knowledge: the knowledge is
-supplied, and checked on the back edges like on any other edge.
+\paragraph{The forward pass.} A forward pass proposes knowledge for
+$\mathrm{Check}$. A merge retains facts established by every incoming
+edge. Loop-head knowledge is supplied.
 
-The derivations are those of Propositions~\ref{prop:laws}
-and~\ref{prop:axioms} together with linear arithmetic. The system is
-sound. It is deliberately incomplete for semantic entailment.
+Derivations use ordinary two-state logic, linear arithmetic, and
+Propositions~\ref{prop:laws} and~\ref{prop:axioms}.
+They include old-state lifting:
+$F\vdash G$ gives $\old(F)\vdash\old(G)$.
+Modal elimination is the entailment in \textsc{Frame}.
+This system is sound and incomplete for semantic entailment.
 
 \begin{example}[Example~\ref{ex:alias}, in full]\label{ex:full}
 With the loop variable a parameter of the head, and
@@ -961,7 +930,7 @@ $\Sigma_H(j)=\{0\le j,\ \mathit{to}\le\len{\mathit{xs}}\}$:
 \begin{array}{llll}
  & \text{node or edge} & \text{effect} & \text{obligation and its reason}\\[2pt]
 1 & \text{entry}\to H(\mathit{from}) & & 0\le\mathit{from},\ \mathit{to}\le\len{\mathit{xs}}\ \text{given}\\
-2 & H(j):\ \code{j < to}\ \text{true} & \emptyset & B=(j<\mathit{to});\ \text{all of }\Sigma_H\text{ kept, }\emptyset\text{ changes nothing}\\
+2 & H(j):\ \code{j < to}\ \text{true} & \emptyset & B=(j<\mathit{to});\ \Sigma_H\ \text{by preservation of existing locations}\\
 3 & v=\code{xs[j]} & \emptyset & \text{the read: }0\le j<\mathit{to}\le\len{\mathit{xs}}\\
 4 & \code{out[j] = v} & \val{:}\any,\ \st{:}\grow & \mathit{to}\le\len{\mathit{xs}}\ \text{by \textsc{(Grow)}};\ 0\le j,\ j<\mathit{to}\ \text{invariant}\\
 5 & j'=j+1 & \emptyset & Q=(j'=j+1)\\
@@ -971,16 +940,15 @@ $\Sigma_H(j)=\{0\le j,\ \mathit{to}\le\len{\mathit{xs}}\}$:
 \]
 No row mentions whether \code{out} is an alias of \code{xs}.
 
-Now suppose the invariant also had an upper bound,
-$\len{\mathit{xs}}\le n$. Row 4 loses it. No axiom puts an upper bound
-under $\bx{\st:\grow}$, and the bound is false after the write when
-\code{out} is \code{xs} and $j=\len{\mathit{xs}}$.
+Suppose the invariant also includes $\len{\mathit{xs}}\le n$.
+The effect in row 4 permits growth beyond $n$, so that effect alone
+does not preserve the bound. The actual write is in bounds by row 3;
+its exact semantics preserves the length.
 
-The upper bound is kept under two additions. The knowledge $\Sigma_H$
-includes $\apart(\mathit{out},\mathit{xs})$. And the effect of the write
-is stated at its region, $\{\mathit{out}[\ast]:\grow\}$. Then the bound
-is kept by \textsc{(Sep)}. The separation itself becomes an obligation
-of rows 1 and 6.
+The regional effect
+$\{\val:\any,\ \mathit{out}.\kw{store}:\grow\}$ preserves the upper bound
+under $\mathit{out}\sep\mathit{xs}$, by \textsc{(Sep)} and law (c).
+This separation is an obligation of rows 1 and 6.
 \end{example}
 
 \section{The patterns}
@@ -990,7 +958,7 @@ of rows 1 and 6.
 \toprule
 Lower bound under aliasing (Ex.~\ref{ex:alias}) & $\mathit{to}\le\len{\mathit{xs}}\vdash\bx{\val:\any,\,\st:\grow}(\mathit{to}\le\len{\mathit{xs}})$\hfill\textsc{(Grow)}\\[2pt]
 Bound across a rewriting call (Ex.~\ref{ex:sep}) & $\mathit{flags}\sep y\wedge i<\len{\mathit{flags}}\vdash\bx{\val:\any,\,y.\kw{store}:\any}(i<\len{\mathit{flags}})$, $y$ standing for the rigid $\mathit{runs}.\mathit{openBrackets}$\hfill\textsc{(Sep)}, \textsc{(Rigid)}\\[2pt]
-Storage the function allocated & the write is no part of the function's effect; $\apart(x,y)$ for older $y$\hfill\textsc{Fresh-Eff}, \textsc{Alloc}\\[2pt]
+Fresh array store & its writes are omitted from the invocation's entry effect; $\apart(x,y)$ for older $y$\hfill\textsc{Fresh-Eff}, \textsc{Alloc}\\[2pt]
 Write-once cache, \code{c ??= build()} & $a\vdash\bx{\Phi_{\mathit{build}}\cup\{\val:\init\}}\,a$, by Theorem~\ref{thm:frame} at a support respected by $\Phi_{\mathit{build}}$ and tolerating $\init$\hfill\textsc{(Init)}\\[2pt]
 Reliance during callbacks & $\dense(\mathit{xs},n)\vdash\bx{\val:\any,\,\st:\grow}\dense(\mathit{xs},n)$\hfill Prop.~\ref{prop:rely}\\[2pt]
 Quantified fact across a write & $\apart(a,z)\wedge\every(z,t,\varphi)\vdash\bx{a[\ast]:\any}\every(z,t,\varphi)$\hfill\textsc{(Every)}\\[2pt]
@@ -1057,18 +1025,14 @@ completeness claim.
 \section{Limits}\label{sec:limits}
 
 \begin{description}[leftmargin=1.5em,style=nextline]
-\item[Effects are closed] An effect has no variables. So a higher-order
-function states one bound for every callback it admits~\cite{bty}.
+\item[Effects are closed] An effect has no variables; Section~8 states
+the consequence for callbacks~\cite{bty}.
 \item[Await] Across an \code{await} the effect is that of the
 environment, $\top$.
-\item[Broken and restored invariants] An invariant that a callee breaks
-and then restores has no form. At each step a fact either enters the
-modality or is derived anew.
-\item[Fixed contracts] A location's contract never changes, so there is
-no type-changing update.
-\item[Transfer at regional effects] The Lean theorem for
-Theorem~\ref{thm:transfer} takes exit effects over the class regions. An
-exit whose effect has a region at a path is outside it.
+\item[Broken and restored invariants] Triples express restored assertions;
+admissibility (Section~3) governs intermediate states.
+\item[Fixed contracts] World extension (Section~3) excludes type-changing updates.
+\item[Transfer at regional effects] Theorem~\ref{thm:transfer} states the Lean scope.
 \end{description}
 
 \begin{thebibliography}{9}\small\itemsep1pt
