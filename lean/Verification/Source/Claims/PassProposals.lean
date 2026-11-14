@@ -91,14 +91,60 @@ def direct (g : SinglePass.StepGrades) (k : Continuation) : Direct :=
   let at_ := fun (live exc : Bool) => leastAccepted fun Φ => g.admits Φ live exc false false k
   { normal := at_ false false, handled := at_ true false, raised := at_ false true }
 
+/-- The parts of the regional route's closed check (`checkClosedNode`) that
+read no bound, computed once for a step: its scope, whether it is an
+inspection, its derivation's tree checked at its term, an empty result or
+entry, and whether its selected signature bounds its throw. -/
+structure ClosedParts where
+  scope : Bool
+  inspect : Bool
+  tree : Bool
+  empty : Bool
+  emptyEntry : Bool
+  throwsSel : Bool
+
+def closedParts (G : NormalGraph ι) (images : InstanceImageCheck G) (sums : List (ReadSummary ι))
+    (c : NodeEvidence ι) (t : Tm) : ClosedParts :=
+  { scope := ProgramCertificates.checkScope (ControlFlow.entry c).length t
+    inspect := ExpressionEffects.check G (ControlFlow.entry c) t
+    tree := decide ((ProgramCertificates.claim c.expression).term = t) &&
+      (ProgramCertificates.checkTreeUsing G images c.expression (sums := sums) ||
+        PromiseCalls.requiresTree G images (ControlFlow.entryFacts G c) (fun _ => false) sums c.expression)
+    empty := ExpressionEffects.emptyType G (ControlFlow.result c)
+    emptyEntry := (ControlFlow.entry c).any (fun A => ExpressionEffects.emptyType G A)
+    throwsSel := ExpressionEffects.selectedThrows c.expression &&
+      (match ExpressionEffects.selectedEffect c.expression with
+        | some eff => eff.onThrow
+        | none => false) }
+
+/-- The closed check at `Φ` from its parts. -/
+def ClosedParts.at (p : ClosedParts) (G : NormalGraph ι) (Φ : Closed) (c : NodeEvidence ι) (t : Tm) (thr : Bool) :
+    Bool :=
+  let w := GraphCode.writeWithinAt G Φ c t
+  let sel := GraphCode.selectedWithinAt Φ [] c.expression
+  p.scope && (!thr || ((p.inspect || w) || (p.tree && sel && p.throwsSel) || p.emptyEntry)) &&
+    (((p.inspect || w) || (p.tree && sel)) || p.empty)
+
+omit [Hashable ι] [Instantiates ι] in
+/-- **The closed check from its parts is the closed check** (proved). -/
+theorem closedParts_at (G : NormalGraph ι) (images : InstanceImageCheck G) (sums : List (ReadSummary ι))
+    (Φ : Closed) (c : NodeEvidence ι) (t : Tm) (thr : Bool) :
+    (closedParts G images sums c t).at G Φ c t thr =
+      GraphCode.ArgumentRegionGraph.checkClosedNode G images sums Φ c t thr := by
+  simp only [closedParts, ClosedParts.at, GraphCode.ArgumentRegionGraph.checkClosedNode, GraphCode.throwsWithin,
+    Bool.and_assoc]
+  rfl
+
 /-- A step's local effect on the regional route, its throw bounded where
 `thr`: the least of its alternatives, each rebased to the entry through the
 regional facts `rs` and read in the closed language (`ofFrame`): the closed
 check (`checkClosedNode`), a call's frame (`callStep`), an element write's
 frame (`writeStep`). -/
 def regional (G : NormalGraph ι) (images : InstanceImageCheck G) (sums : List (ReadSummary ι))
-    (rs : SinglePass.RegionState) (cEv : NodeEvidence ι) (t : Tm) (thr : Bool) : Option Closed :=
-  let closed := leastAccepted fun Φ => GraphCode.ArgumentRegionGraph.checkClosedNode G images sums Φ cEv t thr
+    (rs : SinglePass.RegionState) (cEv : NodeEvidence ι) (t : Tm) (thr : Bool)
+    (parts : ClosedParts := closedParts G images sums cEv t) : Option Closed :=
+  -- (the parts no bound enters checked once, `closedParts_at`)
+  let closed := leastAccepted fun Φ => parts.at G Φ cEv t thr
   let rebased := fun (se : GraphCode.ArgumentRegionGraph.StepEffect) =>
     let ev := GraphCode.ArgumentRegionGraph.nodeRebase [] rs.facts rs.values rs.fields se
     let n := ofFrame (Footprints.rebaseAll ev se.normal)
@@ -108,6 +154,14 @@ def regional (G : NormalGraph ι) (images : InstanceImageCheck G) (sums : List (
     rebased (GraphCode.ArgumentRegionGraph.writeStepEffect i)
   ascending.find? fun Φ => [closed, call, write].any fun a => a.any (·.le Φ)
 
+/-- A step's local effects on the regional route with its throw bounded
+where `handled` and with it bounded (`regional` at both, the bound-free
+parts checked once): the same where `handled`. -/
+def regionalBoth (G : NormalGraph ι) (images : InstanceImageCheck G) (sums : List (ReadSummary ι))
+    (rs : SinglePass.RegionState) (cEv : NodeEvidence ι) (t : Tm) (handled : Bool) : Option Closed × Option Closed :=
+  let parts := closedParts G images sums cEv t
+  let raised := regional G images sums rs cEv t true parts
+  (if handled then raised else regional G images sums rs cEv t false parts, raised)
 end
 
 /-! ## A member's interface -/
@@ -283,8 +337,10 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
     | .ok (σB, reachB) =>
       if σB.walk.visited < reachB then (none, none, σB.walk.visited) else
       let sumsB := σB.answers.summaries.toList
-      let joined := fun (exc : Bool) => SinglePass.work "propose: regional local effects" (f.fr.workItem i) fun _ =>
-        (List.range n).foldl (init := (some keepAll : Option Closed)) fun acc l =>
+      -- (each step's effects with its throw bounded where handled and with
+      -- every throw bounded, made once: `regionalBoth`)
+      let joined := SinglePass.work "propose: regional local effects" (f.fr.workItem i) fun _ =>
+        (List.range n).foldl (init := ((some keepAll : Option Closed), (some keepAll : Option Closed))) fun acc l =>
         match σB.walk.labels[l]? with
         | some (lw : SinglePass.LabelWalk (Label f)) => match lw.visited, lw.entry, lw.stepped, lw.region with
           | true, some entry, some st, some rs =>
@@ -298,10 +354,11 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
             let kHere := (SinglePass.materialize entry width (List.range width) true).1
             let cEv : NodeEvidence _ := ⟨ordinaryEv, some ⟨c.context, node.expression, c.type⟩, [],
               SinglePass.regionalFacts kHere st.stepK, st.stepEffect, {}, none, [], [], [], none⟩
-            joinOpt acc (regional G I sumsB rs cEv node.expression (node.handler.isSome || exc))
+            let (a, b) := regionalBoth G I sumsB rs cEv node.expression node.handler.isSome
+            (joinOpt acc.1 a, joinOpt acc.2 b)
           | _, _, _, _ => acc
         | none => acc
-      (joined false, joined true, σB.walk.visited)
+      (joined.1, joined.2, σB.walk.visited)
     | .error _ => (none, none, 0)
   let within := fun (Φ : Option Closed) (T : Option Closed) => match Φ, T with
     | some a, some b => b.le a && a != Footprints.Closed.top
