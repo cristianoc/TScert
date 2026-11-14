@@ -27,6 +27,7 @@
 \newcommand{\val}{\kw{all\text{-}values}}
 \newcommand{\st}{\kw{all\text{-}stores}}
 \newcommand{\vw}{\kw{all\text{-}views}}
+\newcommand{\slen}{\kw{strlen}}
 \newcommand{\LV}{\mathit{Loc}_{\mathsf{view}}}
 \newcommand{\rigid}{\kw{rigid}}
 \newcommand{\fresh}{\kw{fresh}}
@@ -62,9 +63,9 @@ any change bounded by the effect $\Phi$'', which stands where the separating
 conjunction stands in the frame rule. A fact enters the modality for one
 of three reasons: the effect is disjoint from what the fact reads; the
 effect changes what the fact reads only in a direction the fact
-tolerates; or the invariant annotations on a type fix what the fact reads. Eleven
+tolerates; or the invariant annotations on a type fix what the fact reads. Thirteen
 patterns from a TypeScript code base become one-line annotations, and
-four more show what the language still lacks. Every statement carries one of two marks. \status{Lean} names the theorem
+four more show a form or a derivation it still lacks. Every statement carries one of two marks. \status{Lean} names the theorem
 of the TScert development that proves the statement's content, and gives
 that theorem's scope; where the theorem is narrower than the statement, the mark says how. \status{conj.} marks a conjecture.
 \end{abstract}
@@ -124,6 +125,7 @@ of:
 \code{y = x.f}, \code{x.f = a} & a read and a write of a field\\
 \code{y = x[a]}, \code{x[a] = a'} & a read and a write of an element\\
 \code{y = b[a]}, \code{b[a] = a'}, \code{y = b.length} & a read, a write and the length of a typed array \code{b}\\
+\code{y = s[a]}, \code{y = s.length} & a read of a code unit and the length of a string \code{s}\\
 \code{y = \{f: a, ...\}}, \code{y = [a, ...]} & an allocation\\
 \code{y = x.m(x, ...)} & a call of a native method, such as \code{push}\\
 \code{y = f(x, ...)} & a call of a function\\
@@ -388,7 +390,8 @@ of types.
 
 \begin{definition}[Admissible transition]\label{def:adm}
 Let $s=(\rho,h,W,k)$ and $s'=(\rho',h',W',k')$ be states. $s'$ is
-\emph{admissible from} $s$ when $W\sqsubseteq W'$ and $k'\le k$. We write
+\emph{admissible from} $s$ when $W\sqsubseteq W'$ and $k'\le k$, the
+contracts of $W$ being read at the budget $k'$. We write
 $h\tr{}_\rho h'$ when $h$ and $h'$ are the heaps of two such states and
 $\rho'$ extends $\rho$ \status{Lean: \lean{Admissible}}.
 \end{definition}
@@ -634,7 +637,9 @@ does not contain.
 states two bounds on a command $c$ run from $(\rho,h)$. If $c$ returns,
 in a heap $h'$, then $h\tr{\Phi}_\rho h'$. If $c$ throws, in a heap
 $h'$, then $h\tr{\Phi^{e}}_\rho h'$. We write $c:\Phi$ when $\Phi^{e}$ is
-$\top$. For example $\code{out[j] = v}:\{\val:\any,\ \st:\grow\}$. This
+$\top$. A throw that $c$ itself catches is no exit of $c$: the normal
+bound of \code{try c catch (x) d} covers a return of \code{c}, and a
+throw of \code{c} followed by a return of \code{d}. For example $\code{out[j] = v}:\{\val:\any,\ \st:\grow\}$. This
 judgment is what a \code{Modifies} annotation states and what an effect
 system derives
 \status{Lean: \lean{Post}; for graph code \lean{run\_sound\_single\_pass}, whose guarantee states the bound over class regions and the regional bound of an accepted function}.
@@ -655,8 +660,13 @@ heap. An atom is true only where every path it reads is defined. There
 are six forms:
 \begin{description}[leftmargin=1.5em,style=nextline]
 \item[Linear inequality] An inequality between linear terms over
-variables and lengths $\len\pi$ of arrays at paths. Examples:
+variables and, at paths, lengths $\len\pi$ of arrays,
+$\kw{view}(\pi)$ of typed arrays and $\slen(\pi)$ of strings. Examples:
 $i<\len{\mathit{flags}}$ and $\mathit{to}\le\len{\mathit{xs}}$.
+Each variable or length it reads must denote a \emph{safe integer}, an
+integer $n$ with $|n|\le M$, where $M=2^{53}-1$. Linear combinations of
+these are taken over the mathematical integers; the arithmetic steps of
+Section~6 state when JavaScript arithmetic computes them exactly.
 \item[Equality $\pi\doteq v$] The path $\pi$ reads the value $v$.
 Example: $z\doteq\code{null}$.
 \item[Density $\dense(x,n)$] The first $n$ indices of the array $x$ are
@@ -760,6 +770,11 @@ location $l<\len h$ in a region $r(\rho,h)$ of a pair $(r:\delta)\in S$
 satisfies $\delta_{\len h}(h(l),h'(l))$, then $\rho,m,h'\models F$.
 Locations outside the regions of $S$ may change in any admissible way.
 \end{definition}
+
+\noindent
+Support quantifies over every admissible transition. Evidence that one
+particular transition preserves $F$ establishes $F$ after that
+transition and no support.
 
 \noindent
 For example $\{x.\kw{store}:\grow\}$ supports $n\le\len x$: the fact
@@ -887,7 +902,7 @@ over the variables in scope before $c$ is unaffected by the binding.
 \and
 \inferrule*[left=Frame$^{+}$]{\hoare PcQ \\ c:\Phi \\ \Phi\text{ rigid}}{\hoare{P\wedge\bx{\Phi}R}{c}{Q\wedge\bx{\Phi}R}}
 \and
-\inferrule*[left=Loop]{\hoare{I}{c}{I} \\ c:\Phi \\ \Phi\text{ rigid}}{\hoare{I\wedge\bx{\Phi}R}{\code{loop}\ c}{I\wedge\bx{\Phi}R}}
+\inferrule*[left=Loop]{\hoare{I\wedge\bx{\Phi}R}{c}{I} \\ c:\Phi \\ \Phi\text{ rigid}}{\hoare{I\wedge\bx{\Phi}R}{\code{loop}\ c}{I\wedge\bx{\Phi}R}}
 \and
 \inferrule*[left=Call]{\hoare{P}{y=f(\vec p)}{Q} \\ y=f(\vec p):\Phi}{\hoare{P[\vec x/\vec p]}{y=f(\vec x)}{Q[\vec x/\vec p]}\qquad y=f(\vec x):\Phi[\vec x/\vec p]}
 \and
@@ -915,13 +930,20 @@ $B=\bx{\Phi}R\wedge\bx{\Phi^{e}}R^{e}$: by the modality's definition,
 $\old(\bx{\Phi}R)\wedge\kw{tr}_\Phi\vdash R$, and the exceptional exit
 uses $\Phi^{e}$ and $R^{e}$. The effect is stated at the command's
 entry. Bound variables are renamed apart from the frame assertions and
-their effects.
+their effects; a substitution acts on assertions and effects alike and
+leaves the invocation mark.
 \item[\textsc{Frame}$^{+}$] For a rigid effect the frame keeps its
 modality after $c$, by law (e).
 \item[\textsc{Loop}] Induction on normal iterations uses
-\textsc{Frame}$^{+}$. Here $c$ includes the guard evaluation,
-and every normal exit satisfies $I$. Loop-carried variables occur in
-$I$; neither $R$ nor $\Phi$ mentions them.
+\textsc{Frame}$^{+}$, which turns the premise into
+$\hoare{I\wedge\bx{\Phi}R}{c}{I\wedge\bx{\Phi}R}$. Here $c$ includes the
+guard evaluation, and every normal exit satisfies $I$. Loop-carried
+variables occur in $I$; neither $R$ nor $\Phi$ mentions them. The body
+may use $R$ at a point where the transition from the iteration's entry
+to that point is bounded by $\Phi$, by law (a).
+Proposition~\ref{prop:rely} gives this bound for a sequence of steps and
+calls each bounded by the rigid $\Phi$. A bound on the iteration's exit
+alone gives no bound inside it.
 \item[\textsc{Call}] Instantiate the callee's specification at the
 actual arguments by capture-avoiding substitution; $Q$ may mention
 the result $y$. The displayed rule uses assertions independent of
@@ -993,22 +1015,78 @@ For example take \code{xs.map(f)}, where \code{map} reads
 $n=\len{\mathit{xs}}$ once at its start. Let $F=\dense(\mathit{xs},n)$
 and $\Phi=\{\val:\any,\ \st:\grow\}$. If \code{f}, with all it calls,
 has an effect bounded by $\Phi$, then by \textsc{(Dense)} and the
-proposition $F$ holds each time \code{map} reads an element. So the
-result of \code{xs.map(f)} is dense when \code{xs} is.
+proposition $F$ holds each time \code{map} reads an element. That the
+array \code{map} returns is dense is a separate fact, of how \code{map}
+builds it, and belongs to its post.
 
-\paragraph{Exact posts.} The post
-$\len x=\old(\len x)+1$ of \code{x.push(v)} specifies a strong update
-on shared state. If $y$ may alias $x$, \textsc{(Grow)} preserves
+\paragraph{Exact posts.} The post of \code{x.push(v)}
+(\textsc{Push} below) specifies a strong update on shared state. If $y$ may alias $x$, \textsc{(Grow)} preserves
 $n\le\len y$. The equality $\len y=n$ can become false when $y=x$.
 \textsc{Entry} combines these facts with the post.
+
+The steps that change a length have exact posts. With $N=2^{32}-1$ the
+maximal array length and $i$ an integer:
+\[
+\begin{array}{ll}
+\textsc{Write-In} & \hoare{0\le i<\len x}{\code{x[i] = v}}{\len x=\old(\len x)}\\[3pt]
+\textsc{Write-End} & \hoare{i=\len x\wedge i<N}{\code{x[i] = v}}{\len x=\old(\len x)+1\wedge x[i]\doteq v}\\[3pt]
+\textsc{Push} & \hoare{\len x<N}{\code{y = x.push(v)}}{\len x=\old(\len x)+1\wedge y=\len x}
+\end{array}
+\]
+\textsc{Write-End} also extends a dense prefix:
+$\old(\dense(x,i))\Rightarrow\dense(x,i+1)$.
+For example, a loop that fills \code{widths[at] = w} with \code{at} the
+current length keeps $\mathit{at}=\len{\mathit{widths}}$ by
+\textsc{Write-End} and the increment of \code{at}
+\textsc{Write-In} holds also where the write fills a hole. At the
+maximal length \code{push} throws, so its premise is not needed for a
+post on normal return
+\status{Lean: \lean{elem\_var\_write\_length}, used through \lean{keepsLengths} (\lean{boundedLength\_sound}), for \textsc{Write-In}; \lean{atLengthAtoms\_sound} for the length of \textsc{Write-End}; for \textsc{Push} the growth is the assumed contract \lean{ReceiverAppends}. The density implication and $y=\len x$ have no theorem}.
+
+\paragraph{Arithmetic steps.} The numeric operations below have number
+operands and the empty effect. Let $x,x'$ be safe integers and $c$ a
+safe-integer constant:
+\[
+\begin{array}{ll}
+\textsc{Add}, \textsc{Sub}, \textsc{Scale} & \hoare{|x\pm x'|\le M}{y=x\pm x'}{y=x\pm x'}\qquad\hoare{|c\,x|\le M}{\code{y = c * x}}{y=c\,x}\\[3pt]
+\textsc{Shr} & \hoare{0\le x<2^{31}}{y=x\gg d}{0\le y\wedge 2^{d}y\le x\le 2^{d}y+2^{d}-1}\qquad 0\le d\le 31\\[3pt]
+\textsc{Mask} & \hoare{0\le x<2^{31}}{y=x\mathbin{\&}m}{0\le y\le m\wedge y\le x}\qquad 0\le m<2^{31}
+\end{array}
+\]
+The constants $c$, $d$ and $m$ are literals or variables with a known
+constant value. Outside the stated ranges the step runs and the rule
+gives nothing about $y$. One sum is given past the range: for
+$x=\slen(s)$, \code{y = x + 1} gives the safe integer $y=x+1$, or $y$
+is the number $2^{53}$. Example: for a table
+\code{index} with $\kw{view}(\mathit{index})=4352$ and
+$0\le c<1114112$, \code{j = c >> 8} gives $256\,j\le c$, so
+$j\le 4351$ and \code{index[j]} is at a valid index.
+
+A string is a scalar: it has no location, and $\slen(s)$ of a string in
+a variable $s$ is fixed, with $0\le\slen(s)\le M$. For strings $s,s'$
+and an integer $i$:
+\[
+\begin{array}{ll}
+\textsc{Str-Length} & \hoare{\kw{true}}{\code{y = s.length}}{y=\slen(s)}\\[3pt]
+\textsc{Str-Read} & \hoare{0\le i<\slen(s)\wedge i<N}{\code{y = s[i]}}{\slen(y)=1}\\[3pt]
+\textsc{Concat} & \hoare{\kw{true}}{\code{y = s + s'}}{\slen(y)=\slen(s)+\slen(s')}
+\end{array}
+\]
+The read gives the UTF-16 code unit at $i$ as a string of length 1:
+\code{"ab"[1]} is \code{"b"}. The post of \textsc{Concat} is for a
+normal return
+\status{Lean: \lean{shr\_safe}, \lean{bitAnd\_safe}, \lean{add\_safe}, \lean{sub\_safe}, \lean{mul\_safe}, \lean{add\_two53}; the pass applies them through \lean{bitAtoms}, \lean{smallOperand}, \lean{concatAtoms} and, for the sum past the range, \lean{stringLengthPlusOne} and \lean{pastSafeAtoms} (\lean{linearAtoms\_holds}). \textsc{Str-Read} has no theorem; the Lean model of a read gives U+FFFD for half of a surrogate pair}.
 
 \paragraph{The typed array's steps.} Let $b$ be a typed array of
 format $t$, and let the index $i$ and the written value $v$ be numbers.
 The index is \emph{valid} for $b$ when it is an integer with
 $0\le i<\kw{view}(b)$. The format has a total conversion
-$\mathit{conv}_t$ from numbers to the numbers it stores. For
-\code{Uint8} it sends a number that is not finite to 0 and any other to
-its integer part modulo 256: $\mathit{conv}_{\mathsf{Uint8}}(300)=44$.
+$\mathit{conv}_t$ from numbers to the numbers it stores. There are four
+formats. \code{Uint8}, \code{Uint16} and \code{Int32} send a number that
+is not finite to 0 and any other to its integer part modulo $2^{8}$,
+$2^{16}$ and $2^{32}$, the last taken in $[-2^{31},2^{31})$:
+$\mathit{conv}_{\mathsf{Uint8}}(300)=44$. \code{Float64} stores the
+number itself, NaN as one value. The index $-0$ is the index 0.
 \[
 \begin{array}{lll}
 \textsc{View-Length} & \hoare{\kw{true}}{\code{y = b.length}}{y=\kw{view}(b)} & :\emptyset\\[3pt]
@@ -1020,7 +1098,8 @@ where $Q_{\ne i}$ says that every other valid index $j$ of $b$ reads
 after the write what it read before:
 $\forall j\ne i.\ \forall u.\ \old(b[j]\doteq u)\Rightarrow b[j]\doteq u$.
 At a number that is not a valid index, the read gives \code{undefined}
-and the write changes nothing. The three steps do not throw. The effect
+and the write changes nothing. An assignment has the value $v$ in
+either case. The three steps do not throw. The effect
 of \textsc{View-Write} bounds what every typed array reads after the
 write; the post says what $b$ itself reads, since each element of a
 typed array is its own bytes. The library functions \code{fill} and
@@ -1157,6 +1236,7 @@ Structures built in step & $\hoare{\len a=\len b\wedge a\sep b}{\code{a.push(v)}
 Separation where a value exists & $(z\doteq\code{null}\vee\mathit{xs}\sep z.\mathit{open})\wedge a(\len{\mathit{xs}})\vdash\bx{\val:\any,\,z.\mathit{open}.\kw{store}:\any}\,a(\len{\mathit{xs}})$; at \code{null} the region is empty\\[2pt]
 Fact through a field & $\rigid(x.f)\wedge n\le\len{x.f}\vdash\bx{\val:\any,\,\st:\grow}(n\le\len{x.f})$; fails without $\rigid$\hfill\textsc{(Rigid)}\\[2pt]
 Typed-array length & $i<\kw{view}(w)\vdash\bx{\top}(i<\kw{view}(w))$\hfill\textsc{(View)}\\[2pt]
+Index from a shift or a mask & $0\le c<2^{31}\vdash 0\le(c\gg d)\wedge 2^{d}(c\gg d)\le c$; $0\le(c\mathbin{\&}m)\le m$; integers with $0\le d<32$, $0\le m<2^{31}$\hfill\textsc{Shr}, \textsc{Mask}\\[2pt]
 Array facts across a typed-array write (Ex.~\ref{ex:view}) & $\every(\mathit{xs},t,\varphi)\vdash\bx{\vw:\grow}\every(\mathit{xs},t,\varphi)$ for an array $\mathit{xs}$, $t$ a variable, $\varphi$ over scalars\hfill Thm.~\ref{thm:frame}\\[2pt]
 Fact at a handler & $\bx{\Phi^{e}}R^{e}$\hfill\textsc{Frame}\\
 \bottomrule
@@ -1213,8 +1293,9 @@ and by no resource discipline.
 \paragraph{How much separation.} In these patterns: pairwise
 disjointness of single stores ($\sep$), and of a store with its cells
 ($\apart$) where a fact reads element contents, each established by
-allocation or assumed at a function's entry. Five of the eleven
-obligations use none. This describes the patterns met so far and is no
+allocation or assumed at a function's entry. Seven of the thirteen
+obligations use none; the cache row depends on the support that the
+builder's effect respects. This describes the patterns met so far and is no
 completeness claim.
 
 \section{Limits}\label{sec:limits}
