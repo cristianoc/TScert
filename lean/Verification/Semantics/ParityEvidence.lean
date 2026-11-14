@@ -751,9 +751,12 @@ theorem conjuncts_sat (nodes : Array AssertionNode) :
     · cases hg
 
 /-- **Finite context evidence** (I5, `ContextEvidence`): the context `true`,
-an invariant conjunct of `K`, and conjunctions. -/
+the well-formedness of both states, an invariant conjunct of `K`, and
+conjunctions. Weakening through a derivation is the `tolerantFrame` rule's:
+its context evidence is checked against an assertion derived from `K`. -/
 inductive ContextEvidence where
   | truth
+  | wellFormed
   | invariant (g : AssertionRef)
   | conj (a b : ContextEvidence)
   deriving DecidableEq, Repr
@@ -762,13 +765,14 @@ inductive ContextEvidence where
 endpoints. -/
 def ContextEvidence.ctx (arena : AssertionArena) : ContextEvidence → SupportContext
   | .truth => fun _ _ _ _ => True
+  | .wellFormed => fun _ _ s s' => HeapOk s.n s.W s.h ∧ HeapOk s'.n s'.W s'.h
   | .invariant g => fun η m s s' => Sat arena η m s g ∧ Sat arena η m s' g
   | .conj a b => fun η m s s' => a.ctx arena η m s s' ∧ b.ctx arena η m s s'
 
 /-- The check of context evidence against `K`: an invariant conjunct is a
 conjunct of `K` with checked invariance. -/
 def ContextEvidence.check (arena : AssertionArena) (K : AssertionRef) : ContextEvidence → Bool
-  | .truth => true
+  | .truth | .wellFormed => true
   | .invariant g => (conjuncts arena.nodes K.index).contains g.index && invNode arena.nodes g.index
   | .conj a b => a.check arena K && b.check arena K
 
@@ -776,6 +780,7 @@ def ContextEvidence.check (arena : AssertionArena) (K : AssertionRef) : ContextE
 theorem ContextEvidence.sound {arena : AssertionArena} {K : AssertionRef} {Φ : Footprint} :
     ∀ ev : ContextEvidence, ev.check arena K = true → ContextThroughout arena K Φ (ev.ctx arena)
   | .truth, _ => fun _ _ _ _ _ _ _ _ => trivial
+  | .wellFormed, _ => fun _ _ _ s s' _ _ _ => ⟨s.ok, s'.ok⟩
   | .invariant g, hc => by
     simp only [ContextEvidence.check, Bool.and_eq_true, List.contains_iff_mem] at hc
     intro η m anchor s s' hK ha ha'
@@ -787,5 +792,132 @@ theorem ContextEvidence.sound {arena : AssertionArena} {K : AssertionRef} {Φ : 
     simp only [ContextEvidence.check, Bool.and_eq_true] at hc
     intro η m anchor s s' hK ha ha'
     exact ⟨a.sound hc.1 η m anchor s s' hK ha ha', b.sound hc.2 η m anchor s s' hK ha ha'⟩
+
+/-! ## Finite certificates of the modal rules
+
+The general modal rules (the note, §4, laws (c) and (e); §5, Theorem
+"Tolerant frame"; §6, Frame⁺) consume finite certificates of effect
+inclusion, whole-effect rigidity, support, respect and context. Each
+certificate type states its semantic obligation and proves it for every
+constructor; the regional instances join as constructors with their proofs,
+the rules unchanged. -/
+
+/-- **Effect inclusion under `K`** (the note's `Φ ⊑ Ψ`, law (c)): from a
+state of `K`, every action of `Φ` is one of `Ψ`. -/
+def Included (arena : AssertionArena) (K : AssertionRef) (Φ Ψ : Footprint) : Prop :=
+  ∀ η m s s', Sat arena η m s K → EffectAction Φ η s s' → EffectAction Ψ η s s'
+
+/-- Finite evidence of inclusion: equal effects, and closed effects in
+their order. -/
+inductive InclusionEvidence where
+  | refl
+  | closed (a b : Footprints.Closed)
+  deriving DecidableEq, Repr
+
+def InclusionEvidence.check (Φ Ψ : Footprint) : InclusionEvidence → Bool
+  | .refl => Φ == Ψ
+  | .closed a b => Φ == a.fp && Ψ == b.fp && a.le b
+
+theorem InclusionEvidence.sound {arena : AssertionArena} {K : AssertionRef} {Φ Ψ : Footprint} :
+    ∀ ev : InclusionEvidence, ev.check Φ Ψ = true → Included arena K Φ Ψ
+  | .refl, h => by
+    simp only [InclusionEvidence.check, beq_iff_eq] at h
+    subst h; exact fun _ _ _ _ _ ha => ha
+  | .closed a b, h => by
+    simp only [InclusionEvidence.check, Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨⟨rfl, rfl⟩, hle⟩ := h
+    exact fun _ _ _ _ _ ha => EffectAction.closed_mono hle ha
+
+/-- **Whole-effect rigidity on a domain** (I5, `rigidity_sound`): from a
+state of the domain `D`, an action of `Φ` reaches a state of `D`, and two
+actions in sequence are one. -/
+def RigidOnDomain (arena : AssertionArena) (D : AssertionRef) (Φ : Footprint) : Prop :=
+  ∀ η m s₀ s₁ s₂, Sat arena η m s₀ D → EffectAction Φ η s₀ s₁ → EffectAction Φ η s₁ s₂ →
+    Sat arena η m s₁ D ∧ EffectAction Φ η s₀ s₂
+
+/-- Finite evidence of rigidity: a closed effect, on an invariant domain. -/
+inductive RigidityEvidence where
+  | closed (c : Footprints.Closed)
+  deriving DecidableEq, Repr
+
+def RigidityEvidence.check (arena : AssertionArena) (D : AssertionRef) (Φ : Footprint) : RigidityEvidence → Bool
+  | .closed c => Φ == c.fp && invNode arena.nodes D.index
+
+theorem RigidityEvidence.sound {arena : AssertionArena} {D : AssertionRef} {Φ : Footprint} :
+    ∀ ev : RigidityEvidence, ev.check arena D Φ = true → RigidOnDomain arena D Φ
+  | .closed c, h => by
+    simp only [RigidityEvidence.check, Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨rfl, hinv⟩ := h
+    intro η m s₀ s₁ s₂ hD a₁ a₂
+    exact ⟨invNode_sound arena.nodes D.index hinv η m s₀ s₁ a₁.admissible hD, EffectAction.closed_trans c a₁ a₂⟩
+
+/-- **Disjointness of two regions under `K`** (the note, §5, Definition
+"Respect"): at a state of `K`, no location is in both. -/
+def DisjointUnder (arena : AssertionArena) (K : AssertionRef) (r r' : Region) : Prop :=
+  ∀ η m s, Sat arena η m s K → ∀ l, r.mem η s.h l = true → r'.mem η s.h l = false
+
+/-- Finite evidence of disjointness: the classes of values and of stores
+(`regionClasses_disjoint`), in either order. -/
+inductive DisjointEvidence where
+  | classes
+  deriving DecidableEq, Repr
+
+def DisjointEvidence.check (r r' : Region) : DisjointEvidence → Bool
+  | .classes => (r == .cls .value && r' == .cls .store) || (r == .cls .store && r' == .cls .value)
+
+theorem DisjointEvidence.sound {arena : AssertionArena} {K : AssertionRef} {r r' : Region} :
+    ∀ ev : DisjointEvidence, ev.check r r' = true → DisjointUnder arena K r r'
+  | .classes, h => by
+    simp only [DisjointEvidence.check, Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at h
+    intro η m s _ l hl
+    rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    · exact regionClasses_disjoint hl
+    · cases hm : (Region.cls .value).mem η s.h l
+      · rfl
+      · have := regionClasses_disjoint (η := η) hm; rw [hl] at this; cases this
+
+/-- **Respect, checked as the note defines it** (§5, Definition
+"Respect"): for every support entry `r : δ` (index `i`) and every effect
+entry `r' : γ` (index `j`), `γ ⊑ δ`, or a disjointness certificate for the
+pair `(i, j)` under `K`. -/
+structure RespectEvidence where
+  disjoint : List (Nat × Nat × DisjointEvidence)
+  deriving DecidableEq, Repr
+
+def RespectEvidence.check (ev : RespectEvidence) (S Φ : Footprint) : Bool :=
+  (List.range S.length).all fun i => (List.range Φ.length).all fun j =>
+    match S[i]?, Φ[j]? with
+    | some (r, δ), some (r', γ) =>
+      γ.le δ || ev.disjoint.any fun (i', j', d) => i' == i && j' == j && d.check r r'
+    | _, _ => true
+
+/-- **The note's respect implies its semantic use**: every action of `Φ`
+from a state of `K` stays within `S` (`Respects`). -/
+theorem RespectEvidence.sound {arena : AssertionArena} {K : AssertionRef} {S Φ : Footprint}
+    (ev : RespectEvidence) (hc : ev.check S Φ = true) : Respects arena K Φ S := by
+  intro η m s s' hK ha
+  refine supported_of_pairs ha fun e he e' he' => ?_
+  obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem he
+  obtain ⟨j, hj, rfl⟩ := List.getElem_of_mem he'
+  have := List.all_eq_true.mp (List.all_eq_true.mp hc i (List.mem_range.mpr hi)) j (List.mem_range.mpr hj)
+  rw [List.getElem?_eq_getElem hi, List.getElem?_eq_getElem hj] at this
+  simp only [Bool.or_eq_true, List.any_eq_true, Bool.and_eq_true, beq_iff_eq] at this
+  rcases this with hle | ⟨⟨i', j', d⟩, hd, ⟨⟨rfl, rfl⟩, hdc⟩⟩
+  · exact .inl hle
+  · exact .inr fun l hl => d.sound hdc η m s hK l hl
+
+/-- **Support of an assertion in a context, by certificate** (the note, §5,
+Definition "Support"). An invariant assertion is supported by every `S` in
+every context. -/
+inductive SupportEvidence where
+  | invariant
+  deriving DecidableEq, Repr
+
+def SupportEvidence.check (arena : AssertionArena) (A : AssertionRef) : SupportEvidence → Bool
+  | .invariant => invNode arena.nodes A.index
+
+theorem SupportEvidence.sound {arena : AssertionArena} {C : SupportContext} {S : Footprint} {A : AssertionRef} :
+    ∀ ev : SupportEvidence, ev.check arena A = true → Supports arena C S A
+  | .invariant, h => fun η m s s' ha _ hA _ => invNode_sound arena.nodes A.index h η m s s' ha hA
 
 end Verification.Parity

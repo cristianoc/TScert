@@ -383,6 +383,20 @@ def shiftFormula (nodes : Array AssertionNode) (p : Phase) (n : Nat) : Formula �
   | .falsity, .falsity => true
   | _, _ => false
 
+/-- A scalar variable at the index term `k`: the index is `k`, a parameter
+is itself. -/
+def boundAt (k : Term) : Bound → Option Term
+  | .index => some k
+  | .free t => some t
+  | _ => none
+
+/-- The atomic clauses of a scalar body reading the index and the
+parameters alone, at the index `k`. -/
+def everyInstances (body : List (LinearClause Bound)) (k : Term) : List (Linear.Fact Term) :=
+  body.filterMap fun
+    | .atom F => F.mapVars (boundAt k)
+    | _ => none
+
 /-! ## Derivations -/
 
 /-- **A checked derivation of one two-state formula** (I4, `Derivation`).
@@ -464,19 +478,44 @@ inductive Derivation (arena : AssertionArena) : List Formula → Formula → Typ
   | boxMono {Γ p a b x y Φ} (ha : arena.nodes[a.index]? = some (.box Φ x)) (hb : arena.nodes[b.index]? = some (.box Φ y))
       (e : Derivation arena [.at .after x] (.at .after y)) (d : Derivation arena Γ (.at p a)) :
       Derivation arena Γ (.at p b)
-  /-- Law (c): `Φ ⊑ Ψ` gives `□_Ψ A ⊢ □_Φ A`, for closed effects. -/
-  | boxAnti {Γ p a b x} (cΦ cΨ : Footprints.Closed) (hle : cΦ.le cΨ = true)
-      (ha : arena.nodes[a.index]? = some (.box cΨ.fp x)) (hb : arena.nodes[b.index]? = some (.box cΦ.fp x))
-      (d : Derivation arena Γ (.at p a)) : Derivation arena Γ (.at p b)
+  /-- Law (c): `Φ ⊑ Ψ` under `K`, by an inclusion certificate, gives
+  `K ∧ □_Ψ A ⊢ □_Φ A`. -/
+  | boxAnti {Γ p a b x K Φ Ψ} (ev : InclusionEvidence) (hev : ev.check Φ Ψ = true)
+      (ha : arena.nodes[a.index]? = some (.box Ψ x)) (hb : arena.nodes[b.index]? = some (.box Φ x))
+      (dK : Derivation arena Γ (.at p K)) (d : Derivation arena Γ (.at p a)) : Derivation arena Γ (.at p b)
   /-- Law (d): `g ∨ □_Φ A ⊢ □_Φ (g ∨ A)` for the invariant guard `g`. -/
   | boxGuard {Γ p a g bx x b c Φ} (ha : arena.nodes[a.index]? = some (.guarded g bx))
       (hbx : arena.nodes[bx.index]? = some (.box Φ x)) (hb : arena.nodes[b.index]? = some (.box Φ c))
       (hc : arena.nodes[c.index]? = some (.guarded g x)) (d : Derivation arena Γ (.at p a)) :
       Derivation arena Γ (.at p b)
-  /-- Law (e): `□_Φ A ⊢ □_Φ □_Φ A` for a rigid (closed) effect. -/
-  | boxIdem {Γ p a b x} (cl : Footprints.Closed) (ha : arena.nodes[a.index]? = some (.box cl.fp x))
-      (hb : arena.nodes[b.index]? = some (.box cl.fp a)) (d : Derivation arena Γ (.at p a)) :
-      Derivation arena Γ (.at p b)
+  /-- Law (e): `D ∧ □_Φ A ⊢ □_Φ □_Φ A` for `Φ` rigid on the domain `D`, by
+  a rigidity certificate. -/
+  | boxIdem {Γ p a b x D Φ} (ev : RigidityEvidence) (hev : ev.check arena D Φ = true)
+      (ha : arena.nodes[a.index]? = some (.box Φ x)) (hb : arena.nodes[b.index]? = some (.box Φ a))
+      (dD : Derivation arena Γ (.at p D)) (d : Derivation arena Γ (.at p a)) : Derivation arena Γ (.at p b)
+  /-- **The tolerant frame theorem** (the note, §5, Theorem "Tolerant
+  frame"): `S` supports `A` in a context, `Φ` respects `S` under `K` (the
+  note's pairwise definition), and the context holds throughout the modal
+  domain of an assertion `g` derived from `K`: `K ∧ A ⊢ □_Φ A`. -/
+  | tolerantFrame {Γ p K A b g Φ} (S : Footprint) (sev : SupportEvidence) (rev : RespectEvidence)
+      (cev : ContextEvidence) (hs : sev.check arena A = true) (hr : rev.check S Φ = true)
+      (hc : cev.check arena g = true) (hb : arena.nodes[b.index]? = some (.box Φ A))
+      (e : Derivation arena [.at .after K] (.at .after g)) (dK : Derivation arena Γ (.at p K))
+      (dA : Derivation arena Γ (.at p A)) : Derivation arena Γ (.at p b)
+  /-- Bounded quantification over an empty range: `n ≤ 0` and `π` an
+  ordinary array give `every(π, n, φ)`. -/
+  | everyEmpty {Γ p a d} (π : Path) (n z : Term) (body : List (LinearClause Bound))
+      (ha : arena.nodes[a.index]? = some (.atom (.every π n body)))
+      (hd : arena.nodes[d.index]? = some (.atom (.dense π z))) (dd : Derivation arena Γ (.at p d))
+      (dn : Derivation arena Γ (.linear (tagFact p (.le [(n, 1)] 0)))) : Derivation arena Γ (.at p a)
+  /-- Bounded quantification at an index: `every(π, n, φ)` and `0 ≤ k < n`
+  give each atomic clause of `φ` reading the index and the parameters, at
+  `k`. -/
+  | everyElim {Γ p a} (π : Path) (n k : Term) (body : List (LinearClause Bound)) (G : Linear.Fact Term)
+      (ha : arena.nodes[a.index]? = some (.atom (.every π n body))) (hG : G ∈ everyInstances body k)
+      (d : Derivation arena Γ (.at p a)) (dk : Derivation arena Γ (.linear (tagFact p (.le [(k, -1)] 0))))
+      (dlt : Derivation arena Γ (.linear (tagFact p (.le [(k, 1), (n, -1)] (-1))))) :
+      Derivation arena Γ (.linear (tagFact p G))
   /-- (Grow): `y ≤ |x| ⊢ □_{values: any, stores: grow} (y ≤ |x|)`. -/
   | grow {Γ p a b} (y x : Nat) (ha : arena.nodes[a.index]? = some (.atom (.linear (lowerFact y x))))
       (hb : arena.nodes[b.index]? = some (.box growEffect.fp a)) (d : Derivation arena Γ (.at p a)) :
@@ -491,12 +530,13 @@ inductive Derivation (arena : AssertionArena) : List Formula → Formula → Typ
       (hc : substCheck arena.nodes θ b.index c.index = true)
       (d : Derivation arena Γ (.at .before a)) (dt : Derivation arena Γ (.transition Φ))
       (dθ : Derivation arena Γ (.transport θ)) : Derivation arena Γ (.at .after c)
-  /-- Frame⁺ (the note, §6): for a rigid effect the box itself holds at the
-  exit. -/
-  | framePlus {Γ a b c} (cl : Footprints.Closed) (θ : Substitution) (ha : arena.nodes[a.index]? = some (.box cl.fp b))
-      (hc : substCheck arena.nodes θ a.index c.index = true)
-      (d : Derivation arena Γ (.at .before a)) (dt : Derivation arena Γ (.transition cl.fp))
-      (dθ : Derivation arena Γ (.transport θ)) : Derivation arena Γ (.at .after c)
+  /-- Frame⁺ (the note, §6): for an effect rigid on the domain `D` the box
+  itself holds at the exit. -/
+  | framePlus {Γ a b c D Φ} (ev : RigidityEvidence) (hev : ev.check arena D Φ = true) (θ : Substitution)
+      (ha : arena.nodes[a.index]? = some (.box Φ b)) (hc : substCheck arena.nodes θ a.index c.index = true)
+      (dD : Derivation arena Γ (.at .before D)) (d : Derivation arena Γ (.at .before a))
+      (dt : Derivation arena Γ (.transition Φ)) (dθ : Derivation arena Γ (.transport θ)) :
+      Derivation arena Γ (.at .after c)
   /-- Linear arithmetic over defined terms, by a `Linear.check` certificate. -/
   | linear {Γ G} (Fs : List (Linear.Fact StepVar)) (defs : List StepVar) (steps : List (Linear.Step StepVar))
       (hc : linearCheck Fs defs steps G = true) (d : Derivation arena Γ (conj (Fs.map .linear)))
@@ -619,13 +659,19 @@ inductive RawDerivation where
   | boxAndLeft (Φ : Footprint) (a c r : AssertionRef) (d : RawDerivation)
   | boxAndRight (Φ : Footprint) (a c l : AssertionRef) (d : RawDerivation)
   | boxMono (Φ : Footprint) (a x y : AssertionRef) (e d : RawDerivation)
-  | boxAnti (cΦ cΨ : Footprints.Closed) (a x : AssertionRef) (d : RawDerivation)
+  | boxAnti (ev : InclusionEvidence) (Ψ : Footprint) (a x K : AssertionRef) (dK d : RawDerivation)
   | boxGuard (Φ : Footprint) (a g bx x c : AssertionRef) (d : RawDerivation)
-  | boxIdem (cl : Footprints.Closed) (a x : AssertionRef) (d : RawDerivation)
+  | boxIdem (ev : RigidityEvidence) (a x D : AssertionRef) (dD d : RawDerivation)
+  | tolerantFrame (S : Footprint) (sev : SupportEvidence) (rev : RespectEvidence) (cev : ContextEvidence)
+      (K g : AssertionRef) (e dK dA : RawDerivation)
+  | everyEmpty (π : Path) (n z : Term) (body : List (LinearClause Bound)) (d : AssertionRef) (dd dn : RawDerivation)
+  | everyElim (p : Phase) (a : AssertionRef) (π : Path) (n k : Term) (body : List (LinearClause Bound))
+      (d dk dlt : RawDerivation)
   | grow (y x : Nat) (a : AssertionRef) (d : RawDerivation)
   | dense (x k : Nat) (a : AssertionRef) (d : RawDerivation)
   | frame (Φ : Footprint) (a b : AssertionRef) (θ : Substitution) (d dt dθ : RawDerivation)
-  | framePlus (cl : Footprints.Closed) (a b : AssertionRef) (θ : Substitution) (d dt dθ : RawDerivation)
+  | framePlus (ev : RigidityEvidence) (Φ : Footprint) (a b D : AssertionRef) (θ : Substitution)
+      (dD d dt dθ : RawDerivation)
   | linear (Fs : List (Linear.Fact StepVar)) (defs : List StepVar) (steps : List (Linear.Step StepVar))
       (d dd : RawDerivation)
   | definedOfLinear (F : Linear.Fact StepVar) (d : RawDerivation)
@@ -788,12 +834,16 @@ def checkDerivation (arena : AssertionArena) (premises : List Formula) (goal : F
       pure (.boxMono ha hb (← checkDerivation arena [.at .after x] (.at .after y) e)
         (← checkDerivation arena premises (.at p a) d))
     | _ => .error "boxMono: goal is no assertion"
-  | .boxAnti cΦ cΨ a x d => match goal with
+  | .boxAnti ev Ψ a x K dK d => match goal with
     | .at p b => do
-      let ⟨hle⟩ ← req (cΦ.le cΨ = true) "boxAnti: the effects are not included"
-      let ⟨ha⟩ ← node? arena a (.box cΨ.fp x)
-      let ⟨hb⟩ ← node? arena b (.box cΦ.fp x)
-      pure (.boxAnti cΦ cΨ hle ha hb (← checkDerivation arena premises (.at p a) d))
+      match arena.nodes[b.index]? with
+      | some (.box Φ _) => do
+        let ⟨hev⟩ ← req (ev.check Φ Ψ = true) "boxAnti: the effects are not included"
+        let ⟨ha⟩ ← node? arena a (.box Ψ x)
+        let ⟨hb⟩ ← node? arena b (.box Φ x)
+        pure (.boxAnti (K := K) ev hev ha hb (← checkDerivation arena premises (.at p K) dK)
+          (← checkDerivation arena premises (.at p a) d))
+      | _ => .error "boxAnti: goal is no box"
     | _ => .error "boxAnti: goal is no assertion"
   | .boxGuard Φ a g bx x c d => match goal with
     | .at p b => do
@@ -803,12 +853,46 @@ def checkDerivation (arena : AssertionArena) (premises : List Formula) (goal : F
       let ⟨hc⟩ ← node? arena c (.guarded g x)
       pure (.boxGuard ha hbx hb hc (← checkDerivation arena premises (.at p a) d))
     | _ => .error "boxGuard: goal is no assertion"
-  | .boxIdem cl a x d => match goal with
+  | .boxIdem ev a x D dD d => match goal with
     | .at p b => do
-      let ⟨ha⟩ ← node? arena a (.box cl.fp x)
-      let ⟨hb⟩ ← node? arena b (.box cl.fp a)
-      pure (.boxIdem cl ha hb (← checkDerivation arena premises (.at p a) d))
+      match arena.nodes[b.index]? with
+      | some (.box Φ _) => do
+        let ⟨hev⟩ ← req (ev.check arena D Φ = true) "boxIdem: the effect is not rigid on the domain"
+        let ⟨ha⟩ ← node? arena a (.box Φ x)
+        let ⟨hb⟩ ← node? arena b (.box Φ a)
+        pure (.boxIdem ev hev ha hb (← checkDerivation arena premises (.at p D) dD)
+          (← checkDerivation arena premises (.at p a) d))
+      | _ => .error "boxIdem: goal is no box"
     | _ => .error "boxIdem: goal is no assertion"
+  | .tolerantFrame S sev rev cev K g e dK dA => match goal with
+    | .at p b => do
+      match arena.nodes[b.index]? with
+      | some (.box Φ A) => do
+        let ⟨hs⟩ ← req (sev.check arena A = true) "tolerantFrame: no support"
+        let ⟨hr⟩ ← req (rev.check S Φ = true) "tolerantFrame: the effect does not respect the support"
+        let ⟨hc⟩ ← req (cev.check arena g = true) "tolerantFrame: the context evidence does not check"
+        let ⟨hb⟩ ← node? arena b (.box Φ A)
+        pure (.tolerantFrame S sev rev cev hs hr hc hb (← checkDerivation arena [.at .after K] (.at .after g) e)
+          (← checkDerivation arena premises (.at p K) dK) (← checkDerivation arena premises (.at p A) dA))
+      | _ => .error "tolerantFrame: goal is no box"
+    | _ => .error "tolerantFrame: goal is no assertion"
+  | .everyEmpty π n z body d dd dn => match goal with
+    | .at p a => do
+      let ⟨ha⟩ ← node? arena a (.atom (.every π n body))
+      let ⟨hd⟩ ← node? arena d (.atom (.dense π z))
+      pure (.everyEmpty π n z body ha hd (← checkDerivation arena premises (.at p d) dd)
+        (← checkDerivation arena premises (.linear (tagFact p (.le [(n, 1)] 0))) dn))
+    | _ => .error "everyEmpty: goal is no assertion"
+  | .everyElim p a π n k body d dk dlt => do
+    let ⟨ha⟩ ← node? arena a (.atom (.every π n body))
+    match (everyInstances body k).find? (fun G => goal == .linear (tagFact p G)) with
+    | some G => do
+      let ⟨hG⟩ ← req (G ∈ everyInstances body k) "everyElim: not an instance"
+      let ⟨hg⟩ ← req (goal = .linear (tagFact p G)) "everyElim: goal is not the instance"
+      pure (hg.symm ▸ .everyElim π n k body G ha hG (← checkDerivation arena premises (.at p a) d)
+        (← checkDerivation arena premises (.linear (tagFact p (.le [(k, -1)] 0))) dk)
+        (← checkDerivation arena premises (.linear (tagFact p (.le [(k, 1), (n, -1)] (-1)))) dlt))
+    | none => .error "everyElim: goal is no instance of the body"
   | .grow y x a d => match goal with
     | .at p b => do
       let ⟨ha⟩ ← node? arena a (.atom (.linear (lowerFact y x)))
@@ -828,12 +912,14 @@ def checkDerivation (arena : AssertionArena) (premises : List Formula) (goal : F
       pure (.frame θ ha hc (← checkDerivation arena premises (.at .before a) d)
         (← checkDerivation arena premises (.transition Φ) dt) (← checkDerivation arena premises (.transport θ) dθ))
     | _ => .error "frame: goal is no exit assertion"
-  | .framePlus cl a b θ d dt dθ => match goal with
+  | .framePlus ev Φ a b D θ dD d dt dθ => match goal with
     | .at .after c => do
-      let ⟨ha⟩ ← node? arena a (.box cl.fp b)
+      let ⟨hev⟩ ← req (ev.check arena D Φ = true) "framePlus: the effect is not rigid on the domain"
+      let ⟨ha⟩ ← node? arena a (.box Φ b)
       let ⟨hc⟩ ← req (substCheck arena.nodes θ a.index c.index = true) "framePlus: not the transported box"
-      pure (.framePlus cl θ ha hc (← checkDerivation arena premises (.at .before a) d)
-        (← checkDerivation arena premises (.transition cl.fp) dt) (← checkDerivation arena premises (.transport θ) dθ))
+      pure (.framePlus ev hev θ ha hc (← checkDerivation arena premises (.at .before D) dD)
+        (← checkDerivation arena premises (.at .before a) d)
+        (← checkDerivation arena premises (.transition Φ) dt) (← checkDerivation arena premises (.transport θ) dθ))
     | _ => .error "framePlus: goal is no exit assertion"
   | .linear Fs defs steps d dd => match goal with
     | .linear G => do
@@ -1544,19 +1630,59 @@ theorem Derivation.sound {arena : AssertionArena} (hv : arena.Valid) {Γ : List 
     have hx := (sat_box hv ha).mp (ih s hΓ) s' act
     exact ihe ⟨s.env p, s.env p, s.mark, s', s'⟩ fun q hq => by
       simp only [List.mem_singleton] at hq; subst hq; exact hx
-  | boxAnti cΦ cΨ hle ha hb _ ih =>
+  | boxAnti ev hev ha hb _ _ ihK ih =>
     intro s hΓ
-    exact (sat_box hv hb).mpr fun s' act => (sat_box hv ha).mp (ih s hΓ) s' (EffectAction.closed_mono hle act)
+    exact (sat_box hv hb).mpr fun s' act =>
+      (sat_box hv ha).mp (ih s hΓ) s' (ev.sound hev _ _ _ _ (ihK s hΓ) act)
   | boxGuard ha hbx hb hc _ ih =>
     intro s hΓ
     refine (sat_box hv hb).mpr fun s' act => (sat_guarded hv hc).mpr ?_
     rcases (sat_guarded hv ha).mp (ih s hΓ) with hg | hx
     · exact .inl (guard_invariant hv ha _ _ _ _ act.admissible hg)
     · exact .inr ((sat_box hv hbx).mp hx s' act)
-  | boxIdem cl ha hb _ ih =>
+  | boxIdem ev hev ha hb _ _ ihD ih =>
     intro s hΓ
     exact (sat_box hv hb).mpr fun s₁ a₁ => (sat_box hv ha).mpr fun s₂ a₂ =>
-      (sat_box hv ha).mp (ih s hΓ) s₂ (EffectAction.closed_trans cl a₁ a₂)
+      (sat_box hv ha).mp (ih s hΓ) s₂ (ev.sound hev _ _ _ _ _ (ihD s hΓ) a₁ a₂).2
+  | @tolerantFrame Γ p K A b g Φ S sev rev cev hs hr hc hb _ _ _ ihe ihK ihA =>
+    intro s hΓ
+    have hthrough : ContextThroughout arena K Φ (cev.ctx arena) := by
+      intro η m anchor s₁ s₂ hK a₁ a₂
+      have hg : Sat arena η m anchor g := ihe ⟨η, η, m, anchor, anchor⟩ fun q hq => by
+        simp only [List.mem_singleton] at hq; subst hq; exact hK
+      exact cev.sound hc η m anchor s₁ s₂ hg a₁ a₂
+    exact (sat_box hv hb).mpr fun s' act =>
+      tolerant_frame (sev.sound hs) hthrough (rev.sound hr) _ _ _ (ihK s hΓ) (ihA s hΓ) s' act
+  | @everyEmpty Γ p a d π n z body ha hd _ _ ihd ihn =>
+    intro s hΓ
+    obtain ⟨w, st, ls, k, hw, hst, hls, -, -, -⟩ := (sat_atom hd).mp (ihd s hΓ)
+    have hn := (factAt_tag s p _).mp (ihn s hΓ)
+    obtain ⟨nv, hnv⟩ := factAt_defined hn (x := n) (by simp [Linear.Fact.vars])
+    have e1 := hn.2
+    simp only [Linear.Fact.Holds, Linear.Form.eval, hnv, Option.getD_some] at e1
+    exact (sat_atom ha).mpr ⟨w, st, ls, nv, hw, hst, hls, hnv, fun i hi => by omega⟩
+  | @everyElim Γ p a π n k body G ha hG _ _ _ ih ihk ihlt =>
+    intro s hΓ
+    obtain ⟨w, st, ls, nv, hw, hst, hls, hnv, hall⟩ := (sat_atom ha).mp (ih s hΓ)
+    have hk := (factAt_tag s p _).mp (ihk s hΓ)
+    have hlt := (factAt_tag s p _).mp (ihlt s hΓ)
+    obtain ⟨kv, hkv⟩ := factAt_defined hk (x := k) (by simp [Linear.Fact.vars])
+    have e1 := hk.2
+    have e2 := hlt.2
+    simp only [Linear.Fact.Holds, Linear.Form.eval, hkv, hnv, Option.getD_some] at e1 e2
+    have hi : ((kv.toNat : Nat) : Int) < nv := by omega
+    obtain ⟨C, hC, hCG⟩ := List.mem_filterMap.mp hG
+    cases C with
+    | either _ _ => cases hCG
+    | atom F =>
+      have hF : F.mapVars (boundAt k) = some G := hCG
+      have hFh := (hall kv.toNat hi).2 (.atom F) hC
+      refine (factAt_tag s p G).mpr ((factAt_mapVars hF fun x _ y hy => ?_).mpr hFh)
+      cases x with
+      | index =>
+        cases hy; rw [hkv]; simp only [scalarValue]; congr 1; omega
+      | free t => cases hy; rfl
+      | _ => cases hy
   | @grow Γ p a b y x ha hb _ ih =>
     intro s hΓ
     refine (sat_box hv hb).mpr fun s' act => ?_
@@ -1572,10 +1698,10 @@ theorem Derivation.sound {arena : AssertionArena} (hv : arena.Valid) {Γ : List 
     intro s hΓ
     have hb := (sat_box hv ha).mp (ih s hΓ) s.after (iht s hΓ)
     exact (sat_subst hc (ihθ s hΓ)).mpr hb
-  | framePlus cl θ ha hc _ _ _ ih iht ihθ =>
+  | framePlus ev hev θ ha hc _ _ _ _ ihD ih iht ihθ =>
     intro s hΓ
     have ha' : Sat arena s.beforeEnv s.mark s.after _ := (sat_box hv ha).mpr fun s₂ a₂ =>
-      (sat_box hv ha).mp (ih s hΓ) s₂ (EffectAction.closed_trans cl (iht s hΓ) a₂)
+      (sat_box hv ha).mp (ih s hΓ) s₂ (ev.sound hev _ _ _ _ _ (ihD s hΓ) (iht s hΓ) a₂).2
     exact (sat_subst hc (ihθ s hΓ)).mpr ha'
   | @linear Γ G Fs defs steps hc _ _ ih ihd =>
     intro s hΓ

@@ -157,6 +157,29 @@ theorem EffectAction.rename_iff (σ : Nat → Nat) :
     refine ⟨v', hv', hal.imp_right fun ⟨e, he, hme, hc⟩ => ?_⟩
     exact ⟨(e.1.rename σ, e.2), List.mem_map.mpr ⟨e, he, rfl⟩, by rw [hm]; exact hme, hc⟩
 
+/-- The class of values and the class of stores share no location. -/
+theorem regionClasses_disjoint {l : Nat} (hl : (Region.cls .value).mem η s.h l = true) :
+    (Region.cls .store).mem η s.h l = false := by
+  simp only [Region.mem] at hl ⊢
+  split at hl
+  · simp only [Cls.has] at hl ⊢; simpa using hl
+  · cases hl
+
+/-- **A transition within an effect is within a support whose every entry
+each effect entry either changes less than, or misses** (the note, §5, the
+proof of Theorem "Tolerant frame"). -/
+theorem supported_of_pairs {S : Footprint} (ha : EffectAction Φ η s s')
+    (hp : ∀ e ∈ S, ∀ e' ∈ Φ, e'.2.le e.2 = true ∨ ∀ l, e.1.mem η s.h l = true → e'.1.mem η s.h l = false) :
+    SupportedBy S η s s' := by
+  intro e he l v hl hv
+  obtain ⟨v', hv', hal⟩ := ha.2.2 l v hv
+  refine ⟨v', hv', ?_⟩
+  rcases hal with rfl | ⟨e', he', hm, hc⟩
+  · exact Change.Holds.refl _ _ _
+  · rcases hp e he e' he' with hle | hd
+    · exact hc.mono hle
+    · rw [hd l hl] at hm; cases hm
+
 end Action
 
 /-! ## Paths and witnesses -/

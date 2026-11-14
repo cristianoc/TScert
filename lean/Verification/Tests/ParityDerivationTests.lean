@@ -217,7 +217,8 @@ private def arena : AssertionArena := ⟨#[
   .atom (.linear below),                       -- 16 i < |p.widths|
   .atom (.equal ⟨1, ["items"]⟩ (.path (.var 0))), -- 17 p.items ≐ v, under the binder
   .box topEffect (ref 17),                     -- 18
-  .existsValue (ref 18)]⟩                      -- 19 rigid(p.items)
+  .existsValue (ref 18),                       -- 19 rigid(p.items)
+  .box Φ (ref 1)]⟩                             -- 20 □_Φ g₁
 
 #guard arena.check
 
@@ -267,6 +268,19 @@ private def raw : RawDerivation :=
 -- under the boxes of `F` is refused.
 #guard isOk (substAssertion arena (Substitution.shift 2) (ref 8))
 #guard !isOk (substAssertion arena ⟨#[.path ⟨1, ["next"]⟩, .path (.var 1)]⟩ (ref 8))
+
+-- The tolerant frame rule with an invariant's support: `g₁ ⊢ □_Φ g₁`.
+#guard isOk (checkScoped arena ⟨2, 2⟩ [.at .before (ref 1)] (.at .before (ref 20))
+  (.tolerantFrame [] .invariant ⟨[]⟩ .truth (ref 1) (ref 1) .assumption .assumption .assumption))
+-- A support the effect does not respect is refused: `{values: keep}`
+-- against `Φ = {values: any}`.
+#guard errorOf (checkScoped arena ⟨2, 2⟩ [.at .before (ref 1)] (.at .before (ref 20))
+  (.tolerantFrame [(.cls .value, .keep)] .invariant ⟨[]⟩ .truth (ref 1) (ref 1) .assumption .assumption
+    .assumption)) = "tolerantFrame: the effect does not respect the support"
+-- With a disjointness certificate the stores' support is respected.
+#guard isOk (checkScoped arena ⟨2, 2⟩ [.at .before (ref 1)] (.at .before (ref 20))
+  (.tolerantFrame [(.cls .store, .keep)] .invariant ⟨[(0, 0, .classes)]⟩ .truth (ref 1) (ref 1) .assumption
+    .assumption .assumption))
 
 -- A literal witness: `□_⊤(p.items ≐ null) ⊢ rigid(p.items)`.
 #guard isOk (checkScoped arena ⟨2, 2⟩ [.at .before (ref 1)] (.at .before (ref 19))
