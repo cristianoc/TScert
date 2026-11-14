@@ -876,16 +876,20 @@ state of `K`, every action of `Φ` is one of `Ψ`. -/
 def Included (arena : AssertionArena) (K : AssertionRef) (Φ Ψ : Footprint) : Prop :=
   ∀ η m s s', Sat arena η m s K → EffectAction Φ η s s' → EffectAction Ψ η s s'
 
-/-- Finite evidence of inclusion: equal effects, and closed effects in
-their order. -/
+/-- Finite evidence of inclusion: equal effects, closed effects in their
+order, and entrywise region inclusion with a smaller change
+(`Footprints.Footprint.le` by `Region.sub`, `Selector.sub` on classes),
+read with no class claim on fields. -/
 inductive InclusionEvidence where
   | refl
   | closed (a b : Footprints.Closed)
+  | regions
   deriving DecidableEq, Repr
 
 def InclusionEvidence.check (Φ Ψ : Footprint) : InclusionEvidence → Bool
   | .refl => Φ == Ψ
   | .closed a b => Φ == a.fp && Ψ == b.fp && a.le b
+  | .regions => Footprint.le (fun _ _ => none) Φ Ψ
 
 theorem InclusionEvidence.sound {arena : AssertionArena} {K : AssertionRef} {Φ Ψ : Footprint} :
     ∀ ev : InclusionEvidence, ev.check Φ Ψ = true → Included arena K Φ Ψ
@@ -896,6 +900,7 @@ theorem InclusionEvidence.sound {arena : AssertionArena} {K : AssertionRef} {Φ 
     simp only [InclusionEvidence.check, Bool.and_eq_true, beq_iff_eq] at h
     obtain ⟨⟨rfl, rfl⟩, hle⟩ := h
     exact fun _ _ _ _ _ ha => EffectAction.closed_mono hle ha
+  | .regions, h => fun _ _ _ _ _ ha => EffectAction.regions_mono h ha
 
 /-- **Whole-effect rigidity on a domain** (I5, `rigidity_sound`): from a
 state of the domain `D`, an action of `Φ` reaches a state of `D`, and two
@@ -925,25 +930,23 @@ theorem RigidityEvidence.sound {arena : AssertionArena} {D : AssertionRef} {Φ :
 def DisjointUnder (arena : AssertionArena) (K : AssertionRef) (r r' : Region) : Prop :=
   ∀ η m s, Sat arena η m s K → ∀ l, r.mem η s.h l = true → r'.mem η s.h l = false
 
-/-- Finite evidence of disjointness: the classes of values and of stores
-(`regionClasses_disjoint`), in either order. -/
+/-- Finite evidence of disjointness: two class regions of disjoint selectors
+(`Footprints.Selector.disjoint`, `class_disjoint_sound`). -/
 inductive DisjointEvidence where
   | classes
   deriving DecidableEq, Repr
 
 def DisjointEvidence.check (r r' : Region) : DisjointEvidence → Bool
-  | .classes => (r == .cls .value && r' == .cls .store) || (r == .cls .store && r' == .cls .value)
+  | .classes => match r, r' with
+    | .cls a, .cls b => a.disjoint b
+    | _, _ => false
 
 theorem DisjointEvidence.sound {arena : AssertionArena} {K : AssertionRef} {r r' : Region} :
     ∀ ev : DisjointEvidence, ev.check r r' = true → DisjointUnder arena K r r'
   | .classes, h => by
-    simp only [DisjointEvidence.check, Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at h
     intro η m s _ l hl
-    rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
-    · exact regionClasses_disjoint hl
-    · cases hm : (Region.cls .value).mem η s.h l
-      · rfl
-      · have := regionClasses_disjoint (η := η) hm; rw [hl] at this; cases this
+    cases r <;> cases r' <;> simp only [DisjointEvidence.check, reduceCtorEq] at h
+    exact class_disjoint_sound h hl
 
 /-- **Respect, checked as the note defines it** (§5, Definition
 "Respect"): for every support entry `r : δ` (index `i`) and every effect

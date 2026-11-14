@@ -289,12 +289,17 @@ private def raw : RawDerivation :=
 -- A support the effect does not respect is refused: `{values: keep}`
 -- against `Φ = {values: any}`.
 #guard errorOf (checkScoped arena ⟨2, 2⟩ [.at .before (ref 1)] (.at .before (ref 20))
-  (.tolerantFrame [(.cls .value, .keep)] .invariant ⟨[]⟩ .truth (ref 1) (ref 1) .assumption .assumption
+  (.tolerantFrame [(.cls .values, .keep)] .invariant ⟨[]⟩ .truth (ref 1) (ref 1) .assumption .assumption
     .assumption)) = "tolerantFrame: the effect does not respect the support"
 -- With a disjointness certificate the stores' support is respected.
 #guard isOk (checkScoped arena ⟨2, 2⟩ [.at .before (ref 1)] (.at .before (ref 20))
-  (.tolerantFrame [(.cls .store, .keep)] .invariant ⟨[(0, 0, .classes)]⟩ .truth (ref 1) (ref 1) .assumption
+  (.tolerantFrame [(.cls .stores, .keep)] .invariant ⟨[(0, 0, .classes)]⟩ .truth (ref 1) (ref 1) .assumption
     .assumption .assumption))
+
+-- Region inclusion by selectors: `{arrays: keep} ⊑ {stores: grow}`, not
+-- the converse.
+#guard InclusionEvidence.regions.check [(.cls .arrays, .keep)] [(.cls .stores, .grow)]
+#guard !InclusionEvidence.regions.check [(.cls .stores, .grow)] [(.cls .arrays, .keep)]
 
 -- A literal witness: `□_⊤(p.items ≐ null) ⊢ rigid(p.items)`.
 #guard isOk (checkScoped arena ⟨2, 2⟩ [.at .before (ref 1)] (.at .before (ref 19))

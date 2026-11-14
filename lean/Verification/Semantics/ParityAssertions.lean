@@ -179,13 +179,11 @@ theorem EffectAction.congr_roots {η' : Env} (he : ∀ x, (∃ e ∈ Φ, x ∈ r
     obtain ⟨v', hv', hal⟩ := hp l v hv
     exact ⟨v', hv', hal.imp_right fun ⟨e, he', hme, hc⟩ => ⟨e, he', by rw [hm e he']; exact hme, hc⟩⟩
 
-/-- The class of values and the class of stores share no location. -/
-theorem regionClasses_disjoint {l : Nat} (hl : (Region.cls .value).mem η s.h l = true) :
-    (Region.cls .store).mem η s.h l = false := by
-  simp only [Region.mem] at hl ⊢
-  split at hl
-  · simp only [Cls.has] at hl ⊢; simpa using hl
-  · cases hl
+/-- Entrywise region inclusion includes the actions (`Footprints.Post.mono`,
+`Region.sub_mem`), read with no class claim on fields. -/
+theorem EffectAction.regions_mono {Ψ : Footprint} (hle : Footprint.le (fun _ _ => none) Φ Ψ = true)
+    (ha : EffectAction Φ η s s') : EffectAction Ψ η s s' :=
+  ⟨ha.1, Post.mono hle (fun _ _ _ _ hc => by cases hc) ha.2⟩
 
 /-- **A transition within an effect is within a support whose every entry
 each effect entry either changes less than, or misses** (the note, §5, the
