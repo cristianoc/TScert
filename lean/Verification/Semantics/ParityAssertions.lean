@@ -22,8 +22,9 @@ open Verification Footprints HeapKnowledge TolerantFrames
 
 /-! ## The effect action
 
-The one place this module reads the meaning of an effect. Every modal
-statement below goes through `EffectAction` and the five lemmas after it. -/
+The one place the parity modules read the meaning of an effect. Every
+modal statement goes through `EffectAction` and the lemmas after it, and
+every support through `SupportedBy`. -/
 
 /-- **The action of an effect** at a name valuation (the note, §3, "the
 effect action" `h →Φ_ρ h'`): an admissible transition whose heaps meet the
@@ -31,6 +32,13 @@ effect's postcondition, its regions read at the state it starts from
 (`TolerantFrames.Action`). -/
 def EffectAction (Φ : Footprint) (η : Env) (s s' : IndexedHeap) : Prop :=
   TolerantFrames.Action Φ η s s'
+
+/-- **A transition within a support** (the note, §5, "Support"): every
+location `l` below the first heap's length in a region of an entry `r : δ`
+of `S`, read at the first state, changes at most by `δ`
+(`Footprints.Supported`). -/
+def SupportedBy (S : Footprint) (η : Env) (s s' : IndexedHeap) : Prop :=
+  Footprints.Supported S η s.h s'.h
 
 /-- The effect letting every location change: the note's `⊤`. -/
 def topEffect : Footprint := Footprints.Closed.top.fp
