@@ -315,3 +315,45 @@ theorem Post.renameM {Φ : Footprint} {σ : Nat → Option Nat} {ρ env : Env} {
   · exact .inr ⟨(e.1.renameM σ, e.2), List.mem_map.mpr ⟨e, he, rfl⟩, Region.mem_renameM hσ e.1 hm, hh⟩
 
 end Verification.Footprints
+
+namespace Verification.Footprints
+
+/-- **A footprint's class entries as they act on their class**: on a store
+`init` and `scalar` are `keep`, on a value `grow` is `scalar`
+(`Change.onStore`, `Change.onValue`). -/
+def Footprint.byClass (Φ : Footprint) : Footprint := Φ.map fun e => match e.1 with
+  | .cls .store => (e.1, e.2.onStore)
+  | .cls .value => (e.1, e.2.onValue)
+  | _ => e
+
+/-- A transition within a footprint is within its class entries' action on
+their class. -/
+theorem Post.byClass {Φ : Footprint} {ρ : Env} {h h' : Heap} (hp : Post Φ ρ h h') : Post Φ.byClass ρ h h' := by
+  refine ⟨hp.1, fun l v hv => ?_⟩
+  obtain ⟨v', hv', ha⟩ := hp.2 l v hv
+  refine ⟨v', hv', ?_⟩
+  rcases ha with h | ⟨e, he, hm, hh⟩
+  · exact .inl h
+  · obtain ⟨r, δ⟩ := e
+    refine .inr ⟨_, List.mem_map.mpr ⟨(r, δ), he, rfl⟩, ?_⟩
+    cases r with
+    | cls c =>
+      cases c with
+      | store =>
+        have harr : isArr v = true := by simpa [Region.mem, hv, Cls.has] using hm
+        refine ⟨hm, ?_⟩
+        cases v <;> simp [isArr] at harr
+        cases δ <;> simp only [Change.onStore]
+        · exact hh
+        · exact hh.init_store
+        · exact hh.scalar_store
+        · exact hh
+        · exact hh
+      | value =>
+        have harr : isArr v = false := by simpa [Region.mem, hv, Cls.has] using hm
+        refine ⟨hm, ?_⟩
+        cases δ <;> simp only [Change.onValue]
+        all_goals first | exact hh | exact hh.grow_value harr
+    | _ => exact ⟨hm, hh⟩
+
+end Verification.Footprints

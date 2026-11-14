@@ -155,22 +155,26 @@ first fields of slots' objects whose contents the transition keeps
 ($`c.\mathrm{stable}`$, `FirstKept`), and the one-field paths holding typed
 arrays whose length it keeps ($`c.\mathrm{views}`$, `ViewsKept`)
 (`ReadContext`). A path $`x.f_1\ldots f_n`$ reads the field location of
-$`f_i`$ of the object $`x.f_1\ldots f_{i-1}`$ reads, for each $`i`$; its
-support keeps each of them, but a first field $`c`$ states stable
-(`pathReads`):
+$`f_i`$ of the object $`x.f_1\ldots f_{i-1}`$ reads, for each $`i`$. Each
+location the read passes on from holds an object, which every change but
+`any` keeps; the last holds the value the read ends at, at a change $`\lambda`$
+keeping it. The support reads each location, but a first field $`c`$ states
+stable (`pathReads`):
 
 ```math
-\mathrm{reads}_c(x.f_1\ldots f_n) = \{\,x.f_1\ldots f_{i-1}.f_i : \mathsf{keep} \mid 1 \le i \le n,\ \lnot(i = 1 \land c.\mathrm{stable}(x, f_1))\,\}
+\mathrm{reads}_c^{\lambda}(x.f_1\ldots f_n) = \{\,x.f_1\ldots f_{i-1}.f_i : (i < n\ ?\ \mathsf{grow} : \lambda) \mid 1 \le i \le n,\ \lnot(i = 1 \land c.\mathrm{stable}(x, f_1))\,\}
 ```
 
 A term $`t`$ (ARITHMETIC.md, [linear facts](ARITHMETIC.md#linear-facts))
 at the change $`\delta \in \{\mathsf{keep}, \mathsf{grow}\}`$ its store
 tolerates has the support (`Term.support`): none for an entry term, which
-reads the entry state; otherwise $`\mathrm{reads}_c`$ of its path, and for a
+reads the entry state; otherwise $`\mathrm{reads}_c^{\lambda}`$ of its path,
+$`\lambda`$ `init` for a value or a string's length (a number or a string)
+and `grow` for a length or a typed array's length (an object), and for a
 length $`|x.\pi|`$ the store location of the array $`x.\pi`$ reads, where it
 holds a store, at $`\delta`$, for a typed array's length $`\mathrm{view}(x.\pi)`$
-its length location at $`\mathsf{keep}`$, each but where the context keeps
-it. **Proved** (`Term.support_sound`): where the support is kept, the term
+its length location, holding a number, at `init`, each but where the context
+keeps it. **Proved** (`Term.support_sound`): where the support is kept, the term
 denotes what it denoted, and at $`\delta = \mathsf{grow}`$ a length denotes
 at least as much, at most $`2^{32}-1`$.
 
@@ -181,9 +185,16 @@ other at $`\mathsf{keep}`$; in a disequality every term at $`\mathsf{keep}`$
 (`IndexFact.support?`, proved: `IndexFact.support?_supports`): empty for a
 fact of slots' values; a length fact its store at $`\mathsf{keep}`$, a bound
 its store at $`\mathsf{grow}`$; a disjunction both sides'; a guarded fact its
-guard path's reads and its body's; a store separation its two paths' reads.
-An element fact, a quantified fact and a region fact have no support
-produced: the check keeps none of them.
+guard path's reads and its body's; a store separation its two paths' reads
+(each at `keep` last); a region fact $`\mathrm{apart}(a, b)`$ the two store
+locations at `keep`; a quantified fact $`\mathrm{every}(x.\pi, t, \varphi)`$
+whose body reads no element's field: $`\mathrm{reads}_c^{\mathsf{grow}}(x.\pi)`$,
+the array's store location at either key an array or a typed array holds its
+elements under, at `keep`, the locations of class value at `init` (an element
+the body reads is a number, which `init` keeps), and its bound's and its
+body's terms at `keep` (`everyCells`, `bodySupport`). An element fact, and a
+quantified fact projecting through its elements, have no support produced:
+the check keeps none of them.
 
 **The survival check** (`IndexFact.keeps`): a fact survives an effect
 $`\Phi`$ under a query $`q`$ where $`\Phi`$ respects its support under $`q`$.
@@ -221,7 +232,11 @@ that slot, and the regions at any other position widen to every location
 (`Region.renameM`, `PromiseCalls.callerFrame`; proved:
 `Post.renameM`, `callerFrame_post`). Across a call whose frame states store
 regions, the facts kept are those the survival check keeps under
-$`\Sigma`$'s query (`PromiseCalls.effectKept`).
+$`\Sigma`$'s query (`PromiseCalls.effectKept`); so are the facts kept
+across a call whose frame is its closed bound alone. A closed bound's class
+entries are read as they act on their class: on a store `init` and `scalar`
+are `keep`, on a value `grow` is `scalar` (`Footprint.byClass`, proved:
+`Post.byClass`).
 
 ## The stable set for density
 
@@ -881,12 +896,10 @@ are stated and checked. An index fact (a length, a typed-array length, a
 field path's value) reads the locations its terms read, each holding an
 object, a store or a number. A closed footprint preserves the locations of
 the classes it keeps, and `grow` on a store leaves every length no smaller
-(`HeapKnowledge.Changes.ofClosed`, proved: `ofClosed_holds`). So a call at a
-signature within `{value: any, store: keep}` preserves every length, and a
-fact with a non-positive coefficient on each length it reads, its other
-terms kept, survives a call
-within `{value: any, store: grow}` (`Term.grownBy`, proved:
-`termValue_grown`), and so does such a fact across an element write, within
+(`HeapKnowledge.Changes.ofClosed`, proved: `ofClosed_holds`). A call keeps
+the facts the survival check keeps ([support and respect](#support-and-respect));
+a fact with a non-positive coefficient on each length it reads, its other
+terms kept, survives an element write within
 that footprint at any index ([element writes](#element-writes)); a field
 write, an element write below the length and a call changing only its
 receiver's own locations state their own change. The preservation rules and their proofs are

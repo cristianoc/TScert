@@ -338,6 +338,7 @@ run_cmd do
   check ``Verification.Footprints.knowledgeQuery_sound
   check ``Verification.Footprints.Post.renameM
   check ``Verification.PromiseCalls.callerFrame_post
+  check ``Verification.Footprints.Post.byClass
   check ``Verification.TolerantFrames.kept_box
   check ``Verification.TolerantFrames.grow
   check ``Verification.TolerantFrames.grow_path

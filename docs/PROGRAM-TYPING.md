@@ -1736,9 +1736,11 @@ through `GraphCode.writeWithinAt`. The element write's is
 `IndexWrites.keepsLengths` and `lengthOutput` (proved:
 `ExpressionEffects.elem_var_write_length`, `placeAt_length`), and at any
 index `IndexWrites.growOutput` in `Checker.boundedWrites` (proved:
-`ExpressionEffects.writeStep_grow`, `growOutput_sound`). A call's is
-`Changes.ofClosed` (proved: `ofClosed_holds`) in `PromiseCalls.effectKept`,
-added by `Checker.ensuringCalls`; an element write's is `CallEffects.ElementWrite.changes` in
+`ExpressionEffects.writeStep_grow`, `growOutput_sound`). A call's facts across its frame are those the survival check keeps
+([support and respect](FOOTPRINTS.md#support-and-respect),
+[a call's effect at the caller](FOOTPRINTS.md#a-calls-effect-at-the-caller))
+in `PromiseCalls.effectKept`, added by `Checker.ensuringCalls`; an element
+write's is `CallEffects.ElementWrite.changes` in
 `PromiseCalls.effectKept` (proved in `effectKept_holds`); growth is `PromiseCalls.growChanges` and
 `growFirst` (proved: `receiverGrows_changes`, `growFirst_kept`, in
 `effectKept_holds`), and a definition's code is checked at its signature's

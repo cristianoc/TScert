@@ -2273,13 +2273,13 @@ theorem regionFirst_kept {k : HeapKnowledge.Knowledge} {eff : Effect} {t : Tm} {
 call's positions, `Footprint.renameM`): each position the caller passes a
 slot at reads as that slot, any other position's regions widen to every
 location. -/
-def callerFrame (eff : Effect) (t : Tm) : Footprints.Footprint := eff.frame.renameM (actualSlot t)
+def callerFrame (eff : Effect) (t : Tm) : Footprints.Footprint := (eff.frame.renameM (actualSlot t)).byClass
 
 /-- The call's frame at the caller's slots bounds the call. -/
 theorem callerFrame_post {eff : Effect} {t : Tm} {ρ : Env} {h h' : Heap}
     (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h') :
     Footprints.Post (callerFrame eff t) ρ h h' :=
-  Footprints.Post.renameM (fun _ _ hij => (actualSlot_sound hij ρ).symm) hw
+  (Footprints.Post.renameM (fun _ _ hij => (actualSlot_sound hij ρ).symm) hw).byClass
 
 /-- The heap-reading atoms of a call's entry its footprint keeps, renamed past
 the result (`Changes.ofClosed`, ARITHMETIC.md, "Linear facts"): with
@@ -2305,8 +2305,10 @@ def effectKept (views stable : Nat → String → Bool) (eff : Effect) (t : Tm) 
   | some w => HeapKnowledge.shiftIndices (HeapKnowledge.keptIndicesWith w.changes stable views
       (k.indices.filter fun a => !a.fact.envOnly))
   | none =>
-    HeapKnowledge.shiftIndices (HeapKnowledge.keptIndicesWith (HeapKnowledge.Changes.ofClosed eff.footprint)
-      stable views (k.indices.filter fun a => !a.fact.envOnly))
+    let q := Footprints.knowledgeQuery k
+    let Φ := callerFrame eff t
+    HeapKnowledge.shiftIndices (k.indices.filter fun a =>
+      !a.fact.envOnly && a.fact.keeps q { stable, views } Φ)
 
 theorem effectKept_holds {views stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
     (hk : HeapKnowledge.Holds k ε ρ h) (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
@@ -2339,9 +2341,11 @@ theorem effectKept_holds {views stable : Nat → String → Bool} {eff : Effect}
       · rename_i w hwr
         exact HeapKnowledge.shiftIndices_holds (HeapKnowledge.keptIndicesWith_holds
           (fun a ha hcd => hk.2.2.2.2.2 a (List.mem_filter.mp ha).1 hcd) (hew w hwr).1 hst hv)
-      · exact HeapKnowledge.shiftIndices_holds (HeapKnowledge.keptIndicesWith_holds
-          (fun a ha hcd => hk.2.2.2.2.2 a (List.mem_filter.mp ha).1 hcd)
-          (HeapKnowledge.Changes.ofClosed_holds (CallEffects.Effect.within_holds hw hs ho)) hst hv)
+      · refine HeapKnowledge.shiftIndices_holds fun a ha hcd => ?_
+        obtain ⟨ha, hkeep⟩ := List.mem_filter.mp ha
+        simp only [Bool.and_eq_true] at hkeep
+        exact Footprints.IndexFact.keeps_sound hkeep.2 (Footprints.knowledgeQuery_sound hk)
+          (callerFrame_post hw) ⟨hst, hv⟩ (hk.2.2.2.2.2 a ha hcd)
 
 /-! ### Quantified facts across a growth (ARITHMETIC.md, "Quantified clauses") -/
 

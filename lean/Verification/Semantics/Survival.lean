@@ -32,10 +32,13 @@ def keyRead (c : ReadContext) (x : Nat) (p : List String) (k : String) (r : Regi
   if p.isEmpty && c.stable x k then [] else [(r, δ)]
 
 /-- The field locations a path's read passes, after the prefix `pre`: each
-at `keep` (`keyRead`). -/
-def pathReads (c : ReadContext) (x : Nat) : List String → List String → Footprint
+location the read passes on from holds an object, at `grow`, which keeps an
+object; the last at `last`, which keeps the value the read ends at
+(`keyRead`). -/
+def pathReads (c : ReadContext) (x : Nat) (last : Change) : List String → List String → Footprint
   | _, [] => []
-  | pre, f :: q => keyRead c x pre f (.path x pre (.str f)) .keep ++ pathReads c x (pre ++ [f]) q
+  | pre, f :: q => keyRead c x pre f (.path x pre (.str f)) (if q.isEmpty then last else .grow) ++
+      pathReads c x last (pre ++ [f]) q
 
 private theorem supported_left {S T : Footprint} {ρ h h'} (hs : Supported (S ++ T) ρ h h') : Supported S ρ h h' :=
   fun e he => hs e (List.mem_append_left _ he)
@@ -46,11 +49,22 @@ private theorem supported_right {S T : Footprint} {ρ h h'} (hs : Supported (S +
 theorem supported_sub {S T : Footprint} {ρ h h'} (hs : Supported T ρ h h') (hst : ∀ e ∈ S, e ∈ T) :
     Supported S ρ h h' := fun e he => hs e (hst e he)
 
-/-- A location read at a key the support keeps, or the context keeps, holds
-its contents. -/
+/-- A change keeps the contents `u` where every step of it from `u` is none. -/
+def Keeps (δ : Change) (u : Val) : Prop := ∀ b u', δ.Holds b u u' → u' = u
+
+theorem keeps_keep (u : Val) : Keeps .keep u := fun _ _ h => h
+
+theorem keeps_obj {δ : Change} (hδ : δ ≠ .any) {u : Val} (ho : isObj u = true) : Keeps δ u :=
+  fun _ _ h => h.object_kept hδ ho
+
+theorem keeps_defined {δ : Change} (hδ : δ.le .init = true) {u : Val} (hn : nullish u = false) : Keeps δ u :=
+  fun _ _ h => h.defined_kept hδ hn
+
+/-- A location read at a key the support keeps at a change keeping its
+contents, or the context keeps, holds its contents. -/
 private theorem keyRead_kept {c : ReadContext} {x : Nat} {pre : List String} {k : String} {r : Region}
-    {ρ : Env} {h h' : Heap} {v : Val} {fs : List (PropKey × Nat)} {cd : CallCode} {o l : Nat} {u : Val}
-    (hc : c.Holds ρ h h') (hs : Supported (keyRead c x pre k r .keep) ρ h h')
+    {δ : Change} {ρ : Env} {h h' : Heap} {v : Val} {fs : List (PropKey × Nat)} {cd : CallCode} {o l : Nat}
+    {u : Val} (hc : c.Holds ρ h h') (hs : Supported (keyRead c x pre k r δ) ρ h h') (hδ : Keeps δ u)
     (hv : readPath h (ρ x) pre = some v) (hobj : v = .objAt fs cd o) (hl : fs.lookup (.str k) = some l)
     (hu : h[l]? = some u) (hm : r.mem ρ h l = true) : h'[l]? = some u := by
   unfold keyRead at hs
@@ -61,20 +75,28 @@ private theorem keyRead_kept {c : ReadContext} {x : Nat} {pre : List String} {k 
     simp only [readPath, Option.some.injEq] at hv
     exact hc.1 x k fs cd o l u hst (hv.trans hobj) hl hu
   · obtain ⟨v', hv', hk⟩ := hs _ (List.mem_singleton_self _) l u hm hu
-    simp only [Change.Holds] at hk
-    rw [← hk]; exact hv'
+    rw [← hδ _ _ hk]; exact hv'
+
+private theorem readPath_obj {h : Heap} {u w : Val} {g : String} {q : List String}
+    (hw : readPath h u (g :: q) = some w) : isObj u = true := by
+  cases u <;> simp_all [readPath, isObj]
+
+private theorem readGuard_obj {h : Heap} {u w : Val} {g : String} {q : List String}
+    (hw : readGuard h u (g :: q) = some w) : isObj u = true := by
+  cases u <;> simp_all [readGuard, isObj]
 
 /-- **A path's read is kept** where its support (`pathReads`) is, in its
-context. -/
-theorem pathReads_sound {c : ReadContext} {x : Nat} {ρ : Env} {h h' : Heap} (hc : c.Holds ρ h h') :
-    ∀ (q pre : List String) {v w : Val}, Supported (pathReads c x pre q) ρ h h' →
+context, its last change keeping the value it reads. -/
+theorem pathReads_sound {c : ReadContext} {x : Nat} {last : Change} {ρ : Env} {h h' : Heap}
+    (hc : c.Holds ρ h h') :
+    ∀ (q pre : List String) {v w : Val}, Supported (pathReads c x last pre q) ρ h h' → Keeps last w →
       readPath h (ρ x) pre = some v → readPath h' (ρ x) pre = some v →
       readPath h v q = some w → readPath h' v q = some w := by
   intro q
   induction q with
-  | nil => intro pre v w _ _ _ hw; exact hw
+  | nil => intro pre v w _ _ _ _ hw; exact hw
   | cons f q ih =>
-    intro pre v w hs hv hv' hw
+    intro pre v w hs hlast hv hv' hw
     cases v with
     | objAt fs cd o =>
       simp only [readPath] at hw ⊢
@@ -84,22 +106,26 @@ theorem pathReads_sound {c : ReadContext} {x : Nat} {ρ : Env} {h h' : Heap} (hc
         · rename_i u hu
           have hm : (Region.path x pre (.str f)).mem ρ h l = true := by
             simp [Region.mem, hv, fieldsOf, hl]
-          have hu' := keyRead_kept hc (supported_left hs) hv rfl hl hu hm
+          have hδ : Keeps (if q.isEmpty then last else .grow) u := by
+            cases q with
+            | nil => simp only [readPath, Option.some.injEq] at hw; subst hw; simpa using hlast
+            | cons g q => simpa using keeps_obj (by decide) (readPath_obj hw)
+          have hu' := keyRead_kept hc (supported_left hs) hδ hv rfl hl hu hm
           simp only [hu']
           have happ : ∀ (h : Heap), readPath h (ρ x) pre = some (.objAt fs cd o) → h[l]? = some u →
               readPath h (ρ x) (pre ++ [f]) = some u := by
             intro h hp hlu
             rw [readPath_append, hp]
             simp [readPath, hl, hlu]
-          exact ih (pre ++ [f]) (supported_right hs) (happ h hv hu) (happ h' hv' hu') hw
+          exact ih (pre ++ [f]) (supported_right hs) hlast (happ h hv hu) (happ h' hv' hu') hw
         · cases hw
       · cases hw
     | _ => simp [readPath] at hw
 
-/-- **A guard's read is kept** where its path's read is: an absent key
-reads `undefined` by the object alone. -/
+/-- **A guard's read is kept** where its path's read is at `keep` last: an
+absent key reads `undefined` by the object alone. -/
 theorem guardReads_sound {c : ReadContext} {x : Nat} {ρ : Env} {h h' : Heap} (hc : c.Holds ρ h h') :
-    ∀ (q pre : List String) {v w : Val}, Supported (pathReads c x pre q) ρ h h' →
+    ∀ (q pre : List String) {v w : Val}, Supported (pathReads c x .keep pre q) ρ h h' →
       readPath h (ρ x) pre = some v → readPath h' (ρ x) pre = some v →
       readGuard h v q = some w → readGuard h' v q = some w := by
   intro q
@@ -116,7 +142,11 @@ theorem guardReads_sound {c : ReadContext} {x : Nat} {ρ : Env} {h h' : Heap} (h
         · rename_i u hu
           have hm : (Region.path x pre (.str f)).mem ρ h l = true := by
             simp [Region.mem, hv, fieldsOf, hl]
-          have hu' := keyRead_kept hc (supported_left hs) hv rfl hl hu hm
+          have hδ : Keeps (if q.isEmpty then .keep else .grow) u := by
+            cases q with
+            | nil => simpa using keeps_keep u
+            | cons g q => simpa using keeps_obj (by decide) (readGuard_obj hw)
+          have hu' := keyRead_kept hc (supported_left hs) hδ hv rfl hl hu hm
           simp only [hu']
           have happ : ∀ (h : Heap), readPath h (ρ x) pre = some (.objAt fs cd o) → h[l]? = some u →
               readPath h (ρ x) (pre ++ [f]) = some u := by
@@ -152,7 +182,13 @@ the context does not keep it: a one-field path whose view the context frames
 (`views`), or a first field stated stable (`keyRead`). -/
 def viewRead (c : ReadContext) (x : Nat) (p : List String) : Footprint :=
   if viewKept c x p then [] else
-    keyRead c x p "[[viewLength]]" (.path x p viewLengthKey) .keep
+    keyRead c x p "[[viewLength]]" (.path x p viewLengthKey) .init
+
+/-- The change the last location a term's path reads tolerates: a number
+or a string is kept by `init`, an object by `grow`. -/
+def lastChange : Term.Kind → Change
+  | .value | .strLength => .init
+  | .length | .view => .grow
 
 /-- **A term's support** at the change `δ` its store tolerates: nothing for
 an entry term; else its path's reads, and what its kind reads of the value
@@ -160,7 +196,7 @@ the path ends at: a length its store (`storeRead`), a typed array's length
 its length location (`viewRead`), a value or a string's length nothing more. -/
 def _root_.Verification.HeapKnowledge.Term.support (c : ReadContext) (δ : Change) (t : Term) : Footprint :=
   if t.atEntry then [] else
-  pathReads c t.slot [] t.path ++ match t.kind with
+  pathReads c t.slot (lastChange t.kind) [] t.path ++ match t.kind with
     | .value | .strLength => []
     | .length => storeRead c t.slot t.path δ
     | .view => viewRead c t.slot t.path
@@ -224,8 +260,23 @@ theorem Term.support_sound {c : ReadContext} {δ : Change} {t : Term} {ρ : Env}
   simp only [Term.support, Bool.false_eq_true, if_false] at hs
   simp only [termValue, termAt, Bool.false_eq_true, if_false, Option.bind_eq_some_iff] at ht ⊢
   obtain ⟨w, hw, hk⟩ := ht
+  have hlast : Keeps (lastChange kind) w := by
+    cases kind with
+    | value =>
+      obtain ⟨b, rfl, -⟩ := intValue_safe hk
+      exact keeps_defined (by decide) rfl
+    | strLength =>
+      cases w <;> simp [kindValue, strLengthOf] at hk
+      exact keeps_defined (by decide) rfl
+    | length =>
+      obtain ⟨s, -, hst, -⟩ := lengthOf_store hk
+      cases w <;> simp [storeOf, fieldsOf] at hst
+      exact keeps_obj (by decide) rfl
+    | view =>
+      obtain ⟨fs, cd, o, -, -, rfl, -⟩ := viewLengthOf_inv hk
+      exact keeps_obj (by decide) rfl
   have hw' : readPath h' (ρ x) p = some w :=
-    pathReads_sound hc p [] (supported_left hs) rfl rfl hw
+    pathReads_sound hc p [] (supported_left hs) hlast rfl rfl hw
   have hkind := supported_right hs
   refine (fun (e : ∃ n', kindValue h' kind w = some n' ∧ n ≤ n' ∧ (δ = .keep → n' = n)) => ?_) ?_
   · obtain ⟨n', h1, h2, h3⟩ := e; exact ⟨n', ⟨w, hw', h1⟩, h2, h3⟩
@@ -274,8 +325,7 @@ theorem Term.support_sound {c : ReadContext} {δ : Change} {t : Term} {ρ : Env}
         have hm : (Region.path x p viewLengthKey).mem ρ h l = true := by
           simp [Region.mem, hw, fieldsOf, hl]
         obtain ⟨v', hv', hkk⟩ := hkind _ (List.mem_singleton_self _) l _ hm hb
-        simp only [Change.Holds] at hkk
-        rw [hv', hkk, hb]
+        rw [hv', (show Change.init.Holds _ _ _ from hkk).defined_kept (by decide) rfl, hb]
 
 /-! ## Facts -/
 
@@ -325,21 +375,63 @@ theorem linearSupport_supports (c : ReadContext) (F : Linear.Fact Term) :
     intro q hq
     exact hall .keep G (fun _ => .keep) q hq rfl rfl
 
+/-- A value's region (`RegionOf`) is kept where its store location, holding
+a store, keeps its contents. -/
+theorem regionOf_supported {x : Nat} {ρ : Env} {h h' : Heap} {st : Option Nat} {cells : List (Option Nat)}
+    (hs : Supported [(.inCls (.field x arrayStoreKey) .store, .keep)] ρ h h') (hr : RegionOf h (ρ x) st cells) :
+    RegionOf h' (ρ x) st cells := by
+  rcases hr with hr | ⟨l, rfl, hst, hl⟩
+  · exact .inl hr
+  · have hm : (Region.inCls (.field x arrayStoreKey) .store).mem ρ h l = true := by
+      simp only [Region.mem, hl, Bool.and_eq_true]
+      exact ⟨by simpa [storeOf] using hst, rfl⟩
+    obtain ⟨v', hv', hk⟩ := hs _ (List.mem_singleton_self _) l _ hm hl
+    simp only [Change.Holds] at hk
+    exact .inr ⟨l, rfl, hst, by rw [hv', hk]⟩
+
+/-- Whether a quantified body's variables read the heap only through the
+element cells and terms: no projection through an element. -/
+def Bound.scalar : Bound → Bool
+  | .project _ _ => false
+  | _ => true
+
+/-- The supports of a quantified body's terms, at `keep`. -/
+def bodySupport (c : ReadContext) (body : List (LinearClause Bound)) : Footprint :=
+  body.flatMap fun F => F.vars.flatMap fun b => match b with
+    | .free t => t.support c .keep
+    | _ => []
+
+/-- The locations a quantified fact over the array the path `p` reads from
+slot `s` reads besides its path: the array's store, at either key an array
+or a typed array holds its elements under, and the element cells, which hold
+numbers where an element is read, at `init`. -/
+def everyCells (s : Nat) (p : List String) : Footprint :=
+  [(.inCls (.path s p arrayStoreKey) .store, .keep), (.inCls (.path s p viewElementsKey) .store, .keep),
+    (.cls .value, .init)]
+
 /-- **The support of an index fact**, where one is produced: nothing for a
 fact of slots' values alone; a length its store at `keep`, a bound its store
 at `grow`; a linear fact `linearSupport`; a disjunction both sides'; a
 guarded fact its guard's path reads and its body's; a store separation its
-two paths' reads. An element fact, a quantified fact and a region fact get
-none here: no support is produced, and nothing is kept by it. -/
+two paths' reads; a region fact its two stores at `keep`; a quantified fact
+whose body reads no element's fields its array's path, store and element
+cells (`everyCells`), its bound's and its body's terms. An element fact, and
+a quantified fact projecting through elements, get none here: no support is
+produced, and nothing is kept by it. -/
 def _root_.Verification.HeapKnowledge.IndexFact.support? (c : ReadContext) : IndexFact → Option Footprint
   | .index _ | .int _ | .pastSafe _ => some []
   | .length x _ => some (storeRead c x [] .keep)
   | .bound x _ _ => some (storeRead c x [] .grow)
   | .linear F => some (linearSupport c F)
   | .either A B => do pure ((← A.support? c) ++ (← B.support? c))
-  | .guarded s p _ B => do pure (pathReads c s [] p ++ (← B.support? c))
-  | .storeApart a p b q => some (pathReads c a [] p ++ pathReads c b [] q)
-  | .element _ _ _ | .every _ _ _ _ | .apart _ _ => none
+  | .guarded s p _ B => do pure (pathReads c s .keep [] p ++ (← B.support? c))
+  | .storeApart a p b q => some (pathReads c a .keep [] p ++ pathReads c b .keep [] q)
+  | .apart a b => some [(.inCls (.field a arrayStoreKey) .store, .keep), (.inCls (.field b arrayStoreKey) .store, .keep)]
+  | .every s p stop body =>
+    if body.all (fun F => F.vars.all Bound.scalar) then
+      some (pathReads c s .grow [] p ++ everyCells s p ++ stop.support c .keep ++ bodySupport c body)
+    else none
+  | .element _ _ _ => none
 
 /-- **Every produced support supports its fact** in its context. -/
 theorem IndexFact.support?_supports (c : ReadContext) :
@@ -384,11 +476,84 @@ theorem IndexFact.support?_supports (c : ReadContext) :
     intro S hS; simp only [IndexFact.support?, Option.some.injEq] at hS; subst hS
     intro ρ h h' hc hF hs
     obtain ⟨u, w, hu, hw, hne⟩ := hF
-    exact ⟨u, w, pathReads_sound hc p [] (supported_left hs) rfl rfl hu,
-      pathReads_sound hc q [] (supported_right hs) rfl rfl hw, hne⟩
+    exact ⟨u, w, pathReads_sound hc p [] (supported_left hs) (keeps_keep u) rfl rfl hu,
+      pathReads_sound hc q [] (supported_right hs) (keeps_keep w) rfl rfl hw, hne⟩
   | element _ _ _ => intro S hS; simp [IndexFact.support?] at hS
-  | every _ _ _ _ => intro S hS; simp [IndexFact.support?] at hS
-  | apart _ _ => intro S hS; simp [IndexFact.support?] at hS
+  | apart a b =>
+    intro S hS; simp only [IndexFact.support?, Option.some.injEq] at hS; subst hS
+    intro ρ h h' _ hF hs
+    obtain ⟨sa, xs, sb, ys, hx, hy, hab⟩ := hF
+    exact ⟨sa, xs, sb, ys, regionOf_supported (supported_sub hs (by simp)) hx,
+      regionOf_supported (supported_sub hs (by simp)) hy, hab⟩
+  | every s p stop body =>
+    intro S hS
+    simp only [IndexFact.support?] at hS
+    split at hS
+    · rename_i hsc
+      simp only [Option.some.injEq] at hS; subst hS
+      intro ρ h h' hc hF hs
+      have hpath := supported_left (supported_left (supported_left hs))
+      have hcells := supported_right (supported_left (supported_left hs))
+      have hstop := supported_right (supported_left hs)
+      have hbody := supported_right hs
+      have hw_obj : ∀ w st, readPath h (ρ s) p = some w → elementsOf w = some st → isObj w = true := by
+        intro w st _ he; cases w <;> simp_all [elementsOf, storeOf, fieldsOf, isObj]
+      refine IndexFact.every_frame hF (fun w hw => ?_) (fun w st ls hw he hls => ?_) (fun z hz => ?_)
+        (fun w st ls hw he hls F hF i b hb z hz => ?_)
+      · obtain ⟨w0, st0, -, -, hw0, he0, -⟩ := hF
+        have hww : w0 = w := by rw [hw0] at hw; exact Option.some.inj hw
+        subst hww
+        exact pathReads_sound hc p [] hpath (keeps_obj (by decide) (hw_obj _ st0 hw0 he0)) rfl rfl hw0
+      · -- the store location, at either key, holds a store
+        have hm : (Region.inCls (.path s p arrayStoreKey) .store).mem ρ h st = true ∨
+            (Region.inCls (.path s p viewElementsKey) .store).mem ρ h st = true := by
+          simp only [Region.mem, hw, hls, Bool.and_eq_true]
+          cases w with
+          | objAt fs cd o =>
+            simp only [elementsOf] at he
+            split at he
+            · rename_i st' hst'
+              cases he
+              exact .inl ⟨by simpa [storeOf, fieldsOf] using hst', rfl⟩
+            · split at he
+              · exact .inr ⟨by simpa [fieldsOf] using he, rfl⟩
+              · cases he
+          | _ => simp [elementsOf, storeOf, fieldsOf] at he
+        rcases hm with hm | hm
+        · obtain ⟨v', hv', hk⟩ := hcells (.inCls (.path s p arrayStoreKey) .store, .keep)
+            (by simp [everyCells]) st _ hm hls
+          simp only [Change.Holds] at hk; rw [hv', hk]
+        · obtain ⟨v', hv', hk⟩ := hcells (.inCls (.path s p viewElementsKey) .store, .keep)
+            (by simp [everyCells]) st _ hm hls
+          simp only [Change.Holds] at hk; rw [hv', hk]
+      · obtain ⟨n', h1, -, h3⟩ := Term.support_sound hc (.inl rfl) hstop hz
+        rw [h3 rfl] at h1; exact h1
+      · have hcell : ∀ j z, elementInt h ls j = some z → elementInt h' ls j = some z := by
+          intro j z hj
+          simp only [elementInt] at hj ⊢
+          split at hj
+          · rename_i l hl
+            simp only [Option.bind_eq_some_iff] at hj ⊢
+            obtain ⟨v, hv, hz⟩ := hj
+            obtain ⟨bv, rfl, -⟩ := intValue_safe hz
+            have hm : (Region.cls .value).mem ρ h l = true := by simp [Region.mem, hv, Cls.has, isArr]
+            obtain ⟨v', hv', hk⟩ := hcells (.cls .value, .init) (by simp [everyCells]) l _ hm hv
+            exact ⟨_, hv', by rw [(show Change.init.Holds _ _ _ from hk).defined_kept (by decide) rfl]; exact hz⟩
+          · cases hj
+        cases b with
+        | index => exact hz
+        | elem => exact hcell i z hz
+        | offset d => exact hcell (i + d) z hz
+        | project k q =>
+          have := List.all_eq_true.mp (List.all_eq_true.mp hsc F hF) _ hb
+          simp [Bound.scalar] at this
+        | free t =>
+          have hsub : Supported (t.support c .keep) ρ h h' := supported_sub hbody fun e he => by
+            simp only [bodySupport, List.mem_flatMap]
+            exact ⟨F, hF, .free t, hb, he⟩
+          obtain ⟨n', h1, -, h3⟩ := Term.support_sound hc (.inl rfl) hsub hz
+          rw [h3 rfl] at h1; exact h1
+    · cases hS
 
 /-- **The survival check**: a produced support of the fact that the effect
 respects under the query. -/
