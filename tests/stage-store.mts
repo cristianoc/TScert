@@ -475,7 +475,9 @@ if (eligible) {
   const runner = spawn(runnerBuild, ["10000", String(2 ** 33), orphan], { stdio: ["ignore", "ignore", "ignore", report] });
   const exited = new Promise<void>((done) => runner.on("exit", () => done()));
   // Up to 30 s for the program to start: a loaded machine can take seconds.
-  for (let i = 0; i < 1500 && !existsSync(started); i++) await wait(20);
+  // The shell creates the file before it writes the pid into it.
+  const written = (): boolean => existsSync(started) && Number(readFileSync(started, "utf8")) > 0;
+  for (let i = 0; i < 1500 && !written(); i++) await wait(20);
   const program = pidOf(started);
   runner.kill("SIGKILL");
   await exited;
