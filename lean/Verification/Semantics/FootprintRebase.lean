@@ -285,6 +285,23 @@ theorem RebaseOk.path {ev σ ρ₀ h₀ h} (hk : RebaseOk ev σ ρ₀ h₀ h) {s
       simpa using h₀v
   · cases he
 
+/-- **Fresh-store erasure erases the store's own location only**: a
+selected store's cells, old or fresh, rebase to the value class, and a class
+region, the all-views one among them, to itself, whatever the evidence
+states fresh. Only a `[]` field location the evidence states fresh is
+erased. -/
+theorem rebase_erases_store_only (ev : RebaseEvidence) (s : Nat) (p : List String) (c : Selector) :
+    rebase ev (.elems s) = [.cls .values] ∧ rebase ev (.pathElems s p) = [.cls .values] ∧
+      rebase ev (.cls c) = [.cls c] ∧ ∀ k, rebase ev (.path s p k) = [] → k = arrayStoreKey := by
+  refine ⟨rfl, rfl, rfl, fun k hk => ?_⟩
+  by_cases hf : ev.freshPath s p k = true
+  · simp only [RebaseEvidence.freshPath, Bool.and_eq_true, beq_iff_eq] at hf
+    exact hf.1
+  · simp only [rebase, hf, Bool.false_eq_true, if_false] at hk
+    split at hk
+    · cases hk
+    · split at hk <;> cases hk
+
 /-- A location of the step's heap in a class region by its contents is in
 it at the entry heap, or an entry of the first action at `any` covers it. -/
 private theorem class_back {Φp ρ₀ h₀ h l} (hp : Post Φp ρ₀ h₀ h) (hl : l < h₀.length) {c : Selector}

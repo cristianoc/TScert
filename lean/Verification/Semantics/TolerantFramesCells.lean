@@ -58,6 +58,18 @@ theorem Admissible.contentsCategory {s s' : IndexedHeap} (ha : Admissible s s') 
   obtain ⟨r, hr⟩ := roleAt_some hl
   rw [s'.ok.2.category (ha.roleAt hr) hu', s.ok.2.category hr hu]
 
+/-- **Class regions transport across an admissible transition**: an old
+location is in the class region of a selector after it exactly when it was
+before, whatever the transition changed, `any` included: its contents keep
+their category (`Admissible.contentsCategory`). -/
+theorem Admissible.cls_mem {s s' : IndexedHeap} (ha : Admissible s s') {l : Nat} (hl : l < s.h.length)
+    (ρ : Env) (c : Footprints.Selector) :
+    (Footprints.Region.cls c).mem ρ s'.h l = (Footprints.Region.cls c).mem ρ s.h l := by
+  obtain ⟨u, hu⟩ : ∃ u, s.h[l]? = some u := ⟨_, List.getElem?_eq_getElem hl⟩
+  have hl' : l < s'.h.length := Nat.lt_of_lt_of_le hl ha.length_le
+  obtain ⟨u', hu'⟩ : ∃ u, s'.h[l]? = some u := ⟨_, List.getElem?_eq_getElem hl'⟩
+  simp only [Footprints.Region.mem, hu, hu', Footprints.Selector.selects, ha.contentsCategory hu hu']
+
 /-- A listed cell stays an element cell after every admissible transition. -/
 theorem Admissible.elem_kept {s s' : IndexedHeap} (ha : Admissible s s') {st : Nat}
     {ls : List (Option Nat)} (hs : s.h[st]? = some (.arr ls)) {l : Nat} (hl : some l ∈ ls) :

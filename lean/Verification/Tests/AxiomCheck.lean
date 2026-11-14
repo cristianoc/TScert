@@ -1486,6 +1486,8 @@ run_cmd do
   check ``Verification.HeapOk.view_cells
   check ``Verification.HeapKnowledge.RefsOk.view_selects
   check ``Verification.Kinds.slots_lookup_isNone
+  check ``Verification.TolerantFrames.Admissible.cls_mem
+  check ``Verification.Footprints.rebase_erases_store_only
   check ``Verification.Kinds.thrownError_shaped
   -- writes preserve kinds
   check ``Verification.write_sound

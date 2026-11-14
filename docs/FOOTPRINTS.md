@@ -1052,6 +1052,15 @@ held by the heap, so its fields' roles, its stores' cells' roles
 (`storeEntries`) and its descriptor's view store fix their contents' class; a location whose class differs at the entry heap is one an
 entry of $`\Phi`$ at `any` covers.
 
+Across an admissible transition, a class region selects an old location
+after it exactly when it did before, whatever the transition changed
+(proved: `Admissible.cls_mem`, from `Admissible.contentsCategory`); a post
+alone does not give this, a location an entry at `any` covers changing its
+contents' category. Fresh-store erasure removes the `[]` field location the
+evidence states fresh and nothing else: the store's cells, old ones among
+them, rebase to `values`, and a class region, the all-views one among them,
+to itself (proved: `rebase_erases_store_only`).
+
 Stated limit: a field of a position's own value, $`\mathsf{field}\ s\ k`$ or
 $`\mathsf{path}\ s\ []\ k`$, and own locations, without a link, rebase to
 $`\mathsf{all}`$. A position's value is not held by the heap, so its field map
