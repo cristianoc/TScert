@@ -26,6 +26,8 @@
 \newcommand{\any}{\kw{any}}
 \newcommand{\val}{\kw{all\text{-}values}}
 \newcommand{\st}{\kw{all\text{-}stores}}
+\newcommand{\vw}{\kw{all\text{-}views}}
+\newcommand{\LV}{\mathit{Loc}_{\mathsf{view}}}
 \newcommand{\rigid}{\kw{rigid}}
 \newcommand{\fresh}{\kw{fresh}}
 \newcommand{\old}{\kw{old}}
@@ -121,6 +123,7 @@ of:
 \code{y = a}, \code{y = a + a'} and the other operators & a binding\\
 \code{y = x.f}, \code{x.f = a} & a read and a write of a field\\
 \code{y = x[a]}, \code{x[a] = a'} & a read and a write of an element\\
+\code{y = b[a]}, \code{b[a] = a'}, \code{y = b.length} & a read, a write and the length of a typed array \code{b}\\
 \code{y = \{f: a, ...\}}, \code{y = [a, ...]} & an allocation\\
 \code{y = x.m(x, ...)} & a call of a native method, such as \code{push}\\
 \code{y = f(x, ...)} & a call of a function\\
@@ -181,12 +184,30 @@ cell $l_3$ and changes the store to $\langle l_0,\circ,l_2,l_3\rangle$;
 
 A store location has one of two \emph{forms}, fixed with its kind. An
 \emph{array store} belongs to an ordinary array, and its length may
-change, as above. A \emph{view store} belongs to a typed array, such as
-a \code{Uint8Array}. It lists the cells that hold what the typed array
-reads at each index, and its length is fixed: after
-\code{const b = new Uint8Array(4);} the view store of \code{b} has
-length 4 for the life of \code{b}. We write the forms $\mathsf{array}$
-and $\mathsf{view}_N$, with $N$ the length.
+change, as above. A \emph{view store} belongs to a typed array. We
+write the forms $\mathsf{array}$ and $\mathsf{view}_N$, and
+$\LV\subseteq\LS$ for the set of view stores.
+
+A \emph{typed array}, such as a \code{Uint8Array}, is an object with a
+fixed element format $t$ and one distinguished field, whose location is
+its view store location, of form $\mathsf{view}_N$. Its store has the
+fixed length $N$ and no hole: it lists $N$ element cells, each holding a
+number of the format $t$, which is what the typed array reads at that
+index. The contract of a view store admits every such store. Distinct
+typed arrays have distinct view stores. Typed arrays are created by
+library calls: \code{new Uint8Array(4)} returns a new typed array of
+length 4 whose elements are 0, and \code{b.subarray(p, q)} a new typed
+array of length $q-p$ over the same bytes as \code{b} from index $p$;
+both keep every existing location.
+
+So typed arrays may share bytes. After
+\code{const c = b.subarray(0, 2);} the write \code{b[0] = 7} changes
+what \code{c[0]} reads. The model states this without a buffer: among
+the locations that exist before a write through a typed array, only
+view stores change. At each index whose reading changes, in any view
+store, the store comes to list a new cell that holds the new reading.
+Here the view stores of \code{b} and of \code{c} each list a new cell
+holding 7 at index 0.
 \item[Identity location, kind $\kI$] One for each object, allocated with it.
 It holds \code{null}, and its contract admits \code{null} alone. Two
 objects are the same object when they have the same identity location.
@@ -271,6 +292,7 @@ operation & writes & class written\\
 \code{a[i] = e}, index present & the element cell & \emph{value}\\
 \code{a[i] = e} at a hole or past the end; \code{push} & the store (longer or filled), and a new cell & \emph{store}\\
 \code{pop}, \code{splice}, \code{a.length = n} & the store (possibly shorter) & \emph{store}\\
+\code{b[i] = e}, \code{b} a typed array & view stores (same lengths), and new cells & \emph{store}\\
 \bottomrule
 \end{tabular}
 \medskip
@@ -280,7 +302,9 @@ The \emph{value} class is thus ``contents'': every location that holds
 something other than a store. The \emph{store} class is ``shape'': which
 elements an array has and how many. A fact about a length or about
 presence reads a store; a fact about what a field or an element contains
-reads a value location.
+reads a value location. A fact about an element of an array or of a
+typed array reads both: the store, for the cell at the index, and the
+cell.
 
 \paragraph{Which locations can change.} A location never moves or
 disappears; what changes is its contents. We say that a location $l$
@@ -293,7 +317,7 @@ is outside it. TypeScript's \code{readonly} restricts one view of a
 location and makes no location immutable, since another alias may write.
 
 A location is \emph{immutable} exactly when its contract admits a single
-value. Three kinds of location are immutable. The first is a field
+value. Two kinds of location are immutable. The first is a field
 declared \code{@stable}. This is an annotation of TScert, written in a
 comment on a \code{readonly} field of a record type:
 \code{type Runs = \{ /** @stable */ readonly openBrackets: number[] \}}.
@@ -301,10 +325,11 @@ It states that the field holds, for the object's whole life, the value
 the object was created with; the contract of the field's location is
 that one value. Here the field \code{openBrackets} of a \code{Runs}
 object always holds the same array, whose elements and length may still
-change. The second is a typed array's length, the length $N$ of its
-view store. The third is an identity
-location. All three belong to the value
+change. The second is an identity
+location. Both belong to the value
 class, and no admissible transition (Definition~\ref{def:adm}) changes them.
+A typed array's length is fixed too, by the form $\mathsf{view}_N$ of
+its store.
 
 \section{Model}
 
@@ -336,12 +361,14 @@ when:
 \begin{description}[leftmargin=1.5em,style=sameline]
 \item[(W1) one domain] $\mathrm{dom}\,h=\mathrm{dom}\,W$.
 \item[(W2) contents by kind] For every $l$ with $W(l)=(\kappa,T)$:
-$h(l)$ is a value when $\kappa\in\{\kF,\kC,\kE\}$, a store when $\kappa=\kS$, of length $N$ when its form is
-$\mathsf{view}_N$, and \code{null} when $\kappa=\kI$.
+$h(l)$ is a value when $\kappa\in\{\kF,\kC,\kE\}$, a store when $\kappa=\kS$, of length $N$ and without holes when its
+form is $\mathsf{view}_N$, and \code{null} when $\kappa=\kI$.
 \item[(W3) valid references] Every cell that a store of $h$ lists is a
 location of kind $\kE$. For every object that occurs in $h$ or in $\rho$,
-each field location is of kind $\kF$ or $\kC$, its store location is of kind
-$\kS$, and its identity location is of kind $\kI$.
+each field location is of kind $\kF$ or $\kC$ and its identity location
+is of kind $\kI$; the store location of an array is of kind $\kS$ and
+form $\mathsf{array}$, and that of a typed array of length $N$ of form
+$\mathsf{view}_N$.
 \item[(W4) contracts] $h(l)$ is within $T$ for every $l$ with
 $W(l)=(\kappa,T)$, and each value of $\rho$ meets its type, at the
 budget $k$.
@@ -381,7 +408,8 @@ runs from $s$ for $j<k$ steps and reaches a heap $h'$, then $h'$ is the
 heap of a state that is admissible from $s$, with budget $k-j$
 \status{Lean: \lean{run}, \lean{run\_normal}, \lean{run\_throw},
 \lean{safe\_run} for (W4); \lean{HasTyUsing.sound} and
-\lean{ControlFlow.state\_safe} for (W1) to (W3)}.
+\lean{ControlFlow.state\_safe} for (W1) to (W3), in a model whose view
+stores may hold holes and whose typed-array steps are native calls}.
 \end{theorem}
 \noindent
 So what is proved below of every admissible transition holds of every
@@ -507,10 +535,15 @@ followed by field names. Its \emph{read} in $(\rho,h)$ starts from
 $\rho(x)$ and follows the fields $f_1,\ldots,f_k$ in turn through $h$;
 the read \emph{fails} when a value on the way is not an object with the
 next field. A \emph{region} $r$ denotes a set $r(\rho,h)$ of locations
-of $h$. There are five forms:
+of $h$. A class region reads the kinds and forms of those locations,
+which the world of the state records (Definition~\ref{def:world}); the
+other regions read $\rho$ and $h$. There are six forms:
 \begin{description}[leftmargin=1.5em,style=nextline]
 \item[{$\st$}] Every location of class store:
 $\st(\rho,h)=\LS$. In the heap of Section~2 it denotes $\{3\}$.
+\item[{$\vw$}] Every view store: $\vw(\rho,h)=\LV$, a subset of
+$\st(\rho,h)$. The heap of Section~2 has no typed array, so there it
+denotes $\emptyset$.
 \item[{$\val$}] Every location of class value:
 $\val(\rho,h)=\LF\cup\LC\cup\LE\cup\LI$. In the heap of Section~2 it denotes
 $\{0,1,2,4,5,6,7,8,9\}$.
@@ -525,9 +558,15 @@ $v$ that $\pi$ reads: $(\pi.f)(\rho,h)=\{v(f)\}$. Examples: $o.n$
 denotes $\{0\}$ and $o.m$ denotes $\{1\}$.
 \end{description}
 \noindent
-The first two regions are named for what they cover: all the stores of
-the heap, and all its value locations. In TScert's \code{Modifies}
-annotation they are written \code{stores} and \code{values}. A region at
+The first three regions are named for what they cover: all the stores
+of the heap, its view stores, and all its value locations. They are the
+\emph{class regions}. Value locations, array stores and view stores
+partition the locations of $h$; $\st$ is the union of the last two. A
+location keeps its kind and form (T2), so a class region denotes, among
+the locations of $h$, the same set in every heap reached from $h$; and
+the store of an ordinary array, at $\pi.\kw{store}$ or in $\pi[\ast]$,
+is disjoint from $\vw$. In TScert's \code{Modifies}
+annotation $\st$ and $\val$ are written \code{stores} and \code{values}. A region at
 a path whose read fails denotes the empty set: if \code{z} is
 \code{null}, then $z.\mathit{open}.\kw{store}$ denotes $\emptyset$.
 
@@ -537,7 +576,7 @@ region and a change:
 \[
 \begin{array}{rcl}
 \Phi &::=& \{\,r_1:\delta_1,\ \ldots,\ r_k:\delta_k\,\}\\[3pt]
-r &::=& \st \mid \val \mid \pi.\kw{store} \mid \pi[\ast] \mid \pi.f\\[3pt]
+r &::=& \st \mid \vw \mid \val \mid \pi.\kw{store} \mid \pi[\ast] \mid \pi.f\\[3pt]
 \delta &::=& \keep\mid\init\mid\kw{scalar}\mid\grow\mid\any
 \end{array}
 \]
@@ -577,8 +616,8 @@ $h\tr{\Phi}_\rho h'$ and $h'\tr{\Phi}_\rho h''$ then
 $h\tr{\Phi}_\rho h''$. Rigidity is what lets a fact that survives one
 change bounded by $\Phi$ survive any number of them.
 \begin{description}[leftmargin=1.5em,style=nextline]
-\item[Rigid: class regions] An effect whose regions are $\st$ and $\val$
-is rigid at every named change. A change below $\any$ keeps each
+\item[Rigid: class regions] An effect whose regions are $\st$, $\vw$ and
+$\val$ is rigid at every named change. A change below $\any$ keeps each
 location in its class, and $\any$ absorbs any change that follows it.
 \item[Rigid: a store at a rigid path] $\{\pi.\kw{store}:\delta\}$ is
 rigid on the states where $\pi$ is rigid (Section~4): the path then
@@ -613,7 +652,7 @@ F,G &::=& a \mid F\wedge G \mid g\vee F \mid \exists v.\,F & g\text{ an invarian
 
 \paragraph{Atoms.} An atom is a fact of a first-order language over the
 heap. An atom is true only where every path it reads is defined. There
-are five forms:
+are six forms:
 \begin{description}[leftmargin=1.5em,style=nextline]
 \item[Linear inequality] An inequality between linear terms over
 variables and lengths $\len\pi$ of arrays at paths. Examples:
@@ -629,6 +668,9 @@ number.
 \item[Bounded quantification $\every(z,t,\varphi)$] Each element of the
 array $z$ at an index below $t$ satisfies $\varphi$. For
 \code{a = [10, , 30]}, $\every(a,1,v>0)$ holds.
+\item[Element of a typed array $b{[i]}\doteq v$] The cell that the view
+store of the typed array $b$ lists at index $i$ holds $v$; false when
+$i$ is no index of that store. Example: $b[1]\doteq 4$.
 \end{description}
 
 \paragraph{Satisfaction.} An assertion is interpreted at a triple
@@ -740,7 +782,7 @@ meets the second: a store location is no location of class value.
 
 \begin{theorem}[Tolerant frame]\label{thm:frame}
 If $S$ supports $F$ and $\Phi\resp_K S$, then $K\wedge F\vdash\bx{\Phi}F$.
-\status{Lean: \lean{tolerant\_frame}, from \lean{stable\_sound} and \lean{frame\_sound}, for five forms of fact with their supports: a cell's contents, a link of a variable to a field, a value's kind, density, and the kind of elements. Linear facts enter the modality by the axioms below}
+\status{Lean: \lean{tolerant\_frame\_supports}, for a supported heap predicate and an effect over the regions other than $\vw$; \lean{tolerant\_frame} for five forms of fact with their supports: a cell's contents, a link of a variable to a field, a value's kind, density, and the kind of elements. Linear facts enter the modality by the axioms below}
 \end{theorem}
 \begin{proof}
 Let $h\tr{\Phi}_\rho h'$ and $l\in r(\rho,h)$ with $(r:\delta)\in S$.
@@ -809,8 +851,11 @@ rigid (\lean{stableAt\_of\_stableField}, \lean{stableAt\_cons},
 \lean{stable\_rigid}), and the instance for \textsc{(Grow)} is
 \lean{grow\_path\_typed}.
 \item[\textsc{(View)}] A fact about a typed array's length survives
-every change: that length is an immutable location, by (T4). Lean:
-\lean{view\_box}, \lean{viewLengthOf\_kept}.
+every change: the typed array's store location and its form
+$\mathsf{view}_N$ are fixed, by (T2). Lean: \lean{view\_box},
+\lean{viewLengthOf\_kept}, for linear facts over variables and
+typed-array lengths; the Lean reads the length from a location of the
+typed array whose contract admits the one value $N$.
 \end{description}
 
 \section{Programs}
@@ -822,15 +867,12 @@ state at its handler satisfies $Q^{e}$. We write $\hoare PcQ$ when
 $Q^{e}$ is $\kw{true}$. For example
 $\hoare{\kw{true}}{x=\code{[]}}{\len x=0}$.
 
-The posts $Q$ and $Q^{e}$ are \emph{two-state} assertions.
-For entry state $(\rho_0,h_0,W_0,k_0)$ and exit state
-$(\rho_1,h_1,W_1,k_1)$,
+The assertion $P$ is the \emph{precondition} of the triple; $Q$ and
+$Q^{e}$ are its \emph{posts}, the normal and the exceptional one. A
+post is a \emph{two-state} assertion.
+For entry state $(\rho_0,h_0)$ and exit state $(\rho_1,h_1)$,
 $\old(B)$ means $\rho_0,m,h_0\models B$; $m$ is the enclosing
 invocation's entry mark. Ordinary assertions use $(\rho_1,m,h_1)$.
-A post may also state the kind and form that a location has in $W_0$ or
-in $W_1$. The exit state is admissible from the entry state, so
-$W_0\sqsubseteq W_1$: a location of $h_0$ has the same kind and form in
-both.
 An $\old$ refers to the command whose triple contains it.
 For example, \code{x.push(v)} has post $\len x=\old(\len x)+1$.
 
@@ -886,8 +928,6 @@ the result $y$. The displayed rule uses assertions independent of
 the invocation mark. Freshness assertions require rebasing between
 the callee's and caller's marks. Exceptional posts and effects
 instantiate in the same way; their defaults are $\kw{true}$ and $\top$.
-The instantiated posts relate the call's entry state and its exit
-state, worlds included.
 Lean: \lean{call\_rule}, \lean{invocation\_throw\_action}.
 \item[\textsc{Alloc}] A new array is fresh, empty, and apart from every
 array $y$ that exists before the step. These separations are
@@ -916,9 +956,11 @@ both heaps.
 \end{definition}
 
 \noindent
-Three cases follow from the definition. A region at a rigid path rebases
-to itself. The store of a fresh array is no location of the entry heap,
-so its entry rebases to nothing: this is \textsc{Fresh-Eff}. Any other
+Four cases follow from the definition. A class region and a region at a
+rigid path rebase to themselves. The store of a fresh array is no location of the entry heap,
+so its entry rebases to nothing: this is \textsc{Fresh-Eff}. It applies
+to the one fresh store: a write through a fresh typed array keeps its
+entry $\vw:\grow$, since it may change an older view store. Any other
 region, and the cells of a fresh store, widen to their class. For
 example, in \code{f(o) \{ const xs = o.items; xs.push(1); \}} the push
 has the effect $\{\mathit{xs}.\kw{store}:\grow\}$ where it starts. If
@@ -959,6 +1001,56 @@ $\len x=\old(\len x)+1$ of \code{x.push(v)} specifies a strong update
 on shared state. If $y$ may alias $x$, \textsc{(Grow)} preserves
 $n\le\len y$. The equality $\len y=n$ can become false when $y=x$.
 \textsc{Entry} combines these facts with the post.
+
+\paragraph{The typed array's steps.} Let $b$ be a typed array of
+format $t$, and let the index $i$ and the written value $v$ be numbers.
+The index is \emph{valid} for $b$ when it is an integer with
+$0\le i<\kw{view}(b)$. The format has a total conversion
+$\mathit{conv}_t$ from numbers to the numbers it stores. For
+\code{Uint8} it sends a number that is not finite to 0 and any other to
+its integer part modulo 256: $\mathit{conv}_{\mathsf{Uint8}}(300)=44$.
+\[
+\begin{array}{lll}
+\textsc{View-Length} & \hoare{\kw{true}}{\code{y = b.length}}{y=\kw{view}(b)} & :\emptyset\\[3pt]
+\textsc{View-Read} & \hoare{i\text{ valid}}{\code{y = b[i]}}{b[i]\doteq y} & :\emptyset\\[3pt]
+\textsc{View-Write} & \hoare{i\text{ valid}}{\code{b[i] = v}}{b[i]\doteq\mathit{conv}_t(v)\wedge Q_{\ne i}} & :\{\vw:\grow\}
+\end{array}
+\]
+where $Q_{\ne i}$ says that every other valid index $j$ of $b$ reads
+after the write what it read before:
+$\forall j\ne i.\ \forall u.\ \old(b[j]\doteq u)\Rightarrow b[j]\doteq u$.
+At a number that is not a valid index, the read gives \code{undefined}
+and the write changes nothing. The three steps do not throw. The effect
+of \textsc{View-Write} bounds what every typed array reads after the
+write; the post says what $b$ itself reads, since each element of a
+typed array is its own bytes. The library functions \code{fill} and
+\code{copyWithin} at numbers, and \code{set} from a typed array at a
+number, have the same effect on normal return
+\status{conj. Lean: the steps are native calls; \lean{ViewWrite} states
+the frame of the write as a post, for view stores that may hold holes,
+and \lean{ExactWrite} the exact post for integers the format stores
+unchanged}.
+
+\begin{example}[A write through a typed array]\label{ex:view}
+Let \code{xs} be an array, \code{o} an object, and \code{b} and \code{c}
+typed arrays. Before \code{b[0] = 7} let $3\le\len{\mathit{xs}}$,
+$\every(\mathit{xs},3,v>0)$, $o.n\doteq 1$, $2\le\kw{view}(c)$,
+$b[1]\doteq 4$ and $c[1]\doteq 5$ hold. After the write:
+\begin{description}[leftmargin=1.5em,style=nextline]
+\item[$3\le\len{\mathit{xs}}$ and $\every(\mathit{xs},3,v>0)$ hold]
+Their supports lie in $\mathit{xs}[\ast]$: an array store, disjoint
+from $\vw$, and element cells, which are value locations. So
+$\{\vw:\grow\}$ respects them, and Theorem~\ref{thm:frame} applies.
+\item[$o.n\doteq 1$ holds] Its support is a field location.
+\item[$2\le\kw{view}(c)$ holds] By \textsc{(View)}.
+\item[{$b[1]\doteq 4$ holds}] It gives that 0 and 1 are valid indices
+of $b$; by the post of \textsc{View-Write}.
+\item[{$c[1]\doteq 5$ may fail}] Its support holds the view store of
+\code{c} at $\keep$, and the effect lets that store change. Let \code{c}
+be a \code{Uint8Array} of length 3 and \code{b} be
+\code{c.subarray(1, 3)}: the write makes $c[1]$ read 7.
+\end{description}
+\end{example}
 
 \section{Transfer along edges}\label{sec:transfer}
 
@@ -1065,6 +1157,7 @@ Structures built in step & $\hoare{\len a=\len b\wedge a\sep b}{\code{a.push(v)}
 Separation where a value exists & $(z\doteq\code{null}\vee\mathit{xs}\sep z.\mathit{open})\wedge a(\len{\mathit{xs}})\vdash\bx{\val:\any,\,z.\mathit{open}.\kw{store}:\any}\,a(\len{\mathit{xs}})$; at \code{null} the region is empty\\[2pt]
 Fact through a field & $\rigid(x.f)\wedge n\le\len{x.f}\vdash\bx{\val:\any,\,\st:\grow}(n\le\len{x.f})$; fails without $\rigid$\hfill\textsc{(Rigid)}\\[2pt]
 Typed-array length & $i<\kw{view}(w)\vdash\bx{\top}(i<\kw{view}(w))$\hfill\textsc{(View)}\\[2pt]
+Array facts across a typed-array write (Ex.~\ref{ex:view}) & $\every(\mathit{xs},t,\varphi)\vdash\bx{\vw:\grow}\every(\mathit{xs},t,\varphi)$ for an array $\mathit{xs}$, $t$ a variable, $\varphi$ over scalars\hfill Thm.~\ref{thm:frame}\\[2pt]
 Fact at a handler & $\bx{\Phi^{e}}R^{e}$\hfill\textsc{Frame}\\
 \bottomrule
 \end{tabular}
@@ -1075,16 +1168,12 @@ Four patterns are outside the language. Three need a form it lacks:
 \item[A fact about a field of each element] Example:
 $\code{rows[i].n}\ge 0$ for every $i$. It needs a region $z[\ast].n$: a
 path from each element cell the store lists.
-\item[Overlapping typed-array views] Two views are distinct objects over
-one buffer, so $\sep$ on their stores says nothing about their elements.
-They need regions of buffer cells with offsets. TScert's model states a
-write through a view without them, by the forms of stores. The write's
-post reads the two states and the entry world: every location that is
-not a view store in the entry world keeps its contents, and a view
-store may come to list new cells, which hold what its typed array then
-reads. So facts about values, lengths and ordinary arrays survive the
-write, and a fact about the elements of any typed array does not
-\status{Lean: \lean{ViewWrite}, \lean{Effect.viewPost}}.
+\item[Elements of one typed array across a write through another]
+Example: $c[1]=5$ across \code{b[0] = 7} when \code{b} and \code{c} are
+over disjoint bytes (Example~\ref{ex:view}). Distinct typed arrays have
+distinct view stores whether or not they share bytes, so $\sep$ on
+their stores says nothing about their elements. It needs regions of
+buffer cells with offsets.
 \item[A callback that writes what it captured] Example:
 \code{walk(xs, v => out.push(v))}. Each use has a closed effect. A
 reusable specification of \code{walk} needs an effect variable,
