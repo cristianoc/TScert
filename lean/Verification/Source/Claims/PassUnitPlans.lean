@@ -62,9 +62,9 @@ theorem fragmentPlansCore_shape {ast : Json} {fileKey : String} {budget : Positi
     {names : Option (List String)} {standIns : StandIns} {force : List String}
     {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)} {depends : List (String × List String)}
     {closure proposed : Bool} {front : Option (Json × Front)} {interfaceSlots : Bool}
-    {known : List (String × Option StandIn)} {f : FilePlans}
+    {known : List (String × Option StandIn)} {memo : ProposalMemo} {f : FilePlans}
     (h : fragmentPlansCore ast fileKey budget names standIns force imported depends closure proposed front
-      interfaceSlots known = .ok f) :
+      interfaceSlots known memo = .ok f) :
     f.p.modules = [] ∧ ∃ plans₀ : List (Except String (FunctionPlan EquationStore.State EquationGraphs.Tree)),
       f.plans = plans₀.map fun e => e.bind (FunctionPlan.over f.F) := by
   unfold fragmentPlansCore at h
@@ -90,9 +90,9 @@ theorem fragmentPlansCore_overStore {ast : Json} {fileKey : String} {budget : Po
     {names : Option (List String)} {standIns : StandIns} {force : List String}
     {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)} {depends : List (String × List String)}
     {closure proposed : Bool} {front : Option (Json × Front)} {interfaceSlots : Bool}
-    {known : List (String × Option StandIn)} {f : FilePlans}
+    {known : List (String × Option StandIn)} {memo : ProposalMemo} {f : FilePlans}
     (h : fragmentPlansCore ast fileKey budget names standIns force imported depends closure proposed front
-      interfaceSlots known = .ok f) :
+      interfaceSlots known memo = .ok f) :
     OverStore f := by
   obtain ⟨-, plans₀, hp⟩ := fragmentPlansCore_shape h
   intro i name pos r hi
@@ -112,9 +112,9 @@ theorem fragmentPlansCore_modules {ast : Json} {fileKey : String} {budget : Posi
     {names : Option (List String)} {standIns : StandIns} {force : List String}
     {imported : List (String × Footprints.Closed × Bool × Footprints.Closed)} {depends : List (String × List String)}
     {closure proposed : Bool} {front : Option (Json × Front)} {interfaceSlots : Bool}
-    {known : List (String × Option StandIn)} {f : FilePlans}
+    {known : List (String × Option StandIn)} {memo : ProposalMemo} {f : FilePlans}
     (h : fragmentPlansCore ast fileKey budget names standIns force imported depends closure proposed front
-      interfaceSlots known = .ok f) :
+      interfaceSlots known memo = .ok f) :
     f.p.modules = [] :=
   (fragmentPlansCore_shape h).1
 

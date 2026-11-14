@@ -552,7 +552,7 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
     (imported : List (String × Footprints.Closed × Bool × Footprints.Closed) := [])
     (depends : List (String × List String) := []) (closure : Bool := false) (proposed : Bool := false)
     (front : Option (Json × Front) := none) (interfaceSlots : Bool := false)
-    (known : List (String × Option StandIn) := []) :
+    (known : List (String × Option StandIn) := []) (memo : ProposalMemo := {}) :
     Except String FilePlans := do
   let ast := ast.setObjVal! "modules" (Json.arr #[])
   -- A stand-in's footprint first; then the footprint the module's units
@@ -591,23 +591,25 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
       (some (instancesFromWalk force)) (some (writtenSchemes force))
     let F ← EquationStore.freeze T
     let f : FilePlans := ⟨⟨ast, withStandIns claims sis, qualified, [], depends⟩, fr', F,
-      plans.map fun e => e.bind (FunctionPlan.over F), []⟩
+      plans.map fun e => e.bind (FunctionPlan.over F), [], {}⟩
     return f.withHeadFacts {} false (inferred := true) : Except String FilePlans)
   -- The functions' footprints their own steps establish, as stand-ins
   -- (`PassProposals.proposals`); the claims and the front again where any
   -- is found.
-  let computed := if force.contains "callees" || force.contains "throws" then [] else
+  let (computed, memo) := if force.contains "callees" || force.contains "throws" then ([], memo) else
     SinglePass.timedKind "lower: declarations' footprints" fun _ =>
-      PassProposals.proposals fr (wantedOf fr names) standIns force [] planOf known
+      PassProposals.proposals fr (wantedOf fr names) standIns force [] planOf known memo
   -- Where the initialization calls a function proposed a returned
   -- function's footprint, the module values it types hold such functions:
   -- the proposals once more, every function not yet proposed again read
-  -- at its first proposal.
+  -- at its first proposal; a function planned at the same inputs as
+  -- before read from the memo.
   let returning := (computed.filter (·.resultFootprint != .top)).map (·.name)
-  let computed := if returning.isEmpty || !(fr.init.flatMap stmtNames).any returning.contains then computed else
+  let (computed, memo) := if returning.isEmpty || !(fr.init.flatMap stmtNames).any returning.contains then
+    (computed, memo) else
     SinglePass.timedKind "lower: declarations' footprints" fun _ =>
       SinglePass.work "propose: returned-callable round" (fileItem ast) fun _ =>
-      PassProposals.proposals fr (wantedOf fr names) standIns force computed planOf
+      PassProposals.proposals fr (wantedOf fr names) standIns force computed planOf [] memo
   let (claims, fr) := if computed.isEmpty then (claims, fr) else (withStandIns claims computed, fr.withStandIns computed)
   let fr := SinglePass.timedKind "lower: initialization's walk" fun _ => initTyped fr
   -- With `proposed`, the selected functions whose footprint is more than
@@ -632,7 +634,7 @@ def fragmentPlansCore (ast : Json) (fileKey : String) (budget : PositiveCertific
     SinglePass.work "prepare: plans over the store" (fileItem ast) fun _ => plans.map fun e => e.bind (FunctionPlan.over F)
   let slots := slotTypes.filterMap fun (n, A) =>
     ((fromJson? (toJson A) : Except String (Ty (EquationStore.CheckedLabel F.equations F.primitive))).toOption).map (n, ·)
-  return ⟨⟨ast, claims, qualified, [], depends⟩, fr, F, plans, slots⟩
+  return ⟨⟨ast, claims, qualified, [], depends⟩, fr, F, plans, slots, memo⟩
 
 /-- A module unit's identity on the wire: `module:<location>#<unit>`. -/
 def moduleUnitId (location unit : String) : String := s!"module:{location}#{unit}"
@@ -1144,14 +1146,14 @@ def FilePlans.groupProposals (f : FilePlans) (i : Nat) : List (String × Option 
 def fragmentPlansOfInterfaces (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
     (names : Option (List String)) (standIns : StandIns) (force : List String) (established : Established)
     (tables : List (String × RowTable)) (front : Option (Json × Front) := none)
-    (known : List (String × Option StandIn) := []) : Except String FilePlans := do
+    (known : List (String × Option StandIn) := []) (memo : ProposalMemo := {}) : Except String FilePlans := do
   if established.isEmpty then
-    return ← fragmentPlansCore ast fileKey budget names standIns force (front := front) (known := known)
+    return ← fragmentPlansCore ast fileKey budget names standIns force (front := front) (known := known) (memo := memo)
   let sc ← ImportScope.of ast
   let reads ← importerReads sc ast names (standIns.imports.map StandIn.name) (standIns.functions.map StandIn.name)
   let rs := readsOf reads established
   let f ← fragmentPlansCore ast fileKey budget names standIns force (rs.map (·.1)) (rs.map (·.2)) (front := front)
-    (known := known)
+    (known := known) (memo := memo)
   return f.refuseRows reads established tables
 
 /-- Importer planning from closed interfaces (`fragmentPlansOfInterfaces`),
@@ -1162,10 +1164,10 @@ missing function is told from an entry not established on both paths. -/
 def fragmentPlansFromInterfaces (ast : Json) (fileKey : String) (budget : PositiveCertificates.SearchBudget)
     (names : Option (List String)) (standIns : StandIns) (force : List String) (established : Established)
     (tables : List (String × RowTable) := []) (front : Option (Json × Front) := none)
-    (known : List (String × Option StandIn) := []) :
+    (known : List (String × Option StandIn) := []) (memo : ProposalMemo := {}) :
     Except String FilePlans := do
   let unbound := unboundImports (← ImportScope.of ast) ast
-  return (← fragmentPlansOfInterfaces ast fileKey budget names standIns force established tables front known).refuseUnbound
+  return (← fragmentPlansOfInterfaces ast fileKey budget names standIns force established tables front known memo).refuseUnbound
     unbound
 
 /-- Direct invocation uses the same canonical component computation as

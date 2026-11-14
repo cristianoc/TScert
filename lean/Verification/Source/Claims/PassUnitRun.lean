@@ -25,7 +25,7 @@ theorem passUnitVerdict_safe_run
     {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)} {i fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
     {given : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool}
     {deps : List String}
-    (hplanned : (∃ est tables front known, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables front known =
+    (hplanned : (∃ est tables front known memo, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables front known memo =
         .ok f₀) ∨
       (∃ ms notes, fragmentPlansWithModules ast fileKey budget selection standIns force prepare check =
         .ok (f₀, ms, notes)))
@@ -47,7 +47,7 @@ theorem passUnitVerdict_sound
     {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)} {i fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
     {given : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool}
     {deps : List String}
-    (hplanned : (∃ est tables front known, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables front known =
+    (hplanned : (∃ est tables front known memo, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables front known memo =
         .ok f₀) ∨
       (∃ ms notes, fragmentPlansWithModules ast fileKey budget selection standIns force prepare check =
         .ok (f₀, ms, notes)))
@@ -109,7 +109,7 @@ inductive Mode8Accepted : FilePlans → Nat → Prop where
     {keep : Nat → List (Nat × List HeapKnowledge.IndexAtom)} {i fuel : Nat} {compare : Bool} {debugNode repeats : Nat}
     {given : Option (Std.HashMap String Json)} {observe : Option String} {counting located : Bool}
     {deps : List String}
-    (hplanned : (∃ est tables front known, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables front known =
+    (hplanned : (∃ est tables front known memo, fragmentPlansFromInterfaces ast fileKey budget selection standIns force est tables front known memo =
         .ok f₀) ∨
       (∃ ms notes, fragmentPlansWithModules ast fileKey budget selection standIns force prepare check =
         .ok (f₀, ms, notes)))

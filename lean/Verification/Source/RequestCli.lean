@@ -353,7 +353,8 @@ units they establish, each printed accepted), the file's claims and front
 (its lowering, its type store and its units' groups, no import read at an
 interface), the selection, and the settings each unit's check reads; and the
 proposals and plans of the groups planned so far (`proposals`, `plans`),
-which a later unit reads instead of computing them again. -/
+which a later unit reads instead of computing them again, and what their
+proposals established (`memo`). -/
 structure PreparedFile where
   ast : Json
   fileKey : String
@@ -371,6 +372,10 @@ structure PreparedFile where
   t0 : Nat
   proposals : IO.Ref (Std.HashMap Nat (List (String × Option SourceClaimJson.StandIn)))
   plans : IO.Ref (Std.HashMap Nat (Except String SourceClaimJson.FilePlans))
+  /-- What the proposals of the groups planned so far established, by
+  their inputs (`FilePlans.proposed`): a later planning reads an entry only
+  for the same inputs. -/
+  memo : IO.Ref SourceClaimJson.ProposalMemo
 
 /-- The prepared file's front: its units, their identities and groups. -/
 def PreparedFile.fr (p : PreparedFile) : SourceClaimJson.Front := p.front.2
@@ -440,9 +445,10 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
     emit s!"counts-read: \{\"fragmentBytes\":{← size astPath},\"interfaceBytes\":{← size interfacesPath}}"
   let proposals ← IO.mkRef {}
   let plans ← IO.mkRef {}
+  let memo ← IO.mkRef {}
   return prepared.map fun (est, tables, front, a) =>
     { ast := a, fileKey, budget, est, tables, front, modules := (est.map (·.2.2)).eraseDups, selected, force,
-      givenLines, fuel, located, quiet, t0, proposals, plans }
+      givenLines, fuel, located, quiet, t0, proposals, plans, memo }
 
 /-- The units a prepared file's selection checks, in the order their checks
 run: the leaders of the groups the selection names (`Front.selected`). -/
@@ -450,13 +456,14 @@ def PreparedFile.units (p : PreparedFile) : List Nat := p.fr.selected p.selected
 
 /-- Unit `i`'s group planned alone (`fragmentPlansFromInterfaces` at the
 names of `i`'s group, over the prepared front), each function its group
-reaches outside it read at the proposal `known` gives, and prepared
+reaches outside it read at the proposal `known` gives, what proposals
+established read from `memo` for the same inputs, and prepared
 (`preparedMode8`). -/
-def PreparedFile.plan (p : PreparedFile) (i : Nat) (known : List (String × Option SourceClaimJson.StandIn)) :
-    Except String SourceClaimJson.FilePlans := do
+def PreparedFile.plan (p : PreparedFile) (i : Nat) (known : List (String × Option SourceClaimJson.StandIn))
+    (memo : SourceClaimJson.ProposalMemo) : Except String SourceClaimJson.FilePlans := do
   let f ← SinglePass.work "prepare: unit plans" (p.fr.workItem i) fun _ =>
     SourceClaimJson.fragmentPlansFromInterfaces p.ast p.fileKey p.budget
-      (some [SourceClaimJson.memberName (p.fr.unitId i)]) {} p.force p.est p.tables (some p.front) known
+      (some [SourceClaimJson.memberName (p.fr.unitId i)]) {} p.force p.est p.tables (some p.front) known memo
   let f := SinglePass.work "prepare: head facts" (p.fr.workItem i) fun _ =>
     f.withHeadFacts p.givenLines false (inferred := true)
   return if p.force.contains "start-facts" then f.withFalseStartFact else f
@@ -496,7 +503,9 @@ def PreparedFile.known (p : PreparedFile) (i : Nat) : IO (List (String × Option
     if (← p.proposals.get).contains g then continue
     let memo ← p.proposals.get
     let known := (groupsBelow fr g).flatMap fun h => (memo.get? h).getD []
-    let planned ← IO.lazyPure fun _ => p.plan g known
+    let memo ← p.memo.get
+    let planned ← IO.lazyPure fun _ => p.plan g known memo
+    if let .ok f := planned then p.memo.set f.proposed
     p.plans.modify (·.insert g planned)
     let got : List (String × Option SourceClaimJson.StandIn) := match planned with
       | .ok f => f.groupProposals g
@@ -531,7 +540,11 @@ def PreparedFile.check (p : PreparedFile) (i : Nat) : IO (String × Option Strin
   let known ← p.known i
   let planned ← match (← p.plans.get).get? i with
     | some planned => pure planned
-    | none => IO.lazyPure fun _ => p.plan i known
+    | none => do
+      let memo ← p.memo.get
+      let planned ← IO.lazyPure fun _ => p.plan i known memo
+      if let .ok f := planned then p.memo.set f.proposed
+      pure planned
   let (lines, verdict, extraction) ← match planned with
     | .error reason => pure ([], .error reason, some reason)
     | .ok f => do
