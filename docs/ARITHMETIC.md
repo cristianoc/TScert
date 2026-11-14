@@ -1690,18 +1690,20 @@ function measure(flags: number[], runs: Runs): number { … }
 ```
 
 **Establishing it.** A call establishes a precondition's separation from
-its knowledge (`call-requires`, `HeapKnowledge.storeFollows`): the paths,
-read through the knowledge's read links, reach slots a region fact
-([element regions](FOOTPRINTS.md#element-regions)) or a separation of the
-slots themselves states apart:
+its knowledge (`call-requires`, `HeapKnowledge.storeFollows`): each of the
+target's paths shares a site with one side of a separation the knowledge
+states, a region fact ([element regions](FOOTPRINTS.md#element-regions))
+being the separation of its two slots' empty paths:
 
 ```math
-\frac{\Sigma\vdash x.p\leadsto u\qquad \Sigma\vdash y.q\leadsto w\qquad \Sigma\vdash \mathrm{apart}(u,w)\ \text{or}\ u\mathrel{\#}w}
+\frac{\Sigma\vdash x.p\leadsto z.r\qquad \Sigma\vdash u.p'\leadsto z.r\qquad \Sigma\vdash y.q\leadsto z'.r'\qquad \Sigma\vdash w.q'\leadsto z'.r'\qquad \Sigma\vdash u.p'\mathrel{\#}w.q'}
      {\Sigma\vdash x.p\mathrel{\#}y.q}\ \textsf{store-apart-links}
 ```
 
-with $`x.p\leadsto u`$ a chain of read links from $`x`$'s class through the
-fields $`p`$ to $`u`$'s class (`pathReaches`). A fresh array literal is apart
+with $`x.p\leadsto z.r`$ a chain of read links from $`x`$'s class through a
+prefix of the fields $`p`$ to $`z`$'s class, $`r`$ the rest of $`p`$ (the
+empty chain included: $`x.p\leadsto x.p`$), so both paths read what
+$`z.r`$ reads (`pathSites`, proved: `pathSites_read`). A fresh array literal is apart
 from every older array (`region-alloc`), so `{ openBrackets: [] }` gives
 its field's array a separation from every array parameter. Where a slot
 leaves the knowledge, a region fact or a separation naming it is restated
@@ -1732,8 +1734,11 @@ atoms beside `writeKeeps` (`HeapExpressionRules.writeOutput`).
 $`z = \overline g \lor P\mathrel{\#}Q`$ (a [guarded fact](#guarded-clauses)
 whose guard's path is empty), is the clause `z === null || P !== Q`. An
 edge establishes it by its guard's tag (`guard-tag`) or by its body
-(`guard-body`, `guardBodyFollows`), and from the same guarded separation
-(`guard-match`, `factFollows`); a step keeps it where it keeps the body,
+(`guard-body`, `guardBodyFollows`), and from a separation guarded by the
+same guard whose body entails its body by `store-apart-links`
+(`guard-match`; `guardEntails` decides a linear fact, a disjunction, a
+guarded fact and an integer slot by its own rules, and a body of every other
+kind by the source's atoms, `baseFollows`, proved: `baseFollows_sound`); a step keeps it where it keeps the body,
 the guard reading a slot alone. At a merge the pass keeps, of a
 separation one predecessor states of a slot $`x`$ aliasing $`z`$, the
 separation of $`z`$ guarded by the tag another predecessor holds in $`z`$,
