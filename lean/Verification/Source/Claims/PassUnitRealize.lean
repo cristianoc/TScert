@@ -250,7 +250,11 @@ theorem closure_meets_below {G : NormalGraph ι} {arity E K start Cs vs} {kind :
   · intro q hq j hj U hx hu heap hh hvr r hrv hrr hrref args hvals har ha hreq
     obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
     have henv := (hcaps j hj U).withSelf hlen hself
+    -- Module code states no element write (`Effect.below_write`): its view
+    -- write is vacuous.
     exact ⟨_, .graph hrv hvals (hbL p hp j U r hrr),
+      CallEffects.Effect.safe_postW (show p.effect.elementWrite = none from CallEffects.Effect.below_write
+        (e := { p.effect with ensures := [] }) (CallEffects.Effect.belowRow_below (ho p (List.mem_append_left _ hp)).2.1)) <|
       row_invoke_at (ho p (List.mem_append_left _ hp)) henv
         (Values.withSelf hvalues rfl) hu hh hrr ha (fun F hF => hreq.2 F hF) (hsep r args _)
         (goto_entry_refs (graph_code_refs hvr).1 (fun a ha => by
@@ -281,7 +285,10 @@ theorem closure_meets_below {G : NormalGraph ι} {arity E K start Cs vs} {kind :
     have hpr : s.fixed.effect.promised (args.take s.arguments.1.length) = s.fixed.effect.promised args :=
       CallEffects.Effect.promised_take hbelow hle args
     rw [hp, hpr] at hsafe
-    exact ⟨_, .graph hrv hvals (hbS s hsm j U r hrr), HeapObservations.SafePostExc.weaken
+    exact ⟨_, .graph hrv hvals (hbS s hsm j U r hrr),
+      CallEffects.Effect.safe_postW (show s.fixed.effect.elementWrite = none from
+        CallEffects.Effect.below_write (e := { s.fixed.effect with ensures := [] }) hbelow) <|
+        HeapObservations.SafePostExc.weaken
       (fun _ _ h => CallEffects.Effect.post_take_row hrow hle h)
       (fun _ h => CallEffects.Effect.excPost_args (CallEffects.Effect.below_regions hbelow) h) hsafe⟩
 

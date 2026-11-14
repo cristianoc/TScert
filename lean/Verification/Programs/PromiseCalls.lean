@@ -2875,7 +2875,7 @@ theorem writeKept_holds {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h'
   split
   · rename_i ek f r b i x hw
     obtain ⟨hc, hx⟩ := hew _ hw
-    replace hc := hc.changes .stores
+    replace hc : CallEffects.ElementWrite.stores.changes.Holds h h' := hc
     have hx := hx _ rfl
     simp only [ExpressionEffects.actualsOf, instantiate, instantiateArgs, Nat.not_lt_zero, if_false,
       Nat.sub_zero] at hx

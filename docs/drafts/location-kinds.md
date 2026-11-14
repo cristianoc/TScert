@@ -21,7 +21,7 @@ Claims are labelled **proved**, with the Lean name, in those modules and in
 [KindsWrites](../../lean/Verification/Semantics/KindsWrites.lean),
 [KindsNatives](../../lean/Verification/Semantics/KindsNatives.lean),
 [KindsCapabilities](../../lean/Verification/Semantics/KindsCapabilities.lean),
-[KindsContracts](../../lean/Verification/Semantics/KindsContracts.lean),
+[CallEffects](../../lean/Verification/Semantics/CallEffects.lean),
 [KindsCalls](../../lean/Verification/Semantics/KindsCalls.lean),
 [KindsEffects](../../lean/Verification/Semantics/KindsEffects.lean),
 [ElementWrites](../../lean/Verification/Semantics/ElementWrites.lean)
@@ -286,97 +286,97 @@ budget, the heap and the result; an exceptional one the exit world, the
 budget and the heap. A postcondition of the heap and result alone lifts by
 ignoring the world (`WPost.lift`, `WExc.lift`).
 
-**Safety with world-indexed postconditions** (`SafeW`) is the safety
-predicate of `ExceptionalPosts` over kinded worlds with one structural
-component: the running term's references are valid in the world at every
-budget, zero included. At a positive budget the term is a value of the
-result type meeting the postcondition at the current world and heap, or
-throws a value of the exception family meeting the exceptional
-postcondition there, or steps to a heap meeting an admissible extension of
-the truncated world, where safety continues.
+**Safety with world-indexed postconditions** (`SafePostExcW`,
+[ExceptionalPosts](../../lean/Verification/Semantics/ExceptionalPosts.lean))
+is the safety predicate over kinded worlds with one structural component:
+the running term's references are valid in the world at every budget, zero
+included. At a positive budget the term is a value of the result type
+meeting the postcondition at the current world and heap, or throws a value
+of the exception family meeting the exceptional postcondition there, or
+steps to a heap meeting an admissible extension of the truncated world,
+where safety continues. `SafePostExc` is its instance at heap-only
+postconditions, lifted.
 
 The one condition on every native and every call contract
-(`NativeContract`): from every well-formed entry configuration below the
-budget (a heap meeting an admissible extension $`U`$ of the truncated
-world; callee, receiver and actuals valid in $`U`$ and of their input
-types; the precondition) the invocation is `SafeW` at its result type, its
-normal postcondition and its exceptional one, each given the entry budget,
-world $`U`$ and heap and reading the exit world (`CPost`, `CExc`). Every execution prefix of
-such a call then ends in a well-formed configuration under one extension
-of $`U`$, its budget possibly zero (**proved**, `SafeW.run`,
+(`NativeContract`, [CallEffects](../../lean/Verification/Semantics/CallEffects.lean)):
+from every well-formed entry configuration below the budget (a heap meeting
+an admissible extension $`U`$ of the truncated world; callee, receiver and
+actuals valid in $`U`$ and of their input types; the precondition) the
+invocation is `SafePostExcW` at its result type, its normal postcondition
+and its exceptional one, each given the entry budget, world $`U`$ and heap
+and reading the exit world (`CPost`, `CExc`). Every execution prefix of such
+a call then ends in a well-formed configuration under one extension of
+$`U`$, its budget possibly zero (**proved**, `SafePostExcW.run`,
 `NativeContract.run`), and a thrown value is of the exception family with
 valid references (`Thrown.refs`). Typing, structural validity and the
 postconditions read one successor world.
 
 **Call preservation** (**proved**, [KindsCalls](../../lean/Verification/Semantics/KindsCalls.lean)):
-a run of a `SafeW` term ending in a value or a throw with budget left ends
-under one extension of the truncated entry world where the heap is
+a run of a `SafePostExcW` term ending in a value or a throw with budget left
+ends under one extension of the truncated entry world where the heap is
 well-formed, the term valid, and the result type with the normal
 postcondition, or the exception family, the thrown value's valid references
-and the exceptional postcondition, hold (`SafeW.exit`); a term safe in an
-evaluation context's hole is safe in the context when the context continues
-from each normal exit at the world that exit reached (`SafeW.bind`), and a
-context stepping a throw to a handler enters the handler at the throwing
-configuration's world and heap, well-formed whatever the exceptional
-postcondition states (`SafeW.handle`); a callee meeting `NativeContract`
-makes its invocation `SafeW` (`NativeContract.safe`); the condition is
-closed downward (`NativeContract.down`) and a forwarding descriptor meets it
-when its target does, the target's postconditions read from the
-descriptor's entry world truncated by the forwarding step
-(`NativeContract.bound`); world-indexed postconditions implying heap-only
-ones give `SafeW` at the heap-only ones lifted (`SafeW.erase`).
+and the exceptional postcondition, hold (`SafePostExcW.exit`); a term safe
+in an evaluation context's hole is safe in the context when the context
+continues from each normal exit at the world that exit reached
+(`SafePostExcW.bind`), and a context stepping a throw to a handler enters
+the handler at the throwing configuration's world and heap, well-formed
+whatever the exceptional postcondition states (`SafePostExcW.handle`); a
+callee meeting `NativeContract` makes its invocation `SafePostExcW`
+(`NativeContract.safe`); the condition is closed downward
+(`NativeContract.down`); world-indexed postconditions implying heap-only
+ones give `SafePostExcW` at the heap-only ones lifted
+(`SafePostExcW.erase`).
 
 **Signatures over kinded worlds** (**proved**,
-[KindsEffects](../../lean/Verification/Semantics/KindsEffects.lean)). A
+[CallEffects](../../lean/Verification/Semantics/CallEffects.lean)). A
 signature's normal postcondition, given the call's entry world $`W`$ and
 heap $`h`$, is its heap postcondition and, where it states an element
 write, the view write from $`(W,h)`$ to the exit world and heap
-(`Effect.postK`); its exceptional one is its heap postcondition on a throw
-(`Effect.excPostK`). A promise over kinded worlds (`PromiseK`) is
-`NativeContract` at these; a construct signature (`ConstructK`) is the
-condition of `new` (`NativeConstruct`), whose construction is safe
-(`NativeConstruct.safe`). Two promises of one value whose signatures mean
-the same result (`Effect.sameResult`) give the promise of their meet
-(`PromiseK.combine`): the first run's world and its view write are kept,
-the second run takes the same steps and its heap postconditions hold at
-the same exits (`SafeW.cross`), and the two view writes are one, since the
-signatures state the same element write (`Effect.postK_meet`). A promise
+(`Effect.postW`, `Effect.viewPost`); its exceptional one is its heap
+postcondition on a throw (`Effect.excPostW`). The meaning of a function type
+(`PromiseWith`) is `NativeContract` at these; of a construct signature
+(`ConstructPromise`), the condition of `new` (`NativeConstruct`). Two
+promises of one value whose signatures mean the same result
+(`Effect.sameResult`) give the promise of their meet
+(`PromiseWith.combine`): the first run's world and its view write are kept,
+the second run takes the same steps and its heap postconditions hold at the
+same exits (`SafePostExcW.cross`), and the two view writes are one, since
+the signatures state the same element write (`Effect.postW_meet`). A promise
 weakens to a signature it covers, its element write included
-(`PromiseK.weaken`, `Effect.coversK_sound`); allocation between the call's
-entry and its body composes with the postcondition, the view write
-included (`Effect.postK_prefix`, `ViewWrite.prefix_left`); a fact of the
-world that extension and truncation keep holds at every exit
-(`SafeW.world`).
+(`PromiseWith.weaken'`, `Effect.covers_sound`); a forwarding descriptor
+meets its target's signature, the view write read from the descriptor's
+entry (`PromiseWith.bound`, `ViewWrite.prefix_left`); allocation between
+the call's entry and its body composes with the postcondition, the view
+write included (`Effect.postW_prefix`); a fact of the world that extension
+and truncation keep holds at every exit (`SafePostExcW.world`). Graph code
+states no element write (`Effect.below_write`), so its view write holds of
+every exit (`Effect.postW_of_post`, `Effect.safe_postW`). A call's consumer
+(`call_safe_exc`, `construct_safe_exc_requires`) reads the heap
+postcondition at the exit world the call reaches.
 
-**One world per exit** (**proved**, `gate_write`, `gate_handled`). A
-callback allocates `{ f: x }`; then a value meeting two such promises is
+**One world per exit** (**proved**, `gate_write`, `gate_handled`,
+[KindsEffects](../../lean/Verification/Semantics/KindsEffects.lean)). A
+callback allocates `{ f: x }`; then a value meeting two such signatures is
 called with a view write among its effects. Every normal exit of
 `let o = { f: x } in g(r, args)` is at one world where the object's field
-capability holds, the heap meets the world in both parts (`SafeW.exit`),
-and both signatures' postconditions hold, the view write from the call's
-entry world; every throw into a node's handler enters it at one world with
-the heap well-formed, the thrown value valid, the capability, and the
-meet's exceptional postcondition.
+capability holds, the heap meets the world in both parts
+(`SafePostExcW.exit`), and both signatures' postconditions hold, the view
+write from the call's entry world; every throw into a node's handler enters
+it at one world with the heap well-formed, the thrown value valid, the
+capability, and the meet's exceptional postcondition.
 
-**Early evidence** (**proved**): the callback `throw { f: v }` is `SafeW`
-with no exceptional postcondition from every well-formed configuration
-(`allocThrow_safe`), and run in a graph node with a handler it reaches the
-handler's entry at a heap well-formed under one extension of the entry
-world (`callback_throw_handled`); a callback's well-formed exit followed by
-a native's write-back of fresh element cells and an ordinary array's store
-is well-formed under one world extending the callback's
+**Early evidence** (**proved**): the callback `throw { f: v }` is
+`SafePostExcW` with no exceptional postcondition from every well-formed
+configuration (`allocThrow_safe`), and run in a graph node with a handler it
+reaches the handler's entry at a heap well-formed under one extension of the
+entry world (`callback_throw_handled`); a callback's well-formed exit
+followed by a native's write-back of fresh element cells and an ordinary
+array's store is well-formed under one world extending the callback's
 (`callback_writeback`).
 
-The active safety predicates take world-indexed postconditions:
-`SafePostW` and `SafePostExcW`
-([HeapObservations](../../lean/Verification/Semantics/HeapObservations.lean),
-[ExceptionalPosts](../../lean/Verification/Semantics/ExceptionalPosts.lean))
-read the exit world, `SafePost` and `SafePostExc` are their instances at
-lifted heap-only postconditions, and `PromiseWith` and `ConstructPromise`
-([CallEffects](../../lean/Verification/Semantics/CallEffects.lean)) state
-the call safe at the effect's postconditions lifted (`Effect.postW`,
-`Effect.excPostW`). `SafeWith` and `SafeGraph` state no heap postcondition;
-their result families read the exit world.
+`SafeWith` and `SafeGraph` state no heap postcondition; their result
+families read the exit world.
 
 The condition applies at callback boundaries recursively: a callback's
 allocations take whatever roles its own typing chooses, and a native's
@@ -419,27 +419,16 @@ heap $`h`$ to the exit world $`W'`$ and heap $`h'`$ (`ViewWrite`):
   range (`ElementKind.preFacts`, required by the effect decoder), and a call
   meeting it writes such a value (`ElementKind.takes_of_requires`).
 
-In an effect's heap postcondition, the element write's defining
-contract is the same relation read against a role assignment of the entry
-heap (`CallEffects.ViewWriteA`, `ElementWrite.Holds`): a stated hypothesis
-`RolesFit` constrains the assignment by the entry heap's categories, and the
-relation states the domain's growth, the kept contents of every location
-whose role is no view store, each view store's length with its cells
-locations of the exit heap, and the freshness of newly listed cells. Three
-conjuncts read the kinded world and wait for it: the listed cells are E,
-every location has its role's shape, and the exit heap meets the exit world.
-`ViewWriteA` is the weaker relation: its role
-assignment is any one fitting the entry heap's categories, so an ordinary
-array's store may be classed a view store for it, and it states neither
-reference validity nor the contracts. The kinded relation gives it at the
-entry world's roles, one way (`ViewWriteOf.holds`); the kinded signature
-states `Effect.viewPost`, whose assignment is the entry world's roles and
-whose exit world is the one safety chose
-([call contracts](#call-contracts-over-kinded-worlds)). The coarse change
-follows from the active one
-(`ViewWriteA.changes`); a location holding a string never comes to hold a
-store (`ElementWrite.Holds.not_string_to_store`). The relation from a heap
-holds from each of its prefixes (`ViewWriteA.prefix_left`).
+A call's normal postcondition states this relation from the call's entry
+world and heap (`Effect.viewPost`); its heap postcondition states what the
+relation gives of the two heaps from a well-formed entry
+(`ElementWrite.Holds`, `ViewWriteOf.holds`): the coarse change, no object or
+number altered and every store's length kept (`ViewWrite.changes`), and
+`ExactWrite` for the exact form. The roles are the entry world's because a
+role assignment chosen only to fit the entry heap's categories may give an
+ordinary array's store the role of a view store, and so let the write change
+it (from `[arr [some 1], null]` to `[arr [some 2], null, null]`, location
+0).
 
 It constrains every view store, whichever view the call names: an
 overlapping view may change, exactness constraining the designated one. An
@@ -544,7 +533,7 @@ the capabilities of §4.
 - **Copies** (`Step.mergeV`): the copied fields are allocated as fields;
   every copied key fits that role and every copied value has its category
   (`mergeParts_cat`), so no premise remains beyond the step's own.
-- **Every step**: the running term's references are valid (`SafeW`'s
+- **Every step**: the running term's references are valid (`SafePostExcW`'s
   structural component), and the environment's (`RootsOk`).
 
 The steps that change no heap, the throwing steps and the fresh errors
@@ -606,19 +595,16 @@ environment's values, `EnvOk`
   entry and promises on values; they change no location.
 
 **Callbacks**: a native running a callback composes the callback's safety
-with its own phases at one world (`SafeW.bind`, `SafeW.handle`,
+with its own phases at one world (`SafePostExcW.bind`, `SafePostExcW.handle`,
 `callback_writeback`); the callback's allocations take the roles its own
 typing chose.
 
 ## Call contracts over kinded worlds
 
-The active meaning of a function type states its effect's heap
-postconditions (`PromiseWith`, `ConstructPromise`), and a typed array's
-element write by the weaker relation over a role assignment fitting the entry
-heap (`ViewWriteA`, §6). The signatures over kinded worlds (`PromiseK`,
-`ConstructK`, `Effect.postK` with the view write at the entry world's roles)
-and their composition are proved (§5); their replacing the active meaning is
-**planned**.
+The meaning of a function type and of a construct signature
+(`PromiseWith`, `ConstructPromise`) is the native-contract condition at the
+signature's postconditions over the entry and exit worlds, the view write at
+the entry world's roles (§5).
 
 **Non-vacuity** (**proved**, `families_state`, `families_refs`): at every
 budget one heap meets an admissible kinded world with every structural family

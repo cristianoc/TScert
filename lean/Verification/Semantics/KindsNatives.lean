@@ -10,14 +10,15 @@ ones and fresh ones (`Arr.Within`), and a native's element-storage phase
 preserves kinds when its world extension makes the fresh cells element cells
 and the contents it writes are source values (`native_shaped`); a whole
 native, callbacks included, has the obligation of every call contract
-(`NativeContract`, `Semantics/KindsContracts.lean`). A copy (`Tm.merge`) reads only values the heap holds; the
+(`CallEffects.NativeContract`). A copy (`Tm.merge`) reads only values the heap holds; the
 administrative steps (substitution, a run's entry, its environment maps, its
 handlers, reads, comparisons) refer to no location the term or the heap did
 not. A contract stated as a relation between heaps can meet that obligation
 only if every transition it admits from a structurally well-formed heap
 reaches one (`RespectsKinds`); the typed-array element write's coarse change
-admits one that does not (`elementWrite_not_respects`), and the relation
-`ViewWrite` of `Semantics/KindsContracts.lean` is its contract.
+admits one that does not (`elementWrite_not_respects`), and the call
+contracts state beside it the kinded view write (`ViewWrite`,
+`CallEffects.Effect.viewPost`), from the call's entry world.
 -/
 namespace Verification.Kinds
 
@@ -143,8 +144,9 @@ def RespectsKinds (R : Heap → Heap → Prop) : Prop :=
 /-- **The typed-array element write's coarse change does not respect
 kinds** (`ElementWrite.changes`: every location holding no store, object or
 number may change, and every store keeps its length). A field holding a
-string may come to hold a store; the element write itself excludes that
-(`CallEffects.ElementWrite.Holds.not_string_to_store`). -/
+string may come to hold a store; the kinded view write the call's
+postcondition states beside it keeps every location whose role is no view
+store (`ViewWrite.keep`). -/
 theorem elementWrite_not_respects :
     ¬ RespectsKinds (CallEffects.ElementWrite.stores.changes.Holds) := by
   intro H

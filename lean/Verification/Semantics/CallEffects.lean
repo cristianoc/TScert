@@ -1310,31 +1310,156 @@ theorem Effect.meet_same {a b : Effect} (hs : a.sameResult b = true) :
   · funext R x; simp [Effect.result, hs]
   · funext args; simp [Effect.promised, hs]
 
-/-- A signature's normal-return postcondition as a world-indexed one: its
-heap postcondition (`Effect.post`) lifted. -/
-abbrev Effect.postW (e : Effect) (r : Tm) (args : List Tm) (before : Heap) : HeapObservations.WPost :=
-  HeapObservations.WPost.lift (e.post r args before)
+/-- **The view write a signature states**, from the call's entry world `U`
+and heap `before` to its exit world and heap: where it states an element
+write, the kinded view-element write of it at the actuals
+(`Kinds.ViewWriteOf`), read at the entry world's roles. -/
+def Effect.viewPost (e : Effect) (args : List Tm) {j : Nat} (U : WorldT j) (before : Heap) : WPost :=
+  fun _ W' after _ => ∀ w, e.elementWrite = some w → Kinds.ViewWriteOf w args U before W' after
+
+/-- **A signature's normal-return postcondition**, given the call's entry
+world `U` and heap `before`: at the exit world and heap, its heap
+postcondition (`Effect.post`) and its view write (`Effect.viewPost`). -/
+def Effect.postW (e : Effect) (r : Tm) (args : List Tm) {j : Nat} (U : WorldT j) (before : Heap) : WPost :=
+  fun k W' after v => e.post r args before after v ∧ e.viewPost args U before k W' after v
 
 /-- A signature's throw postcondition as a world-indexed one: its heap
 postcondition (`Effect.excPost`) lifted. -/
 abbrev Effect.excPostW (e : Effect) (r : Tm) (args : List Tm) (before : Heap) : HeapObservations.WExc :=
   HeapObservations.WExc.lift (e.excPost r args before)
 
-/-- The arrow equation, with a heap postcondition relative to this call's
-entry heap. The input and result contracts are exactly those of `Promise`.
-The effect is per signature: one overload may preserve its input heap while
-another overload of the same value does not. -/
-def PromiseWith (Ξ : Fam) (effect : Effect)
-    (Acc : (j : Nat) → WorldT j → List Tm → Prop) (Rc R : Fam)
-    (k : Nat) (W : WorldT k) (v : Val) : Prop :=
+/-- **A signature stating no element write**: its postcondition is its heap
+postcondition, at every entry and exit world. -/
+theorem Effect.postW_of_post {e : Effect} (hx : e.elementWrite = none) {r : Tm} {args : List Tm} {j : Nat}
+    {U : WorldT j} {before : Heap} {k : Nat} {W' : WorldT k} {after : Heap} {v : Val}
+    (h : e.post r args before after v) : e.postW r args U before k W' after v :=
+  ⟨h, fun w hw => by rw [hx] at hw; cases hw⟩
+
+/-- **The meet's postcondition** is the first signature's, view write
+included, and the second's heap postcondition: the two state the same
+element write (`Effect.sameResult`). -/
+theorem Effect.postW_meet {a b : Effect} (hs : a.sameResult b = true) (r : Tm) (args : List Tm) {j : Nat}
+    (U : WorldT j) (before : Heap) (k : Nat) (W' : WorldT k) (after : Heap) (v : Val) :
+    (a.meet b).postW r args U before k W' after v ↔ a.postW r args U before k W' after v ∧ b.post r args before after v := by
+  simp only [Effect.postW, Effect.viewPost]
+  rw [Effect.post_meet hs]
+  exact ⟨fun ⟨⟨ha, hb⟩, hw⟩ => ⟨⟨ha, hw⟩, hb⟩, fun ⟨⟨ha, hw⟩, hb⟩ => ⟨⟨ha, hb⟩, hw⟩⟩
+
+/-- **Prefix transport of a signature's postcondition**: allocation between
+the call's entry and the start of its body composes with the postcondition,
+where the frame's paths and the entry terms agree across it
+(`Effect.post_prefix`), and the view write holds from the entry
+(`Kinds.ViewWrite.prefix_left`). -/
+theorem Effect.postW_prefix (e : Effect) {r : Tm} {args : List Tm} {n m : Nat} {W : WorldT n} {M : WorldT m}
+    {h hm : Heap} (hle : m ≤ n) (hx : WExt (trunc m hle W) M) (hok : HeapOk n W h) (hp : h.IsPrefix hm)
+    (hagree : e.PrefixAgrees (callEnv r args) h hm) (hens : e.EntryAgrees (callEnv r args) h hm)
+    {k : Nat} {W' : WorldT k} {h' : Heap} {v : Val} (hpost : e.postW r args M hm k W' h' v) :
+    e.postW r args W h k W' h' v :=
+  ⟨e.post_prefix hp hagree hens hpost.1, fun w hw =>
+    ⟨(hpost.2 w hw).1.prefix_left hle hx hok hp, fun k hk => ((hpost.2 w hw).2 k hk).prefix_left hp⟩⟩
+
+/-- **Safety at a signature stating no element write** is safety at its
+postcondition over kinded worlds, from every entry world. -/
+theorem Effect.safe_postW {e : Effect} (hx : e.elementWrite = none) {Ξ T : Fam} {r : Tm} {args : List Tm}
+    {j : Nat} {U : WorldT j} {heap : Heap} {n : Nat} {W : WorldT n} {h : Heap} {t : Tm}
+    (hs : SafePostExc Ξ T (e.post r args heap) (e.excPost r args heap) n W h t) :
+    SafePostExcW Ξ T (e.postW r args U heap) (e.excPostW r args heap) n W h t :=
+  SafePostExcW.weaken (fun _ _ _ _ hp => Effect.postW_of_post hx hp) (fun _ _ _ hp => hp) hs
+
+/-- A call's normal postcondition: given the receiver, the actuals, and the
+entry budget, world and heap, a world-indexed postcondition of the exit. -/
+abbrev CPost := Tm → List Tm → (j : Nat) → WorldT j → Heap → WPost
+
+/-- A call's exceptional postcondition: given the receiver, the actuals, and
+the entry budget, world and heap, a world-indexed postcondition of the
+throwing configuration. -/
+abbrev CExc := Tm → List Tm → (j : Nat) → WorldT j → Heap → HeapObservations.WExc
+
+/-- **The native-contract condition** of a callable value `v`, at budget `k`
+and world `W`. From every well-formed entry configuration below `k` (a heap
+meeting an admissible extension `U` of the truncated world, with the
+references of the callee, the receiver and the actuals valid in `U`) that
+meets the input contract (the receiver's type `Rc`, the actuals' `Acc`, the
+precondition `requires`), the invocation is safe with world-indexed
+postconditions: a normal result has the result type `R` and meets `post` at
+its exit world, a throw is of the exception family `Ξ` and meets `excPost`
+at its exit world, each given the entry world and heap, and every
+configuration on the way is well-formed under one extension of `U`
+(`NativeContract.run`). -/
+def NativeContract (Ξ : Fam) (Acc : ArgFam) (Rc : Fam) (requires : Tm → List Tm → Heap → Prop)
+    (R : Tm → List Tm → Fam) (post : CPost) (excPost : CExc) (k : Nat) (W : WorldT k) (v : Val) : Prop :=
   ∀ (j : Nat) (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
     WorldAdm U → ∀ (heap : Heap), HeapOk j U heap → RefsOk U v →
       ∀ r, isVal r = true → Rc j U r → RefsOk U r →
       ∀ args, CallArguments.Values args → (∀ a ∈ args, RefsOk U a) → Acc j U args →
-        effect.Requires r args heap →
+        requires r args heap →
         ∃ result, CallArguments.Invoke ⟨v, r, args⟩ result ∧
-          SafePostExcW Ξ (effect.result R (effect.promised args)) (effect.postW r args heap)
-            (effect.excPostW r args heap) j U heap result
+          SafePostExcW Ξ (R r args) (post r args j U heap) (excPost r args j U heap) j U heap result
+
+/-- **A contract's every execution prefix is well-formed**: the configuration
+`i` steps into the call meets one extension of the entry world truncated to
+the budget left, in both parts of heap satisfaction and with valid
+references. -/
+theorem NativeContract.run {Ξ : Fam} {Acc : ArgFam} {Rc : Fam}
+    {requires : Tm → List Tm → Heap → Prop} {R : Tm → List Tm → Fam} {post : CPost} {excPost : CExc}
+    {k : Nat} {W : WorldT k} {v : Val} (hc : NativeContract Ξ Acc Rc requires R post excPost k W v)
+    {j : Nat} (hj : j < k) {U : WorldT j} (hx : WExt (trunc j (Nat.le_of_lt hj) W) U) (hu : WorldAdm U)
+    {heap : Heap} (hh : HeapOk j U heap) (hv : RefsOk U v) {r : Tm} (hr : isVal r = true)
+    (hrc : Rc j U r) (hrr : RefsOk U r) {args : List Tm} (ha : CallArguments.Values args)
+    (har : ∀ a ∈ args, RefsOk U a) (hacc : Acc j U args) (hreq : requires r args heap) :
+    ∃ result, CallArguments.Invoke ⟨v, r, args⟩ result ∧
+      ∀ {i : Nat} {h' : Heap} {t' : Tm}, Steps i heap result h' t' → i ≤ j →
+        ∃ (m : Nat) (hm : m ≤ j) (U' : WorldT m), m + i = j ∧ WExt (trunc m hm U) U' ∧
+          HeapOk m U' h' ∧ RefsOk U' t' := by
+  obtain ⟨result, hi, hs⟩ := hc j hj U hx hu heap hh hv r hr hrc hrr args ha har hacc hreq
+  refine ⟨result, hi, fun hst hle => ?_⟩
+  obtain ⟨m, hm, U', hmi, hx', -, hh', hr', -⟩ := hs.run hst hle hu hh
+  exact ⟨m, hm, U', hmi, hx', hh', hr'⟩
+
+/-- **The native-contract condition is closed downward**: at a lower budget
+and an extension of the world truncated there. -/
+theorem NativeContract.down {Ξ : Fam} {Acc : ArgFam} {Rc : Fam}
+    {requires : Tm → List Tm → Heap → Prop} {R : Tm → List Tm → Fam} {post : CPost} {excPost : CExc}
+    {k : Nat} {W : WorldT k} {v : Val} (hc : NativeContract Ξ Acc Rc requires R post excPost k W v)
+    {j : Nat} (hj : j ≤ k) {U : WorldT j} (hx : WExt (trunc j hj W) U) :
+    NativeContract Ξ Acc Rc requires R post excPost j U v := by
+  intro i hi V hy hu heap hh hv r hrv hrc hrr args ha har hacc hreq
+  refine hc i (by omega) V ?_ hu heap hh hv r hrv hrc hrr args ha har hacc hreq
+  simpa only [trunc_trunc] using WExt_trans (WExt_trunc (Nat.le_of_lt hi) hx) hy
+
+/-- **Invocation of a callee meeting the native-contract condition.** From a
+well-formed configuration whose callee, receiver and actuals are valid and
+meet the input contract at the world one step below, the invocation is safe
+at the contract's result type and both its postconditions, read from the
+entry world truncated by the invocation's step. -/
+theorem NativeContract.safe {Ξ : Fam} {Acc : ArgFam} {Rc : Fam}
+    {requires : Tm → List Tm → Heap → Prop} {R : Tm → List Tm → Fam} {post : CPost} {excPost : CExc}
+    {n : Nat} {W : WorldT (n + 1)} {v : Val}
+    (hc : NativeContract Ξ Acc Rc requires R post excPost (n + 1) W v) (hadm : WorldAdm W)
+    {heap : Heap} (hh : HeapOk (n + 1) W heap) {r : Tm} (hrv : isVal r = true)
+    (hrc : Rc n (trunc n (Nat.le_succ n) W) r) {args : List Tm}
+    (ha : CallArguments.Values args) (hacc : Acc n (trunc n (Nat.le_succ n) W) args)
+    (hreq : requires r args heap) (href : RefsOk W (.invoke v r args)) :
+    SafePostExcW Ξ (R r args) (post r args n (trunc n (Nat.le_succ n) W) heap)
+      (excPost r args n (trunc n (Nat.le_succ n) W) heap) (n + 1) W heap (.invoke v r args) := by
+  obtain ⟨hv, hrr, har⟩ := RefsOk_invoke.mp href
+  obtain ⟨result, hi, hs⟩ := hc n (Nat.lt_succ_self n) _ (WExt_refl _) (WorldAdm_trunc _ hadm) heap
+    (HeapOk_trunc n W heap hh) (RefsOk_trunc _ hv) r hrv hrc (RefsOk_trunc _ hrr) args ha
+    (fun a h => RefsOk_trunc _ (har a h)) hacc hreq
+  exact ⟨href, .inr ⟨_, heap, result, WExt_refl _, WorldAdm_trunc _ hadm,
+    hi.step heap, HeapOk_trunc n W heap hh, hs⟩⟩
+
+/-- **The arrow equation**: the native-contract condition at a signature's
+precondition (`Effect.Requires`), its result (`Effect.result`) and its
+postconditions over kinded worlds, the normal one read from the call's entry
+world and heap (`Effect.postW`). The effect is per signature: one overload
+may preserve its input heap while another overload of the same value does
+not. -/
+def PromiseWith (Ξ : Fam) (effect : Effect) (Acc : ArgFam) (Rc R : Fam) (k : Nat) (W : WorldT k)
+    (v : Val) : Prop :=
+  NativeContract Ξ Acc Rc effect.Requires (fun _ args => effect.result R (effect.promised args))
+    (fun r args _ U heap => effect.postW r args U heap) (fun r args _ _ heap => effect.excPostW r args heap)
+    k W v
 
 /-- A heap effect's signature is an ordinary arrow once its postcondition is
 forgotten. A promise's is not: its result operand is not the result's type;
@@ -1344,8 +1469,9 @@ theorem PromiseWith.erase {effect Acc Rc R k W v} (hp : effect.plain = true)
   intro j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha
   obtain ⟨result, hi, hs⟩ := h j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha
     (Effect.requires_none (Effect.plain_requires hp) (Effect.plain_pre hp) r args heap)
+  dsimp only at hs
   rw [Effect.result_plain hp] at hs
-  exact ⟨result, hi, HeapObservations.erase hs.post⟩
+  exact ⟨result, hi, SafePostW.erase (SafePostExcW.post hs)⟩
 
 theorem PromiseWith.down {effect Acc Rc R n W v}
     (h : PromiseWith Ξ effect Acc Rc R (n + 1) W v) :
@@ -1363,7 +1489,8 @@ what the result meets, at every result operand. There is deliberately no rule
 relating a promise to a signature without one, whose result operands mean
 different things. -/
 def Effect.Covers (source target : Effect) : Prop :=
-  (∀ r args before after value, source.post r args before after value → target.post r args before after value) ∧
+  (∀ r args j (U : WorldT j) before k (W' : WorldT k) after value,
+    source.postW r args U before k W' after value → target.postW r args U before k W' after value) ∧
   (∀ R args k W u, source.result R (source.promised args) k W u → target.result R (target.promised args) k W u) ∧
   (∀ r args before after, source.excPost r args before after → target.excPost r args before after) ∧
   ∀ r args heap, target.Requires r args heap → source.Requires r args heap
@@ -1479,13 +1606,14 @@ theorem Effect.covers_sound {a b : Effect} (h : a.covers b = true) : a.Covers b 
   simp only [Effect.covers, Bool.and_eq_true] at h
   obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hfc, hp⟩, hf⟩, ho⟩, hfo⟩, hrq⟩, hel⟩, hpre⟩, hens⟩, hgr⟩, hwr⟩ := h
   simp only [beq_iff_eq] at hp
-  refine ⟨fun r args before after v ⟨hw, hfr, hfro, hels, hen, hga, hwa⟩ =>
-      ⟨Effect.frameCovers_sound hfc hw, fun hb => hfr ?_,
+  have hwrite : ∀ w, b.elementWrite = some w → a.elementWrite = some w := fun w hb => by
+    simp only [hb, Option.isNone_some, Bool.false_or, beq_iff_eq] at hwr; exact hwr
+  refine ⟨fun r args j U before k W' after v ⟨⟨hw, hfr, hfro, hels, hen, hga, hwa⟩, hview⟩ =>
+      ⟨⟨Effect.frameCovers_sound hfc hw, fun hb => hfr ?_,
       fun hb => hfro ?_, elementsCovers_sound hel hels,
       fun F hF => hen F (List.contains_iff_mem.mp (List.all_eq_true.mp hens F hF)),
       fun hb => hga (by simp only [hb, Bool.not_true, Bool.false_or] at hgr; exact hgr),
-      fun w hb => hwa w (by
-        simp only [hb, Option.isNone_some, Bool.false_or, beq_iff_eq] at hwr; exact hwr)⟩,
+      fun w hb => hwa w (hwrite w hb)⟩, fun w hb => hview w (hwrite w hb)⟩,
     fun R args k W u hu => ?_, fun r args before after he hb => Effect.frameCovers_sound hfc (he ?_),
     fun r args heap hq => requiresCovers_sound hrq hpre hq⟩
   · rw [hb] at hf; simpa using hf
@@ -1505,7 +1633,7 @@ theorem Effect.bindCovers_covers {n : Nat} {a b : Effect} (h : a.bindCovers n b 
   simp only [Effect.bindCovers, Bool.and_eq_true] at h; exact h.2
 
 theorem Effect.Covers.refl (e : Effect) : e.Covers e :=
-  ⟨fun _ _ _ _ _ h => h, fun _ _ _ _ _ h => h, fun _ _ _ _ h => h, fun _ _ _ h => h⟩
+  ⟨fun _ _ _ _ _ _ _ _ _ h => h, fun _ _ _ _ _ h => h, fun _ _ _ _ h => h, fun _ _ _ h => h⟩
 
 /-- Two executions' results combine as the results of their operands do. -/
 theorem Effect.cross_result (e : Effect) {B C D : Fam} {a : Tm} {n}
@@ -1535,10 +1663,10 @@ theorem PromiseWith.weaken' {Ξ Ξ' : Fam} {effect effect' Acc Acc' Rc Rc' R T k
   intro j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha hq
   obtain ⟨result, hi, hs⟩ :=
     h j hj U hx hu heap hh hvr r hrv (hrecv j hj U r hr) hrr args hv har (hacc j hj U args ha) (he.2.2.2 r args heap hq)
-  exact ⟨result, hi, SafePostExc.consequence_below' (fun m hm => hexc m (by omega))
+  exact ⟨result, hi, SafePostExcW.consequence_below' (fun m hm => hexc m (by omega))
     (fun m hm U' u hu => he.2.1 T args m U' u
-      (Effect.result_mono effect (hres m (by omega) U') (hres m (by omega) U') hu)) (he.1 r args heap)
-    (he.2.2.1 r args heap) hs⟩
+      (Effect.result_mono effect (hres m (by omega) U') (hres m (by omega) U') hu))
+    (fun m _ => he.1 r args j U heap m) (fun _ _ _ h' => he.2.2.1 r args heap h') hs⟩
 
 theorem PromiseWith.weaken {Ξ : Fam} {effect effect' Acc Acc' Rc Rc' R T k W v}
     (he : effect.Covers effect')
@@ -1577,19 +1705,27 @@ theorem PromiseWith.congr {Ξ Ξ' : Fam} {effect Acc Acc' Rc Rc' R T n W v}
 
 /-! ### Construct signatures -/
 
+/-- **The native-contract condition of construction**: from every
+well-formed entry configuration meeting the input contract, `new` runs a
+construction safe at the result type and both postconditions, the receiver
+`undefined`. -/
+def NativeConstruct (Ξ : Fam) (Acc : ArgFam) (requires : List Tm → Heap → Prop) (R : List Tm → Fam)
+    (post : CPost) (excPost : CExc) (k : Nat) (W : WorldT k) (v : Val) : Prop :=
+  ∀ (j : Nat) (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U →
+    ∀ (heap : Heap), HeapOk j U heap → RefsOk U v →
+      ∀ args, CallArguments.Values args → (∀ a ∈ args, RefsOk U a) → Acc j U args → requires args heap →
+        ∃ result, ConstructsTo v args result ∧
+          SafePostExcW Ξ (R args) (post .undef args j U heap) (excPost .undef args j U heap) j U heap result
+
 /-- The promise of one construct signature, independent of argument-list
-syntax: constructing the value, in any strictly future world, with actuals
-`P` admits, runs a body safe at the result whose normal return meets the
-signature's effect, from the heap the construction starts in. -/
+syntax: the construction condition at the signature's precondition, result
+and postconditions over kinded worlds (`Effect.postW`), the receiver
+`undefined`. -/
 def ConstructPromise (Ξ : Fam) (effect : Effect) (P : ArgFam) (R : Fam) (k : Nat) (W : WorldT k)
     (v : Val) : Prop :=
-  ∀ (j : Nat) (hj : j < k) (U : WorldT j),
-    WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U → ∀ (heap : Heap), HeapOk j U heap →
-      RefsOk U v → ∀ args, CallArguments.Values args → (∀ a ∈ args, RefsOk U a) → P j U args →
-        effect.Requires .undef args heap →
-        ∃ result, ConstructsTo v args result ∧
-          SafePostExcW Ξ (effect.result R (effect.promised args)) (effect.postW .undef args heap)
-            (effect.excPostW .undef args heap) j U heap result
+  NativeConstruct Ξ P (effect.Requires .undef) (fun args => effect.result R (effect.promised args))
+    (fun r args _ U heap => effect.postW r args U heap) (fun r args _ _ heap => effect.excPostW r args heap)
+    k W v
 
 theorem ConstructPromise.down {effect P R n W v}
     (h : ConstructPromise Ξ effect P R (n + 1) W v) :
@@ -1610,10 +1746,10 @@ theorem ConstructPromise.weaken' {Ξ Ξ' : Fam} {effect effect' P P' R T k W v}
     (h : ConstructPromise Ξ effect P R k W v) : ConstructPromise Ξ' effect' P' T k W v := by
   intro j hj U hx hu heap hh hvr args hv har ha hq
   obtain ⟨result, hc, hs⟩ := h j hj U hx hu heap hh hvr args hv har (hacc j hj U args ha) (he.2.2.2 .undef args heap hq)
-  exact ⟨result, hc, SafePostExc.consequence_below' (fun m hm => hexc m (by omega))
+  exact ⟨result, hc, SafePostExcW.consequence_below' (fun m hm => hexc m (by omega))
     (fun m hm U' u hu => he.2.1 T args m U' u
-      (Effect.result_mono effect (hres m (by omega) U') (hres m (by omega) U') hu)) (he.1 .undef args heap)
-    (he.2.2.1 .undef args heap) hs⟩
+      (Effect.result_mono effect (hres m (by omega) U') (hres m (by omega) U') hu))
+    (fun m _ => he.1 .undef args j U heap m) (fun _ _ _ h' => he.2.2.1 .undef args heap h') hs⟩
 
 theorem ConstructPromise.congr {Ξ Ξ' : Fam} {effect P P' R T n W v}
     (hexc : Agree Ξ Ξ' n)
@@ -1641,8 +1777,9 @@ theorem ConstructPromise.erase {effect P R k W v} (hp : effect.plain = true)
   intro j hj U hx hu heap hh hvr args hv har ha
   obtain ⟨result, hc, hs⟩ := h j hj U hx hu heap hh hvr args hv har ha
     (Effect.requires_none (Effect.plain_requires hp) (Effect.plain_pre hp) .undef args heap)
+  dsimp only at hs
   rw [Effect.result_plain hp] at hs
-  exact ⟨result, hc, HeapObservations.erase hs.post⟩
+  exact ⟨result, hc, SafePostW.erase (SafePostExcW.post hs)⟩
 
 /-- **Construct signatures.** Values meeting every signature `(parameters,
 result)` under `new`, each with its effect (`ConstructPromise`). The code is
@@ -1749,10 +1886,13 @@ theorem PromiseWith.combine {effect other Acc Rc B C D k W v}
   obtain ⟨hr1, hp1, hr2, hp2⟩ := Effect.meet_same hs
   rw [hr2, hp2] at hsc
   rw [hr1, hp1]
-  exact ⟨b, hib, SafePostExc.weaken
-    (fun heap' value hpost => (Effect.post_meet hs r args heap heap' value).mpr hpost)
-    (fun heap' hexc => Effect.excPost_meet hs r args heap heap' hexc.1 hexc.2)
-    (SafePostExc.cross_upto j (Effect.cross_result effect (hcross j hj)) U U heap b hh hh hsb hsc)⟩
+  have hsc' : SafePostExc Ξ (effect.result C (effect.promised args)) (other.post r args heap)
+      (other.excPost r args heap) j U heap b :=
+    SafePostExcW.weaken (fun _ _ _ _ hp => hp.1) (fun _ _ _ hp => hp) hsc
+  exact ⟨b, hib, SafePostExcW.weaken
+    (fun k' W' heap' value hpost => (Effect.postW_meet hs r args U heap k' W' heap' value).mpr hpost)
+    (fun _ _ heap' hexc => Effect.excPost_meet hs r args heap heap' hexc.1 hexc.2)
+    (SafePostExcW.cross j (Effect.cross_result effect (hcross j hj)) U U heap b hh hh hsb hsc')⟩
 
 /-- Binding saves a receiver and argument prefix, then forwards without
 changing the heap. This generic rule covers fixed and variadic signatures;
@@ -1802,10 +1942,18 @@ theorem PromiseWith.bound {effect : Effect} {Acc Rest : ArgFam} {Rt R Rc : Fam}
     obtain ⟨res, hinv', hsafe⟩ := ht i hi _ hxU hu' heap hh' (RefsOk_trunc _ hobj.1) rv hrv hr'
       (RefsOk_trunc _ hobj.2.1) (pre ++ args) hall hall' (hprefix i hi _ hxU args ha')
       (Effect.requires_none (Effect.keeps_requires hkeeps) (Effect.keeps_pre hkeeps) rv (pre ++ args) heap)
+    dsimp only at hsafe ⊢
     rw [Effect.result_drop, Effect.promised_drop hkeeps]
+    -- The target is entered one step after the bound call, at the same
+    -- heap: its view write from that world is one from the bound call's
+    -- entry (`Kinds.ViewWrite.prefix_left`).
+    have hxi : WExt (trunc i (Nat.le_succ i) U) (trunc i (Nat.le_succ i) U) := WExt_refl _
     exact ⟨hinv, .inr ⟨_, heap, res, WExt_refl _, hu', hinv'.step heap, hh',
-      SafePostExc.weaken (fun _ _ h => Effect.post_drop pre.length h)
-        (fun _ h => Effect.excPost_drop pre.length h) hsafe⟩⟩
+      SafePostExcW.weaken (fun _ _ _ _ h => ⟨Effect.post_drop pre.length h.1, fun w hw => by
+          simp only [Effect.drop, Option.map_eq_some_iff] at hw
+          obtain ⟨w0, h0, rfl⟩ := hw
+          exact ⟨(h.2 w0 h0).1.prefix_left (Nat.le_succ i) hxi hh (List.prefix_refl _), fun _ he => by cases he⟩⟩)
+        (fun _ _ _ h => Effect.excPost_drop pre.length h) hsafe⟩⟩
 
 /-- Application consumes a qualified signature, without inspecting the
 callee's implementation. Its entry heap is after actual evaluation. -/
@@ -1827,7 +1975,7 @@ theorem call_safe_exc {effect : Effect} {P : ArgFam} {Rc R : Fam}
       (RefsOk_trunc _ hrr) vs hv (fun a ha => RefsOk_trunc _ (har a ha))
       (hP.transfer ha n (Nat.le_succ n) U (WExt_refl _)) hq
     exact ⟨href, .inr ⟨U, heap, body, WExt_refl _, WorldAdm_trunc _ hw, hi.step heap,
-      HeapOk_trunc n W heap hh, hs⟩⟩
+      HeapOk_trunc n W heap hh, SafePostExcW.weaken (fun _ _ _ _ hp => hp.1) (fun _ _ _ hp => hp) hs⟩⟩
 
 theorem call_safe {effect : Effect} {P : ArgFam} {Rc R : Fam}
     (hP : Adm P) (hRc : Adm Rc) {n W heap f r vs}
@@ -1877,10 +2025,11 @@ theorem construct_safe_exc_requires {effect : Effect} (hpr : effect.promise = no
         · rw [hpad a ha]; exact RefsOk_undef)
       (hP.transfer ha n (Nat.le_succ n) U (WExt_refl _))
       (Effect.requires_pad hpad hq)
+    dsimp only at hs
     rw [CallArguments.construction_pad hc _ _ hpad, Effect.result_none hpr] at hs
     exact ⟨href, .inr ⟨U, heap, _, WExt_refl _, WorldAdm_trunc _ hw,
       CallArguments.construction_step hc hv heap, HeapOk_trunc n W heap hh,
-      SafePostExc.weaken (fun _ _ h => Effect.post_pad rfl hpad h) (fun _ h => Effect.excPost_pad hpad h) hs⟩⟩
+      SafePostExcW.weaken (fun _ _ _ _ h => Effect.post_pad rfl hpad h.1) (fun _ _ _ h => Effect.excPost_pad hpad h) hs⟩⟩
 
 /-- A construction at a plain signature, whose precondition is empty. -/
 theorem construct_safe_exc {effect : Effect} (hpl : effect.plain = true) {P : ArgFam} {R : Fam}

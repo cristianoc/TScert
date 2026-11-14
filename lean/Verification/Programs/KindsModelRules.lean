@@ -1,5 +1,7 @@
 import Verification.Programs.TolerantFramesModelRules
-import Verification.Semantics.KindsContracts
+import Verification.Semantics.KindsNatives
+import Verification.Semantics.TolerantFramesCells
+import Verification.Semantics.KindsCapabilities
 /-!
 # Witnesses of (View), Alloc and the view write over kinded worlds
 

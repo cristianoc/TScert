@@ -3,24 +3,25 @@ import Verification.Semantics.Kinds
 /-!
 # Element writes and the view-element write
 
-A typed array's element write as a relation between two heaps, and over
-kinded worlds between two world-heap pairs (location-kinds draft, §6).
+A typed array's element write as a relation between two world-heap pairs
+(the Tolerant frames note, kinded worlds; location-kinds draft, §6), and
+what it states of the two heaps alone.
 
-- **Over the active worlds** (`CallEffects.ElementWrite.Holds`): the view
-  write read against a role assignment fitting the entry heap
-  (`CallEffects.ViewWriteA`), and for the exact form the designated view's
-  element at the index holding the element type's conversion of the value
-  (`CallEffects.ExactWrite`, `ElementKind.convert`).
-- **Over kinded worlds** (`Kinds.ViewWrite`, `Kinds.ViewWriteOf`): the exit
-  world extends the entry one, the exit heap meets it in both parts, every
-  old location whose role is no view store keeps its contents, and a view
-  store's newly listed cells are fresh. The active relation is its
-  consequence at the entry world's roles (`Kinds.ViewWriteOf.holds`).
+- **The view-element write** (`Kinds.ViewWrite`, `Kinds.ViewWriteOf`): the
+  exit world extends the entry one, the exit heap meets it in both parts,
+  every old location whose role in the entry world is no view store keeps
+  its contents, and a view store's newly listed cells are fresh; for the
+  exact form, the designated view's element at the index holds the element
+  type's conversion of the value (`CallEffects.ExactWrite`,
+  `ElementKind.convert`). A call's postcondition states it from the call's
+  entry world and heap (`CallEffects.Effect.viewPost`).
+- **What it states of the heaps** (`CallEffects.ElementWrite.Holds`): the
+  coarse change (`ElementWrite.changes`) and, where exact, `ExactWrite`;
+  both follow from the relation from a well-formed entry
+  (`Kinds.ViewWriteOf.holds`).
 
 This module is below the call effects (`Semantics/CallEffects.lean`), which
-state an element write by these relations, and below the safety predicates
-over kinded worlds (`Semantics/KindsContracts.lean`), whose postconditions
-read the exit world; neither of those modules is imported here.
+state an element write by these relations.
 -/
 namespace Verification.CallEffects
 
@@ -198,133 +199,17 @@ theorem ElementKind.convert_negZero :
   refine ⟨hz, fun k hk => ?_, rfl, by simp⟩
   cases k <;> simp_all [ElementKind.convert, int32Bits, bitsOfNat] <;> decide
 
-/-- **A role assignment fitting a heap**: every location of the heap has a
-role (`Role`), and its contents have that role's category
-(`Cat`): a source value in F, C and E, a store in S, of the view's
-length in a view store, `null` in I. A kinded world's roles fit every heap
-meeting it (`Kinds.ViewWriteOf.holds`). -/
-structure RolesFit (roles : Nat → Option Role) (h : Heap) : Prop where
-  dom : ∀ l, l < h.length → ∃ r, roles l = some r
-  cat : ∀ l r v, roles l = some r → h[l]? = some v → Cat r v
-
-/-- **The view-element write from `before` to `after`, read against the
-roles `roles` of `before`'s locations** (location-kinds draft, §6): the
-domain grows; every location whose role is no view store keeps its
-contents; every view store of length `N` holds a store of length `N`
-listing locations of `after`; and every cell a view store newly lists is
-fresh against `before`. It constrains every view store, whichever view the
-call names. -/
-structure ViewWriteAt (roles : Nat → Option Role) (before after : Heap) : Prop where
-  grows : before.length ≤ after.length
-  keep : ∀ l r, roles l = some r → (∀ N, r ≠ .store (.view N)) → after[l]? = before[l]?
-  view : ∀ l N, roles l = some (.store (.view N)) →
-    ∃ ls', after[l]? = some (.arr ls') ∧ ls'.length = N ∧ ∀ c, some c ∈ ls' → c < after.length
-  grow : ∀ l N ls ls', roles l = some (.store (.view N)) → before[l]? = some (.arr ls) →
-    after[l]? = some (.arr ls') → ∀ c, some c ∈ ls' → some c ∈ ls ∨ before.length ≤ c
-
-/-- **The view-element write read against some role assignment**:
-`ViewWriteAt` at an assignment fitting the entry heap, constrained by the
-entry heap's categories alone, so weaker than the kinded relation
-(`Kinds.ViewWrite`), which reads the entry world's roles
-(`ViewWriteA.not_entry_roles`). -/
-def ViewWriteA (before after : Heap) : Prop :=
-  ∃ roles, RolesFit roles before ∧ ViewWriteAt roles before after
-
-/-- **`ViewWriteA` admits a change of an ordinary array's store.** Its
-role assignment is existential: from `[arr [some 1], null]` to
-`[arr [some 2], null, null]` it holds by giving location 0 the role of a
-view store of length 1 and location 1 the identity role, though the roles
-`actual` (location 0 an ordinary array's store, 1 an element) also fit the
-entry heap, and the view write read against them (`ViewWriteAt actual`),
-which keeps every location that is not a view store, fails. The kinded
-relation (`ViewWrite`) reads the entry world's roles. -/
-theorem ViewWriteA.not_entry_roles :
-    let before : Heap := [.arr [some 1], .nul]
-    let after : Heap := [.arr [some 2], .nul, .nul]
-    let actual : Nat → Option Role := fun l =>
-      if l = 0 then some (.store .array) else if l = 1 then some .elem else none
-    ViewWriteA before after ∧ RolesFit actual before ∧ ¬ ViewWriteAt actual before after := by
-  intro before after actual
-  let aux : Nat → Option Role := fun l =>
-    if l = 0 then some (.store (.view 1)) else if l = 1 then some .identity else none
-  refine ⟨⟨aux, ⟨fun l hl => ?_, fun l r v hr hv => ?_⟩, ⟨by decide, fun l r hr hne => ?_,
-      fun l N hr => ?_, fun l N ls ls' hr hl hl' c hc => ?_⟩⟩,
-    ⟨fun l hl => ?_, fun l r v hr hv => ?_⟩, fun hw => ?_⟩
-  · simp only [before, List.length_cons, List.length_nil] at hl
-    rcases (by omega : l = 0 ∨ l = 1) with rfl | rfl <;> simp [aux]
-  · rcases l with _ | _ | l
-    · simp [aux] at hr; subst hr; simp [before] at hv; subst hv; exact ⟨_, rfl, rfl⟩
-    · simp [aux] at hr; subst hr; simp [before] at hv; subst hv; rfl
-    · simp [aux] at hr
-  · rcases l with _ | _ | l
-    · simp [aux] at hr; subst hr; exact absurd rfl (hne 1)
-    · rfl
-    · simp [aux] at hr
-  · rcases l with _ | _ | l
-    · simp [aux] at hr; subst hr; exact ⟨[some 2], rfl, rfl, fun c hc => by simp at hc; subst hc; decide⟩
-    · simp [aux] at hr
-    · simp [aux] at hr
-  · rcases l with _ | _ | l
-    · simp [before] at hl; subst hl; simp [after] at hl'; subst hl'; simp at hc; subst hc
-      exact .inr (by decide)
-    · simp [aux] at hr
-    · simp [aux] at hr
-  · simp only [before, List.length_cons, List.length_nil] at hl
-    rcases (by omega : l = 0 ∨ l = 1) with rfl | rfl <;> simp [actual]
-  · rcases l with _ | _ | l
-    · simp [actual] at hr; subst hr; simp [before] at hv; subst hv; exact ⟨_, rfl⟩
-    · simp [actual] at hr; subst hr; simp [before] at hv; subst hv; rfl
-    · simp [actual] at hr
-  · have := hw.keep 0 (.store .array) (by simp [actual]) (fun N h => by cases h)
-    simp [before, after] at this
-
-/-- What an element write states of a call with actuals `args`: the view
-write, and, where exact, `ExactWrite`. -/
+/-- **What an element write states of the heaps alone**, of a call with
+actuals `args`: its coarse change (`ElementWrite.changes`: no object or
+number altered, every store's length kept), and, where exact, `ExactWrite`.
+Both are consequences of the kinded view-element write from a well-formed
+entry (`Kinds.ViewWriteOf.holds`), which the call's postcondition states
+beside it (`CallEffects.Effect.viewPost`). -/
 def ElementWrite.Holds (w : ElementWrite) (args : List Tm) (before after : Heap) : Prop :=
-  ViewWriteA before after ∧ (∀ k, w = .exact k → ExactWrite k args before after)
-
-theorem RolesFit.role_of {roles : Nat → Option Role} {h : Heap} (hf : RolesFit roles h) {l : Nat}
-    {v : Val} (hv : h[l]? = some v) : ∃ r, roles l = some r ∧ Cat r v := by
-  obtain ⟨r, hr⟩ := hf.dom l (List.getElem?_eq_some_iff.mp hv).1
-  exact ⟨r, hr, hf.cat l r v hr hv⟩
-
-/-- **Every location holding no store keeps its contents.** -/
-theorem ViewWriteA.keeps {before after : Heap} (hw : ViewWriteA before after) {l : Nat} {v : Val}
-    (hv : before[l]? = some v) (hns : ∀ ls, v ≠ .arr ls) : after[l]? = some v := by
-  obtain ⟨roles, hf, hw⟩ := hw
-  obtain ⟨r, hr, hc⟩ := hf.role_of hv
-  rw [hw.keep l r hr (fun N hN => by subst hN; obtain ⟨ls, rfl, -⟩ := hc; exact hns ls rfl), hv]
-
-/-- **The coarse change is a consequence**: every location holding an object
-or a number keeps its contents, and every store keeps its length. -/
-theorem ViewWriteA.changes {before after : Heap} (hw : ViewWriteA before after) (w : ElementWrite) :
-    w.changes.Holds before after := by
-  refine ⟨fun l v hv halt => hw.keeps hv (fun ls h => ?_), fun _ l ls hl => ?_, fun hg => by cases w <;> cases hg⟩
-  · subst h; cases w <;> simp [ElementWrite.changes, HeapKnowledge.Changes.alters] at halt
-  · obtain ⟨roles, hf, hw⟩ := hw
-    obtain ⟨r, hr, hc⟩ := hf.role_of hl
-    cases r with
-    | store f =>
-      cases f with
-      | array => exact ⟨ls, by rw [hw.keep l _ hr (fun N hN => by cases hN), hl], rfl⟩
-      | view N =>
-        obtain ⟨ls₀, he, hlen⟩ := hc
-        cases he
-        obtain ⟨ls', hl', hlen', -⟩ := hw.view l N hr
-        exact ⟨ls', hl', by omega⟩
-    | field | cell | elem => simp [Cat, isSourceVal] at hc
-    | identity => simp [Cat] at hc
+  w.changes.Holds before after ∧ (∀ k, w = .exact k → ExactWrite k args before after)
 
 theorem ElementWrite.Holds.changes {w : ElementWrite} {args : List Tm} {before after : Heap}
-    (h : w.Holds args before after) : w.changes.Holds before after := h.1.changes w
-
-/-- **A location holding a string never comes to hold a store**: the coarse
-change admits it (`Kinds.elementWrite_not_respects`), the element write does
-not. -/
-theorem ElementWrite.Holds.not_string_to_store (w : ElementWrite) (args : List Tm) (s : String) :
-    ¬ w.Holds args [.str s] [.arr []] := fun h => by
-  have := h.1.keeps (l := 0) rfl (fun _ h => by cases h)
-  simp at this
+    (h : w.Holds args before after) : w.changes.Holds before after := h.1
 
 theorem ExactWrite.prefix_left {k : ElementKind} {args : List Tm} {before middle after : Heap}
     (hx : ExactWrite k args middle after) (hprefix : before.IsPrefix middle) : ExactWrite k args before after := by
@@ -333,67 +218,18 @@ theorem ExactWrite.prefix_left {k : ElementKind} {args : List Tm} {before middle
   obtain ⟨t, rfl⟩ := hprefix
   rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hls).1, hls]
 
-/-- The view write from a heap holds from each of its prefixes, the roles
-restricted to the prefix's locations. -/
-theorem ViewWriteA.prefix_left {before middle after : Heap} (hw : ViewWriteA middle after)
-    (hp : before.IsPrefix middle) : ViewWriteA before after := by
-  obtain ⟨roles, hf, hv⟩ := hw
-  obtain ⟨t, rfl⟩ := hp
-  have hget : ∀ l, l < before.length → (before ++ t)[l]? = before[l]? := fun l hl =>
-    List.getElem?_append_left hl
-  refine ⟨fun l => if l < before.length then roles l else none, ⟨fun l hl => ?_, fun l r v hr hv' => ?_⟩,
-    ⟨?_, fun l r hr hne => ?_, fun l N hr => ?_, fun l N ls ls' hr hl hl' c hc => ?_⟩⟩
-  · simp only [if_pos hl]; exact hf.dom l (by simp; omega)
-  · split at hr
-    · exact hf.cat l r v hr (by rw [hget l ‹_›]; exact hv')
-    · cases hr
-  · have := hv.grows; simp at this; omega
-  · split at hr
-    · rw [hv.keep l r hr hne, hget l ‹_›]
-    · cases hr
-  · split at hr
-    · exact hv.view l N hr
-    · cases hr
-  · split at hr
-    · rcases hv.grow l N ls ls' hr (by rw [hget l ‹_›]; exact hl) hl' c hc with h | h
-      · exact .inl h
-      · right; simp at h; omega
-    · cases hr
-
 theorem ElementWrite.Holds.prefix_left {w : ElementWrite} {args : List Tm} {before middle after : Heap}
     (hx : w.Holds args middle after) (hprefix : before.IsPrefix middle) : w.Holds args before after :=
-  ⟨hx.1.prefix_left hprefix, fun k he => (hx.2 k he).prefix_left hprefix⟩
+  ⟨HeapKnowledge.Changes.Holds.prefix_left hx.1 hprefix, fun k he => (hx.2 k he).prefix_left hprefix⟩
 
 /-- An element write of any actuals keeps what a write of stores does. -/
 theorem ElementWrite.Holds.stores {w : ElementWrite} {args args' : List Tm} {before after : Heap}
     (h : w.Holds args before after) : ElementWrite.stores.Holds args' before after :=
-  ⟨h.1, fun _ he => by cases he⟩
+  ⟨by cases w <;> exact h.1, fun _ he => by cases he⟩
 end Verification.CallEffects
 
 namespace Verification.Kinds
 open Verification
-
-/-! ## World-indexed postconditions -/
-
-/-- A postcondition of a normal exit: the budget left, the exit world, the
-heap and the result. -/
-abbrev WPost := (k : Nat) → WorldT k → Heap → Val → Prop
-
-/-- A postcondition of an exceptional exit: the budget left, the exit world
-and the heap the term raises in. -/
-abbrev WExc := (k : Nat) → WorldT k → Heap → Prop
-
-/-- A postcondition of the heap and the result lifts by ignoring the world. -/
-def WPost.lift (Q : Heap → Val → Prop) : WPost := fun _ _ h v => Q h v
-
-/-- A postcondition of the heap lifts by ignoring the world. -/
-def WExc.lift (R : Heap → Prop) : WExc := fun _ _ h => R h
-
-@[simp] theorem WPost.lift_apply (Q : Heap → Val → Prop) {k : Nat} (W : WorldT k) (h : Heap) (v : Val) :
-    WPost.lift Q k W h v ↔ Q h v := Iff.rfl
-
-@[simp] theorem WExc.lift_apply (R : Heap → Prop) {k : Nat} (W : WorldT k) (h : Heap) :
-    WExc.lift R k W h ↔ R h := Iff.rfl
 
 /-! ## The view-element write -/
 
@@ -483,27 +319,35 @@ def ViewWriteOf (w : CallEffects.ElementWrite) (args : List Tm) {n n' : Nat} (W 
     (W' : WorldT n') (h' : Heap) : Prop :=
   ViewWrite W h W' h' ∧ (∀ k, w = .exact k → CallEffects.ExactWrite k args h h')
 
-/-- **The active element write follows from the relation**: at the entry
-world's roles, which fit every heap meeting it, the relation is the active
-one (`CallEffects.ViewWriteA`), and for the exact form `ExactWrite` holds. -/
+/-- **What an element write states of the heaps follows from the
+relation**: from a well-formed entry, the coarse change
+(`ViewWrite.changes`), and for the exact form `ExactWrite`. -/
 theorem ViewWriteOf.holds {w : CallEffects.ElementWrite} {args : List Tm} {n n' : Nat} {W : WorldT n}
     {h : Heap} {W' : WorldT n'} {h' : Heap} (hw : ViewWriteOf w args W h W' h') (hok : HeapOk n W h) :
-    w.Holds args h h' := by
-  have hlen : h.length = (entries W).length := by simpa using hok.1.1
-  have hlen' : h'.length = (entries W').length := by simpa using hw.1.ok.1.1
-  have hge : (entries W).length ≤ (entries W').length := by
-    have := WExt_length hw.1.ext; simpa using this
-  refine ⟨⟨roleAt W, ⟨fun l hl => roleAt_some (by omega), fun l r v hr hv => ?_⟩,
-    ⟨by omega, hw.1.keep, fun l N hr => ?_, hw.1.grow⟩⟩, hw.2⟩
-  · obtain ⟨u, hu, hc, -⟩ := hok.2 l r hr
-    rw [hv] at hu; cases hu; exact hc
-  · obtain ⟨ls', hl', hn, hc⟩ := hw.1.view_store hr
-    exact ⟨ls', hl', hn, fun c h => (hc c h).2⟩
+    w.Holds args h h' :=
+  ⟨hw.1.changes hok w, hw.2⟩
 
-/-- The view-element write as a world-indexed postcondition of a call
-entered at the world `W` and heap `h`: it reads the exit world the safety
-derivation chose. -/
-def ViewWrite.post (w : CallEffects.ElementWrite) (args : List Tm) {n : Nat} (W : WorldT n) (h : Heap) :
-    WPost := fun _ W' h' _ => ViewWriteOf w args W h W' h'
+/-! ## The view write from a prefix -/
+
+/-- **The view write from a prefix of the entry**: a view write from a
+world and heap extending an entry world and heap is one from the entry. -/
+theorem ViewWrite.prefix_left {n m n' : Nat} {W : WorldT n} {M : WorldT m} {h hm : Heap}
+    {W' : WorldT n'} {h' : Heap} (hle : m ≤ n) (hx : WExt (trunc m hle W) M) (hok : HeapOk n W h)
+    (hp : h.IsPrefix hm) (hw : ViewWrite M hm W' h') : ViewWrite W h W' h' := by
+  have hlen : h.length = (entries W).length := by simpa using hok.1.1
+  have hrole : ∀ {l r}, Verification.roleAt W l = some r → Verification.roleAt M l = some r := fun hr =>
+    WExt_roleAt hx (by simpa using hr)
+  have hget : ∀ {l r}, Verification.roleAt W l = some r → hm[l]? = h[l]? := by
+    intro l r hr
+    obtain ⟨t, rfl⟩ := hp
+    exact List.getElem?_append_left (by have := roleAt_lt hr; omega)
+  refine ⟨Nat.le_trans hw.le hle, ?_, hw.ok, fun l r hr hne => ?_, fun l N ls ls' hr hl hl' c hc => ?_⟩
+  · have := WExt_trunc hw.le hx
+    rw [trunc_trunc] at this
+    exact WExt_trans this hw.ext
+  · rw [hw.keep l r (hrole hr) hne, hget hr]
+  · rcases hw.grow l N ls ls' (hrole hr) (by rw [hget hr]; exact hl) hl' c hc with h1 | h1
+    · exact .inl h1
+    · exact .inr (Nat.le_trans hp.length_le h1)
 
 end Verification.Kinds

@@ -120,14 +120,15 @@ theorem SafePostExc.value {Ξ T Q R n W h v} (hv : isVal v = true) (ht : T n W v
     (hr : RefsOk W v) : SafePostExc Ξ T Q R n W h v :=
   SafePostExcW.value hv ht hq hr
 
-/-- Overload combination over two executions of the same term: both
-postconditions survive, on a normal return and on a throw. -/
-theorem SafePostExc.cross_upto {Ξ} {B C D : Fam} {Q Q' : Post} {R R' : Heap → Prop} :
+/-- **Two runs of one term at one world.** The first run's world is kept,
+with its world-indexed postconditions; the second run takes the same steps
+(`Step_det`), so its heap postconditions hold at the same exits, and its
+result type combines with the first's (`CrossCompatUpTo`). -/
+theorem SafePostExcW.cross {Ξ Ξ' B C D : Fam} {Q : WPost} {R : WExc} {Q' : Post} {R' : Heap → Prop} :
     ∀ (n : Nat), CrossCompatUpTo n B C D →
     ∀ (W W' : WorldT n) (h : Heap) (t : Tm), HeapOk n W h → HeapOk n W' h →
-      SafePostExc Ξ B Q R n W h t → SafePostExc Ξ C Q' R' n W' h t →
-        SafePostExc Ξ D (fun heap value => Q heap value ∧ Q' heap value) (fun heap => R heap ∧ R' heap)
-          n W h t := by
+      SafePostExcW Ξ B Q R n W h t → SafePostExc Ξ' C Q' R' n W' h t →
+        SafePostExcW Ξ D (fun k W h v => Q k W h v ∧ Q' h v) (fun k W h => R k W h ∧ R' h) n W h t := by
   intro n
   induction n with
   | zero => intro _ _ _ _ _ _ _ hs _; exact hs
@@ -148,6 +149,43 @@ theorem SafePostExc.cross_upto {Ξ} {B C D : Fam} {Q Q' : Post} {R R' : Heap →
     · obtain ⟨rfl, rfl⟩ := Step_det hst1 hst2
       exact .inr ⟨Z, h1, t1, hz, huz, hst1, hok1,
         ih (fun j hj => hc j (by omega)) Z Z' h1 t1 hok1 hok2 hcont1 hcont2⟩
+
+/-- Overload combination over two executions of the same term: both
+postconditions survive, on a normal return and on a throw. -/
+theorem SafePostExc.cross_upto {Ξ} {B C D : Fam} {Q Q' : Post} {R R' : Heap → Prop} (n : Nat)
+    (hc : CrossCompatUpTo n B C D) (W W' : WorldT n) (h : Heap) (t : Tm) (hok : HeapOk n W h)
+    (hok' : HeapOk n W' h) (h1 : SafePostExc Ξ B Q R n W h t) (h2 : SafePostExc Ξ C Q' R' n W' h t) :
+    SafePostExc Ξ D (fun heap value => Q heap value ∧ Q' heap value) (fun heap => R heap ∧ R' heap)
+      n W h t :=
+  SafePostExcW.cross n hc W W' h t hok hok' h1 h2
+
+/-- **Every execution prefix ends in a well-formed configuration under one
+extension of the truncated entry world**: after `k` steps of a term safe at
+budget `j + k`, a world at budget `j` extends the entry world truncated to
+`j`, the heap meets it in both parts, the term's references are valid in it,
+and safety continues there. The budget left may be zero. -/
+theorem SafePostExcW.run {Ξ T : Fam} {Q : WPost} {R : WExc} :
+    ∀ {k : Nat} {h : Heap} {t : Tm} {h' : Heap} {t' : Tm}, Steps k h t h' t' →
+      ∀ {n : Nat} {W : WorldT n}, k ≤ n → WorldAdm W → HeapOk n W h → SafePostExcW Ξ T Q R n W h t →
+      ∃ (j : Nat) (hj : j ≤ n) (U : WorldT j), j + k = n ∧ WExt (trunc j hj W) U ∧ WorldAdm U ∧
+        HeapOk j U h' ∧ RefsOk U t' ∧ SafePostExcW Ξ T Q R j U h' t' := by
+  intro k h t h' t' hst
+  induction hst with
+  | refl =>
+    intro n W _ hadm hok hs
+    exact ⟨n, Nat.le_refl n, W, rfl, by rw [trunc_id]; exact WExt_refl _, hadm, hok, hs.refs, hs⟩
+  | next st _ ih =>
+    intro n W hk hadm hok hs
+    cases n with
+    | zero => omega
+    | succ m =>
+      rcases hs.2 with (⟨hv, -, -⟩ | ⟨⟨_, hr, -⟩, -⟩) | ⟨U, h₁, t₁, hx, hu, st', hh, hs'⟩
+      · exact absurd st (value_no_step hv)
+      · exact absurd st (raises_no_step hr)
+      · obtain ⟨rfl, rfl⟩ := Step_det st st'
+        obtain ⟨j, hj, U', hjk, hx', hu', hh', hr', hs''⟩ := ih (by omega) hu hh hs'
+        refine ⟨j, by omega, U', by omega, ?_, hu', hh', hr', hs''⟩
+        simpa only [trunc_trunc] using WExt_trans (WExt_trunc hj hx) hx'
 
 /-- Composition through an evaluation context: a throw of the subterm is a
 throw of the whole at the same heap, so the subterm's throw postcondition is
@@ -205,5 +243,22 @@ theorem SafePostExc.one_step {Ξ T Q R n W h t h' v} (ht : isVal t = false) (hv 
           · exact .inl (.inl ⟨hv, ht', hq⟩)
           · exact absurd hr (val_not_thrown hv)
           · exact False.elim (value_no_step hv step'')⟩
+
+/-- **A world fact holds at every exit**: a fact of the world that every
+extension and every truncation keep, true of the entry world, holds at the
+world of each normal and exceptional exit, beside its postcondition. -/
+theorem SafePostExcW.world {Ξ T : Fam} {Q : WPost} {R : WExc} {P : (k : Nat) → WorldT k → Prop}
+    (hmono : ∀ k (W W' : WorldT k), WExt W W' → P k W → P k W')
+    (htrunc : ∀ k j (hj : j ≤ k) (W : WorldT k), P k W → P j (trunc j hj W)) :
+    ∀ {n : Nat} {W : WorldT n} {h : Heap} {t : Tm}, P n W → SafePostExcW Ξ T Q R n W h t →
+      SafePostExcW Ξ T (fun k W h v => Q k W h v ∧ P k W) (fun k W h => R k W h ∧ P k W) n W h t
+  | 0, _, _, _, _, hs => hs
+  | _ + 1, _, _, _, hp, ⟨hr, hs⟩ => by
+    refine ⟨hr, ?_⟩
+    rcases hs with (⟨hv, hT, hq⟩ | ⟨ht, hR⟩) | ⟨U, h', t', hx, hu, st, hh, hs'⟩
+    · exact .inl (.inl ⟨hv, hT, hq, hp⟩)
+    · exact .inl (.inr ⟨ht, hR, hp⟩)
+    · exact .inr ⟨U, h', t', hx, hu, st, hh,
+        SafePostExcW.world hmono htrunc (hmono _ _ _ hx (htrunc _ _ _ _ hp)) hs'⟩
 
 end Verification.HeapObservations

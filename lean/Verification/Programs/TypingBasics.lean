@@ -768,12 +768,16 @@ theorem callsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {kind :
   refine ⟨⟨fs, _, _, rfl, callable_of_kind hk, hself⟩, ?_⟩
   intro q hq j hj U hx hu heap hh hvr r hrv hr hrr args hvals har ha hreq
   obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
-  exact ⟨_, .graph hrv hvals (hb p hp j U r hr), graph_invoke (hs p hp) (hvs.withSelf hlen hself)
+  -- Graph code states no element write (`Effect.below_write`): its view
+  -- write is vacuous, and its postcondition is its heap postcondition.
+  exact ⟨_, .graph hrv hvals (hb p hp j U r hr), HeapObservations.SafePostExcW.weaken
+    (fun _ _ _ _ h => CallEffects.Effect.postW_of_post (CallEffects.Effect.below_write (hs p hp).2.1) h)
+    (fun _ _ _ h => h) (graph_invoke (hs p hp) (hvs.withSelf hlen hself)
     (Values.withSelf hvalues rfl) hj hx hu hh hr ha (fun F hF => hreq.2 F hF)
     (goto_entry_refs (graph_code_refs hvr).1 (fun a ha => by
       rcases List.mem_append.mp ha with ha | ha
       · exact (graph_code_refs hvr).2 a ha
-      · rw [List.mem_singleton.mp ha]; exact hvr) hrr har)⟩
+      · rw [List.mem_singleton.mp ha]; exact hvr) hrr har))⟩
 
 /-- Graph code of fixed arity meets a variadic signature whose fixed
 parameters cover it and whose fixed part it meets: the further actuals are
@@ -806,10 +810,11 @@ theorem restsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {kind :
     rw [← CallArguments.parameters_take arity (args.take _), List.take_take,
       Nat.min_eq_left hle, CallArguments.parameters_take]
   rw [hp, CallEffects.Effect.promised_take (e := s.fixed.effect) hbelow hle] at hsafe
-  exact ⟨_, .graph hrv hvals (hb s hsm j U r hr), HeapObservations.SafePostExc.weaken
-    (fun _ _ h => CallEffects.Effect.post_args (CallEffects.Effect.below_ensures hbelow)
-      (CallEffects.Effect.below_grows hbelow) (CallEffects.Effect.below_write hbelow) (CallEffects.Effect.below_regions hbelow) h)
-      (fun _ h => CallEffects.Effect.excPost_args (CallEffects.Effect.below_regions hbelow) h) hsafe⟩
+  exact ⟨_, .graph hrv hvals (hb s hsm j U r hr), HeapObservations.SafePostExcW.weaken
+    (fun _ _ _ _ h => CallEffects.Effect.postW_of_post (CallEffects.Effect.below_write hbelow)
+      (CallEffects.Effect.post_args (CallEffects.Effect.below_ensures hbelow)
+      (CallEffects.Effect.below_grows hbelow) (CallEffects.Effect.below_write hbelow) (CallEffects.Effect.below_regions hbelow) h))
+      (fun _ _ _ h => CallEffects.Effect.excPost_args (CallEffects.Effect.below_regions hbelow) h) hsafe⟩
 
 /-- An equality established by a branch can refine one immutable slot. -/
 theorem EnvOk.refine {G : NormalGraph ι} {Γ ρ n W i A B}

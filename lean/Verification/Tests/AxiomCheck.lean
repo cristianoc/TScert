@@ -1509,7 +1509,6 @@ run_cmd do
   check ``Verification.TolerantFrames.accepts_source
   check ``Verification.TolerantFrames.Target.entry_roots_not_derived
   check ``Verification.SourceClaimJson.PassUnit.gotoOf_refsOk
-  check ``Verification.CallEffects.ViewWriteA.not_entry_roles
   -- (View): a typed array's length is immutable
   check ``Verification.TolerantFrames.viewLengthOf_kept
   check ``Verification.TolerantFrames.viewLength_invariant
@@ -1558,22 +1557,22 @@ run_cmd do
   check ``Verification.Kinds.Capability.Holds.weakenBelow
   check ``Verification.Kinds.Capability.ofRole_leBelow_iff
   -- world-indexed postconditions, the native-contract condition, the view write
-  check ``Verification.Kinds.SafeW.refs
-  check ``Verification.Kinds.SafeW.mono
-  check ``Verification.Kinds.SafeW.run
-  check ``Verification.Kinds.Thrown.refs
-  check ``Verification.Kinds.NativeContract.run
+  check ``Verification.HeapObservations.SafePostExcW.refs
+  check ``Verification.HeapObservations.SafePostExcW.weaken
+  check ``Verification.HeapObservations.SafePostExcW.run
+  check ``Verification.Thrown.refs
+  check ``Verification.CallEffects.NativeContract.run
   check ``Verification.Kinds.ViewWrite.keeps_array
   check ``Verification.Kinds.ViewWrite.view_store
   check ``Verification.Kinds.ViewWrite.changes
   check ``Verification.Kinds.ViewWriteOf.holds
   check ``Verification.Kinds.viewWrite_overlap
   -- call preservation and the early evidence of the native specifications
-  check ``Verification.Kinds.SafeW.bind
-  check ``Verification.Kinds.SafeW.handle
-  check ``Verification.Kinds.SafeW.exit
-  check ``Verification.Kinds.SafeW.erase
-  check ``Verification.Kinds.NativeContract.safe
+  check ``Verification.HeapObservations.SafePostExcW.bind
+  check ``Verification.HeapObservations.SafePostExcW.handle
+  check ``Verification.HeapObservations.SafePostExcW.exit
+  check ``Verification.HeapObservations.SafePostExcW.erase
+  check ``Verification.CallEffects.NativeContract.safe
   check ``Verification.Kinds.allocThrow_safe
   check ``Verification.Kinds.callback_throw_handled
   check ``Verification.Kinds.callback_writeback
@@ -1582,32 +1581,31 @@ run_cmd do
   check ``Verification.Kinds.host_viewWrite
   check ``Verification.Kinds.families_refs
   check ``Verification.Kinds.families_state
-  check ``Verification.Kinds.NativeContract.down
-  check ``Verification.Kinds.NativeContract.bound
+  check ``Verification.CallEffects.NativeContract.down
+  check ``Verification.CallEffects.PromiseWith.bound
   check ``Verification.Kinds.not_respects_of_breaks
   check ``Verification.Kinds.confined_not_respects
   check ``Verification.Kinds.unrestricted_not_respects
   check ``Verification.Kinds.allocation_not_respects
-  check ``Verification.CallEffects.ViewWriteA.changes
-  check ``Verification.CallEffects.ViewWriteA.prefix_left
-  check ``Verification.CallEffects.ElementWrite.Holds.not_string_to_store
+  check ``Verification.CallEffects.call_safe_exc
+  check ``Verification.CallEffects.Effect.safe_postW
   check ``Verification.CallEffects.ElementKind.intValue_convert
   check ``Verification.CallEffects.ElementKind.readPath_convert
   check ``Verification.CallEffects.ElementKind.convert_negZero
   check ``Verification.CallEffects.ElementKind.convert_takes
   check ``Verification.CallEffects.ElementKind.takes_of_requires
   -- call effects over kinded worlds and the composition gate
-  check ``Verification.Kinds.SafeW.consequence
-  check ``Verification.Kinds.SafeW.world
-  check ``Verification.Kinds.SafeW.cross
-  check ``Verification.CallEffects.Effect.postK_meet
-  check ``Verification.CallEffects.Effect.coversK_sound
+  check ``Verification.HeapObservations.SafePostExcW.consequence_below'
+  check ``Verification.HeapObservations.SafePostExcW.world
+  check ``Verification.HeapObservations.SafePostExcW.cross
+  check ``Verification.CallEffects.Effect.postW_meet
+  check ``Verification.CallEffects.Effect.covers_sound
   check ``Verification.Kinds.ViewWrite.prefix_left
-  check ``Verification.CallEffects.Effect.postK_prefix
-  check ``Verification.Kinds.PromiseK.combine
-  check ``Verification.Kinds.PromiseK.weaken
-  check ``Verification.Kinds.ConstructsTo.step
-  check ``Verification.Kinds.NativeConstruct.safe
+  check ``Verification.CallEffects.Effect.postW_prefix
+  check ``Verification.CallEffects.PromiseWith.combine
+  check ``Verification.CallEffects.PromiseWith.weaken'
+  check ``Verification.CallEffects.Effect.postW_of_post
+  check ``Verification.CallEffects.construct_safe_exc_requires
   check ``Verification.Kinds.literal_safe
   check ``Verification.Kinds.gate_write
   check ``Verification.Kinds.gate_handled

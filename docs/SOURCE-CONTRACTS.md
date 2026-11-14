@@ -542,15 +542,23 @@ contents no allocation constructs: a callable's membership in its function
 type (the behaviour of native code), and a host object's view store and
 length metadata, which no source allocation makes.
 
-The view write a typed array's element write states is read, in the active
-contracts, against a role assignment fitting the entry heap (`ViewWriteA`),
-which admits a change of an ordinary array's store
-(`ViewWriteA.not_entry_roles`); the intended contract reads the entry
-world's roles (`ViewWrite`, `Effect.postK`), so the write keeps every
-location that is not a view store. The meaning of callable and constructor
-types carries these contracts, so `mode8Accepted_sound` is relative to the
-model's accuracy through the entry conditions of its conclusion; graph code
-meets the same condition by proof (`goto_safe`). The
+A call contract's normal postcondition is read over the call's entry and
+exit worlds (`Effect.postW`): the signature's heap postcondition and, where
+it states an element write (`%ByteSet%`, a view's `fill`, `copyWithin` and
+`set`), the view-element write from the entry world and heap to the exit
+world and heap (`Kinds.ViewWrite`), at the one world the exit reaches. The
+exit world extends the entry one and the exit heap meets it; every location
+whose role in the entry world is no view store keeps its contents; a view
+store keeps its length, and each cell it newly lists is fresh. The roles are
+the entry world's because a role assignment chosen only to fit the entry
+heap may give an ordinary array's store the role of a view store, and so
+let the write change it (from `[arr [some 1], null]` to
+`[arr [some 2], null, null]`, location 0). The meaning of callable and
+constructor types carries these contracts, so `mode8Accepted_sound` is
+relative to the model's accuracy through the entry conditions of its
+conclusion; graph code meets the same condition by proof (`goto_safe`), and
+states no element write (`Effect.below_write`), so its view write holds of
+every exit (`Effect.postW_of_post`). The
 [trust surface](DESIGN.md#trust-surface) lists it.
 
 ## Certified imports

@@ -1,33 +1,36 @@
-import Verification.Semantics.KindsContracts
+import Verification.Semantics.KindsNatives
+import Verification.Semantics.TolerantFramesCells
+import Verification.Semantics.KindsCapabilities
 /-!
 # Call preservation over kinded worlds
 
 The general interface every native contract and every call is used through,
-over the safety predicate with world-indexed postconditions (`SafeW`):
+over safety with world-indexed postconditions
+(`HeapObservations.SafePostExcW`), whose worlds are kinded and whose running
+term's references are valid at every budget:
 
-- **execution prefixes** end in well-formed configurations (`SafeW.run`,
-  `NativeContract.run` in `KindsContracts`);
-- **exits** (`SafeW.exit`): a run of a safe term that ends in a value or a
-  throw at positive budget ends under one extension `U` of the truncated
-  entry world, where the heap meets `U` in both parts (contracts and roles'
-  shapes), the term's references are valid, and the result type and the
-  normal postcondition, or the exception family, the thrown value's valid
-  references and the exceptional postcondition, hold at that same `U`;
-- **sequencing** (`SafeW.bind`): a term safe in an evaluation context
-  continues from each normal exit of the hole at the world that exit reached,
-  so a callback's allocations, with the roles its own typing chose, are the
-  world the native's continuation extends;
-- **exception propagation** (`SafeW.bind`, whose context lets the throw out;
-  `SafeW.handle`, whose context steps to a handler): a handler is entered at
-  the throwing configuration's world and heap, which is well-formed whatever
-  the exceptional postcondition states, `True` included (an effect without
-  `onThrow`);
-- **invocation** (`NativeContract.safe`): a callee meeting the native-contract
-  condition makes its invocation safe at its result type and both
-  postconditions;
-- **erasure** (`SafeW.erase`): world-indexed postconditions implying heap-only
-  ones give safety at the heap-only ones lifted, the postconditions the
-  active `SafePostExc` states.
+- **execution prefixes** end in well-formed configurations
+  (`SafePostExcW.run`, `CallEffects.NativeContract.run`);
+- **exits** (`SafePostExcW.exit`): a run of a safe term that ends in a value
+  or a throw at positive budget ends under one extension `U` of the
+  truncated entry world, where the heap meets `U` in both parts (contracts
+  and roles' shapes), the term's references are valid, and the result type
+  and the normal postcondition, or the exception family, the thrown value's
+  valid references and the exceptional postcondition, hold at that same `U`;
+- **sequencing** (`SafePostExcW.bind`): a term safe in an evaluation context
+  continues from each normal exit of the hole at the world that exit
+  reached, so a callback's allocations, with the roles its own typing chose,
+  are the world the native's continuation extends;
+- **exception propagation** (`SafePostExcW.bind`, whose context lets the
+  throw out; `SafePostExcW.handle`, whose context steps to a handler): a
+  handler is entered at the throwing configuration's world and heap, which
+  is well-formed whatever the exceptional postcondition states, `True`
+  included (an effect without `onThrow`);
+- **invocation** (`CallEffects.NativeContract.safe`): a callee meeting the
+  native-contract condition makes its invocation safe at its result type and
+  both postconditions;
+- **erasure** (`SafePostExcW.erase`): world-indexed postconditions implying
+  heap-only ones give safety at the heap-only ones lifted.
 
 The early evidence of the design (location-kinds draft, §9) is proved here:
 a callback that allocates and throws into a handler leaves a well-formed
@@ -36,14 +39,14 @@ and a callback's allocation followed by a native's write-back is well-formed
 under one world extending the callback's (`callback_writeback`).
 -/
 namespace Verification.Kinds
-open Verification
+open Verification HeapObservations
+
+/-- A thrown value's references are valid where the throwing term's are. -/
+theorem _root_.Verification.Thrown.refs {Ξ : Fam} {k : Nat} {W : WorldT k} {t : Tm} (ht : Thrown Ξ k W t)
+    (hr : RefsOk W t) : ∃ v, Raises t v ∧ Ξ k W v ∧ RefsOk W v :=
+  let ⟨v, hv, _, hΞ⟩ := ht; ⟨v, hv, hΞ, fun r hm => hr r (raises_refs hv r hm)⟩
 
 /-! ## Evaluation contexts -/
-
-/-- A throw leaves every context that lets it out. -/
-theorem Thrown.lift {Ξ : Fam} {k : Nat} {W : WorldT k} {t : Tm} {C : Tm → Tm}
-    (raise : ∀ {v}, Raises t v → Raises (C t) v) (h : Thrown Ξ k W t) : Thrown Ξ k W (C t) :=
-  let ⟨v, hv, hs, hΞ⟩ := h; ⟨v, raise hv, hs, hΞ⟩
 
 /-! ## Sequencing and exception propagation -/
 
@@ -52,14 +55,14 @@ context that lets throws out is safe in the context when the context
 continues safely from each normal exit of the hole, at the world and heap
 that exit reached. A throw out of the hole is a throw of the whole at the
 same world and heap, so the exceptional postcondition is the hole's. -/
-theorem SafeW.bind {Ξ A B : Fam} {Q Q' : WPost} {R : WExc} (C : Tm → Tm)
+theorem _root_.Verification.HeapObservations.SafePostExcW.bind {Ξ A B : Fam} {Q Q' : WPost} {R : WExc} (C : Tm → Tm)
     (lift : ∀ {h t h' t'}, Step h t h' t' → Step h (C t) h' (C t'))
     (raise : ∀ {t v}, Raises t v → Raises (C t) v) (hc : CtxRefs C) :
     ∀ (n : Nat) (W : WorldT n) (h : Heap) (t : Tm), WorldAdm W → HeapOk n W h → RefsOk W (C .undef) →
-    SafeW Ξ A Q R n W h t →
+    SafePostExcW Ξ A Q R n W h t →
     (∀ j (hj : j ≤ n) (U : WorldT j), WExt (trunc j hj W) U → WorldAdm U →
-      ∀ h' v, HeapOk j U h' → isVal v = true → A j U v → Q j U h' v → SafeW Ξ B Q' R j U h' (C v)) →
-    SafeW Ξ B Q' R n W h (C t) := by
+      ∀ h' v, HeapOk j U h' → isVal v = true → A j U v → Q j U h' v → SafePostExcW Ξ B Q' R j U h' (C v)) →
+    SafePostExcW Ξ B Q' R n W h (C t) := by
   intro n
   induction n with
   | zero => intro W h t _ _ hC hs _; exact hc.ok hs hC
@@ -82,17 +85,17 @@ the handler from each exceptional one. The handler is entered at the
 throwing configuration's world and heap: the heap meets that world in both
 parts and the thrown value's references are valid there, whatever the
 hole's exceptional postcondition `R` states, `True` included. -/
-theorem SafeW.handle {Ξ Ξ' A B : Fam} {Q Q' : WPost} {R R' : WExc} (C H : Tm → Tm)
+theorem _root_.Verification.HeapObservations.SafePostExcW.handle {Ξ Ξ' A B : Fam} {Q Q' : WPost} {R R' : WExc} (C H : Tm → Tm)
     (lift : ∀ {h t h' t'}, Step h t h' t' → Step h (C t) h' (C t'))
     (hcatch : ∀ {h t v}, Raises t v → Step h (C t) h (H v)) (hc : CtxRefs C) :
     ∀ (n : Nat) (W : WorldT n) (h : Heap) (t : Tm), WorldAdm W → HeapOk n W h → RefsOk W (C .undef) →
-    SafeW Ξ A Q R n W h t →
+    SafePostExcW Ξ A Q R n W h t →
     (∀ j (hj : j ≤ n) (U : WorldT j), WExt (trunc j hj W) U → WorldAdm U →
-      ∀ h' v, HeapOk j U h' → isVal v = true → A j U v → Q j U h' v → SafeW Ξ' B Q' R' j U h' (C v)) →
+      ∀ h' v, HeapOk j U h' → isVal v = true → A j U v → Q j U h' v → SafePostExcW Ξ' B Q' R' j U h' (C v)) →
     (∀ m (hm : m + 1 ≤ n) (U : WorldT (m + 1)), WExt (trunc (m + 1) hm W) U → WorldAdm U →
       ∀ h' v, HeapOk (m + 1) U h' → Ξ (m + 1) U v → RefsOk U v → R (m + 1) U h' →
-        SafeW Ξ' B Q' R' m (trunc m (Nat.le_succ m) U) h' (H v)) →
-    SafeW Ξ' B Q' R' n W h (C t) := by
+        SafePostExcW Ξ' B Q' R' m (trunc m (Nat.le_succ m) U) h' (H v)) →
+    SafePostExcW Ξ' B Q' R' n W h (C t) := by
   intro n
   induction n with
   | zero => intro W h t _ _ hC hs _ _; exact hc.ok hs hC
@@ -123,9 +126,9 @@ references are valid in `U`, and either the value has the result type and
 meets the normal postcondition at `U`, or the thrown value is of the
 exception family with valid references and the exceptional postcondition
 holds at `U`. Typing, shapes and postconditions read the same world. -/
-theorem SafeW.exit {Ξ T : Fam} {Q : WPost} {R : WExc} {k : Nat} {h : Heap} {t : Tm} {h' : Heap}
+theorem _root_.Verification.HeapObservations.SafePostExcW.exit {Ξ T : Fam} {Q : WPost} {R : WExc} {k : Nat} {h : Heap} {t : Tm} {h' : Heap}
     {t' : Tm} (hst : HeapObservations.Steps k h t h' t') {n : Nat} {W : WorldT n} (hk : k < n)
-    (hadm : WorldAdm W) (hok : HeapOk n W h) (hs : SafeW Ξ T Q R n W h t)
+    (hadm : WorldAdm W) (hok : HeapOk n W h) (hs : SafePostExcW Ξ T Q R n W h t)
     (hend : isVal t' = true ∨ ∃ v, Raises t' v) :
     ∃ (j : Nat) (hj : j + 1 ≤ n) (U : WorldT (j + 1)), j + 1 + k = n ∧ WExt (trunc (j + 1) hj W) U ∧
       WorldAdm U ∧ HeapOk (j + 1) U h' ∧ RefsOk U t' ∧
@@ -147,96 +150,11 @@ theorem SafeW.exit {Ξ T : Fam} {Q : WPost} {R : WExc} {k : Nat} {h : Heap} {t :
 /-- **Erasure to heap-only postconditions.** World-indexed postconditions
 implying heap-only ones give safety at the heap-only ones lifted, which are
 the postconditions `SafePostExc` states of the active worlds. -/
-theorem SafeW.erase {Ξ T : Fam} {Q : WPost} {R : WExc} {Q' : Heap → Val → Prop} {R' : Heap → Prop}
+theorem _root_.Verification.HeapObservations.SafePostExcW.erase {Ξ T : Fam} {Q : WPost} {R : WExc} {Q' : Heap → Val → Prop} {R' : Heap → Prop}
     (hQ : ∀ k (W : WorldT k) h v, Q k W h v → Q' h v) (hR : ∀ k (W : WorldT k) h, R k W h → R' h)
-    {n : Nat} {W : WorldT n} {h : Heap} {t : Tm} (hs : SafeW Ξ T Q R n W h t) :
-    SafeW Ξ T (WPost.lift Q') (WExc.lift R') n W h t :=
-  SafeW.mono (Q' := WPost.lift Q') (R' := WExc.lift R') hQ hR hs
-
-/-! ## Invocation -/
-
-theorem refs_invoke {f r : Tm} {args : List Tm} {k : Nat} {W : WorldT k} (hf : RefsOk W f)
-    (hr : RefsOk W r) (ha : ∀ a ∈ args, RefsOk W a) : RefsOk W (.invoke f r args) := by
-  intro x hx
-  simp only [refs, refsArgs_eq, List.mem_append, List.mem_flatMap] at hx
-  rcases hx with (hx | hx) | ⟨a, ha', hx⟩
-  · exact hf x hx
-  · exact hr x hx
-  · exact ha a ha' x hx
-
-/-- **Invocation of a callee meeting the native-contract condition.** From a
-well-formed configuration whose callee, receiver and actuals are valid and
-meet the input contract at the world one step below, the invocation is safe
-at the contract's result type and both its postconditions. -/
-theorem NativeContract.safe {Ξ : Fam} {Acc : (j : Nat) → WorldT j → List Tm → Prop} {Rc : Fam}
-    {requires : Tm → List Tm → Heap → Prop} {R : Tm → List Tm → Fam}
-    {post : CPost} {excPost : CExc}
-    {n : Nat} {W : WorldT (n + 1)} {v : Val}
-    (hc : NativeContract Ξ Acc Rc requires R post excPost (n + 1) W v) (hadm : WorldAdm W)
-    {heap : Heap} (hh : HeapOk (n + 1) W heap) (hv : RefsOk W v) {r : Tm} (hrv : isVal r = true)
-    (hrc : Rc n (trunc n (Nat.le_succ n) W) r) (hrr : RefsOk W r) {args : List Tm}
-    (ha : CallArguments.Values args) (hacc : Acc n (trunc n (Nat.le_succ n) W) args)
-    (har : ∀ a ∈ args, RefsOk W a) (hreq : requires r args heap) :
-    SafeW Ξ (R r args) (post r args n (trunc n (Nat.le_succ n) W) heap)
-      (excPost r args n (trunc n (Nat.le_succ n) W) heap) (n + 1) W heap (.invoke v r args) := by
-  obtain ⟨result, hi, hs⟩ := hc n (Nat.lt_succ_self n) _ (WExt_refl _) (WorldAdm_trunc _ hadm) heap
-    (HeapOk_trunc n W heap hh) (RefsOk_trunc _ hv) r hrv hrc (RefsOk_trunc _ hrr) args ha hacc
-    (fun a h => RefsOk_trunc _ (har a h)) hreq
-  exact ⟨refs_invoke hv hrr har, .inr ⟨_, heap, result, WExt_refl _, WorldAdm_trunc _ hadm,
-    hi.step heap, HeapOk_trunc n W heap hh, hs⟩⟩
-
-/-! ## Forwarding descriptors -/
-
-/-- **The native-contract condition is closed downward**: at a lower budget
-and an extension of the world truncated there. -/
-theorem NativeContract.down {Ξ : Fam} {Acc : (j : Nat) → WorldT j → List Tm → Prop} {Rc : Fam}
-    {requires : Tm → List Tm → Heap → Prop} {R : Tm → List Tm → Fam}
-    {post : CPost} {excPost : CExc}
-    {k : Nat} {W : WorldT k} {v : Val} (hc : NativeContract Ξ Acc Rc requires R post excPost k W v)
-    {j : Nat} (hj : j ≤ k) {U : WorldT j} (hx : WExt (trunc j hj W) U) :
-    NativeContract Ξ Acc Rc requires R post excPost j U v := by
-  intro i hi V hy hu heap hh hv r hrv hrc hrr args ha hacc har hreq
-  refine hc i (by omega) V ?_ hu heap hh hv r hrv hrc hrr args ha hacc har hreq
-  simpa only [trunc_trunc] using WExt_trans (WExt_trunc (Nat.le_of_lt hi) hx) hy
-
-/-- **A forwarding descriptor meets the native-contract condition when its
-target does**, at the saved receiver and the saved prefix before the
-actuals, when the target's actuals' contract survives truncation, as an
-admissible family's does. The target is entered one step after the
-descriptor, so its postconditions are read from the descriptor's entry
-world truncated by that step. Its invocation changes no heap: it calls the target, so every
-configuration of the call is one of the target's. The descriptor's call
-ignores its own receiver. -/
-theorem NativeContract.bound {Ξ : Fam} {Acc : (j : Nat) → WorldT j → List Tm → Prop} {Rc : Fam}
-    {requires : Tm → List Tm → Heap → Prop} {R : Tm → List Tm → Fam}
-    {post : CPost} {excPost : CExc}
-    {k : Nat} {W : WorldT k} {target r₀ : Tm} {pre : List Tm} {fs : List (PropKey × Nat)} {oid : Nat}
-    (ht : NativeContract Ξ Acc Rc requires R post excPost k W target)
-    (hr₀ : isVal r₀ = true) (hrc : ∀ j (U : WorldT j), j < k → Rc j U r₀)
-    (hpre : CallArguments.Values pre)
-    (hdown : ∀ j (U : WorldT (j + 1)) args, Acc (j + 1) U args → Acc j (trunc j (Nat.le_succ j) U) args) :
-    NativeContract Ξ (fun j U args => Acc j U (pre ++ args)) (fun _ _ _ => True)
-      (fun _ args heap => requires r₀ (pre ++ args) heap) (fun _ args => R r₀ (pre ++ args))
-      (fun _ args j U heap => post r₀ (pre ++ args) (j - 1) (trunc (j - 1) (Nat.sub_le j 1) U) heap)
-      (fun _ args j U heap => excPost r₀ (pre ++ args) (j - 1) (trunc (j - 1) (Nat.sub_le j 1) U) heap)
-      k W (.objAt fs (.bound target r₀ pre) oid) := by
-  intro j hj U hx hu heap hh hv r hrv _ _ args ha hacc har hreq
-  have hrefs : RefsOk U target ∧ RefsOk U r₀ ∧ ∀ a ∈ pre, RefsOk U a := by
-    refine ⟨fun x hm => hv x ?_, fun x hm => hv x ?_, fun a hap x hm => hv x ?_⟩ <;>
-      simp only [refs, refsArgs_eq, List.mem_append, List.mem_flatMap]
-    · exact .inr (.inl (.inl hm))
-    · exact .inr (.inl (.inr hm))
-    · exact .inr (.inr ⟨a, hap, hm⟩)
-  refine ⟨_, .bound hrv ha, ?_⟩
-  have hvals : CallArguments.Values (pre ++ args) := fun a hm =>
-    (List.mem_append.mp hm).elim (hpre a) (ha a)
-  have hall : ∀ a ∈ pre ++ args, RefsOk U a := fun a hm =>
-    (List.mem_append.mp hm).elim (hrefs.2.2 a) (har a)
-  cases j with
-  | zero => exact refs_invoke hrefs.1 hrefs.2.1 hall
-  | succ m =>
-    exact NativeContract.safe (ht.down (Nat.le_of_lt hj) hx) hu hh hrefs.1 hr₀
-      (hrc m _ (by omega)) hrefs.2.1 hvals (hdown m U _ hacc) hall hreq
+    {n : Nat} {W : WorldT n} {h : Heap} {t : Tm} (hs : SafePostExcW Ξ T Q R n W h t) :
+    SafePostExcW Ξ T (WPost.lift Q') (WExc.lift R') n W h t :=
+  SafePostExcW.weaken (Q' := WPost.lift Q') (R' := WExc.lift R') hQ hR hs
 
 /-! ## Early evidence: a callback that allocates and throws into a handler -/
 
@@ -263,7 +181,7 @@ theorem allocThrow_safe {Ξ T : Fam} {Q : WPost} {f : PropKey} {v : Tm} {n : Nat
     (hvr : RefsOk W v)
     (hf : f ≠ arrayStoreKey ∧ f ≠ viewElementsKey ∧ f ≠ viewLengthKey)
     (hΞ : ∀ (U : WorldT (n + 1)) u, Ξ (n + 1) U u) :
-    SafeW Ξ T Q (fun _ _ _ => True) (n + 2) W h (allocThrow f v) := by
+    SafePostExcW Ξ T Q (fun _ _ _ => True) (n + 2) W h (allocThrow f v) := by
   have hv : isVal v = true := sourceVal_isVal hsrc
   let W₁ := trunc (n + 1) (Nat.le_succ _) W
   let U := appendWs W₁ (allocEntries (k := n + 1))
@@ -369,7 +287,7 @@ theorem callback_throw_handled {f : PropKey} {v : Tm} {n : Nat} {W : WorldT (n +
 
 /-- **A callback's allocation followed by a native's write-back is
 well-formed under one world extending the callback's.** The callback ran to
-a value at the world `U` its own typing chose (`SafeW.exit`), its
+a value at the world `U` its own typing chose (`SafePostExcW.exit`), its
 allocations with whatever roles that typing gave. The native then appends
 fresh element cells holding source values valid in `U`, each meeting its
 contract, and writes an ordinary array's store `s` to a store listing cells
@@ -430,7 +348,7 @@ A footprint bounds where a call may change the heap. The relations below
 admit a transition from a well-formed heap to a heap no extension of its
 world satisfies, so none of them is evidence of the native-contract
 condition; a contract meeting the condition states its structural part
-through safety (`SafeW`). -/
+through safety (`SafePostExcW`). -/
 
 /-- **A relation that lets an old location's contents leave its role's
 category does not respect kinds.** -/
