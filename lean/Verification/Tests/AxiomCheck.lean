@@ -1,3 +1,4 @@
+import Verification.Semantics.ViewStores
 import Verification.Programs.TolerantFramesExitStructural
 import Verification.Programs.TolerantFramesExitHeadExtraction
 import Verification.Programs.TolerantFramesExitNonHeadExtraction
@@ -1488,6 +1489,13 @@ run_cmd do
   check ``Verification.Kinds.slots_lookup_isNone
   check ``Verification.TolerantFrames.Admissible.cls_mem
   check ``Verification.Footprints.rebase_erases_store_only
+  check ``Verification.viewStoreCtr_adm
+  check ``Verification.viewStoreCtr_admits
+  check ``Verification.viewCellCtr_adm
+  check ``Verification.ViewWorld.trunc
+  check ``Verification.ViewWorld.appendWs
+  check ``Verification.ViewWorld.typedArray
+  check ``Verification.HeapOk.view_cell_stored
   check ``Verification.Kinds.thrownError_shaped
   -- writes preserve kinds
   check ``Verification.write_sound

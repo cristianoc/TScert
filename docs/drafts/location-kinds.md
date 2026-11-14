@@ -69,6 +69,23 @@ $`S_{\mathrm{view}(t,N)}`$, are two forms of S, distinguished by role and,
 in a well-formed state, by their contents' tags, $`\mathsf{arr}`$ and
 $`\mathsf{viewStore}`$ (§3).
 
+A view store's contract is canonical in a **view world** (`ViewWorld`): the
+contract of an $`S_{\mathrm{view}(t,N)}`$ location admits exactly the view
+stores of format $`t`$ and length $`N`$ whose cells are cells of format
+$`t`$, E locations whose contract admits exactly the values $`t`$ stores
+(`viewStoreCtr`, `ViewCell`): an integer in the format's range for
+`uint8`, `uint16` and `int32`, any number for `float64`
+(`ViewFormat.Stored`). So the contract admits every replacement a write
+through an overlapping view may make (proved: `viewStoreCtr_admits`), and
+on a well-formed heap of a view world every cell a view store lists holds a
+number of its format (proved: `HeapOk.view_cell_stored`). Truncation and
+extension with canonical view-store entries keep a view world, and so does
+a typed array's allocation choosing the canonical contract (proved:
+`ViewWorld.trunc`, `ViewWorld.appendWs`, `ViewWorld.typedArray`). Stated
+limit: the admitted-state invariant (`IndexedHeap`) does not include a view
+world, and the host's conversion of a written number into the stored range
+belongs to the primitive write's rules.
+
 A world entry is a pair of a role and a contract. The kinded world
 `WorldT n` is the stratified construction of `WorldT`, each entry's
 contract inspecting kinded worlds below `n`, so a contract can read roles.
