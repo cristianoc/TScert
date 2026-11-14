@@ -883,13 +883,13 @@ $Q^{e}$ is $\kw{true}$. For example
 $\hoare{\kw{true}}{x=\code{[]}}{\len x=0}$.
 
 The assertion $P$ is the \emph{precondition} of the triple; $Q$ and
-$Q^{e}$ are its \emph{posts}, the normal and the exceptional one. A
-post is a \emph{two-state} assertion.
+$Q^{e}$ are its \emph{postconditions}, the normal and the exceptional one. A
+postcondition is a \emph{two-state} assertion.
 For entry state $(\rho_0,h_0)$ and exit state $(\rho_1,h_1)$,
 $\old(B)$ means $\rho_0,m,h_0\models B$; $m$ is the enclosing
 invocation's entry mark. Ordinary assertions use $(\rho_1,m,h_1)$.
 An $\old$ refers to the command whose triple contains it.
-For example, \code{x.push(v)} has post $\len x=\old(\len x)+1$.
+For example, \code{x.push(v)} has postcondition $\len x=\old(\len x)+1$.
 
 The variable that a step binds is fresh (Section~2). So an assertion $R$
 over the variables in scope before $c$ is unaffected by the binding.
@@ -920,7 +920,7 @@ The rules one by one:
 $h_0\tr{\Phi}_{\rho_0}h_1$, using the action of Section~3.
 The precondition supplies $\old(B)$; the effect judgment supplies the
 action at each exit. For example, $\len z=j$ before a command
-and its post $\len z=\old(\len z)+10$ imply $\len z=j+10$.
+and its postcondition $\len z=\old(\len z)+10$ imply $\len z=j+10$.
 Lean: \lean{compose\_holds}, \lean{Composer.fact\_holds},
 for a call's normal exit and the facts of TScert's checker, without
 $\kw{tr}_\Phi$; a conjecture for an arbitrary $B$.
@@ -948,7 +948,7 @@ alone gives no bound inside it.
 actual arguments by capture-avoiding substitution; $Q$ may mention
 the result $y$. The displayed rule uses assertions independent of
 the invocation mark. Freshness assertions require rebasing between
-the callee's and caller's marks. Exceptional posts and effects
+the callee's and caller's marks. Exceptional postconditions and effects
 instantiate in the same way; their defaults are $\kw{true}$ and $\top$.
 Lean: \lean{call\_rule}, \lean{invocation\_throw\_action}.
 \item[\textsc{Alloc}] A new array is fresh, empty, and apart from every
@@ -1017,14 +1017,14 @@ and $\Phi=\{\val:\any,\ \st:\grow\}$. If \code{f}, with all it calls,
 has an effect bounded by $\Phi$, then by \textsc{(Dense)} and the
 proposition $F$ holds each time \code{map} reads an element. That the
 array \code{map} returns is dense is a separate fact, of how \code{map}
-builds it, and belongs to its post.
+builds it, and belongs to its postcondition.
 
-\paragraph{Exact posts.} The post of \code{x.push(v)}
+\paragraph{Exact postconditions.} The postcondition of \code{x.push(v)}
 (\textsc{Push} below) specifies a strong update on shared state. If $y$ may alias $x$, \textsc{(Grow)} preserves
 $n\le\len y$. The equality $\len y=n$ can become false when $y=x$.
-\textsc{Entry} combines these facts with the post.
+\textsc{Entry} combines these facts with the postcondition.
 
-The steps that change a length have exact posts. With $N=2^{32}-1$ the
+The steps that change a length have exact postconditions. With $N=2^{32}-1$ the
 maximal array length and $i$ an integer:
 \[
 \begin{array}{ll}
@@ -1040,7 +1040,7 @@ current length keeps $\mathit{at}=\len{\mathit{widths}}$ by
 \textsc{Write-End} and the increment of \code{at}
 \textsc{Write-In} holds also where the write fills a hole. At the
 maximal length \code{push} throws, so its premise is not needed for a
-post on normal return
+postcondition on normal return
 \status{Lean: \lean{elem\_var\_write\_length}, used through \lean{keepsLengths} (\lean{boundedLength\_sound}), for \textsc{Write-In}; \lean{atLengthAtoms\_sound} for the length of \textsc{Write-End}; for \textsc{Push} the growth is the assumed contract \lean{ReceiverAppends}. The density implication and $y=\len x$ have no theorem}.
 
 \paragraph{Arithmetic steps.} The numeric operations below have number
@@ -1073,7 +1073,7 @@ and an integer $i$:
 \end{array}
 \]
 The read gives the UTF-16 code unit at $i$ as a string of length 1:
-\code{"ab"[1]} is \code{"b"}. The post of \textsc{Concat} is for a
+\code{"ab"[1]} is \code{"b"}. The postcondition of \textsc{Concat} is for a
 normal return
 \status{Lean: \lean{shr\_safe}, \lean{bitAnd\_safe}, \lean{add\_safe}, \lean{sub\_safe}, \lean{mul\_safe}, \lean{add\_two53}; the pass applies them through \lean{bitAtoms}, \lean{smallOperand}, \lean{concatAtoms} and, for the sum past the range, \lean{stringLengthPlusOne} and \lean{pastSafeAtoms} (\lean{linearAtoms\_holds}). \textsc{Str-Read} has no theorem; the Lean model of a read gives U+FFFD for half of a surrogate pair}.
 
@@ -1101,13 +1101,13 @@ At a number that is not a valid index, the read gives \code{undefined}
 and the write changes nothing. An assignment has the value $v$ in
 either case. The three steps do not throw. The effect
 of \textsc{View-Write} bounds what every typed array reads after the
-write; the post says what $b$ itself reads, since each element of a
+write; the postcondition says what $b$ itself reads, since each element of a
 typed array is its own bytes. The library functions \code{fill} and
 \code{copyWithin} at numbers, and \code{set} from a typed array at a
 number, have the same effect on normal return
 \status{conj. Lean: the steps are native calls; \lean{ViewWrite} states
-the frame of the write as a post, for view stores that may hold holes,
-and \lean{ExactWrite} the exact post for integers the format stores
+the frame of the write as a postcondition, for view stores that may hold holes,
+and \lean{ExactWrite} the exact postcondition for integers the format stores
 unchanged}.
 
 \begin{example}[A write through a typed array]\label{ex:view}
@@ -1123,7 +1123,7 @@ $\{\vw:\grow\}$ respects them, and Theorem~\ref{thm:frame} applies.
 \item[$o.n\doteq 1$ holds] Its support is a field location.
 \item[$2\le\kw{view}(c)$ holds] By \textsc{(View)}.
 \item[{$b[1]\doteq 4$ holds}] It gives that 0 and 1 are valid indices
-of $b$; by the post of \textsc{View-Write}.
+of $b$; by the postcondition of \textsc{View-Write}.
 \item[{$c[1]\doteq 5$ may fail}] Its support holds the view store of
 \code{c} at $\keep$, and the effect lets that store change. Let \code{c}
 be a \code{Uint8Array} of length 3 and \code{b} be
@@ -1139,7 +1139,7 @@ handler. An exit edge $e$ carries four things:
 \begin{description}[leftmargin=1.5em,style=nextline]
 \item[The effect $\Phi_e$] The effect of the node when it completes
 through $e$.
-\item[The post $Q_e$] A sound two-state post of the node on that exit.
+\item[The postcondition $Q_e$] A sound two-state postcondition of the node on that exit.
 It includes the binding of the result, or of the thrown value.
 \item[The condition $B_e$] The condition under which a branch is taken;
 $\kw{true}$ on other edges.
@@ -1232,7 +1232,7 @@ Fresh array store & its writes are omitted from the invocation's entry effect; $
 Write-once cache, \code{c ??= build()} & $a\vdash\bx{\Phi_{\mathit{build}}\cup\{\val:\init\}}\,a$, by Theorem~\ref{thm:frame} at a support respected by $\Phi_{\mathit{build}}$ and tolerating $\init$\hfill\textsc{(Init)}\\[2pt]
 Reliance during callbacks & $\dense(\mathit{xs},n)\vdash\bx{\val:\any,\,\st:\grow}\dense(\mathit{xs},n)$\hfill Prop.~\ref{prop:rely}\\[2pt]
 Quantified fact across a write & $\apart(a,z)\wedge\every(z,t,\varphi)\vdash\bx{a[\ast]:\any}\every(z,t,\varphi)$\hfill\textsc{(Every)}\\[2pt]
-Structures built in step & $\hoare{\len a=\len b\wedge a\sep b}{\code{a.push(v)}}{\len a=\old(\len a)+1\wedge\len b=\old(\len b)}$\hfill post, \textsc{(Sep)}\\[2pt]
+Structures built in step & $\hoare{\len a=\len b\wedge a\sep b}{\code{a.push(v)}}{\len a=\old(\len a)+1\wedge\len b=\old(\len b)}$\hfill postcondition, \textsc{(Sep)}\\[2pt]
 Separation where a value exists & $(z\doteq\code{null}\vee\mathit{xs}\sep z.\mathit{open})\wedge a(\len{\mathit{xs}})\vdash\bx{\val:\any,\,z.\mathit{open}.\kw{store}:\any}\,a(\len{\mathit{xs}})$; at \code{null} the region is empty\\[2pt]
 Fact through a field & $\rigid(x.f)\wedge n\le\len{x.f}\vdash\bx{\val:\any,\,\st:\grow}(n\le\len{x.f})$; fails without $\rigid$\hfill\textsc{(Rigid)}\\[2pt]
 Typed-array length & $i<\kw{view}(w)\vdash\bx{\top}(i<\kw{view}(w))$\hfill\textsc{(View)}\\[2pt]
