@@ -432,9 +432,9 @@ it (from `[arr [some 1], null]` to `[arr [some 2], null, null]`, location
 
 It constrains every view store, whichever view the call names: an
 overlapping view may change, exactness constraining the designated one. An
-updated view store lists fresh cells, so old element cells keep their
-contents. The relation is a world-indexed postcondition
-(`ViewWrite.post`). **Proved**: an ordinary array's store is kept
+updated view store's newly listed cells are fresh, so old element cells keep
+their contents. The relation is a world-indexed postcondition
+(`Effect.viewPost`). **Proved**: an ordinary array's store is kept
 (`ViewWrite.keeps_array`); an old $`S_{\mathrm{view}(N)}`$ location holds a
 store of length $`N`$ listing element cells of $`h'`$
 (`ViewWrite.view_store`); from a well-formed entry heap, the coarse change

@@ -366,12 +366,11 @@ reaches it; nor one holding a number at location 3, whose kind is $\kS$.
 
 \begin{theorem}[Preservation]\label{thm:pres}
 Let $t$ be a term that the type system accepts at a state $s$. If $t$
-runs from $s$ for $j$ steps and reaches a heap $h'$, then $h'$ is the
+runs from $s$ for $j<k$ steps and reaches a heap $h'$, then $h'$ is the
 heap of a state that is admissible from $s$, with budget $k-j$
 \status{Lean: \lean{run}, \lean{run\_normal}, \lean{run\_throw},
 \lean{safe\_run} for (W4); \lean{HasTyUsing.sound} and
-\lean{ControlFlow.state\_safe} for (W1) to (W3), on the branch
-\lean{location-kinds}}.
+\lean{ControlFlow.state\_safe} for (W1) to (W3)}.
 \end{theorem}
 \noindent
 So what is proved below of every admissible transition holds of every

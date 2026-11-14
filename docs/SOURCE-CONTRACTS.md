@@ -1955,11 +1955,12 @@ write changes the elements of every view over the written bytes: in the
 model it replaces the written entries of those views' element stores by
 fresh locations holding what each view then reads there. It changes stores
 alone and keeps their lengths: the store-growth footprint, values kept, with
-`elementWrite` (`CallEffects.ElementWrite.Holds`): every location but a
-view's element store keeps its contents, and each view's element store keeps
-its length, every cell it newly lists fresh. So every location holding no
-store keeps its value and every store its length
-(`ElementWrite.Holds.changes`), and a fact of values,
+`elementWrite` (`Effect.viewPost`, `Kinds.ViewWriteOf`): every location
+whose role at the call's entry is not a view's element store keeps its
+contents, and each view's element store keeps its length, every cell it
+newly lists fresh. So no object or number changes and every store keeps its
+length (`ElementWrite.Holds`, what the relation gives of the two heaps), and
+a fact of values,
 paths, lengths and typed-array lengths survives the write, and a quantified
 fact over any array's elements does not (`invalid-typed-array-element-read-after-write`,
 run under Node: a write through a `subarray` view changes the quantified view).
@@ -3138,7 +3139,7 @@ nor writes a property of any object. The table is host state: the model holds
 a weak map's members and its tag, the members found on its prototype and the
 tag a constant, and holds no location for `[[WeakMapData]]`, which no type
 states (a weak map has no `size`). So the calls change no location of the
-model: the empty footprint, as `%ByteSet%`'s writes of a view's elements. A
+model: the empty footprint. A
 lookup gives what its signature states, `V | undefined`, a value the table
 held, which met `V` when `set` stored it and meets it in every later world;
 no fact of the program relates a lookup to an earlier `set`, so a later `get`
