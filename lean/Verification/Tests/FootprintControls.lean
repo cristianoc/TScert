@@ -234,45 +234,18 @@ theorem source_names_any_location (n : Nat) (W : WorldT n) :
   refine ⟨⟨rfl, ?_⟩, by simp⟩
   simp [Scoped]
 
-/-- The array of numbers, whose element family admits only source values. -/
-private def numbers : TupleF :=
-  { required := [], optional := [], rest := some (fun _ _ v => ∃ b, v = .num b), presence := .readable }
-
-private def storeC : Ctr 1 := fun j _ U v => listT numbers j U v
-private def anyC : Ctr 1 := fun _ _ _ _ => True
-
-/-- **One level is not enough** for an element's class: at level 1 a number
-array's store contract holds while its element location holds a store. -/
-theorem elems_class_needs_two_levels :
-    ∃ (W : WorldT 1) (h : Heap), HeapOk 1 W h ∧ lookup W 0 = some storeC ∧
+/-- **An element location holds no store**, at any level: a store's
+references give its element locations the element role, whose contents are
+source values. -/
+theorem element_holds_no_store :
+    ¬ ∃ (n : Nat) (W : WorldT n) (h : Heap), HeapOk n W h ∧
       h[0]? = some (.arr [some 1]) ∧ h[1]? = some (.arr []) := by
-  refine ⟨ofList [storeC, anyC], [.arr [some 1], .arr []], ⟨by simp, ?_⟩, by simp [lookup], rfl, rfl⟩
-  intro l c hl
-  simp only [lookup, toList_ofList] at hl
-  match l, hl with
-  | 0, hl =>
-    simp only [List.getElem?_cons_zero, Option.some.injEq] at hl
-    subst hl
-    refine ⟨_, rfl, fun j hj => ?_⟩
-    have hj0 : j = 0 := by omega
-    subst hj0
-    refine ⟨[some 1], rfl, fun j hj => absurd hj (Nat.not_lt_zero _), by simp [numbers], by decide,
-      fun h => by simp [numbers] at h, fun i A hA => by simp [numbers] at hA,
-      fun i A l hA => by simp [numbers] at hA, fun i l _ hl => ?_⟩
-    have hi : i = 0 := by
-      cases i with
-      | zero => rfl
-      | succ i => simp at hl
-    subst hi
-    simp only [List.getElem?_cons_zero, Option.some.injEq] at hl
-    subst hl
-    exact ⟨_, _, rfl, lookup_trunc (Nat.zero_le 1) _ 1 anyC (by simp [lookup]),
-      fun j hj => absurd hj (Nat.not_lt_zero _)⟩
-  | 1, hl =>
-    simp only [List.getElem?_cons_succ, List.getElem?_cons_zero, Option.some.injEq] at hl
-    subst hl
-    exact ⟨_, rfl, fun _ _ => trivial⟩
-  | l + 2, hl => simp at hl
+  rintro ⟨n, W, h, hok, h0, h1⟩
+  have hrole : roleAt W 1 = some .elem := RefsOk_arr_iff.mp (hok.refs_at h0) 1 (by simp)
+  obtain ⟨u, hu, hcat, -⟩ := hok.2 1 .elem hrole
+  rw [h1] at hu
+  cases hu
+  simp [Cat, isSourceVal] at hcat
 
 /-! ## The stability check
 

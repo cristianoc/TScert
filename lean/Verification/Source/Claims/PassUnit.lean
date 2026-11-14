@@ -49,6 +49,7 @@ def codeHintsAt (r : SourceRequest σ ι) (ci : Nat) : RequestJson.CodeHints := 
 def SafeClause (r : SourceRequest σ ι) : Prop :=
   ∀ η, r.Admits η → ∀ n W h ρ,
     EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices ρ n W h →
+    (∀ node ∈ r.program, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
     SafeGraph (excOf (reassign (RequestJson.graph r.toRequest) η)) r.program
       (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument ρ)) n W h (.at r.start ρ)
 
@@ -58,7 +59,7 @@ def FootprintClause (r : SourceRequest σ ι) : Prop :=
   r.footprint ≠ .top ∨ r.onThrow = true ∨ r.fresh = true →
     ∀ η n W h (L : List Tm) (d : Tm),
       EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
-        (envOf L d) n W h →
+        (envOf L d) n W h → RefsOk W (gotoOf r.program r.start L d) →
       (∀ v ∈ L, isVal v = true) → isVal d = true →
       HeapObservations.SafePostExc (excOf (reassign (RequestJson.graph r.toRequest) η))
         (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
@@ -69,7 +70,7 @@ def FootprintClause (r : SourceRequest σ ι) : Prop :=
 def EnsuresClause (r : SourceRequest σ ι) : Prop :=
   r.ensures ≠ [] → ∀ η n W h (L : List Tm) (d : Tm),
     EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
-      (envOf L d) n W h →
+      (envOf L d) n W h → RefsOk W (gotoOf r.program r.start L d) →
     HeapObservations.SafePost (excOf (reassign (RequestJson.graph r.toRequest) η))
       (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
       (fun h' v => GraphCode.EnsuresAt r.ensures ⟨envOf L d, h⟩ h' (push v (envOf L d))) n W h (gotoOf r.program r.start L d)
@@ -78,7 +79,7 @@ def EnsuresClause (r : SourceRequest σ ι) : Prop :=
 def RegionalClause (r : SourceRequest σ ι) : Prop :=
   ∀ Φ regions, r.regional = some (Φ, regions) → ∀ η n W h (L : List Tm) (d : Tm),
     EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices
-      (envOf L d) n W h →
+      (envOf L d) n W h → RefsOk W (gotoOf r.program r.start L d) →
     HeapObservations.SafePostExc (excOf (reassign (RequestJson.graph r.toRequest) η))
       (GoalHolds (reassign (RequestJson.graph r.toRequest) η) r.goal (r.goal.argument (envOf L d)))
       (fun h' _ => Footprints.ArgumentStoreRegionsWithin Φ regions (envOf L d) h h')
@@ -91,6 +92,7 @@ label within the budget, at every admitted assignment. -/
 def AssertionsClause (r : SourceRequest σ ι) : Prop :=
   ∀ η, r.Admits η → ∀ n W h ρ,
     EntryHolds (reassign (RequestJson.graph r.toRequest) η) r.inputs r.entrySeparation r.entryIndices ρ n W h →
+    (∀ node ∈ r.program, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
     ∀ l k, (l, k) ∈ r.assertions → ∀ j h' ρ', j < n → ReachesIn r.program j h (.at r.start ρ) h' (.at l ρ') →
       HeapKnowledge.Holds k ⟨ρ, h⟩ ρ' h'
 
@@ -100,6 +102,7 @@ def CodeAssertionsClause (r : SourceRequest σ ι) : Prop :=
   ∀ ci q, r.codes[ci]? = some q → ∀ η n W h ρ,
     EntryHolds (reassign (RequestJson.graph r.toRequest) η) (codeRequest r q).inputs {}
       (codeRequest r q).entryIndices ρ n W h →
+    (∀ node ∈ (codeRequest r q).program, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
     ∀ l k, (l, k) ∈ (codeHintsAt r ci).requirements → ∀ j h' ρ', j < n →
       ReachesIn (codeRequest r q).program j h (.at (codeRequest r q).start ρ) h' (.at l ρ') →
       HeapKnowledge.Holds k ⟨ρ, h⟩ ρ' h'

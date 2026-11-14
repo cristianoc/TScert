@@ -61,13 +61,15 @@ obligation. -/
 def NodesKeep (P : Program) (pre : Nat → Assertion) (X : Nat → Env → Heap → Prop) (Q : Heap → Tm → Prop)
     (R : Heap → Prop) (m : Nat) : Prop :=
   ∀ l ρ (s : IndexedHeap), pre l ρ m s → X l ρ s.h → ∃ node, P[l]? = some node ∧
-    EvalKeeps X Q R s.n s.h (instantiate 0 ρ node.expression) ρ node.continuation node.handler
+    (RefsOk s.W (instantiate 0 ρ node.expression) →
+      EvalKeeps X Q R s.n s.h (instantiate 0 ρ node.expression) ρ node.continuation node.handler)
 
 /-- **One transition keeps the run property.** -/
 theorem keeps_step {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Qres Rres : Heap → Prop} {m : Nat}
     {X : Nat → Env → Heap → Prop} {Q : Heap → Tm → Prop} {R : Heap → Prop}
     (hdown : AdminClosed pre m) (hkeep : NodesKeep P pre X Q R m) {n : Nat} {W : WorldT (n + 1)}
     {h h' : Heap} {st st' : State} (ha : WorldAdm W) (ho : HeapOk (n + 1) W h)
+    (hPr : ∀ node ∈ P, RefsOk W node.expression) (hsr : StateRefs W st)
     (hinv : GraphInv pre Ξres Tres Qres Rres m (n + 1) W h st) (hb : StateKeeps X Q R (n + 1) h st)
     (tr : Transition P h st h' st') : StateKeeps X Q R n h' st' := by
   cases tr with
@@ -81,7 +83,7 @@ theorem keeps_step {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Q
       have hpre₀ := hdown l ρ ⟨n + 2, W, h, Nat.zero_lt_succ _, ha, ho⟩ s₀ ⟨Nat.le_succ _, WExt_refl _⟩ rfl hpre
       obtain ⟨node', hP, hk⟩ := hkeep l ρ s₀ hpre₀ hb
       rw [hn] at hP; cases hP
-      exact hk
+      exact hk (RefsOk_trunc _ (node_refs (hPr _ (List.mem_of_getElem? hn)) hsr))
   | expr st => exact fun j h'' t'' hs hj => hb (j + 1) h'' t'' (.next st hs) (by omega)
   | ret hv => exact (hb 0 _ _ .refl (Nat.zero_lt_succ _)).1 hv
   | bind hv => exact (hb 0 _ _ .refl (Nat.zero_lt_succ _)).1 hv
@@ -104,31 +106,35 @@ theorem keeps_postExc {E : List Tm} {K : List (Continuation × Option Target)} {
     (hnodes : NodesChecked (GraphCode.program E K) pre Ξres Tres Qres Rres m) (hdown : AdminClosed pre m)
     (hkeep : NodesKeep (GraphCode.program E K) pre X Q R m) (hT : ∀ n W v, Tres n W v → T n W v) :
     ∀ n (W : WorldT n) h ts st, GraphCode.Sim E K ts st → WorldAdm W → HeapOk n W h →
+      (∀ e ∈ E, RefsOk W e) → StateRefs W st →
       GraphInv pre Ξres Tres Qres Rres m n W h st → StateKeeps X Q R n h st →
       SafePostExc Ξres T Q R n W h ts := by
   intro n
   induction n with
-  | zero => intros; trivial
+  | zero => intro W h ts st sim _ _ hE hr _ _; exact GraphCode.sim_refs sim hE hr
   | succ n ih =>
-    intro W h ts st sim ha ho hinv hb
-    rcases graph_step hnodes hdown ha ho hinv with (⟨v, rfl, hv, hTv⟩ | ⟨v, rfl, hsc, hΞ⟩) |
-        ⟨U, h', st', hx, hu, tr, hh, hi⟩
+    intro W h ts st sim ha ho hE hr hinv hb
+    refine ⟨GraphCode.sim_refs sim hE hr, ?_⟩
+    rcases graph_step hnodes hdown ha ho (GraphCode.program_refs hE) hr hinv with (⟨v, rfl, hv, hTv⟩ | ⟨v, rfl, hsc, hΞ⟩) |
+        ⟨U, h', st', hx, hu, tr, hh, hrs, hi⟩
     · cases sim; exact .inl (.inl ⟨hv, hT _ _ _ hTv, hb⟩)
     · cases sim with
       | raised hv hj => exact .inl (.inr ⟨⟨v, .throwV hv hj, hsc, hΞ⟩, hb⟩)
     · obtain ⟨ts', step, sim'⟩ := GraphCode.sim_step sim tr
       exact .inr ⟨U, h', ts', hx, hu, step, hh,
-        ih U h' ts' st' sim' hu hh hi (keeps_step hdown hkeep ha ho hinv hb tr)⟩
+        ih U h' ts' st' sim' hu hh (fun e he => RefsOk_mono hx (RefsOk_trunc _ (hE e he))) hrs hi
+          (keeps_step hdown hkeep ha ho (GraphCode.program_refs hE) hr hinv hb tr)⟩
 
 /-- **Every node entry a run reaches satisfies its assertion**: a graph run
 from a node entry whose assertion holds, with budget left, to the entry of
 node `l'` ends in a state where `l'`'s assertion holds. -/
 theorem reached_pre {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Qres Rres : Heap → Prop} {m : Nat}
     (hnodes : NodesChecked P pre Ξres Tres Qres Rres m) (hdown : AdminClosed pre m) {l : Nat} {ρ : Env}
-    {s : IndexedHeap} (hpre : pre l ρ m s) {k : Nat} {h' : Heap} {l' : Nat} {ρ' : Env}
+    {s : IndexedHeap} (hpre : pre l ρ m s) (hPr : ∀ node ∈ P, RefsOk s.W node.expression)
+    (hρ : ∀ i, RefsOk s.W (ρ i)) {k : Nat} {h' : Heap} {l' : Nat} {ρ' : Env}
     (hrun : Transitions P k s.h (.at l ρ) h' (.at l' ρ')) (hk : k < s.n) :
     ∃ s' : IndexedHeap, s'.h = h' ∧ pre l' ρ' m s' := by
-  obtain ⟨s', -, he, -, hinv⟩ := graph_inv_run hnodes hdown hrun s rfl hk fun _ _ _ => hpre
+  obtain ⟨s', -, he, -, hinv⟩ := graph_inv_run hnodes hdown hrun s rfl hk hPr hρ fun _ _ _ => hpre
   exact ⟨s', he, hinv s'.pos s'.adm s'.ok⟩
 
 end Keeps

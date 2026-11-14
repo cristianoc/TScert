@@ -66,17 +66,30 @@ ordinary object. The families that grant a capability over an object's own
 keys (an invariant field, a dictionary, an own-key bound) admit only these. -/
 def NoHost (v : Val) : Prop := ∀ flds oid, v = .objAt flds .absent oid → flds.lookup hostKey = none
 
+/-- **The role a storage position grants**: the world gives the location a
+role its tag names (`StorageRole.permits`). Roles are fixed: extension and
+truncation keep it. -/
+def RoleIn (s : StorageRole) {k : Nat} (W : WorldT k) (l : Nat) : Prop :=
+  ∃ r, roleAt W l = some r ∧ s.permits r
+
+theorem RoleIn.mono {s : StorageRole} {k : Nat} {W W' : WorldT k} (hx : WExt W W') {l : Nat}
+    (h : RoleIn s W l) : RoleIn s W' l :=
+  let ⟨r, hr, hp⟩ := h; ⟨r, WExt_roleAt hx hr, hp⟩
+
+@[simp] theorem RoleIn_trunc {s : StorageRole} {k j : Nat} (hj : j ≤ k) {W : WorldT k} {l : Nat} :
+    RoleIn s (trunc j hj W) l ↔ RoleIn s W l := by
+  simp [RoleIn]
+
 /-- A record over storage positions. Each position states the role its
-location was allocated with (`StorageRole`); worlds of this development
-record no role, so the record's meaning reads the key and the contents type,
-and the role is what the kinded world checks
-(`Kinds.Capability.ofRole`). -/
+location was allocated with (`StorageRole`), and the world records a role
+the tag names at the location the key finds (`RoleIn`): the position's
+meaning is the storage capability `Kinds.Capability.ofRole`. -/
 def recT (fs : Fields) : Fam := fun k W v =>
   ∃ (flds : List (PropKey × Nat)) (oid : Nat), v = .objAt flds .absent oid ∧
     (∀ (f : PropKey) (s : StorageRole) (T : Fam), (f, s, T) ∈ fs →
       ∀ l, flds.lookup f = some l → Owned flds f l) ∧
     ∀ (f : PropKey) (s : StorageRole) (T : Fam), (f, s, T) ∈ fs →
-      ∃ (l : Nat) (c : Ctr k), flds.lookup f = some l ∧ lookup W l = some c ∧
+      ∃ (l : Nat) (c : Ctr k), flds.lookup f = some l ∧ lookup W l = some c ∧ RoleIn s W l ∧
         ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ T j W' u
 
 /-- A pair in a zip comes from one position of both lists. -/
@@ -103,7 +116,9 @@ theorem recT_alloc {n : Nat} {W : WorldT n} {ns : List PropKey} {ss : List Stora
     {As : List Fam} {base : Nat}
     (hnd : ns.Nodup) (hlen : ns.length = As.length)
     (hl : ∀ (i : Nat) (hi : i < ns.length),
-      lookup W (base + i) = some (res (As[i]'(hlen ▸ hi)))) :
+      lookup W (base + i) = some (res (As[i]'(hlen ▸ hi))))
+    (hss : ns.length = ss.length)
+    (hr : ∀ (i : Nat) (hi : i < ns.length), RoleIn (ss[i]'(hss ▸ hi)) W (base + i)) :
     recT (ns.zip (ss.zip As)) n W (.objAt (slots base ns) .absent oid) := by
   refine ⟨slots base ns, oid, rfl, ?_⟩
   refine ⟨fun _ _ _ _ _ hl => owned_of_nodup (slots_nodup base ns) hl, ?_⟩
@@ -112,8 +127,11 @@ theorem recT_alloc {n : Nat} {W : WorldT n} {ns : List PropKey} {ss : List Stora
   have hT : T = As[i]'(by simp at hj; omega) := by
     rw [List.getElem_zip] at hp
     exact (congrArg Prod.snd hp).symm
-  subst hT
-  exact ⟨base + i, res (As[i]'(by simp at hj; omega)), lookup_slots hnd hi, hl i hi,
+  have hS : s = ss[i]'(by simp at hj; omega) := by
+    rw [List.getElem_zip] at hp
+    exact (congrArg Prod.fst hp).symm
+  subst hT hS
+  exact ⟨base + i, res (As[i]'(by simp at hj; omega)), lookup_slots hnd hi, hl i hi, hr i hi,
     fun _ _ _ _ => Iff.rfl⟩
 
 /-- What a record type says about one of its fields. -/
@@ -123,8 +141,17 @@ theorem recT_at {fs : Fields} {f : PropKey} {s : StorageRole} {A : Fam} (hm : (f
       v = .objAt flds .absent oid ∧ flds.lookup f = some l ∧ lookup W l = some c ∧
       ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ A j W' u := by
   obtain ⟨flds, oid, rfl, -, hfs⟩ := h
-  obtain ⟨l, c, hl, hw, hag⟩ := hfs f s A hm
+  obtain ⟨l, c, hl, hw, -, hag⟩ := hfs f s A hm
   exact ⟨flds, l, c, oid, rfl, hl, hw, hag⟩
+
+/-- The role a record's storage position grants at the location its key finds. -/
+theorem recT_role {fs : Fields} {f : PropKey} {s : StorageRole} {A : Fam} (hm : (f, s, A) ∈ fs)
+    {k} {W : WorldT k} {flds : List (PropKey × Nat)} {c : CallCode} {oid : Nat}
+    (h : recT fs k W (.objAt flds c oid)) {l : Nat} (hl : flds.lookup f = some l) : RoleIn s W l := by
+  obtain ⟨flds', oid', he, -, hfs⟩ := h
+  cases he
+  obtain ⟨l', c', hl', -, hr, -⟩ := hfs f s A hm
+  rw [hl] at hl'; cases hl'; exact hr
 
 /-- The location a record's named field finds belongs to that key alone. -/
 theorem recT_owned {fs : Fields} {k : Nat} {W : WorldT k} {flds : List (PropKey × Nat)} {c : CallCode} {oid : Nat}
@@ -172,8 +199,8 @@ theorem recT_mono (fs : Fields) (k : Nat) (W W' : WorldT k) (h : WExt W W')
   obtain ⟨flds, oid, rfl, hnd, hfs⟩ := hv
   refine ⟨flds, oid, rfl, hnd, ?_⟩
   intro f s T hm
-  obtain ⟨l, c, hf, hl, hag⟩ := hfs f s T hm
-  exact ⟨l, c, hf, WExt_lookup h hl, hag⟩
+  obtain ⟨l, c, hf, hl, hr, hag⟩ := hfs f s T hm
+  exact ⟨l, c, hf, WExt_lookup h hl, hr.mono h, hag⟩
 
 /-! ## Admissibility -/
 
@@ -201,8 +228,8 @@ theorem recT_adm (fs : Fields) : Adm (recT fs) := by
   rintro n W v ⟨flds, oid, rfl, hnd, hfs⟩
   refine ⟨flds, oid, rfl, hnd, ?_⟩
   intro f s T hm
-  obtain ⟨l, c, hf, hl, hag⟩ := hfs f s T hm
-  refine ⟨l, _, hf, lookup_trunc (Nat.le_succ n) W l c hl, ?_⟩
+  obtain ⟨l, c, hf, hl, hr, hag⟩ := hfs f s T hm
+  refine ⟨l, _, hf, lookup_trunc (Nat.le_succ n) W l c hl, (RoleIn_trunc _).mpr hr, ?_⟩
   intro j hj W' u
   exact hag j (by omega) W' u
 
@@ -475,19 +502,19 @@ alias's guarantee. Like the view, it has no prototype and says nothing of an
 absent key. The calculus adds no key to an existing object; that TypeScript
 lets code holding the dictionary add keys at `A` is the trust boundary
 ([Source index signatures](../../../docs/SOURCE-CONTRACTS.md#index-signatures)). -/
-def dictCellT (K : IndexKeys) (A : Fam) : Fam := fun k W v =>
+def dictCellT (K : IndexKeys) (s : StorageRole) (A : Fam) : Fam := fun k W v =>
   ∃ (flds : List (PropKey × Nat)) (oid : Nat), v = .objAt flds .absent oid ∧
     (flds.lookup CallArguments.protoField = none ∧ flds.lookup hostKey = none) ∧
     ∀ (f : PropKey) (l : Nat), flds.lookup f = some l → K.Admits f →
-      ∃ c : Ctr k, lookup W l = some c ∧
+      ∃ c : Ctr k, lookup W l = some c ∧ RoleIn s W l ∧
         ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val), c j hj W' u ↔ A j W' u
 
 /-- A writable index grants its read: an agreeing contract implies `A`. -/
-theorem dictCellT_view {K : IndexKeys} {A : Fam} {k : Nat} {W : WorldT k} {v : Val}
-    (h : dictCellT K A k W v) : dictViewT K A k W v := by
+theorem dictCellT_view {K : IndexKeys} {s : StorageRole} {A : Fam} {k : Nat} {W : WorldT k} {v : Val}
+    (h : dictCellT K s A k W v) : dictViewT K A k W v := by
   obtain ⟨flds, oid, rfl, hp, hf⟩ := h
   refine ⟨flds, oid, rfl, hp, fun f l hl hk => ?_⟩
-  obtain ⟨c, hc, hag⟩ := hf f l hl hk
+  obtain ⟨c, hc, -, hag⟩ := hf f l hl hk
   exact ⟨c, hc, fun j hj W' u hu => (hag j hj W' u).mp hu⟩
 
 /-- An index view over a class gives one over any class within it. -/
@@ -497,8 +524,8 @@ theorem dictViewT_within {K K' : IndexKeys} (hw : K'.within K = true) {A : Fam} 
   exact ⟨flds, oid, rfl, hp, fun f l hl hk => hf f l hl (IndexKeys.within_admits hw hk)⟩
 
 /-- So does a writable index. -/
-theorem dictCellT_within {K K' : IndexKeys} (hw : K'.within K = true) {A : Fam} {k : Nat}
-    {W : WorldT k} {v : Val} (h : dictCellT K A k W v) : dictCellT K' A k W v := by
+theorem dictCellT_within {K K' : IndexKeys} (hw : K'.within K = true) {s : StorageRole} {A : Fam} {k : Nat}
+    {W : WorldT k} {v : Val} (h : dictCellT K s A k W v) : dictCellT K' s A k W v := by
   obtain ⟨flds, oid, rfl, hp, hf⟩ := h
   exact ⟨flds, oid, rfl, hp, fun f l hl hk => hf f l hl (IndexKeys.within_admits hw hk)⟩
 
@@ -545,7 +572,7 @@ def optT (fs : List (OptionalField Fam)) : Fam := fun k W v =>
     (∀ o ∈ fs, o.readonly = false → ∀ l, flds.lookup o.key = some l → Owned flds o.key l) ∧
     (∀ o ∈ fs, flds.lookup o.key = none → flds.lookup CallArguments.protoField = none) ∧
     ∀ o ∈ fs, ∀ l, flds.lookup o.key = some l →
-      ∃ c : Ctr k, lookup W l = some c ∧
+      ∃ c : Ctr k, lookup W l = some c ∧ (o.readonly = false → RoleIn o.role W l) ∧
         ∀ (j : Nat) (hj : j < k) (W' : WorldT j) (u : Val),
           SlotContract o.readonly (c j hj W' u) (o.type j W' u)
 
@@ -638,7 +665,18 @@ theorem optT_present {fs : List (OptionalField Fam)} {o : OptionalField Fam} (hm
         SlotContract o.readonly (c j hj W' u) (o.type j W' u) := by
   obtain ⟨flds', oid, heq, -, -, hf⟩ := h
   cases heq
-  exact hf o hm l hl
+  obtain ⟨c, hc, -, hag⟩ := hf o hm l hl
+  exact ⟨c, hc, hag⟩
+
+/-- A writable optional key's location has a role its tag names. -/
+theorem optT_role {fs : List (OptionalField Fam)} {o : OptionalField Fam} (hm : o ∈ fs)
+    (hro : o.readonly = false)
+    {k} {W : WorldT k} {flds : List (PropKey × Nat)} (h : optT fs k W (.objAt flds .absent oid))
+    {l : Nat} (hl : flds.lookup o.key = some l) : RoleIn o.role W l := by
+  obtain ⟨flds', oid, heq, -, -, hf⟩ := h
+  cases heq
+  obtain ⟨-, -, hr, -⟩ := hf o hm l hl
+  exact hr hro
 
 /-- The location a writable optional key finds belongs to that key alone. -/
 theorem optT_owned {fs : List (OptionalField Fam)} {o : OptionalField Fam} (hm : o ∈ fs)
@@ -696,15 +734,15 @@ theorem dictViewT_congr {K : IndexKeys} {A B : Fam} {k : Nat} (h : Agree A B k)
     exact ⟨c, hc, fun j hj W' u hu => (h j hj W' u).mpr (hB j hj W' u hu)⟩
 
 /-- A writable index's contract is guarded by the world level too. -/
-theorem dictCellT_congr {K : IndexKeys} {A B : Fam} {k : Nat} (h : Agree A B k)
-    (W : WorldT k) (v : Val) : dictCellT K A k W v ↔ dictCellT K B k W v := by
+theorem dictCellT_congr {K : IndexKeys} {s : StorageRole} {A B : Fam} {k : Nat} (h : Agree A B k)
+    (W : WorldT k) (v : Val) : dictCellT K s A k W v ↔ dictCellT K s B k W v := by
   constructor <;> rintro ⟨flds, oid, rfl, hp, hf⟩ <;> refine ⟨flds, oid, rfl, hp, ?_⟩
   · intro f l hl hk
-    obtain ⟨c, hc, hA⟩ := hf f l hl hk
-    exact ⟨c, hc, fun j hj W' u => (hA j hj W' u).trans (h j hj W' u)⟩
+    obtain ⟨c, hc, hr, hA⟩ := hf f l hl hk
+    exact ⟨c, hc, hr, fun j hj W' u => (hA j hj W' u).trans (h j hj W' u)⟩
   · intro f l hl hk
-    obtain ⟨c, hc, hB⟩ := hf f l hl hk
-    exact ⟨c, hc, fun j hj W' u => (hB j hj W' u).trans (h j hj W' u).symm⟩
+    obtain ⟨c, hc, hr, hB⟩ := hf f l hl hk
+    exact ⟨c, hc, hr, fun j hj W' u => (hB j hj W' u).trans (h j hj W' u).symm⟩
 
 /-- A dictionary view supplies a contract for a key only when that key is
 present. Looking up an arbitrary string cannot use this witness alone. -/
@@ -759,26 +797,27 @@ theorem ownKeysT_slots {K : KeyBound} {k : Nat} {W : WorldT k} {base : Nat}
 /-- A record owning no key but its fields, and no prototype, is a writable
 index over a class whose every field agrees with the index's contract: an
 object allocated with exactly those fields is a dictionary from the start. -/
-theorem dictCellT_of_recT {fs : Fields} {flds : List (PropKey × Nat)} {K : IndexKeys} {A : Fam}
+theorem dictCellT_of_recT {fs : Fields} {flds : List (PropKey × Nat)} {K : IndexKeys} {r : StorageRole} {A : Fam}
     {k : Nat} {W : WorldT k} (hrec : recT fs k W (.objAt flds .absent oid))
+    (hrole : ∀ f s T, (f, s, T) ∈ fs → K.Admits f → s = r)
     (hown : ∀ f l, flds.lookup f = some l → ∃ s T, (f, s, T) ∈ fs)
     (hproto : flds.lookup CallArguments.protoField = none) (hhost : flds.lookup hostKey = none)
     (hA : ∀ f s T, (f, s, T) ∈ fs → K.Admits f →
       ∀ (j : Nat) (_hj : j < k) (W' : WorldT j) (u : Val), T j W' u ↔ A j W' u) :
-    dictCellT K A k W (.objAt flds .absent oid) := by
+    dictCellT K r A k W (.objAt flds .absent oid) := by
   refine ⟨flds, oid, rfl, ⟨hproto, hhost⟩, fun f l hl hk => ?_⟩
   obtain ⟨s, T, hT⟩ := hown f l hl
   obtain ⟨flds', oid, he, -, hfs⟩ := hrec
   cases he
-  obtain ⟨l', c, hl', hc, hag⟩ := hfs f s T hT
+  obtain ⟨l', c, hl', hc, hr, hag⟩ := hfs f s T hT
   rw [hl] at hl'
   cases hl'
-  exact ⟨c, hc, fun j hj W' u => (hag j hj W' u).trans (hA f s T hT hk j hj W' u)⟩
+  exact ⟨c, hc, hrole f s T hT hk ▸ hr, fun j hj W' u => (hag j hj W' u).trans (hA f s T hT hk j hj W' u)⟩
 
 /-- A fresh object owns exactly the keys it allocated. -/
 theorem slots_lookup_mem {base : Nat} {ns : List PropKey} {f : PropKey} {l : Nat}
     (h : (slots base ns).lookup f = some l) : f ∈ ns := by
-  have hown : ownKeysT ⟨true, ns⟩ 0 (ofList []) (.objAt (slots base ns) .absent 0) :=
+  have hown : ownKeysT ⟨true, ns⟩ 0 (ofEntries []) (.objAt (slots base ns) .absent 0) :=
     ownKeysT_slots fun n hn => by simp [KeyBound.admits, hn]
   simpa [KeyBound.admits] using ownKeysT_admits hown h
 
@@ -1145,15 +1184,15 @@ theorem optT_adm (fs : List (OptionalField Fam)) : Adm (optT fs) := by
     obtain ⟨flds, oid, rfl, hw, hp, hf⟩ := h
     refine ⟨flds, oid, rfl, hw, hp, ?_⟩
     intro o hm l hl
-    obtain ⟨c, hc, hag⟩ := hf o hm l hl
-    exact ⟨_, lookup_trunc (Nat.le_succ n) W l c hc,
+    obtain ⟨c, hc, hr, hag⟩ := hf o hm l hl
+    exact ⟨_, lookup_trunc (Nat.le_succ n) W l c hc, fun ho => (RoleIn_trunc _).mpr (hr ho),
       fun j hj W' u => hag j (by omega) W' u⟩
   · intro n W W' hx v h
     obtain ⟨flds, oid, rfl, hw, hp, hf⟩ := h
     refine ⟨flds, oid, rfl, hw, hp, ?_⟩
     intro o hm l hl
-    obtain ⟨c, hc, hag⟩ := hf o hm l hl
-    exact ⟨c, WExt_lookup hx hc, hag⟩
+    obtain ⟨c, hc, hr, hag⟩ := hf o hm l hl
+    exact ⟨c, WExt_lookup hx hc, fun ho => (hr ho).mono hx, hag⟩
 
 theorem dictViewT_adm (K : IndexKeys) (A : Fam) : Adm (dictViewT K A) := by
   refine ⟨?_, ?_⟩
@@ -1171,21 +1210,21 @@ theorem dictViewT_adm (K : IndexKeys) (A : Fam) : Adm (dictViewT K A) := by
     obtain ⟨c, hc, hag⟩ := hf f l hl hk
     exact ⟨c, WExt_lookup hx hc, hag⟩
 
-theorem dictCellT_adm (K : IndexKeys) (A : Fam) : Adm (dictCellT K A) := by
+theorem dictCellT_adm (K : IndexKeys) (s : StorageRole) (A : Fam) : Adm (dictCellT K s A) := by
   refine ⟨?_, ?_⟩
   · intro n W v h
     obtain ⟨flds, oid, rfl, hp, hf⟩ := h
     refine ⟨flds, oid, rfl, hp, ?_⟩
     intro f l hl hk
-    obtain ⟨c, hc, hag⟩ := hf f l hl hk
-    exact ⟨_, lookup_trunc (Nat.le_succ n) W l c hc,
+    obtain ⟨c, hc, hr, hag⟩ := hf f l hl hk
+    exact ⟨_, lookup_trunc (Nat.le_succ n) W l c hc, (RoleIn_trunc _).mpr hr,
       fun j hj W' u => hag j (by omega) W' u⟩
   · intro n W W' hx v h
     obtain ⟨flds, oid, rfl, hp, hf⟩ := h
     refine ⟨flds, oid, rfl, hp, ?_⟩
     intro f l hl hk
-    obtain ⟨c, hc, hag⟩ := hf f l hl hk
-    exact ⟨c, WExt_lookup hx hc, hag⟩
+    obtain ⟨c, hc, hr, hag⟩ := hf f l hl hk
+    exact ⟨c, WExt_lookup hx hc, hr.mono hx, hag⟩
 
 theorem Adm.down_le {α : Type} {A : WorldFamily α} (hA : Adm A) :
     ∀ (n i : Nat) (h : i ≤ n) (W : WorldT n) (v : α), A n W v → A i (trunc i h W) v := by

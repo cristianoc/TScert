@@ -51,6 +51,48 @@ $`\mathrm{Safe}\ \Xi\ T\ 0\ W\ h\ t`$ holds for every term (`safe_zero`),
 so an execution that has used its budget carries no obligation, and every
 assertion is read where single-value contracts determine contents.
 
+## Kinded states
+
+The model's worlds are the note's kinded ones (§§2–3 of the
+[Tolerant frames note](REFERENCES.md#the-tolerant-frames-note)). A world
+entry is a role and a contract
+([Worlds](../lean/Verification/Semantics/Worlds.lean)): a field F, a cell C,
+an element cell E, an array's store or a view store of a fixed length S, an
+object's identity I. Extension keeps every entry and truncation every role.
+A term's references are valid (`RefsOk`) when every location it names has the
+role its position demands: an identity under an object, a store under `[]`,
+a view store under `[[viewElements]]`, a field or a cell under any other
+key, an element cell in a store; and an object's view metadata is valid
+(`ViewMetaOk`: a `[[viewLength]]` location is a field admitting one length,
+a `[[viewElements]]` location a view store of that length, and a map naming
+either names `[[host]]`). A heap meets a world (`HeapOk`,
+[Heaps](../lean/Verification/Semantics/Heaps.lean)) in its contracts below
+the level and in its shapes at every level, zero included: each location
+holds contents of its role's category (a source value in F, C and E, a store
+in S, of the view's length for a view store, `null` in I) with valid
+references (`Shaped`).
+
+Safety (`Safe`, `SafePostW`, `SafePostExcW`, `SafeWith`, `SafeGraph`)
+requires the running term's, or the graph state's (`StateRefs`), references
+valid at every budget, zero included. The meaning of a function or
+constructor type takes the callee's, the receiver's and the actuals' validity
+at its boundary (`Promise`, `PromiseWith`, `ConstructPromise`). A record's,
+a writable optional field's and a writable index's storage positions state
+the role of the location their key finds (`RoleIn`; `recT`, `optT`,
+`dictCellT`).
+
+The typing rules supply what the steps do not: an allocation's and a write's
+payload has its role's category (`Payload`), each allocated key fits its
+stated role (`StorageRole.fitsKey`), a typed allocation names no view
+metadata key, a typed write targets no view store, and a rest store's
+elements are source values (`RestStore`). Typed-step preservation is
+`HasTyUsing.sound` (induction on the typing derivation), over a term whose
+references are valid in the entry world; graph safety is
+`ControlFlow.state_progress` and `state_safe` (induction on the budget over
+every `Transition`), from node expressions and a state whose references are
+valid. A request's semantic clauses (`PassUnit.SafeClause` and the others)
+quantify over entries whose environment and code have valid references.
+
 ## Adequacy
 
 A run of $`k`$ steps that a safety derivation covers, from a state with

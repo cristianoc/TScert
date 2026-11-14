@@ -1,4 +1,4 @@
-import Verification.Semantics.Calculus
+import Verification.Semantics.Worlds
 /-!
 # Storage roles
 
@@ -13,7 +13,7 @@ ordinary property F, `cell` a binding's storage C, `arrayStore` an ordinary
 array's store, `viewStore` a typed array's view store of any fixed length.
 
 A store's element positions carry none: every cell a store lists is an
-element cell in every well-formed state (`Kinds.HeapOk.store_cells`).
+element cell in every well-formed state (`HeapOk.store_cells`).
 -/
 namespace Verification
 
@@ -79,5 +79,27 @@ theorem mem_mapStored {α β : Type} {f : α → β} {fs : List (Stored α)} {k 
   constructor
   · rintro ⟨⟨k', s', a⟩, hm, rfl, rfl, rfl⟩; exact ⟨a, hm, rfl⟩
   · rintro ⟨a, hm, rfl⟩; exact ⟨(k, s, a), hm, rfl, rfl, rfl⟩
+
+/-- The roles a storage role tag names. -/
+def StorageRole.permits : StorageRole → Role → Prop
+  | .field, r => r = .field
+  | .cell, r => r = .cell
+  | .arrayStore, r => r = .store .array
+  | .viewStore, r => ∃ N, r = .store (.view N)
+
+/-- **Distinct tags name disjoint roles**: a role determines the tag naming it. -/
+theorem StorageRole.permits_unique {s s' : StorageRole} {r : Role}
+    (h : s.permits r) (h' : s'.permits r) : s = s' := by
+  cases s <;> cases s' <;> simp only [StorageRole.permits] at h h' <;>
+    first | rfl | (subst h; simp_all) | (obtain ⟨N, rfl⟩ := h; simp_all)
+
+/-- Every tag names some role. -/
+theorem StorageRole.inhabited (s : StorageRole) : ∃ r, s.permits r := by
+  cases s
+  · exact ⟨.field, rfl⟩
+  · exact ⟨.cell, rfl⟩
+  · exact ⟨.store .array, rfl⟩
+  · exact ⟨.store (.view 0), 0, rfl⟩
+
 
 end Verification

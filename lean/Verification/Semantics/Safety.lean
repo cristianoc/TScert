@@ -60,20 +60,27 @@ def ErrorsIn (Ξ : Fam) : Prop := ∀ (k : Nat) (W : WorldT k) (oid : Nat), Ξ k
 theorem val_not_thrown {Ξ : Fam} {k W} {t : Tm} (hv : isVal t = true) : ¬ Thrown Ξ k W t := by
   intro h; rw [h.not_val] at hv; contradiction
 
-/-- Running `t` for `n` steps never gets stuck: it is a value in `T`, it
-throws a value of `Ξ`, or it steps. Each step spends a level, and the world
-drops with it. -/
+/-- Running `t` for `n` steps never gets stuck: at every budget, zero
+included, the running term's references are valid in the world (`RefsOk`);
+at positive budget it is a value in `T`, it throws a value of `Ξ`, or it
+steps. Each step spends a level, and the world drops with it. -/
 def Safe (Ξ T : Fam) : (n : Nat) → WorldT n → Heap → Tm → Prop
-  | 0, _, _, _ => True
-  | n + 1, W, h, t =>
-      ((isVal t = true ∧ T (n + 1) W t) ∨ Thrown Ξ (n + 1) W t) ∨
+  | 0, W, _, t => RefsOk W t
+  | n + 1, W, h, t => RefsOk W t ∧
+      (((isVal t = true ∧ T (n + 1) W t) ∨ Thrown Ξ (n + 1) W t) ∨
       (∃ (W' : WorldT n) (h' : Heap) (t' : Tm),
         WExt (trunc n (Nat.le_succ n) W) W' ∧ WorldAdm W' ∧ Step h t h' t' ∧
-          HeapOk n W' h' ∧ Safe Ξ T n W' h' t')
+          HeapOk n W' h' ∧ Safe Ξ T n W' h' t'))
+
+/-- **The structural component holds at every budget**, zero included. -/
+theorem Safe.refs {Ξ T : Fam} : ∀ {n : Nat} {W : WorldT n} {h : Heap} {t : Tm},
+    Safe Ξ T n W h t → RefsOk W t
+  | 0, _, _, _, h => h
+  | _ + 1, _, _, _, h => h.1
 
 theorem Safe_nul {Ξ : Fam} : ∀ (n : Nat) (W : WorldT n) (h : Heap), Safe Ξ nulT n W h .nul
-  | 0, _, _ => trivial
-  | _ + 1, _, _ => Or.inl (Or.inl ⟨rfl, rfl⟩)
+  | 0, _, _ => RefsOk_nul
+  | _ + 1, _, _ => ⟨RefsOk_nul, Or.inl (Or.inl ⟨rfl, rfl⟩)⟩
 
 /-- Safety is monotone in the exception family and the type, at every budget
 it can still reach. -/
@@ -83,9 +90,11 @@ theorem Safe_mono' {Ξ Ξ' B C : Fam} : ∀ (j : Nat),
     ∀ (W : WorldT j) (h : Heap) (t : Tm), Safe Ξ B j W h t → Safe Ξ' C j W h t := by
   intro j
   induction j with
-  | zero => intro _ _ _ _ _ _; trivial
+  | zero => intro _ _ _ _ _ hs; exact hs
   | succ p ih =>
     intro hΞ hbc W h t hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hv, hB⟩ | hr) | ⟨W', h', t', hx, ha, hst, hok, hsafe⟩
     · exact Or.inl (Or.inl ⟨hv, hbc (p + 1) (Nat.le_refl _) W t hB⟩)
     · exact Or.inl (Or.inr (hr.mono (hΞ (p + 1) (Nat.le_refl _) W)))
@@ -93,25 +102,30 @@ theorem Safe_mono' {Ξ Ξ' B C : Fam} : ∀ (j : Nat),
         ih (fun m hm => hΞ m (by omega)) (fun m hm => hbc m (by omega)) W' h' t' hsafe⟩
 
 /-- General evaluation-context composition. Contexts are supplied with their
-ordinary small-step congruence rule. -/
+ordinary small-step congruence rule and the statement that their references
+are the hole's and the frame's (`CtxRefs`); the frame's are valid at entry,
+so at every later world. The continuation receives each normal exit's value
+with its references valid. -/
 theorem Safe_bind {Ξ A B : Fam} (C : Tm → Tm)
     (lift : ∀ {h t h' t'}, Step h t h' t' → Step h (C t) h' (C t'))
-    (raise : ∀ {t v}, Raises t v → Raises (C t) v) :
-    ∀ n W h t, WorldAdm W → HeapOk n W h → Safe Ξ A n W h t →
+    (raise : ∀ {t v}, Raises t v → Raises (C t) v) (hc : CtxRefs C) :
+    ∀ n W h t, WorldAdm W → HeapOk n W h → RefsOk W (C .undef) → Safe Ξ A n W h t →
     (∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
-      ∀ h' v, HeapOk j U h' → isVal v = true → A j U v → Safe Ξ B j U h' (C v)) →
+      ∀ h' v, HeapOk j U h' → isVal v = true → A j U v → RefsOk U v → Safe Ξ B j U h' (C v)) →
     Safe Ξ B n W h (C t) := by
   intro n
   induction n with
-  | zero => intros; trivial
+  | zero => intro W h t _ _ hC hs _; exact hc.ok hs hC
   | succ n ih =>
-    intro W h t hw hh hs hk
+    intro W h t hw hh hC hs hk
+    obtain ⟨hrf, hs⟩ := hs
     rcases hs with (⟨hv, ht⟩ | hr) | ⟨U, h', t', hx, hu, step, hh', ht'⟩
-    · exact hk (n+1) (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw h t hh hv ht
-    · exact Or.inl (Or.inr (hr.lift raise))
-    · refine Or.inr ⟨U, h', C t', hx, hu, lift step, hh', ih U h' t' hu hh' ht' ?_⟩
-      intro j hj V hx' hv h'' v hh'' hval ha
-      apply hk j (by omega) V _ hv h'' v hh'' hval ha
+    · exact hk (n+1) (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw h t hh hv ht hrf
+    · exact ⟨hc.ok hrf hC, Or.inl (Or.inr (hr.lift raise))⟩
+    · refine ⟨hc.ok hrf hC, Or.inr ⟨U, h', C t', hx, hu, lift step, hh',
+        ih U h' t' hu hh' (RefsOk_mono hx (RefsOk_trunc _ hC)) ht' ?_⟩⟩
+      intro j hj V hx' hv h'' v hh'' hval ha hvr
+      apply hk j (by omega) V _ hv h'' v hh'' hval ha hvr
       apply WExt_trans _ hx'
       simpa only [trunc_trunc] using WExt_trunc hj hx
 
@@ -288,21 +302,21 @@ theorem ArgsT_congr {As Bs : List Fam} {n : Nat}
     | cons a args => exact and_congr (hd j hj W a) (ih args)
 
 theorem value_safe (B : Fam) (n : Nat) (U : WorldT n) (h : Heap) (v : Val)
-    (hv : isVal v = true) (hb : B n U v) : Safe Ξ B n U h v := by
+    (hv : isVal v = true) (hb : B n U v) (hr : RefsOk U v) : Safe Ξ B n U h v := by
   cases n with
-  | zero => trivial
-  | succ n => exact Or.inl (Or.inl ⟨hv, hb⟩)
+  | zero => exact hr
+  | succ n => exact ⟨hr, Or.inl (Or.inl ⟨hv, hb⟩)⟩
 
 /-- A term that throws a closed value is safe at every type. -/
 theorem thrown_safe (B : Fam) (n : Nat) (U : WorldT n) (h : Heap) {t : Tm}
-    (ht : Thrown Ξ n U t) : Safe Ξ B n U h t := by
+    (ht : Thrown Ξ n U t) (hr : RefsOk U t) : Safe Ξ B n U h t := by
   cases n with
-  | zero => trivial
-  | succ n => exact Or.inl (Or.inr ht)
+  | zero => exact hr
+  | succ n => exact ⟨hr, Or.inl (Or.inr ht)⟩
 
 theorem safe_value_mem {B : Fam} {n : Nat} {U : WorldT (n+1)} {h : Heap} {v : Val}
     (hv : isVal v = true) (hs : Safe Ξ B (n+1) U h v) : B (n+1) U v := by
-  rcases hs with (⟨_, hb⟩ | hr) | ⟨_, _, _, _, _, hs, _, _⟩
+  rcases hs.2 with (⟨_, hb⟩ | hr) | ⟨_, _, _, _, _, hs, _, _⟩
   · exact hb
   · rw [hr.not_val] at hv; contradiction
   · exact False.elim (value_no_step hv hs)
@@ -345,19 +359,20 @@ safely at `R`. The receiver is not an actual: `Acc` never sees it. -/
 def Promise (Ξ : Fam) (Acc : (j : Nat) → WorldT j → List Tm → Prop) (Rc R : Fam)
     (k : Nat) (W : WorldT k) (v : Val) : Prop :=
   ∀ (j : Nat) (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
-    WorldAdm U → ∀ (heap : Heap), HeapOk j U heap → ∀ r, isVal r = true → Rc j U r →
-      ∀ args, CallArguments.Values args →
+    WorldAdm U → ∀ (heap : Heap), HeapOk j U heap → RefsOk U v →
+      ∀ r, isVal r = true → Rc j U r → RefsOk U r →
+      ∀ args, CallArguments.Values args → (∀ a ∈ args, RefsOk U a) →
       Acc j U args → ∃ result, CallArguments.Invoke ⟨v, r, args⟩ result ∧ Safe Ξ R j U heap result
 
 theorem Promise.down {Acc Rc R n W v} (h : Promise Ξ Acc Rc R (n + 1) W v) :
     Promise Ξ Acc Rc R n (trunc n (Nat.le_succ n) W) v := by
-  intro j hj U hx hu heap hh r hrv hr args hv ha
-  exact h j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh r hrv hr args hv ha
+  intro j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha
+  exact h j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh hvr r hrv hr hrr args hv har ha
 
 theorem Promise.mono {Acc Rc R n W W' v} (hx : WExt W W') (h : Promise Ξ Acc Rc R n W v) :
     Promise Ξ Acc Rc R n W' v := by
-  intro j hj U hy hu heap hh r hrv hr args hv ha
-  exact h j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh r hrv hr args hv ha
+  intro j hj U hy hu heap hh hvr r hrv hr hrr args hv har ha
+  exact h j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh hvr r hrv hr hrr args hv har ha
 
 /-- Values meeting every fixed signature `(receiver, parameters, result)`:
 each receiver at its contract with each admitted actual list, including one

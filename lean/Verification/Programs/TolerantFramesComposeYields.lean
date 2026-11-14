@@ -58,8 +58,9 @@ theorem stepEdgesSound_of_yields {G : NormalGraph ι} {images : InstanceImageChe
   obtain ⟨na, ys, hY⟩ := hacc l hp.1.1
   have hS : StateHolds G na.entry (w.implies l) startNames ε ρ m s := na.hentry ▸ hp.1.2
   have he : EnvOk G na.c.context ρ s.n s.W := na.hctx ▸ hp.2
+  refine ⟨na.node, na.hP, fun hr => ?_⟩
   obtain ⟨-, hkS, -, cn, ce, hparts⟩ := stepChecked_parts na.hstep hS na.wf na.below na.width he hcodes na.sums
-  have hjY := hY.judged ρ s _ _ hS he hkS hparts.1
+  have hjY := hY.judged ρ s _ _ hS he hkS (hparts.1 hr)
   obtain ⟨hj, ho⟩ := nodeObligations_of_partsY (pre := edgePreAJ G w startNames ε ctx stated given edgesIn)
     (Ξres := excOf G) (Tres := Tres) (Qres := fun _ => True) (Rres := fun _ => True) (x := na.node.handler)
     hparts he hjY
@@ -73,13 +74,13 @@ theorem stepEdgesSound_of_yields {G : NormalGraph ι} {images : InstanceImageChe
             ⟨na.st.result :: na.entry.names, na.st.store, na.entry.fresh⟩ (w.implies l) startNames ε ρ' m' s'' ∧
             PromiseCalls.YieldsOk G ys ρ s''.n s''.W (ρ' 0) ∧ HeapKnowledge.Holds na.st.stepOut ε ρ' s''.h ∧
               ∃ k, k < s.n ∧ Steps k s.h (instantiate 0 ρ na.node.expression) s''.h (ρ' 0))
-          (fun t p o q hmem => hY.exits t p o q hmem ρ s hS he hkS hm) (fun h => absurd h hk)
+          (fun t p o q hmem => hY.exits t p o q hmem ρ s hS he hkS hm hr) (fun h => absurd h hk)
           (fun _ => trivial) s' v hv ⟨hF, hy, hout, hrun⟩ he' hshape)
     (fun s' e _ hFe he' hsc hx => by
       cases hh : na.node.handler with
       | none => exact ⟨hx, trivial⟩
       | some t => exact hY.handler t hh ρ s' e hFe he' hsc hx)
-  exact ⟨na.node, na.hP, _, _, cn, ce, _, _, hj, ho⟩
+  exact ⟨_, _, cn, ce, _, _, hj, ho⟩
 
 end Steps
 
@@ -140,6 +141,7 @@ structure NodeExitsY (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
   exits : ∀ t pushed observed promote, Exit.normal t pushed observed promote ∈ Exit.ofNode node → ∀ ρ (s : IndexedHeap),
     StateHolds G entry (w.implies l) startNames ε ρ m s →
     EnvOk G c.context ρ s.n s.W → HeapKnowledge.Holds st.stepK ε ρ s.h → m ≤ s.h.length →
+    RefsOk s.W (instantiate 0 ρ node.expression) →
     ExitDelivers (edgePreAJ G w startNames ε ctx stated given edgesIn) G c.type c.context
       (fun ρ' m' s' => StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ε
         ρ' m' s' ∧ PromiseCalls.YieldsOk G ys ρ s'.n s'.W (ρ' 0) ∧ HeapKnowledge.Holds st.stepOut ε ρ' s'.h ∧

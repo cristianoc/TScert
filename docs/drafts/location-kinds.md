@@ -64,7 +64,7 @@ world's). An ordinary array's store and a typed array's view
 store of fixed length $`N`$ are two forms of S, distinguished by role.
 
 A world entry is a pair of a role and a contract. The kinded world
-`Kinds.WorldT n` is the stratified construction of `WorldT`, each entry's
+`WorldT n` is the stratified construction of `WorldT`, each entry's
 contract inspecting kinded worlds below `n`, so a contract can read roles.
 Extension appends entries and keeps every old pair; truncation keeps every
 role and restricts the contracts. The world records a location's role
@@ -642,7 +642,7 @@ bridging lemmas that exist, and what it must establish.
    stores; what they do not: reference validity, which step 6 carries.
 3. **The foundational world.** Replace `Worlds.lean` and `Heaps.lean` by the
    kinded world: role-bearing entries, truncation keeping roles, extension
-   (`Kinds.WorldT`, `trunc`, `WExt`, `ofEntries_entries` in place of
+   (`WorldT`, `trunc`, `WExt`, `ofEntries_entries` in place of
    `ofList_toList`, which cannot reconstruct roles); `HeapMeets`, `RefsOk`,
    `Shape` and the strengthened `HeapOk` in their owning layers, safety and
    effects depending on them. Files: `Semantics/Worlds.lean`, `Heaps.lean`,

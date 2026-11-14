@@ -110,38 +110,38 @@ theorem ordinary_requestSafe {f : FilePlans} {r : Req f}
     | direct c after hm _ hreg hacc hs => exact ⟨_, _, guarantee c after hm hacc hs (stated c hreg)⟩
     | fallback c₁ a₂ _ hm _ hreg hacc hs _ => exact ⟨_, _, guarantee c₁ a₂ hm hacc hs (fallbackRegions c₁ hreg)⟩
   obtain ⟨bound, regional, g⟩ := hprimary
-  refine ⟨fun η _ n W h ρ he => g.safe η trivial n W h ρ he, ?_, ?_, ?_,
-    fun η _ n W h ρ he => g.asserted η trivial n W h ρ he, ?_⟩
+  refine ⟨fun η _ n W h ρ he hP hρ => g.safe η trivial n W h ρ he hP hρ, ?_, ?_, ?_,
+    fun η _ n W h ρ he hP hρ => g.asserted η trivial n W h ρ he hP hρ, ?_⟩
   · -- The footprint: by the bound, the purity, or the regional fallback.
-    intro heffect η n W h L d he hvalues hd
+    intro heffect η n W h L d he href hvalues hd
     cases hmain with
     | direct c after hm hb hreg hacc hs =>
       have g' := guarantee c after hm hacc hs (stated c hreg)
       rw [hb] at g'
-      exact footprint_of_bound g' heffect η n W h L d he hvalues hd
+      exact footprint_of_bound g' heffect η n W h L d he href hvalues hd
     | fallback c₁ a₂ hfr hm _ hreg hacc hs _ =>
       have g' := guarantee c₁ a₂ hm hacc hs (fallbackRegions c₁ hreg)
       rw [hreg] at g'
-      exact footprint_of_fallback g' hfr η n W h L d he
-  · intro hne η n W h L d he
-    exact g.ensured hne _ _ (program_nodes r.program) η trivial n W h L d he
+      exact footprint_of_fallback g' hfr η n W h L d he href
+  · intro hne η n W h L d he href
+    exact g.ensured hne _ _ (program_nodes r.program) η trivial n W h L d he href
   · -- The stated regions: the direct run's, or the regional run after the fallback.
-    intro Φ regions hr η n W h L d he
+    intro Φ regions hr η n W h L d he href
     have hspec : regionalSpec r = some (Φ, regions, r.stated.any (·.onThrow)) := by
       simp [regionalSpec, hr]
     cases hmain with
     | direct c after hm _ hreg hacc hs =>
       have g' := guarantee c after hm hacc hs (stated c hreg)
-      exact g'.regionally Φ regions _ (hreg.trans hspec) _ _ (program_nodes r.program) η trivial n W h L d he
+      exact g'.regionally Φ regions _ (hreg.trans hspec) _ _ (program_nodes r.program) η trivial n W h L d he href
     | fallback _ _ _ _ _ _ _ _ hrest =>
       rcases hrest with hnone' | ⟨c₂, a₂, hm, _, hreg, hacc, hs⟩
       · rw [hnone'] at hr; cases hr
       · have g' := guarantee c₂ a₂ hm hacc hs (stated c₂ hreg)
-        exact g'.regionally Φ regions _ (hreg.trans hspec) _ _ (program_nodes r.program) η trivial n W h L d he
+        exact g'.regionally Φ regions _ (hreg.trans hspec) _ _ (program_nodes r.program) η trivial n W h L d he href
   · -- Each code's assertions, from its run's guarantee.
-    intro ci q hci η n W h ρ he l k hk j h' ρ' hj hreach
+    intro ci q hci η n W h ρ he hP hρ l k hk j h' ρ' hj hreach
     have hmem : (q, ci) ∈ r.codes.zipIdx := List.mk_mem_zipIdx_iff_getElem?.mpr hci
-    exact (hcodeG (q, ci) hmem).asserted η trivial n W h ρ he l k hk j h' ρ' hj hreach
+    exact (hcodeG (q, ci) hmem).asserted η trivial n W h ρ he hP hρ l k hk j h' ρ' hj hreach
 
 /-- **A qualified member is safe** (proved, under `RunSound`): its one call
 at its checker gives safety and assertions at its admitted instances; its
@@ -162,8 +162,8 @@ theorem qualified_requestSafe {f : FilePlans} {r : Req f}
   have g := main_guarantee hrun hm (.qualified q) hnone hacc
     (ProgramCertificates.checkReadSummaries_sound hs.2) (fun _ _ _ h => by rw [hregc] at h; cases h)
   have hadm : ∀ η, r.Admits η → q.Admits η := fun η h => by simpa [SourceRequest.Admits, hq] using h
-  refine ⟨fun η ha n W h ρ he => g.safe η (hadm η ha) n W h ρ he, ?_, ?_, ?_,
-    fun η ha n W h ρ he => g.asserted η (hadm η ha) n W h ρ he, ?_⟩
+  refine ⟨fun η ha n W h ρ he hP hρ => g.safe η (hadm η ha) n W h ρ he hP hρ, ?_, ?_, ?_,
+    fun η ha n W h ρ he hP hρ => g.asserted η (hadm η ha) n W h ρ he hP hρ, ?_⟩
   · intro heffect
     rcases heffect with h | h | h
     · exact absurd hfp h

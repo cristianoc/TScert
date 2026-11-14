@@ -10,21 +10,25 @@ structure Policy where
   allows : Config → Config → Prop
   unique : ∀ {c d e}, allows c d → allows c e → d = e
 
+/-- Safety whose every step is the policy's. As `Safe`, the running term's
+references are valid at every budget, zero included. -/
 def SafeWith (Ξ : Fam) (p : Policy) (B : Fam) : (n : Nat) → WorldT n → Heap → Tm → Prop
-  | 0, _, _, _ => True
-  | n+1, W, h, t =>
-      ((isVal t = true ∧ B (n+1) W t) ∨ Thrown Ξ (n+1) W t) ∨
+  | 0, W, _, t => RefsOk W t
+  | n+1, W, h, t => RefsOk W t ∧
+      (((isVal t = true ∧ B (n+1) W t) ∨ Thrown Ξ (n+1) W t) ∨
       ∃ U : WorldT n, ∃ h' t',
         WExt (trunc n (Nat.le_succ n) W) U ∧ WorldAdm U ∧
         Step h t h' t' ∧ HeapOk n U h' ∧
-        p.allows ⟨n+1,W,h,t⟩ ⟨n,U,h',t'⟩ ∧ SafeWith Ξ p B n U h' t'
+        p.allows ⟨n+1,W,h,t⟩ ⟨n,U,h',t'⟩ ∧ SafeWith Ξ p B n U h' t')
 
 theorem erase {p B} : ∀ n (W : WorldT n) h t,
     SafeWith Ξ p B n W h t → Safe Ξ B n W h t := by
   intro n; induction n with
-  | zero => intros; trivial
+  | zero => intro _ _ _ hs; exact hs
   | succ n ih =>
     intro W h t hs
+    obtain ⟨hr, hs⟩ := hs
+    refine ⟨hr, ?_⟩
     rcases hs with (hv | ht) | ⟨U,h',t',he,hu,st,hh,_,rest⟩
     · exact .inl (.inl hv)
     · exact .inl (.inr ht)

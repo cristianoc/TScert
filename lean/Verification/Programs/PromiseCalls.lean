@@ -550,9 +550,11 @@ theorem conj_reached {T : Fam} {Q : Post} {P : (k : Nat) → WorldT k → Tm →
       SafePost Ξ (fun k U u => T k U u ∧ P k U u) Q n W h t := by
   intro n
   induction n with
-  | zero => intros; trivial
+  | zero => intros; assumption
   | succ n ih =>
     intro W h t hs hp
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hv, ht, hq⟩ | hth) | ⟨U, h', t', hx, hu, step, hh, hs⟩
     · exact .inl (.inl ⟨hv, ⟨ht, hp (n+1) (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) 0 h t
         .refl hv⟩, hq⟩)
@@ -746,7 +748,7 @@ theorem yieldFollows_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
     (hs : SafePost (excOf G) T Q n W h (instantiate 0 ρ t)) :
     SafePost (excOf G) (fun k U u => T k U u ∧ YieldsOk G ys ρ k U u) Q n W h (instantiate 0 ρ t) := by
   cases n with
-  | zero => trivial
+  | zero => exact hs
   | succ m =>
   apply conj_reached hs
   intro k hk U hU r h' u run hu y hy hcond _hneg
@@ -949,12 +951,12 @@ theorem promiseCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
     (hsums : SummariesSound G images sums)
     (hy : promiseYields G (claim e).type effect a T ys = true)
     {k ρ n W h} (he : EnvOk G (claim e).context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ (claim e).term)) :
     SafePost (excOf G) (fun m U u => meaning G (claim e).type m U u ∧ YieldsOk G ys ρ m U u)
       (fun h' v => HeapKnowledge.Holds (promiseOutput effect k) ε (push v ρ) h') n W h
       (instantiate 0 ρ (claim e).term) := by
   rcases e with ⟨⟨Γ, t, A⟩, r, ps⟩
-  simp only [claim] at he hy ⊢
+  simp only [claim] at he hy href ⊢
   cases r <;> try (simp only [promiseOf] at hp; contradiction)
   rename_i r0
   simp only [promiseOf] at hp
@@ -1000,17 +1002,19 @@ theorem promiseCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
     intro p hp
     exact ExpressionEffects.valueTerm_instantiate (hvals' p hp).1 (hvals' p hp).2
       (by simpa [context p hp] using he)
+  have refsOf := ExpressionEffects.invoke_refs htf htr hargs hundef href
   cases n with
-  | zero => trivial
+  | zero => exact href
   | succ n =>
     have member : ∀ p ∈ jf::jr::jas, meaning G p.type (n+1) W (instantiate 0 ρ p.term) := by
       intro p hp
-      exact safe_value_mem (values p hp) ((typed' p hp).sound _ _ h ρ he hw hh)
+      exact safe_value_mem (values p hp) ((typed' p hp).sound _ _ h ρ he hw hh (refsOf p hp))
     have hf := ((represents_raw hF (n+1) W _) (member jf (by simp))).1
     have hpw := hf.2 _ (List.mem_map_of_mem hs)
     simp only [CallEffects.Arrow.map, CallEffects.Contract.map] at hpw
     have hArgs := ExpressionEffects.argument_values (ps := jas)
       (fun p hp => typed' p (by simp [hp])) (fun p hp => values p (by simp [hp])) he hw hh
+      (fun p hp => refsOf p (by simp [hp]))
     have actual : (jas.take args.length).map (fun p => instantiate 0 ρ p.term)
         = args.map (instantiate 0 ρ) := by
       simpa only [List.map_map, Function.comp_def] using
@@ -1037,6 +1041,7 @@ theorem promiseCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
         obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hm; exact meaning_adm G p.type) ha j hj U hx))
       (meaning_adm G jr.type) (by simpa [List.map_map, Function.comp_def] using hpw) hr hrval hvs ha hw hh
       (CallEffects.Effect.requires_none hreq hpre _ _ _)
+      (by simpa [htf, htr, instantiate, instantiateArgs_eq_map] using href)
     have hterm : instantiate 0 ρ (.invoke f rv args) = .invoke (instantiate 0 ρ jf.term)
         (instantiate 0 ρ jr.term) (args.map (instantiate 0 ρ)) := by
       simp [instantiate, instantiateArgs_eq_map, htf, htr]
@@ -1129,7 +1134,7 @@ theorem keepsCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
     {e : HeapExpressionRules.StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
     (hc : keepsCall G images j e codes sums = true) (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {k : HeapKnowledge.Knowledge} {ρ n W h} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type)
       (fun h' v => HeapKnowledge.Holds (HeapKnowledge.shift k) ε (push v ρ) h') n W h (instantiate 0 ρ j.term) := by
   unfold keepsCall at hc
@@ -1138,7 +1143,7 @@ theorem keepsCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
     simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
     obtain ⟨⟨⟨rfl, hsel⟩, -⟩, ht⟩ := hc
     refine consequence (fun _ _ _ hv => hv) (fun h' v hq => ?_)
-      (ExpressionEffects.selectedCall_sound p ht hsel hcodes hsums he hw hh)
+      (ExpressionEffects.selectedCall_sound p ht hsel hcodes hsums he hw hh href)
     obtain ⟨vs, rfl⟩ := Footprints.Closed.holds_empty.mp hq
     exact HeapKnowledge.shift_holds (HeapKnowledge.alloc_frames vs hk)
   · contradiction
@@ -1179,7 +1184,7 @@ theorem freshObject_apart {G : NormalGraph ι} {Γ ρ n W h} {v : Tm}
   obtain ⟨Ref,hidx,hfo⟩ := HeapExpressionRules.contractFields_mem hm
   obtain ⟨_,flds1,code0,oid0,l1,c1,hl0,hfd1,hlookup,_⟩ :=
     HeapExpressionRules.fieldOperand_sound hfo (he.2 s Ref hidx)
-  obtain ⟨u,hu,_⟩ := hh.2 l1 c1 hlookup
+  obtain ⟨u,hu,_⟩ := hh.1.2 l1 c1 hlookup
   have hlt : l1 < h.length := List.getElem?_eq_some_iff.mp hu |>.1
   obtain ⟨⟨fs, c, oid, rfl⟩, hown⟩ := hv
   have hge : h.length ≤ l := hown l (by simpa [push, HeapSeparation.At, Footprints.ownOf, Footprints.fieldsOf] using hl)
@@ -1191,7 +1196,7 @@ theorem freshCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
     {e : HeapExpressionRules.StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
     (hc : freshCall G images j e codes sums = true) (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {k : HeapKnowledge.Knowledge} {ρ n W h} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type)
       (fun h' v => HeapKnowledge.Holds (freshOutput G j.context k) ε (push v ρ) h') n W h (instantiate 0 ρ j.term) := by
   unfold freshCall at hc
@@ -1204,7 +1209,7 @@ theorem freshCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
       simp only [Bool.and_eq_true] at hsel
       obtain ⟨hkeep, hfo⟩ := hsel
       refine consequence (fun _ _ _ hv => hv) (fun h' v hq => ?_)
-        (ExpressionEffects.selected_sound p ht hops heff hcodes hsums he hw hh)
+        (ExpressionEffects.selected_sound p ht hops heff hcodes hsums he hw hh href)
       have hfresh := hq.2.2.1 hfo
       obtain ⟨vs, rfl⟩ := keepsHeap_prefix hkeep hq
       have hshift := HeapKnowledge.shift_holds (v := v) (HeapKnowledge.alloc_frames vs hk)
@@ -1306,7 +1311,7 @@ theorem ownCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j : 
     {e : HeapExpressionRules.StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} {i : Nat}
     (hc : ownCall G images j e codes sums = some i) (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {k : HeapKnowledge.Knowledge} {ρ n W h} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type)
       (fun h' v => HeapKnowledge.Holds (ownOutput k i) ε (push v ρ) h') n W h (instantiate 0 ρ j.term) := by
   unfold ownCall at hc
@@ -1329,7 +1334,7 @@ theorem ownCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j : 
         simp only [Bool.and_eq_true, Bool.not_eq_true'] at hsel
         obtain ⟨⟨hle, hown⟩, -⟩ := hsel
         refine consequence (fun _ _ _ hv => hv) (fun h' v hq => ?_)
-          (ExpressionEffects.selected_sound p ht hops heff hcodes hsums he hw hh)
+          (ExpressionEffects.selected_sound p ht hops heff hcodes hsums he hw hh href)
         have hw' := CallEffects.Effect.within_closed hq.1
         unfold CallEffects.Effect.withinClosed at hw'
         simp only [hown, if_true] at hw'
@@ -1373,9 +1378,11 @@ theorem post_with_type {Ξ T : Fam} {Q Q' : Post} (hq : ∀ k W h v, T k W v →
     ∀ {n W h t}, SafePost Ξ T Q n W h t → SafePost Ξ T Q' n W h t := by
   intro n
   induction n with
-  | zero => intros; trivial
+  | zero => intros; assumption
   | succ n ih =>
     intro W h t hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hv, ht, hq'⟩ | hth) | ⟨U, h', t', hx, hu, step, hh, hs⟩
     · exact .inl (.inl ⟨hv, ht, hq _ _ _ _ ht hq'⟩)
     · exact .inl (.inr hth)
@@ -1453,7 +1460,7 @@ theorem elementsCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
     (hc : elementsCall G images j e codes sums = some (x, R)) (hcodes : CodesSound G codes)
     (hsums : SummariesSound G images sums)
     {k : HeapKnowledge.Knowledge} {ρ n W h} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type)
       (fun h' v => HeapKnowledge.Holds (elementsOutput k x R) ε (push v ρ) h') n W h (instantiate 0 ρ j.term) := by
   unfold elementsCall at hc
@@ -1478,7 +1485,7 @@ theorem elementsCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
             obtain ⟨rfl, rfl⟩ := hpair
             obtain ⟨f, args, hterm⟩ := receiverSlot_term hrs
             refine post_with_type (fun m U h' v hT hq => ?_)
-              (ExpressionEffects.selected_sound p ht hops hsel hcodes hsums he hw hh)
+              (ExpressionEffects.selected_sound p ht hops hsel hcodes hsums he hw hh href)
             have hb := onlyBool_sound hbool hT
             obtain ⟨vs, rfl⟩ := keepsHeap_prefix hkeep hq
             have hs := HeapKnowledge.shift_holds (v := v) (HeapKnowledge.alloc_frames vs hk)
@@ -1707,7 +1714,7 @@ theorem requiresApp_sound {G : NormalGraph ι} {images : InstanceImageCheck G}
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     (p : Evidence ι) (hc : requiresApp G images k codes sums p = true) {eff : Effect}
     (hsel : ExpressionEffects.selectedEffect p = some eff) {ρ n W h} (he : EnvOk G (claim p).context ρ n W)
-    (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ (claim p).term)) :
     SafePost (excOf G) (meaning G (claim p).type)
       (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term))
         (ExpressionEffects.actualsOf (instantiate 0 ρ (claim p).term)) h) n W h
@@ -1719,7 +1726,7 @@ theorem requiresApp_sound {G : NormalGraph ι} {images : InstanceImageCheck G}
       subst hsel
       simp only [requiresApp, Bool.and_eq_true, decide_eq_true_eq] at hc
       obtain ⟨⟨⟨hvals, hl⟩, ht⟩, hreq⟩ := hc
-      simp only [claim] at he ⊢
+      simp only [claim] at he href ⊢
       have hq := preconditionHolds_sound hreq hk (ρ := ρ)
       have typed : ∀ p ∈ ps.map claim, HasTyUsing G images p.context p.term p.type := by
         intro p hm
@@ -1730,13 +1737,13 @@ theorem requiresApp_sound {G : NormalGraph ι} {images : InstanceImageCheck G}
         intro p hm
         obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
         simpa only [Bool.and_eq_true] using List.all_eq_true.mp hvals q hq
-      exact (ExpressionEffects.call_local_sound hl typed values he hw hh hq).post
+      exact (ExpressionEffects.call_local_sound hl typed values he hw hh hq href).post
   | construct eff' =>
       simp only [ExpressionEffects.selectedEffect, Option.some.injEq] at hsel
       subst hsel
       simp only [requiresApp, Bool.and_eq_true, decide_eq_true_eq] at hc
       obtain ⟨⟨⟨hvals, hl⟩, ht⟩, hreq⟩ := hc
-      simp only [claim] at he ⊢
+      simp only [claim] at he href ⊢
       have hq := preconditionHolds_sound hreq hk (ρ := ρ)
       have typed : ∀ p ∈ ps.map claim, HasTyUsing G images p.context p.term p.type := by
         intro p hm
@@ -1747,7 +1754,7 @@ theorem requiresApp_sound {G : NormalGraph ι} {images : InstanceImageCheck G}
         intro p hm
         obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
         simpa only [Bool.and_eq_true] using List.all_eq_true.mp hvals q hq
-      exact (ExpressionEffects.construct_local_requires_sound hl typed values he hw hh hq).post
+      exact (ExpressionEffects.construct_local_requires_sound hl typed values he hw hh hq href).post
   | _ => simp [requiresApp] at hc
 
 /-- `call-requires` also bounds the heap a throw leaves, where its signature
@@ -1757,7 +1764,7 @@ theorem requiresApp_sound_exc {G : NormalGraph ι} {images : InstanceImageCheck 
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     (p : Evidence ι) (hc : requiresApp G images k codes sums p = true) {eff : Effect}
     (hsel : ExpressionEffects.selectedEffect p = some eff) {ρ n W h} (he : EnvOk G (claim p).context ρ n W)
-    (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ (claim p).term)) :
     SafePostExc (excOf G) (meaning G (claim p).type)
       (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term))
         (ExpressionEffects.actualsOf (instantiate 0 ρ (claim p).term)) h)
@@ -1770,7 +1777,7 @@ theorem requiresApp_sound_exc {G : NormalGraph ι} {images : InstanceImageCheck 
       subst hsel
       simp only [requiresApp, Bool.and_eq_true, decide_eq_true_eq] at hc
       obtain ⟨⟨⟨hvals, hl⟩, ht⟩, hreq⟩ := hc
-      simp only [claim] at he ⊢
+      simp only [claim] at he href ⊢
       have hq := preconditionHolds_sound hreq hk (ρ := ρ)
       have typed : ∀ p ∈ ps.map claim, HasTyUsing G images p.context p.term p.type := by
         intro p hm
@@ -1781,13 +1788,13 @@ theorem requiresApp_sound_exc {G : NormalGraph ι} {images : InstanceImageCheck 
         intro p hm
         obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
         simpa only [Bool.and_eq_true] using List.all_eq_true.mp hvals q hq
-      exact ExpressionEffects.call_local_sound hl typed values he hw hh hq
+      exact ExpressionEffects.call_local_sound hl typed values he hw hh hq href
   | construct eff' =>
       simp only [ExpressionEffects.selectedEffect, Option.some.injEq] at hsel
       subst hsel
       simp only [requiresApp, Bool.and_eq_true, decide_eq_true_eq] at hc
       obtain ⟨⟨⟨hvals, hl⟩, ht⟩, hreq⟩ := hc
-      simp only [claim] at he ⊢
+      simp only [claim] at he href ⊢
       have hq := preconditionHolds_sound hreq hk (ρ := ρ)
       have typed : ∀ p ∈ ps.map claim, HasTyUsing G images p.context p.term p.type := by
         intro p hm
@@ -1798,7 +1805,7 @@ theorem requiresApp_sound_exc {G : NormalGraph ι} {images : InstanceImageCheck 
         intro p hm
         obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
         simpa only [Bool.and_eq_true] using List.all_eq_true.mp hvals q hq
-      exact ExpressionEffects.construct_local_requires_sound hl typed values he hw hh hq
+      exact ExpressionEffects.construct_local_requires_sound hl typed values he hw hh hq href
   | _ => simp [requiresApp] at hc
 
 theorem requiresApp_selected {G : NormalGraph ι} {images : InstanceImageCheck G}
@@ -1816,7 +1823,7 @@ theorem requiresTree_sound {G : NormalGraph ι} {images : InstanceImageCheck G}
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     (p : Evidence ι) (hc : requiresTree G images k codes sums p = true) :
     ∃ eff, ExpressionEffects.selectedEffect p = some eff ∧ ∀ {ρ n W h}, EnvOk G (claim p).context ρ n W →
-    HeapKnowledge.Holds k ε ρ h → WorldAdm W → HeapOk n W h →
+    HeapKnowledge.Holds k ε ρ h → WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ (claim p).term) →
     SafePost (excOf G) (meaning G (claim p).type)
       (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term))
         (ExpressionEffects.actualsOf (instantiate 0 ρ (claim p).term)) h) n W h
@@ -1826,10 +1833,10 @@ theorem requiresTree_sound {G : NormalGraph ι} {images : InstanceImageCheck G}
     simp only [requiresTree, Bool.and_eq_true, decide_eq_true_eq] at hc
     obtain ⟨hl, hc⟩ := hc
     obtain ⟨eff, hsel⟩ := requiresApp_selected q hc
-    refine ⟨eff, by simpa [ExpressionEffects.selectedEffect] using hsel, fun {ρ n W h} he hk hw hh => ?_⟩
+    refine ⟨eff, by simpa [ExpressionEffects.selectedEffect] using hsel, fun {ρ n W h} he hk hw hh href => ?_⟩
     obtain ⟨hctx, hterm, hsub⟩ := hl
     have ih := requiresApp_sound hcodes hsums q hc hsel (ρ := ρ) (n := n) (W := W) (h := h)
-      (by rw [hctx]; exact he) hk hw hh
+      (by rw [hctx]; exact he) hk hw hh (by simp only [claim] at href; rw [hterm]; exact href)
     rw [hterm] at ih
     exact consequence (fun j W v hv => PositiveCertificates.acceptedUsing hsub j W v hv) (fun _ _ hp => hp) ih
   · have happ : requiresApp G images k codes sums p = true := by
@@ -1840,14 +1847,14 @@ theorem requiresTree_sound {G : NormalGraph ι} {images : InstanceImageCheck G}
       · exact absurd ⟨j, _, q, rfl⟩ hs
       · simpa [requiresTree] using hc
     obtain ⟨eff, hsel⟩ := requiresApp_selected p happ
-    exact ⟨eff, hsel, fun he hk hw hh => requiresApp_sound hcodes hsums p happ hsel he hk hw hh⟩
+    exact ⟨eff, hsel, fun he hk hw hh href => requiresApp_sound hcodes hsums p happ hsel he hk hw hh href⟩
 
 theorem requiresTree_sound_exc {G : NormalGraph ι} {images : InstanceImageCheck G}
     {k : HeapKnowledge.Knowledge} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     (p : Evidence ι) (hc : requiresTree G images k codes sums p = true) :
     ∃ eff, ExpressionEffects.selectedEffect p = some eff ∧ ∀ {ρ n W h}, EnvOk G (claim p).context ρ n W →
-    HeapKnowledge.Holds k ε ρ h → WorldAdm W → HeapOk n W h →
+    HeapKnowledge.Holds k ε ρ h → WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ (claim p).term) →
     SafePostExc (excOf G) (meaning G (claim p).type)
       (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term))
         (ExpressionEffects.actualsOf (instantiate 0 ρ (claim p).term)) h)
@@ -1858,10 +1865,10 @@ theorem requiresTree_sound_exc {G : NormalGraph ι} {images : InstanceImageCheck
     simp only [requiresTree, Bool.and_eq_true, decide_eq_true_eq] at hc
     obtain ⟨hl, hc⟩ := hc
     obtain ⟨eff, hsel⟩ := requiresApp_selected q hc
-    refine ⟨eff, by simpa [ExpressionEffects.selectedEffect] using hsel, fun {ρ n W h} he hk hw hh => ?_⟩
+    refine ⟨eff, by simpa [ExpressionEffects.selectedEffect] using hsel, fun {ρ n W h} he hk hw hh href => ?_⟩
     obtain ⟨hctx, hterm, hsub⟩ := hl
     have ih := requiresApp_sound_exc hcodes hsums q hc hsel (ρ := ρ) (n := n) (W := W) (h := h)
-      (by rw [hctx]; exact he) hk hw hh
+      (by rw [hctx]; exact he) hk hw hh (by simp only [claim] at href; rw [hterm]; exact href)
     rw [hterm] at ih
     exact SafePostExc.consequence_below' (fun _ _ _ _ hv => hv)
       (fun j _ W v hv => PositiveCertificates.acceptedUsing hsub j W v hv) (fun _ _ hp => hp) (fun _ hp => hp) ih
@@ -1873,7 +1880,7 @@ theorem requiresTree_sound_exc {G : NormalGraph ι} {images : InstanceImageCheck
       · exact absurd ⟨j, _, q, rfl⟩ hs
       · simpa [requiresTree] using hc
     obtain ⟨eff, hsel⟩ := requiresApp_selected p happ
-    exact ⟨eff, hsel, fun he hk hw hh => requiresApp_sound_exc hcodes hsums p happ hsel he hk hw hh⟩
+    exact ⟨eff, hsel, fun he hk hw hh href => requiresApp_sound_exc hcodes hsums p happ hsel he hk hw hh href⟩
 
 /-- Whether an ordinary step's evidence is a call `call-requires` applies to. -/
 @[nospecialize] def requiresCall (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι)
@@ -1899,7 +1906,7 @@ theorem requiresCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
     (hc : requiresCall G images j k e codes sums = true) (hcodes : CodesSound G codes)
     (hsums : SummariesSound G images sums)
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type)
       (fun h' v => HeapKnowledge.Holds (requiresOutput e k) ε (push v ρ) h') n W h (instantiate 0 ρ j.term) := by
   unfold requiresCall at hc
@@ -1908,7 +1915,7 @@ theorem requiresCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
     simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
     obtain ⟨rfl, hc⟩ := hc
     obtain ⟨eff, hsel, hs⟩ := requiresTree_sound hcodes hsums p hc
-    have hs := hs he hk hw hh
+    have hs := hs he hk hw hh href
     refine consequence (fun _ _ _ hv => hv) (fun h' v hp => ?_) hs
     simp only [requiresOutput, hsel]
     exact promiseOutput_holds hk hp
@@ -3504,7 +3511,7 @@ theorem ensuresCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
     (hc : ensuresCall G images j k e codes sums = some eff) (hcodes : CodesSound G codes)
     (hsums : SummariesSound G images sums)
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type)
       (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ j.term))
         (ExpressionEffects.actualsOf (instantiate 0 ρ j.term)) h) n W h (instantiate 0 ρ j.term) := by
@@ -3523,11 +3530,11 @@ theorem ensuresCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
         · cases hc
         · cases hc
           rcases hcheck with ⟨hops, ht⟩ | hreq
-          · exact ExpressionEffects.selected_sound p ht hops hsel hcodes hsums he hw hh
+          · exact ExpressionEffects.selected_sound p ht hops hsel hcodes hsums he hw hh href
           · obtain ⟨eff'', hsel', hs⟩ := requiresTree_sound hcodes hsums p hreq
             rw [hsel] at hsel'
             cases hsel'
-            exact hs he hk hw hh
+            exact hs he hk hw hh href
     · cases hc
   · cases hc
 
@@ -3551,8 +3558,10 @@ theorem negation_run {Ξ T : Fam} {Q : Post} {v : Tm} (hv : isVal v = true) :
         (.ite v .fls .tru) := by
   intro n W h hs
   cases n with
-  | zero => trivial
+  | zero => assumption
   | succ n =>
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hval, -, -⟩ | ⟨u, hr, -⟩) | ⟨U, h', t', hx, hu, step, hh, hs⟩
     · simp [isVal] at hval
     · cases hr with
@@ -3562,16 +3571,20 @@ theorem negation_run {Ξ T : Fam} {Q : Post} {v : Tm} (hv : isVal v = true) :
       | iteC s => exact absurd s (value_no_step hv)
       | iteT =>
         cases n with
-        | zero => trivial
+        | zero => assumption
         | succ m =>
+          obtain ⟨hrf, hs⟩ := hs
+          refine ⟨hrf, ?_⟩
           rcases hs with (⟨hval, ht, hq⟩ | ⟨u, hr, -⟩) | ⟨U', h'', t'', -, -, step', -, -⟩
           · exact .inl (.inl ⟨hval, ht, hq, rfl, .inl ⟨rfl, rfl⟩⟩)
           · exact absurd (raises_not_val hr) (by simp [isVal])
           · exact absurd step' (value_no_step (by simp [isVal]))
       | iteF =>
         cases n with
-        | zero => trivial
+        | zero => assumption
         | succ m =>
+          obtain ⟨hrf, hs⟩ := hs
+          refine ⟨hrf, ?_⟩
           rcases hs with (⟨hval, ht, hq⟩ | ⟨u, hr, -⟩) | ⟨U', h'', t'', -, -, step', -, -⟩
           · exact .inl (.inl ⟨hval, ht, hq, rfl, .inr ⟨rfl, rfl⟩⟩)
           · exact absurd (raises_not_val hr) (by simp [isVal])
@@ -3584,8 +3597,10 @@ theorem negation_test_run {Ξ T : Fam} {Q : Post} {v : Tm} (hv : isVal v = true)
         (.ite (.test .truthy v) .fls .tru) := by
   intro n W h hs
   cases n with
-  | zero => trivial
+  | zero => assumption
   | succ n =>
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hval, -, -⟩ | ⟨u, hr, -⟩) | ⟨U, h', t', hx, hu, step, hh, hs⟩
     · simp [isVal] at hval
     · cases hr with
@@ -3704,12 +3719,12 @@ every step is otherwise `base`'s. -/
             indices := out.indices ++ PromiseCalls.negatedIndices k x }
     | none => base.select j k e codes sums
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
     split at hc
     · rename_i x hx
       simp only [CheckResult.map, Option.map_eq_some_iff] at hc
       obtain ⟨out0, hrun, rfl⟩ := hc
-      have hs := base.sound hrun hcodes hsums he hk hw hh
+      have hs := base.sound hrun hcodes hsums he hk hw hh href
       have hterm : (j.term = .ite (.var x) .fls .tru ∨ j.term = .ite (.test .truthy (.var x)) .fls .tru) ∧
           x < j.context.length := by
         unfold PromiseCalls.negationOf at hx
@@ -3749,7 +3764,7 @@ every step is otherwise `base`'s. -/
           rw [ht]; simp [instantiate]
         rw [hinst] at hs ⊢
         exact HeapObservations.weaken (fun h' u hq => finish h' u hq) (PromiseCalls.negation_test_run hxv hs)
-    · exact base.sound hc hcodes hsums he hk hw hh
+    · exact base.sound hc hcodes hsums he hk hw hh href
 
 
 /-- A checker whose ordinary steps that are calls keeping the heap keep every
@@ -3762,12 +3777,12 @@ heap fact of their entry (`PromiseCalls.keepsCall`); every other step is
   select := fun j k e codes sums =>
     if PromiseCalls.keepsCall G images j e codes sums then pure (HeapKnowledge.shift k) else base.select j k e codes sums
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
     split at hc
     · rename_i hkeep
       cases hc
-      exact PromiseCalls.keepsCall_sound hkeep hcodes hsums he hk hw hh
-    · exact base.sound hc hcodes hsums he hk hw hh
+      exact PromiseCalls.keepsCall_sound hkeep hcodes hsums he hk hw hh href
+    · exact base.sound hc hcodes hsums he hk hw hh href
 
 /-- A checker whose ordinary steps that are calls keeping the heap and
 allocating their result keep every heap fact of their entry and separate the
@@ -3782,12 +3797,12 @@ other step is `base`'s. -/
     if PromiseCalls.freshCall G images j e codes sums then pure (PromiseCalls.freshOutput G j.context k)
     else base.select j k e codes sums
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
     split at hc
     · rename_i hfresh
       cases hc
-      exact PromiseCalls.freshCall_sound hfresh hcodes hsums he hk hw hh
-    · exact base.sound hc hcodes hsums he hk hw hh
+      exact PromiseCalls.freshCall_sound hfresh hcodes hsums he hk hw hh href
+    · exact base.sound hc hcodes hsums he hk hw hh href
 
 /-- A checker whose ordinary steps that are calls changing only their
 receiver's own locations keep the heap facts separated from them
@@ -3803,12 +3818,12 @@ receiver's own locations keep the heap facts separated from them
     | some i => pure (PromiseCalls.ownOutput k i)
     | none => base.select j k e codes sums
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
     split at hc
     · rename_i i hown
       cases hc
-      exact PromiseCalls.ownCall_sound hown hcodes hsums he hk hw hh
-    · exact base.sound hc hcodes hsums he hk hw hh
+      exact PromiseCalls.ownCall_sound hown hcodes hsums he hk hw hh href
+    · exact base.sound hc hcodes hsums he hk hw hh href
 
 /-- A checker whose ordinary steps that are calls promising their receiver's
 elements add that atom (`PromiseCalls.elementsCall`); every other step is
@@ -3824,12 +3839,12 @@ elements add that atom (`PromiseCalls.elementsCall`); every other step is
     | some (x, R) => pure (PromiseCalls.elementsOutput k x R)
     | none => base.select j k e codes sums
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
     split at hc
     · rename_i x R hel
       cases hc
-      exact PromiseCalls.elementsCall_sound hel hcodes hsums he hk hw hh
-    · exact base.sound hc hcodes hsums he hk hw hh
+      exact PromiseCalls.elementsCall_sound hel hcodes hsums he hk hw hh href
+    · exact base.sound hc hcodes hsums he hk hw hh href
 
 /-- A checker whose ordinary steps that are calls at a precondition on their
 receiver's elements are checked against the entry's atoms
@@ -3843,12 +3858,12 @@ receiver's elements are checked against the entry's atoms
     if PromiseCalls.requiresCall G images j k e codes sums then pure (PromiseCalls.requiresOutput e k)
     else base.select j k e codes sums
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
     split at hc
     · rename_i hreq
       cases hc
-      exact PromiseCalls.requiresCall_sound hreq hcodes hsums he hk hw hh
-    · exact base.sound hc hcodes hsums he hk hw hh
+      exact PromiseCalls.requiresCall_sound hreq hcodes hsums he hk hw hh href
+    · exact base.sound hc hcodes hsums he hk hw hh href
 
 /-- A checker whose ordinary steps that are calls stating a postcondition add
 their atoms to what `base` gives the step (`PromiseCalls.ensuresCall`); every
@@ -3868,16 +3883,16 @@ other step is `base`'s. -/
         (HeapExpressionRules.keptCells (fun _ => true) none k.cells)
     | none => base.select j k e codes sums
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
     split at hc
     · rename_i eff hens
       simp only [CheckResult.map, Option.map_eq_some_iff] at hc
       obtain ⟨out0, hrun, rfl⟩ := hc
       cases n with
-      | zero => trivial
+      | zero => exact href
       | succ n =>
-      have hs := base.sound hrun hcodes hsums he hk hw hh
-      have hp := PromiseCalls.ensuresCall_sound hens hcodes hsums he hk hw hh
+      have hs := base.sound hrun hcodes hsums he hk hw hh href
+      have hp := PromiseCalls.ensuresCall_sound hens hcodes hsums he hk hw hh href
       exact HeapObservations.weaken (fun h' v hq' => let hq := hq'.1; PromiseCalls.withGrown_holds
         (PromiseCalls.withEnsures_holds (fun i hi => (ProgramTyping.meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1) hq.1.1 hk hq.1.2.1 hq.1.2.2.2.2.2.1 hq.1.2.2.2.2.2.2.1 hq.1.2.2.2.2.2.2.2 hq.2 hq'.2)
         (fun hgr => IndexWrites.grownRegions_holds he hh hk (hq.1.2.2.2.2.2.2.1 hgr).1 (hq.1.2.2.2.2.2.2.1 hgr).2)
@@ -3885,7 +3900,7 @@ other step is `base`'s. -/
           (fun _ _ _ _ _ _ _ _ _ hf => hf)))
         (HeapExpressionRules.stableFirst_frame he hh (HeapExpressionRules.viewFields_frame he hh
           (HeapObservations.cross_upto (n + 1) (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh hs hp)))
-    · exact base.sound hc hcodes hsums he hk hw hh
+    · exact base.sound hc hcodes hsums he hk hw hh href
 
 /-- The steps' rules, a call keeping the heap keeping every heap fact, a call
 allocating its result separating it, a call changing only its receiver's own

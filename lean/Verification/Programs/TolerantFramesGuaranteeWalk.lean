@@ -135,33 +135,35 @@ theorem run_guarantee {G : NormalGraph ι} {admits : MixedAssignment ι → Prop
       PassWalkSound (reassign G η) P start goal inputs sep idx assertions bound ensures regional w given ctx
         edgesIn fresh stated) :
     GraphGuarantee G admits P start goal inputs sep idx assertions bound ensures regional where
-  safe η hη n W h ρ he := by
+  safe η hη n W h ρ he hPn hρ := by
     obtain ⟨w, given, ctx, edgesIn, fresh, stated, hp⟩ := hall η hη
     obtain ⟨hv, hs, hi, ha, ho⟩ := he
     cases n with
-    | zero => trivial
+    | zero => exact hρ
     | succ n =>
       let s : IndexedHeap := ⟨n + 1, W, h, Nat.zero_lt_succ _, ha, ho⟩
       exact graph_safe_at (nodesChecked_of_walk (hp.walk ⟨ρ, h⟩ 0) (regionFields regional) h) passPreU_adminClosed
-        (hp.start (s := s) hv hs hi (by simp))
-  bounded Φ fr ex hb E K hP η hη n W h L d he _ _ := by
+        (hp.start (s := s) hv hs hi (by simp)) hPn hρ
+  bounded Φ fr ex hb E K hP η hη n W h L d he hgo _ _ := by
     obtain ⟨w, given, ctx, edgesIn, fresh, stated, hp⟩ := hall η hη
     obtain ⟨hv, hs, hi, ha, ho⟩ := he
     obtain ⟨dead, hkeep⟩ := hp.footprint Φ fr ex hb
     subst hP
     exact keeps_postExc (nodesChecked_of_walk (hp.walk ⟨envOf L d, h⟩ h.length) (regionFields regional) h)
       passPreU_adminClosed (nodesKeep_anti (fun _ _ _ hu => hu.1.1.1) (hkeep ⟨envOf L d, h⟩ h)) (fun _ _ _ h => h)
-      n W h _ _ .goto ha ho (fun hq ha' ho' => hp.start (s := ⟨n, W, h, hq, ha', ho'⟩) hv hs hi (by simp))
+      n W h _ _ .goto ha ho (GraphCode.goto_refs hgo).1 (GraphCode.goto_refs hgo).2
+      (fun hq ha' ho' => hp.start (s := ⟨n, W, h, hq, ha', ho'⟩) hv hs hi (by simp))
       (.inr (Footprints.Closed.Holds.refl Φ h))
-  ensured hne E K hP η hη n W h L d he := by
+  ensured hne E K hP η hη n W h L d he hgo := by
     obtain ⟨w, given, ctx, edgesIn, fresh, stated, hp⟩ := hall η hη
     obtain ⟨hv, hs, hi, ha, ho⟩ := he
     subst hP
     exact (keeps_postExc (nodesChecked_of_walk (hp.walk ⟨envOf L d, h⟩ 0) (regionFields regional) h)
       passPreU_adminClosed (nodesKeep_anti (fun _ _ _ hu => hu.1.1.1) (hp.returns hne ⟨envOf L d, h⟩ 0))
-      (fun _ _ _ h => h) n W h _ _ .goto ha ho (fun hq ha' ho' => hp.start (s := ⟨n, W, h, hq, ha', ho'⟩) hv hs hi (by simp))
+      (fun _ _ _ h => h) n W h _ _ .goto ha ho (GraphCode.goto_refs hgo).1 (GraphCode.goto_refs hgo).2
+      (fun hq ha' ho' => hp.start (s := ⟨n, W, h, hq, ha', ho'⟩) hv hs hi (by simp))
       trivial).post
-  regionally Φ regions exc hr E K hP η hη n W h L d he := by
+  regionally Φ regions exc hr E K hP η hη n W h L d he hgo := by
     obtain ⟨w, given, ctx, edgesIn, fresh, stated, hp⟩ := hall η hη
     obtain ⟨hv, hs, hi, ha, ho⟩ := he
     obtain ⟨X, hX⟩ := hp.regions Φ regions exc hr
@@ -169,9 +171,10 @@ theorem run_guarantee {G : NormalGraph ι} {admits : MixedAssignment ι → Prop
     have hf : regionFields regional = ArgumentPathTracking.stableFields regions := by simp [regionFields, hr]
     exact keeps_postExc (nodesChecked_of_walk (hp.walk ⟨envOf L d, h⟩ h.length) (regionFields regional) h)
       passPreU_adminClosed (nodesKeep_anti (fun _ _ _ hu => ⟨hu.1.1.1, hf ▸ hu.2⟩) (hX ⟨envOf L d, h⟩ h).2)
-      (fun _ _ _ h => h) n W h _ _ .goto ha ho (fun hq ha' ho' => hp.start (s := ⟨n, W, h, hq, ha', ho'⟩) hv hs hi (by simp))
+      (fun _ _ _ h => h) n W h _ _ .goto ha ho (GraphCode.goto_refs hgo).1 (GraphCode.goto_refs hgo).2
+      (fun hq ha' ho' => hp.start (s := ⟨n, W, h, hq, ha', ho'⟩) hv hs hi (by simp))
       (hX ⟨envOf L d, h⟩ h).1
-  asserted η hη n W h ρ he l k hl j h' ρ' hj hrun := by
+  asserted η hη n W h ρ he hPn hρ l k hl j h' ρ' hj hrun := by
     obtain ⟨w, given, ctx, edgesIn, fresh, stated, hp⟩ := hall η hη
     obtain ⟨hv, hs, hi, ha, ho⟩ := he
     cases n with
@@ -179,7 +182,7 @@ theorem run_guarantee {G : NormalGraph ι} {admits : MixedAssignment ι → Prop
     | succ n =>
       let s : IndexedHeap := ⟨n + 1, W, h, Nat.zero_lt_succ _, ha, ho⟩
       obtain ⟨s', he', hp'⟩ := reached_pre (nodesChecked_of_walk (hp.walk ⟨ρ, h⟩ 0) (regionFields regional) h)
-        passPreU_adminClosed (hp.start (s := s) hv hs hi (by simp)) hrun hj
+        passPreU_adminClosed (hp.start (s := s) hv hs hi (by simp)) hPn hρ hrun hj
       exact he' ▸ hp'.1.1.2 k (hp.labelled l k hl hp'.1.1.1.1.1)
 
 end Walk

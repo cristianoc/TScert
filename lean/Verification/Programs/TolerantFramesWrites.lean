@@ -78,9 +78,11 @@ theorem safePost_grow {Ξ T : Fam} {Q : Post} : ∀ {n W h t} (b : Nat), b ≤ h
     SafePostExc Ξ T (fun h' v => b ≤ h'.length ∧ Q h' v) (fun h' => b ≤ h'.length) n W h t := by
   intro n
   induction n with
-  | zero => intros; trivial
+  | zero => intro _ _ _ _ _ hs; exact hs
   | succ n ih =>
     intro W h t b hb hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hv, ht, hq⟩ | hr) | ⟨U, h', t', hx, hu, st, hh, hs'⟩
     · exact .inl (.inl ⟨hv, ht, hb, hq⟩)
     · exact .inl (.inr ⟨hr, hb⟩)
@@ -108,7 +110,8 @@ theorem judgment_with_output {G : NormalGraph ι} {images : InstanceImageCheck G
       (fun h' => ce.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) :=
   SafePostExc.weaken (fun _ _ hq => hq) (fun _ hq => ⟨hq.1, trivial⟩)
     (SafePostExc.cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh hexc
-      (SafePostExc.of_post (R := fun _ => True) (fun _ => trivial) (checker.sound hr hcodes hsums he hk hw hh)))
+      (SafePostExc.of_post (R := fun _ => True) (fun _ => trivial)
+        (checker.sound hr hcodes hsums he hk hw hh (SafePostExcW.refs hexc))))
 
 /-- **A step with no effect judgment**, an ordinary call or expression: its
 rule's output, both exits within `{values: any, stores: any}`. -/
@@ -117,13 +120,14 @@ theorem top_judgment {G : NormalGraph ι} {images : InstanceImageCheck G} (check
     {sums : List (ReadSummary ι)} (hr : (checker.run j k e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePostExc (excOf G) (meaning G j.type)
       (fun h' v => Footprints.Closed.top.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => Footprints.Closed.top.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) := by
   exact SafePostExc.weaken (fun _ _ hq => ⟨Footprints.Closed.holds_top.mpr hq.1, hq.2⟩)
     (fun _ hq => ⟨Footprints.Closed.holds_top.mpr hq, trivial⟩)
-    (safePost_grow h.length (Nat.le_refl _) (checker.sound hr hcodes hsums he hk hw hh))
+    (safePost_grow h.length (Nat.le_refl _) (checker.sound hr hcodes hsums he hk hw hh href))
 
 /-- **A write within a closed effect, with its rule's output**: a field or
 element write the pass's footprint check admits within `c`
@@ -135,11 +139,12 @@ theorem write_judgment {G : NormalGraph ι} {images : InstanceImageCheck G} (che
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums) {c : Footprints.Closed}
     (hc : ExpressionEffects.writeWithin G j.context c j.term = true)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePostExc (excOf G) (meaning G j.type) (fun h' v => c.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => c.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) :=
   judgment_with_output checker hr hcodes hsums he hk hw hh
-    (ExpressionEffects.write_within_exc hc he hh (erase (checker.sound hr hcodes hsums he hk hw hh)))
+    (ExpressionEffects.write_within_exc hc he hh (erase (checker.sound hr hcodes hsums he hk hw hh href)))
 
 /-- **A typed field write**, within `{values: any, stores: keep}`
 (`ExpressionEffects.field_write_within_exc`), with its rule's output. -/
@@ -149,12 +154,13 @@ theorem field_write_judgment {G : NormalGraph ι} {images : InstanceImageCheck G
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     (hc : ExpressionEffects.fieldWriteWithin G j.context fieldWriteEffect j.term = true)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePostExc (excOf G) (meaning G j.type)
       (fun h' v => fieldWriteEffect.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => fieldWriteEffect.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) :=
   judgment_with_output checker hr hcodes hsums he hk hw hh
-    (ExpressionEffects.field_write_within_exc hc he hh (erase (checker.sound hr hcodes hsums he hk hw hh)))
+    (ExpressionEffects.field_write_within_exc hc he hh (erase (checker.sound hr hcodes hsums he hk hw hh href)))
 
 /-- **An element write at any index of any array**, within
 `{values: any, stores: grow}`, with its rule's output (`write_judgment` at
@@ -165,11 +171,12 @@ theorem element_write_judgment {G : NormalGraph ι} {images : InstanceImageCheck
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     (hc : ExpressionEffects.writeWithin G j.context growEffect j.term = true)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePostExc (excOf G) (meaning G j.type)
       (fun h' v => growEffect.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => growEffect.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) :=
-  write_judgment checker hr hcodes hsums hc he hk hw hh
+  write_judgment checker hr hcodes hsums hc he hk hw hh href
 
 /-- **A step the pass frames, an allocation among them**, at the production
 checker: its normal exit within `{values: keep, stores: keep}` with its rule's
@@ -181,12 +188,14 @@ theorem preserving_judgment {G : NormalGraph ι} {images : InstanceImageCheck G}
     (hr : ((Checker.ordinary G images).run j kE e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePostExc (excOf G) (meaning G j.type)
       (fun h' v => Footprints.Closed.empty.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => Footprints.Closed.top.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) := by
   have hboth := cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh
-    (passPreserving_keeps hpres hr hcodes hsums he hk hw hh) ((Checker.ordinary G images).sound hr hcodes hsums he hk hw hh)
+    (passPreserving_keeps hpres hr hcodes hsums he hk hw hh href)
+    ((Checker.ordinary G images).sound hr hcodes hsums he hk hw hh href)
   exact SafePostExc.weaken (fun _ _ hq => ⟨hq.2.1.1, hq.2.2⟩)
     (fun _ hq => ⟨Footprints.Closed.holds_top.mpr hq, trivial⟩) (safePost_grow h.length (Nat.le_refl _) hboth)
 

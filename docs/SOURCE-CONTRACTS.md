@@ -501,6 +501,26 @@ types it. A closure parameter its context types keeps that type, and a
 written one stays refused
 ([patterns](SOURCE-ELABORATION.md#patterns)).
 
+### Native contracts over kinded worlds
+
+A host value's declared signature is read over kinded worlds: every location
+has a role fixed at its allocation (a field, a binding's cell, an element
+cell, an array's or a view's store, an object's identity), and a well-formed
+heap holds at each location contents of its role's shape, references
+included ([kinds](SINGLE-PASS-PROOF.md#kinded-states)). Every value the
+initial environment binds, native or imported, and every callable member
+reachable through a host object, is assumed to meet its signature in that
+sense: from a well-formed entry with the callee's, the receiver's and the
+actuals' references valid, each step of the invocation, the callbacks it runs
+included, keeps the heap well-formed under one extension of the entry world
+and the running term's references valid, and an exit meets the signature's
+result type and postconditions. A native allocating a property allocates a
+field, one growing an array's store lists fresh element cells, and none
+changes a view store's length. The assumption enters through the meaning of
+callable and constructor types, so `mode8Accepted_sound` is relative to it
+through `EnvOk`; graph code meets the same condition by proof (`goto_safe`).
+The [trust surface](DESIGN.md#trust-surface) lists it.
+
 ## Certified imports
 
 An imported function of the program is read at its declaration's ordinary

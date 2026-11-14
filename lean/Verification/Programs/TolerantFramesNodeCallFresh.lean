@@ -83,7 +83,8 @@ theorem callFresh_of_checked {G : NormalGraph ι} {images : InstanceImageCheck G
     (hdc : passDerivChecked G images codes sums kS ⟨c.context, node.expression, c.type⟩ d = true)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {s : IndexedHeap} {m : Nat} (hm : m ≤ s.h.length)
-    (he : EnvOk G c.context ρ s.n s.W) (hkS : HeapKnowledge.Holds kS ε ρ s.h) :
+    (he : EnvOk G c.context ρ s.n s.W) (hkS : HeapKnowledge.Holds kS ε ρ s.h)
+    (href : RefsOk s.W (instantiate 0 ρ node.expression)) :
     ∀ k h' v, k < s.n → Steps k s.h (instantiate 0 ρ node.expression) h' v → isVal v = true → FreshAt m v := by
   simp only [passCallFresh, Bool.and_eq_true, beq_iff_eq] at hcf
   obtain ⟨⟨hfr, hops⟩, hterm⟩ := hcf
@@ -99,11 +100,11 @@ theorem callFresh_of_checked {G : NormalGraph ι} {images : InstanceImageCheck G
           (ExpressionEffects.actualsOf (instantiate 0 ρ (claim d).term)) s.h) s.n s.W s.h
         (instantiate 0 ρ (claim d).term) := by
       rcases Bool.or_eq_true_iff.mp htree with htree | hreq
-      · exact ExpressionEffects.selected_sound d htree hops heff hcodes hsums (hctx ▸ he) s.adm s.ok
+      · exact ExpressionEffects.selected_sound d htree hops heff hcodes hsums (hctx ▸ he) s.adm s.ok (by rw [hterm]; exact href)
       · obtain ⟨eff', heff', hs⟩ := PromiseCalls.requiresTree_sound hcodes hsums d hreq
         rw [heff] at heff'
         cases heff'
-        exact hs (hctx ▸ he) hkS s.adm s.ok
+        exact hs (hctx ▸ he) hkS s.adm s.ok (by rw [hterm]; exact href)
     rw [hterm] at hs
     intro k h' v hk hst hv
     have hpost := GraphCode.returnsPost_of_safePost hs k h' v hk hst hv
@@ -182,10 +183,10 @@ theorem footprintKept_of {G : NormalGraph ι} {images : InstanceImageCheck G} {c
   obtain ⟨na, hent, hb⟩ := hacc l hp.1.1
   have hS := hent ρ s hp
   have he : EnvOk G na.c.context ρ s.n s.W := na.hctx ▸ hp.2
+  refine ⟨na.node, na.hP, fun hrf k h' t' hst hk => ?_⟩
   obtain ⟨hsums', hkS, -, cn, ce, hj, hn, hx⟩ :=
     stepChecked_parts na.hstep hS na.wf na.below na.width he hcodes na.sums
-  have hex := (stepExits_of hj hn hx).2
-  refine ⟨na.node, na.hP, fun k h' t' hst hk => ?_⟩
+  have hex := (stepExits_of (hj hrf) hn hx).2
   cases hd : GraphCode.deadAt dead l with
   | true =>
     obtain ⟨hdn, hexc⟩ := hb.1 hd
@@ -208,14 +209,14 @@ theorem footprintKept_of {G : NormalGraph ι} {images : InstanceImageCheck G} {c
     have hm : h₀.length ≤ s.h.length := hΦ.1
     have hfc := hb.2 hd
     have hsafe : Safe (excOf G) (meaning G na.c.type) s.n s.W s.h (instantiate 0 ρ na.node.expression) :=
-      HeapObservations.erase hj.post
+      HeapObservations.erase (hj hrf).post
     obtain ⟨hN, hT⟩ := footprint_exits hfc hcodes hsums' (freshOk_recv hS) he hkS hsafe hΦ hst hk
     obtain ⟨-, -, hret, -⟩ := footprintCheck_sound hfc
     refine ⟨fun hv => contKeeps_of (fun _ _ _ => .inr (hN hv)) fun hk' => ⟨hN hv, fun hr => ?_⟩,
       fun e hr => ?_⟩
     · rcases passOutFreshChecked_cases (hret hk' hr) with hc | ⟨hcf, hdc⟩
       · exact copyFresh hS he na.width hc hst
-      · exact callFresh_of_checked hcf hdc hcodes hsums' hm he hkS k h' t' hk hst hv
+      · exact callFresh_of_checked hcf hdc hcodes hsums' hm he hkS hrf k h' t' hk hst hv
     · cases hh : na.node.handler with
       | none =>
         intro hexc

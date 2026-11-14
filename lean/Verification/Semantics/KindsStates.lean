@@ -4,7 +4,7 @@ import Verification.Semantics.TolerantFramesCells
 # Well-formed states over an environment, in the kinded world
 
 A **state** is a budget, a kinded world at that budget and a heap meeting it
-(`Kinds.HeapOk`: the world's contracts below the budget, and each location's
+(`HeapOk`: the world's contracts below the budget, and each location's
 role's shape at every budget). A **state over an environment** `ρ` is a state
 whose world gives every reference of every value of `ρ` the role its position
 demands (`RootsOk`). An **admissible transition** drops the budget and
@@ -93,7 +93,7 @@ theorem length_le {s s' : IndexedHeap} (ha : Admissible s s') : s.h.length ≤ s
 
 /-- **Roles are fixed**: every location keeps its role. -/
 theorem roleAt {s s' : IndexedHeap} (ha : Admissible s s') {l : Nat} {r : Role}
-    (hl : roleAt s.W l = some r) : Kinds.roleAt s'.W l = some r := by
+    (hl : roleAt s.W l = some r) : roleAt s'.W l = some r := by
   obtain ⟨hle, hx⟩ := ha
   exact WExt_roleAt hx (by simpa using hl)
 
@@ -185,9 +185,9 @@ theorem viewLengthOf_kept {s s' : IndexedHeap} {v : Val} (hv : RefsOk s.W v) (ha
     cases hl : fs.lookup viewLengthKey with
     | none => simp [viewLengthOf, hl]
     | some m =>
-      obtain ⟨N, hN⟩ := hv.lengthMeta hl
-      simp [viewLengthOf, hl, s.ok.lengthMeta_value s.pos hN,
-        s'.ok.lengthMeta_value s'.pos (ha.lengthMeta hN)]
+      obtain ⟨N, hN⟩ := Kinds.RefsOk.lengthMeta hv hl
+      simp [viewLengthOf, hl, Kinds.HeapOk.lengthMeta_value s.ok s.pos hN,
+        Kinds.HeapOk.lengthMeta_value s'.ok s'.pos (ha.lengthMeta hN)]
   all_goals rfl
 
 /-- **(View)**: what a root's typed-array length reads is invariant. -/
@@ -215,7 +215,7 @@ theorem storeCells_invariant : Invariant StoreCells :=
 /-- A listed cell stays an element cell after every admissible transition. -/
 theorem Admissible.elem_kept {s s' : IndexedHeap} (ha : Admissible s s') {st : Nat}
     {ls : List (Option Nat)} (hs : s.h[st]? = some (.arr ls)) {l : Nat} (hl : some l ∈ ls) :
-    Kinds.roleAt s'.W l = some .elem := ha.roleAt (s.ok.store_cells hs hl).1
+    Verification.roleAt s'.W l = some .elem := ha.roleAt (s.ok.store_cells hs hl).1
 
 /-- `x`'s store lists only allocated cells: `RootCells` of
 `Semantics/TolerantFramesCells.lean`. -/
@@ -225,7 +225,7 @@ def RootCells (x : Nat) : Assertion := fun ρ _ s =>
 
 /-- **A root's cells are allocated at every state.** -/
 theorem rootCells (x : Nat) (ρ : Env) (m : Nat) (s : State ρ) : RootCells x ρ m s :=
-  fun _ _ _ hv => s.ok.elementsBelow hv
+  fun _ _ _ hv => Kinds.HeapOk.elementsBelow s.ok hv
 
 theorem rootCells_invariant (x : Nat) : Invariant (RootCells x) :=
   fun ρ m s s' ha _ => rootCells x ρ m (s.next s' ha)
@@ -248,6 +248,6 @@ theorem alloc_apart {n : Nat} {W : WorldT n} {h h' : Heap} (hok : HeapOk n W h) 
     (hy : storeOf w = some sy) (hyv : h[sy]? = some (.arr ys)) (hkeep : h'[sy]? = some (.arr ys)) :
     RegionsApart h' u w :=
   TolerantFrames.alloc_apart hx hxv hbx hax hy hkeep (List.getElem?_eq_some_iff.mp hyv).1
-    (hok.elementsBelow hyv)
+    (Kinds.HeapOk.elementsBelow hok hyv)
 
 end Verification.Kinds

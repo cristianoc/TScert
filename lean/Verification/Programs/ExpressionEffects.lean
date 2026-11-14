@@ -41,9 +41,11 @@ theorem inspect_safe {T : Fam} {initial : Heap} : ∀ {n W h t},
     SafePost Ξ T (fun h' _ => Footprints.Closed.empty.Holds initial h') n W h t := by
   intro n
   induction n with
-  | zero => intros; trivial
+  | zero => intros; assumption
   | succ n ih =>
     intro W h t hpre hp hw hh hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hv, ht⟩ | hth) | ⟨U, h', t', hx, hu, step, hh', hs⟩
     · exact .inl (.inl ⟨hv, ht, Footprints.Closed.holds_empty.mpr hpre⟩)
     · exact .inl (.inr hth)
@@ -128,11 +130,13 @@ theorem field_write_within [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n
   split at hsel
   · rename_i Ref hi
     cases n with
-    | zero => trivial
+    | zero => assumption
     | succ n =>
       have hiv := (meaning_value (he.2 i Ref hi)).1
       have hkv := (meaning_value (he.2 k Γ[k] (List.getElem?_eq_getElem hk))).1
       simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero] at hs ⊢
+      obtain ⟨hrf, hs⟩ := hs
+      refine ⟨hrf, ?_⟩
       rcases hs with (⟨hbad, _⟩ | hr) | ⟨U, h', t', hx, hu, step, hh', hs'⟩
       · simp [isVal] at hbad
       · exact .inl (.inr hr)
@@ -153,7 +157,7 @@ theorem field_write_within [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T ρ n
           cases hproj
           rw [hfd] at hfd1
           cases hfd1
-          obtain ⟨u, hu, hmm⟩ := hh.2 l' c1 hlookup
+          obtain ⟨u, hu, hmm⟩ := hh.1.2 l' c1 hlookup
           rw [hv] at hu
           cases hu
           have hA := (hagree 0 (by omega) _ v).mp (hmm 0 (by omega))
@@ -242,12 +246,14 @@ theorem init_write_within [DecidableEq ι] {G : NormalGraph ι} {Γ k Φ t T ρ 
   split at hsel
   · rename_i Ref hi
     cases n with
-    | zero => trivial
+    | zero => assumption
     | succ n =>
       have hiv := (meaning_value (he.2 i Ref hi)).1
       have hjm := he.2 j B hjB
       have hjv := (meaning_value hjm).1
       simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero] at hs ⊢
+      obtain ⟨hrf, hs⟩ := hs
+      refine ⟨hrf, ?_⟩
       rcases hs with (⟨hbad, _⟩ | hr) | ⟨U, h', t', hx, hu, step, hh', hs'⟩
       · simp [isVal] at hbad
       · exact .inl (.inr hr)
@@ -291,19 +297,23 @@ theorem init_write_within_exc [DecidableEq ι] {G : NormalGraph ι} {Γ k Φ t T
   split at hsel
   · rename_i Ref hi
     cases n with
-    | zero => trivial
+    | zero => assumption
     | succ n =>
       have hiv := (meaning_value (he.2 i Ref hi)).1
       have hjv := (meaning_value (he.2 j B hjB)).1
       simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero] at hpost ⊢
+      obtain ⟨hrf, hpost⟩ := hpost
+      refine ⟨hrf, ?_⟩
       rcases hpost with (hv | hr) | ⟨U, h', t', hx, hu, step, hh', hs'⟩
       · exact .inl (.inl hv)
       · exact .inl (.inr ⟨hr, Footprints.Closed.Holds.refl Φ h⟩)
       · obtain ⟨_, _, _, _, _, _, _, rfl, rfl⟩ := HeapExpressionRules.write_inv hiv hjv step
         refine .inr ⟨U, _, _, hx, hu, step, hh', ?_⟩
         cases n with
-        | zero => trivial
+        | zero => assumption
         | succ m =>
+          obtain ⟨hrf, hs'⟩ := hs'
+          refine ⟨hrf, ?_⟩
           rcases hs' with (hv | hr) | ⟨_, _, _, _, _, step', _, _⟩
           · exact .inl (.inl hv)
           · exact absurd hr (val_not_thrown rfl)
@@ -367,13 +377,53 @@ theorem argument_values [DecidableEq ι] {G : NormalGraph ι}
     {ps : List (Sequent ι)} {ρ n W h}
     (ht : ∀ p ∈ ps, HasTyUsing G images Γ p.term p.type)
     (hv : ∀ p ∈ ps, isVal (instantiate 0 ρ p.term) = true)
-    (he : EnvOk G Γ ρ (n+1) W) (hw : WorldAdm W) (hh : HeapOk (n+1) W h) :
+    (he : EnvOk G Γ ρ (n+1) W) (hw : WorldAdm W) (hh : HeapOk (n+1) W h)
+    (hr : ∀ p ∈ ps, RefsOk W (instantiate 0 ρ p.term)) :
     ArgsT (ps.map (fun p => meaning G p.type)) (n+1) W (ps.map (fun p => instantiate 0 ρ p.term)) := by
   induction ps with
   | nil => trivial
   | cons p ps ih =>
-    exact ⟨safe_value_mem (hv p (by simp)) ((ht p (by simp)).sound _ _ h ρ he hw hh),
-      ih (fun p hp => ht p (by simp [hp])) (fun p hp => hv p (by simp [hp]))⟩
+    exact ⟨safe_value_mem (hv p (by simp)) ((ht p (by simp)).sound _ _ h ρ he hw hh (hr p (by simp))),
+      ih (fun p hp => ht p (by simp [hp])) (fun p hp => hv p (by simp [hp])) (fun p hp => hr p (by simp [hp]))⟩
+
+/-- **A call's premises refer to what the call does**: the callee, the
+receiver, each actual, and `undefined` at each omitted position. -/
+theorem invoke_refs {n : Nat} {W : WorldT n} {ρ : Env} {f r : Tm} {args : List Tm}
+    {jf jr : Sequent ι} {jas : List (Sequent ι)} (htf : jf.term = f) (htr : jr.term = r)
+    (hargs : (jas.take args.length).map Sequent.term = args)
+    (hundef : ∀ ja ∈ jas.drop args.length, ja.term = .undef)
+    (href : RefsOk W (instantiate 0 ρ (.invoke f r args))) :
+    ∀ p ∈ jf::jr::jas, RefsOk W (instantiate 0 ρ p.term) := by
+  obtain ⟨hfr, hrr, har⟩ := RefsOk_invoke.mp (by simpa [instantiate, instantiateArgs_eq_map] using href)
+  intro p hp
+  simp only [List.mem_cons] at hp
+  rcases hp with rfl | rfl | hp
+  · rw [htf]; exact hfr
+  · rw [htr]; exact hrr
+  · rcases List.mem_append.mp (by rwa [List.take_append_drop] : p ∈ jas.take args.length ++ jas.drop args.length)
+      with hp' | hp'
+    · have hm : p.term ∈ args := by rw [← hargs]; exact List.mem_map_of_mem hp'
+      exact har _ (List.mem_map_of_mem hm)
+    · rw [hundef p hp']; exact RefsOk_undef
+
+/-- **A construction's premises refer to what it does**: the constructor,
+each actual, and `undefined` at each omitted position. -/
+theorem construct_refs {n : Nat} {W : WorldT n} {ρ : Env} {f : Tm} {args : List Tm}
+    {jf : Sequent ι} {jas : List (Sequent ι)} (htf : jf.term = f)
+    (hargs : (jas.take args.length).map Sequent.term = args)
+    (hundef : ∀ ja ∈ jas.drop args.length, ja.term = .undef)
+    (href : RefsOk W (instantiate 0 ρ (.construct f args))) :
+    ∀ p ∈ jf::jas, RefsOk W (instantiate 0 ρ p.term) := by
+  obtain ⟨hfr, har⟩ := RefsOk_construct.mp (by simpa [instantiate, instantiateArgs_eq_map] using href)
+  intro p hp
+  simp only [List.mem_cons] at hp
+  rcases hp with rfl | hp
+  · rw [htf]; exact hfr
+  · rcases List.mem_append.mp (by rwa [List.take_append_drop] : p ∈ jas.take args.length ++ jas.drop args.length)
+      with hp' | hp'
+    · have hm : p.term ∈ args := by rw [← hargs]; exact List.mem_map_of_mem hp'
+      exact har _ (List.mem_map_of_mem hm)
+    · rw [hundef p hp']; exact RefsOk_undef
 
 /-- The local call rule admits a signature with a precondition only where
 asked to. -/
@@ -400,7 +450,8 @@ theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
     (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
     (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
-    (hq : e.Requires (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h) :
+    (hq : e.Requires (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePostExc (excOf G) (meaning G j.type) (e.post (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h)
       (e.excPost (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h) n W h (instantiate 0 ρ j.term) := by
   rcases j with ⟨Γ,t,A⟩
@@ -424,12 +475,13 @@ theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
   have values : ∀ p ∈ jf::jr::jas, isVal (instantiate 0 ρ p.term) = true := by
     intro p hp
     exact valueTerm_instantiate (hv p hp).1 (hv p hp).2 (by simpa [context p hp] using he)
+  have refsOf := invoke_refs htf htr hargs hundef href
   cases n with
-  | zero => trivial
+  | zero => exact href
   | succ n =>
     have member : ∀ p ∈ jf::jr::jas, meaning G p.type (n+1) W (instantiate 0 ρ p.term) := by
       intro p hp
-      exact safe_value_mem (values p hp) ((typed p hp).sound _ _ h ρ he hw hh)
+      exact safe_value_mem (values p hp) ((typed p hp).sound _ _ h ρ he hw hh (refsOf p hp))
     split at hL
     · rename_i L S hF
       have hf := ((represents_raw hF (n+1) W _ ) (member jf (by simp))).1
@@ -438,6 +490,7 @@ theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
         Function.comp_def] at hp
       have hArgs := argument_values (ps := jas)
         (fun p hp => typed p (by simp [hp])) (fun p hp => values p (by simp [hp])) he hw hh
+        (fun p hp => refsOf p (by simp [hp]))
       have actual : (jas.take args.length).map (fun p => instantiate 0 ρ p.term)
           = args.map (instantiate 0 ρ) := by
         simpa only [List.map_map, Function.comp_def] using
@@ -465,6 +518,7 @@ theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
         (Adm.of_transfer (fun ha j hj U hx => ArgsShort_transfer (fun T hm => by
           obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hm; exact meaning_adm G p.type) ha j hj U hx))
         (meaning_adm G jr.type) hp hr hrval hvals ha hw hh hq'
+        (by simpa [htf, htr, instantiate, instantiateArgs_eq_map] using href)
       rw [CallEffects.Effect.result_none hres] at hs
       simpa [CallEffects.Arrow.map, CallEffects.Contract.map, htf, htr, receiverOf, actualsOf,
         instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def] using hs
@@ -482,7 +536,8 @@ theorem construct_local_requires_sound [DecidableEq ι] {G : NormalGraph ι}
     (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
     (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
-    (hq : e.Requires (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h) :
+    (hq : e.Requires (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePostExc (excOf G) (meaning G j.type) (e.post (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h)
       (e.excPost (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h) n W h (instantiate 0 ρ j.term) := by
   rcases j with ⟨Γ,t,A⟩
@@ -504,12 +559,13 @@ theorem construct_local_requires_sound [DecidableEq ι] {G : NormalGraph ι}
   have values : ∀ p ∈ jf::jas, isVal (instantiate 0 ρ p.term) = true := by
     intro p hp
     exact valueTerm_instantiate (hv p hp).1 (hv p hp).2 (by simpa [context p hp] using he)
+  have refsOf := construct_refs htf hargs hundef href
   cases n with
-  | zero => trivial
+  | zero => exact href
   | succ n =>
     have member : ∀ p ∈ jf::jas, meaning G p.type (n+1) W (instantiate 0 ρ p.term) := by
       intro p hp
-      exact safe_value_mem (values p hp) ((typed p hp).sound _ _ h ρ he hw hh)
+      exact safe_value_mem (values p hp) ((typed p hp).sound _ _ h ρ he hw hh (refsOf p hp))
     split at hL
     · rename_i L S a bs vs hF
       obtain ⟨hmem, hpl⟩ := hL
@@ -519,6 +575,7 @@ theorem construct_local_requires_sound [DecidableEq ι] {G : NormalGraph ι}
         Function.comp_def] at hp
       have hArgs := argument_values (ps := jas)
         (fun p hp => typed p (by simp [hp])) (fun p hp => values p (by simp [hp])) he hw hh
+        (fun p hp => refsOf p (by simp [hp]))
       have actual : (jas.take args.length).map (fun p => instantiate 0 ρ p.term)
           = args.map (instantiate 0 ρ) := by
         simpa only [List.map_map, Function.comp_def] using
@@ -548,6 +605,7 @@ theorem construct_local_requires_sound [DecidableEq ι] {G : NormalGraph ι}
           obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hv'
           simp [hundef p hp, instantiate])
         (by rw [← hsplit]; exact hArgs) hw hh hq'
+        (by simpa [htf, instantiate, instantiateArgs_eq_map] using href)
       simpa [htf, receiverOf, actualsOf, instantiate, instantiateArgs_eq_map] using hs
     · contradiction
 
@@ -558,7 +616,8 @@ private theorem construct_local_sound [DecidableEq ι] {G : NormalGraph ι}
     {e : CallEffects.Effect} (hl : LocalUsing G images j (.construct e) ps codes (sums := sums))
     (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
     (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
-    {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePostExc (excOf G) (meaning G j.type) (e.post (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h)
       (e.excPost (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h) n W h (instantiate 0 ρ j.term) := by
   have hpl : e.plain = true := by
@@ -571,7 +630,7 @@ private theorem construct_local_sound [DecidableEq ι] {G : NormalGraph ι}
     · exact hL.2.resolve_right (by simp)
     · exact hL.elim
   exact construct_local_requires_sound hl ht hv he hw hh
-    (CallEffects.Effect.requires_none (CallEffects.Effect.plain_requires hpl) (CallEffects.Effect.plain_pre hpl) _ _ h)
+    (CallEffects.Effect.requires_none (CallEffects.Effect.plain_requires hpl) (CallEffects.Effect.plain_pre hpl) _ _ h) href
 
 theorem map_spread_false : ∀ (flags : List Bool) (qs : List (Sequent ι)), (∀ b ∈ flags, b = false) →
     flags.length = qs.length →
@@ -601,23 +660,29 @@ theorem spread_head_post {S R : Fam} {Q : HeapObservations.Post} {f r : Tm} {pre
     (hf : isVal f = true) (hrv : isVal r = true) (hp : CallArguments.Values pre) :
     ∀ (n : Nat) (W : WorldT n) (heap : Heap) (s : Tm),
       Purity.readTerm s = true → WorldAdm W → HeapOk n W heap → Safe Ξ S n W heap s →
+      RefsOk W (.invoke f r (pre ++ .spread s :: rest)) →
       (∀ j (hj : j ≤ n) (U : WorldT j), WExt (trunc j hj W) U → WorldAdm U → HeapOk j U heap →
-        ∀ v, isVal v = true → S j U v → SafePost Ξ R Q j U heap (.invoke f r (pre ++ .spread v :: rest))) →
+        ∀ v, isVal v = true → S j U v → RefsOk U (.invoke f r (pre ++ .spread v :: rest)) →
+          SafePost Ξ R Q j U heap (.invoke f r (pre ++ .spread v :: rest))) →
       SafePost Ξ R Q n W heap (.invoke f r (pre ++ .spread s :: rest)) := by
+  have hC : CtxRefs (fun t => Tm.invoke f r (pre ++ .spread t :: rest)) := by ctx_refs
   intro n
   induction n with
-  | zero => intros; trivial
+  | zero => intro _ _ _ _ _ _ _ href _; exact href
   | succ n ih =>
-    intro W heap s hs hw hh hsafe hk
+    intro W heap s hs hw hh hsafe href hk
+    obtain ⟨-, hsafe⟩ := hsafe
     rcases hsafe with (⟨hv, hS⟩ | hthrown) | ⟨U, h', t', hx, hu, step, hh', ht'⟩
-    · exact hk (n+1) (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw hh s hv hS
-    · exact Or.inl (Or.inr (hthrown.lift (C := fun t => .invoke f r (pre ++ .spread t :: rest))
-        (fun r' => RestCalls.call_raise hf hrv hp (.spreadC r'))))
+    · exact hk (n+1) (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw hh s hv hS href
+    · exact ⟨href, Or.inl (Or.inr (hthrown.lift (C := fun t => .invoke f r (pre ++ .spread t :: rest))
+        (fun r' => RestCalls.call_raise hf hrv hp (.spreadC r'))))⟩
     · obtain ⟨rfl, hs'⟩ := Purity.read_step step hs (HeapExpressionRules.heap_values hw hh)
-      refine Or.inr ⟨U, h', _, hx, hu, RestCalls.call_lift hf hrv hp (.spreadC step), hh', ?_⟩
-      apply ih U h' t' hs' hu hh' ht'
-      intro j hj V hy hV hhV v hv hS
-      apply hk j (by omega) V _ hV hhV v hv hS
+      have hst : RefsOk W t' := Kinds.step_refs step (by simpa using hh.1.1) hh.2 (hC.hole href)
+      refine ⟨href, Or.inr ⟨U, _, _, hx, hu, RestCalls.call_lift hf hrv hp (.spreadC step), hh', ?_⟩⟩
+      apply ih U _ t' hs' hu hh' ht'
+        (hC.ok (RefsOk_mono hx (RefsOk_trunc _ hst)) (RefsOk_mono hx (RefsOk_trunc _ (hC.frame href))))
+      intro j hj V hy hV hhV v hv hS hvr
+      apply hk j (by omega) V _ hV hhV v hv hS hvr
       apply WExt_trans _ hy
       simpa only [trunc_trunc] using WExt_trunc hj hx
 
@@ -633,12 +698,15 @@ theorem spread_values_post {E R : Fam} {Q : HeapObservations.Post} (hE : Adm E) 
         Purity.readTerm p.2 = true ∧ FutureSafe Ξ S n W p.2) →
       WorldAdm W → HeapOk n W heap → CallArguments.Values pre →
       (∀ p ∈ parts, p.1 = none → isVal p.2 = true ∧ E n W p.2) →
+      RefsOk W (.invoke f r (pre ++ parts.map RestCalls.partTerm)) →
       (∀ j (hj : j ≤ n) (U : WorldT j), WExt (trunc j hj W) U → WorldAdm U → HeapOk j U heap →
-        ∀ extra, (∀ e ∈ extra, E j U e) → SafePost Ξ R Q j U heap (.invoke f r (pre ++ extra))) →
+        ∀ extra, (∀ e ∈ extra, E j U e) → RefsOk U (.invoke f r (pre ++ extra)) →
+          SafePost Ξ R Q j U heap (.invoke f r (pre ++ extra))) →
       SafePost Ξ R Q n W heap (.invoke f r (pre ++ parts.map RestCalls.partTerm))
-  | [], n, W, heap, pre, _, hw, hh, _, _, hk => by
+  | [], n, W, heap, pre, _, hw, hh, _, _, href, hk => by
     simpa using hk n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw hh [] (by simp)
-  | (none, a) :: parts, n, W, heap, pre, hS, hw, hh, hp, hv, hk => by
+      (by simpa using href)
+  | (none, a) :: parts, n, W, heap, pre, hS, hw, hh, hp, hv, href, hk => by
     obtain ⟨hav, haE⟩ := hv (none, a) (by simp) rfl
     have hrest := spread_values_post hE hEv hf hrv parts n W heap (pre ++ [a])
       (fun q hm => hS q (by simp [hm])) hw hh
@@ -648,29 +716,38 @@ theorem spread_values_post {E R : Fam} {Q : HeapObservations.Post} (hE : Adm E) 
         · exact hp x hx
         · simp at hx; subst hx; exact hav)
       (fun q hm => hv q (by simp [hm]))
+      (by simpa [RestCalls.partTerm] using href)
       (by
-        intro j hj U hx hu hh' extra he
+        intro j hj U hx hu hh' extra he hre
         have := hk j hj U hx hu hh' (a :: extra) (by
           intro e hm
           rcases List.mem_cons.mp hm with rfl | hm
           · exact hE.mono j _ U hx e (hE.down_le n j hj W e haE)
-          · exact he e hm)
+          · exact he e hm) (by simpa using hre)
         simpa using this)
     simpa [RestCalls.partTerm] using hrest
-  | (some S, s) :: parts, n, W, heap, pre, hS, hw, hh, hp, hv, hk => by
+  | (some S, s) :: parts, n, W, heap, pre, hS, hw, hh, hp, hv, href, hk => by
     obtain ⟨hSa, hSs, hread, hfut⟩ := hS (some S, s) (by simp) S rfl
     show SafePost Ξ R Q n W heap (.invoke f r (pre ++ .spread s :: parts.map RestCalls.partTerm))
     apply spread_head_post hf hrv hp n W heap s hread hw hh
-      (hfut n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap hh)
-    intro j hj U hx hu hhU v _ hSv
+      (hfut n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap hh) (by simpa [RestCalls.partTerm] using href)
+    intro j hj U hx hu hhU v _ hSv hvr
     obtain ⟨ls, vs, rfl, hr, he⟩ := hSs j U heap _ hhU hSv
     cases j with
-    | zero => trivial
+    | zero => exact hvr
     | succ p =>
       have hvs : CallArguments.Values vs := fun e hm => hEv p _ e (he e hm p (by omega))
-      refine Or.inr ⟨trunc p (Nat.le_succ p) U, heap,
+      have hnext : RefsOk (trunc p (Nat.le_succ p) U) (.invoke f r (pre ++ vs ++ parts.map RestCalls.partTerm)) := by
+        obtain ⟨hfr, hrr, har⟩ := RefsOk_invoke.mp hvr
+        refine RefsOk_trunc _ (RefsOk_invoke.mpr ⟨hfr, hrr, fun b hb => ?_⟩)
+        simp only [List.mem_append] at hb
+        rcases hb with (hb | hb) | hb
+        · exact har b (by simp [hb])
+        · exact hhU.readElems_refs hr b hb
+        · exact har b (by simp [hb])
+      refine ⟨hvr, Or.inr ⟨trunc p (Nat.le_succ p) U, heap,
         .invoke f r (pre ++ vs ++ parts.map RestCalls.partTerm), WExt_refl _, WorldAdm_trunc _ hu,
-        .callSpread hf hrv rfl hp hr, HeapOk_trunc p U heap hhU, ?_⟩
+        .callSpread hf hrv rfl hp hr, HeapOk_trunc p U heap hhU, ?_⟩⟩
       have hUV : ∀ i (hi : i ≤ p) (X : WorldT i),
           WExt (trunc i hi (trunc p (Nat.le_succ p) U)) X → WExt (trunc i (by omega) W) X := by
         intro i hi X hy
@@ -696,8 +773,9 @@ theorem spread_values_post {E R : Fam} {Q : HeapObservations.Post} (hE : Adm E) 
           refine ⟨h1, ?_⟩
           have := hE.down_le n p (by omega) W q.2 h2
           exact hE.mono p _ _ (hUV p (Nat.le_refl _) _ (by rw [trunc_id]; exact WExt_refl _)) q.2 this)
+        hnext
         (by
-          intro i hi X hy hX hh' extra hex
+          intro i hi X hy hX hh' extra hex hre
           have := hk i (by omega) X (hUV i hi X hy) hX hh' (vs ++ extra) (by
             intro e hm
             rcases List.mem_append.mp hm with hm | hm
@@ -706,9 +784,34 @@ theorem spread_values_post {E R : Fam} {Q : HeapObservations.Post} (hE : Adm E) 
                 apply WExt_trans _ hy
                 simp only [trunc_trunc]
                 exact WExt_refl _) e h0
-            · exact hex e hm)
+            · exact hex e hm) (by simpa using hre)
           simpa using this)
       simpa using hrest
+
+/-- **A variadic call's premises refer to what its actuals do**: each fixed
+or further actual is one of the call's, or a spread of one, and each omitted
+position `undefined`. -/
+theorem jas_refs {n : Nat} {W : WorldT n} {ρ : Env} {jas : List (Sequent ι)} {k u : Nat} {flags : List Bool}
+    {args : List Tm} (hlen : jas.length = k + u + flags.length)
+    (hargs : args = (jas.take k).map Sequent.term ++
+      (flags.zip (jas.drop (k + u))).map (fun q => spreadTerm (q.1, q.2.term)))
+    (hundef : ∀ ja ∈ (jas.drop k).take u, ja.term = .undef)
+    (har : ∀ a ∈ args, RefsOk W (instantiate 0 ρ a)) :
+    ∀ p ∈ jas, RefsOk W (instantiate 0 ρ p.term) := by
+  intro p hp
+  rw [← List.take_append_drop k jas] at hp
+  rcases List.mem_append.mp hp with hp | hp
+  · exact har _ (by rw [hargs]; exact List.mem_append_left _ (List.mem_map_of_mem hp))
+  · rw [← List.take_append_drop u (jas.drop k)] at hp
+    rcases List.mem_append.mp hp with hp | hp
+    · rw [hundef p hp]; exact RefsOk_undef
+    · rw [List.drop_drop] at hp
+      obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hp
+      have hfl : i < flags.length := by simp at hi; omega
+      have hm : (flags[i], (jas.drop (k + u))[i]) ∈ flags.zip (jas.drop (k + u)) :=
+        List.mem_iff_getElem.mpr ⟨i, by simp [List.length_zip]; omega, by simp⟩
+      have := har _ (by rw [hargs]; exact List.mem_append_right _ (List.mem_map_of_mem hm))
+      simpa [instantiate_spreadTerm, RefsOk, refs_spreadTerm] using this
 
 /-- A variadic call whose parts are all values, none a spread, at its selected
 signature: the signature's postcondition holds of the call. -/
@@ -720,7 +823,8 @@ private theorem callRest_local_sound [DecidableEq ι] {G : NormalGraph ι}
     (hnos : flags.all (· == false) = true)
     (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
     (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
-    {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type)
       (e.forgetEnsures.post (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h)
       n W h (instantiate 0 ρ j.term) := by
@@ -731,6 +835,14 @@ private theorem callRest_local_sound [DecidableEq ι] {G : NormalGraph ι}
   · exact (hl : False).elim
   · exact (hl : False).elim
   obtain ⟨hΓf, htf, hΓr, htr, hcontexts, hlen, hshort, hargs, hundef, hparts, hmem, hplain⟩ := hl
+  have refsOf : ∀ p ∈ jf::jr::jas, RefsOk W (instantiate 0 ρ p.term) := by
+    obtain ⟨hfr, hrr, har⟩ := RefsOk_invoke.mp (by simpa [instantiate, instantiateArgs_eq_map] using href)
+    intro p hp
+    simp only [List.mem_cons] at hp
+    rcases hp with rfl | rfl | hp
+    · rw [htf]; exact hfr
+    · rw [htr]; exact hrr
+    · exact jas_refs hlen hargs hundef (fun a ha => har _ (List.mem_map_of_mem ha)) p hp
   have context : ∀ p ∈ jf::jr::jas, p.context = Γ := by
     intro p hp
     simp only [List.mem_cons] at hp
@@ -753,15 +865,16 @@ private theorem callRest_local_sound [DecidableEq ι] {G : NormalGraph ι}
   have hnospread := map_spread_false flags (jas.drop (k + u)) hflags hl2.symm
   rw [hnospread] at hargs
   cases n with
-  | zero => trivial
+  | zero => exact href
   | succ n =>
     have member : ∀ p ∈ jf::jr::jas, meaning G p.type (n+1) W (instantiate 0 ρ p.term) := by
       intro p hp
-      exact safe_value_mem (values p hp) ((typed p hp).sound _ _ h ρ he hw hh)
+      exact safe_value_mem (values p hp) ((typed p hp).sound _ _ h ρ he hw hh (refsOf p hp))
     have hf := restsT_of_restSigs hmem (member jf (by simp))
     have hp := hf.2 _ (List.mem_singleton_self _)
     have hAll := argument_values (ps := jas)
       (fun p hp => typed p (by simp [hp])) (fun p hp => values p (by simp [hp])) he hw hh
+      (fun p hp => refsOf p (by simp [hp]))
     -- The actuals' values: the fixed ones, then the parts.
     let vals := fun (qs : List (Sequent ι)) => qs.map (fun p => instantiate 0 ρ p.term)
     have hsplitk := ArgsT_take_drop k hAll
@@ -829,6 +942,8 @@ private theorem callRest_local_sound [DecidableEq ι] {G : NormalGraph ι}
       hr hrval hvals hacc hw hh
       (CallEffects.Effect.requires_none (CallEffects.Effect.plain_requires hplain)
         (CallEffects.Effect.plain_pre hplain) _ _ _)
+      (by simpa [htf, htr, hargs, vals, instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
+        using href)
     rw [CallEffects.Effect.result_plain hplain] at hs
     replace hs := weaken (fun _ _ hp => CallEffects.Effect.post_forgetEnsures hp) hs
     simpa [htf, htr, hargs, vals, receiverOf, actualsOf, instantiate, instantiateArgs_eq_map, List.map_map,
@@ -858,7 +973,8 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
     (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
     (hsc : ∀ p ∈ ps, checkScope p.context.length p.term = true)
     (hops : spreadOperands k u flags ps = true ∨ (ps.all fun p => valueTerm p.term) = true)
-    {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type)
       (e.forgetEnsures.post (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h)
       n W h (instantiate 0 ρ j.term) := by
@@ -869,6 +985,14 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
   · exact (hl : False).elim
   · exact (hl : False).elim
   obtain ⟨hΓf, htf, hΓr, htr, hcontexts, hlen, hshort, hargs, hundef, hparts, hmem, hplain⟩ := hl
+  have refsOf : ∀ p ∈ jf::jr::jas, RefsOk W (instantiate 0 ρ p.term) := by
+    obtain ⟨hfr, hrr, har⟩ := RefsOk_invoke.mp (by simpa [instantiate, instantiateArgs_eq_map] using href)
+    intro p hp
+    simp only [List.mem_cons] at hp
+    rcases hp with rfl | rfl | hp
+    · rw [htf]; exact hfr
+    · rw [htr]; exact hrr
+    · exact jas_refs hlen hargs hundef (fun a ha => har _ (List.mem_map_of_mem ha)) p hp
   have hops : spreadOperands k u flags (jf :: jr :: jas) = true := by
     rcases hops with hops | hvals
     · exact hops
@@ -923,12 +1047,12 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
   case h_2 => exact hparts.elim
   rename_i El hel
   cases n with
-  | zero => trivial
+  | zero => exact href
   | succ n =>
     have member : ∀ p ∈ jf::jr::jas, isVal (instantiate 0 ρ p.term) = true →
         meaning G p.type (n+1) W (instantiate 0 ρ p.term) := by
       intro p hp hv
-      exact safe_value_mem hv ((typed p hp).sound _ _ h ρ he hw hh)
+      exact safe_value_mem hv ((typed p hp).sound _ _ h ρ he hw hh (refsOf p hp))
     have hfv := valueOf jf (by simp) hfv0
     have hrv := valueOf jr (by simp) hrv0
     have hf := restsT_of_restSigs hmem (member jf (by simp) hfv)
@@ -936,7 +1060,7 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
         ((jas.take k).map (fun p => instantiate 0 ρ p.term)) := by
       have hAll := argument_values (ps := jas.take k)
         (fun p hp => typed p (by simp [List.mem_of_mem_take hp]))
-        hfixedv he hw hh
+        hfixedv he hw hh (fun p hp => refsOf p (by simp [List.mem_of_mem_take hp]))
       exact hAll
     -- The parts: each spread at its store type, each plain part at the element.
     let parts : List (Option Fam × Tm) := (flags.zip (jas.drop k)).map fun q =>
@@ -950,7 +1074,8 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
       apply List.map_congr_left
       intro q _
       rcases q with ⟨_ | _, p⟩ <;> rfl
-    rw [hterm]
+    have hrefs' : RefsOk W (instantiate 0 ρ (.invoke f r args)) := href
+    rw [hterm] at hrefs' ⊢
     -- A spread among the parts: an actual of the call that is no value.
     have hns : ∃ a ∈ (jas.take k).map (fun p => instantiate 0 ρ p.term) ++ parts.map RestCalls.partTerm,
         isVal a = false := by
@@ -983,7 +1108,8 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
           refine ⟨meaning_adm G p.type, spreadsInto_sound this,
             readOperand_instantiate hro (inScope p (by simp [hm])) heΓ, ?_⟩
           intro i hi U hx hu heap' hh'
-          exact (typed p (by simp [hm])).sound i U heap' ρ (heΓ.transfer i hi U hx) hu hh')
+          exact (typed p (by simp [hm])).sound i U heap' ρ (heΓ.transfer i hi U hx) hu hh'
+            (RefsOk_mono hx (RefsOk_trunc _ (refsOf p (by simp [hm])))))
       hw hh
       (by
         intro a ha
@@ -1001,7 +1127,8 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
           have hA : p.type = El := by simpa using hpart _ hq'
           simpa [hA] using member p (by simp [hm]) hv
         · simp at hnone)
-    intro i hi U hx hU hh' extra hex
+      hrefs'
+    intro i hi U hx hU hh' extra hex hre
     have hfU := (CallEffects.restsT_adm _).mono i _ U hx _
       ((CallEffects.restsT_adm _).down_le (n+1) i hi W _ hf)
     have hp := hfU.2 _ (List.mem_singleton_self _)
@@ -1028,7 +1155,7 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
       (by simpa [CallEffects.RestArrow.mapWith, CallEffects.Contract.map, List.map_map, Function.comp_def] using hp)
       hrU hrv hvals hacc hU hh'
       (CallEffects.Effect.requires_none (CallEffects.Effect.plain_requires hplain)
-        (CallEffects.Effect.plain_pre hplain) _ _ _)
+        (CallEffects.Effect.plain_pre hplain) _ _ _) hre
     rw [CallEffects.Effect.result_plain hplain] at hs
     exact weaken (fun _ _ hp => CallEffects.Effect.post_forgetEnsures_spread hns hp) hs
 
@@ -1040,19 +1167,19 @@ theorem selected_sound [DecidableEq ι] {G : NormalGraph ι}
     (hp : selectedOperands e = true) {eff : CallEffects.Effect} (hsel : selectedEffect e = some eff)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ n W h} (he : EnvOk G (claim e).context ρ n W)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ (claim e).term)) :
     SafePost (excOf G) (meaning G (claim e).type) (eff.post (receiverOf (instantiate 0 ρ (claim e).term)) (actualsOf (instantiate 0 ρ (claim e).term)) h)
       n W h (instantiate 0 ρ (claim e).term) := by
   cases e with
   | node j r ps =>
-    simp only [claim] at he ⊢
+    simp only [claim] at he href ⊢
     simp only [checkTreeUsing_eq, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at ht
     cases r <;> try simp only [selectedEffect, reduceCtorEq] at hsel
     case app effect =>
       cases hsel
       simp only [selectedOperands] at hp
       refine SafePostExc.post (call_local_sound ht.1 ?_ ?_ he hw hh
-        (CallEffects.Effect.requires_none (app_requires_none ht.1).1 (app_requires_none ht.1).2 _ _ _))
+        (CallEffects.Effect.requires_none (app_requires_none ht.1).1 (app_requires_none ht.1).2 _ _ _) href)
       · intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
         exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes hsums
@@ -1073,22 +1200,22 @@ theorem selected_sound [DecidableEq ι] {G : NormalGraph ι}
         exact List.all_eq_true.mp hscope e heq
       rcases hp with hvals | ⟨hsp, hops⟩
       · by_cases hsp : flags.any id = true
-        · exact callRestSpread_local_sound ht.1 hsp typed inScope (.inr (by simpa using hvals)) he hw hh
+        · exact callRestSpread_local_sound ht.1 hsp typed inScope (.inr (by simpa using hvals)) he hw hh href
         have hnos : flags.all (· == false) = true := by
           simp only [List.all_eq_true, beq_iff_eq]
           intro b hb
           cases b
           · rfl
           · exact absurd (List.any_eq_true.mpr ⟨true, hb, rfl⟩) hsp
-        apply callRest_local_sound ht.1 hnos typed _ he hw hh
+        refine callRest_local_sound ht.1 hnos typed ?_ he hw hh href
         intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
         exact ⟨List.all_eq_true.mp hvals e heq, List.all_eq_true.mp hscope e heq⟩
-      · exact callRestSpread_local_sound ht.1 hsp typed inScope (.inl (by simpa using hops)) he hw hh
+      · exact callRestSpread_local_sound ht.1 hsp typed inScope (.inl (by simpa using hops)) he hw hh href
     case construct effect =>
       cases hsel
       simp only [selectedOperands] at hp
-      refine SafePostExc.post (construct_local_sound ht.1 ?_ ?_ he hw hh)
+      refine SafePostExc.post (construct_local_sound ht.1 ?_ ?_ he hw hh href)
       · intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
         exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes hsums
@@ -1106,7 +1233,7 @@ theorem selected_sound [DecidableEq ι] {G : NormalGraph ι}
           simp only [selectedOperands] at hp
           obtain ⟨hctx,hterm,hsub⟩ := ht.1
           have ih := selected_sound child (ht.2 ⟨child,by simp⟩ (by simp)) hp hsel hcodes hsums
-            (ρ := ρ) (n := n) (W := W) (h := h) (by rw [hctx]; exact he) hw hh
+            (ρ := ρ) (n := n) (W := W) (h := h) (by rw [hctx]; exact he) hw hh (by rw [hterm]; exact href)
           rw [hterm] at ih
           exact consequence (fun j W v hv => PositiveCertificates.acceptedUsing hsub j W v hv)
             (fun _ _ hp => hp) ih
@@ -1117,7 +1244,7 @@ theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
     {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} (ht : checkTreeUsing G images e codes sums = true)
     (hp : selectedCallWithin Φ e = true) (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ n W h} (he : EnvOk G (claim e).context ρ n W)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ (claim e).term)) :
     SafePost (excOf G) (meaning G (claim e).type) (fun h' _ => Φ.Holds h h')
       n W h (instantiate 0 ρ (claim e).term) := by
   simp only [selectedCallWithin, Bool.and_eq_true] at hp
@@ -1126,7 +1253,7 @@ theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
   · rename_i eff hsel
     simp only [Bool.and_eq_true] at hp
     obtain ⟨hle, hr⟩ := hp
-    apply HeapObservations.weaken (fun h' v hq => ?_) (selected_sound e ht hops hsel hcodes hsums he hw hh)
+    apply HeapObservations.weaken (fun h' v hq => ?_) (selected_sound e ht hops hsel hcodes hsums he hw hh href)
     split at hr
     · rename_i ho
       exact (CallEffects.Effect.within_own hq.1 ho).mono hr
@@ -1182,9 +1309,11 @@ theorem inspect_safe_exc {T : Fam} {initial : Heap} : ∀ {n W h t},
       (fun h' => Footprints.Closed.empty.Holds initial h') n W h t := by
   intro n
   induction n with
-  | zero => intros; trivial
+  | zero => intros; assumption
   | succ n ih =>
     intro W h t hpre hp hw hh hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hv, ht⟩ | hth) | ⟨U, h', t', hx, hu, step, hh', hs⟩
     · exact .inl (.inl ⟨hv, ht, Footprints.Closed.holds_empty.mpr hpre⟩)
     · exact .inl (.inr ⟨hth, Footprints.Closed.holds_empty.mpr hpre⟩)
@@ -1216,19 +1345,23 @@ theorem field_write_within_exc [DecidableEq ι] {G : NormalGraph ι} {Γ Φ t T 
   split at hsel
   · rename_i Ref hi
     cases n with
-    | zero => trivial
+    | zero => assumption
     | succ n =>
       have hiv := (meaning_value (he.2 i Ref hi)).1
       have hkv := (meaning_value (he.2 k Γ[k] (List.getElem?_eq_getElem hk))).1
       simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero] at hpost ⊢
+      obtain ⟨hrf, hpost⟩ := hpost
+      refine ⟨hrf, ?_⟩
       rcases hpost with (hv | hr) | ⟨U, h', t', hx, hu, step, hh', hs'⟩
       · exact .inl (.inl hv)
       · exact .inl (.inr ⟨hr, Footprints.Closed.Holds.refl Φ h⟩)
       · obtain ⟨_, _, _, _, _, _, _, rfl, rfl⟩ := HeapExpressionRules.write_inv hiv hkv step
         refine .inr ⟨U, _, _, hx, hu, step, hh', ?_⟩
         cases n with
-        | zero => trivial
+        | zero => assumption
         | succ m =>
+          obtain ⟨hrf, hs'⟩ := hs'
+          refine ⟨hrf, ?_⟩
           rcases hs' with (hv | hr) | ⟨_, _, _, _, _, step', _, _⟩
           · exact .inl (.inl hv)
           · exact absurd hr (val_not_thrown rfl)
@@ -1483,8 +1616,10 @@ theorem write_back_post {f : PropKey} {flds : List (PropKey × Nat)} {c : CallCo
     (hs : Safe Ξ T n U h2 (.writeAt f (.objAt flds c oid) (.arr ls'))) :
     SafePostExc Ξ T (fun h' _ => P h') (fun h' => P h') n U h2 (.writeAt f (.objAt flds c oid) (.arr ls')) := by
   cases n with
-  | zero => trivial
+  | zero => assumption
   | succ n =>
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hbad, _⟩ | hr) | ⟨U3, h3, t3, hx, hu, st, hh3, hs3⟩
     · simp [isVal] at hbad
     · exact absurd hr (write_values_not_thrown rfl rfl)
@@ -1493,8 +1628,10 @@ theorem write_back_post {f : PropKey} {flds : List (PropKey × Nat)} {c : CallCo
     rw [hfd] at hl3; cases hl3
     refine .inr ⟨U3, _, _, hx, hu, st, hh3, ?_⟩
     cases n with
-    | zero => trivial
+    | zero => assumption
     | succ m =>
+      obtain ⟨hrf, hs3⟩ := hs3
+      refine ⟨hrf, ?_⟩
       rcases hs3 with (⟨hv, ht⟩ | hr) | ⟨_, _, _, _, _, st', _, _⟩
       · exact .inl (.inl ⟨hv, ht, hq⟩)
       · exact absurd hr (val_not_thrown rfl)
@@ -1521,21 +1658,25 @@ theorem elem_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
   rw [hl0] at hs ⊢
   generalize hvk : ρ k = v at hs hvv ⊢
   cases n with
-  | zero => trivial
+  | zero => assumption
   | succ n1 =>
+  obtain ⟨hrf, hs⟩ := hs
+  refine ⟨hrf, ?_⟩
   rcases hs with (⟨hbad, _⟩ | hr) | ⟨U1, h1, t1, hx1, hu1, step1, hh1, hs1⟩
   · simp [isVal] at hbad
   · exact .inl (.inr ⟨hr, StoreWrite.refl _ _ _ _⟩)
   obtain ⟨u, hfu, rfl, rfl⟩ := elem_read_inv hfd step1
   refine .inr ⟨U1, h, _, hx1, hu1, step1, hh1, ?_⟩
   cases n1 with
-  | zero => trivial
+  | zero => assumption
   | succ n2 =>
   -- The store field's contents meet its store type.
-  obtain ⟨u0, hu0, hcu⟩ := hh.2 fl cfl hlookup
+  obtain ⟨u0, hu0, hcu⟩ := hh.1.2 fl cfl hlookup
   rw [hfu] at hu0; cases hu0
   have hmL : meaning G L 1 (trunc 1 (by omega) W) u := (hagree 1 (by omega) _ u).mp (hcu 1 (by omega))
   have huv := (meaning_value hmL).1
+  obtain ⟨hrf, hs1⟩ := hs1
+  refine ⟨hrf, ?_⟩
   rcases hs1 with (⟨hbad, _⟩ | hr) | ⟨U2, h2, t2, hx2, hu2, step2, hh2, hs2⟩
   · simp [isVal] at hbad
   · exact .inl (.inr ⟨hr, StoreWrite.refl _ _ _ _⟩)
@@ -1563,7 +1704,7 @@ theorem elem_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
     obtain ⟨c', hc', himp⟩ := listT_slot hlist hlk
       (by rw [ProgramTyping.positionFam_tupleFams, hA]; rfl)
     obtain ⟨c, hc, rfl⟩ := lookup_trunc_inv _ W l c' hc'
-    obtain ⟨w, hw, hcw⟩ := hh.2 l c hc
+    obtain ⟨w, hw, hcw⟩ := hh.1.2 l c hc
     have hmA : meaning G A 0 (trunc 0 (by omega) W) w := himp 0 (by omega) _ w (hcw 0 (by omega))
     have hnarr : Footprints.isArr w = false := by
       have := sourceTy_sound hpos hmA
@@ -1719,20 +1860,24 @@ theorem elem_var_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty
   generalize hvk : ρ k = v at hs hvv ⊢
   generalize hjk : ρ j = iv at hs hjv ⊢
   cases n with
-  | zero => trivial
+  | zero => assumption
   | succ n1 =>
+  obtain ⟨hrf, hs⟩ := hs
+  refine ⟨hrf, ?_⟩
   rcases hs with (⟨hbad, _⟩ | hr) | ⟨U1, h1, t1, hx1, hu1, step1, hh1, hs1⟩
   · simp [isVal] at hbad
   · exact .inl (.inr ⟨hr, StoreWrite.refl _ _ _ _⟩)
   obtain ⟨u, hfu, rfl, rfl⟩ := elem_read_inv hfd step1
   refine .inr ⟨U1, h, _, hx1, hu1, step1, hh1, ?_⟩
   cases n1 with
-  | zero => trivial
+  | zero => assumption
   | succ n2 =>
-  obtain ⟨u0, hu0, hcu⟩ := hh.2 fl cfl hlookup
+  obtain ⟨u0, hu0, hcu⟩ := hh.1.2 fl cfl hlookup
   rw [hfu] at hu0; cases hu0
   have hmL : meaning G L 1 (trunc 1 (by omega) W) u := (hagree 1 (by omega) _ u).mp (hcu 1 (by omega))
   have huv := (meaning_value hmL).1
+  obtain ⟨hrf, hs1⟩ := hs1
+  refine ⟨hrf, ?_⟩
   rcases hs1 with (⟨hbad, _⟩ | hr) | ⟨U2, h2, t2, hx2, hu2, step2, hh2, hs2⟩
   · simp [isVal] at hbad
   · exact .inl (.inr ⟨hr, StoreWrite.refl _ _ _ _⟩)
@@ -1765,7 +1910,7 @@ theorem elem_var_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty
     obtain ⟨c', hc', himp⟩ := listT_slot hlist hlk
       (by rw [ProgramTyping.positionFam_tupleFams, hA]; rfl)
     obtain ⟨c, hc, rfl⟩ := lookup_trunc_inv _ W l c' hc'
-    obtain ⟨w, hw, hcw⟩ := hh.2 l c hc
+    obtain ⟨w, hw, hcw⟩ := hh.1.2 l c hc
     have hmA : meaning G A 0 (trunc 0 (by omega) W) w := himp 0 (by omega) _ w (hcw 0 (by omega))
     have hnarr : Footprints.isArr w = false := by
       have := sourceTy_sound hpos hmA
@@ -1812,8 +1957,10 @@ theorem elem_var_write_length [DecidableEq ι] {G : NormalGraph ι} {Γ : List (
   rw [hb0] at hs ⊢ hjv
   generalize hvk : ρ k = v at hs hvv ⊢
   cases n with
-  | zero => trivial
+  | zero => assumption
   | succ n1 =>
+  obtain ⟨hrf, hs⟩ := hs
+  refine ⟨hrf, ?_⟩
   rcases hs with (⟨hbad, _⟩ | hr) | ⟨U1, h1, t1, hx1, hu1, step1, hh1, hs1⟩
   · simp [isVal] at hbad
   · exact .inl (.inr ⟨hr, Changes.length_refl _⟩)
@@ -1821,11 +1968,13 @@ theorem elem_var_write_length [DecidableEq ι] {G : NormalGraph ι} {Γ : List (
   rw [hls0] at hfu; cases hfu
   refine .inr ⟨U1, h, _, hx1, hu1, step1, hh1, ?_⟩
   cases n1 with
-  | zero => trivial
+  | zero => assumption
   | succ n2 =>
-  obtain ⟨u0, hu0, hcu⟩ := hh.2 fl cfl hlookup
+  obtain ⟨u0, hu0, hcu⟩ := hh.1.2 fl cfl hlookup
   rw [hls0] at hu0; cases hu0
   have hmL : meaning G L 1 (trunc 1 (by omega) W) (.arr ls0) := (hagree 1 (by omega) _ _).mp (hcu 1 (by omega))
+  obtain ⟨hrf, hs1⟩ := hs1
+  refine ⟨hrf, ?_⟩
   rcases hs1 with (⟨hbad, _⟩ | hr) | ⟨U2, h2, t2, hx2, hu2, step2, hh2, hs2⟩
   · simp [isVal] at hbad
   · exact .inl (.inr ⟨hr, Changes.length_refl _⟩)
@@ -1855,7 +2004,7 @@ theorem elem_var_write_length [DecidableEq ι] {G : NormalGraph ι} {Γ : List (
     obtain ⟨c', hc', himp⟩ := listT_slot hlist hlk
       (by rw [ProgramTyping.positionFam_tupleFams, hA]; rfl)
     obtain ⟨c, hc, rfl⟩ := lookup_trunc_inv _ W l c' hc'
-    obtain ⟨w, hw, hcw⟩ := hh.2 l c hc
+    obtain ⟨w, hw, hcw⟩ := hh.1.2 l c hc
     have hmA : meaning G A 0 (trunc 0 (by omega) W) w := himp 0 (by omega) _ w (hcw 0 (by omega))
     have hnarr : Footprints.isArr w = false := by
       have := sourceTy_sound hpos hmA
@@ -2099,18 +2248,18 @@ theorem selected_sound_exc [DecidableEq ι] {G : NormalGraph ι}
     {eff : CallEffects.Effect} (hsel : selectedEffect e = some eff)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ n W h} (he : EnvOk G (claim e).context ρ n W)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ (claim e).term)) :
     SafePostExc (excOf G) (meaning G (claim e).type) (eff.post (receiverOf (instantiate 0 ρ (claim e).term)) (actualsOf (instantiate 0 ρ (claim e).term)) h)
       (eff.excPost (receiverOf (instantiate 0 ρ (claim e).term)) (actualsOf (instantiate 0 ρ (claim e).term)) h) n W h (instantiate 0 ρ (claim e).term) := by
   cases e with
   | node j r ps =>
-    simp only [claim] at he ⊢
+    simp only [claim] at he href ⊢
     simp only [checkTreeUsing_eq, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at ht
     cases r <;> try simp only [selectedEffect, reduceCtorEq] at hsel
     case app effect =>
       cases hsel
       simp only [selectedOperands] at hp
-      refine call_local_sound ht.1 ?_ ?_ he hw hh (CallEffects.Effect.requires_none (app_requires_none ht.1).1 (app_requires_none ht.1).2 _ _ _)
+      refine call_local_sound ht.1 ?_ ?_ he hw hh (CallEffects.Effect.requires_none (app_requires_none ht.1).1 (app_requires_none ht.1).2 _ _ _) href
       · intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
         exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes hsums
@@ -2121,7 +2270,7 @@ theorem selected_sound_exc [DecidableEq ι] {G : NormalGraph ι}
     case construct effect =>
       cases hsel
       simp only [selectedOperands] at hp
-      apply construct_local_sound ht.1 _ _ he hw hh
+      refine construct_local_sound ht.1 ?_ ?_ he hw hh href
       · intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
         exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes hsums
@@ -2140,7 +2289,7 @@ theorem selected_sound_exc [DecidableEq ι] {G : NormalGraph ι}
           simp only [selectedThrows] at hthrows
           obtain ⟨hctx,hterm,hsub⟩ := ht.1
           have ih := selected_sound_exc child (ht.2 ⟨child,by simp⟩ (by simp)) hp hthrows hsel hcodes hsums
-            (ρ := ρ) (n := n) (W := W) (h := h) (by rw [hctx]; exact he) hw hh
+            (ρ := ρ) (n := n) (W := W) (h := h) (by rw [hctx]; exact he) hw hh (by rw [hterm]; exact href)
           rw [hterm] at ih
           exact SafePostExc.consequence_below' (fun _ _ _ _ h => h)
             (fun j _ W v hv => PositiveCertificates.acceptedUsing hsub j W v hv)

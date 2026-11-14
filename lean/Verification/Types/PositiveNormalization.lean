@@ -180,7 +180,7 @@ theorem ValueSort.disjoint {v : Val} (h : ValueSort.source.Holds v) : ¬ ValueSo
   simp [ValueSort.Holds, isSourceVal] at h
 
 theorem ValueSort.Holds.closed {q : ValueSort} {v : Val} (h : q.Holds v) : isVal v = true ∧ Scoped 0 v :=
-  (topT_iff_sort (n := 0) (W := ofList [])).mpr (by cases q <;> simp_all)
+  (topT_iff_sort (n := 0) (W := ofEntries [])).mpr (by cases q <;> simp_all)
 
 def semWithArgs (Ξ : Fam) (X : α → Fam) (P : α → ArgFam) : Clause α → Fam
   | .top => topT
@@ -207,7 +207,7 @@ def semWithArgs (Ξ : Fam) (X : α → Fam) (P : α → ArgFam) : Clause α → 
   | .dict a bs vs ds os ms ks cs st => fun n W v =>
       refsT (famsOf X a) (bs.map (famsOf X)) n W v ∧
       viewsT (viewsOf X vs) n W v ∧
-        ((∀ d ∈ ds, dictViewT d.1 (X d.2) n W v) ∧ ∀ d ∈ cs, dictCellT d.1 (X d.2.2) n W v) ∧
+        ((∀ d ∈ ds, dictViewT d.1 (X d.2) n W v) ∧ ∀ d ∈ cs, dictCellT d.1 d.2.1 (X d.2.2) n W v) ∧
         optT (os.map (·.map X)) n W v ∧ methodT Ξ (ms.map (Member.of X P)) n W v ∧
         (∀ K ∈ ks, ownKeysT K n W v) ∧ stableKeysT st n W v
   | .arrs L S => interT (CallEffects.callsT Ξ (L.map (Arrow.map X)))
@@ -1133,14 +1133,14 @@ theorem semWithArgs_adm (X : α → Fam) (P : α → ArgFam) (c : Clause α) : A
     · intro n W v h
       exact ⟨(adm _ _).down n W v h.1, (viewsT_adm _).down n W v h.2.1,
         ⟨fun d hd => (dictViewT_adm _ _).down n W v (h.2.2.1.1 d hd),
-          fun d hd => (dictCellT_adm _ _).down n W v (h.2.2.1.2 d hd)⟩, (optT_adm _).down n W v h.2.2.2.1,
+          fun d hd => (dictCellT_adm _ _ _).down n W v (h.2.2.1.2 d hd)⟩, (optT_adm _).down n W v h.2.2.2.1,
         (methodT_adm _).down n W v h.2.2.2.2.1,
         fun K hK => (ownKeysT_adm K).down n W v (h.2.2.2.2.2.1 K hK),
         (stableKeysT_adm _).down n W v h.2.2.2.2.2.2⟩
     · intro n W U hx v h
       exact ⟨(adm _ _).mono n W U hx v h.1, (viewsT_adm _).mono n W U hx v h.2.1,
         ⟨fun d hd => (dictViewT_adm _ _).mono n W U hx v (h.2.2.1.1 d hd),
-          fun d hd => (dictCellT_adm _ _).mono n W U hx v (h.2.2.1.2 d hd)⟩, (optT_adm _).mono n W U hx v h.2.2.2.1,
+          fun d hd => (dictCellT_adm _ _ _).mono n W U hx v (h.2.2.1.2 d hd)⟩, (optT_adm _).mono n W U hx v h.2.2.2.1,
         (methodT_adm _).mono n W U hx v h.2.2.2.2.1,
         fun K hK => (ownKeysT_adm K).mono n W U hx v (h.2.2.2.2.2.1 K hK),
         (stableKeysT_adm _).mono n W U hx v h.2.2.2.2.2.2⟩

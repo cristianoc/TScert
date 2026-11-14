@@ -40,14 +40,6 @@ open Verification
 
 /-! ## Evaluation contexts -/
 
-/-- **A context's references** are those of its hole's contents and those of
-the context around the hole. -/
-def CtxRefs (C : Tm → Tm) : Prop := ∀ t r, r ∈ refs (C t) ↔ r ∈ refs t ∨ r ∈ refs (C .undef)
-
-theorem CtxRefs.ok {C : Tm → Tm} (hc : CtxRefs C) {k : Nat} {W : WorldT k} {t : Tm}
-    (ht : RefsOk W t) (hC : RefsOk W (C .undef)) : RefsOk W (C t) :=
-  fun r hr => ((hc t r).mp hr).elim (ht r) (hC r)
-
 /-- A throw leaves every context that lets it out. -/
 theorem Thrown.lift {Ξ : Fam} {k : Nat} {W : WorldT k} {t : Tm} {C : Tm → Tm}
     (raise : ∀ {v}, Raises t v → Raises (C t) v) (h : Thrown Ξ k W t) : Thrown Ξ k W (C t) :=

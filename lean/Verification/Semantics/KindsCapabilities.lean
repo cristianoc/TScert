@@ -70,7 +70,7 @@ theorem Holds.mono {cap : Capability} {k : Nat} {W W' : WorldT k} (hx : WExt W W
   let ⟨l, hl, ha⟩ := h; ⟨l, hl, ha.mono hx⟩
 
 theorem Holds.trunc {cap : Capability} {k j : Nat} (hj : j ≤ k) {W : WorldT k}
-    {flds : List (PropKey × Nat)} (h : cap.Holds W flds) : cap.Holds (Kinds.trunc j hj W) flds :=
+    {flds : List (PropKey × Nat)} (h : cap.Holds W flds) : cap.Holds (Verification.trunc j hj W) flds :=
   let ⟨l, hl, ha⟩ := h; ⟨l, hl, ha.trunc hj⟩
 
 /-- **Lookup exposes the target's role**: the key's location, its role in the
@@ -105,7 +105,7 @@ with that role, at every lower budget. -/
 theorem At.write {cap : Capability} {n : Nat} {W : WorldT n} {h : Heap} {l : Nat} {v : Val}
     (hok : HeapOk n W h) (hat : cap.At W l)
     (hv : ∀ r T, roleAt W l = some r → cap.permits r T →
-      Shape W r v ∧ ∀ (j : Nat) (hj : j < n), T j (Kinds.trunc j (Nat.le_of_lt hj) W) v) :
+      Shape W r v ∧ ∀ (j : Nat) (hj : j < n), T j (Verification.trunc j (Nat.le_of_lt hj) W) v) :
     HeapOk n W (h.set l v) := by
   obtain ⟨r, c, T, hr, hl, hp, hc⟩ := hat
   obtain ⟨hs, ht⟩ := hv r T hr hp
@@ -191,27 +191,6 @@ the capability permitting the roles the tag names, each with the position's
 contents type. -/
 
 end Capability
-
-/-- The roles a storage role tag names. -/
-def _root_.Verification.StorageRole.permits : StorageRole → Role → Prop
-  | .field, r => r = .field
-  | .cell, r => r = .cell
-  | .arrayStore, r => r = .store .array
-  | .viewStore, r => ∃ N, r = .store (.view N)
-
-/-- **Distinct tags name disjoint roles**: a role determines the tag naming it. -/
-theorem _root_.Verification.StorageRole.permits_unique {s s' : StorageRole} {r : Role}
-    (h : s.permits r) (h' : s'.permits r) : s = s' := by
-  cases s <;> cases s' <;> simp only [StorageRole.permits] at h h' <;>
-    first | rfl | (subst h; simp_all) | (obtain ⟨N, rfl⟩ := h; simp_all)
-
-/-- Every tag names some role. -/
-theorem _root_.Verification.StorageRole.inhabited (s : StorageRole) : ∃ r, s.permits r := by
-  cases s
-  · exact ⟨.field, rfl⟩
-  · exact ⟨.cell, rfl⟩
-  · exact ⟨.store .array, rfl⟩
-  · exact ⟨.store (.view 0), 0, rfl⟩
 
 namespace Capability
 
@@ -376,12 +355,39 @@ theorem _root_.Verification.StorageRole.concrete_of_holds {s : StorageRole} {v :
 theorem _root_.Verification.StorageRole.concrete_view {ls : List (Option Nat)} :
     StorageRole.viewStore.concrete (.arr ls) = some (.store (.view ls.length)) := rfl
 
+/-- **A write's payload category.** Contents of a tag's category have the
+category of every role the tag names, but a view store's: its length is
+fixed by its allocation, which a write of a store of the tag's category does
+not keep. -/
+theorem _root_.Verification.StorageRole.cat_of_holds {s : StorageRole} {r : Role} {v : Val}
+    (hp : s.permits r) (hs : s ≠ .viewStore) (h : s.Holds v) : Cat r v := by
+  cases s with
+  | field => simp only [StorageRole.permits] at hp; subst hp; exact h
+  | cell => simp only [StorageRole.permits] at hp; subst hp; exact h
+  | arrayStore => simp only [StorageRole.permits] at hp; subst hp; exact h
+  | viewStore => exact absurd rfl hs
+
+/-- **A write through a storage position** has the category of the role the
+world records at the position's location. -/
+theorem _root_.Verification.RoleIn.cat {s : StorageRole} {k : Nat} {W : WorldT k} {l : Nat} {v : Val}
+    (hr : RoleIn s W l) (hs : s ≠ .viewStore) (h : s.Holds v) :
+    ∀ r, roleAt W l = some r → Cat r v := by
+  intro r hl
+  obtain ⟨r', hr', hp⟩ := hr
+  rw [hl] at hr'; cases hr'
+  exact StorageRole.cat_of_holds hp hs h
+
 /-- **Key fit** of a tag: an array store under `[]`, a view store under
 `[[viewElements]]`, a field or a cell under every other key. -/
 def _root_.Verification.StorageRole.fitsKey (s : StorageRole) (key : PropKey) : Bool :=
   if key = arrayStoreKey then s == .arrayStore
   else if key = viewElementsKey then s == .viewStore
   else s == .field || s == .cell
+
+/-- An ordinary property fits every key but the store slots'. -/
+theorem _root_.Verification.StorageRole.fitsKey_field {key : PropKey} (h1 : key ≠ arrayStoreKey)
+    (h2 : key ≠ viewElementsKey) : StorageRole.field.fitsKey key = true := by
+  simp [StorageRole.fitsKey, h1, h2]
 
 /-- **A tag fitting its key gives every role it names the slot's role.** -/
 theorem _root_.Verification.StorageRole.slotRole_of_fitsKey {s : StorageRole} {key : PropKey} {r : Role}
@@ -417,13 +423,13 @@ def MetaFit {k : Nat} (ns : List PropKey) (rs : List Role) (cs : List (Ctr k)) :
   (∀ j : Nat, ns[j]? = some viewElementsKey → ∃ (N i : Nat) (c : Ctr k), rs[j]? = some (Role.store (.view N)) ∧
     ns[i]? = some viewLengthKey ∧ rs[i]? = some Role.field ∧ cs[i]? = some c ∧
       CtrStable c (.num (bitsOfNat N))) ∧
-  (viewElementsKey ∈ ns → hostKey ∈ ns)
+  (viewElementsKey ∈ ns ∨ viewLengthKey ∈ ns → hostKey ∈ ns)
 
 /-- An allocation naming neither metadata key fits trivially. -/
 theorem MetaFit.of_not_mem {k : Nat} {ns : List PropKey} {rs : List Role} {cs : List (Ctr k)}
     (hl : viewLengthKey ∉ ns) (he : viewElementsKey ∉ ns) : MetaFit ns rs cs :=
   ⟨fun _ hi => absurd (List.mem_of_getElem? hi) hl, fun _ hj => absurd (List.mem_of_getElem? hj) he,
-    fun hm => absurd hm he⟩
+    fun hm => hm.elim (fun h => absurd h he) (fun h => absurd h hl)⟩
 
 /-- **View metadata of an allocated object**: an allocation whose roles and
 contracts fit its metadata keys gives a field map with valid view
@@ -443,9 +449,16 @@ theorem viewMetaOk_alloc {k : Nat} (W : WorldT k) {ns : List PropKey} {rs : List
     · rw [lookup_appendWs_ge, hsnd, List.getElem?_append_left (by omega)]; exact hc
   refine ⟨fun m hm => ?_, fun e he => ?_, fun e he => ?_⟩
   rotate_left 2
-  · obtain ⟨j, hj, hp⟩ := mem_slots he
+  · obtain ⟨k0, hk0, he⟩ : ∃ k0, (k0 = viewElementsKey ∨ k0 = viewLengthKey) ∧
+        (k0, e) ∈ slots (entries W).length ns := by
+      rcases he with he | he
+      · exact ⟨_, .inl rfl, he⟩
+      · exact ⟨_, .inr rfl, he⟩
+    obtain ⟨j, hj, hp⟩ := mem_slots he
     simp only [Prod.mk.injEq] at hp
-    obtain ⟨i, hi, hk⟩ := List.getElem_of_mem (hfit.2.2 (hp.1 ▸ List.getElem_mem hj))
+    have hmem : k0 ∈ ns := hp.1 ▸ List.getElem_mem hj
+    obtain ⟨i, hi, hk⟩ := List.getElem_of_mem
+      (hfit.2.2 (hk0.elim (fun h => .inl (h ▸ hmem)) (fun h => .inr (h ▸ hmem))))
     rw [← hk, lookup_slots hnd hi]; rfl
   · obtain ⟨i, hi, hp⟩ := mem_slots hm
     simp only [Prod.mk.injEq] at hp

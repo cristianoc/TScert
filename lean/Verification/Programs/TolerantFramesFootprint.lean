@@ -137,11 +137,11 @@ theorem pass_within_normal {G : NormalGraph ι} {images : InstanceImageCheck G} 
             (ExpressionEffects.actualsOf (instantiate 0 ρ (claim d).term)) h) n W h
           (instantiate 0 ρ (claim d).term) := by
         rcases Bool.or_eq_true_iff.mp htree with htree | hreq
-        · exact ExpressionEffects.selected_sound d htree hops heff hcodes hsums (hctx ▸ he) hw hh
+        · exact ExpressionEffects.selected_sound d htree hops heff hcodes hsums (hctx ▸ he) hw hh (by rw [hterm]; exact hsafe.refs)
         · obtain ⟨eff', heff', hs⟩ := PromiseCalls.requiresTree_sound hcodes hsums d hreq
           rw [heff] at heff'
           cases heff'
-          exact hs (hctx ▸ he) hkS hw hh
+          exact hs (hctx ▸ he) hkS hw hh (by rw [hterm]; exact hsafe.refs)
       rw [hterm] at hs
       have hboth := cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh
         (of_value_property (Q := fun _ _ => True) (fun _ _ _ _ _ => trivial) hsafe) hs
@@ -192,11 +192,11 @@ theorem pass_within_throw {G : NormalGraph ι} {images : InstanceImageCheck G} {
             (ExpressionEffects.actualsOf (instantiate 0 ρ (claim d).term)) h) n W h
           (instantiate 0 ρ (claim d).term) := by
         rcases Bool.or_eq_true_iff.mp htree with htree | hreq
-        · exact ExpressionEffects.selected_sound_exc d htree hops hthr heff hcodes hsums (hctx ▸ he) hw hh
+        · exact ExpressionEffects.selected_sound_exc d htree hops hthr heff hcodes hsums (hctx ▸ he) hw hh (by rw [hterm]; exact hsafe.refs)
         · obtain ⟨eff', heff', hs⟩ := PromiseCalls.requiresTree_sound_exc hcodes hsums d hreq
           rw [heff] at heff'
           cases heff'
-          exact hs (hctx ▸ he) hkS hw hh
+          exact hs (hctx ▸ he) hkS hw hh (by rw [hterm]; exact hsafe.refs)
       rw [hterm] at hs
       have hboth := SafePostExc.cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh
         (SafePostExc.of_post (R := fun _ => True) (fun _ => trivial)
@@ -225,11 +225,11 @@ theorem pass_write_judgment {G : NormalGraph ι} {images : InstanceImageCheck G}
     (hc : passWrites G j.context kS Φ j.term = true)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
     (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hkS : HeapKnowledge.Holds kS ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePostExc (excOf G) (meaning G j.type) (fun h' v => Φ.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => Φ.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) :=
   judgment_with_output checker hr hcodes hsums he hk hw hh
-    (passWrites_sound hc he hh hkS (erase (checker.sound hr hcodes hsums he hk hw hh)))
+    (passWrites_sound hc he hh hkS (erase (checker.sound hr hcodes hsums he hk hw hh href)))
 
 end Footprint
 

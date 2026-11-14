@@ -58,10 +58,10 @@ theorem regionalTyped_of_requires {G : NormalGraph ι} {I : InstanceImageCheck G
   simp only [regionalDerivChecked, derivChecked, Bool.and_eq_true, beq_iff_eq] at hd
   obtain ⟨⟨hterm, hctx⟩, -⟩ := hd
   refine ⟨by simpa [ControlFlow.entry, passRegionalEvidence, NodeEvidence.expression] using hctx, ?_⟩
-  intro ε n W h ρ he _ hf hw hh
+  intro ε n W h ρ he _ hf hw hh hrf
   obtain ⟨_, _, hs⟩ := PromiseCalls.requiresTree_sound hcodes hsums d hr
   have hs := erase (hs (by simpa [ControlFlow.entry, passRegionalEvidence, NodeEvidence.expression] using he)
-    (hk ε ρ h hf) hw hh)
+    (hk ε ρ h hf) hw hh (by rw [hterm]; exact hrf))
   rw [hterm] at hs
   have hs' : Safe (excOf G) (fun k U u => meaning G (result (passRegionalEvidence c node (some d) se kHere)) k U u ∧
       PromiseCalls.YieldsOk G (passRegionalEvidence c node (some d) se kHere).yields ρ k U u) n W h
@@ -91,25 +91,26 @@ theorem stepChecked_safe {G : NormalGraph ι} {I : InstanceImageCheck G} {codes 
     {ctx : Nat → List (Ty ι)} {l : Nat} (r : NodeChecked G I codes pc P w startNames ctx l)
     (hc : CodesSound G codes) {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
     (he : EnvOk G r.c.context ρ n W) (hk : HeapKnowledge.Holds r.st.stepK ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ r.node.expression)) :
     Safe (excOf G) (meaning G r.c.type) n W h (instantiate 0 ρ r.node.expression) := by
   rcases r.hstep with ⟨x, hcopy, _⟩ | ⟨_, effect, a0, ha, hsum⟩
   · obtain ⟨i, hi, hty, _⟩ := copiedOf_some hcopy
-    rw [hi]
-    simpa [instantiate] using value_safe (meaning G r.c.type) n W h (ρ i) (meaning_value (he.2 i _ hty)).1 (he.2 i _ hty)
+    rw [hi] at href ⊢
+    simp only [instantiate, Nat.not_lt_zero, ite_false, Nat.sub_zero] at href ⊢
+    exact value_safe (meaning G r.c.type) n W h (ρ i) (meaning_value (he.2 i _ hty)).1 (he.2 i _ hty) href
   · obtain ⟨out, pre, hsel, htree, _, _, _, _, hp, hn⟩ := ha
     have hs := (hsum r.sums).2
     by_cases hpres : passPreserving G I (jOf r.c r.node)
         (kOf G r.c r.entry r.ms (wholeOf r.node.expression)) effect codes a0.summaries.toList = true
     · have hK := (hp hpres).2.1
       rw [hK] at hk
-      exact erase (pass_select_sound (fun h => passTreeCheck_ok htree h) hsel hc hs he hk hw hh)
+      exact erase (pass_select_sound (fun h => passTreeCheck_ok htree h) hsel hc hs he hk hw hh href)
     · have hfalse : passPreserving G I (jOf r.c r.node)
           (kOf G r.c r.entry r.ms (wholeOf r.node.expression)) effect codes a0.summaries.toList = false :=
         Bool.eq_false_iff.mpr hpres
       obtain ⟨out', hwhole, hsel', _, hK, _⟩ := hn hfalse
       rw [hK] at hk
-      exact erase ((passRunChecker pc).sound (pass_select_whole htree hwhole hsel') hc hs he hk hw hh)
+      exact erase ((passRunChecker pc).sound (pass_select_whole htree hwhole hsel') hc hs he hk hw hh href)
 
 /-- Evidence without an ordinary derivation has the checked step's type. -/
 theorem regionalTyped_of_step {G : NormalGraph ι} {I : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
@@ -122,8 +123,8 @@ theorem regionalTyped_of_step {G : NormalGraph ι} {I : InstanceImageCheck G} {c
       RegionalTyped G (passRegionalEvidenceOf r) r.node := by
   obtain ⟨hent, hres⟩ := hshape
   refine ⟨hent, ?_⟩
-  intro ε n W h ρ he _ hf hw hh
-  have hs := stepChecked_safe r hc (hent ▸ he) (hk ε ρ h hf) hw hh
+  intro ε n W h ρ he _ hf hw hh hrf
+  have hs := stepChecked_safe r hc (hent ▸ he) (hk ε ρ h hf) hw hh hrf
   apply of_value_property (fun _ _ _ v _ => outFacts_holds he (HeapKnowledge.empty _ _))
   apply Safe_mono n (fun _ _ _ v hv => ?_) W h _ hs
   exact ⟨hres.symm ▸ hv, fun y hy => by simp [passRegionalEvidenceOf, passRegionalEvidence] at hy⟩

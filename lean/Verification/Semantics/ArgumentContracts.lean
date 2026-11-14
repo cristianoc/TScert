@@ -95,15 +95,18 @@ def callable (Ξ : Fam) (P : Family) (Rc R : Fam) : Fam := fun n W v =>
 theorem call_safe {P : Family} {Rc R : Fam} (hP : Admissible P) (hRc : Adm Rc)
     {n W heap f r vs} (hf : callable Ξ P Rc R n W f) (hr : Rc n W r)
     (hrv : isVal r = true) (hv : CallArguments.Values vs) (ha : P n W vs)
-    (hw : WorldAdm W) (hh : HeapOk n W heap) : Safe Ξ R n W heap (.invoke f r vs) := by
+    (hw : WorldAdm W) (hh : HeapOk n W heap) (href : RefsOk W (.invoke f r vs)) :
+    Safe Ξ R n W heap (.invoke f r vs) := by
   cases n with
-  | zero => trivial
+  | zero => exact href
   | succ n =>
     let U := trunc n (Nat.le_succ n) W
+    obtain ⟨hfr, hrr, har⟩ := RefsOk_invoke.mp href
     obtain ⟨body, hi, hs⟩ := hf.2 n (Nat.lt_succ_self n) U (WExt_refl _)
-      (WorldAdm_trunc _ hw) heap (HeapOk_trunc n W heap hh) r hrv (hRc.down n W r hr)
-      vs hv (hP.transfer ha n (Nat.le_succ n) U (WExt_refl _))
-    exact .inr ⟨U, heap, body, WExt_refl _, WorldAdm_trunc _ hw, hi.step heap,
-      HeapOk_trunc n W heap hh, hs⟩
+      (WorldAdm_trunc _ hw) heap (HeapOk_trunc n W heap hh) (RefsOk_trunc _ hfr) r hrv (hRc.down n W r hr)
+      (RefsOk_trunc _ hrr) vs hv (fun a ha => RefsOk_trunc _ (har a ha))
+      (hP.transfer ha n (Nat.le_succ n) U (WExt_refl _))
+    exact ⟨href, .inr ⟨U, heap, body, WExt_refl _, WorldAdm_trunc _ hw, hi.step heap,
+      HeapOk_trunc n W heap hh, hs⟩⟩
 
 end Verification.ArgumentContracts

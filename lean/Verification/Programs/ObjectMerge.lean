@@ -493,7 +493,7 @@ theorem objFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι}
       exact ⟨l, c, hl, hc, hag⟩
     · obtain ⟨fs', oid', he, -, -, hall⟩ := hopt
       cases he
-      obtain ⟨c, hc, hag⟩ := hall _ (List.mem_map_of_mem hq) l hl
+      obtain ⟨c, hc, -, hag⟩ := hall _ (List.mem_map_of_mem hq) l hl
       exact ⟨c, hc, fun j hj U u hu => (hag j hj U u).1 hu⟩
   · rename_i a bs vs ds os ms ks cs st
     cases ho
@@ -515,7 +515,7 @@ theorem objFacts_of_sem {G : NormalGraph ι} {c : Clause (List ι)} {o : Obj ι}
       exact ⟨l, c, hl, hc, hag⟩
     · obtain ⟨fs', oid', he, -, -, hall⟩ := hopt
       cases he
-      obtain ⟨c, hc, hag⟩ := hall _ (List.mem_map_of_mem hq) l hl
+      obtain ⟨c, hc, -, hag⟩ := hall _ (List.mem_map_of_mem hq) l hl
       exact ⟨c, hc, fun j hj U u hu => (hag j hj U u).1 hu⟩
     · exact dictViewT_present (hview x hx) hk hl
     · cases hne : ds ++ cellViews cs with
@@ -834,7 +834,7 @@ theorem heap_contract {G : NormalGraph ι} {p : Nat} {W : WorldT (p + 1)} {h : H
     (hok : HeapOk (p + 1) W h) {l : Nat} {c : Ctr (p + 1)} {A : List ι} (hc : lookup W l = some c)
     (hag : ∀ (j : Nat) (hj : j < p + 1) (U : WorldT j) (u : Val), c j hj U u → meaning G A j U u) :
     meaning G A p (trunc p (Nat.le_succ p) W) (heapVal h l) := by
-  obtain ⟨v, hv, hmem⟩ := hok.2 l c hc
+  obtain ⟨v, hv, hmem⟩ := hok.1.2 l c hc
   have hA := hag p (Nat.lt_succ_self p) _ v (hmem p (Nat.lt_succ_self p))
   have : heapVal h l = v := by simp [heapVal, hv, meaning_isVal hA]
   rw [this]; exact hA
@@ -859,7 +859,7 @@ theorem storeData_typed {G : NormalGraph ι} {p : Nat} {W : WorldT (p + 1)} {h :
     (hst : storeIn G S T = true) {k : PropKey} {v : Tm} (hv : (storeData h fs).lookup k = some v) :
     ∀ (j : Nat) (hj : j + 1 < p), meaning G T j (trunc j (by omega) (below W)) v := by
   intro j hj
-  obtain ⟨u, hu, hmem⟩ := hok.2 lσ cσ hc
+  obtain ⟨u, hu, hmem⟩ := hok.1.2 lσ cσ hc
   have hs := storeIn_sound hst (hag p (Nat.lt_succ_self p) _ u (hmem p (Nat.lt_succ_self p)))
   unfold storeData at hv
   simp only [hl] at hv
@@ -879,7 +879,7 @@ theorem storeData_typed {G : NormalGraph ι} {p : Nat} {W : WorldT (p + 1)} {h :
   obtain ⟨E, c', hE, hc', hag'⟩ := hrest i m (by simp) hi.1
   cases hE
   obtain ⟨c'', hc'', rfl⟩ := lookup_trunc_inv (Nat.le_succ p) W m c' hc'
-  obtain ⟨w, hw, hmem'⟩ := hok.2 m c'' hc''
+  obtain ⟨w, hw, hmem'⟩ := hok.1.2 m c'' hc''
   have hT : meaning G T j (trunc j (by omega) (below W)) w := by
     have := (hag' j (by omega) (trunc j (by omega) (below W)) w).1
     apply this
@@ -1120,7 +1120,7 @@ theorem src_class_plain {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT 
         | none => rfl
         | some l =>
           obtain ⟨c, hcw, hag⟩ := hf.indexes x hx arrayStoreKey l (by rw [hstr]; exact strings_admit_store) hl
-          obtain ⟨u, hu, hmem⟩ := hok.2 l c hcw
+          obtain ⟨u, hu, hmem⟩ := hok.1.2 l c hcw
           have hm := hag p (Nat.lt_succ_self p) _ u (hmem p (Nat.lt_succ_self p))
           simp only [hu]
           cases u with
@@ -1196,7 +1196,7 @@ theorem src_class {G : NormalGraph ι} {o : Obj ι} {p : Nat} {W : WorldT (p + 1
         · exact hown
         · cases hown
       obtain ⟨c, hcw, hag⟩ := hf.numeric S T hS hst hbuiltins k l hk hl
-      obtain ⟨u, hu, hmem⟩ := hok.2 l c hcw
+      obtain ⟨u, hu, hmem⟩ := hok.1.2 l c hcw
       intro j hj
       have hT := hag j (by omega) _ u (hmem j (by omega))
       have : heapVal h l = u := by simp [heapVal, hu, meaning_isVal hT]
@@ -1268,9 +1268,11 @@ would deny: each bound of a result with one keeps its writable classes
 @[nospecialize] def MergeClause (G : NormalGraph ι) (d : List PropKey) (ca cb cr : Clause (List ι)) : Bool :=
   match objOf ca, srcOf cb, cr with
   | some oa, some sb, .refs fs [] [] os [] ks =>
-    fs.all (·.2.1 == .field) && FieldsOk d oa sb (Stored.views fs) os ks
+    fs.all (·.2.1 == .field) && os.all (fun o => o.readonly || o.role == .field) &&
+      FieldsOk d oa sb (Stored.views fs) os ks
   | some oa, some sb, .dict fs [] [] ds os [] ks cs =>
-    fs.all (·.2.1 == .field) && cs.all (·.2.1 == .field) && FieldsOk d oa sb (Stored.views fs) os ks &&
+    fs.all (·.2.1 == .field) && os.all (fun o => o.readonly || o.role == .field) &&
+      cs.all (·.2.1 == .field) && FieldsOk d oa sb (Stored.views fs) os ks &&
       DictOk G d oa sb (Stored.views fs) os ds (cellViews cs) &&
       ks.all (fun K => cs.all fun y => K.keeps y.1)
   | _, _, _ => false
@@ -1635,8 +1637,19 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
     (hfd : ∀ q ∈ Stored.views fs, (∀ x ∈ cellViews cs, x.1.Admits q.1 → q.2 = x.2) ∧
       (∀ x ∈ ds, x.1.Admits q.1 → inLabels q.2 x.2 = true))
     (hod : ∀ q ∈ os, (∀ x ∈ cellViews cs, x.1.Admits q.key → q.type = x.2) ∧
-      (∀ x ∈ ds, x.1.Admits q.key → inLabels q.type x.2 = true)) :
+      (∀ x ∈ ds, x.1.Admits q.key → inLabels q.type x.2 = true))
+    (hfsr : ∀ q ∈ fs, q.2.1 = .field) (hosr : ∀ q ∈ os, q.readonly = false → q.role = .field)
+    (hcsr : ∀ y ∈ cs, y.2.1 = .field) (hra : RefsOk W va) (hrb : RefsOk W vb) :
     Safe (excOf G) (meaning G R) (p + 1) W h (.merge d va vb) := by
+  have href : RefsOk W (.merge d va vb) := by
+    intro r hr; simp only [refs, List.mem_append] at hr; exact hr.elim (hra r) (hrb r)
+  have hcat := Kinds.mergeParts_cat hok.2 hra hrb hparts
+  have hnol := Kinds.mergeParts_noLength hra hparts
+  have hvref : ∀ e ∈ mergeData pa qs, RefsOk W e.2 := by
+    intro e he
+    rcases Kinds.mergeParts_vals hparts e he with ⟨l, hl⟩ | ⟨s, hs⟩
+    · rw [hl]; exact Kinds.heapVal_refs l (by simpa using hok.1.1) hok.2
+    · rw [hs]; exact RefsOk_of_nil rfl
   have hnodup := mergeData_nodup hpn hqn
   obtain ⟨hF, hO, hP, hK⟩ := result_facts hs hfs hos hpr hks
   have hfn : ((Stored.views fs).map Prod.fst).Nodup := hnd.sublist (List.sublist_append_left _ _)
@@ -1647,7 +1660,7 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
     intro hm
     exact (List.nodup_append.mp hnd).2.2 _ hm _ (List.mem_map_of_mem hq) rfl
   let ix : List (IndexKeys × List ι) := ds ++ cellViews cs
-  generalize mergeData pa qs = ps at hparts hnodup hF hO hP hK hcls hnp
+  generalize mergeData pa qs = ps at hparts hnodup hF hO hP hK hcls hnp hcat hnol hvref
   have hnohost : (slots h.length (ps.map Prod.fst)).lookup hostKey = none := by
     apply lookup_slots_none
     intro hm
@@ -1684,8 +1697,13 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
           obtain ⟨hx, hadmK⟩ := Classical.choose_spec hadmits
           exact hcls _ hx e.1 e.2 hadmK hl j hj
         · rfl
-  refine Or.inr ⟨below W, h, .makeAt .absent (ps.map Prod.fst) (ps.map Prod.snd), WExt_refl _,
-    WorldAdm_trunc _ hadm, Step.mergeV hva hvb hparts, HeapOk_trunc p W h hok, ?_⟩
+  have hmref : RefsOk (below W) (.makeAt .absent (ps.map Prod.fst) (ps.map Prod.snd)) := by
+    intro r hr
+    simp only [Kinds.refs_makeAt, Kinds.codeRefs, List.nil_append, List.mem_flatMap, List.mem_map] at hr
+    obtain ⟨x, ⟨e, he, rfl⟩, hrx⟩ := hr
+    exact RefsOk_trunc _ (hvref e he) r hrx
+  refine ⟨href, Or.inr ⟨below W, h, .makeAt .absent (ps.map Prod.fst) (ps.map Prod.snd), WExt_refl _,
+    WorldAdm_trunc _ hadm, Step.mergeV hva hvb hparts, HeapOk_trunc p W h hok, ?_⟩⟩
   -- The merge allocates an ordinary object: every entry's role is `field`.
   apply make_fields_rule_below (ss := ps.map fun _ => StorageRole.field)
     (As := ps.map (entryFam G (Stored.views fs) os ix)) (by simp)
@@ -1694,8 +1712,26 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
       obtain ⟨e, he, rfl⟩ := List.mem_map.mp hA
       exact entryFam_valOnly G (Stored.views fs) os ix e (hvals _ (List.mem_map_of_mem he)))
     p (below W) h .absent (ps.map Prod.fst) (ps.map Prod.snd) hnodup (by simp) (by simp) hvals
-    (WorldAdm_trunc _ hadm) (HeapOk_trunc p W h hok)
-  · intro q hq
+    (WorldAdm_trunc _ hadm) (HeapOk_trunc p W h hok) (hv := ?hvgoal)
+    (hhold := fun i s v hs hv => by
+      simp only [List.getElem?_map] at hs hv
+      obtain ⟨e, he, rfl⟩ := Option.map_eq_some_iff.mp hs
+      obtain ⟨e', he', rfl⟩ := Option.map_eq_some_iff.mp hv
+      rw [he] at he'; cases he'
+      exact (hcat e (List.mem_of_getElem? he)).2.2)
+    (hfits := fun i s hs key hk => by
+      simp only [List.getElem?_map] at hs hk
+      obtain ⟨e, he, rfl⟩ := Option.map_eq_some_iff.mp hs
+      obtain ⟨e', he', rfl⟩ := Option.map_eq_some_iff.mp hk
+      rw [he] at he'; cases he'
+      have hc := hcat e (List.mem_of_getElem? he)
+      exact StorageRole.fitsKey_field hc.1 hc.2.1)
+    (hmeta := fun _ _ _ => Kinds.MetaFit.of_not_mem
+      (fun hm => by obtain ⟨e, he, hk⟩ := List.mem_map.mp hm; exact hnol e he hk)
+      (fun hm => by obtain ⟨e, he, hk⟩ := List.mem_map.mp hm; exact (hcat e he).2.1 hk))
+    (href := hmref)
+  case hvgoal =>
+    intro q hq
     rw [List.zip_map', List.mem_map] at hq
     obtain ⟨e, he, rfl⟩ := hq
     exact hfam e he
@@ -1719,6 +1755,11 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
       cases hfl
       rw [hl] at hl'; cases hl'
       exact ⟨v, c, hv, hU, hag⟩
+    -- Every location the copy allocates is an ordinary property.
+    have hfr : ∀ f l, (slots h.length (ps.map Prod.fst)).lookup f = some l → RoleIn .field U l := by
+      intro f l hl
+      obtain ⟨v, hv⟩ := lookup_isSome (mem_of_lookup_slots hl)
+      exact recT_role (hzip _ (mem_of_lookup hv)) hrec hl
     have hrefs : ReferenceConjunctions.refsT (ReferenceConjunctions.famsOf (meaning G) fs) [] j U
         (.objAt (slots h.length (ps.map Prod.fst)) .absent (h.length + (ps.map Prod.snd).length)) := by
       refine ⟨⟨_, _, rfl, fun _ _ _ _ _ hl => owned_of_nodup (slots_nodup _ _) hl, ?_⟩, by simp,
@@ -1732,7 +1773,12 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
       cases hfl
       have : entryFam G (Stored.views fs) os ix (f, v) = meaning G T := by
         simp [entryFam, lookup_of_mem hfn hT]
-      exact ⟨l, c, hl, hU, fun i hi U' u => (hag i hi U' u).trans (by rw [this])⟩
+      have hs : s = .field := by
+        obtain ⟨B, hB, hBe⟩ := ReferenceConjunctions.mem_famsOf.mp hm
+        exact hfsr _ hB
+      refine ⟨l, c, hl, hU, ?_, fun i hi U' u => (hag i hi U' u).trans (by rw [this])⟩
+      rw [hs]
+      exact recT_role (hzip _ he) hrec hl
     have hviews : viewT (ReferenceConjunctions.viewsOf (meaning G) []) j U
         (.objAt (slots h.length (ps.map Prod.fst)) .absent (h.length + (ps.map Prod.snd).length)) := by
       intro f F hm; simp [ReferenceConjunctions.viewsOf] at hm
@@ -1761,7 +1807,9 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
         obtain ⟨q', hf, rfl⟩ := hfind
         have : entryFam G (Stored.views fs) os ix (q'.key, v) = meaning G q'.type := by
           simp only [entryFam, hdisj q' hq, hf]
-        refine ⟨c, hU, fun i hi U' u => ?_⟩
+        refine ⟨c, hU, fun hro => by
+          rw [show (OptionalField.map (meaning G) q').role = q'.role from rfl, hosr q' hq hro]
+          exact hfr _ l hl, fun i hi U' u => ?_⟩
         have hiff : c i hi U' u ↔ meaning G q'.type i U' u :=
           (hag i hi U' u).trans (by simp only [OptionalField.map]; rw [this])
         exact ⟨hiff.mp, fun _ => hiff.mpr⟩
@@ -1835,7 +1883,7 @@ theorem merge_finish {G : NormalGraph ι} {d : List PropKey} {oa : Obj ι} {sb :
       · obtain ⟨c, hU, -, himp⟩ := hkey x (List.mem_append_left _ hx) f l hl hxf
         exact ⟨c, hU, himp⟩
       · obtain ⟨c, hU, hiff, -⟩ := hkey (x.1, x.2.2) (List.mem_append_right _ (List.mem_map_of_mem hx)) f l hl hxf
-        exact ⟨c, hU, hiff (x.1, x.2.2) (List.mem_map_of_mem hx) hxf⟩
+        exact ⟨c, hU, hcsr x hx ▸ hfr f l hl, hiff (x.1, x.2.2) (List.mem_map_of_mem hx) hxf⟩
 
 /-- The conditions `FieldsOk` states, as `merge_finish` takes them. -/
 theorem fieldsOk_facts {d : List PropKey} {oa : Obj ι} {sb : Src ι} {fs : List (PropKey × List ι)}
@@ -1942,10 +1990,20 @@ theorem merge_sides {G : NormalGraph ι} {d : List PropKey} {ca cb : Clause (Lis
 /-- **A merge of two values is safe at a result the rule states.** -/
 theorem merge_values_safe {G : NormalGraph ι} {d : List PropKey} {A B R : List ι}
     (hm : MergeOk G d A B R = true) {n : Nat} {W : WorldT n} {h : Heap} {va vb : Val}
-    (hadm : WorldAdm W) (hok : HeapOk n W h) (ha : meaning G A n W va) (hb : meaning G B n W vb) :
+    (hadm : WorldAdm W) (hok : HeapOk n W h) (ha : meaning G A n W va) (hb : meaning G B n W vb)
+    (hra : RefsOk W va) (hrb : RefsOk W vb) :
     Safe (excOf G) (meaning G R) n W h (.merge d va vb) := by
+  have hroles : ∀ {os : List (OptionalField (List ι))}, (os.all fun o => o.readonly || o.role == .field) = true →
+      ∀ q ∈ os, q.readonly = false → q.role = .field := by
+    intro os h q hq hro
+    have := List.all_eq_true.mp h q hq
+    simpa [hro] using this
+  have hfields : ∀ {fs : List (Stored (List ι))}, (fs.all (·.2.1 == .field)) = true →
+      ∀ q ∈ fs, q.2.1 = .field := by
+    intro fs h q hq
+    simpa using List.all_eq_true.mp h q hq
   cases n with
-  | zero => trivial
+  | zero => intro r hr; simp only [refs, List.mem_append] at hr; exact hr.elim (hra r) (hrb r)
   | succ p =>
   simp only [MergeOk, Bool.and_eq_true, List.all_eq_true, List.any_eq_true] at hm
   obtain ⟨⟨hpA, hpB⟩, hall⟩ := hm
@@ -1960,19 +2018,21 @@ theorem merge_values_safe {G : NormalGraph ι} {d : List PropKey} {A B R : List 
   · rename_i oa sb fs os ks hoa hsrc
     obtain ⟨pa, qs, hpn, hqn, hva, hvb, hparts, hs⟩ := merge_sides (d := d) hoa hsrc hok hsa hsb hna hnb
     simp only [Bool.and_eq_true] at hmc
-    obtain ⟨-, hmc⟩ := hmc
+    obtain ⟨⟨hfr, hor⟩, hmc⟩ := hmc
     obtain ⟨hnd, hfs, hos, hpr, hks⟩ := fieldsOk_facts hmc
     exact merge_finish (ds := []) (cs := []) hadm hok hs hpn hqn hva hvb hparts hcr
       (.inl rfl) hnd hfs hos hpr hks (by simp [cellViews]) (by simp [cellViews]) (by simp [cellViews])
       (fun _ _ => ⟨by simp [cellViews], by simp⟩) (fun _ _ => ⟨by simp [cellViews], by simp⟩)
+      (hfields hfr) (hroles hor) (by simp) hra hrb
   · rename_i oa sb fs ds os ks cs hoa hsrc
     obtain ⟨pa, qs, hpn, hqn, hva, hvb, hparts, hs⟩ := merge_sides (d := d) hoa hsrc hok hsa hsb hna hnb
     simp only [Bool.and_eq_true] at hmc
-    obtain ⟨⟨⟨⟨-, -⟩, hmf⟩, hmd⟩, -⟩ := hmc
+    obtain ⟨⟨⟨⟨⟨hfr, hor⟩, hcr'⟩, hmf⟩, hmd⟩, -⟩ := hmc
     obtain ⟨hnd, hfs, hos, hpr, hks⟩ := fieldsOk_facts hmf
     obtain ⟨hne, hnp, hix, hov, hfd, hod⟩ := dictOk_facts hmd
     refine merge_finish hadm hok hs hpn hqn hva hvb hparts hcr (.inr ⟨rfl, hne⟩) hnd hfs
-      hos hpr hks hov ?_ ?_ hfd hod
+      hos hpr hks hov ?_ ?_ hfd hod (hfields hfr) (hroles hor)
+      (fun y hy => by simpa using List.all_eq_true.mp hcr' y hy) hra hrb
     · intro x hx k v hk hv
       rw [lookup_mergeData] at hv
       cases hq : qs.lookup k with

@@ -227,7 +227,8 @@ theorem keepsCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
     {e : HeapExpressionRules.StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
     (hc : PromiseCalls.keepsCall G images j e codes sums = true) (hcodes : CodesSound G codes)
     (hsums : SummariesSound G images sums) {ρ n W h} (he : EnvOk G j.context ρ n W)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type) (fun h' _ => Footprints.Closed.empty.Holds h h' ∧ True) n W h
       (instantiate 0 ρ j.term) := by
   unfold PromiseCalls.keepsCall at hc
@@ -236,7 +237,7 @@ theorem keepsCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
     simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
     obtain ⟨⟨⟨rfl, hsel⟩, -⟩, ht⟩ := hc
     exact PromiseCalls.post_with_type (fun _ _ _ _ _ hq => ⟨hq, trivial⟩)
-      (ExpressionEffects.selectedCall_sound p ht hsel hcodes hsums he hw hh)
+      (ExpressionEffects.selectedCall_sound p ht hsel hcodes hsums he hw hh href)
   · contradiction
 
 /-- A call allocating its result (`PromiseCalls.freshCall`) has its normal
@@ -246,7 +247,8 @@ theorem freshCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
     {e : HeapExpressionRules.StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
     (hc : PromiseCalls.freshCall G images j e codes sums = true) (hcodes : CodesSound G codes)
     (hsums : SummariesSound G images sums) {ρ n W h} (he : EnvOk G j.context ρ n W)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type) (fun h' _ => Footprints.Closed.empty.Holds h h' ∧ True) n W h
       (instantiate 0 ρ j.term) := by
   unfold PromiseCalls.freshCall at hc
@@ -259,7 +261,7 @@ theorem freshCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
       simp only [Bool.and_eq_true] at hsel
       exact PromiseCalls.post_with_type
         (fun _ _ _ _ _ hq => ⟨Footprints.Closed.holds_empty.mpr (PromiseCalls.keepsHeap_prefix hsel.1 hq), trivial⟩)
-        (ExpressionEffects.selected_sound p ht hops heff hcodes hsums he hw hh)
+        (ExpressionEffects.selected_sound p ht hops heff hcodes hsums he hw hh href)
     · cases hsel
   · contradiction
 
@@ -277,6 +279,7 @@ theorem keepsCall_frame {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
     (hc : PromiseCalls.keepsCall G images j e codes sums = true) (hcodes : CodesSound G codes)
     (hsums : SummariesSound G images sums) {ρ η : Env} {r m : Nat} {s : IndexedHeap}
     {kn : HeapKnowledge.Knowledge} {S : List Atom} (he : EnvOk G j.context ρ s.n s.W)
+    (href : RefsOk s.W (instantiate 0 ρ j.term))
     (hkn : HeapKnowledge.Holds kn ε ρ s.h) (hS : Named ε S η ρ m s) (hr : ∀ a ∈ S, r ∉ a.names)
     {k : Nat} {h' : Heap} {t' : Tm} (hst : Steps k s.h (instantiate 0 ρ j.term) h' t') (hk : k < s.n) :
     (isVal t' = true → ∃ s' : IndexedHeap, Action Footprints.Closed.empty.fp ρ s s' ∧ s'.h = h' ∧
@@ -284,7 +287,7 @@ theorem keepsCall_frame {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
         HeapKnowledge.Holds (HeapKnowledge.shift kn) ε (push t' ρ) h' ∧ Named ε S (Env.set η r t') ρ m s') ∧
       (∀ x, Raises t' x → ∃ s' : IndexedHeap, Action Footprints.Closed.top.fp ρ s s' ∧ s'.h = h' ∧
         s'.n + k = s.n ∧ Scoped 0 x ∧ excOf G s'.n s'.W x ∧ Named ε (S.filter (·.heapFree)) η ρ m s') := by
-  have hj := keepsCall_keeps hc hcodes hsums he s.adm s.ok
+  have hj := keepsCall_keeps hc hcodes hsums he s.adm s.ok href
   refine ⟨fun hv => ?_, fun x hx => preserving_throw hj hst hx hk hS⟩
   obtain ⟨s', ha, he', hn, hT, -, hS'⟩ := preserving_normal (Footprints.Closed.empty_le _) hj hst hv hk hS hr
   have hc' : Footprints.Closed.empty.Holds s.h h' := by
@@ -303,18 +306,23 @@ fact of the object the name holds fails after an action of
 `{values: any, stores: any}`. -/
 
 /-- A state of one location holding `v`, at budget 1. -/
-def oneState (v : Val) (hv : isVal v = true) : IndexedHeap :=
-  ⟨1, ofList [anyCtr], [v], Nat.one_pos,
+def oneState (v : Val) (hv : isVal v = true) (hs : isSourceVal v = true) (hn : refs v = []) : IndexedHeap :=
+  ⟨1, ofEntries [(.field, anyCtr)], [v], Nat.one_pos,
     fun l c hl => by
-      simp only [lookup, toList_ofList] at hl
+      simp only [lookup, toList, entries_ofEntries] at hl
       rcases l with _ | l <;> simp at hl
       subst hl
       exact ⟨fun _ _ _ _ _ _ hv => hv, fun _ _ _ _ hv => hv⟩,
-    ⟨by simp, fun l c hl => by
-      simp only [lookup, toList_ofList] at hl
+    ⟨⟨by simp, fun l c hl => by
+      simp only [lookup, toList, entries_ofEntries] at hl
       rcases l with _ | l <;> simp at hl
       subst hl
-      exact ⟨v, rfl, fun _ _ => hv⟩⟩⟩
+      exact ⟨v, rfl, fun _ _ => hv⟩⟩,
+    fun l r hl => by
+      simp only [roleAt, roles, entries_ofEntries] at hl
+      rcases l with _ | l <;> simp at hl
+      subst hl
+      exact ⟨v, rfl, hs, RefsOk_of_nil hn⟩⟩⟩
 
 /-- **A cell fact over a name is not framed by a writing effect**: name 0
 holds an object whose field `f` is location 0; the fact that the field holds
@@ -325,13 +333,13 @@ theorem slotless_not_framed :
         Box Footprints.Closed.top.fp (Named ε [.cell ⟨0, { nul := true }, "f"⟩] η) ρ m s := by
   intro H
   let η : Env := fun _ => .objAt [("f", 0)] .absent 0
-  have hb := H η η 0 (oneState .nul rfl) (fun a ha => by
+  have hb := H η η 0 (oneState .nul rfl rfl rfl) (fun a ha => by
     simp only [List.mem_singleton] at ha; subst ha
     intro f hf; simp only [List.mem_singleton] at hf; subst hf
     exact ⟨[("f", 0)], .absent, 0, .nul, rfl, by simp [HeapFacts.ReadGave, oneState], by decide⟩)
-  have ha : Action Footprints.Closed.top.fp η (oneState .nul rfl) (oneState .tru rfl) :=
+  have ha : Action Footprints.Closed.top.fp η (oneState .nul rfl rfl rfl) (oneState .tru rfl rfl rfl) :=
     action_top ⟨Nat.le_refl 1, by
-      show WExt (trunc 1 (Nat.le_refl 1) (ofList [anyCtr])) (ofList [anyCtr]); rw [trunc_id]; exact WExt_refl _⟩
+      show WExt (trunc 1 (Nat.le_refl 1) (ofEntries [(.field, anyCtr)])) (ofEntries [(.field, anyCtr)]); rw [trunc_id]; exact WExt_refl _⟩
   have := hb _ ha _ (List.mem_singleton_self _) _ (List.mem_singleton_self _)
   obtain ⟨flds, c, oid, u, he, hr, hm⟩ := this
   simp only [η, Tm.objAt.injEq] at he

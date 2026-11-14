@@ -54,8 +54,8 @@ private theorem dictView_excludes {K : IndexKeys} {A : Fam} {n W v}
   rw [hp] at hs
   simp at hs
 
-private theorem dictCell_excludes {K : IndexKeys} {A : Fam} {n W v}
-    (h : dictCellT K A n W v) : ¬ OwnsProto v :=
+private theorem dictCell_excludes {K : IndexKeys} {s : StorageRole} {A : Fam} {n W v}
+    (h : dictCellT K s A n W v) : ¬ OwnsProto v :=
   dictView_excludes (dictCellT_view h)
 
 private theorem bounds_exclude {ks : List KeyBound} (hk : ks.any excludesProto = true) {n W v}

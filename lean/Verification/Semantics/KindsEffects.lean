@@ -163,9 +163,9 @@ theorem ViewWrite.prefix_left {n m n' : Nat} {W : WorldT n} {M : WorldT m} {h hm
     {W' : WorldT n'} {h' : Heap} (hle : m ≤ n) (hx : WExt (trunc m hle W) M) (hok : HeapOk n W h)
     (hp : h.IsPrefix hm) (hw : ViewWrite M hm W' h') : ViewWrite W h W' h' := by
   have hlen : h.length = (entries W).length := by simpa using hok.1.1
-  have hrole : ∀ {l r}, Kinds.roleAt W l = some r → Kinds.roleAt M l = some r := fun hr =>
+  have hrole : ∀ {l r}, Verification.roleAt W l = some r → Verification.roleAt M l = some r := fun hr =>
     WExt_roleAt hx (by simpa using hr)
-  have hget : ∀ {l r}, Kinds.roleAt W l = some r → hm[l]? = h[l]? := by
+  have hget : ∀ {l r}, Verification.roleAt W l = some r → hm[l]? = h[l]? := by
     intro l r hr
     obtain ⟨t, rfl⟩ := hp
     exact List.getElem?_append_left (by have := roleAt_lt hr; omega)

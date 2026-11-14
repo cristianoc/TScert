@@ -123,9 +123,11 @@ theorem safePostExc_invariant {Ξ T : Fam} {I : Heap → Tm → Prop} {Q : Heap 
     ∀ {n W h t}, I h t → Safe Ξ T n W h t → HeapObservations.SafePostExc Ξ T Q R n W h t := by
   intro n
   induction n with
-  | zero => intros; trivial
+  | zero => intros; assumption
   | succ n ih =>
     intro W h t hi hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hv, ht⟩ | hth) | ⟨U, h', t', hx, hu, st, hh, hs⟩
     · exact .inl (.inl ⟨hv, ht, hval hi hv⟩)
     · exact .inl (.inr ⟨hth, hraise hi hth.choose_spec.1⟩)
@@ -210,10 +212,12 @@ theorem cellAlloc_fresh {Ξ T : Fam} {n W h} {b : Nat} {code : CallCode} {ns : L
     HeapObservations.SafePostExc Ξ T (fun h' v => CellFresh b h' v ∧ h.IsPrefix h') (fun _ => True)
       n W h (.makeAt code ns vs) := by
   cases n with
-  | zero => trivial
+  | zero => assumption
   | succ n =>
     have st : Step h (.makeAt code ns vs) (h ++ vs ++ [.nul]) (.objAt (slots h.length ns) code (h.length + vs.length)) :=
       .makeFields hvals hlen
+    obtain ⟨hrf, hsafe⟩ := hsafe
+    refine ⟨hrf, ?_⟩
     rcases hsafe with (⟨hv, _⟩ | hth) | ⟨U, h', t', hx, hu, st', hh, hs⟩
     · simp [isVal] at hv
     · exact absurd st hth.no_step
@@ -308,9 +312,11 @@ theorem stableLocations_exc {Ξ T : Fam} {Q : HeapObservations.Post} {E : Heap �
         (fun h' => E h' ∧ ∀ l v, R l v → h'[l]? = some v) n W h t := by
   intro n
   induction n with
-  | zero => intros; trivial
+  | zero => intros; assumption
   | succ n ih =>
     intro W h t hr hh hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hv, ht, hq⟩ | ⟨hth, he⟩) | ⟨U, h', t', hx, hu, step, hh', hs⟩
     · refine .inl (.inl ⟨hv, ht, hq, fun l v hR => ?_⟩)
       obtain ⟨c, hl, hc⟩ := hr l v hR
@@ -360,7 +366,7 @@ theorem fieldsHold_frame {G : NormalGraph ι} {Γ : List (Ty ι)} {Fs : List (Na
     HeapObservations.SafePostExc Ξ T (fun h' u => Q h' u ∧ FieldsHold Fs b ρ h')
       (fun h' => E h' ∧ FieldsHold Fs b ρ h') n W h t := by
   cases n with
-  | zero => trivial
+  | zero => assumption
   | succ n =>
   -- Each kept pair's field location, with its stable value.
   let R : Nat → Val → Prop := fun l v => ∃ p ∈ Fs, ∃ fs cd o, ρ p.1 = .objAt fs cd o ∧
@@ -411,10 +417,12 @@ theorem fieldAlloc_fresh {Ξ T : Fam} {n W h} {b : Nat} {code : CallCode} {ns : 
     HeapObservations.SafePostExc Ξ T (fun h' v => ∀ f, P f → FieldFresh b h' v f) (fun _ => True)
       n W h (.makeAt code ns vs) := by
   cases n with
-  | zero => trivial
+  | zero => assumption
   | succ n =>
     have st : Step h (.makeAt code ns vs) (h ++ vs ++ [.nul]) (.objAt (slots h.length ns) code (h.length + vs.length)) :=
       .makeFields hvals hlen
+    obtain ⟨hrf, hsafe⟩ := hsafe
+    refine ⟨hrf, ?_⟩
     rcases hsafe with (⟨hv, _⟩ | hth) | ⟨U, h', t', hx, hu, st', hh, hs⟩
     · simp [isVal] at hv
     · exact absurd st hth.no_step
@@ -453,7 +461,7 @@ def FreshWithin [DecidableEq ι] (G : NormalGraph ι) (c : NodeEvidence ι) (t :
     (outF outC thr : Bool) : Prop :=
   ∀ ε n W h ρ (b : Nat), b ≤ h.length → FreshHold F C b ρ h →
     EnvOk G (entry c) ρ n W → PromiseCalls.ImpliesOk G c.implies ρ n W →
-    HeapKnowledge.Holds (entryFacts G c) ε ρ h → WorldAdm W → HeapOk n W h →
+    HeapKnowledge.Holds (entryFacts G c) ε ρ h → WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ t) →
     HeapObservations.SafePostExc (excOf G) (meaning G (result c))
       (fun h' v => (outF = true → FreshValue b v) ∧ (outC = true → CellFresh b h' v) ∧ CellsHold C b ρ h')
       (fun h' => thr = true → CellsHold C b ρ h') n W h (instantiate 0 ρ t)

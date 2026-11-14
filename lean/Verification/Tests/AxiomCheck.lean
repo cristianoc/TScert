@@ -369,7 +369,7 @@ run_cmd do
   check ``Verification.TolerantFrames.rootCells_of_storeCells
   check ``Verification.TolerantFrames.rootCells_box
   check ``Verification.TolerantFrames.storeCells_of_listT
-  check ``Verification.TolerantFrames.rootCells_not_invariant
+  check ``Verification.TolerantFrames.rootCells_invariant
   check ``Verification.TolerantFrames.alloc_apart
   check ``Verification.TolerantFrames.growOne_keeps_store
   check ``Verification.TolerantFrames.apart_grow_keep
@@ -588,7 +588,6 @@ run_cmd do
   check ``Verification.TolerantFrames.view_box
   check ``Verification.TolerantFrames.viewStable_invariant
   check ``Verification.TolerantFrames.viewStable_of_typed
-  check ``Verification.TolerantFrames.view_not_invariant
   -- (Init)
   check ``Verification.TolerantFrames.init_box
   check ``Verification.TolerantFrames.init_path
@@ -1466,19 +1465,19 @@ run_cmd do
       unless standard.contains axiom_ do
         throwError "{decl} depends on the axiom {axiom_}"
   -- kinds disjoint, kept by extension and truncation; shapes monotone
-  check ``Verification.Kinds.kinds_disjoint
-  check ``Verification.Kinds.WExt_kindAt
-  check ``Verification.Kinds.kindAt_trunc
-  check ``Verification.Kinds.Shape_mono
-  check ``Verification.Kinds.Shape_trunc
-  check ``Verification.Kinds.HeapOk_trunc
-  check ``Verification.Kinds.HeapOk.stable_value
-  check ``Verification.Kinds.HeapOk.kinds
+  check ``Verification.kinds_disjoint
+  check ``Verification.WExt_kindAt
+  check ``Verification.kindAt_trunc
+  check ``Verification.Shape_mono
+  check ``Verification.Shape_trunc
+  check ``Verification.HeapOk_trunc
+  check ``Verification.HeapOk.stable_value
+  check ``Verification.HeapOk.kinds
   -- what kinded satisfaction excludes
   check ``Verification.Kinds.counterheap_excluded
   check ``Verification.Kinds.dangling_excluded
   -- allocation preserves kinds
-  check ``Verification.Kinds.HeapOk_appendWs
+  check ``Verification.HeapOk_appendWs
   check ``Verification.Kinds.makeFields_shaped
   check ``Verification.Kinds.objectLiteral_shaped
   check ``Verification.Kinds.bindingCell_shaped
@@ -1490,7 +1489,7 @@ run_cmd do
   check ``Verification.Kinds.hostLength_shaped
   check ``Verification.Kinds.thrownError_shaped
   -- writes preserve kinds
-  check ``Verification.Kinds.write_sound
+  check ``Verification.write_sound
   check ``Verification.Kinds.writeField_shaped
   check ``Verification.Kinds.writeOrdinary_shaped
   check ``Verification.Kinds.bindingWrite_shaped
@@ -1525,7 +1524,7 @@ run_cmd do
   check ``Verification.Kinds.view_box
   check ``Verification.Kinds.view_change_excluded
   -- allocated cells at every budget and state
-  check ``Verification.Kinds.HeapOk.store_cells
+  check ``Verification.HeapOk.store_cells
   check ``Verification.Kinds.storeCells
   check ``Verification.Kinds.storeCells_invariant
   check ``Verification.Kinds.Admissible.elem_kept

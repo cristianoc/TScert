@@ -144,7 +144,7 @@ theorem valueValid_not_source :
     ParameterValid .value emptyStores ∧ ¬ SortValid ValueSort.source.Holds emptyStores := by
   refine ⟨⟨⟨fun _ _ _ h => h, fun _ _ _ _ _ h => h⟩, fun _ _ v h => by subst h; exact ⟨rfl, by simp [Scoped]⟩⟩, ?_⟩
   rintro ⟨-, h⟩
-  have := (h 0 (ofList []) (.arr []) rfl).1
+  have := (h 0 (ofEntries []) (.arr []) rfl).1
   simp [isSourceVal] at this
 
 abbrev ParameterFamily (k : ParameterSpace) := { A : WorldFamily k.Carrier // ParameterValid k A }
@@ -1527,7 +1527,7 @@ theorem mixedMeaning_not_sourceValid :
       SortValid (fun x : Val ⊕ List Val => match x with
         | .inl v => ValueSort.source.Holds v | .inr vs => SourceList vs) (mixedMeaning G η S) := by
   intro h
-  have hm : mixedMeaning emptyStoreGraph (ParameterAssignment.empty .mixed) [0] 0 (ofList [])
+  have hm : mixedMeaning emptyStoreGraph (ParameterAssignment.empty .mixed) [0] 0 (ofEntries [])
       (.inl (.arr [])) := by
     refine ⟨0, List.mem_singleton_self _, ?_⟩
     show qDenoteWithArgs _ _ _ _ _ _
@@ -1539,7 +1539,7 @@ theorem mixedMeaning_not_sourceValid :
       by simp [maxArrayLength], by simp [tupleFams], by simp [tupleFams], by simp [tupleFams],
       by simp [tupleFams]⟩, by simp⟩, ?_⟩
     simp [builtinInvariant, Clause.carriesInvariant]
-  have := ((h emptyStoreGraph _ [0]).2 0 (ofList []) _ hm).1
+  have := ((h emptyStoreGraph _ [0]).2 0 (ofEntries []) _ hm).1
   simp [isSourceVal] at this
 
 /-- A parameter's two-component row meaning is exactly its selected component,

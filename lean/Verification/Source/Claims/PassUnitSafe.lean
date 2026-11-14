@@ -47,12 +47,15 @@ theorem guarantee_goto {G : NormalGraph ι} {admits : MixedAssignment ι → Pro
     {goal : Goal ι} {inputs sep idx assertions bound ensures regional}
     (g : GraphGuarantee G admits P start goal inputs sep idx assertions bound ensures regional)
     {η} (hη : admits η) {n W h L d}
-    (he : EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h) :
+    (he : EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h) (href : RefsOk W (gotoOf P start L d)) :
     Safe (excOf (reassign G η)) (GoalHolds (reassign G η) goal (goal.argument (envOf L d))) n W h
       (gotoOf P start L d) := by
-  have hs := g.safe η hη n W h (envOf L d) he
+  obtain ⟨hE, hρ⟩ := GraphCode.goto_refs href
+  have hP := GraphCode.program_refs (K := P.map fun n => (n.continuation, n.handler)) hE
+  rw [program_nodes P] at hP
+  have hs := g.safe η hη n W h (envOf L d) he hP hρ
   rw [← program_nodes P] at hs
-  exact GraphCode.safe_of_sim n W h .goto hs
+  exact GraphCode.safe_of_sim n W h .goto hE hs
 
 /-- **A request's footprint from its main run** (proved): a guarantee at
 `mainBound` gives the claimed footprint, the bound's own clause where the
@@ -63,6 +66,7 @@ theorem footprint_of_bound {G : NormalGraph ι} {r : SourceRequest σ ι} {regio
     (heffect : r.footprint ≠ .top ∨ r.onThrow = true ∨ r.fresh = true)
     (η : MixedAssignment ι) (n : Nat) (W : WorldT n) (h : Heap) (L : List Tm) (d : Tm)
     (he : EntryHolds (reassign G η) r.inputs r.entrySeparation r.entryIndices (envOf L d) n W h)
+    (href : RefsOk W (gotoOf r.program r.start L d))
     (hvalues : ∀ v ∈ L, isVal v = true) (hd : isVal d = true) :
     HeapObservations.SafePostExc (excOf (reassign G η))
       (GoalHolds (reassign G η) r.goal (r.goal.argument (envOf L d)))
@@ -75,7 +79,7 @@ theorem footprint_of_bound {G : NormalGraph ι} {r : SourceRequest σ ι} {regio
       · injection hb with hb; exact hb.symm
       · cases hb
     subst hx
-    exact g.bounded _ _ _ hb _ _ (program_nodes r.program) η trivial n W h L d he hvalues hd
+    exact g.bounded _ _ _ hb _ _ (program_nodes r.program) η trivial n W h L d he href hvalues hd
   | none =>
     have hcond : ¬ ((!(r.footprint == .top && !r.onThrow && !r.fresh) &&
         !(!r.fresh && r.program.all fun n => Purity.pureTerm n.expression)) = true) := by
@@ -96,7 +100,7 @@ theorem footprint_of_bound {G : NormalGraph ι} {r : SourceRequest σ ι} {regio
       intro e he
       obtain ⟨node, hn, rfl⟩ := List.mem_map.mp he
       exact List.all_eq_true.mp hall node hn
-    have hs := guarantee_goto g trivial he
+    have hs := guarantee_goto g trivial he href
     exact HeapObservations.SafePostExc.weaken
       (fun _ _ h => ⟨Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _)
         ((CallEffects.Effect.post_ofFootprint _ .undef [] _ _ _).mp h), fun hf => by rw [hfresh] at hf; cases hf⟩)
@@ -110,7 +114,8 @@ theorem footprint_of_fallback {G : NormalGraph ι} {r : SourceRequest σ ι} {bo
       r.assertions bound r.ensures (some (r.footprint, [], r.onThrow)))
     (hfr : r.fresh = false)
     (η : MixedAssignment ι) (n : Nat) (W : WorldT n) (h : Heap) (L : List Tm) (d : Tm)
-    (he : EntryHolds (reassign G η) r.inputs r.entrySeparation r.entryIndices (envOf L d) n W h) :
+    (he : EntryHolds (reassign G η) r.inputs r.entrySeparation r.entryIndices (envOf L d) n W h)
+    (href : RefsOk W (gotoOf r.program r.start L d)) :
     HeapObservations.SafePostExc (excOf (reassign G η))
       (GoalHolds (reassign G η) r.goal (r.goal.argument (envOf L d)))
       (fun h' v => r.footprint.Holds h h' ∧ (r.fresh = true → Footprints.FreshAt h.length v))
@@ -118,7 +123,7 @@ theorem footprint_of_fallback {G : NormalGraph ι} {r : SourceRequest σ ι} {bo
   HeapObservations.SafePostExc.weaken
     (fun _ _ hq => ⟨Footprints.ArgumentStoreRegionsWithin.nil_holds hq, fun hf => by rw [hfr] at hf; cases hf⟩)
     (fun _ hq ho => Footprints.ArgumentStoreRegionsWithin.nil_holds (hq ho))
-    (g.regionally _ _ _ rfl _ _ (program_nodes r.program) η trivial n W h L d he)
+    (g.regionally _ _ _ rfl _ _ (program_nodes r.program) η trivial n W h L d he href)
 
 end
 

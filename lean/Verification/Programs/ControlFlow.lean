@@ -190,14 +190,37 @@ inductive Transition (P : Program) : Heap → State → Heap → State → Prop 
   /-- A throw out of a node without one ends the run. -/
   | raise : Raises t v → Transition P h (.eval t ρ k none) h (.raised v)
 
-/-- The graph machine is safe: it returns a value of the result type, ends by
-a throw of a closed value, or takes a transition. -/
+/-- **The references a graph state holds** are valid: its environment's
+values, a running term's, a returned or thrown value's. -/
+def StateRefs {n : Nat} (W : WorldT n) : State → Prop
+  | .at _ ρ => ∀ i, RefsOk W (ρ i)
+  | .eval t ρ _ _ => RefsOk W t ∧ ∀ i, RefsOk W (ρ i)
+  | .done v => RefsOk W v
+  | .raised v => RefsOk W v
+
+theorem push_refs {n : Nat} {W : WorldT n} {v : Tm} {ρ : Env} (hv : RefsOk W v) (hρ : ∀ i, RefsOk W (ρ i)) :
+    ∀ i, RefsOk W (push v ρ i)
+  | 0 => hv
+  | i + 1 => hρ i
+
+theorem mapEnv_refs {n : Nat} {W : WorldT n} {ρ : Env} (m : PointClaims.Mapping) (hρ : ∀ i, RefsOk W (ρ i)) :
+    ∀ i, RefsOk W (mapEnv m ρ i) := fun _ => hρ _
+
+/-- A node's instantiated expression refers to the node's and the
+environment's references. -/
+theorem node_refs {n : Nat} {W : WorldT n} {e : Tm} {ρ : Env} (he : RefsOk W e) (hρ : ∀ i, RefsOk W (ρ i)) :
+    RefsOk W (instantiate 0 ρ e) := fun r hr =>
+  (Kinds.instantiate_refs ρ e 0 r hr).elim (he r) (fun ⟨i, hi⟩ => hρ i r hi)
+
+/-- The graph machine is safe: its state's references are valid, and it
+returns a value of the result type, ends by a throw of a closed value, or
+takes a transition. -/
 def SafeGraph (Ξ : Fam) (P : Program) (T : Fam) : (n : Nat) → WorldT n → Heap → State → Prop
-  | 0, _, _, _ => True
-  | n+1, W, h, s =>
-    ((∃ v, s = .done v ∧ isVal v = true ∧ T (n+1) W v) ∨ (∃ v, s = .raised v ∧ Scoped 0 v ∧ Ξ (n+1) W v)) ∨
+  | 0, W, _, s => StateRefs W s
+  | n+1, W, h, s => StateRefs W s ∧
+    (((∃ v, s = .done v ∧ isVal v = true ∧ T (n+1) W v) ∨ (∃ v, s = .raised v ∧ Scoped 0 v ∧ Ξ (n+1) W v)) ∨
     ∃ U : WorldT n, ∃ h' s', WExt (trunc n (Nat.le_succ n) W) U ∧
-      WorldAdm U ∧ Transition P h s h' s' ∧ HeapOk n U h' ∧ SafeGraph Ξ P T n U h' s'
+      WorldAdm U ∧ Transition P h s h' s' ∧ HeapOk n U h' ∧ SafeGraph Ξ P T n U h' s')
 
 /-- What an edge carries besides the slots' types: the implications the
 source state establishes and the slots holding the promised argument, each
@@ -884,7 +907,7 @@ theorem return_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIma
 
 def ExpressionOk [DecidableEq ι] (G : NormalGraph ι) (c : NodeEvidence ι) (t : Tm) : Prop :=
   ∀ ε n W h ρ, EnvOk G (entry c) ρ n W → ImpliesOk G c.implies ρ n W → HeapKnowledge.Holds (entryFacts G c) ε ρ h →
-    WorldAdm W → HeapOk n W h →
+    WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ t) →
     HeapObservations.SafePost (excOf G) (fun k U u => meaning G (result c) k U u ∧ YieldsOk G c.yields ρ k U u)
       (fun h' v => HeapKnowledge.Holds (outFacts G c) ε (push v ρ) h') n W h (instantiate 0 ρ t)
 
@@ -911,14 +934,16 @@ theorem node_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
     ∀ ε ρ h, HeapKnowledge.Holds (entryFacts G c) ε ρ h → HandlerOk G C (entry c) c.implies c.arguments ε ρ node.handler := by
   simp only [checkNodeUsing_eq, Bool.and_eq_true, decide_eq_true_eq] at hc
   refine ⟨?_, ?_, fun ε ρ h hk => handler_sound hc.1.1.1.1.2 hk⟩
-  · intro ε n W h ρ he hi hf hw hh
+  · intro ε n W h ρ he hi hf hw hh href
     have hterm := hc.1.1.1.1.1
+    have href' : RefsOk W (instantiate 0 ρ (claim c.expression).term) := by
+      rw [hterm]; exact href
     have hy := hc.1.2
     unfold checkYields at hy
     split at hy
     · rename_i effect a T hp
       simp only [Bool.and_eq_true] at hy
-      have hs := PromiseCalls.promiseCall_sound hp hy.1.1 hcodes hsums hy.1.2 he hf hw hh
+      have hs := PromiseCalls.promiseCall_sound hp hy.1.1 hcodes hsums hy.1.2 he hf hw hh href'
       have ho : ∀ out ∈ [HeapExpressionRules.ordinaryOutput (entryFacts G c), PromiseCalls.promiseOutput effect (entryFacts G c)],
           HeapObservations.SafePost (excOf G) (fun m U u => meaning G (claim c.expression).type m U u ∧ YieldsOk G c.yields ρ m U u)
             (fun h' v => HeapKnowledge.Holds out ε (push v ρ) h') n W h (instantiate 0 ρ (claim c.expression).term) := by
@@ -944,7 +969,7 @@ theorem node_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
         · cases hany
         · exact ⟨_, rfl, hany⟩
       have ht := HeapObservations.weaken (fun _ _ ho => outFacts_holds he (outputFits_sound hfit he ho))
-        (checker.sound hrun hcodes hsums he hf hw hh)
+        (checker.sound hrun hcodes hsums he hf hw hh href')
       have ht' := PromiseCalls.yieldFollows_sound hy he hi hh hf.2.2.1 ht
       simpa only [entry, result, hterm] using ht'
   · have hk := hc.2
@@ -980,7 +1005,7 @@ theorem graph_node [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
 
 /-- A state assertion used only in the global safety proof. `v0` is the
 argument a promise goal is about. -/
-def StateOk [DecidableEq ι] (G : NormalGraph ι) (Rty : Goal ι) (C : Certificate ι) (v0 : Tm)
+def StateCore [DecidableEq ι] (G : NormalGraph ι) (Rty : Goal ι) (C : Certificate ι) (v0 : Tm)
     (ε : HeapKnowledge.EntryState) (n : Nat) (W : WorldT n) (h : Heap) : State → Prop
   | .at l ρ => ∃ c, C[l]? = some c ∧ EnvOk G (entry c) ρ n W ∧ ImpliesOk G c.implies ρ n W ∧
       ArgumentsOk c.arguments ρ v0 ∧ HeapKnowledge.Holds c.knowledge ε ρ h
@@ -992,11 +1017,17 @@ def StateOk [DecidableEq ι] (G : NormalGraph ι) (Rty : Goal ι) (C : Certifica
   | .done v => isVal v = true ∧ GoalHolds G Rty v0 n W v
   | .raised v => Scoped 0 v ∧ excOf G n W v
 
+/-- The state assertion: the state's references valid, and its point
+assertions. -/
+def StateOk [DecidableEq ι] (G : NormalGraph ι) (Rty : Goal ι) (C : Certificate ι) (v0 : Tm)
+    (ε : HeapKnowledge.EntryState) (n : Nat) (W : WorldT n) (h : Heap) (s : State) : Prop :=
+  StateRefs W s ∧ StateCore G Rty C v0 ε n W h s
+
 theorem target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ l ρ n W h facts xs sources v0}
     (ht : TargetOk G C Γ l facts xs sources) (he : EnvOk G Γ ρ n W) (hi : ImpliesOk G xs ρ n W)
     (ha : ArgumentsOk sources ρ v0) (hf : HeapKnowledge.Holds facts ε ρ h)
     (hcells : ∀ wanted, HeapFacts.Holds (HeapExpressionRules.typedCells G Γ wanted) ρ h) :
-    StateOk G Rty C v0 ε n W h (.at l.label (mapEnv l.mapping ρ)) := by
+    StateCore G Rty C v0 ε n W h (.at l.label (mapEnv l.mapping ρ)) := by
   obtain ⟨c, hc, hcases⟩ := ht
   rcases hcases with hu | ⟨hcov, hfact, hcar⟩
   · exact (unsatisfiable_sound hu he).elim
@@ -1011,7 +1042,7 @@ theorem branch_target_state [DecidableEq ι] {G : NormalGraph ι} {Rty C Γ q l 
     (ht : BranchTargetOk G C Γ q l facts xs sources) (he : EnvOk G Γ ρ (n+1) W) (hh : HeapOk (n+1) W h)
     (hq : q.holds (ρ 0)) (hi : ImpliesOk G xs ρ (n+1) W) (ha : ArgumentsOk sources ρ v0)
     (hf : HeapKnowledge.Holds facts ε ρ h) :
-    StateOk G Rty C v0 ε n (trunc n (Nat.le_succ n) W) h (.at l.label (mapEnv l.mapping ρ)) := by
+    StateCore G Rty C v0 ε n (trunc n (Nat.le_succ n) W) h (.at l.label (mapEnv l.mapping ρ)) := by
   obtain ⟨c,hc,hcases⟩ := ht
   rcases hcases with hu | ⟨hcov,hfact,hcar⟩
   · simp only [branchUnreachable, Bool.or_eq_true] at hu
@@ -1116,6 +1147,7 @@ theorem state_progress [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
     {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} (hg : checkGraphUsing (checker := checker) (sums := sums) G images Rty P C codes = true)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums) {v0 : Tm} (hv0 : isVal v0 = true)
     {n W h s} (hw : WorldAdm W) (hh : HeapOk (n+1) W h)
+    (hP : ∀ node ∈ P, RefsOk W node.expression)
     (hs : StateOk G Rty C v0 ε (n+1) W h s) :
     ((∃ v, s = .done v ∧ isVal v = true ∧ GoalHolds G Rty v0 (n+1) W v) ∨
       (∃ v, s = .raised v ∧ Scoped 0 v ∧ excOf G (n+1) W v)) ∨
@@ -1126,8 +1158,10 @@ theorem state_progress [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
   let U := trunc n (Nat.le_succ n) W
   cases s with
   | «at» l ρ =>
-    obtain ⟨c, hc, he, hi, ha, hf⟩ := hs
+    obtain ⟨hρr, c, hc, he, hi, ha, hf⟩ := hs
     obtain ⟨node, hn, ht, hk, hx⟩ := graph_node hg hcodes hsums hc
+    have hexpr : RefsOk U (instantiate 0 ρ node.expression) :=
+      RefsOk_trunc _ (node_refs (hP node (List.mem_of_getElem? hn)) hρr)
     have he' := he.transfer n (Nat.le_succ n) U (WExt_refl _)
     have hi' := hi.transfer n (Nat.le_succ n) U (WExt_refl _)
     have hal : aliasedRead c.arguments node.expression = true →
@@ -1140,89 +1174,93 @@ theorem state_progress [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
         simpa [instantiate] using ha q (List.contains_iff_mem.mp hal)
       · cases hal
     exact Or.inr ⟨U, h, _, WExt_refl _, hw', .enter hn, hh',
-      ⟨entry c, result c, (outFacts G c), c.implies, c.yields, c.arguments, _, he', hi', ha, hal,
-        ht ε n U h ρ he' hi' (entryFacts_holds he' hf) hw' hh', hk, hx ε ρ h (entryFacts_holds he' hf)⟩⟩
-  | done v => exact Or.inl (Or.inl ⟨v, rfl, hs⟩)
-  | raised v => exact Or.inl (Or.inr ⟨v, rfl, hs⟩)
+      ⟨⟨hexpr, fun i => RefsOk_trunc _ (hρr i)⟩, entry c, result c, (outFacts G c), c.implies, c.yields, c.arguments, _, he', hi', ha, hal,
+        ht ε n U h ρ he' hi' (entryFacts_holds he' hf) hw' hh' hexpr, hk, hx ε ρ h (entryFacts_holds he' hf)⟩⟩
+  | done v => exact Or.inl (Or.inl ⟨v, rfl, hs.2⟩)
+  | raised v => exact Or.inl (Or.inr ⟨v, rfl, hs.2⟩)
   | eval t ρ k x =>
-    obtain ⟨Γ, A, out, xs, ys, arg, aliased, he, hi, ha, hal, ht, hk, hx⟩ := hs
-    rcases ht with (⟨hv, ⟨hA, hy⟩, hf⟩ | ⟨v, hr, hsc⟩) | ⟨V, h', t', hx', hu, step, hok, hsafe⟩
+    obtain ⟨⟨htr, hρr⟩, Γ, A, out, xs, ys, arg, aliased, he, hi, ha, hal, ht, hk, hx⟩ := hs
+    have hρU : ∀ i, RefsOk U (ρ i) := fun i => RefsOk_trunc _ (hρr i)
+    have htU : RefsOk U t := RefsOk_trunc _ htr
+    rcases ht.2 with (⟨hv, ⟨hA, hy⟩, hf⟩ | ⟨v, hr, hsc⟩) | ⟨V, h', t', hx', hu, step, hok, hsafe⟩
     · have hi' := hi.transfer n (Nat.le_succ n) U (WExt_refl _)
       have hy' := hy.transfer n (Nat.le_succ n) U (WExt_refl _)
       cases k with
       | ret =>
         exact Or.inr ⟨U, h, .done t, WExt_refl _, hw', .ret hv, hh',
-          ⟨hv, goal_return hh hk he hA hy ha⟩⟩
+          ⟨htU, hv, goal_return hh hk he hA hy ha⟩⟩
       | bind l =>
         exact Or.inr ⟨U, h, .at l.label (mapEnv l.mapping (push t ρ)), WExt_refl _, hw', .bind hv, hh',
-          (target_state hk ((refined_push_aliased hh he hA hy (answered := false) (fun h => by cases h) (fun h => by cases h) hf.2.2.1).transfer n (Nat.le_succ n) U (WExt_refl _))
+          ⟨mapEnv_refs _ (push_refs htU hρU), target_state hk ((refined_push_aliased hh he hA hy (answered := false) (fun h => by cases h) (fun h => by cases h) hf.2.2.1).transfer n (Nat.le_succ n) U (WExt_refl _))
             (PromiseCalls.edgeImplications_holds hi' hy') (pushed_arguments ha hal) hf
-            (fun _ => HeapExpressionRules.typedCells_holds (refined_push_aliased hh he hA hy (answered := false) (fun h => by cases h) (fun h => by cases h) hf.2.2.1) hh))⟩
+            (fun _ => HeapExpressionRules.typedCells_holds (refined_push_aliased hh he hA hy (answered := false) (fun h => by cases h) (fun h => by cases h) hf.2.2.1) hh)⟩⟩
       | effect l =>
         exact Or.inr ⟨U, h, .at l.label (mapEnv l.mapping ρ), WExt_refl _, hw', .effect hv, hh',
-          (target_state hk ((refined_env_aliased hh he hy (answered := false) (fun h => by cases h) (fun h => by cases h)
+          ⟨mapEnv_refs _ hρU, target_state hk ((refined_env_aliased hh he hy (answered := false) (fun h => by cases h) (fun h => by cases h)
             (HeapKnowledge.dropResult_holds hf).2.2.1).transfer n (Nat.le_succ n) U (WExt_refl _)) hi' ha (HeapKnowledge.dropResult_holds hf)
             (fun _ => HeapExpressionRules.typedCells_holds (refined_env_aliased hh he hy (answered := false) (fun h => by cases h) (fun h => by cases h)
-              (HeapKnowledge.dropResult_holds hf).2.2.1) hh))⟩
+              (HeapKnowledge.dropResult_holds hf).2.2.1) hh)⟩⟩
       | branch y no =>
         have hb := represents_raw hk.1 (n+1) W t hA
         rcases hb with rfl | rfl
         · exact Or.inr ⟨U, h, .at y.label (mapEnv y.mapping ρ), WExt_refl _, hw', .yes, hh',
-            (target_state hk.2.1 ((refined_env_aliased hh he hy (answered := true) (fun _ => rfl) (fun h => by cases h)
+            ⟨mapEnv_refs _ hρU, target_state hk.2.1 ((refined_env_aliased hh he hy (answered := true) (fun _ => rfl) (fun h => by cases h)
               (HeapKnowledge.dropResult_holds hf).2.2.1).transfer n (Nat.le_succ n) U (WExt_refl _)) hi' ha
               (HeapKnowledge.dropResult_holds (HeapKnowledge.promoteTruthy_holds hf rfl))
               (fun _ => HeapExpressionRules.typedCells_holds (refined_env_aliased hh he hy (answered := true) (fun _ => rfl) (fun h => by cases h)
-                (HeapKnowledge.dropResult_holds hf).2.2.1) hh))⟩
+                (HeapKnowledge.dropResult_holds hf).2.2.1) hh)⟩⟩
         · exact Or.inr ⟨U, h, .at no.label (mapEnv no.mapping ρ), WExt_refl _, hw', .no, hh',
-            (target_state hk.2.2 ((refined_env_aliased hh he hy (answered := false) (fun h => by cases h) (fun h => by cases h)
+            ⟨mapEnv_refs _ hρU, target_state hk.2.2 ((refined_env_aliased hh he hy (answered := false) (fun h => by cases h) (fun h => by cases h)
               (HeapKnowledge.dropResult_holds hf).2.2.1).transfer n (Nat.le_succ n) U (WExt_refl _)) hi' ha
               (HeapKnowledge.dropResult_holds (HeapKnowledge.promoteTruthy_holds hf rfl))
               (fun _ => HeapExpressionRules.typedCells_holds (refined_env_aliased hh he hy (answered := false) (fun h => by cases h) (fun h => by cases h)
-                (HeapKnowledge.dropResult_holds hf).2.2.1) hh))⟩
+                (HeapKnowledge.dropResult_holds hf).2.2.1) hh)⟩⟩
       | branchBind y no =>
         have hb := onlyBoolean_sound hk.1 hA
         rcases hb with rfl | rfl
         · exact Or.inr ⟨U, h, _, WExt_refl _, hw', .yesBind, hh',
-            (branch_target_state hk.2.1 (refined_push_aliased hh he hA hy (answered := true) (fun _ => rfl) (fun h => by cases h) hf.2.2.1) hh rfl
-              (PromiseCalls.edgeImplications_holds hi hy) (pushed_arguments ha hal) hf)⟩
+            ⟨mapEnv_refs _ (push_refs htU hρU), branch_target_state hk.2.1 (refined_push_aliased hh he hA hy (answered := true) (fun _ => rfl) (fun h => by cases h) hf.2.2.1) hh rfl
+              (PromiseCalls.edgeImplications_holds hi hy) (pushed_arguments ha hal) hf⟩⟩
         · exact Or.inr ⟨U, h, _, WExt_refl _, hw', .noBind, hh',
-            (branch_target_state hk.2.2 (refined_push_aliased hh he hA hy (answered := false) (falsified := true) (fun h => by cases h) (fun _ => rfl) hf.2.2.1) hh rfl
-              (PromiseCalls.edgeImplications_holds hi hy) (pushed_arguments ha hal) hf)⟩
+            ⟨mapEnv_refs _ (push_refs htU hρU), branch_target_state hk.2.2 (refined_push_aliased hh he hA hy (answered := false) (falsified := true) (fun h => by cases h) (fun _ => rfl) hf.2.2.1) hh rfl
+              (PromiseCalls.edgeImplications_holds hi hy) (pushed_arguments ha hal) hf⟩⟩
       | tagBind tag y no =>
         cases htag : tagHoldsIn h tag t with
         | true =>
           exact Or.inr ⟨U, h, _, WExt_refl _, hw', .tagBind hv, hh',
-            (by
+            ⟨mapEnv_refs _ (push_refs htU hρU), (by
               simpa [htag] using (branch_target_state hk.1
                 (refined_push_aliased hh he hA hy (answered := truthyBoolean G tag A)
                   (fun hb => truthyBoolean_sound hb hA htag) (fun h => by cases h) hf.2.2.1) hh (tagHolds_of_heap htag)
-                (PromiseCalls.edgeImplications_holds hi hy) (pushed_arguments ha hal) hf))⟩
+                (PromiseCalls.edgeImplications_holds hi hy) (pushed_arguments ha hal) hf))⟩⟩
         | false =>
           exact Or.inr ⟨U, h, _, WExt_refl _, hw', .tagBind hv, hh',
-            (by
+            ⟨mapEnv_refs _ (push_refs htU hρU), (by
               simpa [htag] using (branch_target_state hk.2
                 (refined_push_aliased hh he hA hy (answered := false) (fun h => by cases h) (fun h => by cases h) hf.2.2.1) hh (tagHolds_of_heap htag)
-                (PromiseCalls.edgeImplications_holds hi hy) (pushed_arguments ha hal) hf))⟩
+                (PromiseCalls.edgeImplications_holds hi hy) (pushed_arguments ha hal) hf))⟩⟩
     · have he' := he.transfer n (Nat.le_succ n) U (WExt_refl _)
       have hi' := hi.transfer n (Nat.le_succ n) U (WExt_refl _)
+      have hvU : RefsOk U v := fun r' hr' => htU r' (Kinds.raises_refs hr r' hr')
       cases x with
       | none =>
         exact Or.inr ⟨U, h, .raised v, WExt_refl _, hw', .raise hr, hh',
-          ⟨hsc.1, (builtinExc_adm G _).down n W v hsc.2⟩⟩
+          ⟨hvU, hsc.1, (builtinExc_adm G _).down n W v hsc.2⟩⟩
       | some l =>
         obtain ⟨T, facts, hT, htarget, hfacts⟩ := hx
         have hvT := admitsAll_sound hT ((builtinExc_adm G _).down n W v hsc.2)
         exact Or.inr ⟨U, h, _, WExt_refl _, hw', .handle hr, hh',
-          (target_state htarget (he'.push hvT)
+          ⟨mapEnv_refs _ (push_refs hvU hρU), target_state htarget (he'.push hvT)
             (PromiseCalls.edgeImplications_holds (ys := []) hi' (fun y hy => by cases hy))
             (pushed_arguments ha (fun h => by cases h)) (hfacts v h)
-            (fun _ => HeapExpressionRules.typedCells_holds (he.push (admitsAll_sound hT hsc.2)) hh))⟩
+            (fun _ => HeapExpressionRules.typedCells_holds (he.push (admitsAll_sound hT hsc.2)) hh)⟩⟩
     · have hal' : aliased = true → t' = v0 := by
         intro hal'
         cases hal hal'
         exact absurd step (value_no_step hv0)
       exact Or.inr ⟨V, h', .eval t' ρ k x, hx', hu, .expr step, hok,
-        ⟨Γ,A,out,xs,ys,arg,aliased,he.transfer n (Nat.le_succ n) V hx',hi.transfer n (Nat.le_succ n) V hx',
+        ⟨⟨HeapObservations.SafePostW.refs hsafe, fun i => RefsOk_mono hx' (RefsOk_trunc _ (hρr i))⟩,
+          Γ,A,out,xs,ys,arg,aliased,he.transfer n (Nat.le_succ n) V hx',hi.transfer n (Nat.le_succ n) V hx',
           ha,hal',hsafe,hk,hx⟩⟩
 
 /-- Global safety is by execution budget, not by acyclicity or graph unfolding. -/
@@ -1230,16 +1268,18 @@ theorem state_safe [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
     {checker : HeapExpressionRules.Checker G images} {Rty P C}
     {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} (hg : checkGraphUsing (checker := checker) (sums := sums) G images Rty P C codes = true)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums) {v0 : Tm} (hv0 : isVal v0 = true) :
-    ∀ n W h s, WorldAdm W → HeapOk n W h → StateOk G Rty C v0 ε n W h s →
-      SafeGraph (excOf G) P (GoalHolds G Rty v0) n W h s := by
+    ∀ n W h s, WorldAdm W → HeapOk n W h → (∀ node ∈ P, RefsOk W node.expression) →
+      StateOk G Rty C v0 ε n W h s → SafeGraph (excOf G) P (GoalHolds G Rty v0) n W h s := by
   intro n
   induction n with
-  | zero => intros; trivial
+  | zero => intro W h s _ _ _ hs; exact hs.1
   | succ n ih =>
-    intro W h s hw hh hs
-    rcases state_progress hg hcodes hsums hv0 hw hh hs with terminal | ⟨U,h',s',hx,hu,st,hok,hs'⟩
+    intro W h s hw hh hP hs
+    refine ⟨hs.1, ?_⟩
+    rcases state_progress hg hcodes hsums hv0 hw hh hP hs with terminal | ⟨U,h',s',hx,hu,st,hok,hs'⟩
     · exact .inl terminal
-    · exact .inr ⟨U,h',s',hx,hu,st,hok,ih U h' s' hu hok hs'⟩
+    · exact .inr ⟨U,h',s',hx,hu,st,hok,ih U h' s' hu hok
+        (fun node hm => RefsOk_mono hx (RefsOk_trunc _ (hP node hm))) hs'⟩
 
 /-- Safety from any checked entry and concrete environment meeting its claim. -/
 theorem accepted_entry_safe [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
@@ -1248,9 +1288,9 @@ theorem accepted_entry_safe [DecidableEq ι] {G : NormalGraph ι} {images : Inst
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums) (hc : C[l]? = some c) {v0 : Tm} (hv0 : isVal v0 = true)
     (n W h ρ) (he : EnvOk G (entry c) ρ n W) (hi : ImpliesOk G c.implies ρ n W)
     (ha : ArgumentsOk c.arguments ρ v0) (hf : HeapKnowledge.Holds c.knowledge ε ρ h) (hw : WorldAdm W)
-    (hh : HeapOk n W h) :
+    (hh : HeapOk n W h) (hP : ∀ node ∈ P, RefsOk W node.expression) (hρ : ∀ i, RefsOk W (ρ i)) :
     SafeGraph (excOf G) P (GoalHolds G Rty v0) n W h (.at l ρ) :=
-  state_safe hg hcodes hsums hv0 n W h _ hw hh ⟨c,hc,he,hi,ha,hf⟩
+  state_safe hg hcodes hsums hv0 n W h _ hw hh hP ⟨hρ,c,hc,he,hi,ha,hf⟩
 
 /-- What the entry's knowledge may state: nothing, or what follows from the
 separation the request assumes of its inputs (`entrySeparation`): a unit's
@@ -1340,6 +1380,7 @@ theorem accepted_inputs_safe [DecidableEq ι] {G : NormalGraph ι} {images : Ins
     (hc : checkEntryUsing (checker := checker) (sums := sums) (entrySeparation := entrySeparation)
       (entryIndices := entryIndices) G images Rty P C start inputs codes = true) (n W h ρ)
     (he : EnvOk G inputs ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (hP : ∀ node ∈ P, RefsOk W node.expression) (hρ : ∀ i, RefsOk W (ρ i))
     (hcodes : CodesSound G codes := by exact Verification.ProgramCertificates.codesSound_none _)
     (hsums : SummariesSound G images sums := by exact Verification.ProgramCertificates.summariesSound_none _ _)
     (hsep : HeapSeparation.Holds entrySeparation ρ := by exact HeapSeparation.empty_holds _)
@@ -1360,7 +1401,7 @@ theorem accepted_inputs_safe [DecidableEq ι] {G : NormalGraph ι} {images : Ins
         rw [hs] at hslot
         have hlt : s < inputs.length := by simpa using hslot
         exact (meaning_value (he.2 s inputs[s] (List.getElem?_eq_getElem hlt))).1
-    apply accepted_entry_safe (ε := ⟨ρ, h⟩) hg hcodes hsums hc hv0 n W h ρ _ _ _ _ hw hh
+    apply accepted_entry_safe (ε := ⟨ρ, h⟩) hg hcodes hsums hc hv0 n W h ρ _ _ _ _ hw hh hP hρ
     · simpa only [hin] using he
     · rw [himp]; exact PromiseCalls.ImpliesOk.nil G ρ n W
     · intro p hp

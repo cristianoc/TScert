@@ -280,9 +280,11 @@ theorem grow_safe {Ξ R : Fam} {b : Nat} : ∀ {n W h t}, b ≤ h.length → Saf
     HeapObservations.SafePost Ξ R (fun h' _ => b ≤ h'.length) n W h t := by
   intro n
   induction n with
-  | zero => intros; trivial
+  | zero => intros; assumption
   | succ n ih =>
     intro W h t hb hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hv, ht⟩ | hth) | ⟨U, h', t', hx, hu, step, hh, hs⟩
     · exact .inl (.inl ⟨hv, ht, hb⟩)
     · exact .inl (.inr hth)

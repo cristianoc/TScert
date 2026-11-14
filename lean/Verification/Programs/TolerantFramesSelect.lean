@@ -271,13 +271,14 @@ theorem typedRead_optional_sound {G : NormalGraph ι} {images : InstanceImageChe
     (hopt : optionalOperand (expand G Ref) fld = true) (htree : checkTreeUsing G images p codes sums = true)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type) (fun h' v => HeapKnowledge.Holds (readFrame k i fld true) ε (push v ρ) h') n W h
       (instantiate 0 ρ j.term) := by
   have typed := checkTreeUsing_sound p htree hcodes hsums
   rw [hj, ht] at typed
-  rw [ht]
-  simpa [instantiate] using optionalRead_sound typed hi hopt he hk hw hh
+  rw [ht] at href ⊢
+  simpa [instantiate] using optionalRead_sound typed hi hopt he hk hw hh (by simpa [instantiate] using href)
 
 /-- **The base's selected output under the pass's tree check is sound**: the
 consequence `Checker.sound` states for `run`. -/
@@ -287,20 +288,21 @@ theorem passSteps_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
     (hc : (checkStepResult G images j k e codes sums (tree := false)).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type) (fun h' v => HeapKnowledge.Holds out ε (push v ρ) h') n W h
       (instantiate 0 ρ j.term) := by
   rcases passSteps_value hok hc with hu | ⟨p, rfl, hj, rfl, hreq⟩ | ⟨i, p, fld, Ref, rfl, hj, ht, hi, hopt, htree, rfl⟩
-  · exact checkStep_sound hu hcodes hsums he hk hw hh
+  · exact checkStep_sound hu hcodes hsums he hk hw hh href
   · obtain ⟨eff, -, hs⟩ := PromiseCalls.requiresTree_sound hcodes hsums p hreq
     subst hj
-    apply of_value_property _ (erase (hs he hk hw hh))
+    apply of_value_property _ (erase (hs he hk hw hh href))
     intro _ _ heap v _
     exact ⟨HeapFacts.holds_nil _ _, (HeapKnowledge.shift_holds (v := v) hk).2.1,
       HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.1,
       (HeapKnowledge.shift_holds (v := v) hk).2.2.2.1, HeapKnowledge.elemsHolds_nil _ _,
       HeapKnowledge.envIndices_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.2.2.2 _⟩
-  · exact typedRead_optional_sound hj ht hi hopt htree hcodes hsums he hk hw hh
+  · exact typedRead_optional_sound hj ht hi hopt htree hcodes hsums he hk hw hh href
 
 /-! ## The checker the pass's selection runs -/
 
@@ -310,9 +312,9 @@ pass's tree check holds. -/
   run := fun j k e codes sums =>
     if passTreeOk G images k codes sums e then checkStepResult G images j k e codes sums (tree := false) else failure
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
     split at hc
-    · exact passSteps_sound ‹_› hc hcodes hsums he hk hw hh
+    · exact passSteps_sound ‹_› hc hcodes hsums he hk hw hh href
     · cases hc
 
 /-- The layers of `Checker.ordinary` over a base checker. -/
@@ -354,10 +356,11 @@ theorem ordinary_select_sound {G : NormalGraph ι} {images : InstanceImageCheck 
     (hsel : ((Checker.ordinary G images).select j k e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type) (fun h' v => HeapKnowledge.Holds out ε (push v ρ) h') n W h
       (instantiate 0 ρ j.term) :=
-  (passOrdinary G images).sound (select_run hok hsel) hcodes hsums he hk hw hh
+  (passOrdinary G images).sound (select_run hok hsel) hcodes hsums he hk hw hh href
 
 /-- **A qualified body's `select` is its `run`** (`selectChecks`, line 1276). -/
 theorem withSubtyping_select {G : NormalGraph ι} {images : InstanceImageCheck G} (subtyping : BodySubtyping G)
@@ -419,13 +422,14 @@ theorem passSteps_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
     (hc : ((passSteps G images).run j k e codes sums).value = some out) (hp : kindPreserving e = true)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) : KeepsPost G j ρ n W h := by
-  have hs := erase ((passSteps G images).sound hc hcodes hsums he hk hw hh)
+    (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) : KeepsPost G j ρ n W h := by
+  have hs := erase ((passSteps G images).sound hc hcodes hsums he hk hw hh href)
   simp only [passSteps] at hc
   split at hc
   · rename_i hok
     rcases passSteps_value hok hc with hu | ⟨p, rfl, -⟩ | ⟨i, p, fld, Ref, rfl, -, ht, hi, -⟩
-    · exact base_keeps hu hp hcodes hsums he hk hw hh
+    · exact base_keeps hu hp hcodes hsums he hk hw hh href
     · cases hp
     · refine inspection_keeps hs ?_ hw hh
       rw [ht]
@@ -442,14 +446,15 @@ theorem passPreserving_keeps_select {G : NormalGraph ι} {images : InstanceImage
     (hsel : ((Checker.ordinary G images).select j kE e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) : KeepsPost G j ρ n W h := by
+    (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) : KeepsPost G j ρ n W h := by
   simp only [passPreserving, Bool.or_eq_true] at hpres
   rcases hpres with hc | hp
-  · exact callKeepsHeap_keeps hc hcodes hsums he hk hw hh
+  · exact callKeepsHeap_keeps hc hcodes hsums he hk hw hh href
   · rcases ordinaryOver_run_base (passSteps G images) hp (select_run hok hsel) with ⟨o, hb⟩ | hel
-    · exact passSteps_keeps hb hp hcodes hsums he hk hw hh
+    · exact passSteps_keeps hb hp hcodes hsums he hk hw hh href
     · obtain ⟨⟨x, R⟩, hel⟩ := Option.isSome_iff_exists.mp hel
-      exact elementsCall_keeps hel hcodes hsums he hw hh
+      exact elementsCall_keeps hel hcodes hsums he hw hh href
 
 /-- **The pass's preserving steps, both exits, at its selected output**:
 `pass_preserving_frame` with `hr` discharged by the pass's own conditions. -/
@@ -462,6 +467,7 @@ theorem pass_preserving_frame_select {G : NormalGraph ι} {images : InstanceImag
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ η : Env} {r m : Nat} {s : IndexedHeap} {S : List Atom}
     (he : EnvOk G j.context ρ s.n s.W) (hkE : HeapKnowledge.Holds kE ε ρ s.h)
+    (href : RefsOk s.W (instantiate 0 ρ j.term))
     (hS : Named ε S η ρ m s) (hfr : ∀ a ∈ S, r ∉ a.names)
     {k : Nat} {h' : Heap} {t' : Tm} (hst : Steps k s.h (instantiate 0 ρ j.term) h' t') (hk : k < s.n) :
     (isVal t' = true → ∃ s' : IndexedHeap, Action Footprints.Closed.empty.fp ρ s s' ∧ s'.h = h' ∧
@@ -470,7 +476,7 @@ theorem pass_preserving_frame_select {G : NormalGraph ι} {images : InstanceImag
       (∀ x, Raises t' x → ∃ s' : IndexedHeap, Action Footprints.Closed.top.fp ρ s s' ∧ s'.h = h' ∧
         s'.n + k = s.n ∧ Scoped 0 x ∧ excOf G s'.n s'.W x ∧ Named ε (S.filter (·.heapFree)) η ρ m s') :=
   preserving_step_frame (passOrdinary G images) (select_run hok hsel) hcodes hsums he hkE
-    (passPreserving_keeps_select hpres hok hsel hcodes hsums he hkE s.adm s.ok) hS hfr hst hk
+    (passPreserving_keeps_select hpres hok hsel hcodes hsums he hkE s.adm s.ok href) hS hfr hst hk
 
 /-- **A step the pass frames, at its selected output**: `preserving_judgment`
 with `hr` discharged by the pass's own conditions. -/
@@ -482,13 +488,14 @@ theorem preserving_judgment_select {G : NormalGraph ι} {images : InstanceImageC
     (hsel : ((Checker.ordinary G images).select j kE e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePostExc (excOf G) (meaning G j.type)
       (fun h' v => Footprints.Closed.empty.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => Footprints.Closed.top.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) := by
   have hboth := cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh
-    (passPreserving_keeps_select hpres hok hsel hcodes hsums he hk hw hh)
-    (ordinary_select_sound hok hsel hcodes hsums he hk hw hh)
+    (passPreserving_keeps_select hpres hok hsel hcodes hsums he hk hw hh href)
+    (ordinary_select_sound hok hsel hcodes hsums he hk hw hh href)
   exact SafePostExc.weaken (fun _ _ hq => ⟨hq.2.1.1, hq.2.2⟩)
     (fun _ hq => ⟨Footprints.Closed.holds_top.mpr hq, trivial⟩) (safePost_grow h.length (Nat.le_refl _) hboth)
 
@@ -615,10 +622,11 @@ theorem pass_select_sound {pc : SinglePass.PassChecker G images} {j : Sequent ι
     (hsel : (pc.checker.select j k e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type) (fun h' v => HeapKnowledge.Holds out ε (push v ρ) h') n W h
       (instantiate 0 ρ j.term) :=
-  (passRunChecker pc).sound (pass_select_run hok hsel) hcodes hsums he hk hw hh
+  (passRunChecker pc).sound (pass_select_run hok hsel) hcodes hsums he hk hw hh href
 
 /-- **Every step the pass classifies preserving keeps the heap**, at either
 checker's selected output. -/
@@ -629,15 +637,16 @@ theorem passPreserving_keeps_pass {pc : SinglePass.PassChecker G images} {j : Se
     (hsel : (pc.checker.select j kE e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) : KeepsPost G j ρ n W h := by
+    (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) : KeepsPost G j ρ n W h := by
   cases pc with
-  | ordinary => exact passPreserving_keeps_select hpres (hok rfl) hsel hcodes hsums he hk hw hh
+  | ordinary => exact passPreserving_keeps_select hpres (hok rfl) hsel hcodes hsums he hk hw hh href
   | qualified s o =>
     simp only [passPreserving, Bool.or_eq_true] at hpres
     rcases hpres with hc | hp
-    · exact callKeepsHeap_keeps hc hcodes hsums he hk hw hh
+    · exact callKeepsHeap_keeps hc hcodes hsums he hk hw hh href
     · obtain ⟨o₀, hb⟩ := withSubtyping_run_base (ord := o) hp hsel
-      exact base_keeps hb hp hcodes hsums he hk hw hh
+      exact base_keeps hb hp hcodes hsums he hk hw hh href
 
 /-- **The pass's preserving steps, both exits, at either checker's selected
 output**: `preserving_step_frame` at `runChecker`. -/
@@ -650,6 +659,7 @@ theorem pass_preserving_frame_pass {pc : SinglePass.PassChecker G images}
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ η : Env} {r m : Nat} {s : IndexedHeap} {S : List Atom}
     (he : EnvOk G j.context ρ s.n s.W) (hkE : HeapKnowledge.Holds kE ε ρ s.h)
+    (href : RefsOk s.W (instantiate 0 ρ j.term))
     (hS : Named ε S η ρ m s) (hfr : ∀ a ∈ S, r ∉ a.names)
     {k : Nat} {h' : Heap} {t' : Tm} (hst : Steps k s.h (instantiate 0 ρ j.term) h' t') (hk : k < s.n) :
     (isVal t' = true → ∃ s' : IndexedHeap, Action Footprints.Closed.empty.fp ρ s s' ∧ s'.h = h' ∧
@@ -658,7 +668,7 @@ theorem pass_preserving_frame_pass {pc : SinglePass.PassChecker G images}
       (∀ x, Raises t' x → ∃ s' : IndexedHeap, Action Footprints.Closed.top.fp ρ s s' ∧ s'.h = h' ∧
         s'.n + k = s.n ∧ Scoped 0 x ∧ excOf G s'.n s'.W x ∧ Named ε (S.filter (·.heapFree)) η ρ m s') :=
   preserving_step_frame (passRunChecker pc) (pass_select_run hok hsel) hcodes hsums he hkE
-    (passPreserving_keeps_pass hpres hok hsel hcodes hsums he hkE s.adm s.ok) hS hfr hst hk
+    (passPreserving_keeps_pass hpres hok hsel hcodes hsums he hkE s.adm s.ok href) hS hfr hst hk
 
 /-- **A step the pass frames, at either checker's selected output**: normal
 exit within `{values: keep, stores: keep}` with the output, throw within
@@ -671,13 +681,14 @@ theorem preserving_judgment_pass {pc : SinglePass.PassChecker G images}
     (hsel : (pc.checker.select j kE e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePostExc (excOf G) (meaning G j.type)
       (fun h' v => Footprints.Closed.empty.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => Footprints.Closed.top.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) := by
   have hboth := cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh
-    (passPreserving_keeps_pass hpres hok hsel hcodes hsums he hk hw hh)
-    (pass_select_sound hok hsel hcodes hsums he hk hw hh)
+    (passPreserving_keeps_pass hpres hok hsel hcodes hsums he hk hw hh href)
+    (pass_select_sound hok hsel hcodes hsums he hk hw hh href)
   exact SafePostExc.weaken (fun _ _ hq => ⟨hq.2.1.1, hq.2.2⟩)
     (fun _ hq => ⟨Footprints.Closed.holds_top.mpr hq, trivial⟩) (safePost_grow h.length (Nat.le_refl _) hboth)
 

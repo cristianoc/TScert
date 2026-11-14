@@ -68,12 +68,13 @@ theorem passOutFreshChecked_fresh {codes : CodeEntry ι → Bool} {sums : List (
     {imp : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
     (hS : StateHolds G entry imp start ε ρ m s) (he : EnvOk G c.context ρ s.n s.W)
     (hwidth : entry.names.length ≤ c.context.length) (hm : m ≤ s.h.length)
-    (hkS : HeapKnowledge.Holds stepK ε ρ s.h) {k : Nat} {h' : Heap} {v : Tm}
+    (hkS : HeapKnowledge.Holds stepK ε ρ s.h) (href : RefsOk s.W (instantiate 0 ρ node.expression))
+    {k : Nat} {h' : Heap} {v : Tm}
     (hk : k < s.n) (hst : Steps k s.h (instantiate 0 ρ node.expression) h' v)
     (hv : isVal v = true) : FreshAt m v := by
   rcases passOutFreshChecked_cases hf with hc | ⟨hcf, hdc⟩
   · exact copyFresh hS he hwidth hc hst
-  · exact callFresh_of_checked hcf hdc hcodes hsums hm he hkS k h' v hk hst hv
+  · exact callFresh_of_checked hcf hdc hcodes hsums hm he hkS href k h' v hk hst hv
 
 
 end Aux

@@ -172,11 +172,11 @@ theorem passPreserving_keeps_two {G : NormalGraph ι} {images : InstanceImageChe
     (hsel : (pc.checker.select j kE e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums₀ : SummariesSound G images sums₀) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) : KeepsPost G j ρ n W h := by
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ j.term)) : KeepsPost G j ρ n W h := by
   simp only [passPreserving, Bool.or_eq_true] at hpres
   rcases hpres with hc | hp
-  · exact callKeepsHeap_keeps hc hcodes hsums₀ he hk hw hh
-  · exact passPreserving_keeps_pass (by simp [passPreserving, hp]) hok hsel hcodes hsums he hk hw hh
+  · exact callKeepsHeap_keeps hc hcodes hsums₀ he hk hw hh href
+  · exact passPreserving_keeps_pass (by simp [passPreserving, hp]) hok hsel hcodes hsums he hk hw hh href
 
 /-- **A preserving step's judgment** at the pass's two sums: normal exit
 keeping the heap with the selected output, throw within `top`. -/
@@ -188,13 +188,14 @@ theorem preserving_judgment_two {G : NormalGraph ι} {images : InstanceImageChec
     (hsel : (pc.checker.select j kE e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums₀ : SummariesSound G images sums₀) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap}
-    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePostExc (excOf G) (meaning G j.type)
       (fun h' v => Footprints.Closed.empty.Holds h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
       (fun h' => Footprints.Closed.top.Holds h h' ∧ True) n W h (instantiate 0 ρ j.term) := by
   have hboth := cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh
-    (passPreserving_keeps_two hpres hok hsel hcodes hsums₀ hsums he hk hw hh)
-    (pass_select_sound hok hsel hcodes hsums he hk hw hh)
+    (passPreserving_keeps_two hpres hok hsel hcodes hsums₀ hsums he hk hw hh href)
+    (pass_select_sound hok hsel hcodes hsums he hk hw hh href)
   exact SafePostExc.weaken (fun _ _ hq => ⟨hq.2.1.1, hq.2.2⟩)
     (fun _ hq => ⟨Footprints.Closed.holds_top.mpr hq, trivial⟩) (safePost_grow h.length (Nat.le_refl _) hboth)
 
@@ -253,8 +254,9 @@ of `cn` with the rule's output, and `Fe` at the node's environment after every
 action of `ce`. -/
 def StepParts (G : NormalGraph ι) (A : Ty ι) (cn ce : Footprints.Closed) (t : Tm) (out : HeapKnowledge.Knowledge) (ε : HeapKnowledge.EntryState)
     (Fn Fe : Assertion) (ρ : Env) (m : Nat) (s : IndexedHeap) : Prop :=
-  SafePostExc (excOf G) (meaning G A) (fun h' v => cn.Holds s.h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
-      (fun h' => ce.Holds s.h h' ∧ True) s.n s.W s.h (instantiate 0 ρ t) ∧
+  (RefsOk s.W (instantiate 0 ρ t) →
+    SafePostExc (excOf G) (meaning G A) (fun h' v => cn.Holds s.h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h')
+      (fun h' => ce.Holds s.h h' ∧ True) s.n s.W s.h (instantiate 0 ρ t)) ∧
     (∀ k h' v (s' : IndexedHeap), Steps k s.h (instantiate 0 ρ t) h' v → isVal v = true →
       Action cn.fp ρ s s' → s'.h = h' → HeapKnowledge.Holds out ε (push v ρ) h' → Fn (push v ρ) m s') ∧
     ∀ s' : IndexedHeap, Action ce.fp ρ s s' → Fe ρ m s'
@@ -368,8 +370,10 @@ theorem stepChecked_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
     have hv : isVal (ρ i) = true := (meaning_value (he.2 i _ hty)).1
     refine ⟨hsum, by rw [hK]; exact holds_empty, .inl ⟨hr ▸ List.mem_of_getElem? hx, hfr⟩,
       Footprints.Closed.empty, Footprints.Closed.empty, ⟨?_, ?_, ?_⟩⟩
-    · rw [hval, hO]
+    · intro href
+      rw [hval, hO]
       exact SafePostExc.value hv (he.2 i _ hty) ⟨Footprints.Closed.holds_empty.mpr (List.prefix_refl _), holds_empty⟩
+        (by rw [hval] at href; exact href)
     · intro k h' v s' hsteps _ ha _ _
       rw [hval] at hsteps
       have hvv := PromiseCalls.steps_value hv hsteps
@@ -408,7 +412,7 @@ theorem stepChecked_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
     · obtain ⟨hstore, hK, hO⟩ := hpres hp
       refine ⟨hs1, by rw [hK]; exact hk.1, hres', Footprints.Closed.empty, Footprints.Closed.top,
         ⟨?_, ?_, ?_⟩⟩
-      · rw [hO]; exact preserving_judgment_two hp hok hsel hcodes hs0 hs1 he hk.1 s.adm s.ok
+      · intro href; rw [hO]; exact preserving_judgment_two hp hok hsel hcodes hs0 hs1 he hk.1 s.adm s.ok href
       · intro k h' v s' hsteps _ ha hh hout
         rw [hstore]
         refine stateHolds_pushed hn hI hF hstart ha.1 (hkv k h' v hsteps) ?_
@@ -422,7 +426,7 @@ theorem stepChecked_parts {G : NormalGraph ι} {images : InstanceImageCheck G} {
       have hrun := pass_select_whole htree hwc hsel'
       refine ⟨hs1, by rw [hK]; exact hk.2, hres', Footprints.Closed.top, Footprints.Closed.top,
         ⟨?_, ?_, ?_⟩⟩
-      · rw [hO]; exact top_judgment (passRunChecker pc) hrun hcodes hs1 he hk.2 s.adm s.ok
+      · intro href; rw [hO]; exact top_judgment (passRunChecker pc) hrun hcodes hs1 he hk.2 s.adm s.ok href
       · intro k h' v s' hsteps _ ha hh hout
         rw [hstore]
         refine stateHolds_pushed hn hI hF hstart ha.1 (hkv k h' v hsteps) ?_
@@ -440,7 +444,8 @@ theorem stepChecked_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
     {I : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
     (hS : StateHolds G entry I start ε ρ m s) (w : StoreWF entry.store) (hnb : NamesBelow entry I start fresh)
     (hwidth : entry.names.length ≤ c.context.length)
-    (he : EnvOk G c.context ρ s.n s.W) (hcodes : CodesSound G codes)
+    (he : EnvOk G c.context ρ s.n s.W) (href : RefsOk s.W (instantiate 0 ρ node.expression))
+    (hcodes : CodesSound G codes)
     (hsum : SummariesSound G images answers.summaries.toList) :
     SummariesSound G images ans.summaries.toList ∧ HeapKnowledge.Holds st.stepK ε ρ s.h ∧
     ((st.result ∈ entry.names ∧ st.fresh = fresh) ∨ (st.result = fresh ∧ st.fresh = fresh + 1)) ∧
@@ -448,7 +453,7 @@ theorem stepChecked_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
       (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ I start ε)
       (StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start ε) ρ m s := by
   obtain ⟨h1, h2, h3, cn, ce, hj, hn, hx⟩ := stepChecked_parts h hS w hnb hwidth he hcodes hsum
-  exact ⟨h1, h2, h3, cn, ce, stepExits_of hj hn hx⟩
+  exact ⟨h1, h2, h3, cn, ce, stepExits_of (hj href) hn hx⟩
 
 
 /-- **THE STEP THEOREM, in parts**, at an accepted `checkedStep`:
@@ -509,7 +514,8 @@ theorem checkedStep_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
     {I : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
     (hS : StateHolds G entry I start ε ρ m s) (w : StoreWF entry.store) (hnb : NamesBelow entry I start fresh)
     (hwidth : entry.names.length ≤ c.context.length)
-    (he : EnvOk G c.context ρ s.n s.W) (hcodes : CodesSound G codes)
+    (he : EnvOk G c.context ρ s.n s.W) (href : RefsOk s.W (instantiate 0 ρ node.expression))
+    (hcodes : CodesSound G codes)
     (hsum : SummariesSound G images answers.summaries.toList)
     (hdir : DirectKeepsSummaries G images undefTy)
     (hsrch : SearchKeepsSummaries G images pool fuel suggestions index codes aliases pc.checker) :
@@ -518,7 +524,7 @@ theorem checkedStep_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
     ∃ cn ce : Footprints.Closed, StepExits G c.type cn ce node.expression st.stepOut ε
       (StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ I start ε)
       (StateHolds G ⟨entry.names, entry.store.dropHeap (fun _ => false), entry.fresh⟩ I start ε) ρ m s :=
-  stepChecked_sound (stepChecked_of_step h hdir hsrch) hS w hnb hwidth he hcodes hsum
+  stepChecked_sound (stepChecked_of_step h hdir hsrch) hS w hnb hwidth he href hcodes hsum
 
 end StepTheorem
 

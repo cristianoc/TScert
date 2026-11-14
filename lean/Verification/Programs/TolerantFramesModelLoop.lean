@@ -124,9 +124,14 @@ theorem lowerBound_heap {y x : Nat} {ρ : Env} {m : Nat} {s s' : IndexedHeap} (h
 
 /-- A step that keeps the heap, then the rest at the truncated world. -/
 theorem pure_step {Ξ T : Fam} {Q : Post} {R : Heap → Prop} {n : Nat} {W : WorldT (n + 1)} {h : Heap} {t t' : Tm}
-    (ha : WorldAdm W) (ho : HeapOk (n + 1) W h) (hst : Step h t h t')
+    (ha : WorldAdm W) (ho : HeapOk (n + 1) W h) (hr : RefsOk W t) (hst : Step h t h t')
     (hs : SafePostExc Ξ T Q R n (trunc n (Nat.le_succ n) W) h t') : SafePostExc Ξ T Q R (n + 1) W h t :=
-  .inr ⟨_, h, t', WExt_refl _, WorldAdm_trunc _ ha, hst, HeapOk_trunc n W h ho, hs⟩
+  ⟨hr, .inr ⟨_, h, t', WExt_refl _, WorldAdm_trunc _ ha, hst, HeapOk_trunc n W h ho, hs⟩⟩
+
+/-- A heap-keeping step keeps the term's references valid. -/
+theorem pure_refs {n : Nat} {W : WorldT n} {h : Heap} {t t' : Tm} (ho : HeapOk n W h) (hst : Step h t h t')
+    (hr : RefsOk W t) : RefsOk W t' :=
+  Kinds.step_refs hst (by simpa using ho.1.1) ho.2 hr
 
 /-- The store an array of source values holds: at its store field's location,
 a store under `storeF` at every level below the budget. -/
@@ -138,7 +143,7 @@ theorem arrayF_store {n : Nat} {W : WorldT (n + 1)} {h : Heap} {v : Val} (ho : H
       h[fl]? = some (.arr ls) ∧
       ∀ (j : Nat) (hj : j < n + 1), storeF j (trunc j (Nat.le_of_lt hj) W) (.arr ls) := by
   obtain ⟨flds, fl, c, oid, rfl, hfd, hc, hag⟩ := arrayF_at hv
-  obtain ⟨u, hu, hcu⟩ := ho.2 fl c hc
+  obtain ⟨u, hu, hcu⟩ := ho.1.2 fl c hc
   obtain ⟨ls, rfl, -⟩ := (hag 0 (by omega) _ u).mp (hcu 0 (by omega))
   exact ⟨flds, fl, c, oid, ls, rfl, hfd, hc, hag, hu, fun j hj => (hag j hj _ _).mp (hcu j hj)⟩
 
@@ -150,7 +155,7 @@ theorem cell_src {k : Nat} {W : WorldT (k + 1)} {h : Heap} {ls : List (Option Na
       (∀ (j : Nat) (hj : j < k + 1) (W' : WorldT j) (u : Val), c j hj W' u ↔ srcF j W' u) ∧
       h[l]? = some w ∧ isSourceVal w = true := by
   obtain ⟨c, hc, hag⟩ := storeF_cell hs hl
-  obtain ⟨w, hw, hcw⟩ := ho.2 l c hc
+  obtain ⟨w, hw, hcw⟩ := ho.1.2 l c hc
   exact ⟨c, w, hc, hag, hw, (hag 0 (by omega) _ w).mp (hcw 0 (by omega))⟩
 
 theorem elemLoc_some {ls : List (Option Nat)} {b : UInt64} {l : Nat} (h : elemLoc ls b = some l) :
@@ -185,26 +190,38 @@ array read in slot 3: it may be `out`. -/
 theorem write_safe {Ξ T : Fam} (hT : ∀ n W, T n W .nul) {ρ : Env} {b : UInt64} {k : Nat}
     (hv : isSourceVal (ρ 0) = true) (hb : ρ 1 = .num b) (hidx : indexOfBits b = some k) :
     ∀ (n : Nat) (W : WorldT n) (h : Heap), WorldAdm W → HeapOk n W h → arrayF n W (ρ 4) →
+      RefsOk W (instantiate 0 ρ writeTerm) →
       SafePostExc Ξ T (fun h' _ => growEffect.Holds h h' ∧ True) (fun h' => growEffect.Holds h h' ∧ True)
         n W h (instantiate 0 ρ writeTerm) := by
-  intro n W h ha ho hout
-  rw [writeTerm_inst, hb]
-  generalize hvv : ρ 0 = v at hv
+  intro n W h ha ho hout href
+  rw [writeTerm_inst, hb] at href ⊢
+  generalize hvv : ρ 0 = v at hv href ⊢
   have hval : isVal v = true := srcF_valOnly 0 (trunc 0 (Nat.zero_le _) W) v hv
   cases n with
-  | zero => trivial
+  | zero => exact href
   | succ n1 =>
   obtain ⟨flds, fl, cfl, oid, ls, ho4, hfd, hcfl, hagf, hfl, hst⟩ := arrayF_store ho hout
-  rw [ho4]
+  rw [ho4] at hout href ⊢
+  have hrfl : roleAt W fl = some (.store .array) := by
+    obtain ⟨r, hr, hp⟩ := recT_role (List.mem_singleton_self _) hout hfd
+    simp only [StorageRole.permits] at hp; subst hp; exact hr
+  have hvr : RefsOk W v := href.sub (fun r hr => by simp [refs, hr])
+  have hls : RefsOk W (.arr ls) := ho.refs_at hfl
+  have st1 : Step h (.writeAt arrayStoreKey (.objAt flds .absent oid)
+      (.setElem (.readAt arrayStoreKey (.objAt flds .absent oid)) (.num b) v)) h
+      (.writeAt arrayStoreKey (.objAt flds .absent oid) (.setElem (.arr ls) (.num b) v)) :=
+    .writeC2 rfl (.setC1 (.readField hfd hfl))
+  have hr1 := pure_refs ho st1 href
   -- the store is read
-  refine pure_step ha ho (.writeC2 rfl (.setC1 (.readField hfd hfl))) ?_
+  refine pure_step ha ho href st1 ?_
   cases n1 with
-  | zero => trivial
+  | zero => exact RefsOk_trunc _ hr1
   | succ n2 =>
   have ha1 := WorldAdm_trunc (Nat.le_succ (n2 + 1)) ha
   have ho1 := HeapOk_trunc (n2 + 1) W h ho
   have hst1 : storeF (n2 + 1) (trunc (n2 + 1) (Nat.le_succ _) W) (.arr ls) := hst (n2 + 1) (by omega)
   have hflt : fl < h.length := (List.getElem?_eq_some_iff.mp hfl).1
+  have hobj : RefsOk W (.objAt flds .absent oid) := href.sub (fun r hr => by simp [refs] at hr ⊢; grind)
   cases hloc : elemLoc ls b with
   | some l =>
     -- a listed cell takes the value
@@ -212,65 +229,95 @@ theorem write_safe {Ξ T : Fam} (hT : ∀ n W, T n W .nul) {ρ : Env} {b : UInt6
     obtain ⟨c, w, hc, hagc, hw, hws⟩ := cell_src ho1 hst1 hli
     have hlt : l < h.length := (List.getElem?_eq_some_iff.mp hw).1
     have hnarr : isArr w = false := srcF_not_arr (n := 0) (W := trunc 0 (Nat.zero_le _) W) hws
+    have hrl : roleAt W l = some .elem := (ho.store_cells hfl (List.mem_of_getElem? hli)).1
     have ho2 : HeapOk n2 (trunc n2 (Nat.le_succ n2) (trunc (n2 + 1) (Nat.le_succ _) W)) (h.set l v) :=
-      write_sound n2 _ h l _ v (HeapOk_trunc n2 _ h ho1) (lookup_trunc (Nat.le_succ n2) _ l c hc)
-        (fun j hj => (hagc j (by omega) _ v).mpr hv)
-    refine .inr ⟨_, h.set l v, _, WExt_refl _, WorldAdm_trunc _ ha1, .writeC2 rfl (.setPresent hval hloc hlt),
-      ho2, ?_⟩
+      write_sound n2 _ h l _ .elem v (HeapOk_trunc n2 _ h ho1) (lookup_trunc (Nat.le_succ n2) _ l c hc)
+        (by simpa using hrl) (fun j hj => (hagc j (by omega) _ v).mpr hv)
+        ⟨hv, RefsOk_trunc _ (RefsOk_trunc _ hvr)⟩
+    have hr2 : RefsOk W (.writeAt arrayStoreKey (.objAt flds .absent oid) (.arr ls)) :=
+      hr1.sub (fun r hr => by simp [refs] at hr ⊢; grind)
+    refine ⟨RefsOk_trunc _ hr1, .inr ⟨_, h.set l v, _, WExt_refl _, WorldAdm_trunc _ ha1,
+      .writeC2 rfl (.setPresent hval hloc hlt), ho2, ?_⟩⟩
     cases n2 with
-    | zero => trivial
+    | zero => exact RefsOk_trunc _ (RefsOk_trunc _ hr2)
     | succ n3 =>
     -- the store is put back, unchanged
     have hcfl2 := lookup_trunc (Nat.le_succ (n3 + 1)) _ fl _
       (lookup_trunc (Nat.le_succ (n3 + 2)) W fl cfl hcfl)
-    have ho3 := write_sound n3 _ (h.set l v) fl _ (.arr ls) (HeapOk_trunc n3 _ _ ho2)
-      (lookup_trunc (Nat.le_succ n3) _ fl _ hcfl2) (fun j hj => by
+    have ho3 := write_sound n3 _ (h.set l v) fl _ (.store .array) (.arr ls) (HeapOk_trunc n3 _ _ ho2)
+      (lookup_trunc (Nat.le_succ n3) _ fl _ hcfl2) (by simpa using hrfl) (fun j hj => by
         show cfl j _ _ (.arr ls)
         simp only [trunc_trunc]
         exact (hagf j (by omega) _ _).mpr (hst j (by omega)))
-    refine .inr ⟨_, _, .nul, WExt_refl _, WorldAdm_trunc _ (WorldAdm_trunc _ ha1),
-      .writeField rfl hfd (by simpa using hflt), ho3, SafePostExc.value rfl (hT _ _) ⟨?_, trivial⟩⟩
+      ⟨⟨ls, rfl⟩, RefsOk_trunc _ (RefsOk_trunc _ (RefsOk_trunc _ hls))⟩
+    refine ⟨RefsOk_trunc _ (RefsOk_trunc _ hr2), .inr ⟨_, _, .nul, WExt_refl _, WorldAdm_trunc _ (WorldAdm_trunc _ ha1),
+      .writeField rfl hfd (by simpa using hflt), ho3, SafePostExc.value rfl (hT _ _) ⟨?_, trivial⟩ RefsOk_nul⟩⟩
     exact Footprints.Closed.Holds.mono (by decide) (ExpressionEffects.elem_present_holds hfl hw hnarr)
   | none =>
     -- a fresh cell is listed
-    have hcadm : ∀ c ∈ [(res srcF : Ctr n2)], CtrAdm c := by
-      intro c hc
-      simp only [List.mem_singleton] at hc; subst hc
+    have hcadm : ∀ e ∈ [((.elem : Role), (res srcF : Ctr n2))], CtrAdm e.2 := by
+      intro e he
+      simp only [List.mem_singleton] at he; subst he
       exact ⟨fun i _ U U' hx w hw => srcF_adm.mono i U U' hx w hw, fun i _ U w hw => srcF_valOnly i U w hw⟩
-    have hlen : h.length = (toList (trunc n2 (Nat.le_succ n2) (trunc (n2 + 1) (Nat.le_succ _) W))).length := by
-      have := ho.1; simp [trunc] at this ⊢; omega
-    let W2 := appendWs (trunc n2 (Nat.le_succ n2) (trunc (n2 + 1) (Nat.le_succ _) W)) [res srcF]
+    let W1 := trunc n2 (Nat.le_succ n2) (trunc (n2 + 1) (Nat.le_succ _) W)
+    have hlen : h.length = (entries W1).length := by
+      have := ho.1.1; simp [W1] at this ⊢; omega
+    let W2 := appendWs W1 [(.elem, res srcF)]
+    have hx2 : WExt W1 W2 := WExt_appendWs _ _
+    have hnewr : roleAt W2 h.length = some .elem := by
+      have := roleAt_appendWs' W1 [((.elem : Role), (res srcF : Ctr n2))] (i := 0)
+      rw [Nat.add_zero, ← hlen] at this
+      simpa using this
     have ho2 : HeapOk n2 W2 (h ++ [v]) :=
-      heap_allocs n2 _ _ h [v] (HeapOk_trunc n2 _ h ho1) (WorldAdm_trunc _ ha1) hcadm rfl (by
-        intro q hq j hj
-        simp only [List.zip_cons_cons, List.zip_nil_right, List.mem_singleton] at hq
-        subst hq
-        exact hv)
-    have hx2 : WExt (trunc n2 (Nat.le_succ n2) (trunc (n2 + 1) (Nat.le_succ _) W)) W2 := WExt_appendWs _ _
+      HeapOk_appendWs (HeapOk_trunc n2 _ h ho1) (WorldAdm_trunc _ ha1) hcadm rfl
+        (fun i c u hc hu j hj => by
+          rcases i with _ | i <;> simp at hc hu
+          subst hc; subst hu; exact hv)
+        (fun i r u hr hu => by
+          rcases i with _ | i <;> simp at hr hu
+          subst hr; subst hu
+          exact ⟨hv, RefsOk_mono hx2 (RefsOk_trunc _ (RefsOk_trunc _ hvr))⟩)
     have ha2 : WorldAdm W2 := WorldAdm_appendWs (WorldAdm_trunc _ ha1) hcadm
     have hnew : lookup W2 h.length = some (res srcF) := by
+      have := lookup_appendWs W1 [((.elem : Role), (res srcF : Ctr n2))] (i := 0) (by simp)
+      simp only [toList_length, Nat.add_zero] at this
       rw [hlen]
-      simpa using lookup_appendWs (trunc n2 (Nat.le_succ n2) (trunc (n2 + 1) (Nat.le_succ _) W))
-        [(res srcF : Ctr n2)] (i := 0) (by simp)
-    refine .inr ⟨W2, h ++ [v], _, hx2, ha2, .writeC2 rfl (.setGrow hval hidx hloc), ho2, ?_⟩
+      simpa using this
+    have hls2 : RefsOk W2 (.arr (placeAt ls k h.length)) := by
+      rw [RefsOk_arr_iff]
+      intro l hl
+      rcases Kinds.mem_placeAt hl with hl | rfl
+      · exact WExt_roleAt hx2 (by simpa [W1] using (ho.store_cells hfl hl).1)
+      · exact hnewr
+    have hobj2 : RefsOk W2 (.objAt flds .absent oid) := RefsOk_mono hx2 (RefsOk_trunc _ (RefsOk_trunc _ hobj))
+    have hr2 : RefsOk W2 (.writeAt arrayStoreKey (.objAt flds .absent oid) (.arr (placeAt ls k h.length))) :=
+      fun r hr => by
+        simp only [refs, List.mem_append] at hr
+        rcases hr with hr | hr
+        · exact hobj2 r (by simpa [refs] using hr)
+        · exact hls2 r hr
+    refine ⟨RefsOk_trunc _ hr1, .inr ⟨W2, h ++ [v], _, hx2, ha2, .writeC2 rfl (.setGrow hval hidx hloc), ho2, ?_⟩⟩
     cases n2 with
-    | zero => trivial
+    | zero => exact hr2
     | succ n3 =>
     have hcfl2 := WExt_lookup hx2 (lookup_trunc (Nat.le_succ (n3 + 1)) _ fl _
       (lookup_trunc (Nat.le_succ (n3 + 2)) W fl cfl hcfl))
-    have ho3 := write_sound n3 _ (h ++ [v]) fl _ (.arr (placeAt ls k h.length)) (HeapOk_trunc n3 _ _ ho2)
-      (lookup_trunc (Nat.le_succ n3) _ fl _ hcfl2) (fun j hj => by
+    have hrfl2 : roleAt W2 fl = some (.store .array) := WExt_roleAt hx2 (by simpa [W1] using hrfl)
+    have ho3 := write_sound n3 _ (h ++ [v]) fl _ (.store .array) (.arr (placeAt ls k h.length))
+      (HeapOk_trunc n3 _ _ ho2)
+      (lookup_trunc (Nat.le_succ n3) _ fl _ hcfl2) (by simpa using hrfl2) (fun j hj => by
         show cfl j _ _ _
         refine (hagf j (by omega) _ _).mpr (storeF_grow ?_ (indexOfBits_lt hidx) ?_)
         · refine (listT_adm anyTuple).mono j _ _ ?_ _ (hst j (by omega))
           rw [trunc_trunc]
           have := WExt_trunc (Nat.le_of_lt hj) (WExt_trunc (Nat.le_succ n3) hx2)
-          simpa only [trunc_trunc] using this
+          simpa only [W1, trunc_trunc] using this
         · have := lookup_trunc (Nat.le_of_lt hj) _ _ _ (lookup_trunc (Nat.le_succ n3) W2 _ _ hnew)
           simp only [trunc_trunc] at this ⊢
           exact this)
-    refine .inr ⟨_, _, .nul, WExt_refl _, WorldAdm_trunc _ ha2,
-      .writeField rfl hfd (by simp; omega), ho3, SafePostExc.value rfl (hT _ _) ⟨?_, trivial⟩⟩
+      ⟨⟨_, rfl⟩, RefsOk_trunc _ hls2⟩
+    refine ⟨hr2, .inr ⟨_, _, .nul, WExt_refl _, WorldAdm_trunc _ ha2,
+      .writeField rfl hfd (by simp; omega), ho3, SafePostExc.value rfl (hT _ _) ⟨?_, trivial⟩ RefsOk_nul⟩⟩
     exact ExpressionEffects.elem_grow_holds hfl (indexOfBits_lt hidx)
 
 
@@ -316,8 +363,8 @@ theorem guard_safe {Ξ : Fam} {ce : Footprints.Closed} {Qe : Heap → Prop} {ρ 
     have hinst : instantiate 0 ρ guardTerm = .arith .lt (.num x) (.num y) := by
       simp [guardTerm, instantiate, hx, hy]
     rw [hinst]
-    refine pure_step adm ok (.arithV (lt_binop hsx hsy)) (SafePostExc.value ?_ ?_
-      ⟨Footprints.Closed.Holds.refl _ _, fun ht => ⟨a, b, ha, hb, ?_⟩⟩)
+    refine pure_step adm ok (RefsOk_of_nil rfl) (.arithV (lt_binop hsx hsy)) (SafePostExc.value ?_ ?_
+      ⟨Footprints.Closed.Holds.refl _ _, fun ht => ⟨a, b, ha, hb, ?_⟩⟩ (by split <;> exact RefsOk_of_nil rfl))
     · split <;> rfl
     · split
       · exact .inl rfl
@@ -332,20 +379,24 @@ the heap: a listed cell's value, or `undefined` at a hole or past the end. -/
 theorem read_safe {Ξ : Fam} {ce : Footprints.Closed} {Qe : Heap → Prop} {ρ : Env} {x : UInt64}
     (hj : ρ 0 = .num x) :
     ∀ (n : Nat) (W : WorldT n) (h : Heap), WorldAdm W → HeapOk n W h → arrayF n W (ρ 2) →
+      RefsOk W (instantiate 0 ρ readTerm) →
       SafePostExc Ξ srcF (fun h' _ => Footprints.Closed.empty.Holds h h' ∧ True) (fun h' => ce.Holds h h' ∧ Qe h')
         n W h (instantiate 0 ρ readTerm) := by
-  intro n W h ha ho hxs
+  intro n W h ha ho hxs href
   have hinst : instantiate 0 ρ readTerm = .elemAt (.readAt arrayStoreKey (ρ 2)) (.num x) := by
     simp [readTerm, instantiate, hj]
-  rw [hinst]
+  rw [hinst] at href ⊢
   cases n with
-  | zero => trivial
+  | zero => exact href
   | succ n1 =>
   obtain ⟨flds, fl, cfl, oid, ls, ho2, hfd, -, -, hfl, hst⟩ := arrayF_store ho hxs
-  rw [ho2]
-  refine pure_step ha ho (.elemC1 (.readField hfd hfl)) ?_
+  rw [ho2] at href ⊢
+  have st1 : Step h (.elemAt (.readAt arrayStoreKey (.objAt flds .absent oid)) (.num x)) h
+      (.elemAt (.arr ls) (.num x)) := .elemC1 (.readField hfd hfl)
+  have hr1 := pure_refs ho st1 href
+  refine pure_step ha ho href st1 ?_
   cases n1 with
-  | zero => trivial
+  | zero => exact RefsOk_trunc _ hr1
   | succ n2 =>
   have ho1 := HeapOk_trunc (n2 + 1) W h ho
   have ha1 := WorldAdm_trunc (Nat.le_succ (n2 + 1)) ha
@@ -353,11 +404,12 @@ theorem read_safe {Ξ : Fam} {ce : Footprints.Closed} {Qe : Heap → Prop} {ρ :
   | some l =>
     obtain ⟨i, -, hli⟩ := elemLoc_some hloc
     obtain ⟨-, w, -, -, hw, hws⟩ := cell_src ho1 (hst (n2 + 1) (by omega)) hli
-    exact pure_step ha1 ho1 (.elemRead hloc hw)
-      (SafePostExc.value (srcF_valOnly 0 (trunc 0 (Nat.zero_le _) W) w hws) hws ⟨Footprints.Closed.Holds.refl _ _, trivial⟩)
+    exact pure_step ha1 ho1 (RefsOk_trunc _ hr1) (.elemRead hloc hw)
+      (SafePostExc.value (srcF_valOnly 0 (trunc 0 (Nat.zero_le _) W) w hws) hws ⟨Footprints.Closed.Holds.refl _ _, trivial⟩
+        (RefsOk_trunc _ (ho1.refs_at hw)))
   | none =>
-    exact pure_step ha1 ho1 (.elemAbsent hloc)
-      (SafePostExc.value rfl rfl ⟨Footprints.Closed.Holds.refl _ _, trivial⟩)
+    exact pure_step ha1 ho1 (RefsOk_trunc _ hr1) (.elemAbsent hloc)
+      (SafePostExc.value rfl rfl ⟨Footprints.Closed.Holds.refl _ _, trivial⟩ RefsOk_undef)
 
 
 /-! ## The graph, its assertions and its nodes checked -/
@@ -461,10 +513,11 @@ theorem loop_checked (m : Nat) :
     -- the initialisation `j = from`
     obtain ⟨a, ha, -⟩ := hp.1
     obtain ⟨x, hx, -⟩ := num_of_intValue ha
-    refine ⟨_, rfl, noFam, numT, .empty, .empty, fun _ v => v = ρ 0, fun _ => True, ?_, ?_⟩
+    refine ⟨_, rfl, fun hr => ?_⟩
+    refine ⟨noFam, numT, .empty, .empty, fun _ v => v = ρ 0, fun _ => True, ?_, ?_⟩
     · show SafePostExc _ _ _ _ s.n s.W s.h (instantiate 0 ρ (.var 0))
-      simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero]
-      exact SafePostExc.value (by rw [hx]; rfl) ⟨x, hx⟩ ⟨Footprints.Closed.Holds.refl _ _, rfl⟩
+      simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero] at hr ⊢
+      exact SafePostExc.value (by rw [hx]; rfl) ⟨x, hx⟩ ⟨Footprints.Closed.Holds.refl _ _, rfl⟩ hr
     refine ⟨fun _ _ _ _ _ _ _ _ => trivial, fun s' v ha _ _ hv => ?_, fun _ _ _ _ hab _ => (above_noFam hab).elim⟩
     subst hv
     have hh := headAt_action (by decide) ha hp
@@ -474,7 +527,8 @@ theorem loop_checked (m : Nat) :
     -- the guard `j < to`
     obtain ⟨a, ha, -⟩ := hp.1
     obtain ⟨b, len, hb, -, -⟩ := lowerBound_iff.mp hp.2.1
-    refine ⟨_, rfl, noFam, boolT, .empty, .empty, _, fun _ => True, guard_safe ha hb, ?_⟩
+    refine ⟨_, rfl, fun _ => ?_⟩
+    refine ⟨noFam, boolT, .empty, .empty, _, fun _ => True, guard_safe ha hb, ?_⟩
     refine ⟨fun _ _ _ _ _ hT _ _ => hT, fun s' v ha' _ ⟨_, _, hT⟩ hq => ?_,
       fun _ _ _ _ hab _ => (above_noFam hab).elim⟩
     rcases hT with rfl | rfl
@@ -484,8 +538,9 @@ theorem loop_checked (m : Nat) :
     -- the read `v = xs[j]`
     obtain ⟨a, ha, -⟩ := hp.1.1
     obtain ⟨x, hx, -⟩ := num_of_intValue ha
-    refine ⟨_, rfl, noFam, srcF, .empty, .empty, _, fun _ => True,
-      read_safe hx s.n s.W s.h s.adm s.ok hp.1.2.2.1, ?_⟩
+    refine ⟨_, rfl, fun hr => ?_⟩
+    refine ⟨noFam, srcF, .empty, .empty, _, fun _ => True,
+      read_safe hx s.n s.W s.h s.adm s.ok hp.1.2.2.1 hr, ?_⟩
     refine ⟨fun _ _ _ _ _ _ _ _ => trivial, fun s' v ha' _ ⟨_, _, hT⟩ _ => ?_,
       fun _ _ _ _ hab _ => (above_noFam hab).elim⟩
     have hh := headAt_action (by decide) ha' hp.1
@@ -501,8 +556,9 @@ theorem loop_checked (m : Nat) :
     obtain ⟨st, ls, -, -, rfl, hmax⟩ := HeapKnowledge.lengthOf_store hlen
     obtain ⟨x, hx, hsx⟩ := num_of_intValue ha
     have hidx := HeapKnowledge.indexOfBits_safe hsx h0 (by omega)
-    refine ⟨_, rfl, noFam, nulT, growEffect, growEffect, fun _ _ => True, fun _ => True,
-      write_safe (Ξ := noFam) (T := nulT) (fun _ _ => rfl) hv hx hidx s.n s.W s.h s.adm s.ok hout, ?_⟩
+    refine ⟨_, rfl, fun hr => ?_⟩
+    refine ⟨noFam, nulT, growEffect, growEffect, fun _ _ => True, fun _ => True,
+      write_safe (Ξ := noFam) (T := nulT) (fun _ _ => rfl) hv hx hidx s.n s.W s.h s.adm s.ok hout hr, ?_⟩
     refine ⟨fun _ _ _ _ _ _ _ _ => trivial, fun s' v ha' _ _ _ => ?_,
       fun _ _ _ _ hab _ => (above_noFam hab).elim⟩
     exact bodyAt_action (by decide) ha' hp3
@@ -511,7 +567,8 @@ theorem loop_checked (m : Nat) :
     have hp4 : BodyAt ε ρ m s := hp
     obtain ⟨⟨a, ha, h0⟩, -, -, -, ⟨a', b, ha', hb, hab⟩⟩ := hp
     rw [ha] at ha'; cases ha'
-    refine ⟨_, rfl, noFam, numT, .empty, .empty, _, fun _ => True,
+    refine ⟨_, rfl, fun _ => ?_⟩
+    refine ⟨noFam, numT, .empty, .empty, _, fun _ => True,
       increment_judgment (fun _ _ b => ⟨b, rfl⟩) ha hb h0 hab, ?_⟩
     refine ⟨fun _ _ _ _ _ _ _ _ => trivial, fun s' v ha'' _ _ hq => ?_,
       fun _ _ _ _ hab _ => (above_noFam hab).elim⟩
@@ -524,48 +581,64 @@ theorem loop_checked (m : Nat) :
       arrAt_congr (mapEnv_push_slot rfl) hb'.2.2.1, arrAt_congr (mapEnv_push_slot rfl) hb'.2.2.2.1⟩
   | 5, _ =>
     -- the exit
-    refine ⟨_, rfl, noFam, nulT, .empty, .empty, fun _ _ => True, fun _ => True,
-      SafePostExc.value rfl rfl ⟨Footprints.Closed.Holds.refl _ _, trivial⟩, ?_⟩
+    refine ⟨_, rfl, fun _ => ?_⟩
+    refine ⟨noFam, nulT, .empty, .empty, fun _ _ => True, fun _ => True,
+      SafePostExc.value rfl rfl ⟨Footprints.Closed.Holds.refl _ _, trivial⟩ RefsOk_nul, ?_⟩
     exact ⟨fun _ _ _ _ _ _ _ _ => trivial, fun _ v _ _ ⟨_, _, hT⟩ _ => ⟨hT, trivial⟩,
       fun _ _ _ _ hab _ => (above_noFam hab).elim⟩
+
+/-- The loop's node expressions refer to no location. -/
+theorem loopGraph_refs {n : Nat} {W : WorldT n} : ∀ node ∈ loopGraph, RefsOk W node.expression := by
+  intro node hm
+  simp only [loopGraph, List.mem_cons, List.not_mem_nil, or_false] at hm
+  rcases hm with rfl | rfl | rfl | rfl | rfl | rfl <;>
+    exact RefsOk_of_nil (by simp [refs, guardTerm, readTerm, writeTerm, incTerm])
 
 /-- **The note's loop is safe**, one closed instance of `graph_safe`: from
 every state where `0 ≤ from`, `to ≤ |xs|` and `xs`, `out` are arrays of source
 values, aliased or not, the loop never gets stuck, returns `null` and raises
 nothing. -/
-theorem loop_safe (m : Nat) {ρ : Env} {s : IndexedHeap} (hpre : HeadAt ε ρ m s) :
+theorem loop_safe (m : Nat) {ρ : Env} {s : IndexedHeap} (hpre : HeadAt ε ρ m s) (hρ : ∀ i, RefsOk s.W (ρ i)) :
     SafeGraph noFam loopGraph nulT s.n s.W s.h (.at 0 ρ) :=
   graph_safe_at (pre := loopPre ε) (Qres := fun _ => True) (Rres := fun _ => True) (l := 0)
-    (loop_checked (ε := ε) m) (loopPre_admin m) hpre
+    (loop_checked (ε := ε) m) (loopPre_admin m) hpre loopGraph_refs hρ
 
 /-- A run of the loop to its end, with budget left, returns `null`. -/
-theorem loop_done (m : Nat) {ρ : Env} {s : IndexedHeap} (hpre : HeadAt ε ρ m s) {k : Nat} {h' : Heap} {v : Tm}
+theorem loop_done (m : Nat) {ρ : Env} {s : IndexedHeap} (hpre : HeadAt ε ρ m s) (hρ : ∀ i, RefsOk s.W (ρ i))
+    {k : Nat} {h' : Heap} {v : Tm}
     (hrun : Transitions loopGraph k s.h (.at 0 ρ) h' (.done v)) (hk : k < s.n) : v = .nul := by
   obtain ⟨_, -, -, -, -, hT, -⟩ := invocation_done (pre := loopPre ε) (Qres := fun _ => True)
-    (Rres := fun _ => True) (l := 0) (loop_checked (ε := ε) m) (loopPre_admin m) hpre hrun hk
+    (Rres := fun _ => True) (l := 0) (loop_checked (ε := ε) m) (loopPre_admin m) hpre loopGraph_refs hρ hrun hk
   exact hT
 
 /-- No run of the loop with budget left raises. -/
-theorem loop_no_raise (m : Nat) {ρ : Env} {s : IndexedHeap} (hpre : HeadAt ε ρ m s) {k : Nat} {h' : Heap}
+theorem loop_no_raise (m : Nat) {ρ : Env} {s : IndexedHeap} (hpre : HeadAt ε ρ m s) (hρ : ∀ i, RefsOk s.W (ρ i))
+    {k : Nat} {h' : Heap}
     {e : Tm} (hrun : Transitions loopGraph k s.h (.at 0 ρ) h' (.raised e)) (hk : k < s.n) : False := by
   obtain ⟨_, -, -, -, -, hΞ, -⟩ := invocation_raised (pre := loopPre ε) (Qres := fun _ => True)
-    (Rres := fun _ => True) (l := 0) (loop_checked (ε := ε) m) (loopPre_admin m) hpre hrun hk
+    (Rres := fun _ => True) (l := 0) (loop_checked (ε := ε) m) (loopPre_admin m) hpre loopGraph_refs hρ hrun hk
   exact hΞ
 
 
 /-! ## An aliased entry state
 
-The entry assertion is met where `xs` and `out` are one array: a world of two
-locations, a store listing one cell and that cell, at every positive budget.
-So `loop_safe` covers an aliased run, not only a vacuous one. -/
+The entry assertion is met where `xs` and `out` are one array: a world of
+three locations, a store listing one cell, that cell, and the array's
+identity, at every positive budget. So `loop_safe` covers an aliased run, not
+only a vacuous one. -/
 
-/-- The world: location 0 a store of source values, location 1 its cell. -/
-def aliasWorld (n : Nat) : WorldT n := ofList [res storeF, res srcF]
+/-- The contract of an identity location: `null`. -/
+def idCtr {n : Nat} : Ctr n := fun _ _ _ u => u = .nul
 
-/-- The heap: the store listing location 1, which holds `0`. -/
-def aliasHeap : Heap := [.arr [some 1], .num (bitsOfNat 0)]
+/-- The world: location 0 a store of source values, location 1 its cell,
+location 2 the array's identity. -/
+def aliasWorld (n : Nat) : WorldT n :=
+  ofEntries [(.store .array, res storeF), (.elem, res srcF), (.identity, idCtr)]
 
-/-- The one array, its store field at location 0. -/
+/-- The heap: the store listing location 1, which holds `0`; the identity's `null`. -/
+def aliasHeap : Heap := [.arr [some 1], .num (bitsOfNat 0), .nul]
+
+/-- The one array, its store field at location 0, its identity location 2. -/
 def aliasArray : Val := .objAt [(arrayStoreKey, 0)] .absent 2
 
 /-- `from = 0`, `to = 1`, `xs` and `out` the same array. -/
@@ -584,17 +657,27 @@ theorem res_ctrAdm {k : Nat} {A : Fam} (hA : Adm A) (hV : ValOnly A) : CtrAdm (r
   ⟨fun i _ U U' hx w hw => hA.mono i U U' hx w hw, fun i _ U w hw => hV i U w hw⟩
 
 theorem aliasWorld_lookup {n l : Nat} {c : Ctr n} (hl : lookup (aliasWorld n) l = some c) :
-    (l = 0 ∧ c = res storeF) ∨ (l = 1 ∧ c = res srcF) := by
-  simp only [lookup, aliasWorld, toList_ofList] at hl
-  rcases l with _ | _ | l <;> simp at hl
+    (l = 0 ∧ c = res storeF) ∨ (l = 1 ∧ c = res srcF) ∨ (l = 2 ∧ c = idCtr) := by
+  simp only [lookup, aliasWorld, toList, entries_ofEntries] at hl
+  rcases l with _ | _ | _ | l <;> simp at hl
   · exact .inl ⟨rfl, hl.symm⟩
-  · exact .inr ⟨rfl, hl.symm⟩
+  · exact .inr (.inl ⟨rfl, hl.symm⟩)
+  · exact .inr (.inr ⟨rfl, hl.symm⟩)
+
+theorem aliasWorld_roleAt {n l : Nat} {r : Role} (hl : roleAt (aliasWorld n) l = some r) :
+    (l = 0 ∧ r = .store .array) ∨ (l = 1 ∧ r = .elem) ∨ (l = 2 ∧ r = .identity) := by
+  simp only [roleAt, roles, aliasWorld, entries_ofEntries] at hl
+  rcases l with _ | _ | _ | l <;> simp at hl
+  · exact .inl ⟨rfl, hl.symm⟩
+  · exact .inr (.inl ⟨rfl, hl.symm⟩)
+  · exact .inr (.inr ⟨rfl, hl.symm⟩)
 
 theorem aliasWorld_adm (n : Nat) : WorldAdm (aliasWorld n) := by
   intro l c hl
-  rcases aliasWorld_lookup hl with ⟨-, rfl⟩ | ⟨-, rfl⟩
+  rcases aliasWorld_lookup hl with ⟨-, rfl⟩ | ⟨-, rfl⟩ | ⟨-, rfl⟩
   · exact res_ctrAdm (listT_adm _) storeF_valOnly
   · exact res_ctrAdm srcF_adm srcF_valOnly
+  · exact ⟨fun _ _ _ _ _ _ hv => hv, fun _ _ _ v hv => by simp only [idCtr] at hv; subst hv; rfl⟩
 
 theorem aliasStore (n : Nat) : storeF n (aliasWorld n) (.arr [some 1]) := by
   refine ⟨_, rfl, fun _ _ => by simp [StorePresence, anyTuple], by simp [anyTuple], by decide,
@@ -603,20 +686,42 @@ theorem aliasStore (n : Nat) : storeF n (aliasWorld n) (.arr [some 1]) := by
   intro i l _ hl
   rcases i with _ | i <;> simp at hl
   subst hl
-  exact ⟨srcF, res srcF, rfl, by simp [lookup, aliasWorld], fun _ _ _ _ => SlotContract.refl _ _⟩
+  exact ⟨srcF, res srcF, rfl, by simp [lookup, aliasWorld, toList], fun _ _ _ _ => SlotContract.refl _ _⟩
+
+theorem aliasArray_refs (n : Nat) : RefsOk (aliasWorld n) aliasArray := by
+  intro r hr
+  simp only [aliasArray, refs, objRefs, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
+    or_false] at hr
+  rcases hr with rfl | rfl | rfl
+  · simp [RefOk, roleAt, roles, aliasWorld]
+  · refine ⟨fun m hm => ?_, fun e he => ?_, fun e he => ?_⟩
+    · simp [arrayStoreKey, viewLengthKey] at hm
+    · simp [arrayStoreKey, viewElementsKey] at he
+    · simp [arrayStoreKey, viewElementsKey, viewLengthKey] at he
+  · simp [RefOk, SlotRole, roleAt, roles, aliasWorld]
 
 theorem aliasHeap_ok (n : Nat) : HeapOk n (aliasWorld n) aliasHeap := by
-  refine ⟨by simp [aliasHeap, aliasWorld], fun l c hl => ?_⟩
-  rcases aliasWorld_lookup hl with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
-  · refine ⟨_, rfl, fun j hj => ?_⟩
-    have h := aliasStore j
-    have e : trunc j (Nat.le_of_lt hj) (aliasWorld n) = aliasWorld j := by
-      simp only [trunc, aliasWorld, toList_ofList, List.map_cons, List.map_nil]
-      rfl
-    show storeF j _ _
-    rw [e]
-    exact h
-  · exact ⟨_, rfl, fun _ _ => rfl⟩
+  refine ⟨⟨by simp [aliasHeap, aliasWorld, toList], fun l c hl => ?_⟩, fun l r hl => ?_⟩
+  · rcases aliasWorld_lookup hl with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    · refine ⟨_, rfl, fun j hj => ?_⟩
+      have h := aliasStore j
+      have e : trunc j (Nat.le_of_lt hj) (aliasWorld n) = aliasWorld j := by
+        simp only [trunc, aliasWorld, entries_ofEntries, List.map_cons, List.map_nil]
+        rfl
+      show storeF j _ _
+      rw [e]
+      exact h
+    · exact ⟨_, rfl, fun _ _ => rfl⟩
+    · exact ⟨_, rfl, fun _ _ => rfl⟩
+  · rcases aliasWorld_roleAt hl with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    · refine ⟨_, rfl, ⟨_, rfl⟩, ?_⟩
+      rw [RefsOk_arr_iff]
+      intro l hl
+      simp only [List.mem_singleton, Option.some.injEq] at hl
+      subst hl
+      simp [roleAt, roles, aliasWorld]
+    · exact ⟨_, rfl, rfl, RefsOk_of_nil rfl⟩
+    · exact ⟨_, rfl, rfl, RefsOk_of_nil rfl⟩
 
 /-- The aliased entry state at budget `n + 1`. -/
 def aliasState (n : Nat) : IndexedHeap :=
@@ -632,8 +737,9 @@ theorem aliasArray_arrayF (n : Nat) : arrayF n (aliasWorld n) aliasArray := by
       exact beq_iff_eq.mp hb
     · cases hg
   · simp only [List.mem_singleton, Prod.mk.injEq] at hm
-    obtain ⟨rfl, -, rfl⟩ := hm
-    exact ⟨0, res storeF, by simp [List.lookup], by simp [lookup, aliasWorld], fun _ _ _ _ => Iff.rfl⟩
+    obtain ⟨rfl, rfl, rfl⟩ := hm
+    exact ⟨0, res storeF, by simp [List.lookup], by simp [lookup, aliasWorld, toList],
+      ⟨.store .array, by simp [roleAt, roles, aliasWorld], rfl⟩, fun _ _ _ _ => Iff.rfl⟩
 
 /-- **The entry assertion holds with `xs` and `out` aliased.** -/
 theorem alias_entry (m n : Nat) : HeadAt ε aliasEnv m (aliasState n) ∧ aliasEnv 2 = aliasEnv 3 := by
@@ -643,9 +749,16 @@ theorem alias_entry (m n : Nat) : HeadAt ε aliasEnv m (aliasState n) ∧ aliasE
   exact HeapKnowledge.lengthOf_of_store (s := 0) (ls := [some 1]) (by show List.lookup arrayStoreKey [(arrayStoreKey, 0)] = some 0; simp [List.lookup])
     rfl (by decide)
 
+/-- The entry environment refers to valid locations. -/
+theorem aliasEnv_refs (n : Nat) (i : Nat) : RefsOk (aliasWorld n) (aliasEnv i) := by
+  match i with
+  | 0 | 1 => exact RefsOk_of_nil rfl
+  | 2 | 3 => exact aliasArray_refs n
+  | _ + 4 => exact RefsOk_of_nil rfl
+
 /-- The loop is safe from the aliased entry state. -/
 theorem alias_loop_safe (m n : Nat) :
     SafeGraph noFam loopGraph nulT (n + 1) (aliasWorld (n + 1)) aliasHeap (.at 0 aliasEnv) :=
-  loop_safe (ε := ⟨aliasEnv, aliasHeap⟩) (s := aliasState n) m (alias_entry m n).1
+  loop_safe (ε := ⟨aliasEnv, aliasHeap⟩) (s := aliasState n) m (alias_entry m n).1 (aliasEnv_refs (n + 1))
 
 end Verification.TolerantFrames

@@ -70,7 +70,7 @@ theorem reach_noHost {J : Fam} (hJ : JsonShaped J) {h : Heap} :
       · obtain ⟨flds, oid', he, -, hkeys⟩ := hdict
         cases he
         obtain ⟨ctr, hW, himp⟩ := hkeys (.str s) l hl trivial
-        obtain ⟨w', hw', hsat⟩ := hok.2 l ctr hW
+        obtain ⟨w', hw', hsat⟩ := hok.1.2 l ctr hW
         rw [hw] at hw'
         cases hw'
         obtain ⟨m, rfl⟩ : ∃ m, n = m + 1 := ⟨n - 1, by omega⟩

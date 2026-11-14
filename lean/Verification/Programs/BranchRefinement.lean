@@ -152,7 +152,7 @@ theorem field_value {G : NormalGraph ι} {c : Clause (Ty ι)} {f : PropKey} {K :
         (∀ (W' : WorldT n) (w : Val), c' n (Nat.lt_succ_self n) W' w → meaning G K n W' w) →
         meaning G K n (trunc n (Nat.le_succ n) W) u := by
       intro c' hc' himp
-      obtain ⟨u', hu', hall⟩ := hh.2 l c' hc'
+      obtain ⟨u', hu', hall⟩ := hh.1.2 l c' hc'
       rw [hu] at hu'
       cases hu'
       exact himp _ _ (hall n (Nat.lt_succ_self n))
@@ -161,7 +161,7 @@ theorem field_value {G : NormalGraph ι} {c : Clause (Ty ι)} {f : PropKey} {K :
       obtain ⟨flds', oid', hv', -, hall⟩ := hv.1.1
       rw [hl] at hv'
       cases hv'
-      obtain ⟨l', c', hl', hc', hag⟩ := hall f _ (meaning G K) (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩)
+      obtain ⟨l', c', hl', hc', -, hag⟩ := hall f _ (meaning G K) (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩)
       rw [hf] at hl'
       cases hl'
       exact take c' hc' fun W' w hw => (hag n (Nat.lt_succ_self n) W' w).mp hw
@@ -322,12 +322,12 @@ theorem field_located {G : NormalGraph ι} {c : Clause (Ty ι)} {f : PropKey} {K
     · obtain ⟨_, hK⟩ := Stored.mem_views.mp hK
       obtain ⟨flds', oid', hv', -, hall⟩ := hv.1.1
       obtain ⟨l', c', hl', hc', -⟩ := hall f _ (meaning G K) (ReferenceConjunctions.mem_famsOf.mpr ⟨K, hK, rfl⟩)
-      obtain ⟨u, hu, -⟩ := hh.2 l' c' hc'
+      obtain ⟨u, hu, -⟩ := hh.1.2 l' c' hc'
       exact ⟨flds', _, oid', l', u, hv', hl', hu⟩
     · obtain ⟨hK, hKl⟩ := List.mem_filter.mp hK
       obtain ⟨flds', l', c', oid', hv', hl', hc', -⟩ :=
         viewsT_at (ReferenceConjunctions.mem_viewsOf.mpr ⟨K, hK, rfl⟩) (by simpa using hKl) hv.2.1
-      obtain ⟨u, hu, -⟩ := hh.2 l' c' hc'
+      obtain ⟨u, hu, -⟩ := hh.1.2 l' c' hc'
       exact ⟨flds', _, oid', l', u, hv', hl', hu⟩
   | _ => simp [fixedFields] at hK
 
@@ -541,7 +541,7 @@ theorem restricts_sound [DecidableEq ι] {G : NormalGraph ι} {c c' : Clause (Ty
         have hw' := hstab j hj U w hw
         subst hw'
         -- The value is of the original type at level zero, in one element.
-        obtain ⟨u0, hu0, hm0⟩ := hh.2 l sc hsc
+        obtain ⟨u0, hu0, hm0⟩ := hh.1.2 l sc hsc
         rw [hu] at hu0
         cases hu0
         have hk := himp 0 (Nat.succ_pos n) _ _ (hm0 0 (Nat.succ_pos n))
@@ -971,7 +971,8 @@ theorem promote_sound {X : α → Fam} {P : α → ArgFam} {k : PropKey} {c : Cl
           rcases hm with hm | hm
           · exact hrec f s T hm
           · cases hm
-            refine ⟨l, c', hl, hw, fun j hj W' u => ⟨(hsc j hj W' u).1, ?_⟩⟩
+            refine ⟨l, c', hl, hw, optT_role hmem' (by simpa [OptionalField.map] using hro) hopt hl',
+              fun j hj W' u => ⟨(hsc j hj W' u).1, ?_⟩⟩
             exact (hsc j hj W' u).2 (by simp [OptionalField.map, hro])
         · by_cases hne : (a :: bs).flatten = []
           · have hc : ks.any KeyBound.closed = true := by

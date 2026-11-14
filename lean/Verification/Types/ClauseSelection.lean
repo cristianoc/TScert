@@ -267,7 +267,7 @@ theorem covers_litExcl {sub : Option (Renaming G)} {R : List ι → List ι → 
     | some v =>
       simp only [hv] at hev
       exact lit_excluded G hv hB hev
-        (hR _ _ hpB 0 (ofList []) v (element_member G hc he hv))
+        (hR _ _ hpB 0 (ofEntries []) v (element_member G hc he hv))
 
 /-- **R4, proved.** A target requiring a key the source holds no entry at is
 no covering, under every table. -/

@@ -38,14 +38,14 @@ theorem nodeExitsY_of_checks {G : NormalGraph ι} {images : InstanceImageCheck G
     rw [passShapeCheck'_reassign]; exact hshape
   have hd := nodeExitsYF_of_checks hc hshape' wf hnd hsub (ε := ε) m
   refine ⟨?_, hd.handler⟩
-  intro t pushed observed promote hmem ρ s hS he hkS hm s' v hv hF he' ho
+  intro t pushed observed promote hmem ρ s hS he hkS hm hrf s' v hv hF he' ho
   obtain ⟨hS', hy, hout, k, hk, hrun⟩ := hF
   apply hd.exits t pushed observed promote hmem ρ s' v hv _ he' ho
   refine ⟨hS', hy, hout, fun hfr _ => ?_⟩
   have hfr' : passOutFreshChecked (reassign G η) (images.reassign η) codes sums c node entry st.stepK deriv = true := by
     rw [passOutFreshChecked_reassign, ← hf]
     exact hfr
-  exact passOutFreshChecked_fresh hfr' hcodes hsums hS he hwidth hm hkS hk hrun hv
+  exact passOutFreshChecked_fresh hfr' hcodes hsums hS he hwidth hm hkS hrf hk hrun hv
 
 end Execution
 end Verification.TolerantFrames

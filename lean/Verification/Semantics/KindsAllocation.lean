@@ -18,93 +18,6 @@ contract part (`HeapMeets`) once, for any appended entries.
 -/
 namespace Verification.Kinds
 
-/-! ## Appending entries -/
-
-theorem roleAt_appendWs_lt {k : Nat} (W : WorldT k) (es : List (Role × Ctr k)) {l : Nat}
-    (hl : l < (entries W).length) : roleAt (appendWs W es) l = roleAt W l := by
-  simp only [roleAt, roles, entries_appendWs, List.map_append]
-  rw [List.getElem?_append_left (by simpa using hl)]
-
-theorem lookup_appendWs_lt {k : Nat} (W : WorldT k) (es : List (Role × Ctr k)) {l : Nat}
-    (hl : l < (entries W).length) : lookup (appendWs W es) l = lookup W l := by
-  simp only [lookup, toList, entries_appendWs, List.map_append]
-  rw [List.getElem?_append_left (by simpa using hl)]
-
-theorem lookup_appendWs_ge {k : Nat} (W : WorldT k) (es : List (Role × Ctr k)) {i : Nat} :
-    lookup (appendWs W es) ((entries W).length + i) = (es.map Prod.snd)[i]? := by
-  simp only [lookup, toList, entries_appendWs, List.map_append]
-  rw [List.getElem?_append_right (by simp)]
-  simp
-
-theorem roleAt_appendWs' {k : Nat} (W : WorldT k) (es : List (Role × Ctr k)) {i : Nat} :
-    roleAt (appendWs W es) ((entries W).length + i) = (es.map Prod.fst)[i]? := by
-  rw [roleAt_appendWs_ge W es (by omega)]
-  simp
-
-/-- **Structural satisfaction survives appending locations** whose contents
-have the shapes their new roles demand in the extended world. -/
-theorem Shaped_appendWs {k : Nat} {W : WorldT k} {h : Heap} {es : List (Role × Ctr k)}
-    {vs : List Val} (hlen : h.length = (entries W).length) (hsh : Shaped W h)
-    (hnew : ∀ (i : Nat) (r : Role) (v : Val), (es.map Prod.fst)[i]? = some r → vs[i]? = some v → Shape (appendWs W es) r v)
-    (hes : es.length = vs.length) :
-    Shaped (appendWs W es) (h ++ vs) := by
-  intro l r hr
-  by_cases hl : l < (entries W).length
-  · rw [roleAt_appendWs_lt W es hl] at hr
-    obtain ⟨u, hu, hs⟩ := hsh l r hr
-    exact ⟨u, by rw [List.getElem?_append_left (by omega)]; exact hu,
-      Shape_mono (WExt_appendWs W es) hs⟩
-  · obtain ⟨i, rfl⟩ : ∃ i, l = (entries W).length + i := ⟨l - (entries W).length, by omega⟩
-    rw [roleAt_appendWs'] at hr
-    have hi : i < vs.length := by
-      have := (List.getElem?_eq_some_iff.mp hr).1; simp at this; omega
-    refine ⟨vs[i], by rw [List.getElem?_append_right (by omega)]; simp [hlen, hi], ?_⟩
-    exact hnew i r _ hr (List.getElem?_eq_getElem hi)
-
-/-- **The contract part survives appending locations** whose contents meet
-their admissible contracts: `heap_allocs` of `Semantics/Heaps.lean` for any
-appended entries. -/
-theorem HeapMeets_appendWs {n : Nat} {W : WorldT n} {h : Heap} {es : List (Role × Ctr n)}
-    {vs : List Val} (hok : HeapMeets n W h) (hadm : WorldAdm W) (hcadm : ∀ e ∈ es, CtrAdm e.2)
-    (hes : es.length = vs.length)
-    (hv : ∀ (i : Nat) (c : Ctr n) (v : Val), (es.map Prod.snd)[i]? = some c → vs[i]? = some v →
-      ∀ (j : Nat) (hj : j < n), c j hj (trunc j (Nat.le_of_lt hj) W) v) :
-    HeapMeets n (appendWs W es) (h ++ vs) := by
-  obtain ⟨hlen, hall⟩ := hok
-  have hlen' : h.length = (entries W).length := by simpa using hlen
-  refine ⟨by simp [hlen', hes], fun l c hl => ?_⟩
-  have hxt : ∀ (j : Nat) (hj : j < n),
-      WExt (trunc j (Nat.le_of_lt hj) W) (trunc j (Nat.le_of_lt hj) (appendWs W es)) :=
-    fun j hj => WExt_trunc (Nat.le_of_lt hj) (WExt_appendWs W es)
-  by_cases hlt : l < (entries W).length
-  · rw [lookup_appendWs_lt W es hlt] at hl
-    obtain ⟨v, hv', hm⟩ := hall l c hl
-    exact ⟨v, by rw [List.getElem?_append_left (by omega)]; exact hv',
-      fun j hj => (hadm l c hl).1 j hj _ _ (hxt j hj) v (hm j hj)⟩
-  · obtain ⟨i, rfl⟩ : ∃ i, l = (entries W).length + i := ⟨l - (entries W).length, by omega⟩
-    rw [lookup_appendWs_ge] at hl
-    have hi : i < vs.length := by
-      have := (List.getElem?_eq_some_iff.mp hl).1; simp at this; omega
-    have hce : ∃ e ∈ es, e.2 = c := by
-      have := List.mem_of_getElem? hl; simpa using this
-    obtain ⟨e, he, rfl⟩ := hce
-    refine ⟨vs[i], by rw [List.getElem?_append_right (by omega)]; simp [hlen', hi], fun j hj => ?_⟩
-    exact (hcadm e he).1 j hj _ _ (hxt j hj) _ (hv i e.2 _ hl (List.getElem?_eq_getElem hi) j hj)
-
-/-- **Kinded allocation**: both parts of satisfaction survive appending
-locations whose contents meet their contracts and have their roles' shapes. -/
-theorem HeapOk_appendWs {n : Nat} {W : WorldT n} {h : Heap} {es : List (Role × Ctr n)}
-    {vs : List Val} (hok : HeapOk n W h) (hadm : WorldAdm W) (hcadm : ∀ e ∈ es, CtrAdm e.2)
-    (hes : es.length = vs.length)
-    (hv : ∀ (i : Nat) (c : Ctr n) (v : Val), (es.map Prod.snd)[i]? = some c → vs[i]? = some v →
-      ∀ (j : Nat) (hj : j < n), c j hj (trunc j (Nat.le_of_lt hj) W) v)
-    (hnew : ∀ (i : Nat) (r : Role) (v : Val), (es.map Prod.fst)[i]? = some r → vs[i]? = some v → Shape (appendWs W es) r v) :
-    HeapOk n (appendWs W es) (h ++ vs) :=
-  ⟨HeapMeets_appendWs hok.1 hadm hcadm hes hv,
-    Shaped_appendWs (by simpa using hok.1.1) hok.2 hnew hes⟩
-
-/-! ## Objects -/
-
 /-- The references of a call descriptor, as an allocation and the object it
 makes hold them. -/
 def codeRefs : CallCode → List Ref
@@ -222,7 +135,7 @@ theorem not_mem_slots {base : Nat} {ns : List PropKey} {f : PropKey} (h : f ∉ 
 theorem viewMetaOk_of_not_mem {k : Nat} {W : WorldT k} {base : Nat} {ns : List PropKey}
     (hl : viewLengthKey ∉ ns) (he : viewElementsKey ∉ ns) : ViewMetaOk W (slots base ns) :=
   ⟨fun m hm => absurd hm (not_mem_slots hl m), fun e hm => absurd hm (not_mem_slots he e),
-    fun e hm => absurd hm (not_mem_slots he e)⟩
+    fun e hm => hm.elim (fun hm => absurd hm (not_mem_slots he e)) (fun hm => absurd hm (not_mem_slots hl e))⟩
 
 /-- **An object literal** allocates its properties as fields: under keys other
 than the store slots and the view metadata, initializers that are source

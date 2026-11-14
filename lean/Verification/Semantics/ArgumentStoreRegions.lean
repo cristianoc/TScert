@@ -51,14 +51,15 @@ theorem StablePath.frame {Ξ T Q R x path v} : ∀ {n W h t},
       (fun h' => R h' ∧ HeapKnowledge.readPath h' x path = some v) n W h t := by
   intro n
   induction n with
-  | zero => intros; trivial
+  | zero => intro _ _ _ _ _ hs; exact hs
   | succ n ih =>
     intro W h t hp hh hs
+    obtain ⟨hrf, hs⟩ := hs
     rcases hs with (⟨hv, ht, hq⟩ | ⟨hr, hR⟩) | ⟨U, h', t', hx, hu, st, hh', hs'⟩
-    · exact .inl (.inl ⟨hv, ht, hq, hp.read (Nat.zero_lt_succ n) hh⟩)
-    · exact .inl (.inr ⟨hr, hR, hp.read (Nat.zero_lt_succ n) hh⟩)
-    · exact .inr ⟨U, h', t', hx, hu, st, hh',
-        ih (hp.transfer (Nat.le_succ n) hx) hh' hs'⟩
+    · exact ⟨hrf, .inl (.inl ⟨hv, ht, hq, hp.read (Nat.zero_lt_succ n) hh⟩)⟩
+    · exact ⟨hrf, .inl (.inr ⟨hr, hR, hp.read (Nat.zero_lt_succ n) hh⟩)⟩
+    · exact ⟨hrf, .inr ⟨U, h', t', hx, hu, st, hh',
+        ih (hp.transfer (Nat.le_succ n) hx) hh' hs'⟩⟩
 
 /-- Fixed protected locations compose even when intermediate heaps grow. -/
 theorem Closed.HoldsOn.trans_on {c : Closed} {P : Nat → Prop} {h₀ h h' : Heap}

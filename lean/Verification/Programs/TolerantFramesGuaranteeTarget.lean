@@ -55,28 +55,31 @@ structure GraphGuarantee (G : NormalGraph ι) (admits : MixedAssignment ι → P
     (bound : Option (Footprints.Closed × Bool × Bool)) (ensures : List HeapKnowledge.IndexFact)
     (regional : Option (Footprints.Closed × List Footprints.ArgumentStoreRegion × Bool)) : Prop where
   safe : ∀ η, admits η → ∀ n W h ρ, EntryHolds (reassign G η) inputs sep idx ρ n W h →
+    (∀ node ∈ P, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
     SafeGraph (excOf (reassign G η)) P (GoalHolds (reassign G η) goal (goal.argument ρ)) n W h (.at start ρ)
   bounded : ∀ Φ fresh onThrow, bound = some (Φ, fresh, onThrow) → ∀ E K, GraphCode.program E K = P →
     ∀ η, admits η → ∀ n W h L d,
-    EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h → (∀ v ∈ L, isVal v = true) → isVal d = true →
+    EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h → RefsOk W (.goto E K start L d) →
+    (∀ v ∈ L, isVal v = true) → isVal d = true →
     HeapObservations.SafePostExc (excOf (reassign G η))
       (GoalHolds (reassign G η) goal (goal.argument (envOf L d)))
       (fun h' v => Φ.Holds h h' ∧ (fresh = true → Footprints.FreshAt h.length v))
       (fun h' => onThrow = true → Φ.Holds h h') n W h (.goto E K start L d)
   ensured : ensures ≠ [] → ∀ E K, GraphCode.program E K = P → ∀ η, admits η → ∀ n W h L d,
-    EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h →
+    EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h → RefsOk W (.goto E K start L d) →
     HeapObservations.SafePost (excOf (reassign G η))
       (GoalHolds (reassign G η) goal (goal.argument (envOf L d)))
       (fun h' v => GraphCode.EnsuresAt ensures ⟨envOf L d, h⟩ h' (push v (envOf L d))) n W h (.goto E K start L d)
   regionally : ∀ Φ regions exc, regional = some (Φ, regions, exc) → ∀ E K, GraphCode.program E K = P →
     ∀ η, admits η → ∀ n W h L d,
-    EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h →
+    EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h → RefsOk W (.goto E K start L d) →
     HeapObservations.SafePostExc (excOf (reassign G η))
       (GoalHolds (reassign G η) goal (goal.argument (envOf L d)))
       (fun h' _ => Footprints.ArgumentStoreRegionsWithin Φ regions (envOf L d) h h')
       (fun h' => exc = true → Footprints.ArgumentStoreRegionsWithin Φ regions (envOf L d) h h')
       n W h (.goto E K start L d)
   asserted : ∀ η, admits η → ∀ n W h ρ, EntryHolds (reassign G η) inputs sep idx ρ n W h →
+    (∀ node ∈ P, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
     ∀ l k, (l, k) ∈ assertions → ∀ j h' ρ', j < n → ReachesIn P j h (.at start ρ) h' (.at l ρ') →
       HeapKnowledge.Holds k ⟨ρ, h⟩ ρ' h'
 

@@ -52,11 +52,12 @@ def StepEdgesSoundA (P : ControlFlow.Program) (G : NormalGraph ι) (w : Walk ι)
     (ctx : Nat → List (Ty ι)) (stated : Nat → Option HeapKnowledge.Knowledge) (Ξres Tres : Fam)
     (Qres Rres : Heap → Prop) (m : Nat) : Prop :=
   ∀ l ρ (s : IndexedHeap), passPreT G w startNames ε ctx l ρ m s → ∃ node, P[l]? = some node ∧
+    (RefsOk s.W (instantiate 0 ρ node.expression) →
     ∃ (Ξ T : Fam) (cn ce : Footprints.Closed) (Qn : Post) (Qe : Heap → Prop),
       SafePostExc Ξ T (fun h' v => cn.Holds s.h h' ∧ Qn h' v) (fun h' => ce.Holds s.h h' ∧ Qe h')
         s.n s.W s.h (instantiate 0 ρ node.expression) ∧
       NodeObligations (edgePreA G w startNames ε ctx stated) Ξres Tres Qres Rres Ξ T cn ce Qn Qe ρ m s
-        node.continuation node.handler
+        node.continuation node.handler)
 
 variable [DecidableEq ι] [Hashable ι] in
 /-- **The walk checks every node at the assertion stating the written
@@ -71,8 +72,10 @@ theorem nodesChecked_of_walkA {P : ControlFlow.Program} {G : NormalGraph ι} {w 
     (hheads : HeadsEntered G w startNames ε given m) (hmerges : MergesSound G w given ctx edgesIn) :
     NodesChecked P (passPreA G w startNames ε ctx stated) Ξres Tres (fun _ => True) (fun _ => True) m := by
   intro l ρ s hp
-  obtain ⟨node, hn, Ξ, T, cn, ce, Qn, Qe, hsafe, ho⟩ := hstep l ρ s hp.1
-  exact ⟨node, hn, Ξ, T, cn, ce, Qn, Qe, hsafe,
+  obtain ⟨node, hn, hck⟩ := hstep l ρ s hp.1
+  refine ⟨node, hn, fun hr => ?_⟩
+  obtain ⟨Ξ, T, cn, ce, Qn, Qe, hsafe, ho⟩ := hck hr
+  exact ⟨Ξ, T, cn, ce, Qn, Qe, hsafe,
     nodeObligations_mono (fun t ρ s h => ⟨⟨entries_of_traversed hT hheads hmerges t ρ s h.1.1, h.1.2⟩, h.2⟩) ho⟩
 
 /-- **The stated table holds every assertion** where `run` reads the

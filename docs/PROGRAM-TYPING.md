@@ -1039,7 +1039,19 @@ at $`E`$ for each element. A copy (`merge`) types no payload: its values are
 fields' contents, of their category by the state ([location kinds,
 §9](drafts/location-kinds.md#9-the-typing-premises)). A payload's values are
 then of its role's sort (`Payload.sound`), and so of a kinded role's category
-(`Kinds.payload_stored`, `Kinds.payload_element`).
+(`Payload.stored`, `Payload.element`). A rest store's element positions are
+payloads of element cells (`RestStore`).
+
+**Key and metadata fit.** The role an allocation records must be the one its
+key's slot demands ([kinded states](SINGLE-PASS-PROOF.md#kinded-states)):
+`alloc`, `allocDict`, `ctorGraph` and `callableGraph` take each part's tag to
+fit its key (`StorageRole.fitsKey`: `arrayStore` under `[]`, `viewStore`
+under `[[viewElements]]`, `field` or `cell` under any other key), and that no
+part is `[[viewLength]]` or `[[viewElements]]`: a typed allocation is no host
+object, and view metadata is a host object's (`ViewMetaOk`). `write` and
+`writeCallable` take the written position's tag to be no `viewStore`: a view
+store's length is fixed by its allocation. The checker decides the same
+conjuncts.
 
 The category is weaker than the exception guarantee of `sourceTy`
 (`sourceTy_exc`), which also gives the built-ins' invariant and so refuses
@@ -3115,7 +3127,9 @@ Booleans, numbers, bigints, symbols); each field $`(k{:}T)\in\varphi`$ surely
 given within $`T`$ by $`c_b`$, or by $`c_a`$ where whatever $`c_b`$ gives under $`k`$ is
 within $`T`$; each optional field within its type on both sides, and then $`c_a`$
 holding no prototype; each bound of $`\beta`$ admitting every key either side
-may give (`FieldsOk`). "Within" is label inclusion, whose meaning is a
+may give (`FieldsOk`). The copy allocates ordinary properties, so every field,
+writable optional field and writable index of the result states the role
+`field`. "Within" is label inclusion, whose meaning is a
 union's. The model's copy takes no symbol key, where JavaScript's takes an
 own enumerable one, so what $`c_b`$ gives under a symbol key is read as
 JavaScript's copy may give it: $`c_b`$ never gives a symbol key unless a bound

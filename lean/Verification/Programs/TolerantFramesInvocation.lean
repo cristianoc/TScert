@@ -32,25 +32,27 @@ determinism. -/
 theorem graph_inv_run {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Qres Rres : Heap → Prop} {m : Nat}
     (hnodes : NodesChecked P pre Ξres Tres Qres Rres m) (hdown : AdminClosed pre m) :
     ∀ {k h st h' st'}, Transitions P k h st h' st' → ∀ (s : IndexedHeap), s.h = h → k < s.n →
+      (∀ node ∈ P, RefsOk s.W node.expression) → StateRefs s.W st →
       GraphInv pre Ξres Tres Qres Rres m s.n s.W s.h st →
       ∃ s' : IndexedHeap, Admissible s s' ∧ s'.h = h' ∧ s'.n + k = s.n ∧
         GraphInv pre Ξres Tres Qres Rres m s'.n s'.W s'.h st' := by
   intro k h st h' st' hst
   induction hst with
-  | refl => intro s hs _ hinv; exact ⟨s, Admissible.refl s, hs, rfl, hinv⟩
+  | refl => intro s hs _ _ _ hinv; exact ⟨s, Admissible.refl s, hs, rfl, hinv⟩
   | next tr _ ih =>
-    intro s hs hk hinv
+    intro s hs hk hPr hr hinv
     obtain ⟨n, W, h₀, pos, adm, ok⟩ := s
-    simp only at hs hk hinv ⊢
+    simp only at hs hk hPr hr hinv ⊢
     subst hs
     cases n with
     | zero => omega
     | succ j =>
-      rcases graph_step hnodes hdown adm ok hinv with (⟨v, rfl, -⟩ | ⟨v, rfl, -⟩) | ⟨U, h₁, st₁, hx, hu, tr', hh, hi⟩
+      rcases graph_step hnodes hdown adm ok hPr hr hinv with (⟨v, rfl, -⟩ | ⟨v, rfl, -⟩) | ⟨U, h₁, st₁, hx, hu, tr', hh, hrs, hi⟩
       · cases tr
       · cases tr
       · obtain ⟨rfl, rfl⟩ := transition_det tr tr'
-        obtain ⟨s', ha, he, hn, hinv'⟩ := ih ⟨j, U, _, by omega, hu, hh⟩ rfl (by simp only; omega) hi
+        obtain ⟨s', ha, he, hn, hinv'⟩ := ih ⟨j, U, _, by omega, hu, hh⟩ rfl (by simp only; omega)
+          (fun node hm => RefsOk_mono hx (RefsOk_trunc _ (hPr node hm))) hrs hi
         exact ⟨s', Admissible.trans ⟨Nat.le_succ j, hx⟩ ha, he, by simp only at hn; omega, hinv'⟩
 
 /-- **An invocation's normal exit**: a run from a node entry whose assertion
@@ -58,11 +60,12 @@ holds to `.done v`, with budget left, ends in an admissible state where `v`
 meets the result type and the heap the normal exit post. -/
 theorem invocation_done {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Qres Rres : Heap → Prop}
     {m : Nat} (hnodes : NodesChecked P pre Ξres Tres Qres Rres m) (hdown : AdminClosed pre m) {l : Nat}
-    {ρ : Env} {s : IndexedHeap} (hpre : pre l ρ m s) {k : Nat} {h' : Heap} {v : Tm}
+    {ρ : Env} {s : IndexedHeap} (hpre : pre l ρ m s)
+    (hPr : ∀ node ∈ P, RefsOk s.W node.expression) (hρ : ∀ i, RefsOk s.W (ρ i)) {k : Nat} {h' : Heap} {v : Tm}
     (hrun : Transitions P k s.h (.at l ρ) h' (.done v)) (hk : k < s.n) :
     ∃ s' : IndexedHeap, Admissible s s' ∧ s'.h = h' ∧ s'.n + k = s.n ∧ isVal v = true ∧ Tres s'.n s'.W v ∧
       Qres h' := by
-  obtain ⟨s', ha, he, hn, hinv⟩ := graph_inv_run hnodes hdown hrun s rfl hk fun _ _ _ => hpre
+  obtain ⟨s', ha, he, hn, hinv⟩ := graph_inv_run hnodes hdown hrun s rfl hk hPr hρ fun _ _ _ => hpre
   obtain ⟨hv, hT, hQ⟩ := hinv s'.pos
   exact ⟨s', ha, he, hn, hv, hT, he ▸ hQ⟩
 
@@ -71,11 +74,12 @@ left, ends in an admissible state where `e` is closed and of the exception
 family and the heap meets the exceptional exit post. -/
 theorem invocation_raised {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Qres Rres : Heap → Prop}
     {m : Nat} (hnodes : NodesChecked P pre Ξres Tres Qres Rres m) (hdown : AdminClosed pre m) {l : Nat}
-    {ρ : Env} {s : IndexedHeap} (hpre : pre l ρ m s) {k : Nat} {h' : Heap} {e : Tm}
+    {ρ : Env} {s : IndexedHeap} (hpre : pre l ρ m s)
+    (hPr : ∀ node ∈ P, RefsOk s.W node.expression) (hρ : ∀ i, RefsOk s.W (ρ i)) {k : Nat} {h' : Heap} {e : Tm}
     (hrun : Transitions P k s.h (.at l ρ) h' (.raised e)) (hk : k < s.n) :
     ∃ s' : IndexedHeap, Admissible s s' ∧ s'.h = h' ∧ s'.n + k = s.n ∧ Scoped 0 e ∧ Ξres s'.n s'.W e ∧
       Rres h' := by
-  obtain ⟨s', ha, he, hn, hinv⟩ := graph_inv_run hnodes hdown hrun s rfl hk fun _ _ _ => hpre
+  obtain ⟨s', ha, he, hn, hinv⟩ := graph_inv_run hnodes hdown hrun s rfl hk hPr hρ fun _ _ _ => hpre
   obtain ⟨hsc, hΞ, hR⟩ := hinv s'.pos
   exact ⟨s', ha, he, hn, hsc, hΞ, he ▸ hR⟩
 
@@ -85,12 +89,13 @@ value is an action of `cn` from the entry state, at every name valuation;
 every fact under `□_{cn}` at the entry holds at the exit. -/
 theorem invocation_action {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Qres Rres : Heap → Prop}
     {m : Nat} (hnodes : NodesChecked P pre Ξres Tres Qres Rres m) (hdown : AdminClosed pre m) {l : Nat}
-    {ρ : Env} {s : IndexedHeap} (hpre : pre l ρ m s) {cn : Footprints.Closed}
+    {ρ : Env} {s : IndexedHeap} (hpre : pre l ρ m s)
+    (hPr : ∀ node ∈ P, RefsOk s.W node.expression) (hρ : ∀ i, RefsOk s.W (ρ i)) {cn : Footprints.Closed}
     (hQ : ∀ h, Qres h → cn.Holds s.h h) {k : Nat} {h' : Heap} {v : Tm}
     (hrun : Transitions P k s.h (.at l ρ) h' (.done v)) (hk : k < s.n) (σ : Env) :
     ∃ s' : IndexedHeap, Action cn.fp σ s s' ∧ s'.h = h' ∧ s'.n + k = s.n ∧ isVal v = true ∧
       Tres s'.n s'.W v := by
-  obtain ⟨s', ha, he, hn, hv, hT, hq⟩ := invocation_done hnodes hdown hpre hrun hk
+  obtain ⟨s', ha, he, hn, hv, hT, hq⟩ := invocation_done hnodes hdown hpre hPr hρ hrun hk
   refine ⟨s', ⟨ha, ?_⟩, he, hn, hv, hT⟩
   rw [he]
   exact Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp (hQ h' hq))
@@ -99,11 +104,12 @@ theorem invocation_action {P : Program} {pre : Nat → Assertion} {Ξres Tres : 
 exit**: the caller's frame across the call. -/
 theorem invocation_box {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Qres Rres : Heap → Prop}
     {m : Nat} (hnodes : NodesChecked P pre Ξres Tres Qres Rres m) (hdown : AdminClosed pre m) {l : Nat}
-    {ρ : Env} {s : IndexedHeap} (hpre : pre l ρ m s) {cn : Footprints.Closed}
+    {ρ : Env} {s : IndexedHeap} (hpre : pre l ρ m s)
+    (hPr : ∀ node ∈ P, RefsOk s.W node.expression) (hρ : ∀ i, RefsOk s.W (ρ i)) {cn : Footprints.Closed}
     (hQ : ∀ h, Qres h → cn.Holds s.h h) {k : Nat} {h' : Heap} {v : Tm}
     (hrun : Transitions P k s.h (.at l ρ) h' (.done v)) (hk : k < s.n) {F : Assertion} {σ : Env} {m' : Nat}
     (hb : Box cn.fp F σ m' s) : ∃ s' : IndexedHeap, s'.h = h' ∧ F σ m' s' := by
-  obtain ⟨s', ha, he, -⟩ := invocation_action hnodes hdown hpre hQ hrun hk σ
+  obtain ⟨s', ha, he, -⟩ := invocation_action hnodes hdown hpre hPr hρ hQ hrun hk σ
   exact ⟨s', he, hb s' ha⟩
 
 /-- The exceptional exit of an invocation is one action of its exceptional
@@ -111,11 +117,12 @@ effect. -/
 theorem invocation_throw_action {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam}
     {Qres Rres : Heap → Prop} {m : Nat} (hnodes : NodesChecked P pre Ξres Tres Qres Rres m)
     (hdown : AdminClosed pre m) {l : Nat} {ρ : Env} {s : IndexedHeap} (hpre : pre l ρ m s)
+    (hPr : ∀ node ∈ P, RefsOk s.W node.expression) (hρ : ∀ i, RefsOk s.W (ρ i))
     {ce : Footprints.Closed} (hR : ∀ h, Rres h → ce.Holds s.h h) {k : Nat} {h' : Heap} {e : Tm}
     (hrun : Transitions P k s.h (.at l ρ) h' (.raised e)) (hk : k < s.n) (σ : Env) :
     ∃ s' : IndexedHeap, Action ce.fp σ s s' ∧ s'.h = h' ∧ s'.n + k = s.n ∧ Scoped 0 e ∧
       Ξres s'.n s'.W e := by
-  obtain ⟨s', ha, he, hn, hsc, hΞ, hr⟩ := invocation_raised hnodes hdown hpre hrun hk
+  obtain ⟨s', ha, he, hn, hsc, hΞ, hr⟩ := invocation_raised hnodes hdown hpre hPr hρ hrun hk
   refine ⟨s', ⟨ha, ?_⟩, he, hn, hsc, hΞ⟩
   rw [he]
   exact Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp (hR h' hr))

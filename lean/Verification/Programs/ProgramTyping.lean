@@ -108,7 +108,9 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   `new` passes, and at each variadic one, whose effect is plain, with an
   element rest `El` at the row `ctorRestParams` gives: the further positions it
   binds at `El` or `undefined`; allocated with its code field and its static
-  fields, named by the program, as a callable object's bag is. -/
+  fields, named by the program, as a callable object's bag is. Each static
+  field's key fits an ordinary property (`StorageRole.fitsKey`), and none is a
+  typed array's metadata key: a class value is no host object. -/
   | ctorGraph {Γ : List (Ty ι)} {F U : Ty ι} {L : List (MethodArrow (Ty ι))}
       {S : List (MethodRestArrow (Ty ι))} {arity start : Nat}
       {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
@@ -124,11 +126,15 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       (∀ c ∈ caps, c.2 < Γ.length) →
       (∀ c ∈ caps, HasTyWith G images subtyping Γ (.var c.2) c.1) →
       (∀ p ∈ parts, Payload G (.stored .field) p.2.1) →
+      (∀ p ∈ parts, StorageRole.field.fitsKey p.1 = true) →
+      viewLengthKey ∉ parts.map Prod.fst → viewElementsKey ∉ parts.map Prod.fst →
       HasTyWith G images subtyping Γ (.makeAt (.graph arity E K start (caps.map fun c => .var c.2) .construct)
         (codeField :: parts.map Prod.fst) (.nul :: parts.map fun p => p.2.2)) F
   /-- **A callable object.** The bag is allocated as a record's is, its fields
   named by the program, with graph code that meets the signatures it offers,
-  as a function's does. -/
+  as a function's does. Each field's key fits an ordinary property
+  (`StorageRole.fitsKey`), and none is a typed array's metadata key: a
+  callable object is no host object. -/
   | callableGraph {Γ : List (Ty ι)} {F : Ty ι} {L : List (Arrow (Ty ι))}
       {S : List (RestArrow (Ty ι))} {arity start : Nat} {E : List Tm}
       {K : List (ControlFlow.Continuation × Option ControlFlow.Target)}
@@ -142,6 +148,8 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       (∀ c ∈ caps, c.2 < Γ.length) →
       (∀ c ∈ caps, HasTyWith G images subtyping Γ (.var c.2) c.1) →
       (∀ p ∈ parts, Payload G (.stored .field) p.2.1) →
+      (∀ p ∈ parts, StorageRole.field.fitsKey p.1 = true) →
+      viewLengthKey ∉ parts.map Prod.fst → viewElementsKey ∉ parts.map Prod.fst →
       HasTyWith G images subtyping Γ (.makeAt (.graph arity E K start (caps.map fun c => .var c.2) kind rest)
         (parts.map Prod.fst) (parts.map fun p => p.2.2)) F
   /-- `new f(args)`: `f` at a construct signature with a plain effect, each
@@ -188,10 +196,12 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   /-- A readonly static field of a class value: a view of its own field. -/
   | readBagView {c : Clause (Ty ι)} : HasTyWith G images subtyping Γ a F → Represents G F c →
       (f, A) ∈ c.bagViews → HasTyWith G images subtyping Γ (.readAt f a) A
+  /-- A write of a bag field, at its contract. The field is no view store,
+  whose length its allocation fixes. -/
   | writeCallable {c : Clause (Ty ι)} : HasTyWith G images subtyping Γ a F → Represents G F c →
       c.bag = some (P, Ps) → (f, s, A) ∈ P →
       HasTyWith G images subtyping Γ b A → Represents G N .nul → Payload G (.stored s) A →
-      HasTyWith G images subtyping Γ (.writeAt f a b) N
+      s ≠ .viewStore → HasTyWith G images subtyping Γ (.writeAt f a b) N
   | app {effect : Effect} {Γ : List (Ty ι)} {f r : Tm} {F Rt B : Ty ι} {L : List (Arrow (Ty ι))}
       {S : List (RestArrow (Ty ι))} {xs : List (Ty ι × Tm)} {Us : List (Ty ι)} :
       HasTyWith G images subtyping Γ f F → Represents G F (.arrs L S) →
@@ -208,21 +218,25 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   Every allocation of named locations is this one rule: an object literal, a
   binding's cell and its uninitialized marker, an array object with its
   store slot. The clause states each field's storage position (`fs`), the
-  key and contract of a part with the role the claim gives its location;
-  in this development the rule leaves the role free, since its worlds record
-  none. -/
+  key and contract of a part with the role the claim gives its location,
+  which fits the part's key (`StorageRole.fitsKey`: the array store's role
+  under `[]`, a field's or a cell's under any other key). No key is a typed
+  array's metadata key, as none is `[[host]]`: an allocated object is no host
+  object. -/
   | alloc {parts : List (PropKey × Ty ι × Tm)} {fs : List (Stored (Ty ι))} {ks : List KeyBound}
       {st : List PropKey} :
       (parts.map Prod.fst).Nodup → hostKey ∉ parts.map Prod.fst →
       (∀ p ∈ parts, HasTyWith G images subtyping Γ p.2.2 p.2.1) →
       Stored.views fs = stablePart st false (parts.map fun p => (p.1, p.2.1)) →
-      Represents G Ref (.refs fs [] (stablePart st true (parts.map fun p => (p.1, p.2.1))) [] [] ks st) →
+      Represents G RefT (.refs fs [] (stablePart st true (parts.map fun p => (p.1, p.2.1))) [] [] ks st) →
       (∀ K ∈ ks, ∀ p ∈ parts, K.admits p.1 = true) →
       allocBuiltins G (parts.map fun p => (p.1, p.2.1)) = true →
       (st = [] ∨ CallArguments.arrayStoreField ∉ parts.map Prod.fst) →
       (∀ k ∈ st, k ∈ parts.map Prod.fst) →
       (∀ p ∈ parts, Payload G (.stored (allocRole fs p.1)) p.2.1) →
-      HasTyWith G images subtyping Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
+      (∀ p ∈ parts, (allocRole fs p.1).fitsKey p.1 = true) →
+      viewLengthKey ∉ parts.map Prod.fst → viewElementsKey ∉ parts.map Prod.fst →
+      HasTyWith G images subtyping Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) RefT
   /-- **Allocation at a dictionary.** A literal allocated directly at a
   dictionary type: its fields are the clause's first operand, with no key the
   model keeps for its prototype, and each field whose key an index's class may
@@ -233,7 +247,9 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   since code holding the dictionary may add keys. The clause states each
   field's and each writable index's role: a named field and a writable
   optional field state the role of every writable index whose class may
-  admit their key, since one location is granted by both. -/
+  admit their key, since one location is granted by both. Each field's
+  stated role fits its key (`StorageRole.fitsKey`), and no key is a typed
+  array's metadata key: the object is no host object. -/
   | allocDict {parts : List (PropKey × Ty ι × Tm)} {fs : List (Stored (Ty ι))}
       {ix : List (IndexKeys × Ty ι)} {cs : List (IndexKeys × StorageRole × Ty ι)}
       {os : List (OptionalField (Ty ι))} :
@@ -241,21 +257,23 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
       CallArguments.arrayStoreField ∉ parts.map Prod.fst → hostKey ∉ parts.map Prod.fst →
       (∀ p ∈ parts, HasTyWith G images subtyping Γ p.2.2 p.2.1) →
       Stored.views fs = parts.map (fun p => (p.1, p.2.1)) →
-      Represents G Ref (.dict fs [] [] ix os [] [] cs) →
+      Represents G RefT (.dict fs [] [] ix os [] [] cs) →
       (∀ p ∈ parts, ∀ y ∈ ix ++ cellViews cs, y.1.may p.1 = true → p.2.1 = y.2) →
       (∀ o ∈ os, o.key ∉ parts.map Prod.fst) →
       (∀ o ∈ os, ∀ y ∈ cs, y.1.may o.key = true → o.type = y.2.2 ∨ PositiveRules.Uninhabited G y.2.2) →
       (∀ f ∈ fs, ∀ y ∈ cs, y.1.may f.1 = true → f.2.1 = y.2.1) →
       (∀ o ∈ os, o.readonly = false → ∀ y ∈ cs, y.1.may o.key = true → o.role = y.2.1) →
       (∀ p ∈ parts, Payload G (.stored (allocRole fs p.1)) p.2.1) →
-      HasTyWith G images subtyping Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) Ref
+      (∀ f ∈ fs, f.2.1.fitsKey f.1 = true) →
+      viewLengthKey ∉ parts.map Prod.fst → viewElementsKey ∉ parts.map Prod.fst →
+      HasTyWith G images subtyping Γ (.makeAt .absent (parts.map Prod.fst) (parts.map fun p => p.2.2)) RefT
   /-- A named field, of a record or of a dictionary, reads at its contract. -/
-  | read : HasTyWith G images subtyping Γ a Ref → Represents G Ref c → namedMembers c = some (fs, vs) →
+  | read : HasTyWith G images subtyping Γ a RefT → Represents G RefT c → namedMembers c = some (fs, vs) →
       (f, s, A) ∈ fs → HasTyWith G images subtyping Γ (.readAt f a) A
   /-- A view field reads at its bound: a capability, never a write permission.
   A view of `length` is read so where its type excludes a number, so that no
   array meets it (`lengthExcluded`). -/
-  | readView : HasTyWith G images subtyping Γ a Ref → Represents G Ref c → namedMembers c = some (fs, vs) →
+  | readView : HasTyWith G images subtyping Γ a RefT → Represents G RefT c → namedMembers c = some (fs, vs) →
       (f, A) ∈ vs → (f ≠ lengthKey ∨ lengthExcluded G A = true) → HasTyWith G images subtyping Γ (.readAt f a) A
   /-- **`length` through a view.** A view of `length` admits an array, whose
   `length` is its store's: the read tests the slot's value, and reads an
@@ -292,20 +310,22 @@ inductive HasTyWith (G : NormalGraph ι) (images : PositiveCertificates.Instance
   through one only where its class surely admits it: any string key through
   a string index, a canonical numeric one ("0", "1.5") through a number
   index, a symbol key through a symbol index. -/
-  | readDict {f : PropKey} {K : IndexKeys} {st : List PropKey} : HasTyWith G images subtyping Γ a Ref →
-      Represents G Ref (.dict fs [] vs ix os ms ks cs st) →
+  | readDict {f : PropKey} {K : IndexKeys} {st : List PropKey} : HasTyWith G images subtyping Γ a RefT →
+      Represents G RefT (.dict fs [] vs ix os ms ks cs st) →
       (K, A) ∈ ix → K.surely f = true → Represents G U .undef → inheritedKey f = false →
       HasTyWith G images subtyping Γ (.readAt f a) (A ++ U)
   /-- A computed key of the key clause of a class within the index's reads
   through it: a string through a string index, a number through a number
   index or a string one, a symbol through a symbol index. -/
-  | indexDict {K KK : IndexKeys} {st : List PropKey} : HasTyWith G images subtyping Γ a Ref → Represents G Ref (.dict fs [] vs ix os ms ks cs st) →
+  | indexDict {K KK : IndexKeys} {st : List PropKey} : HasTyWith G images subtyping Γ a RefT → Represents G RefT (.dict fs [] vs ix os ms ks cs st) →
       HasTyWith G images subtyping Γ key Kt → Represents G Kt (keyClause KK) → KK.within K = true →
       (K, A) ∈ ix → Represents G U .undef → KK ≠ .strings →
       HasTyWith G images subtyping Γ (.indexAt a key) (A ++ U)
-  | write : HasTyWith G images subtyping Γ a Ref → Represents G Ref (.refs fs [] vs os ms ks st) → (f, s, A) ∈ fs →
+  /-- A write of a named field, at its contract. The field is no view store,
+  whose length its allocation fixes. -/
+  | write : HasTyWith G images subtyping Γ a RefT → Represents G RefT (.refs fs [] vs os ms ks st) → (f, s, A) ∈ fs →
       HasTyWith G images subtyping Γ b A → Represents G N .nul → Payload G (.stored s) A →
-      HasTyWith G images subtyping Γ (.writeAt f a b) N
+      s ≠ .viewStore → HasTyWith G images subtyping Γ (.writeAt f a b) N
   /-- A binary operator needs operand types it answers for, pair by pair
   (`Operands`), and yields the family of its result kind: no singleton, since
   the result's value is not typed. -/
@@ -555,7 +575,8 @@ theorem setElem_store_safe {Ξ : Fam} {G : NormalGraph ι} {L A : Ty ι} {T : Tu
     (hr : Represents G L (.list T [])) (hro : T.readonly = false) (hA : positionTy T k = some A)
     (hk : indexOfBits b = some k) (hkls : k ≤ ls.length)
     (hav' : meaning G L p X (.arr ls)) (hxw : WorldAdm X) (hok'' : HeapOk p X heap'')
-    (hvval : isVal vv = true) (hv' : meaning G A p X vv) :
+    (hvval : isVal vv = true) (hv' : meaning G A p X vv) (hsrc : isSourceVal vv = true)
+    (href : RefsOk X (.setElem (.arr ls) (.num b) vv)) :
     Safe Ξ (meaning G L) p X heap'' (.setElem (.arr ls) (.num b) vv) := by
   have hlist := ((represents_raw hr p X (.arr ls)) hav').1
   obtain ⟨ls', hls, -, -, -, -, hreq, hopt, hrest⟩ := hlist
@@ -604,9 +625,10 @@ theorem setElem_store_safe {Ξ : Fam} {G : NormalGraph ι} {L A : Ty ι} {T : Tu
             exact ⟨c, hw', hag⟩
           · cases hpos
     obtain ⟨c, hw', hag⟩ := key
-    exact set_present_rule (meaning_adm G A) p X heap'' l vv hvval hxw hok'' hloc hw' hag hv' hkeep
+    exact set_present_rule (meaning_adm G A) p X heap'' l vv hvval hxw hok'' hloc hw' hag hv' hkeep hsrc href
   | none =>
-    apply set_grow_rule (meaning_adm G A) (meaning_valOnly G A) p X heap'' vv hvval hxw hok'' hk hloc hv'
+    refine set_grow_rule (meaning_adm G A) (meaning_valOnly G A) p X heap'' vv hvval hxw hok'' hk hloc hv'
+      ?_ hsrc href
     intro j' hj' U' hx' hm'
     refine (represents_back hr j' U' _) ⟨?_, by simp⟩
     have hold := ((represents_raw hr j' U' _) (hkeep j' hj' U' hx')).1
@@ -629,78 +651,149 @@ theorem famsOf_zip {α : Type} {X : α → Fam} : ∀ (fs : List (Stored α)),
       List.zip_cons_cons] at ih ⊢
     rw [ih]
 
+omit [DecidableEq ι] in
+/-- **Initializers hold their parts' payloads**: an actual at a part's type
+meets the category of the role the part is stored with. -/
+theorem ArgsT_holds {G : NormalGraph ι} {parts : List (PropKey × Ty ι × Tm)} {r : PropKey → StorageRole}
+    (hpay : ∀ p ∈ parts, Payload G (.stored (r p.1)) p.2.1) {j : Nat} {U : WorldT j} {args : List Tm}
+    (hargs : ArgsT (parts.map fun p => meaning G p.2.1) j U args) :
+    ∀ (i : Nat) (s : StorageRole) (v : Val), (parts.map fun p => r p.1)[i]? = some s → args[i]? = some v →
+      s.Holds v := by
+  intro i s v hs hv
+  simp only [List.getElem?_map, Option.map_eq_some_iff] at hs
+  obtain ⟨p, hp, rfl⟩ := hs
+  exact (hpay p (List.mem_of_getElem? hp)).stored
+    (ArgsT_getElem? (A := meaning G p.2.1) hargs (by simp [List.getElem?_map, hp]) hv)
+
+/-- A position's key, under distinct keys, names its own role. -/
+theorem allocRole_getElem? {α : Type} : ∀ {fs : List (Stored α)}, (fs.map (·.1)).Nodup →
+    ∀ {i : Nat} {f : Stored α}, fs[i]? = some f → allocRole fs f.1 = f.2.1
+  | [], _, _, _, h => by simp at h
+  | g :: fs, _, 0, f, h => by
+    simp only [List.getElem?_cons_zero, Option.some.injEq] at h
+    subst h
+    simp [allocRole]
+  | g :: fs, hnd, i + 1, f, h => by
+    simp only [List.map_cons, List.nodup_cons] at hnd
+    simp only [List.getElem?_cons_succ] at h
+    have hf : f ∈ fs := List.mem_of_getElem? h
+    have hne : (g.1 == f.1) = false := by
+      simp only [beq_eq_false_iff_ne, ne_eq]
+      intro he; exact hnd.1 (he ▸ List.mem_map_of_mem hf)
+    have ih := allocRole_getElem? hnd.2 h
+    simp only [allocRole, List.find?_cons, hne] at ih ⊢
+    exact ih
+
+theorem refs_spreadTerm (p : Bool × Tm) : refs (spreadTerm p) = refs p.2 := by
+  rcases p with ⟨_ | _, t⟩ <;> simp [spreadTerm, refs]
+
+theorem refs_partTerm (p : Option Fam × Tm) : refs (RestCalls.partTerm p) = refs p.2 := by
+  rcases p with ⟨_ | _, t⟩ <;> simp [RestCalls.partTerm, refs]
+
+/-- An index view of a fresh object: each admitted key's location agrees with
+the index's contract. -/
+theorem dictViewT_of_recT {fs : Fields} {flds : List (PropKey × Nat)} {K : IndexKeys} {A : Fam}
+    {k : Nat} {W : WorldT k} {oid : Nat} (hrec : recT fs k W (.objAt flds .absent oid))
+    (hown : ∀ f l, flds.lookup f = some l → ∃ s T, (f, s, T) ∈ fs)
+    (hproto : flds.lookup CallArguments.protoField = none) (hhost : flds.lookup hostKey = none)
+    (hA : ∀ f s T, (f, s, T) ∈ fs → K.Admits f →
+      ∀ (j : Nat) (_hj : j < k) (W' : WorldT j) (u : Val), T j W' u ↔ A j W' u) :
+    dictViewT K A k W (.objAt flds .absent oid) := by
+  refine ⟨flds, oid, rfl, ⟨hproto, hhost⟩, fun f l hl hk => ?_⟩
+  obtain ⟨s, T, hT⟩ := hown f l hl
+  obtain ⟨flds', oid', he, -, hfs⟩ := hrec
+  cases he
+  obtain ⟨l', c, hl', hc, -, hag⟩ := hfs f s T hT
+  rw [hl] at hl'
+  cases hl'
+  exact ⟨c, hc, fun j hj W' u hu => (hA f s T hT hk j hj W' u).mp ((hag j hj W' u).mp hu)⟩
+
+/-- Closes `RefsOk W t'` from `h : RefsOk W t` when `t'`'s references are
+among `t`'s: both unfold to memberships in their constructors' references. -/
+macro "sub_refs " h:term : tactic => `(tactic| (
+  refine RefsOk.sub $h (fun r hr => ?_)
+  simp only [instantiate, instantiateArgs_eq_map, refs, refsArgs_eq, List.mem_append, List.mem_flatMap,
+    List.mem_map, List.mem_cons, List.map_map, Function.comp_def, List.flatMap_cons, List.not_mem_nil,
+    false_or, or_false, Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero, exists_eq_or_imp, List.map_cons,
+    List.map_append, List.flatMap_append, instantiate_spreadTerm, refs_spreadTerm, refs_partTerm,
+    List.flatMap_map] at hr ⊢
+  all_goals grind [refs_spreadTerm, refs_partTerm]))
+
 /-- Every derivation is safe in every admissible world and satisfying heap. -/
 theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.InstanceImageCheck G}
     {subtyping : BodySubtyping G} {Γ t A}
     (ht : HasTyUsing G images (subtyping := subtyping) Γ t A) :
-    ∀ n W h ρ, EnvOk G Γ ρ n W → WorldAdm W → HeapOk n W h →
+    ∀ n W h ρ, EnvOk G Γ ρ n W → WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ t) →
       Safe (excOf G) (meaning G A) n W h (instantiate 0 ρ t) := by
   induction ht with
   | var hi =>
-    intro n W h ρ he hw hh
-    simp only [instantiate, Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero]
-    exact value_safe _ _ _ _ _ (meaning_value (he.2 _ _ hi)).1 (he.2 _ _ hi)
+    intro n W h ρ he hw hh href
+    simp only [instantiate, Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero] at href ⊢
+    exact value_safe _ _ _ _ _ (meaning_value (he.2 _ _ hi)).1 (he.2 _ _ hi) href
   | nul hr | undef hr =>
-    intro n W h ρ he hw hh
-    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) rfl)
+    intro n W h ρ he hw hh href
+    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) rfl) href
   | tru hr =>
-    intro n W h ρ he hw hh
-    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) (Or.inl rfl))
+    intro n W h ρ he hw hh href
+    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) (Or.inl rfl)) href
   | fls hr =>
-    intro n W h ρ he hw hh
-    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) (Or.inr rfl))
+    intro n W h ρ he hw hh href
+    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) (Or.inr rfl)) href
   | truLit hr | flsLit hr =>
-    intro n W h ρ he hw hh
-    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) rfl)
+    intro n W h ρ he hw hh href
+    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) rfl) href
   | numLit hr =>
-    intro n W h ρ he hw hh
-    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) rfl)
+    intro n W h ρ he hw hh href
+    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) rfl) href
   | @num _ _ b hr =>
-    intro n W h ρ he hw hh
-    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) ⟨b, rfl⟩)
+    intro n W h ρ he hw hh href
+    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) ⟨b, rfl⟩) href
   | bigintLit hr =>
-    intro n W h ρ he hw hh
-    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) rfl)
+    intro n W h ρ he hw hh href
+    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) rfl) href
   | @bigint _ _ i hr =>
-    intro n W h ρ he hw hh
-    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) ⟨i, rfl⟩)
+    intro n W h ρ he hw hh href
+    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) ⟨i, rfl⟩) href
   | strLit hr =>
-    intro n W h ρ he hw hh
-    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) rfl)
+    intro n W h ρ he hw hh href
+    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) rfl) href
   | @str _ _ s hr =>
-    intro n W h ρ he hw hh
-    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) ⟨s, rfl⟩)
+    intro n W h ρ he hw hh href
+    exact value_safe _ _ _ _ _ rfl ((represents_back hr n W _) ⟨s, rfl⟩) href
   | @funGraph Γ F L S arity start E K caps kind rest As hr hkind hspec hlt hcap ih =>
-    intro n W h ρ he hw hh
-    simp only [instantiate, instantiateArgs_eq_map, List.map_map]
-    apply makeFn_rule nulT_adm nulT_valOnly n W h _ .nul rfl hw hh rfl
+    intro n W h ρ he hw hh href
+    have hcr : ∀ c ∈ caps, RefsOk W (instantiate 0 ρ (.var c.2)) := fun c hc => by sub_refs href
+    simp only [instantiate, instantiateArgs_eq_map, List.map_map] at href ⊢
+    apply makeFn_rule nulT_adm nulT_valOnly n W h _ .nul rfl hw hh rfl rfl href
     intro j hj V hx
     obtain ⟨hsc, henv, hcapv⟩ := captures_sem he hlt
-      (fun c hc => by simpa [instantiate] using ih c hc n W h ρ he hw hh) hj hx
+      (fun c hc => by simpa [instantiate] using ih c hc n W h ρ he hw hh (hcr c hc)) hj hx
     have ho := offers_sem (oid := h.length + 1) [(codeField, h.length)] hkind hspec henv (by simp) hsc (by
       intro v hv
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hv
       exact (meaning_value (hcapv c hc)).1)
     exact (represents_back hr j V _) ⟨ho.1, ho.2⟩
   | @funGraphSelf Γ F L S arity start E K caps kind hr hkind hspec hlt hcap ih =>
-    intro n W h ρ he hw hh
-    simp only [instantiate, instantiateArgs_eq_map, List.map_map]
-    apply makeFn_rule nulT_adm nulT_valOnly n W h _ .nul rfl hw hh rfl
+    intro n W h ρ he hw hh href
+    have hcr : ∀ c ∈ caps, RefsOk W (instantiate 0 ρ (.var c.2)) := fun c hc => by sub_refs href
+    simp only [instantiate, instantiateArgs_eq_map, List.map_map] at href ⊢
+    apply makeFn_rule nulT_adm nulT_valOnly n W h _ .nul rfl hw hh rfl rfl href
     intro j hj V hx
     obtain ⟨hsc, henv, hcapv⟩ := captures_sem he hlt
-      (fun c hc => by simpa [instantiate] using ih c hc n W h ρ he hw hh) hj hx
+      (fun c hc => by simpa [instantiate] using ih c hc n W h ρ he hw hh (hcr c hc)) hj hx
     exact offers_self (oid := h.length + 1) [(codeField, h.length)] hr hkind hspec (by simp) hsc (by
       intro v hv
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hv
       exact (meaning_value (hcapv c hc)).1) j V henv
   | @funScheme Γ i s arity start E K caps kind rest Ss hp hq hcon hkind hspec _hshape hcf hlt hcap ih =>
     obtain ⟨hF, hfree⟩ := capturesFree_sound hcf
-    intro n W h ρ he hw hh
-    simp only [instantiate, instantiateArgs_eq_map, List.map_map]
-    apply makeFn_rule nulT_adm nulT_valOnly n W h _ .nul rfl hw hh rfl
+    intro n W h ρ he hw hh href
+    have hcr : ∀ c ∈ caps, RefsOk W (instantiate 0 ρ (.var c.2)) := fun c hc => by sub_refs href
+    simp only [instantiate, instantiateArgs_eq_map, List.map_map] at href ⊢
+    apply makeFn_rule nulT_adm nulT_valOnly n W h _ .nul rfl hw hh rfl rfl href
     intro j hj U hx
     obtain ⟨hsc, -, hcapv⟩ := captures_sem he hlt
-      (fun c hc => by simpa [instantiate] using ih c hc n W h ρ he hw hh) hj hx
+      (fun c hc => by simpa [instantiate] using ih c hc n W h ρ he hw hh (hcr c hc)) hj hx
     let vs := caps.map fun c => ρ c.2
     -- The captures, at every instantiation of the scheme's binders: their
     -- types read none of them.
@@ -734,25 +827,29 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     refine ⟨?_, fun q hq As hlen hal _ => (instanceTWithArgs_adm _ _ _ _ _).down_le j q hq U _ (hsig As hlen hal)⟩
     simp only [Callee, hcon, Bool.false_eq_true, if_false]
     exact ⟨_, _, _, rfl, callable_of_kind hkind.1, by simpa [Scoped, vs, instantiate] using hsc⟩
-  | @ctorGraph Γ F U L S arity start E K caps parts hr hu hnd hp hspec hrest hlt hcap _ ih ihc =>
-    intro n W h ρ he hw hh
-    simp only [instantiate, instantiateArgs_eq_map, List.map_map, List.map_cons, Function.comp_def]
+  | @ctorGraph Γ F U L S arity start E K caps parts hr hu hnd hp hspec hrest hlt hcap hpay hfit hnl hne ih ihc =>
+    intro n W h ρ he hw hh href
+    have hcr : ∀ c ∈ caps, RefsOk W (instantiate 0 ρ (.var c.2)) := fun c hc => by sub_refs href
+    have hpr : ∀ p ∈ parts, RefsOk W (instantiate 0 ρ p.2.2) := fun p hp => by sub_refs href
+    simp only [instantiate, instantiateArgs_eq_map, List.map_map, List.map_cons, Function.comp_def,
+      Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero] at href ⊢
     have hmap : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.snd
         = parts.map fun x => instantiate 0 ρ x.2.2 := by
       simp [List.map_map, Function.comp_def]
-    rw [← hmap]
+    rw [← hmap] at href ⊢
     apply bind_list (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2))
       (by intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; exact meaning_adm G r.2.1)
       (fun args => .makeAt (.graph arity E K start (caps.map fun c => ρ c.2) .construct)
         (codeField :: parts.map Prod.fst) (.nul :: args))
       (fun hs => CallArguments.Step.makeArgs (.tail rfl hs)) (fun hr => (CallArguments.ArgRaises.tail rfl hr).make)
-      hw hh
+      (fun args r => by simp [refs, refsArgs_eq] <;> grind)
+      hw hh href
       (by
         intro q hq
         obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq
         intro j hj U hx hu heap hok
-        exact ih r hr' j U heap ρ (he.transfer j hj U hx) hu hok)
-    intro j hj U hx hu' heap args hok hargs
+        exact ih r hr' j U heap ρ (he.transfer j hj U hx) hu hok (RefsOk_mono hx (RefsOk_trunc _ (hpr r hr'))))
+    intro j hj U hx hu' heap args hok hargs hrefs
     have hAs : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.fst
         = parts.map fun p => meaning G p.2.1 := by simp [List.map_map, Function.comp_def]
     rw [hAs] at hargs
@@ -787,12 +884,31 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         rcases hq with rfl | hq
         · rfl
         · exact ArgsT_zip hargs q hq)
+      (fun i s v hs hv => by
+        cases i with
+        | zero => simp at hs hv; subst hs hv; rfl
+        | succ i =>
+          simp only [List.getElem?_cons_succ] at hs hv
+          exact ArgsT_holds (r := fun _ => .field) hpay hargs i s v hs hv)
+      (fun i s hs key hk => by
+        cases i with
+        | zero => simp at hs hk; subst hs hk; decide
+        | succ i =>
+          simp only [List.getElem?_cons_succ, List.getElem?_map, Option.map_eq_some_iff] at hs hk
+          obtain ⟨p, hp', rfl⟩ := hs
+          obtain ⟨p', hp'', rfl⟩ := hk
+          rw [hp'] at hp''; cases hp''
+          exact hfit p (List.mem_of_getElem? hp'))
+      (fun _ _ _ => Kinds.MetaFit.of_not_mem
+        (fun hm => (List.mem_cons.mp hm).elim (fun h => absurd h (by decide)) hnl)
+        (fun hm => (List.mem_cons.mp hm).elim (fun h => absurd h (by decide)) hne))
+      hrefs
     intro k' hk' V hy hrec
     have hWV : WExt (trunc k' (by omega) W) V := by
       apply WExt_trans _ hy
       simpa only [trunc_trunc] using WExt_trunc (Nat.le_of_lt hk') hx
     obtain ⟨hsc, henv, hcapv⟩ := captures_sem he hlt
-      (fun c hc => by simpa [instantiate] using ihc c hc n W h ρ he hw hh) (by omega) hWV
+      (fun c hc => by simpa [instantiate] using ihc c hc n W h ρ he hw hh (hcr c hc)) (by omega) hWV
     have hvals : CallArguments.Values (caps.map fun c => ρ c.2) := by
       intro v hv
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hv
@@ -818,24 +934,29 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       exact List.mem_cons_of_mem _ hm
     exact (represents_back hr k' V _)
       ⟨⟨hc, hcr⟩, ⟨⟨_, _, _, rfl, rfl, hbag⟩, by simp⟩, CallableConjunctions.views_nil⟩
-  | @callableGraph Γ F L S arity start E K caps kind rest As parts hr hnd hp hkind hspec hlt hcap _ ih ihc =>
-    intro n W h ρ he hw hh
-    simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
+  | @callableGraph Γ F L S arity start E K caps kind rest As parts hr hnd hp hkind hspec hlt hcap hpay hfit hnl hne
+      ih ihc =>
+    intro n W h ρ he hw hh href
+    have hcr : ∀ c ∈ caps, RefsOk W (instantiate 0 ρ (.var c.2)) := fun c hc => by sub_refs href
+    have hpr : ∀ p ∈ parts, RefsOk W (instantiate 0 ρ p.2.2) := fun p hp => by sub_refs href
+    simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def,
+      Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero] at href ⊢
     have hmap : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.snd
         = parts.map fun x => instantiate 0 ρ x.2.2 := by
       simp [List.map_map, Function.comp_def]
-    rw [← hmap]
+    rw [← hmap] at href ⊢
     apply bind_list (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2))
       (by intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; exact meaning_adm G r.2.1)
       (fun args => .makeAt (.graph arity E K start (caps.map fun c => ρ c.2) kind rest)
         (parts.map Prod.fst) args)
-      (fun hs => CallArguments.Step.makeArgs hs) (fun hr => hr.make) hw hh
+      (fun hs => CallArguments.Step.makeArgs hs) (fun hr => hr.make)
+      (fun args r => by simp [refs, refsArgs_eq] <;> grind) hw hh href
       (by
         intro q hq
         obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq
         intro j hj U hx hu heap hok
-        exact ih r hr' j U heap ρ (he.transfer j hj U hx) hu hok)
-    intro j hj U hx hu heap args hok hargs
+        exact ih r hr' j U heap ρ (he.transfer j hj U hx) hu hok (RefsOk_mono hx (RefsOk_trunc _ (hpr r hr'))))
+    intro j hj U hx hu heap args hok hargs hrefs
     have hAs : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.fst
         = parts.map fun p => meaning G p.2.1 := by simp [List.map_map, Function.comp_def]
     rw [hAs] at hargs
@@ -851,12 +972,20 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_valOnly G r.2.1)
         hargs)
       hu hok (ArgsT_zip hargs)
+      (ArgsT_holds (r := fun _ => .field) hpay hargs)
+      (fun i s hs key hk => by
+        simp only [List.getElem?_map, Option.map_eq_some_iff] at hs hk
+        obtain ⟨p, hp', rfl⟩ := hs
+        obtain ⟨p', hp'', rfl⟩ := hk
+        rw [hp'] at hp''; cases hp''
+        exact hfit p (List.mem_of_getElem? hp'))
+      (fun _ _ _ => Kinds.MetaFit.of_not_mem hnl hne) hrefs
     intro k' hk' V hy hrec
     have hWV : WExt (trunc k' (by omega) W) V := by
       apply WExt_trans _ hy
       simpa only [trunc_trunc] using WExt_trunc (Nat.le_of_lt hk') hx
     obtain ⟨hsc, henv, hcapv⟩ := captures_sem he hlt
-      (fun c hc => by simpa [instantiate] using ihc c hc n W h ρ he hw hh) (by omega) hWV
+      (fun c hc => by simpa [instantiate] using ihc c hc n W h ρ he hw hh (hcr c hc)) (by omega) hWV
     have ho := offers_sem (oid := heap.length + args.length) (slots heap.length (parts.map Prod.fst)) hkind hspec henv (by simp) hsc (by
       intro v hv
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp hv
@@ -869,16 +998,16 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       ⟨⟨⟨⟨⟨_, _, _, rfl, rfl, by rw [hfam]; exact hrec⟩, by simp⟩, ho.1⟩, ho.2⟩,
         MethodMembers.methodT_nil _ _ _⟩
   | @construct Γ f F B L S xs Us a bs vs e hf hr hp hpl hx hu ihf ihx ihu =>
-    intro n W h ρ he hw hh
+    intro n W h ρ he hw hh href
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
     have hs := construct_safe (Ξ := excOf G) (B := meaning G B) hpl
       (xs.map fun p => (meaning G p.1, instantiate 0 ρ p.2)) (Us.map (meaning G))
       (by intro p hp; obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp; exact meaning_adm G q.1)
       (by intro p hp; obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp; exact meaning_valOnly G q.1)
       (by intro A hA; obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
-      hw hh (f := instantiate 0 ρ f) ?_ ?_ ?_
+      hw hh (f := instantiate 0 ρ f) ?_ ?_ ?_ (by sub_refs href)
     · simpa only [List.map_map, Function.comp_def] using hs
-    · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
+    · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh (by sub_refs href))
       intro k hk U v hv
       simpa only [List.map_map, Function.comp_def, List.map_append] using
         ctorsT_select ((represents_raw hr k U v) hv).1.1
@@ -887,16 +1016,18 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     · intro p hp'
       obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp'
       intro j hj U hx hu' heap hok
-      exact ihx q hq j U heap ρ (he.transfer j hj U hx) hu' hok
+      exact ihx q hq j U heap ρ (he.transfer j hj U hx) hu' hok (RefsOk_mono hx (RefsOk_trunc _ (by sub_refs href)))
     · intro A hA
       obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hA
       intro j hj U hx hu' heap hok
-      exact ihu q hq j U heap ρ (he.transfer j hj U hx) hu' hok
+      exact ihu q hq j U heap ρ (he.transfer j hj U hx) hu' hok (RefsOk_mono hx (RefsOk_trunc _ (by sub_refs href)))
   | @constructRest Γ f F P B L S xs parts a bs vs e hf hr hmem hpl hx hp hparts ihf ihx ihp =>
-    intro n W h ρ he hw hh
+    intro n W h ρ he hw hh href
+    have hxr : ∀ p ∈ xs, RefsOk W (instantiate 0 ρ p.2) := fun p hp => by sub_refs href
+    have hpr : ∀ p ∈ parts, RefsOk W (instantiate 0 ρ p.2.2) := fun p hp => by sub_refs href
     have hfF : Safe (excOf G) (ctorRestsT (excOf G) [⟨(), (xs.map fun p => meaning G p.1, argMeaning G P), meaning G B, e⟩])
         n W h (instantiate 0 ρ f) := by
-      apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
+      apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh (by sub_refs href))
       intro k _ U v hv
       have hc := ((represents_raw hr k U v) hv).1.2
       refine ⟨hc.1, fun q hq => ?_⟩
@@ -924,7 +1055,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           rcases p with ⟨_ | _, A, t⟩ <;> rfl
         have hpart : ∀ p ∈ parts, if p.1 then SpreadsInto G p.2.1 E else p.2.1 = E :=
           fun p hp' => hparts (p.1, p.2.1) (List.mem_map_of_mem hp')
-        rw [hterm]
+        rw [hterm] at href ⊢
         apply construct_rest_safe hpl (Ps := xs.map fun p => meaning G p.1)
           (E := meaning G E) (P := argMeaning G P) (R := meaning G B)
           (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q.1)
@@ -945,14 +1076,15 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           hw hh hfF
         · intro q hq j hj U hxU hu heap hok
           obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
-          exact ihx p hp' j U heap ρ (he.transfer j hj U hxU) hu hok
+          exact ihx p hp' j U heap ρ (he.transfer j hj U hxU) hu hok (RefsOk_mono hxU (RefsOk_trunc _ (hxr p hp')))
         · intro q hq j hj U hxU hu heap hok
           obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
           rcases p with ⟨_ | _, A, t⟩
           · have hA : A = E := by simpa using hpart _ hp'
             subst hA
-            exact ihp _ hp' j U heap ρ (he.transfer j hj U hxU) hu hok
-          · exact ihp _ hp' j U heap ρ (he.transfer j hj U hxU) hu hok
+            exact ihp _ hp' j U heap ρ (he.transfer j hj U hxU) hu hok (RefsOk_mono hxU (RefsOk_trunc _ (hpr _ hp')))
+          · exact ihp _ hp' j U heap ρ (he.transfer j hj U hxU) hu hok (RefsOk_mono hxU (RefsOk_trunc _ (hpr _ hp')))
+        · exact href
       · exact hparts.elim
     · -- No spread: the parts are at the positions of the rest's tuple contract.
       rename_i hany
@@ -972,7 +1104,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           apply List.map_congr_left
           intro p hp'
           simp [spreadTerm, hany p hp']
-        rw [hterm]
+        rw [hterm] at href ⊢
         apply construct_pack_safe hpl (Ps := xs.map fun p => meaning G p.1)
           (Qs := parts.map fun p => meaning G p.2.1)
           (P := argMeaning G P) (R := meaning G B)
@@ -996,11 +1128,12 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           hw hh hfF
         · intro q hq j hj U hxU hu heap hok
           rcases List.mem_append.mp hq with hq | hq <;> obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
-          · exact ihx p hp' j U heap ρ (he.transfer j hj U hxU) hu hok
-          · exact ihp p hp' j U heap ρ (he.transfer j hj U hxU) hu hok
+          · exact ihx p hp' j U heap ρ (he.transfer j hj U hxU) hu hok (RefsOk_mono hxU (RefsOk_trunc _ (hxr p hp')))
+          · exact ihp p hp' j U heap ρ (he.transfer j hj U hxU) hu hok (RefsOk_mono hxU (RefsOk_trunc _ (hpr p hp')))
+        · exact href
       · exact hparts.elim
   | @callCallable effect Γ f r F Rt B P Ps L S ms xs Us hf hr hp hrt ha hu hplain ihf ihrt iha ihu =>
-    intro n W h ρ he hw hh
+    intro n W h ρ he hw hh href
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
     have hs := call_safe_short (Ξ := excOf G) (Rc := meaning G Rt) (B := meaning G B) (f := instantiate 0 ρ f)
       (r := instantiate 0 ρ r)
@@ -1012,49 +1145,57 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       (by intro A hA; obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hA; exact meaning_valOnly G q)
       hw hh
     apply (by simpa only [List.map_map,Function.comp_def] using hs)
-    · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
+    · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh (by sub_refs href))
       intro k hk U v hv
       simpa [Arrow.map, Contract.map, Arrow.plain, List.map_map, List.map_append, Function.comp_def] using
         CallEffects.callsT_erase (by simpa [Arrow.map, Contract.map] using hplain)
           (CallEffects.callsT_select (((represents_raw hr k U v) hv).1.1.2) (List.mem_map_of_mem hp))
     · intro j hj U hx hu' heap hok
-      exact ihrt j U heap ρ (he.transfer j hj U hx) hu' hok
+      exact ihrt j U heap ρ (he.transfer j hj U hx) hu' hok (RefsOk_mono hx (RefsOk_trunc _ (by sub_refs href)))
     · intro p hp'
       obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp'
       intro j hj U hx hu' heap hok
-      exact iha q hq j U heap ρ (he.transfer j hj U hx) hu' hok
+      exact iha q hq j U heap ρ (he.transfer j hj U hx) hu' hok (RefsOk_mono hx (RefsOk_trunc _ (by sub_refs href)))
     · intro A hA
       obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hA
       intro j hj U hx hu' heap hok
-      exact ihu q hq j U heap ρ (he.transfer j hj U hx) hu' hok
+      exact ihu q hq j U heap ρ (he.transfer j hj U hx) hu' hok (RefsOk_mono hx (RefsOk_trunc _ (by sub_refs href)))
+    · sub_refs href
   | @readCallable Γ a Ref P Ps f _ A c ha hr hc hm ih =>
-    intro n W h ρ he hw hh
-    apply Safe_bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
-    intro j hj U hx hu heap v hok hv ha'
+    intro n W h ρ he hw hh href
+    apply Safe_bind (Tm.readAt f) Step.readC Raises.readC (by ctx_refs) n W h _ hw hh (by simp [RefsOk, refs])
+      (ih n W h ρ he hw hh href)
+    intro j hj U hx hu heap v hok hv ha' hvr
     exact bag_read (meaning_valOnly G A) (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
-      (bag_sem hc ((represents_raw hr j U v) ha')).1 hu hok
+      (bag_sem hc ((represents_raw hr j U v) ha')).1 hu hok hvr
   | @readBagView Γ a Ref f A c ha hr hm ih =>
-    intro n W h ρ he hw hh
-    apply Safe_bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
-    intro j hj U hx hu heap v hok hv ha'
+    intro n W h ρ he hw hh href
+    apply Safe_bind (Tm.readAt f) Step.readC Raises.readC (by ctx_refs) n W h _ hw hh (by simp [RefsOk, refs])
+      (ih n W h ρ he hw hh href)
+    intro j hj U hx hu heap v hok hv ha' hvr
     obtain ⟨flds, code, oid, l, c', rfl, hf, hl, hag⟩ :=
       CallableConjunctions.views_at (ReferenceConjunctions.mem_viewsOf.mpr ⟨A, hm, rfl⟩)
         (bagViews_sem ((represents_raw hr j U v) ha') (List.ne_nil_of_mem hm))
-    exact read_view_rule (meaning_valOnly G A) j U heap l hu hok hf hl hag
-  | @writeCallable Γ a Ref P Ps f _ A b N c ha hr hc hm hb hn _ iha ihb =>
-    intro n W h ρ he hw hh
-    apply Safe_bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 Raises.writeC1 n W h _ hw hh
-      (iha n W h ρ he hw hh)
-    intro j hj U hx hu heap av hok hav ha'
-    apply Safe_bind (.writeAt f av) (Step.writeC2 hav) (Raises.writeC2 hav) j U heap _ hu hok
-      (ihb j U heap ρ (he.transfer j hj U hx) hu hok)
-    intro k hk V hy hv heap' bv hok' hbval hb'
+    exact read_view_rule (meaning_valOnly G A) j U heap l hu hok hf hl hag hvr
+  | @writeCallable Γ a Ref P Ps f s A b N c ha hr hc hm hb hn hpay hvs iha ihb =>
+    intro n W h ρ he hw hh href
+    have hC : CtxRefs (fun a => .writeAt f a (instantiate 0 ρ b)) := by ctx_refs
+    apply Safe_bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 Raises.writeC1 hC n W h _ hw hh
+      (hC.frame (t := instantiate 0 ρ a) href) (iha n W h ρ he hw hh (hC.hole (t := instantiate 0 ρ a) href))
+    intro j hj U hx hu heap av hok hav ha' hvr
+    have hCU : RefsOk U (.writeAt f av (instantiate 0 ρ b)) :=
+      hC.ok hvr (RefsOk_mono hx (RefsOk_trunc _ (hC.frame (t := instantiate 0 ρ a) href)))
+    have hC2 : CtxRefs (Tm.writeAt f av) := by ctx_refs
+    apply Safe_bind (.writeAt f av) (Step.writeC2 hav) (Raises.writeC2 hav) hC2 j U heap _ hu hok
+      (hC2.frame hCU) (ihb j U heap ρ (he.transfer j hj U hx) hu hok (hC2.hole hCU))
+    intro k hk V hy hv heap' bv hok' hbval hb' hbvr
     have ha'' := (meaning_adm G Ref).mono k _ V hy av ((meaning_adm G Ref).down_le j k hk U av ha')
     apply Safe_mono k (fun i _ X v hval => (represents_back hn i X v) hval)
     exact bag_write (meaning_adm G A) (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩)
-      (bag_sem hc ((represents_raw hr k V av) ha'')).1 hb' hbval hv hok'
+      (bag_sem hc ((represents_raw hr k V av) ha'')).1 hb' hbval hv hok' hvs (hpay.stored hb')
+      (hC2.ok hbvr (RefsOk_mono hy (RefsOk_trunc _ (hC2.frame hCU))))
   | @app effect Γ f r F Rt B L S xs Us hf hr hp hrt ha hu hplain ihf ihrt iha ihu =>
-    intro n W h ρ he hw hh
+    intro n W h ρ he hw hh href
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
     have hs := call_safe_short (Ξ := excOf G) (Rc := meaning G Rt) (B := meaning G B) (f := instantiate 0 ρ f)
       (r := instantiate 0 ρ r)
@@ -1066,51 +1207,60 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       (by intro A hA; obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hA; exact meaning_valOnly G q)
       hw hh
     apply (by simpa only [List.map_map,Function.comp_def] using hs)
-    · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh)
+    · apply Safe_mono n _ W h _ (ihf n W h ρ he hw hh (by sub_refs href))
       intro k hk U v hv
       simpa [Arrow.map, Contract.map, Arrow.plain, List.map_map, List.map_append, Function.comp_def] using
         CallEffects.callsT_erase (by simpa [Arrow.map, Contract.map] using hplain)
           (CallEffects.callsT_select ((represents_raw hr k U v) hv).1 (List.mem_map_of_mem hp))
     · intro j hj U hx hu' heap hok
-      exact ihrt j U heap ρ (he.transfer j hj U hx) hu' hok
+      exact ihrt j U heap ρ (he.transfer j hj U hx) hu' hok (RefsOk_mono hx (RefsOk_trunc _ (by sub_refs href)))
     · intro p hp'
       obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hp'
       intro j hj U hx hu' heap hok
-      exact iha q hq j U heap ρ (he.transfer j hj U hx) hu' hok
+      exact iha q hq j U heap ρ (he.transfer j hj U hx) hu' hok (RefsOk_mono hx (RefsOk_trunc _ (by sub_refs href)))
     · intro A hA
       obtain ⟨q,hq,rfl⟩ := List.mem_map.mp hA
       intro j hj U hx hu' heap hok
-      exact ihu q hq j U heap ρ (he.transfer j hj U hx) hu' hok
+      exact ihu q hq j U heap ρ (he.transfer j hj U hx) hu' hok (RefsOk_mono hx (RefsOk_trunc _ (by sub_refs href)))
+    · sub_refs href
   | @letE Γ a A b B ha hb iha ihb =>
-    intro n W h ρ he hw hh
-    apply Safe_bind (fun a => .letE a (instantiate 1 ρ b)) Step.letC Raises.letC n W h _ hw hh
-      (iha n W h ρ he hw hh)
-    intro j hj U hx hu heap av hok hav ha'
+    intro n W h ρ he hw hh href
+    have hC : CtxRefs (fun a => .letE a (instantiate 1 ρ b)) := by ctx_refs
+    apply Safe_bind (fun a => .letE a (instantiate 1 ρ b)) Step.letC Raises.letC hC n W h _ hw hh
+      (hC.frame (t := instantiate 0 ρ a) href) (iha n W h ρ he hw hh (hC.hole (t := instantiate 0 ρ a) href))
+    intro j hj U hx hu heap av hok hav ha' hvr
+    have hCU : RefsOk U (.letE av (instantiate 1 ρ b)) :=
+      hC.ok hvr (RefsOk_mono hx (RefsOk_trunc _ (hC.frame (t := instantiate 0 ρ a) href)))
     cases j with
-    | zero => trivial
+    | zero => exact hCU
     | succ k =>
-      apply let_rule _ _ hav k U heap hu hok
-      rw [instantiate_beta ρ he.1]
+      apply let_rule _ _ hav k U heap hu hok hCU
+      have hbody : RefsOk (trunc k (Nat.le_succ k) U) (subst 0 av (instantiate 1 ρ b)) :=
+        RefsOk_trunc _ (fun r hr => (Kinds.subst_refs av _ 0 r hr).elim
+          (fun h => hCU r (by rw [refs_letE]; exact List.mem_append_right _ h)) (fun h => hvr r h))
+      rw [instantiate_beta ρ he.1] at hbody ⊢
       have he' := ((he.transfer (k+1) hj U hx).push ha').transfer k (Nat.le_succ k)
         (trunc k (Nat.le_succ k) U) (WExt_refl _)
-      exact ihb k _ heap (push av ρ) he' (WorldAdm_trunc _ hu) (HeapOk_trunc k U heap hok)
-  | @alloc Γ Ref parts fs ks st hnd hhostp hp hfs hr hbound hreal hstore hst _ ih =>
-    intro n W h ρ he hw hh
-    simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
+      exact ihb k _ heap (push av ρ) he' (WorldAdm_trunc _ hu) (HeapOk_trunc k U heap hok) hbody
+  | @alloc Γ Ref parts fs ks st hnd hhostp hp hfs hr hbound hreal hstore hst hpay hfit hnl hne ih =>
+    intro n W h ρ he hw hh href
+    have hpr : ∀ p ∈ parts, RefsOk W (instantiate 0 ρ p.2.2) := fun p hp => by sub_refs href
+    simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def] at href ⊢
     have hmap : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.snd
         = parts.map fun x => instantiate 0 ρ x.2.2 := by
       simp [List.map_map, Function.comp_def]
-    rw [← hmap]
+    rw [← hmap] at href ⊢
     apply bind_list (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2))
       (by intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; exact meaning_adm G r.2.1)
       (fun args => .makeAt .absent (parts.map Prod.fst) args)
-      (fun hs => CallArguments.Step.makeArgs hs) (fun hr => hr.make) hw hh
+      (fun hs => CallArguments.Step.makeArgs hs) (fun hr => hr.make)
+      (fun args r => by simp [refs, refsArgs_eq]) hw hh href
       (by
         intro q hq
         obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq
         intro j hj U hx hu heap hok
-        exact ih r hr' j U heap ρ (he.transfer j hj U hx) hu hok)
-    intro j hj U hx hu heap args hok hargs
+        exact ih r hr' j U heap ρ (he.transfer j hj U hx) hu hok (RefsOk_mono hx (RefsOk_trunc _ (hpr r hr'))))
+    intro j hj U hx hu heap args hok hargs hrefs
     have hAs : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.fst
         = parts.map fun p => meaning G p.2.1 := by simp [List.map_map, Function.comp_def]
     rw [hAs] at hargs
@@ -1150,6 +1300,20 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         simp only [fam]; split
         · exact ⟨hpart q hq, rfl⟩
         · exact hpart q hq)
+      (fun i s v hs hv => by
+        rw [List.getElem?_map] at hs
+        obtain ⟨⟨p, w⟩, hq, rfl⟩ := Option.map_eq_some_iff.mp hs
+        obtain ⟨hp1, hp2⟩ := List.getElem?_zip_eq_some.mp hq
+        rw [hp2] at hv; cases hv
+        exact (hpay p (List.mem_of_getElem? hp1)).stored (hpart (p, w) (List.mem_of_getElem? hq)))
+      (fun i s hs key hk => by
+        rw [List.getElem?_map] at hs hk
+        obtain ⟨⟨p, w⟩, hq, rfl⟩ := Option.map_eq_some_iff.mp hs
+        obtain ⟨p', hp', rfl⟩ := Option.map_eq_some_iff.mp hk
+        obtain ⟨hp1, -⟩ := List.getElem?_zip_eq_some.mp hq
+        rw [hp1] at hp'; cases hp'
+        exact hfit p (List.mem_of_getElem? hp1))
+      (fun _ _ _ => Kinds.MetaFit.of_not_mem hnl hne) hrefs
     intro k hk V hy hrec
     have hrecZ := hrec
     rw [List.zip_map'] at hrecZ
@@ -1161,7 +1325,14 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       fun q hq => recT_at (mem_zip_map_zip Prod.fst (fun q => (role q, fam q)) hq) hrecZ
     have hrecA : recT (ReferenceConjunctions.famsOf (meaning G) fs)
         k V (.objAt (slots heap.length (parts.map Prod.fst)) .absent (heap.length + args.length)) := by
-      obtain ⟨flds, oid, hobj, hown, -⟩ := hrecZ
+      obtain ⟨flds, oid, hobj, hown, hpos⟩ := hrecZ
+      have hfsnd : (fs.map (·.1)).Nodup := by
+        have h1 : fs.map (·.1) = (Stored.views fs).map Prod.fst := by
+          simp [Stored.views, List.map_map, Function.comp_def]
+        rw [h1, hfs]
+        simp only [stablePart]
+        exact List.Nodup.sublist (List.Sublist.map Prod.fst (List.filter_sublist ..))
+          (by simpa [List.map_map, Function.comp_def] using hnd)
       have hfs : ∀ f s T, (f, s, T) ∈ ReferenceConjunctions.famsOf (meaning G) fs →
           ∃ q ∈ parts.zip args, f = q.1.1 ∧ T = fam q := by
         intro f s T hm
@@ -1178,10 +1349,13 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       refine ⟨flds, oid, hobj, fun f s T hm l hl => ?_, fun f s T hm => ?_⟩
       · obtain ⟨q, hq, rfl, rfl⟩ := hfs f s T hm
         exact hown _ _ _ (mem_zip_map_zip Prod.fst (fun q => (role q, fam q)) hq) l hl
-      · obtain ⟨q, hq, rfl, rfl⟩ := hfs f s T hm
-        obtain ⟨flds', l, c, oid', he', hl, hw', hag⟩ := hat q hq
-        rw [hobj] at he'; cases he'
-        exact ⟨l, c, hl, hw', hag⟩
+      · have hsr : allocRole fs f = s := by
+          obtain ⟨B, hB, -⟩ := ReferenceConjunctions.mem_famsOf.mp hm
+          obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp hB
+          exact allocRole_getElem? hfsnd hi
+        obtain ⟨q, hq, rfl, rfl⟩ := hfs f s T hm
+        obtain ⟨l, c, hl, hw', hrl, hag⟩ := hpos _ _ _ (mem_zip_map_zip Prod.fst (fun q => (role q, fam q)) hq)
+        exact ⟨l, c, hl, hw', hsr ▸ hrl, hag⟩
     -- A stable part's location admits values of its type, its initial value
     -- alone.
     have hstable : ∀ p ∈ parts, st.contains p.1 = true → ∃ v, ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr k) (oid : Nat),
@@ -1231,23 +1405,25 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           (by simpa [List.map_map, Function.comp_def] using hrecZ)
         simpa [List.map_map, Function.comp_def] using hinv
       · exact builtinInvariant_of_lookup (slots_lookup_none hstore)
-  | @allocDict Γ Ref parts fs ix cs os hnd hproto hstore hhostp hp hfs hr hix habs _ _ _ _ ih =>
-    intro n W h ρ he hw hh
-    simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
+  | @allocDict Γ Ref parts fs ix cs os hnd hproto hstore hhostp hp hfs hr hix habs _ hfrole _ hpay hfit hnl hne ih =>
+    intro n W h ρ he hw hh href
+    have hpr : ∀ p ∈ parts, RefsOk W (instantiate 0 ρ p.2.2) := fun p hp => by sub_refs href
+    simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def] at href ⊢
     have hmap : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.snd
         = parts.map fun x => instantiate 0 ρ x.2.2 := by
       simp [List.map_map, Function.comp_def]
-    rw [← hmap]
+    rw [← hmap] at href ⊢
     apply bind_list (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2))
       (by intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; exact meaning_adm G r.2.1)
       (fun args => .makeAt .absent (parts.map Prod.fst) args)
-      (fun hs => CallArguments.Step.makeArgs hs) (fun hr => hr.make) hw hh
+      (fun hs => CallArguments.Step.makeArgs hs) (fun hr => hr.make)
+      (fun args r => by simp [refs, refsArgs_eq]) hw hh href
       (by
         intro q hq
         obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq
         intro j hj U hx hu heap hok
-        exact ih r hr' j U heap ρ (he.transfer j hj U hx) hu hok)
-    intro j hj U hx hu heap args hok hargs
+        exact ih r hr' j U heap ρ (he.transfer j hj U hx) hu hok (RefsOk_mono hx (RefsOk_trunc _ (hpr r hr'))))
+    intro j hj U hx hu heap args hok hargs hrefs
     have hAs : (parts.map fun p => (meaning G p.2.1, instantiate 0 ρ p.2.2)).map Prod.fst
         = parts.map fun p => meaning G p.2.1 := by simp [List.map_map, Function.comp_def]
     rw [hAs] at hargs
@@ -1263,6 +1439,32 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_valOnly G r.2.1)
         hargs)
       hu hok (ArgsT_zip hargs)
+      (fun i s v hs hv => by
+        rw [List.getElem?_map] at hs
+        obtain ⟨f, hf, rfl⟩ := Option.map_eq_some_iff.mp hs
+        have hvw : (Stored.views fs)[i]? = some (f.1, f.2.2) := by simp [Stored.views, hf]
+        rw [hfs, List.getElem?_map] at hvw
+        obtain ⟨p, hp1, hpe⟩ := Option.map_eq_some_iff.mp hvw
+        have hkeys : fs.map (·.1) = parts.map Prod.fst := by
+          have := congrArg (List.map Prod.fst) hfs
+          simpa [Stored.views, List.map_map, Function.comp_def] using this
+        have hrole : allocRole fs p.1 = f.2.1 := by
+          rw [show p.1 = f.1 from congrArg Prod.fst hpe]
+          exact allocRole_getElem? (by rw [hkeys]; exact hnd) hf
+        have hpv : meaning G p.2.1 j U v :=
+          ArgsT_getElem? (A := meaning G p.2.1) hargs (by simp [List.getElem?_map, hp1]) hv
+        have := (hpay p (List.mem_of_getElem? hp1)).stored hpv
+        rwa [hrole] at this)
+      (fun i s hs key hk => by
+        rw [List.getElem?_map] at hs hk
+        obtain ⟨f, hf, rfl⟩ := Option.map_eq_some_iff.mp hs
+        obtain ⟨p, hp1, rfl⟩ := Option.map_eq_some_iff.mp hk
+        have hvw : (Stored.views fs)[i]? = some (f.1, f.2.2) := by simp [Stored.views, hf]
+        rw [hfs, List.getElem?_map, hp1] at hvw
+        simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hvw
+        rw [hvw.1]
+        exact hfit f (List.mem_of_getElem? hf))
+      (fun _ _ _ => Kinds.MetaFit.of_not_mem hnl hne) hrefs
     intro k hk V hy hrec
     have hfam : ReferenceConjunctions.famsOf (meaning G) fs
         = (parts.map Prod.fst).zip ((fs.map (·.2.1)).zip (parts.map fun p => meaning G p.2.1)) := by
@@ -1281,10 +1483,10 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         exact ReferenceConjunctions.mem_famsOf.mpr ⟨p.2.1, hs, rfl⟩⟩
     have hnp := slots_lookup_none (base := heap.length) hproto
     have hnh := slots_lookup_none (base := heap.length) hhostp
-    have hcell : ∀ y ∈ ix ++ cellViews cs,
-        dictCellT y.1 (meaning G y.2) k V (.objAt (slots heap.length (parts.map Prod.fst)) .absent (heap.length + args.length)) := by
-      intro y hy
-      refine dictCellT_of_recT hrec hown hnp hnh fun f s T hT hk => ?_
+    have hagree : ∀ y ∈ ix ++ cellViews cs, ∀ f s T,
+        (f, s, T) ∈ (parts.map Prod.fst).zip ((fs.map (·.2.1)).zip (parts.map fun p => meaning G p.2.1)) →
+        y.1.Admits f → ∀ (j : Nat) (_hj : j < k) (W' : WorldT j) (u : Val), T j W' u ↔ meaning G y.2 j W' u := by
+      intro y hy f s T hT hk
       rw [← hfam] at hT
       obtain ⟨B, hB, rfl⟩ := ReferenceConjunctions.mem_famsOf.mp hT
       have hB : (f, B) ∈ parts.map (fun p => (p.1, p.2.1)) := hfs ▸ Stored.mem_views.mpr ⟨s, hB⟩
@@ -1292,12 +1494,22 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       cases hpe
       rw [hix p hp y hy (IndexKeys.may_of_admits hk)]
       exact fun _ _ _ _ => Iff.rfl
+    have hview : ∀ y ∈ ix,
+        dictViewT y.1 (meaning G y.2) k V (.objAt (slots heap.length (parts.map Prod.fst)) .absent (heap.length + args.length)) :=
+      fun y hy => dictViewT_of_recT hrec hown hnp hnh (hagree y (List.mem_append_left _ hy))
+    have hcell : ∀ y ∈ cs,
+        dictCellT y.1 y.2.1 (meaning G y.2.2) k V (.objAt (slots heap.length (parts.map Prod.fst)) .absent (heap.length + args.length)) := by
+      intro y hy
+      refine dictCellT_of_recT hrec (fun f s T hT hk => ?_) hown hnp hnh
+        (hagree (y.1, y.2.2) (List.mem_append_right _ (List.mem_map_of_mem hy)))
+      rw [← hfam] at hT
+      obtain ⟨B, hB, -⟩ := ReferenceConjunctions.mem_famsOf.mp hT
+      exact hfrole _ hB y hy (IndexKeys.may_of_admits hk)
     have hrec' := hrec
     rw [← hfam] at hrec'
     refine (represents_sem hr k V _).mpr ⟨⟨⟨hrec', by simp, fun _ _ _ he => by cases he; exact hnh⟩,
       fun f T hm => by simp [ReferenceConjunctions.viewsOf] at hm,
-      ⟨fun y hy => dictCellT_view (hcell y (List.mem_append_left _ hy)),
-        fun y hy => hcell (y.1, y.2.2) (List.mem_append_right _ (List.mem_map_of_mem hy))⟩,
+      ⟨fun y hy => hview y hy, fun y hy => hcell y hy⟩,
       ⟨_, _, rfl, fun _ _ _ _ hl => owned_of_nodup (slots_nodup _ _) hl, fun _ _ _ => hnp, fun o ho l hl => by
         obtain ⟨o', ho', rfl⟩ := List.mem_map.mp ho
         rw [show (OptionalField.map (meaning G) o').key = o'.key from rfl,
@@ -1305,21 +1517,23 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         cases hl⟩, MethodMembers.methodT_nil _ _ _,
       fun K hK => by simp at hK, stableKeysT_nil _ _ _⟩, builtinInvariant_of_lookup (slots_lookup_none hstore)⟩
   | @read Γ a Ref c fs vs f _ A ha hr hc hm ih =>
-    intro n W h ρ he hw hh
-    apply Safe_bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
-    intro j hj U hx hu heap v hok hv ha'
+    intro n W h ρ he hw hh href
+    apply Safe_bind (Tm.readAt f) Step.readC Raises.readC (by ctx_refs) n W h _ hw hh (by simp [RefsOk, refs])
+      (ih n W h ρ he hw hh href)
+    intro j hj U hx hu heap v hok hv ha' hvr
     obtain ⟨flds, l, c, oid', rfl, hf, hl, hag⟩ :=
       recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) (namedMembers_sem hr hc ha').1
-    exact read_rule (meaning_valOnly G A) j U heap l hu hok hf hl hag
+    exact read_rule (meaning_valOnly G A) j U heap l hu hok hf hl hag hvr
   | @readView Γ a Ref c fs vs f A ha hr hc hm hlen ih =>
-    intro n W h ρ he hw hh
-    apply Safe_bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
-    intro j hj U hx hu heap v hok hv ha'
+    intro n W h ρ he hw hh href
+    apply Safe_bind (Tm.readAt f) Step.readC Raises.readC (by ctx_refs) n W h _ hw hh (by simp [RefsOk, refs])
+      (ih n W h ρ he hw hh href)
+    intro j hj U hx hu heap v hok hv ha' hvr
     have hviews := (namedMembers_sem hr hc ha').2
     have hmA : (f, meaning G A) ∈ ReferenceConjunctions.viewsOf (meaning G) vs :=
       ReferenceConjunctions.mem_viewsOf.mpr ⟨A, hm, rfl⟩
     cases j with
-    | zero => trivial
+    | zero => exact hvr
     | succ j =>
       obtain ⟨flds, l, c, oid', rfl, hf, hl, hag⟩ : ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr (j + 1))
           (oid : Nat), v = .objAt flds .absent oid ∧ flds.lookup f = some l ∧ lookup U l = some c ∧
@@ -1329,20 +1543,22 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         · rcases hviews f _ hmA with hv1 | ⟨-, -, hall⟩
           · exact viewT_at (List.mem_singleton_self _) hv1
           · obtain ⟨w, hw⟩ := Option.isSome_iff_exists.mp hex
-            exact absurd (hall 0 (by omega) (ofList []) w) (numWitness_sound hw)
-      exact read_view_rule (meaning_valOnly G A) (j + 1) U heap l hu hok hf hl hag
+            exact absurd (hall 0 (by omega) (ofEntries []) w) (numWitness_sound hw)
+      exact read_view_rule (meaning_valOnly G A) (j + 1) U heap l hu hok hf hl hag hvr
   | @lenView Γ i Ref A c fs vs hi hr hc hm hnum =>
-    intro n W h ρ henv hw hh
+    intro n W h ρ henv hw hh href
     have hval := (meaning_value (henv.2 i Ref hi)).1
-    simp only [lengthRead, instantiate, Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero]
+    simp only [lengthRead, instantiate, Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero] at href ⊢
+    have hρr : RefsOk W (ρ i) := fun r hr => href r (by simp [refs, hr])
     cases n with
-    | zero => trivial
+    | zero => exact href
     | succ n =>
       cases n with
       | zero =>
-        exact Or.inr ⟨trunc 0 (by omega) W, h, _, WExt_refl _, WorldAdm_trunc _ hw,
-          .iteC (.testV hval), HeapOk_trunc 0 W h hh, trivial⟩
+        refine pure_step hw hh href (.iteC (.testV hval)) ?_
+        exact RefsOk_trunc _ (fun r hr => hρr r (by split at hr <;> simp_all [refs]))
       | succ k =>
+        have hρk : RefsOk (trunc k (by omega) W) (ρ i) := RefsOk_trunc _ hρr
         have henv' := henv.transfer k (by omega) _ (WExt_refl _)
         have hv := henv'.2 i Ref hi
         have hw' : WorldAdm (trunc k (by omega) W) := WorldAdm_trunc _ hw
@@ -1351,23 +1567,23 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         obtain ⟨hsem, hinv⟩ := (represents_sem hr k _ (ρ i)).mp hv
         obtain ⟨hrec, hviews⟩ := namedMembers_sem hr hc hv
         obtain ⟨flds, oid, hρ, -⟩ := hrec
-        apply ite_test_rule .isArray (ρ i) hval _ _ k W h hw hh
+        apply ite_test_rule .isArray (ρ i) hval _ _ k W h hw hh href
         · -- An array: its store is a list, whose length the view's type holds.
           intro ht
-          rw [hρ] at ht ⊢
+          rw [hρ] at ht hρk ⊢
           have hst : (flds.lookup CallArguments.arrayStoreField).isSome = true := ht
           have hinv' := hinv
           rw [hρ] at hinv'
           obtain ⟨l, c', hf, hl, hag⟩ := builtinInvariant_store (namedMembers_carriesInvariant hc) hinv' hst
-          apply Safe_bind Tm.lenOf Step.lenC Raises.lenC k _ h _ hw' hh'
+          apply Safe_bind Tm.lenOf Step.lenC Raises.lenC (by ctx_refs) k _ h _ hw' hh' (by simp [RefsOk, refs])
             (read_view_rule (A := fun _ _ u => ∃ ls, u = .arr ls) (fun _ _ _ ⟨ls, he⟩ => by subst he; rfl)
-              k _ h l hw' hh' hf hl hag)
-          intro j _ U _ hu heap av hok _ ⟨ls, hav⟩
+              k _ h l hw' hh' hf hl hag (code := .absent) (oid := oid) hρk)
+          intro j _ U _ hu heap av hok _ ⟨ls, hav⟩ hvr
           subst hav
-          exact len_rule j U heap hu hok (fun m U' => numIn_sound hnum G.env _)
+          exact len_rule j U heap hu hok (fun m U' => numIn_sound hnum G.env _) hvr
         · -- Any other object: no store, so the view is at its own location.
           intro hf
-          rw [hρ] at hf ⊢
+          rw [hρ] at hf hρk ⊢
           have hf2 : (flds.lookup CallArguments.arrayStoreField).isSome = false := hf
           have hns : flds.lookup CallArguments.arrayStoreField = none := by
             cases hl : flds.lookup CallArguments.arrayStoreField with
@@ -1377,11 +1593,12 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           obtain ⟨flds', l, c', oid', he', hf', hl, hag⟩ :=
             viewsT_at_plain (ReferenceConjunctions.mem_viewsOf.mpr ⟨A, hm, rfl⟩) hns hviews
           cases he'
-          exact read_view_rule (meaning_valOnly G A) k _ h l hw' hh' hf' hl hag
+          exact read_view_rule (meaning_valOnly G A) k _ h l hw' hh' hf' hl hag hρk
   | @readProto Γ a Ref P fs vs os ms ks K gs ws os' ms' ks' st st' f A ha hr hK hf hpr hP hm ih =>
-    intro n W h ρ he hw hh
-    apply Safe_bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
-    intro j hj U hx hu heap v hok hv ha'
+    intro n W h ρ he hw hh href
+    apply Safe_bind (Tm.readAt f) Step.readC Raises.readC (by ctx_refs) n W h _ hw hh (by simp [RefsOk, refs])
+      (ih n W h ρ he hw hh href)
+    intro j hj U hx hu heap v hok hv ha' hvr
     have hs := (represents_raw hr j U v) ha'
     have hloc : ∃ (flds : List (PropKey × Nat)) (l : Nat) (c : Ctr j) (oid : Nat), v = .objAt flds .absent oid ∧
         flds.lookup CallArguments.protoField = some l ∧ lookup U l = some c ∧
@@ -1394,22 +1611,23 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       · exact viewsT_at (ReferenceConjunctions.mem_viewsOf.mpr ⟨P, hpr, rfl⟩) (by decide) hs.2.1
     obtain ⟨flds, l, c, oid, rfl, hpf, hl, hag⟩ := hloc
     have hmiss := ownKeysT_lookup (hs.2.2.2.2.1 K hK) hf
-    apply read_proto_rule j U heap l hu hok hmiss hpf hl hag
-    intro i V h' hV hh' u hu
+    refine read_proto_rule j U heap l hu hok hmiss hpf hl hag ?_ hvr
+    intro i V h' hV hh' u hu hur
     have hp := (represents_raw hP i V u) hu
     rcases List.mem_append.mp hm with hm | hm
     · obtain ⟨_, hm⟩ := Stored.mem_views.mp hm
       obtain ⟨flds', l', c', oid'', rfl, hf', hl', hag'⟩ :=
         recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) hp.1.1
-      exact read_rule (meaning_valOnly G A) i V h' l' hV hh' hf' hl' hag'
+      exact read_rule (meaning_valOnly G A) i V h' l' hV hh' hf' hl' hag' hur
     · obtain ⟨hm, hml⟩ := List.mem_filter.mp hm
       obtain ⟨flds', l', c', oid'', rfl, hf', hl', hag'⟩ :=
         viewsT_at (ReferenceConjunctions.mem_viewsOf.mpr ⟨A, hm, rfl⟩) (by simpa using hml) hp.2.1
-      exact read_view_rule (meaning_valOnly G A) i V h' l' hV hh' hf' hl' hag'
+      exact read_view_rule (meaning_valOnly G A) i V h' l' hV hh' hf' hl' hag' hur
   | @readOptional Γ a Ref fs vs os ms ks st f r _ A U ha hr hm hUnd _ ih =>
-    intro n W h ρ he hw hh
-    apply Safe_bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
-    intro j hj V hx hv heap v hok hval ha'
+    intro n W h ρ he hw hh href
+    apply Safe_bind (Tm.readAt f) Step.readC Raises.readC (by ctx_refs) n W h _ hw hh (by simp [RefsOk, refs])
+      (ih n W h ρ he hw hh href)
+    intro j hj V hx hv heap v hok hval ha' hvr
     have hs := (represents_raw hr j V v) ha'
     obtain ⟨flds, oid, rfl, _⟩ := hs.1.1
     apply Safe_mono j (fun k _ X u hu => (meaning_append G A U k X u).mpr
@@ -1418,25 +1636,31 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         (optT_no_proto (List.mem_map_of_mem hm) hs.2.2.1)
         (fun l hl => by
           obtain ⟨c, hc, hag⟩ := optT_present (List.mem_map_of_mem hm) hs.2.2.1 hl
-          exact ⟨c, hc, fun i hi U u hu => (hag i hi U u).1 hu⟩))
+          exact ⟨c, hc, fun i hi U u hu => (hag i hi U u).1 hu⟩) hvr)
 
   | @readDict Γ a Ref fs vs ix os ms ks cs A U f K st ha hr hm hsure hUnd _ ih =>
-    intro n W h ρ he hw hh
-    apply Safe_bind (Tm.readAt f) Step.readC Raises.readC n W h _ hw hh (ih n W h ρ he hw hh)
-    intro j hj V hx hv heap v hok hval ha'
+    intro n W h ρ he hw hh href
+    apply Safe_bind (Tm.readAt f) Step.readC Raises.readC (by ctx_refs) n W h _ hw hh (by simp [RefsOk, refs])
+      (ih n W h ρ he hw hh href)
+    intro j hj V hx hv heap v hok hval ha' hvr
     have hd := ((represents_raw hr j V v) ha').2.2.1.1 (K, A) hm
     obtain ⟨flds, oid, rfl, _⟩ := ((represents_raw hr j V v) ha').1.1
     apply Safe_mono j (fun k _ X u hu => (meaning_append G A U k X u).mpr
       (hu.elim Or.inl (fun h => Or.inr ((represents_back hUnd k X u) h)))) V heap _
-      (read_dict_rule (meaning_valOnly G A) j V heap hv hok (IndexKeys.surely_admits hsure) hd)
+      (read_dict_rule (meaning_valOnly G A) j V heap hv hok (IndexKeys.surely_admits hsure) hd hvr)
   | @indexDict Γ a Ref fs vs ix os ms ks cs key Kt A U K KK st ha hr hk hStr hwithin hm hUnd _ iha ihk =>
-    intro n W h ρ he hw hh
-    apply Safe_bind (fun v => .indexAt v (instantiate 0 ρ key)) Step.indexC1 Raises.indexC1 n W h _ hw hh
-      (iha n W h ρ he hw hh)
-    intro j hj V hx hv heap av hok hav ha'
-    apply Safe_bind (Tm.indexAt av) (Step.indexC2 hav) (Raises.indexC2 hav) j V heap _ hv hok
-      (ihk j V heap ρ (he.transfer j hj V hx) hv hok)
-    intro k hk X hy hX heap' kv hok' hkv hk'
+    intro n W h ρ he hw hh href
+    have hC : CtxRefs (fun v => .indexAt v (instantiate 0 ρ key)) := by ctx_refs
+    apply Safe_bind (fun v => .indexAt v (instantiate 0 ρ key)) Step.indexC1 Raises.indexC1 hC n W h _ hw hh
+      (hC.frame (t := instantiate 0 ρ a) href) (iha n W h ρ he hw hh (hC.hole (t := instantiate 0 ρ a) href))
+    intro j hj V hx hv heap av hok hav ha' hvr
+    have hCV : RefsOk V (.indexAt av (instantiate 0 ρ key)) :=
+      hC.ok hvr (RefsOk_mono hx (RefsOk_trunc _ (hC.frame (t := instantiate 0 ρ a) href)))
+    have hC2 : CtxRefs (Tm.indexAt av) := by ctx_refs
+    apply Safe_bind (Tm.indexAt av) (Step.indexC2 hav) (Raises.indexC2 hav) hC2 j V heap _ hv hok
+      (hC2.frame hCV) (ihk j V heap ρ (he.transfer j hj V hx) hv hok (hC2.hole hCV))
+    intro k hk X hy hX heap' kv hok' hkv hk' hkvr
+    have hfin : RefsOk X (.indexAt av kv) := hC2.ok hkvr (RefsOk_mono hy (RefsOk_trunc _ (hC2.frame hCV)))
     have ha'' := (meaning_adm G Ref).mono k _ X hy av
       ((meaning_adm G Ref).down_le j k hk V av ha')
     obtain ⟨f, hkey, hadmits⟩ := keyClause_admits ((represents_raw hStr k X kv) hk')
@@ -1444,22 +1668,24 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     obtain ⟨flds, oid, rfl, _⟩ := ((represents_raw hr k X av) ha'').1.1
     apply Safe_mono k (fun i _ Y u hu => (meaning_append G A U i Y u).mpr
       (hu.elim Or.inl (fun h => Or.inr ((represents_back hUnd i Y u) h)))) X heap' _
-      (index_dict_rule (meaning_valOnly G A) k X heap' hX hok' hkey hadmits hd)
-  | @arrLit Γ L T xs hr hreq hbound hpos hx _ ih =>
-    intro n W h ρ he hw hh
-    simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
+      (index_dict_rule (meaning_valOnly G A) k X heap' hX hok' hkey hadmits hd hfin)
+  | @arrLit Γ L T xs hr hreq hbound hpos hx hpay ih =>
+    intro n W h ρ he hw hh href
+    have hpr : ∀ p ∈ xs, RefsOk W (instantiate 0 ρ p.2) := fun p hp => by sub_refs href
+    simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def] at href ⊢
     have hmap : (xs.map fun p => (meaning G p.1, instantiate 0 ρ p.2)).map Prod.snd
         = xs.map fun x => instantiate 0 ρ x.2 := by simp [List.map_map, Function.comp_def]
-    rw [← hmap]
+    rw [← hmap] at href ⊢
     apply bind_list (xs.map fun p => (meaning G p.1, instantiate 0 ρ p.2))
       (by intro q hq; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq; exact meaning_adm G r.1)
-      (fun args => .arrLit args) (fun hs => CallArguments.Step.arrArgs hs) (fun hr => hr.arrLit) hw hh
+      (fun args => .arrLit args) (fun hs => CallArguments.Step.arrArgs hs) (fun hr => hr.arrLit)
+      (fun args r => by simp [refs, refsArgs_eq]) hw hh href
       (by
         intro q hq
         obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hq
         intro j hj U hx hu heap hok
-        exact ih r hr' j U heap ρ (he.transfer j hj U hx) hu hok)
-    intro j hj U hx hu heap args hok hargs
+        exact ih r hr' j U heap ρ (he.transfer j hj U hx) hu hok (RefsOk_mono hx (RefsOk_trunc _ (hpr r hr'))))
+    intro j hj U hx hu heap args hok hargs hrefs
     have hAs : (xs.map fun p => (meaning G p.1, instantiate 0 ρ p.2)).map Prod.fst
         = xs.map fun p => meaning G p.1 := by simp [List.map_map, Function.comp_def]
     rw [hAs] at hargs
@@ -1472,6 +1698,14 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         (by intro A hA'; obtain ⟨r, hr', rfl⟩ := List.mem_map.mp hA'; exact meaning_valOnly G r.1)
         hargs)
       hu hok (builtinExc_errors G _) (ArgsT_zip hargs)
+      (fun v hv => by
+        obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp hv
+        have hlt : i < xs.length := by
+          have := (List.getElem?_eq_some_iff.mp hi).1; simp at hlen; omega
+        have hxi : xs[i]? = some xs[i] := List.getElem?_eq_getElem hlt
+        exact (hpay _ (List.mem_of_getElem? hxi)).element
+          (ArgsT_getElem? (A := meaning G xs[i].1) hargs (by simp [List.getElem?_map, hxi]) hi))
+      hrefs
     intro k hk V hy hl hmax
     refine (represents_back hr k V _) ⟨?_, by simp⟩
     rw [hlen]
@@ -1489,12 +1723,17 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       simp [this]
     · exact hl
   | @elem Γ a i L I A T b k ha hr hi hI hk hA iha ihi =>
-    intro n W h ρ he hw hh
-    apply Safe_bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 Raises.elemC1 n W h _ hw hh (iha n W h ρ he hw hh)
-    intro j hj U hx hu heap av hok hav ha'
-    apply Safe_bind (.elemAt av) (Step.elemC2 hav) (Raises.elemC2 hav) j U heap _ hu hok
-      (ihi j U heap ρ (he.transfer j hj U hx) hu hok)
-    intro m hm V hy hv heap' iv hok' hival hi'
+    intro n W h ρ he hw hh href
+    have hC : CtxRefs (fun a => .elemAt a (instantiate 0 ρ i)) := by ctx_refs
+    apply Safe_bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 Raises.elemC1 hC n W h _ hw hh (hC.frame href)
+      (iha n W h ρ he hw hh (hC.hole href))
+    intro j hj U hx hu heap av hok hav ha' hvr
+    have hCU := hC.ok (t := av) hvr (RefsOk_mono hx (RefsOk_trunc _ (hC.frame href)))
+    have hC2 : CtxRefs (.elemAt av) := by ctx_refs
+    apply Safe_bind (.elemAt av) (Step.elemC2 hav) (Raises.elemC2 hav) hC2 j U heap _ hu hok
+      (hC2.frame hCU) (ihi j U heap ρ (he.transfer j hj U hx) hu hok (hC2.hole hCU))
+    intro m hm V hy hv heap' iv hok' hival hi' hvr2
+    have hfin := hC2.ok (t := iv) hvr2 (RefsOk_mono hy (RefsOk_trunc _ (hC2.frame hCU)))
     have ha'' := (meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U av ha')
     obtain ⟨ls, rfl, -, -, -, -, hreq, -, -⟩ := ((represents_raw hr m V av) ha'').1
     simp only [tupleFams, List.getElem?_map] at hreq
@@ -1502,14 +1741,19 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     subst hb
     obtain ⟨l, c, hl, hw', hag⟩ := hreq k (meaning G A) (by simp [hA])
     exact elem_read_rule (meaning_valOnly G A) m V heap' l hv hok' (by simp [elemLoc, hk, hl]) hw'
-      (fun j hj U u => (hag j hj U u).1)
+      (fun j hj U u => (hag j hj U u).1) hfin
   | @elemOpt Γ a i L I A U T b k ha hr hi hI hk hnone hA hU iha ihi =>
-    intro n W h ρ he hw hh
-    apply Safe_bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 Raises.elemC1 n W h _ hw hh (iha n W h ρ he hw hh)
-    intro j hj U' hx hu heap av hok hav ha'
-    apply Safe_bind (.elemAt av) (Step.elemC2 hav) (Raises.elemC2 hav) j U' heap _ hu hok
-      (ihi j U' heap ρ (he.transfer j hj U' hx) hu hok)
-    intro m hm V hy hv heap' iv hok' hival hi'
+    intro n W h ρ he hw hh href
+    have hC : CtxRefs (fun a => .elemAt a (instantiate 0 ρ i)) := by ctx_refs
+    apply Safe_bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 Raises.elemC1 hC n W h _ hw hh (hC.frame href)
+      (iha n W h ρ he hw hh (hC.hole href))
+    intro j hj U' hx hu heap av hok hav ha' hvr
+    have hCU := hC.ok (t := av) hvr (RefsOk_mono hx (RefsOk_trunc _ (hC.frame href)))
+    have hC2 : CtxRefs (.elemAt av) := by ctx_refs
+    apply Safe_bind (.elemAt av) (Step.elemC2 hav) (Raises.elemC2 hav) hC2 j U' heap _ hu hok
+      (hC2.frame hCU) (ihi j U' heap ρ (he.transfer j hj U' hx) hu hok (hC2.hole hCU))
+    intro m hm V hy hv heap' iv hok' hival hi' hvr2
+    have hfin := hC2.ok (t := iv) hvr2 (RefsOk_mono hy (RefsOk_trunc _ (hC2.frame hCU)))
     have ha'' := (meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U' av ha')
     obtain ⟨ls, rfl, -, -, -, -, -, hopt, hrest⟩ := ((represents_raw hr m V av) ha'').1
     simp only [tupleFams, List.length_map, List.getElem?_map] at hopt hrest
@@ -1518,7 +1762,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     have hundef : ∀ m' (U'' : WorldT m'), meaning G (A ++ U) m' U'' .undef := fun m' U'' =>
       (meaning_append G A U m' U'' _).mpr (Or.inr ((represents_back hU m' U'' _) rfl))
     cases hloc : elemLoc ls b with
-    | none => exact elem_absent_rule m V heap' hv hok' hloc hundef
+    | none => exact elem_absent_rule m V heap' hv hok' hloc hundef hfin
     | some l =>
       have hl : ls[k]? = some (some l) := by
         simp only [elemLoc, hk, Option.bind_some] at hloc
@@ -1549,14 +1793,19 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           · cases hpos
       obtain ⟨c, hw', hag⟩ := key
       apply Safe_mono m (fun m' _ U'' u hu => (meaning_append G A U m' U'' u).mpr (Or.inl hu))
-      exact elem_read_rule (meaning_valOnly G A) m V heap' l hv hok' hloc hw' (fun j hj U u => (hag j hj U u).1)
+      exact elem_read_rule (meaning_valOnly G A) m V heap' l hv hok' hloc hw' (fun j hj U u => (hag j hj U u).1) hfin
   | @elemAny Γ a i L I E U ro presence ha hr hi hq hU iha ihi =>
-    intro n W h ρ he hw hh
-    apply Safe_bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 Raises.elemC1 n W h _ hw hh (iha n W h ρ he hw hh)
-    intro j hj U' hx hu heap av hok hav ha'
-    apply Safe_bind (.elemAt av) (Step.elemC2 hav) (Raises.elemC2 hav) j U' heap _ hu hok
-      (ihi j U' heap ρ (he.transfer j hj U' hx) hu hok)
-    intro m hm V hy hv heap' iv hok' hival hi'
+    intro n W h ρ he hw hh href
+    have hC : CtxRefs (fun a => .elemAt a (instantiate 0 ρ i)) := by ctx_refs
+    apply Safe_bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 Raises.elemC1 hC n W h _ hw hh (hC.frame href)
+      (iha n W h ρ he hw hh (hC.hole href))
+    intro j hj U' hx hu heap av hok hav ha' hvr
+    have hCU := hC.ok (t := av) hvr (RefsOk_mono hx (RefsOk_trunc _ (hC.frame href)))
+    have hC2 : CtxRefs (.elemAt av) := by ctx_refs
+    apply Safe_bind (.elemAt av) (Step.elemC2 hav) (Raises.elemC2 hav) hC2 j U' heap _ hu hok
+      (hC2.frame hCU) (ihi j U' heap ρ (he.transfer j hj U' hx) hu hok (hC2.hole hCU))
+    intro m hm V hy hv heap' iv hok' hival hi' hvr2
+    have hfin := hC2.ok (t := iv) hvr2 (RefsOk_mono hy (RefsOk_trunc _ (hC2.frame hCU)))
     have ha'' := (meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U' av ha')
     obtain ⟨ls, rfl, -, -, -, -, -, -, hrest⟩ := ((represents_raw hr m V av) ha'').1
     have hnum := answers_sound hq hi'
@@ -1565,7 +1814,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     have hundef : ∀ m' (U'' : WorldT m'), meaning G (E ++ U) m' U'' .undef := fun m' U'' =>
       (meaning_append G E U m' U'' _).mpr (Or.inr ((represents_back hU m' U'' _) rfl))
     cases hloc : elemLoc ls b with
-    | none => exact elem_absent_rule m V heap' hv hok' hloc hundef
+    | none => exact elem_absent_rule m V heap' hv hok' hloc hundef hfin
     | some l =>
       obtain ⟨k, hk, hl⟩ : ∃ k, indexOfBits b = some k ∧ ls[k]? = some (some l) := by
         simp only [elemLoc] at hloc
@@ -1582,18 +1831,24 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       simp only [tupleFams, List.map_nil, Option.map_some, Option.some.injEq] at hE
       subst hE
       apply Safe_mono m (fun m' _ U'' u hu => (meaning_append G E U m' U'' u).mpr (Or.inl hu))
-      exact elem_read_rule (meaning_valOnly G E) m V heap' l hv hok' hloc hw' (fun j hj U u => (hag j hj U u).1)
-  | @setElem Γ a i v L I A T b k ha hr hi hI hk hA hkle hro hv _ iha ihi ihv =>
-    intro n W h ρ he hw hh
-    apply Safe_bind (fun a => .setElem a (instantiate 0 ρ i) (instantiate 0 ρ v)) Step.setC1 Raises.setC1 n W h _ hw hh
-      (iha n W h ρ he hw hh)
-    intro j hj U hx hu heap av hok hav ha'
-    apply Safe_bind (fun i => .setElem av i (instantiate 0 ρ v)) (Step.setC2 hav) (Raises.setC2 hav) j U heap _ hu hok
-      (ihi j U heap ρ (he.transfer j hj U hx) hu hok)
-    intro m hm V hy hvw heap' iv hok' hival hi'
-    apply Safe_bind (.setElem av iv) (Step.setC3 hav hival) (Raises.setC3 hav hival) m V heap' _ hvw hok'
-      (ihv m V heap' ρ ((he.transfer j hj U hx).transfer m hm V hy) hvw hok')
-    intro p hp X hz hxw heap'' vv hok'' hvval hv'
+      exact elem_read_rule (meaning_valOnly G E) m V heap' l hv hok' hloc hw' (fun j hj U u => (hag j hj U u).1) hfin
+  | @setElem Γ a i v L I A T b k ha hr hi hI hk hA hkle hro hv hpe iha ihi ihv =>
+    intro n W h ρ he hw hh href
+    have hC : CtxRefs (fun a => .setElem a (instantiate 0 ρ i) (instantiate 0 ρ v)) := by ctx_refs
+    apply Safe_bind (fun a => .setElem a (instantiate 0 ρ i) (instantiate 0 ρ v)) Step.setC1 Raises.setC1 hC
+      n W h _ hw hh (hC.frame href) (iha n W h ρ he hw hh (hC.hole href))
+    intro j hj U hx hu heap av hok hav ha' hvr
+    have hCU := hC.ok (t := av) hvr (RefsOk_mono hx (RefsOk_trunc _ (hC.frame href)))
+    have hC2 : CtxRefs (fun i => .setElem av i (instantiate 0 ρ v)) := by ctx_refs
+    apply Safe_bind (fun i => .setElem av i (instantiate 0 ρ v)) (Step.setC2 hav) (Raises.setC2 hav) hC2
+      j U heap _ hu hok (hC2.frame hCU) (ihi j U heap ρ (he.transfer j hj U hx) hu hok (hC2.hole hCU))
+    intro m hm V hy hvw heap' iv hok' hival hi' hivr
+    have hCV := hC2.ok (t := iv) hivr (RefsOk_mono hy (RefsOk_trunc _ (hC2.frame hCU)))
+    have hC3 : CtxRefs (Tm.setElem av iv) := by ctx_refs
+    apply Safe_bind (.setElem av iv) (Step.setC3 hav hival) (Raises.setC3 hav hival) hC3 m V heap' _ hvw hok'
+      (hC3.frame hCV) (ihv m V heap' ρ ((he.transfer j hj U hx).transfer m hm V hy) hvw hok' (hC3.hole hCV))
+    intro p hp X hz hxw heap'' vv hok'' hvval hv' hvvr
+    have hfin := hC3.ok (t := vv) hvvr (RefsOk_mono hz (RefsOk_trunc _ (hC3.frame hCV)))
     have hav' := (meaning_adm G L).mono p _ X hz av ((meaning_adm G L).down_le m p hp V av
       ((meaning_adm G L).mono m _ V hy av ((meaning_adm G L).down_le j m hm U av ha')))
     have hlist := ((represents_raw hr p X av) hav').1
@@ -1602,28 +1857,36 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     have hb : iv = .num b := (meaning_adm G I).mono p _ X hz iv ((meaning_adm G I).down_le m p hp V iv hi')
       |> (represents_raw hI p X iv)
     subst hb
-    exact setElem_store_safe hr hro hA hk (by omega) hav' hxw hok'' hvval hv'
+    exact setElem_store_safe hr hro hA hk (by omega) hav' hxw hok'' hvval hv' (hpe.element hv') hfin
   | @len Γ a L N T ha hr hn ih =>
-    intro n W h ρ he hw hh
-    apply Safe_bind Tm.lenOf Step.lenC Raises.lenC n W h _ hw hh (ih n W h ρ he hw hh)
-    intro j hj U hx hu heap av hok hav ha'
+    intro n W h ρ he hw hh href
+    have hC : CtxRefs Tm.lenOf := by ctx_refs
+    apply Safe_bind Tm.lenOf Step.lenC Raises.lenC hC n W h _ hw hh (hC.frame href)
+      (ih n W h ρ he hw hh (hC.hole href))
+    intro j hj U hx hu heap av hok hav ha' hvr
     obtain ⟨ls, rfl, -⟩ := ((represents_raw hr j U av) ha').1
-    exact len_rule j U heap hu hok (fun m U' => (represents_back hn m U' _) ⟨_, rfl⟩)
+    exact len_rule j U heap hu hok (fun m U' => (represents_back hn m U' _) ⟨_, rfl⟩) hvr
   | @lenStr Γ a S N ha hs hn ih =>
-    intro n W h ρ he hw hh
-    apply Safe_bind Tm.lenOf Step.lenC Raises.lenC n W h _ hw hh (ih n W h ρ he hw hh)
-    intro j hj U hx hu heap av hok hav ha'
+    intro n W h ρ he hw hh href
+    have hC : CtxRefs Tm.lenOf := by ctx_refs
+    apply Safe_bind Tm.lenOf Step.lenC Raises.lenC hC n W h _ hw hh (hC.frame href)
+      (ih n W h ρ he hw hh (hC.hole href))
+    intro j hj U hx hu heap av hok hav ha' hvr
     have hstr := answers_sound hs ha'
     obtain ⟨s, rfl⟩ : ∃ s, av = .str s := by
       cases av <;> simp [tagHolds] at hstr; exact ⟨_, rfl⟩
     exact len_str_rule j U heap hu hok (builtinExc_errors G _) (fun _ m U' => (represents_back hn m U' _) ⟨_, rfl⟩)
   | @elemStr Γ a i S I T U ha hs hi hq hT hU iha ihi =>
-    intro n W h ρ he hw hh
-    apply Safe_bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 Raises.elemC1 n W h _ hw hh (iha n W h ρ he hw hh)
-    intro j hj U' hx hu heap av hok hav ha'
-    apply Safe_bind (.elemAt av) (Step.elemC2 hav) (Raises.elemC2 hav) j U' heap _ hu hok
-      (ihi j U' heap ρ (he.transfer j hj U' hx) hu hok)
-    intro m hm V hy hv heap' iv hok' hival hi'
+    intro n W h ρ he hw hh href
+    have hC : CtxRefs (fun a => .elemAt a (instantiate 0 ρ i)) := by ctx_refs
+    apply Safe_bind (fun a => .elemAt a (instantiate 0 ρ i)) Step.elemC1 Raises.elemC1 hC n W h _ hw hh (hC.frame href)
+      (iha n W h ρ he hw hh (hC.hole href))
+    intro j hj U' hx hu heap av hok hav ha' hvr
+    have hCU := hC.ok (t := av) hvr (RefsOk_mono hx (RefsOk_trunc _ (hC.frame href)))
+    have hC2 : CtxRefs (.elemAt av) := by ctx_refs
+    apply Safe_bind (.elemAt av) (Step.elemC2 hav) (Raises.elemC2 hav) hC2 j U' heap _ hu hok
+      (hC2.frame hCU) (ihi j U' heap ρ (he.transfer j hj U' hx) hu hok (hC2.hole hCU))
+    intro m hm V hy hv heap' iv hok' hival hi' _
     have ha'' := (meaning_adm G S).mono m _ V hy av ((meaning_adm G S).down_le j m hm U' av ha')
     have hstr := answers_sound hs ha''
     obtain ⟨s, rfl⟩ : ∃ s, av = .str s := by
@@ -1635,44 +1898,57 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       (fun m' U'' t => (meaning_append G T U m' U'' _).mpr (Or.inl ((represents_back hT m' U'' _) ⟨t, rfl⟩)))
       (fun m' U'' => (meaning_append G T U m' U'' _).mpr (Or.inr ((represents_back hU m' U'' _) rfl)))
   | @test Γ a A B k ha ht hf ih =>
-    intro n W h ρ he hw hh
-    apply Safe_bind (.test k) Step.testC Raises.testC n W h _ hw hh (ih n W h ρ he hw hh)
-    intro j hj U hx hu heap av hok hav ha'
+    intro n W h ρ he hw hh href
+    have hC : CtxRefs (.test k) := by ctx_refs
+    apply Safe_bind (.test k) Step.testC Raises.testC hC n W h _ hw hh (hC.frame href)
+      (ih n W h ρ he hw hh (hC.hole href))
+    intro j hj U hx hu heap av hok hav ha' hvr
     cases j with
-    | zero => trivial
+    | zero => exact hvr
     | succ p =>
-      apply Safe_mono (p+1) (fun m _ X v hv => ?_) U heap _ (test_value_safe k av hav p U heap hu hok)
+      apply Safe_mono (p+1) (fun m _ X v hv => ?_) U heap _ (test_value_safe k av hav p U heap hu hok hvr)
       rcases hv with rfl | rfl
       · exact expand_sem_mpr ⟨_, expand_sub ht, rfl, builtinInvariant_of_withoutInvariant rfl _ _ _⟩
       · exact expand_sem_mpr ⟨_, expand_sub hf, rfl, builtinInvariant_of_withoutInvariant rfl _ _ _⟩
   | @merge Γ d a b A B R ha hb hm iha ihb =>
-    intro n W h ρ he hw hh
-    apply Safe_bind (fun a => .merge d a (instantiate 0 ρ b)) Step.mergeC1 Raises.mergeC1 n W h _ hw hh
-      (iha n W h ρ he hw hh)
-    intro j hj U hx hu heap av hok hav ha'
-    apply Safe_bind (.merge d av) (Step.mergeC2 hav) (Raises.mergeC2 hav) j U heap _ hu hok
-      (ihb j U heap ρ (he.transfer j hj U hx) hu hok)
-    intro k hk V hy hv heap' bv hok' hbval hb'
+    intro n W h ρ he hw hh href
+    have hC : CtxRefs (fun a => .merge d a (instantiate 0 ρ b)) := by ctx_refs
+    apply Safe_bind (fun a => .merge d a (instantiate 0 ρ b)) Step.mergeC1 Raises.mergeC1 hC n W h _ hw hh (hC.frame href)
+      (iha n W h ρ he hw hh (hC.hole href))
+    intro j hj U hx hu heap av hok hav ha' hvr
+    have hCU := hC.ok (t := av) hvr (RefsOk_mono hx (RefsOk_trunc _ (hC.frame href)))
+    have hC2 : CtxRefs (.merge d av) := by ctx_refs
+    apply Safe_bind (.merge d av) (Step.mergeC2 hav) (Raises.mergeC2 hav) hC2 j U heap _ hu hok
+      (hC2.frame hCU) (ihb j U heap ρ (he.transfer j hj U hx) hu hok (hC2.hole hCU))
+    intro k hk V hy hv heap' bv hok' hbval hb' hvr2
     have ha'' := (meaning_adm G A).mono k _ V hy av ((meaning_adm G A).down_le j k hk U av ha')
-    exact ObjectMerge.merge_values_safe hm hv hok' ha'' hb'
-  | @makeKey Γ k a K A R hk ha hm _ ihk iha =>
-    intro n W h ρ he hw hh
-    apply Safe_bind (fun k => .makeKey k (instantiate 0 ρ a)) Step.makeKeyC1 Raises.makeKeyC1 n W h _ hw hh
-      (ihk n W h ρ he hw hh)
-    intro j hj U hx hu heap kv hok hkv hk'
-    apply Safe_bind (.makeKey kv) (Step.makeKeyC2 hkv) (Raises.makeKeyC2 hkv) j U heap _ hu hok
-      (iha j U heap ρ (he.transfer j hj U hx) hu hok)
-    intro i hi V hy hv heap' av hok' haval ha'
+    exact ObjectMerge.merge_values_safe hm hv hok' ha'' hb' (RefsOk_mono hy (RefsOk_trunc _ hvr)) hvr2
+  | @makeKey Γ k a K A R hk ha hm hpay ihk iha =>
+    intro n W h ρ he hw hh href
+    have hC : CtxRefs (fun k => .makeKey k (instantiate 0 ρ a)) := by ctx_refs
+    apply Safe_bind (fun k => .makeKey k (instantiate 0 ρ a)) Step.makeKeyC1 Raises.makeKeyC1 hC n W h _ hw hh (hC.frame href)
+      (ihk n W h ρ he hw hh (hC.hole href))
+    intro j hj U hx hu heap kv hok hkv hk' hvr
+    have hCU := hC.ok (t := kv) hvr (RefsOk_mono hx (RefsOk_trunc _ (hC.frame href)))
+    have hC2 : CtxRefs (.makeKey kv) := by ctx_refs
+    apply Safe_bind (.makeKey kv) (Step.makeKeyC2 hkv) (Raises.makeKeyC2 hkv) hC2 j U heap _ hu hok
+      (hC2.frame hCU) (iha j U heap ρ (he.transfer j hj U hx) hu hok (hC2.hole hCU))
+    intro i hi V hy hv heap' av hok' haval ha' hvr2
+    have hfin := hC2.ok (t := av) hvr2 (RefsOk_mono hy (RefsOk_trunc _ (hC2.frame hCU)))
     have hk'' := (meaning_adm G K).mono i _ V hy kv ((meaning_adm G K).down_le j i hi U kv hk')
-    exact ComputedKey.keyed_values_safe hm hv hok' hk'' ha'
+    exact ComputedKey.keyed_values_safe hm hv hok' hk'' ha' (hpay.stored ha') hfin
   | @arith Γ a A b B op N ha hb hopt iha ihb =>
-    intro n W h ρ he hw hh
-    apply Safe_bind (fun a => .arith op a (instantiate 0 ρ b)) Step.arithC1 Raises.arithC1 n W h _ hw hh
-      (iha n W h ρ he hw hh)
-    intro j hj U hx hu heap av hok hav ha'
-    apply Safe_bind (.arith op av) (Step.arithC2 hav) (Raises.arithC2 hav) j U heap _ hu hok
-      (ihb j U heap ρ (he.transfer j hj U hx) hu hok)
-    intro k hk V hy hv heap' bv hok' hbval hb'
+    intro n W h ρ he hw hh href
+    have hC : CtxRefs (fun a => .arith op a (instantiate 0 ρ b)) := by ctx_refs
+    apply Safe_bind (fun a => .arith op a (instantiate 0 ρ b)) Step.arithC1 Raises.arithC1 hC n W h _ hw hh (hC.frame href)
+      (iha n W h ρ he hw hh (hC.hole href))
+    intro j hj U hx hu heap av hok hav ha' hvr
+    have hCU := hC.ok (t := av) hvr (RefsOk_mono hx (RefsOk_trunc _ (hC.frame href)))
+    have hC2 : CtxRefs (.arith op av) := by ctx_refs
+    apply Safe_bind (.arith op av) (Step.arithC2 hav) (Raises.arithC2 hav) hC2 j U heap _ hu hok
+      (hC2.frame hCU) (ihb j U heap ρ (he.transfer j hj U hx) hu hok (hC2.hole hCU))
+    intro k hk V hy hv heap' bv hok' hbval hb' hvr2
+    have hfin := hC2.ok (t := bv) hvr2 (RefsOk_mono hy (RefsOk_trunc _ (hC2.frame hCU)))
     have ha'' := (meaning_adm G A).mono k _ V hy av ((meaning_adm G A).down_le j k hk U av ha')
     rcases hopt with hopt | ⟨hdec, hn⟩
     case inr =>
@@ -1683,7 +1959,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         · obtain ⟨d, hd, hdb, -⟩ := (expand_sem G B hp k V bv).mp hb'
           exact (decidingClause_sound (hall d hd) hdb hav).2
       obtain ⟨z, hz, hr⟩ := hres
-      refine arith_value_safe op av bv z hz k V heap' hv hok' (fun m U => ?_)
+      refine arith_value_safe op av bv z hz k V heap' hv hok' (fun m U => ?_) hfin
       rcases hr with rfl | rfl
       · exact expand_sem_mpr ⟨_, expand_sub hn.1, rfl, builtinInvariant_of_withoutInvariant rfl _ _ _⟩
       · exact expand_sem_mpr ⟨_, expand_sub hn.2, rfl, builtinInvariant_of_withoutInvariant rfl _ _ _⟩
@@ -1695,8 +1971,8 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
     obtain ⟨c, hc, hca, -⟩ := (expand_sem G A hops.1 k V av).mp ha''
     obtain ⟨d, hd, hdb, -⟩ := (expand_sem G B hops.2.1 k V bv).mp hb'
     rcases opResult_sound (hops.2.2 c hc d hd) hca hdb with ⟨z, hz, hr⟩ | hthrow
-    case inr => exact arith_throw_safe op av bv hthrow k V heap' hv hok' (builtinExc_errors G _)
-    refine arith_value_safe op av bv z hz k V heap' hv hok' (fun m U => ?_)
+    case inr => exact arith_throw_safe op av bv hthrow k V heap' hv hok' (builtinExc_errors G _) hfin
+    refine arith_value_safe op av bv z hz k V heap' hv hok' (fun m U => ?_) hfin
     cases r with
     | num => obtain ⟨x, rfl⟩ := hr; exact (represents_back hn m U _) ⟨x, rfl⟩
     | bigint => obtain ⟨i, rfl⟩ := hr; exact (represents_back hn m U _) ⟨i, rfl⟩
@@ -1705,115 +1981,128 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       rcases hr with rfl | rfl
       · exact expand_sem_mpr ⟨_, expand_sub hn.1, rfl, builtinInvariant_of_withoutInvariant rfl _ _ _⟩
       · exact expand_sem_mpr ⟨_, expand_sub hn.2, rfl, builtinInvariant_of_withoutInvariant rfl _ _ _⟩
-  | @write Γ a Ref fs vs os ms ks st f _ A b N ha hr hm hb hn _ iha ihb =>
-    intro n W h ρ he hw hh
-    apply Safe_bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 Raises.writeC1 n W h _ hw hh
-      (iha n W h ρ he hw hh)
-    intro j hj U hx hu heap av hok hav ha'
-    apply Safe_bind (.writeAt f av) (Step.writeC2 hav) (Raises.writeC2 hav) j U heap _ hu hok
-      (ihb j U heap ρ (he.transfer j hj U hx) hu hok)
-    intro k hk V hy hv heap' bv hok' hbval hb'
+  | @write Γ a Ref fs vs os ms ks st f s A b N ha hr hm hb hn hpay hvs iha ihb =>
+    intro n W h ρ he hw hh href
+    have hC : CtxRefs (fun a => .writeAt f a (instantiate 0 ρ b)) := by ctx_refs
+    apply Safe_bind (fun a => .writeAt f a (instantiate 0 ρ b)) Step.writeC1 Raises.writeC1 hC n W h _ hw hh (hC.frame href)
+      (iha n W h ρ he hw hh (hC.hole href))
+    intro j hj U hx hu heap av hok hav ha' hvr
+    have hCU := hC.ok (t := av) hvr (RefsOk_mono hx (RefsOk_trunc _ (hC.frame href)))
+    have hC2 : CtxRefs (.writeAt f av) := by ctx_refs
+    apply Safe_bind (.writeAt f av) (Step.writeC2 hav) (Raises.writeC2 hav) hC2 j U heap _ hu hok
+      (hC2.frame hCU) (ihb j U heap ρ (he.transfer j hj U hx) hu hok (hC2.hole hCU))
+    intro k hk V hy hv heap' bv hok' hbval hb' hvr2
+    have hfin := hC2.ok (t := bv) hvr2 (RefsOk_mono hy (RefsOk_trunc _ (hC2.frame hCU)))
     have ha'' := (meaning_adm G Ref).mono k _ V hy av ((meaning_adm G Ref).down_le j k hk U av ha')
+    have hrec := ((represents_raw hr k V av) ha'').1.1
     obtain ⟨flds, l, c, oid', rfl, hf, hl, hag⟩ :=
-      recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) ((represents_raw hr k V av) ha'').1.1
+      recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) hrec
     apply Safe_mono k (fun i _ X v hval => (represents_back hn i X v) hval)
     exact write_rule (meaning_adm G A) k V heap' l bv hbval hv hok' hf hl hag hb'
+      ((recT_role (ReferenceConjunctions.mem_famsOf.mpr ⟨A, hm, rfl⟩) hrec hf).cat hvs (hpay.stored hb')) hfin
   | @ifBool Γ c C t A e hc hbool ht he ihc iht ihe =>
-    intro n W h ρ henv hw hh
-    apply Safe_bind (fun c => .ite c (instantiate 0 ρ t) (instantiate 0 ρ e)) Step.iteC Raises.iteC
-      n W h _ hw hh (ihc n W h ρ henv hw hh)
-    intro j hj U hx hu heap v hok hv ha
+    intro n W h ρ henv hw hh href
+    have hC : CtxRefs (fun c => .ite c (instantiate 0 ρ t) (instantiate 0 ρ e)) := by ctx_refs
+    apply Safe_bind (fun c => .ite c (instantiate 0 ρ t) (instantiate 0 ρ e)) Step.iteC Raises.iteC hC
+      n W h _ hw hh (hC.frame href) (ihc n W h ρ henv hw hh (hC.hole href))
+    intro j hj U hx hu heap v hok hv ha hvr
+    have hCU := hC.ok (t := v) hvr (RefsOk_mono hx (RefsOk_trunc _ (hC.frame href)))
     have hb := answers_sound hbool ha
     have shape : v = .tru ∨ v = .fls := by cases v <;> simp_all [tagHolds]
     rcases shape with rfl | rfl
     · cases j with
-      | zero => trivial
+      | zero => exact hCU
       | succ k =>
-        refine Or.inr ⟨trunc k (Nat.le_succ k) U, heap, instantiate 0 ρ t,
-          WExt_refl _, WorldAdm_trunc _ hu, .iteT, HeapOk_trunc k U heap hok, ?_⟩
+        refine pure_step hu hok hCU .iteT ?_
         exact iht k _ heap ρ ((henv.transfer (k+1) hj U hx).transfer k (Nat.le_succ k)
           _ (WExt_refl _)) (WorldAdm_trunc _ hu) (HeapOk_trunc k U heap hok)
+          (RefsOk_trunc _ (fun r hr => hCU r (by simp [refs, hr])))
     · cases j with
-      | zero => trivial
+      | zero => exact hCU
       | succ k =>
-        refine Or.inr ⟨trunc k (Nat.le_succ k) U, heap, instantiate 0 ρ e,
-          WExt_refl _, WorldAdm_trunc _ hu, .iteF, HeapOk_trunc k U heap hok, ?_⟩
+        refine pure_step hu hok hCU .iteF ?_
         exact ihe k _ heap ρ ((henv.transfer (k+1) hj U hx).transfer k (Nat.le_succ k)
           _ (WExt_refl _)) (WorldAdm_trunc _ hu) (HeapOk_trunc k U heap hok)
+          (RefsOk_trunc _ (fun r hr => hCU r (by simp [refs, hr])))
   | @ifKnown Γ c C q t e A hc hq ht ihc iht =>
-    intro n W h ρ henv hw hh
-    apply Safe_bind (fun c => .ite c (instantiate 0 ρ t) (instantiate 0 ρ e)) Step.iteC Raises.iteC
-      n W h _ hw hh (ihc n W h ρ henv hw hh)
-    intro j hj U hx hu heap v hok hv ha
+    intro n W h ρ henv hw hh href
+    have hC : CtxRefs (fun c => .ite c (instantiate 0 ρ t) (instantiate 0 ρ e)) := by ctx_refs
+    apply Safe_bind (fun c => .ite c (instantiate 0 ρ t) (instantiate 0 ρ e)) Step.iteC Raises.iteC hC
+      n W h _ hw hh (hC.frame href) (ihc n W h ρ henv hw hh (hC.hole href))
+    intro j hj U hx hu heap v hok hv ha hvr
+    have hCU := hC.ok (t := v) hvr (RefsOk_mono hx (RefsOk_trunc _ (hC.frame href)))
     have hvalue := (represents_raw hq j U v) ha
     cases q <;> simp only [semWithArgs] at hvalue <;> subst v
     · cases j with
-      | zero => trivial
+      | zero => exact hCU
       | succ k =>
-        refine Or.inr ⟨trunc k (Nat.le_succ k) U, heap, instantiate 0 ρ e,
-          WExt_refl _, WorldAdm_trunc _ hu, .iteF, HeapOk_trunc k U heap hok, ?_⟩
+        refine pure_step hu hok hCU .iteF ?_
         exact iht k _ heap ρ ((henv.transfer (k+1) hj U hx).transfer k (Nat.le_succ k)
           _ (WExt_refl _)) (WorldAdm_trunc _ hu) (HeapOk_trunc k U heap hok)
+          (RefsOk_trunc _ (fun r hr => hCU r (by simp at hr; simp [refs, hr])))
     · cases j with
-      | zero => trivial
+      | zero => exact hCU
       | succ k =>
-        refine Or.inr ⟨trunc k (Nat.le_succ k) U, heap, instantiate 0 ρ t,
-          WExt_refl _, WorldAdm_trunc _ hu, .iteT, HeapOk_trunc k U heap hok, ?_⟩
+        refine pure_step hu hok hCU .iteT ?_
         exact iht k _ heap ρ ((henv.transfer (k+1) hj U hx).transfer k (Nat.le_succ k)
           _ (WExt_refl _)) (WorldAdm_trunc _ hu) (HeapOk_trunc k U heap hok)
+          (RefsOk_trunc _ (fun r hr => hCU r (by simp at hr; simp [refs, hr])))
   | @ifBoolVar Γ i C T F t A e hi hb hT hF ht he iht ihe =>
-    intro n W h ρ henv hw hh
+    intro n W h ρ henv hw hh href
     have hshape := answers_sound hb (henv.2 i C hi)
     have shape : ρ i = .tru ∨ ρ i = .fls := by
       cases hv : ρ i <;> simp_all [tagHolds]
-    simp only [instantiate, Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero]
+    simp only [instantiate, Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero] at href ⊢
     cases n with
-    | zero => trivial
+    | zero => exact href
     | succ k =>
       rcases shape with hv | hv
       · have refined := henv.refine hi (represents_back hT (k+1) W (ρ i) rfl (by simp [hv, semWithArgs]))
-        rw [hv]
-        refine Or.inr ⟨trunc k (Nat.le_succ k) W,h,instantiate 0 ρ t,WExt_refl _,
-          WorldAdm_trunc _ hw,.iteT,HeapOk_trunc k W h hh,?_⟩
+        rw [hv] at href ⊢
+        refine pure_step hw hh href .iteT ?_
         exact iht k _ h ρ (refined.transfer k (Nat.le_succ k) _ (WExt_refl _))
-          (WorldAdm_trunc _ hw) (HeapOk_trunc k W h hh)
+          (WorldAdm_trunc _ hw) (HeapOk_trunc k W h hh) (RefsOk_trunc _ (fun r hr => href r (by simp [refs, hr])))
       · have refined := henv.refine hi (represents_back hF (k+1) W (ρ i) rfl (by simp [hv, semWithArgs]))
-        rw [hv]
-        refine Or.inr ⟨trunc k (Nat.le_succ k) W,h,instantiate 0 ρ e,WExt_refl _,
-          WorldAdm_trunc _ hw,.iteF,HeapOk_trunc k W h hh,?_⟩
+        rw [hv] at href ⊢
+        refine pure_step hw hh href .iteF ?_
         exact ihe k _ h ρ (refined.transfer k (Nat.le_succ k) _ (WExt_refl _))
-          (WorldAdm_trunc _ hw) (HeapOk_trunc k W h hh)
+          (WorldAdm_trunc _ hw) (HeapOk_trunc k W h hh) (RefsOk_trunc _ (fun r hr => href r (by simp [refs, hr])))
   | @ifTag Γ i A tag q u B e hi hq ht he iht ihe =>
-    intro n W h ρ henv hw hh
+    intro n W h ρ henv hw hh href
     have hval := (meaning_value (henv.2 i A hi)).1
     have htag := answers_heap h hq (henv.2 i A hi)
-    simp only [instantiate, Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero]
+    simp only [instantiate, Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero] at href ⊢
     cases n with
-    | zero => trivial
+    | zero => exact href
     | succ n =>
       cases n with
       | zero =>
-        exact Or.inr ⟨trunc 0 (by omega) W, h, _, WExt_refl _, WorldAdm_trunc _ hw,
-          .iteC (.testV hval), HeapOk_trunc 0 W h hh, trivial⟩
+        refine pure_step hw hh href (.iteC (.testV hval)) ?_
+        exact RefsOk_trunc _ (fun r hr => href r (by split at hr <;> simp_all [refs]))
       | succ k =>
-        apply ite_test_rule tag (ρ i) hval _ _ k W h hw hh
+        have hk : ∀ {t}, (∀ r ∈ refs t, r ∈ refs (Tm.ite (.test tag (ρ i)) (instantiate 0 ρ u) (instantiate 0 ρ e))) →
+            RefsOk (trunc k (by omega) W) t := fun hs => RefsOk_trunc _ (fun r hr => href r (hs r hr))
+        apply ite_test_rule tag (ρ i) hval _ _ k W h hw hh href
         · intro ht
           exact iht (htag.symm.trans ht) k _ h ρ
             (henv.transfer k (by omega) _ (WExt_refl _))
             (WorldAdm_trunc _ hw) (by simpa only [trunc_trunc] using HeapOk_trunc k _ h (HeapOk_trunc (k+1) W h hh))
+            (hk (fun r hr => by simp [refs, hr]))
         · intro he
           exact ihe (htag.symm.trans he) k _ h ρ
             (henv.transfer k (by omega) _ (WExt_refl _))
             (WorldAdm_trunc _ hw) (by simpa only [trunc_trunc] using HeapOk_trunc k _ h (HeapOk_trunc (k+1) W h hh))
+            (hk (fun r hr => by simp [refs, hr]))
   | @unionVar Γ i C t A hi ht ih =>
-    intro n W h ρ henv hw hh
+    intro n W h ρ henv hw hh href
     cases n with
-    | zero => trivial
+    | zero => exact href
     | succ n =>
       obtain ⟨a, ha, hv⟩ := members_sound (henv.2 i C hi)
-      exact ih a ha (n + 1) W h ρ (henv.refine hi hv) hw hh
-  | @arrParts Γ T E ro presence parts hp hparts hr _ ih =>
-    intro n W h ρ he hw hh
+      exact ih a ha (n + 1) W h ρ (henv.refine hi hv) hw hh href
+  | @arrParts Γ T E ro presence parts hp hparts hr hpe ih =>
+    intro n W h ρ he hw hh href
+    have hpr : ∀ p ∈ parts, RefsOk W (instantiate 0 ρ p.2.2) := fun p hp => by sub_refs href
     have hterm : instantiate 0 ρ (.arrLit (parts.map fun p => spreadTerm (p.1, p.2.2)))
         = .arrLit ((parts.map fun p => ((if p.1 then some (meaning G p.2.1) else none),
             instantiate 0 ρ p.2.2)).map RestCalls.partTerm) := by
@@ -1823,7 +2112,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       apply List.map_congr_left
       intro p _
       rcases p with ⟨_ | _, A, t⟩ <;> rfl
-    rw [hterm]
+    rw [hterm] at href ⊢
     apply RestCalls.store_parts_safe (meaning_adm G E) (meaning_valOnly G E) _ n W h
       (by
         intro q hq S hS
@@ -1835,33 +2124,34 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           have := hparts _ hp'
           simp only [if_true] at this
           exact ⟨meaning_adm G A, spreadsInto_sound this⟩)
-      hw hh
+      hw hh href
       (by
         intro q hq j hj U hxU hu heap hok
         obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
         rcases p with ⟨_ | _, A, t⟩
         · have hA : A = E := by simpa using hparts _ hp'
           subst hA
-          exact ih _ hp' j U heap ρ (he.transfer j hj U hxU) hu hok
-        · exact ih _ hp' j U heap ρ (he.transfer j hj U hxU) hu hok)
-    intro j _ U _ hu heap extra hok hex
+          exact ih _ hp' j U heap ρ (he.transfer j hj U hxU) hu hok (RefsOk_mono hxU (RefsOk_trunc _ (hpr _ hp')))
+        · exact ih _ hp' j U heap ρ (he.transfer j hj U hxU) hu hok (RefsOk_mono hxU (RefsOk_trunc _ (hpr _ hp'))))
+    intro j _ U _ hu heap extra hok hex hre
     apply Safe_mono j _ U heap _
-      (fresh_store_safe ro presence (meaning_adm G E) (meaning_valOnly G E) hu hok (builtinExc_errors G _) hex)
+      (fresh_store_safe ro presence (meaning_adm G E) (meaning_valOnly G E) hu hok (builtinExc_errors G _) hex
+        (fun v hv => hpe.element (hex v hv)) hre)
     intro k _ V v hv
     exact (represents_back hr k V v) ⟨by simpa [tupleFams] using hv, by simp⟩
   | @callPacked effect Γ f r a F Rt A B P xs t hf hmem htP hrt hx ha hpk hplain ihf ihrt ihx iha =>
-    intro n W h ρ he hw hh
+    intro n W h ρ he hw hh href
     have hfF : Safe (excOf G) (restsT (excOf G) [(meaning G Rt, (xs.map Prod.fst).map (meaning G), argMeaning G P,
         meaning G B)]) n W h (instantiate 0 ρ f) :=
       Safe_mono n (fun m _ U v hv => CallEffects.restsT_erase (by simpa [RestArrow.mapWith, Contract.map] using hplain)
-        (restsT_of_restSigs hmem hv)) W h _ (ihf n W h ρ he hw hh)
+        (restsT_of_restSigs hmem hv)) W h _ (ihf n W h ρ he hw hh (by sub_refs href))
     have hterm : instantiate 0 ρ (.invoke f r (xs.map Prod.snd ++
           [.spread (.readAt CallArguments.arrayStoreField a)])) =
         .invoke (instantiate 0 ρ f) (instantiate 0 ρ r)
           ((xs.map fun p => (meaning G p.1, instantiate 0 ρ p.2)).map Prod.snd ++
             [.spread (.readAt CallArguments.arrayStoreField (instantiate 0 ρ a))]) := by
       simp [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
-    rw [hterm]
+    rw [hterm] at href ⊢
     apply packed_call_safe (Rc := meaning G Rt) (Ps := (xs.map Prod.fst).map (meaning G))
       (R := meaning G B) (V := meaning G A) (P := argMeaning G P)
       (meaning_adm G Rt)
@@ -1874,19 +2164,23 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         rw [List.mem_singleton] at hi; subst hi; exact htP, h'⟩) (packedBy_sound hpk hv))
       _ (by simp [List.map_map, Function.comp_def]) hw hh hfF
     · intro j hj U hxU hu heap hok
-      exact ihrt j U heap ρ (he.transfer j hj U hxU) hu hok
+      exact ihrt j U heap ρ (he.transfer j hj U hxU) hu hok (RefsOk_mono hxU (RefsOk_trunc _ (by sub_refs href)))
     · intro q hq j hj U hxU hu heap hok
       obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
-      exact ihx p hp' j U heap ρ (he.transfer j hj U hxU) hu hok
+      exact ihx p hp' j U heap ρ (he.transfer j hj U hxU) hu hok (RefsOk_mono hxU (RefsOk_trunc _ (by sub_refs href)))
     · intro j hj U hxU hu heap hok
-      exact iha j U heap ρ (he.transfer j hj U hxU) hu hok
+      exact iha j U heap ρ (he.transfer j hj U hxU) hu hok (RefsOk_mono hxU (RefsOk_trunc _ (by sub_refs href)))
+    · exact href
   | @callRest effect Γ f r F Rt xs Us P B parts hf hmem hrt hx hu hshort hp hparts hplain
       ihf ihrt ihx ihu ihp =>
-    intro n W h ρ he hw hh
+    intro n W h ρ he hw hh href
+    have hrr : RefsOk W (instantiate 0 ρ r) := by sub_refs href
+    have hxr : ∀ p ∈ xs, RefsOk W (instantiate 0 ρ p.2) := fun p hp => by sub_refs href
+    have hpr : ∀ p ∈ parts, RefsOk W (instantiate 0 ρ p.2.2) := fun p hp => by sub_refs href
     have hfF : Safe (excOf G) (restsT (excOf G) [(meaning G Rt, (xs.map Prod.fst ++ Us).map (meaning G), argMeaning G P,
         meaning G B)]) n W h (instantiate 0 ρ f) :=
       Safe_mono n (fun m _ U v hv => CallEffects.restsT_erase (by simpa [RestArrow.mapWith, Contract.map] using hplain)
-        (restsT_of_restSigs hmem hv)) W h _ (ihf n W h ρ he hw hh)
+        (restsT_of_restSigs hmem hv)) W h _ (ihf n W h ρ he hw hh (by sub_refs href))
     unfold RestParts at hparts
     split at hparts
     · -- A spread: the rest is an element rest.
@@ -1912,7 +2206,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           rcases p with ⟨_ | _, A, t⟩ <;> rfl
         have hpart : ∀ p ∈ parts, if p.1 then SpreadsInto G p.2.1 E else p.2.1 = E :=
           fun p hp' => hparts (p.1, p.2.1) (List.mem_map_of_mem hp')
-        rw [hterm]
+        rw [hterm] at href ⊢
         apply rest_call_safe (Rc := meaning G Rt) (Ps := xs.map fun p => meaning G p.1)
           (E := meaning G E) (P := argMeaning G P) (R := meaning G B)
           (meaning_adm G Rt)
@@ -1933,17 +2227,18 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
               exact ⟨meaning_adm G A, spreadsInto_sound this⟩)
           hw hh (by simpa [List.map_map, Function.comp_def] using hfF)
         · intro j hj U hxU hu heap hok
-          exact ihrt j U heap ρ (he.transfer j hj U hxU) hu hok
+          exact ihrt j U heap ρ (he.transfer j hj U hxU) hu hok (RefsOk_mono hxU (RefsOk_trunc _ hrr))
         · intro q hq j hj U hxU hu heap hok
           obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
-          exact ihx p hp' j U heap ρ (he.transfer j hj U hxU) hu hok
+          exact ihx p hp' j U heap ρ (he.transfer j hj U hxU) hu hok (RefsOk_mono hxU (RefsOk_trunc _ (hxr p hp')))
         · intro q hq j hj U hxU hu heap hok
           obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
           rcases p with ⟨_ | _, A, t⟩
           · have hA : A = E := by simpa using hpart _ hp'
             subst hA
-            exact ihp _ hp' j U heap ρ (he.transfer j hj U hxU) hu hok
-          · exact ihp _ hp' j U heap ρ (he.transfer j hj U hxU) hu hok
+            exact ihp _ hp' j U heap ρ (he.transfer j hj U hxU) hu hok (RefsOk_mono hxU (RefsOk_trunc _ (hpr _ hp')))
+          · exact ihp _ hp' j U heap ρ (he.transfer j hj U hxU) hu hok (RefsOk_mono hxU (RefsOk_trunc _ (hpr _ hp')))
+        · exact href
       · exact hparts.elim
     · -- No spread: the parts are at the positions of the rest's tuple contract.
       rename_i hany
@@ -1963,7 +2258,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           apply List.map_congr_left
           intro p hp'
           simp [spreadTerm, hany p hp']
-        rw [hterm]
+        rw [hterm] at href ⊢
         apply pack_call_safe (Rc := meaning G Rt) (Ps := xs.map fun p => meaning G p.1)
           (Us := Us.map (meaning G)) (Qs := parts.map fun p => meaning G p.2.1)
           (P := argMeaning G P) (R := meaning G B)
@@ -1988,24 +2283,25 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           (by rcases hshort with h | h <;> simp [h])
           hw hh (by simpa [List.map_map, Function.comp_def] using hfF)
         · intro j hj U hxU hu heap hok
-          exact ihrt j U heap ρ (he.transfer j hj U hxU) hu hok
+          exact ihrt j U heap ρ (he.transfer j hj U hxU) hu hok (RefsOk_mono hxU (RefsOk_trunc _ hrr))
         · intro q hq j hj U hxU hu heap hok
           rcases List.mem_append.mp hq with hq | hq <;> obtain ⟨p, hp', rfl⟩ := List.mem_map.mp hq
-          · exact ihx p hp' j U heap ρ (he.transfer j hj U hxU) hu hok
-          · exact ihp p hp' j U heap ρ (he.transfer j hj U hxU) hu hok
+          · exact ihx p hp' j U heap ρ (he.transfer j hj U hxU) hu hok (RefsOk_mono hxU (RefsOk_trunc _ (hxr p hp')))
+          · exact ihp p hp' j U heap ρ (he.transfer j hj U hxU) hu hok (RefsOk_mono hxU (RefsOk_trunc _ (hpr p hp')))
         · intro A hA j hj U hxU hu' heap hok
           obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hA
-          exact ihu q hq j U heap ρ (he.transfer j hj U hxU) hu' hok
+          exact ihu q hq j U heap ρ (he.transfer j hj U hxU) hu' hok RefsOk_undef
+        · exact href
       · exact hparts.elim
   | @bindE Γ F T Rt t r saved Ps L ht hr hpre hne hL hF =>
-    intro n W h ρ he hw hh
+    intro n W h ρ he hw hh href
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def,
-      Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero]
+      Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero] at href ⊢
     cases n with
-    | zero => trivial
+    | zero => exact href
     | succ m =>
       have hpv := ArgsT_slots he hpre
-      apply make_empty_rule (meaning_adm G F) (m + 1) W h _ hw hh
+      refine make_empty_rule (meaning_adm G F) (m + 1) W h _ hw hh ?_ href
       intro oid
       have hone : ∀ a ∈ L, CallEffects.callsT (excOf G) [a.map (meaning G)] (m + 1) W
           (.objAt [] (.bound (ρ t) (ρ r) (saved.map ρ)) oid) := by
@@ -2031,11 +2327,11 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
           obtain ⟨a, ha, rfl⟩ := List.mem_map.mp hp
           exact hone a ha), hinv, by simp⟩
   | @bindRestE effect Γ F T Rt E El R Rc t r saved Ps Qs ht hsig hel hr hpre hQs hkeeps hF =>
-    intro n W h ρ he hw hh
+    intro n W h ρ he hw hh href
     simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def,
-      Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero]
+      Nat.not_lt_zero, ↓reduceIte, Nat.sub_zero] at href ⊢
     cases n with
-    | zero => trivial
+    | zero => exact href
     | succ m =>
       have hrest := restsT_of_restSigs hsig (he.2 t T ht)
       have hpv := ArgsT_slots he hpre
@@ -2056,7 +2352,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         refine mixed_restElem_append hel (fun u hu => ?_) hy
         have hu' := ArgsT_replicate_all hsplit.2 u (by simpa using hu)
         exact (meaning_adm G El).transfer hu' j hj U hx
-      apply make_empty_rule (meaning_adm G F) (m + 1) W h _ hw hh
+      refine make_empty_rule (meaning_adm G F) (m + 1) W h _ hw hh ?_ href
       intro oid
       have hbound := CallEffects.restsT_bound (Rc := meaning G Rc) (fs := []) (oid := oid)
         (meaning_adm G Rt) (by intro A hA; obtain ⟨q, _, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G q)
@@ -2065,7 +2361,7 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
       refine (represents_back hF (m + 1) _ _) ⟨⟨hbound.1, by simp⟩, ?_⟩
       simpa [RestArrow.mapWith, Contract.map, List.map_drop, hlen] using hbound
   | @bindMember Γ F O i k m L S hi hmo hF hL hS hR =>
-    intro n W h ρ he hw hh
+    intro n W h ρ he hw hh href
     obtain ⟨hkey, hmem⟩ := memberOf_at hmo (he.2 i O hi)
     have hscope : Scoped 0 (ρ i) := he.1 i
     have hvalρ : isVal (ρ i) = true := (meaning_value (he.2 i O hi)).1
@@ -2073,24 +2369,34 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         (.letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])) =
         .letE (.readAt k (ρ i)) (.makeAt (.bound (.var 0) (ρ i) []) [] []) := by
       simp [instantiate, instantiateArgs_eq_map]
-    rw [hterm]
+    rw [hterm] at href ⊢
+    have hC : CtxRefs (fun a => Tm.letE a (.makeAt (.bound (.var 0) (ρ i) []) [] [])) := by ctx_refs
     have hread : Safe (excOf G) (MethodMembers.onHost (excOf G) (ρ i) (MethodMembers.Member.of (meaning G) (argMeaning G) m))
         n W h (.readAt k (ρ i)) := by
-      have := member_read_safe hw hh hmem
+      have := member_read_safe hw hh hmem (by
+        rw [show (MethodMembers.Member.of (meaning G) (argMeaning G) m).key = k from hkey]
+        exact hC.hole href)
       rwa [show (MethodMembers.Member.of (meaning G) (argMeaning G) m).key = k from hkey] at this
-    apply Safe_bind (fun a => Tm.letE a (.makeAt (.bound (.var 0) (ρ i) []) [] [])) Step.letC Raises.letC
-      n W h _ hw hh hread
-    intro j hj U hx hu h' u hok hval hon
+    apply Safe_bind (fun a => Tm.letE a (.makeAt (.bound (.var 0) (ρ i) []) [] [])) Step.letC Raises.letC hC
+      n W h _ hw hh (hC.frame href) hread
+    intro j hj U hx hu h' u hok hval hon hvr
+    have hCU := hC.ok (t := u) hvr (RefsOk_mono hx (RefsOk_trunc _ (hC.frame href)))
     cases j with
-    | zero => trivial
+    | zero => exact hCU
     | succ p =>
-      apply let_rule _ u hval p U h' hu hok
+      apply let_rule _ u hval p U h' hu hok hCU
       have hsub : subst 0 u (.makeAt (.bound (.var 0) (ρ i) []) [] []) =
           .makeAt (.bound u (ρ i) []) [] [] := by
         simp [subst, substArgs_eq_map, subst_above hscope (Nat.zero_le 0)]
       rw [hsub]
+      have hbody : RefsOk (trunc p (Nat.le_succ p) U) (.makeAt (.bound u (ρ i) []) [] []) :=
+        RefsOk_trunc _ (fun r hr => by
+          simp only [refs, refsArgs_eq, List.flatMap_nil, List.append_nil, List.mem_append] at hr
+          rcases hr with hr | hr
+          · exact hvr r hr
+          · exact hCU r (by simp [refs, hr]))
       cases p with
-      | zero => trivial
+      | zero => exact hbody
       | succ q =>
         -- The host is in each type the member's host must meet.
         have hO : meaning G O (q + 2) U (ρ i) :=
@@ -2103,8 +2409,8 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
         have hRadm : Adm (MethodMembers.hostIn (ρ i) (m.receivers.map (meaning G))) :=
           MethodMembers.hostIn_adm _ fun A hA => by
             obtain ⟨b, -, rfl⟩ := List.mem_map.mp hA; exact meaning_adm G b
-        apply make_empty_rule (meaning_adm G F) (q + 1) _ h' _ (WorldAdm_trunc _ hu)
-          (HeapOk_trunc (q + 1) U h' hok)
+        refine make_empty_rule (meaning_adm G F) (q + 1) _ h' _ (WorldAdm_trunc _ hu)
+          (HeapOk_trunc (q + 1) U h' hok) ?_ hbody
         intro oid
         refine (meaning_adm G F).down_le (q + 2) (q + 1) (by omega) U _ ?_
         have hinv : Invocable (.objAt [] (.bound u (ρ i) []) oid) :=
@@ -2161,46 +2467,58 @@ theorem HasTyUsing.sound {G : NormalGraph ι} {images : PositiveCertificates.Ins
             (Effect.covers_sound (Effect.bindCovers_covers heff)) (fun _ _ _ r h => h) (fun _ _ _ args ha => ha) (fun _ _ _ w hw => hw)
         exact represents_back hF (q + 2) U _ rfl ⟨hcalls, hrests⟩
   | @bindScheme Γ F O i k m hi hmo hF _ =>
-    intro n W h ρ he hw hh
+    intro n W h ρ he hw hh href
     obtain ⟨hkey, hmem⟩ := memberOf_at hmo (he.2 i O hi)
     have hscope : Scoped 0 (ρ i) := he.1 i
     have hterm : instantiate 0 ρ
         (.letE (.readAt k (.var i)) (.makeAt (.bound (.var 0) (.var (i + 1)) []) [] [])) =
         .letE (.readAt k (ρ i)) (.makeAt (.bound (.var 0) (ρ i) []) [] []) := by
       simp [instantiate, instantiateArgs_eq_map]
-    rw [hterm]
+    rw [hterm] at href ⊢
+    have hC : CtxRefs (fun a => Tm.letE a (.makeAt (.bound (.var 0) (ρ i) []) [] [])) := by ctx_refs
     have hread : Safe (excOf G) (MethodMembers.onHost (excOf G) (ρ i) (MethodMembers.Member.of (meaning G) (argMeaning G) m))
         n W h (.readAt k (ρ i)) := by
-      have := member_read_safe hw hh hmem
+      have := member_read_safe hw hh hmem (by
+        rw [show (MethodMembers.Member.of (meaning G) (argMeaning G) m).key = k from hkey]
+        exact hC.hole href)
       rwa [show (MethodMembers.Member.of (meaning G) (argMeaning G) m).key = k from hkey] at this
-    apply Safe_bind (fun a => Tm.letE a (.makeAt (.bound (.var 0) (ρ i) []) [] [])) Step.letC Raises.letC
-      n W h _ hw hh hread
-    intro j hj U hx hu h' u hok hval hon
+    apply Safe_bind (fun a => Tm.letE a (.makeAt (.bound (.var 0) (ρ i) []) [] [])) Step.letC Raises.letC hC
+      n W h _ hw hh (hC.frame href) hread
+    intro j hj U hx hu h' u hok hval hon hvr
+    have hCU := hC.ok (t := u) hvr (RefsOk_mono hx (RefsOk_trunc _ (hC.frame href)))
     cases j with
-    | zero => trivial
+    | zero => exact hCU
     | succ p =>
-      apply let_rule _ u hval p U h' hu hok
+      apply let_rule _ u hval p U h' hu hok hCU
       have hsub : subst 0 u (.makeAt (.bound (.var 0) (ρ i) []) [] []) =
           .makeAt (.bound u (ρ i) []) [] [] := by
         simp [subst, substArgs_eq_map, subst_above hscope (Nat.zero_le 0)]
       rw [hsub]
+      have hbody : RefsOk (trunc p (Nat.le_succ p) U) (.makeAt (.bound u (ρ i) []) [] []) :=
+        RefsOk_trunc _ (fun r hr => by
+          simp only [refs, refsArgs_eq, List.flatMap_nil, List.append_nil, List.mem_append] at hr
+          rcases hr with hr | hr
+          · exact hvr r hr
+          · exact hCU r (by simp [refs, hr]))
       cases p with
-      | zero => trivial
+      | zero => exact hbody
       | succ q =>
         -- The member bound to its host meets each of its schemes.
-        apply make_empty_rule (meaning_adm G F) (q + 1) _ h' _ (WorldAdm_trunc _ hu)
-          (HeapOk_trunc (q + 1) U h' hok)
+        refine make_empty_rule (meaning_adm G F) (q + 1) _ h' _ (WorldAdm_trunc _ hu)
+          (HeapOk_trunc (q + 1) U h' hok) ?_ hbody
         intro oid
         exact (meaning_adm G F).down_le (q + 2) (q + 1) (by omega) U _
           (hon.2.2 oid _ (List.mem_map_of_mem hF))
   | throw hA ha iha =>
-    intro n W h ρ he hw hh
-    apply Safe_bind Tm.throw Step.throwC Raises.throwC n W h _ hw hh (iha n W h ρ he hw hh)
-    intro j hj U hx hu heap v hok hv ha'
-    exact thrown_safe _ _ _ _ ⟨v, .throwV hv (hA.sound ha'), (meaning_value ha').2, hA.exc ha'⟩
+    intro n W h ρ he hw hh href
+    have hC : CtxRefs Tm.throw := by ctx_refs
+    apply Safe_bind Tm.throw Step.throwC Raises.throwC hC n W h _ hw hh (hC.frame href)
+      (iha n W h ρ he hw hh (hC.hole href))
+    intro j hj U hx hu heap v hok hv ha' hvr
+    exact thrown_safe _ _ _ _ ⟨v, .throwV hv (hA.sound ha'), (meaning_value ha').2, hA.exc ha'⟩ hvr
   | sub ht hc ih =>
-    intro n W h ρ he hw hh
+    intro n W h ρ he hw hh href
     exact Safe_mono n (fun k _ V v hv => subtyping.sound hc k V v hv)
-      W h _ (ih n W h ρ he hw hh)
+      W h _ (ih n W h ρ he hw hh href)
 
 end Verification.ProgramTyping

@@ -2,8 +2,8 @@ import Verification.Semantics.TolerantFrames
 
 /-! # Tolerant frames: allocated cells and separation
 
-A store may list a cell the heap does not have: its contract may admit any
-value (`rootCells_not_invariant`). A root's **allocated cells**
+A store lists only cells of its world, each of the element role, so every
+state's roots list allocated cells (`rootCells_holds`). A root's **allocated cells**
 (`RootCells`: every cell its store lists is below the heap's length,
 `HeapKnowledge.ElementsBelow`) follow, at every state an admissible transition
 reaches, from a fact of the world: its store location's contract lists only
@@ -88,10 +88,10 @@ theorem rootCells_of_storeCells {x : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
   obtain ⟨st, c, hst, hl, hc⟩ := hs
   intro st' ls hst' hv
   rw [hst] at hst'; cases hst'
-  obtain ⟨v, hv', hall⟩ := s.ok.2 st c hl
+  obtain ⟨v, hv', hall⟩ := s.ok.1.2 st c hl
   rw [hv] at hv'; cases hv'
   have h0 := hc 0 s.pos _ ls (hall 0 s.pos)
-  simpa [trunc, s.ok.1] using h0
+  simpa [toList_length, s.ok.1.1] using h0
 
 /-- **Allocated cells hold after every action**, from the store-cells fact. -/
 theorem rootCells_box {Φ : Footprint} {x : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
@@ -105,24 +105,21 @@ theorem storeCells_of_listT {x : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap} {st
     (hc : ∀ j hj U u, c j hj U u → ∃ T, listT T j U u) : StoreCells x ρ m s :=
   ⟨st, c, hst, hl, cellsCtr_of_listT hc⟩
 
-/-! ## Allocated cells are not kept by admissibility alone -/
+/-! ## Allocated cells hold at every state -/
 
-/-- **`RootCells` is not invariant**: in a world whose locations admit every
-value, location 0 holding `[1]` lists an allocated cell, and a transition to
-`[5]` keeps the world. A state must carry `StoreCells` (or a step-indexed
-fact) for its roots. -/
-theorem rootCells_not_invariant :
-    ¬ Invariant (RootCells 0) := by
-  intro H
-  have hb := H (fun _ => .objAt [(arrayStoreKey, 0)] .absent 0) 0
-    (anyState [.arr [some 1], .nul, .nul] rfl (vals3 rfl rfl rfl))
-    (anyState [.arr [some 5], .nul, .nul] rfl (vals3 rfl rfl rfl)) anyState_admissible
-    (fun st ls hst hv => by
-      simp [storeOf, fieldsOf] at hst; subst hst
-      simp [anyState] at hv; subst hv
-      intro l hl; simp at hl; subst hl; simp [anyState])
-  have := hb 0 [some 5] (by simp [storeOf, fieldsOf]) (by simp [anyState]) 5 (by simp)
-  simp [anyState] at this
+/-- **Every state's roots list allocated cells**: a store the heap holds has
+valid references, so each cell it lists has the element role, a location of
+the world and so of the heap. -/
+theorem rootCells_holds (x : Nat) (ρ : Env) (m : Nat) (s : IndexedHeap) : RootCells x ρ m s := by
+  intro st ls _ hv l hl
+  have hrole := RefsOk_arr_iff.mp (s.ok.refs_at hv) l hl
+  have hlt : l < (roles s.W).length := (List.getElem?_eq_some_iff.mp hrole).1
+  rw [s.ok.1.1, toList_length]
+  simpa [roles] using hlt
+
+/-- **`RootCells` is invariant**: it holds at every state. -/
+theorem rootCells_invariant (x : Nat) : Invariant (RootCells x) :=
+  fun ρ m _ s' _ _ => rootCells_holds x ρ m s'
 
 /-! ## Allocation separation -/
 

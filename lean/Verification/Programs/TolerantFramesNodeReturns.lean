@@ -136,10 +136,11 @@ theorem returnsEnsured_of {G : NormalGraph ι} {images : InstanceImageCheck G} {
   obtain ⟨na, hent, hrc⟩ := hacc l hp.1.1
   have hS := hent ρ s hp
   have he : EnvOk G na.c.context ρ s.n s.W := na.hctx ▸ hp.2
+  refine ⟨na.node, na.hP, fun hr k h' t' hst hk => ?_⟩
   obtain ⟨-, -, -, cn, ce, hj, hn, hx⟩ :=
     stepChecked_parts na.hstep hS na.wf na.below na.width he hcodes na.sums
-  have hex := (stepExits_of hj hn hx).2
-  refine ⟨na.node, na.hP, fun k h' t' hst hk => ⟨fun hv => ?_, fun e _ => ?_⟩⟩
+  have hex := (stepExits_of (hj hr) hn hx).2
+  refine ⟨fun hv => ?_, fun e _ => ?_⟩
   · obtain ⟨s', ha, hh, -, hT, -, hF⟩ := (hex k h' t' hst hk).1 hv
     refine contKeeps_of (fun _ _ _ => trivial) fun hret => ?_
     obtain ⟨start, argName, yields, debugNode, answers, hr⟩ := hrc hret

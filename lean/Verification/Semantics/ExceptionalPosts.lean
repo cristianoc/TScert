@@ -20,12 +20,17 @@ abbrev WExc.lift (R : Heap → Prop) : WExc := fun _ _ h => R h
 in. -/
 def SafePostExcW (Ξ : Fam) (T : Fam) (Q : WPost) (R : WExc) :
     (n : Nat) → WorldT n → Heap → Tm → Prop
-  | 0, _, _, _ => True
-  | n + 1, W, h, t =>
-      ((isVal t = true ∧ T (n + 1) W t ∧ Q (n + 1) W h t) ∨ (Thrown Ξ (n + 1) W t ∧ R (n + 1) W h)) ∨
+  | 0, W, _, t => RefsOk W t
+  | n + 1, W, h, t => RefsOk W t ∧
+      (((isVal t = true ∧ T (n + 1) W t ∧ Q (n + 1) W h t) ∨ (Thrown Ξ (n + 1) W t ∧ R (n + 1) W h)) ∨
       (∃ (U : WorldT n) (h' : Heap) (t' : Tm),
         WExt (trunc n (Nat.le_succ n) W) U ∧ WorldAdm U ∧ Step h t h' t' ∧
-          HeapOk n U h' ∧ SafePostExcW Ξ T Q R n U h' t')
+          HeapOk n U h' ∧ SafePostExcW Ξ T Q R n U h' t'))
+
+theorem SafePostExcW.refs {Ξ T : Fam} {Q : WPost} {R : WExc} :
+    ∀ {n W h t}, SafePostExcW Ξ T Q R n W h t → RefsOk W t
+  | 0, _, _, _, h => h
+  | _ + 1, _, _, _, h => h.1
 
 /-- `SafePostExcW` at heap-only postconditions, lifted. -/
 abbrev SafePostExc (Ξ : Fam) (T : Fam) (Q : Post) (R : Heap → Prop) :
@@ -36,9 +41,11 @@ abbrev SafePostExc (Ξ : Fam) (T : Fam) (Q : Post) (R : Heap → Prop) :
 theorem SafePostExcW.post {Ξ T} {Q : WPost} {R : WExc} :
     ∀ {n W h t}, SafePostExcW Ξ T Q R n W h t → SafePostW Ξ T Q n W h t := by
   intro n; induction n with
-  | zero => intros; trivial
+  | zero => intro _ _ _ hs; exact hs
   | succ n ih =>
     intro W h t hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (hv | ⟨hr, -⟩) | ⟨U, h', t', hx, hu, step, hh, hs⟩
     · exact .inl (.inl hv)
     · exact .inl (.inr hr)
@@ -51,9 +58,11 @@ theorem SafePostExc.post {Ξ T Q R} {n W h t} (hs : SafePostExc Ξ T Q R n W h t
 theorem SafePostExcW.of_post {Ξ T} {Q : WPost} {R : WExc} (hR : ∀ k W h, R k W h) :
     ∀ {n W h t}, SafePostW Ξ T Q n W h t → SafePostExcW Ξ T Q R n W h t := by
   intro n; induction n with
-  | zero => intros; trivial
+  | zero => intro _ _ _ hs; exact hs
   | succ n ih =>
     intro W h t hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (hv | hr) | ⟨U, h', t', hx, hu, step, hh, hs⟩
     · exact .inl (.inl hv)
     · exact .inl (.inr ⟨hr, hR _ _ h⟩)
@@ -72,9 +81,11 @@ theorem SafePostExcW.consequence_below' {Ξ Ξ' T U : Fam} {Q Q' : WPost} {R R' 
     ∀ {W h t}, SafePostExcW Ξ T Q R n W h t → SafePostExcW Ξ' U Q' R' n W h t := by
   intro n
   induction n with
-  | zero => intros; trivial
+  | zero => intro _ _ _ _ _ _ _ hs; exact hs
   | succ n ih =>
     intro hexc hsub hpost hr W h t hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hv, ht, hq⟩ | ⟨hth, hR⟩) | ⟨U, h', t', hx, hu, step, hh, hs⟩
     · exact .inl (.inl ⟨hv, hsub _ (Nat.le_refl _) _ _ ht, hpost _ (Nat.le_refl _) _ _ _ hq⟩)
     · exact .inl (.inr ⟨hth.mono (hexc _ (Nat.le_refl _) _), hr _ (Nat.le_refl _) _ _ hR⟩)
@@ -100,14 +111,14 @@ theorem SafePostExc.weaken {Ξ T} {Q Q' : Post} {R R' : Heap → Prop}
   SafePostExc.consequence_below' (fun _ _ _ _ h => h) (fun _ _ _ _ h => h) hq hr hs
 
 theorem SafePostExcW.value {Ξ T} {Q : WPost} {R : WExc} {n W h v} (hv : isVal v = true) (ht : T n W v)
-    (hq : Q n W h v) : SafePostExcW Ξ T Q R n W h v := by
+    (hq : Q n W h v) (hr : RefsOk W v) : SafePostExcW Ξ T Q R n W h v := by
   cases n with
-  | zero => trivial
-  | succ n => exact .inl (.inl ⟨hv, ht, hq⟩)
+  | zero => exact hr
+  | succ n => exact ⟨hr, .inl (.inl ⟨hv, ht, hq⟩)⟩
 
-theorem SafePostExc.value {Ξ T Q R n W h v} (hv : isVal v = true) (ht : T n W v) (hq : Q h v) :
-    SafePostExc Ξ T Q R n W h v :=
-  SafePostExcW.value hv ht hq
+theorem SafePostExc.value {Ξ T Q R n W h v} (hv : isVal v = true) (ht : T n W v) (hq : Q h v)
+    (hr : RefsOk W v) : SafePostExc Ξ T Q R n W h v :=
+  SafePostExcW.value hv ht hq hr
 
 /-- Overload combination over two executions of the same term: both
 postconditions survive, on a normal return and on a throw. -/
@@ -119,11 +130,13 @@ theorem SafePostExc.cross_upto {Ξ} {B C D : Fam} {Q Q' : Post} {R R' : Heap →
           n W h t := by
   intro n
   induction n with
-  | zero => intros; trivial
+  | zero => intro _ _ _ _ _ _ _ hs _; exact hs
   | succ p ih =>
     intro hc W W' h t hok hok'
-    rintro ((⟨hv1, hBv, hQ⟩ | ⟨hr1, hR1⟩) | ⟨Z, h1, t1, hz, huz, hst1, hok1, hcont1⟩)
-      ((⟨hv2, hCv, hQ2⟩ | ⟨hr2, hR2⟩) | ⟨Z', h2, t2, -, -, hst2, hok2, hcont2⟩)
+    rintro ⟨hrf, hs1⟩ ⟨-, hs2⟩
+    refine ⟨hrf, ?_⟩
+    rcases hs1 with (⟨hv1, hBv, hQ⟩ | ⟨hr1, hR1⟩) | ⟨Z, h1, t1, hz, huz, hst1, hok1, hcont1⟩ <;>
+    rcases hs2 with (⟨hv2, hCv, hQ2⟩ | ⟨hr2, hR2⟩) | ⟨Z', h2, t2, -, -, hst2, hok2, hcont2⟩
     · exact .inl (.inl ⟨hv1, hc (p + 1) (Nat.le_refl _) W W' h hok hok' t hBv hCv, hQ, hQ2⟩)
     · rw [hr2.not_val] at hv1; contradiction
     · exact absurd hst2 (value_no_step hv1)
@@ -141,30 +154,32 @@ throw of the whole at the same heap, so the subterm's throw postcondition is
 the whole's. -/
 theorem SafePostExc.bind {Ξ} {A B : Fam} {Q Q' : Post} {R : Heap → Prop} (C : Tm → Tm)
     (lift : ∀ {h t h' t'}, Step h t h' t' → Step h (C t) h' (C t'))
-    (raise : ∀ {t v}, Raises t v → Raises (C t) v) :
-    ∀ n W h t, WorldAdm W → HeapOk n W h → SafePostExc Ξ A Q R n W h t →
+    (raise : ∀ {t v}, Raises t v → Raises (C t) v) (hctx : CtxRefs C) :
+    ∀ n W h t, WorldAdm W → HeapOk n W h → RefsOk W (C .undef) → SafePostExc Ξ A Q R n W h t →
     (∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
-      ∀ h' v, HeapOk j U h' → isVal v = true → A j U v → Q h' v →
+      ∀ h' v, HeapOk j U h' → isVal v = true → A j U v → Q h' v → RefsOk U v →
         SafePostExc Ξ B Q' R j U h' (C v)) → SafePostExc Ξ B Q' R n W h (C t) := by
   intro n; induction n with
-  | zero => intros; trivial
+  | zero => intro W h t _ _ hC hs _; exact hctx.ok hs hC
   | succ p ih =>
-    intro W h t hw hh hs hc
+    intro W h t hw hh hC hs hc
+    obtain ⟨hrf, hs⟩ := hs
     rcases hs with (⟨hv, ha, hq⟩ | ⟨hr, hR⟩) | ⟨U, h', t', hx, hu, step, hh', hs'⟩
-    · exact hc (p+1) (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw h t hh hv ha hq
-    · exact .inl (.inr ⟨hr.lift raise, hR⟩)
-    · refine .inr ⟨U, h', C t', hx, hu, lift step, hh', ih U h' t' hu hh' hs' ?_⟩
-      intro j hj V he hv h'' v hh'' hval ha hq
-      apply hc j (by omega) V _ hv h'' v hh'' hval ha hq
+    · exact hc (p+1) (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw h t hh hv ha hq hrf
+    · exact ⟨hctx.ok hrf hC, .inl (.inr ⟨hr.lift raise, hR⟩)⟩
+    · refine ⟨hctx.ok hrf hC, .inr ⟨U, h', C t', hx, hu, lift step, hh',
+        ih U h' t' hu hh' (RefsOk_mono hx (RefsOk_trunc _ hC)) hs' ?_⟩⟩
+      intro j hj V he hv h'' v hh'' hval ha hq hvr
+      apply hc j (by omega) V _ hv h'' v hh'' hval ha hq hvr
       have he' := WExt_trunc hj hx
       rw [trunc_trunc] at he'
       exact WExt_trans he' he
 
 theorem SafePostExc.bind_value {Ξ T Q R n} {W : WorldT (n+1)} {h b a}
-    (hv : isVal a = true) (hw : WorldAdm W) (hh : HeapOk (n+1) W h)
+    (hv : isVal a = true) (hw : WorldAdm W) (hh : HeapOk (n+1) W h) (href : RefsOk W (.letE a b))
     (hs : SafePostExc Ξ T Q R n (trunc n (Nat.le_succ n) W) h (subst 0 a b)) :
     SafePostExc Ξ T Q R (n+1) W h (.letE a b) :=
-  .inr ⟨_, h, _, WExt_refl _, WorldAdm_trunc _ hw, .letV hv, HeapOk_trunc n W h hh, hs⟩
+  ⟨href, .inr ⟨_, h, _, WExt_refl _, WorldAdm_trunc _ hw, .letV hv, HeapOk_trunc n W h hh, hs⟩⟩
 
 /-- A term that steps once to a value raises nothing: any throw postcondition
 holds of its run. -/
@@ -172,16 +187,20 @@ theorem SafePostExc.one_step {Ξ T Q R n W h t h' v} (ht : isVal t = false) (hv 
     (step : Step h t h' v) (hq : Q h' v) (hs : Safe Ξ T n W h t) :
     SafePostExc Ξ T Q R n W h t := by
   cases n with
-  | zero => trivial
+  | zero => exact hs
   | succ n =>
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hval, _⟩ | hr) | ⟨U, h'', t'', hx, hu, step', hh, hs'⟩
     · simp [ht] at hval
     · exact absurd step hr.no_step
     · obtain ⟨rfl, rfl⟩ := Step_det step step'
       exact .inr ⟨U, h', v, hx, hu, step', hh, by
         cases n with
-        | zero => trivial
+        | zero => exact hs'
         | succ m =>
+          obtain ⟨hrf', hs'⟩ := hs'
+          refine ⟨hrf', ?_⟩
           rcases hs' with (⟨_, ht'⟩ | hr) | ⟨_, _, _, _, _, step'', _, _⟩
           · exact .inl (.inl ⟨hv, ht', hq⟩)
           · exact absurd hr (val_not_thrown hv)

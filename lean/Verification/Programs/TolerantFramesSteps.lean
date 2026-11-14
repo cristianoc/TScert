@@ -98,9 +98,10 @@ theorem created_keeps {Ξ T : Fam} {n : Nat} {W : WorldT n} {h : Heap} {ρ : Env
     SafePost Ξ T (fun h' _ => Footprints.Closed.empty.Holds h h' ∧ True) n W h
       (instantiate 0 ρ (.makeFn (.graph arity E K start caps kind rest) .nul)) := by
   cases n with
-  | zero => trivial
+  | zero => exact hs
   | succ n =>
-    rcases hs with (⟨hv, _⟩ | ⟨_, hr, _⟩) | ⟨U, h', t', hx, hu, step, hh', hs'⟩
+    refine ⟨hs.1, ?_⟩
+    rcases hs.2 with (⟨hv, _⟩ | ⟨_, hr, _⟩) | ⟨U, h', t', hx, hu, step, hh', hs'⟩
     · simp [instantiate, isVal] at hv
     · simp only [instantiate, instantiateArgs_eq_map, List.map] at hr
       cases hr with | makeArg hg _ hr => obtain ⟨rfl, rfl⟩ := singleton_get hg; cases hr
@@ -247,8 +248,9 @@ theorem base_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Seq
     (hc : checkStepUsing G images j k e codes sums = some out) (hp : kindPreserving e = true)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) : KeepsPost G j ρ n W h := by
-  have hs := erase (checkStep_sound hc hcodes hsums he hk hw hh)
+    (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) : KeepsPost G j ρ n W h := by
+  have hs := erase (checkStep_sound hc hcodes hsums he hk hw hh href)
   rcases base_shape hc hp he hk with hi | ⟨_, _, _, _, _, _, _, ht⟩
   · exact inspection_keeps hs hi hw hh
   · unfold KeepsPost; rw [ht] at hs ⊢; exact created_keeps hs
@@ -262,7 +264,8 @@ theorem elementsCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} 
     {R : CallEffects.ElemPred} (hc : PromiseCalls.elementsCall G images j e codes sums = some (x, R))
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W)
-    (hw : WorldAdm W) (hh : HeapOk n W h) : KeepsPost G j ρ n W h := by
+    (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) : KeepsPost G j ρ n W h := by
   unfold PromiseCalls.elementsCall at hc
   split at hc
   · rename_i p _
@@ -281,7 +284,7 @@ theorem elementsCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} 
           by_cases hkeep : PromiseCalls.keepsHeap eff = true
           · exact PromiseCalls.post_with_type
               (fun _ _ _ _ _ hq => ⟨Footprints.Closed.holds_empty.mpr (PromiseCalls.keepsHeap_prefix hkeep hq), trivial⟩)
-              (ExpressionEffects.selected_sound p ht hops hsel hcodes hsums he hw hh)
+              (ExpressionEffects.selected_sound p ht hops hsel hcodes hsums he hw hh href)
           · rw [if_neg hkeep] at hc; cases hc
     · rw [if_neg hcond] at hc; cases hc
   · cases hc
@@ -294,14 +297,15 @@ theorem requiresCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} 
     (hkeep : (ExpressionEffects.selectedEffect p).any PromiseCalls.keepsHeap = true)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) : KeepsPost G j ρ n W h := by
+    (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) : KeepsPost G j ρ n W h := by
   simp only [PromiseCalls.requiresCall, Bool.and_eq_true, decide_eq_true_eq] at hc
   obtain ⟨rfl, hc⟩ := hc
   obtain ⟨eff, hsel, hs⟩ := PromiseCalls.requiresTree_sound hcodes hsums p hc
   rw [hsel] at hkeep
   exact PromiseCalls.post_with_type
     (fun _ _ _ _ _ hq => ⟨Footprints.Closed.holds_empty.mpr (PromiseCalls.keepsHeap_prefix hkeep hq), trivial⟩)
-    (hs he hk hw hh)
+    (hs he hk hw hh href)
 
 /-- **Every call the pass frames keeps the heap.** -/
 theorem callKeepsHeap_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι}
@@ -309,18 +313,19 @@ theorem callKeepsHeap_keeps {G : NormalGraph ι} {images : InstanceImageCheck G}
     (hc : callKeepsHeap G images j kE e codes sums = true)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) : KeepsPost G j ρ n W h := by
+    (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) : KeepsPost G j ρ n W h := by
   cases e with
   | ordinary p =>
     simp only [callKeepsHeap, Bool.or_eq_true, Option.isSome_iff_exists] at hc
     rcases hc with ⟨⟨x, R⟩, hel⟩ | hc
-    · exact elementsCall_keeps hel hcodes hsums he hw hh
+    · exact elementsCall_keeps hel hcodes hsums he hw hh href
     · split at hc
-      · rename_i hreq; exact requiresCall_keeps hreq hc hcodes hsums he hk hw hh
+      · rename_i hreq; exact requiresCall_keeps hreq hc hcodes hsums he hk hw hh href
       · simp only [Bool.or_eq_true, Bool.and_eq_true] at hc
         rcases hc with hf | ⟨-, hkc⟩
-        · exact freshCall_keeps hf hcodes hsums he hw hh
-        · exact keepsCall_keeps hkc hcodes hsums he hw hh
+        · exact freshCall_keeps hf hcodes hsums he hw hh href
+        · exact keepsCall_keeps hkc hcodes hsums he hw hh href
   | _ => simp [callKeepsHeap] at hc
 
 /-! ## The production checker -/
@@ -391,14 +396,15 @@ theorem passPreserving_keeps {G : NormalGraph ι} {images : InstanceImageCheck G
     (hr : ((Checker.ordinary G images).run j kE e codes sums).value = some out)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {n : Nat} {W : WorldT n} {h : Heap} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds kE ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) : KeepsPost G j ρ n W h := by
+    (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) : KeepsPost G j ρ n W h := by
   simp only [passPreserving, Bool.or_eq_true] at hpres
   rcases hpres with hc | hp
-  · exact callKeepsHeap_keeps hc hcodes hsums he hk hw hh
+  · exact callKeepsHeap_keeps hc hcodes hsums he hk hw hh href
   · rcases ordinary_run_base hp hr with ⟨o, hb⟩ | hel
-    · exact base_keeps hb hp hcodes hsums he hk hw hh
+    · exact base_keeps hb hp hcodes hsums he hk hw hh href
     · obtain ⟨⟨x, R⟩, hel⟩ := Option.isSome_iff_exists.mp hel
-      exact elementsCall_keeps hel hcodes hsums he hw hh
+      exact elementsCall_keeps hel hcodes hsums he hw hh href
 
 /-! ## Both exits of a preserving step -/
 
@@ -425,7 +431,7 @@ theorem preserving_step_frame {G : NormalGraph ι} {images : InstanceImageCheck 
         HeapKnowledge.Holds out ε (push t' ρ) h' ∧ Named ε S (Env.set η r t') ρ m s') ∧
       (∀ x, Raises t' x → ∃ s' : IndexedHeap, Action Footprints.Closed.top.fp ρ s s' ∧ s'.h = h' ∧
         s'.n + k = s.n ∧ Scoped 0 x ∧ excOf G s'.n s'.W x ∧ Named ε (S.filter (·.heapFree)) η ρ m s') := by
-  have hout := checker.sound hr hcodes hsums he hkn s.adm s.ok
+  have hout := checker.sound hr hcodes hsums he hkn s.adm s.ok (SafePostW.refs hkeep)
   have hboth := cross_upto s.n (fun _ _ _ _ _ _ _ _ hb _ => hb) s.W s.W s.h _ s.ok s.ok hkeep hout
   have hj : SafePost (excOf G) (meaning G j.type)
       (fun h' v => Footprints.Closed.empty.Holds s.h h' ∧ HeapKnowledge.Holds out ε (push v ρ) h') s.n s.W s.h
@@ -445,6 +451,7 @@ theorem pass_preserving_frame {G : NormalGraph ι} {images : InstanceImageCheck 
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ η : Env} {r m : Nat} {s : IndexedHeap} {S : List Atom}
     (he : EnvOk G j.context ρ s.n s.W) (hkE : HeapKnowledge.Holds kE ε ρ s.h)
+    (href : RefsOk s.W (instantiate 0 ρ j.term))
     (hS : Named ε S η ρ m s) (hfr : ∀ a ∈ S, r ∉ a.names)
     {k : Nat} {h' : Heap} {t' : Tm} (hst : Steps k s.h (instantiate 0 ρ j.term) h' t') (hk : k < s.n) :
     (isVal t' = true → ∃ s' : IndexedHeap, Action Footprints.Closed.empty.fp ρ s s' ∧ s'.h = h' ∧
@@ -453,7 +460,7 @@ theorem pass_preserving_frame {G : NormalGraph ι} {images : InstanceImageCheck 
       (∀ x, Raises t' x → ∃ s' : IndexedHeap, Action Footprints.Closed.top.fp ρ s s' ∧ s'.h = h' ∧
         s'.n + k = s.n ∧ Scoped 0 x ∧ excOf G s'.n s'.W x ∧ Named ε (S.filter (·.heapFree)) η ρ m s') :=
   preserving_step_frame _ hr hcodes hsums he hkE
-    (passPreserving_keeps hpres hr hcodes hsums he hkE s.adm s.ok) hS hfr hst hk
+    (passPreserving_keeps hpres hr hcodes hsums he hkE s.adm s.ok href) hS hfr hst hk
 
 end Steps
 

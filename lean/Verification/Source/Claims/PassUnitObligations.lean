@@ -28,6 +28,7 @@ theorem obligations_sound {G : NormalGraph ι} {images : PositiveCertificates.In
     (h : (ExpressionClaims.checkAllResult G images valid rs es codes sums).accepted = true)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums) :
     ∀ o ∈ rs, ∀ n W heap ρ, EnvOk G o.sequent.context ρ n W → WorldAdm W → HeapOk n W heap →
+      RefsOk W (instantiate 0 ρ o.sequent.term) →
       Safe (excOf G) (meaning G o.sequent.type) n W heap (instantiate 0 ρ o.sequent.term) := by
   unfold ExpressionClaims.checkAllResult at h
   rw [CheckResult.accepted_bind, CheckResult.accepted_ofBool, CheckResult.accepted_allLocated,

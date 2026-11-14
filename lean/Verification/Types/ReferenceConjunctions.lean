@@ -74,13 +74,13 @@ theorem recT_congr_below {ι : Type} (X Y : ι → Fam) (a : List (Stored ι)) (
   · refine ⟨flds, oid, rfl, fun f s T hm => ?_, fun f s T hm => ?_⟩ <;>
       obtain ⟨i, hi, rfl⟩ := mem_famsOf.mp hm
     · exact hown f s (X i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
-    · obtain ⟨l, c, hl, hw, hag⟩ := hfs f s (X i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
-      exact ⟨l, c, hl, hw, fun j hj W' u => (hag j hj W' u).trans (h i j hj W' u)⟩
+    · obtain ⟨l, c, hl, hw, hr, hag⟩ := hfs f s (X i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
+      exact ⟨l, c, hl, hw, hr, fun j hj W' u => (hag j hj W' u).trans (h i j hj W' u)⟩
   · refine ⟨flds, oid, rfl, fun f s T hm => ?_, fun f s T hm => ?_⟩ <;>
       obtain ⟨i, hi, rfl⟩ := mem_famsOf.mp hm
     · exact hown f s (Y i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
-    · obtain ⟨l, c, hl, hw, hag⟩ := hfs f s (Y i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
-      exact ⟨l, c, hl, hw, fun j hj W' u => (hag j hj W' u).trans (h i j hj W' u).symm⟩
+    · obtain ⟨l, c, hl, hw, hr, hag⟩ := hfs f s (Y i) (mem_famsOf.mpr ⟨i, hi, rfl⟩)
+      exact ⟨l, c, hl, hw, hr, fun j hj W' u => (hag j hj W' u).trans (h i j hj W' u).symm⟩
 
 theorem famsOf_append {ι : Type} (X : ι → Fam) (a b : List (Stored ι)) :
     famsOf X (a ++ b) = famsOf X a ++ famsOf X b := List.map_append ..
@@ -125,8 +125,8 @@ theorem opt_congr_below {ι : Type} (X Y : ι → Fam) (a : List (OptionalField 
     · obtain ⟨p, hpa, rfl⟩ := List.mem_map.mp hm
       exact hp (p.map X) (List.mem_map_of_mem hpa) hl
     · obtain ⟨p, hpa, rfl⟩ := List.mem_map.mp hm
-      obtain ⟨c, hc, hag⟩ := hv (p.map X) (List.mem_map_of_mem hpa) l hl
-      exact ⟨c, hc, fun j hj W' u => (hag j hj W' u).congr (h p.type j hj W' u)⟩
+      obtain ⟨c, hc, hr, hag⟩ := hv (p.map X) (List.mem_map_of_mem hpa) l hl
+      exact ⟨c, hc, hr, fun j hj W' u => (hag j hj W' u).congr (h p.type j hj W' u)⟩
   exact ⟨side X Y fun i j hj W' u => h i j hj W' u,
     side Y X fun i j hj W' u => (h i j hj W' u).symm⟩
 

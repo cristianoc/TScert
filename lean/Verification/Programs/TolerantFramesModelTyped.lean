@@ -262,7 +262,7 @@ theorem valueClass_ok [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} 
     rw [hv] at hl
     simp only [fieldsOf, hfd, Option.some.injEq] at hl
     subst hl
-    obtain ⟨w, hw, hcw⟩ := hh.2 fl cc hlookup
+    obtain ⟨w, hw, hcw⟩ := hh.1.2 fl cc hlookup
     have hwsrc := sourceTy_sound hsrc ((hagree 0 (by omega) _ w).mp (hcw 0 (by omega)))
     simp only [Region.mem, hw, Cls.has]
     cases w <;> simp_all [isSourceVal, isArr]
@@ -286,7 +286,7 @@ theorem storeClass_ok [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} 
       rw [hst] at hl
       exact Option.some.inj hl
     subst hl'
-    obtain ⟨u, hu, hcu⟩ := hh.2 st cc hlookup
+    obtain ⟨u, hu, hcu⟩ := hh.1.2 st cc hlookup
     obtain ⟨T, hT⟩ := storeListTy_listT hL ((hagree 0 (by omega) _ u).mp (hcu 0 (by omega)))
     obtain ⟨ls, rfl, -⟩ := hT
     simp [Region.mem, hu, Cls.has, isArr]

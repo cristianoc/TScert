@@ -87,12 +87,13 @@ theorem numberToString_unreserved (b : UInt64) : reservedSpelling (numberToStrin
   · exact digitLead_unreserved h
 
 /-- A key the model does not keep for itself: not the prototype's, the array
-store's or the host classification's. -/
+store's, the host classification's or a typed array's metadata's. -/
 def Unreserved (f : PropKey) : Prop :=
-  (f ≠ CallArguments.protoField ∧ f ≠ CallArguments.arrayStoreField) ∧ f ≠ hostKey
+  ((f ≠ CallArguments.protoField ∧ f ≠ CallArguments.arrayStoreField) ∧ f ≠ hostKey) ∧
+    f ≠ viewElementsKey ∧ f ≠ viewLengthKey
 
 theorem unreserved_str {s : String} (h : reservedSpelling s.toList = false) : Unreserved (.str s) := by
-  refine ⟨⟨fun he => ?_, fun he => ?_⟩, fun he => ?_⟩
+  refine ⟨⟨⟨fun he => ?_, fun he => ?_⟩, fun he => ?_⟩, fun he => ?_, fun he => ?_⟩
   · have hs : s = "[[proto]]" := by
       simpa [CallArguments.protoField] using he
     subst hs; exact absurd h (by decide)
@@ -102,12 +103,20 @@ theorem unreserved_str {s : String} (h : reservedSpelling s.toList = false) : Un
   · have hs : s = "[[host]]" := by
       simpa [hostKey] using he
     subst hs; exact absurd h (by decide)
+  · have hs : s = "[[viewElements]]" := by
+      simpa [viewElementsKey] using he
+    subst hs; exact absurd h (by decide)
+  · have hs : s = "[[viewLength]]" := by
+      simpa [viewLengthKey] using he
+    subst hs; exact absurd h (by decide)
 
 theorem unreserved_sym (i : Nat) : Unreserved (.sym i) := by
-  refine ⟨⟨fun he => ?_, fun he => ?_⟩, fun he => ?_⟩
+  refine ⟨⟨⟨fun he => ?_, fun he => ?_⟩, fun he => ?_⟩, fun he => ?_, fun he => ?_⟩
   · simp [CallArguments.protoField] at he
   · simp [CallArguments.arrayStoreField, arrayStoreKey] at he
   · simp [hostKey] at he
+  · simp [viewElementsKey] at he
+  · simp [viewLengthKey] at he
 
 /-- Where a value of the key's clause converts to, and that the keyed object
 owns it: the one field, or a key the class admits. -/
@@ -148,10 +157,11 @@ keep for itself; the object allocated there is of the clause the key's clause
 gives. -/
 theorem keyed_values_safe [DecidableEq ι] {G : NormalGraph ι} {K A R : List ι}
     (hk : KeyedOk G K A R = true) {n : Nat} {W : WorldT n} {h : Heap} {kv av : Val}
-    (hadm : WorldAdm W) (hok : HeapOk n W h) (hkv : meaning G K n W kv) (hav : meaning G A n W av) :
+    (hadm : WorldAdm W) (hok : HeapOk n W h) (hkv : meaning G K n W kv) (hav : meaning G A n W av)
+    (hsrc : isSourceVal av = true) (href : RefsOk W (.makeKey kv av)) :
     Safe (excOf G) (meaning G R) n W h (.makeKey kv av) := by
   cases n with
-  | zero => trivial
+  | zero => exact href
   | succ p =>
   simp only [KeyedOk, Bool.and_eq_true, List.all_eq_true] at hk
   obtain ⟨hpK, hall⟩ := hk
@@ -165,18 +175,33 @@ theorem keyed_values_safe [DecidableEq ι] {G : NormalGraph ι} {K A R : List ι
   | some d =>
   rw [hkc] at hd
   have hdR : d ∈ expand G R := List.mem_of_elem_eq_true hd
-  obtain ⟨f, hf, ⟨⟨hnp, hns⟩, hnh⟩, hshape⟩ := keyed_key hkc hcv
+  obtain ⟨f, hf, ⟨⟨⟨hnp, hns⟩, hnh⟩, hne, hnl⟩, hshape⟩ := keyed_key hkc hcv
   have hadmA : Adm (meaning G A) := setSem_adm (normalDenote_adm G) _
   have hval : isVal av = true := ObjectMerge.meaning_isVal hav
   have hav' : meaning G A p (trunc p (Nat.le_succ p) W) av :=
     hadmA.down_le (p + 1) p (Nat.le_succ p) W av hav
-  refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, .makeAt .absent [f] [av], WExt_refl _,
-    WorldAdm_trunc _ hadm, Step.makeKeyV hval hf, HeapOk_trunc p W h hok, ?_⟩
+  have hrav : RefsOk W av := fun r hr => href r (by simp [refs, hr])
+  have hmref : RefsOk (trunc p (Nat.le_succ p) W) (.makeAt .absent [f] [av]) := fun r hr =>
+    RefsOk_trunc _ hrav r (by simpa [refs] using hr)
+  refine ⟨href, Or.inr ⟨trunc p (Nat.le_succ p) W, h, .makeAt .absent [f] [av], WExt_refl _,
+    WorldAdm_trunc _ hadm, Step.makeKeyV hval hf, HeapOk_trunc p W h hok, ?_⟩⟩
   apply make_fields_rule (ss := [.field]) (As := [meaning G A]) rfl (by simpa using hadmA)
     (fun B hB => by
       rw [List.mem_singleton.mp hB]
       exact fun _ _ _ ⟨_, _, h⟩ => (normalDenote_value h).1) p _ h .absent [f] [av] (by simp) rfl rfl (by simpa using hval) (WorldAdm_trunc _ hadm)
     (HeapOk_trunc p W h hok) (by simpa using hav')
+    (fun i s v hs hv => by
+      cases i with
+      | zero => simp at hs hv; subst hs hv; exact hsrc
+      | succ i => simp at hs)
+    (fun i s hs key hk => by
+      cases i with
+      | zero =>
+        simp at hs hk; subst hs hk
+        exact StorageRole.fitsKey_field (fun he => hns (by simpa [CallArguments.arrayStoreField] using he)) hne
+      | succ i => simp at hs)
+    (fun _ _ _ => Kinds.MetaFit.of_not_mem (by simpa using fun he => hnl he.symm)
+      (by simpa using fun he => hne he.symm)) hmref
   intro j hj U hx hrec
   have hown : ∀ g l, (slots h.length [f]).lookup g = some l →
       ∃ s T, (g, s, T) ∈ [f].zip ([StorageRole.field].zip [meaning G A]) := by
@@ -203,8 +228,10 @@ theorem keyed_values_safe [DecidableEq ι] {G : NormalGraph ι} {K A R : List ι
     simp only [List.mem_singleton] at hB
     subst hB
     exact ownKeysT_slots fun g hg => by simp_all [KeyBound.admits]
-  · have hcell : dictCellT K (meaning G A) j U (.objAt (slots h.length [f]) .absent (h.length + 1)) :=
-      dictCellT_of_recT hrec hown hproto hhost fun g s T hT _ => by
+  · have hcell : dictCellT K .field (meaning G A) j U (.objAt (slots h.length [f]) .absent (h.length + 1)) :=
+      dictCellT_of_recT hrec (fun g s T hT _ => by
+        simp only [List.zip_cons_cons, List.zip_nil_right, List.mem_singleton, Prod.mk.injEq] at hT
+        exact hT.2.1) hown hproto hhost fun g s T hT _ => by
         simp only [List.zip_cons_cons, List.zip_nil_right, List.mem_singleton, Prod.mk.injEq] at hT
         obtain ⟨-, -, rfl⟩ := hT
         exact fun _ _ _ _ => Iff.rfl

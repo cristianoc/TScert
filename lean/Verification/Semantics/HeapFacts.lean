@@ -116,17 +116,27 @@ theorem shift_holds {facts ρ h v} (hf : Holds facts ρ h) :
   obtain ⟨g,hg,rfl⟩ := List.mem_map.mp hm
   exact hf g hg
 
+/-- A read's value is a heap location's contents or `undefined`: its
+references are valid where the heap is well formed. -/
+theorem ReadGave.refs {flds field h v n W} (hr : ReadGave flds field h v) (hh : HeapOk n W h) :
+    RefsOk W v := by
+  unfold ReadGave at hr
+  split at hr
+  · exact hh.refs_at hr
+  · rw [hr.2]; exact RefsOk_undef
+
 /-- A read observation gives both its value and its unchanged heap. -/
 theorem ReadGave.observed {flds field h v c oid n W}
     (hr : ReadGave flds field h v) (hv : isVal v = true)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (.readAt field (.objAt flds c oid))) :
     SafePost Ξ (exact v) (fun h' u => h' = h ∧ u = v) n W h
       (.readAt field (.objAt flds c oid)) := by
   cases n with
-  | zero => trivial
+  | zero => exact href
   | succ n =>
-    exact .inr ⟨trunc n (Nat.le_succ n) W, h, v, WExt_refl _,
+    have hvr : RefsOk (trunc n (Nat.le_succ n) W) v := RefsOk_trunc _ (hr.refs hh)
+    exact ⟨href, .inr ⟨trunc n (Nat.le_succ n) W, h, v, WExt_refl _,
       WorldAdm_trunc _ hw, hr.step, HeapOk_trunc n W h hh,
-      HeapObservations.value hv rfl ⟨rfl, rfl⟩⟩
+      HeapObservations.value hv rfl ⟨rfl, rfl⟩ hvr⟩⟩
 
 end Verification.HeapFacts

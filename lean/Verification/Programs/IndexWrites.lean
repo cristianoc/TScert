@@ -34,8 +34,10 @@ theorem throw_post {Ξ T : Fam} {Q Q' : Post} {v : Tm} (hv : isVal v = true) :
     ∀ {n W h}, SafePost Ξ T Q n W h (.throw v) → SafePost Ξ T Q' n W h (.throw v) := by
   intro n W h hs
   cases n with
-  | zero => trivial
+  | zero => assumption
   | succ n =>
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hval, -, -⟩ | hr) | ⟨U, h', t', -, -, step, -, -⟩
     · simp [isVal] at hval
     · exact .inl (.inr hr)
@@ -49,8 +51,10 @@ theorem arith_run {Ξ T : Fam} {Q : Post} {op : Arith} {a b : Tm} (ha : isVal a 
       SafePost Ξ T (fun h' u => Q h' u ∧ h' = h ∧ binop op a b = some u) n W h (.arith op a b) := by
   intro n W h hs
   cases n with
-  | zero => trivial
+  | zero => assumption
   | succ n =>
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hval, -, -⟩ | ⟨u, hr, -⟩) | ⟨U, h', t', hx, hu, step, hh, hs⟩
     · simp [isVal] at hval
     · cases hr with
@@ -62,8 +66,10 @@ theorem arith_run {Ξ T : Fam} {Q : Post} {op : Arith} {a b : Tm} (ha : isVal a 
       | arithC2 _ s => exact absurd s (value_no_step hb)
       | arithV hv =>
         cases n with
-        | zero => trivial
+        | zero => assumption
         | succ m =>
+          obtain ⟨hrf, hs⟩ := hs
+          refine ⟨hrf, ?_⟩
           rcases hs with (⟨hval, ht, hq⟩ | ⟨u, hr, -⟩) | ⟨U', h'', t'', -, -, step', -, -⟩
           · exact .inl (.inl ⟨hval, ht, hq, rfl, hv⟩)
           · exact absurd (raises_not_val hr) (by simp [(binop_values hv).2.2])
@@ -77,8 +83,10 @@ theorem len_run {Ξ T : Fam} {Q : Post} {ls : List (Option Nat)} :
       SafePost Ξ T (fun h' u => Q h' u ∧ h' = h ∧ u = .num (bitsOfNat ls.length)) n W h (.lenOf (.arr ls)) := by
   intro n W h hs
   cases n with
-  | zero => trivial
+  | zero => assumption
   | succ n =>
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hval, -, -⟩ | ⟨u, hr, -⟩) | ⟨U, h', t', hx, hu, step, hh, hs⟩
     · simp [isVal] at hval
     · cases hr with
@@ -88,8 +96,10 @@ theorem len_run {Ξ T : Fam} {Q : Post} {ls : List (Option Nat)} :
       | lenC s => exact absurd s (value_no_step rfl)
       | lenV =>
         cases n with
-        | zero => trivial
+        | zero => assumption
         | succ m =>
+          obtain ⟨hrf, hs⟩ := hs
+          refine ⟨hrf, ?_⟩
           rcases hs with (⟨hval, ht, hq⟩ | ⟨u, hr, -⟩) | ⟨U', h'', t'', -, -, step', -, -⟩
           · exact .inl (.inl ⟨hval, ht, hq, rfl, rfl⟩)
           · exact absurd (raises_not_val hr) (by simp [isVal])
@@ -104,8 +114,10 @@ theorem steps_run {Ξ T : Fam} {Q : Post} {h t h' v steps}
   | refl =>
     intro n W hs
     cases n with
-    | zero => trivial
+    | zero => assumption
     | succ n =>
+      obtain ⟨hrf, hs⟩ := hs
+      refine ⟨hrf, ?_⟩
       rcases hs with (⟨hv', ht, hq⟩ | hr) | ⟨_, _, _, _, _, step, _, _⟩
       · exact .inl (.inl ⟨hv', ht, hq, rfl, rfl⟩)
       · exact absurd hr (val_not_thrown hv)
@@ -113,8 +125,10 @@ theorem steps_run {Ξ T : Fam} {Q : Post} {h t h' v steps}
   | next step run ih =>
     intro n W hs
     cases n with
-    | zero => trivial
+    | zero => assumption
     | succ n =>
+      obtain ⟨hrf, hs⟩ := hs
+      refine ⟨hrf, ?_⟩
       rcases hs with (⟨hv', _, _⟩ | hr) | ⟨U, h2, t2, hx, hu, step', hh, hs⟩
       · exact False.elim (value_no_step hv' step)
       · exact absurd step hr.no_step
@@ -227,8 +241,10 @@ theorem len_str_run {Ξ T : Fam} {Q : Post} {str : String} :
         (utf16Units str).length ≤ maxStringLength) n W h (.lenOf (.str str)) := by
   intro n W h hs
   cases n with
-  | zero => trivial
+  | zero => assumption
   | succ n =>
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hval, -, -⟩ | ⟨u, hr, -⟩) | ⟨U, h', t', hx, hu, step, hh, hs⟩
     · simp [isVal] at hval
     · cases hr with
@@ -238,8 +254,10 @@ theorem len_str_run {Ξ T : Fam} {Q : Post} {str : String} :
       | lenC s => exact absurd s (value_no_step rfl)
       | lenStr hl =>
         cases n with
-        | zero => trivial
+        | zero => assumption
         | succ m =>
+          obtain ⟨hrf, hs⟩ := hs
+          refine ⟨hrf, ?_⟩
           rcases hs with (⟨hval, ht, hq⟩ | ⟨u, hr, -⟩) | ⟨U', h'', t'', -, -, step', -, -⟩
           · exact .inl (.inl ⟨hval, ht, hq, rfl, rfl, hl⟩)
           · exact absurd (raises_not_val hr) (by simp [isVal])
@@ -964,8 +982,10 @@ theorem value_run {Ξ T : Fam} {Q : Post} {v : Tm} (hv : isVal v = true) :
     ∀ {n W h}, SafePost Ξ T Q n W h v → SafePost Ξ T (fun h' u => Q h' u ∧ h' = h ∧ u = v) n W h v := by
   intro n W h hs
   cases n with
-  | zero => trivial
+  | zero => assumption
   | succ n =>
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hval, ht, hq⟩ | hr) | ⟨U, h', t', -, -, step, -, -⟩
     · exact .inl (.inl ⟨hval, ht, hq, rfl, rfl⟩)
     · exact absurd hr (val_not_thrown hv)
@@ -1585,7 +1605,8 @@ theorem boundedWrite_safe [DecidableEq ι] {Ξ : Fam} {G : NormalGraph ι} {R S 
     {obj vv : Tm} {s : Nat} {ls : List (Option Nat)} {b : UInt64} {i : Nat} {n : Nat} {W : WorldT n} {h : Heap}
     (hobj : meaning G R n W obj) (hs : Footprints.storeOf obj = some s) (hl : h[s]? = some (.arr ls))
     (hb : indexOfBits b = some i) (hi : i ≤ ls.length)
-    (hv : meaning G E n W vv) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hv : meaning G E n W vv) (hw : WorldAdm W) (hh : HeapOk n W h) (hsrc : isSourceVal vv = true)
+    (href : RefsOk W (.writeAt arrayStoreKey obj (.setElem (.readAt arrayStoreKey obj) (.num b) vv))) :
     Safe Ξ nulT n W h (.writeAt arrayStoreKey obj (.setElem (.readAt arrayStoreKey obj) (.num b) vv)) := by
   obtain ⟨flds, l, c, oid, rfl, hf, hlc, hag⟩ :=
     recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨S, hm, rfl⟩) ((represents_raw hr n W _) hobj).1.1
@@ -1594,21 +1615,34 @@ theorem boundedWrite_safe [DecidableEq ι] {Ξ : Fam} {G : NormalGraph ι} {R S 
     rw [hf] at hs; cases hs; rfl
   subst hsl
   have hvval := (meaning_value hv).1
+  have hC : CtxRefs (Tm.writeAt arrayStoreKey (.objAt flds .absent oid)) := by ctx_refs
   cases n with
-  | zero => trivial
+  | zero => exact href
   | succ p =>
-    obtain ⟨w, hwv, hwc⟩ := hh.2 s c hlc
+    obtain ⟨w, hwv, hwc⟩ := hh.1.2 s c hlc
     rw [hl] at hwv; cases hwv
     have hstore : meaning G S p (trunc p (Nat.le_succ p) W) (.arr ls) := (hag p (by omega) _ _).mp (hwc p (by omega))
     have hv' : meaning G E p (trunc p (Nat.le_succ p) W) vv := (meaning_adm G E).down_le (p + 1) p (by omega) W vv hv
     have hpos : positionTy (⟨[], [], some E, false, pr⟩ : Tuple (Ty ι)) i = some E := by
       simp [positionTy]
-    refine Or.inr ⟨trunc p (Nat.le_succ p) W, h, _, WExt_refl _, WorldAdm_trunc _ hw,
-      .writeC2 rfl (.setC1 (.readField hf hl)), HeapOk_trunc p W h hh, ?_⟩
-    apply Safe_bind (.writeAt arrayStoreKey (.objAt flds .absent oid)) (Step.writeC2 rfl) (Raises.writeC2 rfl)
-      p _ h _ (WorldAdm_trunc _ hw) (HeapOk_trunc p W h hh)
-      (setElem_store_safe hS rfl hpos hb hi hstore (WorldAdm_trunc _ hw) (HeapOk_trunc p W h hh) hvval hv')
-    intro j hj U hx hu heap av hok hav ha'
+    have hframe : RefsOk (trunc p (Nat.le_succ p) W) (.writeAt arrayStoreKey (.objAt flds .absent oid) .undef) :=
+      RefsOk_trunc _ (hC.frame (t := .setElem (.readAt arrayStoreKey (.objAt flds .absent oid)) (.num b) vv) href)
+    have hset : RefsOk (trunc p (Nat.le_succ p) W) (.setElem (.arr ls) (.num b) vv) := by
+      have hvr : RefsOk W vv := fun r hr => href r (by simp [refs, hr])
+      intro r hr
+      simp only [refs, List.mem_append] at hr
+      rcases hr with (hr | hr) | hr
+      · exact read_value_refs hh hl r hr
+      · simp at hr
+      · exact RefsOk_trunc _ hvr r hr
+    refine ⟨href, Or.inr ⟨trunc p (Nat.le_succ p) W, h, _, WExt_refl _, WorldAdm_trunc _ hw,
+      .writeC2 rfl (.setC1 (.readField hf hl)), HeapOk_trunc p W h hh, ?_⟩⟩
+    apply Safe_bind (.writeAt arrayStoreKey (.objAt flds .absent oid)) (Step.writeC2 rfl) (Raises.writeC2 rfl) hC
+      p _ h _ (WorldAdm_trunc _ hw) (HeapOk_trunc p W h hh) hframe
+      (setElem_store_safe hS rfl hpos hb hi hstore (WorldAdm_trunc _ hw) (HeapOk_trunc p W h hh) hvval hv' hsrc hset)
+    intro j hj U hx hu heap av hok hav ha' hvr
+    have hfin : RefsOk U (.writeAt arrayStoreKey (.objAt flds .absent oid) av) :=
+      hC.ok hvr (RefsOk_mono hx (RefsOk_trunc _ hframe))
     have hobjp : meaning G R p (trunc p (Nat.le_succ p) W) (.objAt flds .absent oid) :=
       (meaning_adm G R).down_le (p + 1) p (by omega) W _ hobj
     have hobj' : meaning G R j U (.objAt flds .absent oid) :=
@@ -1616,7 +1650,20 @@ theorem boundedWrite_safe [DecidableEq ι] {Ξ : Fam} {G : NormalGraph ι} {R S 
     obtain ⟨flds', l', c', oid', heq, hf', hl', hag'⟩ :=
       recT_at (ReferenceConjunctions.mem_famsOf.mpr ⟨S, hm, rfl⟩) ((represents_raw hr j U _) hobj').1.1
     cases heq
-    exact write_rule (meaning_adm G S) j U heap l' av hav hu hok hf' hl' hag' ha'
+    have hcat : ∀ r, roleAt U l' = some r → Cat r av := by
+      intro r hr
+      have hslot : RefOk U (.slot arrayStoreKey l') := hfin _ (by
+        simp only [refs, List.mem_append, objRefs, List.mem_cons, List.mem_map]
+        exact .inl (.inr (.inr ⟨(arrayStoreKey, l'), lookup_mem_pair hf', rfl⟩)))
+      simp only [RefOk, hr] at hslot
+      obtain ⟨ls', rfl, -⟩ := ((represents_raw hS j U av) ha').1
+      cases r with
+      | store k =>
+        cases k with
+        | array => exact ⟨ls', rfl⟩
+        | view N => simp [SlotRole, arrayStoreKey, viewElementsKey] at hslot
+      | _ => simp [SlotRole, arrayStoreKey, viewElementsKey] at hslot
+    exact write_rule (meaning_adm G S) j U heap l' av hav hu hok hf' hl' hag' ha' hcat hfin
 
 /-- The complete element-write execution consumes a postcondition for
 both possible updates: an existing element cell followed by the store
@@ -1636,8 +1683,10 @@ theorem elementWrite_post {Ξ T : Fam} {P : Heap → Prop}
       (.writeAt arrayStoreKey (.objAt flds cd oid)
         (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) (.num b) value)) := by
   cases n with
-  | zero => trivial
+  | zero => assumption
   | succ n1 =>
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hbad, _⟩ | hr) | ⟨U1, h1, t1, hx1, hu1, step1, hh1, hs1⟩
     · simp [isVal] at hbad
     · exact .inl (.inr hr)
@@ -1645,8 +1694,10 @@ theorem elementWrite_post {Ξ T : Fam} {P : Heap → Prop}
     rw [hxs] at hu; cases hu
     refine .inr ⟨U1, h, _, hx1, hu1, step1, hh1, ?_⟩
     cases n1 with
-    | zero => trivial
+    | zero => assumption
     | succ n2 =>
+      obtain ⟨hrf, hs1⟩ := hs1
+      refine ⟨hrf, ?_⟩
       rcases hs1 with (⟨hbad, _⟩ | hr) | ⟨U2, h2, t2, hx2, hu2, step2, hh2, hs2⟩
       · simp [isVal] at hbad
       · exact .inl (.inr hr)
@@ -1775,12 +1826,13 @@ and its type `null`. -/
 theorem boundedWrite_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
     (hc : boundedWriteCheck G images j k a i v sub = true) {ρ n W h}
-    (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type)
       (fun h' u => Holds (HeapExpressionRules.ordinaryOutput k) ε (push u ρ) h') n W h (instantiate 0 ρ j.term) := by
   simp only [boundedWriteCheck, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hc
   obtain ⟨⟨⟨⟨hslots, -⟩, htypes⟩, hbd⟩, hnul⟩ := hc
-  rw [boundedSlots_eq hslots]
+  rw [boundedSlots_eq hslots] at href ⊢
   split at htypes
   · rename_i R V hR hV
     split at htypes
@@ -1789,6 +1841,8 @@ theorem boundedWrite_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
       obtain ⟨s, ls, b, idx, hs, hl, hb, hidx, hle⟩ := bounded_sound hbd hk
       have hv : meaning G E n W (ρ v) := PositiveCertificates.acceptedUsing (Bool.and_eq_true _ _ |>.mp htypes).1 n W _ (he.2 v V hV)
       have hsafe := boundedWrite_safe (Ξ := excOf G) hrep hm hS (he.2 a R hR) hs hl hidx (by simpa using hle) hv hw hh
+        (tyIn_sound (G.sorted G.env) (Bool.and_eq_true _ _ |>.mp htypes).2 hv).1
+        (by simpa [instantiate, hb] using href)
       simp only [instantiate, Nat.not_lt_zero, if_false, Nat.sub_zero, hb]
       apply HeapObservations.of_value_property (fun _ _ _ u _ => ?_)
       · exact Safe_mono n (fun m _ X u hu => (represents_back (c := .nul) hnul m X u) hu) W h _ hsafe
@@ -1816,11 +1870,12 @@ def keepsLengths [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (k : Kno
 theorem boundedLength_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
     (hc : boundedWriteCheck G images j k a i v sub = true) (hkeep : keepsLengths G j k a i = true) {ρ n W h}
-    (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type)
       (fun h' u => Holds (lengthOutput (HeapExpressionRules.stableFirst G j.context) k) ε (push u ρ) h') n W h
         (instantiate 0 ρ j.term) := by
-  have hs := boundedWrite_sound hc he hk hw hh
+  have hs := boundedWrite_sound hc he hk hw hh href
   simp only [boundedWriteCheck, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hc
   obtain ⟨⟨⟨⟨hslots, hil⟩, htypes⟩, -⟩, -⟩ := hc
   simp only [keepsLengths, Bool.and_eq_true] at hkeep
@@ -1932,7 +1987,7 @@ theorem arraySlot_region {G : NormalGraph ι} {Γ : List (Ty ι)} {j : Nat} {ρ 
       simp only [Option.orElse_none] at hS
       exact viewsT_at (ReferenceConjunctions.mem_viewsOf.mpr ⟨S, PositiveRules.mem_of_lookup hS, rfl⟩)
         (by simp [arrayStoreKey, lengthKey]) hsem.2.1
-  obtain ⟨w, hwv, hwc⟩ := hh.2 l c hlc
+  obtain ⟨w, hwv, hwc⟩ := hh.1.2 l c hlc
   have hstore : meaning G S n (trunc n (Nat.le_succ n) W) w := hag n (by omega) _ _ (hwc n (by omega))
   have hlist := (represents_raw (show Represents G S (.list T []) from hT) _ _ _ hstore).1
   obtain ⟨ls, rfl, -⟩ := hlist
@@ -1940,7 +1995,7 @@ theorem arraySlot_region {G : NormalGraph ι} {Γ : List (Ty ι)} {j : Nat} {ρ 
     (List.getElem?_eq_some_iff.mp hwv).1, fun l' hl' => ?_⟩
   obtain ⟨c', hc'⟩ := listT_cells ((represents_raw (show Represents G S (.list T []) from hT) _ _ _ hstore).1) l' hl'
   obtain ⟨c0, hc0, -⟩ := lookup_trunc_inv _ W l' c' hc'
-  obtain ⟨u, hu, -⟩ := hh.2 l' c0 hc0
+  obtain ⟨u, hu, -⟩ := hh.1.2 l' c0 hc0
   exact (List.getElem?_eq_some_iff.mp hu).1
 
 /-- Two postconditions of one term hold together: its execution is
@@ -1948,16 +2003,18 @@ deterministic. -/
 theorem safePost_and {Ξ T : Fam} {Q R : Post} : ∀ {n W W' h t}, SafePost Ξ T Q n W h t →
     SafePost Ξ T R n W' h t → SafePost Ξ T (fun h' u => Q h' u ∧ R h' u) n W h t := by
   intro n; induction n with
-  | zero => intros; trivial
+  | zero => intros; assumption
   | succ n ih =>
     intro W W' h t hq hr
+    obtain ⟨hrf, hq⟩ := hq
+    refine ⟨hrf, ?_⟩
     rcases hq with (⟨hv, ht, hq⟩ | hth) | ⟨U, h1, t1, hx, hu, st1, hh1, hq1⟩
-    · rcases hr with (⟨_, _, hr⟩ | hth') | ⟨_, _, _, _, _, st2, _, _⟩
+    · rcases hr.2 with (⟨_, _, hr⟩ | hth') | ⟨_, _, _, _, _, st2, _, _⟩
       · exact .inl (.inl ⟨hv, ht, hq, hr⟩)
       · exact absurd hth' (val_not_thrown hv)
       · exact absurd st2 (value_no_step hv)
     · exact .inl (.inr hth)
-    · rcases hr with (⟨hv', _, _⟩ | hth') | ⟨U2, h2, t2, _, _, st2, _, hr2⟩
+    · rcases hr.2 with (⟨hv', _, _⟩ | hth') | ⟨U2, h2, t2, _, _, st2, _, hr2⟩
       · exact absurd st1 (value_no_step hv')
       · exact absurd st1 hth'.no_step
       · obtain ⟨rfl, rfl⟩ := Step_det st1 st2
@@ -2072,7 +2129,7 @@ theorem regionAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
     SafePost Ξ T (fun h' u => Q h' u ∧ IndexHolds ε (regionAtoms G Γ k t) (push u ρ) h')
       n W h (instantiate 0 ρ t) := by
   cases n with
-  | zero => trivial
+  | zero => assumption
   | succ n =>
   have hval : ∀ i, i < Γ.length → isVal (ρ i) = true :=
     fun i hi => (meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1
@@ -2417,7 +2474,7 @@ theorem writeAtoms_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
       (.writeAt arrayStoreKey (.objAt flds cd oid)
         (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) (.num b) value)) := by
   cases n with
-  | zero => trivial
+  | zero => assumption
   | succ n =>
   have hu : RegionOf h (ρ a) (some target) xs :=
     .inr ⟨target, rfl, by simp [hobj, Footprints.storeOf, Footprints.fieldsOf, hfield], hxs⟩
@@ -2544,7 +2601,8 @@ longer. -/
 theorem boundedWrite_store [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
     (hc : boundedWriteCheck G images j k a i v sub = true) {ρ n W h}
-    (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type)
       (fun h' _ => ∃ s ls ls' b idx, Footprints.storeOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧
         h'[s]? = some (.arr ls') ∧ ρ i = .num b ∧ indexOfBits b = some idx ∧ idx < ls'.length ∧
@@ -2552,7 +2610,7 @@ theorem boundedWrite_store [DecidableEq ι] {G : NormalGraph ι} {images : Insta
       n W h (instantiate 0 ρ j.term) := by
   simp only [boundedWriteCheck, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hc
   obtain ⟨⟨⟨⟨hslots, -⟩, htypes⟩, hbd⟩, hnul⟩ := hc
-  rw [boundedSlots_eq hslots]
+  rw [boundedSlots_eq hslots] at href ⊢
   split at htypes
   · rename_i R V hR hV
     split at htypes
@@ -2561,6 +2619,8 @@ theorem boundedWrite_store [DecidableEq ι] {G : NormalGraph ι} {images : Insta
       obtain ⟨s, ls, b, idx, hs, hl, hb, hidx, hle⟩ := bounded_sound hbd hk
       have hv : meaning G E n W (ρ v) := PositiveCertificates.acceptedUsing (Bool.and_eq_true _ _ |>.mp htypes).1 n W _ (he.2 v V hV)
       have hsafe := boundedWrite_safe (Ξ := excOf G) hrep hm hS (he.2 a R hR) hs hl hidx (by simpa using hle) hv hw hh
+        (tyIn_sound (G.sorted G.env) (Bool.and_eq_true _ _ |>.mp htypes).2 hv).1
+        (by simpa [instantiate, hb] using href)
       have hsafe' := Safe_mono n (fun m _ X u hu => (represents_back (c := .nul) hnul m X u) hu) W h _ hsafe
       obtain ⟨flds, cd, oid, hoi⟩ : ∃ flds cd oid, ρ a = .objAt flds cd oid := by
         cases hra : ρ a
@@ -2694,10 +2754,11 @@ def atLengthAtoms [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (k : Kn
 theorem atLengthAtoms_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
     (hc : boundedWriteCheck G images j k a i v sub = true) {ρ n W h}
-    (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type)
       (fun h' _ => IndexHolds ε (atLengthAtoms G j k a i) ρ h') n W h (instantiate 0 ρ j.term) := by
-  have hst := boundedWrite_store hc he hk hw hh
+  have hst := boundedWrite_store hc he hk hw hh href
   -- `write-bound`, and its linear fact where the entry's length is defined.
   have hbound : ∀ h', (∃ s ls ls' b idx, Footprints.storeOf (ρ a) = some s ∧ h[s]? = some (.arr ls) ∧
       h'[s]? = some (.arr ls') ∧ ρ i = .num b ∧ indexOfBits b = some idx ∧ idx < ls'.length ∧
@@ -2808,8 +2869,10 @@ theorem elementWrite_into {Ξ T : Fam} {h : Heap} {flds : List (PropKey × Nat)}
         (.setElem (.readAt arrayStoreKey (.objAt flds cd oid)) iv value)) := by
   have hv : isVal value = true := ValueSets.ValueSet.mem_isVal hR
   cases n with
-  | zero => trivial
+  | zero => exact hs
   | succ n1 =>
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hbad, _⟩ | hr) | ⟨U1, h1, t1, hx1, hu1, step1, hh1, hs1⟩
     · simp [isVal] at hbad
     · exact .inl (.inr hr)
@@ -2818,8 +2881,10 @@ theorem elementWrite_into {Ξ T : Fam} {h : Heap} {flds : List (PropKey × Nat)}
     have htlt : target < h.length := (List.getElem?_eq_some_iff.mp hu).1
     refine .inr ⟨U1, h, _, hx1, hu1, step1, hh1, ?_⟩
     cases n1 with
-    | zero => trivial
+    | zero => exact hs1
     | succ n2 =>
+      obtain ⟨hrf1, hs1⟩ := hs1
+      refine ⟨hrf1, ?_⟩
       rcases hs1 with (⟨hbad, _⟩ | hr) | ⟨U2, h2, t2, hx2, hu2, step2, hh2, hs2⟩
       · simp [isVal] at hbad
       · exact .inl (.inr hr)
@@ -2889,11 +2954,12 @@ theorem writtenCells_sound {Ξ T : Fam} {k : Knowledge} {R : Option ValueSets.Va
 theorem boundedCells_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
     (hc : boundedWriteCheck G images j k a i v sub = true) {ρ n W h}
-    (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type)
       (fun h' u => HeapFacts.Holds (writtenCells k (HeapExpressionRules.valuesAt G j.context k v)) (push u ρ) h')
       n W h (instantiate 0 ρ j.term) := by
-  have hs := boundedWrite_sound hc he hk hw hh
+  have hs := boundedWrite_sound hc he hk hw hh href
   have hcheck := hc
   simp only [boundedWriteCheck, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hcheck
   obtain ⟨⟨⟨⟨hslots, -⟩, htypes⟩, hbd⟩, -⟩ := hcheck
@@ -3016,10 +3082,11 @@ theorem growOutput_sound [DecidableEq ι] {G : NormalGraph ι} {j : Sequent ι} 
 theorem boundedRegions_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
     (hc : boundedWriteCheck G images j k a i v sub = true) {ρ n W h}
-    (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G j.context ρ n W) (hk : Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type)
       (fun h' _ => IndexHolds ε (writeAtoms G j.context k a) ρ h') n W h (instantiate 0 ρ j.term) := by
-  have hs := boundedWrite_sound hc he hk hw hh
+  have hs := boundedWrite_sound hc he hk hw hh href
   simp only [boundedWriteCheck, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hc
   obtain ⟨⟨⟨⟨hslots, -⟩, htypes⟩, hbd⟩, -⟩ := hc
   have hvl : v < j.context.length := by
@@ -3207,10 +3274,10 @@ theorem indexHolds_append {as bs : List HeapKnowledge.IndexAtom} {ρ h}
                separation := if (IndexWrites.literalArrayAtoms j.context.length j.term).isEmpty then out.separation
         else HeapSeparation.allocate k.separation j.context.length (contractFields G j.context) }
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
     simp only [CheckResult.map, Option.map_eq_some_iff] at hc
     obtain ⟨out0, hrun, rfl⟩ := hc
-    have hs := base.sound hrun hcodes hsums he hk hw hh
+    have hs := base.sound hrun hcodes hsums he hk hw hh href
     refine weaken (fun _ _ hr =>
       let hq := hr.1; ⟨hq.1.1, hq.1.2.1, hq.1.2.2.1, ?_,
       hq.1.2.2.2.2.1, indexHolds_append (indexHolds_append (indexHolds_append hq.1.2.2.2.2.2 hq.2.1) ?_) hr.2⟩)
@@ -3238,10 +3305,10 @@ theorem indexHolds_append {as bs : List HeapKnowledge.IndexAtom} {ρ h}
     { out with indices := out.indices ++ (IndexWrites.stepAtoms G j.context k j.term ++
         IndexWrites.linearAtoms G j.context k j.term ++ IndexWrites.lengthAtoms k j.context j.term) }
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
     simp only [CheckResult.map, Option.map_eq_some_iff] at hc
     obtain ⟨out0, hrun, rfl⟩ := hc
-    have hs := base.emptyArrays.sound hrun hcodes hsums he hk hw hh
+    have hs := base.emptyArrays.sound hrun hcodes hsums he hk hw hh href
     exact weaken (fun h' u hq => ⟨hq.1.1.1.1, hq.1.1.1.2.1, hq.1.1.1.2.2.1, hq.1.1.1.2.2.2.1, hq.1.1.1.2.2.2.2.1,
       indexHolds_append hq.1.1.1.2.2.2.2.2 (indexHolds_append (indexHolds_append hq.1.1.2 hq.1.2) hq.2)⟩)
       (IndexWrites.lengthAtoms_holds he hk (IndexWrites.linearAtoms_holds he hk (IndexWrites.stepAtoms_holds he hk hs)))
@@ -3273,22 +3340,22 @@ every other step is `base`'s. -/
       else failure
     | _ => (base.select j k e codes sums).map (IndexWrites.growOutput G j k)
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
     split at hc
     · split at hc
       · rename_i hck
         cases hc
-        apply IndexWrites.withCells_sound (IndexWrites.boundedCells_sound hck he hk hw hh)
+        apply IndexWrites.withCells_sound (IndexWrites.boundedCells_sound hck he hk hw hh href)
         apply IndexWrites.withWritten_sound (weaken (fun _ _ hq => indexHolds_append hq.1 hq.2)
-          (IndexWrites.safePost_and (IndexWrites.boundedRegions_sound hck he hk hw hh)
-            (IndexWrites.atLengthAtoms_sound hck he hk hw hh)))
+          (IndexWrites.safePost_and (IndexWrites.boundedRegions_sound hck he hk hw hh href)
+            (IndexWrites.atLengthAtoms_sound hck he hk hw hh href)))
         split
         · rename_i hkeep
-          exact IndexWrites.boundedLength_sound hck hkeep he hk hw hh
-        · exact IndexWrites.growOutput_sound he hk hw hh (IndexWrites.boundedWrite_sound hck he hk hw hh)
+          exact IndexWrites.boundedLength_sound hck hkeep he hk hw hh href
+        · exact IndexWrites.growOutput_sound he hk hw hh (IndexWrites.boundedWrite_sound hck he hk hw hh href)
       · cases hc
     · simp only [CheckResult.map, Option.map_eq_some_iff] at hc
       obtain ⟨out0, hrun, rfl⟩ := hc
-      exact IndexWrites.growOutput_sound he hk hw hh (base.sound hrun hcodes hsums he hk hw hh)
+      exact IndexWrites.growOutput_sound he hk hw hh (base.sound hrun hcodes hsums he hk hw hh href)
 
 end Verification.HeapExpressionRules

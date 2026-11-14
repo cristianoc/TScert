@@ -1328,8 +1328,10 @@ def PromiseWith (Ξ : Fam) (effect : Effect)
     (Acc : (j : Nat) → WorldT j → List Tm → Prop) (Rc R : Fam)
     (k : Nat) (W : WorldT k) (v : Val) : Prop :=
   ∀ (j : Nat) (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
-    WorldAdm U → ∀ (heap : Heap), HeapOk j U heap → ∀ r, isVal r = true → Rc j U r →
-      ∀ args, CallArguments.Values args → Acc j U args → effect.Requires r args heap →
+    WorldAdm U → ∀ (heap : Heap), HeapOk j U heap → RefsOk U v →
+      ∀ r, isVal r = true → Rc j U r → RefsOk U r →
+      ∀ args, CallArguments.Values args → (∀ a ∈ args, RefsOk U a) → Acc j U args →
+        effect.Requires r args heap →
         ∃ result, CallArguments.Invoke ⟨v, r, args⟩ result ∧
           SafePostExcW Ξ (effect.result R (effect.promised args)) (effect.postW r args heap)
             (effect.excPostW r args heap) j U heap result
@@ -1339,8 +1341,8 @@ forgotten. A promise's is not: its result operand is not the result's type;
 nor is a precondition's, which an ordinary call does not establish. -/
 theorem PromiseWith.erase {effect Acc Rc R k W v} (hp : effect.plain = true)
     (h : PromiseWith Ξ effect Acc Rc R k W v) : Promise Ξ Acc Rc R k W v := by
-  intro j hj U hx hu heap hh r hrv hr args hv ha
-  obtain ⟨result, hi, hs⟩ := h j hj U hx hu heap hh r hrv hr args hv ha
+  intro j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha
+  obtain ⟨result, hi, hs⟩ := h j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha
     (Effect.requires_none (Effect.plain_requires hp) (Effect.plain_pre hp) r args heap)
   rw [Effect.result_plain hp] at hs
   exact ⟨result, hi, HeapObservations.erase hs.post⟩
@@ -1348,13 +1350,13 @@ theorem PromiseWith.erase {effect Acc Rc R k W v} (hp : effect.plain = true)
 theorem PromiseWith.down {effect Acc Rc R n W v}
     (h : PromiseWith Ξ effect Acc Rc R (n + 1) W v) :
     PromiseWith Ξ effect Acc Rc R n (trunc n (Nat.le_succ n) W) v := by
-  intro j hj U hx hu heap hh r hrv hr args hv ha hq
-  exact h j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh r hrv hr args hv ha hq
+  intro j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha hq
+  exact h j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh hvr r hrv hr hrr args hv har ha hq
 
 theorem PromiseWith.mono {effect Acc Rc R n W W' v} (hx : WExt W W')
     (h : PromiseWith Ξ effect Acc Rc R n W v) : PromiseWith Ξ effect Acc Rc R n W' v := by
-  intro j hj U hy hu heap hh r hrv hr args hv ha hq
-  exact h j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh r hrv hr args hv ha hq
+  intro j hj U hy hu heap hh hvr r hrv hr hrr args hv har ha hq
+  exact h j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh hvr r hrv hr hrr args hv har ha hq
 
 /-- Effect coverage is implication of the normal-return postcondition and of
 what the result meets, at every result operand. There is deliberately no rule
@@ -1530,9 +1532,9 @@ theorem PromiseWith.weaken' {Ξ Ξ' : Fam} {effect effect' Acc Acc' Rc Rc' R T k
     (hacc : ∀ j, j < k → ∀ U args, Acc' j U args → Acc j U args)
     (hres : ∀ j, j < k → ∀ U u, R j U u → T j U u)
     (h : PromiseWith Ξ effect Acc Rc R k W v) : PromiseWith Ξ' effect' Acc' Rc' T k W v := by
-  intro j hj U hx hu heap hh r hrv hr args hv ha hq
+  intro j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha hq
   obtain ⟨result, hi, hs⟩ :=
-    h j hj U hx hu heap hh r hrv (hrecv j hj U r hr) args hv (hacc j hj U args ha) (he.2.2.2 r args heap hq)
+    h j hj U hx hu heap hh hvr r hrv (hrecv j hj U r hr) hrr args hv har (hacc j hj U args ha) (he.2.2.2 r args heap hq)
   exact ⟨result, hi, SafePostExc.consequence_below' (fun m hm => hexc m (by omega))
     (fun m hm U' u hu => he.2.1 T args m U' u
       (Effect.result_mono effect (hres m (by omega) U') (hres m (by omega) U') hu)) (he.1 r args heap)
@@ -1552,8 +1554,8 @@ theorem PromiseWith.weaken_recv {effect : Effect} {Acc : ArgFam} {Rc Rc' R : Fam
     (hrecv : ∀ j (hj : j < k) (U : WorldT j), WExt (trunc j (Nat.le_of_lt hj) W) U →
       ∀ r, Rc' j U r → Rc j U r)
     (h : PromiseWith Ξ effect Acc Rc R k W v) : PromiseWith Ξ effect Acc Rc' R k W v := by
-  intro j hj U hx hu heap hh r hrv hr args hv ha hq
-  exact h j hj U hx hu heap hh r hrv (hrecv j hj U hx r hr) args hv ha hq
+  intro j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha hq
+  exact h j hj U hx hu heap hh hvr r hrv (hrecv j hj U hx r hr) hrr args hv har ha hq
 
 theorem PromiseWith.congr {Ξ Ξ' : Fam} {effect Acc Acc' Rc Rc' R T n W v}
     (hexc : Agree Ξ Ξ' n)
@@ -1583,7 +1585,8 @@ def ConstructPromise (Ξ : Fam) (effect : Effect) (P : ArgFam) (R : Fam) (k : Na
     (v : Val) : Prop :=
   ∀ (j : Nat) (hj : j < k) (U : WorldT j),
     WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U → ∀ (heap : Heap), HeapOk j U heap →
-      ∀ args, CallArguments.Values args → P j U args → effect.Requires .undef args heap →
+      RefsOk U v → ∀ args, CallArguments.Values args → (∀ a ∈ args, RefsOk U a) → P j U args →
+        effect.Requires .undef args heap →
         ∃ result, ConstructsTo v args result ∧
           SafePostExcW Ξ (effect.result R (effect.promised args)) (effect.postW .undef args heap)
             (effect.excPostW .undef args heap) j U heap result
@@ -1591,13 +1594,13 @@ def ConstructPromise (Ξ : Fam) (effect : Effect) (P : ArgFam) (R : Fam) (k : Na
 theorem ConstructPromise.down {effect P R n W v}
     (h : ConstructPromise Ξ effect P R (n + 1) W v) :
     ConstructPromise Ξ effect P R n (trunc n (Nat.le_succ n) W) v := by
-  intro j hj U hx hu heap hh args hv ha hq
-  exact h j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh args hv ha hq
+  intro j hj U hx hu heap hh hvr args hv har ha hq
+  exact h j (by omega) U (by rwa [trunc_trunc] at hx) hu heap hh hvr args hv har ha hq
 
 theorem ConstructPromise.mono {effect P R n W W' v} (hx : WExt W W')
     (h : ConstructPromise Ξ effect P R n W v) : ConstructPromise Ξ effect P R n W' v := by
-  intro j hj U hy hu heap hh args hv ha hq
-  exact h j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh args hv ha hq
+  intro j hj U hy hu heap hh hvr args hv har ha hq
+  exact h j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh hvr args hv har ha hq
 
 theorem ConstructPromise.weaken' {Ξ Ξ' : Fam} {effect effect' P P' R T k W v}
     (he : effect.Covers effect')
@@ -1605,8 +1608,8 @@ theorem ConstructPromise.weaken' {Ξ Ξ' : Fam} {effect effect' P P' R T k W v}
     (hacc : ∀ j, j < k → ∀ U args, P' j U args → P j U args)
     (hres : ∀ j, j < k → ∀ U u, R j U u → T j U u)
     (h : ConstructPromise Ξ effect P R k W v) : ConstructPromise Ξ' effect' P' T k W v := by
-  intro j hj U hx hu heap hh args hv ha hq
-  obtain ⟨result, hc, hs⟩ := h j hj U hx hu heap hh args hv (hacc j hj U args ha) (he.2.2.2 .undef args heap hq)
+  intro j hj U hx hu heap hh hvr args hv har ha hq
+  obtain ⟨result, hc, hs⟩ := h j hj U hx hu heap hh hvr args hv har (hacc j hj U args ha) (he.2.2.2 .undef args heap hq)
   exact ⟨result, hc, SafePostExc.consequence_below' (fun m hm => hexc m (by omega))
     (fun m hm U' u hu => he.2.1 T args m U' u
       (Effect.result_mono effect (hres m (by omega) U') (hres m (by omega) U') hu)) (he.1 .undef args heap)
@@ -1633,10 +1636,10 @@ theorem ConstructPromise.erase {effect P R k W v} (hp : effect.plain = true)
     (h : ConstructPromise Ξ effect P R k W v) :
     ∀ (j : Nat) (hj : j < k) (U : WorldT j),
       WExt (trunc j (Nat.le_of_lt hj) W) U → WorldAdm U → ∀ (heap : Heap), HeapOk j U heap →
-        ∀ args, CallArguments.Values args → P j U args →
+        RefsOk U v → ∀ args, CallArguments.Values args → (∀ a ∈ args, RefsOk U a) → P j U args →
           ∃ result, ConstructsTo v args result ∧ Safe Ξ R j U heap result := by
-  intro j hj U hx hu heap hh args hv ha
-  obtain ⟨result, hc, hs⟩ := h j hj U hx hu heap hh args hv ha
+  intro j hj U hx hu heap hh hvr args hv har ha
+  obtain ⟨result, hc, hs⟩ := h j hj U hx hu heap hh hvr args hv har ha
     (Effect.requires_none (Effect.plain_requires hp) (Effect.plain_pre hp) .undef args heap)
   rw [Effect.result_plain hp] at hs
   exact ⟨result, hc, HeapObservations.erase hs.post⟩
@@ -1735,13 +1738,13 @@ theorem PromiseWith.combine {effect other Acc Rc B C D k W v}
     (hc : PromiseWith Ξ other Acc Rc C k W v)
     (hcross : ∀ n, n < k → CrossCompatUpTo n B C D) :
     PromiseWith Ξ (effect.meet other) Acc Rc D k W v := by
-  intro j hj U hx hu heap hh r hrv hr args hv ha hq
+  intro j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha hq
   have hq' : other.Requires r args heap := by
     simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs
     exact ⟨fun R hR => hq.1 R (by simp only [Effect.meet]; rw [hs.1.1.1.1.2]; exact hR),
       fun F hF => hq.2 F (by simp only [Effect.meet]; rw [hs.1.1.2]; exact hF)⟩
-  obtain ⟨b, hib, hsb⟩ := hb j hj U hx hu heap hh r hrv hr args hv ha ⟨hq.1, hq.2⟩
-  obtain ⟨c, hic, hsc⟩ := hc j hj U hx hu heap hh r hrv hr args hv ha hq'
+  obtain ⟨b, hib, hsb⟩ := hb j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha ⟨hq.1, hq.2⟩
+  obtain ⟨c, hic, hsc⟩ := hc j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha hq'
   cases CallArguments.invoke_deterministic hib hic
   obtain ⟨hr1, hp1, hr2, hp2⟩ := Effect.meet_same hs
   rw [hr2, hp2] at hsc
@@ -1765,10 +1768,21 @@ theorem PromiseWith.bound {effect : Effect} {Acc Rest : ArgFam} {Rt R Rc : Fam}
     (hprefix : ∀ j (hj : j < k) U, WExt (trunc j (Nat.le_of_lt hj) W) U →
       ∀ args, Rest j U args → Acc j U (pre ++ args)) :
     PromiseWith Ξ (effect.drop pre.length) Rest Rc R k W (.objAt fs (.bound tv rv pre) oid) := by
-  intro j hj U hx hu heap hh r hv _ args hargs ha _
+  intro j hj U hx hu heap hh hvr r hv _ _ args hargs har ha _
   refine ⟨_, .bound hv hargs, ?_⟩
+  have hobj : RefsOk U tv ∧ RefsOk U rv ∧ ∀ a ∈ pre, RefsOk U a := by
+    refine ⟨fun x hx => hvr x ?_, fun x hx => hvr x ?_, fun a ha x hx => hvr x ?_⟩ <;>
+      simp only [refs, refsArgs_eq, List.mem_append, List.mem_flatMap]
+    · exact .inr (.inl (.inl hx))
+    · exact .inr (.inl (.inr hx))
+    · exact .inr (.inr ⟨a, ha, hx⟩)
+  have hinv : RefsOk U (.invoke tv rv (pre ++ args)) :=
+    RefsOk_invoke.mpr ⟨hobj.1, hobj.2.1, fun a ha => by
+      rcases List.mem_append.mp ha with ha | ha
+      · exact hobj.2.2 a ha
+      · exact har a ha⟩
   cases j with
-  | zero => trivial
+  | zero => exact hinv
   | succ i =>
     have hi : i < k := by omega
     have hxU : WExt (trunc i (Nat.le_of_lt hi) W) (trunc i (Nat.le_succ i) U) := by
@@ -1783,13 +1797,15 @@ theorem PromiseWith.bound {effect : Effect} {Acc Rest : ArgFam} {Rt R Rc : Fam}
       rcases List.mem_append.mp hm with hm | hm
       · exact hp a hm
       · exact hargs a hm
-    obtain ⟨res, hinv, hsafe⟩ := ht i hi _ hxU hu' heap hh' rv hrv hr'
-      (pre ++ args) hall (hprefix i hi _ hxU args ha')
+    have hall' : ∀ a ∈ pre ++ args, RefsOk (trunc i (Nat.le_succ i) U) a := fun a ha =>
+      RefsOk_trunc _ ((RefsOk_invoke.mp hinv).2.2 a ha)
+    obtain ⟨res, hinv', hsafe⟩ := ht i hi _ hxU hu' heap hh' (RefsOk_trunc _ hobj.1) rv hrv hr'
+      (RefsOk_trunc _ hobj.2.1) (pre ++ args) hall hall' (hprefix i hi _ hxU args ha')
       (Effect.requires_none (Effect.keeps_requires hkeeps) (Effect.keeps_pre hkeeps) rv (pre ++ args) heap)
     rw [Effect.result_drop, Effect.promised_drop hkeeps]
-    exact .inr ⟨_, heap, res, WExt_refl _, hu', hinv.step heap, hh',
+    exact ⟨hinv, .inr ⟨_, heap, res, WExt_refl _, hu', hinv'.step heap, hh',
       SafePostExc.weaken (fun _ _ h => Effect.post_drop pre.length h)
-        (fun _ h => Effect.excPost_drop pre.length h) hsafe⟩
+        (fun _ h => Effect.excPost_drop pre.length h) hsafe⟩⟩
 
 /-- Application consumes a qualified signature, without inspecting the
 callee's implementation. Its entry heap is after actual evaluation. -/
@@ -1797,26 +1813,30 @@ theorem call_safe_exc {effect : Effect} {P : ArgFam} {Rc R : Fam}
     (hP : Adm P) (hRc : Adm Rc) {n W heap f r vs}
     (hf : PromiseWith Ξ effect P Rc R n W f) (hr : Rc n W r)
     (hrv : isVal r = true) (hv : CallArguments.Values vs) (ha : P n W vs)
-    (hw : WorldAdm W) (hh : HeapOk n W heap) (hq : effect.Requires r vs heap) :
+    (hw : WorldAdm W) (hh : HeapOk n W heap) (hq : effect.Requires r vs heap)
+    (href : RefsOk W (.invoke f r vs)) :
     SafePostExc Ξ (effect.result R (effect.promised vs)) (effect.post r vs heap) (effect.excPost r vs heap)
       n W heap (.invoke f r vs) := by
   cases n with
-  | zero => trivial
+  | zero => exact href
   | succ n =>
     let U := trunc n (Nat.le_succ n) W
+    obtain ⟨hfr, hrr, har⟩ := RefsOk_invoke.mp href
     obtain ⟨body, hi, hs⟩ := hf n (Nat.lt_succ_self n) U (WExt_refl _)
-      (WorldAdm_trunc _ hw) heap (HeapOk_trunc n W heap hh) r hrv (hRc.down n W r hr)
-      vs hv (hP.transfer ha n (Nat.le_succ n) U (WExt_refl _)) hq
-    exact .inr ⟨U, heap, body, WExt_refl _, WorldAdm_trunc _ hw, hi.step heap,
-      HeapOk_trunc n W heap hh, hs⟩
+      (WorldAdm_trunc _ hw) heap (HeapOk_trunc n W heap hh) (RefsOk_trunc _ hfr) r hrv (hRc.down n W r hr)
+      (RefsOk_trunc _ hrr) vs hv (fun a ha => RefsOk_trunc _ (har a ha))
+      (hP.transfer ha n (Nat.le_succ n) U (WExt_refl _)) hq
+    exact ⟨href, .inr ⟨U, heap, body, WExt_refl _, WorldAdm_trunc _ hw, hi.step heap,
+      HeapOk_trunc n W heap hh, hs⟩⟩
 
 theorem call_safe {effect : Effect} {P : ArgFam} {Rc R : Fam}
     (hP : Adm P) (hRc : Adm Rc) {n W heap f r vs}
     (hf : PromiseWith Ξ effect P Rc R n W f) (hr : Rc n W r)
     (hrv : isVal r = true) (hv : CallArguments.Values vs) (ha : P n W vs)
-    (hw : WorldAdm W) (hh : HeapOk n W heap) (hq : effect.Requires r vs heap) :
+    (hw : WorldAdm W) (hh : HeapOk n W heap) (hq : effect.Requires r vs heap)
+    (href : RefsOk W (.invoke f r vs)) :
     SafePost Ξ (effect.result R (effect.promised vs)) (effect.post r vs heap) n W heap (.invoke f r vs) :=
-  (call_safe_exc hP hRc hf hr hrv hv ha hw hh hq).post
+  (call_safe_exc hP hRc hf hr hrv hv ha hw hh hq href).post
 
 /-- Trailing `undefined` actuals change no precondition: a construction's
 positions past its actuals hold `undefined` either way (`callEnv_pad`). -/
@@ -1836,11 +1856,13 @@ theorem construct_safe_exc_requires {effect : Effect} (hpr : effect.promise = no
     (hP : Adm P) {n W heap v vs pad}
     (hf : ConstructPromise Ξ effect P R n W v) (hv : CallArguments.Values vs)
     (hpad : ∀ a ∈ pad, a = .undef) (ha : P n W (vs ++ pad))
-    (hw : WorldAdm W) (hh : HeapOk n W heap) (hq : effect.Requires .undef vs heap) :
+    (hw : WorldAdm W) (hh : HeapOk n W heap) (hq : effect.Requires .undef vs heap)
+    (href : RefsOk W (.construct v vs)) :
     SafePostExc Ξ R (effect.post .undef vs heap) (effect.excPost .undef vs heap) n W heap (.construct v vs) := by
   cases n with
-  | zero => trivial
+  | zero => exact href
   | succ n =>
+    obtain ⟨hvr, har⟩ := RefsOk_construct.mp href
     let U := trunc n (Nat.le_succ n) W
     have hvp : CallArguments.Values (vs ++ pad) := by
       intro a h
@@ -1848,24 +1870,28 @@ theorem construct_safe_exc_requires {effect : Effect} (hpr : effect.promise = no
       · exact hv a h
       · rw [hpad a h]; rfl
     obtain ⟨result, ⟨fs, c, enter, oid, rfl, hc, rfl⟩, hs⟩ := hf n (Nat.lt_succ_self n) U (WExt_refl _)
-      (WorldAdm_trunc _ hw) heap (HeapOk_trunc n W heap hh) _ hvp
+      (WorldAdm_trunc _ hw) heap (HeapOk_trunc n W heap hh) (RefsOk_trunc _ hvr) _ hvp
+      (fun a ha => by
+        rcases List.mem_append.mp ha with ha | ha
+        · exact RefsOk_trunc _ (har a ha)
+        · rw [hpad a ha]; exact RefsOk_undef)
       (hP.transfer ha n (Nat.le_succ n) U (WExt_refl _))
       (Effect.requires_pad hpad hq)
     rw [CallArguments.construction_pad hc _ _ hpad, Effect.result_none hpr] at hs
-    exact .inr ⟨U, heap, _, WExt_refl _, WorldAdm_trunc _ hw,
+    exact ⟨href, .inr ⟨U, heap, _, WExt_refl _, WorldAdm_trunc _ hw,
       CallArguments.construction_step hc hv heap, HeapOk_trunc n W heap hh,
-      SafePostExc.weaken (fun _ _ h => Effect.post_pad rfl hpad h) (fun _ h => Effect.excPost_pad hpad h) hs⟩
+      SafePostExc.weaken (fun _ _ h => Effect.post_pad rfl hpad h) (fun _ h => Effect.excPost_pad hpad h) hs⟩⟩
 
 /-- A construction at a plain signature, whose precondition is empty. -/
 theorem construct_safe_exc {effect : Effect} (hpl : effect.plain = true) {P : ArgFam} {R : Fam}
     (hP : Adm P) {n W heap v vs pad}
     (hf : ConstructPromise Ξ effect P R n W v) (hv : CallArguments.Values vs)
     (hpad : ∀ a ∈ pad, a = .undef) (ha : P n W (vs ++ pad))
-    (hw : WorldAdm W) (hh : HeapOk n W heap) :
+    (hw : WorldAdm W) (hh : HeapOk n W heap) (href : RefsOk W (.construct v vs)) :
     SafePostExc Ξ R (effect.post .undef vs heap) (effect.excPost .undef vs heap) n W heap (.construct v vs) :=
   construct_safe_exc_requires
     (by simp only [Effect.plain, Bool.and_eq_true, Option.isNone_iff_eq_none] at hpl; exact hpl.1.1)
-    hP hf hv hpad ha hw hh (Effect.requires_none (Effect.plain_requires hpl) (Effect.plain_pre hpl) .undef vs heap)
+    hP hf hv hpad ha hw hh (Effect.requires_none (Effect.plain_requires hpl) (Effect.plain_pre hpl) .undef vs heap) href
 
 /-- An operational invariant that only appends fresh locations supplies
 the normal-return preservation postcondition, supplementing ordinary safety.
@@ -1876,9 +1902,11 @@ theorem prefix_safe {P : Tm → Prop} {R : Fam} {r : Tm} {args : List Tm}
       SafePost Ξ R ((Effect.ofFootprint .empty).post r args heap) n W heap t := by
   intro n
   induction n with
-  | zero => intros; trivial
+  | zero => intros; assumption
   | succ n ih =>
     intro W heap t hp hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hv, ht⟩ | hth) | ⟨U, h', t', hx, hu, step, hh, hs⟩
     · exact .inl (.inl ⟨hv, ht, (Effect.post_ofFootprint _ _ _ _ _ _).mpr
         (Footprints.Closed.holds_empty.mpr ⟨[], by simp⟩)⟩)
@@ -1904,9 +1932,11 @@ theorem prefix_safe_exc {P : Tm → Prop} {R : Fam} {r : Tm} {args : List Tm}
         (fun h' => Footprints.Closed.empty.Holds heap h') n W h t from this hp (List.prefix_refl _) hpost
   intro n
   induction n with
-  | zero => intros; trivial
+  | zero => intros; assumption
   | succ n ih =>
     intro W h t hp hpre hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (hv | hr) | ⟨U, h', t', hx, hu, step, hh, hs⟩
     · exact .inl (.inl hv)
     · exact .inl (.inr ⟨hr, Footprints.Closed.holds_empty.mpr hpre⟩)

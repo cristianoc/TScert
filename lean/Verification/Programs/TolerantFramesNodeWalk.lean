@@ -205,10 +205,11 @@ theorem stepEdgesSound_of {G : NormalGraph ι} {images : InstanceImageCheck G} {
   obtain ⟨na⟩ := hacc l hp.1.1
   have hS := na.stated ρ s hp
   have he : EnvOk G na.c.context ρ s.n s.W := na.hctx ▸ hp.2
+  refine ⟨na.node, na.hP, fun hr => ?_⟩
   obtain ⟨-, -, -, cn, ce, hparts⟩ :=
     checkedStep_parts na.hstep hS na.wf na.below na.width he hcodes na.sums hdir hsrch
   obtain ⟨hj, ho⟩ := nodeObligations_of_parts (pre := edgePreT G w startNames ε ctx) (Ξres := excOf G)
-    (Tres := Tres) (Qres := fun _ => True) (Rres := fun _ => True) (x := na.node.handler) hparts he
+    (Tres := Tres) (Qres := fun _ => True) (Rres := fun _ => True) (x := na.node.handler) hparts he hr
     (fun j U v hv => na.shape (j + 1) U v hv)
     (fun s' v _ hv hF he' _ => normalTarget_of_exits (fun t p o q hm => na.exits t p o q hm ρ) na.ret
       (fun _ => trivial) s' v hv hF he' (na.shape _ _ v (he'.2 0 _ rfl)))
@@ -216,7 +217,7 @@ theorem stepEdgesSound_of {G : NormalGraph ι} {images : InstanceImageCheck G} {
       cases hh : na.node.handler with
       | none => exact ⟨hx, trivial⟩
       | some t => exact na.handler t hh ρ s' e hFe he' hsc hx)
-  exact ⟨na.node, na.hP, _, _, cn, ce, _, _, hj, ho⟩
+  exact ⟨_, _, cn, ce, _, _, hj, ho⟩
 
 end Nodes
 

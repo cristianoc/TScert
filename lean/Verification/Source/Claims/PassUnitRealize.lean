@@ -123,8 +123,8 @@ def RowSpec (G : NormalGraph ι) (arity : Nat) (E : List Tm)
     (Cs : List (Ty ι)) (row : CallEffects.Arrow (Ty ι)) (sep : HeapSeparation.Separation) : Prop :=
   arity ≤ row.arguments.length ∧ row.effect.belowRow arity = true ∧
   ∀ n W h L, EnvOk G (codeFrame arity row Cs none) (envOf L .nul) n W → WorldAdm W →
-    HeapOk n W h → CallArguments.Values L → PreAt row.effect (none : Option (Ty ι)) L h →
-    HeapSeparation.Holds sep (envOf L .nul) →
+    HeapOk n W h → RefsOk W (.goto E K start L .nul) → CallArguments.Values L →
+    PreAt row.effect (none : Option (Ty ι)) L h → HeapSeparation.Holds sep (envOf L .nul) →
     ∀ r args, FrameValues arity (none : Option (Ty ι)) L r args →
       HeapObservations.SafePostExc (excOf G)
         (row.effect.result (meaning G row.result) (framePromised row.effect (frameOffset (none : Option (Ty ι))) L))
@@ -135,7 +135,7 @@ def RowSpec (G : NormalGraph ι) (arity : Nat) (E : List Tm)
 theorem rowSpec_of_graphCodeSpec {G : NormalGraph ι} {arity E K start Cs row}
     (hs : GraphCodeSpec G arity E K start Cs row) : RowSpec G arity E K start Cs row {} :=
   ⟨hs.1, CallEffects.Effect.belowRow_of_below hs.2.1,
-    fun n W h L he hw hh hv hpre _ r args hf => hs.2.2 n W h L he hw hh hv hpre r args hf⟩
+    fun n W h L he hw hh hgo hv hpre _ r args hf => hs.2.2 n W h L he hw hh hgo hv hpre r args hf⟩
 
 /-- A promise's results meet a plain result admitting them (proved). -/
 theorem promiseAdmits_result [DecidableEq ι] {G : NormalGraph ι} {R T : Ty ι} {π : CallEffects.TypePromise}
@@ -170,8 +170,8 @@ theorem rowSpec_plain_of_promise [DecidableEq ι] {G : NormalGraph ι} {arity E 
     (hp : p.effect.promise = some π) (hR : promiseAdmits G R π = true)
     (hs : RowSpec G arity E K start Cs p sep) : RowSpec G arity E K start Cs (promisePlain p R) sep := by
   refine ⟨hs.1, belowRow_promise_none hs.2.1, ?_⟩
-  intro n W h L he hw hh hv hpre hsep r args hf
-  have hrun := hs.2.2 n W h L he hw hh hv hpre hsep r args hf
+  intro n W h L he hw hh hgo hv hpre hsep r args hf
+  have hrun := hs.2.2 n W h L he hw hh hgo hv hpre hsep r args hf
   have hres : ∀ a, p.effect.result (meaning G p.result) a = π.result (meaning G p.result) a := by
     intro a; simp [CallEffects.Effect.result, hp]
   rw [hres] at hrun
@@ -188,13 +188,14 @@ theorem row_invoke_at {G : NormalGraph ι} {arity E K start Cs row vs sep}
     (hu : WorldAdm U) {heap : Heap} (hh : HeapOk j U heap) {r : Tm} (hr : meaning G row.receiver j U r)
     {args : List Tm} (ha : ArgsShort (row.arguments.map (meaning G)) j U args)
     (hq : ∀ F ∈ row.effect.pre, F.HoldsAt ⟨CallEffects.callEnv r args, heap⟩ (CallEffects.callEnv r args) heap)
-    (hsep : HeapSeparation.Holds sep (envOf (r :: CallArguments.parameters arity args ++ vs) .nul)) :
+    (hsep : HeapSeparation.Holds sep (envOf (r :: CallArguments.parameters arity args ++ vs) .nul))
+    (hgo : RefsOk U (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul)) :
     HeapObservations.SafePostExc (excOf G) (row.effect.result (meaning G row.result) (row.effect.promised args))
       (row.effect.post r args heap) (row.effect.excPost r args heap) j U heap
       (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul) := by
   have hx : WExt (trunc j (Nat.le_refl j) U) U := by rw [trunc_id]; exact WExt_refl U
   have hb := CallEffects.Effect.belowRow_below hs.2.1
-  have hsafe := hs.2.2 j U heap _ (frame_envOk hs.1 hvs (Nat.le_refl j) hx hr ha) hu hh (by
+  have hsafe := hs.2.2 j U heap _ (frame_envOk hs.1 hvs (Nat.le_refl j) hx hr ha) hu hh hgo (by
     intro v hv
     rcases List.mem_cons.mp hv with rfl | hv
     · exact (meaning_value hr).1
@@ -246,13 +247,17 @@ theorem closure_meets_below {G : NormalGraph ι} {arity E K start Cs vs} {kind :
   have hself : Scoped 0 (.objAt fs (.graph arity E K start vs kind false) oid) := by simpa [Scoped] using hsc
   apply (represents_back hr n W _)
   refine ⟨⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩, ⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩⟩
-  · intro q hq j hj U hx hu heap hh r hrv hrr args hvals ha hreq
+  · intro q hq j hj U hx hu heap hh hvr r hrv hrr hrref args hvals har ha hreq
     obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
     have henv := (hcaps j hj U).withSelf hlen hself
     exact ⟨_, .graph hrv hvals (hbL p hp j U r hrr),
       row_invoke_at (ho p (List.mem_append_left _ hp)) henv
-        (Values.withSelf hvalues rfl) hu hh hrr ha (fun F hF => hreq.2 F hF) (hsep r args _)⟩
-  · intro q hq j hj U hx hu heap hh r hrv hrr args hvals ha hreq
+        (Values.withSelf hvalues rfl) hu hh hrr ha (fun F hF => hreq.2 F hF) (hsep r args _)
+        (goto_entry_refs (graph_code_refs hvr).1 (fun a ha => by
+          rcases List.mem_append.mp ha with ha | ha
+          · exact (graph_code_refs hvr).2 a ha
+          · rw [List.mem_singleton.mp ha]; exact hvr) hrref har)⟩
+  · intro q hq j hj U hx hu heap hh hvr r hrv hrr hrref args hvals har ha hreq
     obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
     have hspec := ho _ (List.mem_append_right _ (List.mem_map.mpr ⟨s, hsm, rfl⟩))
     have hle : arity ≤ s.arguments.1.length := hspec.1
@@ -269,6 +274,10 @@ theorem closure_meets_below {G : NormalGraph ι} {arity E K start Cs vs} {kind :
       (fun F hF => (CallEffects.Effect.pre_take hbelow hle (F := F) hF r args heap).mpr
         (hreq.2 F (by simpa [CallEffects.RestArrow.mapWith, CallEffects.Contract.map, CallEffects.RestArrow.fixed] using hF)))
       (by rw [hp]; exact hsep r args _)
+      (goto_entry_refs (graph_code_refs hvr).1 (fun a ha => by
+        rcases List.mem_append.mp ha with ha | ha
+        · exact (graph_code_refs hvr).2 a ha
+        · rw [List.mem_singleton.mp ha]; exact hvr) hrref (fun a ha => har a (List.mem_of_mem_take ha)))
     have hpr : s.fixed.effect.promised (args.take s.arguments.1.length) = s.fixed.effect.promised args :=
       CallEffects.Effect.promised_take hbelow hle args
     rw [hp, hpr] at hsafe
@@ -344,16 +353,18 @@ theorem safePostExc_and {Ξ T : Fam} {Q Q' : HeapObservations.Post} {R : Heap �
     ∀ {n W W' h t}, HeapObservations.SafePostExc Ξ T Q R n W h t → HeapObservations.SafePost Ξ T Q' n W' h t →
       HeapObservations.SafePostExc Ξ T (fun h' u => Q h' u ∧ Q' h' u) R n W h t := by
   intro n; induction n with
-  | zero => intros; trivial
+  | zero => intro _ _ _ _ hq _; exact hq
   | succ n ih =>
     intro W W' h t hq hr
+    obtain ⟨hrf, hq⟩ := hq
+    refine ⟨hrf, ?_⟩
     rcases hq with (⟨hv, ht, hq⟩ | ⟨hth, hR⟩) | ⟨U, h1, t1, hx, hu, st1, hh1, hq1⟩
-    · rcases hr with (⟨_, _, hr⟩ | hth') | ⟨_, _, _, _, _, st2, _, _⟩
+    · rcases hr.2 with (⟨_, _, hr⟩ | hth') | ⟨_, _, _, _, _, st2, _, _⟩
       · exact .inl (.inl ⟨hv, ht, hq, hr⟩)
       · exact absurd hth' (val_not_thrown hv)
       · exact absurd st2 (value_no_step hv)
     · exact .inl (.inr ⟨hth, hR⟩)
-    · rcases hr with (⟨hv', _, _⟩ | hth') | ⟨U2, h2, t2, _, _, st2, _, hr2⟩
+    · rcases hr.2 with (⟨hv', _, _⟩ | hth') | ⟨U2, h2, t2, _, _, st2, _, hr2⟩
       · exact absurd st1 (value_no_step hv')
       · exact absurd st1 hth'.no_step
       · obtain ⟨rfl, rfl⟩ := Step_det st1 st2
@@ -375,18 +386,20 @@ theorem rowSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
     (hcond : rowConditions c = true) (hstore : c.store = none)
     (hsafeG : ∀ η n W h ρ, EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep
       (GraphCode.codeEntryIndices c) ρ n W h →
+      (∀ node ∈ GraphCode.program c.exprs c.conts, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
       SafeGraph (excOf (reassign G η)) (GraphCode.program c.exprs c.conts)
         (GoalHolds (reassign G η) c.goal (c.goal.argument ρ)) n W h (.at c.start ρ))
     (hboundG : ∀ Φ fresh onThrow, codeBound c = some (Φ, fresh, onThrow) → ∀ η n W h L d,
       EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep (GraphCode.codeEntryIndices c)
-        (envOf L d) n W h → (∀ v ∈ L, isVal v = true) → isVal d = true →
+        (envOf L d) n W h → RefsOk W (.goto c.exprs c.conts c.start L d) →
+        (∀ v ∈ L, isVal v = true) → isVal d = true →
       HeapObservations.SafePostExc (excOf (reassign G η))
         (GoalHolds (reassign G η) c.goal (c.goal.argument (envOf L d)))
         (fun h' v => Φ.Holds h h' ∧ (fresh = true → Footprints.FreshAt h.length v))
         (fun h' => onThrow = true → Φ.Holds h h') n W h (.goto c.exprs c.conts c.start L d))
     (hensG : c.row.effect.ensures ≠ [] → ∀ η n W h L d,
       EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep (GraphCode.codeEntryIndices c)
-        (envOf L d) n W h →
+        (envOf L d) n W h → RefsOk W (.goto c.exprs c.conts c.start L d) →
       HeapObservations.SafePost (excOf (reassign G η))
         (GoalHolds (reassign G η) c.goal (c.goal.argument (envOf L d)))
         (fun h' v => GraphCode.EnsuresAt c.row.effect.ensures ⟨envOf L d, h⟩ h' (push v (envOf L d))) n W h
@@ -398,12 +411,12 @@ theorem rowSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
   obtain ⟨⟨⟨⟨⟨⟨harity, hrow⟩, hfo⟩, _hreq⟩, hel⟩, hgr⟩, hew⟩ := hcond
   have hbelow0 := CallEffects.Effect.belowRow_below hrow
   refine ⟨harity, hrow, ?_⟩
-  intro n W heap L he hw hh hvalues hpre hsep r args hframe
+  intro n W heap L he hw hh hgo hvalues hpre hsep r args hframe
   have he' : EnvOk (reassign G η) (codeFrame c.arity c.row c.captures c.store) (envOf L .nul) n W := by
     rw [hstore]; exact he
   have hpre' : PreAt c.row.effect c.store L heap := by rw [hstore]; exact hpre
   have hrun := codeRun_of_clauses (sep := sep) hbelow0 hfo hel hgr hew hsafeG hboundG η n W heap L he' hw hh
-    hvalues hpre' hsep r args
+    hgo hvalues hpre' hsep r args
   rw [hstore] at hrun
   obtain ⟨pre, vs, hpl, rfl⟩ := hframe
   have hpre0 : pre = [] := List.eq_nil_of_length_eq_zero (by simpa [frameOffset] using hpl)
@@ -415,7 +428,7 @@ theorem rowSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
   · have hentry : EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep
         (GraphCode.codeEntryIndices c) (envOf ([] ++ r :: CallArguments.parameters c.arity args ++ vs) .nul) n W heap :=
       ⟨he', hsep, GraphCode.codeEntryIndices_holds hpre', hw, hh⟩
-    have hens := hensG hne η n W heap _ .nul hentry
+    have hens := hensG hne η n W heap _ .nul hentry hgo
     rw [code_goal, hstore] at hens
     refine HeapObservations.SafePostExc.weaken (fun h' v hq => ?_) (fun _ h => h) (safePostExc_and hrun hens)
     obtain ⟨⟨h1, h2, h3, h4, -, h6, h7⟩, hq⟩ := hq
@@ -443,19 +456,21 @@ theorem rowSpec_of_requestSafe {r : SourceRequest σ ι} {c : CodeEntry ι}
   have hgoto : ∀ L d, gotoOf r.program r.start L d = .goto c.exprs c.conts c.start L d := by
     intro L d; simp only [gotoOf, hu.exprs, hu.conts, hu.start]
   apply rowSpec_of_clauses hcond hstore
-  · intro η n W h ρ he
-    have := hsafe.1 η (hadm η) n W h ρ (by rw [hu.inputs, hu.indices]; exact he)
+  · intro η n W h ρ he hP hρ
+    have := hsafe.1 η (hadm η) n W h ρ (by rw [hu.inputs, hu.indices]; exact he) (by rw [hprog]; exact hP) hρ
     rw [hprog, hu.goal, hu.start] at this
     exact this
-  · intro Φ fresh onThrow hb η n W h L d he hvals hd
+  · intro Φ fresh onThrow hb η n W h L d he hgo hvals hd
     obtain ⟨rfl, rfl, rfl, hne⟩ := codeBound_some hb
     have hpre : r.footprint ≠ .top ∨ r.onThrow = true ∨ r.fresh = true := by
       rw [hu.footprint, hu.onThrow, hu.fresh]; exact hne
-    have := hsafe.2.1 hpre η n W h L d (by rw [hu.inputs, hu.indices]; exact he) hvals hd
+    have := hsafe.2.1 hpre η n W h L d (by rw [hu.inputs, hu.indices]; exact he)
+      (by rw [hgoto]; exact hgo) hvals hd
     rw [hgoto, hu.goal, hu.footprint, hu.fresh, hu.onThrow] at this
     exact this
-  · intro hne η n W h L d he
+  · intro hne η n W h L d he hgo
     have := hsafe.2.2.1 (by rw [hu.ensures]; exact hne) η n W h L d (by rw [hu.inputs, hu.indices]; exact he)
+      (by rw [hgoto]; exact hgo)
     rw [hgoto, hu.goal, hu.ensures] at this
     exact this
 

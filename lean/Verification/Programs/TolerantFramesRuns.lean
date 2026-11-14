@@ -73,7 +73,7 @@ theorem graph_run {Ξ T : Fam} {P : Program} :
     cases n with
     | zero => omega
     | succ m =>
-      rcases hsafe with (⟨v, rfl, -⟩ | ⟨v, rfl, -⟩) | ⟨U, h₁, st₁, hx, hu, tr', hh, hs'⟩
+      rcases hsafe.2 with (⟨v, rfl, -⟩ | ⟨v, rfl, -⟩) | ⟨U, h₁, st₁, hx, hu, tr', hh, hs'⟩
       · cases tr
       · cases tr
       · obtain ⟨rfl, rfl⟩ := transition_det tr tr'
@@ -200,10 +200,11 @@ and exit obligations from every state where the assertion holds. -/
 def NodesChecked (P : Program) (pre : Nat → Assertion) (Ξres Tres : Fam) (Qres Rres : Heap → Prop) (m : Nat) :
     Prop :=
   ∀ l ρ (s : IndexedHeap), pre l ρ m s → ∃ node, P[l]? = some node ∧
+    (RefsOk s.W (instantiate 0 ρ node.expression) →
     ∃ (Ξ T : Fam) (cn ce : Footprints.Closed) (Qn : Post) (Qe : Heap → Prop),
       SafePostExc Ξ T (fun h' v => cn.Holds s.h h' ∧ Qn h' v) (fun h' => ce.Holds s.h h' ∧ Qe h')
         s.n s.W s.h (instantiate 0 ρ node.expression) ∧
-      NodeObligations pre Ξres Tres Qres Rres Ξ T cn ce Qn Qe ρ m s node.continuation node.handler
+      NodeObligations pre Ξres Tres Qres Rres Ξ T cn ce Qn Qe ρ m s node.continuation node.handler)
 
 /-- The node assertions survive the administrative steps: a truncation of
 the world with the heap unchanged. -/
@@ -233,63 +234,72 @@ truncated one. -/
 theorem graph_step {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Qres Rres : Heap → Prop} {m : Nat}
     (hnodes : NodesChecked P pre Ξres Tres Qres Rres m) (hdown : AdminClosed pre m) {n : Nat}
     {W : WorldT (n + 1)} {h : Heap} {st : State} (ha : WorldAdm W) (ho : HeapOk (n + 1) W h)
+    (hPr : ∀ node ∈ P, RefsOk W node.expression) (hr : StateRefs W st)
     (hinv : GraphInv pre Ξres Tres Qres Rres m (n + 1) W h st) :
     ((∃ v, st = .done v ∧ isVal v = true ∧ Tres (n + 1) W v) ∨
       (∃ v, st = .raised v ∧ Scoped 0 v ∧ Ξres (n + 1) W v)) ∨
     ∃ (U : WorldT n) (h' : Heap) (st' : State), WExt (trunc n (Nat.le_succ n) W) U ∧ WorldAdm U ∧
-      Transition P h st h' st' ∧ HeapOk n U h' ∧ GraphInv pre Ξres Tres Qres Rres m n U h' st' := by
+      Transition P h st h' st' ∧ HeapOk n U h' ∧ StateRefs U st' ∧
+        GraphInv pre Ξres Tres Qres Rres m n U h' st' := by
   have ha' := WorldAdm_trunc (Nat.le_succ n) ha
   have ho' := HeapOk_trunc n W h ho
   have next : ∀ {h' st'} (U : WorldT n), WExt (trunc n (Nat.le_succ n) W) U → WorldAdm U →
-      Transition P h st h' st' → HeapOk n U h' → GraphInv pre Ξres Tres Qres Rres m n U h' st' →
+      Transition P h st h' st' → HeapOk n U h' → StateRefs U st' → GraphInv pre Ξres Tres Qres Rres m n U h' st' →
       ((∃ v, st = .done v ∧ isVal v = true ∧ Tres (n + 1) W v) ∨
         (∃ v, st = .raised v ∧ Scoped 0 v ∧ Ξres (n + 1) W v)) ∨
       ∃ (U : WorldT n) (h' : Heap) (st' : State), WExt (trunc n (Nat.le_succ n) W) U ∧ WorldAdm U ∧
-        Transition P h st h' st' ∧ HeapOk n U h' ∧ GraphInv pre Ξres Tres Qres Rres m n U h' st' :=
-    fun U hx hu tr hh hi => .inr ⟨U, _, _, hx, hu, tr, hh, hi⟩
+        Transition P h st h' st' ∧ HeapOk n U h' ∧ StateRefs U st' ∧
+          GraphInv pre Ξres Tres Qres Rres m n U h' st' :=
+    fun U hx hu tr hh hrs hi => .inr ⟨U, _, _, hx, hu, tr, hh, hrs, hi⟩
   cases st with
   | «at» l ρ =>
     have hpre := hinv (Nat.zero_lt_succ n) ha ho
     obtain ⟨node, hP, -⟩ := hnodes l ρ _ hpre
-    refine next _ (WExt_refl _) ha' (.enter hP) ho' fun hp => ?_
+    have hnr : RefsOk (trunc n (Nat.le_succ n) W) (instantiate 0 ρ node.expression) :=
+      RefsOk_trunc _ (node_refs (hPr node (List.mem_of_getElem? hP)) hr)
+    refine next _ (WExt_refl _) ha' (.enter hP) ho' ⟨hnr, fun i => RefsOk_trunc _ (hr i)⟩ fun hp => ?_
     let s₀ : IndexedHeap := ⟨n, trunc n (Nat.le_succ n) W, h, hp, ha', ho'⟩
     have hpre₀ := hdown l ρ ⟨n + 1, W, h, Nat.zero_lt_succ n, ha, ho⟩ s₀ ⟨Nat.le_succ n, WExt_refl _⟩ rfl hpre
-    obtain ⟨node', hP', Ξ, T, cn, ce, Qn, Qe, hsafe, hobl⟩ := hnodes l ρ s₀ hpre₀
+    obtain ⟨node', hP', hck⟩ := hnodes l ρ s₀ hpre₀
     rw [hP] at hP'; cases hP'
+    obtain ⟨Ξ, T, cn, ce, Qn, Qe, hsafe, hobl⟩ := hck hnr
     exact ⟨s₀, Ξ, T, cn, ce, Qn, Qe, ⟨Nat.le_refl _, by rw [trunc_id]; exact WExt_refl _⟩, hsafe, hobl⟩
   | eval t ρ k x =>
+    obtain ⟨htr, hρr⟩ := hr
+    have htU : RefsOk (trunc n (Nat.le_succ n) W) t := RefsOk_trunc _ htr
+    have hρU : ∀ i, RefsOk (trunc n (Nat.le_succ n) W) (ρ i) := fun i => RefsOk_trunc _ (hρr i)
     obtain ⟨s₀, Ξ, T, cn, ce, Qn, Qe, hr, hsafe, hobl⟩ := hinv (Nat.zero_lt_succ n)
-    rcases hsafe with (⟨hv, hT, hc, hq⟩ | ⟨⟨e, hre, hsc, hΞ⟩, hc, hq⟩) | ⟨U, h', t', hx, hu, st, hh, hs'⟩
+    rcases hsafe.2 with (⟨hv, hT, hc, hq⟩ | ⟨⟨e, hre, hsc, hΞ⟩, hc, hq⟩) | ⟨U, h', t', hx, hu, st, hh, hs'⟩
     · -- a value: the continuation's transition
       have hshape := hobl.shape n W h t hv hT hc hq
       have tgt : ∀ (hp : 0 < n), NormalTarget pre Tres Qres ρ m (below n W h hp ha ho) t k := fun hp =>
         hobl.normal _ t (below_action hr hc) hv ⟨W, rfl, hT⟩ hq
       cases k with
-      | ret => exact next _ (WExt_refl _) ha' (.ret hv) ho' fun hp => ⟨hv, tgt hp⟩
-      | bind l => exact next _ (WExt_refl _) ha' (.bind hv) ho' fun hp _ _ => tgt hp
-      | effect l => exact next _ (WExt_refl _) ha' (.effect hv) ho' fun hp _ _ => tgt hp
+      | ret => exact next _ (WExt_refl _) ha' (.ret hv) ho' htU fun hp => ⟨hv, tgt hp⟩
+      | bind l => exact next _ (WExt_refl _) ha' (.bind hv) ho' (mapEnv_refs _ (push_refs htU hρU)) fun hp _ _ => tgt hp
+      | effect l => exact next _ (WExt_refl _) ha' (.effect hv) ho' (mapEnv_refs _ hρU) fun hp _ _ => tgt hp
       | branch y no =>
         rcases hshape with rfl | rfl
-        · refine next _ (WExt_refl _) ha' .yes ho' fun hp _ _ => ?_
+        · refine next _ (WExt_refl _) ha' .yes ho' (mapEnv_refs _ hρU) fun hp _ _ => ?_
           rcases tgt hp with ⟨-, hy⟩ | ⟨he, -⟩
           · exact hy
           · cases he
-        · refine next _ (WExt_refl _) ha' .no ho' fun hp _ _ => ?_
+        · refine next _ (WExt_refl _) ha' .no ho' (mapEnv_refs _ hρU) fun hp _ _ => ?_
           rcases tgt hp with ⟨he, -⟩ | ⟨-, hn⟩
           · cases he
           · exact hn
       | branchBind y no =>
         rcases hshape with rfl | rfl
-        · refine next _ (WExt_refl _) ha' .yesBind ho' fun hp _ _ => ?_
+        · refine next _ (WExt_refl _) ha' .yesBind ho' (mapEnv_refs _ (push_refs (RefsOk_of_nil rfl) hρU)) fun hp _ _ => ?_
           rcases tgt hp with ⟨-, hy⟩ | ⟨he, -⟩
           · exact hy
           · cases he
-        · refine next _ (WExt_refl _) ha' .noBind ho' fun hp _ _ => ?_
+        · refine next _ (WExt_refl _) ha' .noBind ho' (mapEnv_refs _ (push_refs (RefsOk_of_nil rfl) hρU)) fun hp _ _ => ?_
           rcases tgt hp with ⟨he, -⟩ | ⟨-, hn⟩
           · cases he
           · exact hn
       | tagBind tag y no =>
-        refine next _ (WExt_refl _) ha' (.tagBind hv) ho' fun hp _ _ => ?_
+        refine next _ (WExt_refl _) ha' (.tagBind hv) ho' (mapEnv_refs _ (push_refs htU hρU)) fun hp _ _ => ?_
         rcases tgt hp with ⟨hq, hy⟩ | ⟨hq, hn⟩
         · simp only [below] at hq
           simp only [hq, if_true]
@@ -300,11 +310,13 @@ theorem graph_step {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Q
     · -- a throw: the handler's transition, or the run ends raised
       have tgt : ∀ (hp : 0 < n), RaiseTarget pre Ξres Rres ρ m (below n W h hp ha ho) e x := fun hp =>
         hobl.raise _ e (below_action hr hc) hsc ⟨W, rfl, hΞ⟩ hq
+      have heU : RefsOk (trunc n (Nat.le_succ n) W) e := fun r' hr' => htU r' (Kinds.raises_refs hre r' hr')
       cases x with
-      | some l => exact next _ (WExt_refl _) ha' (.handle hre) ho' fun hp _ _ => tgt hp
-      | none => exact next _ (WExt_refl _) ha' (.raise hre) ho' fun hp => ⟨hsc, tgt hp⟩
+      | some l => exact next _ (WExt_refl _) ha' (.handle hre) ho' (mapEnv_refs _ (push_refs heU hρU)) fun hp _ _ => tgt hp
+      | none => exact next _ (WExt_refl _) ha' (.raise hre) ho' heU fun hp => ⟨hsc, tgt hp⟩
     · -- an expression step
-      exact next U hx hu (.expr st) hh fun _ => ⟨s₀, Ξ, T, cn, ce, Qn, Qe, hr.step hx, hs', hobl⟩
+      exact next U hx hu (.expr st) hh ⟨SafePostExcW.refs hs', fun i => RefsOk_mono hx (hρU i)⟩
+        fun _ => ⟨s₀, Ξ, T, cn, ce, Qn, Qe, hr.step hx, hs', hobl⟩
   | done v =>
     obtain ⟨hv, hT, -⟩ := hinv (Nat.zero_lt_succ n)
     exact .inl (.inl ⟨v, rfl, hv, hT⟩)
@@ -316,23 +328,26 @@ theorem graph_step {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Q
 describes is safe for the graph machine, at every budget. -/
 theorem graph_safe {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Qres Rres : Heap → Prop} {m : Nat}
     (hnodes : NodesChecked P pre Ξres Tres Qres Rres m) (hdown : AdminClosed pre m) :
-    ∀ n (W : WorldT n) h st, WorldAdm W → HeapOk n W h → GraphInv pre Ξres Tres Qres Rres m n W h st →
-      SafeGraph Ξres P Tres n W h st := by
+    ∀ n (W : WorldT n) h st, WorldAdm W → HeapOk n W h → (∀ node ∈ P, RefsOk W node.expression) →
+      StateRefs W st → GraphInv pre Ξres Tres Qres Rres m n W h st → SafeGraph Ξres P Tres n W h st := by
   intro n
   induction n with
-  | zero => intros; trivial
+  | zero => intro _ _ _ _ _ _ hr _; exact hr
   | succ n ih =>
-    intro W h st ha ho hinv
-    rcases graph_step hnodes hdown ha ho hinv with (h1 | h2) | ⟨U, h', st', hx, hu, tr, hh, hi⟩
+    intro W h st ha ho hPr hr hinv
+    refine ⟨hr, ?_⟩
+    rcases graph_step hnodes hdown ha ho hPr hr hinv with (h1 | h2) | ⟨U, h', st', hx, hu, tr, hh, hrs, hi⟩
     · exact .inl (.inl h1)
     · exact .inl (.inr h2)
-    · exact .inr ⟨U, h', st', hx, hu, tr, hh, ih U h' st' hu hh hi⟩
+    · exact .inr ⟨U, h', st', hx, hu, tr, hh,
+        ih U h' st' hu hh (fun node hm => RefsOk_mono hx (RefsOk_trunc _ (hPr node hm))) hrs hi⟩
 
 /-- The graph is safe from every node entry whose assertion holds. -/
 theorem graph_safe_at {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Qres Rres : Heap → Prop} {m : Nat}
     (hnodes : NodesChecked P pre Ξres Tres Qres Rres m) (hdown : AdminClosed pre m) {l : Nat} {ρ : Env}
-    {s : IndexedHeap} (hpre : pre l ρ m s) : SafeGraph Ξres P Tres s.n s.W s.h (.at l ρ) :=
-  graph_safe hnodes hdown _ _ _ _ s.adm s.ok fun _ _ _ => hpre
+    {s : IndexedHeap} (hpre : pre l ρ m s) (hPr : ∀ node ∈ P, RefsOk s.W node.expression)
+    (hρ : ∀ i, RefsOk s.W (ρ i)) : SafeGraph Ξres P Tres s.n s.W s.h (.at l ρ) :=
+  graph_safe hnodes hdown _ _ _ _ s.adm s.ok hPr hρ fun _ _ _ => hpre
 
 /-! ## Transfer along an exit -/
 

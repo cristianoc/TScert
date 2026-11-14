@@ -19,12 +19,12 @@ theorem call_elim_rest {S : List (Fam × List Fam × ArgFam × Fam)} {s : Fam ×
     (hrv : isVal r = true) (hr : s.1 n W r)
     (hf : restsT Ξ S n W f) (ha : ArgsT s.2.1 n W args) (he : s.2.2.1 n W extra)
     (hev : CallArguments.Values extra)
-    (hw : WorldAdm W) (hh : HeapOk n W heap) :
+    (hw : WorldAdm W) (hh : HeapOk n W heap) (href : RefsOk W (.invoke f r (args ++ extra))) :
     Safe Ξ s.2.2.2 n W heap (.invoke f r (args ++ extra)) := by
   apply ArgumentContracts.call_safe
     (P := ArgsRest s.2.1 s.2.2.1)
     (Adm.of_transfer (fun ha j hj U hx => ArgsRest_transfer hA hE ha j hj U hx)) hR
-    ⟨hf.1, hf.2 s hs⟩ hr hrv ?_ (ArgsRest_of_exact_extra ha he) hw hh
+    ⟨hf.1, hf.2 s hs⟩ hr hrv ?_ (ArgsRest_of_exact_extra ha he) hw hh href
   intro a hm
   rcases List.mem_append.mp hm with hm | hm
   · exact ArgsT_values hAv ha a hm
@@ -37,7 +37,8 @@ theorem argument_alloc_safe {T : TupleF} (hT : ∀ i A, positionFam T i = some A
     (hTv : ∀ i A, positionFam T i = some A → ValOnly A)
     {n : Nat} {W : WorldT n} {h : Heap} {vs : List Tm}
     (hw : WorldAdm W) (hh : HeapOk n W h) (hΞ : ErrorsIn Ξ) (hp : ArgumentContracts.Fits T n W vs)
-    (hvals : CallArguments.Values vs) :
+    (hvals : CallArguments.Values vs) (hsrc : ∀ v ∈ vs, isSourceVal v = true)
+    (href : RefsOk W (.arrLit vs)) :
     Safe Ξ (listT { T with readonly := false }) n W h (.arrLit vs) := by
   obtain ⟨hreq, hbound, hel⟩ := hp
   have hsome : ∀ i, i < vs.length → ∃ A, positionFam T i = some A := by
@@ -71,6 +72,7 @@ theorem argument_alloc_safe {T : TupleF} (hT : ∀ i A, positionFam T i = some A
       have hiv : i < vs.length := by simp at hi; omega
       exact (hT i _ (hAi i _)).down_le n j (Nat.le_of_lt hj) W _
         (hel i _ _ (List.getElem?_eq_getElem hiv) (hAi i _)))
+    hsrc href
     (by
       intro j hj U hx hl hmax
       have := listT_alloc (T := { T with readonly := false }) (As := As) (base := h.length)
@@ -118,7 +120,7 @@ theorem readElems_ok {E : Fam} {n : Nat} {W : WorldT n} {h : Heap} (hh : HeapOk 
     obtain ⟨vs, hr, he⟩ := readElems_ok hh ls (fun l hm => hl l (by simp [hm]))
       (fun hm => hn (by simp [hm]))
     obtain ⟨c, hc, hag⟩ := hl l (by simp)
-    obtain ⟨v, hv, hmem⟩ := hh.2 l c hc
+    obtain ⟨v, hv, hmem⟩ := hh.1.2 l c hc
     refine ⟨v :: vs, by simp [readElems, hv, hr], ?_⟩
     intro e hm j hj
     rcases List.mem_cons.mp hm with rfl | hm
@@ -192,6 +194,32 @@ def partTerm (p : Option Fam × Tm) : Tm :=
   | none => p.2
   | some _ => .spread p.2
 
+/-- **A hole among a list context's entries** is a context whose references
+are the hole's and the rest's. -/
+theorem listCtx {C : List Tm → Tm}
+    (hC : ∀ (args : List Tm) (r : Ref), r ∈ refs (C args) ↔ r ∈ refs (C []) ∨ ∃ a ∈ args, r ∈ refs a)
+    (pre rest : List Tm) (f : Tm → Tm) (hf : ∀ t r, r ∈ refs (f t) ↔ r ∈ refs t)
+    (h0 : refs (f .undef) = []) : CtxRefs (fun t => C (pre ++ f t :: rest)) := by
+  intro t r
+  simp only
+  rw [hC (pre ++ f t :: rest) r, hC (pre ++ f .undef :: rest) r]
+  constructor
+  · rintro (h | ⟨b, hb, hr⟩)
+    · exact .inr (.inl h)
+    · simp only [List.mem_append, List.mem_cons] at hb
+      rcases hb with hb | rfl | hb
+      · exact .inr (.inr ⟨b, by simp [hb], hr⟩)
+      · exact .inl ((hf t r).mp hr)
+      · exact .inr (.inr ⟨b, by simp [hb], hr⟩)
+  · rintro (h | h | ⟨b, hb, hr⟩)
+    · exact .inr ⟨f t, by simp, (hf t r).mpr h⟩
+    · exact .inl h
+    · simp only [List.mem_append, List.mem_cons] at hb
+      rcases hb with hb | rfl | hb
+      · exact .inr ⟨b, by simp [hb], hr⟩
+      · rw [h0] at hr; cases hr
+      · exact .inr ⟨b, by simp [hb], hr⟩
+
 /-- **Parts in a list context.** In a context `C` over a list of terms that
 evaluates its entries left to right (`lift`, `raise`) and replaces a spread
 of a ready store by the store's elements once every earlier entry is a value
@@ -199,7 +227,8 @@ of a ready store by the store's elements once every earlier entry is a value
 (`Step.arrSpread`) do: each part is a plain entry at `E` or a spread of a
 store in a family that spreads into `E`; they run left to right, each spread
 read as soon as its store is ready, and the continuation receives every
-element and entry at `E`. -/
+element and entry at `E`, the whole list's references valid. The context's
+references are its frame's and its entries' (`hC`). -/
 theorem parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) (C : List Tm → Tm)
     (lift : ∀ {h h' : Heap} {t t' : Tm} {pre rest : List Tm}, CallArguments.Values pre →
       Step h t h' t' → Step h (C (pre ++ t :: rest)) h' (C (pre ++ t' :: rest)))
@@ -207,84 +236,139 @@ theorem parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) (C : List Tm → T
       Raises t v → Raises (C (pre ++ t :: rest)) v)
     (spread : ∀ {h : Heap} {pre rest : List Tm} {ls : List (Option Nat)} {vs : List Tm},
       CallArguments.Values pre → readElems h ls = some vs →
-      Step h (C (pre ++ .spread (.arr ls) :: rest)) h (C (pre ++ vs ++ rest))) :
+      Step h (C (pre ++ .spread (.arr ls) :: rest)) h (C (pre ++ vs ++ rest)))
+    (hC : ∀ (args : List Tm) (r : Ref), r ∈ refs (C args) ↔ r ∈ refs (C []) ∨ ∃ a ∈ args, r ∈ refs a) :
     ∀ (parts : List (Option Fam × Tm)) (n : Nat) (W : WorldT n) (heap : Heap) (pre : List Tm),
       (∀ p ∈ parts, ∀ S, p.1 = some S → Adm S ∧ Spreads S E) →
       WorldAdm W → HeapOk n W heap → CallArguments.Values pre →
+      RefsOk W (C (pre ++ parts.map partTerm)) →
       (∀ p ∈ parts, ∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
         ∀ heap, HeapOk j U heap → Safe Ξ (p.1.getD E) j U heap p.2) →
       (∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
         ∀ heap extra, HeapOk j U heap → (∀ e ∈ extra, E j U e) →
-          Safe Ξ R j U heap (C (pre ++ extra))) →
-      Safe Ξ R n W heap (C (pre ++ parts.map partTerm))
-  | [], n, W, heap, pre, _, hw, hh, _, _, hk => by
+          RefsOk U (C (pre ++ extra)) → Safe Ξ R j U heap (C (pre ++ extra))) →
+      Safe Ξ R n W heap (C (pre ++ parts.map partTerm)) := by
+  -- the frame and the prefix, valid where the whole list is
+  have frame : ∀ {k} {W : WorldT k} {pre rest : List Tm}, RefsOk W (C (pre ++ rest)) →
+      RefsOk W (C []) ∧ ∀ a ∈ pre, RefsOk W a := by
+    intro k W pre rest h
+    refine ⟨fun r hr => h r ((hC _ r).mpr (.inl hr)), fun a ha r hr => h r ((hC _ r).mpr (.inr ⟨a, by simp [ha], hr⟩))⟩
+  have build : ∀ {k} {W : WorldT k} {args : List Tm}, RefsOk W (C []) → (∀ a ∈ args, RefsOk W a) →
+      RefsOk W (C args) := by
+    intro k W args h0 ha r hr
+    rcases (hC _ r).mp hr with hr | ⟨a, hm, hr⟩
+    · exact h0 r hr
+    · exact ha a hm r hr
+  have rest_ok : ∀ {k} {W : WorldT k} {pre rest : List Tm}, RefsOk W (C (pre ++ rest)) →
+      ∀ a ∈ rest, RefsOk W a := by
+    intro k W pre rest h a ha r hr
+    exact h r ((hC _ r).mpr (.inr ⟨a, by simp [ha], hr⟩))
+  intro parts
+  induction parts with
+  | nil =>
+    intro n W heap pre _ hw hh _ hrf _ hk
     simpa using hk n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap [] hh (by simp)
-  | (none, a) :: parts, n, W, heap, pre, hS, hw, hh, hp, ht, hk => by
-    have ha := ht (none, a) (by simp) n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap hh
-    apply Safe_bind (A := E) (fun t => C (pre ++ t :: parts.map partTerm))
-      (fun s => lift hp s) (fun s => raise hp s) n W heap a hw hh ha
-    intro j hj U hx hu heap' v hh' hv hEv'
-    have hrest := parts_safe hE hEv C lift raise spread parts j U heap' (pre ++ [v])
-      (fun p hm => hS p (by simp [hm])) hu hh'
-      (by intro x hx'; rcases List.mem_append.mp hx' with hx' | hx'
-          · exact hp x hx'
-          · simp at hx'; subst hx'; exact hv)
-      (by
-        intro p hm i hi V hy hV heap'' hh''
-        apply ht p (by simp [hm]) i (by omega) V _ hV heap'' hh''
-        apply WExt_trans _ hy
-        simpa only [trunc_trunc] using WExt_trunc hi hx)
-      (by
-        intro i hi V hy hV heap'' extra hh'' he
-        have hw' : WExt (trunc i (by omega) W) V := by
-          apply WExt_trans _ hy
-          simpa only [trunc_trunc] using WExt_trunc hi hx
-        have := hk i (by omega) V hw' hV heap'' (v :: extra) hh'' (by
-          intro e hm
-          rcases List.mem_cons.mp hm with rfl | hm
-          · exact hE.mono i _ V hy e (hE.down_le j i hi U e hEv')
-          · exact he e hm)
-        simpa using this)
-    simpa [partTerm] using hrest
-  | (some S, s) :: parts, n, W, heap, pre, hS, hw, hh, hp, ht, hk => by
-    obtain ⟨hSa, hSs⟩ := hS (some S, s) (by simp) S rfl
-    have hs := ht (some S, s) (by simp) n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap hh
-    show Safe Ξ R n W heap (C (pre ++ .spread s :: parts.map partTerm))
-    apply Safe_bind (A := S) (fun t => C (pre ++ .spread t :: parts.map partTerm))
-      (fun s => lift hp (.spreadC s)) (fun s => raise hp (.spreadC s))
-      n W heap s hw hh hs
-    intro j hj U hx hu heap' v hh' _ hv
-    obtain ⟨ls, vs, rfl, hr, he⟩ := hSs j U heap' _ hh' hv
-    cases j with
-    | zero => trivial
-    | succ p =>
-      have hvs : CallArguments.Values vs := fun e hm => hEv p _ e (he e hm p (by omega))
-      refine Or.inr ⟨trunc p (Nat.le_succ p) U, heap', C (pre ++ vs ++ parts.map partTerm), WExt_refl _,
-        WorldAdm_trunc _ hu, spread hp hr, HeapOk_trunc p U heap' hh', ?_⟩
-      have hUV : ∀ i (hi : i ≤ p) (X : WorldT i),
-          WExt (trunc i hi (trunc p (Nat.le_succ p) U)) X → WExt (trunc i (by omega) W) X := by
-        intro i hi X hy
-        apply WExt_trans _ hy
-        have := WExt_trunc (show i ≤ p + 1 by omega) hx
-        simpa only [trunc_trunc] using this
-      have hrest := parts_safe hE hEv C lift raise spread parts p _ heap' (pre ++ vs)
-        (fun q hm => hS q (by simp [hm])) (WorldAdm_trunc _ hu) (HeapOk_trunc p U heap' hh')
+      (by simpa using hrf)
+  | cons q parts ih =>
+    obtain ⟨o, a⟩ := q
+    intro n W heap pre hS hw hh hp hrf ht hk
+    have hfr := frame hrf
+    have hrest := rest_ok (pre := pre) hrf
+    have hctx : ∀ {k} {V : WorldT k} (hx : ∀ {r}, RefOk W r → RefOk V r) (t : Tm),
+        (∀ r ∈ refs t, RefOk V r) → RefsOk V (C (pre ++ t :: parts.map partTerm)) := by
+      intro k V hx t htr
+      refine build (fun r hr => hx (hfr.1 r hr)) (fun b hb => ?_)
+      rcases List.mem_append.mp hb with hb | hb
+      · exact fun r hr => hx (hfr.2 b hb r hr)
+      · rcases List.mem_cons.mp hb with rfl | hb
+        · exact htr
+        · exact fun r hr => hx (hrest b (by simp [hb]) r hr)
+    cases o with
+    | none =>
+      have ha := ht (none, a) (by simp) n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap hh
+      apply Safe_bind (A := E) (fun t => C (pre ++ t :: parts.map partTerm))
+        (fun s => lift hp s) (fun s => raise hp s)
+        (listCtx hC pre _ id (fun _ _ => Iff.rfl) rfl)
+        n W heap a hw hh (hctx (fun h => h) .undef (by simp [refs])) ha
+      intro j hj U hx hu heap' v hh' hv hEv' hvr
+      have hxW : ∀ {r}, RefOk W r → RefOk U r := fun h =>
+        RefOk_mono hx (RefOk_trunc _ h)
+      have hrest' := ih j U heap' (pre ++ [v])
+        (fun p hm => hS p (by simp [hm])) hu hh'
         (by intro x hx'; rcases List.mem_append.mp hx' with hx' | hx'
             · exact hp x hx'
-            · exact hvs x hx')
+            · simp at hx'; subst hx'; exact hv)
+        (by simpa using hctx hxW v hvr)
         (by
-          intro q hm i hi X hy hX heap'' hh''
-          exact ht q (by simp [hm]) i (by omega) X (hUV i hi X hy) hX heap'' hh'')
+          intro p hm i hi V hy hV heap'' hh''
+          apply ht p (by simp [hm]) i (by omega) V _ hV heap'' hh''
+          apply WExt_trans _ hy
+          simpa only [trunc_trunc] using WExt_trunc hi hx)
         (by
-          intro i hi X hy hX heap'' extra hh'' hex
-          have := hk i (by omega) X (hUV i hi X hy) hX heap'' (vs ++ extra) hh'' (by
+          intro i hi V hy hV heap'' extra hh'' he hre
+          have hw' : WExt (trunc i (by omega) W) V := by
+            apply WExt_trans _ hy
+            simpa only [trunc_trunc] using WExt_trunc hi hx
+          have := hk i (by omega) V hw' hV heap'' (v :: extra) hh'' (by
             intro e hm
-            rcases List.mem_append.mp hm with hm | hm
-            · have h0 := he e hm p (by omega)
-              exact hE.mono i _ X hy e (hE.down_le p i hi _ e h0)
-            · exact hex e hm)
+            rcases List.mem_cons.mp hm with rfl | hm
+            · exact hE.mono i _ V hy e (hE.down_le j i hi U e hEv')
+            · exact he e hm) (by simpa using hre)
           simpa using this)
-      simpa using hrest
+      simpa [partTerm] using hrest'
+    | some S =>
+      obtain ⟨hSa, hSs⟩ := hS (some S, a) (by simp) S rfl
+      have hs := ht (some S, a) (by simp) n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap hh
+      show Safe Ξ R n W heap (C (pre ++ .spread a :: parts.map partTerm))
+      apply Safe_bind (A := S) (fun t => C (pre ++ .spread t :: parts.map partTerm))
+        (fun s => lift hp (.spreadC s)) (fun s => raise hp (.spreadC s))
+        (listCtx hC pre _ Tm.spread (fun _ _ => by simp [refs]) rfl)
+        n W heap a hw hh (hctx (fun h => h) (.spread .undef) (by simp [refs])) hs
+      intro j hj U hx hu heap' v hh' _ hv hvr
+      obtain ⟨ls, vs, rfl, hr, he⟩ := hSs j U heap' _ hh' hv
+      have hxW : ∀ {r}, RefOk W r → RefOk U r := fun h =>
+        RefOk_mono hx (RefOk_trunc _ h)
+      have hvsr : ∀ e ∈ vs, RefsOk U e := hh'.readElems_refs hr
+      have hall : RefsOk U (C (pre ++ vs ++ parts.map partTerm)) := by
+        refine build (fun r hr => hxW (hfr.1 r hr)) (fun b hb => ?_)
+        simp only [List.mem_append] at hb
+        rcases hb with (hb | hb) | hb
+        · exact fun r hr => hxW (hfr.2 b hb r hr)
+        · exact hvsr b hb
+        · exact fun r hr => hxW (hrest b (by simp [hb]) r hr)
+      have hsp : RefsOk U (C (pre ++ .spread (.arr ls) :: parts.map partTerm)) :=
+        hctx hxW (.spread (.arr ls)) (fun r hr => hvr r (by simpa [refs] using hr))
+      cases j with
+      | zero => exact hsp
+      | succ p =>
+        have hvs : CallArguments.Values vs := fun e hm => hEv p _ e (he e hm p (by omega))
+        refine ⟨hsp, Or.inr ⟨trunc p (Nat.le_succ p) U, heap', C (pre ++ vs ++ parts.map partTerm), WExt_refl _,
+          WorldAdm_trunc _ hu, spread hp hr, HeapOk_trunc p U heap' hh', ?_⟩⟩
+        have hUV : ∀ i (hi : i ≤ p) (X : WorldT i),
+            WExt (trunc i hi (trunc p (Nat.le_succ p) U)) X → WExt (trunc i (by omega) W) X := by
+          intro i hi X hy
+          apply WExt_trans _ hy
+          have := WExt_trunc (show i ≤ p + 1 by omega) hx
+          simpa only [trunc_trunc] using this
+        have hrest' := ih p _ heap' (pre ++ vs)
+          (fun q hm => hS q (by simp [hm])) (WorldAdm_trunc _ hu) (HeapOk_trunc p U heap' hh')
+          (by intro x hx'; rcases List.mem_append.mp hx' with hx' | hx'
+              · exact hp x hx'
+              · exact hvs x hx')
+          (by simpa using RefsOk_trunc _ hall)
+          (by
+            intro q hm i hi X hy hX heap'' hh''
+            exact ht q (by simp [hm]) i (by omega) X (hUV i hi X hy) hX heap'' hh'')
+          (by
+            intro i hi X hy hX heap'' extra hh'' hex hre
+            have := hk i (by omega) X (hUV i hi X hy) hX heap'' (vs ++ extra) hh'' (by
+              intro e hm
+              rcases List.mem_append.mp hm with hm | hm
+              · have h0 := he e hm p (by omega)
+                exact hE.mono i _ X hy e (hE.down_le p i hi _ e h0)
+              · exact hex e hm) (by simpa using hre)
+            simpa using this)
+        simpa using hrest'
 
 /-- **Actuals after the fixed ones**: the parts in an argument list. -/
 theorem spread_parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) {f r : Tm}
@@ -292,31 +376,38 @@ theorem spread_parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) {f r : Tm}
     ∀ (parts : List (Option Fam × Tm)) (n : Nat) (W : WorldT n) (heap : Heap) (pre : List Tm),
       (∀ p ∈ parts, ∀ S, p.1 = some S → Adm S ∧ Spreads S E) →
       WorldAdm W → HeapOk n W heap → CallArguments.Values pre →
+      RefsOk W (.invoke f r (pre ++ parts.map partTerm)) →
       (∀ p ∈ parts, ∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
         ∀ heap, HeapOk j U heap → Safe Ξ (p.1.getD E) j U heap p.2) →
       (∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
         ∀ heap extra, HeapOk j U heap → (∀ e ∈ extra, E j U e) →
-          Safe Ξ R j U heap (.invoke f r (pre ++ extra))) →
+          RefsOk U (.invoke f r (pre ++ extra)) → Safe Ξ R j U heap (.invoke f r (pre ++ extra))) →
       Safe Ξ R n W heap (.invoke f r (pre ++ parts.map partTerm)) :=
   parts_safe hE hEv (fun args => .invoke f r args) (fun hp s => call_lift hf hrv hp s)
     (fun hp s => call_raise hf hrv hp s) (fun hp hr => .callSpread hf hrv rfl hp hr)
+    (fun args r => by
+      simp only [refs, refsArgs_eq, List.mem_append, List.mem_flatMap, List.flatMap_nil,
+        List.append_nil])
 
 /-- **The parts of a store literal**, evaluated as actuals are. -/
 theorem store_parts_safe {E R : Fam} (hE : Adm E) (hEv : ValOnly E) :
     ∀ (parts : List (Option Fam × Tm)) (n : Nat) (W : WorldT n) (heap : Heap),
       (∀ p ∈ parts, ∀ S, p.1 = some S → Adm S ∧ Spreads S E) →
       WorldAdm W → HeapOk n W heap →
+      RefsOk W (.arrLit (parts.map partTerm)) →
       (∀ p ∈ parts, ∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
         ∀ heap, HeapOk j U heap → Safe Ξ (p.1.getD E) j U heap p.2) →
       (∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
         ∀ heap extra, HeapOk j U heap → (∀ e ∈ extra, E j U e) →
-          Safe Ξ R j U heap (.arrLit extra)) →
+          RefsOk U (.arrLit extra) → Safe Ξ R j U heap (.arrLit extra)) →
       Safe Ξ R n W heap (.arrLit (parts.map partTerm)) := by
-  intro parts n W heap hS hw hh ht hk
+  intro parts n W heap hS hw hh hrf ht hk
   have := parts_safe (R := R) hE hEv Tm.arrLit
     (fun hp s => CallArguments.Step.arrArgs (CallArguments.keep_prefix hp (.head s)))
     (fun hp s => .arrArg (prefix_position hp).1 (prefix_position hp).2 s)
-    (fun hp hr => .arrSpread rfl hp hr) parts n W heap [] hS hw hh (by simp [CallArguments.Values]) ht
+    (fun hp hr => .arrSpread rfl hp hr)
+    (fun args r => by simp [refs, refsArgs_eq])
+    parts n W heap [] hS hw hh (by simp [CallArguments.Values]) (by simpa using hrf) ht
     (by simpa using hk)
   simpa using this
 

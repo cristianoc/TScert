@@ -58,7 +58,7 @@ structure Checker [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageC
   sound : ∀ {j k e out codes sums}, (run j k e codes sums).value = some out →
     CodesSound G codes → SummariesSound G images sums → ∀ {ε ρ n W h},
     EnvOk G j.context ρ n W → HeapKnowledge.Holds k ε ρ h →
-    WorldAdm W → HeapOk n W h →
+    WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ j.term) →
     SafePost (excOf G) (meaning G j.type)
       (fun h' v => HeapKnowledge.Holds out ε (push v ρ) h')
       n W h (instantiate 0 ρ j.term)
@@ -218,13 +218,13 @@ theorem cellHolds {k : Knowledge} {i : Nat} {fld : PropKey} {R : ValueSets.Value
 theorem read_sound {G : NormalGraph ι} {Γ k i fld R A ρ n W h}
     (hm : ∃ flds c oid v, ρ i = .objAt flds c oid ∧ ReadGave flds fld h v ∧ R.mem v = true) (hc : includes G A R = true)
     (_he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (.readAt fld (ρ i))) :
     SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (readOutput k i fld R) ε (push v ρ) h') n W h
       (.readAt fld (ρ i)) := by
   obtain ⟨flds,c,oid,v,hl,hrd,hav⟩ := hm
-  rw [hl]
-  apply consequence _ _ (hrd.observed (ValueSets.ValueSet.mem_isVal hav) hw hh)
+  rw [hl] at href ⊢
+  apply consequence _ _ (hrd.observed (ValueSets.ValueSet.mem_isVal hav) hw hh href)
   · intro j U u hu; subst u; exact includes_sound hc hav j U
   · intro h' u hp
     rw [hp.1]
@@ -435,7 +435,7 @@ theorem typedCells_holds [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
   split at hV
   · rename_i hr
     obtain ⟨El, flds, code, oid, l, c, hl, hfd, hlookup, himp, hEl⟩ := fieldOperand_typed hr (he.2 s Ref hRef)
-    obtain ⟨v, hv, hmm⟩ := hh.2 l c hlookup
+    obtain ⟨v, hv, hmm⟩ := hh.1.2 l c hlookup
     exact ⟨flds, code, oid, v, hl, by simpa [ReadGave, hfd] using hv,
       fieldSets_mem hV hEl (himp 0 (by omega) _ v (hmm 0 (by omega)))⟩
   · cases hV
@@ -447,12 +447,12 @@ theorem presentRead_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i fld R Re
     (hm : ∃ flds c oid v, ρ i = .objAt flds c oid ∧ ReadGave flds fld h v ∧ R.mem v = true) (hc : includes G A R = true)
     (hi : Γ[i]? = some Ref) (hr : fieldOperand (expand G Ref) fld = true)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (.readAt fld (ρ i))) :
     SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (readOutput k i fld R false) ε (push v ρ) h') n W h
       (.readAt fld (ρ i)) := by
   cases n with
-  | zero => trivial
+  | zero => exact href
   | succ n =>
     obtain ⟨_,flds',_,_,l,_,hl',hfd,_,_⟩ := fieldOperand_sound hr (he.2 i Ref hi)
     obtain ⟨flds,c,oid,v,hl,hrd,hav⟩ := hm
@@ -462,8 +462,8 @@ theorem presentRead_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k i fld R Re
       exact this.1
     subst hflds
     have hlv : h[l]? = some v := by simpa [ReadGave, hfd] using hrd
-    rw [hl]
-    apply consequence _ _ (hrd.observed (ValueSets.ValueSet.mem_isVal hav) hw hh)
+    rw [hl] at href ⊢
+    apply consequence _ _ (hrd.observed (ValueSets.ValueSet.mem_isVal hav) hw hh href)
     · intro j U u hu; subst u; exact includes_sound hc hav j U
     · intro h' u hp
       rw [hp.1]
@@ -480,18 +480,18 @@ theorem typedRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
     (ht : HasTyUsing G images Γ (.readAt fld (.var i)) A) (hi : Γ[i]? = some Ref)
     (hr : fieldOperand (expand G Ref) fld = true)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (.readAt fld (ρ i))) :
     SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (readFrame k i fld) ε (push v ρ) h') n W h
       (.readAt fld (ρ i)) := by
   cases n with
-  | zero => trivial
+  | zero => exact href
   | succ n =>
     obtain ⟨El,flds,code,oidb,l,c,hl,hfd,hlookup,himp⟩ := fieldOperand_sound hr (he.2 i Ref hi)
-    obtain ⟨v,hv,hmm⟩ := hh.2 l c hlookup
+    obtain ⟨v,hv,hmm⟩ := hh.1.2 l c hlookup
     have hval := meaning_valOnly G El 0 _ v (himp 0 (by omega) _ v (hmm 0 (by omega)))
     have hs : Safe (excOf G) (meaning G A) (n+1) W h (.readAt fld (ρ i)) := by
-      simpa [instantiate] using ht.sound (n+1) W h ρ he hw hh
+      simpa [instantiate] using ht.sound (n+1) W h ρ he hw hh (by simpa [instantiate] using href)
     rw [hl] at hs ⊢
     apply one_step rfl hval (.readField hfd hv) _ hs
     have hout := HeapKnowledge.shift_holds (v := v) hk
@@ -509,8 +509,10 @@ theorem slice_value {G : NormalGraph ι} {C B : Ty ι} {Q : Post} {n W h v o}
     (hsub : BranchRefinement.ObservedSub G C B o) (hq : o.holds v) :
     SafePost (excOf G) (meaning G B) Q n W h v := by
   cases n with
-  | zero => trivial
+  | zero => exact hs
   | succ n =>
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hv',ht,hpost⟩ | hth) | ⟨_,_,_,_,_,step,_,_⟩
     · exact Or.inl (Or.inl ⟨hv',hsub _ _ _ ht hq,hpost⟩)
     · exact absurd hth (val_not_thrown hv)
@@ -531,8 +533,10 @@ theorem slicedRead_sound {G : NormalGraph ι} {k i fld C B ρ n W h tag q} {R : 
   have hvv : isVal v = true := ValueSets.ValueSet.mem_isVal hav
   have step : Step h (.readAt fld (ρ i)) h v := by rw [hl]; exact hrd.step
   cases n with
-  | zero => trivial
+  | zero => exact base
   | succ n =>
+    obtain ⟨hrf, base⟩ := base
+    refine ⟨hrf, ?_⟩
     rcases base with (⟨hval,_,_⟩ | hth) | ⟨U,h',t',hx,hu,step',hh',hs'⟩
     · rw [hl] at hval; simp [isVal] at hval
     · exact absurd step hth.no_step
@@ -577,7 +581,7 @@ theorem optionalOperand_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W
     refine ⟨flds, oid, rfl, ?_, ?_⟩
     · intro l hl
       rcases hb with (⟨⟨g, s, El⟩, hmem, rfl⟩ | ⟨⟨g, El⟩, hmem, hne, rfl⟩) | ⟨o, hmem, rfl⟩
-      · obtain ⟨l', c', hl', hw, hag⟩ := hrec g s (meaning G El)
+      · obtain ⟨l', c', hl', hw, -, hag⟩ := hrec g s (meaning G El)
           (ReferenceConjunctions.mem_famsOf.mpr ⟨El, hmem, rfl⟩)
         rw [hl] at hl'
         cases hl'
@@ -631,16 +635,16 @@ theorem optionalRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
     (ht : HasTyUsing G images Γ (.readAt fld (.var i)) A) (hi : Γ[i]? = some Ref)
     (hr : optionalOperand (expand G Ref) fld = true)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (.readAt fld (ρ i))) :
     SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (readFrame k i fld true) ε (push v ρ) h') n W h
       (.readAt fld (ρ i)) := by
   cases n with
-  | zero => trivial
+  | zero => exact href
   | succ n =>
     obtain ⟨flds, oid, hl, hpres, habs⟩ := optionalOperand_sound hr (he.2 i Ref hi)
     have hs : Safe (excOf G) (meaning G A) (n+1) W h (.readAt fld (ρ i)) := by
-      simpa [instantiate] using ht.sound (n+1) W h ρ he hw hh
+      simpa [instantiate] using ht.sound (n+1) W h ρ he hw hh (by simpa [instantiate] using href)
     rw [hl] at hs ⊢
     have out : ∀ u, HeapLinks.ReadGave flds fld h u →
         HeapKnowledge.Holds (readFrame k i fld true) ε (push u ρ) h := by
@@ -656,7 +660,7 @@ theorem optionalRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
     cases hlk : flds.lookup fld with
     | some l =>
       obtain ⟨c, hc, hvals⟩ := hpres l hlk
-      obtain ⟨u,hu,hmm⟩ := hh.2 l c hc
+      obtain ⟨u,hu,hmm⟩ := hh.1.2 l c hc
       have hval := hvals _ u (hmm 0 (by omega))
       apply one_step rfl hval (.readField hlk hu) _ hs
       exact out u (by simp [HeapLinks.ReadGave, hlk, hu])
@@ -666,13 +670,13 @@ theorem optionalRead_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
 
 theorem value_sound {G : NormalGraph ι} {Γ k i R A ρ n W h}
     (hr : valuesAt G Γ k i = some R) (hc : includes G A R = true)
-    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) :
+    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (href : RefsOk W (ρ i)) :
     SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (withResult (copy k i) R) ε (push v ρ) h') n W h (ρ i) := by
   have hv := valuesAt_sound hr he hk
   have hval : isVal (ρ i) = true := ValueSets.ValueSet.mem_isVal hv
   exact HeapObservations.value hval (includes_sound hc hv n W)
-    (result_holds (copy_holds hk) hv)
+    (result_holds (copy_holds hk) hv) href
 
 /-- A read link from `i`, or a slot an alias link equates with it, through
 `fld` to `y`: the link a read records. -/
@@ -691,7 +695,8 @@ value of `y` at its field, the read gives that value, which has `y`'s type. -/
 theorem linkedRead_sound {G : NormalGraph ι} {Γ k i y fld B A ρ n W h}
     (hl : linksField k i y fld = true) (hB : Γ[y]? = some B)
     (hsub : FamLe (meaning G B) (meaning G A))
-    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (.readAt fld (ρ i))) :
     SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (linkedOutput k y) ε (push v ρ) h') n W h (.readAt fld (ρ i)) := by
   obtain ⟨g,hg,hm⟩ := List.any_eq_true.mp hl
@@ -710,13 +715,13 @@ theorem linkedRead_sound {G : NormalGraph ι} {Γ k i y fld B A ρ n W h}
   have hty := he.2 y B hB
   have hval := (meaning_value hty).1
   cases n with
-  | zero => trivial
+  | zero => exact href
   | succ n =>
-    rw [ho]
-    exact .inr ⟨trunc n (Nat.le_succ n) W, h, ρ y, WExt_refl _, WorldAdm_trunc _ hw, hr.step,
+    rw [ho] at href ⊢
+    exact ⟨href, .inr ⟨trunc n (Nat.le_succ n) W, h, ρ y, WExt_refl _, WorldAdm_trunc _ hw, hr.step,
       HeapOk_trunc n W h hh,
       HeapObservations.value hval (hsub _ _ _ ((meaning_adm G B).down n W _ hty))
-        (HeapKnowledge.withReadAtoms_holds (copy_holds hk))⟩
+        (HeapKnowledge.withReadAtoms_holds (copy_holds hk)) (RefsOk_trunc _ (hr.refs hh))⟩⟩
 
 /-- Ordinary calls and arbitrary expressions retain immutable snapshots, but no
 heap observation without a specific proved effect rule. -/
@@ -726,10 +731,10 @@ def ordinaryOutput (k : Knowledge) : Knowledge :=
 
 theorem ordinary_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G} {subtyping : BodySubtyping G} {Γ k t A ρ n W h}
     (ht : HasTyUsing G images (subtyping := subtyping) Γ t A) (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ t)) :
     SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (ordinaryOutput k) ε (push v ρ) h') n W h (instantiate 0 ρ t) := by
-  apply of_value_property _ (ht.sound n W h ρ he hw hh)
+  apply of_value_property _ (ht.sound n W h ρ he hw hh href)
   intro _ _ heap v _
   exact ⟨holds_nil _ _,(HeapKnowledge.shift_holds (v := v) hk).2.1,
     HeapLinks.stable_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.1,
@@ -799,7 +804,7 @@ theorem fresh_apart_from [DecidableEq ι] {G : NormalGraph ι} {Γ ρ n W h} {ns
   intro s g hm l l' hl hl'
   obtain ⟨Ref,hidx,hfo⟩ := contractFields_mem hm
   obtain ⟨_,flds1,code0,oid0,l1,c1,hl0,hfd1,hlookup,_⟩ := fieldOperand_sound hfo (he.2 s Ref hidx)
-  obtain ⟨u,hu,_⟩ := hh.2 l1 c1 hlookup
+  obtain ⟨u,hu,_⟩ := hh.1.2 l1 c1 hlookup
   have hlt : l1 < h.length := List.getElem?_eq_some_iff.mp hu |>.1
   have hge : base ≤ l := slots_snd_ge (by simpa [push, HeapSeparation.At] using hl)
   simp only [push, hl0, HeapSeparation.At, List.mem_singleton, exists_eq_left] at hl'
@@ -965,8 +970,10 @@ theorem merge_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W h
       (fun h' v => HeapKnowledge.Holds (allocOutput k [] Γ.length (contractFields G Γ)) ε (push v ρ) h')
       n W h (.merge d a b) := by
   cases n with
-  | zero => trivial
+  | zero => exact hs
   | succ p =>
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hval,_⟩ | hr) | ⟨U,h1,t1,hx,hu,step,hh1,hs1⟩
     · simp [isVal] at hval
     · obtain ⟨v, hr, _⟩ := hr
@@ -999,8 +1006,10 @@ theorem makeKey_alloc_sound [DecidableEq ι] {G : NormalGraph ι} {Γ k A ρ n W
       (fun h' v => HeapKnowledge.Holds (allocOutput k [] Γ.length (contractFields G Γ)) ε (push v ρ) h')
       n W h (.makeKey a b) := by
   cases n with
-  | zero => trivial
+  | zero => exact hs
   | succ p =>
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hval,_⟩ | hr) | ⟨U,h1,t1,hx,hu,step,hh1,hs1⟩
     · simp [isVal] at hval
     · obtain ⟨v, hr, _⟩ := hr
@@ -1106,7 +1115,7 @@ theorem fieldChanges_alters [DecidableEq ι] {G : NormalGraph ι} {Ref : Ty ι} 
     obtain ⟨El, flds', cd', o', l', c, hv', hl', hW, himp, hEl⟩ := fieldOperand_typed hr hv
     rw [ho] at hv'; cases hv'
     rw [hl] at hl'; cases hl'
-    obtain ⟨u', hu', hm⟩ := hh.2 l c hW
+    obtain ⟨u', hu', hm⟩ := hh.1.2 l c hW
     rw [hu] at hu'; cases hu'
     exact foldr_join_alters (List.mem_map_of_mem hEl) (typeChanges_alters (himp 0 (by omega) _ u (hm 0 (by omega))))
   · exact Changes.top_alters u
@@ -1168,9 +1177,11 @@ theorem stableLocations_frame {R : Nat → Val → Prop} {T : Fam} {Q : Post} :
     SafePost (excOf G) T (fun h' u => Q h' u ∧ ∀ l v, R l v → h'[l]? = some v) n W h t := by
   intro n
   induction n with
-  | zero => intros; trivial
+  | zero => intros; assumption
   | succ n ih =>
     intro W h t hr hh hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hv, ht, hq⟩ | hthrow) | ⟨U, h', t', hx, hu, step, hh', hs⟩
     · refine .inl (.inl ⟨hv, ht, hq, ?_⟩)
       intro l v hR
@@ -1190,14 +1201,16 @@ theorem viewFields_frame [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
     (hs : SafePost (excOf G) T Q n W h t) :
     SafePost (excOf G) T (fun h' v => Q h' v ∧ HeapKnowledge.ViewsKept (writeViews G Γ) ρ h h') n W h t := by
   cases n with
-  | zero => trivial
+  | zero => exact hs
   | succ n =>
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hv, ht, hq⟩ | hthrow) | ⟨U, h', t', hx, hu, step, hh', hs⟩
     · exact .inl (.inl ⟨hv, ht, hq, fun _ _ _ _ _ _ _ _ _ _ _ => rfl⟩)
     · exact .inl (.inr hthrow)
     · refine .inr ⟨U, h', t', hx, hu, step, hh', ?_⟩
       cases n with
-      | zero => trivial
+      | zero => exact hs
       | succ m =>
       let R := fun l v => ∃ c, lookup (trunc (m + 1) (Nat.le_succ (m + 1)) W) l = some c ∧ CtrStable c v
       have hr : ∀ l v, R l v → ∃ c, lookup U l = some c ∧ CtrStable c v := by
@@ -1214,7 +1227,7 @@ theorem viewFields_frame [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι
           fieldOperand_typed hvw.1 (he.2 s A hA)
         rw [hs0] at hv0; cases hv0
         rw [hl0] at hl1; cases hl1
-        obtain ⟨u, hu0, hm⟩ := hh.2 l c0 hW
+        obtain ⟨u, hu0, hm⟩ := hh.1.2 l c0 hW
         rw [hw0] at hu0; cases hu0
         have hEw := himp (m + 1) (by omega) _ w (hm (m + 1) (by omega))
         obtain ⟨fields, oid, rfl, hst⟩ := stableField_at (hvw.2 El hEl) hEw
@@ -1264,14 +1277,16 @@ theorem stableFirst_frame [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty �
     (hs : SafePost (excOf G) T Q n W h t) :
     SafePost (excOf G) T (fun h' v => Q h' v ∧ HeapKnowledge.FirstKept (stableFirst G Γ) ρ h h') n W h t := by
   cases n with
-  | zero => trivial
+  | zero => exact hs
   | succ n =>
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hv, ht, hq⟩ | hthrow) | ⟨U, h', t', hx, hu, step, hh', hs⟩
     · exact .inl (.inl ⟨hv, ht, hq, fun _ _ _ _ _ _ _ _ _ _ hw => hw⟩)
     · exact .inl (.inr hthrow)
     · refine .inr ⟨U, h', t', hx, hu, step, hh', ?_⟩
       cases n with
-      | zero => trivial
+      | zero => exact hs
       | succ m =>
       let R := fun l v => ∃ c, lookup (trunc (m + 1) (Nat.le_succ (m + 1)) W) l = some c ∧ CtrStable c v
       have hr : ∀ l v, R l v → ∃ c, lookup U l = some c ∧ CtrStable c v := by
@@ -1515,7 +1530,7 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
     (ht : HasTyUsing G images Γ (.writeAt fld (.var i) (.var j)) A) (hi : i < Γ.length) (hj : j < Γ.length)
     (hr : valuesAt G Γ k j = R)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (.writeAt fld (ρ i) (ρ j))) :
     SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (writeOutput k i j fld R (ownedField (expand G (Γ.getD i [])) fld)
         (fieldChanges G (expand G (Γ.getD i [])) fld) (writeViews G Γ) (stableFirst G Γ)) ε (push v ρ) h')
@@ -1524,11 +1539,11 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
     (meaning_value (he.2 j Γ[j] (List.getElem?_eq_some_iff.mpr ⟨hj,rfl⟩))).1
   have hiv := (meaning_value (he.2 i Γ[i] (List.getElem?_eq_some_iff.mpr ⟨hi,rfl⟩))).1
   have hs : Safe (excOf G) (meaning G A) n W h (.writeAt fld (ρ i) (ρ j)) := by
-    simpa [instantiate] using ht.sound n W h ρ he hw hh
+    simpa [instantiate] using ht.sound n W h ρ he hw hh (by simpa [instantiate] using href)
   cases n with
-  | zero => trivial
+  | zero => exact href
   | succ n =>
-    have step := hs
+    have step := hs.2
     rcases step with (⟨hbad,_⟩ | ⟨_,hr,_⟩) | ⟨U,h',t',hx,hu,step,hh',hs'⟩
     · contradiction
     · cases hr with
@@ -1537,7 +1552,7 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
     · obtain ⟨flds,c,oid,l,hl,hfd,hlt,rfl,rfl⟩ := write_inv hiv hvv step
       -- At budget one the step ends the observed run: no heap is observed after it.
       cases n with
-      | zero => exact .inr ⟨U, _, _, hx, hu, step, hh', trivial⟩
+      | zero => exact ⟨href, .inr ⟨U, _, _, hx, hu, step, hh', hs'⟩⟩
       | succ m =>
       rw [hl] at hs ⊢
       apply one_step rfl rfl (.writeField hvv hfd hlt) _ hs
@@ -1550,7 +1565,7 @@ theorem write_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImag
           obtain ⟨El, flds0, code0, oid0, l1, c0, hv0, hl1, hW, himp, hEl⟩ := fieldOperand_typed hvw.1 (he.2 s A hA)
           rw [hs0] at hv0; cases hv0
           rw [hl0] at hl1; cases hl1
-          obtain ⟨u, hu0, hm⟩ := hh.2 l0 c0 hW
+          obtain ⟨u, hu0, hm⟩ := hh.1.2 l0 c0 hW
           rw [hw] at hu0; cases hu0
           have hEw := himp (m + 1) (by omega) _ w (hm (m + 1) (by omega))
           obtain ⟨flds', oid', rfl, hst⟩ := stableField_at (hvw.2 El hEl) hEw
@@ -1655,9 +1670,11 @@ checked pure computation. -/
 theorem pure_frame {T Q} : ∀ {n W h t}, Safe Ξ T n W h t → pureTerm t = true →
     (∀ h', h.IsPrefix h' → ∀ v, Q h' v) → SafePost Ξ T Q n W h t := by
   intro n; induction n with
-  | zero => intros; trivial
+  | zero => intros; assumption
   | succ n ih =>
     intro W h t hs hp hq
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hv,ht⟩ | hr) | ⟨U,h',t',hx,hu,step,hh,hs⟩
     · exact Or.inl (Or.inl ⟨hv,ht,hq h (List.prefix_refl h) t⟩)
     · exact Or.inl (Or.inr hr)
@@ -1692,11 +1709,11 @@ theorem pure_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImage
     (ht : HasTyUsing G images Γ t A) (hp : pureTerm t = true)
     (hc : checkScope Γ.length t = true)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ t)) :
     SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (pureOutput G Γ k t) ε (push v ρ) h')
       n W h (instantiate 0 ρ t) := by
-  have hs := ht.sound n W h ρ he hw hh
+  have hs := ht.sound n W h ρ he hw hh href
   have hpClosed := pure_instantiate (d := 0) hp hc he
   cases t <;> simp only [pureTerm,isVal] at hp
   case var i =>
@@ -1719,10 +1736,10 @@ theorem heap_values {n W h} (hw : WorldAdm W) (hh : HeapOk (n+1) W h) :
     ∀ (l : Nat) (v : Tm), h[l]? = some v → isVal v = true := by
   intro l v hl
   have hlt : l < (toList W).length := by
-    have := (List.getElem?_eq_some_iff.mp hl).1; rw [← hh.1]; exact this
+    have := (List.getElem?_eq_some_iff.mp hl).1; rw [← hh.1.1]; exact this
   obtain ⟨c, hc⟩ : ∃ c, lookup W l = some c :=
     ⟨_, by simp only [lookup]; exact List.getElem?_eq_getElem hlt⟩
-  obtain ⟨u, hu, hmem⟩ := hh.2 l c hc
+  obtain ⟨u, hu, hmem⟩ := hh.1.2 l c hc
   rw [hl] at hu; cases hu
   exact (hw l c hc).2 0 (by omega) _ v (hmem 0 (by omega))
 
@@ -1795,9 +1812,11 @@ one it starts from, and a predicate of every extension holds where it ends. -/
 theorem inspect_frame {T Q} : ∀ {n W h t}, Safe Ξ T n W h t → Purity.inspectTerm t = true →
     WorldAdm W → HeapOk n W h → (∀ h' v, h.IsPrefix h' → Q h' v) → SafePost Ξ T Q n W h t := by
   intro n; induction n with
-  | zero => intros; trivial
+  | zero => intros; assumption
   | succ n ih =>
     intro W h t hs hp hw hh hq
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hv,ht⟩ | hr) | ⟨U,h',t',hx,hu,step,hh',hs⟩
     · exact Or.inl (Or.inl ⟨hv,ht,hq h t (List.prefix_refl h)⟩)
     · exact Or.inl (Or.inr hr)
@@ -1814,11 +1833,11 @@ theorem reading_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceIm
     (ht : HasTyUsing G images Γ t A) (hp : Purity.inspectTerm t = true)
     (hc : checkScope Γ.length t = true)
     (he : EnvOk G Γ ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ t)) :
     SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (HeapKnowledge.shift k) ε (push v ρ) h')
       n W h (instantiate 0 ρ t) :=
-  inspect_frame (ht.sound n W h ρ he hw hh) (inspect_instantiate (d := 0) hp (by simpa using hc) he) hw hh
+  inspect_frame (ht.sound n W h ρ he hw hh href) (inspect_instantiate (d := 0) hp (by simpa using hc) he) hw hh
     (fun _ _ hpre => knowledge_extend (HeapKnowledge.shift_holds hk) hpre)
 
 /-- Creating graph code allocates a fresh bag without running its code or
@@ -1827,14 +1846,17 @@ values. -/
 theorem graphCreation_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
     {Γ k arity E K start caps kind rest A ρ n W h}
     (ht : HasTyUsing G images Γ (.makeFn (.graph arity E K start caps kind rest) .nul) A) (he : EnvOk G Γ ρ n W)
-    (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ (.makeFn (.graph arity E K start caps kind rest) .nul))) :
     SafePost (excOf G) (meaning G A)
       (fun h' v => HeapKnowledge.Holds (HeapKnowledge.shift k) ε (push v ρ) h')
       n W h (instantiate 0 ρ (.makeFn (.graph arity E K start caps kind rest) .nul)) := by
-  have hs := ht.sound n W h ρ he hw hh
+  have hs := ht.sound n W h ρ he hw hh href
   cases n with
-  | zero => trivial
+  | zero => exact hs
   | succ n =>
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hv, _⟩ | ⟨_,hr,_⟩) | ⟨U,h',t',hx,hu,step,hh',hs'⟩
     · simp [instantiate,isVal] at hv
     · simp only [instantiate, instantiateArgs_eq_map, List.map] at hr
@@ -2135,7 +2157,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
     (hsums : SummariesSound G images sums := by exact Verification.ProgramCertificates.summariesSound_none _ _)
     {ρ n W h}
     (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
-    (hw : WorldAdm W) (hh : HeapOk n W h) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type)
       (fun h' v => HeapKnowledge.Holds out ε (push v ρ) h')
       n W h (instantiate 0 ρ j.term) := by
@@ -2148,7 +2170,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
       have typed := checkTreeUsing_sound e ht hcodes hsums
       rw [hj] at typed
       cases hc
-      exact ordinary_sound typed he hk hw hh
+      exact ordinary_sound typed he hk hw hh href
     · contradiction
   | pure e =>
     simp only [checkStepUsing_eq] at hc
@@ -2158,7 +2180,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
       have typed := checkTreeUsing_sound e ht hcodes hsums
       rw [hj] at typed
       cases hc
-      exact pure_sound typed hpure scope he hk hw hh
+      exact pure_sound typed hpure scope he hk hw hh href
     · contradiction
   | reading e =>
     simp only [checkStepUsing_eq] at hc
@@ -2168,7 +2190,7 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
       have typed := checkTreeUsing_sound e ht hcodes hsums
       rw [hj] at typed
       cases hc
-      exact reading_sound typed hread scope he hk hw hh
+      exact reading_sound typed hread scope he hk hw hh href
     · contradiction
   | created e =>
     simp only [checkStepUsing_eq] at hc
@@ -2180,8 +2202,8 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
       split at hc
       · rename_i arity E K start caps kind rest hb
         cases hc
-        rw [hb] at typed ⊢
-        exact graphCreation_sound typed he hk hw hh
+        rw [hb] at typed href ⊢
+        exact graphCreation_sound typed he hk hw hh href
       · contradiction
     · contradiction
   | typedRead i e =>
@@ -2199,8 +2221,8 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
           have typed := checkTreeUsing_sound e ht hcodes hsums
           rw [hj,term] at typed
           cases hc
-          rw [term]
-          simpa [instantiate] using typedRead_sound typed hi hrep he hk hw hh
+          rw [term] at href ⊢
+          simpa [instantiate] using typedRead_sound typed hi hrep he hk hw hh (by simpa [instantiate] using href)
       · split at hc
         · rename_i hp
           obtain ⟨hj,ht,rfl,hr⟩ := hp
@@ -2212,8 +2234,8 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
             have typed := checkTreeUsing_sound e ht (hsums := hsums)
             rw [hj,term] at typed
             cases hc
-            rw [term]
-            simpa [instantiate] using optionalRead_sound typed hi hrep he hk hw hh
+            rw [term] at href ⊢
+            simpa [instantiate] using optionalRead_sound typed hi hrep he hk hw hh (by simpa [instantiate] using href)
         · contradiction
     · contradiction
   | observedRead i R =>
@@ -2226,13 +2248,13 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
         have hm := cellHolds hk hcell
         have term := readSlot_eq hslot
         cases hc
-        rw [term]
+        rw [term] at href ⊢
         cases hr : j.context[i']? with
         | some Ref =>
           by_cases hfo : fieldOperand (expand G Ref) fld = true
-          · simpa [instantiate, hr, hfo] using presentRead_sound hm hi hr hfo he hk hw hh
-          · simpa [instantiate, hr, hfo] using read_sound hm hi he hk hw hh
-        | none => simpa [instantiate, hr] using read_sound hm hi he hk hw hh
+          · simpa [instantiate, hr, hfo] using presentRead_sound hm hi hr hfo he hk hw hh (by simpa [instantiate] using href)
+          · simpa [instantiate, hr, hfo] using read_sound hm hi he hk hw hh (by simpa [instantiate] using href)
+        | none => simpa [instantiate, hr] using read_sound hm hi he hk hw hh (by simpa [instantiate] using href)
       · contradiction
     · contradiction
   | slicedRead tag q i e p =>
@@ -2255,14 +2277,14 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
             cases hce : claim e; simp_all
           rw [hj,term] at typed
           cases hc
-          rw [term]
+          rw [term] at href ⊢
           simp only [hi, Option.any_some]
           by_cases hfo : fieldOperand (expand G Ref) fld = true
-          · have hs := slicedRead_sound (typedRead_sound typed hi hfo he hk hw hh) hm hfc
+          · have hs := slicedRead_sound (typedRead_sound typed hi hfo he hk hw hh (by simpa [instantiate] using href)) hm hfc
               (BranchRefinement.checkObservedSub_sound hsub) hk
             simpa [instantiate, hfo] using hs
           · have hopt := hrep.resolve_left hfo
-            have hs := slicedRead_sound (optionalRead_sound typed hi hopt he hk hw hh) hm hfc
+            have hs := slicedRead_sound (optionalRead_sound typed hi hopt he hk hw hh (by simpa [instantiate] using href)) hm hfc
               (BranchRefinement.checkObservedSub_sound hsub) hk
             simpa [instantiate, hfo] using hs
       · contradiction
@@ -2273,8 +2295,8 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
     · rename_i hp
       obtain ⟨ht,_,hr,hi⟩ := hp
       cases hc
-      rw [ht]
-      simpa [instantiate] using value_sound hr hi he hk
+      rw [ht] at href ⊢
+      simpa [instantiate] using value_sound hr hi he hk (by simpa [instantiate] using href)
     · contradiction
   | linkedRead i y p =>
     simp only [checkStepUsing_eq] at hc
@@ -2284,9 +2306,9 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
       · rename_i hp
         obtain ⟨rfl,hl,hs⟩ := hp
         cases hc
-        rw [readSlot_eq hslot]
+        rw [readSlot_eq hslot] at href ⊢
         simpa [instantiate] using
-          linkedRead_sound hl hB (PositiveCertificates.acceptedUsing hs) he hk hw hh
+          linkedRead_sound hl hB (PositiveCertificates.acceptedUsing hs) he hk hw hh (by simpa [instantiate] using href)
       · contradiction
     · contradiction
   | allocated e =>
@@ -2300,8 +2322,8 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
         rw [hj] at typed
         obtain ⟨code, term⟩ := allocationSlots_eq hslots
         cases hc
-        rw [term] at typed ⊢
-        have hs := typed.sound n W h ρ he hw hh
+        rw [term] at typed href ⊢
+        have hs := typed.sound n W h ρ he hw hh href
         cases code
         all_goals
           simp only [instantiate, instantiateArgs_eq_map, List.map_map,
@@ -2319,12 +2341,12 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
           have hvb := (meaning_value (he.2 b _ (List.getElem?_eq_getElem hb))).1
           cases hc
           rcases mergeSlots_eq hmerge with term | term
-          · rw [term] at typed ⊢
-            have hs := typed.sound n W h ρ he hw hh
+          · rw [term] at typed href ⊢
+            have hs := typed.sound n W h ρ he hw hh href
             simp only [instantiate] at hs ⊢
             exact merge_alloc_sound hva hvb he hk hh hs
-          · rw [term] at typed ⊢
-            have hs := typed.sound n W h ρ he hw hh
+          · rw [term] at typed href ⊢
+            have hs := typed.sound n W h ρ he hw hh href
             simp only [instantiate] at hs ⊢
             exact makeKey_alloc_sound hva hvb he hk hh hs
         · contradiction
@@ -2337,8 +2359,8 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
             rw [hj] at typed
             have term := storeSlots_eq hstore
             cases hc
-            rw [term] at typed ⊢
-            have hs := typed.sound n W h ρ he hw hh
+            rw [term] at typed href ⊢
+            have hs := typed.sound n W h ρ he hw hh href
             simp only [instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def] at hs ⊢
             refine store_alloc_sound ?_ hk hs
             intro v hv
@@ -2358,8 +2380,8 @@ theorem checkStep_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
         rw [hj] at typed
         rw [term] at typed
         cases hc
-        rw [term]
-        simpa [instantiate] using write_sound typed hi hv hr he hk hw hh
+        rw [term] at href ⊢
+        simpa [instantiate] using write_sound typed hi hv hr he hk hw hh (by simpa [instantiate] using href)
       · contradiction
     · contradiction
   | boundedWrite =>
@@ -2646,10 +2668,10 @@ stable cell facts. -/
   run := fun j k e codes sums => (base.run j k e codes sums).map (withStable G j.context k)
   select := fun j k e codes sums => (base.select j k e codes sums).map (withStable G j.context k)
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
     simp only [CheckResult.map, Option.map_eq_some_iff] at hc
     obtain ⟨out0, h0, rfl⟩ := hc
-    exact withStable_sound he hk hh (base.sound h0 hcodes hsums he hk hw hh)
+    exact withStable_sound he hk hh (base.sound h0 hcodes hsums he hk hw hh href)
 
 /-- The steps' own rules, without the stable links every step keeps. -/
 @[nospecialize] def Checker.steps [DecidableEq ι] (G : NormalGraph ι)
@@ -2657,8 +2679,8 @@ stable cell facts. -/
   run := fun j k e codes sums => checkStepResult G images j k e codes sums
   select := fun j k e codes sums => checkStepResult G images j k e codes sums (tree := false)
   sound := by
-    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh
-    exact checkStep_sound hc hcodes hsums he hk hw hh
+    intro j k e out codes sums hc hcodes hsums ε ρ n W h he hk hw hh href
+    exact checkStep_sound hc hcodes hsums he hk hw hh href
 
 
 /-- Descriptor-aware ordinary expressions use the same heap-forgetting rule
@@ -2675,7 +2697,7 @@ admits (`ordinary`). -/
         checkTreeWith G images subtyping.check e codes sums)).bind fun _ => pure (ordinaryOutput k)
     | step => checkStepResult G images j k step codes sums
   sound := by
-    intro j k step out codes sums checked hcodes hsums ε ρ n W h he hk hw hh
+    intro j k step out codes sums checked hcodes hsums ε ρ n W h he hk hw hh href
     cases step with
     | ordinary e =>
       simp only [CheckResult.value_bind_const, CheckResult.accepted_ofBool] at checked
@@ -2687,9 +2709,9 @@ admits (`ordinary`). -/
         cases checked
         have typed := checkTreeWith_sound subtyping e tests.2 hcodes hsums ordinary
         rw [tests.1.1] at typed
-        exact ordinary_sound typed he hk hw hh
+        exact ordinary_sound typed he hk hw hh href
       · cases checked
-    | _ => exact checkStep_sound checked hcodes hsums he hk hw hh
+    | _ => exact checkStep_sound checked hcodes hsums he hk hw hh href
 
 /-- Descriptor-aware steps, each keeping its input's stable links. -/
 @[nospecialize] def Checker.withSubtyping [DecidableEq ι] (G : NormalGraph ι)

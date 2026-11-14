@@ -38,7 +38,8 @@ theorem promiseCall_yields_local {G : NormalGraph ι} {images : InstanceImageChe
     (htrees : ∀ e ∈ ps, checkTreeUsing G images e codes sums = true) (hcodes : CodesSound G codes)
     (hsums : SummariesSound G images sums)
     (hy : promiseYields G A effect a T ys = true)
-    {ρ n W h} (he : EnvOk G Γ ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    {ρ n W h} (he : EnvOk G Γ ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ t)) :
     SafePost (excOf G) (fun m U u => meaning G A m U u ∧ YieldsOk G ys ρ m U u) (fun _ _ => True) n W h
       (instantiate 0 ρ t) := by
   simp only [promiseOf] at hp
@@ -82,17 +83,19 @@ theorem promiseCall_yields_local {G : NormalGraph ι} {images : InstanceImageChe
     intro p hp
     exact ExpressionEffects.valueTerm_instantiate (hvals' p hp).1 (hvals' p hp).2
       (by simpa [context p hp] using he)
+  have refsOf := ExpressionEffects.invoke_refs htf htr hargs hundef href
   cases n with
-  | zero => trivial
+  | zero => exact href
   | succ n =>
     have member : ∀ p ∈ jf::jr::jas, meaning G p.type (n+1) W (instantiate 0 ρ p.term) := by
       intro p hp
-      exact safe_value_mem (values p hp) ((typed' p hp).sound _ _ h ρ he hw hh)
+      exact safe_value_mem (values p hp) ((typed' p hp).sound _ _ h ρ he hw hh (refsOf p hp))
     have hf := ((represents_raw hF (n+1) W _) (member jf (by simp))).1
     have hpw := hf.2 _ (List.mem_map_of_mem hs)
     simp only [CallEffects.Arrow.map, CallEffects.Contract.map] at hpw
     have hArgs := ExpressionEffects.argument_values (ps := jas)
       (fun p hp => typed' p (by simp [hp])) (fun p hp => values p (by simp [hp])) he hw hh
+      (fun p hp => refsOf p (by simp [hp]))
     have actual : (jas.take args.length).map (fun p => instantiate 0 ρ p.term)
         = args.map (instantiate 0 ρ) := by
       simpa only [List.map_map, Function.comp_def] using
@@ -119,6 +122,7 @@ theorem promiseCall_yields_local {G : NormalGraph ι} {images : InstanceImageChe
         obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hm; exact meaning_adm G p.type) ha j hj U hx))
       (meaning_adm G jr.type) (by simpa [List.map_map, Function.comp_def] using hpw) hr hrval hvs ha hw hh
       (CallEffects.Effect.requires_none hreq hpre _ _ _)
+      (by simpa [htf, htr, instantiate, instantiateArgs_eq_map] using href)
     have hterm : instantiate 0 ρ (.invoke f rv args) = .invoke (instantiate 0 ρ jf.term)
         (instantiate 0 ρ jr.term) (args.map (instantiate 0 ρ)) := by
       simp [instantiate, instantiateArgs_eq_map, htf, htr]
@@ -187,7 +191,8 @@ theorem promiseCall_yields_checked {G : NormalGraph ι} {images : InstanceImageC
     (hctx : (claim e).context = Γ) (hterm : (claim e).term = t) (hty : (claim e).type = A)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     (hy : promiseYields G A effect a T ys = true)
-    {ρ n W h} (he : EnvOk G Γ ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h) :
+    {ρ n W h} (he : EnvOk G Γ ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (instantiate 0 ρ t)) :
     SafePost (excOf G) (fun m U u => meaning G A m U u ∧ YieldsOk G ys ρ m U u) (fun _ _ => True) n W h
       (instantiate 0 ρ t) := by
   obtain ⟨⟨Γ', t', A'⟩, r0, ps, rfl⟩ := promiseOf_app hp
@@ -195,10 +200,10 @@ theorem promiseCall_yields_checked {G : NormalGraph ι} {images : InstanceImageC
   subst hctx hterm hty
   rcases hc with hc | hc
   · simp only [checkTreeUsing_eq, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hc
-    exact promiseCall_yields_local hp hc.1 (fun e he' => hc.2 ⟨e, he'⟩ (List.mem_attach _ _)) hcodes hsums hy he hw hh
+    exact promiseCall_yields_local hp hc.1 (fun e he' => hc.2 ⟨e, he'⟩ (List.mem_attach _ _)) hcodes hsums hy he hw hh href
   · simp only [requiresTree, requiresApp, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hc
     exact promiseCall_yields_local hp hc.1.1.2 (fun e he' => hc.1.2 ⟨e, he'⟩ (List.mem_attach _ _)) hcodes hsums hy
-      he hw hh
+      he hw hh href
 
 end
 

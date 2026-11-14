@@ -59,8 +59,8 @@ theorem trans {s₁ s₂ s₃ : IndexedHeap} (h₁ : Admissible s₁ s₂) (h₂
 grows. -/
 theorem length_le {s s' : IndexedHeap} (ha : Admissible s s') : s.h.length ≤ s'.h.length := by
   obtain ⟨hle, tail, ht⟩ := ha
-  rw [s.ok.1, s'.ok.1, ht]
-  simp [trunc]
+  rw [s.ok.1.1, s'.ok.1.1, toList_length, toList_length, ht]
+  simp
 
 /-- Every location of `s`'s world keeps its contract, restricted to the lower
 budget. -/
@@ -116,7 +116,7 @@ theorem run {Ξ T : Fam} {Q : Post} {R : Heap → Prop} :
     cases n with
     | zero => omega
     | succ m =>
-      rcases hsafe with (⟨hv, -, -⟩ | ⟨hr, -⟩) | ⟨U, h₁, t₁, hx, hu, st', hh, hs'⟩
+      rcases hsafe.2 with (⟨hv, -, -⟩ | ⟨hr, -⟩) | ⟨U, h₁, t₁, hx, hu, st', hh, hs'⟩
       · exact absurd st (value_no_step hv)
       · exact absurd st hr.no_step
       · obtain ⟨rfl, rfl⟩ := Step_det st st'
@@ -131,7 +131,7 @@ theorem exit_value {Ξ T : Fam} {Q : Post} {R : Heap → Prop} {n : Nat} {W : Wo
   cases n with
   | zero => exact absurd hn (Nat.lt_irrefl 0)
   | succ j =>
-    rcases hs with (⟨-, hT, hQ⟩ | ⟨hr, -⟩) | ⟨_, _, _, _, _, st, _, _⟩
+    rcases hs.2 with (⟨-, hT, hQ⟩ | ⟨hr, -⟩) | ⟨_, _, _, _, _, st, _, _⟩
     · exact ⟨hT, hQ⟩
     · exact absurd hv (by rw [hr.not_val]; simp)
     · exact absurd st (value_no_step hv)
@@ -143,7 +143,7 @@ theorem exit_raise {Ξ T : Fam} {Q : Post} {R : Heap → Prop} {n : Nat} {W : Wo
   cases n with
   | zero => exact absurd hn (Nat.lt_irrefl 0)
   | succ j =>
-    rcases hs with (⟨hv, -, -⟩ | ⟨hth, hR⟩) | ⟨_, _, _, _, _, st, _, _⟩
+    rcases hs.2 with (⟨hv, -, -⟩ | ⟨hth, hR⟩) | ⟨_, _, _, _, _, st, _, _⟩
     · rw [raises_not_val hr] at hv; cases hv
     · exact ⟨hth, hR⟩
     · exact absurd st (raises_no_step hr)
@@ -277,11 +277,12 @@ cell, which the first heap's region does not cover. -/
 /-- A contract admitting every value. -/
 def anyCtr : Ctr 1 := fun _ _ _ v => isVal v = true
 
-/-- A world of three locations admitting every value. -/
-def anyWorld : WorldT 1 := ofList [anyCtr, anyCtr, anyCtr]
+/-- A world of three locations admitting every value: an array store, then
+two element cells. -/
+def anyWorld : WorldT 1 := ofEntries [(.store .array, anyCtr), (.elem, anyCtr), (.elem, anyCtr)]
 
 theorem anyWorld_lookup {l : Nat} {c : Ctr 1} (hl : lookup anyWorld l = some c) : l < 3 ∧ c = anyCtr := by
-  simp only [lookup, anyWorld, toList_ofList] at hl
+  simp only [lookup, anyWorld, toList, entries_ofEntries] at hl
   rcases l with _ | _ | _ | l <;> simp at hl
   all_goals exact ⟨by omega, hl.symm⟩
 
@@ -290,35 +291,45 @@ theorem anyWorld_adm : WorldAdm anyWorld := by
   obtain ⟨-, rfl⟩ := anyWorld_lookup hl
   exact ⟨fun _ _ _ _ _ _ hv => hv, fun _ _ _ _ hv => hv⟩
 
-theorem anyWorld_ok {h : Heap} (hl : h.length = 3) (hv : ∀ v ∈ h, isVal v = true) :
-    HeapOk 1 anyWorld h := by
-  refine ⟨by simp [anyWorld, hl], fun l c hc => ?_⟩
-  obtain ⟨hlt, rfl⟩ := anyWorld_lookup hc
-  have hlh : l < h.length := by omega
-  exact ⟨h[l], List.getElem?_eq_getElem hlh, fun _ _ => hv _ (List.getElem_mem hlh)⟩
+/-- A heap of `anyWorld`: a store listing its element cells, and two source
+values without references. -/
+theorem anyWorld_ok {ls : List (Option Nat)} {a b : Val} (hls : ∀ l, some l ∈ ls → l = 1 ∨ l = 2)
+    (ha : isSourceVal a = true) (hb : isSourceVal b = true) (hra : refs a = []) (hrb : refs b = []) :
+    HeapOk 1 anyWorld [.arr ls, a, b] := by
+  have hvals : ∀ v ∈ [Tm.arr ls, a, b], isVal v = true := by
+    intro v hm
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hm
+    rcases hm with rfl | rfl | rfl
+    · rfl
+    · exact sourceVal_isVal ha
+    · exact sourceVal_isVal hb
+  refine ⟨⟨by simp [anyWorld, toList], fun l c hc => ?_⟩, fun l r hr => ?_⟩
+  · obtain ⟨hlt, rfl⟩ := anyWorld_lookup hc
+    have hlh : l < [Tm.arr ls, a, b].length := by simpa using hlt
+    exact ⟨_, List.getElem?_eq_getElem hlh, fun _ _ => hvals _ (List.getElem_mem hlh)⟩
+  · simp only [roleAt, roles, anyWorld, entries_ofEntries] at hr
+    rcases l with _ | _ | _ | l <;> simp at hr <;> subst hr
+    · refine ⟨_, rfl, ⟨ls, rfl⟩, RefsOk_arr_iff.mpr fun l hl => ?_⟩
+      rcases hls l hl with rfl | rfl <;> simp [roleAt, roles, anyWorld]
+    · exact ⟨_, rfl, ha, RefsOk_of_nil hra⟩
+    · exact ⟨_, rfl, hb, RefsOk_of_nil hrb⟩
 
 /-- A state of `anyWorld` at budget 1. -/
-def anyState (h : Heap) (hl : h.length = 3) (hv : ∀ v ∈ h, isVal v = true) : IndexedHeap :=
-  ⟨1, anyWorld, h, Nat.one_pos, anyWorld_adm, anyWorld_ok hl hv⟩
+def anyState (h : Heap) (ok : HeapOk 1 anyWorld h) : IndexedHeap :=
+  ⟨1, anyWorld, h, Nat.one_pos, anyWorld_adm, ok⟩
 
-theorem anyState_admissible {h h' : Heap} {hl hv hl' hv'} :
-    Admissible (anyState h hl hv) (anyState h' hl' hv') :=
+theorem anyState_admissible {h h' : Heap} {ok ok'} :
+    Admissible (anyState h ok) (anyState h' ok') :=
   ⟨Nat.le_refl 1, by show WExt (trunc 1 (Nat.le_refl 1) anyWorld) anyWorld; rw [trunc_id]; exact WExt_refl _⟩
-
-theorem vals3 {a b c : Val} (ha : isVal a = true) (hb : isVal b = true) (hc : isVal c = true) :
-    ∀ v ∈ [a, b, c], isVal v = true := by
-  intro v hm
-  simp only [List.mem_cons, List.not_mem_nil, or_false] at hm
-  rcases hm with rfl | rfl | rfl <;> assumption
 
 /-- **`x[∗] : any` is not rigid.** -/
 theorem elems_not_rigid :
     ¬ Rigid [(.field 0 arrayStoreKey, .any), (.elems 0, .any)]
       (fun _ => .objAt [(arrayStoreKey, 0)] .absent 0) := by
   intro hr
-  let s₁ := anyState [.arr [some 1], .nul, .nul] rfl (vals3 rfl rfl rfl)
-  let s₂ := anyState [.arr [some 2], .nul, .nul] rfl (vals3 rfl rfl rfl)
-  let s₃ := anyState [.arr [some 2], .nul, .tru] rfl (vals3 rfl rfl rfl)
+  let s₁ := anyState [.arr [some 1], .nul, .nul] (anyWorld_ok (by simp) rfl rfl rfl rfl)
+  let s₂ := anyState [.arr [some 2], .nul, .nul] (anyWorld_ok (by simp) rfl rfl rfl rfl)
+  let s₃ := anyState [.arr [some 2], .nul, .tru] (anyWorld_ok (by simp) rfl rfl rfl rfl)
   have a₁ : Action [(.field 0 arrayStoreKey, .any), (.elems 0, .any)]
       (fun _ => .objAt [(arrayStoreKey, 0)] .absent 0) s₁ s₂ := by
     refine ⟨anyState_admissible, by simp [s₁, s₂, anyState], fun l v hl => ?_⟩

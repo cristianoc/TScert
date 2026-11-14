@@ -199,13 +199,13 @@ theorem ElementKind.convert_negZero :
   cases k <;> simp_all [ElementKind.convert, int32Bits, bitsOfNat] <;> decide
 
 /-- **A role assignment fitting a heap**: every location of the heap has a
-role (`Kinds.Role`), and its contents have that role's category
-(`Kinds.Cat`): a source value in F, C and E, a store in S, of the view's
+role (`Role`), and its contents have that role's category
+(`Cat`): a source value in F, C and E, a store in S, of the view's
 length in a view store, `null` in I. A kinded world's roles fit every heap
 meeting it (`Kinds.ViewWriteOf.holds`). -/
-structure RolesFit (roles : Nat → Option Kinds.Role) (h : Heap) : Prop where
+structure RolesFit (roles : Nat → Option Role) (h : Heap) : Prop where
   dom : ∀ l, l < h.length → ∃ r, roles l = some r
-  cat : ∀ l r v, roles l = some r → h[l]? = some v → Kinds.Cat r v
+  cat : ∀ l r v, roles l = some r → h[l]? = some v → Cat r v
 
 /-- **The view-element write from `before` to `after`, read against the
 roles `roles` of `before`'s locations** (location-kinds draft, §6): the
@@ -214,7 +214,7 @@ contents; every view store of length `N` holds a store of length `N`
 listing locations of `after`; and every cell a view store newly lists is
 fresh against `before`. It constrains every view store, whichever view the
 call names. -/
-structure ViewWriteAt (roles : Nat → Option Kinds.Role) (before after : Heap) : Prop where
+structure ViewWriteAt (roles : Nat → Option Role) (before after : Heap) : Prop where
   grows : before.length ≤ after.length
   keep : ∀ l r, roles l = some r → (∀ N, r ≠ .store (.view N)) → after[l]? = before[l]?
   view : ∀ l N, roles l = some (.store (.view N)) →
@@ -238,8 +238,8 @@ write, and, where exact, `ExactWrite`. -/
 def ElementWrite.Holds (w : ElementWrite) (args : List Tm) (before after : Heap) : Prop :=
   ViewWriteA before after ∧ (∀ k, w = .exact k → ExactWrite k args before after)
 
-theorem RolesFit.role_of {roles : Nat → Option Kinds.Role} {h : Heap} (hf : RolesFit roles h) {l : Nat}
-    {v : Val} (hv : h[l]? = some v) : ∃ r, roles l = some r ∧ Kinds.Cat r v := by
+theorem RolesFit.role_of {roles : Nat → Option Role} {h : Heap} (hf : RolesFit roles h) {l : Nat}
+    {v : Val} (hv : h[l]? = some v) : ∃ r, roles l = some r ∧ Cat r v := by
   obtain ⟨r, hr⟩ := hf.dom l (List.getElem?_eq_some_iff.mp hv).1
   exact ⟨r, hr, hf.cat l r v hr hv⟩
 
@@ -267,8 +267,8 @@ theorem ViewWriteA.changes {before after : Heap} (hw : ViewWriteA before after) 
         cases he
         obtain ⟨ls', hl', hlen', -⟩ := hw.view l N hr
         exact ⟨ls', hl', by omega⟩
-    | field | cell | elem => simp [Kinds.Cat, isSourceVal] at hc
-    | identity => simp [Kinds.Cat] at hc
+    | field | cell | elem => simp [Cat, isSourceVal] at hc
+    | identity => simp [Cat] at hc
 
 theorem ElementWrite.Holds.changes {w : ElementWrite} {args : List Tm} {before after : Heap}
     (h : w.Holds args before after) : w.changes.Holds before after := h.1.changes w
@@ -373,25 +373,25 @@ namespace ViewWrite
 variable {n n' : Nat} {W : WorldT n} {h : Heap} {W' : WorldT n'} {h' : Heap}
 
 /-- Every location keeps its role. -/
-theorem roleAt (hw : ViewWrite W h W' h') {l : Nat} {r : Role} (hl : roleAt W l = some r) :
-    Kinds.roleAt W' l = some r := WExt_roleAt hw.ext (by simpa using hl)
+theorem roleAt (hw : ViewWrite W h W' h') {l : Nat} {r : Role} (hl : Verification.roleAt W l = some r) :
+    Verification.roleAt W' l = some r := WExt_roleAt hw.ext (by simpa using hl)
 
 /-- **An ordinary array's store is kept.** -/
-theorem keeps_array (hw : ViewWrite W h W' h') {l : Nat} (hl : Kinds.roleAt W l = some (.store .array)) :
+theorem keeps_array (hw : ViewWrite W h W' h') {l : Nat} (hl : Verification.roleAt W l = some (.store .array)) :
     h'[l]? = h[l]? := hw.keep l _ hl (fun N hN => by cases hN)
 
 /-- **An old view store holds a replacement store of its fixed length, whose
 present entries are element cells of the exit world and locations of the
 exit heap.** -/
 theorem view_store (hw : ViewWrite W h W' h') {l N : Nat}
-    (hl : Kinds.roleAt W l = some (.store (.view N))) :
+    (hl : Verification.roleAt W l = some (.store (.view N))) :
     ∃ ls', h'[l]? = some (Tm.arr ls') ∧ ls'.length = N ∧
-      ∀ c, some c ∈ ls' → Kinds.roleAt W' c = some .elem ∧ c < h'.length := by
+      ∀ c, some c ∈ ls' → Verification.roleAt W' c = some .elem ∧ c < h'.length := by
   obtain ⟨u, hu, ⟨ls', rfl, hlen⟩, -⟩ := hw.ok.2 l _ (hw.roleAt hl)
   exact ⟨ls', hu, hlen, fun c hc => hw.ok.store_cells hu hc⟩
 
 /-- **A fresh location has its role's shape.** -/
-theorem fresh (hw : ViewWrite W h W' h') {l : Nat} {r : Role} (hl : Kinds.roleAt W' l = some r) :
+theorem fresh (hw : ViewWrite W h W' h') {l : Nat} {r : Role} (hl : Verification.roleAt W' l = some r) :
     ∃ u, h'[l]? = some u ∧ Shape W' r u := hw.ok.2 l r hl
 
 /-- **The coarse change is a consequence**: from a well-formed entry heap,
@@ -399,7 +399,7 @@ every location holding an object or a number keeps its contents, and every
 store keeps its length (`CallEffects.ElementWrite.changes`). -/
 theorem changes (hw : ViewWrite W h W' h') (hok : HeapOk n W h) (w : CallEffects.ElementWrite) :
     w.changes.Holds h h' := by
-  have role_of : ∀ {l : Nat} {v : Val}, h[l]? = some v → ∃ r, Kinds.roleAt W l = some r ∧ Shape W r v := by
+  have role_of : ∀ {l : Nat} {v : Val}, h[l]? = some v → ∃ r, Verification.roleAt W l = some r ∧ Shape W r v := by
     intro l v hv
     have hlt : l < (entries W).length := by
       have h1 := (List.getElem?_eq_some_iff.mp hv).1

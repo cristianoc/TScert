@@ -48,7 +48,7 @@ theorem GraphGuarantee.toTarget {G : NormalGraph ι} {admits : MixedAssignment �
   bounded := g.bounded
   ensured := g.ensured
   regionally := g.regionally
-  asserted η hη n W h ρ he l k hl j h' ρ' hj hr := g.asserted η hη n W h ρ he l k hl j h' ρ' hj
+  asserted η hη n W h ρ he hPn hρ l k hl j h' ρ' hj hr := g.asserted η hη n W h ρ he hPn hρ l k hl j h' ρ' hj
     (transitions_of_reachesIn hr)
 
 /-- **A checker's scope gives the checker at each admitted assignment**:

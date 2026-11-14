@@ -220,7 +220,7 @@ theorem checkEntryFields_sound [DecidableEq ι] {G : PositiveGraphs.NormalGraph 
       have hu := hh.stable_value hn hlw hstab
       rw [hlw] at hlw'
       cases hlw'
-      obtain ⟨u', hu', hcu⟩ := hh.2 l _ hlw
+      obtain ⟨u', hu', hcu⟩ := hh.1.2 l _ hlw
       rw [hu] at hu'
       cases hu'
       have hval : isVal u = true :=

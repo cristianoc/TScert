@@ -589,11 +589,11 @@ theorem CallArrow.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R L S q}
       (mixedValues G η q.receiver) (mixedValues G η q.result) n W v := by
   induction hc with
   | emptyRecv he =>
-    intro j hj U hx hu heap hh r hrv hrm
+    intro j hj U hx hu heap hh hvr r hrv hrm
     obtain ⟨i, hi, _⟩ := hrm
     simp [he] at hi
   | empty he =>
-    intro j hj U hx hu heap hh r hrv hrm args hvals ha
+    intro j hj U hx hu heap hh hvr r hrv hrm hrr args hvals har ha
     exact False.elim (short_empty he ha)
   | source hm hrecv hd hres he =>
     exact (hv.1.2 _ (List.mem_map_of_mem hm)).weaken (Effect.covers_sound he)
@@ -609,18 +609,18 @@ theorem CallArrow.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R L S q}
         (fun j hj U args ha => rest_short (hr j hj) hE hd hel ha) (arrow_result hr hres)
     · exact hel.elim
   | union he _ _ hl hh =>
-    intro j hj U hx hu heap hok r hrv hrm args hvals ha
+    intro j hj U hx hu heap hok hvr r hrv hrm hrr args hvals har ha
     rw [he] at ha
     rcases short_union _ _ _ _ ha with ha | ha
-    · exact hl j hj U hx hu heap hok r hrv hrm args hvals ha
-    · exact hh j hj U hx hu heap hok r hrv hrm args hvals ha
+    · exact hl j hj U hx hu heap hok hvr r hrv hrm hrr args hvals har ha
+    · exact hh j hj U hx hu heap hok hvr r hrv hrm hrr args hvals har ha
   | recvUnion he _ _ hl hh =>
-    intro j hj U hx hu heap hok r hrv hrm args hvals ha
+    intro j hj U hx hu heap hok hvr r hrv hrm hrr args hvals har ha
     obtain ⟨i, hi, hvi⟩ := hrm
     rw [he] at hi
     rcases List.mem_append.mp hi with hi | hi
-    · exact hl j hj U hx hu heap hok r hrv ⟨i, hi, hvi⟩ args hvals ha
-    · exact hh j hj U hx hu heap hok r hrv ⟨i, hi, hvi⟩ args hvals ha
+    · exact hl j hj U hx hu heap hok hvr r hrv ⟨i, hi, hvi⟩ hrr args hvals har ha
+    · exact hh j hj U hx hu heap hok hvr r hrv ⟨i, hi, hvi⟩ hrr args hvals har ha
   | combine _ _ hg hs he hl hh =>
     have combined := hl.combine hs hh (fun j hj r hb V V' heap h1 h2 u hv1 hv2 => by
       obtain ⟨i, hi, hv1⟩ := hv1
@@ -1217,7 +1217,7 @@ theorem fixed_calls_pack_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R
   split at hc
   · rename_i τ hP
     obtain ⟨hopt, hrest, hrecv, hd, hres, heff⟩ := hc
-    intro j hj U hx hu heap hh r hrv hrm args hvals ha hq
+    intro j hj U hx hu heap hh hvr r hrv hrm hrr args hvals har ha hq
     obtain ⟨hshort, hpack⟩ := ha
     simp only [List.length_map] at hshort hpack
     have htup := mixed_pack_exact hP hopt hrest hpack
@@ -1239,8 +1239,8 @@ theorem fixed_calls_pack_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R
         have := ArgsT_append hfix htup
         rw [List.take_append_drop, ← List.map_append] at this
         exact ArgsShort_of_exact this
-    obtain ⟨result, hi, hsafe⟩ := hv j hj U hx hu heap hh r hrv
-      (hr j hj _ _ hrecv U r hrm) args hvals (Domains.short (hr j hj) hd hall)
+    obtain ⟨result, hi, hsafe⟩ := hv j hj U hx hu heap hh hvr r hrv
+      (hr j hj _ _ hrecv U r hrm) hrr args hvals har (Domains.short (hr j hj) hd hall)
       ((Effect.covers_sound heff).2.2.2 r args heap hq)
     exact ⟨result, hi, HeapObservations.SafePostExc.consequence_below' (fun _ _ _ _ h => h) (fun m hm V u hu =>
         (Effect.covers_sound heff).2.1 _ args m V u (Effect.result_mono p.effect
@@ -1461,14 +1461,14 @@ theorem covers_recs {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι 
     exact fun l hl => recT_owned (hsrc L hL) (mem_famsOf.mpr ⟨pl, hpL, rfl⟩) hl
   intro f s T hm
   obtain ⟨y, hy, rfl⟩ := mem_famsOf.mp hm
-  obtain ⟨⟨pf, ps, pl⟩, hp, hpf, -, hpy, hyp⟩ := hc b hb (f, s, y) hy
-  simp only at hpf
-  subst hpf
+  obtain ⟨⟨pf, ps, pl⟩, hp, hpf, hps, hpy, hyp⟩ := hc b hb (f, s, y) hy
+  simp only at hpf hps
+  subst hpf hps
   obtain ⟨L, hL, hpL⟩ := List.mem_flatten.mp hp
   obtain ⟨flds', l, c0, oid'', he', hf, hl, hag⟩ :=
     recT_at (mem_famsOf.mpr ⟨pl, hpL, rfl⟩) (hsrc L hL)
   cases he'
-  exact ⟨l, c0, hf, hl, fun j hj W' u =>
+  exact ⟨l, c0, hf, hl, recT_role (mem_famsOf.mpr ⟨pl, hpL, rfl⟩) (hsrc L hL) hf, fun j hj W' u =>
     (hag j hj W' u).trans ⟨hr j hj pl y hpy W' u, hr j hj y pl hyp W' u⟩⟩
 
 theorem covers_fields_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
@@ -1591,9 +1591,10 @@ theorem covers_optional_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
   have slot : ∀ p ∈ optionalSources (a :: bs) vs os,
       (p.readonly = false → ∀ l, flds.lookup p.key = some l → Owned flds p.key l) ∧
       (flds.lookup p.key = none → flds.lookup CallArguments.protoField = none) ∧
-      ∀ l, flds.lookup p.key = some l → ∃ c : Ctr n, lookup W l = some c ∧
+      (∀ l, flds.lookup p.key = some l → ∃ c : Ctr n, lookup W l = some c ∧
         ∀ (j : Nat) (hj : j < n) (W' : WorldT j) (u : Val),
-          SlotContract p.readonly (c j hj W' u) (mixedValues G η p.type j W' u) := by
+          SlotContract p.readonly (c j hj W' u) (mixedValues G η p.type j W' u)) ∧
+      ∀ s, p.writable = some s → ∀ l, flds.lookup p.key = some l → RoleIn s W l := by
     intro p hp
     rcases List.mem_append.mp hp with hp | hp
     rcases List.mem_append.mp hp with hp | hp
@@ -1602,15 +1603,18 @@ theorem covers_optional_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
       obtain ⟨flds', l, c, oid'', he', hf, hw, hag⟩ := recT_at (mem_famsOf.mpr ⟨q.2.2, hqL, rfl⟩) (hsrc L hL)
       cases he'
       refine ⟨fun _ l' hl' => recT_owned (hsrc L hL) (mem_famsOf.mpr ⟨q.2.2, hqL, rfl⟩) hl',
-        (fun hl => by simp [hl] at hf), fun l' hl' => ?_⟩
-      rw [hl'] at hf
-      cases hf
-      exact ⟨c, hw, fun j hj W' u => ⟨(hag j hj W' u).mp, fun _ => (hag j hj W' u).mpr⟩⟩
+        (fun hl => by simp [hl] at hf), fun l' hl' => ?_, fun s hs l' hl' => ?_⟩
+      · rw [hl'] at hf
+        cases hf
+        exact ⟨c, hw, fun j hj W' u => ⟨(hag j hj W' u).mp, fun _ => (hag j hj W' u).mpr⟩⟩
+      · simp only [Option.some.injEq] at hs; subst hs
+        exact recT_role (mem_famsOf.mpr ⟨q.2.2, hqL, rfl⟩) (hsrc L hL) hl' 
     · obtain ⟨hq, hql⟩ := List.mem_filter.mp hq
       obtain ⟨flds', l, c, oid'', he', hf, hw, hag⟩ :=
         viewsT_at (mem_viewsOf.mpr ⟨q.2, hq, rfl⟩) (by simpa using hql) hv.2.1
       cases he'
-      refine ⟨fun h => Bool.noConfusion h, (fun hl => by simp [hl] at hf), fun l' hl' => ?_⟩
+      refine ⟨fun h => Bool.noConfusion h, (fun hl => by simp [hl] at hf), fun l' hl' => ?_,
+        fun s hs => by cases hs⟩
       rw [hl'] at hf
       cases hf
       exact ⟨c, hw, fun j hj W' u => ⟨hag j hj W' u, fun h => nomatch h⟩⟩
@@ -1619,8 +1623,12 @@ theorem covers_optional_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
           q.readonly := by
         cases q.readonly <;> rfl
       rw [hro]
-      exact ⟨fun hro l hl => optT_owned hm hro hv.2.2 hl,
-        fun hl => optT_no_proto hm hv.2.2 hl, fun l hl => optT_present hm hv.2.2 hl⟩
+      refine ⟨fun hro l hl => optT_owned hm hro hv.2.2 hl,
+        fun hl => optT_no_proto hm hv.2.2 hl, fun l hl => optT_present hm hv.2.2 hl, fun s hs l hl => ?_⟩
+      cases hq' : q.readonly
+      · simp only [hq', Bool.false_eq_true, ite_false, Option.some.injEq] at hs; subst hs
+        exact optT_role hm (by simpa [OptionalField.map] using hq') hv.2.2 hl
+      · simp [hq'] at hs
   refine ⟨flds, oid, rfl, fun o hm hro l hl => ?_, fun o hm hl => ?_, fun o hm l hl => ?_⟩
   · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
     rcases hc q hq with ⟨p, hp, hk, hmode, -, -⟩ | ⟨⟨K, hK, hqK⟩, -⟩
@@ -1636,8 +1644,9 @@ theorem covers_optional_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
     · exact ownKeysT_lookup (hks K hK) hpK
   · obtain ⟨q, hq, rfl⟩ := List.mem_map.mp hm
     rcases hc q hq with ⟨p, hp, hk, hmode, hpq, hqp⟩ | ⟨⟨K, hK, hqK⟩, -⟩
-    · obtain ⟨c, hw, hag⟩ := (slot p hp).2.2 l (by rw [hk]; exact hl)
-      exact ⟨c, hw, fun j hj W' u => (hag j hj W' u).weaken
+    · obtain ⟨c, hw, hag⟩ := (slot p hp).2.2.1 l (by rw [hk]; exact hl)
+      refine ⟨c, hw, fun hro' => (slot p hp).2.2.2 _ (hmode (by simpa [OptionalField.map] using hro'))
+        l (by rw [hk]; exact hl), fun j hj W' u => (hag j hj W' u).weaken
         (fun hq' => by simp [OptionalSlot.readonly, hmode hq']) (hr j hj _ _ hpq W' u)
         (fun hq' => hr j hj _ _ (hqp hq') W' u)⟩
     · have := ownKeysT_lookup (hks K hK) hqK
@@ -2559,6 +2568,20 @@ theorem fields_agree {G : NormalGraph ι} {η : MixedAssignment ι} {a : List (S
     · exact hr.2.1 _ (List.mem_map_of_mem hL)
   exact recT_at (mem_famsOf.mpr ⟨f.2, hfL, rfl⟩) hrec
 
+/-- The role a record operand's storage position grants, at the location
+its key finds. -/
+theorem fields_role {G : NormalGraph ι} {η : MixedAssignment ι} {a : List (Stored (List ι))}
+    {bs : List (List (Stored (List ι)))} {n : Nat} {W : WorldT n} {flds : List (PropKey × Nat)} {oid : Nat}
+    (hr : refsT (famsOf (mixedValues G η) a) (bs.map (famsOf (mixedValues G η))) n W (.objAt flds .absent oid))
+    {p : Stored (List ι)} (hp : p ∈ (a :: bs).flatten) {l : Nat} (hl : flds.lookup p.1 = some l) :
+    RoleIn p.2.1 W l := by
+  obtain ⟨L, hL, hfL⟩ := List.mem_flatten.mp hp
+  have hrec : recT (famsOf (mixedValues G η) L) n W (.objAt flds .absent oid) := by
+    rcases List.mem_cons.mp hL with rfl | hL
+    · exact hr.1
+    · exact hr.2.1 _ (List.mem_map_of_mem hL)
+  exact recT_role (mem_famsOf.mpr ⟨p.2.2, hfL, rfl⟩) hrec hl
+
 /-- A present own key of an object whose own keys a bound lists is in it. -/
 private theorem ownKeysT_mem {K : KeyBound} (ha : K.among = true) {k : Nat} {W : WorldT k}
     {flds : List (PropKey × Nat)} (h : ownKeysT K k W (.objAt flds .absent oid))
@@ -2577,7 +2600,7 @@ theorem covers_keys_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : Li
     (hrefs : refsT (famsOf (mixedValues G η) a) (bs.map (famsOf (mixedValues G η))) n W v)
     (hw : viewsT (viewsOf (mixedValues G η) vs) n W v) (hb : ∀ K ∈ ks, ownKeysT K n W v) :
     (∀ y ∈ iy, dictViewT y.1 (mixedValues G η y.2) n W v) ∧
-      ∀ y ∈ cy, dictCellT y.1 (mixedValues G η y.2.2) n W v := by
+      ∀ y ∈ cy, dictCellT y.1 y.2.1 (mixedValues G η y.2.2) n W v := by
   obtain ⟨K, hK, ha, hproto, hhost, hkeys⟩ := hc
   obtain ⟨flds, oid, rfl, -⟩ := hb K hK
   have hown := hb K hK
@@ -2592,14 +2615,15 @@ theorem covers_keys_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : Li
     rw [hpk, hl] at hl'
     cases hl'
     exact ⟨c, hc, fun j hj W' u hu => hr j hj _ _ hpy W' u (hag j hj W' u hu)⟩
-  · obtain ⟨p, hp, hpk, -, hpy, hyp⟩ :=
+  · obtain ⟨p, hp, hpk, hps, hpy, hyp⟩ :=
       (hkeys _ (ownKeysT_mem ha hown hl)).2 y hy (IndexKeys.may_of_admits hk)
     obtain ⟨flds', l', c, oid', he, hl', hc, hag⟩ :=
       fields_agree hrefs (p.1, p.2.2) (Stored.mem_views.mpr ⟨p.2.1, hp⟩)
     cases he
+    have hrole := fields_role hrefs hp hl'
     rw [hpk, hl] at hl'
     cases hl'
-    exact ⟨c, hc, fun j hj W' u => ⟨fun hu => hr j hj _ _ hpy W' u ((hag j hj W' u).mp hu),
+    exact ⟨c, hc, hps ▸ hrole, fun j hj W' u => ⟨fun hu => hr j hj _ _ hpy W' u ((hag j hj W' u).mp hu),
       fun hu => (hag j hj W' u).mpr (hr j hj _ _ hyp W' u hu)⟩⟩
 
 /-- A record's field or view named by `viewOf` is at its location, whose
@@ -2885,7 +2909,7 @@ theorem covers_presence_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R 
       obtain ⟨A, ha⟩ := named i hi
       simp only [StorePresence, show (tupleFams (mixedValues G η) p).presence = .readable from hp] at hd
       have hs := hd i hi _ (by rw [positionFam_tupleFams, ha]; rfl)
-      exact excludesUndefined_sound (hex A (Tuple.position_mem ha)) j (ofList []) (hs (ofList []))
+      exact excludesUndefined_sound (hex A (Tuple.position_mem ha)) j (ofEntries []) (hs (ofEntries []))
   | readable =>
     simp only [CoversPresence, hq] at hc
     rcases hc with hp | ⟨hp, hc⟩ | ha
@@ -3109,7 +3133,7 @@ theorem refs_noHost {α : Type} {X : α → Fam} {a : List (Stored α)} {bs : Li
 theorem dict_noHost {α : Type} {X : α → Fam} {a : List (Stored α)} {bs : List (List (Stored α))}
     {ix : List (IndexKeys × α)} {cx : List (IndexKeys × StorageRole × α)} {n : Nat} {W : WorldT n} {v : Val}
     (hr : refsT (famsOf X a) (bs.map (famsOf X)) n W v)
-    (hd : (∀ x ∈ ix, dictViewT x.1 (X x.2) n W v) ∧ ∀ y ∈ cx, dictCellT y.1 (X y.2.2) n W v) :
+    (hd : (∀ x ∈ ix, dictViewT x.1 (X x.2) n W v) ∧ ∀ y ∈ cx, dictCellT y.1 y.2.1 (X y.2.2) n W v) :
     (!(a :: bs).flatten.isEmpty || !(ix ++ cellViews cx).isEmpty) = true → NoHost v := by
   intro h
   rcases Bool.or_eq_true _ _ |>.mp h with h | h
@@ -3147,7 +3171,7 @@ theorem covers_ctors_sound [DecidableEq ι] {G : NormalGraph ι} {sub : Option (
         (fun j hj U args ha => Domains.sound hd (fun a b hab => hr j hj a b hab) ha)
         (fun m hm V u hu => hr m hm _ _ hres V u hu)
     · -- No actual meets `never`: the promise is vacuous.
-      intro j hj U hx hu heap hh args hvals ha
+      intro j hj U hx hu heap hh hvr args hvals har ha
       obtain ⟨a, ha'⟩ := ArgsT_mem ha (List.mem_map_of_mem hnever)
       exact absurd ha' (by simp [mixedValues, setSem])
   · obtain ⟨t0, ht0, rfl⟩ := List.mem_map.mp ht
@@ -3253,12 +3277,12 @@ theorem Covers.sound_raw [DecidableEq ι] {G : NormalGraph ι} {sub : Option (Re
       obtain ⟨c, hw, hag⟩ := hfs f l hl hk
       exact ⟨c, hw, fun j hj W' u hu => hr j hj x.2 y.2 hxy W' u (hag j hj W' u hu)⟩
     · intro y hy
-      obtain ⟨x, hx, hw, -, hxy, hyx⟩ := (hc.2.2.1.2 y hy).1
+      obtain ⟨x, hx, hw, hxs, hxy, hyx⟩ := (hc.2.2.1.2 y hy).1
       obtain ⟨flds, oid, he, hp, hfs⟩ := dictCellT_within hw (hv.2.2.1.2 x hx)
       refine ⟨flds, oid, he, hp, ?_⟩
       intro f l hl hk
-      obtain ⟨c, hw, hag⟩ := hfs f l hl hk
-      exact ⟨c, hw, fun j hj W' u => ⟨fun hu => hr j hj x.2.2 y.2.2 hxy W' u ((hag j hj W' u).mp hu),
+      obtain ⟨c, hw, hrl, hag⟩ := hfs f l hl hk
+      exact ⟨c, hw, hxs ▸ hrl, fun j hj W' u => ⟨fun hu => hr j hj x.2.2 y.2.2 hxy W' u ((hag j hj W' u).mp hu),
         fun hu => (hag j hj W' u).mpr (hr j hj y.2.2 x.2.2 hyx W' u hu)⟩⟩
   · intro hv
     refine ⟨⟨hv.1.1, fun p hp => ?_⟩, ⟨hv.1.1, fun t ht => ?_⟩⟩
@@ -3533,7 +3557,7 @@ theorem sourceTy_sound {G : NormalGraph ι} {A : List ι}
 
 A type's **category**: every inhabitant is of one sort (`ValueSort`), at
 every sorted assignment (`NormalGraph.Sorted`). It is what a location's role
-asks of its contents (`Kinds.Cat`), and it is weaker than `sourceTy`'s
+asks of its contents (`Cat`), and it is weaker than `sourceTy`'s
 exception guarantee, which adds the built-ins' invariant
 (`sourceCategory_not_exc`). The check is by cases over the row kinds: a
 parameter row is in its binder's sort, a scheme row's members are callables,
@@ -3679,13 +3703,13 @@ theorem sourceCategory_not_exc :
       ¬ FamLe (mixedValues valueParamGraph danglingAssignment [0]) (excOf valueParamGraph) := by
   refine ⟨valueParamGraph.sorted _, by decide, ?_⟩
   · intro h
-    have hm : mixedValues valueParamGraph danglingAssignment [0] 0 (ofList []) danglingArray := by
+    have hm : mixedValues valueParamGraph danglingAssignment [0] 0 (ofEntries []) danglingArray := by
       refine ⟨0, List.mem_singleton_self _, ?_⟩
       show qDenoteWithArgs _ _ _ _ _ _
       rw [qDenoteWithArgs_unfold]
       simp only [qLayerWithArgs, NormalGraph.params, valueParamGraph, Option.isSome_some]
       exact ⟨⟨_, rfl, .source, rfl, rfl, by simp [danglingArray, Scoped]⟩, rfl, fun e => by cases e⟩
-    obtain ⟨-, hinv⟩ := h 0 (ofList []) _ hm
+    obtain ⟨-, hinv⟩ := h 0 (ofEntries []) _ hm
     simp only [builtinInvariant, valueParamGraph, Clause.carriesInvariant] at hinv
     obtain ⟨flds, l, c, oid, he, hf, hl, -⟩ := hinv _ _ rfl (by simp) _ _ (List.mem_singleton_self _)
     simp [lookup] at hl

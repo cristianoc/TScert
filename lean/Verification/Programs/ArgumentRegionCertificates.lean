@@ -41,11 +41,11 @@ theorem closedStep_ok [DecidableEq ι] {G : NormalGraph ι}
   simp only [checkClosedNode, Bool.and_eq_true] at hc
   have hn := nodeWithin_of_checked (F := []) (thr := thr) hc.1.1 hc.2 (fun hthr => by
     have hx := hc.1.2; rw [hthr] at hx; simpa using hx) ht hsums
-  intro ε n W h ρ he hi hk hw hh
+  intro ε n W h ρ he hi hk hw hh hr
   refine ⟨ρ, ?_, ?_⟩
   · intro p s hs; simp [closedStep] at hs
   apply HeapObservations.SafePostExc.weaken _ _
-    (hn ε n W h ρ h.length (Nat.le_refl _) (fun _ hi => nomatch hi) he hi hk hw hh)
+    (hn ε n W h ρ h.length (Nat.le_refl _) (fun _ hi => nomatch hi) he hi hk hw hh hr)
   · intro h' _ hq
     exact Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp (holdsOn_length hq.1))
   · intro h' hq hthr
@@ -99,7 +99,7 @@ theorem callStep_ok [DecidableEq ι] {G : NormalGraph ι}
     (hc : callStep G images sums c t thr = some se)
     (hsums : ProgramCertificates.SummariesSound G images sums) :
     StepOk G c t se thr := by
-  intro ε n W h ρ he _ hk hw hh
+  intro ε n W h ρ he _ hk hw hh hr
   unfold callStep at hc
   split at hc
   · rename_i hcond
@@ -123,17 +123,17 @@ theorem callStep_ok [DecidableEq ι] {G : NormalGraph ι}
           · cases ht : thr
             · apply HeapObservations.SafePostExc.of_post (fun _ hf => by cases hf)
               exact ExpressionEffects.selected_sound c.expression htree hops heff
-                (ProgramCertificates.codesSound_none _) hsums he hw hh
+                (ProgramCertificates.codesSound_none _) hsums he hw hh hr
             · have hx : ExpressionEffects.selectedThrows c.expression = true := by
                 simpa [ht] using hthrows
               exact HeapObservations.SafePostExc.weaken (fun _ _ h => h) (fun _ h _ => h)
                 (ExpressionEffects.selected_sound_exc c.expression htree hops hx heff
-                  (ProgramCertificates.codesSound_none _) hsums he hw hh)
+                  (ProgramCertificates.codesSound_none _) hsums he hw hh hr)
           · obtain ⟨eff', heff', hs⟩ := PromiseCalls.requiresTree_sound_exc
               (ProgramCertificates.codesSound_none _) hsums c.expression hreq
             rw [heff] at heff'; cases heff'
             exact HeapObservations.SafePostExc.weaken (fun _ _ h => h) (fun _ h _ => h)
-              (hs he hk hw hh)
+              (hs he hk hw hh hr)
         rw [hterm] at hs ⊢
         refine ⟨CallEffects.callEnv (instantiate 0 ρ receiver) (args.map (instantiate 0 ρ)), ?_, ?_⟩
         · intro p s hp
@@ -173,10 +173,10 @@ def writeStepEffect (i : Nat) : StepEffect := ⟨some, ExpressionEffects.writeFr
 theorem writeStep_ok [DecidableEq ι] {G : NormalGraph ι} {c : NodeEvidence ι} {t : Tm} {thr : Bool} {i : Nat}
     (hc : ExpressionEffects.writeStep G (entry c) t = some i) (ht : ExpressionOk G c t) :
     StepOk G c t (writeStepEffect i) thr := by
-  intro ε n W h ρ he hi hk hw hh
+  intro ε n W h ρ he hi hk hw hh hr
   refine ⟨ρ, fun p s hp => by cases hp; rfl, ?_⟩
   have hs := HeapObservations.erase (HeapObservations.consequence
-    (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hk hw hh))
+    (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hk hw hh hr))
   exact HeapObservations.SafePostExc.weaken (fun _ _ h => h) (fun _ h _ => h)
     (ExpressionEffects.writeStep_sound hc he hh hs)
 
@@ -328,7 +328,7 @@ theorem freshOut_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
     split at hfr
     · rename_i eff heff
       have hsel := ExpressionEffects.selected_sound c.expression htree hops heff
-        (ProgramCertificates.codesSound_none _) hsums (by simpa only [ControlFlow.entry] using he) hw hh
+        (ProgramCertificates.codesSound_none _) hsums (by simpa only [ControlFlow.entry] using he) hw hh (by rw [hterm']; exact hs.refs)
       rw [hterm'] at hsel
       have hboth := HeapObservations.cross_upto n (fun _ _ _ _ _ _ _ _ hu _ => hu) W W h _ hh hh
         (trivial_run hs).post hsel
@@ -430,7 +430,7 @@ theorem cellsKept_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instance
         (hF.values j (List.contains_iff_mem.mp hwr)) hF.cells hs)
   · obtain ⟨se, hse, hkv⟩ := List.any_eq_true.mp hstep
     simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at hkv
-    obtain ⟨σ, -, hrun⟩ := stepEffects_ok hse ht hsums ε n W h ρ he hi hkn hw hh
+    obtain ⟨σ, -, hrun⟩ := stepEffects_ok hse ht hsums ε n W h ρ he hi hkn hw hh hs.refs
     exact HeapObservations.SafePostExc.weaken (fun _ _ hq => hF.cells.post hkv.1 hq)
       (fun _ hq hthr => hF.cells.post (by rcases hkv.2 with h | h; · rw [hthr] at h; cases h
                                           · exact h) (hq hthr)) hrun
@@ -444,11 +444,11 @@ theorem checkFresh_sound [DecidableEq ι] {G : NormalGraph ι} {images : Instanc
     (hc : checkFresh G images sums Φ F C c t thr = true)
     (ht : ExpressionOk G c t) (hsums : ProgramCertificates.SummariesSound G images sums) :
     FreshWithin G c t F C (freshOut G images sums F C c t) (cellOut F C t) thr := by
-  intro ε n W h ρ b hb hF he hi hk hw hh
+  intro ε n W h ρ b hb hF he hi hk hw hh hr
   simp only [checkFresh, Bool.and_eq_true] at hc
   obtain ⟨hscope, hkept⟩ := hc
   have hs := HeapObservations.erase (HeapObservations.consequence
-    (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hk hw hh))
+    (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hk hw hh hr))
   have hv : HeapObservations.SafePostExc (excOf G) (meaning G (result c))
       (fun _ v => freshOut G images sums F C c t = true → FreshValue b v) (fun _ => True) n W h (instantiate 0 ρ t) := by
     cases hf : freshOut G images sums F C c t
@@ -561,9 +561,9 @@ theorem fieldsCheck_sound [DecidableEq ι] {G : NormalGraph ι} {names : List St
     (hk : fieldsKept G (entry c) Fs = true)
     (hscope : ProgramCertificates.checkScope (entry c).length t = true) (ht : ExpressionOk G c t) :
     FieldsWithin G c t F Fs (fieldOut names F Fs t) := by
-  intro ε n W h ρ b _ hF hFs he hi hkn hw hh
+  intro ε n W h ρ b _ hF hFs he hi hkn hw hh hr
   have hs := HeapObservations.erase (HeapObservations.consequence
-    (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hkn hw hh))
+    (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hkn hw hh hr))
   have hkeep := fieldsHold_frame hk he hh hFs (trivial_run hs)
   have hout := fieldOut_sound (names := names) hscope hF hFs he hs
   have hboth := HeapObservations.SafePostExc.cross_upto n (fun _ _ _ _ _ _ _ _ hu _ => hu) W W h _ hh hh
@@ -589,20 +589,20 @@ theorem checkCopy_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.C
     {Fs : List (Nat × String)}
     (hc : checkCopy c facts t rs = true) (ht : ExpressionOk G c t) :
     NodeWithin G Φ regions c t facts F Fs rs thr := by
-  intro ε n W h ρ initial input hb hf _ _ he hi hk hw hh _
+  intro ε n W h ρ initial input hb hf _ _ he hi hk hw hh hr _
   cases t <;> simp only [checkCopy, Bool.false_eq_true] at hc
   rename_i i
   simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true, List.contains_iff_mem] at hc
   have hv : isVal (ρ i) = true :=
     (meaning_value (he.2 i _ (List.getElem?_eq_getElem hc.1))).1
   have hs := HeapObservations.erase (HeapObservations.consequence
-    (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hk hw hh))
-  simp only [instantiate, Nat.sub_zero] at hs ⊢
+    (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hk hw hh hr))
+  simp only [instantiate, Nat.sub_zero] at hs hr ⊢
   cases n with
-  | zero => trivial
+  | zero => exact hr
   | succ n =>
-    apply HeapObservations.SafePostExc.value hv (safe_value_mem hv hs)
-    exact ⟨hb, fun r hr => hf ⟨i, r⟩ (hc.2 r hr)⟩
+    exact HeapObservations.SafePostExc.value hv (safe_value_mem hv hs)
+      ⟨hb, fun r hr => hf ⟨i, r⟩ (hc.2 r hr)⟩ hr
 
 /-- **The stable-read node rule**'s candidates: a read of a traversed field
 `f` of a tracked slot holding a position's entry value names the region
@@ -657,7 +657,7 @@ theorem checkRead_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.C
     {Fs : List (Nat × String)}
     (hc : checkRead G c regions facts t rs = true) (ht : ExpressionOk G c t) :
     NodeWithin G Φ regions c t facts F Fs rs thr := by
-  intro ε n W h ρ initial input hb hf _ _ he hi hk hw hh hst
+  intro ε n W h ρ initial input hb hf _ _ he hi hk hw hh hrf hst
   unfold checkRead at hc
   split at hc
   · rename_i f i
@@ -671,12 +671,12 @@ theorem checkRead_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.C
         simp [hobj, Footprints.fieldsOf, hl]
       · cases hfo
     have hs := HeapObservations.erase (HeapObservations.consequence
-      (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hk hw hh))
+      (fun _ _ _ hu => hu.1) (fun _ _ h => h) (ht ε n W h ρ he hi hk hw hh hrf))
     have hinst : instantiate 0 ρ (.readAt (.str f) (.var i)) = .readAt (.str f) (ρ i) := by
       simp [instantiate]
-    rw [hinst] at hs ⊢
+    rw [hinst] at hs hrf ⊢
     cases n with
-    | zero => trivial
+    | zero => exact hrf
     | succ n =>
       -- each origin reads, at the current heap, the value the read gives
       have hread : ∀ r ∈ rs, ∃ v, isVal v = true ∧
@@ -689,15 +689,16 @@ theorem checkRead_sound [DecidableEq ι] {G : NormalGraph ι} {Φ : Footprints.C
       obtain ⟨r0, hr0⟩ := List.exists_mem_of_ne_nil rs hne
       obtain ⟨u, hval, -, hu⟩ := hread r0 hr0
       have step := read_step hu
-      rcases hs with (⟨hv0, _⟩ | hth) | ⟨U, h', t', hx', hU, st, hh', hs'⟩
+      rcases hs.2 with (⟨hv0, _⟩ | hth) | ⟨U, h', t', hx', hU, st, hh', hs'⟩
       · simp [isVal] at hv0
       · exact absurd step hth.no_step
       · obtain ⟨rfl, rfl⟩ := Step_det st step
-        refine .inr ⟨U, _, _, hx', hU, st, hh', ?_⟩
+        refine ⟨hrf, .inr ⟨U, _, _, hx', hU, st, hh', ?_⟩⟩
         cases n with
-        | zero => trivial
+        | zero => exact hs'.refs
         | succ m =>
           refine HeapObservations.SafePostExc.value hval (safe_value_mem hval hs') ⟨hb, fun r hr => ?_⟩
+            hs'.refs
           obtain ⟨v, -, h₀v, hv⟩ := hread r hr
           rw [hu] at hv
           cases hv
@@ -860,6 +861,7 @@ theorem checkEntry_sound [DecidableEq ι] {G : NormalGraph ι}
     (hcodes : ProgramCertificates.CodesSound G codes)
     (hsums : ProgramCertificates.SummariesSound G images sums)
     (n W h L d) (he : EnvOk G inputs (envOf L d) n W) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (href : RefsOk W (.goto E K start L d))
     (hsep : HeapSeparation.Holds entrySeparation (envOf L d))
     (hidx : HeapKnowledge.IndexHolds ⟨envOf L d, h⟩ entryIndices (envOf L d) h) :
     HeapObservations.SafePostExc (excOf G) (GoalHolds G Rty (Rty.argument (envOf L d)))
@@ -871,6 +873,6 @@ theorem checkEntry_sound [DecidableEq ι] {G : NormalGraph ι}
   simp only [checkEntryUsing_eq, Bool.and_eq_true] at hg
   exact goto_bounded hc.1.1.1.1.1 hcodes hsums
     (checkNodes_sound hg.1 hcodes hsums hc.2) hc.1.1.1.1.2 (by simpa only [Bool.and_eq_true] using hc.1.1.1.2)
-    hc.1.1.2 hc.1.2 n W h L d he hw hh hsep hidx
+    hc.1.1.2 hc.1.2 n W h L d he hw hh href hsep hidx
 
 end Verification.GraphCode.ArgumentRegionGraph

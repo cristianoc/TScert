@@ -97,10 +97,11 @@ def StepEdgesSoundAt (pre : Nat → Assertion) (P : ControlFlow.Program) (G : No
     (startNames : List Nat) (ε : HeapKnowledge.EntryState) (ctx : Nat → List (Ty ι)) (Ξres Tres : Fam) (Qres Rres : Heap → Prop)
     (m : Nat) : Prop :=
   ∀ l ρ (s : IndexedHeap), passPreT G w startNames ε ctx l ρ m s → ∃ node, P[l]? = some node ∧
+    (RefsOk s.W (instantiate 0 ρ node.expression) →
     ∃ (Ξ T : Fam) (cn ce : Footprints.Closed) (Qn : Post) (Qe : Heap → Prop),
       SafePostExc Ξ T (fun h' v => cn.Holds s.h h' ∧ Qn h' v) (fun h' => ce.Holds s.h h' ∧ Qe h')
         s.n s.W s.h (instantiate 0 ρ node.expression) ∧
-      NodeObligations pre Ξres Tres Qres Rres Ξ T cn ce Qn Qe ρ m s node.continuation node.handler
+      NodeObligations pre Ξres Tres Qres Rres Ξ T cn ce Qn Qe ρ m s node.continuation node.handler)
 
 omit [DecidableEq ι] [Hashable ι] [Instantiates ι] in
 /-- Each visited node delivers its targets when the entry mark is bounded
@@ -109,10 +110,11 @@ by the initial heap. -/
     (startNames : List Nat) (ε : HeapKnowledge.EntryState) (ctx : Nat → List (Ty ι)) (Ξres Tres : Fam) (Qres Rres : Heap → Prop)
     (m : Nat) : Prop :=
   ∀ l ρ (s : IndexedHeap), passPreT G w startNames ε ctx l ρ m s → m ≤ s.h.length → ∃ node, P[l]? = some node ∧
+    (RefsOk s.W (instantiate 0 ρ node.expression) →
     ∃ (Ξ T : Fam) (cn ce : Footprints.Closed) (Qn : Post) (Qe : Heap → Prop),
       SafePostExc Ξ T (fun h' v => cn.Holds s.h h' ∧ Qn h' v) (fun h' => ce.Holds s.h h' ∧ Qe h')
         s.n s.W s.h (instantiate 0 ρ node.expression) ∧
-      NodeObligations pre Ξres Tres Qres Rres Ξ T cn ce Qn Qe ρ m s node.continuation node.handler
+      NodeObligations pre Ξres Tres Qres Rres Ξ T cn ce Qn Qe ρ m s node.continuation node.handler)
 
 omit [Instantiates ι] in
 /-- **Every checked node of the pass delivers `pre`** (`StepEdgesSoundAt`):
@@ -135,9 +137,10 @@ theorem stepEdgesSound_of_checkedAt {pre : Nat → Assertion} {G : NormalGraph �
   obtain ⟨na, hm⟩ := hacc l hp.1.1
   have hS := hm.entered ρ s hp
   have he : EnvOk G na.c.context ρ s.n s.W := na.hctx ▸ hp.2
+  refine ⟨na.node, na.hP, fun hr => ?_⟩
   obtain ⟨-, -, -, cn, ce, hparts⟩ := stepChecked_parts na.hstep hS na.wf na.below na.width he hcodes na.sums
   obtain ⟨hj, ho⟩ := nodeObligations_of_parts (pre := pre) (Ξres := excOf G)
-    (Tres := Tres) (Qres := fun _ => True) (Rres := fun _ => True) (x := na.node.handler) hparts he
+    (Tres := Tres) (Qres := fun _ => True) (Rres := fun _ => True) (x := na.node.handler) hparts he hr
     (fun j U v hv => hm.shape (j + 1) U v hv)
     (fun s' v _ hv hF he' _ => normalTarget_of_exits (fun t p o q hmem => hm.exits t p o q hmem ρ) hm.ret
       (fun _ => trivial) s' v hv hF he' (hm.shape _ _ v (he'.2 0 _ rfl)))
@@ -145,7 +148,7 @@ theorem stepEdgesSound_of_checkedAt {pre : Nat → Assertion} {G : NormalGraph �
       cases hh : na.node.handler with
       | none => exact ⟨hx, trivial⟩
       | some t => exact hm.handler t hh ρ s' e hFe he' hsc hx)
-  exact ⟨na.node, na.hP, _, _, cn, ce, _, _, hj, ho⟩
+  exact ⟨_, _, cn, ce, _, _, hj, ho⟩
 
 omit [Instantiates ι] in
 /-- **Every checked node of the pass delivers** (`StepEdgesSoundA`):

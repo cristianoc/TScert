@@ -180,30 +180,32 @@ delegation steps, each one level down, then from its location, whose contract
 implies `A`. -/
 theorem along_read_safe {A : Fam} (hval : ValOnly A) (key : PropKey) :
     ∀ (d : Nat) {n : Nat} {W : WorldT n} {h : Heap} {v : Val}, WorldAdm W → HeapOk n W h →
-      MethodMembers.along key A d n W v → Safe Ξ A n W h (.readAt key v)
-  | 0, n, W, h, _, hw, hh, ⟨flds, l, c, oid, code, rfl, hf, hl, hag⟩ => read_view_rule_ext hval n W h l hw hh hf hl hag
-  | d + 1, n, W, h, _, hw, hh, ⟨flds, oid, code, rfl, hmiss, hp⟩ => by
+      MethodMembers.along key A d n W v → RefsOk W (.readAt key v) → Safe Ξ A n W h (.readAt key v)
+  | 0, n, W, h, _, hw, hh, ⟨flds, l, c, oid, code, rfl, hf, hl, hag⟩, href =>
+    read_view_rule_ext hval n W h l hw hh hf hl hag href
+  | d + 1, n, W, h, _, hw, hh, ⟨flds, oid, code, rfl, hmiss, hp⟩, href => by
     obtain ⟨pf, lp, cp, oid', code', hρ, hpf, hlp, hpag⟩ := hp
     cases hρ
     cases n with
-    | zero => trivial
+    | zero => exact href
     | succ q =>
-      obtain ⟨pv, hpv, hmem⟩ := hh.2 lp cp hlp
+      obtain ⟨pv, hpv, hmem⟩ := hh.1.2 lp cp hlp
       have hU := WorldAdm_trunc (Nat.le_succ q) hw
       have hH := HeapOk_trunc q W h hh
-      exact Or.inr ⟨trunc q (Nat.le_succ q) W, h, .readAt key pv, WExt_refl _,
-        hU, .readProto hmiss hpf hpv, hH,
-        along_read_safe hval key d hU hH (hpag q (by omega) _ (WExt_refl _) pv (hmem q (by omega)))⟩
+      exact pure_step hw hh href (.readProto hmiss hpf hpv)
+        (along_read_safe hval key d hU hH (hpag q (by omega) _ (WExt_refl _) pv (hmem q (by omega)))
+          (by simpa [RefsOk, refs] using read_value_refs hh hpv))
 
 /-- **Reading a member.** The read finds the key on the host, or, some steps
 later, on an object along the host's prototype chain; either way the value
 read meets the member's signatures invoked on the host. -/
 theorem member_read_safe {m : MethodMembers.Member} {n : Nat} {W : WorldT n} {h : Heap} {v : Val}
-    (hw : WorldAdm W) (hh : HeapOk n W h) (hm : MethodMembers.memberT Ξ m n W v) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (hm : MethodMembers.memberT Ξ m n W v)
+    (href : RefsOk W (.readAt m.key v)) :
     Safe Ξ (MethodMembers.onHost Ξ v m) n W h (.readAt m.key v) := by
   have hval : ValOnly (MethodMembers.onHost Ξ v m) := fun _ _ _ hv => hv.1.1.val
   obtain ⟨d, hd⟩ := hm
-  exact along_read_safe hval m.key d hw hh hd
+  exact along_read_safe hval m.key d hw hh hd href
 
 /-- The fixed signatures a callable type carries, fixed or callable object
 alike; none for any other type. -/
@@ -240,7 +242,8 @@ theorem ArgsT_slots {G : NormalGraph ι} {Γ ρ n W} (he : EnvOk G Γ ρ n W) :
 one tuple contract, as a writable store, since the store is fresh. -/
 def RestStore (G : NormalGraph ι) (S P : Ty ι) : Prop :=
   match expand G P, expand G S with
-  | [.pack T []], [.list U []] => U = { T with readonly := false, presence := U.presence }
+  | [.pack T []], [.list U []] => U = { T with readonly := false, presence := U.presence } ∧
+      T.operands.all (tyIn G .source) = true
   | _, _ => False
 
 /-- A store type whose elements a spread passes at `E`. -/
@@ -326,11 +329,13 @@ theorem prefix_take_drop {α : Type} (Ps : List α) (k : Nat) (E : α) :
 meets a rest-store type when the actuals as one pack meet the rest type. -/
 theorem restStore_safe {G : NormalGraph ι} {S P : Ty ι} (hS : RestStore G S P)
     {n : Nat} {W : WorldT n} {h : Heap} {extra : List Tm} (hw : WorldAdm W) (hh : HeapOk n W h)
-    (he : argMeaning G P n W extra) (hvals : CallArguments.Values extra) :
+    (he : argMeaning G P n W extra) (hvals : CallArguments.Values extra)
+    (href : RefsOk W (.arrLit extra)) :
     Safe (excOf G) (meaning G S) n W h (.arrLit extra) := by
   unfold RestStore at hS
   split at hS
   · rename_i T U hP hR
+    obtain ⟨hS, hsrcT⟩ := hS
     let T' := { T with presence := U.presence }
     have hpos : ∀ i B, positionFam (tupleFams (meaning G) T') i = some B → Adm B := by
       intro i B hB
@@ -344,7 +349,27 @@ theorem restStore_safe {G : NormalGraph ι} {S P : Ty ι} (hS : RestStore G S P)
       exact meaning_valOnly G b
     have hfit : ArgumentContracts.Fits (tupleFams (meaning G) T') n W extra := by
       exact (mixed_pack_args hP).mp he
+    -- each actual is at a position of the pack, a payload of an element cell
+    have hsrc : ∀ v ∈ extra, isSourceVal v = true := by
+      intro v hv
+      obtain ⟨i, hi⟩ := List.mem_iff_getElem?.mp hv
+      obtain ⟨hreq, hbound, hel⟩ := hfit
+      have hsome : (positionFam (tupleFams (meaning G) T') i).isSome = true := by
+        apply ArgumentContracts.positionFam_isSome
+        have hlt := (List.getElem?_eq_some_iff.mp hi).1
+        cases hr : (tupleFams (meaning G) T').rest with
+        | none => have := hbound hr; left; omega
+        | some _ => right; rfl
+      obtain ⟨B, hB⟩ := Option.isSome_iff_exists.mp hsome
+      have hvB := hel i v B hi hB
+      rw [PositiveNormalization.positionFam_tupleFams] at hB
+      obtain ⟨b, hb, rfl⟩ := Option.map_eq_some_iff.mp hB
+      have hbm : b ∈ T.operands := by
+        have := PositiveRules.Tuple.position_mem hb
+        simpa [T', PositiveNormalization.Tuple.operands] using this
+      exact (tyIn_sound (G.sorted G.env) (List.all_eq_true.mp hsrcT b hbm) hvB).1
     have := RestCalls.argument_alloc_safe (Ξ := excOf G) hpos hposv hw hh (builtinExc_errors G _) hfit hvals
+      hsrc href
     apply Safe_mono n _ W h _ this
     intro k _ V v hv
     apply (represents_back hR k V v)
@@ -361,20 +386,42 @@ theorem restStore_safe {G : NormalGraph ι} {S P : Ty ι} (hS : RestStore G S P)
 the error object allocated. -/
 theorem alloc_throw_exc {Ξ T : Fam} {Q : HeapObservations.Post} {R : Heap → Prop} {n : Nat} {W : WorldT n}
     {h : Heap} {vs : List Tm} (hvals : ∀ v ∈ vs, isVal v = true) (hlen : maxArrayLength < vs.length)
-    (hw : WorldAdm W) (hh : HeapOk n W h) (hΞ : ErrorsIn Ξ) (hR : R (h ++ [.nul])) :
+    (hw : WorldAdm W) (hh : HeapOk n W h) (hΞ : ErrorsIn Ξ) (hR : R (h ++ [.nul]))
+    (href : RefsOk W (.arrLit vs)) :
     HeapObservations.SafePostExc Ξ T Q R n W h (.arrLit vs) := by
   cases n with
-  | zero => trivial
+  | zero => exact href
   | succ p =>
-    have hcadm : CtrAdm (res nulT : Ctr p) :=
-      ⟨fun _ _ _ _ _ _ h => h, fun _ _ _ _ h => by rw [show _ = Tm.nul from h]; rfl⟩
-    refine .inr ⟨appendW (trunc p (Nat.le_succ p) W) (res nulT), h ++ [.nul], _,
-      WExt_appendW _ _, WorldAdm_append (WorldAdm_trunc _ hw) hcadm, .arrAllocThrow hvals hlen,
-      heap_alloc p _ h (res nulT) .nul (HeapOk_trunc p W h hh) (WorldAdm_trunc _ hw)
-        (fun _ _ => rfl), ?_⟩
+    obtain ⟨hadm', hok', hr'⟩ := (HeapOk_trunc p W h hh).error (WorldAdm_trunc _ hw)
+    refine ⟨href, .inr ⟨_, h ++ [.nul], _,
+      WExt_appendW _ _ _, hadm', .arrAllocThrow hvals hlen, hok', ?_⟩⟩
     cases p with
-    | zero => trivial
-    | succ q => exact .inl (.inr ⟨⟨thrownError h.length, .throwV rfl rfl, by simp [thrownError, Scoped], hΞ _ _ _⟩, hR⟩)
+    | zero => exact hr'
+    | succ q => exact ⟨hr', .inl (.inr ⟨⟨thrownError h.length, .throwV rfl rfl, by simp [thrownError, Scoped], hΞ _ _ _⟩, hR⟩)⟩
+
+/-- **The entry of a run collecting a rest** refers to the actuals, the
+receiver, the code's node expressions and the frame's further values. -/
+theorem restEntry_refs {k : Nat} {U : WorldT k} {E : List Tm}
+    {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {start arity : Nat} {vs : List Tm}
+    {r : Tm} {args : List Tm} (hE : ∀ e ∈ E, RefsOk U e) (hvs : ∀ a ∈ vs, RefsOk U a) (hr : RefsOk U r)
+    (ha : ∀ a ∈ args, RefsOk U a) :
+    RefsOk U (.letE (.arrLit (args.drop arity))
+      (.goto E K start (.var 0 :: r :: CallArguments.parameters arity args ++ vs) .nul)) := by
+  intro x hx
+  simp only [refs, refsArgs_eq, List.mem_append, List.mem_flatMap] at hx
+  rcases hx with ⟨a, hal, hxa⟩ | ((⟨e, he, hxe⟩ | ⟨a, hal, hxa⟩) | hx)
+  · exact ha a (List.mem_of_mem_drop hal) x hxa
+  · exact hE e he x hxe
+  · rcases hal with hal | hal
+    · rcases List.mem_cons.mp hal with rfl | hal
+      · simp [refs] at hxa
+      · rcases List.mem_cons.mp hal with rfl | hal
+        · exact hr x hxa
+        · rcases Kinds.parameters_mem hal with hal | rfl
+          · exact ha a hal x hxa
+          · simp [refs] at hxa
+    · exact hvs a hal x hxa
+  · simp at hx
 
 /-- **Invoking graph code with a rest.** A call at a variadic signature
 whose fixed parameters are the code's first collects the actuals past them
@@ -388,11 +435,15 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     {j : Nat} (hj : j < n) {U : WorldT j} (hx : WExt (trunc j (Nat.le_of_lt hj) W) U)
     (hu : WorldAdm U) {heap : Heap} (hh : HeapOk j U heap) {r : Tm} (hr : meaning G s.receiver j U r)
     {args : List Tm} (hvals : CallArguments.Values args)
-    (ha : ArgsRest (s.arguments.1.map (meaning G)) (argMeaning G s.arguments.2) j U args) :
+    (ha : ArgsRest (s.arguments.1.map (meaning G)) (argMeaning G s.arguments.2) j U args)
+    (href : RefsOk U (.letE (.arrLit (args.drop arity))
+        (.goto E K start (.var 0 :: r :: CallArguments.parameters arity args ++ vs) .nul))) :
     HeapObservations.SafePostExc (excOf G) (s.effect.result (meaning G s.result) (s.effect.promised args))
       (s.effect.post r args heap) (s.effect.excPost r args heap) j U heap
       (.letE (.arrLit (args.drop arity))
         (.goto E K start (.var 0 :: r :: CallArguments.parameters arity args ++ vs) .nul)) := by
+  have harr_r : RefsOk U (.arrLit (args.drop arity)) := fun x hx => href x (by
+    simp only [refs, List.mem_append]; exact .inl hx)
   obtain ⟨hshort, hpack⟩ := ha
   simp only [List.length_map, hk] at hshort hpack
   have hle : arity ≤ s.fixed.arguments.length := by simp [RestArrow.fixed, hk]
@@ -411,16 +462,24 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     by_cases hmax : (args.drop arity).length ≤ maxArrayLength
     · apply HeapObservations.SafePostExc.one_step rfl rfl
         (.arrAlloc (fun a hm => hvals a (List.mem_of_mem_drop hm)) hmax)
-        ⟨args.drop arity, rfl⟩ (restStore_safe harr hu hh hpack (fun a hm => hvals a (List.mem_of_mem_drop hm)))
+        ⟨args.drop arity, rfl⟩ (restStore_safe harr hu hh hpack (fun a hm => hvals a (List.mem_of_mem_drop hm)) harr_r)
     · exact alloc_throw_exc (fun a hm => hvals a (List.mem_of_mem_drop hm)) (by omega) hu hh
         (builtinExc_errors G _) (fun _ => Effect.within_of_holds
           (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) (Footprints.Closed.holds_empty.mpr ⟨[.nul], rfl⟩)))
-  apply HeapObservations.SafePostExc.bind (.letE · _) .letC .letC j U heap _ hu hh hstore
-  intro i hi V hy hv heap' a hh' hval harr' hprefix
+        harr_r
+  apply HeapObservations.SafePostExc.bind (.letE · _) .letC .letC (by ctx_refs) j U heap _ hu hh
+    (fun x hx => href x (by rw [refs_letE] at hx ⊢; exact List.mem_append_right _ (by simpa [refs] using hx))) hstore
+  intro i hi V hy hv heap' a hh' hval harr' hprefix hvr
+  have hgoV : RefsOk V (.letE a (.goto E K start (.var 0 :: r :: CallArguments.parameters arity args ++ vs) .nul)) := by
+    intro x hx
+    rw [refs_letE, List.mem_append] at hx
+    rcases hx with hx | hx
+    · exact hvr x hx
+    · exact RefsOk_mono hy (RefsOk_trunc _ href) x (by rw [refs_letE]; exact List.mem_append_right _ hx)
   cases i with
-  | zero => trivial
+  | zero => exact hgoV
   | succ p =>
-    apply HeapObservations.SafePostExc.bind_value hval hv hh'
+    apply HeapObservations.SafePostExc.bind_value hval hv hh' hgoV
     have hsub : subst 0 a (.goto E K start (.var 0 :: r :: CallArguments.parameters arity args ++ vs)
         .nul) = .goto E K start (a :: r :: CallArguments.parameters arity args ++ vs) .nul := by
       have hmap : (r :: CallArguments.parameters arity args ++ vs).map (subst 0 a) =
@@ -452,8 +511,15 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     simp only [List.length_cons, List.length_nil, List.cons_append, List.nil_append] at hpromised
     rw [← show framePromised s.effect (frameOffset (some A)) (a :: r :: CallArguments.parameters arity args ++ vs) =
       s.effect.promised args from hpromised]
+    have hgo : RefsOk (trunc p (Nat.le_succ p) V)
+        (.goto E K start (a :: r :: CallArguments.parameters arity args ++ vs) .nul) := by
+      rw [← hsub]
+      exact RefsOk_trunc _ (fun x hx => by
+        rcases Kinds.subst_refs a _ 0 x hx with hx | hx
+        · exact hgoV x (by rw [refs_letE]; exact List.mem_append_right _ hx)
+        · exact hvr x hx)
     exact hs.2.2 p _ heap' _ (henv'.transfer p (Nat.le_succ p) _ (WExt_refl _))
-      (WorldAdm_trunc _ hv) (HeapOk_trunc p V heap' hh') (by
+      (WorldAdm_trunc _ hv) (HeapOk_trunc p V heap' hh') hgo (by
         intro v hm
         rcases List.mem_cons.mp hm with rfl | hm
         · exact hval
@@ -478,7 +544,7 @@ theorem restsT_of_graphRest {G : NormalGraph ι} {arity E K start Cs vs n W} {ki
     CallEffects.restsT (excOf G) (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) n W (.objAt fs (.graph arity E K start vs kind true) oid) := by
   have hself : Scoped 0 (.objAt fs (.graph arity E K start vs kind true) oid) := by simpa [Scoped] using hsc
   refine ⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩
-  intro q hq j hj U hx hu heap hh r hrv hr args hvals ha _
+  intro q hq j hj U hx hu heap hh hvr r hrv hr hrr args hvals har ha _
   obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
   have hbind := hb s hsm j U r hr
   obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hsm
@@ -493,7 +559,11 @@ theorem restsT_of_graphRest {G : NormalGraph ι} {arity E K start Cs vs n W} {ki
     · exact hsc v hv
     · rw [List.mem_singleton.mp hv]; exact hself
   exact ⟨_, .graph hrv hvals hbind,
-    graphRest_invoke hspec hk harr (hvs.withSelf hcs hself) hsc' (Values.withSelf hvalues rfl) hj hx hu hh hr hvals ha⟩
+    graphRest_invoke hspec hk harr (hvs.withSelf hcs hself) hsc' (Values.withSelf hvalues rfl) hj hx hu hh hr hvals ha
+      (restEntry_refs (graph_code_refs hvr).1 (fun a ha => by
+        rcases List.mem_append.mp ha with ha | ha
+        · exact (graph_code_refs hvr).2 a ha
+        · rw [List.mem_singleton.mp ha]; exact hvr) hrr har)⟩
 
 /-- **The signatures graph code offers.** Code without a rest meets each
 fixed signature and, discarding the actuals past its parameters, each
@@ -602,14 +672,18 @@ theorem offers_self {G : NormalGraph ι} {arity E K start Cs vs} {kind : Invoke}
   intro W hvs
   apply (represents_back hr n W _)
   refine ⟨⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩, ⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩⟩
-  · intro q hq j hj U hx hu heap hh r hrv hrr args hvals ha hreq
+  · intro q hq j hj U hx hu heap hh hvr r hrv hrr hrref args hvals har ha hreq
     obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
     have henv := hvs.transfer j (Nat.le_of_lt hj) U hx
     have hF := ih j hj U henv
     exact ⟨_, .graph hrv hvals (hbL p hp j U r hrr),
       graph_invoke_at (ho p (List.mem_append_left _ hp)) (henv.withSelfAt hlen hself hF)
-        (Values.withSelf hvalues rfl) hu hh hrr ha (fun F hF => hreq.2 F hF)⟩
-  · intro q hq j hj U hx hu heap hh r hrv hrr args hvals ha hreq
+        (Values.withSelf hvalues rfl) hu hh hrr ha (fun F hF => hreq.2 F hF)
+        (goto_entry_refs (graph_code_refs hvr).1 (fun a ha => by
+          rcases List.mem_append.mp ha with ha | ha
+          · exact (graph_code_refs hvr).2 a ha
+          · rw [List.mem_singleton.mp ha]; exact hvr) hrref har)⟩
+  · intro q hq j hj U hx hu heap hh hvr r hrv hrr hrref args hvals har ha hreq
     obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
     have hspec := ho _ (List.mem_append_right _ (List.mem_map.mpr ⟨s, hsm, rfl⟩))
     have hle : arity ≤ s.arguments.1.length := hspec.1
@@ -621,6 +695,10 @@ theorem offers_self {G : NormalGraph ι} {arity E K start Cs vs} {kind : Invoke}
       (by simpa [RestArrow.mapWith, Contract.map, RestArrow.fixed] using ha.1)
       (fun F hF => (CallEffects.Effect.pre_take hbelow hle hF r args heap).mpr
         (hreq.2 F (by simpa [RestArrow.mapWith, Contract.map, RestArrow.fixed] using hF)))
+      (goto_entry_refs (graph_code_refs hvr).1 (fun a ha => by
+          rcases List.mem_append.mp ha with ha | ha
+          · exact (graph_code_refs hvr).2 a ha
+          · rw [List.mem_singleton.mp ha]; exact hvr) hrref (fun a ha => har a (List.mem_of_mem_take ha)))
     have hp : CallArguments.parameters arity (args.take s.arguments.1.length) =
         CallArguments.parameters arity args := by
       rw [← CallArguments.parameters_take arity (args.take _), List.take_take,
@@ -644,12 +722,16 @@ theorem ctorsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U : Ty
       (.objAt fs (.graph arity E K start vs .construct) oid) := by
   have hself : Scoped 0 (.objAt fs (.graph arity E K start vs .construct) oid) := by simpa [Scoped] using hsc
   refine ⟨⟨fs, _, _, _, _, _, _, _, rfl, hself⟩, ?_⟩
-  intro q hq j hj V hx hv heap hh args _ ha hreq
+  intro q hq j hj V hx hv heap hh hvr args _ har ha hreq
   obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
   refine ⟨_, ⟨fs, _, _, _, rfl, rfl, rfl⟩, ?_⟩
   exact graph_invoke (row := ⟨U, p.arguments, p.result, p.effect⟩) (hs p hp) (hvs.withSelf hcs hself)
     (Values.withSelf hvalues rfl) hj hx hv hh
     ((represents_back hu j V _) rfl) (ArgsShort_of_exact ha) (fun F hF => hreq.2 F hF)
+    (goto_entry_refs (graph_code_refs hvr).1 (fun a ha => by
+      rcases List.mem_append.mp ha with ha | ha
+      · exact (graph_code_refs hvr).2 a ha
+      · rw [List.mem_singleton.mp ha]; exact hvr) RefsOk_undef har)
 
 /-- The row a class's graph code is checked at for a variadic construct
 signature with fixed parameters `Qs` and element rest `El`: the fixed
@@ -690,7 +772,7 @@ theorem ctorRestsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U 
       (.objAt fs (.graph arity E K start vs .construct) oid) := by
   have hself : Scoped 0 (.objAt fs (.graph arity E K start vs .construct) oid) := by simpa [Scoped] using hsc
   refine ⟨⟨fs, _, _, _, _, _, _, _, rfl, hself⟩, ?_⟩
-  intro q hq j hj V hx hv heap hh args _ ha _
+  intro q hq j hj V hx hv heap hh hvr args _ har ha _
   obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
   obtain ⟨hplain, El, hel, hspec⟩ := hs s hsm
   obtain ⟨hlen, hfix, hext⟩ := ha
@@ -715,6 +797,10 @@ theorem ctorRestsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U 
     (args := args.take (s.arguments.1.length + (arity - s.arguments.1.length)))
     (by simpa [ctorRestParams, List.map_append, List.map_replicate] using hshort)
     (fun F hF => by rw [Effect.plain_pre hplain] at hF; cases hF)
+    (goto_entry_refs (graph_code_refs hvr).1 (fun a ha => by
+      rcases List.mem_append.mp ha with ha | ha
+      · exact (graph_code_refs hvr).2 a ha
+      · rw [List.mem_singleton.mp ha]; exact hvr) RefsOk_undef (fun a ha => har a (List.mem_of_mem_take ha)))
   have hp : CallArguments.parameters arity (args.take (s.arguments.1.length + (arity - s.arguments.1.length))) =
       CallArguments.parameters arity args := by
     rw [← CallArguments.parameters_take arity (args.take _), List.take_take,
@@ -790,15 +876,20 @@ theorem rest_call_safe {Rc : Fam} {Ps : List Fam} {E R : Fam} {P : ArgFam}
     {n W heap f r} (hw : WorldAdm W) (hh : HeapOk n W heap)
     (hf : Safe Ξ (restsT Ξ [(Rc, Ps, P, R)]) n W heap f)
     (hr : FutureSafe Ξ Rc n W r)
-    (hx : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2) (hp : ∀ p ∈ parts, FutureSafe Ξ (p.1.getD E) n W p.2) :
+    (hx : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2) (hp : ∀ p ∈ parts, FutureSafe Ξ (p.1.getD E) n W p.2)
+    (href : RefsOk W (.invoke f r (xs.map Prod.snd ++ parts.map RestCalls.partTerm))) :
     Safe Ξ R n W heap (.invoke f r (xs.map Prod.snd ++ parts.map RestCalls.partTerm)) := by
+  obtain ⟨-, hrr, hargsr⟩ := RefsOk_invoke.mp href
   apply Safe_bind (fun f => .invoke f r (xs.map Prod.snd ++ parts.map RestCalls.partTerm)) Step.callL Raises.callL
-    n W heap f hw hh hf
-  intro j0 hj0 U0 hx0 hu0 heap0 v hok0 hv hfun0
+    (by ctx_refs) n W heap f hw hh (RefsOk_invoke.mpr ⟨RefsOk_undef, hrr, hargsr⟩) hf
+  intro j0 hj0 U0 hx0 hu0 heap0 v hok0 hv hfun0 hvr
+  have hxW0 : ∀ {t}, RefsOk W t → RefsOk U0 t := fun h => RefsOk_mono hx0 (RefsOk_trunc _ h)
   apply Safe_bind (fun r => .invoke v r (xs.map Prod.snd ++ parts.map RestCalls.partTerm))
-    (Step.callRecv hv) (Raises.callRecv hv) j0 U0 heap0 r hu0 hok0
+    (Step.callRecv hv) (Raises.callRecv hv) (by ctx_refs) j0 U0 heap0 r hu0 hok0
+    (RefsOk_invoke.mpr ⟨hvr, RefsOk_undef, fun a ha => hxW0 (hargsr a ha)⟩)
     ((hr.transfer hj0 hx0) j0 (Nat.le_refl _) U0 (by rw [trunc_id]; exact WExt_refl _) hu0 heap0 hok0)
-  intro j hj1 U hy1 hu' heap' rv hok hrv hrm
+  intro j hj1 U hy1 hu' heap' rv hok hrv hrm hrvr
+  have hxU1 : ∀ {t}, RefsOk U0 t → RefsOk U t := fun h => RefsOk_mono hy1 (RefsOk_trunc _ h)
   have hfun := adm_transfer2 (restsT_adm _) hfun0 hj1 hy1 (Nat.le_refl j)
     (by rw [trunc_id]; exact WExt_refl _)
   have hxU : WExt (trunc j (Nat.le_trans hj1 hj0) W) U := by
@@ -808,13 +899,14 @@ theorem rest_call_safe {Rc : Fam} {Ps : List Fam} {E R : Fam} {P : ArgFam}
   apply bind_list xs (by intro p hm; exact hA p.1 (hxs ▸ List.mem_map_of_mem hm))
     (fun args => .invoke v rv (args ++ parts.map RestCalls.partTerm))
     (fun hs => (CallArguments.Prepare.args hv hrv (ArgStep_append _ hs)).step)
-    (fun hr => (hr.append _).invoke hv hrv) hu' hok
+    (fun hr => (hr.append _).invoke hv hrv) (fun args r => by simp [refs, refsArgs_eq] <;> grind) hu' hok
+    (RefsOk_invoke.mpr ⟨hxU1 hvr, hrvr, fun a ha => hxU1 (hxW0 (hargsr a ha))⟩)
     (fun p hm => (hx p hm).transfer hj hxU)
-  intro k hk V hy hv' heap'' args hok' hargs
+  intro k hk V hy hv' heap'' args hok' hargs hrefs
   rw [hxs] at hargs
   apply RestCalls.spread_parts_safe hE hEv hv hrv parts k V heap'' args hS hv' hok'
-    (ArgsT_values hAv hargs) (fun p hm => ((hp p hm).transfer hj hxU).transfer hk hy)
-  intro i hi X hz hX heap3 extra hh3 hext
+    (ArgsT_values hAv hargs) hrefs (fun p hm => ((hp p hm).transfer hj hxU).transfer hk hy)
+  intro i hi X hz hX heap3 extra hh3 hext hre
   have hUX : WExt (trunc i (Nat.le_trans hi hk) U) X := by
     apply WExt_trans _ hz
     simpa only [trunc_trunc] using WExt_trunc hi hy
@@ -823,7 +915,7 @@ theorem rest_call_safe {Rc : Fam} {Ps : List Fam} {E R : Fam} {P : ArgFam}
   have hrX := hRc.mono i _ X hUX rv (hRc.down_le j i (Nat.le_trans hi hk) U rv hrm)
   exact RestCalls.call_elim_rest (s := (Rc, Ps, P, R)) (by simp) hRc hA hAv hP hrv hrX hfX
     (ArgsT_transfer hA hargs i hi X hz) (hEP i X extra hext) (fun e he => hEv i X e (hext e he))
-    hX hh3
+    hX hh3 hre
 
 /-- Every label of `A` is the packed binder `t`, or a meet row of it: each
 value of `A` is one of `t`'s. -/
@@ -875,17 +967,22 @@ theorem packed_call_safe {Rc : Fam} {Ps : List Fam} {R V : Fam} {P : ArgFam}
     (xs : List (Fam × Tm)) (hxs : xs.map Prod.fst = Ps)
     {n W heap f r a} (hw : WorldAdm W) (hh : HeapOk n W heap)
     (hf : Safe Ξ (restsT Ξ [(Rc, Ps, P, R)]) n W heap f)
-    (hr : FutureSafe Ξ Rc n W r) (hx : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2) (ha : FutureSafe Ξ V n W a) :
+    (hr : FutureSafe Ξ Rc n W r) (hx : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2) (ha : FutureSafe Ξ V n W a)
+    (href : RefsOk W (.invoke f r (xs.map Prod.snd ++
+      [.spread (.readAt CallArguments.arrayStoreField a)]))) :
     Safe Ξ R n W heap (.invoke f r (xs.map Prod.snd ++
       [.spread (.readAt CallArguments.arrayStoreField a)])) := by
-  let tail := fun (t : Tm) => [Tm.spread (.readAt CallArguments.arrayStoreField t)]
-  apply Safe_bind (fun f => .invoke f r (xs.map Prod.snd ++ tail a)) Step.callL Raises.callL
-    n W heap f hw hh hf
-  intro j0 hj0 U0 hx0 hu0 heap0 v hok0 hv hfun0
-  apply Safe_bind (fun r => .invoke v r (xs.map Prod.snd ++ tail a))
-    (Step.callRecv hv) (Raises.callRecv hv) j0 U0 heap0 r hu0 hok0
+  obtain ⟨-, hrr, hargsr⟩ := RefsOk_invoke.mp href
+  apply Safe_bind (fun f => Tm.invoke f r (xs.map Prod.snd ++ [Tm.spread (.readAt CallArguments.arrayStoreField a)]))
+    Step.callL Raises.callL (by ctx_refs) n W heap f hw hh (RefsOk_invoke.mpr ⟨RefsOk_undef, hrr, hargsr⟩) hf
+  intro j0 hj0 U0 hx0 hu0 heap0 v hok0 hv hfun0 hvr
+  have hxW0 : ∀ {t}, RefsOk W t → RefsOk U0 t := fun h => RefsOk_mono hx0 (RefsOk_trunc _ h)
+  apply Safe_bind (fun r => Tm.invoke v r (xs.map Prod.snd ++ [Tm.spread (.readAt CallArguments.arrayStoreField a)]))
+    (Step.callRecv hv) (Raises.callRecv hv) (by ctx_refs) j0 U0 heap0 r hu0 hok0
+    (RefsOk_invoke.mpr ⟨hvr, RefsOk_undef, fun a ha => hxW0 (hargsr a ha)⟩)
     ((hr.transfer hj0 hx0) j0 (Nat.le_refl _) U0 (by rw [trunc_id]; exact WExt_refl _) hu0 heap0 hok0)
-  intro j hj1 U hy1 hu' heap' rv hok hrv hrm
+  intro j hj1 U hy1 hu' heap' rv hok hrv hrm hrvr
+  have hxU1 : ∀ {t}, RefsOk U0 t → RefsOk U t := fun h => RefsOk_mono hy1 (RefsOk_trunc _ h)
   have hfun := adm_transfer2 (restsT_adm _) hfun0 hj1 hy1 (Nat.le_refl j)
     (by rw [trunc_id]; exact WExt_refl _)
   have hxU : WExt (trunc j (Nat.le_trans hj1 hj0) W) U := by
@@ -893,47 +990,58 @@ theorem packed_call_safe {Rc : Fam} {Ps : List Fam} {R V : Fam} {P : ArgFam}
     simpa only [trunc_trunc] using WExt_trunc hj1 hx0
   have hj : j ≤ n := Nat.le_trans hj1 hj0
   apply bind_list xs (by intro p hm; exact hA p.1 (hxs ▸ List.mem_map_of_mem hm))
-    (fun args => .invoke v rv (args ++ tail a))
+    (fun args => Tm.invoke v rv (args ++ [Tm.spread (.readAt CallArguments.arrayStoreField a)]))
     (fun hs => (CallArguments.Prepare.args hv hrv (ArgStep_append _ hs)).step)
-    (fun hr => (hr.append _).invoke hv hrv) hu' hok
+    (fun hr => (hr.append _).invoke hv hrv) (fun args r => by simp [refs, refsArgs_eq] <;> grind) hu' hok
+    (RefsOk_invoke.mpr ⟨hxU1 hvr, hrvr, fun a ha => hxU1 (hxW0 (hargsr a ha))⟩)
     (fun p hm => (hx p hm).transfer hj hxU)
-  intro k hk V' hy hv' heap'' args hok' hargs
+  intro k hk V' hy hv' heap'' args hok' hargs hrefs
   rw [hxs] at hargs
   have hvals := ArgsT_values hAv hargs
   have hkU : WExt (trunc k (Nat.le_trans hk hj) W) V' := by
     apply WExt_trans _ hy
     simpa only [trunc_trunc] using WExt_trunc hk hxU
-  apply Safe_bind (A := V) (fun t => .invoke v rv (args ++ tail t))
+  have hctx : CtxRefs (fun t => .invoke v rv (args ++ [.spread (.readAt CallArguments.arrayStoreField t)])) := by
+    ctx_refs
+  have hctx2 : CtxRefs (fun t => .invoke v rv (args ++ [.spread t])) := by ctx_refs
+  apply Safe_bind (A := V) (fun t => .invoke v rv (args ++ [.spread (.readAt CallArguments.arrayStoreField t)]))
     (fun s => RestCalls.call_lift hv hrv hvals (.spreadC (.readC s)))
-    (fun s => RestCalls.call_raise hv hrv hvals (.spreadC (.readC s))) k V' heap'' a hv' hok'
+    (fun s => RestCalls.call_raise hv hrv hvals (.spreadC (.readC s))) hctx k V' heap'' a hv' hok'
+    (hctx.frame hrefs)
     ((ha.transfer (Nat.le_trans hk hj) hkU) k (Nat.le_refl _) V'
       (by rw [trunc_id]; exact WExt_refl _) hv' heap'' hok')
-  intro i hi X hz hX heap3 av hok3 hav hva
+  intro i hi X hz hX heap3 av hok3 hav hva havr
+  have hCX : RefsOk X (.invoke v rv (args ++ [.spread (.readAt CallArguments.arrayStoreField av)])) :=
+    hctx.ok havr (RefsOk_mono hz (RefsOk_trunc _ (hctx.frame hrefs)))
   have hfX := (restsT_adm _).mono i _ X hz v ((restsT_adm _).down_le k i hi V' v
     ((restsT_adm _).mono k _ V' hy v ((restsT_adm _).down_le j k hk U v hfun)))
   have hrX := hRc.mono i _ X hz rv (hRc.down_le k i hi V' rv
     (hRc.mono k _ V' hy rv (hRc.down_le j k hk U rv hrm)))
   have hargsX := ArgsT_transfer hA hargs i hi X hz
   cases i with
-  | zero => trivial
+  | zero => exact hCX
   | succ i =>
     obtain ⟨fs, c, oid, l, ls, vs, rfl, hl, hls, hrd, hvs⟩ :=
       hVP (i + 1) X av hva i (Nat.le_refl _) X (by rw [trunc_id]; exact WExt_refl _) heap3 hok3
+    have hmid : RefsOk (trunc i (Nat.le_succ i) X) (.invoke v rv (args ++ [.spread (.arr ls)])) :=
+      hctx2.ok (read_value_refs hok3 hls)
+        (RefsOk_trunc _ (hctx2.frame (t := .readAt CallArguments.arrayStoreField (.objAt fs c oid)) hCX))
     cases i with
     | zero =>
-      refine Or.inr ⟨trunc 0 (Nat.le_succ 0) X, heap3, _, WExt_refl _, WorldAdm_trunc _ hX,
-        RestCalls.call_lift hv hrv hvals (.spreadC (.readField hl hls)), HeapOk_trunc 0 X heap3 hok3, trivial⟩
+      exact pure_step hX hok3 hCX (RestCalls.call_lift hv hrv hvals (.spreadC (.readField hl hls))) hmid
     | succ m =>
       let X1 := trunc (m + 1) (Nat.le_succ (m + 1)) X
-      refine Or.inr ⟨X1, heap3, _, WExt_refl _, WorldAdm_trunc _ hX,
-        RestCalls.call_lift (rest := []) hv hrv hvals (.spreadC (.readField hl hls)),
-        HeapOk_trunc (m + 1) X heap3 hok3, ?_⟩
+      refine pure_step hX hok3 hCX (RestCalls.call_lift (rest := []) hv hrv hvals (.spreadC (.readField hl hls))) ?_
       have hvsv := hPv _ _ _ (hvs m (by omega))
       let X2 := trunc m (Nat.le_succ m) X1
-      refine Or.inr ⟨X2, heap3, .invoke v rv (args ++ vs), WExt_refl _,
-        WorldAdm_trunc _ (WorldAdm_trunc _ hX),
-        by simpa using Step.callSpread (pre := args) (post := []) hv hrv rfl hvals hrd,
-        HeapOk_trunc m X1 heap3 (HeapOk_trunc (m + 1) X heap3 hok3), ?_⟩
+      have hfin : RefsOk X2 (.invoke v rv (args ++ vs)) := by
+        obtain ⟨hv1, hr1, ha1⟩ := RefsOk_invoke.mp hmid
+        refine RefsOk_trunc _ (RefsOk_invoke.mpr ⟨hv1, hr1, fun b hb => ?_⟩)
+        rcases List.mem_append.mp hb with hb | hb
+        · exact ha1 b (List.mem_append_left _ hb)
+        · exact RefsOk_trunc _ (hok3.readElems_refs hrd b hb)
+      refine pure_step (WorldAdm_trunc _ hX) (HeapOk_trunc (m + 1) X heap3 hok3) hmid
+        (by simpa using Step.callSpread (pre := args) (post := []) hv hrv rfl hvals hrd) ?_
       have hle : ∀ {F : Fam}, Adm F → ∀ u, F (m + 2) X u → F m X2 u := fun hF u h =>
         hF.down m X1 u (hF.down (m + 1) X u h)
       have hPm : P m X2 vs := by
@@ -943,7 +1051,7 @@ theorem packed_call_safe {Rc : Fam} {Ps : List Fam} {R V : Fam} {P : ArgFam}
         (hle hRc rv hrX) (hle (restsT_adm _) v hfX)
         (ArgsT_transfer hA hargsX m (by omega) X2 (by simp only [X2, X1, trunc_trunc]; exact WExt_refl _))
         hPm hvsv (WorldAdm_trunc _ (WorldAdm_trunc _ hX))
-        (HeapOk_trunc m X1 heap3 (HeapOk_trunc (m + 1) X heap3 hok3))
+        (HeapOk_trunc m X1 heap3 (HeapOk_trunc (m + 1) X heap3 hok3)) hfin
 
 /-- **A variadic call writing no spread.** The callee, the receiver and every
 actual run left to right; the fixed ones meet the signature's parameters, less
@@ -958,13 +1066,18 @@ theorem pack_call_safe {Rc : Fam} {Ps Us Qs : List Fam} {R : Fam} {P : ArgFam}
     {n W heap f r} (hw : WorldAdm W) (hh : HeapOk n W heap)
     (hf : Safe Ξ (restsT Ξ [(Rc, Ps ++ Us, P, R)]) n W heap f)
     (hr : FutureSafe Ξ Rc n W r) (hx : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2)
-    (hu : ∀ A ∈ Us, FutureSafe Ξ A n W .undef) :
+    (hu : ∀ A ∈ Us, FutureSafe Ξ A n W .undef) (href : RefsOk W (.invoke f r (xs.map Prod.snd))) :
     Safe Ξ R n W heap (.invoke f r (xs.map Prod.snd)) := by
-  apply Safe_bind (fun f => .invoke f r (xs.map Prod.snd)) Step.callL Raises.callL n W heap f hw hh hf
-  intro j0 hj0 U0 hx0 hu0 heap0 v hok0 hv hfun0
-  apply Safe_bind (fun r => .invoke v r (xs.map Prod.snd)) (Step.callRecv hv) (Raises.callRecv hv) j0 U0 heap0 r hu0 hok0
+  obtain ⟨-, hrr, hargsr⟩ := RefsOk_invoke.mp href
+  apply Safe_bind (fun f => .invoke f r (xs.map Prod.snd)) Step.callL Raises.callL (by ctx_refs) n W heap f hw hh
+    (RefsOk_invoke.mpr ⟨RefsOk_undef, hrr, hargsr⟩) hf
+  intro j0 hj0 U0 hx0 hu0 heap0 v hok0 hv hfun0 hvr
+  have hxW0 : ∀ {t}, RefsOk W t → RefsOk U0 t := fun h => RefsOk_mono hx0 (RefsOk_trunc _ h)
+  apply Safe_bind (fun r => .invoke v r (xs.map Prod.snd)) (Step.callRecv hv) (Raises.callRecv hv) (by ctx_refs)
+    j0 U0 heap0 r hu0 hok0 (RefsOk_invoke.mpr ⟨hvr, RefsOk_undef, fun a ha => hxW0 (hargsr a ha)⟩)
     ((hr.transfer hj0 hx0) j0 (Nat.le_refl _) U0 (by rw [trunc_id]; exact WExt_refl _) hu0 heap0 hok0)
-  intro j hj1 U hy1 hu' heap' rv hok hrv hrm
+  intro j hj1 U hy1 hu' heap' rv hok hrv hrm hrvr
+  have hxU1 : ∀ {t}, RefsOk U0 t → RefsOk U t := fun h => RefsOk_mono hy1 (RefsOk_trunc _ h)
   have hfun := adm_transfer2 (restsT_adm _) hfun0 hj1 hy1 (Nat.le_refl j)
     (by rw [trunc_id]; exact WExt_refl _)
   have hxU : WExt (trunc j (Nat.le_trans hj1 hj0) W) U := by
@@ -973,12 +1086,14 @@ theorem pack_call_safe {Rc : Fam} {Ps Us Qs : List Fam} {R : Fam} {P : ArgFam}
   have hj : j ≤ n := Nat.le_trans hj1 hj0
   apply bind_list xs (by intro p hm; exact hA p.1 (hxs ▸ List.mem_map_of_mem hm))
     (fun args => .invoke v rv args)
-    (fun hs => (CallArguments.Prepare.args hv hrv hs).step) (fun hr => hr.invoke hv hrv) hu' hok
+    (fun hs => (CallArguments.Prepare.args hv hrv hs).step) (fun hr => hr.invoke hv hrv)
+    (fun args r => by simp [refs, refsArgs_eq, or_assoc]) hu' hok
+    (RefsOk_invoke.mpr ⟨hxU1 hvr, hrvr, fun a ha => hxU1 (hxW0 (hargsr a ha))⟩)
     (fun p hm => (hx p hm).transfer hj hxU)
-  intro k hk V hy hv' heap'' args hok' hargs
+  intro k hk V hy hv' heap'' args hok' hargs hrefs
   rw [hxs] at hargs
   cases k with
-  | zero => trivial
+  | zero => exact hrefs
   | succ k =>
     let X := trunc k (Nat.le_succ k) V
     have hX : WorldAdm X := WorldAdm_trunc _ hv'
@@ -1010,9 +1125,10 @@ theorem pack_call_safe {Rc : Fam} {Ps Us Qs : List Fam} {R : Fam} {P : ArgFam}
         refine ⟨by rwa [List.take_of_length_le hl], ?_⟩
         rw [List.drop_eq_nil_of_le hl]
         exact hpack k X [] trivial
+    obtain ⟨hvV, hrvV, haV⟩ := RefsOk_invoke.mp (RefsOk_trunc (Nat.le_succ k) hrefs)
     obtain ⟨body, hi, hsafe⟩ := hfV.2 (Rc, Ps ++ Us, P, R) (by simp) k (Nat.lt_succ_self k) X
-      (WExt_refl _) hX heap'' hhX rv hrv hrV args (ArgsT_values hAv hargsX) hacc
-    exact Or.inr ⟨X, heap'', body, WExt_refl _, hX, hi.step heap'', hhX, hsafe⟩
+      (WExt_refl _) hX heap'' hhX hvV rv hrv hrV hrvV args (ArgsT_values hAv hargsX) haV hacc
+    exact ⟨hrefs, Or.inr ⟨X, heap'', body, WExt_refl _, hX, hi.step heap'', hhX, hsafe⟩⟩
 
 /-- **Eliminating a variadic construct signature.** A ready construction whose
 fixed actuals meet the parameters and whose further ones form a pack of the
@@ -1021,10 +1137,10 @@ theorem ctor_elim_rest {Ps : List Fam} {P : ArgFam} {R : Fam} {e : Effect} (hpl 
     (hA : ∀ A ∈ Ps, Adm A) (hP : Adm P)
     {n W v args extra heap} (hf : ctorRestsT Ξ [⟨(), (Ps, P), R, e⟩] n W v)
     (ha : ArgsT Ps n W args) (he : P n W extra) (hvals : CallArguments.Values (args ++ extra))
-    (hw : WorldAdm W) (hh : HeapOk n W heap) :
+    (hw : WorldAdm W) (hh : HeapOk n W heap) (href : RefsOk W (.construct v (args ++ extra))) :
     Safe Ξ R n W heap (.construct v (args ++ extra)) := by
   cases n with
-  | zero => trivial
+  | zero => exact href
   | succ k =>
     have hl := ArgsT_length ha
     have hrest : CtorRest Ps P k (trunc k (Nat.le_succ k) W) (args ++ extra) := by
@@ -1033,11 +1149,12 @@ theorem ctor_elim_rest {Ps : List Fam} {P : ArgFam} {R : Fam} {e : Effect} (hpl 
         exact ArgsT_transfer hA ha k (Nat.le_succ k) _ (WExt_refl _)
       · rw [List.drop_left' hl]
         exact hP.down k W extra he
+    obtain ⟨hvk, hak⟩ := RefsOk_construct.mp (RefsOk_trunc (Nat.le_succ k) href)
     obtain ⟨result, ⟨fs, c, enter, oid, rfl, hc', rfl⟩, hsafe⟩ :=
       (hf.2 _ (List.mem_singleton_self _)).erase hpl k (Nat.lt_succ_self k) (trunc k (Nat.le_succ k) W)
-        (WExt_refl _) (WorldAdm_trunc _ hw) heap (HeapOk_trunc k W heap hh) _ hvals hrest
-    exact Or.inr ⟨trunc k (Nat.le_succ k) W, heap, _, WExt_refl _, WorldAdm_trunc _ hw,
-      CallArguments.construction_step hc' hvals heap, HeapOk_trunc k W heap hh, hsafe⟩
+        (WExt_refl _) (WorldAdm_trunc _ hw) heap (HeapOk_trunc k W heap hh) hvk _ hvals hak hrest
+    exact ⟨href, Or.inr ⟨trunc k (Nat.le_succ k) W, heap, _, WExt_refl _, WorldAdm_trunc _ hw,
+      CallArguments.construction_step hc' hvals heap, HeapOk_trunc k W heap hh, hsafe⟩⟩
 
 /-- **A variadic construction with a spread.** The constructor, the fixed
 actuals, then the further parts run left to right, each spread read where it
@@ -1050,25 +1167,31 @@ theorem construct_rest_safe {Ps : List Fam} {E R : Fam} {P : ArgFam} {e : Effect
     (hS : ∀ p ∈ parts, ∀ S, p.1 = some S → Adm S ∧ RestCalls.Spreads S E)
     {n W heap f} (hw : WorldAdm W) (hh : HeapOk n W heap)
     (hf : Safe Ξ (ctorRestsT Ξ [⟨(), (Ps, P), R, e⟩]) n W heap f)
-    (hx : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2) (hp : ∀ p ∈ parts, FutureSafe Ξ (p.1.getD E) n W p.2) :
+    (hx : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2) (hp : ∀ p ∈ parts, FutureSafe Ξ (p.1.getD E) n W p.2)
+    (href : RefsOk W (.construct f (xs.map Prod.snd ++ parts.map RestCalls.partTerm))) :
     Safe Ξ R n W heap (.construct f (xs.map Prod.snd ++ parts.map RestCalls.partTerm)) := by
+  obtain ⟨-, hargsr⟩ := RefsOk_construct.mp href
   apply Safe_bind (fun f => .construct f (xs.map Prod.snd ++ parts.map RestCalls.partTerm))
-    Step.constructL Raises.constructL n W heap f hw hh hf
-  intro j hj U hxU hu heap' v hok hv hfun
+    Step.constructL Raises.constructL (by ctx_refs) n W heap f hw hh
+    (RefsOk_construct.mpr ⟨RefsOk_undef, hargsr⟩) hf
+  intro j hj U hxU hu heap' v hok hv hfun hvr
+  have hxW : ∀ {t}, RefsOk W t → RefsOk U t := fun h => RefsOk_mono hxU (RefsOk_trunc _ h)
   apply bind_list xs (by intro p hm; exact hA p.1 (hxs ▸ List.mem_map_of_mem hm))
     (fun args => .construct v (args ++ parts.map RestCalls.partTerm))
     (fun hs => CallArguments.Step.constructArgs hv (ArgStep_append _ hs))
-    (fun hr => (hr.append _).construct hv) hu hok
+    (fun hr => (hr.append _).construct hv) (fun args r => by simp [refs, refsArgs_eq] <;> grind) hu hok
+    (RefsOk_construct.mpr ⟨hvr, fun a ha => hxW (hargsr a ha)⟩)
     (fun p hm => (hx p hm).transfer hj hxU)
-  intro k hk V hy hv' heap'' args hok' hargs
+  intro k hk V hy hv' heap'' args hok' hargs hrefs
   rw [hxs] at hargs
   apply RestCalls.parts_safe hE hEv (Tm.construct v)
     (fun hp s => CallArguments.Step.constructArgs hv (CallArguments.keep_prefix hp (.head s)))
     (fun hp s => .constructArg hv (prefix_position hp).1 (prefix_position hp).2 s)
     (fun hp hr => .constructSpread hv rfl hp hr)
-    parts k V heap'' args hS hv' hok' (ArgsT_values hAv hargs)
+    (fun args r => by simp [refs, refsArgs_eq])
+    parts k V heap'' args hS hv' hok' (ArgsT_values hAv hargs) hrefs
     (fun p hm => ((hp p hm).transfer hj hxU).transfer hk hy)
-  intro i hi X hz hX heap3 extra hh3 hext
+  intro i hi X hz hX heap3 extra hh3 hext hre
   have hUX : WExt (trunc i (Nat.le_trans hi hk) U) X := by
     apply WExt_trans _ hz
     simpa only [trunc_trunc] using WExt_trunc hi hy
@@ -1079,7 +1202,7 @@ theorem construct_rest_safe {Ps : List Fam} {E R : Fam} {P : ArgFam} {e : Effect
       intro a ha
       rcases List.mem_append.mp ha with ha | ha
       · exact ArgsT_values hAv hargs a ha
-      · exact hEv i X a (hext a ha)) hX hh3
+      · exact hEv i X a (hext a ha)) hX hh3 hre
 
 /-- **A variadic construction writing no spread.** The constructor and every
 actual run left to right; the fixed ones meet the signature's parameters and
@@ -1090,14 +1213,18 @@ theorem construct_pack_safe {Ps Qs : List Fam} {R : Fam} {P : ArgFam} {e : Effec
     (xs : List (Fam × Tm)) (hxs : xs.map Prod.fst = Ps ++ Qs)
     {n W heap f} (hw : WorldAdm W) (hh : HeapOk n W heap)
     (hf : Safe Ξ (ctorRestsT Ξ [⟨(), (Ps, P), R, e⟩]) n W heap f)
-    (hx : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2) :
+    (hx : ∀ p ∈ xs, FutureSafe Ξ p.1 n W p.2) (href : RefsOk W (.construct f (xs.map Prod.snd))) :
     Safe Ξ R n W heap (.construct f (xs.map Prod.snd)) := by
-  apply Safe_bind (fun f => .construct f (xs.map Prod.snd)) Step.constructL Raises.constructL n W heap f hw hh hf
-  intro j hj U hxU hu heap' v hok hv hfun
+  obtain ⟨-, hargsr⟩ := RefsOk_construct.mp href
+  apply Safe_bind (fun f => .construct f (xs.map Prod.snd)) Step.constructL Raises.constructL (by ctx_refs)
+    n W heap f hw hh (RefsOk_construct.mpr ⟨RefsOk_undef, hargsr⟩) hf
+  intro j hj U hxU hu heap' v hok hv hfun hvr
   apply bind_list xs (by intro p hm; exact hA p.1 (hxs ▸ List.mem_map_of_mem hm))
-    (Tm.construct v) (fun hs => CallArguments.Step.constructArgs hv hs) (fun hr => hr.construct hv) hu hok
+    (Tm.construct v) (fun hs => CallArguments.Step.constructArgs hv hs) (fun hr => hr.construct hv)
+    (fun args r => by simp [refs, refsArgs_eq]) hu hok
+    (RefsOk_construct.mpr ⟨hvr, fun a ha => RefsOk_mono hxU (RefsOk_trunc _ (hargsr a ha))⟩)
     (fun p hm => (hx p hm).transfer hj hxU)
-  intro k hk V hy hv' heap'' args hok' hargs
+  intro k hk V hy hv' heap'' args hok' hargs hrefs
   rw [hxs] at hargs
   obtain ⟨h1, h2⟩ := ArgsT_take_drop Ps.length hargs
   simp only [List.take_append_of_le_length (Nat.le_refl _), List.take_length,
@@ -1105,6 +1232,7 @@ theorem construct_pack_safe {Ps Qs : List Fam} {R : Fam} {P : ArgFam} {e : Effec
   have hfV := (ctorRestsT_adm _).mono k _ V hy v ((ctorRestsT_adm _).down_le j k hk U v hfun)
   have := ctor_elim_rest hpl (fun A h => hA A (List.mem_append_left _ h)) hP hfV h1 (hpack k V _ h2)
     (by rw [List.take_append_drop]; exact ArgsT_values hAv hargs) hv' hok'
+    (by rw [List.take_append_drop]; exact hrefs)
   rwa [List.take_append_drop] at this
 
 /-- **A fresh store of values at `E`.** Allocated, the values meet the
@@ -1112,7 +1240,7 @@ contract `E` at every position, under any readonly flag and presence mode:
 every position holds a location of its own. -/
 theorem fresh_store_safe {E : Fam} (ro : Bool) (presence : ArrayPresence) (hE : Adm E) (hEv : ValOnly E)
     {n : Nat} {W : WorldT n} {h : Heap} {vs : List Tm} (hw : WorldAdm W) (hh : HeapOk n W h) (hΞ : ErrorsIn Ξ)
-    (hvs : ∀ e ∈ vs, E n W e) :
+    (hvs : ∀ e ∈ vs, E n W e) (hsrc : ∀ v ∈ vs, isSourceVal v = true) (href : RefsOk W (.arrLit vs)) :
     Safe Ξ (listT ⟨[], [], some E, ro, presence⟩) n W h (.arrLit vs) := by
   apply arr_alloc_rule (As := List.replicate vs.length E)
     (by intro A hA; rw [List.eq_of_mem_replicate hA]; exact hE)
@@ -1121,7 +1249,7 @@ theorem fresh_store_safe {E : Fam} (ro : Bool) (presence : ArrayPresence) (hE : 
     (by
       intro q hq
       rw [List.eq_of_mem_replicate (List.of_mem_zip hq).1]
-      exact hvs q.2 (List.of_mem_zip hq).2)
+      exact hvs q.2 (List.of_mem_zip hq).2) hsrc href
   intro k hk X hy hl hmax
   have := listT_alloc (n := k) (W := X) (T := ⟨[], [], some E, ro, presence⟩)
     (As := List.replicate vs.length E) (base := h.length)

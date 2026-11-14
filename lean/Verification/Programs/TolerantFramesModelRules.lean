@@ -11,9 +11,8 @@ where the note's statement does not hold:
 - (View): a linear fact whose current terms are slots' integers and
   typed-array lengths holds after every admissible transition where each
   view's length location is single-valued (`view_box`), which a type stating
-  `viewLengthKey` stable gives (`viewStable_of_typed`); without it the length
-  may change (`view_not_invariant`); an entry term reads the entry state,
-  which no transition changes;
+  `viewLengthKey` stable gives (`viewStable_of_typed`); an entry term reads
+  the entry state, which no transition changes;
 - (Init): every linear fact whose current terms are no string lengths
   survives every action of `{values: init, stores: keep}` (`init_box`), with
   no condition on its paths, its entry terms of every kind;
@@ -108,22 +107,6 @@ theorem viewObj_length {b : UInt64} {n : Int} (hb : SafeIntegers.SafeInt b n) (h
   have hne : (PropKey.str "[[viewLength]]" == PropKey.str "[[host]]") = false := by decide
   simp [HeapKnowledge.viewLengthOf, viewObj, List.lookup, hostKey, viewLengthKey, hne, hl, h0]
 
-/-- **(View) needs the view's stability**: in a world whose locations admit
-every value, a transition changes a typed array's length from 1 to 2. -/
-theorem view_not_invariant :
-    ¬ ∀ (ρ : Env) (m : Nat) (s : IndexedHeap), HeapKnowledge.viewLengthOf s.h (ρ 0) = some 1 →
-      Box Footprints.Closed.top.fp (fun ρ _ s => HeapKnowledge.viewLengthOf s.h (ρ 0) = some 1) ρ m s := by
-  intro hall
-  have two : SafeIntegers.SafeInt (bitsOfNat 2) 2 := ⟨by decide, .inl ⟨by decide, rfl⟩⟩
-  let s₁ := anyState [.nul, .num oneBits, .nul] rfl (vals3 rfl rfl rfl)
-  let s₂ := anyState [.nul, .num (bitsOfNat 2), .nul] rfl (vals3 rfl rfl rfl)
-  have h₁ := viewObj_length oneBits_safe (by decide)
-  have h₂ := viewObj_length two (by decide)
-  have := hall (fun _ => viewObj) 0 s₁ h₁ s₂ (action_top anyState_admissible)
-  simp only [s₂, anyState] at this
-  rw [h₂] at this
-  cases this
-
 /-! ## (Init) -/
 
 theorem initTerm_kept (t : HeapKnowledge.Term) (hk : t.atEntry = false → t.kind ≠ .strLength) :
@@ -170,14 +153,15 @@ fact of the caller under `□_{Φ[x⃗/p⃗]}` at the entry holds at the exit,
 the result named by a name `y` no fact mentions. -/
 theorem call_rule {P : Program} {pre : Nat → Assertion} {Ξres Tres : Fam} {Qres Rres : Heap → Prop} {m : Nat}
     (hnodes : NodesChecked P pre Ξres Tres Qres Rres m) (hdown : AdminClosed pre m) {l : Nat}
-    {ρc ρ : Env} {s : IndexedHeap} (hpre : pre l ρc m s) {Φ : Footprint} {σ : Nat → Nat}
+    {ρc ρ : Env} {s : IndexedHeap} (hpre : pre l ρc m s) (hPr : ∀ node ∈ P, RefsOk s.W node.expression)
+    (hρ : ∀ i, RefsOk s.W (ρc i)) {Φ : Footprint} {σ : Nat → Nat}
     (hQ : ∀ h, Qres h → Post Φ ρc s.h h) (hσ : ∀ i, ρ (σ i) = ρc i)
     {S : List SinglePass.Atom} {η : Env} {y : Nat} (hy : ∀ a ∈ S, y ∉ a.names)
     (hR : Box (Φ.rename σ) (Named ε S η) ρ m s)
     {k : Nat} {h' : Heap} {v : Tm} (hrun : Transitions P k s.h (.at l ρc) h' (.done v)) (hk : k < s.n) :
     ∃ s' : IndexedHeap, Action (Φ.rename σ) ρ s s' ∧ s'.h = h' ∧ s'.n + k = s.n ∧ isVal v = true ∧
       Tres s'.n s'.W v ∧ Qres h' ∧ Named ε S (Env.set η y v) ρ m s' := by
-  obtain ⟨s', ha, he, hn, hv, hT, hq⟩ := invocation_done hnodes hdown hpre hrun hk
+  obtain ⟨s', ha, he, hn, hv, hT, hq⟩ := invocation_done hnodes hdown hpre hPr hρ hrun hk
   have hact : Action (Φ.rename σ) ρ s s' := ⟨ha, Post.rename hσ (he ▸ hQ h' hq)⟩
   exact ⟨s', hact, he, hn, hv, hT, hq, named_set v hy (hR s' hact)⟩
 
@@ -211,10 +195,47 @@ theorem alloc_post (h : Heap) :
   exact alloc_apart hst hget (Nat.le_refl _) (fun _ hm => by simp at hm) hsy
     (by rw [List.append_assoc, List.getElem?_append_left hlt]; exact hys) hlt hbelow
 
-/-- A world-free counter-model: the fresh array `x` (store at location 2)
-and `y` (store at 0, listing cell 1). -/
-def apartEnv : Env := fun i => if i = 0 then .objAt [(arrayStoreKey, 2)] .absent 0
-  else .objAt [(arrayStoreKey, 0)] .absent 0
+/-- The counter-model's world: `y`'s store, its cell, `x`'s store, and the
+two arrays' identities. -/
+def apartWorld : WorldT 1 :=
+  ofEntries [(.store .array, anyCtr), (.elem, anyCtr), (.store .array, anyCtr), (.identity, anyCtr),
+    (.identity, anyCtr)]
+
+theorem apartWorld_adm : WorldAdm apartWorld := by
+  intro l c hl
+  simp only [lookup, apartWorld, toList, entries_ofEntries] at hl
+  rcases l with _ | _ | _ | _ | _ | l <;> simp at hl <;> subst hl <;>
+    exact ⟨fun _ _ _ _ _ _ hv => hv, fun _ _ _ _ hv => hv⟩
+
+/-- A heap of `apartWorld`: `y`'s store listing cell 1, and `x`'s store
+listing cells among cell 1. -/
+theorem apartWorld_ok {xs : List (Option Nat)} (hxs : ∀ l, some l ∈ xs → l = 1) :
+    HeapOk 1 apartWorld [.arr [some 1], .nul, .arr xs, .nul, .nul] := by
+  refine ⟨⟨by simp [apartWorld, toList], fun l c hc => ?_⟩, fun l r hr => ?_⟩
+  · simp only [lookup, apartWorld, toList, entries_ofEntries] at hc
+    rcases l with _ | _ | _ | _ | _ | l <;> simp at hc <;> subst hc <;> exact ⟨_, rfl, fun _ _ => rfl⟩
+  · simp only [roleAt, roles, apartWorld, entries_ofEntries] at hr
+    rcases l with _ | _ | _ | _ | _ | l <;> simp at hr <;> subst hr
+    · exact ⟨_, rfl, ⟨_, rfl⟩, RefsOk_arr_iff.mpr fun l hl => by
+        simp at hl; subst hl; simp [roleAt, roles, apartWorld]⟩
+    · exact ⟨_, rfl, rfl, RefsOk_of_nil rfl⟩
+    · exact ⟨_, rfl, ⟨_, rfl⟩, RefsOk_arr_iff.mpr fun l hl => by
+        obtain rfl := hxs l hl; simp [roleAt, roles, apartWorld]⟩
+    · exact ⟨_, rfl, rfl, RefsOk_of_nil rfl⟩
+    · exact ⟨_, rfl, rfl, RefsOk_of_nil rfl⟩
+
+/-- A state of `apartWorld` at budget 1. -/
+def apartState (xs : List (Option Nat)) (hxs : ∀ l, some l ∈ xs → l = 1) : IndexedHeap :=
+  ⟨1, apartWorld, [.arr [some 1], .nul, .arr xs, .nul, .nul], Nat.one_pos, apartWorld_adm, apartWorld_ok hxs⟩
+
+theorem apartState_admissible {xs xs' : List (Option Nat)} {hxs hxs'} :
+    Admissible (apartState xs hxs) (apartState xs' hxs') :=
+  ⟨Nat.le_refl 1, by show WExt (trunc 1 (Nat.le_refl 1) apartWorld) apartWorld; rw [trunc_id]; exact WExt_refl _⟩
+
+/-- The counter-model's arrays: the fresh array `x` (store at location 2,
+identity 3) and `y` (store at 0, listing cell 1, identity 4). -/
+def apartEnv : Env := fun i => if i = 0 then .objAt [(arrayStoreKey, 2)] .absent 3
+  else .objAt [(arrayStoreKey, 0)] .absent 4
 
 theorem apartEnv_store₀ : storeOf (apartEnv 0) = some 2 := by
   simp [apartEnv, storeOf, fieldsOf]
@@ -224,20 +245,21 @@ theorem apartEnv_store₁ : storeOf (apartEnv 1) = some 0 := by
 
 /-- **Alloc's separations are not kept by freshness**: `x` fresh against the
 mark 2, `y`'s cells allocated, `apart(x, y)`, and an action changing only
-`x`'s store, at `any`, after which `x` lists `y`'s cell. -/
+`x`'s store, at `any`, after which `x` lists `y`'s cell. The heaps meet a
+kinded world, each array with its own identity location. -/
 theorem apart_not_kept_fresh :
     ¬ ∀ (ρ : Env) (m : Nat) (s : IndexedHeap), Fresh 0 ρ m s → RootCells 1 ρ m s → ApartAt 0 1 ρ m s →
       Box [(.field 0 arrayStoreKey, .any)] (ApartAt 0 1) ρ m s := by
   intro hall
-  let s₁ := anyState [.arr [some 1], .nul, .arr []] rfl (vals3 rfl rfl rfl)
-  let s₂ := anyState [.arr [some 1], .nul, .arr [some 1]] rfl (vals3 rfl rfl rfl)
+  let s₁ := apartState [] (by simp)
+  let s₂ := apartState [some 1] (by simp)
   have hfresh : Fresh 0 apartEnv 2 s₁ := ⟨2, apartEnv_store₀, Nat.le_refl _⟩
   have hcells : RootCells 1 apartEnv 2 s₁ := by
     intro st ls hst hv
     rw [apartEnv_store₁] at hst; cases hst
-    simp only [s₁, anyState] at hv
+    simp only [s₁, apartState] at hv
     simp at hv; subst hv
-    intro l hl; simp at hl; subst hl; simp [s₁, anyState]
+    intro l hl; simp at hl; subst hl; simp [s₁, apartState]
   have hap : ApartAt 0 1 apartEnv 2 s₁ := by
     refine ⟨some 2, [], some 0, [some 1], .inr ⟨2, rfl, apartEnv_store₀, rfl⟩,
       .inr ⟨0, rfl, apartEnv_store₁, rfl⟩, ?_⟩
@@ -246,22 +268,24 @@ theorem apart_not_kept_fresh :
     simp only [HeapKnowledge.InRegion, Option.some.injEq, List.mem_singleton, List.not_mem_nil, or_false] at hl hl'
     omega
   have hact : Action [(.field 0 arrayStoreKey, .any)] apartEnv s₁ s₂ := by
-    refine ⟨anyState_admissible, by simp [s₁, s₂, anyState], fun l v hl => ?_⟩
-    rcases l with _ | _ | _ | l <;> simp [s₁, s₂, anyState] at hl ⊢
+    refine ⟨apartState_admissible, by simp [s₁, s₂, apartState], fun l v hl => ?_⟩
+    rcases l with _ | _ | _ | _ | _ | l <;> simp [s₁, s₂, apartState] at hl ⊢
     · exact .inl hl
     · exact .inl hl
     · exact .inr (by simp [Region.mem, apartEnv, fieldsOf, Footprints.Change.Holds])
+    · exact .inl hl
+    · exact .inl hl
   obtain ⟨sa, xs, sb, ys, hx, hy, hab⟩ := hall apartEnv 2 s₁ hfresh hcells hap s₂ hact
   have hxr : xs = [some 1] := by
     rcases hx with ⟨-, hv⟩ | ⟨st, -, hst, hv⟩
     · simp [apartEnv] at hv
     · rw [apartEnv_store₀] at hst; cases hst
-      simp [s₂, anyState] at hv; exact hv.symm
+      simp [s₂, apartState] at hv; exact hv.symm
   have hyr : ys = [some 1] := by
     rcases hy with ⟨-, hv⟩ | ⟨st, -, hst, hv⟩
     · simp [apartEnv] at hv
     · rw [apartEnv_store₁] at hst; cases hst
-      simp [s₂, anyState] at hv; exact hv.symm
+      simp [s₂, apartState] at hv; exact hv.symm
   subst hxr hyr
   exact hab 1 (.inr (by simp)) 1 (.inr (by simp)) rfl
 

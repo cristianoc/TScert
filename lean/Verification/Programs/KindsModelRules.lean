@@ -75,7 +75,7 @@ theorem alloc_post {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h) :
       ∀ (u : Val) (sy : Nat) (ys : List (Option Nat)), storeOf u = some sy → h[sy]? = some (.arr ys) →
         HeapKnowledge.RegionsApart (h ++ [.arr []] ++ [.nul]) (allocated h) u :=
   let ⟨hf, hl, ha⟩ := TolerantFrames.alloc_post h
-  ⟨hf, hl, fun u sy ys hs hy => ha u sy ys hs hy (hok.elementsBelow hy)⟩
+  ⟨hf, hl, fun u sy ys hs hy => ha u sy ys hs hy (Kinds.HeapOk.elementsBelow hok hy)⟩
 
 /-- **The allocation keeps the heap well-formed.** The rule gives the store
 slot the role of an array store and the identity its own, with contracts
@@ -315,14 +315,14 @@ theorem host_refs {k : Nat} :
     · simp [RefOk, hostWorld, hostEntries]
     · exact ⟨fun m hm => by simp [viewLengthKey, arrayStoreKey] at hm,
         fun e he => by simp [viewElementsKey, arrayStoreKey] at he,
-        fun e he => by simp [viewElementsKey, arrayStoreKey] at he⟩
+        fun e he => by simp [viewElementsKey, viewLengthKey, arrayStoreKey] at he⟩
     · simp [RefOk, SlotRole, hostWorld, hostEntries]
   · simp only [hostObject, refs, objRefs, List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil,
       or_false] at hr
     rcases hr with rfl | rfl | rfl
     · simp [RefOk, hostWorld, hostEntries]
     · exact ⟨fun m hm => by simp [viewLengthKey] at hm, fun e he => by simp [viewElementsKey] at he,
-        fun e he => by simp [viewElementsKey] at he⟩
+        fun e he => by simp [viewElementsKey, viewLengthKey] at he⟩
     · simp [RefOk, SlotRole, hostWorld, hostEntries, arrayStoreKey, viewElementsKey]
 
 /-- **The repaired view-element write is inhabited from the initial host
@@ -358,24 +358,5 @@ theorem host_viewWrite (n : Nat) :
     rcases j with _ | j
     · exact absurd rfl hj
     · simp
-
-/-! ## Payload compatibility over kinded roles
-
-The typing's payload statement (`ProgramTyping.Payload`) gives the category a
-kinded role asks of its contents: a storage tag's (`StorageRole.Holds`), from
-which an allocation's concrete role follows (`StorageRole.concrete_of_holds`),
-and an element cell's (`Cat .elem`). -/
-
-theorem payload_stored {ι : Type} {G : PositiveGraphs.NormalGraph ι} {s : StorageRole}
-    {A : List ι} (h : ProgramTyping.Payload G (.stored s) A) {n W v}
-    (hv : PositiveRules.meaning G A n W v) : s.Holds v := by
-  have := h.sound hv
-  cases s <;> simp_all [ProgramTyping.PayloadRole.sort, PositiveNormalization.ValueSort.Holds,
-    StorageRole.Holds]
-
-theorem payload_element {ι : Type} {G : PositiveGraphs.NormalGraph ι} {A : List ι}
-    (h : ProgramTyping.Payload G .element A) {n W v}
-    (hv : PositiveRules.meaning G A n W v) : Cat .elem v :=
-  (h.sound hv).1
 
 end Verification.Kinds

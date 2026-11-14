@@ -56,30 +56,34 @@ theorem throw_nul_safe {T : Fam} {cn ce : Footprints.Closed} {Qn : Post} {s : In
   cases n with
   | zero => exact absurd pos (Nat.lt_irrefl 0)
   | succ j =>
-    exact .inl (.inr ⟨⟨.nul, .throwV rfl rfl, trivial, rfl⟩, Footprints.Closed.Holds.refl _ _, trivial⟩)
+    exact ⟨RefsOk_of_nil rfl, .inl (.inr ⟨⟨.nul, .throwV rfl rfl, trivial, rfl⟩, Footprints.Closed.Holds.refl _ _, trivial⟩)⟩
 
 /-- **The handled throw: `handledGraph` is safe from node 0**, its result
 `null`, no exception escaping. -/
-theorem handled_safe (m : Nat) {ρ : Env} {s : IndexedHeap} :
+theorem handled_safe (m : Nat) {ρ : Env} {s : IndexedHeap} (hρ : ∀ i, RefsOk s.W (ρ i)) :
     SafeGraph noFam handledGraph nulFam s.n s.W s.h (.at 0 ρ) := by
   refine graph_safe_at (Qres := fun _ => True) (Rres := fun _ => True) (pre := handledPre) (m := m) ?_
     (handledPre_admin m) (l := 0) trivial
+    (by intro node hm; simp only [handledGraph, List.mem_cons, List.not_mem_nil, or_false] at hm
+        rcases hm with rfl | rfl <;> exact RefsOk_of_nil rfl) hρ
   intro l ρ s hp
   match l, hp with
   | 0, _ =>
-    refine ⟨_, rfl, nulFam, noFam, .empty, .empty, fun _ _ => True, fun _ => True, throw_nul_safe, ?_⟩
+    refine ⟨_, rfl, fun _ => ?_⟩
+    refine ⟨nulFam, noFam, .empty, .empty, fun _ _ => True, fun _ => True, throw_nul_safe, ?_⟩
     refine ⟨fun _ _ _ _ _ _ _ _ => trivial, fun _ _ _ _ ⟨_, _, hT⟩ _ => hT.elim, ?_⟩
     rintro s' e - - ⟨U, -, he⟩ -
     show (mapEnv none (push e ρ)) 0 = .nul
     simpa [mapEnv, slot, push, nulFam] using he
   | 1, hp =>
-    refine ⟨_, rfl, noFam, nulFam, .empty, .empty, fun _ _ => True, fun _ => True, ?_, ?_⟩
+    refine ⟨_, rfl, fun _ => ?_⟩
+    refine ⟨noFam, nulFam, .empty, .empty, fun _ _ => True, fun _ => True, ?_, ?_⟩
     · obtain ⟨n, W, h, pos, adm, ok⟩ := s
       cases n with
       | zero => exact absurd pos (Nat.lt_irrefl 0)
       | succ j =>
         simp only [instantiate] at hp ⊢
-        exact .inl (.inl ⟨by rw [hp]; rfl, hp, Footprints.Closed.Holds.refl _ _, trivial⟩)
+        exact ⟨by rw [hp]; exact RefsOk_nul, .inl (.inl ⟨by rw [hp]; rfl, hp, Footprints.Closed.Holds.refl _ _, trivial⟩)⟩
     · refine ⟨fun _ _ _ _ _ _ _ _ => trivial, fun s' v _ _ ⟨U, _, hT⟩ _ => ⟨hT, trivial⟩, ?_⟩
       rintro s' e - - ⟨U, -, he⟩ -
       exact he.elim
@@ -90,27 +94,31 @@ theorem escaping_checked (m : Nat) :
     NodesChecked escapingGraph escapingPre nulFam noFam (fun _ => True) (fun _ => True) m := by
   intro l _ _ hp
   match l, hp with
-  | 0, _ => exact ⟨⟨.throw .nul, .ret, none⟩, rfl, nulFam, noFam, .empty, .empty, fun _ _ => True,
+  | 0, _ => exact ⟨⟨.throw .nul, .ret, none⟩, rfl, fun _ => ⟨nulFam, noFam, .empty, .empty, fun _ _ => True,
       fun _ => True, throw_nul_safe, fun _ _ _ _ _ _ _ _ => trivial, fun _ _ _ _ ⟨_, _, hT⟩ _ => hT.elim,
-      fun _ _ _ _ ⟨_, _, he⟩ _ => ⟨he, trivial⟩⟩
+      fun _ _ _ _ ⟨_, _, he⟩ _ => ⟨he, trivial⟩⟩⟩
 
 /-- **The escaping throw: `escapingGraph` is safe from node 0**, its raised
 value `null`. -/
-theorem escaping_safe (m : Nat) {ρ : Env} {s : IndexedHeap} :
+theorem escaping_safe (m : Nat) {ρ : Env} {s : IndexedHeap} (hρ : ∀ i, RefsOk s.W (ρ i)) :
     SafeGraph nulFam escapingGraph noFam s.n s.W s.h (.at 0 ρ) :=
   graph_safe_at (Qres := fun _ => True) (Rres := fun _ => True) (pre := escapingPre) (m := m)
     (escaping_checked m)
     (escapingPre_admin m) (l := 0) trivial
+    (by intro node hm; simp only [escapingGraph, List.mem_cons, List.not_mem_nil, or_false] at hm
+        subst hm; exact RefsOk_of_nil rfl) hρ
 
 /-- A run of `escapingGraph` to its raised state, with budget left, raises
 `null`. -/
-theorem escaping_raised (m : Nat) {ρ : Env} {s : IndexedHeap} {k : Nat} {h' : Heap} {e : Tm}
-    (hrun : Transitions escapingGraph k s.h (.at 0 ρ) h' (.raised e)) (hk : k < s.n) : e = .nul := by
+theorem escaping_raised (m : Nat) {ρ : Env} {s : IndexedHeap} (hρ : ∀ i, RefsOk s.W (ρ i)) {k : Nat}
+    {h' : Heap} {e : Tm} (hrun : Transitions escapingGraph k s.h (.at 0 ρ) h' (.raised e)) (hk : k < s.n) : e = .nul := by
   obtain ⟨s', -, -, -, -, he, -⟩ := invocation_raised (Ξres := nulFam) (Tres := noFam) (Qres := fun _ => True)
     (Rres := fun _ => True)
     (pre := escapingPre) (m := m)
     (escaping_checked m)
-    (escapingPre_admin m) (l := 0) trivial hrun hk
+    (escapingPre_admin m) (l := 0) trivial
+    (by intro node hm; simp only [escapingGraph, List.mem_cons, List.not_mem_nil, or_false] at hm
+        subst hm; exact RefsOk_of_nil rfl) hρ hrun hk
   exact he
 
 /-! ## The loop's increment
@@ -157,10 +165,10 @@ theorem increment_judgment {Ξ T : Fam} {ce : Footprints.Closed} {Qe : Heap → 
     rw [hinst]
     have hstep : Step h (.arith .add (.num x) (.num oneBits)) h (.num (arithBits .add x oneBits)) :=
       .arithV (by simp [binop, Arith.relational])
-    refine .inr ⟨trunc n (Nat.le_succ n) W, h, _, WExt_refl _, WorldAdm_trunc _ adm, hstep,
+    refine ⟨RefsOk_of_nil rfl, .inr ⟨trunc n (Nat.le_succ n) W, h, _, WExt_refl _, WorldAdm_trunc _ adm, hstep,
       HeapOk_trunc n W h ok, SafePostExc.value rfl (hT _ _ _)
         ⟨Footprints.Closed.Holds.refl _ _, a, by rw [hx]; exact ha,
-          SafeIntegers.safeIntOfBits_complete hsum⟩⟩
+          SafeIntegers.safeIntOfBits_complete hsum⟩ (RefsOk_of_nil rfl)⟩⟩
 
 /-- **The increment node checked**: its local judgment and its back edge's
 obligations together, the form `NodesChecked` asks of a node, from the head's

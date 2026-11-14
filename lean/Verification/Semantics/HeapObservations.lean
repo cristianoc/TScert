@@ -24,19 +24,24 @@ the world. Every postcondition of the heap and the result is world-indexed
 through it. -/
 abbrev WPost.lift (Q : Post) : WPost := fun _ _ h v => Q h v
 
-/-- At budget zero there is no observation, just as in `Safe`. At positive
+/-- At every budget the running term's references are valid, as in `Safe`.
+At budget zero there is no observation. At positive
 budget, termination establishes both the value type and a fact about the
 exit: the world reached there, its heap and the value. A throw, as in
 `Safe`, is an outcome with no postcondition: the facts `Q` describe the heap
 a value is produced in, and a thrown value is not one. Divergence remains
 permitted; this is safety with partial correctness. -/
 def SafePostW (Ξ : Fam) (T : Fam) (Q : WPost) : (n : Nat) → WorldT n → Heap → Tm → Prop
-  | 0, _, _, _ => True
-  | n + 1, W, h, t =>
-      ((isVal t = true ∧ T (n + 1) W t ∧ Q (n + 1) W h t) ∨ Thrown Ξ (n + 1) W t) ∨
+  | 0, W, _, t => RefsOk W t
+  | n + 1, W, h, t => RefsOk W t ∧
+      (((isVal t = true ∧ T (n + 1) W t ∧ Q (n + 1) W h t) ∨ Thrown Ξ (n + 1) W t) ∨
       (∃ (U : WorldT n) (h' : Heap) (t' : Tm),
         WExt (trunc n (Nat.le_succ n) W) U ∧ WorldAdm U ∧ Step h t h' t' ∧
-          HeapOk n U h' ∧ SafePostW Ξ T Q n U h' t')
+          HeapOk n U h' ∧ SafePostW Ξ T Q n U h' t'))
+
+theorem SafePostW.refs {T : Fam} {Q : WPost} : ∀ {n W h t}, SafePostW Ξ T Q n W h t → RefsOk W t
+  | 0, _, _, _, h => h
+  | _ + 1, _, _, _, h => h.1
 
 /-- `SafePostW` at a heap-only postcondition, lifted. -/
 abbrev SafePost (Ξ : Fam) (T : Fam) (Q : Post) : (n : Nat) → WorldT n → Heap → Tm → Prop :=
@@ -44,9 +49,11 @@ abbrev SafePost (Ξ : Fam) (T : Fam) (Q : Post) : (n : Nat) → WorldT n → Hea
 
 theorem SafePostW.erase {T} {Q : WPost} : ∀ {n W h t}, SafePostW Ξ T Q n W h t → Safe Ξ T n W h t := by
   intro n; induction n with
-  | zero => intros; trivial
+  | zero => intro _ _ _ hs; exact hs
   | succ n ih =>
     intro W h t hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hv,ht,_⟩ | hr) | ⟨U,h',t',hx,hu,step,hh,hs⟩
     · exact Or.inl (Or.inl ⟨hv,ht⟩)
     · exact Or.inl (Or.inr hr)
@@ -57,9 +64,11 @@ theorem erase {T Q} {n W h t} (hs : SafePost Ξ T Q n W h t) : Safe Ξ T n W h t
 /-- A safe term meets the postcondition that holds of every heap. -/
 theorem of_safe {T} : ∀ {n W h t}, Safe Ξ T n W h t → SafePost Ξ T (fun _ _ => True) n W h t := by
   intro n; induction n with
-  | zero => intros; trivial
+  | zero => intro _ _ _ hs; exact hs
   | succ n ih =>
     intro W h t hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hv,ht⟩ | hr) | ⟨U,h',t',hx,hu,step,hh,hs⟩
     · exact Or.inl (Or.inl ⟨hv,ht,trivial⟩)
     · exact Or.inl (Or.inr hr)
@@ -75,9 +84,11 @@ theorem stable_frame {T Q} {l : Nat} {v : Val} : ∀ {n W h t} {c : Ctr n},
     SafePost Ξ T (fun h' u => Q h' u ∧ h'[l]? = some v) n W h t := by
   intro n
   induction n with
-  | zero => intros; trivial
+  | zero => intro _ _ _ _ _ _ _ hs; exact hs
   | succ n ih =>
     intro W h t c hl hc hh hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hv, ht, hq⟩ | hr) | ⟨U, h', t', hx, hu, step, hh', hs⟩
     · exact .inl (.inl ⟨hv, ht, hq, hh.stable_value (Nat.zero_lt_succ n) hl hc⟩)
     · exact .inl (.inr hr)
@@ -96,11 +107,13 @@ theorem cross_upto {B C D : Fam} {Q R : Post} : ∀ (n : Nat), CrossCompatUpTo n
         SafePost Ξ D (fun heap value => Q heap value ∧ R heap value) n W h t := by
   intro n
   induction n with
-  | zero => intros; trivial
+  | zero => intro _ _ _ _ _ _ _ hs _; exact hs
   | succ p ih =>
     intro hc W W' h t hok hok'
-    rintro ((⟨hv1, hBv, hQ⟩ | hr1) | ⟨Z, h1, t1, hz, huz, hst1, hok1, hcont1⟩)
-      ((⟨hv2, hCv, hR⟩ | hr2) | ⟨Z', h2, t2, -, -, hst2, hok2, hcont2⟩)
+    rintro ⟨hrf, hs1⟩ ⟨-, hs2⟩
+    refine ⟨hrf, ?_⟩
+    rcases hs1 with (⟨hv1, hBv, hQ⟩ | hr1) | ⟨Z, h1, t1, hz, huz, hst1, hok1, hcont1⟩ <;>
+    rcases hs2 with (⟨hv2, hCv, hR⟩ | hr2) | ⟨Z', h2, t2, -, -, hst2, hok2, hcont2⟩
     · exact .inl (.inl ⟨hv1, hc (p + 1) (Nat.le_refl _) W W' h hok hok' t hBv hCv, hQ, hR⟩)
     · rw [hr2.not_val] at hv1; contradiction
     · exact absurd hst2 (value_no_step hv1)
@@ -124,9 +137,11 @@ same operational behavior and does not assume that the initial heap survives. -/
 theorem of_value_property {T Q} (hq : ∀ n W h v, T n W v → Q h v) :
     ∀ {n W h t}, Safe Ξ T n W h t → SafePost Ξ T Q n W h t := by
   intro n; induction n with
-  | zero => intros; trivial
+  | zero => intro _ _ _ hs; exact hs
   | succ n ih =>
     intro W h t hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hv,ht⟩ | hr) | ⟨U,h',t',hx,hu,step,hh,hs⟩
     · exact Or.inl (Or.inl ⟨hv,ht,hq _ _ _ _ ht⟩)
     · exact Or.inl (Or.inr hr)
@@ -142,9 +157,11 @@ theorem SafePostW.consequence_below' {Ξ Ξ' T U : Fam} {Q R : WPost} : ∀ {n},
     ∀ {W h t}, SafePostW Ξ T Q n W h t → SafePostW Ξ' U R n W h t := by
   intro n
   induction n with
-  | zero => intros; trivial
+  | zero => intro _ _ _ _ _ _ hs; exact hs
   | succ n ih =>
     intro hexc hsub hpost W h t hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hv, ht, hq⟩ | hth) | ⟨U, h', t', hx, hu, step, hh, hs⟩
     · exact .inl (.inl ⟨hv, hsub _ (Nat.le_refl _) _ _ ht, hpost _ (Nat.le_refl _) _ _ _ hq⟩)
     · exact .inl (.inr (hth.mono (hexc _ (Nat.le_refl _) _)))
@@ -172,17 +189,19 @@ theorem weaken {T Q R} (hr : ∀ h v, Q h v → R h v)
     {n W h t} (hs : SafePost Ξ T Q n W h t) : SafePost Ξ T R n W h t :=
   consequence (fun _ _ _ ht => ht) hr hs
 
-theorem value {T Q n W h v} (hv : isVal v = true) (ht : T n W v) (hq : Q h v) :
+theorem value {T Q n W h v} (hv : isVal v = true) (ht : T n W v) (hq : Q h v) (hr : RefsOk W v) :
     SafePost Ξ T Q n W h v := by
   cases n with
-  | zero => trivial
-  | succ n => exact Or.inl (Or.inl ⟨hv,ht,hq⟩)
+  | zero => exact hr
+  | succ n => exact ⟨hr, Or.inl (Or.inl ⟨hv,ht,hq⟩)⟩
 
 theorem refine_value {T Q n W h v} (hv : isVal v = true) (hq : Q h v)
     (hs : Safe Ξ T n W h v) : SafePost Ξ T Q n W h v := by
   cases n with
-  | zero => trivial
+  | zero => exact hs
   | succ n =>
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨_,ht⟩ | hr) | ⟨_,_,_,_,_,step,_,_⟩
     · exact Or.inl (Or.inl ⟨hv,ht,hq⟩)
     · exact absurd hr (val_not_thrown hv)
@@ -194,8 +213,10 @@ theorem one_step {T Q n W h t h' v} (ht : isVal t = false) (hv : isVal v = true)
     (step : Step h t h' v) (hq : Q h' v) (hs : Safe Ξ T n W h t) :
     SafePost Ξ T Q n W h t := by
   cases n with
-  | zero => trivial
+  | zero => exact hs
   | succ n =>
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hval,_⟩ | hr) | ⟨U,h'',t'',hx,hu,step',hh,hs'⟩
     · simp [ht] at hval
     · exact absurd step hr.no_step
@@ -208,16 +229,20 @@ theorem one_step_throw {T Q n W h t h' v} (ht : isVal t = false) (hv : isVal v =
     (step : Step h t h' (.throw v)) (hs : Safe Ξ T n W h t) :
     SafePost Ξ T Q n W h t := by
   cases n with
-  | zero => trivial
+  | zero => exact hs
   | succ n =>
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
     rcases hs with (⟨hval,_⟩ | hr) | ⟨U,h'',t'',hx,hu,step',hh,hs'⟩
     · simp [ht] at hval
     · exact absurd step hr.no_step
     · obtain ⟨rfl,rfl⟩ := Step_det step step'
       refine Or.inr ⟨U,h',_,hx,hu,step',hh,?_⟩
       cases n with
-      | zero => trivial
+      | zero => exact hs'
       | succ m =>
+        obtain ⟨hrf', hs'⟩ := hs'
+        refine ⟨hrf', ?_⟩
         rcases hs' with (⟨hval', _⟩ | hr') | ⟨_, _, _, _, _, step'', _, _⟩
         · simp [isVal] at hval'
         · exact .inl (.inr hr')

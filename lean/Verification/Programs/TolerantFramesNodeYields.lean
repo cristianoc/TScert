@@ -35,19 +35,20 @@ theorem SafePostExc.conj_post {Ξ T T' : Fam} {Q Q' : Post} {R : Heap → Prop} 
       SafePostExc Ξ T' Q R n W' h t := by
   intro n
   induction n with
-  | zero => intros; trivial
+  | zero => intro _ _ _ _ _ h2; exact h2
   | succ p ih =>
     intro W W' h t h1 h2
-    rcases h1 with ((⟨hv1, -, hQ⟩ | ⟨hr1, hR⟩) | ⟨Z, h1, t1, -, -, hst1, -, hc1⟩)
-    · rcases h2 with ((⟨-, hT', -⟩ | hr2) | ⟨_, _, _, _, _, hst2, _, _⟩)
+    refine ⟨h2.1, ?_⟩
+    rcases h1.2 with ((⟨hv1, -, hQ⟩ | ⟨hr1, hR⟩) | ⟨Z, h1, t1, -, -, hst1, -, hc1⟩)
+    · rcases h2.2 with ((⟨-, hT', -⟩ | hr2) | ⟨_, _, _, _, _, hst2, _, _⟩)
       · exact .inl (.inl ⟨hv1, hT', hQ⟩)
       · rw [hr2.not_val] at hv1; contradiction
       · exact absurd hst2 (value_no_step hv1)
-    · rcases h2 with ((⟨hv2, -, -⟩ | hr2) | ⟨_, _, _, _, _, hst2, _, _⟩)
+    · rcases h2.2 with ((⟨hv2, -, -⟩ | hr2) | ⟨_, _, _, _, _, hst2, _, _⟩)
       · rw [hr1.not_val] at hv2; contradiction
       · exact .inl (.inr ⟨hr2, hR⟩)
       · exact absurd hst2 hr1.no_step
-    · rcases h2 with ((⟨hv2, -, -⟩ | hr2) | ⟨Z', h2, t2, hz, huz, hst2, hok2, hc2⟩)
+    · rcases h2.2 with ((⟨hv2, -, -⟩ | hr2) | ⟨Z', h2, t2, hz, huz, hst2, hok2, hc2⟩)
       · exact absurd hst1 (value_no_step hv2)
       · exact absurd hst1 hr2.no_step
       · obtain ⟨rfl, rfl⟩ := Step_det hst1 hst2
@@ -213,6 +214,7 @@ structure NodeYielded (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat)
   exits : ∀ t pushed observed promote, Exit.normal t pushed observed promote ∈ Exit.ofNode node → ∀ ρ (s : IndexedHeap),
     StateHolds G entry (w.implies l) startNames ε ρ m s →
     EnvOk G c.context ρ s.n s.W → HeapKnowledge.Holds st.stepK ε ρ s.h → m ≤ s.h.length →
+    RefsOk s.W (instantiate 0 ρ node.expression) →
     ExitDelivers (edgePreAJ G w startNames ε ctx stated given edgesIn) G c.type c.context
       (fun ρ' m' s' => StateHolds G ⟨st.result :: entry.names, st.store, entry.fresh⟩ (w.implies l) startNames ε
         ρ' m' s' ∧ PromiseCalls.YieldsOk G ys ρ s'.n s'.W (ρ' 0) ∧ HeapKnowledge.Holds st.stepOut ε ρ' s'.h ∧

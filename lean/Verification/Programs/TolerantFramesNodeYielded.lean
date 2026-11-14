@@ -152,7 +152,8 @@ theorem yieldsJudged_of_promise {G : NormalGraph ι} {images : InstanceImageChec
   simp only [derivChecked, Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true] at hdc
   obtain ⟨⟨hterm, hctx⟩, htree⟩ := hdc
   exact SafePostExc.conj_post hj
-    (PromiseCalls.promiseCall_yields_checked hp htree hctx hterm hty hcodes hsums hy he s.adm s.ok)
+    (PromiseCalls.promiseCall_yields_checked hp htree hctx hterm hty hcodes hsums hy he s.adm s.ok
+      (SafePostExcW.refs hj))
 
 omit [DecidableEq ι] [Hashable ι] in
 /-- No yields are judged. -/

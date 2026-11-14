@@ -101,31 +101,34 @@ theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
     (hgr : c.row.effect.receiverGrows = false) (hew : c.row.effect.elementWrite = none)
     (hsafeG : ∀ η n W h ρ, EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep
       (GraphCode.codeEntryIndices c) ρ n W h →
+      (∀ node ∈ GraphCode.program c.exprs c.conts, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
       SafeGraph (excOf (reassign G η)) (GraphCode.program c.exprs c.conts)
         (GoalHolds (reassign G η) c.goal (c.goal.argument ρ)) n W h (.at c.start ρ))
     (hboundG : ∀ Φ fresh onThrow, codeBound c = some (Φ, fresh, onThrow) → ∀ η n W h L d,
       EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep (GraphCode.codeEntryIndices c)
-        (envOf L d) n W h → (∀ v ∈ L, isVal v = true) → isVal d = true →
+        (envOf L d) n W h → RefsOk W (.goto c.exprs c.conts c.start L d) →
+        (∀ v ∈ L, isVal v = true) → isVal d = true →
       HeapObservations.SafePostExc (excOf (reassign G η))
         (GoalHolds (reassign G η) c.goal (c.goal.argument (envOf L d)))
         (fun h' v => Φ.Holds h h' ∧ (fresh = true → Footprints.FreshAt h.length v))
         (fun h' => onThrow = true → Φ.Holds h h') n W h (.goto c.exprs c.conts c.start L d)) :
     ∀ η n W heap L, EnvOk (reassign G η) (codeFrame c.arity c.row c.captures c.store) (envOf L .nul) n W →
-      WorldAdm W → HeapOk n W heap → CallArguments.Values L → PreAt c.row.effect c.store L heap →
+      WorldAdm W → HeapOk n W heap → RefsOk W (.goto c.exprs c.conts c.start L .nul) → CallArguments.Values L → PreAt c.row.effect c.store L heap →
       HeapSeparation.Holds sep (envOf L .nul) → ∀ r args,
       HeapObservations.SafePostExc (excOf (reassign G η))
         (c.row.effect.result (meaning (reassign G η) c.row.result)
           (framePromised c.row.effect (frameOffset c.store) L))
         (({ c.row.effect with ensures := [] } : CallEffects.Effect).post r args heap)
         (c.row.effect.excPost r args heap) n W heap (.goto c.exprs c.conts c.start L .nul) := by
-  intro η n W heap L he hw hh hvalues hpre hsep r args
+  intro η n W heap L he hw hh href hvalues hpre hsep r args
   have hentry : EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep
       (GraphCode.codeEntryIndices c) (envOf L .nul) n W heap :=
     ⟨he, hsep, GraphCode.codeEntryIndices_holds hpre, hw, hh⟩
-  have hgraph := hsafeG η n W heap (envOf L .nul) hentry
+  have hgraph := hsafeG η n W heap (envOf L .nul) hentry (GraphCode.program_refs (GraphCode.goto_refs href).1)
+    (GraphCode.goto_refs href).2
   have hs : Safe (excOf (reassign G η)) (GoalHolds (reassign G η) c.goal (c.goal.argument (envOf L .nul)))
       n W heap (.goto c.exprs c.conts c.start L .nul) :=
-    GraphCode.safe_of_sim n W heap .goto hgraph
+    GraphCode.safe_of_sim n W heap .goto (GraphCode.goto_refs href).1 hgraph
   have hsafe : Safe (excOf (reassign G η)) (c.row.effect.result (meaning (reassign G η) c.row.result)
       (framePromised c.row.effect (frameOffset c.store) L)) n W heap
       (.goto c.exprs c.conts c.start L .nul) := code_goal (reassign G η) c L ▸ hs
@@ -165,7 +168,7 @@ theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
           cases hfr : c.row.effect.fresh <;> cases hal : c.exprs.all Purity.pureTerm <;> simp_all
         simp only [codeBound, h1, h2]
         rfl
-      have hb := hboundG _ _ _ hbound η n W heap L .nul hentry
+      have hb := hboundG _ _ _ hbound η n W heap L .nul hentry href
         (fun v hv => hvalues v hv) rfl
       rw [code_goal] at hb
       exact HeapObservations.SafePostExc.weaken
@@ -184,11 +187,13 @@ theorem codeSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι}
     (hcond : codeConditions c = true)
     (hsafeG : ∀ η n W h ρ, EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) {}
       (GraphCode.codeEntryIndices c) ρ n W h →
+      (∀ node ∈ GraphCode.program c.exprs c.conts, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
       SafeGraph (excOf (reassign G η)) (GraphCode.program c.exprs c.conts)
         (GoalHolds (reassign G η) c.goal (c.goal.argument ρ)) n W h (.at c.start ρ))
     (hboundG : ∀ Φ fresh onThrow, codeBound c = some (Φ, fresh, onThrow) → ∀ η n W h L d,
       EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) {} (GraphCode.codeEntryIndices c)
-        (envOf L d) n W h → (∀ v ∈ L, isVal v = true) → isVal d = true →
+        (envOf L d) n W h → RefsOk W (.goto c.exprs c.conts c.start L d) →
+        (∀ v ∈ L, isVal v = true) → isVal d = true →
       HeapObservations.SafePostExc (excOf (reassign G η))
         (GoalHolds (reassign G η) c.goal (c.goal.argument (envOf L d)))
         (fun h' v => Φ.Holds h h' ∧ (fresh = true → Footprints.FreshAt h.length v))
@@ -204,8 +209,8 @@ theorem codeSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι}
   have hbelow0 : ({ c.row.effect with ensures := [] } : CallEffects.Effect).below c.arity = true := by
     rw [he0]; exact hbelow
   refine ⟨harity, hbelow, ?_⟩
-  intro n W heap L he hw hh hvalues hpre r args _hframe
-  have := codeRun_of_clauses (sep := {}) hbelow0 hfo hel hgr hew hsafeG hboundG η n W heap L he hw hh hvalues hpre
+  intro n W heap L he hw hh href hvalues hpre r args _hframe
+  have := codeRun_of_clauses (sep := {}) hbelow0 hfo hel hgr hew hsafeG hboundG η n W heap L he hw hh href hvalues hpre
     (HeapSeparation.empty_holds _) r args
   rw [he0] at this
   exact this

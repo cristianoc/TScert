@@ -81,8 +81,10 @@ theorem nodesChecked_of_walkJ {P : ControlFlow.Program} {G : NormalGraph ι} {w 
     (hheads : HeadsEntered G w startNames ε given m) (hnear : LinearNearFuelEq) :
     NodesChecked P (marked (passPreA G w startNames ε ctx stated)) Ξres Tres (fun _ => True) (fun _ => True) m := by
   intro l ρ s ⟨hp, hm⟩
-  obtain ⟨node, hn, Ξ, T, cn, ce, Qn, Qe, hsafe, ho⟩ := hstep l ρ s hp.1 hm
-  exact ⟨node, hn, Ξ, T, cn, ce, Qn, Qe, hsafe,
+  obtain ⟨node, hn, hck⟩ := hstep l ρ s hp.1 hm
+  refine ⟨node, hn, fun hr => ?_⟩
+  obtain ⟨Ξ, T, cn, ce, Qn, Qe, hsafe, ho⟩ := hck hr
+  exact ⟨Ξ, T, cn, ce, Qn, Qe, hsafe,
     nodeObligations_marked hm (nodeObligations_mono (fun _ _ _ h => passPreA_of_edgeAJ hT hheads hnear h) ho)⟩
 
 end Joined
