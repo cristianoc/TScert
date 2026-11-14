@@ -2601,16 +2601,14 @@ def VisitRecord.of (G : NormalGraph ι) (images : InstanceImageCheck G) (codes :
     (deriv : ProgramCertificates.Evidence ι) (outFresh : Bool) : VisitRecord :=
   { label := l, grades := stepGrades G images codes sums (recvFresh node entry) c node stepK deriv, outFresh }
 
-/-- **The footprint check read off a visit's record**, at the bound
-$`(\Phi, \mathit{ret}, \mathit{exc})`$ and the no-return region `deadArr`,
-over the graph's nodes and claims: at a label of the region `deadNode` with
-no throw bound, elsewhere the record's grades within the bound
-(`StepGrades.admits`) at the live handler, the bound's throw and return
-conditions and the record's freshness. -/
-def VisitRecord.admits (G : NormalGraph ι) (nodes : Array Node) (claimed : Array (PointClaim ι))
+/-- **The footprint check read off a visit's record**, at its node `node`
+and claim `c`, the bound $`(\Phi, \mathit{ret}, \mathit{exc})`$ and the
+no-return region `deadArr`: at a label of the region `deadNode` with no throw
+bound, elsewhere the record's grades within the bound (`StepGrades.admits`)
+at the live handler, the bound's throw and return conditions and the
+record's freshness. -/
+def VisitRecord.admitsAt (G : NormalGraph ι) (node : Node) (c : PointClaim ι)
     (B : Footprints.Closed × Bool × Bool) (deadArr : Array Bool) (r : VisitRecord) : Bool :=
-  let node := nodes[r.label]!
-  let c := claimed[r.label]!
   if deadArr.getD r.label false then
     GraphCode.deadNode G deadArr.toList node (deadEvidence c node) && !B.2.2
   else
@@ -2618,6 +2616,12 @@ def VisitRecord.admits (G : NormalGraph ι) (nodes : Array Node) (claimed : Arra
       (match node.handler with
         | some t => !deadArr.getD t.label false
         | none => false) B.2.2 B.2.1 r.outFresh node.continuation
+
+/-- `VisitRecord.admitsAt` at the record's node and claim in the graph's
+nodes and claims. -/
+def VisitRecord.admits (G : NormalGraph ι) (nodes : Array Node) (claimed : Array (PointClaim ι))
+    (B : Footprints.Closed × Bool × Bool) (deadArr : Array Bool) (r : VisitRecord) : Bool :=
+  r.admitsAt G nodes[r.label]! claimed[r.label]! B deadArr
 
 /-- **The footprint checks read off a walk's records** (`VisitRecord.admits`
 of every visit's record): the check that the bound `B` with its no-return
@@ -2633,14 +2637,13 @@ check `boundOk` makes at a visit of `l` under the bound `B` is
 same read summaries, at the freshness `outFreshOf` computes over them;
 `footprintCheck_eq_admits`). -/
 theorem boundOk_eq_admits (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
-    (B : Footprints.Closed × Bool × Bool) (deadArr : Array Bool) (nodes : Array Node) (claimed : Array (PointClaim ι))
-    (l : Nat) (entry : State) (sums : List (ReadSummary ι)) (stepK : Knowledge)
-    (deriv : ProgramCertificates.Evidence ι) :
-    boundOk G images codes (some B) deadArr l nodes[l]! claimed[l]! entry sums stepK deriv =
-      (VisitRecord.of G images codes l nodes[l]! claimed[l]! entry sums stepK deriv
-        (outFreshOf G images codes sums claimed[l]! nodes[l]! entry stepK deriv)).admits G nodes claimed B deadArr := by
+    (B : Footprints.Closed × Bool × Bool) (deadArr : Array Bool) (l : Nat) (node : Node) (c : PointClaim ι)
+    (entry : State) (sums : List (ReadSummary ι)) (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι) :
+    boundOk G images codes (some B) deadArr l node c entry sums stepK deriv =
+      (VisitRecord.of G images codes l node c entry sums stepK deriv
+        (outFreshOf G images codes sums c node entry stepK deriv)).admitsAt G node c B deadArr := by
   obtain ⟨Φ, ret, exc⟩ := B
-  simp only [boundOk, VisitRecord.admits, VisitRecord.of, footprintCheck_eq_admits]
+  simp only [boundOk, VisitRecord.admitsAt, VisitRecord.of, footprintCheck_eq_admits]
   rfl
 
 /-- A step's yields checked (`checkedYields`) at the node's claim, the
@@ -2727,14 +2730,38 @@ def returnOk (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv
   | some (refusal, _, _) => refusal.isNone
   | none => true
 
-/-- **The record a visit makes of its step** under `grading`
-(`VisitRecord.of` at the read summaries `sums` the step left, its
-freshness `outFresh` as the visit computed it); none otherwise. -/
-def gradedRecord (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l : Nat)
+/-- **A visit's footprint check and its record**, at label `l` from the
+entry `entry`, over the read summaries `sums` the step left, its facts
+`stepK`, its derivation `deriv` and its freshness `outFresh`. Under
+`grading` the step's grades are computed once (`VisitRecord.of`) and that
+one record both decides the check at the walk's bound
+(`VisitRecord.admitsAt`; none passes) and is recorded; otherwise the check
+is `boundOk` and nothing is recorded (`stepCheck_fst`: the check is
+`boundOk` either way). -/
+def stepCheck (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l : Nat)
     (entry : State) (sums : List (ReadSummary ι)) (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι)
-    (outFresh : Bool) : Option VisitRecord :=
-  if env.grading then some (VisitRecord.of G images env.codes l env.nodes[l]! env.claimed[l]! entry sums stepK deriv outFresh)
-  else none
+    (outFresh : Bool) : Bool × Option VisitRecord :=
+  if env.grading then
+    let r := VisitRecord.of G images env.codes l env.nodes[l]! env.claimed[l]! entry sums stepK deriv outFresh
+    (match env.bound with
+      | none => true
+      | some B => r.admitsAt G env.nodes[l]! env.claimed[l]! B env.deadArr, some r)
+  else (boundOk G images env.codes env.bound env.deadArr l env.nodes[l]! env.claimed[l]! entry sums stepK deriv, none)
+
+omit [Instantiates ι] in
+/-- **The check a visit makes is `boundOk`, grading or not** (proved, by
+`boundOk_eq_admits`), where the freshness given is the step's. -/
+theorem stepCheck_fst (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) (l : Nat)
+    (entry : State) (sums : List (ReadSummary ι)) (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι) :
+    (stepCheck G images env l entry sums stepK deriv
+        (outFreshOf G images env.codes sums env.claimed[l]! env.nodes[l]! entry stepK deriv)).1 =
+      boundOk G images env.codes env.bound env.deadArr l env.nodes[l]! env.claimed[l]! entry sums stepK deriv := by
+  unfold stepCheck
+  split
+  · cases hb : env.bound with
+    | none => rfl
+    | some B => simp only [boundOk_eq_admits]
+  · rfl
 
 /-- What a node's step gives its exits and its record: the answers it
 started from (`stepAnswers`), those after `checkedStep` (`steppedAnswers`,
@@ -2743,7 +2770,7 @@ which the footprint check reads), those the return check started from
 fresh counter and timer kind after it; the slots it read, its result,
 whether its result holds a fresh store, whether its footprint and return
 checks passed, its yields where computed, the handler's thrown value's type
-and name, and under `grading` the visit's record (`gradedRecord`). -/
+and name, and under `grading` the visit's record (`stepCheck`). -/
 structure StepDone (ι : Type) [BEq ι] [Hashable ι] (G : NormalGraph ι) where
   stepAnswers : Answered G
   steppedAnswers : Answered G
@@ -2794,8 +2821,9 @@ def visitStep (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEn
       let deriv := derivOf c node st
       let sums := a.summaries.toList
       let outFresh := outFreshOf G images env.codes sums c node entry st.stepK deriv
-      let bounded := boundOk G images env.codes env.bound env.deadArr l node c entry sums st.stepK deriv
-      let record := gradedRecord G images env l entry sums st.stepK deriv outFresh
+      let checked := stepCheck G images env l entry sums st.stepK deriv outFresh
+      let bounded := checked.1
+      let record := checked.2
       if !bounded then .error (WalkStop.mk (.outsideBound l) counts a trace)
       else
         let (yields, a1) := stepYields G images env l entry en.implies st a

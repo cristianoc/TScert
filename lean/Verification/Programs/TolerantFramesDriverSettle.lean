@@ -45,6 +45,8 @@ theorem visitStep_checks {env : SinglePass.WalkEnv ι G I} {σ : SinglePass.Walk
   all_goals refine ⟨?_, ?_, ?_⟩
   all_goals first
     | (apply visitCheck_true; assumption)
+    | (simp (config := { zetaDelta := true }) only [SinglePass.stepCheck_fst] at *
+       apply visitCheck_true; assumption)
     | (unfold SinglePass.returnOk; simp_all (config := { zetaDelta := true }) only; try rfl)
     | assumption
 

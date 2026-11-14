@@ -46,6 +46,34 @@ omit [Hashable ι] [Instantiates ι] in
 theorem boundOk_none (G : NormalGraph ι) (images : InstanceImageCheck G) codes d l node c entry sums stepK deriv :
     boundOk G images codes none d l node c entry sums stepK deriv = true := rfl
 
+omit [Instantiates ι] in
+/-- **A visit's check and record under a bound its step admits** (proved):
+where the walk has no bound and the step's check at `b` and `d` passes, the
+check and record at `b` are those with no bound. -/
+theorem stepCheck_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images)
+    (b : Option (Footprints.Closed × Bool × Bool)) (d : Array Bool) (l : Nat) (entry : State)
+    (sums : List (ReadSummary ι)) (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι)
+    (hnone : env.bound = none)
+    (hok : boundOk G images env.codes b d l env.nodes[l]! env.claimed[l]! entry sums stepK deriv = true) :
+    stepCheck G images (env.rebound b d) l entry sums stepK deriv
+        (outFreshOf G images env.codes sums env.claimed[l]! env.nodes[l]! entry stepK deriv) =
+      stepCheck G images env l entry sums stepK deriv
+        (outFreshOf G images env.codes sums env.claimed[l]! env.nodes[l]! entry stepK deriv) := by
+  have h1 := stepCheck_fst G images (env.rebound b d) l entry sums stepK deriv
+  have h2 := stepCheck_fst G images env l entry sums stepK deriv
+  simp only [WalkEnv.rebound] at h1
+  rw [hok] at h1
+  rw [hnone] at h2
+  apply Prod.ext
+  · simp only [WalkEnv.rebound] at h1 ⊢
+    rw [h1, h2]; rfl
+  · unfold stepCheck
+    simp only [WalkEnv.rebound]
+    by_cases hg : env.grading = true
+    · simp only [hg, if_true]
+    · simp only [Bool.not_eq_true] at hg
+      simp only [hg, Bool.false_eq_true, if_false]
+
 /-- **A step's visit does not see a bound its step admits** (proved): where
 the walk with no bound's step at `l` passes the footprint check at the
 bound `b` and its no-return region `d`, the visit under `b` is the visit with
@@ -64,11 +92,10 @@ theorem visitStep_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) (
   | ok x =>
     obtain ⟨ms, st, stats, a⟩ := x
     have h1 := hok ms st stats a hs
-    have h2 : boundOk G images env.codes env.bound env.deadArr l env.nodes[l]! env.claimed[l]! en.entry
-        a.summaries.toList st.stepK (derivOf env.claimed[l]! env.nodes[l]! st) = true := by
-      rw [hnone]; rfl
-    simp only [WalkEnv.rebound] at h1 ⊢
-    simp only [h1, hnone, boundOk_none]
+    have h3 := stepCheck_rebound G images env b d l en.entry a.summaries.toList st.stepK
+      (derivOf env.claimed[l]! env.nodes[l]! st) hnone h1
+    simp only [WalkEnv.rebound] at h3 ⊢
+    simp only [h3]
     rfl
 
 omit [Instantiates ι] in
@@ -146,7 +173,7 @@ theorem drive_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) (env 
 /-! ### The visits' records
 
 Under `grading` each visit records its step's local effect over the read
-summaries that visit's step left (`gradedRecord`), and the walk keeps every
+summaries that visit's step left (`stepCheck`), and the walk keeps every
 record it was given (`Walk.visits`, appended to). So the footprint checks
 read off the records of a walk that returned (`recordsAdmit`) are the checks
 its visits would have made at the bound (`boundOk_eq_admits`): they give
@@ -154,17 +181,17 @@ its visits would have made at the bound (`boundOk_eq_admits`): they give
 
 /-- **A returned step and its record** (proved): the step was checked by
 `stepRun` from the visit's entry, leaving the answers the footprint check
-reads (`steppedAnswers`), and the visit's record is `gradedRecord` over
+reads (`steppedAnswers`), and the visit's record is `stepCheck`'s over
 their read summaries, at the freshness `outFreshOf` computes over them. -/
 theorem visitStep_record (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images)
     (σ : WalkState ι G) (l : Nat) (en : Entered ι) (sd : StepDone ι G)
     (h : visitStep G images env σ l en = .ok sd) :
     (∃ ms stats, stepRun G images env l en.entry en.fresh σ.answers en.counts en.trace =
         .ok (ms, sd.st, stats, sd.steppedAnswers)) ∧
-      sd.record = gradedRecord G images env l en.entry sd.steppedAnswers.summaries.toList sd.st.stepK
+      sd.record = (stepCheck G images env l en.entry sd.steppedAnswers.summaries.toList sd.st.stepK
         (derivOf env.claimed[l]! env.nodes[l]! sd.st)
         (outFreshOf G images env.codes sd.steppedAnswers.summaries.toList env.claimed[l]! env.nodes[l]! en.entry
-          sd.st.stepK (derivOf env.claimed[l]! env.nodes[l]! sd.st)) := by
+          sd.st.stepK (derivOf env.claimed[l]! env.nodes[l]! sd.st))).2 := by
   unfold visitStep at h
   split at h
   · cases h
@@ -268,7 +295,7 @@ theorem driveAdmits_of_records (G : NormalGraph ι) (images : InstanceImageCheck
               (outFreshOf G images env.codes sd.steppedAnswers.summaries.toList env.claimed[l]! env.nodes[l]!
                 en.entry sd.st.stepK (derivOf env.claimed[l]! env.nodes[l]! sd.st)) ∈ σf.walk.visits := by
             rw [hm, hp, hrec]
-            simp only [gradedRecord, hg, if_true, pushRecord]
+            simp only [stepCheck, hg, if_true, pushRecord, VisitRecord.of]
             exact Array.mem_append_left _ (Array.mem_push_self)
           unfold recordsAdmit at hall
           rw [boundOk_eq_admits]
@@ -438,5 +465,277 @@ theorem run_rebound_of_records (G : NormalGraph ι) (images : InstanceImageCheck
     obtain ⟨rfl, -⟩ := hw
     rw [← hn, ← hc] at hrec ⊢
     exact driveAdmits_of_records G images env B _ hg _ σ0 σ hd hrec
+
+/-! ### Grading erased
+
+A walk that grades and the same walk that does not make the same checks
+and the same visits: they differ in the records alone. -/
+
+/-- The environment with no grading. -/
+def WalkEnv.ungraded {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkEnv ι G images) :
+    WalkEnv ι G images :=
+  { env with grading := false }
+
+/-- The walk's state with no records. -/
+def WalkState.unrecorded {G : NormalGraph ι} (σ : WalkState ι G) : WalkState ι G :=
+  { σ with walk := { σ.walk with visits := #[] } }
+
+/-- A step's result with no record. -/
+def StepDone.unrecorded {G : NormalGraph ι} (sd : StepDone ι G) : StepDone ι G :=
+  { sd with record := none }
+
+omit [Instantiates ι] in
+theorem visitEntry_ungraded (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) σ l :
+    visitEntry G images env.ungraded σ.unrecorded l = visitEntry G images env σ l := by
+  unfold visitEntry
+  simp only [WalkEnv.ungraded, WalkState.unrecorded]
+  rfl
+
+theorem visitExits_ungraded (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) σ l en sd :
+    visitExits G images env.ungraded σ.unrecorded l en sd.unrecorded = visitExits G images env σ l en sd := by
+  unfold visitExits
+  simp only [WalkEnv.ungraded, WalkState.unrecorded, StepDone.unrecorded]
+  rfl
+
+theorem stepRun_ungraded (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) :
+    stepRun G images env.ungraded = stepRun G images env := by
+  rfl
+
+theorem stepYields_ungraded (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) :
+    stepYields G images env.ungraded = stepYields G images env := by
+  rfl
+
+theorem returnRun_ungraded (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) :
+    returnRun G images env.ungraded = returnRun G images env := by
+  funext l entry st yields answers
+  unfold returnRun
+  simp only [WalkEnv.ungraded]
+
+omit [Instantiates ι] in
+theorem thrownTyOf_ungraded {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkEnv ι G images) :
+    thrownTyOf env.ungraded = thrownTyOf env := by
+  rfl
+
+/-- **A step graded makes the step ungraded's check** (proved): the graded
+step's result is the ungraded one's with its record, by `stepCheck_fst`. -/
+theorem visitStep_ungraded (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images)
+    (σ : WalkState ι G) (l : Nat) (en : Entered ι) :
+    (visitStep G images env σ l en).map StepDone.unrecorded = visitStep G images env.ungraded σ.unrecorded l en := by
+  have hc : ∀ entry sums stepK deriv,
+      stepCheck G images env.ungraded l entry sums stepK deriv
+          (outFreshOf G images env.ungraded.codes sums env.ungraded.claimed[l]! env.ungraded.nodes[l]! entry stepK
+            deriv) =
+        ((stepCheck G images env l entry sums stepK deriv
+          (outFreshOf G images env.codes sums env.claimed[l]! env.nodes[l]! entry stepK deriv)).1, none) := by
+    intro entry sums stepK deriv
+    rw [stepCheck_fst]
+    unfold stepCheck
+    simp only [WalkEnv.ungraded, Bool.false_eq_true, if_false] <;> rfl
+  unfold visitStep
+  simp only [stepRun_ungraded, stepYields_ungraded, returnRun_ungraded, thrownTyOf_ungraded,
+    WalkState.unrecorded]
+  cases hs : stepRun G images env l en.entry en.fresh σ.answers en.counts en.trace with
+  | error stop => rfl
+  | ok x =>
+    obtain ⟨ms, st, stats, a⟩ := x
+    simp only [hc]
+    simp only [WalkEnv.ungraded, apply_ite (Except.map StepDone.unrecorded)]
+    repeat' (first | rfl |
+      (split <;> rename_i hsplit <;> first | rw [if_pos hsplit] | rw [if_neg hsplit] | simp only [hsplit] | skip))
+
+
+/-- **A visit graded makes the visit ungraded** (proved): from a state with
+no records, the ungraded visit returns the graded one's state without its
+records, or stops where it stops. -/
+theorem visit_ungraded (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images)
+    (σ : WalkState ι G) (l : Nat) :
+    (visit G images env σ l).map WalkState.unrecorded = visit G images env.ungraded σ.unrecorded l := by
+  have hs := visitStep_ungraded G images env σ l
+  unfold visit visitBody
+  rw [visitEntry_ungraded]
+  cases he : visitEntry G images env σ l with
+  | error stop => rfl
+  | ok en =>
+    simp only
+    have hs := hs en
+    cases hsd : visitStep G images env σ l en with
+    | error stop =>
+      rw [hsd] at hs
+      rw [← hs]
+      rfl
+    | ok sd =>
+      rw [hsd] at hs
+      rw [← hs]
+      simp only [Except.map]
+      rw [visitExits_ungraded]
+      cases hx : visitExits G images env σ l en sd with
+      | error stop => rfl
+      | ok ex => rfl
+
+/-- **The walk graded makes the walk ungraded** (proved): `drive` from a
+state, graded, returns the state the ungraded `drive` returns from it with no
+records, without its records, or stops where it stops (by induction over
+`drive`, each visit by `visit_ungraded`). -/
+theorem drive_ungraded (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) :
+    ∀ fuel (σ : WalkState ι G),
+      (drive (visit G images env) fuel σ).map WalkState.unrecorded =
+        drive (visit G images env.ungraded) fuel σ.unrecorded := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    intro σ
+    unfold drive
+    simp only [WalkState.unrecorded]
+    split <;> rfl
+  | succ fuel ih =>
+    intro σ
+    unfold drive
+    simp only [show (WalkState.unrecorded σ).queue = σ.queue from rfl]
+    split
+    · rfl
+    · rename_i l rest _
+      have hv := visit_ungraded G images env { σ with queue := rest } l
+      rw [show { WalkState.unrecorded σ with queue := rest } = WalkState.unrecorded { σ with queue := rest } from rfl,
+        ← hv]
+      cases visit G images env { σ with queue := rest } l with
+      | error stop => rfl
+      | ok σ' => exact ih σ'
+
+
+omit [Instantiates ι] in
+/-- The setup graded is the setup ungraded, its environment grading
+(proved). -/
+theorem setup_graded (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
+    (P : Program) (claims : List (PointClaim ι)) (start : Nat) (inputs : List (Ty ι)) (goal : Goal ι)
+    (assertions : List (Nat × Knowledge)) (cuts : List Nat)
+    (candidates : List (Nat × List HeapKnowledge.IndexAtom)) (entryIndices : List HeapKnowledge.IndexAtom)
+    (suggestions : List (Sequent ι)) (known : List (ProgramCertificates.Evidence ι)) (codes : CodeEntry ι → Bool)
+    (aliases : List (ι × ι)) (passChecker : PassChecker G images)
+    (answers : Answered G) (reference : Array Knowledge) (debugNode : Nat)
+    (bound : Option (Footprints.Closed × Bool × Bool))
+    (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
+    (ensures : List HeapKnowledge.IndexFact) (givenInputs : Array (List (Nat × Nat)))
+    (entrySeparation : HeapSeparation.Separation) (observe : Option Nat) (tracing observeEntry : Bool)
+    (regional : Option Regional) :
+    setup G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
+        codes aliases passChecker answers reference debugNode bound givenImplies givenArgs ensures givenInputs
+        entrySeparation observe tracing observeEntry regional true =
+      (setup G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
+        codes aliases passChecker answers reference debugNode bound givenImplies givenArgs ensures givenInputs
+        entrySeparation observe tracing observeEntry regional false).map fun (env, σ) => ({ env with grading := true }, σ) := by
+  unfold setup
+  dsimp only
+  by_cases h1 : (claims.toArray.size != (List.toArray P).size) = true
+  · rw [if_pos h1, if_pos h1]; rfl
+  rw [if_neg h1, if_neg h1]
+  by_cases h2 : (!P.all fun node => ObjectCoherence.sourceTerm node.expression) = true
+  · rw [if_pos h2, if_pos h2]; rfl
+  rw [if_neg h2, if_neg h2]
+  repeat' (first | rfl | split)
+
+omit [Instantiates ι] in
+/-- The state the first visit starts from holds no records (proved). -/
+theorem setup_unrecorded (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
+    (P : Program) (claims : List (PointClaim ι)) (start : Nat) (inputs : List (Ty ι)) (goal : Goal ι)
+    (assertions : List (Nat × Knowledge)) (cuts : List Nat)
+    (candidates : List (Nat × List HeapKnowledge.IndexAtom)) (entryIndices : List HeapKnowledge.IndexAtom)
+    (suggestions : List (Sequent ι)) (known : List (ProgramCertificates.Evidence ι)) (codes : CodeEntry ι → Bool)
+    (aliases : List (ι × ι)) (passChecker : PassChecker G images)
+    (answers : Answered G) (reference : Array Knowledge) (debugNode : Nat)
+    (bound : Option (Footprints.Closed × Bool × Bool))
+    (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
+    (ensures : List HeapKnowledge.IndexFact) (givenInputs : Array (List (Nat × Nat)))
+    (entrySeparation : HeapSeparation.Separation) (observe : Option Nat) (tracing observeEntry : Bool)
+    (regional : Option Regional) (grading : Bool)
+    (env : WalkEnv ι G images) (σ0 : WalkState ι G)
+    (h : setup G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
+        codes aliases passChecker answers reference debugNode bound givenImplies givenArgs ensures givenInputs
+        entrySeparation observe tracing observeEntry regional grading = .ok (env, σ0)) : σ0.unrecorded = σ0 := by
+  unfold setup at h
+  dsimp only at h
+  repeat' (first | (cases h; rfl) | (cases h; done) | split at h)
+
+/-- **The walk graded is the walk ungraded with records** (proved): the
+graded walk returns the ungraded walk's state with its records, or stops
+where it stops (`setup_graded`, `drive_ungraded`). -/
+theorem runWalk_ungraded (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
+    (P : Program) (claims : List (PointClaim ι)) (start : Nat) (inputs : List (Ty ι)) (goal : Goal ι)
+    (assertions : List (Nat × Knowledge)) (cuts : List Nat)
+    (candidates : List (Nat × List HeapKnowledge.IndexAtom)) (entryIndices : List HeapKnowledge.IndexAtom)
+    (suggestions : List (Sequent ι)) (known : List (ProgramCertificates.Evidence ι)) (codes : CodeEntry ι → Bool)
+    (aliases : List (ι × ι)) (passChecker : PassChecker G images)
+    (answers : Answered G) (reference : Array Knowledge) (debugNode : Nat)
+    (bound : Option (Footprints.Closed × Bool × Bool))
+    (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
+    (ensures : List HeapKnowledge.IndexFact) (givenInputs : Array (List (Nat × Nat)))
+    (entrySeparation : HeapSeparation.Separation) (observe : Option Nat) (tracing observeEntry : Bool)
+    (regional : Option Regional) :
+    (runWalk G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
+        codes aliases passChecker answers reference debugNode bound givenImplies givenArgs ensures givenInputs
+        entrySeparation observe tracing observeEntry regional true).map (fun (σ, reach) => (σ.unrecorded, reach)) =
+      runWalk G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
+        codes aliases passChecker answers reference debugNode bound givenImplies givenArgs ensures givenInputs
+        entrySeparation observe tracing observeEntry regional false := by
+  unfold runWalk
+  rw [setup_graded]
+  cases hs : setup G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
+        codes aliases passChecker answers reference debugNode bound givenImplies givenArgs ensures givenInputs
+        entrySeparation observe tracing observeEntry regional false with
+  | error stop => rfl
+  | ok x =>
+    obtain ⟨env, σ0⟩ := x
+    have hg := (setup_env _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ env σ0 hs).2.1
+    have h0 := setup_unrecorded _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ env σ0 hs
+    have he : ({ env with grading := true } : WalkEnv ι G images).ungraded = env := by
+      cases env; simp_all [WalkEnv.ungraded]
+    have hd := drive_ungraded G images { env with grading := true } (env.n + 1) σ0
+    rw [he, h0] at hd
+    simp only [Except.map, bind, Except.bind]
+    rw [← hd]
+    cases drive (visit G images { env with grading := true }) (env.n + 1) σ0 with
+    | error stop => rfl
+    | ok σ => rfl
+
+/-- **The pass graded decides as the pass ungraded** (proved): the run with
+`grading` has the run's verdict, answers and trace without it, and the same
+counts but for the records (`runWalk_ungraded`). -/
+theorem run_ungraded (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι)) (fuel : Nat)
+    (P : Program) (claims : List (PointClaim ι)) (start : Nat) (inputs : List (Ty ι)) (goal : Goal ι)
+    (assertions : List (Nat × Knowledge)) (cuts : List Nat)
+    (candidates : List (Nat × List HeapKnowledge.IndexAtom)) (entryIndices : List HeapKnowledge.IndexAtom)
+    (suggestions : List (Sequent ι)) (known : List (ProgramCertificates.Evidence ι)) (codes : CodeEntry ι → Bool)
+    (aliases : List (ι × ι)) (passChecker : PassChecker G images)
+    (answers : Answered G) (reference : Array Knowledge) (debugNode : Nat)
+    (bound : Option (Footprints.Closed × Bool × Bool))
+    (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
+    (ensures : List HeapKnowledge.IndexFact) (givenInputs : Array (List (Nat × Nat)))
+    (entrySeparation : HeapSeparation.Separation) (observe : Option Nat) (tracing observeEntry : Bool)
+    (regional : Option Regional) :
+    (run G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
+        codes aliases passChecker answers reference debugNode bound givenImplies givenArgs ensures givenInputs
+        entrySeparation observe tracing observeEntry regional true).1 = (run G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
+        codes aliases passChecker answers reference debugNode bound givenImplies givenArgs ensures givenInputs
+        entrySeparation observe tracing observeEntry regional false).1 ∧
+    { (run G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
+        codes aliases passChecker answers reference debugNode bound givenImplies givenArgs ensures givenInputs
+        entrySeparation observe tracing observeEntry regional true).2.1 with grades := #[] } =
+      { (run G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
+        codes aliases passChecker answers reference debugNode bound givenImplies givenArgs ensures givenInputs
+        entrySeparation observe tracing observeEntry regional false).2.1 with grades := #[] } ∧
+    (run G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
+        codes aliases passChecker answers reference debugNode bound givenImplies givenArgs ensures givenInputs
+        entrySeparation observe tracing observeEntry regional true).2.2 = (run G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
+        codes aliases passChecker answers reference debugNode bound givenImplies givenArgs ensures givenInputs
+        entrySeparation observe tracing observeEntry regional false).2.2 := by
+  have hw := runWalk_ungraded G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices
+    suggestions known codes aliases passChecker answers reference debugNode bound givenImplies givenArgs ensures
+    givenInputs entrySeparation observe tracing observeEntry regional
+  unfold run
+  rw [← hw]
+  cases runWalk G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
+        codes aliases passChecker answers reference debugNode bound givenImplies givenArgs ensures givenInputs
+        entrySeparation observe tracing observeEntry regional true with
+  | error stop => exact ⟨rfl, rfl, rfl⟩
+  | ok x => exact ⟨rfl, rfl, rfl⟩
 
 end Verification.SinglePass
