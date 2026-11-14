@@ -574,7 +574,7 @@ environment's values, `EnvOk`
 - `receiverStore`, `receiverOwn`, argument store regions (`regions`):
   **fail** alone, each allowing arbitrary contents at the locations it
   names (`confined_not_respects`, the inclusion read from
-  `Effect.withinClosed` and `Effect.frame`, unformalized); repaired by the
+  `Effect.frame`, unformalized); repaired by the
   host assumption;
 - `fresh`, `freshObject`: **fail** alone (`allocation_not_respects`);
   repaired by the host assumption;

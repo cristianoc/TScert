@@ -247,8 +247,8 @@ run_cmd do
   check ``Verification.Footprints.Sep.sound
   check ``Verification.Footprints.Post.mono
   check ``Verification.Footprints.keep_across_call
-  check ``Verification.CallEffects.Effect.within_iff_closed
-  check ``Verification.CallEffects.Effect.within_closed
+  check ``Verification.CallEffects.Effect.within_outside
+  check ``Verification.CallEffects.Effect.within_coarse
   check ``Verification.CallEffects.Effect.within_iff_regions
   check ``Verification.CallEffects.Effect.within_prefix
   check ``Verification.CallEffects.Effect.frameCovers_sound

@@ -254,6 +254,29 @@ theorem Change.min_holds {a b : Change} {n v v'} :
 together. -/
 def Closed.meet (a b : Closed) : Closed := ⟨a.value.min b.value, a.store.min b.store⟩
 
+theorem Closed.le_refl (c : Closed) : c.le c = true := by
+  cases c with | mk v s => cases v <;> cases s <;> rfl
+
+private theorem Change.min_le_left (a b : Change) : (a.min b).le a = true := by
+  cases a <;> cases b <;> rfl
+
+private theorem Change.min_le_right (a b : Change) : (a.min b).le b = true := by
+  cases a <;> cases b <;> rfl
+
+private theorem Change.le_onValue {a b : Change} (h : a.le b = true) : a.onValue.le b.onValue = true := by
+  cases a <;> cases b <;> simp_all [Change.le, Change.rank, Change.onValue]
+
+private theorem Change.le_onStore {a b : Change} (h : a.le b = true) : a.onStore.le b.onStore = true := by
+  cases a <;> cases b <;> simp_all [Change.le, Change.rank, Change.onStore]
+
+theorem Closed.meet_le_left (a b : Closed) : (a.meet b).le a = true := by
+  simp only [Closed.le, Closed.meet, Bool.and_eq_true]
+  exact ⟨Change.le_onValue (Change.min_le_left _ _), Change.le_onStore (Change.min_le_left _ _)⟩
+
+theorem Closed.meet_le_right (a b : Closed) : (a.meet b).le b = true := by
+  simp only [Closed.le, Closed.meet, Bool.and_eq_true]
+  exact ⟨Change.le_onValue (Change.min_le_right _ _), Change.le_onStore (Change.min_le_right _ _)⟩
+
 theorem Closed.at_meet (a b : Closed) (v : Val) : (a.meet b).at v = (a.at v).min (b.at v) := by
   unfold Closed.at Closed.meet
   split <;> rfl

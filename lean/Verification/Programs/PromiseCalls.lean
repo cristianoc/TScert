@@ -1335,12 +1335,10 @@ theorem ownCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j : 
         obtain ⟨⟨hle, hown⟩, -⟩ := hsel
         refine consequence (fun _ _ _ hv => hv) (fun h' v hq => ?_)
           (ExpressionEffects.selected_sound p ht hops heff hcodes hsums he hw hh href)
-        have hw' := CallEffects.Effect.within_closed hq.1
-        unfold CallEffects.Effect.withinClosed at hw'
-        simp only [hown, if_true] at hw'
+        have hw' := CallEffects.Effect.within_outside_own hq.1 hown
         rw [hterm] at hw'
         simp only [ExpressionEffects.receiverOf, instantiate] at hw'
-        have hon := hw'.1.mono hle
+        have hon := hw'.mono hle
         refine HeapKnowledge.shift_holds (ownKept_holds hk fun l hl u hu => ?_)
         obtain ⟨u', hu', hc⟩ := hon.2 l u hl hu
         have : u' = u := by

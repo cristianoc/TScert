@@ -4100,7 +4100,7 @@ with $`\rho`$ the call's values by position: the effect's frame, its closed
 bound $`\{v,s\}`$ with each region's store at `any`
 (`CallEffects.Effect.within`, `Effect.within_iff_regions`; proved). A
 conservative check reads the frame's closed approximation `top`, every
-location a selected store may be (`Effect.within_closed`). A root is a parameter without a
+location a selected store may be (`Effect.within_holds`, `Effect.within_top`). A root is a parameter without a
 default and no rest parameter, whose value in the body is the call's;
 refused: a region at another change (`invalid-modifies-region-change`), a
 root with a default (`invalid-modifies-region-root`), a region on any
