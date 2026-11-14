@@ -53,6 +53,15 @@ def regionEnvFree : Region → Bool
 /-- An effect every region of which is read without the name valuation. -/
 def effectEnvFree (Φ : Footprint) : Bool := Φ.all fun e => regionEnvFree e.1
 
+/-- The slots a region reads its roots at. -/
+def regionRoots : Region → List Nat
+  | .field x _ | .own x | .elems x | .path x _ _ | .pathOwn x _ | .pathElems x _ => [x]
+  | .cls _ | .all | .cell _ => []
+  | .inCls r _ => regionRoots r
+
+/-- An effect reading runtime slots below `n` alone. -/
+def effectScoped (n : Nat) (Φ : Footprint) : Bool := Φ.all fun e => (regionRoots e.1).all (· < n)
+
 section Action
 variable {Φ : Footprint} {η η' : Env} {s s' s'' : IndexedHeap}
 

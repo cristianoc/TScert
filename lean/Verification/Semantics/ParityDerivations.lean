@@ -1343,11 +1343,71 @@ theorem Derivation.sound {arena : AssertionArena} (hv : arena.Valid) {Γ : List 
       all_goals first
         | (simp [Linear.Fact.vars, hnx, hnz, hyv]; done)
         | (simp only [Linear.Fact.Holds, Linear.Form.eval, hnx, hnz, hyv, Option.getD_some]; omega)
+/-! ## The validated boundary -/
+
+/-- The runtime slots of the entry and of the exit environment. -/
+structure Scope where
+  before : Nat
+  after : Nat
+  deriving DecidableEq, Repr
+
+def Scope.count (sc : Scope) : Phase → Nat
+  | .before => sc.before
+  | .after => sc.after
+
+/-- A path reading runtime slots below `n`. -/
+def Path.scoped (n : Nat) (p : Path) : Bool := decide (p.root < n)
+
+def Witness.scoped (n : Nat) : Witness → Bool
+  | .path p => p.scoped n
+  | .literal _ => true
+
+def StepVar.scoped (sc : Scope) : StepVar → Bool
+  | .before t => !t.atEntry && decide (t.slot < sc.before)
+  | .after t => !t.atEntry && decide (t.slot < sc.after)
+
+def OperationPost.scoped (n : Nat) : OperationPost → Bool
+  | .arith _ l r y => l.scoped n && r.scoped n && y.scoped n
+  | .stringLength x y => x.scoped n && y.scoped n
+  | .stringRead x i y => x.scoped n && i.scoped n && y.scoped n
+
+/-- **A formula reads runtime slots within its scope**: assertions by the
+identity check (their binders' eigenvariables apart), linear facts by their
+terms' slots, a transition by its effect read at the entry, a transport by
+an image for every entry slot read at the exit. -/
+def Formula.scoped (arena : AssertionArena) (sc : Scope) : Formula → Bool
+  | .at p a => scopedAt arena.nodes (sc.count p) a.index
+  | .transition Φ => effectScoped sc.before Φ
+  | .operation q => q.scoped sc.after
+  | .linear F => F.vars.all (StepVar.scoped sc)
+  | .transport θ => decide (θ.images.size = sc.before) && θ.images.toList.all (Path.scoped sc.after)
+  | .and F G => F.scoped arena sc && G.scoped arena sc
+  | .truth | .falsity => true
+
+/-- **The validated checker** (I4, the checker's boundary): a derivation
+is returned only for a valid arena and premises and goal scoped at the given
+runtime slots. -/
+def checkScoped (arena : AssertionArena) (sc : Scope) (premises : List Formula) (goal : Formula)
+    (raw : RawDerivation) : Except String (Derivation arena premises goal) := do
+  let ⟨_⟩ ← req (arena.check = true) "the arena is not valid"
+  let ⟨_⟩ ← req ((goal :: premises).all (Formula.scoped arena sc) = true) "a formula reads a slot outside its scope"
+  checkDerivation arena premises goal raw
+
 /-- **A checked derivation is semantically valid** (I4, the common
 consequence theorem for `checkDerivation`). -/
 theorem checkDerivation_sound {arena : AssertionArena} (hv : arena.Valid) {Γ : List Formula} {goal : Formula}
     {raw : RawDerivation} {d : Derivation arena Γ goal} (_ : checkDerivation arena Γ goal raw = .ok d) :
     ∀ s, (∀ p ∈ Γ, Holds arena s p) → Holds arena s goal :=
   d.sound hv
+
+/-- **The checker's acceptance is the semantic conclusion**: what
+`checkScoped` returns needs no further premise. -/
+theorem checkScoped_sound {arena : AssertionArena} {sc : Scope} {Γ : List Formula} {goal : Formula}
+    {raw : RawDerivation} {d : Derivation arena Γ goal} (hc : checkScoped arena sc Γ goal raw = .ok d) :
+    ∀ s, (∀ p ∈ Γ, Holds arena s p) → Holds arena s goal := by
+  unfold checkScoped req at hc
+  by_cases hv : arena.check = true
+  · exact d.sound (AssertionArena.check_valid hv)
+  · simp [hv, bind, Except.bind] at hc
 
 end Verification.Parity

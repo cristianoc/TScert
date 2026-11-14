@@ -102,6 +102,21 @@ theorem shift_holds (n : Nat) (η : Env) (v : Val) (h : Heap) : (shift n).Holds 
 theorem shift_renaming (n : Nat) : (shift n).isRenaming = true := by
   simp [isRenaming, shift, Path.var]
 
+/-- The identity on the slots below `n`: the scope of `n` runtime slots. -/
+def ident (n : Nat) : Substitution := ⟨((List.range n).map Path.var).toArray⟩
+
+/-- The identity holds between two valuations agreeing below `n`. -/
+theorem ident_holds {n : Nat} {η η' : Env} (he : ∀ i < n, η' i = η i) (h : Heap) : (ident n).Holds η η' h := by
+  intro i p hi
+  simp only [ident, List.getElem?_toArray, List.getElem?_map, Option.map_eq_some_iff] at hi
+  obtain ⟨j, hj, rfl⟩ := hi
+  obtain ⟨hlt, hj'⟩ := List.getElem?_eq_some_iff.mp hj
+  simp only [List.getElem_range] at hj'
+  subst hj'
+  simp only [List.length_range] at hlt
+  show some (η' i) = some (η i)
+  rw [he i hlt]
+
 /-- **Instantiating a binder with a witness the path reads.** -/
 theorem instantiate_holds {w : Path} {n : Nat} {η : Env} {h : Heap} {v : Val} (hw : w.read η h = some v) :
     (instantiate w n).Holds (push v η) η h := by
@@ -548,6 +563,23 @@ theorem substAssertion_sound {arena arena' : AssertionArena} {θ : Substitution}
       exact h1.trans (satNode_extend hext A.index hA target m s)
     · cases hc
   · cases hc
+
+/-! ## Scopes
+
+An assertion is scoped at `n` runtime slots when it is itself under the
+identity on the slots below `n`: every slot it reads outside its own
+binders is below `n`. The slots a binder of the assertion introduces are its
+eigenvariables, kept by the lifted identity. -/
+
+/-- Node `a` reads no runtime slot at or above `n`. -/
+def scopedAt (nodes : Array AssertionNode) (n : Nat) (a : Nat) : Bool := substCheck nodes (Substitution.ident n) a a
+
+/-- **An assertion reads its runtime slots alone**: two valuations agreeing
+below its scope satisfy it alike. -/
+theorem sat_scoped_congr {arena : AssertionArena} {n : Nat} {a : AssertionRef}
+    (hc : scopedAt arena.nodes n a.index = true) {η η' : Env} (he : ∀ i < n, η' i = η i) {m : Nat}
+    {s : IndexedHeap} : Sat arena η' m s a ↔ Sat arena η m s a :=
+  sat_subst hc (Substitution.ident_holds he s.h)
 
 /-! ## Marks -/
 

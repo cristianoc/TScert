@@ -4,8 +4,8 @@ import Verification.Semantics.ParityDerivations
 are built and replaced by pipeline cases once the pass produces them: each
 encodes a derivation of the note "Tolerant frames"
 (`docs/drafts/tolerant-frames-note/note.tex`) as a `RawDerivation` and checks
-it with `checkDerivation`. A derivation the checker accepts is valid by
-`Derivation.sound`.
+it with `checkScoped`, which checks the arena and the scopes first: what it
+accepts holds by `checkScoped_sound`.
 
 - The arithmetic of `index[c >> 8]`, with `0 ≤ c < 1114112` and
   `index.length = 4352`, and of `table[x & 255]` with `table.length = 256`
@@ -36,6 +36,20 @@ private def proveOr (Fs : List (Linear.Fact StepVar)) (f : Linear.Form StepVar) 
 private def premisesRaw : Nat → RawDerivation
   | 0 => .truth
   | n + 1 => .andIntro .assumption (premisesRaw n)
+
+/-! ## The validated boundary
+
+An arena whose node 0 is `1 ∧ 1` refers forward, so node 0 denotes `false`.
+The unvalidated check builds a derivation of it from two `true`s; the
+validated one refuses the arena. -/
+
+namespace Invalid
+private def bad : AssertionArena := ⟨#[.and ⟨1⟩ ⟨1⟩, .truth]⟩
+private def raw : RawDerivation := .atAndIntro ⟨1⟩ ⟨1⟩ .atTruth .atTruth
+
+#guard isOk (checkDerivation bad [] (.at .after ⟨0⟩) raw)
+#guard !isOk (checkScoped bad ⟨0, 0⟩ [] (.at .after ⟨0⟩) raw)
+end Invalid
 
 /-! ## `index[c >> 8]` -/
 
@@ -75,13 +89,13 @@ private def raw : RawDerivation :=
               (.andIntro .assumption (.andIntro .assumption .truth))))
           .truth)))
 
-#guard isOk (checkDerivation empty Γ goal raw)
+#guard isOk (checkScoped empty ⟨0, 3⟩ Γ goal raw)
 
 -- The checker refuses the bound one past the table.
 private def goalPast : Formula :=
   conj [.linear (.le [(av j, -1)] 0), .linear (.le [(av j, 1), (index, -1)] (-2))]
 
-#guard !isOk (checkDerivation empty Γ goalPast raw)
+#guard !isOk (checkScoped empty ⟨0, 3⟩ Γ goalPast raw)
 
 end Shift
 
@@ -116,12 +130,12 @@ private def raw : RawDerivation :=
             (.andIntro .assumption .truth)))
         .truth))
 
-#guard isOk (checkDerivation empty Γ goal raw)
+#guard isOk (checkScoped empty ⟨0, 3⟩ Γ goal raw)
 
 /-- Without the operand's range the mask rule does not apply. -/
 private def Γnarrow : List Formula := Γ.take 2 ++ Γ.drop 3
 
-#guard !isOk (checkDerivation empty Γnarrow goal raw)
+#guard !isOk (checkScoped empty ⟨0, 3⟩ Γnarrow goal raw)
 
 end Mask
 
@@ -203,10 +217,10 @@ private def afterF : RawDerivation :=
 private def raw : RawDerivation :=
   .cut (.at .after (ref 8)) (.frame Φ (ref 13) (ref 8) θ boxF .assumption .assumption) afterF
 
-#guard isOk (checkDerivation arena Γ goal raw)
+#guard isOk (checkScoped arena ⟨2, 2⟩ Γ goal raw)
 
 -- Without the transition the frame does not apply.
-#guard !isOk (checkDerivation arena (Γ.filter (· != .transition Φ)) goal raw)
+#guard !isOk (checkScoped arena ⟨2, 2⟩ (Γ.filter (· != .transition Φ)) goal raw)
 
 -- `F` read one binder further builds and checks; a field path for slot `0`
 -- under the boxes of `F` is refused.
