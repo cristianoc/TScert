@@ -18,19 +18,32 @@ contract part (`HeapMeets`) once, for any appended entries.
 namespace Verification.Kinds
 
 /-- The references of a call descriptor, as an allocation and the object it
-makes hold them. -/
-def codeRefs : CallCode → List Ref
+makes hold them; `plain` whether the object owns no array-store slot. -/
+def codeRefs (plain : Bool) : CallCode → List Ref
   | .absent => []
   | .bound t r pre => refs t ++ refs r ++ refsArgs pre
   | .graph _ E _ _ caps _ _ => refsArgs E ++ refsArgs caps
-  | .view s f n => [.view s f n]
+  | .view s f n => [.view s f n plain]
 
 theorem refs_objAt (fs : List (PropKey × Nat)) (c : CallCode) (i : Nat) :
-    refs (.objAt fs c i) = objRefs fs i ++ codeRefs c := by
+    refs (.objAt fs c i) = objRefs fs i ++ codeRefs (fs.lookup arrayStoreKey).isNone c := by
   cases c <;> simp [refs, codeRefs]
 
+/-- A field list an allocation names owns an array-store slot exactly when
+the allocation names the key. -/
+theorem slots_lookup_isNone (base : Nat) (ns : List PropKey) :
+    ((slots base ns).lookup arrayStoreKey).isNone = !ns.contains arrayStoreKey := by
+  induction ns generalizing base with
+  | nil => rfl
+  | cons k ns ih =>
+    by_cases hk : arrayStoreKey = k
+    · subst hk; simp [slots]
+    · have hk' : (arrayStoreKey == k) = false := by simpa using hk
+      simp [slots, List.lookup, hk', ih]
+      exact fun _ => hk
+
 theorem refs_makeAt (c : CallCode) (ns : List PropKey) (xs : List Tm) :
-    refs (.makeAt c ns xs) = codeRefs c ++ xs.flatMap refs := by
+    refs (.makeAt c ns xs) = codeRefs (!ns.contains arrayStoreKey) c ++ xs.flatMap refs := by
   cases c <;> simp [refs, codeRefs]
 
 theorem mem_slots {base : Nat} : ∀ {ns : List PropKey} {p : PropKey × Nat}, p ∈ slots base ns →
@@ -118,7 +131,8 @@ theorem makeFields_shaped {k : Nat} {W : WorldT k} {h : Heap} {c : CallCode}
         rw [hlen, roleAt_appendWs', hfst, List.getElem?_append_left (by omega),
           List.getElem?_eq_getElem (by omega)]
         exact hslot i hi
-    · exact RefOk_mono hxt (href r (by rw [refs_makeAt]; exact List.mem_append_left _ hr))
+    · rw [slots_lookup_isNone] at hr
+      exact RefOk_mono hxt (href r (by rw [refs_makeAt]; exact List.mem_append_left _ hr))
 
 theorem not_mem_slots {base : Nat} {ns : List PropKey} {f : PropKey} (h : f ∉ ns) (l : Nat) :
     (f, l) ∉ slots base ns := fun he => by
@@ -258,7 +272,7 @@ theorem viewStore_shaped {k : Nat} {W : WorldT k} {h : Heap} {f : ViewFormat} {c
     (c : Ctr k) (hlen : h.length = (entries W).length) (hsh : Shaped W h)
     (hcells : ∀ l ∈ cs, roleAt W l = some .elem) :
     Shaped (appendWs W [(.store (.view f cs.length), c)]) (h ++ [.viewStore f cs]) ∧
-      RefOk (appendWs W [(.store (.view f cs.length), c)]) (.view h.length f cs.length) := by
+      RefOk (appendWs W [(.store (.view f cs.length), c)]) (.view h.length f cs.length true) := by
   have hxt := WExt_appendWs W [(.store (.view f cs.length), c)]
   refine ⟨Shaped_appendWs hlen hsh (fun i r v hr hv => ?_) rfl, ?_⟩
   · obtain rfl : i = 0 := by have := (List.getElem?_eq_some_iff.mp hr).1; simpa using this
@@ -267,7 +281,7 @@ theorem viewStore_shaped {k : Nat} {W : WorldT k} {h : Heap} {f : ViewFormat} {c
     simp only [refs, List.mem_map] at hr
     obtain ⟨l, hl, rfl⟩ := hr
     exact WExt_roleAt hxt (hcells l hl)
-  · show roleAt _ _ = _
+  · refine ⟨rfl, ?_⟩
     rw [hlen, show (entries W).length = (entries W).length + 0 from rfl, roleAt_appendWs']; rfl
 
 /-- **A typed array's allocation** (the note *Tolerant frames*, (W3)), as a
@@ -280,7 +294,7 @@ theorem typedArray_shaped {k : Nat} {W : WorldT k} {h : Heap} {f : ViewFormat} {
     (hlen : h.length = (entries W).length) (hsh : Shaped W h)
     (hcells : ∀ l ∈ cs, roleAt W l = some .elem)
     (hrs : rs.length = ns.length) (hccs : ccs.length = ns.length) (hns : ns.length = vs.length)
-    (hargs : ∀ v ∈ vs, RefsOk W v)
+    (hplain : arrayStoreKey ∉ ns) (hargs : ∀ v ∈ vs, RefsOk W v)
     (hslot : ∀ i (hi : i < ns.length), SlotRole ns[i] (some (rs[i]'(by omega))))
     (hcat : ∀ i (hi : i < ns.length), Cat (rs[i]'(by omega)) (vs[i]'(by omega))) :
     let W₁ := appendWs W [(.store (.view f cs.length), cstore)]
@@ -296,7 +310,8 @@ theorem typedArray_shaped {k : Nat} {W : WorldT k} {h : Heap} {f : ViewFormat} {
     intro r hr
     rw [refs_makeAt] at hr
     rcases List.mem_append.mp hr with hr | hr
-    · simp only [codeRefs, List.mem_singleton] at hr; subst hr; exact hst
+    · simp only [codeRefs, List.mem_singleton] at hr; subst hr
+      simpa [hplain] using hst
     · obtain ⟨v, hv, hr⟩ := List.mem_flatMap.mp hr
       exact RefOk_mono hxt (hargs v hv r hr)
   have := makeFields_shaped (c := .view h.length f cs.length) rs ccs hlen₁ hsh₁ hrs hccs hns href hslot hcat

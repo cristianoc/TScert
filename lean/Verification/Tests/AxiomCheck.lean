@@ -1484,6 +1484,8 @@ run_cmd do
   check ``Verification.TolerantFrames.Admissible.contentsCategory
   check ``Verification.HeapOk.entries_cells
   check ``Verification.HeapOk.view_cells
+  check ``Verification.HeapKnowledge.RefsOk.view_selects
+  check ``Verification.Kinds.slots_lookup_isNone
   check ``Verification.Kinds.thrownError_shaped
   -- writes preserve kinds
   check ``Verification.write_sound

@@ -387,6 +387,26 @@ theorem lengthOf_store {h : Heap} {v : Val} {n : Int} (hl : lengthOf h v = some 
     · cases hl
   · cases hl
 
+/-- **A well-formed typed array owns no array-store slot** (the note
+*Tolerant frames*, (W3): a typed array's one store is the view store its
+descriptor names). -/
+theorem RefsOk.view_noArrayStore {k : Nat} {W : WorldT k} {fs : List (PropKey × Nat)} {i s n : Nat}
+    {f : ViewFormat} (hr : RefsOk W (.viewAt fs i s f n)) : fs.lookup arrayStoreKey = none := by
+  have := (hr (.view s f n (fs.lookup arrayStoreKey).isNone) (by simp [refs])).1
+  simpa using this
+
+/-- **The descriptor selects a well-formed typed array's store**, whatever
+its other fields: it is the store of elements its element facts read, it
+has no array store, and so no array length; its length is its
+descriptor's (`viewLengthOf`). -/
+theorem RefsOk.view_selects {k : Nat} {W : WorldT k} {fs : List (PropKey × Nat)} {i s n : Nat}
+    {f : ViewFormat} (hr : RefsOk W (.viewAt fs i s f n)) (h : Heap) :
+    elementsOf (.viewAt fs i s f n) = some s ∧ Footprints.storeOf (.viewAt fs i s f n) = none ∧
+      lengthOf h (.viewAt fs i s f n) = none := by
+  have hno := RefsOk.view_noArrayStore hr
+  refine ⟨elementsOf_view hno i s f n, by simpa [Footprints.storeOf, Footprints.fieldsOf] using hno, ?_⟩
+  simp [lengthOf, Footprints.storeOf, Footprints.fieldsOf, hno]
+
 theorem lengthOf_of_store {h : Heap} {v : Val} {s : Nat} {ls : List (Option Nat)} (hs : Footprints.storeOf v = some s)
     (hl : h[s]? = some (.arr ls)) (hm : ls.length ≤ maxArrayLength) : lengthOf h v = some (ls.length : Int) := by
   simp only [lengthOf, hs, hl, hm, ite_true]

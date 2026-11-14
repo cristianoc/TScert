@@ -1099,7 +1099,15 @@ control("forged declarations: a typed array's view", async (): Promise<void> => 
   const shaped = pass(forged(artifacts, "forged-record-view", document(text.replace(cursor, '$1"view":"uint8",'))));
   refused(shaped, marked, "a record of the source given a view",
     /the declarations required by this unit cannot be interpreted: Cursor: a typed array's type states its methods alone/);
-  say("forged declarations: a record of the source given a view, refused at its declaration");
+  // A typed array's declaration given an array-store slot `[]`: a typed
+  // array has one store, its descriptor's, so the declaration is refused.
+  const uint8 = /("name":"Uint8Array","span":\[0,0\]\},"parameters":\[\],"bases":\[\],"expression":\{"k":"object","fields":\[)/;
+  assert.ok(uint8.test(text), "Uint8Array's definition");
+  const slot = '{"name":"[]","optional":false,"readonly":false,"type":{"k":"atom","name":"number","span":[0,0]},"span":[0,0]},';
+  const stored = pass(forged(artifacts, "forged-view-store-slot", document(text.replace(uint8, `$1${slot}`))));
+  refused(stored, marked, "a typed array given an array-store slot",
+    /Uint8Array: a declared member cannot use the model's internal key/);
+  say("forged declarations: a record of the source given a view, and a typed array given `[]`, refused at their declarations");
 });
 
 control("forged declarations: another import closure", async (): Promise<void> => {

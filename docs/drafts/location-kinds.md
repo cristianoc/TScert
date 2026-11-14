@@ -92,8 +92,13 @@ $`\mathrm{RefsOk}(W,t)`$ holds when every location a term refers to has the
 role its position demands: an object's identity is in I; its slot under
 `[]` is in $`S_{\mathrm{array}}`$; under every other key it is in F or C;
 the view store a typed array's descriptor $`\mathsf{view}(s,t,N)`$ names is
-in $`S_{\mathrm{view}(t,N)}`$ (`Ref.view`); and every cell a store lists,
-an array's or a view store's, is in E. No slot holds a view store. `RefsOk`
+in $`S_{\mathrm{view}(t,N)}`$, and the typed array owns no slot under `[]`
+(`Ref.view`): a typed array's one store is the view store its descriptor
+names; and every cell a store lists, an array's or a view store's, is in E.
+No slot holds a view store. So on a well-formed typed array the store of
+elements is the descriptor's, whatever its other fields, it has no array
+store and no array length (`RefsOk.view_selects`); its length is the
+descriptor's (`viewLengthOf`). `RefsOk`
 covers every subterm, the captures, bound targets, receivers and prefixes of
 call descriptors, and a graph's node expressions, and it reads the world
 only.

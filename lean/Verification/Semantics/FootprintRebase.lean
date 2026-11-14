@@ -124,8 +124,9 @@ theorem HeapOk.categories {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W 
     cases u <;> simp_all [Cat, isSourceVal, isArr]
   views l₀ fs i s f n u hv hu := by
     have hr := HeapOk.contents_refs hok hv
-    have hin : Ref.view s f n ∈ refs (.viewAt fs i s f n) := by simp [refs]
-    have hrole : roleAt W s = some (.store (.view f n)) := by simpa [RefOk] using hr _ hin
+    have hin : Ref.view s f n (fs.lookup arrayStoreKey).isNone ∈ refs (.viewAt fs i s f n) := by
+      simp [refs]
+    have hrole : roleAt W s = some (.store (.view f n)) := (hr _ hin).2
     obtain ⟨u', hu', hc, -⟩ := hok.2 s _ hrole
     rw [hu] at hu'; cases hu'
     obtain ⟨cs, rfl, -⟩ := hc

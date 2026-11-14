@@ -319,7 +319,10 @@ inductive Ref where
   | ident (l : Nat)
   | slot (key : PropKey) (l : Nat)
   | elem (l : Nat)
-  | view (l : Nat) (format : ViewFormat) (length : Nat)
+  /-- A typed array's view store, and whether the typed array owns no
+  array-store slot (`arrayStoreKey`): a typed array has one store, the
+  one its descriptor names. -/
+  | view (l : Nat) (format : ViewFormat) (length : Nat) (plain : Bool)
 
 /-- The references of an object's identity and fields. -/
 def objRefs (fs : List (PropKey × Nat)) (i : Nat) : List Ref :=
@@ -347,11 +350,11 @@ def refs : Tm → List Ref
   | .bigint _ => []
   | .sym _ => []
   | .objAt fs .absent i => objRefs fs i
-  | .objAt fs (.view s f n) i => objRefs fs i ++ [.view s f n]
+  | .objAt fs (.view s f n) i => objRefs fs i ++ [.view s f n (fs.lookup arrayStoreKey).isNone]
   | .objAt fs (.bound t r pre) i => objRefs fs i ++ (refs t ++ refs r ++ refsArgs pre)
   | .objAt fs (.graph _ E _ _ caps _ _) i => objRefs fs i ++ (refsArgs E ++ refsArgs caps)
   | .makeAt .absent _ xs => refsArgs xs
-  | .makeAt (.view s f n) _ xs => .view s f n :: refsArgs xs
+  | .makeAt (.view s f n) ns xs => .view s f n (!ns.contains arrayStoreKey) :: refsArgs xs
   | .makeAt (.bound t r pre) _ xs => (refs t ++ refs r ++ refsArgs pre) ++ refsArgs xs
   | .makeAt (.graph _ E _ _ caps _ _) _ xs => (refsArgs E ++ refsArgs caps) ++ refsArgs xs
   | .readAt _ a => refs a
@@ -395,12 +398,13 @@ def SlotRole (key : PropKey) : Option Role → Prop
 /-- A reference's validity (the note *Tolerant frames*, (W3)): an identity
 is an identity location, a slot a location of its key's role, a listed cell
 an element cell, and a typed array's view store a view store of the
-typed array's format and length. -/
+typed array's format and length, of a typed array owning no array-store
+slot. -/
 def RefOk {k : Nat} (W : WorldT k) : Ref → Prop
   | .ident l => roleAt W l = some .identity
   | .slot key l => SlotRole key (roleAt W l)
   | .elem l => roleAt W l = some .elem
-  | .view l f n => roleAt W l = some (.store (.view f n))
+  | .view l f n plain => plain = true ∧ roleAt W l = some (.store (.view f n))
 
 /-- **Reference validity**: every location a term refers to has the role its
 position demands. It reads the world only, never the heap. -/
@@ -479,7 +483,7 @@ theorem RefOk_mono {k} {W W' : WorldT k} (hx : WExt W W') : ∀ {r : Ref}, RefOk
   | .ident _, h => WExt_roleAt hx h
   | .slot _ _, h => SlotRole_mono hx h
   | .elem _, h => WExt_roleAt hx h
-  | .view _ _ _, h => WExt_roleAt hx h
+  | .view _ _ _ _, h => ⟨h.1, WExt_roleAt hx h.2⟩
 
 theorem RefsOk_mono {k} {W W' : WorldT k} (hx : WExt W W') {t : Tm} (h : RefsOk W t) :
     RefsOk W' t := fun r hr => RefOk_mono hx (h r hr)
@@ -493,7 +497,7 @@ theorem RefOk_trunc {k j} (hj : j ≤ k) {W : WorldT k} : ∀ {r : Ref}, RefOk W
   | .ident _, h => by simpa [RefOk] using h
   | .slot _ _, h => by simpa [RefOk] using h
   | .elem _, h => by simpa [RefOk] using h
-  | .view _ _ _, h => by simpa [RefOk] using h
+  | .view _ _ _ _, h => by simpa [RefOk] using h
 
 theorem RefsOk_trunc {k j} (hj : j ≤ k) {W : WorldT k} {t : Tm} (h : RefsOk W t) :
     RefsOk (trunc j hj W) t := fun r hr => RefOk_trunc hj (h r hr)
