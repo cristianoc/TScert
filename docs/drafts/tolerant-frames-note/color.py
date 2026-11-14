@@ -12,7 +12,7 @@ def rep(old, new, count=1):
 
 
 # ---- code highlighting inside \code{...}
-KW = r'const|let|var|for|while|if|else|return|function|type|readonly|null|undefined|true|false|new|typeof'
+KW = r'const|let|var|for|while|if|else|return|function|type|readonly|null|undefined|true|false|new|typeof|loop|try|catch|throw|break'
 
 
 def hl(arg):

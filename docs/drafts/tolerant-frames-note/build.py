@@ -41,7 +41,7 @@ def repl(m):
 body=re.sub(r'(<p>)(.*?)(</p>)',repl,body,flags=re.S)
 body=re.sub(r'(<dd>)(?!\s*<p>)(.*?)(</dd>)',repl,body,flags=re.S)
 
-KW=r'const|let|var|for|while|if|else|return|function|type|readonly|null|undefined|true|false|new|typeof'
+KW=r'const|let|var|for|while|if|else|return|function|type|readonly|null|undefined|true|false|new|typeof|loop|try|catch|throw|break'
 def hlcode(m):
     if m.group(1): return m.group(0)
     arg=m.group(3); keep=[]
@@ -52,6 +52,7 @@ def hlcode(m):
     arg=re.sub(r'&[#\w]+;',lambda x:stash(x.group(0)),arg)
     arg=re.sub(r'@[A-Za-z]+',lambda x:stash('<span class="cann">'+x.group(0)+'</span>'),arg)
     arg=re.sub(r'(?<![A-Za-z0-9_])('+KW+r')(?![A-Za-z0-9_])',lambda x:stash('<span class="ck">'+x.group(1)+'</span>'),arg)
+    arg=re.sub(r'(?<![A-Za-z0-9_\x00])([A-Za-z_][A-Za-z0-9_]*)(?=\()',lambda x:stash('<span class="cf">'+x.group(1)+'</span>'),arg)
     arg=re.sub(r'(?<![A-Za-z_.\d\x00])\d+(?![A-Za-z_\d\x00])',lambda x:stash('<span class="cn">'+x.group(0)+'</span>'),arg)
     for _ in range(3): arg=re.sub('\x00(\\d+)\x00',lambda x:keep[int(x.group(1))],arg)
     return m.group(2)+arg+'</code>'

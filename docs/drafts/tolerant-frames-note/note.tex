@@ -5,6 +5,7 @@
 \usepackage{newtxtext,newtxmath}
 \usepackage{mathpartir,stmaryrd,microtype,booktabs,enumitem,xcolor}
 \usepackage{tikz}
+\usepackage{needspace}
 \usepackage[colorlinks,linkcolor=black,citecolor=black,urlcolor=black]{hyperref}
 
 \newtheorem{theorem}{Theorem}
@@ -37,6 +38,8 @@
 \newcommand{\hoare}[3]{\{#1\}\;#2\;\{#3\}}
 \newcommand{\hoarex}[4]{\{#1\}\;#2\;\{#3\mid #4\}}
 \newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\kF}{\mathsf{field}}\newcommand{\kC}{\mathsf{cell}}\newcommand{\kE}{\mathsf{elem}}\newcommand{\kS}{\mathsf{store}}\newcommand{\kI}{\mathsf{id}}
+\newcommand{\LF}{\mathit{Loc}_{\kF}}\newcommand{\LC}{\mathit{Loc}_{\kC}}\newcommand{\LE}{\mathit{Loc}_{\kE}}\newcommand{\LS}{\mathit{Loc}_{\kS}}\newcommand{\LI}{\mathit{Loc}_{\kI}}
 \newcommand{\lean}[1]{\texttt{\small #1}}
 \newcommand{\status}[1]{\textsf{\small[#1]}}
 
@@ -89,31 +92,55 @@ The language below makes that the primitive.
 \section{What exists: variables, locations, stores}\label{sec:model}
 
 
-\paragraph{Variables are not in the heap.} Let $\mathit{Var}$ be the set of variables, ranged over by $x,y$, and
+\paragraph{Variables and heap objects.} Let $\mathit{Var}$ be the set of variables, ranged over by $x,y$, and
 $\mathit{Val}$ the set of values, ranged over by $v$. An environment
-$\rho:\mathit{Var}\rightharpoonup\mathit{Val}$ is a finite map from
-variables to values.
+$\rho:\mathit{Var}\rightharpoonup\mathit{Val}$ maps variables to values.
+A variable holds a scalar or an object reference. A binding introduces a
+fresh variable; existing variables retain their values. Object fields and
+array elements hold their contents in the heap, where writes change them.
+A private cell is an object with one field, \code{value}: allocating
+\code{r = \{value: a\}} returns its reference, \code{y = r.value} reads
+its contents, and \code{r.value = a} writes them.
 
-A local binding of the program (a \code{const}, a \code{let}, a
-parameter) is modelled in one of two ways. It is a \emph{cell}, a
-location of the heap, when a closure can change it or can see it change:
-a closure writes it, or it is written after the creation of a closure
-that mentions it. A module binding is a cell too. In every other case a binding is a \emph{variable}, held in $\rho$. Every local \code{const} is a variable, and so are most
-local \code{let}s.
+\paragraph{Lowering.} Lowering maps each TypeScript binding to a value
+variable or a private cell and translates its reads and assignments to
+value bindings or field operations. It uses cells for bindings whose
+mutation must be shared with closures or whose initialization requires
+checked access; assignments to bindings held directly as values introduce
+fresh variables, connected by the edge renamings of Section~\ref{sec:transfer}.
 
-For example, in \code{let i = 0; while (i < k) i++;} the binding
-\code{i} is a variable. In \code{let n = 0; const inc = () => \{ n++; \};}
-the binding \code{n} is written by a closure, so it is a cell. In
-\code{let m = 0; const get = () => m; m = 1;} the binding \code{m} is
-written after \code{get} was created, so it is a cell too.
+\Needspace{165pt}
+\begin{definition}[Commands]\label{def:cmd}
+Programs name intermediate results explicitly. An \emph{atom} $a$ is a
+variable or a scalar literal. A \emph{step} is one
+of:
 
-A variable is never updated in place. Programs are taken in a normal
-form where each step reads variables and binds one fresh variable; an
-assignment \code{x = e} to a variable binds a fresh variable, which the
-code after it uses in place of \code{x}. For example, the source assignment
-\code{i = i + 1} reads the variable $i_0$ and binds a fresh variable
-$i_1$ to $i_0+1$; the code after it reads $i_1$. So a step extends $\rho$ and
-changes none of its existing bindings.
+\smallskip
+\noindent
+\begin{tabular}{@{}ll@{}}
+\code{y = a}, \code{y = a + a'} and the other operators & a binding\\
+\code{y = x.f}, \code{x.f = a} & a read and a write of a field\\
+\code{y = x[a]}, \code{x[a] = a'} & a read and a write of an element\\
+\code{y = \{f: a, ...\}}, \code{y = [a, ...]} & an allocation\\
+\code{y = x.m(x, ...)} & a call of a native method, such as \code{push}\\
+\code{y = f(x, ...)} & a call of a function\\
+\end{tabular}
+\smallskip
+
+\noindent
+Each step binds at most the one fresh variable \code{y}. A
+\emph{command} $c$ is a step, a sequence \code{c; c}, a choice
+\code{if (a) c else c}, a loop \code{loop c}, which repeats $c$ until
+$c$ exits, a handler \code{try c catch (x) c}, or an exit
+\code{return a}, \code{throw a} or \code{break}.
+\end{definition}
+\noindent
+Example: the source statement \code{out[j] = xs[j]} is the command
+\code{v = xs[j]; out[j] = v}. Each intermediate result is named before it is used. Private cells use
+the object allocation and field operations of this same syntax. The
+allocation typing records the storage role of each field in the world
+(Definition~\ref{def:world}); a cell's \code{value} field has role
+$\kC$, an ordinary property role $\kF$.
 
 Effects bound heap changes. Variables retain their values, so a fact
 about variables alone, such as $i<n$, persists.
@@ -121,22 +148,22 @@ about variables alone, such as $i<n$, persists.
 \paragraph{Locations.} A heap $h$ is a finite map from locations, ranged over by $l$, to
 contents. Locations are natural numbers, and the domain of $h$ is the
 initial segment $\{0,\dots,\len h-1\}$: an allocation extends it, and no
-location is ever removed. The locations of a heap $h$ are of five kinds, by what allocated them. Write
-$F$, $C$, $E$, $S$ and $I$ for the sets of its locations of each kind; they
-partition its domain, $\mathrm{dom}\,h=F\uplus C\uplus E\uplus S\uplus I$. A location's kind is fixed for its life. Each kind belongs to one of two
+location is ever removed. The locations of a heap $h$ are of five kinds, by what allocated them:
+$\kF$, $\kC$, $\kE$, $\kS$ and $\kI$. Write $\mathit{Loc}_\kappa$ for the
+set of its locations of kind $\kappa$; the five sets
+partition its domain, $\mathrm{dom}\,h=\LF\uplus\LC\uplus\LE\uplus\LS\uplus\LI$. A location's kind is fixed for its life. Each kind belongs to one of two
 classes, \emph{value} or \emph{store}; effects refer to locations by
 class.
 
 \begin{description}[leftmargin=1.5em,style=nextline]
-\item[Field location, in $F$] One for each own key of each object. It
+\item[Field location, kind $\kF$] One for each ordinary object property. It
 holds the current value of that property. After \code{const o = \{ n: 1, m: 2 \};} the object has two field locations, one for the key \code{n} holding 1 and one for the key \code{m} holding 2; \code{o.n = 3} changes what the first holds and leaves the second. Class: \emph{value}.
-\item[Cell, in $C$] One for each local binding that is modelled as a
-cell (the previous paragraph) and for each module binding. It holds the
-binding's current value. In
-\code{let n = 0; const inc = () => \{ n++; \};} the binding \code{n} has
-one cell, holding 0; a call \code{inc()} changes what it holds to 1.
-Class: \emph{value}.
-\item[Element cell, in $E$] One for each present element of each array.
+\item[Cell location, kind $\kC$] A location of private binding storage,
+including the fields of initialization markers. A binding cell uses such
+a location for its \code{value} field: \code{r = \{value: 0\}} has one,
+holding 0, and an identity location. The write \code{r.value = 1} changes
+the former to 1. Class: \emph{value}.
+\item[Element cell, kind $\kE$] One for each present element of each array.
 It holds that element's current value. In JavaScript an array literal with nothing between two commas leaves
 that index empty: \code{const a = [10, , 30];} makes an array of length
 3 with elements at the indices 0 and 2 and none at index 1. An index
@@ -144,14 +171,14 @@ with no element is a \emph{hole}. This array has two element cells,
 $l_0$ holding 10 and $l_2$ holding 30; the hole at index 1 has no
 location. \code{a[0] = 11} changes what
 $l_0$ holds. Class: \emph{value}.
-\item[Store location, in $S$] One for each array. It holds the array's
+\item[Store location, kind $\kS$] One for each array. It holds the array's
 \emph{store}: the sequence, in index order, of the array's element cells
 and holes. For \code{a} above the store is
 $\langle l_0,\circ,l_2\rangle$. \code{a.push(40)} allocates an element
 cell $l_3$ and changes the store to $\langle l_0,\circ,l_2,l_3\rangle$;
 \code{a.length = 1} changes it to $\langle l_0\rangle$. Class:
 \emph{store}.
-\item[Identity location, in $I$] One for each object, allocated with it.
+\item[Identity location, kind $\kI$] One for each object, allocated with it.
 It holds \code{null}, and its contract admits \code{null} alone. Two
 objects are the same object when they have the same identity location.
 After \code{const o = \{ n: 1, m: 2 \};} the object has one identity
@@ -160,8 +187,8 @@ location beside its two field locations. Class: \emph{value}.
 
 \noindent
 So a heap maps a location to a value or to a store:
-$h(l)\in\mathit{Val}$ for $l\in F\cup C\cup E\cup I$, and
-$h(l)\in\mathit{Store}$ for $l\in S$. Here
+$h(l)\in\mathit{Val}$ for $l\in\LF\cup\LC\cup\LE\cup\LI$, and
+$h(l)\in\mathit{Store}$ for $l\in\LS$. Here
 $\mathit{Store}=(\mathit{Loc}\uplus\{\circ\})^{*}$ is the set of finite
 sequences whose entries are locations or the hole $\circ$, and
 $\mathit{Loc}=\mathbb{N}$. For a store
@@ -173,38 +200,55 @@ $h:\mathit{Loc}\rightharpoonup\mathit{Val}\uplus\mathit{Store}$.
 A value in $\mathit{Val}$ is a scalar or an object. A function is an object that also carries code. A
 \emph{scalar} is \code{null}, \code{undefined}, a number, a string, a
 boolean or a bigint; $\mathit{Scalar}\subseteq\mathit{Val}$ is the set of
-scalars and $\mathit{Obj}\subseteq\mathit{Val}$ the set of objects. An object is a finite map $v:\mathit{Key}\rightharpoonup F$ from its
-own keys to field locations, together with an identity location in $I$;
+scalars and $\mathit{Obj}\subseteq\mathit{Val}$ the set of objects. An object is a finite map $v:\mathit{Key}\rightharpoonup\LF\cup\LC$ from its
+own keys to field locations, together with an identity location in $\LI$;
 both are fixed when the object is allocated. The
 read of a field $f$ of $v$ in a heap $h$ is $h(v(f))$. What changes is $h$ at the locations $v(f)$. An array is an object with one distinguished field, whose
-location $s\in S$ is the array's store location. Its \emph{store} is the
+location $s\in\LS$ is the array's store location. Its \emph{store} is the
 sequence $h(s)=\langle c_0,\dots,c_{n-1}\rangle\in\mathit{Store}$, where
-$c_i\in E$ if index $i$ is present and $c_i=\circ$ if it is a hole. The
+$c_i\in\LE$ if index $i$ is present and $c_i=\circ$ if it is a hole. The
 array's length is $n$, and its element at a present index $i$ is
 $h(c_i)$. For \code{const a = [10, , 30];} the store is
 $h(s)=\langle l_0,\circ,l_2\rangle$, the length is 3, $h(l_0)=10$ and
 $h(l_2)=30$. 
-\paragraph{A whole heap.} Take the program
-\code{const o = \{ n: 1, m: 2 \}; let k = 0; const inc = () => \{ k++; \}; const a = [10, , 30];}
-and number its locations as in the table. After it runs,
-one heap $h$ it can have is:
+\paragraph{Why distinguish fields from cells?}
+The kinds carry a separation fact. If \code{r.value} has kind $\kC$
+and \code{o.value} has kind $\kF$, they denote different locations:
+one location has one kind. Thus, from \code{r.value = 0}, a write
+\code{o.value = 1} preserves \code{r.value = 0}. Merging the two kinds
+would admit \code{r = o}, making that conclusion false without a separate
+separation premise. The distinction supplies this reasoning at an interface,
+where the allocation history of the two objects is unavailable; both kinds
+use the same field-read and field-write operations.
+
+\paragraph{A whole heap.} Take an ordinary object
+\code{o = \{n: 1, m: 2\}}, a private cell \code{r = \{value: 0\}},
+an array \code{a = [10, , 30]}, and a function object \code{inc} whose
+code increments \code{r.value}. Number their locations as follows:
 \[
 \begin{array}{llll}
 \text{location} & \text{kind} & \text{holds} & \\
-0 & F & 1 & \text{the field \code{n} of \code{o}}\\
-1 & F & 2 & \text{the field \code{m} of \code{o}}\\
-2 & C & 0 & \text{the cell of \code{k}}\\
-3 & S & \langle 4,\circ,5\rangle & \text{the store of \code{a}}\\
-4 & E & 10 & \text{the element \code{a[0]}}\\
-5 & E & 30 & \text{the element \code{a[2]}}\\
-6,7,8 & I & \code{null} & \text{the identity locations of \code{o}, \code{inc} and \code{a}}
+0 & \kF & 1 & \text{the field \code{n} of \code{o}}\\
+1 & \kF & 2 & \text{the field \code{m} of \code{o}}\\
+2 & \kC & 0 & \text{the field \code{value} of the private cell \code{r}}\\
+3 & \kS & \langle 4,\circ,5\rangle & \text{the store of \code{a}}\\
+4 & \kE & 10 & \text{the element \code{a[0]}}\\
+5 & \kE & 30 & \text{the element \code{a[2]}}\\
+6,7,8,9 & \kI & \code{null} & \text{the identity locations of \code{o}, \code{r}, \code{inc} and \code{a}}
 \end{array}
 \]
-Here $\mathrm{dom}\,h=\{0,\dots,8\}$, $F=\{0,1\}$, $C=\{2\}$, $S=\{3\}$, $E=\{4,5\}$ and $I=\{6,7,8\}$. The object \code{o} is the map $\{\code{n}\mapsto 0,\ \code{m}\mapsto 1\}$ from its keys to their field locations: the value of \code{o} holds no field contents, and \code{o.n} is read as $h(0)$, \code{o.m} as $h(1)$. The array \code{a} is an object whose distinguished field is the location 3.
-The environment $\rho$ holds \code{o}, \code{inc} and \code{a}; the
-binding \code{k} is the cell 2. A call \code{inc()} changes $h(2)$ to 1 and nothing else, and \code{o.m = 7} changes $h(1)$ to 7 and nothing else.
+Here $\mathrm{dom}\,h=\{0,\dots,9\}$, $\LF=\{0,1\}$, $\LC=\{2\}$,
+$\LS=\{3\}$, $\LE=\{4,5\}$ and $\LI=\{6,7,8,9\}$.
+The object \code{o} is the map $\{\code{n}\mapsto 0,\ \code{m}\mapsto 1\}$:
+\code{o.n} is read as $h(0)$ and \code{o.m} as $h(1)$.
+The cell \code{r} is the object $\{\code{value}\mapsto 2\}$, so
+\code{r.value} is read as $h(2)$. The array \code{a} has store location 3.
+The environment $\rho$ holds \code{o}, \code{r}, \code{inc} and \code{a}.
+A call \code{inc()} changes $h(2)$ to 1 and leaves the other existing
+locations unchanged; \code{o.m = 7} changes $h(1)$ to 7 and leaves the others
+unchanged.
 
-The operations write as follows:
+The steps of Definition~\ref{def:cmd} write as follows:
 
 \medskip
 \noindent
@@ -212,8 +256,8 @@ The operations write as follows:
 \toprule
 operation & writes & class written\\
 \midrule
-\code{x = e}, \code{x} a variable & nothing in the heap & \\
-\code{x = e}, \code{x} a cell & the cell & \emph{value}\\
+\code{y = a} & nothing in the heap & \\
+\code{r.value = a}, \code{r} a private cell & the cell\textquotesingle s contents location & \emph{value}\\
 \code{o.f = e} & the field location & \emph{value}\\
 \code{a[i] = e}, index present & the element cell & \emph{value}\\
 \code{a[i] = e} at a hole or past the end; \code{push} & the store (longer or filled), and a new cell & \emph{store}\\
@@ -250,52 +294,89 @@ that one value. Here the field \code{openBrackets} of a \code{Runs}
 object always holds the same array, whose elements and length may still
 change. The second is a typed array's length. The third is an identity
 location. All three belong to the value
-class, and no admissible step (Section~3) changes them.
+class, and no admissible transition (Definition~\ref{def:adm}) changes them.
 
 \section{Model}
 
-\paragraph{Worlds and states.} A \emph{world} $W$ maps each location to
-its contract. A contract is a type, and a type denotes a predicate on
-contents that is step-indexed and world-monotone~\cite{ahmed}. A world
-$W'$ \emph{extends} $W$ when it gives every location of $W$ the contract
-$W$ gives it; $W'$ may have more locations.
+Two notions carry the whole account. \emph{Well-formed} is a property of
+one state. \emph{Admissible} is a relation between two states. The rules
+of this note are statements about every admissible transition, and typed
+programs make only admissible transitions (Theorem~\ref{thm:pres}).
 
-A heap $h$ \emph{meets} a world $W$ when every location of $h$ holds
-contents within its contract in $W$; an environment meets $W$ when each
-of its values does. A \emph{state} is a tuple $(\rho,h,W,k)$: an
-environment, a heap, a world that $\rho$ and $h$ meet, and a budget
-$k>0$ of remaining steps. A
-state is \emph{well-formed} when every value in $\rho$ meets its type
-and every element cell that a store lists is a location of $h$. In the
-heap of Section~2 the store $\langle 4,\circ,5\rangle$ lists the locations 4 and 5, and both are in $\mathrm{dom}\,h$.
+\begin{definition}[World]\label{def:world}
+A \emph{world} $W$ is a finite map from locations to pairs
+$(\kappa,T)$ of a kind $\kappa\in\{\kF,\kC,\kE,\kS,\kI\}$ and a \emph{contract}
+$T$. A contract is a type; it denotes a predicate on contents that is
+step-indexed and world-monotone~\cite{ahmed}. A world $W'$
+\emph{extends} $W$, written $W\sqsubseteq W'$, when
+$\mathrm{dom}\,W\subseteq\mathrm{dom}\,W'$ and $W'(l)=W(l)$ for every
+$l\in\mathrm{dom}\,W$.
+\end{definition}
+\noindent
+Example: for the heap of Section~2, $W(0)=(\kF,\code{number})$,
+$W(3)=(\kS,\text{stores of number cells})$ and $W(6)=(\kI,\{\code{null}\})$.
+After \code{a.push(40)} the world is $W$ with one more entry,
+$10\mapsto(\kE,\code{number})$, and it extends $W$.
+
+\begin{definition}[Well-formed state]\label{def:state}
+A \emph{state} is a tuple $s=(\rho,h,W,k)$ of an environment, a heap, a
+world and a budget $k>0$ of remaining steps. It is \emph{well-formed}
+when:
+\begin{description}[leftmargin=1.5em,style=sameline]
+\item[(W1) one domain] $\mathrm{dom}\,h=\mathrm{dom}\,W$.
+\item[(W2) contents by kind] For every $l$ with $W(l)=(\kappa,T)$:
+$h(l)$ is a value when $\kappa\in\{\kF,\kC,\kE\}$, a store when $\kappa=\kS$,
+and \code{null} when $\kappa=\kI$.
+\item[(W3) valid references] Every cell that a store of $h$ lists is a
+location of kind $\kE$. For every object that occurs in $h$ or in $\rho$,
+each field location is of kind $\kF$ or $\kC$, its store location is of kind
+$\kS$, and its identity location is of kind $\kI$.
+\item[(W4) contracts] $h(l)$ is within $T$ for every $l$ with
+$W(l)=(\kappa,T)$, and each value of $\rho$ meets its type, at the
+budget $k$.
+\end{description}
+(W1) to (W3) do not depend on the budget. From here on, \emph{state}
+means well-formed state.
+\end{definition}
+\noindent
+Example: the heap of Section~2 with its environment is a well-formed
+state. The same heap with $\langle 4,\circ,12\rangle$ at location 3 is
+not: 12 is no location, against (W3). Neither is it with
+$\langle 4,\circ,6\rangle$ there: 6 is an identity location.
 
 A write within a location's contract preserves every typing judgment,
 whatever aliases exist~\cite{ahmed}. This is the one use the note makes
 of types.
 
-\paragraph{Admissible transitions.} An admissible transition is a change
-of state that respects every contract. Its definition mentions no
-program. A state $s'=(\rho',h',W',k')$ is \emph{admissible from} a state
-$s=(\rho,h,W,k)$ when $W'$ extends $W$ and $k'\le k$. Since $s'$ is a
-state, $h'$ meets $W'$; so every location of $h$ holds in $h'$ contents
-within the contract it had in $W$. We write $h\tr{}_\rho h'$ when $h$
-and $h'$ are the heaps of two such states and $\rho'$ extends $\rho$
-\status{Lean: \lean{Admissible}}.
+\begin{definition}[Admissible transition]\label{def:adm}
+Let $s=(\rho,h,W,k)$ and $s'=(\rho',h',W',k')$ be states. $s'$ is
+\emph{admissible from} $s$ when $W\sqsubseteq W'$ and $k'\le k$. We write
+$h\tr{}_\rho h'$ when $h$ and $h'$ are the heaps of two such states and
+$\rho'$ extends $\rho$ \status{Lean: \lean{Admissible}}.
+\end{definition}
+\noindent
+The definition mentions no program. Unfolded: every location of $h$ is a
+location of $h'$ with the same kind and the same contract, $h'$ holds
+contents of that kind within that contract, and $h'$ may have more
+locations. Example: in the heap of Section~2, the call \code{inc()}
+changes location 2 from 0 to 1; its contract is ``a number'', so the
+transition is admissible. A heap holding a string at location 2 is the
+heap of no state with this world, so no admissible transition from $h$
+reaches it; nor one holding a number at location 3, whose kind is $\kS$.
 
-In the heap of Section~2, the call \code{inc()} takes $h$ to the heap
-that differs from $h$ only in holding 1 at location 2. The contract of
-location 2 is ``a number'', so this is an admissible transition. A heap
-holding a string at location 2 is not reached from $h$ by any admissible
-transition.
-
-Programs enter through a theorem, not through the definition. Let $t$ be
-a term that is safe at a state $s$, in the sense of the step-indexed
-model; a term the type system accepts is. If $t$ runs from $s$ for $j$
-steps and reaches a heap $h'$, then $h'$ is the heap of a state that is
-admissible from $s$, with budget $k-j$
-\status{Lean: \lean{run}, \lean{run\_normal}, \lean{run\_throw}, \lean{safe\_run}}.
+\begin{theorem}[Preservation]\label{thm:pres}
+Let $t$ be a term that the type system accepts at a state $s$. If $t$
+runs from $s$ for $j$ steps and reaches a heap $h'$, then $h'$ is the
+heap of a state that is admissible from $s$, with budget $k-j$
+\status{Lean: \lean{run}, \lean{run\_normal}, \lean{run\_throw},
+\lean{safe\_run} for (W4); \lean{HasTyUsing.sound} and
+\lean{ControlFlow.state\_safe} for (W1) to (W3), on the branch
+\lean{location-kinds}}.
+\end{theorem}
+\noindent
 So what is proved below of every admissible transition holds of every
-step, call and callback of typed code.
+step, call and callback of typed code. Host and library code is modelled
+by declared contracts; that a model is accurate is audited, not proved.
 
 The relation has four properties, used throughout:
 \begin{description}[leftmargin=1.5em,style=nextline]
@@ -303,10 +384,11 @@ The relation has four properties, used throughout:
 $h'\tr{}_\rho h''$ then $h\tr{}_\rho h''$, the worlds composing through
 the intermediate state's world
 \status{Lean: \lean{Admissible.refl}, \lean{Admissible.trans}}.
-\item[(T2) Growth] If $h\tr{}_\rho h'$ then $\len h\le\len{h'}$: a
-transition allocates and never removes a location
+\item[(T2) Growth] If $h\tr{}_\rho h'$ then $\len h\le\len{h'}$, and
+every location of $h$ has in $h'$ the kind it had: a
+transition allocates and never removes or re-purposes a location
 \status{Lean: \lean{Admissible.length\_le}}.
-\item[(T3) Fixed objects] Let $v:\mathit{Key}\rightharpoonup F$ be an
+\item[(T3) Fixed objects] Let $v:\mathit{Key}\rightharpoonup\LF\cup\LC$ be an
 object value and $h\tr{}_\rho h'$. The domain of $v$ and each location
 $v(f)$ are the same before and after: the field $f$ of $v$ is read as
 $h(v(f))$ in $h$ and as $h'(v(f))$ in $h'$. This holds because $v$ is a
@@ -365,13 +447,13 @@ assignment in \code{c ??= build()} changes the contents of $l$ from
 \code{undefined} to the value $v$ that \code{build()} returns, and
 $\init_b(\code{undefined},v)$ holds. The assignment \code{o.n = 3}
 changes the contents of the field location of \code{n} from 1 to 3, and
-$\kw{scalar}_b(1,3)$ holds. With $b=9$, $\grow_9$ relates the store
-$\langle 4,\circ,5\rangle$ to $\langle 4,\circ,5,9\rangle$ (a
-\code{push}) and to $\langle 4,9,5\rangle$ (a write at the hole). It
+$\kw{scalar}_b(1,3)$ holds. With $b=10$, $\grow_{10}$ relates the store
+$\langle 4,\circ,5\rangle$ to $\langle 4,\circ,5,10\rangle$ (a
+\code{push}) and to $\langle 4,10,5\rangle$ (a write at the hole). It
 does not relate it to $\langle 4\rangle$, which fails (i), nor to
 $\langle 4,\circ,5,0\rangle$, which fails (iv): 0 is an old location.
 
-\paragraph{Regions.} Figure~\ref{fig:heap} shows the heap of Section~2 and the locations that each region defined in this paragraph denotes in it.
+\paragraph{Regions.} Figure~\ref{fig:heap} shows the nonidentity locations of the heap of Section~2 and the portions of each region on those locations.
 
 \begin{figure}[ht]
 \centering
@@ -384,7 +466,7 @@ $\langle 4,\circ,5,0\rangle$, which fails (iv): 0 is an old location.
 \node[anchor=west] at (-1.9,0) {heap $h$};
 \node[anchor=west] at (-1.9,-1.05) {kind};
 \node[anchor=west] at (-1.9,-2.2) {region};
-\foreach \i/\c/\k/\n in {0/1/F/{\code{o.n}},1/2/F/{\code{o.m}},2/0/C/{\code{k}},3/{$\langle 4,\circ,5\rangle$}/S/{store of \code{a}},4/10/E/{\code{a[0]}},5/30/E/{\code{a[2]}}}{
+\foreach \i/\c/\k/\n in {0/1/field/{\code{o.n}},1/2/field/{\code{o.m}},2/0/cell/{\code{r.value}},3/{$\langle 4,\circ,5\rangle$}/store/{store of \code{a}},4/10/elem/{\code{a[0]}},5/30/elem/{\code{a[2]}}}{
   \node at (\i,0.75) {\i};
   \node[cell] (c\i) at (\i,0) {\c};
   \node at (\i,-1.05) {$\k$};
@@ -402,11 +484,11 @@ $\langle 4,\circ,5,0\rangle$, which fails (iv): 0 is an old location.
   \foreach \j in \cells { \ifnum\j=3 \node[sbar] at (\j,\y) {}; \else \node[bar] at (\j,\y) {}; \fi }
 }
 \end{tikzpicture}
-\caption{The heap of Section~2 and what each region denotes in it. Top:
+\caption{The nonidentity locations of the heap of Section~2 and the portions of each region on them. Identity locations 6--9 are omitted. Top:
 the object \code{o} points to its two field locations, and the array
-\code{a} to its store location. Middle: the six locations with their
+\code{a} to its store location. Middle: the six depicted locations with their
 contents and kinds; the store at location 3 lists the element cells 4
-and 5, with a hole between them. Bottom: each bar marks a location the
+and 5, with a hole between them. Bottom: each bar marks a depicted location the
 region denotes; store locations are drawn lighter.}\label{fig:heap}
 \end{figure}
 
@@ -418,10 +500,10 @@ next field. A \emph{region} $r$ denotes a set $r(\rho,h)$ of locations
 of $h$. There are five forms:
 \begin{description}[leftmargin=1.5em,style=nextline]
 \item[{$\st$}] Every location of class store:
-$\st(\rho,h)=S$. In the heap of Section~2 it denotes $\{3\}$.
+$\st(\rho,h)=\LS$. In the heap of Section~2 it denotes $\{3\}$.
 \item[{$\val$}] Every location of class value:
-$\val(\rho,h)=F\cup C\cup E\cup I$. In the heap of Section~2 it denotes
-$\{0,1,2,4,5,6,7,8\}$.
+$\val(\rho,h)=\LF\cup\LC\cup\LE\cup\LI$. In the heap of Section~2 it denotes
+$\{0,1,2,4,5,6,7,8,9\}$.
 \item[{$\pi.\kw{store}$}] The store location of the one array that $\pi$
 reads: $(\pi.\kw{store})(\rho,h)=\{s\}$, where $s$ is that array's store
 location. Example: $a.\kw{store}$ denotes $\{3\}$.
@@ -469,8 +551,8 @@ Regions are read in the entry heap $h$, as in dynamic frames~\cite{kassios}.
 New locations are constrained by admissibility alone.
 
 For example, let $h$ be the heap of Section~2 and let $h'$ be $h$ after
-\code{a.push(40)}: $h'(3)=\langle 4,\circ,5,9\rangle$, $h'(9)=40$, and $h'$ agrees with $h$ on every location of $h$ but 3. Then $h\tr{\{\st:\grow\}}_\rho h'$:
-location 3 is in $\st(\rho,h)$ and changed within $\grow_9$, the other locations of $h$ are unchanged, and 9 is new. After
+\code{a.push(40)}: $h'(3)=\langle 4,\circ,5,10\rangle$, $h'(10)=40$, and $h'$ agrees with $h$ on every location of $h$ but 3. Then $h\tr{\{\st:\grow\}}_\rho h'$:
+location 3 is in $\st(\rho,h)$ and changed within $\grow_{10}$, the other locations of $h$ are unchanged, and 10 is new. After
 \code{a.length = 1} the store is $\langle 4\rangle$, a change that is
 not within $\grow$; that transition is bounded by
 $\{a.\kw{store}:\any\}$ and is not bounded by $\{\st:\grow\}$.
@@ -664,8 +746,8 @@ region logic~\cite{bnr}. When $K$ separates no pair, the condition is
 that the assertion is stable under an interfering action~\cite{jones}.
 The theorem chooses between the two at each pair.
 
-A fact may have several supports and none of them greatest. On
-well-formed arrays, $\apart(x,y)$ is supported by
+A fact may have several supports and none of them greatest. The fact
+$\apart(x,y)$ is supported by
 $\{x[\ast]:\grow,\ y[\ast]:\keep\}$: a store that grows lists only the
 cells it listed and new ones. It is also supported by the mirror image,
 $\{x[\ast]:\keep,\ y[\ast]:\grow\}$. It is not supported by
@@ -793,7 +875,7 @@ the callee's and caller's marks. Exceptional posts and effects
 instantiate in the same way; their defaults are $\kw{true}$ and $\top$.
 Lean: \lean{call\_rule}, \lean{invocation\_throw\_action}.
 \item[\textsc{Alloc}] A new array is fresh, empty, and apart from every
-well-formed array $y$ that exists before the step. These separations are
+array $y$ that exists before the step. These separations are
 facts of the state after the step. Later steps keep or lose them like
 any other fact: a growth of the new array's store keeps them, and an
 arbitrary change of that store does not, since it may make the store
@@ -899,7 +981,7 @@ defined.
 \end{definition}
 
 \begin{theorem}[Transfer]\label{thm:transfer}\status{Lean: \lean{transfer}, one theorem per exit, for exit effects over class regions; \lean{graph\_safe} composes the exits into the safety of a graph, and \lean{loop\_safe} is the loop of Section~\ref{sec:transfer} as an instance. A conjecture for exit effects with regions at paths}
-If $s$ is well-formed, $s\models_m\Sigma$, the node $c$ runs from $s$
+If $s\models_m\Sigma$, the node $c$ runs from $s$
 through exit $e$ to $s'$, and $\mathrm{Check}(c,\Sigma,e,A)$, then
 $\theta_e(s')\models_m A$.
 \end{theorem}
@@ -927,6 +1009,7 @@ This system is sound and incomplete for semantic entailment.
 With the loop variable a parameter of the head, and
 $\Sigma_H(j)=\{0\le j,\ \mathit{to}\le\len{\mathit{xs}}\}$:
 \[
+\resizebox{\linewidth}{!}{$
 \begin{array}{llll}
  & \text{node or edge} & \text{effect} & \text{obligation and its reason}\\[2pt]
 1 & \text{entry}\to H(\mathit{from}) & & 0\le\mathit{from},\ \mathit{to}\le\len{\mathit{xs}}\ \text{given}\\
@@ -937,6 +1020,7 @@ $\Sigma_H(j)=\{0\le j,\ \mathit{to}\le\len{\mathit{xs}}\}$:
 6 & \text{back edge},\ \theta=[j\mapsto j'] & & \theta^{*}\Sigma_H=\{0\le j',\ \mathit{to}\le\len{\mathit{xs}}\}\ \text{from }0\le j,\ Q,\ \text{row 4}\\
 7 & H(j):\ \code{j < to}\ \text{false} & \emptyset & \text{exit with }\Sigma_H\wedge\neg(j<\mathit{to})
 \end{array}
+$}
 \]
 No row mentions whether \code{out} is an alias of \code{xs}.
 
