@@ -114,6 +114,40 @@ footprints (proved: `Closed.holds_meet`). The wire spells a closed footprint
 ([source claims](SOURCE-CLAIMS.md#quantified-callables-and-their-eliminations),
 [request protocol](REQUEST-PROTOCOL.md#request-fields)).
 
+## Support and respect
+
+Whether a fact survives a step is one check, the note's
+[tolerant frame](REFERENCES.md#the-tolerant-frames-note). A footprint
+$`S = \{r_1{:}\,\delta_1, \ldots\}`$ **supports** an assertion $`P`$ in a
+context $`C`$ when, for every transition $`h \to h'`$ meeting $`C`$, $`P`$
+holding at $`h`$ and every location of each $`r_i`$, read at $`h`$, changing
+within $`\delta_i`$ give $`P`$ at $`h'`$ (`Footprints.Supports`). The context
+is the evidence a support relies on besides its regions, such as a stable
+field's contents; it is a premise of every use. An assertion has several
+supports, none greatest; the empty support states that the assertion is
+invariant in its context (`Supports.of_invariant`). Supports compose: a
+conjunction or a disjunction is supported by the union of its parts'
+supports (`Supports.and`, `Supports.or`).
+
+A **separation query** $`q`$ answers whether two regions are disjoint. It is
+**sound** at a state $`(\rho, h)`$ when every positive answer names two
+regions sharing no location of $`h`$ (`SepQuery.Sound`); each query is built
+from evidence holding at the step's prestate, and its soundness is proved
+from that evidence. An effect $`\Phi`$ **respects** $`S`$ under $`q`$ when
+
+```math
+\forall (r{:}\,\delta) \in S.\ \forall (r'{:}\,\gamma) \in \Phi.\quad \gamma \sqsubseteq \delta \ \lor\ q(r, r')
+```
+
+(`respects`). **Theorem** (proved: `respect_sound`, `keeps_sound`,
+`TolerantFrames.tolerant_frame_supports`): if $`S`$ supports $`P`$ in $`C`$,
+$`\Phi`$ respects $`S`$ under $`q`$, $`q`$ is sound at $`(\rho, h)`$, the
+transition meets $`C`$ and $`\mathrm{Post}(\Phi)`$, and $`P`$ holds at $`h`$,
+then $`P`$ holds at $`h'`$. Separation knowledge (`SepKnowledge`: class
+evidence, provenance stamps, distinct pairs) is one sound query
+(`SepKnowledge.query_sound`), and the five fact kinds' supports below are
+supports in every context (`FactKind.supports`).
+
 ## The stable set for density
 
 Density reads only a store, and only a store change beyond `grow` can remove

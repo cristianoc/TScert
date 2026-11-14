@@ -293,15 +293,82 @@ theorem Sep.sound {K : SepKnowledge} {μ ρ h r s l} (hK : K.Holds μ ρ h)
   · exact apart₁_sound hK ha hr hs
   · exact apart₁_sound hK ha hs hr
 
-/-! ## The check and the frame -/
+/-! ## Support, separation queries and respect
 
-/-- **The stability check**: every footprint entry changes every support
-region within its tolerance, or is apart from it. -/
-def stable (K : SepKnowledge) (S Φ : Footprint) : Bool :=
-  S.all fun e => Φ.all fun f => f.2.le e.2 || K.apart e.1 f.1
+The note's Definitions *Support* and *Respect* and its Theorem *Tolerant
+frame*, over any assertion (FOOTPRINTS.md, "Support and respect"). -/
 
-theorem stable_sound {K : SepKnowledge} {S Φ μ ρ h h'} (hc : stable K S Φ = true)
-    (hK : K.Holds μ ρ h) (hp : Post Φ ρ h h') : Supported S ρ h h' := by
+/-- **`S` supports the assertion `P` in the context `C`**: for every
+transition from `h` to `h'` meeting `C`, if `P` holds at `h` and every
+location of each region of `S` changes within its entry's change, `P`
+holds at `h'`. `C` is the evidence the support relies on besides `S`
+(a stable field's contents, a typed array's length kept): a support
+witness is stated relative to it, and the context is a premise of every
+use. An assertion may have several supports, none greatest. -/
+def Supports (C : Env → Heap → Heap → Prop) (P : Env → Heap → Prop) (S : Footprint) : Prop :=
+  ∀ ρ h h', C ρ h h' → P ρ h → Supported S ρ h h' → P ρ h'
+
+/-- A support in a weaker context is one in a stronger context. -/
+theorem Supports.weaken {C C' : Env → Heap → Heap → Prop} {P : Env → Heap → Prop} {S : Footprint}
+    (hs : Supports C P S) (hc : ∀ ρ h h', C' ρ h h' → C ρ h h') : Supports C' P S :=
+  fun ρ h h' hc' hp hsup => hs ρ h h' (hc ρ h h' hc') hp hsup
+
+/-- The empty support: the assertion is invariant in its context. -/
+theorem Supports.of_invariant {C : Env → Heap → Heap → Prop} {P : Env → Heap → Prop}
+    (hi : ∀ ρ h h', C ρ h h' → P ρ h → P ρ h') : Supports C P [] :=
+  fun ρ h h' hc hp _ => hi ρ h h' hc hp
+
+/-- A support of a conjunction: the union of supports of its parts. -/
+theorem Supports.and {C : Env → Heap → Heap → Prop} {P Q : Env → Heap → Prop} {S T : Footprint}
+    (hp : Supports C P S) (hq : Supports C Q T) : Supports C (fun ρ h => P ρ h ∧ Q ρ h) (S ++ T) :=
+  fun ρ h h' hc hpq hs => ⟨hp ρ h h' hc hpq.1 fun e he => hs e (List.mem_append_left _ he),
+    hq ρ h h' hc hpq.2 fun e he => hs e (List.mem_append_right _ he)⟩
+
+/-- A support of a disjunction: the union of supports of its parts, which
+keeps the part that held. -/
+theorem Supports.or {C : Env → Heap → Heap → Prop} {P Q : Env → Heap → Prop} {S T : Footprint}
+    (hp : Supports C P S) (hq : Supports C Q T) : Supports C (fun ρ h => P ρ h ∨ Q ρ h) (S ++ T) :=
+  fun ρ h h' hc hpq hs => hpq.imp (fun h1 => hp ρ h h' hc h1 fun e he => hs e (List.mem_append_left _ he))
+    (fun h2 => hq ρ h h' hc h2 fun e he => hs e (List.mem_append_right _ he))
+
+/-- A larger support (more regions constrained) is a support. -/
+theorem Supports.mono {C : Env → Heap → Heap → Prop} {P : Env → Heap → Prop} {S T : Footprint}
+    (hs : Supports C P S) (hst : ∀ e ∈ S, e ∈ T) : Supports C P T :=
+  fun ρ h h' hc hp hsup => hs ρ h h' hc hp fun e he => hsup e (hst e he)
+
+/-- **A separation query**: whether two regions denote disjoint sets. Its
+meaning is `SepQuery.Sound`, stated of a prestate: wherever the evidence
+the query was built from holds, a positive answer means the two regions
+share no location there. -/
+structure SepQuery where
+  disjoint : Region → Region → Bool
+
+/-- The query is sound at the state `(ρ, h)`. -/
+def SepQuery.Sound (q : SepQuery) (ρ : Env) (h : Heap) : Prop :=
+  ∀ r s l, q.disjoint r s = true → r.mem ρ h l = true → s.mem ρ h l = true → False
+
+/-- Two queries, either of which may answer. -/
+def SepQuery.or (q q' : SepQuery) : SepQuery := ⟨fun r s => q.disjoint r s || q'.disjoint r s⟩
+
+theorem SepQuery.or_sound {q q' : SepQuery} {ρ h} (hq : q.Sound ρ h) (hq' : q'.Sound ρ h) :
+    (q.or q').Sound ρ h := by
+  intro r s l hd hr hs
+  simp only [SepQuery.or, Bool.or_eq_true] at hd
+  rcases hd with hd | hd
+  · exact hq r s l hd hr hs
+  · exact hq' r s l hd hr hs
+
+/-- **Respect** (the note's Definition): every pair `r : δ` of the support
+and every entry `r' : γ` of the effect have `γ ⊑ δ`, or the query answers
+that `r` and `r'` are disjoint. Change order is compared first; the query is
+asked only where it fails. -/
+def respects (q : SepQuery) (S Φ : Footprint) : Bool :=
+  S.all fun e => Φ.all fun f => f.2.le e.2 || q.disjoint e.1 f.1
+
+/-- **Respect is sound**: an effect respecting a support under a query
+sound at the prestate changes each support region within its change. -/
+theorem respect_sound {q : SepQuery} {S Φ ρ h h'} (hc : respects q S Φ = true)
+    (hq : q.Sound ρ h) (hp : Post Φ ρ h h') : Supported S ρ h h' := by
   intro e he l v hm hv
   obtain ⟨v', hv', ha⟩ := hp.2 l v hv
   refine ⟨v', hv', ?_⟩
@@ -311,7 +378,39 @@ theorem stable_sound {K : SepKnowledge} {S Φ μ ρ h h'} (hc : stable K S Φ = 
     simp only [Bool.or_eq_true] at this
     rcases this with hle | hap
     · exact hh.mono hle
-    · exact (Sep.sound hK hap hm hfm).elim
+    · exact (hq e.1 f.1 l hap hm hfm).elim
+
+/-- **The tolerant frame, at a transition**: an assertion with a support
+the effect respects under a query sound at the prestate holds after every
+transition within the effect that meets the support's context. -/
+theorem keeps_sound {C : Env → Heap → Heap → Prop} {P : Env → Heap → Prop} {S Φ : Footprint}
+    {q : SepQuery} {ρ h h'} (hs : Supports C P S) (hr : respects q S Φ = true) (hq : q.Sound ρ h)
+    (hp : Post Φ ρ h h') (hc : C ρ h h') (hP : P ρ h) : P ρ h' :=
+  hs ρ h h' hc hP (respect_sound hr hq hp)
+
+/-- Separation knowledge answers a query (`Sep.sound`). -/
+def SepKnowledge.query (K : SepKnowledge) : SepQuery := ⟨K.apart⟩
+
+theorem SepKnowledge.query_sound {K : SepKnowledge} {μ ρ h} (hK : K.Holds μ ρ h) : K.query.Sound ρ h :=
+  fun _ _ _ hd hr hs => Sep.sound hK hd hr hs
+
+/-- Each fact kind's support supports it, in every context
+(`FactKind.support_sound`). -/
+theorem FactKind.supports (F : FactKind) : Supports (fun _ _ _ => True) F.Holds F.support :=
+  fun _ _ _ _ hF hs => FactKind.support_sound hF hs
+
+/-! ## The check and the frame -/
+
+/-- **The stability check**: respect under separation knowledge
+(`stable_eq_respects`). -/
+def stable (K : SepKnowledge) (S Φ : Footprint) : Bool :=
+  S.all fun e => Φ.all fun f => f.2.le e.2 || K.apart e.1 f.1
+
+theorem stable_eq_respects (K : SepKnowledge) (S Φ : Footprint) : stable K S Φ = respects K.query S Φ := rfl
+
+theorem stable_sound {K : SepKnowledge} {S Φ μ ρ h h'} (hc : stable K S Φ = true)
+    (hK : K.Holds μ ρ h) (hp : Post Φ ρ h h') : Supported S ρ h h' :=
+  respect_sound (q := K.query) hc (SepKnowledge.query_sound hK) hp
 
 /-- The facts the check keeps across a footprint. -/
 def frame (K : SepKnowledge) (fs : List FactKind) (Φ : Footprint) : List FactKind :=

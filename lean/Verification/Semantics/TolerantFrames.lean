@@ -483,6 +483,16 @@ theorem tolerant_frame {K : SepKnowledge} {F : FactKind} {Φ : Footprint} {μ : 
     (hF : F.Holds ρ s.h) : Box Φ (fun ρ _ s => F.Holds ρ s.h) ρ m s :=
   fun _ ha => FactKind.support_sound hF (stable_sound hc hK ha.2)
 
+/-- **The tolerant frame theorem, over any assertion**: an assertion with a
+support in a context every action of the effect meets, and an effect
+respecting that support under a query sound at the state, holds after every
+action of the effect: `K ∧ F ⊢ □_Φ F` (`keeps_sound`). -/
+theorem tolerant_frame_supports {C : Env → Heap → Heap → Prop} {P : Env → Heap → Prop} {S Φ : Footprint}
+    {q : SepQuery} {ρ : Env} {m : Nat} {s : IndexedHeap} (hs : Supports C P S) (hr : respects q S Φ = true)
+    (hq : q.Sound ρ s.h) (hc : ∀ s', Action Φ ρ s s' → C ρ s.h s'.h) (hP : P ρ s.h) :
+    Box Φ (fun ρ _ s => P ρ s.h) ρ m s :=
+  fun s' ha => keeps_sound hs hr hq ha.2 (hc s' ha) hP
+
 open HeapKnowledge in
 /-- **An index fact a closed footprint's change keeps holds after every
 action of the footprint** (`holdsAt_kept`, `Changes.ofClosed_holds`). -/

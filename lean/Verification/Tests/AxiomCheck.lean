@@ -326,6 +326,11 @@ run_cmd do
   check ``Verification.TolerantFrames.loop_write_obligations
   check ``Verification.TolerantFrames.loop_back_edge
   check ``Verification.TolerantFrames.tolerant_frame
+  check ``Verification.TolerantFrames.tolerant_frame_supports
+  check ``Verification.Footprints.keeps_sound
+  check ``Verification.Footprints.respect_sound
+  check ``Verification.Footprints.FactKind.supports
+  check ``Verification.Footprints.SepKnowledge.query_sound
   check ``Verification.TolerantFrames.kept_box
   check ``Verification.TolerantFrames.grow
   check ``Verification.TolerantFrames.grow_path
