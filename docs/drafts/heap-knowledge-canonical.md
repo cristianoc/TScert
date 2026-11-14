@@ -381,7 +381,7 @@ Every knowledge the search stores in its table or writes is
 $`\mathsf{norm}_\Gamma`$ of the raw result at the point's context; the type
 of stored knowledge is the subtype of normal forms. The evidence decoder
 checks that each entry is stored at the context it is used at
-([§5.3](canonicity.md#53-checked-at-the-boundary-wire-into-lean-w-x)).
+([§5.2](canonicity.md#52-checked-at-the-boundary-wire-into-lean-w-x)).
 
 ### 6.5 Readers are entailment queries
 

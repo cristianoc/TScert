@@ -21,7 +21,7 @@ their [stored knowledge](../PROGRAM-TYPING.md#stored-knowledge-and-how-it-is-rea
 types, observations and evidence are
 [positive types](../POSITIVE-TYPES.md#covered-pairs) compared by
 [structure-directed comparison](../UNION-SHAPES.md#3-the-catalogue); the
-producer's and the front end's tables are their inputs on the wire; stored
+front end's tables are its inputs on the wire; stored
 stage results are [keys by content](../STAGE-STORE.md#keys) (cited). This
 draft keeps each place's representation and meaning, and states one
 property every place meets, contextual canonicity (§1.2): a normalizer per
@@ -227,44 +227,10 @@ the traversal left to X's design; a knowledge entry shared by points of differen
 contexts checked at each use under that use's context, as `check` does
 today; proof entries shared, not one proof per proposition.
 
-### 3.3 Producer
+### 3.3 Claims wire
 
-**P · Producer types.** `Semantic.ty` (`ocaml-producer/semantic.ml`).
-Joined at every merge (`union`, `widen`, `join_env`, `merge`), and the
-fixpoint ends when a state equals the previous one (`flow.ml`). `union`
-sorts and deduplicates atoms (`ground`) and keeps members another covers:
-`union (Atoms [Num]) (Atoms [NumLit 1])` is `Atoms [Num; NumLit 1]`.
-Requirements: permutation and duplication; a literal beside its base kind;
-atoms split across a union's arms; a meet's operand order; record field
-order. A named type beside its expansion stays two forms (their equality is
-a type question).
-
-**N · Narrowing facts.** The environment's field and path facts
-(`ocaml-producer/environment.ml`), keyed by name and field. A truthiness
-test on `x.f` writes the same field under a field key and a path key
-(`refinement.ml`), and `fact` keeps a knowable fact equal to its contract,
-as a join does. Requirements: a field fact and the path fact of length one;
-a fact equal to its contract.
-
-**M · Flow metadata.** The analysis state's lists
-(analysis_state.ml):
-`record_growth`, `mark_exact_local`, `record_holder` and
-`mark_exact_allocations` prepend entries, so a repeated mark makes a state
-of a different spelling with the same content. At joins
-(`proposal_flow.ml`), `grown_locals` and `exact_allocs` are sorted and
-deduplicated, and `exact_locals` and `holders` are intersected keeping the
-left operand's order. The fixpoint compares whole states; that the
-repetitions delay its convergence is *conjectured*, with no trace or case
-showing it. Requirements: the lists as sets.
-
-**Q · Producer declaration memo.** `definitions`
-(type_queries.ml), keyed by the
-declaration and its arguments `(id, args)`. Requirements: P's, on the
-arguments.
-
-**W · Claims wire.** Labels and rows (`ocaml-producer/claims.ml`), decoded
-by Lean. Label lists are sorted and deduplicated, two or more literals of a
-primitive become a sorted set, and Lean's validator checks the order.
+**W · Claims wire.** Labels and rows of the claims document, decoded by
+Lean, whose validator checks the order of label lists.
 Requirements: T's laws on labels; a meet's operand order; a symbolic union
 flattened; a record row's field order.
 
@@ -302,9 +268,6 @@ without changing the key.
 
 ### 3.6 Not a violation, or not requiring it
 
-- **Alias holders in the producer:** after an object grows, each name
-  holding it is bound to the same immutable value
-  (`statement_analysis.ml`); one shared value is one representation.
 - **Footprints:** the change lattice and the closed footprint grid have one
   value per meaning; the decoder rejects `grow` for the value component
   (`Source/EffectJson.lean`).
@@ -336,7 +299,7 @@ one field, an exponent of about 3 today.
 
 ## 5. Enforcement
 
-Five kinds of guarantee, kept apart.
+Four kinds of guarantee, kept apart.
 
 ### 5.1 Proved: Lean (V, K, L, S, T, E, B, O, I, X)
 
@@ -368,47 +331,34 @@ $`r_1 \approx_\Gamma r_2 \iff \mathsf{norm}_\Gamma\ r_1 = \mathsf{norm}_\Gamma\ 
   existing soundness theorem (what it establishes of the meaning), and its
   output is normalized under $`\Gamma'`$ before it is stored.
 
-### 5.2 Encapsulated: producer (P, N, M, Q)
-
-Each representation is an abstract (or `private`) type in its `.mli`, with
-constructors that return the normal form. This restricts construction to
-the module; that the normal form identifies equivalent values and keeps
-their meaning is tested (§5.5).
-
-### 5.3 Checked at the boundary: wire into Lean (W, X)
+### 5.2 Checked at the boundary: wire into Lean (W, X)
 
 Lean's decoder, a validator, refuses a value not in normal form, with its
-location. This checks what arrives; it does not prove the producer
-complete, and the producer's work before the document is written is not
-bounded by it.
+location. This checks what arrives; the writer's work before the document
+is written is not bounded by it.
 
-### 5.4 Audited: front end (F, D)
+### 5.3 Audited: front end (F, D)
 
 A branded type whose brand the normalizing constructor attaches.
 `tools/unchecked.mts` accepts an assertion that states its reason, so a
 brand can be asserted elsewhere; each such assertion appears in its report
 and is reviewed.
 
-### 5.5 Tested: every place and every extension
+### 5.4 Tested: every place and every extension
 
 - **Laws.** For each place, a control builds, for each law, a pair of raw
   values it relates, within one constructor and across constructors, and
   requires one normal form.
-- **Preservation**, for places whose laws are not proved (P, N, M, Q, F,
-  D): the control also builds values of different meaning that the
+- **Preservation**, for places whose laws are not proved (F, D): the control also builds values of different meaning that the
   normalizer must keep apart, and checks, for each raw value, that its normal
   form admits the same sample values (a normalizer returning `top` for every
   input fails it).
 - **A new constructor** fails the exhaustive match of its normalizer: in
-  Lean by construction, in OCaml by warning 8 (an error in
-  `ocaml-producer/dune` today), in TypeScript by a switch ending in `never`.
+  Lean by construction, in TypeScript by a switch ending in `never`.
 - **A new field** on an existing constructor is caught by a pattern that
   names every field:
   - Lean: a structure pattern omitting a field is refused, also for a field
     with a default.
-  - OCaml: a record pattern omitting a field raises warning 9, a warning
-    only under today's flags (`-warn-error -a+8`); the normalizers' modules
-    make warning 9 an error, and their patterns do not end in `; _`.
   - TypeScript: the normalizer destructures every field and checks the rest
     is empty, `const { a, b, ...rest } = x; rest satisfies Record<PropertyKey, never>`.
 
@@ -432,14 +382,13 @@ its own, reviewed before it is implemented:
    depend on one another (L's alias classes name the slots K and S state
    facts on) and they hold the measured growth:
    [heap-knowledge-canonical.md](heap-knowledge-canonical.md).
-2. The others, each when it is taken up: T, E, B, O and I; X with W; P, N,
-   M and Q; F and D.
+2. The others, each when it is taken up: T, E, B, O and I; X with W; F and D.
 
 ## 7. Decisions for the owner
 
 1. **The definition:** contextual canonicity (§1.2), each place's
    equivalence generated by laws with a normalizer deciding it.
 2. **The places and their requirements** (§3).
-3. **The enforcement** (§5): proved, encapsulated, checked at the boundary,
-   audited, tested; with the field gates and their probes.
+3. **The enforcement** (§5): proved, checked at the boundary, audited,
+   tested; with the field gates and their probes.
 4. **The order:** the heap-knowledge design; then the others.

@@ -4,7 +4,7 @@
 // signature against each member rather than re-checking the body, so
 // `(x: boolean | null) => boolean | null` is not assignable to
 // `(x: boolean) => boolean`. The verifier checks the body under each signature
-// and both hold, which is why this witness is the OCaml producer's alone.
+// and both hold.
 function guardedOverload(seed: boolean): boolean {
   const pick: ((x: boolean) => boolean) & ((x: null) => null) = (
     x: boolean | null,
