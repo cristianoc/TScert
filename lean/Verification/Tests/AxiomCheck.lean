@@ -11,6 +11,7 @@ import Verification.Programs.TolerantFramesExitVacuity
 import Verification.Programs.TolerantFramesDriverExitTrace
 import Verification.Programs.TolerantFramesExitAux
 import Verification.Programs.TolerantFramesMapNames
+import Verification.Programs.SinglePassClose
 import Lean.Util.CollectAxioms
 import Lean.Elab.Command
 import Lean.Compiler.CSimpAttr
@@ -1422,3 +1423,7 @@ run_cmd do
   check ``Verification.TolerantFrames.run_sound_single_pass_of_exits
   check ``Verification.TolerantFrames.run_sound_single_pass
   check ``Verification.TolerantFrames.regionalAt_header
+  check ``Verification.SinglePass.visitStep_rebound
+  check ``Verification.SinglePass.drive_rebound
+  check ``Verification.SinglePass.runWalk_rebound
+  check ``Verification.SinglePass.run_rebound
