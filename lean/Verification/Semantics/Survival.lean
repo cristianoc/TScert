@@ -170,7 +170,7 @@ theorem guardReads_sound {c : ReadContext} {x : Nat} {ρ : Env} {h h' : Heap} (h
 the context does not keep it (`keyRead`); the region is its location where it
 holds a store. -/
 def storeRead (c : ReadContext) (x : Nat) (p : List String) (δ : Change) : Footprint :=
-  keyRead c x p "[]" (.inCls (.path x p arrayStoreKey) .store) δ
+  keyRead c x p "[]" (.inCls (.path x p arrayStoreKey) .stores) δ
 
 /-- A one-field path whose typed array's length the context keeps. -/
 def viewKept (c : ReadContext) (x : Nat) : List String → Bool
@@ -221,7 +221,7 @@ theorem storeRead_sound {c : ReadContext} {x : Nat} {p : List String} {δ : Chan
       have hl : fs.lookup (.str "[]") = some s := by simpa [storeOf, fieldsOf, arrayStoreKey] using hst
       exact ⟨ls, hc.1 x "[]" fs cd o s _ hk hρ hl hls, LengthGrows.refl ls, fun _ => rfl⟩
     | _ => rw [hρ] at hst; simp [storeOf, fieldsOf] at hst
-  · have hm : (Region.inCls (.path x p arrayStoreKey) .store).mem ρ h s = true := by
+  · have hm : (Region.inCls (.path x p arrayStoreKey) .stores).mem ρ h s = true := by
       simp only [Region.mem, hw, hls, Bool.and_eq_true]
       refine ⟨?_, rfl⟩
       simpa [storeOf] using hst
@@ -378,11 +378,11 @@ theorem linearSupport_supports (c : ReadContext) (F : Linear.Fact Term) :
 /-- A value's region (`RegionOf`) is kept where its store location, holding
 a store, keeps its contents. -/
 theorem regionOf_supported {x : Nat} {ρ : Env} {h h' : Heap} {st : Option Nat} {cells : List (Option Nat)}
-    (hs : Supported [(.inCls (.field x arrayStoreKey) .store, .keep)] ρ h h') (hr : RegionOf h (ρ x) st cells) :
+    (hs : Supported [(.inCls (.field x arrayStoreKey) .stores, .keep)] ρ h h') (hr : RegionOf h (ρ x) st cells) :
     RegionOf h' (ρ x) st cells := by
   rcases hr with hr | ⟨l, rfl, hst, hl⟩
   · exact .inl hr
-  · have hm : (Region.inCls (.field x arrayStoreKey) .store).mem ρ h l = true := by
+  · have hm : (Region.inCls (.field x arrayStoreKey) .stores).mem ρ h l = true := by
       simp only [Region.mem, hl, Bool.and_eq_true]
       exact ⟨by simpa [storeOf] using hst, rfl⟩
     obtain ⟨v', hv', hk⟩ := hs _ (List.mem_singleton_self _) l _ hm hl
@@ -406,8 +406,8 @@ slot `s` reads besides its path: the array's store, at either key an array
 or a typed array holds its elements under, and the element cells, which hold
 numbers where an element is read, at `init`. -/
 def everyCells (s : Nat) (p : List String) : Footprint :=
-  [(.inCls (.path s p arrayStoreKey) .store, .keep), (.inCls (.path s p viewElementsKey) .store, .keep),
-    (.cls .value, .init)]
+  [(.inCls (.path s p arrayStoreKey) .stores, .keep), (.inCls (.path s p viewElementsKey) .stores, .keep),
+    (.cls .values, .init)]
 
 /-- **The support of an index fact**, where one is produced: nothing for a
 fact of slots' values alone; a length its store at `keep`, a bound its store
@@ -426,7 +426,7 @@ def _root_.Verification.HeapKnowledge.IndexFact.support? (c : ReadContext) : Ind
   | .either A B => do pure ((← A.support? c) ++ (← B.support? c))
   | .guarded s p _ B => do pure (pathReads c s .keep [] p ++ (← B.support? c))
   | .storeApart a p b q => some (pathReads c a .keep [] p ++ pathReads c b .keep [] q)
-  | .apart a b => some [(.inCls (.field a arrayStoreKey) .store, .keep), (.inCls (.field b arrayStoreKey) .store, .keep)]
+  | .apart a b => some [(.inCls (.field a arrayStoreKey) .stores, .keep), (.inCls (.field b arrayStoreKey) .stores, .keep)]
   | .every s p stop body =>
     if body.all (fun F => F.vars.all Bound.scalar) then
       some (pathReads c s .grow [] p ++ everyCells s p ++ stop.support c .keep ++ bodySupport c body)
@@ -505,8 +505,8 @@ theorem IndexFact.support?_supports (c : ReadContext) :
         subst hww
         exact pathReads_sound hc p [] hpath (keeps_obj (by decide) (hw_obj _ st0 hw0 he0)) rfl rfl hw0
       · -- the store location, at either key, holds a store
-        have hm : (Region.inCls (.path s p arrayStoreKey) .store).mem ρ h st = true ∨
-            (Region.inCls (.path s p viewElementsKey) .store).mem ρ h st = true := by
+        have hm : (Region.inCls (.path s p arrayStoreKey) .stores).mem ρ h st = true ∨
+            (Region.inCls (.path s p viewElementsKey) .stores).mem ρ h st = true := by
           simp only [Region.mem, hw, hls, Bool.and_eq_true]
           cases w with
           | objAt fs cd o =>
@@ -520,10 +520,10 @@ theorem IndexFact.support?_supports (c : ReadContext) :
               · cases he
           | _ => simp [elementsOf, storeOf, fieldsOf] at he
         rcases hm with hm | hm
-        · obtain ⟨v', hv', hk⟩ := hcells (.inCls (.path s p arrayStoreKey) .store, .keep)
+        · obtain ⟨v', hv', hk⟩ := hcells (.inCls (.path s p arrayStoreKey) .stores, .keep)
             (by simp [everyCells]) st _ hm hls
           simp only [Change.Holds] at hk; rw [hv', hk]
-        · obtain ⟨v', hv', hk⟩ := hcells (.inCls (.path s p viewElementsKey) .store, .keep)
+        · obtain ⟨v', hv', hk⟩ := hcells (.inCls (.path s p viewElementsKey) .stores, .keep)
             (by simp [everyCells]) st _ hm hls
           simp only [Change.Holds] at hk; rw [hv', hk]
       · obtain ⟨n', h1, -, h3⟩ := Term.support_sound hc (.inl rfl) hstop hz
@@ -536,8 +536,8 @@ theorem IndexFact.support?_supports (c : ReadContext) :
             simp only [Option.bind_eq_some_iff] at hj ⊢
             obtain ⟨v, hv, hz⟩ := hj
             obtain ⟨bv, rfl, -⟩ := intValue_safe hz
-            have hm : (Region.cls .value).mem ρ h l = true := by simp [Region.mem, hv, Cls.has, isArr]
-            obtain ⟨v', hv', hk⟩ := hcells (.cls .value, .init) (by simp [everyCells]) l _ hm hv
+            have hm : (Region.cls .values).mem ρ h l = true := by simp [Region.mem, hv, Selector.selects, isArr]
+            obtain ⟨v', hv', hk⟩ := hcells (.cls .values, .init) (by simp [everyCells]) l _ hm hv
             exact ⟨_, hv', by rw [(show Change.init.Holds _ _ _ from hk).defined_kept (by decide) rfl]; exact hz⟩
           · cases hj
         cases b with

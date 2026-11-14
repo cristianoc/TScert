@@ -81,8 +81,18 @@ keeps an object, `keep` and `init` keep contents neither `null` nor
 `undefined`, and on a store `init` and `scalar` are `keep` (proved:
 `Change.Holds.object_kept`, `.defined_kept`, `.init_store`, `.scalar_store`).
 
-The locations below a heap's length fall into two classes by their contents:
-`class(store)`, those holding a store, and `class(value)`, the others. A
+A **class region** $`\mathsf{cls}(S)`$ selects the locations whose contents
+have a category in the selector $`S`$, a set of the three categories value
+location, array store and view store (the note *Tolerant frames*, §3).
+Selector inclusion and disjointness are the set operations on the three
+categories, and they give inclusion and disjointness of class regions
+(proved: `class_subset_sound`, `class_disjoint_sound`); $`\mathsf{stores}`$
+(array and view stores) and $`\mathsf{views}`$ overlap, so distinct
+selectors need not be disjoint. Until a view store's contents are told apart
+from an array store's, a store is selected by a selector naming both store
+categories, such as $`\mathsf{stores}`$. The locations below a heap's length
+fall into two classes by their contents: `class(stores)`, those holding a
+store, and `class(values)`, the others. A
 **closed footprint** $`\Phi = \{\mathsf{value}{:}\,\delta_v,\ \mathsf{store}{:}\,\delta_s\}`$
 (`Footprints.Closed`) states a change for each class, `keep`, `init`,
 `scalar` or `any` for values (on a non-store, `grow` is `scalar`) and `keep`,
@@ -207,8 +217,8 @@ sound.
 The query a state's knowledge $`\Sigma`$ answers (`knowledgeQuery`, proved
 sound wherever $`\Sigma`$ holds: `knowledgeQuery_sound`):
 
-- **by class**: the locations of a region holding contents of one class and
-  the locations of the other class;
+- **by class**: the locations of a region in the class region of one
+  selector and the class region of a disjoint selector;
 - **by a store separation**: each region lies in the store of the value a
   path reads, $`x.\pi`$ and $`y.\pi'`$ (`storeSite`), and an unconditional
   fact of $`\Sigma`$ states two paths' values' stores different, each path
@@ -967,7 +977,7 @@ callbacks that change another array beyond `grow`, such as `pop` on an array
 literal the callback allocated. Admitting them needs footprints over regions
 rooted at a call's operands (`own(x)`, `store(x)`, `elems(x)`), composed
 along a graph and framing the caller's knowledge; the regional lemmas are
-proved (`Post.compose`, `transport_sound`,
+proved (`Post.compose_at`, `rebase_sound`,
 `stable_sound`, `frame_sound`, namespace `Footprints`).
 
 ### Argument-path store regions

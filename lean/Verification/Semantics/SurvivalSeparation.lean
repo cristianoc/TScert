@@ -18,24 +18,25 @@ open HeapKnowledge
 /-- Locations of a region whose contents are of one class, against the
 locations of another class. -/
 def classQuery : SepQuery := ⟨fun r s => match r, s with
-  | .inCls _ c, .cls c' => c != c'
-  | .cls c', .inCls _ c => c != c'
+  | .inCls _ c, .cls c' => c.disjoint c'
+  | .cls c', .inCls _ c => c.disjoint c'
   | _, _ => false⟩
 
-private theorem cls_disjoint {c c' : Cls} (hne : c ≠ c') {v : Val} (h₁ : c.has v = true)
-    (h₂ : c'.has v = true) : False := by
-  cases c <;> cases c' <;> simp_all [Cls.has]
+private theorem cls_disjoint {c c' : Selector} (hd : c.disjoint c' = true) {v : Val}
+    (h₁ : c.selects v = true) (h₂ : c'.selects v = true) : False := by
+  rw [Selector.selects_disjoint hd h₁] at h₂; cases h₂
 
 theorem classQuery_sound (ρ : Env) (h : Heap) : classQuery.Sound ρ h := by
   intro r s l hd hr hs
-  have key : ∀ {r c c'}, c ≠ c' → (Region.inCls r c).mem ρ h l = true → (Region.cls c').mem ρ h l = true → False := by
+  have key : ∀ {r c c'}, c.disjoint c' = true → (Region.inCls r c).mem ρ h l = true →
+      (Region.cls c').mem ρ h l = true → False := by
     intro r c c' hne hr hs
     simp only [Region.mem, Bool.and_eq_true] at hr hs
     obtain ⟨-, hr⟩ := hr
     split at hr
     · rename_i v hv; rw [hv] at hs; exact cls_disjoint hne hr hs
     · cases hr
-  cases r <;> cases s <;> simp only [classQuery, Bool.false_eq_true, bne_iff_ne, ne_eq] at hd
+  cases r <;> cases s <;> simp only [classQuery, Bool.false_eq_true] at hd
   all_goals first | exact key hd hr hs | exact key hd hs hr
 
 /-! ## Views of a path -/
@@ -322,8 +323,8 @@ namespace Verification.Footprints
 `init` and `scalar` are `keep`, on a value `grow` is `scalar`
 (`Change.onStore`, `Change.onValue`). -/
 def Footprint.byClass (Φ : Footprint) : Footprint := Φ.map fun e => match e.1 with
-  | .cls .store => (e.1, e.2.onStore)
-  | .cls .value => (e.1, e.2.onValue)
+  | .cls c => if !c.value then (e.1, e.2.onStore)
+      else if !(c.array && c.view) then (e.1, e.2.onValue) else e
   | _ => e
 
 /-- A transition within a footprint is within its class entries' action on
@@ -338,9 +339,14 @@ theorem Post.byClass {Φ : Footprint} {ρ : Env} {h h' : Heap} (hp : Post Φ ρ 
     refine .inr ⟨_, List.mem_map.mpr ⟨(r, δ), he, rfl⟩, ?_⟩
     cases r with
     | cls c =>
-      cases c with
-      | store =>
-        have harr : isArr v = true := by simpa [Region.mem, hv, Cls.has] using hm
+      have hsel : c.selects v = true := by simpa [Region.mem, hv] using hm
+      simp only
+      by_cases hcv : c.value = false
+      · simp only [hcv, Bool.not_false, if_true]
+        have harr : isArr v = true := by
+          unfold Selector.selects at hsel; split at hsel
+          · assumption
+          · rw [hcv] at hsel; cases hsel
         refine ⟨hm, ?_⟩
         cases v <;> simp [isArr] at harr
         cases δ <;> simp only [Change.onStore]
@@ -349,11 +355,18 @@ theorem Post.byClass {Φ : Footprint} {ρ : Env} {h h' : Heap} (hp : Post Φ ρ 
         · exact hh.scalar_store
         · exact hh
         · exact hh
-      | value =>
-        have harr : isArr v = false := by simpa [Region.mem, hv, Cls.has] using hm
-        refine ⟨hm, ?_⟩
-        cases δ <;> simp only [Change.onValue]
-        all_goals first | exact hh | exact hh.grow_value harr
+      · simp only [Bool.not_eq_false] at hcv
+        simp only [hcv, Bool.not_true, Bool.false_eq_true, if_false]
+        split
+        · rename_i hst
+          have harr : isArr v = false := by
+            unfold Selector.selects at hsel; split at hsel
+            · simp_all
+            · rename_i ha; simpa using ha
+          refine ⟨hm, ?_⟩
+          cases δ <;> simp only [Change.onValue]
+          all_goals first | exact hh | exact hh.grow_value harr
+        · exact ⟨hm, hh⟩
     | _ => exact ⟨hm, hh⟩
 
 end Verification.Footprints

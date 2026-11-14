@@ -445,8 +445,8 @@ theorem array_native_post {ρ x s h h' ls ls'} (hs : (fieldsOf (ρ x)).lookup ar
     (hv : h[s]? = some (.arr ls)) (hv' : h'[s]? = some (.arr ls')) (hlen : h.length ≤ h'.length)
     (hg : Change.grow.Holds h.length (.arr ls) (.arr ls'))
     (hrest : ∀ l v, h[l]? = some v → l ≠ s → h'[l]? = some v ∨
-      ((Region.cls .value).mem ρ h l = true ∧ ∃ v', h'[l]? = some v')) :
-    Post [(.field x arrayStoreKey, .grow), (.cls .value, .any)] ρ h h' := by
+      ((Region.cls .values).mem ρ h l = true ∧ ∃ v', h'[l]? = some v')) :
+    Post [(.field x arrayStoreKey, .grow), (.cls .values, .any)] ρ h h' := by
   refine ⟨hlen, fun l v hl => ?_⟩
   by_cases hls : l = s
   · subst hls
@@ -454,7 +454,7 @@ theorem array_native_post {ρ x s h h' ls ls'} (hs : (fieldsOf (ρ x)).lookup ar
     exact ⟨_, hv', .inr ⟨(.field x arrayStoreKey, .grow), List.mem_cons_self .., by simp [Region.mem, hs], hg⟩⟩
   · rcases hrest l v hl hls with h | ⟨hc, v', hv''⟩
     · exact ⟨v, h, .inl rfl⟩
-    · exact ⟨v', hv'', .inr ⟨(.cls .value, .any), by simp, hc, trivial⟩⟩
+    · exact ⟨v', hv'', .inr ⟨(.cls .values, .any), by simp, hc, trivial⟩⟩
 
 /-! ## Relies -/
 
@@ -480,6 +480,7 @@ theorem denseCheck_stable {x n : Nat} {Φ : Footprint} (hc : stableDenseClosed �
     simp only at hcls
     subst hcls
     simp [SepKnowledge.apart, SepKnowledge.apart₁, SepKnowledge.otherClass, denseK, denseClass]
+    right; rfl
   · simp [hle]
 
 /-- **A rely holds across a sequence of steps** each of whose footprints the

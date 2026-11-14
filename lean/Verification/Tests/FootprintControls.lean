@@ -2,6 +2,7 @@ import Lean.Util.CollectAxioms
 import Lean.Elab.Command
 import Verification.Semantics.FootprintProvenance
 import Verification.Semantics.ClosedFootprints
+import Verification.Semantics.FootprintRebase
 import Verification.Semantics.FootprintNatives
 import Verification.Semantics.HeapFacts
 import Verification.Types.PositiveNormalization
@@ -23,36 +24,22 @@ private def arr0 : Env := fun i => if i = 0 then .objAt [(arrayStoreKey, 0)] .ab
 
 `Φ` changes `x`'s store and its listed elements. Location 2 is listed only
 after the first step, so `Φ` read at `h₀` does not cover the second step's
-write. Transporting `elems` to `class(value)` does. -/
+write. Rebasing the second step's `elems` to the entry (`all`) does. -/
 
 private def Φelems : Footprint := [(.field 0 arrayStoreKey, .any), (.elems 0, .any)]
 private def h₀ : Heap := [.arr [some 1], .nul, .nul]
 private def h₁ : Heap := [.arr [some 2], .nul, .nul]
 private def h₂ : Heap := [.arr [some 2], .nul, .tru]
-private def elemsValue : TransportEvidence := { fresh := fun _ => false, elemsValue := fun x => x == 0 }
+/-- The step's slot 0 is the entry's slot 0. -/
+private def sameSlots : RebaseEvidence := { link := fun s => some (s, []), agree := fun _ _ => false }
 
-#guard postB (Φelems ++ transportAll elemsValue Φelems) arr0 h₀ h₂
+#guard postB (Φelems ++ rebaseAll sameSlots Φelems) arr0 h₀ h₂
 
-/-- The two-step rule without transport is false. -/
+/-- The two-step rule without rebasing is false. -/
 theorem union_composition_false :
     ¬ ∀ (Φ : Footprint) (ρ : Env) (a b c : Heap), Post Φ ρ a b → Post Φ ρ b c → Post Φ ρ a c := by
   intro H
   have h := H Φelems arr0 h₀ h₁ h₂ (postB_iff.mp (by decide)) (postB_iff.mp (by decide))
-  exact absurd (postB_iff.mpr h) (by decide)
-
-/-- Cell provenance claimed of a store whose list changed to a new cell: the
-cells transported to themselves miss the cell the second step wrote. -/
-private def forgedCells : TransportEvidence :=
-  { fresh := fun _ => false, elemsValue := fun _ => false, cellsFrom := fun _ _ => true }
-
-#guard !postB (Φelems ++ transportAll forgedCells Φelems) arr0 h₀ h₂
-
-/-- Transport by cell provenance the step does not meet is false. -/
-theorem forged_cells_from_false :
-    ¬ ∀ (Φp Φn : Footprint) (ρ : Env) (a b c : Heap),
-      Post Φp ρ a b → Post Φn ρ b c → Post (Φp ++ transportAll forgedCells Φn) ρ a c := by
-  intro H
-  have h := H Φelems Φelems arr0 h₀ h₁ h₂ (postB_iff.mp (by decide)) (postB_iff.mp (by decide))
   exact absurd (postB_iff.mpr h) (by decide)
 
 /-! ## Inclusion needs evidence valid at the entry heap
@@ -64,8 +51,16 @@ private def fieldK : Env := fun i => if i = 0 then .objAt [("k", 0)] .absent 9 e
 private def g₀ : Heap := [.arr []]
 private def g : Heap := [.nul]
 private def Φp : Footprint := [(.field 0 "k", .any)]
-private def Φq : Footprint := [(.cls .value, .any)]
-private def valueK : ClassEvidence := fun x k => if x = 0 ∧ k = "k" then some .value else none
+private def Φq : Footprint := [(.cls .values, .any)]
+private def valueK : ClassEvidence := fun x k => if x = 0 ∧ k = "k" then some .values else none
+/-- Rebasing evidence stating nothing. -/
+private def noLinks : RebaseEvidence := { link := fun _ => none, agree := fun _ _ => false }
+
+private theorem noLinks_ok (σ ρ₀ : Env) (a b : Heap) : RebaseOk noLinks σ ρ₀ a b where
+  link := by intro _ _ _ h; simp [noLinks] at h
+  agree := by intro _ _ h; simp [noLinks] at h
+  fresh := by intro _ h; exact absurd h (by simp [noLinks])
+  freshField := by intro _ _ h; exact absurd h (by simp [noLinks])
 
 theorem valueK_ok_current : ClassOk valueK fieldK g := by
   intro x k c l hc hl _
@@ -81,31 +76,31 @@ theorem valueK_ok_current : ClassOk valueK fieldK g := by
 
 theorem valueK_fails_entry : ¬ ClassOk valueK fieldK g₀ := by
   intro h
-  have := h 0 "k" .value 0 (by simp [valueK]) (by simp [fieldK, fieldsOf]) (by decide)
+  have := h 0 "k" .values 0 (by simp [valueK]) (by simp [fieldK, fieldsOf]) (by decide)
   exact absurd this (by decide)
 
 /-- Composition with class evidence valid at the current heap, instead of the
 entry heap, is false. -/
 theorem current_heap_compose_false :
-    ¬ ∀ (Φp Φn Φq : Footprint) (cl : ClassEvidence) (ρ : Env) (a b c : Heap) (ev : TransportEvidence),
-      Post Φp ρ a b → Post Φn ρ b c → FreshOk ev.fresh ρ a.length → ElemsValueOk ev.elemsValue ρ b →
-      Footprint.le cl (Φp ++ transportAll ev Φn) Φq = true → ClassOk cl ρ b → Post Φq ρ a c := by
+    ¬ ∀ (Φp Ψ Φq : Footprint) (cl : ClassEvidence) (ρ₀ σ : Env) (a b c : Heap) (ev : RebaseEvidence),
+      Post Φp ρ₀ a b → Post Ψ σ b c → RebaseOk ev σ ρ₀ a b →
+      Footprint.le cl (Φp ++ rebaseAll ev Ψ) Φq = true → ClassOk cl ρ₀ b → Post Φq ρ₀ a c := by
   intro H
-  have h := H Φp [] Φq valueK fieldK g₀ g g { fresh := fun _ => false, elemsValue := fun _ => false }
-    (postB_iff.mp (by decide)) (Post.refl _ _ _) (fun _ h => by cases h)
-    (fun _ h => by cases h) (by decide) valueK_ok_current
+  have h := H Φp [] Φq valueK fieldK fieldK g₀ g g noLinks
+    (postB_iff.mp (by decide)) (Post.refl _ _ _)
+    (noLinks_ok _ _ _ _) (by decide) valueK_ok_current
   exact absurd (postB_iff.mpr h) (by decide)
 
-/-- `Post.compose` itself cannot be applied to the witness: applied with any
-class evidence that justifies the inclusion and holds at the entry heap, it
-would give the false postcondition. So no such evidence exists, while
+/-- `Post.compose_at` itself cannot be applied to the witness: applied with
+any class evidence that justifies the inclusion and holds at the entry heap,
+it would give the false postcondition. So no such evidence exists, while
 evidence holding at the current heap does (`valueK_ok_current`). -/
 theorem compose_needs_entry_evidence :
-    ¬ ∃ cl, Footprint.le cl (Φp ++ transportAll { fresh := fun _ => false, elemsValue := fun _ => false } []) Φq = true ∧
-      ClassOk cl fieldK g₀ := by
+    ¬ ∃ cl, Footprint.le cl (Φp ++ rebaseAll noLinks []) Φq = true ∧ ClassOk cl fieldK g₀ := by
   rintro ⟨cl, hle, hc⟩
-  have h := Post.compose (Φn := []) (h := g) (h' := g) (postB_iff.mp (by decide)) (Post.refl _ _ _)
-    (fun _ h => by cases h) (fun _ h => by cases h) PathEvidenceOk.none hle hc
+  have h := Post.compose_at (Ψ := []) (σ := fieldK) (h := g) (h' := g) (postB_iff.mp (by decide))
+    (Post.refl _ _ _)
+    (noLinks_ok _ _ _ _) hle hc
   exact absurd (postB_iff.mpr h) (by decide)
 
 /-! ## Freshness of a store says nothing of its elements
@@ -255,11 +250,13 @@ itself. -/
 
 private def noKnowledge : SepKnowledge :=
   { cl := fun _ _ => none, stamps := ⟨fun _ => none, fun _ => none⟩, typed := fun _ => [], distinct := [] }
-private def storeK : SepKnowledge := { noKnowledge with cl := fun x k => if x = 0 ∧ k = "k" then some .store else none }
+private def storeK : SepKnowledge := { noKnowledge with cl := fun x k => if x = 0 ∧ k = "k" then some .stores else none }
 private def cellK : FactKind := .cell ⟨0, { nul := true }, "k"⟩
 
-#guard !stable noKnowledge cellK.support [(.cls .value, .any)]
-#guard stable storeK cellK.support [(.cls .value, .any)]
+#guard !stable noKnowledge cellK.support [(.cls .values, .any)]
+#guard stable storeK cellK.support [(.cls .values, .any)]
+-- `stores` and `views` overlap: a store field is not apart from the views.
+#guard !stable storeK cellK.support [(.cls .views, .any)]
 #guard !stable storeK cellK.support [(.field 0 "k", .any)]
 #guard stable storeK cellK.support [(.field 0 "k", .keep)]
 
@@ -321,9 +318,9 @@ The central example: `readRuns(runs)` states `value: any, store: keep` and
 and that array's cells hold no store. -/
 
 private def runsFrame : Footprint :=
-  [(.cls .value, .any), (.cls .store, .keep),
+  [(.cls .values, .any), (.cls .stores, .keep),
    (.path 1 ["openBrackets"] arrayStoreKey, .any), (.pathElems 1 ["openBrackets"], .any)]
-private def flagsStore : ClassEvidence := fun x k => if x = 0 ∧ k = arrayStoreKey then some .store else none
+private def flagsStore : ClassEvidence := fun x k => if x = 0 ∧ k = arrayStoreKey then some .stores else none
 private def runsK : SepKnowledge :=
   { noKnowledge with
     cl := flagsStore

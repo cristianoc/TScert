@@ -62,7 +62,7 @@ def callSlots (r : Tm) (args : List Tm) (p : Nat) : Option Nat :=
 
 /-- The frame `ReceiverGrows` states: every old location but the receiver's
 store kept, which holds a store. -/
-def grownFrame : Footprint := [((Region.field 0 arrayStoreKey).inCls .store, .any)]
+def grownFrame : Footprint := [((Region.field 0 arrayStoreKey).inCls .stores, .any)]
 
 theorem grown_post {e : CallEffects.Effect} {r : Tm} {args : List Tm} {h h' : Heap}
     (hw : e.within r args h h') (hg : CallEffects.ReceiverGrows r h h') :
@@ -70,7 +70,7 @@ theorem grown_post {e : CallEffects.Effect} {r : Tm} {args : List Tm} {h h' : He
   refine ⟨hw.1, fun l v hv => ?_⟩
   rcases hg l v hv with hs | ⟨hs, ls, ls', rfl, hl', -⟩
   · exact ⟨v, hs, .inl rfl⟩
-  · refine ⟨.arr ls', hl', .inr ⟨((Region.field 0 arrayStoreKey).inCls .store, .any), by simp [grownFrame], ?_,
+  · refine ⟨.arr ls', hl', .inr ⟨((Region.field 0 arrayStoreKey).inCls .stores, .any), by simp [grownFrame], ?_,
       trivial⟩⟩
     simp only [Region.mem, hv, Bool.and_eq_true]
     exact ⟨by simpa [CallEffects.callEnv, Footprints.storeOf] using hs, rfl⟩

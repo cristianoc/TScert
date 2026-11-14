@@ -220,7 +220,7 @@ theorem rebase_sound {Φp ρ₀ σ h₀ h ev l} (hp : Post Φp ρ₀ h₀ h) (hk
     · exact .inr h
   | cell b =>
     intro hm
-    have hv : (Region.cls .value).mem ρ₀ h l = true := by simpa [Region.mem] using hm
+    have hv : (Region.cls .values).mem ρ₀ h l = true := by simpa [Region.mem] using hm
     rcases cls_back hp hl hv with h | h
     · exact .inl ⟨.cell b, by simp [rebase], by simpa [Region.mem] using h⟩
     · exact .inr h

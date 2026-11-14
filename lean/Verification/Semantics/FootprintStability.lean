@@ -142,7 +142,7 @@ def SepKnowledge.Holds (K : SepKnowledge) (μ : Nat → Nat) (ρ : Env) (h : Hea
     (∀ a ∈ K.storeApart, ∀ l, (Region.path a.1 a.2.1 arrayStoreKey).mem ρ h l = true →
       (Region.field a.2.2 arrayStoreKey).mem ρ h l = false) ∧
     (∀ a ∈ K.elemsValue, ∀ l, (Region.pathElems a.1 a.2).mem ρ h l = true →
-      (Region.cls .value).mem ρ h l = true)
+      (Region.cls .values).mem ρ h l = true)
 
 /-- Own locations of `x` against typed field `k` of `y`, by stamps. -/
 def SepKnowledge.provenance (K : SepKnowledge) (x y : Nat) (k : PropKey) : Bool :=
@@ -153,10 +153,11 @@ def SepKnowledge.provenance (K : SepKnowledge) (x y : Nat) (k : PropKey) : Bool 
 def SepKnowledge.linked (K : SepKnowledge) (x : Nat) (k : PropKey) (y : Nat) (k' : PropKey) : Bool :=
   K.distinct.contains (x, k, y, k') || K.distinct.contains (y, k', x, k)
 
-/-- Whether a field's contents have, by class evidence, a class other than `c`. -/
-def SepKnowledge.otherClass (K : SepKnowledge) (x : Nat) (k : PropKey) (c : Cls) : Bool :=
+/-- Whether a field's location lies, by class evidence, in a class region
+disjoint from that of `c`. -/
+def SepKnowledge.otherClass (K : SepKnowledge) (x : Nat) (k : PropKey) (c : Selector) : Bool :=
   match K.cl x k with
-  | some c' => c' != c
+  | some c' => c'.disjoint c
   | none => false
 
 /-- One orientation of separation. -/
@@ -164,21 +165,21 @@ def SepKnowledge.apart₁ (K : SepKnowledge) : Region → Region → Bool
   | .field x k, .cls c => K.otherClass x k c
   | .field x k, .field y k' => K.provenance x y k' || K.provenance y x k || K.linked x k y k'
   | .own x, .field y k' => K.provenance x y k'
-  | .field x k, .cell _ => K.otherClass x k .value
+  | .field x k, .cell _ => K.otherClass x k .values
   | .field x k, .inCls _ c => K.otherClass x k c
   | .path x p k, .field y k' => k == arrayStoreKey && k' == arrayStoreKey &&
       K.storeApart.contains (x, p, y)
-  | .pathElems x p, .field y k => K.elemsValue.contains (x, p) && K.cl y k == some .store
-  | .pathElems x p, .cls .store => K.elemsValue.contains (x, p)
-  | .inCls _ c, .cls c' => c != c'
+  | .pathElems x p, .field y k => K.elemsValue.contains (x, p) && K.cl y k == some .stores
+  | .pathElems x p, .cls c => K.elemsValue.contains (x, p) && Selector.values.disjoint c
+  | .inCls _ c, .cls c' => c.disjoint c'
   | .inCls r _, s => K.apart₁ r s
   | _, _ => false
 
 def SepKnowledge.apart (K : SepKnowledge) (r s : Region) : Bool := K.apart₁ r s || K.apart₁ s r
 
-private theorem cls_disjoint {c c' : Cls} (hne : c ≠ c') {v : Val} (h₁ : c.has v = true)
-    (h₂ : c'.has v = true) : False := by
-  cases c <;> cases c' <;> simp_all [Cls.has]
+private theorem cls_disjoint {c c' : Selector} (hd : c.disjoint c' = true) {v : Val}
+    (h₁ : c.selects v = true) (h₂ : c'.selects v = true) : False := by
+  rw [Selector.selects_disjoint hd h₁] at h₂; cases h₂
 
 private theorem provenance_sound {K : SepKnowledge} {μ ρ h x y k l l'} (hK : K.Holds μ ρ h)
     (hp : K.provenance x y k = true) (hl : l ∈ (fieldsOf (ρ x)).map Prod.snd)
@@ -204,7 +205,7 @@ private theorem otherClass_sound {K : SepKnowledge} {μ ρ h x k c l} (hK : K.Ho
   cases hc : K.cl x k with
   | none => simp [hc] at ho
   | some c' =>
-    simp only [hc, bne_iff_ne, ne_eq] at ho
+    simp only [hc] at ho
     simp only [Region.mem, beq_iff_eq] at hr
     simp only [Region.mem] at hs
     split at hs
@@ -229,7 +230,7 @@ private theorem apart₁_sound {K : SepKnowledge} {μ ρ h l} (hK : K.Holds μ �
     obtain ⟨hr, hc⟩ := inCls_cls hr
     cases s
     case cls c' =>
-      simp only [SepKnowledge.apart₁, bne_iff_ne, ne_eq] at ha
+      simp only [SepKnowledge.apart₁] at ha
       simp only [Region.mem] at hc hs
       split at hc
       · rename_i v hv; rw [hv] at hs; exact cls_disjoint ha hc hs
@@ -271,16 +272,14 @@ private theorem apart₁_sound {K : SepKnowledge} {μ ρ h l} (hK : K.Holds μ �
     cases s <;> (try simp only [SepKnowledge.apart₁] at ha) <;> try contradiction
     case field y k =>
       simp only [Bool.and_eq_true, List.contains_iff_mem, beq_iff_eq] at ha
-      exact otherClass_sound (c := .value) hK (by simp [SepKnowledge.otherClass, ha.2]) hs (hv ha.1)
+      exact otherClass_sound (c := .values) hK (by simp [SepKnowledge.otherClass, ha.2]; rfl) hs (hv ha.1)
     case cls c =>
-      cases c
-      · simp only [SepKnowledge.apart₁, List.contains_iff_mem] at ha
-        have h₁ := hv ha
-        simp only [Region.mem] at h₁ hs
-        split at h₁
-        · rename_i v hv'; rw [hv'] at hs; exact cls_disjoint (c := .value) (c' := .store) (by decide) h₁ hs
-        · cases h₁
-      · simp [SepKnowledge.apart₁] at ha
+      simp only [Bool.and_eq_true, List.contains_iff_mem] at ha
+      have h₁ := hv ha.1
+      simp only [Region.mem] at h₁ hs
+      split at h₁
+      · rename_i v hv'; rw [hv'] at hs; exact cls_disjoint ha.2 h₁ hs
+      · cases h₁
   | elems | cls | all | pathOwn | cell =>
     intro s ha
     simp [SepKnowledge.apart₁] at ha
@@ -471,7 +470,7 @@ theorem keep_across_call {K : SepKnowledge} {F : FactKind} {Φ : Footprint} {σ 
   FactKind.support_sound hF (stable_sound hs hK (Post.rename hσ hp))
 
 /-- The class evidence a density fact supplies: its store holds a store. -/
-def denseClass (x : Nat) : ClassEvidence := fun y k => if y = x ∧ k = arrayStoreKey then some .store else none
+def denseClass (x : Nat) : ClassEvidence := fun y k => if y = x ∧ k = arrayStoreKey then some .stores else none
 
 theorem dense_classOk {x n ρ h} (hd : Dense x n ρ h) : ClassOk (denseClass x) ρ h := by
   intro y k c l hc hl _

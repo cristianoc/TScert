@@ -66,11 +66,11 @@ def Dense (x n : Nat) (ρ : Env) (h : Heap) : Prop :=
   ∃ s ls, (fieldsOf (ρ x)).lookup arrayStoreKey = some s ∧ h[s]? = some (.arr ls) ∧ DensePrefix n ls
 
 theorem dense_class {x n ρ h l} (hd : Dense x n ρ h)
-    (hm : (Region.field x arrayStoreKey).mem ρ h l = true) : (Region.cls .store).mem ρ h l = true := by
+    (hm : (Region.field x arrayStoreKey).mem ρ h l = true) : (Region.cls .stores).mem ρ h l = true := by
   obtain ⟨s, ls, hs, hv, -⟩ := hd
   simp only [Region.mem, beq_iff_eq] at hm
   rw [hs] at hm; cases hm
-  simp [Region.mem, hv, Cls.has, isArr]
+  simp [Region.mem, hv, Selector.selects, isArr]
 
 /-- **The support lemma of `Dense`.** It depends only on its store's
 location, and survives any change of it by `grow`. -/
@@ -101,7 +101,7 @@ theorem dense_stable {x n ρ h h' Φ} (hd : Dense x n ρ h) (hp : Post Φ ρ h h
 knowledge: `class(value)` entries are apart from the store by class, every
 other entry must change at most by `grow`. -/
 def stableDenseClosed (Φ : Footprint) : Bool :=
-  Φ.all fun e => e.1 == .cls .value || e.2.le .grow
+  Φ.all fun e => e.1 == .cls .values || e.2.le .grow
 
 theorem stableDenseClosed_sound {x n ρ h h' Φ} (hc : stableDenseClosed Φ = true)
     (hd : Dense x n ρ h) (hp : Post Φ ρ h h') : Dense x n ρ h' := by
@@ -113,7 +113,7 @@ theorem stableDenseClosed_sound {x n ρ h h' Φ} (hc : stableDenseClosed Φ = tr
     rw [hcls] at hem
     obtain ⟨s, ls, hs, hv, -⟩ := hd
     simp only [Region.mem] at hst hem
-    split at hst <;> simp_all [Cls.has]
+    split at hst <;> simp_all [Selector.selects]
   · exact hle
 
 /-! ## Elements -/

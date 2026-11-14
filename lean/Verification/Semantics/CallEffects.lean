@@ -410,7 +410,7 @@ own locations holding a value at `any` (one holding a store stays at the
 closed bound's stores, which `ownChange` gives it); else, with
 `receiverStore`, its store's location at `any`. -/
 def Effect.receiverEntries (e : Effect) : Footprints.Footprint :=
-  if e.receiverOwn then [(.inCls (.own 0) .value, .any)]
+  if e.receiverOwn then [(.inCls ((.own 0)) .values, .any)]
   else if e.receiverStore then [(.field 0 arrayStoreKey, .any)] else []
 
 /-- An argument store region's entry of a frame: the store location the
@@ -524,7 +524,7 @@ private theorem closed_entry_le {e : Effect} {x : Footprints.Region × Footprint
   simp only [Footprints.Closed.fp, List.mem_cons, List.not_mem_nil, or_false] at hx
   unfold Effect.footprint
   rcases hx with rfl | rfl <;>
-    simp only [Footprints.Region.mem, hv, Footprints.Cls.has] at hm <;>
+    simp only [Footprints.Region.mem, hv, Footprints.Selector.selects] at hm <;>
     split <;> simp_all [Footprints.Closed.at, Footprints.Closed.top, change_le_refl, change_le_any]
 
 /-- A region entry covers its location at `any`, which the coarse bound
@@ -577,7 +577,7 @@ theorem Effect.within_closed {e : Effect} {r : Tm} {args : List Tm} {before afte
         simp only [Footprints.Closed.at]
         split <;> simp [change_le_any]
       · rw [hst]; split <;> simp only [Effect.receiverEntries, ho, if_true, List.mem_singleton] at hx <;>
-          subst hx <;> simp_all [Footprints.Region.mem, Footprints.Cls.has, change_le_any]
+          subst hx <;> simp_all [Footprints.Region.mem, Footprints.Selector.selects, change_le_any]
       · have := region_entry_le (v := v) hq
         rw [hst]
         revert this
@@ -610,19 +610,19 @@ theorem Effect.within_iff_closed {e : Effect} (hreg : e.regions = []) (r : Tm) (
   by_cases ho : e.receiverOwn = true
   · simp only [ho, if_true]
     rw [Footprints.Closed.post_extra_any]
-    have hmem : ∀ l, (Footprints.Region.inCls (.own 0) .value).mem (callEnv r args) before l =
+    have hmem : ∀ l, (Footprints.Region.inCls ((.own 0)) .values).mem (callEnv r args) before l =
         (((Footprints.ownOf r).contains l) && match before[l]? with
-          | some v => Footprints.Cls.value.has v
+          | some v => Footprints.Selector.values.selects v
           | none => false) := fun l => rfl
     constructor
     · intro hw
       refine ⟨hw.weaken fun l hl => ?_, hw.1, fun l v hown hv => ?_⟩
-      · show (Footprints.Region.inCls (.own 0) .value).mem (callEnv r args) before l = false
+      · show (Footprints.Region.inCls ((.own 0)) .values).mem (callEnv r args) before l = false
         rw [hmem l]
         simp [hl]
       by_cases ha : Footprints.isArr v = true
-      · have hl : (Footprints.Region.inCls (.own 0) .value).mem (callEnv r args) before l = false := by
-          rw [hmem l, hv]; simp [Footprints.Cls.has, ha]
+      · have hl : (Footprints.Region.inCls ((.own 0)) .values).mem (callEnv r args) before l = false := by
+          rw [hmem l, hv]; simp [Footprints.Selector.selects, ha]
         obtain ⟨v', hv', hc⟩ := hw.2 l v hl hv
         refine ⟨v', hv', ?_⟩
         simpa [Footprints.Closed.at, ha, Effect.ownChange] using hc
@@ -632,12 +632,12 @@ theorem Effect.within_iff_closed {e : Effect} (hreg : e.regions = []) (r : Tm) (
         simp [Footprints.Closed.at, ha, Effect.ownChange, Footprints.Change.Holds]
     · rintro ⟨hout, hin⟩
       refine ⟨hout.1, fun l v hl hv => ?_⟩
-      replace hl : (Footprints.Region.inCls (.own 0) .value).mem (callEnv r args) before l = false := hl
+      replace hl : (Footprints.Region.inCls ((.own 0)) .values).mem (callEnv r args) before l = false := hl
       rw [hmem l, hv] at hl
       by_cases hown : l ∈ Footprints.ownOf r
       · obtain ⟨v', hv', hc⟩ := hin.2 l v hown hv
         have ha : Footprints.isArr v = true := by
-          simpa [List.contains_iff_mem, hown, Footprints.Cls.has] using hl
+          simpa [List.contains_iff_mem, hown, Footprints.Selector.selects] using hl
         refine ⟨v', hv', ?_⟩
         simpa [Footprints.Closed.at, ha, Effect.ownChange] using hc
       · exact hout.2 l v hown hv

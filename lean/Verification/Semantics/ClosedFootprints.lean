@@ -24,7 +24,7 @@ structure Closed where
   store : Change
   deriving DecidableEq, Repr
 
-def Closed.fp (c : Closed) : Footprint := [(.cls .value, c.value), (.cls .store, c.store)]
+def Closed.fp (c : Closed) : Footprint := [(.cls .values, c.value), (.cls .stores, c.store)]
 
 /-- On contents of class `value`, `grow` is `scalar`. -/
 def Change.onValue : Change → Change
@@ -80,10 +80,10 @@ theorem Closed.post_mono {a b : Closed} (hle : a.le b = true) {ρ h h'} (hp : Po
   · exact .inl rfl
   · simp only [Closed.fp, List.mem_cons, List.not_mem_nil, or_false] at he
     rcases he with rfl | rfl
-    · have hc : isArr v = false := by simpa [Region.mem, hv, Cls.has] using hm
+    · have hc : isArr v = false := by simpa [Region.mem, hv, Selector.selects] using hm
       exact .inr ⟨_, List.mem_cons_self .., hm, value_change hc hle.1 hh⟩
-    · have hc : isArr v = true := by simpa [Region.mem, hv, Cls.has] using hm
-      exact .inr ⟨(.cls .store, b.store), by simp [Closed.fp], hm,
+    · have hc : isArr v = true := by simpa [Region.mem, hv, Selector.selects] using hm
+      exact .inr ⟨(.cls .stores, b.store), by simp [Closed.fp], hm,
         class_change (fun h => by rw [hc] at h; cases h) (fun _ => hle.2) hh⟩
 
 private def ρ₀ : Env := fun _ => .undef
@@ -109,13 +109,13 @@ theorem Closed.allowed_iff {c : Closed} {ρ : Env} {h : Heap} {l : Nat} {v v' : 
     · exact Change.Holds.refl _ _ _
     · simp only [Closed.fp, List.mem_cons, List.not_mem_nil, or_false] at he
       rcases he with rfl | rfl <;> cases ha : isArr v <;>
-        simp_all [Region.mem, Cls.has, Closed.at]
+        simp_all [Region.mem, Selector.selects, Closed.at]
   · intro hh
     refine .inr ?_
     cases ha : isArr v
-    · exact ⟨(.cls .value, c.value), by simp [Closed.fp], by simp [Region.mem, hv, Cls.has, ha],
+    · exact ⟨(.cls .values, c.value), by simp [Closed.fp], by simp [Region.mem, hv, Selector.selects, ha],
         by simpa [Closed.at, ha] using hh⟩
-    · exact ⟨(.cls .store, c.store), by simp [Closed.fp], by simp [Region.mem, hv, Cls.has, ha],
+    · exact ⟨(.cls .stores, c.store), by simp [Closed.fp], by simp [Region.mem, hv, Selector.selects, ha],
         by simpa [Closed.at, ha] using hh⟩
 
 /-- A closed footprint's postcondition at any assignment of slots: each old
@@ -230,8 +230,8 @@ theorem Closed.top_le (c : Closed) : Closed.top.le c = (c == Closed.top) := by
 the same change. -/
 private theorem Closed.at_of_holds {c : Closed} {b v v'} (h : (c.at v).Holds b v v')
     (hne : c.at v ≠ .any) : c.at v' = c.at v := by
-  have := Change.Holds.same_class hne h .store
-  simp only [Cls.has] at this
+  have := Change.Holds.same_class hne h .stores
+  simp only [Selector.selects_stores] at this
   simp only [Closed.at, this]
 
 theorem Closed.Holds.refl (c : Closed) (h : Heap) : c.Holds h h :=

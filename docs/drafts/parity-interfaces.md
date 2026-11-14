@@ -57,11 +57,10 @@ The correspondence theorem packages:
 
 Modal statements quantify over the existing indexed states. They hold at fixed environments; fresh operational bindings are connected by substitution and scope evidence. No statement identifies environment extension with equality of the pass’s de Bruijn slot numbers.
 
-```lean
-namespace Verification.Footprints
+Region interpretation is heap-only. A location's contents decide its category: an array store, a view store (the tagged contents of I3), or a value location. The connecting theorem gives the note's role-based meaning: under `HeapOk n W h`, every allocated location's contents category equals its role's category, and under `Admissible` an old location keeps its contents category. Roles remain in the world, admissibility, contracts, valid-reference proofs and assertion-level separation evidence; no region predicate takes a role map.
 
-/-- NEW: the entry world's immutable role projection. -/
-abbrev RoleMap := List Role
+```lean
+namespace Verification
 
 /-- NEW: disjoint categories; every allocated role has exactly one. -/
 inductive Category where
@@ -70,8 +69,12 @@ inductive Category where
   | view
   deriving DecidableEq, Repr
 
-/-- NEW: category of a role, independent of the location's contents. -/
+/-- NEW: category of a role. -/
 def Role.category : Role → Category
+
+end Verification
+
+namespace Verification.Footprints
 
 /-- NEW: a selector is a finite subset of the three categories. -/
 structure Selector where
@@ -91,6 +94,16 @@ def Selector.arrays : Selector
 def Selector.views : Selector
 def Selector.stores : Selector
 def Selector.all : Selector
+
+/-- NEW: whether a class region selects a location holding `v`, by the
+contents category of `v`. -/
+def Selector.selects : Selector → Val → Bool
+
+/-- NEW: the connecting theorem. -/
+theorem HeapOk.category {n : Nat} {W : WorldT n} {h : Heap}
+    (hok : HeapOk n W h) {l : Nat} {r : Role} {v : Val}
+    (hr : roleAt W l = some r) (hv : h[l]? = some v) :
+    contentsCategory v = r.category
 
 end Verification.Footprints
 ```
@@ -122,10 +135,10 @@ inductive Region where
   | inCls (r : Region) (c : Selector)
   deriving DecidableEq, Repr
 
-/-- CHANGED from `Env → Heap → Region → Nat → Bool`.
-Every membership test is restricted to the entry heap's domain. -/
+/-- UNCHANGED signature: heap-only. A class region reads the contents
+category of the entry heap's location (`Selector.selects`). -/
 def Region.mem :
-  RoleMap → Env → Heap → Region → Nat → Bool
+  Env → Heap → Region → Nat → Bool
 
 /-- UNCHANGED: an effect is a finite list of region/change entries. -/
 abbrev Footprint := List (Region × Change)
@@ -159,16 +172,16 @@ Both ordinary and typed store selectors use one `storeOf` observation. A non-sto
 ```lean
 namespace Verification.Footprints
 
-/-- CHANGED: roles are read at the effect's entry. -/
-def Allowed (Φ : Footprint) (rs : RoleMap)
+/-- UNCHANGED: read at the effect's entry heap. -/
+def Allowed (Φ : Footprint)
     (ρ : Env) (h : Heap) (l : Nat) (v v' : Val) : Prop
 
-/-- CHANGED: allocation plus bounds on every old location. -/
-def Post (Φ : Footprint) (rs : RoleMap)
+/-- UNCHANGED: allocation plus bounds on every old location. -/
+def Post (Φ : Footprint)
     (ρ : Env) (h h' : Heap) : Prop
 
-/-- CHANGED: every support entry constrains each old location it selects. -/
-def Supported (S : Footprint) (rs : RoleMap)
+/-- UNCHANGED: every support entry constrains each old location it selects. -/
+def Supported (S : Footprint)
     (ρ : Env) (h h' : Heap) : Prop
 
 /-- CHANGED from two closed grades: pointwise grades on disjoint categories. -/
@@ -185,11 +198,11 @@ end Verification.Footprints
 
 namespace Verification.TolerantFrames
 
-/-- CHANGED: `Post` receives the entry world's roles. -/
+/-- UNCHANGED: admissibility and the heap-only action. -/
 def Action (Φ : Footprints.Footprint) (ρ : Env)
     (s s' : IndexedHeap) : Prop :=
   Admissible s s' ∧
-  Footprints.Post Φ (roles s.W) ρ s.h s'.h
+  Footprints.Post Φ ρ s.h s'.h
 
 /-- UNCHANGED meaning: transitivity of the whole action. -/
 def Rigid (Φ : Footprints.Footprint) (ρ : Env) : Prop
@@ -204,38 +217,31 @@ The basic theorem signatures are:
 ```lean
 namespace Verification.Footprints
 
-/-- NEW: role membership is preserved by world truncation. -/
-theorem class_mem_trunc {k j : Nat} (hj : j ≤ k)
-    (W : WorldT k) (ρ : Env) (h : Heap) (c : Selector) (l : Nat) :
-    Region.mem (roles (trunc j hj W)) ρ h (.cls c) l =
-      Region.mem (roles W) ρ h (.cls c) l
-
-/-- NEW: extending roles preserves old-location class membership. -/
-theorem class_mem_extension {rs rs' : RoleMap} {h h' : Heap}
-    (hr : rs.IsPrefix rs') (hh : h.length ≤ h'.length)
-    (hlen : rs.length = h.length) (ρ : Env) (c : Selector)
-    {l : Nat} (hl : l < h.length) :
-    Region.mem rs' ρ h' (.cls c) l =
-      Region.mem rs ρ h (.cls c) l
+/-- NEW: an old location keeps its contents category along an
+admissible transition (from `HeapOk.category` and role transport). -/
+theorem category_admissible {s s' : TolerantFrames.IndexedHeap}
+    (ha : TolerantFrames.Admissible s s') {l : Nat} {v v' : Val}
+    (hv : s.h[l]? = some v) (hv' : s'.h[l]? = some v') :
+    contentsCategory v' = contentsCategory v
 
 /-- NEW: selector inclusion implies region inclusion. -/
 theorem class_subset_sound {a b : Selector}
-    (hab : a.sub b = true) {rs ρ h l}
-    (ha : Region.mem rs ρ h (.cls a) l = true) :
-    Region.mem rs ρ h (.cls b) l = true
+    (hab : a.sub b = true) {ρ h l}
+    (ha : Region.mem ρ h (.cls a) l = true) :
+    Region.mem ρ h (.cls b) l = true
 
 /-- NEW: selector disjointness excludes common membership. -/
 theorem class_disjoint_sound {a b : Selector}
-    (hab : a.disjoint b = true) {rs ρ h l}
-    (ha : Region.mem rs ρ h (.cls a) l = true) :
-    Region.mem rs ρ h (.cls b) l = false
+    (hab : a.disjoint b = true) {ρ h l}
+    (ha : Region.mem ρ h (.cls a) l = true) :
+    Region.mem ρ h (.cls b) l = false
 
-/-- CHANGED: role-aware versions of the existing foundation lemmas. -/
-theorem Post.refl (Φ : Footprint) (rs : RoleMap)
-    (ρ : Env) (h : Heap) : Post Φ rs ρ h h
+/-- UNCHANGED: the existing foundation lemmas, heap-only. -/
+theorem Post.refl (Φ : Footprint)
+    (ρ : Env) (h : Heap) : Post Φ ρ h h
 
-theorem Post.empty_iff {rs ρ h h'} :
-    Post [] rs ρ h h' ↔ h.IsPrefix h'
+theorem Post.empty_iff {ρ h h'} :
+    Post [] ρ h h' ↔ h.IsPrefix h'
 
 end Verification.Footprints
 ```
@@ -250,14 +256,14 @@ The concrete proof syntax is shared with I4. -/
 def RegionIncluded (K : TolerantFrames.Assertion)
     (r t : Region) : Prop :=
   ∀ ρ m s, K ρ m s → ∀ l,
-    r.mem (roles s.W) ρ s.h l = true →
-    t.mem (roles s.W) ρ s.h l = true
+    r.mem ρ s.h l = true →
+    t.mem ρ s.h l = true
 
 def RegionsDisjoint (K : TolerantFrames.Assertion)
     (r t : Region) : Prop :=
   ∀ ρ m s, K ρ m s → ∀ l,
-    r.mem (roles s.W) ρ s.h l = true →
-    t.mem (roles s.W) ρ s.h l = false
+    r.mem ρ s.h l = true →
+    t.mem ρ s.h l = false
 
 /-- NEW: semantic inclusion of actions under an entry context. -/
 def EffectIncluded (K : TolerantFrames.Assertion)
@@ -269,7 +275,7 @@ def EffectIncluded (K : TolerantFrames.Assertion)
 end Verification.Footprints
 ```
 
-Rigidity evidence checks the **whole effect**. Class entries require only role transport. A selected-store entry requires that its path selects the same store under every action of the whole effect. A store-and-cells entry does not acquire rigidity merely from a rigid object path.
+Rigidity evidence checks the **whole effect**. Class entries require only contents-category stability on admissible states (`category_admissible`). Raw `Post` on arbitrary heaps permits category changes under `any`, so class transport is proved on admissible states, or under a heap-category-stability premise, never unconditionally on raw heaps. A selected-store entry requires that its path selects the same store under every action of the whole effect. A store-and-cells entry does not acquire rigidity merely from a rigid object path.
 
 The checked evidence and its theorem are specified in I5. `Closed` meet and order operate pointwise on the three categories. `Closed.fp` has one equivalence theorem to `Post`; its implementation is a computational normalization, not a second effect semantics.
 
@@ -323,11 +329,11 @@ The migration removes `closed`, `regions`, `receiverStore`, `receiverOwn`, `rece
 
 The JSON representation requires both exit objects, each with `frame` and `ensures`. Entry records contain exactly `region` and `change`. All producers, decoders, comparisons, substitutions and fixtures change together. Source annotation sugar may omit an exceptional clause; elaboration fills it with top and `true`. The decoder accepts one current shape.
 
-`Effect.postW` and its exceptional counterpart each receive the same entry world and heap. Meet, weakening and promise combination use that same entry interpretation on both sides. Heap-only helpers may interpret result predicates; they do not repeat a frame specification.
+Both exits' frames are read at the call's entry heap. Meet, weakening and promise combination use that same entry interpretation on both sides; frames add no entry-world argument to `excPostW`. Heap-only helpers may interpret result predicates; they do not repeat a frame specification.
 
 ### Migration and open work
 
-Leg 2 owns this migration. It replaces `Cls.has`, inequality-based class separation, the two-category closed representation, and duplicate heap/world frame interpretations.
+Leg 2 owns this migration. It replaces `Cls.has`, inequality-based class separation and the duplicate frame interpretations. The three-category split of the interpreter and of `Closed`, and the all-views region as an effect entry, follow I3's tagged representation.
 
 The precise selection of named module cells remains open. Their existing conservative value selector is sound and does not block these interfaces. Search for the smallest regional effect also remains open: checked inclusion, not minimality, is the requirement.
 
@@ -670,7 +676,7 @@ theorem viewWrite_frame
     (hr : ViewWriteRun s.h b index value h' result) :
     Footprints.Post
       [(.cls Footprints.Selector.views, .grow)]
-      (roles s.W) ρ s.h h'
+      ρ s.h h'
 
 /-- NEW: a valid write stores the converted number and preserves
 every other receiver index, including its cell reference. -/
@@ -1066,9 +1072,9 @@ def Rebased (Φ Ψ : Footprint)
     (s₀ s : TolerantFrames.IndexedHeap) : Prop :=
   ∀ r δ, (r, δ) ∈ Φ → ∀ l,
     l < s₀.h.length →
-    r.mem (roles s.W) ρ s.h l = true →
+    r.mem ρ s.h l = true →
     ∃ t γ, (t, γ) ∈ Ψ ∧
-      t.mem (roles s₀.W) ρ₀ s₀.h l = true ∧
+      t.mem ρ₀ s₀.h l = true ∧
       δ.le γ = true
 
 /-- CHANGED: finite facts for arbitrary paths replace root/one-field flags. -/
@@ -1262,7 +1268,7 @@ def Supports (arena : AssertionArena) (C : SupportContext)
     TolerantFrames.Admissible s s' →
     C ρ m s s' →
     Sat arena ρ m s A →
-    Footprints.Supported S (roles s.W) ρ s.h s'.h →
+    Footprints.Supported S ρ s.h s'.h →
     Sat arena ρ m s' A
 
 /-- NEW: context evidence valid over the entire modal domain.
@@ -1340,7 +1346,7 @@ Each semantic owner also owns its producer transaction. The integration owner se
 The declaration order is:
 
 1. **Pure vocabulary and algebra:** `ViewFormat`, categories/selectors, selector laws, path/substitution data, exit products and typed reference identifiers. These can land without changing accepted behavior.
-2. **Common region semantics:** role-aware `Region.mem`, action, inclusion/disjointness and closed normalization. Migrate existing consumers in the same buildable series. There is one authoritative interpretation.
+2. **Common region semantics:** heap-only `Region.mem` over contents categories with the connecting theorem to roles, action, inclusion/disjointness and closed normalization; the three-category split after I3's tags. Migrate existing consumers in the same buildable series. There is one authoritative interpretation.
 3. **Assertion arena and semantic evidence:** nodes, scope validity, `Sat`, substitution, rebasing and support meanings, with basic interpretation lemmas. They can be unused by acceptance while proved.
 4. **Primitive representation:** runtime tags, total conversion, store invariants and operational rules, with preservation. Metadata is removed as its consumers migrate.
 5. **Checked derivations and local records:** finite proof datatypes precede their soundness proofs. Primitive and call rules produce records; edges consume the common consequence checker.
@@ -1352,7 +1358,7 @@ A declaration may precede its acceptance integration. An unproved semantic place
 
 The following changes are within the agreed scope.
 
-1. **State notation.** Region interpretation includes the entry world’s role projection. Admissibility at differing budgets uses truncation followed by extension. Environment agreement is on named values, with explicit substitution for graph slots.
+1. **State notation.** Region interpretation reads the entry heap's contents categories, which equal the entry world's role categories on well-formed states. Admissibility at differing budgets uses truncation followed by extension. Environment agreement is on named values, with explicit substitution for graph slots.
 
 2. **View representation.** W2 already requires density; the implementation must satisfy it. The note should identify the fixed format and length descriptor and format-admitted cells. It should remove any claim that view length necessarily occupies a separate value location.
 

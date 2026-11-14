@@ -157,7 +157,7 @@ theorem alloc_apart {n : Nat} {W : WorldT n} {h h' : Heap} (hok : HeapOk n W h) 
 
 /-- `x`'s store may grow and every location holding a value may change; every
 other store is kept. -/
-def growOne (x : Nat) : Footprint := [(.cls .value, .any), (.field x arrayStoreKey, .grow)]
+def growOne (x : Nat) : Footprint := [(.cls .values, .any), (.field x arrayStoreKey, .grow)]
 
 /-- `apart(x, y)`: the regions of `x` and `y` share no location. -/
 def ApartAt (x y : Nat) : Assertion := fun ρ _ s => RegionsApart s.h (ρ x) (ρ y)
@@ -171,7 +171,7 @@ theorem growOne_keeps_store {x : Nat} {ρ : Env} {h h' : Heap} {st : Nat} {ls : 
   · exact hv'
   · simp only [growOne, List.mem_cons, List.not_mem_nil, or_false] at he
     rcases he with rfl | rfl
-    · simp [Region.mem, hst, Cls.has, isArr] at hm
+    · simp [Region.mem, hst, Selector.selects, isArr] at hm
     · simp [Region.mem] at hm; exact absurd hm hne
 
 /-- **(Apart, one-sided)** `apart(x, y) ⊢ □_{growOne x} apart(x, y)`,
@@ -203,7 +203,7 @@ theorem apart_grow_keep {x y : Nat} {ρ : Env} {m : Nat} {s : IndexedHeap}
         · exact ⟨xs, rfl, fun l hl => .inl hl⟩
         · simp only [growOne, List.mem_cons, List.not_mem_nil, or_false] at he
           rcases he with rfl | rfl
-          · simp [Region.mem, hv, Cls.has, isArr] at hm
+          · simp [Region.mem, hv, Selector.selects, isArr] at hm
           · simp only [Change.Holds] at hch
             rcases hch with rfl | ⟨ls, ls', he1, he2, -, hnew, -⟩ | hsc
             · exact ⟨xs, rfl, fun l hl => .inl hl⟩

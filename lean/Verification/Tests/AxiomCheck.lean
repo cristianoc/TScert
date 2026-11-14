@@ -126,7 +126,8 @@ the following depends on an axiom other than `propext`, `Classical.choice` and `
   the wrapper, code-table, plan, linking and realization theorems it rests on,
   the file-level theorem `SourceClaimJson.PassUnit.passFile_safe` and the
   modules' linking theorems;
-- the regional footprint's transport and composition, cell provenance, and the
+- the regional footprint's rebasing and composition, class-region inclusion
+  and disjointness, cell provenance, and the
   argument-store region composition, framing and stable separation theorems;
 - the tolerant-frame development's admissibility, adequacy, modal-law and
   atom theorems (`Verification.TolerantFrames`);
@@ -241,7 +242,8 @@ run_cmd do
   check ``Verification.SourceClaimJson.PassUnit.passMember_sound
   check ``Verification.SourceClaimJson.PassUnit.codesInOrder_accepted
   check ``Verification.SourceClaimJson.PassUnit.init_asserted
-  check ``Verification.Footprints.transport_sound
+  check ``Verification.Footprints.class_subset_sound
+  check ``Verification.Footprints.class_disjoint_sound
   check ``Verification.Footprints.Sep.sound
   check ``Verification.Footprints.Post.mono
   check ``Verification.Footprints.keep_across_call
@@ -251,7 +253,6 @@ run_cmd do
   check ``Verification.CallEffects.Effect.within_prefix
   check ``Verification.CallEffects.Effect.frameCovers_sound
   check ``Verification.Footprints.Closed.post_extra_any
-  check ``Verification.Footprints.Post.compose
   check ``Verification.Footprints.Region.sub_mem
   check ``Verification.Footprints.CellsFrom.of_post
   check ``Verification.Footprints.ArgumentStoreRegionsWithin.iff_post

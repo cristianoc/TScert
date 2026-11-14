@@ -60,20 +60,28 @@ structure FreshHold (F C : List Nat) (b : Nat) (ρ : Env) (h : Heap) : Prop wher
 
 /-- A region every location of which holds a store where it is read. -/
 def storeOnly : Region → Bool
-  | .cls .store => true
-  | .inCls _ .store => true
+  | .cls c => !c.value
+  | .inCls _ c => !c.value
   | _ => false
+
+/-- A selector naming no value category selects only stores. -/
+theorem Selector.selects_store_only {c : Footprints.Selector} (hc : c.value = false) {v : Tm}
+    (hs : c.selects v = true) : isArr v = true := by
+  unfold Footprints.Selector.selects at hs
+  split at hs
+  · assumption
+  · rw [hc] at hs; cases hs
 
 theorem storeOnly_mem {r : Region} {σ : Env} {h : Heap} {l : Nat} {v : Tm} (hs : storeOnly r = true)
     (hm : r.mem σ h l = true) (hv : h[l]? = some v) : isArr v = true := by
   cases r <;> simp only [storeOnly, Bool.false_eq_true] at hs
   case cls c =>
-    cases c <;> simp only [Bool.false_eq_true] at hs
-    simpa [Region.mem, hv, Cls.has] using hm
+    simp only [Bool.not_eq_true'] at hs
+    exact Selector.selects_store_only hs (by simpa [Region.mem, hv] using hm)
   case inCls r c =>
-    cases c <;> simp only [Bool.false_eq_true] at hs
+    simp only [Bool.not_eq_true'] at hs
     simp only [Region.mem, hv, Bool.and_eq_true] at hm
-    simpa [Cls.has] using hm.2
+    exact Selector.selects_store_only hs hm.2
 
 /-- A frame changing no location of class value: every entry keeps its
 locations, or holds only stores. -/
