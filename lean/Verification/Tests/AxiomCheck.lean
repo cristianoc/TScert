@@ -1502,6 +1502,8 @@ run_cmd do
   check ``Verification.TolerantFrames.Admissible.roleAt
   check ``Verification.TolerantFrames.Admissible.refsOk
   check ``Verification.RootsOk.admissible
+  check ``Verification.Kinds.empty_state
+  check ``Verification.Kinds.alloc_state
   check ``Verification.ControlFlow.sourceTerm_refsOk
   check ``Verification.ControlFlow.program_source_refsOk
   check ``Verification.TolerantFrames.accepts_source

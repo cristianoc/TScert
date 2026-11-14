@@ -507,19 +507,51 @@ A host value's declared signature is read over kinded worlds: every location
 has a role fixed at its allocation (a field, a binding's cell, an element
 cell, an array's or a view's store, an object's identity), and a well-formed
 heap holds at each location contents of its role's shape, references
-included ([kinds](SINGLE-PASS-PROOF.md#kinded-states)). Every value the
-initial environment binds, native or imported, and every callable member
-reachable through a host object, is assumed to meet its signature in that
-sense: from a well-formed entry with the callee's, the receiver's and the
-actuals' references valid, each step of the invocation, the callbacks it runs
-included, keeps the heap well-formed under one extension of the entry world
-and the running term's references valid, and an exit meets the signature's
-result type and postconditions. A native allocating a property allocates a
-field, one growing an array's store lists fresh element cells, and none
-changes a view store's length. The assumption enters through the meaning of
-callable and constructor types, so `mode8Accepted_sound` is relative to it
-through `EnvOk`; graph code meets the same condition by proof (`goto_safe`).
-The [trust surface](DESIGN.md#trust-surface) lists it.
+included ([kinds](SINGLE-PASS-PROOF.md#kinded-states)). The host and the
+libraries are modeled ([modeling a library](#modeling-a-library)), and an
+accurate model of them is one that holds over these worlds:
+
+- **its initial state is well-formed**: at each finite budget, the initial
+  host environment has a representation as a heap meeting an admissible
+  kinded world, its collected declarations' objects meeting their types,
+  and every binding of the environment holding valid references
+  (`EntryHolds` and `RootsOk`, the entry conditions of an accepted
+  request's guarantee, [the headline](SINGLE-PASS-THEOREM.md#the-final-statement));
+- **its operations meet their full contracts on such states**: every value
+  the initial environment binds, native or imported, and every callable
+  member reachable through a host object, meets its signature: from a
+  well-formed entry with the callee's, the receiver's and the actuals'
+  references valid, each step of the invocation, the callbacks it runs
+  included, keeps the heap well-formed under one extension of the entry
+  world and the running term's references valid, and an exit, normal or a
+  throw, meets the signature's result or exception type and
+  postconditions. A native allocating a property allocates a field, one
+  growing an array's store lists fresh element cells, and none changes a
+  view store's length.
+
+Lean proves the structural part of the first: the empty state is
+well-formed at every budget (`Kinds.empty_state`), and allocating a declared
+object whose contents have their roles' categories and their fields' types,
+with valid references, keeps the state well-formed and gives the object its
+record type (`Kinds.alloc_state`, the program's allocation rule), so a
+declaration set of records, prototypes and cells whose fields' contents can
+be allocated in some order is realized from the empty state; a structural
+example holding every family at once, a typed array's view store and
+metadata included, is `Kinds.families_state`. What stays assumed is the
+contents no allocation constructs: a callable's membership in its function
+type (the behaviour of native code), and a host object's view store and
+length metadata, which no source allocation makes.
+
+The view write a typed array's element write states is read, in the active
+contracts, against a role assignment fitting the entry heap (`ViewWriteA`),
+which admits a change of an ordinary array's store
+(`ViewWriteA.not_entry_roles`); the intended contract reads the entry
+world's roles (`ViewWrite`, `Effect.postK`), so the write keeps every
+location that is not a view store. The meaning of callable and constructor
+types carries these contracts, so `mode8Accepted_sound` is relative to the
+model's accuracy through the entry conditions of its conclusion; graph code
+meets the same condition by proof (`goto_safe`). The
+[trust surface](DESIGN.md#trust-surface) lists it.
 
 ## Certified imports
 

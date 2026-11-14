@@ -459,4 +459,65 @@ theorem families_state (n : Nat) :
         | exact fun _ hm => by simp [refs] at hm
         | simp [Cat, isSourceVal, hostObject]
 
+
+/-! ## The structural part of an initial world
+
+A world and heap are built from the empty state by allocating declared
+objects, one at a time: each declared object's fields with their storage
+roles, field types and contents. The empty state is well-formed at every
+budget (`empty_state`); allocating a declared object whose contents are of
+their roles' categories and meet their field types, with valid references,
+keeps the state well-formed and gives the object its record type
+(`alloc_state`, the program's allocation rule `allocation_safe`). What
+these do not construct is a callable's membership in its type: a field
+holding native code meets a function type only by the host model. -/
+
+/-- **The empty state is well-formed at every budget**, an environment of
+scalars' roots valid. -/
+theorem empty_state (n : Nat) :
+    HeapOk n (ofEntries [] : WorldT n) [] ∧ WorldAdm (ofEntries [] : WorldT n) ∧
+      RootsOk (ofEntries [] : WorldT n) (fun _ => .undef) := by
+  refine ⟨⟨entries_meets rfl fun i e v he _ => by simp at he, fun l r hr => by simp at hr⟩,
+    fun l c hc => by simp [lookup, toList] at hc, fun _ => RefsOk_undef⟩
+
+open AllocationWorlds in
+/-- **A declared object allocated from a well-formed state** (`allocation_safe`
+at the allocation's own step): with its fields' roles `ss`, types `As` and
+contents `vs`, each content of its role's category and its type, each role
+fitting its key, the metadata keys fitting, and the contents' references
+valid, the state after the allocation is well-formed at the successor
+world, which extends the truncated one; the object is valid there and meets
+its record type. -/
+theorem alloc_state {Ξ : Fam} {ss : List StorageRole} {As : List Fam} (hss : ss.length = As.length)
+    (hA : ∀ A ∈ As, Adm A) (hV : ∀ A ∈ As, ValOnly A) (p : Nat) (W : WorldT (p + 2)) (h : Heap)
+    (ns : List PropKey) (vs : List Val) (hnd : ns.Nodup) (hns : ns.length = vs.length)
+    (hAs : As.length = vs.length) (hvals : ∀ v ∈ vs, isVal v = true)
+    (hadm : WorldAdm W) (hok : HeapOk (p + 2) W h)
+    (hv : ∀ q ∈ As.zip vs, ∀ (j : Nat) (hj : j + 1 < p + 2), q.1 j (trunc j (by omega) W) q.2)
+    (hhold : ∀ (i : Nat) (s : StorageRole) (v : Val), ss[i]? = some s → vs[i]? = some v → s.Holds v)
+    (hfits : ∀ (i : Nat) (s : StorageRole), ss[i]? = some s → ∀ key : PropKey, ns[i]? = some key →
+      s.fitsKey key = true)
+    (hmeta : ∀ (k : Nat) (rs : List Role), concreteRoles ss vs = some rs →
+      MetaFit ns rs (As.map (fun A => (res A : Ctr k))))
+    (href : RefsOk W (.makeAt .absent ns vs)) :
+    ∃ U : WorldT (p + 1), WExt (trunc (p + 1) (Nat.le_succ _) W) U ∧ WorldAdm U ∧
+      HeapOk (p + 1) U (h ++ vs ++ [.nul]) ∧
+      RefsOk U (.objAt (slots h.length ns) .absent (h.length + vs.length)) ∧
+      recT (ns.zip (ss.zip As)) (p + 1) U (.objAt (slots h.length ns) .absent (h.length + vs.length)) := by
+  have hs := allocation_safe (Ξ := Ξ) (Q := fun j U v => recT (ns.zip (ss.zip As)) j U v) hss hA hV
+    (p + 2) W h .absent ns vs hnd hns hAs hvals hadm hok hv hhold hfits hmeta href (fun _ _ _ _ hr => hr)
+  have hstep : Step h (.makeAt .absent ns vs) (h ++ vs ++ [.nul])
+      (.objAt (slots h.length ns) .absent (h.length + vs.length)) := .makeFields hvals hns
+  obtain ⟨-, hs⟩ := hs
+  rcases hs with (⟨hval, -⟩ | ht) | ⟨U, h', t', hx, hu, hst, hh, -, hrest⟩
+  · simp [isVal] at hval
+  · exact absurd hstep ht.no_step
+  · obtain ⟨rfl, rfl⟩ := Step_det hst hstep
+    obtain ⟨hr, hrest⟩ := hrest
+    refine ⟨U, hx, hu, hh, hr, ?_⟩
+    rcases hrest with (⟨-, hq⟩ | ⟨_, hra, -⟩) | ⟨_, _, _, -, -, hst', -⟩
+    · exact hq
+    · have := raises_not_val hra; simp [isVal] at this
+    · exact absurd hst' (value_no_step rfl)
+
 end Verification.Kinds
