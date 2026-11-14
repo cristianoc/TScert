@@ -1061,7 +1061,16 @@ $\code{rows[i].n}\ge 0$ for every $i$. It needs a region $z[\ast].n$: a
 path from each element cell the store lists.
 \item[Overlapping typed-array views] Two views are distinct objects over
 one buffer, so $\sep$ on their stores says nothing about their elements.
-They need regions of buffer cells with offsets.
+They need regions of buffer cells with offsets. TScert's model states a
+write through a view without them. Within the kind $\kS$ a world marks
+the stores of views, each with its fixed length. A write to an element
+of a view has a post over the two states and the entry world: every
+location that the entry world does not mark as a view's store keeps its
+contents, and every view's store keeps its length; a view's store may
+come to list new cells, which hold what the view then reads. So facts
+about values, lengths and other arrays survive the write, and a fact
+about the elements of any view does not
+\status{Lean: \lean{ViewWrite}, \lean{Effect.viewPost}}.
 \item[A callback that writes what it captured] Example:
 \code{walk(xs, v => out.push(v))}. Each use has a closed effect. A
 reusable specification of \code{walk} needs an effect variable,
