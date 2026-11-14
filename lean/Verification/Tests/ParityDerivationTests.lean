@@ -32,6 +32,12 @@ private def proveOr (Fs : List (Linear.Fact StepVar)) (f : Linear.Form StepVar) 
     List (Linear.Step StepVar) :=
   (Linear.prove Fs f d).getD []
 
+/-- A linear consequence of the facts `Fs` by the certificate the search
+finds, each concluded term named by a fact. -/
+private def lin (Fs : List (Linear.Fact StepVar)) (f : Linear.Form StepVar) (d : Int) (raw : RawDerivation) :
+    RawDerivation :=
+  .linear Fs [] (proveOr Fs f d) raw .truth
+
 /-- The conjunction of a list of linear premises, each a premise. -/
 private def premisesRaw : Nat → RawDerivation
   | 0 => .truth
@@ -79,12 +85,12 @@ private def boundFacts : List (Linear.Fact StepVar) :=
 private def raw : RawDerivation :=
   .cut (smallFacts c)
     (.andIntro .assumption
-      (.andIntro (.linear [.le [(av c, 1)] 1114111] (proveOr [.le [(av c, 1)] 1114111] [(av c, 1)] (2 ^ 31 - 1))
+      (.andIntro (lin [.le [(av c, 1)] 1114111] [(av c, 1)] (2 ^ 31 - 1)
         (premisesRaw 1)) .truth))
     (.cut (shrFacts c j 8) (.shiftRight c j eight .assumption .assumption)
       (.andIntro (.andLeft (.and shrB (.and shrC .truth)) .assumption)
         (.andIntro
-          (.linear boundFacts (proveOr boundFacts [(av j, 1), (index, -1)] (-1))
+          (lin boundFacts [(av j, 1), (index, -1)] (-1)
             (.andIntro (.andLeft (.and shrC .truth) (.andRight shrA .assumption))
               (.andIntro .assumption (.andIntro .assumption .truth))))
           .truth)))
@@ -125,7 +131,7 @@ private def raw : RawDerivation :=
   .cut (maskFacts x y 255) (.mask x y mask255 .assumption (premisesRaw 2))
     (.andIntro (.andLeft (.and maskB (.and maskC .truth)) .assumption)
       (.andIntro
-        (.linear boundFacts (proveOr boundFacts [(av y, 1), (table, -1)] (-1))
+        (lin boundFacts [(av y, 1), (table, -1)] (-1)
           (.andIntro (.andLeft (.and maskC .truth) (.andRight maskA .assumption))
             (.andIntro .assumption .truth)))
         .truth))
@@ -176,12 +182,15 @@ private def arena : AssertionArena := ⟨#[
   .box Φ (ref 8),                              -- 13 □_Φ F
   .atom (.contents items object),              -- 14 p.items is an object
   .atom (.contents extras object),             -- 15 p.items.insideExtras is an object
-  .atom (.linear below)]⟩                      -- 16 i < |p.widths|
+  .atom (.linear below),                       -- 16 i < |p.widths|
+  .atom (.equal ⟨1, ["items"]⟩ (.path (.var 0))), -- 17 p.items ≐ v, under the binder
+  .box topEffect (ref 17),                     -- 18
+  .existsValue (ref 18)]⟩                      -- 19 rigid(p.items)
 
 #guard arena.check
 
 /-- The identity transport: the call binds no name. -/
-private def θ : Substitution := ⟨#[.var 0, .var 1]⟩
+private def θ : Substitution := ⟨#[.path (.var 0), .path (.var 1)]⟩
 
 /-- Before the call `F` and, by the tolerant frame theorem, `□_Φ L` (in the
 case `L`); the call's transition; after it, both null tests failed and
@@ -210,7 +219,7 @@ private def afterF : RawDerivation :=
     (.atomClash .after items .nul object (ref 0) (ref 14) (.boxElim topEffect (ref 1) .assumption) .assumption)
     (.guardCases .after (ref 7) (ref 3) (ref 6) .assumption
       (.atomClash .after extras .nul object (ref 2) (ref 15) (.boxElim topEffect (ref 3) .assumption) .assumption)
-      (.linear lenFacts (proveOr lenFacts [(.after i, 1), (.after (extras.term .length), -1)] (-1))
+      (lin lenFacts [(.after i, 1), (.after (extras.term .length), -1)] (-1)
         (.andIntro (.atomToLinear .after (ref 5) lenEq₂ (.atAndRight (ref 6) (ref 4) .assumption))
           (.andIntro (.atomToLinear .after (ref 16) below .assumption) .truth))))
 
@@ -225,7 +234,22 @@ private def raw : RawDerivation :=
 -- `F` read one binder further builds and checks; a field path for slot `0`
 -- under the boxes of `F` is refused.
 #guard isOk (substAssertion arena (Substitution.shift 2) (ref 8))
-#guard !isOk (substAssertion arena ⟨#[⟨1, ["next"]⟩, .var 1]⟩ (ref 8))
+#guard !isOk (substAssertion arena ⟨#[.path ⟨1, ["next"]⟩, .path (.var 1)]⟩ (ref 8))
+
+-- A literal witness: `□_⊤(p.items ≐ null) ⊢ rigid(p.items)`.
+#guard isOk (checkScoped arena ⟨2, 2⟩ [.at .before (ref 1)] (.at .before (ref 19))
+  (.existsIntroLiteral (ref 18) .nul 2 (ref 1) .assumption))
+
+-- Opening `rigid(p.items)` keeps the ambient premise `i < |p.widths|`, read
+-- one slot further, and concludes it.
+private def belowBefore : Formula := .linear (tagFact .before below)
+private def belowShifted : Formula := .linear (renameFact (shiftVar .before) (tagFact .before below))
+
+#guard isOk (checkScoped arena ⟨2, 2⟩ [.at .before (ref 19), belowBefore] belowBefore
+  (.existsElim .before (ref 19) (ref 18) 2 [belowShifted] belowShifted .assumption .assumption))
+-- The conclusion read at the eigenvariable's own slot is refused.
+#guard !isOk (checkScoped arena ⟨2, 2⟩ [.at .before (ref 19), belowBefore] belowBefore
+  (.existsElim .before (ref 19) (ref 18) 2 [belowBefore] belowBefore .assumption .assumption))
 
 end P18
 

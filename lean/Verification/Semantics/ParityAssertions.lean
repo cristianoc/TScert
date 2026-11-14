@@ -103,6 +103,25 @@ theorem EffectAction.closed_mono {a b : Footprints.Closed} (hle : a.le b = true)
     EffectAction b.fp η s s' :=
   action_le_closed hle h
 
+/-- **An effect with its roots renamed acts as the effect at the renamed
+valuation** (`Footprints.Region.mem_rename`). -/
+theorem EffectAction.rename_iff (σ : Nat → Nat) :
+    EffectAction (Footprint.rename σ Φ) η s s' ↔ EffectAction Φ (fun i => η (σ i)) s s' := by
+  have hm : ∀ (r : Region) l, (r.rename σ).mem η s.h l = r.mem (fun i => η (σ i)) s.h l :=
+    fun r l => Region.mem_rename σ η s.h l r
+  constructor
+  · rintro ⟨ha, hl, hp⟩
+    refine ⟨ha, hl, fun l v hv => ?_⟩
+    obtain ⟨v', hv', hal⟩ := hp l v hv
+    refine ⟨v', hv', hal.imp_right fun ⟨e, he, hme, hc⟩ => ?_⟩
+    obtain ⟨e0, he0, rfl⟩ := List.mem_map.mp he
+    exact ⟨e0, he0, by rw [← hm]; exact hme, hc⟩
+  · rintro ⟨ha, hl, hp⟩
+    refine ⟨ha, hl, fun l v hv => ?_⟩
+    obtain ⟨v', hv', hal⟩ := hp l v hv
+    refine ⟨v', hv', hal.imp_right fun ⟨e, he, hme, hc⟩ => ?_⟩
+    exact ⟨(e.1.rename σ, e.2), List.mem_map.mpr ⟨e, he, rfl⟩, by rw [hm]; exact hme, hc⟩
+
 end Action
 
 /-! ## Paths and witnesses -/

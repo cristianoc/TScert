@@ -152,9 +152,6 @@ def OperationPost.Holds (s : TwoState) : OperationPost → Prop
   | .stringRead x i y => ∃ str b, x.read s.afterEnv s.after.h = some (.str str) ∧
       i.value s.afterEnv s.after.h = some (.num b) ∧ y.read s.afterEnv s.after.h = some (codeUnitAt str b)
 
-instance : DecidableEq Substitution := fun a b =>
-  if h : a.images = b.images then .isTrue (by cases a; cases b; simp_all) else .isFalse (by intro e; cases e; exact h rfl)
-
 /-- **Two-state formulas** (I4, `Formula`): an assertion at one phase, the
 action of an effect from the entry to the exit (the note's `tr_Φ`, §6,
 Entry), an operational post, a linear fact over before- and after-terms, the
@@ -165,6 +162,7 @@ inductive Formula where
   | transition (effect : Footprint)
   | operation (post : OperationPost)
   | linear (fact : Linear.Fact StepVar)
+  | defined (v : StepVar)
   | transport (θ : Substitution)
   | and (left right : Formula)
   | truth
@@ -178,6 +176,7 @@ def Holds (arena : AssertionArena) (s : TwoState) : Formula → Prop
   | .transition Φ => EffectAction Φ s.beforeEnv s.before s.after
   | .operation q => q.Holds s
   | .linear F => FactAt (stepValue s) F
+  | .defined v => (stepValue s v).isSome
   | .transport θ => θ.Holds s.beforeEnv s.afterEnv s.after.h
   | .and F G => Holds arena s F ∧ Holds arena s G
   | .truth => True
@@ -197,13 +196,14 @@ theorem holds_conj {arena : AssertionArena} {s : TwoState} :
 def Formula.swap : Formula → Formula
   | .at p a => .at p.swap a
   | .linear F => .linear (renameFact stepSwap F)
+  | .defined v => .defined (stepSwap v)
   | .and F G => .and F.swap G.swap
   | F => F
 
 /-- A formula reading the two states symmetrically: assertions, linear
 facts and their connectives. -/
 def Formula.swappable : Formula → Bool
-  | .at _ _ | .linear _ | .truth | .falsity => true
+  | .at _ _ | .linear _ | .defined _ | .truth | .falsity => true
   | .and F G => F.swappable && G.swappable
   | _ => false
 
@@ -213,6 +213,7 @@ theorem holds_swap {arena : AssertionArena} {s : TwoState} :
   | .linear F, _ => by
     simp only [Formula.swap, Holds, factAt_rename]
     exact Iff.of_eq (congrArg (FactAt · F) (funext fun v => by cases v <;> rfl))
+  | .defined v, _ => by cases v <;> rfl
   | .and F G, h => by
     simp only [Formula.swappable, Bool.and_eq_true] at h
     simp only [Formula.swap, Holds, holds_swap h.1, holds_swap h.2]
@@ -305,10 +306,39 @@ def stringIndexFacts (x i : Path) : Formula :=
 
 /-- Linear certificate check: the certificate concludes the goal from the
 facts, and the goal names only terms the facts name. -/
-def linearCheck (Fs : List (Linear.Fact StepVar)) (steps : List (Linear.Step StepVar)) (G : Linear.Fact StepVar) : Bool :=
+def linearCheck (Fs : List (Linear.Fact StepVar)) (defs : List StepVar) (steps : List (Linear.Step StepVar))
+    (G : Linear.Fact StepVar) : Bool :=
   (match Linear.check Fs steps with
     | some out => out.contains G
-    | none => false) && G.vars.all fun x => Fs.any fun F => F.vars.contains x
+    | none => false) && G.vars.all fun x => defs.contains x || Fs.any fun F => F.vars.contains x
+
+/-! ## Reading a formula one slot further -/
+
+/-- A two-state variable of phase `p` read one slot further. -/
+def shiftVar (p : Phase) : StepVar → StepVar
+  | .before t => if p = .before then .before (Term.now t.kind (t.slot + 1) t.path) else .before t
+  | .after t => if p = .after then .after (Term.now t.kind (t.slot + 1) t.path) else .after t
+
+def OperationPost.shift : OperationPost → OperationPost
+  | .arith op l r y => .arith op l.shift r.shift ⟨y.root + 1, y.fields⟩
+  | .stringLength x y => .stringLength ⟨x.root + 1, x.fields⟩ ⟨y.root + 1, y.fields⟩
+  | .stringRead x i y => .stringRead ⟨x.root + 1, x.fields⟩ i.shift ⟨y.root + 1, y.fields⟩
+
+/-- **`F'` is `F` with the valuation of phase `p` read one slot further**:
+assertions by the shift substitution of the slots below `n`, terms of phase
+`p` at their next slot, an entry transition with its roots renamed, an exit
+operation and an exit transport with their roots shifted. -/
+def shiftFormula (nodes : Array AssertionNode) (p : Phase) (n : Nat) : Formula → Formula → Bool
+  | .at q a, .at q' a' => q == q' && (if q = p then substCheck nodes (Substitution.shift n) a.index a'.index else a == a')
+  | .linear F, .linear F' => F' == renameFact (shiftVar p) F
+  | .defined v, .defined v' => v' == shiftVar p v
+  | .transition Φ, .transition Φ' => if p = .before then Φ' == Footprint.rename (· + 1) Φ else Φ' == Φ
+  | .operation q, .operation q' => if p = .after then q' == q.shift else q' == q
+  | .transport θ, .transport θ' => p == .after && θ' == ⟨θ.images.map Witness.shift⟩
+  | .and F G, .and F' G' => shiftFormula nodes p n F F' && shiftFormula nodes p n G G'
+  | .truth, .truth => true
+  | .falsity, .falsity => true
+  | _, _ => false
 
 /-! ## Derivations -/
 
@@ -346,19 +376,25 @@ inductive Derivation (arena : AssertionArena) : List Formula → Formula → Typ
       (dg : Derivation arena (.at p g :: Γ) F) (db : Derivation arena (.at p b :: Γ) F) : Derivation arena Γ F
   /-- `π` defined and `A[π/v]` give `∃v. A`. -/
   | existsIntro {Γ p a b c e} (w : Path) (n : Nat) (hn : arena.nodes[a.index]? = some (.existsValue b))
-      (hc : substCheck arena.nodes (Substitution.instantiate w n) b.index c.index = true)
+      (hc : substCheck arena.nodes (Substitution.instantiate (.path w) n) b.index c.index = true)
       (he : arena.nodes[e.index]? = some (.atom (.equal w (.path w))))
       (de : Derivation arena Γ (.at p e)) (dc : Derivation arena Γ (.at p c)) : Derivation arena Γ (.at p a)
-  /-- Open `∃v. B`: from `B` alone, at a fresh slot `0`, derive `G` read under
-  the binder; then `G` holds. -/
-  | existsElim {Γ p a b g g'} (n : Nat) (hn : arena.nodes[a.index]? = some (.existsValue b))
-      (hc : substCheck arena.nodes (Substitution.shift n) g.index g'.index = true)
-      (d : Derivation arena Γ (.at p a)) (e : Derivation arena [.at p b] (.at p g')) :
-      Derivation arena Γ (.at p g)
+  /-- `A[ℓ/v]` gives `∃v. A` for a literal `ℓ`. -/
+  | existsIntroLiteral {Γ p a b c} (ℓ : Val) (n : Nat) (hn : arena.nodes[a.index]? = some (.existsValue b))
+      (hc : substCheck arena.nodes (Substitution.instantiate (.literal ℓ) n) b.index c.index = true)
+      (dc : Derivation arena Γ (.at p c)) : Derivation arena Γ (.at p a)
+  /-- Open `∃v. B` at phase `p`: the eigenvariable is slot `0` of that
+  phase's valuation; the ambient premises `Γ'` and the conclusion `G'` are
+  formulas of `Γ` and `G` read one slot further, so the eigenvariable occurs
+  in none of them. -/
+  | existsElim {Γ Γ' p a b G G'} (n : Nat) (hn : arena.nodes[a.index]? = some (.existsValue b))
+      (hΓ : Γ'.all (fun F' => Γ.any fun F => shiftFormula arena.nodes p n F F') = true)
+      (hG : shiftFormula arena.nodes p n G G' = true)
+      (d : Derivation arena Γ (.at p a)) (e : Derivation arena (.at p b :: Γ') G') : Derivation arena Γ G
   /-- `π ≐ π'` and `A[π/v]` give `A[π'/v]`. -/
   | equalitySubst {Γ p} {b c₁ c₂ e : AssertionRef} (w w' : Path) (n : Nat)
-      (h₁ : substCheck arena.nodes (Substitution.instantiate w n) b.index c₁.index = true)
-      (h₂ : substCheck arena.nodes (Substitution.instantiate w' n) b.index c₂.index = true)
+      (h₁ : substCheck arena.nodes (Substitution.instantiate (.path w) n) b.index c₁.index = true)
+      (h₂ : substCheck arena.nodes (Substitution.instantiate (.path w') n) b.index c₂.index = true)
       (he : arena.nodes[e.index]? = some (.atom (.equal w (.path w'))))
       (de : Derivation arena Γ (.at p e)) (d : Derivation arena Γ (.at p c₁)) : Derivation arena Γ (.at p c₂)
   /-- A derivation reading the states symmetrically holds with entry and
@@ -419,9 +455,21 @@ inductive Derivation (arena : AssertionArena) : List Formula → Formula → Typ
       (d : Derivation arena Γ (.at .before a)) (dt : Derivation arena Γ (.transition cl.fp))
       (dθ : Derivation arena Γ (.transport θ)) : Derivation arena Γ (.at .after c)
   /-- Linear arithmetic over defined terms, by a `Linear.check` certificate. -/
-  | linear {Γ G} (Fs : List (Linear.Fact StepVar)) (steps : List (Linear.Step StepVar))
-      (hc : linearCheck Fs steps G = true) (d : Derivation arena Γ (conj (Fs.map .linear))) :
-      Derivation arena Γ (.linear G)
+  | linear {Γ G} (Fs : List (Linear.Fact StepVar)) (defs : List StepVar) (steps : List (Linear.Step StepVar))
+      (hc : linearCheck Fs defs steps G = true) (d : Derivation arena Γ (conj (Fs.map .linear)))
+      (dd : Derivation arena Γ (conj (defs.map .defined))) : Derivation arena Γ (.linear G)
+  /-- A linear fact defines each of its terms. -/
+  | definedOfLinear {Γ F v} (hv : v ∈ F.vars) (d : Derivation arena Γ (.linear F)) : Derivation arena Γ (.defined v)
+  /-- The atom `defined(t)` is the definedness of `t` at its phase. -/
+  | definedToAtom {Γ p a t} (ha : arena.nodes[a.index]? = some (.atom (.defined t)))
+      (d : Derivation arena Γ (.defined (tagVar p t))) : Derivation arena Γ (.at p a)
+  | atomToDefined {Γ p a t} (ha : arena.nodes[a.index]? = some (.atom (.defined t)))
+      (d : Derivation arena Γ (.at p a)) : Derivation arena Γ (.defined (tagVar p t))
+  /-- `safeInt(π)` is the definedness of `π`'s safe integer. -/
+  | safeIntToDefined {Γ p a π} (ha : arena.nodes[a.index]? = some (.atom (.safeInt π)))
+      (d : Derivation arena Γ (.at p a)) : Derivation arena Γ (.defined (tagVar p (π.term .value)))
+  | definedToSafeInt {Γ p a π} (ha : arena.nodes[a.index]? = some (.atom (.safeInt π)))
+      (d : Derivation arena Γ (.defined (tagVar p (π.term .value)))) : Derivation arena Γ (.at p a)
   /-- A linear atom read as a linear formula of its phase. -/
   | atomToLinear {Γ p a} (F : Linear.Fact Term) (ha : arena.nodes[a.index]? = some (.atom (.linear F)))
       (d : Derivation arena Γ (.at p a)) : Derivation arena Γ (.linear (tagFact p F))
@@ -502,7 +550,9 @@ inductive RawDerivation where
   | guardRight (g b : AssertionRef) (d : RawDerivation)
   | guardCases (p : Phase) (a g b : AssertionRef) (d dg db : RawDerivation)
   | existsIntro (b : AssertionRef) (w : Path) (n : Nat) (c e : AssertionRef) (de dc : RawDerivation)
-  | existsElim (a b : AssertionRef) (n : Nat) (g' : AssertionRef) (d e : RawDerivation)
+  | existsIntroLiteral (b : AssertionRef) (ℓ : Val) (n : Nat) (c : AssertionRef) (dc : RawDerivation)
+  | existsElim (p : Phase) (a b : AssertionRef) (n : Nat) (shifted : List Formula) (goal : Formula)
+      (d e : RawDerivation)
   | equalitySubst (b : AssertionRef) (w w' : Path) (n : Nat) (c₁ e : AssertionRef) (de d : RawDerivation)
   | oldLift (d : RawDerivation)
   | boxElim (Φ : Footprint) (a : AssertionRef) (d : RawDerivation)
@@ -517,7 +567,13 @@ inductive RawDerivation where
   | dense (x k : Nat) (a : AssertionRef) (d : RawDerivation)
   | frame (Φ : Footprint) (a b : AssertionRef) (θ : Substitution) (d dt dθ : RawDerivation)
   | framePlus (cl : Footprints.Closed) (a b : AssertionRef) (θ : Substitution) (d dt dθ : RawDerivation)
-  | linear (Fs : List (Linear.Fact StepVar)) (steps : List (Linear.Step StepVar)) (d : RawDerivation)
+  | linear (Fs : List (Linear.Fact StepVar)) (defs : List StepVar) (steps : List (Linear.Step StepVar))
+      (d dd : RawDerivation)
+  | definedOfLinear (F : Linear.Fact StepVar) (d : RawDerivation)
+  | definedToAtom (t : Term) (d : RawDerivation)
+  | atomToDefined (a : AssertionRef) (d : RawDerivation)
+  | safeIntToDefined (a : AssertionRef) (π : Path) (d : RawDerivation)
+  | definedToSafeInt (π : Path) (d : RawDerivation)
   | atomToLinear (p : Phase) (a : AssertionRef) (F : Linear.Fact Term) (d : RawDerivation)
   | linearToAtom (F : Linear.Fact Term) (d : RawDerivation)
   | atomClash (p : Phase) (π : Path) (v : Val) (R : CallEffects.ElemPred) (e c : AssertionRef)
@@ -597,25 +653,31 @@ def checkDerivation (arena : AssertionArena) (premises : List Formula) (goal : F
   | .existsIntro b w n c e de dc => match goal with
     | .at p a => do
       let ⟨hn⟩ ← node? arena a (.existsValue b)
-      let ⟨hc⟩ ← req (substCheck arena.nodes (Substitution.instantiate w n) b.index c.index = true)
+      let ⟨hc⟩ ← req (substCheck arena.nodes (Substitution.instantiate (.path w) n) b.index c.index = true)
         "existsIntro: not the instance"
       let ⟨he⟩ ← node? arena e (.atom (.equal w (.path w)))
       pure (.existsIntro w n hn hc he (← checkDerivation arena premises (.at p e) de)
         (← checkDerivation arena premises (.at p c) dc))
     | _ => .error "existsIntro: goal is no assertion"
-  | .existsElim a b n g' d e => match goal with
-    | .at p g => do
+  | .existsIntroLiteral b ℓ n c dc => match goal with
+    | .at p a => do
       let ⟨hn⟩ ← node? arena a (.existsValue b)
-      let ⟨hc⟩ ← req (substCheck arena.nodes (Substitution.shift n) g.index g'.index = true)
-        "existsElim: the conclusion under the binder is not the shifted goal"
-      pure (.existsElim n hn hc (← checkDerivation arena premises (.at p a) d)
-        (← checkDerivation arena [.at p b] (.at p g') e))
-    | _ => .error "existsElim: goal is no assertion"
+      let ⟨hc⟩ ← req (substCheck arena.nodes (Substitution.instantiate (.literal ℓ) n) b.index c.index = true)
+        "existsIntroLiteral: not the instance"
+      pure (.existsIntroLiteral ℓ n hn hc (← checkDerivation arena premises (.at p c) dc))
+    | _ => .error "existsIntroLiteral: goal is no assertion"
+  | .existsElim p a b n Γ' G' d e => do
+    let ⟨hn⟩ ← node? arena a (.existsValue b)
+    let ⟨hΓ⟩ ← req (Γ'.all (fun F' => premises.any fun F => shiftFormula arena.nodes p n F F') = true)
+      "existsElim: a premise is not read one slot further"
+    let ⟨hG⟩ ← req (shiftFormula arena.nodes p n goal G' = true) "existsElim: the conclusion is not read one slot further"
+    pure (.existsElim n hn hΓ hG (← checkDerivation arena premises (.at p a) d)
+      (← checkDerivation arena (.at p b :: Γ') G' e))
   | .equalitySubst b w w' n c₁ e de d => match goal with
     | .at p c₂ => do
-      let ⟨h₁⟩ ← req (substCheck arena.nodes (Substitution.instantiate w n) b.index c₁.index = true)
+      let ⟨h₁⟩ ← req (substCheck arena.nodes (Substitution.instantiate (.path w) n) b.index c₁.index = true)
         "equalitySubst: not the first instance"
-      let ⟨h₂⟩ ← req (substCheck arena.nodes (Substitution.instantiate w' n) b.index c₂.index = true)
+      let ⟨h₂⟩ ← req (substCheck arena.nodes (Substitution.instantiate (.path w') n) b.index c₂.index = true)
         "equalitySubst: not the second instance"
       let ⟨he⟩ ← node? arena e (.atom (.equal w (.path w')))
       pure (.equalitySubst w w' n h₁ h₂ he (← checkDerivation arena premises (.at p e) de)
@@ -713,11 +775,43 @@ def checkDerivation (arena : AssertionArena) (premises : List Formula) (goal : F
       pure (.framePlus cl θ ha hc (← checkDerivation arena premises (.at .before a) d)
         (← checkDerivation arena premises (.transition cl.fp) dt) (← checkDerivation arena premises (.transport θ) dθ))
     | _ => .error "framePlus: goal is no exit assertion"
-  | .linear Fs steps d => match goal with
+  | .linear Fs defs steps d dd => match goal with
     | .linear G => do
-      let ⟨hc⟩ ← req (linearCheck Fs steps G = true) "linear: the certificate does not conclude the goal"
-      pure (.linear Fs steps hc (← checkDerivation arena premises (conj (Fs.map .linear)) d))
+      let ⟨hc⟩ ← req (linearCheck Fs defs steps G = true) "linear: the certificate does not conclude the goal"
+      pure (.linear Fs defs steps hc (← checkDerivation arena premises (conj (Fs.map .linear)) d)
+        (← checkDerivation arena premises (conj (defs.map .defined)) dd))
     | _ => .error "linear: goal is no linear fact"
+  | .definedOfLinear F d => match goal with
+    | .defined v => do
+      let ⟨hv⟩ ← req (v ∈ F.vars) "definedOfLinear: the fact does not name the term"
+      pure (.definedOfLinear hv (← checkDerivation arena premises (.linear F) d))
+    | _ => .error "definedOfLinear: goal is no definedness"
+  | .definedToAtom t d => match goal with
+    | .at p a => do
+      let ⟨ha⟩ ← node? arena a (.atom (.defined t))
+      pure (.definedToAtom ha (← checkDerivation arena premises (.defined (tagVar p t)) d))
+    | _ => .error "definedToAtom: goal is no assertion"
+  | .atomToDefined a d => match goal with
+    | .defined v => match v with
+      | .before t => do
+        let ⟨ha⟩ ← node? arena a (.atom (.defined t))
+        pure (.atomToDefined (p := .before) ha (← checkDerivation arena premises (.at .before a) d))
+      | .after t => do
+        let ⟨ha⟩ ← node? arena a (.atom (.defined t))
+        pure (.atomToDefined (p := .after) ha (← checkDerivation arena premises (.at .after a) d))
+    | _ => .error "atomToDefined: goal is no definedness"
+  | .safeIntToDefined a π d => do
+    let ⟨ha⟩ ← node? arena a (.atom (.safeInt π))
+    if hg : goal = .defined (tagVar .before (π.term .value)) then
+      pure (hg.symm ▸ .safeIntToDefined (p := .before) ha (← checkDerivation arena premises (.at .before a) d))
+    else if hg : goal = .defined (tagVar .after (π.term .value)) then
+      pure (hg.symm ▸ .safeIntToDefined (p := .after) ha (← checkDerivation arena premises (.at .after a) d))
+    else .error "safeIntToDefined: goal is not the path's safe integer"
+  | .definedToSafeInt π d => match goal with
+    | .at p a => do
+      let ⟨ha⟩ ← node? arena a (.atom (.safeInt π))
+      pure (.definedToSafeInt ha (← checkDerivation arena premises (.defined (tagVar p (π.term .value))) d))
+    | _ => .error "definedToSafeInt: goal is no assertion"
   | .atomToLinear p a F d => do
     let ⟨ha⟩ ← node? arena a (.atom (.linear F))
     let ⟨hg⟩ ← req (goal = .linear (tagFact p F)) "atomToLinear: goal is not the atom's fact"
@@ -1079,6 +1173,102 @@ theorem dense_iff {η : Env} {h : Heap} {x k : Nat} :
   · rintro ⟨n, hn, h0, st, ls, hs, hl, hd⟩
     exact ⟨η x, st, ls, n, rfl, hs, hl, hn, h0, hd⟩
 
+theorem stepValue_shiftVar (s : TwoState) (p : Phase) (x : Val) (v : StepVar) :
+    stepValue (s.withEnv p (push x (s.env p))) (shiftVar p v) = stepValue s v := by
+  cases p <;> cases v <;> rfl
+
+theorem OperationPost.holds_shift (s : TwoState) (x : Val) (q : OperationPost) :
+    q.shift.Holds (s.withEnv .after (push x (s.env .after))) ↔ q.Holds s := by
+  cases q <;> simp only [OperationPost.shift, OperationPost.Holds, TwoState.withEnv, TwoState.env,
+    Witness.value_shift] <;> rfl
+
+/-- **A formula read one slot further holds where the formula holds at the
+valuation without the eigenvariable.** -/
+theorem holds_shiftFormula {arena : AssertionArena} {p : Phase} {n : Nat} {s : TwoState} {x : Val} :
+    ∀ {F F' : Formula}, shiftFormula arena.nodes p n F F' = true →
+      (Holds arena (s.withEnv p (push x (s.env p))) F' ↔ Holds arena s F)
+  | .at q a, .at q' a', h => by
+    simp only [shiftFormula, Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨rfl, h⟩ := h
+    show Sat arena _ _ _ a' ↔ Sat arena _ _ _ a
+    by_cases hq : q = p
+    · subst hq
+      simp only [if_true] at h
+      simpa only [TwoState.env_withEnv, TwoState.state_withEnv, TwoState.mark_withEnv] using sat_shift h x
+    · simp only [hq, if_false, beq_iff_eq] at h
+      subst h
+      have : (s.withEnv p (push x (s.env p))).env q = s.env q := by cases p <;> cases q <;> simp_all [TwoState.withEnv, TwoState.env]
+      rw [this, TwoState.state_withEnv, TwoState.mark_withEnv]
+  | .linear F, .linear F', h => by
+    simp only [shiftFormula, beq_iff_eq] at h
+    subst h
+    simp only [Holds, factAt_rename]
+    exact Iff.of_eq (congrArg (FactAt · F) (funext fun v => stepValue_shiftVar s p x v))
+  | .defined v, .defined v', h => by
+    simp only [shiftFormula, beq_iff_eq] at h
+    subst h
+    simp only [Holds, stepValue_shiftVar]
+  | .transition Φ, .transition Φ', h => by
+    simp only [shiftFormula] at h
+    cases p
+    · simp only [if_true, beq_iff_eq] at h
+      subst h
+      exact EffectAction.rename_iff _
+    · simp only [beq_iff_eq, reduceCtorEq, if_false] at h
+      subst h; exact Iff.rfl
+  | .operation q, .operation q', h => by
+    simp only [shiftFormula] at h
+    cases p
+    · simp only [reduceCtorEq, if_false, beq_iff_eq] at h
+      subst h; exact Iff.rfl
+    · simp only [if_true, beq_iff_eq] at h
+      subst h; exact OperationPost.holds_shift s x q
+  | .transport θ, .transport θ', h => by
+    simp only [shiftFormula, Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    show (Substitution.Holds _ _ _ _) ↔ _
+    constructor
+    · intro hθ i w hi
+      have := hθ i w.shift (by simp [hi])
+      exact (Witness.value_shift w x s.afterEnv s.after.h).symm.trans this
+    · intro hθ i w hi
+      simp only [Array.getElem?_map, Option.map_eq_some_iff] at hi
+      obtain ⟨w0, hw0, rfl⟩ := hi
+      show w0.shift.value (push x s.afterEnv) s.after.h = some (s.beforeEnv i)
+      rw [Witness.value_shift]; exact hθ i w0 hw0
+  | .and F G, .and F' G', h => by
+    simp only [shiftFormula, Bool.and_eq_true] at h
+    exact and_congr (holds_shiftFormula h.1) (holds_shiftFormula h.2)
+  | .truth, .truth, _ => Iff.rfl
+  | .falsity, .falsity, _ => Iff.rfl
+  | .at _ _, .transition _, h | .at _ _, .operation _, h | .at _ _, .linear _, h | .at _ _, .defined _, h
+  | .at _ _, .transport _, h | .at _ _, .and _ _, h | .at _ _, .truth, h | .at _ _, .falsity, h => by
+    simp [shiftFormula] at h
+  | .transition _, .at _ _, h | .transition _, .operation _, h | .transition _, .linear _, h
+  | .transition _, .defined _, h | .transition _, .transport _, h | .transition _, .and _ _, h
+  | .transition _, .truth, h | .transition _, .falsity, h => by simp [shiftFormula] at h
+  | .operation _, .at _ _, h | .operation _, .transition _, h | .operation _, .linear _, h
+  | .operation _, .defined _, h | .operation _, .transport _, h | .operation _, .and _ _, h
+  | .operation _, .truth, h | .operation _, .falsity, h => by simp [shiftFormula] at h
+  | .linear _, .at _ _, h | .linear _, .transition _, h | .linear _, .operation _, h
+  | .linear _, .defined _, h | .linear _, .transport _, h | .linear _, .and _ _, h
+  | .linear _, .truth, h | .linear _, .falsity, h => by simp [shiftFormula] at h
+  | .defined _, .at _ _, h | .defined _, .transition _, h | .defined _, .operation _, h
+  | .defined _, .linear _, h | .defined _, .transport _, h | .defined _, .and _ _, h
+  | .defined _, .truth, h | .defined _, .falsity, h => by simp [shiftFormula] at h
+  | .transport _, .at _ _, h | .transport _, .transition _, h | .transport _, .operation _, h
+  | .transport _, .linear _, h | .transport _, .defined _, h | .transport _, .and _ _, h
+  | .transport _, .truth, h | .transport _, .falsity, h => by simp [shiftFormula] at h
+  | .and _ _, .at _ _, h | .and _ _, .transition _, h | .and _ _, .operation _, h
+  | .and _ _, .linear _, h | .and _ _, .defined _, h | .and _ _, .transport _, h
+  | .and _ _, .truth, h | .and _ _, .falsity, h => by simp [shiftFormula] at h
+  | .truth, .at _ _, h | .truth, .transition _, h | .truth, .operation _, h | .truth, .linear _, h
+  | .truth, .defined _, h | .truth, .transport _, h | .truth, .and _ _, h | .truth, .falsity, h => by
+    simp [shiftFormula] at h
+  | .falsity, .at _ _, h | .falsity, .transition _, h | .falsity, .operation _, h | .falsity, .linear _, h
+  | .falsity, .defined _, h | .falsity, .transport _, h | .falsity, .and _ _, h | .falsity, .truth, h => by
+    simp [shiftFormula] at h
+
 /-- **The common consequence theorem** (I4, `Derivation.sound`): a checked
 derivation's conclusion holds at every two-state where its premises hold. -/
 theorem Derivation.sound {arena : AssertionArena} (hv : arena.Valid) {Γ : List Formula} {F : Formula}
@@ -1108,22 +1298,25 @@ theorem Derivation.sound {arena : AssertionArena} (hv : arena.Valid) {Γ : List 
   | existsIntro w n hn hc he _ _ ihe ihc =>
     intro s hΓ
     obtain ⟨v, hw, hw'⟩ := (sat_atom he).mp (ihe s hΓ)
-    refine (sat_exists hv hn).mpr ⟨v, (sat_instantiate hc hw).mp (ihc s hΓ)⟩
-  | @existsElim Γ p a b g g' n hn hc _ _ ih ihe =>
+    exact (sat_exists hv hn).mpr ⟨v, (sat_instantiate hc (w := .path w) hw).mp (ihc s hΓ)⟩
+  | existsIntroLiteral ℓ n hn hc _ ihc =>
+    intro s hΓ
+    exact (sat_exists hv hn).mpr ⟨ℓ, (sat_instantiate hc (w := .literal ℓ) rfl).mp (ihc s hΓ)⟩
+  | @existsElim Γ Γ' p a b G G' n hn hΓ' hG _ _ ih ihe =>
     intro s hΓ
     obtain ⟨v, hb⟩ := (sat_exists hv hn).mp (ih s hΓ)
     have hb' : Holds arena (s.withEnv p (push v (s.env p))) (.at p b) := by
       show Sat arena _ _ _ b
       simpa only [TwoState.env_withEnv, TwoState.state_withEnv, TwoState.mark_withEnv] using hb
-    have hg := ihe (s.withEnv p (push v (s.env p))) fun q hq => by
-      simp only [List.mem_singleton] at hq; subst hq; exact hb'
-    have hg' : Sat arena (push v (s.env p)) s.mark (s.state p) g' := by
-      simpa only [Holds, TwoState.env_withEnv, TwoState.state_withEnv, TwoState.mark_withEnv] using hg
-    exact (sat_shift hc v).mp hg'
+    refine (holds_shiftFormula (x := v) hG).mp (ihe (s.withEnv p (push v (s.env p))) fun q hq => ?_)
+    rcases List.mem_cons.mp hq with rfl | hq
+    · exact hb'
+    · obtain ⟨F, hF, hsh⟩ := List.any_eq_true.mp (List.all_eq_true.mp hΓ' q hq)
+      exact (holds_shiftFormula (x := v) hsh).mpr (hΓ F hF)
   | equalitySubst w w' n h₁ h₂ he _ _ ihe ih =>
     intro s hΓ
     obtain ⟨v, hw, hw'⟩ := (sat_atom he).mp (ihe s hΓ)
-    exact (sat_instantiate h₂ hw').mpr ((sat_instantiate h₁ hw).mp (ih s hΓ))
+    exact (sat_instantiate h₂ (w := .path w') hw').mpr ((sat_instantiate h₁ (w := .path w) hw).mp (ih s hΓ))
   | oldLift hΓ' hF _ ih =>
     intro s hΓ
     refine (holds_swap hF).mp (ih s.swap fun q hq => ?_)
@@ -1179,19 +1372,44 @@ theorem Derivation.sound {arena : AssertionArena} (hv : arena.Valid) {Γ : List 
     have ha' : Sat arena s.beforeEnv s.mark s.after _ := (sat_box hv ha).mpr fun s₂ a₂ =>
       (sat_box hv ha).mp (ih s hΓ) s₂ (EffectAction.closed_trans cl (iht s hΓ) a₂)
     exact (sat_subst hc (ihθ s hΓ)).mpr ha'
-  | @linear Γ G Fs steps hc _ ih =>
+  | @linear Γ G Fs defs steps hc _ _ ih ihd =>
     intro s hΓ
     have hFs := holds_conj.mp (ih s hΓ)
+    have hds := holds_conj.mp (ihd s hΓ)
     have hall : ∀ F ∈ Fs, FactAt (stepValue s) F := fun F hF => hFs (.linear F) (List.mem_map_of_mem hF)
-    simp only [linearCheck, Bool.and_eq_true, List.all_eq_true, List.any_eq_true, List.contains_iff_mem] at hc
+    simp only [linearCheck, Bool.and_eq_true, List.all_eq_true, List.any_eq_true, List.contains_iff_mem,
+      Bool.or_eq_true] at hc
     obtain ⟨hcheck, hdef⟩ := hc
     refine ⟨fun x hx => ?_, ?_⟩
-    · obtain ⟨F, hF, hxF⟩ := hdef x hx
-      exact (hall F hF).1 x hxF
+    · rcases hdef x hx with hx' | ⟨F, hF, hxF⟩
+      · exact hds (.defined x) (List.mem_map_of_mem hx')
+      · exact (hall F hF).1 x hxF
     · split at hcheck
       · rename_i out hout
         exact Linear.check_sound (fun F hF => (hall F hF).2) hout G (List.contains_iff_mem.mp hcheck)
       · cases hcheck
+  | definedOfLinear hv _ ih => exact fun s hΓ => (ih s hΓ).1 _ hv
+  | @definedToAtom Γ p a t ha _ ih =>
+    intro s hΓ
+    have := ih s hΓ
+    simp only [Holds, stepValue_tag] at this
+    exact (sat_atom ha).mpr this
+  | @atomToDefined Γ p a t ha _ ih =>
+    intro s hΓ
+    show (stepValue s (tagVar p t)).isSome
+    rw [stepValue_tag]; exact (sat_atom ha).mp (ih s hΓ)
+  | @safeIntToDefined Γ p a π ha _ ih =>
+    intro s hΓ
+    obtain ⟨v, hv', hi⟩ := (sat_atom ha).mp (ih s hΓ)
+    show (stepValue s (tagVar p (π.term .value))).isSome
+    rw [stepValue_tag, Path.termAt_term, hv']; exact hi
+  | @definedToSafeInt Γ p a π ha _ ih =>
+    intro s hΓ
+    have := ih s hΓ
+    simp only [Holds, stepValue_tag, Path.termAt_term] at this
+    obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp this
+    obtain ⟨v, hv', hi⟩ := Option.bind_eq_some_iff.mp hn
+    exact (sat_atom ha).mpr ⟨v, hv', by rw [show kindValue _ .value v = intValue v from rfl] at hi; rw [hi]; rfl⟩
   | atomToLinear F ha _ ih => exact fun s hΓ => (factAt_tag s _ F).mpr ((sat_atom ha).mp (ih s hΓ))
   | linearToAtom F ha _ ih => exact fun s hΓ => (sat_atom ha).mpr ((factAt_tag s _ F).mp (ih s hΓ))
   | atomClash π v R hv' he hc _ _ ihe ihc =>
@@ -1380,7 +1598,8 @@ def Formula.scoped (arena : AssertionArena) (sc : Scope) : Formula → Bool
   | .transition Φ => effectScoped sc.before Φ
   | .operation q => q.scoped sc.after
   | .linear F => F.vars.all (StepVar.scoped sc)
-  | .transport θ => decide (θ.images.size = sc.before) && θ.images.toList.all (Path.scoped sc.after)
+  | .defined v => StepVar.scoped sc v
+  | .transport θ => decide (θ.images.size = sc.before) && θ.images.toList.all (Witness.scoped sc.after)
   | .and F G => F.scoped arena sc && G.scoped arena sc
   | .truth | .falsity => true
 
