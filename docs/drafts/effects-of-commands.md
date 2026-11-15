@@ -300,6 +300,13 @@ Semantic equivalence does not establish identical verifier verdicts. The general
 
 ## Smallest buildable migration
 
+**Order decided on 2026-11-15.** The decisions this section assigns to step 4
+(the exceptional frame at throws, freshness, fact survival at calls, the
+effect proposals, the assumptions of recursion) move onto the per-exit form
+before step 3, so that the serialized format never carries or imitates the
+fields they read. Step 3 then changes the format, and what remains of step 4
+is the deletion of those fields and composition used by acceptance.
+
 There are four integration steps. The first three preserve the interpretation of existing contracts; the fourth activates the general command analysis. Exact verdict preservation must be proved for each claimed refactor, rather than inferred from equivalent specifications.
 
 ### 1. Establish the common semantics behind the existing wire
