@@ -3004,8 +3004,10 @@ def methodBinders (args : List Expr) (Ps : List (Ty Tree)) (As : List (Option (T
 literal's effect: the walk meets an operation whose summary is the
 instance's per-exit contract, each exit's frame read in the closed language
 below the call's entry with a fresh receiver's store discharged
-(`ClassSummary.ofEffect`, Fresh-Eff); its fresh result; whether it may change
-value locations (`changedValues`). A call whose instance's result is the
+(`ClassSummary.ofEffect`, Fresh-Eff); its fresh result, a postcondition of
+its normal exit (`ClassSummary.freshResult`); whether its normal exit's frame
+may change a value location of the heap at its entry
+(`ClassSummary.changesValues`, `changedValues`). A call whose instance's result is the
 empty type never returns normally: its normal exit is unreached, its throw
 its signature's, which a handler or an async body routes to their normal
 exits (`ClassSummary.handle`, `ClassSummary.settle`). (`TSCERT_FORCE=no-return`:
@@ -3017,10 +3019,9 @@ def callChanges (inst : CallEffects.Arrow (Ty Tree)) (receiverFresh : Bool) : W 
     if (← get).force.contains "no-return" then return
   meets (ClassSummary.ofEffect inst.effect (if receiverFresh then [0] else []) returns)
   if !returns then return
-  if inst.effect.footprint.value != .keep || inst.effect.receiverOwn || inst.effect.receiverStore ||
-      inst.effect.elementWrite.isSome then
+  if ClassSummary.changesValues inst.effect.schema.normal.frame then
     modify fun w => { w with changedValues := true }
-  modify fun w => { w with lastFresh := inst.effect.fresh }
+  modify fun w => { w with lastFresh := ClassSummary.freshResult inst.effect.schema.normal }
 
 /-- A literal of no binders, rest or guard passed where the instance's
 parameter is one fixed signature binding more parameters than it, of
@@ -3041,9 +3042,9 @@ def offerToParameters (args : List Expr) (Ps : List (Ty Tree)) : W Unit := do
     if !(rows.all fun r => r.arguments.take params.length == own.arguments) then continue
     let [s] := ProgramTyping.callSigs Go P | continue
     if P.length != 1 || !(ProgramTyping.restSigs Go P).isEmpty || s.arguments.length ≤ params.length then continue
-    let supplies := s.effect == CallEffects.Effect.ordinary || rows.any fun r =>
-      let e := { r.effect with fresh := r.effect.fresh && s.effect.fresh, onThrow := r.effect.onThrow && s.effect.onThrow }
-      e == s.effect || ({ e with closed := s.effect.closed } == s.effect && e.closed.le s.effect.closed)
+    -- (a row's effect covers the parameter's: its specification entails
+    -- the parameter's on both exits, `Effect.covers_sound`)
+    let supplies := s.effect == CallEffects.Effect.ordinary || rows.any fun r => r.effect.covers s.effect
     if supplies then recordAt x.span (kindOf x) (.ok P)
 
 /-- A call of a callee in the walk: a union of callables at one signature
@@ -4310,7 +4311,7 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
         -- The call is an operation of its signature's per-exit contract, as
         -- a call's instance is (`callChanges`).
         meets (ClassSummary.ofEffect eff [])
-        if eff.footprint.value != .keep || eff.receiverOwn || eff.receiverStore || eff.elementWrite.isSome then
+        if ClassSummary.changesValues eff.schema.normal.frame then
           modify fun w => { w with changedValues := true }
         pure (Except.ok R)
       | .error m => pure (Except.error m)
@@ -5000,7 +5001,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   -- A fresh result where a type is expected: made at the expected array.
   let mut result := inst.result
   if let some H := hint then
-    if inst.effect.fresh then
+    if ClassSummary.freshResult inst.effect.schema.normal then
       if let some R ← StateT.lift (tryCatch (freshAt H inst.result) fun _ => pure none) then result := R
   let own ← StateT.lift (calleeAtCall c σ inst rest (c.fixed.filter fits))
   return .ok (own, result)
@@ -5191,9 +5192,9 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
         -- expression_closures.ml:348-351, 400-406), its throw bounded where
         -- the parameter's exceptional exit is (`ClassSummary.project`).
         else
-          let bounded := Footprints.Footprint.boundBelow [] (a.effect.summary 0).exceptional.frame != .top
+          let bounded := Footprints.Footprint.boundBelow [] a.effect.schema.exceptional.frame != .top
           pure { a with result := R, effect := match stated with
-            | some s => { s with pre := requires, onThrow := s.onThrow && bounded }
+            | some s => if bounded then { s with pre := requires } else { s with pre := requires, onThrow := false }
             | none => { proposal bounded with pre := requires } }
       -- Any other literal at its own parameters and written receiver (a
       -- method's `this`), else a receiver admitting every value.
