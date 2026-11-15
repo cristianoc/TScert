@@ -213,8 +213,9 @@ asks.
   note's own terms (postcondition, effect, region, change, class region).
   No coined words, no internal labels, no Lean identifiers unless he asks.
 - A claim is as strong as its evidence: say what was run and what was only
-  read. Never say the implementation is in line with the note from example
-  outcomes.
+  read. Say the implementation is in line with the note only from the
+  comparison with a paper-only reader, giving its counts and its
+  disagreements.
 - An ambiguous request is answered with its most plausible reading and the
   next step. Obvious next steps are taken, not asked.
 - A design question that the principles here do not settle is put to him as

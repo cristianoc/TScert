@@ -1,18 +1,20 @@
 # The note against the implementation, rule by rule
 
-For each rule of the note [Tolerant frames](tolerant-frames-note/note.tex)
-in scope, the Lean statement and the mechanism the pass's acceptance
-applies. Read by gpt-6-astra from the sources at commit `81d7f232` on
-2026-11-15, with no build or suite run; "proved" names a proof declaration
-read in the source. The goal it measures is the
-[parity skill](../../.claude/skills/parity/SKILL.md)'s: each rule has the
-same statement in Lean and is the mechanism the pass applies. The state of
-that work is in [WORK.md](../../WORK.md#status), and the design of the next
-steps is [the note's rules at acceptance](rules-at-acceptance.md).
+A map: for each rule of the note
+[Tolerant frames](tolerant-frames-note/note.tex) in scope, the Lean
+statement and the mechanism the pass's acceptance applies. Read by
+gpt-6-astra from the sources at commit `81d7f232` on 2026-11-15, with no
+build or suite run; "proved" names a proof declaration read in the source.
+The goal is the [parity skill](../../.claude/skills/parity/SKILL.md)'s:
+an agent with only the note and the verifier give each example of the note
+the same verdict. The work list is in [WORK.md](../../WORK.md#status) and
+[the note's rules at acceptance](rules-at-acceptance.md).
 
 A mechanism is **separate** when acceptance applies its own decision,
 proved sound by its own theorem, and that decision establishes no
-derivation in the note's checker (`checkDerivation`, `checkScoped`).
+derivation in the note's checker (`checkDerivation`, `checkScoped`). A
+separate mechanism is sound by its theorem; a row is work where the note
+and that mechanism can give an example different verdicts.
 
 ## The rules
 
@@ -45,7 +47,7 @@ derivation in the note's checker (`checkDerivation`, `checkScoped`).
 | View-Length, View-Read, View-Write | the tagged view model and the native contracts, which the selected call's check reads | separate: `exactWriteOf` reads the exact write of an integer whose format is unchanged; no derivation consumes the exact postconditions |
 | Transfer (§7) | `checkScoped_sound`: the entailment of the checked sequent; `transfer`, for closed exit effects | separate: `exitStep`, `edgeStoreOf`, `edgeTransfer`, `assertionExit`, `headExit` and the merge checks |
 
-## What is not yet applied through the note's mechanism
+## Rules applied through a separate mechanism
 
 Acceptance applies Call and Conj themselves, each with the consequences it
 recognizes. It applies every other rule in scope through a separate
@@ -67,11 +69,9 @@ Init for linear atoms, Every for the represented scalar predicates. A
 structural derivation schema over every relevant atom form is what extends
 them.
 
-## Five fixtures and what each requires
+## Fixtures related to loops
 
-Each fixture below needs more than rule Loop with its frame; each is a
-target of review, with its functions and derivations to be identified
-before a closure is predicted.
+Each fixture below needs more than rule Loop with its frame.
 
 | Fixture | What its source requires |
 |---|---|
