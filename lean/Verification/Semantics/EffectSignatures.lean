@@ -1019,7 +1019,7 @@ theorem Effect.frame_mem_prefix {e : Effect} {ρ : Env} {before middle : Heap}
 bounds, with the promise, receiver mode and store regions they share, a
 fresh result where either states one, and the postconditions of both. A
 throw is bounded by the meet's frame where both state `onThrow`, a
-consequence of the two exceptional guarantees (`Effect.schema_meet`). -/
+consequence of the two exceptional guarantees (`Effect.meet_consequence`). -/
 def Effect.meet (a b : Effect) : Effect :=
   ⟨a.closed.meet b.closed, a.promise, a.fresh || b.fresh, a.receiverStore, a.onThrow && b.onThrow,
     a.receiverOwn, a.freshObject || b.freshObject, a.requires, a.elements, a.pre, a.ensures ++ b.ensures,

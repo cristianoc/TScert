@@ -497,7 +497,7 @@ theorem PromiseWith.conj {effect other Acc Rc B C D k W v}
 
 /-- **Combining two signatures of one value** (`Effect.meet`): both
 guarantees at one exit (`PromiseWith.conj`) give the meet's
-(`Effect.schema_meet`). -/
+(`Effect.meet_consequence`). -/
 theorem PromiseWith.combine {effect other Acc Rc B C D k W v}
     (hs : effect.sameResult other = true)
     (hb : PromiseWith Ξ effect Acc Rc B k W v)
@@ -512,8 +512,8 @@ theorem PromiseWith.combine {effect other Acc Rc B C D k W v}
   dsimp only at hsafe ⊢
   rw [hr1, hp1]
   exact SafePostExcV.weaken
-    (fun _ _ _ _ hp h1 h2 h3 h4 h5 h6 => Effect.schema_meet hs (hp.1 h1 h2 h3 h4 h5 h6) (hp.2 h1 h2 h3 h4 h5 h6))
-    (fun _ _ _ _ hp h1 h2 h3 h4 h5 h6 => Effect.schema_meet hs (hp.1 h1 h2 h3 h4 h5 h6) (hp.2 h1 h2 h3 h4 h5 h6))
+    (fun _ _ _ _ hp h1 h2 h3 h4 h5 h6 => Effect.meet_consequence hs (hp.1 h1 h2 h3 h4 h5 h6) (hp.2 h1 h2 h3 h4 h5 h6))
+    (fun _ _ _ _ hp h1 h2 h3 h4 h5 h6 => Effect.meet_consequence hs (hp.1 h1 h2 h3 h4 h5 h6) (hp.2 h1 h2 h3 h4 h5 h6))
     hsafe
 
 /-- Binding saves a receiver and argument prefix, then forwards without

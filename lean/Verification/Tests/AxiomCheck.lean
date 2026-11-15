@@ -297,7 +297,13 @@ run_cmd do
   check ``Verification.CallEffects.Effect.summary_normal_iff
   check ``Verification.CallEffects.Effect.summary_exceptional_iff
   check ``Verification.CallEffects.Effect.summary_normal_iff_post
-  check ``Verification.CallEffects.Effect.schema_meet
+  check ``Verification.CallEffects.Effect.meet_consequence
+  check ``Verification.CallEffects.Effect.meet_of_conjunction
+  check ``Verification.CallEffects.Effect.schema_canonical
+  check ``Verification.CallEffects.ExitSpec.holds_meet
+  check ``Verification.CallEffects.meetAt_exitPost
+  check ``Verification.CallEffects.instantiate_completion
+  check ``Verification.CallEffects.Exits.exitPost_meet
   check ``Verification.CallEffects.Effect.schema_independent
   check ``Verification.CallEffects.Exits.independent
   check ``Verification.CallEffects.SafePostExcV.cross_independent

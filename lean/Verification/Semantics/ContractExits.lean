@@ -2,6 +2,7 @@ import Verification.Semantics.ExitSummaries
 import Verification.Semantics.ExitWorlds
 import Verification.Semantics.FormulaScopes
 import Verification.Semantics.ExitComposition
+import Verification.Semantics.ExitConjunction
 
 /-! # A signature's contract read per exit
 
@@ -367,8 +368,11 @@ theorem Effect.normalPosts_meet (a b : Effect) (n : Nat) {F : Formula} (hF : F �
 consequence of both guarantees at one exit**: on a normal return its frame
 is both frames' meet (`Effect.within_meet`) and each of its postconditions
 is one of either's; on a throw it states the meet's frame where both state
-`onThrow`, and the note's `⊤` otherwise. -/
-theorem Effect.schema_meet {a b : Effect} (hs : a.sameResult b = true) {c : Completion} {r : Tm}
+`onThrow`, and the note's `⊤` otherwise. It is weaker than the conjunction
+of the two schemas (`Effect.meet_of_conjunction`): where one signature
+alone bounds its throw, the meet's exceptional exit is `⊤` while the
+conjunction keeps that bound. -/
+theorem Effect.meet_consequence {a b : Effect} (hs : a.sameResult b = true) {c : Completion} {r : Tm}
     {args : List Tm} {s s' : IndexedHeap} {v : Tm} (ha : a.schema.exitPost c r args s s' v)
     (hb : b.schema.exitPost c r args s s' v) : (a.meet b).schema.exitPost c r args s s' v := by
   rw [Effect.exitPost_summary] at ha hb ⊢
@@ -390,6 +394,40 @@ theorem Effect.schema_meet {a b : Effect} (hs : a.sameResult b = true) {c : Comp
       have hadm : Admissible s s' := by split at ha <;> exact ha.1.1
       exact ⟨EffectAction.top hadm, fun _ hF => by cases hF⟩
 
+
+/-- **A signature's schema has canonical transports**: its one transport,
+the written result, reads each other entry slot at the next exit slot. -/
+theorem Effect.schema_canonical (e : Effect) : e.schema.canonicalTransports = true := by
+  have hw : ∀ w : ElementWrite, w.schemaPosts.all (·.canonical) = true := by
+    intro w; cases w with
+    | stores => rfl
+    | assign => rfl
+    | exact k =>
+      simp only [ElementWrite.schemaPosts, List.all_cons, List.all_append, List.all_map]
+      simp [FormulaF.canonical, Function.comp_def, writtenResultSchema]
+  simp only [Exits.canonicalTransports, Bool.and_eq_true]
+  refine ⟨?_, ?_⟩
+  · simp only [Effect.schema, ExitSchema.canonicalTransports, Effect.normalSchema, List.all_append,
+      Bool.and_eq_true]
+    refine ⟨⟨⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩
+    · split <;> rfl
+    · split <;> rfl
+    · split <;> rfl
+    · simp [List.all_map, FormulaF.canonical, Function.comp_def]
+    · split <;> rfl
+    · split
+      · exact hw _
+      · rfl
+  · simp only [Effect.schema, ExitSchema.canonicalTransports]
+    split <;> rfl
+
+/-- **The meet of two signatures is a consequence of their schemas'
+conjunction** (`Exits.exitPost_meet`, `Effect.meet_consequence`). -/
+theorem Effect.meet_of_conjunction {a b : Effect} (hs : a.sameResult b = true) {c : Completion} {r : Tm}
+    {args : List Tm} {s s' : IndexedHeap} {v : Tm} (h : (a.schema.meet b.schema).exitPost c r args s s' v) :
+    (a.meet b).schema.exitPost c r args s s' v :=
+  have h' := (Exits.exitPost_meet a.schema_canonical b.schema_canonical).mp h
+  Effect.meet_consequence hs h'.1 h'.2
 
 /-! ## A call read at heaps -/
 

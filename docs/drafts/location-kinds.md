@@ -350,7 +350,7 @@ promises of one value whose signatures mean the same result
 (`PromiseWith.combine`): the second run takes the same steps as the first,
 and its exits, independent of the exit world, hold at the first run's
 worlds (`PromiseWith.conj`, `SafePostExcV.cross_independent`); both
-guarantees give the meet's (`Effect.schema_meet`). A promise
+guarantees give the meet's (`Effect.meet_consequence`). A promise
 weakens to a signature it covers, its exits entailing the other's
 (`PromiseWith.weaken'`, `Effect.covers_sound`); a forwarding descriptor
 meets its target's signature, the target's exits read from the

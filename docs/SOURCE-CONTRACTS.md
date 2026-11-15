@@ -670,7 +670,7 @@ same result meaning give both guarantees at one exit (`PromiseWith.conj`),
 and so their meet's (`PromiseWith.combine`): the meet's normal exit is a
 consequence of both normal exits, and its exceptional exit, the meet's frame
 where both state `onThrow` and the note's $`\top`$ otherwise, of both
-exceptional exits (`Effect.schema_meet`). The signature's effect and the native-contract condition
+exceptional exits (`Effect.meet_consequence`). The signature's effect and the native-contract condition
 are in `Semantics/EffectSignatures.lean`, the callable contracts in
 `Semantics/CallEffects.lean`.
 
