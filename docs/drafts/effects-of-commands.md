@@ -520,10 +520,15 @@ its grammar, positions and order; this section states the design around it.
 The decoder establishes the protocol's reading: the exact syntax, no
 assertion-arena node, primitive literals and the nesting limit
 ([reading](../REQUEST-PROTOCOL.md#reading)). Scope depends on the callable's
-arity, which the effect alone does not state: the consumers check it at the
-callable's arity, before certification (`Effect.belowRow`, where an actual
-is truncated, and the arity instantiation of a rest schema at the expanded
-actuals). The decoder does not establish what a consumer checks: canonical
+arity, which the effect alone does not state. No reader checks a declared
+contract's positions against its callable's arity: an exit's environment
+reads the supplied actuals and `undefined` past them (`callEnv_pad`), so a
+position past the declared arity reads an extra supplied actual or
+`undefined`, and a contract naming one is trusted as written, where it may
+state an unsatisfiable precondition or a false postcondition. A code's
+signature is checked at its arity before its body is certified
+(`Effect.belowRow`, in `codeObligations`). Checking a declared contract's
+scope where it is admitted is [work to do](../../WORK.md#status). The decoder does not establish what a consumer checks: canonical
 transports (`shift = 1`) where `covers`, `meetCovers` and `belowRow` use the
 completion lemmas, the second exit's independence of the world where a
 conjunction is used (`Exits.exitHeapOnly`, which refuses a certified stable
@@ -605,16 +610,17 @@ field no effect has at depth, an assertion reference, a transport's
 override that is no pair, a second tag, an integer written as a string in
 the safe range, a statement stating a postcondition, an exact write without
 its range among its preconditions, symbol identities across two documents'
-orders and undeclared ones, and a key stated twice, once escaped. The
-codec's examples (`Source/EffectCodec.lean`) hold what no read document
-reaches: the serialization predicate of an effect in memory and the
-refusal of a document the verifier writes. The consumers' controls
-(`Tests/EffectCodecControls.lean`) decode documents in the grammar and
-apply the consuming check: a noncanonical transport at coverage, a
-certified stable image of a second signature at a conjunction, an
-exceptional postcondition and a frame reading through a path where a body
-is composed across its rest allocation, and entry and exit positions past
-a callable's arity at its scope.
+orders, undeclared or written as strings, a key stated twice, once
+escaped; and at their consumers, a noncanonical transport at coverage
+(`map(Number)`), and a rest closure's statement past its arity or reading
+through a path at its code's obligations. The codec's examples
+(`Source/EffectCodec.lean`) hold what no read document reaches: the
+serialization predicate of an effect in memory and the refusal of a
+document the verifier writes. The consumers' controls no forged document
+reaches through the command line are Lean checks
+(`Tests/EffectCodecControls.lean`, which states why for each): a certified
+stable image at a conjunction, an exceptional postcondition and an exit
+position past the arity at a code's obligations.
 
 ## Parallel implementation
 

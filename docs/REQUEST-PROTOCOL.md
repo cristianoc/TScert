@@ -49,7 +49,11 @@ verifier --lower-control-flow       <ast.json>
   (`RequestCli.verifyUnitsFile`, `FilePlans.passGroupMode8`): its types
   computed by the walk, every loop head's candidates inferred
   (`HeadInference`), its imports read at the entries `<interfaces.json>`
-  establishes. It prints each module unit the interfaces establish, and
+  establishes. The interfaces document is trusted input: the pipeline
+  writes it from the module checks it binds by content, and the verifier
+  does not authenticate where it comes from, so an invocation with another
+  interfaces document checks the units under the entries that document
+  states. It prints each module unit the interfaces establish, and
   then each selected unit's verdict, one line each,
   `{"unit","members","accepted","depends"}` or `{"unit","members","refusal"}`,
   whose acceptance `SourceClaimJson.PassUnit.mode8Accepted_sound` states.
