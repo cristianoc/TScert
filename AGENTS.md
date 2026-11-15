@@ -8,6 +8,13 @@ TypeScript source and asks the pass whether each unit is safe.
 decisions. Everything below is what an agent needs to change things here
 without breaking the suite's shape.
 
+## Continuing the work on the note
+
+The work that makes the pass implement the rules of the note "Tolerant
+frames" is described, with its decisions, its roles and how to resume it
+from nothing, in [the parity skill](.claude/skills/parity/SKILL.md); its
+state is one row of [WORK.md](WORK.md#status).
+
 ## Commands
 
 ```sh
@@ -164,8 +171,11 @@ status, and statement coverage per directory and file under both
 the record's commit or of the checkout, running no stage. A census rerun with a longer `TSCERT_STEP_LIMIT`
 executes the stages that timed out again and replays the finished ones.
 
-A branch is ready to merge when `make test` passes; it
-reports as soon as its suites pass. The trusted model (Claude Opus 5.5 or
+A branch is ready to merge when `make test` passes in CI, the `test` job
+of its pull request. An implementing subagent runs the build, the static
+checks and the cases its change touches, each under a limit near its
+healthy duration, and never the full suite
+([the parity skill](.claude/skills/parity/SKILL.md#tests)). The trusted model (Claude Opus 5.5 or
 Astra) that authors the change, or merges it when its author is another
 model, merges it when confident the change is correct and sound, a new
 rule's or a change of trust's soundness included, and asks for a review only
