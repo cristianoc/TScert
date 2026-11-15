@@ -154,20 +154,12 @@ unchecked_reports() {
   echo "--list: $sites sites, as its summary counts; --contracts: $(wc -l <<<"$contracts" | tr -d ' ') contract inputs"
 }
 run_test 30 "unchecked.mts lists sites and contract inputs" unchecked_reports
-# The commit-msg hook (bin/git_hooks/commit_record.sh) accepts a commit record and refuses each kind of malformed one.
+# The commit-msg hook (bin/git_hooks/commit_record.sh) refuses each kind of malformed commit record. Its acceptance of
+# well-formed ones is CI's `render` job, which runs it on every commit of a pull request.
 commit_records() {
   local dir="$WORK/commit-records" out
   mkdir -p "$dir"
   record() { printf '%s\n\nWhy:\n    a reason\n\n%s\n\n%s\n' "$1" "$2" "$3"; }
-  record "Subject" "Docs modified (a document):" $'Outcome: no-behaviour-change\nParts: docs' > "$dir/valid"
-  record "Subject" "Rule added (a rule):" $'Outcome: verified\nParts: lean-rules\nTrust: none' > "$dir/valid-behaviour"
-  record "Subject" $'Proposal added (`e as unknown`):\n    `e as unknown` ⇒ the type of `e`' $'Outcome: verified\nParts: tools\nTrust: none' > "$dir/valid-proposal"
-  record "Subject" $'Check modified (a loop head):\n  Before:\n    at a loop head: the given facts hold\n  After:\n    at a loop head: every edge into it establishes the given facts' $'Outcome: refused\nParts: lean-rules\nTrust: none' > "$dir/valid-check"
-  record "Subject" $'Control added (instances):\n    force: `TSCERT_FORCE=instances`\n    unit: invalid-native-promise-invariant-result widen\n    unforced: accepted\n    forced: refused at the result\'s field' $'Outcome: no-behaviour-change\nParts: tools\nTests: forced:instances' > "$dir/valid-control"
-  local valid
-  for valid in valid valid-behaviour valid-proposal valid-check valid-control; do
-    bin/git_hooks/commit_record.sh "$dir/$valid" --check || return 1
-  done
   refused() {
     local name="$1" expected="$2"
     if out="$(bin/git_hooks/commit_record.sh "$dir/$name" --check 2>&1)"; then echo "accepted: $name"; return 1; fi
@@ -197,9 +189,9 @@ commit_records() {
   refused unknown-kind "the change heading 'Function modified (Synthesis.lean):' names the kind 'Function', which is not one of" || return 1
   record "Subject" $'Control modified (forged slot claims,\n  labels):' $'Outcome: no-behaviour-change\nParts: tools' > "$dir/wrapped-control"
   refused wrapped-control "a change heading must close on its own line" || return 1
-  echo "five records accepted, twelve malformed messages refused"
+  echo "twelve malformed messages refused"
 }
-run_test 30 "Commit records: the commit-msg hook" commit_records
+run_test 30 "Commit records: the commit-msg hook refuses malformed ones" commit_records
 # tests/docs.mts checks every document's links, anchors and math.
 run_test 30 "Documents: links, math" node tests/docs.mts
 # tests/caught-errors.mts checks the makers and handlers of caught errors on real failures.

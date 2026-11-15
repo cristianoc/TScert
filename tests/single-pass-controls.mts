@@ -2049,28 +2049,6 @@ control("store: cold and warm runs, an importer's edit, over the interface stage
 });
 
 // ---------------------------------------------------------------------------
-// Native and host contracts: each counterexample tests/node-runs.mts runs
-// under Node, a negative case, refused on the route. (Its Node half is that
-// suite's.)
-
-const counterexamples: readonly string[] = [...new Set([...readFileSync(join(root, "tests/node-runs.mts"), "utf8")
-  .matchAll(/run(?:Example|Importing|Emitted)\("(invalid-[a-z0-9-]+)"/g)].map((m) => m[1] ?? ""))]
-  .filter((file) => cases.some((c) => c.file === file && c.kind === "negative")).sort();
-for (let start = 0; start < counterexamples.length; start += 25) {
-  const chunk = counterexamples.slice(start, start + 25);
-  control(`native contracts: Node counterexamples ${start + 1}-${start + chunk.length} refused`, async (): Promise<void> => {
-    for (const file of chunk) {
-      const test = must(cases.find((c) => c.file === file), file);
-      using outcome = checkSource(join(root, "pipeline/examples", `${file}.ts`),
-        test.project ? tsconfigOf(resolve(root, test.project)) : undefined, test.typescriptErrors, undefined, true);
-      assert.notEqual(outcome.status, "error", `${file}: ${outcome.status === "verified" ? "" : outcome.detail.slice(0, 600)}`);
-      assert.notEqual(outcome.status, "verified", `${file}: a program Node shows unsafe accepted on the route`);
-    }
-    say(`native contracts: ${chunk.length} Node counterexamples (${chunk[0]} … ${chunk.at(-1)}) refused on the route`);
-  });
-}
-
-// ---------------------------------------------------------------------------
 // Mutations of the pass: each check mutated to accept, a unit the production
 // verifier refuses by that check accepted, so the control naming it is what
 // catches the mutation.

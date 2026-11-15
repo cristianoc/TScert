@@ -132,4 +132,5 @@ TypeScript rejects the program, is a proposal of the type computation,
 which the pass checks at its node; the forces `instances`, `guards`,
 `elements`, `objects` and `optional-reads` show each such check is reached.
 What stays trusted is the native's declaration itself, which the negative
-cases and the Node counterexamples guard.
+cases guard, each refused on the route (`make test-cases`) and shown unsafe
+under Node (`tests/node-runs.mts`).
