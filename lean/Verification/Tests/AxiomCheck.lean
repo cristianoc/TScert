@@ -1765,6 +1765,10 @@ run_cmd do
   check ``Verification.CallEffects.construct_exits_exact
   check ``Verification.CallEffects.invoke_exits_exact
   check ``Verification.CallEffects.call_site_exits
+  check ``Verification.CallEffects.ExitSchema.consequence
+  check ``Verification.CallEffects.FormulaF.readsNoActual_independent
+  check ``Verification.CallEffects.frameActualsIndependent_of_scoped
+  check ``Verification.CallEffects.Exits.forgetActuals_sound
   check ``Verification.CallEffects.Exits.callExit_held
   check ``Verification.Kinds.literal_safe
   check ``Verification.Kinds.gate_write

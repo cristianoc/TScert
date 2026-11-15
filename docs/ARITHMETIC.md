@@ -940,7 +940,9 @@ actuals. A module function's postcondition is stated by `moduleArrow` and
 covering, meeting and forgetting are `Effect.keeps`, `ensuresCovers`,
 `Effect.meet` and `Exits.forgetActuals` (a variadic call with a spread,
 by consequence after the guarantee at its expanded actuals:
-`Exits.forgetActuals_sound`). `call-ensures` is proved by
+`Exits.forgetActuals_sound`, an instance of the rule of consequence across
+actuals `ExitSchema.consequence`, its checks sufficient for independence of
+the actuals, `FormulaActualsIndependent` and `FrameActualsIndependent`). `call-ensures` is proved by
 `PromiseCalls.ensuresCall_sound` and `ensuresAtoms_holds`; the step checker
 `Checker.ensuringCalls` joins the two postconditions by
 `HeapObservations.cross_upto`.
