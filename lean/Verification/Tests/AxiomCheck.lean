@@ -309,6 +309,9 @@ run_cmd do
   check ``Verification.CallEffects.ExitSchema.holds_drop
   check ``Verification.CallEffects.Exits.exitPost_drop
   check ``Verification.CallEffects.Effect.drop_weakening
+  check ``Verification.CallEffects.Exits.belowRow_sound
+  check ``Verification.CallEffects.Exits.exitPost_take
+  check ``Verification.CallEffects.Effect.schema_belowRow
   check ``Verification.CallEffects.Effect.schema_independent
   check ``Verification.CallEffects.Exits.independent
   check ``Verification.CallEffects.SafePostExcV.cross_independent

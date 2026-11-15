@@ -4,6 +4,7 @@ import Verification.Semantics.FormulaScopes
 import Verification.Semantics.ExitComposition
 import Verification.Semantics.ExitConjunction
 import Verification.Semantics.ExitRenaming
+import Verification.Semantics.ExitScopes
 
 /-! # A signature's contract read per exit
 
@@ -217,44 +218,72 @@ theorem Effect.summary_arity {e : Effect} {n : Nat} (hb : e.belowRow n = true) (
   have hx : e.elementWrite = none := Effect.below_write (e := { e with ensures := [] }) hb0
   simp [Effect.summary, Effect.normalPosts, hg, hx]
 
-/-- **A call and the call of its first `m ≥ n` actuals agree below the
-scope of the receiver and the first `n` parameters**: the same entry
-values at positions up to `n`, the same exit values at positions up to
-`n + 1`. -/
-theorem callState_agreeBelow_take {n m : Nat} (hm : n ≤ m) (r : Tm) (args : List Tm) (v : Tm) (k : Nat)
-    (s s' : IndexedHeap) :
-    (callState r args v k s s').AgreeBelow ⟨n + 1, n + 2⟩ (callState r (args.take m) v k s s') := by
-  have hc : ∀ i < n + 1, callEnv r (args.take m) i = callEnv r args i := by
-    intro i hi
-    unfold callEnv
-    split
-    · rfl
-    · simp only [List.getD_eq_getElem?_getD, List.getElem?_take]
-      rw [if_pos (by omega)]
-  refine ⟨hc, fun i hi => ?_, rfl, rfl, rfl⟩
-  change i < n + 2 at hi
-  show ensuresEnv v r (args.take m) i = ensuresEnv v r args i
-  unfold ensuresEnv
-  split
-  · rfl
-  · exact hc _ (by omega)
+/-- **A signature's schema has canonical transports**: its one transport,
+the written result, reads each other entry slot at the next exit slot. -/
+theorem Effect.schema_canonical (e : Effect) : e.schema.canonicalTransports = true := by
+  have hw : ∀ w : ElementWrite, w.schemaPosts.all (·.canonical) = true := by
+    intro w; cases w with
+    | stores => rfl
+    | assign => rfl
+    | exact k =>
+      simp only [ElementWrite.schemaPosts, List.all_cons, List.all_append, List.all_map]
+      simp [FormulaF.canonical, Function.comp_def, writtenResultSchema]
+  simp only [Exits.canonicalTransports, Bool.and_eq_true]
+  refine ⟨?_, ?_⟩
+  · simp only [Effect.schema, ExitSchema.canonicalTransports, Effect.normalSchema, List.all_append,
+      Bool.and_eq_true]
+    refine ⟨⟨⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩
+    · split <;> rfl
+    · split <;> rfl
+    · split <;> rfl
+    · simp [List.all_map, FormulaF.canonical, Function.comp_def]
+    · split <;> rfl
+    · split
+      · exact hw _
+      · rfl
+  · simp only [Effect.schema, ExitSchema.canonicalTransports]
+    split <;> rfl
+
+/-- **A signature scoped at arity `n` has a schema scoped there**
+(`Exits.belowRow`): no transport and no append, its frames read call
+positions up to `n` and its postconditions, instantiated at the code's
+arity, the summary's (`Effect.summary_scoped`). -/
+theorem Effect.schema_belowRow {e : Effect} {n : Nat} (hb : e.belowRow n = true) : e.schema.belowRow n = true := by
+  have hb0 := Effect.belowRow_below hb
+  have hg : e.receiverGrows = false := Effect.below_grows (e := { e with ensures := [] }) hb0
+  have hx : e.elementWrite = none := Effect.below_write (e := { e with ensures := [] }) hb0
+  have hslots : e.schema.slots = 0 := by rw [Effect.schema_slots, hx]
+  have hι : e.schema.callInstantiation n = arityInstantiation n := by
+    simp only [Exits.callInstantiation, arityInstantiation, hslots, Nat.max_zero]
+  obtain ⟨h₁, h₂, h₃, h₄⟩ := Effect.summary_scoped hb n AssertionArena.empty
+  rw [← Effect.schema_atArity] at h₁ h₂ h₃ h₄
+  simp only [Exits.atArity, hι] at h₁ h₂ h₃ h₄
+  have hfix : e.normalSchema.all (·.fixedLength) = true := by
+    simp only [Effect.normalSchema, hg, hx, Bool.false_eq_true, if_false, List.append_nil, List.all_append,
+      Bool.and_eq_true]
+    refine ⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩
+    · cases e.fresh <;> rfl
+    · cases e.freshObject <;> rfl
+    · cases e.elements <;> rfl
+    · exact List.all_eq_true.mpr fun F hF => by
+        obtain ⟨G, -, rfl⟩ := List.mem_map.mp hF; rfl
+  simp only [Exits.belowRow, Effect.schema_canonical, hslots, Bool.and_eq_true, decide_eq_true_eq]
+  refine ⟨⟨⟨trivial, (by omega)⟩, ?_⟩, ?_⟩
+  · simp only [ExitSchema.belowRow, Bool.and_eq_true]
+    refine ⟨⟨h₁, hfix⟩, ?_⟩
+    simpa [Exits.atArity, Exits.map, ExitSchema.instantiate, List.all_map] using h₂
+  · have he : e.schema.exceptional.ensures = [] := by simp only [Effect.schema]; split <;> rfl
+    simp only [ExitSchema.belowRow, he, List.all_nil, Bool.and_true]
+    simpa [Exits.atArity, Exits.map, ExitSchema.instantiate] using h₃
 
 /-- **A guarantee about the receiver and the first `n` parameters holds at
 every call extending the call of its first `m ≥ n` actuals**
-(`Effect.belowRow`): its summary is the same at both arities
-(`Effect.summary_arity`) and reads the receiver, the first `n` parameters
-and the result alone (`Effect.summary_scoped`), at which the two calls
-agree (`callState_agreeBelow_take`, `ExitSpec.holds_scoped_congr`). -/
+(`Effect.belowRow`): its schema is scoped there (`Effect.schema_belowRow`,
+`Exits.exitPost_take`). -/
 theorem Effect.exitPost_take {e : Effect} {n m : Nat} (hb : e.belowRow n = true) (hm : n ≤ m) {c : Completion}
     {r : Tm} {args : List Tm} {s s' : IndexedHeap} {v : Tm} (hp : e.schema.exitPost c r (args.take m) s s' v) :
-    e.schema.exitPost c r args s s' v := by
-  rw [Effect.exitPost_summary] at hp ⊢
-  rw [Effect.summary_arity hb (args.take m).length args.length] at hp
-  have hs := callState_agreeBelow_take hm r args v s.h.length s s'
-  obtain ⟨h₁, h₂, h₃, h₄⟩ := Effect.summary_scoped hb args.length AssertionArena.empty
-  cases c with
-  | normal => exact (ExitSpec.holds_scoped_congr h₁ h₂ hs).mp hp
-  | exceptional => exact (ExitSpec.holds_scoped_congr h₃ (by rw [show ((e.summary args.length).get .exceptional).ensures = [] from h₄]; rfl) hs).mp hp
+    e.schema.exitPost c r args s s' v :=
+  (Exits.exitPost_take (Effect.schema_belowRow hb) hm).mp hp
 
 /-- **A signature without store regions selects no new old location across
 allocation**, on either exit: its frame's paths agree across it
@@ -395,32 +424,6 @@ theorem Effect.meet_consequence {a b : Effect} (hs : a.sameResult b = true) {c :
       have hadm : Admissible s s' := by split at ha <;> exact ha.1.1
       exact ⟨EffectAction.top hadm, fun _ hF => by cases hF⟩
 
-
-/-- **A signature's schema has canonical transports**: its one transport,
-the written result, reads each other entry slot at the next exit slot. -/
-theorem Effect.schema_canonical (e : Effect) : e.schema.canonicalTransports = true := by
-  have hw : ∀ w : ElementWrite, w.schemaPosts.all (·.canonical) = true := by
-    intro w; cases w with
-    | stores => rfl
-    | assign => rfl
-    | exact k =>
-      simp only [ElementWrite.schemaPosts, List.all_cons, List.all_append, List.all_map]
-      simp [FormulaF.canonical, Function.comp_def, writtenResultSchema]
-  simp only [Exits.canonicalTransports, Bool.and_eq_true]
-  refine ⟨?_, ?_⟩
-  · simp only [Effect.schema, ExitSchema.canonicalTransports, Effect.normalSchema, List.all_append,
-      Bool.and_eq_true]
-    refine ⟨⟨⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩
-    · split <;> rfl
-    · split <;> rfl
-    · split <;> rfl
-    · simp [List.all_map, FormulaF.canonical, Function.comp_def]
-    · split <;> rfl
-    · split
-      · exact hw _
-      · rfl
-  · simp only [Effect.schema, ExitSchema.canonicalTransports]
-    split <;> rfl
 
 /-- **The meet of two signatures is a consequence of their schemas'
 conjunction** (`Exits.exitPost_meet`, `Effect.meet_consequence`). -/
