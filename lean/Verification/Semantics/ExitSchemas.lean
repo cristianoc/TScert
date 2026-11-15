@@ -57,6 +57,20 @@ interpretation. -/
 def ExitSpec.Holds (arena : AssertionArena) (q : ExitSpec) (s : TwoState) : Prop :=
   EffectAction q.frame s.beforeEnv s.before s.after ∧ ∀ F ∈ q.ensures, Parity.Holds arena s F
 
+/-- A call's values by position: `0` the receiver, `i + 1` the `i`-th actual,
+`undefined` past the last. -/
+def callEnv (r : Tm) (args : List Tm) : Env := fun i => if i = 0 then r else args.getD (i - 1) .undef
+
+/-- A return's values by position: `0` the result, `i + 1` the call's
+position `i` (`callEnv`). -/
+def ensuresEnv (v : Tm) (r : Tm) (args : List Tm) : Env := fun i => if i = 0 then v else callEnv r args (i - 1)
+
+/-- The two-state interpretation of a call with receiver `r` and actuals
+`args` completing with `v`, from the state `s` to the state `s'`, at the
+mark `m`. -/
+def callState (r : Tm) (args : List Tm) (v : Tm) (m : Nat) (s s' : TolerantFrames.IndexedHeap) : TwoState :=
+  ⟨callEnv r args, ensuresEnv v r args, m, s, s'⟩
+
 end Verification.CallEffects
 
 namespace Verification.Parity

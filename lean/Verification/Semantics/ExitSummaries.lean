@@ -34,12 +34,6 @@ exit is `Effect.postW`, its exceptional exit `Effect.excPost`. -/
 namespace Verification.CallEffects
 open Verification Footprints HeapKnowledge TolerantFrames Parity
 
-/-- The two-state interpretation of a call with receiver `r` and actuals
-`args` completing with `v`, from the state `s` to the state `s'`, at the
-mark `m`. -/
-def callState (r : Tm) (args : List Tm) (v : Tm) (m : Nat) (s s' : IndexedHeap) : TwoState :=
-  ⟨callEnv r args, ensuresEnv v r args, m, s, s'⟩
-
 /-- The call positions of the first `n` actuals, as witnesses read at the
 entry. -/
 def actualWitnesses (n : Nat) : List Witness := (List.range n).map fun i => .path ⟨i + 1, []⟩

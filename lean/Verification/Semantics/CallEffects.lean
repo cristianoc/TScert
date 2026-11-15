@@ -1,4 +1,4 @@
-import Verification.Semantics.ExitSchemas
+import Verification.Semantics.ExitPosts
 import Verification.Semantics.ExceptionalPosts
 import Verification.Semantics.Purity
 import Verification.Semantics.ClosedFootprints
@@ -100,14 +100,6 @@ theorem Effect.footprint_of_regions {e : Effect} (h : e.regions = []) : e.footpr
 
 /-- A signature with a footprint and no promise. -/
 def Effect.ofFootprint (c : Footprints.Closed) : Effect := ⟨c, none, false, false, false, false, false, none, none, [], [], false, none, []⟩
-
-/-- A call's values by position: `0` the receiver, `i + 1` the `i`-th actual,
-`undefined` past the last. -/
-def callEnv (r : Tm) (args : List Tm) : Env := fun i => if i = 0 then r else args.getD (i - 1) .undef
-
-/-- A return's values by position: `0` the result, `i + 1` the call's
-position `i` (`callEnv`). -/
-def ensuresEnv (v : Tm) (r : Tm) (args : List Tm) : Env := fun i => if i = 0 then v else callEnv r args (i - 1)
 
 /-- Trailing `undefined` actuals are the positions a call passes none at. -/
 theorem callEnv_pad (r : Tm) (args : List Tm) {pad : List Tm} (hpad : ∀ a ∈ pad, a = .undef) :

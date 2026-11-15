@@ -276,6 +276,13 @@ run_cmd do
   check ``Verification.CallEffects.writtenResultSchema_instantiate
   check ``Verification.CallEffects.Effect.schema_arenaFree
   check ``Verification.CallEffects.ExitSchema.holds_instantiate_arenaFree
+  -- the postcondition of a call per completion
+  check ``Verification.CallEffects.Exits.exitPostW_iff
+  check ``Verification.CallEffects.Exits.exitPost_frame
+  check ``Verification.CallEffects.Exits.exitPost_ensures
+  check ``Verification.CallEffects.SafePostExcW.weaken_admissible
+  check ``Verification.CallEffects.SafePostExcW.complete_normal
+  check ``Verification.CallEffects.SafePostExcW.complete_exceptional
   check ``Verification.CallEffects.exactPre_iff
   check ``Verification.CallEffects.elementWrite_iff
   check ``Verification.CallEffects.Effect.summary_normal_iff

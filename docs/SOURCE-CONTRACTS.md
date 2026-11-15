@@ -610,6 +610,18 @@ meets it, `Effect.schema_arenaFree`; such a formula holds alike at every
 arena, `ExitSchema.holds_instantiate_arenaFree`). A contract that needs an
 assertion would carry its own arena.
 
+What a callable's type guarantees of a completion is the completion's
+instantiated specification at the call's entry and exit states
+(`Exits.exitPost`, in `Semantics/ExitPosts.lean`): the exit state is
+admissible from the entry, the heaps meet the frame, and every
+postcondition holds. Admissibility is part of the guarantee, as the note's
+action of an effect includes it. Read at worlds and heaps it holds at every
+well-formed endpoint of positive budget (`Exits.exitPostW`); a safe run
+supplies such endpoints at the world it reaches
+(`SafePostExcW.complete_normal`, `SafePostExcW.complete_exceptional`), and a
+consequence needs to hold only at the admissible states a run from the entry
+reaches (`SafePostExcW.weaken_admissible`).
+
 A guarantee stated beside the frame is a postcondition `.transition Φ`, so
 the frame and it hold of one transition. On admissible transitions at
 actuals that are values, the normal exit holds exactly where
