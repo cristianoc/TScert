@@ -148,6 +148,40 @@ private def sc : Scope := ⟨5, 5⟩
   "rigidSubst: no rigidity of the path"
 end Axioms
 
+/-! ## A path image under a box
+
+Frame⁺ carries `□_{grow}(n ≤ |y|)` across a step whose exit reads `y` as the
+field `p.f`: the path image is read inside the box, so the transport
+certifies it rigid at the exit. -/
+
+namespace RigidImage
+private def r (n : Nat) : AssertionRef := ⟨n⟩
+private def grow : Footprint := TolerantFrames.growEffect.fp
+private def arena : AssertionArena := ⟨#[
+  .atom (.linear (lowerFact 1 2)),                                         -- 0 n ≤ |y|
+  .box grow (r 0),                                                         -- 1
+  .atom (.linear (.le [(Term.value 1, 1), (Term.now .length 0 ["f"], -1)] 0)), -- 2 n ≤ |p.f|
+  .box grow (r 2),                                                         -- 3
+  .atom (.equal ⟨1, ["f"]⟩ (.path (.var 0))),                              -- 4
+  .box topEffect (r 4),                                                    -- 5
+  .existsValue (r 5),                                                      -- 6 rigid(p.f)
+  .truth]⟩                                                                 -- 7
+
+#guard arena.check
+private def images : Array Witness := #[.path (.var 0), .path (.var 1), .path ⟨0, ["f"]⟩]
+private def θ : Substitution := { images := images, stable := [2] }
+private def Γ : List Formula :=
+  [.at .before (r 1), .transition grow, .transport { images := images }, .at .after (r 6)]
+
+#guard isOk (checkScoped arena ⟨3, 3⟩ Γ (.at .after (r 3))
+  (.framePlus (.closed TolerantFrames.growEffect) grow (r 1) (r 0) (r 7) θ .atTruth .assumption .assumption
+    (.transportRigid [(2, r 6)] .assumption (.andIntro .assumption .truth))))
+-- Without the certificate the field image is refused inside the box.
+#guard errorOf (checkScoped arena ⟨3, 3⟩ Γ (.at .after (r 3))
+  (.framePlus (.closed TolerantFrames.growEffect) grow (r 1) (r 0) (r 7) { images := images } .atTruth .assumption
+    .assumption .assumption)) = "framePlus: not the transported box"
+end RigidImage
+
 /-! ## Exact postconditions of writes -/
 
 namespace Writes

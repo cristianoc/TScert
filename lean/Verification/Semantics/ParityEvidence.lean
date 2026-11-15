@@ -58,6 +58,10 @@ otherwise. -/
 structure Substitution where
   images : Array Witness
   boxed : Bool := false
+  /-- The slots whose path images are certified rigid: read alike at every
+  state an admissible transition reaches (`HoldsAt`). Under a box they stay
+  in the domain. -/
+  stable : List Nat := []
   deriving DecidableEq
 
 namespace Substitution
@@ -65,7 +69,7 @@ namespace Substitution
 /-- The image of slot `i`, where it is in the substitution's domain. -/
 def image (θ : Substitution) (i : Nat) : Option Witness :=
   match θ.images[i]? with
-  | some w => if θ.boxed && !w.heapFree then none else some w
+  | some w => if θ.boxed && !w.heapFree && !θ.stable.contains i then none else some w
   | none => none
 
 theorem image_of_unboxed {θ : Substitution} (hb : θ.boxed = false) (i : Nat) : θ.image i = θ.images[i]? := by
@@ -89,14 +93,16 @@ theorem Holds.path {θ : Substitution} {target source : Env} {h : Heap} (hθ : �
   · rename_i p hp; cases hq; exact hθ i _ hp
   · cases hq
 
-/-- The substitution read under a box: its heap-free images alone. -/
+/-- The substitution read under a box: its heap-free and certified-rigid
+images alone. -/
 def box (θ : Substitution) : Substitution := { θ with boxed := true }
 
-/-- **The substitution under a box holds at every heap.** -/
-theorem Holds.box {θ : Substitution} {target source : Env} {h : Heap} (hθ : θ.Holds target source h) (h' : Heap) :
-    θ.box.Holds target source h' := by
+/-- **The substitution under a box holds at every heap** where it certifies
+no rigid image. -/
+theorem Holds.box {θ : Substitution} (hst : θ.stable = []) {target source : Env} {h : Heap}
+    (hθ : θ.Holds target source h) (h' : Heap) : θ.box.Holds target source h' := by
   intro i w hi
-  simp only [Substitution.box, image] at hi
+  simp only [Substitution.box, image, hst] at hi
   cases hw0 : θ.images[i]? with
   | none => rw [hw0] at hi; cases hi
   | some w0 =>
@@ -109,7 +115,7 @@ theorem Holds.box {θ : Substitution} {target source : Env} {h : Heap} (hθ : θ
 /-- The substitution under one more logical binder: slot `0` stays, slot
 `i + 1` goes to the image of `i`, one slot further. -/
 def lift (θ : Substitution) : Substitution :=
-  ⟨(.path (Path.var 0) :: θ.images.toList.map Witness.shift).toArray, θ.boxed⟩
+  ⟨(.path (Path.var 0) :: θ.images.toList.map Witness.shift).toArray, θ.boxed, θ.stable.map (· + 1)⟩
 
 theorem heapFree_shift (w : Witness) : w.shift.heapFree = w.heapFree := by cases w <;> rfl
 
@@ -128,24 +134,70 @@ theorem Holds.lift {θ : Substitution} {target source : Env} {h : Heap} (hθ : �
     | none => rw [hq] at hi; simp at hi
     | some q =>
       rw [hq] at hi
-      cases hb : θ.boxed <;> cases hf : q.heapFree <;> simp [heapFree_shift, hf, hb] at hi
-      all_goals
-        subst hi
-        rw [Witness.value_shift]
-        apply hθ i q
-        unfold image; rw [← Array.getElem?_toList, hq]; simp [hb, hf]
+      have hc : (θ.stable.map (· + 1)).contains (i + 1) = θ.stable.contains i := by
+        cases h1 : θ.stable.contains i <;> cases h2 : (θ.stable.map (· + 1)).contains (i + 1) <;>
+          simp_all
+      simp only [Option.map_some, heapFree_shift, hc] at hi
+      have hcond : ¬ (θ.boxed && !q.heapFree && !θ.stable.contains i) = true := by
+        intro hcd; rw [if_pos hcd] at hi; cases hi
+      rw [if_neg hcond, Option.some.injEq] at hi
+      subst hi
+      rw [Witness.value_shift]
+      apply hθ i q
+      unfold image; rw [← Array.getElem?_toList, hq]; simp only [if_neg hcond]
+
+/-- **The substitution at a state** (I5, the agreement a box needs): it
+holds at the state, and, read under a box, at every state an admissible
+transition reaches. -/
+def HoldsAt (θ : Substitution) (target source : Env) (s : TolerantFrames.IndexedHeap) : Prop :=
+  θ.Holds target source s.h ∧ ∀ s', TolerantFrames.Admissible s s' → θ.box.Holds target source s'.h
+
+theorem HoldsAt.of_holds {θ : Substitution} (hst : θ.stable = []) {target source : Env}
+    {s : TolerantFrames.IndexedHeap} (hθ : θ.Holds target source s.h) : θ.HoldsAt target source s :=
+  ⟨hθ, fun s' _ => hθ.box hst s'.h⟩
+
+theorem box_box (θ : Substitution) : θ.box.box = θ.box := rfl
+
+/-- An image under a box is an image reading no heap or a certified one. -/
+theorem image_box {θ : Substitution} {i : Nat} {w : Witness} (h : θ.box.image i = some w) :
+    θ.images[i]? = some w ∧ (w.heapFree = true ∨ θ.stable.contains i = true) := by
+  unfold image at h
+  have hi : θ.box.images = θ.images := rfl
+  rw [hi] at h
+  cases hw : θ.images[i]? with
+  | none => rw [hw] at h; cases h
+  | some w0 =>
+    rw [hw] at h
+    dsimp only at h
+    by_cases hc : (θ.box.boxed && !w0.heapFree && !θ.box.stable.contains i) = true
+    · rw [if_pos hc] at h; cases h
+    · rw [if_neg hc] at h; cases h
+      refine ⟨rfl, ?_⟩
+      simp only [box, Bool.true_and, Bool.and_eq_true, Bool.not_eq_true', not_and] at hc
+      cases hf : w.heapFree <;> cases hs : θ.stable.contains i <;> simp_all
+
+/-- **Under a box at a state an action reaches, the substitution still holds.** -/
+theorem HoldsAt.under {θ : Substitution} {target source : Env} {s s' : TolerantFrames.IndexedHeap}
+    (hθ : θ.HoldsAt target source s) (ha : TolerantFrames.Admissible s s') : θ.box.HoldsAt target source s' :=
+  ⟨hθ.2 s' ha, fun s'' ha' => by rw [box_box]; exact hθ.2 s'' (ha.trans ha')⟩
+
+theorem lift_box (θ : Substitution) : θ.lift.box = θ.box.lift := rfl
+
+theorem HoldsAt.lift {θ : Substitution} {target source : Env} {s : TolerantFrames.IndexedHeap}
+    (hθ : θ.HoldsAt target source s) (v : Val) : θ.lift.HoldsAt (push v target) (push v source) s :=
+  ⟨hθ.1.lift v, fun s' ha => by rw [lift_box]; exact (hθ.2 s' ha).lift v⟩
 
 /-- The substitution sending each of the slots below `n` one slot further:
 reading an assertion under one more binder. -/
-def shift (n : Nat) : Substitution := ⟨((List.range n).map fun i => .path (Path.var (i + 1))).toArray, false⟩
+def shift (n : Nat) : Substitution := ⟨((List.range n).map fun i => .path (Path.var (i + 1))).toArray, false, []⟩
 
 /-- The substitution sending slot `0` to a witness and slot `i + 1`, below
 `n + 1`, to slot `i`: instantiating a logical binder. -/
 def instantiate (w : Witness) (n : Nat) : Substitution :=
-  ⟨(w :: (List.range n).map fun i => .path (Path.var i)).toArray, false⟩
+  ⟨(w :: (List.range n).map fun i => .path (Path.var i)).toArray, false, []⟩
 
 /-- The identity on the slots below `n`: the scope of `n` runtime slots. -/
-def ident (n : Nat) : Substitution := ⟨((List.range n).map fun i => .path (Path.var i)).toArray, false⟩
+def ident (n : Nat) : Substitution := ⟨((List.range n).map fun i => .path (Path.var i)).toArray, false, []⟩
 
 private theorem range_image {n i j : Nat} (hj : (List.range n)[i]? = some j) : j = i ∧ i < n := by
   obtain ⟨hlt, hj'⟩ := List.getElem?_eq_some_iff.mp hj
@@ -464,7 +516,7 @@ where the images read at `source` give the target values, the substituted
 node holds at `source` exactly where the node holds at `target`. -/
 theorem substCheck_sound (nodes : Array AssertionNode) :
     ∀ (n a b : Nat), a + b = n → ∀ (θ : Substitution) (target source : Env) (m : Nat) (s : IndexedHeap),
-      substCheck nodes θ a b = true → θ.Holds target source s.h →
+      substCheck nodes θ a b = true → θ.HoldsAt target source s →
       (satNode nodes b source m s ↔ satNode nodes a target m s) := by
   intro n
   induction n using Nat.strongRecOn with
@@ -484,7 +536,7 @@ theorem substCheck_sound (nodes : Array AssertionNode) :
   · exact Iff.rfl
   · rename_i x y
     simp only [beq_iff_eq] at hc
-    exact substAtom_holds hθ hc
+    exact substAtom_holds hθ.1 hc
   · rename_i l r l' r'
     split at hc
     · rename_i hi
@@ -511,13 +563,13 @@ theorem substCheck_sound (nodes : Array AssertionNode) :
     · cases hc
   · rename_i p q p' q'
     simp only [Bool.and_eq_true, beq_iff_eq] at hc
-    exact separated_subst hθ hc.1 hc.2
+    exact separated_subst hθ.1 hc.1 hc.2
   · rename_i p q p' q'
     simp only [Bool.and_eq_true, beq_iff_eq] at hc
-    exact apart_subst hθ hc.1 hc.2
+    exact apart_subst hθ.1 hc.1 hc.2
   · rename_i p p'
     simp only [beq_iff_eq] at hc
-    exact fresh_subst hθ hc
+    exact fresh_subst hθ.1 hc
   · rename_i Φ x Ψ y
     split at hc
     · rename_i hi
@@ -526,17 +578,18 @@ theorem substCheck_sound (nodes : Array AssertionNode) :
       simp only [hi.1, hi.2, dite_true]
       constructor
       · intro hs s' ha'
-        exact (ih _ (by omega) _ _ rfl θ.box target source m s' hrec (hθ.box s'.h)).mp
-          (hs s' ((renameEffect_action hθ hren).mpr ha'))
+        exact (ih _ (by omega) _ _ rfl θ.box target source m s' hrec (hθ.under ha'.admissible)).mp
+          (hs s' ((renameEffect_action hθ.1 hren).mpr ha'))
       · intro hs s' ha'
-        exact (ih _ (by omega) _ _ rfl θ.box target source m s' hrec (hθ.box s'.h)).mpr
-          (hs s' ((renameEffect_action hθ hren).mp ha'))
+        exact (ih _ (by omega) _ _ rfl θ.box target source m s' hrec
+          (hθ.under ((renameEffect_action hθ.1 hren).mp ha').admissible)).mpr
+          (hs s' ((renameEffect_action hθ.1 hren).mp ha'))
     · cases hc
 
 /-- **Substitution at the arena level**: `b` is `a[θ]`. -/
 theorem sat_subst {arena : AssertionArena} {θ : Substitution} {a b : AssertionRef}
     (hc : substCheck arena.nodes θ a.index b.index = true) {target source : Env} {m : Nat} {s : IndexedHeap}
-    (hθ : θ.Holds target source s.h) : Sat arena source m s b ↔ Sat arena target m s a :=
+    (hθ : θ.HoldsAt target source s) : Sat arena source m s b ↔ Sat arena target m s a :=
   substCheck_sound arena.nodes _ a.index b.index rfl θ target source m s hc hθ
 
 /-- **Reading an assertion under one more binder** (the note's `∃`
@@ -545,7 +598,7 @@ shifted, `b` holds under any value pushed exactly where `a` holds. -/
 theorem sat_shift {arena : AssertionArena} {n : Nat} {a b : AssertionRef}
     (hc : substCheck arena.nodes (Substitution.shift n) a.index b.index = true) {η : Env} {m : Nat}
     {s : IndexedHeap} (v : Val) : Sat arena (push v η) m s b ↔ Sat arena η m s a :=
-  sat_subst hc (Substitution.shift_holds n η v s.h)
+  sat_subst hc (.of_holds rfl (Substitution.shift_holds n η v s.h))
 
 /-- **Instantiating a binder** (I4 `existsIntro`): where `b` is the body `a`
 with slot `0` read as the path `w`, `b` holds where `a` holds of the value
@@ -553,7 +606,7 @@ with slot `0` read as the path `w`, `b` holds where `a` holds of the value
 theorem sat_instantiate {arena : AssertionArena} {w : Witness} {n : Nat} {a b : AssertionRef}
     (hc : substCheck arena.nodes (Substitution.instantiate w n) a.index b.index = true) {η : Env} {m : Nat}
     {s : IndexedHeap} {v : Val} (hw : w.value η s.h = some v) : Sat arena η m s b ↔ Sat arena (push v η) m s a :=
-  sat_subst hc (Substitution.instantiate_holds hw)
+  sat_subst hc (.of_holds rfl (Substitution.instantiate_holds hw))
 
 /-! ## Building a substituted assertion -/
 
@@ -663,7 +716,7 @@ def substAssertion (arena : AssertionArena) (θ : Substitution) (A : AssertionRe
 node holds at `source` exactly where `A` holds at `target`. -/
 theorem substAssertion_sound {arena arena' : AssertionArena} {θ : Substitution} {A A' : AssertionRef}
     (hc : substAssertion arena θ A = .ok (arena', A')) {target source : Env} {m : Nat} {s : IndexedHeap}
-    (hθ : θ.Holds target source s.h) :
+    (hθ : θ.HoldsAt target source s) :
     arena'.Valid ∧ (Sat arena' source m s A' ↔ Sat arena target m s A) := by
   unfold substAssertion at hc
   split at hc
@@ -694,7 +747,7 @@ below its scope satisfy it alike. -/
 theorem sat_scoped_congr {arena : AssertionArena} {n : Nat} {a : AssertionRef}
     (hc : scopedAt arena.nodes n a.index = true) {η η' : Env} (he : ∀ i < n, η' i = η i) {m : Nat}
     {s : IndexedHeap} : Sat arena η' m s a ↔ Sat arena η m s a :=
-  sat_subst hc (Substitution.ident_holds he s.h)
+  sat_subst hc (.of_holds rfl (Substitution.ident_holds he s.h))
 
 /-! ## Marks -/
 

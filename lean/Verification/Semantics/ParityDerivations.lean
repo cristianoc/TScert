@@ -200,7 +200,7 @@ def Holds (arena : AssertionArena) (s : TwoState) : Formula → Prop
   | .operation q => q.Holds s
   | .linear F => FactAt (stepValue s) F
   | .defined v => (stepValue s v).isSome
-  | .transport θ => θ.Holds s.beforeEnv s.afterEnv s.after.h
+  | .transport θ => θ.HoldsAt s.beforeEnv s.afterEnv s.after
   | .and F G => Holds arena s F ∧ Holds arena s G
   | .truth => True
   | .falsity => False
@@ -419,7 +419,7 @@ def shiftFormula (nodes : Array AssertionNode) (p : Phase) (n : Nat) : Formula �
   | .defined v, .defined v' => v' == shiftVar p v
   | .transition Φ, .transition Φ' => if p = .before then Φ' == Footprint.rename (· + 1) Φ else Φ' == Φ
   | .operation q, .operation q' => if p = .after then q' == q.shift else !q.readsBefore && q' == q
-  | .transport θ, .transport θ' => p == .after && !θ.boxed && θ' == ⟨θ.images.map Witness.shift, false⟩
+  | .transport θ, .transport θ' => p == .after && !θ.boxed && θ.stable.isEmpty && θ' == ⟨θ.images.map Witness.shift, false, []⟩
   | .and F G, .and F' G' => shiftFormula nodes p n F F' && shiftFormula nodes p n G G'
   | .truth, .truth => true
   | .falsity, .falsity => true
@@ -584,6 +584,17 @@ inductive Derivation (arena : AssertionArena) : List Formula → Formula → Typ
       (hc : substCheck arena.nodes θ b.index c.index = true)
       (d : Derivation arena Γ (.at .before a)) (dt : Derivation arena Γ (.transition Φ))
       (dθ : Derivation arena Γ (.transport θ)) : Derivation arena Γ (.at .after c)
+  /-- **A transport with rigid path images** (I5, "Substitution and
+  marks": a substituted mutable path needs its agreement over the modal
+  domain): a transport whose listed path images are rigid at the exit holds
+  under every box. -/
+  | transportRigid {Γ} (θ : Substitution) (rigid : List (Nat × AssertionRef))
+      (hθ : θ.boxed = false ∧ θ.stable = rigid.map Prod.fst)
+      (hr : rigid.all (fun ir => match rigidPathOf arena.nodes ir.2, θ.images[ir.1]? with
+        | some q, some (.path q') => q == q'
+        | _, _ => false) = true)
+      (d : Derivation arena Γ (.transport { θ with stable := [] }))
+      (dr : Derivation arena Γ (conj (rigid.map fun ir => .at .after ir.2))) : Derivation arena Γ (.transport θ)
   /-- Frame⁺ (the note, §6): for an effect rigid on the domain `D` the box
   itself holds at the exit. -/
   | framePlus {Γ a b c D Φ} (ev : RigidityEvidence) (hev : ev.check arena D Φ = true) (θ : Substitution)
@@ -737,6 +748,7 @@ inductive RawDerivation where
   | tolerantFrame (S : Footprint) (sev : SupportEvidence) (rev : RespectEvidence) (cev : ContextEvidence)
       (K g : AssertionRef) (e dK dA : RawDerivation)
   | rigidSubst (π : Path) (n : Nat) (r a c bx : AssertionRef) (e dr dc : RawDerivation)
+  | transportRigid (rigid : List (Nat × AssertionRef)) (d dr : RawDerivation)
   | sep (x y : Nat) (K : AssertionRef) (dK dA : RawDerivation)
   | everyFrame (x : Nat) (K : AssertionRef) (dK dA : RawDerivation)
   | init (dA : RawDerivation)
@@ -956,6 +968,15 @@ def checkDerivation (arena : AssertionArena) (premises : List Formula) (goal : F
           (← checkDerivation arena premises (.at p K) dK) (← checkDerivation arena premises (.at p A) dA))
       | _ => .error "tolerantFrame: goal is no box"
     | _ => .error "tolerantFrame: goal is no assertion"
+  | .transportRigid rigid d dr => match goal with
+    | .transport θ => do
+      let ⟨hθ⟩ ← req (θ.boxed = false ∧ θ.stable = rigid.map Prod.fst) "transportRigid: not the certified slots"
+      let ⟨hr⟩ ← req (rigid.all (fun ir => match rigidPathOf arena.nodes ir.2, θ.images[ir.1]? with
+        | some q, some (.path q') => q == q'
+        | _, _ => false) = true) "transportRigid: an image is not the rigid path"
+      pure (.transportRigid θ rigid hθ hr (← checkDerivation arena premises (.transport { θ with stable := [] }) d)
+        (← checkDerivation arena premises (conj (rigid.map fun ir => .at .after ir.2)) dr))
+    | _ => .error "transportRigid: goal is no transport"
   | .rigidSubst π n r a c bx e dr dc => match goal with
     | .at p bc => do
       match arena.nodes[bc.index]? with
@@ -1697,20 +1718,26 @@ theorem holds_shiftFormula {arena : AssertionArena} {p : Phase} {n : Nat} {s : T
     · simp only [if_true, beq_iff_eq] at h
       subst h; exact OperationPost.holds_shift s x q
   | .transport θ, .transport θ', h => by
-    simp only [shiftFormula, Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at h
-    obtain ⟨⟨rfl, hb⟩, rfl⟩ := h
-    show (Substitution.Holds _ _ _ _) ↔ _
+    simp only [shiftFormula, Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true', List.isEmpty_iff] at h
+    obtain ⟨⟨⟨rfl, hb⟩, hst⟩, rfl⟩ := h
+    show (Substitution.HoldsAt _ _ _ _) ↔ Substitution.HoldsAt _ _ _ _
+    have key : Substitution.Holds ⟨θ.images.map Witness.shift, false, []⟩ (s.withEnv .after (push x (s.env .after))).beforeEnv
+        (s.withEnv .after (push x (s.env .after))).afterEnv (s.withEnv .after (push x (s.env .after))).after.h ↔
+        θ.Holds s.beforeEnv s.afterEnv s.after.h := by
+      constructor
+      · intro hθ i w hi
+        rw [Substitution.image_of_unboxed hb] at hi
+        have := hθ i w.shift (by rw [Substitution.image_of_unboxed rfl]; simp [hi])
+        exact (Witness.value_shift w x s.afterEnv s.after.h).symm.trans this
+      · intro hθ i w hi
+        rw [Substitution.image_of_unboxed rfl] at hi
+        simp only [Array.getElem?_map, Option.map_eq_some_iff] at hi
+        obtain ⟨w0, hw0, rfl⟩ := hi
+        show w0.shift.value (push x s.afterEnv) s.after.h = some (s.beforeEnv i)
+        rw [Witness.value_shift]; exact hθ i w0 (by rw [Substitution.image_of_unboxed hb]; exact hw0)
     constructor
-    · intro hθ i w hi
-      rw [Substitution.image_of_unboxed hb] at hi
-      have := hθ i w.shift (by rw [Substitution.image_of_unboxed rfl]; simp [hi])
-      exact (Witness.value_shift w x s.afterEnv s.after.h).symm.trans this
-    · intro hθ i w hi
-      rw [Substitution.image_of_unboxed rfl] at hi
-      simp only [Array.getElem?_map, Option.map_eq_some_iff] at hi
-      obtain ⟨w0, hw0, rfl⟩ := hi
-      show w0.shift.value (push x s.afterEnv) s.after.h = some (s.beforeEnv i)
-      rw [Witness.value_shift]; exact hθ i w0 (by rw [Substitution.image_of_unboxed hb]; exact hw0)
+    · intro h; exact .of_holds hst (key.mp h.1)
+    · intro h; exact .of_holds rfl (key.mpr h.1)
   | .and F G, .and F' G', h => by
     simp only [shiftFormula, Bool.and_eq_true] at h
     exact and_congr (holds_shiftFormula h.1) (holds_shiftFormula h.2)
@@ -1856,6 +1883,38 @@ theorem Derivation.sound {arena : AssertionArena} (hv : arena.Valid) {Γ : List 
       exact cev.sound hc η m anchor s₁ s₂ hg a₁ a₂
     exact (sat_box hv hb).mpr fun s' act =>
       tolerant_frame (sev.sound hs) hthrough (rev.sound hr) _ _ _ (ihK s hΓ) (ihA s hΓ) s' act
+  | transportRigid θ rigid hθ hr _ _ ihd ihr =>
+    intro s hΓ
+    obtain ⟨hb, hst⟩ := hθ
+    have h0 := (ihd s hΓ).1
+    have hholds : θ.Holds s.beforeEnv s.afterEnv s.after.h := by
+      intro i w hi
+      rw [Substitution.image_of_unboxed hb] at hi
+      exact h0 i w (by rw [Substitution.image_of_unboxed (θ := { θ with stable := [] }) hb]; exact hi)
+    have hrs := holds_conj.mp (ihr s hΓ)
+    refine ⟨hholds, fun s' ha i w hi => ?_⟩
+    obtain ⟨hw, hcase⟩ := Substitution.image_box hi
+    have hval : w.value s.afterEnv s.after.h = some (s.beforeEnv i) :=
+      hholds i w (by rw [Substitution.image_of_unboxed hb, hw])
+    rcases hcase with hf | hs
+    · rw [Witness.value_heap hf]; exact hval
+    · rw [hst, List.contains_iff_mem] at hs
+      obtain ⟨⟨i', r⟩, hir, rfl⟩ := List.mem_map.mp hs
+      have hc := List.all_eq_true.mp hr _ hir
+      simp only at hc
+      split at hc
+      · rename_i q q' hq hq'
+        simp only [beq_iff_eq] at hc
+        subst hc
+        rw [hw] at hq'; cases hq'
+        have hsr := hrs (.at .after r) (List.mem_map_of_mem hir)
+        obtain ⟨v, hv'⟩ := rigidPathOf_sound hv hq hsr
+        have h1 : q.read s.afterEnv s.after.h = some v := hv' s.after (Admissible.refl _)
+        have h2 : q.read s.afterEnv s'.h = some v := hv' s' ha
+        simp only [Witness.value] at hval ⊢
+        rw [h1] at hval
+        rw [h2, hval]
+      · cases hc
   | @rigidSubst Γ p r a c bx bc π n Φ hr hc hbx hbc _ _ _ ihe ihr ihc =>
     intro s hΓ
     obtain ⟨v, hv'⟩ := rigidPathOf_sound hv hr (ihr s hΓ)
