@@ -271,7 +271,7 @@ process.stdout.write(JSON.stringify({ select, units: run.units }));
 process.exit(0);
 `);
   const p = spawnSync(process.execPath, [driver], { encoding: "utf8", timeout: 170_000,
-    env: { ...process.env, TSCERT_FORCE: "preparation-limit", TSCERT_STEP_LIMIT: "10",
+    env: { ...process.env, TSCERT_FORCE: "preparation-limit", TSCERT_STEP_LIMIT: "1",
       TSCERT_STAGE_STORE: join(work, "store") } });
   assert.equal(p.status, 0, p.stderr);
   const out: unknown = JSON.parse(p.stdout);

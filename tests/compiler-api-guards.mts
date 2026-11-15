@@ -25,7 +25,7 @@ import { close as closeParser } from "../tools/fragment-parse.mts";
 import type { FamilyDescription, GuardEntry, GuardTable } from "../tools/host-families.mts";
 
 const repository = resolve(import.meta.dirname, "..");
-const generated = spawnSync(process.execPath, [join(repository, "dev", "guard-table.mts"), "--check"], { encoding: "utf8" });
+const generated = spawnSync(process.execPath, [join(repository, "dev", "guard-table.mts"), "--check"], { encoding: "utf8", timeout: 60_000 });
 assert.equal(generated.status, 0, generated.stdout + generated.stderr);
 linkFixtures();
 assert.ok(isDeepStrictEqual(await guardTable(stringFamily), stringFamily.guards), "the stand-in's table is the generator's output");
@@ -172,13 +172,22 @@ for (const description of [compilerApiFamily, stringFamily]) {
     }
     return dir;
   };
-  // The real path of what Node loads for `specifier` from a module of the
-  // copy, or null where resolving or loading it throws.
-  const nodeResolves = (dir: string, specifier: string): string | null => {
-    writeFileSync(join(dir, "probe.mjs"),
-      `await import(${JSON.stringify(specifier)});\nconsole.log(import.meta.resolve(${JSON.stringify(specifier)}));\n`);
-    const resolved = spawnSync(process.execPath, [join(dir, "probe.mjs")], { encoding: "utf8" });
-    return resolved.status === 0 ? realpathSync(fileURLToPath(resolved.stdout.trim())) : null;
+  // The real path of what Node loads for each `specifier` from a module of
+  // its copy, or null where resolving or loading it throws: one Node process
+  // imports each copy's probe module, each copy's modules at URLs of its own.
+  const nodeResolves = (probes: readonly (readonly [string, string])[]): (string | null)[] => {
+    for (const [dir, specifier] of probes)
+      writeFileSync(join(dir, "probe.mjs"),
+        `await import(${JSON.stringify(specifier)});\nexport const resolved = import.meta.resolve(${JSON.stringify(specifier)});\n`);
+    const urls = probes.map(([dir]) => pathToFileURL(join(dir, "probe.mjs")).href);
+    const resolved = spawnSync(process.execPath, ["--input-type=module", "-e",
+      `const out = [];\nfor (const url of ${JSON.stringify(urls)}) {\n` +
+      "  try { out.push((await import(url)).resolved); } catch { out.push(null); }\n}\nconsole.log(JSON.stringify(out));\n"],
+      { encoding: "utf8", timeout: 60_000 });
+    assert.equal(resolved.status, 0, `the Node probe: ${resolved.error ?? resolved.stderr}`);
+    const urlsOut: unknown = JSON.parse(resolved.stdout);
+    assert.ok(Array.isArray(urlsOut) && urlsOut.length === probes.length, "one answer per probe");
+    return urlsOut.map((u: unknown) => typeof u === "string" ? realpathSync(fileURLToPath(u)) : null);
   };
   const entry = (mapping: unknown) => (m: Record<string, unknown>): Record<string, unknown> =>
     ({ ...m, exports: { ...(isRecord(m.exports) ? m.exports : {}), [compilerApiGuards.entryPoint]: mapping } });
@@ -202,10 +211,12 @@ for (const description of [compilerApiFamily, stringFamily]) {
     ["an import with JSON attributes", point, false, (m) => m,
       'import { SyntaxKind } from "#enums/syntaxKind" with { type: "json" };'],
   ];
-  for (const [what, specifier, expected, change, line] of variants) {
-    const dir = copy(change, line);
+  const dirs = variants.map(([, , , change, line]) => copy(change, line));
+  const answers = nodeResolves(variants.map(([, specifier], i) => [dirs[i] ?? "", specifier]));
+  for (const [i, [what, specifier, expected]] of variants.entries()) {
+    const dir = dirs[i] ?? "";
     const reviewed = specifier === point ? compilerApiGuards.entryModule : "dist/enums/syntaxKind.js";
-    const nodes = nodeResolves(dir, specifier) === realpathSync(join(dir, reviewed));
+    const nodes = answers[i] === realpathSync(join(dir, reviewed));
     assert.equal(nodes, expected, `${what}: Node resolves ${specifier} ${expected ? "to" : "elsewhere than"} ${reviewed}`);
     assert.equal(activeGuards(compilerApiGuards, dir)?.size === compilerApiGuards.guards.length, nodes,
       `${what}: activated exactly where Node resolves the reviewed module`);
@@ -239,7 +250,7 @@ for (const description of [compilerApiFamily, stringFamily]) {
       `import { compilerApiGuards } from ${JSON.stringify(pathToFileURL(join(repository, "tools", "compiler-api-guards.mts")).href)};\n` +
       `console.log(activeGuards(compilerApiGuards, ${JSON.stringify(root)})?.size ?? 'none');\n`;
     const ran = spawnSync(process.execPath, [...args, "--input-type=module", "-e", code],
-      { encoding: "utf8", env: { ...process.env, ...env } });
+      { encoding: "utf8", env: { ...process.env, ...env }, timeout: 60_000 });
     assert.equal(ran.status, 0, ran.stderr);
     return ran.stdout.trim();
   };
@@ -261,7 +272,7 @@ for (const description of [compilerApiFamily, stringFamily]) {
   const instances = spawnSync(process.execPath, ["--input-type=module", "-e",
     `const url = ${JSON.stringify(pathToFileURL(join(realpathSync(root), "dist", "ast", "is.generated.js")).href)};\n` +
     "const a = await import(url), b = await import(url + '?review');\nconsole.log(a.isIdentifier !== b.isIdentifier);\n"],
-    { encoding: "utf8" });
+    { encoding: "utf8", timeout: 60_000 });
   assert.equal(instances.stdout.trim(), "true", `Node loads another isIdentifier with a query: ${instances.stderr}`);
   // A copy of the package installed in another project, activated by the
   // compiler API's description naming that installation; its declarations

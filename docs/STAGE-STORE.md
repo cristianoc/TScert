@@ -856,8 +856,12 @@ the operation's result, executed or replayed.
 
 - *Executables.* The repository's verifier build, and the mutation
   verifier (`tests/single-pass-mutations.mts`). The mutation verifier is
-  built at each run of the controls from the current build's generated C of
-  the pass's modules and Lake's link response, and is audited as the
+  built from the current build's generated C of the pass's modules and
+  Lake's link response, and replayed from the store (entry
+  `mutation-verifier/<key>`) where it holds a build from the same inputs:
+  the verifier's executable, that C and the link response by content, the
+  toolchain and `tests/single-pass-mutations.mts`; a change to Lean's build
+  builds it again. It is audited as the
   verifier is: its identity is its executable's digest and linked
   libraries, and it reads, beyond the verifier's I/O, only the variable
   `TSCERT_TEST_MUTATIONS`, which its invocation's environment fixes. A

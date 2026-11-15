@@ -13,10 +13,12 @@
 //   sp-footprint   `SinglePass.footprintCheck`: every unit's footprint holds
 //   sp-edge-evidence  `SinglePass.edgeEvidenceChecked`: every edge's slot evidence is accepted
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { auditMutationVerifier } from "../pipeline/stage-execution.mts";
+import { auditMutationVerifier, canonical, sha256, verifierBuild } from "../pipeline/stage-execution.mts";
+import { currentStore } from "../pipeline/stages.mts";
 import { runDirectory } from "../pipeline/run-directory.mts";
 
 const lean = resolve(import.meta.dirname, "../lean");
@@ -94,6 +96,35 @@ export function passMutationVerifier(dir: string = runDirectory("single-pass-mut
   return executable;
 }
 
+/** The mutation verifier in `dir`, replayed from the stage store where it
+ * holds a build from the same inputs: the verifier's executable, the
+ * generated C of the pass's modules and the link response, by content, the
+ * toolchain and this module's source. Lean's build changing any of them
+ * builds it again and publishes it under the new key (entry
+ * `mutation-verifier/<key>`); with the store off it is built every time. */
+export function cachedPassMutationVerifier(dir: string): string {
+  const store = currentStore();
+  const executable = join(dir, "single-pass-mutation-verifier");
+  const ir = (module: string): string => sha256(readFileSync(join(lean, ".lake/build/ir/Verification", `${module}.c`)));
+  const input = canonical({ mutations: sha256(readFileSync(import.meta.filename)), verifier: sha256(readFileSync(verifierBuild)),
+    singlePass: ir("Programs/SinglePass"), json: ir("Source/Claims/Json"),
+    link: sha256(readFileSync(join(lean, ".lake/build/bin/verifier.rsp"))), toolchain: command("lean", ["--print-prefix"]) });
+  const key = sha256(input);
+  const found = store?.finished("mutation-verifier", key, input)?.result.outputs.find(([role]) => role === "verifier")?.[1];
+  if (found !== undefined) {
+    writeFileSync(executable, found);
+    chmodSync(executable, 0o755);
+    auditMutationVerifier(executable);
+    return executable;
+  }
+  const started = performance.now();
+  const built = passMutationVerifier(dir);
+  store?.publishFinished("mutation-verifier", key, { input, exitStatus: 0, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0),
+    outputs: [["verifier", readFileSync(built)]], measurement: { attempt: randomUUID(), elapsedMs: performance.now() - started,
+      limitMs: null, cpu: { unavailable: "a build of the mutation verifier" } } });
+  return built;
+}
+
 /** Use the mutation verifier at `path`, which the suite's process built. */
 export function usePassMutationVerifier(path: string): string {
   auditMutationVerifier(path);
@@ -101,6 +132,7 @@ export function usePassMutationVerifier(path: string): string {
 }
 
 // `node tests/single-pass-mutations.mts --build <dir>`: build it in `dir`, a
-// directory the caller owns, and print its path.
+// directory the caller owns, or replay its build from the store, and print
+// its path.
 if (process.argv[1] === import.meta.filename && process.argv[2] === "--build" && process.argv[3] !== undefined)
-  process.stdout.write(`${passMutationVerifier(process.argv[3])}\n`);
+  process.stdout.write(`${cachedPassMutationVerifier(process.argv[3])}\n`);
