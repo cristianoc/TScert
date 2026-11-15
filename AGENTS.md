@@ -286,9 +286,12 @@ the fast checks and the controls (`tests/single-pass-controls.mts`). `make test-
 then runs the pipeline cases (`pipeline/run-cases.mts`). Three rules decide
 where a check goes.
 
-- **Suites start together.** A suite is `run_test "Name" command args…`; its
-  output is buffered and reported in order, and a failure is counted, never
-  fatal.
+- **Suites start together.** A suite is `run_test <seconds> "Name" command
+  args…`; its output is buffered and reported in order with its time, and a
+  failure is counted, never fatal. Its budget is about three times its
+  healthy duration on a 12-core machine, at least 30 s, scaled by 12 / cores
+  on a smaller one; a suite over it is stopped and reported as a failure
+  with the last lines it wrote.
 - **A case is a source with its expected outcome; anything else is a
   control.** A check of a source through the pipeline is a case of
   `pipeline/cases.mts`. A check of the verifier or the pipeline on an
