@@ -30,7 +30,11 @@ postcondition of one command is read at the other's two-state.
 **Sequence** (`Runs.seq`, `CommandSummary.seq_sound`): its normal exit is
 the first's normal exit followed by the second's; its exceptional exit is
 the first's throw, or the first's normal exit followed by the second's
-throw. -/
+throw.
+
+**Handler** (`Runs.handle`, `CommandSummary.handle_sound`): the normal exit
+of `try c catch (x) d` is `c`'s return, or `c`'s throw followed by `d`'s
+return; its exceptional exit is `c`'s throw followed by `d`'s throw. -/
 namespace Verification.CallEffects
 open Verification Footprints HeapKnowledge TolerantFrames Parity
 
@@ -217,5 +221,36 @@ theorem CommandSummary.seq_sound {arena : AssertionArena} {P P₂ : Assertion} {
     rcases hr with hr | hr
     · exact hw s hP (hA .exceptional s hP hr)
     · exact Runs.then_sound (k₁ := .normal) (k₂ := .exceptional) hA hB hmid hx hxi s hP hr
+
+/-! ## Handlers -/
+
+/-- **The runs of a handler `try c catch (x) d`** (the note, §3, "The
+effect of a command": a throw that a command catches is no exit of it): it
+returns where `c` returns, or `c` throws and then `d` returns; it throws
+where `c` throws and then `d` throws. `d` starts from the state and
+valuation `c`'s throw leaves, whose slot `0` is the thrown value. -/
+def Runs.handle (R₁ R₂ : Runs) : Runs
+  | .normal, s => R₁ .normal s ∨ R₁.then .exceptional R₂ .normal s
+  | .exceptional, s => R₁.then .exceptional R₂ .exceptional s
+
+/-- **The handler's summary** (the design's corrections 4: a caught throw
+contributes to the handler's eventual exit): the summary `C` of
+`try c catch (x) d` is sound where its normal exit is within `c`'s normal
+exit, and within `c`'s throw followed by `d`'s return, and its exceptional
+exit within `c`'s throw followed by `d`'s throw. -/
+theorem CommandSummary.handle_sound {arena : AssertionArena} {P P₂ : Assertion} {R₁ R₂ : Runs}
+    {A B C : CommandSummary} {evn evx : ThenEvidence} (hA : A.Sound arena P R₁) (hB : B.Sound arena P₂ R₂)
+    (hmid : ∀ s, s.Entry P → A.exceptional.Holds arena s → P₂ s.afterEnv s.mark s.after)
+    (hw : A.normal.Weakens arena P C.normal)
+    (hn : evn.Valid arena P A.exceptional B.normal) (hni : evn.Into arena A.exceptional B.normal C.normal)
+    (hx : evx.Valid arena P A.exceptional B.exceptional)
+    (hxi : evx.Into arena A.exceptional B.exceptional C.exceptional) : C.Sound arena P (R₁.handle R₂) := by
+  intro c s hP hr
+  cases c with
+  | normal =>
+    rcases hr with hr | hr
+    · exact hw s hP (hA .normal s hP hr)
+    · exact Runs.then_sound (k₁ := .exceptional) (k₂ := .normal) hA hB hmid hn hni s hP hr
+  | exceptional => exact Runs.then_sound (k₁ := .exceptional) (k₂ := .exceptional) hA hB hmid hx hxi s hP hr
 
 end Verification.CallEffects
