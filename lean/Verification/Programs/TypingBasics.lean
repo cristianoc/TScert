@@ -809,17 +809,11 @@ theorem restsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {kind :
     rw [← CallArguments.parameters_take arity (args.take _), List.take_take,
       Nat.min_eq_left hle, CallArguments.parameters_take]
   rw [hp, CallEffects.Effect.promised_take (e := s.fixed.effect) hbelow hle] at hsafe
-  -- Graph code states no append (`Effect.below_grows`) and no element write
-  -- (`Effect.below_write`): its exits at the actuals it takes are its heap
-  -- postconditions there, which hold at every longer list of actuals
-  -- (`Effect.post_args`).
-  have hng : ∀ {xs : List Tm}, s.fixed.effect.receiverGrows = true → CallArguments.Values xs := fun h => by
-    rw [CallEffects.Effect.below_grows hbelow] at h; cases h
-  exact ⟨_, .graph hrv hvals (hb s hsm j U r hr), CallEffects.Effect.safe_exits_weaken hng
-    (CallEffects.Effect.below_write hbelow) hng hu hh
-    (fun _ _ h => CallEffects.Effect.post_args (CallEffects.Effect.below_ensures hbelow)
-      (CallEffects.Effect.below_grows hbelow) (CallEffects.Effect.below_write hbelow) (CallEffects.Effect.below_regions hbelow) h)
-    (fun _ h => CallEffects.Effect.excPost_args (CallEffects.Effect.below_regions hbelow) h) hsafe⟩
+  -- Graph code's signature is about its receiver and its parameters
+  -- (`Effect.below`): its exits at the actuals it takes hold at every longer
+  -- list of actuals (`Effect.exitPost_take`).
+  exact ⟨_, .graph hrv hvals (hb s hsm j U r hr),
+    CallEffects.Effect.safe_exits_take (CallEffects.Effect.belowRow_of_below hbelow) hle hu hh hsafe⟩
 
 /-- An equality established by a branch can refine one immutable slot. -/
 theorem EnvOk.refine {G : NormalGraph ι} {Γ ρ n W i A B}

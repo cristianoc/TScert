@@ -128,22 +128,6 @@ theorem Effect.safe_fields {Ξ T : Fam} {e : Effect} {r : Tm} {args : List Tm}
     · exact (Effect.excPostW_iff_exit hadm).mpr hp
   exact SafePostExcW.weaken (fun _ _ _ _ hp => hp.1) (fun _ _ _ hp => hp) (SafePostExcV.iff_lift.mp hw)
 
-/-- **Safety at one signature's exits gives safety at another's**, at
-another call, where their heap postconditions imply each other's, the
-second states no element write, and each call's actuals are values where
-its signature states an append of them. -/
-theorem Effect.safe_exits_weaken {Ξ T : Fam} {e e' : Effect} {r r' : Tm} {args args' : List Tm}
-    (hv : e.receiverGrows = true → CallArguments.Values args) (hx' : e'.elementWrite = none)
-    (hv' : e'.receiverGrows = true → CallArguments.Values args') {j : Nat} {U : WorldT j} {heap : Heap} {t : Tm}
-    (hu : WorldAdm U) (hh : HeapOk j U heap)
-    (hq : ∀ h' v, e.post r args heap h' v → e'.post r' args' heap h' v)
-    (hr : ∀ h', e.excPost r args heap h' → e'.excPost r' args' heap h')
-    (hs : SafePostExcV Ξ T (e.schema.exitPostW .normal r args U heap) (e.schema.exitPostW .exceptional r args U heap)
-      j U heap t) :
-    SafePostExcV Ξ T (e'.schema.exitPostW .normal r' args' U heap)
-      (e'.schema.exitPostW .exceptional r' args' U heap) j U heap t :=
-  Effect.safe_exits hx' hv' hu hh (SafePostExc.weaken hq hr (Effect.safe_fields hv hu hh hs))
-
 /-! ## The meet of two specifications -/
 
 /-- **A signature's schema reads its exits only through their heaps**
@@ -187,6 +171,59 @@ theorem Effect.exitPost_summary {e : Effect} {c : Completion} {r : Tm} {args : L
       ((e.summary args.length).get c).Holds AssertionArena.empty (callState r args v s.h.length s s') := by
   unfold Exits.exitPost
   rw [Effect.schema_atArity]
+
+/-- **A guarantee about the receiver and the first `n` parameters holds at
+every call extending the call of its first `m ≥ n` actuals**
+(`Effect.belowRow`): the frame reads no actual (`Effect.within_args`), a
+fresh result, a fresh object and the receiver's elements read the result and
+the receiver, each ensured fact positions up to `n` (`Effect.ensures_take`),
+and no postcondition names a sequence of the actuals. -/
+theorem Effect.exitPost_take {e : Effect} {n m : Nat} (hb : e.belowRow n = true) (hm : n ≤ m) {c : Completion}
+    {r : Tm} {args : List Tm} {s s' : IndexedHeap} {v : Tm} (hp : e.schema.exitPost c r (args.take m) s s' v) :
+    e.schema.exitPost c r args s s' v := by
+  have hb0 := Effect.belowRow_below hb
+  have hreg : e.regions = [] := Effect.below_regions (e := { e with ensures := [] }) hb0
+  have hg : e.receiverGrows = false := Effect.below_grows (e := { e with ensures := [] }) hb0
+  have hx : e.elementWrite = none := Effect.below_write (e := { e with ensures := [] }) hb0
+  rw [Effect.exitPost_summary] at hp ⊢
+  have hframe : ∀ Φ : Footprint, (Φ = e.frame ∨ Φ = topEffect) →
+      EffectAction Φ (callEnv r (args.take m)) s s' → EffectAction Φ (callEnv r args) s s' := by
+    rintro Φ (rfl | rfl) h
+    · exact ⟨h.1, Effect.within_args hreg h.2⟩
+    · exact EffectAction.top h.1
+  have hlen : ∀ k k', e.normalPosts k = e.normalPosts k' := fun k k' => by
+    simp [Effect.normalPosts, hg, hx]
+  cases c with
+  | normal =>
+    refine ⟨hframe _ (.inl rfl) hp.1, fun F hF => ?_⟩
+    change F ∈ e.normalPosts args.length at hF
+    have hH := hp.2 F (show F ∈ e.normalPosts (args.take m).length by rw [hlen]; exact hF)
+    simp only [Effect.normalPosts, hg, hx, Bool.false_eq_true, if_false, List.append_nil, List.mem_append,
+      List.mem_map] at hF
+    rcases hF with ((hf | ho) | hel) | ⟨G, hG, rfl⟩
+    · cases hc : e.fresh <;> simp [hc] at hf; subst hf; exact hH
+    · cases hc : e.freshObject <;> simp [hc] at ho; subst ho; exact hH
+    · cases hc : e.elements <;> simp [hc] at hel; subst hel; exact hH
+    · exact (Effect.ensures_take hb hm hG v r args s.h s'.h).mp hH
+  | exceptional =>
+    cases ho : e.onThrow <;> simp only [Exits.get, Effect.summary, ho, Bool.false_eq_true, if_false, if_true] at hp ⊢
+    · exact ⟨hframe _ (.inr rfl) hp.1, fun _ hF => by cases hF⟩
+    · exact ⟨hframe _ (.inl rfl) hp.1, fun _ hF => by cases hF⟩
+
+/-- **Safety at a signature's exits at the first `m` actuals is safety at
+its exits at every call extending them**, the signature about its receiver
+and its first `n ≤ m` parameters (`Effect.exitPost_take`). -/
+theorem Effect.safe_exits_take {Ξ T : Fam} {e : Effect} {n m : Nat} (hb : e.belowRow n = true) (hm : n ≤ m)
+    {r : Tm} {args : List Tm} {j : Nat} {U : WorldT j} {heap : Heap} {t : Tm} (hu : WorldAdm U)
+    (hh : HeapOk j U heap)
+    (hs : SafePostExcV Ξ T (e.schema.exitPostW .normal r (args.take m) U heap)
+      (e.schema.exitPostW .exceptional r (args.take m) U heap) j U heap t) :
+    SafePostExcV Ξ T (e.schema.exitPostW .normal r args U heap) (e.schema.exitPostW .exceptional r args U heap)
+      j U heap t := by
+  refine SafePostExcV.weaken_reached hu hh ?_ ?_ hs <;>
+    rintro s s' val rfl hW rfl - hp <;> cases eq_of_heq hW <;>
+    exact (Exits.exitPostW_iff _ _ _ _ s s' val).mpr
+      (Effect.exitPost_take hb hm ((Exits.exitPostW_iff _ _ _ _ s s' val).mp hp))
 
 /-- Each postcondition of the meet's normal return is one of either
 signature's. -/

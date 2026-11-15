@@ -713,13 +713,8 @@ theorem offers_self {G : NormalGraph ι} {arity E K start Cs vs} {kind : Invoke}
       rw [← CallArguments.parameters_take arity (args.take _), List.take_take,
         Nat.min_eq_left hle, CallArguments.parameters_take]
     rw [hp, CallEffects.Effect.promised_take (e := s.fixed.effect) hbelow hle] at hsafe
-    have hng : ∀ {xs : List Tm}, s.fixed.effect.receiverGrows = true → CallArguments.Values xs := fun h => by
-      rw [CallEffects.Effect.below_grows hbelow] at h; cases h
     exact ⟨_, .graph hrv hvals (hbS s hsm j U r hrr),
-      CallEffects.Effect.safe_exits_weaken hng (CallEffects.Effect.below_write hbelow) hng hu hh
-      (fun _ _ h => CallEffects.Effect.post_args (CallEffects.Effect.below_ensures hbelow)
-      (CallEffects.Effect.below_grows hbelow) (CallEffects.Effect.below_write hbelow) (CallEffects.Effect.below_regions hbelow) h)
-      (fun _ h => CallEffects.Effect.excPost_args (CallEffects.Effect.below_regions hbelow) h) hsafe⟩
+      CallEffects.Effect.safe_exits_take (CallEffects.Effect.belowRow_of_below hbelow) hle hu hh hsafe⟩
 
 /-- **A class value's graph code** meets each construct signature it was
 checked at, with its effect, with `undefined` for its receiver: `new` enters it
@@ -821,12 +816,8 @@ theorem ctorRestsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U 
       Nat.min_eq_left (by omega), CallArguments.parameters_take]
   rw [hp] at hsafe
   rw [Effect.result_plain hplain] at hsafe ⊢
-  have hng : ∀ {xs : List Tm}, s.effect.receiverGrows = true → CallArguments.Values xs := fun h => by
-    rw [Effect.below_grows hspec.2.1] at h; cases h
-  exact ⟨_, ⟨fs, _, _, _, rfl, rfl, rfl⟩, Effect.safe_exits_weaken hng (Effect.below_write hspec.2.1) hng hv hh
-    (fun _ _ h => Effect.post_args (Effect.below_ensures hspec.2.1)
-      (Effect.below_grows hspec.2.1) (Effect.below_write hspec.2.1) (Effect.below_regions hspec.2.1) h)
-      (fun _ h => Effect.excPost_args (Effect.below_regions hspec.2.1) h) hsafe⟩
+  exact ⟨_, ⟨fs, _, _, _, rfl, rfl, rfl⟩,
+    Effect.safe_exits_take (Effect.belowRow_of_below hspec.2.1) (by omega) hv hh hsafe⟩
 
 /-- The parts a variadic call writes past its fixed actuals fit its rest. With
 a spread among them, the rest is an element rest, each plain part at its

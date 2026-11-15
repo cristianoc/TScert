@@ -1257,7 +1257,10 @@ The invocation proofs supply that match (`graph_invoke`, `graph_invoke_at`,
 meets at its signature (`PromiseWith`). Code states no append and no element
 write (`Effect.below`), and at its exits its heap postconditions and its
 exits agree on every admissible state a run reaches (`Effect.safe_exits`,
-`Effect.safe_fields`).
+`Effect.safe_fields`). A code's signature is about its receiver and its
+parameters (`Effect.belowRow`), so its exits at the actuals it takes hold
+at every call extending them (`Effect.exitPost_take`,
+`Effect.safe_exits_take`).
 
 **Provenance stamps** (`FootprintProvenance.lean`: marks, `after` and
 `before` stamps, proved: `stamps_separate`) state a slot's separation against

@@ -186,7 +186,8 @@ run_cmd do
   check ``Verification.SourceClaimJson.PassUnit.codeRun_of_clauses
   check ``Verification.SourceClaimJson.PassUnit.row_invoke_at
   check ``Verification.SourceClaimJson.PassUnit.safePostExc_and
-  check ``Verification.CallEffects.Effect.post_take_row
+  check ``Verification.CallEffects.Effect.exitPost_take
+  check ``Verification.CallEffects.Effect.safe_exits_take
   check ``Verification.CallEffects.Effect.ensures_frame
   check ``Verification.SourceClaimJson.PassUnit.codeBound_some
   check ``Verification.SourceClaimJson.PassUnit.captures_envOk

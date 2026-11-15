@@ -757,19 +757,6 @@ theorem Effect.within_args {e : Effect} (hreg : e.regions = []) {r : Tm} {args a
     {before after : Heap} (h : e.within r args before after) : e.within r args' before after :=
   Effect.within_coarse hreg (Footprints.Closed.le_refl _) rfl rfl h
 
-theorem Effect.excPost_args {e : Effect} (hreg : e.regions = []) {r : Tm} {args args' : List Tm}
-    {before after : Heap} (h : e.excPost r args before after) : e.excPost r args' before after :=
-  fun ho => Effect.within_args hreg (h ho)
-
-/-- A signature stating no postcondition (`ensures`), no append and no store
-regions has a `post` independent of the actuals. -/
-theorem Effect.post_args {e : Effect} (he : e.ensures = []) (hg : e.receiverGrows = false)
-    (hx : e.elementWrite = none) (hreg : e.regions = []) {r : Tm}
-    {args args' : List Tm} {before after : Heap}
-    {v : Val} (h : e.post r args before after v) : e.post r args' before after v :=
-  ⟨Effect.within_args hreg h.1, h.2.1, h.2.2.1, h.2.2.2.1, fun F hF => (by rw [he] at hF; cases hF),
-    (fun h' => by rw [hg] at h'; cases h'), fun w hw => (by rw [hx] at hw; cases hw)⟩
-
 private theorem parameters_getD : ∀ (n : Nat) (args : List Tm) (p : Nat), p < n →
     (CallArguments.parameters n args).getD p .undef = args.getD p .undef
   | 0, _, _, h => absurd h (Nat.not_lt_zero _)
@@ -931,19 +918,6 @@ theorem Effect.ensures_frame {e : Effect} {n : Nat} (h : e.belowRow n = true) {F
     simp only [ensuresEnv, callEnv, push, envOf, Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel,
       List.getD_eq_getElem?_getD, List.cons_append, List.getElem?_cons_succ, List.getElem?_append_left hlen, hx,
       Option.getD_some, hp]
-
-/-- **A module row's post at a prefix of the actuals is its post at all of
-them** (proved), the prefix at least `n` long. -/
-theorem Effect.post_take_row {e : Effect} {n m : Nat} (h : e.belowRow n = true) (hm : n ≤ m) {r : Tm}
-    {args : List Tm} {before after : Heap} {v : Tm}
-    (hp : e.post r (args.take m) before after v) : e.post r args before after v := by
-  have hb := Effect.belowRow_below h
-  have hreg : e.regions = [] := Effect.below_regions (e := { e with ensures := [] }) hb
-  have hg : e.receiverGrows = false := Effect.below_grows (e := { e with ensures := [] }) hb
-  have hx : e.elementWrite = none := Effect.below_write (e := { e with ensures := [] }) hb
-  exact ⟨Effect.within_args hreg hp.1, hp.2.1, hp.2.2.1, hp.2.2.2.1,
-    fun F hF => (Effect.ensures_take h hm hF v r args before after).mp (hp.2.2.2.2.1 F hF),
-    (fun h' => by rw [hg] at h'; cases h'), fun w hw => (by rw [hx] at hw; cases hw)⟩
 
 theorem Effect.result_drop (e : Effect) (n : Nat) (R : Fam) (a : Tm) :
     (e.drop n).result R a = e.result R a := by

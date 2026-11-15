@@ -282,18 +282,10 @@ theorem closure_meets_below {G : NormalGraph ι} {arity E K start Cs vs} {kind :
     have hpr : s.fixed.effect.promised (args.take s.arguments.1.length) = s.fixed.effect.promised args :=
       CallEffects.Effect.promised_take hbelow hle args
     rw [hp, hpr] at hsafe
-    -- Module code states no append (`Effect.below_grows`) and no element
-    -- write (`Effect.below_write`): its exits at the actuals it takes are its
-    -- heap postconditions there, which hold at all of them
-    -- (`Effect.post_take_row`).
-    have hng : ∀ {xs : List Tm}, s.fixed.effect.receiverGrows = true → CallArguments.Values xs := fun h => by
-      rw [show s.fixed.effect.receiverGrows = false from
-        CallEffects.Effect.below_grows (e := { s.fixed.effect with ensures := [] }) hbelow] at h; cases h
-    exact ⟨_, .graph hrv hvals (hbS s hsm j U r hrr),
-      CallEffects.Effect.safe_exits_weaken hng (show s.fixed.effect.elementWrite = none from
-        CallEffects.Effect.below_write (e := { s.fixed.effect with ensures := [] }) hbelow) hng hu hh
-      (fun _ _ h => CallEffects.Effect.post_take_row hrow hle h)
-      (fun _ h => CallEffects.Effect.excPost_args (CallEffects.Effect.below_regions hbelow) h) hsafe⟩
+    -- Module code's signature is about its receiver and its parameters
+    -- (`Effect.belowRow`): its exits at the actuals it takes hold at every
+    -- longer list of actuals (`Effect.exitPost_take`).
+    exact ⟨_, .graph hrv hvals (hbS s hsm j U r hrr), CallEffects.Effect.safe_exits_take hrow hle hu hh hsafe⟩
 
 theorem reassign_env (G : NormalGraph ι) : reassign G G.env = G := by
   cases G; rfl
