@@ -444,12 +444,12 @@ def Atom.wellFormed (a : Atom) : Bool :=
 reads is a variable, and each term a variable's own safe integer or string
 length. -/
 def Atom.envOnly : Atom → Bool
-  | .linear F => F.vars.all fun t => t.envOnly && !t.atEntry
+  | .linear F => F.vars.all fun t => (t.envOnly || (t.kind == .view && t.path.isEmpty)) && !t.atEntry
   | .equal p w => p.fields.isEmpty && match w with
     | .path q => q.fields.isEmpty
     | .literal _ => true
   | .contents p _ => p.fields.isEmpty
-  | .defined t => t.envOnly && !t.atEntry
+  | .defined t => (t.envOnly || (t.kind == .view && t.path.isEmpty)) && !t.atEntry
   | .safeInt p => p.fields.isEmpty
   | .pastSafe p => p.fields.isEmpty
   | _ => false
@@ -461,10 +461,14 @@ theorem Path.read_nil {η : Env} {h : Heap} {p : Path} (hp : p.fields = []) : p.
 theorem Path.read_heap {η : Env} {h h' : Heap} {p : Path} (hp : p.fields = []) : p.read η h = p.read η h' := by
   rw [Path.read_nil hp, Path.read_nil hp]
 
-private theorem termAt_envOnly {η : Env} {h h' : Heap} {t : Term} (ht : t.envOnly = true) (he : t.atEntry = false) :
+private theorem termAt_envOnly {η : Env} {h h' : Heap} {t : Term}
+    (ht : (t.envOnly || (t.kind == .view && t.path.isEmpty)) = true) (he : t.atEntry = false) :
     termAt η h t = termAt η h' t := by
-  have := termValue_envOnly (ε := ⟨η, h⟩) (ρ := η) (h := h) (h' := h') ht
-  rwa [termValue_now he, termValue_now he] at this
+  rcases Bool.or_eq_true _ _ |>.mp ht with ht | ht
+  · have := termValue_envOnly (ε := ⟨η, h⟩) (ρ := η) (h := h) (h' := h') ht
+    rwa [termValue_now he, termValue_now he] at this
+  · simp only [Bool.and_eq_true, beq_iff_eq, List.isEmpty_iff] at ht
+    simp only [termAt, ht.2, readPath, Option.bind_some, ht.1, kindValue]
 
 /-- **An atom reading the name valuation alone holds in every heap.** -/
 theorem Atom.holds_envOnly {a : Atom} (ha : a.envOnly = true) {η : Env} {h h' : Heap} :

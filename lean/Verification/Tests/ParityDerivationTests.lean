@@ -94,6 +94,60 @@ private def arena : AssertionArena := ⟨#[
 #guard (InclusionEvidence.byClass [.intrinsic]).check arena (r 2) [(.pathElems 0 [], .any)] [(.cls .values, .any)]
 end Regional
 
+/-! ## The atom axioms
+
+(Sep), (Init), (View), (Every) and (Rigid) of the note's Proposition
+"Axioms of the atoms", each at its displayed shape. -/
+
+namespace Axioms
+private def r (n : Nat) : AssertionRef := ⟨n⟩
+private def grow : Footprint := TolerantFrames.growEffect.fp
+private def arena : AssertionArena := ⟨#[
+  .atom (.linear (.le [(Term.value 1, 1), (Term.length 0, -1)] 0)),      -- 0 n ≤ |x|
+  .separated (.var 0) (.var 2),                                         -- 1 x # y
+  .box [(.cls .values, .any), (.store 2 [], .any)] (r 0),               -- 2 (Sep)
+  .box [(.cls .values, .init)] (r 0),                                   -- 3 (Init)
+  .atom (.linear (.le [(Term.value 1, 1), (Term.now .view 3 [], -1)] 0)), -- 4 n ≤ view(w)
+  .box topEffect (r 4),                                                 -- 5 (View)
+  .apart (.var 2) (.var 0),                                             -- 6 apart(y, x)
+  .atom (.every (.var 0) (Term.value 1) [.atom (.le [(.elem, -1)] (-1))]), -- 7 every(x, n, v > 0)
+  .box [(.store 2 [], .any), (.pathElems 2 [], .any)] (r 7),            -- 8 (Every)
+  .atom (.equal ⟨5, ["f"]⟩ (.path (.var 0))),                           -- 9
+  .box topEffect (r 9),                                                 -- 10
+  .existsValue (r 10),                                                  -- 11 rigid(p.f), p at slot 4
+  .atom (.linear (lowerFact 2 0)),                                      -- 12 n ≤ |y|, y fresh at slot 0
+  .box grow (r 12),                                                     -- 13
+  .atom (.linear (.le [(Term.value 1, 1), (Term.now .length 4 ["f"], -1)] 0)), -- 14 n ≤ |p.f|
+  .box grow (r 14),                                                     -- 15 (Rigid) with (Grow)
+  .atom (.linear (.le [(Term.value 1, 1), (Term.length 2, -1)] 0)),      -- 16 n ≤ |y|
+  .box [(.cls .values, .any), (.store 2 [], .any)] (r 16)]⟩             -- 17
+
+#guard arena.check
+private def sc : Scope := ⟨5, 5⟩
+
+#guard isOk (checkScoped arena sc [.at .before (r 1), .at .before (r 0)] (.at .before (r 2))
+  (.sep 0 2 (r 1) .assumption .assumption))
+-- (Sep) frames a fact about `|x|`, not one about the changed `|y|`.
+#guard errorOf (checkScoped arena sc [.at .before (r 1), .at .before (r 16)] (.at .before (r 17))
+  (.sep 0 2 (r 1) .assumption .assumption)) = "sep: the atom reads more than |x| and variables"
+#guard isOk (checkScoped arena sc [.at .before (r 0)] (.at .before (r 3)) (.init .assumption))
+#guard isOk (checkScoped arena sc [.at .before (r 4)] (.at .before (r 5)) (.view .assumption))
+-- A length is no view: (View) does not frame `n ≤ |x|` under `⊤`.
+#guard errorOf (checkScoped arena sc [.at .before (r 0)] (.at .before (r 3)) (.view .assumption)) =
+  "view: the atom reads more than variables and typed-array lengths"
+#guard isOk (checkScoped arena sc [.at .before (r 6), .at .before (r 7)] (.at .before (r 8))
+  (.everyFrame 2 (r 6) .assumption .assumption))
+-- (Every) needs `apart`; a store separation leaves the cells shared.
+#guard errorOf (checkScoped arena sc [.at .before (r 1), .at .before (r 7)] (.at .before (r 8))
+  (.everyFrame 2 (r 1) .assumption .assumption)) = "everyFrame: goal is no box or the separation is no apartness"
+#guard isOk (checkScoped arena sc [.at .before (r 11), .at .before (r 14)] (.at .before (r 15))
+  (.rigidSubst ⟨4, ["f"]⟩ 5 (r 11) (r 12) (r 14) (r 13) (.grow 2 0 (r 12) .assumption) .assumption .assumption))
+-- Without the path's rigidity the substitution is refused.
+#guard errorOf (checkScoped arena sc [.at .before (r 13), .at .before (r 14)] (.at .before (r 15))
+  (.rigidSubst ⟨4, ["f"]⟩ 5 (r 13) (r 12) (r 14) (r 13) (.grow 2 0 (r 12) .assumption) .assumption .assumption)) =
+  "rigidSubst: no rigidity of the path"
+end Axioms
+
 /-! ## `index[c >> 8]` -/
 
 /-- The derivation of the `i`-th conjunct of `conj l` from one of `conj l`. -/

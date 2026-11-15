@@ -498,10 +498,22 @@ inductive Derivation (arena : AssertionArena) : List Formula → Formula → Typ
   note's pairwise definition), and the context holds throughout the modal
   domain of an assertion `g` derived from `K`: `K ∧ A ⊢ □_Φ A`. -/
   | tolerantFrame {Γ p K A b g Φ} (S : Footprint) (sev : SupportEvidence) (rev : RespectEvidence)
-      (cev : ContextEvidence) (hs : sev.check arena A = true) (hr : rev.check arena K S Φ = true)
+      (cev : ContextEvidence) (hs : sev.check arena A S = true) (hr : rev.check arena K S Φ = true)
       (hc : cev.check arena g = true) (hb : arena.nodes[b.index]? = some (.box Φ A))
       (e : Derivation arena [.at .after K] (.at .after g)) (dK : Derivation arena Γ (.at p K))
       (dA : Derivation arena Γ (.at p A)) : Derivation arena Γ (.at p b)
+  /-- **(Rigid)** (the note, §5, Proposition "Axioms of the atoms"):
+  `rigid(π) ∧ a(π) ⊢ □_Φ a(π)` where `a(y) ⊢ □_Φ a(y)` for a fresh `y`. The
+  fresh `y` is slot `0` of the valuation the premise derivation reads, `a(π)`
+  is `a` with `π` for `y` (capture-avoiding), and the premise's effect `Ψ` is
+  `Φ` read one slot further, so it names no `y`. -/
+  | rigidSubst {Γ p r a c bx bc} (π : Path) (n : Nat) (Φ : Footprint)
+      (hr : rigidPathOf arena.nodes r = some π)
+      (hc : substCheck arena.nodes (Substitution.instantiate (.path π) n) a.index c.index = true)
+      (hbx : arena.nodes[bx.index]? = some (.box (Footprint.rename (· + 1) Φ) a))
+      (hbc : arena.nodes[bc.index]? = some (.box Φ c))
+      (e : Derivation arena [.at .after a] (.at .after bx))
+      (dr : Derivation arena Γ (.at p r)) (dc : Derivation arena Γ (.at p c)) : Derivation arena Γ (.at p bc)
   /-- Bounded quantification over an empty range: `n ≤ 0` and `π` an
   ordinary array give `every(π, n, φ)`. -/
   | everyEmpty {Γ p a d} (π : Path) (n z : Term) (body : List (LinearClause Bound))
@@ -664,6 +676,11 @@ inductive RawDerivation where
   | boxIdem (ev : RigidityEvidence) (a x D : AssertionRef) (dD d : RawDerivation)
   | tolerantFrame (S : Footprint) (sev : SupportEvidence) (rev : RespectEvidence) (cev : ContextEvidence)
       (K g : AssertionRef) (e dK dA : RawDerivation)
+  | rigidSubst (π : Path) (n : Nat) (r a c bx : AssertionRef) (e dr dc : RawDerivation)
+  | sep (x y : Nat) (K : AssertionRef) (dK dA : RawDerivation)
+  | everyFrame (x : Nat) (K : AssertionRef) (dK dA : RawDerivation)
+  | init (dA : RawDerivation)
+  | view (dA : RawDerivation)
   | everyEmpty (π : Path) (n z : Term) (body : List (LinearClause Bound)) (d : AssertionRef) (dd dn : RawDerivation)
   | everyElim (p : Phase) (a : AssertionRef) (π : Path) (n k : Term) (body : List (LinearClause Bound))
       (d dk dlt : RawDerivation)
@@ -868,7 +885,7 @@ def checkDerivation (arena : AssertionArena) (premises : List Formula) (goal : F
     | .at p b => do
       match arena.nodes[b.index]? with
       | some (.box Φ A) => do
-        let ⟨hs⟩ ← req (sev.check arena A = true) "tolerantFrame: no support"
+        let ⟨hs⟩ ← req (sev.check arena A S = true) "tolerantFrame: no support"
         let ⟨hr⟩ ← req (rev.check arena K S Φ = true) "tolerantFrame: the effect does not respect the support"
         let ⟨hc⟩ ← req (cev.check arena g = true) "tolerantFrame: the context evidence does not check"
         let ⟨hb⟩ ← node? arena b (.box Φ A)
@@ -876,6 +893,83 @@ def checkDerivation (arena : AssertionArena) (premises : List Formula) (goal : F
           (← checkDerivation arena premises (.at p K) dK) (← checkDerivation arena premises (.at p A) dA))
       | _ => .error "tolerantFrame: goal is no box"
     | _ => .error "tolerantFrame: goal is no assertion"
+  | .rigidSubst π n r a c bx e dr dc => match goal with
+    | .at p bc => do
+      match arena.nodes[bc.index]? with
+      | some (.box Φ c') => do
+        let ⟨_⟩ ← req (c' = c) "rigidSubst: the goal is no box of the instance"
+        let ⟨hr⟩ ← req (rigidPathOf arena.nodes r = some π) "rigidSubst: no rigidity of the path"
+        let ⟨hc⟩ ← req (substCheck arena.nodes (Substitution.instantiate (.path π) n) a.index c'.index = true)
+          "rigidSubst: not the instance at the path"
+        let ⟨hbx⟩ ← node? arena bx (.box (Footprint.rename (· + 1) Φ) a)
+        let ⟨hbc⟩ ← node? arena bc (.box Φ c')
+        pure (.rigidSubst π n Φ hr hc hbx hbc (← checkDerivation arena [.at .after a] (.at .after bx) e)
+          (← checkDerivation arena premises (.at p r) dr) (← checkDerivation arena premises (.at p c') dc))
+      | _ => .error "rigidSubst: goal is no box"
+    | _ => .error "rigidSubst: goal is no assertion"
+  | .sep x y K dK dA => match goal with
+    | .at p b => do
+      match arena.nodes[b.index]? with
+      | some (.box Φ A) => do
+        let ⟨_⟩ ← req (Φ = [(.cls .values, .any), (.store y [], .any)]) "sep: the effect is not {values: any, y.store: any}"
+        let ⟨_⟩ ← node? arena K (.separated (.var x) (.var y))
+        let S : Footprint := [(.store x [], .keep)]
+        let rev : RespectEvidence := ⟨[(0, 0, .classes (.arrayAt K) .intrinsic), (0, 1, .stores K)]⟩
+        let ⟨hs⟩ ← req (SupportEvidence.lengths.check arena A S = true) "sep: the atom reads more than |x| and variables"
+        let ⟨hr⟩ ← req (rev.check arena K S Φ = true) "sep: the effect does not respect the support"
+        let ⟨hc⟩ ← req (ContextEvidence.truth.check arena K = true) "sep: no context"
+        let ⟨hb⟩ ← node? arena b (.box Φ A)
+        pure (.tolerantFrame S .lengths rev .truth hs hr hc hb (.assumption (List.mem_singleton.mpr rfl))
+          (← checkDerivation arena premises (.at p K) dK) (← checkDerivation arena premises (.at p A) dA))
+      | _ => .error "sep: goal is no box"
+    | _ => .error "sep: goal is no assertion"
+  | .everyFrame x K dK dA => match goal with
+    | .at p b => do
+      match arena.nodes[b.index]?, arena.nodes[K.index]? with
+      | some (.box Φ A), some (.apart q z) => do
+        let ⟨_⟩ ← req (q = .var x ∧ z.fields = []) "everyFrame: the separation is not apart(x, z)"
+        let ⟨_⟩ ← req (Φ = [(.store x [], .any), (.pathElems x [], .any)]) "everyFrame: the effect is not {x[*]: any}"
+        let S : Footprint := [(.store z.root [], .keep), (.pathElems z.root [], .keep)]
+        let rev : RespectEvidence := ⟨[(0, 0, .swap (.stores K)), (0, 1, .classes (.arrayAt K) .intrinsic),
+          (1, 0, .classes .intrinsic (.arrayAt K)), (1, 1, .swap (.cells K))]⟩
+        let ⟨hs⟩ ← req (SupportEvidence.everyCells.check arena A S = true)
+          "everyFrame: the atom is no every(z, t, φ) at a variable bound over scalars"
+        let ⟨hr⟩ ← req (rev.check arena K S Φ = true) "everyFrame: the effect does not respect the support"
+        let ⟨hc⟩ ← req (ContextEvidence.truth.check arena K = true) "everyFrame: no context"
+        let ⟨hb⟩ ← node? arena b (.box Φ A)
+        pure (.tolerantFrame S .everyCells rev .truth hs hr hc hb (.assumption (List.mem_singleton.mpr rfl))
+          (← checkDerivation arena premises (.at p K) dK) (← checkDerivation arena premises (.at p A) dA))
+      | _, _ => .error "everyFrame: goal is no box or the separation is no apartness"
+    | _ => .error "everyFrame: goal is no assertion"
+  | .init dA => match goal with
+    | .at p b => do
+      match arena.nodes[b.index]? with
+      | some (.box Φ A) => do
+        let ⟨_⟩ ← req (Φ = [(.cls .values, .init)]) "init: the effect is not {values: init}"
+        let S : Footprint := [(.cls .values, .init), (.cls .stores, .keep)]
+        let rev : RespectEvidence := ⟨[(1, 0, .classes .intrinsic .intrinsic)]⟩
+        let ⟨hs⟩ ← req (SupportEvidence.init.check arena A S = true) "init: the atom is no linear fact"
+        let ⟨hr⟩ ← req (rev.check arena A S Φ = true) "init: the effect does not respect the support"
+        let ⟨hc⟩ ← req (ContextEvidence.truth.check arena A = true) "init: no context"
+        let ⟨hb⟩ ← node? arena b (.box Φ A)
+        let d ← checkDerivation arena premises (.at p A) dA
+        pure (.tolerantFrame S .init rev .truth hs hr hc hb (.assumption (List.mem_singleton.mpr rfl)) d d)
+      | _ => .error "init: goal is no box"
+    | _ => .error "init: goal is no assertion"
+  | .view dA => match goal with
+    | .at p b => do
+      match arena.nodes[b.index]? with
+      | some (.box Φ A) => do
+        let rev : RespectEvidence := ⟨[]⟩
+        let ⟨hs⟩ ← req (SupportEvidence.invariant.check arena A [] = true)
+          "view: the atom reads more than variables and typed-array lengths"
+        let ⟨hr⟩ ← req (rev.check arena A [] Φ = true) "view: no respect"
+        let ⟨hc⟩ ← req (ContextEvidence.truth.check arena A = true) "view: no context"
+        let ⟨hb⟩ ← node? arena b (.box Φ A)
+        let d ← checkDerivation arena premises (.at p A) dA
+        pure (.tolerantFrame [] .invariant rev .truth hs hr hc hb (.assumption (List.mem_singleton.mpr rfl)) d d)
+      | _ => .error "view: goal is no box"
+    | _ => .error "view: goal is no assertion"
   | .everyEmpty π n z body d dd dn => match goal with
     | .at p a => do
       let ⟨ha⟩ ← node? arena a (.atom (.every π n body))
@@ -1655,6 +1749,19 @@ theorem Derivation.sound {arena : AssertionArena} (hv : arena.Valid) {Γ : List 
       exact cev.sound hc η m anchor s₁ s₂ hg a₁ a₂
     exact (sat_box hv hb).mpr fun s' act =>
       tolerant_frame (sev.sound hs) hthrough (rev.sound hr) _ _ _ (ihK s hΓ) (ihA s hΓ) s' act
+  | @rigidSubst Γ p r a c bx bc π n Φ hr hc hbx hbc _ _ _ ihe ihr ihc =>
+    intro s hΓ
+    obtain ⟨v, hv'⟩ := rigidPathOf_sound hv hr (ihr s hΓ)
+    have hπ : ∀ s', Admissible (s.state p) s' → π.read (s.env p) s'.h = some v := hv'
+    have ha : Sat arena (push v (s.env p)) s.mark (s.state p) a :=
+      (sat_instantiate hc (w := .path π) (hπ _ (Admissible.refl _))).mp (ihc s hΓ)
+    have hbox : Sat arena (push v (s.env p)) s.mark (s.state p) bx :=
+      ihe ⟨push v (s.env p), push v (s.env p), s.mark, s.state p, s.state p⟩ fun q hq => by
+        simp only [List.mem_singleton] at hq; subst hq; exact ha
+    refine (sat_box hv hbc).mpr fun s' act => ?_
+    have act' : EffectAction (Footprint.rename (· + 1) Φ) (push v (s.env p)) (s.state p) s' :=
+      (EffectAction.rename_iff _).mpr act
+    exact (sat_instantiate hc (w := .path π) (hπ s' act.admissible)).mpr ((sat_box hv hbx).mp hbox s' act')
   | @everyEmpty Γ p a d π n z body ha hd _ _ ihd ihn =>
     intro s hΓ
     obtain ⟨w, st, ls, k, hw, hst, hls, -, -, -⟩ := (sat_atom hd).mp (ihd s hΓ)

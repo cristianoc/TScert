@@ -1314,18 +1314,251 @@ theorem RespectEvidence.sound {arena : AssertionArena} {K : AssertionRef} {S Φ 
   · exact .inl hle
   · exact .inr fun l hl => d.sound hdc η m s hK l hl
 
+/-! ### Supports -/
+
+/-- A location in a region of a `keep` entry of `S` keeps its contents along
+a transition within `S`. -/
+theorem kept_of_supported {S : Footprint} {η : Env} {s s' : IndexedHeap} (hS : SupportedBy S η s s')
+    {r : Region} (hr : (r, .keep) ∈ S) {l : Nat} (hl : r.mem η s.h l = true) {v : Val} (hv : s.h[l]? = some v) :
+    s'.h[l]? = some v := by
+  obtain ⟨v', hv', hk⟩ := hS _ hr l v hl hv
+  simp only [Change.Holds] at hk
+  rw [hv', hk]
+
+/-- What a term of a heap-free kind reads of a value: no heap. -/
+theorem kindValue_heapFree {k : Term.Kind} (hk : k ≠ .length) (h h' : Heap) (v : Val) :
+    kindValue h k v = kindValue h' k v := by
+  cases k <;> first | rfl | exact absurd rfl hk
+
+/-- A term at a variable reads that variable's value. -/
+theorem termAt_var {η : Env} {h : Heap} {t : Term} (ht : t.path = []) :
+    termAt η h t = kindValue h t.kind (η t.slot) := by
+  simp only [termAt, ht, readPath, Option.bind_some]
+
+/-- A defined term reads a value neither `null` nor `undefined`. -/
+theorem kindValue_nonNullish {h : Heap} {k : Term.Kind} {v : Val} (hk : (kindValue h k v).isSome) :
+    nullish v = false := by
+  cases k <;> cases v <;> simp_all [kindValue, intValue, lengthOf, viewLengthOf, strLengthOf, nullish, storeOf, fieldsOf]
+
+/-- The scalar-length terms of a linear support at variables: each term
+reads a variable, of a heap-free kind or the length of the array a
+`keep` entry of `S` keeps. -/
+def lengthsSupported (F : Linear.Fact Term) (S : Footprint) : Bool :=
+  F.vars.all fun t => !t.atEntry && t.path.isEmpty &&
+    (t.kind != .length || S.contains (.store t.slot [], .keep))
+
 /-- **Support of an assertion in a context, by certificate** (the note, §5,
-Definition "Support"). An invariant assertion is supported by every `S` in
-every context. -/
+Definition "Support"):
+- an invariant assertion, by any `S`;
+- a linear fact at variables, by the `keep` of the stores whose lengths it
+  reads (`{x.store: keep}` supports `n ≤ |x|`, the note's example);
+- `every(z, t, φ)` at a variable `z`, `t` heap-free and `φ` over scalars, by
+  `{z.store: keep, z[cells]: keep}`;
+- `x.f ≐ v` for a literal `v`, by `{x.f: keep}`;
+- a linear fact at any paths, by `{values: init, stores: keep}`: `init`
+  changes no location holding an object, a number or a string. -/
 inductive SupportEvidence where
   | invariant
+  | lengths
+  | everyCells
+  | field
+  | init
   deriving DecidableEq, Repr
 
-def SupportEvidence.check (arena : AssertionArena) (A : AssertionRef) : SupportEvidence → Bool
+def SupportEvidence.check (arena : AssertionArena) (A : AssertionRef) (S : Footprint) : SupportEvidence → Bool
   | .invariant => invNode arena.nodes A.index
+  | .lengths => match arena.nodes[A.index]? with
+    | some (.atom (.linear F)) => lengthsSupported F S
+    | _ => false
+  | .everyCells => match arena.nodes[A.index]? with
+    | some (.atom (.every z n body)) => z.fields.isEmpty && !n.atEntry && n.path.isEmpty && n.kind != .length &&
+        scalarBody body && S.contains (.store z.root [], .keep) && S.contains (.pathElems z.root [], .keep)
+    | _ => false
+  | .field => match arena.nodes[A.index]? with
+    | some (.atom (.equal ⟨x, [f]⟩ (.literal _))) => S.contains (.path x [] (.str f), .keep)
+    | _ => false
+  | .init => match arena.nodes[A.index]? with
+    | some (.atom (.linear F)) => F.vars.all (fun t => !t.atEntry) &&
+        S.contains (.cls .values, .init) && S.contains (.cls .stores, .keep)
+    | _ => false
+
+private theorem lengths_term {S : Footprint} {η : Env} {s s' : IndexedHeap} (hS : SupportedBy S η s s') {t : Term}
+    (ht : (!t.atEntry && t.path.isEmpty && (t.kind != .length || S.contains (.store t.slot [], .keep))) = true)
+    {n : Int} (hn : termAt η s.h t = some n) : termAt η s'.h t = some n := by
+  simp only [Bool.and_eq_true, Bool.or_eq_true, bne_iff_ne, ne_eq, List.contains_iff_mem, List.isEmpty_iff] at ht
+  obtain ⟨⟨-, hp⟩, hk⟩ := ht
+  rw [termAt_var hp] at hn ⊢
+  rcases hk with hk | hk
+  · rw [kindValue_heapFree hk s'.h s.h]; exact hn
+  · by_cases hl : t.kind = .length
+    · rw [hl] at hn ⊢
+      obtain ⟨st, ls, hst, hls, rfl, hm⟩ := lengthOf_store hn
+      have hin : (Region.store t.slot []).mem η s.h st = true := by
+        simp [Region.mem, readPath, elementsOf_store hst]
+      exact lengthOf_of_store hst (kept_of_supported hS hk hin hls) hm
+    · rw [kindValue_heapFree hl s'.h s.h]; exact hn
+
+/-- A path read through locations holding values other than `null` and
+`undefined` reads the same along a transition changing value locations at
+most by `init` and keeping stores. -/
+private theorem readPath_init {η : Env} {s s' : IndexedHeap} (hS : SupportedBy [(.cls .values, .init),
+    (.cls .stores, .keep)] η s s') :
+    ∀ {p : List String} {v w : Val} (k : Term.Kind), readPath s.h v p = some w → (kindValue s.h k w).isSome →
+      readPath s'.h v p = some w
+  | [], _, _, _, h, _ => h
+  | f :: p, v, w, k, h, hk => by
+    cases v with
+    | objAt fs cd oid =>
+      simp only [readPath] at h ⊢
+      split at h
+      · rename_i l hl
+        split at h
+        · rename_i u hu
+          have hnn : nullish u = false := by
+            cases p with
+            | nil => simp only [readPath, Option.some.injEq] at h; subst h; exact kindValue_nonNullish hk
+            | cons g p => cases u <;> simp_all [readPath, nullish]
+          have hin : (Region.cls .values).mem η s.h l = true := by
+            cases u with
+            | arr _ =>
+              cases p with
+              | nil =>
+                simp only [readPath, Option.some.injEq] at h; subst h
+                cases k <;> simp [kindValue, intValue, lengthOf, viewLengthOf, strLengthOf, storeOf, fieldsOf] at hk
+              | cons g p => simp [readPath] at h
+            | viewStore _ _ =>
+              cases p with
+              | nil =>
+                simp only [readPath, Option.some.injEq] at h; subst h
+                cases k <;> simp [kindValue, intValue, lengthOf, viewLengthOf, strLengthOf, storeOf, fieldsOf] at hk
+              | cons g p => simp [readPath] at h
+            | _ => simp [Region.mem, hu, Selector.selects, contentsCategory, Selector.has]
+          obtain ⟨u', hu', hc⟩ := hS _ (List.mem_cons_self ..) l u hin hu
+          have := hc.init_defined hnn
+          subst this
+          simp only [hu']
+          exact readPath_init hS k h hk
+        · cases h
+      · cases h
+    | _ => simp [readPath] at h
 
 theorem SupportEvidence.sound {arena : AssertionArena} {C : SupportContext} {S : Footprint} {A : AssertionRef} :
-    ∀ ev : SupportEvidence, ev.check arena A = true → Supports arena C S A
+    ∀ ev : SupportEvidence, ev.check arena A S = true → Supports arena C S A
   | .invariant, h => fun η m s s' ha _ hA _ => invNode_sound arena.nodes A.index h η m s s' ha hA
+  | .lengths, h => by
+    simp only [SupportEvidence.check] at h
+    split at h
+    · rename_i F hn
+      intro η m s s' _ _ hA hS
+      have hF := (sat_atom hn).mp hA
+      refine (sat_atom hn).mpr (factAt_congr (fun t ht => ?_) hF)
+      obtain ⟨n, hn'⟩ := Option.isSome_iff_exists.mp (hF.1 t ht)
+      rw [hn', lengths_term hS (List.all_eq_true.mp h t ht) hn']
+    · cases h
+  | .everyCells, h => by
+    simp only [SupportEvidence.check] at h
+    split at h
+    · rename_i z n body hn
+      simp only [Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq, List.isEmpty_iff,
+        List.contains_iff_mem] at h
+      obtain ⟨⟨⟨⟨⟨⟨hz, hne⟩, hnp⟩, hnk⟩, hsc⟩, hst⟩, hcl⟩ := h
+      intro η m s s' _ _ hA hS
+      obtain ⟨w, st, ls, k, hw, hsto, hls, hk, hall⟩ := (sat_atom hn).mp hA
+      have hzw : η z.root = w := by
+        simp only [Path.read, hz, readPath, Option.some.injEq] at hw; exact hw
+      have hin : (Region.store z.root []).mem η s.h st = true := by
+        simp [Region.mem, readPath, hzw, elementsOf_store hsto]
+      have hls' := kept_of_supported hS hst hin hls
+      have hcells : ∀ (i l : Nat), ls[i]? = some (some l) → ∀ u, s.h[l]? = some u → s'.h[l]? = some u := by
+        intro i l hi u hu
+        have hsto' : (fieldsOf w).lookup arrayStoreKey = some st := hsto
+        have hmem : (Region.pathElems z.root []).mem η s.h l = true := by
+          simp only [Region.mem, readPath, hzw, storeElems, entriesAt, hsto', hls, Option.bind_some,
+            storeEntries, Option.getD_some, List.contains_iff_mem, List.mem_append]
+          exact .inl (List.mem_of_getElem? hi)
+        exact kept_of_supported hS hcl hmem hu
+      have hk' : termAt η s'.h n = some k := by
+        rw [termAt_var hnp] at hk ⊢; rwa [kindValue_heapFree hnk s'.h s.h]
+      refine (sat_atom hn).mpr ⟨w, st, ls, k, by rw [← hw, Path.read_heap hz], hsto, hls', hk',
+        fun i hi => ⟨(hall i hi).1, fun F hF => ?_⟩⟩
+      refine LinearClause.holdsAt_extend (fun b hb z hz => ?_) ((hall i hi).2 F hF)
+      have hsb : scalarBound b = true := List.all_eq_true.mp (List.all_eq_true.mp hsc F hF) b hb
+      cases b with
+      | index => exact hz
+      | elem =>
+        simp only [scalarValue, elementInt] at hz ⊢
+        split at hz
+        · rename_i l hl
+          obtain ⟨u, hu, hzu⟩ := Option.bind_eq_some_iff.mp hz
+          rw [hcells i l hl u hu]; exact hzu
+        · cases hz
+      | project k p =>
+        cases k <;> cases p <;> simp [scalarBound] at hsb
+        simp only [scalarValue] at hz ⊢
+        split at hz
+        · rename_i l hl
+          obtain ⟨u, hu, hzu⟩ := Option.bind_eq_some_iff.mp hz
+          simp only [hcells i l hl u hu, Option.bind_some]; exact hzu
+        · cases hz
+      | free t =>
+        simp only [scalarBound, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, List.isEmpty_iff] at hsb
+        simp only [scalarValue] at hz ⊢
+        rw [termAt_var hsb.2] at hz ⊢
+        rw [kindValue_heapFree (by rw [hsb.1.2]; decide) s'.h s.h]; exact hz
+      | _ => simp [scalarBound] at hsb
+    · cases h
+  | .field, h => by
+    simp only [SupportEvidence.check] at h
+    split at h
+    · rename_i x f v hn
+      simp only [List.contains_iff_mem] at h
+      intro η m s s' _ _ hA hS
+      obtain ⟨u, hu, hw⟩ := (sat_atom hn).mp hA
+      refine (sat_atom hn).mpr ⟨u, ?_, hw⟩
+      simp only [Path.read] at hu ⊢
+      cases hx : η x with
+      | objAt fs cd oid =>
+        rw [hx] at hu
+        simp only [readPath] at hu ⊢
+        split at hu
+        · rename_i l hl
+          split at hu
+          · rename_i u0 hu0
+            have hin : (Region.path x [] (.str f)).mem η s.h l = true := by
+              simp [Region.mem, readPath, hx, fieldsOf, hl]
+            rw [kept_of_supported hS h hin hu0]; exact hu
+          · cases hu
+        · cases hu
+      | _ => rw [hx] at hu; simp [readPath] at hu
+    · cases h
+  | .init, h => by
+    simp only [SupportEvidence.check] at h
+    split at h
+    · rename_i F hn
+      simp only [Bool.and_eq_true, List.contains_iff_mem] at h
+      obtain ⟨⟨_, hv⟩, hst⟩ := h
+      intro η m s s' _ _ hA hS
+      have hS' : SupportedBy [(.cls .values, .init), (.cls .stores, .keep)] η s s' := by
+        intro e he
+        simp only [List.mem_cons, List.not_mem_nil, or_false] at he
+        rcases he with rfl | rfl
+        · exact hS _ hv
+        · exact hS _ hst
+      have hF := (sat_atom hn).mp hA
+      refine (sat_atom hn).mpr (factAt_congr (fun t ht => ?_) hF)
+      obtain ⟨n, hn'⟩ := Option.isSome_iff_exists.mp (hF.1 t ht)
+      rw [hn']
+      simp only [termAt, Option.bind_eq_some_iff] at hn' ⊢
+      obtain ⟨w, hw, hk⟩ := hn'
+      refine ⟨w, readPath_init hS' t.kind hw (by rw [hk]; rfl), ?_⟩
+      cases hkd : t.kind with
+      | length =>
+        rw [hkd] at hk
+        obtain ⟨st, ls, hsto, hls, rfl, hm⟩ := lengthOf_store hk
+        have hin : (Region.cls .stores).mem η s.h st = true := by
+          simp [Region.mem, hls, Selector.selects, contentsCategory, Selector.has]
+        exact lengthOf_of_store hsto (kept_of_supported hS hst hin hls) hm
+      | _ => rw [hkd] at hk; rwa [kindValue_heapFree (by decide) s'.h s.h]
+    · cases h
 
 end Verification.Parity
