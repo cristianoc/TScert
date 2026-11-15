@@ -620,7 +620,11 @@ well-formed endpoint of positive budget (`Exits.exitPostW`); a safe run
 supplies such endpoints at the world it reaches
 (`SafePostExcW.complete_normal`, `SafePostExcW.complete_exceptional`), and a
 consequence needs to hold only at the admissible states a run from the entry
-reaches (`SafePostExcW.weaken_admissible`).
+reaches (`SafePostExcW.weaken_admissible`). A throw's postcondition reads the thrown
+value: the native-contract condition states safety whose exceptional exit
+raises a value of the exception family meeting it (`SafePostExcV`); a
+postcondition that ignores the value is the one `SafePostExcW` states
+(`SafePostExcV.iff_lift`).
 
 A guarantee stated beside the frame is a postcondition `.transition Φ`, so
 the frame and it hold of one transition. On admissible transitions at

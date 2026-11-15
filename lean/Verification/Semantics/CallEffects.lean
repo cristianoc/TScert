@@ -1325,8 +1325,8 @@ postcondition over kinded worlds, from every entry world. -/
 theorem Effect.safe_postW {e : Effect} (hx : e.elementWrite = none) {Ξ T : Fam} {r : Tm} {args : List Tm}
     {j : Nat} {U : WorldT j} {heap : Heap} {n : Nat} {W : WorldT n} {h : Heap} {t : Tm}
     (hs : SafePostExc Ξ T (e.post r args heap) (e.excPost r args heap) n W h t) :
-    SafePostExcW Ξ T (e.postW r args U heap) (e.excPostW r args heap) n W h t :=
-  SafePostExcW.weaken (fun _ _ _ _ hp => Effect.postW_of_post hx hp) (fun _ _ _ hp => hp) hs
+    SafePostExcV Ξ T (e.postW r args U heap) (e.excPostW r args heap).liftV n W h t :=
+  SafePostExcV.iff_lift.mpr (SafePostExcW.weaken (fun _ _ _ _ hp => Effect.postW_of_post hx hp) (fun _ _ _ hp => hp) hs)
 
 /-- A call's normal postcondition: given the receiver, the actuals, and the
 entry budget, world and heap, a world-indexed postcondition of the exit. -/
@@ -1334,8 +1334,8 @@ abbrev CPost := Tm → List Tm → (j : Nat) → WorldT j → Heap → WPost
 
 /-- A call's exceptional postcondition: given the receiver, the actuals, and
 the entry budget, world and heap, a world-indexed postcondition of the
-throwing configuration. -/
-abbrev CExc := Tm → List Tm → (j : Nat) → WorldT j → Heap → HeapObservations.WExc
+throwing configuration and the value it raises. -/
+abbrev CExc := Tm → List Tm → (j : Nat) → WorldT j → Heap → HeapObservations.WExcV
 
 /-- **The native-contract condition** of a callable value `v`, at budget `k`
 and world `W`. From every well-formed entry configuration below `k` (a heap
@@ -1344,8 +1344,8 @@ references of the callee, the receiver and the actuals valid in `U`) that
 meets the input contract (the receiver's type `Rc`, the actuals' `Acc`, the
 precondition `requires`), the invocation is safe with world-indexed
 postconditions: a normal result has the result type `R` and meets `post` at
-its exit world, a throw is of the exception family `Ξ` and meets `excPost`
-at its exit world, each given the entry world and heap, and every
+its exit world, a throw raises a value of the exception family `Ξ` meeting
+`excPost` with its exit world and heap, each given the entry world and heap, and every
 configuration on the way is well-formed under one extension of `U`
 (`NativeContract.run`). -/
 def NativeContract (Ξ : Fam) (Acc : ArgFam) (Rc : Fam) (requires : Tm → List Tm → Heap → Prop)
@@ -1356,7 +1356,7 @@ def NativeContract (Ξ : Fam) (Acc : ArgFam) (Rc : Fam) (requires : Tm → List 
       ∀ args, CallArguments.Values args → (∀ a ∈ args, RefsOk U a) → Acc j U args →
         requires r args heap →
         ∃ result, CallArguments.Invoke ⟨v, r, args⟩ result ∧
-          SafePostExcW Ξ (R r args) (post r args j U heap) (excPost r args j U heap) j U heap result
+          SafePostExcV Ξ (R r args) (post r args j U heap) (excPost r args j U heap) j U heap result
 
 /-- **A contract's every execution prefix is well-formed**: the configuration
 `i` steps into the call meets one extension of the entry world truncated to
@@ -1375,7 +1375,9 @@ theorem NativeContract.run {Ξ : Fam} {Acc : ArgFam} {Rc : Fam}
           HeapOk m U' h' ∧ RefsOk U' t' := by
   obtain ⟨result, hi, hs⟩ := hc j hj U hx hu heap hh hv r hr hrc hrr args ha har hacc hreq
   refine ⟨result, hi, fun hst hle => ?_⟩
-  obtain ⟨m, hm, U', hmi, hx', -, hh', hr', -⟩ := hs.run hst hle hu hh
+  have hs' := (SafePostExcV.iff_lift (R := fun _ _ _ => True)).mp
+    (SafePostExcV.weaken (fun _ _ _ _ h => h) (fun _ _ _ _ _ => trivial) hs)
+  obtain ⟨m, hm, U', hmi, hx', -, hh', hr', -⟩ := hs'.run hst hle hu hh
   exact ⟨m, hm, U', hmi, hx', hh', hr'⟩
 
 /-- **The native-contract condition is closed downward**: at a lower budget
@@ -1402,7 +1404,7 @@ theorem NativeContract.safe {Ξ : Fam} {Acc : ArgFam} {Rc : Fam}
     (hrc : Rc n (trunc n (Nat.le_succ n) W) r) {args : List Tm}
     (ha : CallArguments.Values args) (hacc : Acc n (trunc n (Nat.le_succ n) W) args)
     (hreq : requires r args heap) (href : RefsOk W (.invoke v r args)) :
-    SafePostExcW Ξ (R r args) (post r args n (trunc n (Nat.le_succ n) W) heap)
+    SafePostExcV Ξ (R r args) (post r args n (trunc n (Nat.le_succ n) W) heap)
       (excPost r args n (trunc n (Nat.le_succ n) W) heap) (n + 1) W heap (.invoke v r args) := by
   obtain ⟨hv, hrr, har⟩ := RefsOk_invoke.mp href
   obtain ⟨result, hi, hs⟩ := hc n (Nat.lt_succ_self n) _ (WExt_refl _) (WorldAdm_trunc _ hadm) heap
@@ -1420,7 +1422,7 @@ not. -/
 def PromiseWith (Ξ : Fam) (effect : Effect) (Acc : ArgFam) (Rc R : Fam) (k : Nat) (W : WorldT k)
     (v : Val) : Prop :=
   NativeContract Ξ Acc Rc effect.Requires (fun _ args => effect.result R (effect.promised args))
-    (fun r args _ U heap => effect.postW r args U heap) (fun r args _ _ heap => effect.excPostW r args heap)
+    (fun r args _ U heap => effect.postW r args U heap) (fun r args _ _ heap => (effect.excPostW r args heap).liftV)
     k W v
 
 /-- A heap effect's signature is an ordinary arrow once its postcondition is
@@ -1433,7 +1435,7 @@ theorem PromiseWith.erase {effect Acc Rc R k W v} (hp : effect.plain = true)
     (Effect.requires_none (Effect.plain_requires hp) (Effect.plain_pre hp) r args heap)
   dsimp only at hs
   rw [Effect.result_plain hp] at hs
-  exact ⟨result, hi, SafePostW.erase (SafePostExcW.post hs)⟩
+  exact ⟨result, hi, SafePostW.erase (SafePostExcV.post hs)⟩
 
 theorem PromiseWith.down {effect Acc Rc R n W v}
     (h : PromiseWith Ξ effect Acc Rc R (n + 1) W v) :
@@ -1619,10 +1621,10 @@ theorem PromiseWith.weaken' {Ξ Ξ' : Fam} {effect effect' Acc Acc' Rc Rc' R T k
   intro j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha hq
   obtain ⟨result, hi, hs⟩ :=
     h j hj U hx hu heap hh hvr r hrv (hrecv j hj U r hr) hrr args hv har (hacc j hj U args ha) (he.2.2.2 r args heap hq)
-  exact ⟨result, hi, SafePostExcW.consequence_below' (fun m hm => hexc m (by omega))
+  exact ⟨result, hi, SafePostExcV.iff_lift.mpr <| SafePostExcW.consequence_below' (fun m hm => hexc m (by omega))
     (fun m hm U' u hu => he.2.1 T args m U' u
       (Effect.result_mono effect (hres m (by omega) U') (hres m (by omega) U') hu))
-    (fun m _ => he.1 r args j U heap m) (fun _ _ _ h' => he.2.2.1 r args heap h') hs⟩
+    (fun m _ => he.1 r args j U heap m) (fun _ _ _ h' => he.2.2.1 r args heap h') (SafePostExcV.iff_lift.mp hs)⟩
 
 theorem PromiseWith.weaken {Ξ : Fam} {effect effect' Acc Acc' Rc Rc' R T k W v}
     (he : effect.Covers effect')
@@ -1671,7 +1673,7 @@ def NativeConstruct (Ξ : Fam) (Acc : ArgFam) (requires : List Tm → Heap → P
     ∀ (heap : Heap), HeapOk j U heap → RefsOk U v →
       ∀ args, CallArguments.Values args → (∀ a ∈ args, RefsOk U a) → Acc j U args → requires args heap →
         ∃ result, ConstructsTo v args result ∧
-          SafePostExcW Ξ (R args) (post .undef args j U heap) (excPost .undef args j U heap) j U heap result
+          SafePostExcV Ξ (R args) (post .undef args j U heap) (excPost .undef args j U heap) j U heap result
 
 /-- The promise of one construct signature, independent of argument-list
 syntax: the construction condition at the signature's precondition, result
@@ -1680,7 +1682,7 @@ and postconditions over kinded worlds (`Effect.postW`), the receiver
 def ConstructPromise (Ξ : Fam) (effect : Effect) (P : ArgFam) (R : Fam) (k : Nat) (W : WorldT k)
     (v : Val) : Prop :=
   NativeConstruct Ξ P (effect.Requires .undef) (fun args => effect.result R (effect.promised args))
-    (fun r args _ U heap => effect.postW r args U heap) (fun r args _ _ heap => effect.excPostW r args heap)
+    (fun r args _ U heap => effect.postW r args U heap) (fun r args _ _ heap => (effect.excPostW r args heap).liftV)
     k W v
 
 theorem ConstructPromise.down {effect P R n W v}
@@ -1702,10 +1704,10 @@ theorem ConstructPromise.weaken' {Ξ Ξ' : Fam} {effect effect' P P' R T k W v}
     (h : ConstructPromise Ξ effect P R k W v) : ConstructPromise Ξ' effect' P' T k W v := by
   intro j hj U hx hu heap hh hvr args hv har ha hq
   obtain ⟨result, hc, hs⟩ := h j hj U hx hu heap hh hvr args hv har (hacc j hj U args ha) (he.2.2.2 .undef args heap hq)
-  exact ⟨result, hc, SafePostExcW.consequence_below' (fun m hm => hexc m (by omega))
+  exact ⟨result, hc, SafePostExcV.iff_lift.mpr <| SafePostExcW.consequence_below' (fun m hm => hexc m (by omega))
     (fun m hm U' u hu => he.2.1 T args m U' u
       (Effect.result_mono effect (hres m (by omega) U') (hres m (by omega) U') hu))
-    (fun m _ => he.1 .undef args j U heap m) (fun _ _ _ h' => he.2.2.1 .undef args heap h') hs⟩
+    (fun m _ => he.1 .undef args j U heap m) (fun _ _ _ h' => he.2.2.1 .undef args heap h') (SafePostExcV.iff_lift.mp hs)⟩
 
 theorem ConstructPromise.congr {Ξ Ξ' : Fam} {effect P P' R T n W v}
     (hexc : Agree Ξ Ξ' n)
@@ -1735,7 +1737,7 @@ theorem ConstructPromise.erase {effect P R k W v} (hp : effect.plain = true)
     (Effect.requires_none (Effect.plain_requires hp) (Effect.plain_pre hp) .undef args heap)
   dsimp only at hs
   rw [Effect.result_plain hp] at hs
-  exact ⟨result, hc, SafePostW.erase (SafePostExcW.post hs)⟩
+  exact ⟨result, hc, SafePostW.erase (SafePostExcV.post hs)⟩
 
 /-- **Construct signatures.** Values meeting every signature `(parameters,
 result)` under `new`, each with its effect (`ConstructPromise`). The code is
@@ -1838,6 +1840,8 @@ theorem PromiseWith.combine {effect other Acc Rc B C D k W v}
       fun F hF => hq.2 F (by simp only [Effect.meet]; rw [hs.1.1.2]; exact hF)⟩
   obtain ⟨b, hib, hsb⟩ := hb j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha ⟨hq.1, hq.2⟩
   obtain ⟨c, hic, hsc⟩ := hc j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha hq'
+  replace hsb := SafePostExcV.iff_lift.mp hsb
+  replace hsc := SafePostExcV.iff_lift.mp hsc
   cases CallArguments.invoke_deterministic hib hic
   obtain ⟨hr1, hp1, hr2, hp2⟩ := Effect.meet_same hs
   rw [hr2, hp2] at hsc
@@ -1845,7 +1849,7 @@ theorem PromiseWith.combine {effect other Acc Rc B C D k W v}
   have hsc' : SafePostExc Ξ (effect.result C (effect.promised args)) (other.post r args heap)
       (other.excPost r args heap) j U heap b :=
     SafePostExcW.weaken (fun _ _ _ _ hp => hp.1) (fun _ _ _ hp => hp) hsc
-  exact ⟨b, hib, SafePostExcW.weaken
+  exact ⟨b, hib, SafePostExcV.iff_lift.mpr <| SafePostExcW.weaken
     (fun k' W' heap' value hpost => (Effect.postW_meet hs r args U heap k' W' heap' value).mpr hpost)
     (fun _ _ heap' hexc => Effect.excPost_meet hs r args heap heap' hexc.1 hexc.2)
     (SafePostExcW.cross j (Effect.cross_result effect (hcross j hj)) U U heap b hh hh hsb hsc')⟩
@@ -1898,6 +1902,7 @@ theorem PromiseWith.bound {effect : Effect} {Acc Rest : ArgFam} {Rt R Rc : Fam}
     obtain ⟨res, hinv', hsafe⟩ := ht i hi _ hxU hu' heap hh' (RefsOk_trunc _ hobj.1) rv hrv hr'
       (RefsOk_trunc _ hobj.2.1) (pre ++ args) hall hall' (hprefix i hi _ hxU args ha')
       (Effect.requires_none (Effect.keeps_requires hkeeps) (Effect.keeps_pre hkeeps) rv (pre ++ args) heap)
+    replace hsafe := SafePostExcV.iff_lift.mp hsafe
     dsimp only at hsafe ⊢
     rw [Effect.result_drop, Effect.promised_drop hkeeps]
     -- The target is entered one step after the bound call, at the same
@@ -1905,7 +1910,7 @@ theorem PromiseWith.bound {effect : Effect} {Acc Rest : ArgFam} {Rt R Rc : Fam}
     -- entry (`Kinds.ViewWrite.prefix_left`).
     have hxi : WExt (trunc i (Nat.le_succ i) U) (trunc i (Nat.le_succ i) U) := WExt_refl _
     exact ⟨hinv, .inr ⟨_, heap, res, WExt_refl _, hu', hinv'.step heap, hh',
-      SafePostExcW.weaken (fun _ _ _ _ h => ⟨Effect.post_drop pre.length h.1, fun w hw => by
+      SafePostExcV.iff_lift.mpr <| SafePostExcW.weaken (fun _ _ _ _ h => ⟨Effect.post_drop pre.length h.1, fun w hw => by
           simp only [Effect.drop, Option.map_eq_some_iff] at hw
           obtain ⟨w0, h0, rfl⟩ := hw
           exact ⟨⟨(h.2 w0 h0).1.1.prefix_left (Nat.le_succ i) hxi hh (List.prefix_refl _),
@@ -1932,7 +1937,7 @@ theorem call_safe_exc {effect : Effect} {P : ArgFam} {Rc R : Fam}
       (RefsOk_trunc _ hrr) vs hv (fun a ha => RefsOk_trunc _ (har a ha))
       (hP.transfer ha n (Nat.le_succ n) U (WExt_refl _)) hq
     exact ⟨href, .inr ⟨U, heap, body, WExt_refl _, WorldAdm_trunc _ hw, hi.step heap,
-      HeapOk_trunc n W heap hh, SafePostExcW.weaken (fun _ _ _ _ hp => hp.1) (fun _ _ _ hp => hp) hs⟩⟩
+      HeapOk_trunc n W heap hh, SafePostExcW.weaken (fun _ _ _ _ hp => hp.1) (fun _ _ _ hp => hp) (SafePostExcV.iff_lift.mp hs)⟩⟩
 
 theorem call_safe {effect : Effect} {P : ArgFam} {Rc R : Fam}
     (hP : Adm P) (hRc : Adm Rc) {n W heap f r vs}
@@ -1986,7 +1991,7 @@ theorem construct_safe_exc_requires {effect : Effect} (hpr : effect.promise = no
     rw [CallArguments.construction_pad hc _ _ hpad, Effect.result_none hpr] at hs
     exact ⟨href, .inr ⟨U, heap, _, WExt_refl _, WorldAdm_trunc _ hw,
       CallArguments.construction_step hc hv heap, HeapOk_trunc n W heap hh,
-      SafePostExcW.weaken (fun _ _ _ _ h => Effect.post_pad rfl hpad h.1) (fun _ _ _ h => Effect.excPost_pad hpad h) hs⟩⟩
+      SafePostExcW.weaken (fun _ _ _ _ h => Effect.post_pad rfl hpad h.1) (fun _ _ _ h => Effect.excPost_pad hpad h) (SafePostExcV.iff_lift.mp hs)⟩⟩
 
 /-- A construction at a plain signature, whose precondition is empty. -/
 theorem construct_safe_exc {effect : Effect} (hpl : effect.plain = true) {P : ArgFam} {R : Fam}

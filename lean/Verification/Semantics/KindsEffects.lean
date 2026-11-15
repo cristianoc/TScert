@@ -165,7 +165,7 @@ theorem gate_write {Ξ : Fam} {a b : CallEffects.Effect} {Acc : (j : Nat) → Wo
       have hr : RefsOk V r := fun y hy => hVb y (by simp [body, refs, hy])
       have hargsr : ∀ a ∈ args, RefsOk V a := fun a ha y hy =>
         hVb y (by simp only [body, refs, refsArgs_eq, List.mem_append, List.mem_flatMap]; exact .inr ⟨a, ha, hy⟩)
-      have hcall := CallEffects.NativeContract.safe (CallEffects.NativeContract.down hcomb (by omega) hxV)
+      have hcall := SafePostExcV.iff_lift.mp <| CallEffects.NativeContract.safe (CallEffects.NativeContract.down hcomb (by omega) hxV)
         (WorldAdm_trunc _ hu) (HeapOk_trunc (p + 1) U h' hh') hrv (hrc _ _) hargs (hacc _ _) (hreq h' hpre)
         (RefsOk_invoke.mpr ⟨hg, hr, hargsr⟩)
       have hw := SafePostExcW.world (P := fun k W' => cap.Holds W' fs) (fun _ _ _ hx' hp => hp.mono hx')

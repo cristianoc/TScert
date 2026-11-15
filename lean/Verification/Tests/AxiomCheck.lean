@@ -283,6 +283,8 @@ run_cmd do
   check ``Verification.CallEffects.SafePostExcW.weaken_admissible
   check ``Verification.CallEffects.SafePostExcW.complete_normal
   check ``Verification.CallEffects.SafePostExcW.complete_exceptional
+  check ``Verification.HeapObservations.SafePostExcV.iff_lift
+  check ``Verification.HeapObservations.SafePostExcV.post
   check ``Verification.CallEffects.exactPre_iff
   check ``Verification.CallEffects.elementWrite_iff
   check ``Verification.CallEffects.Effect.summary_normal_iff

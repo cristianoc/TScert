@@ -51,6 +51,66 @@ theorem SafePostExcW.post {Ξ T} {Q : WPost} {R : WExc} :
     · exact .inl (.inr hr)
     · exact .inr ⟨U, h', t', hx, hu, step, hh, ih hs⟩
 
+/-! ### A throw's postcondition reading the thrown value -/
+
+/-- A postcondition of an exceptional exit that reads the thrown value as
+well: the budget left, the world, the heap the term raises in and the value
+it raises. -/
+abbrev WExcV := (k : Nat) → WorldT k → Heap → Tm → Prop
+
+/-- **The lifting** of an exceptional postcondition that ignores the thrown
+value. -/
+abbrev WExc.liftV (R : WExc) : WExcV := fun k W h _ => R k W h
+
+/-- **Safety with postconditions, the throw's reading the thrown value**:
+the steps, world extensions and heap invariant of `SafePostExcW`, a throw
+raising a value of the exception family that meets `R` with the world and
+heap it raises in. -/
+def SafePostExcV (Ξ : Fam) (T : Fam) (Q : WPost) (R : WExcV) :
+    (n : Nat) → WorldT n → Heap → Tm → Prop
+  | 0, W, _, t => RefsOk W t
+  | n + 1, W, h, t => RefsOk W t ∧
+      (((isVal t = true ∧ T (n + 1) W t ∧ Q (n + 1) W h t) ∨
+        (∃ v, Raises t v ∧ Scoped 0 v ∧ Ξ (n + 1) W v ∧ R (n + 1) W h v)) ∨
+      (∃ (U : WorldT n) (h' : Heap) (t' : Tm),
+        WExt (trunc n (Nat.le_succ n) W) U ∧ WorldAdm U ∧ Step h t h' t' ∧
+          HeapOk n U h' ∧ SafePostExcV Ξ T Q R n U h' t'))
+
+/-- **A postcondition ignoring the thrown value gives `SafePostExcW`**, and
+conversely. -/
+theorem SafePostExcV.iff_lift {Ξ T} {Q : WPost} {R : WExc} :
+    ∀ {n W h t}, SafePostExcV Ξ T Q R.liftV n W h t ↔ SafePostExcW Ξ T Q R n W h t := by
+  intro n; induction n with
+  | zero => intro _ _ _; exact Iff.rfl
+  | succ n ih =>
+    intro W h t
+    simp only [SafePostExcV, SafePostExcW, Thrown]
+    refine and_congr Iff.rfl (or_congr (or_congr Iff.rfl ?_) ?_)
+    · exact ⟨fun ⟨v, hr, hs, hx, hR⟩ => ⟨⟨v, hr, hs, hx⟩, hR⟩, fun ⟨⟨v, hr, hs, hx⟩, hR⟩ => ⟨v, hr, hs, hx, hR⟩⟩
+    · exact exists_congr fun U => exists_congr fun h' => exists_congr fun t' =>
+        and_congr Iff.rfl (and_congr Iff.rfl (and_congr Iff.rfl (and_congr Iff.rfl ih)))
+
+/-- **Consequence**: weaker postconditions on both exits. -/
+theorem SafePostExcV.weaken {Ξ T} {Q Q' : WPost} {R R' : WExcV}
+    (hq : ∀ k W h v, Q k W h v → Q' k W h v) (hr : ∀ k W h v, R k W h v → R' k W h v) :
+    ∀ {n W h t}, SafePostExcV Ξ T Q R n W h t → SafePostExcV Ξ T Q' R' n W h t := by
+  intro n; induction n with
+  | zero => intro _ _ _ hs; exact hs
+  | succ n ih =>
+    intro W h t hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
+    rcases hs with (⟨hv, hT, hQ⟩ | ⟨v, hra, hsc, hx, hR⟩) | ⟨U, h', t', hx, hu, step, hh, hs⟩
+    · exact .inl (.inl ⟨hv, hT, hq _ _ _ _ hQ⟩)
+    · exact .inl (.inr ⟨v, hra, hsc, hx, hr _ _ _ _ hR⟩)
+    · exact .inr ⟨U, h', t', hx, hu, step, hh, ih hs⟩
+
+/-- **Erasure**: forgetting the throw's postcondition gives `SafePostW`. -/
+theorem SafePostExcV.post {Ξ T} {Q : WPost} {R : WExcV} {n W h t} (hs : SafePostExcV Ξ T Q R n W h t) :
+    SafePostW Ξ T Q n W h t :=
+  SafePostExcW.post (R := fun _ _ _ => True)
+    (SafePostExcV.iff_lift.mp (SafePostExcV.weaken (fun _ _ _ _ h => h) (fun _ _ _ _ _ => trivial) hs))
+
 theorem SafePostExc.post {Ξ T Q R} {n W h t} (hs : SafePostExc Ξ T Q R n W h t) : SafePost Ξ T Q n W h t :=
   SafePostExcW.post hs
 
