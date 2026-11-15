@@ -469,13 +469,12 @@ proved: `SourceExtraction.checkRequests_async`):
 ```
 
 The front proposes each footprint, untrusted (`PassProposals.proposals`,
-`PassProposals.lean`): a body's is the join of its checked steps' local
-effects, each the least closed footprint the pass's own footprint check
-accepts at the step
-([declarations](SINGLE-PASS-FRONT.md#declarations) states the rule). It
-bounds the throws where the join of the steps' effects with their throws
-checked is within the footprint: the projection of the body's per-exit
-summary, its normal and exceptional bounds (`ClassSummary.project`).
+`PassProposals.lean`): a body's per-exit summary composes its checked
+steps' local summaries over its graph, each read from the step's visit's
+certificate
+([declarations](SINGLE-PASS-FRONT.md#declarations) states the rule); the
+footprint is its normal bound, and it bounds the throws where the
+exceptional bound is within it (`ClassSummary.project`).
 Callees are proposed first, each caller reading the summary found for it; a
 self-recursive function reads itself at both exits keeping everything, then
 at the join of that and what its steps establish, until each exit its steps

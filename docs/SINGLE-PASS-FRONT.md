@@ -307,30 +307,38 @@ planned with every function proposed before it at its proposal and every
 other at its written effect, else at the ordinary effect, and run by the
 single pass with its footprint open, its loop heads' facts settled as its
 check settles them (`inferredSettle`). Each visited step $`n`$ has a local
-effect $`\ell_r(n)`$ on each of the two routes $`r`$ the pass checks a
-footprint by. On the direct route it is the least closed footprint
-`SinglePass.footprintCheck` accepts at the step. On the regional route it is
-the least of the step's alternatives (the closed check, a call's frame, an
-element write's frame: `ArgumentRegionGraph.checkClosedNode`, `callStep`,
-`writeStep`), each frame rebased to the entry through the regional facts
-(`Footprints.rebaseAll`) and read in the closed language. A route's
-footprint is the join of its steps' local effects, and the proposal is the
-regional route's where that is strictly below the direct route's:
+summary $`\ell_r(n)`$, a closed bound at each exit, on each of the two
+routes $`r`$ the pass checks a footprint by. On the direct route it is read
+from the step's visit's certificate (`SinglePass.StepCertificate`): at each
+exit the meet of the closed bounds of the exit specifications the step's
+rules establish, `top` where none bounds it (`PassProposals.localSummary`),
+its normal exit unreached where its result type is empty.
+On the regional route it is the least of the step's alternatives (the
+closed check, a call's frame, an element write's frame:
+`ArgumentRegionGraph.checkClosedNode`, `callStep`, `writeStep`), on normal
+return and with the throw bounded, each frame rebased to the entry through
+the regional facts (`Footprints.rebaseAll`) and read in the closed language.
+A route's summary composes its steps' local summaries over the graph
+(`PassProposals.composeGraph`): the bound $`p_n`$ of the paths reaching
+node $`n`$ is the join, over its predecessors $`m`$ and over the handled
+throws reaching it, of $`p_m \sqcup \ell_r(m).\mathsf{n}`$ and
+$`p_m \sqcup \ell_r(m).\mathsf{x}`$; the normal exit joins
+$`p_n \sqcup \ell_r(n).\mathsf{n}`$ at the returns, the exceptional exit
+$`p_n \sqcup \ell_r(n).\mathsf{x}`$ at the nodes with no handler. The
+proposal is the regional route's summary where its normal bound is strictly
+below the direct route's:
 
 ```math
-\frac{\ell_r(n)=\min\{\Phi \mid \mathsf{check}_r(n,\Phi)\}\qquad
-      \Phi_r=\bigsqcup_{n\in\mathrm{visited}(f)}\ell_r(n)\qquad r\in\{\mathsf{direct},\mathsf{regional}\}}
-     {\mathrm{propose}(f)=\begin{cases}\Phi_{\mathsf{regional}} & \Phi_{\mathsf{regional}}\sqsubset\Phi_{\mathsf{direct}}\\
-       \Phi_{\mathsf{direct}} & \text{otherwise}\end{cases}}\ \textsf{steps-footprint}
+\frac{S_r=\mathrm{compose}(\ell_r)\qquad r\in\{\mathsf{direct},\mathsf{regional}\}}
+     {\mathrm{propose}(f)=\begin{cases}S_{\mathsf{regional}} & S_{\mathsf{regional}}.\mathsf{n}\sqsubset S_{\mathsf{direct}}.\mathsf{n}\\
+       S_{\mathsf{direct}} & \text{otherwise}\end{cases}}\ \textsf{steps-footprint}
 ```
 
-The regional route is run where the direct route's footprint is more than
-keep/keep, the least footprint. The proposal bounds the throws where the
-join of the steps' effects with their throws checked is within the
-footprint and the footprint is less than the ordinary effect. A step in the
-region from which no normal return is possible (`GraphCode.deadIterate`)
-contributes its throw alone. A function is proposed nothing where its
-footprint is the ordinary effect or one of its runs stops. The same rule
+The regional route is run where the direct route's normal bound is more
+than keep/keep, the least footprint. A plan reads the proposal's projection:
+the normal bound, its throws bounded where the exceptional bound is within
+it and it is less than the ordinary effect. A function is proposed nothing
+where its footprint is the ordinary effect or one of its runs stops. The same rule
 covers a generic function and one with a rest parameter.
 
 A self-recursive function's own reads, a per-exit summary of its normal
@@ -338,8 +346,9 @@ and exceptional bounds, start at both exits keeping everything and are
 joined exit by exit with what its steps establish until each exit they
 establish is within the one read (`ClassSummary.within`, a weakening at each
 exit, `ClassSummary.within_weakens`),
-$`I_0=\bot,\ I_{n+1}=I_n\sqcup T_f(I_n)`$, at most one run per step of the
-lattice's height. A stand-in, a recursion assumption and an entry of the
+$`I_0=\bot,\ I_{n+1}=I_n\sqcup T_f(I_n)`$: a round that does not stop raises
+a component of an exit's bound, at most 4 for each of the 3 components of
+the 2 exits, so at most 25 rounds reach both exits at `top` and stop. A stand-in, a recursion assumption and an entry of the
 proposals' memo carry that summary; a plan reads its projection
 (`ClassSummary.project`), and the memo's key digests both exits of every
 summary its run reads. A member of a cycle of two or more functions reads

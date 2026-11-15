@@ -90,26 +90,8 @@ variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
 /-! ## A step's local effect
 
 Every step the pass checks has its local effect on each route, read from
-its evidence: the least closed footprint the step's check accepts there. The
-direct check's disjuncts are each a rule's own grade below the bound and a
-side condition the bound does not enter (an inspection, a typed write, an
-initializing write, a call at its selected signature, an unreachable
-type), so the footprints it accepts are those above the least of them. -/
-
-/-- A step's local effects on the direct route, read from its grades
-(`SinglePass.stepGrades`, the footprint check at any bound,
-`SinglePass.footprintCheck_eq_admits`): where no live handler catches its
-throw and the bound states no throw bound (`normal`), where a live handler
-catches it (`handled`), and where the bound bounds every throw (`raised`);
-none where no bound admits it. -/
-structure Direct where
-  normal : Option Closed
-  handled : Option Closed
-  raised : Option Closed
-
-def direct (g : SinglePass.StepGrades) (k : Continuation) : Direct :=
-  let at_ := fun (live exc : Bool) => leastAccepted fun Φ => g.admits Φ live exc false false k
-  { normal := at_ false false, handled := at_ true false, raised := at_ false true }
+its evidence: on the direct route its visit's certificate (`localSummary`),
+on the regional route the least closed footprint its check accepts there. -/
 
 /-- The parts of the regional route's closed check (`checkClosedNode`) that
 read no bound, computed once for a step: its scope, whether it is an
@@ -199,59 +181,109 @@ structure Established where
 abbrev Label (f : FilePlans) : Type := EquationStore.CheckedLabel f.F.equations f.F.primitive
 
 /-- What the direct route reads of a member's visited steps (`directRead`):
-the join of their local effects on normal return, outside the region from
-which no normal return is possible (none where a step of that region is not
-`deadNode`), and on a throw; the returned values' functions' footprint, and
+its body's summary composed over the graph (`composeGraph`), none where the
+composition does not settle; the returned values' functions' footprint, and
 whether any return was visited. -/
 structure DirectRead where
-  normal : Option Closed
-  thrown : Option Closed
+  summary : Option SourceExtraction.ClassSummary
   result : Closed
   returns : Bool
+
+/-- **A step's local summary from its visit's certificate**
+(`SinglePass.StepCertificate`): at each exit, the meet of the closed bounds
+below the mark (`Footprint.boundBelow`) of the exit specifications its
+rules establish, each of which holds of the step (`Closed.holds_meet`);
+`top` where no rule bounds that exit, and at both exits where the step's
+scope check fails. Bound-independent: no enclosing bound is read. -/
+def localSummary (q : SinglePass.StepCertificate) : SourceExtraction.ClassSummary :=
+  let bound := fun (xs : List CallEffects.ExitSpec) =>
+    match xs.map (fun x => Footprints.Footprint.boundBelow q.fresh x.frame) with
+    | [] => Footprints.Closed.top
+    | g :: gs => gs.foldl Footprints.Closed.meet g
+  if q.scope then ⟨some (bound q.normal), some (bound q.exceptional)⟩
+  else ⟨some .top, some .top⟩
+
+/-- **A body's summary composed over its graph** (the note, §6: Seq-Eff on
+both exits, choice at joins, a handler's entry at a caught throw; the rules
+of `ClassSummary`): from the start label's entry, where nothing has
+changed, each node `l` of local summary `S` at the bound `p` of the paths
+reaching it passes `p ⊔ S.normal` to its successors (to the body's normal
+exit at a return) and `p ⊔ S.exceptional` to its handler (to the body's
+exceptional exit where it has none); the paths reaching a node join. A node
+no visit reached has no local summary and passes nothing. Every round that
+does not stop raises some node's entry, each at most 13 times (unreached,
+then three components of rank at most 4), so `13 · n + 2` rounds reach the
+least fixed point; none where they do not (unreachable). -/
+def composeGraph (nodes : Array Node) (start : Nat) (locals : Array (Option SourceExtraction.ClassSummary)) :
+    Option SourceExtraction.ClassSummary := Id.run do
+  let n := nodes.size
+  let mut entry : Array (Option Closed) := (Array.replicate n none).set! start (some keepAll)
+  for _ in List.range (13 * n + 2) do
+    let mut next := entry
+    let mut out : SourceExtraction.ClassSummary := ⟨none, none⟩
+    for l in List.range n do
+      match entry.getD l none, locals.getD l none, nodes[l]? with
+      | some p, some S, some node =>
+        let N := SourceExtraction.ClassSummary.andThen (some p) S.normal
+        let X := SourceExtraction.ClassSummary.andThen (some p) S.exceptional
+        if node.continuation == .ret then out := { out with normal := SourceExtraction.ClassSummary.alt out.normal N }
+        for t in successors node.continuation do
+          next := next.set! t.label (SourceExtraction.ClassSummary.alt (next.getD t.label none) N)
+        match node.handler with
+        | some t => next := next.set! t.label (SourceExtraction.ClassSummary.alt (next.getD t.label none) X)
+        | none => out := { out with exceptional := SourceExtraction.ClassSummary.alt out.exceptional X }
+      | _, _, _ => pure ()
+    if next == entry then return some out
+    entry := next
+  return none
+
+/-- A step whose result type is empty never returns normally
+(`ExpressionEffects.emptyType`, the pass's `deadNode`): its normal exit is
+unreached. -/
+def unreturning {ι : Type} [DecidableEq ι] (G : NormalGraph ι) (claimed : Array (PointClaim ι)) (l : Nat)
+    (S : SourceExtraction.ClassSummary) : SourceExtraction.ClassSummary :=
+  match claimed[l]? with
+  | some c => if ExpressionEffects.emptyType G c.type then { S with normal := none } else S
+  | none => S
+
+/-- The local summaries by label: each label's visits' summaries joined
+(`ClassSummary.choice`). -/
+def localsOf (n : Nat) (visits : List (Nat × SourceExtraction.ClassSummary)) :
+    Array (Option SourceExtraction.ClassSummary) :=
+  visits.foldl (init := Array.replicate n none) fun acc (l, S) =>
+    if l < n then acc.set! l (some (match acc.getD l none with
+      | some T => T.choice S
+      | none => S)) else acc
 
 section
 variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
 
-/-- **The direct route's footprint of a member** from each visit's record
-of its step's local effect (`records`, `SinglePass.Walk.visits`): the join
-over the visits outside the region with no normal return (`deadRegion`),
-each at its live handler; the throws' join; at each return the returned
-value's checked type's footprint (the join of its signatures', `top` for a
-value of no function type). -/
-def directRead (G : NormalGraph ι) (nodes : Array Node) (claimed : Array (PointClaim ι))
+/-- **The direct route's summary of a member** from each visit's record of
+its step's local certificate (`records`, `SinglePass.Walk.visits`): the
+local summaries (`localSummary`) composed over the graph (`composeGraph`);
+at each return the returned value's checked type's footprint (the join of
+its signatures', `top` for a value of no function type). -/
+def directRead (G : NormalGraph ι) (nodes : Array Node) (claimed : Array (PointClaim ι)) (start : Nat)
     (records : Array SinglePass.VisitRecord) : DirectRead := Id.run do
   let n := nodes.size
-  let dead := GraphCode.deadIterate ((nodes.zip claimed).map fun (node, c) => (node, ExpressionEffects.emptyType G c.type))
-    (n + 1) (Array.replicate n true)
-  let mut normal : Option Closed := some keepAll
-  let mut thrown : Option Closed := some keepAll
   let mut result : Closed := keepAll
   let mut returns := false
   for r in records do
     let l := r.label
     if l ≥ n then continue
-    let g := r.grades
     let node := nodes[l]!
     let c := claimed[l]!
-    let d := direct g node.continuation
-    thrown := joinOpt thrown d.raised
-    if dead.getD l false then
-      if !GraphCode.deadNode G dead.toList node (SinglePass.deadEvidence c node) then normal := none
-    else
-      let live := match node.handler with
-        | some t => !dead.getD t.label false
-        | none => false
-      normal := joinOpt normal (if live then d.handled else d.normal)
-      if node.continuation == .ret then
-        returns := true
-        let T := match node.expression with
-          | .var j => (c.context[j]?).getD c.type
-          | _ => c.type
-        result := join result (match PositiveRules.expand G T with
-          | [.arrs L S] => if L.isEmpty && S.isEmpty then .top else
-            ((L.map (·.effect)) ++ S.map (·.effect)).foldl (init := keepAll) fun acc e => join acc e.footprint
-          | _ => .top)
-  return ⟨normal, thrown, result, returns⟩
+    if node.continuation == .ret then
+      returns := true
+      let T := match node.expression with
+        | .var j => (c.context[j]?).getD c.type
+        | _ => c.type
+      result := join result (match PositiveRules.expand G T with
+        | [.arrs L S] => if L.isEmpty && S.isEmpty then .top else
+          ((L.map (·.effect)) ++ S.map (·.effect)).foldl (init := keepAll) fun acc e => join acc e.footprint
+        | _ => .top)
+  let locals := localsOf n (records.toList.map fun r => (r.label, unreturning G claimed r.label (localSummary r.certificate)))
+  return ⟨composeGraph nodes start locals, result, returns⟩
 
 end
 
@@ -338,32 +370,33 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
   let prepared := Thunk.mk prepared
   -- The direct route: the settling run's steps, else a walk with no bound.
   let (read, visits) ← match grades with
-    | some gs => pure (SinglePass.work "propose: direct read" (f.fr.workItem i) fun _ => directRead G nodes claimed gs, visitsA)
+    | some gs => pure (SinglePass.work "propose: direct read" (f.fr.workItem i) fun _ => directRead G nodes claimed r.start gs, visitsA)
     | none =>
       let some (walk, codes) := prepared.get | return none
       let .ok (σ, reach) := walk none | return none
       if σ.walk.visited < reach then return none
-      pure (directRead G nodes claimed σ.walk.visits, σ.walk.visited)
-  let normal := read.normal
-  let thrown := read.thrown
+      pure (directRead G nodes claimed r.start σ.walk.visits, σ.walk.visited)
+  let normal := read.summary.bind (·.normal)
   -- The regional route: the walk under the regional fallback at `top`, run
   -- where the direct route's footprint is more than keep/keep (no footprint
   -- is below it).
-  let (regionalΦ, regionalThrown, visitsB) := if normal == some keepAll then (none, none, 0) else
+  let (regionalS, visitsB) : Option SourceExtraction.ClassSummary × Nat :=
+    if normal == some keepAll then (none, 0) else
     match prepared.get with
-    | none => (none, none, 0)
+    | none => (none, 0)
     | some (walk, _) =>
     let tables := SinglePass.work "propose: regional tables" (f.fr.workItem i) fun _ => regionalInferred r .top [] none
     let (names, heads) := (regionalFromJson r.program.length tables).toOption.getD ([], #[])
     let rgTop : SinglePass.Regional := { Φ := .top, regions := [], exc := false, names, heads }
     match walk (some rgTop) with
     | .ok (σB, reachB) =>
-      if σB.walk.visited < reachB then (none, none, σB.walk.visited) else
+      if σB.walk.visited < reachB then (none, σB.walk.visited) else
       let sumsB := σB.answers.summaries.toList
-      -- (each step's effects with its throw bounded where handled and with
-      -- every throw bounded, made once: `regionalBoth`)
-      let joined := SinglePass.work "propose: regional local effects" (f.fr.workItem i) fun _ =>
-        (List.range n).foldl (init := ((some keepAll : Option Closed), (some keepAll : Option Closed))) fun acc l =>
+      -- (each visited step's local summary: its effect on normal return and
+      -- with its throw bounded, `regionalBoth`, `top` where none bounds an
+      -- exit; composed over the graph, `composeGraph`)
+      let locals := SinglePass.work "propose: regional local effects" (f.fr.workItem i) fun _ =>
+        (List.range n).foldl (init := (Array.replicate n none : Array (Option SourceExtraction.ClassSummary))) fun acc l =>
         match σB.walk.labels[l]? with
         | some (lw : SinglePass.LabelWalk (Label f)) => match lw.visited, lw.entry, lw.stepped, lw.region with
           | true, some entry, some st, some rs =>
@@ -377,20 +410,22 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
             let kHere := (SinglePass.materialize entry width (List.range width) true).1
             let cEv : NodeEvidence _ := ⟨ordinaryEv, some ⟨c.context, node.expression, c.type⟩, [],
               SinglePass.regionalFacts kHere st.stepK, st.stepEffect, {}, none, [], [], [], none⟩
-            let (a, b) := regionalBoth G I sumsB rs cEv node.expression node.handler.isSome
-            (joinOpt acc.1 a, joinOpt acc.2 b)
+            let (a, b) := regionalBoth G I sumsB rs cEv node.expression false
+            acc.set! l (some (unreturning G claimed l ⟨some (a.getD .top), some (b.getD .top)⟩))
           | _, _, _, _ => acc
         | none => acc
-      (joined.1, joined.2, σB.walk.visited)
-    | .error _ => (none, none, 0)
-  -- The route of the less normal bound, its normal and exceptional bounds
-  -- (`top` where no bound bounds a throw): the member's summary.
-  let (Φ, X) := match normal, regionalΦ with
-    | some a, some b => if b.le a && !a.le b then (b, regionalThrown) else (a, thrown)
-    | some a, none => (a, thrown)
-    | none, some b => (b, regionalThrown)
-    | none, none => (.top, none)
-  return some ⟨⟨some Φ, some (X.getD .top)⟩, if read.returns then read.result else .top, visits + visitsB⟩
+      (composeGraph nodes r.start locals, σB.walk.visited)
+    | .error _ => (none, 0)
+  -- The route of the less normal bound, its summary (`top` at an exit no
+  -- composition settles): the member's summary.
+  let topS : SourceExtraction.ClassSummary := ⟨some .top, some .top⟩
+  let S := match read.summary, regionalS with
+    | some a, some b => if (b.normal.getD .top).le (a.normal.getD .top) && !(a.normal.getD .top).le (b.normal.getD .top)
+        then b else a
+    | some a, none => a
+    | none, some b => b
+    | none, none => topS
+  return some ⟨S, if read.returns then read.result else .top, visits + visitsB⟩
 
 /-- A plan's request at `top` with no throw bound: its walk unbounded. -/
 def openAt (f : FilePlans) (i : Nat) : FilePlans :=
@@ -504,7 +539,8 @@ A written effect's footprint and throw bound are kept whole (their summary,
 footprint. A self-recursive function's own reads, a summary, start at both
 exits keeping everything and are joined exit by exit with what its steps
 establish until each exit they establish is within the one read
-(`ClassSummary.within`), at most once per step of the lattice's height.
+(`ClassSummary.within`), at most once per step of the summaries' height
+(25 rounds).
 `memo` keys each run by its inputs, both exits of each summary read
 included (`inputDigest`). None where the pass
 establishes nothing of it (callers read it at its written effect or `top`).
@@ -552,10 +588,15 @@ def proposeOne (fr : Front) (controls : List String) (force : List String) (prio
       -- everything; accepted where each exit of what the body establishes
       -- entails the assumption's (`ClassSummary.within`,
       -- `ClassSummary.within_weakens`), else widened to the join
-      -- (`ClassSummary.choice`, `ClassSummary.within_choice`).
+      -- (`ClassSummary.choice`, `ClassSummary.within_choice`). A round that
+      -- does not stop raises a component of an exit's bound (the join's
+      -- components are the maxima, and a bound raised in no component is
+      -- within): at most 4 raises for each of the 3 components of the 2
+      -- exits, so the 25th round reads `top` at both exits, within which
+      -- every summary is, and stops.
       let mut assumed : SourceExtraction.ClassSummary := .ofFormat keepAll true
       let mut memo := memo
-      for _ in List.range 8 do
+      for _ in List.range 25 do
         let (got, memo') := establish (some { name := f.name, summary := assumed }) memo
         memo := memo'
         match got with
