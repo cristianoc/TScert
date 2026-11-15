@@ -235,7 +235,7 @@ theorem CommandSummary.signature_contract {arena : AssertionArena} {P : Assertio
   constructor
   · intro hr
     have h := CommandSummary.signature_holds hS hw hP hr
-    exact (Effect.summary_normal_iff e h.1.1 hvals).mp h
+    exact (Effect.summary_normal_iff e h.1.1 fun _ => hvals).mp h
   · intro hr
     have h := CommandSummary.signature_holds hS hw hP hr
     exact (Effect.summary_exceptional_iff e args.length h.1.1).mp h
@@ -279,7 +279,7 @@ theorem CommandSummary.signature_contract_below {arena : AssertionArena} {P : As
   constructor
   · intro hr
     have h := CommandSummary.signature_holds_below hS hw hsc hP hr
-    exact (Effect.summary_normal_iff e h.1.1 hvals).mp h
+    exact (Effect.summary_normal_iff e h.1.1 fun _ => hvals).mp h
   · intro hr
     have h := CommandSummary.signature_holds_below hS hw hsc hP hr
     exact (Effect.summary_exceptional_iff e args.length h.1.1).mp h

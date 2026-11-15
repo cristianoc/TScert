@@ -105,6 +105,21 @@ theorem SafePostExcV.weaken {Ξ T} {Q Q' : WPost} {R R' : WExcV}
     · exact .inl (.inr ⟨v, hra, hsc, hx, hr _ _ _ _ hR⟩)
     · exact .inr ⟨U, h', t', hx, hu, step, hh, ih hs⟩
 
+/-- **Consequence in the result's family**: a family admitting every
+result the first admits. -/
+theorem SafePostExcV.mono_result {Ξ T T' : Fam} {Q : WPost} {R : WExcV} (hT : ∀ k W v, T k W v → T' k W v) :
+    ∀ {n W h t}, SafePostExcV Ξ T Q R n W h t → SafePostExcV Ξ T' Q R n W h t := by
+  intro n; induction n with
+  | zero => intro _ _ _ hs; exact hs
+  | succ n ih =>
+    intro W h t hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
+    rcases hs with (⟨hv, hT', hQ⟩ | hx) | ⟨U, h', t', hx, hu, step, hh, hs⟩
+    · exact .inl (.inl ⟨hv, hT _ _ _ hT', hQ⟩)
+    · exact .inl (.inr hx)
+    · exact .inr ⟨U, h', t', hx, hu, step, hh, ih hs⟩
+
 /-- **Erasure**: forgetting the throw's postcondition gives `SafePostW`. -/
 theorem SafePostExcV.post {Ξ T} {Q : WPost} {R : WExcV} {n W h t} (hs : SafePostExcV Ξ T Q R n W h t) :
     SafePostW Ξ T Q n W h t :=

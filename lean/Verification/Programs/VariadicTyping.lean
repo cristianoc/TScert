@@ -438,10 +438,16 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     (ha : ArgsRest (s.arguments.1.map (meaning G)) (argMeaning G s.arguments.2) j U args)
     (href : RefsOk U (.letE (.arrLit (args.drop arity))
         (.goto E K start (.var 0 :: r :: CallArguments.parameters arity args ++ vs) .nul))) :
-    HeapObservations.SafePostExc (excOf G) (s.effect.result (meaning G s.result) (s.effect.promised args))
-      (s.effect.post r args heap) (s.effect.excPost r args heap) j U heap
+    HeapObservations.SafePostExcV (excOf G) (s.effect.result (meaning G s.result) (s.effect.promised args))
+      (s.effect.schema.exitPostW .normal r args U heap) (s.effect.schema.exitPostW .exceptional r args U heap) j U heap
       (.letE (.arrLit (args.drop arity))
         (.goto E K start (.var 0 :: r :: CallArguments.parameters arity args ++ vs) .nul)) := by
+  -- Graph code states no append (`Effect.below_grows`) and no element write
+  -- (`Effect.below_write`): its exits are its heap postconditions.
+  have hng : s.effect.receiverGrows = true → CallArguments.Values args := fun h => by
+    rw [show s.effect.receiverGrows = false from Effect.below_grows (e := s.fixed.effect) hs.2.1] at h; cases h
+  apply Effect.safe_exits (show s.effect.elementWrite = none from Effect.below_write (e := s.fixed.effect) hs.2.1)
+    hng hu hh
   have harr_r : RefsOk U (.arrLit (args.drop arity)) := fun x hx => href x (by
     simp only [refs, List.mem_append]; exact .inl hx)
   obtain ⟨hshort, hpack⟩ := ha
@@ -518,6 +524,7 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
         rcases Kinds.subst_refs a _ 0 x hx with hx | hx
         · exact hgoV x (by rw [refs_letE]; exact List.mem_append_right _ hx)
         · exact hvr x hx)
+    refine Effect.safe_fields hng (WorldAdm_trunc _ hv) (HeapOk_trunc p V heap' hh') ?_
     exact hs.2.2 p _ heap' _ (henv'.transfer p (Nat.le_succ p) _ (WExt_refl _))
       (WorldAdm_trunc _ hv) (HeapOk_trunc p V heap' hh') hgo (by
         intro v hm
@@ -545,7 +552,6 @@ theorem restsT_of_graphRest {G : NormalGraph ι} {arity E K start Cs vs n W} {ki
   have hself : Scoped 0 (.objAt fs (.graph arity E K start vs kind true) oid) := by simpa [Scoped] using hsc
   refine ⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩
   intro q hq
-  rw [CallEffects.PromiseWith.iff_legacy]
   intro j hj U hx hu heap hh hvr r hrv hr hrr args hvals har ha _
   obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
   have hbind := hb s hsm j U r hr
@@ -560,8 +566,7 @@ theorem restsT_of_graphRest {G : NormalGraph ι} {arity E K start Cs vs n W} {ki
     rcases List.mem_append.mp hv with hv | hv
     · exact hsc v hv
     · rw [List.mem_singleton.mp hv]; exact hself
-  exact ⟨_, .graph hrv hvals hbind, CallEffects.Effect.safe_postW (CallEffects.Effect.below_write hspec.2.1) <|
-    graphRest_invoke hspec hk harr (hvs.withSelf hcs hself) hsc' (Values.withSelf hvalues rfl) hj hx hu hh hr hvals ha
+  exact ⟨_, .graph hrv hvals hbind, graphRest_invoke hspec hk harr (hvs.withSelf hcs hself) hsc' (Values.withSelf hvalues rfl) hj hx hu hh hr hvals ha
       (restEntry_refs (graph_code_refs hvr).1 (fun a ha => by
         rcases List.mem_append.mp ha with ha | ha
         · exact (graph_code_refs hvr).2 a ha
@@ -675,13 +680,11 @@ theorem offers_self {G : NormalGraph ι} {arity E K start Cs vs} {kind : Invoke}
   apply (represents_back hr n W _)
   refine ⟨⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩, ⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩⟩
   · intro q hq
-    rw [CallEffects.PromiseWith.iff_legacy]
     intro j hj U hx hu heap hh hvr r hrv hrr hrref args hvals har ha hreq
     obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
     have henv := hvs.transfer j (Nat.le_of_lt hj) U hx
     have hF := ih j hj U henv
     exact ⟨_, .graph hrv hvals (hbL p hp j U r hrr),
-      CallEffects.Effect.safe_postW (CallEffects.Effect.below_write (ho p (List.mem_append_left _ hp)).2.1) <|
       graph_invoke_at (ho p (List.mem_append_left _ hp)) (henv.withSelfAt hlen hself hF)
         (Values.withSelf hvalues rfl) hu hh hrr ha (fun F hF => hreq.2 F hF)
         (goto_entry_refs (graph_code_refs hvr).1 (fun a ha => by
@@ -689,7 +692,6 @@ theorem offers_self {G : NormalGraph ι} {arity E K start Cs vs} {kind : Invoke}
           · exact (graph_code_refs hvr).2 a ha
           · rw [List.mem_singleton.mp ha]; exact hvr) hrref har)⟩
   · intro q hq
-    rw [CallEffects.PromiseWith.iff_legacy]
     intro j hj U hx hu heap hh hvr r hrv hrr hrref args hvals har ha hreq
     obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
     have hspec := ho _ (List.mem_append_right _ (List.mem_map.mpr ⟨s, hsm, rfl⟩))
@@ -711,8 +713,10 @@ theorem offers_self {G : NormalGraph ι} {arity E K start Cs vs} {kind : Invoke}
       rw [← CallArguments.parameters_take arity (args.take _), List.take_take,
         Nat.min_eq_left hle, CallArguments.parameters_take]
     rw [hp, CallEffects.Effect.promised_take (e := s.fixed.effect) hbelow hle] at hsafe
+    have hng : ∀ {xs : List Tm}, s.fixed.effect.receiverGrows = true → CallArguments.Values xs := fun h => by
+      rw [CallEffects.Effect.below_grows hbelow] at h; cases h
     exact ⟨_, .graph hrv hvals (hbS s hsm j U r hrr),
-      CallEffects.Effect.safe_postW (CallEffects.Effect.below_write hbelow) <| HeapObservations.SafePostExc.weaken
+      CallEffects.Effect.safe_exits_weaken hng (CallEffects.Effect.below_write hbelow) hng hu hh
       (fun _ _ h => CallEffects.Effect.post_args (CallEffects.Effect.below_ensures hbelow)
       (CallEffects.Effect.below_grows hbelow) (CallEffects.Effect.below_write hbelow) (CallEffects.Effect.below_regions hbelow) h)
       (fun _ h => CallEffects.Effect.excPost_args (CallEffects.Effect.below_regions hbelow) h) hsafe⟩
@@ -731,12 +735,10 @@ theorem ctorsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U : Ty
   have hself : Scoped 0 (.objAt fs (.graph arity E K start vs .construct) oid) := by simpa [Scoped] using hsc
   refine ⟨⟨fs, _, _, _, _, _, _, _, rfl, hself⟩, ?_⟩
   intro q hq
-  rw [CallEffects.ConstructPromise.iff_legacy]
   intro j hj V hx hv heap hh hvr args _ har ha hreq
   obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
   refine ⟨_, ⟨fs, _, _, _, rfl, rfl, rfl⟩, ?_⟩
-  exact CallEffects.Effect.safe_postW (CallEffects.Effect.below_write (hs p hp).2.1) <|
-    graph_invoke (row := ⟨U, p.arguments, p.result, p.effect⟩) (hs p hp) (hvs.withSelf hcs hself)
+  exact graph_invoke (row := ⟨U, p.arguments, p.result, p.effect⟩) (hs p hp) (hvs.withSelf hcs hself)
     (Values.withSelf hvalues rfl) hj hx hv hh
     ((represents_back hu j V _) rfl) (ArgsShort_of_exact ha) (fun F hF => hreq.2 F hF)
     (goto_entry_refs (graph_code_refs hvr).1 (fun a ha => by
@@ -784,7 +786,6 @@ theorem ctorRestsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U 
   have hself : Scoped 0 (.objAt fs (.graph arity E K start vs .construct) oid) := by simpa [Scoped] using hsc
   refine ⟨⟨fs, _, _, _, _, _, _, _, rfl, hself⟩, ?_⟩
   intro q hq
-  rw [CallEffects.ConstructPromise.iff_legacy]
   intro j hj V hx hv heap hh hvr args _ har ha _
   obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
   obtain ⟨hplain, El, hel, hspec⟩ := hs s hsm
@@ -820,8 +821,9 @@ theorem ctorRestsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U 
       Nat.min_eq_left (by omega), CallArguments.parameters_take]
   rw [hp] at hsafe
   rw [Effect.result_plain hplain] at hsafe ⊢
-  exact ⟨_, ⟨fs, _, _, _, rfl, rfl, rfl⟩, Effect.safe_postW (Effect.below_write hspec.2.1) <|
-    HeapObservations.SafePostExc.weaken
+  have hng : ∀ {xs : List Tm}, s.effect.receiverGrows = true → CallArguments.Values xs := fun h => by
+    rw [Effect.below_grows hspec.2.1] at h; cases h
+  exact ⟨_, ⟨fs, _, _, _, rfl, rfl, rfl⟩, Effect.safe_exits_weaken hng (Effect.below_write hspec.2.1) hng hv hh
     (fun _ _ h => Effect.post_args (Effect.below_ensures hspec.2.1)
       (Effect.below_grows hspec.2.1) (Effect.below_write hspec.2.1) (Effect.below_regions hspec.2.1) h)
       (fun _ h => Effect.excPost_args (Effect.below_regions hspec.2.1) h) hsafe⟩

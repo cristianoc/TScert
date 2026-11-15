@@ -514,9 +514,10 @@ theorem elementWrite_iff (w : ElementWrite) :
       exact ⟨hw, (hk k rfl).1, (hk k rfl).2, hr (fun h => by cases h)⟩
 
 /-- **The normal exit of a signature's summary is its normal-return
-postcondition** (`Effect.postW`), on admissible transitions at actuals that
-are values. -/
-theorem Effect.summary_normal_iff (e : Effect) (hadm : Admissible s s') (hvals : ∀ a ∈ args, isVal a = true) :
+postcondition** (`Effect.postW`), on admissible transitions, at actuals that
+are values where the signature states an append of them. -/
+theorem Effect.summary_normal_iff (e : Effect) (hadm : Admissible s s')
+    (hvals : e.receiverGrows = true → ∀ a ∈ args, isVal a = true) :
     (e.summary args.length).normal.Holds arena (callState r args v m s s') ↔
       e.postW r args s.W s.h s'.n s'.W s'.h v := by
   simp only [Effect.summary, ExitSpec.Holds, Effect.normalPosts, List.forall_mem_append]
@@ -550,9 +551,10 @@ theorem Effect.summary_normal_iff (e : Effect) (hadm : Admissible s s') (hvals :
       Parity.Holds arena (callState r args v m s s') F) ↔
       (e.receiverGrows = true → ReceiverGrows r s.h s'.h ∧ ReceiverAppends r args s.h s'.h) := by
     rw [forall_ite]
+    refine imp_congr_right fun hg => ?_
     simp only [List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq]
     rw [← receiverGrows_iff (arena := arena) (args := args) (v := v) (m := m) hadm,
-      ← receiverAppends_iff (arena := arena) (v := v) (m := m) hvals]
+      ← receiverAppends_iff (arena := arena) (v := v) (m := m) (hvals hg)]
     simp only [and_assoc]
   have hwr : (∀ F ∈ (match e.elementWrite with
       | some w => w.posts args.length
@@ -591,13 +593,13 @@ theorem Effect.summary_exceptional_iff (e : Effect) (n : Nat) (hadm : Admissible
 theorem Effect.summary_normal_post (e : Effect) (hadm : Admissible s s') (hvals : ∀ a ∈ args, isVal a = true)
     (h : (e.summary args.length).normal.Holds arena (callState r args v m s s')) :
     e.post r args s.h s'.h v :=
-  ((e.summary_normal_iff hadm hvals).mp h).1
+  ((e.summary_normal_iff hadm fun _ => hvals).mp h).1
 
 /-- **Without an element write the normal exit is the heap postcondition.** -/
 theorem Effect.summary_normal_iff_post (e : Effect) (hx : e.elementWrite = none) (hadm : Admissible s s')
     (hvals : ∀ a ∈ args, isVal a = true) :
     (e.summary args.length).normal.Holds arena (callState r args v m s s') ↔ e.post r args s.h s'.h v :=
-  (e.summary_normal_iff hadm hvals).trans ⟨fun h => h.1, Effect.postW_of_post hx⟩
+  (e.summary_normal_iff hadm fun _ => hvals).trans ⟨fun h => h.1, Effect.postW_of_post hx⟩
 
 /-! ## The operations on signatures -/
 
@@ -608,8 +610,8 @@ theorem Effect.summary_meet_normal {a b : Effect} (hs : a.sameResult b = true) (
     ((a.meet b).summary args.length).normal.Holds arena (callState r args v m s s') ↔
       (a.summary args.length).normal.Holds arena (callState r args v m s s') ∧
         (b.summary args.length).normal.Holds arena (callState r args v m s s') := by
-  rw [Effect.summary_normal_iff _ hadm hvals, Effect.summary_normal_iff _ hadm hvals,
-    Effect.summary_normal_iff _ hadm hvals, Effect.postW_meet hs]
+  rw [Effect.summary_normal_iff _ hadm fun _ => hvals, Effect.summary_normal_iff _ hadm fun _ => hvals,
+    Effect.summary_normal_iff _ hadm fun _ => hvals, Effect.postW_meet hs]
   have hbw : b.elementWrite = a.elementWrite := by
     simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs; exact hs.1.2.symm
   have hview : b.viewPost args s.W s.h s'.n s'.W s'.h v ↔ a.viewPost args s.W s.h s'.n s'.W s'.h v := by
@@ -633,8 +635,8 @@ theorem Effect.summary_drop_normal {e : Effect} (k : Nat) {rv : Tm} {argsv : Lis
     (hadm : Admissible s s') (hvalsv : ∀ a ∈ argsv, isVal a = true) (hvals : ∀ a ∈ args, isVal a = true)
     (h : (e.summary argsv.length).normal.Holds arena (callState rv argsv v m s s')) :
     ((e.drop k).summary args.length).normal.Holds arena (callState r args v m s s') := by
-  obtain ⟨hp, hw⟩ := (Effect.summary_normal_iff _ hadm hvalsv).mp h
-  refine (Effect.summary_normal_iff _ hadm hvals).mpr ⟨Effect.post_drop k hp, fun w hw' => ?_⟩
+  obtain ⟨hp, hw⟩ := (Effect.summary_normal_iff _ hadm fun _ => hvalsv).mp h
+  refine (Effect.summary_normal_iff _ hadm fun _ => hvals).mpr ⟨Effect.post_drop k hp, fun w hw' => ?_⟩
   simp only [Effect.drop, Option.map_eq_some_iff] at hw'
   obtain ⟨w0, h0, rfl⟩ := hw'
   refine ⟨⟨(hw w0 h0).1.1, fun _ h => ?_, fun h => ?_⟩, fun h => absurd rfl h⟩ <;> cases h

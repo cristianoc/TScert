@@ -511,8 +511,9 @@ following the optional rest store and preceding the captures. Actuals past
 the node lists `E`, `K`, entered at `start`, with captures at `Cs`, meets the
 signature `row` when every run of it started from an environment meeting the
 frame the row describes (`codeFrame`: with a rest, its store at `store`) is
-safe at the row's result, a promise's about the parameter it names. Its effect
-is guaranteed at the receiver and actuals matching that frame (`FrameValues`).
+safe at the row's result, a promise's about the parameter it names, and meets
+the row's specification on both exits (`Exits.exitPostW`, the note's Call) at
+the receiver and actuals matching that frame (`FrameValues`).
 The graph
 checker establishes this (`GraphCode.goto_safe`); a code-creating rule takes
 it as a premise. -/
@@ -523,9 +524,9 @@ def GraphCodeSpec (G : NormalGraph ι) (arity : Nat) (E : List Tm)
   ∀ n W h L, EnvOk G (codeFrame arity row Cs store) (envOf L .nul) n W → WorldAdm W →
     HeapOk n W h → RefsOk W (.goto E K start L .nul) → CallArguments.Values L → PreAt row.effect store L h →
     ∀ r args, FrameValues arity store L r args →
-      HeapObservations.SafePostExc (excOf G)
+      HeapObservations.SafePostExcV (excOf G)
         (row.effect.result (meaning G row.result) (framePromised row.effect (frameOffset store) L))
-        (row.effect.post r args h) (row.effect.excPost r args h)
+        (row.effect.schema.exitPostW .normal r args W h) (row.effect.schema.exitPostW .exceptional r args W h)
         n W h (.goto E K start L .nul)
 
 /-- A graph code the certificate of a unit has checked at one signature: the
@@ -706,8 +707,8 @@ theorem graph_invoke {G : NormalGraph ι} {arity E K start Cs row vs n W}
     {args : List Tm} (ha : ArgsShort (row.arguments.map (meaning G)) j U args)
     (hq : ∀ F ∈ row.effect.pre, F.HoldsAt ⟨CallEffects.callEnv r args, heap⟩ (CallEffects.callEnv r args) heap)
     (hgo : RefsOk U (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul)) :
-    HeapObservations.SafePostExc (excOf G) (row.effect.result (meaning G row.result) (row.effect.promised args))
-      (row.effect.post r args heap) (row.effect.excPost r args heap) j U heap
+    HeapObservations.SafePostExcV (excOf G) (row.effect.result (meaning G row.result) (row.effect.promised args))
+      (row.effect.schema.exitPostW .normal r args U heap) (row.effect.schema.exitPostW .exceptional r args U heap) j U heap
       (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul) := by
   have hsafe := hs.2.2 j U heap _ (frame_envOk hs.1 hvs (Nat.le_of_lt hj) hx hr ha) hu hh hgo (by
     intro v hv
@@ -735,8 +736,8 @@ theorem graph_invoke_at {G : NormalGraph ι} {arity E K start Cs row vs}
     {args : List Tm} (ha : ArgsShort (row.arguments.map (meaning G)) j U args)
     (hq : ∀ F ∈ row.effect.pre, F.HoldsAt ⟨CallEffects.callEnv r args, heap⟩ (CallEffects.callEnv r args) heap)
     (hgo : RefsOk U (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul)) :
-    HeapObservations.SafePostExc (excOf G) (row.effect.result (meaning G row.result) (row.effect.promised args))
-      (row.effect.post r args heap) (row.effect.excPost r args heap) j U heap
+    HeapObservations.SafePostExcV (excOf G) (row.effect.result (meaning G row.result) (row.effect.promised args))
+      (row.effect.schema.exitPostW .normal r args U heap) (row.effect.schema.exitPostW .exceptional r args U heap) j U heap
       (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul) := by
   have hx : WExt (trunc j (Nat.le_refl j) U) U := by rw [trunc_id]; exact WExt_refl U
   have hsafe := hs.2.2 j U heap _ (frame_envOk hs.1 hvs (Nat.le_refl j) hx hr ha) hu hh hgo (by
@@ -767,19 +768,14 @@ theorem callsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {kind :
   have hself : Scoped 0 (.objAt fs (.graph arity E K start vs kind) oid) := by simpa [Scoped] using hsc
   refine ⟨⟨fs, _, _, rfl, callable_of_kind hk, hself⟩, ?_⟩
   intro q hq
-  rw [CallEffects.PromiseWith.iff_legacy]
   intro j hj U hx hu heap hh hvr r hrv hr hrr args hvals har ha hreq
   obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
-  -- Graph code states no element write (`Effect.below_write`): its view
-  -- write is vacuous, and its postcondition is its heap postcondition.
-  exact ⟨_, .graph hrv hvals (hb p hp j U r hr), HeapObservations.SafePostExcV.iff_lift.mpr <| HeapObservations.SafePostExcW.weaken
-    (fun _ _ _ _ h => CallEffects.Effect.postW_of_post (CallEffects.Effect.below_write (hs p hp).2.1) h)
-    (fun _ _ _ h => h) (graph_invoke (hs p hp) (hvs.withSelf hlen hself)
+  exact ⟨_, .graph hrv hvals (hb p hp j U r hr), graph_invoke (hs p hp) (hvs.withSelf hlen hself)
     (Values.withSelf hvalues rfl) hj hx hu hh hr ha (fun F hF => hreq.2 F hF)
     (goto_entry_refs (graph_code_refs hvr).1 (fun a ha => by
       rcases List.mem_append.mp ha with ha | ha
       · exact (graph_code_refs hvr).2 a ha
-      · rw [List.mem_singleton.mp ha]; exact hvr) hrr har))⟩
+      · rw [List.mem_singleton.mp ha]; exact hvr) hrr har)⟩
 
 /-- Graph code of fixed arity meets a variadic signature whose fixed
 parameters cover it and whose fixed part it meets: the further actuals are
@@ -794,7 +790,6 @@ theorem restsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {kind :
   have hself : Scoped 0 (.objAt fs (.graph arity E K start vs kind) oid) := by simpa [Scoped] using hsc
   refine ⟨⟨fs, _, _, rfl, callable_of_kind hk, hself⟩, ?_⟩
   intro q hq
-  rw [CallEffects.PromiseWith.iff_legacy]
   intro j hj U hx hu heap hh hvr r hrv hr hrr args hvals har ha hreq
   obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
   have hspec := hs s hsm
@@ -814,11 +809,17 @@ theorem restsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {kind :
     rw [← CallArguments.parameters_take arity (args.take _), List.take_take,
       Nat.min_eq_left hle, CallArguments.parameters_take]
   rw [hp, CallEffects.Effect.promised_take (e := s.fixed.effect) hbelow hle] at hsafe
-  exact ⟨_, .graph hrv hvals (hb s hsm j U r hr), HeapObservations.SafePostExcV.iff_lift.mpr <| HeapObservations.SafePostExcW.weaken
-    (fun _ _ _ _ h => CallEffects.Effect.postW_of_post (CallEffects.Effect.below_write hbelow)
-      (CallEffects.Effect.post_args (CallEffects.Effect.below_ensures hbelow)
-      (CallEffects.Effect.below_grows hbelow) (CallEffects.Effect.below_write hbelow) (CallEffects.Effect.below_regions hbelow) h))
-      (fun _ _ _ h => CallEffects.Effect.excPost_args (CallEffects.Effect.below_regions hbelow) h) hsafe⟩
+  -- Graph code states no append (`Effect.below_grows`) and no element write
+  -- (`Effect.below_write`): its exits at the actuals it takes are its heap
+  -- postconditions there, which hold at every longer list of actuals
+  -- (`Effect.post_args`).
+  have hng : ∀ {xs : List Tm}, s.fixed.effect.receiverGrows = true → CallArguments.Values xs := fun h => by
+    rw [CallEffects.Effect.below_grows hbelow] at h; cases h
+  exact ⟨_, .graph hrv hvals (hb s hsm j U r hr), CallEffects.Effect.safe_exits_weaken hng
+    (CallEffects.Effect.below_write hbelow) hng hu hh
+    (fun _ _ h => CallEffects.Effect.post_args (CallEffects.Effect.below_ensures hbelow)
+      (CallEffects.Effect.below_grows hbelow) (CallEffects.Effect.below_write hbelow) (CallEffects.Effect.below_regions hbelow) h)
+    (fun _ h => CallEffects.Effect.excPost_args (CallEffects.Effect.below_regions hbelow) h) hsafe⟩
 
 /-- An equality established by a branch can refine one immutable slot. -/
 theorem EnvOk.refine {G : NormalGraph ι} {Γ ρ n W i A B}

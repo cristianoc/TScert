@@ -15,9 +15,11 @@ open Verification Footprints Parity TolerantFrames HeapObservations
 section
 variable {effect : Effect} {r : Tm} {args : List Tm} {s s' : IndexedHeap} {v : Tm}
 
-/-- At an admissible transition with value actuals, a signature's normal
-postcondition is its schema's normal exit. -/
-theorem Effect.postW_iff_exit (hadm : Admissible s s') (hvals : CallArguments.Values args) :
+/-- At an admissible transition, a signature's normal postcondition is its
+schema's normal exit, at actuals that are values where it states an append
+of them. -/
+theorem Effect.postW_iff_exit (hadm : Admissible s s')
+    (hvals : effect.receiverGrows = true → CallArguments.Values args) :
     effect.postW r args s.W s.h s'.n s'.W s'.h v ↔ effect.schema.exitPostW .normal r args s.W s.h s'.n s'.W s'.h v := by
   rw [Exits.exitPostW_iff]
   show _ ↔ ((effect.schema.atArity args.length).get .normal).Holds _ _
@@ -36,9 +38,10 @@ theorem Effect.excPostW_iff_exit (hadm : Admissible s s') :
 
 end
 
-/-- Safety from an entry at a world and heap, its postconditions changed to
-ones agreeing with them at every admissible state the run reaches. -/
-private theorem transport {Ξ T : Fam} {Q Q' : WPost} {R R' : WExcV} {j : Nat} {U : WorldT j} {heap : Heap}
+/-- **Safety from an entry at a world and heap, its postconditions changed
+to ones agreeing with them at every admissible state the run reaches**
+(`SafePostExcV.weaken_admissible` at the entry's indexed state). -/
+theorem SafePostExcV.weaken_reached {Ξ T : Fam} {Q Q' : WPost} {R R' : WExcV} {j : Nat} {U : WorldT j} {heap : Heap}
     {t : Tm} (hu : WorldAdm U) (hh : HeapOk j U heap)
     (hq : ∀ (s s' : IndexedHeap) (v : Tm), s.n = j → s.W ≍ U → s.h = heap → Admissible s s' →
       Q s'.n s'.W s'.h v → Q' s'.n s'.W s'.h v)
@@ -63,11 +66,11 @@ theorem NativeContract.iff_exits {Ξ : Fam} {effect : Effect} {Acc : ArgFam} {Rc
         (fun r args _ U heap => effect.schema.exitPostW .exceptional r args U heap) k W v := by
   constructor <;> intro h j hj U hx hu heap hh hvr r hrv hrc hrr args hvals har hacc hreq <;>
     obtain ⟨res, hi, hs⟩ := h j hj U hx hu heap hh hvr r hrv hrc hrr args hvals har hacc hreq <;>
-    refine ⟨res, hi, transport hu hh ?_ ?_ hs⟩ <;>
+    refine ⟨res, hi, SafePostExcV.weaken_reached hu hh ?_ ?_ hs⟩ <;>
     rintro s s' val rfl hW rfl hadm hp <;> cases eq_of_heq hW
-  · exact (Effect.postW_iff_exit hadm hvals).mp hp
+  · exact (Effect.postW_iff_exit hadm fun _ => hvals).mp hp
   · exact (Effect.excPostW_iff_exit hadm).mp hp
-  · exact (Effect.postW_iff_exit hadm hvals).mpr hp
+  · exact (Effect.postW_iff_exit hadm fun _ => hvals).mpr hp
   · exact (Effect.excPostW_iff_exit hadm).mpr hp
 
 /-- **A construct signature's contract is the contract of its exits**, the
@@ -81,11 +84,60 @@ theorem NativeConstruct.iff_exits {Ξ : Fam} {effect : Effect} {P : ArgFam} {Rf 
         (fun r args _ U heap => effect.schema.exitPostW .exceptional r args U heap) k W v := by
   constructor <;> intro h j hj U hx hu heap hh hvr args hvals har hacc hreq <;>
     obtain ⟨res, hi, hs⟩ := h j hj U hx hu heap hh hvr args hvals har hacc hreq <;>
-    refine ⟨res, hi, transport hu hh ?_ ?_ hs⟩ <;>
+    refine ⟨res, hi, SafePostExcV.weaken_reached hu hh ?_ ?_ hs⟩ <;>
+    rintro s s' val rfl hW rfl hadm hp <;> cases eq_of_heq hW
+  · exact (Effect.postW_iff_exit hadm fun _ => hvals).mp hp
+  · exact (Effect.excPostW_iff_exit hadm).mp hp
+  · exact (Effect.postW_iff_exit hadm fun _ => hvals).mpr hp
+  · exact (Effect.excPostW_iff_exit hadm).mpr hp
+
+/-- **Safety at a signature's heap postconditions is safety at its exits**,
+where it states no element write and its actuals are values where it states
+an append of them: from an entry at a world and heap, at every admissible
+state a run reaches the heap postconditions are the exits
+(`Effect.postW_iff_exit`, `Effect.excPostW_iff_exit`). -/
+theorem Effect.safe_exits {Ξ T : Fam} {e : Effect} (hx : e.elementWrite = none) {r : Tm} {args : List Tm}
+    (hvals : e.receiverGrows = true → CallArguments.Values args) {j : Nat} {U : WorldT j} {heap : Heap} {t : Tm}
+    (hu : WorldAdm U) (hh : HeapOk j U heap)
+    (hs : SafePostExc Ξ T (e.post r args heap) (e.excPost r args heap) j U heap t) :
+    SafePostExcV Ξ T (e.schema.exitPostW .normal r args U heap) (e.schema.exitPostW .exceptional r args U heap)
+      j U heap t := by
+  refine SafePostExcV.weaken_reached hu hh ?_ ?_ (Effect.safe_postW (U := U) hx hs) <;>
     rintro s s' val rfl hW rfl hadm hp <;> cases eq_of_heq hW
   · exact (Effect.postW_iff_exit hadm hvals).mp hp
   · exact (Effect.excPostW_iff_exit hadm).mp hp
-  · exact (Effect.postW_iff_exit hadm hvals).mpr hp
-  · exact (Effect.excPostW_iff_exit hadm).mpr hp
+
+/-- **Safety at a signature's exits is safety at its heap postconditions**,
+at actuals that are values where it states an append of them: the heap
+postcondition is the part of the normal exit that reads no world
+(`Effect.postW`). -/
+theorem Effect.safe_fields {Ξ T : Fam} {e : Effect} {r : Tm} {args : List Tm}
+    (hvals : e.receiverGrows = true → CallArguments.Values args) {j : Nat} {U : WorldT j} {heap : Heap} {t : Tm}
+    (hu : WorldAdm U) (hh : HeapOk j U heap)
+    (hs : SafePostExcV Ξ T (e.schema.exitPostW .normal r args U heap) (e.schema.exitPostW .exceptional r args U heap)
+      j U heap t) :
+    SafePostExc Ξ T (e.post r args heap) (e.excPost r args heap) j U heap t := by
+  have hw : SafePostExcV Ξ T (e.postW r args U heap) (e.excPostW r args heap).liftV j U heap t := by
+    refine SafePostExcV.weaken_reached hu hh ?_ ?_ hs <;>
+      rintro s s' val rfl hW rfl hadm hp <;> cases eq_of_heq hW
+    · exact (Effect.postW_iff_exit hadm hvals).mpr hp
+    · exact (Effect.excPostW_iff_exit hadm).mpr hp
+  exact SafePostExcW.weaken (fun _ _ _ _ hp => hp.1) (fun _ _ _ hp => hp) (SafePostExcV.iff_lift.mp hw)
+
+/-- **Safety at one signature's exits gives safety at another's**, at
+another call, where their heap postconditions imply each other's, the
+second states no element write, and each call's actuals are values where
+its signature states an append of them. -/
+theorem Effect.safe_exits_weaken {Ξ T : Fam} {e e' : Effect} {r r' : Tm} {args args' : List Tm}
+    (hv : e.receiverGrows = true → CallArguments.Values args) (hx' : e'.elementWrite = none)
+    (hv' : e'.receiverGrows = true → CallArguments.Values args') {j : Nat} {U : WorldT j} {heap : Heap} {t : Tm}
+    (hu : WorldAdm U) (hh : HeapOk j U heap)
+    (hq : ∀ h' v, e.post r args heap h' v → e'.post r' args' heap h' v)
+    (hr : ∀ h', e.excPost r args heap h' → e'.excPost r' args' heap h')
+    (hs : SafePostExcV Ξ T (e.schema.exitPostW .normal r args U heap) (e.schema.exitPostW .exceptional r args U heap)
+      j U heap t) :
+    SafePostExcV Ξ T (e'.schema.exitPostW .normal r' args' U heap)
+      (e'.schema.exitPostW .exceptional r' args' U heap) j U heap t :=
+  Effect.safe_exits hx' hv' hu hh (SafePostExc.weaken hq hr (Effect.safe_fields hv hu hh hs))
 
 end Verification.CallEffects

@@ -1235,10 +1235,15 @@ declaration's stated regions, `"x[*]"` and `"x.f[*]"` through a `@stable`
 field, are certified by it (`RegionalClause` of `mode8Accepted_sound`'s
 conclusion), and a call effect carries them (`regions`).
 
-`GraphCodeSpec` states a code's effect at the receiver and actuals matching
+`GraphCodeSpec` states a code's specification on both exits
+(`Exits.exitPostW`, the note's Call) at the receiver and actuals matching
 its entry frame (`FrameValues`), including the optional rest-store slot.
 The invocation proofs supply that match (`graph_invoke`, `graph_invoke_at`,
-`graphRest_invoke`).
+`graphRest_invoke`), and their conclusion is the condition a callable value
+meets at its signature (`PromiseWith`). Code states no append and no element
+write (`Effect.below`), and at its exits its heap postconditions and its
+exits agree on every admissible state a run reaches (`Effect.safe_exits`,
+`Effect.safe_fields`).
 
 **Provenance stamps** (`FootprintProvenance.lean`: marks, `after` and
 `before` stamps, proved: `stamps_separate`) state a slot's separation against

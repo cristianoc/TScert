@@ -116,7 +116,7 @@ of `arity`, collecting no rest, whose effect is one module code realizes
 (`Effect.belowRow`: below its arity, a postcondition over the result, the
 receiver and its parameters admitted), safe from every frame meeting the
 signature's, its precondition and the separation `sep`, at the signature's
-result and post. `GraphCodeSpec` at no rest store, at `sep = {}` and with no
+result and its specification on both exits (`Exits.exitPostW`). `GraphCodeSpec` at no rest store, at `sep = {}` and with no
 postcondition, is one (`rowSpec_of_graphCodeSpec`). -/
 def RowSpec (G : NormalGraph ι) (arity : Nat) (E : List Tm)
     (K : List (ControlFlow.Continuation × Option ControlFlow.Target)) (start : Nat)
@@ -126,9 +126,9 @@ def RowSpec (G : NormalGraph ι) (arity : Nat) (E : List Tm)
     HeapOk n W h → RefsOk W (.goto E K start L .nul) → CallArguments.Values L →
     PreAt row.effect (none : Option (Ty ι)) L h → HeapSeparation.Holds sep (envOf L .nul) →
     ∀ r args, FrameValues arity (none : Option (Ty ι)) L r args →
-      HeapObservations.SafePostExc (excOf G)
+      HeapObservations.SafePostExcV (excOf G)
         (row.effect.result (meaning G row.result) (framePromised row.effect (frameOffset (none : Option (Ty ι))) L))
-        (row.effect.post r args h) (row.effect.excPost r args h)
+        (row.effect.schema.exitPostW .normal r args W h) (row.effect.schema.exitPostW .exceptional r args W h)
         n W h (.goto E K start L .nul)
 
 /-- **Graph code at a signature is module code at it** (proved). -/
@@ -175,10 +175,9 @@ theorem rowSpec_plain_of_promise [DecidableEq ι] {G : NormalGraph ι} {arity E 
   have hres : ∀ a, p.effect.result (meaning G p.result) a = π.result (meaning G p.result) a := by
     intro a; simp [CallEffects.Effect.result, hp]
   rw [hres] at hrun
-  show HeapObservations.SafePostExc (excOf G) (meaning G R) (p.effect.post r args h) (p.effect.excPost r args h)
-    n W h _
-  exact HeapObservations.SafePostExc.consequence_below' (fun _ _ _ _ h => h)
-    (fun j _ W' u hu => promiseAdmits_result hR _ j W' u hu) (fun _ _ h => h) (fun _ h => h) hrun
+  show HeapObservations.SafePostExcV (excOf G) (meaning G R) (p.effect.schema.exitPostW .normal r args W h)
+    (p.effect.schema.exitPostW .exceptional r args W h) n W h _
+  exact HeapObservations.SafePostExcV.mono_result (fun j W' u hu => promiseAdmits_result hR _ j W' u hu) hrun
 
 /-- **Invoking a module row's code from a frame at the call's own level**
 (proved): as `graph_invoke_at`, the frame's separation given. -/
@@ -190,8 +189,8 @@ theorem row_invoke_at {G : NormalGraph ι} {arity E K start Cs row vs sep}
     (hq : ∀ F ∈ row.effect.pre, F.HoldsAt ⟨CallEffects.callEnv r args, heap⟩ (CallEffects.callEnv r args) heap)
     (hsep : HeapSeparation.Holds sep (envOf (r :: CallArguments.parameters arity args ++ vs) .nul))
     (hgo : RefsOk U (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul)) :
-    HeapObservations.SafePostExc (excOf G) (row.effect.result (meaning G row.result) (row.effect.promised args))
-      (row.effect.post r args heap) (row.effect.excPost r args heap) j U heap
+    HeapObservations.SafePostExcV (excOf G) (row.effect.result (meaning G row.result) (row.effect.promised args))
+      (row.effect.schema.exitPostW .normal r args U heap) (row.effect.schema.exitPostW .exceptional r args U heap) j U heap
       (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul) := by
   have hx : WExt (trunc j (Nat.le_refl j) U) U := by rw [trunc_id]; exact WExt_refl U
   have hb := CallEffects.Effect.belowRow_below hs.2.1
@@ -248,15 +247,10 @@ theorem closure_meets_below {G : NormalGraph ι} {arity E K start Cs vs} {kind :
   apply (represents_back hr n W _)
   refine ⟨⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩, ⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩⟩
   · intro q hq
-    rw [CallEffects.PromiseWith.iff_legacy]
     intro j hj U hx hu heap hh hvr r hrv hrr hrref args hvals har ha hreq
     obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
     have henv := (hcaps j hj U).withSelf hlen hself
-    -- Module code states no element write (`Effect.below_write`): its view
-    -- write is vacuous.
     exact ⟨_, .graph hrv hvals (hbL p hp j U r hrr),
-      CallEffects.Effect.safe_postW (show p.effect.elementWrite = none from CallEffects.Effect.below_write
-        (e := { p.effect with ensures := [] }) (CallEffects.Effect.belowRow_below (ho p (List.mem_append_left _ hp)).2.1)) <|
       row_invoke_at (ho p (List.mem_append_left _ hp)) henv
         (Values.withSelf hvalues rfl) hu hh hrr ha (fun F hF => hreq.2 F hF) (hsep r args _)
         (goto_entry_refs (graph_code_refs hvr).1 (fun a ha => by
@@ -264,7 +258,6 @@ theorem closure_meets_below {G : NormalGraph ι} {arity E K start Cs vs} {kind :
           · exact (graph_code_refs hvr).2 a ha
           · rw [List.mem_singleton.mp ha]; exact hvr) hrref har)⟩
   · intro q hq
-    rw [CallEffects.PromiseWith.iff_legacy]
     intro j hj U hx hu heap hh hvr r hrv hrr hrref args hvals har ha hreq
     obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
     have hspec := ho _ (List.mem_append_right _ (List.mem_map.mpr ⟨s, hsm, rfl⟩))
@@ -289,10 +282,16 @@ theorem closure_meets_below {G : NormalGraph ι} {arity E K start Cs vs} {kind :
     have hpr : s.fixed.effect.promised (args.take s.arguments.1.length) = s.fixed.effect.promised args :=
       CallEffects.Effect.promised_take hbelow hle args
     rw [hp, hpr] at hsafe
+    -- Module code states no append (`Effect.below_grows`) and no element
+    -- write (`Effect.below_write`): its exits at the actuals it takes are its
+    -- heap postconditions there, which hold at all of them
+    -- (`Effect.post_take_row`).
+    have hng : ∀ {xs : List Tm}, s.fixed.effect.receiverGrows = true → CallArguments.Values xs := fun h => by
+      rw [show s.fixed.effect.receiverGrows = false from
+        CallEffects.Effect.below_grows (e := { s.fixed.effect with ensures := [] }) hbelow] at h; cases h
     exact ⟨_, .graph hrv hvals (hbS s hsm j U r hrr),
-      CallEffects.Effect.safe_postW (show s.fixed.effect.elementWrite = none from
-        CallEffects.Effect.below_write (e := { s.fixed.effect with ensures := [] }) hbelow) <|
-        HeapObservations.SafePostExc.weaken
+      CallEffects.Effect.safe_exits_weaken hng (show s.fixed.effect.elementWrite = none from
+        CallEffects.Effect.below_write (e := { s.fixed.effect with ensures := [] }) hbelow) hng hu hh
       (fun _ _ h => CallEffects.Effect.post_take_row hrow hle h)
       (fun _ h => CallEffects.Effect.excPost_args (CallEffects.Effect.below_regions hbelow) h) hsafe⟩
 
@@ -432,6 +431,9 @@ theorem rowSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
   obtain ⟨pre, vs, hpl, rfl⟩ := hframe
   have hpre0 : pre = [] := List.eq_nil_of_length_eq_zero (by simpa [frameOffset] using hpl)
   subst hpre0
+  -- The row states no append (`hgr`) and no element write (`hew`): its exits
+  -- are its heap postconditions.
+  refine CallEffects.Effect.safe_exits hew (fun h => by rw [hgr] at h; cases h) hw hh ?_
   by_cases hne : c.row.effect.ensures = []
   · have he0 : ({ c.row.effect with ensures := [] } : CallEffects.Effect) = c.row.effect := by rw [← hne]
     rw [he0] at hrun

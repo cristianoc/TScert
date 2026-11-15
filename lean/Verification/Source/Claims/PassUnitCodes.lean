@@ -213,7 +213,9 @@ theorem codeSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι}
   have := codeRun_of_clauses (sep := {}) hbelow0 hfo hel hgr hew hsafeG hboundG η n W heap L he hw hh href hvalues hpre
     (HeapSeparation.empty_holds _) r args
   rw [he0] at this
-  exact this
+  -- The signature states no append (`hgr`) and no element write (`hew`): its
+  -- exits are its heap postconditions.
+  exact CallEffects.Effect.safe_exits hew (fun h => by rw [hgr] at h; cases h) hw hh this
 
 /-- **A code whose run guarantees its graph meets its signature** (proved):
 a code meeting its conditions, whose graph is guaranteed at every assignment

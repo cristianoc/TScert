@@ -882,7 +882,7 @@ $`\Sigma`$ of its frames,
 \begin{aligned}
 \mathrm{RowSpec}_G(c, p, \Sigma) \iff{} & a \le |p.\mathrm{arguments}| \wedge \mathrm{belowRow}(a, p.\mathrm{effect}) \\
  & \wedge \text{every run of } c \text{ from a frame meeting } p\text{'s frame, } p\text{'s precondition and } \Sigma \\
- & \quad \text{is safe at } p\text{'s result and post} \\
+ & \quad \text{is safe at } p\text{'s result and meets } p\text{'s specification on both exits} \\
 \mathrm{belowRow}(n, e) \iff{} & \mathrm{below}(n, e \text{ without its postcondition}) \\
  & \wedge \text{each postcondition fact names only positions} \le n + 1
 \end{aligned}
