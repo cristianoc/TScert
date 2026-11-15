@@ -160,12 +160,12 @@ def codeRunBound (c : CodeEntry ι) : Option RunBound :=
 signature's scope at its arity (`Effect.belowRow`), no precondition beyond
 its promise, every postcondition its signature exports on either exit
 established by its run (`exportsEstablished`), and its frames reading the
-heap at each location alone (`framesAtLocation`, so that a body run after
-allocating its rest meets them from the invocation's entry); then its run's
-bounds and fresh result. -/
+heap at each location alone where it allocates a rest store
+(`framesAtLocation`, so that a body run after allocating its rest meets them
+from the invocation's entry); then its run's bounds and fresh result. -/
 def codeObligations (c : CodeEntry ι) : Option CodeObligations :=
   if decide (c.arity ≤ c.row.arguments.length) && c.row.effect.belowRow c.arity && c.row.effect.requires.isNone &&
-      exportsEstablished c.row.effect [] && framesAtLocation c.row.effect then
+      exportsEstablished c.row.effect [] && (c.store.isNone || framesAtLocation c.row.effect) then
     some ⟨runBounds c, c.row.effect.fresh⟩
   else none
 
@@ -187,18 +187,21 @@ theorem codeBound_eq {c : CodeEntry ι} (h : codeConditions c = true) : codeBoun
   · cases ho'
 
 /-- **What the conditions give**: the arity, the scope, no precondition,
-every exported postcondition established by the run, and the frames read at
-each location alone. -/
+every exported postcondition established by the run, and, where it
+allocates a rest store, the frames read at each location alone. -/
 theorem codeConditions_spec {c : CodeEntry ι} (h : codeConditions c = true) :
     c.arity ≤ c.row.arguments.length ∧ c.row.effect.belowRow c.arity = true ∧ c.row.effect.requires = none ∧
-      exportsEstablished c.row.effect [] = true ∧ framesAtLocation c.row.effect = true := by
+      exportsEstablished c.row.effect [] = true ∧ (c.store.isSome → framesAtLocation c.row.effect = true) := by
   unfold codeConditions at h
   obtain ⟨o, ho⟩ := Option.isSome_iff_exists.mp h
   unfold codeObligations at ho
   split at ho
   · rename_i hc
-    simp only [Bool.and_eq_true, decide_eq_true_eq, Option.isNone_iff_eq_none] at hc
-    exact ⟨hc.1.1.1.1, hc.1.1.1.2, hc.1.1.2, hc.1.2, hc.2⟩
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+    refine ⟨hc.1.1.1.1, hc.1.1.1.2, Option.isNone_iff_eq_none.mp hc.1.1.2, hc.1.2, fun hs => ?_⟩
+    have h2 := hc.2
+    rw [Option.isNone_eq_false_iff.mpr hs] at h2
+    simpa using h2
   · cases ho
 
 /-- **A code's obligations give its signature on both exits** (proved): a

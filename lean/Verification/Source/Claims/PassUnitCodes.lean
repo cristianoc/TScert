@@ -186,7 +186,7 @@ theorem codeSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι}
     unfold codeObligations at ho'
     split at ho' <;> cases ho'
     rfl
-  refine ⟨harity, hbelow, fun _ => allocStable_of_established hx hfr, ?_⟩
+  refine ⟨harity, hbelow, fun hs => allocStable_of_established hx (hfr hs), ?_⟩
   intro n W heap L he hw hh href hvalues hpre r args _hframe
   have hrun := codeRun_of_clauses (sep := {}) hsafeG
     (fun Φ Ψ fresh hb => hboundG Φ Ψ fresh (by rw [codeBound_eq hcond]; exact hb))
