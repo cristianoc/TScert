@@ -749,8 +749,8 @@ signature covers another when its footprint is within the other's, their
 promises are the same, it states a fresh result where the other does, and it
 excepts the receiver's store only where the other does or lets everything
 change, and bounds a throw where the other does (`Effect.covers`); a
-conjunction of signatures with the same promise and exception meets their
-footprints and bounds a throw where both do (`Effect.meet`). A bound function
+conjunction of signatures with the same promise and preconditions is the
+conjunction of their schemas on each exit (`Exits.meet`). A bound function
 forwards to its target with a saved receiver: its signature keeps the fresh
 result and lets everything change where the target's excepts the receiver's
 store (`Effect.drop`). The promises state a type

@@ -568,7 +568,7 @@ inductive CallArrow (compat : ι → ι → Bool) (elem : List ι → Option (Li
   | combine : CallArrow compat elem R L S { q with result := b, effect := e } →
       CallArrow compat elem R L S { q with result := b', effect := e' } →
       (∀ i ∈ b, ∀ k ∈ b', compat i k = true → R [i] q.result) →
-      e.sameResult e' = true → (e.meet e').covers q.effect = true → CallArrow compat elem R L S q
+      e.sameResult e' = true → Effect.meetCovers e e' q.effect = true → CallArrow compat elem R L S q
 
 /-- An arrow's source result within the target's, or empty. -/
 theorem arrow_result {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop} {n : Nat} {r d : List ι}
@@ -622,13 +622,11 @@ theorem CallArrow.sound {G : NormalGraph ι} {η : MixedAssignment ι} {R L S q}
     · exact hl j hj U hx hu heap hok hvr r hrv ⟨i, hi, hvi⟩ hrr args hvals har ha
     · exact hh j hj U hx hu heap hok hvr r hrv ⟨i, hi, hvi⟩ hrr args hvals har ha
   | combine _ _ hg hs he hl hh =>
-    have combined := hl.combine hs hh (fun j hj r hb V V' heap h1 h2 u hv1 hv2 => by
+    exact hl.combine hs he hh (fun j hj r hb V V' heap h1 h2 u hv1 hv2 => by
       obtain ⟨i, hi, hv1⟩ := hv1
       obtain ⟨k, hk, hv2⟩ := hv2
       exact hr r (by omega) _ _ (hg i hi k hk (mixed_compatible hv1 hv2)) V u
         ⟨i, by simp, hv1⟩)
-    exact combined.weaken (Effect.covers_sound he)
-      (fun _ _ _ _ h => h) (fun _ _ _ _ h => h) (fun _ _ _ _ h => h)
 
 theorem rest_covers_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R : List ι → List ι → Prop}
     {p q : RestArrow (List ι)} (hc : RestCovers (restElem G) R p q) (n : Nat)

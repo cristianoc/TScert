@@ -70,7 +70,7 @@ changes only that domain; combining results states and checks both effects. -/
       checkArrowWith G R L S { q with receiver := a } left &&
       checkArrowWith G R L S { q with receiver := b } right
   | .combine b b' effect other left right =>
-      effect.sameResult other && (effect.meet other).covers q.effect &&
+      effect.sameResult other && Effect.meetCovers effect other q.effect &&
       checkArrowWith G R L S { q with result := b, effect := effect } left &&
       checkArrowWith G R L S { q with result := b', effect := other } right &&
       decide (∀ i ∈ b, ∀ k ∈ b', compatible G i k = true → R [i] q.result)

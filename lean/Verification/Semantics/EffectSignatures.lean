@@ -906,87 +906,19 @@ theorem ElementWrite.holds_pad {w : ElementWrite} {args pad : List Tm} (hpad : �
     simp only [ViewAssign, WriteAt, hg] at this ⊢
     exact this
 
-/-- Conjoining two guarantees for the same call: the meet of their closed
-bounds, with the promise, receiver mode and store regions they share, a
-fresh result where either states one, and the postconditions of both. A
-throw is bounded by the meet's frame where both state `onThrow`, a
-consequence of the two exceptional guarantees (`Effect.meet_consequence`). -/
-def Effect.meet (a b : Effect) : Effect :=
-  ⟨a.closed.meet b.closed, a.promise, a.fresh || b.fresh, a.receiverStore, a.onThrow && b.onThrow,
-    a.receiverOwn, a.freshObject || b.freshObject, a.requires, a.elements, a.pre, a.ensures ++ b.ensures,
-    a.receiverGrows || b.receiverGrows, a.elementWrite, a.regions⟩
-
-/-- Two guarantees whose results mean the same: the same promise, or none,
-the same precondition and elements promise, frames over the same locations
-(the same receiver mode and store regions, and no receiver mode beside
-store regions), and the same element write. Only these combine. -/
+/-- **Two signatures whose results and preconditions mean the same**: the
+same promise, precondition on the receiver's elements and precondition on
+the call's values. Their exits conjoin as schemas (`Exits.meet`). -/
 def Effect.sameResult (a b : Effect) : Bool :=
-  (a.promise == b.promise && a.receiverStore == b.receiverStore && a.receiverOwn == b.receiverOwn &&
-    a.requires == b.requires && a.elements == b.elements && a.pre == b.pre) && a.elementWrite == b.elementWrite &&
-    (a.regions == b.regions && (a.regions.isEmpty || (!a.receiverStore && !a.receiverOwn)))
+  a.promise == b.promise && a.requires == b.requires && a.pre == b.pre
 
-private theorem change_min_any : Footprints.Change.min .any .any = .any := rfl
-
-theorem Effect.footprint_meet {a b : Effect} (hr : b.regions = a.regions) :
-    (a.meet b).footprint = a.footprint.meet b.footprint := by
-  unfold Effect.footprint Effect.meet
-  simp only [hr]
-  split <;> simp [Footprints.Closed.meet, Footprints.Closed.top, change_min_any]
-
-theorem Effect.within_meet {a b : Effect} (hs : a.sameResult b = true) {r : Tm} {args : List Tm} {before after : Heap} :
-    (a.meet b).within r args before after ↔ a.within r args before after ∧ b.within r args before after := by
-  simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true, List.isEmpty_iff,
-    Bool.not_eq_true'] at hs
-  obtain ⟨⟨⟨⟨⟨⟨⟨_, hst⟩, how⟩, _⟩, _⟩, _⟩, _⟩, hreg, hmode⟩ := hs
-  have hfp := Effect.footprint_meet (a := a) (b := b) hreg.symm
-  have hmr : (a.meet b).regions = a.regions := rfl
-  rcases hmode with hnil | ⟨hs0, ho0⟩
-  · have hmreg : (a.meet b).regions = [] := by rw [hmr, hnil]
-    have hbreg : b.regions = [] := by rw [← hreg, hnil]
-    have hms : (a.meet b).receiverStore = a.receiverStore := rfl
-    have hmo : (a.meet b).receiverOwn = a.receiverOwn := rfl
-    have hown : (a.meet b).ownChange = a.ownChange.meet b.ownChange := by
-      simp only [Effect.ownChange, hfp, Footprints.Closed.meet, change_min_any]
-    constructor
-    · intro hm
-      refine ⟨Effect.within_coarse hnil (by rw [hfp]; exact Footprints.Closed.meet_le_left _ _) hms.symm hmo.symm hm,
-        Effect.within_coarse hbreg (by rw [hfp]; exact Footprints.Closed.meet_le_right _ _)
-          (hst.symm.trans hms.symm) (how.symm.trans hmo.symm) hm⟩
-    · rintro ⟨ha, hb⟩
-      cases hao : a.receiverOwn
-      · have hbo : b.receiverOwn = false := how.symm.trans hao
-        cases has : a.receiverStore
-        · have hbs : b.receiverStore = false := hst.symm.trans has
-          refine Effect.within_of_footprint hmreg ?_
-          rw [hfp]
-          exact Footprints.Closed.holds_meet.mpr ⟨Effect.within_holds ha has hao, Effect.within_holds hb hbs hbo⟩
-        · refine Effect.within_of_store hmreg (hmo.trans hao) (hms.trans has) ?_
-          rw [hfp]
-          exact Footprints.Closed.holdsOn_meet.mpr ⟨Effect.within_outside_store ha hao,
-            Effect.within_outside_store hb hbo⟩
-      · have hbo : b.receiverOwn = true := how.symm.trans hao
-        refine Effect.within_of_own hmreg (hmo.trans hao) ?_ ?_
-        · rw [hfp]
-          exact Footprints.Closed.holdsOn_meet.mpr ⟨Effect.within_outside_own ha hao,
-            Effect.within_outside_own hb hbo⟩
-        · rw [hown]
-          exact Footprints.Closed.holdsOn_meet.mpr ⟨Effect.within_inside_own ha hao,
-            Effect.within_inside_own hb hbo⟩
-  · have hbs : b.receiverStore = false := by rw [← hst]; exact hs0
-    have hbo : b.receiverOwn = false := by rw [← how]; exact ho0
-    rw [Effect.within_iff_regions (e := a.meet b) hs0 ho0, Effect.within_iff_regions hs0 ho0,
-      Effect.within_iff_regions hbs hbo, hmr]
-    unfold Footprints.ArgumentStoreRegionsWithin
-    rw [show (a.meet b).closed = a.closed.meet b.closed from rfl, Footprints.Closed.holdsOn_meet, hreg]
-
-theorem Effect.meet_same {a b : Effect} (hs : a.sameResult b = true) :
-    (a.meet b).result = a.result ∧ (a.meet b).promised = a.promised ∧
-      b.result = a.result ∧ b.promised = a.promised := by
+theorem Effect.sameResult_same {a b : Effect} (hs : a.sameResult b = true) :
+    b.result = a.result ∧ b.promised = a.promised ∧ b.requires = a.requires ∧ b.pre = a.pre := by
   simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs
-  replace hs := hs.1.1.1.1.1
-  refine ⟨rfl, rfl, ?_, ?_⟩
-  · funext R x; simp [Effect.result, hs]
-  · funext args; simp [Effect.promised, hs]
+  obtain ⟨⟨hp, hr⟩, hpre⟩ := hs
+  refine ⟨?_, ?_, hr.symm, hpre.symm⟩
+  · funext R x; simp [Effect.result, hp]
+  · funext args; simp [Effect.promised, hp]
 
 /-- **The view write a signature states**, from the call's entry world `U`
 and heap `before` to its exit world and heap: where it states an element

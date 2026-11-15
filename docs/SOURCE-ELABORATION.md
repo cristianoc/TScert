@@ -4239,11 +4239,15 @@ other way.
 
 #### Combining effects
 
-Two guarantees of one call combine
-(`Effect.meet`) into the meet of their footprints, with `onThrow` the
-conjunction of theirs. A disjunction would be unsound: an empty footprint
-stated on normal return only, met with a wider one stated also on a throw,
-gives no empty footprint on a throw. Where the conjunction loses a useful
+Two guarantees of one call with the same promise and preconditions
+(`Effect.sameResult`) combine into the conjunction of their schemas, exit by
+exit (`Exits.meet`): where the two frames state the same entries beside
+their class entries, the meet of their class bounds and those entries
+(`frameMeet?`, `post_frameMeet`), otherwise the first frame with the second
+as a transition, and the postconditions of both (`ExitSchema.holds_meet`).
+A disjunction would be unsound: an empty footprint stated on normal return
+only, met with a wider one stated also on a throw, gives no empty footprint
+on a throw. Where the conjunction loses a useful
 guarantee, the signatures stay separately selectable, as overloads are. The
 field is carried, and audited, wherever an effect is: overload combination,
 weakening by an annotation, `bind`, construct signatures, and imported and

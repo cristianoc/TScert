@@ -304,8 +304,8 @@ run_cmd do
   check ``Verification.CallEffects.Effect.summary_normal_iff
   check ``Verification.CallEffects.Effect.summary_exceptional_iff
   check ``Verification.CallEffects.Effect.summary_normal_iff_post
-  check ``Verification.CallEffects.Effect.meet_consequence
-  check ``Verification.CallEffects.Effect.meet_of_conjunction
+  check ``Verification.CallEffects.post_frameMeet
+  check ``Verification.CallEffects.ExitSchema.holds_meet
   check ``Verification.CallEffects.Effect.schema_canonical
   check ``Verification.CallEffects.ExitSpec.holds_meet
   check ``Verification.CallEffects.meetAt_exitPost

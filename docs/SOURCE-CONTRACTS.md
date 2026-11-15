@@ -671,10 +671,9 @@ admissible futures; every signature's schema is such
 exit, kept where the exit is replaced by a state admissible from it with the
 same heap (`Parity.Holds.mono_exit`). Two signatures of one value with the
 same result meaning give both guarantees at one exit (`PromiseWith.conj`),
-and so their meet's (`PromiseWith.combine`): the meet's normal exit is a
-consequence of both normal exits, and its exceptional exit, the meet's frame
-where both state `onThrow` and the note's $`\top`$ otherwise, of both
-exceptional exits (`Effect.meet_consequence`). The signature's effect and the native-contract condition
+and so the guarantee of any signature the conjunction of their schemas
+covers (`PromiseWith.combine`, `Effect.meetCovers`): on each exit the
+conjunction holds exactly where both exits do (`Exits.exitPost_meet`). The signature's effect and the native-contract condition
 are in `Semantics/EffectSignatures.lean`, the callable contracts in
 `Semantics/CallEffects.lean`.
 

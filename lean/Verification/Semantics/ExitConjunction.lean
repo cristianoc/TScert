@@ -236,27 +236,144 @@ theorem instantiate_completion {x : Exits ExitSchema} (hx : x.canonicalTransport
     (ι' := ⟨args.length, N, Nat.le_trans (Nat.le_max_left _ _) hN⟩) (Exits.canonicalTransports_get hx c) rfl
     (Nat.le_trans (Exits.slots_get x c) (Nat.le_max_right _ _)) hN _ (callState_shifted r args v m s s')
 
+/-! ## The meet of two frames -/
+
+/-- A footprint's entries over regions other than class regions. -/
+def _root_.Verification.Footprints.Footprint.nonClasses (Φ : Footprint) : Footprint := Φ.filter (!·.1.isClass)
+
+/-- **The meet of two frames** (the note's effect order, the frame whose
+actions are those of both): where the two state the same entries over
+regions other than class regions, the meet of their class bounds
+(`Footprint.classBound`, `Closed.meet`) and those entries. -/
+def frameMeet? (Φ Ψ : Footprint) : Option Footprint :=
+  if Φ.nonClasses = Ψ.nonClasses then some ((Φ.classBound.meet Ψ.classBound).fp ++ Φ.nonClasses) else none
+
+/-- A class region selects a location exactly where its categories hold
+the location's contents. -/
+private theorem class_mem {r : Region} (hr : r.isClass = true) {ρ : Env} {h : Heap} {l : Nat} {v : Val}
+    (hv : h[l]? = some v) : r.mem ρ h l = true ↔ r.cats.has (contentsCategory v) = true := by
+  refine ⟨Region.cats_mem hv, fun hk => ?_⟩
+  cases r <;> simp only [Region.isClass, Bool.false_eq_true] at hr
+  simpa [Region.cats, Region.mem, hv, Selector.selects] using hk
+
+/-- **A location's change allowed by a footprint** is one its class bound
+allows, or one its other entries allow. -/
+theorem allowed_split {Φ : Footprint} {ρ : Env} {h : Heap} {l : Nat} {v v' : Val} (hv : h[l]? = some v) :
+    Allowed Φ ρ h l v v' ↔ (Φ.classBound.at v).Holds h.length v v' ∨ Allowed Φ.nonClasses ρ h l v v' := by
+  rw [Footprint.classBound, Footprint.close_at, Footprint.changeAt_holds]
+  constructor
+  · rintro (rfl | ⟨e, he, hm, hh⟩)
+    · exact .inl (.inl rfl)
+    · cases hc : e.1.isClass
+      · exact .inr (.inr ⟨e, List.mem_filter.mpr ⟨he, by simp [hc]⟩, hm, hh⟩)
+      · exact .inl (.inr ⟨e, List.mem_filter.mpr ⟨he, hc⟩, (class_mem hc hv).mp hm, hh⟩)
+  · rintro ((rfl | ⟨e, he, hk, hh⟩) | (rfl | ⟨e, he, hm, hh⟩))
+    · exact .inl rfl
+    · have he' := List.mem_filter.mp he
+      exact .inr ⟨e, he'.1, (class_mem he'.2 hv).mpr hk, hh⟩
+    · exact .inl rfl
+    · exact .inr ⟨e, (List.mem_filter.mp he).1, hm, hh⟩
+
+private theorem allowed_append {Φ Ψ : Footprint} {ρ : Env} {h : Heap} {l : Nat} {v v' : Val} :
+    Allowed (Φ ++ Ψ) ρ h l v v' ↔ Allowed Φ ρ h l v v' ∨ Allowed Ψ ρ h l v v' := by
+  simp only [Allowed, List.mem_append]
+  constructor
+  · rintro (rfl | ⟨e, he | he, hm, hh⟩)
+    · exact .inl (.inl rfl)
+    · exact .inl (.inr ⟨e, he, hm, hh⟩)
+    · exact .inr (.inr ⟨e, he, hm, hh⟩)
+  · rintro ((rfl | ⟨e, he, hm, hh⟩) | (rfl | ⟨e, he, hm, hh⟩))
+    · exact .inl rfl
+    · exact .inr ⟨e, .inl he, hm, hh⟩
+    · exact .inl rfl
+    · exact .inr ⟨e, .inr he, hm, hh⟩
+
+/-- **The meet's actions are those of both frames** (proved): a change a
+frame allows is one its class bound or its other entries allow
+(`allowed_split`), the meet of the class bounds allows what both allow
+(`Closed.at_meet`, `Change.min_holds`), and the other entries are the
+same. -/
+theorem post_frameMeet {Φ Ψ Θ : Footprint} (hm : frameMeet? Φ Ψ = some Θ) {ρ : Env} {h h' : Heap} :
+    Post Θ ρ h h' ↔ Post Φ ρ h h' ∧ Post Ψ ρ h h' := by
+  unfold frameMeet? at hm
+  split at hm
+  · rename_i hn
+    cases hm
+    have hΘ : ∀ {l v v'}, h[l]? = some v → (Allowed ((Φ.classBound.meet Ψ.classBound).fp ++ Φ.nonClasses) ρ h l v v' ↔
+        ((Φ.classBound.at v).Holds h.length v v' ∧ (Ψ.classBound.at v).Holds h.length v v') ∨
+          Allowed Φ.nonClasses ρ h l v v') := by
+      intro l v v' hv
+      rw [allowed_append, Closed.allowed_iff hv, Closed.at_meet, Change.min_holds]
+    constructor
+    · rintro ⟨hl, hall⟩
+      refine ⟨⟨hl, fun l v hv => ?_⟩, ⟨hl, fun l v hv => ?_⟩⟩ <;> obtain ⟨v', hv', ha⟩ := hall l v hv <;>
+        refine ⟨v', hv', (allowed_split hv).mpr ?_⟩ <;> rcases (hΘ hv).mp ha with ⟨ha, hb⟩ | hx
+      · exact .inl ha
+      · exact .inr hx
+      · exact .inl hb
+      · exact .inr (hn ▸ hx)
+    · rintro ⟨⟨hl, ha⟩, ⟨-, hb⟩⟩
+      refine ⟨hl, fun l v hv => ?_⟩
+      obtain ⟨v₁, h1, ha⟩ := ha l v hv
+      obtain ⟨v₂, h2, hb⟩ := hb l v hv
+      cases (Option.some.inj (h1.symm.trans h2))
+      refine ⟨v₁, h1, (hΘ hv).mpr ?_⟩
+      rcases (allowed_split hv).mp ha with ha | hx
+      · rcases (allowed_split hv).mp hb with hb | hx
+        · exact .inl ⟨ha, hb⟩
+        · exact .inr (hn ▸ hx)
+      · exact .inr hx
+  · cases hm
+
 /-! ## Conjunction of schemas -/
 
-/-- **The conjunction of two exit schemas.** -/
+/-- **The conjunction of two exit schemas**: where their frames meet
+(`frameMeet?`), the meet with the postconditions of both; otherwise the
+first's frame, its postconditions, the second's frame as a transition and
+the second's postconditions. -/
 def ExitSchema.meet (a b : ExitSchema) : ExitSchema :=
-  ⟨a.frame, a.ensures ++ (.transition b.frame :: b.ensures)⟩
+  match frameMeet? a.frame b.frame with
+  | some Θ => ⟨Θ, a.ensures ++ b.ensures⟩
+  | none => ⟨a.frame, a.ensures ++ (.transition b.frame :: b.ensures)⟩
 
-theorem ExitSchema.instantiate_meet (a b : ExitSchema) (ι : CallInstantiation) :
-    (a.meet b).instantiate ι = (a.instantiate ι).meet (b.instantiate ι) := by
-  simp only [ExitSchema.meet, ExitSchema.instantiate, ExitSpec.meet, List.map_append, List.map_cons]
-  rfl
+/-- **The conjunction of two instantiated exits holds where both do**
+(proved): with met frames by `post_frameMeet`, otherwise by
+`ExitSpec.holds_meet`. -/
+theorem ExitSchema.holds_meet (a b : ExitSchema) (ι : CallInstantiation) (arena : AssertionArena) (st : TwoState) :
+    ((a.meet b).instantiate ι).Holds arena st ↔ (a.instantiate ι).Holds arena st ∧ (b.instantiate ι).Holds arena st := by
+  unfold ExitSchema.meet
+  split
+  · rename_i Θ hm
+    simp only [ExitSchema.instantiate, ExitSpec.Holds, List.map_append, List.mem_append]
+    unfold EffectAction TolerantFrames.Action
+    rw [post_frameMeet hm]
+    constructor
+    · rintro ⟨⟨had, hfa, hfb⟩, he⟩
+      exact ⟨⟨⟨had, hfa⟩, fun F hF => he F (.inl hF)⟩, ⟨⟨had, hfb⟩, fun F hF => he F (.inr hF)⟩⟩
+    · rintro ⟨⟨⟨had, hfa⟩, ha⟩, ⟨⟨-, hfb⟩, hb⟩⟩
+      exact ⟨⟨had, hfa, hfb⟩, fun F hF => hF.elim (ha F) (hb F)⟩
+  · have : (⟨a.frame, a.ensures ++ (.transition b.frame :: b.ensures)⟩ : ExitSchema).instantiate ι =
+        (a.instantiate ι).meet (b.instantiate ι) := by
+      simp only [ExitSchema.instantiate, ExitSpec.meet, List.map_append, List.map_cons]
+      rfl
+    rw [this, ExitSpec.holds_meet]
 
 theorem ExitSchema.slots_meet (a b : ExitSchema) : (a.meet b).slots = max a.slots b.slots := by
-  simp only [ExitSchema.slots, ExitSchema.meet, FormulaSchema.foldr_slots_append, List.foldr_cons]
-  show max _ (max 0 _) = _
-  rw [Nat.zero_max]
+  unfold ExitSchema.meet
+  split
+  · simp only [ExitSchema.slots, FormulaSchema.foldr_slots_append]
+  · simp only [ExitSchema.slots, FormulaSchema.foldr_slots_append, List.foldr_cons]
+    show max _ (max 0 _) = _
+    rw [Nat.zero_max]
 
 theorem ExitSchema.canonical_meet {a b : ExitSchema} (ha : a.canonicalTransports = true)
     (hb : b.canonicalTransports = true) : (a.meet b).canonicalTransports = true := by
   simp only [ExitSchema.canonicalTransports] at ha hb
-  simp only [ExitSchema.canonicalTransports, ExitSchema.meet, List.all_append, List.all_cons, ha, hb]
-  rfl
+  unfold ExitSchema.meet
+  split
+  · simp only [ExitSchema.canonicalTransports, List.all_append, ha, hb]; rfl
+  · simp only [ExitSchema.canonicalTransports, List.all_append, List.all_cons, ha, hb]
+    rfl
 
 /-- **The conjunction of two signatures' schemas**, exit by exit. -/
 def Exits.meet (x y : Exits ExitSchema) : Exits ExitSchema :=
@@ -279,7 +396,7 @@ theorem Exits.exitPost_meet {x y : Exits ExitSchema} (hx : x.canonicalTransports
     simp only [Exits.slots, Exits.meet, ExitSchema.slots_meet]
     omega
   unfold Exits.exitPost
-  rw [Exits.atArity, Exits.get_map, Exits.get_meet, ExitSchema.instantiate_meet, ExitSpec.holds_meet]
+  rw [Exits.atArity, Exits.get_map, Exits.get_meet, ExitSchema.holds_meet]
   refine and_congr ?_ ?_
   · rw [← instantiate_completion hx (N := (x.meet y).callInstantiation args.length |>.entrySlots)
       (by show _ ≤ max _ _; rw [hslots]; omega)]

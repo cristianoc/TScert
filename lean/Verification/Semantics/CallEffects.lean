@@ -410,13 +410,12 @@ theorem PromiseWith.conj {effect other Acc Rc B C D k W v}
       (fun r args _ U heap k' W' h' v' => effect.schema.exitPostW .exceptional r args U heap k' W' h' v' ∧
         other.schema.exitPostW .exceptional r args U heap k' W' h' v') k W v := by
   intro j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha hq
-  have hq' : other.Requires r args heap := by
-    simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs
-    exact ⟨fun R hR => hq.1 R (by rw [hs.1.1.1.1.2]; exact hR), fun F hF => hq.2 F (by rw [hs.1.1.2]; exact hF)⟩
+  obtain ⟨hr2, hp2, hrq2, hpre2⟩ := Effect.sameResult_same hs
+  have hq' : other.Requires r args heap :=
+    ⟨fun R hR => hq.1 R (by rw [← hrq2]; exact hR), fun F hF => hq.2 F (by rw [← hpre2]; exact hF)⟩
   obtain ⟨b, hib, hsb⟩ := hb j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha hq
   obtain ⟨c, hic, hsc⟩ := hc j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha hq'
   cases CallArguments.invoke_deterministic hib hic
-  obtain ⟨-, -, hr2, hp2⟩ := Effect.meet_same hs
   refine ⟨b, hib, ?_⟩
   dsimp only at hsb hsc ⊢
   rw [hr2, hp2] at hsc
@@ -427,25 +426,41 @@ theorem PromiseWith.conj {effect other Acc Rc B C D k W v}
       (Effect.cross_result effect (hcross (i + 1) hj)) (Effect.schema_independent other .normal r args _)
       (Effect.schema_independent other .exceptional r args _) hsb hsc
 
-/-- **Combining two signatures of one value** (`Effect.meet`): both
-guarantees at one exit (`PromiseWith.conj`) give the meet's
-(`Effect.meet_consequence`). -/
-theorem PromiseWith.combine {effect other Acc Rc B C D k W v}
+/-- **Whether the conjunction of two signatures covers a third** (the
+note's rule Conj, then consequence): the conjunction of their schemas
+(`Exits.meet`) covers the third's (`Exits.covers`), with the same promise,
+and the third's precondition implies theirs. -/
+def Effect.meetCovers (a b q : Effect) : Bool :=
+  (a.schema.meet b.schema).covers q.schema && a.promise == q.promise &&
+    requiresCovers a.requires q.requires && preCovers a.pre q.pre
+
+/-- **Combining two signatures of one value**: both guarantees at one exit
+(`PromiseWith.conj`) are the conjunction of their schemas
+(`Exits.exitPost_meet`), which entails a signature it covers
+(`Effect.meetCovers`, `Exits.covers_entails`). -/
+theorem PromiseWith.combine {effect other target Acc Rc B C D k W v}
     (hs : effect.sameResult other = true)
+    (hm : Effect.meetCovers effect other target = true)
     (hb : PromiseWith Ξ effect Acc Rc B k W v)
     (hc : PromiseWith Ξ other Acc Rc C k W v)
     (hcross : ∀ n, n < k → CrossCompatUpTo n B C D) :
-    PromiseWith Ξ (effect.meet other) Acc Rc D k W v := by
+    PromiseWith Ξ target Acc Rc D k W v := by
   intro j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha hq
+  simp only [Effect.meetCovers, Bool.and_eq_true, beq_iff_eq] at hm
+  obtain ⟨⟨⟨hcov, hp⟩, hrq⟩, hpre⟩ := hm
   obtain ⟨res, hi, hsafe⟩ :=
-    PromiseWith.conj hs hb hc hcross j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha ⟨hq.1, hq.2⟩
-  obtain ⟨hr1, hp1, -, -⟩ := Effect.meet_same hs
+    PromiseWith.conj hs hb hc hcross j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha
+      (requiresCovers_sound hrq hpre hq)
   refine ⟨res, hi, ?_⟩
   dsimp only at hsafe ⊢
-  rw [hr1, hp1]
+  have hres : target.result D (target.promised args) = effect.result D (effect.promised args) := by
+    simp [Effect.result, Effect.promised, hp]
+  rw [hres]
+  have hent := Exits.covers_entails hcov
+  have hmeet := @Exits.exitPost_meet _ _ (Effect.schema_canonical effect) (Effect.schema_canonical other)
   exact SafePostExcV.weaken
-    (fun _ _ _ _ hp h1 h2 h3 h4 h5 h6 => Effect.meet_consequence hs (hp.1 h1 h2 h3 h4 h5 h6) (hp.2 h1 h2 h3 h4 h5 h6))
-    (fun _ _ _ _ hp h1 h2 h3 h4 h5 h6 => Effect.meet_consequence hs (hp.1 h1 h2 h3 h4 h5 h6) (hp.2 h1 h2 h3 h4 h5 h6))
+    (fun _ _ _ _ hp h1 h2 h3 h4 h5 h6 => hent _ _ _ _ _ _ (hmeet.mpr ⟨hp.1 h1 h2 h3 h4 h5 h6, hp.2 h1 h2 h3 h4 h5 h6⟩))
+    (fun _ _ _ _ hp h1 h2 h3 h4 h5 h6 => hent _ _ _ _ _ _ (hmeet.mpr ⟨hp.1 h1 h2 h3 h4 h5 h6, hp.2 h1 h2 h3 h4 h5 h6⟩))
     hsafe
 
 /-- Binding saves a receiver and argument prefix, then forwards without

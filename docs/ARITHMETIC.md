@@ -938,8 +938,8 @@ the meaning is the postcondition of the normal exit at the call's actuals
 (`CallEffects.Effect.callPost_ensures`). A module function's postcondition is stated by `moduleArrow` and
 `importedArrow`, other code's is excluded by `codeObligations` (its exports
 are what its run establishes); carrying,
-covering, meeting and forgetting are `Effect.keeps`, `ensuresCovers`,
-`Effect.meet` and `Exits.forgetActuals` (a variadic call with a spread,
+covering, meeting and forgetting are `Effect.keeps`, `Exits.covers`,
+`Exits.meet` and `Exits.forgetActuals` (a variadic call with a spread,
 by consequence after the guarantee at its expanded actuals:
 `Exits.forgetActuals_sound`, an instance of the rule of consequence across
 actuals `ExitSchema.consequence`, its checks sufficient for independence of

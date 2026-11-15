@@ -392,10 +392,15 @@ stays a check of code built on these, each exported postcondition of each
 exit among those a run establishes, a membership whose consequence is proved
 once (`Exits.exitPost_of_established`) and proves both exits of a body; `covers` is sufficient entailment of
 both exits with variance of the result and the precondition. None of them
-needs an inverse of the elaboration. `meet` is the conjunction where it is
-representable, or a proved consequence whose precision is stated; the
-conjunction `onThrow && onThrow` of the exceptional exits is such a
-consequence, not the general meet.
+needs an inverse of the elaboration. `meet` is the conjunction of the two
+schemas on each exit (`Exits.meet`, exact by `Exits.exitPost_meet`): where
+the two frames state the same entries beside their class entries, its frame
+is the meet of their class bounds with those entries (`frameMeet?`, exact by
+`post_frameMeet`), so coverage reads the met closed bound; otherwise its
+frame is the first's and the second's is a postcondition `.transition`.
+Two signatures conjoin where their promise and preconditions are the same
+(`Effect.sameResult`), and the conjunction is used through coverage
+(`Effect.meetCovers`).
 
 A postcondition is read from the normal exit's postconditions by its
 formula: a fresh result store (`freshStore 0`, `ExitSchema.freshResult`), a
