@@ -1,268 +1,81 @@
 # The note against the implementation, rule by rule
 
-An audit by gpt-6-astra, read from the sources at commit `4c6006f2` on
-2026-11-14: every definition, law, axiom and rule of the note
-[Tolerant frames](tolerant-frames-note/note.tex) against the Lean statement
-and the pass's executable mechanism. No build or suite was run for it. It is
-the list the parity work starts from ([the skill](../../.claude/skills/parity/SKILL.md));
-the state of that work is in [WORK.md](../../WORK.md#status). Line numbers
-are those of that commit.
+For each rule of the note [Tolerant frames](tolerant-frames-note/note.tex)
+in scope, the Lean statement and the mechanism the pass's acceptance
+applies. Read by gpt-6-astra from the sources at commit `81d7f232` on
+2026-11-15, with no build or suite run; "proved" names a proof declaration
+read in the source. The goal it measures is the
+[parity skill](../../.claude/skills/parity/SKILL.md)'s: each rule has the
+same statement in Lean and is the mechanism the pass applies. The state of
+that work is in [WORK.md](../../WORK.md#status).
 
-| Audit convention | Meaning |
-|---|---|
-| Comparison | Statements and executable rules, not passing examples. No files were edited; no builds or suites were run. |
-| **SAME** | Same mathematical content, allowing a representation change whose meaning is evident from the definitions. |
-| **NARROWER** | Restricted forms, additional substantive premises, or a weaker conclusion. |
-| **DIFFERENT** | Different semantics or a different rule, rather than a restricted instance. |
-| **ABSENT** | No corresponding statement or executable rule located. This records the result of reading and searching, not a mechanically established absence theorem. |
-| Verdict | Covers both the Lean statement and its executable application. A matching semantic theorem alone does not establish **IN SYNC**. |
-| Scope limitation | The statement inventory below follows the note through its rules, examples, patterns, and limits. The reverse inventory identifies concrete unmatched mechanisms in the inspected preservation and transfer paths; I cannot certify that it exhausts every mechanism elsewhere in `Programs` and `Source`. |
+A mechanism is **separate** when acceptance applies its own decision,
+proved sound by its own theorem, and that decision establishes no
+derivation in the note's checker (`checkDerivation`, `checkScoped`).
 
-The following file keys keep the correspondence readable. Every `key:line` below identifies the file in this table.
+## The rules
 
-| Key | File |
-|---|---|
-| N | note.tex |
-| TF | Semantics/TolerantFrames.lean |
-| W | Semantics/Worlds.lean |
-| H | Semantics/Heaps.lean |
-| FP | Semantics/Footprints.lean |
-| FS | Semantics/FootprintStability.lean |
-| FR | Semantics/FootprintRebase.lean |
-| FN | Semantics/FootprintNatives.lean |
-| SV | Semantics/Survival.lean |
-| SS | Semantics/SurvivalSeparation.lean |
-| IF | Semantics/IndexFacts.lean |
-| HK | Semantics/HeapKnowledge.lean |
-| CE | Semantics/CallEffects.lean |
-| EW | Semantics/ElementWrites.lean |
-| SR | Semantics/StepRelations.lean |
-| TC | Semantics/TolerantFramesCells.lean |
-| MR | Programs/TolerantFramesModelRules.lean |
-| MT | Programs/TolerantFramesModelTyped.lean |
-| ML | Programs/TolerantFramesModelLoop.lean |
-| TR | Programs/TolerantFramesRuns.lean |
-| TI | Programs/TolerantFramesInvocation.lean |
-| SP | Programs/SinglePass.lean |
-| PC | Programs/PromiseCalls.lean |
-| HR | Programs/HeapExpressionRules.lean |
-| EE | Programs/ExpressionEffects.lean |
-| IW | Programs/IndexWrites.lean |
-| AG | Programs/ArgumentRegionGraph.lean |
-| AC | Programs/ArgumentRegionCertificates.lean |
-| HI | Source/Claims/HeadInference.lean |
-| EJ | Source/EffectJson.lean |
-
-| Note statement | Lean correspondence | Executable application and scope | Verdict |
-|---|---|---|---|
-| **Example: aliasing**, N:74 | `grow`, TF:533, proves the lower-bound instance. `loop_safe`, ML:601, concerns a particular graph. | `boundedWriteCheck`, IW:1816; `Checker.boundedWrites`, IW:3322; preservation uses write-specific machinery. The example does not establish general Frame or Loop. | **IMPLEMENTATION NARROWER** |
-| **Example: separation across a call**, N:81 | `regionFirst_kept`, PC:2249; `stable_rigid`, TF:429. Restricted store preservation and stable-path facts. | `effectKept`, PC:2299, uses `knowledgeQuery` and support checks for regional calls; other effect flags select different branches. | **IMPLEMENTATION NARROWER** |
-| **Variables; fresh bindings; lowering**, N:97–112 | Immutable environment values and mapped graph environments correspond to the intended representation. `Tm`, Calculus.lean:221, also permits nested expressions. | `checkedStep`, SP:1826, assigns result names; `edgeTransfer`, SP:1571, maps names. I did not establish a theorem that source lowering satisfies the note’s complete binding/cell discipline. | **IMPLEMENTATION DIFFERENT**; lowering correspondence not fully determined |
-| **Commands**, N:115 | **DIFFERENT:** `Tm`, Calculus:221, and `Continuation`, Calculus:206, are a term calculus plus graph continuations, not the note’s command grammar. Typed-array operations are native-call specifications. | `checkedStep`, SP:1826, checks graph expressions; no translation theorem from the displayed command language was located. | **IMPLEMENTATION DIFFERENT** |
-| **Locations: five kinds; two store forms**, N:151–215 | **SAME:** `Kind`, W:40; `StoreForm`, W:46; `Role`, W:52. **DIFFERENT** typed-array contents: `Cat`, W:406, requires view length but permits holes. | Type/capability checks feed the typed semantics. The pass does not enforce the note’s complete view invariant through this definition. | **IMPLEMENTATION DIFFERENT** |
-| **Heap, stores, object field maps, identity**, N:219–243 | Array stores as optional cell locations and fixed object maps correspond. `Tm.objAt` carries the field map and identity; `Cat`, W:406, requires identity contents `null`. Lean also represents stores as internal terms. | Ordinary read/write and allocation checks use this representation. The view-length metadata discrepancy remains separate. | **IN SYNC** for ordinary objects/arrays; **IMPLEMENTATION DIFFERENT** for views |
-| **Field/cell separation**, N:244 | **SAME:** distinct `Role.field` and `Role.cell`, W:52; capability exclusivity is proved in KindsCapabilities.lean:222. | Field typing and capability checks distinguish these roles. This is model/type evidence, not a general support query over all five kinds. | **IN SYNC** at the role boundary |
-| **Immutable location / `@stable`**, N:319 | **SAME** singleton-contract content: `CtrStable`, W:82; `Admissible.stable_value`, TF:76. | `stableField`, HR:1147; `stableFirst`, HR:1268; `withStable`, HR:2436. The executable recognition is restricted to its type expansions and first-field evidence. | **IMPLEMENTATION NARROWER** |
-| **World**, N:341 | **SAME** indexed kind/contract representation: `WorldT`, W:69; `Ctr`, W:79; `WExt`, W:128; admissibility supplied separately by `WorldAdm`. | Semantic foundation used by the typing checker; not a runtime world computation. | **IN SYNC** |
-| **Well-formed state**, N:357 | **DIFFERENT:** `IndexedHeap`, TF:30, contains budget, world, admissibility and `HeapOk`, but no environment or environment typing. `RootsOk`, W:402, and environment typing are separate hypotheses. | Program checks establish additional environment premises. There is no single executable/state invariant identical to the note’s definition. | **IMPLEMENTATION DIFFERENT** |
-| **W1: one domain**, N:362 | **SAME:** `HeapOk`, H:27, includes `HeapMeets`, whose domain condition identifies heap/world lengths. | Part of the typing/safety foundation. | **IN SYNC** |
-| **W2: contents by kind**, N:363 | **DIFFERENT:** `Cat`, W:406–410, requires the view’s length but not density or numeric-format contents. | Native view contracts add selected restrictions; they do not make W2 the note’s invariant. | **IMPLEMENTATION DIFFERENT** |
-| **W3: valid references**, N:366 | `RefsOk`, W:397; `Shaped`, W:417; `RootsOk`, W:402. Heap references correspond, but environment roots are external to `IndexedHeap`. `ViewMetaOk`, W:383, additionally requires host/length metadata. | Typed graph premises establish root validity. This is a different packaging and a different typed-array representation. | **IMPLEMENTATION DIFFERENT** |
-| **W4: contracts and environment typing**, N:372 | Heap contract satisfaction is in `HeapOk`, H:27. Environment typing is separately required by `EnvOk`, not by `IndexedHeap`. | Typing checks use `EnvOk`; the modal state alone does not carry the note’s W4. | **IMPLEMENTATION DIFFERENT** |
-| **Admissible transition**, N:389 | `Admissible`, TF:43, is budget decrease plus extension of the truncated world. **SAME** world/budget relation, over the different state definition above. | Consumed semantically by soundness proofs; no separate program decision is appropriate. | **IMPLEMENTATION DIFFERENT** as the complete note relation |
-| **Preservation**, N:405 | `run`, TF:104; `run_normal`, TF:154; `run_throw`, TF:164; `safe_run`, TF:173. These preserve the encoded model. `HasTyUsing.sound`, ProgramTyping.lean:723, connects typing to safety. | `checkedStep`, SP:1826, and the certified checker path. These do not prove preservation of the note’s stronger W2. | **IMPLEMENTATION DIFFERENT** |
-| **T1: preorder**, N:421 | **SAME:** `Admissible.refl`, TF:48; `.trans`, TF:52. | Semantic infrastructure, not a standalone pass rule. | **IN SYNC** for the encoded relation |
-| **T2: growth and fixed role/form**, N:425 | **SAME:** `.length_le`, TF:61; `Admissible.roleAt`, TC:50. The length theorem alone would be insufficient, but the role theorem is present. | Allocation/world-extension infrastructure. | **IN SYNC** |
-| **T3: fixed objects**, N:429 | **SAME by representation:** an `objAt` value contains its field map and identity; heap changes do not modify the value. | Reads resolve that fixed map; writes modify its locations. | **IN SYNC** |
-| **T4: immutable locations**, N:434 | **SAME:** `Admissible.stable_value`, TF:76, plus `IndexedHeap.stable_value`, TF:94, gives old and new contents. | `stableFirst`, HR:1268, and `Checker.keepingStable`, HR:2666, exploit selected instances. | **IMPLEMENTATION NARROWER** in executable recognition |
-| **Changes: parameterized preorders**, N:439 | `Change.Holds`, FP:104; reflexivity, monotonicity, composition and lowering lemmas implement the five named changes. No user-extensible family of changes exists. The note’s concrete grammar likewise names five. | `Change.le`, FP:83; effect and support checks use it. | **IN SYNC** for the named change language |
-| **keep / init / scalar / any**, N:454–458 | **SAME** relations on admitted contents: `InitStep`, FP:52; `ScalarStep`, FP:56; `Change.Holds`, FP:104. | Used by effect grading and support/respect. | **IN SYNC** |
-| **grow, conditions (i)–(iv)**, N:457–468 | **SAME:** `LengthGrows`, FP:92; `DensePrefix`, FP:88; `.grow` case, FP:108–110, includes length, every dense prefix, maximum length, and fresh newly listed cells. | Present in footprint semantics. Some executable paths instead use weaker `Changes.store.grow`, IF:1882–1912. | **IMPLEMENTATION DIFFERENT** where that alternate relation substitutes for the rule |
-| **Change ordering**, N:477–481 | **SAME:** `Change.rank`, FP:76; `Change.le`, FP:83; `Change.Holds.mono`. | Directly executable. | **IN SYNC** |
-| **Paths**, N:533 | **SAME** own-field traversal/failure: `readPath`, FP:16; `Region.mem`, FP:323. | Caller-region substitution, support generation and path tracking use this traversal. | **IN SYNC** |
-| **Class regions: stores and values**, N:542,547 | `Region.cls`, FP:310; `Cls.has`, FP:215, classifies contents rather than world roles. On well-formed states the classes agree. | `callerFrame`, PC:2283, and support checks use them. | **IN SYNC** on well-formed states |
-| **Class region: all-views**, N:544 | **ABSENT from `Region`:** FP:310 has no view-store class. `Cls` has only value/store. `ViewWrite`, EW:244, is a separate world-indexed relation. | `elementWrite` and `keptIndicesWith` bypass the ordinary region mechanism, PC:2311–2313. | **IMPLEMENTATION ABSENT** as an effect region |
-| **Path store region**, N:550 | **SAME** selected-location meaning via `.path x p arrayStoreKey`, FP:331. | Signature `regions`, CE:126, only carries argument store paths, at `any`; it does not expose every note region/change combination. | **IMPLEMENTATION NARROWER** |
-| **Path store-and-cells region**, N:553 | Representable as two entries: store field plus `.pathElems`, FP:337. `.elems` alone is only the cells, not the note’s complete region. | No general signature region for this combination; `writeAtoms`, IW:2303, supplies operation-specific preservation. | **IMPLEMENTATION NARROWER** |
-| **Path field region**, N:556 | **SAME** semantic selector: `.path`, FP:316/331. | General field-region effects are not represented by `Effect.regions`, CE:126; receiver-own flags cover another shape. | **IMPLEMENTATION NARROWER** |
-| **Failed path denotes empty region**, N:570 | **SAME:** failed `readPath` gives `false` membership, FP:331–339. | `factSeps`, SS:111, recognizes certain guarded empty-region cases. | **IN SYNC** for region denotation; narrower guard reasoning |
-| **Effects: finite region/change entries**, N:573 | `Footprint`, FP:378, matches the list/set interpretation modulo duplicates. **NARROWER** region universe: no all-views. `Effect`, CE:102, is a different executable signature structure. | `Effect.frame`, CE:385, combines two closed classes, receiver entries and argument-store regions. | **IMPLEMENTATION NARROWER** |
-| **Action of an effect**, N:592 | **SAME schema:** `Allowed`, FP:383; `Post`, FP:387; `Action`, TF:186. Admissibility plus old-location bounds, entry-state regions, allocation unrestricted by the footprint. | `footprintCheck`, SP:1391; `stepWithin`, AG:102. Missing view region and restricted signatures limit application. | **IMPLEMENTATION NARROWER** |
-| **Effect order**, N:609 | Semantic inclusion is the premise of `box_anti`, TF:224. `Footprint.le`, FP:498, is a sufficient syntactic inclusion check, not the definition of all semantic inclusion. | `stepWithin`, AG:102, requires that Boolean check. | **IMPLEMENTATION NARROWER** |
-| **Top**, N:611 | **SAME:** `action_top`, TF:255, relates the closed top footprint to every admissible transition. | `Effect.ordinary`, CE:196, uses top. | **IN SYNC** |
-| **Rigid effect**, N:614 | **SAME:** `Rigid`, TF:203, is transitivity of action. | No general executable rigidity judgment located; closed grades and specialized path evidence supply particular cases. | **IMPLEMENTATION NARROWER** |
-| **Rigid class-region effects**, N:619 | `closed_rigid`, TF:265, covers value/store closed effects. **NARROWER:** no all-views region. | Closed-effect composition is executable; three-class composition is absent. | **IMPLEMENTATION NARROWER** |
-| **Rigid-path store effect**, N:622 | `path_rigid_on`, TF:466. **NARROWER:** requires `StableAt`, a path of singleton-contract fields, rather than the note’s general modal rigidity premise. | `nodeAgree`, AG:73, recognizes only a one-field path from a directly linked entry position. | **IMPLEMENTATION NARROWER** |
-| **Store-and-cells at any is not rigid**, N:625 | Corresponding countermodel section, TF:272 onward. | No program check is required for the counterexample. It must not be treated as a universally composable effect. | **IN SYNC** as a negative semantic statement |
-| **Effect of a command: normal and exceptional bounds**, N:633 | `StepEffect`, AG:43, has normal/raised footprints. `Effect.excPost`, CE:408, allows only the same frame on throw or no bound. | `stepGrades`, SP:1419, tracks normal/throw grades; signature format cannot state arbitrary independent exceptional effects. | **IMPLEMENTATION NARROWER** |
-
-| Note assertion or law | Lean correspondence | Executable application and scope | Verdict |
-|---|---|---|---|
-| **Assertion grammar**, N:644 | **DIFFERENT:** `Assertion`, TF:39, is an arbitrary semantic predicate. Executable `Atom`, SP:21, and `Knowledge`, HK:31, do not encode the displayed grammar: no general existential or modal constructor. | `checkedStep` and store/merge operations process the finite atom representation. No interpretation/equivalence theorem for the note’s grammar was located. | **IMPLEMENTATION DIFFERENT** |
-| **Linear-inequality atom**, N:657 | `IndexFact.linear`, IF:969; `HoldsAt`, IF:1056, requires defined terms. Integer/safe-number interpretation is more specific than an unrestricted first-order numeric language. | Linear entailment and `entailDefinedCheck`, SP:1588. | **IMPLEMENTATION NARROWER** |
-| **Path equality atom**, N:660 | `ReadsAs`, TF:424, has the intended semantic meaning. Executable equality is distributed among links, value facts and linear facts. | `readFrame`, HR:197; `linkedOutput`, HR:691; no general path-equality assertion checker located. | **IMPLEMENTATION NARROWER** |
-| **Density atom**, N:662 | `DenseAt`, TF:595; `dense`, TF:598, prove the constant-prefix instance. `FactKind.dense`, FS:29, uses a natural number, not a logical-variable bound. | Density/type mechanisms exist, but `SinglePass.Atom` has no general dynamic-prefix density constructor. | **IMPLEMENTATION NARROWER** |
-| **Kind-of-contents atom**, N:665 | `FactKind.cell/value`, FS:21–38, and `HeapFacts` represent value-set predicates. | `cellKept`, HR:1418; `keptCells`, HR:1425; field/read checks. | **IN SYNC** for the represented kind predicates |
-| **Bounded quantification**, N:668 | `IndexFact.every`, IF:973. **NARROWER** predicate language: lists of linear clauses over integer-valued bound terms, not arbitrary scalar predicates. It also has extra projection forms. | `support?`, SV:421; `writeAtoms`, IW:2303; `appendKept`, PC:2534; `writeKept`, PC:2707. Multiple special mechanisms. | **IMPLEMENTATION NARROWER** |
-| **Typed-array element equality**, N:671 | `.element`, IF:972, and `ExactWrite`, EW:117, provide restricted element reasoning. No general note-valued element-equality assertion correspondence was established. | Exact-write preservation is restricted to selected formats, safe in-range integers, and recognized argument shapes, PC:2707. | **IMPLEMENTATION NARROWER** |
-| **Satisfaction at environment/mark/heap**, N:676 | **DIFFERENT:** `Assertion`, TF:39, reads an indexed state; executable `Holds`, HK:52, uses an `EntryState` containing entry environment/heap. It is not the interpretation of the note’s full syntax. | Materialization and atom-specific `HoldsAt` relations. | **IMPLEMENTATION DIFFERENT** |
-| **Store separation**, N:685 | **DIFFERENT:** `PathStoresApart`, IF:887, requires defined paths but only says stores differ **if both values have stores**. It is true when a defined endpoint is non-array; the note requires both endpoints to read arrays. | `.storeApart` facts feed `knowledgeSeps`, SS:166. This semantic difference is observable independently of example coverage. | **IMPLEMENTATION DIFFERENT** |
-| **apart**, N:686 | `RegionsApart`, IF:902, is disjointness of store-plus-cell regions. It agrees for well-formed ordinary arrays, but also admits raw stores through `RegionOf`, IF:876. | `regionAtoms`, IW:2084, and `writeAtoms`, IW:2303, process restricted array/slot forms. | **IMPLEMENTATION NARROWER** at the source rule; broader internal domain |
-| **fresh**, N:687 | **SAME selected-store meaning:** `Fresh`, TF:411; `FreshAt`. | `entry.fresh` and `edgeTransfer`, SP:1571; regional freshness evidence, AG:79. Not a general assertion constructor. | **IMPLEMENTATION NARROWER** |
-| **Modality**, N:688 | **SAME schema:** `Box`, TF:194, quantifies over all actions at fixed valuation/mark. Region/state differences above remain. | No general modal assertion/derivation representation; finite preservation checks implement instances. | **IMPLEMENTATION NARROWER** |
-| **Invariant assertion**, N:708 | **SAME:** `Invariant`, TF:200; `invariant_iff_top`, TF:259. | `envOnly` and stable/type-based filters recognize particular invariants. | **IMPLEMENTATION NARROWER** |
-| **Rigid path**, N:712 | `ReadsAs`, TF:424; `stable_rigid`, TF:429. The latter proves singleton-contract paths rigid; it is not a definition/check of every path satisfying the note’s existential modal assertion. | `stableFirst`, HR:1268; `stableTerm`, HR:2421; `nodeAgree`, AG:73. | **IMPLEMENTATION NARROWER** |
-| **Reading: weakest liberal precondition**, N:724 | **SAME by definition** for `Box`, TF:194. No separate weakest-stable-assertion characterization theorem located. | No generic havoc/modal checker. | **IMPLEMENTATION NARROWER** |
-| **Law (a): elimination**, N:736 | **SAME:** `box_elim`, TF:212. | Its application is embodied in soundness of selected preservation checks, not a rule over every assertion in the note. | **IMPLEMENTATION NARROWER** |
-| **Law (b): conjunction**, N:737 | **SAME:** `box_and`, TF:215. | Knowledge lists provide conjunction, but not arbitrary conjunctions containing modal/existential assertions. | **IMPLEMENTATION NARROWER** |
-| **Law (b): monotonicity**, N:737 | **SAME:** `box_mono`, TF:220. | No general entailment-under-modality rule located. | **IMPLEMENTATION NARROWER** |
-| **Law (c): effect antitonicity**, N:738 | **SAME:** `box_anti`, TF:224. | `Footprint.le`, FP:498, and its soundness give restricted executable inclusion evidence. | **IMPLEMENTATION NARROWER** |
-| **Law (d): invariant-guard disjunction**, N:739 | **SAME:** `box_or`, TF:240. | `guarded`/`either` facts and `factSeps`, SS:111, cover particular guards. They do not accept arbitrary invariant assertions as guards. | **IMPLEMENTATION NARROWER** |
-| **Law (e): idempotence**, N:740 | **SAME:** `box_idem`, TF:248; domain variant at TF:446. | No general nested modality or rigidity certificate in executable knowledge. | **IMPLEMENTATION NARROWER** |
-| **Support**, N:755 | **DIFFERENT formulation:** `Supports C P S`, FS:308, is relative to an arbitrary extra heap relation `C`; `P` reads no mark/world. The note quantifies over admissible states directly. | `IndexFact.support?`, SV:421, supplies one selected support or none. It supplies no support for `.element` or projected quantified facts. | **IMPLEMENTATION DIFFERENT** |
-| **Respect**, N:769 | `respects`, FS:365, checks change inclusion or a `SepQuery`. `SepQuery.Sound`, FS:347, establishes sound disjointness. **NARROWER** than the note’s general entailment under `K`. | `knowledgeQuery`, SS:236, answers class separation and recognized store-site separation. | **IMPLEMENTATION NARROWER** |
-| **Tolerant frame theorem**, N:783 | `tolerant_frame_supports`, TF:502, requires a supported heap predicate, a Boolean respect proof, and an extra context premise for every action. `tolerant_frame`, TF:493, handles five `FactKind` forms. Neither supplies the entire note assertion/region language. | Actual generic route exists: `effectKept`, PC:2304–2318 → `IndexFact.keeps`, SV:560 → `respects`. Other branches bypass it, and the missing all-views region excludes a note case. | **IMPLEMENTATION NARROWER** |
-| **Several supports for apart; grow/keep and mirror**, N:801 | `apart_grow_keep`, TC:181, proves a particular growing-one-array case. | `support?` assigns `.apart` keep/keep supports, SV:429; `grownRegions`, IW:3112, separately preserves separation under append. It does not select the note’s alternative supports generally. | **IMPLEMENTATION NARROWER** |
-| **grow/grow does not support apart**, N:805 | The note’s reasoning is consistent with the `grow` relation. I did not locate a matching theorem for precisely this two-support counterexample. `apart_not_kept_fresh`, MR:215, is a different counterexample. | No general support validator deciding this property. | **IMPLEMENTATION ABSENT** for the precise statement |
-| **(Grow)**, N:814 | **SAME displayed lower-bound instance:** `grow`, TF:533. | General call route uses linear supports; receiver-growth and write routes use `keptIndices`/write-specific checks. | **IMPLEMENTATION DIFFERENT** as a uniform executable rule |
-| **(Dense)**, N:815 | `dense`, TF:598; `dense_support`, used by FS:95. **NARROWER:** natural-number prefix parameter rather than a general assertion-language bound. | Native density contracts and dedicated checks; no general dynamic-density fact rule located. | **IMPLEMENTATION NARROWER** |
-| **(Sep)**, N:816 | `regionFirst_kept`, PC:2249, proves selected store preservation; it is not the universally quantified atom axiom. | Support/query path handles represented linear atoms and recognized separations. Signature regions are restricted. | **IMPLEMENTATION NARROWER** |
-| **(Every)**, N:817 | `writeAtoms_holds`, IW:2465, is an element-write theorem, not arbitrary action of `x[*]:any`. `elems_support`, FS:49, is a different whole-array predicate. | `writeAtoms`, IW:2303, requires an unconditional fact, empty array path and checked body/term forms. Generic `everyCells`, SV:408, constrains **all value locations** at `init`, preventing the intended arbitrary disjoint-element-write instance. | **IMPLEMENTATION NARROWER** |
-| **(Init)**, N:818 | `init_box`, MR:94; `init_path`, MR:102. **NARROWER:** linear facts over supported integer/length terms; no general atom substitution rule. | `initWriteWithin`, EE:219, and survival/kept-term machinery. | **IMPLEMENTATION NARROWER** |
-| **(Rigid)**, N:819 | `stable_rigid`, TF:429; `grow_path_typed`, MT:149. **NARROWER:** singleton-contract evidence and the Grow instance, not arbitrary capture-avoiding substitution into any atom/effect. | `stableFirst` and path supports; no general substitution rule using a rigidity witness. | **IMPLEMENTATION NARROWER** |
-| **(View)**, N:820 | `view_box`, MR:44; `viewLengthOf_kept`, TC:82. **DIFFERENT foundation:** length is read from singleton metadata. The theorem is restricted to linear facts and valid roots. | `viewField`/`writeViews`, HR:1162/1167, and view-aware kept-term checks. | **IMPLEMENTATION DIFFERENT** |
-
-| Note program rule | Lean correspondence | Executable application and scope | Verdict |
-|---|---|---|---|
-| **Triples; normal/exceptional two-state posts**, N:863 | `SafePostExc` and `NodeObligations`, TR:142, provide related semantic judgments. No judgment over the note’s complete command/assertion syntax was located. | `Effect.post`, CE:397, has normal ensures; `excPost`, CE:408, has no arbitrary exceptional ensures. | **IMPLEMENTATION NARROWER** |
-| **old**, N:873 | `EntryState`/entry terms and `StepRelation` express selected old values. `compose_holds`, SR:292, is about linear facts and a supplied kept-term map. | `ensuresComposed`, PC:3340; `Composer.fact`, SR:618. No `old(B)` for arbitrary note assertion `B`. | **IMPLEMENTATION NARROWER** |
-| **Entry**, N:884 | `compose_holds`, SR:292; `Composer.fact_holds`, SR:1011. **NARROWER:** selected facts, normal-call composition, no general retained `old(B) ∧ trΦ` assertion. | `withEnsures`, PC:3393; `ensuresComposed`, PC:3340. | **IMPLEMENTATION NARROWER** |
-| **Frame**, N:886 | Modal elimination supplies the semantic argument. `transfer`, TR:380, gives an exit-specific instance for lists of index facts and closed effects. No full command-level Frame theorem located. | `effectKept`, PC:2299, covers selected normal-return facts. `edgeStoreOf`, SP:1551, drops heap facts on handler edges. | **IMPLEMENTATION NARROWER** |
-| **Frame+**, N:888 | `box_idem`, TF:248, proves the modal component. No general triple rule retaining `Box Φ R` after a command located. | No modal knowledge constructor or general executable Frame+ derivation. | **IMPLEMENTATION ABSENT** as the displayed program rule |
-| **Loop**, N:890 | `loop_safe`, ML:601, is for `loopGraph`, ML:444, not arbitrary `c,I,R,Φ`. General graph soundness exists separately. | `headExit`, SP:3032, checks supplied head facts; `headFacts`, HI:998, proposes syntactic families. No generic modal Loop rule. | **IMPLEMENTATION NARROWER** |
-| **Call: normal substitution**, N:892 | `call_rule`, MR:120, renames regional effects and frames a list of named atoms for a checked graph. **NARROWER:** not arbitrary assertion substitution, and uses graph/administrative hypotheses. | `callSlots`, PC:1554; `ensuresAtoms`, PC:1944; `callerFrame`, PC:2283; `ensuresComposed`, PC:3340. Unmapped regions widen. | **IMPLEMENTATION NARROWER** |
-| **Call: exceptional substitution**, N:929 | `invocation_throw_action`, TI:117, supplies an exceptional action for the represented specification. | `onThrow` can reuse the normal frame; arbitrary separate exceptional assertions/effects cannot be encoded by `Effect`. Handler knowledge is additionally weakened. | **IMPLEMENTATION NARROWER** |
-| **Call: freshness mark rebasing**, N:928 | Invocation/freshness lemmas provide selected store freshness. No general substitution/rebasing operation over assertions containing `fresh` was located. | Boolean fresh-result and tracked fresh-slot/field mechanisms. | **IMPLEMENTATION NARROWER** |
-| **Alloc**, N:894 | **SAME ordinary-array post:** `alloc_post`, MR:150, states fresh empty store and separation from every existing array store. | `regionAtoms`, IW:2084, recognizes enumerated allocation encodings and only array slots recognized by the type checker; `Checker.emptyArrays`, IW:3262. | **IMPLEMENTATION NARROWER** |
-| **Seq-Eff**, N:896 | `seq_eff`, MR:274, proves composition using `rebaseAll`, Boolean footprint inclusion and class evidence. **NARROWER:** those are sufficient evidence, not arbitrary rebasing/inclusion premises. | `stepWithin`, AG:102, genuinely implements the composition shape. Its effects and rebasing evidence are restricted. | **IMPLEMENTATION NARROWER** |
-| **Fresh-Eff**, N:898 | `fresh_eff`, MR:284, removes the fresh store entry below the invocation mark. `fresh_eff_bound`, MR:306, composes a closed invocation bound. | `nodeFresh`, AG:80; `freshStore`, FR:68; `rebase`, FR:116. Works for tracked ordinary stores; not a general fact-language freshness premise. | **IMPLEMENTATION NARROWER** |
-| **Rebasing definition**, N:948 | `RebaseOk`, FR:59; `rebaseAll`, FR:134; soundness of rebasing. These implement one sufficient construction, not the entire semantic rebasing relation. | `nodeRebase`, AG:91; `nodeAgree`, AG:73, recognizes only one-field agreement from a directly linked entry value. | **IMPLEMENTATION NARROWER** |
-| **Rebase class/rigid-path region to itself**, N:959 | Class case exists. Arbitrary stable-path rebasing is stronger than the executable evidence producer. | FR:129; AG:73–77. No all-views case. | **IMPLEMENTATION NARROWER** |
-| **Rebase fresh store to nothing**, N:960 | `RebaseOk.fresh_store`, FR:72; `.fresh_path`, FR:88. Correct selected-store erasure. | `freshPath`, FR:81, accepts empty or one-field paths only. | **IMPLEMENTATION NARROWER** |
-| **Fresh typed-array write retains all-views**, N:962 | `ViewWrite`, EW:244, permits changes to older views. The required all-views footprint is absent. | Special `elementWrite` relation rather than rebasing the stated region. | **IMPLEMENTATION DIFFERENT** |
-| **Other regions widen to their class**, N:964 | **DIFFERENT:** `rebase`, FR:116–132, widens unresolved fields, own regions, elements and path-elements to `.all`; `rebase_elems`, MR:269, states this explicitly. | `stepWithin` consumes that broader bound, causing obligations stronger than the note’s. | **IMPLEMENTATION DIFFERENT** |
-| **Freshness bounds effects, not facts**, N:972 | `fresh_eff`, MR:284; `fresh_cells_not_erased`, MR:315; `apart_not_kept_fresh`, MR:215. These support the distinction. | Freshness tracking erases selected store effects; ordinary preservation checks still decide reads. No evidence of freshness alone establishing the example’s bound. | **IN SYNC** for this distinction |
-| **Reliance**, N:985 | **NARROWER:** `rely_chain`, FN:488, quantifies over `FactKind` and requires a successful stability check at **each** step. It is not the note’s arbitrary `Box Φ F` plus one rigid effect premise. | Native callback contracts and specialized density/element reasoning. No generic reliance rule over note assertions. | **IMPLEMENTATION NARROWER** |
-| **map density consequence**, N:992 | `map_rely`, FN:506, proves density at observation points under per-step closed checks. It does not itself prove construction of the result array is dense. | Native specification/typing carries result properties. A complete correspondence for the result-construction claim was not established by this audit. | **IMPLEMENTATION NARROWER**; result-construction correspondence not determined |
-| **Exact push post and alias lower bounds**, N:999 | `ReceiverAppends`, CE:329, and linear composition provide stronger operation-specific information. | `receiverGrows`, CE:119; `linearAppendKept`, PC:2598; `appendKept`, PC:2534. This is not uniform Entry applied to a general post. | **IMPLEMENTATION DIFFERENT** |
-| **View-Length**, N:1014 | `viewLengthOf_kept`, TC:82, is preservation, not the displayed read triple. No matching general step theorem located. | Native-call/metadata reading through ordinary call checks; not a primitive view-store-length rule. | **IMPLEMENTATION DIFFERENT** |
-| **View-Read**, N:1015 | No matching general triple for every valid numeric index and stored format value located. Existing element facts use the restricted index/value language. | Native call specification and index checking. Exact source-to-native correspondence was not fully determined. | **IMPLEMENTATION NARROWER**; exact correspondence not determined |
-| **View-Write**, N:1016 | **NARROWER:** `ExactWrite`, EW:117, requires `ElementKind.Takes`, EW:67: safe integers already inside the format’s range. It therefore does not state the note’s total conversion, e.g. Uint8 conversion of 300 to 44. `ViewWrite`, EW:244, also permits holes. | `elementWrite` flag; `writeKept`, PC:2707; decoder enforces range premises, EJ:183. | **IMPLEMENTATION NARROWER** |
-| **View-Write preserves other indices**, N:1019 | `ExactWrite`, EW:121, preserves other store entries; combined with the world-aware write relation this supports the restricted exact-write case. | `everyWritten`, PC:2681, and `writeKept`, PC:2707, recognize selected quantified facts. | **IMPLEMENTATION NARROWER** |
-| **Invalid view index: undefined/no-op; no throws**, N:1022 | The exact-write relation requires a valid index. It is not a total operational rule for invalid numeric indices. | No general corresponding pass rule located; native specifications require separate auditing. | **IMPLEMENTATION ABSENT** as the stated total rule |
-| **fill/copyWithin/set have all-views effect**, N:1026 | Coarse `ElementWrite.stores`, EW:94, and `ViewWrite` are counterparts, but not the note’s effect entry. | Same special effect flag and coarse `Changes` route. | **IMPLEMENTATION DIFFERENT** |
-| **Typed-array-write example**, N:1034 | Separate proofs exist for stable fields, view lengths and exact writes. The common all-views tolerant-frame derivation cannot be expressed. | `effectKept`, PC:2311, uses coarse changes; `writeKept` handles same-view cases. Arbitrary array quantified facts do not follow through the note’s general support rule. | **IMPLEMENTATION DIFFERENT** |
-| **Exit edge: effect/post/condition/renaming**, N:1057 | `NodeObligations`, TR:142, and graph continuations provide related semantic components. Exit effects are closed in this theorem. | `edgeStoreOf`, SP:1548; `edgeTransfer`, SP:1571; `headExit`, SP:3032. Not one common two-state edge judgment. | **IMPLEMENTATION NARROWER** |
-| **Knowledge: finite set of assertions**, N:1075 | **NARROWER:** `Knowledge`, HK:31; `SinglePass.Atom`, SP:21, store a fixed collection of fact forms. | Named store/materialization machinery. | **IMPLEMENTATION NARROWER** |
-| **Checked transfer**, N:1079 | **DIFFERENT:** `NodeObligations`, TR:142, is a semantic obligation; `transfer`, TR:380, assumes retained modal index facts. No derivation relation for the note’s `old Σ ∧ trΦ ∧ Q ∧ B ⊢ θ*A` was located. | Specialized step outputs, filtering, renaming, merge entailment, and head checks. | **IMPLEMENTATION DIFFERENT** |
-| **Transfer theorem**, N:1090 | **NARROWER:** `transfer`, TR:380, uses closed exit effects and lists of `IndexFact`; it concludes `NodeObligations`, not the displayed theorem from a checked two-state derivation. | `exitStep`, SP:3145, and associated edge/head checks are justified through the executable pass’s own proof structure. | **IMPLEMENTATION NARROWER** |
-| **Sound graphs**, N:1098 | `graph_safe`, TR:329, is general over graph assertions, but requires `NodesChecked`, `AdminClosed`, and reference validity. Its obligations use closed effects and the encoded state model. | `run`, SP:3388; `run_sound_single_pass`, TolerantFramesSinglePassSound.lean:43. A real soundness theorem exists; it is not a theorem for the note’s full Check system. | **IMPLEMENTATION NARROWER** |
-| **Forward pass; merge retains common facts**, N:1104 | Merge soundness corresponds to retaining facts established on incoming paths. | `mergeState`, SP:1606, includes equality, joins and selected entailments; finite executable fact language. | **IMPLEMENTATION NARROWER** |
-| **Loop-head knowledge supplied**, N:1106 | The pass checks supplied head claims. | `headExit`, SP:3032, corresponds; automatic family-based production in HI:998 is additional machinery absent from the note. | **IN SYNC** for checking supplied claims; **NOTE ABSENT** for the producer |
-| **Two-state logic, arithmetic, old-state lifting**, N:1108–1113 | `compose_holds`, SR:292, and `Composer.fact_holds`, SR:1011, justify particular transformations. No general derivation calculus with the listed rules was located. | `compose`, SR:279; `ensuresComposed`, PC:3340; defined-term and linear-entailment checks. | **IMPLEMENTATION NARROWER** |
-| **Full loop example**, N:1115 | `loop_checked`, ML:508; `loop_safe`, ML:601, establish a concrete graph. | Separate write/bound/head mechanisms. This proves an instance, not correspondence of Loop and Checked transfer. | **IMPLEMENTATION NARROWER** |
-| **In-bounds write preserves exact length**, N:1134 | `elem_var_write_length`, EE:1934, supplies operation-specific exact preservation. | `keepsLengths`, IW:1865. The note allows exact semantics here, but has no displayed general write-post rule describing this executable branch. | **NOTE ABSENT** for the specific post/transfer rule |
-| **Regional upper-bound preservation under separation**, N:1139 | Selected-store and support lemmas cover restricted forms. | `writeAtoms`/write framing and regional call support checks; not a uniform derivation using arbitrary regional action and law (c). | **IMPLEMENTATION NARROWER** |
-
-Every row of the patterns table is accounted for separately:
-
-| Pattern, note line | Lean and executable correspondence | Verdict |
+| Rule | Lean statement | Mechanism acceptance applies |
 |---|---|---|
-| **Lower bound under aliasing**, N:1150 | `grow`, TF:533; `effectKept`, PC:2299; write-specific kept-index checks. Matching theorem, multiple restricted executable routes. | **IMPLEMENTATION DIFFERENT** |
-| **Bound across rewriting call**, N:1151 | `regionFirst_kept`, PC:2249; `stable_rigid`, TF:429; `effectKept` plus `knowledgeQuery`. Restricted atom/effect/path evidence. | **IMPLEMENTATION NARROWER** |
-| **Fresh array store**, N:1152 | `fresh_eff`, MR:284; `alloc_post`, MR:150; `nodeFresh`, AG:80; `regionAtoms`, IW:2084. Tracking and recognized allocations restrict the rule. | **IMPLEMENTATION NARROWER** |
-| **Write-once cache**, N:1153 | `init_box`, MR:94; `initWriteWithin`, EE:219. No general support-based composition of arbitrary build effect with initialization for every assertion. | **IMPLEMENTATION NARROWER** |
-| **Reliance during callbacks**, N:1154 | `map_rely`, FN:506, proves selected density observations under per-step checks. | **IMPLEMENTATION NARROWER** |
-| **Quantified fact across write**, N:1155 | `writeAtoms_holds`, IW:2465; executable IW:2303 restricts path, guard, body and write form. No arbitrary `x[*]:any` action rule. | **IMPLEMENTATION NARROWER** |
-| **Structures built in step**, N:1156 | `ReceiverAppends`, CE:329; `linearAppendKept`, PC:2598; separate region preservation. The intended post is handled by append-specific rules. | **IMPLEMENTATION DIFFERENT** |
-| **Separation where value exists**, N:1157 | `factSeps_holds`, SS:127, establishes the guarded empty-region argument; `factSeps`, SS:111, supports root tag guards only. | **IMPLEMENTATION NARROWER** |
-| **Fact through field**, N:1158 | `grow_path_typed`, MT:149; `stableFirst`, HR:1268; path support. No general Rigid substitution rule. | **IMPLEMENTATION NARROWER** |
-| **Typed-array length**, N:1159 | `view_box`, MR:44, through singleton length metadata; view-aware filters. Different model and restricted assertions. | **IMPLEMENTATION DIFFERENT** |
-| **Array facts across typed-array write**, N:1160 | `ViewWrite.keeps_array`, EW:261, provides the semantic frame component. There is no all-views effect, and the pass uses coarse changes/special write branches. | **IMPLEMENTATION DIFFERENT** |
-| **Fact at handler**, N:1161 | `transfer`, TR:380, admits an exceptional retained-fact premise, but `edgeStoreOf`, SP:1551, drops heap-dependent facts at handlers. | **IMPLEMENTATION NARROWER** |
+| Entry | `CommandSummary.Sound` and `ExitSpec.facts` state a command's exit postconditions together with its transition `tr` | separate: `PromiseCalls.withEnsures`, `ensuresComposed`, `callKept`, `Composer.fact` |
+| Frame | `Derivation.frame`: elimination of the modality, with checked substitution and transport | separate: `effectKept`, `frameKeeps`, `IndexFact.keeps`, `postKeeps`; at a handler edge `edgeStoreOf` keeps no heap fact |
+| Frame+ | `Derivation.framePlus`, with certified rigidity on an invariant domain | none: acceptance keeps no fact under the modality |
+| Loop | `LoopEvidence.prefix_sound`, `frame_at_head`, `frame_at_exit`, `reliance_at_prefix`: the parts of the rule, with the note's agreement of valuations at a prefix | separate: `headExit` checks supplied head facts, closed by induction over the graph |
+| Call | `call_exits_exact`, the schema's instantiation, substitution and transport of the mark: instantiation per exit, rest actuals included | Call itself, at the selected signature; the facts a caller derives from it go through the separate Entry and Frame mechanisms above |
+| Alloc | `alloc_post`, with the typed allocation and separation lemmas, for the ordinary empty array | separate: `IndexWrites.regionAtoms`, `Checker.emptyArrays` |
+| Seq-Eff | `Post.compose_rebases`, `ThenEvidence.sound`, `CommandSummary.seq_sound`, `CommandSummary.handle_sound`: composition relative to the entry, on both exits | separate: `footprintCheck` and `StepGrades.admits`, over closed bounds along the walk |
+| Fresh-Eff | `rebaseAll_fresh_eff`, `Post.fresh_eff`, `ThenEvidence.into_fresh`: rebasing erases the fresh store's entry alone | separate: the fresh positions' projection in `StepCertificate.grades` and `Footprint.boundBelow`, and the regional checks |
+| Conj | `SafePostExcV.cross_independent`, `PromiseWith.conj`, `Exits.exitPost_meet`, with the world-independence condition | Conj itself: `Effect.meetCovers` checks the rule's conditions |
+| Grow | `Derivation.grow` | separate: support, and the preservation deciders of writes and calls |
+| Dense | `Derivation.dense`, for a prefix bounded by a variable | separate: the density and type checks and the callback contracts |
+| Sep | `RawDerivation.sep`, through `tolerantFrame`, for linear length atoms | separate: `frameKeeps` and the separation queries |
+| Every | `RawDerivation.everyFrame`, through support and respect, for ordinary arrays and the represented scalar predicates | separate: `everyKept`, `writeAtoms`, and the append and write rules |
+| Init | `RawDerivation.init`, through support and respect, for linear atoms at a path | separate: `callChanges`, the kept terms and the initialization checks |
+| Rigid | `Derivation.rigidSubst`: capture-avoiding substitution under the fresh-variable and effect condition | separate: recognition of stable fields and paths; no producer introduces rigidity into the checker from the typing certificates |
+| View | `RawDerivation.view`, through invariant support, for facts over variables and view lengths | separate: the preservation of view lengths |
+| Write-In | `Derivation.writeIn` with `Bridges.lengthsKept_of_run`: the exact length equation | separate: `keepsLengths`, `boundedLength_sound` |
+| Write-End | `Derivation.writeEnd`: the growth of the length | separate: `atLengthAtoms` and the write rules |
+| Push | `Derivation.pushPost`: the growth of the length, from `ReceiverAppends` | separate: `statesAppend`, the append rules and the Entry mechanisms |
+| Add, Sub, Scale | `Derivation.integerOperation`: safe operands, multiplication by a constant, a safe result | separate: `linearAtoms`, `smallOperand`; the arithmetic bridges relate the two representations |
+| Shr, Mask | `Derivation.shiftRight`, `Derivation.mask`: the displayed ranges and inequalities, known constants included | separate: `bitAtoms` |
+| String length successor | `Derivation.lengthSuccessor`: a safe result or 2⁵³ | separate: `stringLengthPlusOne`, `pastSafeAtoms` |
+| Str-Length, Concat | `stringLengthRead`, `stringConcat`: the equations; bridges relate them to the producers' facts | separate: those producers |
+| Str-Read | `Derivation.stringRead`: a result of length one, under the index bounds; no producer of the pass emits it | none |
+| View-Length, View-Read, View-Write | the tagged view model and the native contracts, which the selected call's check reads | separate: `exactWriteOf` reads the exact write of an integer whose format is unchanged; no derivation consumes the exact postconditions |
+| Transfer (§7) | `checkScoped_sound`: the entailment of the checked sequent; `transfer`, for closed exit effects | separate: `exitStep`, `edgeStoreOf`, `edgeTransfer`, `assertionExit`, `headExit` and the merge checks |
 
-The note’s stated exclusions and remaining named claims also affect correspondence:
+## What is not yet applied through the note's mechanism
 
-| Note statement | Implementation evidence | Finding |
-|---|---|---|
-| **Field of every element is outside the language**, N:1168 | `Bound.project` is interpreted by `boundValue`, IF:868. `support?`, SV:434, refuses supports for projected quantified facts, but the assertion form exists. | **NOTE ABSENT:** implementation assertion language includes a form the note excludes. Its general preservation remains absent. |
-| **Disjoint typed-array bytes are outside the language**, N:1171 | The inspected view model uses view stores and fresh replacement cells, without buffer-offset separation. | **IN SYNC** with this stated limitation. |
-| **Effect-polymorphic callback is outside the language**, N:1177 | `Effect`, CE:102, has no effect-variable binder. | **IN SYNC** with this stated limitation. |
-| **Replacement record across loop needs unestablished separation**, N:1186 | Allocation/freshness and loop-head checking are separate; no general theorem establishing this back-edge separation was located. | Consistent with the limitation; the exact motivating program’s status was **not determined** without running it. |
-| **Assertions duplicable, no ownership resource model**, N:1193–1200 | `Assertion` is a predicate; `Knowledge` is reusable facts. No linear consumption in these mechanisms. | **IN SYNC**. |
-| **No claimed separation-logic embedding**, N:1200 | No such embedding was established in the inspected correspondence. | No implementation obligation supplied by the note. |
-| **“Five of eleven” patterns**, N:1213–1217 | The displayed table actually has **twelve** rows, N:1150–1161. | **Note inconsistency:** the prose count is stale. |
-| **Effects closed**, N:1223 | `Effect`, CE:102, is closed. | **IN SYNC**. |
-| **Await uses top**, N:1225 | Top exists, but I did not trace the complete await lowering/checking path. | **Not determined**. |
-| **Intermediate admissibility; restored assertions**, N:1227 | Safe runs preserve `HeapOk` through admissible worlds, TF:104. The view invariant differs from the note. | **IMPLEMENTATION DIFFERENT** at the model boundary. |
-| **Fixed contracts**, N:1229 | `WExt`, W:128; truncation/extension in `Admissible`, TF:43. | **IN SYNC**. |
-| **Regional-transfer limitation**, N:1230 | `transfer`, TR:380, is closed-effect scoped. Separate regional guarantee machinery exists, but does not turn that theorem into the note’s general Check theorem. | **IMPLEMENTATION NARROWER**, as the note’s qualification anticipates. |
+Acceptance applies Call and Conj themselves, each with the consequences it
+recognizes. It applies every other rule in scope through a separate
+mechanism: Entry, Frame, Frame+, Loop, Alloc, Seq-Eff, Fresh-Eff, the seven
+atom axioms (Grow, Dense, Sep, Every, Init, Rigid, View), Transfer (§7),
+the arithmetic rules, and the exact updates of a write.
 
-The reverse correspondence contains the following concrete unmatched or differently formulated mechanisms. “No rule” here means no rule describing that mechanism—not merely that its function name is absent.
+## Statements weaker than the note
 
-| Mechanism | Implementation location | Counterpart assessment | Verdict / disposition |
-|---|---|---|---|
-| **Head-inference families**: carried, counters, assigned/joined, paired, eliminated-path equalities, called postconditions | `Rules`, HI:382; `headFacts`, HI:998; assembled families HI:1201 | The note says head knowledge is supplied. It gives no rules for these families or their syntactic eligibility conditions. | **NOTE ABSENT**. Specify the proposal algorithm or remove/replace it under the owner’s strict correspondence requirement. |
-| **Method-name lists in head inference** | `resized`, HI:318; `touched`, HI:482 | Named lists of push/pop/shift/unshift/splice/fill/copyWithin substitute for effect reasoning in proposal generation. | **NOTE ABSENT**. Derive proposals from effects, or specify these restrictions explicitly. |
-| **Alternate change algebra** | `StoreChange`, IF:1882; `Changes`, IF:1892; `Term.keptBy`, IF:2020 | Object/number flags and `store.length` are not the five note changes. Its grow relation does not carry all four footprint-grow conditions. | **NOTE ABSENT** as an independent preservation calculus. Replace with note effects/supports or state its derivation and scope. |
-| **Per-fact keep lists** | `keptIndicesWith`, HK:2393; `effectKept`, PC:2299; `keptCells`, HR:1425 | The note supplies support/respect, not these separate keep predicates and branch priority. Some branches implement instances; the dispatch as a whole is not a rule from the note. | **NOTE ABSENT** for the alternate calculus/dispatch. |
-| **Receiver-growth special branch** | `receiverGrows`, CE:119; `effectKept`, PC:2300; `appendKept`, PC:2534; `linearAppendKept`, PC:2598 | The note mentions an exact push post. It does not state the flag’s prefix/fresh-cell/actual-append contract or these quantified/linear transfer rules. | **NOTE ABSENT** for the specialized mechanism. Express its contract as ordinary posts and derive transfer through Entry. |
-| **Exact-write special branch** | `elementWrite`, CE:122; `writeKept`, PC:2707 | The note has View-Write, but this flag has different range premises, formats and coarse-change behavior. | **IMPLEMENTATION DIFFERENT**. Implement View-Write’s total conversion and common effect/post treatment. |
-| **Field-write preservation by replacement value** | `fieldEveryBody`, HR:1323; `fieldEvery`, HR:1333; `writeOutput`, HR:1472 | Preserves a quantified fact because the new value satisfies its body. No explicit corresponding field-write post/inference rule appears in the note. | **NOTE ABSENT**. State a general post rule and derive the case. |
-| **In-bounds and ordinary element-write branches** | `keepsLengths`, IW:1865; `writeAtoms`, IW:2303; `writeCarried`, IW:2734 | Stronger operation semantics are used directly, separately from support/respect and Entry. The note mentions exact length preservation but does not specify these transfer rules. | **NOTE ABSENT** for the branch rules; restricted instances of intended reasoning. |
-| **One chosen support per index fact** | `support?`, SV:421 | The note allows multiple supports. The implementation uses keep/keep for apart and a global value/init support for every; no alternative-support evidence is accepted here. | **IMPLEMENTATION NARROWER**. Supply/check support evidence or derive the required alternatives. |
-| **Store-only separation query** | `knowledgeQuery`, SS:236 | Handles class and store-site separations, not general disjointness of the note’s regions, especially element-cell regions. | **IMPLEMENTATION NARROWER**. Generalize the query. |
-| **Extra region constructors** | `Region.own/pathOwn/cell/inCls/all`, FP:310 | `all` can abbreviate the union of classes. Whole-own-object regions, module-cell widening and class intersections have no explicit note forms/rules. | **NOTE ABSENT** for the additional forms unless given a precise translation into the note language. |
-| **Module cell denotes all values** | `Region.mem .cell`, FP:340 | A named module cell is interpreted as the entire value class, rather than its selected location. No such rule appears in the note. | **NOTE ABSENT**. Replace with selected-location semantics or document a deliberate conservative translation. |
-| **Receiver-own and fresh-object contracts** | CE:109–110; `receiverEntries`, CE:374; `Effect.post`, CE:399; `Checker.keepingOwnCalls`, PC:3810 | The note has individual field regions and fresh array stores, not these whole-object contract primitives. | **NOTE ABSENT** as primitives. Define their expansion/general rule or remove them. |
-| **Type promises and element-test promises** | CE:105,111–112; `promiseOutput`, PC:911; `Checker.elementCalls`, PC:3831 | These enrich the assertion/contract calculus beyond the note’s stated call rule and atom grammar. | **NOTE ABSENT** for their specific introduction/elimination rules. |
-| **Call-post composition by kept terms** | `callKept`, PC:3262; `ensuresComposed`, PC:3340; `Composer.fact`, SR:618 | A restricted symbolic elimination algorithm replaces general Entry/two-state entailment. | **IMPLEMENTATION NARROWER**. Prove it implements a specified derivation fragment, then extend to the note rules. |
-| **Priority-ordered call checker layers** | `Checker.ordinary`, PC:3910; keeping/allocating/own/element/requiring/ensuring layers, PC:3773–3871 | No corresponding priority or mutually exclusive rule dispatch is stated in the note. | **NOTE ABSENT** for that operational restriction. |
-| **Drop unmaterialized heap facts on writes** | `checkedStep`, SP:1962–1969 | Facts whose names no slot holds are dropped without attempting the note’s support/Entry derivation. | **IMPLEMENTATION NARROWER**. Preserve logical witnesses or specify a deliberate inference restriction. |
-| **Drop heap facts at every handler** | `edgeStoreOf`, SP:1551 | Conflicts with the available exceptional Frame rule whenever the exceptional effect preserves a heap fact. | **IMPLEMENTATION NARROWER**. Use the exceptional effect/post. |
-| **Separate typed-array length metadata and host marker** | `LengthMeta`, W:372; `ViewMetaOk`, W:383 | The note obtains length from view-store form. It does not define these extra locations or host-marker requirement. | **IMPLEMENTATION DIFFERENT**. Align representation or prove an explicit faithful correspondence. |
-| **Projected quantified predicates** | `boundValue .project`, IF:868 | The note explicitly lists this form as outside its language. | **NOTE ABSENT**. Add the language/rules or remove the admitted form. |
-| **Vacuous store separation at non-arrays** | `PathStoresApart`, IF:887 | Different from the note’s requirement that both paths read arrays. | **IMPLEMENTATION DIFFERENT**. Separate region-disjointness from array-separation assertions. |
+- **Write-End.** The note concludes `x[i] ≐ v` and the extension of
+  density; `Derivation.writeEnd` concludes the growth of the length.
+- **Push.** The note concludes `y = |x|`; `Derivation.pushPost` concludes
+  the growth of the length.
+- **Str-Read.** The note reads the UTF-16 code unit at `i`;
+  `Derivation.stringRead` concludes a result of length one.
 
-Some fields have a counterpart and should **not** be classified as unmatched merely because they are flags:
+The atom axioms hold for narrower atoms than the note's "an atom": Sep and
+Init for linear atoms, Every for the represented scalar predicates. A
+structural derivation schema over every relevant atom form is what extends
+them.
 
-| Field/mechanism | Actual relationship |
+## Five fixtures and what each requires
+
+Each fixture below needs more than rule Loop with its frame; each is a
+target of review, with its functions and derivations to be identified
+before a closure is predicted.
+
+| Fixture | What its source requires |
 |---|---|
-| `onThrow`, CE:108/408 | Encodes a **restricted instance** of the note’s pair of effects: exceptional effect equals the normal frame, or defaults to top. The defect is insufficient expressiveness, not absence of any theoretical counterpart. |
-| `fresh`, CE:106/398 | Encodes selected-store freshness of a result. It corresponds to `fresh`; arbitrary freshness assertions and rebasing remain missing. |
-| `pre` / `ensures`, CE:113/116 | Encode restricted pre/post assertions. They correspond to triples and Call; the restriction and composition mechanism are the mismatch. |
-| Hashing, caches, named stores, deduplication | An implementation representation or optimization does not independently require a logical rule. What needs correspondence is its effect on accepted derivations and retained knowledge. This audit does not identify their mere existence as a theory defect. |
-
-**Findings and required changes**
-
-| Mechanism to build, generalize or remove | Changes required by the correspondence |
-|---|---|
-| **1. One state/model boundary matching the note** | Enforce dense view stores and their numeric-format invariant. Integrate, or explicitly relate, environment validity/typing to the note’s state. Resolve separate view-length metadata through a faithful representation theorem or a model change. Preservation must conclude the note’s W1–W4. |
-| **2. Complete region/effect language** | Add world-role-based all-views; expose path fields and store-plus-cells at every named change in signatures. Provide independent normal/exceptional effects. Give extra region forms exact translations or remove them. |
-| **3. Assertion language and interpretation** | Provide a representation or proved embedding for conjunction, invariant-guard disjunction, existential witnesses, separation, apart, freshness and modality. Match the note’s atom meanings. Correct `PathStoresApart`’s non-array semantics. Resolve projected quantified predicates, which exceed the note. |
-| **4. General support/respect application** | State support over the same admissible states as the note. Carry any necessary context as proved evidence from those states. Support the required alternative supports, general region disjointness, dynamic density, element assertions, and scalar bounded quantification. Replace the global value/init support where it blocks (Every). |
-| **5. A common preservation route** | Make fields, ordinary elements, native calls and typed-array writes produce effects and posts consumed by the same rules. Remove alternate `Changes`/keep-list routes, or prove and specify them as an exact derivation implementation of the note rather than separate rules. |
-| **6. Complete atom axioms** | Generalize Sep beyond selected stores/linear instances; Every beyond one checked write; Init beyond the current fact subset; Rigid to capture-avoiding substitution from a rigidity witness; View to the note’s model and atom scope. |
-| **7. Entry and two-state entailment** | Preserve arbitrary relevant old assertions and the transition relation, combine them with exact posts and branch conditions, and check defined paths. Implement the note’s derivation rules, including old-state lifting. The current linear/Composer fragment is only part of this. |
-| **8. Frame, Frame+, Loop and Reliance** | State and prove the general command rules. Apply them through the executable derivation system. The concrete `loop_safe` graph and per-step `FactKind` reliance theorem do not discharge these obligations. |
-| **9. Exceptional transfer** | Admit separate exceptional posts/effects and instantiate them at calls. Replace unconditional handler heap-fact dropping with exceptional Entry/Frame reasoning. |
-| **10. Rebasing** | Track arbitrary rigid paths, not only the one-field case. Widen to the appropriate class, not `.all`. Preserve element-cell effects of fresh stores. Retain all-views effects for fresh typed-array writes. |
-| **11. Typed-array operational rules** | Implement/prove View-Length, View-Read and total View-Write, including numeric conversion, invalid indices, nonthrowing behavior and other-index preservation. Remove the in-range-integer restriction from the rule itself; it may remain a derived specialization. |
-| **12. Alloc and freshness** | Recognize allocation by its proved postcondition rather than a list of term encodings. Establish separation against every in-scope array and transport the resulting facts through the common rules. |
-| **13. Checked transfer and graph theorem** | Define a check corresponding to the note’s two-state sequent, with regional effects on every exit. Prove its transfer theorem and connect the actual pass’s accepted edges to it. Compose those edges into graph soundness over the matching model. |
-| **14. Proposal machinery** | The head-inference families and method-name lists need an explicit proposal specification in the note, or replacement/removal under the owner’s stated requirement. Their being checked later establishes safety of acceptance, not rule correspondence. |
-| **15. Additional contract/transfer primitives** | Whole-object freshness/receiver-own effects, type/element promises, replacement-value quantified preservation, append-specific transfer and projected predicates need general rules or translations in the note; otherwise remove them as independent primitives. |
-
-**The implementation is not in sync with the note.** There is substantial proved correspondence: the named changes, world extension, modal laws, ordinary allocation post, and a real executable support/respect path. The decisive gaps are the different view model, missing all-views region, restricted assertion/effect languages, operation-specific preservation paths, restricted rebasing, and absence of the note’s general two-state checked-transfer calculus.
-
-The table supports the change list above. It does **not** justify claiming an exhaustive reverse inventory of all verifier mechanisms, nor a completed correspondence for await, source lowering, or native typed-array read/result-construction contracts; those remain explicitly undetermined in this read-only audit.
+| `bounds-pattern-grow-upper-refused` | `paths`: separation of an allocation through stable paths; `straight`: transfer without a loop |
+| `bounds-pattern-fresh-field-write-refused` | preservation by support across a field write, usable as a loop frame, of a quantified fact over a typed array that also reads another array's length; `everyFrame` gives part of it |
+| `written-ensures-push-refused` | an inferred invariant of a counter and a length, the exact Push consequence, arithmetic, and reasoning at the loop's exit |
+| `bounds-pattern-postfix-prefix-refused` | extension of a changing quantified prefix across a view write, a fact of the invariant |
+| `blocker-for-of-fresh-record` | the separation of a replacement record, which the note places outside its established derivations |
