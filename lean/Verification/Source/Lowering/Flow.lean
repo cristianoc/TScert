@@ -307,12 +307,13 @@ private def reachablePoints (graph : SourceFlow.Graph) (id : Nat) : List String 
         | throw "internal flow error: missing iteration intrinsic"
       let A ← exprType fc iterable
       let N ← exprType fc (.var pos iterate)
-      -- An iterator whose step changes only its own locations is a fresh
-      -- object, separated from the fields of the slots below it, which its
-      -- own locations differ from; the edge from the intrinsic's call
+      -- An iterator whose step changes only its own locations (its normal
+      -- exit's frame, `PromiseCalls.ownOnly`, the premise of `call-own`) is a
+      -- fresh object, separated from the fields of the slots below it, which
+      -- its own locations differ from; the edge from the intrinsic's call
       -- establishes that separation where its effect states a fresh object.
       let fresh := match PositiveRules.expand (SourceTypes.graph (← table)) N with
-        | [.arrs [⟨_, _, _, effect⟩] _] => effect.receiverOwn
+        | [.arrs [⟨_, _, _, effect⟩] _] => PromiseCalls.ownOnly effect.schema.normal.frame
         | _ => false
       let apart : Option (List (Ty Tree)) := if fresh then some Γ else none
       let binding : ScopeBinding Tree := { source := descriptor, fixed := some N, iterator := fresh, apart }

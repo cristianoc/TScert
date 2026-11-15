@@ -1333,8 +1333,7 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
 consequence): the call is safe at its evidence's exits (`selectedExits`) at
 its receiver and its actuals followed by the `undefined` of the positions a
 construction omits, from an entry held from the call's; the receiver owns no
-store where positions are omitted, and the actuals are values where the
-signature the deciders read states an append of them. -/
+store where positions are omitted. -/
 theorem selected_exits_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} (e : Evidence ι)
     {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} (ht : checkTreeUsing G images e codes sums = true)
@@ -1344,8 +1343,6 @@ theorem selected_exits_sound [DecidableEq ι] {G : NormalGraph ι}
     (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ (claim e).term)) :
     ∃ pad : List Tm, (∀ a ∈ pad, a = .undef) ∧
       (pad = [] ∨ Footprints.storeOf (receiverOf (instantiate 0 ρ (claim e).term)) = none) ∧
-      (∀ eff, selectedEffect e = some eff → eff.receiverGrows = true →
-        CallArguments.Values (actualsOf (instantiate 0 ρ (claim e).term) ++ pad)) ∧
       SafePostExcV (excOf G) (meaning G (claim e).type)
         (x.heldPost (receiverOf (instantiate 0 ρ (claim e).term)) (actualsOf (instantiate 0 ρ (claim e).term) ++ pad) W h)
         (x.heldExc (receiverOf (instantiate 0 ρ (claim e).term)) (actualsOf (instantiate 0 ρ (claim e).term) ++ pad) W h)
@@ -1365,7 +1362,7 @@ theorem selected_exits_sound [DecidableEq ι] {G : NormalGraph ι}
           obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
           exact by simpa only [Bool.and_eq_true] using List.all_eq_true.mp hp e heq) he hw hh
         (CallEffects.Effect.requires_none (app_requires_none ht.1).1 (app_requires_none ht.1).2 _ _ _) href
-      refine ⟨[], by simp, .inl rfl, fun _ _ _ => by simpa using hact, ?_⟩
+      refine ⟨[], by simp, .inl rfl, ?_⟩
       simpa only [List.append_nil] using hs
     case callRest effect k u flags P =>
       cases hsel
@@ -1382,10 +1379,7 @@ theorem selected_exits_sound [DecidableEq ι] {G : NormalGraph ι}
       refine ⟨[], by simp, .inl rfl, ?_⟩
       simp only [List.append_nil]
       by_cases hsp : flags.any id = true
-      · refine ⟨fun eff heff hg => ?_, ?_⟩
-        · simp only [selectedEffect, hsp, if_true, Option.some.injEq] at heff
-          subst heff; cases hg
-        rw [if_pos hsp]
+      · rw [if_pos hsp]
         rcases hp with hvals | ⟨-, hops⟩
         · exact callRestSpread_local_sound ht.1 hsp typed inScope (.inr (by simpa using hvals)) he hw hh href
         · exact callRestSpread_local_sound ht.1 hsp typed inScope (.inl (by simpa using hops)) he hw hh href
@@ -1402,7 +1396,6 @@ theorem selected_exits_sound [DecidableEq ι] {G : NormalGraph ι}
         obtain ⟨hact, hs⟩ := callRest_local_sound ht.1 hnos typed (fun p hm => by
           obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
           exact ⟨List.all_eq_true.mp hvals e heq, List.all_eq_true.mp hscope e heq⟩) he hw hh href
-        refine ⟨fun _ _ _ => hact, ?_⟩
         rw [if_neg hsp]
         exact hs
     case construct effect =>
@@ -1426,10 +1419,7 @@ theorem selected_exits_sound [DecidableEq ι] {G : NormalGraph ι}
           exact by simpa only [Bool.and_eq_true] using List.all_eq_true.mp hp e heq) he hw hh
         (CallEffects.Effect.requires_none (CallEffects.Effect.plain_requires hpl) (CallEffects.Effect.plain_pre hpl)
           _ _ h) href
-      refine ⟨pad, hpad, .inr (by rw [hrecv]; rfl), fun _ _ _ a ha => ?_, hs⟩
-      rcases List.mem_append.mp ha with ha | ha
-      · exact hact a ha
-      · rw [hpad a ha]; rfl
+      exact ⟨pad, hpad, .inr (by rw [hrecv]; rfl), hs⟩
     case sub proof =>
       cases ps with
       | nil => simp [selectedExits] at hsel
@@ -1440,10 +1430,10 @@ theorem selected_exits_sound [DecidableEq ι] {G : NormalGraph ι}
           simp only [selectedExits] at hsel
           simp only [selectedOperands] at hp
           obtain ⟨hctx,hterm,hsub⟩ := ht.1
-          obtain ⟨pad, hpad, hrecv, hvals, ih⟩ := selected_exits_sound child (ht.2 ⟨child,by simp⟩ (by simp)) hp hsel
+          obtain ⟨pad, hpad, hrecv, ih⟩ := selected_exits_sound child (ht.2 ⟨child,by simp⟩ (by simp)) hp hsel
             hcodes hsums (ρ := ρ) (n := n) (W := W) (h := h) (by rw [hctx]; exact he) hw hh (by rw [hterm]; exact href)
-          rw [hterm] at hrecv hvals ih
-          exact ⟨pad, hpad, hrecv, fun eff heff => hvals eff (by simpa [selectedEffect] using heff),
+          rw [hterm] at hrecv ih
+          exact ⟨pad, hpad, hrecv,
             SafePostExcV.mono_result (fun j W v hv => PositiveCertificates.acceptedUsing hsub j W v hv) ih⟩
 termination_by sizeOf e
 
@@ -1478,7 +1468,7 @@ theorem selected_sound_exc [DecidableEq ι] {G : NormalGraph ι}
       (eff.callExc (receiverOf (instantiate 0 ρ (claim e).term)) (actualsOf (instantiate 0 ρ (claim e).term)) h)
       n W h (instantiate 0 ρ (claim e).term) := by
   obtain ⟨x, hx⟩ : ∃ x, selectedExits e = some x := selectedExits_of_effect e hsel
-  obtain ⟨pad, hpad, hrecv, -, hs⟩ := selected_exits_sound e ht hp hx hcodes hsums he hw hh href
+  obtain ⟨pad, hpad, hrecv, hs⟩ := selected_exits_sound e ht hp hx hcodes hsums he hw hh href
   exact selectedExits_heldPost_call e hx hsel hpad hrecv hw hh hs
 
 /-- **A selected call meets its signature's postcondition**, at its receiver,

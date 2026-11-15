@@ -36,13 +36,8 @@ Fresh-Eff).
   old location outside `R` keeps its contents
   (`Footprint.keepsHeap_outside`).
 
-**The frame of a signature** (`Effect.frame`, the normal exit's frame of
-`Effect.summary`) has the closed bound below a mark its present fields
-determine (`CallEffects.Effect.frame_boundBelow`): the receiver's own change
-where it states `receiverOwn`, its coarse bound where it states no receiver
-store or the receiver's store is fresh, and `top` otherwise. **The
-exceptional exit's frame** (the note's rule Call, instantiated at the
-exceptional exit) bounds the heaps of a throw
+**The exceptional exit's frame** (the note's rule Call, instantiated at
+the exceptional exit) bounds the heaps of a throw
 (`CallEffects.Effect.callExc_frame`). -/
 namespace Verification.Footprints
 open Verification
@@ -332,92 +327,3 @@ theorem Footprint.keepsHeap_outside {R : Region} {Φ : Footprint} {ρ : Env} {h 
   rw [hu, hc]
 
 end Verification.Footprints
-
-namespace Verification.CallEffects
-open Verification Footprints
-
-/-! ## The frame of a signature -/
-
-private theorem old_closed (P : List Nat) (c : Footprints.Closed) : Footprint.old P c.fp = c.fp := rfl
-
-/-- The argument store regions of a signature freshness does not discharge
-at the positions `P`. -/
-def Effect.oldRegions (e : Effect) (P : List Nat) : List ArgumentStoreRegion :=
-  e.regions.filter fun r => !(regionEntry r).1.freshStore P
-
-/-- **The coarse bound below a mark**: the closed bound, or `top` where an
-argument store region freshness does not discharge remains. -/
-def Effect.footprintBelow (e : Effect) (P : List Nat) : Footprints.Closed :=
-  if (e.oldRegions P).isEmpty then e.closed else .top
-
-/-- With no fresh position the coarse bound below a mark is the coarse
-bound. -/
-theorem Effect.footprintBelow_nil (e : Effect) : e.footprintBelow [] = e.footprint := by
-  unfold Effect.footprintBelow Effect.oldRegions Effect.footprint
-  have : e.regions.filter (fun r => !(regionEntry r).1.freshStore []) = e.regions :=
-    List.filter_eq_self.mpr fun r _ => by
-      cases hp : r.path <;> simp [regionEntry, ArgumentStoreRegion.entry, Region.freshStore, hp]
-  rw [this]
-
-private theorem old_regions (P : List Nat) (rs : List ArgumentStoreRegion) :
-    Footprint.old P (rs.map regionEntry) = (rs.filter fun r => !(regionEntry r).1.freshStore P).map regionEntry := by
-  unfold Footprint.old
-  rw [List.filter_map]
-  rfl
-
-private theorem old_append (P : List Nat) (Φ Ψ : Footprint) :
-    Footprint.old P (Φ ++ Ψ) = Footprint.old P Φ ++ Footprint.old P Ψ :=
-  List.filter_append _ _
-
-private theorem old_receiver (P : List Nat) (e : Effect) :
-    Footprint.old P e.receiverEntries = if e.receiverOwn then [(.inCls (.own 0) .values, .any)]
-      else if e.receiverStore && !P.contains 0 then [(.field 0 arrayStoreKey, .any)] else [] := by
-  unfold Effect.receiverEntries
-  by_cases h0 : 0 ∈ P <;> cases e.receiverOwn <;> cases e.receiverStore <;>
-    simp [Footprint.old, Region.freshStore, h0]
-
-private theorem changeAt_regions (rs : List ArgumentStoreRegion) (k : Category) :
-    Footprint.changeAt (rs.map regionEntry) k = if rs.isEmpty then Change.keep else Change.any := by
-  induction rs with
-  | nil => rfl
-  | cons r rs ih =>
-    cases k <;> simp [Footprint.changeAt_cons, regionEntry, ArgumentStoreRegion.entry, Region.cats, Selector.has]
-
-private theorem changeAt_closed (c : Footprints.Closed) :
-    Footprint.changeAt c.fp .value = c.value ∧ Footprint.changeAt c.fp .array = c.array ∧
-      Footprint.changeAt c.fp .view = c.view :=
-  ⟨congrArg Footprints.Closed.value (Closed.fp_close c), congrArg Footprints.Closed.array (Closed.fp_close c),
-    congrArg Footprints.Closed.view (Closed.fp_close c)⟩
-
-/-- **A signature's frame has the closed bound below a mark its fields
-determine** (proved), its coarse bound below the mark
-(`Effect.footprintBelow`) `c`: the receiver's own change `⟨any, c.array,
-c.view⟩` where it states `receiverOwn`; else `c` where it states no receiver
-store or the receiver's position is fresh; else `top`. -/
-theorem Effect.frame_boundBelow (e : Effect) (P : List Nat) :
-    Footprint.boundBelow P e.frame = if e.receiverOwn then
-        ⟨.any, (e.footprintBelow P).array, (e.footprintBelow P).view⟩
-      else if !e.receiverStore || P.contains 0 then e.footprintBelow P else Footprints.Closed.top := by
-  unfold Footprint.boundBelow Effect.frame
-  rw [old_append, old_append, old_closed, old_regions, old_receiver, Footprint.close_append,
-    Footprint.close_append]
-  obtain ⟨hv, ha, hw⟩ := changeAt_closed e.closed
-  have hreg := changeAt_regions (e.regions.filter fun r => !(regionEntry r).1.freshStore P)
-  unfold Effect.footprintBelow Effect.oldRegions
-  by_cases h0 : 0 ∈ P <;> cases ho : e.receiverOwn <;> cases hs : e.receiverStore <;>
-    cases hr : (e.regions.filter fun r => !(regionEntry r).1.freshStore P).isEmpty <;>
-    simp [Footprint.close_eq, Closed.join, Footprint.changeAt_cons, Footprint.changeAt_nil, Region.cats,
-      Selector.has, hv, ha, hw, hreg, hr, h0, Closed.top]
-
-/-- The exceptional exit's frame is the signature's frame where it states
-`onThrow`, and `⊤` otherwise. -/
-theorem Effect.summary_exceptional_frame (e : Effect) (n : Nat) :
-    (e.summary n).exceptional.frame = if e.onThrow then e.frame else Parity.topEffect := by
-  unfold Effect.summary; cases e.onThrow <;> rfl
-
-/-- The own change of a closed bound bounds it. -/
-theorem Effect.join_own (c : Footprints.Closed) : c.join ⟨.any, c.array, c.view⟩ = ⟨.any, c.array, c.view⟩ := by
-  rcases c with ⟨v, a, w⟩
-  simp [Footprints.Closed.join, Footprints.Change.max_self]
-
-end Verification.CallEffects

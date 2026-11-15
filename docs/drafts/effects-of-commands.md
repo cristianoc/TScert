@@ -431,6 +431,12 @@ Each is a green, buildable step.
 11. The serialized shape changes once, across Lean, TypeScript and
     fixtures; the bridge and the old wire datatype are deleted.
 
+The walk bounds the prefix before an escaping throw by the normal bound
+($`\Phi \sqsubseteq \Psi`$), a sufficient instance of Seq-Eff; tracking
+the prefix's own effect, which a pure prefix may need where the declared
+normal bound exceeds the exceptional one, is composition work after the
+pivot.
+
 The decisions the general checks make are not those of the old fields in
 every case: after the representation forgets a distinction (with a normal
 frame of top, `onThrow` changes no schema while `covers` distinguishes the

@@ -135,8 +135,8 @@ asks.
   run in the worktree it should read, in the background. Every prompt states
   the goal and direction, the owner's decisions that bind it, and the exact
   question. Before a run, read the weekly usage (a one-word non-ephemeral run,
-  then the last `used_percent` in the newest file under `~/.codex/sessions`);
-  stop using Astra at 95%.
+  then the last `used_percent` in the newest file under `~/.codex/sessions`),
+  and tell the owner when a run fails on the limit, so he can reset it.
 
 ### When Astra is used
 

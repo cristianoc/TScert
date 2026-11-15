@@ -22,8 +22,7 @@ signature's normal and throw postconditions themselves
 arity `n` when its frames read the receiver and the first `n` parameters
 and its postconditions the entry slots up to `n` and the exit slots up to
 `n + 1` (`CommandSummary.Scoped`), as every module function's is at its
-arity (`Effect.summary_scoped`), and every signature's under the conditions
-`Effect.summary_scopedSummary_of` states, natives' included.
+arity (`Effect.summary_scoped`).
 
 A body's exit valuation may hold locals past the call's exit positions
 (`Runs.AtCallBelow`: it agrees with `ensuresEnv` below `n + 2`). A scoped
@@ -58,86 +57,6 @@ theorem Effect.summary_scopedSummary {e : Effect} {n : Nat} (h : e.belowRow n = 
   obtain ⟨h₃, h₄⟩ := Effect.summary_scoped h .exceptional
   simp only [CommandSummary.Scoped, Bool.and_eq_true]
   exact ⟨⟨⟨h₁, h₂⟩, h₃⟩, h₄⟩
-
-/-- **A signature's summary at arity `k`, scoped at `n`**: where its frame
-reads call positions up to `n`, its postcondition's facts exit positions up
-to `n + 1` and entry positions up to `n`, an append reads the actuals up to
-position `n` (`k ≤ n`), and an element assignment or exact write, which
-reads entry slots `1` to `3` and states its result by the transport
-`writtenResult k` of `max (k + 1) 4` images, is at `n + 1 = max (k + 1) 4`
-entry slots. The last condition is exact: `FormulaF.scoped` requires a
-transport's images to be the scope's entry slots, so such a summary is
-scoped at `n = max k 3` alone. -/
-theorem Effect.summary_scopedSummary_of {e : Effect} {n k : Nat} (arena : AssertionArena)
-    (hf : effectScoped (n + 1) e.frame = true)
-    (hens : ∀ F ∈ e.ensures, (∀ i ∈ F.slots, i ≤ n + 1) ∧ ∀ i ∈ F.entrySlots, i ≤ n)
-    (hg : e.receiverGrows = true → k ≤ n)
-    (hw : ∀ w, e.elementWrite = some w → w ≠ .stores → max (k + 1) 4 = n + 1) :
-    CommandSummary.Scoped arena n (e.summary k) = true := by
-  have htop : effectScoped (n + 1) topEffect = true := rfl
-  have hwr : max (k + 1) 4 = n + 1 →
-      FormulaF.scoped arena ⟨n + 1, n + 2⟩ (.transport (writtenResult k)) = true := by
-    intro hm
-    simp only [FormulaF.scoped, writtenResult, List.size_toArray, List.length_map, List.length_range, hm,
-      decide_true, Bool.true_and, List.all_eq_true, List.mem_map, List.mem_range, forall_exists_index, and_imp,
-      forall_apply_eq_imp_iff₂, Witness.scoped, Path.scoped, decide_eq_true_eq]
-    intro i hi; split <;> omega
-  have hpost : (e.normalPosts k).all (FormulaF.scoped arena ⟨n + 1, n + 2⟩) = true := by
-    simp only [Effect.normalPosts, List.all_append, Bool.and_eq_true]
-    refine ⟨⟨⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩
-    · cases e.fresh <;> simp [FormulaF.scoped, OperationPostF.scoped]
-    · cases e.freshObject <;> simp [FormulaF.scoped, OperationPostF.scoped]
-    · cases e.elements <;> simp [FormulaF.scoped, OperationPostF.scoped]
-    · refine List.all_eq_true.mpr fun F hF => ?_
-      obtain ⟨G, hG, rfl⟩ := List.mem_map.mp hF
-      simp only [FormulaF.scoped, OperationPostF.scoped, Scope.count, Nat.add_zero, Bool.and_eq_true,
-        List.all_eq_true, decide_eq_true_eq]
-      exact ⟨fun i hi => decide_eq_true (by have := (hens G hG).1 i hi; omega),
-        fun i hi => by have := (hens G hG).2 i hi; omega⟩
-    · cases hgr : e.receiverGrows
-      · rfl
-      · have hk := hg hgr
-        simp only [if_true, List.all_cons, List.all_nil, FormulaF.scoped, effectScoped, OperationPostF.scoped,
-          regionRoots, actualWitnesses, Bool.and_true, List.all_eq_true, List.mem_map, List.mem_range,
-          forall_exists_index, and_imp, forall_apply_eq_imp_iff₂, Witness.scoped, Path.scoped, Bool.and_eq_true,
-          decide_eq_true_eq]
-        exact ⟨by omega, by omega, ⟨by omega, by omega⟩, fun _ _ => by omega⟩
-    · cases hew : e.elementWrite with
-      | none => rfl
-      | some w =>
-        cases w with
-        | stores => rfl
-        | assign =>
-          have hm := hw .assign hew (by intro h; cases h)
-          simp only [ElementWrite.posts, List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true]
-          refine ⟨rfl, ?_, hwr hm⟩
-          simp only [FormulaF.scoped, OperationPostF.scoped, Bool.and_eq_true, decide_eq_true_eq]; omega
-        | exact kk =>
-          have hm := hw (.exact kk) hew (by intro h; cases h)
-          simp only [ElementWrite.posts, List.all_cons, List.all_append, List.all_nil, Bool.and_true,
-            Bool.and_eq_true]
-          refine ⟨rfl, ?_, ?_, hwr hm⟩
-          · simp only [FormulaF.scoped, OperationPostF.scoped, Bool.and_eq_true, decide_eq_true_eq]; omega
-          · refine List.all_eq_true.mpr fun F hF => ?_
-            obtain ⟨G, hG, rfl⟩ := List.mem_map.mp hF
-            simp only [FormulaF.scoped, OperationPostF.scoped, Scope.count, Nat.add_zero, Bool.and_eq_true,
-              List.all_eq_true, decide_eq_true_eq]
-            have h3 : 3 ≤ n := by omega
-            simp only [ElementKind.preFacts] at hG
-            cases hr : kk.range <;> simp only [hr] at hG <;>
-              simp only [List.mem_cons, List.not_mem_nil, or_false] at hG <;>
-              rcases hG with rfl | rfl | rfl | rfl | rfl | rfl <;>
-              simp [HeapKnowledge.IndexFact.slots, HeapKnowledge.IndexFact.entrySlots, Linear.Fact.vars,
-                HeapKnowledge.Term.slots, HeapKnowledge.Term.entrySlots,
-                HeapKnowledge.Term.value, HeapKnowledge.Term.now, decide_eq_true_eq] <;>
-              first | exact decide_eq_true (by omega) | exact ⟨decide_eq_true (by omega), by omega⟩
-  have hexc : effectScoped (n + 1) (e.summary k).exceptional.frame = true := by
-    simp only [Effect.summary]; split
-    · exact hf
-    · exact htop
-  have hexe : (e.summary k).exceptional.ensures = [] := by simp only [Effect.summary]; split <;> rfl
-  simp only [CommandSummary.Scoped, Bool.and_eq_true, hexc, hexe, List.all_nil, and_true]
-  exact ⟨hf, hpost⟩
 
 /-- **A scoped summary reads its scope alone**: at each exit it holds alike
 at two two-states agreeing below its scope (`FormulaF.holds_scoped_congr`). -/
@@ -221,7 +140,7 @@ theorem CommandSummary.signature_holds_below {arena : AssertionArena} {P : Asser
 /-- **An inferred effect states the signature's contract at every call
 whose exit holds locals** (`signature_contract` with
 `signature_holds_below`), its summary at the call's arity scoped at `n`
-(`Effect.summary_scopedSummary`, `Effect.summary_scopedSummary_of`). -/
+(`Effect.summary_scopedSummary`). -/
 theorem CommandSummary.signature_contract_below {arena : AssertionArena} {P : Assertion} {R : Runs}
     {S : CommandSummary} {e : Effect} {n : Nat} {r : Tm} {args : List Tm} (hS : S.Sound arena P R)
     (hw : ∀ c, (S.get c).Weakens arena P ((e.summary args.length).get c))

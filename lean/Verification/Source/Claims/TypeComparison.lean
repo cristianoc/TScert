@@ -23,7 +23,8 @@ def moduleValueType (value : ModuleValue Tree) : Compiler (Ty Tree) := do
     | [.arrs L S], [.arrs actual _] =>
       let retain (a : CallEffects.Arrow (Ty Tree)) :=
         match actual.find? fun b =>
-          { b.effect with onThrow := false } == CallEffects.Effect.ofFootprint ⟨.keep, .keep, .keep⟩ &&
+          b.effect.schema.normal == (CallEffects.Effect.ofFootprint ⟨.keep, .keep, .keep⟩).schema.normal &&
+          b.effect.promise.isNone && b.effect.requires.isNone && b.effect.pre.isEmpty &&
           (sameMeaning T a.receiver b.receiver ||
             (PositiveRules.expand G a.receiver == [.source] && PositiveRules.expand G b.receiver == [.top])) &&
           sameMeaning T a.result b.result &&

@@ -195,7 +195,6 @@ run_cmd do
   check ``Verification.ProgramTyping.codeObligations_sound
   check ``Verification.ProgramTyping.exportsEstablished_sound
   check ``Verification.ProgramTyping.Exits.exitPost_of_established
-  check ``Verification.ProgramTyping.exitBounds_of_regions
   check ``Verification.Footprints.Footprint.classBound_sound
   check ``Verification.ProgramTyping.SafePostExc.grow
   check ``Verification.SourceClaimJson.PassUnit.captures_envOk
@@ -369,7 +368,6 @@ run_cmd do
   check ``Verification.Parity.OperationPostF.holds_scoped_congr
   check ``Verification.Parity.FormulaF.holds_scoped_congr
   check ``Verification.Parity.ExitSpec.holds_scoped_congr
-  check ``Verification.CallEffects.Effect.summary_scopedSummary_of
   check ``Verification.CallEffects.CommandSummary.Scoped.holds_congr
   check ``Verification.CallEffects.Runs.AtCall.below
   check ``Verification.CallEffects.CommandSummary.signature_holds_below
@@ -581,7 +579,6 @@ run_cmd do
   check ``Verification.Footprints.Footprint.includedIn_sound
   check ``Verification.Footprints.Footprint.includedIn_of_boundBelow
   check ``Verification.Footprints.Footprint.keepsHeap_prefix
-  check ``Verification.CallEffects.Effect.frame_boundBelow
   check ``Verification.GraphCode.selectedWithin_sound
   check ``Verification.GraphCode.selectedThrowWithin_sound
   check ``Verification.GraphCode.selectedThrowsWithinAt_eq_grades

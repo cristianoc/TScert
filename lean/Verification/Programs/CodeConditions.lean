@@ -119,32 +119,6 @@ theorem exportsEstablished_sound {e : Effect} {facts : List HeapKnowledge.IndexF
   · exact Exits.exitPost_of_established hadm hp.1 hn hp.2.1 hp.2.2
   · exact Exits.exitPost_of_established (fresh := false) (facts := []) hadm hp hexc (by simp) (by simp)
 
-/-- A frame of class entries, receiver entries and region entries has the
-class bound of its class entries' closed bound. -/
-theorem classBound_frame (e : Effect) (hr : e.regions = []) : e.frame.classBound = e.closed := by
-  have hrc : e.receiverEntries.filter (·.1.isClass) = [] := by
-    unfold Effect.receiverEntries
-    split
-    · rfl
-    · split <;> rfl
-  have hc : e.closed.fp.filter (·.1.isClass) = e.closed.fp := by
-    rcases e.closed with ⟨a, b, c⟩; rfl
-  have hcl : e.closed.fp.close = e.closed := by
-    have := Footprints.Closed.closed?_fp e.closed
-    simpa [Footprints.Footprint.closed?, Footprints.Closed.fp, Footprints.Region.isClass] using this
-  simp only [Footprints.Footprint.classBound, Footprints.Footprint.classes, Effect.frame, hr, List.map_nil,
-    List.append_nil, List.filter_append, hrc, hc, hcl]
-
-/-- **A signature stating no store regions has the bounds of its closed
-footprint**: its footprint on a normal return, and on a throw where it states
-`onThrow`, `⊤` otherwise (`classBound_frame`). -/
-theorem exitBounds_of_regions {e : Effect} (hr : e.regions = []) :
-    exitBounds e = ⟨e.footprint, if e.onThrow then e.footprint else .top⟩ := by
-  rw [Effect.footprint_of_regions hr]
-  have ht : topEffect.classBound = Footprints.Closed.top := rfl
-  unfold exitBounds Effect.schema
-  cases e.onThrow <;> simp [Exits.map, classBound_frame e hr, ht]
-
 /-- **Whether a signature's frames read the heap at each location alone**
 (`Region.atLocation`), on both exits. -/
 def framesAtLocation (e : Effect) : Bool :=

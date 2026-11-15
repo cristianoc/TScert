@@ -1343,8 +1343,9 @@ def armsCallee (G : PositiveGraphs.NormalGraph Tree) (T : EquationStore.State) (
         | false, some A => return A
         | _, _ => throw "an actual where the arms of a union of callables state different parameters"
       | _ => throw "an actual past a parameter"
-    let effect := if rest.all (·.effect == a0.effect) then a0.effect
-      else { CallEffects.Effect.ordinary with onThrow := c.arms.all (·.effect.onThrow) }
+    -- Arms of different effects share the ordinary one, whose exits are
+    -- both `⊤`.
+    let effect := if rest.all (·.effect == a0.effect) then a0.effect else CallEffects.Effect.ordinary
     return { c with fixed := [⟨a0.receiver, params, norm (c.arms.flatMap (·.result)), effect⟩],
                     rests := [], arms := [] }
 

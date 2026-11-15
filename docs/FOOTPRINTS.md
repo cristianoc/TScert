@@ -300,15 +300,9 @@ effect where its closed bound is empty, and a transition it allows then
 leaves an extension of the heap it starts in (`Footprint.keepsHeap`; proved:
 `Footprint.keepsHeap_prefix`).
 
-On a signature's frame the closed bound below the mark is, with $`c`$ its
-coarse bound below the mark (the closed bound, or $`\top`$ where an argument
-store region not at the empty path of a fresh position remains,
-`Effect.footprintBelow`), the receiver's own change
-$`\{\mathrm{value}{:}\,\mathrm{any}\}\sqcup c`$ where the signature
-states `receiverOwn`, $`c`$ where it states no receiver store or the
-receiver's position is fresh, and $`\top`$ otherwise (proved:
-`Effect.frame_boundBelow`). A selected call's check against a closed
-bound $`\Phi`$ is that bound within $`\Phi`$ (`GraphCode.selectedWithinAt`),
+A selected call's check against a closed bound $`\Phi`$ is the closed
+bound below the mark of its normal exit's frame within $`\Phi`$
+(`GraphCode.selectedWithinAt`),
 and `keepsHeap` is that bound with no fresh position within the empty
 bound (`Footprint.keepsHeap`).
 
@@ -449,7 +443,12 @@ checks $`\Phi \sqsubseteq \Psi`$ and its throw within $`\Psi`$, unless
 $`\Psi`$ is $`\top`$, which every run meets by the heap's growth
 (`SinglePass.footprintCheck`, `StepGrades.admits`; proved:
 `TolerantFrames.footprintCheck_sound`, `footprint_exits`, `throw_exits`,
-`footprintKept_of`).
+`footprintKept_of`). The inclusion $`\Phi \sqsubseteq \Psi`$ is a
+sufficient instance of Seq-Eff for the prefix before the throw, the prefix
+bounded by the declared $`\Phi`$; it is no relation the two exits' effects
+of a command must have: a prefix may fit $`\Psi`$ where $`\Phi`$ does not
+(a pure prefix, for one). Tracking the prefix's own effect is composition
+work ([effects of commands](drafts/effects-of-commands.md#changing-the-effect-type)).
 
 Proved: `GraphCode.bounded_step` preserves the bound outside $`D`$ and the
 absence of a normal exit inside it; `goto_bounded` gives the body's footprint.
