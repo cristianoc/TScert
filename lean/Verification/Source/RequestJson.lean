@@ -580,7 +580,9 @@ instance : ToJson DiagnosticOutcome := ⟨DiagnosticOutcome.toJson⟩
 /-- One machine-readable record on stderr, following the human-readable error.
 This transport leaves successful evidence JSON and the proof protocol unchanged. -/
 def withDiagnostic (message : String) (fields : List (String × Json)) : String :=
-  message ++ "\nobligation-diagnostic: " ++ (Json.mkObj fields).compress
+  match EffectCodec.document (Json.mkObj fields) with
+  | .ok j => message ++ "\nobligation-diagnostic: " ++ j.compress
+  | .error e => message ++ "\nobligation-diagnostic refused: " ++ e
 
 /-- A message carrying a diagnostic (`withDiagnostic`). -/
 def hasDiagnostic (message : String) : Bool :=

@@ -1343,29 +1343,34 @@ def decodeExits (j : Json) : Except String (Exits ExitSchema) := do
   if !exitsSerializable x then throw "exits beyond the nesting limit"
   pure x
 
-/-- The field naming an effect a document cannot write. -/
-def unserializableKey : String := "unserializable"
+/-- The fields of a serialized effect (`encode`). -/
+def effectFields : List String := ["exits", "promise", "requires", "pre"]
 
-/-- **An effect in a derived document**: its writing (`encode`) where it
-serializes, otherwise an object naming the reason under
-`unserializableKey`, which `refuseUnserializable` turns into the refusal of
-the whole document before it is written. -/
-def write (e : Effect) : Json :=
-  match checked e with
-  | .ok s => s.encode
-  | .error m => Json.mkObj [(unserializableKey, Json.str m)]
+/-- **Every effect a document holds reads back as an effect**: each object
+of exactly the effect's fields (`effectFields`, the shape `encode` writes
+at every effect) decodes (`decode`), or the document is refused whole,
+naming the first effect's place by its path and the decoder's reason. The
+encoder writes `null` at an assertion reference and at a term literal, and
+the decoder reads the nesting limit, so an effect outside the serialization
+predicate does not read back. -/
+partial def effectsRead (path : String) : Json → Except String Unit
+  | .obj kvs =>
+    let ks := kvs.toArray.toList.map (·.1)
+    if ks.length == effectFields.length && effectFields.all ks.contains then
+      match decode (.obj kvs) with
+      | .ok _ => .ok ()
+      | .error m => .error s!"{if path.isEmpty then "/" else path}: an effect the document cannot write: {m}"
+    else kvs.toArray.toList.forM fun (k, v) => effectsRead s!"{path}/{k}" v
+  | .arr a => a.toList.zipIdx.forM fun (v, i) => effectsRead s!"{path}[{i}]" v
+  | _ => .ok ()
 
-/-- Whether a JSON value holds the field `k` at some depth. -/
-partial def holdsKey (k : String) : Json → Bool
-  | .obj kvs => kvs.toList.any fun (k', v) => k' == k || holdsKey k v
-  | .arr a => a.any (holdsKey k)
-  | _ => false
-
-/-- **A document holding an effect it cannot write is refused whole.** -/
-def refuseUnserializable (j : Json) : Except String Json :=
-  if holdsKey unserializableKey j then
-    .error "a document states an effect whose formulas reference an assertion, state a literal of no primitive constant or nest beyond the limit"
-  else .ok j
+/-- **A document holding effects, written**: the document where every effect
+it holds reads back as one (`effectsRead`), otherwise the refusal of the
+whole document naming the place. Every writer of a document that holds an
+effect writes through it. -/
+def document (j : Json) : Except String Json := do
+  effectsRead "" j
+  pure j
 
 /-- **A document's text states no object key twice** (at its first repeated
 key, by its object's path): the reader reads objects into maps, which keep
@@ -1447,6 +1452,12 @@ private def sample : Effect :=
 #guard refuses r#"{"exits":{"normal":{"frame":[],"ensures":[{"and":{"left":"truth","right":"truth"},"truth":null}]},"exceptional":{"frame":[],"ensures":[]}},"promise":null,"requires":null,"pre":[]}"#
 #guard refuses r#"{"exits":{"normal":{"frame":[],"ensures":[]},"exceptional":{"frame":[],"ensures":[]}},"promise":null,"requires":null,"pre":[{"index":{"slot":"5"}}]}"#
 #guard !refuses r#"{"exits":{"normal":{"frame":[],"ensures":[]},"exceptional":{"frame":[],"ensures":[]}},"promise":null,"requires":null,"pre":[{"index":{"slot":5}}]}"#
+-- A document holding an effect outside the predicate is refused whole, at
+-- the effect's place (a boundary no CLI input reaches: the verifier builds
+-- the effects it writes).
+#guard (document (Json.mkObj [("rows", Json.arr #[Json.null,
+    encode { sample with exits := ⟨⟨[], [.and .truth (.at .after ⟨0⟩)]⟩, ⟨[], []⟩⟩ }])])) matches .error _
+#guard (document (Json.mkObj [("rows", Json.arr #[encode sample])])) matches .ok _
 -- A key stated twice is refused before the document is read into maps.
 #guard (duplicateKey? r#"{"a":{"b":1,"c":[{"b":2}],"b":3}}"#).isSome
 #guard (duplicateKey? r#"{"a":{"b":1,"c":[{"b":2}]},"b":"\"b\""}"#).isNone

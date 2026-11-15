@@ -575,12 +575,15 @@ certification establishes every exit guarantee a signature advertises.
 Serialization is defined on effects of the serialization predicate
 (`EffectCodec.Serializable`): arena-free formulas, primitive literals and
 the nesting limit; every integer is written, a safe one as a number and any
-other as its decimal string. Its subtype (`EffectCodec.SerializableEffect`) has a total encoder. A
-writer that can refuse writes through it (`EffectJson.effectJson`); a
-derived document marks an effect outside the predicate
-(`EffectCodec.write`), and the writer of the claims document and of module
-interfaces refuses the whole document holding one
-(`EffectCodec.refuseUnserializable`).
+other as its decimal string. Its subtype (`EffectCodec.SerializableEffect`) has a total encoder, and a
+writer that can refuse writes through it (`EffectJson.effectJson`). Every
+writer of a document holding effects (the claims document, module
+interfaces, diagnostics and observations, the CLI's printed documents)
+writes it through `EffectCodec.document`: each effect in it reads back as
+one, or the whole document is refused, naming the effect's place. The
+encoder writes `null` at an assertion reference and at a term literal,
+which the decoder refuses, so no object that is not an effect is written
+where an effect is.
 
 - **Encoding then decoding** returns every serializable effect
   (`EffectCodec.decode_encode`).

@@ -159,7 +159,7 @@ def fragmentClaims (ast : Json) (fileKey : String) (standIns : StandIns := {}) (
       ("contracts", Json.arr #[]), ("exits", toJson (EffectJson.classExits footprint onThrow)),
       ("resultExits", toJson (EffectJson.classExits resultFootprint false))]
   let empty := Json.mkObj [("entries", Json.arr #[]), ("expressions", Json.arr #[]), ("contracts", Json.arr #[])]
-  EffectCodec.refuseUnserializable (Json.mkObj ([("file", toJson fileKey), ("sourceSha256", ast.getObjValD "sourceSha256"),
+  EffectCodec.document (Json.mkObj ([("file", toJson fileKey), ("sourceSha256", ast.getObjValD "sourceSha256"),
     ("types", toJson (primitives.map toJson)), ("functions", Json.arr functions.toArray),
     ("modules", Json.arr #[]), ("qualified", Json.arr #[])] ++
     (if init.isEmpty then [] else [("init", empty)])))

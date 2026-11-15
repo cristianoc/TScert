@@ -215,7 +215,9 @@ def readJson (path : String) : IO (Except String Json) := do
 def flowFile (astPath : String) : IO UInt32 := do
   let ast ← readJson astPath
   match ast >>= SourceFlow.document with
-  | .ok graph => IO.println graph.compress; return 0
+  | .ok graph => match EffectCodec.document graph with
+    | .ok j => IO.println j.compress; return 0
+    | .error e => refuse e
   | .error reason => refuse reason
 
 /-- The work table, where profiling (`TSCERT_PROFILE`), written to
@@ -287,7 +289,9 @@ def interfacePlanFile (path selection : String) : IO UInt32 := do
   let selected ← readJson selection
   match (do SourceClaimJson.interfacePlan (← ast) (← selected)) with
   | .error e => refuse e
-  | .ok j => IO.println j.compress; return 0
+  | .ok j => match EffectCodec.document j with
+    | .ok j => IO.println j.compress; return 0
+    | .error e => refuse e
 
 /-- A complete canonical component check. All semantic inputs are in its
 request; no environment-supplied stand-ins or evidence enter this check. -/
@@ -346,7 +350,9 @@ def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) :
     SourceClaimJson.encodeInterfaces modules est tables
   match parsed with
   | .error e => refuse e
-  | .ok j => IO.println j.compress; return 0
+  | .ok j => match EffectCodec.document j with
+    | .ok j => IO.println j.compress; return 0
+    | .error e => refuse e
 
 /-- A file prepared for mode 8 (`prepareUnitsFile`): what is a function of
 the file and its inputs alone and every unit's check reads: the fragment,

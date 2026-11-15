@@ -25,6 +25,14 @@ namespace Verification.SourceClaimJson
 open Lean ProgramTyping RequestJson SourceExtraction ControlFlow PositiveGraphs PositiveRules LabelStore
 open EquationGraphs (Tree)
 
+/-- An observation's line: its tag and its record, written where every
+effect it holds reads back as one (`EffectCodec.document`), otherwise the
+refusal of the whole record naming the place. -/
+def observationLine (tag : String) (record : Json) : String :=
+  match EffectCodec.document record with
+  | .ok j => tag ++ j.compress
+  | .error e => tag ++ "refused: " ++ e
+
 /-- The located refusal of a footprint a unit claims for its declaration, or
 for a closure of its code, that its graph and certificate do not establish:
 at the first node the node-by-node bound check refuses, else at the
@@ -572,7 +580,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
           ("node", toJson rq.program[l]?),
           ("claim", toJson ((rq.claims[l]?).map (RequestJson.PointClaim.shown p))),
           ("facts", shown facts), ("missing", Json.arr missingJson.toArray)] ++ p.fields)
-        "refusal-observation: " ++ record.compress
+        observationLine "refusal-observation: " record
       { index := ci, outcome := .refused s!"code {ci}: {w}" lacks, answers := a, line := record }
     | o => { index := ci, outcome := .refused s!"code {ci}: {o}", answers := a, line := "" }
   let (codeRuns, table, sumsAnswers) := codesInOrder (·.1.entry) codeStep [] next r.codes.zipIdx
@@ -701,7 +709,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
         ("node", toJson r.program[l]?),
         ("claim", toJson ((r.claims[l]?).map (RequestJson.PointClaim.shown p))),
         ("facts", shown facts), ("missing", Json.arr missingJson.toArray), ("lost", Json.arr lostJson.toArray)] ++ p.fields)
-      return checked o ("refusal-observation: " ++ record.compress)
+      return checked o (observationLine "refusal-observation: " record)
   if let .observed ob := o then
     let claimAt := fun l => (r.claims[l]? : Option (CertificateProducer.PointClaim _))
     let mentioned := ((claimAt ob.label).map RequestJson.PointClaim.mentions).getD [] ++
@@ -715,7 +723,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
       ("implies", Json.arr (ob.implies.map fun x => Json.mkObj [("test", toJson x.test),
         ("target", toJson x.target), ("type", toJson (p.shown x.type))]).toArray),
       ("preds", Json.arr (ob.preds.map fun (pl, k) => Json.mkObj (place pl ++ [("knowledge", toJson k)])).toArray)] ++ p.fields)
-    return checked (.notHandled "observed") ("observation: " ++ record.compress)
+    return checked (.notHandled "observed") (observationLine "observation: " record)
   return checked o (countsLine counting name counts)
 
 /-- The node label a pass refusal's text names after `key` (`expression at

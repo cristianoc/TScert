@@ -30,7 +30,7 @@ def encodeInterfaces (modules : List Fragment.ModuleAst) (est : Established) (ta
       return Json.mkObj [("name", toJson n), ("namePos", p), ("established", value)]
     return Json.mkObj [("module", interfaceModuleJson m), ("entries", toJson entries),
       ("rows", (table.map RowTable.rowsWire).getD Json.null)]
-  EffectCodec.refuseUnserializable (Json.mkObj [("modules", toJson rows)])
+  EffectCodec.document (Json.mkObj [("modules", toJson rows)])
 
 /-- Decode a store-authorized result, requiring its exact shape and each
 complete module document to match the importing fragment: its entries,

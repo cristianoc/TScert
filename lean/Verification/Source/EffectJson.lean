@@ -85,10 +85,11 @@ instance : FromJson Effect := ⟨admit⟩
 (`EffectCodec.checked`); a writer that can refuse uses this. -/
 def effectJson (e : Effect) : Except String Json := (·.encode) <$> EffectCodec.checked e
 
-/-- **An effect inside a derived document** (a types table, evidence, a
-claim): `EffectCodec.write`; the document's writer refuses the whole document
-where an effect does not serialize (`EffectCodec.refuseUnserializable`). -/
-instance : ToJson Effect := ⟨EffectCodec.write⟩
+/-- **An effect inside a document is its writing** (`EffectCodec.encode`); a
+writer of a document holding effects writes it through
+`EffectCodec.document`, which refuses the whole document, naming the
+place, where an effect does not read back as one. -/
+instance : ToJson Effect := ⟨EffectCodec.encode⟩
 
 /-- A callable's exits (a statement's, a claim's), read exactly. -/
 instance : FromJson (Exits ExitSchema) := ⟨EffectCodec.decodeExits⟩
