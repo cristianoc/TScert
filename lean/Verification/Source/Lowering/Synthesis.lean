@@ -92,7 +92,9 @@ structure Walk where
   generalCalls : List Span := []
   /-- The summary of the operations of the function literal being walked, at
   the class level (`ClassSummary`): each operation it meets extends it
-  (`ClassSummary.extend`), its control flow composing them
+  (`ClassSummary.extend`), its control flow composing them: an untrusted
+  proposal heuristic, each rule proved sound for runs and the walk's
+  correspondence with the source's runs unproved
   ([proposed exit summaries](ExitProposals.lean)); and the bindings it
   declares. -/
   summary : ClassSummary := ClassSummary.skip

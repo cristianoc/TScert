@@ -191,7 +191,7 @@ store the run allocated (one initialized by a call whose instance states a
 fresh result, or by such a constant) discharged; a `for...of` each step of
 its stepper's first signature, its receiver the iterator the call made
 (`TSCERT_FORCE=steps` leaves the steps out, the adversarial proposal);
-composed along its control flow; its footprint the normal exit's bound, a
+composed along its control flow (an untrusted heuristic); its footprint the normal exit's bound, a
 throw bounded where the exceptional exit's bound is within it; and an expression body that is a
 call whose instance states a fresh result states one. `TSCERT_FORCE=fresh` takes every named receiver as
 such a constant, the adversarial proposal. A

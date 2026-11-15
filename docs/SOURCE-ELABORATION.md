@@ -3875,12 +3875,18 @@ of each operation the walk meets (`ClassSummary`,
 a call's is its instance's per-exit contract, each exit's frame read in the
 closed language below the call's entry with a fresh receiver's store
 discharged (Fresh-Eff); a write's the grade its typed-write rule accepts; a
-`throw`'s an exceptional exit leaving the heap it starts in. The summaries
-compose by the note's rules: sequence on both exits (a throw includes the
-prefix before it), choice, a handler (a caught throw continues in it), an
-async body's throw a normal return of its call; joining each throw's frame
-with the normal frame walked closes the result under another traversal of
-every loop. The proposal in today's effect format is its projection
+`throw`'s an exceptional exit leaving the heap it starts in. Each rule of
+composition is proved sound for runs (`ClassSummary.Sound`): sequence on
+both exits (a throw includes the prefix before it), choice, a handler (a
+caught throw continues in it), a finalizer, an async body (a throw a normal
+return of its call, which never throws) and a loop with rigid class
+entries; a sound summary is a sound command summary (`sound_spec`). The
+walk that applies them is an untrusted proposal heuristic: its summary is
+meant to be sound for the union of the runs of the prefixes it walked (each
+operation by `extend_sound`, a handler entered from both exits of its body,
+loops closed by joining each throw's frame with the normal frame walked);
+that correspondence with the source's runs is not proved, the walk having
+no run semantics of the source. The proposal in today's effect format is its projection
 (`ClassSummary.project`, an upper bound at each exit,
 `ClassSummary.project_covers`): the normal exit's closed bound, its throw
 bounded where the exceptional exit's bound is within it and, at a callback,

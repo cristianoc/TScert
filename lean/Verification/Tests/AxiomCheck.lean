@@ -549,6 +549,17 @@ run_cmd do
   check ``Verification.SourceExtraction.ClassSummary.project_ofFormat
   check ``Verification.SourceExtraction.ClassSummary.within_weakens
   check ``Verification.SourceExtraction.ClassSummary.within_choice
+  check ``Verification.SourceExtraction.ClassSummary.exitHolds_then
+  check ``Verification.SourceExtraction.ClassSummary.seq_sound
+  check ``Verification.SourceExtraction.ClassSummary.choice_sound
+  check ``Verification.SourceExtraction.ClassSummary.extend_sound
+  check ``Verification.SourceExtraction.ClassSummary.handle_sound
+  check ``Verification.SourceExtraction.ClassSummary.finally_sound
+  check ``Verification.SourceExtraction.ClassSummary.settle_sound
+  check ``Verification.SourceExtraction.ClassSummary.within_close
+  check ``Verification.SourceExtraction.ClassSummary.iterates_holds
+  check ``Verification.SourceExtraction.ClassSummary.loop_sound
+  check ``Verification.SourceExtraction.ClassSummary.sound_spec
   check ``Verification.TolerantFrames.pass_within_normal
   check ``Verification.TolerantFrames.pass_within_throw
   check ``Verification.TolerantFrames.pass_within_entry
