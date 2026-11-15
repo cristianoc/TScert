@@ -98,6 +98,28 @@ theorem SafePostExcW.weaken_admissible {Ξ T : Fam} {Q Q' : WPost} {R R' : WExc}
     · refine .inr ⟨U, h', t', hx', hu, st, hh', ih (by omega) U h' t' ?_ hu hh' hs'⟩
       simpa only [trunc_trunc] using WExt_trans (WExt_trunc (Nat.le_succ p) hx) hx'
 
+/-- **Consequence at admissible endpoints, the throw's postcondition reading
+the thrown value**: as `SafePostExcW.weaken_admissible`. -/
+theorem SafePostExcV.weaken_admissible {Ξ T : Fam} {Q Q' : WPost} {R R' : WExcV} (s : IndexedHeap)
+    (hq : ∀ (s' : IndexedHeap) (v : Tm), Admissible s s' → Q s'.n s'.W s'.h v → Q' s'.n s'.W s'.h v)
+    (hr : ∀ (s' : IndexedHeap) (v : Tm), Admissible s s' → R s'.n s'.W s'.h v → R' s'.n s'.W s'.h v) {t : Tm}
+    (hs : SafePostExcV Ξ T Q R s.n s.W s.h t) : SafePostExcV Ξ T Q' R' s.n s.W s.h t := by
+  suffices H : ∀ (n : Nat) (hle : n ≤ s.n) (W : WorldT n) (h : Heap) (t : Tm), WExt (trunc n hle s.W) W →
+      WorldAdm W → HeapOk n W h → SafePostExcV Ξ T Q R n W h t → SafePostExcV Ξ T Q' R' n W h t from
+    H s.n (Nat.le_refl _) s.W s.h t (by rw [trunc_id]; exact WExt_refl _) s.adm s.ok hs
+  intro n
+  induction n with
+  | zero => intro _ _ _ _ _ _ _ hs; exact hs
+  | succ p ih =>
+    intro hle W h t hx hw hok hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
+    rcases hs with (⟨hv, hT, hQ⟩ | ⟨u, hra, hsc, hξ, hR⟩) | ⟨U, h', t', hx', hu, st, hh', hs'⟩
+    · exact .inl (.inl ⟨hv, hT, hq ⟨p + 1, W, h, Nat.succ_pos _, hw, hok⟩ t ⟨hle, hx⟩ hQ⟩)
+    · exact .inl (.inr ⟨u, hra, hsc, hξ, hr ⟨p + 1, W, h, Nat.succ_pos _, hw, hok⟩ u ⟨hle, hx⟩ hR⟩)
+    · refine .inr ⟨U, h', t', hx', hu, st, hh', ih (by omega) U h' t' ?_ hu hh' hs'⟩
+      simpa only [trunc_trunc] using WExt_trans (WExt_trunc (Nat.le_succ p) hx) hx'
+
 /-- **A normal completion within the budget reaches one admissible indexed
 state**, the world the run reaches, its result of the type and the
 postcondition holding there. -/

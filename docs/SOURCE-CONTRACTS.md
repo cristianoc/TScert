@@ -624,7 +624,11 @@ reaches (`SafePostExcW.weaken_admissible`). A throw's postcondition reads the th
 value: the native-contract condition states safety whose exceptional exit
 raises a value of the exception family meeting it (`SafePostExcV`); a
 postcondition that ignores the value is the one `SafePostExcW` states
-(`SafePostExcV.iff_lift`).
+(`SafePostExcV.iff_lift`). A signature's callable contract read through its schema's
+exits is the contract its postconditions state (proved:
+`PromiseWith.iff_exits`, `ConstructPromise.iff_exits`): at the states a safe
+run from a well-formed entry reaches, the normal exit is `Effect.postW` and
+the exceptional exit `Effect.excPost`.
 
 A guarantee stated beside the frame is a postcondition `.transition Φ`, so
 the frame and it hold of one transition. On admissible transitions at
