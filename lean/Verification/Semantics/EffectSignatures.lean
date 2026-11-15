@@ -1111,9 +1111,11 @@ theorem Effect.excPost_prefix (effect : Effect) {r : Tm} {args : List Tm} {befor
     effect.excPost r args middle after → effect.excPost r args before after :=
   fun hw ho => Effect.within_prefix hprefix hagree (hw ho)
 
-/-- Conjoining two guarantees for the same call retains both: the meet of
-their closed bounds, with the promise, receiver mode and store regions they
-share, a fresh result where either states one. -/
+/-- Conjoining two guarantees for the same call: the meet of their closed
+bounds, with the promise, receiver mode and store regions they share, a
+fresh result where either states one, and the postconditions of both. A
+throw is bounded by the meet's frame where both state `onThrow`, a
+consequence of the two exceptional guarantees (`Effect.schema_meet`). -/
 def Effect.meet (a b : Effect) : Effect :=
   ⟨a.closed.meet b.closed, a.promise, a.fresh || b.fresh, a.receiverStore, a.onThrow && b.onThrow,
     a.receiverOwn, a.freshObject || b.freshObject, a.requires, a.elements, a.pre, a.ensures ++ b.ensures,
@@ -1182,40 +1184,6 @@ theorem Effect.within_meet {a b : Effect} (hs : a.sameResult b = true) {r : Tm} 
     unfold Footprints.ArgumentStoreRegionsWithin
     rw [show (a.meet b).closed = a.closed.meet b.closed from rfl, Footprints.Closed.holdsOn_meet, hreg]
 
-theorem Effect.post_meet {a b : Effect} (hs : a.sameResult b = true) (r : Tm) (args : List Tm) (before after : Heap)
-    (value : Val) :
-    (a.meet b).post r args before after value ↔ a.post r args before after value ∧ b.post r args before after value := by
-  have hw := Effect.within_meet hs (r := r) (args := args) (before := before) (after := after)
-  have hf : (a.meet b).fresh = (a.fresh || b.fresh) := rfl
-  have ho : (a.meet b).freshObject = (a.freshObject || b.freshObject) := rfl
-  have he : (a.meet b).elements = a.elements := rfl
-  have hen : (a.meet b).ensures = a.ensures ++ b.ensures := rfl
-  have hg : (a.meet b).receiverGrows = (a.receiverGrows || b.receiverGrows) := rfl
-  have hbe : b.elements = a.elements := by
-    simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs; exact hs.1.1.1.2.symm
-  have hew : (a.meet b).elementWrite = a.elementWrite := rfl
-  have hbw : b.elementWrite = a.elementWrite := by
-    simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs; exact hs.1.2.symm
-  unfold Effect.post
-  rw [hw, hf, ho, he, hen, hbe, hg, hew, hbw, Bool.or_eq_true, Bool.or_eq_true, Bool.or_eq_true]
-  constructor
-  · rintro ⟨⟨ha, hb⟩, hf, ho, hel, hens, hgr, hwr⟩
-    exact ⟨⟨ha, fun h => hf (.inl h), fun h => ho (.inl h), hel, fun F hF => hens F (List.mem_append_left _ hF),
-        fun h => hgr (.inl h), hwr⟩,
-      ⟨hb, fun h => hf (.inr h), fun h => ho (.inr h), hel, fun F hF => hens F (List.mem_append_right _ hF),
-        fun h => hgr (.inr h), hwr⟩⟩
-  · rintro ⟨⟨ha, hfa, hoa, hel, hena, hga, hwa⟩, ⟨hb, hfb, hob, -, henb, hgb, -⟩⟩
-    exact ⟨⟨ha, hb⟩, fun h => h.elim hfa hfb, fun h => h.elim hoa hob, hel,
-      fun F hF => (List.mem_append.mp hF).elim (hena F) (henb F), fun h => h.elim hga hgb, hwa⟩
-
-/-- Both guarantees' throw postconditions give the meet's: it states
-`onThrow` only where both do. -/
-theorem Effect.excPost_meet {a b : Effect} (hs : a.sameResult b = true) (r : Tm) (args : List Tm) (before after : Heap)
-    (ha : a.excPost r args before after) (hb : b.excPost r args before after) : (a.meet b).excPost r args before after := by
-  intro ho
-  have ho' : a.onThrow = true ∧ b.onThrow = true := by simpa [Effect.meet] using ho
-  exact (Effect.within_meet hs).mpr ⟨ha ho'.1, hb ho'.2⟩
-
 theorem Effect.meet_same {a b : Effect} (hs : a.sameResult b = true) :
     (a.meet b).result = a.result ∧ (a.meet b).promised = a.promised ∧
       b.result = a.result ∧ b.promised = a.promised := by
@@ -1252,16 +1220,6 @@ theorem Effect.postW_of_post {e : Effect} (hx : e.elementWrite = none) {r : Tm} 
     {U : WorldT j} {before : Heap} {k : Nat} {W' : WorldT k} {after : Heap} {v : Val}
     (h : e.post r args before after v) : e.postW r args U before k W' after v :=
   ⟨h, fun w hw => by rw [hx] at hw; cases hw⟩
-
-/-- **The meet's postcondition** is the first signature's, view write
-included, and the second's heap postcondition: the two state the same
-element write (`Effect.sameResult`). -/
-theorem Effect.postW_meet {a b : Effect} (hs : a.sameResult b = true) (r : Tm) (args : List Tm) {j : Nat}
-    (U : WorldT j) (before : Heap) (k : Nat) (W' : WorldT k) (after : Heap) (v : Val) :
-    (a.meet b).postW r args U before k W' after v ↔ a.postW r args U before k W' after v ∧ b.post r args before after v := by
-  simp only [Effect.postW, Effect.viewPost]
-  rw [Effect.post_meet hs]
-  exact ⟨fun ⟨⟨ha, hb⟩, hw⟩ => ⟨⟨ha, hw⟩, hb⟩, fun ⟨⟨ha, hw⟩, hb⟩ => ⟨⟨ha, hb⟩, hw⟩⟩
 
 /-- **Prefix transport of a signature's postcondition**: allocation between
 the call's entry and the start of its body composes with the postcondition,

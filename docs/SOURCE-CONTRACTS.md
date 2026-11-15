@@ -631,7 +631,24 @@ postconditions state (proved: `NativeContract.iff_exits`,
 `NativeConstruct.iff_exits`; read as `PromiseWith.iff_legacy`,
 `ConstructPromise.iff_legacy`): at the states a safe run from a well-formed
 entry reaches, the normal exit is `Effect.postW` and the exceptional exit
-`Effect.excPost`. The signature's effect and the native-contract condition
+`Effect.excPost`.
+
+Two safety derivations of one invocation reach the same heaps and terms at
+worlds of their own; their guarantees conjoin at the first's worlds where
+the second's are independent of the admissible exit world at a fixed heap
+and budget (proved: `SafePostExcV.cross_independent`, `IndependentFrom`, in
+`Semantics/ExitWorlds.lean`). A guarantee whose postconditions read the exit
+only through its heap is (`Exits.independent`): no assertion at the exit and
+no transport certifying a rigid image, both of which read the exit's
+admissible futures; every signature's schema is such
+(`Effect.schema_independent`). Every two-state formula is monotone in its
+exit, kept where the exit is replaced by a state admissible from it with the
+same heap (`Parity.Holds.mono_exit`). Two signatures of one value with the
+same result meaning give both guarantees at one exit (`PromiseWith.conj`),
+and so their meet's (`PromiseWith.combine`): the meet's normal exit is a
+consequence of both normal exits, and its exceptional exit, the meet's frame
+where both state `onThrow` and the note's $`\top`$ otherwise, of both
+exceptional exits (`Effect.schema_meet`). The signature's effect and the native-contract condition
 are in `Semantics/EffectSignatures.lean`, the callable contracts in
 `Semantics/CallEffects.lean`.
 
@@ -641,9 +658,7 @@ actuals that are values, the normal exit holds exactly where
 `Effect.postW` does and the exceptional exit exactly where `Effect.excPost`
 does (proved: `Effect.summary_normal_iff`, `Effect.summary_exceptional_iff`;
 the parts: `receiverGrows_iff`, `receiverAppends_iff`, `elementWrite_iff`).
-The meet of two signatures conjoins their normal exits, and a bound
-signature's exits follow from its target's
-(proved: `Effect.summary_meet_normal`, `Effect.summary_meet_exceptional`,
+A bound signature's exits follow from its target's (proved:
 `Effect.summary_drop_normal`, `Effect.summary_drop_exceptional`); a module
 function's summary reads its own positions (proved:
 `Effect.summary_scoped`). The effect's wire is the signature's fields, and

@@ -1,4 +1,5 @@
 import Verification.Semantics.ExitSummaries
+import Verification.Semantics.ExitWorlds
 
 /-! # A signature's contract read per exit
 
@@ -197,5 +198,107 @@ theorem Effect.heldPosts_post {Ξ T : Fam} {e : Effect} {r : Tm} {args : List Tm
     · exact (Effect.excPostW_iff_exit (Exits.exitPost_admissible hp)).mpr ((Exits.exitPostW_iff _ _ _ _ s s' v).mpr hp)
     · intro _
       exact Post.refl _ _ _
+
+
+/-! ## The meet of two specifications -/
+
+/-- **A signature's schema reads its exits only through their heaps**
+(`ExitSchema.exitHeapOnly`): its postconditions are operational posts,
+index facts, transitions and the written result's transport, which
+certifies no rigid image. -/
+theorem Effect.schema_exitHeapOnly (e : Effect) (c : Completion) : (e.schema.get c).exitHeapOnly = true := by
+  have hw : ∀ w : ElementWrite, w.schemaPosts.all (·.exitHeapOnly TransportSchema.stable) = true := by
+    intro w; cases w with
+    | stores => rfl
+    | assign => rfl
+    | exact k =>
+      simp only [ElementWrite.schemaPosts, List.all_cons, List.all_append, List.all_map]
+      simp [FormulaF.exitHeapOnly, Function.comp_def, writtenResultSchema]
+  cases c
+  · simp only [Exits.get, Effect.schema, ExitSchema.exitHeapOnly, Effect.normalSchema, List.all_append,
+      Bool.and_eq_true]
+    refine ⟨⟨⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩
+    · split <;> rfl
+    · split <;> rfl
+    · split <;> rfl
+    · simp [List.all_map, FormulaF.exitHeapOnly, Function.comp_def]
+    · split <;> rfl
+    · split
+      · exact hw _
+      · rfl
+  · simp only [Exits.get, Effect.schema, ExitSchema.exitHeapOnly]
+    split <;> rfl
+
+/-- **A signature's guarantee at each completion is independent of the exit
+world** (`Exits.independent`, `Effect.schema_exitHeapOnly`). -/
+theorem Effect.schema_independent (e : Effect) (c : Completion) (r : Tm) (args : List Tm) (s : IndexedHeap) :
+    IndependentFrom s (e.schema.exitPostW c r args s.W s.h) :=
+  Exits.independent (e.schema_exitHeapOnly c) r args s
+
+/-- A signature's guarantee at a completion is its summary's at the call's
+arity (`Effect.schema_atArity`). -/
+theorem Effect.exitPost_summary {e : Effect} {c : Completion} {r : Tm} {args : List Tm} {s s' : IndexedHeap}
+    {v : Tm} :
+    e.schema.exitPost c r args s s' v ↔
+      ((e.summary args.length).get c).Holds AssertionArena.empty (callState r args v s.h.length s s') := by
+  unfold Exits.exitPost
+  rw [Effect.schema_atArity]
+
+/-- Each postcondition of the meet's normal return is one of either
+signature's. -/
+theorem Effect.normalPosts_meet (a b : Effect) (n : Nat) {F : Formula} (hF : F ∈ (a.meet b).normalPosts n) :
+    F ∈ a.normalPosts n ∨ F ∈ b.normalPosts n := by
+  have hor : ∀ (p q : Bool) (x : Formula), (F ∈ if (p || q) = true then [x] else []) →
+      (F ∈ if p = true then [x] else []) ∨ (F ∈ if q = true then [x] else []) := by
+    intro p q x hx
+    cases p <;> cases q <;> simp_all
+  have horl : ∀ (p q : Bool) (l : List Formula), (F ∈ if (p || q) = true then l else []) →
+      (F ∈ if p = true then l else []) ∨ (F ∈ if q = true then l else []) := by
+    intro p q l hx
+    cases p <;> cases q <;> simp_all
+  simp only [Effect.normalPosts, List.mem_append] at hF ⊢
+  rcases hF with ((((hf | ho) | he) | hen) | hg) | hw
+  · rcases hor _ _ _ hf with h | h
+    · exact .inl (.inl (.inl (.inl (.inl (.inl h)))))
+    · exact .inr (.inl (.inl (.inl (.inl (.inl h)))))
+  · rcases hor _ _ _ ho with h | h
+    · exact .inl (.inl (.inl (.inl (.inl (.inr h)))))
+    · exact .inr (.inl (.inl (.inl (.inl (.inr h)))))
+  · exact .inl (.inl (.inl (.inl (.inr he))))
+  · simp only [Effect.meet, List.map_append, List.mem_append] at hen
+    rcases hen with h | h
+    · exact .inl (.inl (.inl (.inr h)))
+    · exact .inr (.inl (.inl (.inr h)))
+  · rcases horl _ _ _ hg with h | h
+    · exact .inl (.inl (.inr h))
+    · exact .inr (.inl (.inr h))
+  · exact .inl (.inr hw)
+
+/-- **The meet of two signatures with the same result meaning is a
+consequence of both guarantees at one exit**: on a normal return its frame
+is both frames' meet (`Effect.within_meet`) and each of its postconditions
+is one of either's; on a throw it states the meet's frame where both state
+`onThrow`, and the note's `⊤` otherwise. -/
+theorem Effect.schema_meet {a b : Effect} (hs : a.sameResult b = true) {c : Completion} {r : Tm}
+    {args : List Tm} {s s' : IndexedHeap} {v : Tm} (ha : a.schema.exitPost c r args s s' v)
+    (hb : b.schema.exitPost c r args s s' v) : (a.meet b).schema.exitPost c r args s s' v := by
+  rw [Effect.exitPost_summary] at ha hb ⊢
+  cases c with
+  | normal =>
+    refine ⟨⟨ha.1.1, (Effect.within_meet hs).mpr ⟨ha.1.2, hb.1.2⟩⟩, fun F hF => ?_⟩
+    rcases Effect.normalPosts_meet a b _ hF with h | h
+    · exact ha.2 F h
+    · exact hb.2 F h
+  | exceptional =>
+    simp only [Exits.get, Effect.summary] at ha hb ⊢
+    by_cases hab : (a.meet b).onThrow = true
+    · have ho : a.onThrow = true ∧ b.onThrow = true := by simpa [Effect.meet] using hab
+      rw [if_pos ho.1] at ha
+      rw [if_pos ho.2] at hb
+      rw [if_pos hab]
+      exact ⟨⟨ha.1.1, (Effect.within_meet hs).mpr ⟨ha.1.2, hb.1.2⟩⟩, fun _ hF => by cases hF⟩
+    · rw [if_neg hab]
+      have hadm : Admissible s s' := by split at ha <;> exact ha.1.1
+      exact ⟨EffectAction.top hadm, fun _ hF => by cases hF⟩
 
 end Verification.CallEffects

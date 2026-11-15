@@ -296,8 +296,12 @@ run_cmd do
   check ``Verification.CallEffects.Effect.summary_normal_iff
   check ``Verification.CallEffects.Effect.summary_exceptional_iff
   check ``Verification.CallEffects.Effect.summary_normal_iff_post
-  check ``Verification.CallEffects.Effect.summary_meet_normal
-  check ``Verification.CallEffects.Effect.summary_meet_exceptional
+  check ``Verification.CallEffects.Effect.schema_meet
+  check ``Verification.CallEffects.Effect.schema_independent
+  check ``Verification.CallEffects.Exits.independent
+  check ``Verification.CallEffects.SafePostExcV.cross_independent
+  check ``Verification.Parity.Holds.mono_exit
+  check ``Verification.Parity.Holds.exit_heap
   check ``Verification.CallEffects.Effect.summary_drop_normal
   check ``Verification.CallEffects.Effect.summary_drop_exceptional
   check ``Verification.CallEffects.Effect.summary_scoped
@@ -1752,10 +1756,10 @@ run_cmd do
   check ``Verification.HeapObservations.SafePostExcW.consequence_below'
   check ``Verification.HeapObservations.SafePostExcW.world
   check ``Verification.HeapObservations.SafePostExcW.cross
-  check ``Verification.CallEffects.Effect.postW_meet
   check ``Verification.CallEffects.Effect.covers_sound
   check ``Verification.Kinds.ViewWrite.prefix_left
   check ``Verification.CallEffects.Effect.postW_prefix
+  check ``Verification.CallEffects.PromiseWith.conj
   check ``Verification.CallEffects.PromiseWith.combine
   check ``Verification.CallEffects.PromiseWith.weaken'
   check ``Verification.CallEffects.Effect.postW_of_post

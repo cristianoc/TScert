@@ -347,10 +347,10 @@ postcondition on a throw (`Effect.excPostW`). The meaning of a function type
 (`ConstructPromise`), the condition of `new` (`NativeConstruct`). Two
 promises of one value whose signatures mean the same result
 (`Effect.sameResult`) give the promise of their meet
-(`PromiseWith.combine`): the first run's world and its view write are kept,
-the second run takes the same steps and its heap postconditions hold at the
-same exits (`SafePostExcW.cross`), and the two view writes are one, since
-the signatures state the same element write (`Effect.postW_meet`). A promise
+(`PromiseWith.combine`): the second run takes the same steps as the first,
+and its exits, independent of the exit world, hold at the first run's
+worlds (`PromiseWith.conj`, `SafePostExcV.cross_independent`); both
+guarantees give the meet's (`Effect.schema_meet`). A promise
 weakens to a signature it covers, its element write included
 (`PromiseWith.weaken'`, `Effect.covers_sound`); a forwarding descriptor
 meets its target's signature, the view write read from the descriptor's

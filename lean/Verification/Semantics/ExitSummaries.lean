@@ -603,31 +603,6 @@ theorem Effect.summary_normal_iff_post (e : Effect) (hx : e.elementWrite = none)
 
 /-! ## The operations on signatures -/
 
-/-- **The meet's normal exit is both signatures' normal exits**: conjoining
-two guarantees of one call (`Effect.meet`) conjoins their elaborations. -/
-theorem Effect.summary_meet_normal {a b : Effect} (hs : a.sameResult b = true) (hadm : Admissible s s')
-    (hvals : ∀ a ∈ args, isVal a = true) :
-    ((a.meet b).summary args.length).normal.Holds arena (callState r args v m s s') ↔
-      (a.summary args.length).normal.Holds arena (callState r args v m s s') ∧
-        (b.summary args.length).normal.Holds arena (callState r args v m s s') := by
-  rw [Effect.summary_normal_iff _ hadm fun _ => hvals, Effect.summary_normal_iff _ hadm fun _ => hvals,
-    Effect.summary_normal_iff _ hadm fun _ => hvals, Effect.postW_meet hs]
-  have hbw : b.elementWrite = a.elementWrite := by
-    simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs; exact hs.1.2.symm
-  have hview : b.viewPost args s.W s.h s'.n s'.W s'.h v ↔ a.viewPost args s.W s.h s'.n s'.W s'.h v := by
-    simp only [Effect.viewPost, hbw]
-  simp only [Effect.postW, hview]
-  exact ⟨fun ⟨⟨ha, hw⟩, hb⟩ => ⟨⟨ha, hw⟩, hb, hw⟩, fun ⟨⟨ha, hw⟩, hb, _⟩ => ⟨⟨ha, hw⟩, hb⟩⟩
-
-/-- **Both signatures' exceptional exits give the meet's.** -/
-theorem Effect.summary_meet_exceptional {a b : Effect} (hs : a.sameResult b = true) (n : Nat)
-    (hadm : Admissible s s')
-    (ha : (a.summary n).exceptional.Holds arena (callState r args v m s s'))
-    (hb : (b.summary n).exceptional.Holds arena (callState r args v m s s')) :
-    ((a.meet b).summary n).exceptional.Holds arena (callState r args v m s s') :=
-  (Effect.summary_exceptional_iff _ n hadm).mpr (Effect.excPost_meet hs r args s.h s'.h
-    ((Effect.summary_exceptional_iff _ n hadm).mp ha) ((Effect.summary_exceptional_iff _ n hadm).mp hb))
-
 /-- **Binding substitutes the saved actuals** (`Effect.drop`): the target's
 normal exit at the call it forwards to, with receiver `rv` and actuals
 `argsv`, gives the bound signature's at its own call. -/

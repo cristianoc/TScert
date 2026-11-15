@@ -3,18 +3,18 @@ import Verification.Semantics.KindsCalls
 # The gate: a callback's allocation, then a write meeting two signatures
 
 The active call contracts (`CallEffects.PromiseWith`,
-`CallEffects.ConstructPromise`) state a signature's postconditions over
-kinded worlds: the heap postcondition and the view write from the call's
-entry world and heap, both at the exit world (`CallEffects.Effect.postW`).
-Here they compose with a callback's allocation at one successor world.
+`CallEffects.ConstructPromise`) state a signature's specification per
+completion over kinded worlds, from the call's entry world and heap to the
+exit world and heap (`CallEffects.Exits.exitPostW`). Here they compose with a
+callback's allocation at one successor world.
 
 - **The gate** (`gate_write`, `gate_handled`): a callback allocates an
   object, then a value meeting two effectful signatures performs a view
   write. Its every normal exit, and its every throw entering a handler, is
   at one world where the allocated object's property capability holds, the
-  heap meets the world in both parts (contracts and roles' shapes), and the
-  call's postconditions of both signatures hold (`PromiseWith.combine`,
-  `Effect.postW_meet`).
+  heap meets the world in both parts (contracts and roles' shapes), and
+  both signatures' guarantees at that completion hold from one entry
+  (`gateExit`, `PromiseWith.conj`).
 -/
 namespace Verification.Kinds
 open Verification HeapObservations
@@ -83,21 +83,27 @@ theorem literal_safe {Ξ T : Fam} {R : WExc} {f : PropKey} {x : Tm} {A : Fam} {n
     .makeFields (by simpa using hv) rfl, hokU, ?_⟩⟩
   exact ⟨hoRefs, .inl (.inl ⟨rfl, hT U o, rfl, hoRefs, ⟨[x, .nul], by simp⟩, hcap⟩)⟩
 
-/-- The postcondition of the gate's normal exits: at the exit world, the
-callback's object has its property capability, and the call's
-postconditions of both signatures hold from the call's entry. -/
+/-- **Two specifications' guarantee at one completion, with a capability**:
+from one entry, both specifications' guarantees at the completion
+(`Exits.exitPostW`), at the same exit state, and the capability at the exit
+world. -/
+def gateExit (a b : CallEffects.Exits CallEffects.ExitSchema) (c : CallEffects.Completion) (r : Tm)
+    (args : List Tm) (cap : Capability) (fs : List (PropKey × Nat)) : CallEffects.ExitPostW :=
+  fun k W' h' v => (∃ (j : Nat) (U : WorldT j) (h₁ : Heap), a.exitPostW c r args U h₁ k W' h' v ∧
+    b.exitPostW c r args U h₁ k W' h' v) ∧ cap.Holds W' fs
+
+/-- The postcondition of the gate's normal exits: both signatures' normal
+exits and the callback's object's capability (`gateExit`). -/
 def gatePost (a b : CallEffects.Effect) (r : Tm) (args : List Tm) (cap : Capability)
     (fs : List (PropKey × Nat)) : WPost :=
-  fun k W' h' v => (∃ (j : Nat) (U : WorldT j) (h₁ : Heap), a.postW r args U h₁ k W' h' v ∧
-    b.post r args h₁ h' v) ∧ cap.Holds W' fs
+  gateExit a.schema b.schema .normal r args cap fs
 
-/-- The postcondition of the gate's exceptional exits: at the throwing
-world, the callback's object has its property capability, and the meet's
-exceptional postcondition holds of the call (`Effect.excPost_meet`: the
-footprint of both signatures where both state `onThrow`). -/
+/-- The postcondition of the gate's exceptional exits: for the thrown value,
+both signatures' exceptional exits and the callback's object's capability
+(`gateExit`). -/
 def gateExc (a b : CallEffects.Effect) (r : Tm) (args : List Tm) (cap : Capability)
     (fs : List (PropKey × Nat)) : WExc :=
-  fun _ W' h' => (∃ (h₁ : Heap), (a.meet b).excPost r args h₁ h') ∧ cap.Holds W' fs
+  fun k W' h' => ∃ v, gateExit a.schema b.schema .exceptional r args cap fs k W' h' v
 
 /-- **The gate.** A callback allocates `{ f: x }`; then a value `g` meeting
 two signatures `a` and `b` with the same result meaning
@@ -105,9 +111,8 @@ two signatures `a` and `b` with the same result meaning
 view write among its effects. The whole, `let o = { f: x } in g(r, args)`,
 is safe at one world per exit: on a normal return, the exit world gives the
 callback's object its field capability, the heap meets that world in both
-parts (`SafePostExcW.exit`), and both signatures' postconditions hold of the call,
-the first's view write from the call's entry world; on a throw, the same
-with both exceptional postconditions. -/
+parts, and both signatures' normal exits hold of the call from one entry; on
+a throw, the same with both exceptional exits (`gateExit`). -/
 theorem gate_write {Ξ : Fam} {a b : CallEffects.Effect} {Acc : (j : Nat) → WorldT j → List Tm → Prop}
     {Rc : Fam} {B C D : Fam} {f : PropKey} {x g r : Tm} {args : List Tm} {A : Fam}
     {n : Nat} {W : WorldT (n + 2)} {h : Heap}
@@ -128,7 +133,7 @@ theorem gate_write {Ξ : Fam} {a b : CallEffects.Effect} {Acc : (j : Nat) → Wo
   let fs := slots h.length [f]
   let cap := Capability.field f A
   let body : Tm := .invoke g r args
-  have hcomb := CallEffects.PromiseWith.iff_legacy.mp (CallEffects.PromiseWith.combine (D := D) hs ha hb hcross)
+  have hconj := CallEffects.PromiseWith.conj (D := D) hs ha hb hcross
   have hbodyRefs : RefsOk W body := fun y hy => hrefs y
     (show y ∈ refs (literal f x) ++ refs body from List.mem_append.mpr (.inr hy))
   have hxr : RefsOk W x := fun y hy => hrefs y (by
@@ -165,25 +170,26 @@ theorem gate_write {Ξ : Fam} {a b : CallEffects.Effect} {Acc : (j : Nat) → Wo
       have hr : RefsOk V r := fun y hy => hVb y (by simp [body, refs, hy])
       have hargsr : ∀ a ∈ args, RefsOk V a := fun a ha y hy =>
         hVb y (by simp only [body, refs, refsArgs_eq, List.mem_append, List.mem_flatMap]; exact .inr ⟨a, ha, hy⟩)
-      have hcall := SafePostExcV.iff_lift.mp <| CallEffects.NativeContract.safe (CallEffects.NativeContract.down hcomb (by omega) hxV)
-        (WorldAdm_trunc _ hu) (HeapOk_trunc (p + 1) U h' hh') hrv (hrc _ _) hargs (hacc _ _) (hreq h' hpre)
-        (RefsOk_invoke.mpr ⟨hg, hr, hargsr⟩)
+      have hcall := SafePostExcV.iff_lift.mp <| SafePostExcV.weaken (fun _ _ _ _ hp => hp)
+        (R' := fun k W' h'' _ => ∃ e, _ ∧ _) (fun _ _ _ e hp => ⟨e, hp⟩) <|
+        CallEffects.NativeContract.safe (CallEffects.NativeContract.down hconj (by omega) hxV)
+          (WorldAdm_trunc _ hu) (HeapOk_trunc (p + 1) U h' hh') hrv (hrc _ _) hargs (hacc _ _) (hreq h' hpre)
+          (RefsOk_invoke.mpr ⟨hg, hr, hargsr⟩)
       have hw := SafePostExcW.world (P := fun k W' => cap.Holds W' fs) (fun _ _ _ hx' hp => hp.mono hx')
         (fun _ _ hj' _ hp => hp.trunc hj') (hcap.trunc _) hcall
       refine SafePostExcW.consequence_below' (fun _ _ _ _ hξ => hξ) (fun _ _ _ _ _ => trivial) ?_ ?_ hw
       · intro _ _ W' h'' val ⟨hp, hc⟩
-        obtain ⟨hpa, hpb⟩ := (CallEffects.Effect.postW_meet hs r args _ h' _ W' h'' val).mp hp
-        exact ⟨⟨p, _, h', hpa, hpb⟩, hc⟩
-      · intro _ _ W' h'' ⟨hp, hc⟩
-        exact ⟨⟨h', hp⟩, hc⟩
+        exact ⟨⟨p, _, h', hp.1, hp.2⟩, hc⟩
+      · intro _ _ W' h'' ⟨⟨e, hp⟩, hc⟩
+        exact ⟨e, ⟨p, _, h', hp.1, hp.2⟩, hc⟩
 
 /-- **The gate's throw-to-handler variant.** Run in a graph node with a
 handler, the gate's term is safe when the node continues from each normal
 exit and the handler from each throw: the handler is entered at the throwing
 configuration's world and heap, where the heap meets the world in both
 parts, the thrown value is of the exception family with valid references,
-the callback's object has its field capability, and the call's exceptional
-postcondition holds (`SafePostExcW.handle`). -/
+the callback's object has its field capability, and both signatures'
+exceptional exits hold of the call (`SafePostExcW.handle`). -/
 theorem gate_handled {Ξ Ξ' B' : Fam} {Q' : WPost} {R' : WExc} {a b : CallEffects.Effect}
     {Acc : (j : Nat) → WorldT j → List Tm → Prop}
     {Rc : Fam} {B C D : Fam} {f : PropKey} {x g r : Tm} {args : List Tm} {A : Fam}

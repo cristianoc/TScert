@@ -431,37 +431,61 @@ theorem ctorRestsT_congr {Ξ Ξ' : Fam} {α : Type} (l : List α) (f g : α → 
     rw [← (h x hm).1] at hp
     exact (ConstructPromise.congr hΞ (hacc x hm) (h x hm).2.2.2).mpr hp
 
-/-- Combining result guarantees retains the effects established for this call
-domain by either premise. World-sensitive results still require the same
-cross-world compatibility as ordinary arrows. Effects concern the shared final
-heap, so they do not depend on which result world supplies the conclusion. -/
+/-- **Two signatures of one value conjoin their guarantees at one exit**:
+the two derivations of one invocation take the same steps, and the second's
+guarantees, independent of the exit world (`Effect.schema_independent`),
+hold at the first's worlds (`SafePostExcV.cross_independent`), on a normal
+return and on a throw. The second's precondition is the first's
+(`Effect.sameResult`); the result families combine as `CrossCompatUpTo`
+states. -/
+theorem PromiseWith.conj {effect other Acc Rc B C D k W v}
+    (hs : effect.sameResult other = true)
+    (hb : PromiseWith Ξ effect Acc Rc B k W v)
+    (hc : PromiseWith Ξ other Acc Rc C k W v)
+    (hcross : ∀ n, n < k → CrossCompatUpTo n B C D) :
+    NativeContract Ξ Acc Rc effect.Requires (fun _ args => effect.result D (effect.promised args))
+      (fun r args _ U heap k' W' h' v' => effect.schema.exitPostW .normal r args U heap k' W' h' v' ∧
+        other.schema.exitPostW .normal r args U heap k' W' h' v')
+      (fun r args _ U heap k' W' h' v' => effect.schema.exitPostW .exceptional r args U heap k' W' h' v' ∧
+        other.schema.exitPostW .exceptional r args U heap k' W' h' v') k W v := by
+  intro j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha hq
+  have hq' : other.Requires r args heap := by
+    simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs
+    exact ⟨fun R hR => hq.1 R (by rw [hs.1.1.1.1.2]; exact hR), fun F hF => hq.2 F (by rw [hs.1.1.2]; exact hF)⟩
+  obtain ⟨b, hib, hsb⟩ := hb j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha hq
+  obtain ⟨c, hic, hsc⟩ := hc j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha hq'
+  cases CallArguments.invoke_deterministic hib hic
+  obtain ⟨-, -, hr2, hp2⟩ := Effect.meet_same hs
+  refine ⟨b, hib, ?_⟩
+  dsimp only at hsb hsc ⊢
+  rw [hr2, hp2] at hsc
+  cases j with
+  | zero => exact hsb
+  | succ i =>
+    exact SafePostExcV.cross_independent ⟨i + 1, U, heap, Nat.succ_pos _, hu, hh⟩
+      (Effect.cross_result effect (hcross (i + 1) hj)) (Effect.schema_independent other .normal r args _)
+      (Effect.schema_independent other .exceptional r args _) hsb hsc
+
+/-- **Combining two signatures of one value** (`Effect.meet`): both
+guarantees at one exit (`PromiseWith.conj`) give the meet's
+(`Effect.schema_meet`). -/
 theorem PromiseWith.combine {effect other Acc Rc B C D k W v}
     (hs : effect.sameResult other = true)
     (hb : PromiseWith Ξ effect Acc Rc B k W v)
     (hc : PromiseWith Ξ other Acc Rc C k W v)
     (hcross : ∀ n, n < k → CrossCompatUpTo n B C D) :
     PromiseWith Ξ (effect.meet other) Acc Rc D k W v := by
-  rw [PromiseWith.iff_legacy] at hb hc ⊢
   intro j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha hq
-  have hq' : other.Requires r args heap := by
-    simp only [Effect.sameResult, Bool.and_eq_true, beq_iff_eq] at hs
-    exact ⟨fun R hR => hq.1 R (by simp only [Effect.meet]; rw [hs.1.1.1.1.2]; exact hR),
-      fun F hF => hq.2 F (by simp only [Effect.meet]; rw [hs.1.1.2]; exact hF)⟩
-  obtain ⟨b, hib, hsb⟩ := hb j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha ⟨hq.1, hq.2⟩
-  obtain ⟨c, hic, hsc⟩ := hc j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha hq'
-  replace hsb := SafePostExcV.iff_lift.mp hsb
-  replace hsc := SafePostExcV.iff_lift.mp hsc
-  cases CallArguments.invoke_deterministic hib hic
-  obtain ⟨hr1, hp1, hr2, hp2⟩ := Effect.meet_same hs
-  rw [hr2, hp2] at hsc
+  obtain ⟨res, hi, hsafe⟩ :=
+    PromiseWith.conj hs hb hc hcross j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha ⟨hq.1, hq.2⟩
+  obtain ⟨hr1, hp1, -, -⟩ := Effect.meet_same hs
+  refine ⟨res, hi, ?_⟩
+  dsimp only at hsafe ⊢
   rw [hr1, hp1]
-  have hsc' : SafePostExc Ξ (effect.result C (effect.promised args)) (other.post r args heap)
-      (other.excPost r args heap) j U heap b :=
-    SafePostExcW.weaken (fun _ _ _ _ hp => hp.1) (fun _ _ _ hp => hp) hsc
-  exact ⟨b, hib, SafePostExcV.iff_lift.mpr <| SafePostExcW.weaken
-    (fun k' W' heap' value hpost => (Effect.postW_meet hs r args U heap k' W' heap' value).mpr hpost)
-    (fun _ _ heap' hexc => Effect.excPost_meet hs r args heap heap' hexc.1 hexc.2)
-    (SafePostExcW.cross j (Effect.cross_result effect (hcross j hj)) U U heap b hh hh hsb hsc')⟩
+  exact SafePostExcV.weaken
+    (fun _ _ _ _ hp h1 h2 h3 h4 h5 h6 => Effect.schema_meet hs (hp.1 h1 h2 h3 h4 h5 h6) (hp.2 h1 h2 h3 h4 h5 h6))
+    (fun _ _ _ _ hp h1 h2 h3 h4 h5 h6 => Effect.schema_meet hs (hp.1 h1 h2 h3 h4 h5 h6) (hp.2 h1 h2 h3 h4 h5 h6))
+    hsafe
 
 /-- Binding saves a receiver and argument prefix, then forwards without
 changing the heap. This generic rule covers fixed and variadic signatures;
