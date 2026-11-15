@@ -182,7 +182,7 @@ private theorem formula_widen {F : FormulaSchema} (hc : F.canonical = true) {n N
     exact and_congr (ihF hc.1 hs.1) (ihG hc.2 hs.2)
   | _ => exact Iff.rfl
 
-private theorem slots_le_of_mem_list {l : List FormulaSchema} {F : FormulaSchema} (hF : F ∈ l) :
+theorem slots_le_of_mem_list {l : List FormulaSchema} {F : FormulaSchema} (hF : F ∈ l) :
     F.slots ≤ l.foldr (fun F k => max F.slots k) 0 := by
   induction l with
   | nil => cases hF
@@ -192,7 +192,7 @@ private theorem slots_le_of_mem_list {l : List FormulaSchema} {F : FormulaSchema
     · exact Nat.le_max_left _ _
     · exact Nat.le_trans (ih hF) (Nat.le_max_right _ _)
 
-private theorem slots_le_of_mem {q : ExitSchema} {F : FormulaSchema} (hF : F ∈ q.ensures) : F.slots ≤ q.slots :=
+theorem ExitSchema.slots_le_of_mem {q : ExitSchema} {F : FormulaSchema} (hF : F ∈ q.ensures) : F.slots ≤ q.slots :=
   slots_le_of_mem_list hF
 
 /-- **A canonical exit schema means the same at a wider entry scope.** -/
@@ -203,11 +203,17 @@ theorem ExitSchema.holds_widen {q : ExitSchema} (hq : q.canonicalTransports = tr
   simp only [ExitSpec.Holds, ExitSchema.instantiate, List.forall_mem_map]
   refine and_congr Iff.rfl (forall_congr' fun F => imp_congr_right fun hF => ?_)
   have hc : F.canonical = true := List.all_eq_true.mp hq F hF
-  have := formula_widen hc (n := ι.actualCount) (Nat.le_trans (slots_le_of_mem hF) hs) hN arena hsh
+  have := formula_widen hc (n := ι.actualCount) (Nat.le_trans (ExitSchema.slots_le_of_mem hF) hs) hN arena hsh
   unfold instAt at this
   unfold instantiateFormula
   rw [hn]
   exact this
+
+/-- **A canonical formula means the same at a wider entry scope.** -/
+theorem instantiateFormula_widen {F : FormulaSchema} (hc : F.canonical = true) {n N N' : Nat} (hs : F.slots ≤ N)
+    (hN : N ≤ N') {h₁ : n + 1 ≤ N'} {h₂ : n + 1 ≤ N} (arena : AssertionArena) {s : TwoState} (hsh : s.Shifted) :
+    Holds arena s (instantiateFormula ⟨n, N', h₁⟩ F) ↔ Holds arena s (instantiateFormula ⟨n, N, h₂⟩ F) :=
+  formula_widen hc hs hN arena hsh
 
 theorem Exits.canonicalTransports_get {x : Exits ExitSchema} (hx : x.canonicalTransports = true) (c : Completion) :
     (x.get c).canonicalTransports = true := by
@@ -237,9 +243,6 @@ theorem instantiate_completion {x : Exits ExitSchema} (hx : x.canonicalTransport
     (Nat.le_trans (Exits.slots_get x c) (Nat.le_max_right _ _)) hN _ (callState_shifted r args v m s s')
 
 /-! ## The meet of two frames -/
-
-/-- A footprint's entries over regions other than class regions. -/
-def _root_.Verification.Footprints.Footprint.nonClasses (Φ : Footprint) : Footprint := Φ.filter (!·.1.isClass)
 
 /-- **The meet of two frames** (the note's effect order, the frame whose
 actions are those of both): where the two state the same entries over

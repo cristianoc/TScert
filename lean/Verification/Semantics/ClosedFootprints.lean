@@ -608,6 +608,9 @@ theorem Footprint.closed?_sound {Φ : Footprint} {c : Closed} (hc : Φ.closed? =
 /-- The class entries of a footprint. -/
 def Footprint.classes (Ψ : Footprint) : Footprint := Ψ.filter (·.1.isClass)
 
+/-- A footprint's entries over regions other than class regions. -/
+def Footprint.nonClasses (Ψ : Footprint) : Footprint := Ψ.filter (!·.1.isClass)
+
 /-- **The closed bound of a footprint's class entries**: the bound a run
 within which meets the footprint (`Footprint.classBound_sound`). -/
 def Footprint.classBound (Φ : Footprint) : Closed := Φ.classes.close

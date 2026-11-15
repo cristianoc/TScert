@@ -824,15 +824,10 @@ theorem Effect.ofStated_schema (c : Footprints.Closed) (promise : Option TypePro
   rw [Effect.schema, hf]
   cases bounded <;> cases fresh <;> simp [Effect.normalSchema, Effect.ofStated, Exits.ofStated]
 
-/-- Whether a region is a class region (the note's class entries). -/
-def classRegion : Footprints.Region → Bool
-  | .cls _ => true
-  | _ => false
-
 /-- **A frame with its class entries those of `c`**: `c`'s class entries,
 and the frame's entries over other regions. -/
 def replaceClasses (c : Footprints.Closed) (Φ : Footprints.Footprint) : Footprints.Footprint :=
-  c.fp ++ Φ.filter fun e => !classRegion e.1
+  c.fp ++ Φ.nonClasses
 
 /-- **The exits of a specification with its class entries those of `c` and
 its throws bounded**: the normal exit's frame with `c`'s class entries
@@ -849,7 +844,7 @@ def Effect.withClasses (c : Footprints.Closed) (e : Effect) : Effect := { e with
 (proved). -/
 theorem Effect.withClasses_schema (c : Footprints.Closed) (e : Effect) :
     (e.withClasses c).schema = Exits.withClasses c e.schema := by
-  have hrecv : ∀ x ∈ e.receiverEntries, classRegion x.1 = false := by
+  have hrecv : ∀ x ∈ e.receiverEntries, x.1.isClass = false := by
     intro x hx
     simp only [Effect.receiverEntries] at hx
     split at hx
@@ -857,16 +852,16 @@ theorem Effect.withClasses_schema (c : Footprints.Closed) (e : Effect) :
     · split at hx
       · simp at hx; subst hx; rfl
       · cases hx
-  have hfilter : e.frame.filter (fun x => !classRegion x.1) = e.receiverEntries ++ e.regions.map regionEntry := by
-    simp only [Effect.frame, List.filter_append]
+  have hfilter : e.frame.nonClasses = e.receiverEntries ++ e.regions.map regionEntry := by
+    simp only [Footprints.Footprint.nonClasses, Effect.frame, List.filter_append]
     rw [List.filter_eq_nil_iff.mpr (by
         intro x hx
         simp only [Footprints.Closed.fp, List.mem_cons, List.not_mem_nil, or_false] at hx
-        rcases hx with rfl | rfl | rfl <;> simp [classRegion]),
+        rcases hx with rfl | rfl | rfl <;> simp [Footprints.Region.isClass]),
       List.filter_eq_self.mpr (fun x hx => by simp [hrecv x hx]),
       List.filter_eq_self.mpr (fun x hx => by
         obtain ⟨r, -, rfl⟩ := List.mem_map.mp hx
-        simp [regionEntry, Footprints.ArgumentStoreRegion.entry, classRegion])]
+        simp [regionEntry, Footprints.ArgumentStoreRegion.entry, Footprints.Region.isClass])]
     simp
   have hframe : (e.withClasses c).frame = replaceClasses c e.frame := by
     rw [replaceClasses, hfilter]

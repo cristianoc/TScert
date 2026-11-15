@@ -54,7 +54,7 @@ def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name : String
   if !RequestJson.statedWithin r.async r.footprint r.onThrow r.fresh r.stated then
     some s!"source effect refusal at [{namePos.1},{namePos.2}): the footprint claimed for '{name}' is not within the effect its result annotation states" else
   let asyncCode := (r.toRequest.codes.zipIdx.find? fun (q, _) =>
-    !RequestJson.asyncEffects q.async q.entry.row.effect.footprint).map fun (_, i) =>
+    !RequestJson.asyncAdmits q.async q.entry.row.effect).map fun (_, i) =>
       refuseAsync s!"a closure in '{name}'"
         ((((r.codeSources[i]?).bind fun code => sourceMapRegion code.sourceMap).map (·.pos)).getD namePos)
   if asyncCode.isSome then asyncCode else
@@ -523,7 +523,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
     -- An async code's footprint is `top` (`RequestJson.asyncEffects`, as
     -- `codeTableResult` requires of every code): its call returns
     -- normally where its body throws.
-    else if !RequestJson.asyncEffects q.async eff.footprint then
+    else if !RequestJson.asyncAdmits q.async eff then
       refuse (.refused s!"code {ci}: an async definition's footprint")
     else
     let codeBound := ProgramTyping.codeBound q.entry

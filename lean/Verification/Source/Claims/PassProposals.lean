@@ -280,7 +280,7 @@ def directRead (G : NormalGraph ι) (nodes : Array Node) (claimed : Array (Point
         | _ => c.type
       result := join result (match PositiveRules.expand G T with
         | [.arrs L S] => if L.isEmpty && S.isEmpty then .top else
-          ((L.map (·.effect)) ++ S.map (·.effect)).foldl (init := keepAll) fun acc e => join acc e.footprint
+          ((L.map (·.effect)) ++ S.map (·.effect)).foldl (init := keepAll) fun acc e => join acc e.changeBound
         | _ => .top)
   let locals := localsOf n (records.toList.map fun r => (r.label, unreturning G claimed r.label (localSummary r.certificate)))
   return ⟨composeGraph nodes start locals, result, returns⟩
@@ -338,7 +338,7 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
       -- `ProgramTyping.codeConditions` and `ProgramTyping.codeBound`: a
       -- proposal's run is the run the check makes)
       let conditions := ProgramTyping.codeConditions q.entry
-      if !conditions || !RequestJson.asyncEffects q.async eff.footprint then
+      if !conditions || !RequestJson.asyncAdmits q.async eff then
         ({ index := ci, outcome := .refused s!"code {ci}", answers := sumsAnswers, line := "" } : CodeRun _ _)
       else
       let codeBound := ProgramTyping.codeBound q.entry

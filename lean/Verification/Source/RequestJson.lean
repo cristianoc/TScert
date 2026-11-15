@@ -440,6 +440,11 @@ effects design; SOURCE-CONTRACTS.md, "Async functions and await"). -/
 def asyncEffects (async : Bool) (footprint : Footprints.Closed) : Bool :=
   !async || footprint == .top
 
+/-- An async code's signature admits every change on a normal return
+(`Effect.admitsAll`), for the reason `asyncEffects` states. -/
+def asyncAdmits (async : Bool) (e : CallEffects.Effect) : Bool :=
+  !async || e.admitsAll
+
 /-- A declaration's claim within the effect its result annotation states
 (`Modifies<P, T>`; SOURCE-ELABORATION.md, "Stated effects"): a statement adds a
 guarantee (a footprint below `top`, a fresh result, or store regions); the
@@ -461,7 +466,7 @@ of what was checked. -/
 @[nospecialize] def codeTableResult (r : Request σ ι) (c : Response ι) :
     ProgramCertificates.CheckResult ι (List (CodeEntry ι)) :=
   (ProgramCertificates.CheckResult.ofBool
-    (r.codes.all fun q => asyncEffects q.async q.entry.row.effect.footprint)).bind fun _ =>
+    (r.codes.all fun q => asyncAdmits q.async q.entry.row.effect)).bind fun _ =>
   (ProgramCertificates.CheckResult.ofBool (r.codes.length == c.codes.length &&
     (r.codes.zip c.codes).all (fun (q, C) => C.map signature == q.claims))).bind fun _ =>
   (ProgramCertificates.checkReadSummariesResult (graph r) (StoreView.images r.types) c.readSummaries).bind fun _ =>

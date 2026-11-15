@@ -402,6 +402,22 @@ Two signatures conjoin where their promise and preconditions are the same
 (`Effect.sameResult`), and the conjunction is used through coverage
 (`Effect.meetCovers`).
 
+Two questions about a frame's change have two projections. A conservative
+reader of a call's change reads the closed bound above the frame
+(`Effect.changeBound`, the frame's `Footprint.close`: every change the frame
+admits is within it, `Effect.within_changeBound`); whether a frame admits
+every change, which an async code's signature must, is decided by its class
+bound being `⊤` (`Effect.admitsAll`, sufficient: `Effect.within_of_admitsAll`).
+The class bound alone is no upper bound: entries over other regions add
+changes it does not state.
+
+Binding is the exact substitution where it is defined (`Exits.drop`), and
+otherwise the total weakening `Exits.dropWeak`: the frame substituted, or its
+closed bound where it names a saved position; the postconditions that
+substitute, the others forgotten. Its exits follow from the schema's at the
+longer call on both exits (`Exits.exitPost_dropWeak`) and equal the exact
+substitution where that is defined (`Exits.dropWeak_of_drop`).
+
 A postcondition is read from the normal exit's postconditions by its
 formula: a fresh result store (`freshStore 0`, `ExitSchema.freshResult`), a
 fresh result object (`freshObject 0`, `ExitSchema.freshObjectResult`), the

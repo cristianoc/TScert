@@ -725,4 +725,96 @@ theorem Exits.exitPost_drop {k : Nat} {x y : Exits ExitSchema} (hd : x.drop k = 
   rw [this]
   simp only [hlen]
 
+/-! ## Binding as a total weakening -/
+
+/-- **An exit schema at the bound call, weakened where binding hides a
+position**: the frame with the positions substituted, or, where it names a
+saved position, its closed bound above it (`Footprint.close`); the
+postconditions that substitute, the others forgotten. -/
+def ExitSchema.dropWeak (k : Nat) (q : ExitSchema) : ExitSchema :=
+  ⟨(renameFootprint (dropBefore k) q.frame).getD q.frame.close.fp,
+    q.ensures.filterMap (renameFormula (dropRenaming k) (seqDrop k) (trDrop k))⟩
+
+/-- **Binding `k` actuals, total** (the note, rule Call at a bound function,
+then consequence): both exits weakened at the bound call
+(`ExitSchema.dropWeak`). -/
+def Exits.dropWeak (k : Nat) (x : Exits ExitSchema) : Exits ExitSchema := x.map (ExitSchema.dropWeak k)
+
+private theorem mapM_eq_filterMap {α β : Type} {f : α → Option β} :
+    ∀ {xs : List α} {ys : List β}, xs.mapM f = some ys → xs.filterMap f = ys
+  | [], ys, h => by simp only [List.mapM_nil, Option.pure_def, Option.some.injEq] at h; subst h; rfl
+  | x :: xs, ys, h => by
+    simp only [List.mapM_cons, Option.bind_eq_bind, Option.pure_def] at h
+    obtain ⟨y, hy, h⟩ := bind_some h
+    obtain ⟨ys', hys, h⟩ := bind_some h
+    cases h
+    simp [hy, mapM_eq_filterMap hys]
+
+/-- **The weakening is the exact binding where that is defined** (proved). -/
+theorem ExitSchema.dropWeak_of_drop {k : Nat} {q q' : ExitSchema} (hd : q.drop k = some q') : q.dropWeak k = q' := by
+  simp only [ExitSchema.drop, Option.bind_eq_bind, Option.pure_def] at hd
+  obtain ⟨Φ, hΦ, hd⟩ := bind_some hd
+  obtain ⟨es, hes, hd⟩ := bind_some hd
+  cases hd
+  simp [ExitSchema.dropWeak, hΦ, mapM_eq_filterMap hes]
+
+theorem Exits.dropWeak_of_drop {k : Nat} {x y : Exits ExitSchema} (hd : x.drop k = some y) : x.dropWeak k = y := by
+  have hn := ExitSchema.dropWeak_of_drop (Exits.drop_get hd .normal)
+  have he := ExitSchema.dropWeak_of_drop (Exits.drop_get hd .exceptional)
+  simp only [Exits.get] at hn he
+  simp only [Exits.dropWeak, Exits.map, hn, he]
+
+private theorem canonical_dropWeak (k : Nat) (q : ExitSchema) : (q.dropWeak k).canonicalTransports = true := by
+  refine List.all_eq_true.mpr fun G hG => ?_
+  obtain ⟨F, -, hm⟩ := List.mem_filterMap.mp hG
+  exact (canonical_renameFormula hm).2
+
+/-- **The weakened exits follow from the schema's at the longer call**
+(proved), on both exits: a substituted frame or postcondition means at the
+bound call what it meant at the longer one (`action_renameFootprint`,
+`holds_renameFormula`), and an unsubstituted frame's changes are within its
+closed bound (`Footprint.close_sound`), which reads no position. -/
+theorem Exits.exitPost_dropWeak {k : Nat} {x : Exits ExitSchema} {pre : List Tm} (hp : pre.length = k)
+    {c : Completion} {r r₀ : Tm} {args : List Tm} {s s' : IndexedHeap} {v : Tm}
+    (h : x.exitPost c r₀ (pre ++ args) s s' v) : (x.dropWeak k).exitPost c r args s s' v := by
+  have hcy : (x.dropWeak k).canonicalTransports = true := by
+    simp only [Exits.canonicalTransports, Exits.dropWeak, Exits.map, canonical_dropWeak, Bool.and_self]
+  let N := max (args.length + 1) (max x.slots (x.dropWeak k).slots)
+  have hlen : (pre ++ args).length = k + args.length := by simp [hp]
+  unfold Exits.exitPost at h ⊢
+  rw [← instantiate_completion hcy (N := N) (by omega)]
+  have hs := dropRenaming_agrees hp r r₀ args v s.h.length s s'
+  have hsh := callState_shifted r₀ (pre ++ args) v s.h.length s s'
+  have hsh' := callState_shifted r args v s.h.length s s'
+  obtain ⟨hfr, hens⟩ := h
+  simp only [Exits.atArity, Exits.get_map, ExitSchema.instantiate, List.mem_map, forall_exists_index, and_imp,
+    forall_apply_eq_imp_iff₂] at hfr hens
+  simp only [Exits.dropWeak, Exits.get_map, ExitSchema.instantiate, ExitSchema.dropWeak, ExitSpec.Holds,
+    List.mem_map, List.mem_filterMap, forall_exists_index, and_imp]
+  refine ⟨?_, ?_⟩
+  · cases hΦ : renameFootprint (dropBefore k) (x.get c).frame with
+    | some Φ' =>
+      simp only [Option.getD_some]
+      exact (action_renameFootprint hΦ hs.before).mpr hfr
+    | none =>
+      simp only [Option.getD_none]
+      obtain ⟨had, hpost⟩ := hfr
+      exact ⟨had, Footprints.Closed.post_iff.mpr (Footprints.Closed.post_iff.mp (Footprints.Footprint.close_sound hpost))⟩
+  · rintro _ G F hF hm rfl
+    have hc := (canonical_renameFormula hm).1
+    have hsl : F.slots ≤ x.slots := Nat.le_trans (ExitSchema.slots_le_of_mem hF) (Exits.slots_get x c)
+    have hF' : Holds AssertionArena.empty (callState r₀ (pre ++ args) v s.h.length s s')
+        (instantiateFormula ⟨k + args.length, max (k + args.length + 1) x.slots, Nat.le_max_left _ _⟩ F) := by
+      have := hens F hF
+      simp only [Exits.callInstantiation, hlen] at this
+      exact this
+    have hw := (instantiateFormula_widen (n := k + args.length) (N := max (k + args.length + 1) x.slots)
+      (N' := N + k) (h₁ := by omega) (h₂ := Nat.le_max_left _ _) hc (Nat.le_trans hsl (Nat.le_max_right _ _))
+      (by omega) AssertionArena.empty hsh).mpr hF'
+    have key := holds_renameFormula (iS := WitnessSeq.instantiate (k + args.length))
+      (iS' := WitnessSeq.instantiate args.length) (iT := (TransportSchema.instantiate · (N + k)))
+      (iT' := (TransportSchema.instantiate · N)) hs (fun _ _ ha => seqDrop_values hs args.length ha)
+      (fun _ _ ht => holdsAt_trDrop ht hs hsh hsh' N) AssertionArena.empty hm
+    exact key.mpr hw
+
 end Verification.CallEffects

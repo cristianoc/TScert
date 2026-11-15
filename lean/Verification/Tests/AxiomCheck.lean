@@ -611,6 +611,10 @@ run_cmd do
   check ``Verification.CallEffects.Effect.elementsWhenTrue_schema
   check ``Verification.CallEffects.Effect.facts_schema
   check ``Verification.CallEffects.postImplies_sound
+  check ``Verification.CallEffects.Effect.within_changeBound
+  check ``Verification.CallEffects.Effect.within_of_admitsAll
+  check ``Verification.CallEffects.Exits.exitPost_dropWeak
+  check ``Verification.CallEffects.Exits.dropWeak_of_drop
   check ``Verification.CallEffects.Effect.ofClosed_schema
   check ``Verification.CallEffects.Effect.ofStated_schema
   check ``Verification.CallEffects.Effect.throwUnbounded_schema

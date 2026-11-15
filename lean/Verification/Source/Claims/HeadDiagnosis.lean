@@ -52,7 +52,7 @@ def FilePlans.lackingAt (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (
       let eff := q.entry.row.effect
       let conditions := ProgramTyping.codeConditions q.entry
       if !conditions then refuse (.refused "its signature")
-      else if !RequestJson.asyncEffects q.async eff.footprint then refuse (.refused "an async footprint")
+      else if !RequestJson.asyncAdmits q.async eff then refuse (.refused "an async footprint")
       else
       let codeBound := ProgramTyping.codeBound q.entry
       let codePool := CertificateProducer.vocabulary G labels rq.claims rq.inputs

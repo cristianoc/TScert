@@ -350,6 +350,26 @@ def Effect.frame (e : Effect) : Footprints.Footprint :=
 def Effect.within (e : Effect) (r : Tm) (args : List Tm) (before after : Heap) : Prop :=
   Footprints.Post e.frame (callEnv r args) before after
 
+/-- **The closed bound above a signature's frame** (`Footprint.close`): each
+category's largest change any entry of the frame admits. Every change the
+frame admits is within it (`Effect.within_changeBound`): the bound a
+conservative reader of a call's change uses. -/
+def Effect.changeBound (e : Effect) : Footprints.Closed := e.frame.close
+
+theorem Effect.within_changeBound {e : Effect} {r : Tm} {args : List Tm} {before after : Heap}
+    (h : e.within r args before after) : e.changeBound.Holds before after :=
+  Footprints.Closed.holds_iff.mpr (Footprints.Closed.post_iff.mp (Footprints.Footprint.close_sound h))
+
+/-- **Whether a signature's frame admits every change** (sufficient): its
+class bound (`Footprint.classBound`) is `⊤`, so every change keeping the
+heap's prefix meets the frame (`Effect.within_of_admitsAll`). -/
+def Effect.admitsAll (e : Effect) : Bool := e.frame.classBound == .top
+
+theorem Effect.within_of_admitsAll {e : Effect} (h : e.admitsAll = true) {r : Tm} {args : List Tm}
+    {before after : Heap} (hl : before.length ≤ after.length) : e.within r args before after := by
+  simp only [Effect.admitsAll, beq_iff_eq] at h
+  exact Footprints.Footprint.classBound_sound (by rw [h]; exact Footprints.Closed.holds_top.mpr hl)
+
 /-- A signature's normal-return postcondition for a call with receiver `r`,
 from the heap the call starts in: its frame, and, where it states one, a
 fresh store for the result; with `receiverGrows`, `ReceiverGrows` and

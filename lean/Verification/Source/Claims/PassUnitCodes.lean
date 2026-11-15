@@ -19,7 +19,7 @@ section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 
 /-- **A code request's run, as `passGroup` makes it**: its conditions hold,
-an async code's footprint is `top` (`RequestJson.asyncEffects`), and a call
+an async code's signature admits every change (`RequestJson.asyncAdmits`), and a call
 of the pass over its graph from its start, given its frame as inputs, at its
 goal, its requirements as assertions, its entry indices, the codes `table`
 admits, the ordinary checker, starting from the answers `a`, at its bound,
@@ -27,7 +27,7 @@ with no postcondition, separation or regional option, accepted leaving
 `a'`. -/
 def CodeRunAccepted (G : NormalGraph ι) (I : InstanceImageCheck G) (r : SourceRequest σ ι)
     (table : List (CodeEntry ι)) (q : CodeRequest ι) (ci : Nat) (a a' : Answered G) : Prop :=
-  codeConditions q.entry = true ∧ RequestJson.asyncEffects q.async q.entry.row.effect.footprint = true ∧
+  codeConditions q.entry = true ∧ RequestJson.asyncAdmits q.async q.entry.row.effect = true ∧
   ∃ c : RunCall G I, c.P = (codeRequest r q).program ∧ c.claims = q.claims ∧ c.start = q.entry.start ∧
     c.inputs = codeFrame q.entry.arity q.entry.row q.entry.captures q.entry.store ∧ c.goal = q.entry.goal ∧ c.assertions = (codeHintsAt r ci).requirements ∧
     c.entryIndices = GraphCode.codeEntryIndices q.entry ∧ c.codes = GraphCode.admits table ∧
