@@ -128,7 +128,7 @@ theorem gate_write {Ξ : Fam} {a b : CallEffects.Effect} {Acc : (j : Nat) → Wo
   let fs := slots h.length [f]
   let cap := Capability.field f A
   let body : Tm := .invoke g r args
-  have hcomb := CallEffects.PromiseWith.combine (D := D) hs ha hb hcross
+  have hcomb := CallEffects.PromiseWith.iff_legacy.mp (CallEffects.PromiseWith.combine (D := D) hs ha hb hcross)
   have hbodyRefs : RefsOk W body := fun y hy => hrefs y
     (show y ∈ refs (literal f x) ++ refs body from List.mem_append.mpr (.inr hy))
   have hxr : RefsOk W x := fun y hy => hrefs y (by

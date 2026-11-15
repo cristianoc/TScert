@@ -41,13 +41,6 @@ theorem trans {s₁ s₂ s₃ : IndexedHeap} (h₁ : Admissible s₁ s₂) (h₂
   refine ⟨Nat.le_trans hle₂ hle₁, ?_⟩
   simpa only [trunc_trunc] using WExt_trans (WExt_trunc hle₂ hx₁) hx₂
 
-/-- The heap grows: each heap is as long as its world, and the world only
-grows. -/
-theorem length_le {s s' : IndexedHeap} (ha : Admissible s s') : s.h.length ≤ s'.h.length := by
-  obtain ⟨hle, tail, ht⟩ := ha
-  rw [s.ok.1.1, s'.ok.1.1, toList_length, toList_length, ht]
-  simp
-
 /-- Every location of `s`'s world keeps its contract, restricted to the lower
 budget. -/
 theorem lookup_ext {s s' : IndexedHeap} (ha : Admissible s s') {l : Nat} {c : Ctr s.n}
@@ -228,11 +221,6 @@ theorem box_idem (hr : Rigid Φ ρ) (hb : Box Φ F ρ m s) : Box Φ (Box Φ F) �
   fun s₁ ha₁ s₂ ha₂ => hb s₂ (hr s s₁ s₂ ha₁ ha₂)
 
 end Laws
-
-/-- Every admissible transition is an action of the closed footprint letting
-everything change. -/
-theorem action_top {ρ : Env} {s s' : IndexedHeap} (ha : Admissible s s') : Action Footprints.Closed.top.fp ρ s s' :=
-  ⟨ha, Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp (Footprints.Closed.holds_top.mpr ha.length_le))⟩
 
 /-- **Invariance is the note's `F ⊢ □_⊤ F`.** -/
 theorem invariant_iff_top {g : Assertion} : Invariant g ↔ Entails g (Box Footprints.Closed.top.fp g) :=

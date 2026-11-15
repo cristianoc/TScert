@@ -3620,7 +3620,7 @@ says. The empty footprint leaves every such location's contents unchanged;
 an assertion function's signatures state, besides, the promises `guards` and
 `asserts`, a promise about an actual
 ([user-defined guards](#user-defined-guards)). An
-**effect-qualified signature** is a signature carrying such a guarantee. `CallEffects.lean` defines its semantics; the
+**effect-qualified signature** is a signature carrying such a guarantee. `EffectSignatures.lean` defines its effect and `CallEffects.lean` its callable contract; the
 [effect contract](SEMANTICS.md#effect-qualified-call-contracts) and
 [certification rules](#definition-and-application-rules)
 state what a definition's check must establish.

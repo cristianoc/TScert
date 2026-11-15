@@ -94,6 +94,22 @@ heap it starts from. -/
 def Action (Φ : Footprint) (ρ : Env) (s s' : IndexedHeap) : Prop :=
   Admissible s s' ∧ Post Φ ρ s.h s'.h
 
+namespace Admissible
+
+/-- The heap grows: each heap is as long as its world, and the world only
+grows. -/
+theorem length_le {s s' : IndexedHeap} (ha : Admissible s s') : s.h.length ≤ s'.h.length := by
+  obtain ⟨hle, tail, ht⟩ := ha
+  rw [s.ok.1.1, s'.ok.1.1, toList_length, toList_length, ht]
+  simp
+
+end Admissible
+
+/-- Every admissible transition is an action of the closed footprint letting
+everything change. -/
+theorem action_top {ρ : Env} {s s' : IndexedHeap} (ha : Admissible s s') : Action Footprints.Closed.top.fp ρ s s' :=
+  ⟨ha, Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp (Footprints.Closed.holds_top.mpr ha.length_le))⟩
+
 end Verification.TolerantFrames
 
 namespace Verification.Parity
@@ -487,5 +503,52 @@ def Holds (arena : AssertionArena) (s : TwoState) : Formula → Prop
   | .and F G => Holds arena s F ∧ Holds arena s G
   | .truth => True
   | .falsity => False
+
+end Verification.Parity
+
+namespace Verification.Parity
+open Verification Footprints HeapKnowledge TolerantFrames
+
+/-- The effect letting every location change: the note's `⊤`. -/
+def topEffect : Footprint := Footprints.Closed.top.fp
+
+/-- Every admissible transition is an action of `⊤`. -/
+theorem EffectAction.top {η : Env} {s s' : IndexedHeap} (h : Admissible s s') : EffectAction topEffect η s s' :=
+  action_top h
+
+/-- A path through no field reads its root's value in every heap. -/
+theorem Path.read_nil {η : Env} {h : Heap} {p : Path} (hp : p.fields = []) : p.read η h = some (η p.root) := by
+  obtain ⟨r, f⟩ := p; subst hp; rfl
+
+theorem Path.read_heap {η : Env} {h h' : Heap} {p : Path} (hp : p.fields = []) : p.read η h = p.read η h' := by
+  rw [Path.read_nil hp, Path.read_nil hp]
+
+theorem Witness.value_heap {w : Witness} (hw : w.heapFree = true) (η : Env) (h h' : Heap) :
+    w.value η h' = w.value η h := by
+  cases w with
+  | path p => simp only [Witness.heapFree, List.isEmpty_iff] at hw; exact Path.read_heap hw
+  | literal _ => rfl
+
+namespace Substitution
+
+theorem image_of_unboxed {θ : Substitution} (hb : θ.boxed = false) (i : Nat) : θ.image i = θ.images[i]? := by
+  unfold image; cases θ.images[i]? <;> simp [hb]
+
+/-- **The substitution under a box holds at every heap** where it certifies
+no rigid image. -/
+theorem Holds.box {θ : Substitution} (hst : θ.stable = []) {target source : Env} {h : Heap}
+    (hθ : θ.Holds target source h) (h' : Heap) : θ.box.Holds target source h' := by
+  intro i w hi
+  simp only [Substitution.box, image, hst] at hi
+  cases hw0 : θ.images[i]? with
+  | none => rw [hw0] at hi; cases hi
+  | some w0 =>
+    rw [hw0] at hi
+    cases hf : w0.heapFree <;> simp [hf] at hi
+    subst hi
+    rw [Witness.value_heap hf]
+    exact hθ i w0 (by unfold image; rw [hw0]; simp [hf])
+
+end Substitution
 
 end Verification.Parity

@@ -1,5 +1,6 @@
 import Verification.Semantics.ViewStores
-import Verification.Semantics.ContractExits
+import Verification.Semantics.CallEffects
+import Verification.Semantics.ExitSummaries
 import Verification.Semantics.CommandSummaries
 import Verification.Semantics.CommandComposition
 import Verification.Semantics.CommandLoops
@@ -286,8 +287,10 @@ run_cmd do
   check ``Verification.HeapObservations.SafePostExcV.iff_lift
   check ``Verification.HeapObservations.SafePostExcV.post
   check ``Verification.CallEffects.SafePostExcV.weaken_admissible
-  check ``Verification.CallEffects.PromiseWith.iff_exits
-  check ``Verification.CallEffects.ConstructPromise.iff_exits
+  check ``Verification.CallEffects.NativeContract.iff_exits
+  check ``Verification.CallEffects.PromiseWith.iff_legacy
+  check ``Verification.CallEffects.NativeConstruct.iff_exits
+  check ``Verification.CallEffects.ConstructPromise.iff_legacy
   check ``Verification.CallEffects.exactPre_iff
   check ``Verification.CallEffects.elementWrite_iff
   check ``Verification.CallEffects.Effect.summary_normal_iff

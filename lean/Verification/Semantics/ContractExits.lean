@@ -2,8 +2,8 @@ import Verification.Semantics.ExitSummaries
 
 /-! # A signature's contract read per exit
 
-The callable type's contract of a signature (`PromiseWith`,
-`ConstructPromise`) stated by its specification per completion
+The native-contract condition of a signature (`NativeContract`,
+`NativeConstruct`) stated by its specification per completion
 (`Exits.exitPostW`, the note's Call on both exits) is the contract its
 postconditions state today: at the states a safe run from a well-formed
 entry reaches, the two agree (`Effect.summary_normal_iff`,
@@ -52,11 +52,13 @@ private theorem transport {Ξ T : Fam} {Q Q' : WPost} {R R' : WExcV} {j : Nat} {
     exact SafePostExcV.weaken_admissible s (fun s' v hadm h => hq s s' v rfl HEq.rfl rfl hadm h)
       (fun s' v hadm h => hr s s' v rfl HEq.rfl rfl hadm h) hs
 
-/-- **A signature's callable contract is the contract of its exits.** -/
-theorem PromiseWith.iff_exits {Ξ : Fam} {effect : Effect} {Acc : ArgFam} {Rc R : Fam} {k : Nat} {W : WorldT k}
-    {v : Val} :
-    PromiseWith Ξ effect Acc Rc R k W v ↔
-      NativeContract Ξ Acc Rc effect.Requires (fun _ args => effect.result R (effect.promised args))
+/-- **A signature's callable contract is the contract of its exits**: the
+native-contract condition at its postconditions is the one at its exits. -/
+theorem NativeContract.iff_exits {Ξ : Fam} {effect : Effect} {Acc : ArgFam} {Rc : Fam}
+    {Rf : Tm → List Tm → Fam} {k : Nat} {W : WorldT k} {v : Val} :
+    NativeContract Ξ Acc Rc effect.Requires Rf (fun r args _ U heap => effect.postW r args U heap)
+        (fun r args _ _ heap => (effect.excPostW r args heap).liftV) k W v ↔
+      NativeContract Ξ Acc Rc effect.Requires Rf
         (fun r args _ U heap => effect.schema.exitPostW .normal r args U heap)
         (fun r args _ U heap => effect.schema.exitPostW .exceptional r args U heap) k W v := by
   constructor <;> intro h j hj U hx hu heap hh hvr r hrv hrc hrr args hvals har hacc hreq <;>
@@ -70,10 +72,11 @@ theorem PromiseWith.iff_exits {Ξ : Fam} {effect : Effect} {Acc : ArgFam} {Rc R 
 
 /-- **A construct signature's contract is the contract of its exits**, the
 receiver `undefined`. -/
-theorem ConstructPromise.iff_exits {Ξ : Fam} {effect : Effect} {P : ArgFam} {R : Fam} {k : Nat} {W : WorldT k}
-    {v : Val} :
-    ConstructPromise Ξ effect P R k W v ↔
-      NativeConstruct Ξ P (effect.Requires .undef) (fun args => effect.result R (effect.promised args))
+theorem NativeConstruct.iff_exits {Ξ : Fam} {effect : Effect} {P : ArgFam} {Rf : List Tm → Fam} {k : Nat}
+    {W : WorldT k} {v : Val} :
+    NativeConstruct Ξ P (effect.Requires .undef) Rf (fun r args _ U heap => effect.postW r args U heap)
+        (fun r args _ _ heap => (effect.excPostW r args heap).liftV) k W v ↔
+      NativeConstruct Ξ P (effect.Requires .undef) Rf
         (fun r args _ U heap => effect.schema.exitPostW .normal r args U heap)
         (fun r args _ U heap => effect.schema.exitPostW .exceptional r args U heap) k W v := by
   constructor <;> intro h j hj U hx hu heap hh hvr args hvals har hacc hreq <;>

@@ -34,9 +34,6 @@ of `S`, read at the first state, changes at most by `δ`
 def SupportedBy (S : Footprint) (η : Env) (s s' : IndexedHeap) : Prop :=
   Footprints.Supported S η s.h s'.h
 
-/-- The effect letting every location change: the note's `⊤`. -/
-def topEffect : Footprint := Footprints.Closed.top.fp
-
 /-- A region read without the name valuation: classes, every location, a
 module cell and their intersections with a class. -/
 def regionEnvFree : Region → Bool
@@ -77,9 +74,6 @@ theorem EffectAction.refl (Φ : Footprint) (η : Env) (s : IndexedHeap) : Effect
   TolerantFrames.Action.refl Φ η s
 
 theorem EffectAction.admissible (h : EffectAction Φ η s s') : Admissible s s' := h.1
-
-/-- Every admissible transition is an action of `⊤`. -/
-theorem EffectAction.top (h : Admissible s s') : EffectAction topEffect η s s' := action_top h
 
 private theorem region_mem_envFree {r : Region} (hr : regionEnvFree r = true) (hp : Heap) (l : Nat) :
     r.mem η hp l = r.mem η' hp l := by
@@ -365,13 +359,6 @@ def Atom.envOnly : Atom → Bool
   | .safeInt p => p.fields.isEmpty
   | .pastSafe p => p.fields.isEmpty
   | _ => false
-
-/-- A path through no field reads its root's value in every heap. -/
-theorem Path.read_nil {η : Env} {h : Heap} {p : Path} (hp : p.fields = []) : p.read η h = some (η p.root) := by
-  obtain ⟨r, f⟩ := p; subst hp; rfl
-
-theorem Path.read_heap {η : Env} {h h' : Heap} {p : Path} (hp : p.fields = []) : p.read η h = p.read η h' := by
-  rw [Path.read_nil hp, Path.read_nil hp]
 
 private theorem termAt_envOnly {η : Env} {h h' : Heap} {t : Term}
     (ht : (t.envOnly || (t.kind == .view && t.path.isEmpty)) = true) (he : t.atEntry = false) :

@@ -544,7 +544,9 @@ theorem restsT_of_graphRest {G : NormalGraph ι} {arity E K start Cs vs n W} {ki
     CallEffects.restsT (excOf G) (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) n W (.objAt fs (.graph arity E K start vs kind true) oid) := by
   have hself : Scoped 0 (.objAt fs (.graph arity E K start vs kind true) oid) := by simpa [Scoped] using hsc
   refine ⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩
-  intro q hq j hj U hx hu heap hh hvr r hrv hr hrr args hvals har ha _
+  intro q hq
+  rw [CallEffects.PromiseWith.iff_legacy]
+  intro j hj U hx hu heap hh hvr r hrv hr hrr args hvals har ha _
   obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
   have hbind := hb s hsm j U r hr
   obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hsm
@@ -672,7 +674,9 @@ theorem offers_self {G : NormalGraph ι} {arity E K start Cs vs} {kind : Invoke}
   intro W hvs
   apply (represents_back hr n W _)
   refine ⟨⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩, ⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩⟩
-  · intro q hq j hj U hx hu heap hh hvr r hrv hrr hrref args hvals har ha hreq
+  · intro q hq
+    rw [CallEffects.PromiseWith.iff_legacy]
+    intro j hj U hx hu heap hh hvr r hrv hrr hrref args hvals har ha hreq
     obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
     have henv := hvs.transfer j (Nat.le_of_lt hj) U hx
     have hF := ih j hj U henv
@@ -684,7 +688,9 @@ theorem offers_self {G : NormalGraph ι} {arity E K start Cs vs} {kind : Invoke}
           rcases List.mem_append.mp ha with ha | ha
           · exact (graph_code_refs hvr).2 a ha
           · rw [List.mem_singleton.mp ha]; exact hvr) hrref har)⟩
-  · intro q hq j hj U hx hu heap hh hvr r hrv hrr hrref args hvals har ha hreq
+  · intro q hq
+    rw [CallEffects.PromiseWith.iff_legacy]
+    intro j hj U hx hu heap hh hvr r hrv hrr hrref args hvals har ha hreq
     obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
     have hspec := ho _ (List.mem_append_right _ (List.mem_map.mpr ⟨s, hsm, rfl⟩))
     have hle : arity ≤ s.arguments.1.length := hspec.1
@@ -724,7 +730,9 @@ theorem ctorsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U : Ty
       (.objAt fs (.graph arity E K start vs .construct) oid) := by
   have hself : Scoped 0 (.objAt fs (.graph arity E K start vs .construct) oid) := by simpa [Scoped] using hsc
   refine ⟨⟨fs, _, _, _, _, _, _, _, rfl, hself⟩, ?_⟩
-  intro q hq j hj V hx hv heap hh hvr args _ har ha hreq
+  intro q hq
+  rw [CallEffects.ConstructPromise.iff_legacy]
+  intro j hj V hx hv heap hh hvr args _ har ha hreq
   obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
   refine ⟨_, ⟨fs, _, _, _, rfl, rfl, rfl⟩, ?_⟩
   exact CallEffects.Effect.safe_postW (CallEffects.Effect.below_write (hs p hp).2.1) <|
@@ -775,7 +783,9 @@ theorem ctorRestsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U 
       (.objAt fs (.graph arity E K start vs .construct) oid) := by
   have hself : Scoped 0 (.objAt fs (.graph arity E K start vs .construct) oid) := by simpa [Scoped] using hsc
   refine ⟨⟨fs, _, _, _, _, _, _, _, rfl, hself⟩, ?_⟩
-  intro q hq j hj V hx hv heap hh hvr args _ har ha _
+  intro q hq
+  rw [CallEffects.ConstructPromise.iff_legacy]
+  intro j hj V hx hv heap hh hvr args _ har ha _
   obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
   obtain ⟨hplain, El, hel, hspec⟩ := hs s hsm
   obtain ⟨hlen, hfix, hext⟩ := ha

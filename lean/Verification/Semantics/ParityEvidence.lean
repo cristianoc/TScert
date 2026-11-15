@@ -34,20 +34,11 @@ def Witness.shift : Witness → Witness
   | .path p => .path ⟨p.root + 1, p.fields⟩
   | .literal v => .literal v
 
-theorem Witness.value_heap {w : Witness} (hw : w.heapFree = true) (η : Env) (h h' : Heap) :
-    w.value η h' = w.value η h := by
-  cases w with
-  | path p => simp only [Witness.heapFree, List.isEmpty_iff] at hw; exact Path.read_heap hw
-  | literal _ => rfl
-
 theorem Witness.value_shift (w : Witness) (v : Val) (η : Env) (h : Heap) :
     w.shift.value (push v η) h = w.value η h := by
   cases w <;> rfl
 
 namespace Substitution
-
-theorem image_of_unboxed {θ : Substitution} (hb : θ.boxed = false) (i : Nat) : θ.image i = θ.images[i]? := by
-  unfold image; cases θ.images[i]? <;> simp [hb]
 
 /-- The path image of slot `i`, where its image is a path. -/
 def pathAt (θ : Substitution) (i : Nat) : Option Path :=
@@ -61,21 +52,6 @@ theorem Holds.path {θ : Substitution} {target source : Env} {h : Heap} (hθ : �
   split at hq
   · rename_i p hp; cases hq; exact hθ i _ hp
   · cases hq
-
-/-- **The substitution under a box holds at every heap** where it certifies
-no rigid image. -/
-theorem Holds.box {θ : Substitution} (hst : θ.stable = []) {target source : Env} {h : Heap}
-    (hθ : θ.Holds target source h) (h' : Heap) : θ.box.Holds target source h' := by
-  intro i w hi
-  simp only [Substitution.box, image, hst] at hi
-  cases hw0 : θ.images[i]? with
-  | none => rw [hw0] at hi; cases hi
-  | some w0 =>
-    rw [hw0] at hi
-    cases hf : w0.heapFree <;> simp [hf] at hi
-    subst hi
-    rw [Witness.value_heap hf]
-    exact hθ i w0 (by unfold image; rw [hw0]; simp [hf])
 
 /-- The substitution under one more logical binder: slot `0` stays, slot
 `i + 1` goes to the image of `i`, one slot further. -/

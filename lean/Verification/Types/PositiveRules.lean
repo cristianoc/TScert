@@ -1213,6 +1213,7 @@ theorem fixed_calls_pack_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R
     (hv : PromiseWith Ξ p.effect (ArgsShort (p.arguments.map (mixedValues G η))) (mixedValues G η p.receiver) (mixedValues G η p.result) n W v) :
     PromiseWith Ξ t.effect (ArgsRest (t.arguments.1.map (mixedValues G η)) (mixedArgs G η t.arguments.2)) (mixedValues G η t.receiver)
       (mixedValues G η t.result) n W v := by
+  rw [CallEffects.PromiseWith.iff_legacy] at hv ⊢
   unfold FixedCallsPack at hc
   split at hc
   · rename_i τ hP

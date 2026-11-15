@@ -766,7 +766,9 @@ theorem callsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {kind :
       (.objAt fs (.graph arity E K start vs kind) oid) := by
   have hself : Scoped 0 (.objAt fs (.graph arity E K start vs kind) oid) := by simpa [Scoped] using hsc
   refine ⟨⟨fs, _, _, rfl, callable_of_kind hk, hself⟩, ?_⟩
-  intro q hq j hj U hx hu heap hh hvr r hrv hr hrr args hvals har ha hreq
+  intro q hq
+  rw [CallEffects.PromiseWith.iff_legacy]
+  intro j hj U hx hu heap hh hvr r hrv hr hrr args hvals har ha hreq
   obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
   -- Graph code states no element write (`Effect.below_write`): its view
   -- write is vacuous, and its postcondition is its heap postcondition.
@@ -791,7 +793,9 @@ theorem restsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {kind :
     CallEffects.restsT (excOf G) (S.map (RestArrow.mapWith (meaning G) (argMeaning G))) n W (.objAt fs (.graph arity E K start vs kind) oid) := by
   have hself : Scoped 0 (.objAt fs (.graph arity E K start vs kind) oid) := by simpa [Scoped] using hsc
   refine ⟨⟨fs, _, _, rfl, callable_of_kind hk, hself⟩, ?_⟩
-  intro q hq j hj U hx hu heap hh hvr r hrv hr hrr args hvals har ha hreq
+  intro q hq
+  rw [CallEffects.PromiseWith.iff_legacy]
+  intro j hj U hx hu heap hh hvr r hrv hr hrr args hvals har ha hreq
   obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
   have hspec := hs s hsm
   have hle : arity ≤ s.arguments.1.length := hspec.1

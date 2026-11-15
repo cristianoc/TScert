@@ -247,7 +247,9 @@ theorem closure_meets_below {G : NormalGraph ι} {arity E K start Cs vs} {kind :
   have hself : Scoped 0 (.objAt fs (.graph arity E K start vs kind false) oid) := by simpa [Scoped] using hsc
   apply (represents_back hr n W _)
   refine ⟨⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩, ⟨⟨fs, _, _, rfl, callable_of_kind hkind, hself⟩, ?_⟩⟩
-  · intro q hq j hj U hx hu heap hh hvr r hrv hrr hrref args hvals har ha hreq
+  · intro q hq
+    rw [CallEffects.PromiseWith.iff_legacy]
+    intro j hj U hx hu heap hh hvr r hrv hrr hrref args hvals har ha hreq
     obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hq
     have henv := (hcaps j hj U).withSelf hlen hself
     -- Module code states no element write (`Effect.below_write`): its view
@@ -261,7 +263,9 @@ theorem closure_meets_below {G : NormalGraph ι} {arity E K start Cs vs} {kind :
           rcases List.mem_append.mp ha with ha | ha
           · exact (graph_code_refs hvr).2 a ha
           · rw [List.mem_singleton.mp ha]; exact hvr) hrref har)⟩
-  · intro q hq j hj U hx hu heap hh hvr r hrv hrr hrref args hvals har ha hreq
+  · intro q hq
+    rw [CallEffects.PromiseWith.iff_legacy]
+    intro j hj U hx hu heap hh hvr r hrv hrr hrref args hvals har ha hreq
     obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
     have hspec := ho _ (List.mem_append_right _ (List.mem_map.mpr ⟨s, hsm, rfl⟩))
     have hle : arity ≤ s.arguments.1.length := hspec.1
