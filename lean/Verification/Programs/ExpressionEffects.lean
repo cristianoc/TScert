@@ -110,7 +110,7 @@ theorem sourceField_sound [DecidableEq ι] {G : NormalGraph ι} {Ref fld n W v}
 source values: it changes one location, which holds a value, not a store. -/
 def fieldWriteWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Footprints.Closed) (t : Tm) : Bool :=
   match HeapExpressionRules.writeSlots t with
-  | some (f, i, k) => Footprints.Closed.le ⟨.any, .keep⟩ Φ && decide (k < Γ.length) && match Γ[i]? with
+  | some (f, i, k) => Footprints.Closed.le ⟨.any, .keep, .keep⟩ Φ && decide (k < Γ.length) && match Γ[i]? with
     | some Ref => sourceField G (expand G Ref) f
     | none => false
   | none => false
@@ -219,7 +219,7 @@ holds `null` or `undefined`. -/
 def initWriteWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (k : HeapKnowledge.Knowledge)
     (Φ : Footprints.Closed) (t : Tm) : Bool :=
   match HeapExpressionRules.writeSlots t with
-  | some (f, i, j) => Footprints.Closed.le ⟨.init, .keep⟩ Φ && nullishAt k i f &&
+  | some (f, i, j) => Footprints.Closed.le ⟨.init, .keep, .keep⟩ Φ && nullishAt k i f &&
       (match Γ[j]? with
       | some B => sourceTy G B
       | none => false) &&
@@ -1505,7 +1505,7 @@ location but the written object's field `f`, where its store is, within
 weakening. -/
 def StoreWrite (f : PropKey) (o : Tm) (c : Footprints.Closed) (h h' : Heap) : Prop :=
   c.Holds h h' ∧ ∀ fl, (Footprints.fieldsOf o).lookup f = some fl →
-    Footprints.Closed.HoldsOn ⟨.any, .keep⟩ (fun l => l ≠ fl) h h'
+    Footprints.Closed.HoldsOn ⟨.any, .keep, .keep⟩ (fun l => l ≠ fl) h h'
 
 theorem StoreWrite.refl (f : PropKey) (o : Tm) (c : Footprints.Closed) (h : Heap) : StoreWrite f o c h h :=
   ⟨Footprints.Closed.Holds.refl c h, fun _ _ => (Footprints.Closed.Holds.refl _ h).on _⟩
@@ -1513,7 +1513,7 @@ theorem StoreWrite.refl (f : PropKey) (o : Tm) (c : Footprints.Closed) (h : Heap
 /-- The heap after a write taking a fresh location keeps every location but
 the store's. -/
 theorem elem_grow_kept {h : Heap} {fl : Nat} {v : Val} {ls' : List (Option Nat)} :
-    Footprints.Closed.HoldsOn ⟨.any, .keep⟩ (fun l => l ≠ fl) h ((h ++ [v]).set fl (.arr ls')) := by
+    Footprints.Closed.HoldsOn ⟨.any, .keep, .keep⟩ (fun l => l ≠ fl) h ((h ++ [v]).set fl (.arr ls')) := by
   refine ⟨by simp, fun l' w hf hw => ?_⟩
   have hlt := (List.getElem?_eq_some_iff.mp hw).1
   refine ⟨w, ?_, Footprints.Change.Holds.refl _ _ _⟩
@@ -1523,7 +1523,7 @@ theorem elem_grow_kept {h : Heap} {fl : Nat} {v : Val} {ls' : List (Option Nat)}
 store put back. -/
 theorem elem_present_holds {h : Heap} {l fl : Nat} {v u : Val} {ls : List (Option Nat)}
     (hfl : h[fl]? = some (.arr ls)) (hl : h[l]? = some u) (hu : Footprints.isArr u = false) :
-    Footprints.Closed.Holds ⟨.any, .keep⟩ h ((h.set l v).set fl (.arr ls)) := by
+    Footprints.Closed.Holds ⟨.any, .keep, .keep⟩ h ((h.set l v).set fl (.arr ls)) := by
   rw [Footprints.Closed.holds_iff]
   refine ⟨by simp, fun l' w hw => ?_⟩
   by_cases hf : l' = fl
@@ -1546,7 +1546,7 @@ theorem elem_present_holds {h : Heap} {l fl : Nat} {v u : Val} {ls : List (Optio
 store recording it put back. -/
 theorem elem_grow_holds {h : Heap} {fl k : Nat} {v : Val} {ls : List (Option Nat)}
     (hfl : h[fl]? = some (.arr ls)) (hk : k < maxArrayLength) :
-    Footprints.Closed.Holds ⟨.any, .grow⟩ h ((h ++ [v]).set fl (.arr (placeAt ls k h.length))) := by
+    Footprints.Closed.Holds ⟨.any, .grow, .grow⟩ h ((h ++ [v]).set fl (.arr (placeAt ls k h.length))) := by
   rw [Footprints.Closed.holds_iff]
   have hflt := (List.getElem?_eq_some_iff.mp hfl).1
   refine ⟨by simp, fun l' w hw => ?_⟩
@@ -1645,8 +1645,8 @@ theorem elem_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)
     (hst : storeField G (expand G Ref) f idx present = true)
     (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
     (hs : Safe Ξ T n W h (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.num b) (.var k))))) :
-    SafePostExc Ξ T (fun h' _ => StoreWrite f (ρ i) ⟨.any, if present then .keep else .grow⟩ h h')
-      (fun h' => StoreWrite f (ρ i) ⟨.any, if present then .keep else .grow⟩ h h') n W h
+    SafePostExc Ξ T (fun h' _ => StoreWrite f (ρ i) (.ofStores .any (if present then .keep else .grow)) h h')
+      (fun h' => StoreWrite f (ρ i) (.ofStores .any (if present then .keep else .grow)) h h') n W h
       (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.num b) (.var k)))) := by
   have hvv := (meaning_value (he.2 k Γ[k] (List.getElem?_eq_getElem hk))).1
   obtain ⟨B, _, L, hmem, hstore, hbag⟩ := storeField_sound hst (he.2 i Ref hi)
@@ -1737,8 +1737,8 @@ def elemWriteWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Footprints.Cl
   match elemWriteSlots t with
   | some (f, i, b, k) => decide (k < Γ.length) && match Γ[i]?, indexOfBits b with
     | some Ref, some idx =>
-      (storeField G (expand G Ref) f idx true && Footprints.Closed.le ⟨.any, .keep⟩ Φ) ||
-      (storeField G (expand G Ref) f idx false && Footprints.Closed.le ⟨.any, .grow⟩ Φ)
+      (storeField G (expand G Ref) f idx true && Footprints.Closed.le ⟨.any, .keep, .keep⟩ Φ) ||
+      (storeField G (expand G Ref) f idx false && Footprints.Closed.le ⟨.any, .grow, .grow⟩ Φ)
     | _, _ => false
   | none => false
 
@@ -1845,8 +1845,8 @@ theorem elem_var_write_core [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty
     (hst : storeFieldEvery G (expand G Ref) f = true)
     (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
     (hs : Safe Ξ T n W h (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.var j) (.var k))))) :
-    SafePostExc Ξ T (fun h' _ => StoreWrite f (ρ i) ⟨.any, .grow⟩ h h')
-      (fun h' => StoreWrite f (ρ i) ⟨.any, .grow⟩ h h') n W h
+    SafePostExc Ξ T (fun h' _ => StoreWrite f (ρ i) ⟨.any, .grow, .grow⟩ h h')
+      (fun h' => StoreWrite f (ρ i) ⟨.any, .grow, .grow⟩ h h') n W h
       (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.var j) (.var k)))) := by
   have hvv := (meaning_value (he.2 k Γ[k] (List.getElem?_eq_getElem hk))).1
   have hjv := (meaning_value (he.2 j Γ[j] (List.getElem?_eq_getElem hj))).1
@@ -2037,7 +2037,7 @@ position of which holds source values, `{value: any, store: grow}`. -/
 def elemVarWriteWithin (G : NormalGraph ι) (Γ : List (Ty ι)) (Φ : Footprints.Closed) (t : Tm) : Bool :=
   match elemVarWriteSlots t with
   | some (f, i, j, k) => decide (k < Γ.length) && decide (j < Γ.length) && match Γ[i]? with
-    | some Ref => storeFieldEvery G (expand G Ref) f && Footprints.Closed.le ⟨.any, .grow⟩ Φ
+    | some Ref => storeFieldEvery G (expand G Ref) f && Footprints.Closed.le ⟨.any, .grow, .grow⟩ Φ
     | none => false
   | none => false
 
@@ -2090,7 +2090,7 @@ is `{value: any}` with the written slot's store at `any`
 /-- An element write's step frame: every value-class location, and the store
 of the array slot `i` holds. -/
 def writeFrame (i : Nat) : Footprints.Footprint :=
-  Footprints.Closed.fp ⟨.any, .keep⟩ ++ [(.field i arrayStoreKey, .any)]
+  Footprints.Closed.fp ⟨.any, .keep, .keep⟩ ++ [(.field i arrayStoreKey, .any)]
 
 /-- A write of the store an array value holds is within its step frame. -/
 theorem storeWrite_post {ρ : Env} {i fl : Nat} {c : Footprints.Closed} {h h' : Heap}
@@ -2195,7 +2195,7 @@ within `maxArrayLength` where it was (`HeapKnowledge.Changes.ofClosed`). -/
 theorem writeStep_grow [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {t : Tm} {i : Nat}
     {T : Fam} {ρ n W h} (hc : writeStep G Γ t = some i) (he : EnvOk G Γ ρ n W) (hh : HeapOk n W h)
     (hs : Safe Ξ T n W h (instantiate 0 ρ t)) :
-    SafePost Ξ T (fun h' _ => (HeapKnowledge.Changes.ofClosed ⟨.any, .grow⟩).Holds h h') n W h
+    SafePost Ξ T (fun h' _ => (HeapKnowledge.Changes.ofClosed ⟨.any, .grow, .grow⟩).Holds h h') n W h
       (instantiate 0 ρ t) := by
   unfold writeStep at hc
   split at hc
@@ -2223,8 +2223,8 @@ theorem writeStep_grow [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
           rcases Bool.or_eq_true_iff.mp hsel with hst | hst
           all_goals
             exact SafePostExc.post (SafePostExc.weaken
-              (fun _ _ hq => HeapKnowledge.Changes.ofClosed_holds (Footprints.Closed.Holds.mono (b := ⟨.any, .grow⟩) (by rfl) hq.1))
-              (fun _ hq => HeapKnowledge.Changes.ofClosed_holds (Footprints.Closed.Holds.mono (b := ⟨.any, .grow⟩) (by rfl) hq.1))
+              (fun _ _ hq => HeapKnowledge.Changes.ofClosed_holds (Footprints.Closed.Holds.mono (b := ⟨.any, .grow, .grow⟩) (by rfl) hq.1))
+              (fun _ hq => HeapKnowledge.Changes.ofClosed_holds (Footprints.Closed.Holds.mono (b := ⟨.any, .grow, .grow⟩) (by rfl) hq.1))
               (elem_write_core hk hi hidx hst he hh hs))
         · cases hsel
       · cases hc
@@ -2316,19 +2316,19 @@ def writeGrades (G : NormalGraph ι) (Γ : List (Ty ι)) (t : Tm) : List Footpri
   (match HeapExpressionRules.writeSlots t with
     | some (f, i, k) => grantIf (decide (k < Γ.length) && match Γ[i]? with
         | some Ref => sourceField G (expand G Ref) f
-        | none => false) ⟨.any, .keep⟩
+        | none => false) ⟨.any, .keep, .keep⟩
     | none => []) ++
   (match elemWriteSlots t with
     | some (f, i, b, k) => match Γ[i]?, indexOfBits b with
         | some Ref, some idx =>
-          grantIf (decide (k < Γ.length) && storeField G (expand G Ref) f idx true) ⟨.any, .keep⟩ ++
-          grantIf (decide (k < Γ.length) && storeField G (expand G Ref) f idx false) ⟨.any, .grow⟩
+          grantIf (decide (k < Γ.length) && storeField G (expand G Ref) f idx true) ⟨.any, .keep, .keep⟩ ++
+          grantIf (decide (k < Γ.length) && storeField G (expand G Ref) f idx false) ⟨.any, .grow, .grow⟩
         | _, _ => []
     | none => []) ++
   (match elemVarWriteSlots t with
     | some (f, i, j, k) => grantIf (decide (k < Γ.length) && decide (j < Γ.length) && match Γ[i]? with
         | some Ref => storeFieldEvery G (expand G Ref) f
-        | none => false) ⟨.any, .grow⟩
+        | none => false) ⟨.any, .grow, .grow⟩
     | none => [])
 
 /-- **A typed write's check is its grades' below the bound** (proved). -/
@@ -2362,7 +2362,7 @@ def initWriteGrades (G : NormalGraph ι) (Γ : List (Ty ι)) (k : HeapKnowledge.
       | none => false) &&
       match Γ[i]? with
       | some Ref => sourceField G (expand G Ref) f
-      | none => false) ⟨.init, .keep⟩
+      | none => false) ⟨.init, .keep, .keep⟩
   | none => []
 
 /-- **An initializing write's check is its grade below the bound** (proved). -/

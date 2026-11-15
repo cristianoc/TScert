@@ -72,7 +72,7 @@ theorem initTerm_kept (t : HeapKnowledge.Term) (hk : t.atEntry = false → t.kin
   cases k <;> cases p <;>
     simp_all [HeapKnowledge.Term.keptBy, HeapKnowledge.Term.pathKeptBy, HeapKnowledge.Changes.ofClosed,
       initEffect, HeapKnowledge.Changes.keepsLength, Footprints.Change.le, Footprints.Change.rank,
-      Footprints.Change.onStore]
+      Footprints.Change.onStore, Footprints.Closed.stores, Footprints.Change.max]
 
 /-- **(Init)**: a linear fact whose current terms are integers, lengths and
 view lengths at any paths holds after every action of the initialisation

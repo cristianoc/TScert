@@ -3289,7 +3289,8 @@ union with a string.
 A native's **footprint** is the closed footprint its signatures state
 ([FOOTPRINTS](FOOTPRINTS.md#changes-and-footprints)): for the locations that
 existed before a call, the change the call may make to those holding a value
-and to those holding an array store. Each row's footprint is trusted input
+and the one it may make to those holding a store, an array's or a view store
+(`Footprints.Closed.ofStores`). Each row's footprint is trusted input
 of acceptance; its argument is proved of a model of the specification steps
 where the native is modelled, and audited otherwise:
 

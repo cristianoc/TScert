@@ -397,7 +397,7 @@ theorem transfer {pre : Nat → Assertion} {Ξres Tres Ξ T : Fam} {Qres Rres : 
 /-! ## A typed field write -/
 
 /-- `{values: any, stores: keep}`: the effect of a typed field write. -/
-def fieldWriteEffect : Footprints.Closed := ⟨.any, .keep⟩
+def fieldWriteEffect : Footprints.Closed := ⟨.any, .keep, .keep⟩
 
 /-- **A typed field write keeps every length lower bound, on both exits**,
 exposing each exit's endpoint: the action of `{values: any, stores: keep}`, the

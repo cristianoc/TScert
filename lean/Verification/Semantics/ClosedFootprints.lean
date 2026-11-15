@@ -3,14 +3,27 @@ import Verification.Semantics.HeapObservations
 
 /-! # Closed footprints
 
-A **closed footprint** mentions only the two classes of contents: a change for
-the old locations holding a value and one for the old locations holding an
-array store. On a value, `grow` is `keep`, so there are six. They are ordered
-exactly by their entries (`closed_order_exact`), their postcondition reads no
-slot, and the empty one and the one letting everything change are the two
-heap effects of a call signature that state no footprint relation beyond
-prefix and growth (`Closed.holds_empty`, `Closed.holds_top`). Heaps only grow
-under steps, so every run meets the latter (`Closed.top_safe`). -/
+A **closed footprint** mentions only the three class regions, the content
+categories that partition the locations (`Selector.partition`): one change
+for the old locations holding a value, one for those holding an ordinary
+array's store and one for those holding a typed array's view store. These
+are three components, each holding a change. On a value `grow` is `scalar`
+(`Change.onValue`), and on either kind of store `init` and `scalar` are
+`keep` (`Change.onStore`), so a component is read through its normalization
+(`Closed.normal`, `Closed.post_normal`). Closed footprints are ordered
+exactly by their normalized components (`closed_order_exact`), their
+postcondition reads no slot, and the empty one and the one letting
+everything change are the two heap effects of a call signature that state
+no footprint relation beyond prefix and growth (`Closed.holds_empty`,
+`Closed.holds_top`). Heaps only grow under steps, so every run meets the
+latter (`Closed.top_safe`).
+
+A closed footprint stating one change for both store categories,
+`Closed.ofStores`, is the footprint `{values: δ, stores: δ'}`
+(`Closed.ofStores_post_iff`). A footprint of class regions alone has an
+exact closed form (`Footprint.closed?`, `Footprint.closed?_sound`); every
+footprint has a closed bound, which it implies (`Footprint.close`,
+`Footprint.close_sound`). -/
 namespace Verification.Footprints
 
 /-! ## Heaps grow -/
@@ -18,25 +31,52 @@ namespace Verification.Footprints
 theorem step_length_le {h t h' t'} (st : Step h t h' t') : h.length ≤ h'.length := by
   induction st <;> simp_all [List.length_append, List.length_set] <;> omega
 
-/-- A closed footprint: a change for each class of contents. -/
+/-- A closed footprint: a change for each category of contents. -/
 structure Closed where
   value : Change
-  store : Change
+  array : Change
+  view : Change
   deriving DecidableEq, Repr
 
-def Closed.fp (c : Closed) : Footprint := [(.cls .values, c.value), (.cls .stores, c.store)]
+/-- One entry per content category, the three disjoint class regions. -/
+def Closed.fp (c : Closed) : Footprint :=
+  [(.cls .values, c.value), (.cls .arrays, c.array), (.cls .views, c.view)]
+
+/-- The closed footprint stating `value` for the values and `store` for both
+kinds of store: the footprint `{values: value, stores: store}`
+(`Closed.ofStores_post_iff`). -/
+def Closed.ofStores (value store : Change) : Closed := ⟨value, store, store⟩
+
+/-- The least change bounding both store components: the change the closed
+footprint allows on the class `stores`. -/
+def Closed.stores (c : Closed) : Change := c.array.max c.view
+
+theorem Change.max_self (a : Change) : a.max a = a := by cases a <;> rfl
+
+@[simp] theorem Closed.stores_ofStores (v s : Change) : (Closed.ofStores v s).stores = s :=
+  Change.max_self s
+
+@[simp] theorem Closed.value_ofStores (v s : Change) : (Closed.ofStores v s).value = v := rfl
 
 /-- On contents of class `value`, `grow` is `scalar`. -/
 def Change.onValue : Change → Change
   | .grow => .scalar
   | d => d
 
-/-- On a store, `init` and `scalar` are `keep`. -/
+/-- On a store, an array's or a view store, `init` and `scalar` are
+`keep`. -/
 def Change.onStore : Change → Change
   | .init | .scalar => .keep
   | d => d
 
-def Closed.le (a b : Closed) : Bool := a.value.onValue.le b.value.onValue && a.store.onStore.le b.store.onStore
+def Closed.le (a b : Closed) : Bool :=
+  a.value.onValue.le b.value.onValue && a.array.onStore.le b.array.onStore && a.view.onStore.le b.view.onStore
+
+/-- The order of closed footprints stating one change for both stores is the
+order of their two components. -/
+theorem Closed.le_ofStores (v s v' s' : Change) :
+    (Closed.ofStores v s).le (Closed.ofStores v' s') = (v.onValue.le v'.onValue && s.onStore.le s'.onStore) := by
+  simp only [Closed.le, Closed.ofStores, Bool.and_assoc, Bool.and_self]
 
 private theorem value_change {δ δ' : Change} {b v v'} (hv : isArr v = false)
     (hle : δ.onValue.le δ'.onValue = true) (h : δ.Holds b v v') : δ'.Holds b v v' := by
@@ -62,44 +102,40 @@ private theorem store_change {δ δ' : Change} {b v v'} (hv : isArr v = true)
   | scalar => exact .inl h''
   | _ => exact h''
 
-private theorem class_change {δ δ' : Change} {b v v'}
-    (hv : isArr v = false → δ.onValue.le δ'.onValue = true)
-    (hs : isArr v = true → δ.onStore.le δ'.onStore = true) (h : δ.Holds b v v') : δ'.Holds b v v' := by
-  cases ha : isArr v
-  · exact value_change ha (hv ha) h
-  · exact store_change ha (hs ha) h
+/-- Whether contents are a typed array's view store. -/
+def isViewStore : Val → Bool
+  | .viewStore .. => true
+  | _ => false
 
-theorem Closed.post_mono {a b : Closed} (hle : a.le b = true) {ρ h h'} (hp : Post a.fp ρ h h') :
-    Post b.fp ρ h h' := by
-  simp only [Closed.le, Bool.and_eq_true] at hle
-  refine ⟨hp.1, fun l v hv => ?_⟩
-  obtain ⟨v', hv', ha⟩ := hp.2 l v hv
-  refine ⟨v', hv', ?_⟩
-  rcases ha with rfl | ⟨e, he, hm, hh⟩
-  · exact .inl rfl
-  · simp only [Closed.fp, List.mem_cons, List.not_mem_nil, or_false] at he
-    rcases he with rfl | rfl
-    · have hc : isArr v = false := by simpa [Region.mem, hv] using hm
-      exact .inr ⟨_, List.mem_cons_self .., hm, value_change hc hle.1 hh⟩
-    · have hc : isArr v = true := by simpa [Region.mem, hv] using hm
-      exact .inr ⟨(.cls .stores, b.store), by simp [Closed.fp], hm,
-        class_change (fun h => by rw [hc] at h; cases h) (fun _ => hle.2) hh⟩
+/-- The change a closed footprint allows on contents `v`, by their category
+(`Closed.at_category`): a value's, an array store's or a view store's. -/
+def Closed.at (c : Closed) (v : Val) : Change :=
+  if isArr v then (if isViewStore v then c.view else c.array) else c.value
 
-private def ρ₀ : Env := fun _ => .undef
+/-- **The change on contents is their category's component.** -/
+theorem Closed.at_category (c : Closed) (v : Val) : c.at v = match contentsCategory v with
+    | .value => c.value
+    | .array => c.array
+    | .view => c.view := by
+  cases v <;> rfl
 
-/-! ## Closed footprints as call effects -/
+theorem Closed.at_value {c : Closed} {v : Val} (hv : isArr v = false) : c.at v = c.value := by
+  rw [Closed.at_category, (contentsCategory_value v).mpr hv]
 
-/-- The footprint letting no old location change, and the one letting every
-old location change. -/
-def Closed.empty : Closed := ⟨.keep, .keep⟩
-def Closed.top : Closed := ⟨.any, .any⟩
+@[simp] theorem Closed.at_arr (c : Closed) (ls : List (Option Nat)) : c.at (.arr ls) = c.array := rfl
 
-/-- The change a closed footprint allows on contents `v`, by their class. -/
-def Closed.at (c : Closed) (v : Val) : Change := if isArr v then c.store else c.value
+@[simp] theorem Closed.at_viewStore (c : Closed) (f : ViewFormat) (cs : List Nat) :
+    c.at (.viewStore f cs) = c.view := rfl
 
-/-- A closed footprint's postcondition, from the heap a call starts in to the
-heap it returns with. Its regions read no slot. -/
-def Closed.Holds (c : Closed) (h h' : Heap) : Prop := Post c.fp (fun _ => .undef) h h'
+/-- On a closed footprint stating one change for both stores, the change on
+contents is the value's or the store's, by whether they are a store. -/
+theorem Closed.at_ofStores (v s : Change) (u : Val) :
+    (Closed.ofStores v s).at u = if isArr u then s else v := by
+  cases u <;> rfl
+
+private theorem cls_mem {S : Selector} {ρ : Env} {h : Heap} {l : Nat} {v : Val} (hv : h[l]? = some v) :
+    (Region.cls S).mem ρ h l = S.has (contentsCategory v) := by
+  simp [Region.mem, hv, Selector.selects]
 
 theorem Closed.allowed_iff {c : Closed} {ρ : Env} {h : Heap} {l : Nat} {v v' : Val}
     (hv : h[l]? = some v) : Allowed c.fp ρ h l v v' ↔ (c.at v).Holds h.length v v' := by
@@ -107,23 +143,123 @@ theorem Closed.allowed_iff {c : Closed} {ρ : Env} {h : Heap} {l : Nat} {v v' : 
   · rintro (rfl | ⟨e, he, hm, hh⟩)
     · exact Change.Holds.refl _ _ _
     · simp only [Closed.fp, List.mem_cons, List.not_mem_nil, or_false] at he
-      rcases he with rfl | rfl <;> cases ha : isArr v <;>
-        simp_all [Region.mem, Closed.at]
+      rcases he with rfl | rfl | rfl <;> rw [cls_mem hv] at hm <;> rw [Closed.at_category] <;>
+        revert hm <;> cases contentsCategory v <;> simp_all [Selector.has]
   · intro hh
     refine .inr ?_
-    cases ha : isArr v
-    · exact ⟨(.cls .values, c.value), by simp [Closed.fp], by simp [Region.mem, hv, ha],
-        by simpa [Closed.at, ha] using hh⟩
-    · exact ⟨(.cls .stores, c.store), by simp [Closed.fp], by simp [Region.mem, hv, ha],
-        by simpa [Closed.at, ha] using hh⟩
+    cases hc : contentsCategory v <;> simp only [Closed.at_category, hc] at hh
+    · exact ⟨(.cls .values, c.value), by simp [Closed.fp], by rw [cls_mem hv, hc]; rfl, hh⟩
+    · exact ⟨(.cls .arrays, c.array), by simp [Closed.fp], by rw [cls_mem hv, hc]; rfl, hh⟩
+    · exact ⟨(.cls .views, c.view), by simp [Closed.fp], by rw [cls_mem hv, hc]; rfl, hh⟩
+
+/-- An entry of a closed footprint covering a location states the change
+its category's component does. -/
+theorem Closed.fp_entry_at {c : Closed} {x : Region × Change} (hx : x ∈ c.fp) {ρ : Env} {h : Heap} {l : Nat}
+    {v : Val} (hm : x.1.mem ρ h l = true) (hv : h[l]? = some v) : x.2 = c.at v := by
+  simp only [Closed.fp, List.mem_cons, List.not_mem_nil, or_false] at hx
+  rcases hx with rfl | rfl | rfl <;> rw [cls_mem hv] at hm <;> rw [Closed.at_category] <;>
+    revert hm <;> cases contentsCategory v <;> simp [Selector.has]
+
+/-- Every entry of a closed footprint is a class region. -/
+theorem Closed.fp_entry_cls {c : Closed} {x : Region × Change} (hx : x ∈ c.fp) : ∃ S, x.1 = .cls S := by
+  simp only [Closed.fp, List.mem_cons, List.not_mem_nil, or_false] at hx
+  rcases hx with rfl | rfl | rfl <;> exact ⟨_, rfl⟩
 
 /-- A closed footprint's postcondition at any assignment of slots: each old
-location changes within its class's change. -/
+location changes within its category's change. -/
 theorem Closed.post_iff {c : Closed} {ρ : Env} {h h' : Heap} :
     Post c.fp ρ h h' ↔ h.length ≤ h'.length ∧
       ∀ (l : Nat) (v : Val), h[l]? = some v → ∃ v', h'[l]? = some v' ∧ (c.at v).Holds h.length v v' :=
   and_congr Iff.rfl (forall_congr' fun _ => forall_congr' fun _ => forall_congr' fun hv =>
     exists_congr fun _ => and_congr Iff.rfl (Closed.allowed_iff hv))
+
+private theorem Closed.at_mono {a b : Closed} (hle : a.le b = true) {n v v'}
+    (h : (a.at v).Holds n v v') : (b.at v).Holds n v v' := by
+  simp only [Closed.le, Bool.and_eq_true] at hle
+  cases hc : contentsCategory v <;> simp only [Closed.at_category, hc] at h ⊢
+  · exact value_change ((contentsCategory_value v).mp hc) hle.1.1 h
+  · exact store_change (by cases v <;> simp_all [contentsCategory, isArr]) hle.1.2 h
+  · exact store_change (by cases v <;> simp_all [contentsCategory, isArr]) hle.2 h
+
+theorem Closed.post_mono {a b : Closed} (hle : a.le b = true) {ρ h h'} (hp : Post a.fp ρ h h') :
+    Post b.fp ρ h h' := by
+  rw [Closed.post_iff] at hp ⊢
+  exact ⟨hp.1, fun l v hv => let ⟨v', hv', hc⟩ := hp.2 l v hv; ⟨v', hv', Closed.at_mono hle hc⟩⟩
+
+/-- **The exact embedding of a closed footprint stating one change for both
+stores**: its postcondition is that of `{values: value, stores: store}`. -/
+theorem Closed.ofStores_post_iff {v s : Change} {ρ : Env} {h h' : Heap} :
+    Post (Closed.ofStores v s).fp ρ h h' ↔ Post [(.cls .values, v), (.cls .stores, s)] ρ h h' := by
+  refine and_congr Iff.rfl (forall_congr' fun l => forall_congr' fun u => forall_congr' fun hu =>
+    exists_congr fun u' => and_congr Iff.rfl ?_)
+  rw [Closed.allowed_iff hu, Closed.at_ofStores]
+  constructor
+  · intro hh
+    refine .inr ?_
+    cases ha : isArr u
+    · refine ⟨(.cls .values, v), by simp, ?_, by simpa [ha] using hh⟩
+      rw [cls_mem hu]; cases u <;> simp_all [contentsCategory, isArr, Selector.has]
+    · refine ⟨(.cls .stores, s), by simp, ?_, by simpa [ha] using hh⟩
+      rw [cls_mem hu]; cases u <;> simp_all [contentsCategory, isArr, Selector.has]
+  · rintro (rfl | ⟨e, he, hm, hh⟩)
+    · exact Change.Holds.refl _ _ _
+    · simp only [List.mem_cons, List.not_mem_nil, or_false] at he
+      rcases he with rfl | rfl <;> rw [cls_mem hu] at hm <;> cases u <;>
+        simp_all [contentsCategory, isArr, Selector.has]
+
+private def ρ₀ : Env := fun _ => .undef
+
+/-! ## Normalization -/
+
+/-- **The normal form of a closed footprint**: each component read on its
+category (`Change.onValue` on values, `Change.onStore` on either store). -/
+def Closed.normal (c : Closed) : Closed := ⟨c.value.onValue, c.array.onStore, c.view.onStore⟩
+
+private theorem onValue_holds {δ : Change} {b v v'} (hv : isArr v = false) :
+    δ.onValue.Holds b v v' ↔ δ.Holds b v v' := by
+  cases δ with
+  | grow => exact ⟨Change.scalar_le_grow, fun h => h.grow_value hv⟩
+  | _ => exact Iff.rfl
+
+private theorem onStore_holds {δ : Change} {b v v'} (hv : isArr v = true) :
+    δ.onStore.Holds b v v' ↔ δ.Holds b v v' := by
+  cases δ with
+  | init => exact ⟨fun h => .inl h, fun h => h.init_isArr hv⟩
+  | scalar => exact ⟨fun h => .inl h, fun h => h.scalar_isArr hv⟩
+  | _ => exact Iff.rfl
+
+/-- **Normalization keeps the meaning** (proved). -/
+theorem Closed.post_normal {c : Closed} {ρ : Env} {h h' : Heap} :
+    Post c.normal.fp ρ h h' ↔ Post c.fp ρ h h' := by
+  rw [Closed.post_iff, Closed.post_iff]
+  refine and_congr Iff.rfl (forall_congr' fun _ => forall_congr' fun v => forall_congr' fun _ =>
+    exists_congr fun _ => and_congr Iff.rfl ?_)
+  rw [Closed.at_category, Closed.at_category]; unfold Closed.normal
+  cases hc : contentsCategory v <;> simp only
+  · exact onValue_holds ((contentsCategory_value v).mp hc)
+  · exact onStore_holds (by cases v <;> simp_all [contentsCategory, isArr])
+  · exact onStore_holds (by cases v <;> simp_all [contentsCategory, isArr])
+
+/-! ## Closed footprints as call effects -/
+
+/-- The footprint letting no old location change, and the one letting every
+old location change: the note's `⊤`, `{values: any, arrays: any, views:
+any}`. -/
+def Closed.empty : Closed := ⟨.keep, .keep, .keep⟩
+def Closed.top : Closed := ⟨.any, .any, .any⟩
+
+theorem Closed.empty_eq : Closed.empty = Closed.ofStores .keep .keep := rfl
+theorem Closed.top_eq : Closed.top = Closed.ofStores .any .any := rfl
+
+theorem Closed.at_empty (v : Val) : Closed.empty.at v = .keep := by
+  rw [Closed.at_category]; split <;> rfl
+
+theorem Closed.at_top (v : Val) : Closed.top.at v = .any := by
+  rw [Closed.at_category]; split <;> rfl
+
+/-- A closed footprint's postcondition, from the heap a call starts in to the
+heap it returns with. Its regions read no slot. -/
+def Closed.Holds (c : Closed) (h h' : Heap) : Prop := Post c.fp (fun _ => .undef) h h'
 
 theorem Closed.holds_iff {c : Closed} {h h' : Heap} :
     c.Holds h h' ↔ h.length ≤ h'.length ∧
@@ -150,15 +286,14 @@ theorem closed_order_exact (a b : Closed) :
     simp only [List.length_singleton] at h2
     rw [h2] at hb
     cases hb
-  have atv : ∀ c : Closed, c.at .nul = c.value := fun c => by simp [Closed.at, isArr]
-  have ats : ∀ (c : Closed) ls, c.at (.arr ls) = c.store := fun c ls => by simp [Closed.at, isArr]
+  have atv : ∀ c : Closed, c.at .nul = c.value := fun c => rfl
+  have atn : ∀ (c : Closed) b, c.at (.num b) = c.value := fun c b => rfl
   simp only [Closed.le, Bool.and_eq_true]
-  refine ⟨?_, ?_⟩
+  refine ⟨⟨?_, ?_⟩, ?_⟩
   · -- a value location initialized, a number changed, or a number replaced by a store
     have v1 := refute .nul .tru
     have v2 := refute (.num 0) (.num 1)
     have v3 := refute (.num 0) (.arr [])
-    have atn : ∀ (c : Closed) b, c.at (.num b) = c.value := fun c b => by simp [Closed.at, isArr]
     rw [atv a, atv b] at v1
     rw [atn a, atn b] at v2 v3
     cases ha : a.value <;> cases hb : b.value <;> rw [ha, hb] at v1 v2 v3 <;>
@@ -167,15 +302,24 @@ theorem closed_order_exact (a b : Closed) :
         | exact (v1 (by decide) (by decide)).elim
         | exact (v2 (by decide) (by decide)).elim
         | exact (v3 (by decide) (by decide)).elim
-  · -- a store gaining a fresh element location, or losing a present one
+  · -- an array's store gaining a fresh element location, or losing a present one
     have s1 := refute (.arr []) (.arr [some 1])
     have s2 := refute (.arr [some 0]) (.arr [])
-    rw [ats a, ats b] at s1 s2
-    cases ha : a.store <;> cases hb : b.store <;> rw [ha, hb] at s1 s2 <;>
+    simp only [Closed.at_arr] at s1 s2
+    cases ha : a.array <;> cases hb : b.array <;> rw [ha, hb] at s1 s2 <;>
       simp only [Change.onStore, Change.le, Change.rank] <;> first
         | decide
         | exact (s1 (by decide) (by decide)).elim
         | exact (s2 (by decide) (by decide)).elim
+  · -- a view store listing a fresh cell, or replaced by an array's store
+    have w1 := refute (.viewStore .uint8 [0]) (.viewStore .uint8 [1])
+    have w2 := refute (.viewStore .uint8 [0]) (.arr [])
+    simp only [Closed.at_viewStore] at w1 w2
+    cases ha : a.view <;> cases hb : b.view <;> rw [ha, hb] at w1 w2 <;>
+      simp only [Change.onStore, Change.le, Change.rank] <;> first
+        | decide
+        | exact (w1 (by decide) (by decide)).elim
+        | exact (w2 (by decide) (by decide)).elim
 
 theorem Closed.Holds.mono {a b : Closed} (hle : a.le b = true) {h h' : Heap} (hp : a.Holds h h') :
     b.Holds h h' :=
@@ -186,7 +330,7 @@ theorem Closed.holds_empty {h h' : Heap} : Closed.empty.Holds h h' ↔ h.IsPrefi
   rw [Closed.holds_iff, ← Post.empty_iff (ρ := fun _ => .undef)]
   refine and_congr Iff.rfl (forall_congr' fun _ => forall_congr' fun _ => forall_congr' fun _ =>
     exists_congr fun _ => and_congr Iff.rfl ?_)
-  simp [Closed.at, Closed.empty, Allowed, Change.Holds]
+  simp [Closed.at_empty, Allowed, Change.Holds]
 
 /-- **The closed footprint letting everything change is growth**, which every
 run meets (`Closed.top_safe`). -/
@@ -195,15 +339,14 @@ theorem Closed.holds_top {h h' : Heap} : Closed.top.Holds h h' ↔ h.length ≤ 
   refine ⟨fun hp => hp.1, fun hlen => ⟨hlen, fun l v hv => ?_⟩⟩
   have hl := (List.getElem?_eq_some_iff.mp hv).1
   refine ⟨h'[l], List.getElem?_eq_getElem (Nat.lt_of_lt_of_le hl hlen), ?_⟩
-  simp only [Closed.at, Closed.top]
-  split <;> trivial
+  rw [Closed.at_top]; trivial
 
 theorem Closed.empty_le (c : Closed) : Closed.empty.le c = true := by
   cases c with
-  | mk v s => cases v <;> cases s <;> rfl
+  | mk v s w => cases v <;> cases s <;> cases w <;> rfl
 
 /-- The join of two closed footprints: each component's larger change. -/
-def Closed.join (a b : Closed) : Closed := ⟨a.value.max b.value, a.store.max b.store⟩
+def Closed.join (a b : Closed) : Closed := ⟨a.value.max b.value, a.array.max b.array, a.view.max b.view⟩
 
 /-- **The join is below a footprint exactly where both are** (proved). -/
 private theorem Change.max_onValue_le (a b c : Change) :
@@ -216,22 +359,39 @@ private theorem Change.max_onStore_le (a b c : Change) :
 
 theorem Closed.join_le (a b c : Closed) : (a.join b).le c = (a.le c && b.le c) := by
   simp only [Closed.join, Closed.le, Change.max_onValue_le, Change.max_onStore_le]
-  cases a.value.onValue.le c.value.onValue <;> cases b.value.onValue.le c.value.onValue <;> simp
+  cases a.value.onValue.le c.value.onValue <;> cases b.value.onValue.le c.value.onValue <;>
+    cases a.array.onStore.le c.array.onStore <;> cases b.array.onStore.le c.array.onStore <;> simp
+
+theorem Closed.join_ofStores (v s v' s' : Change) :
+    (Closed.ofStores v s).join (Closed.ofStores v' s') = Closed.ofStores (v.max v') (s.max s') := rfl
+
+/-- A closed footprint is below the one stating its store bound on both
+stores (`Closed.stores`); the two are equal where its stores agree. -/
+theorem Closed.le_ofStores_stores (c : Closed) : c.le (Closed.ofStores c.value c.stores) = true := by
+  cases c with | mk v a w => cases v <;> cases a <;> cases w <;> rfl
+
+/-- Where the store bound is `keep` on stores, so is each store component. -/
+theorem Closed.stores_onStore_keep {c : Closed} (h : c.stores.onStore = .keep) :
+    c.array.onStore = .keep ∧ c.view.onStore = .keep := by
+  cases c with
+  | mk v a w => cases a <;> cases w <;> simp_all [Closed.stores, Change.max, Change.le, Change.rank, Change.onStore]
+
+theorem Closed.ofStores_self {v s : Change} : Closed.ofStores (Closed.ofStores v s).value (Closed.ofStores v s).stores =
+    Closed.ofStores v s := by
+  simp
 
 theorem Closed.le_top (a : Closed) : a.le Closed.top = true := by
-  cases a with | mk v s => cases v <;> cases s <;> rfl
+  cases a with | mk v s w => cases v <;> cases s <;> cases w <;> rfl
 
 /-- `top` is below exactly itself (proved). -/
 theorem Closed.top_le (c : Closed) : Closed.top.le c = (c == Closed.top) := by
-  cases c with | mk v s => cases v <;> cases s <;> rfl
+  cases c with | mk v s w => cases v <;> cases s <;> cases w <;> rfl
 
 /-- On contents a change other than `any` keeps, a closed footprint allows
 the same change. -/
-private theorem Closed.at_of_holds {c : Closed} {b v v'} (h : (c.at v).Holds b v v')
+theorem Closed.at_of_holds {c : Closed} {b v v'} (h : (c.at v).Holds b v v')
     (hne : c.at v ≠ .any) : c.at v' = c.at v := by
-  have := Change.Holds.same_class hne h .stores
-  simp only [Selector.selects_stores] at this
-  simp only [Closed.at, this]
+  rw [Closed.at_category, Closed.at_category, h.same_category hne]
 
 theorem Closed.Holds.refl (c : Closed) (h : Heap) : c.Holds h h :=
   Closed.Holds.mono (Closed.empty_le c) (Closed.holds_empty.mpr (List.prefix_refl h))
@@ -251,10 +411,13 @@ theorem Change.min_holds {a b : Change} {n v v'} :
 
 /-- Both of two closed footprints: what two signatures of one call guarantee
 together. -/
-def Closed.meet (a b : Closed) : Closed := ⟨a.value.min b.value, a.store.min b.store⟩
+def Closed.meet (a b : Closed) : Closed := ⟨a.value.min b.value, a.array.min b.array, a.view.min b.view⟩
+
+theorem Closed.meet_ofStores (v s v' s' : Change) :
+    (Closed.ofStores v s).meet (Closed.ofStores v' s') = Closed.ofStores (v.min v') (s.min s') := rfl
 
 theorem Closed.le_refl (c : Closed) : c.le c = true := by
-  cases c with | mk v s => cases v <;> cases s <;> rfl
+  cases c with | mk v s w => cases v <;> cases s <;> cases w <;> rfl
 
 private theorem Change.min_le_left (a b : Change) : (a.min b).le a = true := by
   cases a <;> cases b <;> rfl
@@ -270,14 +433,16 @@ private theorem Change.le_onStore {a b : Change} (h : a.le b = true) : a.onStore
 
 theorem Closed.meet_le_left (a b : Closed) : (a.meet b).le a = true := by
   simp only [Closed.le, Closed.meet, Bool.and_eq_true]
-  exact ⟨Change.le_onValue (Change.min_le_left _ _), Change.le_onStore (Change.min_le_left _ _)⟩
+  exact ⟨⟨Change.le_onValue (Change.min_le_left _ _), Change.le_onStore (Change.min_le_left _ _)⟩,
+    Change.le_onStore (Change.min_le_left _ _)⟩
 
 theorem Closed.meet_le_right (a b : Closed) : (a.meet b).le b = true := by
   simp only [Closed.le, Closed.meet, Bool.and_eq_true]
-  exact ⟨Change.le_onValue (Change.min_le_right _ _), Change.le_onStore (Change.min_le_right _ _)⟩
+  exact ⟨⟨Change.le_onValue (Change.min_le_right _ _), Change.le_onStore (Change.min_le_right _ _)⟩,
+    Change.le_onStore (Change.min_le_right _ _)⟩
 
 theorem Closed.at_meet (a b : Closed) (v : Val) : (a.meet b).at v = (a.at v).min (b.at v) := by
-  unfold Closed.at Closed.meet
+  rw [Closed.at_category, Closed.at_category, Closed.at_category]; unfold Closed.meet
   split <;> rfl
 
 theorem Closed.holds_meet {a b : Closed} {h h' : Heap} :
@@ -316,6 +481,136 @@ theorem grow_safe {Ξ R : Fam} {b : Nat} : ∀ {n W h t}, b ≤ h.length → Saf
 theorem Closed.top_safe {Ξ R : Fam} {n W h t} (hs : Safe Ξ R n W h t) :
     HeapObservations.SafePost Ξ R (fun h' _ => Closed.top.Holds h h') n W h t :=
   HeapObservations.weaken (fun _ _ hb => Closed.holds_top.mpr hb) (grow_safe (Nat.le_refl _) hs)
+
+/-! ## The closed form of a footprint
+
+A region's locations hold contents of the categories `Region.cats` names: a
+class region's selector, a cell's values, and every category otherwise. A
+footprint's closed bound gives each category the largest change of an entry
+whose region may hold it (`Footprint.close`); it is implied by the
+footprint (`Footprint.close_sound`), and equivalent to it where every region
+is a class region (`Footprint.closed?_sound`). A general footprint is never
+recovered from its closed bound. -/
+
+/-- The categories a region's locations may hold. -/
+def Region.cats : Region → Selector
+  | .cls S => S
+  | .inCls _ S => S
+  | .cell _ => .values
+  | _ => .all
+
+/-- **A region's locations hold contents of the categories it names.** -/
+theorem Region.cats_mem {r : Region} {ρ : Env} {h : Heap} {l : Nat} {v : Val} (hv : h[l]? = some v)
+    (hm : r.mem ρ h l = true) : r.cats.has (contentsCategory v) = true := by
+  cases r with
+  | cls S => simpa [Region.cats, Region.mem, hv, Selector.selects] using hm
+  | inCls r S =>
+    simp only [Region.mem, hv, Bool.and_eq_true] at hm
+    simpa [Region.cats, Selector.selects] using hm.2
+  | cell b => simpa [Region.cats, Region.mem, hv, Selector.selects] using hm
+  | _ => exact Selector.has_all _
+
+/-- The largest change of an entry whose region may hold contents of
+category `k`. -/
+def Footprint.changeAt (Φ : Footprint) (k : Category) : Change :=
+  Φ.foldr (fun e d => if e.1.cats.has k then e.2.max d else d) .keep
+
+theorem Change.max_holds {a b : Change} {n v v'} : (a.max b).Holds n v v' ↔ a.Holds n v v' ∨ b.Holds n v v' := by
+  refine ⟨fun h => ?_, fun h => h.elim (·.mono (Change.le_max_left a b)) (·.mono (Change.le_max_right a b))⟩
+  rcases Change.max_cases a b with he | he <;> rw [he] at h
+  · exact .inl h
+  · exact .inr h
+
+theorem Footprint.changeAt_holds (Φ : Footprint) (k : Category) {n : Nat} {v v' : Val} :
+    (Φ.changeAt k).Holds n v v' ↔ v' = v ∨ ∃ e ∈ Φ, e.1.cats.has k = true ∧ e.2.Holds n v v' := by
+  induction Φ with
+  | nil => simp [Footprint.changeAt, Change.Holds]
+  | cons e Φ ih =>
+    unfold Footprint.changeAt at ih ⊢
+    simp only [List.foldr_cons]
+    split
+    · rename_i hk
+      rw [Change.max_holds, ih]
+      constructor
+      · rintro (h | h | ⟨f, hf, hfk, hh⟩)
+        · exact .inr ⟨e, List.mem_cons_self .., hk, h⟩
+        · exact .inl h
+        · exact .inr ⟨f, List.mem_cons_of_mem _ hf, hfk, hh⟩
+      · rintro (h | ⟨f, hf, hfk, hh⟩)
+        · exact .inr (.inl h)
+        · rcases List.mem_cons.mp hf with rfl | hf
+          · exact .inl hh
+          · exact .inr (.inr ⟨f, hf, hfk, hh⟩)
+    · rename_i hk
+      rw [ih]
+      constructor
+      · rintro (h | ⟨f, hf, hfk, hh⟩)
+        · exact .inl h
+        · exact .inr ⟨f, List.mem_cons_of_mem _ hf, hfk, hh⟩
+      · rintro (h | ⟨f, hf, hfk, hh⟩)
+        · exact .inl h
+        · rcases List.mem_cons.mp hf with rfl | hf
+          · exact absurd hfk hk
+          · exact .inr ⟨f, hf, hfk, hh⟩
+
+/-- **The closed bound of a footprint**: each category's largest covering
+change. -/
+def Footprint.close (Φ : Footprint) : Closed :=
+  ⟨Φ.changeAt .value, Φ.changeAt .array, Φ.changeAt .view⟩
+
+theorem Footprint.close_at (Φ : Footprint) (v : Val) : Φ.close.at v = Φ.changeAt (contentsCategory v) := by
+  rw [Closed.at_category]; unfold Footprint.close
+  split <;> rename_i h <;> rw [h]
+
+/-- **A footprint implies its closed bound** (proved). -/
+theorem Footprint.close_sound {Φ : Footprint} {ρ : Env} {h h' : Heap} (hp : Post Φ ρ h h') :
+    Post Φ.close.fp ρ h h' := by
+  rw [Closed.post_iff]
+  refine ⟨hp.1, fun l v hv => ?_⟩
+  obtain ⟨v', hv', ha⟩ := hp.2 l v hv
+  refine ⟨v', hv', ?_⟩
+  rw [Footprint.close_at, Footprint.changeAt_holds]
+  rcases ha with rfl | ⟨e, he, hm, hh⟩
+  · exact .inl rfl
+  · exact .inr ⟨e, he, Region.cats_mem hv hm, hh⟩
+
+/-- Whether a region is a class region. -/
+def Region.isClass : Region → Bool
+  | .cls _ => true
+  | _ => false
+
+/-- **The exact closed form** of a footprint of class regions alone. -/
+def Footprint.closed? (Φ : Footprint) : Option Closed :=
+  if Φ.all (·.1.isClass) then some Φ.close else none
+
+/-- **A footprint of class regions is its closed form** (proved). -/
+theorem Footprint.closed?_sound {Φ : Footprint} {c : Closed} (hc : Φ.closed? = some c) {ρ : Env}
+    {h h' : Heap} : Post Φ ρ h h' ↔ Post c.fp ρ h h' := by
+  unfold Footprint.closed? at hc
+  split at hc
+  · rename_i hall
+    cases hc
+    refine ⟨Footprint.close_sound, fun hp => ?_⟩
+    rw [Closed.post_iff] at hp
+    refine ⟨hp.1, fun l v hv => ?_⟩
+    obtain ⟨v', hv', hh⟩ := hp.2 l v hv
+    refine ⟨v', hv', ?_⟩
+    rw [Footprint.close_at, Footprint.changeAt_holds] at hh
+    rcases hh with rfl | ⟨e, he, hk, hh⟩
+    · exact .inl rfl
+    · refine .inr ⟨e, he, ?_, hh⟩
+      have hcl := List.all_eq_true.mp hall e he
+      obtain ⟨r, δ⟩ := e
+      cases r <;> simp only [Region.isClass, Bool.false_eq_true] at hcl
+      simpa [Region.cats, Region.mem, hv, Selector.selects] using hk
+  · cases hc
+
+/-- The closed form of a closed footprint's entries is itself. -/
+theorem Closed.closed?_fp (c : Closed) : c.fp.closed? = some c := by
+  cases c with
+  | mk v a w =>
+    cases v <;> cases a <;> cases w <;> rfl
+
 
 /-! ## Footprints on some old locations
 
@@ -373,16 +668,6 @@ theorem Closed.HoldsOn.congr {c : Closed} {P Q : Nat → Prop} {h h' : Heap} (hp
 theorem Closed.holds_of_on {c : Closed} {h h' : Heap} (hp : c.HoldsOn (fun _ => True) h h') : c.Holds h h' := by
   rw [Closed.holds_iff]
   exact ⟨hp.1, fun l v hv => hp.2 l v trivial hv⟩
-
-private theorem Closed.at_mono {a b : Closed} (hle : a.le b = true) {n v v'}
-    (h : (a.at v).Holds n v v') : (b.at v).Holds n v v' := by
-  simp only [Closed.le, Bool.and_eq_true] at hle
-  unfold Closed.at at h ⊢
-  cases hv : isArr v
-  · simp only [hv] at h ⊢
-    exact value_change (by simpa using hv) hle.1 h
-  · simp only [hv, if_true] at h ⊢
-    exact class_change (fun h => by rw [hv] at h; cases h) (fun _ => hle.2) h
 
 theorem Closed.HoldsOn.mono {a b : Closed} (hle : a.le b = true) {P : Nat → Prop} {h h' : Heap}
     (hp : a.HoldsOn P h h') : b.HoldsOn P h h' :=

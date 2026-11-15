@@ -254,6 +254,11 @@ run_cmd do
   check ``Verification.CallEffects.Effect.within_prefix
   check ``Verification.CallEffects.Effect.frameCovers_sound
   check ``Verification.Footprints.Closed.post_extra_any
+  check ``Verification.Footprints.closed_order_exact
+  check ``Verification.Footprints.Closed.post_normal
+  check ``Verification.Footprints.Closed.ofStores_post_iff
+  check ``Verification.Footprints.Footprint.closed?_sound
+  check ``Verification.Footprints.Footprint.close_sound
   check ``Verification.Footprints.Region.sub_mem
   check ``Verification.Footprints.CellsFrom.of_post
   check ``Verification.Footprints.ArgumentStoreRegionsWithin.iff_post

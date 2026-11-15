@@ -71,9 +71,7 @@ theorem Closed.HoldsOn.trans_on {c : Closed} {P : Nat → Prop} {h₀ h h' : Hea
   refine ⟨v₂, hv₂, ?_⟩
   by_cases hany : c.at v = .any
   · rw [hany]; trivial
-  · have hclass := Change.Holds.same_class hany hc₁ .stores
-    have heq : c.at v₁ = c.at v := by
-      simp only [Selector.selects_stores] at hclass; simp only [Closed.at, hclass]
+  · have heq : c.at v₁ = c.at v := Closed.at_of_holds hc₁ hany
     rw [heq] at hc₂
     exact hc₁.trans h₁.1 hc₂
 

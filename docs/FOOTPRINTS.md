@@ -92,26 +92,40 @@ selectors need not be disjoint. A class region selects a location whose
 contents' category (`contentsCategory`: `.arr` an array store, `.viewStore`
 a view store, anything else a value) its selector names; on a well-formed
 heap that category is the location's role's (proved: `Shaped.category`).
-The locations below a heap's length fall into two classes by their contents:
-`class(stores)`, those holding a store of either category, and
-`class(values)`, the others. A
-**closed footprint** $`\Phi = \{\mathsf{value}{:}\,\delta_v,\ \mathsf{store}{:}\,\delta_s\}`$
-(`Footprints.Closed`) states a change for each class, `keep`, `init`,
-`scalar` or `any` for values (on a non-store, `grow` is `scalar`) and `keep`,
-`grow` or `any` for stores (on a store, `init` and `scalar` are `keep`): twelve
-footprints. Its meaning relates the
-heap `h` a run starts in to a later heap `h'`:
+The locations below a heap's length fall into three classes by their
+contents' category: `class(values)`, `class(arrays)` and `class(views)`. A
+**closed footprint**
+$`\Phi = \{\mathsf{values}{:}\,\delta_v,\ \mathsf{arrays}{:}\,\delta_a,\ \mathsf{views}{:}\,\delta_w\}`$
+(`Footprints.Closed`, its entries `Closed.fp`) states one change for each
+category: three components, each holding a change. Each component is read on
+its category (`Closed.normal`, proved: `Closed.post_normal`): on a value
+`grow` is `scalar` (`Change.onValue`), so a value's change is `keep`, `init`,
+`scalar` or `any`; on either kind of store `init` and `scalar` are `keep`
+(`Change.onStore`), so a store's change is `keep`, `grow` or `any`. Its
+meaning relates the heap `h` a run starts in to a later heap `h'`:
 
 ```math
 \Phi.\mathrm{Holds}(h, h') \iff |h| \le |h'| \land \forall l < |h|.\ \delta_{\mathrm{class}(h[l])\,|h|}(h[l], h'[l])
 ```
 
 (`Closed.Holds`, through `Closed.holds_iff`). Its extremes: the empty
-footprint `{value: keep, store: keep}` is heap preservation and
-`{value: any, store: any}` is growth (proved: `Closed.holds_empty`,
-`Closed.holds_top`), which every safe run meets (proved: `Closed.top_safe`). The entrywise order is exactly the semantic order
+footprint, every component `keep`, is heap preservation, and the note's
+$`\top`$, every component `any`, is growth (proved: `Closed.holds_empty`,
+`Closed.holds_top`), which every safe run meets (proved: `Closed.top_safe`).
+The order of the normalized components is exactly the semantic order
 (proved: `closed_order_exact`, with a one-location heap witnessing each
 failure; `Closed.Holds.mono`).
+
+A closed footprint stating one change for both stores,
+`Closed.ofStores δ_v δ_s`, is the footprint
+$`\{\mathsf{values}{:}\,\delta_v,\ \mathsf{stores}{:}\,\delta_s\}`$
+(proved: `Closed.ofStores_post_iff`). The change a closed footprint allows on
+the class `stores` is the larger of its two store components
+(`Closed.stores`). A footprint of class regions alone has an exact closed
+form (`Footprint.closed?`, proved: `Footprint.closed?_sound`); every
+footprint implies its closed bound, each category's largest change of an
+entry whose region may hold it (`Footprint.close`, `Region.cats`, proved:
+`Footprint.close_sound`).
 
 **Call effects.** A call or construct signature's effect
 (`CallEffects.Effect`) is a closed footprint, an optional promise, a type
@@ -122,7 +136,7 @@ the call starts in (`PromiseWith`, `ConstructPromise`). One signature covers ano
 the other's and their promises are equal (`Effect.covers`, proved:
 `Effect.covers_sound`); two signatures of one call meet at the meet of their
 footprints (proved: `Closed.holds_meet`). The wire spells a closed footprint
-`{"value": v, "store": s}`
+`{"value": v, "store": s}`, the closed footprint `Closed.ofStores v s`
 ([source claims](SOURCE-CLAIMS.md#quantified-callables-and-their-eliminations),
 [request protocol](REQUEST-PROTOCOL.md#request-fields)).
 
@@ -252,10 +266,11 @@ are `keep`, on a value `grow` is `scalar` (`Footprint.byClass`, proved:
 ## The stable set for density
 
 Density reads only a store, and only a store change beyond `grow` can remove
-a present index below `n`. The closed footprints that keep it are the eight
-whose store change is at most `grow` (`stableDenseClosed`; proved:
-`stableDenseClosed_sound`; outside them a closed footprint lets a non-empty
-dense store become empty, controls in `FootprintControls.lean`):
+a present index below `n`. The check `stableDenseClosed` accepts a closed
+footprint whose store components are at most `grow` (proved:
+`stableDenseClosed_sound`); of the closed footprints the wire spells, those
+are the eight below, and each of the other four lets a non-empty dense store
+become empty (controls in `FootprintControls.lean`):
 
 | Footprint | Keeps density |
 | --- | --- |

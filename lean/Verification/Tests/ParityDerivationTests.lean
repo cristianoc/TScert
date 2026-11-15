@@ -365,7 +365,7 @@ private def r (n : Nat) : AssertionRef := ⟨n⟩
 private def ex : Path := ⟨0, ["items", "insideExtras"]⟩
 private def wd : Path := ⟨0, ["widths"]⟩
 private def items : Path := ⟨0, ["items"]⟩
-private def Φ : Footprint := (⟨.any, .keep⟩ : Footprints.Closed).fp
+private def Φ : Footprint := (⟨.any, .keep, .keep⟩ : Footprints.Closed).fp
 private def len (p : Path) : Term := p.term .length
 private def le (a b : Term) : Linear.Fact Term := .le [(a, 1), (b, -1)] 0
 private def below : Linear.Fact Term := .le [(Term.value 1, 1), (len wd, -1)] (-1)
@@ -607,7 +607,7 @@ private def widths : Path := ⟨0, ["widths"]⟩
 private def i : Term := Term.value 1
 
 /-- `step`'s effect `{values: any}`, stores kept. -/
-private def Φ : Footprint := (⟨.any, .keep⟩ : Footprints.Closed).fp
+private def Φ : Footprint := (⟨.any, .keep, .keep⟩ : Footprints.Closed).fp
 
 private def lenEq₁ : Linear.Fact Term := .le [(extras.term .length, 1), (widths.term .length, -1)] 0
 private def lenEq₂ : Linear.Fact Term := .le [(extras.term .length, -1), (widths.term .length, 1)] 0

@@ -522,7 +522,7 @@ theorem kept_box (c : Footprints.Closed) {F : IndexFact} {ρ : Env} {m : Nat} {s
 
 /-- `{values: any, stores: grow}`: the effect of an element write whose
 target is unknown. -/
-def growEffect : Footprints.Closed := ⟨.any, .grow⟩
+def growEffect : Footprints.Closed := ⟨.any, .grow, .grow⟩
 
 open HeapKnowledge in
 /-- `y ≤ |x|`: slot `y` holds an integer at most the length of `x`'s store. -/

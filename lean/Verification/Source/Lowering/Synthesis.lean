@@ -1604,7 +1604,7 @@ def boundUnion (M : Ty Tree) (forced : Bool) : Compiler (Option (Ty Tree)) := do
   let a :: rest := arms | return none
   if !rest.all (fun b => b.arguments == a.arguments && b.effect == a.effect) then return none
   let top ← prim .top
-  let effect : CallEffects.Effect := if forced then .ofFootprint ⟨.keep, .keep⟩ else a.effect.drop 0
+  let effect : CallEffects.Effect := if forced then .ofFootprint ⟨.keep, .keep, .keep⟩ else a.effect.drop 0
   return some [← lower (SourceTypes.use (.arrs
     [⟨top, a.arguments, norm (arms.flatMap (·.result)), effect⟩] []))]
 
@@ -3019,7 +3019,7 @@ def callChanges (inst : CallEffects.Arrow (Ty Tree)) (receiverFresh : Bool) : W 
     if !inst.effect.onThrow then modify fun w => { w with throwWrites := true }
     return
   -- A call changing the heap, by its instance's footprint.
-  if inst.effect.footprint != ⟨.keep, .keep⟩ then wrote inst.effect.footprint.value inst.effect.footprint.store
+  if inst.effect.footprint != ⟨.keep, .keep, .keep⟩ then wrote inst.effect.footprint.value inst.effect.footprint.stores
   if inst.effect.footprint.value != .keep || inst.effect.receiverOwn || inst.effect.receiverStore ||
       inst.effect.elementWrite.isSome then
     modify fun w => { w with changedValues := true }
@@ -3027,7 +3027,7 @@ def callChanges (inst : CallEffects.Arrow (Ty Tree)) (receiverFresh : Bool) : W 
   -- (a growing receiver within its footprint; one changing its own
   -- locations at the values and its store's change; a receiver's store or
   -- elements both).
-  if inst.effect.receiverOwn then wrote .any inst.effect.footprint.store
+  if inst.effect.receiverOwn then wrote .any inst.effect.footprint.stores
   -- (but a change of a receiver's store the run allocated, a constant
   -- holding one, which its frame bounds: the producer's `receiver_fresh`,
   -- source.ml:953-956, the checker's `Effect.within_below`)
@@ -4324,10 +4324,10 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
       | .ok (eff, R) => do
         -- The call changes the heap by its signature's footprint, as a call's
         -- instance does (`applyCall`).
-        if eff.footprint != ⟨.keep, .keep⟩ then wrote eff.footprint.value eff.footprint.store
+        if eff.footprint != ⟨.keep, .keep, .keep⟩ then wrote eff.footprint.value eff.footprint.stores
         if eff.footprint.value != .keep || eff.receiverOwn || eff.receiverStore || eff.elementWrite.isSome then
           modify fun w => { w with changedValues := true }
-        if eff.receiverOwn then wrote .any eff.footprint.store
+        if eff.receiverOwn then wrote .any eff.footprint.stores
         if eff.receiverStore || eff.elementWrite.isSome then wrote .any .any
         if !eff.onThrow then modify fun w => { w with throwWrites := true }
         pure (Except.ok R)
@@ -4367,7 +4367,7 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
             let G ← graphNow
             let top ← prim .top
             let bound (e : CallEffects.Effect) : CallEffects.Effect :=
-              if forced then .ofFootprint ⟨.keep, .keep⟩ else e.drop 0
+              if forced then .ofFootprint ⟨.keep, .keep, .keep⟩ else e.drop 0
             match PositiveRules.expand G M with
             | [.arrs L R] =>
               match L.find? (fun a => a.effect.promise.isNone && a.effect.keeps 0), R with
@@ -5150,11 +5150,11 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   -- source.ml:1230).
   let freshResult := (match body with | .call .. | .invoke .. => true | _ => false) && (← get).lastFresh
   let kept : CallEffects.Effect :=
-    { CallEffects.Effect.ofFootprint ⟨.keep, .keep⟩ with onThrow := !(← get).throwWrites, fresh := freshResult }
+    { CallEffects.Effect.ofFootprint ⟨.keep, .keep, .keep⟩ with onThrow := !(← get).throwWrites, fresh := freshResult }
   -- One that changes the heap at the classes of contents its writes and
   -- calls change.
   let changed : CallEffects.Effect :=
-    { CallEffects.Effect.ofFootprint ⟨(← get).valueChange, (← get).storeChange⟩ with
+    { CallEffects.Effect.ofFootprint (.ofStores (← get).valueChange (← get).storeChange) with
       onThrow := !(← get).throwWrites, fresh := freshResult }
   modify fun w => { w with breaks := saved.breaks, returns := saved.returns, held := saved.held, expected := saved.expected, literalSlots := saved.literalSlots, heldCells := saved.heldCells, evolving := saved.evolving, holders := saved.holders }
   modify fun w => { w with writes := saved.writes, throwWrites := saved.throwWrites, locals := saved.locals, inLiteral := saved.inLiteral }
@@ -5200,7 +5200,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
         -- adversarial proposal)
         if (← get).force.contains "callbacks" then pure { a with result := R }
         else if pure_ then pure { a with result := R, effect := kept }
-        else if forced then pure { a with result := R, effect := .ofFootprint ⟨.keep, .keep⟩ }
+        else if forced then pure { a with result := R, effect := .ofFootprint ⟨.keep, .keep, .keep⟩ }
         -- A callback that changes the heap at its own effect, never the
         -- parameter's: the call's signature is chosen by it (`applyCall`;
         -- the producer's footprint at every row it claims,
@@ -5212,7 +5212,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
       | none => do pure ⟨← match thisTy with
             | some A => pure A
             | none => StateT.lift (prim .top), qs, R,
-          if pure_ then kept else if forced then .ofFootprint ⟨.keep, .keep⟩ else changed⟩
+          if pure_ then kept else if forced then .ofFootprint ⟨.keep, .keep, .keep⟩ else changed⟩
     -- A written type guard or assertion: its promise, the result its
     -- promised type (`ClosureSetup`'s written promise).
     let a ← match guard with
@@ -5628,7 +5628,7 @@ partial def recursiveConstant (env : Env) (b : Fragment.Binding) (written : Bool
     W (Option (Ty Tree) × Env) := do
   -- An early self is read through its cell at the early contract, rather than a self-entry proposal.
   let some S0 ← earlyContract b (if b.early then .ordinary else
-      { CallEffects.Effect.ofFootprint ⟨.keep, .keep⟩ with onThrow := true })
+      { CallEffects.Effect.ofFootprint ⟨.keep, .keep, .keep⟩ with onThrow := true })
     | expr env b.init
   -- An annotation supplies the signature, not the self-effect seed:
   -- statement_analysis.ml:294-317 seeds every non-early self at keep/keep.
@@ -5637,7 +5637,7 @@ partial def recursiveConstant (env : Env) (b : Fragment.Binding) (written : Bool
     match PositiveRules.expand G S0 with
     | [.arrs L S] =>
       let seed (e : CallEffects.Effect) : CallEffects.Effect :=
-        { e with closed := ⟨.keep, .keep⟩, onThrow := true }
+        { e with closed := ⟨.keep, .keep, .keep⟩, onThrow := true }
       lower (do return [← SourceTypes.use (.arrs
         (L.map fun a => { a with effect := seed a.effect })
         (S.map fun a => { a with effect := seed a.effect }))])
@@ -5993,8 +5993,8 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
       if let some N := stepper then
         let G ← StateT.lift graphNow
         if let some eff := ((ProgramTyping.callSigs G N).map (·.effect)).head? then
-          if eff.receiverOwn then wrote .any eff.footprint.store
-          else if eff.footprint != ⟨.keep, .keep⟩ then wrote eff.footprint.value eff.footprint.store
+          if eff.receiverOwn then wrote .any eff.footprint.stores
+          else if eff.footprint != ⟨.keep, .keep, .keep⟩ then wrote eff.footprint.value eff.footprint.stores
     let exit := loopHead e1 body
     let head := match stepper with
       | some N => { exit with vars := upd exit.vars s!"%next@{p.1}%" N, decl := upd exit.decl s!"%next@{p.1}%" N }

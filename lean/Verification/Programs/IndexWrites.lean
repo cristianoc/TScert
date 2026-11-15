@@ -2736,8 +2736,8 @@ over the written array's length, each term the write keeps read after it,
 with the length one longer (`lengthGrowth a 1`) and each length it grows at
 least what it was (`growth`). -/
 def writeCarried (a : Nat) (first : Nat → String → Bool) (k : Knowledge) : List IndexAtom :=
-  (compose (keptOf (Changes.ofClosed ⟨.any, .grow⟩) first) (unconditionalLinear k.indices)
-    ((lengthGrowth a 1).join (growth (grownOf (Changes.ofClosed ⟨.any, .grow⟩) first)
+  (compose (keptOf (Changes.ofClosed ⟨.any, .grow, .grow⟩) first) (unconditionalLinear k.indices)
+    ((lengthGrowth a 1).join (growth (grownOf (Changes.ofClosed ⟨.any, .grow, .grow⟩) first)
       (unconditionalLinear k.indices)))).map
     fun F => { fact := .linear F }
 
@@ -3055,7 +3055,7 @@ no location holding an object or a number, or locations a stable field holds
 write's change respects (`writtenCells`, `weak-update`). -/
 def growOutput [DecidableEq ι] (G : NormalGraph ι) (j : Sequent ι) (k out : Knowledge) : Knowledge :=
   if (ExpressionEffects.writeStep G j.context j.term).isSome then
-    withCells (withWritten out (keptIndices (Changes.ofClosed ⟨.any, .grow⟩) (HeapExpressionRules.stableFirst G j.context)
+    withCells (withWritten out (keptIndices (Changes.ofClosed ⟨.any, .grow, .grow⟩) (HeapExpressionRules.stableFirst G j.context)
       k.indices))
       (match writeValue j.term with
         | some v => writtenCells k (HeapExpressionRules.valuesAt G j.context k v)

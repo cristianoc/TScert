@@ -37,18 +37,19 @@ abbrev Closed := Verification.Footprints.Closed
 
 /-! ## The closed lattice -/
 
-/-- Every closed footprint, in an order extending the components' rank
+/-- Every closed footprint stating one change for both stores
+(`Footprints.Closed.ofStores`), in an order extending the components' rank
 order: a footprint comes after every footprint below it. -/
 def ascending : List Closed :=
   let cs := [Footprints.Change.keep, .init, .scalar, .grow, .any]
-  ((cs.flatMap fun v => cs.map fun s => (⟨v, s⟩ : Closed)).mergeSort fun a b =>
-    a.value.rank + a.store.rank ≤ b.value.rank + b.store.rank)
+  ((cs.flatMap fun v => cs.map fun s => Footprints.Closed.ofStores v s).mergeSort fun a b =>
+    a.value.rank + a.stores.rank ≤ b.value.rank + b.stores.rank)
 
-def keepAll : Closed := ⟨.keep, .keep⟩
+def keepAll : Closed := ⟨.keep, .keep, .keep⟩
 
 /-- The join: each component's larger change, an upper bound in `Closed.le`
 and in the order `Footprint.le` reads changes in. -/
-def join (a b : Closed) : Closed := ⟨a.value.max b.value, a.store.max b.store⟩
+def join (a b : Closed) : Closed := ⟨a.value.max b.value, a.array.max b.array, a.view.max b.view⟩
 
 def joinOpt : Option Closed → Option Closed → Option Closed
   | some a, some b => some (join a b)

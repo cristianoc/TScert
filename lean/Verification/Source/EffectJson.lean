@@ -46,14 +46,16 @@ private def changeOf (allowed : List Footprints.Change) (name : String) : Except
   | none => throw s!"invalid footprint change '{name}'"
 
 instance : ToJson Footprints.Closed :=
-  ⟨fun c => Json.mkObj [("value", toJson (changeName c.value)), ("store", toJson (changeName c.store))]⟩
+  ⟨fun c => Json.mkObj [("value", toJson (changeName c.value)), ("store", toJson (changeName c.stores))]⟩
 
 /-- On a value `grow` is `scalar`, so `value` is `keep`, `init`, `scalar` or
 `any`; on a store `init` and `scalar` are `keep`, so `store` is `keep`,
-`grow` or `any`. -/
+`grow` or `any`. The wire's `store` is the change of both store components
+(`Footprints.Closed.ofStores`), and a closed footprint is written with its
+store bound (`Footprints.Closed.stores`). -/
 instance : FromJson Footprints.Closed := ⟨fun j => do
-  let c : Footprints.Closed := ⟨← changeOf [.keep, .init, .scalar, .any] (← j.getObjValAs? String "value"),
-    ← changeOf [.keep, .grow, .any] (← j.getObjValAs? String "store")⟩
+  let c : Footprints.Closed := .ofStores (← changeOf [.keep, .init, .scalar, .any] (← j.getObjValAs? String "value"))
+    (← changeOf [.keep, .grow, .any] (← j.getObjValAs? String "store"))
   if toJson c != j then throw "a closed footprint has exactly the fields value and store"
   pure c⟩
 

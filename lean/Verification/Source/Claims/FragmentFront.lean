@@ -105,11 +105,11 @@ def writtenSchemes (force : List String := []) : ClosureSchemes := fun T body =>
       -- (`TSCERT_FORCE=schemes`, and `literals`: keeping both, bounding its throws, the
       -- adversarial proposal)
       let effect := if force.contains "schemes" || force.contains "literals" then
-          { (CallEffects.Effect.ofFootprint ⟨.keep, .keep⟩) with onThrow := true } else
+          { (CallEffects.Effect.ofFootprint ⟨.keep, .keep, .keep⟩) with onThrow := true } else
         stated.getD (match body with
         | .block .. => .ordinary
         | x => if Synthesis.mayCall x || defaults.any (Synthesis.mayCall ·.2) then .ordinary
-          else { (CallEffects.Effect.ofFootprint ⟨.keep, .keep⟩) with onThrow := true })
+          else { (CallEffects.Effect.ofFootprint ⟨.keep, .keep, .keep⟩) with onThrow := true })
       let binders := (tps.zip bounds).map fun (p, b) =>
         ({ name := p.name, bound := b, resolution := none } : ResolutionWire.Binder (ClaimType Tree))
       let claim : ClaimType Tree :=
@@ -150,8 +150,8 @@ def fragmentClaims (ast : Json) (fileKey : String) (standIns : StandIns := {}) (
       -- Forced (`callees`): a function without a written footprint at
       -- keep/keep; (`throws`) bounding its throws too.
       | none, none =>
-        if force.contains "throws" then (⟨.keep, .keep⟩, true, .top)
-        else if force.contains "callees" then (⟨.keep, .keep⟩, false, .top) else (.top, false, .top)
+        if force.contains "throws" then (⟨.keep, .keep, .keep⟩, true, .top)
+        else if force.contains "callees" then (⟨.keep, .keep, .keep⟩, false, .top) else (.top, false, .top)
     Json.mkObj [("name", toJson f.name), ("namePos", toJson f.namePos),
       ("params", Json.arr (f.params.map fun p => Json.mkObj [("name", toJson p.name),
         ("type", annotated "a parameter's type"), ("current", Json.null)]).toArray),
@@ -516,7 +516,7 @@ def Front.withNeverImports (fr : Front) : Front := Id.run do
       match PositiveRules.expand (SourceTypes.graph T') A with
       | [.arrs [a] []] =>
         if a.effect.promise.isNone && (PositiveRules.expand (SourceTypes.graph T') a.result).isEmpty then
-          match importedArrow T' A ⟨.keep, .keep⟩ false .top with
+          match importedArrow T' A ⟨.keep, .keep, .keep⟩ false .top with
           | .ok J =>
             T := T'
             out := out ++ [(v.1, v.2.1, .ok (.written J))]
@@ -960,7 +960,7 @@ def establishStep (budget : PositiveCertificates.SearchBudget) (force : List Str
   let foreign := m.reads.filter (·.location != location)
   let rs := readsOf foreign established
   let forced : StandIns := if force.contains "imports" then
-      { functions := m.names.map fun n => { name := n, footprint := ⟨.keep, .keep⟩, onThrow := true } } else {}
+      { functions := m.names.map fun n => { name := n, footprint := ⟨.keep, .keep, .keep⟩, onThrow := true } } else {}
   let planned := SinglePass.timedKind "lower: modules' plans" fun _ =>
     fragmentPlansCore m.module.document location budget (some m.names) forced force (rs.map (·.1)) (rs.map (·.2))
       (closure := true) (proposed := true) (interfaceSlots := true)

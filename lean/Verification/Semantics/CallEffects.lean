@@ -358,13 +358,19 @@ def Arrow.plain (s : Arrow α) : α × List α × α := (s.receiver, s.arguments
 
 /-- How a signature stating `receiverOwn` may change its receiver's own
 locations: a value arbitrarily, a store as its footprint's stores. -/
-def Effect.ownChange (e : Effect) : Footprints.Closed := ⟨.any, e.footprint.store⟩
+def Effect.ownChange (e : Effect) : Footprints.Closed := ⟨.any, e.footprint.array, e.footprint.view⟩
 
 theorem Effect.le_ownChange (e : Effect) : e.footprint.le e.ownChange = true := by
   unfold Effect.ownChange
   generalize e.footprint = c
-  rcases c with ⟨v, s⟩
-  cases v <;> cases s <;> rfl
+  rcases c with ⟨v, s, w⟩
+  cases v <;> cases s <;> cases w <;> rfl
+
+/-- The receiver's own change on contents: a store's as the coarse bound's, a
+value's arbitrary. -/
+theorem Effect.ownChange_at (e : Effect) (v : Val) :
+    e.ownChange.at v = if Footprints.isArr v then e.footprint.at v else .any := by
+  cases v <;> rfl
 
 /-- A change from `before` to `after` that alters no old location but the
 receiver `r`'s store, which, where it changes, held a store and holds one
@@ -487,11 +493,11 @@ change of the coarse bound allows. -/
 private theorem closed_entry_le {e : Effect} {x : Footprints.Region × Footprints.Change}
     (hx : x ∈ e.closed.fp) {ρ : Env} {h : Heap} {l : Nat} {v : Val}
     (hm : x.1.mem ρ h l = true) (hv : h[l]? = some v) : x.2.le (e.footprint.at v) = true := by
-  simp only [Footprints.Closed.fp, List.mem_cons, List.not_mem_nil, or_false] at hx
+  rw [Footprints.Closed.fp_entry_at hx hm hv]
   unfold Effect.footprint
-  rcases hx with rfl | rfl <;>
-    simp only [Footprints.Region.mem, hv] at hm <;>
-    split <;> simp_all [Footprints.Closed.at, Footprints.Closed.top, change_le_refl, change_le_any]
+  split
+  · exact change_le_refl _
+  · rw [Footprints.Closed.at_top]; exact change_le_any _
 
 /-- A region entry covers its location at `any`, which the coarse bound
 allows. -/
@@ -501,8 +507,8 @@ private theorem region_entry_le {e : Effect} {r : Footprints.ArgumentStoreRegion
     cases hq : e.regions with
     | nil => rw [hq] at hr; cases hr
     | cons _ _ => rfl
-  simp only [Effect.footprint, hne, Bool.false_eq_true, if_false, Footprints.Closed.at, Footprints.Closed.top]
-  split <;> rfl
+  simp only [Effect.footprint, hne, Bool.false_eq_true, if_false, Footprints.Closed.at_top]
+  rfl
 
 theorem Effect.mem_frame {e : Effect} {x : Footprints.Region × Footprints.Change} (hx : x ∈ e.frame) :
     x ∈ e.closed.fp ∨ x ∈ e.receiverEntries ∨ ∃ r ∈ e.regions, x = regionEntry r := by
@@ -543,21 +549,16 @@ theorem Effect.within_inside_own {e : Effect} {r : Tm} {args : List Tm} {before 
     (h : e.within r args before after) (ho : e.receiverOwn = true) :
     e.ownChange.HoldsOn (fun l => l ∈ Footprints.ownOf r) before after := by
   refine post_closedOn h fun x hx l v hP hm hv => ?_
-  have hst : e.ownChange.at v = (if Footprints.isArr v then e.footprint.store else .any) := by
-    simp [Effect.ownChange, Footprints.Closed.at]
+  rw [Effect.ownChange_at]
   rcases Effect.mem_frame hx with hx | hx | ⟨q, hq, rfl⟩
-  · have := closed_entry_le hx hm hv
-    rw [hst]
-    revert this
-    simp only [Footprints.Closed.at]
-    split <;> simp [change_le_any]
-  · rw [hst]; split <;> simp only [Effect.receiverEntries, ho, if_true, List.mem_singleton] at hx <;>
+  · split
+    · exact closed_entry_le hx hm hv
+    · exact change_le_any _
+  · split <;> simp only [Effect.receiverEntries, ho, if_true, List.mem_singleton] at hx <;>
       subst hx <;> simp_all [Footprints.Region.mem, change_le_any]
-  · have := region_entry_le (v := v) hq
-    rw [hst]
-    revert this
-    simp only [Footprints.Closed.at]
-    split <;> simp [change_le_any]
+  · split
+    · exact region_entry_le hq
+    · exact change_le_any _
 
 /-- With `receiverStore` and no `receiverOwn`, the frame bounds every old
 location but the receiver's store by the coarse bound. -/
@@ -615,7 +616,7 @@ theorem Effect.within_of_own {e : Effect} (hreg : e.regions = []) (ho : e.receiv
       rw [hmem, hv] at hl
       simpa [List.contains_iff_mem, hown] using hl
     refine ⟨v', hv', ?_⟩
-    simpa [Footprints.Closed.at, ha, Effect.ownChange] using hc
+    rwa [Effect.ownChange_at, ha, if_pos rfl] at hc
   · exact hout.2 l v hown hv
 
 /-- **The frame of a signature stating `receiverStore`, no `receiverOwn` and
@@ -670,7 +671,7 @@ theorem Effect.ownChange_le {a b : Effect} (hle : a.footprint.le b.footprint = t
     a.ownChange.le b.ownChange = true := by
   simp only [Footprints.Closed.le, Bool.and_eq_true] at hle
   simp only [Effect.ownChange, Footprints.Closed.le, Bool.and_eq_true]
-  exact ⟨rfl, hle.2⟩
+  exact ⟨⟨rfl, hle.1.2⟩, hle.2⟩
 
 /-- **A frame read through its coarse bound**: a signature with no store
 regions, the same receiver modes and a coarse bound at least as large
@@ -1192,8 +1193,9 @@ theorem Effect.within_prefix {e : Effect} {r : Tm} {args : List Tm} {before midd
     obtain ⟨t, rfl⟩ := hprefix
     exact List.getElem?_append_left hl
   rcases Effect.mem_frame hx with hx | hx | ⟨q, hq, rfl⟩
-  · simp only [Footprints.Closed.fp, List.mem_cons, List.not_mem_nil, or_false] at hx
-    rcases hx with rfl | rfl <;> simpa only [Footprints.Region.mem, hgl] using hm
+  · obtain ⟨S, hS⟩ := Footprints.Closed.fp_entry_cls hx
+    rw [hS] at hm ⊢
+    simpa only [Footprints.Region.mem, hgl] using hm
   · unfold Effect.receiverEntries at hx
     split at hx
     · simp only [List.mem_singleton] at hx

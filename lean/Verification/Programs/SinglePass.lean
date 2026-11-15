@@ -1437,9 +1437,9 @@ def stepGrades (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : Cod
     if selected.isEmpty then [] else if derivChecked G images codes sums c node stepK deriv then selected else []
   let throwing := ExpressionEffects.selectedThrows deriv &&
     (match ExpressionEffects.selectedEffect deriv with | some eff => eff.onThrow | none => false)
-  { within := if inspection || ExpressionEffects.emptyType G c.type || emptyContext then [⟨.keep, .keep⟩]
+  { within := if inspection || ExpressionEffects.emptyType G c.type || emptyContext then [⟨.keep, .keep, .keep⟩]
       else writes ++ checked.get
-    throws := if inspection || emptyContext then [⟨.keep, .keep⟩]
+    throws := if inspection || emptyContext then [⟨.keep, .keep, .keep⟩]
       else writes ++ (if throwing then checked.get else [])
     scope := ProgramCertificates.checkScope c.context.length node.expression }
 
@@ -1467,7 +1467,7 @@ theorem footprintCheck_eq_admits (G : NormalGraph ι) (images : InstanceImageChe
         node.continuation := by
   simp only [footprintCheck, stepGrades, StepGrades.admits, Thunk.get, ExpressionEffects.writeWithin_eq_grades,
     ExpressionEffects.initWriteWithin_eq_grades, GraphCode.selectedWithinAt_eq_grades]
-  have hk : ∀ Φ : Footprints.Closed, (⟨.keep, .keep⟩ : Footprints.Closed).le Φ = true :=
+  have hk : ∀ Φ : Footprints.Closed, (⟨.keep, .keep, .keep⟩ : Footprints.Closed).le Φ = true :=
     Footprints.Closed.empty_le
   generalize ExpressionEffects.check G c.context node.expression = a
   generalize ExpressionEffects.emptyType G c.type = b

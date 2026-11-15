@@ -1934,31 +1934,31 @@ store is `keep`, and `grow` on a store leaves each store no shorter and within
 `maxArrayLength` where it was. -/
 def ofClosed (Φ : Footprints.Closed) : Changes :=
   ⟨Φ.value == .any, !(Φ.value.le .init),
-    match Φ.store.onStore with
+    match Φ.stores.onStore with
     | .keep => .keep
     | .grow => .grow
     | _ => .any⟩
 
 theorem ofClosed_holds {Φ : Footprints.Closed} {h h' : Heap} (hp : Φ.Holds h h') : (ofClosed Φ).Holds h h' := by
-  rw [Footprints.Closed.holds_iff] at hp
+  replace hp := Footprints.Closed.holds_iff.mp (hp.mono (Footprints.Closed.le_ofStores_stores Φ))
   refine ⟨fun l v hv ha => ?_, fun hs => ?_, fun hs => ?_⟩
   · obtain ⟨v', hv', hc⟩ := hp.2 l v hv
     have hkeep : v' = v := by
       cases v
       case arr ls =>
         simp only [alters, ofClosed] at ha
-        have hst : Φ.store = .keep ∨ Φ.store = .init ∨ Φ.store = .scalar := by
-          cases hΦ : Φ.store <;> simp_all [Footprints.Change.onStore]
-        simp only [Footprints.Closed.at, Footprints.isArr, ite_true] at hc
+        have hst : Φ.stores = .keep ∨ Φ.stores = .init ∨ Φ.stores = .scalar := by
+          cases hΦ : Φ.stores <;> simp_all [Footprints.Change.onStore]
+        simp only [Footprints.Closed.at_ofStores, Footprints.isArr, ite_true] at hc
         rcases hst with hst | hst | hst
         · rw [hst] at hc; exact hc
         · rw [hst] at hc; exact hc.init_store
         · rw [hst] at hc; exact hc.scalar_store
       case viewStore f cs =>
         simp only [alters, ofClosed] at ha
-        have hst : Φ.store = .keep ∨ Φ.store = .init ∨ Φ.store = .scalar := by
-          cases hΦ : Φ.store <;> simp_all [Footprints.Change.onStore]
-        simp only [Footprints.Closed.at, Footprints.isArr, ite_true] at hc
+        have hst : Φ.stores = .keep ∨ Φ.stores = .init ∨ Φ.stores = .scalar := by
+          cases hΦ : Φ.stores <;> simp_all [Footprints.Change.onStore]
+        simp only [Footprints.Closed.at_ofStores, Footprints.isArr, ite_true] at hc
         rcases hst with hst | hst | hst
         · rw [hst] at hc; exact hc
         · rw [hst] at hc; exact hc.init_isArr rfl
@@ -1966,22 +1966,22 @@ theorem ofClosed_holds {Φ : Footprints.Closed} {h h' : Heap} (hp : Φ.Holds h h
       case objAt =>
         have hva : Φ.value ≠ .any := by
           intro he; simp [alters, ofClosed, he] at ha
-        simp only [Footprints.Closed.at, Footprints.isArr] at hc
+        simp only [Footprints.Closed.at_ofStores, Footprints.isArr] at hc
         exact hc.object_kept hva rfl
       case num =>
         have hva : Φ.value.le .init = true := by
           simpa [alters, ofClosed] using ha
-        simp only [Footprints.Closed.at, Footprints.isArr] at hc
+        simp only [Footprints.Closed.at_ofStores, Footprints.isArr] at hc
         exact hc.defined_kept hva rfl
       all_goals simp [alters] at ha
     exact hkeep ▸ hv'
   · revert hs; simp only [ofClosed]; split <;> simp
   · intro l ls hl
-    have hg : Φ.store = .grow := by
+    have hg : Φ.stores = .grow := by
       revert hs; simp only [ofClosed]
-      cases hΦ : Φ.store <;> simp [Footprints.Change.onStore]
+      cases hΦ : Φ.stores <;> simp [Footprints.Change.onStore]
     obtain ⟨v', hv', hc⟩ := hp.2 l _ hl
-    simp only [Footprints.Closed.at, Footprints.isArr, ite_true, hg] at hc
+    simp only [Footprints.Closed.at_ofStores, Footprints.isArr, ite_true, hg] at hc
     rcases hc with rfl | ⟨ls₁, ls', h₁, rfl, -, -, hlen⟩ | hsc | ⟨_, _, _, he, -⟩
     · exact ⟨ls, hv', Nat.le_refl _, id⟩
     · cases h₁; exact ⟨ls', hv', hlen.1, hlen.2⟩

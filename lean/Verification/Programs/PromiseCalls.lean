@@ -2149,7 +2149,7 @@ theorem storeHeld_sound {k : HeapKnowledge.Knowledge} {s : Nat} {ρ : Env} {h : 
 
 /-- The slots whose store a frame with store regions keeps (`regionFirst_kept`). -/
 def regionFirst (k : HeapKnowledge.Knowledge) (eff : Effect) (t : Tm) : Nat → String → Bool :=
-  fun s g => g == "[]" && eff.closed.store.onStore == .keep && !eff.regions.isEmpty &&
+  fun s g => g == "[]" && eff.closed.stores.onStore == .keep && !eff.regions.isEmpty &&
     eff.regions.all (regionSep k t s) && storeHeld k s
 
 /-- A store separation `storeApartAt` names holds where the path's store is
@@ -2265,9 +2265,10 @@ theorem regionFirst_kept {k : HeapKnowledge.Knowledge} {eff : Effect} {t : Tm} {
     fun r hr => regionSep_out hk (hall r hr) hstore
   obtain ⟨v', hv', hc⟩ := hw'.2 l v hout hv
   rw [hvarr] at hc
-  simp only [Footprints.Closed.at, Footprints.isArr, if_true] at hc
-  have hst : eff.closed.store = .keep ∨ eff.closed.store = .init ∨ eff.closed.store = .scalar := by
-    cases hc' : eff.closed.store <;> simp_all [Footprints.Change.onStore]
+  rw [Footprints.Closed.at_arr] at hc
+  have hst : eff.closed.array = .keep ∨ eff.closed.array = .init ∨ eff.closed.array = .scalar := by
+    have := (Footprints.Closed.stores_onStore_keep hkeep).1
+    cases hc' : eff.closed.array <;> simp_all [Footprints.Change.onStore]
   rw [hvarr]
   rcases hst with hst | hst | hst <;> rw [hst] at hc
   · rw [← hc]; exact hv'

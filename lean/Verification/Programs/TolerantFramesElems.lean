@@ -23,7 +23,7 @@ open Verification.SinglePass (Atom)
 
 /-- The initialisation write's closed effect: values from absent to present,
 stores kept (`ExpressionEffects.initWriteWithin`). -/
-def initEffect : Footprints.Closed := ⟨.init, .keep⟩
+def initEffect : Footprints.Closed := ⟨.init, .keep, .keep⟩
 
 /-- A named fact every action of `c` keeps: `Atom.keptBy`'s, a quantified
 element fact `c`'s change keeps (`IndexFact.everyKept`), or an elements atom
@@ -31,7 +31,7 @@ under an effect keeping every old location. -/
 def _root_.Verification.SinglePass.Atom.keptByElems (c : Footprints.Closed) : Atom → Bool
   | .index x => x.fact.envOnly || x.fact.keptBy (HeapKnowledge.Changes.ofClosed c) (fun _ _ => false) ||
       x.fact.everyKept (HeapKnowledge.Changes.ofClosed c) (fun _ _ => false)
-  | .elem _ => c.value == .keep && c.store == .keep
+  | .elem _ => c.value == .keep && c.array == .keep && c.view == .keep
   | a => a.heapFree
 
 /-- `Atom.keptBy` decides less. -/
@@ -55,9 +55,9 @@ theorem atom_keptByElems {c : Footprints.Closed} {a : Atom} (hk : a.keptByElems 
         (fun _ _ _ _ _ _ _ hf => by simp at hf) hk (ha x' (List.mem_singleton_self _) hcnd)
   | elem e =>
     simp only [Atom.keptByElems, Bool.and_eq_true, beq_iff_eq] at hk
-    obtain ⟨hv, hs⟩ := hk
+    obtain ⟨⟨hv, hs⟩, hw⟩ := hk
     have he : c = Footprints.Closed.empty := by
-      cases c; simp only at hv hs; subst hv; subst hs; rfl
+      cases c; simp only at hv hs hw; subst hv; subst hs; subst hw; rfl
     subst he
     obtain ⟨vs, hvs⟩ := Footprints.Closed.holds_empty.mp hc
     rw [← hvs]
