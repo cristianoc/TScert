@@ -602,6 +602,14 @@ splice at the positions `1` to `n`, a transport at an entry scope of
 is the summary at arity `n` (proved: `Effect.schema_atArity`). Only
 instantiated formulas are interpreted.
 
+A contract states no assertion-arena formula (stated limit): its
+postconditions are operational posts, index facts, transitions, transports
+and their conjunctions, read at the empty arena, and a schema is well formed
+only where it references no arena node (`Exits.arenaFree`; the elaboration
+meets it, `Effect.schema_arenaFree`; such a formula holds alike at every
+arena, `ExitSchema.holds_instantiate_arenaFree`). A contract that needs an
+assertion would carry its own arena.
+
 A guarantee stated beside the frame is a postcondition `.transition Φ`, so
 the frame and it hold of one transition. On admissible transitions at
 actuals that are values, the normal exit holds exactly where

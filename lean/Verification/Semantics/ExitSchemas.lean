@@ -91,6 +91,40 @@ def FormulaF.map {S S' T T' : Type} (f : S → S') (g : T → T') : FormulaF S T
   | .truth => .truth
   | .falsity => .falsity
 
+/-! ## Self-contained formulas
+
+**A contract states no assertion-arena formula** (stated limit): a
+signature's postconditions are operational posts, index facts, transitions,
+transports and their conjunctions, so they are read at the empty arena
+(`AssertionArena.empty`), and a schema is well formed only where it
+references no arena node (`FormulaF.arenaFree`). A contract that needs an
+assertion would carry its own arena. -/
+
+/-- Whether a formula references no node of an assertion arena. -/
+def FormulaF.arenaFree {S T : Type} : FormulaF S T → Bool
+  | .at .. => false
+  | .and F G => F.arenaFree && G.arenaFree
+  | _ => true
+
+/-- The arena with no node. -/
+def AssertionArena.empty : AssertionArena := ⟨#[]⟩
+
+theorem FormulaF.arenaFree_map {S S' T T' : Type} (f : S → S') (g : T → T') (F : FormulaF S T) :
+    (F.map f g).arenaFree = F.arenaFree := by
+  induction F with
+  | and F G ihF ihG => simp only [FormulaF.map, FormulaF.arenaFree, ihF, ihG]
+  | _ => rfl
+
+/-- **A formula referencing no arena node means the same at every arena.** -/
+theorem holds_arenaFree {F : Formula} (hF : F.arenaFree = true) (arena arena' : AssertionArena) (s : TwoState) :
+    Holds arena s F ↔ Holds arena' s F := by
+  induction F with
+  | «at» _ _ => cases hF
+  | and F G ihF ihG =>
+    simp only [FormulaF.arenaFree, Bool.and_eq_true] at hF
+    simp only [Holds, ihF hF.1, ihG hF.2]
+  | _ => exact Iff.rfl
+
 /-! ## Schemas -/
 
 /-- **A sequence of a call's values** in a specification (the note's Call,
@@ -168,6 +202,12 @@ structure ExitSchema where
   ensures : List FormulaSchema
   deriving DecidableEq
 
+/-- Whether an exit schema references no arena node. -/
+def ExitSchema.arenaFree (q : ExitSchema) : Bool := q.ensures.all (·.arenaFree)
+
+/-- Whether both exits reference no arena node: a well-formed contract. -/
+def Exits.arenaFree (x : Exits ExitSchema) : Bool := x.normal.arenaFree && x.exceptional.arenaFree
+
 /-- The exit specification at a call. -/
 def ExitSchema.instantiate (ι : CallInstantiation) (q : ExitSchema) : ExitSpec :=
   ⟨q.frame, q.ensures.map (instantiateFormula ι)⟩
@@ -186,5 +226,15 @@ def Exits.callInstantiation (x : Exits ExitSchema) (n : Nat) : CallInstantiation
 /-- **The specification at a call of `n` actuals** (the note's Call). -/
 def Exits.atArity (x : Exits ExitSchema) (n : Nat) : Exits ExitSpec :=
   x.map (ExitSchema.instantiate (x.callInstantiation n))
+
+/-- **An instantiated exit of a schema referencing no arena node holds alike
+at every arena.** -/
+theorem ExitSchema.holds_instantiate_arenaFree {q : ExitSchema} (hq : q.arenaFree = true) (ι : CallInstantiation)
+    (arena arena' : AssertionArena) (s : TwoState) :
+    (q.instantiate ι).Holds arena s ↔ (q.instantiate ι).Holds arena' s := by
+  simp only [ExitSpec.Holds, ExitSchema.instantiate, List.forall_mem_map]
+  refine and_congr Iff.rfl (forall_congr' fun F => imp_congr_right fun hF => holds_arenaFree ?_ arena arena' s)
+  rw [instantiateFormula, FormulaF.arenaFree_map]
+  exact List.all_eq_true.mp hq F hF
 
 end Verification.CallEffects

@@ -274,6 +274,8 @@ run_cmd do
   check ``Verification.CallEffects.Effect.schema_slots
   check ``Verification.CallEffects.restFrom_one
   check ``Verification.CallEffects.writtenResultSchema_instantiate
+  check ``Verification.CallEffects.Effect.schema_arenaFree
+  check ``Verification.CallEffects.ExitSchema.holds_instantiate_arenaFree
   check ``Verification.CallEffects.exactPre_iff
   check ``Verification.CallEffects.elementWrite_iff
   check ``Verification.CallEffects.Effect.summary_normal_iff

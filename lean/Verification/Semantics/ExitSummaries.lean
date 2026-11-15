@@ -255,6 +255,30 @@ theorem Effect.schema_atArity (e : Effect) (n : Nat) : e.schema.atArity n = e.su
     simp only [Effect.normalSchema, Effect.normalPosts, List.map_append, p1, p2, p3, p4, p5, p6]
   · split <;> rfl
 
+/-- **A signature's schema references no arena node**: the elaboration
+states operational posts, index facts, transitions and transports alone. -/
+theorem Effect.schema_arenaFree (e : Effect) : e.schema.arenaFree = true := by
+  have hw : ∀ w : ElementWrite, w.schemaPosts.all (·.arenaFree) = true := by
+    intro w; cases w with
+    | stores => rfl
+    | assign => rfl
+    | exact k =>
+      simp only [ElementWrite.schemaPosts, List.all_cons, List.all_append, List.all_map]
+      simp [FormulaF.arenaFree, Function.comp_def]
+  have hn : e.normalSchema.all (·.arenaFree) = true := by
+    simp only [Effect.normalSchema, List.all_append, Bool.and_eq_true]
+    refine ⟨⟨⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩
+    · split <;> rfl
+    · split <;> rfl
+    · split <;> rfl
+    · simp [List.all_map, FormulaF.arenaFree, Function.comp_def]
+    · split <;> rfl
+    · split
+      · exact hw _
+      · rfl
+  simp only [Exits.arenaFree, ExitSchema.arenaFree, Effect.schema, Bool.and_eq_true]
+  exact ⟨hn, by split <;> rfl⟩
+
 /-! ## Each postcondition states its field -/
 
 section Equivalence
