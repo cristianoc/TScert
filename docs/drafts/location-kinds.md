@@ -351,12 +351,10 @@ promises of one value whose signatures mean the same result
 and its exits, independent of the exit world, hold at the first run's
 worlds (`PromiseWith.conj`, `SafePostExcV.cross_independent`); both
 guarantees give the meet's (`Effect.schema_meet`). A promise
-weakens to a signature it covers, its element write included
+weakens to a signature it covers, its exits entailing the other's
 (`PromiseWith.weaken'`, `Effect.covers_sound`); a forwarding descriptor
-meets its target's signature, the view write read from the descriptor's
-entry (`PromiseWith.bound`, `ViewWrite.prefix_left`); allocation between
-the call's entry and its body composes with the postcondition, the view
-write included (`Effect.postW_prefix`); a fact of the world that extension
+meets its target's signature, the target's exits read from the
+descriptor's entry (`PromiseWith.bound`, `Exits.exitPost_entry`); a fact of the world that extension
 and truncation keep holds at every exit (`SafePostExcW.world`). Graph code
 states no element write (`Effect.below_write`), so its view write holds of
 every exit (`Effect.postW_of_post`, `Effect.safe_postW`). A call's consumer

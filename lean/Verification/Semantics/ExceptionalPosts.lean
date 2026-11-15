@@ -120,6 +120,29 @@ theorem SafePostExcV.mono_result {Ξ T T' : Fam} {Q : WPost} {R : WExcV} (hT : �
     · exact .inl (.inr hx)
     · exact .inr ⟨U, h', t', hx, hu, step, hh, ih hs⟩
 
+/-- **Consequence at the budgets an execution can reach**, the throw's
+postcondition reading the thrown value: larger exception and result
+families and weaker postconditions on both exits, each required at budgets
+up to the entry's. -/
+theorem SafePostExcV.consequence_below' {Ξ Ξ' T U : Fam} {Q Q' : WPost} {R R' : WExcV} : ∀ {n},
+    (∀ j, j ≤ n → ∀ W v, Ξ j W v → Ξ' j W v) →
+    (∀ j, j ≤ n → ∀ W v, T j W v → U j W v) →
+    (∀ j, j ≤ n → ∀ W h v, Q j W h v → Q' j W h v) → (∀ j, j ≤ n → ∀ W h v, R j W h v → R' j W h v) →
+    ∀ {W h t}, SafePostExcV Ξ T Q R n W h t → SafePostExcV Ξ' U Q' R' n W h t := by
+  intro n
+  induction n with
+  | zero => intro _ _ _ _ _ _ _ hs; exact hs
+  | succ n ih =>
+    intro hexc hsub hpost hr W h t hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
+    rcases hs with (⟨hv, ht, hq⟩ | ⟨v, hra, hsc, hξ, hR⟩) | ⟨U, h', t', hx, hu, step, hh, hs⟩
+    · exact .inl (.inl ⟨hv, hsub _ (Nat.le_refl _) _ _ ht, hpost _ (Nat.le_refl _) _ _ _ hq⟩)
+    · exact .inl (.inr ⟨v, hra, hsc, hexc _ (Nat.le_refl _) _ _ hξ, hr _ (Nat.le_refl _) _ _ _ hR⟩)
+    · exact .inr ⟨U, h', t', hx, hu, step, hh,
+        ih (fun j hj => hexc j (by omega)) (fun j hj => hsub j (by omega)) (fun j hj => hpost j (by omega))
+          (fun j hj => hr j (by omega)) hs⟩
+
 /-- **Erasure**: forgetting the throw's postcondition gives `SafePostW`. -/
 theorem SafePostExcV.post {Ξ T} {Q : WPost} {R : WExcV} {n W h t} (hs : SafePostExcV Ξ T Q R n W h t) :
     SafePostW Ξ T Q n W h t :=

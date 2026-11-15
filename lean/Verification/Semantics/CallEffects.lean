@@ -22,17 +22,6 @@ def PromiseWith (Ξ : Fam) (effect : Effect) (Acc : ArgFam) (Rc R : Fam) (k : Na
     (fun r args _ U heap => effect.schema.exitPostW .normal r args U heap)
     (fun r args _ U heap => effect.schema.exitPostW .exceptional r args U heap) k W v
 
-/-- **The arrow equation read at the signature's postconditions**
-(`NativeContract.iff_exits`): the normal one `Effect.postW`, the throw's
-`Effect.excPostW`. -/
-theorem PromiseWith.iff_legacy {Ξ : Fam} {effect : Effect} {Acc : ArgFam} {Rc R : Fam} {k : Nat} {W : WorldT k}
-    {v : Val} :
-    PromiseWith Ξ effect Acc Rc R k W v ↔
-      NativeContract Ξ Acc Rc effect.Requires (fun _ args => effect.result R (effect.promised args))
-        (fun r args _ U heap => effect.postW r args U heap)
-        (fun r args _ _ heap => (effect.excPostW r args heap).liftV) k W v :=
-  NativeContract.iff_exits.symm
-
 /-- A heap effect's signature is an ordinary arrow once its postcondition is
 forgotten. A promise's is not: its result operand is not the result's type;
 nor is a precondition's, which an ordinary call does not establish. -/
@@ -56,15 +45,15 @@ theorem PromiseWith.mono {effect Acc Rc R n W W' v} (hx : WExt W W')
   intro j hj U hy hu heap hh hvr r hrv hr hrr args hv har ha hq
   exact h j hj U (WExt_trans (WExt_trunc (Nat.le_of_lt hj) hx) hy) hu heap hh hvr r hrv hr hrr args hv har ha hq
 
-/-- Effect coverage is implication of the normal-return postcondition and of
-what the result meets, at every result operand. There is deliberately no rule
-relating a promise to a signature without one, whose result operands mean
-different things. -/
+/-- **Effect coverage** (the note's rule of consequence on both exits): the
+source's specification entails the target's at every call and completion
+(`Exits.Entails`), what the result meets implies the target's at every result
+operand, and the target's precondition implies the source's. There is
+deliberately no rule relating a promise to a signature without one, whose
+result operands mean different things. -/
 def Effect.Covers (source target : Effect) : Prop :=
-  (∀ r args j (U : WorldT j) before k (W' : WorldT k) after value,
-    source.postW r args U before k W' after value → target.postW r args U before k W' after value) ∧
+  source.schema.Entails target.schema ∧
   (∀ R args k W u, source.result R (source.promised args) k W u → target.result R (target.promised args) k W u) ∧
-  (∀ r args before after, source.excPost r args before after → target.excPost r args before after) ∧
   ∀ r args heap, target.Requires r args heap → source.Requires r args heap
 
 /-- A precondition implying another's: none, or a predicate at most the
@@ -174,18 +163,70 @@ theorem Effect.covers_sound {a b : Effect} (h : a.covers b = true) : a.Covers b 
   simp only [beq_iff_eq] at hp
   have hwrite : ∀ w, b.elementWrite = some w → a.elementWrite = some w := fun w hb => by
     simp only [hb, Option.isNone_some, Bool.false_or, beq_iff_eq] at hwr; exact hwr
-  refine ⟨fun r args j U before k W' after v ⟨⟨hw, hfr, hfro, hels, hen, hga, hwa⟩, hview⟩ =>
-      ⟨⟨Effect.frameCovers_sound hfc hw, fun hb => hfr ?_,
-      fun hb => hfro ?_, elementsCovers_sound hel hels,
-      fun F hF => hen F (List.contains_iff_mem.mp (List.all_eq_true.mp hens F hF)),
-      fun hb => hga (by simp only [hb, Bool.not_true, Bool.false_or] at hgr; exact hgr),
-      fun w hb => hwa w (hwrite w hb)⟩, fun w hb => hview w (hwrite w hb)⟩,
-    fun R args k W u hu => ?_, fun r args before after he hb => Effect.frameCovers_sound hfc (he ?_),
+  refine ⟨fun c r args s s' v hx => ?_, fun R args k W u hu => by simpa [Effect.result, Effect.promised, hp] using hu,
     fun r args heap hq => requiresCovers_sound hrq hpre hq⟩
-  · rw [hb] at hf; simpa using hf
-  · rw [hb] at hfo; simpa using hfo
-  · simpa [Effect.result, Effect.promised, hp] using hu
-  · rw [hb] at ho; simpa using ho
+  rw [Effect.exitPost_summary] at hx ⊢
+  cases c with
+  | normal =>
+    refine ⟨⟨hx.1.1, Effect.frameCovers_sound (a := a) (b := b) hfc hx.1.2⟩, fun F hF => ?_⟩
+    have ha : ∀ G ∈ a.normalPosts args.length,
+        Parity.Holds Parity.AssertionArena.empty (callState r args v s.h.length s s') G := hx.2
+    change F ∈ b.normalPosts args.length at hF
+    simp only [Effect.normalPosts, List.mem_append] at hF
+    rcases hF with ((((hF | hF) | hF) | hF) | hF) | hF
+    · cases hb : b.fresh
+      · simp [hb] at hF
+      · rw [hb] at hf hF
+        simp only [Bool.not_true, Bool.false_or] at hf
+        apply ha
+        simp only [Effect.normalPosts, hf, if_true, List.mem_append]
+        exact .inl (.inl (.inl (.inl (.inl hF))))
+    · cases hb : b.freshObject
+      · simp [hb] at hF
+      · rw [hb] at hfo hF
+        simp only [Bool.not_true, Bool.false_or] at hfo
+        apply ha
+        simp only [Effect.normalPosts, hfo, if_true, List.mem_append]
+        exact .inl (.inl (.inl (.inl (.inr hF))))
+    · cases hb : b.elements with
+      | none => simp [hb] at hF
+      | some R' =>
+        rw [hb] at hF hel
+        simp only [List.mem_singleton] at hF
+        subst hF
+        cases hae : a.elements with
+        | none => rw [hae] at hel; cases hel
+        | some R =>
+          rw [hae] at hel
+          have hR := ha (.operation (.elementsWhen 0 .tru 1 R)) (by simp [Effect.normalPosts, hae])
+          exact fun hv => (hR hv).mono hel
+    · obtain ⟨G, hG, rfl⟩ := List.mem_map.mp hF
+      apply ha
+      simp only [Effect.normalPosts, List.mem_append]
+      exact .inl (.inl (.inr (List.mem_map_of_mem (List.contains_iff_mem.mp (List.all_eq_true.mp hens G hG)))))
+    · cases hb : b.receiverGrows
+      · simp [hb] at hF
+      · rw [hb] at hgr hF
+        simp only [Bool.not_true, Bool.false_or] at hgr
+        apply ha
+        simp only [Effect.normalPosts, hgr, if_true, List.mem_append]
+        exact .inl (.inr hF)
+    · cases hb : b.elementWrite with
+      | none => simp [hb] at hF
+      | some w =>
+        rw [hb] at hF
+        apply ha
+        simp only [Effect.normalPosts, hwrite w hb, List.mem_append]
+        exact .inr hF
+  | exceptional =>
+    simp only [Exits.get, Effect.summary] at hx ⊢
+    cases hb : b.onThrow
+    · have hadm : TolerantFrames.Admissible s s' := by split at hx <;> exact hx.1.1
+      exact ⟨Parity.EffectAction.top hadm, fun _ hF => by cases hF⟩
+    · rw [hb] at ho
+      simp only [Bool.not_true, Bool.false_or] at ho
+      rw [if_pos ho] at hx
+      exact ⟨⟨hx.1.1, Effect.frameCovers_sound (a := a) (b := b) hfc hx.1.2⟩, fun _ hF => by cases hF⟩
 
 /-- Whether binding `n` actuals of a signature keeps what it guarantees and
 the bound signature covers `b`. -/
@@ -199,7 +240,7 @@ theorem Effect.bindCovers_covers {n : Nat} {a b : Effect} (h : a.bindCovers n b 
   simp only [Effect.bindCovers, Bool.and_eq_true] at h; exact h.2
 
 theorem Effect.Covers.refl (e : Effect) : e.Covers e :=
-  ⟨fun _ _ _ _ _ _ _ _ _ h => h, fun _ _ _ _ _ h => h, fun _ _ _ _ h => h, fun _ _ _ h => h⟩
+  ⟨fun _ _ _ _ _ _ h => h, fun _ _ _ _ _ h => h, fun _ _ _ h => h⟩
 
 /-- Two executions' results combine as the results of their operands do. -/
 theorem Effect.cross_result (e : Effect) {B C D : Fam} {a : Tm} {n}
@@ -226,14 +267,13 @@ theorem PromiseWith.weaken' {Ξ Ξ' : Fam} {effect effect' Acc Acc' Rc Rc' R T k
     (hacc : ∀ j, j < k → ∀ U args, Acc' j U args → Acc j U args)
     (hres : ∀ j, j < k → ∀ U u, R j U u → T j U u)
     (h : PromiseWith Ξ effect Acc Rc R k W v) : PromiseWith Ξ' effect' Acc' Rc' T k W v := by
-  rw [PromiseWith.iff_legacy] at h ⊢
   intro j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha hq
   obtain ⟨result, hi, hs⟩ :=
-    h j hj U hx hu heap hh hvr r hrv (hrecv j hj U r hr) hrr args hv har (hacc j hj U args ha) (he.2.2.2 r args heap hq)
-  exact ⟨result, hi, SafePostExcV.iff_lift.mpr <| SafePostExcW.consequence_below' (fun m hm => hexc m (by omega))
+    h j hj U hx hu heap hh hvr r hrv (hrecv j hj U r hr) hrr args hv har (hacc j hj U args ha) (he.2.2 r args heap hq)
+  exact ⟨result, hi, SafePostExcV.consequence_below' (fun m hm => hexc m (by omega))
     (fun m hm U' u hu => he.2.1 T args m U' u
       (Effect.result_mono effect (hres m (by omega) U') (hres m (by omega) U') hu))
-    (fun m _ => he.1 r args j U heap m) (fun _ _ _ h' => he.2.2.1 r args heap h') (SafePostExcV.iff_lift.mp hs)⟩
+    (fun _ _ _ _ _ hp => he.1.exitPostW hp) (fun _ _ _ _ _ hp => he.1.exitPostW hp) hs⟩
 
 theorem PromiseWith.weaken {Ξ : Fam} {effect effect' Acc Acc' Rc Rc' R T k W v}
     (he : effect.Covers effect')
@@ -282,16 +322,6 @@ def ConstructPromise (Ξ : Fam) (effect : Effect) (P : ArgFam) (R : Fam) (k : Na
     (fun r args _ U heap => effect.schema.exitPostW .normal r args U heap)
     (fun r args _ U heap => effect.schema.exitPostW .exceptional r args U heap) k W v
 
-/-- The promise of a construct signature read at its postconditions
-(`NativeConstruct.iff_exits`). -/
-theorem ConstructPromise.iff_legacy {Ξ : Fam} {effect : Effect} {P : ArgFam} {R : Fam} {k : Nat} {W : WorldT k}
-    {v : Val} :
-    ConstructPromise Ξ effect P R k W v ↔
-      NativeConstruct Ξ P (effect.Requires .undef) (fun args => effect.result R (effect.promised args))
-        (fun r args _ U heap => effect.postW r args U heap)
-        (fun r args _ _ heap => (effect.excPostW r args heap).liftV) k W v :=
-  NativeConstruct.iff_exits.symm
-
 theorem ConstructPromise.down {effect P R n W v}
     (h : ConstructPromise Ξ effect P R (n + 1) W v) :
     ConstructPromise Ξ effect P R n (trunc n (Nat.le_succ n) W) v := by
@@ -309,13 +339,12 @@ theorem ConstructPromise.weaken' {Ξ Ξ' : Fam} {effect effect' P P' R T k W v}
     (hacc : ∀ j, j < k → ∀ U args, P' j U args → P j U args)
     (hres : ∀ j, j < k → ∀ U u, R j U u → T j U u)
     (h : ConstructPromise Ξ effect P R k W v) : ConstructPromise Ξ' effect' P' T k W v := by
-  rw [ConstructPromise.iff_legacy] at h ⊢
   intro j hj U hx hu heap hh hvr args hv har ha hq
-  obtain ⟨result, hc, hs⟩ := h j hj U hx hu heap hh hvr args hv har (hacc j hj U args ha) (he.2.2.2 .undef args heap hq)
-  exact ⟨result, hc, SafePostExcV.iff_lift.mpr <| SafePostExcW.consequence_below' (fun m hm => hexc m (by omega))
+  obtain ⟨result, hc, hs⟩ := h j hj U hx hu heap hh hvr args hv har (hacc j hj U args ha) (he.2.2 .undef args heap hq)
+  exact ⟨result, hc, SafePostExcV.consequence_below' (fun m hm => hexc m (by omega))
     (fun m hm U' u hu => he.2.1 T args m U' u
       (Effect.result_mono effect (hres m (by omega) U') (hres m (by omega) U') hu))
-    (fun m _ => he.1 .undef args j U heap m) (fun _ _ _ h' => he.2.2.1 .undef args heap h') (SafePostExcV.iff_lift.mp hs)⟩
+    (fun _ _ _ _ _ hp => he.1.exitPostW hp) (fun _ _ _ _ _ hp => he.1.exitPostW hp) hs⟩
 
 theorem ConstructPromise.congr {Ξ Ξ' : Fam} {effect P P' R T n W v}
     (hexc : Agree Ξ Ξ' n)
@@ -501,7 +530,6 @@ theorem PromiseWith.bound {effect : Effect} {Acc Rest : ArgFam} {Rt R Rc : Fam}
     (hprefix : ∀ j (hj : j < k) U, WExt (trunc j (Nat.le_of_lt hj) W) U →
       ∀ args, Rest j U args → Acc j U (pre ++ args)) :
     PromiseWith Ξ (effect.drop pre.length) Rest Rc R k W (.objAt fs (.bound tv rv pre) oid) := by
-  rw [PromiseWith.iff_legacy] at ht ⊢
   intro j hj U hx hu heap hh hvr r hv _ _ args hargs har ha _
   refine ⟨_, .bound hv hargs, ?_⟩
   have hobj : RefsOk U tv ∧ RefsOk U rv ∧ ∀ a ∈ pre, RefsOk U a := by
@@ -536,20 +564,40 @@ theorem PromiseWith.bound {effect : Effect} {Acc Rest : ArgFam} {Rt R Rc : Fam}
     obtain ⟨res, hinv', hsafe⟩ := ht i hi _ hxU hu' heap hh' (RefsOk_trunc _ hobj.1) rv hrv hr'
       (RefsOk_trunc _ hobj.2.1) (pre ++ args) hall hall' (hprefix i hi _ hxU args ha')
       (Effect.requires_none (Effect.keeps_requires hkeeps) (Effect.keeps_pre hkeeps) rv (pre ++ args) heap)
-    replace hsafe := SafePostExcV.iff_lift.mp hsafe
     dsimp only at hsafe ⊢
     rw [Effect.result_drop, Effect.promised_drop hkeeps]
-    -- The target is entered one step after the bound call, at the same
-    -- heap: its view write from that world is one from the bound call's
-    -- entry (`Kinds.ViewWrite.prefix_left`).
-    have hxi : WExt (trunc i (Nat.le_succ i) U) (trunc i (Nat.le_succ i) U) := WExt_refl _
-    exact ⟨hinv, .inr ⟨_, heap, res, WExt_refl _, hu', hinv'.step heap, hh',
-      SafePostExcV.iff_lift.mpr <| SafePostExcW.weaken (fun _ _ _ _ h => ⟨Effect.post_drop pre.length h.1, fun w hw => by
-          simp only [Effect.drop, Option.map_eq_some_iff] at hw
-          obtain ⟨w0, h0, rfl⟩ := hw
-          exact ⟨⟨(h.2 w0 h0).1.1.prefix_left (Nat.le_succ i) hxi hh (List.prefix_refl _),
-            fun _ he => (by cases he), fun he => (by cases he)⟩, fun he => absurd rfl he⟩⟩)
-        (fun _ _ _ h => Effect.excPost_drop pre.length h) hsafe⟩⟩
+    refine ⟨hinv, .inr ⟨_, heap, res, WExt_refl _, hu', hinv'.step heap, hh', ?_⟩⟩
+    cases i with
+    | zero => exact hsafe
+    | succ p =>
+      -- The target is entered one step after the bound call, at the same
+      -- heap: the bound signature's exits follow from the target's at the
+      -- forwarded call (`Effect.summary_drop_normal`,
+      -- `Effect.summary_drop_exceptional`), read from the bound call's
+      -- entry, from which the target's is admissible (`Exits.exitPost_entry`).
+      have hfree : ∀ c, ((effect.drop pre.length).schema.get c).arenaFree = true := by
+        have := Effect.schema_arenaFree (effect.drop pre.length)
+        simp only [Exits.arenaFree, Bool.and_eq_true] at this
+        intro c; cases c
+        · exact this.1
+        · exact this.2
+      have back : ∀ c (hc : ∀ (s s' : TolerantFrames.IndexedHeap) (v : Tm), TolerantFrames.Admissible s s' →
+          effect.schema.exitPost c rv (pre ++ args) s s' v → (effect.drop pre.length).schema.exitPost c r args s s' v)
+          (m : Nat) (V : WorldT m) (h' : Heap) (v : Tm),
+          effect.schema.exitPostW c rv (pre ++ args) (trunc (p + 1) (Nat.le_succ (p + 1)) U) heap m V h' v →
+          (effect.drop pre.length).schema.exitPostW c r args U heap m V h' v := by
+        intro c hc m V h' v hq h1 h2 h3 h4 h5 h6
+        let s0 : TolerantFrames.IndexedHeap := ⟨p + 1, _, heap, Nat.succ_pos _, hu', hh'⟩
+        have hq' := hq s0.pos s0.adm s0.ok h4 h5 h6
+        exact Exits.exitPost_entry (s := s0) (hfree c) ⟨Nat.le_succ _, WExt_refl _⟩ rfl
+          (hc s0 _ v (Exits.exitPost_admissible hq') hq')
+      exact SafePostExcV.weaken
+        (back .normal fun s s' v hadm hq => Effect.exitPost_summary.mpr
+          (Effect.summary_drop_normal pre.length hadm (fun a ha => hall a ha) (fun a ha => hargs a ha)
+            (Effect.exitPost_summary.mp hq)))
+        (back .exceptional fun s s' v hadm hq => Effect.exitPost_summary.mpr
+          (Effect.summary_drop_exceptional pre.length _ _ hadm (Effect.exitPost_summary.mp hq)))
+        hsafe
 
 /-- **A call at a signature's exits from the invocation's entry** (the
 note's Call, `invoke_exits_exact`): a value meeting the signature, invoked at

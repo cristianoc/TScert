@@ -626,12 +626,15 @@ raises a value of the exception family meeting it (`SafePostExcV`); a
 postcondition that ignores the value is the one `SafePostExcW` states
 (`SafePostExcV.iff_lift`). A signature's callable contract (`PromiseWith`,
 `ConstructPromise`) is the native-contract condition at its schema's exits
-(`Exits.exitPostW`, normal and exceptional). It is the contract its
-postconditions state (proved: `NativeContract.iff_exits`,
-`NativeConstruct.iff_exits`; read as `PromiseWith.iff_legacy`,
-`ConstructPromise.iff_legacy`): at the states a safe run from a well-formed
-entry reaches, the normal exit is `Effect.postW` and the exceptional exit
-`Effect.excPost`.
+(`Exits.exitPostW`, normal and exceptional). One signature covers another
+where its specification entails the other's on both exits (`Exits.Entails`),
+its result meets the other's and its precondition is weaker
+(`Effect.Covers`; the check `Effect.covers` decides it, proved:
+`Effect.covers_sound`); a promise weakens along coverage at its exits
+(`PromiseWith.weaken'`, `ConstructPromise.weaken'`). A bound signature's
+exits follow from its target's at the forwarded call, read from the bound
+call's entry, from which the target's is admissible
+(`PromiseWith.bound`, `Exits.exitPost_entry`).
 
 A call's completions read at heaps are its exits at the call's evaluated
 actuals, a construction's omitted positions `undefined`

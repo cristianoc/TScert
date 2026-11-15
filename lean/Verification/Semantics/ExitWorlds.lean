@@ -135,6 +135,39 @@ theorem Holds.exit_heap {arena : AssertionArena} {t : TwoState} {u : IndexedHeap
   | .truth, _, h => h
   | .falsity, _, h => h
 
+/-! ## The entry state -/
+
+/-- A two-state variable reads the entry only through its heap. -/
+theorem stepValue_before_heap {t : TwoState} {u : IndexedHeap} (hh : t.before.h = u.h) :
+    stepValue { t with before := u } = stepValue t := by
+  funext x
+  cases x <;> simp [stepValue, hh]
+
+/-- **An operational post reads the entry only through its heap.** -/
+theorem OperationPostF.holds_before_heap {t : TwoState} {u : IndexedHeap} (hh : t.before.h = u.h)
+    (q : OperationPost) : q.Holds { t with before := u } ↔ q.Holds t := by
+  cases q with
+  | fact p l F => cases p <;> simp [OperationPostF.Holds, TwoState.state, TwoState.env, hh]
+  | _ => simp [OperationPostF.Holds, hh]
+
+/-- **A formula referencing no arena node holds from an earlier entry with
+the same heap**: an entry from which the original is admissible. A
+transition composes admissibility; every other formula reads the entry only
+through its heap. -/
+theorem Holds.entry_back {arena : AssertionArena} {t : TwoState} {u : IndexedHeap}
+    (ha : Admissible u t.before) (hh : t.before.h = u.h) :
+    ∀ {F : Formula}, F.arenaFree = true → Holds arena t F → Holds arena { t with before := u } F
+  | .transition _, _, h => ⟨WorldReach.trans ha h.1, by rw [← hh]; exact h.2⟩
+  | .operation q, _, h => (OperationPostF.holds_before_heap hh q).mpr h
+  | .linear F, _, h => by show HeapKnowledge.FactAt (stepValue _) F; rw [stepValue_before_heap hh]; exact h
+  | .defined v, _, h => by show (stepValue _ v).isSome; rw [stepValue_before_heap hh]; exact h
+  | .transport _, _, h => h
+  | .and _ _, hF, h => by
+    simp only [FormulaF.arenaFree, Bool.and_eq_true] at hF
+    exact ⟨Holds.entry_back ha hh hF.1 h.1, Holds.entry_back ha hh hF.2 h.2⟩
+  | .truth, _, h => h
+  | .falsity, _, h => h
+
 end Verification.Parity
 
 namespace Verification.CallEffects
@@ -231,5 +264,28 @@ theorem Exits.independent {x : Exits ExitSchema} {c : Completion} (hx : (x.get c
   intro u v hu hv _ hh z
   rw [Exits.exitPostW_iff x c r args s u z, Exits.exitPostW_iff x c r args s v z]
   exact ⟨Exits.exitPost_exit_heap hx hv hh, Exits.exitPost_exit_heap hx hu hh.symm⟩
+
+/-- **A guarantee referencing no arena node holds from an earlier entry with
+the same heap** (`Parity.Holds.entry_back`); the entry heap fixes the mark. -/
+theorem Exits.exitPost_entry {x : Exits ExitSchema} {c : Completion} (hx : (x.get c).arenaFree = true)
+    {r : Tm} {args : List Tm} {s u s' : IndexedHeap} {v : Tm} (ha : Admissible u s) (hh : s.h = u.h)
+    (hp : x.exitPost c r args s s' v) : x.exitPost c r args u s' v := by
+  have hens : ∀ F ∈ (x.get c).ensures, Holds AssertionArena.empty (callState r args v s.h.length s s')
+      (instantiateFormula (x.callInstantiation args.length) F) := Exits.exitPost_ensures hp
+  refine ⟨⟨WorldReach.trans ha hp.1.1, ?_⟩, ?_⟩
+  · have h2 := hp.1.2
+    simp only [callState] at h2 ⊢
+    rw [← hh]; exact h2
+  have hmem : ∀ F ∈ ((x.atArity args.length).get c).ensures, ∃ G ∈ (x.get c).ensures,
+      F = instantiateFormula (x.callInstantiation args.length) G := by
+    intro F hF
+    cases c <;> exact List.mem_map.mp hF |>.imp fun G hG => ⟨hG.1, hG.2.symm⟩
+  intro F hF
+  obtain ⟨G, hG, rfl⟩ := hmem F hF
+  have hl : u.h.length = s.h.length := by rw [hh]
+  rw [hl]
+  refine Holds.entry_back (t := callState r args v s.h.length s s') ha hh ?_ (hens G hG)
+  rw [instantiateFormula, FormulaF.arenaFree_map]
+  exact List.all_eq_true.mp hx G hG
 
 end Verification.CallEffects

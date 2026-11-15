@@ -1213,7 +1213,6 @@ theorem fixed_calls_pack_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R
     (hv : PromiseWith Ξ p.effect (ArgsShort (p.arguments.map (mixedValues G η))) (mixedValues G η p.receiver) (mixedValues G η p.result) n W v) :
     PromiseWith Ξ t.effect (ArgsRest (t.arguments.1.map (mixedValues G η)) (mixedArgs G η t.arguments.2)) (mixedValues G η t.receiver)
       (mixedValues G η t.result) n W v := by
-  rw [CallEffects.PromiseWith.iff_legacy] at hv ⊢
   unfold FixedCallsPack at hc
   split at hc
   · rename_i τ hP
@@ -1242,13 +1241,13 @@ theorem fixed_calls_pack_sound {G : NormalGraph ι} {η : MixedAssignment ι} {R
         exact ArgsShort_of_exact this
     obtain ⟨result, hi, hsafe⟩ := hv j hj U hx hu heap hh hvr r hrv
       (hr j hj _ _ hrecv U r hrm) hrr args hvals har (Domains.short (hr j hj) hd hall)
-      ((Effect.covers_sound heff).2.2.2 r args heap hq)
-    exact ⟨result, hi, HeapObservations.SafePostExcV.iff_lift.mpr <|
-      HeapObservations.SafePostExcW.consequence_below' (fun _ _ _ _ h => h) (fun m hm V u hu =>
+      ((Effect.covers_sound heff).2.2 r args heap hq)
+    exact ⟨result, hi,
+      HeapObservations.SafePostExcV.consequence_below' (fun _ _ _ _ h => h) (fun m hm V u hu =>
         (Effect.covers_sound heff).2.1 _ args m V u (Effect.result_mono p.effect
           (fun u hu => hr m (by omega) _ _ hres V u hu) (fun u hu => hr m (by omega) _ _ hres V u hu) hu))
-      (fun m _ => (Effect.covers_sound heff).1 r args j U heap m)
-      (fun _ _ _ h' => (Effect.covers_sound heff).2.2.1 r args heap h') (HeapObservations.SafePostExcV.iff_lift.mp hsafe)⟩
+      (fun _ _ _ _ _ hp => (Effect.covers_sound heff).1.exitPostW hp)
+      (fun _ _ _ _ _ hp => (Effect.covers_sound heff).1.exitPostW hp) hsafe⟩
   · exact hc.elim
 
 /-- A position covered by another: a present source position needs a target

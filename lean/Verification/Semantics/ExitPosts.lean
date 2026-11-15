@@ -296,6 +296,12 @@ pair of states: the rule of consequence on both completions. -/
 def Exits.Entails (x y : Exits ExitSchema) : Prop :=
   ∀ c r args s s' v, x.exitPost c r args s s' v → y.exitPost c r args s s' v
 
+/-- Entailment at worlds and heaps. -/
+theorem Exits.Entails.exitPostW {x y : Exits ExitSchema} (h : x.Entails y) {c : Completion} {r : Tm}
+    {args : List Tm} {j : Nat} {U : WorldT j} {before : Heap} {k : Nat} {V : WorldT k} {after : Heap} {v : Tm}
+    (hp : x.exitPostW c r args U before k V after v) : y.exitPostW c r args U before k V after v :=
+  fun h1 h2 h3 h4 h5 h6 => h _ _ _ _ _ _ (hp h1 h2 h3 h4 h5 h6)
+
 /-- **A completion's guarantee read at heaps**: some indexed states with
 these heaps at which the guarantee holds; what a consequence reading no
 world concludes (`Exits.heapPost_frame`). -/

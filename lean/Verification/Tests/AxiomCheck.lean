@@ -287,10 +287,6 @@ run_cmd do
   check ``Verification.HeapObservations.SafePostExcV.iff_lift
   check ``Verification.HeapObservations.SafePostExcV.post
   check ``Verification.CallEffects.SafePostExcV.weaken_admissible
-  check ``Verification.CallEffects.NativeContract.iff_exits
-  check ``Verification.CallEffects.PromiseWith.iff_legacy
-  check ``Verification.CallEffects.NativeConstruct.iff_exits
-  check ``Verification.CallEffects.ConstructPromise.iff_legacy
   check ``Verification.CallEffects.exactPre_iff
   check ``Verification.CallEffects.elementWrite_iff
   check ``Verification.CallEffects.Effect.summary_normal_iff
@@ -1767,9 +1763,10 @@ run_cmd do
   check ``Verification.HeapObservations.SafePostExcW.cross
   check ``Verification.CallEffects.Effect.covers_sound
   check ``Verification.Kinds.ViewWrite.prefix_left
-  check ``Verification.CallEffects.Effect.postW_prefix
   check ``Verification.CallEffects.PromiseWith.conj
   check ``Verification.CallEffects.PromiseWith.combine
+  check ``Verification.CallEffects.Exits.exitPost_entry
+  check ``Verification.HeapObservations.SafePostExcV.consequence_below'
   check ``Verification.CallEffects.PromiseWith.weaken'
   check ``Verification.CallEffects.Effect.postW_of_post
   check ``Verification.CallEffects.construct_exits

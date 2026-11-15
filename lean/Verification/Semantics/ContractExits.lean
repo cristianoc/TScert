@@ -56,42 +56,6 @@ theorem SafePostExcV.weaken_reached {Ξ T : Fam} {Q Q' : WPost} {R R' : WExcV} {
     exact SafePostExcV.weaken_admissible s (fun s' v hadm h => hq s s' v rfl HEq.rfl rfl hadm h)
       (fun s' v hadm h => hr s s' v rfl HEq.rfl rfl hadm h) hs
 
-/-- **A signature's callable contract is the contract of its exits**: the
-native-contract condition at its postconditions is the one at its exits. -/
-theorem NativeContract.iff_exits {Ξ : Fam} {effect : Effect} {Acc : ArgFam} {Rc : Fam}
-    {Rf : Tm → List Tm → Fam} {k : Nat} {W : WorldT k} {v : Val} :
-    NativeContract Ξ Acc Rc effect.Requires Rf (fun r args _ U heap => effect.postW r args U heap)
-        (fun r args _ _ heap => (effect.excPostW r args heap).liftV) k W v ↔
-      NativeContract Ξ Acc Rc effect.Requires Rf
-        (fun r args _ U heap => effect.schema.exitPostW .normal r args U heap)
-        (fun r args _ U heap => effect.schema.exitPostW .exceptional r args U heap) k W v := by
-  constructor <;> intro h j hj U hx hu heap hh hvr r hrv hrc hrr args hvals har hacc hreq <;>
-    obtain ⟨res, hi, hs⟩ := h j hj U hx hu heap hh hvr r hrv hrc hrr args hvals har hacc hreq <;>
-    refine ⟨res, hi, SafePostExcV.weaken_reached hu hh ?_ ?_ hs⟩ <;>
-    rintro s s' val rfl hW rfl hadm hp <;> cases eq_of_heq hW
-  · exact (Effect.postW_iff_exit hadm fun _ => hvals).mp hp
-  · exact (Effect.excPostW_iff_exit hadm).mp hp
-  · exact (Effect.postW_iff_exit hadm fun _ => hvals).mpr hp
-  · exact (Effect.excPostW_iff_exit hadm).mpr hp
-
-/-- **A construct signature's contract is the contract of its exits**, the
-receiver `undefined`. -/
-theorem NativeConstruct.iff_exits {Ξ : Fam} {effect : Effect} {P : ArgFam} {Rf : List Tm → Fam} {k : Nat}
-    {W : WorldT k} {v : Val} :
-    NativeConstruct Ξ P (effect.Requires .undef) Rf (fun r args _ U heap => effect.postW r args U heap)
-        (fun r args _ _ heap => (effect.excPostW r args heap).liftV) k W v ↔
-      NativeConstruct Ξ P (effect.Requires .undef) Rf
-        (fun r args _ U heap => effect.schema.exitPostW .normal r args U heap)
-        (fun r args _ U heap => effect.schema.exitPostW .exceptional r args U heap) k W v := by
-  constructor <;> intro h j hj U hx hu heap hh hvr args hvals har hacc hreq <;>
-    obtain ⟨res, hi, hs⟩ := h j hj U hx hu heap hh hvr args hvals har hacc hreq <;>
-    refine ⟨res, hi, SafePostExcV.weaken_reached hu hh ?_ ?_ hs⟩ <;>
-    rintro s s' val rfl hW rfl hadm hp <;> cases eq_of_heq hW
-  · exact (Effect.postW_iff_exit hadm fun _ => hvals).mp hp
-  · exact (Effect.excPostW_iff_exit hadm).mp hp
-  · exact (Effect.postW_iff_exit hadm fun _ => hvals).mpr hp
-  · exact (Effect.excPostW_iff_exit hadm).mpr hp
-
 /-- **Invocation at a callable's exits** (the note's Call at the evaluated
 actuals): a callee meeting the native-contract condition at an exit
 specification, invoked at values meeting its input contract one step below,

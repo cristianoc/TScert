@@ -1200,21 +1200,6 @@ theorem Effect.postW_of_post {e : Effect} (hx : e.elementWrite = none) {r : Tm} 
     (h : e.post r args before after v) : e.postW r args U before k W' after v :=
   ⟨h, fun w hw => by rw [hx] at hw; cases hw⟩
 
-/-- **Prefix transport of a signature's postcondition**: allocation between
-the call's entry and the start of its body composes with the postcondition,
-where the frame's paths and the entry terms agree across it
-(`Effect.post_prefix`), and the view write holds from the entry
-(`Kinds.ViewWrite.prefix_left`). -/
-theorem Effect.postW_prefix (e : Effect) {r : Tm} {args : List Tm} {n m : Nat} {W : WorldT n} {M : WorldT m}
-    {h hm : Heap} (hle : m ≤ n) (hx : WExt (trunc m hle W) M) (hok : HeapOk n W h) (hp : h.IsPrefix hm)
-    (hagree : e.PrefixAgrees (callEnv r args) h hm) (hens : e.EntryAgrees (callEnv r args) h hm)
-    {k : Nat} {W' : WorldT k} {h' : Heap} {v : Val} (hpost : e.postW r args M hm k W' h' v) :
-    e.postW r args W h k W' h' v :=
-  ⟨e.post_prefix hp hagree hens hpost.1, fun w hw =>
-    ⟨⟨(hpost.2 w hw).1.1.prefix_left hle hx hok hp, fun k hk =>
-      ⟨((hpost.2 w hw).1.2.1 k hk).1.prefix_left hp, ((hpost.2 w hw).1.2.1 k hk).2⟩,
-      fun ha => ((hpost.2 w hw).1.2.2 ha).prefix_left hp⟩, (hpost.2 w hw).2⟩⟩
-
 /-- **Safety at a signature stating no element write** is safety at its
 postcondition over kinded worlds, from every entry world. -/
 theorem Effect.safe_postW {e : Effect} (hx : e.elementWrite = none) {Ξ T : Fam} {r : Tm} {args : List Tm}
