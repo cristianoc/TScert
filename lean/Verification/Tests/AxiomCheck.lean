@@ -192,6 +192,11 @@ run_cmd do
   check ``Verification.SourceClaimJson.PassUnit.codeRunBound_some
   check ``Verification.ProgramTyping.codeBound_eq
   check ``Verification.ProgramTyping.codeConditions_spec
+  check ``Verification.ProgramTyping.codeObligations_sound
+  check ``Verification.ProgramTyping.exportsEstablished_sound
+  check ``Verification.ProgramTyping.Exits.exitPost_of_established
+  check ``Verification.ProgramTyping.exitBounds_of_regions
+  check ``Verification.Footprints.Footprint.classBound_sound
   check ``Verification.ProgramTyping.SafePostExc.grow
   check ``Verification.SourceClaimJson.PassUnit.captures_envOk
   check ``Verification.SourceClaimJson.PassUnit.approx_meets

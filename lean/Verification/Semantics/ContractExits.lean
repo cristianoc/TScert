@@ -18,32 +18,6 @@ needs a postcondition only there (`SafePostExcV.weaken_admissible`). -/
 namespace Verification.CallEffects
 open Verification Footprints Parity TolerantFrames HeapObservations
 
-section
-variable {effect : Effect} {r : Tm} {args : List Tm} {s s' : IndexedHeap} {v : Tm}
-
-/-- At an admissible transition, a signature's normal postcondition is its
-schema's normal exit, at actuals that are values where it states an append
-of them. -/
-theorem Effect.postW_iff_exit (hadm : Admissible s s')
-    (hvals : effect.receiverGrows = true → CallArguments.Values args) :
-    effect.postW r args s.W s.h s'.n s'.W s'.h v ↔ effect.schema.exitPostW .normal r args s.W s.h s'.n s'.W s'.h v := by
-  rw [Exits.exitPostW_iff]
-  show _ ↔ ((effect.schema.atArity args.length).get .normal).Holds _ _
-  rw [Effect.schema_atArity]
-  exact (Effect.summary_normal_iff effect hadm hvals).symm
-
-/-- At an admissible transition, a signature's throw postcondition is its
-schema's exceptional exit, whatever the thrown value. -/
-theorem Effect.excPostW_iff_exit (hadm : Admissible s s') :
-    (effect.excPostW r args s.h).liftV s'.n s'.W s'.h v ↔
-      effect.schema.exitPostW .exceptional r args s.W s.h s'.n s'.W s'.h v := by
-  rw [Exits.exitPostW_iff]
-  show _ ↔ ((effect.schema.atArity args.length).get .exceptional).Holds _ _
-  rw [Effect.schema_atArity]
-  exact (Effect.summary_exceptional_iff effect args.length hadm).symm
-
-end
-
 /-- **Safety from an entry at a world and heap, its postconditions changed
 to ones agreeing with them at every admissible state the run reaches**
 (`SafePostExcV.weaken_admissible` at the entry's indexed state). -/
@@ -99,22 +73,6 @@ theorem invoke_exits {Ξ : Fam} {Acc : ArgFam} {Rc : Fam} {req : Tm → List Tm 
     (fun a hm => RefsOk_trunc _ (har a hm)) ha hq
   obtain ⟨hnv, hnr⟩ := Step.inert (hi.step h)
   exact SafePostExcV.fromEntry_of_exact hw hh hnv hnr (invoke_exits_exact hc hw hh hrv hr hv ha hq href)
-
-/-- **Safety at a signature's heap postconditions is safety at its exits**,
-where it states no element write and its actuals are values where it states
-an append of them: from an entry at a world and heap, at every admissible
-state a run reaches the heap postconditions are the exits
-(`Effect.postW_iff_exit`, `Effect.excPostW_iff_exit`). -/
-theorem Effect.safe_exits {Ξ T : Fam} {e : Effect} (hx : e.elementWrite = none) {r : Tm} {args : List Tm}
-    (hvals : e.receiverGrows = true → CallArguments.Values args) {j : Nat} {U : WorldT j} {heap : Heap} {t : Tm}
-    (hu : WorldAdm U) (hh : HeapOk j U heap)
-    (hs : SafePostExc Ξ T (e.post r args heap) (e.excPost r args heap) j U heap t) :
-    SafePostExcV Ξ T (e.schema.exitPostW .normal r args U heap) (e.schema.exitPostW .exceptional r args U heap)
-      j U heap t := by
-  refine SafePostExcV.weaken_reached hu hh ?_ ?_ (Effect.safe_postW (U := U) hx hs) <;>
-    rintro s s' val rfl hW rfl hadm hp <;> cases eq_of_heq hW
-  · exact (Effect.postW_iff_exit hadm hvals).mp hp
-  · exact (Effect.excPostW_iff_exit hadm).mp hp
 
 /-! ## The meet of two specifications -/
 

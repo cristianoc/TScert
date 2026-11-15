@@ -19,7 +19,14 @@ is `⊤` asks nothing of the run, so with both exits at `⊤` and no fresh
 result the run is given no bound; a pure body establishes the empty bound
 on both exits by itself. Every consumer (the check of a unit's code
 requests, the proposals, the diagnosis) reads these two projections,
-`codeConditions` and `codeBound`. -/
+`codeConditions` and `codeBound`; a module row's code is checked by the
+same membership with its stated facts (`rowConditions`).
+
+Membership is consequence (`Exits.exitPost_of_established`): a run within
+each exit's class bound that establishes the fresh result and the facts
+meets each exit at every admissible state it reaches, so a run meeting the
+obligations is safe at the signature's exits (`exportsEstablished_sound`,
+`codeObligations_sound`). -/
 namespace Verification.ProgramTyping
 open Verification CallEffects Parity
 
@@ -34,14 +41,115 @@ structure CodeObligations where
   deriving DecidableEq
 
 /-- **The postconditions a code's run establishes**: the fresh result where
-its bound states one. -/
-def codeEstablished (fresh : Bool) : List FormulaSchema :=
-  if fresh then [.operation (.freshStore 0)] else []
+its bound states one, and the index facts `facts` a run is checked to return
+with (a module row's stated postcondition). -/
+def codeEstablished (fresh : Bool) (facts : List HeapKnowledge.IndexFact) : List FormulaSchema :=
+  (if fresh then [.operation (.freshStore 0)] else []) ++ facts.map fun F => .operation (.fact .after 0 F)
 
-/-- The closed bounds of a signature's two exits: its footprint on a normal
-return, and on a throw where it states `onThrow`, `⊤` otherwise. -/
+/-- **What a run establishes holds at its exit** (proved): a fresh result
+where it is checked for one, and each of `facts` at the call's positions. -/
+theorem codeEstablished_holds {fresh : Bool} {facts : List HeapKnowledge.IndexFact} {ι : CallInstantiation}
+    {arena : AssertionArena} {r : Tm} {args : List Tm} {v : Tm} {m : Nat} {s s' : TolerantFrames.IndexedHeap}
+    (hf : fresh = true → Footprints.FreshAt s.h.length v)
+    (he : ∀ F ∈ facts, F.HoldsAt ⟨callEnv r args, s.h⟩ (ensuresEnv v r args) s'.h) :
+    ∀ F ∈ codeEstablished fresh facts, Parity.Holds arena (callState r args v m s s') (instantiateFormula ι F) := by
+  intro F hF
+  simp only [codeEstablished, List.mem_append, List.mem_map] at hF
+  rcases hF with hF | ⟨G, hG, rfl⟩
+  · cases hfr : fresh <;> rw [hfr] at hF
+    · cases hF
+    · rw [List.mem_singleton.mp hF]; exact hf hfr
+  · exact he G hG
+
+/-- **Membership in what a run establishes is consequence** (proved): an
+exit of a schema whose every postcondition is among those a run establishes
+(`codeEstablished`) holds at an admissible transition within the class bound
+of its frame (`Footprint.classBound_sound`) at which the run established
+them. -/
+theorem Exits.exitPost_of_established {x : Exits ExitSchema} {c : Completion} {fresh : Bool}
+    {facts : List HeapKnowledge.IndexFact} {r : Tm} {args : List Tm} {v : Tm} {s s' : TolerantFrames.IndexedHeap}
+    (hadm : TolerantFrames.Admissible s s') (hb : (x.get c).frame.classBound.Holds s.h s'.h)
+    (hm : (x.get c).ensures.all (· ∈ codeEstablished fresh facts) = true)
+    (hf : fresh = true → Footprints.FreshAt s.h.length v)
+    (he : ∀ F ∈ facts, F.HoldsAt ⟨callEnv r args, s.h⟩ (ensuresEnv v r args) s'.h) :
+    x.exitPost c r args s s' v := by
+  have hm' : ∀ F ∈ (x.get c).ensures, F ∈ codeEstablished fresh facts := by
+    simpa only [List.all_eq_true, decide_eq_true_eq] using hm
+  have hframe : Footprints.Post (x.get c).frame (callEnv r args) s.h s'.h := Footprints.Footprint.classBound_sound hb
+  cases c <;>
+  · refine ⟨⟨hadm, hframe⟩, ?_⟩
+    simp only [Exits.atArity, Exits.map, Exits.get, ExitSchema.instantiate, List.mem_map]
+    rintro _ ⟨F, hF, rfl⟩
+    exact codeEstablished_holds hf he F (hm' F hF)
+
+/-- **The closed bounds of a signature's two exits**: the class bound of
+each exit's frame (`Footprint.classBound`), within which a run meets the
+frame. -/
 def exitBounds (e : Effect) : Exits Footprints.Closed :=
-  ⟨e.footprint, if e.onThrow then e.footprint else .top⟩
+  e.schema.map fun q => q.frame.classBound
+
+/-- Whether the exceptional bound is `⊤` or contains the normal one: the
+runner bounds a throw by the normal bound or not at all. -/
+def boundsNested (b : Exits Footprints.Closed) : Bool :=
+  b.exceptional == .top || b.normal.le b.exceptional
+
+/-- **Whether a run establishes every postcondition a signature exports**,
+given the facts `facts` it is checked to return with: each postcondition of
+the normal exit among `codeEstablished` at its fresh result and `facts`,
+none on the exceptional exit, and its exits' bounds nested
+(`boundsNested`). -/
+def exportsEstablished (e : Effect) (facts : List HeapKnowledge.IndexFact) : Bool :=
+  e.schema.normal.ensures.all (· ∈ codeEstablished e.fresh facts) &&
+    e.schema.exceptional.ensures.all (· ∈ codeEstablished false []) && boundsNested (exitBounds e)
+
+/-- **A run that establishes what a signature exports meets the signature on
+both exits** (proved): where every postcondition of each exit is among those
+the run establishes (`exportsEstablished`), a run from a well-formed entry
+returning within the normal exit's bound with its fresh result and the facts
+`facts`, and throwing within the exceptional exit's bound, is safe at the
+signature's exits (`Exits.exitPost_of_established` at every admissible state
+it reaches, `SafePostExcV.weaken_reached`). -/
+theorem exportsEstablished_sound {e : Effect} {facts : List HeapKnowledge.IndexFact}
+    (hx : exportsEstablished e facts = true) {Ξ T : Fam} {r : Tm} {args : List Tm} {j : Nat} {U : WorldT j}
+    {heap : Heap} {t : Tm} (hu : WorldAdm U) (hh : HeapOk j U heap)
+    (hs : HeapObservations.SafePostExc Ξ T
+      (fun h' v => (exitBounds e).normal.Holds heap h' ∧ (e.fresh = true → Footprints.FreshAt heap.length v) ∧
+        ∀ F ∈ facts, F.HoldsAt ⟨callEnv r args, heap⟩ (ensuresEnv v r args) h')
+      (fun h' => (exitBounds e).exceptional.Holds heap h') j U heap t) :
+    HeapObservations.SafePostExcV Ξ T (e.schema.exitPostW .normal r args U heap)
+      (e.schema.exitPostW .exceptional r args U heap) j U heap t := by
+  simp only [exportsEstablished, Bool.and_eq_true] at hx
+  obtain ⟨⟨hn, hexc⟩, -⟩ := hx
+  refine SafePostExcV.weaken_reached hu hh ?_ ?_ (HeapObservations.SafePostExcV.iff_lift.mpr hs) <;>
+    rintro s s' v rfl hW rfl hadm hp <;> cases eq_of_heq hW <;> rw [Exits.exitPostW_iff]
+  · exact Exits.exitPost_of_established hadm hp.1 hn hp.2.1 hp.2.2
+  · exact Exits.exitPost_of_established (fresh := false) (facts := []) hadm hp hexc (by simp) (by simp)
+
+/-- A frame of class entries, receiver entries and region entries has the
+class bound of its class entries' closed bound. -/
+theorem classBound_frame (e : Effect) (hr : e.regions = []) : e.frame.classBound = e.closed := by
+  have hrc : e.receiverEntries.filter (·.1.isClass) = [] := by
+    unfold Effect.receiverEntries
+    split
+    · rfl
+    · split <;> rfl
+  have hc : e.closed.fp.filter (·.1.isClass) = e.closed.fp := by
+    rcases e.closed with ⟨a, b, c⟩; rfl
+  have hcl : e.closed.fp.close = e.closed := by
+    have := Footprints.Closed.closed?_fp e.closed
+    simpa [Footprints.Footprint.closed?, Footprints.Closed.fp, Footprints.Region.isClass] using this
+  simp only [Footprints.Footprint.classBound, Footprints.Footprint.classes, Effect.frame, hr, List.map_nil,
+    List.append_nil, List.filter_append, hrc, hc, hcl]
+
+/-- **A signature stating no store regions has the bounds of its closed
+footprint**: its footprint on a normal return, and on a throw where it states
+`onThrow`, `⊤` otherwise (`classBound_frame`). -/
+theorem exitBounds_of_regions {e : Effect} (hr : e.regions = []) :
+    exitBounds e = ⟨e.footprint, if e.onThrow then e.footprint else .top⟩ := by
+  rw [Effect.footprint_of_regions hr]
+  have ht : topEffect.classBound = Footprints.Closed.top := rfl
+  unfold exitBounds Effect.schema
+  cases e.onThrow <;> simp [Exits.map, classBound_frame e hr, ht]
 
 /-- **The closed bounds a code's run is checked within**: none where both
 exits are `⊤` and the result is not fresh, or where a pure body states no
@@ -60,11 +168,10 @@ def codeRunBound (c : CodeEntry ι) : Option (Footprints.Closed × Bool × Bool)
 /-- **The obligations of a code's run**: its arity within its arguments, its
 signature's scope at its arity, no precondition beyond its promise, and
 every postcondition its signature exports on either exit established by its
-run; then its run's bounds and fresh result. -/
+run (`exportsEstablished`); then its run's bounds and fresh result. -/
 def codeObligations (c : CodeEntry ι) : Option CodeObligations :=
   if decide (c.arity ≤ c.row.arguments.length) && c.row.effect.below c.arity && c.row.effect.requires.isNone &&
-      c.row.effect.schema.normal.ensures.all (· ∈ codeEstablished c.row.effect.fresh) &&
-      c.row.effect.schema.exceptional.ensures.all (· ∈ ([] : List FormulaSchema)) then
+      exportsEstablished c.row.effect [] then
     some ⟨runBounds c, c.row.effect.fresh⟩
   else none
 
@@ -86,30 +193,51 @@ theorem codeBound_eq {c : CodeEntry ι} (h : codeConditions c = true) : codeBoun
   · cases ho'
 
 /-- **What the conditions give**: the arity, the scope, no precondition, and
-none of the postconditions a run does not establish (a fresh object, an
-elements promise, an append, an element write). -/
+every exported postcondition established by the run. -/
 theorem codeConditions_spec {c : CodeEntry ι} (h : codeConditions c = true) :
     c.arity ≤ c.row.arguments.length ∧ c.row.effect.below c.arity = true ∧ c.row.effect.requires = none ∧
-      c.row.effect.freshObject = false ∧ c.row.effect.elements = none := by
+      exportsEstablished c.row.effect [] = true := by
   unfold codeConditions at h
   obtain ⟨o, ho⟩ := Option.isSome_iff_exists.mp h
   unfold codeObligations at ho
   split at ho
   · rename_i hc
-    simp only [Bool.and_eq_true, decide_eq_true_eq, Option.isNone_iff_eq_none, List.all_eq_true,
-      decide_eq_true_eq] at hc
-    obtain ⟨⟨⟨⟨ha, hb⟩, hr⟩, hm⟩, -⟩ := hc
-    refine ⟨ha, hb, hr, ?_, ?_⟩
-    · cases hf : c.row.effect.freshObject
-      · rfl
-      · have := hm (.operation (.freshObject 0)) (by simp [Effect.schema, Effect.normalSchema, hf])
-        simp [codeEstablished] at this
-    · cases he : c.row.effect.elements with
-      | none => rfl
-      | some R =>
-        have := hm (.operation (.elementsWhen 0 .tru 1 R)) (by simp [Effect.schema, Effect.normalSchema, he])
-        simp [codeEstablished] at this
+    simp only [Bool.and_eq_true, decide_eq_true_eq, Option.isNone_iff_eq_none] at hc
+    exact ⟨hc.1.1.1, hc.1.1.2, hc.1.2, hc.2⟩
   · cases ho
+
+/-- **A code's obligations give its signature on both exits** (proved): a
+run of a code with obligations `o` (`codeObligations`) from a well-formed
+entry, returning within its normal exit's bound with a fresh result where
+`o` asks one and throwing within its exceptional exit's bound, is safe at
+the signature's exits (`exportsEstablished_sound`, no facts). -/
+theorem codeObligations_sound {c : CodeEntry ι} {o : CodeObligations} (hc : codeObligations c = some o)
+    {Ξ T : Fam} {r : Tm} {args : List Tm} {j : Nat} {U : WorldT j} {heap : Heap} {t : Tm}
+    (hu : WorldAdm U) (hh : HeapOk j U heap)
+    (hs : HeapObservations.SafePostExc Ξ T
+      (fun h' v => (exitBounds c.row.effect).normal.Holds heap h' ∧
+        (o.freshResult = true → Footprints.FreshAt heap.length v))
+      (fun h' => (exitBounds c.row.effect).exceptional.Holds heap h') j U heap t) :
+    HeapObservations.SafePostExcV Ξ T (c.row.effect.schema.exitPostW .normal r args U heap)
+      (c.row.effect.schema.exitPostW .exceptional r args U heap) j U heap t := by
+  have hc' := hc
+  unfold codeObligations at hc'
+  split at hc'
+  · rename_i hx
+    cases hc'
+    simp only [Bool.and_eq_true] at hx
+    exact exportsEstablished_sound (facts := []) hx.2 hu hh
+      (HeapObservations.SafePostExc.weaken (fun _ _ hq => ⟨hq.1, hq.2, by simp⟩) (fun _ hq => hq) hs)
+  · cases hc'
+
+/-- **The conditions of a module row's code**: its arity within its
+arguments, its signature's scope at its arity with its postcondition
+(`Effect.belowRow`), no precondition beyond its promise, and every
+postcondition its signature exports established by a run returning with the
+signature's own facts (`exportsEstablished`). -/
+def rowConditions (c : CodeEntry ι) : Bool :=
+  decide (c.arity ≤ c.row.arguments.length) && c.row.effect.belowRow c.arity && c.row.effect.requires.isNone &&
+    exportsEstablished c.row.effect c.row.effect.ensures
 
 end
 

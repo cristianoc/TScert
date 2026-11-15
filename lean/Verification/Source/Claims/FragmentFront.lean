@@ -830,7 +830,7 @@ with its captures (`codeFrame`, or past the receiver for a function without
 naming only captures that are no function of the file, the module cells
 (`ModuleLayout.apart`), and the code's entry facts (renamed past the
 receiver, each fact of the request one of `mapIndices pastReceiver`), and
-the row conditions hold (`PassUnit.rowConditions`). -/
+the row conditions hold (`rowConditions`). -/
 def FilePlans.layoutOwn (f : FilePlans) (i : Nat) : LayoutOwn := Id.run do
   let G := StoreView.graph f.F.store
   let fr := f.fr
@@ -892,8 +892,7 @@ def FilePlans.layoutOwn (f : FilePlans) (i : Nat) : LayoutOwn := Id.run do
   for p in rows do
     let e : CodeEntry _ := ⟨arity, exprs, conts, r.start, captures, p, none⟩
     let eff := p.effect
-    if !(decide (arity ≤ p.arguments.length) && eff.belowRow arity && !eff.freshObject && eff.requires.isNone &&
-        eff.elements.isNone && !eff.receiverGrows && eff.elementWrite.isNone) then
+    if !ProgramTyping.rowConditions e then
       return .outside "the code's conditions"
     -- A function declared without `this` states no postcondition of its
     -- receiver, in either state (`IndexFact.pastReceiver`).

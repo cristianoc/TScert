@@ -605,6 +605,30 @@ theorem Footprint.closed?_sound {Φ : Footprint} {c : Closed} (hc : Φ.closed? =
       simpa [Region.cats, Region.mem, hv, Selector.selects] using hk
   · cases hc
 
+/-- The class entries of a footprint. -/
+def Footprint.classes (Ψ : Footprint) : Footprint := Ψ.filter (·.1.isClass)
+
+/-- **The closed bound of a footprint's class entries**: the bound a run
+within which meets the footprint (`Footprint.classBound_sound`). -/
+def Footprint.classBound (Φ : Footprint) : Closed := Φ.classes.close
+
+/-- **A run within a footprint's class bound meets the footprint**
+(proved): the class entries are their closed form
+(`Footprint.closed?_sound`), whose meaning reads no environment
+(`Closed.post_iff`), and each is an entry of the footprint. -/
+theorem Footprint.classBound_sound {Φ : Footprint} {ρ : Env} {h h' : Heap} (hb : Φ.classBound.Holds h h') :
+    Post Φ ρ h h' := by
+  have hc : Φ.classes.closed? = some Φ.classBound := by
+    simp [Footprint.closed?, Footprint.classBound, Footprint.classes, List.all_filter]
+  have hp : Post Φ.classes ρ h h' :=
+    (Footprint.closed?_sound hc).mpr (Closed.post_iff.mpr (Closed.holds_iff.mp hb))
+  refine ⟨hp.1, fun l v hv => ?_⟩
+  obtain ⟨v', hv', ha⟩ := hp.2 l v hv
+  refine ⟨v', hv', ?_⟩
+  rcases ha with h | ⟨e, he, hm, hh⟩
+  · exact .inl h
+  · exact .inr ⟨e, (List.mem_filter.mp he).1, hm, hh⟩
+
 /-- The closed form of a closed footprint's entries is itself. -/
 theorem Closed.closed?_fp (c : Closed) : c.fp.closed? = some c := by
   cases c with

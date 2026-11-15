@@ -70,19 +70,20 @@ theorem code_goal (G : NormalGraph ι) (c : CodeEntry ι) (L : List Tm) :
       CallEffects.TypePromise.param]
     rfl
 
-/-- **A code's run from a frame of its signature** (proved): a code of
-arity within its arguments, whose effect without its postcondition is below
-its arity (`Effect.below`) and states no fresh object, element promise,
-receiver growth or element write, whose graph is safe at every assignment
-from its frame (`codeFrame`) and the separation `sep` at its goal, and
-within its bound (`codeBound`) where it has one, run as its node lists from
-every frame of its signature meeting `sep`, is safe at the signature's result
-and meets its post but for the postcondition. The step shared by code
-requests (`codeSpec_of_clauses`) and module rows (`rowSpec_of_clauses`). -/
+/-- **A code's run from a frame of its signature** (proved): a code whose
+exits' bounds are nested (`boundsNested`), whose graph is safe at every
+assignment from its frame (`codeFrame`) and the separation `sep` at its
+goal, and within its bound (`codeRunBound`) where it has one, run as its
+node lists from every frame of its signature meeting `sep`, is safe at the
+signature's result, returning within its normal exit's bound with a fresh
+result where the signature states one and throwing within its exceptional
+exit's bound (`exitBounds`). With no bound, both exits' bounds are `⊤` and
+every run keeps the old locations, or a pure body changes nothing; with
+one, a throw is within the normal bound or the exceptional one is `⊤`. The
+step shared by code requests (`codeSpec_of_clauses`) and module rows
+(`rowSpec_of_clauses`). -/
 theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSeparation.Separation}
-    (hbelow : ({ c.row.effect with ensures := [] } : CallEffects.Effect).below c.arity = true)
-    (hfo : c.row.effect.freshObject = false) (hel : c.row.effect.elements = none)
-    (hgr : c.row.effect.receiverGrows = false) (hew : c.row.effect.elementWrite = none)
+    (hnest : boundsNested (exitBounds c.row.effect) = true)
     (hsafeG : ∀ η n W h ρ, EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep
       (GraphCode.codeEntryIndices c) ρ n W h →
       (∀ node ∈ GraphCode.program c.exprs c.conts, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
@@ -98,13 +99,15 @@ theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
         (fun h' => onThrow = true → Φ.Holds h h') n W h (.goto c.exprs c.conts c.start L d)) :
     ∀ η n W heap L, EnvOk (reassign G η) (codeFrame c.arity c.row c.captures c.store) (envOf L .nul) n W →
       WorldAdm W → HeapOk n W heap → RefsOk W (.goto c.exprs c.conts c.start L .nul) → CallArguments.Values L → PreAt c.row.effect c.store L heap →
-      HeapSeparation.Holds sep (envOf L .nul) → ∀ r args,
+      HeapSeparation.Holds sep (envOf L .nul) →
       HeapObservations.SafePostExc (excOf (reassign G η))
         (c.row.effect.result (meaning (reassign G η) c.row.result)
           (framePromised c.row.effect (frameOffset c.store) L))
-        (({ c.row.effect with ensures := [] } : CallEffects.Effect).post r args heap)
-        (c.row.effect.excPost r args heap) n W heap (.goto c.exprs c.conts c.start L .nul) := by
-  intro η n W heap L he hw hh href hvalues hpre hsep r args
+        (fun h' v => (exitBounds c.row.effect).normal.Holds heap h' ∧
+          (c.row.effect.fresh = true → Footprints.FreshAt heap.length v))
+        (fun h' => (exitBounds c.row.effect).exceptional.Holds heap h') n W heap
+        (.goto c.exprs c.conts c.start L .nul) := by
+  intro η n W heap L he hw hh href hvalues hpre hsep
   have hentry : EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep
       (GraphCode.codeEntryIndices c) (envOf L .nul) n W heap :=
     ⟨he, hsep, GraphCode.codeEntryIndices_holds hpre, hw, hh⟩
@@ -116,44 +119,27 @@ theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
   have hsafe : Safe (excOf (reassign G η)) (c.row.effect.result (meaning (reassign G η) c.row.result)
       (framePromised c.row.effect (frameOffset c.store) L)) n W heap
       (.goto c.exprs c.conts c.start L .nul) := code_goal (reassign G η) c L ▸ hs
-  have hnrg : c.row.effect.regions = [] :=
-    CallEffects.Effect.below_regions (e := { c.row.effect with ensures := [] }) hbelow
-  have hnen : ∀ F, F ∈ ({ c.row.effect with ensures := [] } : CallEffects.Effect).ensures → False :=
-    fun F hF => by simp at hF
-  have hnel : ∀ R, c.row.effect.elements = some R → False := by
-    intro R hR; rw [hel] at hR; cases hR
-  have hngr : c.row.effect.receiverGrows = true → False := fun h => by rw [hgr] at h; cases h
-  have hnew : ∀ w, c.row.effect.elementWrite = some w → False := fun w h => by rw [hew] at h; cases h
-  by_cases htop : c.row.effect.footprint = .top ∧ c.row.effect.fresh = false
+  by_cases htop : ((exitBounds c.row.effect).normal == .top && (exitBounds c.row.effect).exceptional == .top &&
+      !c.row.effect.fresh) = true
   · -- Both exits' bounds `⊤` and no fresh result: the run is given no
     -- bound, and every run keeps the old locations on either exit.
+    simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at htop
     have hg := SafePostExc.grow (b := heap.length) (Nat.le_refl _)
       (HeapObservations.SafePostExc.of_post (R := fun _ => True) (fun _ => trivial) (Footprints.Closed.top_safe hsafe))
-    refine HeapObservations.SafePostExc.weaken (fun h' v hp => ?_) (fun h' hr _ => ?_) hg
-    · refine ⟨CallEffects.Effect.within_of_footprint hnrg ?_, fun hf => (by simp [htop.2] at hf),
-        fun hf => (by simp [hfo] at hf), fun R hR => (hnel R hR).elim, fun F hF => (hnen F hF).elim,
-        fun hg => (hngr hg).elim, fun w hw => (hnew w hw).elim⟩
-      rw [htop.1]
-      exact hp.1
-    · exact CallEffects.Effect.within_of_footprint hnrg (by rw [htop.1]; exact Footprints.Closed.holds_top.mpr hr.2)
+    exact HeapObservations.SafePostExc.weaken
+      (fun h' v hp => ⟨by rw [htop.1.1]; exact hp.1, fun hf => by simp [htop.2] at hf⟩)
+      (fun h' hr => by rw [htop.1.2]; exact Footprints.Closed.holds_top.mpr hr.2) hg
   · by_cases hpure : c.row.effect.fresh = false ∧ c.exprs.all Purity.pureTerm = true
-    · have hp : ∀ e ∈ c.exprs, Purity.pureTerm e = true := List.all_eq_true.mp hpure.2
+    · -- A pure body changes nothing: within every bound.
+      have hp : ∀ e ∈ c.exprs, Purity.pureTerm e = true := List.all_eq_true.mp hpure.2
       exact HeapObservations.SafePostExc.weaken
-        (fun h' v hq => ⟨CallEffects.Effect.within_of_footprint hnrg
-          (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _)
-            ((CallEffects.Effect.post_ofFootprint _ .undef [] _ _ _).mp hq)), fun hf => (by simp [hpure.1] at hf),
-          fun hf => (by simp [hfo] at hf), fun R hR => (hnel R hR).elim, fun F hF => (hnen F hF).elim,
-          fun hg => (hngr hg).elim, fun w hw => (hnew w hw).elim⟩)
-        (fun h' hq _ => CallEffects.Effect.within_of_footprint hnrg
-          (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq))
+        (fun h' v hq => ⟨Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _)
+            ((CallEffects.Effect.post_ofFootprint _ .undef [] _ _ _).mp hq), fun hf => by simp [hpure.1] at hf⟩)
+        (fun h' hq => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq)
         (CallEffects.pure_safe_exc (r := .undef) (args := []) (.goto hp hvalues rfl) hsafe)
-    · have hbound : codeRunBound c = some (c.row.effect.footprint, c.row.effect.fresh,
+    · have hbound : codeRunBound c = some ((exitBounds c.row.effect).normal, c.row.effect.fresh,
           (exitBounds c.row.effect).exceptional != .top) := by
-        have h1 : ((exitBounds c.row.effect).normal == .top && (exitBounds c.row.effect).exceptional == .top &&
-            !c.row.effect.fresh) = false := by
-          simp only [exitBounds]
-          cases hfp : c.row.effect.footprint == .top <;> cases hfr : c.row.effect.fresh <;>
-            cases hot : c.row.effect.onThrow <;> simp_all
+        have h1 := Bool.eq_false_iff.mpr htop
         have h2 : (!c.row.effect.fresh && c.exprs.all Purity.pureTerm) = false := by
           cases hfr : c.row.effect.fresh <;> cases hal : c.exprs.all Purity.pureTerm <;> simp_all
         simp only [codeRunBound, runBounds, h1, h2, Bool.false_or]
@@ -161,22 +147,24 @@ theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
       have hb := hboundG _ _ _ hbound η n W heap L .nul hentry href
         (fun v hv => hvalues v hv) rfl
       rw [code_goal] at hb
-      exact HeapObservations.SafePostExc.weaken
-        (fun h' v hq => ⟨CallEffects.Effect.within_of_footprint hnrg hq.1.1, hq.1.2, fun hf => (by simp [hfo] at hf),
-          fun R hR => (hnel R hR).elim, fun F hF => (hnen F hF).elim,
-          fun hg => (hngr hg).elim, fun w hw => (hnew w hw).elim⟩)
-        (fun h' hq ho => by
-          by_cases hfp : c.row.effect.footprint = .top
-          · exact CallEffects.Effect.within_of_footprint hnrg (by rw [hfp]; exact Footprints.Closed.holds_top.mpr hq.2)
-          · exact CallEffects.Effect.within_of_footprint hnrg (hq.1 (by simp [exitBounds, ho, hfp])))
+      refine HeapObservations.SafePostExc.weaken (fun h' v hq => hq.1) (fun h' hq => ?_)
         (SafePostExc.grow (b := heap.length) (Nat.le_refl _) hb)
+      -- A throw is within the normal bound, which the exceptional one
+      -- contains, or the exceptional bound is `⊤` (`boundsNested`).
+      by_cases hex : (exitBounds c.row.effect).exceptional = .top
+      · rw [hex]; exact Footprints.Closed.holds_top.mpr hq.2
+      · have hle : (exitBounds c.row.effect).normal.le (exitBounds c.row.effect).exceptional = true := by
+          simp only [boundsNested, Bool.or_eq_true, beq_iff_eq] at hnest
+          exact hnest.resolve_left hex
+        exact Footprints.Closed.Holds.mono hle (hq.1 (by simp [hex]))
 
 /-- **A code safe from its frame, within its bound, meets its signature**
 (proved): a code meeting its conditions, whose graph is safe at every
 assignment from its frame (`codeFrame`) at its goal, and within its bound
 (`codeBound`) where it has one, run as its node lists, is graph code at its
-signature at every assignment (`codeRun_of_clauses` at no separation; its
-signature states no postcondition). -/
+signature at every assignment: its run (`codeRun_of_clauses` at no
+separation) establishes every postcondition its signature exports on both
+exits (`codeObligations_sound`). -/
 theorem codeSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι}
     (hcond : codeConditions c = true)
     (hsafeG : ∀ η n W h ρ, EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) {}
@@ -194,24 +182,22 @@ theorem codeSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι}
         (fun h' => onThrow = true → Φ.Holds h h') n W h (.goto c.exprs c.conts c.start L d)) :
     ∀ η, c.Spec (reassign G η) := by
   intro η
-  obtain ⟨harity, hbelow, _hreq, hfo, hel⟩ := codeConditions_spec hcond
-  have hgr := CallEffects.Effect.below_grows hbelow
-  have hew := CallEffects.Effect.below_write hbelow
-  have hens := CallEffects.Effect.below_ensures hbelow
-  have he0 : ({ c.row.effect with ensures := [] } : CallEffects.Effect) = c.row.effect := by
-    rw [← hens]
-  have hbelow0 : ({ c.row.effect with ensures := [] } : CallEffects.Effect).below c.arity = true := by
-    rw [he0]; exact hbelow
+  obtain ⟨harity, hbelow, _hreq, hx⟩ := codeConditions_spec hcond
+  obtain ⟨o, ho⟩ := Option.isSome_iff_exists.mp hcond
+  have hof : o.freshResult = c.row.effect.fresh := by
+    have ho' := ho
+    unfold codeObligations at ho'
+    split at ho' <;> cases ho'
+    rfl
+  have hnest : boundsNested (exitBounds c.row.effect) = true := by
+    simp only [exportsEstablished, Bool.and_eq_true] at hx; exact hx.2
   refine ⟨harity, hbelow, ?_⟩
   intro n W heap L he hw hh href hvalues hpre r args _hframe
-  have := codeRun_of_clauses (sep := {}) hbelow0 hfo hel hgr hew hsafeG
+  have hrun := codeRun_of_clauses (sep := {}) hnest hsafeG
     (fun Φ fresh onThrow hb => hboundG Φ fresh onThrow (by rw [codeBound_eq hcond]; exact hb))
-    η n W heap L he hw hh href hvalues hpre
-    (HeapSeparation.empty_holds _) r args
-  rw [he0] at this
-  -- The signature states no append (`hgr`) and no element write (`hew`): its
-  -- exits are its heap postconditions.
-  exact CallEffects.Effect.safe_exits hew (fun h => by rw [hgr] at h; cases h) hw hh this
+    η n W heap L he hw hh href hvalues hpre (HeapSeparation.empty_holds _)
+  rw [← hof] at hrun
+  exact codeObligations_sound ho hw hh hrun
 
 /-- **A code whose run guarantees its graph meets its signature** (proved):
 a code meeting its conditions, whose graph is guaranteed at every assignment

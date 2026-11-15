@@ -388,7 +388,9 @@ A semantic reader does not recover an old field from a constructor's
 pattern. `drop` belongs with substitution and consequence, `withoutActuals`
 with forgetting, `meet` with conjunction and its independence condition,
 `below` and `belowRow` with scope and body obligations; `codeConditions`
-stays a check of code built on these; `covers` is sufficient entailment of
+stays a check of code built on these, each exported postcondition of each
+exit among those a run establishes, a membership whose consequence is proved
+once (`Exits.exitPost_of_established`) and proves both exits of a body; `covers` is sufficient entailment of
 both exits with variance of the result and the precondition. None of them
 needs an inverse of the elaboration. `meet` is the conjunction where it is
 representable, or a proved consequence whose precision is stated; the

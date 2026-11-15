@@ -193,9 +193,6 @@ theorem Footprint.boundBelow_nil (P : List Nat) : Footprint.boundBelow P [] = Cl
 
 /-! ## Inclusion in a footprint bound -/
 
-/-- The class entries of a footprint. -/
-def Footprint.classes (Ψ : Footprint) : Footprint := Ψ.filter (·.1.isClass)
-
 /-- **Whether an entry is included in a bound**: discharged by freshness; in
 an entry of the bound with at least its change, by region containment
 (`Region.sub` with the class evidence `cl`); or, category by category, in

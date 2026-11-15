@@ -1254,9 +1254,16 @@ conclusion), and a call effect carries them (`regions`).
 its entry frame (`FrameValues`), including the optional rest-store slot.
 The invocation proofs supply that match (`graph_invoke`, `graph_invoke_at`,
 `graphRest_invoke`), and their conclusion is the condition a callable value
-meets at its signature (`PromiseWith`). Code states no append and no element
-write (`Effect.below`), and at its exits its heap postconditions and its
-exits agree on every admissible state a run reaches (`Effect.safe_exits`).
+meets at its signature (`PromiseWith`). A code's run establishes its
+signature's exits by consequence: each postcondition of each exit is among
+those the run establishes, its fresh result and, for a module row, its
+stated facts (`exportsEstablished`, decided once for code requests,
+proposals and diagnosis by `codeObligations` and for module rows by
+`rowConditions`); a run within the class bound of each exit's frame
+(`exitBounds`, `Footprint.classBound_sound`) that establishes them meets
+each exit at every admissible state it reaches
+(`Exits.exitPost_of_established`, `exportsEstablished_sound`,
+`codeObligations_sound`).
 A code collecting a rest runs after the rest store's allocation; its exits
 from the heap that allocation leaves are exits from the call's entry
 (`Effect.exitPost_prefix`, by `Exits.compose_entry`: the frame rebased by
