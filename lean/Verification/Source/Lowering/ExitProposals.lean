@@ -122,10 +122,6 @@ def ofEffect (e : Effect) (P : List Nat) (returns : Bool := true) : ClassSummary
   ⟨if returns then some (Footprint.boundBelow P e.schema.normal.frame) else none,
     some (Footprint.boundBelow P e.schema.exceptional.frame)⟩
 
-/-- **Whether an exit states a fresh result**: its postcondition that the
-result's store is allocated during the call (`freshStore 0`). -/
-def freshResult (q : ExitSchema) : Bool := decide (FormulaF.operation (.freshStore 0) ∈ q.ensures)
-
 /-- **Whether a frame may change a value location of the entry heap**: the
 value component of its closed bound below the entry
 (`Footprint.boundBelow`, no position discharged). -/
@@ -175,22 +171,6 @@ def project (S : ClassSummary) (bounded : Bool := true) : Effect :=
 effect of closed frame `c` and throw bound `t`, at the class level
 (`ofEffect`). -/
 def ofFormat (c : Closed) (t : Bool) : ClassSummary := ofEffect { Effect.ofFootprint c with onThrow := t } []
-
-/-- **A signature's normal exit states a fresh result exactly where it
-states one** (proved; the schema's normal postconditions, `Effect.schema`). -/
-theorem freshResult_schema (e : Effect) : freshResult e.schema.normal = e.fresh := by
-  have hw : ∀ w : ElementWrite, FormulaF.operation (.freshStore 0) ∉ w.schemaPosts := by
-    intro w; cases w <;> simp [ElementWrite.schemaPosts]
-  have he : FormulaF.operation (.freshStore 0) ∉ (match e.elements with
-      | some R => [(FormulaF.operation (.elementsWhen 0 .tru 1 R) : FormulaSchema)]
-      | none => []) := by
-    split <;> simp
-  have hg : FormulaF.operation (.freshStore 0) ∉ (match e.elementWrite with
-      | some w => w.schemaPosts
-      | none => ([] : List FormulaSchema)) := by
-    split <;> simp [hw]
-  simp only [freshResult, Effect.schema, Effect.normalSchema, List.mem_append]
-  cases e.fresh <;> cases e.freshObject <;> cases e.receiverGrows <;> simp <;> exact ⟨he, hg⟩
 
 /-! ## Each rule is the class instance of the note's -/
 

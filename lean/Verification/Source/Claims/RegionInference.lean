@@ -83,7 +83,7 @@ def calleeRegionNames (r : SourceExtraction.SourceRequest σ ι) : List String :
     | _ => []).eraseDups
   (tys.flatMap fun F => match PositiveRules.expand G F with
     | [PositiveNormalization.Clause.arrs L _] | [PositiveNormalization.Clause.callable _ _ L _ _] =>
-      L.flatMap fun p => SourceExtraction.regionFields p.effect.schema.normal.frame
+      L.flatMap fun p => p.effect.schema.normal.frame.regionFields
     | _ => []).eraseDups
 
 /-- A regional check's tables at the unit's statement entries, inferred

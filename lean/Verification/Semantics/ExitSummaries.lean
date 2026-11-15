@@ -612,4 +612,56 @@ theorem Effect.summary_drop_exceptional {e : Effect} (k n n' : Nat) {rv : Tm} {a
 
 end Equivalence
 
+/-! ## Readings of a signature's schema
+
+Readers of a schema that the front's proposals use, each equal to the
+reading of the signature's elaborated fields (proved). -/
+
+/-- **The fields a frame's path regions read through one field**: for each
+entry whose region is reached from a call position through the one field
+`f` (`.path _ [f] _`), the field `f`. -/
+def _root_.Verification.Footprints.Footprint.regionFields (Φ : Footprint) : List String :=
+  Φ.filterMap fun e => match e.1 with
+    | .path _ [f] _ => some f
+    | _ => none
+
+/-- **A signature's frame reads through the fields its store regions do**
+(proved): the frame's class entries and receiver entries are no path
+regions, and each argument store region is the path region of its path. -/
+theorem Effect.regionFields_schema (e : Effect) :
+    e.schema.normal.frame.regionFields = e.regions.filterMap fun r => match r.path with
+      | [f] => some f
+      | _ => none := by
+  have hr : e.receiverEntries.regionFields = [] := by
+    unfold Effect.receiverEntries
+    split
+    · rfl
+    · split <;> rfl
+  have hc : e.closed.fp.regionFields = [] := rfl
+  simp only [Effect.schema, Effect.frame, Footprint.regionFields, List.filterMap_append] at hr hc ⊢
+  rw [hr, hc, List.nil_append, List.nil_append, List.filterMap_map]
+  congr 1
+  funext r
+  rcases r with ⟨pos, _ | ⟨f, _ | ⟨g, t⟩⟩⟩ <;> rfl
+
+/-- **Whether an exit states a fresh result**: its postcondition that the
+result's store is allocated during the call (`freshStore 0`). -/
+def ExitSchema.freshResult (q : ExitSchema) : Bool := decide (FormulaF.operation (.freshStore 0) ∈ q.ensures)
+
+/-- **A signature's normal exit states a fresh result exactly where it
+states one** (proved; the schema's normal postconditions, `Effect.schema`). -/
+theorem Effect.freshResult_schema (e : Effect) : e.schema.normal.freshResult = e.fresh := by
+  have hw : ∀ w : ElementWrite, FormulaF.operation (.freshStore 0) ∉ w.schemaPosts := by
+    intro w; cases w <;> simp [ElementWrite.schemaPosts]
+  have he : FormulaF.operation (.freshStore 0) ∉ (match e.elements with
+      | some R => [(FormulaF.operation (.elementsWhen 0 .tru 1 R) : FormulaSchema)]
+      | none => []) := by
+    split <;> simp
+  have hg : FormulaF.operation (.freshStore 0) ∉ (match e.elementWrite with
+      | some w => w.schemaPosts
+      | none => ([] : List FormulaSchema)) := by
+    split <;> simp [hw]
+  simp only [ExitSchema.freshResult, Effect.schema, Effect.normalSchema, List.mem_append]
+  cases e.fresh <;> cases e.freshObject <;> cases e.receiverGrows <;> simp <;> exact ⟨he, hg⟩
+
 end Verification.CallEffects

@@ -3006,7 +3006,7 @@ literal's effect: the walk meets an operation whose summary is the
 instance's per-exit contract, each exit's frame read in the closed language
 below the call's entry with a fresh receiver's store discharged
 (`ClassSummary.ofEffect`, Fresh-Eff); its fresh result, a postcondition of
-its normal exit (`ClassSummary.freshResult`); whether its normal exit's frame
+its normal exit (`ExitSchema.freshResult`); whether its normal exit's frame
 may change a value location of the heap at its entry
 (`ClassSummary.changesValues`, `changedValues`). A call whose instance's result is the
 empty type never returns normally: its normal exit is unreached, its throw
@@ -3022,7 +3022,7 @@ def callChanges (inst : CallEffects.Arrow (Ty Tree)) (receiverFresh : Bool) : W 
   if !returns then return
   if ClassSummary.changesValues inst.effect.schema.normal.frame then
     modify fun w => { w with changedValues := true }
-  modify fun w => { w with lastFresh := ClassSummary.freshResult inst.effect.schema.normal }
+  modify fun w => { w with lastFresh := inst.effect.schema.normal.freshResult }
 
 /-- A literal of no binders, rest or guard passed where the instance's
 parameter is one fixed signature binding more parameters than it, of
@@ -5002,7 +5002,7 @@ partial def applyCall (env : Env) (c : Callee) (args : List Expr) (As : List (Op
   -- A fresh result where a type is expected: made at the expected array.
   let mut result := inst.result
   if let some H := hint then
-    if ClassSummary.freshResult inst.effect.schema.normal then
+    if inst.effect.schema.normal.freshResult then
       if let some R ← StateT.lift (tryCatch (freshAt H inst.result) fun _ => pure none) then result := R
   let own ← StateT.lift (calleeAtCall c σ inst rest (c.fixed.filter fits))
   return .ok (own, result)
