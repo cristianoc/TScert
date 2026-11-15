@@ -95,11 +95,11 @@ private theorem lookup_lt_foldr {l : List (Nat × Witness)} {i : Nat} {w : Witne
       have := ih h
       omega
 
-private theorem lookup_lt {t : TransportSchema} {i : Nat} {w : Witness} (h : t.overrides.lookup i = some w) :
+theorem TransportSchema.lookup_lt {t : TransportSchema} {i : Nat} {w : Witness} (h : t.overrides.lookup i = some w) :
     i < t.slots :=
   lookup_lt_foldr h
 
-private theorem images_getElem (t : TransportSchema) (N i : Nat) :
+theorem TransportSchema.images_getElem (t : TransportSchema) (N i : Nat) :
     (t.instantiate N).images[i]? = if i < N then some (match t.overrides.lookup i with
       | some w => w
       | none => .path ⟨i + t.shift, []⟩) else none := by
@@ -117,14 +117,14 @@ private theorem holds_widen {t : TransportSchema} (ht : t.shift = 1) {N N' : Nat
     intro i hi
     unfold Substitution.image
     simp only
-    rw [images_getElem, images_getElem, if_pos hi, if_pos (by omega)]
+    rw [TransportSchema.images_getElem, TransportSchema.images_getElem, if_pos hi, if_pos (by omega)]
     rfl
   constructor
   · intro hθ i w hw
     have hi : i < N := by
       unfold Substitution.image at hw
       simp only at hw
-      rw [images_getElem] at hw
+      rw [TransportSchema.images_getElem] at hw
       by_cases hi : i < N
       · exact hi
       · rw [if_neg hi] at hw; cases hw
@@ -135,17 +135,17 @@ private theorem holds_widen {t : TransportSchema} (ht : t.shift = 1) {N N' : Nat
     · have hiN' : i < N' := by
         unfold Substitution.image at hw
         simp only at hw
-        rw [images_getElem] at hw
+        rw [TransportSchema.images_getElem] at hw
         by_cases hi' : i < N'
         · exact hi'
         · rw [if_neg hi'] at hw; cases hw
       unfold Substitution.image at hw
       simp only at hw
-      rw [images_getElem, if_pos hiN'] at hw
+      rw [TransportSchema.images_getElem, if_pos hiN'] at hw
       have hl : t.overrides.lookup i = none := by
         cases hl : t.overrides.lookup i with
         | none => rfl
-        | some w => exact absurd (lookup_lt hl) (by omega)
+        | some w => exact absurd (TransportSchema.lookup_lt hl) (by omega)
       simp only [hl, ht] at hw
       split at hw
       · cases hw

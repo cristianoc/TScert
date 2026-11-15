@@ -3,6 +3,7 @@ import Verification.Semantics.ExitWorlds
 import Verification.Semantics.FormulaScopes
 import Verification.Semantics.ExitComposition
 import Verification.Semantics.ExitConjunction
+import Verification.Semantics.ExitRenaming
 
 /-! # A signature's contract read per exit
 
@@ -428,6 +429,20 @@ theorem Effect.meet_of_conjunction {a b : Effect} (hs : a.sameResult b = true) {
     (a.meet b).schema.exitPost c r args s s' v :=
   have h' := (Exits.exitPost_meet a.schema_canonical b.schema_canonical).mp h
   Effect.meet_consequence hs h'.1 h'.2
+
+/-- **Today's binding is a total weakening** (`Effect.drop`): a signature's
+exits at the longer call, the saved receiver and actuals in front, give the
+bound signature's exits at the bound call, its actuals values. It forgets
+what it cannot state of the bound call; where the schema names no saved
+position, `Exits.drop` is exact (`Exits.exitPost_drop`). -/
+theorem Effect.drop_weakening {e : Effect} {pre args : List Tm} {c : Completion} {r r₀ : Tm}
+    {s s' : IndexedHeap} {v : Tm} (hvalsv : ∀ a ∈ pre ++ args, isVal a = true) (hvals : ∀ a ∈ args, isVal a = true)
+    (h : e.schema.exitPost c r₀ (pre ++ args) s s' v) : (e.drop pre.length).schema.exitPost c r args s s' v := by
+  have hadm := Exits.exitPost_admissible h
+  rw [Effect.exitPost_summary] at h ⊢
+  cases c
+  · exact Effect.summary_drop_normal pre.length hadm hvalsv hvals h
+  · exact Effect.summary_drop_exceptional pre.length _ _ hadm h
 
 /-! ## A call read at heaps -/
 

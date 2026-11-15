@@ -673,6 +673,11 @@ def TypePromise.drop (n : Nat) : TypePromise → TypePromise
   | .guards p => .guards (p - n)
   | .asserts p => .asserts (p - n)
 
+/-- **Binding `n` actuals as a total weakening**: the bound signature keeps
+the promise, freshness and throw flag, and forgets every postcondition and
+receiver mode it cannot state of the bound call. Its exits at the bound
+call follow from the signature's at the longer call
+(`Effect.drop_weakening`); the exact substitution is `Exits.drop`. -/
 def Effect.drop (n : Nat) (e : Effect) : Effect :=
   ⟨if e.receiverStore || e.receiverOwn then .top else e.footprint, e.promise.map (TypePromise.drop n), e.fresh, false,
     e.onThrow, false, e.freshObject, e.requires, none, e.pre, [], false, e.elementWrite.map fun _ => .stores, []⟩

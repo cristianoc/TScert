@@ -304,6 +304,11 @@ run_cmd do
   check ``Verification.CallEffects.meetAt_exitPost
   check ``Verification.CallEffects.instantiate_completion
   check ``Verification.CallEffects.Exits.exitPost_meet
+  check ``Verification.CallEffects.holds_renameFormula
+  check ``Verification.CallEffects.holdsAt_trDrop
+  check ``Verification.CallEffects.ExitSchema.holds_drop
+  check ``Verification.CallEffects.Exits.exitPost_drop
+  check ``Verification.CallEffects.Effect.drop_weakening
   check ``Verification.CallEffects.Effect.schema_independent
   check ``Verification.CallEffects.Exits.independent
   check ``Verification.CallEffects.SafePostExcV.cross_independent
