@@ -642,7 +642,7 @@ actuals, a construction's omitted positions `undefined`
 from exits held from the call's entry: `Effect.heldPosts_call`). Each
 consequence a decision of the pass reads of a call is derived from the
 exit's frame or one of its postconditions: the frame
-(`Effect.callPost_within`, on a throw `Effect.callExc_within`,
+(`Effect.callPost_within`, on a throw `Effect.callExc_exitFrame`,
 `Effect.callExc_frame`), a fresh result store or object
 (`Effect.callPost_fresh`, `Effect.callPost_freshObject`), the receiver's
 elements (`Effect.callPost_elements`), the index facts it ensures

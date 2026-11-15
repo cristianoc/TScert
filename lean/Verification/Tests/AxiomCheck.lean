@@ -587,7 +587,7 @@ run_cmd do
   check ``Verification.GraphCode.selectedThrowsWithinAt_eq_grades
   check ``Verification.GraphCode.safePostExc_grow
   check ``Verification.CallEffects.Effect.callExc_frame
-  check ``Verification.CallEffects.Effect.callExc_within
+  check ``Verification.CallEffects.Effect.callExc_exitFrame
   check ``Verification.CallEffects.Effect.callPost_within
   check ``Verification.CallEffects.Effect.callPost_fresh
   check ``Verification.CallEffects.Effect.callPost_freshObject

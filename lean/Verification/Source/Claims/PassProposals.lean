@@ -147,7 +147,7 @@ def regional (G : NormalGraph ι) (images : InstanceImageCheck G) (sums : List (
     let ev := GraphCode.ArgumentRegionGraph.nodeRebase [] rs.facts rs.values rs.fields se
     let n := ofFrame (Footprints.rebaseAll ev se.normal)
     if thr then joinOpt n (ofFrame (Footprints.rebaseAll ev se.raised)) else n
-  let call := (GraphCode.ArgumentRegionGraph.callStep G images sums cEv t thr).bind rebased
+  let call := (GraphCode.ArgumentRegionGraph.callStep G images sums cEv t).bind rebased
   let write := (ExpressionEffects.writeStep G (ControlFlow.entry cEv) t).bind fun i =>
     rebased (GraphCode.ArgumentRegionGraph.writeStepEffect i)
   ascending.find? fun Φ => [closed, call, write].any fun a => a.any (·.le Φ)

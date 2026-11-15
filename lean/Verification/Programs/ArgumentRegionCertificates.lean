@@ -75,28 +75,28 @@ theorem grown_post {e : CallEffects.Effect} {r : Tm} {args : List Tm} {h h' : He
     simp only [Region.mem, hv, Bool.and_eq_true]
     exact ⟨by simpa [CallEffects.callEnv, Footprints.storeOf] using hs, rfl⟩
 
-/-- A call at its selected signature: its frame at the call's positions, on
-normal return the narrower `grownFrame` where its normal exit states the
-receiver's growth (`PromiseCalls.statesExtension`); on a throw its frame, which it must state then. -/
+/-- A call at its selected signature: its exits' frames at the call's
+positions, on normal return the narrower `grownFrame` where its normal exit
+states the receiver's growth (`PromiseCalls.statesExtension`), on a throw
+its exceptional exit's frame. -/
 @[nospecialize] def callStep [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (sums : List (ProgramCertificates.ReadSummary ι))
-    (c : NodeEvidence ι) (t : Tm) (thr : Bool) : Option StepEffect :=
+    (c : NodeEvidence ι) (t : Tm) : Option StepEffect :=
   if decide ((ProgramCertificates.claim c.expression).term = t) &&
       (ProgramCertificates.checkTreeUsing G images c.expression (sums := sums) ||
         PromiseCalls.requiresTree G images (entryFacts G c) (fun _ => false) sums c.expression) &&
       ExpressionEffects.selectedOperands c.expression then
     match t, ExpressionEffects.selectedEffect c.expression with
     | .invoke _ r args, some eff =>
-      if !thr || eff.onThrow then
-        some ⟨callSlots r args, if PromiseCalls.statesExtension eff then grownFrame else eff.frame, eff.frame⟩
-      else none
+      some ⟨callSlots r args, if PromiseCalls.statesExtension eff then grownFrame else eff.schema.normal.frame,
+        eff.schema.exceptional.frame⟩
     | _, _ => none
   else none
 
 theorem callStep_ok [DecidableEq ι] {G : NormalGraph ι}
     {images : InstanceImageCheck G} {sums : List (ProgramCertificates.ReadSummary ι)}
     {c : NodeEvidence ι} {t : Tm} {thr : Bool} {se : StepEffect}
-    (hc : callStep G images sums c t thr = some se)
+    (hc : callStep G images sums c t = some se)
     (hsums : ProgramCertificates.SummariesSound G images sums) :
     StepOk G c t se thr := by
   intro ε n W h ρ he _ hk hw hh hr
@@ -108,9 +108,7 @@ theorem callStep_ok [DecidableEq ι] {G : NormalGraph ι}
     subst hterm0
     split at hc
     · rename_i fn receiver args eff hterm heff
-      split at hc
-      · rename_i hthrow
-        cases hc
+      · cases hc
         have hs : HeapObservations.SafePostExc (excOf G)
             (meaning G (ProgramCertificates.claim c.expression).type)
             (eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term))
@@ -156,13 +154,7 @@ theorem callStep_ok [DecidableEq ι] {G : NormalGraph ι}
             · simp only [↓reduceIte]
               exact grown_post (CallEffects.Effect.callPost_within hp) (PromiseCalls.statesExtension_grows hg hp)
           · intro h' hp hthr
-            have hon : eff.onThrow = true := by
-              simp only [Bool.or_eq_true, Bool.not_eq_true'] at hthrow
-              rcases hthrow with ht | ht
-              · rw [hthr] at ht; cases ht
-              · exact ht
-            exact CallEffects.Effect.callExc_within hon (hp hthr)
-      · cases hc
+            exact CallEffects.Effect.callExc_exitFrame (hp hthr)
     · cases hc
   · cases hc
 
@@ -185,7 +177,7 @@ write's. -/
     (images : InstanceImageCheck G) (sums : List (ProgramCertificates.ReadSummary ι))
     (Φ : Footprints.Closed) (c : NodeEvidence ι) (t : Tm) (thr : Bool) : List StepEffect :=
   (if checkClosedNode G images sums Φ c t thr then [closedStep Φ] else []) ++
-    (callStep G images sums c t thr).toList ++
+    (callStep G images sums c t).toList ++
     ((ExpressionEffects.writeStep G (entry c) t).map writeStepEffect).toList
 
 theorem stepEffects_ok [DecidableEq ι] {G : NormalGraph ι}

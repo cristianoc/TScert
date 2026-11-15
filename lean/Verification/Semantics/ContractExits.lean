@@ -546,20 +546,17 @@ theorem Effect.callPost_exactWrite {k : ElementKind}
   simp only [ExactWrite, WriteAt, ExactPre, hg] at hx hq ⊢
   exact ⟨hx, hq⟩
 
-/-- **The frame of a throw**, where the signature states `onThrow`; a throw
-of the evaluation leaves the heap. -/
-theorem Effect.callExc_within (ho : e.onThrow = true) (hp : e.callExc r args before after) :
-    e.within r args before after := by
+/-- **The frame of a throw**: the exceptional exit's frame at the call's
+positions; a throw of the evaluation leaves the heap. -/
+theorem Effect.callExc_exitFrame (hp : e.callExc r args before after) :
+    Post e.schema.exceptional.frame (callEnv r args) before after := by
   rcases hp with ⟨pad, v, hpad, s, s', rfl, rfl, hx⟩ | rfl
   · have hf := Exits.exitPost_frame hx
-    simp only [Effect.schema, Exits.get, ho, if_true] at hf
-    unfold Effect.within
     rwa [callEnv_pad r args hpad] at hf
   · exact Footprints.Post.refl _ _ _
 
-/-- **The exceptional exit's frame holds of a throw's heaps** (the note's
-Call at the exceptional exit): the signature's frame where it states
-`onThrow`, `⊤` otherwise; a throw of the evaluation leaves the heap. -/
+/-- **A throw meets the exceptional exit's frame of the summary**, at
+every arity (`Effect.callExc_exitFrame`). -/
 theorem Effect.callExc_frame (n : Nat) (hp : e.callExc r args before after) :
     Post (e.summary n).exceptional.frame (callEnv r args) before after := by
   have hfr : (e.schema.get .exceptional).frame = (e.summary n).exceptional.frame := by
