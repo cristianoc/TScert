@@ -141,16 +141,97 @@ instance : FromJson HeapKnowledge.GuardTag := ⟨fun
   | _ => throw "a guard's tag is a nullish or Boolean literal"⟩
 deriving instance ToJson, FromJson for HeapKnowledge.IndexFact
 
-/-- An effect is its footprint, its promise, `null` when there is none,
-whether its result's array store is fresh, whether its footprint excepts its
-receiver's store, whether the footprint also holds on a throw, whether it
-excepts its receiver's own locations, and whether its result is an object
-every own location of which is fresh, its precondition on the receiver's
-elements and its elements promise, its precondition on the call's values
-(`pre`) and the facts a normal return states (`ensures`), and, where it
-states any, its frame's store regions, each a position and a path
-(`regions`). Its footprint is the frame's closed bound. -/
-instance : ToJson Effect := ⟨fun e => Json.mkObj [("footprint", toJson e.closed),
+/-! ## The wire form of an effect
+
+The document's fields of an effect are their own datatype (`WireEffect`).
+A value of it read from a document is elaborated into the effect it states
+(`WireEffect.elaborate`); an effect is written only where it is exactly
+the elaboration of a valid wire value (`Representable`, `encodeOld`), so
+writing never weakens an effect. -/
+
+/-- **An effect as the documents write it**: its footprint, its promise,
+`null` when there is none, whether its result's array store is fresh,
+whether its footprint excepts its receiver's store, whether the footprint
+also holds on a throw, whether it excepts its receiver's own locations, and
+whether its result is an object every own location of which is fresh, its
+precondition on the receiver's elements and its elements promise, its
+precondition on the call's values (`pre`) and the facts a normal return
+states (`ensures`), whether it grows its receiver's store, its element
+write, and, where it states any, its frame's store regions, each a position
+and a path (`regions`). Its footprint is the frame's closed bound. -/
+structure WireEffect where
+  closed : Footprints.Closed
+  promise : Option TypePromise
+  fresh : Bool
+  receiverStore : Bool
+  onThrow : Bool
+  receiverOwn : Bool
+  freshObject : Bool
+  requires : Option ElemPred
+  elements : Option ElemPred
+  pre : List HeapKnowledge.IndexFact
+  ensures : List HeapKnowledge.IndexFact
+  receiverGrows : Bool
+  elementWrite : Option ElementWrite
+  regions : List Footprints.ArgumentStoreRegion
+  deriving Repr, DecidableEq
+
+/-- **A valid wire value**: its footprint is one the wire writes (a value
+change `keep`, `init`, `scalar` or `any`, one store change `keep`, `grow`
+or `any` for both stores, `Footprints.Closed.ofStores`), and an exact
+element write states its value's range in its precondition
+(`ElementKind.preFacts`, which `ElementKind.takes_of_requires` reads). -/
+def WireEffect.valid (w : WireEffect) : Bool :=
+  Footprints.Closed.ofStores w.closed.value w.closed.stores == w.closed &&
+    [Footprints.Change.keep, .init, .scalar, .any].contains w.closed.value &&
+    [Footprints.Change.keep, .grow, .any].contains w.closed.stores &&
+    match w.elementWrite with
+    | some (.exact k) => k.preFacts.all w.pre.contains
+    | _ => true
+
+def WireEffect.Valid (w : WireEffect) : Prop := w.valid = true
+
+/-- **The effect a wire value states.** -/
+def WireEffect.elaborate (w : WireEffect) : Effect :=
+  ⟨w.closed, w.promise, w.fresh, w.receiverStore, w.onThrow, w.receiverOwn, w.freshObject, w.requires,
+    w.elements, w.pre, w.ensures, w.receiverGrows, w.elementWrite, w.regions⟩
+
+/-- **An effect the wire represents exactly**: the elaboration of a valid
+wire value. -/
+def Representable (e : Effect) : Prop := ∃ w : WireEffect, w.Valid ∧ w.elaborate = e
+
+/-- The wire value whose elaboration an effect is, where it is one. -/
+def wireOf (e : Effect) : WireEffect :=
+  ⟨e.closed, e.promise, e.fresh, e.receiverStore, e.onThrow, e.receiverOwn, e.freshObject, e.requires,
+    e.elements, e.pre, e.ensures, e.receiverGrows, e.elementWrite, e.regions⟩
+
+theorem wireOf_elaborate (w : WireEffect) : wireOf w.elaborate = w := rfl
+
+/-- **The encoder**: the wire value an effect is the elaboration of, where
+it is valid; refused otherwise. -/
+def encodeOld (e : Effect) : Except String WireEffect :=
+  if (wireOf e).valid && decide ((wireOf e).elaborate = e) then .ok (wireOf e)
+  else .error "an effect the documents' format does not represent exactly"
+
+/-- **What the encoder writes states the effect** (proved). -/
+theorem encodeOld_sound {e : Effect} {w : WireEffect} (h : encodeOld e = .ok w) : w.Valid ∧ w.elaborate = e := by
+  unfold encodeOld at h
+  split at h
+  · rename_i hc
+    cases h
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+    exact hc
+  · cases h
+
+/-- **The encoder writes every representable effect** (proved). -/
+theorem encodeOld_complete {e : Effect} (h : Representable e) : encodeOld e = .ok (wireOf e) := by
+  obtain ⟨w, hv, rfl⟩ := h
+  unfold encodeOld
+  rw [wireOf_elaborate]
+  simp only [WireEffect.Valid] at hv
+  simp [hv]
+
+instance : ToJson WireEffect := ⟨fun e => Json.mkObj [("footprint", toJson e.closed),
   ("promise", match e.promise with | some p => toJson p | none => Json.null),
   ("fresh", toJson e.fresh), ("receiverStore", toJson e.receiverStore), ("onThrow", toJson e.onThrow),
   ("receiverOwn", toJson e.receiverOwn), ("freshObject", toJson e.freshObject),
@@ -161,12 +242,13 @@ instance : ToJson Effect := ⟨fun e => Json.mkObj [("footprint", toJson e.close
     Json.mkObj [("regions", Json.arr (e.regions.map fun r =>
       Json.mkObj [("position", toJson r.position), ("path", toJson r.path)]).toArray)])⟩
 
-instance : FromJson Effect := ⟨fun j => do
+/-- A document's effect as the wire value its fields state. -/
+private def parseWire (j : Json) : Except String WireEffect := do
   let footprint ← j.getObjValAs? Footprints.Closed "footprint"
   let promise ← match ← j.getObjVal? "promise" with
     | .null => pure none
     | p => some <$> fromJson? p
-  let e : Effect := ⟨footprint, promise, ← j.getObjValAs? Bool "fresh", ← j.getObjValAs? Bool "receiverStore",
+  return ⟨footprint, promise, ← j.getObjValAs? Bool "fresh", ← j.getObjValAs? Bool "receiverStore",
     ← j.getObjValAs? Bool "onThrow", ← j.getObjValAs? Bool "receiverOwn", ← j.getObjValAs? Bool "freshObject",
     ← predOf (← j.getObjVal? "requires"), ← predOf (← j.getObjVal? "elements"),
     ← fromJson? (← j.getObjVal? "pre"), ← fromJson? (← j.getObjVal? "ensures"),
@@ -179,14 +261,72 @@ instance : FromJson Effect := ⟨fun j => do
             pure (⟨← r.getObjValAs? Nat "position", ← r.getObjValAs? (List String) "path"⟩ :
               Footprints.ArgumentStoreRegion)
       | .error _ => pure []⟩
+
+/-- A parsed wire value, kept where it re-encodes to the document read and
+is valid. -/
+private def checkWire (j : Json) (e : WireEffect) : Except String WireEffect :=
   if toJson e != j then
-    throw ("an effect has exactly the fields footprint, promise, fresh, receiverStore, onThrow, receiverOwn, " ++
+    .error ("an effect has exactly the fields footprint, promise, fresh, receiverStore, onThrow, receiverOwn, " ++
       "freshObject, requires, elements, a predicate its kinds in order, pre, ensures, receiverGrows and elementWrite, " ++
       "and regions where its frame states store regions")
-  if let some (.exact k) := e.elementWrite then
-    unless k.preFacts.all e.pre.contains do
-      throw s!"an exact element write '{elementWriteName (.exact k)}' states its value's range in its precondition"
-  pure e⟩
+  else if !e.valid then
+    match e.elementWrite with
+    | some (.exact k) =>
+      .error s!"an exact element write '{elementWriteName (.exact k)}' states its value's range in its precondition"
+    | _ => .error "an effect's footprint is one the documents write"
+  else .ok e
+
+/-- **The decoder**: a document's effect as a wire value, refused unless it
+re-encodes to exactly the document read and is valid. -/
+def decodeOld (j : Json) : Except String WireEffect := parseWire j >>= checkWire j
+
+/-- **What the decoder reads is valid and re-encodes to the document read**
+(proved; Json's equality). -/
+theorem decodeOld_sound {j : Json} {w : WireEffect} (h : decodeOld j = .ok w) :
+    w.Valid ∧ (toJson w == j) = true := by
+  unfold decodeOld at h
+  cases hp : parseWire j with
+  | error _ => rw [hp] at h; cases h
+  | ok e =>
+    rw [hp] at h
+    change checkWire j e = .ok w at h
+    unfold checkWire at h
+    split at h
+    · cases h
+    · split at h
+      · split at h <;> cases h
+      · cases h
+        rename_i hj hv
+        refine ⟨by simpa [WireEffect.Valid] using hv, ?_⟩
+        simpa [bne] using hj
+
+/-- An effect is read through its wire value (`decodeOld`), and is the
+effect that value states (`WireEffect.elaborate`): natives and library
+declarations arrive through it. -/
+instance : FromJson Effect := ⟨fun j => WireEffect.elaborate <$> decodeOld j⟩
+
+/-- **An effect is written through the encoder** (`encodeOld`): refused where
+the documents' format does not represent it exactly. -/
+def effectJson (e : Effect) : Except String Json := toJson <$> encodeOld e
+
+/-- **An effect inside a derived document** (a types table, evidence, a
+diagnostic, a claim): the encoder's wire value (`encodeOld`), or, where the
+encoder refuses, an object naming the refusal, `{"unrepresentable":
+reason}`, which no decoder reads (`decodeOld` requires every field of the
+wire). It writes no effect other than the one it is given. A writer that
+can refuse uses `effectJson`. -/
+instance : ToJson Effect := ⟨fun e => match encodeOld e with
+  | .ok w => toJson w
+  | .error msg => Json.mkObj [("unrepresentable", toJson msg)]⟩
+
+/-- **Reading and writing are inverse on what is read** (proved): an effect
+read from a document is written back as that document (Json's equality). -/
+theorem effectJson_decode {j : Json} {w : WireEffect} (h : decodeOld j = .ok w) :
+    ∃ j', effectJson w.elaborate = .ok j' ∧ (j' == j) = true := by
+  obtain ⟨hv, hj⟩ := decodeOld_sound h
+  refine ⟨toJson w, ?_, hj⟩
+  rw [effectJson, encodeOld_complete ⟨w, hv, rfl⟩, wireOf_elaborate]
+  rfl
 
 /-- **An effect as a declaration's result annotation states it**
 (`Modifies<P, T>`, the Fragment's and the request's `stated`): a closed
@@ -213,8 +353,10 @@ def StatedEffect.footprint (s : StatedEffect) : Footprints.Closed :=
 /-- An exact element write is decoded with its value's range in its
 precondition, and refused without it. -/
 private def decodes (e : Effect) : Bool :=
-  match (fromJson? (toJson e) : Except String Effect) with
-  | .ok d => d == e
+  match effectJson e with
+  | .ok j => match (fromJson? j : Except String Effect) with
+    | .ok d => d == e
+    | .error _ => false
   | .error _ => false
 
 #guard decodes { Effect.ordinary with elementWrite := some (.exact .uint8), pre := ElementKind.preFacts .uint8 }

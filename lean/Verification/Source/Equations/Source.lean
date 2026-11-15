@@ -249,7 +249,7 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
             throw s!"{path}: an overload's type needs every parameter's annotation and its result's, and no rest"
           return Json.mkObj [("k", .str "function"), ("receiver", .null),
             ("params", .arr (params.map (·.getObjValD "type"))), ("rest", .null),
-            ("result", g.getObjValD "retType"), ("effect", toJson CallEffects.Effect.ordinary),
+            ("result", g.getObjValD "retType"), ("effect", ← EffectJson.effectJson CallEffects.Effect.ordinary),
             ("span", g.getObjValD "namePos")]
         return .other (← lowerType ctx (Json.mkObj [("k", .str "intersection"), ("parts", .arr parts.toArray),
           ("span", toJson pos)]))]
@@ -266,7 +266,7 @@ def lowerSource (ast claims : Json) : M (List (String × Union) × List (String 
           throw s!"{path}: a generic module function's type needs every parameter's and its result's annotation"
         return .other (← lowerType ctx (Json.mkObj [("k", .str "function"), ("receiver", .null),
           ("params", .arr (params.pop.map (·.getObjValD "type"))), ("rest", params.back!.getObjValD "type"),
-          ("result", f.getObjValD "retType"), ("effect", toJson CallEffects.Effect.ordinary),
+          ("result", f.getObjValD "retType"), ("effect", ← EffectJson.effectJson CallEffects.Effect.ordinary),
           ("span", toJson (← (fromJson? (← field f "namePos") : Except String (Nat × Nat))))]))
       let mut params := []
       let mut rest := none

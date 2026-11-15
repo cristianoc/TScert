@@ -446,24 +446,39 @@ lists each changed verdict with its cause.
 ### The encoder bridge
 
 Between commits 9 and 11 an effect is written in the old wire only where it
-is exactly representable there:
+is exactly representable there. The old wire is its own datatype,
+`WireEffect` (`Source/EffectJson.lean`), with its validity, its elaboration
+into the effect it states, a decoder and a partial encoder:
 
 ```lean
 def Representable (e : Effect) : Prop :=
-  ∃ w : OldWireEffect, w.Valid ∧ elaborate w = e
+  ∃ w : WireEffect, w.Valid ∧ w.elaborate = e
 
 theorem encodeOld_sound (h : encodeOld e = .ok w) :
-  w.Valid ∧ elaborate w = e
+  w.Valid ∧ w.elaborate = e
 
 theorem encodeOld_complete (h : Representable e) :
-  ∃ w, encodeOld e = .ok w
+  encodeOld e = .ok (wireOf e)
+
+theorem decodeOld_sound (h : decodeOld j = .ok w) :
+  w.Valid ∧ (toJson w == j) = true
+
+theorem effectJson_decode (h : decodeOld j = .ok w) :
+  ∃ j', effectJson w.elaborate = .ok j' ∧ (j' == j) = true
 ```
 
-`Valid` includes the old decoder's requirement on exact writes and
-preconditions and the canonical constraints of the wire. With
-`decodeOld (json w) = .ok (elaborate w)` for a valid `w`, encoding and
-decoding are inverse. Every output site establishes representability; no
-total encoder weakens an effect it cannot represent.
+`Valid` is the old decoder's requirement on exact writes and preconditions
+and the canonical footprint of the wire. Every effect is read through
+`decodeOld`, natives and library declarations included; an effect read is
+written back as the document read (`effectJson_decode`, by Json's
+equality). The writers that can refuse (a module function's signatures, an
+import's signatures, a returned function's footprint, the overloads of a
+module declaration) write through `effectJson`, which fails where the
+encoder refuses. The derived serializers of types tables, evidence,
+diagnostics and claims write the encoder's value, or, where it refuses, an
+object naming the refusal, which no decoder reads. The other direction of
+the round trip, that decoding the encoding of a valid value gives that
+value, is checked by examples (`#guard`) and not proved.
 
 ### Exit composition for rest bodies
 

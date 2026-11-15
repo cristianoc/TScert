@@ -79,11 +79,11 @@ def ordinaryImport (T : EquationStore.State) (U : List Tree) : Except String Jso
       throw "an import with a body whose variadic signature states an effect is read only at its module's entry"
     let ordinary (e : CallEffects.Effect) : CallEffects.Effect :=
       { CallEffects.Effect.ofFootprint .top with pre := e.pre, requires := e.requires }
-    let signature (a : CallEffects.Arrow (List Tree)) : Json :=
-      Json.mkObj [("a", toJson "function"), ("this", claim a.receiver),
+    let signature (a : CallEffects.Arrow (List Tree)) : Except String Json := do
+      return Json.mkObj [("a", toJson "function"), ("this", claim a.receiver),
         ("params", toJson (a.arguments.map claim)), ("result", claim a.result), ("construct", toJson "unknown"),
-        ("array", toJson "unknown"), ("effect", toJson (ordinary a.effect))]
-    let atoms := L.map signature
+        ("array", toJson "unknown"), ("effect", ← EffectJson.effectJson (ordinary a.effect))]
+    let atoms ← L.mapM signature
     let atom := match atoms with
       | [a] => a
       | a :: rest => a.setObjVal! "and" (toJson rest)

@@ -791,7 +791,7 @@ def resultWithFootprint (T : EquationStore.State) (ret : Json) (footprint : Foot
       if a.effect.footprint != .top || a.effect.onThrow || a.effect.promise.isSome then throw refusal
       return Json.mkObj [("a", toJson "function"), ("this", claim a.receiver),
         ("params", toJson (a.arguments.map claim)), ("result", claim a.result), ("construct", toJson "unknown"),
-        ("array", toJson "unknown"), ("effect", toJson { a.effect with closed := footprint })]
+        ("array", toJson "unknown"), ("effect", ← EffectJson.effectJson (a.effect.withClasses footprint).throwUnbounded)]
     let plain ← signature s
     let others ← ss.mapM signature
     let atom := if others.isEmpty then plain else plain.setObjVal! "and" (toJson others)
@@ -825,10 +825,10 @@ def moduleArrow (g : Fragment.Fn) (footprint : Footprints.Closed := .top) (onThr
       [("result", result), ("construct", toJson "unknown"), ("array", toJson "unknown")] ++ effect
   -- A guard's promise is a signature of its own, beside the plain one, its
   -- result the promise's type.
-  let promised : List (Json × List (String × Json)) := match g.guard with
-    | some guard => [(guard.type, [("effect", toJson (CallEffects.Effect.ofStated footprint
+  let promised : List (Json × List (String × Json)) ← match g.guard with
+    | some guard => pure [(guard.type, [("effect", ← EffectJson.effectJson (CallEffects.Effect.ofStated footprint
         (some (if guard.asserts then .asserts guard.param else .guards guard.param)) onThrow false g.requires [] regions))])]
-    | none => []
+    | none => pure []
   -- The plain signature states the footprint the declaration's claim
   -- proposes, which the declaration's own unit certifies; its extension
   -- discarding further actuals runs the same code, so it states the same.
@@ -836,9 +836,9 @@ def moduleArrow (g : Fragment.Fn) (footprint : Footprints.Closed := .top) (onThr
   -- assuming it, so a call establishes it whichever signature it takes.
   -- Its postcondition too (`Fn.ensures`), which its unit certifies at each
   -- return (`SourceRequests.ensuresResult`).
-  let plain : List (String × Json) :=
-    if footprint = .top ∧ onThrow = false ∧ fresh = false ∧ g.requires.isEmpty ∧ g.ensures.isEmpty ∧ regions = [] then [] else
-      [("effect", toJson (CallEffects.Effect.ofStated footprint none onThrow fresh g.requires g.ensures regions))]
+  let plain : List (String × Json) ←
+    if footprint = .top ∧ onThrow = false ∧ fresh = false ∧ g.requires.isEmpty ∧ g.ensures.isEmpty ∧ regions = [] then pure [] else
+      pure [("effect", ← EffectJson.effectJson (CallEffects.Effect.ofStated footprint none onThrow fresh g.requires g.ensures regions))]
   let extra := promised.map (fun (result, effect) => Json.mkObj (signature rest result effect)) ++
     if params.any (·.rest) then []
     else ((g.ret, plain) :: promised).map fun (result, effect) => Json.mkObj (signature [("rest", top)] result effect)
