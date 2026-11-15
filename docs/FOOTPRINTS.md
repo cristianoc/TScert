@@ -255,10 +255,10 @@ its argument store regions) is read at the call's positions. At the caller
 it is read at the caller's slots: a position the call passes a slot at is
 that slot, and the regions at any other position widen to every location
 (`Region.renameM`, `PromiseCalls.callerFrame`; proved:
-`Post.renameM`, `callerFrame_post`). Across a call whose frame states store
-regions, the facts kept are those the survival check keeps under
-$`\Sigma`$'s query (`PromiseCalls.effectKept`); so are the facts kept
-across a call whose frame is its closed bound alone. A closed bound's class
+`Post.renameM`, `callerFrame_post`). Across a call, the facts its frame
+keeps are those the survival check keeps under $`\Sigma`$'s query, its
+receiver's entries and store regions included (`PromiseCalls.frameKeeps`),
+beside those its exact postcondition keeps (`PromiseCalls.effectKept`). A closed bound's class
 entries are read as they act on their class: on a store `init` and `scalar`
 are `keep`, on a value `grow` is `scalar` (`Footprint.byClass`, proved:
 `Post.byClass`).

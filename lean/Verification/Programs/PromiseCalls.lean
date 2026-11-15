@@ -2298,34 +2298,40 @@ theorem callerFrame_post {eff : Effect} {t : Tm} {ρ : Env} {h h' : Heap}
     Footprints.Post (callerFrame eff t) ρ h h' :=
   (Footprints.Post.renameM (fun _ _ hij => (actualSlot_sound hij ρ).symm) hw).byClass
 
-/-- The heap-reading atoms of a call's entry its footprint keeps, renamed past
-the result (`Changes.ofClosed`, ARITHMETIC.md, "Linear facts"): with
-`receiverGrows`, those `growChanges` keeps, a field apart from the receiver's
-own locations kept besides (`growFirst`); with store regions, those the
-survival check keeps across the call's frame at the caller's slots
-(`IndexFact.keeps`, `callerFrame`, FOOTPRINTS.md "Support and respect"); none
-where its signature keeps the heap, whose output keeps every atom
-(`call-keep`), or excepts its receiver's store or own locations. -/
-def effectKept (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) : List HeapKnowledge.IndexAtom :=
-  if eff.receiverGrows then
-    HeapKnowledge.shiftIndices (HeapKnowledge.keptIndices growChanges (fun s g => growFirst k t s g || stable s g)
-      (k.indices.filter fun a => !a.fact.envOnly))
-  else if keepsHeap eff || eff.receiverStore || eff.receiverOwn then [] else
-  if !eff.regions.isEmpty then
-    if eff.elementWrite.isSome then [] else
-    let q := Footprints.knowledgeQuery k
-    let Φ := callerFrame eff t
-    HeapKnowledge.shiftIndices (k.indices.filter fun a =>
-      !a.fact.envOnly && a.fact.keeps q { stable } Φ)
-  else
+/-- **A call's fact kept by its frame** (the note's Frame, the tolerant
+route): the fact has a support that every entry of the call's frame at the
+caller's slots (`callerFrame`) respects under the query of the call's entry
+(`IndexFact.keeps`, FOOTPRINTS.md "Support and respect"); where a support or
+the evidence is missing the check fails. -/
+def frameKeeps (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge)
+    (a : HeapKnowledge.IndexAtom) : Bool :=
+  a.fact.keeps (Footprints.knowledgeQuery k) { stable } (callerFrame eff t)
+
+/-- **A call's fact kept by its postcondition** (the note's Entry, from the
+old fact, the transition and the normal exit's exact postconditions,
+`Effect.normalPosts`): where the normal exit states the growth of the
+receiver's store (`receiverGrows`: `ReceiverGrows`), the change it allows
+(`growChanges`) keeps the fact, the fields apart from the receiver's own
+locations kept besides (`growFirst`); where it states a typed array's
+element write (`elementWrite`: `ElementWrite.Holds`), the write's change
+(`ElementWrite.changes`) keeps it. -/
+def postKeeps (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge)
+    (a : HeapKnowledge.IndexAtom) : Bool :=
+  (eff.receiverGrows && (a.fact.keptBy growChanges (fun s g => growFirst k t s g || stable s g) ||
+    a.fact.everyKept growChanges (fun s g => growFirst k t s g || stable s g))) ||
   match eff.elementWrite with
-  | some w => HeapKnowledge.shiftIndices (HeapKnowledge.keptIndicesWith w.changes stable
-      (k.indices.filter fun a => !a.fact.envOnly))
-  | none =>
-    let q := Footprints.knowledgeQuery k
-    let Φ := callerFrame eff t
-    HeapKnowledge.shiftIndices (k.indices.filter fun a =>
-      !a.fact.envOnly && a.fact.keeps q { stable } Φ)
+  | some w => a.fact.keptWith w.changes stable || a.fact.everyKept w.changes stable
+  | none => false
+
+/-- The heap-reading atoms of a call's entry its normal exit keeps, renamed
+past the result (`Changes.ofClosed`, ARITHMETIC.md, "Linear facts"): each
+atom its postcondition keeps (`postKeeps`, the note's Entry) or its frame
+keeps (`frameKeeps`, the note's Frame); none where its frame keeps the heap,
+whose output keeps every atom (`call-keep`). -/
+def effectKept (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) : List HeapKnowledge.IndexAtom :=
+  if keepsHeap eff then [] else
+  HeapKnowledge.shiftIndices (k.indices.filter fun a =>
+    !a.fact.envOnly && (postKeeps stable eff t k a || frameKeeps stable eff t k a))
 
 theorem effectKept_holds {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
     (hk : HeapKnowledge.Holds k ε ρ h) (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
@@ -2336,33 +2342,29 @@ theorem effectKept_holds {stable : Nat → String → Bool} {eff : Effect} {t : 
     HeapKnowledge.IndexHolds ε (effectKept stable eff t k) (push v ρ) h' := by
   unfold effectKept
   split
-  · rename_i hgr
-    have hg := hg hgr
-    exact HeapKnowledge.shiftIndices_holds (HeapKnowledge.keptIndices_holds
-      (fun a ha hcd => hk.2.2.2.2.2 a (List.mem_filter.mp ha).1 hcd)
-      (receiverGrows_changes hg) (HeapKnowledge.firstKept_or (growFirst_kept hk hg) hst))
-  · split
-    · exact HeapKnowledge.indexHolds_nil _ _
-    · rename_i hc
-      simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at hc
-      obtain ⟨⟨-, hs⟩, ho⟩ := hc
-      split
-      · split
-        · exact HeapKnowledge.indexHolds_nil _ _
-        · refine HeapKnowledge.shiftIndices_holds fun a ha hcd => ?_
-          obtain ⟨ha, hkeep⟩ := List.mem_filter.mp ha
-          simp only [Bool.and_eq_true] at hkeep
-          exact Footprints.IndexFact.keeps_sound hkeep.2 (Footprints.knowledgeQuery_sound hk)
-            (callerFrame_post hw) hst (hk.2.2.2.2.2 a ha hcd)
-      split
-      · rename_i w hwr
-        exact HeapKnowledge.shiftIndices_holds (HeapKnowledge.keptIndicesWith_holds
-          (fun a ha hcd => hk.2.2.2.2.2 a (List.mem_filter.mp ha).1 hcd) (hew w hwr).changes hst)
-      · refine HeapKnowledge.shiftIndices_holds fun a ha hcd => ?_
-        obtain ⟨ha, hkeep⟩ := List.mem_filter.mp ha
-        simp only [Bool.and_eq_true] at hkeep
-        exact Footprints.IndexFact.keeps_sound hkeep.2 (Footprints.knowledgeQuery_sound hk)
-          (callerFrame_post hw) hst (hk.2.2.2.2.2 a ha hcd)
+  · exact HeapKnowledge.indexHolds_nil _ _
+  · refine HeapKnowledge.shiftIndices_holds fun a ha hcd => ?_
+    obtain ⟨ha, hkeep⟩ := List.mem_filter.mp ha
+    simp only [Bool.and_eq_true, Bool.or_eq_true] at hkeep
+    have hF := hk.2.2.2.2.2 a ha hcd
+    rcases hkeep.2 with hpost | hframe
+    · unfold postKeeps at hpost
+      rcases Bool.or_eq_true_iff.mp hpost with hgk | hwk
+      · simp only [Bool.and_eq_true, Bool.or_eq_true] at hgk
+        obtain ⟨hgr, hkb⟩ := hgk
+        have hg := hg hgr
+        have hf := HeapKnowledge.firstKept_or (growFirst_kept hk hg) hst
+        rcases hkb with hkb | hkb
+        · exact HeapKnowledge.IndexFact.holdsAt_kept (receiverGrows_changes hg) hf hkb hF
+        · exact HeapKnowledge.IndexFact.everyKept_sound (receiverGrows_changes hg) hf hkb hF
+      · split at hwk
+        · rename_i w hwr
+          rcases Bool.or_eq_true_iff.mp hwk with hkb | hkb
+          · exact HeapKnowledge.IndexFact.holdsAt_keptWith (hew w hwr).changes hst hkb hF
+          · exact HeapKnowledge.IndexFact.everyKept_sound (hew w hwr).changes hst hkb hF
+        · cases hwk
+    · exact Footprints.IndexFact.keeps_sound hframe (Footprints.knowledgeQuery_sound hk)
+        (callerFrame_post hw) hst hF
 
 /-! ### Quantified facts across a growth (ARITHMETIC.md, "Quantified clauses") -/
 
@@ -2543,7 +2545,8 @@ def everyGrown (k : Knowledge) (t : Tm) (a : IndexAtom) : Bool :=
 
 /-- The quantified atoms of a call's entry `k` its growth of its receiver's
 store keeps or extends (`everyGrown`), renamed past the result; none of a call
-growing nothing. -/
+growing nothing. A derived rule of the note's Entry at the normal exit's
+growth and append postconditions (`storeExtends`, `push`). -/
 def appendKept (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) : List HeapKnowledge.IndexAtom :=
   if eff.receiverGrows then HeapKnowledge.shiftIndices (k.indices.filter (everyGrown k t)) else []
 
@@ -2604,7 +2607,8 @@ theorem appended_length {ρ : Env} {h h' : Heap} {i : Nat} {args : List Tm} {n :
 
 open HeapKnowledge in
 /-- **The facts a push carries** (`push-append`, an instance of the
-composition): with `receiverGrows`, the unconditional linear facts of the
+composition, a derived rule of the note's Entry at the append
+postcondition): with `receiverGrows`, the unconditional linear facts of the
 call's entry over the receiver's length, each term the growth keeps read
 after it, the length `count` longer (`IndexWrites.lengthGrowth`); and, where
 the entry states the length defined, the length at least `count`. -/
@@ -2716,7 +2720,8 @@ def writtenPrefix (k : Knowledge) (b i x : Nat) (a : IndexAtom) (next : Term) : 
   | _ => none
 
 /-- The quantified atoms of a call's entry `k` an exact element write keeps
-(`everyWritten`), renamed past the result; none of any other call. -/
+(`everyWritten`), renamed past the result; none of any other call. A
+derived rule of the note's Entry at View-Write's postcondition. -/
 def writeKept (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) : List HeapKnowledge.IndexAtom :=
   match eff.elementWrite, t with
   | some (.exact _), .invoke _ _ [.var b, .var i, .var x] =>

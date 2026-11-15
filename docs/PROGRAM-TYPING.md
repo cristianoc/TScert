@@ -1871,14 +1871,16 @@ through `GraphCode.writeWithinAt`. The element write's is
 `IndexWrites.keepsLengths` and `lengthOutput` (proved:
 `ExpressionEffects.elem_var_write_length`, `placeAt_length`), and at any
 index `IndexWrites.growOutput` in `Checker.boundedWrites` (proved:
-`ExpressionEffects.writeStep_grow`, `growOutput_sound`). A call's facts across its frame are those the survival check keeps
-([support and respect](FOOTPRINTS.md#support-and-respect),
-[a call's effect at the caller](FOOTPRINTS.md#a-calls-effect-at-the-caller))
-in `PromiseCalls.effectKept`, added by `Checker.ensuringCalls`; an element
-write's is `CallEffects.ElementWrite.changes` in
-`PromiseCalls.effectKept` (proved in `effectKept_holds`); growth is `PromiseCalls.growChanges` and
-`growFirst` (proved: `receiverGrows_changes`, `growFirst_kept`, in
-`effectKept_holds`), and a definition's code is checked at its signature's
+`ExpressionEffects.writeStep_grow`, `growOutput_sound`). A call's facts across its normal exit are, fact by
+fact, those of either of the note's two routes (`PromiseCalls.effectKept`,
+added by `Checker.ensuringCalls`; proved: `effectKept_holds`): its frame
+respects a support of the fact (the note's Frame, `PromiseCalls.frameKeeps`:
+[support and respect](FOOTPRINTS.md#support-and-respect),
+[a call's effect at the caller](FOOTPRINTS.md#a-calls-effect-at-the-caller)),
+or the change its exact postcondition states keeps it (the note's Entry,
+`PromiseCalls.postKeeps`): an element write's is
+`CallEffects.ElementWrite.changes`, growth is `PromiseCalls.growChanges` and
+`growFirst` (proved: `receiverGrows_changes`, `growFirst_kept`); and a definition's code is checked at its signature's
 conditions (`PassUnitCodes.codeConditions`); the own-location call is `PromiseCalls.ownKept`.
 A computed receiver's primitive method has the footprint its prototype
 states, composed with the receiver's and arguments' effects: a string's
