@@ -442,14 +442,10 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
       (s.effect.schema.exitPostW .normal r args U heap) (s.effect.schema.exitPostW .exceptional r args U heap) j U heap
       (.letE (.arrLit (args.drop arity))
         (.goto E K start (.var 0 :: r :: CallArguments.parameters arity args ++ vs) .nul)) := by
-  -- The code states no store region, no ensured fact, no append and no
-  -- element write (`Effect.below`): its exits from the heap after the rest's
-  -- allocation are its exits from the call's entry (`Effect.exitPost_prefix`).
-  have hb : s.fixed.effect.below arity = true := hs.2.1
-  have hreg := Effect.below_regions hb
-  have hens := Effect.below_ensures hb
-  have hgr := Effect.below_grows hb
-  have hwr := Effect.below_write hb
+  -- The code's exits carry across the rest's allocation
+  -- (`Exits.AllocStable`): its exits from the heap after the allocation are
+  -- its exits from the call's entry.
+  have hstable : s.fixed.effect.schema.AllocStable := hs.2.2.1 rfl
   have harr_r : RefsOk U (.arrLit (args.drop arity)) := fun x hx => href x (by
     simp only [refs, List.mem_append]; exact .inl hx)
   obtain ⟨hshort, hpack⟩ := ha
@@ -516,7 +512,7 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
           envOf (a :: r :: CallArguments.parameters arity args ++ vs) .nul := by
         funext i; cases i <;> rfl
       rw [← he]; exact henv
-    have hpromised := framePromised_params (e := s.fixed.effect) hs.2.1 [a, r] args vs
+    have hpromised := framePromised_params (e := s.fixed.effect) (Effect.belowRow_entry hs.2.1) [a, r] args vs
     simp only [List.length_cons, List.length_nil, List.cons_append, List.nil_append] at hpromised
     rw [← show framePromised s.effect (frameOffset (some A)) (a :: r :: CallArguments.parameters arity args ++ vs) =
       s.effect.promised args from hpromised]
@@ -527,7 +523,7 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
         rcases Kinds.subst_refs a _ 0 x hx with hx | hx
         · exact hgoV x (by rw [refs_letE]; exact List.mem_append_right _ hx)
         · exact hvr x hx)
-    have hcode := hs.2.2 p _ heap' _ (henv'.transfer p (Nat.le_succ p) _ (WExt_refl _))
+    have hcode := hs.2.2.2 p _ heap' _ (henv'.transfer p (Nat.le_succ p) _ (WExt_refl _))
       (WorldAdm_trunc _ hv) (HeapOk_trunc p V heap' hh') hgo (by
         intro v hm
         rcases List.mem_cons.mp hm with rfl | hm
@@ -543,7 +539,7 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     refine CallEffects.SafePostExcV.weaken_reached (WorldAdm_trunc _ hv) (HeapOk_trunc p V heap' hh') ?_ ?_ hcode <;>
       rintro s₁ s₂ val rfl hW rfl - hp hj0 hu0 hh0 _ _ _ <;>
       rw [← eq_of_heq hW] at hp <;>
-      exact Effect.exitPost_prefix hreg hens hgr hwr (s₀ := ⟨j, U, heap, hj0, hu0, hh0⟩)
+      exact hstable _ _ _ ⟨j, U, heap, hj0, hu0, hh0⟩ _ _ _
         (TolerantFrames.WorldReach.trans ⟨hi, hy⟩ ⟨Nat.le_succ _, by rw [eq_of_heq hW]; exact WExt_refl _⟩) hprefix
         ((CallEffects.Exits.exitPostW_iff _ _ _ _ s₁ s₂ val).mp hp)
 
@@ -706,7 +702,7 @@ theorem offers_self {G : NormalGraph ι} {arity E K start Cs vs} {kind : Invoke}
     obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
     have hspec := ho _ (List.mem_append_right _ (List.mem_map.mpr ⟨s, hsm, rfl⟩))
     have hle : arity ≤ s.arguments.1.length := hspec.1
-    have hbelow : s.fixed.effect.below arity = true := hspec.2.1
+    have hbelow : s.fixed.effect.entryBelow arity = true := Effect.belowRow_entry hspec.2.1
     have henv := hvs.transfer j (Nat.le_of_lt hj) U hx
     have hF := ih j hj U henv
     have hsafe := graph_invoke_at hspec (henv.withSelfAt hlen hself hF) (Values.withSelf hvalues rfl) hu hh
@@ -724,7 +720,7 @@ theorem offers_self {G : NormalGraph ι} {arity E K start Cs vs} {kind : Invoke}
         Nat.min_eq_left hle, CallArguments.parameters_take]
     rw [hp, CallEffects.Effect.promised_take (e := s.fixed.effect) hbelow hle] at hsafe
     exact ⟨_, .graph hrv hvals (hbS s hsm j U r hrr),
-      CallEffects.Effect.safe_exits_take (CallEffects.Effect.belowRow_of_below hbelow) hle hu hh hsafe⟩
+      CallEffects.Effect.safe_exits_take hspec.2.1 hle hu hh hsafe⟩
 
 /-- **A class value's graph code** meets each construct signature it was
 checked at, with its effect, with `undefined` for its receiver: `new` enters it
@@ -827,7 +823,7 @@ theorem ctorRestsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {U 
   rw [hp] at hsafe
   rw [Effect.result_plain hplain] at hsafe ⊢
   exact ⟨_, ⟨fs, _, _, _, rfl, rfl, rfl⟩,
-    Effect.safe_exits_take (Effect.belowRow_of_below hspec.2.1) (by omega) hv hh hsafe⟩
+    Effect.safe_exits_take hspec.2.1 (by omega) hv hh hsafe⟩
 
 /-- The parts a variadic call writes past its fixed actuals fit its rest. With
 a spread among them, the rest is an element rest, each plain part at its

@@ -826,7 +826,7 @@ realized by some member `j` of the file (`RowRealized`): `j`'s plan is
 unqualified, runs this function's code from its start at the row's frame
 with its captures (`codeFrame`, or past the receiver for a function without
 `this`), at the row's goal, postcondition (past the receiver,
-`IndexFact.pastReceiver`), footprint, fresh and throw flags, with an entry separation
+`IndexFact.pastReceiver`), and its run's bound (`UnitIsCode.bound`), with an entry separation
 naming only captures that are no function of the file, the module cells
 (`ModuleLayout.apart`), and the code's entry facts (renamed past the
 receiver, each fact of the request one of `mapIndices pastReceiver`), and
@@ -918,7 +918,8 @@ def FilePlans.layoutOwn (f : FilePlans) (i : Nat) : LayoutOwn := Id.run do
       q.inputs == (if receiverless then p.arguments.take arity ++ captures else codeFrame arity p captures none) &&
       sepOk q && ensuresOk q &&
       (if receiverless then q.entryIndices.all past.contains else q.entryIndices == facts) &&
-      q.footprint == eff.footprint && q.fresh == eff.fresh && q.onThrow == eff.onThrow
+      decide (ProgramTyping.RunBound.ofRequest q.footprint q.onThrow q.fresh =
+        (ProgramTyping.exitBounds eff, eff.fresh))
     if !members.any fun q => frameOk q && q.toRequest.goal == goal then
       if members.any frameOk then return .outside "its goal"
       return .outside "no member realizes a signature row (its frame, entry facts or effect)"

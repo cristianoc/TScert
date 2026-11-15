@@ -179,14 +179,14 @@ theorem codeSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι}
         (fun h' => Ψ ≠ .top → Ψ.Holds h h') n W h (.goto c.exprs c.conts c.start L d)) :
     ∀ η, c.Spec (reassign G η) := by
   intro η
-  obtain ⟨harity, hbelow, _hreq, hx⟩ := codeConditions_spec hcond
+  obtain ⟨harity, hbelow, _hreq, hx, hfr⟩ := codeConditions_spec hcond
   obtain ⟨o, ho⟩ := Option.isSome_iff_exists.mp hcond
   have hof : o.freshResult = c.row.effect.fresh := by
     have ho' := ho
     unfold codeObligations at ho'
     split at ho' <;> cases ho'
     rfl
-  refine ⟨harity, hbelow, ?_⟩
+  refine ⟨harity, hbelow, fun _ => allocStable_of_established hx hfr, ?_⟩
   intro n W heap L he hw hh href hvalues hpre r args _hframe
   have hrun := codeRun_of_clauses (sep := {}) hsafeG
     (fun Φ Ψ fresh hb => hboundG Φ Ψ fresh (by rw [codeBound_eq hcond]; exact hb))

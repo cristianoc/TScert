@@ -21,8 +21,8 @@ signature's normal and throw postconditions themselves
 (`CommandSummary.signature_contract`). A summary is a signature's at
 arity `n` when its frames read the receiver and the first `n` parameters
 and its postconditions the entry slots up to `n` and the exit slots up to
-`n + 1` (`CommandSummary.Scoped`), as every module function's is
-(`Effect.summary_scoped`), and every signature's under the conditions
+`n + 1` (`CommandSummary.Scoped`), as every module function's is at its
+arity (`Effect.summary_scoped`), and every signature's under the conditions
 `Effect.summary_scopedSummary_of` states, natives' included.
 
 A body's exit valuation may hold locals past the call's exit positions
@@ -50,12 +50,14 @@ def CommandSummary.Scoped (arena : AssertionArena) (n : Nat) (S : CommandSummary
   effectScoped (n + 1) S.normal.frame && S.normal.ensures.all (FormulaF.scoped arena ⟨n + 1, n + 2⟩) &&
     effectScoped (n + 1) S.exceptional.frame && S.exceptional.ensures.all (FormulaF.scoped arena ⟨n + 1, n + 2⟩)
 
-/-- **A module function's signature summary is in its scope**
+/-- **A module function's signature summary at its arity is in its scope**
 (`Effect.summary_scoped`). -/
-theorem Effect.summary_scopedSummary {e : Effect} {n : Nat} (h : e.belowRow n = true) (k : Nat)
-    (arena : AssertionArena) : CommandSummary.Scoped arena n (e.summary k) = true := by
-  obtain ⟨h₁, h₂, h₃, h₄⟩ := Effect.summary_scoped h k arena
-  simp [CommandSummary.Scoped, h₁, h₂, h₃, h₄]
+theorem Effect.summary_scopedSummary {e : Effect} {n : Nat} (h : e.belowRow n = true) :
+    CommandSummary.Scoped AssertionArena.empty n (e.summary n) = true := by
+  obtain ⟨h₁, h₂⟩ := Effect.summary_scoped h .normal
+  obtain ⟨h₃, h₄⟩ := Effect.summary_scoped h .exceptional
+  simp only [CommandSummary.Scoped, Bool.and_eq_true]
+  exact ⟨⟨⟨h₁, h₂⟩, h₃⟩, h₄⟩
 
 /-- **A signature's summary at arity `k`, scoped at `n`**: where its frame
 reads call positions up to `n`, its postcondition's facts exit positions up

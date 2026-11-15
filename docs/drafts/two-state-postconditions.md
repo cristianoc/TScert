@@ -116,7 +116,7 @@ return check entails the postcondition from the facts at the return
 
 **A precondition** is read at the callee's entry, where $`\mathrm{old}(t)`$
 is $`t`$: every check of it reads $`F[\mathrm{old}(t):=t]`$
-(`Effect.below`, `preconditionHolds`, the unit's entry facts; proved
+(`Effect.entryBelow`, `preconditionHolds`, the unit's entry facts; proved
 `Effect.pre_toNow`).
 
 **A call** (rule Call). The callee's post is read at
@@ -188,12 +188,13 @@ with the one the step's change states of each term it grows
 (`StepRelation.join`, `growth`; [two-state
 postconditions](../ARITHMETIC.md#two-state-postconditions)).
 
-**Entry allocation before a call** (`Effect.exitPost_prefix`, an instance
+**Entry allocation before a call** (`Exits.allocStable_of`, an instance
 of `Exits.compose_entry`): an exit read from the heap after an
 administrative allocation is an exit from the call's entry, the heap before
-it: the frame rebases to itself, and a code row's postconditions (a fresh
-result or object, the elements of its result; `Effect.below`) read the
-entry only through the freshness mark, which the allocation raises.
+it: a frame whose regions read the heap at the location alone rebases to
+itself, and a code's postcondition (a fresh result, what its run
+establishes; `codeObligations`) reads the entry only through the freshness
+mark, which the allocation raises.
 
 **Module rows** carry the postcondition as stated; `Effect.belowRow` bounds
 its current positions by the result, the receiver and the code's
@@ -230,7 +231,7 @@ one-state meaning:
 - `PassUnit.UnitIsReceiverless.ensures`: the request's post is the row's
   read past the receiver in both states (`pastReceiver`).
 - Executable checks: `entryKnows` (reads `toNow`), `startOldFacts`,
-  `Effect.below` and `belowRow`, `preconditionHolds`, `ensuresAtoms`,
+  `Effect.belowRow`, `preconditionHolds`, `ensuresAtoms`,
   `ensuresComposed`, `linearAppendKept`, `atLengthAtoms`.
 
 ## The named hypotheses
@@ -265,9 +266,9 @@ Restrictions of the language, documented in
   `old(P.length)`, with a parameter as root; not to arbitrary source
   expressions.
 - An exceptional postcondition is the frame alone (`Effect.excPost`).
-- Code rows (local functions) state no postcondition (`Effect.below`), and
-  a row's postcondition names the result, the receiver and the code's
-  parameters (`belowRow`).
+- Code rows (local functions) export only what their run establishes
+  (`codeObligations`), and a row's postcondition names the result, the
+  receiver and the code's parameters (`Effect.belowRow`).
 
 ## What the rules do not derive
 

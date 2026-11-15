@@ -268,9 +268,9 @@ run_cmd do
   check ``Verification.CallEffects.Effect.within_outside
   check ``Verification.CallEffects.Effect.within_coarse
   check ``Verification.CallEffects.Effect.within_iff_regions
-  check ``Verification.CallEffects.Effect.frame_mem_prefix
   check ``Verification.CallEffects.Exits.compose_entry
-  check ``Verification.CallEffects.Effect.exitPost_prefix
+  check ``Verification.CallEffects.Exits.allocStable_of
+  check ``Verification.ProgramTyping.allocStable_of_established
   check ``Verification.CallEffects.Effect.exitPost_exceptional_prefix
   check ``Verification.HeapObservations.SafePostExcV.bind
   check ``Verification.CallEffects.Effect.frameCovers_sound

@@ -134,8 +134,8 @@ def RowSpec (G : NormalGraph ι) (arity : Nat) (E : List Tm)
 /-- **Graph code at a signature is module code at it** (proved). -/
 theorem rowSpec_of_graphCodeSpec {G : NormalGraph ι} {arity E K start Cs row}
     (hs : GraphCodeSpec G arity E K start Cs row) : RowSpec G arity E K start Cs row {} :=
-  ⟨hs.1, CallEffects.Effect.belowRow_of_below hs.2.1,
-    fun n W h L he hw hh hgo hv hpre _ r args hf => hs.2.2 n W h L he hw hh hgo hv hpre r args hf⟩
+  ⟨hs.1, hs.2.1,
+    fun n W h L he hw hh hgo hv hpre _ r args hf => hs.2.2.2 n W h L he hw hh hgo hv hpre r args hf⟩
 
 /-- A promise's results meet a plain result admitting them (proved). -/
 theorem promiseAdmits_result [DecidableEq ι] {G : NormalGraph ι} {R T : Ty ι} {π : CallEffects.TypePromise}
@@ -155,9 +155,9 @@ theorem promiseAdmits_result [DecidableEq ι] {G : NormalGraph ι} {R T : Ty ι}
 /-- Dropping a promise keeps an effect one module code realizes (proved). -/
 theorem belowRow_promise_none {e : CallEffects.Effect} {n : Nat} (h : e.belowRow n = true) :
     ({ e with promise := none } : CallEffects.Effect).belowRow n = true := by
-  simp only [CallEffects.Effect.belowRow, CallEffects.Effect.below, CallEffects.Effect.promiseBelow,
+  simp only [CallEffects.Effect.belowRow, CallEffects.Effect.entryBelow, CallEffects.Effect.promiseBelow,
     Bool.and_eq_true] at h ⊢
-  exact ⟨⟨⟨⟨⟨⟨trivial, h.1.1.1.1.1.2⟩, h.1.1.1.1.2⟩, h.1.1.1.2⟩, h.1.1.2⟩, h.1.2⟩, h.2⟩
+  exact ⟨⟨trivial, h.1.2⟩, h.2⟩
 
 /-- **A promise row's code meets its plain row** (proved): code meeting a
 signature stating the promise `π` as a module row meets, at the same
@@ -193,7 +193,7 @@ theorem row_invoke_at {G : NormalGraph ι} {arity E K start Cs row vs sep}
       (row.effect.schema.exitPostW .normal r args U heap) (row.effect.schema.exitPostW .exceptional r args U heap) j U heap
       (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul) := by
   have hx : WExt (trunc j (Nat.le_refl j) U) U := by rw [trunc_id]; exact WExt_refl U
-  have hb := CallEffects.Effect.belowRow_below hs.2.1
+  have hb := CallEffects.Effect.belowRow_entry hs.2.1
   have hsafe := hs.2.2 j U heap _ (frame_envOk hs.1 hvs (Nat.le_refl j) hx hr ha) hu hh hgo (by
     intro v hv
     rcases List.mem_cons.mp hv with rfl | hv
@@ -263,7 +263,7 @@ theorem closure_meets_below {G : NormalGraph ι} {arity E K start Cs vs} {kind :
     have hspec := ho _ (List.mem_append_right _ (List.mem_map.mpr ⟨s, hsm, rfl⟩))
     have hle : arity ≤ s.arguments.1.length := hspec.1
     have hrow : s.fixed.effect.belowRow arity = true := hspec.2.1
-    have hbelow := CallEffects.Effect.belowRow_below hrow
+    have hbelow := CallEffects.Effect.belowRow_entry hrow
     have henv := (hcaps j hj U).withSelf hlen hself
     have hp : CallArguments.parameters arity (args.take s.arguments.1.length) =
         CallArguments.parameters arity args := by
@@ -302,8 +302,9 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 lists, its start and goal the code's, the code's precondition as its entry
 facts, the signature's postcondition as its own (a function declaring
 `this` reads each call position at the input slot of the same number), and
-the code's footprint, fresh flag and throw flag as its own. Its entry
-separation is the separation of the code's frames (`rowSpec_of_requestSafe`). -/
+its run's bound (`RunBound.ofRequest`) the code's: the bounds of its
+signature's exits (`exitBounds`) and its fresh flag. Its entry separation
+is the separation of the code's frames (`rowSpec_of_requestSafe`). -/
 structure UnitIsCode (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop where
   unqualified : r.qualification = none
   inputs : r.inputs = codeFrame c.arity c.row c.captures c.store
@@ -313,25 +314,25 @@ structure UnitIsCode (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop where
   goal : r.goal = c.goal
   indices : r.entryIndices = GraphCode.codeEntryIndices c
   ensures : r.ensures = c.row.effect.ensures
-  footprint : r.footprint = c.row.effect.footprint
-  fresh : r.fresh = c.row.effect.fresh
-  onThrow : r.onThrow = c.row.effect.onThrow
+  bound : RunBound.ofRequest r.footprint r.onThrow r.fresh = (exitBounds c.row.effect, c.row.effect.fresh)
 
 omit [Labels ι] [StoreView σ ι] in
-/-- **The bound a code's run is given, read as a request's**: where its
-signature states no store regions, its closed footprint, its fresh flag,
-and a throw bounded only where it states `onThrow` (`exitBounds_of_regions`),
-given only where it is not `⊤` on both exits without a fresh result. -/
+/-- **The bound a code's run is given**: the bounds of its signature's
+exits and its fresh flag, given only where they are not `⊤` on both exits
+without a fresh result. -/
 theorem codeRunBound_some {c : CodeEntry ι} {Φ Ψ : Footprints.Closed} {fresh : Bool}
-    (hr : c.row.effect.regions = []) (h : codeRunBound c = some (⟨Φ, Ψ⟩, fresh)) :
-    Φ = c.row.effect.footprint ∧ Ψ = (if c.row.effect.onThrow then c.row.effect.footprint else .top) ∧
-      fresh = c.row.effect.fresh ∧
-      (c.row.effect.footprint ≠ .top ∨ c.row.effect.onThrow = true ∨ c.row.effect.fresh = true) := by
+    (h : codeRunBound c = some (⟨Φ, Ψ⟩, fresh)) :
+    (⟨Φ, Ψ⟩ : CallEffects.Exits Footprints.Closed) = exitBounds c.row.effect ∧ fresh = c.row.effect.fresh ∧
+      ¬((exitBounds c.row.effect).normal = .top ∧ (exitBounds c.row.effect).exceptional = .top ∧
+        c.row.effect.fresh = false) := by
   unfold codeRunBound runBounds at h
-  rw [exitBounds_of_regions hr] at h
-  cases hot : c.row.effect.onThrow <;> cases hf : c.row.effect.fresh <;>
-    by_cases hfp : c.row.effect.footprint = .top <;> by_cases hpu : c.exprs.all Purity.pureTerm = true <;>
-    simp_all <;> obtain ⟨⟨rfl, rfl⟩, rfl⟩ := h <;> simp_all
+  split at h
+  · cases h
+  · rename_i hc
+    simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨hb, hf⟩ := h
+    refine ⟨hb.symm, hf.symm, fun ⟨h1, h2, h3⟩ => hc ?_⟩
+    simp [h1, h2, h3]
 
 end
 
@@ -418,7 +419,8 @@ theorem rowSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
     refine HeapObservations.SafePostExc.weaken (fun h' v hq => ?_) (fun _ h => h) (safePostExc_and hrun hens)
     obtain ⟨⟨h1, h2⟩, hq⟩ := hq
     exact ⟨h1, h2, fun F hF =>
-      (CallEffects.Effect.ensures_frame hrow hF v r args vs .nul heap h').mpr (by simpa using hq F hF)⟩
+      (CallEffects.Effect.ensures_frame (CallEffects.Effect.belowRow_ensures hrow hF).1
+        (CallEffects.Effect.belowRow_ensures hrow hF).2 v r args vs .nul heap h').mpr (by simpa using hq F hF)⟩
 
 end
 
@@ -440,24 +442,36 @@ theorem rowSpec_of_requestSafe {r : SourceRequest σ ι} {c : CodeEntry ι}
     rw [hu.exprs, hu.conts, program_nodes]
   have hgoto : ∀ L d, gotoOf r.program r.start L d = .goto c.exprs c.conts c.start L d := by
     intro L d; simp only [gotoOf, hu.exprs, hu.conts, hu.start]
-  have hreg : c.row.effect.regions = [] := by
-    simp only [rowConditions, Bool.and_eq_true] at hcond
-    exact CallEffects.Effect.below_regions (e := { c.row.effect with ensures := [] })
-      (CallEffects.Effect.belowRow_below hcond.1.1.2)
   apply rowSpec_of_clauses hcond hstore
   · intro η n W h ρ he hP hρ
     have := hsafe.1 η (hadm η) n W h ρ (by rw [hu.inputs, hu.indices]; exact he) hρ
     rw [hprog, hu.goal, hu.start] at this
     exact this
   · intro Φ Ψ fresh hb η n W h L d he hgo hvals hd
-    obtain ⟨rfl, rfl, rfl, hne⟩ := codeRunBound_some hreg hb
+    -- The run's bound is the request's (`UnitIsCode.bound`).
+    obtain ⟨hbd, rfl, hne⟩ := codeRunBound_some hb
+    have hreq := hu.bound
+    simp only [RunBound.ofRequest, Prod.mk.injEq] at hreq
+    obtain ⟨hex, hfr⟩ := hreq
+    rw [← hex] at hbd hne
+    have hΦ : Φ = r.footprint := congrArg CallEffects.Exits.normal hbd
+    have hΨ : Ψ = if r.onThrow then r.footprint else .top := congrArg CallEffects.Exits.exceptional hbd
+    subst hΦ hΨ
     have hpre : r.footprint ≠ .top ∨ r.onThrow = true ∨ r.fresh = true := by
-      rw [hu.footprint, hu.onThrow, hu.fresh]; exact hne
+      by_cases h1 : r.footprint = .top
+      · by_cases h2 : r.onThrow = true
+        · exact .inr (.inl h2)
+        · right; right
+          rw [hfr]
+          cases hf : c.row.effect.fresh
+          · exact absurd ⟨h1, by simp [h2], hf⟩ hne
+          · rfl
+      · exact .inl h1
     have := hsafe.2.1 hpre η n W h L d (by rw [hu.inputs, hu.indices]; exact he)
       (GraphCode.goto_refs hgo).2 hvals hd
-    rw [hgoto, hu.goal, hu.footprint, hu.fresh, hu.onThrow] at this
+    rw [hgoto, hu.goal, hfr] at this
     refine HeapObservations.SafePostExc.weaken (fun _ _ hq => hq) (fun _ hq ht => ?_) this
-    cases hot : c.row.effect.onThrow
+    cases hot : r.onThrow
     · simp [hot] at ht
     · simp only [hot, if_true] at ht ⊢
       exact hq hot
@@ -510,8 +524,8 @@ captures), its program, start and goal the code's at that frame, its entry
 facts implied by the code's at every frame with a receiver in front, the
 signature's postcondition, which names the receiver in neither state, read
 past the receiver as its own (`IndexFact.pastReceiver`: each current and
-each entry position one lower, the result kept), and the code's footprint,
-fresh flag and throw flag. -/
+each entry position one lower, the result kept), and its run's bound the
+code's (`UnitIsCode.bound`). -/
 structure UnitIsReceiverless (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop where
   unqualified : r.qualification = none
   store : c.store = none
@@ -524,9 +538,7 @@ structure UnitIsReceiverless (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop
     HeapKnowledge.IndexHolds ⟨envOf (recv :: L) .nul, h⟩ (GraphCode.codeEntryIndices c) (envOf (recv :: L) .nul) h →
     HeapKnowledge.IndexHolds ⟨envOf L .nul, h⟩ r.entryIndices (envOf L .nul) h
   ensures : c.row.effect.ensures.mapM HeapKnowledge.IndexFact.pastReceiver = some r.ensures
-  footprint : r.footprint = c.row.effect.footprint
-  fresh : r.fresh = c.row.effect.fresh
-  onThrow : r.onThrow = c.row.effect.onThrow
+  bound : RunBound.ofRequest r.footprint r.onThrow r.fresh = (exitBounds c.row.effect, c.row.effect.fresh)
 
 end
 

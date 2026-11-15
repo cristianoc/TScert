@@ -188,3 +188,63 @@ theorem Exits.compose_entry {x y : Exits ExitSchema} {c : Completion} {r : Tm} {
   refine ⟨?_, hq s₂ v he⟩
   rw [Exits.atArity_frame]
   exact ⟨WorldReach.trans h₁.1 hf.1, Post.compose_rebases h₁.2 hf.2 hr hle hcl⟩
+
+/-! ## An exit across an allocation before the call -/
+
+/-- **Whether a region's membership of a location reads the heap at that
+location alone**: a field, the own locations or the store of a call
+position, a class region, a module cell, or such a region in a class. A
+region reading a path through the heap, or a store's element cells, reads
+other locations. -/
+def _root_.Verification.Footprints.Region.atLocation : Region → Bool
+  | .field .. | .own _ | .cls _ | .all | .cell _ => true
+  | .path _ [] _ | .pathOwn _ [] | .store _ [] => true
+  | .inCls r _ => r.atLocation
+  | _ => false
+
+/-- **A region reading the heap at the location alone selects an old
+location alike across an allocation** (proved). -/
+theorem _root_.Verification.Footprints.Region.mem_prefix {R : Region} (hR : R.atLocation = true) {ρ : Env}
+    {h₀ h : Heap} (hp : h₀.IsPrefix h) {l : Nat} (hl : l < h₀.length) : R.mem ρ h l = R.mem ρ h₀ l := by
+  have hgl : h[l]? = h₀[l]? := by
+    obtain ⟨t, rfl⟩ := hp
+    exact List.getElem?_append_left hl
+  induction R with
+  | field | own | all => rfl
+  | cls _ | cell _ => simp only [Region.mem, hgl]
+  | path _ p _ => cases p <;> simp_all [Region.atLocation, Region.mem, HeapKnowledge.readPath]
+  | pathOwn _ p => cases p <;> simp_all [Region.atLocation, Region.mem, HeapKnowledge.readPath]
+  | store _ p => cases p <;> simp_all [Region.atLocation, Region.mem, HeapKnowledge.readPath]
+  | inCls r _ ih => simp only [Region.atLocation] at hR; simp only [Region.mem, ih hR, hgl]
+  | elems | pathElems => simp [Region.atLocation] at hR
+
+/-- **A schema whose exits carry across an allocation before the call**:
+an exit from a later entry whose heap extends an earlier one's, at a world
+the earlier reaches, is an exit from the earlier entry. A body run after
+allocating its rest array meets its signature from the invocation's entry
+by it. -/
+def Exits.AllocStable (x : Exits ExitSchema) : Prop :=
+  ∀ (c : Completion) (r : Tm) (args : List Tm) (s₀ s₁ s₂ : IndexedHeap) (v : Tm),
+    Admissible s₀ s₁ → s₀.h.IsPrefix s₁.h → x.exitPost c r args s₁ s₂ v → x.exitPost c r args s₀ s₂ v
+
+/-- **A sufficient check of carrying across an allocation** (proved,
+`Exits.compose_entry`): each frame's regions read the heap at the location
+alone (`Region.atLocation`), so the frame rebases to itself
+(`Rebases.of_prefix`), and each postcondition is a fresh result, which the
+earlier entry's lower mark keeps (`FreshAt.lower`). -/
+theorem Exits.allocStable_of {x : Exits ExitSchema}
+    (hfr : ∀ c, (x.get c).frame.all (·.1.atLocation) = true)
+    (hens : ∀ c, ∀ F ∈ (x.get c).ensures, F = .operation (.freshStore 0)) : x.AllocStable := by
+  intro c r args s₀ s₁ s₂ v hadm hprefix h
+  refine Exits.compose_entry (Φ := []) (cl := fun _ _ => none) ⟨hadm, Post.of_prefix _ _ hprefix⟩
+    (Rebases.of_prefix fun e he l hl hm => by
+      rwa [← Region.mem_prefix (List.all_eq_true.mp (hfr c) e he) hprefix hl])
+    (Footprint.le_refl _ _) (fun _ _ _ _ hc => by cases hc) ?_ h
+  intro u z hF F hFm
+  have hens' := hens c
+  cases c <;>
+  · simp only [Exits.atArity, Exits.map, Exits.get, ExitSchema.instantiate, List.mem_map] at hFm hF hens'
+    obtain ⟨G, hG, rfl⟩ := hFm
+    have hH := hF _ ⟨G, hG, rfl⟩
+    rw [hens' G hG] at hH ⊢
+    exact FreshAt.lower hprefix.length_le hH

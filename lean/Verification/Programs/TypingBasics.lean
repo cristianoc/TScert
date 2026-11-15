@@ -477,13 +477,13 @@ def framePromised (e : CallEffects.Effect) (offset : Nat) (L : List Tm) : Tm :=
 
 /-- A frame of code binding `arity` parameters holds a promised actual among
 them, as the call passed it. -/
-theorem framePromised_params {e : CallEffects.Effect} {arity : Nat} (h : e.below arity = true)
+theorem framePromised_params {e : CallEffects.Effect} {arity : Nat} (h : e.entryBelow arity = true)
     (pre : List Tm) (args vs : List Tm) :
     framePromised e pre.length (pre ++ CallArguments.parameters arity args ++ vs) = e.promised args := by
   rw [← CallEffects.Effect.promised_frame h args vs]
   rcases e with ⟨c, _ | q⟩
   · rfl
-  · have h := CallEffects.Effect.below_promise h
+  · have h := CallEffects.Effect.entryBelow_promise h
     simp only [CallEffects.Effect.promiseBelow, decide_eq_true_eq] at h
     have hlen : q.param < (CallArguments.parameters arity args ++ vs).length := by
       have := CallEffects.Effect.parameters_length arity args
@@ -513,14 +513,17 @@ signature `row` when every run of it started from an environment meeting the
 frame the row describes (`codeFrame`: with a rest, its store at `store`) is
 safe at the row's result, a promise's about the parameter it names, and meets
 the row's specification on both exits (`Exits.exitPostW`, the note's Call) at
-the receiver and actuals matching that frame (`FrameValues`).
+the receiver and actuals matching that frame (`FrameValues`). Its signature
+is scoped at its arity (`Effect.belowRow`), and, where it collects a rest,
+its exits carry across the rest's allocation (`Exits.AllocStable`).
 The graph
 checker establishes this (`GraphCode.goto_safe`); a code-creating rule takes
 it as a premise. -/
 def GraphCodeSpec (G : NormalGraph ι) (arity : Nat) (E : List Tm)
     (K : List (ControlFlow.Continuation × Option ControlFlow.Target)) (start : Nat)
     (Cs : List (Ty ι)) (row : Arrow (Ty ι)) (store : Option (Ty ι) := none) : Prop :=
-  arity ≤ row.arguments.length ∧ row.effect.below arity = true ∧
+  arity ≤ row.arguments.length ∧ row.effect.belowRow arity = true ∧
+  (store.isSome → row.effect.schema.AllocStable) ∧
   ∀ n W h L, EnvOk G (codeFrame arity row Cs store) (envOf L .nul) n W → WorldAdm W →
     HeapOk n W h → RefsOk W (.goto E K start L .nul) → CallArguments.Values L → PreAt row.effect store L h →
     ∀ r args, FrameValues arity store L r args →
@@ -723,7 +726,7 @@ theorem graph_invoke {G : NormalGraph ι} {arity E K start Cs row vs n W}
     HeapObservations.SafePostExcV (excOf G) (row.effect.result (meaning G row.result) (row.effect.promised args))
       (row.effect.schema.exitPostW .normal r args U heap) (row.effect.schema.exitPostW .exceptional r args U heap) j U heap
       (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul) := by
-  have hsafe := hs.2.2 j U heap _ (frame_envOk hs.1 hvs (Nat.le_of_lt hj) hx hr ha) hu hh hgo (by
+  have hsafe := hs.2.2.2 j U heap _ (frame_envOk hs.1 hvs (Nat.le_of_lt hj) hx hr ha) hu hh hgo (by
     intro v hv
     rcases List.mem_cons.mp hv with rfl | hv
     · exact (meaning_value hr).1
@@ -731,9 +734,9 @@ theorem graph_invoke {G : NormalGraph ι} {arity E K start Cs row vs n W}
       · exact CallArguments.parameters_property (P := fun v => isVal v = true) rfl
           (ArgsT_values (fun A hA => by obtain ⟨a, _, rfl⟩ := List.mem_map.mp (List.mem_of_mem_take hA); exact meaning_valOnly G a) ha.2.1) v hv
       · exact hvalues v hv)
-    (fun _ F hF => (CallEffects.Effect.pre_frame hs.2.1 hF r args vs .nul heap).mp (hq F hF))
+    (fun _ F hF => (CallEffects.Effect.pre_frame (CallEffects.Effect.belowRow_entry hs.2.1) hF r args vs .nul heap).mp (hq F hF))
     r args ⟨[], vs, rfl, rfl⟩
-  have hp := framePromised_params hs.2.1 [r] args vs
+  have hp := framePromised_params (CallEffects.Effect.belowRow_entry hs.2.1) [r] args vs
   simp only [List.length_singleton, List.singleton_append] at hp
   rw [show frameOffset (none : Option (Ty ι)) = 1 from rfl, hp] at hsafe
   exact hsafe
@@ -753,7 +756,7 @@ theorem graph_invoke_at {G : NormalGraph ι} {arity E K start Cs row vs}
       (row.effect.schema.exitPostW .normal r args U heap) (row.effect.schema.exitPostW .exceptional r args U heap) j U heap
       (.goto E K start (r :: CallArguments.parameters arity args ++ vs) .nul) := by
   have hx : WExt (trunc j (Nat.le_refl j) U) U := by rw [trunc_id]; exact WExt_refl U
-  have hsafe := hs.2.2 j U heap _ (frame_envOk hs.1 hvs (Nat.le_refl j) hx hr ha) hu hh hgo (by
+  have hsafe := hs.2.2.2 j U heap _ (frame_envOk hs.1 hvs (Nat.le_refl j) hx hr ha) hu hh hgo (by
     intro v hv
     rcases List.mem_cons.mp hv with rfl | hv
     · exact (meaning_value hr).1
@@ -761,9 +764,9 @@ theorem graph_invoke_at {G : NormalGraph ι} {arity E K start Cs row vs}
       · exact CallArguments.parameters_property (P := fun v => isVal v = true) rfl
           (ArgsT_values (fun A hA => by obtain ⟨a, _, rfl⟩ := List.mem_map.mp (List.mem_of_mem_take hA); exact meaning_valOnly G a) ha.2.1) v hv
       · exact hvalues v hv)
-    (fun _ F hF => (CallEffects.Effect.pre_frame hs.2.1 hF r args vs .nul heap).mp (hq F hF))
+    (fun _ F hF => (CallEffects.Effect.pre_frame (CallEffects.Effect.belowRow_entry hs.2.1) hF r args vs .nul heap).mp (hq F hF))
     r args ⟨[], vs, rfl, rfl⟩
-  have hp := framePromised_params hs.2.1 [r] args vs
+  have hp := framePromised_params (CallEffects.Effect.belowRow_entry hs.2.1) [r] args vs
   simp only [List.length_singleton, List.singleton_append] at hp
   rw [show frameOffset (none : Option (Ty ι)) = 1 from rfl, hp] at hsafe
   exact hsafe
@@ -807,11 +810,12 @@ theorem restsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {kind :
   obtain ⟨s, hsm, rfl⟩ := List.mem_map.mp hq
   have hspec := hs s hsm
   have hle : arity ≤ s.arguments.1.length := hspec.1
-  have hbelow : s.fixed.effect.below arity = true := hspec.2.1
+  have hbelow : s.fixed.effect.belowRow arity = true := hspec.2.1
+  have hentry := CallEffects.Effect.belowRow_entry hbelow
   have hsafe := graph_invoke hspec (hvs.withSelf hlen hself) (Values.withSelf hvalues rfl) hj hx hu hh
     (args := args.take s.arguments.1.length) hr
     (by simpa [RestArrow.mapWith, Contract.map, RestArrow.fixed] using ha.1)
-    (fun F hF => (CallEffects.Effect.pre_take hbelow hle hF r args heap).mpr
+    (fun F hF => (CallEffects.Effect.pre_take hentry hle hF r args heap).mpr
       (hreq.2 F (by simpa [RestArrow.mapWith, Contract.map, RestArrow.fixed] using hF)))
     (goto_entry_refs (graph_code_refs hvr).1 (fun a ha => by
       rcases List.mem_append.mp ha with ha | ha
@@ -821,12 +825,12 @@ theorem restsT_of_graph {G : NormalGraph ι} {arity E K start Cs vs n W} {kind :
       CallArguments.parameters arity args := by
     rw [← CallArguments.parameters_take arity (args.take _), List.take_take,
       Nat.min_eq_left hle, CallArguments.parameters_take]
-  rw [hp, CallEffects.Effect.promised_take (e := s.fixed.effect) hbelow hle] at hsafe
+  rw [hp, CallEffects.Effect.promised_take (e := s.fixed.effect) hentry hle] at hsafe
   -- Graph code's signature is about its receiver and its parameters
-  -- (`Effect.below`): its exits at the actuals it takes hold at every longer
-  -- list of actuals (`Effect.exitPost_take`).
+  -- (`Effect.belowRow`): its exits at the actuals it takes hold at every
+  -- longer list of actuals (`Effect.exitPost_take`).
   exact ⟨_, .graph hrv hvals (hb s hsm j U r hr),
-    CallEffects.Effect.safe_exits_take (CallEffects.Effect.belowRow_of_below hbelow) hle hu hh hsafe⟩
+    CallEffects.Effect.safe_exits_take hbelow hle hu hh hsafe⟩
 
 /-- An equality established by a branch can refine one immutable slot. -/
 theorem EnvOk.refine {G : NormalGraph ι} {Γ ρ n W i A B}

@@ -626,7 +626,7 @@ a binding declared at a path's read (`const b = p.f`, `const { f: b } = p`)
 restates of the binding each fact over a path through it.
 
 **Implementation.** The arrow's meaning is `PromiseWith` and
-`ConstructPromise`. Graph code's frame is `codeFrame`, with `Effect.below`
+`ConstructPromise`. Graph code's frame is `codeFrame`, with `Effect.entryBelow`
 (proved: `Effect.pre_frame`); the entry is `GraphCode.codeEntryIndices` and
 `ControlFlow.entryKnows`, the specification `TypingBasics.PreAt` and
 `GraphCodeSpec`, the invocation `graph_invoke`. A unit's facts are
@@ -936,7 +936,8 @@ entry check.
 **Implementation.** The positions are `CallEffects.ensuresEnv`; at a call
 the meaning is the postcondition of the normal exit at the call's actuals
 (`CallEffects.Effect.callPost_ensures`). A module function's postcondition is stated by `moduleArrow` and
-`importedArrow`, other code's is excluded by `Effect.below`; carrying,
+`importedArrow`, other code's is excluded by `codeObligations` (its exports
+are what its run establishes); carrying,
 covering, meeting and forgetting are `Effect.keeps`, `ensuresCovers`,
 `Effect.meet` and `Exits.forgetActuals` (a variadic call with a spread,
 by consequence after the guarantee at its expanded actuals:

@@ -1277,13 +1277,16 @@ each exit at every admissible state it reaches
 `codeObligations_sound`).
 A code collecting a rest runs after the rest store's allocation; its exits
 from the heap that allocation leaves are exits from the call's entry
-(`Effect.exitPost_prefix`, by `Exits.compose_entry`: the frame rebased by
-Seq-Eff, the postconditions by consequence, freshness lowered to the
+(`Exits.AllocStable`, checked by `Exits.allocStable_of` through
+`Exits.compose_entry`: a frame whose regions read the heap at the location
+alone, `Region.atLocation`, rebases to itself by Seq-Eff, and a fresh
+result, the one postcondition a code's run establishes, is lowered to the
 entry's mark), and the allocation's throw meets the call's exceptional exit
 (`Effect.exitPost_exceptional_prefix`). A code's signature is about its receiver and its
-parameters (`Effect.belowRow`): its summary is the same at every arity and
-reads the receiver, those parameters and the result alone
-(`Effect.summary_arity`, `Effect.summary_scoped`), so by scope congruence
+parameters (`Effect.belowRow`: its entry statements, `Effect.entryBelow`,
+and its schema, `Exits.belowRow`): at its arity its summary reads the
+receiver, those parameters and the result alone
+(`Effect.summary_scoped`), and by scope congruence
 (`ExitSpec.holds_scoped_congr`) its exits at the actuals it takes hold at
 every call extending them (`Effect.exitPost_take`,
 `Effect.safe_exits_take`).

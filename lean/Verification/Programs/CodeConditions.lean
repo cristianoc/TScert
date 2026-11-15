@@ -8,7 +8,7 @@ specification its signature states on both exits (the note *Tolerant
 frames*, §6, rule Call read from the callee: the body's exits entail the
 signature's). One computation decides what its run must establish
 (`codeObligations`): its arity within its arguments, its signature's scope
-at its arity (`Effect.below`) and no precondition beyond its promise, every
+at its arity (`Effect.belowRow`) and no precondition beyond its promise, every
 postcondition the signature exports on either exit among those the body's
 run establishes (`codeEstablished`, a consequence by membership), and the
 closed bound of each exit the run is checked within (`CodeObligations.bound`).
@@ -145,6 +145,30 @@ theorem exitBounds_of_regions {e : Effect} (hr : e.regions = []) :
   unfold exitBounds Effect.schema
   cases e.onThrow <;> simp [Exits.map, classBound_frame e hr, ht]
 
+/-- **Whether a signature's frames read the heap at each location alone**
+(`Region.atLocation`), on both exits. -/
+def framesAtLocation (e : Effect) : Bool :=
+  e.schema.normal.frame.all (·.1.atLocation) && e.schema.exceptional.frame.all (·.1.atLocation)
+
+/-- **A signature whose run establishes what it exports, its frames reading
+the heap at each location alone, carries its exits across an allocation
+before the call** (proved, `Exits.allocStable_of`): each postcondition it
+exports with no facts is a fresh result. -/
+theorem allocStable_of_established {e : Effect} (hx : exportsEstablished e [] = true)
+    (hf : framesAtLocation e = true) : e.schema.AllocStable := by
+  simp only [exportsEstablished, framesAtLocation, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at hx hf
+  refine Exits.allocStable_of (fun c => ?_) (fun c F hF => ?_)
+  · cases c
+    · exact List.all_eq_true.mpr hf.1
+    · exact List.all_eq_true.mpr hf.2
+  · have hm : F ∈ codeEstablished e.fresh [] ∨ F ∈ codeEstablished false [] := by
+      cases c
+      · exact .inl (hx.1 F hF)
+      · exact .inr (hx.2 F hF)
+    rcases hm with hm | hm <;>
+      simp only [codeEstablished, List.map_nil, List.append_nil] at hm <;>
+      split at hm <;> simp_all
+
 /-- **The closed bounds a code's run is checked within**: none where both
 exits are `⊤` and the result is not fresh, or where a pure body states no
 fresh result; both exits' bounds otherwise. -/
@@ -159,12 +183,15 @@ def codeRunBound (c : CodeEntry ι) : Option RunBound :=
   (runBounds c).map fun b => (b, c.row.effect.fresh)
 
 /-- **The obligations of a code's run**: its arity within its arguments, its
-signature's scope at its arity, no precondition beyond its promise, and
-every postcondition its signature exports on either exit established by its
-run (`exportsEstablished`); then its run's bounds and fresh result. -/
+signature's scope at its arity (`Effect.belowRow`), no precondition beyond
+its promise, every postcondition its signature exports on either exit
+established by its run (`exportsEstablished`), and its frames reading the
+heap at each location alone (`framesAtLocation`, so that a body run after
+allocating its rest meets them from the invocation's entry); then its run's
+bounds and fresh result. -/
 def codeObligations (c : CodeEntry ι) : Option CodeObligations :=
-  if decide (c.arity ≤ c.row.arguments.length) && c.row.effect.below c.arity && c.row.effect.requires.isNone &&
-      exportsEstablished c.row.effect [] then
+  if decide (c.arity ≤ c.row.arguments.length) && c.row.effect.belowRow c.arity && c.row.effect.requires.isNone &&
+      exportsEstablished c.row.effect [] && framesAtLocation c.row.effect then
     some ⟨runBounds c, c.row.effect.fresh⟩
   else none
 
@@ -185,18 +212,19 @@ theorem codeBound_eq {c : CodeEntry ι} (h : codeConditions c = true) : codeBoun
   · cases ho'; rw [ho]; rfl
   · cases ho'
 
-/-- **What the conditions give**: the arity, the scope, no precondition, and
-every exported postcondition established by the run. -/
+/-- **What the conditions give**: the arity, the scope, no precondition,
+every exported postcondition established by the run, and the frames read at
+each location alone. -/
 theorem codeConditions_spec {c : CodeEntry ι} (h : codeConditions c = true) :
-    c.arity ≤ c.row.arguments.length ∧ c.row.effect.below c.arity = true ∧ c.row.effect.requires = none ∧
-      exportsEstablished c.row.effect [] = true := by
+    c.arity ≤ c.row.arguments.length ∧ c.row.effect.belowRow c.arity = true ∧ c.row.effect.requires = none ∧
+      exportsEstablished c.row.effect [] = true ∧ framesAtLocation c.row.effect = true := by
   unfold codeConditions at h
   obtain ⟨o, ho⟩ := Option.isSome_iff_exists.mp h
   unfold codeObligations at ho
   split at ho
   · rename_i hc
     simp only [Bool.and_eq_true, decide_eq_true_eq, Option.isNone_iff_eq_none] at hc
-    exact ⟨hc.1.1.1, hc.1.1.2, hc.1.2, hc.2⟩
+    exact ⟨hc.1.1.1.1, hc.1.1.1.2, hc.1.1.2, hc.1.2, hc.2⟩
   · cases ho
 
 /-- **A code's obligations give its signature on both exits** (proved): a
@@ -219,7 +247,7 @@ theorem codeObligations_sound {c : CodeEntry ι} {o : CodeObligations} (hc : cod
   · rename_i hx
     cases hc'
     simp only [Bool.and_eq_true] at hx
-    exact exportsEstablished_sound (facts := []) hx.2 hu hh
+    exact exportsEstablished_sound (facts := []) hx.1.2 hu hh
       (HeapObservations.SafePostExc.weaken (fun _ _ hq => ⟨hq.1, hq.2, by simp⟩) (fun _ hq => hq) hs)
   · cases hc'
 

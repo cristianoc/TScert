@@ -753,7 +753,7 @@ these: `EstablishedSlots` and four `KindMet` premises.
 **What H5a excludes, and what each needs.** A function realized through
 `RowRealized` has fixed arity, no rest, an unqualified request, and
 signatures meeting the code conditions (`codeConditions`) and the code
-specification's own condition `Effect.below` (inside `GraphCodeSpec`). A
+specification's own condition `Effect.belowRow` (inside `GraphCodeSpec`). A
 function outside these is outside $`D`$: its units stay safe
 (`passUnit_safe`), and `passFile_safe` says nothing of its value. Each case against the actual
 definitions:
@@ -780,7 +780,10 @@ definitions:
   initialization allocates each cell fresh), and the layout check admits
   only facts whose levels name captures that are no function of the
   file.
-- *stated regions*: excluded by `Effect.below` (`e.regions.isEmpty`).
+- *stated regions*: a region whose membership reads the heap at the location
+  alone is admitted for a closure's code (`framesAtLocation`); a module row
+  needs its request's run bound to be its exits' bounds
+  (`UnitIsCode.bound`), which a region outside the class bound breaks.
   `RegionalClause` gives the bound; lifting needs the specification's frame
   condition to be the regional one (`ArgumentStoreRegionsWithin`) in place
   of the footprint, in `GraphCodeSpec`.

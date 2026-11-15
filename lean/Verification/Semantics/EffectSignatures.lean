@@ -717,24 +717,21 @@ def Effect.promiseBelow (n : Nat) (e : Effect) : Bool :=
   | some p => p.param < n
   | none => true
 
-/-- Whether what a signature states of the call's values is about the
-receiver and the first `n` parameters, the ones code of arity `n` binds: its
-promise, and each position its precondition `pre` names, read at the
-callee's entry, where `old(t)` is `t` (`IndexFact.toNow`). Code states no
-postcondition: a fact over a parameter needs its entry value, which a
-reassigned parameter no longer holds; and no append, which a native's
-audited signature alone states. -/
-def Effect.below (n : Nat) (e : Effect) : Bool :=
-  e.promiseBelow n && e.pre.all (fun F => F.toNow.slots.all (· ≤ n)) && e.ensures.isEmpty &&
-    !e.receiverGrows && e.elementWrite.isNone && e.regions.isEmpty
+/-- **Whether what a signature states of the call's values at entry is
+about the receiver and the first `n` parameters**, the ones code of arity
+`n` binds: its promise, and each position its precondition `pre` names, read
+at the callee's entry, where `old(t)` is `t` (`IndexFact.toNow`). The scope
+of its exits is `Exits.belowRow` (`Effect.belowRow`). -/
+def Effect.entryBelow (n : Nat) (e : Effect) : Bool :=
+  e.promiseBelow n && e.pre.all (fun F => F.toNow.slots.all (· ≤ n))
 
-theorem Effect.below_promise {e : Effect} {n : Nat} (h : e.below n = true) : e.promiseBelow n = true := by
-  simp only [Effect.below, Bool.and_eq_true] at h; exact h.1.1.1.1.1
+theorem Effect.entryBelow_promise {e : Effect} {n : Nat} (h : e.entryBelow n = true) : e.promiseBelow n = true := by
+  simp only [Effect.entryBelow, Bool.and_eq_true] at h; exact h.1
 
-theorem Effect.below_pre {e : Effect} {n : Nat} (h : e.below n = true) :
+theorem Effect.entryBelow_pre {e : Effect} {n : Nat} (h : e.entryBelow n = true) :
     ∀ F ∈ e.pre, ∀ s ∈ F.toNow.slots, s ≤ n := by
-  simp only [Effect.below, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at h
-  exact fun F hF => h.1.1.1.1.2 F hF
+  simp only [Effect.entryBelow, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at h
+  exact fun F hF => h.2 F hF
 
 /-- **A precondition is one-state**: read at the callee's entry, where the
 current state is the entry state, a fact holds exactly where its
@@ -744,18 +741,6 @@ theorem Effect.pre_toNow {F : HeapKnowledge.IndexFact} (ε : HeapKnowledge.Entry
     F.HoldsAt ⟨ρ, heap⟩ ρ heap ↔ F.toNow.HoldsAt ε ρ heap :=
   (HeapKnowledge.IndexFact.holdsAt_toNow rfl rfl).symm.trans
     (HeapKnowledge.IndexFact.holdsAt_entry (HeapKnowledge.IndexFact.entrySlots_toNow F) _)
-
-theorem Effect.below_ensures {e : Effect} {n : Nat} (h : e.below n = true) : e.ensures = [] := by
-  simp only [Effect.below, Bool.and_eq_true, List.isEmpty_iff] at h; exact h.1.1.1.2
-
-theorem Effect.below_grows {e : Effect} {n : Nat} (h : e.below n = true) : e.receiverGrows = false := by
-  simp only [Effect.below, Bool.and_eq_true, Bool.not_eq_true'] at h; exact h.1.1.2
-
-theorem Effect.below_write {e : Effect} {n : Nat} (h : e.below n = true) : e.elementWrite = none := by
-  simp only [Effect.below, Bool.and_eq_true, Option.isNone_iff_eq_none] at h; exact h.1.2
-
-theorem Effect.below_regions {e : Effect} {n : Nat} (h : e.below n = true) : e.regions = [] := by
-  simp only [Effect.below, Bool.and_eq_true, List.isEmpty_iff] at h; exact h.2
 
 /-- A frame stating no store regions reads the receiver alone. -/
 theorem Effect.within_args {e : Effect} (hreg : e.regions = []) {r : Tm} {args args' : List Tm}
@@ -778,10 +763,10 @@ theorem Effect.parameters_length : ∀ (n : Nat) (args : List Tm), (CallArgument
   | n + 1, _ :: args => by simp [CallArguments.parameters, parameters_length n args]
 
 /-- Code binding `n` parameters holds a promised actual among them. -/
-theorem Effect.promised_frame {e : Effect} {n : Nat} (h : e.below n = true) (args vs : List Tm) :
+theorem Effect.promised_frame {e : Effect} {n : Nat} (h : e.entryBelow n = true) (args vs : List Tm) :
     e.promised (CallArguments.parameters n args ++ vs) = e.promised args := by
   unfold Effect.promised
-  have h := Effect.below_promise h
+  have h := Effect.entryBelow_promise h
   unfold Effect.promiseBelow at h
   split
   · rename_i p hp
@@ -792,10 +777,10 @@ theorem Effect.promised_frame {e : Effect} {n : Nat} (h : e.below n = true) (arg
   · rfl
 
 /-- Actuals past those code binds do not change what it promises about. -/
-theorem Effect.promised_take {e : Effect} {n m : Nat} (h : e.below n = true) (hm : n ≤ m) (args : List Tm) :
+theorem Effect.promised_take {e : Effect} {n m : Nat} (h : e.entryBelow n = true) (hm : n ≤ m) (args : List Tm) :
     e.promised (args.take m) = e.promised args := by
   unfold Effect.promised
-  have h := Effect.below_promise h
+  have h := Effect.entryBelow_promise h
   unfold Effect.promiseBelow at h
   split
   · rename_i p hp
@@ -834,83 +819,36 @@ theorem callEnv_take {m s : Nat} (hle : s ≤ m) (r : Tm) (args : List Tm) :
 
 /-- Code binding `n` parameters reads the precondition's positions in its
 frame as the call passed them: the receiver, then each actual it binds. -/
-theorem Effect.pre_frame {e : Effect} {n : Nat} (h : e.below n = true) {F : HeapKnowledge.IndexFact}
+theorem Effect.pre_frame {e : Effect} {n : Nat} (h : e.entryBelow n = true) {F : HeapKnowledge.IndexFact}
     (hF : F ∈ e.pre) (r : Tm) (args vs : List Tm) (d : Tm) (heap : Heap) :
     F.HoldsAt ⟨callEnv r args, heap⟩ (callEnv r args) heap ↔
       F.HoldsAt ⟨envOf (r :: CallArguments.parameters n args ++ vs) d, heap⟩
         (envOf (r :: CallArguments.parameters n args ++ vs) d) heap := by
   refine (Effect.pre_toNow ⟨callEnv r args, heap⟩ _ heap).trans (Iff.trans ?_ (Effect.pre_toNow ⟨callEnv r args, heap⟩ _ heap).symm)
-  exact HeapKnowledge.IndexFact.holdsAt_congr fun s hs => callEnv_frame (Effect.below_pre h F hF s hs) r args vs d
+  exact HeapKnowledge.IndexFact.holdsAt_congr fun s hs => callEnv_frame (Effect.entryBelow_pre h F hF s hs) r args vs d
 
 /-- Actuals past those code binds do not change what its precondition reads. -/
-theorem Effect.pre_take {e : Effect} {n m : Nat} (h : e.below n = true) (hm : n ≤ m) {F : HeapKnowledge.IndexFact}
+theorem Effect.pre_take {e : Effect} {n m : Nat} (h : e.entryBelow n = true) (hm : n ≤ m) {F : HeapKnowledge.IndexFact}
     (hF : F ∈ e.pre) (r : Tm) (args : List Tm) (heap : Heap) :
     F.HoldsAt ⟨callEnv r (args.take m), heap⟩ (callEnv r (args.take m)) heap ↔
       F.HoldsAt ⟨callEnv r args, heap⟩ (callEnv r args) heap := by
   refine (Effect.pre_toNow ⟨callEnv r args, heap⟩ _ heap).trans (Iff.trans ?_ (Effect.pre_toNow ⟨callEnv r args, heap⟩ _ heap).symm)
-  exact HeapKnowledge.IndexFact.holdsAt_congr fun s hs => callEnv_take (by have := Effect.below_pre h F hF s hs; omega) r args
+  exact HeapKnowledge.IndexFact.holdsAt_congr fun s hs => callEnv_take (by have := Effect.entryBelow_pre h F hF s hs; omega) r args
 
-/-- **What a module function's code realizes at arity `n`**: its effect
-below `n` (`below`) but for its postcondition, each fact of which names the
-result (position `0`), the receiver (`1`) and the first `n` parameters only.
-A unit request states its postcondition at its entry frame
-(`PassUnit.EnsuresClause`), so a reassigned parameter does not change what
-it reads. -/
-def Effect.belowRow (n : Nat) (e : Effect) : Bool :=
-  ({ e with ensures := [] } : Effect).below n &&
-    e.ensures.all (fun F => F.slots.all (· ≤ n + 1) && F.entrySlots.all (· ≤ n))
-
-theorem Effect.belowRow_below {e : Effect} {n : Nat} (h : e.belowRow n = true) :
-    ({ e with ensures := [] } : Effect).below n = true := by
-  simp only [Effect.belowRow, Bool.and_eq_true] at h; exact h.1
-
-theorem Effect.belowRow_ensures {e : Effect} {n : Nat} (h : e.belowRow n = true) :
-    ∀ F ∈ e.ensures, ∀ s ∈ F.slots, s ≤ n + 1 := by
-  simp only [Effect.belowRow, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at h
-  exact fun F hF => (h.2 F hF).1
-
-/-- A module function's postcondition reads the entry at the receiver and
-the first `n` parameters only. -/
-theorem Effect.belowRow_ensures_entry {e : Effect} {n : Nat} (h : e.belowRow n = true) :
-    ∀ F ∈ e.ensures, ∀ s ∈ F.entrySlots, s ≤ n := by
-  simp only [Effect.belowRow, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at h
-  exact fun F hF => (h.2 F hF).2
-
-/-- An effect below `n` is one a module function's code realizes. -/
-theorem Effect.belowRow_of_below {e : Effect} {n : Nat} (h : e.below n = true) : e.belowRow n = true := by
-  have he := Effect.below_ensures h
-  have h' : ({ e with ensures := [] } : Effect) = e := by cases e; simp_all
-  simp [Effect.belowRow, h', h, he]
-
-/-- Actuals past those code binds do not change what its postcondition
-reads. -/
-theorem Effect.ensures_take {e : Effect} {n m : Nat} (h : e.belowRow n = true) (hm : n ≤ m)
-    {F : HeapKnowledge.IndexFact} (hF : F ∈ e.ensures) (v r : Tm) (args : List Tm) (before heap : Heap) :
-    F.HoldsAt ⟨callEnv r (args.take m), before⟩ (ensuresEnv v r (args.take m)) heap ↔
-      F.HoldsAt ⟨callEnv r args, before⟩ (ensuresEnv v r args) heap := by
-  refine (HeapKnowledge.IndexFact.holdsAt_congr_entry (ε := ⟨callEnv r (args.take m), before⟩) (ε' := ⟨callEnv r args, before⟩) rfl fun s hs =>
-    callEnv_take (by have := Effect.belowRow_ensures_entry h F hF s hs; omega) r args).trans
-    (HeapKnowledge.IndexFact.holdsAt_congr fun s hs => ?_)
-  have hle := Effect.belowRow_ensures h F hF s hs
-  simp only [ensuresEnv, callEnv]
-  rcases s with _ | _ | i
-  · simp
-  · simp
-  · simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel, List.getD_eq_getElem?_getD, List.getElem?_take]
-    rw [if_pos (by omega)]
-
-/-- Code binding `n` parameters reads its postcondition's positions in its
-entry frame, the result pushed, as the call passed them. -/
-theorem Effect.ensures_frame {e : Effect} {n : Nat} (h : e.belowRow n = true) {F : HeapKnowledge.IndexFact}
-    (hF : F ∈ e.ensures) (v r : Tm) (args vs : List Tm) (d : Tm) (before heap : Heap) :
+/-- Code binding `n` parameters reads a postcondition fact's positions in
+its entry frame, the result pushed, as the call passed them, where the fact
+reads the result, the receiver and the first `n` parameters at exit and the
+receiver and the first `n` parameters at entry. -/
+theorem Effect.ensures_frame {n : Nat} {F : HeapKnowledge.IndexFact} (hsl : ∀ s ∈ F.slots, s ≤ n + 1)
+    (hen : ∀ s ∈ F.entrySlots, s ≤ n) (v r : Tm) (args vs : List Tm) (d : Tm) (before heap : Heap) :
     F.HoldsAt ⟨callEnv r args, before⟩ (ensuresEnv v r args) heap ↔
       F.HoldsAt ⟨envOf (r :: CallArguments.parameters n args ++ vs) d, before⟩
         (push v (envOf (r :: CallArguments.parameters n args ++ vs) d)) heap := by
   refine (HeapKnowledge.IndexFact.holdsAt_congr_entry (ε := ⟨callEnv r args, before⟩)
     (ε' := ⟨envOf (r :: CallArguments.parameters n args ++ vs) d, before⟩) rfl fun s hs =>
-    callEnv_frame (Effect.belowRow_ensures_entry h F hF s hs) r args vs d).trans
+    callEnv_frame (hen s hs) r args vs d).trans
     (HeapKnowledge.IndexFact.holdsAt_congr fun s hs => ?_)
-  have hle := Effect.belowRow_ensures h F hF s hs
+  have hle := hsl s hs
   rcases s with _ | _ | i
   · rfl
   · simp [ensuresEnv, callEnv, push, envOf]
@@ -967,58 +905,6 @@ theorem ElementWrite.holds_pad {w : ElementWrite} {args pad : List Tm} (hpad : �
   · have := ha he
     simp only [ViewAssign, WriteAt, hg] at this ⊢
     exact this
-
-/-- **Agreement across allocation.** Each store region's path reads, at the
-heap before an allocation, what it reads after it: the checked transport a
-frame reading nonempty paths needs to lift across allocation (an actual may
-be a fresh object holding an old array). Empty paths agree always. -/
-def Effect.PrefixAgrees (e : Effect) (ρ : Env) (before middle : Heap) : Prop :=
-  ∀ q ∈ e.regions, ∀ v, HeapKnowledge.readPath middle (ρ q.position) q.path = some v →
-    HeapKnowledge.readPath before (ρ q.position) q.path = some v
-
-theorem Effect.prefixAgrees_of_nil {e : Effect} (h : e.regions.all (·.path.isEmpty) = true) (ρ : Env)
-    (before middle : Heap) : e.PrefixAgrees ρ before middle := by
-  intro q hq v hv
-  have hp := List.isEmpty_iff.mp (List.all_eq_true.mp h q hq)
-  rw [hp] at hv ⊢
-  exact hv
-
-theorem Effect.prefixAgrees_of_regions {e : Effect} (h : e.regions = []) (ρ : Env)
-    (before middle : Heap) : e.PrefixAgrees ρ before middle :=
-  Effect.prefixAgrees_of_nil (by simp [h]) ρ before middle
-
-/-- **A frame selects no new old location across allocation** where its
-paths agree across it (`PrefixAgrees`): each entry selects, among the
-locations of the earlier heap, at the later heap only locations it selects
-at the earlier one. Class regions read a location's contents, which
-allocation keeps. -/
-theorem Effect.frame_mem_prefix {e : Effect} {ρ : Env} {before middle : Heap}
-    (hprefix : before.IsPrefix middle) (hagree : e.PrefixAgrees ρ before middle) :
-    ∀ x ∈ e.frame, ∀ l, l < before.length → x.1.mem ρ middle l = true → x.1.mem ρ before l = true := by
-  intro x hx l hl hm
-  have hgl : middle[l]? = before[l]? := by
-    obtain ⟨t, rfl⟩ := hprefix
-    exact List.getElem?_append_left hl
-  rcases Effect.mem_frame hx with hx | hx | ⟨q, hq, rfl⟩
-  · obtain ⟨S, hS⟩ := Footprints.Closed.fp_entry_cls hx
-    rw [hS] at hm ⊢
-    simpa only [Footprints.Region.mem, hgl] using hm
-  · unfold Effect.receiverEntries at hx
-    split at hx
-    · simp only [List.mem_singleton] at hx
-      subst hx
-      simpa only [Footprints.Region.mem, hgl] using hm
-    · split at hx
-      · simp only [List.mem_singleton] at hx
-        subst hx
-        exact hm
-      · cases hx
-  · simp only [regionEntry, Footprints.ArgumentStoreRegion.entry, Footprints.Region.mem] at hm ⊢
-    split at hm
-    · rename_i w hw'
-      rw [hagree q hq w hw']
-      exact hm
-    · cases hm
 
 /-- Conjoining two guarantees for the same call: the meet of their closed
 bounds, with the promise, receiver mode and store regions they share, a

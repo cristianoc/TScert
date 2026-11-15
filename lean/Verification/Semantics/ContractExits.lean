@@ -118,63 +118,52 @@ theorem Effect.exitPost_summary {e : Effect} {c : Completion} {r : Tm} {args : L
   unfold Exits.exitPost
   rw [Effect.schema_atArity]
 
-/-- **A module function's summary reads its own positions**: where its
-effect is about the receiver and its first `n` parameters
-(`Effect.belowRow`), its frames read call positions up to `n` and its
-postconditions the entry positions up to `n` and the exit positions up to
-`n + 1`. -/
-theorem Effect.summary_scoped {e : Effect} {n : Nat} (h : e.belowRow n = true) (k : Nat)
-    (arena : AssertionArena) :
-    effectScoped (n + 1) (e.summary k).normal.frame = true ∧
-      (e.summary k).normal.ensures.all (FormulaF.scoped arena ⟨n + 1, n + 2⟩) = true ∧
-      effectScoped (n + 1) (e.summary k).exceptional.frame = true ∧ (e.summary k).exceptional.ensures = [] := by
-  have hb := Effect.belowRow_below h
-  have hreg : e.regions = [] := Effect.below_regions (e := { e with ensures := [] }) hb
-  have hg : e.receiverGrows = false := Effect.below_grows (e := { e with ensures := [] }) hb
-  have hx : e.elementWrite = none := Effect.below_write (e := { e with ensures := [] }) hb
-  have hframe : effectScoped (n + 1) e.frame = true := by
-    unfold effectScoped
-    refine List.all_eq_true.mpr fun x hx' => ?_
-    rcases Effect.mem_frame hx' with hc | hr | ⟨q, hq, -⟩
-    · obtain ⟨S, hS⟩ := Closed.fp_entry_cls hc
-      simp [hS, regionRoots]
-    · unfold Effect.receiverEntries at hr
-      split at hr
-      · simp only [List.mem_singleton] at hr; subst hr; simp [regionRoots]
-      · split at hr
-        · simp only [List.mem_singleton] at hr; subst hr; simp [regionRoots]
-        · cases hr
-    · rw [hreg] at hq; cases hq
-  have htop : effectScoped (n + 1) topEffect = true := rfl
-  refine ⟨hframe, ?_, ?_, ?_⟩
-  · simp only [Effect.summary, Effect.normalPosts, hg, hx, Bool.false_eq_true, if_false,
-      List.append_nil, List.all_append, Bool.and_eq_true]
-    refine ⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩
-    · cases e.fresh <;> simp [FormulaF.scoped, OperationPostF.scoped]
-    · cases e.freshObject <;> simp [FormulaF.scoped, OperationPostF.scoped]
-    · cases e.elements <;> simp [FormulaF.scoped, OperationPostF.scoped]
-    · refine List.all_eq_true.mpr fun F hF => ?_
-      obtain ⟨G, hG, rfl⟩ := List.mem_map.mp hF
-      simp only [FormulaF.scoped, OperationPostF.scoped, Scope.count, Nat.add_zero, Bool.and_eq_true,
-        List.all_eq_true, decide_eq_true_eq]
-      exact ⟨fun i hi => decide_eq_true (by have := Effect.belowRow_ensures h G hG i hi; omega),
-        fun i hi => by have := Effect.belowRow_ensures_entry h G hG i hi; omega⟩
-  · simp only [Effect.summary]
-    split
-    · exact hframe
-    · exact htop
-  · simp only [Effect.summary]
-    split <;> rfl
+/-- **The scope of a signature at code of arity `n`**: what it states of
+the call's values at entry (`Effect.entryBelow`) and its schema
+(`Exits.belowRow`) are about the receiver and the first `n` parameters, the
+ones code of arity `n` binds. Whether a body establishes what the schema
+states is body certification's decision (`ProgramTyping.codeObligations`). -/
+def Effect.belowRow (n : Nat) (e : Effect) : Bool := e.entryBelow n && e.schema.belowRow n
 
-/-- **A signature about its receiver and its first `n` parameters has one
-summary at every arity** (`Effect.belowRow`): it states no append of the
-actuals and no element write, the postconditions that read the arity. -/
-theorem Effect.summary_arity {e : Effect} {n : Nat} (hb : e.belowRow n = true) (k k' : Nat) :
-    e.summary k = e.summary k' := by
-  have hb0 := Effect.belowRow_below hb
-  have hg : e.receiverGrows = false := Effect.below_grows (e := { e with ensures := [] }) hb0
-  have hx : e.elementWrite = none := Effect.below_write (e := { e with ensures := [] }) hb0
-  simp [Effect.summary, Effect.normalPosts, hg, hx]
+theorem Effect.belowRow_entry {e : Effect} {n : Nat} (h : e.belowRow n = true) : e.entryBelow n = true := by
+  simp only [Effect.belowRow, Bool.and_eq_true] at h; exact h.1
+
+/-- **A signature scoped at arity `n` has a schema scoped there**. -/
+theorem Effect.schema_belowRow {e : Effect} {n : Nat} (h : e.belowRow n = true) : e.schema.belowRow n = true := by
+  simp only [Effect.belowRow, Bool.and_eq_true] at h; exact h.2
+
+/-- **A signature's summary at its code's arity reads its own positions**
+(`Exits.belowRow`): at arity `n` the summary is the schema at the code's
+instantiation, its frames reading call positions up to `n`, its
+postconditions entry positions up to `n` and exit positions up to `n + 1`. -/
+theorem Effect.summary_scoped {e : Effect} {n : Nat} (h : e.belowRow n = true) (c : Completion) :
+    effectScoped (n + 1) ((e.summary n).get c).frame = true ∧
+      ((e.summary n).get c).ensures.all (FormulaF.scoped AssertionArena.empty ⟨n + 1, n + 2⟩) = true := by
+  have hb := Effect.schema_belowRow h
+  simp only [Exits.belowRow, Bool.and_eq_true, decide_eq_true_eq] at hb
+  obtain ⟨⟨⟨-, hslots⟩, hn⟩, hx⟩ := hb
+  have hι : e.schema.callInstantiation n = arityInstantiation n := by
+    simp only [Exits.callInstantiation, arityInstantiation, Nat.max_eq_left hslots]
+  have hq : (e.schema.get c).belowRow n = true := by cases c <;> assumption
+  simp only [ExitSchema.belowRow, Bool.and_eq_true] at hq
+  rw [← Effect.schema_atArity, Exits.atArity, Exits.get_map, hι]
+  exact ⟨hq.1.1, by simpa only [ExitSchema.instantiate, List.all_map, Function.comp_def] using hq.2⟩
+
+/-- **A postcondition fact of a signature scoped at arity `n`** reads the
+result, the receiver and the first `n` parameters at exit and the receiver
+and the first `n` parameters at entry (`Effect.summary_scoped`, the fact as
+the normal exit's postcondition). -/
+theorem Effect.belowRow_ensures {e : Effect} {n : Nat} (h : e.belowRow n = true) {F : HeapKnowledge.IndexFact}
+    (hF : F ∈ e.ensures) : (∀ s ∈ F.slots, s ≤ n + 1) ∧ ∀ s ∈ F.entrySlots, s ≤ n := by
+  have hs := (Effect.summary_scoped h .normal).2
+  have hm : (FormulaF.operation (.fact .after 0 F) : Formula) ∈ ((e.summary n).get .normal).ensures := by
+    simp only [Effect.summary, Exits.get, Effect.normalPosts, List.mem_append, List.mem_map]
+    exact .inl (.inl (.inr ⟨F, hF, rfl⟩))
+  have := List.all_eq_true.mp hs _ hm
+  simp only [FormulaF.scoped, OperationPostF.scoped, Scope.count, Nat.add_zero, Bool.and_eq_true,
+    List.all_eq_true, decide_eq_true_eq] at this
+  exact ⟨fun s hs' => by have := of_decide_eq_true (this.1 s hs'); omega,
+    fun s hs' => by have := this.2 s hs'; omega⟩
 
 /-- **A signature's schema has canonical transports**: its one transport,
 the written result, reads each other entry slot at the next exit slot. -/
@@ -202,38 +191,6 @@ theorem Effect.schema_canonical (e : Effect) : e.schema.canonicalTransports = tr
   · simp only [Effect.schema, ExitSchema.canonicalTransports]
     split <;> rfl
 
-/-- **A signature scoped at arity `n` has a schema scoped there**
-(`Exits.belowRow`): no transport and no append, its frames read call
-positions up to `n` and its postconditions, instantiated at the code's
-arity, the summary's (`Effect.summary_scoped`). -/
-theorem Effect.schema_belowRow {e : Effect} {n : Nat} (hb : e.belowRow n = true) : e.schema.belowRow n = true := by
-  have hb0 := Effect.belowRow_below hb
-  have hg : e.receiverGrows = false := Effect.below_grows (e := { e with ensures := [] }) hb0
-  have hx : e.elementWrite = none := Effect.below_write (e := { e with ensures := [] }) hb0
-  have hslots : e.schema.slots = 0 := by rw [Effect.schema_slots, hx]
-  have hι : e.schema.callInstantiation n = arityInstantiation n := by
-    simp only [Exits.callInstantiation, arityInstantiation, hslots, Nat.max_zero]
-  obtain ⟨h₁, h₂, h₃, h₄⟩ := Effect.summary_scoped hb n AssertionArena.empty
-  rw [← Effect.schema_atArity] at h₁ h₂ h₃ h₄
-  simp only [Exits.atArity, hι] at h₁ h₂ h₃ h₄
-  have hfix : e.normalSchema.all (·.fixedLength) = true := by
-    simp only [Effect.normalSchema, hg, hx, Bool.false_eq_true, if_false, List.append_nil, List.all_append,
-      Bool.and_eq_true]
-    refine ⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩
-    · cases e.fresh <;> rfl
-    · cases e.freshObject <;> rfl
-    · cases e.elements <;> rfl
-    · exact List.all_eq_true.mpr fun F hF => by
-        obtain ⟨G, -, rfl⟩ := List.mem_map.mp hF; rfl
-  simp only [Exits.belowRow, Effect.schema_canonical, hslots, Bool.and_eq_true, decide_eq_true_eq]
-  refine ⟨⟨⟨trivial, (by omega)⟩, ?_⟩, ?_⟩
-  · simp only [ExitSchema.belowRow, Bool.and_eq_true]
-    refine ⟨⟨h₁, hfix⟩, ?_⟩
-    simpa [Exits.atArity, Exits.map, ExitSchema.instantiate, List.all_map] using h₂
-  · have he : e.schema.exceptional.ensures = [] := by simp only [Effect.schema]; split <;> rfl
-    simp only [ExitSchema.belowRow, he, List.all_nil, Bool.and_true]
-    simpa [Exits.atArity, Exits.map, ExitSchema.instantiate] using h₃
-
 /-- **A guarantee about the receiver and the first `n` parameters holds at
 every call extending the call of its first `m ≥ n` actuals**
 (`Effect.belowRow`): its schema is scoped there (`Effect.schema_belowRow`,
@@ -242,60 +199,6 @@ theorem Effect.exitPost_take {e : Effect} {n m : Nat} (hb : e.belowRow n = true)
     {r : Tm} {args : List Tm} {s s' : IndexedHeap} {v : Tm} (hp : e.schema.exitPost c r (args.take m) s s' v) :
     e.schema.exitPost c r args s s' v :=
   (Exits.exitPost_take (Effect.schema_belowRow hb) hm).mp hp
-
-/-- **A signature without store regions selects no new old location across
-allocation**, on either exit: its frame's paths agree across it
-(`Effect.frame_mem_prefix`), and `⊤` is of class regions, which read a
-location's contents. -/
-theorem Effect.schema_frame_mem_prefix {e : Effect} (hreg : e.regions = []) (c : Completion) {ρ : Env}
-    {before middle : Heap} (hprefix : before.IsPrefix middle) :
-    ∀ x ∈ (e.schema.get c).frame, ∀ l, l < before.length → x.1.mem ρ middle l = true →
-      x.1.mem ρ before l = true := by
-  have hf := Effect.frame_mem_prefix hprefix (Effect.prefixAgrees_of_regions hreg ρ before middle)
-  intro x hx l hl hm
-  cases c with
-  | normal => exact hf x hx l hl hm
-  | exceptional =>
-    simp only [Exits.get, Effect.schema] at hx
-    split at hx
-    · exact hf x hx l hl hm
-    · have hgl : middle[l]? = before[l]? := by
-        obtain ⟨t, rfl⟩ := hprefix
-        exact List.getElem?_append_left hl
-      obtain ⟨S, hS⟩ := Footprints.Closed.fp_entry_cls hx
-      rw [hS] at hm ⊢
-      simpa only [Footprints.Region.mem, hgl] using hm
-
-/-- **A signature's exits carried across an allocation before the call**
-(`Exits.compose_entry`): a signature stating no store region, no ensured
-fact, no append and no element write has from an entry the exits it has
-from a later entry, at a world the first reaches, whose heap extends the
-first's by allocation. Its frame rebases to itself (`Rebases.of_prefix`),
-the allocation keeps every old location (`Post.of_prefix`), and its
-postconditions read the entry only through the freshness mark, which the
-allocation raises (`FreshAt.lower`, `FreshObjectAt.lower`). -/
-theorem Effect.exitPost_prefix {e : Effect} (hreg : e.regions = []) (hens : e.ensures = [])
-    (hg : e.receiverGrows = false) (hx : e.elementWrite = none) {c : Completion} {r : Tm} {args : List Tm}
-    {s₀ s₁ s₂ : IndexedHeap} {v : Tm} (hadm : Admissible s₀ s₁) (hprefix : s₀.h.IsPrefix s₁.h)
-    (h : e.schema.exitPost c r args s₁ s₂ v) : e.schema.exitPost c r args s₀ s₂ v := by
-  refine Exits.compose_entry (Φ := []) (cl := fun _ _ => none) ⟨hadm, Post.of_prefix _ _ hprefix⟩
-    (Rebases.of_prefix (Effect.schema_frame_mem_prefix hreg c hprefix)) (Footprint.le_refl _ _)
-    (fun _ _ _ _ hc => by cases hc) ?_ h
-  intro u z hF
-  rw [Effect.schema_atArity] at hF ⊢
-  intro F hFm
-  have hH := hF F hFm
-  cases c with
-  | exceptional =>
-    simp only [Exits.get, Effect.summary] at hFm
-    split at hFm <;> cases hFm
-  | normal =>
-    simp only [Exits.get, Effect.summary, Effect.normalPosts, hg, hx, hens, Bool.false_eq_true, if_false,
-      List.map_nil, List.append_nil, List.mem_append] at hFm
-    rcases hFm with (hf | ho) | hel
-    · cases hc : e.fresh <;> simp [hc] at hf; subst hf; exact FreshAt.lower hprefix.length_le hH
-    · cases hc : e.freshObject <;> simp [hc] at ho; subst ho; exact FreshObjectAt.lower hprefix.length_le hH
-    · cases hc : e.elements <;> simp [hc] at hel; subst hel; exact hH
 
 /-- **An allocation alone meets every signature's exceptional exit**: it
 keeps every old location (`Post.of_prefix`), and the exceptional exit
