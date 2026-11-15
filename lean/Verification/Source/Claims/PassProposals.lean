@@ -4,19 +4,20 @@ import Verification.Source.Lowering.ExitProposals
 /-! **Proposals by the pass** ([proposals by the pass](../../../../docs/drafts/proposals-by-the-pass.md)):
 what the front proposes about a body's unwritten effect is computed with
 the pass's own steps on that body. A function's unwritten effect is a
-per-exit summary (`SourceExtraction.ClassSummary`): its normal exit's bound
-the join of its checked steps' local effects on normal return, its
-exceptional exit's the join of their local effects with their throws
-bounded, each step's local effect the least closed footprint its check
-accepts on one of the two
-routes the pass checks a footprint by: the direct node-by-node check
-(`SinglePass.footprintCheck`), and the regional fallback, whose
-alternatives (`ArgumentRegionGraph.stepEffects`' kinds) are rebased to the
-entry through the regional facts (`rebaseAll`) and read in the closed
-language. The returned function's footprint is read off the returned
+per-exit summary (`SourceExtraction.ClassSummary`): each checked step's
+local summary, independent of any enclosing bound, composed over the body's
+graph by the rules of `ClassSummary` (`composeGraph`: Seq-Eff on both
+exits, choice at joins, a caught throw entering its handler). A step's
+local summary is read on one of the two routes the pass checks a footprint
+by: the direct node-by-node check, from its visit's certificate
+(`localSummary`), and the regional fallback, whose alternatives
+(`ArgumentRegionGraph.stepEffects`' kinds) are rebased to the entry
+through the regional facts (`rebaseAll`) and read in the closed language
+(`regional`). The returned function's footprint is read off the returned
 value's checked type. A plan reads a summary's projection
-(`ClassSummary.project`). A proposal decides nothing: the function's own
-unit checks it, and its callers read it. -/
+(`ClassSummary.project`, whose schema is above the summary's,
+`ClassSummary.project_entails`). A proposal decides nothing: the
+function's own unit checks it, and its callers read it. -/
 namespace Verification.SourceClaimJson
 
 /-- A written-footprint stand-in: the effect a function or an import would
@@ -333,6 +334,9 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
       let hints := (r.codeHints[ci]?).getD {}
       let rq := q.asRequest r.toRequest
       let eff := q.entry.row.effect
+      -- (the code's conditions and bound as the check computes them,
+      -- `passGroup`, `PassUnit.codeConditions`, `PassUnit.codeBound`: a
+      -- proposal's run is the run the check makes)
       let conditions := decide (q.entry.arity ≤ q.entry.row.arguments.length) && eff.below q.entry.arity &&
         !eff.freshObject && eff.requires.isNone && eff.elements.isNone && !eff.receiverGrows && eff.elementWrite.isNone
       if !conditions || !RequestJson.asyncEffects q.async eff.footprint then
@@ -495,7 +499,10 @@ def proposalDepth : Nat := 12
 /-- What the functions of a file read of each other while proposed: the
 summary of a function's written closed footprint and throw bound where it
 states one without regions (`ClassSummary.ofFormat`), `top` where it states
-one with regions. -/
+one with regions. This is the reading of a statement the claims document
+gives the function (`fragmentClaims`, a footprint and a throw flag, which
+`RequestJson.statedWithin` compares with the statement), and changes with
+that document's format. -/
 def written (f : Fragment.Fn) : Option SourceExtraction.ClassSummary :=
   f.stated.map fun s => if s.regions.isEmpty then .ofFormat s.closed s.onThrow else .ofFormat .top false
 
@@ -535,11 +542,15 @@ functions it reaches outside its group; its interface from its own steps
 (`settledInterface`); the functions `controls` names at their stand-ins.
 A written effect's footprint and throw bound are kept whole (their summary,
 `ClassSummary.ofFormat`), its steps proposing its returned function's
-footprint. A self-recursive function's own reads, a summary, start at both
-exits keeping everything and are joined exit by exit with what its steps
-establish until each exit they establish is within the one read
-(`ClassSummary.within`), at most once per step of the summaries' height
-(25 rounds).
+footprint. A self-recursive function's own reads are found by a **bounded
+search** of at most 25 rounds: a summary read, first both exits keeping
+everything, joined exit by exit with what the steps establish
+(`ClassSummary.choice`) until each exit they establish is within the one
+read (`ClassSummary.within`); none where no round of the 25 stops. That 25
+rounds suffice is argued, not proved: a round that does not stop raises a
+component of an exit's bound, at most 4 times for each of the 3 components
+of the 2 exits. The round that stops proposes the summary read; the
+function's own unit checks it.
 `memo` keys each run by its inputs, both exits of each summary read
 included (`inputDigest`). None where the pass
 establishes nothing of it (callers read it at its written effect or `top`).
@@ -583,16 +594,14 @@ def proposeOne (fr : Front) (controls : List String) (force : List String) (prio
       let (got, memo) := establish (some { name := f.name, summary := S }) memo
       (got.map fun got => { got with summary := S }, memo)
     else if (fr.mentions i).contains f.name then Id.run do
-      -- A recursion assumption, per exit: first both exits keeping
-      -- everything; accepted where each exit of what the body establishes
-      -- entails the assumption's (`ClassSummary.within`,
+      -- A recursion assumption, per exit, found by a bounded search: first
+      -- both exits keeping everything; kept where each exit of what the
+      -- body establishes entails the assumption's (`ClassSummary.within`,
       -- `ClassSummary.within_weakens`), else widened to the join
-      -- (`ClassSummary.choice`, `ClassSummary.within_choice`). A round that
-      -- does not stop raises a component of an exit's bound (the join's
-      -- components are the maxima, and a bound raised in no component is
-      -- within): at most 4 raises for each of the 3 components of the 2
-      -- exits, so the 25th round reads `top` at both exits, within which
-      -- every summary is, and stops.
+      -- (`ClassSummary.choice`, `ClassSummary.within_choice`); none after
+      -- 25 rounds that do not stop. (Argued, not proved: a round that does
+      -- not stop raises a component of an exit's bound, at most 4 raises
+      -- for each of the 3 components of the 2 exits.)
       let mut assumed : SourceExtraction.ClassSummary := .ofFormat keepAll true
       let mut memo := memo
       for _ in List.range 25 do

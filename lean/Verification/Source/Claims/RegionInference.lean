@@ -74,8 +74,8 @@ keep is an entry the edge into the head does not establish. -/
     if next = tables then some tables else claimedFreshIterate G images Φ nodes fuel next
 
 /-- The field names the store regions of a unit's callees read through one
-field: the effects each call node's context types state (`regionNames` over
-a certificate's selected effects). -/
+field: the effects each call node's context types state, read from their
+normal frames (`regionNames` over a certificate's selected effects). -/
 def calleeRegionNames (r : SourceExtraction.SourceRequest σ ι) : List String :=
   let G := RequestJson.graph r.toRequest
   let tys := ((r.program.zip r.claims).flatMap fun (n, c) => match n.expression with
@@ -83,9 +83,7 @@ def calleeRegionNames (r : SourceExtraction.SourceRequest σ ι) : List String :
     | _ => []).eraseDups
   (tys.flatMap fun F => match PositiveRules.expand G F with
     | [PositiveNormalization.Clause.arrs L _] | [PositiveNormalization.Clause.callable _ _ L _ _] =>
-      L.flatMap fun p => p.effect.regions.filterMap fun x => match x.path with
-        | [f] => some f
-        | _ => none
+      L.flatMap fun p => SourceExtraction.regionFields p.effect.schema.normal.frame
     | _ => []).eraseDups
 
 /-- A regional check's tables at the unit's statement entries, inferred

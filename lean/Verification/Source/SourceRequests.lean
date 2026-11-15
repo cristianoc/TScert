@@ -4,6 +4,7 @@ import Verification.Programs.ArgumentRegionCertificates
 -- SourceResolution.lean constructs the qualified body checker from the retained
 -- source signature and proves the descriptor evidence used by source instances.
 import Verification.Source.SourceResolution
+import Verification.Source.Lowering.ExitReaders
 
 namespace Verification.SourceExtraction
 open Lean ProgramTyping PositiveRules ControlFlow CertificateProducer RequestJson
@@ -224,12 +225,12 @@ decides whether the result holds at every node and on every edge. -/
     if next = tables then some tables else freshTablesIterate G images sums Φ nodes fuel next
 
 /-- The field names the regions of a body's calls read through one field:
-the fields whose freshness its fresh-field facts range over. -/
+the fields whose freshness its fresh-field facts range over, read from each
+selected signature's normal frame (`SourceExtraction.regionFields`,
+`regionFields_schema`). -/
 def regionNames (C : ControlFlow.Certificate ι) : List String :=
   (C.flatMap fun c => match ExpressionEffects.selectedEffect c.expression with
-    | some eff => eff.regions.filterMap fun r => match r.path with
-      | [f] => some f
-      | _ => none
+    | some eff => SourceExtraction.regionFields eff.schema.normal.frame
     | none => []).eraseDups
 
 /-- One pass over candidate fresh fields, the fresh values fixed: at each

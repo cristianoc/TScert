@@ -590,6 +590,7 @@ run_cmd do
   check ``Verification.SourceExtraction.ClassSummary.handle_after
   check ``Verification.SourceExtraction.ClassSummary.schema_atArity
   check ``Verification.SourceExtraction.ClassSummary.freshResult_schema
+  check ``Verification.SourceExtraction.regionFields_schema
   check ``Verification.SourceExtraction.ClassSummary.within_weakens
   check ``Verification.SourceExtraction.ClassSummary.within_choice
   check ``Verification.SourceExtraction.ClassSummary.exitHolds_then
