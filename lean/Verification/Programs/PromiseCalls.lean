@@ -2158,7 +2158,9 @@ theorem storeHeld_sound {k : HeapKnowledge.Knowledge} {s : Nat} {ρ : Env} {h : 
       exact ⟨l, ls, hxs ▸ hs, hls⟩
     · cases hm
 
-/-- The slots whose store a frame with store regions keeps (`regionFirst_kept`). -/
+/-- The slots whose store a frame with store regions keeps (`regionFirst_kept`,
+the Lean statement the note *Tolerant frames* cites for its axiom (Sep); the
+pass reads the frame route, `callKeeps`, instead). -/
 def regionFirst (k : HeapKnowledge.Knowledge) (eff : Effect) (t : Tm) : Nat → String → Bool :=
   fun s g => g == "[]" && eff.closed.stores.onStore == .keep && !eff.regions.isEmpty &&
     eff.regions.all (regionSep k t s) && storeHeld k s
@@ -3340,57 +3342,59 @@ theorem callRelation_holds {eff : Effect} {t : Tm} {ρ : Env} {h h' : Heap} {v :
   · exact ⟨fun F hF => (by cases hF), fun _ u hu => (by cases hu), fun u hu => (by cases hu)⟩
 
 open HeapKnowledge in
-/-- **The change a call makes to the caller's heap** (`Changes`), with the
-fields of slots' objects it keeps (`first`), by the mode its effect states:
-with `receiverGrows`, its growth; with a receiver mode, every change; with
-store regions and no element write, every change but the regions' frame;
-otherwise its element write's change, or its closed footprint's. -/
-def callChange (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : Knowledge) :
-    Changes × (Nat → String → Bool) :=
-  if eff.receiverGrows then (growChanges, fun s g => growFirst k t s g || stable s g)
-  else if eff.receiverStore || eff.receiverOwn then (Changes.top, fun _ _ => false)
-  else if !eff.regions.isEmpty then
-    if eff.elementWrite.isNone then (Changes.top, fun s g => regionFirst k eff t s g || stable s g)
-    else (Changes.top, fun _ _ => false)
-  else match eff.elementWrite with
-    | some w => (w.changes, stable)
-    | none => (Changes.ofClosed eff.footprint, stable)
+/-- **The changes a call's normal exit states of the caller's heap**
+(`Changes`), each with the fields of slots' objects it keeps (`first`): the
+growth where it states the receiver's store extended (`statesExtension`:
+`growChanges`, `growFirst`), an element write's where it states the views'
+growth (`statesViewGrowth`: `writeChanges`), and its frame's closed bound
+(`Footprint.boundBelow` with no fresh position, `Changes.ofClosed`). -/
+def callChanges (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : Knowledge) :
+    List (Changes × (Nat → String → Bool)) :=
+  (if statesExtension eff t then [(growChanges, fun s g => growFirst k t s g || stable s g)] else []) ++
+  (if statesViewGrowth eff t then [(writeChanges, stable)] else []) ++
+  [(Changes.ofClosed (Footprints.Footprint.boundBelow [] eff.frame), stable)]
 
 open HeapKnowledge in
-/-- The call's change holds of its step, and the fields it keeps keep their
+/-- Each change holds of the call's step, and the fields it keeps keep their
 contents (proved). -/
-theorem callChange_holds {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h' : Heap}
+theorem callChanges_holds {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h' : Heap}
     (hk : Holds k ε ρ h)
     (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
     (hg : eff.receiverGrows = true →
       CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h')
     (hew : ∀ w, eff.elementWrite = some w → w.Holds (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
     (hst : FirstKept stable ρ h h') :
-    (callChange stable eff t k).1.Holds h h' ∧ FirstKept (callChange stable eff t k).2 ρ h h' := by
-  have hnone : FirstKept (fun _ _ => false) ρ h h' := fun _ _ _ _ _ _ _ hf => by cases hf
-  unfold callChange
-  split
-  · rename_i hgr
-    exact ⟨receiverGrows_changes (hg hgr), firstKept_or (growFirst_kept hk (hg hgr)) hst⟩
-  split
-  · exact ⟨Changes.top_holds h h', hnone⟩
-  rename_i hmode
-  simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at hmode
-  obtain ⟨hs, ho⟩ := hmode
-  split
-  · split
-    · exact ⟨Changes.top_holds h h', firstKept_or (regionFirst_kept hk hs ho hw) hst⟩
-    · exact ⟨Changes.top_holds h h', hnone⟩
-  split
-  · rename_i w hwr
-    exact ⟨(hew w hwr).changes, hst⟩
-  · exact ⟨Changes.ofClosed_holds (CallEffects.Effect.within_holds hw hs ho), hst⟩
+    ∀ c ∈ callChanges stable eff t k, c.1.Holds h h' ∧ FirstKept c.2 ρ h h' := by
+  intro c hc
+  unfold callChanges at hc
+  simp only [List.mem_append] at hc
+  rcases hc with (hc | hc) | hc
+  · split at hc
+    · rename_i hx
+      simp only [List.mem_singleton] at hc; subst hc
+      have hgr := hg (statesExtension_grows hx)
+      exact ⟨receiverGrows_changes hgr, firstKept_or (growFirst_kept hk hgr) hst⟩
+    · cases hc
+  · split at hc
+    · rename_i hv
+      simp only [List.mem_singleton] at hc; subst hc
+      obtain ⟨w, hwr⟩ := statesViewGrowth_write hv
+      have := (hew w hwr).changes
+      exact ⟨by cases w <;> exact this, hst⟩
+    · cases hc
+  · simp only [List.mem_singleton] at hc; subst hc
+    refine ⟨Changes.ofClosed_holds (Footprints.Closed.holds_of_on ?_), hst⟩
+    have hb := Footprints.Footprint.boundBelow_sound (b := h.length) hw (Footprints.FreshPositions.nil _ _)
+    exact ⟨hb.1, fun l v _ hv => hb.2 l v (List.getElem?_eq_some_iff.mp hv).1 hv⟩
 
 open HeapKnowledge in
-/-- Whether a call keeps the value of a term of the caller: its change keeps
-it (`Term.keptBy`). -/
+/-- **Whether a call keeps the value of a term of the caller**: a change its
+normal exit states keeps it (`Term.keptBy`, the note's Entry), or its frame
+at the caller's slots respects the term's support at `keep` under the query
+of the call's entry (`Term.support`, `respects`, the note's Frame). -/
 def callKeeps (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : Knowledge) (u : Term) : Bool :=
-  u.keptBy (callChange stable eff t k).1 (callChange stable eff t k).2
+  (callChanges stable eff t k).any (fun c => u.keptBy c.1 c.2) ||
+    Footprints.respects (Footprints.knowledgeQuery k) (u.support { stable } .keep) (callerFrame eff t)
 
 open HeapKnowledge in
 /-- A term of the caller the call keeps, read after the return one slot
@@ -3399,10 +3403,13 @@ def callKept (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : Kno
   if callKeeps stable eff t k u then some (u.mapM' (· + 1)) else none
 
 open HeapKnowledge in
-/-- A term of the caller the call grows (`Term.grownBy` of its change),
-read after the return one slot higher. -/
+/-- A term of the caller the call grows: a change its normal exit states
+grows it (`Term.grownBy`), or its frame respects the term's support at
+`grow`; read after the return one slot higher. -/
 def callGrown (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : Knowledge) (u : Term) : Option Term :=
-  if u.grownBy (callChange stable eff t k).1 (callChange stable eff t k).2 then some (u.mapM' (· + 1)) else none
+  if (callChanges stable eff t k).any (fun c => u.grownBy c.1 c.2) ||
+      Footprints.respects (Footprints.knowledgeQuery k) (u.support { stable } .grow) (callerFrame eff t)
+  then some (u.mapM' (· + 1)) else none
 
 open HeapKnowledge in
 theorem callKept_sound {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
@@ -3419,8 +3426,14 @@ theorem callKept_sound {stable : Nat → String → Bool} {eff : Effect} {t : Tm
   · rename_i hc
     cases hu
     rw [termValue_mapM' fun _ => rfl]
-    obtain ⟨hch, hf⟩ := callChange_holds hk hw hg hew hst
-    exact termValue_kept hch hf hc hn
+    unfold callKeeps at hc
+    rcases Bool.or_eq_true_iff.mp hc with hc | hc
+    · obtain ⟨c, hcm, hc⟩ := List.any_eq_true.mp hc
+      obtain ⟨hch, hf⟩ := callChanges_holds hk hw hg hew hst c hcm
+      exact termValue_kept hch hf hc hn
+    · obtain ⟨n', h1, -, h3⟩ := Footprints.Term.support_sound (c := { stable }) hst (.inl rfl)
+        (Footprints.respect_sound hc (Footprints.knowledgeQuery_sound hk) (callerFrame_post hw)) hn
+      rw [h3 rfl] at h1; exact h1
   · cases hu
 
 open HeapKnowledge in
@@ -3439,8 +3452,13 @@ theorem callGrown_sound {stable : Nat → String → Bool} {eff : Effect} {t : T
   · rename_i hc
     cases hu
     rw [termValue_mapM' fun _ => rfl]
-    obtain ⟨hch, hf⟩ := callChange_holds hk hw hg hew hst
-    exact termValue_grown hch hf hc hn
+    rcases Bool.or_eq_true_iff.mp hc with hc | hc
+    · obtain ⟨c, hcm, hc⟩ := List.any_eq_true.mp hc
+      obtain ⟨hch, hf⟩ := callChanges_holds hk hw hg hew hst c hcm
+      exact termValue_grown hch hf hc hn
+    · obtain ⟨n', h1, h2, -⟩ := Footprints.Term.support_sound (c := { stable }) hst (.inr rfl)
+        (Footprints.respect_sound hc (Footprints.knowledgeQuery_sound hk) (callerFrame_post hw)) hn
+      exact ⟨n', h1, h2⟩
   · cases hu
 
 open HeapKnowledge in

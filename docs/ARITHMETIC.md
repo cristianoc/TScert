@@ -807,9 +807,14 @@ $`t`$ reads,
 
 and nothing where $`\delta`$ may change $`t`$ otherwise (`Term.keptBy`,
 `Term.grownBy`; the relation `growth`, proved `growth_holds` from
-`termValue_grown`). The change is the effect's (`callChange` at a call, by
-the mode its effect states, proved `callChange_holds`; the growth of the
-receiver at a push; a growing write at the length), and the same context
+`termValue_grown`). At a call a term is kept or grown where a change its
+normal exit states keeps or grows it, the growth where it states the
+receiver's store extended, an element write's where it states the views'
+growth, and its frame's closed bound (`callChanges`, proved
+`callChanges_holds`), or where its frame at the caller's slots respects the
+term's support (`callKeeps`, `callGrown`, through `respect_sound` and
+`Term.support_sound`); elsewhere the change is the growth of the receiver at
+a push, or a growing write at the length; and the same context
 composes every linear and every other post fact (`callContext`). From
 $`|w|\le|s|`$ before a call growing every store whose post states
 $`|w|=\mathrm{old}(|w|)+2`$, the caller reads $`|w|-2\le|s|`$ after it:
