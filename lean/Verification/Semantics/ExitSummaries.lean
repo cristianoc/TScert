@@ -664,6 +664,112 @@ theorem Effect.freshResult_schema (e : Effect) : e.schema.normal.freshResult = e
   simp only [ExitSchema.freshResult, Effect.schema, Effect.normalSchema, List.mem_append]
   cases e.fresh <;> cases e.freshObject <;> cases e.receiverGrows <;> simp <;> exact ⟨he, hg⟩
 
+/-- **Whether an exit states a fresh result object**: its postcondition that
+every own location of the result was allocated during the call
+(`freshObject 0`). -/
+def ExitSchema.freshObjectResult (q : ExitSchema) : Bool := decide (FormulaF.operation (.freshObject 0) ∈ q.ensures)
+
+/-- The element predicate of a postcondition `elementsWhen 0 true 1 R`. -/
+def elementsWhenTrueOf : FormulaSchema → Option ElemPred
+  | .operation (.elementsWhen 0 .tru 1 R) => some R
+  | _ => none
+
+/-- The index fact of a postcondition `fact after 0 F`. -/
+def factAfterOf : FormulaSchema → Option IndexFact
+  | .operation (.fact .after 0 F) => some F
+  | _ => none
+
+/-- **The element predicates an exit states of the receiver where the
+result is `true`**: each postcondition `elementsWhen 0 true 1 R`. -/
+def ExitSchema.elementsWhenTrue (q : ExitSchema) : List ElemPred := q.ensures.filterMap elementsWhenTrueOf
+
+/-- **The index facts an exit states at its exit**: each postcondition
+`fact after 0 F`, the fact `F` read at the result (position `0`) and the
+call's positions one higher, in the heap the exit leaves. -/
+def ExitSchema.facts (q : ExitSchema) : List IndexFact := q.ensures.filterMap factAfterOf
+
+theorem ExitSchema.mem_elementsWhenTrue {q : ExitSchema} {R : ElemPred} :
+    R ∈ q.elementsWhenTrue ↔ FormulaF.operation (.elementsWhen 0 .tru 1 R) ∈ q.ensures := by
+  simp only [ExitSchema.elementsWhenTrue, List.mem_filterMap]
+  constructor
+  · rintro ⟨F, hF, hR⟩
+    unfold elementsWhenTrueOf at hR
+    split at hR
+    · cases hR; exact hF
+    · cases hR
+  · exact fun h => ⟨_, h, rfl⟩
+
+theorem ExitSchema.mem_facts {q : ExitSchema} {F : IndexFact} :
+    F ∈ q.facts ↔ FormulaF.operation (.fact .after 0 F) ∈ q.ensures := by
+  simp only [ExitSchema.facts, List.mem_filterMap]
+  constructor
+  · rintro ⟨G, hG, hF⟩
+    unfold factAfterOf at hF
+    split at hF
+    · cases hF; exact hG
+    · cases hF
+  · exact fun h => ⟨_, h, rfl⟩
+
+/-- **A signature's normal exit states a fresh result object exactly where
+it states one** (proved). -/
+theorem Effect.freshObjectResult_schema (e : Effect) : e.schema.normal.freshObjectResult = e.freshObject := by
+  have hw : ∀ w : ElementWrite, FormulaF.operation (.freshObject 0) ∉ w.schemaPosts := by
+    intro w; cases w <;> simp [ElementWrite.schemaPosts]
+  have he : FormulaF.operation (.freshObject 0) ∉ (match e.elements with
+      | some R => [(FormulaF.operation (.elementsWhen 0 .tru 1 R) : FormulaSchema)]
+      | none => []) := by
+    split <;> simp
+  have hg : FormulaF.operation (.freshObject 0) ∉ (match e.elementWrite with
+      | some w => w.schemaPosts
+      | none => ([] : List FormulaSchema)) := by
+    split <;> simp [hw]
+  simp only [ExitSchema.freshObjectResult, Effect.schema, Effect.normalSchema, List.mem_append]
+  cases e.fresh <;> cases e.freshObject <;> cases e.receiverGrows <;> simp <;> exact ⟨he, hg⟩
+
+private theorem write_select {α : Type} (f : FormulaSchema → Option α) (hf : ∀ F, (∃ k G, F = .operation (.fact .before k G)) ∨
+      (∃ Φ, F = .transition Φ) ∨ (∃ x i v g, F = .operation (.viewWrite x i v g)) ∨ (∃ θ, F = .transport θ) → f F = none)
+    (w : ElementWrite) : w.schemaPosts.filterMap f = [] := by
+  have hpre : ∀ (l : List IndexFact), (l.map fun G => (FormulaF.operation (.fact .before 0 G) : FormulaSchema)).filterMap f = [] := by
+    intro l; induction l with
+    | nil => rfl
+    | cons G l ih => rw [List.map_cons, List.filterMap_cons, hf _ (.inl ⟨0, G, rfl⟩), ih]
+  cases w with
+  | stores => simp [ElementWrite.schemaPosts, hf _ (.inr (.inl ⟨_, rfl⟩))]
+  | assign =>
+    simp [ElementWrite.schemaPosts, hf _ (.inr (.inl ⟨_, rfl⟩)), hf _ (.inr (.inr (.inl ⟨_, _, _, _, rfl⟩))),
+      hf _ (.inr (.inr (.inr ⟨_, rfl⟩)))]
+  | exact k =>
+    simp only [ElementWrite.schemaPosts, List.filterMap_cons, List.filterMap_append, hpre,
+      hf _ (.inr (.inl ⟨_, rfl⟩)), hf _ (.inr (.inr (.inl ⟨_, _, _, _, rfl⟩))),
+      hf _ (.inr (.inr (.inr ⟨_, rfl⟩)))]
+    rfl
+
+/-- **A signature's normal exit states the elements predicate it states**
+(proved). -/
+theorem Effect.elementsWhenTrue_schema (e : Effect) : e.schema.normal.elementsWhenTrue = e.elements.toList := by
+  have hw := write_select elementsWhenTrueOf (by rintro F (⟨_, _, rfl⟩ | ⟨_, rfl⟩ | ⟨_, _, _, _, rfl⟩ | ⟨_, rfl⟩) <;> rfl)
+  have hens : (e.ensures.map fun F => (FormulaF.operation (.fact .after 0 F) : FormulaSchema)).filterMap
+      elementsWhenTrueOf = [] := by
+    induction e.ensures with
+    | nil => rfl
+    | cons _ _ ih => rw [List.map_cons, List.filterMap_cons]; exact ih
+  simp only [ExitSchema.elementsWhenTrue, Effect.schema, Effect.normalSchema, List.filterMap_append, hens]
+  cases e.elements <;> cases hwr : e.elementWrite <;> cases e.fresh <;> cases e.freshObject <;>
+    cases e.receiverGrows <;> simp [hw, elementsWhenTrueOf, List.filterMap_cons]
+
+/-- **A signature's normal exit states the index facts it ensures**
+(proved). -/
+theorem Effect.facts_schema (e : Effect) : e.schema.normal.facts = e.ensures := by
+  have hw := write_select factAfterOf (by rintro F (⟨_, _, rfl⟩ | ⟨_, rfl⟩ | ⟨_, _, _, _, rfl⟩ | ⟨_, rfl⟩) <;> rfl)
+  have hens : (e.ensures.map fun F => (FormulaF.operation (.fact .after 0 F) : FormulaSchema)).filterMap
+      factAfterOf = e.ensures := by
+    induction e.ensures with
+    | nil => rfl
+    | cons _ _ ih => rw [List.map_cons, List.filterMap_cons]; exact congrArg _ ih
+  simp only [ExitSchema.facts, Effect.schema, Effect.normalSchema, List.filterMap_append, hens]
+  cases e.elements <;> cases hwr : e.elementWrite <;> cases e.fresh <;> cases e.freshObject <;>
+    cases e.receiverGrows <;> simp [hw, factAfterOf, List.filterMap_cons]
+
 /-! ## Builders of effects by their exits
 
 Each builder states an effect by what it states of its two exits, and its

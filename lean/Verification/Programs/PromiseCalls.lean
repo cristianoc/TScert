@@ -1164,7 +1164,7 @@ and stating a fresh object, its derivation checked. -/
   | .ordinary p =>
     decide (claim p = j) && ExpressionEffects.selectedOperands p &&
       (match ExpressionEffects.selectedEffect p with
-        | some eff => keepsHeap eff && eff.freshObject
+        | some eff => keepsHeap eff && eff.schema.normal.freshObjectResult
         | none => false) &&
       checkTreeUsing G images p codes sums
   | _ => false
@@ -1420,7 +1420,7 @@ its derivation checked, its receiver a slot. -/
     if decide (claim p = j) && ExpressionEffects.selectedOperands p && checkTreeUsing G images p codes sums &&
         onlyBool G j.type then
       match ExpressionEffects.selectedEffect p, receiverSlot j.term with
-      | some eff, some x => if keepsHeap eff then eff.elements.map fun R => (x, R) else none
+      | some eff, some x => if keepsHeap eff then eff.schema.normal.elementsWhenTrue.head?.map fun R => (x, R) else none
       | _, _ => none
     else none
   | _ => none
@@ -1436,7 +1436,7 @@ def elementsCallFast (G : NormalGraph ι) (images : InstanceImageCheck G) (j : S
     match ExpressionEffects.selectedEffect p, receiverSlot j.term with
     | some eff, some x =>
       if keepsHeap eff then
-        match eff.elements with
+        match eff.schema.normal.elementsWhenTrue.head? with
         | some R =>
           if decide (claim p = j) && ExpressionEffects.selectedOperands p && onlyBool G j.type &&
               checkTreeUsing G images p codes sums then some (x, R) else none
@@ -1453,7 +1453,7 @@ def elementsCallFast (G : NormalGraph ι) (images : InstanceImageCheck G) (j : S
     cases ExpressionEffects.selectedEffect p <;> cases receiverSlot j.term <;>
       cases decide (claim p = j) <;> cases ExpressionEffects.selectedOperands p <;>
       cases onlyBool G j.type <;> cases checkTreeUsing G images p codes sums <;> simp
-    all_goals (split <;> (try cases ‹Effect›.elements) <;> simp)
+    all_goals (split <;> (try split) <;> simp_all)
   · rfl
 
 /-- The knowledge after a call promising its receiver's elements: every fact
@@ -1505,7 +1505,7 @@ theorem elementsCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
                 rcases hb with rfl | rfl
                 · rfl
                 · simp [tagHolds] at ht
-              have hel := Effect.callPost_elements hR' hv hq
+              have hel := Effect.callPost_elements (List.mem_of_mem_head? hR') hv hq
               rw [hterm] at hel
               simpa [ExpressionEffects.receiverOf, instantiate, push] using hel
             · exact hs.2.2.2.2.1 a ha hcond
@@ -1930,7 +1930,7 @@ theorem requiresCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
 
 /-! ### A call stating a postcondition (PROGRAM-TYPING.md, "Reads below the length")
 
-A call whose selected signature states a postcondition (`Effect.ensures`)
+A call whose selected signature states index facts at its normal exit (`ExitSchema.facts`)
 returns normally in a heap where each holds at the return's positions: the
 result, and the call's receiver and actuals. Renamed to the slots after the
 return, the result's slot `0` and each position's slot one higher, each fact
@@ -1951,11 +1951,11 @@ by composition (`ensuresComposed`). -/
 def ensuresAtoms (eff : Effect) (t : Tm) : List HeapKnowledge.IndexAtom :=
   match callSlots t with
   | some (recv, slots) => HeapKnowledge.mapIndices (ensuresSlot recv slots)
-      ((eff.ensures.filter (·.entrySlots.isEmpty)).map fun F => { fact := F })
+      ((eff.schema.normal.facts.filter (·.entrySlots.isEmpty)).map fun F => { fact := F })
   | none => []
 
 theorem ensuresAtoms_holds {eff : Effect} {t : Tm} {ρ : Env} {h' : Heap} {v : Tm}
-    (hp : ∀ F ∈ eff.ensures, F.entrySlots = [] →
+    (hp : ∀ F ∈ eff.schema.normal.facts, F.entrySlots = [] →
       F.HoldsAt ε (CallEffects.ensuresEnv v (ExpressionEffects.receiverOf (instantiate 0 ρ t))
       (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h') :
     HeapKnowledge.IndexHolds ε (ensuresAtoms eff t) (push v ρ) h' := by
@@ -3154,7 +3154,7 @@ which denotes no integer: it never holds, and its relation is `0 ≤ -1`. -/
 def callRelation (eff : Effect) (t : Tm) : StepRelation :=
   match callSlots t with
   | some (recv, slots) =>
-    let facts := eff.ensures.filterMap fun F => match F with
+    let facts := eff.schema.normal.facts.filterMap fun F => match F with
       | .linear G => if G.vars.any (·.atEntry) then
           if G.vars.any (absentAt slots) then some (.le [] (-1)) else G.mapVars (callVar recv slots)
         else none
@@ -3224,7 +3224,7 @@ open HeapKnowledge in
 and return, the relation holds from `ρ, h` to `push v ρ, h'` at the caller's
 entry state `ε`. -/
 theorem callRelation_holds {eff : Effect} {t : Tm} {ρ : Env} {h h' : Heap} {v : Tm}
-    (hp : ∀ F ∈ eff.ensures, F.HoldsAt ⟨CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t))
+    (hp : ∀ F ∈ eff.schema.normal.facts, F.HoldsAt ⟨CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t))
       (ExpressionEffects.actualsOf (instantiate 0 ρ t)), h⟩ (CallEffects.ensuresEnv v (ExpressionEffects.receiverOf (instantiate 0 ρ t))
       (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h') :
     (callRelation eff t).Holds ε ρ h (push v ρ) h' := by
@@ -3269,18 +3269,18 @@ theorem callRelation_holds {eff : Effect} {t : Tm} {ρ : Env} {h h' : Heap} {v :
         exact heq
     -- Each relation fact is a post fact's image.
     -- A post fact reading an absent position never holds.
-    have habsent : ∀ G, IndexFact.linear G ∈ eff.ensures → G.vars.any (absentAt slots) = true → False := by
+    have habsent : ∀ G, IndexFact.linear G ∈ eff.schema.normal.facts → G.vars.any (absentAt slots) = true → False := by
       intro G hG ha
       obtain ⟨x, hx, hxa⟩ := List.any_eq_true.mp ha
       have hd := (hp _ hG).1 x hx
       rw [absentAt_none hs hxa] at hd
       cases hd
     -- Each relation fact is a post fact's image, or `0 ≤ -1` of one that never holds.
-    have hfact : ∀ F ∈ eff.ensures.filterMap (fun F => match F with
+    have hfact : ∀ F ∈ eff.schema.normal.facts.filterMap (fun F => match F with
         | .linear G => if G.vars.any (·.atEntry) then
             if G.vars.any (absentAt slots) then some (.le [] (-1)) else G.mapVars (callVar recv slots)
           else none
-        | _ => none), ∃ G, IndexFact.linear G ∈ eff.ensures ∧
+        | _ => none), ∃ G, IndexFact.linear G ∈ eff.schema.normal.facts ∧
           (G.mapVars (callVar recv slots) = some F ∨ G.vars.any (absentAt slots) = true) := by
       intro F hF
       obtain ⟨F0, hF0, hm⟩ := List.mem_filterMap.mp hF
@@ -3465,7 +3465,7 @@ def ensuresComposed (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (
   | some (recv, slots) =>
     let P : Composer := ⟨callKept stable eff t k0, IndexWrites.unconditionalLinear k0.indices,
       callContext stable eff t k0, callVar recv slots, ensuresSlot recv slots, absentAt slots, absentSlot slots⟩
-    ((eff.ensures.filter fun F => match F with
+    ((eff.schema.normal.facts.filter fun F => match F with
       | .linear G => !G.vars.any (·.atEntry) && (F.mapM (ensuresSlot recv slots)).isNone
       | _ => !F.entrySlots.isEmpty || (F.mapM (ensuresSlot recv slots)).isNone).flatMap
       P.fact).map fun F => { fact := F }
@@ -3584,7 +3584,7 @@ applies to: at the sequent `j`, a call checked as `selected_sound` or as
     if decide (claim p = j) && (ExpressionEffects.selectedOperands p && checkTreeUsing G images p codes sums ||
         requiresTree G images k codes sums p) then
       match ExpressionEffects.selectedEffect p with
-      | some eff => if eff.ensures.isEmpty && (effectKept
+      | some eff => if eff.schema.normal.facts.isEmpty && (effectKept
           (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (appendKept eff j.term k).isEmpty &&
           (writeKept eff j.term k).isEmpty &&
           (linearAppendKept j.context.length eff j.term k).isEmpty &&
@@ -3602,7 +3602,7 @@ def ensuresCallFast (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Se
   match e with
   | .ordinary p =>
     match ExpressionEffects.selectedEffect p with
-    | some eff => if eff.ensures.isEmpty && (effectKept
+    | some eff => if eff.schema.normal.facts.isEmpty && (effectKept
           (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (appendKept eff j.term k).isEmpty &&
           (writeKept eff j.term k).isEmpty &&
           (linearAppendKept j.context.length eff j.term k).isEmpty &&

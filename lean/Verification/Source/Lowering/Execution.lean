@@ -560,7 +560,7 @@ written to the cell at its contract, and the right side's value. -/
       let G := SourceTypes.graph (← table)
       let fresh := match PositiveRules.expand G (← exprType fc callee) with
         | [.ctors signatures _ _ _ _] => !signatures.isEmpty &&
-          signatures.all (fun s => PromiseCalls.keepsHeap s.effect && s.effect.freshObject)
+          signatures.all (fun s => PromiseCalls.keepsHeap s.effect && s.effect.schema.normal.freshObjectResult)
         | _ => false
       unless fresh && (← freshNativeConstructor scope callee) do
         throw (locatedRefusal (← table) original.span .expressionClaim

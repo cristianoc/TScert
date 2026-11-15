@@ -28,7 +28,7 @@ def passDerivOf (c : PointClaim ι) (node : Node) (st : Stepped ι) : ProgramCer
 /-- A call's result fresh, as `run`'s `outFresh` reads it off the derivation's
 selected effect. -/
 def passCallFresh (node : Node) (deriv : ProgramCertificates.Evidence ι) : Bool :=
-  (match ExpressionEffects.selectedEffect deriv with | some eff => eff.fresh | none => false) &&
+  (match ExpressionEffects.selectedEffect deriv with | some eff => eff.schema.normal.freshResult | none => false) &&
     ExpressionEffects.selectedOperands deriv && (ProgramCertificates.claim deriv).term == node.expression
 
 /-- The fresh receiver slots of the step (`run`'s `F` at the footprint

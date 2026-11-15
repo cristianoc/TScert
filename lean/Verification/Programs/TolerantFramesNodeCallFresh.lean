@@ -43,7 +43,7 @@ def passOutFreshChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (co
   (match node.expression with
     | .var i => (entry.names[i]?).any entry.fresh.contains
     | _ => false) ||
-    ((match ExpressionEffects.selectedEffect deriv with | some eff => eff.fresh | none => false) &&
+    ((match ExpressionEffects.selectedEffect deriv with | some eff => eff.schema.normal.freshResult | none => false) &&
       ExpressionEffects.selectedOperands deriv &&
       SinglePass.derivChecked G images codes sums c node stepK deriv)
 

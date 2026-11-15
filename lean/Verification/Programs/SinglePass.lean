@@ -797,8 +797,8 @@ def directCall (G : NormalGraph ι) (images : InstanceImageCheck G) (Γ : List (
   -- A slot read at `D`: its leaf, coerced where its type is not `D`.
   let leaf := fun (i : Nat) (B : Ty ι) => ProgramCertificates.Evidence.node ⟨Γ, Tm.var i, B⟩ ProgramCertificates.Rule.var []
   let L : List (CallEffects.Arrow (Ty ι)) := L
-  let ordered := L.filter (fun (p : CallEffects.Arrow (Ty ι)) => p.effect.elements.isSome) ++
-    L.filter (fun (p : CallEffects.Arrow (Ty ι)) => p.effect.elements.isNone)
+  let ordered := L.filter (fun (p : CallEffects.Arrow (Ty ι)) => !p.effect.schema.normal.elementsWhenTrue.isEmpty) ++
+    L.filter (fun (p : CallEffects.Arrow (Ty ι)) => p.effect.schema.normal.elementsWhenTrue.isEmpty)
   let stating := fun (p : CallEffects.Arrow (Ty ι)) => p.effect.requires.isSome || !p.effect.pre.isEmpty
   for phase in [true, false] do
     for p in ordered do
@@ -2689,7 +2689,7 @@ def outFreshOf (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : Cod
   (match node.expression with
     | .var i => (entry.names[i]?).any entry.fresh.contains
     | _ => false) ||
-    ((match ExpressionEffects.selectedEffect deriv with | some eff => eff.fresh | none => false) &&
+    ((match ExpressionEffects.selectedEffect deriv with | some eff => eff.schema.normal.freshResult | none => false) &&
       ExpressionEffects.selectedOperands deriv &&
       derivChecked G images codes sums c node stepK deriv)
 

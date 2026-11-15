@@ -313,8 +313,8 @@ structure UnitIsCode (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop where
   start : r.start = c.start
   goal : r.goal = c.goal
   indices : r.entryIndices = GraphCode.codeEntryIndices c
-  ensures : r.ensures = c.row.effect.ensures
-  bound : RunBound.ofRequest r.footprint r.onThrow r.fresh = (exitBounds c.row.effect, c.row.effect.fresh)
+  ensures : r.ensures = c.row.effect.schema.normal.facts
+  bound : RunBound.ofRequest r.footprint r.onThrow r.fresh = (exitBounds c.row.effect, c.row.effect.schema.normal.freshResult)
 
 omit [Labels ι] [StoreView σ ι] in
 /-- **The bound a code's run is given**: the bounds of its signature's
@@ -322,9 +322,9 @@ exits and its fresh flag, given only where they are not `⊤` on both exits
 without a fresh result. -/
 theorem codeRunBound_some {c : CodeEntry ι} {Φ Ψ : Footprints.Closed} {fresh : Bool}
     (h : codeRunBound c = some (⟨Φ, Ψ⟩, fresh)) :
-    (⟨Φ, Ψ⟩ : CallEffects.Exits Footprints.Closed) = exitBounds c.row.effect ∧ fresh = c.row.effect.fresh ∧
+    (⟨Φ, Ψ⟩ : CallEffects.Exits Footprints.Closed) = exitBounds c.row.effect ∧ fresh = c.row.effect.schema.normal.freshResult ∧
       ¬((exitBounds c.row.effect).normal = .top ∧ (exitBounds c.row.effect).exceptional = .top ∧
-        c.row.effect.fresh = false) := by
+        c.row.effect.schema.normal.freshResult = false) := by
   unfold codeRunBound runBounds at h
   split at h
   · cases h
@@ -387,12 +387,12 @@ theorem rowSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
         (GoalHolds (reassign G η) c.goal (c.goal.argument (envOf L d)))
         (fun h' v => Φ.Holds h h' ∧ (fresh = true → Footprints.FreshAt h.length v))
         (fun h' => Ψ ≠ .top → Ψ.Holds h h') n W h (.goto c.exprs c.conts c.start L d))
-    (hensG : c.row.effect.ensures ≠ [] → ∀ η n W h L d,
+    (hensG : c.row.effect.schema.normal.facts ≠ [] → ∀ η n W h L d,
       EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep (GraphCode.codeEntryIndices c)
         (envOf L d) n W h → RefsOk W (.goto c.exprs c.conts c.start L d) →
       HeapObservations.SafePost (excOf (reassign G η))
         (GoalHolds (reassign G η) c.goal (c.goal.argument (envOf L d)))
-        (fun h' v => GraphCode.EnsuresAt c.row.effect.ensures ⟨envOf L d, h⟩ h' (push v (envOf L d))) n W h
+        (fun h' v => GraphCode.EnsuresAt c.row.effect.schema.normal.facts ⟨envOf L d, h⟩ h' (push v (envOf L d))) n W h
         (.goto c.exprs c.conts c.start L d)) :
     ∀ η, RowSpec (reassign G η) c.arity c.exprs c.conts c.start c.captures c.row sep := by
   intro η
@@ -409,7 +409,7 @@ theorem rowSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
   have hpre0 : pre = [] := List.eq_nil_of_length_eq_zero (by simpa [frameOffset] using hpl)
   subst hpre0
   refine exportsEstablished_sound hx hw hh ?_
-  by_cases hne : c.row.effect.ensures = []
+  by_cases hne : c.row.effect.schema.normal.facts = []
   · exact HeapObservations.SafePostExc.weaken (fun _ _ hq => ⟨hq.1, hq.2, by simp [hne]⟩) (fun _ h => h) hrun
   · have hentry : EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep
         (GraphCode.codeEntryIndices c) (envOf ([] ++ r :: CallArguments.parameters c.arity args ++ vs) .nul) n W heap :=
@@ -463,7 +463,7 @@ theorem rowSpec_of_requestSafe {r : SourceRequest σ ι} {c : CodeEntry ι}
         · exact .inr (.inl h2)
         · right; right
           rw [hfr]
-          cases hf : c.row.effect.fresh
+          cases hf : c.row.effect.schema.normal.freshResult
           · exact absurd ⟨h1, by simp [h2], hf⟩ hne
           · rfl
       · exact .inl h1
@@ -537,8 +537,8 @@ structure UnitIsReceiverless (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop
   indices : ∀ (L : List Tm) (recv : Tm) h,
     HeapKnowledge.IndexHolds ⟨envOf (recv :: L) .nul, h⟩ (GraphCode.codeEntryIndices c) (envOf (recv :: L) .nul) h →
     HeapKnowledge.IndexHolds ⟨envOf L .nul, h⟩ r.entryIndices (envOf L .nul) h
-  ensures : c.row.effect.ensures.mapM HeapKnowledge.IndexFact.pastReceiver = some r.ensures
-  bound : RunBound.ofRequest r.footprint r.onThrow r.fresh = (exitBounds c.row.effect, c.row.effect.fresh)
+  ensures : c.row.effect.schema.normal.facts.mapM HeapKnowledge.IndexFact.pastReceiver = some r.ensures
+  bound : RunBound.ofRequest r.footprint r.onThrow r.fresh = (exitBounds c.row.effect, c.row.effect.schema.normal.freshResult)
 
 end
 
@@ -572,7 +572,7 @@ theorem mapM_some_mem {α β : Type} {f : α → Option β} :
 (proved): the mistranslation that read it as `result = old(first parameter)`
 is not a request of the row. -/
 theorem not_receiverless_of_oldReceiver {σ ι : Type} [Labels ι] [StoreView σ ι] {r : SourceRequest σ ι}
-    {c : CodeEntry ι} (hm : resultIsOldReceiver ∈ c.row.effect.ensures) : ¬ UnitIsReceiverless r c := by
+    {c : CodeEntry ι} (hm : resultIsOldReceiver ∈ c.row.effect.schema.normal.facts) : ¬ UnitIsReceiverless r c := by
   intro hu
   obtain ⟨y, hy⟩ := mapM_some_mem hu.ensures _ hm
   rw [resultIsOldReceiver_pastReceiver] at hy

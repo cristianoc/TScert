@@ -154,11 +154,11 @@ result, the receiver and the first `n` parameters at exit and the receiver
 and the first `n` parameters at entry (`Effect.summary_scoped`, the fact as
 the normal exit's postcondition). -/
 theorem Effect.belowRow_ensures {e : Effect} {n : Nat} (h : e.belowRow n = true) {F : HeapKnowledge.IndexFact}
-    (hF : F ∈ e.ensures) : (∀ s ∈ F.slots, s ≤ n + 1) ∧ ∀ s ∈ F.entrySlots, s ≤ n := by
+    (hF : F ∈ e.schema.normal.facts) : (∀ s ∈ F.slots, s ≤ n + 1) ∧ ∀ s ∈ F.entrySlots, s ≤ n := by
   have hs := (Effect.summary_scoped h .normal).2
   have hm : (FormulaF.operation (.fact .after 0 F) : Formula) ∈ ((e.summary n).get .normal).ensures := by
-    simp only [Effect.summary, Exits.get, Effect.normalPosts, List.mem_append, List.mem_map]
-    exact .inl (.inl (.inr ⟨F, hF, rfl⟩))
+    rw [← Effect.schema_atArity]
+    exact List.mem_map_of_mem (f := instantiateFormula (e.schema.callInstantiation n)) (ExitSchema.mem_facts.mp hF)
   have := List.all_eq_true.mp hs _ hm
   simp only [FormulaF.scoped, OperationPostF.scoped, Scope.count, Nat.add_zero, Bool.and_eq_true,
     List.all_eq_true, decide_eq_true_eq] at this
@@ -335,58 +335,6 @@ def Effect.callExc (e : Effect) (r : Tm) (args : List Tm) (before : Heap) : Heap
 section CallPost
 variable {e : Effect} {r : Tm} {args : List Tm} {before after : Heap} {v : Tm}
 
-/-- The normal exit read at heaps, as its summary's postconditions. -/
-private theorem callPost_summary (hp : e.callPost r args before after v) :
-    ∃ pad : List Tm, (∀ a ∈ pad, a = .undef) ∧ (pad = [] ∨ Footprints.storeOf r = none) ∧
-      ∃ s s' : IndexedHeap, s.h = before ∧ s'.h = after ∧ Admissible s s' ∧
-        Post e.frame (callEnv r args) before after ∧
-        ∀ F ∈ e.normalPosts (args ++ pad).length,
-          Parity.Holds AssertionArena.empty (callState r (args ++ pad) v before.length s s') F := by
-  obtain ⟨pad, hpad, hrecv, s, s', rfl, rfl, hx⟩ := hp
-  rw [Effect.exitPost_summary] at hx
-  refine ⟨pad, hpad, hrecv, s, s', rfl, rfl, hx.1.1, ?_, hx.2⟩
-  have h2 := hx.1.2
-  change Post e.frame (callEnv r (args ++ pad)) s.h s'.h at h2
-  rwa [callEnv_pad r args hpad] at h2
-
-/-- **The frame**: the call's heaps meet the signature's frame. -/
-theorem Effect.callPost_within (hp : e.callPost r args before after v) : e.within r args before after := by
-  obtain ⟨-, -, -, -, -, -, -, -, hw, -⟩ := callPost_summary hp
-  exact hw
-
-/-- **A fresh result store**, where the signature states one. -/
-theorem Effect.callPost_fresh (hf : e.fresh = true) (hp : e.callPost r args before after v) :
-    Footprints.FreshAt before.length v := by
-  obtain ⟨pad, _, _, s, s', hs, _, _, _, hF⟩ := callPost_summary hp
-  subst hs
-  exact hF (.operation (.freshStore 0)) (by simp [Effect.normalPosts, hf])
-
-/-- **A fresh result object**, where the signature states one. -/
-theorem Effect.callPost_freshObject (hf : e.freshObject = true) (hp : e.callPost r args before after v) :
-    Footprints.FreshObjectAt before.length v := by
-  obtain ⟨pad, _, _, s, s', hs, _, _, _, hF⟩ := callPost_summary hp
-  subst hs
-  exact hF (.operation (.freshObject 0)) (by simp [Effect.normalPosts, hf])
-
-/-- **The receiver's elements** where the result is `true`, where the
-signature states an elements predicate. -/
-theorem Effect.callPost_elements {R : ElemPred} (hR : e.elements = some R) (hv : v = .tru)
-    (hp : e.callPost r args before after v) : ElemsAt R r after := by
-  obtain ⟨pad, _, _, s, s', _, hs', _, _, hF⟩ := callPost_summary hp
-  subst hs'
-  exact hF (.operation (.elementsWhen 0 .tru 1 R)) (by simp [Effect.normalPosts, hR]) hv
-
-/-- **Each index fact the signature ensures**, read at the call's
-positions. -/
-theorem Effect.callPost_ensures {F : HeapKnowledge.IndexFact} (hF : F ∈ e.ensures) (hp : e.callPost r args before after v) :
-    F.HoldsAt ⟨callEnv r args, before⟩ (ensuresEnv v r args) after := by
-  obtain ⟨pad, hpad, -, s, s', rfl, rfl, -, -, hH⟩ := callPost_summary hp
-  have h := hH (.operation (.fact .after 0 F)) (by simp [Effect.normalPosts, hF])
-  have he : ensuresEnv v r (args ++ pad) = ensuresEnv v r args := by
-    funext i; simp only [ensuresEnv, callEnv_pad r args hpad]
-  change F.HoldsAt ⟨callEnv r (args ++ pad), s.h⟩ (ensuresEnv v r (args ++ pad)) s'.h at h
-  rwa [he, callEnv_pad r args hpad] at h
-
 /-- **Every postcondition of the normal exit holds**, instantiated at the
 evaluated actuals followed by the omitted positions' `undefined`, at indexed
 states with the call's heaps. -/
@@ -398,6 +346,46 @@ theorem Effect.callPost_holds (hp : e.callPost r args before after v) :
           (instantiateFormula (e.schema.callInstantiation (args ++ pad).length) F) := by
   obtain ⟨pad, hpad, hrecv, s, s', rfl, rfl, hx⟩ := hp
   exact ⟨pad, hpad, hrecv, s, s', rfl, rfl, Exits.exitPost_admissible hx, Exits.exitPost_ensures hx⟩
+
+/-- **The frame**: the call's heaps meet the normal exit's frame. -/
+theorem Effect.callPost_within (hp : e.callPost r args before after v) : e.within r args before after := by
+  obtain ⟨pad, hpad, -, s, s', rfl, rfl, hx⟩ := hp
+  have hf := Exits.exitPost_frame hx
+  change Post e.schema.normal.frame (callEnv r (args ++ pad)) s.h s'.h at hf
+  rwa [callEnv_pad r args hpad] at hf
+
+/-- **A fresh result store**, where the normal exit states one
+(`ExitSchema.freshResult`). -/
+theorem Effect.callPost_fresh (hf : e.schema.normal.freshResult = true) (hp : e.callPost r args before after v) :
+    Footprints.FreshAt before.length v := by
+  obtain ⟨pad, -, -, s, s', rfl, -, -, hH⟩ := Effect.callPost_holds hp
+  exact hH (.operation (.freshStore 0)) (by simpa [ExitSchema.freshResult] using hf)
+
+/-- **A fresh result object**, where the normal exit states one
+(`ExitSchema.freshObjectResult`). -/
+theorem Effect.callPost_freshObject (hf : e.schema.normal.freshObjectResult = true)
+    (hp : e.callPost r args before after v) : Footprints.FreshObjectAt before.length v := by
+  obtain ⟨pad, -, -, s, s', rfl, -, -, hH⟩ := Effect.callPost_holds hp
+  exact hH (.operation (.freshObject 0)) (by simpa [ExitSchema.freshObjectResult] using hf)
+
+/-- **The receiver's elements** where the result is `true`, for each
+element predicate the normal exit states (`ExitSchema.elementsWhenTrue`). -/
+theorem Effect.callPost_elements {R : ElemPred} (hR : R ∈ e.schema.normal.elementsWhenTrue) (hv : v = .tru)
+    (hp : e.callPost r args before after v) : ElemsAt R r after := by
+  obtain ⟨pad, -, -, s, s', -, rfl, -, hH⟩ := Effect.callPost_holds hp
+  exact hH (.operation (.elementsWhen 0 .tru 1 R)) (ExitSchema.mem_elementsWhenTrue.mp hR) hv
+
+/-- **Each index fact the normal exit states** (`ExitSchema.facts`), read at
+the call's positions. -/
+theorem Effect.callPost_ensures {F : HeapKnowledge.IndexFact} (hF : F ∈ e.schema.normal.facts)
+    (hp : e.callPost r args before after v) :
+    F.HoldsAt ⟨callEnv r args, before⟩ (ensuresEnv v r args) after := by
+  obtain ⟨pad, hpad, -, s, s', rfl, rfl, -, hH⟩ := Effect.callPost_holds hp
+  have h := hH (.operation (.fact .after 0 F)) (ExitSchema.mem_facts.mp hF)
+  have he : ensuresEnv v r (args ++ pad) = ensuresEnv v r args := by
+    funext i; simp only [ensuresEnv, callEnv_pad r args hpad]
+  change F.HoldsAt ⟨callEnv r (args ++ pad), s.h⟩ (ensuresEnv v r (args ++ pad)) s'.h at h
+  rwa [he, callEnv_pad r args hpad] at h
 
 /-- **The receiver's growth**, where the normal exit states the frame
 `{receiver store: any}` and the store's extension (`receiverGrows_iff`). -/

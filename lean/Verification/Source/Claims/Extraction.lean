@@ -45,7 +45,7 @@ def importedArrow (T : EquationStore.State) (U : List Tree) (footprint : Footpri
     else [⟨"this", graphClaim a.receiver, false⟩]
   let params : List Fragment.Param := receiver ++ a.arguments.zipIdx.map fun (A, i) => ⟨s!"p{i}", graphClaim A, false⟩
   let ret ← resultWithFootprint T (graphClaim a.result) result
-  moduleArrow ⟨"", (0, 0), params, ret, [], false, guard, false, none, a.effect.pre, a.effect.ensures⟩
+  moduleArrow ⟨"", (0, 0), params, ret, [], false, guard, false, none, a.effect.pre, a.effect.schema.normal.facts⟩
     footprint onThrow
 
 /-- Whether a declaration's module is one with a body, whose functions a

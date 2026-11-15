@@ -607,6 +607,10 @@ run_cmd do
   check ``Verification.SourceExtraction.ClassSummary.handle_after
   check ``Verification.SourceExtraction.ClassSummary.schema_atArity
   check ``Verification.CallEffects.Effect.freshResult_schema
+  check ``Verification.CallEffects.Effect.freshObjectResult_schema
+  check ``Verification.CallEffects.Effect.elementsWhenTrue_schema
+  check ``Verification.CallEffects.Effect.facts_schema
+  check ``Verification.CallEffects.postImplies_sound
   check ``Verification.CallEffects.Effect.ofClosed_schema
   check ``Verification.CallEffects.Effect.ofStated_schema
   check ``Verification.CallEffects.Effect.throwUnbounded_schema

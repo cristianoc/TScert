@@ -387,7 +387,7 @@ def varFresh (F : List Nat) : Tm → Bool
 def callFresh [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (sums : List (ProgramCertificates.ReadSummary ι)) (c : NodeEvidence ι) (t : Tm) : Bool :=
   (match ExpressionEffects.selectedEffect c.expression with
-    | some eff => eff.fresh
+    | some eff => eff.schema.normal.freshResult
     | none => false) &&
     ExpressionEffects.selectedOperands c.expression &&
     decide ((ProgramCertificates.claim c.expression).term = t) &&

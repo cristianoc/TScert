@@ -968,7 +968,7 @@ came from a different context. No execution budget is inspected. -/
         -- Before them, a signature stating a precondition `admits` holds of
         -- at the term, as a construct signature's is: its postcondition is
         -- what the call can state there.
-        let ordered := L.filter (·.effect.elements.isSome) ++ L.filter (·.effect.elements.isNone)
+        let ordered := L.filter (!·.effect.schema.normal.elementsWhenTrue.isEmpty) ++ L.filter (·.effect.schema.normal.elementsWhenTrue.isEmpty)
         let stating := fun (p : Arrow (Ty ι)) => p.effect.requires.isSome || !p.effect.pre.isEmpty
         -- The signatures stating a precondition `admits` holds of, then
         -- those stating none: a signature stating one `admits` refuses is

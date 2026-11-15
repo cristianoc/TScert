@@ -104,7 +104,7 @@ theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
         (c.row.effect.result (meaning (reassign G η) c.row.result)
           (framePromised c.row.effect (frameOffset c.store) L))
         (fun h' v => (exitBounds c.row.effect).normal.Holds heap h' ∧
-          (c.row.effect.fresh = true → Footprints.FreshAt heap.length v))
+          (c.row.effect.schema.normal.freshResult = true → Footprints.FreshAt heap.length v))
         (fun h' => (exitBounds c.row.effect).exceptional.Holds heap h') n W heap
         (.goto c.exprs c.conts c.start L .nul) := by
   intro η n W heap L he hw hh href hvalues hpre hsep
@@ -120,7 +120,7 @@ theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
       (framePromised c.row.effect (frameOffset c.store) L)) n W heap
       (.goto c.exprs c.conts c.start L .nul) := code_goal (reassign G η) c L ▸ hs
   by_cases htop : ((exitBounds c.row.effect).normal == .top && (exitBounds c.row.effect).exceptional == .top &&
-      !c.row.effect.fresh) = true
+      !c.row.effect.schema.normal.freshResult) = true
   · -- Both exits' bounds `⊤` and no fresh result: the run is given no
     -- bound, and every run keeps the old locations on either exit.
     simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at htop
@@ -129,7 +129,7 @@ theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
     exact HeapObservations.SafePostExc.weaken
       (fun h' v hp => ⟨by rw [htop.1.1]; exact hp.1, fun hf => by simp [htop.2] at hf⟩)
       (fun h' hr => by rw [htop.1.2]; exact Footprints.Closed.holds_top.mpr hr.2) hg
-  · by_cases hpure : c.row.effect.fresh = false ∧ c.exprs.all Purity.pureTerm = true
+  · by_cases hpure : c.row.effect.schema.normal.freshResult = false ∧ c.exprs.all Purity.pureTerm = true
     · -- A pure body changes nothing: within every bound.
       have hp : ∀ e ∈ c.exprs, Purity.pureTerm e = true := List.all_eq_true.mp hpure.2
       exact HeapObservations.SafePostExc.weaken
@@ -138,10 +138,10 @@ theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
         (fun h' hq => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq)
         (CallEffects.pure_safe_exc (r := .undef) (args := []) (.goto hp hvalues rfl) hsafe)
     · have hbound : codeRunBound c = some (⟨(exitBounds c.row.effect).normal, (exitBounds c.row.effect).exceptional⟩,
-          c.row.effect.fresh) := by
+          c.row.effect.schema.normal.freshResult) := by
         have h1 := Bool.eq_false_iff.mpr htop
-        have h2 : (!c.row.effect.fresh && c.exprs.all Purity.pureTerm) = false := by
-          cases hfr : c.row.effect.fresh <;> cases hal : c.exprs.all Purity.pureTerm <;> simp_all
+        have h2 : (!c.row.effect.schema.normal.freshResult && c.exprs.all Purity.pureTerm) = false := by
+          cases hfr : c.row.effect.schema.normal.freshResult <;> cases hal : c.exprs.all Purity.pureTerm <;> simp_all
         simp only [codeRunBound, runBounds, h1, h2, Bool.false_or]
         rfl
       have hb := hboundG _ _ _ hbound η n W heap L .nul hentry href
@@ -181,7 +181,7 @@ theorem codeSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι}
   intro η
   obtain ⟨harity, hbelow, _hreq, hx, hfr⟩ := codeConditions_spec hcond
   obtain ⟨o, ho⟩ := Option.isSome_iff_exists.mp hcond
-  have hof : o.freshResult = c.row.effect.fresh := by
+  have hof : o.freshResult = c.row.effect.schema.normal.freshResult := by
     have ho' := ho
     unfold codeObligations at ho'
     split at ho' <;> cases ho'

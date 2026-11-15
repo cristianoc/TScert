@@ -94,11 +94,33 @@ theorem frameIncluded_sound {Φ Ψ : Footprints.Footprint} (h : frameIncluded Φ
   · exact mono h ha
   · exact mono h (Parity.EffectAction.top ha.1)
 
+/-- **One postcondition implies another** (sufficient): the same
+postcondition, or the receiver's elements where the result holds a value at
+a predicate at most the other's (`ElemPred.le`). -/
+def postImplies : Parity.FormulaSchema → Parity.FormulaSchema → Bool
+  | .operation (.elementsWhen x v y R), .operation (.elementsWhen x' v' y' R') =>
+    x == x' && v == v' && y == y' && R.le R'
+  | F, G => F == G
+
+/-- **An implied postcondition holds where the implying one does**
+(proved), at every instantiation and two-state interpretation. -/
+theorem postImplies_sound {F G : Parity.FormulaSchema} (h : postImplies F G = true)
+    {ι : CallInstantiation} {arena : Parity.AssertionArena} {st : Parity.TwoState}
+    (hF : Parity.Holds arena st (instantiateFormula ι F)) :
+    Parity.Holds arena st (instantiateFormula ι G) := by
+  unfold postImplies at h
+  split at h
+  · simp only [Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨⟨⟨rfl, rfl⟩, rfl⟩, hle⟩ := h
+    exact fun hv => (hF hv).mono hle
+  · simp only [beq_iff_eq] at h
+    subst h; exact hF
+
 /-- **One exit schema covers another**: its frame is included in the
-other's (`frameIncluded`) and each postcondition of the other is one of its
-own. -/
+other's (`frameIncluded`) and each postcondition of the other is implied by
+one of its own (`postImplies`). -/
 def ExitSchema.covers (a b : ExitSchema) : Bool :=
-  frameIncluded a.frame b.frame && b.ensures.all a.ensures.contains
+  frameIncluded a.frame b.frame && b.ensures.all fun G => a.ensures.any (postImplies · G)
 
 /-- **One specification covers another** (the note's rule of consequence on
 both exits, sufficient): both state canonical transports, and each exit
@@ -122,7 +144,8 @@ theorem Exits.covers_entails {x y : Exits ExitSchema} (h : x.covers y = true) : 
   obtain ⟨hfr, hens⟩ := hxN
   refine ⟨frameIncluded_sound hc.1 hfr, fun F hF => ?_⟩
   obtain ⟨G, hG, rfl⟩ := List.mem_map.mp hF
-  exact hens _ (List.mem_map_of_mem (List.contains_iff_mem.mp (List.all_eq_true.mp hc.2 G hG)))
+  obtain ⟨F, hF', himp⟩ := List.any_eq_true.mp (List.all_eq_true.mp hc.2 G hG)
+  exact postImplies_sound himp (hens _ (List.mem_map_of_mem hF'))
 
 /-- Whether one signature covers another: its schema covers the other's
 (`Exits.covers`), the same promise, and a weaker precondition. -/

@@ -265,7 +265,7 @@ def retypeFromFragment (force : List String := []) : Retype := fun fr T f fc mod
     | none => match module.find? (·.1 == n) with
       | some v => match runCompiler T [] (moduleValueType v) with
         | .ok (A, r) => match PositiveRules.expand (SourceTypes.graph r.types) A with
-          | [.arrs [a] _] => a.effect.ensures
+          | [.arrs [a] _] => a.effect.schema.normal.facts
           | _ => []
         | .error _ => []
       | none => []
@@ -896,7 +896,7 @@ def FilePlans.layoutOwn (f : FilePlans) (i : Nat) : LayoutOwn := Id.run do
       return .outside "the code's conditions"
     -- A function declared without `this` states no postcondition of its
     -- receiver, in either state (`IndexFact.pastReceiver`).
-    let receiverlessEnsures := eff.ensures.mapM HeapKnowledge.IndexFact.pastReceiver
+    let receiverlessEnsures := eff.schema.normal.facts.mapM HeapKnowledge.IndexFact.pastReceiver
     if receiverless && receiverlessEnsures.isNone then
       return .outside "a postcondition of the receiver"
     let goal := if receiverless then receiverlessGoal e else e.goal
@@ -912,14 +912,14 @@ def FilePlans.layoutOwn (f : FilePlans) (i : Nat) : LayoutOwn := Id.run do
       q.entrySeparation.depth == q.inputs.length &&
         q.entrySeparation.facts.all fun a => cellLevel a.slot && a.partners.all fun pt => cellLevel pt.1
     let ensuresOk := fun (q : SourceRequest _ _) =>
-      (if receiverless then receiverlessEnsures == some q.ensures else q.ensures == eff.ensures)
+      (if receiverless then receiverlessEnsures == some q.ensures else q.ensures == eff.schema.normal.facts)
     let frameOk := fun (q : SourceRequest _ _) =>
       q.qualification.isNone &&
       q.inputs == (if receiverless then p.arguments.take arity ++ captures else codeFrame arity p captures none) &&
       sepOk q && ensuresOk q &&
       (if receiverless then q.entryIndices.all past.contains else q.entryIndices == facts) &&
       decide (ProgramTyping.RunBound.ofRequest q.footprint q.onThrow q.fresh =
-        (ProgramTyping.exitBounds eff, eff.fresh))
+        (ProgramTyping.exitBounds eff, eff.schema.normal.freshResult))
     if !members.any fun q => frameOk q && q.toRequest.goal == goal then
       if members.any frameOk then return .outside "its goal"
       return .outside "no member realizes a signature row (its frame, entry facts or effect)"

@@ -93,7 +93,7 @@ given the facts `facts` it is checked to return with: each postcondition of
 the normal exit among `codeEstablished` at its fresh result and `facts`,
 none on the exceptional exit. -/
 def exportsEstablished (e : Effect) (facts : List HeapKnowledge.IndexFact) : Bool :=
-  e.schema.normal.ensures.all (· ∈ codeEstablished e.fresh facts) &&
+  e.schema.normal.ensures.all (· ∈ codeEstablished e.schema.normal.freshResult facts) &&
     e.schema.exceptional.ensures.all (· ∈ codeEstablished false [])
 
 /-- **A run that establishes what a signature exports meets the signature on
@@ -107,7 +107,7 @@ theorem exportsEstablished_sound {e : Effect} {facts : List HeapKnowledge.IndexF
     (hx : exportsEstablished e facts = true) {Ξ T : Fam} {r : Tm} {args : List Tm} {j : Nat} {U : WorldT j}
     {heap : Heap} {t : Tm} (hu : WorldAdm U) (hh : HeapOk j U heap)
     (hs : HeapObservations.SafePostExc Ξ T
-      (fun h' v => (exitBounds e).normal.Holds heap h' ∧ (e.fresh = true → Footprints.FreshAt heap.length v) ∧
+      (fun h' v => (exitBounds e).normal.Holds heap h' ∧ (e.schema.normal.freshResult = true → Footprints.FreshAt heap.length v) ∧
         ∀ F ∈ facts, F.HoldsAt ⟨callEnv r args, heap⟩ (ensuresEnv v r args) h')
       (fun h' => (exitBounds e).exceptional.Holds heap h') j U heap t) :
     HeapObservations.SafePostExcV Ξ T (e.schema.exitPostW .normal r args U heap)
@@ -135,7 +135,7 @@ theorem allocStable_of_established {e : Effect} (hx : exportsEstablished e [] = 
   · cases c
     · exact List.all_eq_true.mpr hf.1
     · exact List.all_eq_true.mpr hf.2
-  · have hm : F ∈ codeEstablished e.fresh [] ∨ F ∈ codeEstablished false [] := by
+  · have hm : F ∈ codeEstablished e.schema.normal.freshResult [] ∨ F ∈ codeEstablished false [] := by
       cases c
       · exact .inl (hx.1 F hF)
       · exact .inr (hx.2 F hF)
@@ -148,13 +148,13 @@ exits are `⊤` and the result is not fresh, or where a pure body states no
 fresh result; both exits' bounds otherwise. -/
 def runBounds (c : CodeEntry ι) : Option (Exits Footprints.Closed) :=
   if ((exitBounds c.row.effect).normal == .top && (exitBounds c.row.effect).exceptional == .top &&
-      !c.row.effect.fresh) || (!c.row.effect.fresh && c.exprs.all Purity.pureTerm)
+      !c.row.effect.schema.normal.freshResult) || (!c.row.effect.schema.normal.freshResult && c.exprs.all Purity.pureTerm)
   then none else some (exitBounds c.row.effect)
 
 /-- **The bound the run is given** (`RunBound`): both exits' closed bounds
 and whether the result is fresh. -/
 def codeRunBound (c : CodeEntry ι) : Option RunBound :=
-  (runBounds c).map fun b => (b, c.row.effect.fresh)
+  (runBounds c).map fun b => (b, c.row.effect.schema.normal.freshResult)
 
 /-- **The obligations of a code's run**: its arity within its arguments, its
 signature's scope at its arity (`Effect.belowRow`), no precondition beyond
@@ -166,7 +166,7 @@ from the invocation's entry); then its run's bounds and fresh result. -/
 def codeObligations (c : CodeEntry ι) : Option CodeObligations :=
   if decide (c.arity ≤ c.row.arguments.length) && c.row.effect.belowRow c.arity && c.row.effect.requires.isNone &&
       exportsEstablished c.row.effect [] && (c.store.isNone || framesAtLocation c.row.effect) then
-    some ⟨runBounds c, c.row.effect.fresh⟩
+    some ⟨runBounds c, c.row.effect.schema.normal.freshResult⟩
   else none
 
 /-- A code's conditions: it has obligations. -/
@@ -235,7 +235,7 @@ postcondition its signature exports established by a run returning with the
 signature's own facts (`exportsEstablished`). -/
 def rowConditions (c : CodeEntry ι) : Bool :=
   decide (c.arity ≤ c.row.arguments.length) && c.row.effect.belowRow c.arity && c.row.effect.requires.isNone &&
-    exportsEstablished c.row.effect c.row.effect.ensures
+    exportsEstablished c.row.effect c.row.effect.schema.normal.facts
 
 end
 

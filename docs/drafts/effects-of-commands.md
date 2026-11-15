@@ -397,6 +397,19 @@ representable, or a proved consequence whose precision is stated; the
 conjunction `onThrow && onThrow` of the exceptional exits is such a
 consequence, not the general meet.
 
+A postcondition is read from the normal exit's postconditions by its
+formula: a fresh result store (`freshStore 0`, `ExitSchema.freshResult`), a
+fresh result object (`freshObject 0`, `ExitSchema.freshObjectResult`), the
+receiver's elements where the result is `true` (`elementsWhen 0 true 1 R`,
+`ExitSchema.elementsWhenTrue`) and the index facts at the exit
+(`fact after 0 F`, `ExitSchema.facts`). The consequence a call draws from
+each is its formula's meaning at the call (`Effect.callPost_fresh`,
+`callPost_freshObject`, `callPost_elements`, `callPost_ensures`), read from
+the exit's postconditions held at the call (`Effect.callPost_holds`). In
+coverage a target's postcondition is implied by one of the source's
+(`postImplies`, proved by `postImplies_sound`): the same formula, or the
+receiver's elements at a predicate at most the target's (`ElemPred.le`).
+
 ### The eleven commits
 
 Each is a green, buildable step.
@@ -476,7 +489,8 @@ import's signatures, a returned function's footprint, the overloads of a
 module declaration) write through `effectJson`, which fails where the
 encoder refuses. The derived serializers of types tables, evidence,
 diagnostics and claims write the encoder's value, or, where it refuses, an
-object naming the refusal, which no decoder reads. The other direction of
+object naming the refusal, which no decoder reads; this total writer
+belongs to the bridge and is deleted with it in commit 11. The other direction of
 the round trip, that decoding the encoding of a valid value gives that
 value, is checked by examples (`#guard`) and not proved.
 
