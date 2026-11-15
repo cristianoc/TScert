@@ -152,4 +152,83 @@ theorem SafePostExcW.complete_exceptional {Ξ T : Fam} {Q : WPost} {R : WExc} (s
     · exact ⟨⟨p + 1, U, h', Nat.succ_pos _, hu, hh⟩, rfl, ⟨hj, hx⟩, hth, hR⟩
     · exact absurd st (raises_no_step hraise)
 
+/-! ## A call: evaluation, then invocation -/
+
+/-- **Evaluation reaching an invocation** (the note's Call: evaluation of
+the callee, the receiver and the arguments, spread expansion included,
+precedes invocation): from budget `n`, world `W` and heap `h`, the term is an
+invocation meeting `E` there, or raises a value of `Ξ` meeting `R`, or steps,
+to an admissible extension of the world and a well-formed heap, to a term
+with the same property. -/
+def EvalCallSafe (Ξ : Fam) (E : (n : Nat) → WorldT n → Heap → Tm → Tm → List Tm → Prop) (R : WExcV) :
+    (n : Nat) → WorldT n → Heap → Tm → Prop
+  | 0, W, _, t => RefsOk W t
+  | n + 1, W, h, t => RefsOk W t ∧
+      (((∃ f r vs, t = .invoke f r vs ∧ E (n + 1) W h f r vs) ∨
+        (∃ v, Raises t v ∧ Scoped 0 v ∧ Ξ (n + 1) W v ∧ R (n + 1) W h v)) ∨
+      (∃ (U : WorldT n) (h' : Heap) (t' : Tm),
+        WExt (trunc n (Nat.le_succ n) W) U ∧ WorldAdm U ∧ Step h t h' t' ∧
+          HeapOk n U h' ∧ EvalCallSafe Ξ E R n U h' t'))
+
+/-- **A call is safe where its evaluation is and each invocation it
+reaches is**: every completion is a throw of the evaluation, meeting `R`, or
+a completion of an invocation the evaluation reached. -/
+theorem call_site_sound {Ξ T : Fam} {Q : WPost} {R : WExcV}
+    {E : (n : Nat) → WorldT n → Heap → Tm → Tm → List Tm → Prop}
+    (hinvoke : ∀ n (W : WorldT n) h f r vs, E n W h f r vs → SafePostExcV Ξ T Q R n W h (.invoke f r vs)) :
+    ∀ {n W h t}, EvalCallSafe Ξ E R n W h t → SafePostExcV Ξ T Q R n W h t := by
+  intro n
+  induction n with
+  | zero => intro _ _ _ he; exact he
+  | succ n ih =>
+    intro W h t he
+    obtain ⟨hrf, he⟩ := he
+    rcases he with (hinv | hraise) | hstep
+    · obtain ⟨f, r, vs, rfl, hE⟩ := hinv
+      exact hinvoke _ W h f r vs hE
+    · exact ⟨hrf, .inl (.inr hraise)⟩
+    · obtain ⟨U, h', t', hx, hu, st, hh, he⟩ := hstep
+      exact ⟨hrf, .inr ⟨U, h', t', hx, hu, st, hh, ih he⟩⟩
+
+/-- **Erasure at the states a run reaches**: safety with world-indexed
+postconditions gives safety at heap postconditions each implies at every
+admissible state the run reaches from the entry (`SafePostExcV.weaken_admissible`). -/
+theorem SafePostExcV.erase_reached {Ξ T : Fam} {Q : WPost} {R : WExcV} {H : Post} {J : Heap → Prop}
+    (s : IndexedHeap)
+    (hn : ∀ (s' : IndexedHeap) (v : Tm), Admissible s s' → Q s'.n s'.W s'.h v → H s'.h v)
+    (he : ∀ (s' : IndexedHeap) (v : Tm), Admissible s s' → R s'.n s'.W s'.h v → J s'.h) {t : Tm}
+    (hs : SafePostExcV Ξ T Q R s.n s.W s.h t) : SafePostExc Ξ T H J s.n s.W s.h t :=
+  SafePostExcV.iff_lift.mp
+    (SafePostExcV.weaken_admissible s (Q' := WPost.lift H) (R' := (WExc.lift J).liftV) hn he hs)
+
+/-- **One exit specification entails another** at every call and every
+pair of states: the rule of consequence on both completions. -/
+def Exits.Entails (x y : Exits ExitSchema) : Prop :=
+  ∀ c r args s s' v, x.exitPost c r args s s' v → y.exitPost c r args s s' v
+
+/-- **A completion's guarantee read at heaps**: some indexed states with
+these heaps at which the guarantee holds; what a consequence reading no
+world concludes (`Exits.heapPost_frame`). -/
+def Exits.heapPost (x : Exits ExitSchema) (c : Completion) (r : Tm) (args : List Tm) (before after : Heap)
+    (v : Tm) : Prop :=
+  ∃ s s' : IndexedHeap, s.h = before ∧ s'.h = after ∧ x.exitPost c r args s s' v
+
+theorem Exits.heapPost_frame {x : Exits ExitSchema} {c : Completion} {r : Tm} {args : List Tm}
+    {before after : Heap} {v : Tm} (h : x.heapPost c r args before after v) :
+    Post (x.get c).frame (callEnv r args) before after := by
+  obtain ⟨s, s', rfl, rfl, hp⟩ := h
+  exact Exits.exitPost_frame hp
+
+/-- **Safety at a callable's exits from an entry is safety at their heap
+readings** (`SafePostExcV.erase_reached`). -/
+theorem SafePostExcV.heapPosts {Ξ T : Fam} {x : Exits ExitSchema} {r : Tm} {args : List Tm} (s : IndexedHeap)
+    {t : Tm}
+    (hs : SafePostExcV Ξ T (x.exitPostW .normal r args s.W s.h) (x.exitPostW .exceptional r args s.W s.h)
+      s.n s.W s.h t) :
+    SafePostExc Ξ T (x.heapPost .normal r args s.h) (fun h' => ∃ v, x.heapPost .exceptional r args s.h h' v)
+      s.n s.W s.h t :=
+  SafePostExcV.erase_reached s
+    (fun s' _ _ hp => ⟨s, s', rfl, rfl, hp s.pos s.adm s.ok s'.pos s'.adm s'.ok⟩)
+    (fun s' v _ hp => ⟨v, s, s', rfl, rfl, hp s.pos s.adm s.ok s'.pos s'.adm s'.ok⟩) hs
+
 end Verification.CallEffects

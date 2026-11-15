@@ -91,6 +91,22 @@ theorem NativeConstruct.iff_exits {Ξ : Fam} {effect : Effect} {P : ArgFam} {Rf 
   · exact (Effect.postW_iff_exit hadm fun _ => hvals).mpr hp
   · exact (Effect.excPostW_iff_exit hadm).mpr hp
 
+/-- **Invocation at a callable's exits** (the note's Call at the evaluated
+actuals): a callee meeting the native-contract condition at an exit
+specification, invoked at values meeting its input contract one step below,
+is safe at the specification's exits from the entry world truncated by the
+invocation's step (`NativeContract.safe`). -/
+theorem invoke_exits {Ξ : Fam} {Acc : ArgFam} {Rc : Fam} {req : Tm → List Tm → Heap → Prop}
+    {Rf : Tm → List Tm → Fam} {x : Exits ExitSchema} {n : Nat} {W : WorldT (n + 1)} {f : Val}
+    (hc : NativeContract Ξ Acc Rc req Rf (fun r vs _ U h => x.exitPostW .normal r vs U h)
+      (fun r vs _ U h => x.exitPostW .exceptional r vs U h) (n + 1) W f)
+    (hw : WorldAdm W) {h : Heap} (hh : HeapOk (n + 1) W h) {r : Tm} (hrv : isVal r = true)
+    (hr : Rc n (trunc n (Nat.le_succ n) W) r) {vs : List Tm} (hv : CallArguments.Values vs)
+    (ha : Acc n (trunc n (Nat.le_succ n) W) vs) (hq : req r vs h) (href : RefsOk W (.invoke f r vs)) :
+    SafePostExcV Ξ (Rf r vs) (x.exitPostW .normal r vs (trunc n (Nat.le_succ n) W) h)
+      (x.exitPostW .exceptional r vs (trunc n (Nat.le_succ n) W) h) (n + 1) W h (.invoke f r vs) :=
+  NativeContract.safe hc hw hh hrv hr hv ha hq href
+
 /-- **Safety at a signature's heap postconditions is safety at its exits**,
 where it states no element write and its actuals are values where it states
 an append of them: from an entry at a world and heap, at every admissible
