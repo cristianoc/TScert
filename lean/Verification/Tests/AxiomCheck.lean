@@ -367,9 +367,9 @@ run_cmd do
   check ``Verification.PromiseCalls.regionFirst_kept
   check ``Verification.PromiseCalls.effectKept_holds
   check ``Verification.PromiseCalls.statesExtension_grows
-  check ``Verification.PromiseCalls.statesAppend_grows
-  check ``Verification.PromiseCalls.statesViewGrowth_write
-  check ``Verification.PromiseCalls.statesExactWrite_exact
+  check ``Verification.PromiseCalls.statesAppend_appends
+  check ``Verification.PromiseCalls.statesViewGrowth_changes
+  check ``Verification.PromiseCalls.exactWriteOf_exact
   check ``Verification.PromiseCalls.storeHeld_sound
   check ``Verification.HeapKnowledge.storeFollows_sound
   check ``Verification.HeapKnowledge.restateStores_holds
@@ -565,8 +565,11 @@ run_cmd do
   check ``Verification.CallEffects.Effect.callPost_freshObject
   check ``Verification.CallEffects.Effect.callPost_elements
   check ``Verification.CallEffects.Effect.callPost_ensures
-  check ``Verification.CallEffects.Effect.callPost_grows
-  check ``Verification.CallEffects.Effect.callPost_elementWrite
+  check ``Verification.CallEffects.Effect.callPost_holds
+  check ``Verification.CallEffects.Effect.callPost_storeGrows
+  check ``Verification.CallEffects.Effect.callPost_appends
+  check ``Verification.CallEffects.Effect.callPost_viewGrowth
+  check ``Verification.CallEffects.Effect.callPost_exactWrite
   check ``Verification.CallEffects.Effect.heldPosts_call
   check ``Verification.GraphCode.selectedGrades_eq_fields
   check ``Verification.GraphCode.selectedWithinAt_eq_fields

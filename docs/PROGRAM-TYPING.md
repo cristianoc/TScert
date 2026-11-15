@@ -1878,10 +1878,13 @@ respects a support of the fact (the note's Frame, `PromiseCalls.frameKeeps`:
 [support and respect](FOOTPRINTS.md#support-and-respect),
 [a call's effect at the caller](FOOTPRINTS.md#a-calls-effect-at-the-caller)),
 or the change its exact postcondition states keeps it (the note's Entry,
-`PromiseCalls.postKeeps`), each rule triggered by the one postcondition it
-reads among the normal exit's postconditions of the signature's exit
-summary (`PromiseCalls.callPosts`; proved: `statesExtension_grows`,
-`statesAppend_grows`, `statesViewGrowth_write`, `statesExactWrite_exact`):
+`PromiseCalls.postKeeps`), each rule triggered by the postconditions it
+reads among the normal exit's postconditions of the signature's schema,
+stated once for every arity (`PromiseCalls.callPosts`), and its contract
+derived from those formulas at the call (proved: `statesExtension_grows`
+from the receiver store's frame and extension, `statesAppend_appends`,
+`statesViewGrowth_changes`, `exactWriteOf_exact` from View-Write at a
+format with its element type's precondition facts):
 the views' growth an element write's change `PromiseCalls.writeChanges`,
 the store's extension growth's `PromiseCalls.growChanges` and `growFirst`
 (proved: `receiverGrows_changes`, `growFirst_kept`); `appendKept` and

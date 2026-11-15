@@ -76,8 +76,8 @@ theorem grown_post {e : CallEffects.Effect} {r : Tm} {args : List Tm} {h h' : He
     exact ⟨by simpa [CallEffects.callEnv, Footprints.storeOf] using hs, rfl⟩
 
 /-- A call at its selected signature: its frame at the call's positions, on
-normal return the narrower `grownFrame` where the signature states
-`receiverGrows`; on a throw its frame, which it must state then. -/
+normal return the narrower `grownFrame` where its normal exit states the
+receiver's growth (`PromiseCalls.statesExtension`); on a throw its frame, which it must state then. -/
 @[nospecialize] def callStep [DecidableEq ι] (G : NormalGraph ι)
     (images : InstanceImageCheck G) (sums : List (ProgramCertificates.ReadSummary ι))
     (c : NodeEvidence ι) (t : Tm) (thr : Bool) : Option StepEffect :=
@@ -88,7 +88,7 @@ normal return the narrower `grownFrame` where the signature states
     match t, ExpressionEffects.selectedEffect c.expression with
     | .invoke _ r args, some eff =>
       if !thr || eff.onThrow then
-        some ⟨callSlots r args, if eff.receiverGrows then grownFrame else eff.frame, eff.frame⟩
+        some ⟨callSlots r args, if PromiseCalls.statesExtension eff then grownFrame else eff.frame, eff.frame⟩
       else none
     | _, _ => none
   else none
@@ -151,10 +151,10 @@ theorem callStep_ok [DecidableEq ι] {G : NormalGraph ι}
             instantiateArgs_eq_map] at hs ⊢
           apply HeapObservations.SafePostExc.weaken _ _ hs
           · intro h' v hp
-            cases hg : eff.receiverGrows
+            cases hg : PromiseCalls.statesExtension eff
             · simp only [Bool.false_eq_true, ↓reduceIte]; exact CallEffects.Effect.callPost_within hp
             · simp only [↓reduceIte]
-              exact grown_post (CallEffects.Effect.callPost_within hp) (CallEffects.Effect.callPost_grows hg hp).1
+              exact grown_post (CallEffects.Effect.callPost_within hp) (PromiseCalls.statesExtension_grows hg hp)
           · intro h' hp hthr
             have hon : eff.onThrow = true := by
               simp only [Bool.or_eq_true, Bool.not_eq_true'] at hthrow

@@ -134,6 +134,15 @@ def ElementKind.format : ElementKind → ViewFormat
 
 theorem ElementKind.range_format (k : ElementKind) : k.format.range = k.range := by cases k <;> rfl
 
+/-- The element type of a format's typed array. -/
+def ElementKind.ofFormat : ViewFormat → ElementKind
+  | .uint8 => .uint8
+  | .uint16 => .uint16
+  | .int32 => .int32
+  | .float64 => .float64
+
+theorem ElementKind.format_ofFormat (f : ViewFormat) : (ElementKind.ofFormat f).format = f := by cases f <;> rfl
+
 /-- A typed array's length, as its descriptor states it. -/
 def viewLength : Val → Option Nat
   | .viewAt _ _ _ _ N => some N

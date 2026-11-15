@@ -629,7 +629,7 @@ postcondition that ignores the value is the one `SafePostExcW` states
 (`Exits.exitPostW`, normal and exceptional). One signature covers another
 where its specification entails the other's on both exits (`Exits.Entails`),
 its result meets the other's and its precondition is weaker
-(`Effect.Covers`; the check `Effect.covers` decides it, proved:
+(`Effect.Covers`; the check `Effect.covers` is sufficient for it, proved:
 `Effect.covers_sound`); a promise weakens along coverage at its exits
 (`PromiseWith.weaken'`, `ConstructPromise.weaken'`). A bound signature's
 exits follow from its target's at the forwarded call, read from the bound
@@ -646,9 +646,14 @@ exit's frame or one of its postconditions: the frame
 `Effect.callExc_frame`), a fresh result store or object
 (`Effect.callPost_fresh`, `Effect.callPost_freshObject`), the receiver's
 elements (`Effect.callPost_elements`), the index facts it ensures
-(`Effect.callPost_ensures`), the receiver's growth and the append
-(`Effect.callPost_grows`) and the element write's change
-(`Effect.callPost_elementWrite`).
+(`Effect.callPost_ensures`); and, each from the postconditions that state
+it, read at the call (`Effect.callPost_holds`), the receiver's growth from
+the frame `{receiver store: any}` and the store's extension
+(`Effect.callPost_storeGrows`), the append of the actuals
+(`Effect.callPost_appends`), an element write's change from the views'
+growth (`Effect.callPost_viewGrowth`), and an exact element write from
+View-Write at its element type's format with its precondition's facts
+(`Effect.callPost_exactWrite`).
 
 Two safety derivations of one invocation reach the same heaps and terms at
 worlds of their own; their guarantees conjoin at the first's worlds where

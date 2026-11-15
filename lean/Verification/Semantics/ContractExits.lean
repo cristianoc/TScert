@@ -256,8 +256,9 @@ states with these heaps (`Exits.heapPost`). Each consequence a pass decision
 reads is derived from the exit's frame or one of its postconditions
 (`Effect.callPost_within`, `Effect.callPost_fresh`,
 `Effect.callPost_freshObject`, `Effect.callPost_elements`,
-`Effect.callPost_ensures`, `Effect.callPost_grows`,
-`Effect.callPost_elementWrite`). -/
+`Effect.callPost_ensures`, `Effect.callPost_storeGrows`,
+`Effect.callPost_appends`, `Effect.callPost_viewGrowth`,
+`Effect.callPost_exactWrite`). -/
 def Effect.callPost (e : Effect) (r : Tm) (args : List Tm) (before : Heap) : Post :=
   fun after v => ∃ pad : List Tm, (∀ a ∈ pad, a = .undef) ∧ (pad = [] ∨ Footprints.storeOf r = none) ∧
     e.schema.heapPost .normal r (args ++ pad) before after v
@@ -324,35 +325,67 @@ theorem Effect.callPost_ensures {F : HeapKnowledge.IndexFact} (hF : F ∈ e.ensu
   change F.HoldsAt ⟨callEnv r (args ++ pad), s.h⟩ (ensuresEnv v r (args ++ pad)) s'.h at h
   rwa [he, callEnv_pad r args hpad] at h
 
-/-- **The receiver's growth and the append of the actuals**, where the
-signature states them. -/
-theorem Effect.callPost_grows (hg : e.receiverGrows = true) (hp : e.callPost r args before after v) :
-    ReceiverGrows r before after ∧ ReceiverAppends r args before after := by
-  obtain ⟨pad, hpad, hrecv, s, s', rfl, rfl, hadm, -, hH⟩ := callPost_summary hp
-  have hmem : ∀ F ∈ [(FormulaF.transition [(.field 0 arrayStoreKey, .any)] : Formula), .operation (.storeExtends 0),
-      .operation (.push 0 1 (actualWitnesses (args ++ pad).length))], F ∈ e.normalPosts (args ++ pad).length := by
-    intro F hF
-    simp only [Effect.normalPosts, hg, List.mem_append]
-    exact .inl (.inr hF)
-  refine ⟨(receiverGrows_iff hadm).mp ⟨hH _ (hmem _ (by simp)), hH _ (hmem _ (by simp))⟩, fun hv => ?_⟩
+/-- **Every postcondition of the normal exit holds**, instantiated at the
+evaluated actuals followed by the omitted positions' `undefined`, at indexed
+states with the call's heaps. -/
+theorem Effect.callPost_holds (hp : e.callPost r args before after v) :
+    ∃ pad : List Tm, (∀ a ∈ pad, a = .undef) ∧ (pad = [] ∨ Footprints.storeOf r = none) ∧
+      ∃ s s' : IndexedHeap, s.h = before ∧ s'.h = after ∧ Admissible s s' ∧
+        ∀ F ∈ e.schema.normal.ensures, Parity.Holds AssertionArena.empty
+          (callState r (args ++ pad) v before.length s s')
+          (instantiateFormula (e.schema.callInstantiation (args ++ pad).length) F) := by
+  obtain ⟨pad, hpad, hrecv, s, s', rfl, rfl, hx⟩ := hp
+  exact ⟨pad, hpad, hrecv, s, s', rfl, rfl, Exits.exitPost_admissible hx, Exits.exitPost_ensures hx⟩
+
+/-- **The receiver's growth**, where the normal exit states the frame
+`{receiver store: any}` and the store's extension (`receiverGrows_iff`). -/
+theorem Effect.callPost_storeGrows
+    (h1 : (.transition [(.field 0 arrayStoreKey, .any)] : FormulaSchema) ∈ e.schema.normal.ensures)
+    (h2 : (.operation (.storeExtends 0) : FormulaSchema) ∈ e.schema.normal.ensures)
+    (hp : e.callPost r args before after v) : ReceiverGrows r before after := by
+  obtain ⟨pad, -, -, s, s', rfl, rfl, hadm, hH⟩ := Effect.callPost_holds hp
+  exact (receiverGrows_iff (args := args ++ pad) hadm).mp ⟨hH _ h1, hH _ h2⟩
+
+/-- **The append of the actuals**, where the normal exit states the append
+of the actuals from position `1` on (`receiverAppends_iff`). -/
+theorem Effect.callPost_appends
+    (ha : (.operation (.push 0 1 (.restFrom 1)) : FormulaSchema) ∈ e.schema.normal.ensures)
+    (hp : e.callPost r args before after v) : ReceiverAppends r args before after := by
+  obtain ⟨pad, -, hrecv, s, s', rfl, rfl, -, hH⟩ := Effect.callPost_holds hp
+  have hF := hH _ ha
+  simp only [instantiateFormula, FormulaF.map, OperationPostF.map, Exits.callInstantiation, restFrom_one] at hF
+  intro hv
   rcases hrecv with rfl | hr
-  · have happ := (receiverAppends_iff (by simpa using hv)).mp (hH _ (hmem _ (by simp)))
-    simp only [List.append_nil] at happ
-    exact happ hv
+  · simp only [List.append_nil] at hF
+    exact (receiverAppends_iff (by simpa using hv)).mp hF hv
   · exact ReceiverAppends.of_no_store hr hv
 
-/-- **The element write's change of the heap**, where the signature states
-an element write. -/
-theorem Effect.callPost_elementWrite {w : ElementWrite} (hw : e.elementWrite = some w)
-    (hp : e.callPost r args before after v) : w.Holds args before after := by
-  obtain ⟨pad, hpad, -, s, s', rfl, rfl, -, -, hH⟩ := callPost_summary hp
-  have hall : ∀ F ∈ w.posts (args ++ pad).length,
-      Parity.Holds AssertionArena.empty (callState r (args ++ pad) v s.h.length s s') F := by
-    intro F hF
-    apply hH
-    simp only [Effect.normalPosts, hw, List.mem_append]
-    exact .inr hF
-  exact ElementWrite.holds_pad hpad ((elementWrite_iff w).mp hall).1
+/-- **An element write's coarse change**, where the normal exit states the
+views' growth `{all-views: grow}` (`Kinds.ViewWrite.frame_iff`,
+`Kinds.ViewWrite.changes`). -/
+theorem Effect.callPost_viewGrowth
+    (hg : (.transition [(.cls .views, .grow)] : FormulaSchema) ∈ e.schema.normal.ensures)
+    (hp : e.callPost r args before after v) : ElementWrite.stores.changes.Holds before after := by
+  obtain ⟨pad, -, -, s, s', rfl, rfl, -, hH⟩ := Effect.callPost_holds hp
+  have hF := hH _ hg
+  have hw : Kinds.ViewWrite s.W s.h s'.W s'.h :=
+    (Kinds.ViewWrite.frame_iff s.ok (callEnv r (args ++ pad))).mpr ⟨hF.1, s'.ok, hF.2⟩
+  exact hw.changes s.ok .stores
+
+/-- **An exact element write**, where the normal exit states View-Write at
+the element type's format and the facts of its precondition
+(`exactPre_iff`). -/
+theorem Effect.callPost_exactWrite {k : ElementKind}
+    (hw : (.operation (.viewWrite 1 2 3 (some k.format)) : FormulaSchema) ∈ e.schema.normal.ensures)
+    (hpre : ∀ F ∈ k.preFacts, (.operation (.fact .before 0 F) : FormulaSchema) ∈ e.schema.normal.ensures)
+    (hp : e.callPost r args before after v) : ExactWrite k args before after ∧ ExactPre k args := by
+  obtain ⟨pad, hpad, -, s, s', rfl, rfl, -, hH⟩ := Effect.callPost_holds hp
+  have hx : ExactWrite k (args ++ pad) s.h s'.h := hH _ hw _ rfl
+  have hq : ExactPre k (args ++ pad) := (exactPre_iff (r := r) k s.h).mp fun F hF => hH _ (hpre F hF)
+  have hg : ∀ i, (args ++ pad).getD i .undef = args.getD i .undef := fun i => by
+    simpa [callEnv] using congrFun (callEnv_pad .undef args hpad) (i + 1)
+  simp only [ExactWrite, WriteAt, ExactPre, hg] at hx hq ⊢
+  exact ⟨hx, hq⟩
 
 /-- **The frame of a throw**, where the signature states `onThrow`; a throw
 of the evaluation leaves the heap. -/

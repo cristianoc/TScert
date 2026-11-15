@@ -2315,108 +2315,78 @@ def writeChanges : HeapKnowledge.Changes := CallEffects.ElementWrite.changes .st
 
 /-! ### The normal exit's postconditions a call's Entry rules read
 
-Each derived rule of the note's Entry at a call is triggered by the one
-postcondition it needs among the normal exit's postconditions of the
-signature's exit summary (`Effect.summary`, `Effect.normalPosts`): the
-store's extension, the append, the views' growth, View-Write at an element
-type's format. Each lemma below states that the postcondition's presence
-gives the contract the rule's soundness reads. -/
+Each derived rule of the note's Entry at a call is triggered by the
+postconditions it needs among the normal exit's postconditions of the
+signature's schema (`Effect.schema`, stated once for every arity): the
+receiver store's frame and extension, the append of the actuals, the views'
+growth, View-Write at an element type's format with its precondition's
+facts. The contract each rule's soundness reads is derived from those
+formulas at the call (`Effect.callPost_storeGrows`,
+`Effect.callPost_appends`, `Effect.callPost_viewGrowth`,
+`Effect.callPost_exactWrite`). -/
 
-/-- The normal exit's postconditions of a call's signature, at its actuals'
-number (`Effect.summary`). -/
-def callPosts (eff : Effect) (t : Tm) : List Parity.Formula :=
-  (eff.summary (ExpressionEffects.actualsOf t).length).normal.ensures
+/-- The normal exit's postconditions of a call's signature, as its schema
+states them. -/
+def callPosts (eff : Effect) : List Parity.FormulaSchema := eff.schema.normal.ensures
 
-/-- The normal exit states the receiver's store extended (`storeExtends`). -/
-def statesExtension (eff : Effect) (t : Tm) : Bool :=
-  (callPosts eff t).contains (.operation (.storeExtends 0))
+/-- The normal exit states the receiver's store's frame `{receiver store:
+any}` and its extension (`storeExtends`): together, its growth
+(`receiverGrows_iff`). -/
+def statesExtension (eff : Effect) : Bool :=
+  (callPosts eff).contains (.transition [(.field 0 arrayStoreKey, .any)]) &&
+    (callPosts eff).contains (.operation (.storeExtends 0))
 
-/-- The normal exit states an append to the receiver (`push`). -/
-def statesAppend (eff : Effect) (t : Tm) : Bool :=
-  (callPosts eff t).any fun F => match F with
-    | .operation (.push 0 1 _) => true
-    | _ => false
+/-- The normal exit states the append of the actuals to the receiver
+(`push` of the actuals from position `1` on). -/
+def statesAppend (eff : Effect) : Bool :=
+  (callPosts eff).contains (.operation (.push 0 1 (.restFrom 1)))
 
 /-- The normal exit states the views' growth, `{views: grow}`, a typed
 array's element write's frame (`Kinds.ViewWrite.frame_iff`). -/
-def statesViewGrowth (eff : Effect) (t : Tm) : Bool :=
-  (callPosts eff t).contains (.transition [(.cls .views, .grow)])
+def statesViewGrowth (eff : Effect) : Bool :=
+  (callPosts eff).contains (.transition [(.cls .views, .grow)])
 
-/-- The normal exit states View-Write at an element type's format. -/
-def statesExactWrite (eff : Effect) (t : Tm) : Bool :=
-  (callPosts eff t).any fun F => match F with
-    | .operation (.viewWrite 1 2 3 (some _)) => true
-    | _ => false
+/-- The element type of the exact element write the normal exit states:
+View-Write at a format, and each fact of its element type's precondition
+read at the entry. -/
+def exactWriteOf (eff : Effect) : Option CallEffects.ElementKind :=
+  (callPosts eff).findSome? fun F => match F with
+    | .operation (.viewWrite 1 2 3 (some f)) =>
+      if (CallEffects.ElementKind.ofFormat f).preFacts.all fun G => (callPosts eff).contains (.operation (.fact .before 0 G))
+      then some (CallEffects.ElementKind.ofFormat f) else none
+    | _ => none
 
-private theorem mem_normalPosts {eff : Effect} {n : Nat} {F : Parity.Formula} (h : F ∈ eff.normalPosts n) :
-    (eff.fresh = true ∧ F = .operation (.freshStore 0)) ∨ (eff.freshObject = true ∧ F = .operation (.freshObject 0)) ∨
-    (∃ R, eff.elements = some R ∧ F = .operation (.elementsWhen 0 .tru 1 R)) ∨
-    (∃ G ∈ eff.ensures, F = .operation (.fact .after 0 G)) ∨
-    (eff.receiverGrows = true ∧ (F = .transition [(.field 0 arrayStoreKey, .any)] ∨ F = .operation (.storeExtends 0) ∨
-      F = .operation (.push 0 1 (CallEffects.actualWitnesses n)))) ∨
-    (∃ w, eff.elementWrite = some w ∧ F ∈ w.posts n) := by
-  unfold CallEffects.Effect.normalPosts at h
-  simp only [List.mem_append] at h
-  rcases h with ((((hf | ho) | hel) | hen) | hg) | hw
-  · cases hc : eff.fresh <;> simp [hc] at hf; exact .inl ⟨rfl, hf⟩
-  · cases hc : eff.freshObject <;> simp [hc] at ho; exact .inr (.inl ⟨rfl, ho⟩)
-  · cases hc : eff.elements <;> simp [hc] at hel; exact .inr (.inr (.inl ⟨_, rfl, hel⟩))
-  · obtain ⟨G, hG, rfl⟩ := List.mem_map.mp hen; exact .inr (.inr (.inr (.inl ⟨G, hG, rfl⟩)))
-  · cases hc : eff.receiverGrows <;> simp [hc] at hg; exact .inr (.inr (.inr (.inr (.inl ⟨rfl, hg⟩))))
-  · cases hc : eff.elementWrite <;> simp [hc] at hw; exact .inr (.inr (.inr (.inr (.inr ⟨_, rfl, hw⟩))))
+theorem statesExtension_grows {eff : Effect} (h : statesExtension eff = true) {r : Tm} {args : List Tm}
+    {before after : Heap} {v : Tm} (hp : eff.callPost r args before after v) :
+    CallEffects.ReceiverGrows r before after := by
+  simp only [statesExtension, Bool.and_eq_true, List.contains_iff_mem] at h
+  exact CallEffects.Effect.callPost_storeGrows h.1 h.2 hp
 
-private theorem op_not_mem_posts (w : CallEffects.ElementWrite) (n : Nat) {o : Parity.OperationPost}
-    (ho : match o with | .viewWrite .. | .fact .. => False | _ => True) :
-    Parity.FormulaF.operation o ∉ w.posts n := by
-  cases o <;> simp at ho <;> cases w <;> simp [CallEffects.ElementWrite.posts]
+theorem statesAppend_appends {eff : Effect} (h : statesAppend eff = true) {r : Tm} {args : List Tm}
+    {before after : Heap} {v : Tm} (hp : eff.callPost r args before after v) :
+    CallEffects.ReceiverAppends r args before after :=
+  CallEffects.Effect.callPost_appends (List.contains_iff_mem.mp h) hp
 
-/-- **The extension postcondition gives the growth** (proved): it occurs in
-the normal exit only where the signature states `ReceiverGrows` and
-`ReceiverAppends` (`Effect.normalPosts`, `receiverGrows_iff`). -/
-theorem statesExtension_grows {eff : Effect} {t : Tm} (h : statesExtension eff t = true) :
-    eff.receiverGrows = true := by
-  unfold statesExtension callPosts at h
-  rcases mem_normalPosts (List.contains_iff_mem.mp h) with ⟨-, he⟩ | ⟨-, he⟩ | ⟨_, -, he⟩ | ⟨_, -, he⟩ |
-    ⟨hg, -⟩ | ⟨w, -, hw⟩
-  all_goals first | exact hg | (cases he) | exact absurd hw (op_not_mem_posts w _ trivial)
+theorem statesViewGrowth_changes {eff : Effect} (h : statesViewGrowth eff = true) {r : Tm} {args : List Tm}
+    {before after : Heap} {v : Tm} (hp : eff.callPost r args before after v) :
+    writeChanges.Holds before after :=
+  CallEffects.Effect.callPost_viewGrowth (List.contains_iff_mem.mp h) hp
 
-/-- **The append postcondition gives the growth and the append** (proved;
-`receiverAppends_iff`). -/
-theorem statesAppend_grows {eff : Effect} {t : Tm} (h : statesAppend eff t = true) :
-    eff.receiverGrows = true := by
-  unfold statesAppend callPosts at h
-  obtain ⟨F, hF, hp⟩ := List.any_eq_true.mp h
-  split at hp
-  · rcases mem_normalPosts hF with ⟨-, he⟩ | ⟨-, he⟩ | ⟨_, -, he⟩ | ⟨_, -, he⟩ | ⟨hg, -⟩ | ⟨w, -, hw⟩
-    all_goals first | exact hg | (cases he) | exact absurd hw (op_not_mem_posts w _ trivial)
-  · cases hp
-
-/-- **The views' growth gives an element write** (proved;
-`elementWrite_iff`): it occurs in the normal exit only where the signature
-states one. -/
-theorem statesViewGrowth_write {eff : Effect} {t : Tm} (h : statesViewGrowth eff t = true) :
-    ∃ w, eff.elementWrite = some w := by
-  unfold statesViewGrowth callPosts at h
-  rcases mem_normalPosts (List.contains_iff_mem.mp h) with ⟨-, he⟩ | ⟨-, he⟩ | ⟨_, -, he⟩ | ⟨_, -, he⟩ |
-    ⟨-, he | he | he⟩ | ⟨w, hw, -⟩
-  all_goals first | exact ⟨_, hw⟩ | (cases he) | simp at he
-
-/-- **View-Write at an element type's format gives an exact element write**
-(proved; `elementWrite_iff`). -/
-theorem statesExactWrite_exact {eff : Effect} {t : Tm} (h : statesExactWrite eff t = true) :
-    ∃ k, eff.elementWrite = some (.exact k) := by
-  unfold statesExactWrite callPosts at h
-  obtain ⟨F, hF, hp⟩ := List.any_eq_true.mp h
-  split at hp
-  · rename_i fmt
-    rcases mem_normalPosts hF with ⟨-, he⟩ | ⟨-, he⟩ | ⟨_, -, he⟩ | ⟨_, -, he⟩ | ⟨-, he | he | he⟩ |
-      ⟨w, hw, hwF⟩
-    all_goals try (cases he)
-    cases w with
-    | exact k => exact ⟨k, hw⟩
-    | stores => simp [CallEffects.ElementWrite.posts] at hwF
-    | assign => simp [CallEffects.ElementWrite.posts] at hwF
-  · cases hp
+theorem exactWriteOf_exact {eff : Effect} {k : CallEffects.ElementKind} (h : exactWriteOf eff = some k) {r : Tm}
+    {args : List Tm} {before after : Heap} {v : Tm} (hp : eff.callPost r args before after v) :
+    CallEffects.ExactWrite k args before after ∧ CallEffects.ExactPre k args := by
+  obtain ⟨F, hF, hk⟩ := List.exists_of_findSome?_eq_some h
+  split at hk
+  · rename_i f
+    split at hk
+    · rename_i hall
+      cases hk
+      refine CallEffects.Effect.callPost_exactWrite (k := CallEffects.ElementKind.ofFormat f) ?_ ?_ hp
+      · rw [CallEffects.ElementKind.format_ofFormat]; exact hF
+      · intro G hG
+        exact List.contains_iff_mem.mp (List.all_eq_true.mp hall G hG)
+    · cases hk
+  · cases hk
 
 /-- **A call's fact kept by its postcondition** (the note's Entry, from the
 old fact, the transition and the normal exit's exact postconditions,
@@ -2428,9 +2398,9 @@ the fields apart from the receiver's own locations kept besides
 its length) keeps it. -/
 def postKeeps (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge)
     (a : HeapKnowledge.IndexAtom) : Bool :=
-  (statesExtension eff t && (a.fact.keptBy growChanges (fun s g => growFirst k t s g || stable s g) ||
+  (statesExtension eff && (a.fact.keptBy growChanges (fun s g => growFirst k t s g || stable s g) ||
     a.fact.everyKept growChanges (fun s g => growFirst k t s g || stable s g))) ||
-  (statesViewGrowth eff t && (a.fact.keptWith writeChanges stable || a.fact.everyKept writeChanges stable))
+  (statesViewGrowth eff && (a.fact.keptWith writeChanges stable || a.fact.everyKept writeChanges stable))
 
 /-- The heap-reading atoms of a call's entry its normal exit keeps, renamed
 past the result (`Changes.ofClosed`, ARITHMETIC.md, "Linear facts"): each
@@ -2443,12 +2413,11 @@ def effectKept (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : H
     !a.fact.envOnly && (postKeeps stable eff t k a || frameKeeps stable eff t k a))
 
 theorem effectKept_holds {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
-    (hk : HeapKnowledge.Holds k ε ρ h) (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
-    (hg : eff.receiverGrows = true →
-      CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h')
-    (hew : ∀ w, eff.elementWrite = some w → w.Holds (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
+    (hk : HeapKnowledge.Holds k ε ρ h)
+    (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v)
     (hst : HeapKnowledge.FirstKept stable ρ h h') :
     HeapKnowledge.IndexHolds ε (effectKept stable eff t k) (push v ρ) h' := by
+  have hw := CallEffects.Effect.callPost_within hq
   unfold effectKept
   split
   · exact HeapKnowledge.indexHolds_nil _ _
@@ -2461,17 +2430,14 @@ theorem effectKept_holds {stable : Nat → String → Bool} {eff : Effect} {t : 
       rcases Bool.or_eq_true_iff.mp hpost with hgk | hwk
       · simp only [Bool.and_eq_true, Bool.or_eq_true] at hgk
         obtain ⟨hgr, hkb⟩ := hgk
-        have hg := hg (statesExtension_grows hgr)
+        have hg := statesExtension_grows hgr hq
         have hf := HeapKnowledge.firstKept_or (growFirst_kept hk hg) hst
         rcases hkb with hkb | hkb
         · exact HeapKnowledge.IndexFact.holdsAt_kept (receiverGrows_changes hg) hf hkb hF
         · exact HeapKnowledge.IndexFact.everyKept_sound (receiverGrows_changes hg) hf hkb hF
       · simp only [Bool.and_eq_true] at hwk
         obtain ⟨hvw, hwk⟩ := hwk
-        obtain ⟨w, hwr⟩ := statesViewGrowth_write hvw
-        have hc : writeChanges.Holds h h' := by
-          have := (hew w hwr).changes
-          cases w <;> exact this
+        have hc : writeChanges.Holds h h' := statesViewGrowth_changes hvw hq
         rcases Bool.or_eq_true_iff.mp hwk with hkb | hkb
         · exact HeapKnowledge.IndexFact.holdsAt_keptWith hc hst hkb hF
         · exact HeapKnowledge.IndexFact.everyKept_sound hc hst hkb hF
@@ -2660,22 +2626,20 @@ store keeps or extends (`everyGrown`), renamed past the result; none of a call
 growing nothing. A derived rule of the note's Entry at the normal exit's
 growth and append postconditions (`storeExtends`, `push`). -/
 def appendKept (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) : List HeapKnowledge.IndexAtom :=
-  if statesExtension eff t && statesAppend eff t then HeapKnowledge.shiftIndices (k.indices.filter (everyGrown k t))
+  if statesExtension eff && statesAppend eff then HeapKnowledge.shiftIndices (k.indices.filter (everyGrown k t))
   else []
 
 open HeapKnowledge in
 theorem appendKept_holds {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
     (hk : Holds k ε ρ h)
-    (hg : eff.receiverGrows = true →
-      CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h' ∧
-      CallEffects.ReceiverAppends (ExpressionEffects.receiverOf (instantiate 0 ρ t))
-        (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h') :
+    (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v) :
     IndexHolds ε (appendKept eff t k) (push v ρ) h' := by
   unfold appendKept
   split
   · rename_i hgr
     simp only [Bool.and_eq_true] at hgr
-    obtain ⟨hgrow, happ⟩ := hg (statesExtension_grows hgr.1)
+    have hgrow := statesExtension_grows hgr.1 hq
+    have happ := statesAppend_appends hgr.2 hq
     have hf := growFirst_kept hk hgrow
     refine shiftIndices_holds fun a ha hcd => ?_
     obtain ⟨ha, hkept⟩ := List.mem_filter.mp ha
@@ -2729,7 +2693,7 @@ the entry states the length defined, the length at least `count`. -/
 def linearAppendKept (n : Nat) (eff : Effect) (t : Tm) (k : Knowledge) : List IndexAtom :=
   match t with
   | .invoke _ (.var i) args =>
-    if statesExtension eff t && statesAppend eff t && IndexWrites.appendSlots n args then
+    if statesExtension eff && statesAppend eff && IndexWrites.appendSlots n args then
       shiftIndices ((compose (IndexWrites.keptOf growChanges (growFirst k t)) (IndexWrites.unconditionalLinear k.indices)
           ((IndexWrites.lengthGrowth i args.length).join (growth (IndexWrites.grownOf growChanges (growFirst k t))
             (IndexWrites.unconditionalLinear k.indices)))).map (fun F => { fact := .linear F }) ++
@@ -2740,10 +2704,7 @@ def linearAppendKept (n : Nat) (eff : Effect) (t : Tm) (k : Knowledge) : List In
 open HeapKnowledge in
 theorem linearAppendKept_holds {n : Nat} {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
     (hv : ∀ i, i < n → isVal (ρ i) = true) (hk : Holds k ε ρ h)
-    (hg : eff.receiverGrows = true →
-      CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h' ∧
-      CallEffects.ReceiverAppends (ExpressionEffects.receiverOf (instantiate 0 ρ t))
-        (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h') :
+    (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v) :
     IndexHolds ε (linearAppendKept n eff t k) (push v ρ) h' := by
   unfold linearAppendKept
   split
@@ -2751,8 +2712,9 @@ theorem linearAppendKept_holds {n : Nat} {eff : Effect} {t : Tm} {k : Knowledge}
     split
     · rename_i hc
       simp only [Bool.and_eq_true] at hc
-      obtain ⟨⟨he, -⟩, hs⟩ := hc
-      obtain ⟨hgrow, happ⟩ := hg (statesExtension_grows he)
+      obtain ⟨⟨he, ha⟩, hs⟩ := hc
+      have hgrow := statesExtension_grows he hq
+      have happ := statesAppend_appends ha hq
       have hf := growFirst_kept hk hgrow
       simp only [ExpressionEffects.receiverOf, ExpressionEffects.actualsOf, instantiate, Nat.not_lt_zero,
         if_false, Nat.sub_zero] at hgrow happ
@@ -2836,7 +2798,7 @@ derived rule of the note's Entry at View-Write's postcondition. -/
 def writeKept (eff : Effect) (t : Tm) (k : HeapKnowledge.Knowledge) : List HeapKnowledge.IndexAtom :=
   match t with
   | .invoke _ _ [.var b, .var i, .var x] =>
-    if statesExactWrite eff t then
+    if statesViewGrowth eff && (exactWriteOf eff).isSome then
     let i := HeapKnowledge.pick (HeapLinks.aliases k.links) (HeapKnowledge.intSlot k.indices) i
     let x := HeapKnowledge.pick (HeapLinks.aliases k.links) (HeapKnowledge.intSlot k.indices) x
     HeapKnowledge.shiftIndices (k.indices.filter (everyWritten k b i x) ++
@@ -3000,7 +2962,7 @@ theorem every_written_prefix {ρ : Env} {h h' : Heap} {b i x s : Nat} {st next :
 open HeapKnowledge in
 theorem writeKept_holds {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
     (hk : Holds k ε ρ h)
-    (hew : ∀ w, eff.elementWrite = some w → w.Holds (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h') :
+    (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v) :
     IndexHolds ε (writeKept eff t k) (push v ρ) h' := by
   unfold writeKept
   split
@@ -3009,10 +2971,10 @@ theorem writeKept_holds {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h'
     rotate_left
     · exact indexHolds_nil _ _
     rename_i hse
-    obtain ⟨ek, hw⟩ := statesExactWrite_exact hse
-    obtain ⟨hc, hx, -⟩ := hew _ hw
-    replace hc : CallEffects.ElementWrite.stores.changes.Holds h h' := hc
-    have hx := hx _ rfl
+    simp only [Bool.and_eq_true] at hse
+    obtain ⟨ek, hw⟩ := Option.isSome_iff_exists.mp hse.2
+    have hx := exactWriteOf_exact hw hq
+    have hc : writeChanges.Holds h h' := statesViewGrowth_changes hse.1 hq
     simp only [ExpressionEffects.actualsOf, instantiate, instantiateArgs, Nat.not_lt_zero, if_false,
       Nat.sub_zero] at hx
     have hi := pick_eq (fun a b hab => HeapLinks.aliases_eq hk.2.2.1 hab)
@@ -3350,19 +3312,17 @@ growth (`statesViewGrowth`: `writeChanges`), and its frame's closed bound
 (`Footprint.boundBelow` with no fresh position, `Changes.ofClosed`). -/
 def callChanges (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : Knowledge) :
     List (Changes × (Nat → String → Bool)) :=
-  (if statesExtension eff t then [(growChanges, fun s g => growFirst k t s g || stable s g)] else []) ++
-  (if statesViewGrowth eff t then [(writeChanges, stable)] else []) ++
+  (if statesExtension eff then [(growChanges, fun s g => growFirst k t s g || stable s g)] else []) ++
+  (if statesViewGrowth eff then [(writeChanges, stable)] else []) ++
   [(Changes.ofClosed (Footprints.Footprint.boundBelow [] eff.frame), stable)]
 
 open HeapKnowledge in
 /-- Each change holds of the call's step, and the fields it keeps keep their
 contents (proved). -/
 theorem callChanges_holds {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h' : Heap}
+    {v : Tm}
     (hk : Holds k ε ρ h)
-    (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
-    (hg : eff.receiverGrows = true →
-      CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h')
-    (hew : ∀ w, eff.elementWrite = some w → w.Holds (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
+    (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v)
     (hst : FirstKept stable ρ h h') :
     ∀ c ∈ callChanges stable eff t k, c.1.Holds h h' ∧ FirstKept c.2 ρ h h' := by
   intro c hc
@@ -3372,19 +3332,18 @@ theorem callChanges_holds {stable : Nat → String → Bool} {eff : Effect} {t :
   · split at hc
     · rename_i hx
       simp only [List.mem_singleton] at hc; subst hc
-      have hgr := hg (statesExtension_grows hx)
+      have hgr := statesExtension_grows hx hq
       exact ⟨receiverGrows_changes hgr, firstKept_or (growFirst_kept hk hgr) hst⟩
     · cases hc
   · split at hc
     · rename_i hv
       simp only [List.mem_singleton] at hc; subst hc
-      obtain ⟨w, hwr⟩ := statesViewGrowth_write hv
-      have := (hew w hwr).changes
-      exact ⟨by cases w <;> exact this, hst⟩
+      exact ⟨statesViewGrowth_changes hv hq, hst⟩
     · cases hc
   · simp only [List.mem_singleton] at hc; subst hc
     refine ⟨Changes.ofClosed_holds (Footprints.Closed.holds_of_on ?_), hst⟩
-    have hb := Footprints.Footprint.boundBelow_sound (b := h.length) hw (Footprints.FreshPositions.nil _ _)
+    have hb := Footprints.Footprint.boundBelow_sound (b := h.length) (CallEffects.Effect.callPost_within hq)
+      (Footprints.FreshPositions.nil _ _)
     exact ⟨hb.1, fun l v _ hv => hb.2 l v (List.getElem?_eq_some_iff.mp hv).1 hv⟩
 
 open HeapKnowledge in
@@ -3414,10 +3373,7 @@ def callGrown (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k : Kn
 open HeapKnowledge in
 theorem callKept_sound {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
     (hk : Holds k ε ρ h)
-    (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
-    (hg : eff.receiverGrows = true →
-      CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h')
-    (hew : ∀ w, eff.elementWrite = some w → w.Holds (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
+    (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v)
     (hst : FirstKept stable ρ h h') :
     ∀ u u' n, callKept stable eff t k u = some u' → termValue ε ρ h u = some n → termValue ε (push v ρ) h' u' = some n := by
   intro u u' n hu hn
@@ -3429,20 +3385,17 @@ theorem callKept_sound {stable : Nat → String → Bool} {eff : Effect} {t : Tm
     unfold callKeeps at hc
     rcases Bool.or_eq_true_iff.mp hc with hc | hc
     · obtain ⟨c, hcm, hc⟩ := List.any_eq_true.mp hc
-      obtain ⟨hch, hf⟩ := callChanges_holds hk hw hg hew hst c hcm
+      obtain ⟨hch, hf⟩ := callChanges_holds hk hq hst c hcm
       exact termValue_kept hch hf hc hn
     · obtain ⟨n', h1, -, h3⟩ := Footprints.Term.support_sound (c := { stable }) hst (.inl rfl)
-        (Footprints.respect_sound hc (Footprints.knowledgeQuery_sound hk) (callerFrame_post hw)) hn
+        (Footprints.respect_sound hc (Footprints.knowledgeQuery_sound hk) (callerFrame_post (CallEffects.Effect.callPost_within hq))) hn
       rw [h3 rfl] at h1; exact h1
   · cases hu
 
 open HeapKnowledge in
 theorem callGrown_sound {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
     (hk : Holds k ε ρ h)
-    (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
-    (hg : eff.receiverGrows = true →
-      CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h')
-    (hew : ∀ w, eff.elementWrite = some w → w.Holds (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
+    (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v)
     (hst : FirstKept stable ρ h h') :
     ∀ u u' n, callGrown stable eff t k u = some u' → termValue ε ρ h u = some n →
       ∃ n', termValue ε (push v ρ) h' u' = some n' ∧ n ≤ n' := by
@@ -3454,10 +3407,10 @@ theorem callGrown_sound {stable : Nat → String → Bool} {eff : Effect} {t : T
     rw [termValue_mapM' fun _ => rfl]
     rcases Bool.or_eq_true_iff.mp hc with hc | hc
     · obtain ⟨c, hcm, hc⟩ := List.any_eq_true.mp hc
-      obtain ⟨hch, hf⟩ := callChanges_holds hk hw hg hew hst c hcm
+      obtain ⟨hch, hf⟩ := callChanges_holds hk hq hst c hcm
       exact termValue_grown hch hf hc hn
     · obtain ⟨n', h1, h2, -⟩ := Footprints.Term.support_sound (c := { stable }) hst (.inr rfl)
-        (Footprints.respect_sound hc (Footprints.knowledgeQuery_sound hk) (callerFrame_post hw)) hn
+        (Footprints.respect_sound hc (Footprints.knowledgeQuery_sound hk) (callerFrame_post (CallEffects.Effect.callPost_within hq))) hn
       exact ⟨n', h1, h2⟩
   · cases hu
 
@@ -3472,16 +3425,10 @@ def callContext (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (k0 :
 open HeapKnowledge in
 theorem callContext_holds {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k0 : Knowledge} {ρ : Env}
     {h h' : Heap} {v : Tm} (hk0 : Holds k0 ε ρ h)
-    (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
-    (hp : ∀ F ∈ eff.ensures, F.HoldsAt ⟨CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t))
-      (ExpressionEffects.actualsOf (instantiate 0 ρ t)), h⟩ (CallEffects.ensuresEnv v (ExpressionEffects.receiverOf (instantiate 0 ρ t))
-      (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h')
-    (hg : eff.receiverGrows = true →
-      CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h')
-    (hew : ∀ w, eff.elementWrite = some w → w.Holds (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
+    (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v)
     (hstable : FirstKept stable ρ h h') :
     (callContext stable eff t k0).Holds ε ρ h (push v ρ) h' :=
-  StepRelation.join_holds (callRelation_holds hp) (growth_holds (callGrown_sound hk0 hw hg hew hstable))
+  StepRelation.join_holds (callRelation_holds fun _ hF => CallEffects.Effect.callPost_ensures hF hq) (growth_holds (callGrown_sound hk0 hq hstable))
 
 open HeapKnowledge in
 /-- **Rule Call's composition in the caller**: the caller's facts after the
@@ -3508,13 +3455,7 @@ def ensuresComposed (stable : Nat → String → Bool) (eff : Effect) (t : Tm) (
 open HeapKnowledge in
 theorem ensuresComposed_holds {stable : Nat → String → Bool} {eff : Effect} {t : Tm} {k0 : Knowledge} {ρ : Env}
     {h h' : Heap} {v : Tm} (hk0 : Holds k0 ε ρ h)
-    (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
-    (hp : ∀ F ∈ eff.ensures, F.HoldsAt ⟨CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t))
-      (ExpressionEffects.actualsOf (instantiate 0 ρ t)), h⟩ (CallEffects.ensuresEnv v (ExpressionEffects.receiverOf (instantiate 0 ρ t))
-      (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h')
-    (hg : eff.receiverGrows = true →
-      CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h')
-    (hew : ∀ w, eff.elementWrite = some w → w.Holds (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
+    (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v)
     (hstable : FirstKept stable ρ h h') :
     IndexHolds ε (ensuresComposed stable eff t k0) (push v ρ) h' := by
   intro a ha _
@@ -3524,7 +3465,7 @@ theorem ensuresComposed_holds {stable : Nat → String → Bool} {eff : Effect} 
     · cases ha
     · obtain ⟨F, hF, rfl⟩ := List.mem_map.mp ha
       exact compose_holds (IndexWrites.unconditionalLinear_holds hk0.2.2.2.2.2)
-        (callKept_sound hk0 hw hg hew hstable) (callContext_holds hk0 hw hp hg hew hstable) F hF
+        (callKept_sound hk0 hq hstable) (callContext_holds hk0 hq hstable) F hF
   · split at ha
     · rename_i recv slots hs
       obtain ⟨G, hG, rfl⟩ := List.mem_map.mp ha
@@ -3534,10 +3475,10 @@ theorem ensuresComposed_holds {stable : Nat → String → Bool} {eff : Effect} 
           ⟨CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)), h⟩
           ρ h (push v ρ) (CallEffects.ensuresEnv v (ExpressionEffects.receiverOf (instantiate 0 ρ t))
             (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h' :=
-        ⟨IndexWrites.unconditionalLinear_holds hk0.2.2.2.2.2, callKept_sound hk0 hw hg hew hstable,
-          callContext_holds hk0 hw hp hg hew hstable, fun _ _ hx => callVar_val hs hx, fun _ _ hx => ensuresSlot_env hs hx,
+        ⟨IndexWrites.unconditionalLinear_holds hk0.2.2.2.2.2, callKept_sound hk0 hq hstable,
+          callContext_holds hk0 hq hstable, fun _ _ hx => callVar_val hs hx, fun _ _ hx => ensuresSlot_env hs hx,
           fun _ hx => absentAt_none hs hx, fun _ hx => absentSlot_undef hs hx⟩
-      exact Composer.fact_holds hsound (hp F (List.mem_filter.mp hF).1) G hGF
+      exact Composer.fact_holds hsound (CallEffects.Effect.callPost_ensures (List.mem_filter.mp hF).1 hq) G hGF
     · cases ha
 
 /-- Knowledge with a call's result-fact atoms added, the atoms of its entry
@@ -3552,15 +3493,7 @@ def withEnsures (stable : Nat → String → Bool) (n : Nat) (eff : Effect) (t :
 theorem withEnsures_holds {stable : Nat → String → Bool} {n : Nat} {eff : Effect} {t : Tm} {k0 k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap} {v : Tm}
     (hv : ∀ i, i < n → isVal (ρ i) = true)
     (hk : HeapKnowledge.Holds k ε (push v ρ) h') (hk0 : HeapKnowledge.Holds k0 ε ρ h)
-    (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
-    (hp : ∀ F ∈ eff.ensures, F.HoldsAt ⟨CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t))
-      (ExpressionEffects.actualsOf (instantiate 0 ρ t)), h⟩ (CallEffects.ensuresEnv v (ExpressionEffects.receiverOf (instantiate 0 ρ t))
-      (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h')
-    (hg : eff.receiverGrows = true →
-      CallEffects.ReceiverGrows (ExpressionEffects.receiverOf (instantiate 0 ρ t)) h h' ∧
-      CallEffects.ReceiverAppends (ExpressionEffects.receiverOf (instantiate 0 ρ t))
-        (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
-    (hew : ∀ w, eff.elementWrite = some w → w.Holds (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h')
+    (hq : eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h' v)
     (hstable : HeapKnowledge.FirstKept stable ρ h h') :
     HeapKnowledge.Holds (withEnsures stable n eff t k0 k) ε (push v ρ) h' := HeapKnowledge.withElements_holds
   ⟨hk.1, hk.2.1, hk.2.2.1, hk.2.2.2.1, hk.2.2.2.2.1, fun a ha hc => by
@@ -3571,26 +3504,38 @@ theorem withEnsures_holds {stable : Nat → String → Bool} {n : Nat} {eff : Ef
           · rcases List.mem_append.mp ha with ha | ha
             · rcases List.mem_append.mp ha with ha | ha
               · exact hk.2.2.2.2.2 a ha hc
-              · exact ensuresAtoms_holds (fun F hF he => (HeapKnowledge.IndexFact.holdsAt_entry he _).mp (hp F hF)) a ha hc
-            · exact effectKept_holds hk0 hw (fun hgr => (hg hgr).1) hew hstable a ha hc
-          · exact appendKept_holds hk0 hg a ha hc
-        · exact writeKept_holds hk0 hew a ha hc
-      · exact linearAppendKept_holds hv hk0 hg a ha hc
-    · exact ensuresComposed_holds hk0 hw hp (fun hgr => (hg hgr).1) hew hstable a ha hc⟩
+              · exact ensuresAtoms_holds (fun F hF he => (HeapKnowledge.IndexFact.holdsAt_entry he _).mp
+                (CallEffects.Effect.callPost_ensures hF hq)) a ha hc
+            · exact effectKept_holds hk0 hq hstable a ha hc
+          · exact appendKept_holds hk0 hq a ha hc
+        · exact writeKept_holds hk0 hq a ha hc
+      · exact linearAppendKept_holds hv hk0 hq a ha hc
+    · exact ensuresComposed_holds hk0 hq hstable a ha hc⟩
 
 /-- Knowledge with the region facts a call growing its receiver's store keeps
 (`IndexWrites.grownRegions`) and the cell facts its change respects (`cells`,
-`weak-update`, `grows_into`) added, renamed past the result; none of a call
-growing nothing. -/
+`weak-update`, `grows_into`) added, renamed past the result, where its normal
+exit states the receiver's growth and the append (`statesExtension`,
+`statesAppend`); none otherwise. -/
 def withGrown (eff : Effect) (out : HeapKnowledge.Knowledge) (kept : List HeapKnowledge.IndexAtom)
     (cells : HeapFacts.Facts) : HeapKnowledge.Knowledge :=
-  if eff.receiverGrows then { out with cells := out.cells ++ cells, indices := out.indices ++ HeapKnowledge.shiftIndices kept }
+  if statesExtension eff && statesAppend eff then { out with cells := out.cells ++ cells, indices := out.indices ++ HeapKnowledge.shiftIndices kept }
   else out
+
+theorem withGrown_grows {eff : Effect} (hg : (statesExtension eff && statesAppend eff) = true) {r : Tm}
+    {args : List Tm} {before after : Heap} {v : Tm} (hp : eff.callPost r args before after v) :
+    CallEffects.ReceiverGrows r before after :=
+  statesExtension_grows (Bool.and_eq_true_iff.mp hg).1 hp
+
+theorem withGrown_appends {eff : Effect} (hg : (statesExtension eff && statesAppend eff) = true) {r : Tm}
+    {args : List Tm} {before after : Heap} {v : Tm} (hp : eff.callPost r args before after v) :
+    CallEffects.ReceiverAppends r args before after :=
+  statesAppend_appends (Bool.and_eq_true_iff.mp hg).2 hp
 
 theorem withGrown_holds {eff : Effect} {out : HeapKnowledge.Knowledge} {kept : List HeapKnowledge.IndexAtom}
     {cells : HeapFacts.Facts} {ρ : Env} {h' : Heap} {v : Tm} (ho : HeapKnowledge.Holds out ε (push v ρ) h')
-    (hk : eff.receiverGrows = true → HeapKnowledge.IndexHolds ε kept ρ h')
-    (hc : eff.receiverGrows = true → HeapFacts.Holds cells (push v ρ) h') :
+    (hk : (statesExtension eff && statesAppend eff) = true → HeapKnowledge.IndexHolds ε kept ρ h')
+    (hc : (statesExtension eff && statesAppend eff) = true → HeapFacts.Holds cells (push v ρ) h') :
     HeapKnowledge.Holds (withGrown eff out kept cells) ε (push v ρ) h' := by
   unfold withGrown
   split
@@ -4049,13 +3994,11 @@ other step is `base`'s. -/
       have hp := PromiseCalls.ensuresCall_sound hens hcodes hsums he hk hw hh href
       exact HeapObservations.weaken (fun h' v hq' => let hq := hq'.1; PromiseCalls.withGrown_holds
         (PromiseCalls.withEnsures_holds (fun i hi => (ProgramTyping.meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1) hq.1 hk
-          (CallEffects.Effect.callPost_within hq.2) (fun _ hF => CallEffects.Effect.callPost_ensures hF hq.2)
-          (fun hgr => CallEffects.Effect.callPost_grows hgr hq.2)
-          (fun _ hw => CallEffects.Effect.callPost_elementWrite hw hq.2) hq'.2)
-        (fun hgr => IndexWrites.grownRegions_holds he hh hk (CallEffects.Effect.callPost_grows hgr hq.2).1
-          (CallEffects.Effect.callPost_grows hgr hq.2).2)
+          hq.2 hq'.2)
+        (fun hgr => IndexWrites.grownRegions_holds he hh hk (PromiseCalls.withGrown_grows hgr hq.2)
+          (PromiseCalls.withGrown_appends hgr hq.2))
         (fun hgr => HeapExpressionRules.keptCells_holds hk.1
-          (PromiseCalls.grows_into (CallEffects.Effect.callPost_grows hgr hq.2).1)
+          (PromiseCalls.grows_into (PromiseCalls.withGrown_grows hgr hq.2))
           (fun _ _ _ _ _ _ _ _ _ hf => hf)))
         (HeapExpressionRules.stableFirst_frame he hh
           (HeapObservations.cross_upto (n + 1) (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh hs hp))
