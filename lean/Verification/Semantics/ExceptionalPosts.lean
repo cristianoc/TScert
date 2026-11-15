@@ -317,6 +317,42 @@ theorem SafePostExc.bind_value {Ξ T Q R n} {W : WorldT (n+1)} {h b a}
     SafePostExc Ξ T Q R (n+1) W h (.letE a b) :=
   ⟨href, .inr ⟨_, h, _, WExt_refl _, WorldAdm_trunc _ hw, .letV hv, HeapOk_trunc n W h hh, hs⟩⟩
 
+/-- **Composition through an evaluation context, the throw's postcondition
+reading the thrown value**: a throw of the subterm is a throw of the whole
+raising the same value at the same world and heap, so the subterm's throw
+postcondition is the whole's; a value of the subterm continues as the
+context filled with it. -/
+theorem SafePostExcV.bind {Ξ} {A B : Fam} {Q Q' : WPost} {R : WExcV} (C : Tm → Tm)
+    (lift : ∀ {h t h' t'}, Step h t h' t' → Step h (C t) h' (C t'))
+    (raise : ∀ {t v}, Raises t v → Raises (C t) v) (hctx : CtxRefs C) :
+    ∀ n W h t, WorldAdm W → HeapOk n W h → RefsOk W (C .undef) → SafePostExcV Ξ A Q R n W h t →
+    (∀ j (hj : j ≤ n) U, WExt (trunc j hj W) U → WorldAdm U →
+      ∀ h' v, HeapOk j U h' → isVal v = true → A j U v → Q j U h' v → RefsOk U v →
+        SafePostExcV Ξ B Q' R j U h' (C v)) → SafePostExcV Ξ B Q' R n W h (C t) := by
+  intro n; induction n with
+  | zero => intro W h t _ _ hC hs _; exact hctx.ok hs hC
+  | succ p ih =>
+    intro W h t hw hh hC hs hc
+    obtain ⟨hrf, hs⟩ := hs
+    rcases hs with (⟨hv, ha, hq⟩ | ⟨v, hr, hsc, hx, hR⟩) | ⟨U, h', t', hx, hu, step, hh', hs'⟩
+    · exact hc (p+1) (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw h t hh hv ha hq hrf
+    · exact ⟨hctx.ok hrf hC, .inl (.inr ⟨v, raise hr, hsc, hx, hR⟩)⟩
+    · refine ⟨hctx.ok hrf hC, .inr ⟨U, h', C t', hx, hu, lift step, hh',
+        ih U h' t' hu hh' (RefsOk_mono hx (RefsOk_trunc _ hC)) hs' ?_⟩⟩
+      intro j hj V he hv h'' v hh'' hval ha hq hvr
+      apply hc j (by omega) V _ hv h'' v hh'' hval ha hq hvr
+      have he' := WExt_trunc hj hx
+      rw [trunc_trunc] at he'
+      exact WExt_trans he' he
+
+/-- **One step of a `let` of a value**, the throw's postcondition reading the
+thrown value: the body with the value substituted, one budget lower. -/
+theorem SafePostExcV.bind_value {Ξ T} {Q : WPost} {R : WExcV} {n} {W : WorldT (n+1)} {h b a}
+    (hv : isVal a = true) (hw : WorldAdm W) (hh : HeapOk (n+1) W h) (href : RefsOk W (.letE a b))
+    (hs : SafePostExcV Ξ T Q R n (trunc n (Nat.le_succ n) W) h (subst 0 a b)) :
+    SafePostExcV Ξ T Q R (n+1) W h (.letE a b) :=
+  ⟨href, .inr ⟨_, h, _, WExt_refl _, WorldAdm_trunc _ hw, .letV hv, HeapOk_trunc n W h hh, hs⟩⟩
+
 /-- A term that steps once to a value raises nothing: any throw postcondition
 holds of its run. -/
 theorem SafePostExc.one_step {Ξ T Q R n W h t h' v} (ht : isVal t = false) (hv : isVal v = true)
