@@ -1312,9 +1312,9 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
     rw [CallEffects.Effect.result_plain hplain] at hs
     exact SafePostExcV.weaken
       (fun _ _ _ _ hp => CallEffects.Exits.fromEntry_weaken (fun _ _ _ hq => CallEffects.Exits.forgetActuals_sound hq)
-        hi hx hp)
+        ⟨hi, hx⟩ hp)
       (fun _ _ _ _ hp => .inl (CallEffects.Exits.fromEntry_weaken
-          (fun _ _ _ hq => CallEffects.Exits.forgetActuals_sound hq) hi hx hp)) hs
+          (fun _ _ _ hq => CallEffects.Exits.forgetActuals_sound hq) ⟨hi, hx⟩ hp)) hs
 
 /-- **A variadic call's guarantee read at its heaps**: safety at the
 selected exits (`selectedExits`) from entries held from the call's gives the

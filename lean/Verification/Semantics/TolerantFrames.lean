@@ -30,16 +30,11 @@ abbrev Assertion := Env → Nat → IndexedHeap → Prop
 
 namespace Admissible
 
-theorem refl (s : IndexedHeap) : Admissible s s :=
-  ⟨Nat.le_refl _, by rw [trunc_id]; exact WExt_refl _⟩
+theorem refl (s : IndexedHeap) : Admissible s s := WorldReach.refl s.W
 
 /-- Composition through the intermediate state's world. -/
 theorem trans {s₁ s₂ s₃ : IndexedHeap} (h₁ : Admissible s₁ s₂) (h₂ : Admissible s₂ s₃) :
-    Admissible s₁ s₃ := by
-  obtain ⟨hle₁, hx₁⟩ := h₁
-  obtain ⟨hle₂, hx₂⟩ := h₂
-  refine ⟨Nat.le_trans hle₂ hle₁, ?_⟩
-  simpa only [trunc_trunc] using WExt_trans (WExt_trunc hle₂ hx₁) hx₂
+    Admissible s₁ s₃ := WorldReach.trans h₁ h₂
 
 /-- Every location of `s`'s world keeps its contract, restricted to the lower
 budget. -/

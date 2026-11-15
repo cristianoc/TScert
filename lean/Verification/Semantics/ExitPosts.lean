@@ -247,15 +247,13 @@ at a budget at most the call's `n` and a world extending the call's world
 heap the call starts in leaves (the note's Call: evaluation precedes
 invocation, and the specification is relative to the invocation's entry). -/
 def HeldEntry {n : Nat} (W : WorldT n) (h : Heap) (s : IndexedHeap) : Prop :=
-  s.h = h ∧ ∃ hle : s.n ≤ n, WExt (trunc s.n hle W) s.W
+  s.h = h ∧ WorldReach W s.W
 
-/-- An entry held from a world extending the truncation of another is held
-from that other. -/
-theorem HeldEntry.trans {n j : Nat} {W : WorldT n} {U : WorldT j} (hj : j ≤ n) (hx : WExt (trunc j hj W) U)
-    {h : Heap} {s : IndexedHeap} (hs : HeldEntry U h s) : HeldEntry W h s := by
-  obtain ⟨rfl, hle, hy⟩ := hs
-  refine ⟨rfl, Nat.le_trans hle hj, WExt_trans ?_ hy⟩
-  simpa only [trunc_trunc] using WExt_trunc hle hx
+/-- An entry held from a world reached from another is held from that
+other. -/
+theorem HeldEntry.trans {n j : Nat} {W : WorldT n} {U : WorldT j} (hx : WorldReach W U)
+    {h : Heap} {s : IndexedHeap} (hs : HeldEntry U h s) : HeldEntry W h s :=
+  ⟨hs.1, hx.trans hs.2⟩
 
 /-- **A completion's guarantee from an invocation entry**: at the exit, the
 completion's guarantee from some entry meeting `P`. -/
@@ -282,11 +280,11 @@ an invocation's entry gives the other's from an entry held from the entry of
 a call the invocation's is an extension of. -/
 theorem Exits.fromEntry_weaken {x y : Exits ExitSchema} {c : Completion} {r r' : Tm} {args other : List Tm}
     (hxy : ∀ s s' v, x.exitPost c r args s s' v → y.exitPost c r' other s s' v)
-    {n j : Nat} {W : WorldT n} {U : WorldT j} (hj : j ≤ n) (hx : WExt (trunc j hj W) U) {h : Heap}
+    {n j : Nat} {W : WorldT n} {U : WorldT j} (hx : WorldReach W U) {h : Heap}
     {k : Nat} {V : WorldT k} {after : Heap} {v : Tm}
     (hp : x.fromEntry c r args (HeldEntry U h) k V after v) : y.fromEntry c r' other (HeldEntry W h) k V after v := by
   obtain ⟨s, hs, hp⟩ := hp
-  exact ⟨s, hs.trans hj hx, fun h1 h2 h3 h4 h5 h6 => hxy _ _ _ (hp h1 h2 h3 h4 h5 h6)⟩
+  exact ⟨s, hs.trans hx, fun h1 h2 h3 h4 h5 h6 => hxy _ _ _ (hp h1 h2 h3 h4 h5 h6)⟩
 
 /-- **A call's guarantee from held entries read at its heaps**: at the
 admissible states a run from the call's entry reaches, the guarantee from a

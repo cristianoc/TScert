@@ -83,10 +83,26 @@ structure IndexedHeap where
   adm : WorldAdm W
   ok : HeapOk n W h
 
-/-- `s'` is reachable from `s` by what safe code may do: its budget is at
-most `s`'s, and its world extends `s`'s world truncated to its budget. -/
+/-- **A world reached from another** by what safe code may do: its budget
+is at most the other's, and it extends the other truncated to its budget. -/
+def WorldReach {n m : Nat} (W : WorldT n) (U : WorldT m) : Prop :=
+  ∃ hle : m ≤ n, WExt (trunc m hle W) U
+
+theorem WorldReach.refl {n : Nat} (W : WorldT n) : WorldReach W W :=
+  ⟨Nat.le_refl _, by rw [trunc_id]; exact WExt_refl _⟩
+
+/-- Composition through the intermediate world. -/
+theorem WorldReach.trans {n m k : Nat} {W : WorldT n} {U : WorldT m} {V : WorldT k} (h₁ : WorldReach W U)
+    (h₂ : WorldReach U V) : WorldReach W V := by
+  obtain ⟨hle₁, hx₁⟩ := h₁
+  obtain ⟨hle₂, hx₂⟩ := h₂
+  refine ⟨Nat.le_trans hle₂ hle₁, ?_⟩
+  simpa only [trunc_trunc] using WExt_trans (WExt_trunc hle₂ hx₁) hx₂
+
+/-- `s'` is reachable from `s` by what safe code may do: its world is
+reached from `s`'s (`WorldReach`). -/
 def Admissible (s s' : IndexedHeap) : Prop :=
-  ∃ hle : s'.n ≤ s.n, WExt (trunc s'.n hle s.W) s'.W
+  WorldReach s.W s'.W
 
 /-- An action of the footprint `Φ` at the name valuation `ρ`: an admissible
 transition whose heaps meet `Φ`'s postcondition, its regions read at the
