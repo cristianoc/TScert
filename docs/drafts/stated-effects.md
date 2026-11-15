@@ -511,7 +511,8 @@ slot**, the local observation bound `first s "[]"` of `keptIndicesWith`
 (`FirstKept`); the global `Changes.store` of a closed footprint is the
 constant instance. For a regional frame a slot's store location is kept
 where $`K`$ separates it from the store every region selects at the call
-(`regionFirst`, proved from `Effect.within_iff_regions`:
+(`regionFirst`, over each entry of the frame: its closed bound keeps array
+stores, or it selects a store $`K`$ separates from the slot's;
 `regionFirst_kept`). $`K`$ is the caller's knowledge, and separation
 enters it from checked sources only, as its index facts: a region fact
 `apart` (`RegionsApart`; `region-alloc`, `region-write`), and a store
@@ -950,8 +951,8 @@ Decisions:
   a typed array is refused, and `apart(P, Q)` keeps its name.
 - **One separation source**: the knowledge's index facts (region facts and
   store separations), each established or restated by a checked rule;
-  `region-call-keep` reads them per slot through `regionFirst`, the
-  frame's guarantee given by `Effect.within_iff_regions`, and a separation
+  `region-call-keep` reads them per slot through `regionFirst`, over the
+  entries of the frame, and a separation
   through a field is kept across a call by the field's stability
   (`stable-first`), the one keep rule of a field's location across a call.
 - **A frame with regions on the claims' `CallEffect`**: `regions` beside

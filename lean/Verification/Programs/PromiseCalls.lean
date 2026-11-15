@@ -2156,12 +2156,22 @@ theorem storeHeld_sound {k : HeapKnowledge.Knowledge} {s : Nat} {ρ : Env} {h : 
       exact ⟨l, ls, hxs ▸ hs, hls⟩
     · cases hm
 
-/-- The slots whose store a frame with store regions keeps (`regionFirst_kept`,
-the Lean statement the note *Tolerant frames* cites for its axiom (Sep); the
-pass reads the frame route, `callKeeps`, instead). -/
-def regionFirst (k : HeapKnowledge.Knowledge) (eff : Effect) (t : Tm) : Nat → String → Bool :=
-  fun s g => g == "[]" && eff.closed.stores.onStore == .keep && !eff.regions.isEmpty &&
-    eff.regions.all (regionSep k t s) && storeHeld k s
+/-- **Whether an entry of a frame leaves the store of the slot `s`**: its
+closed bound keeps every array store (`Change.onStore`), or its region is the
+store field at a path of a call position (`ArgumentStoreRegion.entry`) that
+`regionSep` separates from `s`'s store. -/
+def entryKeepsStore (k : HeapKnowledge.Knowledge) (t : Tm) (s : Nat) (e : Footprints.Region × Footprints.Change) :
+    Bool :=
+  (Footprints.Footprint.close [e]).array.onStore == .keep || match e.1 with
+    | .path x p key => key == arrayStoreKey && regionSep k t s ⟨x, p⟩
+    | _ => false
+
+/-- The slots whose store a frame keeps: each entry of the frame leaves the
+slot's store (`entryKeepsStore`), which holds an array store
+(`regionFirst_kept`, the Lean statement the note *Tolerant frames* cites for
+its axiom (Sep); the pass reads the frame route, `callKeeps`, instead). -/
+def regionFirst (k : HeapKnowledge.Knowledge) (Φ : Footprints.Footprint) (t : Tm) : Nat → String → Bool :=
+  fun s g => g == "[]" && Φ.all (entryKeepsStore k t s) && storeHeld k s
 
 /-- A store separation `storeApartAt` names holds where the path's store is
 the slot's: never. -/
@@ -2255,36 +2265,47 @@ private theorem regionSep_out {k : HeapKnowledge.Knowledge} {t : Tm} {s : Nat}
         exact storeApartAt_out al hm hF heq hl
     · cases hr
 
-theorem regionFirst_kept {k : HeapKnowledge.Knowledge} {eff : Effect} {t : Tm} {ρ : Env} {h h' : Heap}
-    (hk : HeapKnowledge.Holds k ε ρ h) (hs : eff.receiverStore = false) (ho : eff.receiverOwn = false)
-    (hw : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t)) h h') :
-    HeapKnowledge.FirstKept (regionFirst k eff t) ρ h h' := by
+/-- **A frame keeps the store of each slot `regionFirst` names** (proved):
+the slot's store location holds an array store, and each entry of the frame
+covering it changes no array store or selects a store separated from it. -/
+theorem regionFirst_kept {k : HeapKnowledge.Knowledge} {Φ : Footprints.Footprint} {t : Tm} {ρ : Env} {h h' : Heap}
+    (hk : HeapKnowledge.Holds k ε ρ h)
+    (hw : Footprints.Post Φ (CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t))
+      (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h h') :
+    HeapKnowledge.FirstKept (regionFirst k Φ t) ρ h h' := by
   intro s g fs cd o l v hf hρ hl hv
-  simp only [regionFirst, Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true', List.isEmpty_eq_false_iff,
-    List.all_eq_true] at hf
-  obtain ⟨⟨⟨⟨rfl, hkeep⟩, -⟩, hall⟩, hheld⟩ := hf
-  have hw' := (CallEffects.Effect.within_iff_regions hs ho _ _ h h').mp hw
+  simp only [regionFirst, Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at hf
+  obtain ⟨⟨rfl, hall⟩, hheld⟩ := hf
   have hstore : Footprints.storeOf (ρ s) = some l := by
     rw [hρ]; simpa [Footprints.storeOf, Footprints.fieldsOf, arrayStoreKey] using hl
   -- the slot's store location holds an array store
   obtain ⟨l', ys, hs', hys⟩ := storeHeld_sound hk hheld
   rw [hstore] at hs'; cases hs'
   have hvarr : v = .arr ys := by rw [hys] at hv; cases hv; rfl
-  -- no region selects it
-  have hout : ∀ r ∈ eff.regions, r.resolve (CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t))
-      (ExpressionEffects.actualsOf (instantiate 0 ρ t))) h ≠ some l :=
-    fun r hr => regionSep_out hk (hall r hr) hstore
-  obtain ⟨v', hv', hc⟩ := hw'.2 l v hout hv
-  rw [hvarr] at hc
-  rw [Footprints.Closed.at_arr] at hc
-  have hst : eff.closed.array = .keep ∨ eff.closed.array = .init ∨ eff.closed.array = .scalar := by
-    have := (Footprints.Closed.stores_onStore_keep hkeep).1
-    cases hc' : eff.closed.array <;> simp_all [Footprints.Change.onStore]
-  rw [hvarr]
-  rcases hst with hst | hst | hst <;> rw [hst] at hc
-  · rw [← hc]; exact hv'
-  · rw [← hc.init_store]; exact hv'
-  · rw [← hc.scalar_store]; exact hv'
+  subst hvarr
+  obtain ⟨v', hv', ha⟩ := hw.2 l (.arr ys) hv
+  rcases ha with rfl | ⟨e, he, hm, hh⟩
+  · exact hv'
+  have he' := hall e he
+  simp only [entryKeepsStore, Bool.or_eq_true, beq_iff_eq] at he'
+  rcases he' with hkeep | hsep
+  · -- the entry's closed bound keeps array stores
+    have hc : ((Footprints.Footprint.close [e]).array).Holds h.length (.arr ys) v' := by
+      rw [← Footprints.Closed.at_arr, Footprints.Footprint.close_at, Footprints.Footprint.changeAt_holds]
+      exact .inr ⟨e, List.mem_singleton_self _, Footprints.Region.cats_mem hv hm, hh⟩
+    generalize (Footprints.Footprint.close [e]).array = c at hc hkeep
+    cases c <;> simp only [Footprints.Change.onStore, reduceCtorEq] at hkeep
+    · rw [← hc]; exact hv'
+    · rw [← hc.init_store]; exact hv'
+    · rw [← hc.scalar_store]; exact hv'
+  · -- the entry selects a store separated from the slot's
+    obtain ⟨R, δ⟩ := e
+    cases R <;> simp only [Bool.false_eq_true] at hsep
+    rename_i x p key
+    simp only [Bool.and_eq_true, beq_iff_eq] at hsep
+    obtain ⟨rfl, hsep⟩ := hsep
+    have hres := (Footprints.ArgumentStoreRegion.mem_entry ⟨x, p⟩ _ h l).mp hm
+    exact absurd hres (regionSep_out hk hsep hstore)
 
 /-- **A call's frame at the caller's slots** (`Effect.frame` read at the
 call's positions, `Footprint.renameM`): each position the caller passes a
