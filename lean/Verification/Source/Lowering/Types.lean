@@ -788,7 +788,7 @@ def resultWithFootprint (T : EquationStore.State) (ret : Json) (footprint : Foot
   match PositiveRules.expand (SourceTypes.graph T) [label] with
   | [.arrs (s :: ss) []] =>
     let signature (a : Arrow (List Tree)) : Except String Json := do
-      if !a.effect.admitsAll || a.effect.onThrow || a.effect.promise.isSome then throw refusal
+      if !a.effect.admitsAll || !(a.effect.schema.exceptional.frame.classBound == .top && a.effect.schema.exceptional.ensures.isEmpty) || a.effect.promise.isSome then throw refusal
       return Json.mkObj [("a", toJson "function"), ("this", claim a.receiver),
         ("params", toJson (a.arguments.map claim)), ("result", claim a.result), ("construct", toJson "unknown"),
         ("array", toJson "unknown"), ("effect", ← EffectJson.effectJson (a.effect.withClasses footprint).throwUnbounded)]

@@ -264,13 +264,10 @@ run_cmd do
   check ``Verification.Footprints.Sep.sound
   check ``Verification.Footprints.Post.mono
   check ``Verification.Footprints.keep_across_call
-  check ``Verification.CallEffects.Effect.within_outside
-  check ``Verification.CallEffects.Effect.within_coarse
-  check ``Verification.CallEffects.Effect.within_iff_regions
   check ``Verification.CallEffects.Exits.compose_entry
   check ``Verification.CallEffects.Exits.allocStable_of
+  check ``Verification.CallEffects.Exits.exitPost_exceptional_prefix
   check ``Verification.ProgramTyping.allocStable_of_established
-  check ``Verification.CallEffects.Effect.exitPost_exceptional_prefix
   check ``Verification.HeapObservations.SafePostExcV.bind
   check ``Verification.CallEffects.Exits.covers_entails
   check ``Verification.Footprints.Closed.post_extra_any
@@ -282,12 +279,7 @@ run_cmd do
   -- exit summaries: the elaboration of a signature and its equivalences
   check ``Verification.CallEffects.receiverGrows_iff
   check ``Verification.CallEffects.receiverAppends_iff
-  check ``Verification.CallEffects.writtenResult_iff
-  check ``Verification.CallEffects.Effect.schema_atArity
-  check ``Verification.CallEffects.Effect.schema_slots
   check ``Verification.CallEffects.restFrom_one
-  check ``Verification.CallEffects.writtenResultSchema_instantiate
-  check ``Verification.CallEffects.Effect.schema_arenaFree
   check ``Verification.CallEffects.ExitSchema.holds_instantiate_arenaFree
   -- the postcondition of a call per completion
   check ``Verification.CallEffects.Exits.exitPostW_iff
@@ -300,13 +292,8 @@ run_cmd do
   check ``Verification.HeapObservations.SafePostExcV.post
   check ``Verification.CallEffects.SafePostExcV.weaken_admissible
   check ``Verification.CallEffects.exactPre_iff
-  check ``Verification.CallEffects.elementWrite_iff
-  check ``Verification.CallEffects.Effect.summary_normal_iff
-  check ``Verification.CallEffects.Effect.summary_exceptional_iff
-  check ``Verification.CallEffects.Effect.summary_normal_iff_post
   check ``Verification.CallEffects.post_frameMeet
   check ``Verification.CallEffects.ExitSchema.holds_meet
-  check ``Verification.CallEffects.Effect.schema_canonical
   check ``Verification.CallEffects.ExitSpec.holds_meet
   check ``Verification.CallEffects.meetAt_exitPost
   check ``Verification.CallEffects.instantiate_completion
@@ -315,17 +302,13 @@ run_cmd do
   check ``Verification.CallEffects.holdsAt_trDrop
   check ``Verification.CallEffects.ExitSchema.holds_drop
   check ``Verification.CallEffects.Exits.exitPost_drop
-  check ``Verification.CallEffects.Effect.drop_weakening
   check ``Verification.CallEffects.Exits.belowRow_sound
   check ``Verification.CallEffects.Exits.exitPost_take
   check ``Verification.CallEffects.Effect.schema_belowRow
-  check ``Verification.CallEffects.Effect.schema_independent
   check ``Verification.CallEffects.Exits.independent
   check ``Verification.CallEffects.SafePostExcV.cross_independent
   check ``Verification.Parity.Holds.mono_exit
   check ``Verification.Parity.Holds.exit_heap
-  check ``Verification.CallEffects.Effect.summary_drop_normal
-  check ``Verification.CallEffects.Effect.summary_drop_exceptional
   check ``Verification.CallEffects.Effect.summary_scoped
   -- command summaries: their meaning, consequence and weakening
   check ``Verification.CallEffects.checkConsequences_sound
@@ -357,7 +340,6 @@ run_cmd do
   check ``Verification.CallEffects.reliance_at_prefix
   check ``Verification.CallEffects.Effect.summary_scopedSummary
   check ``Verification.CallEffects.CommandSummary.signature_holds
-  check ``Verification.CallEffects.CommandSummary.signature_contract
   check ``Verification.CallEffects.CommandSummary.frame_at_call
   check ``Verification.Parity.Path.read_scoped_congr
   check ``Verification.Parity.Witness.value_scoped_congr
@@ -371,7 +353,6 @@ run_cmd do
   check ``Verification.CallEffects.CommandSummary.Scoped.holds_congr
   check ``Verification.CallEffects.Runs.AtCall.below
   check ``Verification.CallEffects.CommandSummary.signature_holds_below
-  check ``Verification.CallEffects.CommandSummary.signature_contract_below
   check ``Verification.CallEffects.CommandSummary.frame_at_call_below
   check ``Verification.Parity.OperationPostF.holds_shift
   check ``Verification.Footprints.Region.sub_mem
@@ -606,19 +587,23 @@ run_cmd do
   check ``Verification.SourceExtraction.ClassSummary.seq_after
   check ``Verification.SourceExtraction.ClassSummary.handle_after
   check ``Verification.SourceExtraction.ClassSummary.schema_atArity
-  check ``Verification.CallEffects.Effect.freshResult_schema
-  check ``Verification.CallEffects.Effect.freshObjectResult_schema
-  check ``Verification.CallEffects.Effect.elementsWhenTrue_schema
-  check ``Verification.CallEffects.Effect.facts_schema
   check ``Verification.CallEffects.postImplies_sound
   check ``Verification.CallEffects.Effect.within_changeBound
   check ``Verification.CallEffects.Effect.within_of_admitsAll
   check ``Verification.CallEffects.Exits.exitPost_dropWeak
+  check ``Verification.CallEffects.Exits.dropWeak_arenaFree
+  check ``Verification.CallEffects.Effect.drop_exits
+  check ``Verification.CallEffects.Effect.drop_arenaFree
+  check ``Verification.CallEffects.Effect.promised_drop
+  check ``Verification.CallEffects.Effect.result_drop
+  check ``Verification.EffectJson.WireEffect.elaborate_canonicalize
+  check ``Verification.EffectJson.wireOf_elaborate
+  check ``Verification.EffectJson.encodeOld_sound
+  check ``Verification.EffectJson.encodeOld_complete
+  check ``Verification.EffectJson.decodeOld_sound
+  check ``Verification.EffectJson.effectJson_decode
   check ``Verification.CallEffects.Exits.dropWeak_of_drop
   check ``Verification.CallEffects.Effect.ofClosed_schema
-  check ``Verification.CallEffects.Effect.ofStated_schema
-  check ``Verification.CallEffects.Effect.throwUnbounded_schema
-  check ``Verification.CallEffects.Effect.regionFields_schema
   check ``Verification.SourceExtraction.ClassSummary.within_weakens
   check ``Verification.SourceExtraction.ClassSummary.within_choice
   check ``Verification.SourceExtraction.ClassSummary.exitHolds_then
@@ -1791,7 +1776,6 @@ run_cmd do
   check ``Verification.Kinds.unrestricted_not_respects
   check ``Verification.Kinds.allocation_not_respects
   check ``Verification.CallEffects.call_safe_exc
-  check ``Verification.CallEffects.Effect.safe_postW
   check ``Verification.CallEffects.ElementKind.intValue_convert
   check ``Verification.CallEffects.ElementKind.readPath_convert
   check ``Verification.CallEffects.ElementKind.convert_negZero
@@ -1811,7 +1795,6 @@ run_cmd do
   check ``Verification.CallEffects.Exits.exitPost_entry
   check ``Verification.HeapObservations.SafePostExcV.consequence_below'
   check ``Verification.CallEffects.PromiseWith.weaken'
-  check ``Verification.CallEffects.Effect.postW_of_post
   check ``Verification.CallEffects.construct_exits
   check ``Verification.CallEffects.call_exits
   check ``Verification.CallEffects.call_exits_exact

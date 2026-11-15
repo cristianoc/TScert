@@ -2053,7 +2053,7 @@ theorem growFirst_kept {k : HeapKnowledge.Knowledge} {t : Tm} {ρ : Env} {h h' :
 
 /-! ### Facts kept across a frame with store regions
 
-The callee's frame at the call's actuals (`Effect.within_iff_regions`) keeps
+The callee's frame at the call's actuals (`Effect.within`) keeps
 every location its regions do not select within its closed bound. A slot's
 store is kept where the bound keeps stores and checked separation places the
 slot's store outside every region: for a region at a position's own store,
@@ -3050,7 +3050,7 @@ theorem writeKept_holds {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h'
 /-! ### Rule Call: a two-state postcondition in the caller's facts
 
 A callee's post fact naming an entry term `old(t)` relates the caller's state
-just before the call (the callee's entry, `Effect.post`) and the state after
+just before the call (the callee's entry, `Effect.callPost`) and the state after
 it. The caller's facts after the call are composed (`HeapKnowledge.compose`)
 from its facts before the call, at its own entry state, and that relation:
 each callee entry term is the caller's term before the call at the slot

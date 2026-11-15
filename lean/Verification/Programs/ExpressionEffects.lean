@@ -352,8 +352,8 @@ def selectedExits : Evidence ι → Option (CallEffects.Exits CallEffects.ExitSc
 
 /-- The signature the deciders read of a call's evidence: the selected
 signature, and for a variadic invocation with a spread the signature
-without what it states of the actuals (`Effect.withoutActuals`), which the
-selected exits entail (`selectedExits_entails`); through subsumption. -/
+without what it states of the actuals (`Effect.withoutActuals`), whose exits
+are the selected ones (`selectedExits_entails`); through subsumption. -/
 def selectedEffect : Evidence ι → Option CallEffects.Effect
   | .node _ (.app e) _ => some e
   | .node _ (.callRest e _ _ flags _) _ => some (if flags.any id then e.withoutActuals else e)
@@ -377,7 +377,7 @@ theorem selectedExits_entails (e : Evidence ι) {x : CallEffects.Exits CallEffec
       subst hx he
       by_cases hsp : flags.any id = true
       · rw [if_pos hsp] at hp ⊢
-        exact effect.withoutActuals_entails hp
+        exact hp
       · rw [if_neg hsp] at hp ⊢
         exact hp
     case sub =>

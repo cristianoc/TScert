@@ -10,11 +10,8 @@ import Verification.Semantics.ExitScopes
 
 The native-contract condition of a signature (`NativeContract`,
 `NativeConstruct`) stated by its specification per completion
-(`Exits.exitPostW`, the note's Call on both exits) is the contract its
-postconditions state today: at the states a safe run from a well-formed
-entry reaches, the two agree (`Effect.summary_normal_iff`,
-`Effect.summary_exceptional_iff`, `Effect.schema_atArity`), and safety
-needs a postcondition only there (`SafePostExcV.weaken_admissible`). -/
+(`Exits.exitPostW`, the note's Call on both exits), and the operations on
+signatures and readings of a call that the pass draws from it. -/
 namespace Verification.CallEffects
 open Verification Footprints Parity TolerantFrames HeapObservations
 
@@ -74,50 +71,6 @@ theorem invoke_exits {Ξ : Fam} {Acc : ArgFam} {Rc : Fam} {req : Tm → List Tm 
   obtain ⟨hnv, hnr⟩ := Step.inert (hi.step h)
   exact SafePostExcV.fromEntry_of_exact hw hh hnv hnr (invoke_exits_exact hc hw hh hrv hr hv ha hq href)
 
-/-! ## The meet of two specifications -/
-
-/-- **A signature's schema reads its exits only through their heaps**
-(`ExitSchema.exitHeapOnly`): its postconditions are operational posts,
-index facts, transitions and the written result's transport, which
-certifies no rigid image. -/
-theorem Effect.schema_exitHeapOnly (e : Effect) (c : Completion) : (e.schema.get c).exitHeapOnly = true := by
-  have hw : ∀ w : ElementWrite, w.schemaPosts.all (·.exitHeapOnly TransportSchema.stable) = true := by
-    intro w; cases w with
-    | stores => rfl
-    | assign => rfl
-    | exact k =>
-      simp only [ElementWrite.schemaPosts, List.all_cons, List.all_append, List.all_map]
-      simp [FormulaF.exitHeapOnly, Function.comp_def, writtenResultSchema]
-  cases c
-  · simp only [Exits.get, Effect.schema, ExitSchema.exitHeapOnly, Effect.normalSchema, List.all_append,
-      Bool.and_eq_true]
-    refine ⟨⟨⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩
-    · split <;> rfl
-    · split <;> rfl
-    · split <;> rfl
-    · simp [List.all_map, FormulaF.exitHeapOnly, Function.comp_def]
-    · split <;> rfl
-    · split
-      · exact hw _
-      · rfl
-  · simp only [Exits.get, Effect.schema, ExitSchema.exitHeapOnly]
-    split <;> rfl
-
-/-- **A signature's guarantee at each completion is independent of the exit
-world** (`Exits.independent`, `Effect.schema_exitHeapOnly`). -/
-theorem Effect.schema_independent (e : Effect) (c : Completion) (r : Tm) (args : List Tm) (s : IndexedHeap) :
-    IndependentFrom s (e.schema.exitPostW c r args s.W s.h) :=
-  Exits.independent (e.schema_exitHeapOnly c) r args s
-
-/-- A signature's guarantee at a completion is its summary's at the call's
-arity (`Effect.schema_atArity`). -/
-theorem Effect.exitPost_summary {e : Effect} {c : Completion} {r : Tm} {args : List Tm} {s s' : IndexedHeap}
-    {v : Tm} :
-    e.schema.exitPost c r args s s' v ↔
-      ((e.summary args.length).get c).Holds AssertionArena.empty (callState r args v s.h.length s s') := by
-  unfold Exits.exitPost
-  rw [Effect.schema_atArity]
-
 /-- **The scope of a signature at code of arity `n`**: what it states of
 the call's values at entry (`Effect.entryBelow`) and its schema
 (`Exits.belowRow`) are about the receiver and the first `n` parameters, the
@@ -146,7 +99,7 @@ theorem Effect.summary_scoped {e : Effect} {n : Nat} (h : e.belowRow n = true) (
     simp only [Exits.callInstantiation, arityInstantiation, Nat.max_eq_left hslots]
   have hq : (e.schema.get c).belowRow n = true := by cases c <;> assumption
   simp only [ExitSchema.belowRow, Bool.and_eq_true] at hq
-  rw [← Effect.schema_atArity, Exits.atArity, Exits.get_map, hι]
+  rw [Effect.summary, Exits.atArity, Exits.get_map, hι]
   exact ⟨hq.1.1, by simpa only [ExitSchema.instantiate, List.all_map, Function.comp_def] using hq.2⟩
 
 /-- **A postcondition fact of a signature scoped at arity `n`** reads the
@@ -157,39 +110,12 @@ theorem Effect.belowRow_ensures {e : Effect} {n : Nat} (h : e.belowRow n = true)
     (hF : F ∈ e.schema.normal.facts) : (∀ s ∈ F.slots, s ≤ n + 1) ∧ ∀ s ∈ F.entrySlots, s ≤ n := by
   have hs := (Effect.summary_scoped h .normal).2
   have hm : (FormulaF.operation (.fact .after 0 F) : Formula) ∈ ((e.summary n).get .normal).ensures := by
-    rw [← Effect.schema_atArity]
     exact List.mem_map_of_mem (f := instantiateFormula (e.schema.callInstantiation n)) (ExitSchema.mem_facts.mp hF)
   have := List.all_eq_true.mp hs _ hm
   simp only [FormulaF.scoped, OperationPostF.scoped, Scope.count, Nat.add_zero, Bool.and_eq_true,
     List.all_eq_true, decide_eq_true_eq] at this
   exact ⟨fun s hs' => by have := of_decide_eq_true (this.1 s hs'); omega,
     fun s hs' => by have := this.2 s hs'; omega⟩
-
-/-- **A signature's schema has canonical transports**: its one transport,
-the written result, reads each other entry slot at the next exit slot. -/
-theorem Effect.schema_canonical (e : Effect) : e.schema.canonicalTransports = true := by
-  have hw : ∀ w : ElementWrite, w.schemaPosts.all (·.canonical) = true := by
-    intro w; cases w with
-    | stores => rfl
-    | assign => rfl
-    | exact k =>
-      simp only [ElementWrite.schemaPosts, List.all_cons, List.all_append, List.all_map]
-      simp [FormulaF.canonical, Function.comp_def, writtenResultSchema]
-  simp only [Exits.canonicalTransports, Bool.and_eq_true]
-  refine ⟨?_, ?_⟩
-  · simp only [Effect.schema, ExitSchema.canonicalTransports, Effect.normalSchema, List.all_append,
-      Bool.and_eq_true]
-    refine ⟨⟨⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩
-    · split <;> rfl
-    · split <;> rfl
-    · split <;> rfl
-    · simp [List.all_map, FormulaF.canonical, Function.comp_def]
-    · split <;> rfl
-    · split
-      · exact hw _
-      · rfl
-  · simp only [Effect.schema, ExitSchema.canonicalTransports]
-    split <;> rfl
 
 /-- **A guarantee about the receiver and the first `n` parameters holds at
 every call extending the call of its first `m ≥ n` actuals**
@@ -199,16 +125,6 @@ theorem Effect.exitPost_take {e : Effect} {n m : Nat} (hb : e.belowRow n = true)
     {r : Tm} {args : List Tm} {s s' : IndexedHeap} {v : Tm} (hp : e.schema.exitPost c r (args.take m) s s' v) :
     e.schema.exitPost c r args s s' v :=
   (Exits.exitPost_take (Effect.schema_belowRow hb) hm).mp hp
-
-/-- **An allocation alone meets every signature's exceptional exit**: it
-keeps every old location (`Post.of_prefix`), and the exceptional exit
-states no postcondition. -/
-theorem Effect.exitPost_exceptional_prefix (e : Effect) {r : Tm} {args : List Tm} {s s' : IndexedHeap} {v : Tm}
-    (hadm : Admissible s s') (hprefix : s.h.IsPrefix s'.h) : e.schema.exitPost .exceptional r args s s' v := by
-  rw [Effect.exitPost_summary]
-  refine ⟨⟨hadm, Post.of_prefix _ _ hprefix⟩, fun F hF => ?_⟩
-  simp only [Exits.get, Effect.summary] at hF
-  split at hF <;> cases hF
 
 /-- **Safety at a signature's exits at the first `m` actuals is safety at
 its exits at every call extending them**, the signature about its receiver
@@ -225,19 +141,39 @@ theorem Effect.safe_exits_take {Ξ T : Fam} {e : Effect} {n m : Nat} (hb : e.bel
     exact (Exits.exitPostW_iff _ _ _ _ s s' val).mpr
       (Effect.exitPost_take hb hm ((Exits.exitPostW_iff _ _ _ _ s s' val).mp hp))
 
-/-- **Today's binding is a total weakening** (`Effect.drop`): a signature's
-exits at the longer call, the saved receiver and actuals in front, give the
-bound signature's exits at the bound call, its actuals values. It forgets
-what it cannot state of the bound call; where the schema names no saved
-position, `Exits.drop` is exact (`Exits.exitPost_drop`). -/
-theorem Effect.drop_weakening {e : Effect} {pre args : List Tm} {c : Completion} {r r₀ : Tm}
-    {s s' : IndexedHeap} {v : Tm} (hvalsv : ∀ a ∈ pre ++ args, isVal a = true) (hvals : ∀ a ∈ args, isVal a = true)
-    (h : e.schema.exitPost c r₀ (pre ++ args) s s' v) : (e.drop pre.length).schema.exitPost c r args s s' v := by
-  have hadm := Exits.exitPost_admissible h
-  rw [Effect.exitPost_summary] at h ⊢
-  cases c
-  · exact Effect.summary_drop_normal pre.length hadm hvalsv hvals h
-  · exact Effect.summary_drop_exceptional pre.length _ _ hadm h
+/-- **Binding `n` actuals** (the note, rule Call at a bound function, then
+consequence): the bound signature's exits are the signature's weakened at
+the bound call (`Exits.dropWeak`), exact where the substitution of the saved
+positions is defined (`Exits.dropWeak_of_drop`); its promise is about the
+same actual, counted after the saved ones; its preconditions are kept. -/
+def Effect.drop (n : Nat) (e : Effect) : Effect :=
+  ⟨e.exits.dropWeak n, e.promise.map (TypePromise.drop n), e.requires, e.pre⟩
+
+/-- **Binding is consequence on both exits** (`Exits.exitPost_dropWeak`): a
+signature's exits at the longer call, the saved receiver and actuals in
+front, give the bound signature's exits at the bound call. -/
+theorem Effect.drop_exits {e : Effect} {pre args : List Tm} {c : Completion} {r r₀ : Tm}
+    {s s' : IndexedHeap} {v : Tm} (h : e.schema.exitPost c r₀ (pre ++ args) s s' v) :
+    (e.drop pre.length).schema.exitPost c r args s s' v :=
+  Exits.exitPost_dropWeak rfl h
+
+/-- **A bound signature's exits reference no arena node**: a substituted
+postcondition never does (`renameFormula`). -/
+theorem Effect.drop_arenaFree (n : Nat) (e : Effect) (c : Completion) : ((e.drop n).schema.get c).arenaFree = true :=
+  Exits.dropWeak_arenaFree n e.exits c
+
+theorem Effect.promised_drop {e : Effect} {pre args : List Tm} (h : e.keeps pre.length = true) :
+    (e.drop pre.length).promised args = e.promised (pre ++ args) := by
+  rcases e with ⟨x, _ | (p | p), rq, pr⟩ <;>
+    simp only [Effect.keeps, Effect.drop, Effect.promised, TypePromise.drop, TypePromise.param,
+      Option.map, Bool.and_eq_true] at h ⊢
+  all_goals
+    have h' : pre.length ≤ p := of_decide_eq_true h.2
+    simp [List.getD_eq_getElem?_getD, List.getElem?_append_right h']
+
+theorem Effect.result_drop (e : Effect) (n : Nat) (R : Fam) (a : Tm) :
+    (e.drop n).result R a = e.result R a := by
+  rcases e with ⟨x, _ | (_ | _), rq, pr⟩ <;> rfl
 
 /-! ## A call read at heaps -/
 
@@ -380,13 +316,8 @@ theorem Effect.callExc_exitFrame (hp : e.callExc r args before after) :
 /-- **A throw meets the exceptional exit's frame of the summary**, at
 every arity (`Effect.callExc_exitFrame`). -/
 theorem Effect.callExc_frame (n : Nat) (hp : e.callExc r args before after) :
-    Post (e.summary n).exceptional.frame (callEnv r args) before after := by
-  have hfr : (e.schema.get .exceptional).frame = (e.summary n).exceptional.frame := by
-    unfold Effect.schema Effect.summary; cases e.onThrow <;> rfl
-  rcases hp with ⟨pad, v, hpad, s, s', rfl, rfl, hx⟩ | rfl
-  · have hf := Exits.exitPost_frame hx
-    rwa [hfr, callEnv_pad r args hpad] at hf
-  · exact Footprints.Post.refl _ _ _
+    Post (e.summary n).exceptional.frame (callEnv r args) before after :=
+  Effect.callExc_exitFrame hp
 
 /-- A call read at heaps from exits held from its entry: its normal and
 exceptional exits at heaps (`SafePostExcV.heldPosts`). -/

@@ -4126,9 +4126,9 @@ parameters' call positions and $`q_i`$ the paths, `[]` or $`[f_i]`$:
 
 with $`\rho`$ the call's values by position: the effect's frame, its closed
 bound $`\{v,s\}`$ with each region's store at `any`
-(`CallEffects.Effect.within`, `Effect.within_iff_regions`; proved). A
-conservative check reads the frame's closed approximation `top`, every
-location a selected store may be (`Effect.within_holds`, `Effect.within_top`). A root is a parameter without a
+(`CallEffects.Effect.within`, `ArgumentStoreRegionsWithin.iff_post`;
+proved). A conservative check reads the closed bound above the frame
+(`Effect.changeBound`, `Effect.within_changeBound`). A root is a parameter without a
 default and no rest parameter, whose value in the body is the call's;
 refused: a region at another change (`invalid-modifies-region-change`), a
 root with a default (`invalid-modifies-region-root`), a region on any
@@ -4171,8 +4171,8 @@ select, is dropped (`stated-region-grow-keeps-lengths`;
 `invalid-stated-region-grow-region` and
 `invalid-stated-region-grow-upper-bound`, run under Node). The pass keeps
 the facts and bounds the rule keeps, reading the frame from the callee's
-type (`Effect.regions`); a call's coarse bound for every other purpose is
-`top` (`Effect.footprint`).
+type (`Effect.frame`); a call's coarse bound for every other purpose is the
+closed bound above the frame (`Effect.changeBound`).
 
 Every other heap fact is kept only as the closed approximation `top` keeps
 it.
@@ -4407,7 +4407,7 @@ The proposal is of the normal return only: a finalizer's change after a throw
 is no part of it, and a caller catching the throw and returning holds no
 footprint (`invalid-closure-finally-throw-footprint`); the graph checker
 independently checks its region. Implementation:
-`HeapObservations.SafePostExc`, `CallEffects.Effect.excPost`,
+`HeapObservations.SafePostExc`, `CallEffects.Effect.callExc`,
 `GraphCode.NodeWithin` (its `thr` flag), `GraphCode.throwsWithin`,
 `GraphCode.handlerFresh`, `GraphCode.BoundState` (its `exc` flag) and
 `FootprintClause` of `PassUnit.RequestSafe`, a conjunct of

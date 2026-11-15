@@ -1576,7 +1576,9 @@ elements is `HeapKnowledge.elementsOf`. Preservation is
 `bodyFactFollows` (proved: `every_follows`); the read's restatement is
 `HeapKnowledge.readEvery`, in `readAtoms` (proved: `readEvery_holds`, from
 `bridgeReads_path` and `bridgeReads_term`). The append relation is
-`CallEffects.ReceiverAppends`, beside `ReceiverGrows`, in `Effect.post`;
+`CallEffects.ReceiverAppends`, beside `ReceiverGrows`, read from the
+normal exit's postconditions (`Effect.callPost_appends`,
+`Effect.callPost_storeGrows`);
 `every-grow` and `every-push` are `PromiseCalls.everyGrown`, with
 `HeapKnowledge.bodyKeptBy` and `appendedBody`, added by `appendKept` in
 `withEnsures` (proved: `every_grown`, `every_appended`, from

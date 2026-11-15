@@ -137,9 +137,9 @@ theorem footprint_of_bound {G : NormalGraph ι} {r : SourceRequest σ ι} {regio
     have hs := guarantee_goto g trivial he hroots
     exact HeapObservations.SafePostExc.weaken
       (fun _ _ h => ⟨Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _)
-        ((CallEffects.Effect.post_ofFootprint _ .undef [] _ _ _).mp h), fun hf => by rw [hfresh] at hf; cases hf⟩)
+        h, fun hf => by rw [hfresh] at hf; cases hf⟩)
       (fun _ h _ => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) h)
-      (CallEffects.pure_safe_exc (r := .undef) (args := []) (.goto hp hvalues hd) hs)
+      (CallEffects.pure_safe_exc (.goto hp hvalues hd) hs)
 
 /-- **A request's footprint from the regional fallback** (proved): a run
 within the claimed footprint off no region is within it everywhere. -/

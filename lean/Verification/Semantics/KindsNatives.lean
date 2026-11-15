@@ -17,8 +17,9 @@ not. A contract stated as a relation between heaps can meet that obligation
 only if every transition it admits from a structurally well-formed heap
 reaches one (`RespectsKinds`); the typed-array element write's coarse change
 admits one that does not (`elementWrite_not_respects`), and the call
-contracts state beside it the kinded view write (`ViewWrite`,
-`CallEffects.Effect.viewPost`), from the call's entry world.
+contracts state beside it the kinded view write (`ViewWrite`, the
+postcondition `{all-views: grow}` of `CallEffects.ElementWrite.schemaPosts`),
+from the call's entry world.
 -/
 namespace Verification.Kinds
 

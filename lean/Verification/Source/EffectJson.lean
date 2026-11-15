@@ -191,21 +191,293 @@ def WireEffect.valid (w : WireEffect) : Bool :=
 
 def WireEffect.Valid (w : WireEffect) : Prop := w.valid = true
 
-/-- **The effect a wire value states.** -/
+/-- The receiver's entries a wire value's frame states: with `receiverOwn`,
+its own locations holding a value at `any` (one holding a store stays at
+the closed bound's stores); else, with `receiverStore`, its store's location
+at `any`. -/
+def WireEffect.receiverEntries (w : WireEffect) : Footprints.Footprint :=
+  if w.receiverOwn then [(.inCls (.own 0) .values, .any)]
+  else if w.receiverStore then [(.field 0 arrayStoreKey, .any)] else []
+
+/-- **The frame a wire value states**: its closed bound's three class
+entries, its receiver's entries and its argument store regions, read at the
+call's positions. -/
+def WireEffect.frame (w : WireEffect) : Footprints.Footprint :=
+  w.closed.fp ++ w.receiverEntries ++ w.regions.map regionEntry
+
+/-- **The postconditions a wire value states of a normal return**: the
+result's fresh store and fresh object, the receiver's elements where the
+result is `true`, the index facts, the receiver's growth and the append of
+the actuals, and a typed array's element write
+(`ElementWrite.schemaPosts`). -/
+def WireEffect.normalSchema (w : WireEffect) : List Parity.FormulaSchema :=
+  (if w.fresh then [.operation (.freshStore 0)] else [] : List Parity.FormulaSchema) ++
+  (if w.freshObject then [.operation (.freshObject 0)] else [] : List Parity.FormulaSchema) ++
+  (match w.elements with
+    | some R => [.operation (.elementsWhen 0 .tru 1 R)]
+    | none => [] : List Parity.FormulaSchema) ++
+  w.ensures.map (fun F => (.operation (.fact .after 0 F) : Parity.FormulaSchema)) ++
+  (if w.receiverGrows then
+    [.transition [(.field 0 arrayStoreKey, .any)], .operation (.storeExtends 0),
+      .operation (.push 0 1 (.restFrom 1))] else [] : List Parity.FormulaSchema) ++
+  (match w.elementWrite with
+    | some k => k.schemaPosts
+    | none => [])
+
+/-- **The effect a wire value states**: the normal exit its frame and its
+postconditions, the exceptional exit its frame where it states `onThrow`,
+the note's `⊤` otherwise, with no postcondition; its promise and
+preconditions. -/
 def WireEffect.elaborate (w : WireEffect) : Effect :=
-  ⟨w.closed, w.promise, w.fresh, w.receiverStore, w.onThrow, w.receiverOwn, w.freshObject, w.requires,
-    w.elements, w.pre, w.ensures, w.receiverGrows, w.elementWrite, w.regions⟩
+  ⟨⟨⟨w.frame, w.normalSchema⟩, if w.onThrow then ⟨w.frame, []⟩ else ⟨Parity.topEffect, []⟩⟩,
+    w.promise, w.requires, w.pre⟩
+
+/-- **The canonical wire value of the effect a wire value states**: two wire
+values state one effect where they differ only in `receiverStore` beside
+`receiverOwn`, whose entry covers the store, or in `onThrow` where the frame
+is `⊤`; the canonical one states neither. -/
+def WireEffect.canonicalize (w : WireEffect) : WireEffect :=
+  { w with receiverStore := w.receiverStore && !w.receiverOwn,
+           onThrow := w.onThrow && !decide (w.frame = Parity.topEffect) }
+
+/-- A wire value is canonical where it is its own canonical value. -/
+def WireEffect.Canonical (w : WireEffect) : Prop := w.canonicalize = w
+
+theorem WireEffect.valid_canonicalize (w : WireEffect) : w.canonicalize.valid = w.valid := rfl
+
+private theorem WireEffect.frame_canonicalize (w : WireEffect) : w.canonicalize.frame = w.frame := by
+  rcases w with ⟨c, p, f, rs, o, ro, fo, rq, el, pr, en, rg, ew, regs⟩
+  cases ro <;> simp [WireEffect.frame, WireEffect.canonicalize, WireEffect.receiverEntries]
+
+/-- **The canonical value states the same effect** (proved). -/
+theorem WireEffect.elaborate_canonicalize (w : WireEffect) : w.canonicalize.elaborate = w.elaborate := by
+  have hf := WireEffect.frame_canonicalize w
+  rcases w with ⟨c, p, f, rs, o, ro, fo, rq, el, pr, en, rg, ew, regs⟩
+  simp only [WireEffect.elaborate, hf]
+  simp only [WireEffect.canonicalize]
+  cases o <;> by_cases ht : WireEffect.frame ⟨c, p, f, rs, true, ro, fo, rq, el, pr, en, rg, ew, regs⟩ = Parity.topEffect <;>
+    simp_all [WireEffect.normalSchema, WireEffect.frame, WireEffect.receiverEntries]
+
+/-! ### Reading a wire value back from the exits it states -/
+
+/-- The receiver's own entry of a frame. -/
+private def ownEntry : Footprints.Region × Footprints.Change := (.inCls (.own 0) .values, .any)
+
+/-- The receiver's store entry of a frame. -/
+private def storeEntry : Footprints.Region × Footprints.Change := (.field 0 arrayStoreKey, .any)
+
+/-- The argument store region an entry of a frame states, where it is one
+(`ArgumentStoreRegion.entry`). -/
+private def storeRegionOf : Footprints.Region × Footprints.Change → Option Footprints.ArgumentStoreRegion
+  | (.path p path k, .any) => if k = arrayStoreKey then some ⟨p, path⟩ else none
+  | _ => none
+
+/-- The format a postcondition states View-Write at, where it is one. -/
+private def viewWriteFormatOf : Parity.FormulaSchema → Option (Option ViewFormat)
+  | .operation (.viewWrite 1 2 3 g) => some g
+  | _ => none
+
+/-- **The element write a list of postconditions states**: an exact write
+at the element type of the format its View-Write states, an element
+assignment where it states View-Write at the typed array's own format, the
+views' growth alone otherwise. -/
+private def elementWriteIn (q : List Parity.FormulaSchema) : Option ElementWrite :=
+  match (q.filterMap viewWriteFormatOf).head? with
+  | some (some f) => some (.exact (ElementKind.ofFormat f))
+  | some none => some .assign
+  | none => if Parity.FormulaF.transition [(.cls .views, .grow)] ∈ q then some .stores else none
+
+/-- **The wire value an effect is read as**: each field from the reader of
+the exit that states it (the frame's class bound, receiver entries and store
+regions; the normal exit's fresh result, fresh object, elements, facts,
+growth and element write; the throw flag where the exceptional exit is the
+normal frame and the frame is no `⊤`). It is the canonical wire value of
+every effect a wire value states (`wireOf_elaborate`). -/
+def wireOf (e : Effect) : WireEffect :=
+  let q := e.schema.normal
+  let own := decide (ownEntry ∈ q.frame)
+  ⟨q.frame.classBound, e.promise, q.freshResult, decide (storeEntry ∈ q.frame) && !own,
+    decide (e.schema.exceptional = ⟨q.frame, []⟩) && !decide (q.frame = Parity.topEffect), own,
+    q.freshObjectResult, e.requires, q.elementsWhenTrue.head?, e.pre, q.facts,
+    decide (Parity.FormulaF.operation (.storeExtends 0) ∈ q.ensures), elementWriteIn q.ensures,
+    q.frame.filterMap storeRegionOf⟩
+
+section Readers
+variable (w : WireEffect)
+
+private theorem frame_classBound : w.frame.classBound = w.closed := by
+  have hr : w.receiverEntries.filter (·.1.isClass) = [] := by
+    unfold WireEffect.receiverEntries
+    split
+    · rfl
+    · split <;> rfl
+  have hg : (w.regions.map regionEntry).filter (·.1.isClass) = [] := by
+    rw [List.filter_eq_nil_iff]
+    intro x hx
+    obtain ⟨r, -, rfl⟩ := List.mem_map.mp hx
+    simp [regionEntry, Footprints.ArgumentStoreRegion.entry, Footprints.Region.isClass]
+  have hc : w.closed.fp.filter (·.1.isClass) = w.closed.fp := rfl
+  have hf := Footprints.Closed.closed?_fp w.closed
+  simp only [Footprints.Footprint.closed?] at hf
+  split at hf
+  · simp only [Footprints.Footprint.classBound, Footprints.Footprint.classes, WireEffect.frame,
+      List.filter_append, hr, hg, hc, List.append_nil]
+    exact Option.some.inj hf
+  · cases hf
+
+private theorem mem_frame_receiver {x : Footprints.Region × Footprints.Change} (hx : x = ownEntry ∨ x = storeEntry) :
+    x ∈ w.frame ↔ x ∈ w.receiverEntries := by
+  simp only [WireEffect.frame, List.mem_append, List.mem_map]
+  constructor
+  · rintro ((h | h) | ⟨r, -, rfl⟩)
+    · rcases hx with rfl | rfl <;> simp [Footprints.Closed.fp, ownEntry, storeEntry] at h
+    · exact h
+    · rcases hx with h | h <;> simp [regionEntry, Footprints.ArgumentStoreRegion.entry, ownEntry, storeEntry] at h
+  · exact fun h => .inl (.inr h)
+
+private theorem frame_own : decide (ownEntry ∈ w.frame) = w.receiverOwn := by
+  simp only [mem_frame_receiver w (.inl rfl)]
+  by_cases ho : w.receiverOwn = true <;> by_cases hs : w.receiverStore = true <;>
+    simp [WireEffect.receiverEntries, ho, hs, ownEntry]
+
+private theorem frame_store : (decide (storeEntry ∈ w.frame) && !decide (ownEntry ∈ w.frame)) =
+    (w.receiverStore && !w.receiverOwn) := by
+  simp only [mem_frame_receiver w (.inr rfl), frame_own]
+  by_cases ho : w.receiverOwn = true <;> by_cases hs : w.receiverStore = true <;>
+    simp [WireEffect.receiverEntries, ho, hs, storeEntry]
+
+private theorem frame_regions : w.frame.filterMap storeRegionOf = w.regions := by
+  have hr : w.receiverEntries.filterMap storeRegionOf = [] := by
+    unfold WireEffect.receiverEntries
+    split
+    · rfl
+    · split <;> rfl
+  have hc : w.closed.fp.filterMap storeRegionOf = [] := rfl
+  simp only [WireEffect.frame, List.filterMap_append, hr, hc, List.nil_append, List.filterMap_map]
+  induction w.regions with
+  | nil => rfl
+  | cons r rs ih =>
+    simp only [List.filterMap_cons, Function.comp_apply, ih]
+    simp [storeRegionOf, regionEntry, Footprints.ArgumentStoreRegion.entry]
+
+private theorem exceptional_throw :
+    (decide ((if w.onThrow = true then (⟨w.frame, []⟩ : ExitSchema) else ⟨Parity.topEffect, []⟩) = ⟨w.frame, []⟩) &&
+      !decide (w.frame = Parity.topEffect)) = (w.onThrow && !decide (w.frame = Parity.topEffect)) := by
+  by_cases ht : w.frame = Parity.topEffect
+  · cases w.onThrow <;> simp [ht]
+  · have ht' : Parity.topEffect ≠ w.frame := Ne.symm ht
+    cases w.onThrow <;> simp [ht, ht']
+
+private theorem noForm_writes {F : Parity.FormulaSchema} (hF : ∀ k G, F ≠ .operation (.fact .before k G))
+    (hT : ∀ Φ, F ≠ .transition Φ) (hV : ∀ x i v g, F ≠ .operation (.viewWrite x i v g))
+    (hθ : ∀ θ, F ≠ .transport θ) (k : ElementWrite) : F ∉ k.schemaPosts := by
+  cases k <;> simp_all [ElementWrite.schemaPosts]
+  intro x _ h
+  exact hF 0 x h.symm
+
+private theorem normal_fresh : decide (Parity.FormulaF.operation (.freshStore 0) ∈ w.normalSchema) = w.fresh := by
+  rcases w with ⟨c, p, f, rs, o, ro, fo, rq, el, pr, en, rg, ew, regs⟩
+  have hw := noForm_writes (F := .operation (.freshStore 0)) (by simp) (by simp) (by simp) (by simp)
+  simp only [WireEffect.normalSchema, List.mem_append]
+  cases f <;> cases fo <;> cases rg <;> cases el <;>
+    cases ew <;> simp [hw]
+
+private theorem normal_freshObject : decide (Parity.FormulaF.operation (.freshObject 0) ∈ w.normalSchema) = w.freshObject := by
+  rcases w with ⟨c, p, f, rs, o, ro, fo, rq, el, pr, en, rg, ew, regs⟩
+  have hw := noForm_writes (F := .operation (.freshObject 0)) (by simp) (by simp) (by simp) (by simp)
+  simp only [WireEffect.normalSchema, List.mem_append]
+  cases f <;> cases fo <;> cases rg <;> cases el <;>
+    cases ew <;> simp [hw]
+
+private theorem normal_grows : decide (Parity.FormulaF.operation (.storeExtends 0) ∈ w.normalSchema) = w.receiverGrows := by
+  rcases w with ⟨c, p, f, rs, o, ro, fo, rq, el, pr, en, rg, ew, regs⟩
+  have hw := noForm_writes (F := .operation (.storeExtends 0)) (by simp) (by simp) (by simp) (by simp)
+  simp only [WireEffect.normalSchema, List.mem_append]
+  cases f <;> cases fo <;> cases rg <;> cases el <;>
+    cases ew <;> simp [hw]
+
+private theorem write_select {α : Type} (f : Parity.FormulaSchema → Option α) (hf : ∀ F, (∃ k G, F = .operation (.fact .before k G)) ∨
+      (∃ Φ, F = .transition Φ) ∨ (∃ x i v g, F = .operation (.viewWrite x i v g)) ∨ (∃ θ, F = .transport θ) → f F = none)
+    (k : ElementWrite) : k.schemaPosts.filterMap f = [] := by
+  have hpre : ∀ (l : List HeapKnowledge.IndexFact),
+      (l.map fun G => (Parity.FormulaF.operation (.fact .before 0 G) : Parity.FormulaSchema)).filterMap f = [] := by
+    intro l; induction l with
+    | nil => rfl
+    | cons G l ih => rw [List.map_cons, List.filterMap_cons, hf _ (.inl ⟨0, G, rfl⟩), ih]
+  cases k with
+  | stores => simp [ElementWrite.schemaPosts, hf _ (.inr (.inl ⟨_, rfl⟩))]
+  | assign =>
+    simp [ElementWrite.schemaPosts, hf _ (.inr (.inl ⟨_, rfl⟩)), hf _ (.inr (.inr (.inl ⟨_, _, _, _, rfl⟩))),
+      hf _ (.inr (.inr (.inr ⟨_, rfl⟩)))]
+  | exact k =>
+    simp only [ElementWrite.schemaPosts, List.filterMap_cons, List.filterMap_append, hpre,
+      hf _ (.inr (.inl ⟨_, rfl⟩)), hf _ (.inr (.inr (.inl ⟨_, _, _, _, rfl⟩))),
+      hf _ (.inr (.inr (.inr ⟨_, rfl⟩)))]
+    rfl
+
+private theorem normal_elements : (ExitSchema.mk w.frame w.normalSchema).elementsWhenTrue.head? = w.elements := by
+  rcases w with ⟨c, p, f, rs, o, ro, fo, rq, el, pr, en, rg, ew, regs⟩
+  have hw := write_select elementsWhenTrueOf (by rintro F (⟨_, _, rfl⟩ | ⟨_, rfl⟩ | ⟨_, _, _, _, rfl⟩ | ⟨_, rfl⟩) <;> rfl)
+  have hens : (en.map fun F => (Parity.FormulaF.operation (.fact .after 0 F) : Parity.FormulaSchema)).filterMap
+      elementsWhenTrueOf = [] := by
+    induction en with
+    | nil => rfl
+    | cons _ _ ih => rw [List.map_cons, List.filterMap_cons]; exact ih
+  simp only [ExitSchema.elementsWhenTrue, WireEffect.normalSchema, List.filterMap_append, hens]
+  cases el <;> cases hwr : ew <;> cases f <;> cases fo <;>
+    cases rg <;> simp [hw, elementsWhenTrueOf, List.filterMap_cons]
+
+private theorem normal_facts : (ExitSchema.mk w.frame w.normalSchema).facts = w.ensures := by
+  rcases w with ⟨c, p, f, rs, o, ro, fo, rq, el, pr, en, rg, ew, regs⟩
+  have hw := write_select factAfterOf (by rintro F (⟨_, _, rfl⟩ | ⟨_, rfl⟩ | ⟨_, _, _, _, rfl⟩ | ⟨_, rfl⟩) <;> rfl)
+  have hens : (en.map fun F => (Parity.FormulaF.operation (.fact .after 0 F) : Parity.FormulaSchema)).filterMap
+      factAfterOf = en := by
+    induction en with
+    | nil => rfl
+    | cons _ _ ih => rw [List.map_cons, List.filterMap_cons]; exact congrArg _ ih
+  simp only [ExitSchema.facts, WireEffect.normalSchema, List.filterMap_append, hens]
+  cases el <;> cases hwr : ew <;> cases f <;> cases fo <;>
+    cases rg <;> simp [hw, factAfterOf, List.filterMap_cons]
+
+private theorem normal_write : elementWriteIn w.normalSchema = w.elementWrite := by
+  rcases w with ⟨c, p, f, rs, o, ro, fo, rq, el, pr, en, rg, ew, regs⟩
+  have hens : (en.map fun F => (Parity.FormulaF.operation (.fact .after 0 F) : Parity.FormulaSchema)).filterMap
+      viewWriteFormatOf = [] := by
+    induction en with
+    | nil => rfl
+    | cons _ _ ih => rw [List.map_cons, List.filterMap_cons]; exact ih
+  unfold elementWriteIn
+  simp only [WireEffect.normalSchema, List.filterMap_append, hens, List.mem_append]
+  cases hk : ew with
+  | none =>
+    cases el <;> cases f <;> cases fo <;> cases rg <;>
+      simp [viewWriteFormatOf, List.findSome?_cons]
+  | some k =>
+    cases k with
+    | stores =>
+      cases el <;> cases f <;> cases fo <;> cases rg <;>
+        simp [viewWriteFormatOf, ElementWrite.schemaPosts, List.findSome?_cons]
+    | assign =>
+      cases el <;> cases f <;> cases fo <;> cases rg <;>
+        simp [viewWriteFormatOf, ElementWrite.schemaPosts, List.findSome?_cons]
+    | exact k =>
+      have hk' : ElementKind.ofFormat k.format = k := by cases k <;> rfl
+      cases el <;> cases f <;> cases fo <;> cases rg <;>
+        simp [viewWriteFormatOf, ElementWrite.schemaPosts, hk', List.findSome?_cons]
+
+end Readers
+
+/-- **Reading the exits a wire value states gives its canonical value**
+(proved, each field by its reader). -/
+theorem wireOf_elaborate (w : WireEffect) : wireOf w.elaborate = w.canonicalize := by
+  simp only [wireOf, WireEffect.elaborate, Effect.schema, ExitSchema.freshResult, ExitSchema.freshObjectResult,
+    frame_classBound, frame_regions, normal_elements, normal_facts, normal_write, WireEffect.canonicalize]
+  congr 1 <;> first | exact normal_fresh w | exact frame_store w | exact exceptional_throw w | exact frame_own w |
+    exact normal_freshObject w | exact normal_grows w
 
 /-- **An effect the wire represents exactly**: the elaboration of a valid
 wire value. -/
 def Representable (e : Effect) : Prop := ∃ w : WireEffect, w.Valid ∧ w.elaborate = e
-
-/-- The wire value whose elaboration an effect is, where it is one. -/
-def wireOf (e : Effect) : WireEffect :=
-  ⟨e.closed, e.promise, e.fresh, e.receiverStore, e.onThrow, e.receiverOwn, e.freshObject, e.requires,
-    e.elements, e.pre, e.ensures, e.receiverGrows, e.elementWrite, e.regions⟩
-
-theorem wireOf_elaborate (w : WireEffect) : wireOf w.elaborate = w := rfl
 
 /-- **The encoder**: the wire value an effect is the elaboration of, where
 it is valid; refused otherwise. -/
@@ -223,11 +495,12 @@ theorem encodeOld_sound {e : Effect} {w : WireEffect} (h : encodeOld e = .ok w) 
     exact hc
   · cases h
 
-/-- **The encoder writes every representable effect** (proved). -/
+/-- **The encoder writes every representable effect** (proved), as its
+canonical wire value (`wireOf_elaborate`). -/
 theorem encodeOld_complete {e : Effect} (h : Representable e) : encodeOld e = .ok (wireOf e) := by
   obtain ⟨w, hv, rfl⟩ := h
   unfold encodeOld
-  rw [wireOf_elaborate]
+  rw [wireOf_elaborate, WireEffect.elaborate_canonicalize, WireEffect.valid_canonicalize]
   simp only [WireEffect.Valid] at hv
   simp [hv]
 
@@ -320,12 +593,15 @@ instance : ToJson Effect := ⟨fun e => match encodeOld e with
   | .error msg => Json.mkObj [("unrepresentable", toJson msg)]⟩
 
 /-- **Reading and writing are inverse on what is read** (proved): an effect
-read from a document is written back as that document (Json's equality). -/
-theorem effectJson_decode {j : Json} {w : WireEffect} (h : decodeOld j = .ok w) :
+read from a document holding a canonical wire value (`WireEffect.Canonical`)
+is written back as that document (Json's equality). A document holding
+another wire value of the same effect is read as that effect and written as
+its canonical value. -/
+theorem effectJson_decode {j : Json} {w : WireEffect} (h : decodeOld j = .ok w) (hc : w.Canonical) :
     ∃ j', effectJson w.elaborate = .ok j' ∧ (j' == j) = true := by
   obtain ⟨hv, hj⟩ := decodeOld_sound h
   refine ⟨toJson w, ?_, hj⟩
-  rw [effectJson, encodeOld_complete ⟨w, hv, rfl⟩, wireOf_elaborate]
+  rw [effectJson, encodeOld_complete ⟨w, hv, rfl⟩, wireOf_elaborate, hc]
   rfl
 
 /-- **An effect as a declaration's result annotation states it**
@@ -350,18 +626,23 @@ without store regions, `top` with them. -/
 def StatedEffect.footprint (s : StatedEffect) : Footprints.Closed :=
   if s.regions.isEmpty then s.closed else .top
 
+/-- An ordinary arrow's guarantee as a wire value. -/
+private def ordinaryWire : WireEffect :=
+  ⟨.top, none, false, false, false, false, false, none, none, [], [], false, none, []⟩
+
 /-- An exact element write is decoded with its value's range in its
 precondition, and refused without it. -/
-private def decodes (e : Effect) : Bool :=
-  match effectJson e with
+private def decodes (w : WireEffect) : Bool :=
+  match effectJson w.elaborate with
   | .ok j => match (fromJson? j : Except String Effect) with
-    | .ok d => d == e
+    | .ok d => d == w.elaborate
     | .error _ => false
   | .error _ => false
 
-#guard decodes { Effect.ordinary with elementWrite := some (.exact .uint8), pre := ElementKind.preFacts .uint8 }
-#guard decodes { Effect.ordinary with elementWrite := some (.exact .float64), pre := ElementKind.preFacts .float64 }
-#guard !decodes { Effect.ordinary with elementWrite := some (.exact .uint8) }
-#guard !decodes { Effect.ordinary with elementWrite := some (.exact .int32), pre := ElementKind.preFacts .uint8 }
+#guard ordinaryWire.elaborate == Effect.ordinary
+#guard decodes { ordinaryWire with elementWrite := some (.exact .uint8), pre := ElementKind.preFacts .uint8 }
+#guard decodes { ordinaryWire with elementWrite := some (.exact .float64), pre := ElementKind.preFacts .float64 }
+#guard !decodes { ordinaryWire with elementWrite := some (.exact .uint8) }
+#guard !decodes { ordinaryWire with elementWrite := some (.exact .int32), pre := ElementKind.preFacts .uint8 }
 
 end Verification.EffectJson

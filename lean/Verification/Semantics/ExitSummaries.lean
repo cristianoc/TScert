@@ -11,26 +11,16 @@ postconditions (`Parity.Formula`), all read at one two-state interpretation
 environment holds the returned or thrown value at `0` and the call's
 positions one higher (`ensuresEnv`).
 
-A signature's effect (`Effect`) is elaborated into its summary at an arity
-(`Effect.summary`):
-
-- the normal frame is the signature's frame (`Effect.frame`): its closed
-  bound's three class entries, its receiver's entries and its argument store
-  regions;
-- the normal postconditions are the result's fresh store and fresh object,
-  the receiver's elements where the result is `true`, the index facts the
-  signature states, the receiver's growth and the append, and the view write
-  with its assignment and conversion;
-- the exceptional frame is the normal one where the signature states
-  `onThrow`, and the note's `⊤` otherwise; a throw states no postcondition.
-
-A guarantee stated beside the frame, the growth's frame `{receiver store:
-any}` and the view write's `{all-views: grow}`, is a postcondition
-`.transition Φ`, conjoined with the frame: the two hold of one transition.
-
-**On admissible transitions the summary states the signature's contract**
-(`Effect.summary_normal_iff`, `Effect.summary_exceptional_iff`): its normal
-exit is `Effect.postW`, its exceptional exit `Effect.excPost`. -/
+A signature's effect (`Effect`) states its exits as a schema
+(`Effect.schema`), the same for every arity (the note's Call); at a call of
+`n` actuals it is its summary (`Effect.summary`, `Exits.atArity`). A
+guarantee stated beside the frame, such as the receiver's growth `{receiver
+store: any}` or a typed array's element write `{all-views: grow}`, is a
+postcondition `.transition Φ`, conjoined with the frame: the two hold of one
+transition. This module holds the readers of postconditions by their
+formulas, the meaning of the formulas the library's contracts state
+(`receiverGrows_iff`, `receiverAppends_iff`, `exactPre_iff`), and the
+builders of the effects code states. -/
 namespace Verification.CallEffects
 open Verification Footprints HeapKnowledge TolerantFrames Parity
 
@@ -38,81 +28,29 @@ open Verification Footprints HeapKnowledge TolerantFrames Parity
 entry. -/
 def actualWitnesses (n : Nat) : List Witness := (List.range n).map fun i => .path ⟨i + 1, []⟩
 
-/-- The transport stating that the result is the value written, the third
-actual (entry slot `3`): exit slot `0` reads entry slot `3`, and each other
-entry slot `i` is exit slot `i + 1`. -/
-def writtenResult (n : Nat) : Substitution :=
-  ⟨((List.range (max (n + 1) 4)).map fun i => Witness.path ⟨if i = 3 then 0 else i + 1, []⟩).toArray, false, []⟩
+/-- **The summary of a signature** at a call of `n` actuals: its schema
+instantiated there (`Exits.atArity`). -/
+def Effect.summary (e : Effect) (n : Nat) : Exits ExitSpec := e.schema.atArity n
 
-/-! ## The elaboration -/
+/-! ## Schemas of the library's contracts
 
-/-- **A typed array's element write as postconditions**: its frame
-`{all-views: grow}` (`Kinds.ViewWrite.frame_iff`), and for an element
-assignment View-Write at the typed array's format and the result the value
-written, for the exact form View-Write at the element type's format, the
-facts its precondition gives and the result. -/
-def ElementWrite.posts (n : Nat) : ElementWrite → List Formula
-  | .stores => [.transition [(.cls .views, .grow)]]
-  | .assign => [.transition [(.cls .views, .grow)], .operation (.viewWrite 1 2 3 none), .transport (writtenResult n)]
-  | .exact k => .transition [(.cls .views, .grow)] :: .operation (.viewWrite 1 2 3 (some k.format)) ::
-      ((k.preFacts.map fun F => .operation (.fact .before 0 F)) ++ [.transport (writtenResult n)])
-
-/-- **The postconditions of a signature's normal return**, at arity `n`. -/
-def Effect.normalPosts (e : Effect) (n : Nat) : List Formula :=
-  (if e.fresh then [.operation (.freshStore 0)] else []) ++
-  (if e.freshObject then [.operation (.freshObject 0)] else []) ++
-  (match e.elements with
-    | some R => [.operation (.elementsWhen 0 .tru 1 R)]
-    | none => []) ++
-  e.ensures.map (fun F => .operation (.fact .after 0 F)) ++
-  (if e.receiverGrows then
-    [.transition [(.field 0 arrayStoreKey, .any)], .operation (.storeExtends 0),
-      .operation (.push 0 1 (actualWitnesses n))] else []) ++
-  (match e.elementWrite with
-    | some w => w.posts n
-    | none => [])
-
-/-- **The exit summary of a signature** at arity `n`: the normal exit's frame
-and postconditions, and the exceptional exit's, `⊤` without `onThrow`. -/
-def Effect.summary (e : Effect) (n : Nat) : Exits ExitSpec :=
-  ⟨⟨e.frame, e.normalPosts n⟩, if e.onThrow then ⟨e.frame, []⟩ else ⟨topEffect, []⟩⟩
-
-/-! ## The elaboration as a schema
-
-The same guarantee stated once for every arity (the note's Call): the
-append names the actuals from position `1` on, and the written result is the
-transport `writtenResultSchema`, entry slot `3` read at exit slot `0` and every
-other entry slot `i` at exit slot `i + 1`. -/
+The append names the actuals from position `1` on, and the written result is
+the transport `writtenResultSchema`, entry slot `3` read at exit slot `0` and
+every other entry slot `i` at exit slot `i + 1`. -/
 
 /-- The written result, over every entry slot. -/
 def writtenResultSchema : TransportSchema := ⟨1, [(3, .path ⟨0, []⟩)], false, []⟩
 
-/-- A typed array's element write as schema postconditions. -/
+/-- **A typed array's element write as schema postconditions**: its frame
+`{all-views: grow}` (`Kinds.ViewWrite.frame_iff`), and for an element
+assignment View-Write at the typed array's format and the result the value
+written, for the exact form View-Write at the element type's format, the
+facts its precondition gives and the result. -/
 def ElementWrite.schemaPosts : ElementWrite → List FormulaSchema
   | .stores => [.transition [(.cls .views, .grow)]]
   | .assign => [.transition [(.cls .views, .grow)], .operation (.viewWrite 1 2 3 none), .transport writtenResultSchema]
   | .exact k => .transition [(.cls .views, .grow)] :: .operation (.viewWrite 1 2 3 (some k.format)) ::
       ((k.preFacts.map fun F => .operation (.fact .before 0 F)) ++ [.transport writtenResultSchema])
-
-/-- The postconditions of a signature's normal return, as a schema. -/
-def Effect.normalSchema (e : Effect) : List FormulaSchema :=
-  (if e.fresh then [.operation (.freshStore 0)] else []) ++
-  (if e.freshObject then [.operation (.freshObject 0)] else []) ++
-  (match e.elements with
-    | some R => [.operation (.elementsWhen 0 .tru 1 R)]
-    | none => []) ++
-  e.ensures.map (fun F => .operation (.fact .after 0 F)) ++
-  (if e.receiverGrows then
-    [.transition [(.field 0 arrayStoreKey, .any)], .operation (.storeExtends 0),
-      .operation (.push 0 1 (.restFrom 1))] else []) ++
-  (match e.elementWrite with
-    | some w => w.schemaPosts
-    | none => [])
-
-/-- **A signature's specification schema**: the normal exit's frame and
-postconditions, and the exceptional exit's, `⊤` without `onThrow`. -/
-def Effect.schema (e : Effect) : Exits ExitSchema :=
-  ⟨⟨e.frame, e.normalSchema⟩, if e.onThrow then ⟨e.frame, []⟩ else ⟨topEffect, []⟩⟩
 
 /-- The actuals from position `1` at a call of `n` actuals are its actual
 positions. -/
@@ -125,167 +63,10 @@ theorem restFrom_one (n : Nat) : (WitnessSeq.restFrom 1).instantiate n = actualW
     obtain ⟨j, -, rfl⟩ := hi
     simp
 
-/-- The written result over an entry scope of `max (n + 1) 4` slots is
-`writtenResult n`. -/
-theorem writtenResultSchema_instantiate (n : Nat) :
-    writtenResultSchema.instantiate (max (n + 1) 4) = writtenResult n := by
-  simp only [TransportSchema.instantiate, writtenResultSchema, writtenResult]
-  congr 2
-  refine List.map_congr_left fun i _ => ?_
-  by_cases h : i = 3
-  · subst h; rfl
-  · have h' : (i == 3) = false := by simp [h]
-    simp [List.lookup, h', h]
-
-private theorem write_slots (w : ElementWrite) :
-    w.schemaPosts.foldr (fun (F : FormulaSchema) k => max F.slots k) 0 = if w = .stores then 0 else 4 := by
-  have hf : ∀ l : List IndexFact, (l.map fun F => (FormulaF.operation (.fact .before 0 F) : FormulaSchema)).foldr
-      (fun (F : FormulaSchema) k => max F.slots k) 0 = 0 := by
-    intro l; induction l with
-    | nil => rfl
-    | cons _ _ ih => simp only [List.map_cons, List.foldr_cons, ih]; rfl
-  cases w with
-  | stores => rfl
-  | assign => rfl
-  | exact k =>
-    simp only [ElementWrite.schemaPosts, List.foldr_cons, FormulaSchema.foldr_slots_append, hf]
-    rfl
-
-/-- The entry slots a signature's schema names: `4` for an element
-assignment or exact write, whose transport names entry slot `3`, else `0`. -/
-theorem Effect.schema_slots (e : Effect) :
-    e.schema.slots = match e.elementWrite with
-      | some .stores | none => 0
-      | some _ => 4 := by
-  have hex : e.schema.exceptional.slots = 0 := by
-    simp only [Effect.schema]; split <;> rfl
-  have hens : (e.ensures.map fun F => (FormulaF.operation (.fact .after 0 F) : FormulaSchema)).foldr
-      (fun (F : FormulaSchema) k => max F.slots k) 0 = 0 := by
-    induction e.ensures with
-    | nil => rfl
-    | cons _ _ ih => simp only [List.map_cons, List.foldr_cons, ih]; rfl
-  simp only [Exits.slots, hex, Nat.max_zero]
-  simp only [Effect.schema, ExitSchema.slots, Effect.normalSchema, FormulaSchema.foldr_slots_append, hens]
-  have h1 : (if e.fresh = true then [(FormulaF.operation (.freshStore 0) : FormulaSchema)] else []).foldr
-      (fun (F : FormulaSchema) k => max F.slots k) 0 = 0 := by split <;> rfl
-  have h2 : (if e.freshObject = true then [(FormulaF.operation (.freshObject 0) : FormulaSchema)] else []).foldr
-      (fun (F : FormulaSchema) k => max F.slots k) 0 = 0 := by split <;> rfl
-  have h3 : (match e.elements with
-      | some R => [(FormulaF.operation (.elementsWhen 0 .tru 1 R) : FormulaSchema)]
-      | none => []).foldr (fun (F : FormulaSchema) k => max F.slots k) 0 = 0 := by split <;> rfl
-  have h4 : (if e.receiverGrows = true then [(FormulaF.transition [(.field 0 arrayStoreKey, .any)] : FormulaSchema),
-      .operation (.storeExtends 0), .operation (.push 0 1 (.restFrom 1))] else []).foldr
-      (fun (F : FormulaSchema) k => max F.slots k) 0 = 0 := by split <;> rfl
-  rw [h1, h2, h3, h4]
-  cases hw : e.elementWrite with
-  | none => rfl
-  | some w =>
-    simp only [write_slots]
-    cases w <;> simp
-
-/-- **The schema at a call of `n` actuals is the summary at arity `n`.** -/
-theorem Effect.schema_atArity (e : Effect) (n : Nat) : e.schema.atArity n = e.summary n := by
-  have hι : (e.schema.callInstantiation n).actualCount = n := rfl
-  have hslot : ∀ w, e.elementWrite = some w → w ≠ .stores → (e.schema.callInstantiation n).entrySlots = max (n + 1) 4 := by
-    intro w hw hs
-    show max (n + 1) e.schema.slots = _
-    rw [Effect.schema_slots, hw]
-    cases w with
-    | stores => exact absurd rfl hs
-    | assign => rfl
-    | exact _ => rfl
-  show e.schema.map (ExitSchema.instantiate (e.schema.callInstantiation n)) = _
-  generalize e.schema.callInstantiation n = ι at hι hslot
-  subst hι
-  have hw : ∀ w, e.elementWrite = some w → w.schemaPosts.map (instantiateFormula ι) = w.posts ι.actualCount := by
-    intro w hw'
-    cases w with
-    | stores => rfl
-    | assign =>
-      simp only [ElementWrite.schemaPosts, ElementWrite.posts, List.map_cons, List.map_nil, instantiateFormula,
-        FormulaF.map, OperationPostF.map, hslot _ hw' (by intro h; cases h), writtenResultSchema_instantiate]
-    | exact k =>
-      simp only [ElementWrite.schemaPosts, ElementWrite.posts, List.map_cons, List.map_append, List.map_map,
-        List.map_nil, instantiateFormula, FormulaF.map, OperationPostF.map,
-        hslot _ hw' (by intro h; cases h), writtenResultSchema_instantiate]
-      rfl
-  simp only [Exits.map, ExitSchema.instantiate, Effect.schema, Effect.summary]
-  congr 1
-  · have p1 : (if e.fresh = true then [(FormulaF.operation (.freshStore 0) : FormulaSchema)] else []).map
-        (instantiateFormula ι) = if e.fresh = true then [.operation (.freshStore 0)] else [] := by split <;> rfl
-    have p2 : (if e.freshObject = true then [(FormulaF.operation (.freshObject 0) : FormulaSchema)] else []).map
-        (instantiateFormula ι) = if e.freshObject = true then [.operation (.freshObject 0)] else [] := by
-      split <;> rfl
-    have p3 : (match e.elements with
-        | some R => [(FormulaF.operation (.elementsWhen 0 .tru 1 R) : FormulaSchema)]
-        | none => []).map (instantiateFormula ι) = (match e.elements with
-        | some R => [.operation (.elementsWhen 0 .tru 1 R)]
-        | none => []) := by split <;> rfl
-    have p4 : (e.ensures.map fun F => (FormulaF.operation (.fact .after 0 F) : FormulaSchema)).map
-        (instantiateFormula ι) = e.ensures.map fun F => .operation (.fact .after 0 F) := by
-      rw [List.map_map]; rfl
-    have p5 : (if e.receiverGrows = true then [(FormulaF.transition [(.field 0 arrayStoreKey, .any)] : FormulaSchema),
-        .operation (.storeExtends 0), .operation (.push 0 1 (.restFrom 1))] else []).map (instantiateFormula ι) =
-        if e.receiverGrows = true then [.transition [(.field 0 arrayStoreKey, .any)], .operation (.storeExtends 0),
-          .operation (.push 0 1 (actualWitnesses ι.actualCount))] else [] := by
-      split
-      · simp only [List.map_cons, List.map_nil, instantiateFormula, FormulaF.map, OperationPostF.map, restFrom_one]
-      · rfl
-    have p6 : (match e.elementWrite with
-        | some w => w.schemaPosts
-        | none => []).map (instantiateFormula ι) = (match e.elementWrite with
-        | some w => w.posts ι.actualCount
-        | none => []) := by
-      split
-      · rename_i w heq; exact hw w heq
-      · rfl
-    simp only [Effect.normalSchema, Effect.normalPosts, List.map_append, p1, p2, p3, p4, p5, p6]
-  · split <;> rfl
-
-/-- **A signature's schema references no arena node**: the elaboration
-states operational posts, index facts, transitions and transports alone. -/
-theorem Effect.schema_arenaFree (e : Effect) : e.schema.arenaFree = true := by
-  have hw : ∀ w : ElementWrite, w.schemaPosts.all (·.arenaFree) = true := by
-    intro w; cases w with
-    | stores => rfl
-    | assign => rfl
-    | exact k =>
-      simp only [ElementWrite.schemaPosts, List.all_cons, List.all_append, List.all_map]
-      simp [FormulaF.arenaFree, Function.comp_def]
-  have hn : e.normalSchema.all (·.arenaFree) = true := by
-    simp only [Effect.normalSchema, List.all_append, Bool.and_eq_true]
-    refine ⟨⟨⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩
-    · split <;> rfl
-    · split <;> rfl
-    · split <;> rfl
-    · simp [List.all_map, FormulaF.arenaFree, Function.comp_def]
-    · split <;> rfl
-    · split
-      · exact hw _
-      · rfl
-  simp only [Exits.arenaFree, ExitSchema.arenaFree, Effect.schema, Bool.and_eq_true]
-  exact ⟨hn, by split <;> rfl⟩
-
-/-! ## Each postcondition states its field -/
+/-! ## The formulas of the library's contracts -/
 
 section Equivalence
 variable {arena : AssertionArena} {r : Tm} {args : List Tm} {v : Tm} {m : Nat} {s s' : IndexedHeap}
-
-private theorem forall_ite {P : Formula → Prop} {c : Bool} {l : List Formula} :
-    (∀ F ∈ (if c then l else []), P F) ↔ (c = true → ∀ F ∈ l, P F) := by
-  cases c <;> simp
-
-private theorem frame_iff {Φ : Footprint} (hadm : Admissible s s') :
-    EffectAction Φ (callEnv r args) s s' ↔ Post Φ (callEnv r args) s.h s'.h :=
-  ⟨fun h => h.2, fun h => ⟨hadm, h⟩⟩
-
-private theorem fact_after_iff (F : IndexFact) :
-    Parity.Holds arena (callState r args v m s s') (.operation (.fact .after 0 F)) ↔
-      F.HoldsAt ⟨callEnv r args, s.h⟩ (ensuresEnv v r args) s'.h := Iff.rfl
-
-private theorem fact_before_iff (F : IndexFact) :
-    Parity.Holds arena (callState r args v m s s') (.operation (.fact .before 0 F)) ↔
-      F.HoldsAt ⟨callEnv r args, s.h⟩ (callEnv r args) s.h := Iff.rfl
 
 /-- **The receiver's growth is its frame and the store's extension.** -/
 theorem receiverGrows_iff (hadm : Admissible s s') :
@@ -356,51 +137,6 @@ theorem receiverAppends_iff (hvals : ∀ a ∈ args, isVal a = true) :
   · intro ha
     exact ⟨args, rfl, hvals, ha, rfl⟩
 
-private theorem writeAt_args (g : ViewFormat) (before after : Heap) :
-    WriteAt g [callEnv r args 1, callEnv r args 2, callEnv r args 3] before after ↔
-      WriteAt g args before after := Iff.rfl
-
-/-- The transport `writtenResult` states that the result is the third
-actual. -/
-theorem writtenResult_iff (n : Nat) :
-    Parity.Holds arena (callState r args v m s s') (.transport (writtenResult n)) ↔ v = args.getD 2 .undef := by
-  have himg : ∀ i w, (writtenResult n).image i = some w →
-      w = Witness.path ⟨if i = 3 then 0 else i + 1, []⟩ ∧ i < max (n + 1) 4 := by
-    intro i w hi
-    rw [Substitution.image_of_unboxed rfl] at hi
-    simp only [writtenResult, List.getElem?_toArray, List.getElem?_map] at hi
-    by_cases hlt : i < max (n + 1) 4
-    · rw [List.getElem?_range hlt] at hi
-      simp only [Option.map_some, Option.some.injEq] at hi
-      exact ⟨hi.symm, hlt⟩
-    · rw [List.getElem?_eq_none (by simpa using Nat.le_of_not_lt hlt)] at hi
-      cases hi
-  have hholds : (writtenResult n).Holds (callEnv r args) (ensuresEnv v r args) s'.h ↔
-      v = args.getD 2 .undef := by
-    constructor
-    · intro hθ
-      have h3 : (writtenResult n).image 3 = some (.path ⟨0, []⟩) := by
-        rw [Substitution.image_of_unboxed rfl]
-        simp only [writtenResult, List.getElem?_toArray, List.getElem?_map]
-        rw [List.getElem?_range (by omega)]
-        rfl
-      have := hθ 3 _ h3
-      simp [Witness.value, Path.read, HeapKnowledge.readPath, ensuresEnv, callEnv] at this
-      rw [List.getD_eq_getElem?_getD]; exact this
-    · intro hv i w hi
-      obtain ⟨rfl, -⟩ := himg i w hi
-      by_cases h3 : i = 3
-      · subst h3
-        simp [Witness.value, Path.read, HeapKnowledge.readPath, ensuresEnv, callEnv, hv]
-      · simp only [h3, if_false, Witness.value, Path.read, HeapKnowledge.readPath, ensuresEnv,
-          Nat.add_one_ne_zero, Nat.add_sub_cancel]
-  simp only [Parity.Holds, callState, Substitution.HoldsAt]
-  constructor
-  · exact fun h => hholds.mp h.1
-  · intro hv
-    have hθ := hholds.mpr hv
-    exact ⟨hθ, fun s'' _ => hθ.box rfl s''.h⟩
-
 /-- **An exact write's precondition facts are `ExactPre`.** -/
 theorem exactPre_iff (k : ElementKind) (h : Heap) :
     (∀ F ∈ k.preFacts, F.HoldsAt ⟨callEnv r args, h⟩ (callEnv r args) h) ↔ ExactPre k args := by
@@ -454,168 +190,11 @@ theorem exactPre_iff (k : ElementKind) (h : Heap) :
             subst ht; simp [hxv]
           · simp [Linear.Fact.Holds, Linear.Form.eval, termValuation, hxv]; omega
 
-/-- **A typed array's element write is its postconditions**, on admissible
-transitions: the frame of the view write (`Kinds.ViewWrite.frame_iff`) and,
-by its form, View-Write, the precondition's facts and the result. -/
-theorem elementWrite_iff (w : ElementWrite) :
-    (∀ F ∈ w.posts args.length, Parity.Holds arena (callState r args v m s s') F) ↔
-      w.Holds args s.h s'.h ∧ Kinds.ViewWriteOf w args s.W s.h s'.W s'.h ∧ (w ≠ .stores → v = args.getD 2 .undef) := by
-  have hview : Parity.Holds arena (callState r args v m s s') (.transition [(.cls .views, .grow)]) ↔
-      Kinds.ViewWrite s.W s.h s'.W s'.h := by
-    rw [Kinds.ViewWrite.frame_iff s.ok (callEnv r args)]
-    exact ⟨fun h => ⟨h.1, s'.ok, h.2⟩, fun h => ⟨h.1, h.2.2⟩⟩
-  have hwrite : ∀ f, Parity.Holds arena (callState r args v m s s') (.operation (.viewWrite 1 2 3 f)) ↔
-      ∀ g, writeFormats (args.getD 0 .undef) f g → WriteAt g args s.h s'.h := fun _ => Iff.rfl
-  cases w with
-  | stores =>
-    simp only [ElementWrite.posts, List.forall_mem_cons, List.not_mem_nil, false_implies, implies_true, and_true]
-    rw [hview]
-    constructor
-    · intro hw
-      refine ⟨⟨hw.changes s.ok _, ?_, ?_⟩, ⟨hw, ?_, ?_⟩, fun h => absurd rfl h⟩ <;> intros <;>
-        contradiction
-    · rintro ⟨-, ⟨hw, -⟩, -⟩
-      exact hw
-  | assign =>
-    simp only [ElementWrite.posts, List.forall_mem_cons, List.not_mem_nil, false_implies, implies_true, and_true]
-    rw [hview, hwrite, writtenResult_iff]
-    have hassign : (∀ g, writeFormats (args.getD 0 .undef) none g → WriteAt g args s.h s'.h) ↔
-        ViewAssign args s.h s'.h := Iff.rfl
-    rw [hassign]
-    constructor
-    · rintro ⟨hw, ha, hr⟩
-      refine ⟨⟨hw.changes s.ok _, ?_, fun _ => ha⟩, ⟨hw, ?_, fun _ => ha⟩, fun _ => hr⟩ <;> intros <;>
-        contradiction
-    · rintro ⟨-, ⟨hw, -, ha⟩, hr⟩
-      exact ⟨hw, ha rfl, hr (fun h => by cases h)⟩
-  | exact k =>
-    simp only [ElementWrite.posts, List.forall_mem_cons, List.forall_mem_append, List.forall_mem_map,
-      List.not_mem_nil, false_implies, implies_true, and_true]
-    rw [hview, hwrite, writtenResult_iff]
-    simp only [fact_before_iff]
-    rw [exactPre_iff]
-    have hexact : (∀ g, writeFormats (args.getD 0 .undef) (some k.format) g → WriteAt g args s.h s'.h) ↔
-        ExactWrite k args s.h s'.h :=
-      ⟨fun h => h _ rfl, fun h g hg => by cases hg; exact h⟩
-    rw [hexact]
-    constructor
-    · rintro ⟨hw, hx, hp, hr⟩
-      have hk : ∀ k', ElementWrite.exact k = .exact k' → ExactWrite k' args s.h s'.h ∧ ExactPre k' args :=
-        fun k' h => by cases h; exact ⟨hx, hp⟩
-      refine ⟨⟨hw.changes s.ok _, hk, ?_⟩, ⟨hw, hk, ?_⟩, fun _ => hr⟩ <;> intros <;> contradiction
-    · rintro ⟨-, ⟨hw, hk, -⟩, hr⟩
-      exact ⟨hw, (hk k rfl).1, (hk k rfl).2, hr (fun h => by cases h)⟩
-
-/-- **The normal exit of a signature's summary is its normal-return
-postcondition** (`Effect.postW`), on admissible transitions, at actuals that
-are values where the signature states an append of them. -/
-theorem Effect.summary_normal_iff (e : Effect) (hadm : Admissible s s')
-    (hvals : e.receiverGrows = true → ∀ a ∈ args, isVal a = true) :
-    (e.summary args.length).normal.Holds arena (callState r args v m s s') ↔
-      e.postW r args s.W s.h s'.n s'.W s'.h v := by
-  simp only [Effect.summary, ExitSpec.Holds, Effect.normalPosts, List.forall_mem_append]
-  have hfr : EffectAction e.frame (callState r args v m s s').beforeEnv (callState r args v m s s').before
-      (callState r args v m s s').after ↔ e.within r args s.h s'.h := frame_iff hadm
-  rw [hfr]
-  simp only [Effect.postW, Effect.post, Effect.viewPost]
-  -- each field and its postconditions
-  have hfresh : (∀ F ∈ (if e.fresh then [FormulaF.operation (.freshStore 0)] else []),
-      Parity.Holds arena (callState r args v m s s') F) ↔ (e.fresh = true → FreshAt s.h.length v) := by
-    rw [forall_ite]; simp only [List.mem_singleton, forall_eq]; rfl
-  have hobj : (∀ F ∈ (if e.freshObject then [FormulaF.operation (.freshObject 0)] else []),
-      Parity.Holds arena (callState r args v m s s') F) ↔ (e.freshObject = true → FreshObjectAt s.h.length v) := by
-    rw [forall_ite]; simp only [List.mem_singleton, forall_eq]; rfl
-  have hel : (∀ F ∈ (match e.elements with
-      | some R => [FormulaF.operation (.elementsWhen 0 .tru 1 R)]
-      | none => []), Parity.Holds arena (callState r args v m s s') F) ↔
-      (∀ R, e.elements = some R → v = .tru → ElemsAt R r s'.h) := by
-    cases e.elements with
-    | none => simp
-    | some R =>
-      simp only [List.mem_singleton, forall_eq, Option.some.injEq, forall_eq']
-      rfl
-  have hens : (∀ F ∈ e.ensures.map (fun F => FormulaF.operation (.fact .after 0 F)),
-      Parity.Holds arena (callState r args v m s s') F) ↔
-      (∀ F ∈ e.ensures, F.HoldsAt ⟨callEnv r args, s.h⟩ (ensuresEnv v r args) s'.h) := by
-    simp only [List.mem_map, forall_exists_index, and_imp, forall_apply_eq_imp_iff₂]
-    rfl
-  have hgrow : (∀ F ∈ (if e.receiverGrows then [FormulaF.transition [(.field 0 arrayStoreKey, .any)],
-      .operation (.storeExtends 0), .operation (.push 0 1 (actualWitnesses args.length))] else []),
-      Parity.Holds arena (callState r args v m s s') F) ↔
-      (e.receiverGrows = true → ReceiverGrows r s.h s'.h ∧ ReceiverAppends r args s.h s'.h) := by
-    rw [forall_ite]
-    refine imp_congr_right fun hg => ?_
-    simp only [List.mem_cons, List.not_mem_nil, or_false, forall_eq_or_imp, forall_eq]
-    rw [← receiverGrows_iff (arena := arena) (args := args) (v := v) (m := m) hadm,
-      ← receiverAppends_iff (arena := arena) (v := v) (m := m) (hvals hg)]
-    simp only [and_assoc]
-  have hwr : (∀ F ∈ (match e.elementWrite with
-      | some w => w.posts args.length
-      | none => []), Parity.Holds arena (callState r args v m s s') F) ↔
-      ((∀ w, e.elementWrite = some w → w.Holds args s.h s'.h) ∧
-        ∀ w, e.elementWrite = some w → Kinds.ViewWriteOf w args s.W s.h s'.W s'.h ∧
-          (w ≠ .stores → v = args.getD 2 .undef)) := by
-    cases e.elementWrite with
-    | none => simp
-    | some w =>
-      simp only [Option.some.injEq, forall_eq']
-      rw [elementWrite_iff w]
-  rw [hfresh, hobj, hel, hens, hgrow, hwr]
-  constructor
-  · rintro ⟨hw, ⟨⟨⟨⟨⟨hf, ho⟩, hl⟩, he⟩, hg⟩, hx, hv⟩⟩
-    exact ⟨⟨hw, hf, ho, hl, he, hg, hx⟩, hv⟩
-  · rintro ⟨⟨hw, hf, ho, hl, he, hg, hx⟩, hv⟩
-    exact ⟨hw, ⟨⟨⟨⟨⟨hf, ho⟩, hl⟩, he⟩, hg⟩, hx, hv⟩⟩
-
-/-- **The exceptional exit of a signature's summary is its throw
-postcondition** (`Effect.excPost`), on admissible transitions: the frame
-where it states `onThrow`, and `⊤` otherwise, which every admissible
-transition meets. -/
-theorem Effect.summary_exceptional_iff (e : Effect) (n : Nat) (hadm : Admissible s s') :
-    (e.summary n).exceptional.Holds arena (callState r args v m s s') ↔ e.excPost r args s.h s'.h := by
-  simp only [Effect.summary, Effect.excPost]
-  cases ho : e.onThrow
-  · simp only [Bool.false_eq_true, if_false, ExitSpec.Holds, List.not_mem_nil, false_imp_iff,
-      implies_true, and_true, iff_true]
-    exact EffectAction.top hadm
-  · simp only [if_true, ExitSpec.Holds, List.not_mem_nil, false_imp_iff, implies_true, and_true,
-      forall_const]
-    exact frame_iff hadm
-
-/-- **Without an element write the normal exit is the heap postcondition.** -/
-theorem Effect.summary_normal_iff_post (e : Effect) (hx : e.elementWrite = none) (hadm : Admissible s s')
-    (hvals : ∀ a ∈ args, isVal a = true) :
-    (e.summary args.length).normal.Holds arena (callState r args v m s s') ↔ e.post r args s.h s'.h v :=
-  (e.summary_normal_iff hadm fun _ => hvals).trans ⟨fun h => h.1, Effect.postW_of_post hx⟩
-
-/-! ## The operations on signatures -/
-
-/-- **Binding substitutes the saved actuals** (`Effect.drop`): the target's
-normal exit at the call it forwards to, with receiver `rv` and actuals
-`argsv`, gives the bound signature's at its own call. -/
-theorem Effect.summary_drop_normal {e : Effect} (k : Nat) {rv : Tm} {argsv : List Tm}
-    (hadm : Admissible s s') (hvalsv : ∀ a ∈ argsv, isVal a = true) (hvals : ∀ a ∈ args, isVal a = true)
-    (h : (e.summary argsv.length).normal.Holds arena (callState rv argsv v m s s')) :
-    ((e.drop k).summary args.length).normal.Holds arena (callState r args v m s s') := by
-  obtain ⟨hp, hw⟩ := (Effect.summary_normal_iff _ hadm fun _ => hvalsv).mp h
-  refine (Effect.summary_normal_iff _ hadm fun _ => hvals).mpr ⟨Effect.post_drop k hp, fun w hw' => ?_⟩
-  simp only [Effect.drop, Option.map_eq_some_iff] at hw'
-  obtain ⟨w0, h0, rfl⟩ := hw'
-  refine ⟨⟨(hw w0 h0).1.1, fun _ h => ?_, fun h => ?_⟩, fun h => absurd rfl h⟩ <;> cases h
-
-/-- **Binding keeps the exceptional exit.** -/
-theorem Effect.summary_drop_exceptional {e : Effect} (k n n' : Nat) {rv : Tm} {argsv : List Tm} {v' : Tm}
-    (hadm : Admissible s s') (h : (e.summary n).exceptional.Holds arena (callState rv argsv v' m s s')) :
-    ((e.drop k).summary n').exceptional.Holds arena (callState r args v m s s') :=
-  (Effect.summary_exceptional_iff _ n' hadm).mpr
-    (Effect.excPost_drop k ((Effect.summary_exceptional_iff _ n hadm).mp h))
-
 end Equivalence
 
-/-! ## Readings of a signature's schema
+/-! ## Readings of a schema
 
-Readers of a schema that the front's proposals use, each equal to the
-reading of the signature's elaborated fields (proved). -/
+Readers of an exit schema that the front's proposals and the pass use. -/
 
 /-- **The fields a frame's path regions read through one field**: for each
 entry whose region is reached from a call position through the one field
@@ -625,44 +204,9 @@ def _root_.Verification.Footprints.Footprint.regionFields (Φ : Footprint) : Lis
     | .path _ [f] _ => some f
     | _ => none
 
-/-- **A signature's frame reads through the fields its store regions do**
-(proved): the frame's class entries and receiver entries are no path
-regions, and each argument store region is the path region of its path. -/
-theorem Effect.regionFields_schema (e : Effect) :
-    e.schema.normal.frame.regionFields = e.regions.filterMap fun r => match r.path with
-      | [f] => some f
-      | _ => none := by
-  have hr : e.receiverEntries.regionFields = [] := by
-    unfold Effect.receiverEntries
-    split
-    · rfl
-    · split <;> rfl
-  have hc : e.closed.fp.regionFields = [] := rfl
-  simp only [Effect.schema, Effect.frame, Footprint.regionFields, List.filterMap_append] at hr hc ⊢
-  rw [hr, hc, List.nil_append, List.nil_append, List.filterMap_map]
-  congr 1
-  funext r
-  rcases r with ⟨pos, _ | ⟨f, _ | ⟨g, t⟩⟩⟩ <;> rfl
-
 /-- **Whether an exit states a fresh result**: its postcondition that the
 result's store is allocated during the call (`freshStore 0`). -/
 def ExitSchema.freshResult (q : ExitSchema) : Bool := decide (FormulaF.operation (.freshStore 0) ∈ q.ensures)
-
-/-- **A signature's normal exit states a fresh result exactly where it
-states one** (proved; the schema's normal postconditions, `Effect.schema`). -/
-theorem Effect.freshResult_schema (e : Effect) : e.schema.normal.freshResult = e.fresh := by
-  have hw : ∀ w : ElementWrite, FormulaF.operation (.freshStore 0) ∉ w.schemaPosts := by
-    intro w; cases w <;> simp [ElementWrite.schemaPosts]
-  have he : FormulaF.operation (.freshStore 0) ∉ (match e.elements with
-      | some R => [(FormulaF.operation (.elementsWhen 0 .tru 1 R) : FormulaSchema)]
-      | none => []) := by
-    split <;> simp
-  have hg : FormulaF.operation (.freshStore 0) ∉ (match e.elementWrite with
-      | some w => w.schemaPosts
-      | none => ([] : List FormulaSchema)) := by
-    split <;> simp [hw]
-  simp only [ExitSchema.freshResult, Effect.schema, Effect.normalSchema, List.mem_append]
-  cases e.fresh <;> cases e.freshObject <;> cases e.receiverGrows <;> simp <;> exact ⟨he, hg⟩
 
 /-- **Whether an exit states a fresh result object**: its postcondition that
 every own location of the result was allocated during the call
@@ -710,74 +254,9 @@ theorem ExitSchema.mem_facts {q : ExitSchema} {F : IndexFact} :
     · cases hF
   · exact fun h => ⟨_, h, rfl⟩
 
-/-- **A signature's normal exit states a fresh result object exactly where
-it states one** (proved). -/
-theorem Effect.freshObjectResult_schema (e : Effect) : e.schema.normal.freshObjectResult = e.freshObject := by
-  have hw : ∀ w : ElementWrite, FormulaF.operation (.freshObject 0) ∉ w.schemaPosts := by
-    intro w; cases w <;> simp [ElementWrite.schemaPosts]
-  have he : FormulaF.operation (.freshObject 0) ∉ (match e.elements with
-      | some R => [(FormulaF.operation (.elementsWhen 0 .tru 1 R) : FormulaSchema)]
-      | none => []) := by
-    split <;> simp
-  have hg : FormulaF.operation (.freshObject 0) ∉ (match e.elementWrite with
-      | some w => w.schemaPosts
-      | none => ([] : List FormulaSchema)) := by
-    split <;> simp [hw]
-  simp only [ExitSchema.freshObjectResult, Effect.schema, Effect.normalSchema, List.mem_append]
-  cases e.fresh <;> cases e.freshObject <;> cases e.receiverGrows <;> simp <;> exact ⟨he, hg⟩
-
-private theorem write_select {α : Type} (f : FormulaSchema → Option α) (hf : ∀ F, (∃ k G, F = .operation (.fact .before k G)) ∨
-      (∃ Φ, F = .transition Φ) ∨ (∃ x i v g, F = .operation (.viewWrite x i v g)) ∨ (∃ θ, F = .transport θ) → f F = none)
-    (w : ElementWrite) : w.schemaPosts.filterMap f = [] := by
-  have hpre : ∀ (l : List IndexFact), (l.map fun G => (FormulaF.operation (.fact .before 0 G) : FormulaSchema)).filterMap f = [] := by
-    intro l; induction l with
-    | nil => rfl
-    | cons G l ih => rw [List.map_cons, List.filterMap_cons, hf _ (.inl ⟨0, G, rfl⟩), ih]
-  cases w with
-  | stores => simp [ElementWrite.schemaPosts, hf _ (.inr (.inl ⟨_, rfl⟩))]
-  | assign =>
-    simp [ElementWrite.schemaPosts, hf _ (.inr (.inl ⟨_, rfl⟩)), hf _ (.inr (.inr (.inl ⟨_, _, _, _, rfl⟩))),
-      hf _ (.inr (.inr (.inr ⟨_, rfl⟩)))]
-  | exact k =>
-    simp only [ElementWrite.schemaPosts, List.filterMap_cons, List.filterMap_append, hpre,
-      hf _ (.inr (.inl ⟨_, rfl⟩)), hf _ (.inr (.inr (.inl ⟨_, _, _, _, rfl⟩))),
-      hf _ (.inr (.inr (.inr ⟨_, rfl⟩)))]
-    rfl
-
-/-- **A signature's normal exit states the elements predicate it states**
-(proved). -/
-theorem Effect.elementsWhenTrue_schema (e : Effect) : e.schema.normal.elementsWhenTrue = e.elements.toList := by
-  have hw := write_select elementsWhenTrueOf (by rintro F (⟨_, _, rfl⟩ | ⟨_, rfl⟩ | ⟨_, _, _, _, rfl⟩ | ⟨_, rfl⟩) <;> rfl)
-  have hens : (e.ensures.map fun F => (FormulaF.operation (.fact .after 0 F) : FormulaSchema)).filterMap
-      elementsWhenTrueOf = [] := by
-    induction e.ensures with
-    | nil => rfl
-    | cons _ _ ih => rw [List.map_cons, List.filterMap_cons]; exact ih
-  simp only [ExitSchema.elementsWhenTrue, Effect.schema, Effect.normalSchema, List.filterMap_append, hens]
-  cases e.elements <;> cases hwr : e.elementWrite <;> cases e.fresh <;> cases e.freshObject <;>
-    cases e.receiverGrows <;> simp [hw, elementsWhenTrueOf, List.filterMap_cons]
-
-/-- **A signature's normal exit states the index facts it ensures**
-(proved). -/
-theorem Effect.facts_schema (e : Effect) : e.schema.normal.facts = e.ensures := by
-  have hw := write_select factAfterOf (by rintro F (⟨_, _, rfl⟩ | ⟨_, rfl⟩ | ⟨_, _, _, _, rfl⟩ | ⟨_, rfl⟩) <;> rfl)
-  have hens : (e.ensures.map fun F => (FormulaF.operation (.fact .after 0 F) : FormulaSchema)).filterMap
-      factAfterOf = e.ensures := by
-    induction e.ensures with
-    | nil => rfl
-    | cons _ _ ih => rw [List.map_cons, List.filterMap_cons]; exact congrArg _ ih
-  simp only [ExitSchema.facts, Effect.schema, Effect.normalSchema, List.filterMap_append, hens]
-  cases e.elements <;> cases hwr : e.elementWrite <;> cases e.fresh <;> cases e.freshObject <;>
-    cases e.receiverGrows <;> simp [hw, factAfterOf, List.filterMap_cons]
-
 /-! ## Builders of effects by their exits
 
-Each builder states an effect by what it states of its two exits, and its
-schema is proved equal to those exits (today's elaboration of the fields it
-sets). Code building an effect goes through them, so that a representation
-holding the exits changes the builders and no caller. `ofClosed` and
-`ofStated` build the families today's encoding states (a closed frame, a
-declaration's statement); they are not general constructors of schemas. -/
+Each builder states an effect by what it states of its two exits. -/
 
 /-- **The exits of a closed frame** `c`: the normal exit within `c` with no
 postcondition, the exceptional exit within `c` where `bounded`, `⊤`
@@ -787,16 +266,12 @@ def Exits.ofClosed (c : Footprints.Closed) (bounded : Bool) : Exits ExitSchema :
 
 /-- **An effect of a closed frame** (`Exits.ofClosed`), with no promise and
 no precondition. -/
-def Effect.ofClosed (c : Footprints.Closed) (bounded : Bool) : Effect := { Effect.ofFootprint c with onThrow := bounded }
+def Effect.ofClosed (c : Footprints.Closed) (bounded : Bool) : Effect := ⟨Exits.ofClosed c bounded, none, none, []⟩
 
-theorem Effect.ofClosed_frame (c : Footprints.Closed) (bounded : Bool) : (Effect.ofClosed c bounded).frame = c.fp := by
-  simp [Effect.ofClosed, Effect.frame, Effect.ofFootprint, Effect.receiverEntries]
+theorem Effect.ofClosed_frame (c : Footprints.Closed) (bounded : Bool) : (Effect.ofClosed c bounded).frame = c.fp := rfl
 
-/-- **An effect of a closed frame states its exits** (proved). -/
 theorem Effect.ofClosed_schema (c : Footprints.Closed) (bounded : Bool) :
-    (Effect.ofClosed c bounded).schema = Exits.ofClosed c bounded := by
-  rw [Effect.schema, Effect.ofClosed_frame]
-  cases bounded <;> simp [Effect.normalSchema, Effect.ofClosed, Effect.ofFootprint, Exits.ofClosed]
+    (Effect.ofClosed c bounded).schema = Exits.ofClosed c bounded := rfl
 
 /-- **The exits a declaration states**: on a normal return the closed frame
 `c` and the store regions `regions` at `any`, a fresh result where `fresh`
@@ -813,16 +288,7 @@ def Exits.ofStated (c : Footprints.Closed) (bounded fresh : Bool) (ensures : Lis
 and its precondition `pre`. -/
 def Effect.ofStated (c : Footprints.Closed) (promise : Option TypePromise) (bounded fresh : Bool)
     (pre ensures : List HeapKnowledge.IndexFact) (regions : List Footprints.ArgumentStoreRegion) : Effect :=
-  ⟨c, promise, fresh, false, bounded, false, false, none, none, pre, ensures, false, none, regions⟩
-
-/-- **An effect a declaration states states its exits** (proved). -/
-theorem Effect.ofStated_schema (c : Footprints.Closed) (promise : Option TypePromise) (bounded fresh : Bool)
-    (pre ensures : List HeapKnowledge.IndexFact) (regions : List Footprints.ArgumentStoreRegion) :
-    (Effect.ofStated c promise bounded fresh pre ensures regions).schema = Exits.ofStated c bounded fresh ensures regions := by
-  have hf : (Effect.ofStated c promise bounded fresh pre ensures regions).frame = c.fp ++ regions.map regionEntry := by
-    simp [Effect.ofStated, Effect.frame, Effect.receiverEntries]
-  rw [Effect.schema, hf]
-  cases bounded <;> cases fresh <;> simp [Effect.normalSchema, Effect.ofStated, Exits.ofStated]
+  ⟨Exits.ofStated c bounded fresh ensures regions, promise, none, pre⟩
 
 /-- **A frame with its class entries those of `c`**: `c`'s class entries,
 and the frame's entries over other regions. -/
@@ -838,45 +304,10 @@ def Exits.withClasses (c : Footprints.Closed) (x : Exits ExitSchema) : Exits Exi
 
 /-- **An effect with its class entries those of `c` and its throws bounded**
 (`Exits.withClasses`), its promise and preconditions `e`'s. -/
-def Effect.withClasses (c : Footprints.Closed) (e : Effect) : Effect := { e with closed := c, onThrow := true }
-
-/-- **An effect with its class entries replaced states those exits**
-(proved). -/
-theorem Effect.withClasses_schema (c : Footprints.Closed) (e : Effect) :
-    (e.withClasses c).schema = Exits.withClasses c e.schema := by
-  have hrecv : ∀ x ∈ e.receiverEntries, x.1.isClass = false := by
-    intro x hx
-    simp only [Effect.receiverEntries] at hx
-    split at hx
-    · simp at hx; subst hx; rfl
-    · split at hx
-      · simp at hx; subst hx; rfl
-      · cases hx
-  have hfilter : e.frame.nonClasses = e.receiverEntries ++ e.regions.map regionEntry := by
-    simp only [Footprints.Footprint.nonClasses, Effect.frame, List.filter_append]
-    rw [List.filter_eq_nil_iff.mpr (by
-        intro x hx
-        simp only [Footprints.Closed.fp, List.mem_cons, List.not_mem_nil, or_false] at hx
-        rcases hx with rfl | rfl | rfl <;> simp [Footprints.Region.isClass]),
-      List.filter_eq_self.mpr (fun x hx => by simp [hrecv x hx]),
-      List.filter_eq_self.mpr (fun x hx => by
-        obtain ⟨r, -, rfl⟩ := List.mem_map.mp hx
-        simp [regionEntry, Footprints.ArgumentStoreRegion.entry, Footprints.Region.isClass])]
-    simp
-  have hframe : (e.withClasses c).frame = replaceClasses c e.frame := by
-    rw [replaceClasses, hfilter]
-    simp only [Effect.frame, List.append_assoc]
-    rfl
-  simp only [Effect.schema, hframe, Exits.withClasses]
-  rfl
+def Effect.withClasses (c : Footprints.Closed) (e : Effect) : Effect := { e with exits := Exits.withClasses c e.exits }
 
 /-- **An effect whose throws are unbounded**: `e`'s normal exit, `⊤` on a
 throw. -/
-def Effect.throwUnbounded (e : Effect) : Effect := { e with onThrow := false }
-
-/-- **An effect whose throws are unbounded states `e`'s normal exit and `⊤`
-on a throw** (proved). -/
-theorem Effect.throwUnbounded_schema (e : Effect) :
-    e.throwUnbounded.schema = ⟨e.schema.normal, ⟨topEffect, []⟩⟩ := rfl
+def Effect.throwUnbounded (e : Effect) : Effect := { e with exits := ⟨e.exits.normal, ⟨topEffect, []⟩⟩ }
 
 end Verification.CallEffects

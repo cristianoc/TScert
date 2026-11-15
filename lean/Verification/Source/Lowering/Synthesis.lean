@@ -5125,8 +5125,9 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
       pure A
   -- The body's summary (`ClassSummary`): closed under another traversal of
   -- its loops (`ClassSummary.close`), an async body's throw a normal return
-  -- of its call (`ClassSummary.settle`). Its proposal in today's format is
-  -- its projection (`ClassSummary.project`), an upper bound at each exit
+  -- of its call (`ClassSummary.settle`). Its proposal is the effect a
+  -- declaration states (`Effect.ofStated`) at its projection's closed frame
+  -- and throw bound (`ClassSummary.format`), an upper bound at each exit
   -- (`ClassSummary.project_covers`): the normal exit's bound, its throw
   -- bounded where the exceptional exit's bound is within it and, at a
   -- callback, the parameter's exceptional exit is bounded.
@@ -5136,11 +5137,12 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   -- result returns a fresh store (the producer's `fresh_result`,
   -- source.ml:1230): a postcondition established apart from the summary.
   let freshResult := (match body with | .call .. | .invoke .. => true | _ => false) && (← get).lastFresh
-  let proposal := fun (bounded : Bool) => ({ S.project bounded with fresh := freshResult } : CallEffects.Effect)
+  let proposal := fun (bounded : Bool) =>
+    CallEffects.Effect.ofStated (S.format bounded).1 none (S.format bounded).2 freshResult [] [] []
   -- A body whose proposal keeps both values and stores: the footprint its
   -- calls are checked at.
   let kept := proposal true
-  let pure_ := kept.closed == .empty
+  let pure_ := kept.changeBound == .empty
   let changed := kept
   modify fun w => { w with breaks := saved.breaks, returns := saved.returns, held := saved.held, expected := saved.expected, literalSlots := saved.literalSlots, heldCells := saved.heldCells, evolving := saved.evolving, holders := saved.holders }
   modify fun w => { w with summary := saved.summary, locals := saved.locals, inLiteral := saved.inLiteral }

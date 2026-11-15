@@ -170,7 +170,7 @@ end Path
 inductive Witness where
   | path (p : Path)
   | literal (v : Val)
-  deriving DecidableEq
+  deriving DecidableEq, Repr
 
 /-- The value a witness denotes, where it denotes one. -/
 def Witness.value (η : Env) (h : Heap) : Witness → Option Val
@@ -314,7 +314,7 @@ structure Substitution where
   state an admissible transition reaches (`HoldsAt`). Under a box they stay
   in the domain. -/
   stable : List Nat := []
-  deriving DecidableEq
+  deriving DecidableEq, Repr
 
 namespace Substitution
 
@@ -449,7 +449,7 @@ inductive OperationPostF (Seq : Type) where
   slot `x` (`CallEffects.WriteAt`), at the format `f`, or at the typed
   array's own format where `f` is none. -/
   | viewWrite (x i v : Nat) (format : Option ViewFormat)
-  deriving DecidableEq
+  deriving DecidableEq, Repr
 
 /-- The operational posts of the interpreted formulas: an append's arguments a
 list of witnesses. -/
@@ -501,7 +501,7 @@ inductive FormulaF (Seq Transport : Type) where
   | and (left right : FormulaF Seq Transport)
   | truth
   | falsity
-  deriving DecidableEq
+  deriving DecidableEq, Repr
 
 /-- **The interpreted two-state formulas** (I4, `Formula`): an append's
 arguments a list of witnesses, a transport a substitution. -/

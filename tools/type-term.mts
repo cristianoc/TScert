@@ -1188,7 +1188,7 @@ export const FRESH_PLACE = "`Fresh` states a written signature's fresh result, a
 /** The call effect a statement gives its signature: its footprint, on-throw
  * flag and fresh result, no promise, no receiver-store exception. A
  * statement with store regions gives its frame's closed approximation,
- * letting every location change (`CallEffects.Effect.footprint`): the
+ * letting every location change (`StatedEffect.footprint`): the
  * regions are read only from a unit's own statement. */
 export const statedEffect = (stated: StatedEffect): Modifies<{ values: "any"; stores: "grow" }, CallEffect> =>
   (footprintEffect(stated.regions.length ? { value: "any", store: "any" } : stated.footprint,

@@ -127,21 +127,27 @@ def framesAtLocation (e : Effect) : Bool :=
 /-- **A signature whose run establishes what it exports, its frames reading
 the heap at each location alone, carries its exits across an allocation
 before the call** (proved, `Exits.allocStable_of`): each postcondition it
-exports with no facts is a fresh result. -/
+exports with no facts is a fresh result, and its exceptional exit exports
+none. -/
 theorem allocStable_of_established {e : Effect} (hx : exportsEstablished e [] = true)
     (hf : framesAtLocation e = true) : e.schema.AllocStable := by
   simp only [exportsEstablished, framesAtLocation, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at hx hf
-  refine Exits.allocStable_of (fun c => ?_) (fun c F hF => ?_)
+  have hm : ∀ c, ∀ F ∈ (e.schema.get c).ensures,
+      F ∈ codeEstablished e.schema.normal.freshResult [] ∨ F ∈ codeEstablished false [] := by
+    intro c F hF
+    cases c
+    · exact .inl (hx.1 F hF)
+    · exact .inr (hx.2 F hF)
+  refine Exits.allocStable_of (fun c => ?_) (fun c F hF => ?_) ?_
   · cases c
     · exact List.all_eq_true.mpr hf.1
     · exact List.all_eq_true.mpr hf.2
-  · have hm : F ∈ codeEstablished e.schema.normal.freshResult [] ∨ F ∈ codeEstablished false [] := by
-      cases c
-      · exact .inl (hx.1 F hF)
-      · exact .inr (hx.2 F hF)
-    rcases hm with hm | hm <;>
+  · rcases hm c F hF with hm | hm <;>
       simp only [codeEstablished, List.map_nil, List.append_nil] at hm <;>
       split at hm <;> simp_all
+  · refine List.eq_nil_iff_forall_not_mem.mpr fun F hF => ?_
+    have := hx.2 F hF
+    simp [codeEstablished] at this
 
 /-- **The closed bounds a code's run is checked within**: none where both
 exits are `⊤` and the result is not fresh, or where a pure body states no

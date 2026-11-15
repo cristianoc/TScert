@@ -696,43 +696,43 @@ its conclusion `Safe` with
 
 ```math
 \exists t.\;\mathrm{Invoke}(f,r,\vec v,t)\land
-\mathrm{SafePostExc}(R,Q_\epsilon(r,h),X_\epsilon(r,h),j,U,h,t),
+\mathrm{SafePostExc}(R,Q_\epsilon(r,\vec v,h),X_\epsilon(r,\vec v,h),j,U,h,t),
 ```
 
 where $`\mathrm{SafePostExc}`$ is `SafePost` with a postcondition
-$`X_\epsilon(r,h)`$ also on the heap a throw is raised in
+$`X_\epsilon(r,\vec v,h)`$ also on the heap a throw is raised in
 ([throws](#computations-and-recursive-types)).
 
 All quantifiers and premises are unchanged: the guarantee holds at every future
 world and compatible entry heap, for every receiver and actual list admitted
 by that signature. Write the resulting family
-$`\mathcal F_\epsilon(R_c,\mathcal A,R)`$. An effect $`\epsilon = (\Phi, \pi, \varphi, \sigma, \theta)`$ is
-a [closed footprint](FOOTPRINTS.md#changes-and-footprints) $`\Phi`$, an
-optional promise $`\pi`$, and three Booleans: $`\varphi`$, a fresh result,
-$`\sigma`$, the receiver's store excepted, and $`\theta`$, the footprint
-bounding a throw as well (`Effect`). Its postcondition, for a call
-with receiver $`r`$, is the footprint's, on every old location but $`r`$'s
-array store where $`\sigma`$, and the result's store allocated by the call
-where $`\varphi`$ (`Effect.post`):
+$`\mathcal F_\epsilon(R_c,\mathcal A,R)`$. An effect $`\epsilon`$ is
+a specification per exit, the note's $`c:\Phi\mid\Phi^{e}`$: for the normal
+and the exceptional exit a frame and a list of two-state postconditions
+(`Effect.schema`, `ExitSchema`), an optional promise $`\pi`$ and
+preconditions (`Effect`). Its postcondition, for a call with receiver
+$`r`$ and actuals $`\vec v`$ from the heap $`h`$, is the normal exit's
+specification instantiated at the call (`Exits.exitPost`): the transition
+is an action of the frame $`\Phi`$ read at the call's positions, and each
+postcondition holds of the entry, the exit and the result,
 
 ```math
-Q_{\epsilon}(r,h)(h',v)=\mathsf{Post}_\Phi^{\,\neg\sigma\lor l\ne\mathsf{store}(r)}(h,h')\land
-(\varphi\Rightarrow \exists s.\ \mathsf{store}(v)=s\land |h|\le s),
+Q_{\epsilon}(r,\vec v,h)(h',v)=\mathrm{tr}_\Phi(r,\vec v)(h,h')\land
+\textstyle\bigwedge_{F\in\mathrm{ens}(\Phi)}F(r,\vec v,v)(h,h').
 ```
 
-where $`\mathsf{Post}_\Phi^{P}`$ is the footprint's postcondition on the old
-locations $`l`$ satisfying $`P`$ (`Closed.HoldsOn`) and $`\mathsf{store}(v)`$
-the location of $`v`$'s array store (`storeOf`). On a throw, the footprint
-holds where $`\theta`$ is set (`Effect.excPost`):
+On a throw, the exceptional exit's holds of the thrown value
+(`Exits.exitPostW`, at `.exceptional`):
 
 ```math
-X_{\epsilon}(r,h)(h')=\theta\Rightarrow\mathsf{Post}_\Phi^{\,\neg\sigma\lor l\ne\mathsf{store}(r)}(h,h').
+X_{\epsilon}(r,\vec v,h)(h',v)=\mathrm{tr}_{\Phi^{e}}(r,\vec v)(h,h')\land
+\textstyle\bigwedge_{F\in\mathrm{ens}(\Phi^{e})}F(r,\vec v,v)(h,h').
 ```
 
-Two footprints are its extremes: the empty one, $`Q_{(\emptyset,\pi)}(h)(h',v)=(h\preceq h')`$,
+Two frames are the extremes: the empty one, $`\mathrm{tr}_\emptyset(h,h')=(h\preceq h')`$,
 where $`h\preceq h'`$ means that $`h'`$ extends the heap list $`h`$ without changing
 any existing entry (`Closed.holds_empty`), and the one letting every location
-change, $`Q_{(\top,\pi)}(h)(h',v)=(|h|\le|h'|)`$, which every run meets
+change, $`\mathrm{tr}_\top(h,h')=(|h|\le|h'|)`$, which every run meets
 (`Closed.holds_top`, `Closed.top_safe`).
 
 A promise is about one actual, the $`p`$-th, written $`v_p`$ (`undefined`
@@ -745,21 +745,20 @@ R^{\mathsf{asserts}\,p}(v) = (v=\mathsf{undefined}\land v_p\in R).
 ```
 
 Membership of $`v_p`$ is taken at the world and heap of the return. One
-signature covers another when its footprint is within the other's, their
-promises are the same, it states a fresh result where the other does, and it
-excepts the receiver's store only where the other does or lets everything
-change, and bounds a throw where the other does (`Effect.covers`); a
-conjunction of signatures with the same promise and preconditions is the
-conjunction of their schemas on each exit (`Exits.meet`). A bound function
-forwards to its target with a saved receiver: its signature keeps the fresh
-result and lets everything change where the target's excepts the receiver's
-store (`Effect.drop`). The promises state a type
+signature covers another when its specification entails the other's on both
+exits, their promises are the same and its precondition is weaker
+(`Effect.covers`); a conjunction of signatures with the same promise and
+preconditions is the conjunction of their schemas on each exit
+(`Exits.meet`). A bound function forwards to its target with a saved
+receiver: its exits are the target's weakened at the bound call, each
+position substituted, a frame naming a saved position replaced by its closed
+bound and a postcondition naming one forgotten (`Effect.drop`). The promises state a type
 guard's and an assertion function's promise
 ([user-defined guards](SOURCE-ELABORATION.md#user-defined-guards)). Fresh allocation is allowed. The effect
-bounds the heap at a normal return, and at a throw where $`\theta`$ is set;
-it does not bound intermediate writes or claim termination. Where
-$`\theta`$ is unset, a caller catching an exception recovers no entry heap
-fact from the effect. A callback that temporarily mutates and restores
+bounds the heap at a normal return and at a throw, each by its exit's
+frame; it does not bound intermediate writes or claim termination. Where
+the exceptional frame is $`\top`$, a caller catching an exception recovers
+no entry heap fact from the effect. A callback that temporarily mutates and restores
 state must still satisfy ordinary safety for all intermediate execution.
 
 `PromiseWith` formalizes this equation; `PromiseWith.erase` forgets the

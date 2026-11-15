@@ -39,67 +39,34 @@ theorem ElemsAt.mono {R R' : ElemPred} {r : Tm} {h : Heap} (hle : R.le R' = true
   obtain ⟨s, ls, hs, hl, hall⟩ := he
   exact ⟨s, ls, hs, hl, fun l hm => let ⟨v, hv, hr⟩ := hall l hm; ⟨v, hv, ElemPred.le_sound hle hr⟩⟩
 
-/-- What a call signature guarantees beyond its contract: a closed footprint
-(`Footprints.Closed`) bounding the change from its entry heap to the heap a
-normal return leaves, and an optional promise. Without a promise the
-signature's result operand is the result's type. `fresh` states that a normal
-return's value has an array store allocated by the call; `receiverStore` that
-the footprint bounds every old location but the receiver's array store, which
-the call may change arbitrarily. `onThrow` states that the footprint also
-bounds the change to the heap a throw leaves; a promise and `fresh` concern a
-normal return alone. `receiverOwn` states that the footprint bounds every old
-location but the receiver's own ones, its store's among them, which the call
-may change arbitrarily; `freshObject` that a normal return's value is an
-object every own location of which the call allocated. `requires` states a
-precondition: the receiver's elements meet the predicate in the heap the call
-starts in (`ElemsAt`); `pre` a precondition on the call's values: each index
-fact holds of them in the heap the call starts in, read at the call's
-positions (`callEnv`: 0 the receiver, `i + 1` the `i`-th actual), such as
-`bound(1, 2, true)`, the second actual an index below the length of the first
-actual's store; `elements` a promise: a normal return of `true` leaves the
-receiver's elements meeting it; `receiverGrows` that a normal return changed
-no old location but the receiver's store, which it extended
-(`ReceiverGrows`), the actuals, where each is a value, appended in order
-(`ReceiverAppends`); `elementWrite` that a normal return changed the heap as
-a typed array's element write may (`ElementWrite.Holds`). -/
+/-- **A call signature's guarantee beyond its contract** (the note
+*Tolerant frames*, §6, the specification of a callable, $c:\Phi\mid\Phi^{e}$):
+its specification per completion (`exits`, an `ExitSchema` for the normal
+and one for the exceptional exit: a frame bounding the change from the
+call's entry heap to the heap the exit leaves, and two-state postconditions,
+read at the call's positions, `callEnv`, and the exit's, `ensuresEnv`), and
+an optional promise and two preconditions, which are no part of an exit.
+Without a promise the signature's result operand is the result's type.
+`requires` states a precondition on the receiver's elements: they meet the
+predicate in the heap the call starts in (`ElemsAt`); `pre` one on the
+call's values: each index fact holds of them in the heap the call starts
+in, read at the call's positions (`callEnv`: 0 the receiver, `i + 1` the
+`i`-th actual), such as `bound(1, 2, true)`, the second actual an index
+below the length of the first actual's store. -/
 structure Effect where
-  /-- The closed bound of the frame (`Effect.frame`). -/
-  closed : Footprints.Closed
+  exits : Exits ExitSchema
   promise : Option TypePromise
-  fresh : Bool
-  receiverStore : Bool
-  onThrow : Bool
-  receiverOwn : Bool
-  freshObject : Bool
   requires : Option ElemPred := none
-  elements : Option ElemPred := none
   pre : List HeapKnowledge.IndexFact := []
-  /-- Facts a normal return states, at the result (position `0`) and the
-  call's positions one higher (`ensuresEnv`), in the heap it leaves. -/
-  ensures : List HeapKnowledge.IndexFact := []
-  /-- A normal return changed no old location but the receiver's store, which
-  it extended (`ReceiverGrows`) by the actuals (`ReceiverAppends`). -/
-  receiverGrows : Bool := false
-  /-- A normal return changed the heap as a typed array's element write may
-  (`ElementWrite.Holds`). -/
-  elementWrite : Option ElementWrite := none
-  /-- The argument store regions of the frame (`Effect.frame`): the store
-  each selects at the call's entry, read from a call position through a
-  path of own data fields, may change arbitrarily (`"x.f[*]": "any"`). -/
-  regions : List Footprints.ArgumentStoreRegion := []
   deriving Repr, DecidableEq
 
-/-- The closed bound the frame implies, for conservative checks
-(`Effect.within_holds`): the closed bound, or `top` where the frame states
-store regions, whose selected locations may change whatever they hold. -/
-def Effect.footprint (e : Effect) : Footprints.Closed :=
-  if e.regions.isEmpty then e.closed else .top
+/-- **A signature's specification schema**: its exits. -/
+abbrev Effect.schema (e : Effect) : Exits ExitSchema := e.exits
 
-theorem Effect.footprint_of_regions {e : Effect} (h : e.regions = []) : e.footprint = e.closed := by
-  simp [Effect.footprint, h]
-
-/-- A signature with a footprint and no promise. -/
-def Effect.ofFootprint (c : Footprints.Closed) : Effect := ⟨c, none, false, false, false, false, false, none, none, [], [], false, none, []⟩
+/-- A signature with a closed frame on a normal return, `⊤` on a throw, and
+no promise. -/
+def Effect.ofFootprint (c : Footprints.Closed) : Effect :=
+  ⟨⟨⟨c.fp, []⟩, ⟨Parity.topEffect, []⟩⟩, none, none, []⟩
 
 /-- Trailing `undefined` actuals are the positions a call passes none at. -/
 theorem callEnv_pad (r : Tm) (args : List Tm) {pad : List Tm} (hpad : ∀ a ∈ pad, a = .undef) :
@@ -273,21 +240,6 @@ theorem MethodRestArrow.map_of_operands {f : α → α} {s : MethodRestArrow α}
 /-- Deliberate forgetting, for ordinary call elimination. -/
 def Arrow.plain (s : Arrow α) : α × List α × α := (s.receiver, s.arguments, s.result)
 
-/-- How a signature stating `receiverOwn` may change its receiver's own
-locations: a value arbitrarily, a store as its footprint's stores. -/
-def Effect.ownChange (e : Effect) : Footprints.Closed := ⟨.any, e.footprint.array, e.footprint.view⟩
-
-theorem Effect.le_ownChange (e : Effect) : e.footprint.le e.ownChange = true := by
-  unfold Effect.ownChange
-  generalize e.footprint = c
-  rcases c with ⟨v, s, w⟩
-  cases v <;> cases s <;> cases w <;> rfl
-
-/-- The receiver's own change on contents: a store's as the coarse bound's, a
-value's arbitrary. -/
-theorem Effect.ownChange_at (e : Effect) (v : Val) :
-    e.ownChange.at v = if Footprints.isArr v then e.footprint.at v else .any := by
-  cases v <;> rfl
 
 /-- A change from `before` to `after` that alters no old location but the
 receiver `r`'s store, which, where it changes, held a store and holds one
@@ -327,23 +279,15 @@ theorem ReceiverGrows.prefix_left {r : Tm} {before middle after : Heap} (hg : Re
   obtain ⟨t, rfl⟩ := hprefix
   rw [List.getElem?_append_left (List.getElem?_eq_some_iff.mp hv).1, hv]
 
-/-- The receiver's entries of a signature's frame: with `receiverOwn`, its
-own locations holding a value at `any` (one holding a store stays at the
-closed bound's stores, which `ownChange` gives it); else, with
-`receiverStore`, its store's location at `any`. -/
-def Effect.receiverEntries (e : Effect) : Footprints.Footprint :=
-  if e.receiverOwn then [(.inCls ((.own 0)) .values, .any)]
-  else if e.receiverStore then [(.field 0 arrayStoreKey, .any)] else []
 
 /-- An argument store region's entry of a frame: the store location the
 region selects at the call's entry, at `any`. -/
 def regionEntry (r : Footprints.ArgumentStoreRegion) : Footprints.Region × Footprints.Change := r.entry
 
-/-- **The frame** of a signature: its closed bound's two classes, its
-receiver's entries and its argument store regions, read at the call's
-positions (`callEnv`). It is the one statement of what a call may change. -/
-def Effect.frame (e : Effect) : Footprints.Footprint :=
-  e.closed.fp ++ e.receiverEntries ++ e.regions.map regionEntry
+/-- **The frame** of a signature: its normal exit's, read at the call's
+positions (`callEnv`). It is the one statement of what a normal return may
+change. -/
+def Effect.frame (e : Effect) : Footprints.Footprint := e.exits.normal.frame
 
 /-- What a signature's frame states of a call with receiver `r` and actuals
 `args`: `Post` of the frame at the call's positions. -/
@@ -370,276 +314,12 @@ theorem Effect.within_of_admitsAll {e : Effect} (h : e.admitsAll = true) {r : Tm
   simp only [Effect.admitsAll, beq_iff_eq] at h
   exact Footprints.Footprint.classBound_sound (by rw [h]; exact Footprints.Closed.holds_top.mpr hl)
 
-/-- A signature's normal-return postcondition for a call with receiver `r`,
-from the heap the call starts in: its frame, and, where it states one, a
-fresh store for the result; with `receiverGrows`, `ReceiverGrows` and
-`ReceiverAppends` at the actuals; with `elementWrite`, its change. -/
-def Effect.post (e : Effect) (r : Tm) (args : List Tm) : Heap → Post := fun before after v =>
-  e.within r args before after ∧ (e.fresh = true → Footprints.FreshAt before.length v) ∧
-    (e.freshObject = true → Footprints.FreshObjectAt before.length v) ∧
-    (∀ R, e.elements = some R → v = .tru → ElemsAt R r after) ∧
-    (∀ F ∈ e.ensures, F.HoldsAt ⟨callEnv r args, before⟩ (ensuresEnv v r args) after) ∧
-    (e.receiverGrows = true → ReceiverGrows r before after ∧ ReceiverAppends r args before after) ∧
-    (∀ w, e.elementWrite = some w → w.Holds args before after)
-
-/-- A signature's postcondition on a throw, from the heap the call starts in:
-its frame at the call's actuals where it states `onThrow`, and nothing
-otherwise. -/
-def Effect.excPost (e : Effect) (r : Tm) (args : List Tm) (before : Heap) : Heap → Prop := fun after =>
-  e.onThrow = true → e.within r args before after
-
-/-- A footprint's postcondition bounds the locations `P` admits by a closed
-bound at least each covering entry's change. -/
-theorem post_closedOn {Φ : Footprints.Footprint} {ρ : Env} {h h' : Heap} {c : Footprints.Closed}
-    {P : Nat → Prop} (hp : Footprints.Post Φ ρ h h')
-    (hΦ : ∀ e ∈ Φ, ∀ l v, P l → e.1.mem ρ h l = true → h[l]? = some v → e.2.le (c.at v) = true) :
-    c.HoldsOn P h h' :=
-  ⟨hp.1, fun l v hP hv => by
-    obtain ⟨v', hv', ha⟩ := hp.2 l v hv
-    refine ⟨v', hv', ?_⟩
-    rcases ha with rfl | ⟨e, he, hm, hh⟩
-    · exact Footprints.Change.Holds.refl _ _ _
-    · exact hh.mono (hΦ e he l v hP hm hv)⟩
-
-private theorem change_le_any (c : Footprints.Change) : c.le .any = true := by
-  cases c <;> rfl
-
-private theorem change_le_refl (c : Footprints.Change) : c.le c = true := by
-  cases c <;> rfl
-
-/-- An entry of the closed bound covers a location at most as its class's
-change of the coarse bound allows. -/
-private theorem closed_entry_le {e : Effect} {x : Footprints.Region × Footprints.Change}
-    (hx : x ∈ e.closed.fp) {ρ : Env} {h : Heap} {l : Nat} {v : Val}
-    (hm : x.1.mem ρ h l = true) (hv : h[l]? = some v) : x.2.le (e.footprint.at v) = true := by
-  rw [Footprints.Closed.fp_entry_at hx hm hv]
-  unfold Effect.footprint
-  split
-  · exact change_le_refl _
-  · rw [Footprints.Closed.at_top]; exact change_le_any _
-
-/-- A region entry covers its location at `any`, which the coarse bound
-allows. -/
-private theorem region_entry_le {e : Effect} {r : Footprints.ArgumentStoreRegion}
-    (hr : r ∈ e.regions) {v : Val} : (regionEntry r).2.le (e.footprint.at v) = true := by
-  have hne : e.regions.isEmpty = false := by
-    cases hq : e.regions with
-    | nil => rw [hq] at hr; cases hr
-    | cons _ _ => rfl
-  simp only [Effect.footprint, hne, Bool.false_eq_true, if_false, Footprints.Closed.at_top]
-  rfl
-
-theorem Effect.mem_frame {e : Effect} {x : Footprints.Region × Footprints.Change} (hx : x ∈ e.frame) :
-    x ∈ e.closed.fp ∨ x ∈ e.receiverEntries ∨ ∃ r ∈ e.regions, x = regionEntry r := by
-  simp only [Effect.frame, List.mem_append, List.mem_map] at hx
-  rcases hx with (hx | hx) | ⟨r, hr, rfl⟩
-  · exact .inl hx
-  · exact .inr (.inl hx)
-  · exact .inr (.inr ⟨r, hr, rfl⟩)
-
-/-- **The frame outside the receiver's entries**: every old location no
-receiver entry covers changes within the coarse bound `footprint`. -/
-theorem Effect.within_outside {e : Effect} {r : Tm} {args : List Tm} {before after : Heap}
-    (h : e.within r args before after) {P : Nat → Prop}
-    (hrecv : ∀ x ∈ e.receiverEntries, ∀ l, P l → x.1.mem (callEnv r args) before l = false) :
-    e.footprint.HoldsOn P before after :=
-  post_closedOn h fun x hx l v hP hm hv => by
-    rcases Effect.mem_frame hx with hx | hx | ⟨q, hq, rfl⟩
-    · exact closed_entry_le hx hm hv
-    · rw [hrecv x hx l hP] at hm; cases hm
-    · exact region_entry_le hq
-
-/-- With `receiverOwn`, the frame bounds every old location but the
-receiver's own by the coarse bound. -/
-theorem Effect.within_outside_own {e : Effect} {r : Tm} {args : List Tm} {before after : Heap}
-    (h : e.within r args before after) (ho : e.receiverOwn = true) :
-    e.footprint.HoldsOn (fun l => l ∉ Footprints.ownOf r) before after := by
-  have h0 : callEnv r args 0 = r := rfl
-  refine Effect.within_outside h fun x hx l hl => ?_
-  simp only [Effect.receiverEntries, ho, if_true, List.mem_singleton] at hx
-  subst hx
-  simp only [Footprints.Region.mem, h0, Bool.and_eq_false_iff]
-  left
-  simpa [List.contains_iff_mem, Footprints.ownOf] using hl
-
-/-- With `receiverOwn`, the frame bounds the receiver's own locations by
-`ownChange`. -/
-theorem Effect.within_inside_own {e : Effect} {r : Tm} {args : List Tm} {before after : Heap}
-    (h : e.within r args before after) (ho : e.receiverOwn = true) :
-    e.ownChange.HoldsOn (fun l => l ∈ Footprints.ownOf r) before after := by
-  refine post_closedOn h fun x hx l v hP hm hv => ?_
-  rw [Effect.ownChange_at]
-  rcases Effect.mem_frame hx with hx | hx | ⟨q, hq, rfl⟩
-  · split
-    · exact closed_entry_le hx hm hv
-    · exact change_le_any _
-  · split <;> simp only [Effect.receiverEntries, ho, if_true, List.mem_singleton] at hx <;>
-      subst hx <;> simp_all [Footprints.Region.mem, change_le_any]
-  · split
-    · exact region_entry_le hq
-    · exact change_le_any _
-
-/-- With `receiverStore` and no `receiverOwn`, the frame bounds every old
-location but the receiver's store by the coarse bound. -/
-theorem Effect.within_outside_store {e : Effect} {r : Tm} {args : List Tm} {before after : Heap}
-    (h : e.within r args before after) (ho : e.receiverOwn = false) :
-    e.footprint.HoldsOn (fun l => (Footprints.fieldsOf r).lookup arrayStoreKey ≠ some l) before after := by
-  have h0 : callEnv r args 0 = r := rfl
-  refine Effect.within_outside h fun x hx l hl => ?_
-  cases hs : e.receiverStore
-  · simp [Effect.receiverEntries, ho, hs] at hx
-  · simp only [Effect.receiverEntries, ho, hs, if_true, Bool.false_eq_true, if_false, List.mem_singleton] at hx
-    subst hx
-    simp only [Footprints.Region.mem, h0]
-    simpa using hl
-
-/-- A signature's frame holds where its closed bound holds everywhere. -/
-theorem Effect.within_of_holds {e : Effect} {r : Tm} {args : List Tm} {before after : Heap}
-    (h : e.closed.Holds before after) : e.within r args before after := by
-  have hp : Footprints.Post e.closed.fp (callEnv r args) before after :=
-    Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp h)
-  exact ⟨hp.1, fun l v hv => by
-    obtain ⟨v', hv', ha⟩ := hp.2 l v hv
-    refine ⟨v', hv', ?_⟩
-    rcases ha with h | ⟨x, hx, hm, hh⟩
-    · exact .inl h
-    · exact .inr ⟨x, List.mem_append_left _ (List.mem_append_left _ hx), hm, hh⟩⟩
-
-/-- Without store regions the coarse bound is the closed bound. -/
-theorem Effect.within_of_footprint {e : Effect} (hreg : e.regions = []) {r : Tm} {args : List Tm}
-    {before after : Heap} (h : e.footprint.Holds before after) : e.within r args before after :=
-  Effect.within_of_holds (by rw [← Effect.footprint_of_regions hreg]; exact h)
-
-/-- **The frame of a signature stating `receiverOwn` and no store regions**,
-from its coarse bound outside the receiver's own locations and `ownChange`
-on them. -/
-theorem Effect.within_of_own {e : Effect} (hreg : e.regions = []) (ho : e.receiverOwn = true)
-    {r : Tm} {args : List Tm} {before after : Heap}
-    (hout : e.footprint.HoldsOn (fun l => l ∉ Footprints.ownOf r) before after)
-    (hin : e.ownChange.HoldsOn (fun l => l ∈ Footprints.ownOf r) before after) :
-    e.within r args before after := by
-  have hfp : e.footprint = e.closed := Effect.footprint_of_regions hreg
-  have h0 : callEnv r args 0 = r := rfl
-  unfold Effect.within Effect.frame Effect.receiverEntries
-  simp only [hreg, List.map_nil, List.append_nil, ho, if_true]
-  rw [← hfp, Footprints.Closed.post_extra_any]
-  refine ⟨hout.1, fun l v hl hv => ?_⟩
-  by_cases hown : l ∈ Footprints.ownOf r
-  · obtain ⟨v', hv', hc⟩ := hin.2 l v hown hv
-    have hmem : (Footprints.Region.inCls (.own 0) .values).mem (callEnv r args) before l =
-        (((Footprints.ownOf r).contains l) && match before[l]? with
-          | some v => Footprints.Selector.values.selects v
-          | none => false) := rfl
-    have ha : Footprints.isArr v = true := by
-      replace hl : (Footprints.Region.inCls (.own 0) .values).mem (callEnv r args) before l = false := hl
-      rw [hmem, hv] at hl
-      simpa [List.contains_iff_mem, hown] using hl
-    refine ⟨v', hv', ?_⟩
-    rwa [Effect.ownChange_at, ha, if_pos rfl] at hc
-  · exact hout.2 l v hown hv
-
-/-- **The frame of a signature stating `receiverStore`, no `receiverOwn` and
-no store regions**, from its coarse bound outside the receiver's store. -/
-theorem Effect.within_of_store {e : Effect} (hreg : e.regions = []) (ho : e.receiverOwn = false)
-    (hs : e.receiverStore = true) {r : Tm} {args : List Tm} {before after : Heap}
-    (hout : e.footprint.HoldsOn (fun l => (Footprints.fieldsOf r).lookup arrayStoreKey ≠ some l) before after) :
-    e.within r args before after := by
-  have hfp : e.footprint = e.closed := Effect.footprint_of_regions hreg
-  have h0 : callEnv r args 0 = r := rfl
-  unfold Effect.within Effect.frame Effect.receiverEntries
-  simp only [hreg, List.map_nil, List.append_nil, ho, hs, Bool.false_eq_true, if_false, if_true]
-  rw [← hfp, Footprints.Closed.post_extra_any]
-  refine (Footprints.Closed.HoldsOn.congr ?_).mp hout
-  intro l
-  simp [Footprints.Region.mem, h0]
-
-theorem Effect.within_own {e : Effect} {r : Tm} {args : List Tm} {before after : Heap}
-    (h : e.within r args before after) (ho : e.receiverOwn = true) : e.ownChange.Holds before after := by
-  have hout := (Effect.within_outside_own h ho).mono e.le_ownChange
-  have hin := Effect.within_inside_own h ho
-  refine Footprints.Closed.holds_of_on ⟨hout.1, fun l v _ hv => ?_⟩
-  by_cases hm : l ∈ Footprints.ownOf r
-  · exact hin.2 l v hm hv
-  · exact hout.2 l v hm hv
-
-/-- What a footprint on the locations below `b` follows from: the footprint
-anywhere, or on every location but a store, or every own location of an
-object, allocated after `b`. -/
-theorem Effect.within_below {e : Effect} {r : Tm} {args : List Tm} {b : Nat} {before after : Heap}
-    (h : e.within r args before after) (hr : e.receiverStore = true → Footprints.FreshAt b r)
-    (ho : e.receiverOwn = true → Footprints.FreshObjectAt b r) :
-    e.footprint.HoldsOn (· < b) before after := by
-  cases hown : e.receiverOwn
-  · cases hs : e.receiverStore
-    · exact Effect.within_outside h (P := (· < b)) fun x hx => by simp [Effect.receiverEntries, hown, hs] at hx
-    · exact (Effect.within_outside_store h hown).below_fresh (hr hs)
-  · exact (Effect.within_outside_own h hown).below_fresh_object (ho hown)
-
-theorem Effect.within_holds {e : Effect} {r : Tm} {args : List Tm} {before after : Heap}
-    (h : e.within r args before after) (hr : e.receiverStore = false) (ho : e.receiverOwn = false) :
-    e.footprint.Holds before after :=
-  Footprints.Closed.holds_of_on (Effect.within_outside h fun x hx => by
-    simp [Effect.receiverEntries, hr, ho] at hx)
-
-theorem Effect.within_top {e : Effect} {r : Tm} {args : List Tm} {before after : Heap}
-    (h : e.within r args before after) : Footprints.Closed.top.Holds before after :=
-  Footprints.Closed.holds_top.mpr h.1
-
-/-- A coarse bound below another's gives the receiver's own change below. -/
-theorem Effect.ownChange_le {a b : Effect} (hle : a.footprint.le b.footprint = true) :
-    a.ownChange.le b.ownChange = true := by
-  simp only [Footprints.Closed.le, Bool.and_eq_true] at hle
-  simp only [Effect.ownChange, Footprints.Closed.le, Bool.and_eq_true]
-  exact ⟨⟨rfl, hle.1.2⟩, hle.2⟩
-
-/-- **A frame read through its coarse bound**: a signature with no store
-regions, the same receiver modes and a coarse bound at least as large
-bounds the same transition, at any actuals. -/
-theorem Effect.within_coarse {e e' : Effect} (hreg : e'.regions = [])
-    (hle : e.footprint.le e'.footprint = true) (hs : e'.receiverStore = e.receiverStore)
-    (ho : e'.receiverOwn = e.receiverOwn) {r : Tm} {args args' : List Tm} {before after : Heap}
-    (h : e.within r args before after) : e'.within r args' before after := by
-  cases hown : e.receiverOwn
-  · cases hst : e.receiverStore
-    · exact Effect.within_of_footprint hreg ((Effect.within_holds h hst hown).mono hle)
-    · exact Effect.within_of_store hreg (ho.trans hown) (hs.trans hst)
-        ((Effect.within_outside_store h hown).mono hle)
-  · exact Effect.within_of_own hreg (ho.trans hown) ((Effect.within_outside_own h hown).mono hle)
-      ((Effect.within_inside_own h hown).mono (Effect.ownChange_le hle))
-
-/-- **Store regions.** A signature stating no receiver mode: its frame is
-the closed bound on every location but the stores the regions select at the
-call's entry (`ArgumentStoreRegionsWithin`), the store-exception predicate of
-a statement's store regions. -/
-theorem Effect.within_iff_regions {e : Effect} (hs : e.receiverStore = false) (ho : e.receiverOwn = false)
-    (r : Tm) (args : List Tm) (before after : Heap) :
-    e.within r args before after ↔
-      Footprints.ArgumentStoreRegionsWithin e.closed e.regions (callEnv r args) before after := by
-  have hrecv : e.receiverEntries = [] := by simp [Effect.receiverEntries, hs, ho]
-  rw [Footprints.ArgumentStoreRegionsWithin.iff_post]
-  unfold Effect.within Effect.frame
-  rw [hrecv, List.append_nil]
-  rfl
-
-@[simp] theorem Effect.post_ofFootprint (c : Footprints.Closed) (r : Tm) (args : List Tm) (before after : Heap) (v : Val) :
-    (Effect.ofFootprint c).post r args before after v ↔ c.Holds before after := by
-  have hw : (Effect.ofFootprint c).within r args before after ↔ c.Holds before after := by
-    unfold Effect.within Effect.frame Effect.receiverEntries
-    simp only [Effect.ofFootprint, Bool.false_eq_true, if_false, List.map_nil, List.append_nil]
-    exact Footprints.Closed.post_iff.trans Footprints.Closed.holds_iff.symm
-  unfold Effect.post
-  rw [hw]
-  simp [Effect.ofFootprint]
 
 /-- Whether the signature's result operand is the result's type and it
 states no precondition: a signature an ordinary arrow can stand for once its
 postcondition, an elements promise included, is forgotten. -/
 def Effect.plain (e : Effect) : Bool := e.promise.isNone && e.requires.isNone && e.pre.isEmpty
 
-/-- Whether a signature states no precondition and no elements promise, the
-two parts of a guarantee about its receiver's elements. -/
-def Effect.elementFree (e : Effect) : Bool :=
-  e.requires.isNone && e.elements.isNone && e.pre.isEmpty && e.ensures.isEmpty
 
 /-- The actual a promise is about: the one at its parameter, `undefined` where
 the call passes none. A signature without a promise is about none. -/
@@ -693,42 +373,21 @@ def TypePromise.drop (n : Nat) : TypePromise → TypePromise
   | .guards p => .guards (p - n)
   | .asserts p => .asserts (p - n)
 
-/-- **Binding `n` actuals as a total weakening**: the bound signature keeps
-the promise, freshness and throw flag, and forgets every postcondition and
-receiver mode it cannot state of the bound call. Its exits at the bound
-call follow from the signature's at the longer call
-(`Effect.drop_weakening`); the exact substitution is `Exits.drop`. -/
-def Effect.drop (n : Nat) (e : Effect) : Effect :=
-  ⟨if e.receiverStore || e.receiverOwn then .top else e.footprint, e.promise.map (TypePromise.drop n), e.fresh, false,
-    e.onThrow, false, e.freshObject, e.requires, none, e.pre, [], false, e.elementWrite.map fun _ => .stores, []⟩
-
 /-- Whether binding `n` actuals keeps the promise about an actual of the
-bound call. A precondition or an elements promise is about the receiver the
-binding saves, which the bound call does not pass: binding keeps neither. -/
+bound call, and the signature states no precondition. A precondition is
+about the receiver or the actuals the binding saves, which the bound call
+does not pass: binding keeps none. What binding keeps of the exits is their
+weakening at the bound call (`Effect.drop`). -/
 def Effect.keeps (n : Nat) (e : Effect) : Bool :=
-  e.elementFree && match e.promise with
+  e.requires.isNone && e.pre.isEmpty && match e.promise with
   | some p => n ≤ p.param
   | none => true
 
-theorem Effect.keeps_elementFree {e : Effect} {n : Nat} (h : e.keeps n = true) : e.elementFree = true := by
-  simp only [Effect.keeps, Bool.and_eq_true] at h; exact h.1
-
 theorem Effect.keeps_requires {e : Effect} {n : Nat} (h : e.keeps n = true) : e.requires = none := by
-  have := Effect.keeps_elementFree h
-  simp only [Effect.elementFree, Bool.and_eq_true, Option.isNone_iff_eq_none] at this; exact this.1.1.1
+  simp only [Effect.keeps, Bool.and_eq_true, Option.isNone_iff_eq_none] at h; exact h.1.1
 
 theorem Effect.keeps_pre {e : Effect} {n : Nat} (h : e.keeps n = true) : e.pre = [] := by
-  have := Effect.keeps_elementFree h
-  simp only [Effect.elementFree, Bool.and_eq_true, List.isEmpty_iff] at this; exact this.1.2
-
-theorem Effect.promised_drop {e : Effect} {pre args : List Tm} (h : e.keeps pre.length = true) :
-    (e.drop pre.length).promised args = e.promised (pre ++ args) := by
-  rcases e with ⟨c, _ | (p | p), f, s, o, w, fo, rq, el⟩ <;>
-    simp only [Effect.keeps, Effect.drop, Effect.promised, TypePromise.drop, TypePromise.param,
-      Option.map, Bool.and_eq_true] at h ⊢
-  all_goals
-    have h' : pre.length ≤ p := of_decide_eq_true h.2
-    simp [List.getD_eq_getElem?_getD, List.getElem?_append_right h']
+  simp only [Effect.keeps, Bool.and_eq_true, List.isEmpty_iff] at h; exact h.1.2
 
 /-- Whether a promise is about one of the first `n` parameters, the ones code
 of arity `n` binds. -/
@@ -762,10 +421,6 @@ theorem Effect.pre_toNow {F : HeapKnowledge.IndexFact} (ε : HeapKnowledge.Entry
   (HeapKnowledge.IndexFact.holdsAt_toNow rfl rfl).symm.trans
     (HeapKnowledge.IndexFact.holdsAt_entry (HeapKnowledge.IndexFact.entrySlots_toNow F) _)
 
-/-- A frame stating no store regions reads the receiver alone. -/
-theorem Effect.within_args {e : Effect} (hreg : e.regions = []) {r : Tm} {args args' : List Tm}
-    {before after : Heap} (h : e.within r args before after) : e.within r args' before after :=
-  Effect.within_coarse hreg (Footprints.Closed.le_refl _) rfl rfl h
 
 private theorem parameters_getD : ∀ (n : Nat) (args : List Tm) (p : Nat), p < n →
     (CallArguments.parameters n args).getD p .undef = args.getD p .undef
@@ -882,34 +537,6 @@ theorem Effect.ensures_frame {n : Nat} {F : HeapKnowledge.IndexFact} (hsl : ∀ 
       List.getD_eq_getElem?_getD, List.cons_append, List.getElem?_cons_succ, List.getElem?_append_left hlen, hx,
       Option.getD_some, hp]
 
-theorem Effect.result_drop (e : Effect) (n : Nat) (R : Fam) (a : Tm) :
-    (e.drop n).result R a = e.result R a := by
-  rcases e with ⟨c, _ | (_ | _), f, s, o, w, fo, rq, el⟩ <;> rfl
-
-/-- A bound call forwards to its target with the receiver it saved: the
-target's postcondition at that receiver is the bound signature's at any. -/
-theorem Effect.within_drop {e : Effect} (n : Nat) {rv r : Tm} {argsv args : List Tm} {before after : Heap}
-    (h : e.within rv argsv before after) : (e.drop n).within r args before after := by
-  apply Effect.within_of_holds
-  unfold Effect.drop
-  by_cases hs : (e.receiverStore || e.receiverOwn) = true
-  · simp only [hs, if_true]
-    exact Effect.within_top h
-  · simp only [Bool.not_eq_true, Bool.or_eq_false_iff] at hs
-    simp only [hs.1, hs.2, Bool.or_self, Bool.false_eq_true, if_false]
-    exact Effect.within_holds h hs.1 hs.2
-
-theorem Effect.post_drop {e : Effect} (n : Nat) {rv r : Tm} {argsv args : List Tm} {before after : Heap} {v : Val}
-    (h : e.post rv argsv before after v) : (e.drop n).post r args before after v :=
-  ⟨Effect.within_drop n h.1, h.2.1, h.2.2.1, fun _ hR => by simp [Effect.drop] at hR,
-    fun _ hF => (by simp [Effect.drop] at hF), fun hg => (by simp [Effect.drop] at hg), fun w hw => (by
-      simp only [Effect.drop, Option.map_eq_some_iff] at hw
-      obtain ⟨w0, h0, rfl⟩ := hw
-      exact ElementWrite.Holds.stores (h.2.2.2.2.2.2 w0 h0))⟩
-
-theorem Effect.excPost_drop {e : Effect} (n : Nat) {rv r : Tm} {argsv args : List Tm} {before after : Heap}
-    (h : e.excPost rv argsv before after) : (e.drop n).excPost r args before after :=
-  fun ho => Effect.within_drop n (h ho)
 
 /-- A postcondition at actuals padded with `undefined` is the one at the
 actuals, of a receiver holding no store. -/
@@ -940,41 +567,6 @@ theorem Effect.sameResult_same {a b : Effect} (hs : a.sameResult b = true) :
   · funext R x; simp [Effect.result, hp]
   · funext args; simp [Effect.promised, hp]
 
-/-- **The view write a signature states**, from the call's entry world `U`
-and heap `before` to its exit world and heap: where it states an element
-write, the kinded view-element write of it at the actuals
-(`Kinds.ViewWriteOf`), read at the entry world's roles; where exact, the
-result of an element assignment, exact or not, is the value written, the
-value an assignment `b[i] = v` is. -/
-def Effect.viewPost (e : Effect) (args : List Tm) {j : Nat} (U : WorldT j) (before : Heap) : WPost :=
-  fun _ W' after r => ∀ w, e.elementWrite = some w → Kinds.ViewWriteOf w args U before W' after ∧
-    (w ≠ .stores → r = args.getD 2 .undef)
-
-/-- **A signature's normal-return postcondition**, given the call's entry
-world `U` and heap `before`: at the exit world and heap, its heap
-postcondition (`Effect.post`) and its view write (`Effect.viewPost`). -/
-def Effect.postW (e : Effect) (r : Tm) (args : List Tm) {j : Nat} (U : WorldT j) (before : Heap) : WPost :=
-  fun k W' after v => e.post r args before after v ∧ e.viewPost args U before k W' after v
-
-/-- A signature's throw postcondition as a world-indexed one: its heap
-postcondition (`Effect.excPost`) lifted. -/
-abbrev Effect.excPostW (e : Effect) (r : Tm) (args : List Tm) (before : Heap) : HeapObservations.WExc :=
-  HeapObservations.WExc.lift (e.excPost r args before)
-
-/-- **A signature stating no element write**: its postcondition is its heap
-postcondition, at every entry and exit world. -/
-theorem Effect.postW_of_post {e : Effect} (hx : e.elementWrite = none) {r : Tm} {args : List Tm} {j : Nat}
-    {U : WorldT j} {before : Heap} {k : Nat} {W' : WorldT k} {after : Heap} {v : Val}
-    (h : e.post r args before after v) : e.postW r args U before k W' after v :=
-  ⟨h, fun w hw => by rw [hx] at hw; cases hw⟩
-
-/-- **Safety at a signature stating no element write** is safety at its
-postcondition over kinded worlds, from every entry world. -/
-theorem Effect.safe_postW {e : Effect} (hx : e.elementWrite = none) {Ξ T : Fam} {r : Tm} {args : List Tm}
-    {j : Nat} {U : WorldT j} {heap : Heap} {n : Nat} {W : WorldT n} {h : Heap} {t : Tm}
-    (hs : SafePostExc Ξ T (e.post r args heap) (e.excPost r args heap) n W h t) :
-    SafePostExcV Ξ T (e.postW r args U heap) (e.excPostW r args heap).liftV n W h t :=
-  SafePostExcV.iff_lift.mpr (SafePostExcW.weaken (fun _ _ _ _ hp => Effect.postW_of_post hx hp) (fun _ _ _ hp => hp) hs)
 
 /-- A call's normal postcondition: given the receiver, the actuals, and the
 entry budget, world and heap, a world-indexed postcondition of the exit. -/

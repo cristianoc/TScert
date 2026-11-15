@@ -134,9 +134,9 @@ theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
       have hp : ∀ e ∈ c.exprs, Purity.pureTerm e = true := List.all_eq_true.mp hpure.2
       exact HeapObservations.SafePostExc.weaken
         (fun h' v hq => ⟨Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _)
-            ((CallEffects.Effect.post_ofFootprint _ .undef [] _ _ _).mp hq), fun hf => by simp [hpure.1] at hf⟩)
+            hq, fun hf => by simp [hpure.1] at hf⟩)
         (fun h' hq => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq)
-        (CallEffects.pure_safe_exc (r := .undef) (args := []) (.goto hp hvalues rfl) hsafe)
+        (CallEffects.pure_safe_exc (.goto hp hvalues rfl) hsafe)
     · have hbound : codeRunBound c = some (⟨(exitBounds c.row.effect).normal, (exitBounds c.row.effect).exceptional⟩,
           c.row.effect.schema.normal.freshResult) := by
         have h1 := Bool.eq_false_iff.mpr htop

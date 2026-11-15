@@ -769,6 +769,31 @@ private theorem canonical_dropWeak (k : Nat) (q : ExitSchema) : (q.dropWeak k).c
   obtain ⟨F, -, hm⟩ := List.mem_filterMap.mp hG
   exact (canonical_renameFormula hm).2
 
+private theorem arenaFree_renameFormula {k : Nat} :
+    ∀ {F G : FormulaSchema}, renameFormula (dropRenaming k) (seqDrop k) (trDrop k) F = some G → G.arenaFree = true
+  | .at .., _, h => by cases h
+  | .and F G, H, h => by
+    simp only [renameFormula, Option.bind_eq_bind, Option.pure_def] at h
+    obtain ⟨A, hA, h⟩ := bind_some h
+    obtain ⟨B, hB, h⟩ := bind_some h
+    cases h
+    simp [FormulaF.arenaFree, arenaFree_renameFormula hA, arenaFree_renameFormula hB]
+  | .transition _, G, h | .operation _, G, h | .linear _, G, h | .defined _, G, h | .transport _, G, h => by
+    simp only [renameFormula, Option.map_eq_some_iff] at h
+    obtain ⟨_, -, rfl⟩ := h
+    rfl
+  | .truth, G, h | .falsity, G, h => by cases h; rfl
+
+/-- **The weakened exits reference no arena node** (proved): a substituted
+postcondition never does (`renameFormula` refuses `.at`). -/
+theorem Exits.dropWeak_arenaFree (k : Nat) (x : Exits ExitSchema) (c : Completion) :
+    ((x.dropWeak k).get c).arenaFree = true := by
+  refine List.all_eq_true.mpr fun G hG => ?_
+  cases c <;>
+  · simp only [Exits.dropWeak, Exits.get_map, ExitSchema.dropWeak] at hG
+    obtain ⟨F, -, hm⟩ := List.mem_filterMap.mp hG
+    exact arenaFree_renameFormula hm
+
 /-- **The weakened exits follow from the schema's at the longer call**
 (proved), on both exits: a substituted frame or postcondition means at the
 bound call what it meant at the longer one (`action_renameFootprint`,

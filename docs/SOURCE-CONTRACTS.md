@@ -542,42 +542,57 @@ contents no allocation constructs: a callable's membership in its function
 type (the behaviour of native code), and a host object's view store and
 length metadata, which no source allocation makes.
 
-A call contract's normal postcondition is read over the call's entry and
-exit worlds (`Effect.postW`): the signature's heap postcondition and, where
-it states an element write (`%ByteSet%`, a view's `fill`, `copyWithin` and
-`set`), the view-element write from the entry world and heap to the exit
-world and heap (`Kinds.ViewWrite`), at the one world the exit reaches. The
-exit world extends the entry one and the exit heap meets it; every location
-whose role in the entry world is no view store keeps its contents; a view
-store keeps its length, and each cell it newly lists is fresh. The roles are
-the entry world's because a role assignment chosen only to fit the entry
-heap may give an ordinary array's store the role of a view store, and so
-let the write change it (from `[arr [some 1], null]` to
+A call contract states a typed array's element write (`%ByteSet%`, a
+view's `fill`, `copyWithin` and `set`) as postconditions of its normal exit
+(`ElementWrite.schemaPosts`): the action of
+$`\{\mathsf{all\text{-}views}:\mathsf{grow}\}`$, which on well-formed
+states is the view-element write from the entry world and heap to the exit
+world and heap (`Kinds.ViewWrite.frame_iff`), at the one world the exit
+reaches. The exit world extends the entry one and the exit heap meets it;
+every location whose role in the entry world is no view store keeps its
+contents; a view store keeps its length, and each cell it newly lists is
+fresh. The roles are the entry world's because a role assignment chosen only
+to fit the entry heap may give an ordinary array's store the role of a view
+store, and so let the write change it (from `[arr [some 1], null]` to
 `[arr [some 2], null, null]`, location 0). The meaning of callable and
 constructor types carries these contracts, so `mode8Accepted_sound` is
 relative to the model's accuracy through the entry conditions of its
-conclusion; graph code meets the same condition by proof (`goto_safe`), and
-states no element write (`Effect.below_write`), so its view write holds of
-every exit (`Effect.postW_of_post`). The
+conclusion; graph code meets the same condition by proof (`goto_safe`),
+establishing every postcondition its signature exports
+(`ProgramTyping.exportsEstablished`), which states no element write. The
 [trust surface](DESIGN.md#trust-surface) lists it.
 
 #### The contract per exit
 
-A signature's contract is also stated per exit of a call, as its **exit
-summary** (`CallEffects.Effect.summary`, in `Semantics/ExitSummaries.lean`):
-for the normal and the exceptional exit a frame, a list of region and change
-entries, and a list of two-state postconditions (`CallEffects.ExitSpec`,
-`Parity.Formula`). An exit specification holds of a transition where the
-transition is an action of the frame and every postcondition holds, all in
-one two-state interpretation (`ExitSpec.Holds`): the entry environment holds
-the call's positions (`callEnv`), the exit environment the result or the
-thrown value at `0` and the call's positions one higher (`ensuresEnv`). A
-signature's summary is:
+A signature's effect is its specification per exit of a call
+(`CallEffects.Effect`, in `Semantics/EffectSignatures.lean`): its exits
+(`Effect.schema`), its promise, and its preconditions on the receiver's
+elements and on the call's values. For the normal and the exceptional exit
+it states a frame, a list of region and change entries, and a list of
+two-state postconditions (`CallEffects.ExitSchema`, `Parity.Formula`). An
+exit specification holds of a transition where the transition is an action
+of the frame and every postcondition holds, all in one two-state
+interpretation (`ExitSpec.Holds`): the entry environment holds the call's
+positions (`callEnv`), the exit environment the result or the thrown value
+at `0` and the call's positions one higher (`ensuresEnv`). The frame of a
+signature is its normal exit's (`Effect.frame`, read by `Effect.within`).
 
-- **normal frame**: the frame (`Effect.frame`): the closed bound's three
-  class entries, the receiver's entries (`receiverOwn`'s own value
-  locations where it is set, else `receiverStore`'s store) and each argument
-  store region at `any`;
+The specification is stated once for every arity, as a schema (in
+`Semantics/ExitSchemas.lean`): its postconditions name the actuals from a
+position on (`WitnessSeq.restFrom`, a rest parameter's actuals) and state a
+transport over every entry slot by a shift and finitely many replacements
+(`TransportSchema`). A call of `n` actuals instantiates it (`Exits.atArity`,
+the note's Call), the signature's summary at arity `n` (`Effect.summary`):
+the rest splice at the positions `1` to `n`, a transport at an entry scope of
+`max (n + 1) k` slots, `k` the slots its replacements name. Only
+instantiated formulas are interpreted.
+
+The documents write an effect in their own shape (`EffectJson.WireEffect`),
+whose fields state exits (`WireEffect.elaborate`):
+
+- **normal frame**: the closed bound's three class entries, the receiver's
+  entries (`receiverOwn`'s own value locations where it is set, else
+  `receiverStore`'s store) and each argument store region at `any`;
 - **normal postconditions**: the result's fresh store (`fresh`) and fresh
   object (`freshObject`), the receiver's elements where the result is
   `true` (`elements`), each stated index fact (`ensures`); for
@@ -588,27 +603,28 @@ signature's summary is:
   the element type's format and its precondition's facts, with the result
   the value written;
 - **exceptional exit**: the normal frame and no postcondition where the
-  signature states `onThrow`; otherwise $`\top`$, the three class entries
+  value states `onThrow`; otherwise $`\top`$, the three class entries
   at `any`, and no postcondition.
 
-A signature states the summary once for every arity, as a schema
-(`Effect.schema`, `CallEffects.ExitSchema`, in `Semantics/ExitSchemas.lean`):
-its postconditions name the actuals from a position on (`WitnessSeq.restFrom`,
-a rest parameter's actuals) and state a transport over every entry slot by a
-shift and finitely many replacements (`TransportSchema`). A call of `n`
-actuals instantiates it (`Exits.atArity`, the note's Call): the rest
-splice at the positions `1` to `n`, a transport at an entry scope of
-`max (n + 1) k` slots, `k` the slots its replacements name; the instantiation
-is the summary at arity `n` (proved: `Effect.schema_atArity`). Only
-instantiated formulas are interpreted.
+Two wire values state one effect where they differ only in `receiverStore`
+beside `receiverOwn`, whose entry covers the store, or in `onThrow` where
+the frame is $`\top`$; the canonical value states neither
+(`WireEffect.canonicalize`, proved to state the same effect:
+`WireEffect.elaborate_canonicalize`). The decoder reads both. An effect is
+written only where it is the elaboration of a valid wire value
+(`Representable`), as its canonical value, each field read back from the
+exit that states it (`wireOf`; proved: `wireOf_elaborate`,
+`encodeOld_sound`, `encodeOld_complete`); a document holding a canonical
+value is written back as read (`effectJson_decode`).
 
 A contract states no assertion-arena formula (stated limit): its
 postconditions are operational posts, index facts, transitions, transports
 and their conjunctions, read at the empty arena, and a schema is well formed
-only where it references no arena node (`Exits.arenaFree`; the elaboration
-meets it, `Effect.schema_arenaFree`; such a formula holds alike at every
-arena, `ExitSchema.holds_instantiate_arenaFree`). A contract that needs an
-assertion would carry its own arena.
+only where it references no arena node (`Exits.arenaFree`); such a formula
+holds alike at every arena (`ExitSchema.holds_instantiate_arenaFree`). The
+one decision reading it, binding, reads the bound signature's exits, which
+reference none (proved: `Exits.dropWeak_arenaFree`). A contract that needs
+an assertion would carry its own arena.
 
 What a callable's type guarantees of a completion is the completion's
 instantiated specification at the call's entry and exit states
@@ -636,9 +652,14 @@ because the other's class entries let everything change, and each
 postcondition of the other is one of the first's (`Exits.covers_entails`);
 beside it the same promise and a weaker precondition. A promise weakens along coverage at its exits
 (`PromiseWith.weaken'`, `ConstructPromise.weaken'`). A bound signature's
-exits follow from its target's at the forwarded call, read from the bound
-call's entry, from which the target's is admissible
-(`PromiseWith.bound`, `Exits.exitPost_entry`).
+exits are its target's weakened at the bound call (`Effect.drop`,
+`Exits.dropWeak`: the frame with the positions substituted, or its closed
+bound where it names a saved position, the postconditions that substitute,
+the others forgotten); they follow from the target's at the forwarded call
+(proved: `Effect.drop_exits`, `Exits.exitPost_dropWeak`), read from the
+bound call's entry, from which the target's is admissible
+(`PromiseWith.bound`, `Exits.exitPost_entry`). Binding keeps a promise
+about an actual past the saved ones and no precondition (`Effect.keeps`).
 
 A call's completions read at heaps are its exits at the call's evaluated
 actuals, a construction's omitted positions `undefined`
@@ -653,11 +674,11 @@ elements (`Effect.callPost_elements`), the index facts it ensures
 (`Effect.callPost_ensures`); and, each from the postconditions that state
 it, read at the call (`Effect.callPost_holds`), the receiver's growth from
 the frame `{receiver store: any}` and the store's extension
-(`Effect.callPost_storeGrows`), the append of the actuals
-(`Effect.callPost_appends`), an element write's change from the views'
-growth (`Effect.callPost_viewGrowth`), and an exact element write from
-View-Write at its element type's format with its precondition's facts
-(`Effect.callPost_exactWrite`).
+(`Effect.callPost_storeGrows`, `receiverGrows_iff`), the append of the
+actuals (`Effect.callPost_appends`, `receiverAppends_iff`), an element
+write's change from the views' growth (`Effect.callPost_viewGrowth`), and
+an exact element write from View-Write at its element type's format with
+its precondition's facts (`Effect.callPost_exactWrite`, `exactPre_iff`).
 
 Two safety derivations of one invocation reach the same heaps and terms at
 worlds of their own; their guarantees conjoin at the first's worlds where
@@ -666,28 +687,22 @@ and budget (proved: `SafePostExcV.cross_independent`, `IndependentFrom`, in
 `Semantics/ExitWorlds.lean`). A guarantee whose postconditions read the exit
 only through its heap is (`Exits.independent`): no assertion at the exit and
 no transport certifying a rigid image, both of which read the exit's
-admissible futures; every signature's schema is such
-(`Effect.schema_independent`). Every two-state formula is monotone in its
+admissible futures. Every two-state formula is monotone in its
 exit, kept where the exit is replaced by a state admissible from it with the
 same heap (`Parity.Holds.mono_exit`). Two signatures of one value with the
 same result meaning give both guarantees at one exit (`PromiseWith.conj`),
 and so the guarantee of any signature the conjunction of their schemas
-covers (`PromiseWith.combine`, `Effect.meetCovers`): on each exit the
-conjunction holds exactly where both exits do (`Exits.exitPost_meet`). The signature's effect and the native-contract condition
-are in `Semantics/EffectSignatures.lean`, the callable contracts in
-`Semantics/CallEffects.lean`.
+covers (`PromiseWith.combine`, `Effect.meetCovers`, which checks the
+second's exits read through their heaps alone, `Exits.exitHeapOnly`, and
+canonical transports on both): on each exit the conjunction holds exactly
+where both exits do (`Exits.exitPost_meet`). The signature's effect and the
+native-contract condition are in `Semantics/EffectSignatures.lean`, the
+callable contracts in `Semantics/CallEffects.lean`.
 
 A guarantee stated beside the frame is a postcondition `.transition Φ`, so
-the frame and it hold of one transition. On admissible transitions at
-actuals that are values, the normal exit holds exactly where
-`Effect.postW` does and the exceptional exit exactly where `Effect.excPost`
-does (proved: `Effect.summary_normal_iff`, `Effect.summary_exceptional_iff`;
-the parts: `receiverGrows_iff`, `receiverAppends_iff`, `elementWrite_iff`).
-A bound signature's exits follow from its target's (proved:
-`Effect.summary_drop_normal`, `Effect.summary_drop_exceptional`); a module
-function's summary reads its own positions (proved:
-`Effect.summary_scoped`). The effect's wire is the signature's fields, and
-the pass decides from them.
+the frame and it hold of one transition. A module function's summary reads
+its own positions (proved: `Effect.summary_scoped`). The pass decides from
+the exits.
 
 ## Certified imports
 

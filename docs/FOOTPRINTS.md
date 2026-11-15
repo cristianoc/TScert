@@ -678,7 +678,7 @@ result promised; a pure graph; the pass's walk at the bound, node by node
 (`SinglePass.footprintCheck`); and, for a unit promising no fresh result, the
 regional check with no regions at $`\Phi_c`$ (`regionalChecked`), its
 throws bounded where the unit claims $`\Phi_c`$ on a throw. A frame stating
-a store region is `top` to the node-by-node check (`Effect.footprint`); the
+a store region is `top` to the node-by-node check (`StatedEffect.footprint`); the
 regional check rebases its region on a store the body allocated to none, so
 a body changing such a store through a callee stays within $`\Phi_c`$
 (`stated-fresh-direct`). With no regions the regional check's postcondition
@@ -944,18 +944,21 @@ $`R`$ reads no world, so the fact is an atom of heap knowledge, compared along
 edges and kept or dropped by the knowledge rules.
 
 **The signatures' two parts.** A call signature's effect states two more
-optional predicates about its receiver, as `receiverStore` and `receiverOwn`
-are about it: `requires R`, a precondition, $`\mathrm{elems}(r,R)`$ in the
+optional predicates about its receiver, as its frame's receiver entries are
+about it: `requires R`, a precondition, $`\mathrm{elems}(r,R)`$ in the
 heap the call starts in; and `elements R`, a promise, $`\mathrm{elems}(r,R)`$
-in the heap a normal return of `true` leaves (`Effect.requires`,
-`Effect.elements`, in `PromiseWith` and `Effect.post`). One signature covers
+in the heap a normal return of `true` leaves, the normal exit's
+postcondition `elementsWhen 0 true 1 R` (`Effect.requires`,
+`ExitSchema.elementsWhenTrue`, in `PromiseWith`). One signature covers
 another where its precondition is weaker and its promise stronger
 (`Effect.covers`, proved: `covers_sound`); two signatures of one call combine
-only where both state the same parts (`PromiseWith.combine`); an ordinary
+where both state the same precondition, and their promises conjoin
+(`PromiseWith.combine`); an ordinary
 arrow erases only a signature without a precondition (`Effect.plain`,
-`PromiseWith.erase`); binding keeps neither part (`Effect.keeps`), since a
-bound call does not pass the receiver the parts are about; graph code stating
-either is refused (`ProgramTyping.codeConditions`). `Array.prototype`'s members are invoked
+`PromiseWith.erase`); binding keeps no precondition (`Effect.keeps`) and
+forgets the promise (`Effect.drop`), since a bound call does not pass the
+receiver the parts are about; graph code stating either is refused
+(`ProgramTyping.codeConditions`). `Array.prototype`'s members are invoked
 with the array as their receiver (`xs.every(g)` reads the member and calls it
 with `xs`), so the parts are about the array.
 
@@ -1280,8 +1283,8 @@ from the heap that allocation leaves are exits from the call's entry
 `Exits.compose_entry`: a frame whose regions read the heap at the location
 alone, `Region.atLocation`, rebases to itself by Seq-Eff, and a fresh
 result, the one postcondition a code's run establishes, is lowered to the
-entry's mark), and the allocation's throw meets the call's exceptional exit
-(`Effect.exitPost_exceptional_prefix`). A code's signature is about its receiver and its
+entry's mark), and the allocation's throw meets the call's exceptional exit,
+which exports no postcondition (`Exits.exitPost_exceptional_prefix`). A code's signature is about its receiver and its
 parameters (`Effect.belowRow`: its entry statements, `Effect.entryBelow`,
 and its schema, `Exits.belowRow`): at its arity its summary reads the
 receiver, those parameters and the result alone

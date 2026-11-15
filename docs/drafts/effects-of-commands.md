@@ -419,7 +419,11 @@ otherwise the total weakening `Exits.dropWeak`: the frame substituted, or its
 closed bound where it names a saved position; the postconditions that
 substitute, the others forgotten. Its exits follow from the schema's at the
 longer call on both exits (`Exits.exitPost_dropWeak`) and equal the exact
-substitution where that is defined (`Exits.dropWeak_of_drop`).
+substitution where that is defined (`Exits.dropWeak_of_drop`). A bound
+signature is the target's exits weakened so, its promise counted after the
+saved actuals and its preconditions (`Effect.drop`); binding keeps a
+signature whose promise is about an actual past the saved ones and that
+states no precondition (`Effect.keeps`).
 
 A postcondition is read from the normal exit's postconditions by its
 formula: a fresh result store (`freshStore 0`, `ExitSchema.freshResult`), a
@@ -464,7 +468,13 @@ Each is a green, buildable step.
    goes through it while the representation is unchanged.
 10. The pivot: `Effect` stores `exits`, `promise`, `requires` and `pre`;
     `schema` is a projection; the old fields and the proofs only the
-    elaboration needs are deleted. No reader needs repair here.
+    elaboration needs are deleted. A property every elaboration has and a
+    decision reads is a check where the decision is made: a conjunction's
+    independence and canonical transports (`Effect.meetCovers`), a rest
+    body's exceptional exit stating no postcondition
+    (`ProgramTyping.exportsEstablished`, `Exits.AllocStable`); a bound
+    signature's exits are arena-free by construction
+    (`Exits.dropWeak_arenaFree`).
 11. The serialized shape changes once, across Lean, TypeScript and
     fixtures; the bridge and the old wire datatype are deleted.
 
@@ -485,7 +495,7 @@ lists each changed verdict with its cause.
 Between commits 9 and 11 an effect is written in the old wire only where it
 is exactly representable there. The old wire is its own datatype,
 `WireEffect` (`Source/EffectJson.lean`), with its validity, its elaboration
-into the effect it states, a decoder and a partial encoder:
+into the exits it states, a decoder and a partial encoder:
 
 ```lean
 def Representable (e : Effect) : Prop :=
@@ -500,23 +510,29 @@ theorem encodeOld_complete (h : Representable e) :
 theorem decodeOld_sound (h : decodeOld j = .ok w) :
   w.Valid ∧ (toJson w == j) = true
 
-theorem effectJson_decode (h : decodeOld j = .ok w) :
+theorem effectJson_decode (h : decodeOld j = .ok w) (hc : w.Canonical) :
   ∃ j', effectJson w.elaborate = .ok j' ∧ (j' == j) = true
 ```
 
 `Valid` is the old decoder's requirement on exact writes and preconditions
-and the canonical footprint of the wire. Every effect is read through
-`decodeOld`, natives and library declarations included; an effect read is
-written back as the document read (`effectJson_decode`, by Json's
-equality). The writers that can refuse (a module function's signatures, an
-import's signatures, a returned function's footprint, the overloads of a
-module declaration) write through `effectJson`, which fails where the
-encoder refuses. The derived serializers of types tables, evidence,
-diagnostics and claims write the encoder's value, or, where it refuses, an
-object naming the refusal, which no decoder reads; this total writer
-belongs to the bridge and is deleted with it in commit 11. The other direction of
-the round trip, that decoding the encoding of a valid value gives that
-value, is checked by examples (`#guard`) and not proved.
+and the canonical footprint of the wire. Two wire values elaborate to one
+effect where they differ only in `receiverStore` beside `receiverOwn`, or
+in `onThrow` where the frame is $`\top`$; the canonical value
+(`WireEffect.canonicalize`) states neither, and `wireOf` reads it back from
+the exits, each field by the reader of the exit that states it
+(`wireOf_elaborate`: `wireOf w.elaborate = w.canonicalize`). Every effect is
+read through `decodeOld`, natives and library declarations included, which
+accepts both values; an effect read from a canonical value is written back
+as the document read (`effectJson_decode`, by Json's equality). The writers
+that can refuse (a module function's signatures, an import's signatures, a
+returned function's footprint, the overloads of a module declaration) write
+through `effectJson`, which fails where the encoder refuses. The derived
+serializers of types tables, evidence, diagnostics and claims write the
+encoder's value, or, where it refuses, an object naming the refusal, which
+no decoder reads; this total writer belongs to the bridge and is deleted
+with it in commit 11. The other direction of the round trip, that decoding
+the encoding of a valid value gives that value, is checked by examples
+(`#guard`) and not proved.
 
 ### Exit composition for rest bodies
 

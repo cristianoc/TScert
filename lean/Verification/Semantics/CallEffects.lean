@@ -521,32 +521,17 @@ theorem PromiseWith.bound {effect : Effect} {Acc Rest : ArgFam} {Rt R Rc : Fam}
     | succ p =>
       -- The target is entered one step after the bound call, at the same
       -- heap: the bound signature's exits follow from the target's at the
-      -- forwarded call (`Effect.summary_drop_normal`,
-      -- `Effect.summary_drop_exceptional`), read from the bound call's
+      -- forwarded call (`Effect.drop_exits`), read from the bound call's
       -- entry, from which the target's is admissible (`Exits.exitPost_entry`).
-      have hfree : ∀ c, ((effect.drop pre.length).schema.get c).arenaFree = true := by
-        have := Effect.schema_arenaFree (effect.drop pre.length)
-        simp only [Exits.arenaFree, Bool.and_eq_true] at this
-        intro c; cases c
-        · exact this.1
-        · exact this.2
-      have back : ∀ c (hc : ∀ (s s' : TolerantFrames.IndexedHeap) (v : Tm), TolerantFrames.Admissible s s' →
-          effect.schema.exitPost c rv (pre ++ args) s s' v → (effect.drop pre.length).schema.exitPost c r args s s' v)
-          (m : Nat) (V : WorldT m) (h' : Heap) (v : Tm),
+      have back : ∀ c (m : Nat) (V : WorldT m) (h' : Heap) (v : Tm),
           effect.schema.exitPostW c rv (pre ++ args) (trunc (p + 1) (Nat.le_succ (p + 1)) U) heap m V h' v →
           (effect.drop pre.length).schema.exitPostW c r args U heap m V h' v := by
-        intro c hc m V h' v hq h1 h2 h3 h4 h5 h6
+        intro c m V h' v hq h1 h2 h3 h4 h5 h6
         let s0 : TolerantFrames.IndexedHeap := ⟨p + 1, _, heap, Nat.succ_pos _, hu', hh'⟩
         have hq' := hq s0.pos s0.adm s0.ok h4 h5 h6
-        exact Exits.exitPost_entry (s := s0) (hfree c) ⟨Nat.le_succ _, WExt_refl _⟩ rfl
-          (hc s0 _ v (Exits.exitPost_admissible hq') hq')
-      exact SafePostExcV.weaken
-        (back .normal fun s s' v hadm hq => Effect.exitPost_summary.mpr
-          (Effect.summary_drop_normal pre.length hadm (fun a ha => hall a ha) (fun a ha => hargs a ha)
-            (Effect.exitPost_summary.mp hq)))
-        (back .exceptional fun s s' v hadm hq => Effect.exitPost_summary.mpr
-          (Effect.summary_drop_exceptional pre.length _ _ hadm (Effect.exitPost_summary.mp hq)))
-        hsafe
+        exact Exits.exitPost_entry (s := s0) (Effect.drop_arenaFree _ effect c) ⟨Nat.le_succ _, WExt_refl _⟩ rfl
+          (Effect.drop_exits hq')
+      exact SafePostExcV.weaken (back .normal) (back .exceptional) hsafe
 
 /-- **A call at a signature's exits from the invocation's entry** (the
 note's Call, `invoke_exits_exact`): a value meeting the signature, invoked at
@@ -683,10 +668,10 @@ theorem construct_exits {effect : Effect} (hpr : effect.promise = none) {P : Arg
 /-- An operational invariant that only appends fresh locations supplies
 the normal-return preservation postcondition, supplementing ordinary safety.
 The safety proof supplies the same worlds and result contract at every step. -/
-theorem prefix_safe {P : Tm → Prop} {R : Fam} {r : Tm} {args : List Tm}
+theorem prefix_safe {P : Tm → Prop} {R : Fam}
     (hstep : ∀ {h t h' t'}, P t → Step h t h' t' → h.IsPrefix h' ∧ P t') :
     ∀ {n W heap t}, P t → Safe Ξ R n W heap t →
-      SafePost Ξ R ((Effect.ofFootprint .empty).post r args heap) n W heap t := by
+      SafePost Ξ R (fun h' _ => Footprints.Closed.empty.Holds heap h') n W heap t := by
   intro n
   induction n with
   | zero => intros; assumption
@@ -695,27 +680,25 @@ theorem prefix_safe {P : Tm → Prop} {R : Fam} {r : Tm} {args : List Tm}
     obtain ⟨hrf, hs⟩ := hs
     refine ⟨hrf, ?_⟩
     rcases hs with (⟨hv, ht⟩ | hth) | ⟨U, h', t', hx, hu, step, hh, hs⟩
-    · exact .inl (.inl ⟨hv, ht, (Effect.post_ofFootprint _ _ _ _ _ _).mpr
-        (Footprints.Closed.holds_empty.mpr ⟨[], by simp⟩)⟩)
+    · exact .inl (.inl ⟨hv, ht, Footprints.Closed.holds_empty.mpr ⟨[], by simp⟩⟩)
     · exact .inl (.inr hth)
     · obtain ⟨hprefix, hp'⟩ := hstep hp step
       exact .inr ⟨U, h', t', hx, hu, step, hh,
-        HeapObservations.weaken (fun _ _ hpost => (Effect.post_ofFootprint _ _ _ _ _ _).mpr
-          (Footprints.Closed.holds_empty.mpr
-          (hprefix.trans (Footprints.Closed.holds_empty.mp ((Effect.post_ofFootprint _ _ _ _ _ _).mp hpost)))))
+        HeapObservations.weaken (fun _ _ hpost => Footprints.Closed.holds_empty.mpr
+          (hprefix.trans (Footprints.Closed.holds_empty.mp hpost)))
           (ih hp' hs)⟩
 
 /-- The same invariant bounds the heap a throw leaves: every step keeps the
 heap a prefix, so a raise does too. -/
-theorem prefix_safe_exc {P : Tm → Prop} {R : Fam} {r : Tm} {args : List Tm}
+theorem prefix_safe_exc {P : Tm → Prop} {R : Fam}
     (hstep : ∀ {h t h' t'}, P t → Step h t h' t' → h.IsPrefix h' ∧ P t') :
     ∀ {n W heap t}, P t → Safe Ξ R n W heap t →
-      SafePostExc Ξ R ((Effect.ofFootprint .empty).post r args heap)
+      SafePostExc Ξ R (fun h' _ => Footprints.Closed.empty.Holds heap h')
         (fun h' => Footprints.Closed.empty.Holds heap h') n W heap t := by
   intro n W heap t hp hs
-  have hpost := prefix_safe (r := r) (args := args) hstep hp hs
-  suffices ∀ {n W h t}, P t → heap.IsPrefix h → SafePost Ξ R ((Effect.ofFootprint .empty).post r args heap) n W h t →
-      SafePostExc Ξ R ((Effect.ofFootprint .empty).post r args heap)
+  have hpost := prefix_safe hstep hp hs
+  suffices ∀ {n W h t}, P t → heap.IsPrefix h → SafePost Ξ R (fun h' _ => Footprints.Closed.empty.Holds heap h') n W h t →
+      SafePostExc Ξ R (fun h' _ => Footprints.Closed.empty.Holds heap h')
         (fun h' => Footprints.Closed.empty.Holds heap h') n W h t from this hp (List.prefix_refl _) hpost
   intro n
   induction n with
@@ -730,9 +713,9 @@ theorem prefix_safe_exc {P : Tm → Prop} {R : Fam} {r : Tm} {args : List Tm}
     · obtain ⟨hprefix, hp'⟩ := hstep hp step
       exact .inr ⟨U, h', t', hx, hu, step, hh, ih hp' (hpre.trans hprefix) hs⟩
 
-theorem pure_safe_exc {R : Fam} {r : Tm} {args : List Tm} {n W heap t}
+theorem pure_safe_exc {R : Fam} {n W heap t}
     (hp : Purity.PureRun t) (hs : Safe Ξ R n W heap t) :
-    SafePostExc Ξ R ((Effect.ofFootprint .empty).post r args heap)
+    SafePostExc Ξ R (fun h' _ => Footprints.Closed.empty.Holds heap h')
       (fun h' => Footprints.Closed.empty.Holds heap h') n W heap t :=
   prefix_safe_exc Purity.CollectingRun.step (.pure hp) hs
 

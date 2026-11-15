@@ -149,7 +149,7 @@ inductive WitnessSeq where
   | fixed (xs : List Witness)
   | restFrom (first : Nat)
   | append (left right : WitnessSeq)
-  deriving DecidableEq
+  deriving DecidableEq, Repr
 
 /-- The sequence at a call of `n` actuals: a rest the actuals' positions from
 `first`, through the last actual, the positions past it, where the call
@@ -167,7 +167,7 @@ structure TransportSchema where
   overrides : List (Nat × Witness)
   boxed : Bool := false
   stable : List Nat := []
-  deriving DecidableEq
+  deriving DecidableEq, Repr
 
 /-- The transport at an entry scope of `entrySlots` slots, each with its
 image. -/
@@ -214,7 +214,7 @@ values. -/
 structure ExitSchema where
   frame : Footprint
   ensures : List FormulaSchema
-  deriving DecidableEq
+  deriving DecidableEq, Repr
 
 /-- Whether an exit schema references no arena node. -/
 def ExitSchema.arenaFree (q : ExitSchema) : Bool := q.ensures.all (·.arenaFree)

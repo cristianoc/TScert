@@ -15,10 +15,8 @@ summary is read at (the note *Tolerant frames*, §6, Call).
 
 A body summary within a signature's summary at each exit
 (`ExitSpec.Weakens`, by checked frame inclusion and checked consequence)
-states the signature's contract for every such run
-(`CommandSummary.signature_holds`), and with `Effect.summary` the
-signature's normal and throw postconditions themselves
-(`CommandSummary.signature_contract`). A summary is a signature's at
+states the signature's summary (`Effect.summary`) for every such run
+(`CommandSummary.signature_holds`). A summary is a signature's at
 arity `n` when its frames read the receiver and the first `n` parameters
 and its postconditions the entry slots up to `n` and the exit slots up to
 `n + 1` (`CommandSummary.Scoped`), as every module function's is at its
@@ -28,9 +26,8 @@ A body's exit valuation may hold locals past the call's exit positions
 (`Runs.AtCallBelow`: it agrees with `ensuresEnv` below `n + 2`). A scoped
 signature summary holds alike at two two-states agreeing below its scope
 (`CommandSummary.Scoped.holds_congr`, by `FormulaF.holds_scoped_congr`), so
-the contract of such a body is stated at `callState` too
-(`CommandSummary.signature_holds_below`,
-`CommandSummary.signature_contract_below`). -/
+the signature's summary of such a body is stated at `callState` too
+(`CommandSummary.signature_holds_below`). -/
 namespace Verification.CallEffects
 open Verification Footprints HeapKnowledge TolerantFrames Parity
 
@@ -92,26 +89,6 @@ theorem CommandSummary.signature_holds {arena : AssertionArena} {P : Assertion} 
     (hr : R.AtCall r args c v m s s') : (Sig.get c).Holds arena (callState r args v m s s') :=
   hw c _ hP (hS c _ hP hr)
 
-/-- **An inferred effect states the signature's contract** (the note, §6,
-Call, on both exits): a body summary within a signature's summary
-(`Effect.summary`) at each exit gives, at every return with value `v`, the
-signature's normal-return postcondition (`Effect.postW`), and at every
-throw its throw postcondition (`Effect.excPost`), at actuals that are
-values. -/
-theorem CommandSummary.signature_contract {arena : AssertionArena} {P : Assertion} {R : Runs} {S : CommandSummary}
-    {e : Effect} {r : Tm} {args : List Tm} (hS : S.Sound arena P R)
-    (hw : ∀ c, (S.get c).Weakens arena P ((e.summary args.length).get c)) (hvals : ∀ a ∈ args, isVal a = true)
-    {v : Tm} {m : Nat} {s s' : IndexedHeap} (hP : P (callEnv r args) m s) :
-    (R.AtCall r args .normal v m s s' → e.postW r args s.W s.h s'.n s'.W s'.h v) ∧
-      (R.AtCall r args .exceptional v m s s' → e.excPost r args s.h s'.h) := by
-  constructor
-  · intro hr
-    have h := CommandSummary.signature_holds hS hw hP hr
-    exact (Effect.summary_normal_iff e h.1.1 fun _ => hvals).mp h
-  · intro hr
-    have h := CommandSummary.signature_holds hS hw hP hr
-    exact (Effect.summary_exceptional_iff e args.length h.1.1).mp h
-
 /-- **The inferred mutation effect is the body's frame**: at every return
 and every throw from an entry meeting `P`, the transition is within the
 body summary's frame at that exit, read at the call's positions. -/
@@ -136,25 +113,6 @@ theorem CommandSummary.signature_holds_below {arena : AssertionArena} {P : Asser
   have hs : TwoState.AgreeBelow ⟨n + 1, n + 2⟩ ⟨callEnv r args, η', m, s, s'⟩ (callState r args v m s s') :=
     ⟨fun _ _ => rfl, fun i hi => (hη' i hi).symm, rfl, rfl, rfl⟩
   exact (CommandSummary.Scoped.holds_congr hsc c hs).mpr h
-
-/-- **An inferred effect states the signature's contract at every call
-whose exit holds locals** (`signature_contract` with
-`signature_holds_below`), its summary at the call's arity scoped at `n`
-(`Effect.summary_scopedSummary`). -/
-theorem CommandSummary.signature_contract_below {arena : AssertionArena} {P : Assertion} {R : Runs}
-    {S : CommandSummary} {e : Effect} {n : Nat} {r : Tm} {args : List Tm} (hS : S.Sound arena P R)
-    (hw : ∀ c, (S.get c).Weakens arena P ((e.summary args.length).get c))
-    (hsc : CommandSummary.Scoped arena n (e.summary args.length) = true) (hvals : ∀ a ∈ args, isVal a = true)
-    {v : Tm} {m : Nat} {s s' : IndexedHeap} (hP : P (callEnv r args) m s) :
-    (R.AtCallBelow n r args .normal v m s s' → e.postW r args s.W s.h s'.n s'.W s'.h v) ∧
-      (R.AtCallBelow n r args .exceptional v m s s' → e.excPost r args s.h s'.h) := by
-  constructor
-  · intro hr
-    have h := CommandSummary.signature_holds_below hS hw hsc hP hr
-    exact (Effect.summary_normal_iff e h.1.1 fun _ => hvals).mp h
-  · intro hr
-    have h := CommandSummary.signature_holds_below hS hw hsc hP hr
-    exact (Effect.summary_exceptional_iff e args.length h.1.1).mp h
 
 /-- **The inferred mutation effect is the body's frame at every call whose
 exit holds locals**: the frame reads the entry valuation alone. -/

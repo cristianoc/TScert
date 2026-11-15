@@ -225,8 +225,7 @@ decides whether the result holds at every node and on every edge. -/
 
 /-- The field names the regions of a body's calls read through one field:
 the fields whose freshness its fresh-field facts range over, read from each
-selected signature's normal frame (`Footprint.regionFields`,
-`Effect.regionFields_schema`). -/
+selected signature's normal frame (`Footprint.regionFields`). -/
 def regionNames (C : ControlFlow.Certificate ι) : List String :=
   (C.flatMap fun c => match ExpressionEffects.selectedEffect c.expression with
     | some eff => eff.schema.normal.frame.regionFields

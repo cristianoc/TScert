@@ -218,24 +218,42 @@ theorem _root_.Verification.Footprints.Region.mem_prefix {R : Region} (hR : R.at
   | inCls r _ ih => simp only [Region.atLocation] at hR; simp only [Region.mem, ih hR, hgl]
   | elems | pathElems => simp [Region.atLocation] at hR
 
+/-- **An allocation alone meets an exceptional exit stating no
+postcondition** (proved): it keeps every old location (`Post.of_prefix`),
+which every frame admits. -/
+theorem Exits.exitPost_exceptional_prefix {x : Exits ExitSchema} (he : x.exceptional.ensures = []) {r : Tm}
+    {args : List Tm} {s s' : IndexedHeap} {v : Tm} (hadm : Admissible s s') (hprefix : s.h.IsPrefix s'.h) :
+    x.exitPost .exceptional r args s s' v := by
+  refine ⟨⟨hadm, ?_⟩, fun F hF => ?_⟩
+  · simp only [callState, Exits.atArity, Exits.map, Exits.get, ExitSchema.instantiate]
+    exact Post.of_prefix _ _ hprefix
+  · simp only [Exits.atArity, Exits.map, Exits.get, ExitSchema.instantiate, he, List.map_nil] at hF
+    cases hF
+
 /-- **A schema whose exits carry across an allocation before the call**:
 an exit from a later entry whose heap extends an earlier one's, at a world
-the earlier reaches, is an exit from the earlier entry. A body run after
-allocating its rest array meets its signature from the invocation's entry
-by it. -/
+the earlier reaches, is an exit from the earlier entry; and the
+allocation's own throw, which only extends the heap, meets the exceptional
+exit. A body run after allocating its rest array meets its signature from
+the invocation's entry by it. -/
 def Exits.AllocStable (x : Exits ExitSchema) : Prop :=
-  ∀ (c : Completion) (r : Tm) (args : List Tm) (s₀ s₁ s₂ : IndexedHeap) (v : Tm),
-    Admissible s₀ s₁ → s₀.h.IsPrefix s₁.h → x.exitPost c r args s₁ s₂ v → x.exitPost c r args s₀ s₂ v
+  (∀ (c : Completion) (r : Tm) (args : List Tm) (s₀ s₁ s₂ : IndexedHeap) (v : Tm),
+    Admissible s₀ s₁ → s₀.h.IsPrefix s₁.h → x.exitPost c r args s₁ s₂ v → x.exitPost c r args s₀ s₂ v) ∧
+  ∀ (r : Tm) (args : List Tm) (s₀ s₁ : IndexedHeap) (v : Tm),
+    Admissible s₀ s₁ → s₀.h.IsPrefix s₁.h → x.exitPost .exceptional r args s₀ s₁ v
 
 /-- **A sufficient check of carrying across an allocation** (proved,
 `Exits.compose_entry`): each frame's regions read the heap at the location
 alone (`Region.atLocation`), so the frame rebases to itself
-(`Rebases.of_prefix`), and each postcondition is a fresh result, which the
-earlier entry's lower mark keeps (`FreshAt.lower`). -/
+(`Rebases.of_prefix`), each postcondition is a fresh result, which the
+earlier entry's lower mark keeps (`FreshAt.lower`), and the exceptional
+exit states none (`Exits.exitPost_exceptional_prefix`). -/
 theorem Exits.allocStable_of {x : Exits ExitSchema}
     (hfr : ∀ c, (x.get c).frame.all (·.1.atLocation) = true)
-    (hens : ∀ c, ∀ F ∈ (x.get c).ensures, F = .operation (.freshStore 0)) : x.AllocStable := by
-  intro c r args s₀ s₁ s₂ v hadm hprefix h
+    (hens : ∀ c, ∀ F ∈ (x.get c).ensures, F = .operation (.freshStore 0)) (he : x.exceptional.ensures = []) :
+    x.AllocStable := by
+  refine ⟨fun c r args s₀ s₁ s₂ v hadm hprefix h => ?_,
+    fun r args s₀ s₁ v hadm hprefix => Exits.exitPost_exceptional_prefix he hadm hprefix⟩
   refine Exits.compose_entry (Φ := []) (cl := fun _ _ => none) ⟨hadm, Post.of_prefix _ _ hprefix⟩
     (Rebases.of_prefix fun e he l hl hm => by
       rwa [← Region.mem_prefix (List.all_eq_true.mp (hfr c) e he) hprefix hl])

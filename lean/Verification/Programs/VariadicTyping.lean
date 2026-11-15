@@ -463,7 +463,7 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     exact this
   -- The rest's allocation extends the heap: by the rest store, or by the
   -- error a too long rest throws, which meets the call's exceptional exit
-  -- (`Effect.exitPost_exceptional_prefix`).
+  -- (`Exits.AllocStable`).
   have hstore : HeapObservations.SafePostExc (excOf G) (meaning G A) (fun heap' _ => heap.IsPrefix heap')
       (fun heap' => heap.IsPrefix heap') j U heap (.arrLit (args.drop arity)) := by
     by_cases hmax : (args.drop arity).length ≤ maxArrayLength
@@ -479,7 +479,7 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     rintro s₀ s' val rfl hW rfl hadm hp
     cases eq_of_heq hW
     intro _ _ _ _ _ _
-    exact Effect.exitPost_exceptional_prefix _ hadm hp
+    exact hstable.2 _ _ _ _ _ hadm hp
   apply HeapObservations.SafePostExcV.bind (.letE · _) .letC .letC (by ctx_refs) j U heap _ hu hh
     (fun x hx => href x (by rw [refs_letE] at hx ⊢; exact List.mem_append_right _ (by simpa [refs] using hx))) hstoreV
   intro i hi V hy hv heap' a hh' hval harr' hprefix hvr
@@ -539,7 +539,7 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     refine CallEffects.SafePostExcV.weaken_reached (WorldAdm_trunc _ hv) (HeapOk_trunc p V heap' hh') ?_ ?_ hcode <;>
       rintro s₁ s₂ val rfl hW rfl - hp hj0 hu0 hh0 _ _ _ <;>
       rw [← eq_of_heq hW] at hp <;>
-      exact hstable _ _ _ ⟨j, U, heap, hj0, hu0, hh0⟩ _ _ _
+      exact hstable.1 _ _ _ ⟨j, U, heap, hj0, hu0, hh0⟩ _ _ _
         (TolerantFrames.WorldReach.trans ⟨hi, hy⟩ ⟨Nat.le_succ _, by rw [eq_of_heq hW]; exact WExt_refl _⟩) hprefix
         ((CallEffects.Exits.exitPostW_iff _ _ _ _ s₁ s₂ val).mp hp)
 

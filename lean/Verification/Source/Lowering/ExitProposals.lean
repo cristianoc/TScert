@@ -285,7 +285,8 @@ theorem project_covers (S : ClassSummary) (bounded : Bool) (n : Nat) (c : Comple
   | normal =>
     simp only [Exits.get] at hk
     subst hk
-    simpa [project, format, Exits.get, Effect.summary, Effect.ofClosed_frame] using hp
+    simpa [project, format, Exits.get, Effect.summary, Exits.atArity, Exits.map, ExitSchema.instantiate,
+      Effect.ofClosed, Exits.ofClosed] using hp
   | exceptional =>
     simp only [Exits.get] at hk
     subst hk

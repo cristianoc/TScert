@@ -4726,10 +4726,11 @@ link and value fact, and the separation:
 
 The signature's postcondition leaves every other old location's contents
 unchanged on a normal return, and every atom kept is about one
-(`PromiseCalls.ownCall_sound`); a throw keeps nothing. Such a signature
-lets its receiver's own locations change as $`\{value: any, store: S\}`$
-allow, $`S`$ its footprint's stores (`Effect.ownChange`), so a body calling
-it is within a bound admitting that change (`selectedCallWithin`).
+(`PromiseCalls.ownCall_sound`); a throw keeps nothing. Such a signature's
+frame lets its receiver's own value locations change arbitrarily (the entry
+`inCls (own 0) values: any`) and every other location as its other entries
+allow, so a body calling it is within a bound admitting that change
+(`selectedCallWithin`).
 
 The array iterator meets both: `%Iterate%` states `freshObject`, and its
 step, called with the iterator as its receiver, `receiverOwn`

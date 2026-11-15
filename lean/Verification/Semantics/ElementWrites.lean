@@ -22,7 +22,7 @@ what it states of the two heaps alone.
   well-formed states its frame is the action of the effect
   `{all-views: grow}` (`Kinds.ViewWrite.frame_iff`). A call's postcondition
   states it from the call's entry world and heap
-  (`CallEffects.Effect.viewPost`).
+  (`CallEffects.ElementWrite.schemaPosts`).
 - **What it states of the heaps** (`CallEffects.ElementWrite.Holds`): the
   coarse change (`ElementWrite.changes`) and, where exact, `ExactWrite` and
   the facts the exact signature's precondition gives (`ExactPre`); all
@@ -307,7 +307,7 @@ number altered, every store's length kept), and, where exact, `ExactWrite`
 and the facts its precondition gives (`ExactPre`). They are consequences
 of the kinded view-element write from a well-formed entry
 (`Kinds.ViewWriteOf.holds`), which the call's postcondition states beside it
-(`CallEffects.Effect.viewPost`), and of the precondition
+(`CallEffects.ElementWrite.schemaPosts`), and of the precondition
 (`ElementKind.exactPre_of_requires`). -/
 def ElementWrite.Holds (w : ElementWrite) (args : List Tm) (before after : Heap) : Prop :=
   w.changes.Holds before after ∧ (∀ k, w = .exact k → ExactWrite k args before after ∧ ExactPre k args) ∧
