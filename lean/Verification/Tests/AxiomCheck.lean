@@ -289,6 +289,11 @@ run_cmd do
   check ``Verification.CallEffects.Runs.then_sound
   check ``Verification.CallEffects.CommandSummary.seq_sound
   check ``Verification.CallEffects.CommandSummary.handle_sound
+  check ``Verification.CallEffects.Footprint.covers_join
+  check ``Verification.CallEffects.ExitSpec.weakens_join
+  check ``Verification.CallEffects.CommandSummary.choice_sound
+  check ``Verification.CallEffects.CommandSummary.join_sound
+  check ``Verification.CallEffects.CommandSummary.seq_spec_sound
   check ``Verification.Parity.OperationPost.holds_shift
   check ``Verification.Footprints.Region.sub_mem
   check ``Verification.Footprints.CellsFrom.of_post

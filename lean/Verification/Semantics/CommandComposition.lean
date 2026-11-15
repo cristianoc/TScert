@@ -34,7 +34,12 @@ throw.
 
 **Handler** (`Runs.handle`, `CommandSummary.handle_sound`): the normal exit
 of `try c catch (x) d` is `c`'s return, or `c`'s throw followed by `d`'s
-return; its exceptional exit is `c`'s throw followed by `d`'s throw. -/
+return; its exceptional exit is `c`'s throw followed by `d`'s throw.
+
+**Choice** (`Runs.choice`, `CommandSummary.join_sound`): the join of the
+branches' summaries, the frames by entry-wise maximum (`Footprint.join`) and
+the postconditions those both state or that checked consequence derives
+from each. -/
 namespace Verification.CallEffects
 open Verification Footprints HeapKnowledge TolerantFrames Parity
 
@@ -252,5 +257,166 @@ theorem CommandSummary.handle_sound {arena : AssertionArena} {P P₂ : Assertion
     · exact hw s hP (hA .normal s hP hr)
     · exact Runs.then_sound (k₁ := .exceptional) (k₂ := .normal) hA hB hmid hn hni s hP hr
   | exceptional => exact Runs.then_sound (k₁ := .exceptional) (k₂ := .exceptional) hA hB hmid hx hxi s hP hr
+
+/-! ## Choice -/
+
+/-- **Entry-wise maximum**: an entry added to a frame raises the change of
+the first entry of its region to their maximum, or is appended where no
+entry has its region. -/
+def Footprint.insertMax : Footprint → Region × Change → Footprint
+  | [], e => [e]
+  | f :: Φ, e => if f.1 = e.1 then (f.1, f.2.max e.2) :: Φ else f :: Footprint.insertMax Φ e
+
+/-- **The join of two frames** (the note, §3, "Order, top, rigidity": an
+upper bound in `⊑`): the second's entries inserted into the first by
+entry-wise maximum. -/
+def Footprint.join (Φ Ψ : Footprint) : Footprint := Ψ.foldl Footprint.insertMax Φ
+
+/-- Each entry of `Φ` has an entry of its region in `Ψ` with at least its
+change. -/
+def Footprint.Covers (Φ Ψ : Footprint) : Prop := ∀ e ∈ Φ, ∃ f ∈ Ψ, f.1 = e.1 ∧ e.2.le f.2 = true
+
+private theorem change_le_trans {a b c : Change} (h₁ : a.le b = true) (h₂ : b.le c = true) : a.le c = true := by
+  simp only [Change.le, decide_eq_true_eq] at *
+  omega
+
+theorem Footprint.Covers.trans {Φ Ψ Θ : Footprint} (h₁ : Footprint.Covers Φ Ψ) (h₂ : Footprint.Covers Ψ Θ) :
+    Footprint.Covers Φ Θ := by
+  intro e he
+  obtain ⟨f, hf, hfe, hle⟩ := h₁ e he
+  obtain ⟨g, hg, hgf, hle'⟩ := h₂ f hf
+  exact ⟨g, hg, hgf.trans hfe, change_le_trans hle hle'⟩
+
+/-- Covering is inclusion, at any class evidence. -/
+theorem Footprint.Covers.le {Φ Ψ : Footprint} (h : Footprint.Covers Φ Ψ) (cl : ClassEvidence) :
+    Footprint.le cl Φ Ψ = true := by
+  refine List.all_eq_true.mpr fun e he => ?_
+  obtain ⟨f, hf, hfe, hle⟩ := h e he
+  exact List.any_eq_true.mpr ⟨f, hf, by rw [hfe]; simp [hle, Region.sub_refl]⟩
+
+theorem Footprint.covers_insertMax (Φ : Footprint) (e : Region × Change) :
+    Footprint.Covers Φ (Footprint.insertMax Φ e) ∧
+      ∃ f ∈ Footprint.insertMax Φ e, f.1 = e.1 ∧ e.2.le f.2 = true := by
+  induction Φ with
+  | nil => exact ⟨(fun _ h => by cases h), ⟨e, List.mem_singleton_self _, rfl, Change.le_refl _⟩⟩
+  | cons g Φ ih =>
+    simp only [Footprint.insertMax]
+    split
+    · rename_i hg
+      refine ⟨fun e' he' => ?_, ⟨_, List.mem_cons_self .., hg, Change.le_max_right _ _⟩⟩
+      rcases List.mem_cons.mp he' with rfl | he'
+      · exact ⟨_, List.mem_cons_self .., rfl, Change.le_max_left _ _⟩
+      · exact ⟨e', List.mem_cons_of_mem _ he', rfl, Change.le_refl _⟩
+    · obtain ⟨hc, f, hf, hfe, hle⟩ := ih
+      refine ⟨fun e' he' => ?_, ⟨f, List.mem_cons_of_mem _ hf, hfe, hle⟩⟩
+      rcases List.mem_cons.mp he' with rfl | he'
+      · exact ⟨e', List.mem_cons_self .., rfl, Change.le_refl _⟩
+      · obtain ⟨f', hf', h1, h2⟩ := hc e' he'
+        exact ⟨f', List.mem_cons_of_mem _ hf', h1, h2⟩
+
+/-- **The join covers both frames.** -/
+theorem Footprint.covers_join (Φ Ψ : Footprint) :
+    Footprint.Covers Φ (Footprint.join Φ Ψ) ∧ Footprint.Covers Ψ (Footprint.join Φ Ψ) := by
+  induction Ψ generalizing Φ with
+  | nil => exact ⟨fun e he => ⟨e, he, rfl, Change.le_refl _⟩, fun _ h => by cases h⟩
+  | cons e Ψ ih =>
+    obtain ⟨h₁, f, hf, hfe, hle⟩ := Footprint.covers_insertMax Φ e
+    obtain ⟨i₁, i₂⟩ := ih (Footprint.insertMax Φ e)
+    simp only [Footprint.join, List.foldl_cons] at i₁ i₂ ⊢
+    refine ⟨h₁.trans i₁, fun e' he' => ?_⟩
+    rcases List.mem_cons.mp he' with rfl | he'
+    · obtain ⟨g, hg, hgf, hle'⟩ := i₁ f hf
+      exact ⟨g, hg, hgf.trans hfe, change_le_trans hle hle'⟩
+    · exact i₂ e' he'
+
+/-- The class evidence stating no class: it holds at every heap. -/
+theorem classOk_none (ρ : Env) (h : Heap) : ClassOk (fun _ _ => none) ρ h :=
+  fun _ _ _ _ hc => by cases hc
+
+/-- **The join of two exit specifications**: the join of the frames, and
+the postconditions both state, with `extra`, formulas checked to follow
+from each. -/
+def ExitSpec.join (q q' : ExitSpec) (extra : List Formula) : ExitSpec :=
+  ⟨Footprint.join q.frame q'.frame, q.ensures.filter (fun F => q'.ensures.contains F) ++ extra⟩
+
+/-- **Each specification is within the join** (the design, "Join
+alternative executions by an upper bound"): where `extra` follows from
+each one's formulas. -/
+theorem ExitSpec.weakens_join {arena : AssertionArena} {P : Assertion} {q q' : ExitSpec} {extra : List Formula}
+    (h : Consequence arena q.facts extra) (h' : Consequence arena q'.facts extra) :
+    q.Weakens arena P (q.join q' extra) ∧ q'.Weakens arena P (q.join q' extra) := by
+  have hcl : ∀ η m (st : IndexedHeap), P η m st → ClassOk (fun _ _ => none) η st.h :=
+    fun η _ st _ => classOk_none η st.h
+  obtain ⟨c₁, c₂⟩ := Footprint.covers_join q.frame q'.frame
+  refine ⟨ExitSpec.weakens_of hcl (c₁.le _) ?_, ExitSpec.weakens_of hcl (c₂.le _) ?_⟩
+  · intro s hs G hG
+    rcases List.mem_append.mp hG with hG | hG
+    · exact hs G (List.mem_cons_of_mem _ (List.mem_filter.mp hG).1)
+    · exact h s hs G hG
+  · intro s hs G hG
+    rcases List.mem_append.mp hG with hG | hG
+    · have := (List.mem_filter.mp hG).2
+      exact hs G (List.mem_cons_of_mem _ (List.contains_iff_mem.mp this))
+    · exact h' s hs G hG
+
+/-- **The runs of a choice between two commands**: the runs of either. A
+branch on a guard is the choice whose runs are the guarded branches' runs. -/
+def Runs.choice (R₁ R₂ : Runs) : Runs := fun c s => R₁ c s ∨ R₂ c s
+
+/-- **The summary of a choice**: within each branch's summary at each exit,
+from the entry condition. -/
+theorem CommandSummary.choice_sound {arena : AssertionArena} {P : Assertion} {R₁ R₂ : Runs}
+    {A B C : CommandSummary} (hA : A.Sound arena P R₁) (hB : B.Sound arena P R₂)
+    (wA : ∀ c, (A.get c).Weakens arena P (C.get c)) (wB : ∀ c, (B.get c).Weakens arena P (C.get c)) :
+    C.Sound arena P (R₁.choice R₂) := by
+  intro c s hP hr
+  rcases hr with hr | hr
+  · exact wA c s hP (hA c s hP hr)
+  · exact wB c s hP (hB c s hP hr)
+
+/-- **The join of two summaries**, exit by exit, with the formulas `extra`
+checked to follow from both. -/
+def CommandSummary.join (A B : CommandSummary) (extra : Exits (List Formula)) : CommandSummary :=
+  ⟨A.normal.join B.normal extra.normal, A.exceptional.join B.exceptional extra.exceptional⟩
+
+/-- **Choice** (the join of the branches' summaries): the frames' entry-wise
+maximum and the postconditions both branches establish. -/
+theorem CommandSummary.join_sound {arena : AssertionArena} {P : Assertion} {R₁ R₂ : Runs} {A B : CommandSummary}
+    {extra : Exits (List Formula)} (hA : A.Sound arena P R₁) (hB : B.Sound arena P R₂)
+    (eA : ∀ c, Consequence arena (A.get c).facts (extra.get c))
+    (eB : ∀ c, Consequence arena (B.get c).facts (extra.get c)) :
+    (A.join B extra).Sound arena P (R₁.choice R₂) := by
+  have hw : ∀ c, (A.get c).Weakens arena P ((A.join B extra).get c) ∧
+      (B.get c).Weakens arena P ((A.join B extra).get c) := by
+    intro c
+    cases c with
+    | normal => exact ExitSpec.weakens_join (eA .normal) (eB .normal)
+    | exceptional => exact ExitSpec.weakens_join (eA .exceptional) (eB .exceptional)
+  exact CommandSummary.choice_sound hA hB (fun c => (hw c).1) (fun c => (hw c).2)
+
+/-- **The summary of a sequence from its parts' summaries**: the normal
+exit the evidence states, and the join of the first's throw with the first's
+return followed by the second's throw. -/
+def CommandSummary.seq (A B : CommandSummary) (evn evx : ThenEvidence) (extra : List Formula) : CommandSummary :=
+  ⟨evn.spec A.normal B.normal, A.exceptional.join (evx.spec A.normal B.exceptional) extra⟩
+
+/-- **The computed summary of a sequence is sound.** -/
+theorem CommandSummary.seq_spec_sound {arena : AssertionArena} {P P₂ : Assertion} {R₁ R₂ : Runs}
+    {A B : CommandSummary} {evn evx : ThenEvidence} {extra : List Formula} (hA : A.Sound arena P R₁)
+    (hB : B.Sound arena P₂ R₂) (hmid : ∀ s, s.Entry P → A.normal.Holds arena s → P₂ s.afterEnv s.mark s.after)
+    (hn : evn.Valid arena P A.normal B.normal) (hx : evx.Valid arena P A.normal B.exceptional)
+    (e₁ : Consequence arena A.exceptional.facts extra)
+    (e₂ : Consequence arena (evx.spec A.normal B.exceptional).facts extra) :
+    (A.seq B evn evx extra).Sound arena P (R₁.seq R₂) := by
+  obtain ⟨w₁, w₂⟩ := ExitSpec.weakens_join (P := P) e₁ e₂
+  intro c s hP hr
+  cases c with
+  | normal =>
+    exact Runs.then_sound (k₁ := .normal) (k₂ := .normal) hA hB hmid hn (evn.into_spec arena _ _) s hP hr
+  | exceptional =>
+    rcases hr with hr | hr
+    · exact w₁ s hP (hA .exceptional s hP hr)
+    · exact w₂ s hP (Runs.then_sound (k₁ := .normal) (k₂ := .exceptional) hA hB hmid hx
+        (evx.into_spec arena _ _) s hP hr)
 
 end Verification.CallEffects
