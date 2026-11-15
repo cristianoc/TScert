@@ -1418,28 +1418,33 @@ at a node outside the region from which no normal return is possible: the
 step within `Φ` (`ExpressionEffects.check`, `writeWithin`, `initWriteWithin`,
 the step's derivation `deriv` within it at the fresh receivers `F`
 (`selectedWithinAt`), claimed at the node's term and context and its tree
-accepted, an empty type); its throw within it where a live handler catches
-it or the bound covers throws (`exc`); a return under a fresh result
-(`ret`) returning a fresh value (`outFresh`); the term in scope. -/
+accepted, an empty type); its throw within `Φ` where a live handler
+catches it, and, where none does, within the exceptional bound `Ψ` with
+`Φ` within `Ψ` (the escaping throw completes a run whose prefix is within
+`Φ`), unless `Ψ` is `⊤`; a return under a fresh result (`ret`) returning a
+fresh value (`outFresh`); the term in scope. -/
 def footprintCheck (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
-    (sums : List (ReadSummary ι)) (Φ : Footprints.Closed) (F : List Nat) (c : PointClaim ι) (node : Node)
-    (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι) (liveHandler exc ret outFresh : Bool) : Bool :=
+    (sums : List (ReadSummary ι)) (Φ Ψ : Footprints.Closed) (F : List Nat) (c : PointClaim ι) (node : Node)
+    (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι) (liveHandler ret outFresh : Bool) : Bool :=
   -- The step's derivation, where its signature bounds the step: claimed
   -- at the node's term and context, its tree accepted (`GraphCode.nodeChecked`'s
   -- conjuncts beside `selectedWithinAt`).
   let derivChecked : Thunk Bool := Thunk.mk fun _ => SinglePass.derivChecked G images codes sums c node stepK deriv
-  let writes := ExpressionEffects.writeWithin G c.context Φ node.expression ||
-    ExpressionEffects.initWriteWithin G c.context stepK Φ node.expression
-  let within := ExpressionEffects.check G c.context node.expression || writes ||
+  let writes := fun (B : Footprints.Closed) => ExpressionEffects.writeWithin G c.context B node.expression ||
+    ExpressionEffects.initWriteWithin G c.context stepK B node.expression
+  let within := ExpressionEffects.check G c.context node.expression || writes Φ ||
     (GraphCode.selectedWithinAt Φ F deriv && derivChecked.get) || ExpressionEffects.emptyType G c.type ||
     c.context.any (ExpressionEffects.emptyType G ·)
-  -- The throw within the bound where a handler outside the region with
-  -- no normal return catches it or the bound covers throws
-  -- (`GraphCode.nodeChecked`'s `deadHandler`): a call's throw by its
-  -- signature's exceptional exit (`GraphCode.selectedThrowsWithinAt`).
-  let throws := !(liveHandler || exc) || ExpressionEffects.check G c.context node.expression || writes ||
-    (GraphCode.selectedThrowsWithinAt Φ F deriv && derivChecked.get) ||
+  -- A throw within a bound: a call's throw by its signature's exceptional
+  -- exit (`GraphCode.selectedThrowsWithinAt`).
+  let throwsAt := fun (B : Footprints.Closed) => ExpressionEffects.check G c.context node.expression || writes B ||
+    (GraphCode.selectedThrowsWithinAt B F deriv && derivChecked.get) ||
     c.context.any (ExpressionEffects.emptyType G ·)
+  -- A throw a live handler catches continues within the normal bound; one
+  -- that escapes completes the run exceptionally, its prefix within the
+  -- normal bound, so within the exceptional bound where that is not `⊤`
+  -- (which every run meets), the normal bound inside it.
+  let throws := (!liveHandler || throwsAt Φ) && (liveHandler || Ψ == .top || (Φ.le Ψ && throwsAt Ψ))
   let returns := match node.continuation with
     | .ret => !ret || outFresh
     | _ => true
@@ -1467,27 +1472,29 @@ def stepGrades (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : Cod
       else writes ++ checkedT.get
     scope := ProgramCertificates.checkScope c.context.length node.expression }
 
-/-- Whether a step's local effect `g` is within the bound `Φ`: a grade on
-normal return below it; where a live handler catches its throw or the bound
-covers throws (`exc`), a throw's grade below it; a return under a fresh
+/-- Whether a step's local effect `g` is within the bounds `Φ` (normal) and
+`Ψ` (exceptional): a grade on normal return below `Φ`; where a live handler
+catches its throw, a throw's grade below `Φ`; where none does and `Ψ` is not
+`⊤`, `Φ` within `Ψ` and a throw's grade below `Ψ`; a return under a fresh
 result (`ret`) returning a fresh value; the term in scope. -/
-def StepGrades.admits (g : StepGrades) (Φ : Footprints.Closed) (liveHandler exc ret outFresh : Bool)
+def StepGrades.admits (g : StepGrades) (Φ Ψ : Footprints.Closed) (liveHandler ret outFresh : Bool)
     (k : Continuation) : Bool :=
-  g.within.any (·.le Φ) && (!(liveHandler || exc) || g.throws.any (·.le Φ)) &&
+  g.within.any (·.le Φ) && ((!liveHandler || g.throws.any (·.le Φ)) &&
+    (liveHandler || Ψ == .top || (Φ.le Ψ && g.throws.any (·.le Ψ)))) &&
     (match k with
       | .ret => !ret || outFresh
       | _ => true) && g.scope
 
 omit [Hashable ι] [Instantiates ι] in
-/-- **The footprint check is the step's local effect within the bound**
-(proved): every disjunct of `footprintCheck` reading the bound is a rule's
-grade below it, so the check at any bound is `admits` of the grades
+/-- **The footprint check is the step's local effect within the bounds**
+(proved): every disjunct of `footprintCheck` reading a bound is a rule's
+grade below it, so the check at any bounds is `admits` of the grades
 `stepGrades` reads off the step once. -/
 theorem footprintCheck_eq_admits (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
-    (sums : List (ReadSummary ι)) (Φ : Footprints.Closed) (F : List Nat) (c : PointClaim ι) (node : Node)
-    (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι) (liveHandler exc ret outFresh : Bool) :
-    footprintCheck G images codes sums Φ F c node stepK deriv liveHandler exc ret outFresh =
-      (stepGrades G images codes sums F c node stepK deriv).admits Φ liveHandler exc ret outFresh
+    (sums : List (ReadSummary ι)) (Φ Ψ : Footprints.Closed) (F : List Nat) (c : PointClaim ι) (node : Node)
+    (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι) (liveHandler ret outFresh : Bool) :
+    footprintCheck G images codes sums Φ Ψ F c node stepK deriv liveHandler ret outFresh =
+      (stepGrades G images codes sums F c node stepK deriv).admits Φ Ψ liveHandler ret outFresh
         node.continuation := by
   simp only [footprintCheck, stepGrades, StepGrades.admits, Thunk.get, ExpressionEffects.writeWithin_eq_grades,
     ExpressionEffects.initWriteWithin_eq_grades, GraphCode.selectedWithinAt_eq_grades,
@@ -1500,7 +1507,10 @@ theorem footprintCheck_eq_admits (G : NormalGraph ι) (images : InstanceImageChe
   generalize derivChecked G images codes sums c node stepK deriv = dc
   generalize GraphCode.selectedGrades F deriv = sel
   generalize GraphCode.selectedThrowGrades F deriv = selT
+  generalize (Ψ == Footprints.Closed.top) = t
+  generalize Φ.le Ψ = n
   cases a <;> cases b <;> cases d <;> cases dc <;> cases hsel : sel.isEmpty <;> cases hselT : selT.isEmpty <;>
+    cases liveHandler <;> cases t <;> cases n <;>
     simp_all [List.any_append, List.isEmpty_iff, Bool.and_assoc, Bool.or_assoc]
 
 /-- A selected call's exit summary (`Effect.summary`) at its actuals'
@@ -2257,7 +2267,7 @@ structure WalkEnv (ι : Type) [DecidableEq ι] [Hashable ι] (G : NormalGraph ι
   ensures : List HeapKnowledge.IndexFact
   reference : Array Knowledge
   debugNode : Nat
-  bound : Option (Footprints.Closed × Bool × Bool)
+  bound : Option RunBound
   givenImplies : Array (List (PromiseCalls.Implication ι))
   givenArgs : Array (List Nat)
   givenInputs : Array (List (Nat × Nat))
@@ -2277,16 +2287,18 @@ structure WalkEnv (ι : Type) [DecidableEq ι] [Hashable ι] (G : NormalGraph ι
   /-- Whether each visit records its step's local effect (`Walk.visits`). -/
   grading : Bool
 
-/-- Under a footprint bound stating no normal return, the region from which
+/-- Under a bound whose exceptional exit is `⊤`, the region from which
 no normal return is possible (`GraphCode.inferDead`), refined from every
 node; empty otherwise. -/
 def deadRegion (G : NormalGraph ι) (nodes : Array Node) (claimed : Array (PointClaim ι))
-    (bound : Option (Footprints.Closed × Bool × Bool)) : Array Bool :=
+    (bound : Option RunBound) : Array Bool :=
   match bound with
-  | some (_, _, false) =>
-    let flags := (nodes.zip claimed).map fun (node, c) => (node, ExpressionEffects.emptyType G c.type)
-    GraphCode.deadIterate flags (nodes.size + 1) (Array.replicate nodes.size true)
-  | _ => #[]
+  | some (b, _) =>
+    if b.exceptional == .top then
+      let flags := (nodes.zip claimed).map fun (node, c) => (node, ExpressionEffects.emptyType G c.type)
+      GraphCode.deadIterate flags (nodes.size + 1) (Array.replicate nodes.size true)
+    else #[]
+  | none => #[]
 
 /-- **The in-degrees** the walk starts from: at each label below
 `nodes.size` that is no loop head, the count of the edges into it
@@ -2340,7 +2352,7 @@ def setupEnv (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (
     (suggestions : List (Sequent ι)) (index : KnownIndex ι) (codes : CodeEntry ι → Bool) (aliases : List (ι × ι))
     (passChecker : PassChecker G images) (undefTy : Option (Ty ι)) (nodes : Array Node)
     (claimed : Array (PointClaim ι)) (start : Nat) (goal : Goal ι) (ensures : List HeapKnowledge.IndexFact)
-    (reference : Array Knowledge) (debugNode : Nat) (bound : Option (Footprints.Closed × Bool × Bool))
+    (reference : Array Knowledge) (debugNode : Nat) (bound : Option RunBound)
     (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
     (givenInputs : Array (List (Nat × Nat))) (observe : Option Nat) (tracing observeEntry : Bool)
     (regional : Option Regional) (isHead reached : Array Bool) (startEntered : Bool)
@@ -2363,7 +2375,7 @@ def setup (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty 
     (suggestions : List (Sequent ι)) (known : List (ProgramCertificates.Evidence ι)) (codes : CodeEntry ι → Bool)
     (aliases : List (ι × ι)) (passChecker : PassChecker G images)
     (answers : Answered G) (reference : Array Knowledge := #[]) (debugNode : Nat := 1000000000)
-    (bound : Option (Footprints.Closed × Bool × Bool) := none)
+    (bound : Option RunBound := none)
     (givenImplies : Array (List (PromiseCalls.Implication ι)) := #[])
     (givenArgs : Array (List Nat) := #[])
     (ensures : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
@@ -2682,25 +2694,25 @@ def outFreshOf (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : Cod
       derivChecked G images codes sums c node stepK deriv)
 
 /-- **The footprint check at a node** (`GraphCode.nodeChecked`): under no
-bound, it passes; under the bound $`(\Phi, \mathit{ret}, \mathit{exc})`$, at a
-label of the no-return region `deadArr` it is `deadNode` with no throw
-bound, elsewhere `footprintCheck` at the fresh receiver slots, the live
+bound, it passes; under the bound $`(\Phi, \Psi, \mathit{ret})`$, at a
+label of the no-return region `deadArr` it is `deadNode` with the
+exceptional bound $`\Psi = \top`$, elsewhere `footprintCheck` at the fresh receiver slots, the live
 handler and the result's freshness (`outFreshOf`), over the read summaries
 `sums` after the step, its facts `stepK` and its derivation `deriv`. -/
 def boundOk (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
-    (bound : Option (Footprints.Closed × Bool × Bool)) (deadArr : Array Bool) (l : Nat) (node : Node)
+    (bound : Option RunBound) (deadArr : Array Bool) (l : Nat) (node : Node)
     (c : PointClaim ι) (entry : State) (sums : List (ReadSummary ι)) (stepK : Knowledge)
     (deriv : ProgramCertificates.Evidence ι) : Bool :=
   match bound with
   | none => true
-  | some (Φ, ret, exc) =>
+  | some (⟨Φ, Ψ⟩, ret) =>
     if deadArr.getD l false then
-      GraphCode.deadNode G deadArr.toList node (deadEvidence c node) && !exc
+      GraphCode.deadNode G deadArr.toList node (deadEvidence c node) && Ψ == .top
     else
-      footprintCheck G images codes sums Φ (recvFresh node entry) c node stepK deriv
+      footprintCheck G images codes sums Φ Ψ (recvFresh node entry) c node stepK deriv
         (match node.handler with
           | some t => !deadArr.getD t.label false
-          | none => false) exc ret
+          | none => false) ret
         (outFreshOf G images codes sums c node entry stepK deriv)
 
 /-- **A visit's record** at label `l`: its step's local certificate
@@ -2726,32 +2738,32 @@ theorem VisitRecord.of_grades (G : NormalGraph ι) (images : InstanceImageCheck 
   ⟨rfl, stepCertificate_grades ..⟩
 
 /-- **The footprint check read off a visit's record**, at its node `node`
-and claim `c`, the bound $`(\Phi, \mathit{ret}, \mathit{exc})`$ and the
-no-return region `deadArr`: at a label of the region `deadNode` with no throw
-bound, elsewhere the record's grades within the bound (`StepGrades.admits`)
+and claim `c`, the bound $`(\Phi, \Psi, \mathit{ret})`$ and the
+no-return region `deadArr`: at a label of the region `deadNode` with the
+exceptional bound $`\Psi = \top`$, elsewhere the record's grades within the bound (`StepGrades.admits`)
 at the live handler, the bound's throw and return conditions and the
 record's freshness. -/
 def VisitRecord.admitsAt (G : NormalGraph ι) (node : Node) (c : PointClaim ι)
-    (B : Footprints.Closed × Bool × Bool) (deadArr : Array Bool) (r : VisitRecord) : Bool :=
+    (B : RunBound) (deadArr : Array Bool) (r : VisitRecord) : Bool :=
   if deadArr.getD r.label false then
-    GraphCode.deadNode G deadArr.toList node (deadEvidence c node) && !B.2.2
+    GraphCode.deadNode G deadArr.toList node (deadEvidence c node) && B.1.exceptional == .top
   else
-    r.grades.admits B.1
+    r.grades.admits B.1.normal B.1.exceptional
       (match node.handler with
         | some t => !deadArr.getD t.label false
-        | none => false) B.2.2 B.2.1 r.outFresh node.continuation
+        | none => false) B.2 r.outFresh node.continuation
 
 /-- `VisitRecord.admitsAt` at the record's node and claim in the graph's
 nodes and claims. -/
 def VisitRecord.admits (G : NormalGraph ι) (nodes : Array Node) (claimed : Array (PointClaim ι))
-    (B : Footprints.Closed × Bool × Bool) (deadArr : Array Bool) (r : VisitRecord) : Bool :=
+    (B : RunBound) (deadArr : Array Bool) (r : VisitRecord) : Bool :=
   r.admitsAt G nodes[r.label]! claimed[r.label]! B deadArr
 
 /-- **The footprint checks read off a walk's records** (`VisitRecord.admits`
 of every visit's record): the check that the bound `B` with its no-return
 region `deadArr` admits every visit the records witness. -/
 def recordsAdmit (G : NormalGraph ι) (nodes : Array Node) (claimed : Array (PointClaim ι))
-    (B : Footprints.Closed × Bool × Bool) (deadArr : Array Bool) (visits : Array VisitRecord) : Bool :=
+    (B : RunBound) (deadArr : Array Bool) (visits : Array VisitRecord) : Bool :=
   visits.all (·.admits G nodes claimed B deadArr)
 
 omit [Hashable ι] [Instantiates ι] in
@@ -2761,12 +2773,12 @@ check `boundOk` makes at a visit of `l` under the bound `B` is
 same read summaries, at the freshness `outFreshOf` computes over them;
 `footprintCheck_eq_admits`). -/
 theorem boundOk_eq_admits (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
-    (B : Footprints.Closed × Bool × Bool) (deadArr : Array Bool) (l : Nat) (node : Node) (c : PointClaim ι)
+    (B : RunBound) (deadArr : Array Bool) (l : Nat) (node : Node) (c : PointClaim ι)
     (entry : State) (sums : List (ReadSummary ι)) (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι) :
     boundOk G images codes (some B) deadArr l node c entry sums stepK deriv =
       (VisitRecord.of G images codes l node c entry sums stepK deriv
         (outFreshOf G images codes sums c node entry stepK deriv)).admitsAt G node c B deadArr := by
-  obtain ⟨Φ, ret, exc⟩ := B
+  obtain ⟨⟨Φ, Ψ⟩, ret⟩ := B
   simp only [boundOk, VisitRecord.admitsAt, (VisitRecord.of_grades ..).2, footprintCheck_eq_admits]
   rfl
 
@@ -3593,7 +3605,7 @@ def runWalk (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (T
     (suggestions : List (Sequent ι)) (known : List (ProgramCertificates.Evidence ι)) (codes : CodeEntry ι → Bool)
     (aliases : List (ι × ι)) (passChecker : PassChecker G images)
     (answers : Answered G) (reference : Array Knowledge := #[]) (debugNode : Nat := 1000000000)
-    (bound : Option (Footprints.Closed × Bool × Bool) := none)
+    (bound : Option RunBound := none)
     (givenImplies : Array (List (PromiseCalls.Implication ι)) := #[])
     (givenArgs : Array (List Nat) := #[])
     (ensures : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])
@@ -3618,7 +3630,7 @@ def run (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : List (Ty ι
     (suggestions : List (Sequent ι)) (known : List (ProgramCertificates.Evidence ι)) (codes : CodeEntry ι → Bool)
     (aliases : List (ι × ι)) (passChecker : PassChecker G images)
     (answers : Answered G) (reference : Array Knowledge := #[]) (debugNode : Nat := 1000000000)
-    (bound : Option (Footprints.Closed × Bool × Bool) := none)
+    (bound : Option RunBound := none)
     (givenImplies : Array (List (PromiseCalls.Implication ι)) := #[])
     (givenArgs : Array (List Nat) := #[])
     (ensures : List HeapKnowledge.IndexFact := []) (givenInputs : Array (List (Nat × Nat)) := #[])

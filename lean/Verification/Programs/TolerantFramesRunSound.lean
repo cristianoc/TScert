@@ -40,7 +40,7 @@ and the fields the same propositions, the reachability read as `Transitions`. -/
 theorem GraphGuarantee.toTarget {G : NormalGraph ι} {admits : MixedAssignment ι → Prop} {P : Program}
     {start : Nat} {goal : Goal ι} {inputs : List (Ty ι)} {sep : HeapSeparation.Separation}
     {idx : List HeapKnowledge.IndexAtom} {assertions : List (Nat × HeapKnowledge.Knowledge)}
-    {bound : Option (Footprints.Closed × Bool × Bool)} {ensures : List HeapKnowledge.IndexFact}
+    {bound : Option RunBound} {ensures : List HeapKnowledge.IndexFact}
     {regional : Option (Footprints.Closed × List Footprints.ArgumentStoreRegion × Bool)}
     (hsrc : P.all (fun node => ObjectCoherence.sourceTerm node.expression) = true)
     (g : GraphGuarantee G admits P start goal inputs sep idx assertions bound ensures regional) :

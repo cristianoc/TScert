@@ -543,6 +543,19 @@ structure CodeEntry (ι : Type) where
   store : Option (Ty ι) := none
   deriving DecidableEq, Repr
 
+/-- **The bound a graph's run is checked within** (the note *Tolerant
+frames*, §6: each completion bounded by its own effect): the closed bound of
+each exit, normal and exceptional, and whether a normal return's result is
+fresh. -/
+abbrev RunBound := CallEffects.Exits Footprints.Closed × Bool
+
+/-- **A request's bound read as a run's** (the request document states a
+closed bound `Φ`, whether a throw is bounded and whether the result is
+fresh): `Φ` on a normal return, and on a throw `Φ` where it is bounded,
+`⊤` otherwise. -/
+def RunBound.ofRequest (Φ : Footprints.Closed) (onThrow fresh : Bool) : RunBound :=
+  (⟨Φ, if onThrow then Φ else .top⟩, fresh)
+
 def CodeEntry.Spec (G : NormalGraph ι) (c : CodeEntry ι) : Prop :=
   GraphCodeSpec G c.arity c.exprs c.conts c.start c.captures c.row c.store
 

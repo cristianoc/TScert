@@ -36,19 +36,19 @@ def EntryHolds (G : NormalGraph ι) (inputs : List (Ty ι)) (sep : HeapSeparatio
 structure GraphGuarantee (G : NormalGraph ι) (admits : MixedAssignment ι → Prop) (P : Program)
     (start : Nat) (goal : Goal ι) (inputs : List (Ty ι)) (sep : HeapSeparation.Separation)
     (idx : List HeapKnowledge.IndexAtom) (assertions : List (Nat × HeapKnowledge.Knowledge))
-    (bound : Option (Footprints.Closed × Bool × Bool)) (ensures : List HeapKnowledge.IndexFact)
+    (bound : Option RunBound) (ensures : List HeapKnowledge.IndexFact)
     (regional : Option (Footprints.Closed × List Footprints.ArgumentStoreRegion × Bool)) : Prop where
   safe : ∀ η, admits η → ∀ n W h ρ, EntryHolds (reassign G η) inputs sep idx ρ n W h →
     (∀ node ∈ P, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
     SafeGraph (excOf (reassign G η)) P (GoalHolds (reassign G η) goal (goal.argument ρ)) n W h (.at start ρ)
-  bounded : ∀ Φ fresh onThrow, bound = some (Φ, fresh, onThrow) → ∀ E K, GraphCode.program E K = P →
+  bounded : ∀ Φ Ψ fresh, bound = some (⟨Φ, Ψ⟩, fresh) → ∀ E K, GraphCode.program E K = P →
     ∀ η, admits η → ∀ n W h L d,
     EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h → RefsOk W (.goto E K start L d) →
     (∀ v ∈ L, isVal v = true) → isVal d = true →
     SafePostExc (excOf (reassign G η))
       (GoalHolds (reassign G η) goal (goal.argument (envOf L d)))
       (fun h' v => Φ.Holds h h' ∧ (fresh = true → Footprints.FreshAt h.length v))
-      (fun h' => onThrow = true → Φ.Holds h h') n W h (.goto E K start L d)
+      (fun h' => Ψ ≠ .top → Ψ.Holds h h') n W h (.goto E K start L d)
   ensured : ensures ≠ [] → ∀ E K, GraphCode.program E K = P → ∀ η, admits η → ∀ n W h L d,
     EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h → RefsOk W (.goto E K start L d) →
     SafePost (excOf (reassign G η))
@@ -80,20 +80,20 @@ where the bound states a fresh result. -/
 def BoundQ (Φ : Footprints.Closed) (h₀ : Heap) (fresh : Bool) : Heap → Tm → Prop :=
   fun h v => Φ.Holds h₀ h ∧ (fresh = true → Footprints.FreshAt h₀.length v)
 
-/-- An escaping throw under the bound: within `Φ` where the bound covers
-throws. -/
-def BoundR (Φ : Footprints.Closed) (h₀ : Heap) (onThrow : Bool) : Heap → Prop :=
-  fun h => onThrow = true → Φ.Holds h₀ h
+/-- An escaping throw under the exceptional bound `Ψ`: within it where it is
+not `⊤`, which every run meets by the heap's growth. -/
+def BoundR (Ψ : Footprints.Closed) (h₀ : Heap) : Heap → Prop :=
+  fun h => Ψ ≠ .top → Ψ.Holds h₀ h
 
 /-- **(Named hypothesis) The footprint check keeps the bound**: from a node
 entry where the pass's assertion holds, with mark `|h₀|`, and the node is
 dead or the heap within `Φ` from `h₀`, every run of its term with budget
 left reaches an exit whose target is dead or within `Φ`, a return within
-`Φ` with a fresh result where `fresh`, an escaping throw within `Φ` where
-`onThrow`. -/
+`Φ` with a fresh result where `fresh`, an escaping throw within the
+exceptional bound `Ψ` (`BoundR`). -/
 def FootprintKept (P : Program) (G : NormalGraph ι) (w : Walk ι) (startNames : List Nat) (ε : HeapKnowledge.EntryState)
-    (ctx : Nat → List (Ty ι)) (Φ : Footprints.Closed) (h₀ : Heap) (dead : List Bool) (fresh onThrow : Bool) : Prop :=
-  NodesKeep P (passPreT G w startNames ε ctx) (BoundX Φ h₀ dead) (BoundQ Φ h₀ fresh) (BoundR Φ h₀ onThrow) h₀.length
+    (ctx : Nat → List (Ty ι)) (Φ Ψ : Footprints.Closed) (h₀ : Heap) (dead : List Bool) (fresh : Bool) : Prop :=
+  NodesKeep P (passPreT G w startNames ε ctx) (BoundX Φ h₀ dead) (BoundQ Φ h₀ fresh) (BoundR Ψ h₀) h₀.length
 
 /-- A return meets `ensures` at the returned value and the entry values. -/
 def EnsuresQ (ens : List HeapKnowledge.IndexFact) (ε : HeapKnowledge.EntryState) : Heap → Tm → Prop :=

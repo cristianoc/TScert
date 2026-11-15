@@ -8,12 +8,12 @@ the pass's typed assertion holds and the node is in the no-return region
 `dead` or the heap is within `Φ` from the invocation's entry `h₀`, that every
 run of the node's term with budget left reaches an exit meeting the same
 property at its target, a return within `Φ` (its value fresh where the bound
-states a fresh result) and an escaping throw within `Φ` where the bound
-covers throws.
+states a fresh result) and an escaping throw within the exceptional bound
+`Ψ` where that is not `⊤`.
 
 `BoundChecked` is the check `run` makes at a node under a bound (the
 footprint bound at this node), over a checked node (`NodeChecked`): inside
-`dead`, `deadNode` and no throw bound; outside it, `footprintCheck` at the
+`dead`, `deadNode` and the exceptional bound `⊤`; outside it, `footprintCheck` at the
 values `run` computes there, its `outFresh` restated as `passOutFreshChecked`
 (a copy of a slot holding a fresh name, or a call stating a fresh result
 whose derivation `derivChecked` accepts). `callFresh_of_checked` proves the
@@ -111,19 +111,19 @@ theorem callFresh_of_checked {G : NormalGraph ι} {images : InstanceImageCheck G
     exact FreshAt.lower hm (CallEffects.Effect.callPost_fresh hfr hpost)
 
 /-- **The footprint bound's check at a checked node** (`run`, "The footprint
-bound at this node", under `bound = some (Φ, ret, exc)` and the region
-`dead`): inside the region, `deadNode` with no throw bound; outside it,
+bound at this node", under `bound = some (⟨Φ, Ψ⟩, ret)` and the region
+`dead`): inside the region, `deadNode` with the exceptional bound `⊤`; outside it,
 `footprintCheck` at the step's values, `outFresh` as `run` computes it
 (`passOutFreshChecked`). -/
 def BoundChecked {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
     {pc : SinglePass.PassChecker G images} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat}
     {ctx : Nat → List (Ty ι)} {l : Nat} (r : NodeChecked G images codes pc P w startNames ctx l)
-    (Φ : Footprints.Closed) (dead : List Bool) (ret exc : Bool) : Prop :=
+    (Φ Ψ : Footprints.Closed) (dead : List Bool) (ret : Bool) : Prop :=
   (GraphCode.deadAt dead l = true →
-    GraphCode.deadNode G dead r.node (passDeadEvidence r.c r.node) = true ∧ exc = false) ∧
+    GraphCode.deadNode G dead r.node (passDeadEvidence r.c r.node) = true ∧ Ψ = .top) ∧
   (GraphCode.deadAt dead l = false →
-    SinglePass.footprintCheck G images codes r.ans.summaries.toList Φ (passRecvFresh r.node r.entry) r.c r.node
-      r.st.stepK (passDerivOf r.c r.node r.st) (passLiveHandler dead r.node) exc ret
+    SinglePass.footprintCheck G images codes r.ans.summaries.toList Φ Ψ (passRecvFresh r.node r.entry) r.c r.node
+      r.st.stepK (passDerivOf r.c r.node r.st) (passLiveHandler dead r.node) ret
       (passOutFreshChecked G images codes r.ans.summaries.toList r.c r.node r.entry r.st.stepK
         (passDerivOf r.c r.node r.st)) = true)
 
@@ -147,12 +147,12 @@ theorem BoundChecked.reassign {G : NormalGraph ι} {η : MixedAssignment ι} {im
     {pc' : SinglePass.PassChecker (reassign G η) (images.reassign η)} {P : ControlFlow.Program} {w : Walk ι}
     {startNames : List Nat} {ctx : Nat → List (Ty ι)} {l : Nat} (hpc : PassCheckerReassign G η images pc pc')
     {r : NodeChecked G images codes pc P w startNames ctx l} {Φ : Footprints.Closed} {dead : List Bool}
-    {ret exc : Bool} (hb : BoundChecked r Φ dead ret exc) :
-    BoundChecked (nodeChecked_reassign hpc r) Φ dead ret exc := by
+    {Ψ : Footprints.Closed} {ret : Bool} (hb : BoundChecked r Φ Ψ dead ret) :
+    BoundChecked (nodeChecked_reassign hpc r) Φ Ψ dead ret := by
   refine ⟨fun hd => hb.1 hd, fun hd => ?_⟩
   have h2 := hb.2 hd
-  show SinglePass.footprintCheck (PositiveRules.reassign G η) (images.reassign η) codes r.ans.summaries.toList Φ _ r.c r.node
-    r.st.stepK _ _ exc ret (passOutFreshChecked (PositiveRules.reassign G η) (images.reassign η) codes r.ans.summaries.toList
+  show SinglePass.footprintCheck (PositiveRules.reassign G η) (images.reassign η) codes r.ans.summaries.toList Φ Ψ _ r.c r.node
+    r.st.stepK _ _ ret (passOutFreshChecked (PositiveRules.reassign G η) (images.reassign η) codes r.ans.summaries.toList
       r.c r.node r.entry r.st.stepK (passDerivOf r.c r.node r.st)) = true
   rw [passOutFreshChecked_reassign, footprintCheck_reassign]
   exact h2
@@ -161,24 +161,25 @@ omit [Instantiates ι] in
 /-- **The footprint check keeps the bound at every node** (`FootprintKept`):
 where every visited node is checked (`NodeChecked`), its entry state holds
 where the typed node assertion does at the mark `|h₀|`, `run` checked its
-bound there (`BoundChecked`, with `ret` the bound's fresh result and `exc`
-its throw bound) and the codes are sound, every node keeps `BoundX`: a run
-of a node outside `dead` from a heap within `Φ` stays within it on each
-exit (`footprint_exits`, its fresh receivers from the state,
+bound there (`BoundChecked`, with `ret` the bound's fresh result and `Ψ`
+its exceptional bound) and the codes are sound, every node keeps `BoundX`:
+a run of a node outside `dead` from a heap within `Φ` stays within it on a
+normal exit and a caught throw, and within `Ψ` on an escaping throw where
+`Ψ` is not `⊤` (`footprint_exits`, its fresh receivers from the state,
 `freshOk_recv`), a return's value fresh where `ret` (`passOutFreshChecked`:
 a copy of a fresh slot, `copyFresh`, or a checked fresh call,
 `callFresh_of_checked`, the heap at least as long as `h₀`); a run of a node
 of `dead` reaches a target of `dead` or no normal exit (`deadNode`: an
 empty result type, or a continuation into `dead`), and a throw a handler of
-`dead`, or escapes with no throw bound. -/
+`dead`, or escapes under the exceptional bound `⊤`. -/
 theorem footprintKept_of {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
     {pc : SinglePass.PassChecker G images} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat}
-    {ctx : Nat → List (Ty ι)} {Φ : Footprints.Closed} {h₀ : Heap} {dead : List Bool} {ret exc : Bool}
+    {ctx : Nat → List (Ty ι)} {Φ Ψ : Footprints.Closed} {h₀ : Heap} {dead : List Bool} {ret : Bool}
     (hacc : ∀ l, w.visited l → ∃ r : NodeChecked G images codes pc P w startNames ctx l,
       (∀ ρ (s : IndexedHeap), passPreT G w startNames ε ctx l ρ h₀.length s →
-        StateHolds G r.entry (w.implies l) startNames ε ρ h₀.length s) ∧ BoundChecked r Φ dead ret exc)
+        StateHolds G r.entry (w.implies l) startNames ε ρ h₀.length s) ∧ BoundChecked r Φ Ψ dead ret)
     (hcodes : CodesSound G codes) :
-    FootprintKept P G w startNames ε ctx Φ h₀ dead ret exc := by
+    FootprintKept P G w startNames ε ctx Φ Ψ h₀ dead ret := by
   intro l ρ s hp hX
   obtain ⟨na, hent, hb⟩ := hacc l hp.1.1
   have hS := hent ρ s hp
@@ -199,7 +200,7 @@ theorem footprintKept_of {G : NormalGraph ι} {images : InstanceImageCheck G} {c
         exact contKeeps_of (fun t ht _ => .inl (hcont.2 t ht))
           (fun hk' => by rw [hk'] at hcont; simp at hcont)
     · cases hh : na.node.handler with
-      | none => intro hexc'; rw [hexc] at hexc'; cases hexc'
+      | none => intro hne; exact absurd hexc hne
       | some t =>
         have := hdn.2
         simp only [GraphCode.deadHandler, hh] at this
@@ -210,8 +211,8 @@ theorem footprintKept_of {G : NormalGraph ι} {images : InstanceImageCheck G} {c
     have hfc := hb.2 hd
     have hsafe : Safe (excOf G) (meaning G na.c.type) s.n s.W s.h (instantiate 0 ρ na.node.expression) :=
       HeapObservations.erase (hj hrf).post
-    obtain ⟨hN, hT⟩ := footprint_exits hfc hcodes hsums' (freshOk_recv hS) he hkS hsafe hΦ hst hk
-    obtain ⟨-, -, hret, -⟩ := footprintCheck_sound hfc
+    obtain ⟨hN, hT, hE⟩ := footprint_exits hfc hcodes hsums' (freshOk_recv hS) he hkS hsafe hΦ hst hk
+    obtain ⟨-, -, -, hret, -⟩ := footprintCheck_sound hfc
     refine ⟨fun hv => contKeeps_of (fun _ _ _ => .inr (hN hv)) fun hk' => ⟨hN hv, fun hr => ?_⟩,
       fun e hr => ?_⟩
     · rcases passOutFreshChecked_cases (hret hk' hr) with hc | ⟨hcf, hdc⟩
@@ -219,8 +220,8 @@ theorem footprintKept_of {G : NormalGraph ι} {images : InstanceImageCheck G} {c
       · exact callFresh_of_checked hcf hdc hcodes hsums' hm he hkS hrf k h' t' hk hst hv
     · cases hh : na.node.handler with
       | none =>
-        intro hexc
-        exact hT (by simp [hexc]) e hr
+        intro hne
+        exact hE (by simp [passLiveHandler, hh]) hne e hr
       | some t =>
         simp only [HandlerKeeps, BoundX]
         cases hdt : GraphCode.deadAt dead t.label with

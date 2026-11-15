@@ -19,7 +19,7 @@ variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι]
 
 /-- The walk's environment with its bound and no-return region replaced. -/
 def WalkEnv.rebound {G : NormalGraph ι} {images : InstanceImageCheck G} (env : WalkEnv ι G images)
-    (bound : Option (Footprints.Closed × Bool × Bool)) (deadArr : Array Bool) : WalkEnv ι G images :=
+    (bound : Option RunBound) (deadArr : Array Bool) : WalkEnv ι G images :=
   { env with bound, deadArr }
 
 theorem stepRun_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images) b d l entry
@@ -51,7 +51,7 @@ omit [Instantiates ι] in
 where the walk has no bound and the step's check at `b` and `d` passes, the
 check and record at `b` are those with no bound. -/
 theorem stepCheck_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images)
-    (b : Option (Footprints.Closed × Bool × Bool)) (d : Array Bool) (l : Nat) (entry : State)
+    (b : Option RunBound) (d : Array Bool) (l : Nat) (entry : State)
     (sums : List (ReadSummary ι)) (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι)
     (hnone : env.bound = none)
     (hok : boundOk G images env.codes b d l env.nodes[l]! env.claimed[l]! entry sums stepK deriv = true) :
@@ -79,7 +79,7 @@ the walk with no bound's step at `l` passes the footprint check at the
 bound `b` and its no-return region `d`, the visit under `b` is the visit with
 no bound. -/
 theorem visitStep_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images)
-    (b : Option (Footprints.Closed × Bool × Bool)) (d : Array Bool) (σ : WalkState ι G) (l : Nat) (en : Entered ι)
+    (b : Option RunBound) (d : Array Bool) (σ : WalkState ι G) (l : Nat) (en : Entered ι)
     (hnone : env.bound = none)
     (hok : ∀ ms st stats a, stepRun G images env l en.entry en.fresh σ.answers en.counts en.trace = .ok (ms, st, stats, a) →
       boundOk G images env.codes b d l env.nodes[l]! env.claimed[l]! en.entry a.summaries.toList st.stepK
@@ -115,7 +115,7 @@ theorem visitExits_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) 
 the walk with no bound makes it: its entry, its step, and the check over the
 read summaries after the step. -/
 def VisitAdmits (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images)
-    (b : Option (Footprints.Closed × Bool × Bool)) (d : Array Bool) (σ : WalkState ι G) (l : Nat) : Prop :=
+    (b : Option RunBound) (d : Array Bool) (σ : WalkState ι G) (l : Nat) : Prop :=
   ∀ en, visitEntry G images env σ l = .ok en →
     ∀ ms st stats a, stepRun G images env l en.entry en.fresh σ.answers en.counts en.trace = .ok (ms, st, stats, a) →
       boundOk G images env.codes b d l env.nodes[l]! env.claimed[l]! en.entry a.summaries.toList st.stepK
@@ -134,7 +134,7 @@ theorem visit_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) (env 
 /-- **Every visit of the walk with no bound passes the footprint check at
 `b` and `d`**: by `drive`'s own recursion. -/
 def DriveAdmits (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images)
-    (b : Option (Footprints.Closed × Bool × Bool)) (d : Array Bool) : Nat → WalkState ι G → Prop
+    (b : Option RunBound) (d : Array Bool) : Nat → WalkState ι G → Prop
   | 0, _ => True
   | fuel + 1, σ => match σ.queue with
     | [] => True
@@ -259,7 +259,7 @@ visit of that `drive` passes the footprint check at `B` and `d`: its record
 is the one it appended (`visit_record`, `visitStep_record`), kept to the end
 (`drive_visits`), and its check is that record's (`boundOk_eq_admits`). -/
 theorem driveAdmits_of_records (G : NormalGraph ι) (images : InstanceImageCheck G) (env : WalkEnv ι G images)
-    (B : Footprints.Closed × Bool × Bool) (d : Array Bool) (hg : env.grading = true) :
+    (B : RunBound) (d : Array Bool) (hg : env.grading = true) :
     ∀ fuel (σ σf : WalkState ι G), drive (visit G images env) fuel σ = .ok σf →
       recordsAdmit G env.nodes env.claimed B d σf.walk.visits = true →
       DriveAdmits G images env (some B) d fuel σ := by
@@ -312,7 +312,7 @@ theorem setup_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) (pool
     (suggestions : List (Sequent ι)) (known : List (ProgramCertificates.Evidence ι)) (codes : CodeEntry ι → Bool)
     (aliases : List (ι × ι)) (passChecker : PassChecker G images)
     (answers : Answered G) (reference : Array Knowledge) (debugNode : Nat)
-    (B : Footprints.Closed × Bool × Bool)
+    (B : RunBound)
     (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
     (ensures : List HeapKnowledge.IndexFact) (givenInputs : Array (List (Nat × Nat)))
     (entrySeparation : HeapSeparation.Separation) (observe : Option Nat) (tracing observeEntry : Bool)
@@ -349,7 +349,7 @@ theorem setup_env (G : NormalGraph ι) (images : InstanceImageCheck G) (pool : L
     (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
     (ensures : List HeapKnowledge.IndexFact) (givenInputs : Array (List (Nat × Nat)))
     (entrySeparation : HeapSeparation.Separation) (observe : Option Nat) (tracing observeEntry : Bool)
-    (regional : Option Regional) (grading : Bool) (bnd : Option (Footprints.Closed × Bool × Bool))
+    (regional : Option Regional) (grading : Bool) (bnd : Option RunBound)
     (env : WalkEnv ι G images) (σ0 : WalkState ι G)
     (h : setup G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
         codes aliases passChecker answers reference debugNode bnd givenImplies givenArgs ensures givenInputs
@@ -373,7 +373,7 @@ theorem runWalk_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) (po
     (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
     (ensures : List HeapKnowledge.IndexFact) (givenInputs : Array (List (Nat × Nat)))
     (entrySeparation : HeapSeparation.Separation) (observe : Option Nat) (tracing observeEntry : Bool)
-    (regional : Option Regional) (grading : Bool) (B : Footprints.Closed × Bool × Bool)
+    (regional : Option Regional) (grading : Bool) (B : RunBound)
     (hadm : ∀ env σ0, setup G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
         codes aliases passChecker answers reference debugNode none givenImplies givenArgs ensures givenInputs
         entrySeparation observe tracing observeEntry regional grading = .ok (env, σ0) →
@@ -410,7 +410,7 @@ theorem run_rebound (G : NormalGraph ι) (images : InstanceImageCheck G) (pool :
     (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
     (ensures : List HeapKnowledge.IndexFact) (givenInputs : Array (List (Nat × Nat)))
     (entrySeparation : HeapSeparation.Separation) (observe : Option Nat) (tracing observeEntry : Bool)
-    (regional : Option Regional) (B : Footprints.Closed × Bool × Bool) (grading : Bool)
+    (regional : Option Regional) (B : RunBound) (grading : Bool)
     (hadm : ∀ env σ0, setup G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
         codes aliases passChecker answers reference debugNode none givenImplies givenArgs ensures givenInputs
         entrySeparation observe tracing observeEntry regional grading = .ok (env, σ0) →
@@ -439,7 +439,7 @@ theorem run_rebound_of_records (G : NormalGraph ι) (images : InstanceImageCheck
     (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
     (ensures : List HeapKnowledge.IndexFact) (givenInputs : Array (List (Nat × Nat)))
     (entrySeparation : HeapSeparation.Separation) (observe : Option Nat) (tracing observeEntry : Bool)
-    (regional : Option Regional) (B : Footprints.Closed × Bool × Bool) (σf : WalkState ι G) (reach : Nat)
+    (regional : Option Regional) (B : RunBound) (σf : WalkState ι G) (reach : Nat)
     (hw : runWalk G images pool fuel P claims start inputs goal assertions cuts candidates entryIndices suggestions known
         codes aliases passChecker answers reference debugNode none givenImplies givenArgs ensures givenInputs
         entrySeparation observe tracing observeEntry regional true = .ok (σf, reach))
@@ -612,7 +612,7 @@ theorem setup_graded (G : NormalGraph ι) (images : InstanceImageCheck G) (pool 
     (suggestions : List (Sequent ι)) (known : List (ProgramCertificates.Evidence ι)) (codes : CodeEntry ι → Bool)
     (aliases : List (ι × ι)) (passChecker : PassChecker G images)
     (answers : Answered G) (reference : Array Knowledge) (debugNode : Nat)
-    (bound : Option (Footprints.Closed × Bool × Bool))
+    (bound : Option RunBound)
     (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
     (ensures : List HeapKnowledge.IndexFact) (givenInputs : Array (List (Nat × Nat)))
     (entrySeparation : HeapSeparation.Separation) (observe : Option Nat) (tracing observeEntry : Bool)
@@ -642,7 +642,7 @@ theorem setup_unrecorded (G : NormalGraph ι) (images : InstanceImageCheck G) (p
     (suggestions : List (Sequent ι)) (known : List (ProgramCertificates.Evidence ι)) (codes : CodeEntry ι → Bool)
     (aliases : List (ι × ι)) (passChecker : PassChecker G images)
     (answers : Answered G) (reference : Array Knowledge) (debugNode : Nat)
-    (bound : Option (Footprints.Closed × Bool × Bool))
+    (bound : Option RunBound)
     (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
     (ensures : List HeapKnowledge.IndexFact) (givenInputs : Array (List (Nat × Nat)))
     (entrySeparation : HeapSeparation.Separation) (observe : Option Nat) (tracing observeEntry : Bool)
@@ -665,7 +665,7 @@ theorem runWalk_ungraded (G : NormalGraph ι) (images : InstanceImageCheck G) (p
     (suggestions : List (Sequent ι)) (known : List (ProgramCertificates.Evidence ι)) (codes : CodeEntry ι → Bool)
     (aliases : List (ι × ι)) (passChecker : PassChecker G images)
     (answers : Answered G) (reference : Array Knowledge) (debugNode : Nat)
-    (bound : Option (Footprints.Closed × Bool × Bool))
+    (bound : Option RunBound)
     (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
     (ensures : List HeapKnowledge.IndexFact) (givenInputs : Array (List (Nat × Nat)))
     (entrySeparation : HeapSeparation.Separation) (observe : Option Nat) (tracing observeEntry : Bool)
@@ -706,7 +706,7 @@ theorem run_ungraded (G : NormalGraph ι) (images : InstanceImageCheck G) (pool 
     (suggestions : List (Sequent ι)) (known : List (ProgramCertificates.Evidence ι)) (codes : CodeEntry ι → Bool)
     (aliases : List (ι × ι)) (passChecker : PassChecker G images)
     (answers : Answered G) (reference : Array Knowledge) (debugNode : Nat)
-    (bound : Option (Footprints.Closed × Bool × Bool))
+    (bound : Option RunBound)
     (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
     (ensures : List HeapKnowledge.IndexFact) (givenInputs : Array (List (Nat × Nat)))
     (entrySeparation : HeapSeparation.Separation) (observe : Option Nat) (tracing observeEntry : Bool)

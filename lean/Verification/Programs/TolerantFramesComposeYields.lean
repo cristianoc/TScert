@@ -239,14 +239,14 @@ the recorded entries. -/
 theorem footprintKept_of_walk {G : NormalGraph ι} {I : InstanceImageCheck G} {c : Target.RunCall G I}
     {after : Answered G} {admits : MixedAssignment ι → Prop} (hp : RunPremises G I c after admits)
     {r : RunWalkA G I c} {dead : List Bool} (hd : ∀ l (hl : r.w.visited l), NodePassChecked c dead (r.node l hl))
-    {η : MixedAssignment ι} (hη : admits η) {Φ : Footprints.Closed} {fr ex : Bool}
-    (hbd : c.bound = some (Φ, fr, ex)) (ε : HeapKnowledge.EntryState) (h₀ : Heap) :
-    FootprintKept c.P (reassign G η) r.w (List.range c.inputs.length) ε r.ctx Φ h₀ dead fr ex := by
+    {η : MixedAssignment ι} (hη : admits η) {Φ Ψ : Footprints.Closed} {fr : Bool}
+    (hbd : c.bound = some (⟨Φ, Ψ⟩, fr)) (ε : HeapKnowledge.EntryState) (h₀ : Heap) :
+    FootprintKept c.P (reassign G η) r.w (List.range c.inputs.length) ε r.ctx Φ Ψ h₀ dead fr := by
   obtain ⟨pc', hpc⟩ := scope_reassign hp.2.1 hη
   exact footprintKept_of
     (fun l hl => ⟨nodeChecked_reassign hpc (r.node l hl),
       fun _ _ hq => (nodeChecked_reassign hpc (r.node l hl)).hentry ▸ hq.1.2,
-      ((hd l hl).bound Φ fr ex hbd).reassign hpc⟩)
+      ((hd l hl).bound Φ Ψ fr hbd).reassign hpc⟩)
     (codesSound_reassign hp.2.2.1 η)
 
 /-- **The return check establishes `ensures` at a checked walk**
@@ -284,7 +284,7 @@ theorem run_sound_checked (hrun : RunTraversedC ι) (hyield : NodesYield ι) (hn
       stable := fun Φ regions exc hr ρ s he =>
         GraphCode.ArgumentPathTracking.checkEntryFields_sound
           ((checkEntryFields_reassign G η c.inputs regions).trans (hfields Φ regions exc hr)) he s.pos s.ok
-      footprint := fun Φ fr ex hbd => ⟨dead, footprintKept_of_walk hp (fun l hl => (hd l hl).1) hη hbd⟩
+      footprint := fun Φ Ψ fr hbd => ⟨dead, footprintKept_of_walk hp (fun l hl => (hd l hl).1) hη hbd⟩
       returns := fun hne => returnsEnsured_of_walk hp (fun l hl => (hd l hl).1) hη hne
       regions := hreg G I c after admits hp r ⟨dead, hd, hgiven, hmerging, hrecord⟩ η hη
       labelled := assertionsLabelled_of_checked labelsChecked G I c after admits hp r }⟩

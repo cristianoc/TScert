@@ -900,6 +900,7 @@ run_cmd do
   check ``Verification.TolerantFrames.stepEdgesSound_of
   check ``Verification.TolerantFrames.footprintCheck_sound
   check ``Verification.TolerantFrames.footprint_exits
+  check ``Verification.TolerantFrames.throw_exits
   check ``Verification.TolerantFrames.returnCheck_plain
   check ``Verification.TolerantFrames.typedRead_optional_sound
   check ``Verification.TolerantFrames.namesBelow_step

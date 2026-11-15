@@ -71,7 +71,7 @@ theorem code_goal (G : NormalGraph ι) (c : CodeEntry ι) (L : List Tm) :
     rfl
 
 /-- **A code's run from a frame of its signature** (proved): a code whose
-exits' bounds are nested (`boundsNested`), whose graph is safe at every
+graph is safe at every
 assignment from its frame (`codeFrame`) and the separation `sep` at its
 goal, and within its bound (`codeRunBound`) where it has one, run as its
 node lists from every frame of its signature meeting `sep`, is safe at the
@@ -79,24 +79,24 @@ signature's result, returning within its normal exit's bound with a fresh
 result where the signature states one and throwing within its exceptional
 exit's bound (`exitBounds`). With no bound, both exits' bounds are `⊤` and
 every run keeps the old locations, or a pure body changes nothing; with
-one, a throw is within the normal bound or the exceptional one is `⊤`. The
+one, the run checked within both exits' bounds (`RunBound`), an exceptional
+bound of `⊤` met by the heap's growth. The
 step shared by code requests (`codeSpec_of_clauses`) and module rows
 (`rowSpec_of_clauses`). -/
 theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSeparation.Separation}
-    (hnest : boundsNested (exitBounds c.row.effect) = true)
     (hsafeG : ∀ η n W h ρ, EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep
       (GraphCode.codeEntryIndices c) ρ n W h →
       (∀ node ∈ GraphCode.program c.exprs c.conts, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
       SafeGraph (excOf (reassign G η)) (GraphCode.program c.exprs c.conts)
         (GoalHolds (reassign G η) c.goal (c.goal.argument ρ)) n W h (.at c.start ρ))
-    (hboundG : ∀ Φ fresh onThrow, codeRunBound c = some (Φ, fresh, onThrow) → ∀ η n W h L d,
+    (hboundG : ∀ Φ Ψ fresh, codeRunBound c = some (⟨Φ, Ψ⟩, fresh) → ∀ η n W h L d,
       EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep (GraphCode.codeEntryIndices c)
         (envOf L d) n W h → RefsOk W (.goto c.exprs c.conts c.start L d) →
         (∀ v ∈ L, isVal v = true) → isVal d = true →
       HeapObservations.SafePostExc (excOf (reassign G η))
         (GoalHolds (reassign G η) c.goal (c.goal.argument (envOf L d)))
         (fun h' v => Φ.Holds h h' ∧ (fresh = true → Footprints.FreshAt h.length v))
-        (fun h' => onThrow = true → Φ.Holds h h') n W h (.goto c.exprs c.conts c.start L d)) :
+        (fun h' => Ψ ≠ .top → Ψ.Holds h h') n W h (.goto c.exprs c.conts c.start L d)) :
     ∀ η n W heap L, EnvOk (reassign G η) (codeFrame c.arity c.row c.captures c.store) (envOf L .nul) n W →
       WorldAdm W → HeapOk n W heap → RefsOk W (.goto c.exprs c.conts c.start L .nul) → CallArguments.Values L → PreAt c.row.effect c.store L heap →
       HeapSeparation.Holds sep (envOf L .nul) →
@@ -137,8 +137,8 @@ theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
             ((CallEffects.Effect.post_ofFootprint _ .undef [] _ _ _).mp hq), fun hf => by simp [hpure.1] at hf⟩)
         (fun h' hq => Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq)
         (CallEffects.pure_safe_exc (r := .undef) (args := []) (.goto hp hvalues rfl) hsafe)
-    · have hbound : codeRunBound c = some ((exitBounds c.row.effect).normal, c.row.effect.fresh,
-          (exitBounds c.row.effect).exceptional != .top) := by
+    · have hbound : codeRunBound c = some (⟨(exitBounds c.row.effect).normal, (exitBounds c.row.effect).exceptional⟩,
+          c.row.effect.fresh) := by
         have h1 := Bool.eq_false_iff.mpr htop
         have h2 : (!c.row.effect.fresh && c.exprs.all Purity.pureTerm) = false := by
           cases hfr : c.row.effect.fresh <;> cases hal : c.exprs.all Purity.pureTerm <;> simp_all
@@ -149,14 +149,11 @@ theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
       rw [code_goal] at hb
       refine HeapObservations.SafePostExc.weaken (fun h' v hq => hq.1) (fun h' hq => ?_)
         (SafePostExc.grow (b := heap.length) (Nat.le_refl _) hb)
-      -- A throw is within the normal bound, which the exceptional one
-      -- contains, or the exceptional bound is `⊤` (`boundsNested`).
+      -- A throw within the exceptional bound, or, where that is `⊤`, by
+      -- the heap's growth.
       by_cases hex : (exitBounds c.row.effect).exceptional = .top
       · rw [hex]; exact Footprints.Closed.holds_top.mpr hq.2
-      · have hle : (exitBounds c.row.effect).normal.le (exitBounds c.row.effect).exceptional = true := by
-          simp only [boundsNested, Bool.or_eq_true, beq_iff_eq] at hnest
-          exact hnest.resolve_left hex
-        exact Footprints.Closed.Holds.mono hle (hq.1 (by simp [hex]))
+      · exact hq.1 hex
 
 /-- **A code safe from its frame, within its bound, meets its signature**
 (proved): a code meeting its conditions, whose graph is safe at every
@@ -172,14 +169,14 @@ theorem codeSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι}
       (∀ node ∈ GraphCode.program c.exprs c.conts, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
       SafeGraph (excOf (reassign G η)) (GraphCode.program c.exprs c.conts)
         (GoalHolds (reassign G η) c.goal (c.goal.argument ρ)) n W h (.at c.start ρ))
-    (hboundG : ∀ Φ fresh onThrow, codeBound c = some (Φ, fresh, onThrow) → ∀ η n W h L d,
+    (hboundG : ∀ Φ Ψ fresh, codeBound c = some (⟨Φ, Ψ⟩, fresh) → ∀ η n W h L d,
       EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) {} (GraphCode.codeEntryIndices c)
         (envOf L d) n W h → RefsOk W (.goto c.exprs c.conts c.start L d) →
         (∀ v ∈ L, isVal v = true) → isVal d = true →
       HeapObservations.SafePostExc (excOf (reassign G η))
         (GoalHolds (reassign G η) c.goal (c.goal.argument (envOf L d)))
         (fun h' v => Φ.Holds h h' ∧ (fresh = true → Footprints.FreshAt h.length v))
-        (fun h' => onThrow = true → Φ.Holds h h') n W h (.goto c.exprs c.conts c.start L d)) :
+        (fun h' => Ψ ≠ .top → Ψ.Holds h h') n W h (.goto c.exprs c.conts c.start L d)) :
     ∀ η, c.Spec (reassign G η) := by
   intro η
   obtain ⟨harity, hbelow, _hreq, hx⟩ := codeConditions_spec hcond
@@ -189,12 +186,10 @@ theorem codeSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι}
     unfold codeObligations at ho'
     split at ho' <;> cases ho'
     rfl
-  have hnest : boundsNested (exitBounds c.row.effect) = true := by
-    simp only [exportsEstablished, Bool.and_eq_true] at hx; exact hx.2
   refine ⟨harity, hbelow, ?_⟩
   intro n W heap L he hw hh href hvalues hpre r args _hframe
-  have hrun := codeRun_of_clauses (sep := {}) hnest hsafeG
-    (fun Φ fresh onThrow hb => hboundG Φ fresh onThrow (by rw [codeBound_eq hcond]; exact hb))
+  have hrun := codeRun_of_clauses (sep := {}) hsafeG
+    (fun Φ Ψ fresh hb => hboundG Φ Ψ fresh (by rw [codeBound_eq hcond]; exact hb))
     η n W heap L he hw hh href hvalues hpre (HeapSeparation.empty_holds _)
   rw [← hof] at hrun
   exact codeObligations_sound ho hw hh hrun

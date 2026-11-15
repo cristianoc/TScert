@@ -417,7 +417,7 @@ where
     ("footprintRegional", l.getObjValD "footprintRegional")]
 
 /-- A bound and a regional check, as text, for `runDigests`. -/
-def boundText (bound : Option (Footprints.Closed × Bool × Bool)) (regional : Option SinglePass.Regional) : String :=
+def boundText (bound : Option RunBound) (regional : Option SinglePass.Regional) : String :=
   s!"{reprStr bound}|{reprStr (regional.map fun rg => (rg.Φ, rg.exc, rg.names, rg.regions.length))}"
 
 /-- **One member's single pass** (`SinglePass.run`), no certificate built:
@@ -448,7 +448,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
       RequestJson.statedWithin r.async r.footprint r.onThrow r.fresh r.stated) then
     return .before name (.refused "the declared effect")
   if bounded && !(r.footprint != .top || r.fresh) then return .before name (.refused "the declared effect")
-  let bound := if bounded then some (r.footprint, r.fresh, r.onThrow) else none
+  let bound := if bounded then some (RunBound.ofRequest r.footprint r.onThrow r.fresh) else none
   -- A postcondition (`ensuresResult`): checked at each return in the pass.
   if !r.ensures.isEmpty && r.qualification.isSome then return .before name (.refused "a postcondition")
   let labels := SinglePass.timedKind "outside: search labels" fun _ => r.searchLabels
@@ -612,7 +612,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
   if let some (_, regions) := r.regional then
     if r.async || r.fresh || !GraphCode.ArgumentPathTracking.checkEntryFields (RequestJson.graph r.toRequest) r.inputs regions then
       return { name, codes := codeRuns, outcome := .refused "store regions" }
-  let walk := fun (k : WalkKind) (bound : Option (Footprints.Closed × Bool × Bool)) (regional : Option SinglePass.Regional) =>
+  let walk := fun (k : WalkKind) (bound : Option RunBound) (regional : Option SinglePass.Regional) =>
     -- (each run recorded: more than one per member run is a regional
     -- check beside the first, `mainRun`)
     SinglePass.work "check: main graph run" (f.fr.workItem i) fun _ =>

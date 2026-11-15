@@ -4,8 +4,8 @@ import Verification.Programs.TolerantFramesComposeRunSound
 
 The visit's step computes whether its footprint check passes (`bounded`
 in `SinglePass.visitStep`): under no bound, it passes; under the bound
-$`(\Phi, \mathit{ret}, \mathit{exc})`$, at a label of the no-return region
-`deadArr` it is `deadNode` with no throw bound, elsewhere `footprintCheck`
+$`(\Phi, \Psi, \mathit{ret})`$, at a label of the no-return region
+`deadArr` it is `deadNode` with $`\Psi = \top`$, elsewhere `footprintCheck`
 at the step's values with the fresh receiver slots, the live handler and
 `outFresh` as the step computes them. `passBounded` is that expression
 over its values. Proved: (`boundChecked_of_bounded`) where it passes at a
@@ -25,19 +25,19 @@ over its values: the bound, the no-return region `deadArr`, the label,
 its node, claim and entry state, the read summaries after the step, the
 step's facts and its derivation. -/
 def passBounded (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
-    (bound : Option (Footprints.Closed × Bool × Bool)) (deadArr : Array Bool) (l : Nat) (node : Node)
+    (bound : Option RunBound) (deadArr : Array Bool) (l : Nat) (node : Node)
     (c : PointClaim ι) (entry : SinglePass.State) (sums : List (ReadSummary ι)) (stepK : HeapKnowledge.Knowledge)
     (deriv : ProgramCertificates.Evidence ι) : Bool :=
   match bound with
   | none => true
-  | some (Φ, ret, exc) =>
+  | some (⟨Φ, Ψ⟩, ret) =>
     if deadArr.getD l false then
-      GraphCode.deadNode G deadArr.toList node (passDeadEvidence c node) && !exc
+      GraphCode.deadNode G deadArr.toList node (passDeadEvidence c node) && Ψ == .top
     else
-      footprintCheck G images codes sums Φ (passRecvFresh node entry) c node stepK deriv
+      footprintCheck G images codes sums Φ Ψ (passRecvFresh node entry) c node stepK deriv
         (match node.handler with
           | some t => !deadArr.getD t.label false
-          | none => false) exc ret
+          | none => false) ret
         (passOutFreshChecked G images codes sums c node entry stepK deriv)
 
 omit [Labels ι] in
@@ -56,17 +56,17 @@ answers after its step, its step's facts and derivation), the node meets
 theorem boundChecked_of_bounded {G : NormalGraph ι} {images : InstanceImageCheck G} {codes : CodeEntry ι → Bool}
     {pc : SinglePass.PassChecker G images} {P : ControlFlow.Program} {w : Walk ι} {startNames : List Nat}
     {ctx : Nat → List (Ty ι)} {l : Nat} (r : NodeChecked G images codes pc P w startNames ctx l)
-    {bound : Option (Footprints.Closed × Bool × Bool)} {deadArr : Array Bool}
+    {bound : Option RunBound} {deadArr : Array Bool}
     (hb : passBounded G images codes bound deadArr l r.node r.c r.entry r.ans.summaries.toList r.st.stepK
       (passDerivOf r.c r.node r.st) = true) :
-    ∀ Φ fr ex, bound = some (Φ, fr, ex) → BoundChecked r Φ deadArr.toList fr ex := by
-  intro Φ fr ex hbd
+    ∀ Φ Ψ fr, bound = some (⟨Φ, Ψ⟩, fr) → BoundChecked r Φ Ψ deadArr.toList fr := by
+  intro Φ Ψ fr hbd
   subst hbd
   simp only [passBounded] at hb
   refine ⟨fun hd => ?_, fun hd => ?_⟩
   · rw [deadAt_toList] at hd
     rw [if_pos hd] at hb
-    simp only [Bool.and_eq_true, Bool.not_eq_true'] at hb
+    simp only [Bool.and_eq_true, beq_iff_eq] at hb
     exact hb
   · rw [deadAt_toList] at hd
     rw [if_neg (by simp [hd])] at hb

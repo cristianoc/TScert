@@ -18,11 +18,11 @@ variable {ι : Type} [DecidableEq ι] [Hashable ι] [Instantiates ι] (G : Norma
   (images : InstanceImageCheck G)
 
 omit [Hashable ι] [Instantiates ι] in
-theorem footprintCheck_reassign (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) (Φ : Footprints.Closed)
+theorem footprintCheck_reassign (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) (Φ Ψ : Footprints.Closed)
     (F : List Nat) (c : PointClaim ι) (node : ControlFlow.Node) (stepK : HeapKnowledge.Knowledge)
-    (deriv : ProgramCertificates.Evidence ι) (liveHandler exc ret outFresh : Bool) :
-    footprintCheck (reassign G η) (images.reassign η) codes sums Φ F c node stepK deriv liveHandler exc ret outFresh =
-      footprintCheck G images codes sums Φ F c node stepK deriv liveHandler exc ret outFresh := by
+    (deriv : ProgramCertificates.Evidence ι) (liveHandler ret outFresh : Bool) :
+    footprintCheck (reassign G η) (images.reassign η) codes sums Φ Ψ F c node stepK deriv liveHandler ret outFresh =
+      footprintCheck G images codes sums Φ Ψ F c node stepK deriv liveHandler ret outFresh := by
   simp only [footprintCheck, derivChecked, Parametricity.checkTree_reassign, Parametricity.requiresTree_reassign]
   rfl
 

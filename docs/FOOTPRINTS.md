@@ -438,8 +438,19 @@ type by the rule above, or a non-return continuation whose destinations all
 lie in $`D`$; every exceptional handler of a node in $`D`$ also lies in $`D`$.
 The region may contain cycles. Its nodes retain ordinary safety and may
 change the heap without satisfying $`\Phi`$. A handler outside $`D`$ requires
-the throwing node to meet the footprint on its throw too. A body claiming
-`onThrow` uses an empty $`D`$.
+the throwing node to meet the footprint on its throw too. A body whose
+exceptional bound is not $`\top`$ uses an empty $`D`$.
+
+The pass checks a run within a bound of each exit, $`\Phi`$ on a normal
+return and $`\Psi`$ on a throw that leaves the invocation (`RunBound`, the
+note's Call: each completion bounded by its own effect). A throw a live
+handler catches continues the run and is checked within $`\Phi`$; a throw
+none catches completes the run, its prefix within $`\Phi`$, so its node
+checks $`\Phi \sqsubseteq \Psi`$ and its throw within $`\Psi`$, unless
+$`\Psi`$ is $`\top`$, which every run meets by the heap's growth
+(`SinglePass.footprintCheck`, `StepGrades.admits`; proved:
+`TolerantFrames.footprintCheck_sound`, `footprint_exits`, `throw_exits`,
+`footprintKept_of`).
 
 Proved: `GraphCode.bounded_step` preserves the bound outside $`D`$ and the
 absence of a normal exit inside it; `goto_bounded` gives the body's footprint.

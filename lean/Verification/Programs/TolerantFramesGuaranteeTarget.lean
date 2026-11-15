@@ -68,7 +68,7 @@ budget. -/
 structure GraphGuarantee (G : NormalGraph ι) (admits : MixedAssignment ι → Prop) (P : Program)
     (start : Nat) (goal : Goal ι) (inputs : List (Ty ι)) (sep : HeapSeparation.Separation)
     (idx : List HeapKnowledge.IndexAtom) (assertions : List (Nat × HeapKnowledge.Knowledge))
-    (bound : Option (Footprints.Closed × Bool × Bool)) (ensures : List HeapKnowledge.IndexFact)
+    (bound : Option RunBound) (ensures : List HeapKnowledge.IndexFact)
     (regional : Option (Footprints.Closed × List Footprints.ArgumentStoreRegion × Bool)) : Prop where
   /-- The graph's node expressions mention no location
   (`ObjectCoherence.sourceTerm`): their references are valid in every world
@@ -77,14 +77,14 @@ structure GraphGuarantee (G : NormalGraph ι) (admits : MixedAssignment ι → P
   safe : ∀ η, admits η → ∀ n W h ρ, EntryHolds (reassign G η) inputs sep idx ρ n W h →
     (∀ node ∈ P, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
     SafeGraph (excOf (reassign G η)) P (GoalHolds (reassign G η) goal (goal.argument ρ)) n W h (.at start ρ)
-  bounded : ∀ Φ fresh onThrow, bound = some (Φ, fresh, onThrow) → ∀ E K, GraphCode.program E K = P →
+  bounded : ∀ Φ Ψ fresh, bound = some (⟨Φ, Ψ⟩, fresh) → ∀ E K, GraphCode.program E K = P →
     ∀ η, admits η → ∀ n W h L d,
     EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h → RefsOk W (.goto E K start L d) →
     (∀ v ∈ L, isVal v = true) → isVal d = true →
     HeapObservations.SafePostExc (excOf (reassign G η))
       (GoalHolds (reassign G η) goal (goal.argument (envOf L d)))
       (fun h' v => Φ.Holds h h' ∧ (fresh = true → Footprints.FreshAt h.length v))
-      (fun h' => onThrow = true → Φ.Holds h h') n W h (.goto E K start L d)
+      (fun h' => Ψ ≠ .top → Ψ.Holds h h') n W h (.goto E K start L d)
   ensured : ensures ≠ [] → ∀ E K, GraphCode.program E K = P → ∀ η, admits η → ∀ n W h L d,
     EntryHolds (reassign G η) inputs sep idx (envOf L d) n W h → RefsOk W (.goto E K start L d) →
     HeapObservations.SafePost (excOf (reassign G η))
@@ -135,7 +135,7 @@ structure RunCall (G : NormalGraph ι) (I : InstanceImageCheck G) where
   answers : Answered G
   reference : Array HeapKnowledge.Knowledge
   debugNode : Nat
-  bound : Option (Footprints.Closed × Bool × Bool)
+  bound : Option RunBound
   givenImplies : Array (List (PromiseCalls.Implication ι))
   givenArgs : Array (List Nat)
   ensures : List HeapKnowledge.IndexFact

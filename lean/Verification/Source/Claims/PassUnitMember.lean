@@ -20,11 +20,11 @@ variable {σ ι : Type} [Labels ι] [StoreView σ ι]
 /-- The bound the main graph's run is given, as `passGroup` computes it
 (`bounded`): none for the footprint letting everything change on normal
 return alone, none for a pure graph promising no fresh result, the claimed
-footprint, fresh flag and throw flag otherwise. -/
-def mainBound (r : SourceRequest σ ι) : Option (Footprints.Closed × Bool × Bool) :=
+footprint, fresh flag and throw flag otherwise (`RunBound.ofRequest`). -/
+def mainBound (r : SourceRequest σ ι) : Option RunBound :=
   if (!(r.footprint == .top && !r.onThrow && !r.fresh) &&
       !(!r.fresh && r.program.all fun n => Purity.pureTerm n.expression)) = true then
-    some (r.footprint, r.fresh, r.onThrow)
+    some (RunBound.ofRequest r.footprint r.onThrow r.fresh)
   else none
 
 /-- The regional option the unit's stated regions give the run (`regionalOf

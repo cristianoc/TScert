@@ -154,7 +154,7 @@ def lackingFacts (G : NormalGraph ι) (images : InstanceImageCheck G) (droppable
     (candidates : List (Nat × List IndexAtom)) (entryIndices : List IndexAtom)
     (suggestions : List (Sequent ι)) (known : List (ProgramCertificates.Evidence ι)) (codes : CodeEntry ι → Bool)
     (aliases : List (ι × ι)) (passChecker : PassChecker G images)
-    (answers : Answered G) (bound : Option (Footprints.Closed × Bool × Bool))
+    (answers : Answered G) (bound : Option RunBound)
     (givenImplies : Array (List (PromiseCalls.Implication ι))) (givenArgs : Array (List Nat))
     (ensures : List HeapKnowledge.IndexFact) (givenInputs : Array (List (Nat × Nat)))
     (entrySeparation : HeapSeparation.Separation) (regional : Option Regional) : List (Nat × LeftOut) :=

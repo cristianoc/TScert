@@ -77,7 +77,7 @@ assertion of the request the written assertion at its label
 (`labelled`). -/
 structure PassWalkSound (G : NormalGraph ι) (P : Program) (start : Nat) (goal : Goal ι) (inputs : List (Ty ι))
     (sep : HeapSeparation.Separation) (idx : List HeapKnowledge.IndexAtom)
-    (assertions : List (Nat × HeapKnowledge.Knowledge)) (bound : Option (Footprints.Closed × Bool × Bool))
+    (assertions : List (Nat × HeapKnowledge.Knowledge)) (bound : Option RunBound)
     (ensures : List HeapKnowledge.IndexFact)
     (regional : Option (Footprints.Closed × List Footprints.ArgumentStoreRegion × Bool))
     (w : Walk ι) (given : Nat → Bool) (ctx : Nat → List (Ty ι))
@@ -89,8 +89,8 @@ structure PassWalkSound (G : NormalGraph ι) (P : Program) (start : Nat) (goal :
     HeapKnowledge.IndexHolds ⟨ρ, s.h⟩ idx ρ s.h → passPreA G w (List.range inputs.length) ⟨ρ, s.h⟩ ctx stated start ρ m s
   stable : ∀ Φ regions exc, regional = some (Φ, regions, exc) → ∀ ρ (s : IndexedHeap), EnvOk G inputs ρ s.n s.W →
     ArgumentPathTracking.StableNow (ArgumentPathTracking.stableFields regions) ρ s.h s.W
-  footprint : ∀ Φ fr ex, bound = some (Φ, fr, ex) → ∃ dead, ∀ ε h₀,
-    FootprintKept P G w (List.range inputs.length) ε ctx Φ h₀ dead fr ex
+  footprint : ∀ Φ Ψ fr, bound = some (⟨Φ, Ψ⟩, fr) → ∃ dead, ∀ ε h₀,
+    FootprintKept P G w (List.range inputs.length) ε ctx Φ Ψ h₀ dead fr
   returns : ensures ≠ [] → ∀ ε m, ReturnsEnsured P G w (List.range inputs.length) ε ctx ensures m
   regions : ∀ Φ regions exc, regional = some (Φ, regions, exc) →
     ∃ X : HeapKnowledge.EntryState → Heap → Nat → Env → Heap → Prop, ∀ ε h₀, X ε h₀ start ε.env h₀ ∧
@@ -102,7 +102,7 @@ omit [DecidableEq ι] [Hashable ι] in
 separation and the index facts. -/
 theorem PassWalkSound.start {G : NormalGraph ι} {P : Program} {start : Nat} {goal : Goal ι}
     {inputs : List (Ty ι)} {sep : HeapSeparation.Separation} {idx : List HeapKnowledge.IndexAtom}
-    {assertions : List (Nat × HeapKnowledge.Knowledge)} {bound : Option (Footprints.Closed × Bool × Bool)}
+    {assertions : List (Nat × HeapKnowledge.Knowledge)} {bound : Option RunBound}
     {ensures : List HeapKnowledge.IndexFact}
     {regional : Option (Footprints.Closed × List Footprints.ArgumentStoreRegion × Bool)}
     {w : Walk ι} {given : Nat → Bool} {ctx : Nat → List (Ty ι)}
@@ -126,7 +126,7 @@ every field of `GraphGuarantee`, each read at the node assertion
 `passPreU`. -/
 theorem run_guarantee {G : NormalGraph ι} {admits : MixedAssignment ι → Prop} {P : Program} {start : Nat}
     {goal : Goal ι} {inputs : List (Ty ι)} {sep : HeapSeparation.Separation} {idx : List HeapKnowledge.IndexAtom}
-    {assertions : List (Nat × HeapKnowledge.Knowledge)} {bound : Option (Footprints.Closed × Bool × Bool)}
+    {assertions : List (Nat × HeapKnowledge.Knowledge)} {bound : Option RunBound}
     {ensures : List HeapKnowledge.IndexFact}
     {regional : Option (Footprints.Closed × List Footprints.ArgumentStoreRegion × Bool)}
     (hall : ∀ η, admits η → ∃ (w : Walk ι) (given : Nat → Bool) (ctx : Nat → List (Ty ι))
@@ -144,10 +144,10 @@ theorem run_guarantee {G : NormalGraph ι} {admits : MixedAssignment ι → Prop
       let s : IndexedHeap := ⟨n + 1, W, h, Nat.zero_lt_succ _, ha, ho⟩
       exact graph_safe_at (nodesChecked_of_walk (hp.walk ⟨ρ, h⟩ 0) (regionFields regional) h) passPreU_adminClosed
         (hp.start (s := s) hv hs hi (by simp)) hPn hρ
-  bounded Φ fr ex hb E K hP η hη n W h L d he hgo _ _ := by
+  bounded Φ Ψ fr hb E K hP η hη n W h L d he hgo _ _ := by
     obtain ⟨w, given, ctx, edgesIn, fresh, stated, hp⟩ := hall η hη
     obtain ⟨hv, hs, hi, ha, ho⟩ := he
-    obtain ⟨dead, hkeep⟩ := hp.footprint Φ fr ex hb
+    obtain ⟨dead, hkeep⟩ := hp.footprint Φ Ψ fr hb
     subst hP
     exact keeps_postExc (nodesChecked_of_walk (hp.walk ⟨envOf L d, h⟩ h.length) (regionFields regional) h)
       passPreU_adminClosed (nodesKeep_anti (fun _ _ _ hu => hu.1.1.1) (hkeep ⟨envOf L d, h⟩ h)) (fun _ _ _ h => h)

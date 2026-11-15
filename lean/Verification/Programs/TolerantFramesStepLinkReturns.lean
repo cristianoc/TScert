@@ -99,55 +99,89 @@ theorem pass_footprint_exits [DecidableEq ι] {G : NormalGraph ι} {images : Ins
     exact pass_within_entry h₁ (hh ▸ hq)
 
 /-- **The pass's footprint check read as its conditions** (`SinglePass.footprintCheck`,
-by unfolding): at the node's sequent `j`, `within`, `throws` where a live
-handler catches the throw or the bound covers throws, a return's freshness
-where the bound requires it, and the term's scope. -/
+by unfolding): at the node's sequent `j`, `within` at the normal bound `Φ`;
+`throws` at `Φ` where a live handler catches the throw, and, where none
+does and the exceptional bound `Ψ` is not `⊤`, `Φ` within `Ψ` and `throws`
+at `Ψ`; a return's freshness where the bound requires it; and the term's
+scope. -/
 theorem footprintCheck_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
-    {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} {Φ : Footprints.Closed} {F : List Nat}
+    {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} {Φ Ψ : Footprints.Closed} {F : List Nat}
     {c : PointClaim ι} {node : Node} {kS : HeapKnowledge.Knowledge} {d : ProgramCertificates.Evidence ι}
-    {liveHandler exc ret outFresh : Bool}
-    (h : footprintCheck G images codes sums Φ F c node kS d liveHandler exc ret outFresh = true) :
+    {liveHandler ret outFresh : Bool}
+    (h : footprintCheck G images codes sums Φ Ψ F c node kS d liveHandler ret outFresh = true) :
     passWithin G images codes sums ⟨c.context, node.expression, c.type⟩ kS Φ F d = true ∧
-    ((liveHandler || exc) = true → passThrows G images codes sums ⟨c.context, node.expression, c.type⟩ kS Φ F d = true) ∧
+    (liveHandler = true → passThrows G images codes sums ⟨c.context, node.expression, c.type⟩ kS Φ F d = true) ∧
+    (liveHandler = false → Ψ ≠ .top →
+      Φ.le Ψ = true ∧ passThrows G images codes sums ⟨c.context, node.expression, c.type⟩ kS Ψ F d = true) ∧
     (node.continuation = .ret → ret = true → outFresh = true) ∧
     checkScope c.context.length node.expression = true := by
   have tg : ∀ f : Unit → Bool, (Thunk.mk f).get = f () := fun _ => rfl
   simp only [footprintCheck, SinglePass.derivChecked, tg, Bool.and_eq_true] at h
-  obtain ⟨⟨⟨hw, ht⟩, hr⟩, hs⟩ := h
-  refine ⟨?_, fun hl => ?_, fun hk hret => ?_, hs⟩
+  obtain ⟨⟨⟨hw, ⟨htc, hte⟩⟩, hr⟩, hs⟩ := h
+  refine ⟨?_, fun hl => ?_, fun hl hne => ?_, fun hk hret => ?_, hs⟩
   · simpa [passWithin, passWrites, passDerivChecked, Bool.or_assoc, Bool.and_assoc] using hw
-  · rw [hl] at ht
-    simpa [passThrows, passWrites, passDerivChecked, Bool.or_assoc, Bool.and_assoc] using ht
+  · rw [hl] at htc
+    simpa [passThrows, passWrites, passDerivChecked, Bool.or_assoc, Bool.and_assoc] using htc
+  · rw [hl] at hte
+    simp only [Bool.false_or, Bool.or_eq_true, beq_iff_eq, Bool.and_eq_true] at hte
+    rcases hte with htop | ⟨hle, hth⟩
+    · exact absurd htop hne
+    · exact ⟨hle, by simpa [passThrows, passWrites, passDerivChecked, or_assoc, and_assoc] using hth⟩
   · rw [hk] at hr; simpa [hret] using hr
 
-/-- **The footprint check composes the invocation's bound**, from the pass's
-function: where `footprintCheck` accepts the node, the fresh receiver slots
+/-- **A throw within a bound composes the invocation's bound**: where the
+pass's `throws` holds at a bound `B` at the node, the fresh receiver slots
 `F` hold stores allocated at or past the invocation's entry `h₀`, and the
-node's local safety and a bound `Φ` from `h₀` to its entry heap hold, each
-run with budget left keeps `Φ` from `h₀` to the heap of its normal exit, and of
-its throw where a live handler catches it or the bound covers throws. -/
+node's local safety and `B` from `h₀` to its entry heap hold, each run with
+budget left that raises keeps `B` from `h₀` to its heap. -/
+theorem throw_exits [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
+    {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} {B : Footprints.Closed} {F : List Nat}
+    {j : Sequent ι} {kS : HeapKnowledge.Knowledge} {d : ProgramCertificates.Evidence ι}
+    (hth : passThrows G images codes sums j kS B F d = true) (hscope : checkScope j.context.length j.term = true)
+    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
+    {ρ : Env} {s : IndexedHeap} {h₀ : Heap} (hF : GraphCode.FreshOk F h₀.length ρ)
+    (he : EnvOk G j.context ρ s.n s.W) (hkS : HeapKnowledge.Holds kS ε ρ s.h)
+    (hsafe : Safe (excOf G) (meaning G j.type) s.n s.W s.h (instantiate 0 ρ j.term))
+    (h₁ : B.Holds h₀ s.h) {k : Nat} {h' : Heap} {t' : Tm}
+    (hst : Steps k s.h (instantiate 0 ρ j.term) h' t') (hk : k < s.n) :
+    ∀ x, Raises t' x → B.Holds h₀ h' := by
+  intro x hx
+  have ht := pass_within_throw hth hscope hcodes hsums hF he hkS s.adm s.ok hsafe
+  obtain ⟨s', -, hh, -, -, hq⟩ := run_throw ht hst hx hk
+  exact pass_within_entry h₁ (hh ▸ hq)
+
+/-- **The footprint check composes the invocation's bounds**, from the
+pass's function: where `footprintCheck` accepts the node, the fresh
+receiver slots `F` hold stores allocated at or past the invocation's entry
+`h₀`, and the node's local safety and the normal bound `Φ` from `h₀` to its
+entry heap hold, each run with budget left keeps `Φ` from `h₀` to the heap
+of its normal exit and of a throw a live handler catches, and the
+exceptional bound `Ψ`, where it is not `⊤`, to the heap of a throw none
+does (`Φ` within `Ψ`, `Closed.Holds.mono`). -/
 theorem footprint_exits [DecidableEq ι] {G : NormalGraph ι} {images : InstanceImageCheck G}
-    {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} {Φ : Footprints.Closed} {F : List Nat}
+    {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} {Φ Ψ : Footprints.Closed} {F : List Nat}
     {c : PointClaim ι} {node : Node} {kS : HeapKnowledge.Knowledge} {d : ProgramCertificates.Evidence ι}
-    {liveHandler exc ret outFresh : Bool}
-    (hfc : footprintCheck G images codes sums Φ F c node kS d liveHandler exc ret outFresh = true)
+    {liveHandler ret outFresh : Bool}
+    (hfc : footprintCheck G images codes sums Φ Ψ F c node kS d liveHandler ret outFresh = true)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ : Env} {s : IndexedHeap} {h₀ : Heap} (hF : GraphCode.FreshOk F h₀.length ρ)
     (he : EnvOk G c.context ρ s.n s.W) (hkS : HeapKnowledge.Holds kS ε ρ s.h)
     (hsafe : Safe (excOf G) (meaning G c.type) s.n s.W s.h (instantiate 0 ρ node.expression))
     (h₁ : Φ.Holds h₀ s.h) {k : Nat} {h' : Heap} {t' : Tm}
     (hst : Steps k s.h (instantiate 0 ρ node.expression) h' t') (hk : k < s.n) :
-    (isVal t' = true → Φ.Holds h₀ h') ∧ ((liveHandler || exc) = true → ∀ x, Raises t' x → Φ.Holds h₀ h') := by
-  obtain ⟨hwi, hth, -, hscope⟩ := footprintCheck_sound hfc
-  refine ⟨fun hv => ?_, fun hl x hx => ?_⟩
+    (isVal t' = true → Φ.Holds h₀ h') ∧ (liveHandler = true → ∀ x, Raises t' x → Φ.Holds h₀ h') ∧
+      (liveHandler = false → Ψ ≠ .top → ∀ x, Raises t' x → Ψ.Holds h₀ h') := by
+  obtain ⟨hwi, hthc, hthe, -, hscope⟩ := footprintCheck_sound hfc
+  refine ⟨fun hv => ?_, fun hl => ?_, fun hl hne => ?_⟩
   · have hn := pass_within_normal (j := ⟨c.context, node.expression, c.type⟩) hwi hscope hcodes hsums hF he hkS
       s.adm s.ok hsafe
     obtain ⟨s', -, hh, -, -, hq⟩ := run_normal (SafePostExc.of_post (R := fun _ => True) (fun _ => trivial) hn) hst hv hk
     exact pass_within_entry h₁ (hh ▸ hq)
-  · have ht := pass_within_throw (j := ⟨c.context, node.expression, c.type⟩) (hth hl) hscope hcodes hsums hF he hkS
-      s.adm s.ok hsafe
-    obtain ⟨s', -, hh, -, -, hq⟩ := run_throw ht hst hx hk
-    exact pass_within_entry h₁ (hh ▸ hq)
+  · exact throw_exits (j := ⟨c.context, node.expression, c.type⟩) (hthc hl) hscope hcodes hsums hF he hkS hsafe h₁
+      hst hk
+  · obtain ⟨hle, hth⟩ := hthe hl hne
+    exact throw_exits (j := ⟨c.context, node.expression, c.type⟩) hth hscope hcodes hsums hF he hkS hsafe
+      (Footprints.Closed.Holds.mono hle h₁) hst hk
 
 /-- **A plain return's check** (`SinglePass.returnCheck`, by unfolding): where
 it refuses nothing, the claim's type is the goal's or empty, so a returned

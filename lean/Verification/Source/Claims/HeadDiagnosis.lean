@@ -28,7 +28,7 @@ def FilePlans.lackingAt (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (
     if r.qualification.isSome then [] else
     let bounded := !(r.footprint == .top && !r.onThrow && !r.fresh) &&
       !(!r.fresh && r.program.all fun n => Purity.pureTerm n.expression)
-    let bound := if bounded then some (r.footprint, r.fresh, r.onThrow) else none
+    let bound := if bounded then some (RunBound.ofRequest r.footprint r.onThrow r.fresh) else none
     let labels := r.searchLabels
     match ExpressionClaims.produceUsing G I labels (StoreView.valid r.types)
         (StoreView.projection r.types) fuel r.obligations { answers with summaries := #[], summaryAnswers := {} } with

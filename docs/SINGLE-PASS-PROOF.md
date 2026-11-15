@@ -975,9 +975,13 @@ at a copy. The footprint check gives a writing step's bound.
 - `footprintCheck_sound`, `footprint_exits`, `pass_footprint_exits`: where
   `footprintCheck` accepts the node, the receiver slots it records fresh
   hold stores allocated at or past the mark (`FreshOk`, `freshOk_recv`),
-  and each run with budget left keeps the bound $`\Phi`$ from the
-  invocation's entry heap to the heap of its normal exit, and of its throw
-  where a live handler catches it or the bound covers throws;
+  and each run with budget left keeps the normal bound $`\Phi`$ from the
+  invocation's entry heap to the heap of its normal exit and of a throw a
+  live handler catches, and the exceptional bound $`\Psi`$, where it is not
+  $`\top`$, to the heap of a throw none catches: the node checks
+  $`\Phi \sqsubseteq \Psi`$ and the throw within $`\Psi`$, since the
+  escaping throw completes a run whose prefix is within $`\Phi`$
+  (`throw_exits`);
 - `typedRead_optional_sound`: at a read of a field the slot's type states
   optional, the output `readFrame k i fld true` holds after the read;
 - `namesBelow_step`, `width_step`: the state after the step is below the

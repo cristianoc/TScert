@@ -88,19 +88,13 @@ frame. -/
 def exitBounds (e : Effect) : Exits Footprints.Closed :=
   e.schema.map fun q => q.frame.classBound
 
-/-- Whether the exceptional bound is `⊤` or contains the normal one: the
-runner bounds a throw by the normal bound or not at all. -/
-def boundsNested (b : Exits Footprints.Closed) : Bool :=
-  b.exceptional == .top || b.normal.le b.exceptional
-
 /-- **Whether a run establishes every postcondition a signature exports**,
 given the facts `facts` it is checked to return with: each postcondition of
 the normal exit among `codeEstablished` at its fresh result and `facts`,
-none on the exceptional exit, and its exits' bounds nested
-(`boundsNested`). -/
+none on the exceptional exit. -/
 def exportsEstablished (e : Effect) (facts : List HeapKnowledge.IndexFact) : Bool :=
   e.schema.normal.ensures.all (· ∈ codeEstablished e.fresh facts) &&
-    e.schema.exceptional.ensures.all (· ∈ codeEstablished false []) && boundsNested (exitBounds e)
+    e.schema.exceptional.ensures.all (· ∈ codeEstablished false [])
 
 /-- **A run that establishes what a signature exports meets the signature on
 both exits** (proved): where every postcondition of each exit is among those
@@ -119,7 +113,7 @@ theorem exportsEstablished_sound {e : Effect} {facts : List HeapKnowledge.IndexF
     HeapObservations.SafePostExcV Ξ T (e.schema.exitPostW .normal r args U heap)
       (e.schema.exitPostW .exceptional r args U heap) j U heap t := by
   simp only [exportsEstablished, Bool.and_eq_true] at hx
-  obtain ⟨⟨hn, hexc⟩, -⟩ := hx
+  obtain ⟨hn, hexc⟩ := hx
   refine SafePostExcV.weaken_reached hu hh ?_ ?_ (HeapObservations.SafePostExcV.iff_lift.mpr hs) <;>
     rintro s s' v rfl hW rfl hadm hp <;> cases eq_of_heq hW <;> rw [Exits.exitPostW_iff]
   · exact Exits.exitPost_of_established hadm hp.1 hn hp.2.1 hp.2.2
@@ -159,11 +153,10 @@ def runBounds (c : CodeEntry ι) : Option (Exits Footprints.Closed) :=
       !c.row.effect.fresh) || (!c.row.effect.fresh && c.exprs.all Purity.pureTerm)
   then none else some (exitBounds c.row.effect)
 
-/-- **The bound the run is given**: the normal exit's closed bound, whether
-the result is fresh, and whether the throw is bounded by the same closed
-bound (its exceptional bound not `⊤`). -/
-def codeRunBound (c : CodeEntry ι) : Option (Footprints.Closed × Bool × Bool) :=
-  (runBounds c).map fun b => (b.normal, c.row.effect.fresh, b.exceptional != .top)
+/-- **The bound the run is given** (`RunBound`): both exits' closed bounds
+and whether the result is fresh. -/
+def codeRunBound (c : CodeEntry ι) : Option RunBound :=
+  (runBounds c).map fun b => (b, c.row.effect.fresh)
 
 /-- **The obligations of a code's run**: its arity within its arguments, its
 signature's scope at its arity, no precondition beyond its promise, and
@@ -179,8 +172,8 @@ def codeObligations (c : CodeEntry ι) : Option CodeObligations :=
 def codeConditions (c : CodeEntry ι) : Bool := (codeObligations c).isSome
 
 /-- The bound a code's run is given, from its obligations. -/
-def codeBound (c : CodeEntry ι) : Option (Footprints.Closed × Bool × Bool) :=
-  (codeObligations c).bind fun o => o.bound.map fun b => (b.normal, o.freshResult, b.exceptional != .top)
+def codeBound (c : CodeEntry ι) : Option RunBound :=
+  (codeObligations c).bind fun o => o.bound.map fun b => (b, o.freshResult)
 
 theorem codeBound_eq {c : CodeEntry ι} (h : codeConditions c = true) : codeBound c = codeRunBound c := by
   unfold codeConditions at h

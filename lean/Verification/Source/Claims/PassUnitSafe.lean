@@ -97,12 +97,23 @@ theorem footprint_of_bound {G : NormalGraph ι} {r : SourceRequest σ ι} {regio
       (fun h' => r.onThrow = true → r.footprint.Holds h h') n W h (gotoOf r.program r.start L d) := by
   cases hb : mainBound r with
   | some x =>
-    have hx : x = (r.footprint, r.fresh, r.onThrow) := by
+    have hx : x = RunBound.ofRequest r.footprint r.onThrow r.fresh := by
       unfold mainBound at hb; split at hb
       · injection hb with hb; exact hb.symm
       · cases hb
     subst hx
-    exact g.bounded _ _ _ hb _ _ (program_nodes r.program) η trivial n W h L d he (gotoOf_refsOk g.source hroots) hvalues hd
+    -- A throw bounded by the request is within its footprint: by the
+    -- exceptional bound where that is not `⊤`, by the heap's growth where
+    -- it is.
+    have hg := ProgramTyping.SafePostExc.grow (b := h.length) (Nat.le_refl _)
+      (g.bounded _ _ _ hb _ _ (program_nodes r.program) η trivial n W h L d he (gotoOf_refsOk g.source hroots)
+        hvalues hd)
+    refine HeapObservations.SafePostExc.weaken (fun _ _ hq => hq.1) (fun h' hq ho => ?_) hg
+    by_cases ht : r.footprint = .top
+    · rw [ht]; exact Footprints.Closed.holds_top.mpr hq.2
+    · have := hq.1
+      simp only [ho, if_true] at this
+      exact this ht
   | none =>
     have hcond : ¬ ((!(r.footprint == .top && !r.onThrow && !r.fresh) &&
         !(!r.fresh && r.program.all fun n => Purity.pureTerm n.expression)) = true) := by

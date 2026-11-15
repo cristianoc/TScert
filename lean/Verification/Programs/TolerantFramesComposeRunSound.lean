@@ -26,14 +26,14 @@ variable {ι : Type} [Labels ι]
 
 /-- **What the driver checks at a node it visits** (`run`, "The footprint
 bound at this node" and a return's checks), at the node's checked step
-`r`: under the call's bound `(Φ, fr, ex)`, `BoundChecked` in the no-return
+`r`: under the call's bound `(⟨Φ, Ψ⟩, fr)`, `BoundChecked` in the no-return
 region `dead`; where the call states a postcondition, `ReturnChecked`; the
 yields it kept (`r.ys`) checked (`NodeYieldChecks`) over a sound summary
 table. -/
 structure NodePassChecked {G : NormalGraph ι} {I : InstanceImageCheck G} (c : Target.RunCall G I)
     (dead : List Bool) {w : Walk ι} {ctx : Nat → List (Ty ι)} {l : Nat}
     (r : NodeChecked G I c.codes c.passChecker c.P w (List.range c.inputs.length) ctx l) : Prop where
-  bound : ∀ Φ fr ex, c.bound = some (Φ, fr, ex) → BoundChecked r Φ dead fr ex
+  bound : ∀ Φ Ψ fr, c.bound = some (⟨Φ, Ψ⟩, fr) → BoundChecked r Φ Ψ dead fr
   ret : c.ensures ≠ [] → ReturnChecked r c.goal c.ensures
   yields : ∃ sums : List (ReadSummary ι), SummariesSound G I sums ∧
     NodeYieldChecks G I c.codes sums w (List.range c.inputs.length) c.goal c.ensures l r.node r.c r.entry r.st r.ys

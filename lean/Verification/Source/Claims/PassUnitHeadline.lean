@@ -103,7 +103,7 @@ theorem ordinary_requestSafe {f : FilePlans} {r : Req f}
     simp only [Option.some.injEq, Prod.mk.injEq] at h
     obtain ⟨-, rfl, -⟩ := h
     exact checkEntryFields_nil _ _
-  have hprimary : ∃ (bound : Option (Footprints.Closed × Bool × Bool))
+  have hprimary : ∃ (bound : Option RunBound)
       (regional : Option (Footprints.Closed × List Footprints.ArgumentStoreRegion × Bool)), GraphGuarantee (StoreView.graph f.F.store) (fun _ => True) r.program
       r.start r.goal r.inputs r.entrySeparation r.entryIndices r.assertions bound r.ensures regional := by
     cases hmain with

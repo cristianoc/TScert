@@ -322,15 +322,16 @@ omit [Labels ι] [StoreView σ ι] in
 signature states no store regions, its closed footprint, its fresh flag,
 and a throw bounded only where it states `onThrow` (`exitBounds_of_regions`),
 given only where it is not `⊤` on both exits without a fresh result. -/
-theorem codeRunBound_some {c : CodeEntry ι} {Φ : Footprints.Closed} {fresh onThrow : Bool}
-    (hr : c.row.effect.regions = []) (h : codeRunBound c = some (Φ, fresh, onThrow)) :
-    Φ = c.row.effect.footprint ∧ fresh = c.row.effect.fresh ∧ (onThrow = true → c.row.effect.onThrow = true) ∧
+theorem codeRunBound_some {c : CodeEntry ι} {Φ Ψ : Footprints.Closed} {fresh : Bool}
+    (hr : c.row.effect.regions = []) (h : codeRunBound c = some (⟨Φ, Ψ⟩, fresh)) :
+    Φ = c.row.effect.footprint ∧ Ψ = (if c.row.effect.onThrow then c.row.effect.footprint else .top) ∧
+      fresh = c.row.effect.fresh ∧
       (c.row.effect.footprint ≠ .top ∨ c.row.effect.onThrow = true ∨ c.row.effect.fresh = true) := by
   unfold codeRunBound runBounds at h
   rw [exitBounds_of_regions hr] at h
   cases hot : c.row.effect.onThrow <;> cases hf : c.row.effect.fresh <;>
     by_cases hfp : c.row.effect.footprint = .top <;> by_cases hpu : c.exprs.all Purity.pureTerm = true <;>
-    simp_all <;> obtain ⟨rfl, rfl, rfl⟩ := h <;> simp_all
+    simp_all <;> obtain ⟨⟨rfl, rfl⟩, rfl⟩ := h <;> simp_all
 
 end
 
@@ -377,14 +378,14 @@ theorem rowSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
       (∀ node ∈ GraphCode.program c.exprs c.conts, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
       SafeGraph (excOf (reassign G η)) (GraphCode.program c.exprs c.conts)
         (GoalHolds (reassign G η) c.goal (c.goal.argument ρ)) n W h (.at c.start ρ))
-    (hboundG : ∀ Φ fresh onThrow, codeRunBound c = some (Φ, fresh, onThrow) → ∀ η n W h L d,
+    (hboundG : ∀ Φ Ψ fresh, codeRunBound c = some (⟨Φ, Ψ⟩, fresh) → ∀ η n W h L d,
       EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep (GraphCode.codeEntryIndices c)
         (envOf L d) n W h → RefsOk W (.goto c.exprs c.conts c.start L d) →
         (∀ v ∈ L, isVal v = true) → isVal d = true →
       HeapObservations.SafePostExc (excOf (reassign G η))
         (GoalHolds (reassign G η) c.goal (c.goal.argument (envOf L d)))
         (fun h' v => Φ.Holds h h' ∧ (fresh = true → Footprints.FreshAt h.length v))
-        (fun h' => onThrow = true → Φ.Holds h h') n W h (.goto c.exprs c.conts c.start L d))
+        (fun h' => Ψ ≠ .top → Ψ.Holds h h') n W h (.goto c.exprs c.conts c.start L d))
     (hensG : c.row.effect.ensures ≠ [] → ∀ η n W h L d,
       EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep (GraphCode.codeEntryIndices c)
         (envOf L d) n W h → RefsOk W (.goto c.exprs c.conts c.start L d) →
@@ -396,15 +397,12 @@ theorem rowSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
   intro η
   simp only [rowConditions, Bool.and_eq_true, decide_eq_true_eq, Option.isNone_iff_eq_none] at hcond
   obtain ⟨⟨⟨harity, hrow⟩, _hreq⟩, hx⟩ := hcond
-  have hnest : boundsNested (exitBounds c.row.effect) = true := by
-    have hx' := hx
-    simp only [exportsEstablished, Bool.and_eq_true] at hx'; exact hx'.2
   refine ⟨harity, hrow, ?_⟩
   intro n W heap L he hw hh hgo hvalues hpre hsep r args hframe
   have he' : EnvOk (reassign G η) (codeFrame c.arity c.row c.captures c.store) (envOf L .nul) n W := by
     rw [hstore]; exact he
   have hpre' : PreAt c.row.effect c.store L heap := by rw [hstore]; exact hpre
-  have hrun := codeRun_of_clauses (sep := sep) hnest hsafeG hboundG η n W heap L he' hw hh hgo hvalues hpre' hsep
+  have hrun := codeRun_of_clauses (sep := sep) hsafeG hboundG η n W heap L he' hw hh hgo hvalues hpre' hsep
   rw [hstore] at hrun
   obtain ⟨pre, vs, hpl, rfl⟩ := hframe
   have hpre0 : pre = [] := List.eq_nil_of_length_eq_zero (by simpa [frameOffset] using hpl)
@@ -451,14 +449,18 @@ theorem rowSpec_of_requestSafe {r : SourceRequest σ ι} {c : CodeEntry ι}
     have := hsafe.1 η (hadm η) n W h ρ (by rw [hu.inputs, hu.indices]; exact he) hρ
     rw [hprog, hu.goal, hu.start] at this
     exact this
-  · intro Φ fresh onThrow hb η n W h L d he hgo hvals hd
-    obtain ⟨rfl, rfl, hot, hne⟩ := codeRunBound_some hreg hb
+  · intro Φ Ψ fresh hb η n W h L d he hgo hvals hd
+    obtain ⟨rfl, rfl, rfl, hne⟩ := codeRunBound_some hreg hb
     have hpre : r.footprint ≠ .top ∨ r.onThrow = true ∨ r.fresh = true := by
       rw [hu.footprint, hu.onThrow, hu.fresh]; exact hne
     have := hsafe.2.1 hpre η n W h L d (by rw [hu.inputs, hu.indices]; exact he)
       (GraphCode.goto_refs hgo).2 hvals hd
     rw [hgoto, hu.goal, hu.footprint, hu.fresh, hu.onThrow] at this
-    exact HeapObservations.SafePostExc.weaken (fun _ _ hq => hq) (fun _ hq ho => hq (hot ho)) this
+    refine HeapObservations.SafePostExc.weaken (fun _ _ hq => hq) (fun _ hq ht => ?_) this
+    cases hot : c.row.effect.onThrow
+    · simp [hot] at ht
+    · simp only [hot, if_true] at ht ⊢
+      exact hq hot
   · intro hne η n W h L d he hgo
     have := hsafe.2.2.1 (by rw [hu.ensures]; exact hne) η n W h L d (by rw [hu.inputs, hu.indices]; exact he)
       (GraphCode.goto_refs hgo).2
