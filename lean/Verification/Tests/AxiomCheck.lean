@@ -4,6 +4,7 @@ import Verification.Semantics.CommandSummaries
 import Verification.Semantics.CommandComposition
 import Verification.Semantics.CommandLoops
 import Verification.Semantics.CommandBodies
+import Verification.Semantics.FormulaScopes
 import Verification.Programs.FrameChecks
 import Verification.Programs.TolerantFramesExitStructural
 import Verification.Programs.TolerantFramesExitHeadExtraction
@@ -310,6 +311,21 @@ run_cmd do
   check ``Verification.CallEffects.CommandSummary.signature_holds
   check ``Verification.CallEffects.CommandSummary.signature_contract
   check ``Verification.CallEffects.CommandSummary.frame_at_call
+  check ``Verification.Parity.Path.read_scoped_congr
+  check ``Verification.Parity.Witness.value_scoped_congr
+  check ``Verification.Parity.termAt_congr
+  check ``Verification.Parity.stepValue_scoped_congr
+  check ``Verification.Parity.Substitution.holds_scoped_congr
+  check ``Verification.Parity.Substitution.holdsAt_scoped_congr
+  check ``Verification.Parity.OperationPost.holds_scoped_congr
+  check ``Verification.Parity.Formula.holds_scoped_congr
+  check ``Verification.Parity.ExitSpec.holds_scoped_congr
+  check ``Verification.CallEffects.Effect.summary_scopedSummary_of
+  check ``Verification.CallEffects.CommandSummary.Scoped.holds_congr
+  check ``Verification.CallEffects.Runs.AtCall.below
+  check ``Verification.CallEffects.CommandSummary.signature_holds_below
+  check ``Verification.CallEffects.CommandSummary.signature_contract_below
+  check ``Verification.CallEffects.CommandSummary.frame_at_call_below
   check ``Verification.Parity.OperationPost.holds_shift
   check ``Verification.Footprints.Region.sub_mem
   check ``Verification.Footprints.CellsFrom.of_post
