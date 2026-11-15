@@ -312,14 +312,6 @@ theorem ReceiverAppends.prefix_left {r : Tm} {args : List Tm} {before middle aft
   obtain ⟨l, hl, hv, hfresh⟩ := hel j a hj
   exact ⟨l, hl, hv, by simp only [List.length_append] at hfresh; omega⟩
 
-/-- Actuals one of which is no value append nothing a call states. -/
-theorem ReceiverAppends.of_not_values {r : Tm} {args : List Tm} {before after : Heap}
-    (h : ∃ a ∈ args, isVal a = false) : ReceiverAppends r args before after := by
-  intro hv
-  obtain ⟨a, ha, hf⟩ := h
-  rw [hv a ha] at hf
-  cases hf
-
 /-- A receiver holding no store has nothing appended. -/
 theorem ReceiverAppends.of_no_store {r : Tm} {args : List Tm} {before after : Heap}
     (h : Footprints.storeOf r = none) : ReceiverAppends r args before after := by
@@ -981,40 +973,6 @@ theorem Effect.post_drop {e : Effect} (n : Nat) {rv r : Tm} {argsv args : List T
 theorem Effect.excPost_drop {e : Effect} (n : Nat) {rv r : Tm} {argsv args : List Tm} {before after : Heap}
     (h : e.excPost rv argsv before after) : (e.drop n).excPost r args before after :=
   fun ho => Effect.within_drop n (h ho)
-
-/-- A signature without its postcondition: what a call whose actuals are not
-its positions' values (a variadic call) concludes. -/
-def Effect.forgetEnsures (e : Effect) : Effect :=
-  { e with ensures := [], elementWrite := (e.elementWrite.map fun _ => .stores), closed := e.footprint, regions := [] }
-
-
-theorem Effect.forgetEnsures_write {e : Effect} {args args' : List Tm} {before after : Heap}
-    (h : ∀ w, e.elementWrite = some w → w.Holds args before after) :
-    ∀ w, e.forgetEnsures.elementWrite = some w → w.Holds args' before after := by
-  intro w hw
-  simp only [Effect.forgetEnsures, Option.map_eq_some_iff] at hw
-  obtain ⟨w0, h0, rfl⟩ := hw
-  exact ElementWrite.Holds.stores (h w0 h0)
-
-/-- Forgetting a signature's store regions keeps its coarse bound, at any
-actuals. -/
-theorem Effect.within_forgetEnsures {e : Effect} {r : Tm} {args args' : List Tm} {before after : Heap}
-    (h : e.within r args before after) : e.forgetEnsures.within r args' before after :=
-  Effect.within_coarse (e := e) (e' := e.forgetEnsures) rfl (by simp [Effect.forgetEnsures, Effect.footprint]; exact Footprints.Closed.le_refl _) rfl rfl h
-
-theorem Effect.post_forgetEnsures {e : Effect} {r : Tm} {args : List Tm} {before after : Heap} {v : Val}
-    (h : e.post r args before after v) : e.forgetEnsures.post r args before after v :=
-  ⟨Effect.within_forgetEnsures h.1, h.2.1, h.2.2.1, h.2.2.2.1, fun F hF => (by simp [Effect.forgetEnsures] at hF),
-    h.2.2.2.2.2.1, Effect.forgetEnsures_write h.2.2.2.2.2.2⟩
-
-/-- A variadic call with a spread among its actuals concludes the signature's
-postcondition without its postcondition facts at those actuals: an append
-states nothing of actuals one of which is no value. -/
-theorem Effect.post_forgetEnsures_spread {e : Effect} {r : Tm} {args args' : List Tm} {before after : Heap}
-    {v : Val} (hs : ∃ a ∈ args', isVal a = false)
-    (h : e.post r args before after v) : e.forgetEnsures.post r args' before after v :=
-  ⟨Effect.within_forgetEnsures h.1, h.2.1, h.2.2.1, h.2.2.2.1, fun F hF => (by simp [Effect.forgetEnsures] at hF),
-    fun hg => ⟨(h.2.2.2.2.2.1 hg).1, ReceiverAppends.of_not_values hs⟩, Effect.forgetEnsures_write h.2.2.2.2.2.2⟩
 
 /-- A postcondition at actuals padded with `undefined` is the one at the
 actuals, of a receiver holding no store. -/

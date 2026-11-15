@@ -559,6 +559,23 @@ theorem call_safe {effect : Effect} {P : ArgFam} {Rc R : Fam}
     SafePost Ξ (effect.result R (effect.promised vs)) (effect.post r vs heap) n W heap (.invoke f r vs) :=
   (call_safe_exc hP hRc hf hr hrv hv ha hw hh hq href).post
 
+/-- **A call at a signature's exits** (the note's Call, `invoke_exits`): a
+value meeting the signature, invoked at value actuals meeting its input
+contract and precondition, is safe at the signature's specification at those
+actuals, from an invocation entry held from the call's (`HeldEntry`). -/
+theorem call_exits {effect : Effect} {P : ArgFam} {Rc R : Fam}
+    (hP : Adm P) (hRc : Adm Rc) {n W heap f r vs}
+    (hf : PromiseWith Ξ effect P Rc R n W f) (hr : Rc n W r)
+    (hrv : isVal r = true) (hv : CallArguments.Values vs) (ha : P n W vs)
+    (hw : WorldAdm W) (hh : HeapOk n W heap) (hq : effect.Requires r vs heap)
+    (href : RefsOk W (.invoke f r vs)) :
+    SafePostExcV Ξ (effect.result R (effect.promised vs)) (effect.schema.fromEntry .normal r vs (HeldEntry W heap))
+      (effect.schema.fromEntry .exceptional r vs (HeldEntry W heap)) n W heap (.invoke f r vs) := by
+  cases n with
+  | zero => exact href
+  | succ n =>
+    exact invoke_exits hf hw hh hrv (hRc.down n W r hr) hv (hP.transfer ha n (Nat.le_succ n) _ (WExt_refl _)) hq href
+
 /-- Trailing `undefined` actuals change no precondition: a construction's
 positions past its actuals hold `undefined` either way (`callEnv_pad`). -/
 theorem Effect.requires_pad {e : Effect} {r : Tm} {args pad : List Tm} {h : Heap}

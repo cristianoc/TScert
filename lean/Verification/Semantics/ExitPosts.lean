@@ -170,6 +170,14 @@ def EvalCallSafe (Ξ : Fam) (E : (n : Nat) → WorldT n → Heap → Tm → Tm �
         WExt (trunc n (Nat.le_succ n) W) U ∧ WorldAdm U ∧ Step h t h' t' ∧
           HeapOk n U h' ∧ EvalCallSafe Ξ E R n U h' t'))
 
+/-- An invocation meeting `E` is an evaluation reaching it. -/
+theorem EvalCallSafe.invoke {Ξ : Fam} {E : (n : Nat) → WorldT n → Heap → Tm → Tm → List Tm → Prop} {R : WExcV}
+    {n : Nat} {W : WorldT n} {h : Heap} {f r : Tm} {vs : List Tm} (href : RefsOk W (.invoke f r vs))
+    (hE : E n W h f r vs) : EvalCallSafe Ξ E R n W h (.invoke f r vs) := by
+  cases n with
+  | zero => exact href
+  | succ n => exact ⟨href, .inl (.inl ⟨f, r, vs, rfl, hE⟩)⟩
+
 /-- **A call is safe where its evaluation is and each invocation it
 reaches is**: every completion is a throw of the evaluation, meeting `R`, or
 a completion of an invocation the evaluation reached. -/
@@ -230,5 +238,74 @@ theorem SafePostExcV.heapPosts {Ξ T : Fam} {x : Exits ExitSchema} {r : Tm} {arg
   SafePostExcV.erase_reached s
     (fun s' _ _ hp => ⟨s, s', rfl, rfl, hp s.pos s.adm s.ok s'.pos s'.adm s'.ok⟩)
     (fun s' v _ hp => ⟨v, s, s', rfl, rfl, hp s.pos s.adm s.ok s'.pos s'.adm s'.ok⟩) hs
+
+/-! ## A call's guarantee from its invocation entry -/
+
+/-- **An invocation entry held from a call's entry**: the call's heap `h`,
+at a budget at most the call's `n` and a world extending the call's world
+`W` truncated there; the entry an evaluation reaching the invocation in the
+heap the call starts in leaves (the note's Call: evaluation precedes
+invocation, and the specification is relative to the invocation's entry). -/
+def HeldEntry {n : Nat} (W : WorldT n) (h : Heap) (s : IndexedHeap) : Prop :=
+  s.h = h ∧ ∃ hle : s.n ≤ n, WExt (trunc s.n hle W) s.W
+
+/-- An entry held from a world extending the truncation of another is held
+from that other. -/
+theorem HeldEntry.trans {n j : Nat} {W : WorldT n} {U : WorldT j} (hj : j ≤ n) (hx : WExt (trunc j hj W) U)
+    {h : Heap} {s : IndexedHeap} (hs : HeldEntry U h s) : HeldEntry W h s := by
+  obtain ⟨rfl, hle, hy⟩ := hs
+  refine ⟨rfl, Nat.le_trans hle hj, WExt_trans ?_ hy⟩
+  simpa only [trunc_trunc] using WExt_trunc hle hx
+
+/-- **A completion's guarantee from an invocation entry**: at the exit, the
+completion's guarantee from some entry meeting `P`. -/
+def Exits.fromEntry (x : Exits ExitSchema) (c : Completion) (r : Tm) (args : List Tm)
+    (P : IndexedHeap → Prop) : ExitPostW :=
+  fun k V after v => ∃ s, P s ∧ x.exitPostW c r args s.W s.h k V after v
+
+/-- **A call's guarantee on a normal return**, its evaluation keeping the
+heap: the normal exit from an entry held from the call's. -/
+abbrev Exits.heldPost (x : Exits ExitSchema) (r : Tm) (args : List Tm) {n : Nat} (W : WorldT n) (h : Heap) :
+    WPost :=
+  x.fromEntry .normal r args (HeldEntry W h)
+
+/-- **A call's guarantee on a throw**, its evaluation keeping the heap: the
+exceptional exit from an entry held from the call's, or a throw of the
+evaluation, in the heap the call starts in. -/
+abbrev Exits.heldExc (x : Exits ExitSchema) (r : Tm) (args : List Tm) {n : Nat} (W : WorldT n) (h : Heap) :
+    WExcV :=
+  fun k V after v => x.fromEntry .exceptional r args (HeldEntry W h) k V after v ∨ after = h
+
+/-- **Consequence from held entries**: where one specification's exit
+entails another's at other actuals, the guarantee from an entry held from
+an invocation's entry gives the other's from an entry held from the entry of
+a call the invocation's is an extension of. -/
+theorem Exits.fromEntry_weaken {x y : Exits ExitSchema} {c : Completion} {r r' : Tm} {args other : List Tm}
+    (hxy : ∀ s s' v, x.exitPost c r args s s' v → y.exitPost c r' other s s' v)
+    {n j : Nat} {W : WorldT n} {U : WorldT j} (hj : j ≤ n) (hx : WExt (trunc j hj W) U) {h : Heap}
+    {k : Nat} {V : WorldT k} {after : Heap} {v : Tm}
+    (hp : x.fromEntry c r args (HeldEntry U h) k V after v) : y.fromEntry c r' other (HeldEntry W h) k V after v := by
+  obtain ⟨s, hs, hp⟩ := hp
+  exact ⟨s, hs.trans hj hx, fun h1 h2 h3 h4 h5 h6 => hxy _ _ _ (hp h1 h2 h3 h4 h5 h6)⟩
+
+/-- **A call's guarantee from held entries read at its heaps**: at the
+admissible states a run from the call's entry reaches, the guarantee from a
+held entry is the guarantee at some indexed states, the first with the
+call's heap (`Exits.heapPost`); a throw of the evaluation leaves the call's
+heap. -/
+theorem SafePostExcV.heldPosts {Ξ T : Fam} {x : Exits ExitSchema} {r : Tm} {args : List Tm} {n : Nat}
+    {W : WorldT n} {h : Heap} {t : Tm} (hw : WorldAdm W) (hh : HeapOk n W h)
+    (hs : SafePostExcV Ξ T (x.heldPost r args W h) (x.heldExc r args W h) n W h t) :
+    SafePostExc Ξ T (x.heapPost .normal r args h)
+      (fun h' => (∃ v, x.heapPost .exceptional r args h h' v) ∨ h' = h) n W h t := by
+  cases n with
+  | zero => exact hs
+  | succ n =>
+    refine SafePostExcV.erase_reached ⟨n + 1, W, h, Nat.succ_pos _, hw, hh⟩ ?_ ?_ hs
+    · rintro s' v - ⟨s, ⟨hsh, -⟩, hp⟩
+      exact ⟨s, s', hsh, rfl, hp s.pos s.adm s.ok s'.pos s'.adm s'.ok⟩
+    · rintro s' v - (⟨s, ⟨hsh, -⟩, hp⟩ | heq)
+      · exact .inl ⟨v, s, s', hsh, rfl, hp s.pos s.adm s.ok s'.pos s'.adm s'.ok⟩
+      · exact .inr heq
 
 end Verification.CallEffects

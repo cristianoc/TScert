@@ -391,11 +391,16 @@ locations below the heap the body started in; the runs compose by
   ([element writes](#element-writes));
 - a **selected call or construction** whose signature's frame is within
   $`\Phi`$, its operands values (`selectedWithinAt`; proved:
-  `ExpressionEffects.selected_sound`, through `CallEffects.call_safe` and
-  `CallEffects.construct_safe_exc`): a fixed call, a variadic call and a
-  construction, each at the signature the evidence selects; a variadic
-  call's spreads read their stores in the heap the call starts in
-  (`spread_values_post`, `spread_head_post`). The check is the closed bound
+  `ExpressionEffects.selected_sound`, through `CallEffects.call_safe`,
+  `CallEffects.call_exits` and `CallEffects.construct_safe_exc`): a fixed
+  call, a variadic call and a construction, each at the signature the
+  evidence selects. A variadic call's evaluation reads its spreads' stores
+  in the heap the call starts in and reaches an invocation at the expanded
+  actuals (`spread_values_eval`, `spread_head_eval`, composed by
+  `CallEffects.call_site_sound`); the signature's specification holds
+  there, and the call concludes what it states independently of the
+  actuals (`selectedExits`, `Exits.forgetActuals_sound`), read as the
+  signature `Effect.withoutActuals`. The check is the closed bound
   of the signature's frame below the invocation's mark within $`\Phi`$, an
   entry on the store of a position whose operand is a slot holding a fresh
   store discharged ([frame checks](#frame-checks); proved:

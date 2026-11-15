@@ -938,7 +938,9 @@ the last conjunct of `CallEffects.Effect.post`, which takes the call's
 actuals. A module function's postcondition is stated by `moduleArrow` and
 `importedArrow`, other code's is excluded by `Effect.below`; carrying,
 covering, meeting and forgetting are `Effect.keeps`, `ensuresCovers`,
-`Effect.meet` and `Effect.forgetEnsures`. `call-ensures` is proved by
+`Effect.meet` and `Exits.forgetActuals` (a variadic call with a spread,
+by consequence after the guarantee at its expanded actuals:
+`Exits.forgetActuals_sound`). `call-ensures` is proved by
 `PromiseCalls.ensuresCall_sound` and `ensuresAtoms_holds`; the step checker
 `Checker.ensuringCalls` joins the two postconditions by
 `HeapObservations.cross_upto`.

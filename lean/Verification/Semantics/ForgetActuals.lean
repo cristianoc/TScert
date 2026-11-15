@@ -120,4 +120,100 @@ theorem Exits.forgetActuals_sound {x : Exits ExitSchema} {c : Completion} {r : T
   unfold Exits.exitPost Exits.atArity at *
   cases c <;> exact ExitSchema.forgetActuals_holds hp
 
+/-! ## The signature the forgotten specification entails
+
+What the deciders read of a call whose specification is forgotten at its
+actuals, as a signature: what the forgotten specification entails
+(`Effect.withoutActuals_entails`). -/
+
+/-- **A signature without what it states of the actuals**: its frame through
+its coarse bound, without store regions (`Effect.footprint`), no index fact,
+no growth of the receiver, a typed array's element write as the views'
+growth. -/
+def Effect.withoutActuals (e : Effect) : Effect :=
+  { e with ensures := [], elementWrite := (e.elementWrite.map fun _ => .stores), closed := e.footprint, regions := [], receiverGrows := false }
+
+/-- A frame without store regions reads the receiver alone. -/
+theorem Effect.frame_scoped_of_regions {e : Effect} (h : e.regions = []) : effectScoped 1 e.frame = true := by
+  simp only [Effect.frame, h, List.map_nil, List.append_nil, Effect.receiverEntries, effectScoped, List.all_append,
+    Footprints.Closed.fp]
+  split
+  · simp [regionRoots]
+  · split <;> simp [regionRoots]
+
+/-- **The frame without the actuals is the forgotten frame's consequence.** -/
+theorem Effect.withoutActuals_frame (e : Effect) {η : Env} {s s' : IndexedHeap}
+    (h : EffectAction (if effectScoped 1 e.frame then e.frame else topEffect) η s s') :
+    EffectAction e.withoutActuals.frame η s s' := by
+  by_cases hreg : e.regions = []
+  · rw [if_pos (Effect.frame_scoped_of_regions hreg)] at h
+    have hfr : e.withoutActuals.frame = e.frame := by
+      simp only [Effect.withoutActuals, Effect.frame, Effect.receiverEntries, Effect.footprint_of_regions hreg, hreg]
+    rw [hfr]
+    exact h
+  · have hfp : e.footprint = .top := by simp [Effect.footprint, List.isEmpty_iff, hreg]
+    refine EffectAction.mono_entries (Φ := topEffect) (fun x hx l hl => ⟨x, ?_, hl, ?_⟩) (EffectAction.top h.1)
+    · simp only [Effect.withoutActuals, Effect.frame, hfp]
+      exact List.mem_append_left _ (List.mem_append_left _ hx)
+    · cases x.2 <;> rfl
+
+/-- Each postcondition of the signature without the actuals is one of the
+signature's, reading no actual. -/
+theorem Effect.withoutActuals_normal (e : Effect) {G : FormulaSchema} (hG : G ∈ e.withoutActuals.normalSchema) :
+    G ∈ e.normalSchema ∧ G.readsNoActual = true := by
+  simp only [Effect.withoutActuals, Effect.normalSchema, List.map_nil, List.append_nil, Bool.false_eq_true,
+    if_false, List.mem_append] at hG
+  simp only [Effect.normalSchema, List.mem_append]
+  rcases hG with ((hG | hG) | hG) | hG
+  · refine ⟨.inl (.inl (.inl (.inl (.inl hG)))), ?_⟩
+    cases hf : e.fresh <;> simp only [hf, if_true, Bool.false_eq_true, if_false, List.mem_singleton,
+      List.not_mem_nil] at hG
+    subst hG; rfl
+  · refine ⟨.inl (.inl (.inl (.inl (.inr hG)))), ?_⟩
+    cases hf : e.freshObject <;> simp only [hf, if_true, Bool.false_eq_true, if_false, List.mem_singleton,
+      List.not_mem_nil] at hG
+    subst hG; rfl
+  · refine ⟨.inl (.inl (.inl (.inr hG))), ?_⟩
+    cases hR : e.elements <;> simp only [hR, List.mem_singleton, List.not_mem_nil] at hG
+    subst hG; rfl
+  · cases hw : e.elementWrite with
+    | none => simp [hw] at hG
+    | some w =>
+      simp only [hw, Option.map_some, ElementWrite.schemaPosts, List.mem_singleton] at hG
+      subst hG
+      refine ⟨.inr ?_, rfl⟩
+      cases w <;> simp [ElementWrite.schemaPosts]
+
+/-- **The signature without the actuals is a consequence of the forgotten
+specification**, on both exits. -/
+theorem Effect.withoutActuals_entails (e : Effect) {c : Completion} {r : Tm} {args : List Tm}
+    {s s' : IndexedHeap} {v : Tm} (h : e.schema.forgetActuals.exitPost c r args s s' v) :
+    e.withoutActuals.schema.exitPost c r args s s' v := by
+  cases c
+  · obtain ⟨hfr, hens⟩ := h
+    refine ⟨Effect.withoutActuals_frame e hfr, ?_⟩
+    intro F hF
+    obtain ⟨G, hG, rfl⟩ := List.mem_map.mp hF
+    obtain ⟨hGe, hno⟩ := Effect.withoutActuals_normal e hG
+    have hfix : G.fixedSeqs = true := by
+      simp only [FormulaF.readsNoActual, Bool.and_eq_true] at hno
+      exact hno.1
+    have := hens _ (List.mem_map_of_mem (List.mem_filter.mpr ⟨hGe, hno⟩))
+    rwa [instantiateFormula_fixedSeqs hfix _ (e.withoutActuals.schema.callInstantiation args.length)] at this
+  · obtain ⟨hfr, -⟩ := h
+    refine ⟨?_, fun F hF => ?_⟩
+    · cases ho : e.onThrow
+      · simp only [Exits.atArity, Exits.map, Exits.get, Exits.forgetActuals, ExitSchema.instantiate,
+          ExitSchema.forgetActuals, Effect.schema, ho, Bool.false_eq_true, if_false] at hfr ⊢
+        have ho' : e.withoutActuals.onThrow = false := ho
+        simp only [ho', Bool.false_eq_true, if_false]
+        split at hfr <;> exact hfr
+      · simp only [Exits.atArity, Exits.map, Exits.get, Exits.forgetActuals, ExitSchema.instantiate,
+          ExitSchema.forgetActuals, Effect.schema, ho, if_true] at hfr ⊢
+        have ho' : e.withoutActuals.onThrow = true := ho
+        rw [if_pos ho']
+        exact Effect.withoutActuals_frame e hfr
+    · simp only [Exits.atArity, Exits.map, Exits.get, ExitSchema.instantiate, Effect.schema] at hF
+      split at hF <;> simp at hF
+
 end Verification.CallEffects

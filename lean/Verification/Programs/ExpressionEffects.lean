@@ -1,4 +1,5 @@
 import Verification.Programs.HeapExpressionRules
+import Verification.Semantics.ForgetActuals
 
 /-! Definition-side effect checks over lowered expressions. Safety comes from
 ordinary evidence; this layer establishes the additional heap postcondition. -/
@@ -335,14 +336,60 @@ def spreadOperands (k u : Nat) (flags : List Bool) : List (Sequent ι) → Bool
       (flags.zip (jas.drop (k + u))).all fun q => if q.1 then readOperand q.2.term else valueTerm q.2.term
   | _ => false
 
-/-- The effect of the signature a call's evidence selects: an invocation's, a
-variadic invocation's or a construction's, through subsumption. -/
+/-- **The exits a call's evidence selects** (the note's Call, then
+consequence): the selected signature's specification for an invocation, a
+construction and a variadic invocation without a spread, all instantiated at
+the evaluated actuals; for a variadic invocation with a spread, whose
+expanded actuals are not known where the guarantee is consumed, the
+specification with what it states of the actuals forgotten
+(`Exits.forgetActuals`); through subsumption. -/
+def selectedExits : Evidence ι → Option (CallEffects.Exits CallEffects.ExitSchema)
+  | .node _ (.app e) _ => some e.schema
+  | .node _ (.callRest e _ _ flags _) _ => some (if flags.any id then e.schema.forgetActuals else e.schema)
+  | .node _ (.construct e) _ => some e.schema
+  | .node _ (.sub _) [p] => selectedExits p
+  | _ => none
+
+/-- The signature the deciders read of a call's evidence: the selected
+signature, and for a variadic invocation with a spread the signature
+without what it states of the actuals (`Effect.withoutActuals`), which the
+selected exits entail (`selectedExits_entails`); through subsumption. -/
 def selectedEffect : Evidence ι → Option CallEffects.Effect
   | .node _ (.app e) _ => some e
-  | .node _ (.callRest e _ _ _ _) _ => some e.forgetEnsures
+  | .node _ (.callRest e _ _ flags _) _ => some (if flags.any id then e.withoutActuals else e)
   | .node _ (.construct e) _ => some e
   | .node _ (.sub _) [p] => selectedEffect p
   | _ => none
+
+/-- **The selected exits entail the signature the deciders read**, on both
+exits, at every call. -/
+theorem selectedExits_entails (e : Evidence ι) {x : CallEffects.Exits CallEffects.ExitSchema}
+    {eff : CallEffects.Effect} (hx : selectedExits e = some x) (he : selectedEffect e = some eff)
+    {c : CallEffects.Completion} {r : Tm} {args : List Tm} {s s' : TolerantFrames.IndexedHeap} {v : Tm}
+    (hp : x.exitPost c r args s s' v) : eff.schema.exitPost c r args s s' v := by
+  cases e with
+  | node j rule ps =>
+    cases rule <;> try simp only [selectedExits, reduceCtorEq] at hx
+    case app => simp only [selectedEffect, Option.some.injEq] at hx he; subst hx he; exact hp
+    case construct => simp only [selectedEffect, Option.some.injEq] at hx he; subst hx he; exact hp
+    case callRest effect k u flags P =>
+      simp only [selectedEffect, Option.some.injEq] at hx he
+      subst hx he
+      by_cases hsp : flags.any id = true
+      · rw [if_pos hsp] at hp ⊢
+        exact effect.withoutActuals_entails hp
+      · rw [if_neg hsp] at hp ⊢
+        exact hp
+    case sub =>
+      cases ps with
+      | nil => simp [selectedExits] at hx
+      | cons child rest =>
+        cases rest with
+        | cons _ _ => simp [selectedExits] at hx
+        | nil =>
+          simp only [selectedExits, selectedEffect] at hx he
+          exact selectedExits_entails child hx he hp
+termination_by sizeOf e
 
 /-- A selected call's operands. All actual evaluation has already been
 lowered to earlier graph nodes; omitted arguments are the ordinary evidence's
@@ -653,45 +700,56 @@ theorem map_zip_type : ∀ (flags : List Bool) (qs : List (Sequent ι)), flags.l
   | [], _ :: _, hl => by simp at hl
   | _ :: _, [], hl => by simp at hl
 
-/-- A spread operand that reads the heap, in a call whose earlier actuals are
-values: its reads keep the heap, so a postcondition of the run from that
-heap, once the operand is a value at `S`, is one of the whole. -/
-theorem spread_head_post {S R : Fam} {Q : HeapObservations.Post} {f r : Tm} {pre rest : List Tm}
+/-- **A spread operand that reads the heap, evaluated** (the note's Call:
+evaluation precedes invocation), in a call whose earlier actuals are values:
+its reads keep the heap, so the call's evaluation reaches what it reaches
+once the operand is a value at `S`, or throws the operand's throw, in the
+heap it starts in. -/
+theorem spread_head_eval {S : Fam} {E : (n : Nat) → WorldT n → Heap → Tm → Tm → List Tm → Prop}
+    {R : HeapObservations.WExcV} {f r : Tm} {pre rest : List Tm}
     (hf : isVal f = true) (hrv : isVal r = true) (hp : CallArguments.Values pre) :
     ∀ (n : Nat) (W : WorldT n) (heap : Heap) (s : Tm),
       Purity.readTerm s = true → WorldAdm W → HeapOk n W heap → Safe Ξ S n W heap s →
       RefsOk W (.invoke f r (pre ++ .spread s :: rest)) →
+      (∀ j (hj : j ≤ n) (U : WorldT j), WExt (trunc j hj W) U → ∀ v, R j U heap v) →
       (∀ j (hj : j ≤ n) (U : WorldT j), WExt (trunc j hj W) U → WorldAdm U → HeapOk j U heap →
         ∀ v, isVal v = true → S j U v → RefsOk U (.invoke f r (pre ++ .spread v :: rest)) →
-          SafePost Ξ R Q j U heap (.invoke f r (pre ++ .spread v :: rest))) →
-      SafePost Ξ R Q n W heap (.invoke f r (pre ++ .spread s :: rest)) := by
+          CallEffects.EvalCallSafe Ξ E R j U heap (.invoke f r (pre ++ .spread v :: rest))) →
+      CallEffects.EvalCallSafe Ξ E R n W heap (.invoke f r (pre ++ .spread s :: rest)) := by
   have hC : CtxRefs (fun t => Tm.invoke f r (pre ++ .spread t :: rest)) := by ctx_refs
   intro n
   induction n with
-  | zero => intro _ _ _ _ _ _ _ href _; exact href
+  | zero => intro _ _ _ _ _ _ _ href _ _; exact href
   | succ n ih =>
-    intro W heap s hs hw hh hsafe href hk
+    intro W heap s hs hw hh hsafe href hR hk
     obtain ⟨-, hsafe⟩ := hsafe
-    rcases hsafe with (⟨hv, hS⟩ | hthrown) | ⟨U, h', t', hx, hu, step, hh', ht'⟩
+    rcases hsafe with (⟨hv, hS⟩ | ⟨u, hra, hsc, hξ⟩) | ⟨U, h', t', hx, hu, step, hh', ht'⟩
     · exact hk (n+1) (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw hh s hv hS href
-    · exact ⟨href, Or.inl (Or.inr (hthrown.lift (C := fun t => .invoke f r (pre ++ .spread t :: rest))
-        (fun r' => RestCalls.call_raise hf hrv hp (.spreadC r'))))⟩
+    · exact ⟨href, Or.inl (Or.inr ⟨u, RestCalls.call_raise hf hrv hp (.spreadC hra), hsc, hξ,
+        hR (n+1) (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) u⟩)⟩
     · obtain ⟨rfl, hs'⟩ := Purity.read_step step hs (HeapExpressionRules.heap_values hw hh)
       have hst : RefsOk W t' := Kinds.step_refs step (by simpa using hh.1.1) hh.2 (hC.hole href)
       refine ⟨href, Or.inr ⟨U, _, _, hx, hu, RestCalls.call_lift hf hrv hp (.spreadC step), hh', ?_⟩⟩
+      have hUW : ∀ j (hj : j ≤ n) (V : WorldT j), WExt (trunc j hj U) V → WExt (trunc j (by omega) W) V := by
+        intro j hj V hy
+        apply WExt_trans _ hy
+        simpa only [trunc_trunc] using WExt_trunc hj hx
       apply ih U _ t' hs' hu hh' ht'
         (hC.ok (RefsOk_mono hx (RefsOk_trunc _ hst)) (RefsOk_mono hx (RefsOk_trunc _ (hC.frame href))))
+        (fun j hj V hy v => hR j (by omega) V (hUW j hj V hy) v)
       intro j hj V hy hV hhV v hv hS hvr
-      apply hk j (by omega) V _ hV hhV v hv hS hvr
-      apply WExt_trans _ hy
-      simpa only [trunc_trunc] using WExt_trunc hj hx
+      exact hk j (by omega) V (hUW j hj V hy) hV hhV v hv hS hvr
 
-/-- **Parts after the fixed actuals, every one ready or a read**: each plain
-part a value at the element contract `E`, each spread a read of a store at a
-type that spreads into `E`, read where it is written. The call steps through
-the spreads in the heap it starts in, so any postcondition of the call's run
-from that heap holds of the whole. -/
-theorem spread_values_post {E R : Fam} {Q : HeapObservations.Post} (hE : Adm E) (hEv : ValOnly E)
+/-- **The evaluation of parts after the fixed actuals, every one ready or a
+read** (the note's Call: evaluation, spread expansion included, precedes
+invocation): each plain part a value at the element contract `E`, each
+spread a read of a store at a type that spreads into `E`, read where it is
+written. The call steps through the spreads in the heap it starts in, so its
+evaluation reaches an invocation at the fixed actuals followed by values at
+`E`, at an admissible extension of the world, or throws a spread's throw in
+that heap. -/
+theorem spread_values_eval {E : Fam} {I : (n : Nat) → WorldT n → Heap → Tm → Tm → List Tm → Prop}
+    {R : HeapObservations.WExcV} (hE : Adm E) (hEv : ValOnly E)
     {f r : Tm} (hf : isVal f = true) (hrv : isVal r = true) :
     ∀ (parts : List (Option Fam × Tm)) (n : Nat) (W : WorldT n) (heap : Heap) (pre : List Tm),
       (∀ p ∈ parts, ∀ S, p.1 = some S → Adm S ∧ RestCalls.Spreads S E ∧
@@ -699,16 +757,17 @@ theorem spread_values_post {E R : Fam} {Q : HeapObservations.Post} (hE : Adm E) 
       WorldAdm W → HeapOk n W heap → CallArguments.Values pre →
       (∀ p ∈ parts, p.1 = none → isVal p.2 = true ∧ E n W p.2) →
       RefsOk W (.invoke f r (pre ++ parts.map RestCalls.partTerm)) →
+      (∀ j (hj : j ≤ n) (U : WorldT j), WExt (trunc j hj W) U → ∀ v, R j U heap v) →
       (∀ j (hj : j ≤ n) (U : WorldT j), WExt (trunc j hj W) U → WorldAdm U → HeapOk j U heap →
         ∀ extra, (∀ e ∈ extra, E j U e) → RefsOk U (.invoke f r (pre ++ extra)) →
-          SafePost Ξ R Q j U heap (.invoke f r (pre ++ extra))) →
-      SafePost Ξ R Q n W heap (.invoke f r (pre ++ parts.map RestCalls.partTerm))
-  | [], n, W, heap, pre, _, hw, hh, _, _, href, hk => by
+          CallEffects.EvalCallSafe Ξ I R j U heap (.invoke f r (pre ++ extra))) →
+      CallEffects.EvalCallSafe Ξ I R n W heap (.invoke f r (pre ++ parts.map RestCalls.partTerm))
+  | [], n, W, heap, pre, _, hw, hh, _, _, href, _, hk => by
     simpa using hk n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw hh [] (by simp)
       (by simpa using href)
-  | (none, a) :: parts, n, W, heap, pre, hS, hw, hh, hp, hv, href, hk => by
+  | (none, a) :: parts, n, W, heap, pre, hS, hw, hh, hp, hv, href, hR, hk => by
     obtain ⟨hav, haE⟩ := hv (none, a) (by simp) rfl
-    have hrest := spread_values_post hE hEv hf hrv parts n W heap (pre ++ [a])
+    have hrest := spread_values_eval (I := I) hE hEv hf hrv parts n W heap (pre ++ [a])
       (fun q hm => hS q (by simp [hm])) hw hh
       (by
         intro x hx
@@ -716,7 +775,7 @@ theorem spread_values_post {E R : Fam} {Q : HeapObservations.Post} (hE : Adm E) 
         · exact hp x hx
         · simp at hx; subst hx; exact hav)
       (fun q hm => hv q (by simp [hm]))
-      (by simpa [RestCalls.partTerm] using href)
+      (by simpa [RestCalls.partTerm] using href) hR
       (by
         intro j hj U hx hu hh' extra he hre
         have := hk j hj U hx hu hh' (a :: extra) (by
@@ -726,11 +785,12 @@ theorem spread_values_post {E R : Fam} {Q : HeapObservations.Post} (hE : Adm E) 
           · exact he e hm) (by simpa using hre)
         simpa using this)
     simpa [RestCalls.partTerm] using hrest
-  | (some S, s) :: parts, n, W, heap, pre, hS, hw, hh, hp, hv, href, hk => by
+  | (some S, s) :: parts, n, W, heap, pre, hS, hw, hh, hp, hv, href, hR, hk => by
     obtain ⟨hSa, hSs, hread, hfut⟩ := hS (some S, s) (by simp) S rfl
-    show SafePost Ξ R Q n W heap (.invoke f r (pre ++ .spread s :: parts.map RestCalls.partTerm))
-    apply spread_head_post hf hrv hp n W heap s hread hw hh
+    show CallEffects.EvalCallSafe Ξ I R n W heap (.invoke f r (pre ++ .spread s :: parts.map RestCalls.partTerm))
+    apply spread_head_eval hf hrv hp n W heap s hread hw hh
       (hfut n (Nat.le_refl _) W (by rw [trunc_id]; exact WExt_refl _) hw heap hh) (by simpa [RestCalls.partTerm] using href)
+      hR
     intro j hj U hx hu hhU v _ hSv hvr
     obtain ⟨ls, vs, rfl, hr, he⟩ := hSs j U heap _ hhU hSv
     cases j with
@@ -754,7 +814,7 @@ theorem spread_values_post {E R : Fam} {Q : HeapObservations.Post} (hE : Adm E) 
         apply WExt_trans _ hy
         have := WExt_trunc (show i ≤ p + 1 by omega) hx
         simpa only [trunc_trunc] using this
-      have hrest := spread_values_post hE hEv hf hrv parts p _ heap (pre ++ vs)
+      have hrest := spread_values_eval (I := I) hE hEv hf hrv parts p _ heap (pre ++ vs)
         (by
           intro q hm T hT
           obtain ⟨h1, h2, h3, h4⟩ := hS q (by simp [hm]) T hT
@@ -774,6 +834,7 @@ theorem spread_values_post {E R : Fam} {Q : HeapObservations.Post} (hE : Adm E) 
           have := hE.down_le n p (by omega) W q.2 h2
           exact hE.mono p _ _ (hUV p (Nat.le_refl _) _ (by rw [trunc_id]; exact WExt_refl _)) q.2 this)
         hnext
+        (fun i hi X hy v => hR i (by omega) X (hUV i hi X hy) v)
         (by
           intro i hi X hy hX hh' extra hex hre
           have := hk i (by omega) X (hUV i hi X hy) hX hh' (vs ++ extra) (by
@@ -814,7 +875,8 @@ theorem jas_refs {n : Nat} {W : WorldT n} {ρ : Env} {jas : List (Sequent ι)} {
       simpa [instantiate_spreadTerm, RefsOk, refs_spreadTerm] using this
 
 /-- A variadic call whose parts are all values, none a spread, at its selected
-signature: the signature's postcondition holds of the call. -/
+signature: the call is safe at the signature's specification at its actuals,
+from an invocation entry held from the call's (`CallEffects.call_exits`). -/
 private theorem callRest_local_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G}
     {j : Sequent ι} {ps : List (Sequent ι)} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
@@ -825,8 +887,9 @@ private theorem callRest_local_sound [DecidableEq ι] {G : NormalGraph ι}
     (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
     (href : RefsOk W (instantiate 0 ρ j.term)) :
-    SafePost (excOf G) (meaning G j.type)
-      (e.forgetEnsures.post (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h)
+    CallArguments.Values (actualsOf (instantiate 0 ρ j.term)) ∧ SafePostExcV (excOf G) (meaning G j.type)
+      (e.schema.heldPost (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) W h)
+      (e.schema.heldExc (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) W h)
       n W h (instantiate 0 ρ j.term) := by
   rcases j with ⟨Γ,t,A⟩
   cases t <;> try exact (hl : False).elim
@@ -864,6 +927,14 @@ private theorem callRest_local_sound [DecidableEq ι] {G : NormalGraph ι}
   have hl2' : jas.length - (k + u) = flags.length := by simpa using hl2
   have hnospread := map_spread_false flags (jas.drop (k + u)) hflags hl2.symm
   rw [hnospread] at hargs
+  have hact : CallArguments.Values (actualsOf (instantiate 0 ρ (Tm.invoke f r args))) := by
+    intro a ha
+    simp only [actualsOf, instantiate, instantiateArgs_eq_map, hargs, List.map_append, List.map_map,
+      List.mem_append, List.mem_map, Function.comp_apply] at ha
+    rcases ha with ⟨p, hp, rfl⟩ | ⟨p, hp, rfl⟩
+    · exact values p (by simp [List.mem_of_mem_take hp])
+    · exact values p (by simp [List.mem_of_mem_drop hp])
+  refine ⟨hact, ?_⟩
   cases n with
   | zero => exact href
   | succ n =>
@@ -932,7 +1003,7 @@ private theorem callRest_local_sound [DecidableEq ι] {G : NormalGraph ι}
       · exact values p (by simp [List.mem_of_mem_drop hp])
     have hr := member jr (by simp)
     have hrval := values jr (by simp)
-    have hs := CallEffects.call_safe (effect := e)
+    have hs := CallEffects.call_exits (effect := e)
       (P := ArgsRest ((jas.take (k + u)).map (fun p => meaning G p.type)) (argMeaning G P))
       (Adm.of_transfer (fun ha j hj U hx => ArgsRest_transfer (fun T hm => by
           obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hm; exact meaning_adm G p.type)
@@ -945,7 +1016,8 @@ private theorem callRest_local_sound [DecidableEq ι] {G : NormalGraph ι}
       (by simpa [htf, htr, hargs, vals, instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def]
         using href)
     rw [CallEffects.Effect.result_plain hplain] at hs
-    replace hs := weaken (fun _ _ hp => CallEffects.Effect.post_forgetEnsures hp) hs
+    replace hs := SafePostExcV.weaken (R' := e.schema.heldExc _ _ W h) (fun _ _ _ _ hp => hp)
+      (fun _ _ _ _ hp => .inl hp) hs
     simpa [htf, htr, hargs, vals, receiverOf, actualsOf, instantiate, instantiateArgs_eq_map, List.map_map,
       Function.comp_def] using hs
 
@@ -962,8 +1034,12 @@ theorem readOperand_instantiate {G : NormalGraph ι} {Γ t ρ n W}
 
 /-- A variadic call with a spread among its parts, the callee, the receiver,
 the fixed actuals and the plain parts values, each spread's operand a read, at
-its selected signature: the spreads are read in the heap the call starts in,
-and the signature's postcondition holds of the call. -/
+its selected signature (the note's Call, then consequence): the evaluation
+reads the spreads in the heap the call starts in and reaches an invocation at
+the expanded actuals (`spread_values_eval`), which is safe at the signature's
+specification there (`CallEffects.call_exits`); forgetting what it states of
+the actuals (`Exits.forgetActuals_sound`), the call is safe at the forgotten
+specification at its own actuals. -/
 private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G}
     {j : Sequent ι} {ps : List (Sequent ι)} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
@@ -975,8 +1051,9 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
     (hops : spreadOperands k u flags ps = true ∨ (ps.all fun p => valueTerm p.term) = true)
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
     (href : RefsOk W (instantiate 0 ρ j.term)) :
-    SafePost (excOf G) (meaning G j.type)
-      (e.forgetEnsures.post (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h)
+    SafePostExcV (excOf G) (meaning G j.type)
+      (e.schema.forgetActuals.heldPost (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) W h)
+      (e.schema.forgetActuals.heldExc (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) W h)
       n W h (instantiate 0 ρ j.term) := by
   rcases j with ⟨Γ,t,A⟩
   cases t <;> try exact (hl : False).elim
@@ -1076,21 +1153,19 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
       rcases q with ⟨_ | _, p⟩ <;> rfl
     have hrefs' : RefsOk W (instantiate 0 ρ (.invoke f r args)) := href
     rw [hterm] at hrefs' ⊢
-    -- A spread among the parts: an actual of the call that is no value.
-    have hns : ∃ a ∈ (jas.take k).map (fun p => instantiate 0 ρ p.term) ++ parts.map RestCalls.partTerm,
-        isVal a = false := by
-      obtain ⟨b, hb, hbt⟩ := List.any_eq_true.mp hsp
-      obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hb
-      have hlen' : (jas.drop k).length = flags.length := by simp [hlen]
-      have hm : (flags[i], (jas.drop k)[i]'(by omega)) ∈ flags.zip (jas.drop k) :=
-        List.mem_iff_getElem.mpr ⟨i, by simp [List.length_zip]; omega, by simp⟩
-      refine ⟨.spread (instantiate 0 ρ ((jas.drop k)[i]'(by omega)).term), List.mem_append_right _ ?_, rfl⟩
-      refine List.mem_map.mpr ⟨_, List.mem_map.mpr ⟨_, hm, rfl⟩, ?_⟩
-      simp only [id] at hbt
-      simp [RestCalls.partTerm, hbt]
     have hpart : ∀ q ∈ flags.zip (jas.drop k), if q.1 then SpreadsInto G q.2.type El else q.2.type = El :=
       fun q hq => hparts (q.1, q.2.type) (List.mem_map_of_mem hq)
-    apply spread_values_post (E := meaning G El) (meaning_adm G El) (meaning_valOnly G El) hfv hrv
+    let F := instantiate 0 ρ jf.term
+    let Rv := instantiate 0 ρ jr.term
+    let fixedVals := (jas.take k).map (fun p => instantiate 0 ρ p.term)
+    let x := e.schema.forgetActuals
+    let Q := x.heldPost Rv (fixedVals ++ parts.map RestCalls.partTerm) W h
+    let R := x.heldExc Rv (fixedVals ++ parts.map RestCalls.partTerm) W h
+    show SafePostExcV (excOf G) (meaning G A) Q R (n+1) W h (.invoke F Rv (fixedVals ++ parts.map RestCalls.partTerm))
+    refine CallEffects.call_site_sound
+      (E := fun j U hp f r vs => SafePostExcV (excOf G) (meaning G A) Q R j U hp (.invoke f r vs))
+      (fun _ _ _ _ _ _ hs => hs) ?_
+    apply spread_values_eval (E := meaning G El) (meaning_adm G El) (meaning_valOnly G El) hfv hrv
       parts (n+1) W h _
       (by
         intro q hq S hS
@@ -1127,8 +1202,9 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
           have hA : p.type = El := by simpa using hpart _ hq'
           simpa [hA] using member p (by simp [hm]) hv
         · simp at hnone)
-      hrefs'
+      hrefs' (fun _ _ _ _ _ => .inr rfl)
     intro i hi U hx hU hh' extra hex hre
+    refine CallEffects.EvalCallSafe.invoke hre ?_
     have hfU := (CallEffects.restsT_adm _).mono i _ U hx _
       ((CallEffects.restsT_adm _).down_le (n+1) i hi W _ hf)
     have hp := hfU.2 _ (List.mem_singleton_self _)
@@ -1146,7 +1222,7 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
         (ArgsT_transfer (fun T hm => by obtain ⟨p,_,rfl⟩ := List.mem_map.mp hm; exact meaning_adm G p.type)
           hfixed i hi U hx)
         ((restElem_args hel).mpr hex)
-    have hs := CallEffects.call_safe (effect := e)
+    have hs := CallEffects.call_exits (effect := e)
       (P := ArgsRest ((jas.take k).map (fun p => meaning G p.type)) (argMeaning G P))
       (Adm.of_transfer (fun ha j hj U hx => ArgsRest_transfer (fun T hm => by
           obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hm; exact meaning_adm G p.type)
@@ -1157,7 +1233,41 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
       (CallEffects.Effect.requires_none (CallEffects.Effect.plain_requires hplain)
         (CallEffects.Effect.plain_pre hplain) _ _ _) hre
     rw [CallEffects.Effect.result_plain hplain] at hs
-    exact weaken (fun _ _ hp => CallEffects.Effect.post_forgetEnsures_spread hns hp) hs
+    exact SafePostExcV.weaken
+      (fun _ _ _ _ hp => CallEffects.Exits.fromEntry_weaken (fun _ _ _ hq => CallEffects.Exits.forgetActuals_sound hq)
+        hi hx hp)
+      (fun _ _ _ _ hp => .inl (CallEffects.Exits.fromEntry_weaken
+          (fun _ _ _ hq => CallEffects.Exits.forgetActuals_sound hq) hi hx hp)) hs
+
+/-- **A variadic call's guarantee read at its heaps**: safety at the
+selected exits (`selectedExits`) from entries held from the call's gives the
+heap postcondition of the signature the deciders read (`selectedEffect`),
+from the heap the call starts in: the exits entail its specification
+(`Effect.withoutActuals_entails`), which at an admissible transition is its
+postcondition (`Effect.postW_iff_exit`), at actuals that are values where it
+states an append of them. -/
+theorem callRest_heldPost_post {Ξ T : Fam} {e : CallEffects.Effect} {flags : List Bool} {r : Tm} {args : List Tm}
+    {n : Nat} {W : WorldT n} {h : Heap} {t : Tm} (hw : WorldAdm W) (hh : HeapOk n W h)
+    (hvals : flags.any id = false → CallArguments.Values args)
+    (hs : SafePostExcV Ξ T
+      ((if flags.any id then e.schema.forgetActuals else e.schema).heldPost r args W h)
+      ((if flags.any id then e.schema.forgetActuals else e.schema).heldExc r args W h) n W h t) :
+    SafePost Ξ T ((if flags.any id then e.withoutActuals else e).post r args h) n W h t := by
+  refine SafePostExc.post (SafePostExc.weaken (fun h' v hp => ?_) (fun _ hp => hp)
+    (CallEffects.SafePostExcV.heldPosts hw hh hs))
+  obtain ⟨s, s', rfl, rfl, hp⟩ := hp
+  have hx : (if flags.any id then e.withoutActuals else e).schema.exitPost .normal r args s s' v := by
+    by_cases hsp : flags.any id = true
+    · rw [if_pos hsp] at hp ⊢
+      exact e.withoutActuals_entails hp
+    · rw [if_neg hsp] at hp ⊢
+      exact hp
+  have hg : (if flags.any id then e.withoutActuals else e).receiverGrows = true → CallArguments.Values args := by
+    by_cases hsp : flags.any id = true
+    · rw [if_pos hsp]; intro hg; cases hg
+    · rw [if_neg hsp]; intro _; exact hvals (by simpa using hsp)
+  exact ((CallEffects.Effect.postW_iff_exit (CallEffects.Exits.exitPost_admissible hx) hg).mpr
+    ((CallEffects.Exits.exitPostW_iff _ _ _ _ s s' v).mpr hx)).1
 
 /-- **A selected call meets its signature's postcondition**, at its receiver,
 from the heap it starts in. -/
@@ -1198,20 +1308,28 @@ theorem selected_sound [DecidableEq ι] {G : NormalGraph ι}
         intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
         exact List.all_eq_true.mp hscope e heq
-      rcases hp with hvals | ⟨hsp, hops⟩
-      · by_cases hsp : flags.any id = true
+      by_cases hsp : flags.any id = true
+      · refine callRest_heldPost_post hw hh (fun h => by rw [hsp] at h; cases h) ?_
+        rw [if_pos hsp]
+        rcases hp with hvals | ⟨-, hops⟩
         · exact callRestSpread_local_sound ht.1 hsp typed inScope (.inr (by simpa using hvals)) he hw hh href
+        · exact callRestSpread_local_sound ht.1 hsp typed inScope (.inl (by simpa using hops)) he hw hh href
+      · have hvals : (ps.all fun p => valueTerm (claim p).term) = true := by
+          rcases hp with hvals | ⟨hsp', -⟩
+          · exact hvals
+          · exact absurd hsp' hsp
         have hnos : flags.all (· == false) = true := by
           simp only [List.all_eq_true, beq_iff_eq]
           intro b hb
           cases b
           · rfl
           · exact absurd (List.any_eq_true.mpr ⟨true, hb, rfl⟩) hsp
-        refine callRest_local_sound ht.1 hnos typed ?_ he hw hh href
-        intro p hm
-        obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
-        exact ⟨List.all_eq_true.mp hvals e heq, List.all_eq_true.mp hscope e heq⟩
-      · exact callRestSpread_local_sound ht.1 hsp typed inScope (.inl (by simpa using hops)) he hw hh href
+        obtain ⟨hact, hs⟩ := callRest_local_sound ht.1 hnos typed (fun p hm => by
+          obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
+          exact ⟨List.all_eq_true.mp hvals e heq, List.all_eq_true.mp hscope e heq⟩) he hw hh href
+        refine callRest_heldPost_post hw hh (fun _ => hact) ?_
+        rw [if_neg hsp]
+        exact hs
     case construct effect =>
       cases hsel
       simp only [selectedOperands] at hp
