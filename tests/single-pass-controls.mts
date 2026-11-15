@@ -1915,6 +1915,97 @@ control("forged effect: an exact write's range removed from its preconditions", 
   say(`forged effect: ${forgedCount} exact writes without their range among their preconditions refused at their read`);
 });
 
+/** Require a forged fragment refused where the verifier reads it: by an
+ * interface stage, which stops the run, or by the pass, at `at`. */
+function refusedAtRead(fragment: string, unit: string, what: string, at: RegExp): void {
+  let p: Pass;
+  try {
+    p = pass(fragment);
+  } catch (error: unknown) {
+    assert.match(error instanceof Error ? error.message : String(error), at, `${what}: refused otherwise`);
+    return;
+  }
+  refused(p, unit, what, at);
+}
+/** The documents of a fragment: its own and each module's it carries. */
+function documentsOf(fragment: Record<string, unknown>): Record<string, unknown>[] {
+  const modules = Array.isArray(fragment.modules) ? fragment.modules.filter(isObject) : [];
+  return [fragment, ...modules];
+}
+/** The index of the unique symbol `name` in a document's `symbols`. */
+function symbolIndex(document: Record<string, unknown>, name: string): number {
+  const symbols = isObject(document.declarations) && Array.isArray(document.declarations.symbols) ? document.declarations.symbols : [];
+  const i = symbols.findIndex((s: unknown) => isObject(s) && s.name === name);
+  assert.ok(i >= 0, `the symbol ${name}`);
+  return i;
+}
+/** Add `entry` to the normal frame of every effect of the definition
+ * `name` of a document. */
+function addToFrames(document: Record<string, unknown>, name: string, entry: unknown): number {
+  const definitions = isObject(document.declarations) && Array.isArray(document.declarations.definitions)
+    ? document.declarations.definitions : [];
+  const definition: unknown = definitions.find((d: unknown) => isObject(d) && isObject(d.declaration) && d.declaration.name === name);
+  let added = 0;
+  visitAll(definition, (node) => {
+    if (!isEffect(node) || !isObject(node.exits) || !isObject(node.exits.normal) || !Array.isArray(node.exits.normal.frame)) return;
+    node.exits.normal.frame.push(structuredClone(entry));
+    added++;
+  });
+  assert.ok(added > 0, `an effect of ${name}`);
+  return added;
+}
+
+control("forged effect: symbol identities read against their document's symbols", async (): Promise<void> => {
+  // The importer and its module list their unique symbols in different
+  // orders. `Map`'s effects, in both documents, are given a frame entry on
+  // the receiver's field keyed by `Symbol.toStringTag`, each document naming
+  // it by its own index: read at canonical numbers, the two stores agree
+  // and the import is read as before. The importer naming another symbol
+  // (`Symbol.toPrimitive`) there makes the stores differ, refused at the
+  // read. A symbol key past its document's `symbols`, and a symbol literal
+  // at a number no declared symbol has, are refused where the document is
+  // read.
+  const file = "interface-rows-symbol-order-value-import";
+  const unit = "widest@912";
+  const artifacts = run(file);
+  honest(file, unit);
+  const keyed = (document: Record<string, unknown>, name: string): unknown =>
+    ({ region: { field: { x: 0, key: { symbol: symbolIndex(document, name) } } }, change: "keep" });
+  const agreeing = fragmentJson(artifacts);
+  const [importer, module] = documentsOf(agreeing);
+  assert.ok(importer !== undefined && module !== undefined, "an importer and its module");
+  assert.notEqual(symbolIndex(importer, "toStringTag"), symbolIndex(module, "toStringTag"), "two orders");
+  for (const d of [importer, module]) addToFrames(d, "Map", keyed(d, "toStringTag"));
+  accepted(pass(forged(artifacts, "symbol-order-agreeing", agreeing)), unit, "one symbol at two indices");
+  const differing = fragmentJson(artifacts);
+  const [importer2, module2] = documentsOf(differing);
+  assert.ok(importer2 !== undefined && module2 !== undefined);
+  addToFrames(importer2, "Map", keyed(importer2, "toPrimitive"));
+  addToFrames(module2, "Map", keyed(module2, "toStringTag"));
+  refused(pass(forged(artifacts, "symbol-order-differing", differing)), unit, "two symbols");
+  const past = fragmentJson(artifacts);
+  const [importer3] = documentsOf(past);
+  assert.ok(importer3 !== undefined && isObject(importer3.declarations) && Array.isArray(importer3.declarations.symbols));
+  const count = importer3.declarations.symbols.length;
+  addToFrames(importer3, "Map", { region: { field: { x: 0, key: { symbol: count } } }, change: "keep" });
+  refusedAtRead(forged(artifacts, "symbol-undeclared-key", past), unit, "a symbol key past the document's symbols",
+    new RegExp(`a symbol key ${count} names no unique symbol its document declares`));
+  const literal = fragmentJson(artifacts);
+  const [importer4] = documentsOf(literal);
+  assert.ok(importer4 !== undefined);
+  const undeclared = 2 ** 40 + 7;
+  let literals = 0;
+  visitAll(importer4, (node) => {
+    if (literals > 0 || !isEffect(node) || !isObject(node.exits) || !isObject(node.exits.normal) || !Array.isArray(node.exits.normal.ensures)) return;
+    node.exits.normal.ensures.push({ operation: { post: { elementsWhen: { x: 0, value: { sym: { id: undeclared } }, y: 0, predicate: [] } } } });
+    literals++;
+  });
+  assert.equal(literals, 1, "an effect of the importer");
+  refusedAtRead(forged(artifacts, "symbol-undeclared-literal", literal), unit, "a symbol literal no document declares",
+    new RegExp(`a symbol literal ${undeclared} is the canonical number of no unique symbol its document declares`));
+  say("symbol identities: one symbol at two documents' indices agrees, two symbols differ, an undeclared key and literal refused at the read");
+});
+
 control("forged fragment: the rest intrinsic's effect widened", async (): Promise<void> => {
   // Rest collection consumes the intrinsic's stated effect, so the intrinsic at an
   // ordinary arrow's effect leaves the defining unit's growth footprint

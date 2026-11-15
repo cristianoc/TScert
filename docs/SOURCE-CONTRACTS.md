@@ -816,11 +816,13 @@ importer reads is the one its declaration's code establishes in its own
 module's check. A store map relates two stores' built-ins only where both
 state them, so a module's document, and the document of a file importing
 one, list `ArrayProto` whatever their code writes. Both stores read every
-symbol key at its canonical number, a function of the `unique symbol`
-declaration's identity (`Fragment.canonicalSymbols`): a component's request
-and an importer's fragment are renumbered as they are read, each module
-document with its own symbol list, and documents read together in which two
-identities share a number are refused (`Fragment.symbolNumbersApart`). So a
+symbol identity, a symbol key and an effect's symbol literal, at its
+canonical number, a function of the `unique symbol` declaration's identity
+(`Fragment.canonicalSymbols`): a component's request and an importer's
+fragment are renumbered as they are read, each module document with its own
+symbol list; an identity its document's list does not declare is refused,
+and so are documents read together in which two identities share a number
+(`Fragment.symbolNumbersApart`). So a
 symbol has one key in every store, and one key is one symbol. The check
 relates a clause to an image clause up to the order of a record's or a
 dictionary's conjunctions, which a meet lists in its parts' order, and up to

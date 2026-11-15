@@ -283,7 +283,7 @@ def moduleGiven (ast : Json) (given : Std.HashMap String Json) : Std.HashMap Str
 def interfacePlanFile (path selection : String) : IO UInt32 := do
   let ast := (← readJson path) >>= fun a => do
     Fragment.symbolNumbersApart [a]
-    pure (Fragment.canonicalSymbols a)
+    Fragment.canonicalSymbols a
   let selected ← readJson selection
   match (do SourceClaimJson.interfacePlan (← ast) (← selected)) with
   | .error e => refuse e
@@ -304,7 +304,7 @@ def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) :
     Fragment.symbolNumbersApart (members ++ ds.flatMap fun d =>
       (((d.getObjValD "interface").getObjValAs? (Array Json) "modules").toOption.getD #[]).toList.map
         (·.getObjValD "module"))
-    let modules ← members.mapM fun m => Fragment.decodeModule (Fragment.canonicalSymbols m)
+    let modules ← members.mapM fun m => do Fragment.decodeModule (← Fragment.canonicalSymbols m)
     let mut imported : List Fragment.ModuleAst := []
     for d in ds do
       fieldsExactly d ["key", "interface"]
@@ -312,7 +312,7 @@ def interfaceFile (path : String) (budget : PositiveCertificates.SearchBudget) :
       let i ← jField d "interface"
       fieldsExactly i ["modules"]
       for row in ← jArr i "modules" do
-        let m ← Fragment.decodeModule (Fragment.canonicalSymbols (← jField row "module"))
+        let m ← Fragment.decodeModule (← Fragment.canonicalSymbols (← jField row "module"))
         if modules.any (·.location == m.location) || imported.any (·.location == m.location) then
           throw "component dependency overlaps"
         imported := imported ++ [m]
@@ -401,7 +401,7 @@ def prepareUnitsFile (astPath : String) (fileKey : String) (fuel : Nat) (names :
   -- the module documents it carries too.
   let ast := ast >>= fun a => do
     Fragment.symbolNumbersApart [a]
-    pure (Fragment.canonicalSymbols a)
+    Fragment.canonicalSymbols a
   -- No unit is given a line: every loop head's proposal is inferred.
   let givenLines : Std.HashMap String Json := {}
   -- A pass refusal's text located at the source obligation it names

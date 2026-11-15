@@ -1368,46 +1368,67 @@ def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
 
 /-! ### Canonical symbol numbers
 
-A symbol key `{"symbol": i}` names the `i`-th entry of its document's
-`symbols`, a `unique symbol` declaration's identity. Two documents list
-their symbols in their own orders, so one index can name two symbols and
-one symbol two indices. The single pass reads every document's symbol keys
-at their canonical numbers instead: a function of the declaration identity
-alone (`symbolNumber`), so every store a run builds, a module's and each
+A symbol key `{"symbol": i}` and a symbol literal `{"sym": {"id": i}}` (an
+effect's) name the `i`-th entry of their document's `symbols`, a `unique
+symbol` declaration's identity. Two documents list their symbols in their
+own orders, so one index can name two symbols and one symbol two indices.
+The single pass reads every document's symbol identities at their
+canonical numbers instead: a function of the declaration identity alone
+(`symbolNumber`), so every store a run builds, a module's and each
 importer's, gives one symbol one key. Canonical numbers are at least
 `symbolBase`, above every index, so renumbering a renumbered document
-changes nothing. Two identities of one number are refused
+changes nothing. A symbol identity a document's `symbols` does not declare
+(an index past them, or a number at least `symbolBase` that is no declared
+identity's) is refused, and so are two identities of one number
 (`symbolNumbersApart`). -/
 
 /-- A document's symbol identities, from its `declarations`' `symbols`. -/
 def documentSymbols (doc : Json) : Array Json :=
   ((doc.getObjValD "declarations").getObjValAs? (Array Json) "symbols").toOption.getD #[]
 
-/-- A JSON value with each symbol index (a natural number in a field
-`symbol`) below `symbolBase` replaced by its symbol's canonical number,
-outside the fields named in `skip`. -/
-partial def renumberSymbols (symbols : Array Json) (skip : List String := []) : Json → Json
-  | .arr xs => .arr (xs.map (renumberSymbols symbols))
-  | .obj kvs => Json.mkObj (kvs.toArray.toList.map fun (k, v) =>
-      if skip.contains k then (k, v) else
-      (k, match k, v with
-        | "symbol", .num n =>
-          if n.exponent == 0 && n.mantissa ≥ 0 && n.mantissa.toNat < symbolBase then
-            match symbols[n.mantissa.toNat]? with
-            | some id => toJson (symbolNumber id)
-            | none => v
-          else v
-        | _, _ => renumberSymbols symbols [] v))
-  | j => j
+/-- **A symbol identity at its canonical number**: an index of the
+document's `symbols` renumbered, a canonical number of one of them kept;
+any other natural number is refused, naming `what` it is. A value that is
+no natural number is left to the reader that reads it. -/
+def canonicalSymbol (symbols : Array Json) (what : String) (v : Json) : Except String Json :=
+  match v with
+  | .num n =>
+    if n.exponent == 0 && n.mantissa ≥ 0 then
+      let i := n.mantissa.toNat
+      if i < symbolBase then match symbols[i]? with
+        | some id => .ok (toJson (symbolNumber id))
+        | none => .error s!"{what} {i} names no unique symbol its document declares"
+      else if symbols.any (symbolNumber · == i) then .ok v
+      else .error s!"{what} {i} is the canonical number of no unique symbol its document declares"
+    else .ok v
+  | _ => .ok v
 
-/-- **A document at canonical symbol numbers**: its own symbol keys
+/-- A JSON value with each symbol identity (a symbol key's field `symbol`, a
+symbol literal's `sym`'s `id`) at its canonical number (`canonicalSymbol`),
+outside the fields named in `skip`. -/
+partial def renumberSymbols (symbols : Array Json) (skip : List String := []) : Json → Except String Json
+  | .arr xs => .arr <$> xs.mapM (renumberSymbols symbols)
+  | .obj kvs => do
+    let kvs' ← kvs.toArray.toList.mapM fun (k, v) => do
+      if skip.contains k then return (k, v)
+      match k, v with
+      | "symbol", .num _ => return (k, ← canonicalSymbol symbols "a symbol key" v)
+      | "sym", .obj inner =>
+        match inner.get? "id" with
+        | some i => return (k, (← renumberSymbols symbols [] v).setObjVal! "id" (← canonicalSymbol symbols "a symbol literal" i))
+        | none => return (k, ← renumberSymbols symbols [] v)
+      | _, _ => return (k, ← renumberSymbols symbols [] v)
+    return Json.mkObj kvs'
+  | j => .ok j
+
+/-- **A document at canonical symbol numbers**: its own symbol identities
 renumbered by its own `symbols`, and each module document it carries
-(`modules`) by that module's. -/
-def canonicalSymbols (doc : Json) : Json :=
-  let own := renumberSymbols (documentSymbols doc) ["modules"] doc
+(`modules`) by that module's; an identity no document declares is refused. -/
+def canonicalSymbols (doc : Json) : Except String Json := do
+  let own ← renumberSymbols (documentSymbols doc) ["modules"] doc
   match doc.getObjVal? "modules" with
-  | .ok (.arr ms) => own.setObjVal! "modules" (.arr (ms.map fun m => renumberSymbols (documentSymbols m) [] m))
-  | _ => own
+  | .ok (.arr ms) => return own.setObjVal! "modules" (.arr (← ms.mapM fun m => renumberSymbols (documentSymbols m) [] m))
+  | _ => return own
 
 /-- The symbol identities of documents and of the documents they carry. -/
 def symbolIdentities (docs : List Json) : List Json :=
