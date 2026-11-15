@@ -35,12 +35,13 @@ def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name : String
     (r : SourceRequest σ ι) (c : Response ι) : Option String :=
   let G := RequestJson.graph r.toRequest
   let images := StoreView.images r.types
-  let firstBad (Φ : Footprints.Closed) (ret exc : Bool) (start : Nat) (P : Program) (C : Certificate ι)
+  let firstBad (B : ProgramTyping.RunBound) (start : Nat) (P : Program) (C : Certificate ι)
       (sourceMap : SourceMap) : Option SourceMapEntry :=
     let facts := GraphCode.inferFresh G images c.readSummaries P C start
-    let dead := GraphCode.inferDead G P C exc
+    let dead := GraphCode.inferDead G P C B.1.exceptional
     ((P.zip C).zipIdx.find? fun ((node, point), l) =>
-      !GraphCode.nodeChecked G images c.readSummaries Φ facts dead ret exc l node point).bind fun (_, l) => (sourceMap[l]?).bind id
+      !GraphCode.nodeChecked G images c.readSummaries B.1.normal B.1.exceptional facts dead B.2 l node point).bind
+      fun (_, l) => (sourceMap[l]?).bind id
   let refuse (what : String) (pos : Span) :=
     s!"source effect refusal at [{pos.1},{pos.2}): the footprint claimed for {what} is not established by its body"
   -- An async definition's footprint is `top` whatever its body does
@@ -60,7 +61,8 @@ def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name : String
   let unit := effectResult r c
   if !unit.accepted then
     if unit.exhaustion.isSome then none else
-    some (refuse s!"'{name}'" (((firstBad r.footprint r.fresh r.onThrow r.start r.program c.certificate r.sourceMap).map (·.pos)).getD namePos))
+    some (refuse s!"'{name}'" (((firstBad (ProgramTyping.RunBound.ofRequest r.footprint r.onThrow r.fresh) r.start r.program c.certificate
+      r.sourceMap).map (·.pos)).getD namePos))
   else
   -- A statement with store regions: at the first node the regional check
   -- refuses (`regionalResult`), else at the declaration.
@@ -83,9 +85,8 @@ def footprintRefusal {σ ι : Type} [Labels ι] [StoreView σ ι] (name : String
       let code := GraphCode.effectCheckedResult G images c.readSummaries q.entry C
       if code.accepted || code.exhaustion.isSome then none else
         let sourceMap := ((r.codeSources[i]?).map (·.sourceMap)).getD []
-        let place := firstBad q.entry.row.effect.footprint q.entry.row.effect.fresh q.entry.row.effect.onThrow
-            q.entry.start
-            (GraphCode.program q.entry.exprs q.entry.conts) C sourceMap <|>
+        let place := (ProgramTyping.codeBound q.entry).bind (fun B =>
+            firstBad B q.entry.start (GraphCode.program q.entry.exprs q.entry.conts) C sourceMap) <|>
           sourceMapRegion sourceMap
         some (refuse s!"a closure in '{name}'" ((place.map (·.pos)).getD namePos))
 

@@ -1,6 +1,7 @@
 import Verification.Programs.Parametricity
 import Verification.Programs.ExpressionEffects
 import Verification.Programs.FrameChecks
+import Verification.Programs.CodeConditions
 
 /-! # Graph code: a closure whose body is a checked graph
 
@@ -296,9 +297,11 @@ def deadIterate (nodes : Array (Node × Bool)) : Nat → Array Bool → Array Bo
     if next = dead then dead else deadIterate nodes fuel next
 
 /-- Candidate region, refined by removing nodes whose normal or exceptional
-successor may return. The independent node check validates the result. -/
-@[nospecialize] def inferDead (G : NormalGraph ι) (P : Program) (C : Certificate ι) (exc : Bool) : List Bool :=
-  if exc then [] else
+successor may return, under an exceptional bound `Ψ` of `⊤` (none
+otherwise). The independent node check validates the result. -/
+@[nospecialize] def inferDead (G : NormalGraph ι) (P : Program) (C : Certificate ι) (Ψ : Footprints.Closed) :
+    List Bool :=
+  if Ψ != .top then [] else
   let nodes := ((P.zip C).map fun (node, c) => (node, ExpressionEffects.emptyType G (result c))).toArray
   (deadIterate nodes (P.length + 1) (Array.replicate P.length true)).toList
 
@@ -1480,21 +1483,34 @@ below decides whether the result holds on every edge. -/
   let init := (nodes.map fun ((_, c), l) => if l = start then [] else List.range (entry c).length).toArray
   ((freshIterate nodes calls (P.length + 2) init).map Array.toList).getD []
 
-/-- One node of a graph within the bound: a handler's facts following from
-its own, and its throw within the bound where a handler outside the checked
-no-return region catches it or the invocation's throws are bounded (`exc`); its destinations' facts following from its own; and an
+/-- **A node's throw within the bounds** `(Φ, Ψ)` (`SinglePass.footprintCheck`'s
+throw condition): a throw a handler outside the checked no-return region
+catches continues within the normal bound `Φ`; one that escapes completes
+the run exceptionally, its prefix within `Φ`, so within the exceptional
+bound `Ψ` where that is not `⊤`, `Φ` inside it. -/
+@[nospecialize] def nodeThrowsWithin [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
+    (sums : List (ProgramCertificates.ReadSummary ι)) (Φ Ψ : Footprints.Closed) (F : List Nat)
+    (dead : List Bool) (node : Node) (c : NodeEvidence ι) : Bool :=
+  let live := !deadHandler dead node.handler
+  (!live || throwsWithin G images sums Φ F c node.expression) &&
+    (live || Ψ == .top || (Φ.le Ψ && throwsWithin G images sums Ψ F c node.expression))
+
+/-- One node of a graph within the bounds `(Φ, Ψ)` of its two exits: a
+handler's facts following from its own, and its throw within the bounds
+(`nodeThrowsWithin`); its destinations' facts following from its own; and an
 inspection (which preserves the heap), a typed write of a field holding a
-value, or a call at a selected signature within the bound. Pure graphs retain
-the independent operational rule, which also covers their handlers. -/
+value, or a call at a selected signature within `Φ`. A node of the no-return
+region needs `Ψ = ⊤`. Pure graphs retain the independent operational rule,
+which also covers their handlers. -/
 @[nospecialize] def nodeChecked [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (sums : List (ProgramCertificates.ReadSummary ι))
-    (Φ : Footprints.Closed) (facts : List (List Nat)) (dead : List Bool) (ret exc : Bool) (l : Nat) (node : Node) (c : NodeEvidence ι) : Bool :=
-  if deadAt dead l then deadNode G dead node c && !exc else
+    (Φ Ψ : Footprints.Closed) (facts : List (List Nat)) (dead : List Bool) (ret : Bool) (l : Nat) (node : Node) (c : NodeEvidence ι) : Bool :=
+  if deadAt dead l then deadNode G dead node c && Ψ == .top else
   let F := factsAt facts l
   -- The unreachability test, which expands every type of the node's entry,
   -- runs only where the node is not otherwise within the bound.
   ((match node.handler with | none => true | some t => deadAt dead t.label || handlerFresh facts F t) &&
-    (!((!deadHandler dead node.handler) || exc) || throwsWithin G images sums Φ F c node.expression) &&
+    nodeThrowsWithin G images sums Φ Ψ F dead node c &&
     ProgramCertificates.checkScope (entry c).length node.expression &&
     edgesFresh facts F (varFresh F node.expression || callFresh G images sums c node.expression) ret node.continuation &&
     ((ExpressionEffects.check G (entry c) node.expression ||
@@ -1508,12 +1524,12 @@ the independent operational rule, which also covers their handlers. -/
 
 @[nospecialize] def nodeCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (sums : List (ProgramCertificates.ReadSummary ι))
-    (Φ : Footprints.Closed) (facts : List (List Nat)) (dead : List Bool) (ret exc : Bool) (l : Nat) (node : Node) (c : NodeEvidence ι) :
+    (Φ Ψ : Footprints.Closed) (facts : List (List Nat)) (dead : List Bool) (ret : Bool) (l : Nat) (node : Node) (c : NodeEvidence ι) :
     ProgramCertificates.CheckResult ι Unit :=
-  if deadAt dead l then ProgramCertificates.CheckResult.ofBool (deadNode G dead node c && !exc) else
+  if deadAt dead l then ProgramCertificates.CheckResult.ofBool (deadNode G dead node c && Ψ == .top) else
   let F := factsAt facts l
   ((ProgramCertificates.CheckResult.ofBool ((match node.handler with | none => true | some t => deadAt dead t.label || handlerFresh facts F t) &&
-      (!((!deadHandler dead node.handler) || exc) || throwsWithin G images sums Φ F c node.expression) &&
+      nodeThrowsWithin G images sums Φ Ψ F dead node c &&
       ProgramCertificates.checkScope (entry c).length node.expression &&
       edgesFresh facts F (varFresh F node.expression || callFresh G images sums c node.expression) ret node.continuation)).bind fun _ =>
     ((ProgramCertificates.CheckResult.ofBool (ExpressionEffects.check G (entry c) node.expression ||
@@ -1526,37 +1542,37 @@ the independent operational rule, which also covers their handlers. -/
     ProgramCertificates.CheckResult.ofBool (ExpressionEffects.emptyType G (result c))).orElse fun _ =>
   ProgramCertificates.CheckResult.ofBool (unreachableEntry G c)
 
-/-- Every node within the bound, at the facts inferred for the graph, the
-entry with none; with `ret`, every return a fresh value. -/
+/-- Every node within the run's bound `B` (`RunBound`: the bounds of the two
+exits and whether the result is fresh), at the facts inferred for the
+graph, the entry with none; with a fresh result, every return a fresh
+value. -/
 @[nospecialize] def compositionalCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (sums : List (ProgramCertificates.ReadSummary ι))
-    (Φ : Footprints.Closed) (ret exc : Bool) (start : Nat) (P : Program) (C : Certificate ι) :
+    (B : ProgramTyping.RunBound) (start : Nat) (P : Program) (C : Certificate ι) :
     ProgramCertificates.CheckResult ι Unit :=
   let facts := inferFresh G images sums P C start
-  let dead := inferDead G P C exc
+  let dead := inferDead G P C B.1.exceptional
   (ProgramCertificates.CheckResult.ofBool (factsAt facts start).isEmpty).bind fun _ =>
   ProgramCertificates.CheckResult.all (P.zip C).zipIdx fun ((node, c), l) =>
-    (nodeCheckedResult G images sums Φ facts dead ret exc l node c).at (.node l)
+    (nodeCheckedResult G images sums B.1.normal B.1.exceptional facts dead B.2 l node c).at (.node l)
 
 theorem entryFacts_reassign [DecidableEq ι] (G : NormalGraph ι) (η : MixedAssignment ι) (c : NodeEvidence ι) :
     entryFacts (reassign G η) c = entryFacts G c := rfl
 
-/-- Definition effects supplement, rather than replace, ordinary safety. A
-footprint letting everything change, without a fresh result or a footprint on
-a throw, holds of every run (`Closed.top_safe`); any other bound is
-established node by node (`compositionalChecked`), or, without a fresh result,
-by a graph of pure nodes, which keeps the heap a prefix at every step, a raise
-included; either holds beside the entry's goal, a promise included. A fresh
-result is established node by node whatever the footprint. -/
+/-- **A code's obligations, checked node by node**: the code has obligations
+(`ProgramTyping.codeObligations`: its arity and scope, no precondition, every
+exported postcondition established by its run), and its run is within the
+bounds they give (`CodeObligations.bound`, none where both exits are `⊤`
+with no fresh result or the body is pure), node by node
+(`compositionalCheckedResult`), with a fresh result where they ask one. -/
 @[nospecialize] def effectCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (sums : List (ProgramCertificates.ReadSummary ι))
     (c : CodeEntry ι) (C : Certificate ι) : ProgramCertificates.CheckResult ι Unit :=
-  (ProgramCertificates.CheckResult.ofBool (!c.row.effect.freshObject &&
-    (c.row.effect.requires.isNone && (c.row.effect.elements.isNone && (!c.row.effect.receiverGrows && c.row.effect.elementWrite.isNone))))).bind fun _ =>
-  if c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false then pure () else
-    (ProgramCertificates.CheckResult.ofBool (!c.row.effect.fresh && c.exprs.all Purity.pureTerm)).orElse fun _ =>
-    compositionalCheckedResult G images sums c.row.effect.footprint c.row.effect.fresh c.row.effect.onThrow c.start
-      (program c.exprs c.conts) C
+  match ProgramTyping.codeObligations c with
+  | none => ProgramCertificates.CheckResult.ofBool false
+  | some o => match o.bound with
+    | none => pure ()
+    | some b => compositionalCheckedResult G images sums (b, o.freshResult) c.start (program c.exprs c.conts) C
 
 /-- What a code entry's graph is checked to return: its signature's result,
 or its signature's promise about the parameter it names, at that parameter's
@@ -1588,8 +1604,6 @@ describes, against an earlier table. -/
 @[nospecialize] def codeCheckedResult [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (sums : List (ProgramCertificates.ReadSummary ι))
     (table : List (CodeEntry ι)) (c : CodeEntry ι) (C : ControlFlow.Certificate ι) : ProgramCertificates.CheckResult ι Unit :=
-  (ProgramCertificates.CheckResult.ofBool (decide (c.arity ≤ c.row.arguments.length) &&
-    c.row.effect.below c.arity)).bind fun _ =>
   (effectCheckedResult G images sums c C).bind fun _ =>
   checkEntryResult (sums := sums) (entryIndices := codeEntryIndices c) G images c.goal (program c.exprs c.conts)
     C c.start (codeFrame c.arity c.row c.captures c.store) (admits table)

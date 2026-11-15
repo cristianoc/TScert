@@ -205,7 +205,8 @@ relate a native's result or changed cells to its arguments; each is a
 field of the audited contract that states the native (a row of
 `tools/*.mts` or a pinned overlay entry, below), stated and reviewed with
 it, and has no written form in a program's source: no rule certifies one
-from a body (`effectCheckedResult` refuses each).
+from a body (a code's exported postconditions are those its run
+establishes, `ProgramTyping.exportsEstablished`).
 
 **Why a type, and no `@modifies` tag.** `Modifies` is a type, so it rides
 on every signature TScert reads, a function type's included: a callback

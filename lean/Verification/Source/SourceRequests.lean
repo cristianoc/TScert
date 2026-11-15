@@ -312,7 +312,7 @@ any other claim is established node by node
 (`GraphCode.compositionalChecked`), or, without a fresh result, by a graph of
 pure nodes, which preserves the heap, for a unit returning a plain result
 under the ordinary checker. A fresh result is established node by node
-whatever the footprint, as `GraphCode.effectCheckedResult` does for code.
+whatever the footprint.
 Where those refuse, a unit promising no fresh result is checked by the
 regional check with no regions (`regionalChecked`), whose stores the body
 allocated rebase to none. -/
@@ -324,7 +324,7 @@ allocated rebase to none. -/
     (ProgramCertificates.CheckResult.ofBool (r.qualification.isNone && (r.footprint != .top || r.fresh))).bind fun _ =>
     (ProgramCertificates.CheckResult.ofBool (!r.fresh && r.program.all fun n => Purity.pureTerm n.expression)).orElse fun _ =>
     (GraphCode.compositionalCheckedResult (RequestJson.graph r.toRequest) (StoreView.images r.types) c.readSummaries
-      r.footprint r.fresh r.onThrow r.start r.program c.certificate).orElse fun _ =>
+      (ProgramTyping.RunBound.ofRequest r.footprint r.onThrow r.fresh) r.start r.program c.certificate).orElse fun _ =>
     ProgramCertificates.CheckResult.ofBool (!r.fresh && regionalChecked r c r.footprint [] r.onThrow)
 
 /-- The store regions a unit's statement excepts (`"x[*]": "any"`), each an

@@ -232,10 +232,12 @@ otherwise the layers read every fact.
 ### A footprint
 
 A unit stating a footprint is bounded node by node in the walk, as
-`GraphCode.compositionalChecked` checks it (`nodeChecked`): a node's throw
-is within the bound where the unit states the bound on a throw or a handler
-outside the region with no normal return catches it (`deadHandler`), so an
-effect without `onThrow` admits no such handler; a state also carries the names
+`GraphCode.compositionalCheckedResult` checks it (`nodeChecked`) at the
+bounds of its two exits: a node's throw that a handler outside the region
+with no normal return catches (`deadHandler`) is within the normal bound,
+and one that escapes within the exceptional bound where that is not `⊤`,
+the normal bound inside it (`nodeThrowsWithin`), so an exceptional bound of
+`⊤` admits no such handler; a state also carries the names
 holding a store the run allocated (`inferFresh`'s facts, over names: a copy
 of such a name, or a call at a signature stating a fresh result whose
 derivation `derivChecked` accepts; a merge
