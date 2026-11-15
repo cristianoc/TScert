@@ -631,20 +631,31 @@ The wire transaction is sequential and has one owner across Lean, TypeScript and
 
 ## Corrections to the note and limits
 
-1. **Top includes views.** Its printed `{values: any, arrays: any}` omits the third class. Top contains all three.
-2. **Own regions need an explicit decision.** Add the general own-value region for exact preservation of current contracts, or acknowledge the resulting contract/verdict changes under the narrower grammar.
+The note states each point this design relies on
+([the note](../REFERENCES.md#the-tolerant-frames-note)):
+
+1. **Top includes views.** The note's store class contains view stores, so
+   its `⊤` is the three classes the model's `⊤` is.
+2. **Own regions.** The note's regions include `π.own`, every field
+   location of the object a path reads, the model's own-value region.
 3. **Seq-Eff's rebasing premise is the note's definition.** `Rebases`
    admits coverage absorbed by an entry of the frame so far at `any`; such
    a rebasing gives the note's direct coverage of the later frame by the
    union of the frame so far and the rebased frame (`Rebases.covers`), so
    `Post.compose_rebases` is Seq-Eff over the printed definition
    "Rebasing".
-4. **State both-exit sequence and handler composition.** An uncaught throw includes the prefix before it; a caught throw contributes to the handler’s eventual exit.
-5. **Distinguish frames from exact posts.** Growth does not imply append contents; `{views: grow}` does not determine the receiver’s converted element.
-6. **Keep marks and `old` scopes explicit.** Freshness uses the enclosing entry mark; each command post uses that command’s entry. Composition transports these separately.
-7. **Correct the rebasing status paragraph.** Class widening is available at arbitrary path depth. The recorded limit is a direct unlinked position field widening to every location.
-8. **Bound inference is conservative.** Finite stated effects and finite postcondition lists need not express strongest command summaries. Loop widening and checked consequence are part of inference.
+4. **Both exits compose.** A throw of the first command, a throw of the
+   second after a return of the first, and a caught throw contributing to
+   the handler's exit.
+5. **Effects bound change; postconditions state values.** Growth does not
+   imply an append's contents; `{views: grow}` does not determine the
+   receiver's converted element.
+6. **The mark and `old` are distinct.** Freshness reads the invocation's
+   mark, and `old` the command's entry.
+7. **Rebasing widens to a class at any path depth.** The note's rebasing
+   tag states it.
+8. **A derived effect is an upper bound.** Finite stated effects and
+   finite postcondition lists need not express strongest command
+   summaries; loop widening and checked consequence are part of inference.
 
 Reduction remains deterministic. Host-dependent operations are host values meeting stated contracts. Region interpretation remains heap-only, connected to world kinds by the existing correspondence theorems.
-
-No files were edited and no builds or suites were run.
