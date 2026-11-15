@@ -31,7 +31,10 @@ Fresh-Eff).
   locations below `b` (`Footprint.includedIn_sound`).
 - **Inclusion in the empty effect** (`Footprint.keepsHeap`): every entry
   changes nothing its region may hold; success gives the entry heap as a
-  prefix of the exit heap (`Footprint.keepsHeap_prefix`).
+  prefix of the exit heap (`Footprint.keepsHeap_prefix`). Where the entries
+  at regions other than `R` are included in it (`Footprint.without`), every
+  old location outside `R` keeps its contents
+  (`Footprint.keepsHeap_outside`).
 
 **The frame of a signature** (`Effect.frame`, the normal exit's frame of
 `Effect.summary`) has the closed bound below a mark its present fields
@@ -292,6 +295,41 @@ theorem Footprint.keepsHeap_prefix {Φ : Footprint} {ρ : Env} {h h' : Heap} (hk
   have hb := (Footprint.boundBelow_sound (b := h.length) hp (FreshPositions.nil _ _)).mono hk
   exact Closed.holds_empty.mp (Closed.holds_of_on
     ⟨hb.1, fun l v _ hv => hb.2 l v (List.getElem?_eq_some_iff.mp hv).1 hv⟩)
+
+/-- No region is the store of a position of the empty list. -/
+theorem Region.freshStore_nil (R : Region) : R.freshStore [] = false := by
+  induction R with
+  | inCls r _ ih => simpa [Region.freshStore] using ih
+  | path _ p _ => cases p <;> simp [Region.freshStore]
+  | store _ p => cases p <;> simp [Region.freshStore]
+  | _ => first | rfl | simp [Region.freshStore]
+
+/-- **A frame's entries at regions other than `R`.** -/
+def Footprint.without (R : Region) (Φ : Footprint) : Footprint := Φ.filter fun e => !(e.1 == R)
+
+/-- **A frame whose entries outside a region keep the heap keeps every old
+location outside it** (proved): where `Φ.without R` is included in the empty
+effect, a transition `Φ` allows leaves every old location `R` does not cover
+as it was. -/
+theorem Footprint.keepsHeap_outside {R : Region} {Φ : Footprint} {ρ : Env} {h h' : Heap}
+    (hk : (Φ.without R).keepsHeap = true) (hp : Post Φ ρ h h') {l : Nat} {v : Val}
+    (hl : R.mem ρ h l = false) (hv : h[l]? = some v) : h'[l]? = some v := by
+  obtain ⟨v', hv', ha⟩ := hp.2 l v hv
+  rcases ha with rfl | ⟨e, he, hm, hh⟩
+  · exact hv'
+  have hne : (e.1 == R) = false := by
+    cases heq : e.1 == R
+    · rfl
+    · rw [beq_iff_eq] at heq; rw [heq, hl] at hm; cases hm
+  have hon : (Footprint.boundBelow [] (Φ.without R)).HoldsOn (· = l) h h' := ⟨hp.1, fun l'' w heq hw => by
+    subst heq; rw [hv] at hw; cases hw
+    refine ⟨v', hv', ?_⟩
+    rw [Footprint.boundBelow, Footprint.close_at, Footprint.changeAt_holds]
+    exact .inr ⟨e, List.mem_filter.mpr ⟨List.mem_filter.mpr ⟨he, by simp [hne]⟩, by simp [Region.freshStore_nil]⟩,
+      Region.cats_mem hv hm, hh⟩⟩
+  obtain ⟨u, hu, hc⟩ := (hon.mono hk).2 l v rfl hv
+  rw [Closed.at_empty] at hc
+  rw [hu, hc]
 
 end Verification.Footprints
 

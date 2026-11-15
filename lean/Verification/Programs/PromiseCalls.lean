@@ -1221,22 +1221,33 @@ theorem freshCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
 
 /-! ### A call changing only its receiver's own locations (PROGRAM-TYPING.md, "A call changing only its receiver")
 
-A call at a signature whose footprint is within the empty one on every old
-location but its receiver's own ones changes no location a fact names that a
+A call whose normal exit's frame has an entry at its receiver's own value
+locations, and whose other entries are included in the empty effect
+(`Footprint.keepsHeap_outside`), changes no location a fact names that a
 separation fact keeps apart from every own location of the receiver
 (`call-own`). -/
 
+/-- The receiver's own value locations: the region of a frame's entry that
+`call-own` reads as changed. -/
+def receiverOwnValues : Footprints.Region := .inCls (.own 0) .values
+
+/-- **Whether a frame changes only its receiver's own value locations**: it
+has an entry at them, and its entries at every other region are included in
+the empty effect. -/
+def ownOnly (Φ : Footprints.Footprint) : Bool :=
+  Φ.any (fun x => x.1 == receiverOwnValues) && (Φ.without receiverOwnValues).keepsHeap
+
 /-- The receiver slot of an ordinary step's evidence that `call-own` applies
-to: at the sequent `j`, its operands values, at a selected signature within
-the empty footprint but on its receiver's own locations, its derivation
-checked, its receiver a slot. -/
+to: at the sequent `j`, its operands values, at a selected signature whose
+normal exit's frame changes only its receiver's own value locations
+(`ownOnly`), its derivation checked, its receiver a slot. -/
 @[nospecialize] def ownCallChecked (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Sequent ι)
     (e : HeapExpressionRules.StepEvidence ι) (codes : CodeEntry ι → Bool) (sums : List (ReadSummary ι)) : Bool :=
   match e with
   | .ordinary p =>
     decide (claim p = j) && ExpressionEffects.selectedOperands p &&
       (match ExpressionEffects.selectedEffect p with
-        | some eff => eff.footprint.le .empty && eff.receiverOwn && !eff.receiverStore
+        | some eff => ownOnly eff.schema.normal.frame
         | none => false) &&
       checkTreeUsing G images p codes sums
   | _ => false
@@ -1331,20 +1342,18 @@ theorem ownCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j : 
       obtain ⟨f, args, hterm⟩ := hterm
       split at hsel
       · rename_i eff heff
-        simp only [Bool.and_eq_true, Bool.not_eq_true'] at hsel
-        obtain ⟨⟨hle, hown⟩, -⟩ := hsel
+        simp only [ownOnly, Bool.and_eq_true] at hsel
+        obtain ⟨-, hkeep⟩ := hsel
         refine consequence (fun _ _ _ hv => hv) (fun h' v hq => ?_)
           (ExpressionEffects.selected_sound p ht hops heff hcodes hsums he hw hh href)
-        have hw' := CallEffects.Effect.within_outside_own (Effect.callPost_within hq) hown
+        have hw' := Effect.callPost_within hq
         rw [hterm] at hw'
         simp only [ExpressionEffects.receiverOf, instantiate] at hw'
-        have hon := hw'.mono hle
         refine HeapKnowledge.shift_holds (ownKept_holds hk fun l hl u hu => ?_)
-        obtain ⟨u', hu', hc⟩ := hon.2 l u hl hu
-        have : u' = u := by
-          simp only [Footprints.Closed.at, Footprints.Closed.empty] at hc
-          split at hc <;> simpa [Footprints.Change.Holds] using hc
-        rw [← this]; exact hu'
+        refine Footprints.Footprint.keepsHeap_outside (Φ := eff.schema.normal.frame) hkeep hw' ?_ hu
+        simp only [receiverOwnValues, Footprints.Region.mem, CallEffects.callEnv, if_pos, Bool.and_eq_false_iff]
+        left
+        simpa [List.contains_iff_mem, Footprints.ownOf] using hl
       · cases hsel
     · cases hcond
   · cases hc

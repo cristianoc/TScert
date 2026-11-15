@@ -4710,15 +4710,17 @@ definition never states `freshObject`: only an intrinsic's declaration does
 
 ##### A call changing only its receiver
 
-A call whose evidence selects a signature with footprint within the empty
-one on every old location but its receiver's own ones (`receiverOwn`), its
-receiver the slot $`x`$, keeps each cell fact and read link about a field
-$`z.g`$ that a separation fact keeps apart from every own location of $`x`$,
-every alias link and value fact, and the separation:
+A call whose evidence selects a signature whose normal exit's frame
+$`\Phi`$ has an entry at its receiver's own value locations
+$`0.\mathsf{own}`$, every other entry included in the empty effect
+(`PromiseCalls.ownOnly`, `Footprint.keepsHeap_outside`), its receiver the
+slot $`x`$, keeps each cell fact and read link about a field $`z.g`$ that a
+separation fact keeps apart from every own location of $`x`$, every alias
+link and value fact, and the separation:
 
 ```math
 \frac{\Gamma\vdash_G \mathrm{invoke}(f,x,\vec u):A\ \text{at a signature}\ \mathcal F_\epsilon
-      \qquad \epsilon.\mathsf{footprint}\le\emptyset\qquad\epsilon.\mathsf{receiverOwn}\qquad\neg\,\epsilon.\mathsf{receiverStore}}
+      \qquad (0.\mathsf{own},\delta)\in\Phi\qquad \Phi\setminus 0.\mathsf{own}\le\emptyset}
 {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow \mathrm{invoke}(f,x,\vec u):A\dashv \Pi\;;\;\{a\in\Sigma\mid a\ \text{about}\ z.g\Rightarrow\mathrm{apart}(x.\star,z.g)\}}\ \textsf{call-own}
 ```
 
