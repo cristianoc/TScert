@@ -406,8 +406,9 @@ The reader reads a value and writes it again: an effect that is not exactly
 that writing (an unknown, missing or repeated field, a second tag, a wrong
 scalar, a malformed pair, a noncanonical integer or literal) is refused at
 the first place it differs, by its path in the document. A document stating
-an object key twice is refused when its text is read, before its objects
-are read into maps. A decoded effect references no assertion, states
+an object key twice, its keys compared as the strings they state with their
+escapes decoded, is refused when its text is read, before its objects are
+read into maps. A decoded effect references no assertion, states
 primitive literals only and nests at most 256 deep
 (`EffectCodec.decode_sound`); every effect of that kind is read back as
 written (`EffectCodec.decode_encode`). An effect is admitted as a contract

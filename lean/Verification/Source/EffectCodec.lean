@@ -1372,14 +1372,34 @@ def document (j : Json) : Except String Json := do
   effectsRead "" j
   pure j
 
+/-- The UTF-16 code unit four hexadecimal digits state. -/
+def hexUnit (cs : List Char) : Option Nat :=
+  (cs.mapM fun c => hexOf c.toLower).map fun ds => ds.foldl (fun a d => a * 16 + d) 0
+
 /-- **A document's text states no object key twice** (at its first repeated
-key, by its object's path): the reader reads objects into maps, which keep
-one value of a key. -/
+key): the reader reads objects into maps, which keep one value of a key.
+Keys are compared as the strings they state, their escapes decoded (`\u0070`
+is `p`, a surrogate pair one character). -/
 partial def duplicateKey? (text : String) : Option String :=
   let rec str (cs : List Char) (acc : List Char) : Option (String × List Char) :=
     match cs with
     | '"' :: rest => some (String.ofList acc.reverse, rest)
-    | '\\' :: c :: rest => str rest (c :: '\\' :: acc)
+    | '\\' :: 'u' :: a :: b :: c :: d :: rest =>
+      match hexUnit [a, b, c, d] with
+      | none => none
+      | some u =>
+        if 0xD800 ≤ u ∧ u < 0xDC00 then
+          match rest with
+          | '\\' :: 'u' :: e :: f :: g :: h :: rest' =>
+            match hexUnit [e, f, g, h] with
+            | some l => if 0xDC00 ≤ l ∧ l < 0xE000 then
+                str rest' (Char.ofNat (0x10000 + (u - 0xD800) * 0x400 + (l - 0xDC00)) :: acc)
+              else str rest (Char.ofNat u :: acc)
+            | none => none
+          | _ => str rest (Char.ofNat u :: acc)
+        else str rest (Char.ofNat u :: acc)
+    | '\\' :: c :: rest => str rest ((match c with
+        | 'b' => '\x08' | 'f' => '\x0c' | 'n' => '\n' | 'r' => '\r' | 't' => '\t' | c => c) :: acc)
     | c :: rest => str rest (c :: acc)
     | [] => none
   -- `stack`: per open object its keys, `none` for an array; `key`: whether a

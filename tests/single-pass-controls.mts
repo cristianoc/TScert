@@ -1927,6 +1927,22 @@ function refusedAtRead(fragment: string, unit: string, what: string, at: RegExp)
   }
   refused(p, unit, what, at);
 }
+control("forged effect: a key stated twice, once escaped", async (): Promise<void> => {
+  // An effect's `pre` stated a second time as `"\u0070re"`: a reader of
+  // objects into maps would keep one of the two. The document's text is
+  // refused before it is read into maps, the keys compared as the strings
+  // they state.
+  const file = "typed-array-element-writes";
+  const artifacts = run(file);
+  const text = readFileSync(fragmentOf(artifacts), "utf8");
+  const at = text.indexOf('"pre":[');
+  assert.ok(at >= 0, "an effect's preconditions");
+  const path = join(artifacts, "escaped-duplicate-key.json");
+  writeFileSync(path, `${text.slice(0, at)}"\\u0070re":[],${text.slice(at)}`);
+  refusedAtRead(path, "writeThenRead@861", "an escaped key stated twice", /an object states the key 'pre' twice/);
+  say("forged effect: a key stated twice, once escaped, refused when the document's text is read");
+});
+
 /** The documents of a fragment: its own and each module's it carries. */
 function documentsOf(fragment: Record<string, unknown>): Record<string, unknown>[] {
   const modules = Array.isArray(fragment.modules) ? fragment.modules.filter(isObject) : [];
