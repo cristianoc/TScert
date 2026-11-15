@@ -262,6 +262,10 @@ across a call whose frame is its closed bound alone. A closed bound's class
 entries are read as they act on their class: on a store `init` and `scalar`
 are `keep`, on a value `grow` is `scalar` (`Footprint.byClass`, proved:
 `Post.byClass`).
+The frame is the normal exit's frame of the signature's exit summary, whose
+exceptional frame is the same where the signature states `onThrow` and
+$`\top`$ otherwise
+([the contract per exit](SOURCE-CONTRACTS.md#the-contract-per-exit)).
 
 ## The stable set for density
 

@@ -152,7 +152,35 @@ inductive OperationPost where
   /-- An append of the argument values to the array at entry slot `x`
   (exit slot `x'`): the assumed contract `CallEffects.ReceiverAppends`. -/
   | push (x x' : Nat) (args : List Witness)
+  /-- An index fact (`HeapKnowledge.IndexFact`) read in the state of phase
+  `phase`, its slot `i` that phase's slot `i + lift`, its entry terms at the
+  entry. -/
+  | fact (phase : Phase) (lift : Nat) (F : IndexFact)
+  /-- The array store of the value at exit slot `x` was allocated after the
+  entry: its location is at or beyond the entry heap's length
+  (`Footprints.FreshAt`). -/
+  | freshStore (x : Nat)
+  /-- The value at exit slot `x` is an object every own location of which
+  was allocated after the entry (`Footprints.FreshObjectAt`). -/
+  | freshObject (x : Nat)
+  /-- Where exit slot `x` holds `v`, every present element of the array at
+  exit slot `y` meets `R` (`CallEffects.ElemsAt`). -/
+  | elementsWhen (x : Nat) (v : Val) (y : Nat) (R : CallEffects.ElemPred)
+  /-- The store of the array at entry slot `x` keeps its contents, or holds
+  an array store its entry list is a prefix of, at most `2^32 − 1` long. -/
+  | storeExtends (x : Nat)
+  /-- View-Write (the note *Tolerant frames*): the write of the number at
+  entry slot `v` at the index at entry slot `i` of the typed array at entry
+  slot `x` (`CallEffects.WriteAt`), at the format `f`, or at the typed
+  array's own format where `f` is none. -/
+  | viewWrite (x i v : Nat) (format : Option ViewFormat)
   deriving DecidableEq
+
+/-- The formats a view write is stated at: the given one, or the typed
+array's own. -/
+def writeFormats (x : Val) : Option ViewFormat → ViewFormat → Prop
+  | some f, g => g = f
+  | none, g => CallEffects.viewFormatOf x = some g
 
 def OperationPost.Holds (s : TwoState) : OperationPost → Prop
   | .arith op l r y => ∃ a b c, l.value s.afterEnv s.after.h = some a ∧ r.value s.afterEnv s.after.h = some b ∧
@@ -169,10 +197,19 @@ def OperationPost.Holds (s : TwoState) : OperationPost → Prop
       s.afterEnv x' = s.beforeEnv x
   | .push x x' args => ∃ vs, args.mapM (·.value s.beforeEnv s.before.h) = some vs ∧ (∀ a ∈ vs, isVal a = true) ∧
       CallEffects.ReceiverAppends (s.beforeEnv x) vs s.before.h s.after.h ∧ s.afterEnv x' = s.beforeEnv x
+  | .fact p l F => F.HoldsAt ⟨s.beforeEnv, s.before.h⟩ (fun i => s.env p (i + l)) (s.state p).h
+  | .freshStore x => FreshAt s.before.h.length (s.afterEnv x)
+  | .freshObject x => FreshObjectAt s.before.h.length (s.afterEnv x)
+  | .elementsWhen x v y R => s.afterEnv x = v → CallEffects.ElemsAt R (s.afterEnv y) s.after.h
+  | .storeExtends x => ∀ st v, storeOf (s.beforeEnv x) = some st → s.before.h[st]? = some v →
+      s.after.h[st]? = some v ∨ ∃ ls ls', v = .arr ls ∧ s.after.h[st]? = some (.arr ls') ∧ ls <+: ls' ∧
+        ls'.length ≤ maxArrayLength
+  | .viewWrite x i v f => ∀ g, writeFormats (s.beforeEnv x) f g →
+      CallEffects.WriteAt g [s.beforeEnv x, s.beforeEnv i, s.beforeEnv v] s.before.h s.after.h
 
 /-- Whether a post reads the entry state. -/
 def OperationPost.readsBefore : OperationPost → Bool
-  | .lengthsKept .. | .boundedWrite .. | .push .. => true
+  | .lengthsKept .. | .boundedWrite .. | .push .. | .fact .. | .storeExtends .. | .viewWrite .. => true
   | _ => false
 
 /-- **Two-state formulas** (I4, `Formula`): an assertion at one phase, the
@@ -407,6 +444,12 @@ def OperationPost.shift : OperationPost → OperationPost
   | .lengthsKept x x' => .lengthsKept x (x' + 1)
   | .boundedWrite x i x' => .boundedWrite x i (x' + 1)
   | .push x x' args => .push x (x' + 1) args
+  | .fact p l F => .fact p (if p = .after then l + 1 else l) F
+  | .freshStore x => .freshStore (x + 1)
+  | .freshObject x => .freshObject (x + 1)
+  | .elementsWhen x v y R => .elementsWhen (x + 1) v (y + 1) R
+  | .storeExtends x => .storeExtends x
+  | .viewWrite x i v f => .viewWrite x i v f
 
 /-- **`F'` is `F` with the valuation of phase `p` read one slot further**:
 assertions by the shift substitution of the slots below `n`, terms of phase
@@ -1669,6 +1712,17 @@ theorem OperationPost.holds_shift (s : TwoState) (x : Val) (q : OperationPost) :
   | lengthsKept _ _ => rfl
   | boundedWrite _ _ _ => rfl
   | push _ _ _ => rfl
+  | fact p l F =>
+    cases p
+    · rfl
+    · simp only [OperationPost.shift, OperationPost.Holds, TwoState.withEnv, TwoState.env, TwoState.state]
+      exact Iff.of_eq (congrArg (fun η => F.HoldsAt _ η _) (funext fun i => by
+        simp only [Verification.push]; rfl))
+  | freshStore _ => rfl
+  | freshObject _ => rfl
+  | elementsWhen _ _ _ _ => rfl
+  | storeExtends _ => rfl
+  | viewWrite _ _ _ _ => rfl
 
 theorem OperationPost.holds_before (s : TwoState) (η : Env) {q : OperationPost} (hq : q.readsBefore = false) :
     q.Holds (s.withEnv .before η) ↔ q.Holds s := by
@@ -2198,6 +2252,11 @@ def OperationPost.scoped (sc : Scope) : OperationPost → Bool
   | .lengthsKept x x' => decide (x < sc.before) && decide (x' < sc.after)
   | .boundedWrite x i x' => decide (x < sc.before) && decide (i < sc.before) && decide (x' < sc.after)
   | .push x x' args => decide (x < sc.before) && decide (x' < sc.after) && args.all (Witness.scoped sc.before)
+  | .fact p l F => F.slots.all (fun i => decide (i + l < sc.count p)) && F.entrySlots.all (fun i => decide (i < sc.before))
+  | .freshStore x | .freshObject x => decide (x < sc.after)
+  | .elementsWhen x _ y _ => decide (x < sc.after) && decide (y < sc.after)
+  | .storeExtends x => decide (x < sc.before)
+  | .viewWrite x i v _ => decide (x < sc.before) && decide (i < sc.before) && decide (v < sc.before)
 
 /-- **A formula reads runtime slots within its scope**: assertions by the
 identity check (their binders' eigenvariables apart), linear facts by their

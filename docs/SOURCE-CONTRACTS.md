@@ -561,6 +561,50 @@ states no element write (`Effect.below_write`), so its view write holds of
 every exit (`Effect.postW_of_post`). The
 [trust surface](DESIGN.md#trust-surface) lists it.
 
+#### The contract per exit
+
+A signature's contract is also stated per exit of a call, as its **exit
+summary** (`CallEffects.Effect.summary`, in `Semantics/ExitSummaries.lean`):
+for the normal and the exceptional exit a frame, a list of region and change
+entries, and a list of two-state postconditions (`CallEffects.ExitSpec`,
+`Parity.Formula`). An exit specification holds of a transition where the
+transition is an action of the frame and every postcondition holds, all in
+one two-state interpretation (`ExitSpec.Holds`): the entry environment holds
+the call's positions (`callEnv`), the exit environment the result or the
+thrown value at `0` and the call's positions one higher (`ensuresEnv`). A
+signature's summary is:
+
+- **normal frame**: the frame (`Effect.frame`): the closed bound's three
+  class entries, the receiver's entries (`receiverOwn`'s own value
+  locations where it is set, else `receiverStore`'s store) and each argument
+  store region at `any`;
+- **normal postconditions**: the result's fresh store (`fresh`) and fresh
+  object (`freshObject`), the receiver's elements where the result is
+  `true` (`elements`), each stated index fact (`ensures`); for
+  `receiverGrows` the action of `{receiver store: any}`, the receiver
+  store's extension and the append of the actuals; for an element write the
+  action of $`\{\mathsf{all\text{-}views}:\mathsf{grow}\}`$, and for
+  `assign` View-Write at the typed array's format, for `exact` View-Write at
+  the element type's format and its precondition's facts, with the result
+  the value written;
+- **exceptional exit**: the normal frame and no postcondition where the
+  signature states `onThrow`; otherwise $`\top`$, the three class entries
+  at `any`, and no postcondition.
+
+A guarantee stated beside the frame is a postcondition `.transition Φ`, so
+the frame and it hold of one transition. On admissible transitions at
+actuals that are values, the normal exit holds exactly where
+`Effect.postW` does and the exceptional exit exactly where `Effect.excPost`
+does (proved: `Effect.summary_normal_iff`, `Effect.summary_exceptional_iff`;
+the parts: `receiverGrows_iff`, `receiverAppends_iff`, `elementWrite_iff`).
+The meet of two signatures conjoins their normal exits, and a bound
+signature's exits follow from its target's
+(proved: `Effect.summary_meet_normal`, `Effect.summary_meet_exceptional`,
+`Effect.summary_drop_normal`, `Effect.summary_drop_exceptional`); a module
+function's summary reads its own positions (proved:
+`Effect.summary_scoped`). The effect's wire is the signature's fields, and
+the pass decides from them.
+
 ## Certified imports
 
 An imported function of the program is read at its declaration's ordinary

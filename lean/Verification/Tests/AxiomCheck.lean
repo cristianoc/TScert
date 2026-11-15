@@ -1,4 +1,5 @@
 import Verification.Semantics.ViewStores
+import Verification.Semantics.ExitSummaries
 import Verification.Programs.TolerantFramesExitStructural
 import Verification.Programs.TolerantFramesExitHeadExtraction
 import Verification.Programs.TolerantFramesExitNonHeadExtraction
@@ -259,6 +260,21 @@ run_cmd do
   check ``Verification.Footprints.Closed.ofStores_post_iff
   check ``Verification.Footprints.Footprint.closed?_sound
   check ``Verification.Footprints.Footprint.close_sound
+  -- exit summaries: the elaboration of a signature and its equivalences
+  check ``Verification.CallEffects.receiverGrows_iff
+  check ``Verification.CallEffects.receiverAppends_iff
+  check ``Verification.CallEffects.writtenResult_iff
+  check ``Verification.CallEffects.exactPre_iff
+  check ``Verification.CallEffects.elementWrite_iff
+  check ``Verification.CallEffects.Effect.summary_normal_iff
+  check ``Verification.CallEffects.Effect.summary_exceptional_iff
+  check ``Verification.CallEffects.Effect.summary_normal_iff_post
+  check ``Verification.CallEffects.Effect.summary_meet_normal
+  check ``Verification.CallEffects.Effect.summary_meet_exceptional
+  check ``Verification.CallEffects.Effect.summary_drop_normal
+  check ``Verification.CallEffects.Effect.summary_drop_exceptional
+  check ``Verification.CallEffects.Effect.summary_scoped
+  check ``Verification.Parity.OperationPost.holds_shift
   check ``Verification.Footprints.Region.sub_mem
   check ``Verification.Footprints.CellsFrom.of_post
   check ``Verification.Footprints.ArgumentStoreRegionsWithin.iff_post

@@ -43,15 +43,6 @@ def Exits.map {α β : Type} (f : α → β) (x : Exits α) : Exits β := ⟨f x
     (x.map f).get c = f (x.get c) := by
   cases c <;> rfl
 
-/-- A completion's guarantee on shared state (the note, §6): the effect
-bounding the old locations it may change (`frame`), read at the call's
-positions, and the facts it states (`ensures`), the result or the thrown
-value at position `0` and the call's positions one higher. -/
-structure ExitSpec where
-  frame : Footprints.Footprint
-  ensures : List HeapKnowledge.IndexFact
-  deriving DecidableEq, Repr
-
 /-- A promise about the actual at `param`, whose type is then the signature's
 result operand. `guards p` is a type guard's, `(x: A) => x is T`: the result
 is `true` or `false`, and a `true` result leaves the actual at `p` in the
