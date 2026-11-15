@@ -599,18 +599,22 @@ checked.
 
 ### Controls
 
-The codec's examples (`Source/EffectCodec.lean`) decode and write again an
-effect with an exceptional postcondition, a rest sequence, nested
-conjunctions and a transport with repeated overrides and stable slots, and
-refuse an unknown nested field, an assertion reference, a malformed
-transport, a second tag, a noncanonical integer and a repeated key; an
-arena reference at depth and a term literal do not serialize. The
-consumers' controls (`Tests/EffectCodecControls.lean`) decode documents in
-the grammar that the consuming check refuses: a noncanonical transport at
-coverage, a certified stable image of a second signature at a conjunction,
-an exceptional postcondition and a frame reading through a path where a
-body is composed across its rest allocation, and entry and exit positions
-past a callable's arity at its scope.
+The controls of forged documents go through the verifier's command line
+(`tests/single-pass-controls.mts`, the controls named "forged effect"): a
+field no effect has at depth, an assertion reference, a transport's
+override that is no pair, a second tag, an integer written as a string in
+the safe range, a statement stating a postcondition, an exact write without
+its range among its preconditions, symbol identities across two documents'
+orders and undeclared ones, and a key stated twice, once escaped. The
+codec's examples (`Source/EffectCodec.lean`) hold what no read document
+reaches: the serialization predicate of an effect in memory and the
+refusal of a document the verifier writes. The consumers' controls
+(`Tests/EffectCodecControls.lean`) decode documents in the grammar and
+apply the consuming check: a noncanonical transport at coverage, a
+certified stable image of a second signature at a conjunction, an
+exceptional postcondition and a frame reading through a path where a body
+is composed across its rest allocation, and entry and exit positions past
+a callable's arity at its scope.
 
 ## Parallel implementation
 

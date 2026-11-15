@@ -1426,18 +1426,11 @@ partial def duplicateKey? (text : String) : Option String :=
 
 /-! ## Examples
 
-Effects of every grammar form round-trip, and documents outside the grammar
-are refused at their first difference. -/
-
-private def roundTrips (e : Effect) : Bool :=
-  match decode (encode e) with
-  | .ok d => d == e
-  | .error _ => false
-
-private def refuses (text : String) : Bool :=
-  match Json.parse text with
-  | .ok j => (decode j).toOption.isNone
-  | .error _ => false
+What no document the verifier reads can reach: the serialization predicate
+of an effect in memory, and the refusal of a document the verifier writes.
+The decoder's refusals of forged documents are controls through the
+verifier's command line (`tests/single-pass-controls.mts`, "forged
+effect"), and its round trip is a theorem (`decode_encode`). -/
 
 private def topFrame : Footprint := Parity.topEffect
 
@@ -1458,28 +1451,14 @@ private def sample : Effect :=
     [.every 1 ["x"] (.now .length 1 ["x"]) [.either (.atom (.le [(.offset 2, 1)] 0)) (.atom (.ne [(.elem, 1)] 5))],
       .apart 1 2]⟩
 
-#guard roundTrips sample
-#guard roundTrips Effect.ordinary
 -- An assertion-arena reference does not serialize, at any depth.
 #guard !serializable { sample with exits := ⟨⟨[], [.and .truth (.at .after ⟨0⟩)]⟩, ⟨[], []⟩⟩ }
 -- A term literal does not serialize.
 #guard !serializable { sample with exits := ⟨⟨[], [.operation (.elementsWhen 0 (.var 0) 1 {})]⟩, ⟨[], []⟩⟩ }
--- An unknown nested field, an `at` formula, a transport without its stable slots, a repeated constructor tag and a noncanonical integer.
-#guard refuses r#"{"exits":{"normal":{"frame":[],"ensures":["truth"]},"exceptional":{"frame":[],"ensures":[{"and":{"left":"truth","right":"falsity","extra":1}}]}},"promise":null,"requires":null,"pre":[]}"#
-#guard refuses r#"{"exits":{"normal":{"frame":[],"ensures":[{"at":{"phase":"after","assertion":{"index":0}}}]},"exceptional":{"frame":[],"ensures":[]}},"promise":null,"requires":null,"pre":[]}"#
-#guard refuses r#"{"exits":{"normal":{"frame":[],"ensures":[{"transport":{"shift":1,"overrides":[],"boxed":false}}]},"exceptional":{"frame":[],"ensures":[]}},"promise":null,"requires":null,"pre":[]}"#
-#guard refuses r#"{"exits":{"normal":{"frame":[],"ensures":[{"transport":{"shift":1,"overrides":[[1]],"boxed":false,"stable":[]}}]},"exceptional":{"frame":[],"ensures":[]}},"promise":null,"requires":null,"pre":[]}"#
-#guard refuses r#"{"exits":{"normal":{"frame":[],"ensures":[{"and":{"left":"truth","right":"truth"},"truth":null}]},"exceptional":{"frame":[],"ensures":[]}},"promise":null,"requires":null,"pre":[]}"#
-#guard refuses r#"{"exits":{"normal":{"frame":[],"ensures":[]},"exceptional":{"frame":[],"ensures":[]}},"promise":null,"requires":null,"pre":[{"index":{"slot":"5"}}]}"#
-#guard !refuses r#"{"exits":{"normal":{"frame":[],"ensures":[]},"exceptional":{"frame":[],"ensures":[]}},"promise":null,"requires":null,"pre":[{"index":{"slot":5}}]}"#
 -- A document holding an effect outside the predicate is refused whole, at
--- the effect's place (a boundary no CLI input reaches: the verifier builds
--- the effects it writes).
+-- the effect's place; one holding effects that serialize is written.
 #guard (document (Json.mkObj [("rows", Json.arr #[Json.null,
     encode { sample with exits := ⟨⟨[], [.and .truth (.at .after ⟨0⟩)]⟩, ⟨[], []⟩⟩ }])])) matches .error _
-#guard (document (Json.mkObj [("rows", Json.arr #[encode sample])])) matches .ok _
--- A key stated twice is refused before the document is read into maps.
-#guard (duplicateKey? r#"{"a":{"b":1,"c":[{"b":2}],"b":3}}"#).isSome
-#guard (duplicateKey? r#"{"a":{"b":1,"c":[{"b":2}]},"b":"\"b\""}"#).isNone
+#guard (document (Json.mkObj [("rows", Json.arr #[encode sample, encode Effect.ordinary])])) matches .ok _
 
 end Verification.EffectCodec

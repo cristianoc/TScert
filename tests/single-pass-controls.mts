@@ -1943,6 +1943,62 @@ control("forged effect: a key stated twice, once escaped", async (): Promise<voi
   say("forged effect: a key stated twice, once escaped, refused when the document's text is read");
 });
 
+control("forged effect: documents outside the grammar", async (): Promise<void> => {
+  // A declaration's effect forged out of the serialized grammar, each
+  // refused where the verifier reads it: a field no effect has at depth, an
+  // assertion-arena reference, a transport's override that is no pair, a
+  // second constructor tag, an integer as a string in the safe range; and a
+  // statement whose exits state a postcondition no statement states.
+  const file = "typed-array-element-writes";
+  const unit = "writeThenRead@861";
+  const artifacts = run(file);
+  honest(file, unit);
+  const forgeries: [string, (e: Record<string, unknown>) => void, RegExp][] = [
+    ["nested-unknown-field", (e) => {
+      const frame = isObject(e.exits) && isObject(e.exits.normal) && Array.isArray(e.exits.normal.frame) ? e.exits.normal.frame : [];
+      const entry: unknown = frame[0];
+      assert.ok(isObject(entry), "a frame entry");
+      entry.extra = 1;
+    }, /differs from its writing at \/exits\/normal\/frame\[0\]\/extra: a field the effect does not have/],
+    ["arena-reference", (e) => ensuresOf(e).push({ and: { left: "truth", right: { at: { phase: "after", assertion: { index: 0 } } } } }),
+      /exits\/normal\/ensures\/\[\d+\]\/and\/right\/at\/no formula of a specification/],
+    ["malformed-transport", (e) => ensuresOf(e).push({ transport: { shift: 1, overrides: [[1]], boxed: false, stable: [] } }),
+      /transport\/overrides\/\[0\]\/a pair is a list of two/],
+    ["second-tag", (e) => ensuresOf(e).push({ and: { left: "truth", right: "truth" }, truth: null }),
+      /a constructor is an object of one field, its name/],
+    ["noncanonical-integer", (e) => { if (Array.isArray(e.pre)) e.pre.push({ index: { slot: "5" } }); },
+      /differs from its writing at \/pre\[\d+\]\/index\/slot/],
+  ];
+  for (const [name, forge, at] of forgeries) {
+    const document = fragmentJson(artifacts);
+    let first = true;
+    visitAll(document, (node) => {
+      if (!first || !isEffect(node)) return;
+      forge(node);
+      first = false;
+    });
+    assert.ok(!first, "an effect");
+    refusedAtRead(forged(artifacts, `effect-${name}`, document), unit, name, at);
+  }
+  const stated = run("stated-fresh");
+  const statedDocument = fragmentJson(stated);
+  const functions = Array.isArray(statedDocument.functions) ? statedDocument.functions : [];
+  const same: unknown = functions.find((f: unknown) => isObject(f) && f.name === "same");
+  assert.ok(isObject(same) && isObject(same.stated) === false, "same states nothing");
+  same.stated = statedExits({ footprint: { value: "any", store: "any" }, onThrow: false, fresh: false, regions: [] });
+  const exits: unknown = same.stated;
+  assert.ok(isObject(exits) && isObject(exits.normal) && Array.isArray(exits.normal.ensures));
+  exits.normal.ensures.push("truth");
+  refusedAtRead(forged(stated, "statement-outside-its-form", statedDocument), unitOf(fragmentAst(stated), "same"),
+    "a statement stating a postcondition", /a statement states a closed frame with store regions, a throw within it or none, and a fresh result/);
+  say(`forged effect: ${forgeries.length} effects outside the grammar and a statement outside its form refused at their read`);
+});
+/** An effect's normal postconditions. */
+function ensuresOf(e: Record<string, unknown>): unknown[] {
+  assert.ok(isObject(e.exits) && isObject(e.exits.normal) && Array.isArray(e.exits.normal.ensures), "an effect's postconditions");
+  return e.exits.normal.ensures;
+}
+
 /** The documents of a fragment: its own and each module's it carries. */
 function documentsOf(fragment: Record<string, unknown>): Record<string, unknown>[] {
   const modules = Array.isArray(fragment.modules) ? fragment.modules.filter(isObject) : [];
