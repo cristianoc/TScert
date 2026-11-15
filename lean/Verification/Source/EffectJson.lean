@@ -188,6 +188,28 @@ instance : FromJson Effect := ⟨fun j => do
       throw s!"an exact element write '{elementWriteName (.exact k)}' states its value's range in its precondition"
   pure e⟩
 
+/-- **An effect as a declaration's result annotation states it**
+(`Modifies<P, T>`, the Fragment's and the request's `stated`): a closed
+footprint, whether it also bounds a throw, whether the result's array store
+is fresh, and the store regions it excepts. This is the documents' shape;
+the effect it states is `StatedEffect.effect`. -/
+structure StatedEffect where
+  closed : Footprints.Closed
+  onThrow : Bool
+  fresh : Bool
+  regions : List Footprints.ArgumentStoreRegion
+  deriving Repr, DecidableEq
+
+/-- **The effect a statement states** (`Effect.ofStated`), with the
+precondition `pre` its declaration states and no promise. -/
+def StatedEffect.effect (s : StatedEffect) (pre : List HeapKnowledge.IndexFact := []) : Effect :=
+  Effect.ofStated s.closed none s.onThrow s.fresh pre [] s.regions
+
+/-- The closed bound a statement gives its unit's claim: its closed footprint
+without store regions, `top` with them. -/
+def StatedEffect.footprint (s : StatedEffect) : Footprints.Closed :=
+  if s.regions.isEmpty then s.closed else .top
+
 /-- An exact element write is decoded with its value's range in its
 precondition, and refused without it. -/
 private def decodes (e : Effect) : Bool :=

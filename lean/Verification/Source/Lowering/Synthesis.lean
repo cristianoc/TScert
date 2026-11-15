@@ -1869,7 +1869,7 @@ def earlyContract (b : Fragment.Binding) (effect : CallEffects.Effect := .ordina
       let Rt ← match receiver with
         | some (t, _) => lower (Fragment.translate t)
         | none => prim .top
-      return [← lower (SourceTypes.use (.arrs [⟨Rt, Ds, R, stated.getD effect⟩] []))]
+      return [← lower (SourceTypes.use (.arrs [⟨Rt, Ds, R, (stated.map (·.effect)).getD effect⟩] []))]
     | _, _ => throw "no written contract") fun _ => pure none)
 
 /-- A call's actuals with its spreads read as the call reads them: a spread of a tuple of required positions as those
@@ -5151,8 +5151,8 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
   let R := written <|> R
   let forced := (← get).force.contains "literals"
   -- A written effect (`Modifies<…>`) is the one it states.
-  let kept := { stated.getD kept with pre := requires }
-  let changed := { stated.getD changed with pre := requires }
+  let kept := match stated with | some s => s.effect requires | none => { kept with pre := requires }
+  let changed := match stated with | some s => s.effect requires | none => { changed with pre := requires }
   -- A generic closure: at the scheme its annotations state, its body walked
   -- with each binder a rigid row (`Scheme.closureRows`), where that scheme's
   -- effect covers its body's.
@@ -5175,7 +5175,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
       | some A, _ => pure A
       | none, some a => pure a.receiver
       | none, none => StateT.lift (prim .source)
-    let r : CallEffects.RestArrow (Ty Tree) := ⟨recv, (qs, pack), R, stated.getD .ordinary⟩
+    let r : CallEffects.RestArrow (Ty Tree) := ⟨recv, (qs, pack), R, (stated.map (·.effect)).getD .ordinary⟩
     record e (.ok [← StateT.lift (lower (SourceTypes.use (.arrs [] [r])))])
   | some qs, some R, none =>
     -- A callback is checked at the signature it is passed at, its result its
@@ -5195,7 +5195,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
         else
           let bounded := Footprints.Footprint.boundBelow [] a.effect.schema.exceptional.frame != .top
           pure { a with result := R, effect := match stated with
-            | some s => if bounded then { s with pre := requires } else ({ s with pre := requires } : CallEffects.Effect).throwUnbounded
+            | some s => if bounded then s.effect requires else (s.effect requires).throwUnbounded
             | none => { proposal bounded with pre := requires } }
       -- Any other literal at its own parameters and written receiver (a
       -- method's `this`), else a receiver admitting every value.

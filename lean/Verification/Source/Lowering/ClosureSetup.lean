@@ -109,7 +109,7 @@ structure LambdaSetup (ι : Type) where
 
 /-- The statement a closure's code must cover over its annotation's whole
 domain (`lambdaSetup`): the one its source states. -/
-@[noinline] def statedObligation (stated : Option CallEffects.Effect) : Option CallEffects.Effect := stated
+@[noinline] def statedObligation (stated : Option EffectJson.StatedEffect) : Option EffectJson.StatedEffect := stated
 
 /-- **A lambda's graph code.** Its code is the graph its body compiles to
 (`CallCode.graph`), checked at each signature the code offers from that
@@ -203,7 +203,7 @@ by subtyping; or a scheme row's variadic signatures. -/
         let restPack ← lower (SourceTypes.use (.pack ⟨[], [], some E, false, .dense⟩ []))
         -- Its own signature's effect is its annotation's: the statement, or
         -- none beyond the contract.
-        let effect := stated.getD .ordinary
+        let effect := (stated.map (·.effect)).getD .ordinary
         let own ← lower (SourceTypes.use (.arrs [] [⟨Rsource, (sourceDs, [restPack]), R, effect⟩]))
         recordHints [own]
         pure ([(⟨Rsource, sourceDs, R, effect⟩, some [restPack])], [own])
@@ -313,7 +313,7 @@ by subtyping; or a scheme row's variadic signatures. -/
     let some written := ret | throw (locatedRefusal T pos .bindingAnnotation reason)
     let R ← lower (Fragment.callableType written)
     let T ← table
-    let some row := rows.find? (fun r => r.effect.covers { s with pre := requires } && r.arguments.length == arity)
+    let some row := rows.find? (fun r => r.effect.covers (s.effect requires) && r.arguments.length == arity)
       | throw (locatedRefusal T pos .bindingAnnotation reason)
     requireWithin T pos .bindingAnnotation Rsource row.receiver reason
     for (D, B) in row.arguments.zip sourceDs do

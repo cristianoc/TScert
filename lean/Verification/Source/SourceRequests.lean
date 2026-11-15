@@ -71,7 +71,7 @@ structure SourceRequest (σ ι : Type) [Labels ι] [StoreView σ ι] extends Req
   /-- The effect the declaration's result annotation states, as the source
   states it (`Fragment.Fn`): the claim must lie within it
   (`RequestJson.statedWithin`). -/
-  stated : Option CallEffects.Effect
+  stated : Option EffectJson.StatedEffect
 
 @[nospecialize] def SourceRequest.codeHints (r : SourceRequest σ ι) : List RequestJson.CodeHints :=
   r.codeSources.map fun c => ⟨c.sourceMap, c.assertions, c.candidates, c.cuts⟩

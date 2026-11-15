@@ -34,9 +34,13 @@ structure StandIn where
 footprint and throw bound are written. -/
 def StandIn.effect (s : StandIn) : CallEffects.Effect := s.summary.project
 
-def StandIn.footprint (s : StandIn) : Footprints.Closed := s.effect.closed
+/-- The closed footprint the claims document writes for a stand-in
+(`ClassSummary.format`). -/
+def StandIn.footprint (s : StandIn) : Footprints.Closed := s.summary.format.1
 
-def StandIn.onThrow (s : StandIn) : Bool := s.effect.onThrow
+/-- The throw flag the claims document writes for a stand-in
+(`ClassSummary.format`). -/
+def StandIn.onThrow (s : StandIn) : Bool := s.summary.format.2
 
 /-- The stand-in of today's format: the summary of a closed footprint and a
 throw bound (`ClassSummary.ofFormat`). -/

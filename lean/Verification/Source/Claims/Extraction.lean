@@ -283,10 +283,10 @@ def ordinarySlots (d : Document EquationStore.State Tree) (ordinary : List Fragm
   let slotOf (u : Fragment.Fn) : Except String Json := do
     let r ← returning u
     let c := claimOf u
-    match u.stated.bind fun (s : CallEffects.Effect) => if s.regions.isEmpty then none else some s with
+    match u.stated.bind fun (s : EffectJson.StatedEffect) => if s.regions.isEmpty then none else some s with
     | some s => moduleArrow r s.closed s.onThrow false s.regions
     | none =>
-      let fresh := u.stated.any (·.fresh : CallEffects.Effect → Bool)
+      let fresh := u.stated.any (·.fresh : EffectJson.StatedEffect → Bool)
       moduleArrow r ((c.map (·.footprint)).getD .top) ((c.map (·.onThrow)).getD false) fresh
   names.filterMap fun name => do
     let units := ordinary.filter (·.name == name)

@@ -316,7 +316,7 @@ did not mention grow it, and the request carries the result. -/
   -- The stores a stated frame excepts, each call position at the input slot
   -- that holds it on entry.
   let regionSlot : Nat → Option Nat := fun p => if receiverInput then some p else if p = 0 then none else some (p - 1)
-  let some regional := (f.stated.bind fun (s : CallEffects.Effect) =>
+  let some regional := (f.stated.bind fun (s : EffectJson.StatedEffect) =>
       if s.regions.isEmpty then none else some (s.closed, s.regions)).mapM
         fun ((c, rs) : Footprints.Closed × List Footprints.ArgumentStoreRegion) =>
           (rs.mapM fun (r : Footprints.ArgumentStoreRegion) => (regionSlot r.position).map fun q =>

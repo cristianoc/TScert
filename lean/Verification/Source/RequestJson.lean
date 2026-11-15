@@ -449,7 +449,7 @@ async declaration states none. A statement with store regions is established
 by the unit's regional check (`SourceRequests.regionalResult`), whatever its
 claim. Unstated, any claim. -/
 def statedWithin (async : Bool) (footprint : Footprints.Closed) (onThrow fresh : Bool) :
-    Option CallEffects.Effect → Bool
+    Option EffectJson.StatedEffect → Bool
   | none => true
   | some s => !async && (s.footprint != .top || s.fresh || !s.regions.isEmpty) &&
       (!s.regions.isEmpty || footprint.le s.footprint) && (!s.regions.isEmpty || !s.onThrow || onThrow) &&

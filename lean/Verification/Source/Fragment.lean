@@ -336,7 +336,7 @@ inductive Expr where
   certified at `top` (`asyncEffects`). -/
   | lambda (pos : Span) (receiver : Option (Json × Invoke)) (typeParams : List TypeParam)
       (params : List (String × Json)) (defaults : List (Nat × Expr)) (rest : Bool)
-      (result : Option Json) (guard : Option Guard) (stated : Option CallEffects.Effect) (async : Bool) (requires : List HeapKnowledge.IndexFact) (body : Expr)
+      (result : Option Json) (guard : Option Guard) (stated : Option EffectJson.StatedEffect) (async : Bool) (requires : List HeapKnowledge.IndexFact) (body : Expr)
   /-- A class value: its constructor `lambda` as construct-only code, and its
   static fields, each the binding its initializer bound, in member order. -/
   | ctor (pos : Span) (lam : Expr) (statics : List (PropKey × Expr))
@@ -714,7 +714,7 @@ structure Fn where
   async : Bool
   /-- The effect its result annotation states (`Modifies<P, T>`), which its
   unit's claim must lie within (`RequestJson.statedWithin`). -/
-  stated : Option CallEffects.Effect
+  stated : Option EffectJson.StatedEffect
   /-- Its precondition, index facts at the call's positions: `0` the
   receiver, `i + 1` the `i`-th actual (ARITHMETIC.md, 
   "Preconditions"). -/
@@ -843,7 +843,7 @@ effect's frame is the closed footprint with those store regions and no
 receiver mode; a statement of `top` without a fresh result states nothing,
 and is refused. With regions, a fresh result beside them and a bound of
 `top` are refused. -/
-def decodeStated : Json → Except String (Option CallEffects.Effect)
+def decodeStated : Json → Except String (Option EffectJson.StatedEffect)
   | .null => pure none
   | j => do
     fieldsExactly j ["footprint", "onThrow", "fresh", "regions"]
@@ -858,11 +858,11 @@ def decodeStated : Json → Except String (Option CallEffects.Effect)
     if regions.isEmpty then
       if footprint == .top && !fresh then
         throw "a stated effect states a footprint below `top` or a fresh result"
-      pure (some (CallEffects.Effect.ofStated footprint none onThrow fresh [] [] []))
+      pure (some ⟨footprint, onThrow, fresh, []⟩)
     else
       if footprint == .top || fresh || !regions.Nodup then
         throw "a stated effect with store regions states a bound below `top` off them, distinct positions and no fresh result"
-      pure (some (CallEffects.Effect.ofStated footprint none onThrow false [] [] regions))
+      pure (some ⟨footprint, onThrow, false, regions⟩)
 
 /-- A guard's promise as the Fragment states it, or none. -/
 def decodeGuard : Json → Except String (Option Guard)

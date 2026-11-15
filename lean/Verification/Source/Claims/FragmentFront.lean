@@ -106,7 +106,7 @@ def writtenSchemes (force : List String := []) : ClosureSchemes := fun T body =>
       -- adversarial proposal)
       let effect := if force.contains "schemes" || force.contains "literals" then
           CallEffects.Effect.ofClosed ⟨.keep, .keep, .keep⟩ true else
-        stated.getD (match body with
+        (stated.map (·.effect)).getD (match body with
         | .block .. => .ordinary
         | x => if Synthesis.mayCall x || defaults.any (Synthesis.mayCall ·.2) then .ordinary
           else CallEffects.Effect.ofClosed ⟨.keep, .keep, .keep⟩ true)
