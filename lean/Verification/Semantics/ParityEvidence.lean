@@ -29,11 +29,6 @@ private theorem readPath_append (h : Heap) (x : Val) (p q : List String) :
 
 /-! ## Substitutions -/
 
-/-- A witness reading no heap: a variable or a literal. -/
-def Witness.heapFree : Witness → Bool
-  | .path p => p.fields.isEmpty
-  | .literal _ => true
-
 /-- A witness read one binder further. -/
 def Witness.shift : Witness → Witness
   | .path p => .path ⟨p.root + 1, p.fields⟩
@@ -49,36 +44,10 @@ theorem Witness.value_shift (w : Witness) (v : Val) (η : Env) (h : Heap) :
     w.shift.value (push v η) h = w.value η h := by
   cases w <;> rfl
 
-/-- **A substitution of slots by witnesses** (I5, `Substitution`): slot `i`
-of the substituted assertion is replaced by the path or the literal
-`images[i]`. Slots past the images are outside its domain. Under a box
-(`boxed`) only the images reading no heap are in its domain: the box's body
-is read at every state an action reaches, where a path image may read
-otherwise. -/
-structure Substitution where
-  images : Array Witness
-  boxed : Bool := false
-  /-- The slots whose path images are certified rigid: read alike at every
-  state an admissible transition reaches (`HoldsAt`). Under a box they stay
-  in the domain. -/
-  stable : List Nat := []
-  deriving DecidableEq
-
 namespace Substitution
-
-/-- The image of slot `i`, where it is in the substitution's domain. -/
-def image (θ : Substitution) (i : Nat) : Option Witness :=
-  match θ.images[i]? with
-  | some w => if θ.boxed && !w.heapFree && !θ.stable.contains i then none else some w
-  | none => none
 
 theorem image_of_unboxed {θ : Substitution} (hb : θ.boxed = false) (i : Nat) : θ.image i = θ.images[i]? := by
   unfold image; cases θ.images[i]? <;> simp [hb]
-
-/-- **The interpretation of names** (I5, `Substitution.Holds`): each image
-in the domain, read at `source`, gives the value slot `i` has at `target`. -/
-def Holds (θ : Substitution) (target source : Env) (h : Heap) : Prop :=
-  ∀ (i : Nat) (w : Witness), θ.image i = some w → w.value source h = some (target i)
 
 /-- The path image of slot `i`, where its image is a path. -/
 def pathAt (θ : Substitution) (i : Nat) : Option Path :=
@@ -92,10 +61,6 @@ theorem Holds.path {θ : Substitution} {target source : Env} {h : Heap} (hθ : �
   split at hq
   · rename_i p hp; cases hq; exact hθ i _ hp
   · cases hq
-
-/-- The substitution read under a box: its heap-free and certified-rigid
-images alone. -/
-def box (θ : Substitution) : Substitution := { θ with boxed := true }
 
 /-- **The substitution under a box holds at every heap** where it certifies
 no rigid image. -/
@@ -145,12 +110,6 @@ theorem Holds.lift {θ : Substitution} {target source : Env} {h : Heap} (hθ : �
       rw [Witness.value_shift]
       apply hθ i q
       unfold image; rw [← Array.getElem?_toList, hq]; simp only [if_neg hcond]
-
-/-- **The substitution at a state** (I5, the agreement a box needs): it
-holds at the state, and, read under a box, at every state an admissible
-transition reaches. -/
-def HoldsAt (θ : Substitution) (target source : Env) (s : TolerantFrames.IndexedHeap) : Prop :=
-  θ.Holds target source s.h ∧ ∀ s', TolerantFrames.Admissible s s' → θ.box.Holds target source s'.h
 
 theorem HoldsAt.of_holds {θ : Substitution} (hst : θ.stable = []) {target source : Env}
     {s : TolerantFrames.IndexedHeap} (hθ : θ.Holds target source s.h) : θ.HoldsAt target source s :=

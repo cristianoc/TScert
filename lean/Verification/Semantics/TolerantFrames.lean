@@ -25,23 +25,8 @@ open Verification Footprints HeapObservations
 
 /-! ## States and admissible transitions -/
 
-/-- A state: budget `n`, positive, a world at `n` whose contracts survive
-allocation, and a heap meeting the world. -/
-structure IndexedHeap where
-  n : Nat
-  W : WorldT n
-  h : Heap
-  pos : 0 < n
-  adm : WorldAdm W
-  ok : HeapOk n W h
-
 /-- An assertion, read at a name valuation, an entry mark and a state. -/
 abbrev Assertion := Env → Nat → IndexedHeap → Prop
-
-/-- `s'` is reachable from `s` by what safe code may do: its budget is at
-most `s`'s, and its world extends `s`'s world truncated to its budget. -/
-def Admissible (s s' : IndexedHeap) : Prop :=
-  ∃ hle : s'.n ≤ s.n, WExt (trunc s'.n hle s.W) s'.W
 
 namespace Admissible
 
@@ -179,12 +164,6 @@ theorem safe_run {Ξ T : Fam} {s : IndexedHeap} {t t' : Tm} {h' : Heap} {k : Nat
   exact ⟨s', ha, he, hn, erase hs'.post⟩
 
 /-! ## Actions and the modality -/
-
-/-- An action of the footprint `Φ` at the name valuation `ρ`: an admissible
-transition whose heaps meet `Φ`'s postcondition, its regions read at the
-heap it starts from. -/
-def Action (Φ : Footprint) (ρ : Env) (s s' : IndexedHeap) : Prop :=
-  Admissible s s' ∧ Post Φ ρ s.h s'.h
 
 theorem Action.refl (Φ : Footprint) (ρ : Env) (s : IndexedHeap) : Action Φ ρ s s :=
   ⟨Admissible.refl s, Post.refl Φ ρ s.h⟩

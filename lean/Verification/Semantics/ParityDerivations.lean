@@ -28,34 +28,7 @@ open Verification Footprints HeapKnowledge TolerantFrames
 
 /-! ## Two-state formulas -/
 
-/-- The state a formula reads (I4, `Phase`): the command's entry or exit. -/
-inductive Phase where
-  | before
-  | after
-  deriving DecidableEq, Repr
-
-def Phase.swap : Phase → Phase
-  | .before => .after
-  | .after => .before
-
-/-- One node entry and one exit, with a common invocation mark (I4,
-`TwoState`). -/
-structure TwoState where
-  beforeEnv : Env
-  afterEnv : Env
-  mark : Nat
-  before : IndexedHeap
-  after : IndexedHeap
-
 namespace TwoState
-
-def env (s : TwoState) : Phase → Env
-  | .before => s.beforeEnv
-  | .after => s.afterEnv
-
-def state (s : TwoState) : Phase → IndexedHeap
-  | .before => s.before
-  | .after => s.after
 
 /-- The two-state with the environment of phase `p` replaced. -/
 def withEnv (s : TwoState) : Phase → Env → TwoState
@@ -78,22 +51,6 @@ def swap (s : TwoState) : TwoState := ⟨s.afterEnv, s.beforeEnv, s.mark, s.afte
 @[simp] theorem state_swap (s : TwoState) (p : Phase) : s.swap.state p = s.state p.swap := by cases p <;> rfl
 
 end TwoState
-
-/-- A term read in the state of phase `p`. -/
-def tagVar : Phase → Term → StepVar
-  | .before, t => .before t
-  | .after, t => .after t
-
-/-- A two-state variable with entry and exit exchanged. -/
-def stepSwap : StepVar → StepVar
-  | .before t => .after t
-  | .after t => .before t
-
-/-- **What a two-state variable denotes**: a before-term at the entry, an
-after-term at the exit. -/
-def stepValue (s : TwoState) : StepVar → Option Int
-  | .before t => termAt s.beforeEnv s.before.h t
-  | .after t => termAt s.afterEnv s.after.h t
 
 @[simp] theorem stepValue_tag (s : TwoState) (p : Phase) (t : Term) :
     stepValue s (tagVar p t) = termAt (s.env p) (s.state p).h t := by
@@ -133,114 +90,10 @@ theorem factAt_tag (s : TwoState) (p : Phase) (F : Linear.Fact Term) :
   rw [tagFact, factAt_rename]
   exact Iff.of_eq (congrArg (FactAt · F) (funext fun t => stepValue_tag s p t))
 
-/-- **Internal exact operational posts** (I4, `OperationPost`) of the
-arithmetic in scope, read at the exit: the result path reads the value of the
-operator on what its operands read (`binop`); a string's length read
-(`Step.lenStr`); a string's element read (`codeUnitAt`). -/
-inductive OperationPost where
-  | arith (op : Arith) (left right : Witness) (result : Path)
-  | stringLength (string result : Path)
-  | stringRead (string : Path) (index : Witness) (result : Path)
-  /-- A write keeping every array store's length, the array at entry slot
-  `x` and exit slot `x'` (`ExpressionEffects.elem_var_write_length`). -/
-  | lengthsKept (x x' : Nat)
-  /-- A write at the index in entry slot `i` of the array at entry slot `x`
-  (exit slot `x'`): the index is below the store's new length, the length
-  grows to at most `index + 1`, by one where the index was at or past it
-  (`IndexWrites.boundedWrite_store`). -/
-  | boundedWrite (x i x' : Nat)
-  /-- An append of the argument values to the array at entry slot `x`
-  (exit slot `x'`): the assumed contract `CallEffects.ReceiverAppends`. -/
-  | push (x x' : Nat) (args : List Witness)
-  /-- An index fact (`HeapKnowledge.IndexFact`) read in the state of phase
-  `phase`, its slot `i` that phase's slot `i + lift`, its entry terms at the
-  entry. -/
-  | fact (phase : Phase) (lift : Nat) (F : IndexFact)
-  /-- The array store of the value at exit slot `x` was allocated after the
-  entry: its location is at or beyond the entry heap's length
-  (`Footprints.FreshAt`). -/
-  | freshStore (x : Nat)
-  /-- The value at exit slot `x` is an object every own location of which
-  was allocated after the entry (`Footprints.FreshObjectAt`). -/
-  | freshObject (x : Nat)
-  /-- Where exit slot `x` holds `v`, every present element of the array at
-  exit slot `y` meets `R` (`CallEffects.ElemsAt`). -/
-  | elementsWhen (x : Nat) (v : Val) (y : Nat) (R : CallEffects.ElemPred)
-  /-- The store of the array at entry slot `x` keeps its contents, or holds
-  an array store its entry list is a prefix of, at most `2^32 − 1` long. -/
-  | storeExtends (x : Nat)
-  /-- View-Write (the note *Tolerant frames*): the write of the number at
-  entry slot `v` at the index at entry slot `i` of the typed array at entry
-  slot `x` (`CallEffects.WriteAt`), at the format `f`, or at the typed
-  array's own format where `f` is none. -/
-  | viewWrite (x i v : Nat) (format : Option ViewFormat)
-  deriving DecidableEq
-
-/-- The formats a view write is stated at: the given one, or the typed
-array's own. -/
-def writeFormats (x : Val) : Option ViewFormat → ViewFormat → Prop
-  | some f, g => g = f
-  | none, g => CallEffects.viewFormatOf x = some g
-
-def OperationPost.Holds (s : TwoState) : OperationPost → Prop
-  | .arith op l r y => ∃ a b c, l.value s.afterEnv s.after.h = some a ∧ r.value s.afterEnv s.after.h = some b ∧
-      y.read s.afterEnv s.after.h = some c ∧ binop op a b = some c
-  | .stringLength x y => ∃ str, x.read s.afterEnv s.after.h = some (.str str) ∧
-      (utf16Units str).length ≤ maxStringLength ∧
-      y.read s.afterEnv s.after.h = some (.num (bitsOfNat (utf16Units str).length))
-  | .stringRead x i y => ∃ str b, x.read s.afterEnv s.after.h = some (.str str) ∧
-      i.value s.afterEnv s.after.h = some (.num b) ∧ y.read s.afterEnv s.after.h = some (codeUnitAt str b)
-  | .lengthsKept x x' => (⟨true, true, .length⟩ : Changes).Holds s.before.h s.after.h ∧ s.afterEnv x' = s.beforeEnv x
-  | .boundedWrite x i x' => (∃ st ls ls' b idx, storeOf (s.beforeEnv x) = some st ∧ s.before.h[st]? = some (.arr ls) ∧
-      s.after.h[st]? = some (.arr ls') ∧ s.beforeEnv i = .num b ∧ indexOfBits b = some idx ∧ idx < ls'.length ∧
-      ls'.length ≤ max ls.length (idx + 1) ∧ (ls.length ≤ idx → ls'.length = ls.length + 1)) ∧
-      s.afterEnv x' = s.beforeEnv x
-  | .push x x' args => ∃ vs, args.mapM (·.value s.beforeEnv s.before.h) = some vs ∧ (∀ a ∈ vs, isVal a = true) ∧
-      CallEffects.ReceiverAppends (s.beforeEnv x) vs s.before.h s.after.h ∧ s.afterEnv x' = s.beforeEnv x
-  | .fact p l F => F.HoldsAt ⟨s.beforeEnv, s.before.h⟩ (fun i => s.env p (i + l)) (s.state p).h
-  | .freshStore x => FreshAt s.before.h.length (s.afterEnv x)
-  | .freshObject x => FreshObjectAt s.before.h.length (s.afterEnv x)
-  | .elementsWhen x v y R => s.afterEnv x = v → CallEffects.ElemsAt R (s.afterEnv y) s.after.h
-  | .storeExtends x => ∀ st v, storeOf (s.beforeEnv x) = some st → s.before.h[st]? = some v →
-      s.after.h[st]? = some v ∨ ∃ ls ls', v = .arr ls ∧ s.after.h[st]? = some (.arr ls') ∧ ls <+: ls' ∧
-        ls'.length ≤ maxArrayLength
-  | .viewWrite x i v f => ∀ g, writeFormats (s.beforeEnv x) f g →
-      CallEffects.WriteAt g [s.beforeEnv x, s.beforeEnv i, s.beforeEnv v] s.before.h s.after.h
-
 /-- Whether a post reads the entry state. -/
 def OperationPost.readsBefore : OperationPost → Bool
   | .lengthsKept .. | .boundedWrite .. | .push .. | .fact .. | .storeExtends .. | .viewWrite .. => true
   | _ => false
-
-/-- **Two-state formulas** (I4, `Formula`): an assertion at one phase, the
-action of an effect from the entry to the exit (the note's `tr_Φ`, §6,
-Entry), an operational post, a linear fact over before- and after-terms, the
-transport of names (the exit environment reads each entry slot `i` at the
-path `θ(i)`), and the connectives. -/
-inductive Formula where
-  | at (phase : Phase) (assertion : AssertionRef)
-  | transition (effect : Footprint)
-  | operation (post : OperationPost)
-  | linear (fact : Linear.Fact StepVar)
-  | defined (v : StepVar)
-  | transport (θ : Substitution)
-  | and (left right : Formula)
-  | truth
-  | falsity
-  deriving DecidableEq
-
-/-- **The meaning of a formula** (I4, `Holds`): `before` interprets `old`;
-the transition reads the entry's environment. -/
-def Holds (arena : AssertionArena) (s : TwoState) : Formula → Prop
-  | .at p a => Sat arena (s.env p) s.mark (s.state p) a
-  | .transition Φ => EffectAction Φ s.beforeEnv s.before s.after
-  | .operation q => q.Holds s
-  | .linear F => FactAt (stepValue s) F
-  | .defined v => (stepValue s v).isSome
-  | .transport θ => θ.HoldsAt s.beforeEnv s.afterEnv s.after
-  | .and F G => Holds arena s F ∧ Holds arena s G
-  | .truth => True
-  | .falsity => False
 
 /-- The conjunction of a list of formulas. -/
 def conj : List Formula → Formula

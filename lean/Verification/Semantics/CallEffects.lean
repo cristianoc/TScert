@@ -1,3 +1,4 @@
+import Verification.Semantics.TwoStateFormulas
 import Verification.Semantics.ExceptionalPosts
 import Verification.Semantics.Purity
 import Verification.Semantics.ClosedFootprints
@@ -57,48 +58,10 @@ inductive TypePromise where
 def TypePromise.param : TypePromise → Nat
   | .guards p | .asserts p => p
 
-/-- A predicate of values by their kind: what an element fact states of
-every present element of an array (`ElemsAt`). It reads no heap and no
-world: `string`, `number`, `boolean`, `null`, `undefined`, and their unions,
-the nullish exclusions among them. -/
-structure ElemPred where
-  nul : Bool := false
-  undef : Bool := false
-  bool : Bool := false
-  num : Bool := false
-  str : Bool := false
-  big : Bool := false
-  sym : Bool := false
-  obj : Bool := false
-  deriving Repr, DecidableEq, Hashable
-
-def ElemPred.mem (R : ElemPred) : Tm → Bool
-  | .nul => R.nul
-  | .undef => R.undef
-  | .tru | .fls => R.bool
-  | .num _ => R.num
-  | .str _ => R.str
-  | .bigint _ => R.big
-  | .sym _ => R.sym
-  | .objAt .. => R.obj
-  | _ => false
-
-/-- Inclusion of predicates. -/
-def ElemPred.le (a b : ElemPred) : Bool :=
-  (!a.nul || b.nul) && (!a.undef || b.undef) && (!a.bool || b.bool) && (!a.num || b.num) &&
-    (!a.str || b.str) && (!a.big || b.big) && (!a.sym || b.sym) && (!a.obj || b.obj)
-
 theorem ElemPred.le_sound {a b : ElemPred} (h : a.le b = true) {v : Tm} (hv : a.mem v = true) :
     b.mem v = true := by
   simp only [ElemPred.le, Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at h
   cases v <;> simp_all [ElemPred.mem] <;> omega
-
-/-- **The elements fact** of a value `r` at a heap: `r`'s array store exists
-and every element location it lists holds a value meeting `R`. A hole lists
-no location, so the fact is about present elements. -/
-def ElemsAt (R : ElemPred) (r : Tm) (h : Heap) : Prop :=
-  ∃ s ls, Footprints.storeOf r = some s ∧ h[s]? = some (.arr ls) ∧
-    ∀ l, some l ∈ ls → ∃ v, h[l]? = some v ∧ R.mem v = true
 
 theorem ElemsAt.mono {R R' : ElemPred} {r : Tm} {h : Heap} (hle : R.le R' = true) (he : ElemsAt R r h) :
     ElemsAt R' r h := by
@@ -372,16 +335,6 @@ def ReceiverGrows (r : Tm) (before after : Heap) : Prop :=
   ∀ l v, before[l]? = some v → after[l]? = some v ∨
     (Footprints.storeOf r = some l ∧ ∃ ls ls', v = .arr ls ∧ after[l]? = some (.arr ls') ∧
       ls <+: ls' ∧ ls'.length ≤ maxArrayLength)
-
-/-- A change from `before` to `after` appending the actuals `args`, where each
-is a value, to the receiver `r`'s store: the store it held holds one longer
-by the actuals' number, whose element at the old length plus `j` is present
-and holds the `j`-th actual at a location beyond the input heap: `Array.prototype.push` on an ordinary array
-(SOURCE-CONTRACTS.md, "Native footprints"). -/
-def ReceiverAppends (r : Tm) (args : List Tm) (before after : Heap) : Prop :=
-  (∀ a ∈ args, isVal a = true) → ∀ s ls, Footprints.storeOf r = some s → before[s]? = some (.arr ls) →
-    ∃ ls', after[s]? = some (.arr ls') ∧ ls'.length = ls.length + args.length ∧
-      ∀ j a, args[j]? = some a → ∃ l, ls'[ls.length + j]? = some (some l) ∧ after[l]? = some a ∧ before.length ≤ l
 
 /-- An append to a heap extending `before` is one to `before`. -/
 theorem ReceiverAppends.prefix_left {r : Tm} {args : List Tm} {before middle after : Heap}

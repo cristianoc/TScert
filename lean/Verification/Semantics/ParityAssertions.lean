@@ -27,13 +27,6 @@ The one place the parity modules read the meaning of an effect. Every
 modal statement goes through `EffectAction` and the lemmas after it, and
 every support through `SupportedBy`. -/
 
-/-- **The action of an effect** at a name valuation (the note, §3, "the
-effect action" `h →Φ_ρ h'`): an admissible transition whose heaps meet the
-effect's postcondition, its regions read at the state it starts from
-(`TolerantFrames.Action`). -/
-def EffectAction (Φ : Footprint) (η : Env) (s s' : IndexedHeap) : Prop :=
-  TolerantFrames.Action Φ η s s'
-
 /-- **A transition within a support** (the note, §5, "Support"): every
 location `l` below the first heap's length in a region of an entry `r : δ`
 of `S`, read at the first state, changes at most by `δ`
@@ -73,16 +66,6 @@ theorem _root_.Verification.TolerantFrames.Admissible.arrayStore {s s' : Indexed
   have hc := ha.contentsCategory hl hu
   cases u <;> simp [contentsCategory] at hc
   exact ⟨_, hu⟩
-
-/-- **The cells a typed array lists** (the note, §4, "Atoms", the element
-of a typed array): the entries of the view store its descriptor names
-(`HeapKnowledge.descriptorStore`, `storeEntries`), of a value owning no
-array store, which every well-formed typed array is
-(`HeapKnowledge.RefsOk.view_selects`). An ordinary array lists none here. -/
-def viewCells (h : Heap) (v : Val) : Option (List (Option Nat)) :=
-  match storeOf v, HeapKnowledge.descriptorStore v with
-  | none, some s => h[s]?.bind storeEntries
-  | _, _ => none
 
 theorem viewCells_ordinary {h : Heap} {v : Val} {s : Nat} (hs : storeOf v = some s) : viewCells h v = none := by
   simp [viewCells, hs]
@@ -318,25 +301,10 @@ end Action
 
 /-! ## Paths and witnesses -/
 
-/-- A reference to an arena node. -/
-structure AssertionRef where
-  index : Nat
-  deriving DecidableEq, Repr
-
-/-- An ordinary path (the note, §2, "paths" `π`): a root slot and the named
-data fields read in turn from its value. -/
-structure Path where
-  root : Nat
-  fields : List String
-  deriving DecidableEq, Repr
-
 namespace Path
 
 /-- The variable `x`: the empty path at slot `x`. -/
 def var (x : Nat) : Path := ⟨x, []⟩
-
-/-- The value a path reads, where every field it passes is owned. -/
-def read (η : Env) (h : Heap) (p : Path) : Option Val := readPath h (η p.root) p.fields
 
 /-- The current term of kind `k` read at the end of the path. -/
 def term (k : Term.Kind) (p : Path) : Term := Term.now k p.root p.fields
@@ -348,17 +316,6 @@ theorem termAt_term (η : Env) (h : Heap) (k : Term.Kind) (p : Path) :
     termAt η h (p.term k) = (p.read η h).bind (kindValue h k) := rfl
 
 end Path
-
-/-- A witness expression (I4): a path, or a literal source value. -/
-inductive Witness where
-  | path (p : Path)
-  | literal (v : Val)
-  deriving DecidableEq
-
-/-- The value a witness denotes, where it denotes one. -/
-def Witness.value (η : Env) (h : Heap) : Witness → Option Val
-  | .path p => p.read η h
-  | .literal v => some v
 
 /-! ## Atoms -/
 
@@ -375,51 +332,6 @@ def scalarBound : Bound → Bool
 /-- A scalar body: every variable of every clause is scalar. -/
 def scalarBody (body : List (LinearClause Bound)) : Bool :=
   body.all fun F => F.vars.all scalarBound
-
-/-- What a scalar variable denotes at index `i` of the store listing `ls`:
-the index, the present element's safe integer, the present element's string
-length, or the parameter's value. -/
-def scalarValue (η : Env) (h : Heap) (ls : List (Option Nat)) (i : Nat) : Bound → Option Int
-  | .index => some (i : Int)
-  | .elem => elementInt h ls i
-  | .project .strLength [] => match ls[i]? with
-    | some (some l) => h[l]?.bind strLengthOf
-    | _ => none
-  | .free t => termAt η h t
-  | _ => none
-
-/-- The selected first-order atoms (the note, §4, "Atoms"; I4, `Atom`):
-a linear fact over current terms, a path's value, a dense prefix, a kind of
-contents, a bounded quantification, a typed-array element, a defined term, a
-safe integer, and the double `2^53` past the safe integers. -/
-inductive Atom where
-  | linear (fact : Linear.Fact Term)
-  | equal (path : Path) (value : Witness)
-  | dense (path : Path) (bound : Term)
-  | contents (path : Path) (kind : CallEffects.ElemPred)
-  | every (path : Path) (bound : Term) (body : List (LinearClause Bound))
-  | element (path : Path) (index : Term) (value : Witness)
-  | defined (term : Term)
-  | safeInt (path : Path)
-  | pastSafe (path : Path)
-  deriving DecidableEq
-
-/-- **The meaning of an atom** (the note, §4, "Atoms": an atom is true only
-where every path it reads is defined). -/
-def Atom.Holds (η : Env) (h : Heap) : Atom → Prop
-  | .linear F => FactAt (termAt η h) F
-  | .equal p w => ∃ v, p.read η h = some v ∧ w.value η h = some v
-  | .dense p n => ∃ w s ls k, p.read η h = some w ∧ storeOf w = some s ∧ h[s]? = some (.arr ls) ∧
-      termAt η h n = some k ∧ 0 ≤ k ∧ DensePrefix k.toNat ls
-  | .contents p R => ∃ v, p.read η h = some v ∧ R.mem v = true
-  | .every p n body => ∃ w s ls k, p.read η h = some w ∧ storeOf w = some s ∧ h[s]? = some (.arr ls) ∧
-      termAt η h n = some k ∧ ∀ i : Nat, (i : Int) < k →
-        (∃ l, ls[i]? = some (some l)) ∧ ∀ F ∈ body, F.HoldsAt (scalarValue η h ls i)
-  | .element p t w => ∃ u ls k l v, p.read η h = some u ∧ viewCells h u = some ls ∧
-      termAt η h t = some k ∧ 0 ≤ k ∧ ls[k.toNat]? = some (some l) ∧ h[l]? = some v ∧ w.value η h = some v
-  | .defined t => (termAt η h t).isSome
-  | .safeInt p => ∃ v, p.read η h = some v ∧ (intValue v).isSome
-  | .pastSafe p => p.read η h = some (.num SafeIntegers.pastSafeBits)
 
 /-- The terms an atom names. -/
 def Atom.terms : Atom → List Term
@@ -504,12 +416,6 @@ theorem Atom.holds_envOnly {a : Atom} (ha : a.envOnly = true) {η : Env} {h h' :
 
 /-! ## Separation and freshness -/
 
-/-- **An ordinary array's store** (the note, §2, "Arrays"): the value's `[]`
-slot names a location holding an array store listing `xs`, and the value
-names no typed array's store, so the store it owns is that one alone. -/
-def ArrayStore (h : Heap) (u : Val) (s : Nat) (xs : List (Option Nat)) : Prop :=
-  storeOf u = some s ∧ descriptorStore u = none ∧ h[s]? = some (.arr xs)
-
 /-- An ordinary array's cells, as the region `π[∗]` selects them
 (`storeElems`), are its store's listing. -/
 theorem ArrayStore.cells {h : Heap} {u : Val} {s : Nat} {xs : List (Option Nat)} (ha : ArrayStore h u s xs) :
@@ -518,17 +424,6 @@ theorem ArrayStore.cells {h : Heap} {u : Val} {s : Nat} {xs : List (Option Nat)}
   have hs' : (fieldsOf u).lookup arrayStoreKey = some s := hs
   simp [storeElems, entriesAt, hs', hd, hx, storeEntries]
 
-/-- `π # π'` (the note, §4, "Satisfaction"): the two paths read ordinary
-arrays, with different store locations. -/
-def Separated (η : Env) (h : Heap) (p q : Path) : Prop :=
-  ∃ u w s t xs ys, p.read η h = some u ∧ q.read η h = some w ∧ ArrayStore h u s xs ∧ ArrayStore h w t ys ∧ s ≠ t
-
-/-- `apart(π, π')` (the note, §4, "Satisfaction"): `π # π'`, and the stores
-of the two arrays list no common element cell. -/
-def Apart (η : Env) (h : Heap) (p q : Path) : Prop :=
-  ∃ u w s t xs ys, p.read η h = some u ∧ q.read η h = some w ∧ ArrayStore h u s xs ∧ ArrayStore h w t ys ∧
-    s ≠ t ∧ ∀ l, some l ∈ xs → some l ∉ ys
-
 /-- **The cells of two ordinary arrays are disjoint as regions exactly where
 their store listings are** (the note's `apart` and the regions `π[∗]`). -/
 theorem cells_disjoint_iff {h : Heap} {u w : Val} {s t : Nat} {xs ys : List (Option Nat)}
@@ -536,60 +431,10 @@ theorem cells_disjoint_iff {h : Heap} {u w : Val} {s t : Nat} {xs ys : List (Opt
     (∀ l, some l ∈ storeElems h u → some l ∉ storeElems h w) ↔ (∀ l, some l ∈ xs → some l ∉ ys) := by
   rw [hu.cells, hw.cells]
 
-/-- `fresh(π)` (the note, §4, "Satisfaction"): the store of the array the
-path reads is at or above the entry mark. -/
-def FreshPath (η : Env) (m : Nat) (h : Heap) (p : Path) : Prop :=
-  ∃ v, p.read η h = some v ∧ FreshAt m v
+/-! ## The arena
 
-/-! ## The arena -/
-
-/-- An arena node (the note, §4, "Syntax"; I4, `AssertionNode`): sharing is
-the representation of the note's ordinary syntax. `guarded g A` is the
-note's `g ∨ A` with `g` invariant; `existsValue A` binds logical slot `0`;
-`box Φ A` is `□_Φ A`. -/
-inductive AssertionNode where
-  | truth
-  | falsity
-  | atom (a : Atom)
-  | and (left right : AssertionRef)
-  | guarded (guard body : AssertionRef)
-  | existsValue (body : AssertionRef)
-  | separated (left right : Path)
-  | apart (left right : Path)
-  | fresh (path : Path)
-  | box (effect : Footprint) (body : AssertionRef)
-  deriving DecidableEq
-
-/-- Finite immutable nodes. -/
-structure AssertionArena where
-  nodes : Array AssertionNode
-
-/-- **Satisfaction of node `i`** (the note, §4, "Satisfaction"). A reference
-not below its user denotes `False`; a valid arena has none. -/
-def satNode (nodes : Array AssertionNode) (i : Nat) (η : Env) (m : Nat) (s : IndexedHeap) : Prop :=
-  match nodes[i]? with
-  | none => False
-  | some .truth => True
-  | some .falsity => False
-  | some (.atom a) => a.Holds η s.h
-  | some (.and l r) =>
-    (if _ : l.index < i then satNode nodes l.index η m s else False) ∧
-      (if _ : r.index < i then satNode nodes r.index η m s else False)
-  | some (.guarded g b) =>
-    (if _ : g.index < i then satNode nodes g.index η m s else False) ∨
-      (if _ : b.index < i then satNode nodes b.index η m s else False)
-  | some (.existsValue b) =>
-    ∃ v : Val, if _ : b.index < i then satNode nodes b.index (push v η) m s else False
-  | some (.separated p q) => Separated η s.h p q
-  | some (.apart p q) => Apart η s.h p q
-  | some (.fresh p) => FreshPath η m s.h p
-  | some (.box Φ b) =>
-    ∀ s', EffectAction Φ η s s' → if _ : b.index < i then satNode nodes b.index η m s' else False
-termination_by i
-
-/-- `η, m, s ⊨ a`. -/
-def Sat (arena : AssertionArena) (η : Env) (m : Nat) (s : IndexedHeap) (a : AssertionRef) : Prop :=
-  satNode arena.nodes a.index η m s
+The arena, its nodes and their satisfaction (`satNode`, `Sat`) are defined
+in `TwoStateFormulas`, below the callable guarantees. -/
 
 /-! ## Invariant assertions -/
 
