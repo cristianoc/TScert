@@ -300,6 +300,12 @@ private def raw : RawDerivation :=
 -- the converse.
 #guard InclusionEvidence.regions.check [(.cls .arrays, .keep)] [(.cls .stores, .grow)]
 #guard !InclusionEvidence.regions.check [(.cls .stores, .grow)] [(.cls .arrays, .keep)]
+-- The views analogue: `{views: keep} ⊑ {stores: grow}`, not the converse,
+-- and array stores and view stores are disjoint classes.
+#guard InclusionEvidence.regions.check [(.cls .views, .keep)] [(.cls .stores, .grow)]
+#guard !InclusionEvidence.regions.check [(.cls .stores, .grow)] [(.cls .views, .keep)]
+#guard !InclusionEvidence.regions.check [(.cls .views, .keep)] [(.cls .arrays, .grow)]
+#guard Selector.arrays.disjoint Selector.views
 
 -- A literal witness: `□_⊤(p.items ≐ null) ⊢ rigid(p.items)`.
 #guard isOk (checkScoped arena ⟨2, 2⟩ [.at .before (ref 1)] (.at .before (ref 19))

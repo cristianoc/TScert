@@ -1,4 +1,4 @@
-import Verification.Semantics.TolerantFrames
+import Verification.Semantics.TolerantFramesCells
 
 /-! # Parity assertions
 
@@ -55,7 +55,7 @@ def effectEnvFree (Φ : Footprint) : Bool := Φ.all fun e => regionEnvFree e.1
 
 /-- The slots a region reads its roots at. -/
 def regionRoots : Region → List Nat
-  | .field x _ | .own x | .elems x | .path x _ _ | .pathOwn x _ | .pathElems x _ => [x]
+  | .field x _ | .own x | .elems x | .path x _ _ | .pathOwn x _ | .pathElems x _ | .store x _ => [x]
   | .cls _ | .all | .cell _ => []
   | .inCls r _ => regionRoots r
 
@@ -63,39 +63,28 @@ def regionRoots : Region → List Nat
 def effectScoped (n : Nat) (Φ : Footprint) : Bool := Φ.all fun e => (regionRoots e.1).all (· < n)
 
 /-- **An ordinary array store stays one** along every admissible
-transition: a location holding an array store has the store kind in the
-world, which the transition keeps (`HeapOk.kinds`, `WExt_roleAt`). With
-tagged stores, the store-category correspondence of the shared foundation
-replaces this proof. -/
+transition: its contents keep their category, an array store
+(`Admissible.contentsCategory`). -/
 theorem _root_.Verification.TolerantFrames.Admissible.arrayStore {s s' : IndexedHeap} (ha : Admissible s s')
     {l : Nat} {xs : List (Option Nat)} (hl : s.h[l]? = some (.arr xs)) : ∃ ys, s'.h[l]? = some (.arr ys) := by
-  have hk : K s.W .store l := (s.ok.kinds.2.1 l).mpr ⟨xs, hl⟩
-  obtain ⟨hle, hx⟩ := ha
-  have hk' : K s'.W .store l := by
-    unfold K kindAt at hk ⊢
-    obtain ⟨r, hr, hrk⟩ := Option.map_eq_some_iff.mp hk
-    have := WExt_roleAt hx (show roleAt (trunc s'.n hle s.W) l = some r by rw [roleAt_trunc]; exact hr)
-    rw [this]; simp [hrk]
-  exact (s'.ok.kinds.2.1 l).mp hk'
+  have hl' : l < s'.h.length := Nat.lt_of_lt_of_le (List.getElem?_eq_some_iff.mp hl).1 ha.length_le
+  obtain ⟨u, hu⟩ : ∃ u, s'.h[l]? = some u := ⟨_, List.getElem?_eq_getElem hl'⟩
+  have hc := ha.contentsCategory hl hu
+  cases u <;> simp [contentsCategory] at hc
+  exact ⟨_, hu⟩
 
 /-- **The cells a typed array lists** (the note, §4, "Atoms", the element
-of a typed array): today's representation, a host object owning no array
-store whose `viewElementsKey` location holds the listing. The tagged view
-store of the primitive views replaces this one definition. An ordinary
-array lists none here. -/
-def viewCells (h : Heap) : Val → Option (List (Option Nat))
-  | v@(.objAt fs _ _) =>
-    if storeOf v = none ∧ (fs.lookup hostKey).isSome = true then
-      match fs.lookup viewElementsKey with
-      | some l => match h[l]? with
-        | some (.arr ls) => some ls
-        | _ => none
-      | none => none
-    else none
-  | _ => none
+of a typed array): the entries of the view store its descriptor names
+(`HeapKnowledge.descriptorStore`, `storeEntries`), of a value owning no
+array store, which every well-formed typed array is
+(`HeapKnowledge.RefsOk.view_selects`). An ordinary array lists none here. -/
+def viewCells (h : Heap) (v : Val) : Option (List (Option Nat)) :=
+  match storeOf v, HeapKnowledge.descriptorStore v with
+  | none, some s => h[s]?.bind storeEntries
+  | _, _ => none
 
 theorem viewCells_ordinary {h : Heap} {v : Val} {s : Nat} (hs : storeOf v = some s) : viewCells h v = none := by
-  cases v <;> simp_all [viewCells]
+  simp [viewCells, hs]
 
 section Action
 variable {Φ : Footprint} {η η' : Env} {s s' s'' : IndexedHeap}
