@@ -260,8 +260,9 @@ def lin (G : Linear.Fact Term) : Formula := .linear (tagFact .after G)
 /-- The safe integer a path reads, as a current term. -/
 abbrev vt (p : Path) : Term := p.term .value
 
-/-- **An operand with its value evidence** (I4, "Arithmetic indices and
-range conditions"): a path read as its own safe integer, a path proved equal
+/-- **An operand with its value evidence** (the note, §6, "Arithmetic
+steps": the constants are literals or variables with a known constant
+value): a path read as its own safe integer, a path proved equal
 to a constant, or a literal number. These are the operands of the pass's
 producers (`IndexWrites.operandForm`: a slot the knowledge states a safe
 integer, that slot's checked constant `knownConstant`, or a literal). -/
@@ -296,16 +297,14 @@ def safeFact (y : Path) : Formula := .defined (.after (vt y))
 def smallFacts (F : Linear.Form Term) (c : Int) : Formula :=
   conj [lin (.le (F.scale (-1)) c), lin (.le F (2 ^ 31 - 1 - c))]
 
-/-- **Shift right by a constant** (I4, "Arithmetic indices and range
-conditions"; the note has no rule for it yet): of `y = x >> d` with
+/-- **Shift right by a constant** (the note, §6, "Arithmetic steps", Shr): of `y = x >> d` with
 `x = F + c`, `y` a safe integer, `0 ≤ y` and
 `2^d·y ≤ x ≤ 2^d·y + (2^d − 1)` (`IndexWrites.bitAtoms .shr`). -/
 def shrFacts (y : Path) (F : Linear.Form Term) (c d : Int) : Formula :=
   conj [safeFact y, lin (.le [(vt y, -1)] 0), lin (.le ((vt y, 2 ^ d.toNat) :: F.scale (-1)) c),
     lin (.le ((vt y, -(2 ^ d.toNat)) :: F) (2 ^ d.toNat - 1 - c))]
 
-/-- **Mask by a constant** (I4, "Arithmetic indices and range conditions";
-the note has no rule for it yet): of `y = x & m` with `x = F + c`, `y` a
+/-- **Mask by a constant** (the note, §6, "Arithmetic steps", Mask): of `y = x & m` with `x = F + c`, `y` a
 safe integer, `0 ≤ y ≤ m` and `y ≤ x` (`IndexWrites.bitAtoms .bitAnd`). -/
 def maskFacts (y : Path) (F : Linear.Form Term) (c m : Int) : Formula :=
   conj [safeFact y, lin (.le [(vt y, -1)] 0), lin (.le [(vt y, 1)] m), lin (.le ((vt y, 1) :: F.scale (-1)) c)]
@@ -630,24 +629,21 @@ inductive Derivation (arena : AssertionArena) : List Formula → Formula → Typ
       (he : arena.nodes[e.index]? = some (.atom (.equal π (.literal v))))
       (hc : arena.nodes[c.index]? = some (.atom (.contents π R)))
       (de : Derivation arena Γ (.at p e)) (dc : Derivation arena Γ (.at p c)) : Derivation arena Γ F
-  /-- **Shift right by a constant** (I4, "Arithmetic indices and range
-  conditions"): a constant `d ∈ [0, 31]` (a literal or a path proved
+  /-- **Shr** (the note, §6, "Arithmetic steps"): a constant `d ∈ [0, 31]` (a literal or a path proved
   constant) of an operand in `[0, 2^31 − 1]`. -/
   | shiftRight {Γ} (x k : Operand) (y : Path) (F : Linear.Form Term) (c d : Int) (hx : x.form = some (F, c))
       (hk : k.form = some ([], d)) (hd : 0 ≤ d ∧ d < 32)
       (dop : Derivation arena Γ (.operation (.arith .shr x.witness k.witness y)))
       (dx : Derivation arena Γ x.premise) (dk : Derivation arena Γ k.premise)
       (ds : Derivation arena Γ (smallFacts F c)) : Derivation arena Γ (shrFacts y F c d)
-  /-- **Mask by a constant** (I4, "Arithmetic indices and range
-  conditions"): a constant `m ∈ [0, 2^31 − 1]` of an operand in
+  /-- **Mask** (the note, §6, "Arithmetic steps"): a constant `m ∈ [0, 2^31 − 1]` of an operand in
   `[0, 2^31 − 1]`. -/
   | mask {Γ} (x k : Operand) (y : Path) (F : Linear.Form Term) (c m : Int) (hx : x.form = some (F, c))
       (hk : k.form = some ([], m)) (hm : 0 ≤ m ∧ m < 2 ^ 31)
       (dop : Derivation arena Γ (.operation (.arith .bitAnd x.witness k.witness y)))
       (dx : Derivation arena Γ x.premise) (dk : Derivation arena Γ k.premise)
       (ds : Derivation arena Γ (smallFacts F c)) : Derivation arena Γ (maskFacts y F c m)
-  /-- **Exact integer operations** (I4, "Arithmetic indices and range
-  conditions"): a sum, a difference or a product with a constant factor of
+  /-- **Add, Sub, Scale** (the note, §6, "Arithmetic steps"): a sum, a difference or a product with a constant factor of
   safe integers, its exact result a safe integer. -/
   | integerOperation {Γ} (op : Arith) (l r : Operand) (y : Path) (fl : Linear.Form Term) (cl : Int)
       (fr : Linear.Form Term) (cr : Int) (F : Linear.Form Term) (c : Int)
@@ -655,8 +651,9 @@ inductive Derivation (arena : AssertionArena) : List Formula → Formula → Typ
       (dop : Derivation arena Γ (.operation (.arith op l.witness r.witness y)))
       (dl : Derivation arena Γ l.premise) (dr : Derivation arena Γ r.premise)
       (drange : Derivation arena Γ (rangeFacts F c)) : Derivation arena Γ (valueFacts y F c)
-  /-- **A string's length plus one** (I4, "Arithmetic indices and range
-  conditions", `lengthSuccessor`; the pass's `stringLengthPlusOne`): of
+  /-- **The sum given past the range** (the note, §6, "Arithmetic steps":
+  for `x = slen(s)`, `y = x + 1` is the safe integer `x + 1` or `2^53`; the
+  pass's `stringLengthPlusOne`): of
   `y = x + 1` (either order) with `x = |s|`, `pastSafe(y)` or `y` the exact
   sum, a safe integer. -/
   | lengthSuccessor {Γ g pg e e₀ e' e₁ e₂} (l r : Operand) (y s : Path) (lengthLeft : Bool) (x : Path)
@@ -672,22 +669,24 @@ inductive Derivation (arena : AssertionArena) : List Formula → Formula → Typ
       (dl : Derivation arena Γ l.premise) (dr : Derivation arena Γ r.premise)
       (dlen : Derivation arena Γ (lengthEq x s)) (done : Derivation arena Γ one) :
       Derivation arena Γ (.at .after g)
-  /-- **A defined string has its UTF-16 length**, in `[0, 2^53 − 1]` (I4,
-  "Arithmetic indices and range conditions"; the note has no rule for it yet). -/
+  /-- **A defined string has its UTF-16 length**, in `[0, 2^53 − 1]` (the
+  note, §6, "Arithmetic steps": `0 ≤ slen(s) ≤ M`). -/
   | stringLength {Γ p a} (t : Term) (ht : t.kind = .strLength) (ha : arena.nodes[a.index]? = some (.atom (.defined t)))
       (d : Derivation arena Γ (.at p a)) : Derivation arena Γ (strRange (tagVar p t))
-  /-- **A string's length read** is its UTF-16 length, a safe integer (I4;
-  the pass's atoms on `lenOf` of a string; the note has no rule for it yet). -/
+  /-- **Str-Length** (the note, §6, "Arithmetic steps"): a string's length
+  read is its UTF-16 length, a safe integer (the pass's atoms on `lenOf` of
+  a string). -/
   | stringLengthRead {Γ} (x y : Path) (dop : Derivation arena Γ (.operation (.stringLength x y))) :
       Derivation arena Γ (lengthReadFacts x y)
-  /-- **A string's element read at a valid index** is one code unit (I4,
-  `stringRead`; the note has no rule for it yet). The index bound
+  /-- **Str-Read** (the note, §6, "Arithmetic steps"): a string's element
+  read at a valid index is one code unit. The index bound
   `i ≤ 2^32 − 2` is the code-unit model's (`stringIndexFacts`). No producer
   of the pass emits this consequence: it is no replacement of one. -/
   | stringRead {Γ} (x i y : Path) (dop : Derivation arena Γ (.operation (.stringRead x (.path i) y)))
       (di : Derivation arena Γ (stringIndexFacts x i)) : Derivation arena Γ (unitFacts y)
-  /-- **A normal concatenation** has the sum of the operands' lengths (I4;
-  the pass's `concatAtoms`; the note has no rule for it yet). -/
+  /-- **Concat** (the note, §6, "Arithmetic steps"): a normal
+  concatenation has the sum of the operands' lengths (the pass's
+  `concatAtoms`). -/
   | stringConcat {Γ} (x z y : Path) (dop : Derivation arena Γ (.operation (.arith .add (.path x) (.path z) y)))
       (dx : Derivation arena Γ (.linear (.le [(alen x, -1)] 0)))
       (dz : Derivation arena Γ (.linear (.le [(alen z, -1)] 0))) : Derivation arena Γ (concatFacts x z y)

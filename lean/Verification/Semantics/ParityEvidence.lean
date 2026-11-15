@@ -932,10 +932,12 @@ def Included (arena : AssertionArena) (K : AssertionRef) (Φ Ψ : Footprint) : P
 /-! ### The class a region lies in -/
 
 /-- A node stating that the path reads an ordinary array: a dense prefix, a
-bounded quantification, a store separation or an apartness naming it. -/
+bounded quantification, a linear fact reading its length, a store
+separation or an apartness naming it. -/
 def arrayNode (n : AssertionNode) (π : Path) : Bool :=
   match n with
   | .atom (.dense q _) | .atom (.every q _ _) => q == π
+  | .atom (.linear F) => F.vars.contains (π.term .length)
   | .separated q q' | .apart q q' => q == π || q' == π
   | _ => false
 
@@ -947,6 +949,12 @@ theorem arrayNode_sound {arena : AssertionArena} {c : AssertionRef} {n : Asserti
   | atom a =>
     have hs' := (sat_atom hn).mp hs
     cases a <;> simp only [arrayNode, beq_iff_eq, reduceCtorEq] at ha
+    · rename_i F
+      obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (hs'.1 _ (List.contains_iff_mem.mp ha))
+      rw [Path.termAt_term] at hn
+      obtain ⟨u, hu, hl⟩ := Option.bind_eq_some_iff.mp hn
+      obtain ⟨st, ls, hst, hls, -, -⟩ := lengthOf_store hl
+      exact ⟨u, st, ls, hu, hst, hls⟩
     · subst ha; obtain ⟨w, st, ls, _, hw, hst, hls, -⟩ := hs'; exact ⟨w, st, ls, hw, hst, hls⟩
     · subst ha; obtain ⟨w, st, ls, _, hw, hst, hls, -⟩ := hs'; exact ⟨w, st, ls, hw, hst, hls⟩
   | separated q q' =>
@@ -1409,13 +1417,17 @@ Definition "Support"):
   `{z.store: keep, z[cells]: keep}`;
 - `x.f ≐ v` for a literal `v`, by `{x.f: keep}`;
 - a linear fact at any paths, by `{values: init, stores: keep}`: `init`
-  changes no location holding an object, a number or a string. -/
+  changes no location holding an object, a number or a string;
+- a typed array's element `b[i] ≐ ℓ` at a variable `b`, `i` heap-free and
+  `ℓ` a literal, by `{b.store: keep, b[cells]: keep}` (the note, §6,
+  Example "A write through a typed array"). -/
 inductive SupportEvidence where
   | invariant
   | lengths
   | everyCells
   | field
   | init
+  | viewElement
   deriving DecidableEq, Repr
 
 def SupportEvidence.check (arena : AssertionArena) (A : AssertionRef) (S : Footprint) : SupportEvidence → Bool
@@ -1433,6 +1445,10 @@ def SupportEvidence.check (arena : AssertionArena) (A : AssertionRef) (S : Footp
   | .init => match arena.nodes[A.index]? with
     | some (.atom (.linear F)) => F.vars.all (fun t => !t.atEntry) &&
         S.contains (.cls .values, .init) && S.contains (.cls .stores, .keep)
+    | _ => false
+  | .viewElement => match arena.nodes[A.index]? with
+    | some (.atom (.element b t (.literal _))) => b.fields.isEmpty && !t.atEntry && t.path.isEmpty &&
+        t.kind != .length && S.contains (.store b.root [], .keep) && S.contains (.pathElems b.root [], .keep)
     | _ => false
 
 private theorem lengths_term {S : Footprint} {η : Env} {s s' : IndexedHeap} (hS : SupportedBy S η s s') {t : Term}
@@ -1583,6 +1599,48 @@ theorem SupportEvidence.sound {arena : AssertionArena} {C : SupportContext} {S :
           · cases hu
         · cases hu
       | _ => rw [hx] at hu; simp [readPath] at hu
+    · cases h
+  | .viewElement, h => by
+    simp only [SupportEvidence.check] at h
+    split at h
+    · rename_i b t lit hn
+      simp only [Bool.and_eq_true, Bool.not_eq_true', bne_iff_ne, ne_eq, List.isEmpty_iff,
+        List.contains_iff_mem] at h
+      obtain ⟨⟨⟨⟨⟨hb, _⟩, htp⟩, htk⟩, hst⟩, hcl⟩ := h
+      intro η m s s' _ _ hA hS
+      obtain ⟨u, ls, k, l, v, hu, hvc, hk, h0, hl, hv, hw⟩ := (sat_atom hn).mp hA
+      have hub : η b.root = u := by simp only [Path.read, hb, readPath, Option.some.injEq] at hu; exact hu
+      unfold viewCells at hvc
+      split at hvc
+      · rename_i st hso hds
+        obtain ⟨c0, hc0, hent⟩ := Option.bind_eq_some_iff.mp hvc
+        have hel : elementsOf u = some st := by
+          cases u with
+          | objAt fs cd oid =>
+            simp only [descriptorStore] at hds
+            split at hds
+            · rename_i heq
+              cases hds
+              simp only [storeOf, fieldsOf] at hso
+              cases heq
+              simp [elementsOf, hso]
+            · cases hds
+          | _ => simp [descriptorStore] at hds
+        have hin : (Region.store b.root []).mem η s.h st = true := by
+          simp [Region.mem, readPath, hub, hel]
+        have hc0' := kept_of_supported hS hst hin hc0
+        have hmem : (Region.pathElems b.root []).mem η s.h l = true := by
+          simp only [Region.mem, readPath, hub, storeElems, List.contains_iff_mem, List.mem_append]
+          refine .inr ?_
+          simp only [hds, entriesAt, hc0, Option.bind_some, hent, Option.getD_some]
+          exact List.mem_of_getElem? hl
+        have hv' := kept_of_supported hS hcl hmem hv
+        have hk' : termAt η s'.h t = some k := by
+          rw [termAt_var htp] at hk ⊢; rwa [kindValue_heapFree htk s'.h s.h]
+        refine (sat_atom hn).mpr ⟨u, ls, k, l, v, by rw [← hu, Path.read_heap hb], ?_, hk', h0, hl, hv', ?_⟩
+        · simp only [viewCells, hso, hds, hc0', Option.bind_some, hent]
+        · simpa [Witness.value] using hw
+      · cases hvc
     · cases h
   | .init, h => by
     simp only [SupportEvidence.check] at h

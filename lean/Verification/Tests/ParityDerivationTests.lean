@@ -7,19 +7,24 @@ encodes a derivation of the note "Tolerant frames"
 it with `checkScoped`, which checks the arena and the scopes first: what it
 accepts holds by `checkScoped_sound`.
 
+- The regional certificates: classes, store separation, rigid stores.
+- The atom axioms (Sep), (Init), (View), (Every), (Rigid), each refused off
+  its shape.
+- A rigid path image under a box (Frame⁺ with a certified transport).
+- The note's Example "A write through a typed array": four facts framed
+  across `{views: grow}`, and the fifth, about another typed array's
+  element, refused.
+- P4's straight-line bound and P18's two-field guard, their framing derived
+  by (Rigid) and the tolerant frame theorem; the fields' stable contracts
+  (the guards' and the paths' rigidity) are premises, since no rule of the
+  checker introduces them.
+- Write-In, Write-End and Push from their exact posts.
 - The arithmetic of `index[c >> 8]`, with `0 ≤ c < 1114112` and
   `index.length = 4352`, and of `table[x & 255]` with `table.length = 256`
-  (I4, "Arithmetic indices and range conditions").
-- The modal plumbing of P18's two-field guard (not yet P18's parity
-  derivation): the guard `g₁ ∨ g₂ ∨ L` across a call of effect
-  `{values: any}`, by law (d), Frame and guard elimination
-  (`astra/parity-plan-out.md`, P18). Two premises stand for evidence the
-  rules do not produce yet: the guards are `□_⊤(π ≐ null)`, which P18
-  obtains from the null tests and the fields' stable contracts (stable
-  paths have no introduction rule yet); and the `L` case is framed
-  inside its branch, `g₁ ∨ g₂ ∨ □_Φ L`, which P18 obtains by the
-  tolerant frame rule at the stores' keep support, whose regional
-  support certificate the shared foundation supplies. -/
+  (the note, §6, Shr and Mask).
+- The modal plumbing of law (d), Frame and guard elimination on P18's
+  guard, with the framed `L` case as a premise (`P18Plumbing`), and unit
+  checks of substitution, literal witnesses and ∃ elimination. -/
 namespace Verification.Parity.Tests
 open Verification Footprints HeapKnowledge
 
@@ -181,6 +186,280 @@ private def Γ : List Formula :=
   (.framePlus (.closed TolerantFrames.growEffect) grow (r 1) (r 0) (r 7) { images := images } .atTruth .assumption
     .assumption .assumption)) = "framePlus: not the transported box"
 end RigidImage
+
+/-! ## The note's Example "A write through a typed array"
+
+Before `b[0] = 7`, of effect `{views: grow}`: `3 ≤ |xs|`,
+`every(xs, t, v > 0)`, `o.n ≐ 1`, `2 ≤ view(c)` and `c[j] ≐ 5` (`t` and `j`
+variables standing for `3` and `1`). The first four hold after the write by
+Frame, each from the tolerant frame theorem at its support or (View); the
+last has no derivation: its support keeps `c`'s view store, which the
+effect lets grow. -/
+
+namespace ViewWrite
+private def r (n : Nat) : AssertionRef := ⟨n⟩
+private def Φ : Footprint := [(.cls .views, .grow)]
+private def arena : AssertionArena := ⟨#[
+  .atom (.linear (.le [(Term.length 0, -1)] (-3))),                         -- 0 3 ≤ |xs|
+  .atom (.every (.var 0) (Term.value 4) [.atom (.le [(.elem, -1)] (-1))]),  -- 1 every(xs, t, v > 0)
+  .atom (.equal ⟨1, ["n"]⟩ (.literal (.num (bitsOfNat 1)))),                -- 2 o.n ≐ 1
+  .atom (.linear (.le [(Term.now .view 3 [], -1)] (-2))),                   -- 3 2 ≤ view(c)
+  .atom (.element (.var 3) (Term.value 5) (.literal (.num (bitsOfNat 5)))), -- 4 c[j] ≐ 5
+  .box Φ (r 0), .box Φ (r 1), .box Φ (r 2), .box Φ (r 3), .box Φ (r 4)]⟩    -- 5–9
+
+#guard arena.check
+private def θ : Substitution := Substitution.ident 6
+private def Γ : List Formula :=
+  [.at .before (r 0), .at .before (r 1), .at .before (r 2), .at .before (r 3), .at .before (r 4),
+    .transition Φ, .transport θ]
+
+/-- Frame of the box `b` of the atom `a`, the box derived by `box`. -/
+private def frameOf (a b : Nat) (box : RawDerivation) : RawDerivation :=
+  .frame Φ (r b) (r a) θ box .assumption .assumption
+
+private def box0 : RawDerivation :=
+  .tolerantFrame [(.store 0 [], .keep)] .lengths ⟨[(0, 0, .classes (.arrayAt (r 0)) .intrinsic)]⟩ .truth (r 0) (r 0)
+    .assumption .assumption .assumption
+private def box1 : RawDerivation :=
+  .tolerantFrame [(.store 0 [], .keep), (.pathElems 0 [], .keep)] .everyCells
+    ⟨[(0, 0, .classes (.arrayAt (r 1)) .intrinsic), (1, 0, .classes .intrinsic .intrinsic)]⟩ .truth (r 1) (r 1)
+    .assumption .assumption .assumption
+private def box2 : RawDerivation :=
+  .tolerantFrame [(.path 1 [] (.str "n"), .keep)] .field ⟨[(0, 0, .classes (.fieldAt (r 2)) .intrinsic)]⟩ .truth
+    (r 2) (r 2) .assumption .assumption .assumption
+
+private def goal : Formula := conj [.at .after (r 0), .at .after (r 1), .at .after (r 2), .at .after (r 3)]
+
+#guard isOk (checkScoped arena ⟨6, 6⟩ Γ goal
+  (.andIntro (frameOf 0 5 box0) (.andIntro (frameOf 1 6 box1) (.andIntro (frameOf 2 7 box2)
+    (.andIntro (frameOf 3 8 (.view .assumption)) .truth)))))
+
+-- `c[j] ≐ 5` has its support at `c`'s view store and cells at `keep`; the
+-- effect lets the view store grow, and no certificate separates it.
+#guard errorOf (checkScoped arena ⟨6, 6⟩ Γ (.at .after (r 4)) (frameOf 4 9
+  (.tolerantFrame [(.store 3 [], .keep), (.pathElems 3 [], .keep)] .viewElement ⟨[]⟩ .truth (r 4) (r 4)
+    .assumption .assumption .assumption))) = "tolerantFrame: the effect does not respect the support"
+end ViewWrite
+
+/-! ## P4, the straight-line bound
+
+`|a.flags| = |a.starts|` survives a call of effect
+`{values: any, o.store: any}` where `a.flags # o` and `a.starts # o`, the
+two paths rigid (`astra/parity-plan-out.md`, P4): (Rigid) twice opens the
+paths as fresh variables `y1`, `y2`, the tolerant frame theorem frames each
+length fact at the support `{y1.store: keep, y2.store: keep}` (values and
+`o.store` disjoint from both stores), and the separations of variables are
+invariant. After the call, `i + 1 < |a.flags|` gives `i + 1 < |a.starts|`.
+The rigidity of the two fields comes from their stable contracts, which no
+rule of this checker introduces: they are premises. -/
+
+namespace P4
+private def r (n : Nat) : AssertionRef := ⟨n⟩
+private def fl : Path := ⟨0, ["flags"]⟩
+private def st : Path := ⟨0, ["starts"]⟩
+private def Φ : Footprint := [(.cls .values, .any), (.store 1 [], .any)]
+private def Φ1 : Footprint := Footprint.rename (· + 1) Φ
+private def Φ2 : Footprint := Footprint.rename (· + 1) Φ1
+private def len (p : Path) : Term := p.term .length
+private def le (a b : Term) : Linear.Fact Term := .le [(a, 1), (b, -1)] 0
+private def below : Linear.Fact Term := .le [(Term.value 2, 1), (len fl, -1)] (-2)
+
+private def arena : AssertionArena := ⟨#[
+  -- a2: y2 at 0, y1 at 1, a at 2, o at 3
+  .atom (.linear (le (Term.length 1) (Term.length 0))),   -- 0 |y1| ≤ |y2|
+  .atom (.linear (le (Term.length 0) (Term.length 1))),   -- 1 |y2| ≤ |y1|
+  .separated (.var 1) (.var 3),                           -- 2 y1 # o
+  .separated (.var 0) (.var 3),                           -- 3 y2 # o
+  .and (r 0) (r 1), .and (r 2) (r 3), .and (r 4) (r 5),   -- 4 5 6 (a2)
+  .box Φ2 (r 0), .box Φ2 (r 1), .box Φ2 (r 4), .box Φ2 (r 5), .box Φ2 (r 6),  -- 7–11
+  -- a1: y1 at 0, a at 1, o at 2
+  .atom (.linear (le (Term.length 0) (Term.now .length 1 ["starts"]))),  -- 12
+  .atom (.linear (le (Term.now .length 1 ["starts"]) (Term.length 0))),  -- 13
+  .separated (.var 0) (.var 2),                           -- 14
+  .separated ⟨1, ["starts"]⟩ (.var 2),                    -- 15
+  .and (r 12) (r 13), .and (r 14) (r 15), .and (r 16) (r 17),  -- 16 17 18 (core1)
+  .atom (.equal ⟨2, ["starts"]⟩ (.path (.var 0))), .box topEffect (r 19), .existsValue (r 20),  -- 19 20 21 rigid(a.starts)
+  .and (r 18) (r 21),                                     -- 22 a1
+  .box Φ1 (r 18), .box Φ1 (r 21), .box Φ1 (r 22),          -- 23 24 25
+  -- c: a at 0, o at 1, i at 2
+  .atom (.linear (le (len fl) (len st))), .atom (.linear (le (len st) (len fl))),  -- 26 27
+  .separated fl (.var 1), .separated st (.var 1),          -- 28 29
+  .and (r 26) (r 27), .and (r 28) (r 29), .and (r 30) (r 31),  -- 30 31 32
+  .atom (.equal ⟨1, ["starts"]⟩ (.path (.var 0))), .box topEffect (r 33), .existsValue (r 34),  -- 33 34 35
+  .and (r 32) (r 35),                                     -- 36 c
+  .box Φ (r 36),                                          -- 37
+  .atom (.equal ⟨1, ["flags"]⟩ (.path (.var 0))), .box topEffect (r 38), .existsValue (r 39),  -- 38 39 40 rigid(a.flags)
+  .atom (.linear below),                                  -- 41 i + 1 < |a.flags|
+  .and (r 4) (r 2)]⟩                                      -- 42 the lengths and y1 # o only
+
+#guard arena.check
+
+/-- The support of a length fact over `y1`, `y2`, respected by `Φ2`. -/
+private def frameLength (K : Nat) (seps : Bool) (dA : RawDerivation) : RawDerivation :=
+  .tolerantFrame [(.store 1 [], .keep), (.store 0 [], .keep)] .lengths
+    ⟨[(0, 0, .classes (.arrayAt (r 0)) .intrinsic), (0, 1, .stores (r 2)),
+      (1, 0, .classes (.arrayAt (r 0)) .intrinsic), (1, 1, .stores (r (if seps then 3 else 2)))]⟩
+    .truth (r K) (r K) .assumption .assumption dA
+
+/-- `a2 ⊢ □_Φ2 a2`. -/
+private def e2 : RawDerivation :=
+  .boxAndIntro Φ2 (r 6) (r 4) (r 5) (r 9) (r 10)
+    (.boxAndIntro Φ2 (r 4) (r 0) (r 1) (r 7) (r 8)
+      (frameLength 6 true (.atAndLeft (r 4) (r 1) (.atAndLeft (r 6) (r 5) .assumption)))
+      (frameLength 6 true (.atAndRight (r 4) (r 0) (.atAndLeft (r 6) (r 5) .assumption))))
+    (.tolerantFrame [] .invariant ⟨[]⟩ .truth (r 6) (r 6) .assumption .assumption (.atAndRight (r 6) (r 4) .assumption))
+
+/-- `a1 ⊢ □_Φ1 a1`: (Rigid) at `a.starts` for `y2`. -/
+private def e1 : RawDerivation :=
+  .boxAndIntro Φ1 (r 22) (r 18) (r 21) (r 23) (r 24)
+    (.rigidSubst ⟨1, ["starts"]⟩ 3 (r 21) (r 6) (r 18) (r 11) e2 (.atAndRight (r 22) (r 18) .assumption)
+      (.atAndLeft (r 22) (r 21) .assumption))
+    (.tolerantFrame [] .invariant ⟨[]⟩ .truth (r 22) (r 22) .assumption .assumption
+      (.atAndRight (r 22) (r 18) .assumption))
+
+private def Γ : List Formula :=
+  [.at .before (r 26), .at .before (r 27), .at .before (r 28), .at .before (r 29), .at .before (r 35),
+    .at .before (r 40), .transition Φ, .transport (Substitution.ident 3), .at .after (r 41)]
+
+/-- `c` before the call. -/
+private def cBefore : RawDerivation :=
+  .atAndIntro (r 32) (r 35)
+    (.atAndIntro (r 30) (r 31) (.atAndIntro (r 26) (r 27) .assumption .assumption)
+      (.atAndIntro (r 28) (r 29) .assumption .assumption))
+    .assumption
+
+private def goal : Formula := .linear (.le [(.after (Term.value 2), 1), (.after (len st), -1)] (-2))
+private def lenFacts : List (Linear.Fact StepVar) := [tagFact .after below, tagFact .after (le (len fl) (len st))]
+
+private def raw : RawDerivation :=
+  .cut (.at .after (r 36))
+    (.frame Φ (r 37) (r 36) (Substitution.ident 3)
+      (.rigidSubst fl 2 (r 40) (r 22) (r 36) (r 25) e1 .assumption cBefore) .assumption .assumption)
+    (linRaw lenFacts [(.after (Term.value 2), 1), (.after (len st), -1)] (-2)
+      (.andIntro (.atomToLinear .after (r 41) below .assumption)
+        (.andIntro (.atomToLinear .after (r 26) (le (len fl) (len st))
+          (.atAndLeft (r 30) (r 27) (.atAndLeft (r 32) (r 31) (.atAndLeft (r 36) (r 35) .assumption)))) .truth)))
+
+#guard isOk (checkScoped arena ⟨3, 3⟩ Γ goal raw)
+
+-- Without `y2 # o` the call's write of `o`'s store may be `y2`'s:
+-- the length fact's support is not respected.
+#guard errorOf (checkScoped arena ⟨4, 4⟩ [.at .after (r 42)] (.at .after (r 7))
+  (frameLength 42 true (.atAndLeft (r 4) (r 1) (.atAndLeft (r 42) (r 2) .assumption)))) =
+  "tolerantFrame: the effect does not respect the support"
+end P4
+
+/-! ## P18, the two-field guard, its framing derived
+
+`F = g₁ ∨ g₂ ∨ (L ∧ rigid(p.items.insideExtras) ∧ rigid(p.widths))` with
+`g₁ = □_⊤(p.items ≐ null)`, `g₂ = □_⊤(p.items.insideExtras ≐ null)` and
+`L = |p.items.insideExtras| = |p.widths|`, across a call of effect
+`{values: any}` (stores kept): law (d) twice, and in the third case (Rigid)
+twice and the tolerant frame theorem at the two stores' `keep`
+(`astra/parity-plan-out.md`, P18). The guards and the two rigidities are
+the stable contracts' facts, which no rule of this checker introduces: the
+premise `F` states them. -/
+
+namespace P18
+private def r (n : Nat) : AssertionRef := ⟨n⟩
+private def ex : Path := ⟨0, ["items", "insideExtras"]⟩
+private def wd : Path := ⟨0, ["widths"]⟩
+private def items : Path := ⟨0, ["items"]⟩
+private def Φ : Footprint := (⟨.any, .keep⟩ : Footprints.Closed).fp
+private def len (p : Path) : Term := p.term .length
+private def le (a b : Term) : Linear.Fact Term := .le [(a, 1), (b, -1)] 0
+private def below : Linear.Fact Term := .le [(Term.value 1, 1), (len wd, -1)] (-1)
+private def object : CallEffects.ElemPred := { obj := true }
+
+private def arena : AssertionArena := ⟨#[
+  -- a2: y2 (widths) at 0, y1 (extras) at 1, p at 2, i at 3
+  .atom (.linear (le (Term.length 1) (Term.length 0))), .atom (.linear (le (Term.length 0) (Term.length 1))),  -- 0 1
+  .and (r 0) (r 1),                                                    -- 2
+  .box Φ (r 0), .box Φ (r 1), .box Φ (r 2),                            -- 3 4 5
+  -- a1: y1 at 0, p at 1, i at 2
+  .atom (.linear (le (Term.length 0) (Term.now .length 1 ["widths"]))),  -- 6
+  .atom (.linear (le (Term.now .length 1 ["widths"]) (Term.length 0))),  -- 7
+  .and (r 6) (r 7),                                                    -- 8
+  .atom (.equal ⟨2, ["widths"]⟩ (.path (.var 0))), .box topEffect (r 9), .existsValue (r 10),  -- 9 10 11
+  .and (r 8) (r 11),                                                   -- 12
+  .box Φ (r 8), .box Φ (r 11), .box Φ (r 12),                          -- 13 14 15
+  -- c: p at 0, i at 1
+  .atom (.linear (le (len ex) (len wd))), .atom (.linear (le (len wd) (len ex))),  -- 16 17
+  .and (r 16) (r 17),                                                  -- 18 L
+  .atom (.equal ⟨1, ["widths"]⟩ (.path (.var 0))), .box topEffect (r 19), .existsValue (r 20),  -- 19 20 21
+  .and (r 18) (r 21),                                                  -- 22
+  .atom (.equal ⟨1, ["items", "insideExtras"]⟩ (.path (.var 0))), .box topEffect (r 23), .existsValue (r 24),  -- 23 24 25
+  .and (r 22) (r 25),                                                  -- 26 the third case
+  .box Φ (r 22),                                                       -- 27
+  .atom (.equal items (.literal .nul)), .box topEffect (r 28),         -- 28 29 g₁
+  .atom (.equal ex (.literal .nul)), .box topEffect (r 30),            -- 30 31 g₂
+  .guarded (r 31) (r 26), .guarded (r 29) (r 32),                      -- 32 33 F
+  .box Φ (r 26), .guarded (r 31) (r 34), .box Φ (r 32), .guarded (r 29) (r 36), .box Φ (r 33),  -- 34–38
+  .box Φ (r 25),                                                       -- 39
+  .atom (.contents items object), .atom (.contents ex object),         -- 40 41
+  .atom (.linear below)]⟩                                              -- 42 i < |p.widths|
+
+#guard arena.check
+
+private def frameLength (dA : RawDerivation) : RawDerivation :=
+  .tolerantFrame [(.store 1 [], .keep), (.store 0 [], .keep)] .lengths
+    ⟨[(0, 0, .classes (.arrayAt (r 0)) .intrinsic), (1, 0, .classes (.arrayAt (r 0)) .intrinsic)]⟩
+    .truth (r 2) (r 2) .assumption .assumption dA
+
+private def e2 : RawDerivation :=
+  .boxAndIntro Φ (r 2) (r 0) (r 1) (r 3) (r 4) (frameLength (.atAndLeft (r 2) (r 1) .assumption))
+    (frameLength (.atAndRight (r 2) (r 0) .assumption))
+
+private def e1 : RawDerivation :=
+  .boxAndIntro Φ (r 12) (r 8) (r 11) (r 13) (r 14)
+    (.rigidSubst ⟨1, ["widths"]⟩ 3 (r 11) (r 2) (r 8) (r 5) e2 (.atAndRight (r 12) (r 8) .assumption)
+      (.atAndLeft (r 12) (r 11) .assumption))
+    (.tolerantFrame [] .invariant ⟨[]⟩ .truth (r 12) (r 12) .assumption .assumption
+      (.atAndRight (r 12) (r 8) .assumption))
+
+/-- `□_Φ` of the third case, in its branch; `rex` the rigidity it opens `ex` by. -/
+private def boxThird (rex : Nat) : RawDerivation :=
+  .boxAndIntro Φ (r 26) (r 22) (r 25) (r 27) (r 39)
+    (.rigidSubst ex 2 (r rex) (r 12) (r 22) (r 15) e1 (.atAndRight (r 26) (r 22) .assumption)
+      (.atAndLeft (r 26) (r 25) .assumption))
+    (.tolerantFrame [] .invariant ⟨[]⟩ .truth (r 26) (r 26) .assumption .assumption
+      (.atAndRight (r 26) (r 22) .assumption))
+
+/-- `□_Φ F` before the call, by cases and law (d) twice. -/
+private def boxF (rex : Nat) : RawDerivation :=
+  .guardCases .before (r 33) (r 29) (r 32) .assumption
+    (.boxGuard Φ (r 37) (r 29) (r 36) (r 32) (r 33) (.guardLeft (r 29) (r 36) .assumption))
+    (.boxGuard Φ (r 37) (r 29) (r 36) (r 32) (r 33)
+      (.guardRight (r 29) (r 36)
+        (.guardCases .before (r 32) (r 31) (r 26) .assumption
+          (.boxGuard Φ (r 35) (r 31) (r 34) (r 26) (r 32) (.guardLeft (r 31) (r 34) .assumption))
+          (.boxGuard Φ (r 35) (r 31) (r 34) (r 26) (r 32) (.guardRight (r 31) (r 34) (boxThird rex))))))
+
+private def Γ : List Formula :=
+  [.at .before (r 33), .transition Φ, .transport (Substitution.ident 2),
+    .at .after (r 40), .at .after (r 41), .at .after (r 42)]
+
+private def goal : Formula := .linear (.le [(.after (Term.value 1), 1), (.after (len ex), -1)] (-1))
+private def lenFacts : List (Linear.Fact StepVar) := [tagFact .after below, tagFact .after (le (len wd) (len ex))]
+
+private def afterF : RawDerivation :=
+  .guardCases .after (r 33) (r 29) (r 32) .assumption
+    (.atomClash .after items .nul object (r 28) (r 40) (.boxElim topEffect (r 29) .assumption) .assumption)
+    (.guardCases .after (r 32) (r 31) (r 26) .assumption
+      (.atomClash .after ex .nul object (r 30) (r 41) (.boxElim topEffect (r 31) .assumption) .assumption)
+      (linRaw lenFacts [(.after (Term.value 1), 1), (.after (len ex), -1)] (-1)
+        (.andIntro (.atomToLinear .after (r 42) below .assumption)
+          (.andIntro (.atomToLinear .after (r 17) (le (len wd) (len ex))
+            (.atAndRight (r 18) (r 16) (.atAndLeft (r 22) (r 21) (.atAndLeft (r 26) (r 25) .assumption)))) .truth))))
+
+private def raw (rex : Nat) : RawDerivation :=
+  .cut (.at .after (r 33)) (.frame Φ (r 38) (r 33) (Substitution.ident 2) (boxF rex) .assumption .assumption) afterF
+
+#guard isOk (checkScoped arena ⟨2, 2⟩ Γ goal (raw 25))
+-- The fact through `p.items.insideExtras` needs that path's rigidity: the
+-- rigidity of `p.widths` does not open it.
+#guard errorOf (checkScoped arena ⟨2, 2⟩ Γ goal (raw 21)) = "rigidSubst: no rigidity of the path"
+end P18
 
 /-! ## Exact postconditions of writes -/
 
