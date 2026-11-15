@@ -331,4 +331,40 @@ theorem Effect.heldPosts_call {Ξ T : Fam} {pad : List Tm} (hpad : ∀ a ∈ pad
 
 end CallPost
 
+/-! ### An exact write's range among a contract's preconditions
+
+View-Write at a format (`viewWrite … (some f)`) is exact for the values its
+element type takes; for any other value the host converts it. A contract
+stating an exact write therefore states its value's and index's range
+(`ElementKind.preFacts`) among its preconditions, which its callers
+establish (`ElementKind.exactPre_of_requires`). This is a condition of a
+contract's admission, checked where a document's effect is read
+(`EffectJson`): the front end that writes the contract is unproved, and a
+document can be forged. -/
+
+/-- The formats of the exact view writes a formula states, its
+conjunctions opened. -/
+def exactWriteFormats : FormulaSchema → List ViewFormat
+  | .operation (.viewWrite _ _ _ (some f)) => [f]
+  | .and a b => exactWriteFormats a ++ exactWriteFormats b
+  | _ => []
+
+/-- **Every exact view write a contract states, at either exit and at any
+conjunction depth, has its element type's range facts among the contract's
+preconditions.** -/
+def Effect.exactWritesRequired (e : Effect) : Bool :=
+  (e.exits.normal.ensures ++ e.exits.exceptional.ensures).all fun F =>
+    (exactWriteFormats F).all fun f => (ElementKind.ofFormat f).preFacts.all e.pre.contains
+
+/-- **An admitted contract's exact write has its range among the
+preconditions** (proved): at a call meeting the precondition, the facts an
+exact write needs hold (`ElementKind.exactPre_of_requires`). -/
+theorem Effect.exactWrite_pre {e : Effect} (h : e.exactWritesRequired = true) {x i v : Nat} {f : ViewFormat}
+    (hw : (.operation (.viewWrite x i v (some f)) : FormulaSchema) ∈ e.schema.normal.ensures) :
+    ∀ F ∈ (ElementKind.ofFormat f).preFacts, F ∈ e.pre := by
+  intro F hF
+  have hall := List.all_eq_true.mp h _ (List.mem_append_left _ hw)
+  simp only [exactWriteFormats, List.all_cons, List.all_nil, Bool.and_true] at hall
+  exact List.contains_iff_mem.mp (List.all_eq_true.mp hall F hF)
+
 end Verification.CallEffects

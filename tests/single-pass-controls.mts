@@ -1876,6 +1876,45 @@ control("forged fragment: a store separation removed", async (): Promise<void> =
   say("store separations: the fragment without the callee's separation refused at the read it kept");
 });
 
+// ---------------------------------------------------------------------------
+// Forged effects: a document's serialized effect forged, refused where the
+// verifier reads it (REQUEST-PROTOCOL.md, "The serialized effect").
+
+/** A case's fragment as parsed JSON, outside its declared shape: a forgery
+ * may leave the grammar. */
+function fragmentJson(artifacts: string): Record<string, unknown> {
+  const value: unknown = JSON.parse(readFileSync(fragmentOf(artifacts), "utf8"));
+  assert.ok(isObject(value), "a fragment");
+  return value;
+}
+/** Whether an object is a serialized effect: its four fields. */
+const isEffect = (node: Record<string, unknown>): boolean =>
+  "exits" in node && "promise" in node && "requires" in node && "pre" in node;
+
+control("forged effect: an exact write's range removed from its preconditions", async (): Promise<void> => {
+  // `%ByteSet%`'s signatures state View-Write at their view's format and
+  // their range as postconditions read at the entry; the forgery keeps
+  // those postconditions and removes the preconditions that state the range,
+  // so no caller would establish it. The verifier refuses the contract where
+  // it reads it.
+  const file = "typed-array-element-writes";
+  const artifacts = run(file);
+  honest(file, "writeThenRead@861");
+  const document = fragmentJson(artifacts);
+  let forgedCount = 0;
+  visitAll(document, (node) => {
+    if (isEffect(node) && (JSON.stringify(node.exits) ?? "").includes('"viewWrite":{"x":1,"i":2,"v":3,"format":"')) {
+      node.pre = [];
+      forgedCount++;
+    }
+  });
+  assert.ok(forgedCount > 0, "an exact write's contract");
+  refused(pass(forged(artifacts, "exact-write-range-removed", document)), "writeThenRead@861",
+    "an exact write without its range among its preconditions",
+    /an exact element write states its range among its preconditions/);
+  say(`forged effect: ${forgedCount} exact writes without their range among their preconditions refused at their read`);
+});
+
 control("forged fragment: the rest intrinsic's effect widened", async (): Promise<void> => {
   // Rest collection consumes the intrinsic's stated effect, so the intrinsic at an
   // ordinary arrow's effect leaves the defining unit's growth footprint

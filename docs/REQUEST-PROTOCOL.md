@@ -306,10 +306,6 @@ preconditions (`CallEffects.Effect`). Arrays are ordered lists; every field
 is required but `atEntry`; an object of a union has exactly one of the
 alternatives' tags, at every depth.
 
-
-Arrays are ordered lists; every field is required but `atEntry`; an object
-of a union has exactly one of the alternatives' tags, at every depth.
-
 ```ts
 type Nat = number;            // a safe integer at least 0
 type Integer = number | string; // a safe integer, else its canonical decimal
@@ -414,7 +410,11 @@ an object key twice is refused when its text is read, before its objects
 are read into maps. A decoded effect references no assertion, states
 primitive literals only and nests at most 256 deep
 (`EffectCodec.decode_sound`); every effect of that kind is read back as
-written (`EffectCodec.decode_encode`). The front end's reader of a types
+written (`EffectCodec.decode_encode`). An effect is admitted as a contract
+where every exact view write it states (`viewWrite` at a format, at either
+exit and at any depth of `and`) has its element type's range facts
+(`ElementKind.preFacts`) among `pre`, which its callers establish
+(`EffectJson.admit`, `Effect.exactWrite_pre`). The front end's reader of a types
 table (`decodeCallEffect`) checks the same grammar and reads only safe
 integers. Scope at a callable's arity, canonical transports, the
 independence of a conjunction's second exit and the stability of a rest

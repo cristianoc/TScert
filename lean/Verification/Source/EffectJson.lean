@@ -68,9 +68,18 @@ instance : FromJson HeapKnowledge.IndexFact :=
 
 /-! ## Effects -/
 
-/-- **An effect is read in its serialized form** (`EffectCodec.decode`):
-natives and library declarations arrive through it. -/
-instance : FromJson Effect := ⟨EffectCodec.decode⟩
+/-- **An effect is admitted as a contract**: read in its serialized form
+(`EffectCodec.decode`), and refused unless every exact view write it states
+has its range among its preconditions (`Effect.exactWritesRequired`, whose
+theorem `Effect.exactWrite_pre` the exact write's rule reads). Natives and
+library declarations arrive through it. -/
+def admit (j : Json) : Except String Effect := do
+  let e ← EffectCodec.decode j
+  if !e.exactWritesRequired then
+    throw "an exact element write states its range among its preconditions"
+  pure e
+
+instance : FromJson Effect := ⟨admit⟩
 
 /-- **An effect is written in its serialized form** where it serializes
 (`EffectCodec.checked`); a writer that can refuse uses this. -/

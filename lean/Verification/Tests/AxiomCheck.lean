@@ -378,6 +378,8 @@ run_cmd do
   check ``Verification.PromiseCalls.statesAppend_appends
   check ``Verification.PromiseCalls.statesViewGrowth_changes
   check ``Verification.PromiseCalls.exactWriteOf_exact
+  check ``Verification.PromiseCalls.exactWriteOf_requires
+  check ``Verification.CallEffects.Effect.exactWrite_pre
   check ``Verification.PromiseCalls.storeHeld_sound
   check ``Verification.HeapKnowledge.storeFollows_sound
   check ``Verification.HeapKnowledge.restateStores_holds

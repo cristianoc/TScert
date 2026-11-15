@@ -2407,6 +2407,23 @@ theorem exactWriteOf_exact {eff : Effect} {k : CallEffects.ElementKind} (h : exa
     · cases hk
   · cases hk
 
+/-- **An admitted contract's exact write is established by its caller**
+(proved): where the contract was admitted (`Effect.exactWritesRequired`, the
+effect reader's check), the range facts the exact write reads (`ExactPre`)
+hold at every call meeting its precondition; a contract read from a
+document states no range its callers do not establish. -/
+theorem exactWriteOf_requires {eff : Effect} {k : CallEffects.ElementKind} (h : exactWriteOf eff = some k)
+    (hadm : eff.exactWritesRequired = true) {r : Tm} {args : List Tm} {heap : Heap}
+    (hq : eff.Requires r args heap) : CallEffects.ExactPre k args := by
+  obtain ⟨F, hF, hk⟩ := List.exists_of_findSome?_eq_some h
+  split at hk
+  · rename_i f
+    split at hk
+    · cases hk
+      exact CallEffects.ElementKind.exactPre_of_requires (CallEffects.Effect.exactWrite_pre hadm hF) hq
+    · cases hk
+  · cases hk
+
 /-- **A call's fact kept by its postcondition** (the note's Entry, from the
 old fact, the transition and the normal exit's exact postconditions,
 `callPosts`): where the normal exit states the receiver's store extended
