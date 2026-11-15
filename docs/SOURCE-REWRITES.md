@@ -4234,15 +4234,16 @@ statements of 17 functions in the census of 6be11ce.
 
 ### A spread of a record of readonly fields
 
-`tools/type-graph.mts#footprintEffect` constructs the nine fields of a
-`CallEffect` from its footprint and optional guarantees. The options have
-type `Partial<Omit<CallEffect, "footprint">>`; an omitted or `undefined`
-option gives the field its `false` or `null` default. Explicit `false` and
-`null` retain those values. `promiseEffect` supplies its promise through
-this constructor. `withPromise` copies an effect's nine fields with a
-replacement promise, retaining every other guarantee. All three constructors
-state checked normal-return preservation of values and stores: their bodies
-read metadata and allocate fresh records through the existing footprint rules.
+`tools/type-graph.mts#footprintEffect` constructs a `CallEffect`, its two
+exits, promise and preconditions, from its footprint and optional
+guarantees (`EffectOptions`, an authoring type of its own); an omitted or
+`undefined` option gives the guarantee its `false` or `null` default.
+`promiseEffect` supplies its promise through this constructor. `withPromise`
+builds an effect of the same exits and preconditions with a replacement
+promise, and `withConditions` one with further preconditions and further
+facts a normal return states. These constructors state checked
+normal-return preservation of values and stores: their bodies read metadata
+and allocate fresh records through the existing footprint rules.
 
 A `CallEffect` has readonly fields. Such a record permits host values,
 whose own keys the type does not enumerate. Object spread requires a
@@ -4252,14 +4253,12 @@ contract that excludes them
 
 - **Equivalent form:** the effect's known footprint and selected guarantees
   are passed to `footprintEffect`. A promise update of existing metadata
-  calls `withPromise`. The replaced operands are ordinary effects constructed
-  by the metadata factories; they own exactly the nine data properties in
-  constructor order. Construction retains the same values and key order,
-  including the identities of the footprint, promise and element-kind arrays.
-  `withPromise` retains the unchanged fields of its input. The one-argument
-  constructor calls retain their defaults. At these sites the arguments are
-  lexical reads, reads of ordinary data properties and fresh literals. They
-  invoke no code, and the intermediate allocations are unobserved.
+  calls `withPromise`, and a declaration's conditions `withConditions`. The
+  replaced operands are ordinary effects constructed by the metadata
+  factories; they own exactly the four data properties in constructor
+  order. At these sites the arguments are lexical reads, reads of ordinary
+  data properties and fresh literals. They invoke no code, and the
+  intermediate allocations are unobserved.
 - **Avoided form and cost:** `{ ...emptyEffect, onThrow: true }` and
   `{ ...footprintEffect(footprint), promise }` spread a readonly contract.
   Tracking the constructor's fresh value through that annotation would
@@ -4267,14 +4266,12 @@ contract that excludes them
   uses the existing object checks. A custom call allocates an options record
   and its result; the avoided form allocates its result and, for an inline
   constructor operand, the intermediate effect record. A promise update
-  allocates its result and retains the input effect.
+  allocates its result and retains the input effect's exits.
 - **Scope:** `blocker-prep-effect-spread` constructs an on-throw effect;
   `blocker-round-collection-effect` constructs a native collection guard's
   promise. `spread-readonly-record-refused` retains the host exclusion.
-  `tools/library-modules.mts` retains its readonly effect spreads with the
-  same host-exclusion obligation ([catalog scope](../WORK.md#status)).
-  `tools/compiler-api.mts#requestReading` copies its local effect's nine
-  fields explicitly; that local owns those fields and no code writes it.
+  `tools/library-modules.mts` and `tools/compiler-api.mts#requestReading`
+  build their effects through `footprintEffect`.
 - **Commit:** the introducing commit.
 
 ### A parameter type computed from a compiler-API method

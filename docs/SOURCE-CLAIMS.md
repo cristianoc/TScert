@@ -235,8 +235,9 @@ primitive table above, so the receiver accepts any value. Its claim is:
 
 ```json
 {"scheme": {
-  "effect": {"footprint": {"value":"any","store":"any"}, "promise": null, "fresh": false, "receiverStore": false, "onThrow": false,
-    "receiverOwn": false, "freshObject": false, "requires": null, "elements": null},
+  "effect": {"exits": {"normal": {"frame": TOP, "ensures": []},
+                       "exceptional": {"frame": TOP, "ensures": []}},
+             "promise": null, "requires": null, "pre": []},
   "typeParams": [{"name":"T","bound":null,"resolution":null}],
   "this": [4], "params": [{"param":"T"}],
   "rest": null, "result": {"param":"T"}
@@ -250,44 +251,17 @@ makes `o` and `r` binders of the same scheme;
 `this` is the required receiver type, `params` is the fixed parameter list,
 and `rest` is `null` or the surplus-element type. Binder names resolve
 lexically; a nested scheme's binders hide outer binders of the same names.
-The effect is `{"footprint": f, "promise": p, "fresh": b, "receiverStore": c, "onThrow": o, "receiverOwn": w,
-"freshObject": j, "requires": q, "elements": e, "pre": P, "ensures": E, "receiverGrows": g, "elementWrite": x}`. The footprint `f` is a
-[closed footprint](FOOTPRINTS.md#changes-and-footprints), `{"value":v,"store":s}`
-with `v` one of `keep` and `any` and `s` one of `keep`, `grow` and `any`: on
-normal return, the locations of the entry heap holding a value change at most
-by `v`, those holding an array store at most by `s`. The promise `p` is `null`,
-`{"guards":{"param":i}}` or `{"asserts":{"param":i}}`: `guards` and `asserts`
-promise the `i`-th actual a value of the result, on a `true` result or a
-normal return ([user-defined guards](SOURCE-ELABORATION.md#user-defined-guards)).
-`fresh` states that a normal return's value has an array store the call
-allocated; `receiverStore` that the footprint bounds every location but the
-receiver's array store, which the call may change arbitrarily
-([effect-qualified contracts](SEMANTICS.md#effect-qualified-call-contracts));
-`onThrow` that the footprint also bounds the heap a throw leaves
-([exceptional footprints](SOURCE-ELABORATION.md#exceptional-footprints));
-`receiverOwn` that it bounds every location but the receiver's own and
-`freshObject` that a normal return's value is an object the call allocated
-([a call changing only its receiver](PROGRAM-TYPING.md#a-call-changing-only-its-receiver)).
-`requires` and `elements` are `null` or a list of the kinds
-`"null"`, `"undefined"`, `"boolean"`, `"number"`, `"string"`, `"bigint"`,
-`"symbol"` and `"object"`, each at most once and in this order: a predicate the
-receiver's present elements meet where the call starts, and one they meet
-where it returns `true` ([the elements fact](FOOTPRINTS.md#the-elements-fact)).
-`receiverGrows` states that a normal return changed no location but the
-receiver's array store, which it extended by the call's actuals, its old
-elements at their indices; only a native's audited signature states it
-([native footprints](SOURCE-CONTRACTS.md#native-footprints)).
-`elementWrite` is `null`, `"stores"` or `"exact"`: a normal return changed no
-location holding no store and kept every store's length, as a typed array's
-element write does, and, where `"exact"`, the store of elements of the first
-actual lists the same entries but at the second actual, where it lists a
-location holding the third; only a native's audited signature states it
-([stated library types](SOURCE-CONTRACTS.md#stated-library-types)).
-Where the frame states store regions, the effect has, besides,
-`"regions": [{"position": i, "path": p}, …]`, nonempty: the store the
-fields `p` read from the call position `i` select at the call's entry may
-change arbitrarily, the footprint `f` bounding every other location
-([stated effects](SOURCE-ELABORATION.md#stated-effects)).
+`TOP` is the frame letting every location change, one entry
+`{"region": {"cls": selector}, "change": "any"}` per content class. The
+effect is [the serialized effect](REQUEST-PROTOCOL.md#the-serialized-effect):
+each exit's frame bounds the locations of the entry heap it may change, its
+postconditions state what holds where it completes; the promise `null`,
+`{"guards":{"param":i}}` or `{"asserts":{"param":i}}` promises the `i`-th
+actual a value of the result, on a `true` result or a normal return
+([user-defined guards](SOURCE-ELABORATION.md#user-defined-guards)); `requires`
+and `pre` are the call's preconditions. A function's proposed exits (`exits`)
+and its returned function's (`resultExits`) are exits in the same form: a
+closed frame on a normal return, and on a throw that frame or `⊤`.
 Each is an obligation the pass checks.
 
 A call expression can propose an instance with:

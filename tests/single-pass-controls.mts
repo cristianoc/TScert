@@ -39,7 +39,8 @@ import { deferredIdentity } from "../tools/type-term.mts";
 import { cases } from "../pipeline/cases.mts";
 import type { Ast } from "../tools/fragment.mts";
 import type { TypeDefinition, TypeTerm } from "../tools/declaration-types.mts";
-import { emptyEffect, ordinaryEffect } from "../tools/type-graph.mts";
+import type { StatedFrame, StoreRegion } from "../tools/type-graph.mts";
+import { emptyEffect, ordinaryEffect, statedExits } from "../tools/type-graph.mts";
 import { entryRowControl, forcedProposals, interfaceControls } from "./single-pass-control-inputs.mts";
 
 const root = resolve(import.meta.dirname, "..");
@@ -521,15 +522,20 @@ control("forged fragment: a closure's written precondition removed", async (): P
   say(`closures: the fragment without the closure's written precondition refused (${lost.join(", ") || "the front"})`);
 });
 
-/** A function's statement forged in the fragment: `stated` replaced. */
+/** A function's statement forged in the fragment: `stated` replaced by the
+ * exits of a written frame (`statedExits`). */
 type Stated = NonNullable<Ast["functions"][number]["stated"]>;
-function forgedStatement(artifacts: string, name: string, document: string, stated: Stated,
-    expected?: Stated["regions"]): Pass {
+/** The store regions a statement's normal frame states. */
+const statedRegions = (stated: Stated): StoreRegion[] => stated.normal.frame.flatMap(({ region, change }) =>
+  typeof region === "object" && "path" in region && region.path.key === "[]" && change === "any"
+    ? [{ position: region.path.x, path: [...region.path.fields] }] : []);
+function forgedStatement(artifacts: string, name: string, document: string, stated: StatedFrame,
+    expected?: StoreRegion[]): Pass {
   const ast = fragmentAst(artifacts);
   const fn = must(ast.functions.find((f) => f.name === name), name);
   if (expected === undefined) assert.equal(fn.stated, null, `${name} states nothing`);
-  else assert.deepEqual(fn.stated?.regions, expected, `${name}'s regions`);
-  fn.stated = stated;
+  else assert.deepEqual(fn.stated === null ? null : statedRegions(fn.stated), expected, `${name}'s regions`);
+  fn.stated = statedExits(stated);
   return pass(forged(artifacts, document, ast));
 }
 
@@ -554,7 +560,7 @@ control("forged fragment: store regions moved", async (): Promise<void> => {
     [{ position: 2, path: [] }]), trim, "trim's region at n");
   const ownAst = fragmentAst(artifacts);
   must(ownAst.functions.find((f) => f.name === "shrink"), "shrink").stated =
-    { footprint: { value: "any", store: "keep" }, onThrow: false, fresh: false, regions: [{ position: 0, path: [] }] };
+    statedExits({ footprint: { value: "any", store: "keep" }, onThrow: false, fresh: false, regions: [{ position: 0, path: [] }] });
   refused(pass(forged(artifacts, "forged-receiver-region-fragment", ownAst)), shrink, "shrink's region at the receiver");
   say("forged store regions: a region moved to another parameter, and one at an undeclared receiver, each refused at its unit");
 });
@@ -988,9 +994,7 @@ control("forged declarations: the Promise tag", async (): Promise<void> => {
       "calls" in prototype, "the copied prototype record");
     const fields: unknown[] = prototype.fields;
     for (const field of fields) if (field && typeof field === "object" && "readonly" in field) field.readonly = false;
-    prototype.calls = [{ k: "function", effect: { footprint: { value: "any", store: "any" }, promise: null, fresh: false,
-      receiverStore: false, onThrow: false, receiverOwn: false, freshObject: false, requires: null, elements: null,
-      pre: [], ensures: [], receiverGrows: false, elementWrite: null },
+    prototype.calls = [{ k: "function", effect: ordinaryEffect,
       receiver: null, params: [], rest: null,
       result: { k: "atom", name: "unknown", span: [0, 0] }, span: [0, 0] }];
     return must(JSON.stringify(contract), "the callable contract's text");
@@ -1197,6 +1201,9 @@ control("forged fragment: an array owning toJSON", async (): Promise<void> => {
   say("an array owning toJSON, forged past the parser: refused at the empty intersection");
 });
 
+/** A statement keeping every location, on a throw too: `Modifies<{}, T>`. */
+const emptyStatement: StatedFrame = { footprint: { value: "keep", store: "keep" }, onThrow: false, fresh: false, regions: [] };
+
 control("forged fragment: a generic closure's statement", async (): Promise<void> => {
   const artifacts = run("generic-function-type-annotation");
   const fragment = readFileSync(fragmentOf(artifacts), "utf8");
@@ -1206,7 +1213,7 @@ control("forged fragment: a generic closure's statement", async (): Promise<void
   assert.ok(unstated > lambda, "its statement");
   const path = join(artifacts, "forged-generic-stated-fragment.json");
   writeFileSync(path, fragment.slice(0, unstated) +
-    '"stated":{"footprint":{"value":"keep","store":"keep"},"onThrow":false,"fresh":false,"regions":[]}' + fragment.slice(unstated + '"stated":null'.length));
+    `"stated":${JSON.stringify(statedExits(emptyStatement))}` + fragment.slice(unstated + '"stated":null'.length));
   refusedFile(pass(path), "forged", /a generic closure states no effect/);
   say("stated generic closure: a statement written into the Fragment refused");
 });
@@ -1216,7 +1223,7 @@ control("forged fragment: a method's statement dropped", async (): Promise<void>
   // with `bump`'s statement dropped, the class is still refused.
   const artifacts = run("invalid-method-effect-construction");
   const fragment = readFileSync(fragmentOf(artifacts), "utf8");
-  const statement = '"stated":{"footprint":{"value":"keep","store":"keep"},"onThrow":false,"fresh":false,"regions":[]}';
+  const statement = `"stated":${JSON.stringify(statedExits(emptyStatement))}`;
   assert.equal(fragment.split(statement).length, 2, "bump's statement");
   const path = join(artifacts, "forged-unstated-fragment.json");
   writeFileSync(path, fragment.replace(statement, '"stated":null'));

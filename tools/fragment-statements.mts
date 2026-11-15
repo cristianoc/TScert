@@ -9,7 +9,8 @@ import * as ts from "typescript/unstable/ast";
 import type { Expression, FunctionDeclaration, Node, Statement } from "typescript/unstable/ast";
 import type { BindingAst, Expr, FunctionAst, FunctionParamAst, Guard, LoopInvariant, PatternAst, PatternElemAst, PatternPropAst, Stmt } from "./fragment.mts";
 import type { Span } from "./span.mts";
-import type { DeclarationIdentity, GuardTag, IndexFact, StatedEffect, TypeTerm } from "./declaration-types.mts";
+import type { DeclarationIdentity, GuardTag, IndexFact, TypeTerm } from "./declaration-types.mts";
+import { statedExits, type StatedFrame } from "./type-graph.mts";
 import { assertionFailureName, asyncCompleteName, asyncReturnName, forInName, iterateForInName, iterateName } from "./intrinsics.mts";
 import { GENERATOR, UNCLOSABLE, booleanForm, booleanReturn, bindingScope, firstOptional, capturesLoopLet, continueBlock, continueLabel, continueTarget, type Loop, forInEntryReads, labeledTarget, statementLabel, freeOffsets, iterationLabel, jumpTarget, nameSlot, namesRead, parameterName, patternNames, skipParentheses, switchLabel, TYPEOF_SHAPES } from "./fragment-support.mts";
 import type { Gate } from "./fragment-parse.mts";
@@ -2026,7 +2027,7 @@ export function controlStmt(this: Gate, node: Statement): Modifies<{ values: "an
 
 /** A declaration's header as `functionDecl` reads it: its result, its
  * guard, its stated effect and its parameters' contracts. */
-type FunctionHeader = { retType: TypeTerm; guard: Guard | null; stated: StatedEffect | null; parameterTypes: TypeTerm[] };
+type FunctionHeader = { retType: TypeTerm; guard: Guard | null; stated: StatedFrame | null; parameterTypes: TypeTerm[] };
 
 /** A declaration with overloads, its implementation `node`: one unit per
  * overload, each the implementation's code at that overload's parameter and
@@ -2233,7 +2234,7 @@ export function functionDecl(this: Gate, node: FunctionDeclaration, signature: F
       params,
       retType,
       guard,
-      stated,
+      stated: stated === null ? null : statedExits(stated),
       requires,
       ensures,
       completion: isAsync ? "async" : "sync",

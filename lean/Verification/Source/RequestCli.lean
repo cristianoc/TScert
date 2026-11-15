@@ -207,6 +207,8 @@ def readJson (path : String) : IO (Except String Json) := do
     | return .error s!"{path}: a text that is not valid UTF-8 is refused"
   if let some what := wireSurrogate text then
     return .error s!"{path}: a string that is not well-formed Unicode, {what}, is refused"
+  if let some what := EffectCodec.duplicateKey? text then
+    return .error s!"{path}: {what}, which a document refuses"
   return Json.parse text
 
 /-- Export the same execution graph constructor used by typed extraction. -/

@@ -329,7 +329,26 @@ structure Function (ι : Type) where
   resultFootprint : Footprints.Closed
   /-- Omitted by a document whose closures each advertise one signature. -/
   arrows : Option (List (ArrowClaims ι)) := none
-  deriving FromJson
+
+/-- A function's claims read from the document: its proposed exits (`exits`)
+and its returned function's (`resultExits`) are a claim's exits
+(`EffectJson.classOfExits`), the returned function's with no throw bound. -/
+instance [FromJson ι] : FromJson (Function ι) where
+  fromJson? j := do
+    let (footprint, onThrow) ← EffectJson.classOfExits (← fromJson? (← j.getObjVal? "exits"))
+    let (resultFootprint, resultThrow) ← EffectJson.classOfExits (← fromJson? (← j.getObjVal? "resultExits"))
+    if resultThrow then throw "a returned function's proposed exits bound no throw"
+    let arrows ← match j.getObjVal? "arrows" with
+      | .ok a => some <$> fromJson? a
+      | .error _ => pure none
+    let name ← j.getObjValAs? String "name"
+    let namePos ← fromJson? (← j.getObjVal? "namePos")
+    let params ← fromJson? (← j.getObjVal? "params")
+    let result ← fromJson? (← j.getObjVal? "result")
+    let entries ← fromJson? (← j.getObjVal? "entries")
+    let expressions ← fromJson? (← j.getObjVal? "expressions")
+    let contracts ← fromJson? (← j.getObjVal? "contracts")
+    return ⟨name, namePos, params, result, entries, expressions, contracts, footprint, onThrow, resultFootprint, arrows⟩
 
 /-- Absence asserts nothing: a document whose closures each advertise one
 signature states no per-arrow claims, and no producer writes an empty list. -/
@@ -337,8 +356,8 @@ instance [ToJson ι] : ToJson (Function ι) where
   toJson f := Json.mkObj ([("name", toJson f.name), ("namePos", toJson f.namePos),
     ("params", toJson f.params), ("result", toJson f.result),
     ("entries", toJson f.entries), ("expressions", toJson f.expressions),
-    ("contracts", toJson f.contracts), ("footprint", toJson f.footprint), ("onThrow", toJson f.onThrow),
-    ("resultFootprint", toJson f.resultFootprint)] ++
+    ("contracts", toJson f.contracts), ("exits", toJson (EffectJson.classExits f.footprint f.onThrow)),
+    ("resultExits", toJson (EffectJson.classExits f.resultFootprint false))] ++
     (match f.arrows with
      | none | some [] => []
      | some rows => [("arrows", toJson rows)]))

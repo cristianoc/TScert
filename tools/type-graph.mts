@@ -3,7 +3,7 @@
  * A row and a label list both denote unions. Contracts within one clause are
  * simultaneous requirements (including all arrows of an overload).
  */
-import type { CallEffect, CallPromise, ClosedFootprint, ElementKind, ElementKinds, ElementWrite, ExactElementWrite, BodyFact, BodyVariable, IndexFact, LinearTerm, PropertyKey, StoreRegion } from "./declaration-types.mts";
+import type { CallEffect, CallPromise, ClosedFootprint, ElementKind, ElementKinds, ElementWrite, ExactElementWrite, Exits, ExitSchema, Formula, Frame, IndexFact, LinearTerm, OperationPost, PropertyKey, Selector, TransportSchema, WitnessSeq } from "./declaration-types.mts";
 import { requireWellFormed } from "./wire-strings.mts";
 import {
   hasExactly,
@@ -51,6 +51,16 @@ export const closedFootprints: readonly ClosedFootprint[] = [
   { value: "keep", store: "grow" }, { value: "any", store: "grow" },
   { value: "keep", store: "any" }, { value: "any", store: "any" },
 ];
+/** A store region of a written frame: the store the value at the call
+ * position `position` (`0` the receiver) selects through the fields `path`
+ * at the call's entry (`Footprints.ArgumentStoreRegion`). */
+export type StoreRegion = { readonly position: number; readonly path: readonly string[] };
+/** A written statement's frame (`Modifies<P, T>`, `Fresh<T>`,
+ * SOURCE-ELABORATION.md, "Stated effects"), an authoring form: its closed
+ * footprint, off the stores its `regions` select, which may change
+ * arbitrarily; whether it holds on a throw; whether the result is fresh.
+ * The Fragment states its exits (`statedExits`). */
+export type StatedFrame = { footprint: ClosedFootprint; onThrow: boolean; fresh: boolean; regions: StoreRegion[] };
 /** The guarantees a footprint's signature states beside its footprint, an
  * authoring form of an effect (`footprintEffect` builds the effect): its
  * promise, whether its footprint also bounds a throw (`onThrow`), whether
@@ -90,58 +100,128 @@ export function exactWritePre(write: ExactElementWrite): Modifies<{}, IndexFact[
 }
 const isExactWrite = (w: ElementWrite | null): w is ExactElementWrite =>
   w === "exactUint8" || w === "exactUint16" || w === "exactInt32" || w === "exactFloat64";
-/** A signature effect of a footprint and its options, with false and null
- * for omitted guarantees. An exact element write states its range in its
- * preconditions (`exactWritePre`); an effect without it is refused. */
+const formatOfWrite = (w: ExactElementWrite): ViewFormat =>
+  w === "exactUint8" ? "uint8" : w === "exactUint16" ? "uint16" : w === "exactInt32" ? "int32" : "float64";
+/** The selector of one content class (`Selector.values`, `.arrays`, `.views`). */
+const valuesClass: Selector = { value: true, array: false, view: false };
+const arraysClass: Selector = { value: false, array: true, view: false };
+const viewsClass: Selector = { value: false, array: false, view: true };
+/** **A closed footprint's frame** (`Closed.fp`): one entry per content class,
+ * its store change on both store classes (`Closed.ofStores`). */
+export const classFrame = (c: ClosedFootprint): Modifies<{}, Frame> => [
+  { region: { cls: valuesClass }, change: c.value }, { region: { cls: arraysClass }, change: c.store },
+  { region: { cls: viewsClass }, change: c.store }];
+/** The frame letting every location change: the note's `⊤`. */
+export const topFrame: Frame = classFrame(topFootprint);
+/** **An exit's guarantee**: its frame and its postconditions (`ExitSchema`). */
+export const exitSchema = (frame: Frame, ensures: readonly Formula[] = []): Modifies<{}, ExitSchema> =>
+  ({ frame, ensures });
+/** **An effect of its exits** (`CallEffects.Effect`), its promise and its
+ * preconditions. */
+export const effect = (exits: Exits<ExitSchema>,
+    o?: { readonly promise?: CallPromise | null; readonly requires?: ElementKinds | null; readonly pre?: readonly IndexFact[] }):
+    Modifies<{}, CallEffect> =>
+  ({ exits, promise: o?.promise ?? null, requires: o?.requires ?? null, pre: [...(o?.pre ?? [])] });
+/** A postcondition stating an index fact in phase `phase`, its positions
+ * raised by `lift`. */
+export const factPost = (phase: "before" | "after", lift: number, fact: IndexFact): Modifies<{}, Formula> =>
+  ({ operation: { post: { fact: { phase, lift, fact } } } });
+/** A postcondition stating the transport of names `t`. */
+export const transportPost = (t: TransportSchema): Modifies<{}, Formula> => ({ transport: t });
+/** A postcondition stating the append of `args` to the array at entry
+ * position `x`, the exit position `exit` holding it. */
+export const pushPost = (x: number, exit: number, args: WitnessSeq): Modifies<{}, Formula> =>
+  ({ operation: { post: { push: { x, exit, args } } } });
+const operation = (post: OperationPost): Formula => ({ operation: { post } });
+/** The written result of an element write: entry position 3 read at exit
+ * position 0, every other entry position `i` at `i + 1`
+ * (`writtenResultSchema`). */
+const writtenResult: TransportSchema = { shift: 1, overrides: [[3, { path: { root: 0, fields: [] } }]], boxed: false, stable: [] };
+/** **An element write's postconditions** (`ElementWrite.schemaPosts`): the
+ * views' growth; for an element assignment View-Write at the typed array's
+ * format and the result the value written; for an exact write View-Write at
+ * its format, the facts its precondition gives, and the result. */
+function writePosts(w: ElementWrite): Modifies<{}, Formula[]> {
+  const grow: Formula = { transition: { effect: [{ region: { cls: viewsClass }, change: "grow" }] } };
+  if (w === "stores") return [grow];
+  if (w === "assign") return [grow, operation({ viewWrite: { x: 1, i: 2, v: 3, format: null } }), transportPost(writtenResult)];
+  return [grow, operation({ viewWrite: { x: 1, i: 2, v: 3, format: formatOfWrite(w) } }),
+    ...exactWritePre(w).map(f => factPost("before", 0, f)), transportPost(writtenResult)];
+}
+/** The receiver's store entry of a frame: its array store at `any`. */
+const receiverStoreEntry: Frame[number] = { region: { field: { x: 0, key: "[]" } }, change: "any" };
+/** **A signature effect of a footprint and its options**, the exits it
+ * states (`Exits`): the normal frame the footprint's class entries, then the
+ * receiver's own locations (else its store) at `any`; the normal
+ * postconditions the fresh result store and object, the receiver's
+ * elements where the result is `true`, the facts after, the receiver's growth
+ * and append, and the element write's; the exceptional exit the same frame
+ * where `onThrow`, `⊤` otherwise, with no postcondition. An exact element
+ * write states its range in its preconditions (`exactWritePre`); an effect
+ * without it is refused. */
 export const footprintEffect = (footprint: ClosedFootprint, options?: EffectOptions): Modifies<{}, CallEffect> => {
   const elementWrite = options?.elementWrite ?? null;
   const pre = options?.pre ?? [];
-  if (isExactWrite(elementWrite) && !exactWritePre(elementWrite).every(f => pre.some(g => JSON.stringify(g) === JSON.stringify(f))))
+  if (isExactWrite(elementWrite) && !exactWritePre(elementWrite).every(f => pre.some(g => canonicalText(g) === canonicalText(f))))
     throw Error(`an exact element write '${elementWrite}' states its range among its preconditions`);
-  return { footprint, promise: options?.promise ?? null, fresh: options?.fresh ?? false,
-    receiverStore: options?.receiverStore ?? false, onThrow: options?.onThrow ?? false,
-    receiverOwn: options?.receiverOwn ?? false, freshObject: options?.freshObject ?? false,
-    requires: options?.requires ?? null, elements: options?.elements ?? null, pre: [...pre],
-    ensures: [...(options?.ensures ?? [])], receiverGrows: options?.receiverGrows ?? false, elementWrite };
+  const receiver: Frame = options?.receiverOwn
+    ? [{ region: { inCls: { region: { own: { x: 0 } }, selector: valuesClass } }, change: "any" }]
+    : options?.receiverStore ? [receiverStoreEntry] : [];
+  const frame: Frame = [...classFrame(footprint), ...receiver];
+  const elements = options?.elements ?? null;
+  const ensures: Formula[] = [
+    ...(options?.fresh ? [operation({ freshStore: { x: 0 } })] : []),
+    ...(options?.freshObject ? [operation({ freshObject: { x: 0 } })] : []),
+    ...(elements === null ? [] : [operation({ elementsWhen: { x: 0, value: "true", y: 1, predicate: elements } })]),
+    ...(options?.ensures ?? []).map(f => factPost("after", 0, f)),
+    ...(options?.receiverGrows ? [{ transition: { effect: [receiverStoreEntry] } }, operation({ storeExtends: { x: 0 } }),
+      pushPost(0, 1, { restFrom: { first: 1 } })] : []),
+    ...(elementWrite === null ? [] : writePosts(elementWrite))];
+  return effect({ normal: exitSchema(frame, ensures), exceptional: options?.onThrow ? exitSchema(frame) : exitSchema(topFrame) },
+    { promise: options?.promise ?? null, requires: options?.requires ?? null, pre });
+};
+/** **A statement's exits** (`Exits.ofStated`): the closed footprint's frame
+ * and the store regions at `any`, a fresh result store where it states one,
+ * and on a throw the same frame where it states `onThrow`, `⊤` otherwise. */
+export const statedExits = (s: StatedFrame): Modifies<{}, Exits<ExitSchema>> => {
+  const frame: Frame = [...classFrame(s.footprint),
+    ...s.regions.map((r): Frame[number] => ({ region: { path: { x: r.position, fields: r.path, key: "[]" } }, change: "any" }))];
+  return { normal: exitSchema(frame, s.fresh ? [operation({ freshStore: { x: 0 } })] : []),
+    exceptional: s.onThrow ? exitSchema(frame) : exitSchema(topFrame) };
 };
 /** An effect with a replacement promise and every other guarantee retained. */
-export const withPromise = (effect: CallEffect, promise: CallPromise | null): Modifies<{}, CallEffect> =>
-  ({ footprint: effect.footprint, promise, fresh: effect.fresh, receiverStore: effect.receiverStore,
-    onThrow: effect.onThrow, receiverOwn: effect.receiverOwn, freshObject: effect.freshObject,
-    requires: effect.requires, elements: effect.elements, pre: effect.pre, ensures: effect.ensures,
-    receiverGrows: effect.receiverGrows, elementWrite: effect.elementWrite,
-    ...(effect.regions === undefined ? {} : { regions: effect.regions }) });
+export const withPromise = (e: CallEffect, promise: CallPromise | null): Modifies<{}, CallEffect> =>
+  effect(e.exits, { promise, requires: e.requires, pre: e.pre });
+/** An effect with further postconditions at one exit, every other guarantee
+ * retained. */
+export const withPosts = (e: CallEffect, exit: "normal" | "exceptional", posts: readonly Formula[]): Modifies<{}, CallEffect> => {
+  const at = (q: ExitSchema): ExitSchema => exitSchema(q.frame, [...q.ensures, ...posts]);
+  return effect(exit === "normal" ? { normal: at(e.exits.normal), exceptional: e.exits.exceptional }
+    : { normal: e.exits.normal, exceptional: at(e.exits.exceptional) }, { promise: e.promise, requires: e.requires, pre: e.pre });
+};
 /** An effect with further preconditions and further facts a normal return
- * states, every other guarantee retained: a declaration's `@requires` and
- * `@ensures`. */
-export const withConditions = (effect: CallEffect, pre: readonly IndexFact[], ensures: readonly IndexFact[]):
-    Modifies<{}, CallEffect> =>
-  ({ footprint: effect.footprint, promise: effect.promise, fresh: effect.fresh, receiverStore: effect.receiverStore,
-    onThrow: effect.onThrow, receiverOwn: effect.receiverOwn, freshObject: effect.freshObject,
-    requires: effect.requires, elements: effect.elements, pre: [...effect.pre, ...pre],
-    ensures: [...effect.ensures, ...ensures], receiverGrows: effect.receiverGrows, elementWrite: effect.elementWrite,
-    ...(effect.regions === undefined ? {} : { regions: effect.regions }) });
-/** A call promise's JSON text, built from its one key and its parameter. */
-function promiseText(p: CallPromise): Modifies<{}, string> {
-  return p.guards !== undefined ? `{"guards":{"param":${JSON.stringify(p.guards.param)}}}`
-    : `{"asserts":{"param":${JSON.stringify(p.asserts.param)}}}`;
+ * states (`fact after 0`), every other guarantee retained: a declaration's
+ * `@requires` and `@ensures`. */
+export const withConditions = (e: CallEffect, pre: readonly IndexFact[], ensures: readonly IndexFact[]):
+    Modifies<{}, CallEffect> => {
+  const posted = withPosts(e, "normal", ensures.map(f => factPost("after", 0, f)));
+  return effect(posted.exits, { promise: posted.promise, requires: posted.requires, pre: [...posted.pre, ...pre] });
+};
+/** **A value's canonical text**: JSON with every object's keys in code point
+ * order and every list in its order, absent fields left out; Lean writes a
+ * document's objects in the same key order. */
+export function canonicalText(v: unknown): Modifies<{}, string> {
+  if (Array.isArray(v)) return `[${v.map(canonicalText).join(",")}]`;
+  if (typeof v === "object" && v !== null) {
+    const entries = Object.entries(v).filter(([, x]) => x !== undefined).sort(([a], [b]) => codePointLess(a, b) ? -1 : a === b ? 0 : 1);
+    return `{${entries.map(([k, x]) => `${JSON.stringify(k)}:${canonicalText(x)}`).join(",")}}`;
+  }
+  const text = JSON.stringify(v);
+  return text === undefined ? "null" : text;
 }
-function kindsText(kinds: ElementKinds | null): Modifies<{}, string> {
-  return kinds === null ? "null" : `[${kinds.map(k => JSON.stringify(k)).join(",")}]`;
-}
-/** **An effect's text**, the one serialization of an effect: its fields in
- * the documents' order, every list in its order. It identifies the effect's
- * syntax: type identity and the comparison of effects read it. */
-export function effectText(e: CallEffect): Modifies<{}, string> {
-  return `{"footprint":{"value":${JSON.stringify(e.footprint.value)},"store":${JSON.stringify(e.footprint.store)}},` +
-    `"promise":${e.promise === null ? "null" : promiseText(e.promise)},"fresh":${JSON.stringify(e.fresh)},` +
-    `"receiverStore":${JSON.stringify(e.receiverStore)},"onThrow":${JSON.stringify(e.onThrow)},` +
-    `"receiverOwn":${JSON.stringify(e.receiverOwn)},"freshObject":${JSON.stringify(e.freshObject)},` +
-    `"requires":${kindsText(e.requires)},"elements":${kindsText(e.elements)},"pre":${JSON.stringify(e.pre)},` +
-    `"ensures":${JSON.stringify(e.ensures)},"receiverGrows":${JSON.stringify(e.receiverGrows)},` +
-    `"elementWrite":${JSON.stringify(e.elementWrite)}` +
-    `${e.regions === undefined ? "" : `,"regions":${JSON.stringify(e.regions)}`}}`;
-}
+/** **An effect's text**, the one serialization of an effect's syntax
+ * (`canonicalText`): type identity and the comparison of effects read it. */
+export const effectText = (e: CallEffect): Modifies<{}, string> => canonicalText(e);
 /** **Whether two effects are the same**: the same text (`effectText`). */
 export const sameEffect = (a: CallEffect, b: CallEffect): boolean => effectText(a) === effectText(b);
 /** Heap preservation: no location may change, no promise. */
@@ -152,275 +232,147 @@ export const ordinaryEffect: CallEffect = footprintEffect(topFootprint);
  * whose code may change every location. */
 export const promiseEffect = (asserts: boolean, param: number): Modifies<{}, CallEffect> =>
   footprintEffect(topFootprint, { promise: asserts ? { asserts: { param } } : { guards: { param } } });
-export const sameFootprint = (a: ClosedFootprint, b: ClosedFootprint): boolean =>
-  a.value === b.value && a.store === b.store;
+
+/** **The serialized effect's grammar** (REQUEST-PROTOCOL.md, "The serialized
+ * effect"), as data: a shape is a scalar, a list, a pair, a nullable value, a
+ * record of exactly its fields (`atEntry` alone optional, and `true`), a
+ * union of objects of one field each and of names, or a named shape. */
+type Shape =
+  | "nat" | "int" | "bool" | "string" | "true"
+  | { readonly list: Shape } | { readonly pair: readonly [Shape, Shape] } | { readonly nullable: Shape }
+  | { readonly record: { readonly [field: string]: Shape }; readonly optional?: { readonly [field: string]: Shape } }
+  | { readonly union: { readonly [tag: string]: Shape }; readonly names?: readonly string[] }
+  | { readonly names: readonly string[] }
+  | { readonly ref: string };
 /** The kinds an elements predicate lists, each at most once, in this order. */
 const elementKindOrder: readonly ElementKind[] =
   ["null", "undefined", "boolean", "number", "string", "bigint", "symbol", "object"];
-/** An elements predicate a value states: `null`, or kinds in their order,
- * each once; `undefined` where the value states neither. */
-function decodeKinds(v: JsonRead): Modifies<{ values: "any"; stores: "grow" }, ElementKinds | null | undefined> {
-  if (v === null) return null;
-  if (!Array.isArray(v)) return undefined;
-  const kinds: ElementKind[] = [];
-  let last = -1;
-  for (const k of v) {
-    const i = elementKindOrder.findIndex(o => o === k);
-    if (i <= last) return undefined;
-    last = i;
-    const kind = elementKindOrder[i];
-    if (kind === undefined) return undefined;
-    kinds.push(kind);
+const strings: Shape = { list: "string" };
+const termShape: Shape = { record: { kind: { names: ["value", "length", "view", "strLength"] }, slot: "nat", path: strings },
+  optional: { atEntry: "true" } };
+const linear = (v: Shape): Shape => ({ union: { le: { record: { form: { list: { pair: [v, "int"] } }, bound: "int" } },
+  ne: { record: { form: { list: { pair: [v, "int"] } }, bound: "int" } } } });
+const grammar: { readonly [name: string]: Shape } = {
+  selector: { record: { value: "bool", array: "bool", view: "bool" } },
+  symbolKey: { record: { symbol: "nat" } },
+  region: { union: {
+    field: { record: { x: "nat", key: { ref: "keyOf" } } }, own: { record: { x: "nat" } }, elems: { record: { x: "nat" } },
+    cls: { ref: "selector" }, path: { record: { x: "nat", fields: strings, key: { ref: "keyOf" } } },
+    pathOwn: { record: { x: "nat", fields: strings } }, pathElems: { record: { x: "nat", fields: strings } },
+    cell: { record: { name: "string" } }, inCls: { record: { region: { ref: "region" }, selector: { ref: "selector" } } },
+    store: { record: { x: "nat", fields: strings } } }, names: ["all"] },
+  frame: { list: { record: { region: { ref: "region" }, change: { names: ["keep", "init", "scalar", "grow", "any"] } } } },
+  path: { record: { root: "nat", fields: strings } },
+  literal: { union: { num: { record: { bits: "string" } }, str: { record: { value: "string" } },
+    bigint: { record: { value: "string" } }, sym: { record: { id: "nat" } } }, names: ["null", "undefined", "true", "false"] },
+  witness: { union: { path: { ref: "path" }, literal: { ref: "literal" } } },
+  seq: { union: { fixed: { record: { xs: { list: { ref: "witness" } } } }, restFrom: { record: { first: "nat" } },
+    append: { record: { left: { ref: "seq" }, right: { ref: "seq" } } } } },
+  transport: { record: { shift: "nat", overrides: { list: { pair: ["nat", { ref: "witness" }] } }, boxed: "bool",
+    stable: { list: "nat" } } },
+  stepVar: { union: { before: { record: { t: termShape } }, after: { record: { t: termShape } } } },
+  bodyVariable: { union: { offset: { record: { delta: "nat" } },
+    project: { record: { kind: { names: ["value", "length", "view", "strLength"] }, path: strings } },
+    free: { record: { t: termShape } } }, names: ["index", "elem"] },
+  clause: { union: { either: { record: { left: { ref: "clause" }, right: { ref: "clause" } } },
+    le: { record: { form: { list: { pair: [{ ref: "bodyVariable" }, "int"] } }, bound: "int" } },
+    ne: { record: { form: { list: { pair: [{ ref: "bodyVariable" }, "int"] } }, bound: "int" } } } },
+  fact: { union: {
+    index: { record: { slot: "nat" } }, length: { record: { array: "nat", length: "nat" } },
+    bound: { record: { array: "nat", index: "nat", strict: "bool" } }, int: { record: { slot: "nat" } },
+    pastSafe: { record: { slot: "nat" } }, linear: { record: { fact: linear(termShape) } },
+    either: { record: { left: { ref: "fact" }, right: { ref: "fact" } } },
+    guarded: { record: { slot: "nat", path: strings, tag: { names: ["null", "undefined", "true", "false"] }, body: { ref: "fact" } } },
+    element: { record: { value: "nat", array: "nat", index: "nat" } },
+    every: { record: { slot: "nat", path: strings, stop: termShape, body: { list: { ref: "clause" } } } },
+    apart: { record: { slot: "nat", other: "nat" } },
+    storeApart: { record: { slot: "nat", path: strings, other: "nat", otherPath: strings } } } },
+  kinds: { list: { names: elementKindOrder } },
+  post: { union: {
+    arith: { record: { op: { names: ["add", "sub", "mul", "div", "pow", "xor", "rem", "bitAnd", "bitOr", "shl", "shr", "ushr",
+      "lt", "le", "gt", "ge", "eq", "looseEq"] }, left: { ref: "witness" }, right: { ref: "witness" }, result: { ref: "path" } } },
+    stringLength: { record: { string: { ref: "path" }, result: { ref: "path" } } },
+    stringRead: { record: { string: { ref: "path" }, index: { ref: "witness" }, result: { ref: "path" } } },
+    lengthsKept: { record: { x: "nat", exit: "nat" } }, boundedWrite: { record: { x: "nat", i: "nat", exit: "nat" } },
+    push: { record: { x: "nat", exit: "nat", args: { ref: "seq" } } },
+    fact: { record: { phase: { names: ["before", "after"] }, lift: "nat", fact: { ref: "fact" } } },
+    freshStore: { record: { x: "nat" } }, freshObject: { record: { x: "nat" } },
+    elementsWhen: { record: { x: "nat", value: { ref: "literal" }, y: "nat", predicate: { ref: "kinds" } } },
+    storeExtends: { record: { x: "nat" } },
+    viewWrite: { record: { x: "nat", i: "nat", v: "nat", format: { nullable: { names: ["uint8", "uint16", "int32", "float64"] } } } } } },
+  formula: { union: {
+    transition: { record: { effect: { ref: "frame" } } }, operation: { record: { post: { ref: "post" } } },
+    linear: { record: { fact: linear({ ref: "stepVar" }) } }, defined: { record: { v: { ref: "stepVar" } } },
+    transport: { ref: "transport" }, and: { record: { left: { ref: "formula" }, right: { ref: "formula" } } } },
+    names: ["truth", "falsity"] },
+  exit: { record: { frame: { ref: "frame" }, ensures: { list: { ref: "formula" } } } },
+  exits: { record: { normal: { ref: "exit" }, exceptional: { ref: "exit" } } },
+  promise: { union: { guards: { record: { param: "nat" } }, asserts: { record: { param: "nat" } } } },
+  effect: { record: { exits: { ref: "exits" }, promise: { nullable: { ref: "promise" } },
+    requires: { nullable: { ref: "kinds" } }, pre: { list: { ref: "fact" } } } },
+};
+/** The first place a value differs from a shape, by its path, or `null`. A
+ * key is a string or `{symbol}`; an elements predicate lists its kinds in
+ * their order, each once. */
+function shapeError(shape: Shape, v: JsonRead, at: string): Modifies<{}, string | null> {
+  if (shape === "nat") return typeof v === "number" && Number.isSafeInteger(v) && v >= 0 ? null : `${at}: a natural number in the safe range`;
+  if (shape === "int") return typeof v === "number" && Number.isSafeInteger(v) ? null : `${at}: an integer in the safe range`;
+  if (shape === "bool") return typeof v === "boolean" ? null : `${at}: a Boolean`;
+  if (shape === "string") return typeof v === "string" ? null : `${at}: a string`;
+  if (shape === "true") return v === true ? null : `${at}: true`;
+  if ("ref" in shape) {
+    if (shape.ref === "keyOf") return typeof v === "string" ? null : shapeError({ ref: "symbolKey" }, v, at);
+    const named = grammar[shape.ref];
+    if (named === undefined) return `${at}: no shape ${shape.ref}`;
+    const e = shapeError(named, v, at);
+    if (e !== null || shape.ref !== "kinds" || !isJsonList(v)) return e;
+    const order = v.map(k => elementKindOrder.findIndex(o => o === k));
+    return order.every((i, n) => n === 0 || (order[n - 1] ?? -1) < i) ? null : `${at}: kinds in their order, each once`;
   }
-  return kinds;
-}
-/** A natural number a value states, or `undefined`. */
-function decodeNat(v: JsonRead): number | undefined {
-  return typeof v === "number" && Number.isSafeInteger(v) && v >= 0 ? v : undefined;
-}
-/** A safe integer a value states, or `undefined`. */
-function decodeInt(v: JsonRead): number | undefined {
-  return typeof v === "number" && Number.isSafeInteger(v) ? v : undefined;
-}
-/** The index facts a precondition or a result states (`CallEffect.pre`,
- * `CallEffect.ensures`), as fresh
- * objects, or `undefined` where the value is no list of them. */
-export function decodeIndexFacts(v: JsonRead): Modifies<{ values: "any"; stores: "grow" }, IndexFact[] | undefined> {
-  if (!isJsonList(v)) return undefined;
-  const facts: IndexFact[] = [];
-  for (const f of v) {
-    const fact = decodeIndexFact(f);
-    if (fact === undefined) return undefined;
-    facts.push(fact);
+  if ("list" in shape) {
+    if (!isJsonList(v)) return `${at}: a list`;
+    for (let i = 0; i < v.length; i++) { const e = shapeError(shape.list, v[i], `${at}[${i}]`); if (e !== null) return e; }
+    return null;
   }
-  return facts;
-}
-/** A record's fields, where the value is a record of exactly these. */
-function fieldsOf(v: JsonRead, names: readonly string[]): JsonObject | undefined {
-  return isJsonObject(v) && Object.keys(v).sort().join(",") === [...names].sort().join(",") ? v : undefined;
-}
-function decodeIndexFact(v: JsonRead): IndexFact | undefined {
-  if (!isJsonObject(v) || Object.keys(v).length !== 1) return undefined;
-  const either = fieldsOf(v.either, ["left", "right"]);
-  if (either) {
-    const left = decodeIndexFact(either.left), right = decodeIndexFact(either.right);
-    return left === undefined || right === undefined ? undefined : { either: { left, right } };
+  if ("pair" in shape) {
+    if (!isJsonList(v) || v.length !== 2) return `${at}: a pair`;
+    return shapeError(shape.pair[0], v[0], `${at}[0]`) ?? shapeError(shape.pair[1], v[1], `${at}[1]`);
   }
-  const guarded = fieldsOf(v.guarded, ["slot", "path", "tag", "body"]);
-  if (guarded) {
-    const slot = decodeNat(guarded.slot);
-    const path = guarded.path;
-    const tag = guarded.tag;
-    const body = decodeIndexFact(guarded.body);
-    if (slot === undefined || body === undefined || (tag !== "null" && tag !== "undefined" && tag !== "true" && tag !== "false") || !isJsonList(path)) return undefined;
-    const fields: string[] = [];
-    for (const f of path) { if (typeof f !== "string") return undefined; fields.push(f); }
-    return { guarded: { slot, path: fields, tag, body } };
-  }
-  const element = fieldsOf(v.element, ["value", "array", "index"]);
-  if (element) {
-    const value = decodeNat(element.value), array = decodeNat(element.array), index = decodeNat(element.index);
-    return value === undefined || array === undefined || index === undefined ? undefined
-      : { element: { value, array, index } };
-  }
-  const every = fieldsOf(v.every, ["slot", "path", "stop", "body"]);
-  if (every) {
-    const slot = decodeNat(every.slot);
-    const stop = decodeLinearTerm(every.stop);
-    if (slot === undefined || stop === undefined || !isJsonList(every.path) || !isJsonList(every.body)) return undefined;
-    const fields: string[] = [];
-    for (const f of every.path) { if (typeof f !== "string") return undefined; fields.push(f); }
-    const body: BodyFact[] = [];
-    for (const b of every.body) {
-      const fact = decodeBodyFact(b);
-      if (fact === undefined) return undefined;
-      body.push(fact);
+  if ("nullable" in shape) return v === null ? null : shapeError(shape.nullable, v, at);
+  if ("record" in shape) {
+    if (!isJsonObject(v)) return `${at}: an object`;
+    for (const k of Object.keys(v))
+      if (!(k in shape.record) && !(shape.optional !== undefined && k in shape.optional)) return `${at}/${k}: a field no effect has`;
+    for (const [k, s] of Object.entries(shape.record)) {
+      if (!(k in v)) return `${at}/${k}: a required field is missing`;
+      const e = shapeError(s, v[k], `${at}/${k}`);
+      if (e !== null) return e;
     }
-    return { every: { slot, path: fields, stop, body } };
+    for (const [k, s] of Object.entries(shape.optional ?? {})) {
+      if (!(k in v)) continue;
+      const e = shapeError(s, v[k], `${at}/${k}`);
+      if (e !== null) return e;
+    }
+    return null;
   }
-  const storeApart = fieldsOf(v.storeApart, ["slot", "path", "other", "otherPath"]);
-  if (storeApart) {
-    const slot = decodeNat(storeApart.slot), other = decodeNat(storeApart.other);
-    if (slot === undefined || other === undefined || !isJsonList(storeApart.path) || !isJsonList(storeApart.otherPath)) return undefined;
-    const path: string[] = [], otherPath: string[] = [];
-    for (const f of storeApart.path) { if (typeof f !== "string") return undefined; path.push(f); }
-    for (const f of storeApart.otherPath) { if (typeof f !== "string") return undefined; otherPath.push(f); }
-    return { storeApart: { slot, path, other, otherPath } };
+  if ("union" in shape) {
+    if (typeof v === "string") return shape.names?.includes(v) ? null : `${at}: '${v}' is no constructor`;
+    if (!isJsonObject(v)) return `${at}: a constructor`;
+    const tags = Object.keys(v);
+    const tag = tags[0];
+    if (tags.length !== 1 || tag === undefined) return `${at}: a constructor is an object of one field`;
+    const s = shape.union[tag];
+    return s === undefined ? `${at}/${tag}: no constructor` : shapeError(s, v[tag], `${at}/${tag}`);
   }
-  const index = fieldsOf(v.index, ["slot"]);
-  if (index) { const slot = decodeNat(index.slot); return slot === undefined ? undefined : { index: { slot } }; }
-  const int = fieldsOf(v.int, ["slot"]);
-  if (int) { const slot = decodeNat(int.slot); return slot === undefined ? undefined : { int: { slot } }; }
-  const pastSafe = fieldsOf(v.pastSafe, ["slot"]);
-  if (pastSafe) { const slot = decodeNat(pastSafe.slot); return slot === undefined ? undefined : { pastSafe: { slot } }; }
-  const length = fieldsOf(v.length, ["array", "length"]);
-  if (length) {
-    const array = decodeNat(length.array);
-    const len = decodeNat(length.length);
-    return array === undefined || len === undefined ? undefined : { length: { array, length: len } };
-  }
-  const bound = fieldsOf(v.bound, ["array", "index", "strict"]);
-  if (bound) {
-    const array = decodeNat(bound.array);
-    const index = decodeNat(bound.index);
-    const strict = bound.strict;
-    return array === undefined || index === undefined || typeof strict !== "boolean" ? undefined
-      : { bound: { array, index, strict } };
-  }
-  const linear = fieldsOf(v.linear, ["fact"]);
-  const fact = linear === undefined || !isJsonObject(linear.fact) || Object.keys(linear.fact).length !== 1 ? undefined
-    : linear.fact;
-  if (fact === undefined) return undefined;
-  const le = fieldsOf(fact.le, ["form", "bound"]);
-  const ne = fieldsOf(fact.ne, ["form", "bound"]);
-  const body = le ?? ne;
-  if (body === undefined || !isJsonList(body.form)) return undefined;
-  const form: (readonly [LinearTerm, number])[] = [];
-  for (const t of body.form) {
-    if (!isJsonList(t) || t.length !== 2) return undefined;
-    const x = decodeLinearTerm(t[0]);
-    const c = decodeInt(t[1]);
-    if (x === undefined || c === undefined) return undefined;
-    form.push([x, c]);
-  }
-  const d = decodeInt(body.bound);
-  if (d === undefined) return undefined;
-  return { linear: { fact: le ? { le: { form, bound: d } } : { ne: { form, bound: d } } } };
+  return typeof v === "string" && shape.names.includes(v) ? null : `${at}: one of ${shape.names.join(", ")}`;
 }
-/** A linear fact over variables `decode` reads: `{le}` or `{ne}`, each a form
- * and a bound. */
-function decodeLinearForm<V>(v: JsonRead, decode: (x: JsonRead) => V | undefined):
-    { le: { form: (readonly [V, number])[]; bound: number }; ne?: undefined } |
-    { ne: { form: (readonly [V, number])[]; bound: number }; le?: undefined } | undefined {
-  if (!isJsonObject(v) || Object.keys(v).length !== 1) return undefined;
-  const le = fieldsOf(v.le, ["form", "bound"]);
-  const ne = fieldsOf(v.ne, ["form", "bound"]);
-  const body = le ?? ne;
-  if (body === undefined || !isJsonList(body.form)) return undefined;
-  const form: (readonly [V, number])[] = [];
-  for (const t of body.form) {
-    if (!isJsonList(t) || t.length !== 2) return undefined;
-    const x = decode(t[0]);
-    const c = decodeInt(t[1]);
-    if (x === undefined || c === undefined) return undefined;
-    form.push([x, c]);
-  }
-  const d = decodeInt(body.bound);
-  if (d === undefined) return undefined;
-  return le ? { le: { form, bound: d } } : { ne: { form, bound: d } };
-}
-function decodeBodyFact(v: JsonRead): BodyFact | undefined {
-  const e = fieldsOf(v, ["either"]);
-  if (e !== undefined) {
-    const b = fieldsOf(e.either, ["left", "right"]);
-    if (b === undefined) return undefined;
-    const left = decodeBodyFact(b.left), right = decodeBodyFact(b.right);
-    return left === undefined || right === undefined ? undefined : { either: { left, right } };
-  }
-  const f = decodeLinearForm(v, decodeBodyVariable);
-  return f === undefined ? undefined : f.le ? { le: f.le } : { ne: f.ne };
-}
-
-/** A variable of a quantified fact's body (`HeapKnowledge.Bound`). */
-function decodeBodyVariable(v: JsonRead): BodyVariable | undefined {
-  if (v === "index" || v === "elem") return v;
-  const offset = fieldsOf(v, ["offset"]);
-  if (offset !== undefined) {
-    const o = fieldsOf(offset.offset, ["delta"]);
-    return o !== undefined && typeof o.delta === "number" && Number.isSafeInteger(o.delta) && o.delta >= 0 ? { offset: { delta: o.delta } } : undefined;
-  }
-  const projected = fieldsOf(v, ["project"]);
-  if (projected !== undefined) {
-    const p = fieldsOf(projected.project, ["kind", "path"]);
-    const t = p === undefined ? undefined : decodeLinearTerm({ kind: p.kind, path: p.path, slot: 0 });
-    return t === undefined ? undefined : { project: { kind: t.kind, path: t.path } };
-  }
-  const free = fieldsOf(v, ["free"]);
-  const t = free === undefined ? undefined : fieldsOf(free.free, ["t"]);
-  const term = t === undefined ? undefined : decodeLinearTerm(t.t);
-  return term === undefined ? undefined : { free: { t: term } };
-}
-/** A linear term (`HeapKnowledge.Term`): its kind, its root position and
- * the named data fields read from it. */
-function decodeLinearTerm(v: JsonRead): LinearTerm | undefined {
-  const t = fieldsOf(v, ["kind", "slot", "path"]);
-  if (t === undefined) return undefined;
-  const kind = t.kind;
-  if (kind !== "value" && kind !== "length" && kind !== "view" && kind !== "strLength") return undefined;
-  const slot = decodeNat(t.slot);
-  if (slot === undefined || !isJsonList(t.path)) return undefined;
-  const path: string[] = [];
-  for (const f of t.path) {
-    if (typeof f !== "string") return undefined;
-    path.push(f);
-  }
-  return { kind, slot, path };
-}
-/** The closed footprint a value states, as a fresh object of its fields, or
- * `undefined` where the value states none. */
-export function decodeClosedFootprint(v: JsonRead): Modifies<{ values: "any"; stores: "grow" }, ClosedFootprint | undefined> {
-  if (!isJsonObject(v) || Object.keys(v).length !== 2) return undefined;
-  const value = v.value;
-  const store = v.store;
-  if (!isFootprintValue(value) || !isFootprintStore(store)) return undefined;
-  return { value, store };
-}
-function isFootprintValue(v: unknown): v is ClosedFootprint["value"] {
-  return v === "keep" || v === "init" || v === "scalar" || v === "any";
-}
-function isFootprintStore(v: unknown): v is ClosedFootprint["store"] {
-  return v === "keep" || v === "grow" || v === "any";
-}
-/** The call effect a value states, as fresh objects of its fields, or
- * `undefined` where the value states none. */
+/** The first place a value differs from the serialized effect, or `null`. */
+export const effectError = (v: JsonRead): Modifies<{}, string | null> => shapeError({ ref: "effect" }, v, "effect");
+/** **The effect a value states**, or `undefined` where it is not exactly the
+ * serialized effect (`effectError`). */
 export function decodeCallEffect(v: JsonRead): Modifies<{ values: "any"; stores: "grow" }, CallEffect | undefined> {
-  if (!isJsonObject(v) || Object.keys(v).length !== ("regions" in v ? 14 : 13)) return undefined;
-  let regions: StoreRegion[] | undefined;
-  if ("regions" in v) {
-    if (!isJsonList(v.regions) || v.regions.length === 0) return undefined;
-    regions = [];
-    for (const r of v.regions) {
-      const q = fieldsOf(r, ["position", "path"]);
-      const position = q === undefined ? undefined : decodeNat(q.position);
-      if (q === undefined || position === undefined || !isJsonList(q.path)) return undefined;
-      const path: string[] = [];
-      for (const f of q.path) { if (typeof f !== "string") return undefined; path.push(f); }
-      regions.push({ position, path });
-    }
-  }
-  const requires = decodeKinds(v.requires);
-  const elements = decodeKinds(v.elements);
-  const pre = decodeIndexFacts(v.pre);
-  const ensures = decodeIndexFacts(v.ensures);
-  if (requires === undefined || elements === undefined || pre === undefined || ensures === undefined) return undefined;
-  const footprint = decodeClosedFootprint(v.footprint);
-  const fresh = v.fresh;
-  const receiverStore = v.receiverStore;
-  const onThrow = v.onThrow;
-  const receiverOwn = v.receiverOwn;
-  const freshObject = v.freshObject;
-  const receiverGrows = v.receiverGrows;
-  const elementWrite = v.elementWrite;
-  const writes: readonly ElementWrite[] = ["stores", "assign", "exactUint8", "exactUint16", "exactInt32", "exactFloat64"];
-  const write = elementWrite === null ? null : writes.find(w => w === elementWrite);
-  if (write === undefined) return undefined;
-  if (footprint === undefined || typeof fresh !== "boolean" || typeof receiverStore !== "boolean" ||
-      typeof onThrow !== "boolean" || typeof receiverOwn !== "boolean" ||
-      typeof freshObject !== "boolean" || typeof receiverGrows !== "boolean") return undefined;
-  const stated = v.promise;
-  let promise: CallPromise | null = null;
-  if (stated !== null) {
-    if (!isJsonObject(stated) || Object.keys(stated).length !== 1) return undefined;
-    const guards = "guards" in stated;
-    const about: JsonRead = guards ? stated.guards : "asserts" in stated ? stated.asserts : undefined;
-    if (!isJsonObject(about) || Object.keys(about).length !== 1) return undefined;
-    const param = about.param;
-    if (typeof param !== "number" || !Number.isInteger(param) || param < 0) return undefined;
-    promise = guards ? { guards: { param } } : { asserts: { param } };
-  }
-  const effect: CallEffect = { footprint, promise, fresh, receiverStore, onThrow, receiverOwn, freshObject, requires,
-    elements, pre, ensures, receiverGrows, elementWrite: write };
-  return regions === undefined ? effect : { ...effect, regions };
+  if (effectError(v) !== null) return undefined;
+  return v as CallEffect; // asserted: effectError checked the value field by field against the effect's grammar
 }
 /** One contract representation; every operand mapping must retain its effect. */
 type CallContract<Receiver, Arguments, L = number> = {

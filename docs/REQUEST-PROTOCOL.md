@@ -294,22 +294,137 @@ records in graph rows, scheme rows, code entries and subtype certificates;
 a code entry must discharge both safety and its effect
 ([the definition rules](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)).
 
-The effect is `{"footprint": f, "promise": p, "fresh": b, "receiverStore": c, "onThrow": o, "receiverOwn": w,
-"freshObject": j, "requires": q, "elements": e}`:
+The effect `e` is [the serialized effect](#the-serialized-effect).
 
-- `f`, a [closed footprint](FOOTPRINTS.md#changes-and-footprints)
-  `{"value": v, "store": s}`, `v` one of `"keep"` and `"any"`, `s` one of
-  `"keep"`, `"grow"` and `"any"`;
-- `p`, `null`, `{"guards":{"param":i}}` or `{"asserts":{"param":i}}`, the
-  last two with the promise's type as the result
-  ([effect-qualified contracts](SEMANTICS.md#effect-qualified-call-contracts));
-- `b`, `c`, `o`, `w` and `j`, Booleans: a fresh result, the receiver's store
-  excepted from the footprint, the footprint stated on a throw too
-  ([exceptional footprints](SOURCE-ELABORATION.md#exceptional-footprints)),
-  the receiver's own locations excepted, and a fresh object result;
-- `q` and `e`, `null` or a list of kinds, the predicate the receiver's
-  present elements meet where the call starts and where it returns `true`
-  ([the elements fact](FOOTPRINTS.md#the-elements-fact)).
+### The serialized effect
+
+Every document that carries a callable's effect (the Fragment's declaration
+document, a request's types tables, the claims document, module interfaces,
+diagnostics) writes it in this one shape: its two exits, a normal return's
+and a throw's, each a frame and postconditions; its promise; and its
+preconditions (`CallEffects.Effect`). Arrays are ordered lists; every field
+is required but `atEntry`; an object of a union has exactly one of the
+alternatives' tags, at every depth.
+
+
+Arrays are ordered lists; every field is required but `atEntry`; an object
+of a union has exactly one of the alternatives' tags, at every depth.
+
+```ts
+type Nat = number;            // a safe integer at least 0
+type Integer = number | string; // a safe integer, else its canonical decimal
+type Bits64 = string;         // 16 lowercase hexadecimal digits
+type Change = "keep" | "init" | "scalar" | "grow" | "any";
+type Key = string | { symbol: Nat };
+type Selector = { value: boolean; array: boolean; view: boolean };
+type Region =
+  | { field: { x: Nat; key: Key } } | { own: { x: Nat } } | { elems: { x: Nat } }
+  | { cls: Selector } | "all"
+  | { path: { x: Nat; fields: string[]; key: Key } }
+  | { pathOwn: { x: Nat; fields: string[] } } | { pathElems: { x: Nat; fields: string[] } }
+  | { cell: { name: string } } | { inCls: { region: Region; selector: Selector } }
+  | { store: { x: Nat; fields: string[] } };
+type Frame = { region: Region; change: Change }[];
+type Path = { root: Nat; fields: string[] };
+type Literal = "null" | "undefined" | "true" | "false"
+  | { num: { bits: Bits64 } } | { str: { value: string } }
+  | { bigint: { value: string } } | { sym: { id: Nat } };
+type Witness = { path: Path } | { literal: Literal };
+type WitnessSeq = { fixed: { xs: Witness[] } } | { restFrom: { first: Nat } }
+  | { append: { left: WitnessSeq; right: WitnessSeq } };
+type TransportSchema = { shift: Nat; overrides: [Nat, Witness][]; boxed: boolean; stable: Nat[] };
+type LinearTerm = { kind: "value" | "length" | "view" | "strLength"; slot: Nat; path: string[]; atEntry?: true };
+type StepVar = { before: { t: LinearTerm } } | { after: { t: LinearTerm } };
+type LinearFact<V> = { le: { form: [V, Integer][]; bound: Integer } }
+  | { ne: { form: [V, Integer][]; bound: Integer } };
+type Clause<V> = LinearFact<V> | { either: { left: Clause<V>; right: Clause<V> } };
+type BodyVariable = "index" | "elem" | { offset: { delta: Nat } }
+  | { project: { kind: LinearTerm["kind"]; path: string[] } } | { free: { t: LinearTerm } };
+type IndexFact = { index: { slot: Nat } } | { int: { slot: Nat } } | { pastSafe: { slot: Nat } }
+  | { length: { array: Nat; length: Nat } } | { bound: { array: Nat; index: Nat; strict: boolean } }
+  | { linear: { fact: LinearFact<LinearTerm> } } | { either: { left: IndexFact; right: IndexFact } }
+  | { guarded: { slot: Nat; path: string[]; tag: "null" | "undefined" | "true" | "false"; body: IndexFact } }
+  | { element: { value: Nat; array: Nat; index: Nat } }
+  | { every: { slot: Nat; path: string[]; stop: LinearTerm; body: Clause<BodyVariable>[] } }
+  | { apart: { slot: Nat; other: Nat } }
+  | { storeApart: { slot: Nat; path: string[]; other: Nat; otherPath: string[] } };
+type ElementKinds = ("null" | "undefined" | "boolean" | "number" | "string" | "bigint" | "symbol" | "object")[];
+type OperationPost =
+  | { arith: { op: Arith; left: Witness; right: Witness; result: Path } }
+  | { stringLength: { string: Path; result: Path } }
+  | { stringRead: { string: Path; index: Witness; result: Path } }
+  | { lengthsKept: { x: Nat; exit: Nat } } | { boundedWrite: { x: Nat; i: Nat; exit: Nat } }
+  | { push: { x: Nat; exit: Nat; args: WitnessSeq } }
+  | { fact: { phase: "before" | "after"; lift: Nat; fact: IndexFact } }
+  | { freshStore: { x: Nat } } | { freshObject: { x: Nat } }
+  | { elementsWhen: { x: Nat; value: Literal; y: Nat; predicate: ElementKinds } }
+  | { storeExtends: { x: Nat } }
+  | { viewWrite: { x: Nat; i: Nat; v: Nat; format: "uint8" | "uint16" | "int32" | "float64" | null } };
+type Formula = { transition: { effect: Frame } } | { operation: { post: OperationPost } }
+  | { linear: { fact: LinearFact<StepVar> } } | { defined: { v: StepVar } }
+  | { transport: TransportSchema } | { and: { left: Formula; right: Formula } } | "truth" | "falsity";
+type ExitSchema = { frame: Frame; ensures: Formula[] };
+type Exits<A> = { normal: A; exceptional: A };
+type CallPromise = { guards: { param: Nat } } | { asserts: { param: Nat } };
+type CallEffect = { exits: Exits<ExitSchema>; promise: CallPromise | null;
+  requires: ElementKinds | null; pre: IndexFact[] };
+```
+
+`Arith` is the calculus's binary operator by its name. Each record is the
+Lean structure of the same fields in the same order, and each single-key
+object the constructor of that name, `exit` naming `x'`, a region's
+`fields` its path, `cell`'s `name` its binder. The formulas are exactly the
+constructors of `FormulaF WitnessSeq TransportSchema` that reference no
+assertion-arena node: a contract states no assertion
+([self-contained formulas](../lean/Verification/Semantics/ExitSchemas.lean)).
+A literal is one of the eight primitive constants of the calculus, a
+number by its double's bits and a symbol by its identity: no object
+identity, store or executable term is a literal. An integer is a JSON
+number in the safe range and a decimal string, with no leading zero, plus
+sign or negative zero, outside it; a bigint literal is always its decimal
+string.
+
+#### Positions and ordering
+
+Entry position `0` is the receiver and `i + 1` the `i`-th actual; at both
+exits `0` is the returned or thrown value, `1` the receiver and `i + 2` the
+`i`-th actual. A promise's `param` is the actual's index. Frames and
+transitions read entry positions; arithmetic and string posts, freshness and
+`elementsWhen` exit positions; `push` reads its sequence at the entry, `x`
+at the entry and `exit` at the exit; `storeExtends` and `viewWrite` entry
+positions. A fact's positions are those of its phase raised by `lift`, its
+entry terms the invocation's entry; a `StepVar` names its phase, so its term
+has no `atEntry`. `restFrom first` is the supplied actual positions from
+`first` on, the receiver excluded; `append` concatenates.
+
+A transport's override is the first one for its slot; repeated and
+reordered overrides are kept as written. Frame entries combine by the
+largest change admitted at a location, formula lists and `and` are
+conjunction, and neither is sorted, merged or simplified: the serialized
+form is the structure the effect holds. An elements predicate alone is a
+set, written in the order of the grammar with no kind twice.
+
+#### Reading
+
+The reader reads a value and writes it again: an effect that is not exactly
+that writing (an unknown, missing or repeated field, a second tag, a wrong
+scalar, a malformed pair, a noncanonical integer or literal) is refused at
+the first place it differs, by its path in the document. A document stating
+an object key twice is refused when its text is read, before its objects
+are read into maps. A decoded effect references no assertion, states
+primitive literals only and nests at most 256 deep
+(`EffectCodec.decode_sound`); every effect of that kind is read back as
+written (`EffectCodec.decode_encode`). The front end's reader of a types
+table (`decodeCallEffect`) checks the same grammar and reads only safe
+integers. Scope at a callable's arity, canonical transports, the
+independence of a conjunction's second exit and the stability of a rest
+allocation are checked where a decision reads them
+([the design](drafts/effects-of-commands.md#the-serialized-effect)).
+
+A declaration's statement (`Modifies<P, T>`, `Fresh<T>`, the Fragment's
+`stated`) is its exits in the same form, and so are the claims document's
+proposed exits of a function (`exits`) and of the function it returns
+(`resultExits`), and a module interface's established ones.
 
 ## Terms
 

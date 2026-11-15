@@ -474,6 +474,7 @@ export function indexFactPositions(f: IndexFact): number[] {
   if ("element" in f) return [f.element.value, f.element.array, f.element.index];
   if ("every" in f) return [f.every.slot, f.every.stop.slot, ...f.every.body.flatMap(bodyPositions)];
   if ("storeApart" in f) return [f.storeApart.slot, f.storeApart.other];
+  if ("apart" in f) return [f.apart.slot, f.apart.other];
   const F = f.linear.fact;
   return ("le" in F ? F.le.form : F.ne.form).map(([t]) => t.slot);
 }

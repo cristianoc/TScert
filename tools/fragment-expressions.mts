@@ -2,6 +2,7 @@
  * Each function is a method of the gate: `Gate` holds it as a field, so a call
  * reads `this.name(...)`; its body names the gate `gate`, typed, which lets a
  * call that never returns (`gate.fail`) narrow what follows. */
+import { statedExits } from "./type-graph.mts";
 import * as ts from "typescript/unstable/ast";
 import type { ArrowFunction, ClassDeclaration, BinaryExpression, Expression, FunctionDeclaration, FunctionExpression, Identifier, MethodDeclaration, Node, Statement } from "typescript/unstable/ast";
 import type { PropertyKey, TypeTerm } from "./declaration-types.mts";
@@ -2413,7 +2414,7 @@ export function lambda(this: Gate,
         params,
         result: declaredResult,
         guard,
-        stated: written.stated,
+        stated: written.stated === null ? null : statedExits(written.stated),
         requires,
         completion: isAsync ? "async" : "sync",
         body: { k: "blockBody", pos: gate.span(body), body: [...bindings, ...statements] },
@@ -2450,7 +2451,7 @@ export function lambda(this: Gate,
       }),
       result: declaredResult,
       guard,
-      stated: written.stated,
+      stated: written.stated === null ? null : statedExits(written.stated),
         requires,
       completion: isAsync ? "async" : "sync",
       body: inner,

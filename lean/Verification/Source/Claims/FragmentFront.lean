@@ -156,13 +156,13 @@ def fragmentClaims (ast : Json) (fileKey : String) (standIns : StandIns := {}) (
       ("params", Json.arr (f.params.map fun p => Json.mkObj [("name", toJson p.name),
         ("type", annotated "a parameter's type"), ("current", Json.null)]).toArray),
       ("result", annotated "a result type"), ("entries", Json.arr #[]), ("expressions", Json.arr #[]),
-      ("contracts", Json.arr #[]), ("footprint", toJson footprint), ("onThrow", toJson onThrow),
-      ("resultFootprint", toJson resultFootprint)]
+      ("contracts", Json.arr #[]), ("exits", toJson (EffectJson.classExits footprint onThrow)),
+      ("resultExits", toJson (EffectJson.classExits resultFootprint false))]
   let empty := Json.mkObj [("entries", Json.arr #[]), ("expressions", Json.arr #[]), ("contracts", Json.arr #[])]
-  return Json.mkObj ([("file", toJson fileKey), ("sourceSha256", ast.getObjValD "sourceSha256"),
+  EffectCodec.refuseUnserializable (Json.mkObj ([("file", toJson fileKey), ("sourceSha256", ast.getObjValD "sourceSha256"),
     ("types", toJson (primitives.map toJson)), ("functions", Json.arr functions.toArray),
     ("modules", Json.arr #[]), ("qualified", Json.arr #[])] ++
-    (if init.isEmpty then [] else [("init", empty)]))
+    (if init.isEmpty then [] else [("init", empty)])))
 
 /-- A unit's flow graphs, its own and its nested closures', and their
 entry prologues' sites (`prologueSites`). -/
@@ -489,8 +489,8 @@ footprints, as `fragmentClaims` states a stand-in's. -/
 def withStandIns (claims : Json) (sis : List StandIn) : Json :=
   claims.setObjVal! "functions" (Json.arr ((claims.getObjValAs? (Array Json) "functions").toOption.getD #[] |>.map fun j =>
     match sis.find? (some ·.name == (j.getObjValAs? String "name").toOption) with
-    | some s => ((j.setObjVal! "footprint" (toJson s.footprint)).setObjVal! "onThrow" (toJson s.onThrow)).setObjVal!
-        "resultFootprint" (toJson s.resultFootprint)
+    | some s => (j.setObjVal! "exits" (toJson (EffectJson.classExits s.footprint s.onThrow))).setObjVal!
+        "resultExits" (toJson (EffectJson.classExits s.resultFootprint false))
     | none => j))
 
 /-- The front with each import that never returns read at the footprint

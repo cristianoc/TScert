@@ -8,6 +8,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runEmitted, runExample, runImporting, runNode } from "../pipeline/run-example.mts";
+import { ordinaryEffect } from "../tools/type-graph.mts";
 import { cases } from "../pipeline/cases.mts";
 
 assert.ok(Number.isNaN(Number(runExample("invalid-disjunctive-test-facts", "sum([1], 0, 2, false)"))),
@@ -193,7 +194,7 @@ assert.equal(runExample("invalid-round-promised-readonly-set",
   "a complete structural readonly set can shrink the map input and leave a result hole");
 
 {
-  const values = 'const span = [0, 0]; const atom = { k: "atom", name: "string", span }; const effect = { footprint: { value: "any", store: "any" }, promise: null, fresh: false, receiverStore: false, onThrow: false, receiverOwn: false, freshObject: false, requires: null, elements: null }; const fn = { k: "function", effect, receiver: null, params: [], rest: null, result: atom, span }; const functions = [fn, fn];';
+  const values = `const span = [0, 0]; const atom = { k: "atom", name: "string", span }; const effect = ${JSON.stringify(ordinaryEffect)}; const fn = { k: "function", effect, receiver: null, params: [], rest: null, result: atom, span }; const functions = [fn, fn];`;
   assert.equal(runExample("invalid-prep-intersection-function-array",
     `(() => { ${values} const combined = oneTerm(functions, span); combined.parts[0] = atom; try { functions[0].params.length; return false; } catch (error) { return error instanceof TypeError; } })()`), true,
     "an intersection's writable view can corrupt the function array it aliases");

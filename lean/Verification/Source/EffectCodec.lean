@@ -1225,19 +1225,23 @@ def serializable (e : Effect) : Bool :=
 
 def Serializable (e : Effect) : Prop := serializable e = true
 
+/-- A callable's two exits. -/
+def exitsJ (x : Exits ExitSchema) : Json := obj ["normal", "exceptional"] [exitJ x.normal, exitJ x.exceptional]
+
+def exitsOf (j : Json) : Except String (Exits ExitSchema) := do
+  let [nm, ex] ← fields j ["normal", "exceptional"] | throw "exits"
+  pure ⟨← under "normal" (exitOf nestingLimit nm), ← under "exceptional" (exitOf nestingLimit ex)⟩
+
 /-- **The encoder**: an effect's exits, promise, elements precondition and
 preconditions. -/
 def encode (e : Effect) : Json :=
   obj ["exits", "promise", "requires", "pre"]
-    [obj ["normal", "exceptional"] [exitJ e.exits.normal, exitJ e.exits.exceptional], optJ promiseJ e.promise,
-      optJ predJ e.requires, listJ factJ e.pre]
+    [exitsJ e.exits, optJ promiseJ e.promise, optJ predJ e.requires, listJ factJ e.pre]
 
 /-- The effect a document states, read within the nesting limit. -/
 def parse (j : Json) : Except String Effect := do
   let [x, p, r, pre] ← fields j ["exits", "promise", "requires", "pre"] | throw "an effect"
-  let [nm, ex] ← under "exits" (fields x ["normal", "exceptional"]) | throw "exits"
-  pure ⟨⟨← under "exits/normal" (exitOf nestingLimit nm), ← under "exits/exceptional" (exitOf nestingLimit ex)⟩,
-    ← under "promise" (optOf promiseOf p), ← under "requires" (optOf predOf r),
+  pure ⟨← under "exits" (exitsOf x), ← under "promise" (optOf promiseOf p), ← under "requires" (optOf predOf r),
     ← under "pre" (listOf (factOf nestingLimit) pre)⟩
 
 theorem parse_encode {e : Effect} (h : Serializable e) : parse (encode e) = .ok e := by
@@ -1250,7 +1254,7 @@ theorem parse_encode {e : Effect} (h : Serializable e) : parse (encode e) = .ok 
   have h4 := optOf_optJ predOf predJ r predJ_ne_null (fun a _ => predOf_predJ a)
   have h5 := listOf_listJ (factOf nestingLimit) factJ pre fun F hF =>
     factOf_factJ F nestingLimit (Nat.le_trans (le_maxOf factDepth hF) (by simp at hd; omega))
-  simp [encode, parse, fields_obj, h1, h2, h3, h4, h5]
+  simp [encode, parse, exitsJ, exitsOf, fields_obj, h1, h2, h3, h4, h5]
 
 /-- The first place two JSON values differ, by its path. -/
 partial def firstDifference (path : String) (a b : Json) : String :=
@@ -1319,5 +1323,132 @@ def SerializableEffect.encode (e : SerializableEffect) : Json := EffectCodec.enc
 def checked (e : Effect) : Except String SerializableEffect :=
   if h : serializable e = true then .ok ⟨e, h⟩
   else .error "an effect whose formulas reference an assertion, state a literal of no primitive constant or nest beyond the limit"
+
+
+/-- **A value read exactly**: what `parse` reads of a document, refused unless
+the document is its writing (`enc`), up to the order of object members, at
+the first place it differs. -/
+def exactly {α : Type} (enc : α → Json) (parse : Json → Except String α) (j : Json) : Except String α := do
+  let a ← parse j
+  if (enc a).compress == j.compress then pure a
+  else throw s!"a value differs from its writing at {firstDifference "" (enc a) j}"
+
+/-- Whether a callable's exits serialize (`serializable`). -/
+def exitsSerializable (x : Exits ExitSchema) : Bool := serializable ⟨x, none, none, []⟩
+
+/-- **A callable's exits, read exactly** (a statement's, a claim's): the
+exits of the serialized effect. -/
+def decodeExits (j : Json) : Except String (Exits ExitSchema) := do
+  let x ← exactly exitsJ exitsOf j
+  if !exitsSerializable x then throw "exits beyond the nesting limit"
+  pure x
+
+/-- The field naming an effect a document cannot write. -/
+def unserializableKey : String := "unserializable"
+
+/-- **An effect in a derived document**: its writing (`encode`) where it
+serializes, otherwise an object naming the reason under
+`unserializableKey`, which `refuseUnserializable` turns into the refusal of
+the whole document before it is written. -/
+def write (e : Effect) : Json :=
+  match checked e with
+  | .ok s => s.encode
+  | .error m => Json.mkObj [(unserializableKey, Json.str m)]
+
+/-- Whether a JSON value holds the field `k` at some depth. -/
+partial def holdsKey (k : String) : Json → Bool
+  | .obj kvs => kvs.toList.any fun (k', v) => k' == k || holdsKey k v
+  | .arr a => a.any (holdsKey k)
+  | _ => false
+
+/-- **A document holding an effect it cannot write is refused whole.** -/
+def refuseUnserializable (j : Json) : Except String Json :=
+  if holdsKey unserializableKey j then
+    .error "a document states an effect whose formulas reference an assertion, state a literal of no primitive constant or nest beyond the limit"
+  else .ok j
+
+/-- **A document's text states no object key twice** (at its first repeated
+key, by its object's path): the reader reads objects into maps, which keep
+one value of a key. -/
+partial def duplicateKey? (text : String) : Option String :=
+  let rec str (cs : List Char) (acc : List Char) : Option (String × List Char) :=
+    match cs with
+    | '"' :: rest => some (String.ofList acc.reverse, rest)
+    | '\\' :: c :: rest => str rest (c :: '\\' :: acc)
+    | c :: rest => str rest (c :: acc)
+    | [] => none
+  -- `stack`: per open object its keys, `none` for an array; `key`: whether a
+  -- string read now is an object's key.
+  let rec go (cs : List Char) (stack : List (Option (List String))) (key : Bool) : Option String :=
+    match cs with
+    | [] => none
+    | '"' :: rest => match str rest [] with
+      | none => none
+      | some (s, rest') =>
+        if key then match stack with
+          | some ks :: up =>
+            if ks.contains s then some s!"an object states the key '{s}' twice"
+            else go rest' (some (s :: ks) :: up) false
+          | _ => go rest' stack false
+        else go rest' stack false
+    | '{' :: rest => go rest (some [] :: stack) true
+    | '[' :: rest => go rest (none :: stack) false
+    | '}' :: rest | ']' :: rest => go rest stack.tail false
+    | ',' :: rest => go rest stack (match stack with | some _ :: _ => true | _ => false)
+    | _ :: rest => go rest stack key
+  go text.toList [] false
+
+
+/-! ## Examples
+
+Effects of every grammar form round-trip, and documents outside the grammar
+are refused at their first difference. -/
+
+private def roundTrips (e : Effect) : Bool :=
+  match decode (encode e) with
+  | .ok d => d == e
+  | .error _ => false
+
+private def refuses (text : String) : Bool :=
+  match Json.parse text with
+  | .ok j => (decode j).toOption.isNone
+  | .error _ => false
+
+private def topFrame : Footprint := Parity.topEffect
+
+/-- An exceptional postcondition, a rest sequence, a nested conjunction and
+a transport with overrides and stable slots. -/
+private def sample : Effect :=
+  ⟨⟨⟨[(.cls ⟨true, false, false⟩, .keep), (.inCls (.pathOwn 1 ["a"]) ⟨true, false, false⟩, .any),
+        (.path 0 [] (.sym 3), .grow)],
+      [.operation (.push 0 1 (.append (.fixed [.literal (.num 0x3ff0000000000000)]) (.restFrom 1))),
+        .and (.operation (.fact .after 0 (.linear (.le [(.old .length 1 [], -9007199254740993)] 4))))
+          (.and .truth (.linear (.ne [(.after (.now .value 0 []), 1)] 0))),
+        .operation (.elementsWhen 0 .tru 1 ⟨true, false, false, true, false, false, false, false⟩),
+        .operation (.arith .add (.literal (.bigint (-123456789012345678901234567890))) (.literal (.str "x\"y"))
+          ⟨2, ["f"]⟩)]⟩,
+    ⟨topFrame, [.transport ⟨1, [(3, .path ⟨0, []⟩), (3, .literal .undef)], true, [2, 2]⟩,
+      .operation (.freshStore 0)]⟩⟩,
+    some (.asserts 1), some ⟨false, true, false, false, false, false, false, true⟩,
+    [.every 1 ["x"] (.now .length 1 ["x"]) [.either (.atom (.le [(.offset 2, 1)] 0)) (.atom (.ne [(.elem, 1)] 5))],
+      .apart 1 2]⟩
+
+#guard roundTrips sample
+#guard roundTrips Effect.ordinary
+-- An assertion-arena reference does not serialize, at any depth.
+#guard !serializable { sample with exits := ⟨⟨[], [.and .truth (.at .after ⟨0⟩)]⟩, ⟨[], []⟩⟩ }
+-- A term literal does not serialize.
+#guard !serializable { sample with exits := ⟨⟨[], [.operation (.elementsWhen 0 (.var 0) 1 {})]⟩, ⟨[], []⟩⟩ }
+-- An unknown nested field, an `at` formula, a transport without its stable slots, a repeated constructor tag and a noncanonical integer.
+#guard refuses r#"{"exits":{"normal":{"frame":[],"ensures":["truth"]},"exceptional":{"frame":[],"ensures":[{"and":{"left":"truth","right":"falsity","extra":1}}]}},"promise":null,"requires":null,"pre":[]}"#
+#guard refuses r#"{"exits":{"normal":{"frame":[],"ensures":[{"at":{"phase":"after","assertion":{"index":0}}}]},"exceptional":{"frame":[],"ensures":[]}},"promise":null,"requires":null,"pre":[]}"#
+#guard refuses r#"{"exits":{"normal":{"frame":[],"ensures":[{"transport":{"shift":1,"overrides":[],"boxed":false}}]},"exceptional":{"frame":[],"ensures":[]}},"promise":null,"requires":null,"pre":[]}"#
+#guard refuses r#"{"exits":{"normal":{"frame":[],"ensures":[{"transport":{"shift":1,"overrides":[[1]],"boxed":false,"stable":[]}}]},"exceptional":{"frame":[],"ensures":[]}},"promise":null,"requires":null,"pre":[]}"#
+#guard refuses r#"{"exits":{"normal":{"frame":[],"ensures":[{"and":{"left":"truth","right":"truth"},"truth":null}]},"exceptional":{"frame":[],"ensures":[]}},"promise":null,"requires":null,"pre":[]}"#
+#guard refuses r#"{"exits":{"normal":{"frame":[],"ensures":[]},"exceptional":{"frame":[],"ensures":[]}},"promise":null,"requires":null,"pre":[{"index":{"slot":"5"}}]}"#
+#guard !refuses r#"{"exits":{"normal":{"frame":[],"ensures":[]},"exceptional":{"frame":[],"ensures":[]}},"promise":null,"requires":null,"pre":[{"index":{"slot":5}}]}"#
+-- A key stated twice is refused before the document is read into maps.
+#guard (duplicateKey? r#"{"a":{"b":1,"c":[{"b":2}],"b":3}}"#).isSome
+#guard (duplicateKey? r#"{"a":{"b":1,"c":[{"b":2}]},"b":"\"b\""}"#).isNone
 
 end Verification.EffectCodec

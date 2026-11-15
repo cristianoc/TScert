@@ -30,7 +30,7 @@ import type { Node } from "typescript/unstable/ast";
 import { oneTerm, signatures, typeTerm, type TermScope } from "./type-term.mts";
 import { termText } from "./named-record.mts";
 import type { JsonObject } from "./calculus.mts";
-import type { DeclarationIdentity, ElementKind, PropertyKey, TypeDefinition, TypeTerm } from "./declaration-types.mts";
+import type { DeclarationIdentity, ElementKind, IndexFact, PropertyKey, TypeDefinition, TypeTerm } from "./declaration-types.mts";
 import { emptyFootprint, topFootprint, closedFootprints, emptyEffect, footprintEffect, ordinaryEffect } from "./type-graph.mts";
 import type { CallEffect, ArrayPresence, ClosedFootprint } from "./type-graph.mts";
 
@@ -156,12 +156,12 @@ const atEachFootprint = (signature: (effect: CallEffect, footprint: ClosedFootpr
 /** Map allocates at the captured length. A callback preserving stores
  * keeps that length equal to the receiver's final length; growth gives an
  * upper bound on the result instead. Ordinary construction fixes species. */
-const mapEnsures = (store: ClosedFootprint["store"]): CallEffect["ensures"] => store === "any" ? [] : [
+const mapEnsures = (store: ClosedFootprint["store"]): IndexFact[] => store === "any" ? [] : [
   { linear: { fact: { le: { form: [[{ kind: "length", slot: 0, path: [] }, 1],
     [{ kind: "length", slot: 1, path: [] }, -1]], bound: 0 } } } },
   ...(store === "keep" ? [{ linear: { fact: { le: { form: [
     [{ kind: "length", slot: 0, path: [] }, -1],
-    [{ kind: "length", slot: 1, path: [] }, 1]], bound: 0 } } } }] satisfies CallEffect["ensures"] : []),
+    [{ kind: "length", slot: 1, path: [] }, 1]], bound: 0 } } } }] satisfies IndexFact[] : []),
 ];
 
 export const overlay: readonly OverlayEntry[] = [
@@ -424,7 +424,7 @@ export const overlay: readonly OverlayEntry[] = [
   // have different deletion counts but the same result and effect contracts.
   { name: "splice", from: "Array", signature: "splice(start: number, deleteCount: number, ...items: T[]): T[];",
     stated: [{ params: [atomOf("number"), optionalNumber], rest: element, result: arrayOf(element, false),
-      effect: footprintEffect(receiverStoreEffect.footprint, { receiverStore: true, fresh: true }) }] },
+      effect: footprintEffect({ value: "any", store: "keep" }, { receiverStore: true, fresh: true }) }] },
   // Iteration: `ArrayIterator<T>` extends `IteratorObject<T,
   // BuiltinIteratorReturn, unknown>`, an `Iterator<T, BuiltinIteratorReturn,
   // unknown>`, which meets `Iterator<T>`, the result `Iterable<T>` asks for.

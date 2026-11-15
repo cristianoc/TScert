@@ -16,48 +16,101 @@ export type ClosedFootprint = { readonly value: "keep" | "init" | "scalar" | "an
  * result: a type guard's or an assertion function's. */
 export type CallPromise = { readonly guards: { readonly param: number }; readonly asserts?: never } |
   { readonly asserts: { readonly param: number }; readonly guards?: never };
-/** What a signature guarantees beyond its contract: its footprint, an
- * optional promise, whether a normal return's value has an array store the
- * call allocated (`fresh`), and whether the footprint excepts the receiver's
- * array store, which the call may change arbitrarily (`receiverStore`), and
- * whether the footprint also bounds the heap a throw leaves (`onThrow`)
- * (`CallEffects.Effect`). */
+/** A location's permitted change (`Footprints.Change`). */
+export type Change = "keep" | "init" | "scalar" | "grow" | "any";
+/** A property key: a string, or a symbol by its identity (`PropKey`). */
+export type Key = string | { readonly symbol: number };
+/** The content categories a class region selects (`Footprints.Selector`). */
+export type Selector = { readonly value: boolean; readonly array: boolean; readonly view: boolean };
+/** A region of locations, read at the call's entry (`Footprints.Region`):
+ * a field, the own locations or the element cells of the value at position
+ * `x`, a content class, every location, the same through the data fields
+ * `fields`, a variable's cell, a region within a class, and the store the
+ * value through `fields` selects. */
+export type Region =
+  | { readonly field: { readonly x: number; readonly key: Key } }
+  | { readonly own: { readonly x: number } }
+  | { readonly elems: { readonly x: number } }
+  | { readonly cls: Selector }
+  | "all"
+  | { readonly path: { readonly x: number; readonly fields: readonly string[]; readonly key: Key } }
+  | { readonly pathOwn: { readonly x: number; readonly fields: readonly string[] } }
+  | { readonly pathElems: { readonly x: number; readonly fields: readonly string[] } }
+  | { readonly cell: { readonly name: string } }
+  | { readonly inCls: { readonly region: Region; readonly selector: Selector } }
+  | { readonly store: { readonly x: number; readonly fields: readonly string[] } };
+/** A frame: the regions an exit may change, each with its change
+ * (`Footprints.Footprint`). */
+export type Frame = readonly { readonly region: Region; readonly change: Change }[];
+/** A path: a root position and the data fields read from its value. */
+export type Path = { readonly root: number; readonly fields: readonly string[] };
+/** A primitive constant of a specification: a number by its double's bits
+ * (sixteen lowercase hexadecimal digits), a bigint by its decimal text, a
+ * symbol by its identity. */
+export type Literal = "null" | "undefined" | "true" | "false"
+  | { readonly num: { readonly bits: string } } | { readonly str: { readonly value: string } }
+  | { readonly bigint: { readonly value: string } } | { readonly sym: { readonly id: number } };
+/** A path or a literal (`Parity.Witness`). */
+export type Witness = { readonly path: Path } | { readonly literal: Literal };
+/** A sequence of a call's values: fixed witnesses, the actuals from call
+ * position `first` on, or two in turn (`WitnessSeq`). */
+export type WitnessSeq =
+  | { readonly fixed: { readonly xs: readonly Witness[] } }
+  | { readonly restFrom: { readonly first: number } }
+  | { readonly append: { readonly left: WitnessSeq; readonly right: WitnessSeq } };
+/** The names of the entry read at the exit: entry slot `i` is exit slot
+ * `i + shift` but for the first override of `i`; with `boxed`, an image
+ * reading the heap holds only at a `stable` slot (`TransportSchema`). */
+export type TransportSchema = { readonly shift: number; readonly overrides: readonly (readonly [number, Witness])[];
+  readonly boxed: boolean; readonly stable: readonly number[] };
+/** A two-state variable: a term read at the entry or at the exit. */
+export type StepVar = { readonly before: { readonly t: LinearTerm } } | { readonly after: { readonly t: LinearTerm } };
+/** A binary operator of the calculus by its name (`Arith`). */
+export type Arith = "add" | "sub" | "mul" | "div" | "pow" | "xor" | "rem" | "bitAnd" | "bitOr" | "shl" | "shr" |
+  "ushr" | "lt" | "le" | "gt" | "ge" | "eq" | "looseEq";
+/** An operational postcondition (`Parity.OperationPostF`): `x` an entry
+ * position and `exit` an exit position, freshness and `elementsWhen` at exit
+ * positions, a fact at its phase's positions raised by `lift`. */
+export type OperationPost =
+  | { readonly arith: { readonly op: Arith; readonly left: Witness; readonly right: Witness; readonly result: Path } }
+  | { readonly stringLength: { readonly string: Path; readonly result: Path } }
+  | { readonly stringRead: { readonly string: Path; readonly index: Witness; readonly result: Path } }
+  | { readonly lengthsKept: { readonly x: number; readonly exit: number } }
+  | { readonly boundedWrite: { readonly x: number; readonly i: number; readonly exit: number } }
+  | { readonly push: { readonly x: number; readonly exit: number; readonly args: WitnessSeq } }
+  | { readonly fact: { readonly phase: "before" | "after"; readonly lift: number; readonly fact: IndexFact } }
+  | { readonly freshStore: { readonly x: number } }
+  | { readonly freshObject: { readonly x: number } }
+  | { readonly elementsWhen: { readonly x: number; readonly value: Literal; readonly y: number;
+      readonly predicate: ElementKinds } }
+  | { readonly storeExtends: { readonly x: number } }
+  | { readonly viewWrite: { readonly x: number; readonly i: number; readonly v: number; readonly format: ViewFormat | null } };
+/** A two-state postcondition of a specification
+ * (`FormulaF WitnessSeq TransportSchema`, no assertion-arena node). */
+export type Formula =
+  | { readonly transition: { readonly effect: Frame } }
+  | { readonly operation: { readonly post: OperationPost } }
+  | { readonly linear: { readonly fact: LinearFactOf<StepVar> } }
+  | { readonly defined: { readonly v: StepVar } }
+  | { readonly transport: TransportSchema }
+  | { readonly and: { readonly left: Formula; readonly right: Formula } }
+  | "truth" | "falsity";
+/** An exit's guarantee: the frame of the old locations it may change and
+ * its postconditions (`ExitSchema`). */
+export type ExitSchema = { readonly frame: Frame; readonly ensures: readonly Formula[] };
+/** One datum per completion of a call (`Exits`). */
+export type Exits<A> = { readonly normal: A; readonly exceptional: A };
+/** **A callable's effect** (`CallEffects.Effect`, REQUEST-PROTOCOL.md, "The
+ * serialized effect"): its two exits, a normal return's and a throw's,
+ * read at the call's entry positions (`0` the receiver, `i + 1` the `i`-th
+ * actual) and at the exit's (`0` the returned or thrown value, `1` the
+ * receiver, `i + 2` the `i`-th actual); an optional promise; a precondition
+ * on the receiver's elements; and preconditions on the call's values. */
 export type CallEffect = {
-  readonly footprint: ClosedFootprint; readonly promise: CallPromise | null; readonly fresh: boolean;
-  readonly receiverStore: boolean; readonly onThrow: boolean;
-  /** The footprint bounds every old location but the receiver's own ones. */
-  readonly receiverOwn: boolean;
-  /** A normal return's value is an object every own location of which the
-   * call allocated. */
-  readonly freshObject: boolean;
-  /** A precondition: every present element of the receiver's array has one
-   * of these kinds in the heap the call starts in. */
+  readonly exits: Exits<ExitSchema>;
+  readonly promise: CallPromise | null;
   readonly requires: ElementKinds | null;
-  /** A promise: a normal return of `true` leaves every present element of
-   * the receiver's array of one of these kinds. */
-  readonly elements: ElementKinds | null;
-  /** A precondition on the call's values: each index fact holds of them in
-   * the heap the call starts in, read at the call's positions (0 the
-   * receiver, i + 1 the i-th actual) (`CallEffects.Effect.pre`). */
   readonly pre: readonly IndexFact[];
-  /** Postcondition: each index fact holds in the heap a normal return leaves,
-   * read at the return's positions (0 the result, i + 1 the call's position
-   * i) (`CallEffects.Effect.ensures`). Only a trusted signature states one. */
-  readonly ensures: readonly IndexFact[];
-  /** A normal return changed no old location but the receiver's array store,
-   * which it grew: a store listing the old entries first, at most 2^32 - 1
-   * long (`CallEffects.ReceiverGrows`). Only a trusted signature states it. */
-  readonly receiverGrows: boolean;
-  /** A normal return changed the heap as a typed array's element write may:
-   * every location holding no store kept, every store's length kept
-   * (`"stores"`, `CallEffects.ElementWrite`). Only a trusted signature
-   * states it. */
-  readonly elementWrite: ElementWrite | null;
-  /** The frame's store regions, present where it states some: the store
-   * each selects at the call's entry, the path of data fields read from the
-   * call position, may change arbitrarily, `footprint` bounding every other
-   * location (`CallEffects.Effect.regions`). */
-  readonly regions?: readonly StoreRegion[];
 };
 /** What a typed array's element write keeps (`CallEffects.ElementWrite`):
  * every location holding no store and every store's length (`"stores"`);
@@ -69,7 +122,8 @@ export type CallEffect = {
  * value at position 3 (`CallEffects.ElementKind.convert`: the number
  * denoting the value's integer for an integer type, the value itself for
  * `Float64Array`), its other elements unchanged (`"exactUint8"`,
- * `"exactUint16"`, `"exactInt32"`, `"exactFloat64"`). */
+ * `"exactUint16"`, `"exactInt32"`, `"exactFloat64"`). An authoring option of
+ * `footprintEffect`, which states it as postconditions. */
 export type ElementWrite = "stores" | "assign" | ExactElementWrite;
 /** The exact element write of each element type (`ElementWrite`). */
 export type ExactElementWrite = "exactUint8" | "exactUint16" | "exactInt32" | "exactFloat64";
@@ -97,6 +151,7 @@ export type IndexFact =
   | { readonly element: { readonly value: number; readonly array: number; readonly index: number } }
   | { readonly every: { readonly slot: number; readonly path: readonly string[]; readonly stop: LinearTerm;
       readonly body: readonly BodyFact[] } }
+  | { readonly apart: { readonly slot: number; readonly other: number } }
   | { readonly storeApart: { readonly slot: number; readonly path: readonly string[]; readonly other: number;
       readonly otherPath: readonly string[] } };
 /** A variable of a quantified fact's body (`HeapKnowledge.Bound`): the bound
@@ -111,9 +166,11 @@ export type BodyFact =
 export type GuardTag = "null" | "undefined" | "true" | "false";
 /** A linear fact (`Linear.Fact`): `Σ c·t ≤ bound` or `≠ bound`, each term a
  * linear term and its coefficient. */
-export type LinearFact =
-  | { readonly le: { readonly form: readonly (readonly [LinearTerm, number])[]; readonly bound: number } }
-  | { readonly ne: { readonly form: readonly (readonly [LinearTerm, number])[]; readonly bound: number } };
+export type LinearFact = LinearFactOf<LinearTerm>;
+/** A linear fact over variables `V`. */
+export type LinearFactOf<V> =
+  | { readonly le: { readonly form: readonly (readonly [V, number])[]; readonly bound: number } }
+  | { readonly ne: { readonly form: readonly (readonly [V, number])[]; readonly bound: number } };
 /** A term of a linear fact (`HeapKnowledge.Term`): a root position, the
  * named data fields read from what it holds in turn (`path`, empty for the
  * position's own value), and what the term reads of the value the path ends
@@ -132,18 +189,6 @@ export type LinearTerm = {
  * each at most once, in this order. */
 export type ElementKind = "null" | "undefined" | "boolean" | "number" | "string" | "bigint" | "symbol" | "object";
 export type ElementKinds = readonly ElementKind[];
-/** The effect a written signature states at its result (`Modifies<P, T>`,
- * SOURCE-ELABORATION.md, "Stated effects"): a closed footprint, whether
- * it also bounds the heap a throw leaves, and whether a normal return's value
- * holds an array store the call allocated (`Fresh<T>`). */
-/** A store region of a written frame: the store the value at the call
- * position `position` (`0` the receiver) selects through the fields `path`
- * at the call's entry (`Footprints.ArgumentStoreRegion`). */
-export type StoreRegion = { readonly position: number; readonly path: readonly string[] };
-/** A written statement's frame: its closed footprint, off the stores its
- * `regions` select, which may change arbitrarily; whether it holds on a
- * throw; whether the result is fresh. */
-export type StatedEffect = { footprint: ClosedFootprint; onThrow: boolean; fresh: boolean; regions: StoreRegion[] };
 /** One type alias or interface: its module, its name and its span there. The
  * module identities are disjoint by construction: the client's absolute
  * path; `typescript/lib/<file>` for a file the compiler's library resolution

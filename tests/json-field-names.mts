@@ -18,21 +18,27 @@ const read = (file: string): string => readFileSync(join(root, file), "utf8");
 const captured = (m: RegExpMatchArray): string[] => (m[1] === undefined ? [] : [m[1]]);
 
 /** Property names a TypeScript file declares. */
-const declared = (files: string[], before?: string): Set<string> => new Set(files.flatMap((file) =>
-  [...(before ? read(file).split(before)[0] ?? "" : read(file)).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*/g, "")
-    .matchAll(/(?<![\w.])([A-Za-z_]\w*)\??\s*:(?!:)/g)].flatMap(captured)));
+const declared = (files: string[], before?: string, text?: string): Set<string> =>
+  new Set([...files.map((file) => before ? read(file).split(before)[0] ?? "" : read(file)), ...(text === undefined ? [] : [text])]
+    .flatMap((source) => [...source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*/g, "")
+      .matchAll(/(?<![\w.])([A-Za-z_]\w*)\??\s*:(?!:)/g)].flatMap(captured)));
+
+/** The field lists of the serialized effect's codec (EffectCodec.lean): an
+ * object's fields read (`fields v [..]`) and written (`obj [..]`). */
+const codecLists = (s: string): RegExpMatchArray[] => [...s.matchAll(/\b(?:fields\s+\S+|obj)\s+\[([^\]]*)\]/g)];
 
 /** Field names a Lean file reads or states: explicit field reads, exact field
  * lists and, where a file decodes structures with `FromJson`, their fields. */
 const lean = (files: string[], structures: boolean = false, before?: string): Set<string> => new Set(files.flatMap((file) => {
   const s = (before ? read(file).split(before)[0] ?? "" : read(file)).replace(/\/-[\s\S]*?-\//g, "").replace(/--.*/g, "");
-  const exact = [...s.matchAll(/fieldsExactly\s+\S+\s+\[([^\]]*)\]/g)]
+  const exact = [...s.matchAll(/fieldsExactly\s+\S+\s+\[([^\]]*)\]/g), ...codecLists(s)]
     .flatMap((m) => [...(m[1] ?? "").matchAll(/"(\w+)"/g)].flatMap(captured));
   // Plain and parenthesized arguments separately, since one read can nest in
   // another's argument.
   const reads = [...s.matchAll(/\b(?:jField|field|str|arr|bool|jArr|jStr|jNat|jBool)\s+[^\s()]+\s+"(\w+)"/g),
     ...s.matchAll(/\b(?:jField|field|str|arr|bool|jArr|jStr|jNat|jBool)\s+\([^()]*\)\s+"(\w+)"/g),
     ...s.matchAll(/getObjVal\?\s+"(\w+)"/g),
+    ...s.matchAll(/\btagged\s+"(\w+)"/g),
     ...s.matchAll(/getObjValAs\?\s+\S+\s+"(\w+)"/g)].flatMap(captured);
   const fields = !structures ? [] : [...s.matchAll(/^structure\s+\w+[^\n]*?\s+where\n((?:[ \t]+.*\n|\n)+?)(?=\S)/gm)]
     .flatMap((m) => [...(m[1] ?? "").matchAll(/^[ \t]+(\w+)\s*:/gm)].flatMap(captured));
@@ -53,6 +59,7 @@ const expectSubset = (what: string, names: Set<string>, from: Set<string>, allow
 // Equation lowering reads declarations and claim labels across these owners.
 const equationReaders = [
   "lean/Verification/Source/EffectJson.lean",
+  "lean/Verification/Source/EffectCodec.lean",
   "lean/Verification/Source/Equations/Trees.lean",
   "lean/Verification/Source/Equations/Declarations.lean",
   "lean/Verification/Source/Equations/ClaimWire.lean",
@@ -80,28 +87,39 @@ const equationReaders = [
   });
   expectSubset("Fragment fields Lean ignores", ts, leanNames, {
     arguments: "a reference's argument spans are provenance",
-    v: "a literal atom's value is read by the claim decoder",
-    fact: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
-    form: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
-    int: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
-    pastSafe: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
-    le: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
-    length: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
-    linear: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
-    guarded: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
-    tag: "a guarded index fact's field, read by the instance EffectJson.lean states for HeapKnowledge.GuardTag's fact",
-    ne: "an index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact and Linear.Fact",
-    every: "a quantified index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact",
-    stop: "a quantified index fact's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact",
-    free: "a quantified fact's body variable, read by the instance EffectJson.lean derives for HeapKnowledge.Bound",
-    offset: "an element offset, read by derived quantified-body variable instances",
-    delta: "an element offset, read by derived quantified-body variable instances",
-    project: "an element projection, read by the derived HeapKnowledge.Bound and Wire.BodyVariable instances",
-    t: "a quantified fact's body term, read by the instance EffectJson.lean derives for HeapKnowledge.Bound",
-    storeApart: "a store separation's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact",
-    other: "a store separation's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact",
-    otherPath: "a store separation's field, read by the instance EffectJson.lean derives for HeapKnowledge.IndexFact",
   });
+}
+
+// The serialized effect (REQUEST-PROTOCOL.md, "The serialized effect"): the
+// codec Lean reads and writes (EffectCodec.lean, its objects' field lists and
+// its constructors' names), the TypeScript types its writers build
+// (declaration-types.mts, from `Change` to `CallEffect`) and the grammar the
+// TypeScript reader checks (type-graph.mts, `grammar`), name for name.
+{
+  const codec = read("lean/Verification/Source/EffectCodec.lean").replace(/\/-[\s\S]*?-\//g, "").replace(/--.*/g, "");
+  const leanNames = new Set([...codecLists(codec).flatMap((m) => [...(m[1] ?? "").matchAll(/"(\w+)"/g)].flatMap(captured)),
+    ...[...codec.matchAll(/\btagged\s+"(\w+)"/g)].flatMap(captured)]);
+  const types = read("tools/declaration-types.mts");
+  const typeNames = declared([], undefined, types.slice(types.indexOf("export type Change ="),
+    types.indexOf("/** What a typed array's element write keeps")));
+  const graph = read("tools/type-graph.mts");
+  const grammarText = graph.slice(graph.indexOf("const strings: Shape"), graph.indexOf("\n};", graph.indexOf("const grammar:")))
+    .replace("const grammar:", "").replace(/\b\w+\??: Shape\b/g, "");
+  const shapeWords = ["record", "optional", "union", "names", "list", "pair", "nullable", "ref"];
+  const grammarNames = new Set([...declared([], undefined, grammarText)].filter((n) => !shapeWords.includes(n)));
+  // An index fact, its terms and a linear fact are the effect's own types
+  // (`IndexFact`, `LinearTerm`, `LinearFactOf`), declared beside it.
+  const shared = declared([], undefined, types.slice(types.indexOf("export type IndexFact ="),
+    types.indexOf("/** The kinds of value an elements predicate admits")));
+  const typed = new Set([...typeNames, ...shared, "param", "guards", "asserts", "symbol"]);
+  // The grammar's rules, named for their content, are keys of the grammar
+  // object; those that are no field of the effect are these.
+  const rule = "a rule of the grammar, named for its content";
+  const rules = Object.fromEntries([...grammarNames].filter((n) => !leanNames.has(n) &&
+    new RegExp(`^  ${n}:`, "m").test(grammarText)).map((n) => [n, rule]));
+  expectSubset("The effect grammar's names Lean's codec lacks", grammarNames, leanNames, rules);
+  expectSubset("Lean's effect codec names the grammar lacks", leanNames, grammarNames, {});
+  expectSubset("Lean's effect codec names the types lack", leanNames, typed, {});
 }
 
 // The claim-independent source execution graphs.

@@ -833,36 +833,25 @@ def decodeCompletion (j : Json) : Except String Bool := do
   | "async" => pure true
   | k => throw s!"a definition completes `sync` or `async`, not {k}"
 
-/-- The effect a definition's result annotation states, `{footprint,
-onThrow, fresh, regions}`, or none: a closed footprint and whether it holds
-on a throw too, whether the result is fresh, and the call positions whose
-values, read through a path of fields, select the stores the frame lets
-change arbitrarily (`"x[*]": "any"`, `"x.f[*]": "any"`), each
-`{position, path}`. The
-effect's frame is the closed footprint with those store regions and no
-receiver mode; a statement of `top` without a fresh result states nothing,
-and is refused. With regions, a fresh result beside them and a bound of
-`top` are refused. -/
+/-- The effect a definition's result annotation states, its exits in the
+serialized effect's form (`EffectCodec.decodeExits`), or none: a closed
+frame with the store regions the frame lets change arbitrarily
+(`"x[*]": "any"`, `"x.f[*]": "any"`), on a throw the same frame or `⊤`,
+and a fresh result (`EffectJson.StatedEffect.ofExits`). A statement of
+`top` without a fresh result states nothing, and is refused. With regions,
+a fresh result beside them and a bound of `top` are refused. -/
 def decodeStated : Json → Except String (Option EffectJson.StatedEffect)
   | .null => pure none
   | j => do
-    fieldsExactly j ["footprint", "onThrow", "fresh", "regions"]
-    let footprint : Footprints.Closed ← fromJson? (← jField j "footprint")
-    let onThrow ← (← jField j "onThrow").getBool?
-    let fresh ← (← jField j "fresh").getBool?
-    let regions ← (← (← jField j "regions").getArr?).toList.mapM fun (r : Json) => do
-      fieldsExactly r ["position", "path"]
-      let position : Nat ← fromJson? (← jField r "position")
-      let path : List String ← fromJson? (← jField r "path")
-      pure (⟨position, path⟩ : Footprints.ArgumentStoreRegion)
-    if regions.isEmpty then
-      if footprint == .top && !fresh then
+    let s ← EffectJson.StatedEffect.ofExits (← EffectCodec.decodeExits j)
+    if s.regions.isEmpty then
+      if s.closed == .top && !s.fresh then
         throw "a stated effect states a footprint below `top` or a fresh result"
-      pure (some ⟨footprint, onThrow, fresh, []⟩)
+      pure (some s)
     else
-      if footprint == .top || fresh || !regions.Nodup then
+      if s.closed == .top || s.fresh || !s.regions.Nodup then
         throw "a stated effect with store regions states a bound below `top` off them, distinct positions and no fresh result"
-      pure (some ⟨footprint, onThrow, false, regions⟩)
+      pure (some s)
 
 /-- A guard's promise as the Fragment states it, or none. -/
 def decodeGuard : Json → Except String (Option Guard)

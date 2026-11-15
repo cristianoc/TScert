@@ -587,35 +587,27 @@ the rest splice at the positions `1` to `n`, a transport at an entry scope of
 `max (n + 1) k` slots, `k` the slots its replacements name. Only
 instantiated formulas are interpreted.
 
-The documents write an effect in their own shape (`EffectJson.WireEffect`),
-whose fields state exits (`WireEffect.elaborate`):
+The documents write an effect as its exits
+([the serialized effect](REQUEST-PROTOCOL.md#the-serialized-effect)). The
+front end states a native's or a library's contract through its builder
+(`footprintEffect`, `tools/type-graph.mts`), whose options name the exits:
 
-- **normal frame**: the closed bound's three class entries, the receiver's
-  entries (`receiverOwn`'s own value locations where it is set, else
-  `receiverStore`'s store) and each argument store region at `any`;
+- **normal frame**: the closed bound's three class entries, then the
+  receiver's own value locations (`receiverOwn`) or else its store
+  (`receiverStore`) at `any`;
 - **normal postconditions**: the result's fresh store (`fresh`) and fresh
   object (`freshObject`), the receiver's elements where the result is
   `true` (`elements`), each stated index fact (`ensures`); for
   `receiverGrows` the action of `{receiver store: any}`, the receiver
   store's extension and the append of the actuals; for an element write the
   action of $`\{\mathsf{all\text{-}views}:\mathsf{grow}\}`$, and for
-  `assign` View-Write at the typed array's format, for `exact` View-Write at
-  the element type's format and its precondition's facts, with the result
-  the value written;
+  `assign` View-Write at the typed array's format, for an exact write
+  View-Write at the element type's format and its precondition's facts,
+  with the result the value written; an exact write states its range among
+  its preconditions, and the builder refuses one that does not;
 - **exceptional exit**: the normal frame and no postcondition where the
-  value states `onThrow`; otherwise $`\top`$, the three class entries
+  options state `onThrow`; otherwise $`\top`$, the three class entries
   at `any`, and no postcondition.
-
-Two wire values state one effect where they differ only in `receiverStore`
-beside `receiverOwn`, whose entry covers the store, or in `onThrow` where
-the frame is $`\top`$; the canonical value states neither
-(`WireEffect.canonicalize`, proved to state the same effect:
-`WireEffect.elaborate_canonicalize`). The decoder reads both. An effect is
-written only where it is the elaboration of a valid wire value
-(`Representable`), as its canonical value, each field read back from the
-exit that states it (`wireOf`; proved: `wireOf_elaborate`,
-`encodeOld_sound`, `encodeOld_complete`); a document holding a canonical
-value is written back as read (`effectJson_decode`).
 
 A contract states no assertion-arena formula (stated limit): its
 postconditions are operational posts, index facts, transitions, transports

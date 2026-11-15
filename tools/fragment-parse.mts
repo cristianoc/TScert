@@ -25,7 +25,8 @@ import { noteInput, readText, writeText } from "./files.mts";
 import { dirname, resolve } from "node:path";
 // declaration-session.mts names the project a module is lowered in, rooted at the module.
 import { moduleProject, moduleProjectText } from "./declaration-session.mts";
-import type { DeclarationIdentity, ResolutionSlots, StatedEffect, TypeDefinition, TypeTerm, ValueRoot } from "./declaration-types.mts";
+import type { DeclarationIdentity, ResolutionSlots, TypeDefinition, TypeTerm, ValueRoot } from "./declaration-types.mts";
+import type { StatedFrame } from "./type-graph.mts";
 import { withConditions } from "./type-graph.mts";
 import { deepPartMap, mapDocument, mapFunctionParts } from "./fragment-parts.mts";
 import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositions, restRefusal, restTerm, REST_PACK_BOUND, REST_PACK_VALUE, statedResult, substitute, typeTerm, visitType, mapTypeParts, type MappedMember, type TermScope } from "./type-term.mts";
@@ -937,7 +938,7 @@ export class Gate {
   /** A definition's written result: its statement of the definition's
    * effect, `Modifies<P, T>`, and the result annotation it states it of
    * (`statedResult`); no statement where it writes none. */
-  statedResult(node: TypeNode | undefined, at: Node): Modifies<{ values: "any"; stores: "grow" }, { stated: StatedEffect | null; result: TypeNode | undefined }> {
+  statedResult(node: TypeNode | undefined, at: Node): Modifies<{ values: "any"; stores: "grow" }, { stated: StatedFrame | null; result: TypeNode | undefined }> {
     return statedResult(this.termScope(), node, at);
   }
 

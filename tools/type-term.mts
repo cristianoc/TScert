@@ -7,9 +7,9 @@ import type { Identifier, Node, SourceFile, TypeAliasDeclaration, TypeElement, T
 import type { Span } from "./span.mts";
 import { statesTag } from "./bound-annotations.mts";
 import { childrenOf, isTypeAlias, unparenthesized } from "./syntax.mts";
-import type { ClosedFootprint, PropertyKey, ResolutionSlots, StatedEffect, StoreRegion, TypeTerm } from "./declaration-types.mts";
+import type { ClosedFootprint, PropertyKey, ResolutionSlots, TypeTerm } from "./declaration-types.mts";
 import { withPromise, footprintEffect, ordinaryEffect, promiseEffect, sameEffect } from "./type-graph.mts";
-import type { CallEffect, CallPromise } from "./type-graph.mts";
+import type { CallEffect, CallPromise, StatedFrame, StoreRegion } from "./type-graph.mts";
 
 /** The projections a resolvable parameter owns: its observation and its
  * result. */
@@ -1190,7 +1190,7 @@ export const FRESH_PLACE = "`Fresh` states a written signature's fresh result, a
  * statement with store regions gives its frame's closed approximation,
  * letting every location change (`StatedEffect.footprint`): the
  * regions are read only from a unit's own statement. */
-export const statedEffect = (stated: StatedEffect): Modifies<{ values: "any"; stores: "grow" }, CallEffect> =>
+export const statedEffect = (stated: StatedFrame): Modifies<{ values: "any"; stores: "grow" }, CallEffect> =>
   (footprintEffect(stated.regions.length ? { value: "any", store: "any" } : stated.footprint,
     { onThrow: stated.onThrow, fresh: stated.fresh }));
 
@@ -1203,7 +1203,7 @@ export const statedEffect = (stated: StatedEffect): Modifies<{ values: "any"; st
  * definition, whose throw is its promise's rejection; one on a constructor or
  * a construct signature, whose effect is its class's construction. */
 export function statedResult(scope: TermScope, result: TypeNode | undefined, at: Node | null):
-    Modifies<{ values: "any"; stores: "grow" }, { stated: StatedEffect | null; result: TypeNode | undefined }> {
+    Modifies<{ values: "any"; stores: "grow" }, { stated: StatedFrame | null; result: TypeNode | undefined }> {
   const unwrapped = result && unwrap(result);
   // A guard states its frame at its promise's type, `x is Modifies<P, T>`,
   // which TypeScript reads as `x is T`: the predicate stays the result.
@@ -1295,7 +1295,7 @@ const locationKey = (key: string): boolean => {
  * any other location key is refused: the regions it names are read where
  * their certification reaches the source (docs/drafts/stated-effects.md,
  * §3.1). */
-function statementOf(scope: TermScope, written: TypeNode, at: Node | null): Modifies<{ values: "any"; stores: "grow" }, StatedEffect> {
+function statementOf(scope: TermScope, written: TypeNode, at: Node | null): Modifies<{ values: "any"; stores: "grow" }, StatedFrame> {
   const node = unwrap(written);
   const shape = "a frame is written in place as a type literal `{ values?: c; stores?: c; onThrow?: true; \"L\"?: c }`, each `c` one of \"keep\", \"init\", \"scalar\", \"grow\", \"any\"";
   if (!ts.isTypeLiteralNode(node)) return scope.fail(written, shape);

@@ -24,13 +24,13 @@ def encodeInterfaces (modules : List Fragment.ModuleAst) (est : Established) (ta
       let p ← jField f "namePos"
       let value := match est.lookup (m.location, n) with
         | none => Json.null
-        | some ((fp, ot, ret), u) => Json.mkObj [("footprint", toJson fp), ("onThrow", toJson ot),
-            ("resultFootprint", toJson ret), ("unit", toJson u),
+        | some ((fp, ot, ret), u) => Json.mkObj [("exits", toJson (EffectJson.classExits fp ot)),
+            ("resultExits", toJson (EffectJson.classExits ret false)), ("unit", toJson u),
             ("interface", toJson ((table.bind (·.interfaces.lookup n)).getD []))]
       return Json.mkObj [("name", toJson n), ("namePos", p), ("established", value)]
     return Json.mkObj [("module", interfaceModuleJson m), ("entries", toJson entries),
       ("rows", (table.map RowTable.rowsWire).getD Json.null)]
-  return Json.mkObj [("modules", toJson rows)]
+  EffectCodec.refuseUnserializable (Json.mkObj [("modules", toJson rows)])
 
 /-- Decode a store-authorized result, requiring its exact shape and each
 complete module document to match the importing fragment: its entries,
@@ -59,10 +59,10 @@ def decodeInterfaces (sc : ImportScope) (j : Json) : Except String (Established 
         throw "interface function identity mismatch"
       let e ← jField entry "established"
       if e == Json.null then continue
-      fieldsExactly e ["footprint", "onThrow", "resultFootprint", "unit", "interface"]
-      let fp : Footprints.Closed ← fromJson? (← jField e "footprint")
-      let ot ← e.getObjValAs? Bool "onThrow"
-      let ret : Footprints.Closed ← fromJson? (← jField e "resultFootprint")
+      fieldsExactly e ["exits", "resultExits", "unit", "interface"]
+      let (fp, ot) ← EffectJson.classOfExits (← fromJson? (← jField e "exits"))
+      let (ret, rt) ← EffectJson.classOfExits (← fromJson? (← jField e "resultExits"))
+      if rt then throw "a returned function's established exits bound no throw"
       let u ← e.getObjValAs? String "unit"
       if !u.startsWith s!"module:{m.location}#" then throw "interface group identity mismatch"
       ifaces := ifaces ++ [(n, ← fromJson? (← jField e "interface"))]

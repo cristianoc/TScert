@@ -597,12 +597,6 @@ run_cmd do
   check ``Verification.CallEffects.Effect.drop_arenaFree
   check ``Verification.CallEffects.Effect.promised_drop
   check ``Verification.CallEffects.Effect.result_drop
-  check ``Verification.EffectJson.WireEffect.elaborate_canonicalize
-  check ``Verification.EffectJson.wireOf_elaborate
-  check ``Verification.EffectJson.encodeOld_sound
-  check ``Verification.EffectJson.encodeOld_complete
-  check ``Verification.EffectJson.decodeOld_sound
-  check ``Verification.EffectJson.effectJson_decode
   check ``Verification.EffectCodec.decode_encode
   check ``Verification.EffectCodec.decode_sound
   check ``Verification.EffectCodec.encode_injective
