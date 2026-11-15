@@ -559,6 +559,71 @@ theorem selectedWithin_sound {Φ : Footprints.Closed} {F : List Nat} {b : Nat} {
     Φ.HoldsOn (· < b) h h' :=
   (Footprints.Footprint.boundBelow_sound hq (freshPositions_sound hF)).mono hle
 
+/-- **A selected call's local effect on a throw**: the closed bound below
+the invocation's mark of its signature's exceptional-exit frame (the note's
+rule Call at the exceptional exit, `Effect.summary`), each entry
+instantiated at the call's positions, an entry on a fresh position's store
+discharged (`Footprint.boundBelow`), where the call's throw is its
+signature's (`selectedThrows`). It reads no bound. -/
+def selectedThrowGrades (F : List Nat) (e : ProgramCertificates.Evidence ι) : List Footprints.Closed :=
+  if ExpressionEffects.selectedOperands e && ExpressionEffects.selectedThrows e then
+    match ExpressionEffects.selectedEffect e with
+    | some eff => [Footprints.Footprint.boundBelow (freshPositions F (ProgramCertificates.claim e).term)
+        (eff.summary (ExpressionEffects.actualsOf (ProgramCertificates.claim e).term).length).exceptional.frame]
+    | none => []
+  else []
+
+/-- **A selected call's throw within the bound**: its exceptional exit's
+local effect below it, the frame's check entry by entry
+(`Footprint.boundBelow_le`). -/
+def selectedThrowsWithinAt (Φ : Footprints.Closed) (F : List Nat) (e : ProgramCertificates.Evidence ι) : Bool :=
+  ExpressionEffects.selectedOperands e && ExpressionEffects.selectedThrows e &&
+    match ExpressionEffects.selectedEffect e with
+    | some eff => (Footprints.Footprint.boundBelow (freshPositions F (ProgramCertificates.claim e).term)
+        (eff.summary (ExpressionEffects.actualsOf (ProgramCertificates.claim e).term).length).exceptional.frame).le Φ
+    | none => false
+
+/-- **A selected call's throw check is its exceptional grade below the
+bound** (proved). -/
+theorem selectedThrowsWithinAt_eq_grades (Φ : Footprints.Closed) (F : List Nat) (e : ProgramCertificates.Evidence ι) :
+    selectedThrowsWithinAt Φ F e = (selectedThrowGrades F e).any (·.le Φ) := by
+  unfold selectedThrowsWithinAt selectedThrowGrades
+  cases ExpressionEffects.selectedEffect e <;> cases ExpressionEffects.selectedOperands e <;>
+    cases ExpressionEffects.selectedThrows e <;> simp
+
+/-- **Every run's heap grows**, on a normal return and on a throw: from a
+heap at least `b` long every exit heap is too. -/
+theorem safePostExc_grow {Ξ T : Fam} {Q : HeapObservations.Post} {R : Heap → Prop} {b : Nat} :
+    ∀ {n W h t}, b ≤ h.length → HeapObservations.SafePostExc Ξ T Q R n W h t →
+      HeapObservations.SafePostExc Ξ T (fun h' v => Q h' v ∧ b ≤ h'.length) (fun h' => R h' ∧ b ≤ h'.length)
+        n W h t := by
+  intro n
+  induction n with
+  | zero => intro _ _ _ _ hs; exact hs
+  | succ n ih =>
+    intro W h t hb hs
+    obtain ⟨hrf, hs⟩ := hs
+    refine ⟨hrf, ?_⟩
+    rcases hs with (⟨hv, ht, hq⟩ | ⟨hth, hr⟩) | ⟨U, h', t', hx, hu, step, hh, hs⟩
+    · exact .inl (.inl ⟨hv, ht, hq, hb⟩)
+    · exact .inl (.inr ⟨hth, hr, hb⟩)
+    · exact .inr ⟨U, h', t', hx, hu, step, hh, ih (Nat.le_trans hb (Footprints.step_length_le step)) hs⟩
+
+/-- **A selected call's throw is within the bound below the mark** where
+its exceptional grade is below the bound: the throw postcondition and the
+heap's growth give the exceptional frame
+(`Effect.summary_exceptional_post`), within its closed bound below the mark
+(`Footprint.boundBelow_sound`). -/
+theorem selectedThrowWithin_sound {Φ : Footprints.Closed} {F : List Nat} {b : Nat} {ρ : Env} {t : Tm}
+    {eff : CallEffects.Effect} {n : Nat} {h h' : Heap} (hF : FreshOk F b ρ)
+    (hle : (Footprints.Footprint.boundBelow (freshPositions F t) (eff.summary n).exceptional.frame).le Φ = true)
+    (hl : h.length ≤ h'.length)
+    (hq : eff.excPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t))
+      h h') :
+    Φ.HoldsOn (· < b) h h' :=
+  (Footprints.Footprint.boundBelow_sound (CallEffects.Effect.summary_exceptional_post eff n hl hq)
+    (freshPositions_sound hF)).mono hle
+
 /-- A node's run is within a closed bound `Φ` on the locations below `b`, on
 normal return, from the heap it starts in, where the slots `F` hold stores
 allocated at or after `b`; and its value has such a store where `out`. Where

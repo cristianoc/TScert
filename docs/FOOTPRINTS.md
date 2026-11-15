@@ -306,6 +306,18 @@ under `receiverStore`, $`\Phi=\top`$ or a fresh receiver; and `keepsHeap` is
 the empty coarse footprint with neither receiver exception (proved:
 `GraphCode.selectedWithinAt_eq_fields`, `PromiseCalls.keepsHeap_eq_fields`).
 
+A selected call's throw is checked against the exceptional exit's frame of
+its signature's exit summary, the note's rule Call at the exceptional exit:
+the same closed bound below the mark, of the signature's frame where it
+states `onThrow` and of $`\top`$ otherwise
+(`GraphCode.selectedThrowsWithinAt`). The throw postcondition and the
+heap's growth give that frame's action (proved:
+`Effect.summary_exceptional_post`, `GraphCode.safePostExc_grow`), so the
+throw is within the bound below the mark (proved:
+`GraphCode.selectedThrowWithin_sound`). The pass's footprint check reads it
+(`SinglePass.footprintCheck`, `TolerantFrames.passThrows`); the graph
+checker's `GraphCode.throwsWithin` reads the normal frame and `onThrow`.
+
 ## The stable set for density
 
 Density reads only a store, and only a store change beyond `grow` can remove

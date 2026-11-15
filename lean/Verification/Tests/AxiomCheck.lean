@@ -530,6 +530,10 @@ run_cmd do
   check ``Verification.Footprints.Footprint.keepsHeap_prefix
   check ``Verification.CallEffects.Effect.frame_boundBelow
   check ``Verification.GraphCode.selectedWithin_sound
+  check ``Verification.GraphCode.selectedThrowWithin_sound
+  check ``Verification.GraphCode.selectedThrowsWithinAt_eq_grades
+  check ``Verification.GraphCode.safePostExc_grow
+  check ``Verification.CallEffects.Effect.summary_exceptional_post
   check ``Verification.GraphCode.selectedGrades_eq_fields
   check ``Verification.GraphCode.selectedWithinAt_eq_fields
   check ``Verification.PromiseCalls.keepsHeap_eq_fields

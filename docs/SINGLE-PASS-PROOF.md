@@ -579,8 +579,9 @@ $`\Phi`$), `passDerivChecked` (`derivChecked`: $`d`$ claimed at the
 node's term and context, its tree accepted by `checkTreeUsing` or by `requiresTree` at
 $`k_S`$), `passWithin` (`within`, 1433–1435: an inspection, `passWrites`,
 `selectedWithinAt Φ F d` with `passDerivChecked`, or a type no value has) and
-`passThrows` (`throws`, 1443–1446, its first disjunct, which bounds no
-throw, left out). Proved, for $`\mathrm{FreshOk}\ F\ b\ \rho`$:
+`passThrows` (`throws`, its first disjunct, which bounds no throw, left
+out; a call by its signature's exceptional exit, `selectedThrowsWithinAt Φ F d`
+with `passDerivChecked`). Proved, for $`\mathrm{FreshOk}\ F\ b\ \rho`$:
 
 - `pass_within_normal`: `passWithin` ⟹ the normal exit is within $`\Phi`$ on
   the locations below $`b`$ from the node's entry heap:

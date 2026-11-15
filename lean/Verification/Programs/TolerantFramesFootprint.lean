@@ -7,7 +7,8 @@ pass checks each node: its normal exit within `Φ` (`within`: an inspection,
 a write the bound admits (`writes`), a call at a selected signature within
 the bound (`GraphCode.selectedWithinAt` on the step's derivation), or a type
 no value has), and its throw where a live handler or the bound's `onThrow`
-needs it (`throws`). This module states what that check gives:
+needs it (`throws`: a call by its signature's exceptional exit,
+`GraphCode.selectedThrowsWithinAt`). This module states what that check gives:
 
 - `pass_within_normal`, `pass_within_throw`: the node's run is within `Φ` on
   the locations below `b` from the node's entry heap, the slots `F` holding
@@ -58,14 +59,13 @@ def passWithin (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : Cod
 
 /-- The pass's `throws` (lines 1443–1446) but its first disjunct, which
 discharges no throw: the throw bounded by an inspection, a write, a selected
-call stating `onThrow`, or an unreachable node. -/
+call whose signature's exceptional exit is within the bound, or an
+unreachable node. -/
 def passThrows (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
     (sums : List (ReadSummary ι)) (j : Sequent ι) (kS : HeapKnowledge.Knowledge) (Φ : Footprints.Closed)
     (F : List Nat) (d : ProgramCertificates.Evidence ι) : Bool :=
   ExpressionEffects.check G j.context j.term || passWrites G j.context kS Φ j.term ||
-    (GraphCode.selectedWithinAt Φ F d && passDerivChecked G images codes sums kS j d &&
-      ExpressionEffects.selectedThrows d &&
-      (match ExpressionEffects.selectedEffect d with | some eff => eff.onThrow | none => false)) ||
+    (GraphCode.selectedThrowsWithinAt Φ F d && passDerivChecked G images codes sums kS j d) ||
     j.context.any (ExpressionEffects.emptyType G ·)
 
 /-! ## What the check gives -/
@@ -159,16 +159,14 @@ theorem pass_within_throw {G : NormalGraph ι} {images : InstanceImageCheck G} {
       (ExpressionEffects.sound_exc hexpr hscope he hw hh hsafe)
   · exact SafePostExc.weaken (fun _ _ _ => trivial) (fun _ hq => hq.on _) (passWrites_sound hwrite he hh hkS hsafe)
   · simp only [Bool.and_eq_true] at hcall
-    obtain ⟨⟨⟨hsw, hdc⟩, hthr⟩, hon⟩ := hcall
+    obtain ⟨hsw, hdc⟩ := hcall
     simp only [passDerivChecked, Bool.and_eq_true, beq_iff_eq] at hdc
     obtain ⟨⟨hterm, hctx⟩, htree⟩ := hdc
     have hsel := hsw
-    simp only [GraphCode.selectedWithinAt, Bool.and_eq_true] at hsel
-    obtain ⟨hops, hsel⟩ := hsel
+    simp only [GraphCode.selectedThrowsWithinAt, Bool.and_eq_true] at hsel
+    obtain ⟨⟨hops, hthr⟩, hsel⟩ := hsel
     split at hsel
     · rename_i eff heff
-      rw [heff] at hon
-      simp only at hon
       have hs : SafePostExc (excOf G) (meaning G (claim d).type)
           (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (claim d).term))
             (ExpressionEffects.actualsOf (instantiate 0 ρ (claim d).term)) h)
@@ -186,7 +184,8 @@ theorem pass_within_throw {G : NormalGraph ι} {images : InstanceImageCheck G} {
         (SafePostExc.of_post (R := fun _ => True) (fun _ => trivial)
           (of_value_property (Q := fun _ _ => True) (fun _ _ _ _ _ => trivial) hsafe)) hs
       exact SafePostExc.weaken (fun _ _ _ => trivial)
-        (fun _ hq => selected_within_on hF (hterm ▸ hsel) (hq.2 hon)) hboth
+        (fun _ hq => GraphCode.selectedThrowWithin_sound hF (hterm ▸ hsel) hq.2 hq.1.2)
+        (GraphCode.safePostExc_grow (Nat.le_refl _) hboth)
     · cases hsel
   · obtain ⟨A, hA, hnil⟩ := List.any_eq_true.mp hctx
     obtain ⟨i, hi⟩ := List.getElem?_of_mem hA

@@ -117,9 +117,7 @@ theorem footprintCheck_sound [DecidableEq ι] {G : NormalGraph ι} {images : Ins
   refine ⟨?_, fun hl => ?_, fun hk hret => ?_, hs⟩
   · simpa [passWithin, passWrites, passDerivChecked, Bool.or_assoc, Bool.and_assoc] using hw
   · rw [hl] at ht
-    simp only [passThrows, passWrites, passDerivChecked]
-    cases hse : ExpressionEffects.selectedEffect d <;> simp only [hse] at ht ⊢ <;>
-      simpa [Bool.or_assoc, Bool.and_assoc] using ht
+    simpa [passThrows, passWrites, passDerivChecked, Bool.or_assoc, Bool.and_assoc] using ht
   · rw [hk] at hr; simpa [hret] using hr
 
 /-- **The footprint check composes the invocation's bound**, from the pass's

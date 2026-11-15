@@ -1434,11 +1434,10 @@ def footprintCheck (G : NormalGraph ι) (images : InstanceImageCheck G) (codes :
     c.context.any (ExpressionEffects.emptyType G ·)
   -- The throw within the bound where a handler outside the region with
   -- no normal return catches it or the bound covers throws
-  -- (`GraphCode.nodeChecked`'s `deadHandler`): an effect without
-  -- `onThrow` bounds no throw a live handler catches.
+  -- (`GraphCode.nodeChecked`'s `deadHandler`): a call's throw by its
+  -- signature's exceptional exit (`GraphCode.selectedThrowsWithinAt`).
   let throws := !(liveHandler || exc) || ExpressionEffects.check G c.context node.expression || writes ||
-    (GraphCode.selectedWithinAt Φ F deriv && derivChecked.get && ExpressionEffects.selectedThrows deriv &&
-      (match ExpressionEffects.selectedEffect deriv with | some eff => eff.onThrow | none => false)) ||
+    (GraphCode.selectedThrowsWithinAt Φ F deriv && derivChecked.get) ||
     c.context.any (ExpressionEffects.emptyType G ·)
   let returns := match node.continuation with
     | .ret => !ret || outFresh
@@ -1456,14 +1455,15 @@ def stepGrades (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : Cod
   let selected := GraphCode.selectedGrades F deriv
   let inspection := ExpressionEffects.check G c.context node.expression
   let emptyContext := c.context.any (ExpressionEffects.emptyType G ·)
+  let selectedT := GraphCode.selectedThrowGrades F deriv
   let checked : Thunk (List Footprints.Closed) := Thunk.mk fun _ =>
     if selected.isEmpty then [] else if derivChecked G images codes sums c node stepK deriv then selected else []
-  let throwing := ExpressionEffects.selectedThrows deriv &&
-    (match ExpressionEffects.selectedEffect deriv with | some eff => eff.onThrow | none => false)
+  let checkedT : Thunk (List Footprints.Closed) := Thunk.mk fun _ =>
+    if selectedT.isEmpty then [] else if derivChecked G images codes sums c node stepK deriv then selectedT else []
   { within := if inspection || ExpressionEffects.emptyType G c.type || emptyContext then [⟨.keep, .keep, .keep⟩]
       else writes ++ checked.get
     throws := if inspection || emptyContext then [⟨.keep, .keep, .keep⟩]
-      else writes ++ (if throwing then checked.get else [])
+      else writes ++ checkedT.get
     scope := ProgramCertificates.checkScope c.context.length node.expression }
 
 /-- Whether a step's local effect `g` is within the bound `Φ`: a grade on
@@ -1489,17 +1489,17 @@ theorem footprintCheck_eq_admits (G : NormalGraph ι) (images : InstanceImageChe
       (stepGrades G images codes sums F c node stepK deriv).admits Φ liveHandler exc ret outFresh
         node.continuation := by
   simp only [footprintCheck, stepGrades, StepGrades.admits, Thunk.get, ExpressionEffects.writeWithin_eq_grades,
-    ExpressionEffects.initWriteWithin_eq_grades, GraphCode.selectedWithinAt_eq_grades]
+    ExpressionEffects.initWriteWithin_eq_grades, GraphCode.selectedWithinAt_eq_grades,
+    GraphCode.selectedThrowsWithinAt_eq_grades]
   have hk : ∀ Φ : Footprints.Closed, (⟨.keep, .keep, .keep⟩ : Footprints.Closed).le Φ = true :=
     Footprints.Closed.empty_le
   generalize ExpressionEffects.check G c.context node.expression = a
   generalize ExpressionEffects.emptyType G c.type = b
   generalize c.context.any (ExpressionEffects.emptyType G ·) = d
   generalize derivChecked G images codes sums c node stepK deriv = dc
-  generalize ExpressionEffects.selectedThrows deriv = th
-  generalize (match ExpressionEffects.selectedEffect deriv with | some eff => eff.onThrow | none => false) = ot
   generalize GraphCode.selectedGrades F deriv = sel
-  cases a <;> cases b <;> cases d <;> cases dc <;> cases th <;> cases ot <;> cases hsel : sel.isEmpty <;>
+  generalize GraphCode.selectedThrowGrades F deriv = selT
+  cases a <;> cases b <;> cases d <;> cases dc <;> cases hsel : sel.isEmpty <;> cases hselT : selT.isEmpty <;>
     simp_all [List.any_append, List.isEmpty_iff, Bool.and_assoc, Bool.or_assoc]
 
 /-- A selected call's exit summary (`Effect.summary`) at its actuals'
@@ -1516,7 +1516,7 @@ inspection or an empty type keeps everything (the empty frame); a typed
 write and an initializing write state their closed footprints' entries; a
 call at its selected signature, its derivation checked, states the
 signature's exit summary, its exceptional exit where the call's throw is the
-signature's (`onThrow`). -/
+signature's (`selectedThrows`). -/
 def stepCertificate (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
     (sums : List (ReadSummary ι)) (F : List Nat) (c : PointClaim ι) (node : Node)
     (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι) : StepCertificate :=
@@ -1528,13 +1528,14 @@ def stepCertificate (G : NormalGraph ι) (images : InstanceImageCheck G) (codes 
   let emptyContext := c.context.any (ExpressionEffects.emptyType G ·)
   let checked : Thunk (List (CallEffects.Exits CallEffects.ExitSpec)) := Thunk.mk fun _ =>
     if selected.isEmpty then [] else if derivChecked G images codes sums c node stepK deriv then selected else []
-  let throwing := ExpressionEffects.selectedThrows deriv &&
-    (match ExpressionEffects.selectedEffect deriv with | some eff => eff.onThrow | none => false)
+  let thrown := if ExpressionEffects.selectedThrows deriv then selected else []
+  let checkedT : Thunk (List (CallEffects.Exits CallEffects.ExitSpec)) := Thunk.mk fun _ =>
+    if thrown.isEmpty then [] else if derivChecked G images codes sums c node stepK deriv then thrown else []
   let keepsAll : CallEffects.ExitSpec := { frame := [], ensures := [] }
   { normal := if inspection || ExpressionEffects.emptyType G c.type || emptyContext then [keepsAll]
       else writes ++ checked.get.map (·.normal)
     exceptional := if inspection || emptyContext then [keepsAll]
-      else writes ++ (if throwing then checked.get.map (·.exceptional) else [])
+      else writes ++ checkedT.get.map (·.exceptional)
     fresh := GraphCode.freshPositions F (ProgramCertificates.claim deriv).term
     scope := ProgramCertificates.checkScope c.context.length node.expression }
 
@@ -1553,14 +1554,14 @@ private theorem summaries_normal (F : List Nat) (deriv : ProgramCertificates.Evi
   cases ExpressionEffects.selectedOperands deriv <;> cases ExpressionEffects.selectedEffect deriv <;> rfl
 
 omit [DecidableEq ι] [Hashable ι] [Instantiates ι] in
-private theorem summaries_exceptional (F : List Nat) (deriv : ProgramCertificates.Evidence ι)
-    (ht : (match ExpressionEffects.selectedEffect deriv with | some eff => eff.onThrow | none => false) = true) :
-    (selectedSummaries deriv).map (fun s => Footprints.Footprint.boundBelow
-      (GraphCode.freshPositions F (ProgramCertificates.claim deriv).term) s.exceptional.frame) =
-      GraphCode.selectedGrades F deriv := by
-  unfold selectedSummaries GraphCode.selectedGrades
-  cases ExpressionEffects.selectedOperands deriv <;> cases hse : ExpressionEffects.selectedEffect deriv <;>
-    simp_all [CallEffects.Effect.summary]
+private theorem summaries_exceptional (F : List Nat) (deriv : ProgramCertificates.Evidence ι) :
+    (if ExpressionEffects.selectedThrows deriv then selectedSummaries deriv else []).map
+      (fun s => Footprints.Footprint.boundBelow
+        (GraphCode.freshPositions F (ProgramCertificates.claim deriv).term) s.exceptional.frame) =
+      GraphCode.selectedThrowGrades F deriv := by
+  unfold selectedSummaries GraphCode.selectedThrowGrades
+  cases ExpressionEffects.selectedOperands deriv <;> cases ExpressionEffects.selectedThrows deriv <;>
+    cases ExpressionEffects.selectedEffect deriv <;> rfl
 
 omit [Hashable ι] [Instantiates ι] in
 /-- **The grades are the certificate's projection** (proved): each exit
@@ -1589,14 +1590,9 @@ theorem stepCertificate_grades (G : NormalGraph ι) (images : InstanceImageCheck
     · rfl
     · rw [List.map_append, hw]
       congr 1
-      cases ht : (ExpressionEffects.selectedThrows deriv &&
-          (match ExpressionEffects.selectedEffect deriv with | some eff => eff.onThrow | none => false))
-      · simp only [Bool.false_eq_true, if_false, List.map_nil]
-      · simp only [if_true]
-        simp only [Bool.and_eq_true] at ht
-        rw [List.map_map, checked_map]
-        simp only [Function.comp_def]
-        rw [summaries_exceptional F deriv ht.2]
+      rw [List.map_map, checked_map]
+      simp only [Function.comp_def]
+      rw [summaries_exceptional F deriv]
 
 /-- **A return's checks** (`GraphCode.returnOk`, `checkReturnResult`), at
 node `l` returning its result's name `result` from `entry` with the output
