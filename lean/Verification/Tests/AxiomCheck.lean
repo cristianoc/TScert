@@ -2,6 +2,7 @@ import Verification.Semantics.ViewStores
 import Verification.Semantics.ExitSummaries
 import Verification.Semantics.CommandSummaries
 import Verification.Semantics.CommandComposition
+import Verification.Semantics.CommandLoops
 import Verification.Programs.TolerantFramesExitStructural
 import Verification.Programs.TolerantFramesExitHeadExtraction
 import Verification.Programs.TolerantFramesExitNonHeadExtraction
@@ -297,6 +298,12 @@ run_cmd do
   check ``Verification.CallEffects.rebaseAll_fresh_eff
   check ``Verification.CallEffects.Post.fresh_eff
   check ``Verification.CallEffects.ThenEvidence.into_fresh
+  check ``Verification.CallEffects.LoopEvidence.prefix_sound
+  check ``Verification.CallEffects.LoopEvidence.loop_sound
+  check ``Verification.CallEffects.box_of_rigid
+  check ``Verification.CallEffects.LoopEvidence.frame_at_head
+  check ``Verification.CallEffects.frame_at_exit
+  check ``Verification.CallEffects.reliance_at_prefix
   check ``Verification.Parity.OperationPost.holds_shift
   check ``Verification.Footprints.Region.sub_mem
   check ``Verification.Footprints.CellsFrom.of_post
