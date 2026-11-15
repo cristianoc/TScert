@@ -365,6 +365,155 @@ Delete `elementWrite` and `stores/assign/exact` metadata variants; `onThrow`, `r
 
 A wholly verdict-preserving migration to the more general analysis is not guaranteed. Steps 1–3 isolate representation changes; step 4 owns the semantic integration.
 
+## Changing the effect type
+
+The effect type changes from its fields to its two exits by moving every
+reader onto the exits first and changing the representation last. The
+existing mechanisms are `Effect.schema` and `ExitSpec.Holds` for the
+meaning, `FrameChecks` for frames, Entry and consequence for
+postconditions, and `CommandComposition` for sequencing and rebasing.
+
+### Readers and where each goes
+
+| Kind of reader | Readers | Destination |
+|---|---|---|
+| Frame | `ExpressionEffects`, `GraphCode`, `ArgumentRegionCertificates`, regional preservation in `PromiseCalls` | the selected completion's frame, through `includedIn`, `boundBelow`, `keepsHeap` and rebasing evidence |
+| Postcondition | freshness, elements, growth, append, exact write, index facts | Entry and consequence from the selected exit's `ensures`; a frame proves none of these |
+| Scope and body | `below`, `belowRow`, `codeConditions`, `PassUnitCodes`, `PassUnitRealize`, `VariadicTyping` | scoped schemas, and certificates establishing every exported postcondition |
+| Operation on effects | `drop`, `meet`, `covers`, `withoutActuals` | schema transformations with their entailment, substitution or conjunction theorems |
+| Constructor and proposal | library contracts, `Lowering/Synthesis`, `ExitProposals`, `PassProposals` | both exits built directly; inference proposes them and body certification proves them |
+| Serialization | `EffectJson`, writers of requests and claims, `Lowering/Types`, the TypeScript mappings and declarations, fixtures | one wire transaction |
+
+A semantic reader does not recover an old field from a constructor's
+pattern. `drop` belongs with substitution and consequence, `withoutActuals`
+with forgetting, `meet` with conjunction and its independence condition,
+`below` and `belowRow` with scope and body obligations; `codeConditions`
+stays a check of code built on these; `covers` is sufficient entailment of
+both exits with variance of the result and the precondition. None of them
+needs an inverse of the elaboration. `meet` is the conjunction where it is
+representable, or a proved consequence whose precision is stated; the
+conjunction `onThrow && onThrow` of the exceptional exits is such a
+consequence, not the general meet.
+
+### The eleven commits
+
+Each is a green, buildable step.
+
+1. The scope declarations move below callable and body typing (below),
+   names and definitions unchanged; a signature's exits at a prefix of the
+   actuals carry to the longer call by scope congruence.
+2. `SafePostExcV.bind`, the bind induction keeping the thrown value in the
+   exceptional clause, and its one-step `bind_value` specialization.
+3. The semantic composition foundation (`Consequence`, `Rebases`,
+   `Post.compose_rebases`) below body typing, and `Exits.compose_entry`
+   (below); the rest body's invocation uses it in place of the round trip
+   through the heap postconditions.
+4. The schema operations with their semantic theorems, one operation per
+   commit; each old operation is kept with a proved relationship to the new
+   one until its readers move.
+5. The frame deciders: the shared `FrameChecks` interfaces, then
+   `ExpressionEffects` and `GraphCode`, then `ArgumentRegionCertificates`,
+   then `PromiseCalls`.
+6. The remaining Entry readers, then `below`, `belowRow` and body
+   certification (`PassUnitCodes`, `PassUnitRealize`).
+7. The proposals: `ExitProposals`, then `PassProposals`, `Synthesis` and the
+   readers of requests and diagnostics. The exceptional prefix is kept
+   through sequence and handlers.
+8. The constructors, by semantic family: builders of schemas, each equal to
+   today's elaboration.
+9. The old wire as a datatype, and the encoder bridge (below); serialization
+   goes through it while the representation is unchanged.
+10. The pivot: `Effect` stores `exits`, `promise`, `requires` and `pre`;
+    `schema` is a projection; the old fields and the proofs only the
+    elaboration needs are deleted. No reader needs repair here.
+11. The serialized shape changes once, across Lean, TypeScript and
+    fixtures; the bridge and the old wire datatype are deleted.
+
+The decisions the general checks make are not those of the old fields in
+every case: after the representation forgets a distinction (with a normal
+frame of top, `onThrow` changes no schema while `covers` distinguishes the
+two), the decision follows the schema. A commit that changes a decision
+lists each changed verdict with its cause.
+
+### The encoder bridge
+
+Between commits 9 and 11 an effect is written in the old wire only where it
+is exactly representable there:
+
+```lean
+def Representable (e : Effect) : Prop :=
+  ∃ w : OldWireEffect, w.Valid ∧ elaborate w = e
+
+theorem encodeOld_sound (h : encodeOld e = .ok w) :
+  w.Valid ∧ elaborate w = e
+
+theorem encodeOld_complete (h : Representable e) :
+  ∃ w, encodeOld e = .ok w
+```
+
+`Valid` includes the old decoder's requirement on exact writes and
+preconditions and the canonical constraints of the wire. With
+`decodeOld (json w) = .ok (elaborate w)` for a valid `w`, encoding and
+decoding are inverse. Every output site establishes representability; no
+total encoder weakens an effect it cannot represent.
+
+### Exit composition for rest bodies
+
+A body with a rest parameter runs after the allocation of its rest array.
+Its exits, stated at the heap after that allocation, are carried to the
+invocation's entry by composition: the frame by Seq-Eff and Fresh-Eff
+rebasing, the postconditions by consequence.
+
+```lean
+theorem Exits.compose_entry
+    (h₁ : EffectAction Φ (callEnv r args) s₀ s₁)
+    (hr : Rebases Φ Ψ (callEnv r args) s₀.h
+      (x.get c).frame (callEnv r args) s₁.h)
+    (hle : Footprint.le cl (Φ ++ Ψ) (y.get c).frame = true)
+    (hcl : ClassOk cl (callEnv r args) s₀.h)
+    (hq : ∀ u z,
+      (∀ F ∈ (x.get c).ensures, Holds AssertionArena.empty
+        (callState r args z s₁.h.length s₁ u)
+        (instantiateFormula (x.callInstantiation args.length) F)) →
+      ∀ F ∈ (y.get c).ensures, Holds AssertionArena.empty
+        (callState r args z s₀.h.length s₀ u)
+        (instantiateFormula (y.callInstantiation args.length) F))
+    (h₂ : x.exitPost c r args s₁ s₂ v) :
+    y.exitPost c r args s₀ s₂ v
+```
+
+The frame follows from `Post.compose_rebases`, admissibility by
+transitivity, and the postconditions from `hq`. A checked instance of `hq`
+uses the consequence machinery of `ThenEvidence.sound`; there is one
+rebasing relation. For the rest allocation the prefix changes no old
+location; fresh-result guarantees are lowered from the allocation heap's
+mark to the invocation's mark, a fresh entry of the rest store is
+discharged, old cells reached through that store are kept, and the
+allocation's exceptional exit meets the invocation's exceptional guarantee.
+`Exits.exitPost_entry` covers equal entry heaps only.
+
+### Declarations below typing
+
+`ParityDerivations` depends on `ProgramTyping` through `ParityEvidence` and
+`ParityAssertions`, and `ProgramTyping` on `VariadicTyping` and
+`TypingBasics`; the scope theorems the typing of bodies needs sit below
+both:
+
+- `Scope`, `Scope.count`, `Path.scoped`, `Witness.scoped`,
+  `StepVar.scoped`, `OperationPostF.scoped`, `FormulaF.scoped`;
+- substitution and scoping of assertions: `substCheck` and what its
+  soundness needs, `scopedAt`, `sat_scoped_congr`, congruence of region
+  roots and `effectScoped`;
+- `TwoState.AgreeBelow` and the congruence theorems of `FormulaScopes`, over
+  `ExitSchemas` and the assertion semantics;
+- `Effect.summary_scoped` and its corollaries for interfaces, above
+  `EffectSignatures`;
+- `Consequence`, `Rebases`, `Post.compose_rebases` and the composition
+  interface.
+
+Derivation checking, the framing of graphs and the integration of command
+bodies stay above typing.
+
 ## Parallel implementation
 
 After the foundational interfaces in step 1 are fixed, two implementers can work on disjoint files:
