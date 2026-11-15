@@ -307,11 +307,10 @@ store region not at the empty path of a fresh position remains,
 $`\{\mathrm{value}{:}\,\mathrm{any}\}\sqcup c`$ where the signature
 states `receiverOwn`, $`c`$ where it states no receiver store or the
 receiver's position is fresh, and $`\top`$ otherwise (proved:
-`Effect.frame_boundBelow`). So a selected call's check against a closed
-bound $`\Phi`$ is $`c`$ within $`\Phi`$, with the receiver's own change within it under `receiverOwn` and,
-under `receiverStore`, $`\Phi=\top`$ or a fresh receiver; and `keepsHeap` is
-the empty coarse footprint with neither receiver exception (proved:
-`GraphCode.selectedWithinAt_eq_fields`, `PromiseCalls.keepsHeap_eq_fields`).
+`Effect.frame_boundBelow`). A selected call's check against a closed
+bound $`\Phi`$ is that bound within $`\Phi`$ (`GraphCode.selectedWithinAt`),
+and `keepsHeap` is that bound with no fresh position within the empty
+bound (`Footprint.keepsHeap`).
 
 A selected call's throw is checked against the exceptional exit's frame of
 its signature's exit summary, the note's rule Call at the exceptional exit:

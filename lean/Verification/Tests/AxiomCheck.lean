@@ -599,7 +599,6 @@ run_cmd do
   check ``Verification.CallEffects.Effect.callPost_viewGrowth
   check ``Verification.CallEffects.Effect.callPost_exactWrite
   check ``Verification.CallEffects.Effect.heldPosts_call
-  check ``Verification.PromiseCalls.keepsHeap_eq_fields
   check ``Verification.SinglePass.stepCertificate_grades
   check ``Verification.SinglePass.VisitRecord.of_grades
   check ``Verification.SourceExtraction.ClassSummary.then_into

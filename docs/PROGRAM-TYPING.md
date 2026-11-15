@@ -4636,10 +4636,9 @@ normal return:
 {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow \mathrm{invoke}(f,v,\vec u):A\dashv \Pi\;;\;\Sigma}\ \textsf{call-keep}
 ```
 
-The frame's closed bound ([frame checks](FOOTPRINTS.md#frame-checks)) is
-empty exactly where the coarse footprint is and the signature excepts
-neither its receiver's store nor its own locations
-(`PromiseCalls.keepsHeap_eq_fields`). The signature's postcondition makes
+The rule applies where the frame's closed bound
+([frame checks](FOOTPRINTS.md#frame-checks)) is empty
+(`PromiseCalls.keepsHeap`). The signature's postcondition makes
 the heap a normal return leaves an extension of the one the call started in
 (`Footprint.keepsHeap_prefix`), and every
 atom of $`\Sigma`$ holds of an extension (`HeapKnowledge.alloc_frames`);

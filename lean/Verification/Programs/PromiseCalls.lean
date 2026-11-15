@@ -906,17 +906,6 @@ call starts with on a normal return: its normal exit's frame
 (`Footprint.keepsHeap`; PROGRAM-TYPING.md, "A call that keeps the heap"). -/
 def keepsHeap (e : Effect) : Bool := Footprints.Footprint.keepsHeap e.frame
 
-/-- **The check is the one the signature's fields gave** (proved): the
-empty coarse footprint, and neither the receiver's store nor its own
-locations excepted. -/
-theorem keepsHeap_eq_fields (e : Effect) :
-    keepsHeap e = (e.footprint.le .empty && !e.receiverStore && !e.receiverOwn) := by
-  unfold keepsHeap Footprints.Footprint.keepsHeap
-  rw [CallEffects.Effect.frame_boundBelow, CallEffects.Effect.footprintBelow_nil]
-  cases ho : e.receiverOwn <;> cases hs : e.receiverStore <;>
-    simp [Footprints.Closed.le, Footprints.Closed.empty, Footprints.Closed.top,
-      Footprints.Change.le, Footprints.Change.rank, Footprints.Change.onValue, Footprints.Change.onStore]
-
 /-- The heap facts of a call's entry kept on a normal return of a call at a
 promise signature: every one where its effect keeps the heap (`call-keep`),
 else those no call changes. -/
@@ -3569,7 +3558,7 @@ applies to: at the sequent `j`, a call checked as `selected_sound` or as
           (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (appendKept eff j.term k).isEmpty &&
           (writeKept eff j.term k).isEmpty &&
           (linearAppendKept j.context.length eff j.term k).isEmpty &&
-          (!eff.receiverGrows || k.cells.isEmpty) then none else some eff
+          (!(statesExtension eff && statesAppend eff) || k.cells.isEmpty) then none else some eff
       | none => none
     else none
   | _ => none
@@ -3587,7 +3576,7 @@ def ensuresCallFast (G : NormalGraph ι) (images : InstanceImageCheck G) (j : Se
           (HeapExpressionRules.stableFirst G j.context) eff j.term k).isEmpty && (appendKept eff j.term k).isEmpty &&
           (writeKept eff j.term k).isEmpty &&
           (linearAppendKept j.context.length eff j.term k).isEmpty &&
-          (!eff.receiverGrows || k.cells.isEmpty) then none
+          (!(statesExtension eff && statesAppend eff) || k.cells.isEmpty) then none
       else if decide (claim p = j) && (ExpressionEffects.selectedOperands p && checkTreeUsing G images p codes sums ||
           requiresTree G images k codes sums p) then some eff else none
     | none => none
