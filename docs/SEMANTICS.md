@@ -769,7 +769,7 @@ fixed signatures; `restsT_adm` does the same for argument-pack rests.
 justify effect-aware contract operations. `call_safe` proves application from
 the qualified promise without access to the body.
 The pass runs a code's graph at its signature's bound and conditions
-(`PassUnitCodes.codeConditions`); `PassUnitCodes.codeSpec_of_guarantee`
+(`ProgramTyping.codeConditions`); `PassUnitCodes.codeSpec_of_guarantee`
 establishes from that run the semantic contract used by fixed and variadic
 closure introduction.
 The positive type graph carries the effect on every signature; Lean computes a

@@ -334,17 +334,14 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
       let hints := (r.codeHints[ci]?).getD {}
       let rq := q.asRequest r.toRequest
       let eff := q.entry.row.effect
-      -- (the code's conditions and bound as the check computes them,
-      -- `passGroup`, `PassUnit.codeConditions`, `PassUnit.codeBound`: a
+      -- (the code's conditions and bound are the check's own,
+      -- `ProgramTyping.codeConditions` and `ProgramTyping.codeBound`: a
       -- proposal's run is the run the check makes)
-      let conditions := decide (q.entry.arity ≤ q.entry.row.arguments.length) && eff.below q.entry.arity &&
-        !eff.freshObject && eff.requires.isNone && eff.elements.isNone && !eff.receiverGrows && eff.elementWrite.isNone
+      let conditions := ProgramTyping.codeConditions q.entry
       if !conditions || !RequestJson.asyncEffects q.async eff.footprint then
         ({ index := ci, outcome := .refused s!"code {ci}", answers := sumsAnswers, line := "" } : CodeRun _ _)
       else
-      let codeBound := if eff.footprint == .top && !eff.fresh && !eff.onThrow then none
-        else if !eff.fresh && q.entry.exprs.all Purity.pureTerm then none
-        else some (eff.footprint, eff.fresh, eff.onThrow)
+      let codeBound := ProgramTyping.codeBound q.entry
       let codePool := CertificateProducer.vocabulary G labels rq.claims rq.inputs
       let codeGiven : GivenHeads _ := match line with
         | some l => match (l.getObjVal? "codes").bind fun cs => do

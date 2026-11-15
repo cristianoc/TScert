@@ -1,4 +1,5 @@
 import Verification.Source.Claims.PassUnit
+import Verification.Programs.CodeConditions
 
 /-! # The single pass's unit theorem: the code table
 
@@ -16,23 +17,6 @@ open CertificateProducer (Answered)
 
 section
 variable {σ ι : Type} [Labels ι] [StoreView σ ι]
-
-/-- A code's signature conditions, as `passGroup` checks them before its run:
-its arity within its arguments, its effect below its arity, and no fresh
-object, precondition, element promise, receiver growth or element write. -/
-def codeConditions (c : CodeEntry ι) : Bool :=
-  decide (c.arity ≤ c.row.arguments.length) && c.row.effect.below c.arity &&
-    !c.row.effect.freshObject && c.row.effect.requires.isNone && c.row.effect.elements.isNone &&
-    !c.row.effect.receiverGrows && c.row.effect.elementWrite.isNone
-
-/-- The bound a code's run is given, as `passGroup` computes it: none for the
-footprint letting everything change on normal return alone, none for a pure
-graph promising no fresh result, its footprint, fresh flag and throw flag
-otherwise. -/
-def codeBound (c : CodeEntry ι) : Option (Footprints.Closed × Bool × Bool) :=
-  if c.row.effect.footprint == .top && !c.row.effect.fresh && !c.row.effect.onThrow then none
-  else if !c.row.effect.fresh && c.exprs.all Purity.pureTerm then none
-  else some (c.row.effect.footprint, c.row.effect.fresh, c.row.effect.onThrow)
 
 /-- **A code request's run, as `passGroup` makes it**: its conditions hold,
 an async code's footprint is `top` (`RequestJson.asyncEffects`), and a call
@@ -104,7 +88,7 @@ theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
       (∀ node ∈ GraphCode.program c.exprs c.conts, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
       SafeGraph (excOf (reassign G η)) (GraphCode.program c.exprs c.conts)
         (GoalHolds (reassign G η) c.goal (c.goal.argument ρ)) n W h (.at c.start ρ))
-    (hboundG : ∀ Φ fresh onThrow, codeBound c = some (Φ, fresh, onThrow) → ∀ η n W h L d,
+    (hboundG : ∀ Φ fresh onThrow, codeRunBound c = some (Φ, fresh, onThrow) → ∀ η n W h L d,
       EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep (GraphCode.codeEntryIndices c)
         (envOf L d) n W h → RefsOk W (.goto c.exprs c.conts c.start L d) →
         (∀ v ∈ L, isVal v = true) → isVal d = true →
@@ -140,15 +124,18 @@ theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
     intro R hR; rw [hel] at hR; cases hR
   have hngr : c.row.effect.receiverGrows = true → False := fun h => by rw [hgr] at h; cases h
   have hnew : ∀ w, c.row.effect.elementWrite = some w → False := fun w h => by rw [hew] at h; cases h
-  by_cases htop : c.row.effect.footprint = .top ∧ c.row.effect.fresh = false ∧ c.row.effect.onThrow = false
-  · -- No footprint on a throw: the throw's postcondition is vacuous.
-    apply HeapObservations.SafePostExc.of_post (fun _ h => absurd h (by simp [htop.2.2]))
-    refine HeapObservations.weaken (fun h' v hp => ?_) (Footprints.Closed.top_safe hsafe)
-    refine ⟨CallEffects.Effect.within_of_footprint hnrg ?_, fun hf => (by simp [htop.2.1] at hf),
-      fun hf => (by simp [hfo] at hf), fun R hR => (hnel R hR).elim, fun F hF => (hnen F hF).elim,
-      fun hg => (hngr hg).elim, fun w hw => (hnew w hw).elim⟩
-    rw [htop.1]
-    exact hp
+  by_cases htop : c.row.effect.footprint = .top ∧ c.row.effect.fresh = false
+  · -- Both exits' bounds `⊤` and no fresh result: the run is given no
+    -- bound, and every run keeps the old locations on either exit.
+    have hg := SafePostExc.grow (b := heap.length) (Nat.le_refl _)
+      (HeapObservations.SafePostExc.of_post (R := fun _ => True) (fun _ => trivial) (Footprints.Closed.top_safe hsafe))
+    refine HeapObservations.SafePostExc.weaken (fun h' v hp => ?_) (fun h' hr _ => ?_) hg
+    · refine ⟨CallEffects.Effect.within_of_footprint hnrg ?_, fun hf => (by simp [htop.2] at hf),
+        fun hf => (by simp [hfo] at hf), fun R hR => (hnel R hR).elim, fun F hF => (hnen F hF).elim,
+        fun hg => (hngr hg).elim, fun w hw => (hnew w hw).elim⟩
+      rw [htop.1]
+      exact hp.1
+    · exact CallEffects.Effect.within_of_footprint hnrg (by rw [htop.1]; exact Footprints.Closed.holds_top.mpr hr.2)
   · by_cases hpure : c.row.effect.fresh = false ∧ c.exprs.all Purity.pureTerm = true
     · have hp : ∀ e ∈ c.exprs, Purity.pureTerm e = true := List.all_eq_true.mp hpure.2
       exact HeapObservations.SafePostExc.weaken
@@ -160,22 +147,29 @@ theorem codeRun_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
         (fun h' hq _ => CallEffects.Effect.within_of_footprint hnrg
           (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) hq))
         (CallEffects.pure_safe_exc (r := .undef) (args := []) (.goto hp hvalues rfl) hsafe)
-    · have hbound : codeBound c = some (c.row.effect.footprint, c.row.effect.fresh, c.row.effect.onThrow) := by
-        have h1 : (c.row.effect.footprint == .top && !c.row.effect.fresh && !c.row.effect.onThrow) = false := by
+    · have hbound : codeRunBound c = some (c.row.effect.footprint, c.row.effect.fresh,
+          (exitBounds c.row.effect).exceptional != .top) := by
+        have h1 : ((exitBounds c.row.effect).normal == .top && (exitBounds c.row.effect).exceptional == .top &&
+            !c.row.effect.fresh) = false := by
+          simp only [exitBounds]
           cases hfp : c.row.effect.footprint == .top <;> cases hfr : c.row.effect.fresh <;>
             cases hot : c.row.effect.onThrow <;> simp_all
         have h2 : (!c.row.effect.fresh && c.exprs.all Purity.pureTerm) = false := by
           cases hfr : c.row.effect.fresh <;> cases hal : c.exprs.all Purity.pureTerm <;> simp_all
-        simp only [codeBound, h1, h2]
+        simp only [codeRunBound, runBounds, h1, h2, Bool.false_or]
         rfl
       have hb := hboundG _ _ _ hbound η n W heap L .nul hentry href
         (fun v hv => hvalues v hv) rfl
       rw [code_goal] at hb
       exact HeapObservations.SafePostExc.weaken
-        (fun h' v hq => ⟨CallEffects.Effect.within_of_footprint hnrg hq.1, hq.2, fun hf => (by simp [hfo] at hf),
+        (fun h' v hq => ⟨CallEffects.Effect.within_of_footprint hnrg hq.1.1, hq.1.2, fun hf => (by simp [hfo] at hf),
           fun R hR => (hnel R hR).elim, fun F hF => (hnen F hF).elim,
           fun hg => (hngr hg).elim, fun w hw => (hnew w hw).elim⟩)
-        (fun h' hq ho => CallEffects.Effect.within_of_footprint hnrg (hq ho)) hb
+        (fun h' hq ho => by
+          by_cases hfp : c.row.effect.footprint = .top
+          · exact CallEffects.Effect.within_of_footprint hnrg (by rw [hfp]; exact Footprints.Closed.holds_top.mpr hq.2)
+          · exact CallEffects.Effect.within_of_footprint hnrg (hq.1 (by simp [exitBounds, ho, hfp])))
+        (SafePostExc.grow (b := heap.length) (Nat.le_refl _) hb)
 
 /-- **A code safe from its frame, within its bound, meets its signature**
 (proved): a code meeting its conditions, whose graph is safe at every
@@ -200,9 +194,9 @@ theorem codeSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι}
         (fun h' => onThrow = true → Φ.Holds h h') n W h (.goto c.exprs c.conts c.start L d)) :
     ∀ η, c.Spec (reassign G η) := by
   intro η
-  simp only [codeConditions, Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true',
-    Option.isNone_iff_eq_none] at hcond
-  obtain ⟨⟨⟨⟨⟨⟨harity, hbelow⟩, hfo⟩, _hreq⟩, hel⟩, hgr⟩, hew⟩ := hcond
+  obtain ⟨harity, hbelow, _hreq, hfo, hel⟩ := codeConditions_spec hcond
+  have hgr := CallEffects.Effect.below_grows hbelow
+  have hew := CallEffects.Effect.below_write hbelow
   have hens := CallEffects.Effect.below_ensures hbelow
   have he0 : ({ c.row.effect with ensures := [] } : CallEffects.Effect) = c.row.effect := by
     rw [← hens]
@@ -210,7 +204,9 @@ theorem codeSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι}
     rw [he0]; exact hbelow
   refine ⟨harity, hbelow, ?_⟩
   intro n W heap L he hw hh href hvalues hpre r args _hframe
-  have := codeRun_of_clauses (sep := {}) hbelow0 hfo hel hgr hew hsafeG hboundG η n W heap L he hw hh href hvalues hpre
+  have := codeRun_of_clauses (sep := {}) hbelow0 hfo hel hgr hew hsafeG
+    (fun Φ fresh onThrow hb => hboundG Φ fresh onThrow (by rw [codeBound_eq hcond]; exact hb))
+    η n W heap L he hw hh href hvalues hpre
     (HeapSeparation.empty_holds _) r args
   rw [he0] at this
   -- The signature states no append (`hgr`) and no element write (`hew`): its

@@ -15,6 +15,7 @@ import Verification.Source.Claims.Extraction
 -- Claims/Imports.lean plans certified imports: the module runs and the qualified reads.
 import Verification.Source.Claims.Imports
 import Verification.Programs.SinglePass
+import Verification.Programs.CodeConditions
 import Verification.Programs.SinglePassStats
 import Verification.Source.Lowering.ExitProposals
 
@@ -516,8 +517,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
     let hints := (r.codeHints[ci]?).getD {}
     let rq := q.asRequest r.toRequest
     let eff := q.entry.row.effect
-    let conditions := decide (q.entry.arity ≤ q.entry.row.arguments.length) && eff.below q.entry.arity &&
-      !eff.freshObject && eff.requires.isNone && eff.elements.isNone && !eff.receiverGrows && eff.elementWrite.isNone
+    let conditions := ProgramTyping.codeConditions q.entry
     if !conditions then refuse (.refused s!"code {ci}: its signature")
     -- An async code's footprint is `top` (`RequestJson.asyncEffects`, as
     -- `codeTableResult` requires of every code): its call returns
@@ -525,9 +525,7 @@ def FilePlans.passMember (f : FilePlans) (fuel : Nat) (i : Nat) (compare : Bool 
     else if !RequestJson.asyncEffects q.async eff.footprint then
       refuse (.refused s!"code {ci}: an async definition's footprint")
     else
-    let codeBound := if eff.footprint == .top && !eff.fresh && !eff.onThrow then none
-      else if !eff.fresh && q.entry.exprs.all Purity.pureTerm then none
-      else some (eff.footprint, eff.fresh, eff.onThrow)
+    let codeBound := ProgramTyping.codeBound q.entry
     let codePool := CertificateProducer.vocabulary G labels rq.claims rq.inputs
     let codeGiven : GivenHeads _ := match line with
       | some l => match (l.getObjVal? "codes").bind fun cs => do

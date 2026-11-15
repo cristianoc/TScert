@@ -329,22 +329,23 @@ structure UnitIsCode (r : SourceRequest σ ι) (c : CodeEntry ι) : Prop where
   onThrow : r.onThrow = c.row.effect.onThrow
 
 omit [Labels ι] [StoreView σ ι] in
-theorem codeBound_some {c : CodeEntry ι} {Φ : Footprints.Closed} {fresh onThrow : Bool}
-    (h : codeBound c = some (Φ, fresh, onThrow)) :
-    Φ = c.row.effect.footprint ∧ fresh = c.row.effect.fresh ∧ onThrow = c.row.effect.onThrow ∧
+theorem codeRunBound_some {c : CodeEntry ι} {Φ : Footprints.Closed} {fresh onThrow : Bool}
+    (h : codeRunBound c = some (Φ, fresh, onThrow)) :
+    Φ = c.row.effect.footprint ∧ fresh = c.row.effect.fresh ∧ (onThrow = true → c.row.effect.onThrow = true) ∧
       (c.row.effect.footprint ≠ .top ∨ c.row.effect.onThrow = true ∨ c.row.effect.fresh = true) := by
-  unfold codeBound at h
+  unfold codeRunBound runBounds at h
   split at h
   · cases h
   · rename_i hne
-    split at h
-    · cases h
-    · simp only [Option.some.injEq, Prod.mk.injEq] at h
-      obtain ⟨rfl, rfl, rfl⟩ := h
-      refine ⟨rfl, rfl, rfl, ?_⟩
-      by_cases hfp : c.row.effect.footprint = .top
-      · right
-        cases hf : c.row.effect.fresh <;> cases ho : c.row.effect.onThrow <;> simp_all
+    simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, rfl, rfl⟩ := h
+    refine ⟨rfl, rfl, fun ho => ?_, ?_⟩
+    · simp only [exitBounds] at ho
+      cases hot : c.row.effect.onThrow <;> simp_all
+    · by_cases hfp : c.row.effect.footprint = .top
+      · right; right
+        simp only [exitBounds, hfp] at hne
+        cases hf : c.row.effect.fresh <;> cases hot : c.row.effect.onThrow <;> simp_all
       · exact Or.inl hfp
 
 end
@@ -391,7 +392,7 @@ theorem rowSpec_of_clauses {G : NormalGraph ι} {c : CodeEntry ι} {sep : HeapSe
       (∀ node ∈ GraphCode.program c.exprs c.conts, RefsOk W node.expression) → (∀ i, RefsOk W (ρ i)) →
       SafeGraph (excOf (reassign G η)) (GraphCode.program c.exprs c.conts)
         (GoalHolds (reassign G η) c.goal (c.goal.argument ρ)) n W h (.at c.start ρ))
-    (hboundG : ∀ Φ fresh onThrow, codeBound c = some (Φ, fresh, onThrow) → ∀ η n W h L d,
+    (hboundG : ∀ Φ fresh onThrow, codeRunBound c = some (Φ, fresh, onThrow) → ∀ η n W h L d,
       EntryHolds (reassign G η) (codeFrame c.arity c.row c.captures c.store) sep (GraphCode.codeEntryIndices c)
         (envOf L d) n W h → RefsOk W (.goto c.exprs c.conts c.start L d) →
         (∀ v ∈ L, isVal v = true) → isVal d = true →
@@ -466,13 +467,13 @@ theorem rowSpec_of_requestSafe {r : SourceRequest σ ι} {c : CodeEntry ι}
     rw [hprog, hu.goal, hu.start] at this
     exact this
   · intro Φ fresh onThrow hb η n W h L d he hgo hvals hd
-    obtain ⟨rfl, rfl, rfl, hne⟩ := codeBound_some hb
+    obtain ⟨rfl, rfl, hot, hne⟩ := codeRunBound_some hb
     have hpre : r.footprint ≠ .top ∨ r.onThrow = true ∨ r.fresh = true := by
       rw [hu.footprint, hu.onThrow, hu.fresh]; exact hne
     have := hsafe.2.1 hpre η n W h L d (by rw [hu.inputs, hu.indices]; exact he)
       (GraphCode.goto_refs hgo).2 hvals hd
     rw [hgoto, hu.goal, hu.footprint, hu.fresh, hu.onThrow] at this
-    exact this
+    exact HeapObservations.SafePostExc.weaken (fun _ _ hq => hq) (fun _ hq ho => hq (hot ho)) this
   · intro hne η n W h L d he hgo
     have := hsafe.2.2.1 (by rw [hu.ensures]; exact hne) η n W h L d (by rw [hu.inputs, hu.indices]; exact he)
       (GraphCode.goto_refs hgo).2

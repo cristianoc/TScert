@@ -1890,7 +1890,7 @@ the store's extension growth's `PromiseCalls.growChanges` and `growFirst`
 (proved: `receiverGrows_changes`, `growFirst_kept`); `appendKept` and
 `linearAppendKept` read the extension and the append, `writeKept`
 View-Write at an element type's format; and a definition's code is checked at its signature's
-conditions (`PassUnitCodes.codeConditions`); the own-location call is `PromiseCalls.ownKept`.
+conditions (`ProgramTyping.codeConditions`); the own-location call is `PromiseCalls.ownKept`.
 A computed receiver's primitive method has the footprint its prototype
 states, composed with the receiver's and arguments' effects: a string's
 `charCodeAt` keeps the heap, while an argument that pops an array drops its
@@ -4707,7 +4707,7 @@ literal's allocation does (`PromiseCalls.freshCall_sound`, from
 
 where $`r.\star`$ stands for every own location of $`r`$. A code
 definition never states `freshObject`: only an intrinsic's declaration does
-(`PassUnitCodes.codeConditions`).
+(`ProgramTyping.codeConditions`).
 
 ##### A call changing only its receiver
 

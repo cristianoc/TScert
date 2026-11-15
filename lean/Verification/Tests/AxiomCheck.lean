@@ -189,7 +189,10 @@ run_cmd do
   check ``Verification.CallEffects.Effect.exitPost_take
   check ``Verification.CallEffects.Effect.safe_exits_take
   check ``Verification.CallEffects.Effect.ensures_frame
-  check ``Verification.SourceClaimJson.PassUnit.codeBound_some
+  check ``Verification.SourceClaimJson.PassUnit.codeRunBound_some
+  check ``Verification.ProgramTyping.codeBound_eq
+  check ``Verification.ProgramTyping.codeConditions_spec
+  check ``Verification.ProgramTyping.SafePostExc.grow
   check ``Verification.SourceClaimJson.PassUnit.captures_envOk
   check ``Verification.SourceClaimJson.PassUnit.approx_meets
   check ``Verification.SourceClaimJson.PassUnit.approx_captures_envOk

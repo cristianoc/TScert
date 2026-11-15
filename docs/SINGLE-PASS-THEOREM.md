@@ -391,8 +391,9 @@ What each establishes, all proved:
   a sound table to a sound one, the counterpart of `GraphCode.extendTable_sound`.
   Its step, `codeSpec_of_guarantee`, is `GraphCode.codeChecked_sound`'s
   argument with the run's guarantee in place of `checkEntryUsing` and the
-  effect's three cases (`top`, pure, bounded) read from `codeBound` in place
-  of `effectChecked`. The premise that changes is the certificate check;
+  effect's three cases (both exits' bounds `top` with no fresh result,
+  pure, bounded) read from `codeRunBound`, which `codeBound` equals under
+  the conditions (`codeBound_eq`), in place of `effectChecked`. The premise that changes is the certificate check;
   the summaries are the final ones the wrapper checks (H2 carries them back).
 - each code's guarantee, for its assertions: `codesAccepted_guarantees`;
 - the main graph: `main_guarantee` (H1); the footprint by the bound, by the
@@ -425,7 +426,8 @@ runs, the summaries' and obligations' checks, the outcome), and
   checks in about 10 s, measured 2026-11-12). A code run's request is
   `codeRequest r q` (`q.asRequest r.toRequest`), whose inputs and entry
   facts are `codeFrame` and `codeEntryIndices` by definition; code
-  conditions and `codeBound` are written inline, equal by unfolding; the
+  conditions and bound are the shared `ProgramTyping.codeConditions` and
+  `ProgramTyping.codeBound` (`Programs/CodeConditions.lean`); the
   table the main run reads is `admits` of the accepted codes
   (`codesInOrder_accepted`: every run `codesInOrder` returns accepted makes
   the codes `CodesAccepted` and the table every code's entry), equal to

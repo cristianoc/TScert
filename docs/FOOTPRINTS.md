@@ -945,7 +945,7 @@ only where both state the same parts (`PromiseWith.combine`); an ordinary
 arrow erases only a signature without a precondition (`Effect.plain`,
 `PromiseWith.erase`); binding keeps neither part (`Effect.keeps`), since a
 bound call does not pass the receiver the parts are about; graph code stating
-either is refused (`PassUnitCodes.codeConditions`). `Array.prototype`'s members are invoked
+either is refused (`ProgramTyping.codeConditions`). `Array.prototype`'s members are invoked
 with the array as their receiver (`xs.every(g)` reads the member and calls it
 with `xs`), so the parts are about the array.
 
