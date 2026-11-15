@@ -531,7 +531,12 @@ The wire transaction is sequential and has one owner across Lean, TypeScript and
 
 1. **Top includes views.** Its printed `{values: any, arrays: any}` omits the third class. Top contains all three.
 2. **Own regions need an explicit decision.** Add the general own-value region for exact preservation of current contracts, or acknowledge the resulting contract/verdict changes under the narrower grammar.
-3. **Seq-Eff needs its rebasing premises stated precisely.** The implementation’s `Post.compose_at` uses `RebaseOk`, entry class evidence and checked inclusion. Its rebasing also permits coverage absorbed by an earlier `any` entry. State that general rule, with the displayed absorption rule as a corollary.
+3. **Seq-Eff's rebasing premise is the note's definition.** `Rebases`
+   admits coverage absorbed by an entry of the frame so far at `any`; such
+   a rebasing gives the note's direct coverage of the later frame by the
+   union of the frame so far and the rebased frame (`Rebases.covers`), so
+   `Post.compose_rebases` is Seq-Eff over the printed definition
+   "Rebasing".
 4. **State both-exit sequence and handler composition.** An uncaught throw includes the prefix before it; a caught throw contributes to the handler’s eventual exit.
 5. **Distinguish frames from exact posts.** Growth does not imply append contents; `{views: grow}` does not determine the receiver’s converted element.
 6. **Keep marks and `old` scopes explicit.** Freshness uses the enclosing entry mark; each command post uses that command’s entry. Composition transports these separately.

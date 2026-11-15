@@ -314,6 +314,7 @@ run_cmd do
   check ``Verification.CallEffects.CommandSummary.Sound.weaken
   check ``Verification.CallEffects.rebases_of_rebaseOk
   check ``Verification.CallEffects.Post.compose_rebases
+  check ``Verification.CallEffects.Rebases.covers
   check ``Verification.CallEffects.Post.seq_eff
   check ``Verification.CallEffects.ThenEvidence.sound
   check ``Verification.CallEffects.Runs.then_sound

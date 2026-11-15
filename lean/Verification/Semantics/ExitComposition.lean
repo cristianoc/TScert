@@ -79,6 +79,19 @@ def Rebases (Φp Ψ' : Footprint) (ρ₀ : Env) (h₀ : Heap) (Ψ : Footprint) (
     (∃ e' ∈ Ψ', e'.1.mem ρ₀ h₀ l = true ∧ e.2.le e'.2 = true) ∨
       ∃ e' ∈ Φp, e'.1.mem ρ₀ h₀ l = true ∧ e'.2 = .any
 
+/-- **Rebasing gives the note's direct coverage** (the note, §6, the
+definition "Rebasing"): every location of the entry heap that `Ψ` covers at
+a change is covered by `Φp ∪ Ψ'`, read at the entry, at the same or a wider
+change. An absorbing entry of `Φp` is at `any`, the widest change. -/
+theorem Rebases.covers {Φp Ψ' Ψ : Footprint} {ρ₀ σ : Env} {h₀ h : Heap}
+    (hr : Rebases Φp Ψ' ρ₀ h₀ Ψ σ h) :
+    ∀ l, l < h₀.length → ∀ e ∈ Ψ, e.1.mem σ h l = true →
+      ∃ e' ∈ Φp ++ Ψ', e'.1.mem ρ₀ h₀ l = true ∧ e.2.le e'.2 = true := by
+  intro l hl e he hm
+  rcases hr l hl e he hm with ⟨e', he', hm', hle⟩ | ⟨e', he', hm', hany⟩
+  · exact ⟨e', List.mem_append_right _ he', hm', hle⟩
+  · exact ⟨e', List.mem_append_left _ he', hm', by rw [hany]; cases e.2 <;> rfl⟩
+
 /-- **The computed rebasing rebases** (`rebase_sound`): under its evidence,
 after an action of the frame so far. -/
 theorem rebases_of_rebaseOk {Φp Ψ : Footprint} {ρ₀ σ : Env} {h₀ h : Heap} {ev : RebaseEvidence}
@@ -91,7 +104,9 @@ theorem rebases_of_rebaseOk {Φp Ψ : Footprint} {ρ₀ σ : Env} {h₀ h : Heap
 /-- **Seq-Eff, the general rule**: the frame so far `Φp` from the entry, a
 later frame `Ψ` from where it starts, a rebasing `Ψ'` of `Ψ` to the entry,
 and `Φp ∪ Ψ' ⊑_cl Φq` with `cl` valid at the entry heap give `Φq` from the
-entry. -/
+entry. The rebasing gives the note's direct coverage of `Ψ` by `Φp ∪ Ψ'`
+(`Rebases.covers`), so the rule is the note's Seq-Eff over its printed
+definition "Rebasing". -/
 theorem Post.compose_rebases {Φp Ψ Ψ' Φq : Footprint} {cl : ClassEvidence} {ρ₀ σ : Env} {h₀ h h' : Heap}
     (hp : Post Φp ρ₀ h₀ h) (hn : Post Ψ σ h h') (hr : Rebases Φp Ψ' ρ₀ h₀ Ψ σ h)
     (hle : Footprint.le cl (Φp ++ Ψ') Φq = true) (hc : ClassOk cl ρ₀ h₀) : Post Φq ρ₀ h₀ h' := by
