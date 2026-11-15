@@ -6,7 +6,8 @@ The summary of a composite command from its parts' summaries (the note
 *Tolerant frames*, §6, Seq-Eff and the definition "Rebasing", with the
 corrections 3 and 4 of `docs/drafts/effects-of-commands.md`).
 
-**Rebasing** (`Rebases`) is the note's definition with its absorption made
+**Rebasing** (`Rebases`, with the general Seq-Eff `Post.compose_rebases`,
+stated in `ExitComposition`) is the note's definition with its absorption made
 explicit: every location of the composite's entry heap that a later frame,
 read where the later command starts, covers at a change `δ` is covered by
 the rebased frame at `δ` or a wider change, or by an entry of the frame so
@@ -47,66 +48,6 @@ the composite's entry heap rebases to none, while the entries of that
 store's cells and every class entry are kept (`rebaseAll_fresh_eff`). -/
 namespace Verification.CallEffects
 open Verification Footprints HeapKnowledge TolerantFrames Parity
-
-/-! ## Rebasing, with absorption -/
-
-/-- **Rebasing** (the note, §6, the definition "Rebasing", with the
-absorption of the design's correction 3): every location of the entry heap
-`h₀` in a region of an entry of `Ψ`, read at the valuation `σ` and heap `h`
-where the later command starts, is in a region of an entry of `Ψ'`, read at
-the entry, at the same or a wider change, or in a region of an entry of the
-frame so far `Φp` at `any`. -/
-def Rebases (Φp Ψ' : Footprint) (ρ₀ : Env) (h₀ : Heap) (Ψ : Footprint) (σ : Env) (h : Heap) : Prop :=
-  ∀ l, l < h₀.length → ∀ e ∈ Ψ, e.1.mem σ h l = true →
-    (∃ e' ∈ Ψ', e'.1.mem ρ₀ h₀ l = true ∧ e.2.le e'.2 = true) ∨
-      ∃ e' ∈ Φp, e'.1.mem ρ₀ h₀ l = true ∧ e'.2 = .any
-
-/-- **The computed rebasing rebases** (`rebase_sound`): under its evidence,
-after an action of the frame so far. -/
-theorem rebases_of_rebaseOk {Φp Ψ : Footprint} {ρ₀ σ : Env} {h₀ h : Heap} {ev : RebaseEvidence}
-    (hp : Post Φp ρ₀ h₀ h) (hk : RebaseOk ev σ ρ₀ h₀ h) : Rebases Φp (rebaseAll ev Ψ) ρ₀ h₀ Ψ σ h := by
-  intro l hl e he hm
-  rcases rebase_sound hp hk hl hm with ⟨r, hr, hrm⟩ | h
-  · exact .inl ⟨(r, e.2), List.mem_flatMap.mpr ⟨e, he, List.mem_map.mpr ⟨r, hr, rfl⟩⟩, hrm, Change.le_refl _⟩
-  · exact .inr h
-
-/-- **Seq-Eff, the general rule**: the frame so far `Φp` from the entry, a
-later frame `Ψ` from where it starts, a rebasing `Ψ'` of `Ψ` to the entry,
-and `Φp ∪ Ψ' ⊑_cl Φq` with `cl` valid at the entry heap give `Φq` from the
-entry. -/
-theorem Post.compose_rebases {Φp Ψ Ψ' Φq : Footprint} {cl : ClassEvidence} {ρ₀ σ : Env} {h₀ h h' : Heap}
-    (hp : Post Φp ρ₀ h₀ h) (hn : Post Ψ σ h h') (hr : Rebases Φp Ψ' ρ₀ h₀ Ψ σ h)
-    (hle : Footprint.le cl (Φp ++ Ψ') Φq = true) (hc : ClassOk cl ρ₀ h₀) : Post Φq ρ₀ h₀ h' := by
-  refine ⟨Nat.le_trans hp.1 hn.1, fun l v₀ hv₀ => ?_⟩
-  have hl := (List.getElem?_eq_some_iff.mp hv₀).1
-  have hb : h₀.length ≤ h.length := hp.1
-  obtain ⟨v₁, hv₁, ha₁⟩ := hp.2 l v₀ hv₀
-  obtain ⟨v₂, hv₂, ha₂⟩ := hn.2 l v₁ hv₁
-  refine ⟨v₂, hv₂, Allowed.mono hle hc hl ?_⟩
-  have viaAny : ∀ e ∈ Φp, e.1.mem ρ₀ h₀ l = true → e.2 = .any → Allowed (Φp ++ Ψ') ρ₀ h₀ l v₀ v₂ :=
-    fun e hm hem hany => .inr ⟨e, List.mem_append_left _ hm, hem, by rw [hany]; trivial⟩
-  rcases ha₁ with rfl | ⟨e₁, he₁, hm₁, hh₁⟩
-  · rcases ha₂ with rfl | ⟨e₂, he₂, hm₂, hh₂⟩
-    · exact .inl rfl
-    · rcases hr l hl e₂ he₂ hm₂ with ⟨e', he', hm', hle'⟩ | ⟨e', he', hm', hany⟩
-      · exact .inr ⟨e', List.mem_append_right _ he', hm', (hh₂.mono hle').lower hb⟩
-      · exact viaAny e' he' hm' hany
-  · rcases ha₂ with rfl | ⟨e₂, he₂, hm₂, hh₂⟩
-    · exact .inr ⟨e₁, List.mem_append_left _ he₁, hm₁, hh₁⟩
-    · rcases hr l hl e₂ he₂ hm₂ with ⟨e', he', hm', hle'⟩ | ⟨e', he', hm', hany⟩
-      · have hseq := hh₁.seq hb (hh₂.mono hle')
-        rcases Change.max_cases e₁.2 e'.2 with hmax | hmax
-        · exact .inr ⟨e₁, List.mem_append_left _ he₁, hm₁, by rw [← hmax]; exact hseq⟩
-        · exact .inr ⟨e', List.mem_append_right _ he', hm', by rw [← hmax]; exact hseq⟩
-      · exact viaAny e' he' hm' hany
-
-/-- **Seq-Eff as the note displays it** (`c₁ : Φ`, `c₂ : Ψ`, `Ψ ⇝ Ψ'`,
-`Φ ∪ Ψ' ⊑ Φ` give `c₁; c₂ : Φ`), the instance of `Post.compose_rebases`
-whose bound is the first frame. -/
-theorem Post.seq_eff {Φ Ψ Ψ' : Footprint} {cl : ClassEvidence} {ρ₀ σ : Env} {h₀ h h' : Heap}
-    (hp : Post Φ ρ₀ h₀ h) (hn : Post Ψ σ h h') (hr : Rebases Φ Ψ' ρ₀ h₀ Ψ σ h)
-    (hle : Footprint.le cl (Φ ++ Ψ') Φ = true) (hc : ClassOk cl ρ₀ h₀) : Post Φ ρ₀ h₀ h' :=
-  Post.compose_rebases hp hn hr hle hc
 
 /-! ## One exit followed by another -/
 

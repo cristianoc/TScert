@@ -188,12 +188,12 @@ with the one the step's change states of each term it grows
 (`StepRelation.join`, `growth`; [two-state
 postconditions](../ARITHMETIC.md#two-state-postconditions)).
 
-**Entry allocation before a call** (`Effect.post_prefix`): a post read at
-the heap after an administrative allocation is read at the call's entry,
-the heap before it, where its entry terms denote the same at both
-(`Effect.EntryAgrees`, read through `holdsAt_congr_entryTerms`); a code
-row states no postcondition (`Effect.below`), so at its one use it holds
-vacuously (`entryAgrees_of_nil`).
+**Entry allocation before a call** (`Effect.exitPost_prefix`, an instance
+of `Exits.compose_entry`): an exit read from the heap after an
+administrative allocation is an exit from the call's entry, the heap before
+it: the frame rebases to itself, and a code row's postconditions (a fresh
+result or object, the elements of its result; `Effect.below`) read the
+entry only through the freshness mark, which the allocation raises.
 
 **Module rows** carry the postcondition as stated; `Effect.belowRow` bounds
 its current positions by the result, the receiver and the code's

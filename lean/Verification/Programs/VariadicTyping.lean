@@ -442,12 +442,14 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
       (s.effect.schema.exitPostW .normal r args U heap) (s.effect.schema.exitPostW .exceptional r args U heap) j U heap
       (.letE (.arrLit (args.drop arity))
         (.goto E K start (.var 0 :: r :: CallArguments.parameters arity args ++ vs) .nul)) := by
-  -- Graph code states no append (`Effect.below_grows`) and no element write
-  -- (`Effect.below_write`): its exits are its heap postconditions.
-  have hng : s.effect.receiverGrows = true → CallArguments.Values args := fun h => by
-    rw [show s.effect.receiverGrows = false from Effect.below_grows (e := s.fixed.effect) hs.2.1] at h; cases h
-  apply Effect.safe_exits (show s.effect.elementWrite = none from Effect.below_write (e := s.fixed.effect) hs.2.1)
-    hng hu hh
+  -- The code states no store region, no ensured fact, no append and no
+  -- element write (`Effect.below`): its exits from the heap after the rest's
+  -- allocation are its exits from the call's entry (`Effect.exitPost_prefix`).
+  have hb : s.fixed.effect.below arity = true := hs.2.1
+  have hreg := Effect.below_regions hb
+  have hens := Effect.below_ensures hb
+  have hgr := Effect.below_grows hb
+  have hwr := Effect.below_write hb
   have harr_r : RefsOk U (.arrLit (args.drop arity)) := fun x hx => href x (by
     simp only [refs, List.mem_append]; exact .inl hx)
   obtain ⟨hshort, hpack⟩ := ha
@@ -463,18 +465,27 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
     unfold envOf at this
     rw [List.getD_eq_getElem?_getD, hi] at this
     exact this
+  -- The rest's allocation extends the heap: by the rest store, or by the
+  -- error a too long rest throws, which meets the call's exceptional exit
+  -- (`Effect.exitPost_exceptional_prefix`).
   have hstore : HeapObservations.SafePostExc (excOf G) (meaning G A) (fun heap' _ => heap.IsPrefix heap')
-      (s.effect.excPost r args heap) j U heap (.arrLit (args.drop arity)) := by
+      (fun heap' => heap.IsPrefix heap') j U heap (.arrLit (args.drop arity)) := by
     by_cases hmax : (args.drop arity).length ≤ maxArrayLength
     · apply HeapObservations.SafePostExc.one_step rfl rfl
         (.arrAlloc (fun a hm => hvals a (List.mem_of_mem_drop hm)) hmax)
         ⟨args.drop arity, rfl⟩ (restStore_safe harr hu hh hpack (fun a hm => hvals a (List.mem_of_mem_drop hm)) harr_r)
     · exact alloc_throw_exc (fun a hm => hvals a (List.mem_of_mem_drop hm)) (by omega) hu hh
-        (builtinExc_errors G _) (fun _ => Effect.within_of_holds
-          (Footprints.Closed.Holds.mono (Footprints.Closed.empty_le _) (Footprints.Closed.holds_empty.mpr ⟨[.nul], rfl⟩)))
-        harr_r
-  apply HeapObservations.SafePostExc.bind (.letE · _) .letC .letC (by ctx_refs) j U heap _ hu hh
-    (fun x hx => href x (by rw [refs_letE] at hx ⊢; exact List.mem_append_right _ (by simpa [refs] using hx))) hstore
+        (builtinExc_errors G _) ⟨[.nul], rfl⟩ harr_r
+  have hstoreV : HeapObservations.SafePostExcV (excOf G) (meaning G A) (fun _ _ heap' _ => heap.IsPrefix heap')
+      (s.effect.schema.exitPostW .exceptional r args U heap) j U heap (.arrLit (args.drop arity)) := by
+    refine CallEffects.SafePostExcV.weaken_reached hu hh (fun _ _ _ _ _ _ _ hp => hp) ?_
+      (HeapObservations.SafePostExcV.iff_lift.mpr hstore)
+    rintro s₀ s' val rfl hW rfl hadm hp
+    cases eq_of_heq hW
+    intro _ _ _ _ _ _
+    exact Effect.exitPost_exceptional_prefix _ hadm hp
+  apply HeapObservations.SafePostExcV.bind (.letE · _) .letC .letC (by ctx_refs) j U heap _ hu hh
+    (fun x hx => href x (by rw [refs_letE] at hx ⊢; exact List.mem_append_right _ (by simpa [refs] using hx))) hstoreV
   intro i hi V hy hv heap' a hh' hval harr' hprefix hvr
   have hgoV : RefsOk V (.letE a (.goto E K start (.var 0 :: r :: CallArguments.parameters arity args ++ vs) .nul)) := by
     intro x hx
@@ -485,7 +496,7 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
   cases i with
   | zero => exact hgoV
   | succ p =>
-    apply HeapObservations.SafePostExc.bind_value hval hv hh' hgoV
+    apply HeapObservations.SafePostExcV.bind_value hval hv hh' hgoV
     have hsub : subst 0 a (.goto E K start (.var 0 :: r :: CallArguments.parameters arity args ++ vs)
         .nul) = .goto E K start (a :: r :: CallArguments.parameters arity args ++ vs) .nul := by
       have hmap : (r :: CallArguments.parameters arity args ++ vs).map (subst 0 a) =
@@ -505,14 +516,6 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
           envOf (a :: r :: CallArguments.parameters arity args ++ vs) .nul := by
         funext i; cases i <;> rfl
       rw [← he]; exact henv
-    -- The frame reads no path: code states no store regions (`Effect.below`), so
-    -- the rest pack's allocation lifts by agreement of empty paths.
-    have hagree := Effect.prefixAgrees_of_regions (Effect.below_regions hs.2.1) (CallEffects.callEnv r args) heap heap'
-    apply HeapObservations.SafePostExc.weaken (Q := s.fixed.effect.post r args heap')
-      (R := s.fixed.effect.excPost r args heap')
-      (fun heap'' v hp => s.effect.post_prefix hprefix hagree
-        (Effect.entryAgrees_of_nil (Effect.below_ensures hs.2.1) _ heap heap') hp)
-      (fun heap'' hp => s.effect.excPost_prefix hprefix hagree hp)
     have hpromised := framePromised_params (e := s.fixed.effect) hs.2.1 [a, r] args vs
     simp only [List.length_cons, List.length_nil, List.cons_append, List.nil_append] at hpromised
     rw [← show framePromised s.effect (frameOffset (some A)) (a :: r :: CallArguments.parameters arity args ++ vs) =
@@ -524,8 +527,7 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
         rcases Kinds.subst_refs a _ 0 x hx with hx | hx
         · exact hgoV x (by rw [refs_letE]; exact List.mem_append_right _ hx)
         · exact hvr x hx)
-    refine Effect.safe_fields hng (WorldAdm_trunc _ hv) (HeapOk_trunc p V heap' hh') ?_
-    exact hs.2.2 p _ heap' _ (henv'.transfer p (Nat.le_succ p) _ (WExt_refl _))
+    have hcode := hs.2.2 p _ heap' _ (henv'.transfer p (Nat.le_succ p) _ (WExt_refl _))
       (WorldAdm_trunc _ hv) (HeapOk_trunc p V heap' hh') hgo (by
         intro v hm
         rcases List.mem_cons.mp hm with rfl | hm
@@ -536,6 +538,14 @@ theorem graphRest_invoke {G : NormalGraph ι} {arity E K start Cs A vs n W}
             · exact CallArguments.parameters_property (P := fun v => isVal v = true) rfl hvals v hm
             · exact hvalues v hm)
       (fun hn => by cases hn) r args ⟨[a], vs, rfl, rfl⟩
+    -- The code's exits from the heap after the allocation, at the world the
+    -- invocation reaches, are its exits from the call's entry.
+    refine CallEffects.SafePostExcV.weaken_reached (WorldAdm_trunc _ hv) (HeapOk_trunc p V heap' hh') ?_ ?_ hcode <;>
+      rintro s₁ s₂ val rfl hW rfl - hp hj0 hu0 hh0 _ _ _ <;>
+      rw [← eq_of_heq hW] at hp <;>
+      exact Effect.exitPost_prefix hreg hens hgr hwr (s₀ := ⟨j, U, heap, hj0, hu0, hh0⟩)
+        (TolerantFrames.WorldReach.trans ⟨hi, hy⟩ ⟨Nat.le_succ _, by rw [eq_of_heq hW]; exact WExt_refl _⟩) hprefix
+        ((CallEffects.Exits.exitPostW_iff _ _ _ _ s₁ s₂ val).mp hp)
 
 /-- **Graph code with a rest meets its variadic signatures**: the actuals past
 its fixed parameters are collected, not discarded (`restsT_of_graph` is the

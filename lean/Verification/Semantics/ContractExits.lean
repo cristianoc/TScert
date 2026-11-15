@@ -1,6 +1,7 @@
 import Verification.Semantics.ExitSummaries
 import Verification.Semantics.ExitWorlds
 import Verification.Semantics.FormulaScopes
+import Verification.Semantics.ExitComposition
 
 /-! # A signature's contract read per exit
 
@@ -111,23 +112,6 @@ theorem Effect.safe_exits {Ξ T : Fam} {e : Effect} (hx : e.elementWrite = none)
     rintro s s' val rfl hW rfl hadm hp <;> cases eq_of_heq hW
   · exact (Effect.postW_iff_exit hadm hvals).mp hp
   · exact (Effect.excPostW_iff_exit hadm).mp hp
-
-/-- **Safety at a signature's exits is safety at its heap postconditions**,
-at actuals that are values where it states an append of them: the heap
-postcondition is the part of the normal exit that reads no world
-(`Effect.postW`). -/
-theorem Effect.safe_fields {Ξ T : Fam} {e : Effect} {r : Tm} {args : List Tm}
-    (hvals : e.receiverGrows = true → CallArguments.Values args) {j : Nat} {U : WorldT j} {heap : Heap} {t : Tm}
-    (hu : WorldAdm U) (hh : HeapOk j U heap)
-    (hs : SafePostExcV Ξ T (e.schema.exitPostW .normal r args U heap) (e.schema.exitPostW .exceptional r args U heap)
-      j U heap t) :
-    SafePostExc Ξ T (e.post r args heap) (e.excPost r args heap) j U heap t := by
-  have hw : SafePostExcV Ξ T (e.postW r args U heap) (e.excPostW r args heap).liftV j U heap t := by
-    refine SafePostExcV.weaken_reached hu hh ?_ ?_ hs <;>
-      rintro s s' val rfl hW rfl hadm hp <;> cases eq_of_heq hW
-    · exact (Effect.postW_iff_exit hadm hvals).mpr hp
-    · exact (Effect.excPostW_iff_exit hadm).mpr hp
-  exact SafePostExcW.weaken (fun _ _ _ _ hp => hp.1) (fun _ _ _ hp => hp) (SafePostExcV.iff_lift.mp hw)
 
 /-! ## The meet of two specifications -/
 
@@ -269,6 +253,70 @@ theorem Effect.exitPost_take {e : Effect} {n m : Nat} (hb : e.belowRow n = true)
   cases c with
   | normal => exact (ExitSpec.holds_scoped_congr h₁ h₂ hs).mp hp
   | exceptional => exact (ExitSpec.holds_scoped_congr h₃ (by rw [show ((e.summary args.length).get .exceptional).ensures = [] from h₄]; rfl) hs).mp hp
+
+/-- **A signature without store regions selects no new old location across
+allocation**, on either exit: its frame's paths agree across it
+(`Effect.frame_mem_prefix`), and `⊤` is of class regions, which read a
+location's contents. -/
+theorem Effect.schema_frame_mem_prefix {e : Effect} (hreg : e.regions = []) (c : Completion) {ρ : Env}
+    {before middle : Heap} (hprefix : before.IsPrefix middle) :
+    ∀ x ∈ (e.schema.get c).frame, ∀ l, l < before.length → x.1.mem ρ middle l = true →
+      x.1.mem ρ before l = true := by
+  have hf := Effect.frame_mem_prefix hprefix (Effect.prefixAgrees_of_regions hreg ρ before middle)
+  intro x hx l hl hm
+  cases c with
+  | normal => exact hf x hx l hl hm
+  | exceptional =>
+    simp only [Exits.get, Effect.schema] at hx
+    split at hx
+    · exact hf x hx l hl hm
+    · have hgl : middle[l]? = before[l]? := by
+        obtain ⟨t, rfl⟩ := hprefix
+        exact List.getElem?_append_left hl
+      obtain ⟨S, hS⟩ := Footprints.Closed.fp_entry_cls hx
+      rw [hS] at hm ⊢
+      simpa only [Footprints.Region.mem, hgl] using hm
+
+/-- **A signature's exits carried across an allocation before the call**
+(`Exits.compose_entry`): a signature stating no store region, no ensured
+fact, no append and no element write has from an entry the exits it has
+from a later entry, at a world the first reaches, whose heap extends the
+first's by allocation. Its frame rebases to itself (`Rebases.of_prefix`),
+the allocation keeps every old location (`Post.of_prefix`), and its
+postconditions read the entry only through the freshness mark, which the
+allocation raises (`FreshAt.lower`, `FreshObjectAt.lower`). -/
+theorem Effect.exitPost_prefix {e : Effect} (hreg : e.regions = []) (hens : e.ensures = [])
+    (hg : e.receiverGrows = false) (hx : e.elementWrite = none) {c : Completion} {r : Tm} {args : List Tm}
+    {s₀ s₁ s₂ : IndexedHeap} {v : Tm} (hadm : Admissible s₀ s₁) (hprefix : s₀.h.IsPrefix s₁.h)
+    (h : e.schema.exitPost c r args s₁ s₂ v) : e.schema.exitPost c r args s₀ s₂ v := by
+  refine Exits.compose_entry (Φ := []) (cl := fun _ _ => none) ⟨hadm, Post.of_prefix _ _ hprefix⟩
+    (Rebases.of_prefix (Effect.schema_frame_mem_prefix hreg c hprefix)) (Footprint.le_refl _ _)
+    (fun _ _ _ _ hc => by cases hc) ?_ h
+  intro u z hF
+  rw [Effect.schema_atArity] at hF ⊢
+  intro F hFm
+  have hH := hF F hFm
+  cases c with
+  | exceptional =>
+    simp only [Exits.get, Effect.summary] at hFm
+    split at hFm <;> cases hFm
+  | normal =>
+    simp only [Exits.get, Effect.summary, Effect.normalPosts, hg, hx, hens, Bool.false_eq_true, if_false,
+      List.map_nil, List.append_nil, List.mem_append] at hFm
+    rcases hFm with (hf | ho) | hel
+    · cases hc : e.fresh <;> simp [hc] at hf; subst hf; exact FreshAt.lower hprefix.length_le hH
+    · cases hc : e.freshObject <;> simp [hc] at ho; subst ho; exact FreshObjectAt.lower hprefix.length_le hH
+    · cases hc : e.elements <;> simp [hc] at hel; subst hel; exact hH
+
+/-- **An allocation alone meets every signature's exceptional exit**: it
+keeps every old location (`Post.of_prefix`), and the exceptional exit
+states no postcondition. -/
+theorem Effect.exitPost_exceptional_prefix (e : Effect) {r : Tm} {args : List Tm} {s s' : IndexedHeap} {v : Tm}
+    (hadm : Admissible s s') (hprefix : s.h.IsPrefix s'.h) : e.schema.exitPost .exceptional r args s s' v := by
+  rw [Effect.exitPost_summary]
+  refine ⟨⟨hadm, Post.of_prefix _ _ hprefix⟩, fun F hF => ?_⟩
+  simp only [Exits.get, Effect.summary] at hF
+  split at hF <;> cases hF
 
 /-- **Safety at a signature's exits at the first `m` actuals is safety at
 its exits at every call extending them**, the signature about its receiver

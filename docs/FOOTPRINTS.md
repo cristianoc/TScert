@@ -1256,8 +1256,13 @@ The invocation proofs supply that match (`graph_invoke`, `graph_invoke_at`,
 `graphRest_invoke`), and their conclusion is the condition a callable value
 meets at its signature (`PromiseWith`). Code states no append and no element
 write (`Effect.below`), and at its exits its heap postconditions and its
-exits agree on every admissible state a run reaches (`Effect.safe_exits`,
-`Effect.safe_fields`). A code's signature is about its receiver and its
+exits agree on every admissible state a run reaches (`Effect.safe_exits`).
+A code collecting a rest runs after the rest store's allocation; its exits
+from the heap that allocation leaves are exits from the call's entry
+(`Effect.exitPost_prefix`, by `Exits.compose_entry`: the frame rebased by
+Seq-Eff, the postconditions by consequence, freshness lowered to the
+entry's mark), and the allocation's throw meets the call's exceptional exit
+(`Effect.exitPost_exceptional_prefix`). A code's signature is about its receiver and its
 parameters (`Effect.belowRow`): its summary is the same at every arity and
 reads the receiver, those parameters and the result alone
 (`Effect.summary_arity`, `Effect.summary_scoped`), so by scope congruence

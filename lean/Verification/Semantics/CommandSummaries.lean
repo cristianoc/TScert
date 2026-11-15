@@ -1,4 +1,5 @@
 import Verification.Semantics.ExitSummaries
+import Verification.Semantics.ExitComposition
 import Verification.Semantics.ParityDerivations
 
 /-! # Command summaries
@@ -66,11 +67,6 @@ theorem ExitSpec.holds_iff_facts {arena : AssertionArena} {q : ExitSpec} {s : Tw
 
 /-! ## Checked consequence -/
 
-/-- **Consequence**: at every two-state where the premises hold, the goals
-hold. -/
-def Consequence (arena : AssertionArena) (Γ goals : List Formula) : Prop :=
-  ∀ s, (∀ F ∈ Γ, Parity.Holds arena s F) → ∀ G ∈ goals, Parity.Holds arena s G
-
 /-- **The derivation checker on a list of goals**: each goal with its raw
 derivation from the premises (`checkDerivation`). -/
 def checkConsequences (arena : AssertionArena) (Γ : List Formula) : List Formula → List RawDerivation → Bool
@@ -98,23 +94,6 @@ theorem checkConsequences_sound {arena : AssertionArena} (hv : arena.Valid) {Γ 
     · exact checkConsequences_sound hv hr s hΓ G' hG'
   | [], _ :: _, h => by simp [checkConsequences] at h
   | _ :: _, [], h => by simp [checkConsequences] at h
-
-theorem Consequence.nil (arena : AssertionArena) (Γ : List Formula) : Consequence arena Γ [] :=
-  fun _ _ _ hG => by cases hG
-
-/-- Each premise is a consequence. -/
-theorem Consequence.refl (arena : AssertionArena) (Γ : List Formula) : Consequence arena Γ Γ :=
-  fun _ hΓ G hG => hΓ G hG
-
-/-- More premises keep a consequence. -/
-theorem Consequence.mono {arena : AssertionArena} {Γ Γ' goals : List Formula} (hsub : ∀ F ∈ Γ, F ∈ Γ')
-    (h : Consequence arena Γ goals) : Consequence arena Γ' goals :=
-  fun s hΓ => h s fun F hF => hΓ F (hsub F hF)
-
-/-- Consequences of consequences. -/
-theorem Consequence.trans {arena : AssertionArena} {Γ Δ goals : List Formula} (h₁ : Consequence arena Γ Δ)
-    (h₂ : Consequence arena Δ goals) : Consequence arena Γ goals :=
-  fun s hΓ => h₂ s (h₁ s hΓ)
 
 /-! ## Formulas reading one phase -/
 
@@ -233,27 +212,5 @@ theorem CommandSummary.Sound.weaken {arena : AssertionArena} {P : Assertion} {R 
 theorem CommandSummary.Sound.entry {arena : AssertionArena} {P P' : Assertion} {R : Runs} {S : CommandSummary}
     (hS : S.Sound arena P R) (hP : ∀ η m st, P' η m st → P η m st) : S.Sound arena P' R :=
   fun c s hP' hr => hS c s (hP _ _ _ hP') hr
-
-/-! ## Footprint inclusion -/
-
-theorem _root_.Verification.Footprints.Change.le_refl (c : Change) : c.le c = true := by
-  cases c <;> rfl
-
-theorem _root_.Verification.Footprints.Region.sub_refl (cl : ClassEvidence) (r : Region) : Region.sub cl r r = true := by
-  cases r <;> simp [Region.sub, Region.subBase]
-
-theorem _root_.Verification.Footprints.Footprint.le_of_subset {cl : ClassEvidence} {Φ Ψ : Footprint} (h : ∀ e ∈ Φ, e ∈ Ψ) :
-    Footprint.le cl Φ Ψ = true :=
-  List.all_eq_true.mpr fun e he => List.any_eq_true.mpr
-    ⟨e, h e he, by simp [Change.le_refl, Region.sub_refl]⟩
-
-theorem _root_.Verification.Footprints.Footprint.le_refl (cl : ClassEvidence) (Φ : Footprint) : Footprint.le cl Φ Φ = true :=
-  Footprint.le_of_subset fun _ h => h
-
-theorem _root_.Verification.Footprints.Footprint.le_append_left (cl : ClassEvidence) (Φ Ψ : Footprint) : Footprint.le cl Φ (Φ ++ Ψ) = true :=
-  Footprint.le_of_subset fun _ h => List.mem_append_left _ h
-
-theorem _root_.Verification.Footprints.Footprint.le_append_right (cl : ClassEvidence) (Φ Ψ : Footprint) : Footprint.le cl Ψ (Φ ++ Ψ) = true :=
-  Footprint.le_of_subset fun _ h => List.mem_append_right _ h
 
 end Verification.CallEffects

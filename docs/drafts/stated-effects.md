@@ -451,7 +451,7 @@ The remaining regions:
   cited).
 
 **Allocation before a call.** Lifting a call's post from the heap after an
-allocation to the heap before it (`Effect.post_prefix`) holds for a frame
+allocation to the heap before it (`Effect.exitPost_prefix`) holds for a frame
 whose regions are read from values that exist before the allocation: own
 locations and an empty path's store are heap-independent, and a class of
 an old location is unchanged by allocation. For a frame reading a nonempty
@@ -788,8 +788,8 @@ Paths relative to `lean/Verification/`; "chain1" names a file of branch
   `PathEvidenceOk.kept`; `[*]`'s store and cells transported separately
   (`CellsFrom` or `pathElemsValue`); freshness at the selected location.
   Prefix lifting for general frames requires checked transport, proved for
-  `graphRest_invoke`'s rest pack and on the exceptional exit; the current
-  `Effect.post_prefix` stays for frames read from values existing before
+  `graphRest_invoke`'s rest pack and on the exceptional exit;
+  `Effect.exitPost_prefix` covers frames read from values existing before
   the allocation. Chain1's `ArgumentStoreRegionsWithin` and its `.trans`,
   `.nested`, `.receiver`, `frame_length` become lemmas of `Post` at
   `path _ _ store`.

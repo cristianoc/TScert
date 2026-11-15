@@ -963,24 +963,6 @@ theorem ElementWrite.holds_pad {w : ElementWrite} {args pad : List Tm} (hpad : �
     simp only [ViewAssign, WriteAt, hg] at this ⊢
     exact this
 
-/-- A footprint's postcondition from a heap extending `before` by
-allocation is one from `before` where each entry covers, read at `before`,
-every old location it covers read at the later heap. -/
-theorem post_prefix_of_mem {Φ : Footprints.Footprint} {ρ : Env} {before middle after : Heap}
-    (hprefix : before.IsPrefix middle) (hp : Footprints.Post Φ ρ middle after)
-    (hm : ∀ x ∈ Φ, ∀ l, l < before.length → x.1.mem ρ middle l = true → x.1.mem ρ before l = true) :
-    Footprints.Post Φ ρ before after := by
-  refine ⟨Nat.le_trans hprefix.length_le hp.1, fun l v hv => ?_⟩
-  have hl := (List.getElem?_eq_some_iff.mp hv).1
-  have hv' : middle[l]? = some v := by
-    obtain ⟨t, rfl⟩ := hprefix
-    rw [List.getElem?_append_left hl, hv]
-  obtain ⟨v', hv'', ha⟩ := hp.2 l v hv'
-  refine ⟨v', hv'', ?_⟩
-  rcases ha with h | ⟨x, hx, hxm, hh⟩
-  · exact .inl h
-  · exact .inr ⟨x, hx, hm x hx l hl hxm, hh.lower hprefix.length_le⟩
-
 /-- **Agreement across allocation.** Each store region's path reads, at the
 heap before an allocation, what it reads after it: the checked transport a
 frame reading nonempty paths needs to lift across allocation (an actual may
@@ -1000,12 +982,14 @@ theorem Effect.prefixAgrees_of_regions {e : Effect} (h : e.regions = []) (ρ : E
     (before middle : Heap) : e.PrefixAgrees ρ before middle :=
   Effect.prefixAgrees_of_nil (by simp [h]) ρ before middle
 
-/-- Allocation before a call composes with its frame where the frame's paths
-agree across it (`PrefixAgrees`). -/
-theorem Effect.within_prefix {e : Effect} {r : Tm} {args : List Tm} {before middle after : Heap}
-    (hprefix : before.IsPrefix middle) (hagree : e.PrefixAgrees (callEnv r args) before middle)
-    (hw : e.within r args middle after) : e.within r args before after := by
-  apply post_prefix_of_mem hprefix hw
+/-- **A frame selects no new old location across allocation** where its
+paths agree across it (`PrefixAgrees`): each entry selects, among the
+locations of the earlier heap, at the later heap only locations it selects
+at the earlier one. Class regions read a location's contents, which
+allocation keeps. -/
+theorem Effect.frame_mem_prefix {e : Effect} {ρ : Env} {before middle : Heap}
+    (hprefix : before.IsPrefix middle) (hagree : e.PrefixAgrees ρ before middle) :
+    ∀ x ∈ e.frame, ∀ l, l < before.length → x.1.mem ρ middle l = true → x.1.mem ρ before l = true := by
   intro x hx l hl hm
   have hgl : middle[l]? = before[l]? := by
     obtain ⟨t, rfl⟩ := hprefix
@@ -1030,39 +1014,6 @@ theorem Effect.within_prefix {e : Effect} {r : Tm} {args : List Tm} {before midd
       rw [hagree q hq w hw']
       exact hm
     · cases hm
-
-/-- **Agreement of the entry across allocation**: each entry term of a
-signature's postcondition denotes, at the call's positions, at the heap
-before an allocation what it denotes after it. The call's entry state is
-the heap before the allocation; this is what reading the post at the later
-heap needs to state it there. -/
-def Effect.EntryAgrees (e : Effect) (ρ : Env) (before middle : Heap) : Prop :=
-  ∀ F ∈ e.ensures, ∀ t ∈ F.entryTerms, HeapKnowledge.termAt ρ middle t = HeapKnowledge.termAt ρ before t
-
-/-- A signature stating no postcondition agrees across any allocation. -/
-theorem Effect.entryAgrees_of_nil {e : Effect} (h : e.ensures = []) (ρ : Env) (before middle : Heap) :
-    e.EntryAgrees ρ before middle := by
-  intro F hF; rw [h] at hF; cases hF
-
-/-- Fresh entry allocation composes with the body's frame, where the frame's
-paths and the postcondition's entry terms agree across it: the post read at
-the call's entry, the heap before the allocation. -/
-theorem Effect.post_prefix (effect : Effect) {r : Tm} {args : List Tm} {before middle after : Heap} {v : Val}
-    (hprefix : before.IsPrefix middle) (hagree : effect.PrefixAgrees (callEnv r args) before middle)
-    (hens : effect.EntryAgrees (callEnv r args) before middle) :
-    effect.post r args middle after v → effect.post r args before after v := by
-  rintro ⟨hw, hf, ho, hel, hen, hg, hew⟩
-  exact ⟨Effect.within_prefix hprefix hagree hw, fun h => (hf h).lower hprefix.length_le,
-    fun h => (ho h).lower hprefix.length_le, hel,
-    fun F hF => (HeapKnowledge.IndexFact.holdsAt_congr_entryTerms (hens F hF)).mp (hen F hF),
-    fun h => ⟨(hg h).1.prefix_left hprefix, (hg h).2.prefix_left hprefix⟩, fun w h => (hew w h).prefix_left hprefix⟩
-
-/-- Fresh entry allocation composes with the frame on a throw too, where the
-frame's paths agree across it. -/
-theorem Effect.excPost_prefix (effect : Effect) {r : Tm} {args : List Tm} {before middle after : Heap}
-    (hprefix : before.IsPrefix middle) (hagree : effect.PrefixAgrees (callEnv r args) before middle) :
-    effect.excPost r args middle after → effect.excPost r args before after :=
-  fun hw ho => Effect.within_prefix hprefix hagree (hw ho)
 
 /-- Conjoining two guarantees for the same call: the meet of their closed
 bounds, with the promise, receiver mode and store regions they share, a
