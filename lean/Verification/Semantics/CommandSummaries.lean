@@ -16,7 +16,7 @@ from a state meeting `P` meets the summary at its exit
 (`CommandSummary.Sound`).
 
 A postcondition that holds at one two-state is carried to another by what
-it reads: a formula reading one phase alone (`Formula.reads`) holds alike at
+it reads: a formula reading one phase alone (`FormulaF.reads`) holds alike at
 two-states agreeing on that phase (`holds_reads`), and one reading a
 command's exit alone holds, entry and exit exchanged, at the entry of the
 command that follows (`holds_carry`). Consequences are the derivation
@@ -124,7 +124,7 @@ def stepPhase : StepVar → Phase
 
 /-- **A formula reading one phase alone**: an assertion at that phase, a
 linear fact or definedness over that phase's terms, and their connectives. -/
-def _root_.Verification.Parity.Formula.reads (p : Phase) : Formula → Bool
+def _root_.Verification.Parity.FormulaF.reads (p : Phase) : Formula → Bool
   | .at q _ => q == p
   | .linear F => F.vars.all fun v => stepPhase v == p
   | .defined v => stepPhase v == p
@@ -146,11 +146,11 @@ theorem holds_reads {arena : AssertionArena} {p : Phase} {s s' : TwoState} (he :
     (hst : s.state p = s'.state p) (hm : s.mark = s'.mark) :
     ∀ {F : Formula}, F.reads p = true → (Parity.Holds arena s F ↔ Parity.Holds arena s' F)
   | .at q a, h => by
-    simp only [Formula.reads, beq_iff_eq] at h
+    simp only [FormulaF.reads, beq_iff_eq] at h
     subst h
     simp only [Parity.Holds, he, hst, hm]
   | .linear F, h => by
-    simp only [Formula.reads, List.all_eq_true, beq_iff_eq] at h
+    simp only [FormulaF.reads, List.all_eq_true, beq_iff_eq] at h
     have hv : ∀ v ∈ F.vars, stepValue s v = stepValue s' v := fun v hv => stepValue_congr he hst (h v hv)
     simp only [Parity.Holds, FactAt]
     constructor
@@ -161,24 +161,24 @@ theorem holds_reads {arena : AssertionArena} {p : Phase} {s s' : TwoState} (he :
       refine ⟨fun v hm' => by rw [hv v hm']; exact hd v hm', ?_⟩
       exact (Linear.Fact.holds_congr fun v hm' => by rw [hv v hm']).mpr hF
   | .defined v, h => by
-    simp only [Formula.reads, beq_iff_eq] at h
+    simp only [FormulaF.reads, beq_iff_eq] at h
     simp only [Parity.Holds, stepValue_congr he hst h]
   | .and F G, h => by
-    simp only [Formula.reads, Bool.and_eq_true] at h
+    simp only [FormulaF.reads, Bool.and_eq_true] at h
     simp only [Parity.Holds, holds_reads he hst hm h.1, holds_reads he hst hm h.2]
   | .truth, _ => Iff.rfl
   | .falsity, _ => Iff.rfl
-  | .transition _, h | .operation _, h | .transport _, h => by simp [Formula.reads] at h
+  | .transition _, h | .operation _, h | .transport _, h => by simp [FormulaF.reads] at h
 
 /-- A formula reading one phase reads the two states symmetrically. -/
-theorem _root_.Verification.Parity.Formula.reads_swappable {p : Phase} {F : Formula} (h : F.reads p = true) :
+theorem _root_.Verification.Parity.FormulaF.reads_swappable {p : Phase} {F : Formula} (h : F.reads p = true) :
     F.swappable = true := by
   induction F with
   | «at» _ _ | linear _ | defined _ | truth | falsity => rfl
   | and F G ihF ihG =>
-    simp only [Formula.reads, Bool.and_eq_true] at h
-    simp only [Formula.swappable, ihF h.1, ihG h.2, Bool.and_self]
-  | transition _ | operation _ | transport _ => simp [Formula.reads] at h
+    simp only [FormulaF.reads, Bool.and_eq_true] at h
+    simp only [FormulaF.swappable, ihF h.1, ihG h.2, Bool.and_self]
+  | transition _ | operation _ | transport _ => simp [FormulaF.reads] at h
 
 /-- **A formula reading a command's exit holds, entry and exit exchanged, at
 the entry of the command that follows**: the first two-state's exit is the
@@ -188,7 +188,7 @@ theorem holds_carry {arena : AssertionArena} {s₁ s₂ : TwoState} (he : s₁.a
     (h : Parity.Holds arena s₁ F) : Parity.Holds arena s₂ F.swap := by
   let t : TwoState := ⟨s₂.afterEnv, s₂.beforeEnv, s₂.mark, s₂.after, s₂.before⟩
   have hsw : t.swap = s₂ := rfl
-  rw [← hsw, holds_swap (Formula.reads_swappable hF)]
+  rw [← hsw, holds_swap (FormulaF.reads_swappable hF)]
   exact (holds_reads (p := .after) (s := s₁) (s' := t) he hst hm hF).mp h
 
 /-! ## Weakening an exit specification -/

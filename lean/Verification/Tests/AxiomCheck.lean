@@ -270,6 +270,10 @@ run_cmd do
   check ``Verification.CallEffects.receiverGrows_iff
   check ``Verification.CallEffects.receiverAppends_iff
   check ``Verification.CallEffects.writtenResult_iff
+  check ``Verification.CallEffects.Effect.schema_atArity
+  check ``Verification.CallEffects.Effect.schema_slots
+  check ``Verification.CallEffects.restFrom_one
+  check ``Verification.CallEffects.writtenResultSchema_instantiate
   check ``Verification.CallEffects.exactPre_iff
   check ``Verification.CallEffects.elementWrite_iff
   check ``Verification.CallEffects.Effect.summary_normal_iff
@@ -317,8 +321,8 @@ run_cmd do
   check ``Verification.Parity.stepValue_scoped_congr
   check ``Verification.Parity.Substitution.holds_scoped_congr
   check ``Verification.Parity.Substitution.holdsAt_scoped_congr
-  check ``Verification.Parity.OperationPost.holds_scoped_congr
-  check ``Verification.Parity.Formula.holds_scoped_congr
+  check ``Verification.Parity.OperationPostF.holds_scoped_congr
+  check ``Verification.Parity.FormulaF.holds_scoped_congr
   check ``Verification.Parity.ExitSpec.holds_scoped_congr
   check ``Verification.CallEffects.Effect.summary_scopedSummary_of
   check ``Verification.CallEffects.CommandSummary.Scoped.holds_congr
@@ -326,7 +330,7 @@ run_cmd do
   check ``Verification.CallEffects.CommandSummary.signature_holds_below
   check ``Verification.CallEffects.CommandSummary.signature_contract_below
   check ``Verification.CallEffects.CommandSummary.frame_at_call_below
-  check ``Verification.Parity.OperationPost.holds_shift
+  check ``Verification.Parity.OperationPostF.holds_shift
   check ``Verification.Footprints.Region.sub_mem
   check ``Verification.Footprints.CellsFrom.of_post
   check ``Verification.Footprints.ArgumentStoreRegionsWithin.iff_post

@@ -198,7 +198,7 @@ theorem lengthsKept_of_run {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {Γ
     {steps : Nat} {h' : Heap} {v : Tm}
     (hrun : Steps steps s.h (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.var j) (.var k)))) h' v)
     (hv : isVal v = true) (hb : steps < s.n) {x x' : Nat} {η η' : Env} {m : Nat} (hη : η' x' = η x) :
-    ∃ s' : IndexedHeap, Admissible s s' ∧ s'.h = h' ∧ (OperationPost.lengthsKept x x').Holds ⟨η, η', m, s, s'⟩ := by
+    ∃ s' : IndexedHeap, Admissible s s' ∧ s'.h = h' ∧ (OperationPostF.lengthsKept x x').Holds ⟨η, η', m, s, s'⟩ := by
   obtain ⟨s', ha, hh, hq⟩ :=
     post_of_run (elem_var_write_length hk hj hi hst hoi hfl hls0 hb0 hidx hlt he s.ok hs) hrun hv hb
   exact ⟨s', ha, hh, by subst hh; exact hq, hη⟩
@@ -213,7 +213,7 @@ theorem boundedWrite_of_run {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {i
     (href : RefsOk s.W (instantiate 0 ρ j.term))
     {steps : Nat} {h' : Heap} {u : Tm} (hrun : Steps steps s.h (instantiate 0 ρ j.term) h' u)
     (hu : isVal u = true) (hb : steps < s.n) {x' : Nat} {η' : Env} {m : Nat} (hη : η' x' = ρ a) :
-    ∃ s' : IndexedHeap, Admissible s s' ∧ s'.h = h' ∧ (OperationPost.boundedWrite a i x').Holds ⟨ρ, η', m, s, s'⟩ := by
+    ∃ s' : IndexedHeap, Admissible s s' ∧ s'.h = h' ∧ (OperationPostF.boundedWrite a i x').Holds ⟨ρ, η', m, s, s'⟩ := by
   obtain ⟨s', ha, hh, hq⟩ := post_of_run (SafePostExc.of_post (R := fun _ => True) (fun _ => trivial)
     (boundedWrite_store hc he hk s.adm s.ok href)) hrun hu hb
   exact ⟨s', ha, hh, by subst hh; exact hq, hη⟩

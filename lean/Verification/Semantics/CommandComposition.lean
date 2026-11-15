@@ -129,12 +129,12 @@ structure ThenEvidence.Valid (arena : AssertionArena) (P : Assertion) (q₁ q₂
     Prop where
   classOk : ∀ η m st, P η m st → ClassOk ev.cl η st.h
   rebaseOk : ∀ s, s.Entry P → q₁.Holds arena s → RebaseOk ev.rebase s.afterEnv s.beforeEnv s.before.h s.after.h
-  entryReads : ev.entry.all (Formula.reads .before) = true
-  carryReads : ev.carry.all (Formula.reads .after) = true
-  midReads : ev.mid.all (Formula.reads .after) = true
+  entryReads : ev.entry.all (FormulaF.reads .before) = true
+  carryReads : ev.carry.all (FormulaF.reads .after) = true
+  midReads : ev.mid.all (FormulaF.reads .after) = true
   entryOk : Consequence arena q₁.facts ev.entry
   carryOk : Consequence arena q₁.facts ev.carry
-  midOk : Consequence arena (ev.carry.map Formula.swap ++ q₂.facts) ev.mid
+  midOk : Consequence arena (ev.carry.map FormulaF.swap ++ q₂.facts) ev.mid
 
 /-- **The composite exit is within `q`**: the frames, rebased, within `q`'s
 frame by checked inclusion, and `q`'s postconditions consequences of its
@@ -175,7 +175,7 @@ theorem ThenEvidence.sound {arena : AssertionArena} {P : Assertion} {q₁ q₂ q
   rcases List.mem_append.mp hF with hF | hF
   · exact (holds_reads (p := .before) (s := ⟨ρ₀, η, m, t₀, t₁⟩) (s' := ⟨ρ₀, ρ₂, m, t₀, t₂⟩) rfl rfl rfl (List.all_eq_true.mp hv.entryReads F hF)).mp
       (hv.entryOk _ hf₁ F hF)
-  · have hc : ∀ G ∈ ev.carry.map Formula.swap ++ q₂.facts, Parity.Holds arena ⟨η, ρ₂, m, t₁, t₂⟩ G := by
+  · have hc : ∀ G ∈ ev.carry.map FormulaF.swap ++ q₂.facts, Parity.Holds arena ⟨η, ρ₂, m, t₁, t₂⟩ G := by
       intro G hG
       rcases List.mem_append.mp hG with hG | hG
       · obtain ⟨G₀, hG₀, rfl⟩ := List.mem_map.mp hG

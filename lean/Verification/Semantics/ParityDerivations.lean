@@ -91,7 +91,7 @@ theorem factAt_tag (s : TwoState) (p : Phase) (F : Linear.Fact Term) :
   exact Iff.of_eq (congrArg (FactAt · F) (funext fun t => stepValue_tag s p t))
 
 /-- Whether a post reads the entry state. -/
-def OperationPost.readsBefore : OperationPost → Bool
+def OperationPostF.readsBefore : OperationPost → Bool
   | .lengthsKept .. | .boundedWrite .. | .push .. | .fact .. | .storeExtends .. | .viewWrite .. => true
   | _ => false
 
@@ -106,7 +106,7 @@ theorem holds_conj {arena : AssertionArena} {s : TwoState} :
   | F :: t => by simp only [conj, Holds, holds_conj, List.mem_cons, forall_eq_or_imp]
 
 /-- Entry and exit exchanged in a formula reading states alone. -/
-def Formula.swap : Formula → Formula
+def FormulaF.swap : Formula → Formula
   | .at p a => .at p.swap a
   | .linear F => .linear (renameFact stepSwap F)
   | .defined v => .defined (stepSwap v)
@@ -115,7 +115,7 @@ def Formula.swap : Formula → Formula
 
 /-- A formula reading the two states symmetrically: assertions, linear
 facts and their connectives. -/
-def Formula.swappable : Formula → Bool
+def FormulaF.swappable : Formula → Bool
   | .at _ _ | .linear _ | .defined _ | .truth | .falsity => true
   | .and F G => F.swappable && G.swappable
   | _ => false
@@ -124,12 +124,12 @@ theorem holds_swap {arena : AssertionArena} {s : TwoState} :
     ∀ {F : Formula}, F.swappable = true → (Holds arena s.swap F.swap ↔ Holds arena s F)
   | .at p a, _ => by cases p <;> rfl
   | .linear F, _ => by
-    simp only [Formula.swap, Holds, factAt_rename]
+    simp only [FormulaF.swap, Holds, factAt_rename]
     exact Iff.of_eq (congrArg (FactAt · F) (funext fun v => by cases v <;> rfl))
   | .defined v, _ => by cases v <;> rfl
   | .and F G, h => by
-    simp only [Formula.swappable, Bool.and_eq_true] at h
-    simp only [Formula.swap, Holds, holds_swap h.1, holds_swap h.2]
+    simp only [FormulaF.swappable, Bool.and_eq_true] at h
+    simp only [FormulaF.swap, Holds, holds_swap h.1, holds_swap h.2]
   | .truth, _ => Iff.rfl
   | .falsity, _ => Iff.rfl
 
@@ -290,7 +290,7 @@ def shiftVar (p : Phase) : StepVar → StepVar
   | .before t => if p = .before then .before (Term.now t.kind (t.slot + 1) t.path) else .before t
   | .after t => if p = .after then .after (Term.now t.kind (t.slot + 1) t.path) else .after t
 
-def OperationPost.shift : OperationPost → OperationPost
+def OperationPostF.shift : OperationPost → OperationPost
   | .arith op l r y => .arith op l.shift r.shift ⟨y.root + 1, y.fields⟩
   | .stringLength x y => .stringLength ⟨x.root + 1, x.fields⟩ ⟨y.root + 1, y.fields⟩
   | .stringRead x i y => .stringRead ⟨x.root + 1, x.fields⟩ i.shift ⟨y.root + 1, y.fields⟩
@@ -393,8 +393,8 @@ inductive Derivation (arena : AssertionArena) : List Formula → Formula → Typ
       (de : Derivation arena Γ (.at p e)) (d : Derivation arena Γ (.at p c₁)) : Derivation arena Γ (.at p c₂)
   /-- A derivation reading the states symmetrically holds with entry and
   exit exchanged: a one-state derivation read before the command. -/
-  | oldLift {Γ F} (hΓ : Γ.all Formula.swappable = true) (hF : F.swappable = true)
-      (d : Derivation arena (Γ.map Formula.swap) F.swap) : Derivation arena Γ F
+  | oldLift {Γ F} (hΓ : Γ.all FormulaF.swappable = true) (hF : F.swappable = true)
+      (d : Derivation arena (Γ.map FormulaF.swap) F.swap) : Derivation arena Γ F
   /-- Law (a): `□_Φ A ⊢ A`. -/
   | boxElim {Γ p a b Φ} (hn : arena.nodes[a.index]? = some (.box Φ b)) (d : Derivation arena Γ (.at p a)) :
       Derivation arena Γ (.at p b)
@@ -777,9 +777,9 @@ def checkDerivation (arena : AssertionArena) (premises : List Formula) (goal : F
         (← checkDerivation arena premises (.at p c₁) d))
     | _ => .error "equalitySubst: goal is no assertion"
   | .oldLift d => do
-    let ⟨hΓ⟩ ← req (premises.all Formula.swappable = true) "oldLift: a premise reads a transition"
+    let ⟨hΓ⟩ ← req (premises.all FormulaF.swappable = true) "oldLift: a premise reads a transition"
     let ⟨hF⟩ ← req (goal.swappable = true) "oldLift: the goal reads a transition"
-    pure (.oldLift hΓ hF (← checkDerivation arena (premises.map Formula.swap) goal.swap d))
+    pure (.oldLift hΓ hF (← checkDerivation arena (premises.map FormulaF.swap) goal.swap d))
   | .boxElim Φ a d => match goal with
     | .at p b => do
       let ⟨h⟩ ← node? arena a (.box Φ b)
@@ -1262,7 +1262,7 @@ theorem Operand.sound {arena : AssertionArena} {s : TwoState} {o : Operand} {F :
 
 theorem binop_operands {op : Arith} (hop : op = .add ∨ op = .sub ∨ op = .mul ∨ op = .shr ∨ op = .bitAnd)
     {s : TwoState} {l r : Witness} {y : Path} {a b : UInt64} (hl : l.value s.afterEnv s.after.h = some (.num a))
-    (hr : r.value s.afterEnv s.after.h = some (.num b)) (h : (OperationPost.arith op l r y).Holds s) :
+    (hr : r.value s.afterEnv s.after.h = some (.num b)) (h : (OperationPostF.arith op l r y).Holds s) :
     y.read s.afterEnv s.after.h = some (.num (arithBits op a b)) := by
   obtain ⟨a', b', c', ha, hb, hy, hbin⟩ := h
   rw [hl] at ha; cases ha
@@ -1288,7 +1288,7 @@ theorem small_sound {arena : AssertionArena} {s : TwoState} {F : Linear.Form Ter
 
 theorem shiftRight_sound {arena : AssertionArena} {s : TwoState} {x k : Operand} {y : Path} {F : Linear.Form Term}
     {c d : Int} (hx : x.form = some (F, c)) (hk : k.form = some ([], d)) (hd : 0 ≤ d ∧ d < 32)
-    (hop : (OperationPost.arith .shr x.witness k.witness y).Holds s) (hpx : Holds arena s x.premise)
+    (hop : (OperationPostF.arith .shr x.witness k.witness y).Holds s) (hpx : Holds arena s x.premise)
     (hpk : Holds arena s k.premise) (hsm : Holds arena s (smallFacts F c)) : Holds arena s (shrFacts y F c d) := by
   obtain ⟨hFd, xb, hxv, hxs⟩ := Operand.sound hx hpx
   obtain ⟨-, kb, hkv, hks⟩ := Operand.sound hk hpk
@@ -1316,7 +1316,7 @@ theorem shiftRight_sound {arena : AssertionArena} {s : TwoState} {x k : Operand}
 
 theorem mask_sound {arena : AssertionArena} {s : TwoState} {x k : Operand} {y : Path} {F : Linear.Form Term}
     {c m : Int} (hx : x.form = some (F, c)) (hk : k.form = some ([], m)) (hm : 0 ≤ m ∧ m < 2 ^ 31)
-    (hop : (OperationPost.arith .bitAnd x.witness k.witness y).Holds s) (hpx : Holds arena s x.premise)
+    (hop : (OperationPostF.arith .bitAnd x.witness k.witness y).Holds s) (hpx : Holds arena s x.premise)
     (hpk : Holds arena s k.premise) (hsm : Holds arena s (smallFacts F c)) : Holds arena s (maskFacts y F c m) := by
   obtain ⟨hFd, xb, hxv, hxs⟩ := Operand.sound hx hpx
   obtain ⟨-, kb, hkv, hks⟩ := Operand.sound hk hpk
@@ -1352,7 +1352,7 @@ theorem valueFacts_of {arena : AssertionArena} {s : TwoState} {y : Path} {F : Li
 
 theorem integerOperation_sound {arena : AssertionArena} {s : TwoState} {op : Arith} {l r : Operand} {y : Path}
     {fl fr F : Linear.Form Term} {cl cr c : Int} (hl : l.form = some (fl, cl)) (hr : r.form = some (fr, cr))
-    (hF : resultForm op fl cl fr cr = some (F, c)) (hop : (OperationPost.arith op l.witness r.witness y).Holds s)
+    (hF : resultForm op fl cl fr cr = some (F, c)) (hop : (OperationPostF.arith op l.witness r.witness y).Holds s)
     (hpl : Holds arena s l.premise) (hpr : Holds arena s r.premise) (hrange : Holds arena s (rangeFacts F c)) :
     Holds arena s (valueFacts y F c) := by
   obtain ⟨hld, a, hav, has⟩ := Operand.sound hl hpl
@@ -1425,7 +1425,7 @@ theorem lengthSuccessor_sound {arena : AssertionArena} (hv : arena.Valid) {s : T
     (he' : arena.nodes[e'.index]? = some (.and e₁ e₂))
     (he₁ : arena.nodes[e₁.index]? = some (.atom (.linear (exactTermFacts y (fl ++ fr) (cl + cr)).1)))
     (he₂ : arena.nodes[e₂.index]? = some (.atom (.linear (exactTermFacts y (fl ++ fr) (cl + cr)).2)))
-    (hop : (OperationPost.arith .add l.witness r.witness y).Holds s)
+    (hop : (OperationPostF.arith .add l.witness r.witness y).Holds s)
     (hpl : Holds arena s l.premise) (hpr : Holds arena s r.premise)
     (hlen : Holds arena s (lengthEq x sp)) (hon : Holds arena s one) :
     Holds arena s (.at .after g) := by
@@ -1554,21 +1554,21 @@ theorem stepValue_shiftVar (s : TwoState) (p : Phase) (x : Val) (v : StepVar) :
     stepValue (s.withEnv p (push x (s.env p))) (shiftVar p v) = stepValue s v := by
   cases p <;> cases v <;> rfl
 
-theorem OperationPost.holds_shift (s : TwoState) (x : Val) (q : OperationPost) :
+theorem OperationPostF.holds_shift (s : TwoState) (x : Val) (q : OperationPost) :
     q.shift.Holds (s.withEnv .after (Verification.push x (s.env .after))) ↔ q.Holds s := by
   cases q with
   | arith op l r y =>
-    simp only [OperationPost.shift, OperationPost.Holds, TwoState.withEnv, TwoState.env, Witness.value_shift]; rfl
+    simp only [OperationPostF.shift, OperationPostF.Holds, TwoState.withEnv, TwoState.env, Witness.value_shift]; rfl
   | stringLength x y => rfl
   | stringRead x' i y =>
-    simp only [OperationPost.shift, OperationPost.Holds, TwoState.withEnv, TwoState.env, Witness.value_shift]; rfl
+    simp only [OperationPostF.shift, OperationPostF.Holds, TwoState.withEnv, TwoState.env, Witness.value_shift]; rfl
   | lengthsKept _ _ => rfl
   | boundedWrite _ _ _ => rfl
   | push _ _ _ => rfl
   | fact p l F =>
     cases p
     · rfl
-    · simp only [OperationPost.shift, OperationPost.Holds, TwoState.withEnv, TwoState.env, TwoState.state]
+    · simp only [OperationPostF.shift, OperationPostF.Holds, TwoState.withEnv, TwoState.env, TwoState.state]
       exact Iff.of_eq (congrArg (fun η => F.HoldsAt _ η _) (funext fun i => by
         simp only [Verification.push]; rfl))
   | freshStore _ => rfl
@@ -1577,9 +1577,9 @@ theorem OperationPost.holds_shift (s : TwoState) (x : Val) (q : OperationPost) :
   | storeExtends _ => rfl
   | viewWrite _ _ _ _ => rfl
 
-theorem OperationPost.holds_before (s : TwoState) (η : Env) {q : OperationPost} (hq : q.readsBefore = false) :
+theorem OperationPostF.holds_before (s : TwoState) (η : Env) {q : OperationPost} (hq : q.readsBefore = false) :
     q.Holds (s.withEnv .before η) ↔ q.Holds s := by
-  cases q <;> first | rfl | simp [OperationPost.readsBefore] at hq
+  cases q <;> first | rfl | simp [OperationPostF.readsBefore] at hq
 
 /-- **A formula read one slot further holds where the formula holds at the
 valuation without the eigenvariable.** -/
@@ -1620,9 +1620,9 @@ theorem holds_shiftFormula {arena : AssertionArena} {p : Phase} {n : Nat} {s : T
     cases p
     · simp only [reduceCtorEq, if_false, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at h
       obtain ⟨hq, rfl⟩ := h
-      exact OperationPost.holds_before s _ hq
+      exact OperationPostF.holds_before s _ hq
     · simp only [if_true, beq_iff_eq] at h
-      subst h; exact OperationPost.holds_shift s x q
+      subst h; exact OperationPostF.holds_shift s x q
   | .transport θ, .transport θ', h => by
     simp only [shiftFormula, Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true', List.isEmpty_iff] at h
     obtain ⟨⟨⟨rfl, hb⟩, hst⟩, rfl⟩ := h
@@ -2098,7 +2098,7 @@ def StepVar.scoped (sc : Scope) : StepVar → Bool
 
 /-- A post reads its operands in their phases' scopes: the exit's operands
 below the exit count, the entry's below the entry count. -/
-def OperationPost.scoped (sc : Scope) : OperationPost → Bool
+def OperationPostF.scoped (sc : Scope) : OperationPost → Bool
   | .arith _ l r y => l.scoped sc.after && r.scoped sc.after && y.scoped sc.after
   | .stringLength x y => x.scoped sc.after && y.scoped sc.after
   | .stringRead x i y => x.scoped sc.after && i.scoped sc.after && y.scoped sc.after
@@ -2115,7 +2115,7 @@ def OperationPost.scoped (sc : Scope) : OperationPost → Bool
 identity check (their binders' eigenvariables apart), linear facts by their
 terms' slots, a transition by its effect read at the entry, a transport by
 an image for every entry slot read at the exit. -/
-def Formula.scoped (arena : AssertionArena) (sc : Scope) : Formula → Bool
+def FormulaF.scoped (arena : AssertionArena) (sc : Scope) : Formula → Bool
   | .at p a => scopedAt arena.nodes (sc.count p) a.index
   | .transition Φ => effectScoped sc.before Φ
   | .operation q => q.scoped sc
@@ -2131,7 +2131,7 @@ runtime slots. -/
 def checkScoped (arena : AssertionArena) (sc : Scope) (premises : List Formula) (goal : Formula)
     (raw : RawDerivation) : Except String (Derivation arena premises goal) := do
   let ⟨_⟩ ← req (arena.check = true) "the arena is not valid"
-  let ⟨_⟩ ← req ((goal :: premises).all (Formula.scoped arena sc) = true) "a formula reads a slot outside its scope"
+  let ⟨_⟩ ← req ((goal :: premises).all (FormulaF.scoped arena sc) = true) "a formula reads a slot outside its scope"
   checkDerivation arena premises goal raw
 
 /-- **A checked derivation is semantically valid** (I4, the common

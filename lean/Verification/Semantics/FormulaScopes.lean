@@ -2,10 +2,10 @@ import Verification.Semantics.ExitSummaries
 
 /-! # A scoped formula reads its scope alone
 
-A two-state formula scoped at `sc` (`Formula.scoped`) reads the entry
+A two-state formula scoped at `sc` (`FormulaF.scoped`) reads the entry
 valuation below `sc.before` and the exit valuation below `sc.after`, besides
 the two states and the mark. Two two-states agreeing on those
-(`TwoState.AgreeBelow`) satisfy it alike (`Formula.holds_scoped_congr`),
+(`TwoState.AgreeBelow`) satisfy it alike (`FormulaF.holds_scoped_congr`),
 and so an exit specification whose frame and postconditions are scoped
 (`ExitSpec.holds_scoped_congr`). Each kind of formula reads its scope by
 its own congruence: an assertion by `sat_scoped_congr`, a transition by
@@ -13,7 +13,7 @@ its own congruence: an assertion by `sat_scoped_congr`, a transition by
 their terms read (`stepValue_scoped_congr`), a transport by its images'
 roots and its domain (`Substitution.holdsAt_scoped_congr`), and an
 operational post by the slots each constructor reads
-(`OperationPost.holds_scoped_congr`). -/
+(`OperationPostF.holds_scoped_congr`). -/
 namespace Verification.Parity
 open Verification Footprints HeapKnowledge TolerantFrames
 
@@ -107,7 +107,7 @@ private theorem mapM_congr {α β : Type} {f g : α → Option β} :
     simp only [List.mapM_cons, h a (List.mem_cons_self ..), mapM_congr fun b hb => h b (List.mem_cons_of_mem _ hb)]
 
 /-- **An operational post reads its scope alone**, for every constructor. -/
-theorem OperationPost.holds_scoped_congr {sc : Scope} {s s' : TwoState} (hs : s.AgreeBelow sc s')
+theorem OperationPostF.holds_scoped_congr {sc : Scope} {s s' : TwoState} (hs : s.AgreeBelow sc s')
     {q : OperationPost} (hq : q.scoped sc = true) : q.Holds s' ↔ q.Holds s := by
   have hb := hs.beforeEnv
   have ha := hs.afterEnv
@@ -118,87 +118,87 @@ theorem OperationPost.holds_scoped_congr {sc : Scope} {s s' : TwoState} (hs : s.
   subst hB hA
   cases q with
   | arith op l r y =>
-    simp only [OperationPost.scoped, Bool.and_eq_true] at hq
-    simp only [OperationPost.Holds, Witness.value_scoped_congr hq.1.1 ha, Witness.value_scoped_congr hq.1.2 ha,
+    simp only [OperationPostF.scoped, Bool.and_eq_true] at hq
+    simp only [OperationPostF.Holds, Witness.value_scoped_congr hq.1.1 ha, Witness.value_scoped_congr hq.1.2 ha,
       Path.read_scoped_congr hq.2 ha]
   | stringLength x y =>
-    simp only [OperationPost.scoped, Bool.and_eq_true] at hq
-    simp only [OperationPost.Holds, Path.read_scoped_congr hq.1 ha, Path.read_scoped_congr hq.2 ha]
+    simp only [OperationPostF.scoped, Bool.and_eq_true] at hq
+    simp only [OperationPostF.Holds, Path.read_scoped_congr hq.1 ha, Path.read_scoped_congr hq.2 ha]
   | stringRead x i y =>
-    simp only [OperationPost.scoped, Bool.and_eq_true] at hq
-    simp only [OperationPost.Holds, Path.read_scoped_congr hq.1.1 ha, Witness.value_scoped_congr hq.1.2 ha,
+    simp only [OperationPostF.scoped, Bool.and_eq_true] at hq
+    simp only [OperationPostF.Holds, Path.read_scoped_congr hq.1.1 ha, Witness.value_scoped_congr hq.1.2 ha,
       Path.read_scoped_congr hq.2 ha]
   | lengthsKept x x' =>
-    simp only [OperationPost.scoped, Bool.and_eq_true, decide_eq_true_eq] at hq
-    simp only [OperationPost.Holds, hb x hq.1, ha x' hq.2]
+    simp only [OperationPostF.scoped, Bool.and_eq_true, decide_eq_true_eq] at hq
+    simp only [OperationPostF.Holds, hb x hq.1, ha x' hq.2]
   | boundedWrite x i x' =>
-    simp only [OperationPost.scoped, Bool.and_eq_true, decide_eq_true_eq] at hq
-    simp only [OperationPost.Holds, hb x hq.1.1, hb i hq.1.2, ha x' hq.2]
+    simp only [OperationPostF.scoped, Bool.and_eq_true, decide_eq_true_eq] at hq
+    simp only [OperationPostF.Holds, hb x hq.1.1, hb i hq.1.2, ha x' hq.2]
   | push x x' args =>
-    simp only [OperationPost.scoped, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hq
+    simp only [OperationPostF.scoped, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hq
     have hm : args.mapM (·.value b' B'.h) = args.mapM (·.value b B'.h) :=
       mapM_congr fun w hw => Witness.value_scoped_congr (hq.2 w hw) hb B'.h
-    simp only [OperationPost.Holds, hm, hb x hq.1.1, ha x' hq.1.2]
+    simp only [OperationPostF.Holds, hm, hb x hq.1.1, ha x' hq.1.2]
   | fact p l F =>
-    simp only [OperationPost.scoped, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at hq
+    simp only [OperationPostF.scoped, Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at hq
     cases p
-    · simp only [OperationPost.Holds, TwoState.env, TwoState.state]
+    · simp only [OperationPostF.Holds, TwoState.env, TwoState.state]
       exact (IndexFact.holdsAt_congr (ε := ⟨b', B'.h⟩) (h := B'.h) fun i hi => hb _ (hq.1 i hi)).trans
         (IndexFact.holdsAt_congr_entry rfl fun i hi => hb i (hq.2 i hi))
-    · simp only [OperationPost.Holds, TwoState.env, TwoState.state]
+    · simp only [OperationPostF.Holds, TwoState.env, TwoState.state]
       exact (IndexFact.holdsAt_congr (ε := ⟨b', B'.h⟩) (h := A'.h) fun i hi => ha _ (hq.1 i hi)).trans
         (IndexFact.holdsAt_congr_entry rfl fun i hi => hb i (hq.2 i hi))
   | freshStore x =>
-    simp only [OperationPost.scoped, decide_eq_true_eq] at hq
-    simp only [OperationPost.Holds, ha x hq]
+    simp only [OperationPostF.scoped, decide_eq_true_eq] at hq
+    simp only [OperationPostF.Holds, ha x hq]
   | freshObject x =>
-    simp only [OperationPost.scoped, decide_eq_true_eq] at hq
-    simp only [OperationPost.Holds, ha x hq]
+    simp only [OperationPostF.scoped, decide_eq_true_eq] at hq
+    simp only [OperationPostF.Holds, ha x hq]
   | elementsWhen x v y R =>
-    simp only [OperationPost.scoped, Bool.and_eq_true, decide_eq_true_eq] at hq
-    simp only [OperationPost.Holds, ha x hq.1, ha y hq.2]
+    simp only [OperationPostF.scoped, Bool.and_eq_true, decide_eq_true_eq] at hq
+    simp only [OperationPostF.Holds, ha x hq.1, ha y hq.2]
   | storeExtends x =>
-    simp only [OperationPost.scoped, decide_eq_true_eq] at hq
-    simp only [OperationPost.Holds, hb x hq]
+    simp only [OperationPostF.scoped, decide_eq_true_eq] at hq
+    simp only [OperationPostF.Holds, hb x hq]
   | viewWrite x i v f =>
-    simp only [OperationPost.scoped, Bool.and_eq_true, decide_eq_true_eq] at hq
-    simp only [OperationPost.Holds, hb x hq.1.1, hb i hq.1.2, hb v hq.2]
+    simp only [OperationPostF.scoped, Bool.and_eq_true, decide_eq_true_eq] at hq
+    simp only [OperationPostF.Holds, hb x hq.1.1, hb i hq.1.2, hb v hq.2]
 
 /-! ## Formulas -/
 
 /-- **The scope transfer**: a formula scoped at `sc` holds alike at two
 two-states with the same states and mark whose valuations agree below the
 scope. -/
-theorem Formula.holds_scoped_congr {arena : AssertionArena} {sc : Scope} {s s' : TwoState}
+theorem FormulaF.holds_scoped_congr {arena : AssertionArena} {sc : Scope} {s s' : TwoState}
     (hs : s.AgreeBelow sc s') : ∀ {F : Formula}, F.scoped arena sc = true → (Holds arena s' F ↔ Holds arena s F)
   | .at p a, hF => by
-    simp only [Formula.scoped] at hF
+    simp only [FormulaF.scoped] at hF
     cases p
     · simp only [Holds, TwoState.env, TwoState.state, hs.mark, hs.before]
       exact sat_scoped_congr hF hs.beforeEnv
     · simp only [Holds, TwoState.env, TwoState.state, hs.mark, hs.after]
       exact sat_scoped_congr hF hs.afterEnv
   | .transition Φ, hF => by
-    simp only [Formula.scoped, effectScoped, List.all_eq_true, decide_eq_true_eq] at hF
+    simp only [FormulaF.scoped, effectScoped, List.all_eq_true, decide_eq_true_eq] at hF
     simp only [Holds, hs.before, hs.after]
     exact EffectAction.congr_roots fun x ⟨e, he, hx⟩ => hs.beforeEnv x (hF e he x hx)
-  | .operation q, hF => OperationPost.holds_scoped_congr hs hF
+  | .operation q, hF => OperationPostF.holds_scoped_congr hs hF
   | .linear F, hF => by
-    simp only [Formula.scoped, List.all_eq_true] at hF
+    simp only [FormulaF.scoped, List.all_eq_true] at hF
     simp only [Holds]
     exact ⟨factAt_congr fun x hx => (stepValue_scoped_congr hs (hF x hx)).symm,
       factAt_congr fun x hx => stepValue_scoped_congr hs (hF x hx)⟩
   | .defined v, hF => by
-    simp only [Formula.scoped] at hF
+    simp only [FormulaF.scoped] at hF
     simp only [Holds]
     rw [stepValue_scoped_congr hs hF]
   | .transport θ, hF => by
-    simp only [Formula.scoped, Bool.and_eq_true, decide_eq_true_eq] at hF
+    simp only [FormulaF.scoped, Bool.and_eq_true, decide_eq_true_eq] at hF
     simp only [Holds, hs.after]
     exact Substitution.holdsAt_scoped_congr hF.2 (fun i hi => hs.beforeEnv i (hF.1 ▸ hi)) hs.afterEnv _
   | .and F G, hF => by
-    simp only [Formula.scoped, Bool.and_eq_true] at hF
-    simp only [Holds, Formula.holds_scoped_congr hs hF.1, Formula.holds_scoped_congr hs hF.2]
+    simp only [FormulaF.scoped, Bool.and_eq_true] at hF
+    simp only [Holds, FormulaF.holds_scoped_congr hs hF.1, FormulaF.holds_scoped_congr hs hF.2]
   | .truth, _ => Iff.rfl
   | .falsity, _ => Iff.rfl
 
@@ -206,12 +206,12 @@ theorem Formula.holds_scoped_congr {arena : AssertionArena} {sc : Scope} {s s' :
 below `sc.before`, its postconditions scoped) holds alike at two two-states
 agreeing below the scope. -/
 theorem ExitSpec.holds_scoped_congr {arena : AssertionArena} {sc : Scope} {q : CallEffects.ExitSpec}
-    (hf : effectScoped sc.before q.frame = true) (he : q.ensures.all (Formula.scoped arena sc) = true)
+    (hf : effectScoped sc.before q.frame = true) (he : q.ensures.all (FormulaF.scoped arena sc) = true)
     {s s' : TwoState} (hs : s.AgreeBelow sc s') : q.Holds arena s' ↔ q.Holds arena s := by
-  have hT := Formula.holds_scoped_congr (arena := arena) (F := .transition q.frame) hs hf
+  have hT := FormulaF.holds_scoped_congr (arena := arena) (F := .transition q.frame) hs hf
   simp only [Holds] at hT
   simp only [CallEffects.ExitSpec.Holds, hT]
   refine and_congr_right fun _ => forall₂_congr fun F hF => ?_
-  exact Formula.holds_scoped_congr hs (List.all_eq_true.mp he F hF)
+  exact FormulaF.holds_scoped_congr hs (List.all_eq_true.mp he F hF)
 
 end Verification.Parity

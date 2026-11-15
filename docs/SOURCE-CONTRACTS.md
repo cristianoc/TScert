@@ -591,6 +591,17 @@ signature's summary is:
   signature states `onThrow`; otherwise $`\top`$, the three class entries
   at `any`, and no postcondition.
 
+A signature states the summary once for every arity, as a schema
+(`Effect.schema`, `CallEffects.ExitSchema`, in `Semantics/ExitSchemas.lean`):
+its postconditions name the actuals from a position on (`WitnessSeq.restFrom`,
+a rest parameter's actuals) and state a transport over every entry slot by a
+shift and finitely many replacements (`TransportSchema`). A call of `n`
+actuals instantiates it (`Exits.atArity`, the note's Call): the rest
+splice at the positions `1` to `n`, a transport at an entry scope of
+`max (n + 1) k` slots, `k` the slots its replacements name; the instantiation
+is the summary at arity `n` (proved: `Effect.schema_atArity`). Only
+instantiated formulas are interpreted.
+
 A guarantee stated beside the frame is a postcondition `.transition Φ`, so
 the frame and it hold of one transition. On admissible transitions at
 actuals that are values, the normal exit holds exactly where

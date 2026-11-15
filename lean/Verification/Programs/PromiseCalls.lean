@@ -2367,7 +2367,7 @@ private theorem mem_normalPosts {eff : Effect} {n : Nat} {F : Parity.Formula} (h
 
 private theorem op_not_mem_posts (w : CallEffects.ElementWrite) (n : Nat) {o : Parity.OperationPost}
     (ho : match o with | .viewWrite .. | .fact .. => False | _ => True) :
-    Parity.Formula.operation o ∉ w.posts n := by
+    Parity.FormulaF.operation o ∉ w.posts n := by
   cases o <;> simp at ho <;> cases w <;> simp [CallEffects.ElementWrite.posts]
 
 /-- **The extension postcondition gives the growth** (proved): it occurs in

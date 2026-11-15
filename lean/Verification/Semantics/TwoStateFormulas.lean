@@ -380,7 +380,7 @@ def stepValue (s : TwoState) : StepVar → Option Int
 arithmetic in scope, read at the exit: the result path reads the value of the
 operator on what its operands read (`binop`); a string's length read
 (`Step.lenStr`); a string's element read (`codeUnitAt`). -/
-inductive OperationPost where
+inductive OperationPostF (Seq : Type) where
   | arith (op : Arith) (left right : Witness) (result : Path)
   | stringLength (string result : Path)
   | stringRead (string : Path) (index : Witness) (result : Path)
@@ -394,7 +394,7 @@ inductive OperationPost where
   | boundedWrite (x i x' : Nat)
   /-- An append of the argument values to the array at entry slot `x`
   (exit slot `x'`): the assumed contract `CallEffects.ReceiverAppends`. -/
-  | push (x x' : Nat) (args : List Witness)
+  | push (x x' : Nat) (args : Seq)
   /-- An index fact (`HeapKnowledge.IndexFact`) read in the state of phase
   `phase`, its slot `i` that phase's slot `i + lift`, its entry terms at the
   entry. -/
@@ -419,13 +419,17 @@ inductive OperationPost where
   | viewWrite (x i v : Nat) (format : Option ViewFormat)
   deriving DecidableEq
 
+/-- The operational posts of the interpreted formulas: an append's arguments a
+list of witnesses. -/
+abbrev OperationPost := OperationPostF (List Witness)
+
 /-- The formats a view write is stated at: the given one, or the typed
 array's own. -/
 def writeFormats (x : Val) : Option ViewFormat → ViewFormat → Prop
   | some f, g => g = f
   | none, g => CallEffects.viewFormatOf x = some g
 
-def OperationPost.Holds (s : TwoState) : OperationPost → Prop
+def OperationPostF.Holds (s : TwoState) : OperationPost → Prop
   | .arith op l r y => ∃ a b c, l.value s.afterEnv s.after.h = some a ∧ r.value s.afterEnv s.after.h = some b ∧
       y.read s.afterEnv s.after.h = some c ∧ binop op a b = some c
   | .stringLength x y => ∃ str, x.read s.afterEnv s.after.h = some (.str str) ∧
@@ -455,17 +459,21 @@ action of an effect from the entry to the exit (the note's `tr_Φ`, §6,
 Entry), an operational post, a linear fact over before- and after-terms, the
 transport of names (the exit environment reads each entry slot `i` at the
 path `θ(i)`), and the connectives. -/
-inductive Formula where
+inductive FormulaF (Seq Transport : Type) where
   | at (phase : Phase) (assertion : AssertionRef)
   | transition (effect : Footprint)
-  | operation (post : OperationPost)
+  | operation (post : OperationPostF Seq)
   | linear (fact : Linear.Fact StepVar)
   | defined (v : StepVar)
-  | transport (θ : Substitution)
-  | and (left right : Formula)
+  | transport (θ : Transport)
+  | and (left right : FormulaF Seq Transport)
   | truth
   | falsity
   deriving DecidableEq
+
+/-- **The interpreted two-state formulas** (I4, `Formula`): an append's
+arguments a list of witnesses, a transport a substitution. -/
+abbrev Formula := FormulaF (List Witness) Substitution
 
 /-- **The meaning of a formula** (I4, `Holds`): `before` interprets `old`;
 the transition reads the entry's environment. -/
