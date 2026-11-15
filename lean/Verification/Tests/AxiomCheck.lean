@@ -1,5 +1,6 @@
 import Verification.Semantics.ViewStores
 import Verification.Semantics.ExitSummaries
+import Verification.Semantics.CommandSummaries
 import Verification.Programs.TolerantFramesExitStructural
 import Verification.Programs.TolerantFramesExitHeadExtraction
 import Verification.Programs.TolerantFramesExitNonHeadExtraction
@@ -274,6 +275,12 @@ run_cmd do
   check ``Verification.CallEffects.Effect.summary_drop_normal
   check ``Verification.CallEffects.Effect.summary_drop_exceptional
   check ``Verification.CallEffects.Effect.summary_scoped
+  -- command summaries: their meaning, consequence and weakening
+  check ``Verification.CallEffects.checkConsequences_sound
+  check ``Verification.CallEffects.holds_reads
+  check ``Verification.CallEffects.holds_carry
+  check ``Verification.CallEffects.ExitSpec.weakenCheck_sound
+  check ``Verification.CallEffects.CommandSummary.Sound.weaken
   check ``Verification.Parity.OperationPost.holds_shift
   check ``Verification.Footprints.Region.sub_mem
   check ``Verification.Footprints.CellsFrom.of_post
