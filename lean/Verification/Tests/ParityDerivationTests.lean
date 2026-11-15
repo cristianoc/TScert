@@ -64,6 +64,36 @@ private def raw : RawDerivation := .atAndIntro ⟨1⟩ ⟨1⟩ .atTruth .atTruth
 #guard errorOf (checkScoped bad ⟨0, 0⟩ [] (.at .after ⟨0⟩) raw) = "the arena is not valid"
 end Invalid
 
+/-! ## Regional certificates -/
+
+namespace Regional
+private def r (n : Nat) : AssertionRef := ⟨n⟩
+private def arena : AssertionArena := ⟨#[
+  .atom (.dense (.var 0) (Term.value 1)),       -- 0 dense(xs, n): xs an ordinary array
+  .separated (.var 0) (.var 2),                 -- 1 xs # ys
+  .and (r 0) (r 1),                             -- 2 K
+  .atom (.equal ⟨1, ["items"]⟩ (.path (.var 0))), -- 3
+  .box topEffect (r 3),                         -- 4
+  .existsValue (r 4)]⟩                          -- 5 rigid(p.items), p at slot 0
+
+#guard arena.check
+-- `xs.store` is an array store, disjoint from the view stores.
+#guard (DisjointEvidence.classes (.arrayAt (r 0)) .intrinsic).check arena (r 2) (.store 0 []) (.cls .views)
+-- Without a conjunct naming `ys` as an array, `ys.store` has no class.
+#guard !(DisjointEvidence.classes (.arrayAt (r 0)) .intrinsic).check arena (r 2) (.store 2 []) (.cls .views)
+#guard (DisjointEvidence.classes (.arrayAt (r 1)) .intrinsic).check arena (r 2) (.store 2 []) (.cls .views)
+-- The two stores a separation names, in either order.
+#guard (DisjointEvidence.stores (r 1)).check arena (r 2) (.store 0 []) (.store 2 [])
+#guard (DisjointEvidence.swap (.stores (r 1))).check arena (r 2) (.store 2 []) (.store 0 [])
+-- A store's cells are values, disjoint from every store.
+#guard (DisjointEvidence.classes .intrinsic .intrinsic).check arena (r 2) (.pathElems 0 []) (.cls .stores)
+-- `{p.items.store: any}` is rigid where `p.items` is; `{p.items[cells]: any}` is not.
+#guard (RigidityEvidence.stable [r 5]).check arena (r 5) [(.store 0 ["items"], .any), (.cls .values, .any)]
+#guard !(RigidityEvidence.stable [r 5]).check arena (r 5) [(.pathElems 0 ["items"], .any)]
+-- Inclusion by class: the cells of `xs` at `any` are within `{values: any}`.
+#guard (InclusionEvidence.byClass [.intrinsic]).check arena (r 2) [(.pathElems 0 [], .any)] [(.cls .values, .any)]
+end Regional
+
 /-! ## `index[c >> 8]` -/
 
 /-- The derivation of the `i`-th conjunct of `conj l` from one of `conj l`. -/
@@ -293,18 +323,18 @@ private def raw : RawDerivation :=
     .assumption)) = "tolerantFrame: the effect does not respect the support"
 -- With a disjointness certificate the stores' support is respected.
 #guard isOk (checkScoped arena ⟨2, 2⟩ [.at .before (ref 1)] (.at .before (ref 20))
-  (.tolerantFrame [(.cls .stores, .keep)] .invariant ⟨[(0, 0, .classes)]⟩ .truth (ref 1) (ref 1) .assumption
+  (.tolerantFrame [(.cls .stores, .keep)] .invariant ⟨[(0, 0, .classes .intrinsic .intrinsic)]⟩ .truth (ref 1) (ref 1) .assumption
     .assumption .assumption))
 
 -- Region inclusion by selectors: `{arrays: keep} ⊑ {stores: grow}`, not
 -- the converse.
-#guard InclusionEvidence.regions.check [(.cls .arrays, .keep)] [(.cls .stores, .grow)]
-#guard !InclusionEvidence.regions.check [(.cls .stores, .grow)] [(.cls .arrays, .keep)]
+#guard InclusionEvidence.regions.check arena (ref 1) [(.cls .arrays, .keep)] [(.cls .stores, .grow)]
+#guard !InclusionEvidence.regions.check arena (ref 1) [(.cls .stores, .grow)] [(.cls .arrays, .keep)]
 -- The views analogue: `{views: keep} ⊑ {stores: grow}`, not the converse,
 -- and array stores and view stores are disjoint classes.
-#guard InclusionEvidence.regions.check [(.cls .views, .keep)] [(.cls .stores, .grow)]
-#guard !InclusionEvidence.regions.check [(.cls .stores, .grow)] [(.cls .views, .keep)]
-#guard !InclusionEvidence.regions.check [(.cls .views, .keep)] [(.cls .arrays, .grow)]
+#guard InclusionEvidence.regions.check arena (ref 1) [(.cls .views, .keep)] [(.cls .stores, .grow)]
+#guard !InclusionEvidence.regions.check arena (ref 1) [(.cls .stores, .grow)] [(.cls .views, .keep)]
+#guard !InclusionEvidence.regions.check arena (ref 1) [(.cls .views, .keep)] [(.cls .arrays, .grow)]
 #guard Selector.arrays.disjoint Selector.views
 
 -- A literal witness: `□_⊤(p.items ≐ null) ⊢ rigid(p.items)`.

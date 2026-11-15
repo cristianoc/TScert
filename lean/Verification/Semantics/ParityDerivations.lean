@@ -480,7 +480,7 @@ inductive Derivation (arena : AssertionArena) : List Formula → Formula → Typ
       Derivation arena Γ (.at p b)
   /-- Law (c): `Φ ⊑ Ψ` under `K`, by an inclusion certificate, gives
   `K ∧ □_Ψ A ⊢ □_Φ A`. -/
-  | boxAnti {Γ p a b x K Φ Ψ} (ev : InclusionEvidence) (hev : ev.check Φ Ψ = true)
+  | boxAnti {Γ p a b x K Φ Ψ} (ev : InclusionEvidence) (hev : ev.check arena K Φ Ψ = true)
       (ha : arena.nodes[a.index]? = some (.box Ψ x)) (hb : arena.nodes[b.index]? = some (.box Φ x))
       (dK : Derivation arena Γ (.at p K)) (d : Derivation arena Γ (.at p a)) : Derivation arena Γ (.at p b)
   /-- Law (d): `g ∨ □_Φ A ⊢ □_Φ (g ∨ A)` for the invariant guard `g`. -/
@@ -498,7 +498,7 @@ inductive Derivation (arena : AssertionArena) : List Formula → Formula → Typ
   note's pairwise definition), and the context holds throughout the modal
   domain of an assertion `g` derived from `K`: `K ∧ A ⊢ □_Φ A`. -/
   | tolerantFrame {Γ p K A b g Φ} (S : Footprint) (sev : SupportEvidence) (rev : RespectEvidence)
-      (cev : ContextEvidence) (hs : sev.check arena A = true) (hr : rev.check S Φ = true)
+      (cev : ContextEvidence) (hs : sev.check arena A = true) (hr : rev.check arena K S Φ = true)
       (hc : cev.check arena g = true) (hb : arena.nodes[b.index]? = some (.box Φ A))
       (e : Derivation arena [.at .after K] (.at .after g)) (dK : Derivation arena Γ (.at p K))
       (dA : Derivation arena Γ (.at p A)) : Derivation arena Γ (.at p b)
@@ -838,7 +838,7 @@ def checkDerivation (arena : AssertionArena) (premises : List Formula) (goal : F
     | .at p b => do
       match arena.nodes[b.index]? with
       | some (.box Φ _) => do
-        let ⟨hev⟩ ← req (ev.check Φ Ψ = true) "boxAnti: the effects are not included"
+        let ⟨hev⟩ ← req (ev.check arena K Φ Ψ = true) "boxAnti: the effects are not included"
         let ⟨ha⟩ ← node? arena a (.box Ψ x)
         let ⟨hb⟩ ← node? arena b (.box Φ x)
         pure (.boxAnti (K := K) ev hev ha hb (← checkDerivation arena premises (.at p K) dK)
@@ -869,7 +869,7 @@ def checkDerivation (arena : AssertionArena) (premises : List Formula) (goal : F
       match arena.nodes[b.index]? with
       | some (.box Φ A) => do
         let ⟨hs⟩ ← req (sev.check arena A = true) "tolerantFrame: no support"
-        let ⟨hr⟩ ← req (rev.check S Φ = true) "tolerantFrame: the effect does not respect the support"
+        let ⟨hr⟩ ← req (rev.check arena K S Φ = true) "tolerantFrame: the effect does not respect the support"
         let ⟨hc⟩ ← req (cev.check arena g = true) "tolerantFrame: the context evidence does not check"
         let ⟨hb⟩ ← node? arena b (.box Φ A)
         pure (.tolerantFrame S sev rev cev hs hr hc hb (← checkDerivation arena [.at .after K] (.at .after g) e)
@@ -1645,7 +1645,7 @@ theorem Derivation.sound {arena : AssertionArena} (hv : arena.Valid) {Γ : List 
   | boxIdem ev hev ha hb _ _ ihD ih =>
     intro s hΓ
     exact (sat_box hv hb).mpr fun s₁ a₁ => (sat_box hv ha).mpr fun s₂ a₂ =>
-      (sat_box hv ha).mp (ih s hΓ) s₂ (ev.sound hev _ _ _ _ _ (ihD s hΓ) a₁ a₂).2
+      (sat_box hv ha).mp (ih s hΓ) s₂ (ev.sound hv hev _ _ _ _ _ (ihD s hΓ) a₁ a₂).2
   | @tolerantFrame Γ p K A b g Φ S sev rev cev hs hr hc hb _ _ _ ihe ihK ihA =>
     intro s hΓ
     have hthrough : ContextThroughout arena K Φ (cev.ctx arena) := by
@@ -1703,7 +1703,7 @@ theorem Derivation.sound {arena : AssertionArena} (hv : arena.Valid) {Γ : List 
   | framePlus ev hev θ ha hc _ _ _ _ ihD ih iht ihθ =>
     intro s hΓ
     have ha' : Sat arena s.beforeEnv s.mark s.after _ := (sat_box hv ha).mpr fun s₂ a₂ =>
-      (sat_box hv ha).mp (ih s hΓ) s₂ (ev.sound hev _ _ _ _ _ (ihD s hΓ) (iht s hΓ) a₂).2
+      (sat_box hv ha).mp (ih s hΓ) s₂ (ev.sound hv hev _ _ _ _ _ (ihD s hΓ) (iht s hΓ) a₂).2
     exact (sat_subst hc (ihθ s hΓ)).mpr ha'
   | @linear Γ G Fs defs steps hc _ _ ih ihd =>
     intro s hΓ

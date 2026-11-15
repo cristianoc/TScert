@@ -1,4 +1,5 @@
 import Verification.Semantics.TolerantFramesCells
+import Verification.Semantics.FootprintRebase
 
 /-! # Parity assertions
 
@@ -188,6 +189,130 @@ theorem supported_of_pairs {S : Footprint} (ha : EffectAction Φ η s s')
   · rcases hp e he e' he' with hle | hd
     · exact hc.mono hle
     · rw [hd l hl] at hm; cases hm
+
+/-- **Entrywise coverage includes the actions**: where every location an
+entry of `Φ` selects at the first state is selected by an entry of `Ψ` with
+a larger change, an action of `Φ` is one of `Ψ`. -/
+theorem EffectAction.mono_entries {Ψ : Footprint}
+    (hcov : ∀ e ∈ Φ, ∀ l, e.1.mem η s.h l = true → ∃ e' ∈ Ψ, e'.1.mem η s.h l = true ∧ e.2.le e'.2 = true)
+    (ha : EffectAction Φ η s s') : EffectAction Ψ η s s' := by
+  refine ⟨ha.1, ha.2.1, fun l v hv => ?_⟩
+  obtain ⟨v', hv', hal⟩ := ha.2.2 l v hv
+  refine ⟨v', hv', hal.imp_right fun ⟨e, he, hm, hc⟩ => ?_⟩
+  obtain ⟨e', he', hm', hle⟩ := hcov e he l hm
+  exact ⟨e', he', hm', hc.mono hle⟩
+
+/-- **An effect whose regions read the same locations at both states of a
+first action composes with a second** (the note, §3, "Order, top,
+rigidity"): two actions in sequence are one. The changes of two entries
+meeting at a location compose within the larger of the two
+(`Change.Holds.seq`, `Change.max_cases`). -/
+theorem EffectAction.trans_stable
+    (hst : ∀ e ∈ Φ, ∀ l, l < s.h.length → e.1.mem η s'.h l = e.1.mem η s.h l)
+    (h₁ : EffectAction Φ η s s') (h₂ : EffectAction Φ η s' s'') : EffectAction Φ η s s'' := by
+  refine ⟨h₁.1.trans h₂.1, Nat.le_trans h₁.2.1 h₂.2.1, fun l v₀ hv₀ => ?_⟩
+  have hl : l < s.h.length := (List.getElem?_eq_some_iff.mp hv₀).1
+  have hb : s.h.length ≤ s'.h.length := h₁.2.1
+  obtain ⟨v₁, hv₁, a₁⟩ := h₁.2.2 l v₀ hv₀
+  obtain ⟨v₂, hv₂, a₂⟩ := h₂.2.2 l v₁ hv₁
+  refine ⟨v₂, hv₂, ?_⟩
+  rcases a₁ with rfl | ⟨e₁, he₁, hm₁, hh₁⟩
+  · rcases a₂ with rfl | ⟨e₂, he₂, hm₂, hh₂⟩
+    · exact .inl rfl
+    · refine .inr ⟨e₂, he₂, by rw [← hst e₂ he₂ l hl]; exact hm₂, hh₂.lower hb⟩
+  · rcases a₂ with rfl | ⟨e₂, he₂, hm₂, hh₂⟩
+    · exact .inr ⟨e₁, he₁, hm₁, hh₁⟩
+    · have hseq := Change.Holds.seq hb hh₁ hh₂
+      rcases Change.max_cases e₁.2 e₂.2 with hmx | hmx
+      · rw [hmx] at hseq; exact .inr ⟨e₁, he₁, hm₁, hseq⟩
+      · rw [hmx] at hseq; exact .inr ⟨e₂, he₂, by rw [← hst e₂ he₂ l hl]; exact hm₂, hseq⟩
+
+/-- A region reading the same locations at every state an admissible
+transition reaches, given the paths it reads at `paths`: classes (their
+locations keep their category), every location, module cells, a variable's
+own fields, and a selected store or field at a path whose read is fixed. A
+store's cells (`elems`, `pathElems`) are not: a store may come to list other
+cells (the note, §3, "Not rigid"). -/
+def stableRegion (paths : List (Nat × List String)) : Region → Bool
+  | .cls _ | .all | .cell _ | .field _ _ | .own _ => true
+  | .inCls r _ => stableRegion paths r
+  | .store x p | .path x p _ | .pathOwn x p => paths.contains (x, p)
+  | .elems _ | .pathElems _ _ => false
+
+theorem region_mem_stable {paths : List (Nat × List String)} (ha : Admissible s s')
+    (hp : ∀ xp ∈ paths, readPath s'.h (η xp.1) xp.2 = readPath s.h (η xp.1) xp.2) :
+    ∀ {r : Region}, stableRegion paths r = true → ∀ l, l < s.h.length → r.mem η s'.h l = r.mem η s.h l
+  | .cls c, _, l, hl => ha.cls_mem hl η c
+  | .all, _, _, _ => rfl
+  | .cell _, _, l, hl => ha.cls_mem hl η .values
+  | .field _ _, _, _, _ => rfl
+  | .own _, _, _, _ => rfl
+  | .inCls r c, h, l, hl => by
+    have := region_mem_stable ha hp (r := r) h l hl
+    have hc := ha.cls_mem hl η c
+    simp only [Region.mem] at hc ⊢
+    rw [this, hc]
+  | .store x p, h, _, _ => by
+    simp only [stableRegion, List.contains_iff_mem] at h
+    simp only [Region.mem, hp _ h]
+  | .path x p _, h, _, _ => by
+    simp only [stableRegion, List.contains_iff_mem] at h
+    simp only [Region.mem, hp _ h]
+  | .pathOwn x p, h, _, _ => by
+    simp only [stableRegion, List.contains_iff_mem] at h
+    simp only [Region.mem, hp _ h]
+  | .elems _, h, _, _ => by simp [stableRegion] at h
+  | .pathElems _ _, h, _, _ => by simp [stableRegion] at h
+
+/-- The category class a region's locations lie in at every well-formed
+state, whatever the valuation: a class, a module cell (values), and a
+store's listed cells (values: element cells hold no store,
+`HeapCategories.cells`). -/
+def regionClass : Region → Option Selector
+  | .cls a | .inCls _ a => some a
+  | .cell _ | .elems _ | .pathElems _ _ => some .values
+  | _ => none
+
+theorem storeElems_values {s : IndexedHeap} {v : Val} {l : Nat}
+    (hm : (storeElems s.h v).contains (some l) = true) : (Region.cls .values).mem η s.h l = true := by
+  simp only [storeElems, List.contains_iff_mem, List.mem_append] at hm
+  have key : ∀ o : Option Nat, some l ∈ entriesAt s.h o → (Region.cls .values).mem η s.h l = true := by
+    intro o ho
+    cases o with
+    | none => simp [entriesAt] at ho
+    | some st =>
+      simp only [entriesAt] at ho
+      cases he : s.h[st]?.bind storeEntries with
+      | none => rw [he] at ho; simp at ho
+      | some ls =>
+        rw [he] at ho
+        simp only [Option.getD_some] at ho
+        obtain ⟨-, hlt⟩ := s.ok.entries_cells he ho
+        obtain ⟨u, hu⟩ : ∃ u, s.h[l]? = some u := ⟨_, List.getElem?_eq_getElem hlt⟩
+        have hna := (Footprints.HeapOk.categories s.ok).cells st ls l u he ho hu
+        simp only [Region.mem, hu, Selector.selects]
+        cases u <;> simp_all [isArr, contentsCategory, Selector.has]
+  rcases hm with hm | hm
+  · exact key _ hm
+  · exact key _ hm
+
+theorem regionClass_sound {s : IndexedHeap} {r : Region} {a : Selector} (hr : regionClass r = some a) {l : Nat}
+    (hm : r.mem η s.h l = true) : (Region.cls a).mem η s.h l = true := by
+  cases r with
+  | cls c => cases hr; exact hm
+  | inCls r c =>
+    cases hr
+    simp only [Region.mem, Bool.and_eq_true] at hm ⊢
+    exact hm.2
+  | cell _ => cases hr; exact hm
+  | elems x => cases hr; exact storeElems_values hm
+  | pathElems x p =>
+    cases hr
+    simp only [Region.mem] at hm
+    split at hm
+    · exact storeElems_values hm
+    · cases hm
+  | _ => cases hr
 
 end Action
 
@@ -382,10 +507,12 @@ def Separated (η : Env) (h : Heap) (p q : Path) : Prop :=
     h[s]? = some (.arr xs) ∧ h[t]? = some (.arr ys) ∧ s ≠ t
 
 /-- `apart(π, π')` (the note, §4, "Satisfaction"): `π # π'`, and the stores
-of the two arrays list no common element cell. -/
+of the two arrays list no common element cell: no cell the region `π[∗]`
+selects (`storeElems`) is one `π'[∗]` selects. -/
 def Apart (η : Env) (h : Heap) (p q : Path) : Prop :=
   ∃ u w s t xs ys, p.read η h = some u ∧ q.read η h = some w ∧ storeOf u = some s ∧ storeOf w = some t ∧
-    s ≠ t ∧ h[s]? = some (.arr xs) ∧ h[t]? = some (.arr ys) ∧ ∀ l, some l ∈ xs → some l ∉ ys
+    s ≠ t ∧ h[s]? = some (.arr xs) ∧ h[t]? = some (.arr ys) ∧
+    ∀ l, some l ∈ storeElems h u → some l ∉ storeElems h w
 
 /-- `fresh(π)` (the note, §4, "Satisfaction"): the store of the array the
 path reads is at or above the entry mark. -/

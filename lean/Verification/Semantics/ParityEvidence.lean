@@ -876,23 +876,170 @@ state of `K`, every action of `Φ` is one of `Ψ`. -/
 def Included (arena : AssertionArena) (K : AssertionRef) (Φ Ψ : Footprint) : Prop :=
   ∀ η m s s', Sat arena η m s K → EffectAction Φ η s s' → EffectAction Ψ η s s'
 
+/-! ### The class a region lies in -/
+
+/-- A node stating that the path reads an ordinary array: a dense prefix, a
+bounded quantification, a store separation or an apartness naming it. -/
+def arrayNode (n : AssertionNode) (π : Path) : Bool :=
+  match n with
+  | .atom (.dense q _) | .atom (.every q _ _) => q == π
+  | .separated q q' | .apart q q' => q == π || q' == π
+  | _ => false
+
+theorem arrayNode_sound {arena : AssertionArena} {c : AssertionRef} {n : AssertionNode}
+    (hn : arena.nodes[c.index]? = some n) {π : Path} (ha : arrayNode n π = true) {η : Env} {m : Nat}
+    {s : IndexedHeap} (hs : Sat arena η m s c) :
+    ∃ u st ls, π.read η s.h = some u ∧ storeOf u = some st ∧ s.h[st]? = some (.arr ls) := by
+  cases n with
+  | atom a =>
+    have hs' := (sat_atom hn).mp hs
+    cases a <;> simp only [arrayNode, beq_iff_eq, reduceCtorEq] at ha
+    · subst ha; obtain ⟨w, st, ls, _, hw, hst, hls, -⟩ := hs'; exact ⟨w, st, ls, hw, hst, hls⟩
+    · subst ha; obtain ⟨w, st, ls, _, hw, hst, hls, -⟩ := hs'; exact ⟨w, st, ls, hw, hst, hls⟩
+  | separated q q' =>
+    obtain ⟨u, w, st, t, xs, ys, hu, hw, hsu, htw, hxs, hys, -⟩ := (sat_separated hn).mp hs
+    simp only [arrayNode, Bool.or_eq_true, beq_iff_eq] at ha
+    rcases ha with rfl | rfl
+    · exact ⟨u, st, xs, hu, hsu, hxs⟩
+    · exact ⟨w, t, ys, hw, htw, hys⟩
+  | apart q q' =>
+    obtain ⟨u, w, st, t, xs, ys, hu, hw, hsu, htw, -, hxs, hys, -⟩ := (sat_apart hn).mp hs
+    simp only [arrayNode, Bool.or_eq_true, beq_iff_eq] at ha
+    rcases ha with rfl | rfl
+    · exact ⟨u, st, xs, hu, hsu, hxs⟩
+    · exact ⟨w, t, ys, hw, htw, hys⟩
+  | _ => simp [arrayNode] at ha
+
+/-- **Evidence of the class a region's locations lie in** under `K` (the
+note, §3, "Regions": value locations, array stores and view stores partition
+the heap): the class every well-formed state gives it (`regionClass`); the
+store at a path a conjunct of `K` shows an ordinary array's (arrays); the
+field at a path a conjunct of `K` shows holding a value (values). -/
+inductive ClassWitness where
+  | intrinsic
+  | arrayAt (c : AssertionRef)
+  | fieldAt (c : AssertionRef)
+  deriving DecidableEq, Repr
+
+def ClassWitness.selector (arena : AssertionArena) (K : AssertionRef) (r : Region) : ClassWitness → Option Selector
+  | .intrinsic => regionClass r
+  | .arrayAt c =>
+    if (conjuncts arena.nodes K.index).contains c.index then
+      match r, arena.nodes[c.index]? with
+      | .store x p, some n => if arrayNode n ⟨x, p⟩ then some .arrays else none
+      | _, _ => none
+    else none
+  | .fieldAt c =>
+    if (conjuncts arena.nodes K.index).contains c.index then
+      match r, arena.nodes[c.index]? with
+      | .path x p (.str f), some (.atom (.equal q (.literal v))) =>
+        if q == ⟨x, p ++ [f]⟩ && contentsCategory v == .value then some .values else none
+      | _, _ => none
+    else none
+
+private theorem readPath_snoc (h : Heap) (x : Val) (p : List String) (f : String) :
+    readPath h x (p ++ [f]) = (readPath h x p).bind fun v => readPath h v [f] := by
+  induction p generalizing x with
+  | nil => rfl
+  | cons g p ih =>
+    cases x <;> simp only [List.cons_append, readPath, Option.bind_none]
+    split
+    · split
+      · exact ih _
+      · rfl
+    · rfl
+
+theorem ClassWitness.sound {arena : AssertionArena} {K : AssertionRef} {r : Region}
+    {a : Selector} : ∀ w : ClassWitness, w.selector arena K r = some a →
+      ∀ η m s, Sat arena η m s K → ∀ l, r.mem η s.h l = true → (Region.cls a).mem η s.h l = true
+  | .intrinsic, h, η, m, s, _, l, hl => regionClass_sound h hl
+  | .arrayAt c, h, η, m, s, hK, l, hl => by
+    simp only [ClassWitness.selector] at h
+    split at h
+    · rename_i hc
+      have hcs : Sat arena η m s c :=
+        conjuncts_sat arena.nodes K.index c.index (List.contains_iff_mem.mp hc) η m s hK
+      split at h
+      · rename_i x p n hn
+        split at h
+        · rename_i ha
+          cases h
+          obtain ⟨u, st, ls, hu, hst, hls⟩ := arrayNode_sound hn ha hcs
+          simp only [Region.mem] at hl
+          simp only [Path.read] at hu
+          rw [hu] at hl
+          simp only [elementsOf_store hst, beq_iff_eq, Option.some.injEq] at hl
+          subst hl
+          simp [Region.mem, hls, Selector.selects, contentsCategory, Selector.has]
+        · cases h
+      · cases h
+    · cases h
+  | .fieldAt c, h, η, m, s, hK, l, hl => by
+    simp only [ClassWitness.selector] at h
+    split at h
+    · rename_i hc
+      have hcs : Sat arena η m s c :=
+        conjuncts_sat arena.nodes K.index c.index (List.contains_iff_mem.mp hc) η m s hK
+      split at h
+      · rename_i x p f q v hn
+        split at h
+        · rename_i hq
+          cases h
+          simp only [Bool.and_eq_true, beq_iff_eq] at hq
+          obtain ⟨rfl, hcat⟩ := hq
+          obtain ⟨u, hu, hw⟩ := (sat_atom hn).mp hcs
+          simp only [Witness.value, Option.some.injEq] at hw
+          subst hw
+          simp only [Region.mem] at hl
+          split at hl
+          · rename_i o ho
+            simp only [beq_iff_eq] at hl
+            simp only [Path.read, readPath_snoc, ho, Option.bind_some] at hu
+            cases o with
+            | objAt fs cd oid =>
+              simp only [fieldsOf] at hl
+              simp only [readPath, hl] at hu
+              split at hu
+              · rename_i u' hu'
+                simp only [Option.some.injEq] at hu
+                subst hu
+                simp [Region.mem, hu', Selector.selects, hcat, Selector.has]
+              · cases hu
+            | _ => simp [fieldsOf] at hl
+          · cases hl
+        · cases h
+      · cases h
+    · cases h
+
+/-! ### Inclusion -/
+
 /-- Finite evidence of inclusion: equal effects, closed effects in their
-order, and entrywise region inclusion with a smaller change
-(`Footprints.Footprint.le` by `Region.sub`, `Selector.sub` on classes),
-read with no class claim on fields. -/
+order, entrywise region inclusion with a smaller change
+(`Footprints.Footprint.le` by `Region.sub`, `Selector.sub` on classes), and
+each entry within a class entry of `Ψ`, its class given by a witness under
+`K`. -/
 inductive InclusionEvidence where
   | refl
   | closed (a b : Footprints.Closed)
   | regions
+  | byClass (ws : List ClassWitness)
   deriving DecidableEq, Repr
 
-def InclusionEvidence.check (Φ Ψ : Footprint) : InclusionEvidence → Bool
+def InclusionEvidence.check (arena : AssertionArena) (K : AssertionRef) (Φ Ψ : Footprint) :
+    InclusionEvidence → Bool
   | .refl => Φ == Ψ
   | .closed a b => Φ == a.fp && Ψ == b.fp && a.le b
   | .regions => Footprint.le (fun _ _ => none) Φ Ψ
+  | .byClass ws => (List.range Φ.length).all fun i => match Φ[i]?, ws[i]? with
+    | some e, some w => match w.selector arena K e.1 with
+      | some a => Ψ.any fun e' => match e'.1 with
+        | .cls b => a.sub b && e.2.le e'.2
+        | _ => false
+      | none => false
+    | _, _ => false
 
 theorem InclusionEvidence.sound {arena : AssertionArena} {K : AssertionRef} {Φ Ψ : Footprint} :
-    ∀ ev : InclusionEvidence, ev.check Φ Ψ = true → Included arena K Φ Ψ
+    ∀ ev : InclusionEvidence, ev.check arena K Φ Ψ = true → Included arena K Φ Ψ
   | .refl, h => by
     simp only [InclusionEvidence.check, beq_iff_eq] at h
     subst h; exact fun _ _ _ _ _ ha => ha
@@ -901,6 +1048,31 @@ theorem InclusionEvidence.sound {arena : AssertionArena} {K : AssertionRef} {Φ 
     obtain ⟨⟨rfl, rfl⟩, hle⟩ := h
     exact fun _ _ _ _ _ ha => EffectAction.closed_mono hle ha
   | .regions, h => fun _ _ _ _ _ ha => EffectAction.regions_mono h ha
+  | .byClass ws, h => by
+    simp only [InclusionEvidence.check, List.all_eq_true, List.mem_range] at h
+    intro η m s s' hK ha
+    refine EffectAction.mono_entries (fun e he l hl => ?_) ha
+    obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem he
+    have hc := h i hi
+    rw [List.getElem?_eq_getElem hi] at hc
+    cases hw : ws[i]? with
+    | none => simp [hw] at hc
+    | some w =>
+      simp only [hw] at hc
+      cases ha' : w.selector arena K Φ[i].1 with
+      | none => simp [ha'] at hc
+      | some a =>
+        simp only [ha'] at hc
+        obtain ⟨e', he', hc'⟩ := List.any_eq_true.mp hc
+        split at hc'
+        · rename_i b hb
+          simp only [Bool.and_eq_true] at hc'
+          refine ⟨e', he', ?_, hc'.2⟩
+          rw [hb]
+          exact class_subset_sound hc'.1 (w.sound ha' η m s hK l hl)
+        · cases hc'
+
+/-! ### Rigidity -/
 
 /-- **Whole-effect rigidity on a domain** (I5, `rigidity_sound`): from a
 state of the domain `D`, an action of `Φ` reaches a state of `D`, and two
@@ -909,44 +1081,207 @@ def RigidOnDomain (arena : AssertionArena) (D : AssertionRef) (Φ : Footprint) :
   ∀ η m s₀ s₁ s₂, Sat arena η m s₀ D → EffectAction Φ η s₀ s₁ → EffectAction Φ η s₁ s₂ →
     Sat arena η m s₁ D ∧ EffectAction Φ η s₀ s₂
 
-/-- Finite evidence of rigidity: a closed effect, on an invariant domain. -/
+/-- The path a node states rigid: `∃v. □_⊤ (π ≐ v)` (`sat_rigid_iff`). -/
+def rigidPathOf (nodes : Array AssertionNode) (c : AssertionRef) : Option Path :=
+  match nodes[c.index]? with
+  | some (.existsValue b) => match nodes[b.index]? with
+    | some (.box Φ e) => if Φ == topEffect then match nodes[e.index]? with
+      | some (.atom (.equal q (.path w))) =>
+        if q.root ≠ 0 ∧ w == Path.var 0 then some ⟨q.root - 1, q.fields⟩ else none
+      | _ => none else none
+    | _ => none
+  | _ => none
+
+theorem rigidPathOf_sound {arena : AssertionArena} (hv : arena.Valid) {c : AssertionRef} {π : Path}
+    (h : rigidPathOf arena.nodes c = some π) {η : Env} {m : Nat} {s : IndexedHeap} (hs : Sat arena η m s c) :
+    PathRigid π η s := by
+  unfold rigidPathOf at h
+  split at h
+  · rename_i b hb
+    split at h
+    · rename_i Φ e he
+      split at h
+      · rename_i hΦ
+        simp only [beq_iff_eq] at hΦ
+        subst hΦ
+        split at h
+        · rename_i q w hq
+          split at h
+          · rename_i hw
+            obtain ⟨hr, hw⟩ := hw
+            simp only [beq_iff_eq] at hw
+            subst hw
+            cases h
+            have hq' : arena.nodes[e.index]? = some (.atom (.equal ⟨(q.root - 1) + 1, q.fields⟩ (.path (Path.var 0)))) := by
+              rw [hq]; congr; obtain ⟨r, f⟩ := q; simp only at hr ⊢; congr 1; omega
+            exact (sat_rigid_iff hv (p := ⟨q.root - 1, q.fields⟩) hb he hq').mp hs
+          · cases h
+        · cases h
+      · cases h
+    · cases h
+  · cases h
+
+/-- Finite evidence of rigidity: a closed effect, on an invariant domain;
+and an effect whose every region reads the same locations along its
+actions (`stableRegion`), the paths it reads at rigid by conjuncts of the
+invariant domain (the note, §3, "Rigid: a store at a rigid path"). -/
 inductive RigidityEvidence where
   | closed (c : Footprints.Closed)
+  | stable (rigid : List AssertionRef)
   deriving DecidableEq, Repr
+
+/-- The rigid paths the listed conjuncts of `D` state. -/
+def rigidPaths (arena : AssertionArena) (D : AssertionRef) (rigid : List AssertionRef) : Option (List Path) :=
+  rigid.mapM fun c => if (conjuncts arena.nodes D.index).contains c.index then rigidPathOf arena.nodes c else none
 
 def RigidityEvidence.check (arena : AssertionArena) (D : AssertionRef) (Φ : Footprint) : RigidityEvidence → Bool
   | .closed c => Φ == c.fp && invNode arena.nodes D.index
+  | .stable rigid => invNode arena.nodes D.index && match rigidPaths arena D rigid with
+    | some ps => Φ.all fun e => stableRegion (ps.map fun π => (π.root, π.fields)) e.1
+    | none => false
 
-theorem RigidityEvidence.sound {arena : AssertionArena} {D : AssertionRef} {Φ : Footprint} :
+private theorem mapM_mem {α β : Type} {f : α → Option β} :
+    ∀ {l : List α} {l' : List β}, l.mapM f = some l' → ∀ b ∈ l', ∃ a ∈ l, f a = some b
+  | [], l', h => by simp at h; subst h; simp
+  | a :: t, l', h => by
+    simp only [List.mapM_cons, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
+      Option.some.injEq] at h
+    obtain ⟨b0, hb0, t', ht, rfl⟩ := h
+    intro b hb
+    rcases List.mem_cons.mp hb with rfl | hb
+    · exact ⟨a, List.mem_cons_self .., hb0⟩
+    · obtain ⟨a', ha', hf⟩ := mapM_mem ht b hb
+      exact ⟨a', List.mem_cons_of_mem _ ha', hf⟩
+
+theorem RigidityEvidence.sound {arena : AssertionArena} (hv : arena.Valid) {D : AssertionRef} {Φ : Footprint} :
     ∀ ev : RigidityEvidence, ev.check arena D Φ = true → RigidOnDomain arena D Φ
   | .closed c, h => by
     simp only [RigidityEvidence.check, Bool.and_eq_true, beq_iff_eq] at h
     obtain ⟨rfl, hinv⟩ := h
     intro η m s₀ s₁ s₂ hD a₁ a₂
     exact ⟨invNode_sound arena.nodes D.index hinv η m s₀ s₁ a₁.admissible hD, EffectAction.closed_trans c a₁ a₂⟩
+  | .stable rigid, h => by
+    simp only [RigidityEvidence.check, Bool.and_eq_true] at h
+    obtain ⟨hinv, hps⟩ := h
+    split at hps
+    · rename_i ps hps'
+      intro η m s₀ s₁ s₂ hD a₁ a₂
+      refine ⟨invNode_sound arena.nodes D.index hinv η m s₀ s₁ a₁.admissible hD, ?_⟩
+      have hread : ∀ xp ∈ ps.map (fun π => (π.root, π.fields)),
+          readPath s₁.h (η xp.1) xp.2 = readPath s₀.h (η xp.1) xp.2 := by
+        intro xp hxp
+        obtain ⟨π, hπ, rfl⟩ := List.mem_map.mp hxp
+        obtain ⟨c, -, hc⟩ := mapM_mem hps' π hπ
+        split at hc
+        · rename_i hcon
+          have hcs := conjuncts_sat arena.nodes D.index c.index (List.contains_iff_mem.mp hcon) η m s₀ hD
+          obtain ⟨v, hv'⟩ := rigidPathOf_sound hv hc hcs
+          have h1 := hv' s₁ a₁.admissible
+          have h0 := hv' s₀ (Admissible.refl s₀)
+          simp only [Path.read] at h0 h1
+          rw [h0, h1]
+        · cases hc
+      exact EffectAction.trans_stable (fun e he l hl =>
+        region_mem_stable a₁.admissible hread (List.all_eq_true.mp hps e he) l hl) a₁ a₂
+    · cases hps
+
+/-! ### Disjointness and respect -/
 
 /-- **Disjointness of two regions under `K`** (the note, §5, Definition
 "Respect"): at a state of `K`, no location is in both. -/
 def DisjointUnder (arena : AssertionArena) (K : AssertionRef) (r r' : Region) : Prop :=
   ∀ η m s, Sat arena η m s K → ∀ l, r.mem η s.h l = true → r'.mem η s.h l = false
 
-/-- Finite evidence of disjointness: two class regions of disjoint selectors
-(`Footprints.Selector.disjoint`, `class_disjoint_sound`). -/
+/-- Finite evidence of disjointness under `K`: regions of disjoint classes
+(`Selector.disjoint`, `class_disjoint_sound`), each class by a witness; the
+stores of two paths a conjunct separates (`π # π'` or `apart`); the cells of
+two paths a conjunct states apart; and either of these in the other order. -/
 inductive DisjointEvidence where
-  | classes
+  | classes (a b : ClassWitness)
+  | stores (c : AssertionRef)
+  | cells (c : AssertionRef)
+  | swap (d : DisjointEvidence)
   deriving DecidableEq, Repr
 
-def DisjointEvidence.check (r r' : Region) : DisjointEvidence → Bool
-  | .classes => match r, r' with
-    | .cls a, .cls b => a.disjoint b
-    | _, _ => false
+/-- The two paths a separating node names. -/
+def separatedPaths : Option AssertionNode → Option (Path × Path)
+  | some (.separated q q') | some (.apart q q') => some (q, q')
+  | _ => none
 
-theorem DisjointEvidence.sound {arena : AssertionArena} {K : AssertionRef} {r r' : Region} :
-    ∀ ev : DisjointEvidence, ev.check r r' = true → DisjointUnder arena K r r'
-  | .classes, h => by
-    intro η m s _ l hl
-    cases r <;> cases r' <;> simp only [DisjointEvidence.check, reduceCtorEq] at h
-    exact class_disjoint_sound h hl
+def DisjointEvidence.check (arena : AssertionArena) (K : AssertionRef) (r r' : Region) : DisjointEvidence → Bool
+  | .classes a b => match a.selector arena K r, b.selector arena K r' with
+    | some x, some y => x.disjoint y
+    | _, _ => false
+  | .stores c => (conjuncts arena.nodes K.index).contains c.index && match separatedPaths arena.nodes[c.index]? with
+    | some (q, q') => r == .store q.root q.fields && r' == .store q'.root q'.fields
+    | none => false
+  | .cells c => (conjuncts arena.nodes K.index).contains c.index && match arena.nodes[c.index]? with
+    | some (.apart q q') => r == .pathElems q.root q.fields && r' == .pathElems q'.root q'.fields
+    | _ => false
+  | .swap d => d.check arena K r' r
+
+theorem DisjointEvidence.sound {arena : AssertionArena} {K : AssertionRef} :
+    ∀ {r r' : Region} (ev : DisjointEvidence), ev.check arena K r r' = true → DisjointUnder arena K r r'
+  | r, r', .classes a b, h => by
+    simp only [DisjointEvidence.check] at h
+    split at h
+    · rename_i x y hx hy
+      intro η m s hK l hl
+      cases hm : r'.mem η s.h l
+      · rfl
+      · have h1 := a.sound hx η m s hK l hl
+        have h2 := b.sound hy η m s hK l hm
+        rw [class_disjoint_sound h h1] at h2; cases h2
+    · cases h
+  | r, r', .stores c, h => by
+    simp only [DisjointEvidence.check, Bool.and_eq_true] at h
+    obtain ⟨hc, h⟩ := h
+    split at h
+    · rename_i q q' hqq
+      simp only [Bool.and_eq_true, beq_iff_eq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      intro η m s hK l hl
+      have hcs := conjuncts_sat arena.nodes K.index c.index (List.contains_iff_mem.mp hc) η m s hK
+      have hsep : ∃ u w st t, q.read η s.h = some u ∧ q'.read η s.h = some w ∧ storeOf u = some st ∧
+          storeOf w = some t ∧ st ≠ t := by
+        unfold separatedPaths at hqq
+        split at hqq
+        · rename_i _ _ hn; cases hqq
+          obtain ⟨u, w, st, t, -, -, hu, hw, hsu, htw, -, -, hne⟩ := (sat_separated hn).mp hcs
+          exact ⟨u, w, st, t, hu, hw, hsu, htw, hne⟩
+        · rename_i _ _ hn; cases hqq
+          obtain ⟨u, w, st, t, -, -, hu, hw, hsu, htw, hne, -⟩ := (sat_apart hn).mp hcs
+          exact ⟨u, w, st, t, hu, hw, hsu, htw, hne⟩
+        · cases hqq
+      obtain ⟨u, w, st, t, hu, hw, hsu, htw, hne⟩ := hsep
+      simp only [Path.read] at hu hw
+      simp only [Region.mem, hu, hw, elementsOf_store hsu, elementsOf_store htw, beq_iff_eq,
+        Option.some.injEq] at hl ⊢
+      subst hl
+      simpa using hne.symm
+    · cases h
+  | r, r', .cells c, h => by
+    simp only [DisjointEvidence.check, Bool.and_eq_true] at h
+    obtain ⟨hc, h⟩ := h
+    split at h
+    · rename_i q q' hn
+      simp only [Bool.and_eq_true, beq_iff_eq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      intro η m s hK l hl
+      have hcs := conjuncts_sat arena.nodes K.index c.index (List.contains_iff_mem.mp hc) η m s hK
+      obtain ⟨u, w, -, -, -, -, hu, hw, -, -, -, -, -, hcells⟩ := (sat_apart hn).mp hcs
+      simp only [Path.read] at hu hw
+      simp only [Region.mem, hu, hw, List.contains_iff_mem] at hl ⊢
+      cases hm : (storeElems s.h w).contains (some l)
+      · rfl
+      · exact absurd (List.contains_iff_mem.mp hm) (hcells l hl)
+    · cases h
+  | r, r', .swap d, h => by
+    intro η m s hK l hl
+    cases hm : r'.mem η s.h l
+    · rfl
+    · have := DisjointEvidence.sound d h η m s hK l hm
+      rw [hl] at this; cases this
 
 /-- **Respect, checked as the note defines it** (§5, Definition
 "Respect"): for every support entry `r : δ` (index `i`) and every effect
@@ -956,17 +1291,18 @@ structure RespectEvidence where
   disjoint : List (Nat × Nat × DisjointEvidence)
   deriving DecidableEq, Repr
 
-def RespectEvidence.check (ev : RespectEvidence) (S Φ : Footprint) : Bool :=
+def RespectEvidence.check (ev : RespectEvidence) (arena : AssertionArena) (K : AssertionRef) (S Φ : Footprint) :
+    Bool :=
   (List.range S.length).all fun i => (List.range Φ.length).all fun j =>
     match S[i]?, Φ[j]? with
     | some (r, δ), some (r', γ) =>
-      γ.le δ || ev.disjoint.any fun (i', j', d) => i' == i && j' == j && d.check r r'
+      γ.le δ || ev.disjoint.any fun (i', j', d) => i' == i && j' == j && d.check arena K r r'
     | _, _ => true
 
 /-- **The note's respect implies its semantic use**: every action of `Φ`
 from a state of `K` stays within `S` (`Respects`). -/
 theorem RespectEvidence.sound {arena : AssertionArena} {K : AssertionRef} {S Φ : Footprint}
-    (ev : RespectEvidence) (hc : ev.check S Φ = true) : Respects arena K Φ S := by
+    (ev : RespectEvidence) (hc : ev.check arena K S Φ = true) : Respects arena K Φ S := by
   intro η m s s' hK ha
   refine supported_of_pairs ha fun e he e' he' => ?_
   obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem he
