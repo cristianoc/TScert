@@ -1200,7 +1200,8 @@ partial def decodeExpr (j : Json) : Except String Expr := do
     let guard ← match (j.getObjVal? "guard").toOption with
       | some g => decodeGuard g
       | none => pure none
-    let stated ← decodeStated (← jField j "stated")
+    let stated ← (decodeStated (← jField j "stated")).mapError
+      fun m => s!"the function at [{p.1},{p.2}): stated: {m}"
     return .lambda p receiver typeParams params defaults (!restAt.isEmpty)
       (if result == .null then none else some result) guard stated async (← fromJson? (← jField j "requires")) body
   | "conditional" => do
@@ -1352,7 +1353,11 @@ def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
   fieldsExactly j ["name", "namePos", "typeParams", "params", "retType", "guard", "stated", "requires", "ensures",
     "completion", "body", "strict"]
   let typeParams ← decodeTypeParams (← jArr j "typeParams")
-  let fn : Fn := ⟨← jStr (← jField j "name"), ← jSpan j "namePos",
+  let name ← jStr (← jField j "name")
+  let namePos ← jSpan j "namePos"
+  let stated ← (decodeStated (← jField j "stated")).mapError
+    fun m => s!"the function {name} at [{namePos.1},{namePos.2}): stated: {m}"
+  let fn : Fn := ⟨name, namePos,
     ← (← jArr j "params").mapM (fun p => do
       fieldsExactly p (["name", "pos", "type"] ++ ["rest"].filter (fun k => (p.getObjVal? k).isOk))
       let rest ← match (p.getObjVal? "rest").toOption with
@@ -1363,7 +1368,7 @@ def decodeFn (j : Json) : Except String (Fn × List TypeParam) := do
       return ⟨← jStr (← jField p "name"), ← jField p "type", rest⟩),
     ← jField j "retType", ← (← jArr j "body").mapM decodeStmt, !(← (← jField j "strict").getBool?),
     ← decodeGuard (← jField j "guard"), ← decodeCompletion (← jField j "completion"),
-    ← decodeStated (← jField j "stated"), ← fromJson? (← jField j "requires"), ← fromJson? (← jField j "ensures")⟩
+    stated, ← fromJson? (← jField j "requires"), ← fromJson? (← jField j "ensures")⟩
   return (fn, typeParams)
 
 /-! ### Canonical symbol numbers

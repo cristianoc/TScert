@@ -60,9 +60,10 @@ def decodeInterfaces (sc : ImportScope) (j : Json) : Except String (Established 
       let e ← jField entry "established"
       if e == Json.null then continue
       fieldsExactly e ["exits", "resultExits", "unit", "interface"]
-      let (fp, ot) ← EffectJson.classOfExits (← fromJson? (← jField e "exits"))
-      let (ret, rt) ← EffectJson.classOfExits (← fromJson? (← jField e "resultExits"))
-      if rt then throw "a returned function's established exits bound no throw"
+      let at_ := fun (field : String) (msg : String) => s!"the interface entry {n} of {m.location}: {field}: {msg}"
+      let (fp, ot) ← (do EffectJson.classOfExits (← fromJson? (← jField e "exits"))).mapError (at_ "exits")
+      let (ret, rt) ← (do EffectJson.classOfExits (← fromJson? (← jField e "resultExits"))).mapError (at_ "resultExits")
+      if rt then throw (at_ "resultExits" "a returned function's established exits bound no throw")
       let u ← e.getObjValAs? String "unit"
       if !u.startsWith s!"module:{m.location}#" then throw "interface group identity mismatch"
       ifaces := ifaces ++ [(n, ← fromJson? (← jField e "interface"))]

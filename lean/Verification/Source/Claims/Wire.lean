@@ -335,13 +335,15 @@ and its returned function's (`resultExits`) are a claim's exits
 (`EffectJson.classOfExits`), the returned function's with no throw bound. -/
 instance [FromJson ι] : FromJson (Function ι) where
   fromJson? j := do
-    let (footprint, onThrow) ← EffectJson.classOfExits (← fromJson? (← j.getObjVal? "exits"))
-    let (resultFootprint, resultThrow) ← EffectJson.classOfExits (← fromJson? (← j.getObjVal? "resultExits"))
-    if resultThrow then throw "a returned function's proposed exits bound no throw"
+    let name ← j.getObjValAs? String "name"
+    let at_ := fun (field : String) (m : String) => s!"the claims of {name}: {field}: {m}"
+    let (footprint, onThrow) ← (do EffectJson.classOfExits (← fromJson? (← j.getObjVal? "exits"))).mapError (at_ "exits")
+    let (resultFootprint, resultThrow) ←
+      (do EffectJson.classOfExits (← fromJson? (← j.getObjVal? "resultExits"))).mapError (at_ "resultExits")
+    if resultThrow then throw (at_ "resultExits" "a returned function's proposed exits bound no throw")
     let arrows ← match j.getObjVal? "arrows" with
       | .ok a => some <$> fromJson? a
       | .error _ => pure none
-    let name ← j.getObjValAs? String "name"
     let namePos ← fromJson? (← j.getObjVal? "namePos")
     let params ← fromJson? (← j.getObjVal? "params")
     let result ← fromJson? (← j.getObjVal? "result")
