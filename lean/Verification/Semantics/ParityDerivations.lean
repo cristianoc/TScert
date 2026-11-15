@@ -2189,11 +2189,15 @@ def StepVar.scoped (sc : Scope) : StepVar → Bool
   | .before t => !t.atEntry && decide (t.slot < sc.before)
   | .after t => !t.atEntry && decide (t.slot < sc.after)
 
-def OperationPost.scoped (n : Nat) : OperationPost → Bool
-  | .arith _ l r y => l.scoped n && r.scoped n && y.scoped n
-  | .stringLength x y => x.scoped n && y.scoped n
-  | .stringRead x i y => x.scoped n && i.scoped n && y.scoped n
-  | .lengthsKept _ x' | .boundedWrite _ _ x' | .push _ x' _ => decide (x' < n)
+/-- A post reads its operands in their phases' scopes: the exit's operands
+below the exit count, the entry's below the entry count. -/
+def OperationPost.scoped (sc : Scope) : OperationPost → Bool
+  | .arith _ l r y => l.scoped sc.after && r.scoped sc.after && y.scoped sc.after
+  | .stringLength x y => x.scoped sc.after && y.scoped sc.after
+  | .stringRead x i y => x.scoped sc.after && i.scoped sc.after && y.scoped sc.after
+  | .lengthsKept x x' => decide (x < sc.before) && decide (x' < sc.after)
+  | .boundedWrite x i x' => decide (x < sc.before) && decide (i < sc.before) && decide (x' < sc.after)
+  | .push x x' args => decide (x < sc.before) && decide (x' < sc.after) && args.all (Witness.scoped sc.before)
 
 /-- **A formula reads runtime slots within its scope**: assertions by the
 identity check (their binders' eigenvariables apart), linear facts by their
@@ -2202,7 +2206,7 @@ an image for every entry slot read at the exit. -/
 def Formula.scoped (arena : AssertionArena) (sc : Scope) : Formula → Bool
   | .at p a => scopedAt arena.nodes (sc.count p) a.index
   | .transition Φ => effectScoped sc.before Φ
-  | .operation q => q.scoped sc.after
+  | .operation q => q.scoped sc
   | .linear F => F.vars.all (StepVar.scoped sc)
   | .defined v => StepVar.scoped sc v
   | .transport θ => decide (θ.images.size = sc.before) && θ.images.toList.all (Witness.scoped sc.after)

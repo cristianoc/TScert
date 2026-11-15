@@ -474,6 +474,12 @@ namespace Writes
 #guard isOk (checkScoped empty ⟨2, 2⟩ [.operation (.push 0 1 [.literal (.num (bitsOfNat 7))]), .defined (lenB 0),
     .linear (.le [(lenB 0, 1)] (maxArrayLength - 1))] (lengthStep 0 1 1)
   (.pushPost 0 1 [.literal (.num (bitsOfNat 7))] .assumption .assumption .assumption))
+-- A post reading an entry slot past the entry's scope is refused.
+#guard errorOf (checkScoped empty ⟨1, 2⟩ [.operation (.boundedWrite 0 1 1)] (lengthStep 0 1 1)
+  (.writeEnd 0 1 1 .assumption .assumption)) = "a formula reads a slot outside its scope"
+#guard errorOf (checkScoped empty ⟨1, 2⟩ [.operation (.push 0 1 [.path (.var 3)]), .defined (lenB 0),
+    .linear (.le [(lenB 0, 1)] (maxArrayLength - 1))] (lengthStep 0 1 1)
+  (.pushPost 0 1 [.path (.var 3)] .assumption .assumption .assumption)) = "a formula reads a slot outside its scope"
 end Writes
 
 /-! ## `index[c >> 8]` -/
