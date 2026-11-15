@@ -569,10 +569,11 @@ theorem selectedWithin_sound {Φ : Footprints.Closed} {F : List Nat} {b : Nat} {
 the invocation's mark of its signature's exceptional-exit frame (the note's
 rule Call at the exceptional exit, `Effect.summary`), each entry
 instantiated at the call's positions, an entry on a fresh position's store
-discharged (`Footprint.boundBelow`), where the call's throw is its
-signature's (`selectedThrows`). It reads no bound. -/
+discharged (`Footprint.boundBelow`); a throw of the call's evaluation
+keeps the heap (`ExpressionEffects.selected_sound_exc`). It reads no
+bound. -/
 def selectedThrowGrades (F : List Nat) (e : ProgramCertificates.Evidence ι) : List Footprints.Closed :=
-  if ExpressionEffects.selectedOperands e && ExpressionEffects.selectedThrows e then
+  if ExpressionEffects.selectedOperands e then
     match ExpressionEffects.selectedEffect e with
     | some eff => [Footprints.Footprint.boundBelow (freshPositions F (ProgramCertificates.claim e).term)
         (eff.summary (ExpressionEffects.actualsOf (ProgramCertificates.claim e).term).length).exceptional.frame]
@@ -583,7 +584,7 @@ def selectedThrowGrades (F : List Nat) (e : ProgramCertificates.Evidence ι) : L
 local effect below it, the frame's check entry by entry
 (`Footprint.boundBelow_le`). -/
 def selectedThrowsWithinAt (Φ : Footprints.Closed) (F : List Nat) (e : ProgramCertificates.Evidence ι) : Bool :=
-  ExpressionEffects.selectedOperands e && ExpressionEffects.selectedThrows e &&
+  ExpressionEffects.selectedOperands e &&
     match ExpressionEffects.selectedEffect e with
     | some eff => (Footprints.Footprint.boundBelow (freshPositions F (ProgramCertificates.claim e).term)
         (eff.summary (ExpressionEffects.actualsOf (ProgramCertificates.claim e).term).length).exceptional.frame).le Φ
@@ -594,8 +595,7 @@ bound** (proved). -/
 theorem selectedThrowsWithinAt_eq_grades (Φ : Footprints.Closed) (F : List Nat) (e : ProgramCertificates.Evidence ι) :
     selectedThrowsWithinAt Φ F e = (selectedThrowGrades F e).any (·.le Φ) := by
   unfold selectedThrowsWithinAt selectedThrowGrades
-  cases ExpressionEffects.selectedEffect e <;> cases ExpressionEffects.selectedOperands e <;>
-    cases ExpressionEffects.selectedThrows e <;> simp
+  cases ExpressionEffects.selectedEffect e <;> cases ExpressionEffects.selectedOperands e <;> simp
 
 /-- **Every run's heap grows**, on a normal return and on a throw: from a
 heap at least `b` long every exit heap is too. -/
@@ -1414,7 +1414,7 @@ def throwsWithin [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCh
     (decide ((ProgramCertificates.claim c.expression).term = t) &&
       (ProgramCertificates.checkTreeUsing G images c.expression (sums := sums) ||
         PromiseCalls.requiresTree G images (entryFacts G c) (fun _ => false) sums c.expression) &&
-      selectedWithinAt Φ F c.expression && ExpressionEffects.selectedThrows c.expression &&
+      selectedWithinAt Φ F c.expression &&
       (match ExpressionEffects.selectedEffect c.expression with
       | some eff => eff.onThrow
       | none => false)) ||
@@ -1446,7 +1446,7 @@ theorem throwsWithin_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
   · exact HeapObservations.SafePostExc.weaken (fun _ _ _ => trivial) (fun _ hq => hq.on _)
       (writeWithinAt_sound hwrite henv hheap hknowledge hsafe)
   · simp only [Bool.and_eq_true, decide_eq_true_eq] at hcall
-    obtain ⟨⟨⟨⟨hterm', htree⟩, hsel⟩, hthr⟩, hon⟩ := hcall
+    obtain ⟨⟨⟨hterm', htree⟩, hsel⟩, hon⟩ := hcall
     simp only [selectedWithinAt, Bool.and_eq_true] at hsel
     obtain ⟨hops, hsel⟩ := hsel
     split at hsel
@@ -1459,7 +1459,7 @@ theorem throwsWithin_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
           (eff.excPost (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) (ExpressionEffects.actualsOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h')
           j V h' (instantiate 0 ρ (ProgramCertificates.claim c.expression).term) := by
         rcases Bool.or_eq_true_iff.mp htree with htree | hreq
-        · exact ExpressionEffects.selected_sound_exc c.expression htree hops hthr heff
+        · exact ExpressionEffects.selected_sound_exc c.expression htree hops heff
             (ProgramCertificates.codesSound_none _) hsums (by simpa only [ControlFlow.entry] using henv) hworld hheap
             (by rw [hterm']; exact href)
         · obtain ⟨eff', heff', hs⟩ := PromiseCalls.requiresTree_sound_exc

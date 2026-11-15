@@ -164,7 +164,7 @@ theorem pass_within_throw {G : NormalGraph ι} {images : InstanceImageCheck G} {
     obtain ⟨⟨hterm, hctx⟩, htree⟩ := hdc
     have hsel := hsw
     simp only [GraphCode.selectedThrowsWithinAt, Bool.and_eq_true] at hsel
-    obtain ⟨⟨hops, hthr⟩, hsel⟩ := hsel
+    obtain ⟨hops, hsel⟩ := hsel
     split at hsel
     · rename_i eff heff
       have hs : SafePostExc (excOf G) (meaning G (claim d).type)
@@ -174,7 +174,7 @@ theorem pass_within_throw {G : NormalGraph ι} {images : InstanceImageCheck G} {
             (ExpressionEffects.actualsOf (instantiate 0 ρ (claim d).term)) h) n W h
           (instantiate 0 ρ (claim d).term) := by
         rcases Bool.or_eq_true_iff.mp htree with htree | hreq
-        · exact ExpressionEffects.selected_sound_exc d htree hops hthr heff hcodes hsums (hctx ▸ he) hw hh (by rw [hterm]; exact hsafe.refs)
+        · exact ExpressionEffects.selected_sound_exc d htree hops heff hcodes hsums (hctx ▸ he) hw hh (by rw [hterm]; exact hsafe.refs)
         · obtain ⟨eff', heff', hs⟩ := PromiseCalls.requiresTree_sound_exc hcodes hsums d hreq
           rw [heff] at heff'
           cases heff'

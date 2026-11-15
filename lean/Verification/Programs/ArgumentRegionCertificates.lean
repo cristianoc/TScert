@@ -84,7 +84,7 @@ normal return the narrower `grownFrame` where the signature states
   if decide ((ProgramCertificates.claim c.expression).term = t) &&
       (ProgramCertificates.checkTreeUsing G images c.expression (sums := sums) ||
         PromiseCalls.requiresTree G images (entryFacts G c) (fun _ => false) sums c.expression) &&
-      ExpressionEffects.selectedOperands c.expression && (!thr || ExpressionEffects.selectedThrows c.expression) then
+      ExpressionEffects.selectedOperands c.expression then
     match t, ExpressionEffects.selectedEffect c.expression with
     | .invoke _ r args, some eff =>
       if !thr || eff.onThrow then
@@ -104,7 +104,7 @@ theorem callStep_ok [DecidableEq ι] {G : NormalGraph ι}
   split at hc
   · rename_i hcond
     simp only [Bool.and_eq_true, decide_eq_true_eq] at hcond
-    obtain ⟨⟨⟨hterm0, htree⟩, hops⟩, hthrows⟩ := hcond
+    obtain ⟨⟨hterm0, htree⟩, hops⟩ := hcond
     subst hterm0
     split at hc
     · rename_i fn receiver args eff hterm heff
@@ -124,10 +124,8 @@ theorem callStep_ok [DecidableEq ι] {G : NormalGraph ι}
             · apply HeapObservations.SafePostExc.of_post (fun _ hf => by cases hf)
               exact ExpressionEffects.selected_sound c.expression htree hops heff
                 (ProgramCertificates.codesSound_none _) hsums he hw hh hr
-            · have hx : ExpressionEffects.selectedThrows c.expression = true := by
-                simpa [ht] using hthrows
-              exact HeapObservations.SafePostExc.weaken (fun _ _ h => h) (fun _ h _ => h)
-                (ExpressionEffects.selected_sound_exc c.expression htree hops hx heff
+            · exact HeapObservations.SafePostExc.weaken (fun _ _ h => h) (fun _ h _ => h)
+                (ExpressionEffects.selected_sound_exc c.expression htree hops heff
                   (ProgramCertificates.codesSound_none _) hsums he hw hh hr)
           · obtain ⟨eff', heff', hs⟩ := PromiseCalls.requiresTree_sound_exc
               (ProgramCertificates.codesSound_none _) hsums c.expression hreq

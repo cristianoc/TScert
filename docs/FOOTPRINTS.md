@@ -317,7 +317,10 @@ A selected call's throw is checked against the exceptional exit's frame of
 its signature's exit summary, the note's rule Call at the exceptional exit:
 the same closed bound below the mark, of the signature's frame where it
 states `onThrow` and of $`\top`$ otherwise
-(`GraphCode.selectedThrowsWithinAt`). The throw postcondition and the
+(`GraphCode.selectedThrowsWithinAt`), for every selected form, a variadic
+call included: a throw of the call's evaluation (a spread's read) keeps the
+heap, and the invocation's throw meets the exceptional exit
+(`ExpressionEffects.selected_sound_exc`). The throw postcondition and the
 heap's growth give that frame's action (proved:
 `Effect.summary_exceptional_post`, `GraphCode.safePostExc_grow`), so the
 throw is within the bound below the mark (proved:

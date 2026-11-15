@@ -1486,7 +1486,7 @@ theorem selectedExits_heldPost_post {Ξ T : Fam} {x : CallEffects.Exits CallEffe
 /-- **A selected call meets its signature's postcondition**, at its receiver,
 from the heap it starts in: its selected exits read at its heaps
 (`selected_exits_sound`, `selectedExits_heldPost_post`). -/
-theorem selected_posts_sound [DecidableEq ι] {G : NormalGraph ι}
+theorem selected_sound_exc [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} (e : Evidence ι)
     {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} (ht : checkTreeUsing G images e codes sums = true)
     (hp : selectedOperands e = true) {eff : CallEffects.Effect} (hsel : selectedEffect e = some eff)
@@ -1502,7 +1502,7 @@ theorem selected_posts_sound [DecidableEq ι] {G : NormalGraph ι}
   exact selectedExits_heldPost_post e hx hsel hpad hrecv (hvals eff hsel) hw hh hs
 
 /-- **A selected call meets its signature's postcondition**, at its receiver,
-from the heap it starts in (`selected_posts_sound`). -/
+from the heap it starts in (`selected_sound_exc`). -/
 theorem selected_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} (e : Evidence ι)
     {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} (ht : checkTreeUsing G images e codes sums = true)
@@ -1512,7 +1512,7 @@ theorem selected_sound [DecidableEq ι] {G : NormalGraph ι}
     (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ (claim e).term)) :
     SafePost (excOf G) (meaning G (claim e).type) (eff.post (receiverOf (instantiate 0 ρ (claim e).term)) (actualsOf (instantiate 0 ρ (claim e).term)) h)
       n W h (instantiate 0 ρ (claim e).term) :=
-  (selected_posts_sound e ht hp hsel hcodes hsums he hw hh href).post
+  (selected_sound_exc e ht hp hsel hcodes hsums he hw hh href).post
 
 theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} {Φ : Footprints.Closed} (e : Evidence ι)
@@ -2505,28 +2505,6 @@ theorem writeStep_grow [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
       · cases hc
     · cases hc
 
-
-/-- The selected forms a throw postcondition is concluded for: an invocation
-or a construction at a fixed signature, through subsumption. -/
-def selectedThrows : Evidence ι → Bool
-  | .node _ (.app _) _ => true
-  | .node _ (.construct _) _ => true
-  | .node _ (.sub _) [p] => selectedThrows p
-  | _ => false
-
-/-- **A selected call meets its signature's postconditions** on a normal
-return and on a throw, at its receiver, from the heap it starts in. -/
-theorem selected_sound_exc [DecidableEq ι] {G : NormalGraph ι}
-    {images : PositiveCertificates.InstanceImageCheck G} (e : Evidence ι)
-    {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} (ht : checkTreeUsing G images e codes sums = true)
-    (hp : selectedOperands e = true) (_hthrows : selectedThrows e = true)
-    {eff : CallEffects.Effect} (hsel : selectedEffect e = some eff)
-    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
-    {ρ n W h} (he : EnvOk G (claim e).context ρ n W)
-    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ (claim e).term)) :
-    SafePostExc (excOf G) (meaning G (claim e).type) (eff.post (receiverOf (instantiate 0 ρ (claim e).term)) (actualsOf (instantiate 0 ρ (claim e).term)) h)
-      (eff.excPost (receiverOf (instantiate 0 ρ (claim e).term)) (actualsOf (instantiate 0 ρ (claim e).term)) h) n W h (instantiate 0 ρ (claim e).term) :=
-  selected_posts_sound e ht hp hsel hcodes hsums he hw hh href
 
 /-! ## A write's local effect
 

@@ -114,8 +114,7 @@ def closedParts (G : NormalGraph ι) (images : InstanceImageCheck G) (sums : Lis
         PromiseCalls.requiresTree G images (ControlFlow.entryFacts G c) (fun _ => false) sums c.expression)
     empty := ExpressionEffects.emptyType G (ControlFlow.result c)
     emptyEntry := (ControlFlow.entry c).any (fun A => ExpressionEffects.emptyType G A)
-    throwsSel := ExpressionEffects.selectedThrows c.expression &&
-      (match ExpressionEffects.selectedEffect c.expression with
+    throwsSel := (match ExpressionEffects.selectedEffect c.expression with
         | some eff => eff.onThrow
         | none => false) }
 

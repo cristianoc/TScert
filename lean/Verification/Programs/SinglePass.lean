@@ -1516,8 +1516,7 @@ node, facts `stepK` and derivation `deriv`, its fresh slots `F`: an
 inspection or an empty type keeps everything (the empty frame); a typed
 write and an initializing write state their closed footprints' entries; a
 call at its selected signature, its derivation checked, states the
-signature's exit summary, its exceptional exit where the call's throw is the
-signature's (`selectedThrows`). -/
+signature's exit summary on both exits. -/
 def stepCertificate (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
     (sums : List (ReadSummary ι)) (F : List Nat) (c : PointClaim ι) (node : Node)
     (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι) : StepCertificate :=
@@ -1529,14 +1528,11 @@ def stepCertificate (G : NormalGraph ι) (images : InstanceImageCheck G) (codes 
   let emptyContext := c.context.any (ExpressionEffects.emptyType G ·)
   let checked : Thunk (List (CallEffects.Exits CallEffects.ExitSpec)) := Thunk.mk fun _ =>
     if selected.isEmpty then [] else if derivChecked G images codes sums c node stepK deriv then selected else []
-  let thrown := if ExpressionEffects.selectedThrows deriv then selected else []
-  let checkedT : Thunk (List (CallEffects.Exits CallEffects.ExitSpec)) := Thunk.mk fun _ =>
-    if thrown.isEmpty then [] else if derivChecked G images codes sums c node stepK deriv then thrown else []
   let keepsAll : CallEffects.ExitSpec := { frame := [], ensures := [] }
   { normal := if inspection || ExpressionEffects.emptyType G c.type || emptyContext then [keepsAll]
       else writes ++ checked.get.map (·.normal)
     exceptional := if inspection || emptyContext then [keepsAll]
-      else writes ++ checkedT.get.map (·.exceptional)
+      else writes ++ checked.get.map (·.exceptional)
     fresh := GraphCode.freshPositions F (ProgramCertificates.claim deriv).term
     scope := ProgramCertificates.checkScope c.context.length node.expression }
 
@@ -1556,13 +1552,12 @@ private theorem summaries_normal (F : List Nat) (deriv : ProgramCertificates.Evi
 
 omit [DecidableEq ι] [Hashable ι] [Instantiates ι] in
 private theorem summaries_exceptional (F : List Nat) (deriv : ProgramCertificates.Evidence ι) :
-    (if ExpressionEffects.selectedThrows deriv then selectedSummaries deriv else []).map
+    (selectedSummaries deriv).map
       (fun s => Footprints.Footprint.boundBelow
         (GraphCode.freshPositions F (ProgramCertificates.claim deriv).term) s.exceptional.frame) =
       GraphCode.selectedThrowGrades F deriv := by
   unfold selectedSummaries GraphCode.selectedThrowGrades
-  cases ExpressionEffects.selectedOperands deriv <;> cases ExpressionEffects.selectedThrows deriv <;>
-    cases ExpressionEffects.selectedEffect deriv <;> rfl
+  cases ExpressionEffects.selectedOperands deriv <;> cases ExpressionEffects.selectedEffect deriv <;> rfl
 
 omit [Hashable ι] [Instantiates ι] in
 /-- **The grades are the certificate's projection** (proved): each exit
