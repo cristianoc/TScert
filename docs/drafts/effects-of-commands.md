@@ -116,50 +116,7 @@ An exact primitive post is exact about the observations specified by that operat
 
 ### JSON
 
-The effect object has exactly these fields:
-
-```json
-{
-  "exits": {
-    "normal": {
-      "frame": [
-        {
-          "region": { "class": "views" },
-          "change": "grow"
-        }
-      ],
-      "ensures": []
-    },
-    "exceptional": {
-      "frame": [
-        { "region": { "class": "values" }, "change": "any" },
-        { "region": { "class": "arrays" }, "change": "any" },
-        { "region": { "class": "views" }, "change": "any" }
-      ],
-      "ensures": []
-    }
-  },
-  "promise": null,
-  "requires": null,
-  "pre": []
-}
-```
-
-Region alternatives are:
-
-```text
-{"class": "values" | "arrays" | "views"}
-{"store": {"position": n, "path": [...]}}
-{"cells": {"position": n, "path": [...]}}
-{"field": {"position": n, "path": [...], "key": <PropKey>}}
-{"own":   {"position": n, "path": [...]}}
-```
-
-Here `cells` denotes the note’s store-plus-cells region. `own` denotes own value locations. Changes are `keep`, `init`, `scalar`, `grow`, `any`.
-
-`ensures` uses one strict constructor encoding of `Parity.Formula`; assertion references resolve through the containing document’s shared arena. References, scopes and constructor fields are checked. There is no effect-local second arena.
-
-Both exits and both lists are required. Empty `ensures` means true; an impossible exit has a proved false postcondition. Unknown fields and the old shape are refused. Every document containing an effect uses this same encoding.
+The serialized form of an effect is [the serialized effect](#the-serialized-effect).
 
 ## Command summaries and composition
 
@@ -590,6 +547,201 @@ both:
 
 Derivation checking, the framing of graphs and the integration of command
 bodies stay above typing.
+
+## The serialized effect
+
+Every document that carries a callable's effect (the Fragment's declaration
+document, the request's types tables, the claims document, module
+interfaces, diagnostics) writes it in one shape: the effect's two exits,
+its promise and its preconditions, as `CallEffects.Effect` stores them.
+[The request protocol](../REQUEST-PROTOCOL.md) owns the grammar; this
+section states its design.
+
+### Grammar
+
+Arrays are ordered lists; every field is required but `atEntry`; an object
+of a union has exactly one of the alternatives' tags, at every depth.
+
+```ts
+type Nat = number;            // a safe integer at least 0
+type Integer = number | string; // a safe integer, else its canonical decimal
+type Bits64 = string;         // 16 lowercase hexadecimal digits
+type Change = "keep" | "init" | "scalar" | "grow" | "any";
+type Key = string | { symbol: Nat };
+type Selector = { value: boolean; array: boolean; view: boolean };
+type Region =
+  | { field: { x: Nat; key: Key } } | { own: { x: Nat } } | { elems: { x: Nat } }
+  | { cls: Selector } | "all"
+  | { path: { x: Nat; fields: string[]; key: Key } }
+  | { pathOwn: { x: Nat; fields: string[] } } | { pathElems: { x: Nat; fields: string[] } }
+  | { cell: { name: string } } | { inCls: { region: Region; selector: Selector } }
+  | { store: { x: Nat; fields: string[] } };
+type Frame = { region: Region; change: Change }[];
+type Path = { root: Nat; fields: string[] };
+type Literal = "null" | "undefined" | "true" | "false"
+  | { num: { bits: Bits64 } } | { str: { value: string } }
+  | { bigint: { value: string } } | { sym: { id: Nat } };
+type Witness = { path: Path } | { literal: Literal };
+type WitnessSeq = { fixed: { xs: Witness[] } } | { restFrom: { first: Nat } }
+  | { append: { left: WitnessSeq; right: WitnessSeq } };
+type TransportSchema = { shift: Nat; overrides: [Nat, Witness][]; boxed: boolean; stable: Nat[] };
+type LinearTerm = { kind: "value" | "length" | "view" | "strLength"; slot: Nat; path: string[]; atEntry?: true };
+type StepVar = { before: { t: LinearTerm } } | { after: { t: LinearTerm } };
+type LinearFact<V> = { le: { form: [V, Integer][]; bound: Integer } }
+  | { ne: { form: [V, Integer][]; bound: Integer } };
+type Clause<V> = LinearFact<V> | { either: { left: Clause<V>; right: Clause<V> } };
+type BodyVariable = "index" | "elem" | { offset: { delta: Nat } }
+  | { project: { kind: LinearTerm["kind"]; path: string[] } } | { free: { t: LinearTerm } };
+type IndexFact = { index: { slot: Nat } } | { int: { slot: Nat } } | { pastSafe: { slot: Nat } }
+  | { length: { array: Nat; length: Nat } } | { bound: { array: Nat; index: Nat; strict: boolean } }
+  | { linear: { fact: LinearFact<LinearTerm> } } | { either: { left: IndexFact; right: IndexFact } }
+  | { guarded: { slot: Nat; path: string[]; tag: "null" | "undefined" | "true" | "false"; body: IndexFact } }
+  | { element: { value: Nat; array: Nat; index: Nat } }
+  | { every: { slot: Nat; path: string[]; stop: LinearTerm; body: Clause<BodyVariable>[] } }
+  | { apart: { slot: Nat; other: Nat } }
+  | { storeApart: { slot: Nat; path: string[]; other: Nat; otherPath: string[] } };
+type ElementKinds = ("null" | "undefined" | "boolean" | "number" | "string" | "bigint" | "symbol" | "object")[];
+type OperationPost =
+  | { arith: { op: Arith; left: Witness; right: Witness; result: Path } }
+  | { stringLength: { string: Path; result: Path } }
+  | { stringRead: { string: Path; index: Witness; result: Path } }
+  | { lengthsKept: { x: Nat; exit: Nat } } | { boundedWrite: { x: Nat; i: Nat; exit: Nat } }
+  | { push: { x: Nat; exit: Nat; args: WitnessSeq } }
+  | { fact: { phase: "before" | "after"; lift: Nat; fact: IndexFact } }
+  | { freshStore: { x: Nat } } | { freshObject: { x: Nat } }
+  | { elementsWhen: { x: Nat; value: Literal; y: Nat; predicate: ElementKinds } }
+  | { storeExtends: { x: Nat } }
+  | { viewWrite: { x: Nat; i: Nat; v: Nat; format: "uint8" | "uint16" | "int32" | "float64" | null } };
+type Formula = { transition: { effect: Frame } } | { operation: { post: OperationPost } }
+  | { linear: { fact: LinearFact<StepVar> } } | { defined: { v: StepVar } }
+  | { transport: TransportSchema } | { and: { left: Formula; right: Formula } } | "truth" | "falsity";
+type ExitSchema = { frame: Frame; ensures: Formula[] };
+type Exits<A> = { normal: A; exceptional: A };
+type CallPromise = { guards: { param: Nat } } | { asserts: { param: Nat } };
+type CallEffect = { exits: Exits<ExitSchema>; promise: CallPromise | null;
+  requires: ElementKinds | null; pre: IndexFact[] };
+```
+
+`Arith` is the calculus's binary operator by its name. Each record is the
+Lean structure of the same fields in the same order, and each single-key
+object the constructor of that name, `exit` naming `x'`, a region's
+`fields` its path, `cell`'s `name` its binder. The formulas are exactly the
+constructors of `FormulaF WitnessSeq TransportSchema` that reference no
+assertion-arena node: a contract states no assertion
+([self-contained formulas](../../lean/Verification/Semantics/ExitSchemas.lean)).
+A literal is one of the eight primitive constants of the calculus, a
+number by its double's bits and a symbol by its identity: no object
+identity, store or executable term is a literal. An integer is a JSON
+number in the safe range and a decimal string, with no leading zero, plus
+sign or negative zero, outside it; a bigint literal is always its decimal
+string.
+
+### Positions and ordering
+
+Entry position `0` is the receiver and `i + 1` the `i`-th actual; at both
+exits `0` is the returned or thrown value, `1` the receiver and `i + 2` the
+`i`-th actual. A promise's `param` is the actual's index. Frames and
+transitions read entry positions; arithmetic and string posts, freshness and
+`elementsWhen` exit positions; `push` reads its sequence at the entry, `x`
+at the entry and `exit` at the exit; `storeExtends` and `viewWrite` entry
+positions. A fact's positions are those of its phase raised by `lift`, its
+entry terms the invocation's entry; a `StepVar` names its phase, so its term
+has no `atEntry`. `restFrom first` is the supplied actual positions from
+`first` on, the receiver excluded; `append` concatenates.
+
+A transport's override is the first one for its slot; repeated and
+reordered overrides are kept as written. Frame entries combine by the
+largest change admitted at a location, formula lists and `and` are
+conjunction, and neither is sorted, merged or simplified: the serialized
+form is the structure the effect holds. An elements predicate alone is a
+set, written in the order of the grammar with no kind twice.
+
+### What the decoder establishes and what consumers check
+
+The decoder reads a value and writes it again: a document whose effect is
+not exactly that writing, an unknown, missing or repeated field, a second
+tag, a wrong scalar, a malformed pair, a noncanonical integer or literal, is
+refused at the first place it differs, by its path in the document. A
+document is read once from its text, and an object stating a key twice is
+refused there, before its members are read into a map. A decoded effect is
+arena-free, its literals primitive constants, its integers representable,
+and its nesting at most the decoder's limit (`EffectCodec.nestingLimit`).
+
+Scope depends on the callable's arity, which the effect alone does not
+state: the reader of the enclosing callable checks it against the
+signature, before certification, by the scope checks of its consumers
+(`belowRow` where an actual is truncated, the arity instantiation of a rest
+schema at the expanded actuals). The decoder does not establish what a
+consumer checks: canonical transports (`shift = 1`) where `covers`,
+`meetCovers` and `belowRow` use the completion lemmas, the second exit's
+independence of the world where a conjunction is used, and the stability
+of a rest allocation at both exits where a body is composed; a `stable`
+slot is an obligation `HoldsAt` states, not evidence of one. A decoded
+native contract is trusted as the library model's contract is: decoding
+certifies no body and proves no contract.
+
+### Builders and identity
+
+The front end states an effect through its builders, never as a literal
+object. `EffectOptions` is an authoring type, never serialized; a footprint
+effect (`footprintEffect`) is the exits the old fields stated: the closed
+bound's three class entries, the receiver's own locations (else its store)
+at `any`, the store regions, then the normal postconditions in their order
+(fresh store, fresh object, elements where the result is `true`, the facts
+after, the receiver's growth and append, the element write's
+postconditions), and the exceptional exit the same frame where the effect
+states throws, `⊤` otherwise, with no postcondition. An exact element write
+requires its range's facts among the preconditions. `withPromise` keeps
+every other field; an imported declaration's `@ensures` adds a normal
+`fact after 0` postcondition and its `@requires` a precondition.
+
+One serializer writes an effect's text, in the grammar's field order with
+every list in its order, and type identity compares that text: it is the
+identity of the syntax, so two effects of one meaning written differently
+are two types. Both effect comparisons and the test for an ordinary effect
+use one structural comparison.
+
+### Statements and proposals
+
+A declaration's statement (`Modifies<P, T>`, `Fresh<T>`) is serialized as
+its exits in the same codec: the normal frame, the exceptional frame the
+same or `⊤` as `onThrow` states, and `freshStore 0` for a fresh result; an
+absent statement is `null`. The claims document states a function's
+proposed exits (`exits`) and its returned function's (`resultExits`), and an
+interface's established record the same two. A returned callable's
+proposal is its normal bound, an exceptional `⊤` and no postcondition, and
+certification establishes every exit guarantee a signature advertises.
+
+### Codec theorems
+
+Serialization is defined on effects of the serialization predicate
+(`EffectCodec.Serializable`): arena-free formulas, primitive literals,
+representable integers and the nesting limit. Its subtype has a total
+encoder, and a document holding an effect outside it is refused whole
+when it is written.
+
+- **Encoding then decoding** returns every serializable effect
+  (`EffectCodec.decode_encode`).
+- **A decoded effect** is serializable and is the effect the decoder
+  returned (`EffectCodec.decode_sound`).
+- **Decoding then encoding** writes the document read, up to the order of
+  object members (`EffectCodec.encode_decode`).
+- **Encoding keeps** both exits' frames, every formula, the promise and the
+  preconditions: the encoding is a function of the effect's own structure
+  (`EffectCodec.decode_encode`, read as injectivity).
+
+These are codec theorems; scope and certification are proved where they are
+checked.
+
+### Controls
+
+Forged documents: an effect with an arena reference at depth, out-of-scope
+entry and exit positions, a malformed transport, an unknown nested field, a
+repeated key. Forced through their consumers: a noncanonical transport, an
+unjustified stable image, a conjunction whose second exit reads the world,
+and an allocation-unstable proposal. Valid exceptional postconditions, rest
+sequences, nested conjunctions and transport overrides are decoded and
+written again, so that a narrowing of the grammar shows.
 
 ## Parallel implementation
 
