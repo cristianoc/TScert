@@ -1999,6 +1999,76 @@ function ensuresOf(e: Record<string, unknown>): unknown[] {
   return e.exits.normal.ensures;
 }
 
+control("forged effect: a noncanonical transport at coverage", async (): Promise<void> => {
+  // `map(Number)`: `Number`'s call signature covers `map`'s callback's
+  // (`Effect.covers`). `Number`'s effect given a transport postcondition
+  // of shift 1, a canonical one, is still covered; of shift 2, which the
+  // decoder reads but coverage's completion lemmas do not admit, the
+  // coverage is refused: the call `version.split(".").map(Number)` finds
+  // no derivation of its claim, the two documents differing in the shift
+  // alone.
+  const file = "number-value";
+  const unit = "parts@230";
+  const artifacts = run(file);
+  honest(file, unit);
+  const withTransport = (shift: number): Record<string, unknown> => {
+    const document = fragmentJson(artifacts);
+    const declarations = isObject(document.declarations) && Array.isArray(document.declarations.definitions)
+      ? document.declarations.definitions : [];
+    const number: unknown = declarations.find((d: unknown) => isObject(d) && isObject(d.declaration) && d.declaration.name === "Number");
+    let forgedCount = 0;
+    visitAll(isObject(number) ? number.expression : null, (node) => {
+      if (!isEffect(node)) return;
+      ensuresOf(node).push({ transport: { shift, overrides: [], boxed: false, stable: [] } });
+      forgedCount++;
+    });
+    assert.ok(forgedCount > 0, "Number's call signature");
+    return document;
+  };
+  accepted(pass(forged(artifacts, "transport-canonical", withTransport(1))), unit, "a canonical transport");
+  refused(pass(forged(artifacts, "transport-noncanonical", withTransport(2))), unit, "a transport of shift 2",
+    /source expression obligation at \[274,304\): evidence search failed: no derivation of its node-typing claim/);
+  say("forged effect: Number's signature with a canonical transport covers map's callback; with a transport of shift 2 the coverage is refused");
+});
+
+control("forged effect: a rest closure's statement past its scope or through a path", async (): Promise<void> => {
+  // A stated closure collecting a rest array, `sum = (...ns) => …`, is
+  // checked after its prologue allocates the rest, so its signature's frames
+  // read the heap at each location alone (`framesAtLocation`, the
+  // allocation's stability). Its statement re-stated as written is
+  // accepted.
+  const file = "method-effect-rest";
+  const artifacts = run(file);
+  const restate = (regions: StoreRegion[]): Record<string, unknown> => {
+    const document = fragmentJson(artifacts);
+    let stated = 0;
+    visitAll(document, (node) => {
+      if (node.k !== "lambda" || !isObject(node.stated)) return;
+      node.stated = statedExits({ footprint: { value: "keep", store: "keep" }, onThrow: false, fresh: false, regions });
+      stated++;
+    });
+    assert.equal(stated, 1, "sum's statement");
+    return document;
+  };
+  const honestRun = pass(forged(artifacts, "rest-body-restated", restate([])));
+  const units = [...honestRun.verdicts].filter(([, v]) => v.closed).map(([u]) => u);
+  assert.ok(units.length > 0 && [...honestRun.verdicts.values()].every((v) => v.closed), `restated: ${words(honestRun).slice(0, 1500)}`);
+  // Regions at the receiver, in scope at every arity: its own store, read
+  // at a location, is accepted; the store of its field `f`, read through
+  // the path, is refused at the code's obligations, where the two differ
+  // only in reading the heap at a location (`framesAtLocation`).
+  const own = pass(forged(artifacts, "rest-body-own-region", restate([{ position: 0, path: [] }])));
+  accepted(own, "init", "a region read at a location");
+  // A region at a position past the closure's arity, read at a location:
+  // the code's scope (`Effect.belowRow`) refuses it.
+  refused(pass(forged(artifacts, "rest-body-far-region", restate([{ position: 5, path: [] }]))), "init",
+    "a region past the arity", /single pass: refused: code 0: its signature/);
+  const p = pass(forged(artifacts, "rest-body-path-region", restate([{ position: 0, path: ["f"] }])));
+  refused(p, "init", "a rest body stated with a store region", /single pass: refused: code 0: its signature/);
+
+  say(`forged effect: a rest closure's statement re-stated accepted (${units.join(", ")}), with a region at a location accepted, with one past its arity or through a path refused at its code`);
+});
+
 /** The documents of a fragment: its own and each module's it carries. */
 function documentsOf(fragment: Record<string, unknown>): Record<string, unknown>[] {
   const modules = Array.isArray(fragment.modules) ? fragment.modules.filter(isObject) : [];
