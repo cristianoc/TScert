@@ -543,6 +543,12 @@ run_cmd do
   check ``Verification.PromiseCalls.keepsHeap_eq_fields
   check ``Verification.SinglePass.stepCertificate_grades
   check ``Verification.SinglePass.VisitRecord.of_grades
+  check ``Verification.SourceExtraction.ClassSummary.then_into
+  check ``Verification.SourceExtraction.ClassSummary.seq_into
+  check ``Verification.SourceExtraction.ClassSummary.project_covers
+  check ``Verification.SourceExtraction.ClassSummary.project_ofFormat
+  check ``Verification.SourceExtraction.ClassSummary.within_weakens
+  check ``Verification.SourceExtraction.ClassSummary.within_choice
   check ``Verification.TolerantFrames.pass_within_normal
   check ``Verification.TolerantFrames.pass_within_throw
   check ``Verification.TolerantFrames.pass_within_entry

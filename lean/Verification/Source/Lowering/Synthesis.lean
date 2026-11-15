@@ -1,5 +1,6 @@
 import Verification.Source.SourceExtraction
 import Verification.Source.Claims.Schemes
+import Verification.Source.Lowering.ExitProposals
 
 /-! # The types of a function's declarations and expressions, computed
 
@@ -89,18 +90,12 @@ structure Walk where
   hints : List (Span × Ty Tree) := []
   /-- Fresh call results whose later uses require the general array contract. -/
   generalCalls : List Span := []
-  /-- Whether the function literal being walked may change the heap: a write,
-  an assignment of a binding it does not declare, or a call whose instance
-  states another footprint than keeping both values and stores; and the
-  bindings it declares. -/
-  writes : Bool := false
-  /-- Whether a call in it may leave a changed heap on its throw: one whose
-  instance states no bound on a throw (`onThrow`). -/
-  throwWrites : Bool := false
-  /-- The changes it may make, by class of contents: to the old locations
-  holding a value, and to those holding an array store. -/
-  valueChange : Footprints.Change := .keep
-  storeChange : Footprints.Change := .keep
+  /-- The summary of the operations of the function literal being walked, at
+  the class level (`ClassSummary`): each operation it meets extends it
+  (`ClassSummary.extend`), its control flow composing them
+  ([proposed exit summaries](ExitProposals.lean)); and the bindings it
+  declares. -/
+  summary : ClassSummary := ClassSummary.skip
   locals : List String := []
   exprs : Std.HashMap Span (String × Except String (Ty Tree)) := {}
   /-- The expressions whose computed type a rule the lowering shares refuses
@@ -185,11 +180,6 @@ structure Walk where
   one's parameters and declarations no cell holds, `cellLocals`): a closure
   they hold sees each at the value it held when the closure was made. -/
   literalSlots : List String := []
-  /-- Whether a handler catches what the statements being walked throw. -/
-  caught : Bool := false
-  /-- Whether the body being walked is an async literal's: a throw in it
-  rejects the promise its call returns normally. -/
-  asyncBody : Bool := false
   /-- The constants in scope: a write of a key one's record may lack grows
   its type. -/
   consts : List String := []
@@ -1832,10 +1822,18 @@ partial def declaredIn (ss : List Stmt) : List String :=
     | _ => []
 end
 
-/-- The walk records a change of the heap. -/
-def wrote (value store : Footprints.Change := .any) : W Unit := do
-  modify fun w => { w with writes := true, valueChange := w.valueChange.max value, storeChange := w.storeChange.max store }
-  if value != .keep then modify fun w => { w with valueWrites := w.valueWrites + 1 }
+/-- The walk meets an operation of summary `op`: the summary walked so far
+extended by it (`ClassSummary.extend`); one whose normal exit may change a
+value location counts as a value write (`valueWrites`). -/
+def meets (op : ClassSummary) : W Unit := do
+  modify fun w => { w with summary := w.summary.extend op }
+  if op.normal.any (·.value != .keep) then modify fun w => { w with valueWrites := w.valueWrites + 1 }
+
+/-- The walk meets a write returning within the grade its typed-write rule
+accepts (`ExpressionEffects.writeGrades`: `value` on values, `store` on both
+kinds of store), and never throwing. -/
+def wrote (value store : Footprints.Change := .any) : W Unit :=
+  meets (.ofClosed (.ofStores value store))
 
 /-- An assignment of `n`: a change of the heap where the function literal
 being walked does not declare `n`, of its values (`value`: an initializing
@@ -3001,40 +2999,26 @@ def methodBinders (args : List Expr) (Ps : List (Ty Tree)) (As : List (Option (T
   return fromActuals
 
 /-- What a call at instance `inst` changes, recorded for a function
-literal's effect: its instance's footprint, a change of its receiver's store
-or elements, its fresh result and its throws (`applyCall`'s effects, read
-after the actuals are walked). -/
+literal's effect: the walk meets an operation whose summary is the
+instance's per-exit contract, each exit's frame read in the closed language
+below the call's entry with a fresh receiver's store discharged
+(`ClassSummary.ofEffect`, Fresh-Eff); its fresh result; whether it may change
+value locations (`changedValues`). A call whose instance's result is the
+empty type never returns normally: its normal exit is unreached, its throw
+its signature's, which a handler or an async body routes to their normal
+exits (`ClassSummary.handle`, `ClassSummary.settle`). (`TSCERT_FORCE=no-return`:
+the throw of such a call left out too, the adversarial proposal.) -/
 def callChanges (inst : CallEffects.Arrow (Ty Tree)) (receiverFresh : Bool) : W Unit := do
-  -- A call whose instance's result is the empty type never returns
-  -- normally: on a normal return it changes nothing; its throw is its
-  -- signature's (the producer's `no_return`,
-  -- expression_closures.ml:320; the pass's footprint of a
-  -- call decides the result's emptiness itself).
-  -- (but under a handler or in an async body, where its throw is caught and
-  -- the heap it leaves is a normal return's: source.ml:1166-1175,
-  -- expression_closures.ml:344)
-  -- (`TSCERT_FORCE=no-return`: also there, the adversarial proposal)
-  if inst.result.isEmpty && ((← get).force.contains "no-return" || (!(← get).caught && !(← get).asyncBody)) then
+  let returns := !inst.result.isEmpty
+  if !returns then
     modify fun w => { w with lastFresh := false }
-    if !inst.effect.onThrow then modify fun w => { w with throwWrites := true }
-    return
-  -- A call changing the heap, by its instance's footprint.
-  if inst.effect.footprint != ⟨.keep, .keep, .keep⟩ then wrote inst.effect.footprint.value inst.effect.footprint.stores
+    if (← get).force.contains "no-return" then return
+  meets (ClassSummary.ofEffect inst.effect (if receiverFresh then [0] else []) returns)
+  if !returns then return
   if inst.effect.footprint.value != .keep || inst.effect.receiverOwn || inst.effect.receiverStore ||
       inst.effect.elementWrite.isSome then
     modify fun w => { w with changedValues := true }
-  -- A change its receiver's store or elements state beside the footprint.
-  -- (a growing receiver within its footprint; one changing its own
-  -- locations at the values and its store's change; a receiver's store or
-  -- elements both).
-  if inst.effect.receiverOwn then wrote .any inst.effect.footprint.stores
-  -- (but a change of a receiver's store the run allocated, a constant
-  -- holding one, which its frame bounds: the producer's `receiver_fresh`,
-  -- source.ml:953-956, the checker's `Effect.within_below`)
-  if (inst.effect.receiverStore && !receiverFresh) || inst.effect.elementWrite.isSome then
-    wrote .any .any
   modify fun w => { w with lastFresh := inst.effect.fresh }
-  if !inst.effect.onThrow then modify fun w => { w with throwWrites := true }
 
 /-- A literal of no binders, rest or guard passed where the instance's
 parameter is one fixed signature binding more parameters than it, of
@@ -4019,9 +4003,11 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
     -- `undefined` (the producer's `NullishAssign`,
     -- Lean's initializing write); else it changes the values.
     let initializing := !(← get).locals.contains n
+    -- (an initializing write: within `{value: init}`,
+    -- `ExpressionEffects.initWriteWithin`, where its right operand changes
+    -- nothing, else a write of the value)
     assigns n (if initializing then .init else .any)
-    let before := (← get).writes
-    if initializing then modify fun w => { w with writes := false }
+    let before := (← get).summary
     recordAt namePos "identifier" (match env.vars.lookup n with
       | some A => .ok A
       | none => .error s!"'{n}' is bound outside what the walk sees")
@@ -4030,10 +4016,7 @@ partial def exprAt (env : Env) (e : Expr) (exp : Option (Ty Tree) := none) : W (
       | none => pure none
     if let some D := D then modify fun w => { w with hints := (rhs.span, D) :: w.hints }
     let (R, e1) ← expr env rhs D
-    if initializing then
-      let changed := (← get).writes
-      modify fun w => { w with writes := before || changed }
-      if changed then modify fun w => { w with valueChange := w.valueChange.max .any }
+    if initializing && (← get).summary.normal != before.normal then wrote .any .keep
     let r ← attempt e do
       let some L := env.vars.lookup n | throw s!"'{n}' is bound outside what the walk sees"
       joinTy (← nonNullish L) (← need R "the right operand")
@@ -4322,14 +4305,11 @@ partial def exprCall (env : Env) (e : Expr) (exp : Option (Ty Tree)) : W (Option
     modify fun w => { w with changedValues := false }
     let r ← match r with
       | .ok (eff, R) => do
-        -- The call changes the heap by its signature's footprint, as a call's
-        -- instance does (`applyCall`).
-        if eff.footprint != ⟨.keep, .keep, .keep⟩ then wrote eff.footprint.value eff.footprint.stores
+        -- The call is an operation of its signature's per-exit contract, as
+        -- a call's instance is (`callChanges`).
+        meets (ClassSummary.ofEffect eff [])
         if eff.footprint.value != .keep || eff.receiverOwn || eff.receiverStore || eff.elementWrite.isSome then
           modify fun w => { w with changedValues := true }
-        if eff.receiverOwn then wrote .any eff.footprint.stores
-        if eff.receiverStore || eff.elementWrite.isSome then wrote .any .any
-        if !eff.onThrow then modify fun w => { w with throwWrites := true }
         pure (Except.ok R)
       | .error m => pure (Except.error m)
     let v ← record e r
@@ -5100,11 +5080,11 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
     | x => [.effect x.span x]
   let cells := (cellLocals (params.map (·.1)) bodyStmts).map (·.1)
   inner := { inner with cells := inner.cells ++ cells }
-  modify fun w => { w with writes := false, throwWrites := false, valueChange := .keep, storeChange := .keep, locals := declared, inLiteral := true,
+  modify fun w => { w with summary := ClassSummary.skip, locals := declared, inLiteral := true,
                            literalSlots := declared.filter (!cells.contains ·) ++ w.literalSlots, heldCells := cells ++ w.heldCells }
   -- The contextual result guides async resolution calls as well as ordinary
   -- returns, before their stores are made.
-  modify fun w => { w with returns := [], expected := (if rowInterior then expectedResult else written <|> expectedResult), asyncBody := async }
+  modify fun w => { w with returns := [], expected := (if rowInterior then expectedResult else written <|> expectedResult) }
   -- An expression body's entry is its prologue's, at the body's start.
   modify fun w => { w with entries := w.entries.insert body.span.1 inner.vars }
   -- Each default runs at a call omitting its argument, before the body: its
@@ -5125,8 +5105,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
     if let (some (n, _), some D) := (params[i]?, if open_ then B else D) then
       inner := { inner with vars := upd inner.vars n D, decl := upd inner.decl n D }
   if (← get).force.contains "defaults" then
-    modify fun w => { w with writes := beforeDefaults.writes, throwWrites := beforeDefaults.throwWrites }
-    modify fun w => { w with valueChange := beforeDefaults.valueChange, storeChange := beforeDefaults.storeChange }
+    modify fun w => { w with summary := beforeDefaults.summary }
   let R ← match body with
     | .block _ ss => do
       let done ← stmts (some inner) ss
@@ -5140,25 +5119,28 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
       modify fun w => { w with lastFresh := false }
       let (A, _) ← expr inner x (← get).expected
       pure A
-  -- A body that changes nothing keeps both values and stores: the
-  -- footprint its calls are checked at (the producer's inferred effect).
-  let pure_ := !(← get).writes
-  -- One that also calls nothing leaving a changed heap on its throw keeps
-  -- them on a throw too (`onThrow`).
+  -- The body's summary (`ClassSummary`): closed under another traversal of
+  -- its loops (`ClassSummary.close`), an async body's throw a normal return
+  -- of its call (`ClassSummary.settle`). Its proposal in today's format is
+  -- its projection (`ClassSummary.project`), an upper bound at each exit
+  -- (`ClassSummary.project_covers`): the normal exit's bound, its throw
+  -- bounded where the exceptional exit's bound is within it and, at a
+  -- callback, the parameter's exceptional exit is bounded.
+  let S := (← get).summary.close
+  let S := if async then S.settle else S
   -- An expression body calling a function whose instance states a fresh
   -- result returns a fresh store (the producer's `fresh_result`,
-  -- source.ml:1230).
+  -- source.ml:1230): a postcondition established apart from the summary.
   let freshResult := (match body with | .call .. | .invoke .. => true | _ => false) && (← get).lastFresh
-  let kept : CallEffects.Effect :=
-    { CallEffects.Effect.ofFootprint ⟨.keep, .keep, .keep⟩ with onThrow := !(← get).throwWrites, fresh := freshResult }
-  -- One that changes the heap at the classes of contents its writes and
-  -- calls change.
-  let changed : CallEffects.Effect :=
-    { CallEffects.Effect.ofFootprint (.ofStores (← get).valueChange (← get).storeChange) with
-      onThrow := !(← get).throwWrites, fresh := freshResult }
+  let proposal := fun (bounded : Bool) => ({ S.project bounded with fresh := freshResult } : CallEffects.Effect)
+  -- A body whose proposal keeps both values and stores: the footprint its
+  -- calls are checked at.
+  let kept := proposal true
+  let pure_ := kept.closed == .empty
+  let changed := kept
   modify fun w => { w with breaks := saved.breaks, returns := saved.returns, held := saved.held, expected := saved.expected, literalSlots := saved.literalSlots, heldCells := saved.heldCells, evolving := saved.evolving, holders := saved.holders }
-  modify fun w => { w with writes := saved.writes, throwWrites := saved.throwWrites, locals := saved.locals, inLiteral := saved.inLiteral }
-  modify fun w => { w with valueChange := saved.valueChange, storeChange := saved.storeChange, lastBody := R, asyncBody := saved.asyncBody }
+  modify fun w => { w with summary := saved.summary, locals := saved.locals, inLiteral := saved.inLiteral }
+  modify fun w => { w with lastBody := R }
   -- Async returns are already the fragment's resolution calls, including
   -- returns in a block. Their walked
   -- result is a proposal checked at each body return.
@@ -5204,9 +5186,13 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
         -- A callback that changes the heap at its own effect, never the
         -- parameter's: the call's signature is chosen by it (`applyCall`;
         -- the producer's footprint at every row it claims,
-        -- expression_closures.ml:348-351, 400-406), without its bound on a
-        -- throw where the parameter states none.
-        else pure { a with result := R, effect := if a.effect.onThrow then changed else { changed with onThrow := false } }
+        -- expression_closures.ml:348-351, 400-406), its throw bounded where
+        -- the parameter's exceptional exit is (`ClassSummary.project`).
+        else
+          let bounded := Footprints.Footprint.boundBelow [] (a.effect.summary 0).exceptional.frame != .top
+          pure { a with result := R, effect := match stated with
+            | some s => { s with pre := requires, onThrow := s.onThrow && bounded }
+            | none => { proposal bounded with pre := requires } }
       -- Any other literal at its own parameters and written receiver (a
       -- method's `this`), else a receiver admitting every value.
       | none => do pure ⟨← match thisTy with
@@ -5679,13 +5665,14 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     if !env.ghost then modify fun w => { w with returns := w.returns ++ [A] }
     return none
   | .throw _ x =>
-    let before ← get
+    let before := (← get).summary
     let _ ← expr env x
-    -- With no enclosing handler and outside async completion, neither
-    -- the throw nor its operand has a normal exit.
-    -- Keep its throw effect, and every expression claim, for the checker.
-    if !before.caught && !before.asyncBody then
-      modify fun w => { w with writes := before.writes, valueChange := before.valueChange, storeChange := before.storeChange }
+    -- The operand's operations, then a throw (`ClassSummary.raise`): the
+    -- path ends, its operations reaching the exceptional exit alone (an
+    -- enclosing handler or async body routes it, `ClassSummary.handle`,
+    -- `ClassSummary.settle`).
+    meets ClassSummary.raise
+    modify fun w => { w with summary := { w.summary with normal := before.normal } }
     return none
   | .effect _ x =>
     let added := match x with
@@ -5983,18 +5970,17 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
           recordAt (p.1, p.1 + "for".length) "identifier" (.ok F)
           recordAt p "call" ((·.2) <$> r)
           stepper := ((·.2) <$> r).toOption
-    -- For a declaration's footprint, the iteration changes what its
-    -- intrinsic's call states (`applyCall`) and what each step of the
-    -- stepper it gives does: the values where a step changes its receiver's
-    -- own locations, the iterator the call made, else its footprint (the
-    -- producer's `iteration_footprint`); an iteration
-    -- whose stepper the walk does not determine may change anything.
+    -- For a declaration's footprint, the iteration is the operation its
+    -- intrinsic's call states (`applyCall`) and each step of the stepper it
+    -- gives: an operation of the step's per-exit contract, its receiver the
+    -- iterator the call made, a fresh store (`ClassSummary.ofEffect` at
+    -- position `0`, Fresh-Eff); an iteration whose stepper the walk does not
+    -- determine may change anything.
     if !(← get).force.contains "steps" then
       if let some N := stepper then
         let G ← StateT.lift graphNow
         if let some eff := ((ProgramTyping.callSigs G N).map (·.effect)).head? then
-          if eff.receiverOwn then wrote .any eff.footprint.stores
-          else if eff.footprint != ⟨.keep, .keep, .keep⟩ then wrote eff.footprint.value eff.footprint.stores
+          meets (ClassSummary.ofEffect eff [0])
     let exit := loopHead e1 body
     let head := match stepper with
       | some N => { exit with vars := upd exit.vars s!"%next@{p.1}%" N, decl := upd exit.decl s!"%next@{p.1}%" N }
@@ -6044,24 +6030,22 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
     let keep := keepPaths kept
     return join (some (keep exit)) (out.map fun o => keep { o with vars := o.vars.filter (·.1 != s!"%next@{p.1}%") })
   | .tryStmt p body handler finalizer =>
-    let outer := (← get).caught
-    -- A handler with no normal exit, and no finalizer: what the body's
-    -- throws leave reaches no normal return, so the body is walked as
-    -- outside it, and the handler's changes are no part of the footprint of
-    -- a normal return; a throw it leaves may change what they change (the
-    -- producer's `Try` of a `throw_only_stmts` handler).
-    let rethrows := finalizer.isNone && (handler.any fun (_, hs) => throwOnly hs)
+    -- A handler with no normal exit (the producer's `throw_only_stmts`):
+    -- the statement returns only where its body does.
+    let rethrows := handler.any fun (_, hs) => throwOnly hs
     -- A finalizer that only falls through or throws completes normally only
     -- where the guarded block did: after a throw it throws again, so it
-    -- catches nothing (the producer's `Try` of a finalizer that does not
-    -- leave).
+    -- catches nothing; one that may leave may end a throw's path normally.
     let finalizerLeaves := finalizer.any leaves
-    if (handler.isSome || finalizerLeaves) && !rethrows then modify fun w => { w with caught := true }
+    -- The body's summary from the statement's entry, its throws its own
+    -- (`ClassSummary.handle`).
+    let S0 := (← get).summary
+    modify fun w => { w with summary := ⟨S0.normal, none⟩ }
     -- The jumps and returns the statement's body and handler leave by (each
     -- through the finalizer: a copy of it per route, `SourceFlow.sequence`).
     let w0 ← get
     let b ← stmts (some env) body
-    modify fun w => { w with caught := outer || finalizerLeaves }
+    let B := (← get).summary
     -- A handler's entry: each binding the body assigns at its declared
     -- type, and each cell (a throw keeps no current-content fact).
     let reset := cellsDeclared (← get) (loopHead env body)
@@ -6071,17 +6055,24 @@ partial def stmt (env : Env) (s : Stmt) : W (Option Env) := do
         let hEnv := match param with
           | some (n, _) => { reset with vars := upd reset.vars n unknown, decl := upd reset.decl n unknown }
           | none => reset
-        let before ← get
+        -- The handler starts where the body throws: a caught throw's path
+        -- continues in it (`ClassSummary.handle`), every path walked so far
+        -- kept.
+        modify fun w => { w with summary := ⟨ClassSummary.alt B.normal B.exceptional, none⟩ }
         let r ← stmts (some hEnv) hs
-        if rethrows then
-          modify fun w =>
-            let grew := w.valueChange != before.valueChange || w.storeChange != before.storeChange ||
-              (w.writes && !before.writes)
-            { w with writes := before.writes, valueChange := before.valueChange,
-                     storeChange := before.storeChange, throwWrites := w.throwWrites || grew }
+        let H := (← get).summary
+        -- It returns where the body or the handler does, the handler where
+        -- it has a normal exit; it throws where the handler does.
+        modify fun w => { w with summary := ⟨if rethrows then B.normal else H.normal,
+          ClassSummary.alt S0.exceptional H.exceptional⟩ }
         pure r
-      | none => pure none
-    modify fun w => { w with caught := outer }
+      | none =>
+        -- With no handler, the body's throws are the statement's.
+        modify fun w => { w with summary := ⟨B.normal, ClassSummary.alt S0.exceptional B.exceptional⟩ }
+        pure none
+    -- (a finalizer that may leave ends a throw's path normally)
+    if finalizerLeaves then
+      modify fun w => { w with summary := { w.summary with normal := ClassSummary.alt w.summary.normal w.summary.exceptional } }
     let joined := if handler.isSome then join b h else b
     match finalizer with
     | some fs =>

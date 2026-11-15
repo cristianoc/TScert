@@ -481,8 +481,11 @@ steps establish, until they establish no more. A function with a written
 effect keeps its footprint and throw bound whole, its steps proposing its
 returned function's footprint. An async function keeps `top`, the language's
 restriction ([the fragment](SOURCE-FRAGMENT.md)). A function literal's
-effect is found by the walk's grades (`Walk.valueChange`,
-`Walk.storeChange`, `Synthesis.callChanges` in `Synthesis.lean`). A method call on an object whose type has several
+effect is proposed from a summary of each operation its body walks, composed
+along its control flow at the class level (`ClassSummary`,
+`lean/Verification/Source/Lowering/ExitProposals.lean`, and
+`Synthesis.callChanges`), then projected into the closed footprint and throw
+bound (`ClassSummary.project`). A method call on an object whose type has several
 alternatives once each declaration it names is unfolded, with actuals that
 are names or literals, may be lowered to one node dispatched on the object
 (`Lowering.dispatchesCall`), which no bounded node rule above admits; a

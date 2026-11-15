@@ -108,7 +108,7 @@ This design preserves the semantic property, and claims no unchanged proof for a
 
 ## 6. What disappears
 
-`declarationWalks` as an effect-analysis traversal, its `returnedFootprint` collection, and the effect-grading state and operations in `Synthesis`: `valueChange`, `storeChange`, `throwWrites`, `wrote`, `callChange`, `targetWrite`, and the corresponding construct grades (`F/Claims/FragmentFront.lean`, `returnedFootprint`, `declarationWalks`; `F/Lowering/Synthesis.lean:99,1823–1851`). Function literals obtain effects through their own checked bodies before their grading machinery can go (`F/Lowering/Synthesis.lean`, the function literal's effect).
+`declarationWalks` as an effect-analysis traversal, its `returnedFootprint` collection, and the effect-proposal operations in `Synthesis` (`wrote`, `callChanges`, `targetWrite`, which extend a literal's per-exit summary `Walk.summary`), and the corresponding construct grades (`F/Claims/FragmentFront.lean`, `returnedFootprint`, `declarationWalks`; `F/Lowering/Synthesis.lean`, `meets`). Function literals obtain effects through their own checked bodies before their grading machinery can go (`F/Lowering/Synthesis.lean`, the function literal's effect).
 
 In the C2 inventory ([on-demand processing, section 9](on-demand-processing.md#proposal-c2)):
 

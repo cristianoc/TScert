@@ -180,23 +180,19 @@ literal with an array rest is stated at its rest arrow, the pack of the
 rest's element, at its written effect else the ordinary one
 (`ClosureSetup`'s own signature of an array rest); a rest of a tuple of
 required positions is one fixed parameter per position. Its effect is the one
-it writes (`Modifies<…>`); else the footprint keeping values and stores
-where the walk sees no write, assignment or call changing the heap, else
-the closed footprint of the classes of contents its writes and calls
-change (an assignment of a binding it does not declare or a field write
-the values, `x ??= v` of such a binding whose `v` changes nothing its
-initialization, `init`; an element write the values and a store's growth;
-a `for...of` what each step of its stepper's first signature does, the
-values and its store's change where the step changes its receiver's own
-locations (a native iterator's position), else the step's footprint
-(`TSCERT_FORCE=steps` leaves the steps out, the adversarial proposal); an array's
-`length`, and a call changing a receiver's store or elements, both,
-but a call changing the store of a constant holding a store the run
-allocated (one initialized by a call whose instance states a fresh
-result, or by such a constant); a call changing its receiver's own
-locations the values and its store's change; any other call its
-instance's footprint); it bounds a throw (`onThrow`) where none of its
-calls states a throw left unbounded; and an expression body that is a
+it writes (`Modifies<…>`); else the projection of its body's per-exit
+summary ([definition and application rules](SOURCE-ELABORATION.md#definition-and-application-rules)):
+each write at the grade its rule accepts (an assignment of a binding it does
+not declare or a field write the values, `x ??= v` of such a binding whose
+`v` changes nothing `init`; an element write the values and a store's
+growth; an array's `length` both), each call at its instance's per-exit
+contract read below the call's entry, the store of a constant holding a
+store the run allocated (one initialized by a call whose instance states a
+fresh result, or by such a constant) discharged; a `for...of` each step of
+its stepper's first signature, its receiver the iterator the call made
+(`TSCERT_FORCE=steps` leaves the steps out, the adversarial proposal);
+composed along its control flow; its footprint the normal exit's bound, a
+throw bounded where the exceptional exit's bound is within it; and an expression body that is a
 call whose instance states a fresh result states one. `TSCERT_FORCE=fresh` takes every named receiver as
 such a constant, the adversarial proposal. A
 generic function literal (one writing type parameters, a class's generic
@@ -225,7 +221,7 @@ scheme. Any generic literal a walk meets before the scheme rows are made (a
 declaration's footprint, the initialization's walk), is walked at its own
 parameters as any other literal. A
 callback is stated at that effect on every row it offers, never at its
-parameter's (without `onThrow` where the parameter states none). Of a call's several
+parameter's (its throw unbounded where the parameter's exceptional exit is). Of a call's several
 signatures, each callback is walked first at the first one's parameter
 under the binders its receiver and other actuals give, and the signature
 chosen is the first whose parameters admit the walked actuals and whose
