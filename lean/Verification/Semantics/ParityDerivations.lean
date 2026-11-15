@@ -141,6 +141,17 @@ inductive OperationPost where
   | arith (op : Arith) (left right : Witness) (result : Path)
   | stringLength (string result : Path)
   | stringRead (string : Path) (index : Witness) (result : Path)
+  /-- A write keeping every array store's length, the array at entry slot
+  `x` and exit slot `x'` (`ExpressionEffects.elem_var_write_length`). -/
+  | lengthsKept (x x' : Nat)
+  /-- A write at the index in entry slot `i` of the array at entry slot `x`
+  (exit slot `x'`): the index is below the store's new length, the length
+  grows to at most `index + 1`, by one where the index was at or past it
+  (`IndexWrites.boundedWrite_store`). -/
+  | boundedWrite (x i x' : Nat)
+  /-- An append of the argument values to the array at entry slot `x`
+  (exit slot `x'`): the assumed contract `CallEffects.ReceiverAppends`. -/
+  | push (x x' : Nat) (args : List Witness)
   deriving DecidableEq
 
 def OperationPost.Holds (s : TwoState) : OperationPost → Prop
@@ -151,6 +162,18 @@ def OperationPost.Holds (s : TwoState) : OperationPost → Prop
       y.read s.afterEnv s.after.h = some (.num (bitsOfNat (utf16Units str).length))
   | .stringRead x i y => ∃ str b, x.read s.afterEnv s.after.h = some (.str str) ∧
       i.value s.afterEnv s.after.h = some (.num b) ∧ y.read s.afterEnv s.after.h = some (codeUnitAt str b)
+  | .lengthsKept x x' => (⟨true, true, .length⟩ : Changes).Holds s.before.h s.after.h ∧ s.afterEnv x' = s.beforeEnv x
+  | .boundedWrite x i x' => (∃ st ls ls' b idx, storeOf (s.beforeEnv x) = some st ∧ s.before.h[st]? = some (.arr ls) ∧
+      s.after.h[st]? = some (.arr ls') ∧ s.beforeEnv i = .num b ∧ indexOfBits b = some idx ∧ idx < ls'.length ∧
+      ls'.length ≤ max ls.length (idx + 1) ∧ (ls.length ≤ idx → ls'.length = ls.length + 1)) ∧
+      s.afterEnv x' = s.beforeEnv x
+  | .push x x' args => ∃ vs, args.mapM (·.value s.beforeEnv s.before.h) = some vs ∧ (∀ a ∈ vs, isVal a = true) ∧
+      CallEffects.ReceiverAppends (s.beforeEnv x) vs s.before.h s.after.h ∧ s.afterEnv x' = s.beforeEnv x
+
+/-- Whether a post reads the entry state. -/
+def OperationPost.readsBefore : OperationPost → Bool
+  | .lengthsKept .. | .boundedWrite .. | .push .. => true
+  | _ => false
 
 /-- **Two-state formulas** (I4, `Formula`): an assertion at one phase, the
 action of an effect from the entry to the exit (the note's `tr_Φ`, §6,
@@ -355,6 +378,22 @@ def linearCheck (Fs : List (Linear.Fact StepVar)) (defs : List StepVar) (steps :
     | some out => out.contains G
     | none => false) && G.vars.all fun x => defs.contains x || Fs.any fun F => F.vars.contains x
 
+/-! ## The exact postconditions of writes -/
+
+/-- The length of the array at entry slot `x`. -/
+def lenB (x : Nat) : StepVar := .before (Term.length x)
+/-- The length of the array at exit slot `x`. -/
+def lenA (x : Nat) : StepVar := .after (Term.length x)
+
+/-- `|x'| = old(|x|) + k`. -/
+def lengthStep (x x' : Nat) (k : Int) : Formula :=
+  conj [.linear (.le [(lenA x', 1), (lenB x, -1)] k), .linear (.le [(lenB x, 1), (lenA x', -1)] (-k))]
+
+/-- `i = old(|x|)` and `old(|x|) < N`: Write-End's premise. -/
+def atEndFacts (x i : Nat) : Formula :=
+  conj [.linear (.le [(.before (Term.value i), 1), (lenB x, -1)] 0),
+    .linear (.le [(lenB x, 1), (.before (Term.value i), -1)] 0), .linear (.le [(lenB x, 1)] (maxArrayLength - 1))]
+
 /-! ## Reading a formula one slot further -/
 
 /-- A two-state variable of phase `p` read one slot further. -/
@@ -366,6 +405,9 @@ def OperationPost.shift : OperationPost → OperationPost
   | .arith op l r y => .arith op l.shift r.shift ⟨y.root + 1, y.fields⟩
   | .stringLength x y => .stringLength ⟨x.root + 1, x.fields⟩ ⟨y.root + 1, y.fields⟩
   | .stringRead x i y => .stringRead ⟨x.root + 1, x.fields⟩ i.shift ⟨y.root + 1, y.fields⟩
+  | .lengthsKept x x' => .lengthsKept x (x' + 1)
+  | .boundedWrite x i x' => .boundedWrite x i (x' + 1)
+  | .push x x' args => .push x (x' + 1) args
 
 /-- **`F'` is `F` with the valuation of phase `p` read one slot further**:
 assertions by the shift substitution of the slots below `n`, terms of phase
@@ -376,7 +418,7 @@ def shiftFormula (nodes : Array AssertionNode) (p : Phase) (n : Nat) : Formula �
   | .linear F, .linear F' => F' == renameFact (shiftVar p) F
   | .defined v, .defined v' => v' == shiftVar p v
   | .transition Φ, .transition Φ' => if p = .before then Φ' == Footprint.rename (· + 1) Φ else Φ' == Φ
-  | .operation q, .operation q' => if p = .after then q' == q.shift else q' == q
+  | .operation q, .operation q' => if p = .after then q' == q.shift else !q.readsBefore && q' == q
   | .transport θ, .transport θ' => p == .after && !θ.boxed && θ' == ⟨θ.images.map Witness.shift, false⟩
   | .and F G, .and F' G' => shiftFormula nodes p n F F' && shiftFormula nodes p n G G'
   | .truth, .truth => true
@@ -638,6 +680,24 @@ inductive Derivation (arena : AssertionArena) : List Formula → Formula → Typ
   | stringConcat {Γ} (x z y : Path) (dop : Derivation arena Γ (.operation (.arith .add (.path x) (.path z) y)))
       (dx : Derivation arena Γ (.linear (.le [(alen x, -1)] 0)))
       (dz : Derivation arena Γ (.linear (.le [(alen z, -1)] 0))) : Derivation arena Γ (concatFacts x z y)
+  /-- **Write-In** (the note, §6, "Exact postconditions"): a write keeping
+  the stores' lengths gives `|x| = old(|x|)`. -/
+  | writeIn {Γ} (x x' : Nat) (dop : Derivation arena Γ (.operation (.lengthsKept x x')))
+      (dl : Derivation arena Γ (.defined (lenB x))) : Derivation arena Γ (lengthStep x x' 0)
+  /-- **Write-End** (the note, §6, "Exact postconditions"), its length:
+  `i = |x| ∧ i < N` gives `|x| = old(|x|) + 1`. The element read `x[i] ≐ v`
+  and the dense prefix are not stated: an ordinary array's element has no
+  atom, and the dense prefix no theorem. -/
+  | writeEnd {Γ} (x i x' : Nat) (dop : Derivation arena Γ (.operation (.boundedWrite x i x')))
+      (de : Derivation arena Γ (atEndFacts x i)) : Derivation arena Γ (lengthStep x x' 1)
+  /-- **Push** (the note, §6, "Exact postconditions"), its length, from the
+  assumed contract `ReceiverAppends`: `|x| + k ≤ N` gives
+  `|x| = old(|x|) + k` for `k` arguments. `y = |x|` is not stated: no
+  theorem gives it. -/
+  | pushPost {Γ} (x x' : Nat) (args : List Witness) (dop : Derivation arena Γ (.operation (.push x x' args)))
+      (dl : Derivation arena Γ (.defined (lenB x)))
+      (dm : Derivation arena Γ (.linear (.le [(lenB x, 1)] (maxArrayLength - args.length)))) :
+      Derivation arena Γ (lengthStep x x' args.length)
 
 /-! ## Raw derivations and their check -/
 
@@ -709,6 +769,9 @@ inductive RawDerivation where
   | stringLengthRead (x y : Path) (dop : RawDerivation)
   | stringRead (x i y : Path) (dop di : RawDerivation)
   | stringConcat (x z y : Path) (dop dx dz : RawDerivation)
+  | writeIn (x x' : Nat) (dop dl : RawDerivation)
+  | writeEnd (x i x' : Nat) (dop de : RawDerivation)
+  | pushPost (x x' : Nat) (args : List Witness) (dop dl dm : RawDerivation)
 
 /-- The node at a reference, where it is the stated one. -/
 private def node? (arena : AssertionArena) (a : AssertionRef) (n : AssertionNode) :
@@ -1140,6 +1203,19 @@ def checkDerivation (arena : AssertionArena) (premises : List Formula) (goal : F
       (← checkDerivation arena premises (.operation (.arith .add (.path x) (.path z) y)) dop)
       (← checkDerivation arena premises (.linear (.le [(alen x, -1)] 0)) dx)
       (← checkDerivation arena premises (.linear (.le [(alen z, -1)] 0)) dz))
+  | .writeIn x x' dop dl => do
+    let ⟨hg⟩ ← req (goal = lengthStep x x' 0) "writeIn: goal is not the kept length"
+    pure (hg.symm ▸ .writeIn x x' (← checkDerivation arena premises (.operation (.lengthsKept x x')) dop)
+      (← checkDerivation arena premises (.defined (lenB x)) dl))
+  | .writeEnd x i x' dop de => do
+    let ⟨hg⟩ ← req (goal = lengthStep x x' 1) "writeEnd: goal is not the grown length"
+    pure (hg.symm ▸ .writeEnd x i x' (← checkDerivation arena premises (.operation (.boundedWrite x i x')) dop)
+      (← checkDerivation arena premises (atEndFacts x i) de))
+  | .pushPost x x' args dop dl dm => do
+    let ⟨hg⟩ ← req (goal = lengthStep x x' args.length) "pushPost: goal is not the appended length"
+    pure (hg.symm ▸ .pushPost x x' args (← checkDerivation arena premises (.operation (.push x x' args)) dop)
+      (← checkDerivation arena premises (.defined (lenB x)) dl)
+      (← checkDerivation arena premises (.linear (.le [(lenB x, 1)] (maxArrayLength - args.length))) dm))
 
 
 /-! ## Soundness of the arithmetic rules -/
@@ -1563,9 +1639,20 @@ theorem stepValue_shiftVar (s : TwoState) (p : Phase) (x : Val) (v : StepVar) :
   cases p <;> cases v <;> rfl
 
 theorem OperationPost.holds_shift (s : TwoState) (x : Val) (q : OperationPost) :
-    q.shift.Holds (s.withEnv .after (push x (s.env .after))) ↔ q.Holds s := by
-  cases q <;> simp only [OperationPost.shift, OperationPost.Holds, TwoState.withEnv, TwoState.env,
-    Witness.value_shift] <;> rfl
+    q.shift.Holds (s.withEnv .after (Verification.push x (s.env .after))) ↔ q.Holds s := by
+  cases q with
+  | arith op l r y =>
+    simp only [OperationPost.shift, OperationPost.Holds, TwoState.withEnv, TwoState.env, Witness.value_shift]; rfl
+  | stringLength x y => rfl
+  | stringRead x' i y =>
+    simp only [OperationPost.shift, OperationPost.Holds, TwoState.withEnv, TwoState.env, Witness.value_shift]; rfl
+  | lengthsKept _ _ => rfl
+  | boundedWrite _ _ _ => rfl
+  | push _ _ _ => rfl
+
+theorem OperationPost.holds_before (s : TwoState) (η : Env) {q : OperationPost} (hq : q.readsBefore = false) :
+    q.Holds (s.withEnv .before η) ↔ q.Holds s := by
+  cases q <;> first | rfl | simp [OperationPost.readsBefore] at hq
 
 /-- **A formula read one slot further holds where the formula holds at the
 valuation without the eigenvariable.** -/
@@ -1604,8 +1691,9 @@ theorem holds_shiftFormula {arena : AssertionArena} {p : Phase} {n : Nat} {s : T
   | .operation q, .operation q', h => by
     simp only [shiftFormula] at h
     cases p
-    · simp only [reduceCtorEq, if_false, beq_iff_eq] at h
-      subst h; exact Iff.rfl
+    · simp only [reduceCtorEq, if_false, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at h
+      obtain ⟨hq, rfl⟩ := h
+      exact OperationPost.holds_before s _ hq
     · simp only [if_true, beq_iff_eq] at h
       subst h; exact OperationPost.holds_shift s x q
   | .transport θ, .transport θ', h => by
@@ -1655,6 +1743,25 @@ theorem holds_shiftFormula {arena : AssertionArena} {p : Phase} {n : Nat} {s : T
   | .falsity, .at _ _, h | .falsity, .transition _, h | .falsity, .operation _, h | .falsity, .linear _, h
   | .falsity, .defined _, h | .falsity, .transport _, h | .falsity, .and _ _, h | .falsity, .truth, h => by
     simp [shiftFormula] at h
+
+private theorem mapM_length {α β : Type} {f : α → Option β} :
+    ∀ {l : List α} {l' : List β}, l.mapM f = some l' → l'.length = l.length
+  | [], l', h => by simp at h; subst h; rfl
+  | a :: t, l', h => by
+    simp only [List.mapM_cons, Option.bind_eq_bind, Option.bind_eq_some_iff, Option.pure_def,
+      Option.some.injEq] at h
+    obtain ⟨b, -, t', ht, rfl⟩ := h
+    simp [mapM_length ht]
+
+/-- `|x'| = old(|x|) + k` where the two lengths are `L` and `L + k`. -/
+theorem lengthStep_of {arena : AssertionArena} {s : TwoState} {x x' : Nat} {k L : Int}
+    (hb : stepValue s (lenB x) = some L) (ha : stepValue s (lenA x') = some (L + k)) :
+    Holds arena s (lengthStep x x' k) := by
+  simp only [lengthStep, conj, Holds]
+  refine ⟨⟨?_, ?_⟩, ⟨?_, ?_⟩, trivial⟩
+  all_goals first
+    | (simp [Linear.Fact.vars, ha, hb]; done)
+    | (simp only [Linear.Fact.Holds, Linear.Form.eval, ha, hb, Option.getD_some]; omega)
 
 /-- **The common consequence theorem** (I4, `Derivation.sound`): a checked
 derivation's conclusion holds at every two-state where its premises hold. -/
@@ -1952,6 +2059,55 @@ theorem Derivation.sound {arena : AssertionArena} (hv : arena.Valid) {Γ : List 
       all_goals first
         | (simp [Linear.Fact.vars, hnx, hnz, hyv]; done)
         | (simp only [Linear.Fact.Holds, Linear.Form.eval, hnx, hnz, hyv, Option.getD_some]; omega)
+  | writeIn x x' _ _ ihop ihl =>
+    intro s hΓ
+    obtain ⟨hc, hx'⟩ := ihop s hΓ
+    obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (ihl s hΓ)
+    have hn' : lengthOf s.before.h (s.beforeEnv x) = some n := hn
+    obtain ⟨st, ls, hst, hls, rfl, hm⟩ := lengthOf_store hn'
+    obtain ⟨ls', hls', hlen⟩ := hc.2.1 rfl st ls hls
+    refine lengthStep_of (L := ls.length) hn ?_
+    show lengthOf s.after.h (s.afterEnv x') = _
+    rw [hx', lengthOf_of_store hst hls' (by omega), hlen]; simp
+  | writeEnd x i x' _ _ ihop ihe =>
+    intro s hΓ
+    obtain ⟨⟨st, ls, ls', b, idx, hst, hls, hls', hb, hidx, hlt, hmx, hgrow⟩, hx'⟩ := ihop s hΓ
+    have he := ihe s hΓ
+    simp only [atEndFacts, conj, Holds] at he
+    obtain ⟨h1, h2, h3, -⟩ := he
+    obtain ⟨k, hk⟩ := factAt_defined h1 (x := .before (Term.value i)) (by simp [Linear.Fact.vars])
+    obtain ⟨n, hn⟩ := factAt_defined h1 (x := lenB x) (by simp [Linear.Fact.vars])
+    have e1 := h1.2
+    have e2 := h2.2
+    have e3 := h3.2
+    simp only [Linear.Fact.Holds, Linear.Form.eval, hk, hn, Option.getD_some] at e1 e2 e3
+    have hn' : lengthOf s.before.h (s.beforeEnv x) = some n := hn
+    obtain ⟨st', ls0, hst', hls0, rfl, -⟩ := lengthOf_store hn'
+    rw [hst] at hst'; cases hst'
+    rw [hls] at hls0; cases hls0
+    have hk' : intValue (s.beforeEnv i) = some k := hk
+    rw [hb] at hk'
+    have hsafe := SafeIntegers.safeIntOfBits_sound hk'
+    have hidx' := indexOfBits_safe hsafe (by omega) (by simp [maxArrayLength] at e3 ⊢; omega)
+    rw [hidx] at hidx'; cases hidx'
+    have hl' := hgrow (by omega)
+    refine lengthStep_of (L := ls.length) hn ?_
+    show lengthOf s.after.h (s.afterEnv x') = _
+    rw [hx', lengthOf_of_store hst hls' (by simp [maxArrayLength] at e3 ⊢; omega), hl']; simp
+  | pushPost x x' args _ _ _ ihop ihl ihm =>
+    intro s hΓ
+    obtain ⟨vs, hvs, hval, happ, hx'⟩ := ihop s hΓ
+    obtain ⟨n, hn⟩ := Option.isSome_iff_exists.mp (ihl s hΓ)
+    have hn' : lengthOf s.before.h (s.beforeEnv x) = some n := hn
+    obtain ⟨st, ls, hst, hls, rfl, -⟩ := lengthOf_store hn'
+    obtain ⟨ls', hls', hlen, -⟩ := happ hval st ls hst hls
+    have hm := (ihm s hΓ).2
+    simp only [Linear.Fact.Holds, Linear.Form.eval, hn, Option.getD_some] at hm
+    have hvl := mapM_length hvs
+    refine lengthStep_of (L := ls.length) hn ?_
+    show lengthOf s.after.h (s.afterEnv x') = _
+    rw [hx', lengthOf_of_store hst hls' (by simp [maxArrayLength] at hm ⊢; omega), hlen, hvl]; simp
+
 /-! ## The validated boundary -/
 
 /-- The runtime slots of the entry and of the exit environment. -/
@@ -1979,6 +2135,7 @@ def OperationPost.scoped (n : Nat) : OperationPost → Bool
   | .arith _ l r y => l.scoped n && r.scoped n && y.scoped n
   | .stringLength x y => x.scoped n && y.scoped n
   | .stringRead x i y => x.scoped n && i.scoped n && y.scoped n
+  | .lengthsKept _ x' | .boundedWrite _ _ x' | .push _ x' _ => decide (x' < n)
 
 /-- **A formula reads runtime slots within its scope**: assertions by the
 identity check (their binders' eigenvariables apart), linear facts by their

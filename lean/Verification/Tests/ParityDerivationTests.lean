@@ -148,6 +148,21 @@ private def sc : Scope := ⟨5, 5⟩
   "rigidSubst: no rigidity of the path"
 end Axioms
 
+/-! ## Exact postconditions of writes -/
+
+namespace Writes
+#guard isOk (checkScoped empty ⟨2, 2⟩ [.operation (.lengthsKept 0 1), .defined (lenB 0)] (lengthStep 0 1 0)
+  (.writeIn 0 1 .assumption .assumption))
+#guard isOk (checkScoped empty ⟨2, 2⟩ [.operation (.boundedWrite 0 1 1), atEndFacts 0 1] (lengthStep 0 1 1)
+  (.writeEnd 0 1 1 .assumption .assumption))
+-- Write-End's growth needs the index at the length.
+#guard errorOf (checkScoped empty ⟨2, 2⟩ [.operation (.boundedWrite 0 1 1)] (lengthStep 0 1 1)
+  (.writeEnd 0 1 1 .assumption .assumption)) = "assumption: not a premise"
+#guard isOk (checkScoped empty ⟨2, 2⟩ [.operation (.push 0 1 [.literal (.num (bitsOfNat 7))]), .defined (lenB 0),
+    .linear (.le [(lenB 0, 1)] (maxArrayLength - 1))] (lengthStep 0 1 1)
+  (.pushPost 0 1 [.literal (.num (bitsOfNat 7))] .assumption .assumption .assumption))
+end Writes
+
 /-! ## `index[c >> 8]` -/
 
 /-- The derivation of the `i`-th conjunct of `conj l` from one of `conj l`. -/

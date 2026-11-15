@@ -18,7 +18,13 @@ form `slotForm F` over the exit's terms.
 - `concatAtoms` is `stringConcat`'s facts.
 - `pastSafeAtoms` (the sum at a string length plus one) is
   `lengthSuccessor`'s guarded conclusion.
-- The length read of a string is `stringLengthRead`'s facts. -/
+- The length read of a string is `stringLengthRead`'s facts.
+
+And the exact postconditions of writes hold of the calculus's runs: a normal
+run of an element write below its store's length meets `lengthsKept`
+(`ExpressionEffects.elem_var_write_length`, the note's Write-In), and one of
+a checked write meets `boundedWrite` (`IndexWrites.boundedWrite_store`,
+Write-End's length). -/
 namespace Verification.Parity.Bridges
 open Verification HeapKnowledge IndexWrites
 
@@ -163,5 +169,53 @@ theorem pastSafeAtoms_iff (hv : arena.Valid) (hs : s.afterEnv = push u ρ) (F : 
   · rintro (hp | ⟨h0, h1, h2⟩)
     · exact ⟨.inr hp, .inr hp, .inr hp⟩
     · exact ⟨.inl h0, .inl h1, .inl h2⟩
+
+/-! ## The exact postconditions of writes, of the calculus's runs -/
+
+open ProgramTyping PositiveRules PositiveGraphs PositiveNormalization Tower HeapObservations ProgramCertificates
+
+open TolerantFrames in
+/-- A normal run of a term whose safety carries a postcondition ends, with
+budget left, in an admissible state meeting it (`TolerantFrames.run_normal`). -/
+theorem post_of_run {Ξ T : Fam} {Q : Post} {R : Heap → Prop} {s : IndexedHeap} {t v : Tm} {h' : Heap} {k : Nat}
+    (hsafe : SafePostExc Ξ T Q R s.n s.W s.h t) (hst : Steps k s.h t h' v) (hv : isVal v = true) (hk : k < s.n) :
+    ∃ s' : IndexedHeap, Admissible s s' ∧ s'.h = h' ∧ Q h' v :=
+  let ⟨s', ha, he, _, _, hq⟩ := run_normal hsafe hst hv hk
+  ⟨s', ha, he, hq⟩
+
+open TolerantFrames ExpressionEffects in
+/-- **Write-In's post of the calculus's run**: a normal run of an element
+write below its store's length ends where `lengthsKept` holds. -/
+theorem lengthsKept_of_run {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {f : PropKey}
+    {i j k : Nat} {Ref : Ty ι} {Ξ T : Fam} {ρ : Env} {s : IndexedHeap} {flds : List (PropKey × Nat)}
+    {cd : CallCode} {oid fl : Nat} {ls0 : List (Option Nat)} {b0 : UInt64} {idx : Nat}
+    (hk : k < Γ.length) (hj : j < Γ.length) (hi : Γ[i]? = some Ref)
+    (hst : storeFieldEvery G (expand G Ref) f = true)
+    (hoi : ρ i = .objAt flds cd oid) (hfl : flds.lookup f = some fl) (hls0 : s.h[fl]? = some (.arr ls0))
+    (hb0 : ρ j = .num b0) (hidx : indexOfBits b0 = some idx) (hlt : idx < ls0.length)
+    (he : EnvOk G Γ ρ s.n s.W)
+    (hs : Safe Ξ T s.n s.W s.h (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.var j) (.var k)))))
+    {steps : Nat} {h' : Heap} {v : Tm}
+    (hrun : Steps steps s.h (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.var j) (.var k)))) h' v)
+    (hv : isVal v = true) (hb : steps < s.n) {x x' : Nat} {η η' : Env} {m : Nat} (hη : η' x' = η x) :
+    ∃ s' : IndexedHeap, Admissible s s' ∧ s'.h = h' ∧ (OperationPost.lengthsKept x x').Holds ⟨η, η', m, s, s'⟩ := by
+  obtain ⟨s', ha, hh, hq⟩ :=
+    post_of_run (elem_var_write_length hk hj hi hst hoi hfl hls0 hb0 hidx hlt he s.ok hs) hrun hv hb
+  exact ⟨s', ha, hh, by subst hh; exact hq, hη⟩
+
+open TolerantFrames in
+/-- **Write-End's post of the calculus's run**: a normal run of a checked
+write ends where `boundedWrite` holds, at the write's own valuation. -/
+theorem boundedWrite_of_run {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {images : PositiveCertificates.InstanceImageCheck G}
+    {j : Sequent ι} {k : Knowledge} {a i v : Nat} {sub : PositiveCertificates.SubtypeChoices ι}
+    (hc : boundedWriteCheck G images j k a i v sub = true) {ρ : Env} {s : IndexedHeap}
+    (he : EnvOk G j.context ρ s.n s.W) (hk : HeapKnowledge.Holds k ε ρ s.h)
+    (href : RefsOk s.W (instantiate 0 ρ j.term))
+    {steps : Nat} {h' : Heap} {u : Tm} (hrun : Steps steps s.h (instantiate 0 ρ j.term) h' u)
+    (hu : isVal u = true) (hb : steps < s.n) {x' : Nat} {η' : Env} {m : Nat} (hη : η' x' = ρ a) :
+    ∃ s' : IndexedHeap, Admissible s s' ∧ s'.h = h' ∧ (OperationPost.boundedWrite a i x').Holds ⟨ρ, η', m, s, s'⟩ := by
+  obtain ⟨s', ha, hh, hq⟩ := post_of_run (SafePostExc.of_post (R := fun _ => True) (fun _ => trivial)
+    (boundedWrite_store hc he hk s.adm s.ok href)) hrun hu hb
+  exact ⟨s', ha, hh, by subst hh; exact hq, hη⟩
 
 end Verification.Parity.Bridges
