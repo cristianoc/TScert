@@ -1065,7 +1065,8 @@ $x=\slen(s)$, \code{y = x + 1} gives the safe integer $y=x+1$, or $y$
 is the number $2^{53}$. Example: for a table
 \code{index} with $\kw{view}(\mathit{index})=4352$ and
 $0\le c<1114112$, \code{j = c >> 8} gives $256\,j\le c$, so
-$j\le 4351$ and \code{index[j]} is at a valid index.
+$j\le 4351$ and $0\le j<\kw{view}(\mathit{index})$, the precondition
+of the read \code{index[j]}.
 
 A string is a scalar: it has no location, and $\slen(s)$ of a string in
 a variable $s$ is fixed, with $0\le\slen(s)\le M$. For strings $s,s'$
@@ -1084,8 +1085,9 @@ normal return
 
 \paragraph{The typed array's steps.} Let $b$ be a typed array of
 format $t$, and let the index $i$ and the written value $v$ be numbers.
-The index is \emph{valid} for $b$ when it is an integer with
-$0\le i<\kw{view}(b)$. The format has a total conversion
+The precondition of a read and of a write is the linear atom
+$0\le i<\kw{view}(b)$; as a linear atom it holds only of an integer $i$
+(Section~4). The format has a total conversion
 $\mathit{conv}_t$ from numbers to the numbers it stores. There are four
 formats. \code{Uint8}, \code{Uint16} and \code{Int32} send a number that
 is not finite to 0 and any other to its integer part modulo $2^{8}$,
@@ -1095,14 +1097,14 @@ number itself, NaN as one value. The index $-0$ is the index 0.
 \[
 \begin{array}{lll}
 \textsc{View-Length} & \hoare{\kw{true}}{\code{y = b.length}}{y=\kw{view}(b)} & :\emptyset\\[3pt]
-\textsc{View-Read} & \hoare{i\text{ valid}}{\code{y = b[i]}}{b[i]\doteq y} & :\emptyset\\[3pt]
-\textsc{View-Write} & \hoare{i\text{ valid}}{\code{b[i] = v}}{b[i]\doteq\mathit{conv}_t(v)\wedge Q_{\ne i}} & :\{\vw:\grow\}
+\textsc{View-Read} & \hoare{0\le i<\kw{view}(b)}{\code{y = b[i]}}{b[i]\doteq y} & :\emptyset\\[3pt]
+\textsc{View-Write} & \hoare{0\le i<\kw{view}(b)}{\code{b[i] = v}}{b[i]\doteq\mathit{conv}_t(v)\wedge Q_{\ne i}} & :\{\vw:\grow\}
 \end{array}
 \]
-where $Q_{\ne i}$ says that every other valid index $j$ of $b$ reads
-after the write what it read before:
+where $Q_{\ne i}$ says that every other index of $b$ reads after the
+write what it read before:
 $\forall j\ne i.\ \forall u.\ \old(b[j]\doteq u)\Rightarrow b[j]\doteq u$.
-At a number that is not a valid index, the read gives \code{undefined}
+At any other number $i$, the read gives \code{undefined}
 and the write changes nothing. An assignment has the value $v$ in
 either case. The three steps do not throw. The effect
 of \textsc{View-Write} bounds what every typed array reads after the
@@ -1133,8 +1135,8 @@ from $\vw$, and element cells, which are value locations. So
 $\{\vw:\grow\}$ respects them, and Theorem~\ref{thm:frame} applies.
 \item[$o.n\doteq 1$ holds] Its support is a field location.
 \item[$2\le\kw{view}(c)$ holds] By \textsc{(View)}.
-\item[{$b[1]\doteq 4$ holds}] It gives that 0 and 1 are valid indices
-of $b$; by the postcondition of \textsc{View-Write}.
+\item[{$b[1]\doteq 4$ holds}] It gives $1<\kw{view}(b)$, so the
+precondition of the write at index 0 holds; by the postcondition of \textsc{View-Write}.
 \item[{$c[1]\doteq 5$ may fail}] Its support holds the view store of
 \code{c} at $\keep$, and the effect lets that store change. Let \code{c}
 be a \code{Uint8Array} of length 3 and \code{b} be
