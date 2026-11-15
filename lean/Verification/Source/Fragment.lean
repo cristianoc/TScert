@@ -1393,8 +1393,11 @@ def documentSymbols (doc : Json) : Array Json :=
 
 /-- **A symbol identity at its canonical number**: an index of the
 document's `symbols` renumbered, a canonical number of one of them kept;
-any other natural number is refused, naming `what` it is. A value that is
-no natural number is left to the reader that reads it. -/
+any other natural number is refused, naming `what` it is. An identity
+written as a decimal string, which the effect codec reads as a natural
+number beyond the safe range, is refused: every identity is below
+`2 * symbolBase`, a safe number. Any other value is left to the reader that
+reads it, which refuses it. -/
 def canonicalSymbol (symbols : Array Json) (what : String) (v : Json) : Except String Json :=
   match v with
   | .num n =>
@@ -1406,6 +1409,7 @@ def canonicalSymbol (symbols : Array Json) (what : String) (v : Json) : Except S
       else if symbols.any (symbolNumber · == i) then .ok v
       else .error s!"{what} {i} is the canonical number of no unique symbol its document declares"
     else .ok v
+  | .str t => .error s!"{what} '{t}' is written as a string: an identity is a natural number below 2^41"
   | _ => .ok v
 
 /-- A JSON value with each symbol identity (a symbol key's field `symbol`, a
@@ -1417,7 +1421,7 @@ partial def renumberSymbols (symbols : Array Json) (skip : List String := []) : 
     let kvs' ← kvs.toArray.toList.mapM fun (k, v) => do
       if skip.contains k then return (k, v)
       match k, v with
-      | "symbol", .num _ => return (k, ← canonicalSymbol symbols "a symbol key" v)
+      | "symbol", .num _ | "symbol", .str _ => return (k, ← canonicalSymbol symbols "a symbol key" v)
       | "sym", .obj inner =>
         match inner.get? "id" with
         | some i => return (k, (← renumberSymbols symbols [] v).setObjVal! "id" (← canonicalSymbol symbols "a symbol literal" i))

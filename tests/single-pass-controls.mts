@@ -2075,7 +2075,29 @@ control("forged effect: symbol identities read against their document's symbols"
   assert.equal(literals, 1, "an effect of the importer");
   refusedAtRead(forged(artifacts, "symbol-undeclared-literal", literal), unit, "a symbol literal no document declares",
     new RegExp(`a symbol literal ${undeclared} is the canonical number of no unique symbol its document declares`));
-  say("symbol identities: one symbol at two documents' indices agrees, two symbols differ, an undeclared key and literal refused at the read");
+  // An identity written as a decimal string, which the effect codec reads
+  // as a natural number beyond the safe range: refused, as a key and as a
+  // literal.
+  const big = "9007199254740992";
+  const stringKey = fragmentJson(artifacts);
+  const [importer5] = documentsOf(stringKey);
+  assert.ok(importer5 !== undefined);
+  addToFrames(importer5, "Map", { region: { field: { x: 0, key: { symbol: big } } }, change: "keep" });
+  refusedAtRead(forged(artifacts, "symbol-string-key", stringKey), unit, "a symbol key written as a string",
+    new RegExp(`a symbol key '${big}' is written as a string`));
+  const stringLiteral = fragmentJson(artifacts);
+  const [importer6] = documentsOf(stringLiteral);
+  assert.ok(importer6 !== undefined);
+  let stringLiterals = 0;
+  visitAll(importer6, (node) => {
+    if (stringLiterals > 0 || !isEffect(node)) return;
+    ensuresOf(node).push({ operation: { post: { elementsWhen: { x: 0, value: { sym: { id: big } }, y: 0, predicate: [] } } } });
+    stringLiterals++;
+  });
+  assert.equal(stringLiterals, 1, "an effect of the importer");
+  refusedAtRead(forged(artifacts, "symbol-string-literal", stringLiteral), unit, "a symbol literal written as a string",
+    new RegExp(`a symbol literal '${big}' is written as a string`));
+  say("symbol identities: one symbol at two documents' indices agrees, two symbols differ, an undeclared key and literal, and a key and literal written as strings refused at the read");
 });
 
 control("forged fragment: the rest intrinsic's effect widened", async (): Promise<void> => {
