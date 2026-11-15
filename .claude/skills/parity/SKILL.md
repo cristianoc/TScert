@@ -13,18 +13,29 @@ the work is run. Read it in full, then the plan's row of
 ## The goal
 
 The note [Tolerant frames](../../../docs/drafts/tolerant-frames-note/note.tex)
-is the theory and the source of truth. The pass is in line with the note when
-it implements the note's rules: each definition, law, axiom and rule of the
-note has the same statement in Lean and is the mechanism the pass applies.
-Examples that pass are a test of that match and no substitute for it. A
-mechanism of the pass with no rule in the note is out of line too: it gets a
-rule in the note or it is deleted.
+is the theory and the source of truth. Lean and the note are in sync when,
+for an example in the part the note covers, an agent that has only the note
+answers "does this example verify?" the same way the implementation does
+(the owner's definition, 2026-11-15). Parts the note does not cover
+(promises, for instance) are outside the test.
+
+**The test.** Each example is given to an agent that has only the note,
+which answers whether it verifies; the answer is compared with the
+verifier's outcome on the example's pipeline case. A disagreement is closed
+on either side: the pass changes, or the note changes with the owner's
+approval.
+
+**Busy work** is work that is required neither for soundness nor on the
+critical path to that agreement. It is not queued.
 
 The order of the work:
 
-1. the implementation is brought to the note's rules;
-2. then every example the note supports is run through the verifier, and the
-   two notes are read again against the result;
+1. the implementation is brought to the note where an example's verdict
+   depends on it;
+2. the checking round: every example of the note is run through the
+   verifier and through the paper-only agent, and the two notes are read
+   again against the result. This round drives the work: the
+   disagreements it finds are the work list;
 3. then the second note,
    [Tolerant frames II](../../../docs/drafts/tolerant-frames-2-note/note.tex),
    is rewritten as the examples the first note does not handle.
