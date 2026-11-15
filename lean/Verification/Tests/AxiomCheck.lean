@@ -4,6 +4,7 @@ import Verification.Semantics.CommandSummaries
 import Verification.Semantics.CommandComposition
 import Verification.Semantics.CommandLoops
 import Verification.Semantics.CommandBodies
+import Verification.Programs.FrameChecks
 import Verification.Programs.TolerantFramesExitStructural
 import Verification.Programs.TolerantFramesExitHeadExtraction
 import Verification.Programs.TolerantFramesExitNonHeadExtraction
@@ -506,6 +507,12 @@ run_cmd do
   check ``Verification.TolerantFrames.preserving_judgment_pass
   check ``Verification.TolerantFrames.passWrites_sound
   check ``Verification.TolerantFrames.selected_within_on
+  check ``Verification.Footprints.Footprint.boundBelow_sound
+  check ``Verification.Footprints.Footprint.boundBelow_le
+  check ``Verification.Footprints.Footprint.includedIn_sound
+  check ``Verification.Footprints.Footprint.includedIn_of_boundBelow
+  check ``Verification.Footprints.Footprint.keepsHeap_prefix
+  check ``Verification.CallEffects.Effect.frame_boundBelow
   check ``Verification.TolerantFrames.pass_within_normal
   check ``Verification.TolerantFrames.pass_within_throw
   check ``Verification.TolerantFrames.pass_within_entry

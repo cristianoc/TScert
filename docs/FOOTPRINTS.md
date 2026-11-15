@@ -267,6 +267,40 @@ exceptional frame is the same where the signature states `onThrow` and
 $`\top`$ otherwise
 ([the contract per exit](SOURCE-CONTRACTS.md#the-contract-per-exit)).
 
+### Frame checks
+
+A call's frame, read at the heap the call starts in, is compared with the
+invocation's bound on the locations below the invocation's mark $`b`$, the
+length of the heap the invocation started in (`Programs/FrameChecks.lean`).
+An entry whose region is the array store of a call position $`i \in P`$
+holding a store allocated at or after $`b`$ covers no such location and is
+discharged, the note's Fresh-Eff (`Region.freshStore`; proved:
+`Region.freshStore_mem`). The closed bound of the remaining entries gives
+each category $`k`$ the largest change of an entry whose region may hold it:
+
+```math
+\lfloor\Phi\rfloor_P(k) = \bigsqcup\,\{\delta \mid (R,\delta)\in\Phi,\ R\ \text{not a fresh store of}\ P,\ k\in\mathrm{cats}(R)\}
+```
+
+It bounds every location below $`b`$ (`Footprint.boundBelow`; proved:
+`Footprint.boundBelow_sound`), and it is below a closed bound exactly where
+the closed bound of each remaining entry is (proved:
+`Footprint.boundBelow_le`). Against a footprint bound $`\Psi`$, an entry is
+included where freshness discharges it, where it lies in an entry of
+$`\Psi`$ with at least its change by region inclusion (`Region.sub`, with
+class evidence), or where its own closed bound is below that of $`\Psi`$'s
+class entries; a region whose inclusion is unknown is read at every category
+it may hold (`Footprint.includedIn`; proved: `Footprint.includedIn_sound`,
+`Footprint.includedIn_of_boundBelow`). A frame is included in the empty
+effect where its closed bound is empty, and a transition it allows then
+leaves an extension of the heap it starts in (`Footprint.keepsHeap`; proved:
+`Footprint.keepsHeap_prefix`).
+
+On a signature's frame the closed bound below the mark is the receiver's
+own change where the signature states `receiverOwn`, its coarse bound where
+it states no receiver store or the receiver's position is fresh, and
+$`\top`$ otherwise (proved: `Effect.frame_boundBelow`).
+
 ## The stable set for density
 
 Density reads only a store, and only a store change beyond `grow` can remove
