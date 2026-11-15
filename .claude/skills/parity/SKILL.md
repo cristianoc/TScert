@@ -95,6 +95,12 @@ asks.
 - **A specification is closed.** Its postconditions mention its own
   parameters, receiver, result and heap, and no formula of the assertions
   a particular unit's check collected.
+- **An assertion is read at a state, with its world.** The modality
+  quantifies over the states admissible from that state. Two
+  specifications of one function conjoin (rule Conj of the note) when the
+  second's postconditions are independent of the world. The owner holds
+  this rule as provisional: an example that needs a weaker side condition
+  changes it, in the note first.
 - **Trust.** That host and library values meet their declared contracts is
   the standing trust in the library model. A consequence of it is stated
   where that trust is stated and is not presented as a new assumption. A

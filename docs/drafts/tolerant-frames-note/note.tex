@@ -392,8 +392,10 @@ of types.
 Let $s=(\rho,h,W,k)$ and $s'=(\rho',h',W',k')$ be states. $s'$ is
 \emph{admissible from} $s$ when $W\sqsubseteq W'$ and $k'\le k$, the
 contracts of $W$ being read at the budget $k'$. We write
-$h\tr{}_\rho h'$ when $h$ and $h'$ are the heaps of two such states and
-$\rho'$ extends $\rho$ \status{Lean: \lean{Admissible}}.
+$h\tr{}_\rho h'$ for this relation between $s$ and $s'$ when $\rho'$
+extends $\rho$: a heap $h$ stands for the state it is the heap of, whose
+world and budget the notation leaves implicit
+\status{Lean: \lean{Admissible}}.
 \end{definition}
 \noindent
 The definition mentions no program. Unfolded: every location of $h$ is a
@@ -683,8 +685,10 @@ store of the typed array $b$ lists at index $i$ holds $v$; false when
 $i$ is no index of that store. Example: $b[1]\doteq 4$.
 \end{description}
 
-\paragraph{Satisfaction.} An assertion is interpreted at a triple
-$(\rho,m,h)$: an environment, an \emph{entry mark}, and a heap. The
+\paragraph{Satisfaction.} An assertion is interpreted at a state
+$s=(\rho,h,W,k)$ and an \emph{entry mark} $m$; we write
+$\rho,m,h\models F$, leaving the world and the budget of $s$ implicit as
+in Definition~\ref{def:adm}. The
 entry mark $m\le\len h$ is the length the heap had when the current
 function invocation started; the locations at or above $m$ are the ones
 the invocation has allocated. We write $\rho,m,h\models F$. Atoms read
@@ -698,8 +702,12 @@ have their usual meaning. The other four forms are:
 \rho,m,h\models\bx{\Phi}F &\iff& \text{for all }h'\text{, if }h\tr{\Phi}_\rho h'\text{ then }\rho,m,h'\models F .
 \end{array}
 \]
-So $\bx{\Phi}F$ says: $F$ holds in every heap reached from here by a
-change bounded by $\Phi$. Since $h\tr{\Phi}_\rho h$, it says in
+So $\bx{\Phi}F$ says: $F$ holds in every state reached from here by a
+change bounded by $\Phi$. The states reached are those admissible from
+$s$, so the modality reads the world of $s$, and it is the one form that
+does: let $x.f$ hold 0; $\bx{\top}(x.f\doteq 0)$ is true at a state
+whose world gives that field the contract ``zero'' and false at a state
+with the same heap whose world gives it the contract ``a number''. Since $h\tr{\Phi}_\rho h$, it says in
 particular that $F$ holds here.
 
 Two examples, in the heap $h$ of Section~2, where $\len a=3$. First,
@@ -764,8 +772,8 @@ of it the fact tolerates.
 
 \begin{definition}[Support]
 A \emph{support} for an assertion $F$ is a finite set $S$ of pairs
-$r:\delta$, a region and a change, with this property: for all
-$\rho,m,h,h'$, if $\rho,m,h\models F$, $h\tr{}_\rho h'$, and every
+$r:\delta$, a region and a change, with this property: for all states
+with heaps $h$ and $h'$ and every mark $m$, if $\rho,m,h\models F$, $h\tr{}_\rho h'$, and every
 location $l<\len h$ in a region $r(\rho,h)$ of a pair $(r:\delta)\in S$
 satisfies $\delta_{\len h}(h(l),h'(l))$, then $\rho,m,h'\models F$.
 Locations outside the regions of $S$ may change in any admissible way.
@@ -783,16 +791,19 @@ any growth of that store.
 
 \begin{definition}[Respect]
 Let $K$ be an assertion. An effect $\Phi$ \emph{respects} a support $S$
-under $K$, written $\Phi\resp_K S$, when for every pair
-$(r:\delta)\in S$ and every entry $(r':\gamma)\in\Phi$, either
-$\gamma\sqsubseteq\delta$, or $K$ entails that $r$ and $r'$ denote
-disjoint sets.
+under $K$, written $\Phi\resp_K S$, when for every $\rho,m,h,h'$ with
+$\rho,m,h\models K$ and $h\tr{\Phi}_\rho h'$, every location
+$l<\len h$ in a region $r(\rho,h)$ of a pair $(r:\delta)\in S$
+satisfies $\delta_{\len h}(h(l),h'(l))$ \status{Lean: \lean{Respects}}.
 \end{definition}
 
 \noindent
-For example $\{\val:\any,\ \st:\grow\}$ respects
+A sufficient condition, and the one a checker decides: for every pair
+$(r:\delta)\in S$ and every entry $(r':\gamma)\in\Phi$, either
+$\gamma\sqsubseteq\delta$, or $K$ entails that $r$ and $r'$ denote
+disjoint sets. For example $\{\val:\any,\ \st:\grow\}$ respects
 $\{x.\kw{store}:\grow\}$ under $\kw{true}$. The entry $\st:\grow$ meets
-the first condition, $\grow\sqsubseteq\grow$. The entry $\val:\any$
+the first alternative, $\grow\sqsubseteq\grow$. The entry $\val:\any$
 meets the second: a store location is no location of class value.
 
 \begin{theorem}[Tolerant frame]\label{thm:frame}
@@ -888,6 +899,7 @@ postcondition is a \emph{two-state} assertion.
 For entry state $(\rho_0,h_0)$ and exit state $(\rho_1,h_1)$,
 $\old(B)$ means $\rho_0,m,h_0\models B$; $m$ is the enclosing
 invocation's entry mark. Ordinary assertions use $(\rho_1,m,h_1)$.
+Both are states of the one execution, with the worlds it reaches.
 An $\old$ refers to the command whose triple contains it.
 For example, \code{x.push(v)} has postcondition $\len x=\old(\len x)+1$.
 
@@ -971,6 +983,36 @@ command itself allocated is no part of the command's effect, seen from
 its entry. A fresh store may list a cell of the entry heap, and a change
 of that cell is part of the effect.
 \end{description}
+
+\begin{definition}[Independence of the world]\label{def:indep}
+A postcondition is \emph{independent of the world} from an entry state
+$s$ when it has the same truth at any two exit states that are
+admissible from $s$ and have the same environment, heap and budget.
+\end{definition}
+
+\noindent
+An assertion without the modality is independent of the world: it reads
+the environment, the mark and the heap. So is $\old(B)$ for every $B$,
+since the entry state is fixed, and so is $\bx{\Phi}F$ when $F$ is
+independent and invariant, being then equivalent to $F$. An arbitrary
+$\bx{\Phi}F$ is not, by the example of the two contracts in Section~4,
+and neither is a fact through a rigid path.
+
+Two specifications of one command combine:
+\begin{mathpar}
+\inferrule*[left=Conj]{\hoarex{P_1}c{Q_1}{Q_1^{e}} \\ \hoarex{P_2}c{Q_2}{Q_2^{e}} \\ Q_2,\ Q_2^{e}\text{ independent of the world}}{\hoarex{P_1\wedge P_2}c{Q_1\wedge Q_2}{Q_1^{e}\wedge Q_2^{e}}}
+\end{mathpar}
+and if $c:\Phi_1\mid\Phi_1^{e}$ and $c:\Phi_2\mid\Phi_2^{e}$, each
+completion of $c$ is bounded by both of its effects. The reduction is
+deterministic, so the two executions reach the same heap and the same
+value; the worlds they reach may differ, and the side condition moves
+$Q_2$ to the world the first one reaches. For example, a function with
+two signatures, one stating that the array it returns is fresh and the
+other that its length is at least the argument $n$, returns an array
+with both properties: neither postcondition has a modality.
+\status{conj.} Lean: \lean{SafePostExcW.cross}, for a second
+specification whose postconditions read heaps alone. This rule is
+provisional: an example may call for a weaker side condition.
 
 \begin{definition}[Rebasing]
 Let $\Psi$ be an effect read at an intermediate heap and $\Psi'$ an
