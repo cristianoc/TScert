@@ -39,9 +39,8 @@ determine (`CallEffects.Effect.frame_boundBelow`): the receiver's own change
 where it states `receiverOwn`, its coarse bound where it states no receiver
 store or the receiver's store is fresh, and `top` otherwise. **The
 exceptional exit's frame** (the note's rule Call, instantiated at the
-exceptional exit) bounds the heap a throw leaves where the heap grew
-(`CallEffects.Effect.summary_exceptional_post`, the heap-only reading of
-`Effect.summary_exceptional_iff`). -/
+exceptional exit) bounds the heaps of a throw
+(`CallEffects.Effect.callExc_frame`). -/
 namespace Verification.Footprints
 open Verification
 
@@ -374,21 +373,6 @@ theorem Effect.frame_boundBelow (e : Effect) (P : List Nat) :
     cases hr : (e.regions.filter fun r => !(regionEntry r).1.freshStore P).isEmpty <;>
     simp [Footprint.close_eq, Closed.join, Footprint.changeAt_cons, Footprint.changeAt_nil, Region.cats,
       Selector.has, hv, ha, hw, hreg, hr, h0, Closed.top]
-
-/-- **The exceptional exit's frame holds of a throw's heap** (proved): the
-throw postcondition (`Effect.excPost`) and the heap's growth give the
-action of the summary's exceptional frame (`Effect.summary`, the note's rule
-Call at the exceptional exit), the heap-only reading of
-`Effect.summary_exceptional_iff`: the signature's frame where it states
-`onThrow`, `⊤` otherwise. -/
-theorem Effect.summary_exceptional_post (e : Effect) (n : Nat) {r : Tm} {args : List Tm} {h h' : Heap}
-    (hl : h.length ≤ h'.length) (hx : e.excPost r args h h') :
-    Post (e.summary n).exceptional.frame (callEnv r args) h h' := by
-  unfold Effect.summary
-  unfold Effect.excPost at hx
-  cases ho : e.onThrow
-  · exact Footprints.Closed.post_iff.mpr (Footprints.Closed.holds_iff.mp (Footprints.Closed.holds_top.mpr hl))
-  · exact hx ho
 
 /-- The exceptional exit's frame is the signature's frame where it states
 `onThrow`, and `⊤` otherwise. -/

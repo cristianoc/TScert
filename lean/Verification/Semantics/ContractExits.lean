@@ -180,26 +180,6 @@ theorem Effect.safe_exits_weaken {Ξ T : Fam} {e e' : Effect} {r r' : Tm} {args 
       (e'.schema.exitPostW .exceptional r' args' U heap) j U heap t :=
   Effect.safe_exits hx' hv' hu hh (SafePostExc.weaken hq hr (Effect.safe_fields hv hu hh hs))
 
-/-- **A call's guarantee from held entries read as a signature's heap
-postconditions** (`SafePostExcV.heldPosts`): at an admissible transition the
-signature's exits are its postconditions (`Effect.postW_iff_exit`,
-`Effect.excPostW_iff_exit`), at actuals that are values where it states an
-append of them; a throw of the evaluation leaves the heap, within every
-frame. -/
-theorem Effect.heldPosts_post {Ξ T : Fam} {e : Effect} {r : Tm} {args : List Tm} {n : Nat} {W : WorldT n}
-    {h : Heap} {t : Tm} (hvals : e.receiverGrows = true → CallArguments.Values args) (hw : WorldAdm W)
-    (hh : HeapOk n W h) (hs : SafePostExcV Ξ T (e.schema.heldPost r args W h) (e.schema.heldExc r args W h) n W h t) :
-    SafePostExc Ξ T (e.post r args h) (e.excPost r args h) n W h t := by
-  refine SafePostExc.weaken (fun h' v hp => ?_) (fun h' hp => ?_) (SafePostExcV.heldPosts hw hh hs)
-  · obtain ⟨s, s', rfl, rfl, hp⟩ := hp
-    exact ((Effect.postW_iff_exit (Exits.exitPost_admissible hp) hvals).mpr
-      ((Exits.exitPostW_iff _ _ _ _ s s' v).mpr hp)).1
-  · rcases hp with ⟨v, s, s', rfl, rfl, hp⟩ | rfl
-    · exact (Effect.excPostW_iff_exit (Exits.exitPost_admissible hp)).mpr ((Exits.exitPostW_iff _ _ _ _ s s' v).mpr hp)
-    · intro _
-      exact Post.refl _ _ _
-
-
 /-! ## The meet of two specifications -/
 
 /-- **A signature's schema reads its exits only through their heaps**
@@ -300,5 +280,149 @@ theorem Effect.schema_meet {a b : Effect} (hs : a.sameResult b = true) {c : Comp
     · rw [if_neg hab]
       have hadm : Admissible s s' := by split at ha <;> exact ha.1.1
       exact ⟨EffectAction.top hadm, fun _ hF => by cases hF⟩
+
+
+/-! ## A call read at heaps -/
+
+/-- **A call's normal completion read at heaps** (the note's Call, at the
+evaluated actuals): the normal exit of the signature's schema at the
+receiver and the actuals followed by the `undefined` of the positions a
+construction omits, the receiver then owning no store, at some indexed
+states with these heaps (`Exits.heapPost`). Each consequence a pass decision
+reads is derived from the exit's frame or one of its postconditions
+(`Effect.callPost_within`, `Effect.callPost_fresh`,
+`Effect.callPost_freshObject`, `Effect.callPost_elements`,
+`Effect.callPost_ensures`, `Effect.callPost_grows`,
+`Effect.callPost_elementWrite`). -/
+def Effect.callPost (e : Effect) (r : Tm) (args : List Tm) (before : Heap) : Post :=
+  fun after v => ∃ pad : List Tm, (∀ a ∈ pad, a = .undef) ∧ (pad = [] ∨ Footprints.storeOf r = none) ∧
+    e.schema.heapPost .normal r (args ++ pad) before after v
+
+/-- **A call's throw read at heaps**: the exceptional exit at the actuals
+followed by the omitted positions' `undefined`, read at heaps, or a throw of
+the call's evaluation, which leaves the heap. -/
+def Effect.callExc (e : Effect) (r : Tm) (args : List Tm) (before : Heap) : Heap → Prop :=
+  fun after => (∃ (pad : List Tm) (v : Tm), (∀ a ∈ pad, a = .undef) ∧
+    e.schema.heapPost .exceptional r (args ++ pad) before after v) ∨ after = before
+
+section CallPost
+variable {e : Effect} {r : Tm} {args : List Tm} {before after : Heap} {v : Tm}
+
+/-- The normal exit read at heaps, as its summary's postconditions. -/
+private theorem callPost_summary (hp : e.callPost r args before after v) :
+    ∃ pad : List Tm, (∀ a ∈ pad, a = .undef) ∧ (pad = [] ∨ Footprints.storeOf r = none) ∧
+      ∃ s s' : IndexedHeap, s.h = before ∧ s'.h = after ∧ Admissible s s' ∧
+        Post e.frame (callEnv r args) before after ∧
+        ∀ F ∈ e.normalPosts (args ++ pad).length,
+          Parity.Holds AssertionArena.empty (callState r (args ++ pad) v before.length s s') F := by
+  obtain ⟨pad, hpad, hrecv, s, s', rfl, rfl, hx⟩ := hp
+  rw [Effect.exitPost_summary] at hx
+  refine ⟨pad, hpad, hrecv, s, s', rfl, rfl, hx.1.1, ?_, hx.2⟩
+  have h2 := hx.1.2
+  change Post e.frame (callEnv r (args ++ pad)) s.h s'.h at h2
+  rwa [callEnv_pad r args hpad] at h2
+
+/-- **The frame**: the call's heaps meet the signature's frame. -/
+theorem Effect.callPost_within (hp : e.callPost r args before after v) : e.within r args before after := by
+  obtain ⟨-, -, -, -, -, -, -, -, hw, -⟩ := callPost_summary hp
+  exact hw
+
+/-- **A fresh result store**, where the signature states one. -/
+theorem Effect.callPost_fresh (hf : e.fresh = true) (hp : e.callPost r args before after v) :
+    Footprints.FreshAt before.length v := by
+  obtain ⟨pad, _, _, s, s', hs, _, _, _, hF⟩ := callPost_summary hp
+  subst hs
+  exact hF (.operation (.freshStore 0)) (by simp [Effect.normalPosts, hf])
+
+/-- **A fresh result object**, where the signature states one. -/
+theorem Effect.callPost_freshObject (hf : e.freshObject = true) (hp : e.callPost r args before after v) :
+    Footprints.FreshObjectAt before.length v := by
+  obtain ⟨pad, _, _, s, s', hs, _, _, _, hF⟩ := callPost_summary hp
+  subst hs
+  exact hF (.operation (.freshObject 0)) (by simp [Effect.normalPosts, hf])
+
+/-- **The receiver's elements** where the result is `true`, where the
+signature states an elements predicate. -/
+theorem Effect.callPost_elements {R : ElemPred} (hR : e.elements = some R) (hv : v = .tru)
+    (hp : e.callPost r args before after v) : ElemsAt R r after := by
+  obtain ⟨pad, _, _, s, s', _, hs', _, _, hF⟩ := callPost_summary hp
+  subst hs'
+  exact hF (.operation (.elementsWhen 0 .tru 1 R)) (by simp [Effect.normalPosts, hR]) hv
+
+/-- **Each index fact the signature ensures**, read at the call's
+positions. -/
+theorem Effect.callPost_ensures {F : HeapKnowledge.IndexFact} (hF : F ∈ e.ensures) (hp : e.callPost r args before after v) :
+    F.HoldsAt ⟨callEnv r args, before⟩ (ensuresEnv v r args) after := by
+  obtain ⟨pad, hpad, -, s, s', rfl, rfl, -, -, hH⟩ := callPost_summary hp
+  have h := hH (.operation (.fact .after 0 F)) (by simp [Effect.normalPosts, hF])
+  have he : ensuresEnv v r (args ++ pad) = ensuresEnv v r args := by
+    funext i; simp only [ensuresEnv, callEnv_pad r args hpad]
+  change F.HoldsAt ⟨callEnv r (args ++ pad), s.h⟩ (ensuresEnv v r (args ++ pad)) s'.h at h
+  rwa [he, callEnv_pad r args hpad] at h
+
+/-- **The receiver's growth and the append of the actuals**, where the
+signature states them. -/
+theorem Effect.callPost_grows (hg : e.receiverGrows = true) (hp : e.callPost r args before after v) :
+    ReceiverGrows r before after ∧ ReceiverAppends r args before after := by
+  obtain ⟨pad, hpad, hrecv, s, s', rfl, rfl, hadm, -, hH⟩ := callPost_summary hp
+  have hmem : ∀ F ∈ [(FormulaF.transition [(.field 0 arrayStoreKey, .any)] : Formula), .operation (.storeExtends 0),
+      .operation (.push 0 1 (actualWitnesses (args ++ pad).length))], F ∈ e.normalPosts (args ++ pad).length := by
+    intro F hF
+    simp only [Effect.normalPosts, hg, List.mem_append]
+    exact .inl (.inr hF)
+  refine ⟨(receiverGrows_iff hadm).mp ⟨hH _ (hmem _ (by simp)), hH _ (hmem _ (by simp))⟩, fun hv => ?_⟩
+  rcases hrecv with rfl | hr
+  · have happ := (receiverAppends_iff (by simpa using hv)).mp (hH _ (hmem _ (by simp)))
+    simp only [List.append_nil] at happ
+    exact happ hv
+  · exact ReceiverAppends.of_no_store hr hv
+
+/-- **The element write's change of the heap**, where the signature states
+an element write. -/
+theorem Effect.callPost_elementWrite {w : ElementWrite} (hw : e.elementWrite = some w)
+    (hp : e.callPost r args before after v) : w.Holds args before after := by
+  obtain ⟨pad, hpad, -, s, s', rfl, rfl, -, -, hH⟩ := callPost_summary hp
+  have hall : ∀ F ∈ w.posts (args ++ pad).length,
+      Parity.Holds AssertionArena.empty (callState r (args ++ pad) v s.h.length s s') F := by
+    intro F hF
+    apply hH
+    simp only [Effect.normalPosts, hw, List.mem_append]
+    exact .inr hF
+  exact ElementWrite.holds_pad hpad ((elementWrite_iff w).mp hall).1
+
+/-- **The frame of a throw**, where the signature states `onThrow`; a throw
+of the evaluation leaves the heap. -/
+theorem Effect.callExc_within (ho : e.onThrow = true) (hp : e.callExc r args before after) :
+    e.within r args before after := by
+  rcases hp with ⟨pad, v, hpad, s, s', rfl, rfl, hx⟩ | rfl
+  · have hf := Exits.exitPost_frame hx
+    simp only [Effect.schema, Exits.get, ho, if_true] at hf
+    unfold Effect.within
+    rwa [callEnv_pad r args hpad] at hf
+  · exact Footprints.Post.refl _ _ _
+
+/-- **The exceptional exit's frame holds of a throw's heaps** (the note's
+Call at the exceptional exit): the signature's frame where it states
+`onThrow`, `⊤` otherwise; a throw of the evaluation leaves the heap. -/
+theorem Effect.callExc_frame (n : Nat) (hp : e.callExc r args before after) :
+    Post (e.summary n).exceptional.frame (callEnv r args) before after := by
+  have hfr : (e.schema.get .exceptional).frame = (e.summary n).exceptional.frame := by
+    unfold Effect.schema Effect.summary; cases e.onThrow <;> rfl
+  rcases hp with ⟨pad, v, hpad, s, s', rfl, rfl, hx⟩ | rfl
+  · have hf := Exits.exitPost_frame hx
+    rwa [hfr, callEnv_pad r args hpad] at hf
+  · exact Footprints.Post.refl _ _ _
+
+/-- A call read at heaps from exits held from its entry: its normal and
+exceptional exits at heaps (`SafePostExcV.heldPosts`). -/
+theorem Effect.heldPosts_call {Ξ T : Fam} {pad : List Tm} (hpad : ∀ a ∈ pad, a = .undef)
+    (hrecv : pad = [] ∨ Footprints.storeOf r = none) {n : Nat} {W : WorldT n} {h : Heap} {t : Tm}
+    (hw : WorldAdm W) (hh : HeapOk n W h)
+    (hs : SafePostExcV Ξ T (e.schema.heldPost r (args ++ pad) W h) (e.schema.heldExc r (args ++ pad) W h) n W h t) :
+    SafePostExc Ξ T (e.callPost r args h) (e.callExc r args h) n W h t :=
+  SafePostExc.weaken (fun _ _ hp => ⟨pad, hpad, hrecv, hp⟩)
+    (fun _ hp => hp.imp (fun ⟨v, hv⟩ => ⟨pad, v, hpad, hv⟩) id) (SafePostExcV.heldPosts hw hh hs)
+
+end CallPost
 
 end Verification.CallEffects

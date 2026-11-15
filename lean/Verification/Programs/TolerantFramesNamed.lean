@@ -260,7 +260,7 @@ theorem freshCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
     · rename_i eff heff
       simp only [Bool.and_eq_true] at hsel
       exact PromiseCalls.post_with_type
-        (fun _ _ _ _ _ hq => ⟨Footprints.Closed.holds_empty.mpr (PromiseCalls.keepsHeap_prefix hsel.1 hq), trivial⟩)
+        (fun _ _ _ _ _ hq => ⟨Footprints.Closed.holds_empty.mpr (PromiseCalls.keepsHeap_prefix hsel.1 (CallEffects.Effect.callPost_within hq)), trivial⟩)
         (ExpressionEffects.selected_sound p ht hops heff hcodes hsums he hw hh href)
     · cases hsel
   · contradiction

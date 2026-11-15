@@ -933,9 +933,9 @@ start's identity under a guard), `two-state-post-defines` (two equalities
 through one entry value); `written-ensures-old-refused` is a gap at the
 entry check.
 
-**Implementation.** The positions are `CallEffects.ensuresEnv`, the meaning
-the last conjunct of `CallEffects.Effect.post`, which takes the call's
-actuals. A module function's postcondition is stated by `moduleArrow` and
+**Implementation.** The positions are `CallEffects.ensuresEnv`; at a call
+the meaning is the postcondition of the normal exit at the call's actuals
+(`CallEffects.Effect.callPost_ensures`). A module function's postcondition is stated by `moduleArrow` and
 `importedArrow`, other code's is excluded by `Effect.below`; carrying,
 covering, meeting and forgetting are `Effect.keeps`, `ensuresCovers`,
 `Effect.meet` and `Exits.forgetActuals` (a variadic call with a spread,

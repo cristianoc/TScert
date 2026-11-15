@@ -562,7 +562,16 @@ run_cmd do
   check ``Verification.GraphCode.selectedThrowWithin_sound
   check ``Verification.GraphCode.selectedThrowsWithinAt_eq_grades
   check ``Verification.GraphCode.safePostExc_grow
-  check ``Verification.CallEffects.Effect.summary_exceptional_post
+  check ``Verification.CallEffects.Effect.callExc_frame
+  check ``Verification.CallEffects.Effect.callExc_within
+  check ``Verification.CallEffects.Effect.callPost_within
+  check ``Verification.CallEffects.Effect.callPost_fresh
+  check ``Verification.CallEffects.Effect.callPost_freshObject
+  check ``Verification.CallEffects.Effect.callPost_elements
+  check ``Verification.CallEffects.Effect.callPost_ensures
+  check ``Verification.CallEffects.Effect.callPost_grows
+  check ``Verification.CallEffects.Effect.callPost_elementWrite
+  check ``Verification.CallEffects.Effect.heldPosts_call
   check ``Verification.GraphCode.selectedGrades_eq_fields
   check ``Verification.GraphCode.selectedWithinAt_eq_fields
   check ``Verification.PromiseCalls.keepsHeap_eq_fields

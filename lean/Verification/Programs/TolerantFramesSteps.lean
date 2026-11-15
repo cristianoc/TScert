@@ -283,7 +283,7 @@ theorem elementsCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} 
           simp only [hsel, hrs] at hc
           by_cases hkeep : PromiseCalls.keepsHeap eff = true
           · exact PromiseCalls.post_with_type
-              (fun _ _ _ _ _ hq => ⟨Footprints.Closed.holds_empty.mpr (PromiseCalls.keepsHeap_prefix hkeep hq), trivial⟩)
+              (fun _ _ _ _ _ hq => ⟨Footprints.Closed.holds_empty.mpr (PromiseCalls.keepsHeap_prefix hkeep (CallEffects.Effect.callPost_within hq)), trivial⟩)
               (ExpressionEffects.selected_sound p ht hops hsel hcodes hsums he hw hh href)
           · rw [if_neg hkeep] at hc; cases hc
     · rw [if_neg hcond] at hc; cases hc
@@ -304,7 +304,7 @@ theorem requiresCall_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} 
   obtain ⟨eff, hsel, hs⟩ := PromiseCalls.requiresTree_sound hcodes hsums p hc
   rw [hsel] at hkeep
   exact PromiseCalls.post_with_type
-    (fun _ _ _ _ _ hq => ⟨Footprints.Closed.holds_empty.mpr (PromiseCalls.keepsHeap_prefix hkeep hq), trivial⟩)
+    (fun _ _ _ _ _ hq => ⟨Footprints.Closed.holds_empty.mpr (PromiseCalls.keepsHeap_prefix hkeep (CallEffects.Effect.callPost_within hq)), trivial⟩)
     (hs he hk hw hh href)
 
 /-- **Every call the pass frames keeps the heap.** -/

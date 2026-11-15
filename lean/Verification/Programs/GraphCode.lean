@@ -616,18 +616,16 @@ theorem safePostExc_grow {Ξ T : Fam} {Q : HeapObservations.Post} {R : Heap → 
     · exact .inr ⟨U, h', t', hx, hu, step, hh, ih (Nat.le_trans hb (Footprints.step_length_le step)) hs⟩
 
 /-- **A selected call's throw is within the bound below the mark** where
-its exceptional grade is below the bound: the throw postcondition and the
-heap's growth give the exceptional frame
-(`Effect.summary_exceptional_post`), within its closed bound below the mark
-(`Footprint.boundBelow_sound`). -/
+its exceptional grade is below the bound: the throw read at heaps gives the
+exceptional exit's frame (`Effect.callExc_frame`), within its closed bound
+below the mark (`Footprint.boundBelow_sound`). -/
 theorem selectedThrowWithin_sound {Φ : Footprints.Closed} {F : List Nat} {b : Nat} {ρ : Env} {t : Tm}
     {eff : CallEffects.Effect} {n : Nat} {h h' : Heap} (hF : FreshOk F b ρ)
     (hle : (Footprints.Footprint.boundBelow (freshPositions F t) (eff.summary n).exceptional.frame).le Φ = true)
-    (hl : h.length ≤ h'.length)
-    (hq : eff.excPost (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t))
+    (hq : eff.callExc (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t))
       h h') :
     Φ.HoldsOn (· < b) h h' :=
-  (Footprints.Footprint.boundBelow_sound (CallEffects.Effect.summary_exceptional_post eff n hl hq)
+  (Footprints.Footprint.boundBelow_sound (CallEffects.Effect.callExc_frame n hq)
     (freshPositions_sound hF)).mono hle
 
 /-- A node's run is within a closed bound `Φ` on the locations below `b`, on
@@ -1371,7 +1369,7 @@ theorem nodePost_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : Inst
       split at hsel
       · rename_i eff heff
         have hs : HeapObservations.SafePost (excOf G) (meaning G (ProgramCertificates.claim c.expression).type)
-            (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term))
+            (eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term))
             (ExpressionEffects.actualsOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h')
             j V h' (instantiate 0 ρ (ProgramCertificates.claim c.expression).term) := by
           simp only [Bool.or_eq_true] at htree
@@ -1385,7 +1383,7 @@ theorem nodePost_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : Inst
             cases heff'
             exact hs (by simpa only [ControlFlow.entry] using henv) hknowledge hworld hheap (by rw [hterm']; exact href)
         rw [hterm'] at hs hsel
-        exact HeapObservations.weaken (fun h'' v hq => selectedWithin_sound hF hsel hq.1) hs
+        exact HeapObservations.weaken (fun h'' v hq => selectedWithin_sound hF hsel (CallEffects.Effect.callPost_within hq)) hs
       · cases hsel
   -- The node's value.
   by_cases hcf : callFresh G images sums c t = true
@@ -1399,7 +1397,7 @@ theorem nodePost_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : Inst
       rw [hterm'] at hs
       have hboth := HeapObservations.cross_upto j (fun _ _ _ _ _ _ _ _ hu _ => hu) V V h' _ hheap hheap hwithin hs
       exact HeapObservations.weaken (fun h'' v hq =>
-        ⟨hq.1, fun _ => (hq.2.2.1 hfr).lower (Nat.le_trans hb (Nat.le_refl _))⟩) hboth
+        ⟨hq.1, fun _ => (CallEffects.Effect.callPost_fresh hfr hq.2).lower (Nat.le_trans hb (Nat.le_refl _))⟩) hboth
     · cases hfr
   · simp only [Bool.not_eq_true] at hcf
     exact HeapObservations.weaken (fun _ _ hq => ⟨hq, fun h => by simp [hvar, hcf] at h⟩) hwithin
@@ -1454,9 +1452,9 @@ theorem throwsWithin_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
       rw [heff] at hon
       simp only at hon
       have hs : HeapObservations.SafePostExc (excOf G) (meaning G (ProgramCertificates.claim c.expression).type)
-          (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term))
+          (eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term))
             (ExpressionEffects.actualsOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h')
-          (eff.excPost (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) (ExpressionEffects.actualsOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h')
+          (eff.callExc (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) (ExpressionEffects.actualsOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h')
           j V h' (instantiate 0 ρ (ProgramCertificates.claim c.expression).term) := by
         rcases Bool.or_eq_true_iff.mp htree with htree | hreq
         · exact ExpressionEffects.selected_sound_exc c.expression htree hops heff
@@ -1468,7 +1466,7 @@ theorem throwsWithin_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
           exact hs (by simpa only [ControlFlow.entry] using henv) hknowledge hworld hheap (by rw [hterm']; exact href)
       rw [hterm'] at hs hsel
       exact HeapObservations.SafePostExc.weaken (fun _ _ _ => trivial)
-        (fun h'' hq => selectedWithin_sound hF hsel (hq hon)) hs
+        (fun h'' hq => selectedWithin_sound hF hsel (CallEffects.Effect.callExc_within hon hq)) hs
     · cases hsel
 
 /-- A node within the bound on normal return, and on a throw where its

@@ -96,7 +96,7 @@ theorem callFresh_of_checked {G : NormalGraph ι} {images : InstanceImageCheck G
     rw [heff] at hfr
     simp only at hfr
     have hs : SafePost (excOf G) (meaning G (claim d).type)
-        (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (claim d).term))
+        (eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ (claim d).term))
           (ExpressionEffects.actualsOf (instantiate 0 ρ (claim d).term)) s.h) s.n s.W s.h
         (instantiate 0 ρ (claim d).term) := by
       rcases Bool.or_eq_true_iff.mp htree with htree | hreq
@@ -108,7 +108,7 @@ theorem callFresh_of_checked {G : NormalGraph ι} {images : InstanceImageCheck G
     rw [hterm] at hs
     intro k h' v hk hst hv
     have hpost := GraphCode.returnsPost_of_safePost hs k h' v hk hst hv
-    exact FreshAt.lower hm (hpost.2.1 hfr)
+    exact FreshAt.lower hm (CallEffects.Effect.callPost_fresh hfr hpost)
 
 /-- **The footprint bound's check at a checked node** (`run`, "The footprint
 bound at this node", under `bound = some (Φ, ret, exc)` and the region

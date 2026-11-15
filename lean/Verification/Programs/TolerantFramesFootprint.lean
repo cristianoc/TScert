@@ -119,7 +119,7 @@ theorem pass_within_normal {G : NormalGraph ι} {images : InstanceImageCheck G} 
     split at hsel
     · rename_i eff heff
       have hs : SafePost (excOf G) (meaning G (claim d).type)
-          (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (claim d).term))
+          (eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ (claim d).term))
             (ExpressionEffects.actualsOf (instantiate 0 ρ (claim d).term)) h) n W h
           (instantiate 0 ρ (claim d).term) := by
         rcases Bool.or_eq_true_iff.mp htree with htree | hreq
@@ -131,7 +131,7 @@ theorem pass_within_normal {G : NormalGraph ι} {images : InstanceImageCheck G} 
       rw [hterm] at hs
       have hboth := cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh
         (of_value_property (Q := fun _ _ => True) (fun _ _ _ _ _ => trivial) hsafe) hs
-      exact weaken (fun _ _ hq => selected_within_on hF (hterm ▸ hsel) hq.2.1) hboth
+      exact weaken (fun _ _ hq => selected_within_on hF (hterm ▸ hsel) (CallEffects.Effect.callPost_within hq.2)) hboth
     · cases hsel
   · exact ExpressionEffects.noReturn_sound hempty hsafe
   · obtain ⟨A, hA, hnil⟩ := List.any_eq_true.mp hctx
@@ -168,9 +168,9 @@ theorem pass_within_throw {G : NormalGraph ι} {images : InstanceImageCheck G} {
     split at hsel
     · rename_i eff heff
       have hs : SafePostExc (excOf G) (meaning G (claim d).type)
-          (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (claim d).term))
+          (eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ (claim d).term))
             (ExpressionEffects.actualsOf (instantiate 0 ρ (claim d).term)) h)
-          (eff.excPost (ExpressionEffects.receiverOf (instantiate 0 ρ (claim d).term))
+          (eff.callExc (ExpressionEffects.receiverOf (instantiate 0 ρ (claim d).term))
             (ExpressionEffects.actualsOf (instantiate 0 ρ (claim d).term)) h) n W h
           (instantiate 0 ρ (claim d).term) := by
         rcases Bool.or_eq_true_iff.mp htree with htree | hreq
@@ -184,7 +184,7 @@ theorem pass_within_throw {G : NormalGraph ι} {images : InstanceImageCheck G} {
         (SafePostExc.of_post (R := fun _ => True) (fun _ => trivial)
           (of_value_property (Q := fun _ _ => True) (fun _ _ _ _ _ => trivial) hsafe)) hs
       exact SafePostExc.weaken (fun _ _ _ => trivial)
-        (fun _ hq => GraphCode.selectedThrowWithin_sound hF (hterm ▸ hsel) hq.2 hq.1.2)
+        (fun _ hq => GraphCode.selectedThrowWithin_sound hF (hterm ▸ hsel) hq.1.2)
         (GraphCode.safePostExc_grow (Nat.le_refl _) hboth)
     · cases hsel
   · obtain ⟨A, hA, hnil⟩ := List.any_eq_true.mp hctx

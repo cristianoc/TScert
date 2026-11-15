@@ -976,39 +976,18 @@ theorem Effect.excPost_drop {e : Effect} (n : Nat) {rv r : Tm} {argsv args : Lis
 
 /-- A postcondition at actuals padded with `undefined` is the one at the
 actuals, of a receiver holding no store. -/
-theorem Effect.post_pad {e : Effect} {r : Tm} (hr : Footprints.storeOf r = none) {args pad : List Tm}
-    (hpad : ∀ a ∈ pad, a = .undef)
-    {before after : Heap} {v : Val} (h : e.post r (args ++ pad) before after v) : e.post r args before after v := by
-  have hwr : ∀ w, e.elementWrite = some w → w.Holds args before after := by
-    intro w hw
-    obtain ⟨hc, hx, ha⟩ := h.2.2.2.2.2.2 w hw
-    have hg : ∀ i, (args ++ pad).getD i .undef = args.getD i .undef := fun i => by
-      simpa [callEnv] using congrFun (callEnv_pad r args hpad) (i + 1)
-    refine ⟨hc, fun k he => ?_, fun he => ?_⟩
-    · have := hx k he
-      simp only [ExactWrite, WriteAt, ExactPre, hg] at this ⊢
-      exact this
-    · have := ha he
-      simp only [ViewAssign, WriteAt, hg] at this ⊢
-      exact this
-  have hw := h.1
-  unfold Effect.within at hw
-  rw [callEnv_pad r args hpad] at hw
-  refine ⟨hw, h.2.1, h.2.2.1, h.2.2.2.1, fun F hF => ?_,
-    fun hg => ⟨(h.2.2.2.2.2.1 hg).1, ReceiverAppends.of_no_store hr⟩, hwr⟩
-  have := h.2.2.2.2.1 F hF
-  have he : ensuresEnv v r (args ++ pad) = ensuresEnv v r args := by
-    funext i; simp only [ensuresEnv, callEnv_pad r args hpad]
-  rwa [he, callEnv_pad r args hpad] at this
-
-/-- A throw's postcondition at actuals padded with `undefined` is the one at
-the actuals. -/
-theorem Effect.excPost_pad {e : Effect} {r : Tm} {args pad : List Tm} (hpad : ∀ a ∈ pad, a = .undef)
-    {before after : Heap} (h : e.excPost r (args ++ pad) before after) : e.excPost r args before after := by
-  intro ho
-  have hw := h ho
-  unfold Effect.within at hw ⊢
-  rwa [callEnv_pad r args hpad] at hw
+theorem ElementWrite.holds_pad {w : ElementWrite} {args pad : List Tm} (hpad : ∀ a ∈ pad, a = .undef)
+    {before after : Heap} (h : w.Holds (args ++ pad) before after) : w.Holds args before after := by
+  obtain ⟨hc, hx, ha⟩ := h
+  have hg : ∀ i, (args ++ pad).getD i .undef = args.getD i .undef := fun i => by
+    simpa [callEnv] using congrFun (callEnv_pad .undef args hpad) (i + 1)
+  refine ⟨hc, fun k he => ?_, fun he => ?_⟩
+  · have := hx k he
+    simp only [ExactWrite, WriteAt, ExactPre, hg] at this ⊢
+    exact this
+  · have := ha he
+    simp only [ViewAssign, WriteAt, hg] at this ⊢
+    exact this
 
 /-- A footprint's postcondition from a heap extending `before` by
 allocation is one from `before` where each entry covers, read at `before`,

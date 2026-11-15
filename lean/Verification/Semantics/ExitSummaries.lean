@@ -589,12 +589,6 @@ theorem Effect.summary_exceptional_iff (e : Effect) (n : Nat) (hadm : Admissible
       forall_const]
     exact frame_iff hadm
 
-/-- **The normal exit implies the heap postcondition** (`Effect.post`). -/
-theorem Effect.summary_normal_post (e : Effect) (hadm : Admissible s s') (hvals : ∀ a ∈ args, isVal a = true)
-    (h : (e.summary args.length).normal.Holds arena (callState r args v m s s')) :
-    e.post r args s.h s'.h v :=
-  ((e.summary_normal_iff hadm fun _ => hvals).mp h).1
-
 /-- **Without an element write the normal exit is the heap postcondition.** -/
 theorem Effect.summary_normal_iff_post (e : Effect) (hx : e.elementWrite = none) (hadm : Admissible s s')
     (hvals : ∀ a ∈ args, isVal a = true) :

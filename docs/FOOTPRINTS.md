@@ -320,9 +320,8 @@ states `onThrow` and of $`\top`$ otherwise
 (`GraphCode.selectedThrowsWithinAt`), for every selected form, a variadic
 call included: a throw of the call's evaluation (a spread's read) keeps the
 heap, and the invocation's throw meets the exceptional exit
-(`ExpressionEffects.selected_sound_exc`). The throw postcondition and the
-heap's growth give that frame's action (proved:
-`Effect.summary_exceptional_post`, `GraphCode.safePostExc_grow`), so the
+(`ExpressionEffects.selected_sound_exc`). The throw read at heaps gives
+that frame (proved: `Effect.callExc_frame`), so the
 throw is within the bound below the mark (proved:
 `GraphCode.selectedThrowWithin_sound`). The pass's footprint check reads it
 (`SinglePass.footprintCheck`, `TolerantFrames.passThrows`); the graph
@@ -397,7 +396,7 @@ locations below the heap the body started in; the runs compose by
   `ExpressionEffects.selected_sound`, the call's selected exits
   `ExpressionEffects.selected_exits_sound`, through `CallEffects.call_exits`
   and `CallEffects.construct_exits`, read at its heaps by
-  `selectedExits_heldPost_post`): a fixed
+  `selectedExits_heldPost_call`): a fixed
   call, a variadic call and a construction, each at the signature the
   evidence selects. A variadic call's evaluation reads its spreads' stores
   in the heap the call starts in and reaches an invocation at the expanded

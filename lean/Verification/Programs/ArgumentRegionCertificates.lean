@@ -113,9 +113,9 @@ theorem callStep_ok [DecidableEq ι] {G : NormalGraph ι}
         cases hc
         have hs : HeapObservations.SafePostExc (excOf G)
             (meaning G (ProgramCertificates.claim c.expression).type)
-            (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term))
+            (eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term))
               (ExpressionEffects.actualsOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h)
-            (fun h' => thr = true → eff.excPost
+            (fun h' => thr = true → eff.callExc
               (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term))
               (ExpressionEffects.actualsOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h h')
             n W h (instantiate 0 ρ (ProgramCertificates.claim c.expression).term) := by
@@ -152,15 +152,16 @@ theorem callStep_ok [DecidableEq ι] {G : NormalGraph ι}
           apply HeapObservations.SafePostExc.weaken _ _ hs
           · intro h' v hp
             cases hg : eff.receiverGrows
-            · simp only [Bool.false_eq_true, ↓reduceIte]; exact hp.1
-            · simp only [↓reduceIte]; exact grown_post hp.1 (hp.2.2.2.2.2.1 hg).1
+            · simp only [Bool.false_eq_true, ↓reduceIte]; exact CallEffects.Effect.callPost_within hp
+            · simp only [↓reduceIte]
+              exact grown_post (CallEffects.Effect.callPost_within hp) (CallEffects.Effect.callPost_grows hg hp).1
           · intro h' hp hthr
             have hon : eff.onThrow = true := by
               simp only [Bool.or_eq_true, Bool.not_eq_true'] at hthrow
               rcases hthrow with ht | ht
               · rw [hthr] at ht; cases ht
               · exact ht
-            exact hp hthr hon
+            exact CallEffects.Effect.callExc_within hon (hp hthr)
       · cases hc
     · cases hc
   · cases hc
@@ -331,8 +332,8 @@ theorem freshOut_sound [DecidableEq ι] {G : NormalGraph ι} {images : InstanceI
       have hboth := HeapObservations.cross_upto n (fun _ _ _ _ _ _ _ _ hu _ => hu) W W h _ hh hh
         (trivial_run hs).post hsel
       exact HeapObservations.SafePostExc.of_post (fun _ => trivial)
-        (HeapObservations.weaken (Q := fun h' v => True ∧ eff.post _ _ h h' v)
-          (fun _ _ hq => freshAt_value ((hq.2.2.1 hfr).lower hb)) hboth)
+        (HeapObservations.weaken (Q := fun h' v => True ∧ eff.callPost _ _ h h' v)
+          (fun _ _ hq => freshAt_value ((CallEffects.Effect.callPost_fresh hfr hq.2).lower hb)) hboth)
     · cases hfr
 
 theorem lookup_parts {k : PropKey} {j : Nat} :

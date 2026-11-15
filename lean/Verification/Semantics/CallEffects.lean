@@ -587,18 +587,18 @@ theorem call_exits {effect : Effect} {P : ArgFam} {Rc R : Fam}
 /-- Application consumes a qualified signature, without inspecting the
 callee's implementation. Its entry heap is after actual evaluation; its
 postconditions are its exits read at its heaps (`call_exits`,
-`Effect.heldPosts_post`). -/
+`Effect.heldPosts_call`). -/
 theorem call_safe_exc {effect : Effect} {P : ArgFam} {Rc R : Fam}
     (hP : Adm P) (hRc : Adm Rc) {n W heap f r vs}
     (hf : PromiseWith Ξ effect P Rc R n W f) (hr : Rc n W r)
     (hrv : isVal r = true) (hv : CallArguments.Values vs) (ha : P n W vs)
     (hw : WorldAdm W) (hh : HeapOk n W heap) (hq : effect.Requires r vs heap)
     (href : RefsOk W (.invoke f r vs)) :
-    SafePostExc Ξ (effect.result R (effect.promised vs)) (effect.post r vs heap) (effect.excPost r vs heap)
+    SafePostExc Ξ (effect.result R (effect.promised vs)) (effect.callPost r vs heap) (effect.callExc r vs heap)
       n W heap (.invoke f r vs) :=
-  Effect.heldPosts_post (fun _ => hv) hw hh
-    (SafePostExcV.weaken (R' := effect.schema.heldExc _ _ W heap) (fun _ _ _ _ hp => hp) (fun _ _ _ _ hp => .inl hp)
-      (call_exits hP hRc hf hr hrv hv ha hw hh hq href))
+  Effect.heldPosts_call (pad := []) (by simp) (.inl rfl) hw hh
+    (SafePostExcV.weaken (R' := effect.schema.heldExc _ _ W heap) (fun _ _ _ _ hp => by simpa using hp)
+      (fun _ _ _ _ hp => .inl (by simpa using hp)) (call_exits hP hRc hf hr hrv hv ha hw hh hq href))
 
 theorem call_safe {effect : Effect} {P : ArgFam} {Rc R : Fam}
     (hP : Adm P) (hRc : Adm Rc) {n W heap f r vs}
@@ -606,7 +606,7 @@ theorem call_safe {effect : Effect} {P : ArgFam} {Rc R : Fam}
     (hrv : isVal r = true) (hv : CallArguments.Values vs) (ha : P n W vs)
     (hw : WorldAdm W) (hh : HeapOk n W heap) (hq : effect.Requires r vs heap)
     (href : RefsOk W (.invoke f r vs)) :
-    SafePost Ξ (effect.result R (effect.promised vs)) (effect.post r vs heap) n W heap (.invoke f r vs) :=
+    SafePost Ξ (effect.result R (effect.promised vs)) (effect.callPost r vs heap) n W heap (.invoke f r vs) :=
   (call_safe_exc hP hRc hf hr hrv hv ha hw hh hq href).post
 
 /-- Trailing `undefined` actuals change no precondition: a construction's

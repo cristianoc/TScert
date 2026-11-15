@@ -633,6 +633,20 @@ postconditions state (proved: `NativeContract.iff_exits`,
 entry reaches, the normal exit is `Effect.postW` and the exceptional exit
 `Effect.excPost`.
 
+A call's completions read at heaps are its exits at the call's evaluated
+actuals, a construction's omitted positions `undefined`
+(`Effect.callPost`, `Effect.callExc`, in `Semantics/ContractExits.lean`;
+from exits held from the call's entry: `Effect.heldPosts_call`). Each
+consequence a decision of the pass reads of a call is derived from the
+exit's frame or one of its postconditions: the frame
+(`Effect.callPost_within`, on a throw `Effect.callExc_within`,
+`Effect.callExc_frame`), a fresh result store or object
+(`Effect.callPost_fresh`, `Effect.callPost_freshObject`), the receiver's
+elements (`Effect.callPost_elements`), the index facts it ensures
+(`Effect.callPost_ensures`), the receiver's growth and the append
+(`Effect.callPost_grows`) and the element write's change
+(`Effect.callPost_elementWrite`).
+
 Two safety derivations of one invocation reach the same heaps and terms at
 worlds of their own; their guarantees conjoin at the first's worlds where
 the second's are independent of the admissible exit world at a fixed heap

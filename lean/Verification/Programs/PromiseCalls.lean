@@ -923,14 +923,14 @@ else those no call changes. -/
 def promiseOutput (effect : Effect) (k : HeapKnowledge.Knowledge) : HeapKnowledge.Knowledge :=
   if keepsHeap effect then HeapKnowledge.shift k else HeapExpressionRules.ordinaryOutput k
 
-/-- A normal return at an effect keeping the heap returns in an extension of
-the heap the call started in. -/
-theorem keepsHeap_prefix {e : Effect} (hk : keepsHeap e = true) {r : Tm} {args : List Tm} {before after : Heap} {v}
-    (hp : e.post r args before after v) : before.IsPrefix after := by
-  exact Footprints.Footprint.keepsHeap_prefix hk hp.1
+/-- A transition within the frame of an effect keeping the heap ends in an
+extension of the heap it starts in. -/
+theorem keepsHeap_prefix {e : Effect} (hk : keepsHeap e = true) {r : Tm} {args : List Tm} {before after : Heap}
+    (hp : e.within r args before after) : before.IsPrefix after := by
+  exact Footprints.Footprint.keepsHeap_prefix hk hp
 
 theorem promiseOutput_holds {effect : Effect} {k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap}
-    {r : Tm} {args : List Tm} {v} (hk : HeapKnowledge.Holds k ε ρ h) (hp : effect.post r args h h' v) :
+    {r : Tm} {args : List Tm} {v : Tm} (hk : HeapKnowledge.Holds k ε ρ h) (hp : effect.within r args h h') :
     HeapKnowledge.Holds (promiseOutput effect k) ε (push v ρ) h' := by
   unfold promiseOutput
   split
@@ -1060,7 +1060,7 @@ theorem promiseCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
     have hsel : s.effect = effect := by
       revert hsome
       split <;> (try split) <;> intro hsome <;> simp_all
-    refine consequence (fun m U u hu => ?_) (fun h' v hq => promiseOutput_holds hk (hsel ▸ hq)) hs'
+    refine consequence (fun m U u hu => ?_) (fun h' v hq => promiseOutput_holds hk (hsel ▸ Effect.callPost_within hq)) hs'
     clear hsel
     split at hsome
     · rename_i p heff
@@ -1221,8 +1221,8 @@ theorem freshCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j 
       obtain ⟨hkeep, hfo⟩ := hsel
       refine consequence (fun _ _ _ hv => hv) (fun h' v hq => ?_)
         (ExpressionEffects.selected_sound p ht hops heff hcodes hsums he hw hh href)
-      have hfresh := hq.2.2.1 hfo
-      obtain ⟨vs, rfl⟩ := keepsHeap_prefix hkeep hq
+      have hfresh := Effect.callPost_freshObject hfo hq
+      obtain ⟨vs, rfl⟩ := keepsHeap_prefix hkeep (Effect.callPost_within hq)
       have hshift := HeapKnowledge.shift_holds (v := v) (HeapKnowledge.alloc_frames vs hk)
       refine ⟨?_, hshift.2.1, hshift.2.2.1,
         HeapSeparation.allocate_holds hk.2.2.2.1 (freshObject_apart he hh hfresh), hshift.2.2.2.2⟩
@@ -1346,7 +1346,7 @@ theorem ownCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {j : 
         obtain ⟨⟨hle, hown⟩, -⟩ := hsel
         refine consequence (fun _ _ _ hv => hv) (fun h' v hq => ?_)
           (ExpressionEffects.selected_sound p ht hops heff hcodes hsums he hw hh href)
-        have hw' := CallEffects.Effect.within_outside_own hq.1 hown
+        have hw' := CallEffects.Effect.within_outside_own (Effect.callPost_within hq) hown
         rw [hterm] at hw'
         simp only [ExpressionEffects.receiverOf, instantiate] at hw'
         have hon := hw'.mono hle
@@ -1496,7 +1496,7 @@ theorem elementsCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
             refine post_with_type (fun m U h' v hT hq => ?_)
               (ExpressionEffects.selected_sound p ht hops hsel hcodes hsums he hw hh href)
             have hb := onlyBool_sound hbool hT
-            obtain ⟨vs, rfl⟩ := keepsHeap_prefix hkeep hq
+            obtain ⟨vs, rfl⟩ := keepsHeap_prefix hkeep (Effect.callPost_within hq)
             have hs := HeapKnowledge.shift_holds (v := v) (HeapKnowledge.alloc_frames vs hk)
             refine ⟨hs.1, hs.2.1, hs.2.2.1, hs.2.2.2.1, ?_, hs.2.2.2.2.2⟩
             intro a ha hcond
@@ -1507,7 +1507,7 @@ theorem elementsCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
                 rcases hb with rfl | rfl
                 · rfl
                 · simp [tagHolds] at ht
-              have hel := hq.2.2.2.1 _ hR' hv
+              have hel := Effect.callPost_elements hR' hv hq
               rw [hterm] at hel
               simpa [ExpressionEffects.receiverOf, instantiate, push] using hel
             · exact hs.2.2.2.2.1 a ha hcond
@@ -1725,7 +1725,7 @@ theorem requiresApp_sound {G : NormalGraph ι} {images : InstanceImageCheck G}
     (hsel : ExpressionEffects.selectedEffect p = some eff) {ρ n W h} (he : EnvOk G (claim p).context ρ n W)
     (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ (claim p).term)) :
     SafePost (excOf G) (meaning G (claim p).type)
-      (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term))
+      (eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term))
         (ExpressionEffects.actualsOf (instantiate 0 ρ (claim p).term)) h) n W h
       (instantiate 0 ρ (claim p).term) := by
   obtain ⟨j, r, ps⟩ := p
@@ -1775,9 +1775,9 @@ theorem requiresApp_sound_exc {G : NormalGraph ι} {images : InstanceImageCheck 
     (hsel : ExpressionEffects.selectedEffect p = some eff) {ρ n W h} (he : EnvOk G (claim p).context ρ n W)
     (hk : HeapKnowledge.Holds k ε ρ h) (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ (claim p).term)) :
     SafePostExc (excOf G) (meaning G (claim p).type)
-      (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term))
+      (eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term))
         (ExpressionEffects.actualsOf (instantiate 0 ρ (claim p).term)) h)
-      (eff.excPost (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term)) (ExpressionEffects.actualsOf (instantiate 0 ρ (claim p).term)) h) n W h
+      (eff.callExc (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term)) (ExpressionEffects.actualsOf (instantiate 0 ρ (claim p).term)) h) n W h
       (instantiate 0 ρ (claim p).term) := by
   obtain ⟨j, r, ps⟩ := p
   cases r with
@@ -1834,7 +1834,7 @@ theorem requiresTree_sound {G : NormalGraph ι} {images : InstanceImageCheck G}
     ∃ eff, ExpressionEffects.selectedEffect p = some eff ∧ ∀ {ρ n W h}, EnvOk G (claim p).context ρ n W →
     HeapKnowledge.Holds k ε ρ h → WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ (claim p).term) →
     SafePost (excOf G) (meaning G (claim p).type)
-      (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term))
+      (eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term))
         (ExpressionEffects.actualsOf (instantiate 0 ρ (claim p).term)) h) n W h
       (instantiate 0 ρ (claim p).term) := by
   by_cases hs : ∃ j c q, p = .node j (.sub c) [q]
@@ -1865,9 +1865,9 @@ theorem requiresTree_sound_exc {G : NormalGraph ι} {images : InstanceImageCheck
     ∃ eff, ExpressionEffects.selectedEffect p = some eff ∧ ∀ {ρ n W h}, EnvOk G (claim p).context ρ n W →
     HeapKnowledge.Holds k ε ρ h → WorldAdm W → HeapOk n W h → RefsOk W (instantiate 0 ρ (claim p).term) →
     SafePostExc (excOf G) (meaning G (claim p).type)
-      (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term))
+      (eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term))
         (ExpressionEffects.actualsOf (instantiate 0 ρ (claim p).term)) h)
-      (eff.excPost (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term)) (ExpressionEffects.actualsOf (instantiate 0 ρ (claim p).term)) h) n W h
+      (eff.callExc (ExpressionEffects.receiverOf (instantiate 0 ρ (claim p).term)) (ExpressionEffects.actualsOf (instantiate 0 ρ (claim p).term)) h) n W h
       (instantiate 0 ρ (claim p).term) := by
   by_cases hs : ∃ j c q, p = .node j (.sub c) [q]
   · obtain ⟨j, c, q, rfl⟩ := hs
@@ -1927,7 +1927,7 @@ theorem requiresCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} 
     have hs := hs he hk hw hh href
     refine consequence (fun _ _ _ hv => hv) (fun h' v hp => ?_) hs
     simp only [requiresOutput, hsel]
-    exact promiseOutput_holds hk hp
+    exact promiseOutput_holds hk (Effect.callPost_within hp)
   · cases hc
 
 /-! ### A call stating a postcondition (PROGRAM-TYPING.md, "Reads below the length")
@@ -3667,7 +3667,7 @@ theorem ensuresCall_sound {G : NormalGraph ι} {images : InstanceImageCheck G} {
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hk : HeapKnowledge.Holds k ε ρ h)
     (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ j.term)) :
     SafePost (excOf G) (meaning G j.type)
-      (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ j.term))
+      (eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ j.term))
         (ExpressionEffects.actualsOf (instantiate 0 ρ j.term)) h) n W h (instantiate 0 ρ j.term) := by
   unfold ensuresCall at hc
   split at hc
@@ -4048,9 +4048,14 @@ other step is `base`'s. -/
       have hs := base.sound hrun hcodes hsums he hk hw hh href
       have hp := PromiseCalls.ensuresCall_sound hens hcodes hsums he hk hw hh href
       exact HeapObservations.weaken (fun h' v hq' => let hq := hq'.1; PromiseCalls.withGrown_holds
-        (PromiseCalls.withEnsures_holds (fun i hi => (ProgramTyping.meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1) hq.1 hk hq.2.1 hq.2.2.2.2.2.1 hq.2.2.2.2.2.2.1 hq.2.2.2.2.2.2.2 hq'.2)
-        (fun hgr => IndexWrites.grownRegions_holds he hh hk (hq.2.2.2.2.2.2.1 hgr).1 (hq.2.2.2.2.2.2.1 hgr).2)
-        (fun hgr => HeapExpressionRules.keptCells_holds hk.1 (PromiseCalls.grows_into (hq.2.2.2.2.2.2.1 hgr).1)
+        (PromiseCalls.withEnsures_holds (fun i hi => (ProgramTyping.meaning_value (he.2 i _ (List.getElem?_eq_getElem hi))).1) hq.1 hk
+          (CallEffects.Effect.callPost_within hq.2) (fun _ hF => CallEffects.Effect.callPost_ensures hF hq.2)
+          (fun hgr => CallEffects.Effect.callPost_grows hgr hq.2)
+          (fun _ hw => CallEffects.Effect.callPost_elementWrite hw hq.2) hq'.2)
+        (fun hgr => IndexWrites.grownRegions_holds he hh hk (CallEffects.Effect.callPost_grows hgr hq.2).1
+          (CallEffects.Effect.callPost_grows hgr hq.2).2)
+        (fun hgr => HeapExpressionRules.keptCells_holds hk.1
+          (PromiseCalls.grows_into (CallEffects.Effect.callPost_grows hgr hq.2).1)
           (fun _ _ _ _ _ _ _ _ _ hf => hf)))
         (HeapExpressionRules.stableFirst_frame he hh
           (HeapObservations.cross_upto (n + 1) (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh hs hp))
