@@ -501,60 +501,6 @@ theorem selectedWithinAt_eq_grades (Φ : Footprints.Closed) (F : List Nat) (e : 
   · simp
   · cases ExpressionEffects.selectedEffect e <;> simp
 
-/-- **The grade the signature's fields give** (proved), its coarse bound
-below the mark `c` (`Effect.footprintBelow` at the fresh positions, where an
-argument store region at the empty path of a fresh position is discharged):
-the receiver's own change joined to `c` where it states `receiverOwn`; else
-`c` where it states no receiver store or the receiver is fresh; else
-`top`. -/
-theorem selectedGrades_eq_fields (F : List Nat) (e : ProgramCertificates.Evidence ι) :
-    selectedGrades F e = if ExpressionEffects.selectedOperands e then match ExpressionEffects.selectedEffect e with
-      | some eff =>
-        let c := eff.footprintBelow (freshPositions F (ProgramCertificates.claim e).term)
-        [if eff.receiverOwn then c.join ⟨.any, c.array, c.view⟩
-          else if !eff.receiverStore || receiverFresh F (ProgramCertificates.claim e).term then c
-          else Footprints.Closed.top]
-      | none => []
-    else [] := by
-  unfold selectedGrades
-  cases ExpressionEffects.selectedOperands e
-  · rfl
-  · cases ExpressionEffects.selectedEffect e with
-    | none => rfl
-    | some eff =>
-      simp only [if_true, CallEffects.Effect.frame_boundBelow, freshPositions_zero,
-        CallEffects.Effect.join_own]
-
-/-- **The check the signature's fields give** (proved): the coarse bound
-below the mark `c` within the bound, and, where the signature states
-`receiverOwn`, its own change within it; where it states `receiverStore`,
-the bound letting everything change or the receiver fresh. -/
-theorem selectedWithinAt_eq_fields (Φ : Footprints.Closed) (F : List Nat) (e : ProgramCertificates.Evidence ι) :
-    selectedWithinAt Φ F e = (ExpressionEffects.selectedOperands e && match ExpressionEffects.selectedEffect e with
-      | some eff =>
-        let c := eff.footprintBelow (freshPositions F (ProgramCertificates.claim e).term)
-        c.le Φ && (if eff.receiverOwn then (⟨.any, c.array, c.view⟩ : Footprints.Closed).le Φ else
-          (!eff.receiverStore || Φ == .top || receiverFresh F (ProgramCertificates.claim e).term))
-      | none => false) := by
-  rw [selectedWithinAt_eq_grades, selectedGrades_eq_fields]
-  cases ExpressionEffects.selectedOperands e
-  · simp
-  · cases ExpressionEffects.selectedEffect e with
-    | none => simp
-    | some eff =>
-      simp only [Bool.true_and, if_true, List.any_cons, List.any_nil, Bool.or_false]
-      split
-      · rw [Footprints.Closed.join_le]
-      · cases hr : (!eff.receiverStore || receiverFresh F (ProgramCertificates.claim e).term)
-        · simp only [Bool.false_eq_true, if_false, Footprints.Closed.top_le]
-          cases hΦ : Φ == Footprints.Closed.top
-          · simp_all
-          · have : Φ = Footprints.Closed.top := by simpa using hΦ
-            subst this
-            simp [Footprints.Closed.le_top]
-        · simp only [if_true]
-          cases h1 : eff.receiverStore <;> cases h2 : receiverFresh F (ProgramCertificates.claim e).term <;> simp_all
-
 /-- **A selected call's transition is within the bound below the mark**
 where its grade is below the bound (`Footprint.boundBelow_sound`). -/
 theorem selectedWithin_sound {Φ : Footprints.Closed} {F : List Nat} {b : Nat} {ρ : Env} {t : Tm}
@@ -1403,8 +1349,8 @@ theorem nodePost_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : Inst
     exact HeapObservations.weaken (fun _ _ hq => ⟨hq, fun h => by simp [hvar, hcf] at h⟩) hwithin
 
 /-- Whether a node's throw is within the bound: an inspection, a typed
-write, or a selected invocation or construction within the bound whose
-signature states its footprint on a throw. -/
+write, or a selected invocation or construction whose exceptional exit's
+frame is within the bound (`selectedThrowsWithinAt`). -/
 def throwsWithin [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCheck G)
     (sums : List (ProgramCertificates.ReadSummary ι))
     (Φ : Footprints.Closed) (F : List Nat) (c : NodeEvidence ι) (t : Tm) : Bool :=
@@ -1412,10 +1358,7 @@ def throwsWithin [DecidableEq ι] (G : NormalGraph ι) (images : InstanceImageCh
     (decide ((ProgramCertificates.claim c.expression).term = t) &&
       (ProgramCertificates.checkTreeUsing G images c.expression (sums := sums) ||
         PromiseCalls.requiresTree G images (entryFacts G c) (fun _ => false) sums c.expression) &&
-      selectedWithinAt Φ F c.expression &&
-      (match ExpressionEffects.selectedEffect c.expression with
-      | some eff => eff.onThrow
-      | none => false)) ||
+      selectedThrowsWithinAt Φ F c.expression) ||
   -- A node no environment reaches: a slot of its entry has no value.
   (entry c).any (fun A => ExpressionEffects.emptyType G A)
 
@@ -1444,13 +1387,11 @@ theorem throwsWithin_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
   · exact HeapObservations.SafePostExc.weaken (fun _ _ _ => trivial) (fun _ hq => hq.on _)
       (writeWithinAt_sound hwrite henv hheap hknowledge hsafe)
   · simp only [Bool.and_eq_true, decide_eq_true_eq] at hcall
-    obtain ⟨⟨⟨hterm', htree⟩, hsel⟩, hon⟩ := hcall
-    simp only [selectedWithinAt, Bool.and_eq_true] at hsel
+    obtain ⟨⟨hterm', htree⟩, hsel⟩ := hcall
+    simp only [selectedThrowsWithinAt, Bool.and_eq_true] at hsel
     obtain ⟨hops, hsel⟩ := hsel
     split at hsel
     · rename_i eff heff
-      rw [heff] at hon
-      simp only at hon
       have hs : HeapObservations.SafePostExc (excOf G) (meaning G (ProgramCertificates.claim c.expression).type)
           (eff.callPost (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term))
             (ExpressionEffects.actualsOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h')
@@ -1466,7 +1407,7 @@ theorem throwsWithin_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
           exact hs (by simpa only [ControlFlow.entry] using henv) hknowledge hworld hheap (by rw [hterm']; exact href)
       rw [hterm'] at hs hsel
       exact HeapObservations.SafePostExc.weaken (fun _ _ _ => trivial)
-        (fun h'' hq => selectedWithin_sound hF hsel (CallEffects.Effect.callExc_within hon hq)) hs
+        (fun h'' hq => selectedThrowWithin_sound hF hsel hq) hs
     · cases hsel
 
 /-- A node within the bound on normal return, and on a throw where its

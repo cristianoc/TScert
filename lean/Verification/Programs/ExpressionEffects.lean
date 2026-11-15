@@ -429,14 +429,11 @@ def selectedOperands : Evidence ι → Bool
   | _ => false
 
 /-- Invocation and construction consume the selected signature's effect:
-within the bound when the signature's footprint is; for a signature
-excepting its receiver's own locations, when the bound admits their change;
-and for one excepting its receiver's store, when the bound lets everything
-change. -/
+within the bound when the closed bound of its normal exit's frame
+(`Footprint.close`) is. -/
 def selectedCallWithin (Φ : Footprints.Closed) (e : Evidence ι) : Bool :=
   selectedOperands e && match selectedEffect e with
-    | some eff => eff.footprint.le Φ &&
-        (if eff.receiverOwn then eff.ownChange.le Φ else (!eff.receiverStore || Φ == .top))
+    | some eff => (eff.schema.normal.frame.close).le Φ
     | none => false
 
 theorem argument_values [DecidableEq ι] {G : NormalGraph ι}
@@ -1509,19 +1506,10 @@ theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
   obtain ⟨hops, hp⟩ := hp
   split at hp
   · rename_i eff hsel
-    simp only [Bool.and_eq_true] at hp
-    obtain ⟨hle, hr⟩ := hp
     apply HeapObservations.weaken (fun h' v hq => ?_) (selected_sound e ht hops hsel hcodes hsums he hw hh href)
-    have hwq := CallEffects.Effect.callPost_within hq
-    split at hr
-    · rename_i ho
-      exact (CallEffects.Effect.within_own hwq ho).mono hr
-    rename_i ho
-    simp only [Bool.not_eq_true] at ho
-    simp only [Bool.or_eq_true, Bool.not_eq_true', beq_iff_eq] at hr
-    rcases hr with hr | hr
-    · exact (CallEffects.Effect.within_holds hwq hr ho).mono hle
-    · rw [hr]; exact CallEffects.Effect.within_top hwq
+    -- The frame is within its closed bound (`Footprint.close_sound`).
+    have hc := Footprints.Footprint.close_sound (CallEffects.Effect.callPost_within hq)
+    exact (Footprints.Closed.holds_iff.mpr (Footprints.Closed.post_iff.mp hc)).mono hp
   · cases hp
 
 /-! ### No normal return

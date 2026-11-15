@@ -463,7 +463,8 @@ that return outside $`D`$.
 
 A node whose exceptional handler lies outside $`D`$ is within the bound on a
 throw as well: its throw is an inspection, a typed write, or a call whose
-signature bounds its throws (`onThrow`), and the handler's facts follow from
+signature's exceptional exit has its frame within the bound
+(`GraphCode.selectedThrowsWithinAt`), and the handler's facts follow from
 the node's, the thrown value never fresh (proved:
 `GraphCode.throwsWithin_sound`, `handlerFresh_sound`).
 A signature stating `onThrow` bounds the throws leaving the invocation too

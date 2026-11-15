@@ -96,15 +96,14 @@ on the regional route the least closed footprint its check accepts there. -/
 
 /-- The parts of the regional route's closed check (`checkClosedNode`) that
 read no bound, computed once for a step: its scope, whether it is an
-inspection, its derivation's tree checked at its term, an empty result or
-entry, and whether its selected signature bounds its throw. -/
+inspection, its derivation's tree checked at its term, and an empty result
+or entry. -/
 structure ClosedParts where
   scope : Bool
   inspect : Bool
   tree : Bool
   empty : Bool
   emptyEntry : Bool
-  throwsSel : Bool
 
 def closedParts (G : NormalGraph ι) (images : InstanceImageCheck G) (sums : List (ReadSummary ι))
     (c : NodeEvidence ι) (t : Tm) : ClosedParts :=
@@ -114,17 +113,15 @@ def closedParts (G : NormalGraph ι) (images : InstanceImageCheck G) (sums : Lis
       (ProgramCertificates.checkTreeUsing G images c.expression (sums := sums) ||
         PromiseCalls.requiresTree G images (ControlFlow.entryFacts G c) (fun _ => false) sums c.expression)
     empty := ExpressionEffects.emptyType G (ControlFlow.result c)
-    emptyEntry := (ControlFlow.entry c).any (fun A => ExpressionEffects.emptyType G A)
-    throwsSel := (match ExpressionEffects.selectedEffect c.expression with
-        | some eff => eff.onThrow
-        | none => false) }
+    emptyEntry := (ControlFlow.entry c).any (fun A => ExpressionEffects.emptyType G A) }
 
 /-- The closed check at `Φ` from its parts. -/
 def ClosedParts.at (p : ClosedParts) (G : NormalGraph ι) (Φ : Closed) (c : NodeEvidence ι) (t : Tm) (thr : Bool) :
     Bool :=
   let w := GraphCode.writeWithinAt G Φ c t
   let sel := GraphCode.selectedWithinAt Φ [] c.expression
-  p.scope && (!thr || ((p.inspect || w) || (p.tree && sel && p.throwsSel) || p.emptyEntry)) &&
+  let selT := GraphCode.selectedThrowsWithinAt Φ [] c.expression
+  p.scope && (!thr || ((p.inspect || w) || (p.tree && selT) || p.emptyEntry)) &&
     (((p.inspect || w) || (p.tree && sel)) || p.empty)
 
 omit [Hashable ι] [Instantiates ι] in
@@ -135,7 +132,6 @@ theorem closedParts_at (G : NormalGraph ι) (images : InstanceImageCheck G) (sum
       GraphCode.ArgumentRegionGraph.checkClosedNode G images sums Φ c t thr := by
   simp only [closedParts, ClosedParts.at, GraphCode.ArgumentRegionGraph.checkClosedNode, GraphCode.throwsWithin,
     Bool.and_assoc]
-  rfl
 
 /-- A step's local effect on the regional route, its throw bounded where
 `thr`: the least of its alternatives, each rebased to the entry through the
