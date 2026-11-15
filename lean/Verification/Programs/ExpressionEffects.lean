@@ -1239,82 +1239,107 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
     let Q := x.heldPost Rv (fixedVals ++ parts.map RestCalls.partTerm) W h
     let R := x.heldExc Rv (fixedVals ++ parts.map RestCalls.partTerm) W h
     show SafePostExcV (excOf G) (meaning G A) Q R (n+1) W h (.invoke F Rv (fixedVals ++ parts.map RestCalls.partTerm))
-    refine CallEffects.call_site_sound
-      (E := fun j U hp f r vs => SafePostExcV (excOf G) (meaning G A) Q R j U hp (.invoke f r vs))
-      (fun _ _ _ _ _ _ hs => hs) ?_
-    apply spread_values_eval (E := meaning G El) (meaning_adm G El) (meaning_valOnly G El) hfv hrv
-      parts (n+1) W h _
+    -- The invocations the evaluation reaches: the callee and the receiver,
+    -- the fixed actuals followed by values at the element, in the call's
+    -- heap, at a well-formed world reached from the call's.
+    let I : (m : Nat) → WorldT m → Heap → Tm → Tm → List Tm → Prop := fun m U h' f' r' vs =>
+      h' = h ∧ f' = F ∧ r' = Rv ∧ ∃ extra, vs = fixedVals ++ extra ∧ ∃ hi : m ≤ n + 1,
+        WExt (trunc m hi W) U ∧ WorldAdm U ∧ HeapOk m U h' ∧ (∀ a ∈ extra, meaning G El m U a) ∧
+          RefsOk U (.invoke f' r' vs)
+    -- The call at its callee's exits, at the reached invocation's actuals.
+    have hfull := CallEffects.call_site_exits (x := e.schema) (T := meaning G A)
+      (R := fun _ _ h' _ => h' = h) (E := I)
       (by
-        intro q hq S hS
-        obtain ⟨q', hq', rfl⟩ := List.mem_map.mp hq
-        rcases q' with ⟨_ | _, p⟩
-        · simp at hS
-        · simp only [if_true, Option.some.injEq] at hS
-          subst hS
-          have := hpart _ hq'
-          simp only [if_true] at this
-          have hm : p ∈ jas := List.mem_of_mem_drop (List.of_mem_zip hq').2
-          have hro := hparts0 _ hq'
-          simp only [if_true] at hro
-          have heΓ : EnvOk G Γ ρ (n+1) W := by simpa [context p (by simp [hm])] using he
-          refine ⟨meaning_adm G p.type, spreadsInto_sound this,
-            readOperand_instantiate hro (inScope p (by simp [hm])) heΓ, ?_⟩
-          intro i hi U hx hu heap' hh'
-          exact (typed p (by simp [hm])).sound i U heap' ρ (heΓ.transfer i hi U hx) hu hh'
-            (RefsOk_mono hx (RefsOk_trunc _ (refsOf p (by simp [hm])))))
+        rintro m U h' f' r' vs ⟨-, rfl, rfl, extra, rfl, -, -, -, -, hex, -⟩
+        refine ⟨hfv, hrv, fun a ha => ?_⟩
+        rcases List.mem_append.mp ha with ha | ha
+        · obtain ⟨p, hp, rfl⟩ := List.mem_map.mp ha
+          exact hfixedv p hp
+        · exact meaning_valOnly G El _ U a (hex a ha))
+      (by
+        rintro i U h' f' r' vs ⟨rfl, rfl, rfl, extra, rfl, hi, hx, hU, hh', hex, hre⟩
+        have hfU := (CallEffects.restsT_adm _).mono (i+1) _ U hx _
+          ((CallEffects.restsT_adm _).down_le (n+1) (i+1) hi W _ hf)
+        have hp := hfU.2 _ (List.mem_singleton_self _)
+        have hrU := (meaning_adm G jr.type).mono (i+1) _ U hx _
+          ((meaning_adm G jr.type).down_le (n+1) (i+1) hi W _ (member jr (by simp) hrv))
+        have hvals : CallArguments.Values (fixedVals ++ extra) := by
+          intro a ha
+          rcases List.mem_append.mp ha with ha | ha
+          · obtain ⟨p, hp, rfl⟩ := List.mem_map.mp ha
+            exact hfixedv p hp
+          · exact meaning_valOnly G El (i+1) U a (hex a ha)
+        have hacc : ArgsRest ((jas.take k).map (fun p => meaning G p.type)) (argMeaning G P) (i+1) U
+            (fixedVals ++ extra) :=
+          ArgsRest_of_exact_extra
+            (ArgsT_transfer (fun T hm => by obtain ⟨p,_,rfl⟩ := List.mem_map.mp hm; exact meaning_adm G p.type)
+              hfixed (i+1) hi U hx)
+            ((restElem_args hel).mpr hex)
+        have hs := CallEffects.call_exits_exact (effect := e)
+          (P := ArgsRest ((jas.take k).map (fun p => meaning G p.type)) (argMeaning G P))
+          (Adm.of_transfer (fun ha j hj U hx => ArgsRest_transfer (fun T hm => by
+              obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hm; exact meaning_adm G p.type)
+            (argMeaning_adm G P) ha j hj U hx))
+          (meaning_adm G jr.type)
+          (by simpa [CallEffects.RestArrow.mapWith, CallEffects.Contract.map, List.map_map, Function.comp_def] using hp)
+          hrU hrv hvals hacc hU hh'
+          (CallEffects.Effect.requires_none (CallEffects.Effect.plain_requires hplain)
+            (CallEffects.Effect.plain_pre hplain) _ _ _) hre
+        rw [CallEffects.Effect.result_plain hplain] at hs
+        exact hs)
       hw hh
       (by
-        intro a ha
-        obtain ⟨p, hp, rfl⟩ := List.mem_map.mp ha
-        exact hfixedv p hp)
-      (by
-        intro q hq hnone
-        obtain ⟨q', hq', rfl⟩ := List.mem_map.mp hq
-        have hm : q'.2 ∈ jas := List.mem_of_mem_drop (List.of_mem_zip hq').2
-        rcases q' with ⟨_ | _, p⟩
-        · have hv0 := hparts0 _ hq'
-          simp only [Bool.false_eq_true, if_false] at hv0
-          have hv := valueOf p (by simp [hm]) hv0
-          refine ⟨hv, ?_⟩
-          have hA : p.type = El := by simpa using hpart _ hq'
-          simpa [hA] using member p (by simp [hm]) hv
-        · simp at hnone)
-      hrefs' (fun _ _ _ _ _ => .inr rfl)
-    intro i hi U hx hU hh' extra hex hre
-    refine CallEffects.EvalCallSafe.invoke hre ?_
-    have hfU := (CallEffects.restsT_adm _).mono i _ U hx _
-      ((CallEffects.restsT_adm _).down_le (n+1) i hi W _ hf)
-    have hp := hfU.2 _ (List.mem_singleton_self _)
-    have hrU := (meaning_adm G jr.type).mono i _ U hx _
-      ((meaning_adm G jr.type).down_le (n+1) i hi W _ (member jr (by simp) hrv))
-    have hvals : CallArguments.Values ((jas.take k).map (fun p => instantiate 0 ρ p.term) ++ extra) := by
-      intro a ha
-      rcases List.mem_append.mp ha with ha | ha
-      · obtain ⟨p, hp, rfl⟩ := List.mem_map.mp ha
-        exact hfixedv p hp
-      · exact meaning_valOnly G El i U a (hex a ha)
-    have hacc : ArgsRest ((jas.take k).map (fun p => meaning G p.type)) (argMeaning G P) i U
-        ((jas.take k).map (fun p => instantiate 0 ρ p.term) ++ extra) :=
-      ArgsRest_of_exact_extra
-        (ArgsT_transfer (fun T hm => by obtain ⟨p,_,rfl⟩ := List.mem_map.mp hm; exact meaning_adm G p.type)
-          hfixed i hi U hx)
-        ((restElem_args hel).mpr hex)
-    have hs := CallEffects.call_exits (effect := e)
-      (P := ArgsRest ((jas.take k).map (fun p => meaning G p.type)) (argMeaning G P))
-      (Adm.of_transfer (fun ha j hj U hx => ArgsRest_transfer (fun T hm => by
-          obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hm; exact meaning_adm G p.type)
-        (argMeaning_adm G P) ha j hj U hx))
-      (meaning_adm G jr.type)
-      (by simpa [CallEffects.RestArrow.mapWith, CallEffects.Contract.map, List.map_map, Function.comp_def] using hp)
-      hrU hrv hvals hacc hU hh'
-      (CallEffects.Effect.requires_none (CallEffects.Effect.plain_requires hplain)
-        (CallEffects.Effect.plain_pre hplain) _ _ _) hre
-    rw [CallEffects.Effect.result_plain hplain] at hs
-    exact SafePostExcV.weaken
-      (fun _ _ _ _ hp => CallEffects.Exits.fromEntry_weaken (fun _ _ _ hq => CallEffects.Exits.forgetActuals_sound hq)
-        ⟨hi, hx⟩ hp)
-      (fun _ _ _ _ hp => .inl (CallEffects.Exits.fromEntry_weaken
-          (fun _ _ _ hq => CallEffects.Exits.forgetActuals_sound hq) ⟨hi, hx⟩ hp)) hs
+        apply spread_values_eval (E := meaning G El) (meaning_adm G El) (meaning_valOnly G El) hfv hrv
+          parts (n+1) W h _
+          (by
+            intro q hq S hS
+            obtain ⟨q', hq', rfl⟩ := List.mem_map.mp hq
+            rcases q' with ⟨_ | _, p⟩
+            · simp at hS
+            · simp only [if_true, Option.some.injEq] at hS
+              subst hS
+              have := hpart _ hq'
+              simp only [if_true] at this
+              have hm : p ∈ jas := List.mem_of_mem_drop (List.of_mem_zip hq').2
+              have hro := hparts0 _ hq'
+              simp only [if_true] at hro
+              have heΓ : EnvOk G Γ ρ (n+1) W := by simpa [context p (by simp [hm])] using he
+              refine ⟨meaning_adm G p.type, spreadsInto_sound this,
+                readOperand_instantiate hro (inScope p (by simp [hm])) heΓ, ?_⟩
+              intro i hi U hx hu heap' hh'
+              exact (typed p (by simp [hm])).sound i U heap' ρ (heΓ.transfer i hi U hx) hu hh'
+                (RefsOk_mono hx (RefsOk_trunc _ (refsOf p (by simp [hm])))))
+          hw hh
+          (by
+            intro a ha
+            obtain ⟨p, hp, rfl⟩ := List.mem_map.mp ha
+            exact hfixedv p hp)
+          (by
+            intro q hq hnone
+            obtain ⟨q', hq', rfl⟩ := List.mem_map.mp hq
+            have hm : q'.2 ∈ jas := List.mem_of_mem_drop (List.of_mem_zip hq').2
+            rcases q' with ⟨_ | _, p⟩
+            · have hv0 := hparts0 _ hq'
+              simp only [Bool.false_eq_true, if_false] at hv0
+              have hv := valueOf p (by simp [hm]) hv0
+              refine ⟨hv, ?_⟩
+              have hA : p.type = El := by simpa using hpart _ hq'
+              simpa [hA] using member p (by simp [hm]) hv
+            · simp at hnone)
+          hrefs' (fun _ _ _ _ _ => rfl)
+        intro i hi U hx hU hh' extra hex hre
+        exact CallEffects.EvalCallSafe.invoke hre ⟨rfl, rfl, rfl, extra, rfl, hi, hx, hU, hh', hex, hre⟩)
+    -- Forgetting what the specification states of the actuals, by
+    -- consequence (`Exits.forgetActuals_sound`), from the reached
+    -- invocation's entry, held from the call's.
+    have hheap : ∀ m U h' f' r' vs, I m U h' f' r' vs → h' = h := fun _ _ _ _ _ _ hI => hI.1
+    have hforget : ∀ c m U f' r' vs, I m U h f' r' vs → ∀ s s' v, e.schema.exitPost c r' vs s s' v →
+        x.exitPost c Rv (fixedVals ++ parts.map RestCalls.partTerm) s s' v := by
+      rintro c m U f' r' vs ⟨-, -, rfl, -⟩ s s' v hp
+      exact CallEffects.Exits.forgetActuals_sound hp
+    exact SafePostExcV.weaken (fun _ _ _ _ hp => CallEffects.Exits.callExit_held hheap (hforget .normal) hp)
+      (fun _ _ _ _ hp => hp.elim .inr fun hp => .inl (CallEffects.Exits.callExit_held hheap (hforget .exceptional) hp))
+      hfull
 
 /-- **A variadic call's guarantee read at its heaps**: safety at the
 selected exits (`selectedExits`) from entries held from the call's gives the

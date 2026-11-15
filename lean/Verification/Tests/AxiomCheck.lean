@@ -1761,6 +1761,11 @@ run_cmd do
   check ``Verification.CallEffects.Effect.postW_of_post
   check ``Verification.CallEffects.construct_exits
   check ``Verification.CallEffects.call_exits
+  check ``Verification.CallEffects.call_exits_exact
+  check ``Verification.CallEffects.construct_exits_exact
+  check ``Verification.CallEffects.invoke_exits_exact
+  check ``Verification.CallEffects.call_site_exits
+  check ``Verification.CallEffects.Exits.callExit_held
   check ``Verification.Kinds.literal_safe
   check ``Verification.Kinds.gate_write
   check ``Verification.Kinds.gate_handled

@@ -94,9 +94,26 @@ theorem NativeConstruct.iff_exits {Ξ : Fam} {effect : Effect} {P : ArgFam} {Rf 
 /-- **Invocation at a callable's exits** (the note's Call at the evaluated
 actuals): a callee meeting the native-contract condition at an exit
 specification, invoked at values meeting its input contract one step below,
-is safe at the specification's exits from its entry, the entry world
-truncated by the invocation's step and the entry heap, held from the
-invocation's (`HeldEntry`; `NativeContract.safe`). -/
+is safe at the specification's exits from the invocation's entry: its world
+truncated by the invocation's step, and its heap (`NativeContract.safe`). -/
+theorem invoke_exits_exact {Ξ : Fam} {Acc : ArgFam} {Rc : Fam} {req : Tm → List Tm → Heap → Prop}
+    {Rf : Tm → List Tm → Fam} {x : Exits ExitSchema} {n : Nat} {W : WorldT (n + 1)} {f : Val}
+    (hc : NativeContract Ξ Acc Rc req Rf (fun r vs _ U h => x.exitPostW .normal r vs U h)
+      (fun r vs _ U h => x.exitPostW .exceptional r vs U h) (n + 1) W f)
+    (hw : WorldAdm W) {h : Heap} (hh : HeapOk (n + 1) W h) {r : Tm} (hrv : isVal r = true)
+    (hr : Rc n (trunc n (Nat.le_succ n) W) r) {vs : List Tm} (hv : CallArguments.Values vs)
+    (ha : Acc n (trunc n (Nat.le_succ n) W) vs) (hq : req r vs h) (href : RefsOk W (.invoke f r vs)) :
+    SafePostExcV Ξ (Rf r vs) (x.exitPostW .normal r vs (trunc n (Nat.le_succ n) W) h)
+      (x.exitPostW .exceptional r vs (trunc n (Nat.le_succ n) W) h) (n + 1) W h (.invoke f r vs) := by
+  obtain ⟨hfr, hrr, har⟩ := RefsOk_invoke.mp href
+  obtain ⟨result, hi, hs⟩ := hc n (Nat.lt_succ_self n) _ (WExt_refl _) (WorldAdm_trunc _ hw) h
+    (HeapOk_trunc n W h hh) (RefsOk_trunc _ hfr) r hrv hr (RefsOk_trunc _ hrr) vs hv
+    (fun a hm => RefsOk_trunc _ (har a hm)) ha hq
+  exact ⟨href, .inr ⟨_, h, result, WExt_refl _, WorldAdm_trunc _ hw, hi.step h, HeapOk_trunc n W h hh, hs⟩⟩
+
+/-- **Invocation at a callable's exits from a held entry**: the exact
+entry (`invoke_exits_exact`) is held from the invocation's (`HeldEntry`;
+`SafePostExcV.fromEntry_of_exact`). -/
 theorem invoke_exits {Ξ : Fam} {Acc : ArgFam} {Rc : Fam} {req : Tm → List Tm → Heap → Prop}
     {Rf : Tm → List Tm → Fam} {x : Exits ExitSchema} {n : Nat} {W : WorldT (n + 1)} {f : Val}
     (hc : NativeContract Ξ Acc Rc req Rf (fun r vs _ U h => x.exitPostW .normal r vs U h)
@@ -107,17 +124,11 @@ theorem invoke_exits {Ξ : Fam} {Acc : ArgFam} {Rc : Fam} {req : Tm → List Tm 
     SafePostExcV Ξ (Rf r vs) (x.fromEntry .normal r vs (HeldEntry W h))
       (x.fromEntry .exceptional r vs (HeldEntry W h)) (n + 1) W h (.invoke f r vs) := by
   obtain ⟨hfr, hrr, har⟩ := RefsOk_invoke.mp href
-  obtain ⟨result, hi, hs⟩ := hc n (Nat.lt_succ_self n) _ (WExt_refl _) (WorldAdm_trunc _ hw) h
+  obtain ⟨_, hi, -⟩ := hc n (Nat.lt_succ_self n) _ (WExt_refl _) (WorldAdm_trunc _ hw) h
     (HeapOk_trunc n W h hh) (RefsOk_trunc _ hfr) r hrv hr (RefsOk_trunc _ hrr) vs hv
     (fun a hm => RefsOk_trunc _ (har a hm)) ha hq
-  refine ⟨href, .inr ⟨_, h, result, WExt_refl _, WorldAdm_trunc _ hw, hi.step h, HeapOk_trunc n W h hh, ?_⟩⟩
-  cases n with
-  | zero => exact hs
-  | succ m =>
-    let s : IndexedHeap := ⟨m + 1, trunc (m + 1) (Nat.le_succ _) W, h, Nat.succ_pos _, WorldAdm_trunc _ hw,
-      HeapOk_trunc _ W h hh⟩
-    have hs0 : HeldEntry W h s := ⟨rfl, Nat.le_succ _, WExt_refl _⟩
-    exact SafePostExcV.weaken (fun _ _ _ _ hp => ⟨s, hs0, hp⟩) (fun _ _ _ _ hp => ⟨s, hs0, hp⟩) hs
+  obtain ⟨hnv, hnr⟩ := Step.inert (hi.step h)
+  exact SafePostExcV.fromEntry_of_exact hw hh hnv hnr (invoke_exits_exact hc hw hh hrv hr hv ha hq href)
 
 /-- **Safety at a signature's heap postconditions is safety at its exits**,
 where it states no element write and its actuals are values where it states

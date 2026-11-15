@@ -527,6 +527,22 @@ theorem PromiseWith.bound {effect : Effect} {Acc Rest : ArgFam} {Rt R Rc : Fam}
             fun _ he => (by cases he), fun he => (by cases he)⟩, fun he => absurd rfl he⟩⟩)
         (fun _ _ _ h => Effect.excPost_drop pre.length h) hsafe⟩⟩
 
+/-- **A call at a signature's exits from the invocation's entry** (the
+note's Call, `invoke_exits_exact`): a value meeting the signature, invoked at
+value actuals meeting its input contract and precondition, is safe at the
+signature's specification at those actuals from the invocation's world
+truncated by its step and its heap. -/
+theorem call_exits_exact {effect : Effect} {P : ArgFam} {Rc R : Fam}
+    (hP : Adm P) (hRc : Adm Rc) {n : Nat} {W : WorldT (n + 1)} {heap f r vs}
+    (hf : PromiseWith Ξ effect P Rc R (n + 1) W f) (hr : Rc (n + 1) W r)
+    (hrv : isVal r = true) (hv : CallArguments.Values vs) (ha : P (n + 1) W vs)
+    (hw : WorldAdm W) (hh : HeapOk (n + 1) W heap) (hq : effect.Requires r vs heap)
+    (href : RefsOk W (.invoke f r vs)) :
+    SafePostExcV Ξ (effect.result R (effect.promised vs))
+      (effect.schema.exitPostW .normal r vs (trunc n (Nat.le_succ n) W) heap)
+      (effect.schema.exitPostW .exceptional r vs (trunc n (Nat.le_succ n) W) heap) (n + 1) W heap (.invoke f r vs) :=
+  invoke_exits_exact hf hw hh hrv (hRc.down n W r hr) hv (hP.transfer ha n (Nat.le_succ n) _ (WExt_refl _)) hq href
+
 /-- **A call at a signature's exits** (the note's Call, `invoke_exits`): a
 value meeting the signature, invoked at value actuals meeting its input
 contract and precondition, is safe at the signature's specification at those
@@ -577,12 +593,44 @@ theorem Effect.requires_pad {e : Effect} {r : Tm} {args pad : List Tm} {h : Heap
   rw [callEnv_pad r args hpad]
   exact hq.2 F hF
 
-/-- **A construction at a signature's exits** (the note's Call): a class
-value meeting a construct signature stating no promise, constructed at value
-actuals meeting its input contract and precondition, is safe at the
-signature's specification at the actuals followed by the `undefined` of the
-positions it omits, the receiver `undefined`, from an invocation entry held
-from the construction's (`HeldEntry`). -/
+/-- **A construction at a signature's exits from the construction's
+entry** (the note's Call): a class value meeting a construct signature
+stating no promise, constructed at value actuals meeting its input contract
+and precondition, is safe at the signature's specification at the actuals
+followed by the `undefined` of the positions it omits, the receiver
+`undefined`, from the construction's world truncated by its step and its
+heap. -/
+theorem construct_exits_exact {effect : Effect} (hpr : effect.promise = none) {P : ArgFam} {R : Fam}
+    (hP : Adm P) {n : Nat} {W : WorldT (n + 1)} {heap v vs pad}
+    (hf : ConstructPromise Ξ effect P R (n + 1) W v) (hv : CallArguments.Values vs)
+    (hpad : ∀ a ∈ pad, a = .undef) (ha : P (n + 1) W (vs ++ pad))
+    (hw : WorldAdm W) (hh : HeapOk (n + 1) W heap) (hq : effect.Requires .undef vs heap)
+    (href : RefsOk W (.construct v vs)) :
+    SafePostExcV Ξ R (effect.schema.exitPostW .normal .undef (vs ++ pad) (trunc n (Nat.le_succ n) W) heap)
+      (effect.schema.exitPostW .exceptional .undef (vs ++ pad) (trunc n (Nat.le_succ n) W) heap) (n + 1) W heap
+      (.construct v vs) := by
+  obtain ⟨hvr, har⟩ := RefsOk_construct.mp href
+  let U := trunc n (Nat.le_succ n) W
+  have hvp : CallArguments.Values (vs ++ pad) := by
+    intro a h
+    rcases List.mem_append.mp h with h | h
+    · exact hv a h
+    · rw [hpad a h]; rfl
+  obtain ⟨result, ⟨fs, c, enter, oid, rfl, hc, rfl⟩, hs⟩ := hf n (Nat.lt_succ_self n) U (WExt_refl _)
+    (WorldAdm_trunc _ hw) heap (HeapOk_trunc n W heap hh) (RefsOk_trunc _ hvr) _ hvp
+    (fun a ha => by
+      rcases List.mem_append.mp ha with ha | ha
+      · exact RefsOk_trunc _ (har a ha)
+      · rw [hpad a ha]; exact RefsOk_undef)
+    (hP.transfer ha n (Nat.le_succ n) U (WExt_refl _))
+    (Effect.requires_pad hpad hq)
+  dsimp only at hs
+  rw [CallArguments.construction_pad hc _ _ hpad, Effect.result_none hpr] at hs
+  exact ⟨href, .inr ⟨U, heap, _, WExt_refl _, WorldAdm_trunc _ hw,
+    CallArguments.construction_step hc hv heap, HeapOk_trunc n W heap hh, hs⟩⟩
+
+/-- **A construction at a signature's exits** from an invocation entry held
+from the construction's (`construct_exits_exact`, `HeldEntry`). -/
 theorem construct_exits {effect : Effect} (hpr : effect.promise = none) {P : ArgFam} {R : Fam}
     (hP : Adm P) {n W heap v vs pad}
     (hf : ConstructPromise Ξ effect P R n W v) (hv : CallArguments.Values vs)
@@ -595,30 +643,21 @@ theorem construct_exits {effect : Effect} (hpr : effect.promise = none) {P : Arg
   | zero => exact href
   | succ n =>
     obtain ⟨hvr, har⟩ := RefsOk_construct.mp href
-    let U := trunc n (Nat.le_succ n) W
     have hvp : CallArguments.Values (vs ++ pad) := by
       intro a h
       rcases List.mem_append.mp h with h | h
       · exact hv a h
       · rw [hpad a h]; rfl
-    obtain ⟨result, ⟨fs, c, enter, oid, rfl, hc, rfl⟩, hs⟩ := hf n (Nat.lt_succ_self n) U (WExt_refl _)
+    obtain ⟨_, ⟨_, c, _, _, rfl, hc, rfl⟩, -⟩ := hf n (Nat.lt_succ_self n) _ (WExt_refl _)
       (WorldAdm_trunc _ hw) heap (HeapOk_trunc n W heap hh) (RefsOk_trunc _ hvr) _ hvp
       (fun a ha => by
         rcases List.mem_append.mp ha with ha | ha
         · exact RefsOk_trunc _ (har a ha)
         · rw [hpad a ha]; exact RefsOk_undef)
-      (hP.transfer ha n (Nat.le_succ n) U (WExt_refl _))
+      (hP.transfer ha n (Nat.le_succ n) _ (WExt_refl _))
       (Effect.requires_pad hpad hq)
-    dsimp only at hs
-    rw [CallArguments.construction_pad hc _ _ hpad, Effect.result_none hpr] at hs
-    refine ⟨href, .inr ⟨U, heap, _, WExt_refl _, WorldAdm_trunc _ hw,
-      CallArguments.construction_step hc hv heap, HeapOk_trunc n W heap hh, ?_⟩⟩
-    cases n with
-    | zero => exact hs
-    | succ m =>
-      let s : TolerantFrames.IndexedHeap := ⟨m + 1, U, heap, Nat.succ_pos _, WorldAdm_trunc _ hw, HeapOk_trunc _ W heap hh⟩
-      have hs0 : HeldEntry W heap s := ⟨rfl, Nat.le_succ _, WExt_refl _⟩
-      exact SafePostExcV.weaken (fun _ _ _ _ hp => ⟨s, hs0, hp⟩) (fun _ _ _ _ hp => ⟨s, hs0, hp⟩) hs
+    obtain ⟨hnv, hnr⟩ := Step.inert (CallArguments.construction_step hc hv heap)
+    exact SafePostExcV.fromEntry_of_exact hw hh hnv hnr (construct_exits_exact hpr hP hf hv hpad ha hw hh hq href)
 
 /-- An operational invariant that only appends fresh locations supplies
 the normal-return preservation postcondition, supplementing ordinary safety.

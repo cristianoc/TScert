@@ -178,25 +178,107 @@ theorem EvalCallSafe.invoke {Ξ : Fam} {E : (n : Nat) → WorldT n → Heap → 
   | zero => exact href
   | succ n => exact ⟨href, .inl (.inl ⟨f, r, vs, rfl, hE⟩)⟩
 
-/-- **A call is safe where its evaluation is and each invocation it
-reaches is**: every completion is a throw of the evaluation, meeting `R`, or
-a completion of an invocation the evaluation reached. -/
-theorem call_site_sound {Ξ T : Fam} {Q : WPost} {R : WExcV}
+/-- **A term that neither is a value nor raises has its guarantee read past
+its step**: safety at postconditions implying others at every completion,
+where the budget left after the term's step is positive, is safety at the
+others. -/
+theorem SafePostExcV.weaken_inert {Ξ T : Fam} {Q Q' : WPost} {R R' : WExcV} {n : Nat} {W : WorldT (n + 1)}
+    {h : Heap} {t : Tm} (hnv : isVal t = false) (hnr : ∀ u, ¬ Raises t u)
+    (hq : 0 < n → ∀ k V a v, Q k V a v → Q' k V a v) (hr : 0 < n → ∀ k V a v, R k V a v → R' k V a v)
+    (hs : SafePostExcV Ξ T Q R (n + 1) W h t) : SafePostExcV Ξ T Q' R' (n + 1) W h t := by
+  obtain ⟨hrf, (⟨hv, -⟩ | ⟨u, hra, -⟩) | ⟨U, h', t', hx, hu, st, hh', hs'⟩⟩ := hs
+  · rw [hnv] at hv; cases hv
+  · exact absurd hra (hnr u)
+  · refine ⟨hrf, .inr ⟨U, h', t', hx, hu, st, hh', ?_⟩⟩
+    cases n with
+    | zero => exact hs'
+    | succ m => exact SafePostExcV.weaken (hq (Nat.succ_pos _)) (hr (Nat.succ_pos _)) hs'
+
+/-- A term that steps neither is a value nor raises. -/
+theorem Step.inert {h h' : Heap} {t t' : Tm} (st : Step h t h' t') : isVal t = false ∧ ∀ u, ¬ Raises t u :=
+  ⟨Bool.eq_false_iff.mpr fun hv => value_no_step hv st, fun _ hu => raises_no_step hu st⟩
+
+/-- An invocation at values neither is a value nor raises. -/
+theorem invoke_values_inert {f r : Tm} {vs : List Tm} (hf : isVal f = true) (hr : isVal r = true)
+    (hv : CallArguments.Values vs) : isVal (.invoke f r vs) = false ∧ ∀ u, ¬ Raises (.invoke f r vs) u := by
+  refine ⟨rfl, fun u hu => ?_⟩
+  cases hu with
+  | callL h => rw [raises_not_val h] at hf; cases hf
+  | callRecv _ h => rw [raises_not_val h] at hr; cases hr
+  | callArg _ _ hi _ h =>
+    have := hv _ (List.mem_of_getElem? hi)
+    rw [raises_not_val h] at this; cases this
+
+/-- **An invocation an evaluation reached** from a call's entry: its world
+reached from the call's (`WorldReach`), and the call's term evaluating to it
+from the call's heap (the evaluation prefix). -/
+def EvalReached {n m : Nat} (W : WorldT n) (h : Heap) (t : Tm) (U : WorldT m) (h' : Heap) (t' : Tm) : Prop :=
+  WorldReach W U ∧ ∃ k, Steps k h t h' t'
+
+/-- **A call's guarantee at a completion** (the note's Call, before any
+consequence): an invocation `f r vs` the evaluation reached from the call's
+entry (`EvalReached`), at a well-formed state of budget `m + 1`, meeting `E`,
+and the completion's guarantee at its receiver and evaluated actuals from
+its entry: the invocation's world truncated by the invocation's step, its
+heap, the budget there positive. -/
+def Exits.callExit (x : Exits ExitSchema) (c : Completion)
+    (E : (n : Nat) → WorldT n → Heap → Tm → Tm → List Tm → Prop) {n : Nat} (W : WorldT n) (h : Heap)
+    (t : Tm) : ExitPostW :=
+  fun k V after v => ∃ (m : Nat) (U : WorldT (m + 1)) (h' : Heap) (f r : Tm) (vs : List Tm),
+    EvalReached W h t U h' (.invoke f r vs) ∧ WorldAdm U ∧ HeapOk (m + 1) U h' ∧ 0 < m ∧
+      E (m + 1) U h' f r vs ∧ x.exitPostW c r vs (trunc m (Nat.le_succ m) U) h' k V after v
+
+/-- **A call at its callee's exits** (the note's Call): where evaluation of
+the callee, the receiver and the arguments is safe and reaches invocations
+at values meeting `E`, each safe at the specification's exits from its
+entry, the call is safe; each completion is a throw of the evaluation,
+meeting `R`, or a completion of a reached invocation with its guarantee
+(`Exits.callExit`). -/
+theorem call_site_exits {Ξ T : Fam} {x : Exits ExitSchema} {R : WExcV}
     {E : (n : Nat) → WorldT n → Heap → Tm → Tm → List Tm → Prop}
-    (hinvoke : ∀ n (W : WorldT n) h f r vs, E n W h f r vs → SafePostExcV Ξ T Q R n W h (.invoke f r vs)) :
-    ∀ {n W h t}, EvalCallSafe Ξ E R n W h t → SafePostExcV Ξ T Q R n W h t := by
+    (hval : ∀ m U h f r vs, E m U h f r vs → isVal f = true ∧ isVal r = true ∧ CallArguments.Values vs)
+    (hinvoke : ∀ m (U : WorldT (m + 1)) h f r vs, E (m + 1) U h f r vs →
+      SafePostExcV Ξ T (x.exitPostW .normal r vs (trunc m (Nat.le_succ m) U) h)
+        (x.exitPostW .exceptional r vs (trunc m (Nat.le_succ m) U) h) (m + 1) U h (.invoke f r vs)) :
+    ∀ {n W h t}, WorldAdm W → HeapOk n W h → EvalCallSafe Ξ E R n W h t →
+      SafePostExcV Ξ T (x.callExit .normal E W h t)
+        (fun k V a v => R k V a v ∨ x.callExit .exceptional E W h t k V a v) n W h t := by
   intro n
   induction n with
-  | zero => intro _ _ _ he; exact he
+  | zero => intro _ _ _ _ _ he; exact he
   | succ n ih =>
-    intro W h t he
+    intro W h t hw hh he
     obtain ⟨hrf, he⟩ := he
     rcases he with (hinv | hraise) | hstep
     · obtain ⟨f, r, vs, rfl, hE⟩ := hinv
-      exact hinvoke _ W h f r vs hE
-    · exact ⟨hrf, .inl (.inr hraise)⟩
-    · obtain ⟨U, h', t', hx, hu, st, hh, he⟩ := hstep
-      exact ⟨hrf, .inr ⟨U, h', t', hx, hu, st, hh, ih he⟩⟩
+      obtain ⟨hf, hr, hv⟩ := hval _ _ _ _ _ _ hE
+      obtain ⟨hnv, hnr⟩ := invoke_values_inert hf hr hv
+      have hreach : EvalReached W h (.invoke f r vs) W h (.invoke f r vs) := ⟨WorldReach.refl W, 0, .refl⟩
+      exact SafePostExcV.weaken_inert hnv hnr
+        (fun hn _ _ _ _ hp => ⟨n, W, h, f, r, vs, hreach, hw, hh, hn, hE, hp⟩)
+        (fun hn _ _ _ _ hp => .inr ⟨n, W, h, f, r, vs, hreach, hw, hh, hn, hE, hp⟩) (hinvoke n W h f r vs hE)
+    · obtain ⟨v, hra, hsc, hξ, hR⟩ := hraise
+      exact ⟨hrf, .inl (.inr ⟨v, hra, hsc, hξ, .inl hR⟩)⟩
+    · obtain ⟨U, h', t', hx, hu, st, hh', he⟩ := hstep
+      have hxU : WorldReach W U := ⟨Nat.le_succ n, hx⟩
+      have back : ∀ c k V a v, x.callExit c E U h' t' k V a v → x.callExit c E W h t k V a v := by
+        rintro c k V a v ⟨m, U', h'', f, r, vs, ⟨hreach, j, hsteps⟩, hrest⟩
+        exact ⟨m, U', h'', f, r, vs, ⟨hxU.trans hreach, j + 1, .next st hsteps⟩, hrest⟩
+      exact ⟨hrf, .inr ⟨U, h', t', hx, hu, st, hh', SafePostExcV.weaken (back .normal)
+        (fun k V a v hp => hp.imp_right (back .exceptional k V a v)) (ih hu hh' he)⟩⟩
+
+/-- **The entry of a call's guarantee**: the reached invocation's entry is a
+well-formed indexed state whose world is reached from the call's, and the
+completion's guarantee holds from it at every well-formed exit. -/
+theorem Exits.callExit_entry {x : Exits ExitSchema} {c : Completion}
+    {E : (n : Nat) → WorldT n → Heap → Tm → Tm → List Tm → Prop} {n : Nat} {W : WorldT n} {h : Heap} {t : Tm}
+    {k : Nat} {V : WorldT k} {after : Heap} {v : Tm} (hp : x.callExit c E W h t k V after v) :
+    ∃ (s : IndexedHeap) (m : Nat) (U : WorldT (m + 1)) (f r : Tm) (vs : List Tm),
+      EvalReached W h t U s.h (.invoke f r vs) ∧ E (m + 1) U s.h f r vs ∧ WorldReach W s.W ∧
+        x.exitPostW c r vs s.W s.h k V after v := by
+  obtain ⟨m, U, h', f, r, vs, hreach, hu, hh, hm, hE, hx⟩ := hp
+  refine ⟨⟨m, trunc m (Nat.le_succ m) U, h', hm, WorldAdm_trunc _ hu, HeapOk_trunc m U h' hh⟩, m, U, f, r, vs,
+    hreach, hE, hreach.1.trans ⟨Nat.le_succ m, WExt_refl _⟩, hx⟩
 
 /-- **Erasure at the states a run reaches**: safety with world-indexed
 postconditions gives safety at heap postconditions each implies at every
@@ -274,6 +356,21 @@ abbrev Exits.heldExc (x : Exits ExitSchema) (r : Tm) (args : List Tm) {n : Nat} 
     WExcV :=
   fun k V after v => x.fromEntry .exceptional r args (HeldEntry W h) k V after v ∨ after = h
 
+/-- **The exact entry of an invocation is held from the invocation's**:
+safety, past a step, at a specification's exits from the invocation's world
+truncated by its step and its heap gives safety at them from an entry held
+from the invocation's (`HeldEntry`). -/
+theorem SafePostExcV.fromEntry_of_exact {Ξ T : Fam} {x : Exits ExitSchema} {r : Tm} {vs : List Tm} {n : Nat}
+    {W : WorldT (n + 1)} {h : Heap} {t : Tm} (hw : WorldAdm W) (hh : HeapOk (n + 1) W h)
+    (hnv : isVal t = false) (hnr : ∀ u, ¬ Raises t u)
+    (hs : SafePostExcV Ξ T (x.exitPostW .normal r vs (trunc n (Nat.le_succ n) W) h)
+      (x.exitPostW .exceptional r vs (trunc n (Nat.le_succ n) W) h) (n + 1) W h t) :
+    SafePostExcV Ξ T (x.fromEntry .normal r vs (HeldEntry W h)) (x.fromEntry .exceptional r vs (HeldEntry W h))
+      (n + 1) W h t :=
+  let s (hn : 0 < n) : IndexedHeap := ⟨n, trunc n (Nat.le_succ n) W, h, hn, WorldAdm_trunc _ hw, HeapOk_trunc n W h hh⟩
+  have hs0 (hn : 0 < n) : HeldEntry W h (s hn) := ⟨rfl, Nat.le_succ _, WExt_refl _⟩
+  SafePostExcV.weaken_inert hnv hnr (fun hn _ _ _ _ hp => ⟨s hn, hs0 hn, hp⟩) (fun hn _ _ _ _ hp => ⟨s hn, hs0 hn, hp⟩) hs
+
 /-- **Consequence from held entries**: where one specification's exit
 entails another's at other actuals, the guarantee from an entry held from
 an invocation's entry gives the other's from an entry held from the entry of
@@ -305,5 +402,20 @@ theorem SafePostExcV.heldPosts {Ξ T : Fam} {x : Exits ExitSchema} {r : Tm} {arg
     · rintro s' v - (⟨s, ⟨hsh, -⟩, hp⟩ | heq)
       · exact .inl ⟨v, s, s', hsh, rfl, hp s.pos s.adm s.ok s'.pos s'.adm s'.ok⟩
       · exact .inr heq
+
+/-- **Consequence of a call's guarantee to held entries**: where every
+invocation meeting `E` is at the call's heap, and the exit at the reached
+invocation's receiver and actuals entails another specification's at given
+ones (both read at the invocation), the call's guarantee gives the other's from an entry held from the
+call's (`HeldEntry`). -/
+theorem Exits.callExit_held {x y : Exits ExitSchema} {c : Completion}
+    {E : (n : Nat) → WorldT n → Heap → Tm → Tm → List Tm → Prop} {n : Nat} {W : WorldT n} {h : Heap} {t : Tm}
+    {r' : Tm} {other : List Tm} (hE : ∀ m U h' f r vs, E m U h' f r vs → h' = h)
+    (hxy : ∀ m U f r vs, E m U h f r vs → ∀ s s' v, x.exitPost c r vs s s' v → y.exitPost c r' other s s' v)
+    {k : Nat} {V : WorldT k} {after : Heap} {v : Tm} (hp : x.callExit c E W h t k V after v) :
+    y.fromEntry c r' other (HeldEntry W h) k V after v := by
+  obtain ⟨s, m, U, f, r, vs, -, hEm, hw, hx⟩ := Exits.callExit_entry hp
+  obtain rfl := hE _ _ _ _ _ _ hEm
+  exact ⟨s, ⟨rfl, hw⟩, fun h1 h2 h3 h4 h5 h6 => hxy _ _ _ _ _ hEm _ _ _ (hx h1 h2 h3 h4 h5 h6)⟩
 
 end Verification.CallEffects

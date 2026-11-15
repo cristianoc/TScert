@@ -397,11 +397,16 @@ locations below the heap the body started in; the runs compose by
   call, a variadic call and a construction, each at the signature the
   evidence selects. A variadic call's evaluation reads its spreads' stores
   in the heap the call starts in and reaches an invocation at the expanded
-  actuals (`spread_values_eval`, `spread_head_eval`, composed by
-  `CallEffects.call_site_sound`); the signature's specification holds
-  there, and the call concludes what it states independently of the
-  actuals (`selectedExits`, `Exits.forgetActuals_sound`), read as the
-  signature `Effect.withoutActuals`. The check is the closed bound
+  actuals (`spread_values_eval`, `spread_head_eval`). The call's guarantee
+  is the signature's specification at the reached invocation's receiver and
+  expanded actuals, from that invocation's exact entry (its world truncated
+  by its step, its heap), the evaluation's own throws a separate alternative
+  (`CallEffects.call_site_exits`, `Exits.callExit`, from
+  `CallEffects.call_exits_exact`); by consequence the call concludes what
+  it states independently of the actuals, from an entry held from the
+  call's (`Exits.callExit_held`, `selectedExits`,
+  `Exits.forgetActuals_sound`), read as the signature
+  `Effect.withoutActuals`. The check is the closed bound
   of the signature's frame below the invocation's mark within $`\Phi`$, an
   entry on the store of a position whose operand is a slot holding a fresh
   store discharged ([frame checks](#frame-checks); proved:
