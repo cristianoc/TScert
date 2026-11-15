@@ -504,19 +504,37 @@ theorem Atom.holds_envOnly {a : Atom} (ha : a.envOnly = true) {η : Env} {h h' :
 
 /-! ## Separation and freshness -/
 
+/-- **An ordinary array's store** (the note, §2, "Arrays"): the value's `[]`
+slot names a location holding an array store listing `xs`, and the value
+names no typed array's store, so the store it owns is that one alone. -/
+def ArrayStore (h : Heap) (u : Val) (s : Nat) (xs : List (Option Nat)) : Prop :=
+  storeOf u = some s ∧ descriptorStore u = none ∧ h[s]? = some (.arr xs)
+
+/-- An ordinary array's cells, as the region `π[∗]` selects them
+(`storeElems`), are its store's listing. -/
+theorem ArrayStore.cells {h : Heap} {u : Val} {s : Nat} {xs : List (Option Nat)} (ha : ArrayStore h u s xs) :
+    storeElems h u = xs := by
+  obtain ⟨hs, hd, hx⟩ := ha
+  have hs' : (fieldsOf u).lookup arrayStoreKey = some s := hs
+  simp [storeElems, entriesAt, hs', hd, hx, storeEntries]
+
 /-- `π # π'` (the note, §4, "Satisfaction"): the two paths read ordinary
-arrays, their stores ordinary array stores, at different locations. -/
+arrays, with different store locations. -/
 def Separated (η : Env) (h : Heap) (p q : Path) : Prop :=
-  ∃ u w s t xs ys, p.read η h = some u ∧ q.read η h = some w ∧ storeOf u = some s ∧ storeOf w = some t ∧
-    h[s]? = some (.arr xs) ∧ h[t]? = some (.arr ys) ∧ s ≠ t
+  ∃ u w s t xs ys, p.read η h = some u ∧ q.read η h = some w ∧ ArrayStore h u s xs ∧ ArrayStore h w t ys ∧ s ≠ t
 
 /-- `apart(π, π')` (the note, §4, "Satisfaction"): `π # π'`, and the stores
-of the two arrays list no common element cell: no cell the region `π[∗]`
-selects (`storeElems`) is one `π'[∗]` selects. -/
+of the two arrays list no common element cell. -/
 def Apart (η : Env) (h : Heap) (p q : Path) : Prop :=
-  ∃ u w s t xs ys, p.read η h = some u ∧ q.read η h = some w ∧ storeOf u = some s ∧ storeOf w = some t ∧
-    s ≠ t ∧ h[s]? = some (.arr xs) ∧ h[t]? = some (.arr ys) ∧
-    ∀ l, some l ∈ storeElems h u → some l ∉ storeElems h w
+  ∃ u w s t xs ys, p.read η h = some u ∧ q.read η h = some w ∧ ArrayStore h u s xs ∧ ArrayStore h w t ys ∧
+    s ≠ t ∧ ∀ l, some l ∈ xs → some l ∉ ys
+
+/-- **The cells of two ordinary arrays are disjoint as regions exactly where
+their store listings are** (the note's `apart` and the regions `π[∗]`). -/
+theorem cells_disjoint_iff {h : Heap} {u w : Val} {s t : Nat} {xs ys : List (Option Nat)}
+    (hu : ArrayStore h u s xs) (hw : ArrayStore h w t ys) :
+    (∀ l, some l ∈ storeElems h u → some l ∉ storeElems h w) ↔ (∀ l, some l ∈ xs → some l ∉ ys) := by
+  rw [hu.cells, hw.cells]
 
 /-- `fresh(π)` (the note, §4, "Satisfaction"): the store of the array the
 path reads is at or above the entry mark. -/
@@ -643,11 +661,11 @@ theorem invNode_sound (nodes : Array AssertionNode) :
   · rename_i p q hn
     rw [hn] at hs ⊢
     simp only [Bool.and_eq_true, List.isEmpty_iff] at hi
-    obtain ⟨u, w, a, b, xs, ys, hu, hw, hsa, hsb, hxa, hyb, hne⟩ := hs
+    obtain ⟨u, w, a, b, xs, ys, hu, hw, ⟨hsa, hda, hxa⟩, ⟨hsb, hdb, hyb⟩, hne⟩ := hs
     obtain ⟨xs', hx'⟩ := ha.arrayStore hxa
     obtain ⟨ys', hy'⟩ := ha.arrayStore hyb
     exact ⟨u, w, a, b, xs', ys', by rw [Path.read_heap hi.1]; exact hu, by rw [Path.read_heap hi.2]; exact hw,
-      hsa, hsb, hx', hy', hne⟩
+      ⟨hsa, hda, hx'⟩, ⟨hsb, hdb, hy'⟩, hne⟩
   · rename_i p hn
     rw [hn] at hs ⊢
     simp only [List.isEmpty_iff] at hi

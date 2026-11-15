@@ -958,13 +958,13 @@ theorem arrayNode_sound {arena : AssertionArena} {c : AssertionRef} {n : Asserti
     · subst ha; obtain ⟨w, st, ls, _, hw, hst, hls, -⟩ := hs'; exact ⟨w, st, ls, hw, hst, hls⟩
     · subst ha; obtain ⟨w, st, ls, _, hw, hst, hls, -⟩ := hs'; exact ⟨w, st, ls, hw, hst, hls⟩
   | separated q q' =>
-    obtain ⟨u, w, st, t, xs, ys, hu, hw, hsu, htw, hxs, hys, -⟩ := (sat_separated hn).mp hs
+    obtain ⟨u, w, st, t, xs, ys, hu, hw, ⟨hsu, -, hxs⟩, ⟨htw, -, hys⟩, -⟩ := (sat_separated hn).mp hs
     simp only [arrayNode, Bool.or_eq_true, beq_iff_eq] at ha
     rcases ha with rfl | rfl
     · exact ⟨u, st, xs, hu, hsu, hxs⟩
     · exact ⟨w, t, ys, hw, htw, hys⟩
   | apart q q' =>
-    obtain ⟨u, w, st, t, xs, ys, hu, hw, hsu, htw, -, hxs, hys, -⟩ := (sat_apart hn).mp hs
+    obtain ⟨u, w, st, t, xs, ys, hu, hw, ⟨hsu, -, hxs⟩, ⟨htw, -, hys⟩, -⟩ := (sat_apart hn).mp hs
     simp only [arrayNode, Bool.or_eq_true, beq_iff_eq] at ha
     rcases ha with rfl | rfl
     · exact ⟨u, st, xs, hu, hsu, hxs⟩
@@ -1308,10 +1308,10 @@ theorem DisjointEvidence.sound {arena : AssertionArena} {K : AssertionRef} :
         unfold separatedPaths at hqq
         split at hqq
         · rename_i _ _ hn; cases hqq
-          obtain ⟨u, w, st, t, -, -, hu, hw, hsu, htw, -, -, hne⟩ := (sat_separated hn).mp hcs
+          obtain ⟨u, w, st, t, -, -, hu, hw, ⟨hsu, -⟩, ⟨htw, -⟩, hne⟩ := (sat_separated hn).mp hcs
           exact ⟨u, w, st, t, hu, hw, hsu, htw, hne⟩
         · rename_i _ _ hn; cases hqq
-          obtain ⟨u, w, st, t, -, -, hu, hw, hsu, htw, hne, -⟩ := (sat_apart hn).mp hcs
+          obtain ⟨u, w, st, t, -, -, hu, hw, ⟨hsu, -⟩, ⟨htw, -⟩, hne, -⟩ := (sat_apart hn).mp hcs
           exact ⟨u, w, st, t, hu, hw, hsu, htw, hne⟩
         · cases hqq
       obtain ⟨u, w, st, t, hu, hw, hsu, htw, hne⟩ := hsep
@@ -1330,7 +1330,8 @@ theorem DisjointEvidence.sound {arena : AssertionArena} {K : AssertionRef} :
       obtain ⟨rfl, rfl⟩ := h
       intro η m s hK l hl
       have hcs := conjuncts_sat arena.nodes K.index c.index (List.contains_iff_mem.mp hc) η m s hK
-      obtain ⟨u, w, -, -, -, -, hu, hw, -, -, -, -, -, hcells⟩ := (sat_apart hn).mp hcs
+      obtain ⟨u, w, s₁, t₁, xs, ys, hu, hw, hau, haw, -, hlist⟩ := (sat_apart hn).mp hcs
+      have hcells := (cells_disjoint_iff hau haw).mpr hlist
       simp only [Path.read] at hu hw
       simp only [Region.mem, hu, hw, List.contains_iff_mem] at hl ⊢
       cases hm : (storeElems s.h w).contains (some l)
