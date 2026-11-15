@@ -272,7 +272,7 @@ run_cmd do
   check ``Verification.ProgramTyping.allocStable_of_established
   check ``Verification.CallEffects.Effect.exitPost_exceptional_prefix
   check ``Verification.HeapObservations.SafePostExcV.bind
-  check ``Verification.CallEffects.Effect.frameCovers_sound
+  check ``Verification.CallEffects.Exits.covers_entails
   check ``Verification.Footprints.Closed.post_extra_any
   check ``Verification.Footprints.closed_order_exact
   check ``Verification.Footprints.Closed.post_normal

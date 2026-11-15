@@ -5626,8 +5626,7 @@ partial def recursiveConstant (env : Env) (b : Fragment.Binding) (written : Bool
     let G ← graphNow
     match PositiveRules.expand G S0 with
     | [.arrs L S] =>
-      let seed (e : CallEffects.Effect) : CallEffects.Effect :=
-        { e with closed := ⟨.keep, .keep, .keep⟩, onThrow := true }
+      let seed (e : CallEffects.Effect) : CallEffects.Effect := e.withClasses ⟨.keep, .keep, .keep⟩
       lower (do return [← SourceTypes.use (.arrs
         (L.map fun a => { a with effect := seed a.effect })
         (S.map fun a => { a with effect := seed a.effect }))])

@@ -63,19 +63,9 @@ def requiresCovers : Option ElemPred → Option ElemPred → Bool
   | some a, some b => b.le a
   | some _, none => false
 
-/-- An elements promise implying another's: the other states none, or a
-predicate at least this one's. -/
-def elementsCovers : Option ElemPred → Option ElemPred → Bool
-  | _, none => true
-  | some a, some b => a.le b
-  | none, some _ => false
-
 /-- A precondition on the call's values implying another's: each fact of the
 other's is one of this one's. -/
 def preCovers (a b : List HeapKnowledge.IndexFact) : Bool := a.all b.contains
-
-/-- A postcondition implying another: each of the other's facts is one of its facts. -/
-def ensuresCovers (a b : List HeapKnowledge.IndexFact) : Bool := b.all a.contains
 
 theorem requiresCovers_sound {a b : Effect} (h : requiresCovers a.requires b.requires = true)
     (hp : preCovers a.pre b.pre = true) {r args heap}
@@ -86,147 +76,66 @@ theorem requiresCovers_sound {a b : Effect} (h : requiresCovers a.requires b.req
   | none => rw [hq] at h; cases h
   | some R' => rw [hq] at h; exact (hb.1 R' hq).mono h
 
-theorem elementsCovers_sound {a b : Effect} (h : elementsCovers a.elements b.elements = true) {r after} {v : Tm}
-    (ha : ∀ R, a.elements = some R → v = .tru → ElemsAt R r after) :
-    ∀ R, b.elements = some R → v = .tru → ElemsAt R r after := by
-  intro R hR hv
-  rw [hR] at h
-  cases hq : a.elements with
-  | none => rw [hq] at h; cases h
-  | some R' => rw [hq] at h; exact (ha R' hq hv).mono h
+/-! ## Coverage of schemas -/
 
-/-- A frame within another's. Where the other states no store regions:
-a smaller coarse bound; the receiver's store excepted only where the other
-excepts it and not the receiver's own locations, or lets everything change;
-and the receiver's own locations excepted only where the other excepts them
-or lets everything change. Where it states store regions, which add the
-locations they select, each entry of the frame lies in one of the other's
-(`Footprint.le`), or the other's closed bound lets everything change. -/
-def Effect.frameCovers (a b : Effect) : Bool :=
-  if b.regions.isEmpty then
-    a.footprint.le b.footprint &&
-      (!a.receiverStore || (b.receiverStore && !b.receiverOwn) || b.footprint == .top) &&
-      (!a.receiverOwn || b.receiverOwn || b.footprint == .top)
-  else Footprints.Footprint.le (fun _ _ => none) a.frame b.frame || b.closed == .top
+/-- **Frame inclusion** (the note's effect order on frames): every entry of
+`Φ` lies in one of `Ψ`'s (`Footprint.le`, with no class claim on fields), or
+`Ψ`'s class entries let every location change (`⊤` within `Ψ`). -/
+def frameIncluded (Φ Ψ : Footprints.Footprint) : Bool :=
+  Footprints.Footprint.le (fun _ _ => none) Φ Ψ || Footprints.Footprint.le (fun _ _ => none) Parity.topEffect Ψ
 
-theorem Effect.frameCovers_sound {a b : Effect} (h : a.frameCovers b = true) {r : Tm} {args : List Tm}
-    {before after : Heap} (hwa : a.within r args before after) : b.within r args before after := by
-  unfold Effect.frameCovers at h
-  split at h
-  · rename_i hb
-    have hbr : b.regions = [] := List.isEmpty_iff.mp hb
-    simp only [Bool.and_eq_true] at h
-    obtain ⟨⟨hle, hs⟩, hw⟩ := h
-    have htop_of : b.footprint = .top → b.within r args before after := fun ht =>
-      Effect.within_of_footprint hbr (by rw [ht]; exact Effect.within_top hwa)
-    by_cases hao : a.receiverOwn = true
-    · simp only [hao, Bool.not_true, Bool.false_or, Bool.or_eq_true, beq_iff_eq] at hw
-      rcases hw with hbo | htop
-      · exact Effect.within_of_own hbr hbo ((Effect.within_outside_own hwa hao).mono hle)
-          ((Effect.within_inside_own hwa hao).mono (Effect.ownChange_le hle))
-      · exact htop_of htop
-    · simp only [Bool.not_eq_true] at hao
-      by_cases has : a.receiverStore = true
-      · simp only [has, Bool.not_true, Bool.false_or, Bool.or_eq_true, beq_iff_eq, Bool.and_eq_true,
-          Bool.not_eq_true'] at hs
-        rcases hs with ⟨hbs, hbo⟩ | htop
-        · exact Effect.within_of_store hbr hbo hbs ((Effect.within_outside_store hwa hao).mono hle)
-        · exact htop_of htop
-      · simp only [Bool.not_eq_true] at has
-        cases hbo : b.receiverOwn
-        · cases hbs : b.receiverStore
-          · exact Effect.within_of_footprint hbr ((Effect.within_holds hwa has hao).mono hle)
-          · exact Effect.within_of_store hbr hbo hbs
-              (((Effect.within_holds hwa has hao).mono hle).on _)
-        · exact Effect.within_of_own hbr hbo (((Effect.within_holds hwa has hao).mono hle).on _)
-            ((((Effect.within_holds hwa has hao).mono hle).mono b.le_ownChange).on _)
-  · simp only [Bool.or_eq_true, beq_iff_eq] at h
-    rcases h with hle | htop
-    · exact Footprints.Post.mono hle (fun _ _ _ _ hc => by cases hc) hwa
-    · apply Effect.within_of_holds
-      rw [htop]
-      exact Effect.within_top hwa
+/-- **An included frame's actions are actions of the including one.** -/
+theorem frameIncluded_sound {Φ Ψ : Footprints.Footprint} (h : frameIncluded Φ Ψ = true) {η : Env}
+    {s s' : TolerantFrames.IndexedHeap} (ha : Parity.EffectAction Φ η s s') : Parity.EffectAction Ψ η s s' := by
+  have mono : ∀ {Φ' : Footprints.Footprint}, Footprints.Footprint.le (fun _ _ => none) Φ' Ψ = true →
+      Parity.EffectAction Φ' η s s' → Parity.EffectAction Ψ η s s' :=
+    fun hle ha' => ⟨ha'.1, Footprints.Post.mono hle (fun _ _ _ _ hc => by cases hc) ha'.2⟩
+  rcases Bool.or_eq_true_iff.mp h with h | h
+  · exact mono h ha
+  · exact mono h (Parity.EffectAction.top ha.1)
 
-/-- A frame within the other's and the same promise; a fresh result, or a
-fresh object, where the other states one; `onThrow` where the other states
-it; a weaker precondition and stronger promises. -/
+/-- **One exit schema covers another**: its frame is included in the
+other's (`frameIncluded`) and each postcondition of the other is one of its
+own. -/
+def ExitSchema.covers (a b : ExitSchema) : Bool :=
+  frameIncluded a.frame b.frame && b.ensures.all a.ensures.contains
+
+/-- **One specification covers another** (the note's rule of consequence on
+both exits, sufficient): both state canonical transports, and each exit
+covers the other's (`ExitSchema.covers`). -/
+def Exits.covers (x y : Exits ExitSchema) : Bool :=
+  x.canonicalTransports && y.canonicalTransports && x.normal.covers y.normal &&
+    x.exceptional.covers y.exceptional
+
+/-- **Coverage is entailment** (proved): a specification covering another
+entails it at every call and completion (`Exits.Entails`). -/
+theorem Exits.covers_entails {x y : Exits ExitSchema} (h : x.covers y = true) : x.Entails y := by
+  simp only [Exits.covers, Bool.and_eq_true] at h
+  obtain ⟨⟨⟨hxc, hyc⟩, hn⟩, he⟩ := h
+  intro c r args s s' v hx
+  have hc : (x.get c).covers (y.get c) = true := by cases c <;> assumption
+  simp only [ExitSchema.covers, Bool.and_eq_true] at hc
+  have hN : max (args.length + 1) x.slots ≤ max (args.length + 1) (max x.slots y.slots) := by omega
+  have hN' : max (args.length + 1) y.slots ≤ max (args.length + 1) (max x.slots y.slots) := by omega
+  have hxN := (instantiate_completion hxc (c := c) (r := r) (v := v) (m := s.h.length) (s := s) (s' := s') hN).mpr hx
+  refine (instantiate_completion hyc (c := c) (r := r) (v := v) (m := s.h.length) (s := s) (s' := s') hN').mp ?_
+  obtain ⟨hfr, hens⟩ := hxN
+  refine ⟨frameIncluded_sound hc.1 hfr, fun F hF => ?_⟩
+  obtain ⟨G, hG, rfl⟩ := List.mem_map.mp hF
+  exact hens _ (List.mem_map_of_mem (List.contains_iff_mem.mp (List.all_eq_true.mp hc.2 G hG)))
+
+/-- Whether one signature covers another: its schema covers the other's
+(`Exits.covers`), the same promise, and a weaker precondition. -/
 def Effect.covers (a b : Effect) : Bool :=
-  a.frameCovers b && a.promise == b.promise && (!b.fresh || a.fresh) && (!b.onThrow || a.onThrow) &&
-    (!b.freshObject || a.freshObject) &&
-    requiresCovers a.requires b.requires && elementsCovers a.elements b.elements && preCovers a.pre b.pre &&
-    ensuresCovers a.ensures b.ensures && (!b.receiverGrows || a.receiverGrows) &&
-    (b.elementWrite.isNone || a.elementWrite == b.elementWrite)
+  a.schema.covers b.schema && a.promise == b.promise &&
+    requiresCovers a.requires b.requires && preCovers a.pre b.pre
 
 theorem Effect.covers_sound {a b : Effect} (h : a.covers b = true) : a.Covers b := by
   simp only [Effect.covers, Bool.and_eq_true] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hfc, hp⟩, hf⟩, ho⟩, hfo⟩, hrq⟩, hel⟩, hpre⟩, hens⟩, hgr⟩, hwr⟩ := h
+  obtain ⟨⟨⟨hx, hp⟩, hrq⟩, hpre⟩ := h
   simp only [beq_iff_eq] at hp
-  have hwrite : ∀ w, b.elementWrite = some w → a.elementWrite = some w := fun w hb => by
-    simp only [hb, Option.isNone_some, Bool.false_or, beq_iff_eq] at hwr; exact hwr
-  refine ⟨fun c r args s s' v hx => ?_, fun R args k W u hu => by simpa [Effect.result, Effect.promised, hp] using hu,
+  exact ⟨Exits.covers_entails hx, fun R args k W u hu => by simpa [Effect.result, Effect.promised, hp] using hu,
     fun r args heap hq => requiresCovers_sound hrq hpre hq⟩
-  rw [Effect.exitPost_summary] at hx ⊢
-  cases c with
-  | normal =>
-    refine ⟨⟨hx.1.1, Effect.frameCovers_sound (a := a) (b := b) hfc hx.1.2⟩, fun F hF => ?_⟩
-    have ha : ∀ G ∈ a.normalPosts args.length,
-        Parity.Holds Parity.AssertionArena.empty (callState r args v s.h.length s s') G := hx.2
-    change F ∈ b.normalPosts args.length at hF
-    simp only [Effect.normalPosts, List.mem_append] at hF
-    rcases hF with ((((hF | hF) | hF) | hF) | hF) | hF
-    · cases hb : b.fresh
-      · simp [hb] at hF
-      · rw [hb] at hf hF
-        simp only [Bool.not_true, Bool.false_or] at hf
-        apply ha
-        simp only [Effect.normalPosts, hf, if_true, List.mem_append]
-        exact .inl (.inl (.inl (.inl (.inl hF))))
-    · cases hb : b.freshObject
-      · simp [hb] at hF
-      · rw [hb] at hfo hF
-        simp only [Bool.not_true, Bool.false_or] at hfo
-        apply ha
-        simp only [Effect.normalPosts, hfo, if_true, List.mem_append]
-        exact .inl (.inl (.inl (.inl (.inr hF))))
-    · cases hb : b.elements with
-      | none => simp [hb] at hF
-      | some R' =>
-        rw [hb] at hF hel
-        simp only [List.mem_singleton] at hF
-        subst hF
-        cases hae : a.elements with
-        | none => rw [hae] at hel; cases hel
-        | some R =>
-          rw [hae] at hel
-          have hR := ha (.operation (.elementsWhen 0 .tru 1 R)) (by simp [Effect.normalPosts, hae])
-          exact fun hv => (hR hv).mono hel
-    · obtain ⟨G, hG, rfl⟩ := List.mem_map.mp hF
-      apply ha
-      simp only [Effect.normalPosts, List.mem_append]
-      exact .inl (.inl (.inr (List.mem_map_of_mem (List.contains_iff_mem.mp (List.all_eq_true.mp hens G hG)))))
-    · cases hb : b.receiverGrows
-      · simp [hb] at hF
-      · rw [hb] at hgr hF
-        simp only [Bool.not_true, Bool.false_or] at hgr
-        apply ha
-        simp only [Effect.normalPosts, hgr, if_true, List.mem_append]
-        exact .inl (.inr hF)
-    · cases hb : b.elementWrite with
-      | none => simp [hb] at hF
-      | some w =>
-        rw [hb] at hF
-        apply ha
-        simp only [Effect.normalPosts, hwrite w hb, List.mem_append]
-        exact .inr hF
-  | exceptional =>
-    simp only [Exits.get, Effect.summary] at hx ⊢
-    cases hb : b.onThrow
-    · have hadm : TolerantFrames.Admissible s s' := by split at hx <;> exact hx.1.1
-      exact ⟨Parity.EffectAction.top hadm, fun _ hF => by cases hF⟩
-    · rw [hb] at ho
-      simp only [Bool.not_true, Bool.false_or] at ho
-      rw [if_pos ho] at hx
-      exact ⟨⟨hx.1.1, Effect.frameCovers_sound (a := a) (b := b) hfc hx.1.2⟩, fun _ hF => by cases hF⟩
 
 /-- Whether binding `n` actuals of a signature keeps what it guarantees and
 the bound signature covers `b`. -/

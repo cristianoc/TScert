@@ -630,7 +630,11 @@ postcondition that ignores the value is the one `SafePostExcW` states
 where its specification entails the other's on both exits (`Exits.Entails`),
 its result meets the other's and its precondition is weaker
 (`Effect.Covers`; the check `Effect.covers` is sufficient for it, proved:
-`Effect.covers_sound`); a promise weakens along coverage at its exits
+`Effect.covers_sound`). The check reads the schemas (`Exits.covers`): on
+each exit the first frame is included in the other's, entry by entry or
+because the other's class entries let everything change, and each
+postcondition of the other is one of the first's (`Exits.covers_entails`);
+beside it the same promise and a weaker precondition. A promise weakens along coverage at its exits
 (`PromiseWith.weaken'`, `ConstructPromise.weaken'`). A bound signature's
 exits follow from its target's at the forwarded call, read from the bound
 call's entry, from which the target's is admissible

@@ -669,7 +669,9 @@ theorem Effect.freshResult_schema (e : Effect) : e.schema.normal.freshResult = e
 Each builder states an effect by what it states of its two exits, and its
 schema is proved equal to those exits (today's elaboration of the fields it
 sets). Code building an effect goes through them, so that a representation
-holding the exits changes the builders and no caller. -/
+holding the exits changes the builders and no caller. `ofClosed` and
+`ofStated` build the families today's encoding states (a closed frame, a
+declaration's statement); they are not general constructors of schemas. -/
 
 /-- **The exits of a closed frame** `c`: the normal exit within `c` with no
 postcondition, the exceptional exit within `c` where `bounded`, `⊤`
@@ -715,6 +717,57 @@ theorem Effect.ofStated_schema (c : Footprints.Closed) (promise : Option TypePro
     simp [Effect.ofStated, Effect.frame, Effect.receiverEntries]
   rw [Effect.schema, hf]
   cases bounded <;> cases fresh <;> simp [Effect.normalSchema, Effect.ofStated, Exits.ofStated]
+
+/-- Whether a region is a class region (the note's class entries). -/
+def classRegion : Footprints.Region → Bool
+  | .cls _ => true
+  | _ => false
+
+/-- **A frame with its class entries those of `c`**: `c`'s class entries,
+and the frame's entries over other regions. -/
+def replaceClasses (c : Footprints.Closed) (Φ : Footprints.Footprint) : Footprints.Footprint :=
+  c.fp ++ Φ.filter fun e => !classRegion e.1
+
+/-- **The exits of a specification with its class entries those of `c` and
+its throws bounded**: the normal exit's frame with `c`'s class entries
+(`replaceClasses`) and its postconditions, and the exceptional exit within
+that frame, with no postcondition. -/
+def Exits.withClasses (c : Footprints.Closed) (x : Exits ExitSchema) : Exits ExitSchema :=
+  ⟨⟨replaceClasses c x.normal.frame, x.normal.ensures⟩, ⟨replaceClasses c x.normal.frame, []⟩⟩
+
+/-- **An effect with its class entries those of `c` and its throws bounded**
+(`Exits.withClasses`), its promise and preconditions `e`'s. -/
+def Effect.withClasses (c : Footprints.Closed) (e : Effect) : Effect := { e with closed := c, onThrow := true }
+
+/-- **An effect with its class entries replaced states those exits**
+(proved). -/
+theorem Effect.withClasses_schema (c : Footprints.Closed) (e : Effect) :
+    (e.withClasses c).schema = Exits.withClasses c e.schema := by
+  have hrecv : ∀ x ∈ e.receiverEntries, classRegion x.1 = false := by
+    intro x hx
+    simp only [Effect.receiverEntries] at hx
+    split at hx
+    · simp at hx; subst hx; rfl
+    · split at hx
+      · simp at hx; subst hx; rfl
+      · cases hx
+  have hfilter : e.frame.filter (fun x => !classRegion x.1) = e.receiverEntries ++ e.regions.map regionEntry := by
+    simp only [Effect.frame, List.filter_append]
+    rw [List.filter_eq_nil_iff.mpr (by
+        intro x hx
+        simp only [Footprints.Closed.fp, List.mem_cons, List.not_mem_nil, or_false] at hx
+        rcases hx with rfl | rfl | rfl <;> simp [classRegion]),
+      List.filter_eq_self.mpr (fun x hx => by simp [hrecv x hx]),
+      List.filter_eq_self.mpr (fun x hx => by
+        obtain ⟨r, -, rfl⟩ := List.mem_map.mp hx
+        simp [regionEntry, Footprints.ArgumentStoreRegion.entry, classRegion])]
+    simp
+  have hframe : (e.withClasses c).frame = replaceClasses c e.frame := by
+    rw [replaceClasses, hfilter]
+    simp only [Effect.frame, List.append_assoc]
+    rfl
+  simp only [Effect.schema, hframe, Exits.withClasses]
+  rfl
 
 /-- **An effect whose throws are unbounded**: `e`'s normal exit, `⊤` on a
 throw. -/
