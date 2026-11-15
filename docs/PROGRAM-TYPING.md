@@ -825,7 +825,7 @@ $`\varphi=\overline{k_i{:}A_i}`$, empty for a class with none):
 
 A plain effect has no promise, so its result operand is the result's type. A
 construction with value operands runs within its selected signature's
-footprint $`\varepsilon`$ (`CallEffects.construct_safe_exc`), which is how a body
+footprint $`\varepsilon`$ (`CallEffects.construct_exits`), which is how a body
 checked against a bound consumes it, as it consumes a call's
 ([FOOTPRINTS.md](FOOTPRINTS.md#the-checked-callback-contract)).
 

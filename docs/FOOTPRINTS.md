@@ -391,8 +391,9 @@ locations below the heap the body started in; the runs compose by
   ([element writes](#element-writes));
 - a **selected call or construction** whose signature's frame is within
   $`\Phi`$, its operands values (`selectedWithinAt`; proved:
-  `ExpressionEffects.selected_sound`, through `CallEffects.call_safe`,
-  `CallEffects.call_exits` and `CallEffects.construct_safe_exc`): a fixed
+  `ExpressionEffects.selected_sound`, through `CallEffects.call_exits` and
+  `CallEffects.construct_exits`, read at its heaps by
+  `Effect.heldPosts_post`): a fixed
   call, a variadic call and a construction, each at the signature the
   evidence selects. A variadic call's evaluation reads its spreads' stores
   in the heap the call starts in and reaches an invocation at the expanded

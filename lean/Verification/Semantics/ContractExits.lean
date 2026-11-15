@@ -168,4 +168,23 @@ theorem Effect.safe_exits_weaken {Ξ T : Fam} {e e' : Effect} {r r' : Tm} {args 
       (e'.schema.exitPostW .exceptional r' args' U heap) j U heap t :=
   Effect.safe_exits hx' hv' hu hh (SafePostExc.weaken hq hr (Effect.safe_fields hv hu hh hs))
 
+/-- **A call's guarantee from held entries read as a signature's heap
+postconditions** (`SafePostExcV.heldPosts`): at an admissible transition the
+signature's exits are its postconditions (`Effect.postW_iff_exit`,
+`Effect.excPostW_iff_exit`), at actuals that are values where it states an
+append of them; a throw of the evaluation leaves the heap, within every
+frame. -/
+theorem Effect.heldPosts_post {Ξ T : Fam} {e : Effect} {r : Tm} {args : List Tm} {n : Nat} {W : WorldT n}
+    {h : Heap} {t : Tm} (hvals : e.receiverGrows = true → CallArguments.Values args) (hw : WorldAdm W)
+    (hh : HeapOk n W h) (hs : SafePostExcV Ξ T (e.schema.heldPost r args W h) (e.schema.heldExc r args W h) n W h t) :
+    SafePostExc Ξ T (e.post r args h) (e.excPost r args h) n W h t := by
+  refine SafePostExc.weaken (fun h' v hp => ?_) (fun h' hp => ?_) (SafePostExcV.heldPosts hw hh hs)
+  · obtain ⟨s, s', rfl, rfl, hp⟩ := hp
+    exact ((Effect.postW_iff_exit (Exits.exitPost_admissible hp) hvals).mpr
+      ((Exits.exitPostW_iff _ _ _ _ s s' v).mpr hp)).1
+  · rcases hp with ⟨v, s, s', rfl, rfl, hp⟩ | rfl
+    · exact (Effect.excPostW_iff_exit (Exits.exitPost_admissible hp)).mpr ((Exits.exitPostW_iff _ _ _ _ s s' v).mpr hp)
+    · intro _
+      exact Post.refl _ _ _
+
 end Verification.CallEffects

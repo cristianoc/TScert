@@ -527,38 +527,6 @@ theorem PromiseWith.bound {effect : Effect} {Acc Rest : ArgFam} {Rt R Rc : Fam}
             fun _ he => (by cases he), fun he => (by cases he)⟩, fun he => absurd rfl he⟩⟩)
         (fun _ _ _ h => Effect.excPost_drop pre.length h) hsafe⟩⟩
 
-/-- Application consumes a qualified signature, without inspecting the
-callee's implementation. Its entry heap is after actual evaluation. -/
-theorem call_safe_exc {effect : Effect} {P : ArgFam} {Rc R : Fam}
-    (hP : Adm P) (hRc : Adm Rc) {n W heap f r vs}
-    (hf : PromiseWith Ξ effect P Rc R n W f) (hr : Rc n W r)
-    (hrv : isVal r = true) (hv : CallArguments.Values vs) (ha : P n W vs)
-    (hw : WorldAdm W) (hh : HeapOk n W heap) (hq : effect.Requires r vs heap)
-    (href : RefsOk W (.invoke f r vs)) :
-    SafePostExc Ξ (effect.result R (effect.promised vs)) (effect.post r vs heap) (effect.excPost r vs heap)
-      n W heap (.invoke f r vs) := by
-  rw [PromiseWith.iff_legacy] at hf
-  cases n with
-  | zero => exact href
-  | succ n =>
-    let U := trunc n (Nat.le_succ n) W
-    obtain ⟨hfr, hrr, har⟩ := RefsOk_invoke.mp href
-    obtain ⟨body, hi, hs⟩ := hf n (Nat.lt_succ_self n) U (WExt_refl _)
-      (WorldAdm_trunc _ hw) heap (HeapOk_trunc n W heap hh) (RefsOk_trunc _ hfr) r hrv (hRc.down n W r hr)
-      (RefsOk_trunc _ hrr) vs hv (fun a ha => RefsOk_trunc _ (har a ha))
-      (hP.transfer ha n (Nat.le_succ n) U (WExt_refl _)) hq
-    exact ⟨href, .inr ⟨U, heap, body, WExt_refl _, WorldAdm_trunc _ hw, hi.step heap,
-      HeapOk_trunc n W heap hh, SafePostExcW.weaken (fun _ _ _ _ hp => hp.1) (fun _ _ _ hp => hp) (SafePostExcV.iff_lift.mp hs)⟩⟩
-
-theorem call_safe {effect : Effect} {P : ArgFam} {Rc R : Fam}
-    (hP : Adm P) (hRc : Adm Rc) {n W heap f r vs}
-    (hf : PromiseWith Ξ effect P Rc R n W f) (hr : Rc n W r)
-    (hrv : isVal r = true) (hv : CallArguments.Values vs) (ha : P n W vs)
-    (hw : WorldAdm W) (hh : HeapOk n W heap) (hq : effect.Requires r vs heap)
-    (href : RefsOk W (.invoke f r vs)) :
-    SafePost Ξ (effect.result R (effect.promised vs)) (effect.post r vs heap) n W heap (.invoke f r vs) :=
-  (call_safe_exc hP hRc hf hr hrv hv ha hw hh hq href).post
-
 /-- **A call at a signature's exits** (the note's Call, `invoke_exits`): a
 value meeting the signature, invoked at value actuals meeting its input
 contract and precondition, is safe at the signature's specification at those
@@ -576,6 +544,31 @@ theorem call_exits {effect : Effect} {P : ArgFam} {Rc R : Fam}
   | succ n =>
     exact invoke_exits hf hw hh hrv (hRc.down n W r hr) hv (hP.transfer ha n (Nat.le_succ n) _ (WExt_refl _)) hq href
 
+/-- Application consumes a qualified signature, without inspecting the
+callee's implementation. Its entry heap is after actual evaluation; its
+postconditions are its exits read at its heaps (`call_exits`,
+`Effect.heldPosts_post`). -/
+theorem call_safe_exc {effect : Effect} {P : ArgFam} {Rc R : Fam}
+    (hP : Adm P) (hRc : Adm Rc) {n W heap f r vs}
+    (hf : PromiseWith Ξ effect P Rc R n W f) (hr : Rc n W r)
+    (hrv : isVal r = true) (hv : CallArguments.Values vs) (ha : P n W vs)
+    (hw : WorldAdm W) (hh : HeapOk n W heap) (hq : effect.Requires r vs heap)
+    (href : RefsOk W (.invoke f r vs)) :
+    SafePostExc Ξ (effect.result R (effect.promised vs)) (effect.post r vs heap) (effect.excPost r vs heap)
+      n W heap (.invoke f r vs) :=
+  Effect.heldPosts_post (fun _ => hv) hw hh
+    (SafePostExcV.weaken (R' := effect.schema.heldExc _ _ W heap) (fun _ _ _ _ hp => hp) (fun _ _ _ _ hp => .inl hp)
+      (call_exits hP hRc hf hr hrv hv ha hw hh hq href))
+
+theorem call_safe {effect : Effect} {P : ArgFam} {Rc R : Fam}
+    (hP : Adm P) (hRc : Adm Rc) {n W heap f r vs}
+    (hf : PromiseWith Ξ effect P Rc R n W f) (hr : Rc n W r)
+    (hrv : isVal r = true) (hv : CallArguments.Values vs) (ha : P n W vs)
+    (hw : WorldAdm W) (hh : HeapOk n W heap) (hq : effect.Requires r vs heap)
+    (href : RefsOk W (.invoke f r vs)) :
+    SafePost Ξ (effect.result R (effect.promised vs)) (effect.post r vs heap) n W heap (.invoke f r vs) :=
+  (call_safe_exc hP hRc hf hr hrv hv ha hw hh hq href).post
+
 /-- Trailing `undefined` actuals change no precondition: a construction's
 positions past its actuals hold `undefined` either way (`callEnv_pad`). -/
 theorem Effect.requires_pad {e : Effect} {r : Tm} {args pad : List Tm} {h : Heap}
@@ -584,20 +577,20 @@ theorem Effect.requires_pad {e : Effect} {r : Tm} {args pad : List Tm} {h : Heap
   rw [callEnv_pad r args hpad]
   exact hq.2 F hF
 
-/-- A construction of a class value with value actuals takes one step to the
-body its signature makes safe, meeting the signature's effect from the heap
-it starts in, where the signature's precondition holds of the construction's
-actuals (`call-requires`) and it states no promise, so its result operand is
-the result's type. The signature may declare trailing positions the
-construction omits: each admits `undefined`, which the step binds there. -/
-theorem construct_safe_exc_requires {effect : Effect} (hpr : effect.promise = none) {P : ArgFam} {R : Fam}
+/-- **A construction at a signature's exits** (the note's Call): a class
+value meeting a construct signature stating no promise, constructed at value
+actuals meeting its input contract and precondition, is safe at the
+signature's specification at the actuals followed by the `undefined` of the
+positions it omits, the receiver `undefined`, from an invocation entry held
+from the construction's (`HeldEntry`). -/
+theorem construct_exits {effect : Effect} (hpr : effect.promise = none) {P : ArgFam} {R : Fam}
     (hP : Adm P) {n W heap v vs pad}
     (hf : ConstructPromise Ξ effect P R n W v) (hv : CallArguments.Values vs)
     (hpad : ∀ a ∈ pad, a = .undef) (ha : P n W (vs ++ pad))
     (hw : WorldAdm W) (hh : HeapOk n W heap) (hq : effect.Requires .undef vs heap)
     (href : RefsOk W (.construct v vs)) :
-    SafePostExc Ξ R (effect.post .undef vs heap) (effect.excPost .undef vs heap) n W heap (.construct v vs) := by
-  rw [ConstructPromise.iff_legacy] at hf
+    SafePostExcV Ξ R (effect.schema.fromEntry .normal .undef (vs ++ pad) (HeldEntry W heap))
+      (effect.schema.fromEntry .exceptional .undef (vs ++ pad) (HeldEntry W heap)) n W heap (.construct v vs) := by
   cases n with
   | zero => exact href
   | succ n =>
@@ -618,20 +611,14 @@ theorem construct_safe_exc_requires {effect : Effect} (hpr : effect.promise = no
       (Effect.requires_pad hpad hq)
     dsimp only at hs
     rw [CallArguments.construction_pad hc _ _ hpad, Effect.result_none hpr] at hs
-    exact ⟨href, .inr ⟨U, heap, _, WExt_refl _, WorldAdm_trunc _ hw,
-      CallArguments.construction_step hc hv heap, HeapOk_trunc n W heap hh,
-      SafePostExcW.weaken (fun _ _ _ _ h => Effect.post_pad rfl hpad h.1) (fun _ _ _ h => Effect.excPost_pad hpad h) (SafePostExcV.iff_lift.mp hs)⟩⟩
-
-/-- A construction at a plain signature, whose precondition is empty. -/
-theorem construct_safe_exc {effect : Effect} (hpl : effect.plain = true) {P : ArgFam} {R : Fam}
-    (hP : Adm P) {n W heap v vs pad}
-    (hf : ConstructPromise Ξ effect P R n W v) (hv : CallArguments.Values vs)
-    (hpad : ∀ a ∈ pad, a = .undef) (ha : P n W (vs ++ pad))
-    (hw : WorldAdm W) (hh : HeapOk n W heap) (href : RefsOk W (.construct v vs)) :
-    SafePostExc Ξ R (effect.post .undef vs heap) (effect.excPost .undef vs heap) n W heap (.construct v vs) :=
-  construct_safe_exc_requires
-    (by simp only [Effect.plain, Bool.and_eq_true, Option.isNone_iff_eq_none] at hpl; exact hpl.1.1)
-    hP hf hv hpad ha hw hh (Effect.requires_none (Effect.plain_requires hpl) (Effect.plain_pre hpl) .undef vs heap) href
+    refine ⟨href, .inr ⟨U, heap, _, WExt_refl _, WorldAdm_trunc _ hw,
+      CallArguments.construction_step hc hv heap, HeapOk_trunc n W heap hh, ?_⟩⟩
+    cases n with
+    | zero => exact hs
+    | succ m =>
+      let s : TolerantFrames.IndexedHeap := ⟨m + 1, U, heap, Nat.succ_pos _, WorldAdm_trunc _ hw, HeapOk_trunc _ W heap hh⟩
+      have hs0 : HeldEntry W heap s := ⟨rfl, Nat.le_succ _, WExt_refl _⟩
+      exact SafePostExcV.weaken (fun _ _ _ _ hp => ⟨s, hs0, hp⟩) (fun _ _ _ _ hp => ⟨s, hs0, hp⟩) hs
 
 /-- An operational invariant that only appends fresh locations supplies
 the normal-return preservation postcondition, supplementing ordinary safety.

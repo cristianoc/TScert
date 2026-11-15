@@ -489,7 +489,11 @@ theorem app_requires_none [DecidableEq ι] {G : NormalGraph ι}
   · exact hL.2.2.resolve_left (by simp)
   · exact hL.elim
 
-theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
+/-- **Invocation at the selected signature's exits**: a call whose callee,
+receiver and actuals are values is safe at the signature's specification at
+its actuals, from an invocation entry held from the call's
+(`CallEffects.call_exits`); its actuals are values. -/
+theorem call_local_exits [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G}
     {j : Sequent ι} {ps : List (Sequent ι)} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
     {allow : Bool}
@@ -499,8 +503,10 @@ theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hq : e.Requires (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h)
     (href : RefsOk W (instantiate 0 ρ j.term)) :
-    SafePostExc (excOf G) (meaning G j.type) (e.post (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h)
-      (e.excPost (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h) n W h (instantiate 0 ρ j.term) := by
+    CallArguments.Values (actualsOf (instantiate 0 ρ j.term)) ∧ SafePostExcV (excOf G) (meaning G j.type)
+      (e.schema.heldPost (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) W h)
+      (e.schema.heldExc (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) W h)
+      n W h (instantiate 0 ρ j.term) := by
   rcases j with ⟨Γ,t,A⟩
   -- The rule admits only a call with a callee and a receiver premise.
   cases t <;> try exact (hl : False).elim
@@ -523,6 +529,14 @@ theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
     intro p hp
     exact valueTerm_instantiate (hv p hp).1 (hv p hp).2 (by simpa [context p hp] using he)
   have refsOf := invoke_refs htf htr hargs hundef href
+  have hact : CallArguments.Values (actualsOf (instantiate 0 ρ (Tm.invoke f r args))) := by
+    intro a ha
+    simp only [actualsOf, instantiate, instantiateArgs_eq_map, List.mem_map] at ha
+    obtain ⟨b, hb, rfl⟩ := ha
+    have hb' : b ∈ (jas.take args.length).map Sequent.term := by rw [hargs]; exact hb
+    obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hb'
+    exact values p (by simp [List.mem_of_mem_take hp])
+  refine ⟨hact, ?_⟩
   cases n with
   | zero => exact href
   | succ n =>
@@ -560,22 +574,42 @@ theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
       have hres : e.promise = none := hL.2.1
       have hq' : e.Requires (instantiate 0 ρ jr.term) (args.map (instantiate 0 ρ)) h := by
         simpa [receiverOf, actualsOf, instantiate, htr, instantiateArgs_eq_map] using hq
-      have hs := CallEffects.call_safe_exc (effect := e)
+      have hs := CallEffects.call_exits (effect := e)
         (P := ArgsShort (jas.map (fun p => meaning G p.type)))
         (Adm.of_transfer (fun ha j hj U hx => ArgsShort_transfer (fun T hm => by
           obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hm; exact meaning_adm G p.type) ha j hj U hx))
         (meaning_adm G jr.type) hp hr hrval hvals ha hw hh hq'
         (by simpa [htf, htr, instantiate, instantiateArgs_eq_map] using href)
       rw [CallEffects.Effect.result_none hres] at hs
+      replace hs := SafePostExcV.weaken (R' := e.schema.heldExc _ _ W h) (fun _ _ _ _ hp => hp)
+        (fun _ _ _ _ hp => .inl hp) hs
       simpa [CallEffects.Arrow.map, CallEffects.Contract.map, htf, htr, receiverOf, actualsOf,
         instantiate, instantiateArgs_eq_map, List.map_map, Function.comp_def] using hs
     · contradiction
 
-/-- Construction consumes the selected construct signature's effect, as
-invocation does: the constructor and the actuals are values, each omitted
-position an explicit `undefined` premise; a signature stating a precondition
-(`allowRequires`) where it holds of the construction's actuals. -/
-theorem construct_local_requires_sound [DecidableEq ι] {G : NormalGraph ι}
+/-- Invocation at the selected signature, read at its heap postconditions
+(`Effect.heldPosts_post`). -/
+theorem call_local_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G}
+    {j : Sequent ι} {ps : List (Sequent ι)} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    {allow : Bool}
+    {e : CallEffects.Effect} (hl : LocalUsing G images j (.app e) ps codes (sums := sums) (allowRequires := allow))
+    (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
+    (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
+    {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (hq : e.Requires (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
+    SafePostExc (excOf G) (meaning G j.type) (e.post (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h)
+      (e.excPost (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h) n W h (instantiate 0 ρ j.term) := by
+  obtain ⟨hact, hs⟩ := call_local_exits hl ht hv he hw hh hq href
+  exact CallEffects.Effect.heldPosts_post (fun _ => hact) hw hh hs
+
+/-- **Construction at the selected construct signature's exits**: a
+construction whose constructor and actuals are values is safe at the
+signature's specification at its actuals followed by the `undefined` of the
+positions it omits, the receiver `undefined`, from an invocation entry held
+from the construction's (`CallEffects.construct_exits`). -/
+theorem construct_local_exits [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G}
     {j : Sequent ι} {ps : List (Sequent ι)} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
     {allow : Bool}
@@ -585,8 +619,11 @@ theorem construct_local_requires_sound [DecidableEq ι] {G : NormalGraph ι}
     {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
     (hq : e.Requires (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h)
     (href : RefsOk W (instantiate 0 ρ j.term)) :
-    SafePostExc (excOf G) (meaning G j.type) (e.post (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h)
-      (e.excPost (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h) n W h (instantiate 0 ρ j.term) := by
+    receiverOf (instantiate 0 ρ j.term) = .undef ∧ CallArguments.Values (actualsOf (instantiate 0 ρ j.term)) ∧
+      ∃ pad : List Tm, (∀ a ∈ pad, a = .undef) ∧ SafePostExcV (excOf G) (meaning G j.type)
+        (e.schema.heldPost (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term) ++ pad) W h)
+        (e.schema.heldExc (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term) ++ pad) W h)
+        n W h (instantiate 0 ρ j.term) := by
   rcases j with ⟨Γ,t,A⟩
   -- The rule admits only a construction with a constructor premise.
   cases t <;> try exact (hl : False).elim
@@ -607,8 +644,16 @@ theorem construct_local_requires_sound [DecidableEq ι] {G : NormalGraph ι}
     intro p hp
     exact valueTerm_instantiate (hv p hp).1 (hv p hp).2 (by simpa [context p hp] using he)
   have refsOf := construct_refs htf hargs hundef href
+  have hact : CallArguments.Values (actualsOf (instantiate 0 ρ (Tm.construct f args))) := by
+    intro a ha
+    simp only [actualsOf, instantiate, instantiateArgs_eq_map, List.mem_map] at ha
+    obtain ⟨b, hb, rfl⟩ := ha
+    have hb' : b ∈ (jas.take args.length).map Sequent.term := by rw [hargs]; exact hb
+    obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hb'
+    exact values p (by simp [List.mem_of_mem_take hp])
+  refine ⟨rfl, hact, ?_⟩
   cases n with
-  | zero => exact href
+  | zero => exact ⟨[], by simp, href⟩
   | succ n =>
     have member : ∀ p ∈ jf::jas, meaning G p.type (n+1) W (instantiate 0 ρ p.term) := by
       intro p hp
@@ -642,7 +687,7 @@ theorem construct_local_requires_sound [DecidableEq ι] {G : NormalGraph ι}
         · exact hpr
       have hq' : e.Requires .undef (args.map (instantiate 0 ρ)) h := by
         simpa [receiverOf, actualsOf, instantiate, instantiateArgs_eq_map] using hq
-      have hs := CallEffects.construct_safe_exc_requires hpr
+      have hs := CallEffects.construct_exits hpr
         (P := ArgsT (jas.map (fun p => meaning G p.type)))
         (Adm.of_transfer (fun ha j hj U hx => ArgsT_transfer (fun T hm => by
           obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hm; exact meaning_adm G p.type) ha j hj U hx))
@@ -653,8 +698,40 @@ theorem construct_local_requires_sound [DecidableEq ι] {G : NormalGraph ι}
           simp [hundef p hp, instantiate])
         (by rw [← hsplit]; exact hArgs) hw hh hq'
         (by simpa [htf, instantiate, instantiateArgs_eq_map] using href)
-      simpa [htf, receiverOf, actualsOf, instantiate, instantiateArgs_eq_map] using hs
+      replace hs := SafePostExcV.weaken (R' := e.schema.heldExc _ _ W h) (fun _ _ _ _ hp => hp)
+        (fun _ _ _ _ hp => .inl hp) hs
+      refine ⟨(jas.drop args.length).map (fun p => instantiate 0 ρ p.term), ?_, ?_⟩
+      · intro v hv'
+        obtain ⟨p,hp,rfl⟩ := List.mem_map.mp hv'
+        simp [hundef p hp, instantiate]
+      · simpa [htf, receiverOf, actualsOf, instantiate, instantiateArgs_eq_map] using hs
     · contradiction
+
+/-- Construction consumes the selected construct signature's effect, as
+invocation does: the constructor and the actuals are values, each omitted
+position an explicit `undefined` premise; a signature stating a precondition
+(`allowRequires`) where it holds of the construction's actuals; read at its
+heap postconditions (`Effect.heldPosts_post`, `Effect.post_pad`). -/
+theorem construct_local_requires_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G}
+    {j : Sequent ι} {ps : List (Sequent ι)} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
+    {allow : Bool}
+    {e : CallEffects.Effect} (hl : LocalUsing G images j (.construct e) ps codes (sums := sums) (allowRequires := allow))
+    (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
+    (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
+    {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
+    (hq : e.Requires (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h)
+    (href : RefsOk W (instantiate 0 ρ j.term)) :
+    SafePostExc (excOf G) (meaning G j.type) (e.post (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h)
+      (e.excPost (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h) n W h (instantiate 0 ρ j.term) := by
+  obtain ⟨hrecv, hact, pad, hpad, hs⟩ := construct_local_exits hl ht hv he hw hh hq href
+  have hvp : CallArguments.Values (actualsOf (instantiate 0 ρ j.term) ++ pad) := by
+    intro a ha
+    rcases List.mem_append.mp ha with ha | ha
+    · exact hact a ha
+    · rw [hpad a ha]; rfl
+  refine SafePostExc.weaken (fun _ _ hp => CallEffects.Effect.post_pad (by rw [hrecv]; rfl) hpad hp)
+    (fun _ hp => CallEffects.Effect.excPost_pad hpad hp) (CallEffects.Effect.heldPosts_post (fun _ => hvp) hw hh hs)
 
 /-- A construction at a plain signature, whose precondition is empty. -/
 private theorem construct_local_sound [DecidableEq ι] {G : NormalGraph ι}

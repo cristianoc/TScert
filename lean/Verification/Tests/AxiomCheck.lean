@@ -1759,7 +1759,8 @@ run_cmd do
   check ``Verification.CallEffects.PromiseWith.combine
   check ``Verification.CallEffects.PromiseWith.weaken'
   check ``Verification.CallEffects.Effect.postW_of_post
-  check ``Verification.CallEffects.construct_safe_exc_requires
+  check ``Verification.CallEffects.construct_exits
+  check ``Verification.CallEffects.call_exits
   check ``Verification.Kinds.literal_safe
   check ``Verification.Kinds.gate_write
   check ``Verification.Kinds.gate_handled
