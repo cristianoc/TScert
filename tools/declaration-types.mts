@@ -160,17 +160,20 @@ export type BodyVariable = "index" | "elem" | { offset: { delta: number } } | { 
 /** A linear fact of a quantified fact's body, over its variables. */
 export type BodyFact =
   | { readonly either: { readonly left: BodyFact; readonly right: BodyFact } }
-  | { readonly le: { readonly form: readonly (readonly [BodyVariable, number])[]; readonly bound: number } }
-  | { readonly ne: { readonly form: readonly (readonly [BodyVariable, number])[]; readonly bound: number } };
+  | { readonly le: { readonly form: readonly (readonly [BodyVariable, Integer])[]; readonly bound: Integer } }
+  | { readonly ne: { readonly form: readonly (readonly [BodyVariable, Integer])[]; readonly bound: Integer } };
 /** The value a guard compares a path's read with (`HeapKnowledge.GuardTag`). */
 export type GuardTag = "null" | "undefined" | "true" | "false";
 /** A linear fact (`Linear.Fact`): `Σ c·t ≤ bound` or `≠ bound`, each term a
  * linear term and its coefficient. */
 export type LinearFact = LinearFactOf<LinearTerm>;
+/** An integer of a linear fact: a number in the safe range, its canonical
+ * decimal string outside it (REQUEST-PROTOCOL.md, "The serialized effect"). */
+export type Integer = number | string;
 /** A linear fact over variables `V`. */
 export type LinearFactOf<V> =
-  | { readonly le: { readonly form: readonly (readonly [V, number])[]; readonly bound: number } }
-  | { readonly ne: { readonly form: readonly (readonly [V, number])[]; readonly bound: number } };
+  | { readonly le: { readonly form: readonly (readonly [V, Integer])[]; readonly bound: Integer } }
+  | { readonly ne: { readonly form: readonly (readonly [V, Integer])[]; readonly bound: Integer } };
 /** A term of a linear fact (`HeapKnowledge.Term`): a root position, the
  * named data fields read from what it holds in turn (`path`, empty for the
  * position's own value), and what the term reads of the value the path ends

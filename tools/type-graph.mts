@@ -238,7 +238,7 @@ export const promiseEffect = (asserts: boolean, param: number): Modifies<{}, Cal
  * record of exactly its fields (`atEntry` alone optional, and `true`), a
  * union of objects of one field each and of names, or a named shape. */
 type Shape =
-  | "nat" | "int" | "bool" | "string" | "true"
+  | "nat" | "int" | "bool" | "string" | "true" | "bits" | "decimal"
   | { readonly list: Shape } | { readonly pair: readonly [Shape, Shape] } | { readonly nullable: Shape }
   | { readonly record: { readonly [field: string]: Shape }; readonly optional?: { readonly [field: string]: Shape } }
   | { readonly union: { readonly [tag: string]: Shape }; readonly names?: readonly string[] }
@@ -263,8 +263,8 @@ const grammar: { readonly [name: string]: Shape } = {
     store: { record: { x: "nat", fields: strings } } }, names: ["all"] },
   frame: { list: { record: { region: { ref: "region" }, change: { names: ["keep", "init", "scalar", "grow", "any"] } } } },
   path: { record: { root: "nat", fields: strings } },
-  literal: { union: { num: { record: { bits: "string" } }, str: { record: { value: "string" } },
-    bigint: { record: { value: "string" } }, sym: { record: { id: "nat" } } }, names: ["null", "undefined", "true", "false"] },
+  literal: { union: { num: { record: { bits: "bits" } }, str: { record: { value: "string" } },
+    bigint: { record: { value: "decimal" } }, sym: { record: { id: "nat" } } }, names: ["null", "undefined", "true", "false"] },
   witness: { union: { path: { ref: "path" }, literal: { ref: "literal" } } },
   seq: { union: { fixed: { record: { xs: { list: { ref: "witness" } } } }, restFrom: { record: { first: "nat" } },
     append: { record: { left: { ref: "seq" }, right: { ref: "seq" } } } } },
@@ -311,46 +311,69 @@ const grammar: { readonly [name: string]: Shape } = {
   effect: { record: { exits: { ref: "exits" }, promise: { nullable: { ref: "promise" } },
     requires: { nullable: { ref: "kinds" } }, pre: { list: { ref: "fact" } } } },
 };
+/** The recursive shapes: each layer of one takes a unit of the nesting
+ * limit, along every path (`EffectCodec.nestingLimit`). */
+const recursiveShapes: readonly string[] = ["region", "seq", "clause", "fact", "formula"];
+/** The nesting a reader reads: an exit's frame and postconditions, and each
+ * precondition, start from it. */
+const nestingLimit = 256;
+/** A canonical decimal integer: no leading zero, plus sign or negative zero. */
+const canonicalDecimal = (v: string): boolean => /^(0|-?[1-9][0-9]*)$/.test(v);
+/** An integer a number states exactly: below `2^53` in magnitude. */
+const safeMagnitude = 2n ** 53n;
 /** The first place a value differs from a shape, by its path, or `null`. A
  * key is a string or `{symbol}`; an elements predicate lists its kinds in
- * their order, each once. */
-function shapeError(shape: Shape, v: JsonRead, at: string): Modifies<{}, string | null> {
+ * their order, each once; an integer is a safe one's number or another's
+ * canonical decimal string; a record's and a union's fields are their own;
+ * `depth` is the nesting left to the recursive shapes. */
+function shapeError(shape: Shape, v: JsonRead, at: string, depth: number): Modifies<{}, string | null> {
   if (shape === "nat") return typeof v === "number" && Number.isSafeInteger(v) && v >= 0 ? null : `${at}: a natural number in the safe range`;
-  if (shape === "int") return typeof v === "number" && Number.isSafeInteger(v) ? null : `${at}: an integer in the safe range`;
+  if (shape === "int") {
+    if (typeof v === "number") return Number.isSafeInteger(v) ? null : `${at}: an integer in the safe range, or its decimal string`;
+    if (typeof v !== "string" || !canonicalDecimal(v)) return `${at}: an integer, a number or its canonical decimal string`;
+    const i = BigInt(v);
+    return (i < 0n ? -i : i) >= safeMagnitude ? null : `${at}: an integer in the safe range is a number`;
+  }
+  if (shape === "decimal") return typeof v === "string" && canonicalDecimal(v) ? null : `${at}: a canonical decimal integer`;
+  if (shape === "bits") return typeof v === "string" && /^[0-9a-f]{16}$/.test(v) ? null : `${at}: sixteen lowercase hexadecimal digits`;
   if (shape === "bool") return typeof v === "boolean" ? null : `${at}: a Boolean`;
   if (shape === "string") return typeof v === "string" ? null : `${at}: a string`;
   if (shape === "true") return v === true ? null : `${at}: true`;
   if ("ref" in shape) {
-    if (shape.ref === "keyOf") return typeof v === "string" ? null : shapeError({ ref: "symbolKey" }, v, at);
+    if (shape.ref === "keyOf") return typeof v === "string" ? null : shapeError({ ref: "symbolKey" }, v, at, depth);
+    if (!Object.hasOwn(grammar, shape.ref)) return `${at}: no shape ${shape.ref}`;
     const named = grammar[shape.ref];
     if (named === undefined) return `${at}: no shape ${shape.ref}`;
-    const e = shapeError(named, v, at);
+    const recursive = recursiveShapes.includes(shape.ref);
+    if (recursive && depth <= 0) return `${at}: nested beyond the limit`;
+    const e = shapeError(named, v, at, recursive ? depth - 1 : depth);
     if (e !== null || shape.ref !== "kinds" || !isJsonList(v)) return e;
     const order = v.map(k => elementKindOrder.findIndex(o => o === k));
     return order.every((i, n) => n === 0 || (order[n - 1] ?? -1) < i) ? null : `${at}: kinds in their order, each once`;
   }
   if ("list" in shape) {
     if (!isJsonList(v)) return `${at}: a list`;
-    for (let i = 0; i < v.length; i++) { const e = shapeError(shape.list, v[i], `${at}[${i}]`); if (e !== null) return e; }
+    for (let i = 0; i < v.length; i++) { const e = shapeError(shape.list, v[i], `${at}[${i}]`, depth); if (e !== null) return e; }
     return null;
   }
   if ("pair" in shape) {
     if (!isJsonList(v) || v.length !== 2) return `${at}: a pair`;
-    return shapeError(shape.pair[0], v[0], `${at}[0]`) ?? shapeError(shape.pair[1], v[1], `${at}[1]`);
+    return shapeError(shape.pair[0], v[0], `${at}[0]`, depth) ?? shapeError(shape.pair[1], v[1], `${at}[1]`, depth);
   }
-  if ("nullable" in shape) return v === null ? null : shapeError(shape.nullable, v, at);
+  if ("nullable" in shape) return v === null ? null : shapeError(shape.nullable, v, at, depth);
   if ("record" in shape) {
     if (!isJsonObject(v)) return `${at}: an object`;
+    const optional = shape.optional ?? {};
     for (const k of Object.keys(v))
-      if (!(k in shape.record) && !(shape.optional !== undefined && k in shape.optional)) return `${at}/${k}: a field no effect has`;
+      if (!Object.hasOwn(shape.record, k) && !Object.hasOwn(optional, k)) return `${at}/${k}: a field no effect has`;
     for (const [k, s] of Object.entries(shape.record)) {
-      if (!(k in v)) return `${at}/${k}: a required field is missing`;
-      const e = shapeError(s, v[k], `${at}/${k}`);
+      if (!Object.hasOwn(v, k)) return `${at}/${k}: a required field is missing`;
+      const e = shapeError(s, v[k], `${at}/${k}`, depth);
       if (e !== null) return e;
     }
-    for (const [k, s] of Object.entries(shape.optional ?? {})) {
-      if (!(k in v)) continue;
-      const e = shapeError(s, v[k], `${at}/${k}`);
+    for (const [k, s] of Object.entries(optional)) {
+      if (!Object.hasOwn(v, k)) continue;
+      const e = shapeError(s, v[k], `${at}/${k}`, depth);
       if (e !== null) return e;
     }
     return null;
@@ -361,13 +384,14 @@ function shapeError(shape: Shape, v: JsonRead, at: string): Modifies<{}, string 
     const tags = Object.keys(v);
     const tag = tags[0];
     if (tags.length !== 1 || tag === undefined) return `${at}: a constructor is an object of one field`;
+    if (!Object.hasOwn(shape.union, tag)) return `${at}/${tag}: no constructor`;
     const s = shape.union[tag];
-    return s === undefined ? `${at}/${tag}: no constructor` : shapeError(s, v[tag], `${at}/${tag}`);
+    return s === undefined ? `${at}/${tag}: no constructor` : shapeError(s, v[tag], `${at}/${tag}`, depth);
   }
   return typeof v === "string" && shape.names.includes(v) ? null : `${at}: one of ${shape.names.join(", ")}`;
 }
 /** The first place a value differs from the serialized effect, or `null`. */
-export const effectError = (v: JsonRead): Modifies<{}, string | null> => shapeError({ ref: "effect" }, v, "effect");
+export const effectError = (v: JsonRead): Modifies<{}, string | null> => shapeError({ ref: "effect" }, v, "effect", nestingLimit);
 /** **The effect a value states**, or `undefined` where it is not exactly the
  * serialized effect (`effectError`). */
 export function decodeCallEffect(v: JsonRead): Modifies<{ values: "any"; stores: "grow" }, CallEffect | undefined> {

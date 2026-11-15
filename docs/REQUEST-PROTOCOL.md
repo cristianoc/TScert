@@ -419,8 +419,12 @@ exit and at any depth of `and`) has its element type's range facts
 literal name a `unique symbol` of their document's `symbols` and are read at
 its canonical number before the effect is
 ([certified imports](SOURCE-CONTRACTS.md#certified-imports)). The front end's reader of a types
-table (`decodeCallEffect`) checks the same grammar and reads only safe
-integers. Scope at a callable's arity, canonical transports, the
+table (`decodeCallEffect`) reads a subset of that grammar: the same
+records and unions, each field an own field, the same nesting limit, bits
+as sixteen lowercase hexadecimal digits, a bigint as its canonical decimal
+string and an integer as a safe number or the canonical decimal string of
+another; a position (`Nat`) only in the safe range. It reads parsed values,
+so a number written `1.0` reads as `1`. Scope at a callable's arity, canonical transports, the
 independence of a conjunction's second exit and the stability of a rest
 allocation are checked where a decision reads them
 ([the design](drafts/effects-of-commands.md#the-serialized-effect)).
