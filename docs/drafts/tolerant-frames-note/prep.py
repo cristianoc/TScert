@@ -23,7 +23,14 @@ src=src[:m.start()]+'\n\n'.join(out)+src[m.end():]
 src=re.sub(r'\\begin\{description\}\[[^\]]*\]',r'\\begin{description}',src)
 # MathJax has no \textsc: inside display math a rule name is upright text
 def _names(m):
-    return re.sub(r'\\textsc\{([^{}]*)\}', lambda n: r'\class{rulec}{\text{'+n.group(1)+'}}', m.group(0))
+    t=m.group(0)
+    # a display scaled to the line width in the PDF is a plain display on the page
+    t=re.sub(r'\\resizebox\{\\linewidth\}\{!\}\{\$(.*)\$\}', lambda r: r.group(1), t, flags=re.S)
+    # a rule name inside \text{...}: close the text, set the name, reopen
+    inner=re.compile(r'\\text\{([^{}]*)\\textsc\{([^{}]*)\}([^{}]*)\}')
+    while inner.search(t):
+        t=inner.sub(lambda n: r'\text{'+n.group(1)+r'}\class{rulec}{\text{'+n.group(2)+r'}}\text{'+n.group(3)+'}', t)
+    return re.sub(r'\\textsc\{([^{}]*)\}', lambda n: r'\class{rulec}{\text{'+n.group(1)+'}}', t)
 src=re.sub(r'\\\[.*?\\\]', _names, src, flags=re.S)
 src=re.sub(r'\\begin\{figure\}.*?\\end\{figure\}','FIGUREHEAPMARKER\n',src,flags=re.S)
 src=src.replace(r'Figure~\ref{fig:heap}','Figure 1')
