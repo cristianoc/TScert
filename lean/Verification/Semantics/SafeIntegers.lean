@@ -712,6 +712,31 @@ theorem numberEqual_of_safe {x y : UInt64} {i : Int} (hx : SafeInt x i) (hy : Sa
 #guard safeIntOfBits (arithBits .add (bitsOfNat (2 ^ 53 - 1)) (bitsOfNat 2)) = none
 #guard safeIntOfBits (arithBits .sub (bitsOfNat 3) (bitsOfNat 10)) = some (-7)
 
+/-- **`ToInt32` lands in the signed 32-bit range.** -/
+theorem toInt32_range (x : UInt64) : -2 ^ 31 ≤ toInt32 x ∧ toInt32 x < 2 ^ 31 := by
+  unfold toInt32
+  dsimp only
+  split
+  · decide
+  · split <;> split <;> omega
+
+/-- The double `int32Bits i` denotes the safe integer `i`. -/
+theorem safeInt_int32Bits {i : Int} (hi : i.natAbs < 2 ^ 53) : SafeInt (int32Bits i) i := by
+  have hlt := bitsOfNat_lt hi
+  refine ⟨hi, ?_⟩
+  by_cases hn : i < 0
+  · refine .inr ⟨by omega, ?_⟩
+    have he : (-i).toNat = i.natAbs := by omega
+    simp only [int32Bits, if_pos hn, he, UInt64.toNat_or]
+    have hor := Nat.two_pow_add_eq_or_of_lt hlt 1
+    rw [Nat.mul_one] at hor
+    rw [show (0x8000000000000000 : UInt64).toNat = 2 ^ 63 from rfl, Nat.or_comm, ← hor]
+    omega
+  · refine .inl ⟨by omega, ?_⟩
+    simp only [int32Bits, if_neg hn]
+    congr 3
+    omega
+
 set_option exponentiation.threshold 2048 in
 set_option maxRecDepth 4096 in
 /-- Conversion preserves a nonnegative safe integer below the signed 32-bit limit. -/
@@ -745,6 +770,47 @@ theorem toInt32_safe_nonneg {x : UInt64} {i : Int} (hx : SafeInt x i)
       show ¬2 ^ 63 ≤ x.toNat by omega, decide_false,
       show ¬2 ^ 31 ≤ i.natAbs by omega]
     omega
+
+set_option exponentiation.threshold 2048 in
+set_option maxRecDepth 4096 in
+/-- Conversion preserves a negative safe integer at least the signed 32-bit limit. -/
+theorem toInt32_safe_neg {x : UInt64} {i : Int} (hx : SafeInt x i) (hi : i < 0) (hlo : -2 ^ 31 ≤ i) :
+    toInt32 x = i := by
+  have hp : 0 < i.natAbs := by omega
+  have heq : x.toNat = (bitsOfNat i.natAbs).toNat + 2 ^ 63 := by
+    rcases hx.2 with ⟨hn, _⟩ | ⟨_, he⟩
+    · omega
+    · exact he
+  obtain ⟨hE, hM, -, -⟩ := bitsOfNat_fields hp hx.1 true
+  simp only [if_true] at hE hM
+  rw [← heq] at hE hM
+  have hl : i.natAbs.log2 < 32 := (Nat.log2_lt (by omega)).mpr (by omega)
+  have hd : (-((1023 + (i.natAbs.log2 : Int)) - 1075)).toNat = 52 - i.natAbs.log2 := by omega
+  have he0 : (1023 + i.natAbs.log2 == 0) = false := by simp
+  have heInf : (1023 + i.natAbs.log2 == 2047) = false := by simp; omega
+  have h32 : ¬32 ≤ (1023 + (i.natAbs.log2 : Int)) - 1075 := by omega
+  have hneg : ¬0 ≤ (1023 + (i.natAbs.log2 : Int)) - 1075 := by omega
+  simp only [toInt32, expo_toNat, frac_toNat, sign_toNat, hE, he0, heInf,
+    Bool.false_eq_true, if_false, Int.natCast_add, show ((1023 : Nat) : Int) = 1023 from rfl, h32, hneg,
+    hd, hM, Nat.mul_div_cancel _ (Nat.two_pow_pos _), Nat.mod_eq_of_lt (show i.natAbs < 2 ^ 32 by omega),
+    show 2 ^ 63 ≤ x.toNat by omega, decide_true, if_true]
+  rw [Nat.mod_eq_of_lt (show 2 ^ 32 - i.natAbs < 2 ^ 32 by omega), if_pos (by omega)]
+  omega
+
+/-- **A safe integer is no NaN**: its biased exponent is below all ones. -/
+theorem SafeInt.expo_lt {x : UInt64} {i : Int} (hx : SafeInt x i) : x.toNat / 2 ^ 52 % 2 ^ 11 < 2047 := by
+  by_cases hz : i = 0
+  · subst hz
+    rcases hx.2 with ⟨_, he⟩ | ⟨_, he⟩ <;> simp only [Int.natAbs_zero, bitsOfNat_zero] at he <;> omega
+  · have hp : 0 < i.natAbs := by omega
+    have hl : i.natAbs.log2 < 53 := log2_lt53 hp hx.1
+    rcases hx.2 with ⟨_, he⟩ | ⟨_, he⟩
+    · obtain ⟨hE, -, -, -⟩ := bitsOfNat_fields hp hx.1 false
+      simp only [Bool.false_eq_true, if_false, Nat.add_zero] at hE
+      rw [← he] at hE; omega
+    · obtain ⟨hE, -, -, -⟩ := bitsOfNat_fields hp hx.1 true
+      simp only [if_true] at hE
+      rw [← he] at hE; omega
 
 /-- A bounded signed right shift computes Euclidean division by its power of two. -/
 theorem shr_safe {x y : UInt64} {i k : Int} (hx : SafeInt x i) (hy : SafeInt y k)

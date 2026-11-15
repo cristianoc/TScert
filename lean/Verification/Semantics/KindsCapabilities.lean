@@ -325,6 +325,17 @@ theorem _root_.Verification.StorageRole.concrete_cat {s : StorageRole} {v : Val}
   · cases h; exact ⟨_, rfl⟩
   · cases h
 
+/-- **A recorded role is no view store.** -/
+theorem _root_.Verification.StorageRole.concrete_plain {s : StorageRole} {v : Val} {r : Role}
+    (h : s.concrete v = some r) : ∀ f N, r ≠ .store (.view f N) := by
+  intro f N hr; subst hr
+  unfold StorageRole.concrete at h
+  split at h
+  · split at h <;> cases h
+  · split at h <;> cases h
+  · cases h
+  · cases h
+
 /-- Contents of the tag's category determine a recorded role. -/
 theorem _root_.Verification.StorageRole.concrete_of_holds {s : StorageRole} {v : Val}
     (h : s.Holds v) : ∃ r, s.concrete v = some r := by
@@ -407,6 +418,18 @@ theorem concreteRoles_spec : ∀ {ss : List StorageRole} {vs : List Val} {rs : L
     cases i with
     | zero => simp at hs hv; subst hs hv; exact ⟨r, rfl, hr⟩
     | succ i => simpa using h3 i s' v' (by simpa using hs) (by simpa using hv)
+
+/-- **Recorded roles are no view stores.** -/
+theorem concreteRoles_plain {ss : List StorageRole} {vs : List Val} {rs : List Role}
+    (h : concreteRoles ss vs = some rs) : ∀ r ∈ rs, ∀ f N, r ≠ .store (.view f N) := by
+  intro r hr f N
+  obtain ⟨hl, hrl, hall⟩ := concreteRoles_spec h
+  obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hr
+  obtain ⟨s, hs⟩ : ∃ s, ss[i]? = some s := ⟨ss[i], List.getElem?_eq_getElem (by omega)⟩
+  obtain ⟨v, hv⟩ : ∃ v, vs[i]? = some v := ⟨vs[i], List.getElem?_eq_getElem (by omega)⟩
+  obtain ⟨r', hr', hc⟩ := hall i s v hs hv
+  rw [List.getElem?_eq_getElem hi] at hr'; cases hr'
+  exact StorageRole.concrete_plain hc f N
 
 /-- Contents each of its tag's category determine the recorded roles. -/
 theorem concreteRoles_of_holds : ∀ {ss : List StorageRole} {vs : List Val},

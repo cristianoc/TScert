@@ -70,6 +70,15 @@ def objectEntries {k : Nat} (rs : List Role) (cs : List (Ctr k)) :
     List (Role × Ctr k) :=
   (rs ++ [Role.identity]).zip (cs ++ [idCtr])
 
+/-- **An object allocation appends no view store** where no field role is one. -/
+theorem objectEntries_plain {k : Nat} {rs : List Role} {cs : List (Ctr k)}
+    (hrs : ∀ r ∈ rs, ∀ f N, r ≠ .store (.view f N)) :
+    ∀ e ∈ objectEntries rs cs, ∀ f N, e.1 ≠ .store (.view f N) := by
+  intro e he f N
+  rcases List.mem_append.mp (List.of_mem_zip he).1 with h | h
+  · exact hrs _ h f N
+  · simp only [List.mem_singleton] at h; rw [h]; exact fun h => by cases h
+
 theorem objectEntries_fst {k} {rs : List Role} {cs : List (Ctr k)}
     (h : rs.length = cs.length) : (objectEntries rs cs).map Prod.fst = rs ++ [Role.identity] := by
   simp [objectEntries, List.map_fst_zip, h]

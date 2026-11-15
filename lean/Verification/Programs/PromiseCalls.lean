@@ -2724,7 +2724,8 @@ the same number; the element at the index is the written value, which meets
 the body or lies past the bound. -/
 theorem every_written {ρ : Env} {h h' : Heap} {b i x s : Nat} {st : Term} {body : List (LinearClause Bound)}
     {as : List IndexAtom} (he : IndexHolds ε as ρ h) (hs : ρ s = ρ b)
-    (hc : writeChanges.Holds h h') {k : CallEffects.ElementKind} (hx : CallEffects.ExactWrite k [ρ b, ρ i, ρ x] h h')
+    (hc : writeChanges.Holds h h') {k : CallEffects.ElementKind}
+    (hx : CallEffects.ExactWrite k [ρ b, ρ i, ρ x] h h' ∧ CallEffects.ExactPre k [ρ b, ρ i, ρ x])
     (hst : st.keptBy writeChanges (fun _ _ => false) = true)
     (hb : body.all (bodyKeptBy writeChanges (fun _ _ => false)) = true)
     (hnew : entailsKnown as (.le [(st, 1), (.value i, -1)] 0) = true ∨ body.all (writtenBody as i x) = true)
@@ -2732,7 +2733,7 @@ theorem every_written {ρ : Env} {h h' : Heap} {b i x s : Nat} {st : Term} {body
   obtain ⟨w, sto, ls, n, hw, hsto, hls, hn, hall⟩ := hF
   simp only [readPath, Option.some.injEq] at hw
   subst hw
-  obtain ⟨ls', kb, i0, hls', hkb, hi0, hlt, hj, l, hl, hlv⟩ := hx.2 sto ls (by simpa [hs] using hsto) hls
+  obtain ⟨ls', kb, i0, hls', hkb, hi0, hj, l, hl, hlv⟩ := hx.1.taken hx.2 sto ls (by simpa [hs] using hsto) hls
   simp only [List.getD_cons_succ, List.getD_cons_zero] at hkb hlv
   have hki : intValue (ρ i) = some (i0 : Int) := by rw [hkb]; exact intValue_num hi0
   have hn' := termValue_kept hc firstKept_none hst hn
@@ -2777,13 +2778,12 @@ theorem every_written {ρ : Env} {h h' : Heap} {b i x s : Nat} {st : Term} {body
     · cases y with
       | index => exact hy
       | elem =>
-        simp only [boundValue, elementInt, hj j hji] at hy ⊢
+        simp only [boundValue, elementInt] at hy ⊢
         split at hy
         · rename_i l' hl'
           obtain ⟨u, hu, hum⟩ := Option.bind_eq_some_iff.mp hy
-          obtain ⟨bu, rfl, -⟩ := intValue_safe hum
-          simp only [hc.1 l' _ hu (by simp [writeChanges, CallEffects.ElementWrite.changes, Changes.alters]),
-            Option.bind_some, hum]
+          obtain ⟨l'', hl'', hu'⟩ := hj j hji l' u hl' hu
+          simp only [hl'', hu', Option.bind_some, hum]
         · cases hy
       | project _ _ | offset _ => simp [Bound.keptBy] at hky
       | free t => exact termValue_kept (ε := ε) hc firstKept_none hky hy
@@ -2797,7 +2797,8 @@ Every target index other than the written index belongs to the old prefix;
 the written index holds the value checked against the body. -/
 theorem every_written_prefix {ρ : Env} {h h' : Heap} {b i x s : Nat} {st next : Term} {body : List (LinearClause Bound)}
     {as : List IndexAtom} (he : IndexHolds ε as ρ h) (hs : ρ s = ρ b)
-    (hc : writeChanges.Holds h h') {k : CallEffects.ElementKind} (hx : CallEffects.ExactWrite k [ρ b, ρ i, ρ x] h h')
+    (hc : writeChanges.Holds h h') {k : CallEffects.ElementKind}
+    (hx : CallEffects.ExactWrite k [ρ b, ρ i, ρ x] h h' ∧ CallEffects.ExactPre k [ρ b, ρ i, ρ x])
     (hnext : termDefined as next = true)
     (hcover : entailsKnown as (.le [(next, 1), (.value i, -1)] 1) = true)
     (hstart : entailsKnown as (.le [(.value i, 1), (st, -1)] 0) = true)
@@ -2808,7 +2809,7 @@ theorem every_written_prefix {ρ : Env} {h h' : Heap} {b i x s : Nat} {st next :
   obtain ⟨w, sto, ls, n, hw, hsto, hls, hn, hall⟩ := hF
   simp only [readPath, Option.some.injEq] at hw
   subst hw
-  obtain ⟨ls', kb, i0, hls', hkb, hi0, hlt, hj, l, hl, hlv⟩ := hx.2 sto ls (by simpa [hs] using hsto) hls
+  obtain ⟨ls', kb, i0, hls', hkb, hi0, hj, l, hl, hlv⟩ := hx.1.taken hx.2 sto ls (by simpa [hs] using hsto) hls
   simp only [List.getD_cons_succ, List.getD_cons_zero] at hkb hlv
   have hki : intValue (ρ i) = some (i0 : Int) := by rw [hkb]; exact intValue_num hi0
   obtain ⟨n', hn0⟩ := Option.isSome_iff_exists.mp (termDefined_sound he hnext)
@@ -2853,13 +2854,12 @@ theorem every_written_prefix {ρ : Env} {h h' : Heap} {b i x s : Nat} {st next :
     · cases y with
       | index => exact hy
       | elem =>
-        simp only [boundValue, elementInt, hj j hji] at hy ⊢
+        simp only [boundValue, elementInt] at hy ⊢
         split at hy
         · rename_i l' hl'
           obtain ⟨u, hu, hum⟩ := Option.bind_eq_some_iff.mp hy
-          obtain ⟨bu, rfl, -⟩ := intValue_safe hum
-          simp only [hc.1 l' _ hu (by simp [writeChanges, CallEffects.ElementWrite.changes, Changes.alters]),
-            Option.bind_some, hum]
+          obtain ⟨l'', hl'', hu'⟩ := hj j hji l' u hl' hu
+          simp only [hl'', hu', Option.bind_some, hum]
         · cases hy
       | project _ _ | offset _ => simp [Bound.keptBy] at hky
       | free t => exact termValue_kept (ε := ε) hc firstKept_none hky hy
@@ -2886,7 +2886,9 @@ theorem writeKept_holds {eff : Effect} {t : Tm} {k : Knowledge} {ρ : Env} {h h'
       (p := intSlot k.indices) x
     have hx' : CallEffects.ExactWrite ek [ρ b,
         ρ (pick (HeapLinks.aliases k.links) (intSlot k.indices) i),
-        ρ (pick (HeapLinks.aliases k.links) (intSlot k.indices) x)] h h' := by
+        ρ (pick (HeapLinks.aliases k.links) (intSlot k.indices) x)] h h' ∧ CallEffects.ExactPre ek [ρ b,
+        ρ (pick (HeapLinks.aliases k.links) (intSlot k.indices) i),
+        ρ (pick (HeapLinks.aliases k.links) (intSlot k.indices) x)] := by
       simpa only [hi, hv] using hx
     clear hx
     have hx := hx'

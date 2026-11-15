@@ -1291,6 +1291,12 @@ assert.equal(runExample("invalid-named-implicit-index", 'typeof asDictionary({ a
     "invalid-node-bytes-past-end: a byte past the end is undefined");
   assert.equal(runImporting("node-bytes-write", "write(Buffer.from(\"a\"), 300)"), 44,
     "node-bytes-write: 300 reads back as 44");
+  assert.equal(runImporting("node-bytes-write", "write(Buffer.from(\"a\"), -1)"), 255,
+    "node-bytes-write: -1 reads back as 255");
+  assert.equal(runImporting("node-bytes-write", "write(Buffer.from(\"a\"), NaN)"), 0,
+    "node-bytes-write: NaN reads back as 0");
+  assert.equal(runImporting("node-bytes-write", "writeAt(Buffer.from(\"a\"), 5, 7)"), 97,
+    "node-bytes-write: a write at a number that is no valid index leaves the element");
   assert.equal(runImporting("invalid-node-bytes-spread", "copied(Buffer.from(\"ab\")) === undefined"), true,
     "invalid-node-bytes-spread: the copy has no length");
   assert.equal(runImporting("invalid-node-bytes-json", "JSON.parse(serialized(Buffer.from(\"a\"))).type"), "Buffer",
@@ -3075,6 +3081,9 @@ for (const [file, call] of [
   // Construction and data contracts.
   assert.equal(runExample(negative("invalid-typed-array-write-past-end"), "written()"), undefined,
     "a write past the end of a view writes no element, and the read after it is undefined");
+  assert.equal(runExample(negative("invalid-typed-array-element-write-uint8-negative"),
+    "typeof wrapped([0, 0], Uint8Array.of(0), 0, -1)"), "undefined",
+    "a Uint8Array write of -1 stores 255, and the read it bounds is past the end");
   assert.equal(runExample(negative("invalid-typed-array-subclass"), "typeof trimmed(reset())"), "number",
     "subarray constructs its result with the subclass, whose code replaces the narrowed string");
   assert.equal(runExample(negative("invalid-typed-array-float64-subclass"), "typeof trimmed(reset())"), "number",

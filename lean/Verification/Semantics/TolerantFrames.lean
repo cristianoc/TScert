@@ -288,9 +288,11 @@ theorem anyWorld_lookup {l : Nat} {c : Ctr 1} (hl : lookup anyWorld l = some c) 
   all_goals exact ⟨by omega, hl.symm⟩
 
 theorem anyWorld_adm : WorldAdm anyWorld := by
-  intro l c hl
-  obtain ⟨-, rfl⟩ := anyWorld_lookup hl
-  exact ⟨fun _ _ _ _ _ _ hv => hv, fun _ _ _ _ hv => hv⟩
+  refine ⟨fun l c hl => ?_, fun l f N hr => ?_⟩
+  · obtain ⟨-, rfl⟩ := anyWorld_lookup hl
+    exact ⟨fun _ _ _ _ _ _ hv => hv, fun _ _ _ _ hv => hv⟩
+  · simp only [roleAt, roles, anyWorld, entries_ofEntries] at hr
+    rcases l with _ | _ | _ | l <;> simp at hr
 
 /-- A heap of `anyWorld`: a store listing its element cells, and two source
 values without references. -/

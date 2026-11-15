@@ -100,7 +100,7 @@ theorem allocation_safe {Q : Fam} {ss : List StorageRole} {As : List Fam} (hss :
         simp at hc hv'; subst hc hv'; rfl
     refine ⟨href, Or.inr ⟨appendWs W₀ (objectEntries rs cs),
       h ++ vs ++ [.nul], .objAt (slots h.length ns) code (h.length + vs.length),
-      WExt_appendWs _ _, WorldAdm_appendWs (WorldAdm_trunc _ hadm) hcadm,
+      WExt_appendWs _ _, WorldAdm_appendWs_plain (WorldAdm_trunc _ hadm) hcadm (objectEntries_plain (concreteRoles_plain hrs)),
       .makeFields hvals hns, ⟨hmeets, hsh.1⟩, by simp only [policy, next, hroles, hE, W₀, cs], ?_⟩⟩
     cases p with
     | zero => exact hsh.2

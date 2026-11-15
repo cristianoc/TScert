@@ -76,15 +76,21 @@ $`t`$, E locations whose contract admits exactly the values $`t`$ stores
 (`viewStoreCtr`, `ViewCell`): an integer in the format's range for
 `uint8`, `uint16` and `int32`, any number for `float64`
 (`ViewFormat.Stored`). So the contract admits every replacement a write
-through an overlapping view may make (proved: `viewStoreCtr_admits`), and
-on a well-formed heap of a view world every cell a view store lists holds a
-number of its format (proved: `HeapOk.view_cell_stored`). Truncation and
-extension with canonical view-store entries keep a view world, and so does
-a typed array's allocation choosing the canonical contract (proved:
-`ViewWorld.trunc`, `ViewWorld.appendWs`, `ViewWorld.typedArray`). Stated
-limit: the admitted-state invariant (`IndexedHeap`) does not include a view
-world, and the host's conversion of a written number into the stored range
-belongs to the primitive write's rules.
+through an overlapping view may make (proved: `viewStoreCtr_admits`). An
+admissible world is a view world (`WorldAdm.view`), so every state the pass
+reasons about has one (`IndexedHeap.adm`): truncation keeps it, every rule
+extending a world appends no view store (proved: `WorldAdm_trunc`,
+`WorldAdm_appendWs_plain`), and a typed array's allocation, a native
+constructor's, `subarray`'s, `Buffer`'s or an imported typed array's, keeps
+it where it chooses the canonical contract (proved: `WorldAdm.typedArray`),
+which those trusted contracts state by their exit world being admissible.
+On a well-formed heap of an admissible world every cell a view store lists
+holds a number of its format at level 2 or more (proved:
+`HeapOk.view_cell_stored`); at level 1 a contract inspects no lower world,
+so the cell's contract states nothing of its contents there. The host's
+conversion of a written number into the stored range is
+`ViewFormat.conv`, whose result the format stores (proved:
+`ViewFormat.conv_stored`).
 
 A world entry is a pair of a role and a contract. The kinded world
 `WorldT n` is the stratified construction of `WorldT`, each entry's
@@ -413,20 +419,29 @@ heap $`h`$ to the exit world $`W'`$ and heap $`h'`$ (`ViewWrite`):
 - every old location whose role is no view store keeps its contents;
 - every cell an old view store newly lists is fresh against $`h`$;
 - the exact form adds `ExactWrite` of the designated view's element type,
-  view, index and value: the value is a safe integer within the type's
-  range (`ElementKind.Takes`), and the cell at the index holds the type's
-  conversion of it (`ElementKind.convert`, the host's ToUint8, ToUint16 or
-  ToInt32 there, the value itself for `Float64Array`:
-  `ElementKind.convert_takes`). An exact effect's precondition states the
-  range (`ElementKind.preFacts`, required by the effect decoder), and a call
-  meeting it writes such a value (`ElementKind.takes_of_requires`).
+  view, index and value, the note's View-Write: for every number written at
+  a valid index the index's cell holds the format's total conversion of it
+  (`ViewFormat.conv`) and every other index's cell what it held, and at a
+  number that is no valid index no location changes; and the facts its
+  precondition gives (`ExactPre`: the value one the element type takes,
+  `ElementKind.Takes`, and the index valid), which a call meeting the
+  precondition has (`ElementKind.exactPre_of_requires`). There the
+  conversion is `ElementKind.convert` (`ElementKind.convert_conv`), and the
+  write's statement the one the pass reads (`ExactWrite.taken`).
+
+On well-formed states the relation's frame, every old location but a view
+store kept and each view store replaced by one of its format and length
+whose new cells are fresh, is the action of the effect
+$`\{\mathsf{all\text{-}views}:\mathsf{grow}\}`$ (proved:
+`ViewWrite.frame_iff`).
 
 A call's normal postcondition states this relation from the call's entry
 world and heap (`Effect.viewPost`); its heap postcondition states what the
 relation gives of the two heaps from a well-formed entry
 (`ElementWrite.Holds`, `ViewWriteOf.holds`): the coarse change, no object or
 number altered and every store's length kept (`ViewWrite.changes`), and
-`ExactWrite` for the exact form. The roles are the entry world's because a
+`ExactWrite` with `ExactPre` for the exact form; for the exact form the
+result is the value written (`Effect.viewPost`). The roles are the entry world's because a
 role assignment chosen only to fit the entry heap's categories may give an
 ordinary array's store the role of a view store, and so let the write change
 it. In a well-formed state the contents' tags tell the two apart too

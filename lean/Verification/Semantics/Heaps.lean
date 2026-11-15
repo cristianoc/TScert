@@ -215,22 +215,6 @@ theorem write_sound (n : Nat) (W : WorldT n) (h : Heap) (l : Nat) (c : Ctr n) (r
 
 /-! ## Appending entries -/
 
-theorem roleAt_appendWs_lt {k : Nat} (W : WorldT k) (es : List (Role × Ctr k)) {l : Nat}
-    (hl : l < (entries W).length) : roleAt (appendWs W es) l = roleAt W l := by
-  simp only [roleAt, roles, entries_appendWs, List.map_append]
-  rw [List.getElem?_append_left (by simpa using hl)]
-
-theorem lookup_appendWs_lt {k : Nat} (W : WorldT k) (es : List (Role × Ctr k)) {l : Nat}
-    (hl : l < (entries W).length) : lookup (appendWs W es) l = lookup W l := by
-  simp only [lookup, toList, entries_appendWs, List.map_append]
-  rw [List.getElem?_append_left (by simpa using hl)]
-
-theorem lookup_appendWs_ge {k : Nat} (W : WorldT k) (es : List (Role × Ctr k)) {i : Nat} :
-    lookup (appendWs W es) ((entries W).length + i) = (es.map Prod.snd)[i]? := by
-  simp only [lookup, toList, entries_appendWs, List.map_append]
-  rw [List.getElem?_append_right (by simp)]
-  simp
-
 theorem roleAt_appendWs' {k : Nat} (W : WorldT k) (es : List (Role × Ctr k)) {i : Nat} :
     roleAt (appendWs W es) ((entries W).length + i) = (es.map Prod.fst)[i]? := by
   rw [roleAt_appendWs_ge W es (by omega)]
@@ -322,7 +306,7 @@ theorem HeapOk.error {n : Nat} {W : WorldT n} {h : Heap} (hok : HeapOk n W h) (h
     ⟨fun _ _ _ _ _ _ h => h, fun _ _ _ _ h => by rw [show _ = Tm.nul from h]; rfl⟩
   have hlen : h.length = (entries W).length := by have := hok.1.1; simpa using this
   have hA : appendW W .identity (fun _ _ _ u => u = .nul) = appendWs W [(.identity, fun _ _ _ u => u = .nul)] := rfl
-  refine ⟨WorldAdm_append hadm hcadm, ⟨?_, ?_⟩, ?_⟩
+  refine ⟨WorldAdm_append hadm hcadm (fun _ _ h => by cases h), ⟨?_, ?_⟩, ?_⟩
   · rw [hA]
     exact HeapMeets_appendWs hok.1 hadm (by simpa using hcadm) rfl (fun i c v hc hv j hj => by
       obtain rfl : i = 0 := by have := (List.getElem?_eq_some_iff.mp hc).1; simpa using this

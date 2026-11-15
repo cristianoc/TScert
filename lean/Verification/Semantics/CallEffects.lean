@@ -230,6 +230,35 @@ theorem ElementKind.takes_of_requires {e : Effect} {k : ElementKind}
     HeapKnowledge.termValuation, HeapKnowledge.termValue_value, h3, hi, Option.getD_some] at hlo hhi
   omega
 
+/-- **An exact write's precondition gives the facts `ExactPre` states**:
+the value is one its element type takes (`ElementKind.takes_of_requires`),
+and the index a safe integer at least `0` and below the typed array's
+length. -/
+theorem ElementKind.exactPre_of_requires {e : Effect} {k : ElementKind}
+    (hpre : ∀ F ∈ k.preFacts, F ∈ e.pre) {r : Tm} {args : List Tm} {heap : Heap}
+    (hq : e.Requires r args heap) : ExactPre k args := by
+  have hf : ∀ F ∈ k.preFacts, F.HoldsAt ⟨callEnv r args, heap⟩ (callEnv r args) heap :=
+    fun F hF => hq.2 F (hpre F hF)
+  have h1 : callEnv r args 1 = args.getD 0 .undef := rfl
+  have h2 : callEnv r args 2 = args.getD 1 .undef := rfl
+  have hint := hf (.int 2) (by simp [ElementKind.preFacts])
+  simp only [HeapKnowledge.IndexFact.HoldsAt, h2] at hint
+  obtain ⟨i, hi⟩ := Option.isSome_iff_exists.mp hint
+  obtain ⟨b, hb, hs⟩ := HeapKnowledge.intValue_safe hi
+  have hlo := hf (.linear (.le [(.value 2, -1)] 0)) (by simp [ElementKind.preFacts])
+  have hhi := hf (.linear (.le [(.value 2, 1), (.now .view 1 [], -1)] (-1))) (by simp [ElementKind.preFacts])
+  obtain ⟨hdef, hhi⟩ := hhi
+  obtain ⟨N, hN⟩ := Option.isSome_iff_exists.mp (hdef (.now .view 1 []) (by simp [Linear.Fact.vars]))
+  simp only [HeapKnowledge.IndexFact.HoldsAt, Linear.Fact.Holds, Linear.Form.eval,
+    HeapKnowledge.termValuation, HeapKnowledge.termValue_value, h2, hi, Option.getD_some] at hlo hhi
+  rw [hN] at hhi
+  simp only [Option.getD_some] at hhi
+  have hN' : HeapKnowledge.viewLengthOf (args.getD 0 .undef) = some N := by
+    simpa [HeapKnowledge.termValue_nil, HeapKnowledge.kindValue, h1] using hN
+  have hk : k.Takes (args.getD 2 .undef) := ElementKind.takes_of_requires hpre hq
+  refine ⟨hk, b, i.toNat, N, hb, ?_, hN', by omega⟩
+  rw [show ((i.toNat : Nat) : Int) = i by omega]; exact hs
+
 /-- An ordinary arrow's guarantee: none beyond its contract. -/
 def Effect.ordinary : Effect := .ofFootprint .top
 
@@ -1091,7 +1120,7 @@ theorem Effect.post_pad {e : Effect} {r : Tm} (hr : Footprints.storeOf r = none)
     have hg : ∀ i, (args ++ pad).getD i .undef = args.getD i .undef := fun i => by
       simpa [callEnv] using congrFun (callEnv_pad r args hpad) (i + 1)
     have := hx k he
-    simp only [ExactWrite, hg] at this ⊢
+    simp only [ExactWrite, ExactPre, hg] at this ⊢
     exact this
   have hw := h.1
   unfold Effect.within at hw
@@ -1329,9 +1358,11 @@ theorem Effect.meet_same {a b : Effect} (hs : a.sameResult b = true) :
 /-- **The view write a signature states**, from the call's entry world `U`
 and heap `before` to its exit world and heap: where it states an element
 write, the kinded view-element write of it at the actuals
-(`Kinds.ViewWriteOf`), read at the entry world's roles. -/
+(`Kinds.ViewWriteOf`), read at the entry world's roles; where exact, the
+result is the value written, the value an assignment `b[i] = v` is. -/
 def Effect.viewPost (e : Effect) (args : List Tm) {j : Nat} (U : WorldT j) (before : Heap) : WPost :=
-  fun _ W' after _ => ∀ w, e.elementWrite = some w → Kinds.ViewWriteOf w args U before W' after
+  fun _ W' after r => ∀ w, e.elementWrite = some w → Kinds.ViewWriteOf w args U before W' after ∧
+    ∀ k, w = .exact k → r = args.getD 2 .undef
 
 /-- **A signature's normal-return postcondition**, given the call's entry
 world `U` and heap `before`: at the exit world and heap, its heap
@@ -1372,7 +1403,8 @@ theorem Effect.postW_prefix (e : Effect) {r : Tm} {args : List Tm} {n m : Nat} {
     {k : Nat} {W' : WorldT k} {h' : Heap} {v : Val} (hpost : e.postW r args M hm k W' h' v) :
     e.postW r args W h k W' h' v :=
   ⟨e.post_prefix hp hagree hens hpost.1, fun w hw =>
-    ⟨(hpost.2 w hw).1.prefix_left hle hx hok hp, fun k hk => ((hpost.2 w hw).2 k hk).prefix_left hp⟩⟩
+    ⟨⟨(hpost.2 w hw).1.1.prefix_left hle hx hok hp, fun k hk =>
+      ⟨((hpost.2 w hw).1.2 k hk).1.prefix_left hp, ((hpost.2 w hw).1.2 k hk).2⟩⟩, (hpost.2 w hw).2⟩⟩
 
 /-- **Safety at a signature stating no element write** is safety at its
 postcondition over kinded worlds, from every entry world. -/
@@ -1962,7 +1994,8 @@ theorem PromiseWith.bound {effect : Effect} {Acc Rest : ArgFam} {Rt R Rc : Fam}
       SafePostExcW.weaken (fun _ _ _ _ h => ⟨Effect.post_drop pre.length h.1, fun w hw => by
           simp only [Effect.drop, Option.map_eq_some_iff] at hw
           obtain ⟨w0, h0, rfl⟩ := hw
-          exact ⟨(h.2 w0 h0).1.prefix_left (Nat.le_succ i) hxi hh (List.prefix_refl _), fun _ he => by cases he⟩⟩)
+          exact ⟨⟨(h.2 w0 h0).1.1.prefix_left (Nat.le_succ i) hxi hh (List.prefix_refl _), fun _ he => by cases he⟩,
+            fun _ he => by cases he⟩⟩)
         (fun _ _ _ h => Effect.excPost_drop pre.length h) hsafe⟩⟩
 
 /-- Application consumes a qualified signature, without inspecting the

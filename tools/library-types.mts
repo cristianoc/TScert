@@ -100,7 +100,10 @@ const definitionOf = (id: DeclarationIdentity, expression: TypeTerm): TypeDefini
  * over the written bytes by fresh cells holding what each now reads there,
  * within the store-growth footprint: every location but a view store keeps
  * its contents, and each view store keeps its format and length, every cell
- * it newly lists fresh (`elementWrite`, `CallEffects.ElementWrite.Holds`);
+ * it newly lists fresh, the effect `{all-views: grow}` of a write through a
+ * typed array on a normal return (`elementWrite`,
+ * `Kinds.ViewWrite.frame_iff`): `fill` and `copyWithin` at numbers, `set`
+ * from a typed array at a number;
  * `subarray` allocates its typed array, within the empty footprint. `map`,
  * `filter`, `slice` and the other members, a species constructor's or a
  * callback's, are not stated. */

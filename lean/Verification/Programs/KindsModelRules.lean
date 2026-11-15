@@ -2,6 +2,7 @@ import Verification.Programs.TolerantFramesModelRules
 import Verification.Semantics.KindsNatives
 import Verification.Semantics.TolerantFramesCells
 import Verification.Semantics.KindsCapabilities
+import Verification.Semantics.ViewStores
 /-!
 # Witnesses of (View), Alloc and the view write over kinded worlds
 
@@ -117,6 +118,41 @@ theorem overlapAfter_ok (n : Nat) :
       | exact fun _ hm => by simp [refs] at hm
       | simp [Cat, isSourceVal]
 
+/-- `Uint8`'s conversion keeps the double `1`. -/
+theorem conv_oneBits : ViewFormat.conv .uint8 oneBits = oneBits := by
+  rw [ViewFormat.conv_safeInt oneBits_safe (fun lo hi he => by
+    simp only [ViewFormat.range, Option.some.injEq, Prod.mk.injEq] at he; omega)]
+  simp [int32Bits, oneBits]
+
+/-- **The write of `1` at index 0 through a `Uint8Array` of length 1**
+whose view store at `s` lists the cell `c` before and the cell `c'`, holding
+`1`, after: the exact write and the facts its precondition gives. -/
+theorem exactWrite_one {i s c c' : Nat} {before after : Heap}
+    (hb : before[s]? = some (.viewStore .uint8 [c])) (ha : after[s]? = some (.viewStore .uint8 [c']))
+    (hc' : after[c']? = some (.num oneBits)) :
+    CallEffects.ExactWrite .uint8 [.viewAt [] i s .uint8 1, .num 0, .num oneBits] before after ∧
+      CallEffects.ExactPre .uint8 [.viewAt [] i s .uint8 1, .num 0, .num oneBits] := by
+  have h0 : SafeIntegers.SafeInt (0 : UInt64) (0 : Int) := ⟨by decide, .inl ⟨by decide, rfl⟩⟩
+  refine ⟨fun x ib N hx hib hN => ?_, ⟨oneBits, 1, rfl, oneBits_safe, fun lo hi he => by
+      simp [CallEffects.ElementKind.range] at he; omega⟩, 0, 0, 1, rfl, h0,
+    by simp [HeapKnowledge.viewLengthOf], by decide⟩
+  simp only [List.getD_cons_succ, List.getD_cons_zero, Tm.num.injEq, CallEffects.viewLength,
+    Option.some.injEq] at hx hib hN
+  subst hx hib hN
+  refine ⟨fun i0 hi0 hlt st ls hst hls => ?_, fun hinv => absurd (hinv 0 h0) (by omega)⟩
+  obtain rfl : i0 = 0 := by omega
+  rw [List.getD_cons_zero, HeapKnowledge.elementsOf_view (by rfl)] at hst
+  cases hst
+  rw [hb] at hls
+  simp only [Option.bind_some, storeEntries, List.map_cons, List.map_nil, Option.some.injEq] at hls
+  subst hls
+  refine ⟨[some c'], by simp [ha, storeEntries], ⟨c', rfl, by
+    rw [hc']; show _ = some (Tm.num (ViewFormat.conv .uint8 oneBits)); rw [conv_oneBits]⟩,
+    fun j hj l u hl _ => ?_⟩
+  rcases j with _ | j
+  · exact absurd rfl hj
+  · simp at hl
+
 /-- **A view-element write changes two overlapping views' stores and keeps
 an ordinary array's.** Between the two well-formed heaps, at every budget,
 the exact write through the first view holds: both view stores (locations 0
@@ -141,21 +177,7 @@ theorem viewWrite_overlap (n : Nat) :
       simp [overlapAfter] at hl' <;> obtain ⟨-, rfl⟩ := hl' <;> simp at hc <;> subst hc <;>
       exact .inr (by simp [overlapBefore])
   · cases hk
-    refine ⟨⟨oneBits, 1, rfl, oneBits_safe, fun lo hi he => by
-      simp [CallEffects.ElementKind.range] at he; omega⟩, fun s ls hs hls => ?_⟩
-    have h0 : SafeIntegers.SafeInt (0 : UInt64) (0 : Int) := ⟨by decide, .inl ⟨by decide, rfl⟩⟩
-    have he : HeapKnowledge.elementsOf overlapView = some 0 := by decide
-    have hg : ([overlapView, Tm.num 0, Tm.num oneBits] : List Tm).getD 0 .undef = overlapView := rfl
-    rw [hg, he] at hs
-    cases hs
-    have hls' : ls = [some 2] := by simpa [overlapBefore, storeEntries] using hls.symm
-    subst hls'
-    refine ⟨[some 6], 0, 0, rfl, rfl, h0, by simp, fun j hj => ?_, 6, rfl, by
-      rw [show ([_, Tm.num 0, Tm.num oneBits] : List Tm).getD 2 .undef = .num oneBits from rfl, oneBits,
-        CallEffects.ElementKind.convert_bitsOfNat _ (by decide)]; rfl⟩
-    rcases j with _ | j
-    · exact absurd rfl hj
-    · simp
+    exact exactWrite_one (i := 8) (by rfl) (by rfl) (by rfl)
 
 
 /-! ## A representative initial host world
@@ -170,13 +192,13 @@ store and every other location. -/
 
 /-- The roles and contracts of the initial host world, by location. -/
 def hostEntries {k : Nat} : List (Role × Ctr k) :=
-  [(.store (.view .uint8 1), anyCtr), (.elem, anyCtr), (.identity, idCtr),
+  [(.store (.view .uint8 1), viewStoreCtr k .uint8 1), (.elem, viewCellCtr k .uint8), (.identity, idCtr),
    (.store .array, anyCtr), (.elem, anyCtr), (.identity, idCtr), (.field, anyCtr), (.identity, idCtr)]
 
 def hostWorld {k : Nat} : WorldT k := ofEntries hostEntries
 
 /-- The world after the write: the fresh element cell appended. -/
-def hostWorld' {k : Nat} : WorldT k := ofEntries (hostEntries ++ [(.elem, anyCtr)])
+def hostWorld' {k : Nat} : WorldT k := ofEntries (hostEntries ++ [(.elem, viewCellCtr k .uint8)])
 
 def hostBefore : Heap :=
   [.viewStore .uint8 [1], .num 0, .nul, .arr [some 4], .num 0, .nul, .str "x", .nul]
@@ -203,14 +225,49 @@ theorem entries_meets {k : Nat} {es : List (Role × Ctr k)} {h : Heap} (hl : h.l
   have hlt : l < h.length := by have := (List.getElem?_eq_some_iff.mp he).1; omega
   exact ⟨h[l], List.getElem?_eq_getElem hlt, fun j hj => hv l e _ he (List.getElem?_eq_getElem hlt) j hj _⟩
 
+/-- A heap meets a world given by its entries where each location's
+contents meet its entry's contract at every lower level, at the world
+truncated there. -/
+theorem entries_meets' {k : Nat} {es : List (Role × Ctr k)} {h : Heap} (hl : h.length = es.length)
+    (hv : ∀ (i : Nat) (e : Role × Ctr k) (v : Val), es[i]? = some e → h[i]? = some v →
+      ∀ (j : Nat) (hj : j < k), e.2 j hj (trunc j (Nat.le_of_lt hj) (ofEntries es)) v) :
+    HeapMeets k (ofEntries es) h := by
+  refine ⟨by simp [toList, hl], fun l c hc => ?_⟩
+  simp only [lookup, toList, entries_ofEntries, List.getElem?_map, Option.map_eq_some_iff] at hc
+  obtain ⟨e, he, rfl⟩ := hc
+  have hlt : l < h.length := by have := (List.getElem?_eq_some_iff.mp he).1; omega
+  exact ⟨h[l], List.getElem?_eq_getElem hlt, fun j hj => hv l e _ he (List.getElem?_eq_getElem hlt) j hj⟩
+
+theorem stored_uint8_zero : ViewFormat.Stored .uint8 (.num 0) :=
+  ⟨0, rfl, fun lo hi he => ⟨0, ⟨by decide, .inl ⟨by decide, rfl⟩⟩, by
+    simp only [ViewFormat.range, Option.some.injEq, Prod.mk.injEq] at he; omega⟩⟩
+
+theorem stored_uint8_one : ViewFormat.Stored .uint8 (.num oneBits) :=
+  ⟨oneBits, rfl, fun lo hi he => ⟨1, oneBits_safe, by
+    simp only [ViewFormat.range, Option.some.injEq, Prod.mk.injEq] at he; omega⟩⟩
+
+/-- **A `Uint8Array` view store of length 1 meets its canonical contract**
+where its cell's entry is a cell of the format. -/
+theorem viewStore_one {k j : Nat} (hj : j < k) {es : List (Role × Ctr k)} {c : Nat}
+    (he : es[c]? = some (.elem, viewCellCtr k .uint8)) :
+    viewStoreCtr k .uint8 1 j hj (trunc j (Nat.le_of_lt hj) (ofEntries es)) (.viewStore .uint8 [c]) := by
+  refine ⟨[c], rfl, rfl, fun c' hc => ?_⟩
+  simp only [List.mem_singleton] at hc; subst hc
+  have hl : lookup (ofEntries es) c' = some (viewCellCtr k .uint8) := by simp [lookup, toList, he]
+  exact ⟨by simp [roleAt, roles, he, restrictE], _, lookup_trunc _ _ c' _ hl, fun _ _ _ _ => Iff.rfl⟩
+
 @[simp] theorem roleAt_ofEntries {k : Nat} (es : List (Role × Ctr k)) (l : Nat) :
     roleAt (ofEntries es) l = (es.map Prod.fst)[l]? := by
   simp [roleAt, roles]
 
 theorem hostBefore_ok (n : Nat) : HeapOk n (hostWorld (k := n)) hostBefore := by
-  refine ⟨entries_meets rfl fun i e v he hv j hj W => ?_, fun l r hr => ?_⟩
+  refine ⟨entries_meets' rfl fun i e v he hv j hj => ?_, fun l r hr => ?_⟩
   · rcases i with _ | _ | _ | _ | _ | _ | _ | _ | i <;>
-      simp [hostEntries, hostBefore] at he hv <;> subst he hv <;> simp [anyCtr, idCtr, isVal]
+      simp [hostEntries, hostBefore] at he hv <;> subst he hv <;>
+      first
+        | exact viewStore_one hj (es := hostEntries (k := n)) (c := 1) rfl
+        | exact stored_uint8_zero
+        | simp [anyCtr, idCtr, isVal]
   · simp only [hostWorld, roleAt_ofEntries] at hr
     rcases l with _ | _ | _ | _ | _ | _ | _ | _ | l <;> simp [hostEntries] at hr <;> subst hr <;>
       refine ⟨_, rfl, ?_, ?_⟩ <;>
@@ -221,9 +278,14 @@ theorem hostBefore_ok (n : Nat) : HeapOk n (hostWorld (k := n)) hostBefore := by
         | simp [Cat, isSourceVal]
 
 theorem hostAfter_ok (n : Nat) : HeapOk n (hostWorld' (k := n)) hostAfter := by
-  refine ⟨entries_meets rfl fun i e v he hv j hj W => ?_, fun l r hr => ?_⟩
+  refine ⟨entries_meets' rfl fun i e v he hv j hj => ?_, fun l r hr => ?_⟩
   · rcases i with _ | _ | _ | _ | _ | _ | _ | _ | _ | i <;>
-      simp [hostEntries, hostAfter] at he hv <;> subst he hv <;> simp [anyCtr, idCtr, isVal]
+      simp [hostEntries, hostAfter] at he hv <;> subst he hv <;>
+      first
+        | exact viewStore_one hj (es := hostEntries (k := n) ++ [(.elem, viewCellCtr n .uint8)]) (c := 8) rfl
+        | exact stored_uint8_zero
+        | exact stored_uint8_one
+        | simp [anyCtr, idCtr, isVal]
   · simp only [hostWorld', roleAt_ofEntries] at hr
     rcases l with _ | _ | _ | _ | _ | _ | _ | _ | _ | l <;> simp [hostEntries] at hr <;> subst hr <;>
       refine ⟨_, rfl, ?_, ?_⟩ <;>
@@ -264,7 +326,7 @@ store and keeping the ordinary array's store. -/
 theorem host_viewWrite (n : Nat) :
     ViewWriteOf (.exact .uint8) [hostView, .num 0, .num oneBits] (hostWorld (k := n)) hostBefore
       (hostWorld' (k := n)) hostAfter ∧ hostAfter[0]? ≠ hostBefore[0]? ∧ hostAfter[3]? = hostBefore[3]? := by
-  refine ⟨⟨⟨Nat.le_refl n, by rw [trunc_id]; exact ⟨[(.elem, anyCtr)], by simp [hostWorld, hostWorld']⟩,
+  refine ⟨⟨⟨Nat.le_refl n, by rw [trunc_id]; exact ⟨[(.elem, viewCellCtr n .uint8)], by simp [hostWorld, hostWorld']⟩,
     hostAfter_ok n, fun l r hr hne => ?_, fun l f N cs cs' hr hl hl' c hc => ?_⟩, fun _ hk => ?_⟩,
     by simp [hostAfter, hostBefore], rfl⟩
   · simp only [hostWorld, roleAt_ofEntries] at hr
@@ -275,21 +337,7 @@ theorem host_viewWrite (n : Nat) :
       simp [hostAfter] at hl' <;> obtain ⟨-, rfl⟩ := hl' <;> simp at hc <;> subst hc <;>
       exact .inr (by simp [hostBefore])
   · cases hk
-    refine ⟨⟨oneBits, 1, rfl, oneBits_safe, fun lo hi he => by
-      simp [CallEffects.ElementKind.range] at he; omega⟩, fun s ls hs hls => ?_⟩
-    have h0 : SafeIntegers.SafeInt (0 : UInt64) (0 : Int) := ⟨by decide, .inl ⟨by decide, rfl⟩⟩
-    have he : HeapKnowledge.elementsOf hostView = some 0 := by decide
-    have hg : ([hostView, Tm.num 0, Tm.num oneBits] : List Tm).getD 0 .undef = hostView := rfl
-    rw [hg, he] at hs
-    cases hs
-    have hls' : ls = [some 1] := by simpa [hostBefore, storeEntries] using hls.symm
-    subst hls'
-    refine ⟨[some 8], 0, 0, rfl, rfl, h0, by simp, fun j hj => ?_, 8, rfl, by
-      rw [show ([_, Tm.num 0, Tm.num oneBits] : List Tm).getD 2 .undef = .num oneBits from rfl, oneBits,
-        CallEffects.ElementKind.convert_bitsOfNat _ (by decide)]; rfl⟩
-    rcases j with _ | j
-    · exact absurd rfl hj
-    · simp
+    exact exactWrite_one (i := 2) (by rfl) (by rfl) (by rfl)
 
 /-! ## Every structural family at once, at every budget -/
 
@@ -320,15 +368,22 @@ def familiesEnv : Env := fun i =>
   | 5 => hostClosure | 6 => hostBound | _ => .undef
 
 theorem familiesWorld_adm {k : Nat} : WorldAdm (familiesWorld (k := k)) := by
-  intro l c hc
-  simp only [lookup, toList, familiesWorld, entries_ofEntries, List.getElem?_map, Option.map_eq_some_iff] at hc
-  obtain ⟨e, he, rfl⟩ := hc
-  rcases l with _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | l <;>
-    simp [familiesEntries, hostEntries] at he <;> subst he <;>
-    first
-      | exact ⟨fun _ _ _ _ _ _ hv => hv, fun _ _ _ _ hv => hv⟩
-      | exact idCtr_adm
-      | exact ⟨fun _ _ _ _ _ _ hv => hv, fun _ _ _ _ hv => by rw [hv]; rfl⟩
+  refine ⟨fun l c hc => ?_, fun l f N hr => ?_⟩
+  · simp only [lookup, toList, familiesWorld, entries_ofEntries, List.getElem?_map, Option.map_eq_some_iff] at hc
+    obtain ⟨e, he, rfl⟩ := hc
+    rcases l with _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | l <;>
+      simp [familiesEntries, hostEntries] at he <;> subst he <;>
+      first
+        | exact viewStoreCtr_adm k .uint8 1
+        | exact viewCellCtr_adm k .uint8
+        | exact ⟨fun _ _ _ _ _ _ hv => hv, fun _ _ _ _ hv => hv⟩
+        | exact idCtr_adm
+        | exact ⟨fun _ _ _ _ _ _ hv => hv, fun _ _ _ _ hv => by rw [hv]; rfl⟩
+  · simp only [familiesWorld, roleAt_ofEntries] at hr
+    rcases l with _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | l <;>
+      simp [familiesEntries, hostEntries] at hr
+    obtain ⟨rfl, rfl⟩ := hr
+    exact ⟨_, by simp [lookup, toList, familiesWorld, familiesEntries, hostEntries], fun _ _ _ _ => Iff.rfl⟩
 
 theorem familiesWorld_ext {k : Nat} : WExt (hostWorld (k := k)) (familiesWorld (k := k)) :=
   ⟨[(.cell, anyCtr), (.identity, idCtr), (.field, anyCtr), (.identity, idCtr), (.field, anyCtr),
@@ -403,10 +458,13 @@ theorem families_state (n : Nat) :
     HeapOk n (familiesWorld (k := n)) familiesHeap ∧ WorldAdm (familiesWorld (k := n)) ∧
       RootsOk (familiesWorld (k := n)) familiesEnv := by
   have hobj := RefsOk_mono familiesWorld_ext (host_refs (k := n)).2.2
-  refine ⟨⟨entries_meets rfl fun i e v he hv j hj W => ?_, fun l r hr => ?_⟩, familiesWorld_adm, families_refs⟩
+  refine ⟨⟨entries_meets' rfl fun i e v he hv j hj => ?_, fun l r hr => ?_⟩, familiesWorld_adm, families_refs⟩
   · rcases i with _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | i <;>
       simp [familiesEntries, hostEntries, familiesHeap, hostBefore] at he hv <;> subst he hv <;>
-      simp [anyCtr, idCtr, isVal, hostObject]
+      first
+        | exact viewStore_one hj (es := familiesEntries (k := n)) (c := 1) rfl
+        | exact stored_uint8_zero
+        | simp [anyCtr, idCtr, isVal, hostObject]
   · simp only [familiesWorld, roleAt_ofEntries] at hr
     rcases l with _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | _ | l <;>
       simp [familiesEntries, hostEntries] at hr <;> subst hr <;>
@@ -437,7 +495,7 @@ theorem empty_state (n : Nat) :
     HeapOk n (ofEntries [] : WorldT n) [] ∧ WorldAdm (ofEntries [] : WorldT n) ∧
       RootsOk (ofEntries [] : WorldT n) (fun _ => .undef) := by
   refine ⟨⟨entries_meets rfl fun i e v he _ => by simp at he, fun l r hr => by simp at hr⟩,
-    fun l c hc => by simp [lookup, toList] at hc, fun _ => RefsOk_undef⟩
+    ⟨fun l c hc => by simp [lookup, toList] at hc, fun l f N hr => by simp at hr⟩, fun _ => RefsOk_undef⟩
 
 open AllocationWorlds in
 /-- **A declared object allocated from a well-formed state** (`allocation_safe`

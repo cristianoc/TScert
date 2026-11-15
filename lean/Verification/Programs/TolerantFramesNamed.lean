@@ -308,11 +308,13 @@ fact of the object the name holds fails after an action of
 /-- A state of one location holding `v`, at budget 1. -/
 def oneState (v : Val) (hv : isVal v = true) (hs : isSourceVal v = true) (hn : refs v = []) : IndexedHeap :=
   ⟨1, ofEntries [(.field, anyCtr)], [v], Nat.one_pos,
-    fun l c hl => by
+    ⟨fun l c hl => by
       simp only [lookup, toList, entries_ofEntries] at hl
       rcases l with _ | l <;> simp at hl
       subst hl
-      exact ⟨fun _ _ _ _ _ _ hv => hv, fun _ _ _ _ hv => hv⟩,
+      exact ⟨fun _ _ _ _ _ _ hv => hv, fun _ _ _ _ hv => hv⟩, fun l f N hr => by
+      simp only [roleAt, roles, entries_ofEntries] at hr
+      rcases l with _ | l <;> simp at hr⟩,
     ⟨⟨by simp, fun l c hl => by
       simp only [lookup, toList, entries_ofEntries] at hl
       rcases l with _ | l <;> simp at hl

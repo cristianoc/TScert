@@ -1968,54 +1968,84 @@ alone and keeps their lengths: the store-growth footprint, values kept, with
 `elementWrite` (`Effect.viewPost`, `Kinds.ViewWriteOf`): every location
 whose role at the call's entry is not a view's element store keeps its
 contents, and each view's element store keeps its length, every cell it
-newly lists fresh. So no object or number changes and every store keeps its
+newly lists fresh, which on well-formed states is the action of the effect
+$`\{\mathsf{all\text{-}views}:\mathsf{grow}\}`$ (proved:
+`Kinds.ViewWrite.frame_iff`). So no object or number changes and every store keeps its
 length (`ElementWrite.Holds`, what the relation gives of the two heaps), and
 a fact of values,
 paths, lengths and typed-array lengths survives the write, and a quantified
 fact over any array's elements does not (`invalid-typed-array-element-read-after-write`,
 run under Node: a write through a `subarray` view changes the quantified view).
-`fill`, `copyWithin` and `set` change the heap alike; `subarray` allocates
-its view.
+`fill` and `copyWithin` at numbers and `set` from a typed array at a
+number change the heap alike on a normal return and state nothing of a
+throw; `subarray` allocates its view.
 
-**An exact element write.** `%ByteSet%` has, after that signature, one for
-each element type, a write at a safe integer $`0\le k<\mathrm{view}(b)`$, a
-valid integer index, of a safe integer $`v`$ within the element type's
-range, from $`0`$ to $`255`$ of a `Uint8Array`, to $`65535`$ of a
-`Uint16Array`, from $`-2^{31}`$ to $`2^{31}-1`$ of an `Int32Array`, any of a
-`Float64Array`:
+**The three steps' rules.** The host is assumed to meet the rules of the
+note *Tolerant frames* for a typed array $`b`$ of format $`t`$, an index
+$`i`$ and a value $`v`$, numbers; the index is valid for $`b`$ where it is
+an integer with $`0\le i<\mathrm{view}(b)`$, $`-0`$ the index $`0`$
+(every typed array's length is below $`2^{53}`$, so a valid index is a safe
+integer):
+
+- `b.length` (`%ByteLength%`) is $`\mathrm{view}(b)`$, with the empty
+  effect;
+- `b[i]` (`%ByteAt%`) at a valid index is the element, a number of the
+  format, and at any other number `undefined`, with the empty effect;
+- `b[i] = v` (`%ByteSet%`) at a valid index makes the index read
+  $`\mathrm{conv}_t(v)`$ and every other index of $`b`$ read what it read
+  (`CallEffects.ExactWrite`); at a number that is no valid index no location
+  changes; the assignment is $`v`$ in either case (`Effect.viewPost`); its
+  effect is $`\{\mathsf{all\text{-}views}:\mathsf{grow}\}`$ (proved equal,
+  on well-formed states, to the view write's frame:
+  `Kinds.ViewWrite.frame_iff`).
+
+None of the three throws. $`\mathrm{conv}_t`$ is total (`ViewFormat.conv`):
+`Uint8`, `Uint16` and `Int32` send a number that is not finite to $`0`$ and
+any other to its integer part modulo $`2^8`$, $`2^{16}`$ and $`2^{32}`$, the
+last read in $`[-2^{31},2^{31})`$ (ECMA-262's ToUint8, ToUint16, ToInt32,
+through the calculus's exact `toInt32`); `Float64` stores the number itself,
+every NaN as one value. Its result is a number the format stores (proved:
+`ViewFormat.conv_stored`), and on a safe integer of the format's range it
+keeps the integer, $`+0`$ of $`-0`$ in an integer format (proved:
+`ViewFormat.conv_safeInt`). So `Uint8Array` reads back 44 after a write of
+300, 255 after $`-1`$ and 0 after NaN, and a write at index 5 of a view of
+length 1 leaves its element (`node-bytes-write`, run under Node).
+
+The intrinsics state these rules as signatures: `%ByteAt%`'s two above and
+the following, `%ByteLength%`'s result the safe integer
+$`\mathrm{view}(b)`$, and `%ByteSet%`'s first, which states no element and
+holds of every write, then one for each element type, a write at a safe
+integer $`0\le k<\mathrm{view}(b)`$ of a safe integer $`v`$ within the
+element type's range, from $`0`$ to $`255`$ of a `Uint8Array`, to
+$`65535`$ of a `Uint16Array`, from $`-2^{31}`$ to $`2^{31}-1`$ of an
+`Int32Array`, any of a `Float64Array`:
 
 ```math
 \%\mathrm{ByteSet}\%\colon(V_\mathit{Int32Array},\ \mathtt{number},\ \mathtt{number})\Rightarrow_{\{\mathsf{value}:\mathsf{keep},\ \mathsf{store}:\mathsf{grow}\},\ \mathsf{elementWrite}\ \mathsf{exact}_\mathit{Int32}}^{\ \mathrm{int}(2),\ 0\le 2\le\mathrm{view}(1)-1,\ \mathrm{int}(3),\ -2^{31}\le 3\le 2^{31}-1}\mathtt{number}
 ```
 
 and alike of the others, $`\mathsf{exact}_t`$ naming the element type $`t`$
-(`CallEffects.ElementKind`). There ToNumber of a number is the number, and
-TypedArraySetElement writes the element's own bytes of the buffer, at the
-view's byte offset plus $`k`$ times the element size: no other element of
-the view reads them. A later read of the element gives the element type's
-conversion of $`v`$, $`\mathrm{conv}_t(v)`$ (`ElementKind.convert`): for an
-integer type, the conversion (ToUint8, ToUint16, ToInt32) followed by the
-read gives the number denoting $`v`$'s integer, $`+0`$ where $`v`$ is
-$`-0`$; for `Float64Array`, $`v`$ itself, $`-0`$ included. So a normal
-return leaves the view's element store listing the same entries but at
-$`k`$, where it lists a location holding $`\mathrm{conv}_t(v)`$
-(`CallEffects.ExactWrite`), beside the change every write makes. The
-exact write states $`v`$ a safe integer within $`t`$'s range
-(`ElementKind.Takes`), where $`\mathrm{conv}_t`$ is the host's conversion
-(`ElementKind.convert_takes`); an exact effect's precondition states that
-range (`ElementKind.preFacts`), so a call meeting it writes such a value
-(`ElementKind.takes_of_requires`), and the effect decoder refuses an exact
-effect whose precondition omits it. Other
-views over the bytes may change, as above. $`\mathrm{conv}_t(v)`$ and
-$`v`$ denote the same integer (`ElementKind.intValue_convert`), which is
-what every index fact reads; the two differ only at $`-0`$ of an integer type
+(`CallEffects.ElementKind`). The exact effect states View-Write
+(`CallEffects.ExactWrite`) of the actuals, for every number and index; its
+precondition is the range the pass uses it at, and the effect decoder
+refuses an exact effect whose precondition omits it
+(`ElementKind.preFacts`). A call meeting it writes a valid index and a value
+$`t`$ takes (`ElementKind.exactPre_of_requires`), where the conversion is
+`ElementKind.convert` (`ElementKind.convert_conv`): the index's cell holds
+$`\mathrm{conv}_t(v)`$ and every other index's cell what it held
+(`ExactWrite.taken`). Other views over the bytes may change, as above.
+$`\mathrm{conv}_t(v)`$ and $`v`$ denote the same integer there
+(`ElementKind.intValue_convert`), which is what every index fact reads; the
+two differ only at $`-0`$ of an integer type
 (`ElementKind.convert_negZero`), which no index fact distinguishes
 (`typed-array-element-write-negative-zero`).
 Outside the range the conversion changes the integer: an `Int32Array` write
 of $`2^{31}`$ stores $`-2^{31}`$ (`invalid-typed-array-element-write-int32-wrap`,
-run under Node) and a `Uint8Array` write of 260 stores 4
-(`invalid-typed-array-element-write-uint8-truncation`, run under Node), and
-the first signature, which states no element, is the call's. Audited against
+run under Node), a `Uint8Array` write of 260 stores 4
+(`invalid-typed-array-element-write-uint8-truncation`, run under Node) and
+one of $`-1`$ stores 255 (`invalid-typed-array-element-write-uint8-negative`,
+run under Node), and the first signature, which states no element, is the
+call's. Audited against
 ECMA-262's TypedArraySetElement, IsValidIntegerIndex and the numeric
 conversions, and a probe under Node 26.13.0 (2026-11-08). A read after a write is still `%ByteAt%`'s, a number or
 `undefined`, where TypeScript narrows the element by the write

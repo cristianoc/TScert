@@ -218,7 +218,8 @@ theorem allocThrow_safe {Ξ T : Fam} {Q : WPost} {f : PropKey} {v : Tm} {n : Nat
   let o : Tm := .objAt (slots h.length [f]) .absent (h.length + 1)
   have hoRefs : RefsOk U o := by simpa [U, allocEntries] using hobj
   refine ⟨fun r hr => hvr r (by simpa [allocThrow, refs, refsArgs_eq] using hr), .inr ⟨U, h ++ [v] ++ [.nul],
-    .throw o, WExt_appendWs _ _, WorldAdm_appendWs (WorldAdm_trunc _ hadm) ?_, ?_, hokU, ?_⟩⟩
+    .throw o, WExt_appendWs _ _, WorldAdm_appendWs_plain (WorldAdm_trunc _ hadm) ?_
+      (objectEntries_plain (by simp)), ?_, hokU, ?_⟩⟩
   · intro e he
     simp only [allocEntries, objectEntries, List.cons_append, List.nil_append, List.zip_cons_cons,
       List.zip_nil_right, List.mem_cons, List.not_mem_nil, or_false] at he
@@ -312,8 +313,9 @@ theorem callback_writeback {n : Nat} {U : WorldT n} {h : Heap} (hok : HeapOk n U
   let U' := appendWs U es
   have hx : WExt U U' := WExt_appendWs U es
   have hlenU : h.length = (entries U).length := by simpa using hok.1.1
-  have hadm' : WorldAdm U' := WorldAdm_appendWs hadm (fun e he => by
-    obtain ⟨c, hc, rfl⟩ := List.mem_map.mp he; exact hcadm c hc)
+  have hadm' : WorldAdm U' := WorldAdm_appendWs_plain hadm (fun e he => by
+    obtain ⟨c, hc, rfl⟩ := List.mem_map.mp he; exact hcadm c hc) (fun e he f N => by
+    obtain ⟨c, -, rfl⟩ := List.mem_map.mp he; exact fun h => by cases h)
   have hok' : HeapOk n U' (h ++ vs) := HeapOk_appendWs hok hadm (fun e he => by
       obtain ⟨c, hc, rfl⟩ := List.mem_map.mp he; exact hcadm c hc) (by simp [es, hlen])
     (fun i c u hc hu j hj => by

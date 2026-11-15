@@ -1,4 +1,4 @@
-import Verification.Semantics.Calculus
+import Verification.Semantics.SafeIntegers
 /-!
 # Stratified kinded worlds
 
@@ -26,7 +26,8 @@ coherence laws are equalities. Extension appends entries and keeps every old
 role and contract.
 
 Not every contract is a type. `CtrAdm` requires a contract to survive the
-world growing, and `WorldAdm` lifts that to a world.
+world growing, and `WorldAdm` lifts that to a world, where besides every view
+store has the canonical contract of its format and length (`ViewWorld`).
 
 The second half states **reference validity** (`RefsOk`): every location a
 term refers to has the role its position demands, and the **shape** each role
@@ -288,18 +289,137 @@ def CtrAdm {k : Nat} (c : Ctr k) : Prop :=
   (∀ (j : Nat) (hj : j < k) (W W' : WorldT j), WExt W W' → ∀ v, c j hj W v → c j hj W' v) ∧
     ∀ (j : Nat) (hj : j < k) (W : WorldT j) v, c j hj W v → isVal v = true
 
-def WorldAdm {k : Nat} (W : WorldT k) : Prop := ∀ l c, lookup W l = some c → CtrAdm c
+theorem roleAt_appendWs_lt {k : Nat} (W : WorldT k) (es : List (Role × Ctr k)) {l : Nat}
+    (hl : l < (entries W).length) : roleAt (appendWs W es) l = roleAt W l := by
+  simp only [roleAt, roles, entries_appendWs, List.map_append]
+  rw [List.getElem?_append_left (by simpa using hl)]
+
+theorem lookup_appendWs_lt {k : Nat} (W : WorldT k) (es : List (Role × Ctr k)) {l : Nat}
+    (hl : l < (entries W).length) : lookup (appendWs W es) l = lookup W l := by
+  simp only [lookup, toList, entries_appendWs, List.map_append]
+  rw [List.getElem?_append_left (by simpa using hl)]
+
+theorem lookup_appendWs_ge {k : Nat} (W : WorldT k) (es : List (Role × Ctr k)) {i : Nat} :
+    lookup (appendWs W es) ((entries W).length + i) = (es.map Prod.snd)[i]? := by
+  simp only [lookup, toList, entries_appendWs, List.map_append]
+  rw [List.getElem?_append_right (by simp)]
+  simp
+
+/-! ## The canonical contract of a view store
+
+A typed array's view store lists one element cell per index (`Cat`,
+`StoreForm.view`). Its cells hold numbers of the store's format, and its
+contract admits every replacement a write through any typed array may make:
+every view store of its format and length whose cells are such cells (the
+note *Tolerant frames*, (W2): "the contract of a view store admits every
+such store"). A world whose every view-store location has this canonical
+contract is a **view world** (`ViewWorld`); an admissible world is one
+(`WorldAdm.view`). -/
+
+/-- The integers an integer format stores: `0` to `2^8 - 1`, `0` to
+`2^16 - 1`, `-2^31` to `2^31 - 1`; `float64` stores every number. -/
+def ViewFormat.range : ViewFormat → Option (Int × Int)
+  | .uint8 => some (0, 255)
+  | .uint16 => some (0, 65535)
+  | .int32 => some (-2147483648, 2147483647)
+  | .float64 => none
+
+/-- **The values a format stores**: a number, an integer in the format's
+range where it has one. -/
+def ViewFormat.Stored (f : ViewFormat) (v : Val) : Prop :=
+  ∃ b, v = .num b ∧ ∀ lo hi, f.range = some (lo, hi) → ∃ i, SafeIntegers.SafeInt b i ∧ lo ≤ i ∧ i ≤ hi
+
+theorem ViewFormat.Stored.isVal {f : ViewFormat} {v : Val} (h : f.Stored v) : isVal v = true := by
+  obtain ⟨b, rfl, -⟩ := h; rfl
+
+/-- A cell of a view store of format `f` in `U`: an element cell whose
+contract admits exactly the values `f` stores, at every level it inspects. -/
+def ViewCell {j : Nat} (U : WorldT j) (f : ViewFormat) (c : Nat) : Prop :=
+  roleAt U c = some .elem ∧
+    ∃ d, lookup U c = some d ∧ ∀ i (hi : i < j) (U' : WorldT i) u, d i hi U' u ↔ f.Stored u
+
+theorem ViewCell.mono {j : Nat} {U U' : WorldT j} (hx : WExt U U') {f : ViewFormat} {c : Nat}
+    (h : ViewCell U f c) : ViewCell U' f c := by
+  obtain ⟨hr, d, hd, hiff⟩ := h
+  exact ⟨WExt_roleAt hx hr, d, WExt_lookup hx hd, hiff⟩
+
+theorem ViewCell.trunc {k j : Nat} (hj : j ≤ k) {W : WorldT k} {f : ViewFormat} {c : Nat}
+    (h : ViewCell W f c) : ViewCell (Verification.trunc j hj W) f c := by
+  obtain ⟨hr, d, hd, hiff⟩ := h
+  exact ⟨by simpa using hr, _, lookup_trunc hj W c d hd, fun i hi U' u => hiff i _ U' u⟩
+
+/-- **The canonical contract of a view store** of format `f` and length `N`:
+every view store of that format and length whose cells are cells of the
+format. -/
+def viewStoreCtr (k : Nat) (f : ViewFormat) (N : Nat) : Ctr k :=
+  fun _ _ U v => ∃ cs, v = .viewStore f cs ∧ cs.length = N ∧ ∀ c ∈ cs, ViewCell U f c
+
+/-- A contract is the canonical one of a view store of format `f` and length
+`N`, at every level it inspects. -/
+def CanonicalView {k : Nat} (c : Ctr k) (f : ViewFormat) (N : Nat) : Prop :=
+  ∀ j (hj : j < k) U v, c j hj U v ↔ viewStoreCtr k f N j hj U v
+
+/-- **A view world**: every view-store location has the canonical contract
+of its format and length. -/
+def ViewWorld {k : Nat} (W : WorldT k) : Prop :=
+  ∀ l f N, roleAt W l = some (.store (.view f N)) → ∃ c, lookup W l = some c ∧ CanonicalView c f N
+
+theorem ViewWorld.trunc {k j : Nat} (hj : j ≤ k) {W : WorldT k} (hW : ViewWorld W) :
+    ViewWorld (Verification.trunc j hj W) := by
+  intro l f N hr
+  obtain ⟨c, hc, hiff⟩ := hW l f N (by simpa using hr)
+  exact ⟨_, lookup_trunc hj W l c hc, fun i hi U v => hiff i _ U v⟩
+
+/-- **Extension keeps a view world** where each appended view-store entry
+has the canonical contract. -/
+theorem ViewWorld.appendWs {k : Nat} {W : WorldT k} {es : List (Role × Ctr k)} (hW : ViewWorld W)
+    (hes : ∀ e ∈ es, ∀ f N, e.1 = .store (.view f N) → CanonicalView e.2 f N) :
+    ViewWorld (Verification.appendWs W es) := by
+  intro l f N hr
+  by_cases hl : l < (entries W).length
+  · rw [roleAt_appendWs_lt W es hl] at hr
+    obtain ⟨c, hc, hiff⟩ := hW l f N hr
+    exact ⟨c, by rw [lookup_appendWs_lt W es hl]; exact hc, hiff⟩
+  · have hge : (entries W).length ≤ l := by omega
+    rw [roleAt_appendWs_ge W es hge] at hr
+    obtain ⟨i, rfl⟩ : ∃ i, l = (entries W).length + i := ⟨l - (entries W).length, by omega⟩
+    simp only [Nat.add_sub_cancel_left, List.getElem?_map, Option.map_eq_some_iff] at hr
+    obtain ⟨e, he, hef⟩ := hr
+    refine ⟨e.2, ?_, hes e (List.mem_of_getElem? he) f N hef⟩
+    rw [lookup_appendWs_ge]; simp [he]
+
+/-- Entries none of which is a view store keep a view world. -/
+theorem ViewWorld.appendWs_plain {k : Nat} {W : WorldT k} {es : List (Role × Ctr k)} (hW : ViewWorld W)
+    (hes : ∀ e ∈ es, ∀ f N, e.1 ≠ .store (.view f N)) : ViewWorld (Verification.appendWs W es) :=
+  hW.appendWs fun e he f N h => absurd h (hes e he f N)
+
+/-! ## Which worlds are admissible -/
+
+/-- **An admissible world**: every contract survives the world growing and
+admits only machine values (`CtrAdm`), and every view store has the
+canonical contract of its format and length (`ViewWorld`, the note
+*Tolerant frames*, (W2)). It reads as its contracts' admissibility where a
+function is expected. -/
+structure WorldAdm {k : Nat} (W : WorldT k) : Prop where
+  ctr : ∀ l c, lookup W l = some c → CtrAdm c
+  view : ViewWorld W
+
+instance {k : Nat} {W : WorldT k} : CoeFun (WorldAdm W) (fun _ => ∀ l c, lookup W l = some c → CtrAdm c) :=
+  ⟨WorldAdm.ctr⟩
 
 theorem WorldAdm_trunc {k j : Nat} (h : j ≤ k) {W : WorldT k} (hA : WorldAdm W) :
     WorldAdm (trunc j h W) := by
-  intro l c' hl
+  refine ⟨fun l c' hl => ?_, hA.view.trunc h⟩
   obtain ⟨c, hc, rfl⟩ := lookup_trunc_inv h W l c' hl
   exact ⟨fun i hi U U' hx v hv => (hA l c hc).1 i (Nat.lt_of_lt_of_le hi h) U U' hx v hv,
     fun i hi U v hv => (hA l c hc).2 i (Nat.lt_of_lt_of_le hi h) U v hv⟩
 
+/-- **Extension keeps an admissible world** where each appended contract is
+admissible and each appended view store's contract is canonical. -/
 theorem WorldAdm_appendWs {k : Nat} {W : WorldT k} {es : List (Role × Ctr k)}
-    (hW : WorldAdm W) (hc : ∀ e ∈ es, CtrAdm e.2) : WorldAdm (appendWs W es) := by
-  intro l d hl
+    (hW : WorldAdm W) (hc : ∀ e ∈ es, CtrAdm e.2)
+    (hv : ∀ e ∈ es, ∀ f N, e.1 = .store (.view f N) → CanonicalView e.2 f N) : WorldAdm (appendWs W es) := by
+  refine ⟨fun l d hl => ?_, hW.view.appendWs hv⟩
   simp only [lookup, toList, entries_appendWs, List.map_append] at hl
   by_cases hlt : l < (entries W).length
   · rw [List.getElem?_append_left (by simpa using hlt)] at hl
@@ -309,6 +429,13 @@ theorem WorldAdm_appendWs {k : Nat} {W : WorldT k} {es : List (Role × Ctr k)}
       have := List.mem_of_getElem? hl
       simpa using this
     exact hc e he
+
+/-- Extension by entries none of which is a view store keeps an admissible
+world where each appended contract is admissible. -/
+theorem WorldAdm_appendWs_plain {k : Nat} {W : WorldT k} {es : List (Role × Ctr k)}
+    (hW : WorldAdm W) (hc : ∀ e ∈ es, CtrAdm e.2) (hp : ∀ e ∈ es, ∀ f N, e.1 ≠ .store (.view f N)) :
+    WorldAdm (appendWs W es) :=
+  WorldAdm_appendWs hW hc fun e he f N h => absurd h (hp e he f N)
 
 /-! ## References and their validity -/
 
@@ -575,9 +702,9 @@ theorem codeUnitAt_refs (s : String) (b : UInt64) : refs (codeUnitAt s b) = [] :
   unfold codeUnitAt; split <;> rfl
 
 theorem WorldAdm_append {k : Nat} {W : WorldT k} {r : Role} {c : Ctr k}
-    (hW : WorldAdm W) (hc : CtrAdm c) : WorldAdm (appendW W r c) := by
+    (hW : WorldAdm W) (hc : CtrAdm c) (hr : ∀ f N, r ≠ .store (.view f N)) : WorldAdm (appendW W r c) := by
   have : appendW W r c = appendWs W [(r, c)] := rfl
-  rw [this]; exact WorldAdm_appendWs hW (by simpa using hc)
+  rw [this]; exact WorldAdm_appendWs_plain hW (by simpa using hc) (by simpa using hr)
 
 theorem lookup_appendWs {k : Nat} (W : WorldT k) (es : List (Role × Ctr k)) {i : Nat}
     (_hi : i < es.length) :

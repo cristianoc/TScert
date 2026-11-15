@@ -78,7 +78,8 @@ theorem literal_safe {Ξ T : Fam} {R : WExc} {f : PropKey} {x : Tm} {A : Fam} {n
     exact Capability.holds_alloc W₁ (ns := [f]) (rs := [.field]) (As := [A])  (by simp) rfl rfl
       (i := 0) (by simp) rfl ⟨rfl, rfl⟩
   refine ⟨fun r hr => hxr r (by simpa [literal, refs, refsArgs_eq] using hr), .inr ⟨U, h ++ [x] ++ [.nul],
-    o, WExt_appendWs _ _, WorldAdm_appendWs (WorldAdm_trunc _ hadm) hadmE,
+    o, WExt_appendWs _ _, WorldAdm_appendWs_plain (WorldAdm_trunc _ hadm) hadmE
+      (objectEntries_plain (by simp)),
     .makeFields (by simpa using hv) rfl, hokU, ?_⟩⟩
   exact ⟨hoRefs, .inl (.inl ⟨rfl, hT U o, rfl, hoRefs, ⟨[x, .nul], by simp⟩, hcap⟩)⟩
 

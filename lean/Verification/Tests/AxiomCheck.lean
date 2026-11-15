@@ -1495,7 +1495,13 @@ run_cmd do
   check ``Verification.ViewWorld.trunc
   check ``Verification.ViewWorld.appendWs
   check ``Verification.ViewWorld.typedArray
+  check ``Verification.WorldAdm.typedArray
+  check ``Verification.WorldAdm_appendWs_plain
   check ``Verification.HeapOk.view_cell_stored
+  check ``Verification.ViewFormat.conv_stored
+  check ``Verification.ViewFormat.conv_safeInt
+  check ``Verification.SafeIntegers.toInt32_safe_neg
+  check ``Verification.Kinds.ViewWrite.frame_iff
   check ``Verification.Kinds.thrownError_shaped
   -- writes preserve kinds
   check ``Verification.write_sound
@@ -1608,6 +1614,9 @@ run_cmd do
   check ``Verification.CallEffects.ElementKind.convert_negZero
   check ``Verification.CallEffects.ElementKind.convert_takes
   check ``Verification.CallEffects.ElementKind.takes_of_requires
+  check ``Verification.CallEffects.ElementKind.exactPre_of_requires
+  check ``Verification.CallEffects.ElementKind.convert_conv
+  check ``Verification.CallEffects.ExactWrite.taken
   -- call effects over kinded worlds and the composition gate
   check ``Verification.HeapObservations.SafePostExcW.consequence_below'
   check ``Verification.HeapObservations.SafePostExcW.world

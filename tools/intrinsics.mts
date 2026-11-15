@@ -670,20 +670,22 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // array holds a data property (`numericOwn`), and neither
     // `Array.prototype` nor `Object.prototype` owns one, so no getter runs.
     // A view of bytes's [[Get]] at a number, ToPropertyKey's canonical
-    // numeric string: the element at a valid index, a number, and
-    // `undefined` at any other key, the prototype chain never read
-    // (ECMA-262, "TypedArray Objects", TypedArrayGetElement). It runs no code
-    // and writes nothing. Two signatures: any read, an element or
-    // `undefined`; and a read at a safe integer `k`, `0 ≤ k < view(b)`, the
-    // element there, a number (a `Float64Array`'s any double, `NaN`
-    // included): such a `k` is a valid integer index (IsValidIntegerIndex:
-    // integral, not `-0`, below the length, `-0` reading as `0` after
-    // ToPropertyKey's canonical numeric string). The second states its
+    // numeric string (ECMA-262, "TypedArray Objects", TypedArrayGetElement;
+    // the note *Tolerant frames*, View-Read): the element at a valid index,
+    // an integer `0 ≤ k < view(b)` (`-0` the index 0), a number of the
+    // view's format, and `undefined` at any other number, the prototype
+    // chain never read. It runs no code, writes nothing and throws nothing.
+    // Two signatures: any read, an element or `undefined`; and a read at a
+    // safe integer `k`, `0 ≤ k < view(b)`, a valid index (every typed
+    // array's length is below 2^53), the element there, a number (a
+    // `Float64Array`'s any double, `NaN` included). The second states its
     // result the element the view's elements hold at the index
     // (`IndexFact.element`, at the return's positions: 0 the result, 2 the
     // view, 3 the index): a typed array's elements are the cells its view
     // store lists, the view store its descriptor names, one per index below
-    // its fixed length, each holding the element (DESIGN.md, "Trust surface").
+    // its fixed length, each holding the element (DESIGN.md, "Trust
+    // surface"); that the element is a number of the format follows from
+    // the view store's canonical contract (`HeapOk.view_cell_stored`).
     [byteAtName]: () => {
       const params = [views, atom("number")];
       return { typeParams: [], type: { k: "intersection", span, parts: [
@@ -697,12 +699,12 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
       ] } };
     },
     // `%TypedArray%.prototype`'s `length` getter, the view's length, 0 where
-    // its buffer is detached: it reads the view's slots, runs no code and
-    // writes nothing. Every view's buffer being of fixed size and never
-    // detached (DESIGN.md, "Trust surface"), the length is the view's
-    // typed-array length, which it states of its result: a safe integer equal
-    // to `view(b)`, at the return's positions (0 the result, 2 the view, the
-    // call's first actual).
+    // its buffer is detached: it reads the view's slots, runs no code, writes
+    // nothing and throws nothing. Every view's buffer being of fixed size and
+    // never detached (DESIGN.md, "Trust surface"), the length is the view's
+    // typed-array length (the note *Tolerant frames*, View-Length), which it
+    // states of its result: a safe integer equal to `view(b)`, at the
+    // return's positions (0 the result, 2 the view, the call's first actual).
     [byteLengthName]: () => ({ typeParams: [], type: { ...fn([views], atom("number")),
       effect: footprintEffect(emptyFootprint, { ensures: [
         { int: { slot: 0 } },
@@ -713,30 +715,30 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
       ] }) } }),
     // A view of bytes's [[Set]] at a number, ToPropertyKey's canonical
     // numeric string, of a number (ECMA-262, "TypedArray Objects",
-    // TypedArraySetElement): ToNumber of the number, which runs no code, and
-    // the element at a valid index set to it converted to the view's element
-    // type, no element at any other key, the prototype chain never read. It
-    // writes the view's element alone, and answers a number, the value the
-    // assignment is. Each typed array's elements are its view store's cells,
-    // and the views over one buffer share its bytes: a write sets the
-    // element's entry of the view store of every typed array over the
-    // written bytes to a fresh location holding what that view now reads
-    // there, which changes stores alone, keeps their lengths and present
-    // entries and lists no old location they did not list: within the
-    // store-growth footprint, every location but a view's element store
-    // keeps its contents, and each view's element store keeps its length,
-    // every cell it newly lists fresh (`elementWrite`,
-    // `CallEffects.ElementWrite.Holds`).
-    // Then, for each element type, a write at a safe integer `k`,
+    // TypedArraySetElement; the note *Tolerant frames*, View-Write): ToNumber
+    // of the number, which runs no code, and at a valid index the element set
+    // to the format's total conversion of it (`ViewFormat.conv`: a number
+    // that is not finite is 0, any other its integer part modulo 2^8, 2^16
+    // or 2^32 of `Uint8`, `Uint16` and `Int32`, the last read in
+    // [−2^31, 2^31); the number itself of `Float64`, every NaN as one),
+    // every other index of the view reading what it read; at a number that
+    // is no valid index no element changes. It throws nothing and answers
+    // the number, the value the assignment is. Each typed array's elements
+    // are its view store's cells, and the views over one buffer share its
+    // bytes: a write sets the element's entry of the view store of every
+    // typed array over the written bytes to a fresh location holding what
+    // that view now reads there, which changes view stores alone and keeps
+    // their lengths: the effect `{all-views: grow}` (`elementWrite`,
+    // `Kinds.ViewWrite.frame_iff`), within the store-growth footprint.
+    // Then, for each element type, the exact write at a safe integer `k`,
     // `0 ≤ k < view(b)`, a valid integer index, of a safe integer within the
     // element type's range (0 to 255 of a `Uint8Array`, 0 to 65535 of a
     // `Uint16Array`, −2^31 to 2^31 − 1 of an `Int32Array`, any of a
-    // `Float64Array`), which sets the view's element at `k` to the element
-    // type's conversion of the value (`CallEffects.ElementKind.convert`: the
-    // number denoting its integer, +0 of −0, for an integer type; the value
-    // for `Float64Array`) and no other element of the view: each element is
-    // its own bytes of the buffer (`elementWrite` of the element type, at
-    // the call's positions: 1 the view, 2 the index, 3 the value).
+    // `Float64Array`): the effect states the write's rule for every number
+    // (`CallEffects.ExactWrite`), and the precondition the range the pass
+    // reads it at, where the conversion keeps the value's integer, +0 of −0
+    // for an integer type (`elementWrite` of the element type, at the call's
+    // positions: 1 the view, 2 the index, 3 the value).
     [byteSetName]: () => {
       const value = (slot: number): LinearTerm => ({ kind: "value", slot, path: [] });
       const le = (form: [LinearTerm, number][], bound: number): IndexFact => ({ linear: { fact: { le: { form, bound } } } });

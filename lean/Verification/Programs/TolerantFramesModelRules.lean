@@ -155,10 +155,12 @@ def apartWorld : WorldT 1 :=
     (.identity, anyCtr)]
 
 theorem apartWorld_adm : WorldAdm apartWorld := by
-  intro l c hl
-  simp only [lookup, apartWorld, toList, entries_ofEntries] at hl
-  rcases l with _ | _ | _ | _ | _ | l <;> simp at hl <;> subst hl <;>
-    exact ⟨fun _ _ _ _ _ _ hv => hv, fun _ _ _ _ hv => hv⟩
+  refine ⟨fun l c hl => ?_, fun l f N hr => ?_⟩
+  · simp only [lookup, apartWorld, toList, entries_ofEntries] at hl
+    rcases l with _ | _ | _ | _ | _ | l <;> simp at hl <;> subst hl <;>
+      exact ⟨fun _ _ _ _ _ _ hv => hv, fun _ _ _ _ hv => hv⟩
+  · simp only [roleAt, roles, apartWorld, entries_ofEntries] at hr
+    rcases l with _ | _ | _ | _ | _ | l <;> simp at hr
 
 /-- A heap of `apartWorld`: `y`'s store listing cell 1, and `x`'s store
 listing cells among cell 1. -/

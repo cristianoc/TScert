@@ -366,7 +366,10 @@ theorem arr_alloc_rule_below {Q : Fam} {As : List Fam} (hA : ∀ A ∈ As, Adm A
       rw [trunc_trunc]
       exact hv (A, v) (List.mem_iff_getElem?.mpr ⟨i, List.getElem?_zip_eq_some.mpr ⟨hAi, hv'⟩⟩) j (by omega)
     refine ⟨href, Or.inr ⟨appendWs W₀ es, h ++ vs, .arr (elemSlots h.length vs.length),
-      WExt_appendWs _ _, WorldAdm_appendWs (WorldAdm_trunc _ hadm) hcadm,
+      WExt_appendWs _ _, WorldAdm_appendWs_plain (WorldAdm_trunc _ hadm) hcadm (fun e he f N => by
+        rw [show e.1 = Role.elem from by
+          have := (List.of_mem_zip he).1; simp only [List.mem_map] at this; obtain ⟨_, _, h⟩ := this; exact h.symm]
+        exact fun h => by cases h),
       .arrAlloc hvals hmax, ⟨hmeets, hsh.1⟩, ?_⟩⟩
     cases p with
     | zero => exact hsh.2
@@ -485,7 +488,7 @@ theorem set_grow_rule {ls : List (Option Nat)} {b : UInt64} {k : Nat} {A Q : Fam
       rw [trunc_trunc]
       exact hA.down_le (p + 1) j (by omega) W v hv
     refine ⟨href, Or.inr ⟨appendWs W₀ [(.elem, res A)], h ++ [v], .arr (placeAt ls k h.length),
-      WExt_appendWs _ _, WorldAdm_appendWs (WorldAdm_trunc _ hadm) hcadm,
+      WExt_appendWs _ _, WorldAdm_appendWs_plain (WorldAdm_trunc _ hadm) hcadm (by simp),
       .setGrow hval hk hn, ⟨hmeets, hsh.1⟩, ?_⟩⟩
     cases p with
     | zero => exact hsh.2

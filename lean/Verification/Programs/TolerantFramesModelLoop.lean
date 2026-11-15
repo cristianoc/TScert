@@ -277,7 +277,7 @@ theorem write_safe {Ξ T : Fam} (hT : ∀ n W, T n W .nul) {ρ : Env} {b : UInt6
           rcases i with _ | i <;> simp at hr hu
           subst hr; subst hu
           exact ⟨hv, RefsOk_mono hx2 (RefsOk_trunc _ (RefsOk_trunc _ hvr))⟩)
-    have ha2 : WorldAdm W2 := WorldAdm_appendWs (WorldAdm_trunc _ ha1) hcadm
+    have ha2 : WorldAdm W2 := WorldAdm_appendWs_plain (WorldAdm_trunc _ ha1) hcadm (by simp)
     have hnew : lookup W2 h.length = some (res srcF) := by
       have := lookup_appendWs W1 [((.elem : Role), (res srcF : Ctr n2))] (i := 0) (by simp)
       simp only [toList_length, Nat.add_zero] at this
@@ -673,11 +673,12 @@ theorem aliasWorld_roleAt {n l : Nat} {r : Role} (hl : roleAt (aliasWorld n) l =
   · exact .inr (.inr ⟨rfl, hl.symm⟩)
 
 theorem aliasWorld_adm (n : Nat) : WorldAdm (aliasWorld n) := by
-  intro l c hl
-  rcases aliasWorld_lookup hl with ⟨-, rfl⟩ | ⟨-, rfl⟩ | ⟨-, rfl⟩
-  · exact res_ctrAdm (listT_adm _) storeF_valOnly
-  · exact res_ctrAdm srcF_adm srcF_valOnly
-  · exact ⟨fun _ _ _ _ _ _ hv => hv, fun _ _ _ v hv => by simp only [idCtr] at hv; subst hv; rfl⟩
+  refine ⟨fun l c hl => ?_, fun l f N hr => ?_⟩
+  · rcases aliasWorld_lookup hl with ⟨-, rfl⟩ | ⟨-, rfl⟩ | ⟨-, rfl⟩
+    · exact res_ctrAdm (listT_adm _) storeF_valOnly
+    · exact res_ctrAdm srcF_adm srcF_valOnly
+    · exact ⟨fun _ _ _ _ _ _ hv => hv, fun _ _ _ v hv => by simp only [idCtr] at hv; subst hv; rfl⟩
+  · rcases aliasWorld_roleAt hr with ⟨-, h⟩ | ⟨-, h⟩ | ⟨-, h⟩ <;> cases h
 
 theorem aliasStore (n : Nat) : storeF n (aliasWorld n) (.arr [some 1]) := by
   refine ⟨_, rfl, fun _ _ => by simp [StorePresence, anyTuple], by simp [anyTuple], by decide,
