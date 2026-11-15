@@ -391,6 +391,26 @@ theorem selectedExits_entails (e : Evidence ι) {x : CallEffects.Exits CallEffec
           exact selectedExits_entails child hx he hp
 termination_by sizeOf e
 
+/-- A call's evidence selecting a signature selects exits. -/
+theorem selectedExits_of_effect (e : Evidence ι) {eff : CallEffects.Effect} (he : selectedEffect e = some eff) :
+    ∃ x, selectedExits e = some x := by
+  cases e with
+  | node j rule ps =>
+    cases rule <;> try simp only [selectedEffect, reduceCtorEq] at he
+    case app => exact ⟨_, rfl⟩
+    case construct => exact ⟨_, rfl⟩
+    case callRest => exact ⟨_, rfl⟩
+    case sub =>
+      cases ps with
+      | nil => simp [selectedEffect] at he
+      | cons child rest =>
+        cases rest with
+        | cons _ _ => simp [selectedEffect] at he
+        | nil =>
+          simp only [selectedEffect] at he
+          simpa only [selectedExits] using selectedExits_of_effect child he
+termination_by sizeOf e
+
 /-- A selected call's operands. All actual evaluation has already been
 lowered to earlier graph nodes; omitted arguments are the ordinary evidence's
 explicit `undefined` premises; a variadic call's spreads read their operands'
@@ -732,29 +752,6 @@ theorem construct_local_requires_sound [DecidableEq ι] {G : NormalGraph ι}
     · rw [hpad a ha]; rfl
   refine SafePostExc.weaken (fun _ _ hp => CallEffects.Effect.post_pad (by rw [hrecv]; rfl) hpad hp)
     (fun _ hp => CallEffects.Effect.excPost_pad hpad hp) (CallEffects.Effect.heldPosts_post (fun _ => hvp) hw hh hs)
-
-/-- A construction at a plain signature, whose precondition is empty. -/
-private theorem construct_local_sound [DecidableEq ι] {G : NormalGraph ι}
-    {images : PositiveCertificates.InstanceImageCheck G}
-    {j : Sequent ι} {ps : List (Sequent ι)} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
-    {e : CallEffects.Effect} (hl : LocalUsing G images j (.construct e) ps codes (sums := sums))
-    (ht : ∀ p ∈ ps, HasTyUsing G images p.context p.term p.type)
-    (hv : ∀ p ∈ ps, valueTerm p.term = true ∧ checkScope p.context.length p.term = true)
-    {ρ n W h} (he : EnvOk G j.context ρ n W) (hw : WorldAdm W) (hh : HeapOk n W h)
-    (href : RefsOk W (instantiate 0 ρ j.term)) :
-    SafePostExc (excOf G) (meaning G j.type) (e.post (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h)
-      (e.excPost (receiverOf (instantiate 0 ρ j.term)) (actualsOf (instantiate 0 ρ j.term)) h) n W h (instantiate 0 ρ j.term) := by
-  have hpl : e.plain = true := by
-    rcases j with ⟨Γ,t,A⟩
-    cases t <;> try exact (hl : False).elim
-    rcases ps with _ | ⟨jf, jas⟩
-    · exact (hl : False).elim
-    obtain ⟨-, -, -, -, -, hL⟩ := hl
-    split at hL
-    · exact hL.2.resolve_right (by simp)
-    · exact hL.elim
-  exact construct_local_requires_sound hl ht hv he hw hh
-    (CallEffects.Effect.requires_none (CallEffects.Effect.plain_requires hpl) (CallEffects.Effect.plain_pre hpl) _ _ h) href
 
 theorem map_spread_false : ∀ (flags : List Bool) (qs : List (Sequent ι)), (∀ b ∈ flags, b = false) →
     flags.length = qs.length →
@@ -1341,63 +1338,44 @@ private theorem callRestSpread_local_sound [DecidableEq ι] {G : NormalGraph ι}
       (fun _ _ _ _ hp => hp.elim .inr fun hp => .inl (CallEffects.Exits.callExit_held hheap (hforget .exceptional) hp))
       hfull
 
-/-- **A variadic call's guarantee read at its heaps**: safety at the
-selected exits (`selectedExits`) from entries held from the call's gives the
-heap postcondition of the signature the deciders read (`selectedEffect`),
-from the heap the call starts in: the exits entail its specification
-(`Effect.withoutActuals_entails`), which at an admissible transition is its
-postcondition (`Effect.postW_iff_exit`), at actuals that are values where it
-states an append of them. -/
-theorem callRest_heldPost_post {Ξ T : Fam} {e : CallEffects.Effect} {flags : List Bool} {r : Tm} {args : List Tm}
-    {n : Nat} {W : WorldT n} {h : Heap} {t : Tm} (hw : WorldAdm W) (hh : HeapOk n W h)
-    (hvals : flags.any id = false → CallArguments.Values args)
-    (hs : SafePostExcV Ξ T
-      ((if flags.any id then e.schema.forgetActuals else e.schema).heldPost r args W h)
-      ((if flags.any id then e.schema.forgetActuals else e.schema).heldExc r args W h) n W h t) :
-    SafePost Ξ T ((if flags.any id then e.withoutActuals else e).post r args h) n W h t := by
-  refine SafePostExc.post (SafePostExc.weaken (fun h' v hp => ?_) (fun _ hp => hp)
-    (CallEffects.SafePostExcV.heldPosts hw hh hs))
-  obtain ⟨s, s', rfl, rfl, hp⟩ := hp
-  have hx : (if flags.any id then e.withoutActuals else e).schema.exitPost .normal r args s s' v := by
-    by_cases hsp : flags.any id = true
-    · rw [if_pos hsp] at hp ⊢
-      exact e.withoutActuals_entails hp
-    · rw [if_neg hsp] at hp ⊢
-      exact hp
-  have hg : (if flags.any id then e.withoutActuals else e).receiverGrows = true → CallArguments.Values args := by
-    by_cases hsp : flags.any id = true
-    · rw [if_pos hsp]; intro hg; cases hg
-    · rw [if_neg hsp]; intro _; exact hvals (by simpa using hsp)
-  exact ((CallEffects.Effect.postW_iff_exit (CallEffects.Exits.exitPost_admissible hx) hg).mpr
-    ((CallEffects.Exits.exitPostW_iff _ _ _ _ s s' v).mpr hx)).1
-
-/-- **A selected call meets its signature's postcondition**, at its receiver,
-from the heap it starts in. -/
-theorem selected_sound [DecidableEq ι] {G : NormalGraph ι}
+/-- **A selected call at its selected exits** (the note's Call, then
+consequence): the call is safe at its evidence's exits (`selectedExits`) at
+its receiver and its actuals followed by the `undefined` of the positions a
+construction omits, from an entry held from the call's; the receiver owns no
+store where positions are omitted, and the actuals are values where the
+signature the deciders read states an append of them. -/
+theorem selected_exits_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} (e : Evidence ι)
     {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} (ht : checkTreeUsing G images e codes sums = true)
-    (hp : selectedOperands e = true) {eff : CallEffects.Effect} (hsel : selectedEffect e = some eff)
+    (hp : selectedOperands e = true) {x : CallEffects.Exits CallEffects.ExitSchema} (hsel : selectedExits e = some x)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ n W h} (he : EnvOk G (claim e).context ρ n W)
     (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ (claim e).term)) :
-    SafePost (excOf G) (meaning G (claim e).type) (eff.post (receiverOf (instantiate 0 ρ (claim e).term)) (actualsOf (instantiate 0 ρ (claim e).term)) h)
-      n W h (instantiate 0 ρ (claim e).term) := by
+    ∃ pad : List Tm, (∀ a ∈ pad, a = .undef) ∧
+      (pad = [] ∨ Footprints.storeOf (receiverOf (instantiate 0 ρ (claim e).term)) = none) ∧
+      (∀ eff, selectedEffect e = some eff → eff.receiverGrows = true →
+        CallArguments.Values (actualsOf (instantiate 0 ρ (claim e).term) ++ pad)) ∧
+      SafePostExcV (excOf G) (meaning G (claim e).type)
+        (x.heldPost (receiverOf (instantiate 0 ρ (claim e).term)) (actualsOf (instantiate 0 ρ (claim e).term) ++ pad) W h)
+        (x.heldExc (receiverOf (instantiate 0 ρ (claim e).term)) (actualsOf (instantiate 0 ρ (claim e).term) ++ pad) W h)
+        n W h (instantiate 0 ρ (claim e).term) := by
   cases e with
   | node j r ps =>
     simp only [claim] at he href ⊢
     simp only [checkTreeUsing_eq, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at ht
-    cases r <;> try simp only [selectedEffect, reduceCtorEq] at hsel
+    cases r <;> try simp only [selectedExits, reduceCtorEq] at hsel
     case app effect =>
       cases hsel
       simp only [selectedOperands] at hp
-      refine SafePostExc.post (call_local_sound ht.1 ?_ ?_ he hw hh
-        (CallEffects.Effect.requires_none (app_requires_none ht.1).1 (app_requires_none ht.1).2 _ _ _) href)
-      · intro p hm
-        obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
-        exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes hsums
-      · intro p hm
-        obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
-        exact by simpa only [Bool.and_eq_true] using List.all_eq_true.mp hp e heq
+      obtain ⟨hact, hs⟩ := call_local_exits ht.1 (fun p hm => by
+          obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
+          exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes hsums)
+        (fun p hm => by
+          obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
+          exact by simpa only [Bool.and_eq_true] using List.all_eq_true.mp hp e heq) he hw hh
+        (CallEffects.Effect.requires_none (app_requires_none ht.1).1 (app_requires_none ht.1).2 _ _ _) href
+      refine ⟨[], by simp, .inl rfl, fun _ _ _ => by simpa using hact, ?_⟩
+      simpa only [List.append_nil] using hs
     case callRest effect k u flags P =>
       cases hsel
       simp only [selectedOperands, Bool.and_eq_true, Bool.or_eq_true] at hp
@@ -1410,8 +1388,12 @@ theorem selected_sound [DecidableEq ι] {G : NormalGraph ι}
         intro p hm
         obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
         exact List.all_eq_true.mp hscope e heq
+      refine ⟨[], by simp, .inl rfl, ?_⟩
+      simp only [List.append_nil]
       by_cases hsp : flags.any id = true
-      · refine callRest_heldPost_post hw hh (fun h => by rw [hsp] at h; cases h) ?_
+      · refine ⟨fun eff heff hg => ?_, ?_⟩
+        · simp only [selectedEffect, hsp, if_true, Option.some.injEq] at heff
+          subst heff; cases hg
         rw [if_pos hsp]
         rcases hp with hvals | ⟨-, hops⟩
         · exact callRestSpread_local_sound ht.1 hsp typed inScope (.inr (by simpa using hvals)) he hw hh href
@@ -1429,35 +1411,108 @@ theorem selected_sound [DecidableEq ι] {G : NormalGraph ι}
         obtain ⟨hact, hs⟩ := callRest_local_sound ht.1 hnos typed (fun p hm => by
           obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
           exact ⟨List.all_eq_true.mp hvals e heq, List.all_eq_true.mp hscope e heq⟩) he hw hh href
-        refine callRest_heldPost_post hw hh (fun _ => hact) ?_
+        refine ⟨fun _ _ _ => hact, ?_⟩
         rw [if_neg hsp]
         exact hs
     case construct effect =>
       cases hsel
       simp only [selectedOperands] at hp
-      refine SafePostExc.post (construct_local_sound ht.1 ?_ ?_ he hw hh href)
-      · intro p hm
-        obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
-        exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes hsums
-      · intro p hm
-        obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
-        exact by simpa only [Bool.and_eq_true] using List.all_eq_true.mp hp e heq
+      have hl := ht.1
+      have hpl : effect.plain = true := by
+        rcases j with ⟨Γ,t,A⟩
+        cases t <;> try exact (hl : False).elim
+        rcases ps with _ | ⟨jf, jas⟩
+        · exact (hl : False).elim
+        obtain ⟨-, -, -, -, -, hL⟩ := hl
+        split at hL
+        · exact hL.2.resolve_right (by simp)
+        · exact hL.elim
+      obtain ⟨hrecv, hact, pad, hpad, hs⟩ := construct_local_exits hl (fun p hm => by
+          obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
+          exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes hsums)
+        (fun p hm => by
+          obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
+          exact by simpa only [Bool.and_eq_true] using List.all_eq_true.mp hp e heq) he hw hh
+        (CallEffects.Effect.requires_none (CallEffects.Effect.plain_requires hpl) (CallEffects.Effect.plain_pre hpl)
+          _ _ h) href
+      refine ⟨pad, hpad, .inr (by rw [hrecv]; rfl), fun _ _ _ a ha => ?_, hs⟩
+      rcases List.mem_append.mp ha with ha | ha
+      · exact hact a ha
+      · rw [hpad a ha]; rfl
     case sub proof =>
       cases ps with
-      | nil => simp [selectedEffect] at hsel
+      | nil => simp [selectedExits] at hsel
       | cons child rest =>
         cases rest with
-        | cons _ _ => simp [selectedEffect] at hsel
+        | cons _ _ => simp [selectedExits] at hsel
         | nil =>
-          simp only [selectedEffect] at hsel
+          simp only [selectedExits] at hsel
           simp only [selectedOperands] at hp
           obtain ⟨hctx,hterm,hsub⟩ := ht.1
-          have ih := selected_sound child (ht.2 ⟨child,by simp⟩ (by simp)) hp hsel hcodes hsums
-            (ρ := ρ) (n := n) (W := W) (h := h) (by rw [hctx]; exact he) hw hh (by rw [hterm]; exact href)
-          rw [hterm] at ih
-          exact consequence (fun j W v hv => PositiveCertificates.acceptedUsing hsub j W v hv)
-            (fun _ _ hp => hp) ih
+          obtain ⟨pad, hpad, hrecv, hvals, ih⟩ := selected_exits_sound child (ht.2 ⟨child,by simp⟩ (by simp)) hp hsel
+            hcodes hsums (ρ := ρ) (n := n) (W := W) (h := h) (by rw [hctx]; exact he) hw hh (by rw [hterm]; exact href)
+          rw [hterm] at hrecv hvals ih
+          exact ⟨pad, hpad, hrecv, fun eff heff => hvals eff (by simpa [selectedEffect] using heff),
+            SafePostExcV.mono_result (fun j W v hv => PositiveCertificates.acceptedUsing hsub j W v hv) ih⟩
 termination_by sizeOf e
+
+/-- The selected exits read at the heaps of a run: the signature the
+deciders read (`selectedEffect`) at its postconditions, its actuals those of
+the call (`selectedExits_entails`, `Effect.postW_iff_exit`,
+`Effect.post_pad`). -/
+theorem selectedExits_heldPost_post {Ξ T : Fam} {x : CallEffects.Exits CallEffects.ExitSchema}
+    {eff : CallEffects.Effect} (ev : Evidence ι) (hx : selectedExits ev = some x) (he : selectedEffect ev = some eff)
+    {r : Tm} {args pad : List Tm} (hpad : ∀ a ∈ pad, a = .undef) (hrecv : pad = [] ∨ Footprints.storeOf r = none)
+    (hvals : eff.receiverGrows = true → CallArguments.Values (args ++ pad))
+    {n : Nat} {W : WorldT n} {h : Heap} {t : Tm} (hw : WorldAdm W) (hh : HeapOk n W h)
+    (hs : SafePostExcV Ξ T (x.heldPost r (args ++ pad) W h) (x.heldExc r (args ++ pad) W h) n W h t) :
+    SafePostExc Ξ T (eff.post r args h) (eff.excPost r args h) n W h t := by
+  refine SafePostExc.weaken (fun h' v hp => ?_) (fun h' hp => ?_) (CallEffects.SafePostExcV.heldPosts hw hh hs)
+  · obtain ⟨s, s', rfl, rfl, hp⟩ := hp
+    have hp' := selectedExits_entails ev hx he hp
+    have hq := ((CallEffects.Effect.postW_iff_exit (CallEffects.Exits.exitPost_admissible hp') hvals).mpr
+      ((CallEffects.Exits.exitPostW_iff _ _ _ _ s s' v).mpr hp')).1
+    rcases hrecv with rfl | hr
+    · simpa using hq
+    · exact CallEffects.Effect.post_pad hr hpad hq
+  · rcases hp with ⟨v, s, s', rfl, rfl, hp⟩ | rfl
+    · have hp' := selectedExits_entails ev hx he hp
+      exact CallEffects.Effect.excPost_pad hpad
+        ((CallEffects.Effect.excPostW_iff_exit (CallEffects.Exits.exitPost_admissible hp')).mpr
+          ((CallEffects.Exits.exitPostW_iff _ _ _ _ s s' v).mpr hp'))
+    · intro _
+      exact Footprints.Post.refl _ _ _
+
+/-- **A selected call meets its signature's postcondition**, at its receiver,
+from the heap it starts in: its selected exits read at its heaps
+(`selected_exits_sound`, `selectedExits_heldPost_post`). -/
+theorem selected_posts_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} (e : Evidence ι)
+    {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} (ht : checkTreeUsing G images e codes sums = true)
+    (hp : selectedOperands e = true) {eff : CallEffects.Effect} (hsel : selectedEffect e = some eff)
+    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
+    {ρ n W h} (he : EnvOk G (claim e).context ρ n W)
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ (claim e).term)) :
+    SafePostExc (excOf G) (meaning G (claim e).type)
+      (eff.post (receiverOf (instantiate 0 ρ (claim e).term)) (actualsOf (instantiate 0 ρ (claim e).term)) h)
+      (eff.excPost (receiverOf (instantiate 0 ρ (claim e).term)) (actualsOf (instantiate 0 ρ (claim e).term)) h)
+      n W h (instantiate 0 ρ (claim e).term) := by
+  obtain ⟨x, hx⟩ : ∃ x, selectedExits e = some x := selectedExits_of_effect e hsel
+  obtain ⟨pad, hpad, hrecv, hvals, hs⟩ := selected_exits_sound e ht hp hx hcodes hsums he hw hh href
+  exact selectedExits_heldPost_post e hx hsel hpad hrecv (hvals eff hsel) hw hh hs
+
+/-- **A selected call meets its signature's postcondition**, at its receiver,
+from the heap it starts in (`selected_posts_sound`). -/
+theorem selected_sound [DecidableEq ι] {G : NormalGraph ι}
+    {images : PositiveCertificates.InstanceImageCheck G} (e : Evidence ι)
+    {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} (ht : checkTreeUsing G images e codes sums = true)
+    (hp : selectedOperands e = true) {eff : CallEffects.Effect} (hsel : selectedEffect e = some eff)
+    (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
+    {ρ n W h} (he : EnvOk G (claim e).context ρ n W)
+    (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ (claim e).term)) :
+    SafePost (excOf G) (meaning G (claim e).type) (eff.post (receiverOf (instantiate 0 ρ (claim e).term)) (actualsOf (instantiate 0 ρ (claim e).term)) h)
+      n W h (instantiate 0 ρ (claim e).term) :=
+  (selected_posts_sound e ht hp hsel hcodes hsums he hw hh href).post
 
 theorem selectedCall_sound [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} {Φ : Footprints.Closed} (e : Evidence ι)
@@ -2464,57 +2519,14 @@ return and on a throw, at its receiver, from the heap it starts in. -/
 theorem selected_sound_exc [DecidableEq ι] {G : NormalGraph ι}
     {images : PositiveCertificates.InstanceImageCheck G} (e : Evidence ι)
     {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)} (ht : checkTreeUsing G images e codes sums = true)
-    (hp : selectedOperands e = true) (hthrows : selectedThrows e = true)
+    (hp : selectedOperands e = true) (_hthrows : selectedThrows e = true)
     {eff : CallEffects.Effect} (hsel : selectedEffect e = some eff)
     (hcodes : CodesSound G codes) (hsums : SummariesSound G images sums)
     {ρ n W h} (he : EnvOk G (claim e).context ρ n W)
     (hw : WorldAdm W) (hh : HeapOk n W h) (href : RefsOk W (instantiate 0 ρ (claim e).term)) :
     SafePostExc (excOf G) (meaning G (claim e).type) (eff.post (receiverOf (instantiate 0 ρ (claim e).term)) (actualsOf (instantiate 0 ρ (claim e).term)) h)
-      (eff.excPost (receiverOf (instantiate 0 ρ (claim e).term)) (actualsOf (instantiate 0 ρ (claim e).term)) h) n W h (instantiate 0 ρ (claim e).term) := by
-  cases e with
-  | node j r ps =>
-    simp only [claim] at he href ⊢
-    simp only [checkTreeUsing_eq, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at ht
-    cases r <;> try simp only [selectedEffect, reduceCtorEq] at hsel
-    case app effect =>
-      cases hsel
-      simp only [selectedOperands] at hp
-      refine call_local_sound ht.1 ?_ ?_ he hw hh (CallEffects.Effect.requires_none (app_requires_none ht.1).1 (app_requires_none ht.1).2 _ _ _) href
-      · intro p hm
-        obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
-        exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes hsums
-      · intro p hm
-        obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
-        exact by simpa only [Bool.and_eq_true] using List.all_eq_true.mp hp e heq
-    case callRest => simp [selectedThrows] at hthrows
-    case construct effect =>
-      cases hsel
-      simp only [selectedOperands] at hp
-      refine construct_local_sound ht.1 ?_ ?_ he hw hh href
-      · intro p hm
-        obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
-        exact checkTreeUsing_sound e (ht.2 ⟨e,heq⟩ (by simp)) hcodes hsums
-      · intro p hm
-        obtain ⟨e,heq,rfl⟩ := List.mem_map.mp hm
-        exact by simpa only [Bool.and_eq_true] using List.all_eq_true.mp hp e heq
-    case sub proof =>
-      cases ps with
-      | nil => simp [selectedEffect] at hsel
-      | cons child rest =>
-        cases rest with
-        | cons _ _ => simp [selectedEffect] at hsel
-        | nil =>
-          simp only [selectedEffect] at hsel
-          simp only [selectedOperands] at hp
-          simp only [selectedThrows] at hthrows
-          obtain ⟨hctx,hterm,hsub⟩ := ht.1
-          have ih := selected_sound_exc child (ht.2 ⟨child,by simp⟩ (by simp)) hp hthrows hsel hcodes hsums
-            (ρ := ρ) (n := n) (W := W) (h := h) (by rw [hctx]; exact he) hw hh (by rw [hterm]; exact href)
-          rw [hterm] at ih
-          exact SafePostExc.consequence_below' (fun _ _ _ _ h => h)
-            (fun j _ W v hv => PositiveCertificates.acceptedUsing hsub j W v hv)
-            (fun _ _ hp => hp) (fun _ hp => hp) ih
-termination_by sizeOf e
+      (eff.excPost (receiverOf (instantiate 0 ρ (claim e).term)) (actualsOf (instantiate 0 ρ (claim e).term)) h) n W h (instantiate 0 ρ (claim e).term) :=
+  selected_posts_sound e ht hp hsel hcodes hsums he hw hh href
 
 /-! ## A write's local effect
 
