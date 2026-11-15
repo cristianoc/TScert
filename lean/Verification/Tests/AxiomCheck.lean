@@ -1,6 +1,7 @@
 import Verification.Semantics.ViewStores
 import Verification.Semantics.ExitSummaries
 import Verification.Semantics.CommandSummaries
+import Verification.Semantics.CommandComposition
 import Verification.Programs.TolerantFramesExitStructural
 import Verification.Programs.TolerantFramesExitHeadExtraction
 import Verification.Programs.TolerantFramesExitNonHeadExtraction
@@ -281,6 +282,12 @@ run_cmd do
   check ``Verification.CallEffects.holds_carry
   check ``Verification.CallEffects.ExitSpec.weakenCheck_sound
   check ``Verification.CallEffects.CommandSummary.Sound.weaken
+  check ``Verification.CallEffects.rebases_of_rebaseOk
+  check ``Verification.CallEffects.Post.compose_rebases
+  check ``Verification.CallEffects.Post.seq_eff
+  check ``Verification.CallEffects.ThenEvidence.sound
+  check ``Verification.CallEffects.Runs.then_sound
+  check ``Verification.CallEffects.CommandSummary.seq_sound
   check ``Verification.Parity.OperationPost.holds_shift
   check ``Verification.Footprints.Region.sub_mem
   check ``Verification.Footprints.CellsFrom.of_post
