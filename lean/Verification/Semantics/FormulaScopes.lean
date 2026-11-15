@@ -1,5 +1,5 @@
-import Verification.Semantics.ExitSummaries
-import Verification.Semantics.ParityDerivations
+import Verification.Semantics.AssertionScopes
+import Verification.Semantics.ExitSchemas
 
 /-! # A scoped formula reads its scope alone
 

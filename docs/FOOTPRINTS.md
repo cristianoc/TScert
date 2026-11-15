@@ -1258,8 +1258,11 @@ meets at its signature (`PromiseWith`). Code states no append and no element
 write (`Effect.below`), and at its exits its heap postconditions and its
 exits agree on every admissible state a run reaches (`Effect.safe_exits`,
 `Effect.safe_fields`). A code's signature is about its receiver and its
-parameters (`Effect.belowRow`), so its exits at the actuals it takes hold
-at every call extending them (`Effect.exitPost_take`,
+parameters (`Effect.belowRow`): its summary is the same at every arity and
+reads the receiver, those parameters and the result alone
+(`Effect.summary_arity`, `Effect.summary_scoped`), so by scope congruence
+(`ExitSpec.holds_scoped_congr`) its exits at the actuals it takes hold at
+every call extending them (`Effect.exitPost_take`,
 `Effect.safe_exits_take`).
 
 **Provenance stamps** (`FootprintProvenance.lean`: marks, `after` and

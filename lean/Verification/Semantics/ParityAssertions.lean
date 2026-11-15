@@ -1,5 +1,6 @@
 import Verification.Semantics.TolerantFramesCells
 import Verification.Semantics.FootprintRebase
+import Verification.Semantics.AssertionScopes
 
 /-! # Parity assertions
 
@@ -44,15 +45,6 @@ def regionEnvFree : Region → Bool
 /-- An effect every region of which is read without the name valuation. -/
 def effectEnvFree (Φ : Footprint) : Bool := Φ.all fun e => regionEnvFree e.1
 
-/-- The slots a region reads its roots at. -/
-def regionRoots : Region → List Nat
-  | .field x _ | .own x | .elems x | .path x _ _ | .pathOwn x _ | .pathElems x _ | .store x _ => [x]
-  | .cls _ | .all | .cell _ => []
-  | .inCls r _ => regionRoots r
-
-/-- An effect reading runtime slots below `n` alone. -/
-def effectScoped (n : Nat) (Φ : Footprint) : Bool := Φ.all fun e => (regionRoots e.1).all (· < n)
-
 /-- **An ordinary array store stays one** along every admissible
 transition: its contents keep their category, an array store
 (`Admissible.contentsCategory`). -/
@@ -72,8 +64,6 @@ variable {Φ : Footprint} {η η' : Env} {s s' s'' : IndexedHeap}
 
 theorem EffectAction.refl (Φ : Footprint) (η : Env) (s : IndexedHeap) : EffectAction Φ η s s :=
   TolerantFrames.Action.refl Φ η s
-
-theorem EffectAction.admissible (h : EffectAction Φ η s s') : Admissible s s' := h.1
 
 private theorem region_mem_envFree {r : Region} (hr : regionEnvFree r = true) (hp : Heap) (l : Nat) :
     r.mem η hp l = r.mem η' hp l := by
@@ -105,47 +95,6 @@ theorem EffectAction.closed_mono {a b : Footprints.Closed} (hle : a.le b = true)
     EffectAction b.fp η s s' :=
   action_le_closed hle h
 
-/-- **An effect with its roots renamed acts as the effect at the renamed
-valuation** (`Footprints.Region.mem_rename`). -/
-theorem EffectAction.rename_iff (σ : Nat → Nat) :
-    EffectAction (Footprint.rename σ Φ) η s s' ↔ EffectAction Φ (fun i => η (σ i)) s s' := by
-  have hm : ∀ (r : Region) l, (r.rename σ).mem η s.h l = r.mem (fun i => η (σ i)) s.h l :=
-    fun r l => Region.mem_rename σ η s.h l r
-  constructor
-  · rintro ⟨ha, hl, hp⟩
-    refine ⟨ha, hl, fun l v hv => ?_⟩
-    obtain ⟨v', hv', hal⟩ := hp l v hv
-    refine ⟨v', hv', hal.imp_right fun ⟨e, he, hme, hc⟩ => ?_⟩
-    obtain ⟨e0, he0, rfl⟩ := List.mem_map.mp he
-    exact ⟨e0, he0, by rw [← hm]; exact hme, hc⟩
-  · rintro ⟨ha, hl, hp⟩
-    refine ⟨ha, hl, fun l v hv => ?_⟩
-    obtain ⟨v', hv', hal⟩ := hp l v hv
-    refine ⟨v', hv', hal.imp_right fun ⟨e, he, hme, hc⟩ => ?_⟩
-    exact ⟨(e.1.rename σ, e.2), List.mem_map.mpr ⟨e, he, rfl⟩, by rw [hm]; exact hme, hc⟩
-
-private theorem region_mem_congr {r : Region} {η η' : Env} (he : ∀ x ∈ regionRoots r, η x = η' x) (hp : Heap)
-    (l : Nat) : r.mem η hp l = r.mem η' hp l := by
-  induction r with
-  | inCls r _ ih => simp only [Region.mem, ih (by simpa [regionRoots] using he)]
-  | cls _ | all | cell _ => rfl
-  | _ => simp only [regionRoots, List.mem_singleton, forall_eq] at he; simp only [Region.mem, he]
-
-/-- **An effect acts alike at valuations agreeing on its roots.** -/
-theorem EffectAction.congr_roots {η' : Env} (he : ∀ x, (∃ e ∈ Φ, x ∈ regionRoots e.1) → η' x = η x) :
-    EffectAction Φ η' s s' ↔ EffectAction Φ η s s' := by
-  have hm : ∀ e ∈ Φ, ∀ l, e.1.mem η' s.h l = e.1.mem η s.h l :=
-    fun e he' l => region_mem_congr (fun x hx => he x ⟨e, he', hx⟩) s.h l
-  constructor
-  · rintro ⟨ha, hl, hp⟩
-    refine ⟨ha, hl, fun l v hv => ?_⟩
-    obtain ⟨v', hv', hal⟩ := hp l v hv
-    exact ⟨v', hv', hal.imp_right fun ⟨e, he', hme, hc⟩ => ⟨e, he', by rw [← hm e he']; exact hme, hc⟩⟩
-  · rintro ⟨ha, hl, hp⟩
-    refine ⟨ha, hl, fun l v hv => ?_⟩
-    obtain ⟨v', hv', hal⟩ := hp l v hv
-    exact ⟨v', hv', hal.imp_right fun ⟨e, he', hme, hc⟩ => ⟨e, he', by rw [hm e he']; exact hme, hc⟩⟩
-
 /-- Entrywise region inclusion includes the actions (`Footprints.Post.mono`,
 `Region.sub_mem`), read with no class claim on fields. -/
 theorem EffectAction.regions_mono {Ψ : Footprint} (hle : Footprint.le (fun _ _ => none) Φ Ψ = true)
@@ -166,18 +115,6 @@ theorem supported_of_pairs {S : Footprint} (ha : EffectAction Φ η s s')
   · rcases hp e he e' he' with hle | hd
     · exact hc.mono hle
     · rw [hd l hl] at hm; cases hm
-
-/-- **Entrywise coverage includes the actions**: where every location an
-entry of `Φ` selects at the first state is selected by an entry of `Ψ` with
-a larger change, an action of `Φ` is one of `Ψ`. -/
-theorem EffectAction.mono_entries {Ψ : Footprint}
-    (hcov : ∀ e ∈ Φ, ∀ l, e.1.mem η s.h l = true → ∃ e' ∈ Ψ, e'.1.mem η s.h l = true ∧ e.2.le e'.2 = true)
-    (ha : EffectAction Φ η s s') : EffectAction Ψ η s s' := by
-  refine ⟨ha.1, ha.2.1, fun l v hv => ?_⟩
-  obtain ⟨v', hv', hal⟩ := ha.2.2 l v hv
-  refine ⟨v', hv', hal.imp_right fun ⟨e, he, hm, hc⟩ => ?_⟩
-  obtain ⟨e', he', hm', hle⟩ := hcov e he l hm
-  exact ⟨e', he', hm', hc.mono hle⟩
 
 /-- **An effect whose regions read the same locations at both states of a
 first action composes with a second** (the note, §3, "Order, top,
@@ -296,9 +233,6 @@ end Action
 /-! ## Paths and witnesses -/
 
 namespace Path
-
-/-- The variable `x`: the empty path at slot `x`. -/
-def var (x : Nat) : Path := ⟨x, []⟩
 
 /-- The current term of kind `k` read at the end of the path. -/
 def term (k : Term.Kind) (p : Path) : Term := Term.now k p.root p.fields

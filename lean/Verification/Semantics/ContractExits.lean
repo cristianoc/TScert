@@ -1,5 +1,6 @@
 import Verification.Semantics.ExitSummaries
 import Verification.Semantics.ExitWorlds
+import Verification.Semantics.FormulaScopes
 
 /-! # A signature's contract read per exit
 
@@ -172,43 +173,102 @@ theorem Effect.exitPost_summary {e : Effect} {c : Completion} {r : Tm} {args : L
   unfold Exits.exitPost
   rw [Effect.schema_atArity]
 
+/-- **A module function's summary reads its own positions**: where its
+effect is about the receiver and its first `n` parameters
+(`Effect.belowRow`), its frames read call positions up to `n` and its
+postconditions the entry positions up to `n` and the exit positions up to
+`n + 1`. -/
+theorem Effect.summary_scoped {e : Effect} {n : Nat} (h : e.belowRow n = true) (k : Nat)
+    (arena : AssertionArena) :
+    effectScoped (n + 1) (e.summary k).normal.frame = true ∧
+      (e.summary k).normal.ensures.all (FormulaF.scoped arena ⟨n + 1, n + 2⟩) = true ∧
+      effectScoped (n + 1) (e.summary k).exceptional.frame = true ∧ (e.summary k).exceptional.ensures = [] := by
+  have hb := Effect.belowRow_below h
+  have hreg : e.regions = [] := Effect.below_regions (e := { e with ensures := [] }) hb
+  have hg : e.receiverGrows = false := Effect.below_grows (e := { e with ensures := [] }) hb
+  have hx : e.elementWrite = none := Effect.below_write (e := { e with ensures := [] }) hb
+  have hframe : effectScoped (n + 1) e.frame = true := by
+    unfold effectScoped
+    refine List.all_eq_true.mpr fun x hx' => ?_
+    rcases Effect.mem_frame hx' with hc | hr | ⟨q, hq, -⟩
+    · obtain ⟨S, hS⟩ := Closed.fp_entry_cls hc
+      simp [hS, regionRoots]
+    · unfold Effect.receiverEntries at hr
+      split at hr
+      · simp only [List.mem_singleton] at hr; subst hr; simp [regionRoots]
+      · split at hr
+        · simp only [List.mem_singleton] at hr; subst hr; simp [regionRoots]
+        · cases hr
+    · rw [hreg] at hq; cases hq
+  have htop : effectScoped (n + 1) topEffect = true := rfl
+  refine ⟨hframe, ?_, ?_, ?_⟩
+  · simp only [Effect.summary, Effect.normalPosts, hg, hx, Bool.false_eq_true, if_false,
+      List.append_nil, List.all_append, Bool.and_eq_true]
+    refine ⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩
+    · cases e.fresh <;> simp [FormulaF.scoped, OperationPostF.scoped]
+    · cases e.freshObject <;> simp [FormulaF.scoped, OperationPostF.scoped]
+    · cases e.elements <;> simp [FormulaF.scoped, OperationPostF.scoped]
+    · refine List.all_eq_true.mpr fun F hF => ?_
+      obtain ⟨G, hG, rfl⟩ := List.mem_map.mp hF
+      simp only [FormulaF.scoped, OperationPostF.scoped, Scope.count, Nat.add_zero, Bool.and_eq_true,
+        List.all_eq_true, decide_eq_true_eq]
+      exact ⟨fun i hi => decide_eq_true (by have := Effect.belowRow_ensures h G hG i hi; omega),
+        fun i hi => by have := Effect.belowRow_ensures_entry h G hG i hi; omega⟩
+  · simp only [Effect.summary]
+    split
+    · exact hframe
+    · exact htop
+  · simp only [Effect.summary]
+    split <;> rfl
+
+/-- **A signature about its receiver and its first `n` parameters has one
+summary at every arity** (`Effect.belowRow`): it states no append of the
+actuals and no element write, the postconditions that read the arity. -/
+theorem Effect.summary_arity {e : Effect} {n : Nat} (hb : e.belowRow n = true) (k k' : Nat) :
+    e.summary k = e.summary k' := by
+  have hb0 := Effect.belowRow_below hb
+  have hg : e.receiverGrows = false := Effect.below_grows (e := { e with ensures := [] }) hb0
+  have hx : e.elementWrite = none := Effect.below_write (e := { e with ensures := [] }) hb0
+  simp [Effect.summary, Effect.normalPosts, hg, hx]
+
+/-- **A call and the call of its first `m ≥ n` actuals agree below the
+scope of the receiver and the first `n` parameters**: the same entry
+values at positions up to `n`, the same exit values at positions up to
+`n + 1`. -/
+theorem callState_agreeBelow_take {n m : Nat} (hm : n ≤ m) (r : Tm) (args : List Tm) (v : Tm) (k : Nat)
+    (s s' : IndexedHeap) :
+    (callState r args v k s s').AgreeBelow ⟨n + 1, n + 2⟩ (callState r (args.take m) v k s s') := by
+  have hc : ∀ i < n + 1, callEnv r (args.take m) i = callEnv r args i := by
+    intro i hi
+    unfold callEnv
+    split
+    · rfl
+    · simp only [List.getD_eq_getElem?_getD, List.getElem?_take]
+      rw [if_pos (by omega)]
+  refine ⟨hc, fun i hi => ?_, rfl, rfl, rfl⟩
+  change i < n + 2 at hi
+  show ensuresEnv v r (args.take m) i = ensuresEnv v r args i
+  unfold ensuresEnv
+  split
+  · rfl
+  · exact hc _ (by omega)
+
 /-- **A guarantee about the receiver and the first `n` parameters holds at
 every call extending the call of its first `m ≥ n` actuals**
-(`Effect.belowRow`): the frame reads no actual (`Effect.within_args`), a
-fresh result, a fresh object and the receiver's elements read the result and
-the receiver, each ensured fact positions up to `n` (`Effect.ensures_take`),
-and no postcondition names a sequence of the actuals. -/
+(`Effect.belowRow`): its summary is the same at both arities
+(`Effect.summary_arity`) and reads the receiver, the first `n` parameters
+and the result alone (`Effect.summary_scoped`), at which the two calls
+agree (`callState_agreeBelow_take`, `ExitSpec.holds_scoped_congr`). -/
 theorem Effect.exitPost_take {e : Effect} {n m : Nat} (hb : e.belowRow n = true) (hm : n ≤ m) {c : Completion}
     {r : Tm} {args : List Tm} {s s' : IndexedHeap} {v : Tm} (hp : e.schema.exitPost c r (args.take m) s s' v) :
     e.schema.exitPost c r args s s' v := by
-  have hb0 := Effect.belowRow_below hb
-  have hreg : e.regions = [] := Effect.below_regions (e := { e with ensures := [] }) hb0
-  have hg : e.receiverGrows = false := Effect.below_grows (e := { e with ensures := [] }) hb0
-  have hx : e.elementWrite = none := Effect.below_write (e := { e with ensures := [] }) hb0
   rw [Effect.exitPost_summary] at hp ⊢
-  have hframe : ∀ Φ : Footprint, (Φ = e.frame ∨ Φ = topEffect) →
-      EffectAction Φ (callEnv r (args.take m)) s s' → EffectAction Φ (callEnv r args) s s' := by
-    rintro Φ (rfl | rfl) h
-    · exact ⟨h.1, Effect.within_args hreg h.2⟩
-    · exact EffectAction.top h.1
-  have hlen : ∀ k k', e.normalPosts k = e.normalPosts k' := fun k k' => by
-    simp [Effect.normalPosts, hg, hx]
+  rw [Effect.summary_arity hb (args.take m).length args.length] at hp
+  have hs := callState_agreeBelow_take hm r args v s.h.length s s'
+  obtain ⟨h₁, h₂, h₃, h₄⟩ := Effect.summary_scoped hb args.length AssertionArena.empty
   cases c with
-  | normal =>
-    refine ⟨hframe _ (.inl rfl) hp.1, fun F hF => ?_⟩
-    change F ∈ e.normalPosts args.length at hF
-    have hH := hp.2 F (show F ∈ e.normalPosts (args.take m).length by rw [hlen]; exact hF)
-    simp only [Effect.normalPosts, hg, hx, Bool.false_eq_true, if_false, List.append_nil, List.mem_append,
-      List.mem_map] at hF
-    rcases hF with ((hf | ho) | hel) | ⟨G, hG, rfl⟩
-    · cases hc : e.fresh <;> simp [hc] at hf; subst hf; exact hH
-    · cases hc : e.freshObject <;> simp [hc] at ho; subst ho; exact hH
-    · cases hc : e.elements <;> simp [hc] at hel; subst hel; exact hH
-    · exact (Effect.ensures_take hb hm hG v r args s.h s'.h).mp hH
-  | exceptional =>
-    cases ho : e.onThrow <;> simp only [Exits.get, Effect.summary, ho, Bool.false_eq_true, if_false, if_true] at hp ⊢
-    · exact ⟨hframe _ (.inr rfl) hp.1, fun _ hF => by cases hF⟩
-    · exact ⟨hframe _ (.inl rfl) hp.1, fun _ hF => by cases hF⟩
+  | normal => exact (ExitSpec.holds_scoped_congr h₁ h₂ hs).mp hp
+  | exceptional => exact (ExitSpec.holds_scoped_congr h₃ (by rw [show ((e.summary args.length).get .exceptional).ensures = [] from h₄]; rfl) hs).mp hp
 
 /-- **Safety at a signature's exits at the first `m` actuals is safety at
 its exits at every call extending them**, the signature about its receiver

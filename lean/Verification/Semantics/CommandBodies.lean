@@ -37,55 +37,6 @@ open Verification Footprints HeapKnowledge TolerantFrames Parity
 
 /-! ## Scope and the operations on signatures -/
 
-/-- **A module function's summary reads its own positions**: where its
-effect is about the receiver and its first `n` parameters
-(`Effect.belowRow`), its frames read call positions up to `n` and its
-postconditions the entry positions up to `n` and the exit positions up to
-`n + 1`. -/
-theorem Effect.summary_scoped {e : Effect} {n : Nat} (h : e.belowRow n = true) (k : Nat)
-    (arena : AssertionArena) :
-    effectScoped (n + 1) (e.summary k).normal.frame = true ∧
-      (e.summary k).normal.ensures.all (FormulaF.scoped arena ⟨n + 1, n + 2⟩) = true ∧
-      effectScoped (n + 1) (e.summary k).exceptional.frame = true ∧ (e.summary k).exceptional.ensures = [] := by
-  have hb := Effect.belowRow_below h
-  have hreg : e.regions = [] := Effect.below_regions (e := { e with ensures := [] }) hb
-  have hg : e.receiverGrows = false := Effect.below_grows (e := { e with ensures := [] }) hb
-  have hx : e.elementWrite = none := Effect.below_write (e := { e with ensures := [] }) hb
-  have hframe : effectScoped (n + 1) e.frame = true := by
-    unfold effectScoped
-    refine List.all_eq_true.mpr fun x hx' => ?_
-    rcases Effect.mem_frame hx' with hc | hr | ⟨q, hq, -⟩
-    · obtain ⟨S, hS⟩ := Closed.fp_entry_cls hc
-      simp [hS, regionRoots]
-    · unfold Effect.receiverEntries at hr
-      split at hr
-      · simp only [List.mem_singleton] at hr; subst hr; simp [regionRoots]
-      · split at hr
-        · simp only [List.mem_singleton] at hr; subst hr; simp [regionRoots]
-        · cases hr
-    · rw [hreg] at hq; cases hq
-  have htop : effectScoped (n + 1) topEffect = true := rfl
-  refine ⟨hframe, ?_, ?_, ?_⟩
-  · simp only [Effect.summary, Effect.normalPosts, hg, hx, Bool.false_eq_true, if_false,
-      List.append_nil, List.all_append, Bool.and_eq_true]
-    refine ⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩
-    · cases e.fresh <;> simp [FormulaF.scoped, OperationPostF.scoped]
-    · cases e.freshObject <;> simp [FormulaF.scoped, OperationPostF.scoped]
-    · cases e.elements <;> simp [FormulaF.scoped, OperationPostF.scoped]
-    · refine List.all_eq_true.mpr fun F hF => ?_
-      obtain ⟨G, hG, rfl⟩ := List.mem_map.mp hF
-      simp only [FormulaF.scoped, OperationPostF.scoped, Scope.count, Nat.add_zero, Bool.and_eq_true,
-        List.all_eq_true, decide_eq_true_eq]
-      exact ⟨fun i hi => decide_eq_true (by have := Effect.belowRow_ensures h G hG i hi; omega),
-        fun i hi => by have := Effect.belowRow_ensures_entry h G hG i hi; omega⟩
-  · simp only [Effect.summary]
-    split
-    · exact hframe
-    · exact htop
-  · simp only [Effect.summary]
-    split <;> rfl
-
-
 /-- **A body's runs at a call's positions**: the run from the call's entry
 valuation completing by `c` with the value `v`, read at `callState`. -/
 def Runs.AtCall (R : Runs) (r : Tm) (args : List Tm) (c : Completion) (v : Tm) (m : Nat) (s s' : IndexedHeap) :

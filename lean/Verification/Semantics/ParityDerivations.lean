@@ -2075,56 +2075,6 @@ theorem Derivation.sound {arena : AssertionArena} (hv : arena.Valid) {Γ : List 
 
 /-! ## The validated boundary -/
 
-/-- The runtime slots of the entry and of the exit environment. -/
-structure Scope where
-  before : Nat
-  after : Nat
-  deriving DecidableEq, Repr
-
-def Scope.count (sc : Scope) : Phase → Nat
-  | .before => sc.before
-  | .after => sc.after
-
-/-- A path reading runtime slots below `n`. -/
-def Path.scoped (n : Nat) (p : Path) : Bool := decide (p.root < n)
-
-def Witness.scoped (n : Nat) : Witness → Bool
-  | .path p => p.scoped n
-  | .literal _ => true
-
-def StepVar.scoped (sc : Scope) : StepVar → Bool
-  | .before t => !t.atEntry && decide (t.slot < sc.before)
-  | .after t => !t.atEntry && decide (t.slot < sc.after)
-
-/-- A post reads its operands in their phases' scopes: the exit's operands
-below the exit count, the entry's below the entry count. -/
-def OperationPostF.scoped (sc : Scope) : OperationPost → Bool
-  | .arith _ l r y => l.scoped sc.after && r.scoped sc.after && y.scoped sc.after
-  | .stringLength x y => x.scoped sc.after && y.scoped sc.after
-  | .stringRead x i y => x.scoped sc.after && i.scoped sc.after && y.scoped sc.after
-  | .lengthsKept x x' => decide (x < sc.before) && decide (x' < sc.after)
-  | .boundedWrite x i x' => decide (x < sc.before) && decide (i < sc.before) && decide (x' < sc.after)
-  | .push x x' args => decide (x < sc.before) && decide (x' < sc.after) && args.all (Witness.scoped sc.before)
-  | .fact p l F => F.slots.all (fun i => decide (i + l < sc.count p)) && F.entrySlots.all (fun i => decide (i < sc.before))
-  | .freshStore x | .freshObject x => decide (x < sc.after)
-  | .elementsWhen x _ y _ => decide (x < sc.after) && decide (y < sc.after)
-  | .storeExtends x => decide (x < sc.before)
-  | .viewWrite x i v _ => decide (x < sc.before) && decide (i < sc.before) && decide (v < sc.before)
-
-/-- **A formula reads runtime slots within its scope**: assertions by the
-identity check (their binders' eigenvariables apart), linear facts by their
-terms' slots, a transition by its effect read at the entry, a transport by
-an image for every entry slot read at the exit. -/
-def FormulaF.scoped (arena : AssertionArena) (sc : Scope) : Formula → Bool
-  | .at p a => scopedAt arena.nodes (sc.count p) a.index
-  | .transition Φ => effectScoped sc.before Φ
-  | .operation q => q.scoped sc
-  | .linear F => F.vars.all (StepVar.scoped sc)
-  | .defined v => StepVar.scoped sc v
-  | .transport θ => decide (θ.images.size = sc.before) && θ.images.toList.all (Witness.scoped sc.after)
-  | .and F G => F.scoped arena sc && G.scoped arena sc
-  | .truth | .falsity => true
-
 /-- **The validated checker** (I4, the checker's boundary): a derivation
 is returned only for a valid arena and premises and goal scoped at the given
 runtime slots. -/

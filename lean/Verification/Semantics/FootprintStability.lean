@@ -422,30 +422,6 @@ theorem frame_sound {K : SepKnowledge} {fs Φ μ ρ h h'} (hK : K.Holds μ ρ h)
 
 /-! ## A callee's frame at the caller's slots -/
 
-/-- A region with its slots renamed by `σ`: a callee's position `i` read as
-the caller's slot `σ i`. -/
-def Region.rename (σ : Nat → Nat) : Region → Region
-  | .field x k => .field (σ x) k
-  | .own x => .own (σ x)
-  | .elems x => .elems (σ x)
-  | .cls c => .cls c
-  | .all => .all
-  | .path x p k => .path (σ x) p k
-  | .pathOwn x p => .pathOwn (σ x) p
-  | .pathElems x p => .pathElems (σ x) p
-  | .cell b => .cell b
-  | .inCls r c => .inCls (r.rename σ) c
-  | .store x p => .store (σ x) p
-
-theorem Region.mem_rename (σ : Nat → Nat) (ρ : Env) (h : Heap) (l : Nat) :
-    ∀ r : Region, (r.rename σ).mem ρ h l = r.mem (fun i => ρ (σ i)) h l := by
-  intro r
-  induction r with
-  | inCls r c ih => simp only [Region.rename, Region.mem, ih]
-  | _ => rfl
-
-def Footprint.rename (σ : Nat → Nat) (Φ : Footprint) : Footprint := Φ.map fun e => (e.1.rename σ, e.2)
-
 /-- A footprint at the values the caller's slots hold is the renamed
 footprint at the caller's environment. -/
 theorem Post.rename {Φ : Footprint} {σ : Nat → Nat} {ρ env : Env} {h h' : Heap}
