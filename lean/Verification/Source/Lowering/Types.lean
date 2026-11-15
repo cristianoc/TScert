@@ -826,9 +826,8 @@ def moduleArrow (g : Fragment.Fn) (footprint : Footprints.Closed := .top) (onThr
   -- A guard's promise is a signature of its own, beside the plain one, its
   -- result the promise's type.
   let promised : List (Json × List (String × Json)) := match g.guard with
-    | some guard => [(guard.type, [("effect", toJson (CallEffects.Effect.mk footprint
-        (some (if guard.asserts then .asserts guard.param else .guards guard.param)) false false onThrow false false none none
-        g.requires [] false none regions))])]
+    | some guard => [(guard.type, [("effect", toJson (CallEffects.Effect.ofStated footprint
+        (some (if guard.asserts then .asserts guard.param else .guards guard.param)) onThrow false g.requires [] regions))])]
     | none => []
   -- The plain signature states the footprint the declaration's claim
   -- proposes, which the declaration's own unit certifies; its extension
@@ -839,9 +838,7 @@ def moduleArrow (g : Fragment.Fn) (footprint : Footprints.Closed := .top) (onThr
   -- return (`SourceRequests.ensuresResult`).
   let plain : List (String × Json) :=
     if footprint = .top ∧ onThrow = false ∧ fresh = false ∧ g.requires.isEmpty ∧ g.ensures.isEmpty ∧ regions = [] then [] else
-      [("effect", toJson ({ CallEffects.Effect.ofFootprint footprint with
-        onThrow := onThrow, fresh := fresh, pre := g.requires, ensures := g.ensures,
-        regions := regions } : CallEffects.Effect))]
+      [("effect", toJson (CallEffects.Effect.ofStated footprint none onThrow fresh g.requires g.ensures regions))]
   let extra := promised.map (fun (result, effect) => Json.mkObj (signature rest result effect)) ++
     if params.any (·.rest) then []
     else ((g.ret, plain) :: promised).map fun (result, effect) => Json.mkObj (signature [("rest", top)] result effect)

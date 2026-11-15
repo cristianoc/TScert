@@ -138,8 +138,16 @@ a normal return of the call; the call never throws, its exceptional exit
 unreached. -/
 def settle (S : ClassSummary) : ClassSummary := ⟨alt S.normal S.exceptional, none⟩
 
+/-- Whether the projection bounds a throw by the normal frame: where asked
+(`bounded`), the normal bound is not `⊤`, and the exceptional bound, where
+reached, is within it. -/
+def throwBounded (S : ClassSummary) (bounded : Bool := true) : Bool :=
+  bounded && S.normal.getD .empty != Closed.top && (match S.exceptional with
+    | none => true
+    | some x => x.le (S.normal.getD .empty))
+
 /-- **The projection into today's effect format**: the effect of a closed
-frame and a throw bound (`Effect.ofFootprint`, `onThrow`) whose closed frame
+frame and a throw bound (`Effect.ofClosed`) whose closed frame
 is the normal exit's bound, its throw bounded where `bounded` asks for it
 and the exceptional exit's bound is within the normal one's, or unreached.
 Its schema is an upper bound of the summary's (`project_entails`), at each
@@ -161,16 +169,12 @@ Where the exceptional bound is reached and within the normal one, and the
 normal bound is not `top`, it is the least effect of today's format whose
 schema is above the summary's. -/
 def project (S : ClassSummary) (bounded : Bool := true) : Effect :=
-  let n := S.normal.getD .empty
-  { Effect.ofFootprint n with
-    onThrow := bounded && n != Closed.top && (match S.exceptional with
-      | none => true
-      | some x => x.le n) }
+  Effect.ofClosed (S.normal.getD .empty) (S.throwBounded bounded)
 
 /-- **Today's format embedded in a summary**: the per-exit contract of the
 effect of closed frame `c` and throw bound `t`, at the class level
 (`ofEffect`). -/
-def ofFormat (c : Closed) (t : Bool) : ClassSummary := ofEffect { Effect.ofFootprint c with onThrow := t } []
+def ofFormat (c : Closed) (t : Bool) : ClassSummary := ofEffect (Effect.ofClosed c t) []
 
 /-! ## Each rule is the class instance of the note's -/
 
@@ -258,13 +262,12 @@ private theorem le_join (a b : Closed) : a.le (a.join b) = true ∧ b.le (a.join
   exact Bool.and_eq_true_iff.mp h.symm
 
 private theorem ofFootprint_frame (c : Closed) (t : Bool) :
-    ({ Effect.ofFootprint c with onThrow := t } : Effect).frame = c.fp := by
-  simp [Effect.frame, Effect.ofFootprint, Effect.receiverEntries]
+    (Effect.ofClosed c t).frame = c.fp := Effect.ofClosed_frame c t
 
 private theorem ofFootprint_exc (c : Closed) (t : Bool) (n : Nat) :
-    (({ Effect.ofFootprint c with onThrow := t } : Effect).summary n).exceptional.frame =
+    ((Effect.ofClosed c t).summary n).exceptional.frame =
       if t then c.fp else topEffect := by
-  cases t <;> simp [Effect.summary, ofFootprint_frame]
+  cases t <;> rfl
 
 /-- **The projection includes the summary** (proved): at each exit the
 summary reaches, its bound's frame is within the frame the projection's
@@ -281,8 +284,8 @@ theorem project_covers (S : ClassSummary) (bounded : Bool) (n : Nat) (c : Comple
   | exceptional =>
     simp only [Exits.get] at hk
     subst hk
-    have hframe := ofFootprint_exc (N.getD .empty) (project ⟨N, some k⟩ bounded).onThrow n
-    simp only [project] at hframe ⊢
+    have hframe := ofFootprint_exc (N.getD .empty) (throwBounded ⟨N, some k⟩ bounded) n
+    simp only [project, throwBounded] at hframe ⊢
     rw [show ∀ e : Effect, (e.summary n).get .exceptional = (e.summary n).exceptional from fun _ => rfl, hframe]
     by_cases ht : (bounded && N.getD .empty != Closed.top && k.le (N.getD .empty)) = true
     · simp only [ht, if_true]
@@ -296,11 +299,13 @@ theorem project_covers (S : ClassSummary) (bounded : Bool) (n : Nat) (c : Comple
 frame `c` and throw bound `t` is the projection of its summary, but for a
 throw bound at `top`, which states nothing. -/
 theorem project_ofFormat (c : Closed) (t : Bool) :
-    (ofFormat c t).project = { Effect.ofFootprint c with onThrow := t && c != Closed.top } := by
+    (ofFormat c t).project = Effect.ofClosed c (t && c != Closed.top) := by
   have hb : Footprint.boundBelow [] c.fp = c := Footprint.boundBelow_fp [] c
   have ht : Footprint.boundBelow [] topEffect = Closed.top := Footprint.boundBelow_fp [] Closed.top
-  cases t <;> simp [ofFormat, ofEffect, project, Effect.schema, ofFootprint_frame, hb, ht, Closed.le_refl]
-  · intro h; rw [Closed.top_le]; simpa using h
+  cases t <;> simp [ofFormat, ofEffect, project, throwBounded, Effect.ofClosed_schema, Exits.ofClosed, hb, ht,
+    Closed.le_refl]
+  rw [Closed.top_le]
+  cases h : c == Closed.top <;> simp_all
 
 /-! ## The summary's schema, and the projection above it -/
 
@@ -326,10 +331,8 @@ theorem entails_of_frames {x y : Exits ExitSchema} (hy : ∀ c, (y.get c).ensure
     nomatch hF
 
 private theorem ofFootprint_schema (c : Closed) (t : Bool) :
-    ({ Effect.ofFootprint c with onThrow := t } : Effect).schema =
-      ⟨⟨c.fp, []⟩, if t then ⟨c.fp, []⟩ else ⟨topEffect, []⟩⟩ := by
-  rw [Effect.schema, ofFootprint_frame]
-  simp [Effect.normalSchema, Effect.ofFootprint]
+    (Effect.ofClosed c t).schema =
+      ⟨⟨c.fp, []⟩, if t then ⟨c.fp, []⟩ else ⟨topEffect, []⟩⟩ := Effect.ofClosed_schema c t
 
 /-- **The projection is an upper bound of the summary in the effect order**
 (proved; `Exits.Entails`, the order `Effect.Covers` reads schemas in): at
@@ -338,7 +341,7 @@ What it weakens is listed at `project`. -/
 theorem project_entails (S : ClassSummary) (bounded : Bool) : S.schema.Entails (S.project bounded).schema := by
   rcases S with ⟨N, X⟩
   have hs : (project ⟨N, X⟩ bounded).schema = ⟨⟨(N.getD .empty).fp, []⟩,
-      if (project ⟨N, X⟩ bounded).onThrow then ⟨(N.getD .empty).fp, []⟩ else ⟨topEffect, []⟩⟩ :=
+      if throwBounded ⟨N, X⟩ bounded then ⟨(N.getD .empty).fp, []⟩ else ⟨topEffect, []⟩⟩ :=
     ofFootprint_schema _ _
   rw [hs]
   refine entails_of_frames (fun c => ?_) (fun c ρ h h' hp => ?_)
@@ -352,7 +355,7 @@ theorem project_entails (S : ClassSummary) (bounded : Bool) : S.schema.Entails (
       show Post (if _ then _ else _ : ExitSchema).frame ρ h h'
       split
       · next ht =>
-        simp only [project, Bool.and_eq_true] at ht
+        simp only [throwBounded, Bool.and_eq_true] at ht
         have hle : (X.getD .empty).le (N.getD .empty) = true := by
           cases X with
           | none => exact Closed.empty_le _

@@ -105,11 +105,11 @@ def writtenSchemes (force : List String := []) : ClosureSchemes := fun T body =>
       -- (`TSCERT_FORCE=schemes`, and `literals`: keeping both, bounding its throws, the
       -- adversarial proposal)
       let effect := if force.contains "schemes" || force.contains "literals" then
-          { (CallEffects.Effect.ofFootprint ⟨.keep, .keep, .keep⟩) with onThrow := true } else
+          CallEffects.Effect.ofClosed ⟨.keep, .keep, .keep⟩ true else
         stated.getD (match body with
         | .block .. => .ordinary
         | x => if Synthesis.mayCall x || defaults.any (Synthesis.mayCall ·.2) then .ordinary
-          else { (CallEffects.Effect.ofFootprint ⟨.keep, .keep, .keep⟩) with onThrow := true })
+          else CallEffects.Effect.ofClosed ⟨.keep, .keep, .keep⟩ true)
       let binders := (tps.zip bounds).map fun (p, b) =>
         ({ name := p.name, bound := b, resolution := none } : ResolutionWire.Binder (ClaimType Tree))
       let claim : ClaimType Tree :=

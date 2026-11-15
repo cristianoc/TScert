@@ -664,4 +664,65 @@ theorem Effect.freshResult_schema (e : Effect) : e.schema.normal.freshResult = e
   simp only [ExitSchema.freshResult, Effect.schema, Effect.normalSchema, List.mem_append]
   cases e.fresh <;> cases e.freshObject <;> cases e.receiverGrows <;> simp <;> exact ⟨he, hg⟩
 
+/-! ## Builders of effects by their exits
+
+Each builder states an effect by what it states of its two exits, and its
+schema is proved equal to those exits (today's elaboration of the fields it
+sets). Code building an effect goes through them, so that a representation
+holding the exits changes the builders and no caller. -/
+
+/-- **The exits of a closed frame** `c`: the normal exit within `c` with no
+postcondition, the exceptional exit within `c` where `bounded`, `⊤`
+otherwise. -/
+def Exits.ofClosed (c : Footprints.Closed) (bounded : Bool) : Exits ExitSchema :=
+  ⟨⟨c.fp, []⟩, if bounded then ⟨c.fp, []⟩ else ⟨topEffect, []⟩⟩
+
+/-- **An effect of a closed frame** (`Exits.ofClosed`), with no promise and
+no precondition. -/
+def Effect.ofClosed (c : Footprints.Closed) (bounded : Bool) : Effect := { Effect.ofFootprint c with onThrow := bounded }
+
+theorem Effect.ofClosed_frame (c : Footprints.Closed) (bounded : Bool) : (Effect.ofClosed c bounded).frame = c.fp := by
+  simp [Effect.ofClosed, Effect.frame, Effect.ofFootprint, Effect.receiverEntries]
+
+/-- **An effect of a closed frame states its exits** (proved). -/
+theorem Effect.ofClosed_schema (c : Footprints.Closed) (bounded : Bool) :
+    (Effect.ofClosed c bounded).schema = Exits.ofClosed c bounded := by
+  rw [Effect.schema, Effect.ofClosed_frame]
+  cases bounded <;> simp [Effect.normalSchema, Effect.ofClosed, Effect.ofFootprint, Exits.ofClosed]
+
+/-- **The exits a declaration states**: on a normal return the closed frame
+`c` and the store regions `regions` at `any`, a fresh result where `fresh`
+and the index facts `ensures` of the result and the call's positions; on a
+throw the same frame where `bounded`, `⊤` otherwise. -/
+def Exits.ofStated (c : Footprints.Closed) (bounded fresh : Bool) (ensures : List HeapKnowledge.IndexFact)
+    (regions : List Footprints.ArgumentStoreRegion) : Exits ExitSchema :=
+  let frame := c.fp ++ regions.map regionEntry
+  ⟨⟨frame, (if fresh then [.operation (.freshStore 0)] else []) ++
+      ensures.map fun F => .operation (.fact .after 0 F)⟩,
+    if bounded then ⟨frame, []⟩ else ⟨topEffect, []⟩⟩
+
+/-- **An effect a declaration states** (`Exits.ofStated`), with its promise
+and its precondition `pre`. -/
+def Effect.ofStated (c : Footprints.Closed) (promise : Option TypePromise) (bounded fresh : Bool)
+    (pre ensures : List HeapKnowledge.IndexFact) (regions : List Footprints.ArgumentStoreRegion) : Effect :=
+  ⟨c, promise, fresh, false, bounded, false, false, none, none, pre, ensures, false, none, regions⟩
+
+/-- **An effect a declaration states states its exits** (proved). -/
+theorem Effect.ofStated_schema (c : Footprints.Closed) (promise : Option TypePromise) (bounded fresh : Bool)
+    (pre ensures : List HeapKnowledge.IndexFact) (regions : List Footprints.ArgumentStoreRegion) :
+    (Effect.ofStated c promise bounded fresh pre ensures regions).schema = Exits.ofStated c bounded fresh ensures regions := by
+  have hf : (Effect.ofStated c promise bounded fresh pre ensures regions).frame = c.fp ++ regions.map regionEntry := by
+    simp [Effect.ofStated, Effect.frame, Effect.receiverEntries]
+  rw [Effect.schema, hf]
+  cases bounded <;> cases fresh <;> simp [Effect.normalSchema, Effect.ofStated, Exits.ofStated]
+
+/-- **An effect whose throws are unbounded**: `e`'s normal exit, `⊤` on a
+throw. -/
+def Effect.throwUnbounded (e : Effect) : Effect := { e with onThrow := false }
+
+/-- **An effect whose throws are unbounded states `e`'s normal exit and `⊤`
+on a throw** (proved). -/
+theorem Effect.throwUnbounded_schema (e : Effect) :
+    e.throwUnbounded.schema = ⟨e.schema.normal, ⟨topEffect, []⟩⟩ := rfl
+
 end Verification.CallEffects

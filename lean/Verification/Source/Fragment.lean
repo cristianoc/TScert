@@ -858,11 +858,11 @@ def decodeStated : Json → Except String (Option CallEffects.Effect)
     if regions.isEmpty then
       if footprint == .top && !fresh then
         throw "a stated effect states a footprint below `top` or a fresh result"
-      pure (some { CallEffects.Effect.ofFootprint footprint with onThrow, fresh })
+      pure (some (CallEffects.Effect.ofStated footprint none onThrow fresh [] [] []))
     else
       if footprint == .top || fresh || !regions.Nodup then
         throw "a stated effect with store regions states a bound below `top` off them, distinct positions and no fresh result"
-      pure (some { CallEffects.Effect.ofFootprint footprint with onThrow := onThrow, regions := regions })
+      pure (some (CallEffects.Effect.ofStated footprint none onThrow false [] [] regions))
 
 /-- A guard's promise as the Fragment states it, or none. -/
 def decodeGuard : Json → Except String (Option Guard)

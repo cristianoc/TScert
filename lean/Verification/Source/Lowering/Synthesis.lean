@@ -5195,7 +5195,7 @@ partial def walkLambda (env : Env) (e : Expr) (sig : Option (CallEffects.Arrow (
         else
           let bounded := Footprints.Footprint.boundBelow [] a.effect.schema.exceptional.frame != .top
           pure { a with result := R, effect := match stated with
-            | some s => if bounded then { s with pre := requires } else { s with pre := requires, onThrow := false }
+            | some s => if bounded then { s with pre := requires } else ({ s with pre := requires } : CallEffects.Effect).throwUnbounded
             | none => { proposal bounded with pre := requires } }
       -- Any other literal at its own parameters and written receiver (a
       -- method's `this`), else a receiver admitting every value.
@@ -5618,7 +5618,7 @@ partial def recursiveConstant (env : Env) (b : Fragment.Binding) (written : Bool
     W (Option (Ty Tree) × Env) := do
   -- An early self is read through its cell at the early contract, rather than a self-entry proposal.
   let some S0 ← earlyContract b (if b.early then .ordinary else
-      { CallEffects.Effect.ofFootprint ⟨.keep, .keep, .keep⟩ with onThrow := true })
+      CallEffects.Effect.ofClosed ⟨.keep, .keep, .keep⟩ true)
     | expr env b.init
   -- An annotation supplies the signature, not the self-effect seed:
   -- statement_analysis.ml:294-317 seeds every non-early self at keep/keep.

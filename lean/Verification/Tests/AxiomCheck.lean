@@ -607,6 +607,9 @@ run_cmd do
   check ``Verification.SourceExtraction.ClassSummary.handle_after
   check ``Verification.SourceExtraction.ClassSummary.schema_atArity
   check ``Verification.CallEffects.Effect.freshResult_schema
+  check ``Verification.CallEffects.Effect.ofClosed_schema
+  check ``Verification.CallEffects.Effect.ofStated_schema
+  check ``Verification.CallEffects.Effect.throwUnbounded_schema
   check ``Verification.CallEffects.Effect.regionFields_schema
   check ``Verification.SourceExtraction.ClassSummary.within_weakens
   check ``Verification.SourceExtraction.ClassSummary.within_choice
