@@ -87,6 +87,14 @@ asks.
 - **Closure specifications over captured variables:** separate work, later.
 - **The exact update of a typed array stays inside its rule.** The contract
   language does not grow for it.
+- **A specification with a rest parameter is a schema.** Its rest variable
+  denotes the sequence of supplied argument values, and rule Call
+  instantiates it at the evaluated argument list, spread expansion
+  included. A function body is checked for every such sequence, which
+  equals the initial contents of its fresh rest array.
+- **A specification is closed.** Its postconditions mention its own
+  parameters, receiver, result and heap, and no formula of the assertions
+  a particular unit's check collected.
 - **Trust.** That host and library values meet their declared contracts is
   the standing trust in the library model. A consequence of it is stated
   where that trust is stated and is not presented as a new assumption. A

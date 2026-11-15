@@ -950,6 +950,11 @@ the result $y$. The displayed rule uses assertions independent of
 the invocation mark. Freshness assertions require rebasing between
 the callee's and caller's marks. Exceptional postconditions and effects
 instantiate in the same way; their defaults are $\kw{true}$ and $\top$.
+A specification with a rest parameter is a schema whose rest variable
+denotes the sequence of supplied argument values; \textsc{Call}
+substitutes the evaluated sequence, including spread expansion. In
+checking a function body, that sequence equals the initial contents of
+the freshly allocated rest array.
 Lean: \lean{call\_rule}, \lean{invocation\_throw\_action}.
 \item[\textsc{Alloc}] A new array is fresh, empty, and apart from every
 array $y$ that exists before the step. These separations are
