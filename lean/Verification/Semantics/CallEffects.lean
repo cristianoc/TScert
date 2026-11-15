@@ -394,13 +394,14 @@ theorem ctorRestsT_congr {Ξ Ξ' : Fam} {α : Type} (l : List α) (f g : α → 
 
 /-- **Two signatures of one value conjoin their guarantees at one exit**:
 the two derivations of one invocation take the same steps, and the second's
-guarantees, independent of the exit world (`Effect.schema_independent`),
+guarantees, independent of the exit world where its exits read the exit
+through its heap alone (`Exits.exitHeapOnly`, `Exits.independent`),
 hold at the first's worlds (`SafePostExcV.cross_independent`), on a normal
 return and on a throw. The second's precondition is the first's
 (`Effect.sameResult`); the result families combine as `CrossCompatUpTo`
 states. -/
 theorem PromiseWith.conj {effect other Acc Rc B C D k W v}
-    (hs : effect.sameResult other = true)
+    (hs : effect.sameResult other = true) (hind : other.schema.exitHeapOnly = true)
     (hb : PromiseWith Ξ effect Acc Rc B k W v)
     (hc : PromiseWith Ξ other Acc Rc C k W v)
     (hcross : ∀ n, n < k → CrossCompatUpTo n B C D) :
@@ -423,14 +424,15 @@ theorem PromiseWith.conj {effect other Acc Rc B C D k W v}
   | zero => exact hsb
   | succ i =>
     exact SafePostExcV.cross_independent ⟨i + 1, U, heap, Nat.succ_pos _, hu, hh⟩
-      (Effect.cross_result effect (hcross (i + 1) hj)) (Effect.schema_independent other .normal r args _)
-      (Effect.schema_independent other .exceptional r args _) hsb hsc
+      (Effect.cross_result effect (hcross (i + 1) hj)) (Exits.independent (Exits.exitHeapOnly_get hind .normal) r args _)
+      (Exits.independent (Exits.exitHeapOnly_get hind .exceptional) r args _) hsb hsc
 
 /-- **Whether the conjunction of two signatures covers a third** (the
 note's rule Conj, then consequence): the conjunction of their schemas
 (`Exits.meet`) covers the third's (`Exits.covers`), with the same promise,
 and the third's precondition implies theirs. -/
 def Effect.meetCovers (a b q : Effect) : Bool :=
+  b.schema.exitHeapOnly && a.schema.canonicalTransports && b.schema.canonicalTransports &&
   (a.schema.meet b.schema).covers q.schema && a.promise == q.promise &&
     requiresCovers a.requires q.requires && preCovers a.pre q.pre
 
@@ -447,9 +449,9 @@ theorem PromiseWith.combine {effect other target Acc Rc B C D k W v}
     PromiseWith Ξ target Acc Rc D k W v := by
   intro j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha hq
   simp only [Effect.meetCovers, Bool.and_eq_true, beq_iff_eq] at hm
-  obtain ⟨⟨⟨hcov, hp⟩, hrq⟩, hpre⟩ := hm
+  obtain ⟨⟨⟨⟨⟨⟨hind, hca⟩, hcb⟩, hcov⟩, hp⟩, hrq⟩, hpre⟩ := hm
   obtain ⟨res, hi, hsafe⟩ :=
-    PromiseWith.conj hs hb hc hcross j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha
+    PromiseWith.conj hs hind hb hc hcross j hj U hx hu heap hh hvr r hrv hr hrr args hv har ha
       (requiresCovers_sound hrq hpre hq)
   refine ⟨res, hi, ?_⟩
   dsimp only at hsafe ⊢
@@ -457,7 +459,7 @@ theorem PromiseWith.combine {effect other target Acc Rc B C D k W v}
     simp [Effect.result, Effect.promised, hp]
   rw [hres]
   have hent := Exits.covers_entails hcov
-  have hmeet := @Exits.exitPost_meet _ _ (Effect.schema_canonical effect) (Effect.schema_canonical other)
+  have hmeet := @Exits.exitPost_meet _ _ hca hcb
   exact SafePostExcV.weaken
     (fun _ _ _ _ hp h1 h2 h3 h4 h5 h6 => hent _ _ _ _ _ _ (hmeet.mpr ⟨hp.1 h1 h2 h3 h4 h5 h6, hp.2 h1 h2 h3 h4 h5 h6⟩))
     (fun _ _ _ _ hp h1 h2 h3 h4 h5 h6 => hent _ _ _ _ _ _ (hmeet.mpr ⟨hp.1 h1 h2 h3 h4 h5 h6, hp.2 h1 h2 h3 h4 h5 h6⟩))

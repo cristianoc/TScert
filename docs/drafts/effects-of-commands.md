@@ -400,7 +400,10 @@ is the meet of their class bounds with those entries (`frameMeet?`, exact by
 frame is the first's and the second's is a postcondition `.transition`.
 Two signatures conjoin where their promise and preconditions are the same
 (`Effect.sameResult`), and the conjunction is used through coverage
-(`Effect.meetCovers`).
+(`Effect.meetCovers`), which also checks what the conjunction's proof
+reads of the two schemas: canonical transports on both, and the second's
+exits reading the exit through its heap alone, so that its guarantee holds
+at the first run's worlds (`Exits.exitHeapOnly`, `Exits.independent`).
 
 Two questions about a frame's change have two projections. A conservative
 reader of a call's change reads the closed bound above the frame

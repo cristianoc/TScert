@@ -232,6 +232,18 @@ theorem SafePostExcV.cross_independent {Ξ B C D : Fam} {Q Q' : WPost} {R R' : W
 heap (`FormulaF.exitHeapOnly`). -/
 def ExitSchema.exitHeapOnly (q : ExitSchema) : Bool := q.ensures.all (·.exitHeapOnly TransportSchema.stable)
 
+/-- **Whether both exits of a schema read the exit through its heap
+alone** (`ExitSchema.exitHeapOnly`): the condition under which its
+guarantee is independent of the exit world (`Exits.independent`). -/
+def Exits.exitHeapOnly (x : Exits ExitSchema) : Bool := x.normal.exitHeapOnly && x.exceptional.exitHeapOnly
+
+theorem Exits.exitHeapOnly_get {x : Exits ExitSchema} (h : x.exitHeapOnly = true) (c : Completion) :
+    (x.get c).exitHeapOnly = true := by
+  simp only [Exits.exitHeapOnly, Bool.and_eq_true] at h
+  cases c
+  · exact h.1
+  · exact h.2
+
 /-- **A completion's guarantee is kept at every exit state admissible from
 the entry with the same heap**, where its schema's postconditions read the
 exit only through its heap: the frame reads the heaps, and each instantiated

@@ -116,7 +116,8 @@ a throw, the same with both exceptional exits (`gateExit`). -/
 theorem gate_write {Ξ : Fam} {a b : CallEffects.Effect} {Acc : (j : Nat) → WorldT j → List Tm → Prop}
     {Rc : Fam} {B C D : Fam} {f : PropKey} {x g r : Tm} {args : List Tm} {A : Fam}
     {n : Nat} {W : WorldT (n + 2)} {h : Heap}
-    (hs : a.sameResult b = true) (ha : CallEffects.PromiseWith Ξ a Acc Rc B (n + 2) W g)
+    (hs : a.sameResult b = true) (hind : b.schema.exitHeapOnly = true)
+    (ha : CallEffects.PromiseWith Ξ a Acc Rc B (n + 2) W g)
     (hb : CallEffects.PromiseWith Ξ b Acc Rc C (n + 2) W g)
     (hcross : ∀ j, j < n + 2 → CrossCompatUpTo j B C D)
     (hadm : WorldAdm W) (hok : HeapOk (n + 2) W h) (hsrc : isSourceVal x = true)
@@ -133,7 +134,7 @@ theorem gate_write {Ξ : Fam} {a b : CallEffects.Effect} {Acc : (j : Nat) → Wo
   let fs := slots h.length [f]
   let cap := Capability.field f A
   let body : Tm := .invoke g r args
-  have hconj := CallEffects.PromiseWith.conj (D := D) hs ha hb hcross
+  have hconj := CallEffects.PromiseWith.conj (D := D) hs hind ha hb hcross
   have hbodyRefs : RefsOk W body := fun y hy => hrefs y
     (show y ∈ refs (literal f x) ++ refs body from List.mem_append.mpr (.inr hy))
   have hxr : RefsOk W x := fun y hy => hrefs y (by
@@ -196,7 +197,8 @@ theorem gate_handled {Ξ Ξ' B' : Fam} {Q' : WPost} {R' : WExc} {a b : CallEffec
     {n : Nat} {W : WorldT (n + 2)} {h : Heap}
     {E : List Tm} {K : List (ControlFlow.Continuation × Option ControlFlow.Target)} {L : List Tm}
     {d : Tm} {k : ControlFlow.Continuation} {l : ControlFlow.Target}
-    (hs : a.sameResult b = true) (ha : CallEffects.PromiseWith Ξ a Acc Rc B (n + 2) W g)
+    (hs : a.sameResult b = true) (hind : b.schema.exitHeapOnly = true)
+    (ha : CallEffects.PromiseWith Ξ a Acc Rc B (n + 2) W g)
     (hb : CallEffects.PromiseWith Ξ b Acc Rc C (n + 2) W g)
     (hcross : ∀ j, j < n + 2 → CrossCompatUpTo j B C D)
     (hadm : WorldAdm W) (hok : HeapOk (n + 2) W h) (hsrc : isSourceVal x = true)
@@ -238,7 +240,7 @@ theorem gate_handled {Ξ Ξ' B' : Fam} {Q' : WPost} {R' : WExc} {a b : CallEffec
     rcases (hctx .undef y).mp hy with h | h
     · simp [refs] at h
     · exact hrefs y ((hctx _ y).mpr (.inr h))
-  have hgate := gate_write (D := D) hs ha hb hcross hadm hok hsrc hf hA hxA hinner hscope hrv hargs
+  have hgate := gate_write (D := D) hs hind ha hb hcross hadm hok hsrc hf hA hxA hinner hscope hrv hargs
     hrc hacc hreq
   exact SafePostExcW.handle (fun t => Tm.frame E K t L d k (some l))
     (fun t => .goto E K l.label (envMap l.mapping (t :: L) d).1
