@@ -299,7 +299,12 @@ leaves an extension of the heap it starts in (`Footprint.keepsHeap`; proved:
 On a signature's frame the closed bound below the mark is the receiver's
 own change where the signature states `receiverOwn`, its coarse bound where
 it states no receiver store or the receiver's position is fresh, and
-$`\top`$ otherwise (proved: `Effect.frame_boundBelow`).
+$`\top`$ otherwise (proved: `Effect.frame_boundBelow`). So a selected call's
+check against a closed bound $`\Phi`$ is the coarse footprint within
+$`\Phi`$, with the receiver's own change within it under `receiverOwn` and,
+under `receiverStore`, $`\Phi=\top`$ or a fresh receiver; and `keepsHeap` is
+the empty coarse footprint with neither receiver exception (proved:
+`GraphCode.selectedWithinAt_eq_fields`, `PromiseCalls.keepsHeap_eq_fields`).
 
 ## The stable set for density
 
@@ -365,16 +370,17 @@ locations below the heap the body started in; the runs compose by
 - an **element write** at a literal index, within `{value: any, store: grow}`,
   or `{value: any, store: keep}` at a required position
   ([element writes](#element-writes));
-- a **selected call or construction** whose signature's footprint is within
+- a **selected call or construction** whose signature's frame is within
   $`\Phi`$, its operands values (`selectedWithinAt`; proved:
   `ExpressionEffects.selected_sound`, through `CallEffects.call_safe` and
   `CallEffects.construct_safe_exc`): a fixed call, a variadic call and a
   construction, each at the signature the evidence selects; a variadic
   call's spreads read their stores in the heap the call starts in
-  (`spread_values_post`, `spread_head_post`). A signature excepting its
-  receiver's store is within $`\Phi`$ where the receiver is a slot holding a
-  fresh store, or $`\Phi`$ lets everything change
-  (`Effect.within_below`);
+  (`spread_values_post`, `spread_head_post`). The check is the closed bound
+  of the signature's frame below the invocation's mark within $`\Phi`$, an
+  entry on the store of a position whose operand is a slot holding a fresh
+  store discharged ([frame checks](#frame-checks); proved:
+  `GraphCode.selectedWithin_sound`);
 - a node **without a normal return**: its term, by the node's own checked
   ordinary typing, has a type no value meets, so its run is within every
   $`\Phi`$ on normal return (rule below).

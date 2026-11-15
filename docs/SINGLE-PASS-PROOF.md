@@ -370,7 +370,8 @@ call layers through `keepsHeap` (proved for `keepsCall` and `freshCall`;
 effect), and the other step kinds through their terms (proved for
 inspections; the term shapes `created`, the reads and `knownValue` require are
 not connected here). The frame consumes no class evidence: `keepsHeap`
-compares closed footprints. Two conditions are outside it: the result's name
+compares the closed bound of the selected exit's frame with the empty one
+([frame checks](FOOTPRINTS.md#frame-checks)). Two conditions are outside it: the result's name
 is fresh for the store (a premise, `hr`), and the output the pass applies is
 the checked rule's (`Checker.select` agreeing with `run`).
 

@@ -80,28 +80,16 @@ theorem passWrites_sound {G : NormalGraph ι} {Γ : List (Ty ι)} {kS : HeapKnow
   · exact ExpressionEffects.write_within_exc hc he hh hs
   · exact ExpressionEffects.init_write_within_exc hc he hh hkS hs
 
-/-- A selected call's `within`, its receiver's store fresh where the
-signature excepts it, bounds the heap by `Φ` on the locations below `b`
-(the case analysis of `GraphCode.nodePost_of_checked`). -/
+/-- A selected call's `within` bounds the heap by `Φ` on the locations
+below `b`: its grade, the closed bound of its frame below the mark, is below
+`Φ` (`GraphCode.selectedWithin_sound`). -/
 theorem selected_within_on {Φ : Footprints.Closed} {F : List Nat} {b : Nat} {ρ : Env} {t : Tm}
     {eff : CallEffects.Effect} {h h' : Heap} (hF : GraphCode.FreshOk F b ρ)
-    (hle : eff.footprint.le Φ = true)
-    (hr : (if eff.receiverOwn then eff.ownChange.le Φ else
-        (!eff.receiverStore || Φ == .top || GraphCode.receiverFresh F t)) = true)
+    (hle : (Footprints.Footprint.boundBelow (GraphCode.freshPositions F t) eff.frame).le Φ = true)
     (hq : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t))
       h h') :
-    Φ.HoldsOn (· < b) h h' := by
-  split at hr
-  · rename_i ho
-    exact ((CallEffects.Effect.within_own hq ho).mono hr).on _
-  rename_i ho
-  simp only [Bool.not_eq_true] at ho
-  simp only [Bool.or_eq_true, Bool.not_eq_true', beq_iff_eq] at hr
-  rcases hr with (hr | hr) | hr
-  · exact ((CallEffects.Effect.within_holds hq hr ho).mono hle).on _
-  · rw [hr]; exact (CallEffects.Effect.within_top hq).on _
-  · exact (CallEffects.Effect.within_below hq (fun _ => GraphCode.receiverFresh_sound hr hF)
-      (fun h => by rw [ho] at h; cases h)).mono hle
+    Φ.HoldsOn (· < b) h h' :=
+  GraphCode.selectedWithin_sound hF hle hq
 
 /-- **The pass's `within` bounds the node's normal exit** by `Φ` on the
 locations below `b`, from the node's entry heap. -/
@@ -130,8 +118,6 @@ theorem pass_within_normal {G : NormalGraph ι} {images : InstanceImageCheck G} 
     obtain ⟨hops, hsel⟩ := hsel
     split at hsel
     · rename_i eff heff
-      simp only [Bool.and_eq_true] at hsel
-      obtain ⟨hle, hr⟩ := hsel
       have hs : SafePost (excOf G) (meaning G (claim d).type)
           (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (claim d).term))
             (ExpressionEffects.actualsOf (instantiate 0 ρ (claim d).term)) h) n W h
@@ -145,7 +131,7 @@ theorem pass_within_normal {G : NormalGraph ι} {images : InstanceImageCheck G} 
       rw [hterm] at hs
       have hboth := cross_upto n (fun _ _ _ _ _ _ _ _ hb _ => hb) W W h _ hh hh
         (of_value_property (Q := fun _ _ => True) (fun _ _ _ _ _ => trivial) hsafe) hs
-      exact weaken (fun _ _ hq => selected_within_on hF hle (hterm ▸ hr) hq.2.1) hboth
+      exact weaken (fun _ _ hq => selected_within_on hF (hterm ▸ hsel) hq.2.1) hboth
     · cases hsel
   · exact ExpressionEffects.noReturn_sound hempty hsafe
   · obtain ⟨A, hA, hnil⟩ := List.any_eq_true.mp hctx
@@ -183,8 +169,6 @@ theorem pass_within_throw {G : NormalGraph ι} {images : InstanceImageCheck G} {
     · rename_i eff heff
       rw [heff] at hon
       simp only at hon
-      simp only [Bool.and_eq_true] at hsel
-      obtain ⟨hle, hr⟩ := hsel
       have hs : SafePostExc (excOf G) (meaning G (claim d).type)
           (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (claim d).term))
             (ExpressionEffects.actualsOf (instantiate 0 ρ (claim d).term)) h)
@@ -202,7 +186,7 @@ theorem pass_within_throw {G : NormalGraph ι} {images : InstanceImageCheck G} {
         (SafePostExc.of_post (R := fun _ => True) (fun _ => trivial)
           (of_value_property (Q := fun _ _ => True) (fun _ _ _ _ _ => trivial) hsafe)) hs
       exact SafePostExc.weaken (fun _ _ _ => trivial)
-        (fun _ hq => selected_within_on hF hle (hterm ▸ hr) (hq.2 hon)) hboth
+        (fun _ hq => selected_within_on hF (hterm ▸ hsel) (hq.2 hon)) hboth
     · cases hsel
   · obtain ⟨A, hA, hnil⟩ := List.any_eq_true.mp hctx
     obtain ⟨i, hi⟩ := List.getElem?_of_mem hA

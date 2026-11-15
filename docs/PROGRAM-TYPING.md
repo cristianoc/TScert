@@ -4615,18 +4615,22 @@ states every field of a value at a structural type an own data property.
 ##### A call that keeps the heap
 
 A call (an invocation, a variadic invocation or a construction) whose
-evidence selects a signature with effect $`\epsilon`$, its footprint within
-the empty one and stating no change of its receiver's store, keeps every
-atom of the heap part on a normal return:
+evidence selects a signature with effect $`\epsilon`$, its normal exit's
+frame included in the empty effect, keeps every atom of the heap part on a
+normal return:
 
 ```math
 \frac{\Gamma\vdash_G \mathrm{invoke}(f,v,\vec u):A\ \text{at a signature}\ \mathcal F_\epsilon
-      \qquad \epsilon.\mathsf{footprint}\le\emptyset\qquad\neg\,\epsilon.\mathsf{receiverStore}}
+      \qquad \lfloor\epsilon.\mathsf{frame}\rfloor = \emptyset}
 {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow \mathrm{invoke}(f,v,\vec u):A\dashv \Pi\;;\;\Sigma}\ \textsf{call-keep}
 ```
 
-The signature's postcondition makes the heap a normal return leaves an
-extension of the one the call started in (`Closed.holds_empty`), and every
+The frame's closed bound ([frame checks](FOOTPRINTS.md#frame-checks)) is
+empty exactly where the coarse footprint is and the signature excepts
+neither its receiver's store nor its own locations
+(`PromiseCalls.keepsHeap_eq_fields`). The signature's postcondition makes
+the heap a normal return leaves an extension of the one the call started in
+(`Footprint.keepsHeap_prefix`), and every
 atom of $`\Sigma`$ holds of an extension (`HeapKnowledge.alloc_frames`);
 `PromiseCalls.keepsCall_sound` proves the rule from `selectedCall_sound`. A
 throw keeps nothing. A call at a promise signature (a type guard's, an

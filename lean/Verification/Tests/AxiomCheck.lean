@@ -513,6 +513,10 @@ run_cmd do
   check ``Verification.Footprints.Footprint.includedIn_of_boundBelow
   check ``Verification.Footprints.Footprint.keepsHeap_prefix
   check ``Verification.CallEffects.Effect.frame_boundBelow
+  check ``Verification.GraphCode.selectedWithin_sound
+  check ``Verification.GraphCode.selectedGrades_eq_fields
+  check ``Verification.GraphCode.selectedWithinAt_eq_fields
+  check ``Verification.PromiseCalls.keepsHeap_eq_fields
   check ``Verification.TolerantFrames.pass_within_normal
   check ``Verification.TolerantFrames.pass_within_throw
   check ``Verification.TolerantFrames.pass_within_entry

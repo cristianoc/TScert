@@ -1,5 +1,6 @@
 import Verification.Programs.Parametricity
 import Verification.Programs.ExpressionEffects
+import Verification.Programs.FrameChecks
 
 /-! # Graph code: a closure whose body is a checked graph
 
@@ -394,40 +395,142 @@ def receiverFresh (F : List Nat) : Tm → Bool
   | .invoke _ (.var j) _ => F.contains j
   | _ => false
 
-theorem receiverFresh_sound {F : List Nat} {b : Nat} {ρ : Env} {t : Tm}
-    (hr : receiverFresh F t = true) (hF : FreshOk F b ρ) :
-    FreshAt b (ExpressionEffects.receiverOf (instantiate 0 ρ t)) := by
-  cases t <;> simp [receiverFresh] at hr
-  rename_i f r args
-  cases r <;> simp at hr
-  rename_i i
-  simpa [ExpressionEffects.receiverOf, instantiate] using hF i hr
+/-- The call positions, from `i`, of actuals that are slots holding a fresh
+store. -/
+def freshActuals (F : List Nat) : List Tm → Nat → List Nat
+  | [], _ => []
+  | a :: as, i => (if varFresh F a then [i] else []) ++ freshActuals F as (i + 1)
 
-/-- A selected call within the bound: its footprint within it, and its
-receiver's store, where the signature excepts it, fresh or the bound letting
-everything change. -/
-def selectedWithinAt (Φ : Footprints.Closed) (F : List Nat) (e : ProgramCertificates.Evidence ι) : Bool :=
-  ExpressionEffects.selectedOperands e && match ExpressionEffects.selectedEffect e with
-    | some eff => eff.footprint.le Φ && (if eff.receiverOwn then eff.ownChange.le Φ else
-        (!eff.receiverStore || Φ == .top || receiverFresh F (ProgramCertificates.claim e).term))
-    | none => false
+/-- **The fresh call positions** of a call or a construction: the receiver
+(`0`) and each actual (`i + 1` for the `i`-th) that is a slot holding a
+fresh store. -/
+def freshPositions (F : List Nat) : Tm → List Nat
+  | .invoke _ r args => (if varFresh F r then [0] else []) ++ freshActuals F args 1
+  | .construct _ args => freshActuals F args 1
+  | _ => []
 
-/-- **A selected call's local effect**: the closed footprint its rule
-grants, which reads no bound: its signature's footprint with its
-receiver's own change, or, where the signature excepts its receiver's
-store and the receiver is not fresh, `top`. -/
+theorem freshActuals_mem {F : List Nat} {args : List Tm} {k i : Nat} (hi : i ∈ freshActuals F args k) :
+    k ≤ i ∧ ∃ j, args[i - k]? = some (.var j) ∧ j ∈ F := by
+  induction args generalizing k with
+  | nil => cases hi
+  | cons a as ih =>
+    simp only [freshActuals, List.mem_append] at hi
+    rcases hi with hi | hi
+    · split at hi
+      · rename_i hv
+        simp only [List.mem_singleton] at hi
+        subst hi
+        cases a <;> simp only [varFresh, Bool.false_eq_true] at hv
+        exact ⟨Nat.le_refl _, _, by simp, List.contains_iff_mem.mp hv⟩
+      · cases hi
+    · obtain ⟨hk, j, hj, hF⟩ := ih hi
+      refine ⟨by omega, j, ?_, hF⟩
+      rw [show i - k = (i - (k + 1)) + 1 by omega]
+      simpa using hj
+
+/-- **The receiver's position is fresh exactly where its slot is**: the
+positions' `0` is `receiverFresh`. -/
+theorem freshPositions_zero (F : List Nat) (t : Tm) : (freshPositions F t).contains 0 = receiverFresh F t := by
+  have hnot : ∀ args, (freshActuals F args 1).contains 0 = false := fun args => by
+    cases h : (freshActuals F args 1).contains 0
+    · rfl
+    · have := (freshActuals_mem (List.contains_iff_mem.mp h)).1
+      omega
+  cases t <;> simp only [freshPositions, receiverFresh, List.contains_nil]
+  case invoke f r args =>
+    rw [List.contains_append, hnot, Bool.or_false]
+    cases r <;> simp [varFresh]
+  case construct f args => exact hnot args
+
+/-- **The fresh positions hold fresh stores** at the call's positions
+(`callEnv`), where the slots `F` do. -/
+theorem freshPositions_sound {F : List Nat} {b : Nat} {ρ : Env} {t : Tm} (hF : FreshOk F b ρ) :
+    Footprints.FreshPositions (freshPositions F t)
+      b (CallEffects.callEnv (ExpressionEffects.receiverOf (instantiate 0 ρ t))
+        (ExpressionEffects.actualsOf (instantiate 0 ρ t))) := by
+  have hact : ∀ (r : Tm) (args : List Tm) i, i ∈ freshActuals F args 1 →
+      FreshAt b (CallEffects.callEnv r (args.map (instantiate 0 ρ)) i) := by
+    intro r args i hi
+    obtain ⟨hk, j, hj, hjF⟩ := freshActuals_mem hi
+    have hi0 : i ≠ 0 := by omega
+    have hget : (args.map (instantiate 0 ρ)).getD (i - 1) .undef = ρ j := by
+      rw [List.getD_eq_getElem?_getD, List.getElem?_map, hj]
+      simp [instantiate]
+    simp only [CallEffects.callEnv, hi0, if_false, hget]
+    exact hF j hjF
+  intro i hi
+  cases t <;> simp only [freshPositions, List.not_mem_nil] at hi
+  case invoke f r args =>
+    simp only [instantiate, instantiateArgs_eq_map, ExpressionEffects.receiverOf, ExpressionEffects.actualsOf]
+    rcases List.mem_append.mp hi with hi | hi
+    · split at hi
+      · rename_i hv
+        simp only [List.mem_singleton] at hi
+        subst hi
+        cases r <;> simp only [varFresh, Bool.false_eq_true] at hv
+        simpa [CallEffects.callEnv, instantiate] using hF _ (List.contains_iff_mem.mp hv)
+      · cases hi
+    · exact hact _ args i hi
+  case construct f args =>
+    simp only [instantiate, instantiateArgs_eq_map, ExpressionEffects.receiverOf, ExpressionEffects.actualsOf]
+    exact hact _ args i hi
+
+/-- **A selected call's local effect**: the closed bound below the
+invocation's mark of its signature's normal-exit frame (`Effect.frame`),
+each entry instantiated at the call's positions, an entry on a fresh
+position's store discharged (`Footprint.boundBelow`). It reads no bound. -/
 def selectedGrades (F : List Nat) (e : ProgramCertificates.Evidence ι) : List Footprints.Closed :=
   if ExpressionEffects.selectedOperands e then match ExpressionEffects.selectedEffect e with
-    | some eff => [if eff.receiverOwn then eff.footprint.join eff.ownChange
-        else if !eff.receiverStore || receiverFresh F (ProgramCertificates.claim e).term then eff.footprint
-        else Footprints.Closed.top]
+    | some eff => [Footprints.Footprint.boundBelow (freshPositions F (ProgramCertificates.claim e).term) eff.frame]
     | none => []
   else []
+
+/-- **A selected call within the bound**: its local effect below it, the
+frame's check entry by entry (`Footprint.boundBelow_le`). -/
+def selectedWithinAt (Φ : Footprints.Closed) (F : List Nat) (e : ProgramCertificates.Evidence ι) : Bool :=
+  ExpressionEffects.selectedOperands e && match ExpressionEffects.selectedEffect e with
+    | some eff => (Footprints.Footprint.boundBelow (freshPositions F (ProgramCertificates.claim e).term)
+        eff.frame).le Φ
+    | none => false
 
 /-- **A selected call's check is its grade below the bound** (proved). -/
 theorem selectedWithinAt_eq_grades (Φ : Footprints.Closed) (F : List Nat) (e : ProgramCertificates.Evidence ι) :
     selectedWithinAt Φ F e = (selectedGrades F e).any (·.le Φ) := by
   unfold selectedWithinAt selectedGrades
+  cases ExpressionEffects.selectedOperands e
+  · simp
+  · cases ExpressionEffects.selectedEffect e <;> simp
+
+/-- **The grade is the one the signature's fields gave** (proved): the
+receiver's own change joined to the coarse bound where it states
+`receiverOwn`; else the coarse bound where it states no receiver store or the
+receiver is fresh; else `top`. -/
+theorem selectedGrades_eq_fields (F : List Nat) (e : ProgramCertificates.Evidence ι) :
+    selectedGrades F e = if ExpressionEffects.selectedOperands e then match ExpressionEffects.selectedEffect e with
+      | some eff => [if eff.receiverOwn then eff.footprint.join eff.ownChange
+          else if !eff.receiverStore || receiverFresh F (ProgramCertificates.claim e).term then eff.footprint
+          else Footprints.Closed.top]
+      | none => []
+    else [] := by
+  unfold selectedGrades
+  cases ExpressionEffects.selectedOperands e
+  · rfl
+  · cases ExpressionEffects.selectedEffect e with
+    | none => rfl
+    | some eff =>
+      simp only [if_true, CallEffects.Effect.frame_boundBelow, freshPositions_zero,
+        CallEffects.Effect.footprint_join_ownChange]
+
+/-- **The check is the one the signature's fields gave** (proved): the
+coarse footprint within the bound, and, where the signature states
+`receiverOwn`, its own change within it; where it states `receiverStore`,
+the bound letting everything change or the receiver fresh. -/
+theorem selectedWithinAt_eq_fields (Φ : Footprints.Closed) (F : List Nat) (e : ProgramCertificates.Evidence ι) :
+    selectedWithinAt Φ F e = (ExpressionEffects.selectedOperands e && match ExpressionEffects.selectedEffect e with
+      | some eff => eff.footprint.le Φ && (if eff.receiverOwn then eff.ownChange.le Φ else
+          (!eff.receiverStore || Φ == .top || receiverFresh F (ProgramCertificates.claim e).term))
+      | none => false) := by
+  rw [selectedWithinAt_eq_grades, selectedGrades_eq_fields]
   cases ExpressionEffects.selectedOperands e
   · simp
   · cases ExpressionEffects.selectedEffect e with
@@ -445,6 +548,16 @@ theorem selectedWithinAt_eq_grades (Φ : Footprints.Closed) (F : List Nat) (e : 
             simp [Footprints.Closed.le_top]
         · simp only [if_true]
           cases h1 : eff.receiverStore <;> cases h2 : receiverFresh F (ProgramCertificates.claim e).term <;> simp_all
+
+/-- **A selected call's transition is within the bound below the mark**
+where its grade is below the bound (`Footprint.boundBelow_sound`). -/
+theorem selectedWithin_sound {Φ : Footprints.Closed} {F : List Nat} {b : Nat} {ρ : Env} {t : Tm}
+    {eff : CallEffects.Effect} {h h' : Heap} (hF : FreshOk F b ρ)
+    (hle : (Footprints.Footprint.boundBelow (freshPositions F t) eff.frame).le Φ = true)
+    (hq : eff.within (ExpressionEffects.receiverOf (instantiate 0 ρ t)) (ExpressionEffects.actualsOf (instantiate 0 ρ t))
+      h h') :
+    Φ.HoldsOn (· < b) h h' :=
+  (Footprints.Footprint.boundBelow_sound hq (freshPositions_sound hF)).mono hle
 
 /-- A node's run is within a closed bound `Φ` on the locations below `b`, on
 normal return, from the heap it starts in, where the slots `F` hold stores
@@ -1186,8 +1299,6 @@ theorem nodePost_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : Inst
       obtain ⟨hops, hsel⟩ := hsel
       split at hsel
       · rename_i eff heff
-        simp only [Bool.and_eq_true] at hsel
-        obtain ⟨hle, hr⟩ := hsel
         have hs : HeapObservations.SafePost (excOf G) (meaning G (ProgramCertificates.claim c.expression).type)
             (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term))
             (ExpressionEffects.actualsOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h')
@@ -1202,20 +1313,8 @@ theorem nodePost_of_checked [DecidableEq ι] {G : NormalGraph ι} {images : Inst
             rw [heff] at heff'
             cases heff'
             exact hs (by simpa only [ControlFlow.entry] using henv) hknowledge hworld hheap (by rw [hterm']; exact href)
-        rw [hterm'] at hs
-        apply HeapObservations.weaken (fun h'' v hq => ?_) hs
-        split at hr
-        · rename_i ho
-          exact ((CallEffects.Effect.within_own hq.1 ho).mono hr).on _
-        rename_i ho
-        simp only [Bool.not_eq_true] at ho
-        simp only [Bool.or_eq_true, Bool.not_eq_true', beq_iff_eq] at hr
-        rcases hr with (hr | hr) | hr
-        · exact ((CallEffects.Effect.within_holds hq.1 hr ho).mono hle).on _
-        · rw [hr]; exact (CallEffects.Effect.within_top hq.1).on _
-        · refine (CallEffects.Effect.within_below hq.1 (fun _ => ?_) (fun h => by rw [ho] at h; cases h)).mono hle
-          rw [hterm'] at hr
-          exact receiverFresh_sound hr hF
+        rw [hterm'] at hs hsel
+        exact HeapObservations.weaken (fun h'' v hq => selectedWithin_sound hF hsel hq.1) hs
       · cases hsel
   -- The node's value.
   by_cases hcf : callFresh G images sums c t = true
@@ -1283,8 +1382,6 @@ theorem throwsWithin_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
     · rename_i eff heff
       rw [heff] at hon
       simp only at hon
-      simp only [Bool.and_eq_true] at hsel
-      obtain ⟨hle, hr⟩ := hsel
       have hs : HeapObservations.SafePostExc (excOf G) (meaning G (ProgramCertificates.claim c.expression).type)
           (eff.post (ExpressionEffects.receiverOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term))
             (ExpressionEffects.actualsOf (instantiate 0 ρ (ProgramCertificates.claim c.expression).term)) h')
@@ -1298,21 +1395,9 @@ theorem throwsWithin_sound [DecidableEq ι] {G : NormalGraph ι} {images : Insta
             (ProgramCertificates.codesSound_none _) hsums c.expression hreq
           rw [heff] at heff'; cases heff'
           exact hs (by simpa only [ControlFlow.entry] using henv) hknowledge hworld hheap (by rw [hterm']; exact href)
-      rw [hterm'] at hs
-      apply HeapObservations.SafePostExc.weaken (fun _ _ _ => trivial) (fun h'' hq => ?_) hs
-      have hq := hq hon
-      split at hr
-      · rename_i ho
-        exact ((CallEffects.Effect.within_own hq ho).mono hr).on _
-      rename_i ho
-      simp only [Bool.not_eq_true] at ho
-      simp only [Bool.or_eq_true, Bool.not_eq_true', beq_iff_eq] at hr
-      rcases hr with (hr | hr) | hr
-      · exact ((CallEffects.Effect.within_holds hq hr ho).mono hle).on _
-      · rw [hr]; exact (CallEffects.Effect.within_top hq).on _
-      · refine (CallEffects.Effect.within_below hq (fun _ => ?_) (fun h => by rw [ho] at h; cases h)).mono hle
-        rw [hterm'] at hr
-        exact receiverFresh_sound hr hF
+      rw [hterm'] at hs hsel
+      exact HeapObservations.SafePostExc.weaken (fun _ _ _ => trivial)
+        (fun h'' hq => selectedWithin_sound hF hsel (hq hon)) hs
     · cases hsel
 
 /-- A node within the bound on normal return, and on a throw where its

@@ -1,6 +1,7 @@
 import Verification.Programs.ExpressionEffects
 import Verification.Programs.IndexWrites
 import Verification.Semantics.SurvivalSeparation
+import Verification.Programs.FrameChecks
 
 /-! # Promises between slots
 
@@ -900,10 +901,21 @@ theorem ordinaryOutput_holds {k : HeapKnowledge.Knowledge} {ρ h} (hk : HeapKnow
     HeapKnowledge.envIndices_holds (HeapKnowledge.shift_holds (v := v) hk).2.2.2.2.2 _⟩
 
 /-- Whether a signature's effect keeps the contents of every location a
-call starts with on a normal return: the empty footprint, on the receiver's
-array store and own locations as well (PROGRAM-TYPING.md, "A call that keeps
-the heap"). -/
-def keepsHeap (e : Effect) : Bool := e.footprint.le .empty && !e.receiverStore && !e.receiverOwn
+call starts with on a normal return: its normal exit's frame
+(`Effect.frame`) is included in the empty effect
+(`Footprint.keepsHeap`; PROGRAM-TYPING.md, "A call that keeps the heap"). -/
+def keepsHeap (e : Effect) : Bool := Footprints.Footprint.keepsHeap e.frame
+
+/-- **The check is the one the signature's fields gave** (proved): the
+empty coarse footprint, and neither the receiver's store nor its own
+locations excepted. -/
+theorem keepsHeap_eq_fields (e : Effect) :
+    keepsHeap e = (e.footprint.le .empty && !e.receiverStore && !e.receiverOwn) := by
+  unfold keepsHeap Footprints.Footprint.keepsHeap
+  rw [CallEffects.Effect.frame_boundBelow]
+  cases ho : e.receiverOwn <;> cases hs : e.receiverStore <;>
+    simp [Effect.ownChange, Footprints.Closed.le, Footprints.Closed.empty, Footprints.Closed.top,
+      Footprints.Change.le, Footprints.Change.rank, Footprints.Change.onValue, Footprints.Change.onStore]
 
 /-- The heap facts of a call's entry kept on a normal return of a call at a
 promise signature: every one where its effect keeps the heap (`call-keep`),
@@ -915,8 +927,7 @@ def promiseOutput (effect : Effect) (k : HeapKnowledge.Knowledge) : HeapKnowledg
 the heap the call started in. -/
 theorem keepsHeap_prefix {e : Effect} (hk : keepsHeap e = true) {r : Tm} {args : List Tm} {before after : Heap} {v}
     (hp : e.post r args before after v) : before.IsPrefix after := by
-  simp only [keepsHeap, Bool.and_eq_true, Bool.not_eq_true'] at hk
-  exact Footprints.Closed.holds_empty.mp ((CallEffects.Effect.within_holds hp.1 hk.1.2 hk.2).mono hk.1.1)
+  exact Footprints.Footprint.keepsHeap_prefix hk hp.1
 
 theorem promiseOutput_holds {effect : Effect} {k : HeapKnowledge.Knowledge} {ρ : Env} {h h' : Heap}
     {r : Tm} {args : List Tm} {v} (hk : HeapKnowledge.Holds k ε ρ h) (hp : effect.post r args h h' v) :
