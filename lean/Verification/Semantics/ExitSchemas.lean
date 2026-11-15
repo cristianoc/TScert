@@ -229,6 +229,15 @@ def ExitSchema.instantiate (ι : CallInstantiation) (q : ExitSchema) : ExitSpec 
 /-- The entry slots a schema's transports name. -/
 def ExitSchema.slots (q : ExitSchema) : Nat := q.ensures.foldr (fun F k => max F.slots k) 0
 
+/-- The slots a list of formulas names, appended, are the larger of each
+part's. -/
+theorem FormulaSchema.foldr_slots_append (a b : List FormulaSchema) :
+    (a ++ b).foldr (fun (F : FormulaSchema) k => max F.slots k) 0 =
+      max (a.foldr (fun (F : FormulaSchema) k => max F.slots k) 0) (b.foldr (fun (F : FormulaSchema) k => max F.slots k) 0) := by
+  induction a with
+  | nil => simp
+  | cons F t ih => simp only [List.cons_append, List.foldr_cons, ih, Nat.max_assoc]
+
 /-- The entry slots both exits' transports name. -/
 def Exits.slots (x : Exits ExitSchema) : Nat := max x.normal.slots x.exceptional.slots
 

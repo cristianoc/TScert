@@ -9,12 +9,16 @@ A schema of the longer call is a schema of the bound call where it names no
 saved value: each entry position `i > k` of the longer call is position
 `i - k` of the bound call (`dropBefore`), each exit position past the result
 likewise (`dropAfter`), and the result stays. `Exits.drop k` substitutes
-these positions in every frame and every formula and refuses a schema
-naming a saved position (`Exits.drop`); its exits at the bound call are
-exactly the schema's at the longer call (`Exits.exitPost_drop`).
+these positions in every frame and every formula (`Exits.drop`). Its checked
+domain is a sufficient check, not a characterization: it refuses a schema
+naming a saved position, an assertion-arena reference (`.at`), a transport
+of another shift than `1`, and a transport with a replacement at a saved
+position, even one the call's equations make tautological. Where it
+succeeds, its exits at the bound call are exactly the schema's at the longer
+call (`Exits.exitPost_drop`).
 
 The substitution is stated once for every two-state formula
-(`FormulaF.renameHolds`): renamed by partial maps of entry and exit
+(`holds_renameFormula`): renamed by partial maps of entry and exit
 positions, a formula holds at a two-state interpretation exactly where the
 original holds at one agreeing with it on every renamed position
 (`Renaming.Agrees`). A transport's equations at the saved positions are
@@ -238,7 +242,9 @@ theorem holds_renameOperation {R : Renaming} {s s' : TwoState} (hs : R.Agrees s 
 /-! ## Formulas -/
 
 /-- **A two-state formula with its positions renamed**, its appends'
-arguments by `seq` and its transports by `tr`; an arena node is refused. -/
+arguments by `seq` and its transports by `tr`: defined where every position
+it names is renamed, `seq` and `tr` are defined at its appends and
+transports, and it holds no arena node (`.at`), which is refused. -/
 def renameFormula {S S' T T' : Type} (R : Renaming) (seq : S → Option S') (tr : T → Option T') :
     FormulaF S T → Option (FormulaF S' T')
   | .at .. => none
@@ -416,9 +422,11 @@ theorem seqDrop_values {k : Nat} {s s' : TwoState} (hs : (dropRenaming k).Agrees
     simp only [WitnessSeq.instantiate, List.mapM_append, seqDrop_values hs n hA, seqDrop_values hs n hB]
 
 /-- **A transport at the bound call**: one whose default image is the next
-exit slot and whose replacements name no saved position, its replacements
-and certified-rigid slots reindexed. Its equations at the saved positions
-are a call's (`TwoState.Shifted`). -/
+exit slot (`shift = 1`) and whose replacements are all at positions past the
+saved ones, its replacements and certified-rigid slots reindexed. Its
+equations at the saved positions are a call's (`TwoState.Shifted`). Any
+other transport is refused, a replacement at a saved position even where it
+is tautological. -/
 def trDrop (k : Nat) (t : TransportSchema) : Option TransportSchema :=
   if t.shift = 1 ∧ t.overrides.all (fun p => decide (k < p.1)) = true then
     (t.overrides.mapM fun p => (renameWitness (dropAfter k) p.2).map ((p.1 - k), ·)).map fun ov =>
@@ -617,13 +625,15 @@ private theorem canonical_renameFormula {k : Nat} :
   | .truth, G, h | .falsity, G, h => by cases h; exact ⟨rfl, rfl⟩
 
 /-- **An exit schema at the bound call**: its frame and formulas with the
-positions substituted, where none names a saved position. -/
+positions substituted, defined where the frame names no saved position and
+every formula is in the domain of `renameFormula` at `trDrop`. -/
 def ExitSchema.drop (k : Nat) (q : ExitSchema) : Option ExitSchema := do
   pure ⟨← renameFootprint (dropBefore k) q.frame,
     ← q.ensures.mapM (renameFormula (dropRenaming k) (seqDrop k) (trDrop k))⟩
 
 /-- **Binding `k` actuals** (the note, rule Call at a bound function): both
-exits at the bound call, where neither names a saved position. -/
+exits at the bound call, defined where both are in the domain of
+`ExitSchema.drop`. -/
 def Exits.drop (k : Nat) (x : Exits ExitSchema) : Option (Exits ExitSchema) := do
   pure ⟨← x.normal.drop k, ← x.exceptional.drop k⟩
 
@@ -689,9 +699,10 @@ theorem Exits.drop_get {k : Nat} {x y : Exits ExitSchema} (hd : x.drop k = some 
   · exact ha
   · exact hb
 
-/-- **Binding is exact** (the note, rule Call at a bound function): where a
-schema names no saved position, its exits at the bound call are its exits
-at the longer call, the saved receiver and actuals in front. -/
+/-- **Binding is exact** (the note, rule Call at a bound function): where
+`Exits.drop` succeeds, the exits at the bound call are the schema's exits
+at the longer call, the saved receiver and actuals in front
+(`holds_renameFormula`, `holdsAt_trDrop`). -/
 theorem Exits.exitPost_drop {k : Nat} {x y : Exits ExitSchema} (hd : x.drop k = some y) {pre : List Tm}
     (hp : pre.length = k) {c : Completion} {r r₀ : Tm} {args : List Tm} {s s' : IndexedHeap} {v : Tm} :
     y.exitPost c r args s s' v ↔ x.exitPost c r₀ (pre ++ args) s s' v := by

@@ -114,13 +114,6 @@ postconditions, and the exceptional exit's, `⊤` without `onThrow`. -/
 def Effect.schema (e : Effect) : Exits ExitSchema :=
   ⟨⟨e.frame, e.normalSchema⟩, if e.onThrow then ⟨e.frame, []⟩ else ⟨topEffect, []⟩⟩
 
-private theorem foldr_slots_append (a b : List FormulaSchema) :
-    (a ++ b).foldr (fun (F : FormulaSchema) k => max F.slots k) 0 =
-      max (a.foldr (fun (F : FormulaSchema) k => max F.slots k) 0) (b.foldr (fun (F : FormulaSchema) k => max F.slots k) 0) := by
-  induction a with
-  | nil => simp
-  | cons F t ih => simp only [List.cons_append, List.foldr_cons, ih, Nat.max_assoc]
-
 /-- The actuals from position `1` at a call of `n` actuals are its actual
 positions. -/
 theorem restFrom_one (n : Nat) : (WitnessSeq.restFrom 1).instantiate n = actualWitnesses n := by
@@ -155,7 +148,7 @@ private theorem write_slots (w : ElementWrite) :
   | stores => rfl
   | assign => rfl
   | exact k =>
-    simp only [ElementWrite.schemaPosts, List.foldr_cons, foldr_slots_append, hf]
+    simp only [ElementWrite.schemaPosts, List.foldr_cons, FormulaSchema.foldr_slots_append, hf]
     rfl
 
 /-- The entry slots a signature's schema names: `4` for an element
@@ -172,7 +165,7 @@ theorem Effect.schema_slots (e : Effect) :
     | nil => rfl
     | cons _ _ ih => simp only [List.map_cons, List.foldr_cons, ih]; rfl
   simp only [Exits.slots, hex, Nat.max_zero]
-  simp only [Effect.schema, ExitSchema.slots, Effect.normalSchema, foldr_slots_append, hens]
+  simp only [Effect.schema, ExitSchema.slots, Effect.normalSchema, FormulaSchema.foldr_slots_append, hens]
   have h1 : (if e.fresh = true then [(FormulaF.operation (.freshStore 0) : FormulaSchema)] else []).foldr
       (fun (F : FormulaSchema) k => max F.slots k) 0 = 0 := by split <;> rfl
   have h2 : (if e.freshObject = true then [(FormulaF.operation (.freshObject 0) : FormulaSchema)] else []).foldr

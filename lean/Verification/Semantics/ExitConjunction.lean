@@ -247,15 +247,8 @@ theorem ExitSchema.instantiate_meet (a b : ExitSchema) (ι : CallInstantiation) 
   simp only [ExitSchema.meet, ExitSchema.instantiate, ExitSpec.meet, List.map_append, List.map_cons]
   rfl
 
-private theorem foldr_slots_append (a b : List FormulaSchema) :
-    (a ++ b).foldr (fun (F : FormulaSchema) k => max F.slots k) 0 =
-      max (a.foldr (fun (F : FormulaSchema) k => max F.slots k) 0) (b.foldr (fun (F : FormulaSchema) k => max F.slots k) 0) := by
-  induction a with
-  | nil => simp
-  | cons F t ih => simp only [List.cons_append, List.foldr_cons, ih, Nat.max_assoc]
-
 theorem ExitSchema.slots_meet (a b : ExitSchema) : (a.meet b).slots = max a.slots b.slots := by
-  simp only [ExitSchema.slots, ExitSchema.meet, foldr_slots_append, List.foldr_cons]
+  simp only [ExitSchema.slots, ExitSchema.meet, FormulaSchema.foldr_slots_append, List.foldr_cons]
   show max _ (max 0 _) = _
   rw [Nat.zero_max]
 
