@@ -333,10 +333,16 @@ contributes its throw alone. A function is proposed nothing where its
 footprint is the ordinary effect or one of its runs stops. The same rule
 covers a generic function and one with a rest parameter.
 
-A self-recursive function's own reads start at keep/keep bounding its
-throws and are joined with what its steps establish until they establish no
-more, $`I_0=\bot,\ I_{n+1}=I_n\sqcup T_f(I_n)`$, at most one run per step of
-the lattice's height. A member of a cycle of two or more functions reads
+A self-recursive function's own reads, a per-exit summary of its normal
+and exceptional bounds, start at both exits keeping everything and are
+joined exit by exit with what its steps establish until each exit they
+establish is within the one read (`ClassSummary.within`, a weakening at each
+exit, `ClassSummary.within_weakens`),
+$`I_0=\bot,\ I_{n+1}=I_n\sqcup T_f(I_n)`$, at most one run per step of the
+lattice's height. A stand-in, a recursion assumption and an entry of the
+proposals' memo carry that summary; a plan reads its projection
+(`ClassSummary.project`), and the memo's key digests both exits of every
+summary its run reads. A member of a cycle of two or more functions reads
 the members not yet proposed at their written effect, else at the ordinary
 effect. A function whose
 result annotation can state a returned function's footprint

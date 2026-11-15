@@ -16,6 +16,7 @@ import Verification.Source.Claims.Extraction
 import Verification.Source.Claims.Imports
 import Verification.Programs.SinglePass
 import Verification.Programs.SinglePassStats
+import Verification.Source.Lowering.ExitProposals
 
 /-! Source claim validation, evidence production and the theorem relating
 exact accepted plans to modeled graph safety. -/
@@ -114,7 +115,7 @@ def Front.extractSome (fr : Front) (wanted : Std.HashSet Nat) (retype : Option R
     | .error reason => (T, plans.push (.error reason))).map id (·.toList)
 
 /-- What proposals established, by their inputs' digest (`FilePlans.proposed`). -/
-abbrev ProposalMemo := Std.HashMap UInt64 (Option (Footprints.Closed × Bool × Footprints.Closed × Nat))
+abbrev ProposalMemo := Std.HashMap UInt64 (Option (SourceExtraction.ClassSummary × Footprints.Closed × Nat))
 
 /-- A file's plans over one frozen store: the import plan, the front, the
 frozen store, and each unit's plan or refusal, in the front's order. -/

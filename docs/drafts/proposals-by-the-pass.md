@@ -62,7 +62,7 @@ I_0=\bot,\qquad I_{n+1}=I_n\sqcup T_f(I_n),
 \qquad T_f(I_n)\sqsubseteq I_n\ \Longrightarrow\ \text{finalize}.
 ```
 
-Written components stay fixed. Unwritten footprints start at `keep/keep`; the exceptional guarantee starts bounded and can weaken. Returned-callable components participate wherever represented. Freshness, if inferred, uses the reverse Boolean order.
+Written components stay fixed. Unwritten components are a per-exit summary, the closed bounds of the normal and the exceptional exit (`ClassSummary`, `F/Lowering/ExitProposals.lean`); both start at `keep`, the join is exit by exit, and the iteration stops where each exit $`T_f(I_n)`$ states is within $`I_n`$'s (`ClassSummary.within`, a weakening at each exit by `ClassSummary.within_weakens`). Stand-ins, recursion assumptions and memo entries carry the summary; a plan's footprint and throw bound are its projection (`ClassSummary.project`, an upper bound at each exit by `ClassSummary.project_covers`), and a memo key digests both exits of each summary read. The summaries carry no postcondition; a fresh result and a returned callable's footprint are established apart. Returned-callable components participate wherever represented. Freshness, if inferred, uses the reverse Boolean order.
 
 Each unstable successful round strictly increases the finite product lattice, so its height bounds the rounds. Calling the result the **least** fixed point additionally requires monotonicity of $`T_f`$; that property is unproved for the proposed driver. A located typing failure remains a failure, rather than evidence for a smaller effect.
 

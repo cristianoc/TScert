@@ -1,27 +1,46 @@
 import Verification.Source.Claims.MemberSettle
+import Verification.Source.Lowering.ExitProposals
 
 /-! **Proposals by the pass** ([proposals by the pass](../../../../docs/drafts/proposals-by-the-pass.md)):
 what the front proposes about a body's unwritten effect is computed with
-the pass's own steps on that body. A function's unwritten footprint and
-throw bound are the join of its checked steps' local effects, each step's
-local effect the least closed footprint its check accepts on one of the two
+the pass's own steps on that body. A function's unwritten effect is a
+per-exit summary (`SourceExtraction.ClassSummary`): its normal exit's bound
+the join of its checked steps' local effects on normal return, its
+exceptional exit's the join of their local effects with their throws
+bounded, each step's local effect the least closed footprint its check
+accepts on one of the two
 routes the pass checks a footprint by: the direct node-by-node check
 (`SinglePass.footprintCheck`), and the regional fallback, whose
 alternatives (`ArgumentRegionGraph.stepEffects`' kinds) are rebased to the
 entry through the regional facts (`rebaseAll`) and read in the closed
 language. The returned function's footprint is read off the returned
-value's checked type. A proposal decides nothing: the function's own unit
-checks it, and its callers read it. -/
+value's checked type. A plan reads a summary's projection
+(`ClassSummary.project`). A proposal decides nothing: the function's own
+unit checks it, and its callers read it. -/
 namespace Verification.SourceClaimJson
 
-/-- A written-footprint stand-in: the footprint a function or an import would
-state if written, supplied apart from the source. The command line
-supplies none. -/
+/-- A written-footprint stand-in: the effect a function or an import would
+state if written, supplied apart from the source, as its complete per-exit
+summary (`SourceExtraction.ClassSummary`), with the footprint of the
+function it returns. The command line supplies none. -/
 structure StandIn where
   name : String
-  footprint : Footprints.Closed
-  onThrow : Bool := false
+  summary : SourceExtraction.ClassSummary := ⟨some .top, some .top⟩
   resultFootprint : Footprints.Closed := .top
+
+/-- **A stand-in in today's effect format**: its summary's projection
+(`ClassSummary.project`, an upper bound at each exit), where a plan's
+footprint and throw bound are written. -/
+def StandIn.effect (s : StandIn) : CallEffects.Effect := s.summary.project
+
+def StandIn.footprint (s : StandIn) : Footprints.Closed := s.effect.closed
+
+def StandIn.onThrow (s : StandIn) : Bool := s.effect.onThrow
+
+/-- The stand-in of today's format: the summary of a closed footprint and a
+throw bound (`ClassSummary.ofFormat`). -/
+def StandIn.ofFormat (name : String) (c : Footprints.Closed) (t : Bool) (r : Footprints.Closed := .top) : StandIn :=
+  ⟨name, SourceExtraction.ClassSummary.ofFormat c t, r⟩
 
 /-- The stand-ins of a file: for the file's functions and for its imports. -/
 structure StandIns where
@@ -167,12 +186,12 @@ end
 
 /-! ## A member's interface -/
 
-/-- What a member's own steps establish of its interface: its footprint, its
-throw bound, the footprint of the function it returns, and the transfers
-its two runs visited. -/
+/-- What a member's own steps establish of its interface: its per-exit
+summary (the closed bounds of its normal and exceptional exits), the
+footprint of the function it returns, and the transfers its two runs
+visited. -/
 structure Established where
-  footprint : Closed
-  onThrow : Bool
+  summary : SourceExtraction.ClassSummary
   result : Closed
   visits : Nat
 
@@ -256,7 +275,7 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
   let answers : CertificateProducer.Answered G := {}
   let some (.ok plan) := f.plans[i]? | return none
   let .ok (.graph _ _ r) := plan.certify | return none
-  if r.qualification.isSome || r.async then return some ⟨.top, false, .top, 0⟩
+  if r.qualification.isSome || r.async then return some ⟨⟨some .top, some .top⟩, .top, 0⟩
   let nodes := r.program.toArray
   let claimed := r.claims.toArray
   let n := nodes.size
@@ -364,15 +383,14 @@ def interface (f : FilePlans) (fuel : Nat) (i : Nat) (given : Option (Std.HashMa
         | none => acc
       (joined.1, joined.2, σB.walk.visited)
     | .error _ => (none, none, 0)
-  let within := fun (Φ : Option Closed) (T : Option Closed) => match Φ, T with
-    | some a, some b => b.le a && a != Footprints.Closed.top
-    | _, _ => false
-  let (Φ, ot) := match normal, regionalΦ with
-    | some a, some b => if b.le a && !a.le b then (b, within regionalΦ regionalThrown) else (a, within normal thrown)
-    | some a, none => (a, within normal thrown)
-    | none, some b => (b, within regionalΦ regionalThrown)
-    | none, none => (.top, false)
-  return some ⟨Φ, ot, if read.returns then read.result else .top, visits + visitsB⟩
+  -- The route of the less normal bound, its normal and exceptional bounds
+  -- (`top` where no bound bounds a throw): the member's summary.
+  let (Φ, X) := match normal, regionalΦ with
+    | some a, some b => if b.le a && !a.le b then (b, regionalThrown) else (a, thrown)
+    | some a, none => (a, thrown)
+    | none, some b => (b, regionalThrown)
+    | none, none => (.top, none)
+  return some ⟨⟨some Φ, some (X.getD .top)⟩, if read.returns then read.result else .top, visits + visitsB⟩
 
 /-- A plan's request at `top` with no throw bound: its walk unbounded. -/
 def openAt (f : FilePlans) (i : Nat) : FilePlans :=
@@ -440,11 +458,12 @@ def proposalDepth : Nat := 12
 
 /-! ## The fold over a file's functions -/
 
-/-- What the functions of a file read of each other while proposed: a
-function's written effect where it states one without regions, `top` where
-it states one with regions. -/
-def written (f : Fragment.Fn) : Option (Closed × Bool) :=
-  f.stated.map fun s => if s.regions.isEmpty then ((s.closed, s.onThrow) : Closed × Bool) else (.top, false)
+/-- What the functions of a file read of each other while proposed: the
+summary of a function's written closed footprint and throw bound where it
+states one without regions (`ClassSummary.ofFormat`), `top` where it states
+one with regions. -/
+def written (f : Fragment.Fn) : Option SourceExtraction.ClassSummary :=
+  f.stated.map fun s => if s.regions.isEmpty then .ofFormat s.closed s.onThrow else .ofFormat .top false
 
 /-- **The inputs a proposal's runs read, digested**: of each member of
 member `j`'s group in the plans `fp` the proposal planned, its name and
@@ -458,7 +477,7 @@ def inputDigest (fp : FilePlans) (j : Nat) (reads : List StandIn) : UInt64 :=
   let reached := (((fp.fr.group j).flatMap fp.fr.reach).filterMap fun k =>
     (fp.fr.units[k]?).map (·.1.name)).eraseDups
   let read := (reads.filter (reached.contains ·.name)).map fun s =>
-    (s.name, reprStr s.footprint, s.onThrow, reprStr s.resultFootprint)
+    (s.name, reprStr s.summary, reprStr s.resultFootprint)
   let members := (fp.fr.group j).map fun k =>
     let unit := (fp.fr.units[k]?).map fun (g, _, c) => (g.name, g.namePos, c.isSome)
     match fp.plans[k]? with
@@ -480,10 +499,14 @@ functions) at its written effect or `top` whatever was found of it, so
 the proposal is a function of the function and of the proposals of the
 functions it reaches outside its group; its interface from its own steps
 (`settledInterface`); the functions `controls` names at their stand-ins.
-A written effect's footprint and throw bound are kept whole, its steps proposing its returned function's footprint. A
-self-recursive function's own reads start at keep/keep with its throws
-bounded and are joined with what its steps establish until they establish
-no more, at most once per step of the lattice's height. None where the pass
+A written effect's footprint and throw bound are kept whole (their summary,
+`ClassSummary.ofFormat`), its steps proposing its returned function's
+footprint. A self-recursive function's own reads, a summary, start at both
+exits keeping everything and are joined exit by exit with what its steps
+establish until each exit they establish is within the one read
+(`ClassSummary.within`), at most once per step of the lattice's height.
+`memo` keys each run by its inputs, both exits of each summary read
+included (`inputDigest`). None where the pass
 establishes nothing of it (callers read it at its written effect or `top`).
 With `results` (`TSCERT_FORCE`, the adversarial proposal), each returned
 function's footprint keep/keep. -/
@@ -493,15 +516,15 @@ def proposeOne (fr : Front) (controls : List String) (force : List String) (prio
   let cycle := (fr.group i).filterMap fun j => match fr.units[j]? with
     | some (g, _, none) => if j != i && (fr.group i).length > 1 then some g.name else none
     | _ => none
-  let declared : List (String × Option (Closed × Bool)) := fr.units.filterMap fun (g, _, c) =>
+  let declared : List (String × Option SourceExtraction.ClassSummary) := fr.units.filterMap fun (g, _, c) =>
     if c.isNone && !controls.contains g.name then some (g.name, written g) else none
   let reads := fun (own : Option StandIn) => (found.filter (!cycle.contains ·.name)) ++ declared.filterMap fun (nm, w) =>
     if nm == f.name then own
     else if !cycle.contains nm && found.any (·.name == nm) then none
     else match (if cycle.contains nm then none else prior.find? (·.name == nm)), w with
       | some p, _ => some p
-      | none, some (Φ, ot) => some { name := nm, footprint := Φ, onThrow := ot }
-      | none, none => some { name := nm, footprint := .top }
+      | none, some S => some { name := nm, summary := S }
+      | none, none => some { name := nm }
   -- What the member's runs establish at its reads (`settledInterface`),
   -- read from `memo` where a proposal planned the same inputs
   -- (`inputDigest`), a refusal (`none`) included.
@@ -517,31 +540,36 @@ def proposeOne (fr : Front) (controls : List String) (force : List String) (prio
       | some j =>
         let key := inputDigest fp j (reads own)
         match memo.get? key with
-        | some got => (got.map fun (Φ, ot, R, v) => ⟨Φ, ot, R, v⟩, memo)
+        | some got => (got.map fun (S, R, v) => ⟨S, R, v⟩, memo)
         | none =>
           let got := settledInterface fp proposalDepth j
-          (got, memo.insert key (got.map fun e => (e.footprint, e.onThrow, e.result, e.visits)))
-  let (r, memo) : Option Established × ProposalMemo := if let some (Φ, ot) := written f then
-      let (got, memo) := establish (some { name := f.name, footprint := Φ, onThrow := ot }) memo
-      (got.map fun got => { got with footprint := Φ, onThrow := ot }, memo)
+          (got, memo.insert key (got.map fun e => (e.summary, e.result, e.visits)))
+  let (r, memo) : Option Established × ProposalMemo := if let some S := written f then
+      let (got, memo) := establish (some { name := f.name, summary := S }) memo
+      (got.map fun got => { got with summary := S }, memo)
     else if (fr.mentions i).contains f.name then Id.run do
-      let mut assumed : Closed × Bool := (keepAll, true)
+      -- A recursion assumption, per exit: first both exits keeping
+      -- everything; accepted where each exit of what the body establishes
+      -- entails the assumption's (`ClassSummary.within`,
+      -- `ClassSummary.within_weakens`), else widened to the join
+      -- (`ClassSummary.choice`, `ClassSummary.within_choice`).
+      let mut assumed : SourceExtraction.ClassSummary := .ofFormat keepAll true
       let mut memo := memo
       for _ in List.range 8 do
-        let (got, memo') := establish (some { name := f.name, footprint := assumed.1, onThrow := assumed.2 }) memo
+        let (got, memo') := establish (some { name := f.name, summary := assumed }) memo
         memo := memo'
         match got with
         | none => return (none, memo)
         | some got =>
-          if got.footprint.le assumed.1 && (got.onThrow || !assumed.2) then
-            return (some { got with footprint := assumed.1, onThrow := assumed.2 }, memo)
-          assumed := (join assumed.1 got.footprint, assumed.2 && got.onThrow)
+          if got.summary.within assumed then
+            return (some { got with summary := assumed }, memo)
+          assumed := assumed.choice got.summary
       return (none, memo)
     else establish none memo
   (r.map fun got =>
     let R := if force.contains "results" then keepAll else got.result
     let R := if (resultWithFootprint fr.d.types f.ret R).isOk then R else .top
-    { name := f.name, footprint := got.footprint, onThrow := got.onThrow && got.footprint != .top, resultFootprint := R },
+    { name := f.name, summary := got.summary, resultFootprint := R },
     memo)
 
 /-- The functions a wanted unit reaches, callees first: each after every

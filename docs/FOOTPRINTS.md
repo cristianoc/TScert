@@ -474,10 +474,12 @@ effects, each the least closed footprint the pass's own footprint check
 accepts at the step
 ([declarations](SINGLE-PASS-FRONT.md#declarations) states the rule). It
 bounds the throws where the join of the steps' effects with their throws
-checked is within the footprint. Callees are proposed first, each caller
-reading the footprint found for it; a self-recursive function reads itself
-at `{value: keep, store: keep}`, then at the join of that and what its
-steps establish, until they establish no more. A function with a written
+checked is within the footprint: the projection of the body's per-exit
+summary, its normal and exceptional bounds (`ClassSummary.project`).
+Callees are proposed first, each caller reading the summary found for it; a
+self-recursive function reads itself at both exits keeping everything, then
+at the join of that and what its steps establish, until each exit its steps
+establish is within the one it read (`ClassSummary.within`). A function with a written
 effect keeps its footprint and throw bound whole, its steps proposing its
 returned function's footprint. An async function keeps `top`, the language's
 restriction ([the fragment](SOURCE-FRAGMENT.md)). A function literal's

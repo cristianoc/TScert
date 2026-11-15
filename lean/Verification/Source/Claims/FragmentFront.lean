@@ -960,7 +960,7 @@ def establishStep (budget : PositiveCertificates.SearchBudget) (force : List Str
   let foreign := m.reads.filter (·.location != location)
   let rs := readsOf foreign established
   let forced : StandIns := if force.contains "imports" then
-      { functions := m.names.map fun n => { name := n, footprint := ⟨.keep, .keep, .keep⟩, onThrow := true } } else {}
+      { functions := m.names.map fun n => StandIn.ofFormat n ⟨.keep, .keep, .keep⟩ true } else {}
   let planned := SinglePass.timedKind "lower: modules' plans" fun _ =>
     fragmentPlansCore m.module.document location budget (some m.names) forced force (rs.map (·.1)) (rs.map (·.2))
       (closure := true) (proposed := true) (interfaceSlots := true)
@@ -1142,7 +1142,7 @@ def FilePlans.groupProposals (f : FilePlans) (i : Nat) : List (String × Option 
     | some (g, _, none) => if g.async then none else
       some (g.name, (f.fr.d.functions.find? (·.name == g.name)).bind fun c =>
         if c.footprint == .top && !c.onThrow && c.resultFootprint == .top then none
-        else some { name := g.name, footprint := c.footprint, onThrow := c.onThrow, resultFootprint := c.resultFootprint })
+        else some (StandIn.ofFormat g.name c.footprint c.onThrow c.resultFootprint))
     | _ => none
 
 /-- Importer planning from closed interfaces. No module is planned here. -/
