@@ -338,7 +338,7 @@ export function decodeCallEffect(v: JsonRead): Modifies<{ values: "any"; stores:
   const freshObject = v.freshObject;
   const receiverGrows = v.receiverGrows;
   const elementWrite = v.elementWrite;
-  const writes: readonly ElementWrite[] = ["stores", "exactUint8", "exactUint16", "exactInt32", "exactFloat64"];
+  const writes: readonly ElementWrite[] = ["stores", "assign", "exactUint8", "exactUint16", "exactInt32", "exactFloat64"];
   const write = elementWrite === null ? null : writes.find(w => w === elementWrite);
   if (write === undefined) return undefined;
   if (footprint === undefined || typeof fresh !== "boolean" || typeof receiverStore !== "boolean" ||

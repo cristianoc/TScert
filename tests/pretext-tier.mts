@@ -105,6 +105,7 @@ export const boundsList: Listed[] = [
     "invalid-typed-array-length-fraction", "typed-array-element-facts", "invalid-typed-array-element-read-inclusive",
     "typed-array-element-writes", "invalid-typed-array-element-write-int32-wrap",
     "invalid-typed-array-element-write-uint8-truncation", "invalid-typed-array-element-write-uint8-negative",
+    "invalid-typed-array-element-write-uint8-wrap-read",
     "invalid-typed-array-element-write-value",
     "typed-array-subarray-facts-gap", "invalid-typed-array-element-read-after-write", "typed-array-prefix-write",
     "invalid-typed-array-prefix-past", "invalid-typed-array-prefix-value", "invalid-typed-array-prefix-int32-wrap",

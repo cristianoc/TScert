@@ -106,6 +106,10 @@ the view stores of the typed arrays over the written bytes by fresh cells
 (`ElementWrite.Holds`). -/
 inductive ElementWrite where
   | stores
+  /-- Besides, a numeric element assignment `b[i] = v` (`%ByteSet%`): the
+  write of the element at the typed array's format (`ViewAssign`, the note's
+  View-Write for every number and index). -/
+  | assign
   /-- Besides, the element store of the view (the first actual), whose
   element type is `k`, changed only at the index (the second actual, a safe
   integer below its length), whose entry is a location holding `k`'s
@@ -145,25 +149,41 @@ theorem viewLength_of_viewLengthOf {v : Val} {n : Int} (h : HeapKnowledge.viewLe
   · cases h
 
 /-- **The write of an element** (the note *Tolerant frames*, View-Write),
-of the actuals `args`, a typed array of format `k` (`args[0]`), a number
+of the actuals `args`, a typed array of format `f` (`args[0]`), a number
 (`args[1]`) and the number written (`args[2]`), from `before` to `after`.
 Where the index denotes an integer `i` below the typed array's length (a
 valid index; `-0` denotes `0`; every typed array's length is below `2^53`,
 so a valid index is a safe integer), where its store (`elementsOf`) listed
 the entries `ls`, it lists after the write a cell at `i` holding the
-format's conversion of the number (`ViewFormat.conv`), and at every other
+format's conversion of the number (`ViewFormat.conv`; a NaN of `Float64` as a
+NaN, `SameNumber`), and at every other
 index a cell holding what that index's cell held. At a number that is no
 valid index no location changes. -/
-def ExactWrite (k : ElementKind) (args : List Tm) (before after : Heap) : Prop :=
+def WriteAt (f : ViewFormat) (args : List Tm) (before after : Heap) : Prop :=
   ∀ x ib N, args.getD 2 .undef = .num x → args.getD 1 .undef = .num ib →
     viewLength (args.getD 0 .undef) = some N →
     (∀ i : Nat, SafeIntegers.SafeInt ib i → i < N →
       ∀ s ls, HeapKnowledge.elementsOf (args.getD 0 .undef) = some s → before[s]?.bind storeEntries = some ls →
         ∃ ls', after[s]?.bind storeEntries = some ls' ∧
-          (∃ l, ls'[i]? = some (some l) ∧ after[l]? = some (.num (k.format.conv x))) ∧
+          (∃ l y, ls'[i]? = some (some l) ∧ after[l]? = some (.num y) ∧ SameNumber y (f.conv x)) ∧
           ∀ j, j ≠ i → ∀ l u, ls[j]? = some (some l) → before[l]? = some u →
             ∃ l', ls'[j]? = some (some l') ∧ after[l']? = some u) ∧
     ((∀ i : Nat, SafeIntegers.SafeInt ib i → N ≤ i) → before.IsPrefix after)
+
+/-- The write of an element of a typed array of the element type `k`'s
+format (`%ByteSet%`'s exact signatures). -/
+def ExactWrite (k : ElementKind) (args : List Tm) (before after : Heap) : Prop :=
+  WriteAt k.format args before after
+
+/-- A typed array's format, as its descriptor states it. -/
+def viewFormatOf : Val → Option ViewFormat
+  | .viewAt _ _ _ f _ => some f
+  | _ => none
+
+/-- **A numeric element assignment** `b[i] = v` (`%ByteSet%`): the write of
+the element at the typed array's own format. -/
+def ViewAssign (args : List Tm) (before after : Heap) : Prop :=
+  ∀ f, viewFormatOf (args.getD 0 .undef) = some f → WriteAt f args before after
 
 /-- **The facts an exact write's precondition gives** (`ElementKind.preFacts`,
 `ElementKind.exactPre_of_requires`): the value is one `k` takes, and the
@@ -198,10 +218,18 @@ theorem ExactWrite.taken {k : ElementKind} {args : List Tm} {before after : Heap
   obtain ⟨x, hxv⟩ : ∃ x, args.getD 2 .undef = .num x := by
     obtain ⟨x, _, hxe, -⟩ := hk; exact ⟨x, hxe⟩
   have hN' := viewLength_of_viewLengthOf hN
-  obtain ⟨ls', hls', ⟨l, hl, hlv⟩, hj⟩ :=
+  obtain ⟨ls', hls', ⟨l, y, hl, hlv, hy⟩, hj⟩ :=
     (hx x b N.toNat hxv hb hN').1 i hsi (by omega) s ls hs hls
   rw [hxv] at hk ⊢
-  exact ⟨ls', b, i, hls', hb, hsi, hj, l, hl, by rw [ElementKind.convert_conv hk]; exact hlv⟩
+  obtain ⟨b', i', hb', hs', hr⟩ := hk
+  cases hb'
+  have hne : isNaNBits (k.format.conv x) = false := by
+    rw [ViewFormat.conv_safeInt hs' (fun lo hi he => hr lo hi (by rw [← ElementKind.range_format]; exact he))]
+    split
+    · exact isNaNBits_safeInt hs'
+    · exact isNaNBits_safeInt (SafeIntegers.safeInt_int32Bits hs'.1)
+  refine ⟨ls', b, i, hls', hb, hsi, hj, l, hl, ?_⟩
+  rw [ElementKind.convert_conv ⟨x, i', rfl, hs', hr⟩, hlv, hy.eq_of_not_nan hne]
 
 /-- **The conversion keeps the integer a value denotes.** -/
 theorem ElementKind.intValue_convert (k : ElementKind) (v : Tm) :
@@ -273,13 +301,14 @@ of the kinded view-element write from a well-formed entry
 (`CallEffects.Effect.viewPost`), and of the precondition
 (`ElementKind.exactPre_of_requires`). -/
 def ElementWrite.Holds (w : ElementWrite) (args : List Tm) (before after : Heap) : Prop :=
-  w.changes.Holds before after ∧ (∀ k, w = .exact k → ExactWrite k args before after ∧ ExactPre k args)
+  w.changes.Holds before after ∧ (∀ k, w = .exact k → ExactWrite k args before after ∧ ExactPre k args) ∧
+    (w = .assign → ViewAssign args before after)
 
 theorem ElementWrite.Holds.changes {w : ElementWrite} {args : List Tm} {before after : Heap}
     (h : w.Holds args before after) : w.changes.Holds before after := h.1
 
-theorem ExactWrite.prefix_left {k : ElementKind} {args : List Tm} {before middle after : Heap}
-    (hx : ExactWrite k args middle after) (hprefix : before.IsPrefix middle) : ExactWrite k args before after := by
+theorem WriteAt.prefix_left {f : ViewFormat} {args : List Tm} {before middle after : Heap}
+    (hx : WriteAt f args middle after) (hprefix : before.IsPrefix middle) : WriteAt f args before after := by
   intro x ib N hxv hb hN
   obtain ⟨hv, hinv⟩ := hx x ib N hxv hb hN
   refine ⟨fun i hi hlt s ls hs hls => ?_, fun h => hprefix.trans (hinv h)⟩
@@ -288,15 +317,23 @@ theorem ExactWrite.prefix_left {k : ElementKind} {args : List Tm} {before middle
   exact ⟨ls', hls', hw, fun j hji l u hl hu =>
     hj j hji l u hl (List.getElem?_append_left (List.getElem?_eq_some_iff.mp hu).1 ▸ hu)⟩
 
+theorem ExactWrite.prefix_left {k : ElementKind} {args : List Tm} {before middle after : Heap}
+    (hx : ExactWrite k args middle after) (hprefix : before.IsPrefix middle) : ExactWrite k args before after :=
+  WriteAt.prefix_left hx hprefix
+
+theorem ViewAssign.prefix_left {args : List Tm} {before middle after : Heap}
+    (hx : ViewAssign args middle after) (hprefix : before.IsPrefix middle) : ViewAssign args before after :=
+  fun f hf => (hx f hf).prefix_left hprefix
+
 theorem ElementWrite.Holds.prefix_left {w : ElementWrite} {args : List Tm} {before middle after : Heap}
     (hx : w.Holds args middle after) (hprefix : before.IsPrefix middle) : w.Holds args before after :=
   ⟨HeapKnowledge.Changes.Holds.prefix_left hx.1 hprefix, fun k he =>
-    ⟨(hx.2 k he).1.prefix_left hprefix, (hx.2 k he).2⟩⟩
+    ⟨(hx.2.1 k he).1.prefix_left hprefix, (hx.2.1 k he).2⟩, fun he => (hx.2.2 he).prefix_left hprefix⟩
 
 /-- An element write of any actuals keeps what a write of stores does. -/
 theorem ElementWrite.Holds.stores {w : ElementWrite} {args args' : List Tm} {before after : Heap}
     (h : w.Holds args before after) : ElementWrite.stores.Holds args' before after :=
-  ⟨by cases w <;> exact h.1, fun _ he => by cases he⟩
+  ⟨by cases w <;> exact h.1, fun _ he => (by cases he), fun he => (by cases he)⟩
 end Verification.CallEffects
 
 namespace Verification.Kinds
@@ -383,11 +420,13 @@ end ViewWrite
 /-- **The view-element write of a call's actuals**: the relation, and for the
 exact form the write of the designated typed array's element
 (`CallEffects.ExactWrite`) and the facts its precondition gives
-(`CallEffects.ExactPre`). Exactness constrains the designated typed array;
-every other view store may change. -/
+(`CallEffects.ExactPre`); for an element assignment the write at the typed
+array's format (`CallEffects.ViewAssign`). Exactness constrains the
+designated typed array; every other view store may change. -/
 def ViewWriteOf (w : CallEffects.ElementWrite) (args : List Tm) {n n' : Nat} (W : WorldT n) (h : Heap)
     (W' : WorldT n') (h' : Heap) : Prop :=
-  ViewWrite W h W' h' ∧ (∀ k, w = .exact k → CallEffects.ExactWrite k args h h' ∧ CallEffects.ExactPre k args)
+  ViewWrite W h W' h' ∧ (∀ k, w = .exact k → CallEffects.ExactWrite k args h h' ∧ CallEffects.ExactPre k args) ∧
+    (w = .assign → CallEffects.ViewAssign args h h')
 
 /-- **What an element write states of the heaps follows from the
 relation**: from a well-formed entry, the coarse change

@@ -1115,13 +1115,16 @@ theorem Effect.post_pad {e : Effect} {r : Tm} (hr : Footprints.storeOf r = none)
     {before after : Heap} {v : Val} (h : e.post r (args ++ pad) before after v) : e.post r args before after v := by
   have hwr : ∀ w, e.elementWrite = some w → w.Holds args before after := by
     intro w hw
-    obtain ⟨hc, hx⟩ := h.2.2.2.2.2.2 w hw
-    refine ⟨hc, fun k he => ?_⟩
+    obtain ⟨hc, hx, ha⟩ := h.2.2.2.2.2.2 w hw
     have hg : ∀ i, (args ++ pad).getD i .undef = args.getD i .undef := fun i => by
       simpa [callEnv] using congrFun (callEnv_pad r args hpad) (i + 1)
-    have := hx k he
-    simp only [ExactWrite, ExactPre, hg] at this ⊢
-    exact this
+    refine ⟨hc, fun k he => ?_, fun he => ?_⟩
+    · have := hx k he
+      simp only [ExactWrite, WriteAt, ExactPre, hg] at this ⊢
+      exact this
+    · have := ha he
+      simp only [ViewAssign, WriteAt, hg] at this ⊢
+      exact this
   have hw := h.1
   unfold Effect.within at hw
   rw [callEnv_pad r args hpad] at hw
@@ -1359,10 +1362,11 @@ theorem Effect.meet_same {a b : Effect} (hs : a.sameResult b = true) :
 and heap `before` to its exit world and heap: where it states an element
 write, the kinded view-element write of it at the actuals
 (`Kinds.ViewWriteOf`), read at the entry world's roles; where exact, the
-result is the value written, the value an assignment `b[i] = v` is. -/
+result of an element assignment, exact or not, is the value written, the
+value an assignment `b[i] = v` is. -/
 def Effect.viewPost (e : Effect) (args : List Tm) {j : Nat} (U : WorldT j) (before : Heap) : WPost :=
   fun _ W' after r => ∀ w, e.elementWrite = some w → Kinds.ViewWriteOf w args U before W' after ∧
-    ∀ k, w = .exact k → r = args.getD 2 .undef
+    (w ≠ .stores → r = args.getD 2 .undef)
 
 /-- **A signature's normal-return postcondition**, given the call's entry
 world `U` and heap `before`: at the exit world and heap, its heap
@@ -1404,7 +1408,8 @@ theorem Effect.postW_prefix (e : Effect) {r : Tm} {args : List Tm} {n m : Nat} {
     e.postW r args W h k W' h' v :=
   ⟨e.post_prefix hp hagree hens hpost.1, fun w hw =>
     ⟨⟨(hpost.2 w hw).1.1.prefix_left hle hx hok hp, fun k hk =>
-      ⟨((hpost.2 w hw).1.2 k hk).1.prefix_left hp, ((hpost.2 w hw).1.2 k hk).2⟩⟩, (hpost.2 w hw).2⟩⟩
+      ⟨((hpost.2 w hw).1.2.1 k hk).1.prefix_left hp, ((hpost.2 w hw).1.2.1 k hk).2⟩,
+      fun ha => ((hpost.2 w hw).1.2.2 ha).prefix_left hp⟩, (hpost.2 w hw).2⟩⟩
 
 /-- **Safety at a signature stating no element write** is safety at its
 postcondition over kinded worlds, from every entry world. -/
@@ -1994,8 +1999,8 @@ theorem PromiseWith.bound {effect : Effect} {Acc Rest : ArgFam} {Rt R Rc : Fam}
       SafePostExcW.weaken (fun _ _ _ _ h => ⟨Effect.post_drop pre.length h.1, fun w hw => by
           simp only [Effect.drop, Option.map_eq_some_iff] at hw
           obtain ⟨w0, h0, rfl⟩ := hw
-          exact ⟨⟨(h.2 w0 h0).1.1.prefix_left (Nat.le_succ i) hxi hh (List.prefix_refl _), fun _ he => by cases he⟩,
-            fun _ he => by cases he⟩⟩)
+          exact ⟨⟨(h.2 w0 h0).1.1.prefix_left (Nat.le_succ i) hxi hh (List.prefix_refl _),
+            fun _ he => (by cases he), fun he => (by cases he)⟩, fun he => absurd rfl he⟩⟩)
         (fun _ _ _ h => Effect.excPost_drop pre.length h) hsafe⟩⟩
 
 /-- Application consumes a qualified signature, without inspecting the

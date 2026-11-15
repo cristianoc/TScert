@@ -146,8 +146,8 @@ theorem exactWrite_one {i s c c' : Nat} {before after : Heap}
   rw [hb] at hls
   simp only [Option.bind_some, storeEntries, List.map_cons, List.map_nil, Option.some.injEq] at hls
   subst hls
-  refine ⟨[some c'], by simp [ha, storeEntries], ⟨c', rfl, by
-    rw [hc']; show _ = some (Tm.num (ViewFormat.conv .uint8 oneBits)); rw [conv_oneBits]⟩,
+  refine ⟨[some c'], by simp [ha, storeEntries], ⟨c', oneBits, rfl, hc', by
+    show SameNumber _ (ViewFormat.conv .uint8 oneBits); rw [conv_oneBits]; exact .refl _⟩,
     fun j hj l u hl _ => ?_⟩
   rcases j with _ | j
   · exact absurd rfl hj
@@ -166,7 +166,7 @@ theorem viewWrite_overlap (n : Nat) :
       roleAt (roleWorld (k := n) overlapRoles) 4 = some (.store .array) ∧
       overlapAfter[4]? = overlapBefore[4]? := by
   refine ⟨overlapBefore_ok n, ⟨⟨Nat.le_refl n, by rw [trunc_id]; exact roleWorld_ext _ _,
-    overlapAfter_ok n, fun l r hr hne => ?_, fun l f N cs cs' hr hl hl' c hc => ?_⟩, fun _ hk => ?_⟩,
+    overlapAfter_ok n, fun l r hr hne => ?_, fun l f N cs cs' hr hl hl' c hc => ?_⟩, fun _ hk => ?_, fun hk => by cases hk⟩,
     by simp [overlapAfter, overlapBefore], by simp [overlapAfter, overlapBefore],
     by simp [overlapRoles], rfl⟩
   · rw [roleAt_roleWorld] at hr
@@ -327,7 +327,7 @@ theorem host_viewWrite (n : Nat) :
     ViewWriteOf (.exact .uint8) [hostView, .num 0, .num oneBits] (hostWorld (k := n)) hostBefore
       (hostWorld' (k := n)) hostAfter ∧ hostAfter[0]? ≠ hostBefore[0]? ∧ hostAfter[3]? = hostBefore[3]? := by
   refine ⟨⟨⟨Nat.le_refl n, by rw [trunc_id]; exact ⟨[(.elem, viewCellCtr n .uint8)], by simp [hostWorld, hostWorld']⟩,
-    hostAfter_ok n, fun l r hr hne => ?_, fun l f N cs cs' hr hl hl' c hc => ?_⟩, fun _ hk => ?_⟩,
+    hostAfter_ok n, fun l r hr hne => ?_, fun l f N cs cs' hr hl hl' c hc => ?_⟩, fun _ hk => ?_, fun hk => by cases hk⟩,
     by simp [hostAfter, hostBefore], rfl⟩
   · simp only [hostWorld, roleAt_ofEntries] at hr
     rcases l with _ | _ | _ | _ | _ | _ | _ | _ | l <;> simp [hostEntries] at hr <;> subst hr <;>

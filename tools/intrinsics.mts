@@ -720,7 +720,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // to the format's total conversion of it (`ViewFormat.conv`: a number
     // that is not finite is 0, any other its integer part modulo 2^8, 2^16
     // or 2^32 of `Uint8`, `Uint16` and `Int32`, the last read in
-    // [−2^31, 2^31); the number itself of `Float64`, every NaN as one),
+    // [−2^31, 2^31); the number itself of `Float64`, a NaN read back as a NaN),
     // every other index of the view reading what it read; at a number that
     // is no valid index no element changes. It throws nothing and answers
     // the number, the value the assignment is. Each typed array's elements
@@ -729,7 +729,10 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
     // typed array over the written bytes to a fresh location holding what
     // that view now reads there, which changes view stores alone and keeps
     // their lengths: the effect `{all-views: grow}` (`elementWrite`,
-    // `Kinds.ViewWrite.frame_iff`), within the store-growth footprint.
+    // `Kinds.ViewWrite.frame_iff`), within the store-growth footprint. Its
+    // first signature states this of every element assignment, with the
+    // element write at the view's own format and the value as the result
+    // (`"assign"`, `CallEffects.ViewAssign`).
     // Then, for each element type, the exact write at a safe integer `k`,
     // `0 ≤ k < view(b)`, a valid integer index, of a safe integer within the
     // element type's range (0 to 255 of a `Uint8Array`, 0 to 65535 of a
@@ -746,7 +749,7 @@ export function intrinsics(promise: (argument: TypeTerm) => TypeTerm, needed: Re
         le([[value(2), 1], [{ kind: "view", slot: 1, path: [] }, -1]], -1), { int: { slot: 3 } }];
       return { typeParams: [], type: { k: "intersection", span, parts: [
         { ...fn([views, atom("number"), atom("number")], atom("number")),
-          effect: footprintEffect({ value: "keep", store: "grow" }, { elementWrite: "stores" }) },
+          effect: footprintEffect({ value: "keep", store: "grow" }, { elementWrite: "assign" }) },
         ...viewKinds.map(({ type, range, write }): TypeTerm => ({ ...fn([type, atom("number"), atom("number")], atom("number")),
           effect: footprintEffect({ value: "keep", store: "grow" }, { elementWrite: write, pre: [...index,
             ...(range === null ? [] : [le([[value(3), -1]], -range[0]), le([[value(3), 1]], range[1])])] }) })),

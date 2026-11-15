@@ -422,7 +422,10 @@ heap $`h`$ to the exit world $`W'`$ and heap $`h'`$ (`ViewWrite`):
   view, index and value, the note's View-Write: for every number written at
   a valid index the index's cell holds the format's total conversion of it
   (`ViewFormat.conv`) and every other index's cell what it held, and at a
-  number that is no valid index no location changes; and the facts its
+  number that is no valid index no location changes (a NaN of `Float64`
+  read back as a NaN, `SameNumber`); for an element assignment of any number
+  the same at the typed array's own format (`ViewAssign`), the result the
+  value; and the facts its
   precondition gives (`ExactPre`: the value one the element type takes,
   `ElementKind.Takes`, and the index valid), which a call meeting the
   precondition has (`ElementKind.exactPre_of_requires`). There the

@@ -2803,6 +2803,8 @@ export const cases: Case[] = [
     /no derivation of its node-typing claim/),
   negative("invalid-typed-array-element-write-uint8-truncation", "a Uint8Array write of 260 stores 4: the fact is not kept and the read after it is past the end, `undefined` at `number` (run under Node)",
     /no derivation of its node-typing claim/),
+  negative("invalid-typed-array-element-write-uint8-wrap-read", "a Uint8Array write of 300 stores its conversion, 44: the element read back is not the value written, and the read it bounds is past the start, `undefined` at `number` (run under Node)",
+    /no derivation of its node-typing claim/),
   negative("invalid-typed-array-element-write-uint8-negative", "a Uint8Array write of -1 stores its conversion, 255: the fact is not kept and the read after it is past the end, `undefined` at `number` (run under Node)",
     /no derivation of its node-typing claim/),
   negative("invalid-typed-array-element-write-value", "a write of the length, which the body excludes: the fact is not kept and the read at it is past the end, `undefined` at `number` (run under Node)", /source expression obligation at \[514,531\): evidence search failed: no derivation of its node-typing claim/),

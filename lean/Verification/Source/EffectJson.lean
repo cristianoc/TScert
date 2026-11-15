@@ -20,13 +20,14 @@ open Lean CallEffects
 /-- An element write's wire name. -/
 def elementWriteName : ElementWrite → String
   | .stores => "stores"
+  | .assign => "assign"
   | .exact .uint8 => "exactUint8"
   | .exact .uint16 => "exactUint16"
   | .exact .int32 => "exactInt32"
   | .exact .float64 => "exactFloat64"
 
 private def elementWriteOf (name : String) : Except String ElementWrite :=
-  match [ElementWrite.stores, .exact .uint8, .exact .uint16, .exact .int32, .exact .float64].find?
+  match [ElementWrite.stores, .assign, .exact .uint8, .exact .uint16, .exact .int32, .exact .float64].find?
       (elementWriteName · == name) with
   | some w => pure w
   | none => throw s!"invalid element write '{name}'"

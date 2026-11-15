@@ -7,8 +7,9 @@ conversion of the number written (the note *Tolerant frames*, "The typed
 array's steps"; ECMA-262, NumericToRawBytes then RawBytesToNumeric):
 `Uint8`, `Uint16` and `Int32` send a number that is not finite to `0` and any
 other to its integer part modulo `2^8`, `2^16` and `2^32`, the last taken in
-`[-2^31, 2^31)`; `Float64` stores the number itself, every NaN as one value
-(`ViewFormat.conv`, over the bits of a double).
+`[-2^31, 2^31)`; `Float64` stores the number itself (`ViewFormat.conv`, over
+the bits of a double), a NaN read back as a NaN whose bits the host chooses
+(`SameNumber`: the element's bits equal the conversion's, or both are NaNs).
 
 - **Its result is a number the format stores** (`ViewFormat.conv_stored`,
   `ViewFormat.Stored`).
@@ -19,9 +20,6 @@ other to its integer part modulo `2^8`, `2^16` and `2^32`, the last taken in
 namespace Verification
 open SafeIntegers
 
-/-- The bits of the one NaN a `Float64Array` stores. -/
-def canonicalNaN : UInt64 := 0x7ff8000000000000
-
 /-- A double's bits denote NaN: its biased exponent all ones, its fraction
 not zero. -/
 def isNaNBits (x : UInt64) : Bool :=
@@ -30,13 +28,12 @@ def isNaNBits (x : UInt64) : Bool :=
 /-- **The total conversion of a format** on the bits of a double: the
 integer formats through `ToInt32` (`toInt32`: a number that is not finite
 is `0`, any other its integer part modulo `2^32`, read as signed), modulo
-`2^8` and `2^16` for the unsigned ones; `Float64` the number itself, a NaN
-as `canonicalNaN`. -/
+`2^8` and `2^16` for the unsigned ones; `Float64` the number itself. -/
 def ViewFormat.conv : ViewFormat → UInt64 → UInt64
   | .uint8, x => int32Bits (toInt32 x % 2 ^ 8)
   | .uint16, x => int32Bits (toInt32 x % 2 ^ 16)
   | .int32, x => int32Bits (toInt32 x)
-  | .float64, x => if isNaNBits x then canonicalNaN else x
+  | .float64, x => x
 
 #guard ViewFormat.conv .uint8 (300.0 : Float).toBits == (44.0 : Float).toBits
 #guard ViewFormat.conv .uint8 (-1.0 : Float).toBits == (255.0 : Float).toBits
@@ -49,10 +46,20 @@ def ViewFormat.conv : ViewFormat → UInt64 → UInt64
 #guard ViewFormat.conv .int32 (-0.0 : Float).toBits == (0.0 : Float).toBits
 #guard ViewFormat.conv .float64 (-0.0 : Float).toBits == (-0.0 : Float).toBits
 #guard ViewFormat.conv .float64 (0.5 : Float).toBits == (0.5 : Float).toBits
-#guard ViewFormat.conv .float64 0xfff0000000000001 == canonicalNaN
+#guard isNaNBits (ViewFormat.conv .float64 0xfff0000000000001)
 
-/-- `canonicalNaN` is a NaN. -/
-theorem isNaNBits_canonicalNaN : isNaNBits canonicalNaN = true := by decide
+/-- **The number an element reads after a write of the conversion `z`**: `z`
+itself, or a NaN where `z` is one, the host choosing a NaN's bits
+(ECMA-262, NumericToRawBytes). -/
+def SameNumber (y z : UInt64) : Prop := y = z ∨ (isNaNBits y = true ∧ isNaNBits z = true)
+
+theorem SameNumber.refl (z : UInt64) : SameNumber z z := .inl rfl
+
+/-- Of a conversion that is no NaN, the number read is the conversion. -/
+theorem SameNumber.eq_of_not_nan {y z : UInt64} (h : SameNumber y z) (hz : isNaNBits z = false) : y = z := by
+  rcases h with h | ⟨-, h⟩
+  · exact h
+  · rw [hz] at h; cases h
 
 /-- An integer of a 32-bit result is a safe integer its bits denote. -/
 private theorem stored_int32Bits {i lo hi : Int} (hlo : lo ≤ i) (hhi : i ≤ hi) (hl : -2 ^ 31 ≤ lo)
@@ -109,6 +116,6 @@ theorem ViewFormat.conv_safeInt {f : ViewFormat} {x : UInt64} {i : Int} (hx : Sa
     by_cases hn : i < 0
     · rw [toInt32_safe_neg hx hn h0]
     · rw [toInt32_safe_nonneg hx (by omega) (by omega)]
-  | float64 => simp [ViewFormat.conv, isNaNBits_safeInt hx]
+  | float64 => simp [ViewFormat.conv]
 
 end Verification

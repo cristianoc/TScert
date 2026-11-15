@@ -3081,6 +3081,9 @@ for (const [file, call] of [
   // Construction and data contracts.
   assert.equal(runExample(negative("invalid-typed-array-write-past-end"), "written()"), undefined,
     "a write past the end of a view writes no element, and the read after it is undefined");
+  assert.equal(runExample(negative("invalid-typed-array-element-write-uint8-wrap-read"),
+    "typeof past(new Array(300).fill(1), new Uint8Array(1))"), "undefined",
+    "a Uint8Array write of 300 stores 44, and the read it bounds is before the start");
   assert.equal(runExample(negative("invalid-typed-array-element-write-uint8-negative"),
     "typeof wrapped([0, 0], Uint8Array.of(0), 0, -1)"), "undefined",
     "a Uint8Array write of -1 stores 255, and the read it bounds is past the end");

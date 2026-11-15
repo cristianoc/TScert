@@ -1993,7 +1993,7 @@ integer):
   format, and at any other number `undefined`, with the empty effect;
 - `b[i] = v` (`%ByteSet%`) at a valid index makes the index read
   $`\mathrm{conv}_t(v)`$ and every other index of $`b`$ read what it read
-  (`CallEffects.ExactWrite`); at a number that is no valid index no location
+  (`CallEffects.WriteAt`); at a number that is no valid index no location
   changes; the assignment is $`v`$ in either case (`Effect.viewPost`); its
   effect is $`\{\mathsf{all\text{-}views}:\mathsf{grow}\}`$ (proved equal,
   on well-formed states, to the view write's frame:
@@ -2003,8 +2003,10 @@ None of the three throws. $`\mathrm{conv}_t`$ is total (`ViewFormat.conv`):
 `Uint8`, `Uint16` and `Int32` send a number that is not finite to $`0`$ and
 any other to its integer part modulo $`2^8`$, $`2^{16}`$ and $`2^{32}`$, the
 last read in $`[-2^{31},2^{31})`$ (ECMA-262's ToUint8, ToUint16, ToInt32,
-through the calculus's exact `toInt32`); `Float64` stores the number itself,
-every NaN as one value. Its result is a number the format stores (proved:
+through the calculus's exact `toInt32`); `Float64` stores the number itself.
+A `Float64` element written a NaN reads a NaN, whose bits the host chooses
+(ECMA-262, NumericToRawBytes): the written index reads a number equal to
+$`\mathrm{conv}_t(v)`$, or a NaN where that is one (`SameNumber`). Its result is a number the format stores (proved:
 `ViewFormat.conv_stored`), and on a safe integer of the format's range it
 keeps the integer, $`+0`$ of $`-0`$ in an integer format (proved:
 `ViewFormat.conv_safeInt`). So `Uint8Array` reads back 44 after a write of
@@ -2013,8 +2015,10 @@ length 1 leaves its element (`node-bytes-write`, run under Node).
 
 The intrinsics state these rules as signatures: `%ByteAt%`'s two above and
 the following, `%ByteLength%`'s result the safe integer
-$`\mathrm{view}(b)`$, and `%ByteSet%`'s first, which states no element and
-holds of every write, then one for each element type, a write at a safe
+$`\mathrm{view}(b)`$, and `%ByteSet%`'s first, which holds of every element
+assignment and states View-Write at the typed array's own format and the
+value as the result (`elementWrite` `assign`, `CallEffects.ViewAssign`),
+then one for each element type, a write at a safe
 integer $`0\le k<\mathrm{view}(b)`$ of a safe integer $`v`$ within the
 element type's range, from $`0`$ to $`255`$ of a `Uint8Array`, to
 $`65535`$ of a `Uint16Array`, from $`-2^{31}`$ to $`2^{31}-1`$ of an
@@ -2029,7 +2033,8 @@ and alike of the others, $`\mathsf{exact}_t`$ naming the element type $`t`$
 (`CallEffects.ExactWrite`) of the actuals, for every number and index; its
 precondition is the range the pass uses it at, and the effect decoder
 refuses an exact effect whose precondition omits it
-(`ElementKind.preFacts`). A call meeting it writes a valid index and a value
+(`ElementKind.preFacts`). `fill`, `copyWithin` and `set` state the frame
+alone (`elementWrite` `stores`). A call meeting it writes a valid index and a value
 $`t`$ takes (`ElementKind.exactPre_of_requires`), where the conversion is
 `ElementKind.convert` (`ElementKind.convert_conv`): the index's cell holds
 $`\mathrm{conv}_t(v)`$ and every other index's cell what it held
@@ -2042,8 +2047,9 @@ two differ only at $`-0`$ of an integer type
 Outside the range the conversion changes the integer: an `Int32Array` write
 of $`2^{31}`$ stores $`-2^{31}`$ (`invalid-typed-array-element-write-int32-wrap`,
 run under Node), a `Uint8Array` write of 260 stores 4
-(`invalid-typed-array-element-write-uint8-truncation`, run under Node) and
-one of $`-1`$ stores 255 (`invalid-typed-array-element-write-uint8-negative`,
+(`invalid-typed-array-element-write-uint8-truncation`, run under Node), one of
+300 stores 44 (`invalid-typed-array-element-write-uint8-wrap-read`, run under
+Node) and one of $`-1`$ stores 255 (`invalid-typed-array-element-write-uint8-negative`,
 run under Node), and the first signature, which states no element, is the
 call's. Audited against
 ECMA-262's TypedArraySetElement, IsValidIntegerIndex and the numeric
