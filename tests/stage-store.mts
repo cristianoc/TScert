@@ -3,7 +3,8 @@
 // writer, a timeout/success race, writable artifact isolation, a longer
 // limit executing past a recorded timeout and a retry of timeouts executing
 // it again at the same limit, an edit of the replay policy, which no key
-// covers, replaying its entries, and eviction within a budget. The stages are shell-script
+// covers, replaying its entries, eviction within a budget, and a runner's
+// lost wakes and a worker's lost runner. The stages are shell-script
 // stand-ins declared audited for the test, so no build is needed; the
 // pipeline's own stages replay in `tests/single-pass-controls.mts`.
 import assert from "node:assert/strict";
@@ -15,7 +16,7 @@ import { hostname, platform } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { runDirectory } from "../pipeline/run-directory.mts";
 import { Store, StoreError, pausePublicationForTests, pauseLockForTests, type StoredResult } from "../pipeline/stage-store.mts";
-import { claimWaitMs, invokeProcess, readInvocationLog, Recorder, startEviction, type Invoked } from "../pipeline/stages.mts";
+import { claimWaitMs, invokeProcess, invokeWorker, readInvocationLog, Recorder, startEviction, type Invoked } from "../pipeline/stages.mts";
 import { auditForTests, canonical, pauseIdentificationForTests, linkedLibraries, runnerBuild, sha256, verifierCall, verifierProtocol,
   type ProcessCall }
   from "../pipeline/stage-execution.mts";
@@ -142,6 +143,18 @@ if (process.argv[2] === "--child") {
   } catch (error) {
     process.stdout.write(JSON.stringify({ error: error instanceof StoreError ? "store" : String(error) }));
   }
+  process.exit(0);
+}
+
+// A child process of the lost-runner control: a worker stage whose program
+// answers its parts, then kills its runner; the driver's result, as JSON.
+if (process.argv[2] === "--lost-runner") {
+  const [, , , program, input] = process.argv;
+  auditForTests(program, ["/bin/sleep"]);
+  const run = invokeWorker(lower(program, input), { parts: (prepared) => prepared.trim().split(" "),
+    request: () => "all", partOf: (answer) => answer.trim() }, { limitMs: 1_000, force: true, recorder: null });
+  process.stdout.write(JSON.stringify({ preparation: run.preparation.execution,
+    parts: run.parts.map((p) => [p.part, p.execution, p.error?.message ?? null]) }));
   process.exit(0);
 }
 
@@ -501,6 +514,52 @@ if (eligible) {
     "kill at the runner's own deadline, which leaves no process of the stage running, also of a program ignoring " +
     "SIGTERM, stopped or out of its group; descendants end with the program; a killed runner's stage is killed; " +
     "a program over its memory limit is stopped and reported\n");
+}
+
+{
+  // Lost wakes: a runner built with its first SIGCHLD, or its first
+  // SIGALRM, taken by a wait that names no signal (as macOS's sigwait does
+  // on EINTR) reaps its program's end and keeps its time limit; a runner
+  // killed while the driver of a worker waits for its report ends the stage
+  // as a tool failure. Each is bounded to a few seconds.
+  const injected = (dropped: string): string => {
+    const header = join(dir, `drop-${dropped}.h`), executable = join(dir, `stage-runner-drop-${dropped}`);
+    writeFileSync(header, `#include <signal.h>
+static int dropped_once = 0;
+static int dropping_sigwait(const sigset_t *set, int *sig) {
+  int e = sigwait(set, sig);
+  if (e == 0 && *sig == ${dropped} && !dropped_once) { dropped_once = 1; *sig = 0; }
+  return e;
+}
+#define sigwait dropping_sigwait
+`);
+    const built = spawnSync("cc", ["-O2", "-include", header, "-o", executable,
+      resolve(import.meta.dirname, "../pipeline/runner/stage-runner.c")], { encoding: "utf8" });
+    assert.equal(built.status, 0, built.stderr);
+    return executable;
+  };
+  const timedRun = (runner: string, limitMs: number, args: readonly string[]): { ms: number; report: string } => {
+    const started = performance.now();
+    const p = spawnSync(runner, [String(limitMs), String(2 ** 33), ...args],
+      { stdio: ["ignore", "ignore", "ignore", "pipe"], encoding: "utf8", timeout: 8_000, killSignal: "SIGKILL" });
+    return { ms: performance.now() - started, report: String(p.output[3]) };
+  };
+  const exited = timedRun(injected("SIGCHLD"), 6_000, ["/bin/sh", "-c", "exit 3"]);
+  assert.ok(exited.ms < 3_000 && /^exit 3$/m.test(exited.report),
+    `a program's end whose SIGCHLD went unnamed: ${Math.round(exited.ms)} ms, ${exited.report}`);
+  const limited = timedRun(injected("SIGALRM"), 300, ["/bin/sleep", "30"]);
+  assert.ok(limited.ms < 3_000 && /^deadline$/m.test(limited.report),
+    `a limit whose first SIGALRM went unnamed: ${Math.round(limited.ms)} ms, ${limited.report}`);
+  const program = script("lost-runner.sh", 'echo "a b"; echo a; echo b; kill -KILL $PPID; /bin/sleep 30', ["/bin/sleep"]);
+  const started = performance.now();
+  const lost = spawnSync(process.execPath, [import.meta.filename, "--lost-runner", program, file("lost-runner.json", "")],
+    { encoding: "utf8", timeout: 20_000, killSignal: "SIGKILL" });
+  assert.equal(lost.status, 0, `the driver of a killed runner: ${lost.error ?? lost.stderr}`);
+  assert.deepEqual(JSON.parse(lost.stdout), { preparation: "failed", parts: [["a", "executed", null], ["b", "executed", null]] },
+    lost.stdout);
+  process.stdout.write(`lost wakes: a runner reaps a program whose SIGCHLD a wait did not name (${Math.round(exited.ms)} ms) ` +
+    `and stops one at its limit when a SIGALRM went unnamed (${Math.round(limited.ms)} ms); a worker whose runner was ` +
+    `killed after its last line is a tool failure in ${((performance.now() - started) / 1000).toFixed(1)} s\n`);
 }
 
 if (eligible) {

@@ -342,54 +342,57 @@ int main(int argc, char **argv) {
    * process id, which every signal of the stage also goes to. */
 
   /* At a limit, or on a forwarded signal, the program and its group are
-   * signalled; GRACE_MS later they are killed. The timer wakes the runner
-   * every POLL_MS to read the program's memory, and at the time limit. */
-  long long started = now_ms(), exceeded = -1;
-  arm(limit < POLL_MS ? limit : POLL_MS);
+   * signalled; GRACE_MS later they are killed. Every wake, whichever
+   * signal it names, reaps the program if it has ended, decides the limits
+   * by the clock and arms the timer again: at most POLL_MS ahead, to read
+   * the program's memory, and at the time limit or the kill, whichever is
+   * first. A SIGCHLD or SIGALRM may be taken by a wake that names no signal
+   * (macOS's sigwait returns 0 on an interrupted wait, EINTR, and leaves its
+   * signal unset), so no step depends on the signal a wake names, but a
+   * forwarded one's. */
+  long long started = now_ms(), exceeded = -1, kill_at = 0;
   int terminating = 0, expired = 0, killed = 0;
-  while (!reaped) {
-    /* macOS's sigwait returns 0 on an interrupted wait (EINTR) and leaves
-     * its signal unset: a wait that names no signal is waited again. */
+  arm(limit < POLL_MS ? limit : POLL_MS);
+  for (;;) {
     int sig = 0;
     int e = sigwait(&taken, &sig);
     if (e != 0) {
       errno = e;
       fail("sigwait");
     }
-    if (sig == 0) continue;
-    if (sig == SIGCHLD) {
-      // The watchdog ends early only where the runner has killed the group.
-      if (watching && wait_for(watchdog, NULL, WNOHANG) == watchdog) {
-        if (!killed) {
-          errno = ECHILD;
-          fail("watchdog");
-        }
-        watching = 0;
+    // The watchdog ends early only where the runner has killed the group.
+    if (watching && wait_for(watchdog, NULL, WNOHANG) == watchdog) {
+      if (!killed) {
+        errno = ECHILD;
+        fail("watchdog");
       }
-      reap();
-      continue;
+      watching = 0;
     }
-    if (sig == SIGALRM && terminating) {
+    reap();
+    if (reaped) break;
+    long long now = now_ms();
+    int forwarded_signal = sig != 0 && sig != SIGCHLD && sig != SIGALRM;
+    if (!terminating && !forwarded_signal) {
+      long long used = footprint(child);
+      if (now - started >= limit) expired = 1;
+      else if (used > memory) exceeded = used;
+    }
+    if (forwarded_signal || (!terminating && (expired || exceeded >= 0))) {
+      signal_stage(forwarded_signal ? sig : SIGTERM);
+      if (!terminating) {
+        terminating = 1;
+        kill_at = now + GRACE_MS;
+      }
+    }
+    if (terminating && !killed && now >= kill_at) {
       killed = 1;
       kill_child(SIGKILL);
       kill_group(SIGKILL);
-      continue;
     }
-    if (sig == SIGALRM) {
-      long long elapsed = now_ms() - started, used = footprint(child);
-      if (elapsed >= limit) expired = 1;
-      else if (used > memory) exceeded = used;
-      else {
-        long long left = limit - elapsed;
-        arm(left < POLL_MS ? (long)left : POLL_MS);
-        continue;
-      }
-    }
-    signal_stage(sig == SIGALRM ? SIGTERM : sig);
-    if (!terminating) {
-      terminating = 1;
-      arm(GRACE_MS);
-    }
+    long long next = POLL_MS;
+    if (!terminating && limit - (now - started) < next) next = limit - (now - started);
+    if (terminating && !killed && kill_at - now < next) next = kill_at - now;
+    arm(next < 1 ? 1 : (long)next);
   }
   arm(0);
   /* The program has ended: what remains of its group, which the watchdog

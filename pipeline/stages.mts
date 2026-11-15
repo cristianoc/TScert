@@ -316,6 +316,9 @@ export type WorkerRun = { preparation: WorkerPart; parts: WorkerPart[]; starts: 
 export const workerPolicy: string = canonical({ process: resourcePolicy, spawn: "spawn", clock: "each part from the line before" });
 /** How often the driver of a worker reads its output and clock. */
 const workerPollMs = 5;
+/** How long the driver of a worker waits for its runner's report after
+ * killing it. */
+const lostMs = 3_000;
 
 /** A part's description, whose canonical text its key is the digest of:
  * the worker's own description and the part, null for the preparation. */
@@ -544,8 +547,12 @@ export function invokeWorker(call: ProcessCall, protocol: WorkerProtocol, option
         }
         pieceStart = now;
       };
-      // Read lines as they arrive; stop the worker where a piece outlasts
-      // its limit.
+      // Read lines as they arrive; stop the worker where a piece, or its end
+      // after the last line, outlasts its limit, timed from the line before.
+      // After the SIGKILL, the runner's report is waited for `lostMs`: a
+      // runner that never reports its end (killed, or its program's end
+      // missed) is a tool failure of the piece the worker was in.
+      let lostAt = Infinity, lost = false;
       for (;;) {
         ended = running.ended();
         buffered += running.readOutput().toString("utf8");
@@ -556,17 +563,23 @@ export function invokeWorker(call: ProcessCall, protocol: WorkerProtocol, option
         }
         if (ended) break;
         const now = performance.now();
-        if (!stopped && current() !== undefined && now - pieceStart > options.limitMs) {
+        if (!stopped && now - pieceStart > options.limitMs) {
           stopped = true;
           running.signal("SIGTERM");
           killAt = now + 2_000;
         } else if (now > killAt) {
           running.signal("SIGKILL");
           killAt = Infinity;
+          lostAt = now + lostMs;
+        } else if (now > lostAt) {
+          lost = true;
+          ended = true;
+          break;
         }
         Atomics.wait(pause, 0, 0, workerPollMs);
       }
       const end = running.finish();
+      if (lost) end.error = Error(`the stage runner reported no end ${lostMs} ms after its kill`);
       const now = performance.now();
       const part = current();
       if (held.unread !== null) {
@@ -586,9 +599,10 @@ export function invokeWorker(call: ProcessCall, protocol: WorkerProtocol, option
       const stderr = text(end.stderrBytes);
       if (part === undefined && end.status === 0 && end.error === undefined && end.signal === null) return "ended";
       const attempt = randomUUID();
-      if (stopped || end.exceeded !== null) {
+      if ((stopped && !lost && part !== undefined) || end.exceeded !== null) {
         // A piece over its time or memory limit: that piece alone; a timeout
-        // is published, a memory failure nowhere.
+        // is published, a memory failure nowhere. A worker stopped after its
+        // last line, or whose runner reported no end, failed.
         const execution: Execution = stopped ? "timed-out" : "failed";
         const r = record(part ?? null, attempt, directory, execution, null, now - pieceStart, cpu, null);
         if (stopped && replaying !== null && ineligible === null)

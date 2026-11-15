@@ -734,7 +734,8 @@ slow costs its own limit: the work of one unit lies in its own piece.
 
 *Limits.* The driver reads the worker's output as it is written and
 publishes each piece as its line arrives. Each piece has the stage's limit,
-timed from the line before it (the preparation from the start). A piece
+timed from the line before it (the preparation from the start), and so has
+the worker's end after its last line. A piece
 over its limit stops the worker; that piece alone is published as a
 timeout observation under its key, with its limit and the policy
 `workerPolicy`, and a new worker is started for the parts after it, the
@@ -744,7 +745,10 @@ verdict. The preparation over either limit, or refused, ends the stage with
 no part, and each unit of the file is then recorded with that timeout or
 refusal as the reason it has no verdict (`dev/census.mts`, `runFile`; the
 control `worker preparation over its limit`): a preparation is repeated
-once per worker start, never once per unit. The CPU time of a piece is the worker program's between the line
+once per worker start, never once per unit. A worker stopped after its
+last line is a tool failure. After its kill, the driver waits 3 s for the
+runner's report; a runner that reports no end (killed, or its program's end
+missed) is a tool failure of the piece the worker was in. The CPU time of a piece is the worker program's between the line
 before it and its own, as the runner reads it (`stage-runner --cpu`); each
 piece is its own attempt record.
 
@@ -893,7 +897,8 @@ taken over from a stopped or completed owner and never from a running one,
 a delayed contender retaining its generations across collection, a repeated
 release leaving a reused generation's owner intact, another host's
 owners running until a clean forgets the host, each timeout observation an
-item, a replay racing
+item, a runner's wake that names no signal, a worker's runner killed after
+its last line, a replay racing
 passes a miss or the entry's own result, and a pass an orchestrator starts
 leaving the store within its budget. The replay control evicts its store
 whole and runs again: every stage executes, to the same outcome, documents
@@ -923,7 +928,11 @@ unavailable, with its reason.
   or SIGQUIT, it continues and signals the program, by its process id, and
   the group (SIGTERM at a limit), and
   250 ms later kills them, so a program ignoring SIGTERM, stopped, or out of
-  the group ends too. Its standard output and standard error are files the
+  the group ends too. Each wake of the runner, whichever signal it names,
+  reaps the program if it has ended, decides both limits and the kill by the
+  clock and arms its timer again, so a SIGCHLD or SIGALRM taken by a wait
+  that names no signal (macOS's `sigwait` on EINTR) delays the runner by
+  200 ms at most. Its standard output and standard error are files the
   adapter opens and unlinks before the runner starts and reads whole when
   the runner ends, so an output's size is bounded by the file system alone.
   When the program ends, the runner kills what remains of its group and
