@@ -345,6 +345,10 @@ run_cmd do
   check ``Verification.GraphCode.ArgumentRegionGraph.checkCopy_sound
   check ``Verification.PromiseCalls.regionFirst_kept
   check ``Verification.PromiseCalls.effectKept_holds
+  check ``Verification.PromiseCalls.statesExtension_grows
+  check ``Verification.PromiseCalls.statesAppend_grows
+  check ``Verification.PromiseCalls.statesViewGrowth_write
+  check ``Verification.PromiseCalls.statesExactWrite_exact
   check ``Verification.PromiseCalls.storeHeld_sound
   check ``Verification.HeapKnowledge.storeFollows_sound
   check ``Verification.HeapKnowledge.restateStores_holds

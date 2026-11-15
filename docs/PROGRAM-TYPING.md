@@ -1878,9 +1878,15 @@ respects a support of the fact (the note's Frame, `PromiseCalls.frameKeeps`:
 [support and respect](FOOTPRINTS.md#support-and-respect),
 [a call's effect at the caller](FOOTPRINTS.md#a-calls-effect-at-the-caller)),
 or the change its exact postcondition states keeps it (the note's Entry,
-`PromiseCalls.postKeeps`): an element write's is
-`CallEffects.ElementWrite.changes`, growth is `PromiseCalls.growChanges` and
-`growFirst` (proved: `receiverGrows_changes`, `growFirst_kept`); and a definition's code is checked at its signature's
+`PromiseCalls.postKeeps`), each rule triggered by the one postcondition it
+reads among the normal exit's postconditions of the signature's exit
+summary (`PromiseCalls.callPosts`; proved: `statesExtension_grows`,
+`statesAppend_grows`, `statesViewGrowth_write`, `statesExactWrite_exact`):
+the views' growth an element write's change `PromiseCalls.writeChanges`,
+the store's extension growth's `PromiseCalls.growChanges` and `growFirst`
+(proved: `receiverGrows_changes`, `growFirst_kept`); `appendKept` and
+`linearAppendKept` read the extension and the append, `writeKept`
+View-Write at an element type's format; and a definition's code is checked at its signature's
 conditions (`PassUnitCodes.codeConditions`); the own-location call is `PromiseCalls.ownKept`.
 A computed receiver's primitive method has the footprint its prototype
 states, composed with the receiver's and arguments' effects: a string's
