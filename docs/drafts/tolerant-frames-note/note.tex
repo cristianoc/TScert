@@ -65,9 +65,9 @@ of three reasons: the effect is disjoint from what the fact reads; the
 effect changes what the fact reads only in a direction the fact
 tolerates; or the invariant annotations on a type fix what the fact reads. Thirteen
 patterns from a TypeScript code base become one-line annotations, and
-four more show a form or a derivation it still lacks. Every statement carries one of two marks. \status{Lean} names the theorem
+four more show a form or a derivation it still lacks. Every statement carries one of three marks. \status{Lean} names the theorem
 of the TScert development that proves the statement's content, and gives
-that theorem's scope; where the theorem is narrower than the statement, the mark says how. \status{conj.} marks a conjecture.
+that theorem's scope; where the theorem is narrower than the statement, the mark says how. \status{conj.} marks a conjecture, and \status{assumed} a specification assumed of the host.
 \end{abstract}
 
 \section{The problem}
@@ -1104,10 +1104,16 @@ of \textsc{View-Write} bounds what every typed array reads after the
 write; the postcondition says what $b$ itself reads, since each element of a
 typed array is its own bytes. The library functions \code{fill} and
 \code{copyWithin} at numbers, and \code{set} from a typed array at a
-number, have the same effect on normal return
-\status{conj. Lean: the steps are native calls; \lean{ViewWrite} states
-the frame of the write as a postcondition, for view stores that may hold holes,
-and \lean{ExactWrite} the exact postcondition for integers the format stores
+number, have the same effect on normal return.
+
+The three steps have no reduction rule. They are specified
+axiomatically by the rules above, and soundness is relative to the host
+satisfying them. The reason is that the model has no buffer: a reduction
+rule for the write would have to say what every other typed array over
+the same bytes then reads
+\status{assumed. Lean: the contracts of the three native operations;
+\lean{ViewWrite} states the frame of the write as a postcondition and
+\lean{ExactWrite} the exact postcondition for integers the format stores
 unchanged}.
 
 \begin{example}[A write through a typed array]\label{ex:view}

@@ -480,6 +480,17 @@ Storage layout, hash-consing and compression remain open performance choices. Th
 
 ## I3. Operational typed arrays
 
+**Decision of 2026-11-15 (owner).** The three typed-array steps are host
+operations specified by the note's rules View-Length, View-Read and
+View-Write: the reduction stays deterministic, and the write's rule is
+assumed of the host as a call's contract is. The representation of this
+section (descriptor, tagged view store, formats, the canonical contract)
+stands. Its operational rules, the eight primitive theorems and the
+nondeterministic write are withdrawn; what remains of them is the
+specification the three native operations state: the effect
+`{all-views: grow}` and the exact postcondition, with the total conversion
+of each format.
+
 ### The existing mechanism this extends
 
 This interface extends `Tm`, `Step`, `StoreForm`, `Cat`, `RefsOk` and `HeapOk`. It replaces the production roles of `ElementWrite`, `ExactWrite`, `ViewWrite`, `ViewWriteOf`, and `Effect.viewPost`.
