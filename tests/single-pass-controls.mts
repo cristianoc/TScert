@@ -5,10 +5,12 @@
 // --verify-interface-stage 8` with the interface stages it needs); a
 // control then runs the pass over its fragment under a forced proposal
 // (`TSCERT_FORCE`), or over a forged fragment, and requires the unit it
-// names refused. Other controls read what the parser's document states,
-// run a native counterexample under Node, or check the driver's run
-// retention and the store's replay. The store-boundary controls of the
-// interface stages name a fresh store.
+// names refused. Other controls read what the parser's document states or
+// run a native counterexample under Node. The controls of the test
+// infrastructure (the store-boundary controls of the interface stages, the
+// store's cold and warm runs, replay, run retention) run with --infra
+// (`make test-infra`), each in a fresh store of its own, beside the observed
+// stages' and the declaration sessions' controls.
 import assert from "node:assert/strict";
 import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -152,6 +154,13 @@ const stops = new Set<number>();
 const stop = (name: string, body: () => Promise<void>): void => {
   stops.add(controls.push({ name: `stop: ${name}`, body }) - 1);
 };
+/** Controls of the test infrastructure, the store, replay and the driver's
+ * run directories: run only by `--infra` (`make test-infra`), with the
+ * observed stages' and the declaration sessions' controls beside them. */
+const infraControls = new Set<number>();
+const infraControl = (name: string, body: () => Promise<void>): void => {
+  infraControls.add(controls.push({ name, body }) - 1);
+};
 /** Controls running the pass's mutation verifier (tests/single-pass-mutations.mts):
  * given once the suite's process has built it. */
 const mutationControls = new Set<number>();
@@ -280,7 +289,7 @@ process.exit(0);
 // ---------------------------------------------------------------------------
 // Module interfaces: the store boundary of the interface stages.
 
-control("module interfaces: the store boundary", async (): Promise<void> => {
+infraControl("module interfaces: the store boundary", async (): Promise<void> => {
   const artifacts = run("certified-value-import");
   interfaceControls(fragmentOf(artifacts), join(artifacts, "interface-controls"), say, counted);
 });
@@ -1985,7 +1994,7 @@ control("step failures: the pass's exit without a complete refusal is a tool fai
   say("step failures: the pass's exit without a complete refusal is a tool failure; an unreadable input is the verifier's status 3");
 });
 
-control("store: cold and warm runs, an importer's edit, over the interface stages", async (): Promise<void> => {
+infraControl("store: cold and warm runs, an importer's edit, over the interface stages", async (): Promise<void> => {
   const previous = process.env.TSCERT_STAGE_STORE;
   const scratch = runDirectory("single-pass-store-");
   const useStore = (name: string): void => {
@@ -2157,7 +2166,7 @@ control("tag selection: one per run", async (): Promise<void> => {
   say("tag selection: one per run, the importer's and its module's family readings equal; the module's own run selects its own kinds");
 });
 
-control("run retention: only requested runs are kept", async (): Promise<void> => {
+infraControl("run retention: only requested runs are kept", async (): Promise<void> => {
   // A long-lived caller retains only explicitly requested runs, including
   // replayed results and results whose consumer throws.
   const source = join(root, "pipeline", "examples", "values.ts");
@@ -2269,7 +2278,7 @@ runDirectory("must-not-start-");
   say("run retention: unrequested runs, a throwing consumer's, a failed request write's and a timed-out worker's left nothing; a run stops before it starts on a full disk");
 });
 
-control("replay: cold, warm and evicted runs agree", async (): Promise<void> => {
+infraControl("replay: cold, warm and evicted runs agree", async (): Promise<void> => {
   // Replay: a cold run in a fresh store and a warm run in another run root
   // agree on their outcome, documents and logs; the warm run replays every
   // stage (the module interfaces included), the parse by its observations.
@@ -2367,7 +2376,8 @@ const readFinished = (value: unknown): Finished => {
   return { finished: value.finished, error: value.error, retiring: value.retiring,
     operations: { executed: o.executed, replayed: o.replayed, elapsedMs: o.elapsedMs } };
 };
-const chosen = process.argv.slice(serving ? 3 : 2);
+const infraTier = !serving && process.argv[2] === "--infra";
+const chosen = process.argv.slice(serving ? 3 : infraTier ? 3 : 2);
 if (serving) {
   // A control process: one control per message. A process whose caches may
   // disagree with the file system reports its control and exits.
@@ -2393,11 +2403,12 @@ if (serving) {
   });
   process.on("disconnect", () => process.exit(0));
 } else {
-  // `node tests/single-pass-controls.mts [pattern…]`: the controls whose
-  // names contain a pattern, every one with none.
+  // `node tests/single-pass-controls.mts [--infra] [pattern…]`: the controls
+  // whose names contain a pattern, every one with none; the infrastructure's
+  // with --infra, the others without.
   startEviction();
   linkFixtures();
-  // With no pattern, the observed stages' replay controls
+  // In the infrastructure's tier with no pattern, the observed stages' replay controls
   // (tests/observed-stages.mts), which run their stages in fresh processes,
   // the parse's with real compilers, and the retained declaration sessions'
   // controls (tests/session-reuse.mts), each in a process of its own beside
@@ -2413,12 +2424,12 @@ if (serving) {
       child.on("error", fail);
       child.on("close", (status: number | null) => done({ status, stdout, stderr }));
     });
-  const besides = chosen.length > 0 ? [] : [beside("observed-stages.mts"), beside("session-reuse.mts")];
+  const besides = chosen.length > 0 || !infraTier ? [] : [beside("observed-stages.mts"), beside("session-reuse.mts")];
   const started = performance.now();
   const failures: string[] = [];
   const tally: Operations = { executed: 0, replayed: 0, elapsedMs: 0 };
   const withStops = process.env.TSCERT_SINGLE_PASS_STOPS === "1";
-  const selected = controls.flatMap((c, i) => (withStops || !stops.has(i)) &&
+  const selected = controls.flatMap((c, i) => (withStops || !stops.has(i)) && infraControls.has(i) === infraTier &&
     (chosen.length === 0 || chosen.some((p) => c.name.includes(p))) ? [i] : []);
   const pending = selected.filter((i) => !mutationControls.has(i));
   // The pass's mutation verifier, built beside the other controls when a
@@ -2447,7 +2458,7 @@ if (serving) {
       done();
     });
   });
-  if (!withStops)
+  if (!withStops && !infraTier)
     for (const i of stops) process.stdout.write(`not run (TSCERT_SINGLE_PASS_STOPS=1 runs it): ${controls[i]?.name}\n`);
   const total = selected.length;
   let processes = 0;

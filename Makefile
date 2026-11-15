@@ -4,7 +4,7 @@
 OUT ?= $(or $(TMPDIR),/tmp)/semantic-diff.html
 REV ?= HEAD
 
-.PHONY: help setup build build-lean test test-checks test-cases cases check lowering compiler-api-shapes semantic-diff deck fmt \
+.PHONY: help setup build build-lean test test-checks test-infra test-cases cases check lowering compiler-api-shapes semantic-diff deck fmt \
   check-fmt setup-git-hooks clean-store census build-runner test-pretext
 
 help: ## list the targets
@@ -33,6 +33,9 @@ test: test-checks test-cases ## build, then the fast checks and the controls, th
 
 test-checks: build ## build, then the fast checks and the controls no case can make (replayed from the stage store)
 	@./test-all.sh
+
+test-infra: build ## build, then the tests of the test infrastructure: the stage store, the runner, replay, observed stages, declaration sessions (CI runs them when their code changes)
+	@./test-all.sh --infra
 
 test-cases: build ## build, then the pipeline cases
 	node pipeline/run-cases.mts

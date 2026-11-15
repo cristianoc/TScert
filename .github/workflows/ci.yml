@@ -1,6 +1,7 @@
-# Build, then the fast checks and controls (`make test-checks`) and the
-# pipeline cases (`make test-cases`), together `make test`, on every pull
-# request and every push to main, on Linux.
+# Build, then the fast checks and controls (`make test-checks`), the tests of
+# the test infrastructure where their code changed (`make test-infra`) and the
+# pipeline cases (`make test-cases`), on every pull request and every push to
+# main, on Linux.
 name: CI
 
 on:
@@ -64,6 +65,21 @@ jobs:
 
       - name: Fast checks and controls
         run: make test-checks
+
+      # The tests of the test infrastructure (`make test-infra`), only where
+      # a change touches the code they test or the tests themselves; on a
+      # push or a run with no base to compare, always.
+      - name: Infrastructure tests
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          paths='^(pipeline/(stages|stage-store|stage-execution|run-directory|in-process-execution|parse-stage|verify-source|module-interfaces)\.mts|pipeline/runner/|tools/(files|compiler-channel|compiler-processes|declaration-session|declaration-graph)\.mts|tests/(stage-store|observed-stages|session-reuse|single-pass-controls)\.mts|test-all\.sh|Makefile|\.github/workflows/ci\.yml)'
+          if [ -n "$BASE" ] && git fetch --no-tags --depth=1 origin "$BASE" 2>/dev/null &&
+              ! git diff --name-only "$BASE" HEAD | grep -qE "$paths"; then
+            echo "no infrastructure code changed since $BASE"
+          else
+            make test-infra
+          fi
 
       # C3 and C4 over the corpus (tests/compiler-api-shapes.mts): about a
       # minute, outside the fast checks.

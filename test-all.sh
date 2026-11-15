@@ -2,13 +2,20 @@
 # The checks of `make test-checks`, after its build: the suites below, each a
 # `run_test` line with a comment naming what it checks, running no stage, and
 # the controls no pipeline case can make (tests/single-pass-controls.mts). The pipeline
-# cases are pipeline/run-cases.mts (`make test-cases`).
-# Usage: test-all.sh
+# cases are pipeline/run-cases.mts (`make test-cases`). With --infra, the tests
+# of the test infrastructure instead (`make test-infra`): the stage store, the
+# runner, replay, observed stages and retained declaration sessions.
+# Usage: test-all.sh [--infra]
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO" || exit 1
 
+tier="Fast checks"
+if [ "${1:-}" = --infra ]; then
+  tier="Infrastructure tests"
+  shift
+fi
 if [ $# -gt 0 ]; then
   echo "Unknown argument: $1"
   exit 2
@@ -41,9 +48,9 @@ finish() {
   local status=$?
   echo
   if [ "$status" -eq 0 ]; then
-    status_line 32 "✓ Fast checks: PASS"
+    status_line 32 "✓ $tier: PASS"
   else
-    status_line 31 "✗ Fast checks: FAIL"
+    status_line 31 "✗ $tier: FAIL"
   fi
   echo "  Test suites: $passed passed, $failed failed"
   if [ "$completed" -eq 0 ]; then
@@ -123,6 +130,14 @@ typecheck() {
   (cd tools && npx tsc -p tsconfig.json)
 }
 
+if [ "$tier" = "Infrastructure tests" ]; then
+# tests/stage-store.mts checks the stage store and the stage runner with stand-in stages: invalidation, concurrent writers,
+# interrupted writers, timeouts, isolation, eviction, a runner's lost wakes and a worker's lost runner.
+run_test 180 "Stage store" node tests/stage-store.mts
+# The controls of the infrastructure: the interface stages' store boundary, cold and warm runs, replay and run retention, each
+# in a fresh store; beside them the observed stages' replay controls and the declaration sessions' controls.
+run_test 300 "Infrastructure controls" node tests/single-pass-controls.mts --infra
+else
 run_test 30 "Front-end types" typecheck
 run_test 30 "JSON field names agree (TS, Lean)" node tests/json-field-names.mts
 # tools/unchecked.mts enforces the node side's typing conventions: every unit boundary annotated, no value typed `any`,
@@ -202,8 +217,6 @@ run_test 240 "Examples run under Node" node tests/node-runs.mts
 run_test 80 "Trusted inputs" node tests/trusted-inputs.mts
 # tests/tool-failures.mts forces a failure of the compiler's API at each kind of catching site: each is reported as a tool failure.
 run_test 75 "Tool failures stay tool failures" node tests/tool-failures.mts
-# tests/stage-store.mts checks the stage store with stand-in stages: invalidation, concurrent writers, interrupted writers, timeouts, isolation.
-run_test 180 "Stage store" node tests/stage-store.mts
 # The keyed closures are identified and hold no policy, store or orchestration module, and the stages' code reads the file system only through tools/files.mts; the observed stages' replay controls run beside the controls.
 run_test 30 "Keyed closures; observed stages read through files.mts" node tests/observed-stages.mts --reads
 # tests/shared-work.mts checks the work shared within a process: an attempt's answers, query answers and every compiler's ledger.
@@ -223,8 +236,9 @@ run_test 30 "Claim text of malformed input" node tests/claim-text.mts
 # tests/rule-inventory.mts checks that the rules REQUEST-PROTOCOL documents are the rules Lean declares.
 run_test 30 "Rule inventory" node tests/rule-inventory.mts
 # tests/single-pass-controls.mts runs the controls no case can make, their operations replayed from the stage store: forced proposals, forged fragments,
-# the interface stages' store boundary, run retention and replay; beside them the observed stages' replay controls and the declaration sessions' controls.
+# forged declarations, mutations of the pass, the file worker and the family boundary.
 run_test 360 "Controls" node tests/single-pass-controls.mts
+fi
 
 report_tests
 

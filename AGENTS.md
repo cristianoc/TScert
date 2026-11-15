@@ -21,6 +21,7 @@ state is one row of [WORK.md](WORK.md#status).
 make help        # every target
 make test        # make test-checks, then make test-cases: every test
 make test-checks # build, then the fast checks and the controls, replayed from the store
+make test-infra  # build, then the tests of the test infrastructure (store, runner, replay, observed stages, sessions)
 make test-cases  # build, then the pipeline cases
 make cases P=x   # the pipeline cases whose file names contain x
 make check FILE=f.ts [PROJECT=dir]  # one source file through the pipeline
@@ -284,8 +285,16 @@ extraction, the pass's front, wire), and what Lean proves needs no test.
 
 `make test-checks` builds (a no-op when nothing changed), then runs `test-all.sh`:
 the fast checks and the controls (`tests/single-pass-controls.mts`). `make test-cases` builds,
-then runs the pipeline cases (`pipeline/run-cases.mts`). Three rules decide
-where a check goes.
+then runs the pipeline cases (`pipeline/run-cases.mts`). `make test-infra`
+builds, then runs `test-all.sh --infra`: the tests of the test infrastructure,
+the stage store and the runner (`tests/stage-store.mts`), the controls of the
+store, replay and run retention (`single-pass-controls.mts --infra`), the
+observed stages' replay controls (`tests/observed-stages.mts`) and the
+retained declaration sessions' (`tests/session-reuse.mts`); CI runs it when a
+change touches the code they test (the paths its `Infrastructure tests` step
+lists) or the tests themselves. The mutation controls stay in `make
+test-checks`: each shows a check of the pass is what refuses a unit. Three
+rules decide where a check goes.
 
 - **Suites start together.** A suite is `run_test <seconds> "Name" command
   args…`; its output is buffered and reported in order with its time, and a
@@ -312,7 +321,7 @@ where a check goes.
   states its own family overrides. The suite reports the controls' wall
   time and how many of their operations executed and replayed. Controls of
   the store itself (`tests/observed-stages.mts`, the replay control) name
-  fresh stores and execute every time.
+  fresh stores, execute every time and run in `make test-infra`.
 
 ## What a result means
 

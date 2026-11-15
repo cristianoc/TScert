@@ -844,7 +844,9 @@ A control tests the verifier or the pipeline on
 an input no case makes: a forged or tampered document, a forced proposal,
 a mutation of the verifier, an injected tool failure, a host-family
 override. The controls of
-`tests/single-pass-controls.mts` run in `make test-checks`, in a pool of processes. Every
+`tests/single-pass-controls.mts` run in `make test-checks`, in a pool of processes,
+but those of the store, replay and run retention, which run in `make
+test-infra` (`--infra`). Every
 operation a control runs is a stage invocation of the common mechanism and
 replays from the store like any other: its key binds the executable by
 content, its argument vector, its environment and the bytes of every input
@@ -890,7 +892,9 @@ store.
 The controls of the store itself (`tests/stage-store.mts`, the observed
 stages' replay controls, the cold and warm comparison of `tests/single-pass-controls.mts`)
 name fresh stores of their own and execute every time: their subject is the
-replay mechanism. Store tests cover dependency invalidation, concurrent
+replay mechanism. They are the tier `make test-infra`, with the retained
+declaration sessions' controls (`tests/session-reuse.mts`), which CI runs
+when a change touches the code they test. Store tests cover dependency invalidation, concurrent
 publication, interrupted writers, timeout/success races, writable
 artifact isolation and eviction: least recent use within the budget, items
 no use line names measured, references of either index going with their
