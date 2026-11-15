@@ -26,6 +26,7 @@ import { dirname, resolve } from "node:path";
 // declaration-session.mts names the project a module is lowered in, rooted at the module.
 import { moduleProject, moduleProjectText } from "./declaration-session.mts";
 import type { DeclarationIdentity, ResolutionSlots, StatedEffect, TypeDefinition, TypeTerm, ValueRoot } from "./declaration-types.mts";
+import { withConditions } from "./type-graph.mts";
 import { deepPartMap, mapDocument, mapFunctionParts } from "./fragment-parts.mts";
 import { computedAlias, computedForm, optionalTerm, resolutionSlots, restPositions, restRefusal, restTerm, REST_PACK_BOUND, REST_PACK_VALUE, statedResult, substitute, typeTerm, visitType, mapTypeParts, type MappedMember, type TermScope } from "./type-term.mts";
 import type { Ast, Expr, FunctionAst, ModuleAst, Stmt, TypeParamAst } from "./fragment.mts";
@@ -2829,7 +2830,7 @@ function writtenImport(gate: Gate, value: ValueRoot, clauses: readonly string[],
   if (typeof post === "string") return gate.fail(at ?? null, `${post}: ${what}`);
   const ensures = [...contract.ensures, ...post];
   const stated = (f: Extract<TypeTerm, { k: "function" }>): Extract<TypeTerm, { k: "function" }> =>
-    ({ ...f, effect: { ...f.effect, pre, ensures } });
+    ({ ...f, effect: withConditions(f.effect, pre, ensures) });
   if (value.type.k === "function") return stated(value.type);
   return { k: "intersection", parts: forms.map(stated), span: value.type.span };
 }

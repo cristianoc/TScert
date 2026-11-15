@@ -8,6 +8,7 @@
  * values. Each entry is checked against the installed package by
  * `tests/compiler-api.mts`. */
 import type { CallEffect, DeclarationIdentity, TypeTerm } from "./declaration-types.mts";
+import { footprintEffect } from "./type-graph.mts";
 import type { FamilyDescription } from "./host-families.mts";
 import { compilerApiGuards } from "./compiler-api-guards.mts";
 import * as ts from "typescript/unstable/ast";
@@ -414,15 +415,10 @@ export const statedGuards: readonly { name: string; text: string; implementation
  * getters or `toJSON` of program objects. A `fresh` entry additionally states
  * that an array result's store is allocated by the call. */
 export function requestReading(type: TypeTerm, fresh: boolean): TypeTerm {
-  const effect: CallEffect = { footprint: { value: "any", store: "grow" }, promise: null, fresh: false,
-    receiverStore: false, onThrow: false, receiverOwn: false, freshObject: false, requires: null, elements: null, pre: [],
-    ensures: [], receiverGrows: false, elementWrite: null };
+  const effect: CallEffect = footprintEffect({ value: "any", store: "grow" });
   const at = (t: TypeTerm): TypeTerm =>
     t.k === "function" && t.effect.promise === null
-      ? { ...t, effect: { footprint: effect.footprint, promise: effect.promise, fresh: fresh && t.result.k === "array",
-        receiverStore: effect.receiverStore, onThrow: effect.onThrow, receiverOwn: effect.receiverOwn,
-        freshObject: effect.freshObject, requires: effect.requires, elements: effect.elements, pre: effect.pre,
-        ensures: effect.ensures, receiverGrows: effect.receiverGrows, elementWrite: effect.elementWrite } }
+      ? { ...t, effect: footprintEffect({ value: "any", store: "grow" }, { fresh: fresh && t.result.k === "array" }) }
     : t.k === "intersection" ? { ...t, parts: t.parts.map(at) }
     : t.k === "scheme" ? { ...t, signatures: t.signatures.map(s => s.k === "function" && s.effect.promise === null ? { ...s, effect } : s) }
     : t;

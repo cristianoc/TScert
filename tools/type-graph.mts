@@ -3,7 +3,7 @@
  * A row and a label list both denote unions. Contracts within one clause are
  * simultaneous requirements (including all arrows of an overload).
  */
-import type { CallEffect, CallPromise, ClosedFootprint, ElementKind, ElementKinds, ElementWrite, BodyFact, BodyVariable, IndexFact, LinearTerm, PropertyKey, StoreRegion } from "./declaration-types.mts";
+import type { CallEffect, CallPromise, ClosedFootprint, ElementKind, ElementKinds, ElementWrite, ExactElementWrite, BodyFact, BodyVariable, IndexFact, LinearTerm, PropertyKey, StoreRegion } from "./declaration-types.mts";
 import { requireWellFormed } from "./wire-strings.mts";
 import {
   hasExactly,
@@ -51,23 +51,99 @@ export const closedFootprints: readonly ClosedFootprint[] = [
   { value: "keep", store: "grow" }, { value: "any", store: "grow" },
   { value: "keep", store: "any" }, { value: "any", store: "any" },
 ];
-/** The optional guarantees a footprint's signature states. */
-type EffectOptions = Partial<Omit<CallEffect, "footprint">>;
-/** A fresh signature effect, with false and null for omitted guarantees. */
-export const footprintEffect = (footprint: ClosedFootprint, options?: EffectOptions): Modifies<{}, CallEffect> =>
-  ({ footprint, promise: options?.promise ?? null, fresh: options?.fresh ?? false,
+/** The guarantees a footprint's signature states beside its footprint, an
+ * authoring form of an effect (`footprintEffect` builds the effect): its
+ * promise, whether its footprint also bounds a throw (`onThrow`), whether
+ * its result's array store or every own location of its result is fresh,
+ * whether it excepts its receiver's store or own locations, whether it
+ * grows its receiver's store and appends its actuals, its precondition on
+ * the receiver's elements and its elements promise, its preconditions and
+ * the facts a normal return states, and its element write. Never
+ * serialized. */
+export type EffectOptions = {
+  readonly promise?: CallPromise | null;
+  readonly onThrow?: boolean;
+  readonly fresh?: boolean;
+  readonly freshObject?: boolean;
+  readonly receiverStore?: boolean;
+  readonly receiverOwn?: boolean;
+  readonly receiverGrows?: boolean;
+  readonly requires?: ElementKinds | null;
+  readonly elements?: ElementKinds | null;
+  readonly pre?: readonly IndexFact[];
+  readonly ensures?: readonly IndexFact[];
+  readonly elementWrite?: ElementWrite | null;
+};
+/** The facts an exact element write's precondition states of the call's
+ * positions (`CallEffects.ElementKind.preFacts`): the index at position 2 a
+ * safe integer at least 0 and below the length of the typed array at
+ * position 1, the value at position 3 a safe integer within the element
+ * type's range. */
+export function exactWritePre(write: ExactElementWrite): Modifies<{}, IndexFact[]> {
+  const value = (slot: number): LinearTerm => ({ kind: "value", slot, path: [] });
+  const le = (form: [LinearTerm, number][], bound: number): IndexFact => ({ linear: { fact: { le: { form, bound } } } });
+  const range: readonly [number, number] | null = write === "exactUint8" ? [0, 255] : write === "exactUint16" ? [0, 65535]
+    : write === "exactInt32" ? [-2147483648, 2147483647] : null;
+  return [{ int: { slot: 2 } }, le([[value(2), -1]], 0),
+    le([[value(2), 1], [{ kind: "view", slot: 1, path: [] }, -1]], -1), { int: { slot: 3 } },
+    ...(range === null ? [] : [le([[value(3), -1]], -range[0]), le([[value(3), 1]], range[1])])];
+}
+const isExactWrite = (w: ElementWrite | null): w is ExactElementWrite =>
+  w === "exactUint8" || w === "exactUint16" || w === "exactInt32" || w === "exactFloat64";
+/** A signature effect of a footprint and its options, with false and null
+ * for omitted guarantees. An exact element write states its range in its
+ * preconditions (`exactWritePre`); an effect without it is refused. */
+export const footprintEffect = (footprint: ClosedFootprint, options?: EffectOptions): Modifies<{}, CallEffect> => {
+  const elementWrite = options?.elementWrite ?? null;
+  const pre = options?.pre ?? [];
+  if (isExactWrite(elementWrite) && !exactWritePre(elementWrite).every(f => pre.some(g => JSON.stringify(g) === JSON.stringify(f))))
+    throw Error(`an exact element write '${elementWrite}' states its range among its preconditions`);
+  return { footprint, promise: options?.promise ?? null, fresh: options?.fresh ?? false,
     receiverStore: options?.receiverStore ?? false, onThrow: options?.onThrow ?? false,
     receiverOwn: options?.receiverOwn ?? false, freshObject: options?.freshObject ?? false,
-    requires: options?.requires ?? null, elements: options?.elements ?? null, pre: options?.pre ?? [],
-    ensures: options?.ensures ?? [], receiverGrows: options?.receiverGrows ?? false,
-    elementWrite: options?.elementWrite ?? null });
-/** A fresh effect with a replacement promise and every other guarantee retained. */
+    requires: options?.requires ?? null, elements: options?.elements ?? null, pre: [...pre],
+    ensures: [...(options?.ensures ?? [])], receiverGrows: options?.receiverGrows ?? false, elementWrite };
+};
+/** An effect with a replacement promise and every other guarantee retained. */
 export const withPromise = (effect: CallEffect, promise: CallPromise | null): Modifies<{}, CallEffect> =>
   ({ footprint: effect.footprint, promise, fresh: effect.fresh, receiverStore: effect.receiverStore,
     onThrow: effect.onThrow, receiverOwn: effect.receiverOwn, freshObject: effect.freshObject,
     requires: effect.requires, elements: effect.elements, pre: effect.pre, ensures: effect.ensures,
     receiverGrows: effect.receiverGrows, elementWrite: effect.elementWrite,
     ...(effect.regions === undefined ? {} : { regions: effect.regions }) });
+/** An effect with further preconditions and further facts a normal return
+ * states, every other guarantee retained: a declaration's `@requires` and
+ * `@ensures`. */
+export const withConditions = (effect: CallEffect, pre: readonly IndexFact[], ensures: readonly IndexFact[]):
+    Modifies<{}, CallEffect> =>
+  ({ footprint: effect.footprint, promise: effect.promise, fresh: effect.fresh, receiverStore: effect.receiverStore,
+    onThrow: effect.onThrow, receiverOwn: effect.receiverOwn, freshObject: effect.freshObject,
+    requires: effect.requires, elements: effect.elements, pre: [...effect.pre, ...pre],
+    ensures: [...effect.ensures, ...ensures], receiverGrows: effect.receiverGrows, elementWrite: effect.elementWrite,
+    ...(effect.regions === undefined ? {} : { regions: effect.regions }) });
+/** A call promise's JSON text, built from its one key and its parameter. */
+function promiseText(p: CallPromise): Modifies<{}, string> {
+  return p.guards !== undefined ? `{"guards":{"param":${JSON.stringify(p.guards.param)}}}`
+    : `{"asserts":{"param":${JSON.stringify(p.asserts.param)}}}`;
+}
+function kindsText(kinds: ElementKinds | null): Modifies<{}, string> {
+  return kinds === null ? "null" : `[${kinds.map(k => JSON.stringify(k)).join(",")}]`;
+}
+/** **An effect's text**, the one serialization of an effect: its fields in
+ * the documents' order, every list in its order. It identifies the effect's
+ * syntax: type identity and the comparison of effects read it. */
+export function effectText(e: CallEffect): Modifies<{}, string> {
+  return `{"footprint":{"value":${JSON.stringify(e.footprint.value)},"store":${JSON.stringify(e.footprint.store)}},` +
+    `"promise":${e.promise === null ? "null" : promiseText(e.promise)},"fresh":${JSON.stringify(e.fresh)},` +
+    `"receiverStore":${JSON.stringify(e.receiverStore)},"onThrow":${JSON.stringify(e.onThrow)},` +
+    `"receiverOwn":${JSON.stringify(e.receiverOwn)},"freshObject":${JSON.stringify(e.freshObject)},` +
+    `"requires":${kindsText(e.requires)},"elements":${kindsText(e.elements)},"pre":${JSON.stringify(e.pre)},` +
+    `"ensures":${JSON.stringify(e.ensures)},"receiverGrows":${JSON.stringify(e.receiverGrows)},` +
+    `"elementWrite":${JSON.stringify(e.elementWrite)}` +
+    `${e.regions === undefined ? "" : `,"regions":${JSON.stringify(e.regions)}`}}`;
+}
+/** **Whether two effects are the same**: the same text (`effectText`). */
+export const sameEffect = (a: CallEffect, b: CallEffect): boolean => effectText(a) === effectText(b);
 /** Heap preservation: no location may change, no promise. */
 export const emptyEffect: CallEffect = footprintEffect(emptyFootprint);
 /** An ordinary arrow's effect: every location may change, no promise. */
@@ -78,22 +154,9 @@ export const promiseEffect = (asserts: boolean, param: number): Modifies<{}, Cal
   footprintEffect(topFootprint, { promise: asserts ? { asserts: { param } } : { guards: { param } } });
 export const sameFootprint = (a: ClosedFootprint, b: ClosedFootprint): boolean =>
   a.value === b.value && a.store === b.store;
-const samePromise = (a: CallPromise | null, b: CallPromise | null): boolean =>
-  a === null || b === null ? a === b
-    : a.guards !== undefined ? b.guards !== undefined && a.guards.param === b.guards.param
-    : b.asserts !== undefined && a.asserts.param === b.asserts.param;
-export const sameEffect = (a: CallEffect, b: CallEffect): boolean =>
-  sameFootprint(a.footprint, b.footprint) && samePromise(a.promise, b.promise) && a.fresh === b.fresh &&
-    a.receiverStore === b.receiverStore && a.onThrow === b.onThrow && a.receiverOwn === b.receiverOwn &&
-    a.freshObject === b.freshObject && sameKinds(a.requires, b.requires) && sameKinds(a.elements, b.elements) &&
-    JSON.stringify(a.pre) === JSON.stringify(b.pre) && JSON.stringify(a.ensures) === JSON.stringify(b.ensures) &&
-    a.receiverGrows === b.receiverGrows && a.elementWrite === b.elementWrite &&
-    JSON.stringify(a.regions ?? []) === JSON.stringify(b.regions ?? []);
 /** The kinds an elements predicate lists, each at most once, in this order. */
 const elementKindOrder: readonly ElementKind[] =
   ["null", "undefined", "boolean", "number", "string", "bigint", "symbol", "object"];
-const sameKinds = (a: ElementKinds | null, b: ElementKinds | null): boolean =>
-  a === null || b === null ? a === b : a.length === b.length && a.every((k, i) => k === b[i]);
 /** An elements predicate a value states: `null`, or kinds in their order,
  * each once; `undefined` where the value states neither. */
 function decodeKinds(v: JsonRead): Modifies<{ values: "any"; stores: "grow" }, ElementKinds | null | undefined> {

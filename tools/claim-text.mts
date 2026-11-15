@@ -18,6 +18,7 @@ import {
   decodeCallEffect,
   ordinaryEffect,
   presencePrefix,
+  sameEffect,
   type ClauseKey,
   type StringClause,
 } from "./type-graph.mts";
@@ -38,30 +39,10 @@ const members = (v: JsonValue): readonly JsonValue[] =>
         ? [...v]
         : [];
 /** An ordinary arrow's effect, the one a structural function atom states. */
-/** Each field is compared with `ordinaryEffect`'s, whose promise and kind
- * lists are `null`, so `===` is `sameEffect`'s comparison of them, and whose
- * index-fact lists are empty. */
+/** Whether a value states the ordinary effect (`sameEffect`). */
 const isOrdinary = (effect: JsonRead): boolean => {
   const d = decodeCallEffect(effect);
-  const o = ordinaryEffect;
-  return (
-    d !== undefined &&
-    d.footprint.value === o.footprint.value &&
-    d.footprint.store === o.footprint.store &&
-    d.promise === o.promise &&
-    d.fresh === o.fresh &&
-    d.receiverStore === o.receiverStore &&
-    d.onThrow === o.onThrow &&
-    d.receiverOwn === o.receiverOwn &&
-    d.freshObject === o.freshObject &&
-    d.requires === o.requires &&
-    d.elements === o.elements &&
-    d.pre.length === 0 &&
-    d.ensures.length === 0 &&
-    d.receiverGrows === o.receiverGrows &&
-    d.elementWrite === o.elementWrite &&
-    d.regions === undefined && o.regions === undefined
-  );
+  return d !== undefined && sameEffect(d, ordinaryEffect);
 };
 /** The atoms whose kind is all there is to them, read off `Atom` rather than
  * restated: the members whose only field is `a`. */

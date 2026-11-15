@@ -402,7 +402,7 @@ const bytesEntries: GlobalEntry[] = [
  * allocates: it runs no code of the client's and writes no location it did
  * not allocate. */
 const lengthTerm = (kind: "value" | "view", slot: number): LinearTerm => ({ kind, slot, path: [] });
-const viewOfLength: CallEffect = { ...emptyEffect,
+const viewOfLength: CallEffect = footprintEffect(emptyFootprint, {
   // At a call's positions: 1 the length, `(int(1) ∧ 0 ≤ 1) ∨ past(1)`, a
   // safe integer at least 0 or the double 2^53, at which ToIndex throws.
   pre: [{ either: { left: { int: { slot: 1 } }, right: { pastSafe: { slot: 1 } } } },
@@ -412,7 +412,7 @@ const viewOfLength: CallEffect = { ...emptyEffect,
   ensures: [
     { every: { slot: 0, path: [], stop: lengthTerm("view", 0), body: [] } },
     { linear: { fact: { le: { form: [[lengthTerm("view", 0), 1], [lengthTerm("value", 2), -1]], bound: 0 } } } },
-    { linear: { fact: { le: { form: [[lengthTerm("view", 0), -1], [lengthTerm("value", 2), 1]], bound: 0 } } } }] };
+    { linear: { fact: { le: { form: [[lengthTerm("view", 0), -1], [lengthTerm("value", 2), 1]], bound: 0 } } } }] });
 const typedArrayEntries: GlobalEntry[] = viewKinds.map(({ name, type }): GlobalEntry => (
   { host: transparent("a length or an array of numbers, which no node list is"), global: name,
     signature: `${name}: ${name}Constructor`, constructs: true, effect: emptyEffect,

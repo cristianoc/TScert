@@ -11,7 +11,7 @@
  * refused where it is imported (`declaration-graph.mts`). */
 import type { Stated } from "./library-globals.mts";
 import type { CallEffect, DeclarationIdentity, TypeDefinition, TypeTerm } from "./declaration-types.mts";
-import { emptyEffect, ordinaryEffect } from "./type-graph.mts";
+import { emptyEffect, emptyFootprint, footprintEffect, ordinaryEffect } from "./type-graph.mts";
 import { pathToFileHrefName } from "./intrinsics.mts";
 import { bigIntStats, buffer, bytes, definitions as stated, dirent, url } from "./library-types.mts";
 
@@ -68,7 +68,7 @@ const field = (name: string, type: TypeTerm, optional: boolean): Field =>
 
 /** A function that computes a string and allocates only it, also when it
  * throws. */
-const pathEffect: CallEffect = { ...emptyEffect, onThrow: true };
+const pathEffect: CallEffect = footprintEffect(emptyFootprint, { onThrow: true });
 
 /** What `createHash("sha256")` returns, a `Hash` at the members the
  * overlay states (SOURCE-CONTRACTS.md, "Library modules"),
@@ -213,7 +213,7 @@ export const modulesOverlay: readonly ModuleEntry[] = [
         field("timeout", union(atom("number"), atom("undefined")), true),
         field("killSignal", union(atom("string"), atom("number"), atom("undefined")), true)] }],
       result: atom("string") },
-    effect: { ...emptyEffect, onThrow: true } },
+    effect: footprintEffect(emptyFootprint, { onThrow: true }) },
   // `execFileSync(file, args, options)` runs `file` with the arguments and,
   // when the child exits with status 0, returns its standard output: decoded
   // to a string where `options.encoding` is a text encoding, `null` where

@@ -8,7 +8,7 @@ import type { Span } from "./span.mts";
 import { statesTag } from "./bound-annotations.mts";
 import { childrenOf, isTypeAlias, unparenthesized } from "./syntax.mts";
 import type { ClosedFootprint, PropertyKey, ResolutionSlots, StatedEffect, StoreRegion, TypeTerm } from "./declaration-types.mts";
-import { withPromise, footprintEffect, ordinaryEffect, promiseEffect } from "./type-graph.mts";
+import { withPromise, footprintEffect, ordinaryEffect, promiseEffect, sameEffect } from "./type-graph.mts";
 import type { CallEffect, CallPromise } from "./type-graph.mts";
 
 /** The projections a resolvable parameter owns: its observation and its
@@ -1703,26 +1703,6 @@ function sameSlots(a: ResolutionSlots | null, b: ResolutionSlots | null): Modifi
   return a === null || b === null ? a === b : a.observation === b.observation && a.result === b.result;
 }
 
-/** Whether two call effects are equal; a promise, data of one key, by its
- * JSON text. */
-function sameEffect(a: CallEffect, b: CallEffect): Modifies<{}, boolean> {
-  return a.footprint.value === b.footprint.value && a.footprint.store === b.footprint.store &&
-    a.fresh === b.fresh && a.receiverStore === b.receiverStore && a.onThrow === b.onThrow &&
-    a.receiverOwn === b.receiverOwn && a.freshObject === b.freshObject &&
-    JSON.stringify(a.requires) === JSON.stringify(b.requires) &&
-    JSON.stringify(a.elements) === JSON.stringify(b.elements) &&
-    JSON.stringify(a.pre) === JSON.stringify(b.pre) && JSON.stringify(a.ensures) === JSON.stringify(b.ensures) &&
-    a.receiverGrows === b.receiverGrows && a.elementWrite === b.elementWrite &&
-    JSON.stringify(a.regions ?? []) === JSON.stringify(b.regions ?? []) &&
-    (a.promise === null || b.promise === null ? a.promise === b.promise : samePromise(a.promise, b.promise));
-}
-
-/** Whether two call promises are about the same parameter, both guards or
- * both assertions. */
-function samePromise(a: CallPromise, b: CallPromise): Modifies<{}, boolean> {
-  if (a.guards !== undefined) return b.guards !== undefined && a.guards.param === b.guards.param;
-  return b.asserts !== undefined && a.asserts.param === b.asserts.param;
-}
 
 /** The key kinds an index signature's parameter type names: `string`,
  * `number`, `symbol`, or a union of them. */

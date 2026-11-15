@@ -8,6 +8,7 @@ import type { CallEffect, CallPromise, DeclarationDocument, ElementKinds, Declar
 import type { Ast, ModuleAst } from "./fragment.mts";
 import type { Span } from "./span.mts";
 import { astHolds, documentHolds, moduleHolds } from "./fragment-parts.mts";
+import { effectText } from "./type-graph.mts";
 import { DEFERRED_MODULE, deferredOf, expandMapped, mapTypeParts, substitute, type AliasHook, type RecordHook } from "./type-term.mts";
 
 type Reference = Extract<TypeTerm, { k: "reference" }>;
@@ -119,29 +120,6 @@ function binderText(b: Extract<TypeTerm, { k: "scheme" }>["binders"][number]): M
   const resolution = b.resolution === null ? "null"
     : `{"observation":${JSON.stringify(b.resolution.observation)},"result":${b.resolution.result === null ? "null" : JSON.stringify(b.resolution.result)}}`;
   return `{"name":${JSON.stringify(b.name)},"bound":${optionalTermText(b.bound)},"resolution":${resolution},"default":${optionalTermText(b.default)}}`;
-}
-
-/** A call promise's JSON text, built from its one key and its parameter. */
-function promiseText(p: CallPromise): Modifies<{}, string> {
-  return p.guards !== undefined ? `{"guards":{"param":${JSON.stringify(p.guards.param)}}}`
-    : `{"asserts":{"param":${JSON.stringify(p.asserts.param)}}}`;
-}
-
-/** A call effect as text; its promise by its JSON text. */
-function effectText(e: CallEffect): Modifies<{}, string> {
-  return `{"footprint":{"value":${JSON.stringify(e.footprint.value)},"store":${JSON.stringify(e.footprint.store)}},` +
-    `"promise":${e.promise === null ? "null" : promiseText(e.promise)},"fresh":${JSON.stringify(e.fresh)},` +
-    `"receiverStore":${JSON.stringify(e.receiverStore)},"onThrow":${JSON.stringify(e.onThrow)},` +
-    `"receiverOwn":${JSON.stringify(e.receiverOwn)},"freshObject":${JSON.stringify(e.freshObject)},` +
-    `"requires":${kindsText(e.requires)},"elements":${kindsText(e.elements)},"pre":${JSON.stringify(e.pre)},` +
-    `"ensures":${JSON.stringify(e.ensures)},"receiverGrows":${JSON.stringify(e.receiverGrows)},` +
-    `"elementWrite":${JSON.stringify(e.elementWrite)}` +
-    `${e.regions === undefined ? "" : `,"regions":${JSON.stringify(e.regions)}`}}`;
-}
-
-/** An elements predicate as text: `null` or its kinds' list. */
-function kindsText(kinds: ElementKinds | null): Modifies<{}, string> {
-  return kinds === null ? "null" : `[${kinds.map(k => JSON.stringify(k)).join(",")}]`;
 }
 
 const keyText = (name: PropertyKey): Modifies<{ values: "any"; stores: "grow" }, string> =>
