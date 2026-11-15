@@ -522,7 +522,7 @@ $\langle 4,\circ,5,0\rangle$, which fails (iv): 0 is an old location.
 \draw[->] (a) -- (2.7,0.42);
 \draw[->] ([xshift=-2pt]c3.south) to[out=-70,in=-110,looseness=0.9] (c4.south);
 \draw[->] ([xshift=2pt]c3.south) to[out=-60,in=-120,looseness=0.7] (c5.south);
-\foreach \y/\name/\cells in {-2.2/{$o.n$}/{0},-2.6/{$o.m$}/{1},-3.0/{$a.\kw{store}$}/{3},-3.4/{$a[\ast]$}/{3,4,5},-3.8/{$\st$}/{3},-4.2/{$\val$}/{0,1,2,4,5}}{
+\foreach \y/\name/\cells in {-2.2/{$o.n$}/{0},-2.6/{$o.m$}/{1},-3.0/{$o.\kw{own}$}/{0,1},-3.4/{$a.\kw{store}$}/{3},-3.8/{$a[\ast]$}/{3,4,5},-4.2/{$\st$}/{3},-4.6/{$\val$}/{0,1,2,4,5}}{
   \node[anchor=east] at (-0.55,\y) {\name};
   \foreach \j in \cells { \ifnum\j=3 \node[sbar] at (\j,\y) {}; \else \node[bar] at (\j,\y) {}; \fi }
 }
@@ -542,7 +542,7 @@ the read \emph{fails} when a value on the way is not an object with the
 next field. A \emph{region} $r$ denotes a set $r(\rho,h)$ of locations
 of $h$. A class region reads the kinds and forms of those locations,
 which the world of the state records (Definition~\ref{def:world}); the
-other regions read $\rho$ and $h$. There are six forms:
+other regions read $\rho$ and $h$. There are seven forms:
 \begin{description}[leftmargin=1.5em,style=nextline]
 \item[{$\st$}] Every location of class store:
 $\st(\rho,h)=\LS$. In the heap of Section~2 it denotes $\{3\}$.
@@ -561,6 +561,12 @@ Example: $a[\ast]$ denotes $\{3,4,5\}$.
 \item[{$\pi.f$}] The field location for the key $f$ of the one object
 $v$ that $\pi$ reads: $(\pi.f)(\rho,h)=\{v(f)\}$. Examples: $o.n$
 denotes $\{0\}$ and $o.m$ denotes $\{1\}$.
+\item[{$\pi.\kw{own}$}] Every field location of the one object $v$ that
+$\pi$ reads: $(\pi.\kw{own})(\rho,h)=\{v(f)\mid f\in\mathrm{dom}\,v\}$,
+a set of value locations. Example: $o.\kw{own}$ denotes $\{0,1\}$. It
+covers the fields a type of $v$ does not list, which no finite set of
+regions $\pi.f$ does. By (T3) the object $v$ fixes this set
+\status{Lean: the regions \lean{own} and \lean{pathOwn}}.
 \end{description}
 \noindent
 The first three regions are named for what they cover: all the stores
@@ -581,10 +587,15 @@ region and a change:
 \[
 \begin{array}{rcl}
 \Phi &::=& \{\,r_1:\delta_1,\ \ldots,\ r_k:\delta_k\,\}\\[3pt]
-r &::=& \st \mid \vw \mid \val \mid \pi.\kw{store} \mid \pi[\ast] \mid \pi.f\\[3pt]
+r &::=& \st \mid \vw \mid \val \mid \pi.\kw{store} \mid \pi[\ast] \mid \pi.f \mid \pi.\kw{own}\\[3pt]
 \delta &::=& \keep\mid\init\mid\kw{scalar}\mid\grow\mid\any
 \end{array}
 \]
+An effect bounds change and states no value: $\{\st:\grow\}$ does not
+say what an array's new elements are, and $\{\vw:\grow\}$ does not say
+which element of a typed array was written or to what. Those are
+postconditions (Section~6).
+
 Two examples. The effect $\{\val:\any,\ \st:\grow\}$ reads: every
 location that is not a store may change arbitrarily, and every array may
 grow and none may shrink. It is the effect of an element write
@@ -627,6 +638,14 @@ location in its class, and $\any$ absorbs any change that follows it.
 \item[Rigid: a store at a rigid path] $\{\pi.\kw{store}:\delta\}$ is
 rigid on the states where $\pi$ is rigid (Section~4): the path then
 reads the same store in $h$ and in $h'$.
+\item[Rigid: the own fields at a rigid path] $\{\pi.\kw{own}:\delta\}$
+is rigid on the states where $\pi$ is rigid: by (T3) the path then reads
+an object with the same field locations in $h$ and in $h'$
+\status{conj.}. It is the effect of a method that changes only its
+receiver's fields, as \code{it.next()} does for an iterator \code{it}:
+$\code{it.next()}:\{\mathit{it}.\kw{own}:\any\}$
+\status{Lean: \lean{ownCall\_sound}, for a call whose normal effect has
+an entry at the receiver's own fields and keeps every other location}.
 \item[Not rigid: cells of a store changed at $\any$]
 $\{x[\ast]:\any\}$ is not rigid. A first change may make the store of
 $x$ list an element cell that existed before and that it did not list,
@@ -900,6 +919,11 @@ For entry state $(\rho_0,h_0)$ and exit state $(\rho_1,h_1)$,
 $\old(B)$ means $\rho_0,m,h_0\models B$; $m$ is the enclosing
 invocation's entry mark. Ordinary assertions use $(\rho_1,m,h_1)$.
 Both are states of the one execution, with the worlds it reaches.
+The mark and $\old$ are separate: $\fresh(x)$ compares with the mark $m$
+of the enclosing invocation in the entry state and in the exit state
+alike, while $\old$ selects the entry state of the command. A sequence
+composes entry states and leaves $m$ as it is; a call has its own mark,
+and its freshness assertions are rebased (rule \textsc{Call}).
 An $\old$ refers to the command whose triple contains it.
 For example, \code{x.push(v)} has postcondition $\len x=\old(\len x)+1$.
 
@@ -978,6 +1002,17 @@ array type; \lean{apart\_grow\_keep}, \lean{apart\_not\_kept\_fresh}.
 \item[\textsc{Seq-Eff}] The effect of a sequence, stated at the entry of
 the sequence. The effect $\Psi$ of the second command is read where that
 command starts, so it is first \emph{rebased} to the entry (below).
+Both exits compose in this way. A throw of $c_1$ is a throw of
+$c_1;c_2$, bounded by the exceptional effect of $c_1$. A throw of $c_2$
+follows a return of $c_1$, so its bound is that of the sequence with
+$\Psi^{e}$ in place of $\Psi$. For \code{try c catch (x) d}, a return of
+\code{d} that follows a throw of \code{c} is a normal exit, bounded as
+the sequence of the exceptional effect of \code{c} and the normal effect
+of \code{d}; a throw of \code{d} is an exceptional exit, bounded
+likewise with the exceptional effect of \code{d}
+\status{conj. Lean: \lean{PassWalkSound}, for a checker that requires,
+where a throw can escape, the normal bound to be included in the
+exceptional one; this is sufficient and not necessary}.
 \item[\textsc{Fresh-Eff}] A change to the store of an array that the
 command itself allocated is no part of the command's effect, seen from
 its entry. A fresh store may list a cell of the entry heap, and a change
@@ -1039,7 +1074,7 @@ has the effect $\{\mathit{xs}.\kw{store}:\grow\}$ where it starts. If
 $o.\mathit{items}$ is rigid, the effect of \code{f} at its entry is
 $\{o.\mathit{items}.\kw{store}:\grow\}$. Otherwise it widens to
 $\{\st:\grow\}$
-\status{Lean: \lean{seq\_eff}, \lean{fresh\_eff}, \lean{fresh\_cells\_not\_erased}, \lean{rebaseAll}, \lean{rebase\_sound}, \lean{rebaseAll\_labels}. The Lean rebasing widens element cells and regions it cannot place to every location (\lean{rebase\_elems}), a wider bound than their class}.
+\status{Lean: \lean{seq\_eff}, \lean{fresh\_eff}, \lean{fresh\_cells\_not\_erased}, \lean{rebaseAll}, \lean{rebase\_sound}, \lean{rebaseAll\_labels}. The Lean rebasing widens to its class a region at any path depth; a field read from a position with no recorded link to an entry path widens to every location, a wider bound than its class}.
 
 \begin{example}[Freshness bounds effects, not facts]\label{ex:fresh}
 Let \code{shrink(xs)} pop its argument,
@@ -1361,6 +1396,10 @@ completeness claim.
 \begin{description}[leftmargin=1.5em,style=nextline]
 \item[Effects are closed] An effect has no variables; Section~8 states
 the consequence for callbacks~\cite{bty}.
+\item[Derived effects are bounds] The effect a checker derives for a
+command is an upper bound in $\sqsubseteq$ and need not be the least: a
+finite effect and a finite list of postconditions cannot always state
+the strongest specification of a loop.
 \item[Await] Across an \code{await} the effect is that of the
 environment, $\top$.
 \item[Broken and restored invariants] Triples express restored assertions;
