@@ -82,6 +82,9 @@ export function expectOutcome(test: Case, result: Outcome): Outcome {
 }
 
 if (import.meta.filename === resolve(process.argv[1] ?? "")) {
+  // A timeout a case reports is one of its own run: a recorded one is
+  // executed again at its limit (`retryingTimeouts`, stages.mts).
+  process.env["TSCERT_RETRY_TIMEOUTS"] ??= "1";
   startEviction();
   linkFixtures();
   const patterns = process.argv.slice(2);

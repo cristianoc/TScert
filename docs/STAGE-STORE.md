@@ -663,7 +663,10 @@ limit is at least the requested limit. A larger requested limit executes the
 stage. If no finished entry is available, retrying timeouts
 (`TSCERT_RETRY_TIMEOUTS=1`) bypasses timeout reuse and executes at the
 requested limit. The retry flag is outside the key; normal timeout
-publication and resource-policy checks apply. Force execution bypasses both
+publication and resource-policy checks apply. The suites (`test-all.sh`,
+`pipeline/run-cases.mts`) set it, so a timeout a suite reports is one of its
+own run: a timeout an earlier run recorded, under whatever load that run
+met, is executed again at its limit. The census reuses recorded timeouts. Force execution bypasses both
 finished results and timeout observations. Reuse reports an earlier timeout, not proof that execution
 would time out again.
 
@@ -870,7 +873,9 @@ the operation's result, executed or replayed.
   replayed when warm) and its outcome required to be the case's expected
   one.
 - *Ran.* Each operation's attempt must have executed, or replayed a finished
-  result the store holds for its key; a replayed timeout fails the control.
+  result the store holds for its key. A timeout an earlier run recorded is
+  executed again, since `test-all.sh` retries timeouts; a timeout of the
+  current run, or a replayed one where the flag is unset, fails the control.
   `TSCERT_STAGE_STORE=off` executes every operation of every control.
 - *Limit.* A control's operation is killed after 30 s unless the control
   states another limit (`tested`, `pipeline/stages.mts`).

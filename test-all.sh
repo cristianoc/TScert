@@ -14,6 +14,10 @@ if [ $# -gt 0 ]; then
   exit 2
 fi
 
+# A timeout this run reports is one of its own: a timeout an earlier run
+# recorded is executed again at its limit (`retryingTimeouts`, pipeline/stages.mts).
+export TSCERT_RETRY_TIMEOUTS="${TSCERT_RETRY_TIMEOUTS:-1}"
+
 WORK="$(mktemp -d)"
 passed=0
 failed=0

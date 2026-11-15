@@ -62,7 +62,8 @@ replay as [observed stages](docs/STAGE-STORE.md#observed-stages) on macOS.
   30 s unless the control states another limit;
   `TSCERT_STEP_LIMIT=<seconds>` sets a stage's limit. A timeout is recorded with its limit and reported
   again at that limit or a smaller one; `TSCERT_RETRY_TIMEOUTS=1` executes
-  it again at the same limit.
+  it again at the same limit. The suites set it: a timeout a suite reports
+  is one of its own run; the census reuses recorded timeouts.
 - Each process stage is also stopped once its program's memory exceeds
   8 GiB, a tool failure that is never published;
   `TSCERT_STAGE_MEMORY=<gibibytes>` sets that limit

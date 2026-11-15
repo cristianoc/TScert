@@ -22,6 +22,9 @@ import { auditForTests, canonical, pauseIdentificationForTests, linkedLibraries,
   from "../pipeline/stage-execution.mts";
 
 const dir = runDirectory("tscert-stage-store-");
+// The suites retry recorded timeouts (test-all.sh); these tests reuse them
+// unless a test sets the flag itself.
+delete process.env["TSCERT_RETRY_TIMEOUTS"];
 
 /** A stand-in stage program: a shell script, audited with `dependencies`. */
 function script(name: string, body: string, dependencies: readonly string[] = ["/bin/cat"]): string {

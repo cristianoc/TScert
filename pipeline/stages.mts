@@ -141,7 +141,10 @@ export function startEviction(): void {
 }
 /** Whether recorded timeouts are retried: `TSCERT_RETRY_TIMEOUTS=1` executes a
  * stage whose key holds a timeout observation and no finished result, at the
- * current limit, and replays finished results as before. */
+ * current limit, and replays finished results as before. The suites set it
+ * (`test-all.sh`, `pipeline/run-cases.mts`): a timeout a suite reports is one
+ * of its own run, never one an earlier run recorded under another load. The
+ * census leaves it unset and reuses recorded timeouts, a result of its own. */
 export function retryingTimeouts(): boolean {
   return process.env["TSCERT_RETRY_TIMEOUTS"] === "1";
 }
