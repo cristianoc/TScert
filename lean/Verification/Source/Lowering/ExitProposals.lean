@@ -112,8 +112,9 @@ def ofClosed (c : Closed) : ClassSummary := ⟨some c, none⟩
 def raise : ClassSummary := ⟨none, some .empty⟩
 
 /-- An async body's summary: a throw rejects the promise the call returned,
-a normal return of the call. -/
-def settle (S : ClassSummary) : ClassSummary := ⟨alt S.normal S.exceptional, S.exceptional⟩
+a normal return of the call; the call never throws, its exceptional exit
+unreached. -/
+def settle (S : ClassSummary) : ClassSummary := ⟨alt S.normal S.exceptional, none⟩
 
 /-- **The projection into today's effect format**: the effect of a closed
 frame and a throw bound (`Effect.ofFootprint`, `onThrow`) whose closed frame
