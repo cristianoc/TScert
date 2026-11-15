@@ -17,13 +17,19 @@ is the theory and the source of truth. Lean and the note are in sync when,
 for an example in the part the note covers, an agent that has only the note
 answers "does this example verify?" the same way the implementation does
 (the owner's definition, 2026-11-15). Parts the note does not cover
-(promises, for instance) are outside the test.
+(promises, for instance) are outside the test. The note is a model of the
+verifier, actionable and accurate without being the implementation; a piece
+of work starts as a change of the note the owner approves, and the code is
+then written until readers of the note and the verifier agree on the
+examples the change concerns (the owner's statement, 2026-11-15).
 
 **The test.** Each example is given to an agent that has only the note,
 which answers whether it verifies; the answer is compared with the
 verifier's outcome on the example's pipeline case. A disagreement is closed
 on either side: the pass changes, or the note changes with the owner's
 approval.
+
+The test is run as [the paper-reader test](#the-paper-reader-test).
 
 **Busy work** is work that is required neither for soundness nor on the
 critical path to that agreement. It is not queued.
@@ -44,6 +50,42 @@ The scope is the general rules and the arithmetic of bound facts that the
 text-layout library pretext needs. The note does not give a rule to every
 feature of the verifier. A feature outside the scope stays as it is, provided
 it cannot make a rule in scope unsound.
+
+## The paper-reader test
+
+`dev/paper-readers.mts` prepares the readers' material and compares their
+answers; it launches no reader. The procedure:
+
+1. **Prepare** a directory outside the repository:
+   `node dev/paper-readers.mts prepare --out <dir> [--cases <file> |
+   --pattern <s> …] [--sample <n> --seed <k>] [--batch <size>]
+   [--note <file>]`. It writes the note as `paper.tex`, the readers'
+   instructions as `TASK.md`, each selected case's source as
+   `examples/<id>.ts` under a neutral id in a seeded order, with its comments
+   removed but for a JSDoc comment carrying an annotation tag, and one
+   `batch-<n>.txt` per reader. The key (id → case, declared outcome, area)
+   goes to `<dir>.key.json`, beside the directory.
+2. **Read.** Each batch goes to an independent subagent on a capable model
+   (Claude Opus or Astra), told to work only inside that directory and to
+   follow `TASK.md`; it writes `answers-<batch>.json`. A reader never sees
+   the key, the case names, the comments or another reader's answers.
+3. **Compare:** `node dev/paper-readers.mts compare --dir <dir> [--json]`.
+   A positive case is expected to verify, a negative case or a gap to be
+   refused; each example is agree, differ or not covered, with totals per
+   pattern P1–P21 named in the cases' area texts.
+4. **Examine each disagreement before either side changes.** Its cause is
+   one of: the note is silent or ambiguous; the note is more general than its
+   status tags; the reader erred; the verifier is behind the note.
+5. **Judge a revision of the note on a held-out sample** that its reviser
+   never saw. On 2026-11-15 a revision reached 108 of 115 on the examples it
+   was written from and 23 of 44 on unseen ones; after a revision for
+   generality and a stated scope, 25 of 43, with 2 wrong verdicts and 16 not
+   covered. Agreement on the examples a revision was written from does not
+   measure the note.
+
+Every report gives three counts, agree, not covered and differ, for the
+catalogue cases, for the note's own examples and for a held-out sample. The
+note changes only with the owner's approval.
 
 ## Where things are
 
