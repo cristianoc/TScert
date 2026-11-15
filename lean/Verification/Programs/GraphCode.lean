@@ -501,14 +501,18 @@ theorem selectedWithinAt_eq_grades (Φ : Footprints.Closed) (F : List Nat) (e : 
   · simp
   · cases ExpressionEffects.selectedEffect e <;> simp
 
-/-- **The grade is the one the signature's fields gave** (proved): the
-receiver's own change joined to the coarse bound where it states
-`receiverOwn`; else the coarse bound where it states no receiver store or the
-receiver is fresh; else `top`. -/
+/-- **The grade the signature's fields give** (proved), its coarse bound
+below the mark `c` (`Effect.footprintBelow` at the fresh positions, where an
+argument store region at the empty path of a fresh position is discharged):
+the receiver's own change joined to `c` where it states `receiverOwn`; else
+`c` where it states no receiver store or the receiver is fresh; else
+`top`. -/
 theorem selectedGrades_eq_fields (F : List Nat) (e : ProgramCertificates.Evidence ι) :
     selectedGrades F e = if ExpressionEffects.selectedOperands e then match ExpressionEffects.selectedEffect e with
-      | some eff => [if eff.receiverOwn then eff.footprint.join eff.ownChange
-          else if !eff.receiverStore || receiverFresh F (ProgramCertificates.claim e).term then eff.footprint
+      | some eff =>
+        let c := eff.footprintBelow (freshPositions F (ProgramCertificates.claim e).term)
+        [if eff.receiverOwn then c.join ⟨.any, c.array, c.view⟩
+          else if !eff.receiverStore || receiverFresh F (ProgramCertificates.claim e).term then c
           else Footprints.Closed.top]
       | none => []
     else [] := by
@@ -519,15 +523,17 @@ theorem selectedGrades_eq_fields (F : List Nat) (e : ProgramCertificates.Evidenc
     | none => rfl
     | some eff =>
       simp only [if_true, CallEffects.Effect.frame_boundBelow, freshPositions_zero,
-        CallEffects.Effect.footprint_join_ownChange]
+        CallEffects.Effect.join_own]
 
-/-- **The check is the one the signature's fields gave** (proved): the
-coarse footprint within the bound, and, where the signature states
+/-- **The check the signature's fields give** (proved): the coarse bound
+below the mark `c` within the bound, and, where the signature states
 `receiverOwn`, its own change within it; where it states `receiverStore`,
 the bound letting everything change or the receiver fresh. -/
 theorem selectedWithinAt_eq_fields (Φ : Footprints.Closed) (F : List Nat) (e : ProgramCertificates.Evidence ι) :
     selectedWithinAt Φ F e = (ExpressionEffects.selectedOperands e && match ExpressionEffects.selectedEffect e with
-      | some eff => eff.footprint.le Φ && (if eff.receiverOwn then eff.ownChange.le Φ else
+      | some eff =>
+        let c := eff.footprintBelow (freshPositions F (ProgramCertificates.claim e).term)
+        c.le Φ && (if eff.receiverOwn then (⟨.any, c.array, c.view⟩ : Footprints.Closed).le Φ else
           (!eff.receiverStore || Φ == .top || receiverFresh F (ProgramCertificates.claim e).term))
       | none => false) := by
   rw [selectedWithinAt_eq_grades, selectedGrades_eq_fields]

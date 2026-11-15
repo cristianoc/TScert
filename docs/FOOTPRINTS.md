@@ -275,7 +275,11 @@ length of the heap the invocation started in (`Programs/FrameChecks.lean`).
 An entry whose region is the array store of a call position $`i \in P`$
 holding a store allocated at or after $`b`$ covers no such location and is
 discharged, the note's Fresh-Eff (`Region.freshStore`; proved:
-`Region.freshStore_mem`). The closed bound of the remaining entries gives
+`Region.freshStore_mem`): the store field of $`i`$, the store field at the
+empty path from $`i`$ (an argument store region's entry), the selected
+store at the empty path, each possibly restricted to a class. A region
+reached through a nonempty path from $`i`$ stays, since a fresh store may
+list old cells. The closed bound of the remaining entries gives
 each category $`k`$ the largest change of an entry whose region may hold it:
 
 ```math
@@ -296,12 +300,15 @@ effect where its closed bound is empty, and a transition it allows then
 leaves an extension of the heap it starts in (`Footprint.keepsHeap`; proved:
 `Footprint.keepsHeap_prefix`).
 
-On a signature's frame the closed bound below the mark is the receiver's
-own change where the signature states `receiverOwn`, its coarse bound where
-it states no receiver store or the receiver's position is fresh, and
-$`\top`$ otherwise (proved: `Effect.frame_boundBelow`). So a selected call's
-check against a closed bound $`\Phi`$ is the coarse footprint within
-$`\Phi`$, with the receiver's own change within it under `receiverOwn` and,
+On a signature's frame the closed bound below the mark is, with $`c`$ its
+coarse bound below the mark (the closed bound, or $`\top`$ where an argument
+store region not at the empty path of a fresh position remains,
+`Effect.footprintBelow`), the receiver's own change
+$`\{\mathrm{value}{:}\,\mathrm{any}\}\sqcup c`$ where the signature
+states `receiverOwn`, $`c`$ where it states no receiver store or the
+receiver's position is fresh, and $`\top`$ otherwise (proved:
+`Effect.frame_boundBelow`). So a selected call's check against a closed
+bound $`\Phi`$ is $`c`$ within $`\Phi`$, with the receiver's own change within it under `receiverOwn` and,
 under `receiverStore`, $`\Phi=\top`$ or a fresh receiver; and `keepsHeap` is
 the empty coarse footprint with neither receiver exception (proved:
 `GraphCode.selectedWithinAt_eq_fields`, `PromiseCalls.keepsHeap_eq_fields`).

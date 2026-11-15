@@ -912,9 +912,9 @@ locations excepted. -/
 theorem keepsHeap_eq_fields (e : Effect) :
     keepsHeap e = (e.footprint.le .empty && !e.receiverStore && !e.receiverOwn) := by
   unfold keepsHeap Footprints.Footprint.keepsHeap
-  rw [CallEffects.Effect.frame_boundBelow]
+  rw [CallEffects.Effect.frame_boundBelow, CallEffects.Effect.footprintBelow_nil]
   cases ho : e.receiverOwn <;> cases hs : e.receiverStore <;>
-    simp [Effect.ownChange, Footprints.Closed.le, Footprints.Closed.empty, Footprints.Closed.top,
+    simp [Footprints.Closed.le, Footprints.Closed.empty, Footprints.Closed.top,
       Footprints.Change.le, Footprints.Change.rank, Footprints.Change.onValue, Footprints.Change.onStore]
 
 /-- The heap facts of a call's entry kept on a normal return of a call at a

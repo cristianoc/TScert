@@ -7,10 +7,14 @@ each over the frame's region-and-change entries, read at the environment
 the frame is instantiated at (the note *Tolerant frames*, Frame and
 Fresh-Eff).
 
-- **Freshness** (`Region.freshStore`): an entry whose region is the store
-  field of a call position holding a store allocated at or after a mark `b`
-  covers no location below `b` (`Region.freshStore_mem`); on the old
-  locations it is discharged (`Footprint.old`).
+- **Freshness** (`Region.freshStore`, the note's Fresh-Eff): an entry whose
+  region is the store of a call position holding a store allocated at or
+  after a mark `b` (its store field, the store field at the empty path, as an
+  argument store region states it, or the selected store at the empty path,
+  each possibly restricted to a class) covers no location below `b`
+  (`Region.freshStore_mem`); on the old locations it is discharged
+  (`Footprint.old`). A region reached through a nonempty path from a fresh
+  position stays: a fresh store may list old cells.
 - **The closed bound below a mark** (`Footprint.boundBelow`): the closed
   bound of the entries freshness does not discharge, each category's
   largest change of an entry whose region may hold it; a transition the
@@ -42,10 +46,15 @@ open Verification
 
 /-! ## Freshness -/
 
-/-- Whether a region is the store field of a call position the list `P`
-names. -/
+/-- **Whether a region is the store of a call position the list `P`
+names** (the note's Fresh-Eff, `x.store` with `x` fresh): its store field,
+its store field at the empty path, its selected store at the empty path, or
+such a region restricted to a class. -/
 def Region.freshStore (P : List Nat) : Region → Bool
   | .field i k => decide (k = arrayStoreKey) && P.contains i
+  | .path i [] k => decide (k = arrayStoreKey) && P.contains i
+  | .store i [] => P.contains i
+  | .inCls r _ => r.freshStore P
   | _ => false
 
 /-- The positions `P` hold values whose array store was allocated at or
@@ -57,15 +66,43 @@ theorem FreshPositions.nil (b : Nat) (ρ : Env) : FreshPositions [] b ρ := fun 
 /-- **A fresh store covers no old location.** -/
 theorem Region.freshStore_mem {P : List Nat} {b : Nat} {ρ : Env} {R : Region} {h : Heap} {l : Nat}
     (hP : FreshPositions P b ρ) (hR : R.freshStore P = true) (hm : R.mem ρ h l = true) : b ≤ l := by
-  cases R with
-  | field i k =>
-    simp only [Region.freshStore, Bool.and_eq_true, decide_eq_true_eq, List.contains_iff_mem] at hR
-    obtain ⟨rfl, hi⟩ := hR
+  have hfield : ∀ i, i ∈ P → (Region.field i arrayStoreKey).mem ρ h l = true → b ≤ l := by
+    intro i hi hm
     obtain ⟨s, hs, hb⟩ := hP i hi
     simp only [Region.mem, beq_iff_eq] at hm
     rw [storeOf_lookup hs] at hm
     cases hm
     exact hb
+  induction R with
+  | field i k =>
+    simp only [Region.freshStore, Bool.and_eq_true, decide_eq_true_eq, List.contains_iff_mem] at hR
+    obtain ⟨rfl, hi⟩ := hR
+    exact hfield i hi hm
+  | path i p k =>
+    cases p with
+    | nil =>
+      simp only [Region.freshStore, Bool.and_eq_true, decide_eq_true_eq, List.contains_iff_mem] at hR
+      obtain ⟨rfl, hi⟩ := hR
+      rw [Region.mem_path_nil] at hm
+      exact hfield i hi hm
+    | cons _ _ => simp [Region.freshStore] at hR
+  | store i p =>
+    cases p with
+    | nil =>
+      simp only [Region.freshStore, List.contains_iff_mem] at hR
+      obtain ⟨s, hs, hb⟩ := hP i hR
+      simp only [Region.mem, HeapKnowledge.readPath, beq_iff_eq] at hm
+      have hfs := storeOf_lookup hs
+      cases hv : ρ i <;> rw [hv] at hfs hm <;> simp only [fieldsOf, List.lookup] at hfs
+      case objAt fs c x =>
+        simp only [HeapKnowledge.elementsOf, hfs, Option.some.injEq] at hm
+        exact hm ▸ hb
+      all_goals cases hfs
+    | cons _ _ => simp [Region.freshStore] at hR
+  | inCls r c ih =>
+    simp only [Region.freshStore] at hR
+    simp only [Region.mem, Bool.and_eq_true] at hm
+    exact ih hR hm.1
   | _ => simp [Region.freshStore] at hR
 
 /-- The entries of a frame that may cover an old location: those freshness
@@ -268,13 +305,30 @@ open Verification Footprints
 
 private theorem old_closed (P : List Nat) (c : Footprints.Closed) : Footprint.old P c.fp = c.fp := rfl
 
+/-- The argument store regions of a signature freshness does not discharge
+at the positions `P`. -/
+def Effect.oldRegions (e : Effect) (P : List Nat) : List ArgumentStoreRegion :=
+  e.regions.filter fun r => !(regionEntry r).1.freshStore P
+
+/-- **The coarse bound below a mark**: the closed bound, or `top` where an
+argument store region freshness does not discharge remains. -/
+def Effect.footprintBelow (e : Effect) (P : List Nat) : Footprints.Closed :=
+  if (e.oldRegions P).isEmpty then e.closed else .top
+
+/-- With no fresh position the coarse bound below a mark is the coarse
+bound. -/
+theorem Effect.footprintBelow_nil (e : Effect) : e.footprintBelow [] = e.footprint := by
+  unfold Effect.footprintBelow Effect.oldRegions Effect.footprint
+  have : e.regions.filter (fun r => !(regionEntry r).1.freshStore []) = e.regions :=
+    List.filter_eq_self.mpr fun r _ => by
+      cases hp : r.path <;> simp [regionEntry, ArgumentStoreRegion.entry, Region.freshStore, hp]
+  rw [this]
+
 private theorem old_regions (P : List Nat) (rs : List ArgumentStoreRegion) :
-    Footprint.old P (rs.map regionEntry) = rs.map regionEntry := by
-  induction rs with
-  | nil => rfl
-  | cons r rs ih =>
-    simp only [List.map_cons, Footprint.old, List.filter_cons] at ih ⊢
-    simp [regionEntry, ArgumentStoreRegion.entry, Region.freshStore]
+    Footprint.old P (rs.map regionEntry) = (rs.filter fun r => !(regionEntry r).1.freshStore P).map regionEntry := by
+  unfold Footprint.old
+  rw [List.filter_map]
+  rfl
 
 private theorem old_append (P : List Nat) (Φ Ψ : Footprint) :
     Footprint.old P (Φ ++ Ψ) = Footprint.old P Φ ++ Footprint.old P Ψ :=
@@ -301,21 +355,22 @@ private theorem changeAt_closed (c : Footprints.Closed) :
     congrArg Footprints.Closed.view (Closed.fp_close c)⟩
 
 /-- **A signature's frame has the closed bound below a mark its fields
-determine** (proved): the receiver's own change where it states
-`receiverOwn`; else its coarse bound where it states no receiver store or
-the receiver's position is fresh; else `top`. Freshness of any other
-position discharges no entry of the frame. -/
+determine** (proved), its coarse bound below the mark
+(`Effect.footprintBelow`) `c`: the receiver's own change `⟨any, c.array,
+c.view⟩` where it states `receiverOwn`; else `c` where it states no receiver
+store or the receiver's position is fresh; else `top`. -/
 theorem Effect.frame_boundBelow (e : Effect) (P : List Nat) :
-    Footprint.boundBelow P e.frame = if e.receiverOwn then e.ownChange
-      else if !e.receiverStore || P.contains 0 then e.footprint else Footprints.Closed.top := by
+    Footprint.boundBelow P e.frame = if e.receiverOwn then
+        ⟨.any, (e.footprintBelow P).array, (e.footprintBelow P).view⟩
+      else if !e.receiverStore || P.contains 0 then e.footprintBelow P else Footprints.Closed.top := by
   unfold Footprint.boundBelow Effect.frame
   rw [old_append, old_append, old_closed, old_regions, old_receiver, Footprint.close_append,
     Footprint.close_append]
   obtain ⟨hv, ha, hw⟩ := changeAt_closed e.closed
-  have hreg := changeAt_regions e.regions
-  unfold Effect.ownChange Effect.footprint
+  have hreg := changeAt_regions (e.regions.filter fun r => !(regionEntry r).1.freshStore P)
+  unfold Effect.footprintBelow Effect.oldRegions
   by_cases h0 : 0 ∈ P <;> cases ho : e.receiverOwn <;> cases hs : e.receiverStore <;>
-    cases hr : e.regions.isEmpty <;>
+    cases hr : (e.regions.filter fun r => !(regionEntry r).1.freshStore P).isEmpty <;>
     simp [Footprint.close_eq, Closed.join, Footprint.changeAt_cons, Footprint.changeAt_nil, Region.cats,
       Selector.has, hv, ha, hw, hreg, hr, h0, Closed.top]
 
@@ -340,10 +395,8 @@ theorem Effect.summary_exceptional_frame (e : Effect) (n : Nat) :
     (e.summary n).exceptional.frame = if e.onThrow then e.frame else Parity.topEffect := by
   unfold Effect.summary; cases e.onThrow <;> rfl
 
-/-- The receiver's own change bounds the coarse bound. -/
-theorem Effect.footprint_join_ownChange (e : Effect) : e.footprint.join e.ownChange = e.ownChange := by
-  unfold Effect.ownChange
-  generalize e.footprint = c
+/-- The own change of a closed bound bounds it. -/
+theorem Effect.join_own (c : Footprints.Closed) : c.join ⟨.any, c.array, c.view⟩ = ⟨.any, c.array, c.view⟩ := by
   rcases c with ⟨v, a, w⟩
   simp [Footprints.Closed.join, Footprints.Change.max_self]
 
