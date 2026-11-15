@@ -234,7 +234,7 @@ def WireEffect.elaborate (w : WireEffect) : Effect :=
 
 /-- **The canonical wire value of the effect a wire value states**: two wire
 values state one effect where they differ only in `receiverStore` beside
-`receiverOwn`, whose entry covers the store, or in `onThrow` where the frame
+`receiverOwn`, which selects the branch where `receiverStore` adds no entry, or in `onThrow` where the frame
 is `⊤`; the canonical one states neither. -/
 def WireEffect.canonicalize (w : WireEffect) : WireEffect :=
   { w with receiverStore := w.receiverStore && !w.receiverOwn,

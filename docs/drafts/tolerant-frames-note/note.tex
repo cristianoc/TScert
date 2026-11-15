@@ -1012,8 +1012,9 @@ two signatures, one stating that the array it returns is fresh and the
 other that its length is at least the argument $n$, returns an array
 with both properties: neither postcondition has a modality.
 \status{Lean: \lean{SafePostExcV.cross\_independent}; \lean{PromiseWith.conj}
-for two signatures of a function, whose postconditions are independent
-by \lean{Effect.schema\_independent}}. This rule is
+for two signatures of a function, under a check of the second one's
+postconditions that is sufficient for independence by
+\lean{Exits.independent}}. This rule is
 provisional: an example may call for a weaker side condition.
 
 \begin{definition}[Rebasing]
