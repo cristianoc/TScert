@@ -113,13 +113,14 @@ def close (S : ClassSummary) : ClassSummary :=
 
 /-- **The summary of an operation of a callable contract**, the positions `P`
 holding stores allocated after the call's entry (Fresh-Eff): each exit's
-frame of the instance's per-exit contract (`Effect.summary`, whose frames
+frame of the instance's specification schema (`Effect.schema`, whose frames
 read no arity), read in the closed language below the entry mark
 (`Footprint.boundBelow`); the normal exit unreached where the result is
-empty. -/
+empty. A class summary states frames alone: the schema's postconditions
+are not read. -/
 def ofEffect (e : Effect) (P : List Nat) (returns : Bool := true) : ClassSummary :=
-  ⟨if returns then some (Footprint.boundBelow P (e.summary 0).normal.frame) else none,
-    some (Footprint.boundBelow P (e.summary 0).exceptional.frame)⟩
+  ⟨if returns then some (Footprint.boundBelow P e.schema.normal.frame) else none,
+    some (Footprint.boundBelow P e.schema.exceptional.frame)⟩
 
 /-- An operation that returns within a closed bound and never throws. -/
 def ofClosed (c : Closed) : ClassSummary := ⟨some c, none⟩
@@ -134,13 +135,26 @@ def settle (S : ClassSummary) : ClassSummary := ⟨alt S.normal S.exceptional, n
 
 /-- **The projection into today's effect format**: the effect of a closed
 frame and a throw bound (`Effect.ofFootprint`, `onThrow`) whose closed frame
-is the normal exit's bound, the least such effect whose per-exit contract
-includes the summary (`project_covers`): its throw bounded where `bounded`
-asks for it and the exceptional exit's bound is within the normal one's, or
-unreached. Where the exceptional bound is within the normal one it is the
-least effect of today's format including the summary. A throw bound at
-`top` states nothing (the exceptional frame `⊤` either way), so `top` is
-projected with none, the form `Effect.summary` elaborates. -/
+is the normal exit's bound, its throw bounded where `bounded` asks for it
+and the exceptional exit's bound is within the normal one's, or unreached.
+Its schema is an upper bound of the summary's (`project_entails`), at each
+exit the summary reaches (`project_covers`).
+
+**What it loses**, each a weakening at one exit:
+
+- an unreached normal exit: the projection returns within the empty frame;
+- an unreached exceptional exit: the projection throws within the normal
+  frame where its throw is bounded, else within `⊤`;
+- an exceptional bound not within the normal one: the projection throws
+  within `⊤`;
+- every exceptional bound where `bounded` is false or the normal bound is
+  `top`: a throw bound at `top` states nothing (the exceptional frame `⊤`
+  either way), so `top` is projected with none, the form `Effect.schema`
+  elaborates.
+
+Where the exceptional bound is reached and within the normal one, and the
+normal bound is not `top`, it is the least effect of today's format whose
+schema is above the summary's. -/
 def project (S : ClassSummary) (bounded : Bool := true) : Effect :=
   let n := S.normal.getD .empty
   { Effect.ofFootprint n with
@@ -206,6 +220,31 @@ theorem seq_into {A B : ClassSummary} {a x : Closed} (ha : A.normal = some a) (h
   | some y =>
     refine ⟨y.join (a.join x), by simp [seq, ha, hx, hA, alt, andThen], fp_covers_join_right _ _⟩
 
+private theorem covers_refl (c : Closed) : Footprint.Covers c.fp c.fp := fun e he => ⟨e, he, rfl, Change.le_refl _⟩
+
+/-- **An exit reached after the first command returns includes its prefix**
+(Seq-Eff at either exit of the second command): where the first command
+returns within `a` and the second then completes by `k` within `y`, the
+sequence's bound at `k` is at least `a.join y`. -/
+theorem seq_after {A B : ClassSummary} {a y : Closed} (k : Completion) (ha : A.normal = some a)
+    (hy : B.get k = some y) : ∃ c, (seq A B).get k = some c ∧ Footprint.Covers (a.join y).fp c.fp := by
+  cases k with
+  | normal => exact ⟨a.join y, by simp_all [seq, Exits.get, andThen], covers_refl _⟩
+  | exceptional => exact seq_into ha hy
+
+/-- **An exit reached after a caught throw includes the throw's prefix**
+(`handle`): where the protected command throws within `x` and the handler
+then completes by `k` within `d`, the statement's bound at `k` is at least
+`x.join d`. -/
+theorem handle_after {A D : ClassSummary} {x d : Closed} (k : Completion) (hx : A.exceptional = some x)
+    (hd : D.get k = some d) : ∃ c, (handle A D).get k = some c ∧ Footprint.Covers (x.join d).fp c.fp := by
+  cases k with
+  | normal =>
+    cases hA : A.normal with
+    | none => exact ⟨x.join d, by simp_all [handle, Exits.get, alt, andThen], covers_refl _⟩
+    | some y => exact ⟨y.join (x.join d), by simp_all [handle, Exits.get, alt, andThen], fp_covers_join_right _ _⟩
+  | exceptional => exact ⟨x.join d, by simp_all [handle, Exits.get, andThen], covers_refl _⟩
+
 /-! ## The projection is an upper bound -/
 
 private theorem le_join (a b : Closed) : a.le (a.join b) = true ∧ b.le (a.join b) = true := by
@@ -255,8 +294,66 @@ theorem project_ofFormat (c : Closed) (t : Bool) :
     (ofFormat c t).project = { Effect.ofFootprint c with onThrow := t && c != Closed.top } := by
   have hb : Footprint.boundBelow [] c.fp = c := Footprint.boundBelow_fp [] c
   have ht : Footprint.boundBelow [] topEffect = Closed.top := Footprint.boundBelow_fp [] Closed.top
-  cases t <;> simp [ofFormat, ofEffect, project, Effect.summary, ofFootprint_frame, hb, ht, Closed.le_refl]
+  cases t <;> simp [ofFormat, ofEffect, project, Effect.schema, ofFootprint_frame, hb, ht, Closed.le_refl]
   · intro h; rw [Closed.top_le]; simpa using h
+
+/-! ## The summary's schema, and the projection above it -/
+
+/-- **The schema of a summary**: at each exit its bound's class entries and
+no postcondition; the empty frame at an exit no run reaches, which holds of
+all of its runs (`sound_spec`). -/
+def schema (S : ClassSummary) : Exits ExitSchema :=
+  ⟨⟨(S.normal.getD .empty).fp, []⟩, ⟨(S.exceptional.getD .empty).fp, []⟩⟩
+
+/-- **A schema entails one stating no postcondition** where each exit's
+frame includes the first's (`Exits.Entails`). -/
+theorem entails_of_frames {x y : Exits ExitSchema} (hy : ∀ c, (y.get c).ensures = [])
+    (hf : ∀ c ρ h h', Post (x.get c).frame ρ h h' → Post (y.get c).frame ρ h h') : x.Entails y := by
+  intro c r args s s' v hp
+  refine ⟨⟨hp.1.1, ?_⟩, ?_⟩
+  · rw [Exits.atArity_frame]
+    exact hf c _ _ _ (Exits.exitPost_frame hp)
+  · intro F hF
+    have he : ((y.atArity args.length).get c).ensures =
+        (y.get c).ensures.map (instantiateFormula (y.callInstantiation args.length)) := by
+      cases c <;> rfl
+    rw [he, hy c] at hF
+    nomatch hF
+
+private theorem ofFootprint_schema (c : Closed) (t : Bool) :
+    ({ Effect.ofFootprint c with onThrow := t } : Effect).schema =
+      ⟨⟨c.fp, []⟩, if t then ⟨c.fp, []⟩ else ⟨topEffect, []⟩⟩ := by
+  rw [Effect.schema, ofFootprint_frame]
+  simp [Effect.normalSchema, Effect.ofFootprint]
+
+/-- **The projection is an upper bound of the summary in the effect order**
+(proved; `Exits.Entails`, the order `Effect.Covers` reads schemas in): at
+both exits, at every call, the summary's schema entails the projection's.
+What it weakens is listed at `project`. -/
+theorem project_entails (S : ClassSummary) (bounded : Bool) : S.schema.Entails (S.project bounded).schema := by
+  rcases S with ⟨N, X⟩
+  have hs : (project ⟨N, X⟩ bounded).schema = ⟨⟨(N.getD .empty).fp, []⟩,
+      if (project ⟨N, X⟩ bounded).onThrow then ⟨(N.getD .empty).fp, []⟩ else ⟨topEffect, []⟩⟩ :=
+    ofFootprint_schema _ _
+  rw [hs]
+  refine entails_of_frames (fun c => ?_) (fun c ρ h h' hp => ?_)
+  · cases c
+    · rfl
+    · show (if _ then _ else _ : ExitSchema).ensures = []
+      split <;> rfl
+  · cases c with
+    | normal => exact hp
+    | exceptional =>
+      show Post (if _ then _ else _ : ExitSchema).frame ρ h h'
+      split
+      · next ht =>
+        simp only [project, Bool.and_eq_true] at ht
+        have hle : (X.getD .empty).le (N.getD .empty) = true := by
+          cases X with
+          | none => exact Closed.empty_le _
+          | some k => simpa using ht.2
+        exact Closed.post_mono hle hp
+      · exact Closed.post_mono (Closed.le_top _) hp
 
 /-! ## Entailment between summaries -/
 
@@ -522,6 +619,9 @@ theorem loop_sound {R Rd : CallEffects.Runs} {B D : ClassSummary}
 postcondition; an unreached exit's is vacuous. -/
 def spec (S : ClassSummary) : CommandSummary :=
   ⟨⟨(S.normal.getD .empty).fp, []⟩, ⟨(S.exceptional.getD .empty).fp, []⟩⟩
+
+/-- The summary's schema at a call of any arity is its command summary. -/
+theorem schema_atArity (S : ClassSummary) (n : Nat) : S.schema.atArity n = S.spec := rfl
 
 /-- **A sound class summary is a sound command summary** (proved;
 `CommandSummary.Sound` of `Semantics/CommandSummaries.lean`). -/

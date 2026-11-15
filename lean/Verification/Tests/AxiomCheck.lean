@@ -585,6 +585,10 @@ run_cmd do
   check ``Verification.SourceExtraction.ClassSummary.seq_into
   check ``Verification.SourceExtraction.ClassSummary.project_covers
   check ``Verification.SourceExtraction.ClassSummary.project_ofFormat
+  check ``Verification.SourceExtraction.ClassSummary.project_entails
+  check ``Verification.SourceExtraction.ClassSummary.seq_after
+  check ``Verification.SourceExtraction.ClassSummary.handle_after
+  check ``Verification.SourceExtraction.ClassSummary.schema_atArity
   check ``Verification.SourceExtraction.ClassSummary.within_weakens
   check ``Verification.SourceExtraction.ClassSummary.within_choice
   check ``Verification.SourceExtraction.ClassSummary.exitHolds_then
