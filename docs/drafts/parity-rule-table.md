@@ -7,7 +7,8 @@ applies. Read by gpt-6-astra from the sources at commit `81d7f232` on
 read in the source. The goal it measures is the
 [parity skill](../../.claude/skills/parity/SKILL.md)'s: each rule has the
 same statement in Lean and is the mechanism the pass applies. The state of
-that work is in [WORK.md](../../WORK.md#status).
+that work is in [WORK.md](../../WORK.md#status), and the design of the next
+steps is [the note's rules at acceptance](rules-at-acceptance.md).
 
 A mechanism is **separate** when acceptance applies its own decision,
 proved sound by its own theorem, and that decision establishes no

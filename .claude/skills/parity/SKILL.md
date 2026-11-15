@@ -51,7 +51,10 @@ it cannot make a rule in scope unsound.
 - The designs: [parity-interfaces.md](../../../docs/drafts/parity-interfaces.md)
   (shared definitions) and
   [effects-of-commands.md](../../../docs/drafts/effects-of-commands.md)
-  (effects stated per exit, the effect of a command, four migration steps).
+  (effects stated per exit, the effect of a command, four migration steps),
+  [rules-at-acceptance.md](../../../docs/drafts/rules-at-acceptance.md)
+  (composition used by acceptance, checked transfer, rule Loop with its
+  frame, the checking round).
 - The note's page and PDF are built in its directory: `python3 build.py`
   (page, through pandoc), `python3 color.py && latexmk -pdf note-color.tex`
   (PDF). Build products other than the tracked PDF are removed after a build.
