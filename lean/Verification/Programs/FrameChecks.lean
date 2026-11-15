@@ -142,6 +142,14 @@ theorem Closed.fp_close (c : Closed) : Footprint.close c.fp = c := by
   rcases c with ⟨v, a, w⟩
   cases v <;> cases a <;> cases w <;> rfl
 
+/-- A closed footprint's entries are their own closed bound below any mark:
+no class entry is a fresh store. -/
+theorem Footprint.boundBelow_fp (P : List Nat) (c : Closed) : Footprint.boundBelow P c.fp = c :=
+  Closed.fp_close c
+
+/-- The empty frame's closed bound is the empty footprint. -/
+theorem Footprint.boundBelow_nil (P : List Nat) : Footprint.boundBelow P [] = Closed.empty := rfl
+
 /-! ## Inclusion in a footprint bound -/
 
 /-- The class entries of a footprint. -/

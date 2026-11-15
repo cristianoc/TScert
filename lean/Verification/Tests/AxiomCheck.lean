@@ -517,6 +517,8 @@ run_cmd do
   check ``Verification.GraphCode.selectedGrades_eq_fields
   check ``Verification.GraphCode.selectedWithinAt_eq_fields
   check ``Verification.PromiseCalls.keepsHeap_eq_fields
+  check ``Verification.SinglePass.stepCertificate_grades
+  check ``Verification.SinglePass.VisitRecord.of_grades
   check ``Verification.TolerantFrames.pass_within_normal
   check ``Verification.TolerantFrames.pass_within_throw
   check ``Verification.TolerantFrames.pass_within_entry

@@ -3,6 +3,7 @@ import Verification.Programs.CertificateProducer
 import Verification.Programs.GraphCode
 import Verification.Programs.SinglePassStats
 import Verification.Programs.ArgumentRegionCertificates
+import Verification.Semantics.ExitSummaries
 
 /-! One forward pass over a graph cut at its statement entries
 (docs/SINGLE-PASS.md): each node visited once, in a topological order
@@ -266,12 +267,34 @@ structure StepGrades where
   throws : List Footprints.Closed
   scope : Bool
 
-/-- **A visit's record of its step's local effect**: the label visited, the
-grades its footprint check reads (`stepGrades`) and its result's freshness
-(`outFreshOf`), each over the read summaries that visit's step left
-(`VisitRecord.of`). -/
+/-- **A step's local certificate**: for each exit, the exit specifications
+its rules establish (`CallEffects.ExitSpec`: a frame read at the step's call
+positions and the postconditions it states), each read from the step's
+evidence and none from a bound; the call positions holding a fresh store,
+whose entries a frame's closed bound below the invocation's mark discharges
+(`GraphCode.freshPositions`, `Footprint.boundBelow`); and whether its term is
+in scope. -/
+structure StepCertificate where
+  normal : List CallEffects.ExitSpec
+  exceptional : List CallEffects.ExitSpec
+  fresh : List Nat
+  scope : Bool
+
+/-- **The grades a certificate projects to**: each exit specification's
+frame closed below the mark (`Footprint.boundBelow`). -/
+def StepCertificate.grades (q : StepCertificate) : StepGrades :=
+  { within := q.normal.map fun x => Footprints.Footprint.boundBelow q.fresh x.frame
+    throws := q.exceptional.map fun x => Footprints.Footprint.boundBelow q.fresh x.frame
+    scope := q.scope }
+
+/-- **A visit's record of its step's local effect**: the label visited, its
+step's local certificate (`stepCertificate`), the grades its footprint check
+reads, the certificate's projection (`VisitRecord.of_grades`), and its
+result's freshness (`outFreshOf`), each over the read summaries that visit's
+step left (`VisitRecord.of`). -/
 structure VisitRecord where
   label : Nat
+  certificate : StepCertificate
   grades : StepGrades
   outFresh : Bool
 
@@ -1479,6 +1502,102 @@ theorem footprintCheck_eq_admits (G : NormalGraph ι) (images : InstanceImageChe
   cases a <;> cases b <;> cases d <;> cases dc <;> cases th <;> cases ot <;> cases hsel : sel.isEmpty <;>
     simp_all [List.any_append, List.isEmpty_iff, Bool.and_assoc, Bool.or_assoc]
 
+/-- A selected call's exit summary (`Effect.summary`) at its actuals'
+number, where its operands are values. -/
+def selectedSummaries (e : ProgramCertificates.Evidence ι) : List (CallEffects.Exits CallEffects.ExitSpec) :=
+  if ExpressionEffects.selectedOperands e then match ExpressionEffects.selectedEffect e with
+    | some eff => [eff.summary (ExpressionEffects.actualsOf (ProgramCertificates.claim e).term).length]
+    | none => []
+  else []
+
+/-- **A step's local certificate** (`StepCertificate`), at its claim `c`,
+node, facts `stepK` and derivation `deriv`, its fresh slots `F`: an
+inspection or an empty type keeps everything (the empty frame); a typed
+write and an initializing write state their closed footprints' entries; a
+call at its selected signature, its derivation checked, states the
+signature's exit summary, its exceptional exit where the call's throw is the
+signature's (`onThrow`). -/
+def stepCertificate (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
+    (sums : List (ReadSummary ι)) (F : List Nat) (c : PointClaim ι) (node : Node)
+    (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι) : StepCertificate :=
+  let writes := (ExpressionEffects.writeGrades G c.context node.expression ++
+    ExpressionEffects.initWriteGrades G c.context stepK node.expression).map
+      fun g => ({ frame := g.fp, ensures := [] } : CallEffects.ExitSpec)
+  let selected := selectedSummaries deriv
+  let inspection := ExpressionEffects.check G c.context node.expression
+  let emptyContext := c.context.any (ExpressionEffects.emptyType G ·)
+  let checked : Thunk (List (CallEffects.Exits CallEffects.ExitSpec)) := Thunk.mk fun _ =>
+    if selected.isEmpty then [] else if derivChecked G images codes sums c node stepK deriv then selected else []
+  let throwing := ExpressionEffects.selectedThrows deriv &&
+    (match ExpressionEffects.selectedEffect deriv with | some eff => eff.onThrow | none => false)
+  let keepsAll : CallEffects.ExitSpec := { frame := [], ensures := [] }
+  { normal := if inspection || ExpressionEffects.emptyType G c.type || emptyContext then [keepsAll]
+      else writes ++ checked.get.map (·.normal)
+    exceptional := if inspection || emptyContext then [keepsAll]
+      else writes ++ (if throwing then checked.get.map (·.exceptional) else [])
+    fresh := GraphCode.freshPositions F (ProgramCertificates.claim deriv).term
+    scope := ProgramCertificates.checkScope c.context.length node.expression }
+
+omit [Hashable ι] [Instantiates ι] in
+private theorem checked_map {α β : Type} (f : α → β) (xs : List α) (dc : Bool) :
+    (if xs.isEmpty then [] else if dc then xs else []).map f =
+      (if (xs.map f).isEmpty then [] else if dc then xs.map f else []) := by
+  cases xs <;> cases dc <;> rfl
+
+omit [DecidableEq ι] [Hashable ι] [Instantiates ι] in
+private theorem summaries_normal (F : List Nat) (deriv : ProgramCertificates.Evidence ι) :
+    (selectedSummaries deriv).map (fun s => Footprints.Footprint.boundBelow
+      (GraphCode.freshPositions F (ProgramCertificates.claim deriv).term) s.normal.frame) =
+      GraphCode.selectedGrades F deriv := by
+  unfold selectedSummaries GraphCode.selectedGrades
+  cases ExpressionEffects.selectedOperands deriv <;> cases ExpressionEffects.selectedEffect deriv <;> rfl
+
+omit [DecidableEq ι] [Hashable ι] [Instantiates ι] in
+private theorem summaries_exceptional (F : List Nat) (deriv : ProgramCertificates.Evidence ι)
+    (ht : (match ExpressionEffects.selectedEffect deriv with | some eff => eff.onThrow | none => false) = true) :
+    (selectedSummaries deriv).map (fun s => Footprints.Footprint.boundBelow
+      (GraphCode.freshPositions F (ProgramCertificates.claim deriv).term) s.exceptional.frame) =
+      GraphCode.selectedGrades F deriv := by
+  unfold selectedSummaries GraphCode.selectedGrades
+  cases ExpressionEffects.selectedOperands deriv <;> cases hse : ExpressionEffects.selectedEffect deriv <;>
+    simp_all [CallEffects.Effect.summary]
+
+omit [Hashable ι] [Instantiates ι] in
+/-- **The grades are the certificate's projection** (proved): each exit
+specification's frame, closed below the invocation's mark, is the grade its
+rule grants (`stepGrades`). -/
+theorem stepCertificate_grades (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
+    (sums : List (ReadSummary ι)) (F : List Nat) (c : PointClaim ι) (node : Node)
+    (stepK : Knowledge) (deriv : ProgramCertificates.Evidence ι) :
+    (stepCertificate G images codes sums F c node stepK deriv).grades =
+      stepGrades G images codes sums F c node stepK deriv := by
+  have hw : ∀ gs : List Footprints.Closed,
+      (gs.map fun g => ({ frame := g.fp, ensures := [] } : CallEffects.ExitSpec)).map
+        (fun x => Footprints.Footprint.boundBelow (GraphCode.freshPositions F (ProgramCertificates.claim deriv).term)
+          x.frame) = gs := by
+    intro gs
+    simp only [List.map_map, Function.comp_def, Footprints.Footprint.boundBelow_fp, List.map_id']
+  simp only [stepCertificate, stepGrades, StepCertificate.grades, Thunk.get]
+  generalize derivChecked G images codes sums c node stepK deriv = dc
+  congr 1
+  · split
+    · rfl
+    · rw [List.map_append, hw, List.map_map, checked_map]
+      simp only [Function.comp_def]
+      rw [summaries_normal]
+  · split
+    · rfl
+    · rw [List.map_append, hw]
+      congr 1
+      cases ht : (ExpressionEffects.selectedThrows deriv &&
+          (match ExpressionEffects.selectedEffect deriv with | some eff => eff.onThrow | none => false))
+      · simp only [Bool.false_eq_true, if_false, List.map_nil]
+      · simp only [if_true]
+        simp only [Bool.and_eq_true] at ht
+        rw [List.map_map, checked_map]
+        simp only [Function.comp_def]
+        rw [summaries_exceptional F deriv ht.2]
+
 /-- **A return's checks** (`GraphCode.returnOk`, `checkReturnResult`), at
 node `l` returning its result's name `result` from `entry` with the output
 store `store`: a postcondition (`ensures`) entailed by the output's facts
@@ -2592,14 +2711,27 @@ def boundOk (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEn
           | none => false) exc ret
         (outFreshOf G images codes sums c node entry stepK deriv)
 
-/-- **A visit's record** at label `l`: the grades of its step (`stepGrades`)
-at the fresh receiver slots, over the read summaries `sums` the step left,
-its facts `stepK` and its derivation `deriv`, and its result's freshness
-`outFresh`. -/
+/-- **A visit's record** at label `l`: its step's local certificate
+(`stepCertificate`) at the fresh slots, over the read summaries `sums` the
+step left, its facts `stepK` and its derivation `deriv`, the grades it
+projects to, and its result's freshness `outFresh`. -/
 def VisitRecord.of (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
     (l : Nat) (node : Node) (c : PointClaim ι) (entry : State) (sums : List (ReadSummary ι)) (stepK : Knowledge)
     (deriv : ProgramCertificates.Evidence ι) (outFresh : Bool) : VisitRecord :=
-  { label := l, grades := stepGrades G images codes sums (recvFresh node entry) c node stepK deriv, outFresh }
+  let q := stepCertificate G images codes sums (recvFresh node entry) c node stepK deriv
+  { label := l, certificate := q, grades := q.grades, outFresh }
+
+omit [Hashable ι] [Instantiates ι] in
+/-- **A record's grades are its certificate's projection**, the grades the
+step's rules grant (proved, `stepCertificate_grades`). -/
+theorem VisitRecord.of_grades (G : NormalGraph ι) (images : InstanceImageCheck G) (codes : CodeEntry ι → Bool)
+    (l : Nat) (node : Node) (c : PointClaim ι) (entry : State) (sums : List (ReadSummary ι)) (stepK : Knowledge)
+    (deriv : ProgramCertificates.Evidence ι) (outFresh : Bool) :
+    (VisitRecord.of G images codes l node c entry sums stepK deriv outFresh).grades =
+        (VisitRecord.of G images codes l node c entry sums stepK deriv outFresh).certificate.grades ∧
+      (VisitRecord.of G images codes l node c entry sums stepK deriv outFresh).grades =
+        stepGrades G images codes sums (recvFresh node entry) c node stepK deriv :=
+  ⟨rfl, stepCertificate_grades ..⟩
 
 /-- **The footprint check read off a visit's record**, at its node `node`
 and claim `c`, the bound $`(\Phi, \mathit{ret}, \mathit{exc})`$ and the
@@ -2643,7 +2775,7 @@ theorem boundOk_eq_admits (G : NormalGraph ι) (images : InstanceImageCheck G) (
       (VisitRecord.of G images codes l node c entry sums stepK deriv
         (outFreshOf G images codes sums c node entry stepK deriv)).admitsAt G node c B deadArr := by
   obtain ⟨Φ, ret, exc⟩ := B
-  simp only [boundOk, VisitRecord.admitsAt, VisitRecord.of, footprintCheck_eq_admits]
+  simp only [boundOk, VisitRecord.admitsAt, (VisitRecord.of_grades ..).2, footprintCheck_eq_admits]
   rfl
 
 /-- A step's yields checked (`checkedYields`) at the node's claim, the
