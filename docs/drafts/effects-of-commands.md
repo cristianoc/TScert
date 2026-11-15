@@ -664,8 +664,8 @@ tag, a wrong scalar, a malformed pair, a noncanonical integer or literal, is
 refused at the first place it differs, by its path in the document. A
 document is read once from its text, and an object stating a key twice is
 refused there, before its members are read into a map. A decoded effect is
-arena-free, its literals primitive constants, its integers representable,
-and its nesting at most the decoder's limit (`EffectCodec.nestingLimit`).
+arena-free, its literals primitive constants and its nesting at most the
+decoder's limit (`EffectCodec.nestingLimit`).
 
 Scope depends on the callable's arity, which the effect alone does not
 state: the reader of the enclosing callable checks it against the
@@ -715,20 +715,19 @@ certification establishes every exit guarantee a signature advertises.
 ### Codec theorems
 
 Serialization is defined on effects of the serialization predicate
-(`EffectCodec.Serializable`): arena-free formulas, primitive literals,
-representable integers and the nesting limit. Its subtype has a total
-encoder, and a document holding an effect outside it is refused whole
-when it is written.
+(`EffectCodec.Serializable`): arena-free formulas, primitive literals and
+the nesting limit; every integer is written, a safe one as a number and any
+other as its decimal string. Its subtype (`EffectCodec.SerializableEffect`) has a total encoder, and a
+document holding an effect outside it is refused whole when it is written.
 
 - **Encoding then decoding** returns every serializable effect
   (`EffectCodec.decode_encode`).
-- **A decoded effect** is serializable and is the effect the decoder
-  returned (`EffectCodec.decode_sound`).
-- **Decoding then encoding** writes the document read, up to the order of
-  object members (`EffectCodec.encode_decode`).
+- **A decoded effect** is serializable, and decoding then encoding writes
+  the document read, up to the order of object members
+  (`EffectCodec.decode_sound`).
 - **Encoding keeps** both exits' frames, every formula, the promise and the
-  preconditions: the encoding is a function of the effect's own structure
-  (`EffectCodec.decode_encode`, read as injectivity).
+  preconditions: two serializable effects of one writing are one effect
+  (`EffectCodec.encode_injective`).
 
 These are codec theorems; scope and certification are proved where they are
 checked.

@@ -1,4 +1,5 @@
 import Verification.Semantics.ViewStores
+import Verification.Source.EffectCodec
 import Verification.Semantics.CallEffects
 import Verification.Semantics.ExitSummaries
 import Verification.Semantics.CommandSummaries
@@ -602,6 +603,9 @@ run_cmd do
   check ``Verification.EffectJson.encodeOld_complete
   check ``Verification.EffectJson.decodeOld_sound
   check ``Verification.EffectJson.effectJson_decode
+  check ``Verification.EffectCodec.decode_encode
+  check ``Verification.EffectCodec.decode_sound
+  check ``Verification.EffectCodec.encode_injective
   check ``Verification.CallEffects.Exits.dropWeak_of_drop
   check ``Verification.CallEffects.Effect.ofClosed_schema
   check ``Verification.SourceExtraction.ClassSummary.within_weakens
