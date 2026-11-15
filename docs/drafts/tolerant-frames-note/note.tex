@@ -987,7 +987,8 @@ of that cell is part of the effect.
 \begin{definition}[Independence of the world]\label{def:indep}
 A postcondition is \emph{independent of the world} from an entry state
 $s$ when it has the same truth at any two exit states that are
-admissible from $s$ and have the same environment, heap and budget.
+admissible from $s$ and have the same environment, heap and budget
+\status{Lean: \lean{IndependentFrom}}.
 \end{definition}
 
 \noindent
@@ -1010,8 +1011,9 @@ $Q_2$ to the world the first one reaches. For example, a function with
 two signatures, one stating that the array it returns is fresh and the
 other that its length is at least the argument $n$, returns an array
 with both properties: neither postcondition has a modality.
-\status{conj.} Lean: \lean{SafePostExcW.cross}, for a second
-specification whose postconditions read heaps alone. This rule is
+\status{Lean: \lean{SafePostExcV.cross\_independent}; \lean{PromiseWith.conj}
+for two signatures of a function, whose postconditions are independent
+by \lean{Effect.schema\_independent}}. This rule is
 provisional: an example may call for a weaker side condition.
 
 \begin{definition}[Rebasing]

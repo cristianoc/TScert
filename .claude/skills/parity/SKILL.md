@@ -62,7 +62,9 @@ Each was made by the owner. A design that needs to depart from one stops and
 asks.
 
 - **The note changes only with the owner's approval.** Show the difference,
-  wait for his word, then commit. Where Lean proves less than the note, Lean
+  wait for his word, then commit. A status tag (`Lean:`, `conj.`,
+  `assumed`) is the exception: it follows the state of the proofs on the
+  line and is updated without asking. Where Lean proves less than the note, Lean
   changes. The note is precise, defines each key concept once as a numbered
   definition, gives an example for what it introduces, and does not grow
   beyond what pretext needs.
