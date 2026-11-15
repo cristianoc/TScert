@@ -294,6 +294,9 @@ run_cmd do
   check ``Verification.CallEffects.CommandSummary.choice_sound
   check ``Verification.CallEffects.CommandSummary.join_sound
   check ``Verification.CallEffects.CommandSummary.seq_spec_sound
+  check ``Verification.CallEffects.rebaseAll_fresh_eff
+  check ``Verification.CallEffects.Post.fresh_eff
+  check ``Verification.CallEffects.ThenEvidence.into_fresh
   check ``Verification.Parity.OperationPost.holds_shift
   check ``Verification.Footprints.Region.sub_mem
   check ``Verification.Footprints.CellsFrom.of_post
