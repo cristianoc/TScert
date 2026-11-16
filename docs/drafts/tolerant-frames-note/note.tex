@@ -1509,7 +1509,7 @@ o.n = 2}, the true branch of \code{if (y)} has $t<1$, and $o.n<1$ does
 not follow, since $o.n\doteq t$ no longer holds.
 
 A binding \code{y = a} gives $y\doteq a$
-\status{Lean: \lean{ReadGave} for a field read. \textsc{Elem-Read} is assumed, as the contract of the element read}.
+\status{Lean: \lean{ReadGave} for a field read; \lean{fieldWriteFrame}, \lean{fieldWriteStep\_sound} for the effect of \textsc{Field-Write}, whose postcondition is not part of the step's summary. \textsc{Elem-Read} is assumed, as the contract of the element read}.
 
 \paragraph{Functions.} A function \code{f} with parameters $\vec p$ and
 body $c$ has the specification of rule \textsc{Call} when its body
@@ -1564,7 +1564,7 @@ current length keeps $\mathit{at}=\len{\mathit{widths}}$ by
 \textsc{Write-In} holds also where the write fills a hole. At the
 maximal length \code{push} throws, so its premise is not needed for a
 postcondition on normal return
-\status{Lean: \lean{elem\_var\_write\_length}, used through \lean{keepsLengths} (\lean{boundedLength\_sound}), for \textsc{Write-In}: every spine keeps its length across a typed write at an index below the length; \lean{atLengthAtoms\_sound} for the length of \textsc{Write-End}; for \textsc{Push} the growth, the appended element and the kept prefix are the assumed contract \lean{ReceiverAppends} with \lean{ReceiverGrows}. The Lean states the effects of these steps over classes, $\{\val:\any,\ \st:\grow\}$, with the receiver's spine in their postconditions}.
+\status{Lean: \lean{elem\_var\_write\_length}, used through \lean{keepsLengths} (\lean{boundedLength\_sound}), for \textsc{Write-In}: every spine keeps its length across a typed write at an index below the length; \lean{atLengthAtoms\_sound} for the length of \textsc{Write-End}; for \textsc{Push} the growth, the appended element and the kept prefix are the assumed contract \lean{ReceiverAppends} with \lean{ReceiverGrows}, and its effect $\{x.\kw{spine}:\grow\}$ is \lean{receiverGrowFrame}, which they imply (\lean{Effect.callPost\_receiverGrowFrame}). The Lean states the effects of \textsc{Write-In} and \textsc{Write-End} over classes, $\{\val:\any,\ \st:\grow\}$}.
 
 \paragraph{Writes that keep or extend a fact.} \textsc{Frame} keeps a
 fact across a write that cannot reach what the fact reads. Three rules
