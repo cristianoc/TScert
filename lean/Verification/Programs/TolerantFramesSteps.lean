@@ -74,8 +74,9 @@ theorem created_keeps {Ξ T : Fam} {n : Nat} {W : WorldT n} {h : Heap} {ρ : Env
       exact Or.inr ⟨U, _, _, hx, hu, step, hh',
         refine_value rfl ⟨Footprints.Closed.holds_empty.mpr ⟨[.nul, .nul], by simp⟩, trivial⟩ hs'⟩
 
-/-- **The base rule of a preserving kind fixes the term's shape**: the
-instantiated term is an inspection, or the term creates a graph closure. -/
+/-- **The base rule of a step other than a call or a write fixes the term's
+shape**: the instantiated term is an inspection, or the term creates a graph
+closure. -/
 theorem base_shape {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι} {k out : HeapKnowledge.Knowledge}
     {e : StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
     (hc : checkStepUsing G images j k e codes sums = some out) (hord : ∀ p, e ≠ .ordinary p)
@@ -207,7 +208,8 @@ theorem base_shape {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Seq
           · cases hc
         · cases hc
 
-/-- **A preserving kind's base rule keeps the heap on its normal exit.** -/
+/-- **The base rule of a step other than a call or a write keeps the heap on
+its normal exit.** -/
 theorem base_keeps {G : NormalGraph ι} {images : InstanceImageCheck G} {j : Sequent ι} {k out : HeapKnowledge.Knowledge}
     {e : StepEvidence ι} {codes : CodeEntry ι → Bool} {sums : List (ReadSummary ι)}
     (hc : checkStepUsing G images j k e codes sums = some out) (hord : ∀ p, e ≠ .ordinary p)

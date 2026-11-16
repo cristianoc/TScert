@@ -298,8 +298,8 @@ implication mentions it. -/
 def ResultFresh (st : State) (I : List (PromiseCalls.Implication ι)) (start : List Nat) (r : Nat) : Prop :=
   r ∉ st.names ∧ r ∉ st.fresh ∧ r ∉ start ∧ ∀ y ∈ I, y.test ≠ r ∧ y.target ≠ r
 
-/-- **The state after a preserving step whose result takes a fresh name**
-(line 1309): the frame's facts at `Env.set η r v` (`named_keep_box`) and
+/-- **The state after a step of empty normal effect whose result takes a fresh
+name** (`SinglePass.checkedStep`): the frame's facts at `Env.set η r v` (`named_keep_box`) and
 the rule's output at the pushed slots
 give the pushed state. -/
 theorem stateHolds_fresh_result {G : NormalGraph ι} {st : State}
@@ -319,7 +319,7 @@ theorem stateHolds_fresh_result {G : NormalGraph ι} {st : State}
     (fun q x hq => ne fun e => hrs (e ▸ List.mem_of_getElem? hq))
     (fun y hy => ⟨ne (hri y hy).1, ne (hri y hy).2⟩) (deltaRemove_ok hS) hout
 
-/-- **The state after a preserving read of a slot** (line 1307): the result
+/-- **The state after a read of a slot of empty normal effect**: the result
 keeps the slot's name `x`, whose value `v` it is; every name keeps its value. -/
 theorem stateHolds_reused_name {G : NormalGraph ι} {st : State}
     {I : List (PromiseCalls.Implication ι)} {start : List Nat} {ρ η : Env} {m : Nat} {s s' : IndexedHeap}

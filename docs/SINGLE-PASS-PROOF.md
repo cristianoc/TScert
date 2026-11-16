@@ -426,9 +426,9 @@ $`\{\mathsf{values}:\mathsf{keep},\ \mathsf{spines}:\mathsf{keep}\}`$. Proved:
   $`\top`$ with the raised value closed and of the exception family and the
   heap-free part of $`S`$.
 
-`ownCall` and `ensuresCall` steps are not preserving: the first only
-excludes `keepsCall`, the second is an `ordinary` step taking the
-writing path.
+An `ownCall` step's normal effect is $`\top`$: it changes its receiver's own
+locations. An `ensuresCall` step is framed where its signature keeps the
+heap, as every call whose checked normal effect is empty.
 
 The theorems above take the output of a checker's `run` (`hr`); the pass's
 own conditions discharge it ([the selected output](#the-selected-output-under-the-passs-tree-check)).

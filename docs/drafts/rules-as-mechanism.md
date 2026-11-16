@@ -92,7 +92,7 @@ contains the other:
 the call and then respect of the support; the deciders for writes,
 elements and cells have the same shape (`keptIndices`, `Atom.keptBy`,
 `everyGrown`, `writeKept`, `keepsLengths`, `writeAtoms`, `cellKept`,
-`IndexFact.keptBy`, `keptWith`, `callKeepsHeap`).
+`IndexFact.keptBy`, `keptWith`).
 
 ## Measurements
 
