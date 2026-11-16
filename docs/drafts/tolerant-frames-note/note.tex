@@ -731,27 +731,44 @@ system derives
 
 \section{The assertion language}
 
-\paragraph{Syntax.} Assertions $F,G$ are built from atoms $a$:
+\paragraph{Syntax.} The grammars below give every form of the assertion
+language, and the paragraphs after them give the meaning of each form.
+A path $\pi$ is as in Section~3. A \emph{field suffix} $\vec f$ is a
+non-empty sequence of field names $f_1\ldots f_k$. In a term, $n$ is a
+safe-integer literal. In a linear combination, $c$ is any integer. In
+an atom, $v$ and $w$ stand for a scalar literal or a logical variable.
 \[
-\begin{array}{rcll}
-F,G &::=& a \mid F\wedge G \mid F\vee G \mid \exists v.\,F & v\text{ a logical variable}\\
- &\mid& \pi\sep\pi' \mid \apart(x,y) \mid \fresh(r) & \text{separation and freshness}\\
- &\mid& \bx{\Phi}F & \text{the modality}
+\begin{array}{llcl}
+\text{paths} & \pi &::=& x \mid \pi.f\\[2pt]
+\text{terms} & t &::=& n \mid x \mid \pi \mid \len\pi \mid \kw{view}(\pi) \mid \slen(\pi) \mid z[t] \mid z[t].\vec f\\[2pt]
+\text{linear combinations} & e &::=& c \mid c\cdot t \mid e+e\\[2pt]
+\text{atoms} & a &::=& e\le e \mid \pi\doteq v \mid \pi.f^{?}\doteq v \mid \dense(x,e) \mid \pi\in V\\
+ & &\mid& z[e]\doteq v \mid \every(z,e,\varphi)\\[2pt]
+\text{bodies} & \varphi &::=& \psi \mid \varphi\wedge\varphi\qquad\psi\ ::=\ e\le e \mid \psi\vee\psi\\[2pt]
+\text{body terms} & u &::=& i \mid z[i] \mid z[i+d] \mid z[i].\vec f \mid \len{z[i].\vec f}\\
+ & &\mid& \kw{view}(z[i].\vec f) \mid \slen(z[i].\vec f) \mid \slen(z[i]) \mid t\\[2pt]
+\text{assertions} & F,G &::=& a \mid F\wedge G \mid F\vee G \mid \exists v.\,F\\
+ & &\mid& \pi\sep\pi' \mid \apart(x,y) \mid \fresh(r) \mid \bx{\Phi}F\\[2pt]
+\text{postconditions} & Q &::=& F \mid \old(F) \mid \kw{tr}_{\Phi} \mid Q\wedge Q \mid Q\vee Q \mid Q\Rightarrow Q \mid \forall j.\,Q
 \end{array}
 \]
+The linear combinations of a body are over body terms $u$ in place of
+terms $t$. In a body term, $d\ge 0$ is a literal and a term $t$ does
+not mention the index $i$. The other comparisons are written with
+$\le$: $e=e'$ is $e\le e'\wedge e'\le e$, and $e<e'$ is $e+1\le e'$. A
+postcondition is an assertion of two states (Section~6). In it $j$
+ranges over indices, and a term may be $\old(t)$, the value of $t$ at
+the entry. Every rule of this paper has its premises and its conclusions
+in these grammars.
 
 \paragraph{Terms.} A \emph{term} denotes an integer at a state, or is
-undefined there:
-\[
-t\ ::=\ n \mid x \mid \pi \mid \len\pi \mid \kw{view}(\pi) \mid \slen(\pi) \mid z[t] \mid z[t].\pi
-\]
+undefined there.
 A literal $n$, a safe integer, denotes itself. A variable $x$ and a path $\pi$ denote
 the number they hold or read. $\len\pi$ is the length of the array that
 $\pi$ reads, $\kw{view}(\pi)$ the length of the typed array, and
 $\slen(\pi)$ the length of the string. $z[t]$ is the number that the
-collection $z$ holds at the index $t$, and $z[t].\pi$ the
-number read from the element at $t$ along the fields of $\pi$, which
-here stands for a sequence of field names alone. A term is \emph{defined} when the
+collection $z$ holds at the index $t$, and $z[t].\vec f$ the
+number read from the element at $t$ along the fields $\vec f$. A term is \emph{defined} when the
 read succeeds, gives a value of the kind the term asks for, and that
 value is a \emph{safe integer}: an integer $n$ with $|n|\le M$, where
 $M=2^{53}-1$. Example: with \code{o = \{ n: 1 \}} and \code{a = [10, , 30]},
@@ -775,7 +792,7 @@ $\pi$ reads has no field $f$, the read gives \code{undefined}. Example:
 with \code{o = \{ n: 1 \}}, $o.m^{?}\doteq\code{undefined}$ holds, and
 $o.m\doteq v$ holds of no $v$.
 \item[Density $\dense(x,n)$] The first $n$ indices of the array $x$ are
-present. For \code{a = [10, , 30]}, $\dense(a,1)$ holds and $\dense(a,2)$
+present, for $n$ a linear combination of terms. For \code{a = [10, , 30]}, $\dense(a,1)$ holds and $\dense(a,2)$
 does not.
 \item[Contents $\pi\in V$] The path $\pi$ reads a value in the set $V$.
 The set is a finite union of kinds of value (a number, a string, an
@@ -783,7 +800,7 @@ object, \code{null}, \code{undefined}, a boolean), possibly with
 literals added or excluded. Examples: $x.f\in\mathit{number}$, and
 $x.f\notin\{\code{null}\}$, the values other than \code{null}.
 \item[Element $z{[i]}\doteq v$] The collection $z$ reads $v$
-at the index $i$: the term $i$ is defined with $0\le i$ and $i$ below
+at the index $i$: the index, a linear combination of terms, is defined with $0\le i$ and $i$ below
 the length of $z$, and $v$ is the value of the element cell the spine
 lists at $i$, or \code{undefined} where an array has a hole at $i$.
 Examples: for \code{a = [10, , 30]}, $a[0]\doteq 10$ and
@@ -792,15 +809,10 @@ $a[1]\doteq\code{undefined}$; for a typed array, $b[1]\doteq 4$.
 a collection, the bound $t$, a linear combination of
 terms, is defined, and the body
 $\varphi$ holds at each index $i$ with $0\le i<t$. The body is a
-conjunction of disjunctions of linear inequalities over the index $i$
-and these further terms:
-\[
-z[i]\qquad z[i+d]\ \ (d\ge 0\text{ a literal})\qquad z[i].\pi\qquad
-\len{z[i].\pi}\qquad\kw{view}(z[i].\pi)\qquad\slen(z[i].\pi)
-\]
-and $\slen(z[i])$, together with terms that do not mention $i$. The
-term $z[i]$ denotes the number the element at $i$ holds, $z[i].\pi$ the
-number read from that element along $\pi$, and $\slen(z[i])$ the length
+conjunction of disjunctions of linear inequalities over the body terms
+of the grammar. The
+term $z[i]$ denotes the number the element at $i$ holds, $z[i].\vec f$ the
+number read from that element along the fields $\vec f$, and $\slen(z[i])$ the length
 of an element that is a string. Each inequality of the body is true only
 where its terms are defined: $z[i]>0$ holds at $i$ only where $z$ has an
 element at $i$ that is a safe integer. A disjunction of the body holds
@@ -1020,7 +1032,7 @@ For a length $\len\pi$ in an inequality, $\delta$ is $\grow$ where the
 inequality stays true when the length increases, as in
 $n\le\len\pi$, and $\keep$ otherwise. In the index of an element fact
 and in the bound and the body of a quantified fact, every length is at
-$\keep$. A term $z[t].\pi$ reads a field of an element, for which there
+$\keep$. A term $z[t].\vec f$ reads a field of an element, for which there
 is no region, and has no support. A field that a condition $C$ says
 keeps its contents is left out of $\mathrm{reads}$, and the support is
 then under $C$. In the row of $\every$, $z$ reads an array, the body
@@ -1147,11 +1159,9 @@ of the enclosing invocation in the entry state and in the exit state
 alike, while $\old$ selects the entry state of the command. A sequence
 composes entry states and leaves $m$ as it is; a call has its own mark,
 and its freshness assertions are rebased (rule \textsc{Call}).
-An $\old$ refers to the command whose triple contains it. Besides
-$\old(B)$, a postcondition may use a term $\old(t)$, the value of $t$
-at the entry, an implication between two of its assertions, and a
-quantifier over indices, as in the postconditions $Q_{<}$ and
-$Q_{\ne i}$ below.
+An $\old$ refers to the command whose triple contains it. The forms of a postcondition are those of the
+grammar of Section~4; the postconditions $Q_{<}$ and $Q_{\ne i}$ below
+use its implication and its quantifier over indices.
 For example, \code{x.push(v)} has postcondition $\len x=\old(\len x)+1$.
 
 The variable that a step binds is fresh (Section~2). So an assertion $R$
@@ -1236,11 +1246,17 @@ the result $y$. The displayed rule uses assertions independent of
 the invocation mark. Freshness assertions require rebasing between
 the callee's and caller's marks. Exceptional postconditions and effects
 instantiate in the same way; their defaults are $\kw{true}$ and $\top$.
-A specification with a rest parameter is a schema whose rest variable
-denotes the sequence of supplied argument values; \textsc{Call}
-substitutes the evaluated sequence, including spread expansion. In
-checking a function body, that sequence equals the initial contents of
-the freshly allocated rest array.
+A specification of a function with a rest parameter $r$ is a family of
+specifications, one for each number $n\ge 0$ of rest arguments. In the
+member for $n$, $r$ stands for $n$ variables $r_0,\ldots,r_{n-1}$. The
+member may mention $n$ and these variables, and nothing else of $r$.
+\textsc{Call} instantiates the member whose $n$ is the number of
+arguments that the call supplies for $r$, with the $j$-th of them for
+$r_j$; a spread argument is first expanded to its elements. In the body
+of the function, $r$ is a fresh array, and at the entry $\len r=n$,
+$\dense(r,n)$ and $r[j]\doteq r_j$ for each $j<n$ hold. Example: for
+\code{function f(...r)}, the call \code{f(a, b)} instantiates the member
+for $n=2$, with $a$ for $r_0$ and $b$ for $r_1$.
 Lean: \lean{call\_exits\_exact}, for both exits of a signature, rest arguments included; \lean{call\_rule}, for a checked graph and the normal exit.
 \item[\textsc{Alloc}] A new array is fresh, empty, and apart from every
 array $y$ that exists before the step. An array literal
@@ -1385,13 +1401,45 @@ object or an array, $a$ an atom and $i$ an integer:
 A field read of an object whose type has the field needs no fact; an
 optional field reads $x.f^{?}\doteq y$. \textsc{Elem-Read} gives
 \code{undefined} at a hole, by the meaning of the element atom; with
-$\dense(x,n)$ and $i<n$ the element is present. In \textsc{Test} the
-atom $a$ is read as an assertion: a comparison of two terms that are
-both known to be defined is the inequality, and its negation the
-converse inequality; a comparison of a number not known to be a safe
-integer gives no fact, and neither does a test of any other form. A comparison of a path with \code{null} or
-\code{undefined} is the equality or its negation, a fact
-$\pi\notin\{\code{null}\}$. A binding \code{y = a} gives $y\doteq a$
+$\dense(x,n)$ and $i<n$ the element is present. 
+
+In \textsc{Test} the tested atom is a variable, since a comparison is a
+binding (Definition~\ref{def:cmd}). The assertions that stand for $a$
+and $\neg a$ on the two branches of \code{if (y)} depend on the step
+that bound $y$:
+\begin{description}[leftmargin=1.5em,style=nextline]
+\item[A comparison of two terms] The step is \code{y = a1 < a2}, or the
+same with \code{<=}, \code{>}, \code{>=}, \code{===} or \code{!==}, and
+both operands are terms known to be defined. The true branch has the
+comparison of the two terms, and the false branch has its negation, the
+converse comparison.
+\item[A comparison with \code{null} or \code{undefined}] The step is
+\code{y = }$\pi$\code{ === null} or \code{y = }$\pi$\code{ !== null}. One
+branch has $\pi\doteq\code{null}$ and the other has
+$\pi\notin\{\code{null}\}$. The equality is on the true branch for
+\code{===} and on the false branch for \code{!==}. A comparison with
+\code{undefined} gives the same two facts for \code{undefined}.
+\item[A negation] The step is \code{y = !y1}. The true branch has the
+facts of the false branch of \code{y1}, and the false branch has the
+facts of its true branch.
+\item[A conjunction or a disjunction] The step is \code{y = y1 \&\& y2}.
+The true branch has the facts of the true branches of \code{y1} and of
+\code{y2}. The false branch has the disjunction of the facts of their
+false branches. For \code{y = y1 || y2} the true branch has the
+disjunction of the facts of the two true branches, and the false branch
+has the facts of both false branches.
+\item[Any other test] Neither branch has a fact. This is the case of a
+boolean variable that none of the steps above bound, of a number, of a
+string, and of a comparison one of whose operands is not known to be a
+defined term.
+\end{description}
+\noindent
+Example: let $i$ and $n$ be known to be defined. After
+\code{t = i < n; u = xs !== null; y = t \&\& u}, the true branch of
+\code{if (y)} has $i<n$ and $\mathit{xs}\notin\{\code{null}\}$, and the
+false branch has $n\le i\vee\mathit{xs}\doteq\code{null}$.
+
+A binding \code{y = a} gives $y\doteq a$
 \status{Lean: \lean{ReadGave} for a field read. \textsc{Elem-Read} is assumed, as the contract of the element read}.
 
 \paragraph{Functions.} A function \code{f} with parameters $\vec p$ and
