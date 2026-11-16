@@ -1,7 +1,7 @@
 // `node:path`'s `dirname` and `basename` at strings run no code of the
 // client's and allocate only the string they return, so a `map` callback
 // calling them stays within the empty footprint and its result dense;
-// `join` also preserves stores under untampered standard objects;
+// `join` also preserves spines under untampered standard objects;
 // `resolve`, `relative` and `realpathSync` are called outside the maps.
 import { realpathSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";

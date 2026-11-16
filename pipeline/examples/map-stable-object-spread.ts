@@ -1,6 +1,6 @@
 // `map` callbacks building objects with spreads: a merge reads its sources'
 // own properties and allocates their copy, which changes no location, so
-// each callback is within `{value: any, store: keep}` and the results are
+// each callback is within `{value: any, spine: keep}` and the results are
 // dense.
 type Binder = { name: string; bound: number | null };
 export function bounded(binders: Binder[]): Binder[] {

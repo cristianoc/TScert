@@ -1,4 +1,4 @@
-// The store separation used by stated-region-nullable-apart with an
+// The spine separation used by stated-region-nullable-apart with an
 // undefined alternative. Copy transport and the join supply its guard.
 type Runs = { /** @stable */ readonly open: number[] };
 

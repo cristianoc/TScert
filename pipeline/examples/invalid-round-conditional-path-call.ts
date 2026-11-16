@@ -1,4 +1,4 @@
-// Store growth permits replacing a tested field's value through another alias.
+// Spine growth permits replacing a tested field's value through another alias.
 type Expression =
   | { kind: "property"; name: { text: string } }
   | { kind: "other" };

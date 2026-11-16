@@ -10,7 +10,7 @@ JSDoc tags whose text is a clause of
 [the clause language](ARITHMETIC.md#the-clause-language): `safeInteger(p)`,
 linear comparisons over integers, paths `x.f` and lengths `p.length`, `&&`,
 `||` and `!`, guards such as `p === null || …`, a closing quantified atom
-`forall i in xs: …`, and `p !== q` of two arrays, whose stores differ. [Where clauses are written](ARITHMETIC.md#the-clause-language)
+`forall i in xs: …`, and `p !== q` of two arrays, whose spines differ. [Where clauses are written](ARITHMETIC.md#the-clause-language)
 lists what each tag may name.
 
 ### `@requires C`
@@ -36,9 +36,9 @@ function widthAt(widths: number[], ends: number[], k: number): number {
 }
 ```
 
-`p !== q` of two arrays states that their stores differ, so the body keeps
-`flags`'s facts across a call whose frame changes the other's store
-([store separation](ARITHMETIC.md#store-separation)):
+`p !== q` of two arrays states that their spines differ, so the body keeps
+`flags`'s facts across a call whose frame changes the other's spine
+([spine separation](ARITHMETIC.md#spine-separation)):
 
 ```ts
 /** @requires flags !== runs.openBrackets */
@@ -126,10 +126,10 @@ call returns a `T`; on a normal return every previously allocated location
 keeps its contents but those `P` names, each changed at most as `P` says.
 `P` is a type literal: `values` (`"keep"`, `"init"`, `"scalar"`, `"grow"`
 or `"any"`) bounds changes to locations holding a value, `spines` the same
-for array stores, and `onThrow: true` makes the bound hold on a throw too;
+for array spines, and `onThrow: true` makes the bound hold on a throw too;
 `{}` states that nothing previously allocated changes. On a function
-declaration, `"x[*]": "any"` excepts the store parameter `x` holds at the
-call, and `"x.f[*]": "any"` the store its `@stable` field `f` holds, which
+declaration, `"x[*]": "any"` excepts the spine parameter `x` holds at the
+call, and `"x.f[*]": "any"` the spine its `@stable` field `f` holds, which
 may change arbitrarily. TypeScript reads it as `T`; the
 verifier certifies it from the function's code.
 [Stated effects](SOURCE-ELABORATION.md#stated-effects).
@@ -153,8 +153,8 @@ function shrink(xs: number[]): Modifies<{ values: "any"; "xs[*]": "any" }, void>
 ### `Fresh<T>`
 
 As a written signature's result type, alone or as the `T` of `Modifies`: a
-normal return's value holds an array store the call allocated, so the
-caller's facts about every other store survive changes to it. TypeScript
+normal return's value holds an array spine the call allocated, so the
+caller's facts about every other spine survive changes to it. TypeScript
 reads it as `T`; the verifier certifies it from the function's code.
 [Stated effects](SOURCE-ELABORATION.md#stated-effects).
 

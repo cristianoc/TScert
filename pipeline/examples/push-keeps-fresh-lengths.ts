@@ -1,6 +1,6 @@
 // pretext's `segmentAtLineBreaks`: two arrays built by literals grow
 // together, one element each per step, while the loop writes a typed array
-// between the pushes. An array literal's store field is apart from the store
+// between the pushes. An array literal's spine field is apart from the spine
 // fields of the older arrays in its scope whatever the heap holds, so a push
 // into either keeps the other's length, and the two stay equally long.
 

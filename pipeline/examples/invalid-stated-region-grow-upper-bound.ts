@@ -1,4 +1,4 @@
-// A frame stating a store region beside `spines: "grow"` keeps no upper
+// A frame stating a spine region beside `spines: "grow"` keeps no upper
 // bound of a length outside the region: `step` pushes onto `xs`, so
 // `xs.length <= ys.length` is lost and `ys[n - 1]` is refused (run under
 // Node: `last([], [])` returns `undefined`).

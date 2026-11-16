@@ -239,7 +239,7 @@ const slides: Slide[] = [
       card("Owned matcher preservation", "blocker-round-global-signature-matcher verifies. Its string-comparing matcher preserves existing array storage on normal return, including lengths and which indices are present. globalEntry verifies in this census. A matcher using pop shortens the array and violates that guarantee; the falsely promised version is refused and throws TypeError under Node."),
       card("A semantic binder printer", "blocker-round-binder-entries verifies using the shared complete type-term printer before serialization. The larger mergeRefusal function reaches the scope-object obligation in group 13. The source repair compares semantic fields, retaining declaration-identity spans."),
     ]) + bullets([
-      point("Use the whole contract", "a footprint describes allowed value and store changes. A qualified callback must establish it from its body. A normal-return guarantee supplies no preservation when the call throws. The existing effect checks and negative cases guard that boundary."),
+      point("Use the whole contract", "a footprint describes allowed value and spine changes. A qualified callback must establish it from its body. A normal-return guarantee supplies no preservation when the call throws. The existing effect checks and negative cases guard that boundary."),
     ]),
   }),
   slide("routes", {

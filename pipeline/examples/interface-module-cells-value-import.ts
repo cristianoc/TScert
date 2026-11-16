@@ -4,7 +4,7 @@
 // analysis.ts's `removeSkippableSegmentBreaks` through their callees): the
 // separation names the closure's own captured cells, which no caller
 // changes, so the function is laid out and its interface entry published.
-// `classCount`, read at its certified footprint, which writes no store of
+// `classCount`, read at its certified footprint, which writes no spine of
 // the caller's, keeps the fact `i < xs.length` across its call.
 import { classCount } from "@fixture/module-cells";
 

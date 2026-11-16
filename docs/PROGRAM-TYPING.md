@@ -225,10 +225,10 @@ proves such a call safe rather than enforcing that surface rule. An empty
 parameter list is a zero-argument call, not an absent one. A tuple rest
 parameter and a tuple spread are a fixed number of positions each, so they need
 no rule of their own here: the signature carries the positions, and the array a
-rest parameter binds is allocated by the ordinary store and allocation rules.
+rest parameter binds is allocated by the ordinary spine and allocation rules.
 Into fixed parameters, or into a rest that is one tuple contract (an argument
 pack's instance), each spread's positions are ordinary element reads of
-its operand's store, made once every actual is evaluated, in position order,
+its operand's spine, made once every actual is evaluated, in position order,
 and the call takes them as actuals where the spread is written; the lowering
 admits no actual that runs code after the first spread, so the reads see what
 JavaScript's spreads, each read where it is written, would.
@@ -239,7 +239,7 @@ $`m`$ with captures at $`\vec C`$ meets a signature, written
 $`\vec C\vdash_G\kappa:(R;\vec A\to B)`$ (`GraphCodeSpec`), when $`m\le|\vec A|`$
 and every run of it entered from an environment meeting
 $`R,\vec A_{<m},\vec C`$ is safe at $`B`$. Code with a rest is entered with the
-store of the further actuals first: $`\vec C\vdash_G\kappa:(Q;R;\vec A\to B)`$
+spine of the further actuals first: $`\vec C\vdash_G\kappa:(Q;R;\vec A\to B)`$
 when every run entered from $`Q,R,\vec A_{<m},\vec C`$ is safe at $`B`$
 (`codeFrame`). The [graph checker](#checked-control-flow-graphs) establishes
 either from the code's run at that entry and the result $`B`$
@@ -247,14 +247,14 @@ either from the code's run at that entry and the result $`B`$
 collects a rest (`CodeOffers`): code without one meets each fixed signature
 and each variadic one's fixed row; code with one offers only variadic
 signatures, each taking exactly its fixed parameters, from a frame whose
-store $`Q`$ is one its rest's pack describes
-($`\mathrm{Store}_G`$, below):
+spine $`Q`$ is one its rest's pack describes
+($`\mathrm{Spine}_G`$, below):
 
 ```math
 \mathrm{Offers}_G(\kappa,\vec C,L,S)\iff
 \begin{cases}
 \forall(R,\vec A,B)\in L\cup S^\flat.\;\vec C\vdash_G\kappa:(R;\vec A\to B) & \kappa\ \text{collects no rest}\\
-L=\varnothing\ \land\ \forall\sigma=(R,\vec A,P,B)\in S.\;|\vec A|=m\land\mathrm{Store}_G(Q_\sigma,P)\land\vec C\vdash_G\kappa:(Q_\sigma;R;\vec A\to B) & \kappa\ \text{collects a rest}
+L=\varnothing\ \land\ \forall\sigma=(R,\vec A,P,B)\in S.\;|\vec A|=m\land\mathrm{Spine}_G(Q_\sigma,P)\land\vec C\vdash_G\kappa:(Q_\sigma;R;\vec A\to B) & \kappa\ \text{collects a rest}
 \end{cases}
 ```
 
@@ -276,7 +276,7 @@ Every receiver such a signature admits is then an object (`kindOffers_binds`,
 from `objectClause_member`). Soundness is `offers_sem`: code without a rest
 meets its signatures by `callsT_of_graph` and `restsT_of_graph`, code with one
 its variadic signatures by `restsT_of_graphRest`, whose invocation allocates
-the store before the run starts (`graphRest_invoke`); each invocation steps,
+the spine before the run starts (`graphRest_invoke`); each invocation steps,
 since the code's kind binds the receiver. Creation then reads the captures
 only:
 
@@ -297,8 +297,8 @@ No code check reads the graph's assignment (`Parametricity.checkEntry_reassign`)
 so an entry meets its signature in the graph reassigned at every assignment
 $`\eta`$ of its parameter rows, $`\vec C\vdash_{G[\eta]}\kappa:\sigma`$, which is
 what `CodesSound` states. For code with a rest the evidence also lists the
-store types $`Q_\sigma`$, in the signatures' order (`Rule.funGraph arrays`), and
-each table entry the store its frame starts with (`CodeEntry.store`).
+spine types $`Q_\sigma`$, in the signatures' order (`Rule.funGraph arrays`), and
+each table entry the spine its frame starts with (`CodeEntry.spine`).
 
 A **recursive closure** is graph code of fixed arity whose frame has one more
 slot after its captures, its self entry, which every invocation fills with the
@@ -371,7 +371,7 @@ with binders $`\vec p`$ (parameter rows) and signatures $`L`$ and $`S`$ over the
 a table entry holds at every assignment of $`\vec p`$ the graph's domain admits
 (`G.domain.allowed`), so at every instantiation of $`\vec p`$; for an
 unqualified row every assignment is admitted, and a row is qualified by the
-bounds its source signature implies ([implied bounds](SOURCE-CONTRACTS.md#implied-bounds)). The arity and rest-store
+bounds its source signature implies ([implied bounds](SOURCE-CONTRACTS.md#implied-bounds)). The arity and rest-spine
 requirements are checked once, independently of the assignment (`CodeOffersShape`).
 Its captures' types read none of $`\vec p`$ (`capturesFree`: their free parameter
 rows, computed and checked by `FreeOk`,
@@ -476,7 +476,7 @@ elements every instance's list has, and $`P`$ types nothing else:
 ```
 
 Here $`\tau_B`$ is $`B`$'s tuple contract. A list within an instance $`X\le\mathsf{Pack}(\tau_B)`$
-is within $`\mathsf{Pack}(\tau_B)`$, so the store a call collects meets the store type $`B`$
+is within $`\mathsf{Pack}(\tau_B)`$, so the spine a call collects meets the spine type $`B`$
 describes (this step has no Lean proof); that each call meets the body's input at
 $`B`$ is the module function's interface ([module rules](SOURCE-CONTRACTS.md#modules-and-code-units)).
 In a module function a type parameter typing a rest and anything else is
@@ -493,7 +493,7 @@ tuple type, and the declaration's contract at the call reads
      {f:(\vec A,\ldots\mathsf{Pack}(\tau_X))\to R\ \text{at}\ T:=X}
 ```
 
-with $`\mathsf{Array}_\rho(\tau)`$ the built-in array over a store of contract
+with $`\mathsf{Array}_\rho(\tau)`$ the built-in array over a spine of contract
 $`\tau`$, readonly or not. That is the contract's meaning at $`X`$: every
 argument list in $`\mathsf{Pack}(\tau_X)`$ collects into a fresh array of
 $`X`$, and these are the lists a call collects into one. An instance with
@@ -537,7 +537,7 @@ This instantiates the [common behavioral equation](SEMANTICS.md#one-meaning-for-
 which also explains overload conjunction, callable fields and quantification.
 Code enters only where it is created: graph code pads a short list
 (`graph_invoke`), and code with a rest collects the actuals past its $`k`$
-fixed parameters into a fresh store, which its entry allocates with the
+fixed parameters into a fresh spine, which its entry allocates with the
 ordinary steps before the run starts (`graphRest_invoke`):
 
 ```math
@@ -548,28 +548,28 @@ ordinary steps before the run starts (`graphRest_invoke`):
 
 A pack holds its actuals at their positions only below the current level. The
 allocation is a step, after which the budget is one lower, so that is all the
-fresh store's contracts need (`arr_alloc_rule_below`, `RestCalls.argument_alloc_safe`).
+fresh spine's contracts need (`arr_alloc_rule_below`, `RestCalls.argument_alloc_safe`).
 
 So one value may meet fixed and variadic signatures at once, and a graph call
 clause carries both: `arrs L S`, `callable P Ps L S`. Write
-$`\mathrm{Store}_G(Q,P)`$ when $`Q`$ is the store $`P`$'s one tuple contract
-describes, writable since the store is fresh (`RestStore`), and $`\mathrm{Spreads}_G(S,E)`$ when $`S`$ is a
-store contract every position of which is within $`E`$, and either it is
+$`\mathrm{Spine}_G(Q,P)`$ when $`Q`$ is the spine $`P`$'s one tuple contract
+describes, writable since the spine is fresh (`RestSpine`), and $`\mathrm{Spreads}_G(S,E)`$ when $`S`$ is a
+spine contract every position of which is within $`E`$, and either it is
 dense or $`E`$ includes `undefined` (`SpreadsInto`). A hole yields
 $`\mathsf{undefined}`$ and must therefore be admitted by $`E`$. Creation checks the code once per variadic signature, from the
-frame with the rest store in slot 0, the receiver in slot 1, then the fixed
+frame with the rest spine in slot 0, the receiver in slot 1, then the fixed
 parameters: the second case of $`\mathrm{Offers}_G`$ (`funGraph`;
-`callableGraph` adds a field bag). The code's entry node wraps the store into
+`callableGraph` adds a field bag). The code's entry node wraps the spine into
 the array the rest parameter names, an ordinary allocation the extractor
 emits.
 
-[RestCalls.lean](../lean/Verification/Programs/RestCalls.lean) proves variadic calls: eliminating a variadic signature, allocating the rest store, spreading actuals.
+[RestCalls.lean](../lean/Verification/Programs/RestCalls.lean) proves variadic calls: eliminating a variadic signature, allocating the rest spine, spreading actuals.
 
 A call writes the fixed actuals, or a prefix whose omitted positions admit
 `undefined`, then parts that fit the rest; a call that omits a fixed position
 writes no part (`callRest`). With a spread among the parts, the rest is an
 element rest $`\mathsf{Pack}([\,],[\,],E)`$ ($`\mathrm{elem}_G(P)=E`$,
-`restElem`), and each part is an actual in $`E`$ or a spread of a store whose
+`restElem`), and each part is an actual in $`E`$ or a spread of a spine whose
 elements are. Without one, $`P`$ is one tuple contract $`\tau`$, and the parts are
 at its positions within its length bounds (`RestParts`):
 
@@ -591,14 +591,14 @@ P=\mathsf{Pack}(\tau)\ \land\ |\tau.R|\le|\vec p|\ \land\ (\tau.E=\varnothing\Ri
 The first case is `rest_call_safe`: the actuals collected at $`E`$ form a list
 the element rest admits (`restElem_args`). The second is `pack_call_safe`: the
 actuals at the positions form a list $`\tau`$ admits (`restParts_pack`). The
-rest store is allocated from those actuals at the current level; the
-allocation step consumes the level (`restStore_safe`,
-`RestCalls.argument_alloc_safe`). `RestStore` checks identical element positions
-and length bounds and requires a writable result. The fresh store may use any
+rest spine is allocated from those actuals at the current level; the
+allocation step consumes the level (`restSpine_safe`,
+`RestCalls.argument_alloc_safe`). `RestSpine` checks identical element positions
+and length bounds and requires a writable result. The fresh spine may use any
 presence mode: all collected positions exist. Pack metadata does not impose a
 lifetime presence contract on this allocation.
 
-A spread is read by the call once every earlier actual is a value, the store's
+A spread is read by the call once every earlier actual is a value, the spine's
 elements replacing it in order, `undefined` at a hole
 (`Step.callSpread`, `spread_parts_safe`):
 
@@ -608,7 +608,7 @@ elements replacing it in order, `undefined` at a hole
 ```
 
 Into a rest, a spread followed by an actual that runs code is copied where it
-is written, `[...s]`, a fresh store the call then spreads, so the later actual
+is written, `[...s]`, a fresh spine the call then spreads, so the later actual
 cannot change what it passes ([a literal with spreads](#a-literal-with-spreads),
 `arrParts`); into fixed parameters the lowering admits no such actual (above).
 A hole read from the source becomes a present `undefined` value in the copy.
@@ -620,7 +620,7 @@ For a required tuple, source lowering instead reads its known positions in
 order into an ordinary array literal before evaluating later actuals. The
 existing element-read and array-literal rules preserve the tuple's exact
 contract, including density. This avoids weakening a dense Boolean tuple to
-an unbounded store that would require `undefined` when spread again.
+an unbounded spine that would require `undefined` when spread again.
 
 Covering compares admitted lists. A variadic source with an element rest
 covers a fixed target whose first positions are within its fixed parameters and
@@ -914,9 +914,9 @@ binder's lists, after the fixed actuals, passes one of those lists
      {\Gamma\vdash_G f(\vec a,\ {\ldots}a.\mathtt{[]}):B}\ \textsf{callPacked}
 ```
 
-**Instantiation.** At an instance, an array or tuple type $`X`$ whose store
+**Instantiation.** At an instance, an array or tuple type $`X`$ whose spine
 meets a tuple contract $`\tau`$ with no sparse holes is packable by
-$`\tau`$'s lists: a satisfying heap holds at the store's location a store
+$`\tau`$'s lists: a satisfying heap holds at the spine's location a spine
 meeting $`\tau`$ one level down, whose elements fit $`\tau`$ below that;
 this lemma has no Lean proof. So at $`T:=X`$, with
 $`T^{*}:=\mathsf{Pack}(\tau)`$, the binder's values are exactly $`X`$'s:
@@ -933,7 +933,7 @@ spelled with its packed name, `T#pack`.
 
 ### Sorts and categories
 
-A value is a scalar or an object; a store is not a value
+A value is a scalar or an object; a spine is not a value
 ([the Tolerant frames note](REFERENCES.md#the-tolerant-frames-note), §2). The
 semantic **sorts** are sets of closed terms:
 
@@ -954,15 +954,15 @@ only (`SortValid`):
 
 A binder's **sort** on the shared carrier $`\mathsf{Val}\uplus\mathsf{Val}^{*}`$
 is its value component in its kind's sort ($`V`$ for a value or packed
-binder, $`S`$ for a store binder; an argument binder has none) and its list
+binder, $`S`$ for a spine binder; an argument binder has none) and its list
 component in $`L`$ for an argument or packed binder (`ParameterKind.MixedSort`).
-A **store binder** is internal: the parameter of the array heads, applied to
-an array type's store type (`Interning.arrayHead`), and the family variables
+A **spine binder** is internal: the parameter of the array heads, applied to
+an array type's spine type (`Interning.arrayHead`), and the family variables
 a variance check generates for it; no source binder is one. The shared
 carrier's own closedness is machine closedness, $`V\cup S`$
-(`MachineClosed`), since every type's meaning, a store type's included, is a
+(`MachineClosed`), since every type's meaning, a spine type's included, is a
 family on it. The outer sort a substitution checks (`hasKind`) groups value
-and store binders: a type of clause rows other than packs, of schemes or of
+and spine binders: a type of clause rows other than packs, of schemes or of
 meets has the outer sort of both (`ParameterKind.valued`).
 
 A binder observes its assigned family restricted to its sort
@@ -974,7 +974,7 @@ A binder observes its assigned family restricted to its sort
 
 so a binder of kind $`k`$ ranges over exactly the families valid at its sort:
 every selection is valid at it (`selectParameter_sorted`), and a family valid
-at the sort of a value, store or argument binder is its own selection
+at the sort of a value, spine or argument binder is its own selection
 (`selectParameter_self`). An assignment is **sorted** when each parameter
 row's selected family is in its binder's sort (`NormalGraph.Sorted`); every
 assignment is (`NormalGraph.sorted`). A substitution's image is its own
@@ -1019,8 +1019,8 @@ row, its binder's lists. The check reads the argument's rows and their pack
 positions, one level: a category reads no operand of a record or callable.
 
 **Payload compatibility.** Every typed allocation and write gives its
-contents a role: a storage position's tag (field, cell, array store, view
-store) or an element cell (`PayloadRole`). Its contents' type is in the
+contents a role: a storage position's tag (field, cell, array spine, view
+spine) or an element cell (`PayloadRole`). Its contents' type is in the
 role's sort (`Payload`):
 
 ```math
@@ -1039,14 +1039,14 @@ at $`E`$ for each element. A copy (`merge`) types no payload: its values are
 fields' contents, of their category by the state ([location kinds,
 §9](drafts/location-kinds.md#9-the-typing-premises)). A payload's values are
 then of its role's sort (`Payload.sound`), and so of a kinded role's category
-(`Payload.stored`, `Payload.element`). A rest store's element positions are
-payloads of element cells (`RestStore`).
+(`Payload.stored`, `Payload.element`). A rest spine's element positions are
+payloads of element cells (`RestSpine`).
 
 **Key fit.** The role an allocation records must be the one its key's slot
 demands ([kinded states](SINGLE-PASS-PROOF.md#kinded-states)): `alloc`,
 `allocDict`, `ctorGraph` and `callableGraph` take each part's tag to fit its
-key (`StorageRole.fitsKey`: `arrayStore` under `[]`, `field` or `cell` under
-any other key). No slot holds a typed array's view store, which its
+key (`StorageRole.fitsKey`: `arraySpine` under `[]`, `field` or `cell` under
+any other key). No slot holds a typed array's view spine, which its
 descriptor names. The checker decides the same conjuncts.
 
 The category is weaker than the exception guarantee of `sourceTy`
@@ -1055,12 +1055,12 @@ parameter rows; `sourceTy` implies $`A\subseteq V`$ (`sourceTy_tyIn`). Three
 counter-models fix these definitions, each a theorem:
 
 - `valueValid_not_source`: validity at a value binder's carrier, machine
-  closedness, admits the family of empty stores, so it does not give $`V`$.
-- `mixedMeaning_not_sourceValid`: a store type's meaning holds the empty
-  store, so a type's meaning is not $`V`$-valid in general, and the shared
+  closedness, admits the family of empty spines, so it does not give $`V`$.
+- `mixedMeaning_not_sourceValid`: a spine type's meaning holds the empty
+  spine, so a type's meaning is not $`V`$-valid in general, and the shared
   carrier's value component is $`V\cup S`$.
 - `sourceCategory_not_exc`: a value binder at a sorted assignment is in
-  $`V`$, yet its member, an object owning the store key at a location no
+  $`V`$, yet its member, an object owning the spine key at a location no
   world holds, is outside the exception family; a classification admitting
   parameter rows does not give `sourceTy_exc`.
 
@@ -1069,7 +1069,7 @@ counter-models fix these definitions, each a theorem:
 A variadic construct signature $`\mathsf{new}(\vec Q,\ {\ldots}P)\Rightarrow^{\varepsilon} B`$,
 its effect $`\varepsilon`$ plain, admits the lists whose first $`|\vec Q|`$ actuals are at $`\vec Q`$ and whose
 further ones form a pack of $`P`$ (`CtorRest`, `ctorRestsT`). `new` reads a
-spread actual as a call does, its store's elements replacing it once every
+spread actual as a call does, its spine's elements replacing it once every
 earlier actual is a value (`Step.constructSpread`), and the parts past the
 fixed actuals fit the rest as a variadic call's do ($`\mathrm{Parts}_G`$
 above; `constructRest`, `construct_rest_safe`, `construct_pack_safe`,
@@ -1104,7 +1104,7 @@ allocation. Let $`\varphi`$ range over field maps $`\overline{f{:}A}`$ with dist
 names, and write $`\mathsf{Ref}(\varphi)`$ for the record clause carrying those
 invariants. Each field of $`\varphi`$ is a storage position stating the role
 its location is allocated with (`field` for an object literal's property,
-`cell` for a binding's cell, `arrayStore` for an array's store slot;
+`cell` for a binding's cell, `arraySpine` for an array's spine slot;
 [location kinds](drafts/location-kinds.md#4-storage-capabilities)), which the
 rule takes from the claimed record. `alloc` allocates one fresh location per
 named field, and the names
@@ -1114,14 +1114,14 @@ key `[[host]]`, so the object is ordinary
 are exactly those names, so its type may also bound them: each own-key bound
 $`b`$ the type states must admit every name
 ([POSITIVE-TYPES.md](POSITIVE-TYPES.md#records)). An array is allocated this
-way, its store and prototype as the two fields, own keys among those two, then
+way, its spine and prototype as the two fields, own keys among those two, then
 read as an array, owning none of `ArrayProto`'s keys, by subsumption. A record
 type is of objects meeting the built-ins'
 [array invariant](SEMANTICS.md#the-array-invariant), so an allocation owning
-the store key $`\sigma`$ must be a built-in array
-($`\mathsf{builtins}\vDash\overline{f{:}A}`$, `allocBuiltins`): its store field at a
-store type (every clause a `list`, whose element types contain only JavaScript values,
-`storeTy_sound`), its prototype field at the built-in prototype type
+the spine key $`\sigma`$ must be a built-in array
+($`\mathsf{builtins}\vDash\overline{f{:}A}`$, `allocBuiltins`): its spine field at a
+spine type (every clause a `list`, whose element types contain only JavaScript values,
+`spineTy_sound`), its prototype field at the built-in prototype type
 $`P_{\mathcal B}`$, which reads no parameter row (`builtinsFree`, so it means the
 same at the assignment the invariant reads it at, `builtinsFree_meaning`), and
 none of its names a key that prototype provides ($`N_{\mathcal B}`$). An
@@ -1137,7 +1137,7 @@ allocation without $`\sigma`$, or in a graph stating no built-ins, meets it at o
 ```math
 \mathsf{builtins}\vDash\overline{f{:}A}\iff
 \sigma\notin\overline{f}\ \lor\ \bigl(\overline{f}\cap N_{\mathcal B}=\varnothing\land
-  (\sigma{:}S)\in\overline{f{:}A}\ \text{with}\ S\ \text{a store type}\land(\mathsf{proto}{:}P_{\mathcal B})\in\overline{f{:}A}\bigr)
+  (\sigma{:}S)\in\overline{f{:}A}\ \text{with}\ S\ \text{a spine type}\land(\mathsf{proto}{:}P_{\mathcal B})\in\overline{f{:}A}\bigr)
 ```
 
 `read` and `write` name the field they act on and require it of the receiver's
@@ -1243,9 +1243,9 @@ location: its array alternative, which needs every number there
 that location, the number found
 among the first few the type's clauses reject (`numWitness`,
 `lengthExcluded`). Any other view of `length` may be an array's, whose
-`length` is its store's length, so its read tests the object in slot
-$`i`$: an array's store is a list, in every graph (the built-ins' invariant, or
-`storeListT` without one), whose length is a number, and any other object's
+`length` is its spine's length, so its read tests the object in slot
+$`i`$: an array's spine is a list, in every graph (the built-ins' invariant, or
+`spineListT` without one), whose length is a number, and any other object's
 `length` is at its own location. The term is
 $`\mathsf{len}_i=\mathsf{if}\ \mathsf{isArray}(x_i)\ \mathsf{then}\ |x_i.\sigma|\ \mathsf{else}\ x_i.\mathtt{length}`$
 (`lengthRead`, `lenView`). A member access, in a body or a closure, and a
@@ -1317,7 +1317,7 @@ says is absent
 ([writable string index signatures](SOURCE-MODEL.md#writable-string-index-signatures),
 [covering](POSITIVE-TYPES.md#records)). So a literal meant for a writable
 dictionary is allocated at the dictionary itself, `allocDict`: its fields are
-the clause's named fields, none the prototype key, the store key or the host key, each whose key an index's
+the clause's named fields, none the prototype key, the spine key or the host key, each whose key an index's
 class may admit ($`\theta\ni_?k`$, `IndexKeys.may`) at exactly that index's
 type, and the clause states no own-key bound. It may state optional fields
 $`\omega`$ the literal leaves out, each, where a writable index's class may
@@ -1372,10 +1372,10 @@ run.
 
 ### Arrays
 
-An array is an object whose store field holds a _store_: the location of each
+An array is an object whose spine field holds a _store_: the location of each
 element in order, or a hole. Identity, aliasing and mutation are the object's;
-the store is a value the object replaces when the array grows. A `list` clause
-is one or more tuple contracts on a store: required positions, each a
+the spine is a value the object replaces when the array grows. A `list` clause
+is one or more tuple contracts on a spine: required positions, each a
 location under its family; optional positions, a hole or such a location; and a
 rest family under which any further location must be, without which there is
 none. Presence is a separate three-way contract: dense forbids holes,
@@ -1383,25 +1383,25 @@ readable requires a hole's `undefined` to satisfy its position type, and sparse
 constrains only present optional/rest entries. Required positions always exist.
 Source `T[]` means readable, uniformly in `T`; see the
 [array equations](POSITIVE-TYPES.md#arrays). A spread reads at its element type
-from either a dense or readable store. A sparse store additionally needs an
+from either a dense or readable spine. A sparse spine additionally needs an
 explicit `undefined` alternative (`SpreadsInto`); `listT_spreads` proves all three cases. An index in bounds and an
-arbitrary one differ, as do a mutable and a readonly array. A readonly store carries
+arbitrary one differ, as do a mutable and a readonly array. A readonly spine carries
 element read capabilities: each location invariant implies the element type.
-Writable stores require equality and are invariant; `setElem` requires a
-writable store. The outer store field is also a view for a readonly array. `arrLit` allocates a store under the claimed tuple; `elem` reads a
+Writable spines require equality and are invariant; `setElem` requires a
+writable spine. The outer spine field is also a view for a readonly array. `arrLit` allocates a spine under the claimed tuple; `elem` reads a
 required position named by a literal index, `elemOpt` an optional or rest
 position, adding `undefined`, and `elemAny` any numeric index into a
 homogeneous array, adding `undefined` (a native result with a required
 position, such as a non-empty `split`'s, `[string, ...string[]]`, is read by
 `elem` at index 0: [a non-empty `split`](SOURCE-CONTRACTS.md#native-footprints));
 `setElem` writes a named position into
-its location, or a fresh one the new store records, keeping the contract for
+its location, or a fresh one the new spine records, keeping the contract for
 every alias; `len` reads the length. The source read `a.length` of an
 array, in a statement and in a closed expression (an arrow's expression
-body, a condition's operands) alike, is the length of its store:
+body, a condition's operands) alike, is the length of its spine:
 
 ```math
-\frac{\Gamma\vdash_G a:A\quad \mathit{store}_G(A)=S\quad
+\frac{\Gamma\vdash_G a:A\quad \mathit{spine}_G(A)=S\quad
       \Gamma\vdash_G a.\mathtt{[]}:S\quad S\equiv_G\mathsf{list}(\tau)\quad N\equiv_G\mathsf{num}}
      {\Gamma\vdash_G⟦a.\mathit{length}⟧=\mathsf{lenOf}\;(a.\mathtt{[]}):N}\ \textsf{len}
 ```
@@ -1453,7 +1453,7 @@ numeric key, which `Array<T>`'s `[n: number]: T` says holds a `T`, else
 `undefined`: `Array.prototype` and `Object.prototype` own no numeric key
 ([trust surface](DESIGN.md#trust-surface)). No getter runs, so the read
 writes nothing and states heap preservation
-([effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)). `elemAny` would read the store
+([effects](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)). `elemAny` would read the spine
 alone, which answers `undefined` where the array owns such a key.
 
 <a id="reads-at-an-index-from-the-length"></a>
@@ -1484,10 +1484,10 @@ empty array), `invalid-array-last-sparse`, `invalid-array-last-after-pop`,
 
 A write `xs[k] = v` at a key every value of which is a number — `number`, a
 numeric literal, or a union of them — into an array whose
-store contract is homogeneous and writable, $`\mathsf{list}(\langle[\,],[\,],E,\mathrm{writable}\rangle)`$,
+spine contract is homogeneous and writable, $`\mathsf{list}(\langle[\,],[\,],E,\mathrm{writable}\rangle)`$,
 lowers to the slots of the receiver, the key and the value, as a literal
 index's write does, and is admitted where the heap knowledge bounds the key by
-the receiver's store. A program states the bound with a guard before the
+the receiver's spine. A program states the bound with a guard before the
 write, its own statement:
 
 ```ts
@@ -1502,9 +1502,9 @@ Boolean slot:
 ```math
 \begin{aligned}
 \mathrm{index}(k)(\rho,h) &\iff \rho(k)=\mathsf{num}\,b\land \mathrm{indexOfBits}(b)=\mathsf{some}\,i\\
-\mathrm{length}(x,n)(\rho,h) &\iff \mathrm{store}(\rho(x))=\ell\land h[\ell]=\mathsf{arr}\,ls\land \rho(n)=\mathsf{num}(\mathrm{bitsOfNat}\,|ls|)\\
-\mathrm{bound}(x,k)(\rho,h) &\iff \mathrm{store}(\rho(x))=\ell\land h[\ell]=\mathsf{arr}\,ls\land \rho(k)=\mathsf{num}\,b\land \mathrm{indexOfBits}(b)=\mathsf{some}\,i\land i\le|ls|\\
-\mathrm{bound}_<(x,k)(\rho,h) &\iff \mathrm{store}(\rho(x))=\ell\land h[\ell]=\mathsf{arr}\,ls\land \rho(k)=\mathsf{num}\,b\land \mathrm{indexOfBits}(b)=\mathsf{some}\,i\land i<|ls|
+\mathrm{length}(x,n)(\rho,h) &\iff \mathrm{spine}(\rho(x))=\ell\land h[\ell]=\mathsf{arr}\,ls\land \rho(n)=\mathsf{num}(\mathrm{bitsOfNat}\,|ls|)\\
+\mathrm{bound}(x,k)(\rho,h) &\iff \mathrm{spine}(\rho(x))=\ell\land h[\ell]=\mathsf{arr}\,ls\land \rho(k)=\mathsf{num}\,b\land \mathrm{indexOfBits}(b)=\mathsf{some}\,i\land i\le|ls|\\
+\mathrm{bound}_<(x,k)(\rho,h) &\iff \mathrm{spine}(\rho(x))=\ell\land h[\ell]=\mathsf{arr}\,ls\land \rho(k)=\mathsf{num}\,b\land \mathrm{indexOfBits}(b)=\mathsf{some}\,i\land i<|ls|
 \end{aligned}
 ```
 
@@ -1551,22 +1551,22 @@ $`2^{31}`$ and above fail it.
      {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow x.\mathtt{[]}:=x.\mathtt{[]}⟦k\mapsto v⟧:\mathsf{Null}\dashv\Pi;\ \emptyset}\ \textsf{setElem-bounded}
 ```
 
-The write reads the store, lands on a present element's location or, at a
-hole below the length or at the length, on a fresh location the new store
-records, leaving no hole, and writes the store back (proved, by the proof the
+The write reads the spine, lands on a present element's location or, at a
+hole below the length or at the length, on a fresh location the new spine
+records, leaving no hole, and writes the spine back (proved, by the proof the
 literal rule `setElem` shares). An element location is written before the
-store field is, so the step carries no observation of the heap past it. Its
-frame condition is the footprint `{value: any, store: grow}`
+spine field is, so the step carries no observation of the heap past it. Its
+frame condition is the footprint `{value: any, spine: grow}`
 ([element writes](FOOTPRINTS.md#element-writes)).
 
 **What the write keeps of fields' contents** is
 [`weak-update`](#a-fields-contents-across-a-write) at the change
-$`(\top,\ R(v))`$: the write replaces the store location's array store by
+$`(\top,\ R(v))`$: the write replaces the spine location's array spine by
 one and sets at most one element location to $`v`$.
 
 **The length after the write.** At $`0\le k\le|x|`$ the write leaves
 $`|x|=\max(|x|_{\mathrm{before}},k+1)`$ with the index $`k`$ present: a
-present cell keeps the store, and a fresh cell is placed at $`k`$
+present cell keeps the spine, and a fresh cell is placed at $`k`$
 (`placeAt`). The step states, beside its output:
 
 ```math
@@ -1575,7 +1575,7 @@ present cell keeps the store, and a fresh cell is placed at $`k`$
 ```
 
 ```math
-\frac{\Sigma\vdash|x|\le k\qquad F\in\Sigma\ \text{linear, over}\ |x|\ \text{and terms}\ \{\mathsf{value}:\mathsf{any},\ \mathsf{store}:\mathsf{grow}\}\ \text{keeps}}
+\frac{\Sigma\vdash|x|\le k\qquad F\in\Sigma\ \text{linear, over}\ |x|\ \text{and terms}\ \{\mathsf{value}:\mathsf{any},\ \mathsf{spine}:\mathsf{grow}\}\ \text{keeps}}
      {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow x.\mathtt{[]}:=x.\mathtt{[]}⟦k\mapsto v⟧\dashv\ldots,\ F[\,|x|\mapsto|x|-1\,]}\ \textsf{write-append}
 ```
 
@@ -1585,7 +1585,7 @@ keeps exactly (`Term.keptBy`), so the length of another array, which may be
 $`x`$'s, is not. A builder appending by index (`widths[at] = w` at
 $`\mathit{at}\le|\mathit{widths}|`$) keeps $`\mathit{at}\le|\mathit{widths}|`$
 across `at++`, and at $`\mathit{at}=|\mathit{widths}|`$ the equality.
-Proved: `IndexWrites.boundedWrite_store`, from `elementWrite_post`'s two
+Proved: `IndexWrites.boundedWrite_spine`, from `elementWrite_post`'s two
 cases and `placeAt_length`; `atLengthAtoms_sound`, `write-append` being
 `append_fact_holds` at the change 1.
 
@@ -1614,7 +1614,7 @@ $`q_{\mathit{op}}`$ `IndexNumbers.boundAnswer`; proved:
 `strictEquals_index` and `le_of_relation`, which rest on
 `doubleOrder_denotes`, against `Float.Model`. The write's evidence is
 `boundedWrite` (`Checker.boundedWrites`, `IndexWrites.boundedWriteCheck`;
-proved: `IndexWrites.boundedWrite_safe`, through `setElem_store_safe`), its
+proved: `IndexWrites.boundedWrite_safe`, through `setElem_spine_safe`), its
 output `ordinaryOutput`, its footprint check `elemVarWriteWithin`.
 
 The cases `index-write-guard`, `index-write-guard-loop` and
@@ -1643,17 +1643,17 @@ frame condition states of the locations it may alter.
 
 **Changes.** A change $`\chi=(o,n,s)`$ states whether it may alter a location
 holding an object ($`o`$) or a number ($`n`$), and what it does to one
-holding a store ($`s`$: preserves its contents, preserves its length, grows
+holding a spine ($`s`$: preserves its contents, preserves its length, grows
 it, or neither: $`\mathsf{keep}`$, $`\mathsf{length}`$, $`\mathsf{grow}`$,
-$`\mathsf{any}`$); a location holding any other value may change. A store
-grown holds a store at least as long, at most $`2^{32}-1`$ long where it was.
+$`\mathsf{any}`$); a location holding any other value may change. A spine
+grown holds a spine at least as long, at most $`2^{32}-1`$ long where it was.
 The locations a term reads hold, in turn, an object for each field of its
 path but the last, the last a number for a value term and an object
-otherwise, then, for a length, a store, and for a typed-array length, a
+otherwise, then, for a length, a spine, and for a typed-array length, a
 number. A term is preserved by $`\chi`$ where none of them holds what
 $`\chi`$ may alter; the first location, field $`g`$ of the root's object,
 also where it is known to be none the step writes ($`\mathrm{first}(x,g)`$),
-and a store also where it is the root's own `[]` field and
+and a spine also where it is the root's own `[]` field and
 $`\mathrm{first}(x,[\,])`$ holds (proved). At a call, an element write and
 a field write, $`\mathrm{first}(x,g)`$ holds besides where some clause of
 $`\Gamma(x)`$ states $`g`$ `@stable` and every other states it or is `null`
@@ -1672,8 +1672,8 @@ write):
 and a length term needs besides $`s\in\{\mathsf{keep},\mathsf{length}\}`$
 or, of an empty path, $`\mathrm{first}(x,[\,])`$, a typed-array length
 $`\neg n`$. A fact is preserved where each of its terms is; `length` reads a
-store's length, preserved where $`s\in\{\mathsf{keep},\mathsf{length}\}`$ or
-$`\mathrm{first}(x,[\,])`$, and `bound`, which a longer store preserves,
+spine's length, preserved where $`s\in\{\mathsf{keep},\mathsf{length}\}`$ or
+$`\mathrm{first}(x,[\,])`$, and `bound`, which a longer spine preserves,
 where $`s\ne\mathsf{any}`$ or $`\mathrm{first}(x,[\,])`$ (proved). Where
 $`s=\mathsf{grow}`$, a length term whose path the change preserves is
 **grown**: after the change it denotes at least what it denoted
@@ -1694,7 +1694,7 @@ bounds of lengths (proved). These are the preservation rules:
 - **A field write** $`x.f=y`$: its location held a member of a type the
   receiver's type states for $`f`$, so $`\chi`$ is the classes those types
   admit, by their clauses' shapes (`top` admits each, `source` each but a
-  store), and $`\mathrm{first}(z,g)`$ is
+  spine), and $`\mathrm{first}(z,g)`$ is
   $`\mathrm{apart}(x.f,z.g)\lor\mathrm{sibling}(x.f,z.g)`$, the condition
   that preserves a cell fact. A field of type `number` preserves every length
   and every path's objects; a field of type `string` preserves the numbers
@@ -1704,64 +1704,64 @@ bounds of lengths (proved). These are the preservation rules:
   $`x.f`$: `cursor.segmentIndex = segmentIndex + 1` states the field's new
   value.
 - **An element write below the length**, `setElem-bounded` at a strict bound
-  on a store every position of which holds source values:
+  on a spine every position of which holds source values:
   $`\chi=(\top,\top,\text{length})`$ (proved: the present element's location
-  held no store, and a hole's write gives a store of the same length).
+  held no spine, and a hole's write gives a spine of the same length).
 - **An element write at any index**, at a literal index whose position of
-  the store's tuple contract holds source values or at a slot on a store
+  the spine's tuple contract holds source values or at a slot on a spine
   every position of which does ([element writes](FOOTPRINTS.md#element-writes)):
   $`\chi=(\top,\top,\mathsf{grow})`$ (proved: at a listed index the
   element's location takes the value, and at a hole or past the end, an
-  index below $`2^{32}-1`$, a fresh location is listed in a store no
+  index below $`2^{32}-1`$, a fresh location is listed in a spine no
   shorter). So `out[j] = v` preserves `to <= xs.length` whatever `out` is,
   and no upper bound of a length (positive `element-write-keeps-lengths`;
   negative, run under Node, `invalid-element-write-upper-bound`):
 ```math
-\frac{\Gamma;\Sigma\vdash x[k]=y\qquad x[k]=y\ \text{within}\ \{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{store}{:}\,\mathsf{grow}\}}
+\frac{\Gamma;\Sigma\vdash x[k]=y\qquad x[k]=y\ \text{within}\ \{\mathsf{value}{:}\,\mathsf{any},\ \mathsf{spine}{:}\,\mathsf{grow}\}}
      {\Gamma;\Sigma\vdash x[k]=y\ \text{changes}\ (\top,\top,\mathsf{grow})}\ \textsf{setElem-grow}
 ```
 
 - **A call** at a selected signature $`\mathcal F_\epsilon`$ stating none of
-  `receiverStore`, `receiverOwn` and `receiverGrows` and not leaving the heap
+  `receiverSpine`, `receiverFields` and `receiverGrows` and not leaving the heap
   unchanged: $`\chi`$ is its footprint's: $`o`$ where it states `any` for
   values, $`n`$ where it states `scalar` or `any`, $`s`$ $`\mathsf{keep}`$
-  where it states `keep` for stores (proved). `{value: scalar, store: keep}`,
-  a `Map`'s `set`, alters no location holding an object or a store, so it
+  where it states `keep` for spines (proved). `{value: scalar, spine: keep}`,
+  a `Map`'s `set`, alters no location holding an object or a spine, so it
   preserves every length and every path's objects (positive
   `map-insert-keeps-paths`, pretext's `getGraphemeEnds`);
-  `{value: init, store: keep}` alters none holding a number either, so it
+  `{value: init, spine: keep}` alters none holding a number either, so it
   preserves every fact over values, paths and lengths.
 - **An initializing write** $`x.f=y`$ of a source value, where the knowledge
   at the write states that the field's location holds `null` or `undefined`
   (a cell fact, or a read link from it to a slot a value fact bounds so):
-  within `{value: init, store: keep}` (proved). It is the write of
+  within `{value: init, spine: keep}` (proved). It is the write of
   `cached ??= build()` past its test, `build` keeping the heap, so a
   definition caching its result in a module binding states
-  `{value: init, store: keep}`, pretext's `getEngineProfile` among them, and
+  `{value: init, spine: keep}`, pretext's `getEngineProfile` among them, and
   a caller keeps its facts across the call (positive `lazy-cache-keeps-facts`;
   negative, run under Node, `invalid-lazy-cache-initializer-pops`, an
   initializer popping the flags; a forged control, a cell written whatever it
   holds claimed at `init`, refused at the write). A definition's proposed
   footprint reads a module binding as a read of its cell, changing no
   location, and a field update `s.f++` as the field's write, so a counter
-  kept in a module cache's field is within `{value: any, store: keep}`
+  kept in a module cache's field is within `{value: any, spine: keep}`
   (positive `module-cache-keeps-lengths`; negative, run under Node,
   `invalid-module-cache-keeps-lengths-pop`, a callee popping the counted
   module array):
 
 ```math
 \frac{\Gamma;\Sigma\vdash x.f:=y\qquad \Sigma\vdash x.f\in\{\mathtt{null},\mathtt{undefined}\}\qquad \Gamma(y)\ \text{source}}
-     {x.f:=y\ \text{within}\ \{\mathsf{value}{:}\,\mathsf{init},\ \mathsf{store}{:}\,\mathsf{keep}\}}\ \textsf{write-init}
+     {x.f:=y\ \text{within}\ \{\mathsf{value}{:}\,\mathsf{init},\ \mathsf{spine}{:}\,\mathsf{keep}\}}\ \textsf{write-init}
 ```
 
-- **A call growing its receiver's store**, at a selected signature stating
+- **A call growing its receiver's spine**, at a selected signature stating
   `receiverGrows` (`Array.prototype.push`,
   [native footprints](SOURCE-CONTRACTS.md#native-footprints)):
   $`\chi=(\bot,\bot,\mathsf{grow})`$, and $`\mathrm{first}(z,g)`$ is
   $`\mathrm{apart}(x.\star,z.g)`$ for a receiver slot $`x`$ (proved). So
   `out.push(v)` preserves every fact over values, paths and typed-array
   lengths, `i < other.length` whatever `other` is, and an upper bound of a
-  length only of a store apart from `out`'s; a definition's code states no
+  length only of a spine apart from `out`'s; a definition's code states no
   `receiverGrows`. Its quantified facts are the
   [growth's and the append's](ARITHMETIC.md#quantified-clauses).
 - **A typed array's element write**, a call at a selected signature stating
@@ -1790,9 +1790,9 @@ location, $`y.f`$'s, and tolerates any change of it into $`V`$: that is
 its support, $`\{y.f:\ \mathrm{into}\ V\}`$. A write's change is a pair
 $`(L,C)`$: the locations $`L`$ it may change, each of which comes to hold a
 value of $`C`$, every other old location keeping its value or replacing an
-array store by an array store (`IntoContents`). A store's replacement by a
-store keeps every cell fact: a location holding a store meets $`V`$ only
-where $`V`$ holds every store. By the [tolerant frame
+array spine by an array spine (`IntoContents`). A spine's replacement by a
+spine keeps every cell fact: a location holding a spine meets $`V`$ only
+where $`V`$ holds every spine. By the [tolerant frame
 theorem](REFERENCES.md#the-tolerant-frames-note) the change respects the
 support where $`y.f`$ is known apart from $`L`$, or where
 $`C\subseteq V`$:
@@ -1809,10 +1809,10 @@ Every write the pass checks states its change so:
   `write-sibling` (`writeKeeps_ne`);
 - an element write $`x.\mathtt{[]}:=x.\mathtt{[]}⟦k\mapsto v⟧`$ at any index,
   a checked one and the length among them: $`L=\top`$, $`C=R(v)`$ (at most
-  one element location comes to hold $`v`$, the store location a store; a
+  one element location comes to hold $`v`$, the spine location a spine; a
   fresh element's location is past the heap, `elementWrite_into`);
-- a call growing its receiver's store (`ReceiverGrows`): $`L=\emptyset`$
-  (its store location alone changes, to a store, `grows_into`).
+- a call growing its receiver's spine (`ReceiverGrows`): $`L=\emptyset`$
+  (its spine location alone changes, to a spine, `grows_into`).
 
 A step whose change bounds no contents (a call at a footprint, an
 `elementWrite` change) keeps the cell facts its own rule keeps.
@@ -1882,11 +1882,11 @@ or the change its exact postcondition states keeps it (the note's Entry,
 reads among the normal exit's postconditions of the signature's schema,
 stated once for every arity (`PromiseCalls.callPosts`), and its contract
 derived from those formulas at the call (proved: `statesExtension_grows`
-from the receiver store's frame and extension, `statesAppend_appends`,
+from the receiver spine's frame and extension, `statesAppend_appends`,
 `statesViewGrowth_changes`, `exactWriteOf_exact` from View-Write at a
 format with its element type's precondition facts):
 the views' growth an element write's change `PromiseCalls.writeChanges`,
-the store's extension growth's `PromiseCalls.growChanges` and `growFirst`
+the spine's extension growth's `PromiseCalls.growChanges` and `growFirst`
 (proved: `receiverGrows_changes`, `growFirst_kept`); `appendKept` and
 `linearAppendKept` read the extension and the append, `writeKept`
 View-Write at an element type's format; and a definition's code is checked at its signature's
@@ -1907,7 +1907,7 @@ and applied by `Checker.keepingStable` (proved: `withStable_sound`);
 
 A read `xs[k]` is $`\%\mathsf{ElementAt}\%(\mathit{xs},k)`$
 ([arrays](#arrays)), which has two signatures: any read, an element or
-`undefined`, and a read at an index below the length of the store, the
+`undefined`, and a read at an index below the length of the spine, the
 element itself:
 
 ```math
@@ -1916,12 +1916,12 @@ element itself:
 (\mathtt{readonly}\ T[\,],\ \mathtt{number})\Rightarrow_{\emptyset}^{\mathrm{bound}_<(1,2)} T
 ```
 
-A readable store holds a hole only where reading `undefined` meets its
+A readable spine holds a hole only where reading `undefined` meets its
 element contract, so the element at an index below the length meets $`T`$
 whether it is present or a hole. The read is $`\%\mathsf{ElementAt}\%`$'s at
 a key TypeScript types `number` of arrays, tuples and node lists, and at a
 number literal of arrays where the program asserts the element present
-(`xs[0]!`); an unasserted literal read is the store's own read, which reads
+(`xs[0]!`); an unasserted literal read is the spine's own read, which reads
 the required positions a list type states.
 
 **A precondition on the call's values.** A signature's precondition `pre` is
@@ -2042,7 +2042,7 @@ reaching a point are these:
   `TSCERT_FORCE=head-eliminated`, refused at its head). At other nodes a name
   an edge drops has its facts eliminated (`SinglePass.Store.drop`).
 
-**Implementation.** A store's holes are bounded by `Types.StorePresence`.
+**Implementation.** A spine's holes are bounded by `Types.SpinePresence`.
 The positions are `CallEffects.callEnv`; the meaning is
 `CallEffects.Effect.Requires`, with `Effect.plain`, `Effect.keeps` and
 `preCovers`. `call-requires` is `PromiseCalls.preconditionHolds` (proved:
@@ -2210,17 +2210,17 @@ A handle's meaning is `elaborateDeclaration` in `tools/declaration-graph.mts`.
 
 ### A literal with spreads
 
-A store literal evaluates its parts left to right, and a spread of a ready
-store is replaced by the store's elements once every earlier part is a value,
-`undefined` at a hole (`Step.arrSpread`); the store then takes one fresh
+A spine literal evaluates its parts left to right, and a spread of a ready
+spine is replaced by the spine's elements once every earlier part is a value,
+`undefined` at a hole (`Step.arrSpread`); the spine then takes one fresh
 location per value (`Step.arrAlloc`), where there are at most $`2^{32}-1`$
 values, and otherwise throws a fresh error object, as engines throw a
 `RangeError` (`Step.arrAllocThrow`; `[...a, ...a]` with $`|a|>2^{31}`$), so
-a store's length is within [its contract's bound](POSITIVE-TYPES.md#arrays).
+a spine's length is within [its contract's bound](POSITIVE-TYPES.md#arrays).
 A literal is typed in a family whose exceptions hold every thrown error
 object (`ErrorsIn`), as an operator that throws is. Its length is known only at run time,
 so its contract is one element type $`E`$ at every position: each plain part
-is in $`E`$, each spread a store whose elements are:
+is in $`E`$, each spread a spine whose elements are:
 
 ```math
 \frac{\forall p\in\vec p.\;\Gamma\vdash_G p:E\ \lor\ (p={\ldots}s\land\Gamma\vdash_G s:S\land\mathrm{Spreads}_G(S,E))
@@ -2229,11 +2229,11 @@ is in $`E`$, each spread a store whose elements are:
 ```
 
 $`\pi`$ is any presence mode and $`\rho`$ either readonly flag: every
-position holds a location of its own, so the fresh store meets each
-(`fresh_store_safe`). No existing location is retyped. The parts run in the
+position holds a location of its own, so the fresh spine meets each
+(`fresh_spine_safe`). No existing location is retyped. The parts run in the
 same list context as a call's actuals, which `RestCalls.parts_safe` states
-once for both (`store_parts_safe`, `spread_parts_safe`). A source literal
-`[a, ...xs, b]` spreads the store of the array object `xs`, `xs.[]`; one whose
+once for both (`spine_parts_safe`, `spread_parts_safe`). A source literal
+`[a, ...xs, b]` spreads the spine of the array object `xs`, `xs.[]`; one whose
 spread is followed by an element that runs code copies the spread where it is
 written, `[...xs]`, the one-part instance of the rule, so the later element
 cannot change what the literal holds. A literal without a spread is `arrLit`.
@@ -2277,7 +2277,7 @@ and owning no other key, and `readProto` reads the member there. A method call
 `s.m(a)` reads the member so and invokes it with `s` as its receiver, which
 the member's signature names (`this: string`).
 
-An array's `length` is its store's. A read of `length` where
+An array's `length` is its spine's. A read of `length` where
 $`x`$'s type $`B`$ holds arrays beside other values branches on
 $`\mathsf{isArray}`$, each edge binding $`x`$ refined:
 
@@ -2290,7 +2290,7 @@ x:R\ \text{on the true edge},\quad x:\mathsf{tagSlice}_G(B,\mathsf{isArray},\mat
 with $`R`$ the built-in sparse `readonly unknown[]` and $`r`$ the read above at
 the false edge's type. The true edge is `arraySlice`'s: an array label and a
 record or dictionary owning $`\sigma`$ are built-in arrays
-([array invariant](SEMANTICS.md#the-array-invariant)), whose store `len`
+([array invariant](SEMANTICS.md#the-array-invariant)), whose spine `len`
 reads; on the false edge `tagSlice` drops the array labels. The test reads
 no heap, and each arm is JavaScript's read for the values reaching it.
 
@@ -2321,7 +2321,7 @@ JavaScript throws:
 - `x[key()] += rhs()`: after the key, where the old value is read, so the
   right side is not evaluated; the write tests the operand again, which then
   never throws, to be typed at the refined operand. A compound assignment to
-  an element of an array's store, `e[1] += s`, writes the store as an element
+  an element of an array's spine, `e[1] += s`, writes the spine as an element
   write does.
 
 An optional chain keeps its own test, `x?.[key()]` skipping the key where
@@ -2463,12 +2463,12 @@ value. The certificate premise
 (`ClauseOperatorTypes`) reads $`r`$ off the first clause pair and checks the rest.
 Strict equality answers for any pair with a primitive or an object
 ([its meaning](SEMANTICS.md#operational-language)); the source lowering
-refuses two operands that may both be of neither kind (`unknown`, a store).
+refuses two operands that may both be of neither kind (`unknown`, a spine).
 
 For loose equality, `opResult` gives `bool` when every operand-clause pair
 meets one of three conditions: both are primitive; one is `null` or
 `undefined`; or both are object clauses. Mutable and readonly arrays are
-object records with required store locations. A union must satisfy the condition for every pair, so
+object records with required spine locations. A union must satisfy the condition for every pair, so
 `number[] | null` can compare with `number[] | undefined`, while
 `number[] | number` compared with `number` needs an object-conversion rule.
 The proof `opResult_sound` establishes that each admitted pair computes a
@@ -2557,7 +2557,7 @@ $`\mathsf{symbol}`$ clauses, and $`\mathsf{isFun}`$ answers true on an arrow, a
 callable and a construct-signature clause alike, since `typeof` reports a
 class as a function. $`\mathsf{truthy}`$ answers false on the $`\mathsf{null}`$
 and $`\mathsf{undefined}`$ clauses and true on every object, function, class,
-symbol and store clause; on a Boolean, number, string or bigint singleton it
+symbol and spine clause; on a Boolean, number, string or bigint singleton it
 answers the singleton's `ToBoolean`, and on the broad $`\mathsf{bool}`$,
 $`\mathsf{num}`$, $`\mathsf{str}`$ and $`\mathsf{bigint}`$ clauses it has no fixed
 answer. $`\mathsf{typeofObject}`$, `typeof` answering `"object"`, answers true
@@ -2570,7 +2570,7 @@ $`\kappa`$; false where a key bound excludes $`\kappa`$, as a fresh literal's do
 and nothing on an open record, which may own any other key. It has no answer
 on the other object clauses (an arrow, a callable, a class value) and answers
 false on a primitive one, which owns no key. $`\mathsf{isArray}`$,
-`Array.isArray`, is the same answer for the store key $`\sigma`$ on a record or
+`Array.isArray`, is the same answer for the spine key $`\sigma`$ on a record or
 dictionary clause (`arrayAnswer`), true where the clause says its object owns
 $`\sigma`$, as every array type's does, and false on every other clause but
 $`\mathsf{top}`$:
@@ -2738,7 +2738,7 @@ and effect selection admits a call only directly, by subsumption, with its
 operands evaluated values, so the effect of a dispatched call is not
 established: `ps[ps.length - 1].split("\n")` at `undefined | string`
 (`split-non-empty`) would leave its function's claimed footprint, which keeps
-every existing value and store, unestablished. The refusal is conservative
+every existing value and spine, unestablished. The refusal is conservative
 ([WORK](../WORK.md#effects-of-dispatched-calls)). With the object $`x`$ and the actuals
 $`\vec y`$ already in slots, the source call `x.k(y…)` lowers to one term that
 reads the member and invokes it, dispatched as a member read is
@@ -3151,10 +3151,10 @@ whatever either side gives under a key $`K`$ admits is within $`V`$:
 
 ($`\mathrm{given}_K(c_a,V)`$ is `classWithinA`). For the source it is
 `classWithin`, over the keys a copy takes, less $`\delta`$, and also no array
-store whose elements a copy would give under index keys: a bound excluding the
-store key, or a string index at a type no member of which is a list
-(`noStore`, since the store key `[]` is a string), or, for the class of the
-canonical numeric keys, an array whose store's elements are within $`V`$
+spine whose elements a copy would give under index keys: a bound excluding the
+spine key, or a string index at a type no member of which is a list
+(`noSpine`, since the spine key `[]` is a string), or, for the class of the
+canonical numeric keys, an array whose spine's elements are within $`V`$
 (`classWithinPlain`; `arrayRoute`):
 
 ```math
@@ -3163,10 +3163,10 @@ canonical numeric keys, an array whose store's elements are within $`V`$
      {\mathrm{gives}_K(c_b,V)}\ \textsf{array-source}
 ```
 
-its elements are within $`V`$ (`storeData_typed`), and so are its own fields
+its elements are within $`V`$ (`spineData_typed`), and so are its own fields
 at those keys, by the built-ins' invariant's $`\mathsf{numericOwn}`$
 ([the array invariant](SEMANTICS.md#the-array-invariant), `ObjFacts.numeric`,
-`numeric_of_inv`). An element sits one location further than its store, so
+`numeric_of_inv`). An element sits one location further than its spine, so
 the copied values are known one level below the merge's, which the
 allocation, a step later, needs (`make_fields_rule_below`). For the symbol class, which
 admits no key the model's copy gives, $`c_b`$ says what JavaScript's copy gives
@@ -3244,7 +3244,7 @@ clause's object (`keyed_key`), which is none the model keeps for itself
 (`Unreserved`: $`\mathsf{esc}`$ spells none, a
 number's `ToString` begins with a digit, a minus sign, `NaN` or `Infinity`,
 `numberToString_unreserved`, and a symbol is no string), so the object holds
-no prototype and no store, and the allocation's one location is at $`A`$
+no prototype and no spine, and the allocation's one location is at $`A`$
 (`make_fields_rule`). For heap knowledge it is an allocation, as a merge is
 (`HeapExpressionRules.makeKey_alloc_sound`).
 
@@ -3703,10 +3703,10 @@ Four implementations discharge the tested-slot obligation:
   where the bound is `unknown`, whose values other than null and undefined no
   clause row states.
 - **Array of the built-ins:** a passed `Array.isArray` finds an object owning
-  the store key. A member of a record, dictionary or `source` clause meets
+  the spine key. A member of a record, dictionary or `source` clause meets
   the built-ins' [array invariant](SEMANTICS.md#the-array-invariant), so such a
   member is a member of the built-in `sparse ReadonlyArray<unknown>`: a clause
-  row $`L`$ holding the array shape over a store of `unknown`,
+  row $`L`$ holding the array shape over a spine of `unknown`,
   $`P_{\mathcal B}`$ and $`N_{\mathcal B}`$, the built-ins' `unknown` row holding
   `source` only (`builtinArrayLabel`, `exactUnknown`, `builtinArray_of_record`).
   An indexed dictionary's members own no prototype key, which an array
@@ -3727,7 +3727,7 @@ Four implementations discharge the tested-slot obligation:
       {A\preceq_{\mathsf{isArray}=\mathsf{true}}B}\ \textsf{tag-array}
 ```
 
-  with $`S`$ a readonly store at a type holding `top` or `source`. Each
+  with $`S`$ a readonly spine at a type holding `top` or `source`. Each
   operand of `&&` and `||` sees this refinement where an earlier operand's
   `Array.isArray` holds (`arrayRefine`, `tagRefine`): a label of an array
   stays, and a label each clause of which is of no array, or of a record
@@ -4700,7 +4700,7 @@ literal's allocation does (`PromiseCalls.freshCall_sound`, from
 
 ```math
 \frac{\Gamma\vdash_G \mathrm{invoke}(f,v,\vec u):A\ \text{at a signature}\ \mathcal F_\epsilon
-      \qquad \epsilon.\mathsf{footprint}\le\emptyset\qquad\neg\,\epsilon.\mathsf{receiverStore}\qquad\neg\,\epsilon.\mathsf{receiverOwn}\qquad\epsilon.\mathsf{freshObject}}
+      \qquad \epsilon.\mathsf{footprint}\le\emptyset\qquad\neg\,\epsilon.\mathsf{receiverSpine}\qquad\neg\,\epsilon.\mathsf{receiverFields}\qquad\epsilon.\mathsf{freshObject}}
 {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow \mathrm{invoke}(f,v,\vec u):A\dashv \Pi\;;\;\Sigma,\ \mathrm{apart}(r.\star,\ \mathrm{contractFields}(\Gamma))}\ \textsf{call-fresh}
 ```
 
@@ -4712,7 +4712,7 @@ definition never states `freshObject`: only an intrinsic's declaration does
 
 A call whose evidence selects a signature whose normal exit's frame
 $`\Phi`$ has an entry at its receiver's own value locations
-$`0.\mathsf{own}`$, every other entry included in the empty effect
+$`0.\mathsf{fields}`$, every other entry included in the empty effect
 (`PromiseCalls.ownOnly`, `Footprint.keepsHeap_outside`), its receiver the
 slot $`x`$, keeps each cell fact and read link about a field $`z.g`$ that a
 separation fact keeps apart from every own location of $`x`$, every alias
@@ -4720,7 +4720,7 @@ link and value fact, and the separation:
 
 ```math
 \frac{\Gamma\vdash_G \mathrm{invoke}(f,x,\vec u):A\ \text{at a signature}\ \mathcal F_\epsilon
-      \qquad (0.\mathsf{own},\delta)\in\Phi\qquad \Phi\setminus 0.\mathsf{own}\le\emptyset}
+      \qquad (0.\mathsf{fields},\delta)\in\Phi\qquad \Phi\setminus 0.\mathsf{fields}\le\emptyset}
 {\Gamma;\Pi;\Sigma\vdash_G r\leftarrow \mathrm{invoke}(f,x,\vec u):A\dashv \Pi\;;\;\{a\in\Sigma\mid a\ \text{about}\ z.g\Rightarrow\mathrm{apart}(x.\star,z.g)\}}\ \textsf{call-own}
 ```
 
@@ -4733,7 +4733,7 @@ allow, so a body calling it is within a bound admitting that change
 (`selectedCallWithin`).
 
 The array iterator meets both: `%Iterate%` states `freshObject`, and its
-step, called with the iterator as its receiver, `receiverOwn`
+step, called with the iterator as its receiver, `receiverFields`
 ([native footprints](SOURCE-CONTRACTS.md#native-footprints)). The loop's
 cuts restate the iterator's separation from the fields the records of the
 older slots name, as they restate a cell's
@@ -4893,14 +4893,14 @@ It computes a guaranteed output, not an assumed postcondition:
 | Evidence                             | Guaranteed output in the result-pushed frame                                                                                                                                                                                             |
 | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Pure value or variable copy          | Preserve facts and links; copies establish slot equality and duplicate existing facts. Literals establish their exact result even when their supplied type is wider. Lambda bodies require ordinary typing, without captured heap facts. |
-| Pure test or conditional             | Preserve existing facts and links, shifted past the result slot. Every evaluated subexpression must be syntactically pure (a length `lenOf` of a slot among them: an array's store is read by a field read of its own, then counted); no new result-to-cell link is invented.                                                                       |
+| Pure test or conditional             | Preserve existing facts and links, shifted past the result slot. Every evaluated subexpression must be syntactically pure (a length `lenOf` of a slot among them: an array's spine is read by a field read of its own, then counted); no new result-to-cell link is invented.                                                                       |
 | Inspection (`reading`)               | Reads, tests, arithmetic, `let`, allocations whose initializers are operands and merges (`inspectTerm`), a method callee's read and bound-function allocation among them: check ordinary evidence and scope, and preserve every fact and link, shifted past the result slot. An inspection changes no location and runs no code; it only appends locations (`inspect_step`), and every fact holds of an extended heap (`knowledge_extend`, `inspect_frame`). |
 | Ordinary typed read                  | Preserve facts and record read links to the receiver and witnessed aliases, retaining its plain or callable descriptor; through a key a record may lack, optional links. No prior current-content fact is needed. Its result has the supplied type. |
 | Observed read                        | Preserve facts and links; record the result's primitive predicate and its current read relationship. That set must fit the requested ordinary result type.                                                                               |
 | Sliced read (`slicedRead`)           | A read of a location one of whose facts answers a tag $`\tau`$ with $`q`$ (a nullish exclusion answers its test `false`, a tag atom is its answer): ordinary read evidence at the location's contract $`C`$, whose refinement by that answer is within the requested type (`ObservedSub`, as a branch edge checks a refinement). As an ordinary typed read otherwise. |
 | Linked read (`linkedRead`)           | The rule [read-linked](HOST-FAMILIES.md#linked-reads): a read of a field one of whose read links, from the receiver's slot or a slot an alias link equates with it, names the slot holding what the field holds: the read gives that slot's value, at its type below the claim (`checkUsing`); the output is that slot's copy, with what the knowledge states of paths through the field restated of it, as a typed read's (`linkedOutput`). [Witness edges](#witness-edges) check both the slot's type and its receiver-and-field link when carrying it into a target. |
 | Known immutable value                | Check the requested primitive type against a proved slot fact or the slot's ordinary primitive type.                                                                                                                                     |
-| Allocation                           | Check ordinary creation evidence and scope for either descriptor, preserve old facts, add the fresh bag's initial contents where a checked value slot's are known, and one separation fact: its locations apart from every record slot's contract fields. Closure code is not executed. A merge of two slots is an allocation too: old facts preserved, its locations separated likewise. So is an array literal's store of value slots, whose element locations lie past the heap's end: old facts preserved (`store_alloc_sound`). |
+| Allocation                           | Check ordinary creation evidence and scope for either descriptor, preserve old facts, add the fresh bag's initial contents where a checked value slot's are known, and one separation fact: its locations apart from every record slot's contract fields. Closure code is not executed. A merge of two slots is an allocation too: old facts preserved, its locations separated likewise. So is an array literal's spine of value slots, whose element locations lie past the heap's end: old facts preserved (`spine_alloc_sound`). |
 | Write                                | Check ordinary write evidence (no old-content premise), discard old cell facts but those a separation fact separates from the written location, record new contents for the receiver and its witnessed aliases where the value is a known primitive, or its supported nullish exclusion, and preserve immutable facts and slot equalities. Read links are discarded. |
 | Ordinary expression, including calls | Check ordinary evidence, discard cell facts and read links, preserving immutable facts and slot equalities.                                                                                                                              |
 
@@ -4926,7 +4926,7 @@ part of the input.
 `typedRead_sound`, `slicedRead_sound`, `linkedRead_sound`, `read_sound`, `reading_sound` (its
 postcondition `readFrame`: the heap is kept and the result's source cell
 recorded), `alloc_sound` (with `merge_alloc_sound` and
-`store_alloc_sound`) and `write_sound` prove the read, allocation and write
+`spine_alloc_sound`) and `write_sound` prove the read, allocation and write
 rules above. The read rule is
 
 ```math
@@ -5130,7 +5130,7 @@ what the entry states by where it comes from:
   [invariant](ARITHMETIC.md#loop-invariants);
 - its **candidates** $`C_l`$, at a loop head: the index facts head inference
   proposes there, its bounds, linear, guarded and quantified facts, element
-  regions and store separations.
+  regions and spine separations.
 
 Ordinary reference contracts remain in $`\Gamma_l`$; the calculus always
 assumes environment and heap well-formedness.

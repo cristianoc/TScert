@@ -1,5 +1,5 @@
-// A constant naming the mapped array is no store the callback allocated:
-// `pop` through it changes the mapped array's store, so `map` takes its
+// A constant naming the mapped array is no spine the callback allocated:
+// `pop` through it changes the mapped array's spine, so `map` takes its
 // signature with holes.
 export function drained(xs: string[]): string[] {
   return xs.map((x) => {

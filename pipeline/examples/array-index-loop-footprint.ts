@@ -1,4 +1,4 @@
-// An array walked by index within a stated `{value: any, store: grow}`, the
+// An array walked by index within a stated `{value: any, spine: grow}`, the
 // form type-term.mts's `quantified` and `signatures` use where they read
 // each element with its position (SOURCE-REWRITES.md, "An array's entries
 // iterated by index"). `for (const [i, x] of xs.entries())` steps an

@@ -41,12 +41,12 @@ construct-only, by `new` ($`\kappa`$), collecting a rest or not ($`\varrho`$)
 ([graph code](#graph-code)). Every closure the source creates, a class and a
 callable object included, is graph code; there is no other code. The
 descriptor $`\mathsf{view}(s,t,N)`$ is no code: it makes the object a typed
-array, $`\mathsf{viewAt}(\mathit{fs},i,s,t,N)`$, whose view store is at the
+array, $`\mathsf{viewAt}(\mathit{fs},i,s,t,N)`$, whose view spine is at the
 location $`s`$, whose element format $`t`$ is one of `uint8`, `uint16`, `int32`
-and `float64`, and whose length $`N`$ is fixed. The view store's contents are
-the internal value $`\mathsf{viewStore}(t,\langle c_0,\ldots,c_{N-1}\rangle)`$,
+and `float64`, and whose length $`N`$ is fixed. The view spine's contents are
+the internal value $`\mathsf{viewSpine}(t,\langle c_0,\ldots,c_{N-1}\rangle)`$,
 the element cell of each index in order, with no hole; its tag tells a view
-store from an array's store $`\mathsf{arr}(\ldots)`$ by the contents alone. An argument list is not a value: which lists a rest
+spine from an array's spine $`\mathsf{arr}(\ldots)`$ by the contents alone. An argument list is not a value: which lists a rest
 parameter's type admits is a separate contract on lists of values
 ([argument packs](POSITIVE-TYPES.md#argument-packs)).
 `make c a` evaluates its initializer `a`, then appends that value and one
@@ -75,8 +75,8 @@ $`\mathsf{bigintEq}(i)`$, each false on every other kind) and $`\mathsf{truthy}`
 ```
 
 (`numberTruthy`: a number is falsy where it equals zero or is not equal to
-itself); every object, function, class, symbol and store is truthy. $`\mathsf{isArray}`$ holds of a
-plain object owning the array store key $`\sigma`$, which no source property
+itself); every object, function, class, symbol and spine is truthy. $`\mathsf{isArray}`$ holds of a
+plain object owning the array spine key $`\sigma`$, which no source property
 names, so it holds of exactly the arrays, as `Array.isArray` does of
 JavaScript's Array exotic objects:
 $`\mathsf{isArray}(\mathsf{obj}(\mathit{fs},\mathsf{absent}))\iff\sigma\in\mathrm{dom}\mathit{fs}`$,
@@ -128,7 +128,7 @@ body does.
 
 **Allocation from parts.** $`\mathsf{merge}_\delta(a,b)`$ (`Tm.merge`)
 evaluates $`a`$, then $`b`$ (`mergeC1`, `mergeC2`), then reads, in the heap as it
-is, the fields $`a`$'s object owns but the array store $`\sigma`$, and the own
+is, the fields $`a`$'s object owns but the array spine $`\sigma`$, and the own
 enumerable data properties $`b`$ has, less the keys in $`\delta`$, and steps to
 the allocation of both, $`b`$'s over $`a`$'s:
 
@@ -193,14 +193,14 @@ coercions the calculus does not have:
 | anything else | none | none |
 
 Strict equality $`\equiv`$ (`===`, `Arith.eq`; `strictEquals`) answers a Boolean
-except on two stores:
+except on two spines:
 
 ```math
 v_1\equiv v_2=\begin{cases}
 \mathsf{sameValue}(v_1,v_2) & v_1\ \text{or}\ v_2\ \text{a primitive}\\
 i_1=i_2 & v_k=\mathsf{objAt}(\mathit{fs}_k,c_k,i_k)\\
-\mathsf{false} & \text{an object and a store}\\
-\text{none} & \text{two stores}
+\mathsf{false} & \text{an object and a spine}\\
+\text{none} & \text{two spines}
 \end{cases}
 ```
 
@@ -274,7 +274,7 @@ review.
 any other double with its sign clear, a biased exponent $`e`$ neither 0 nor
 all ones and a fraction $`m`$ has the value $`(m+2^{52})\cdot 2^{e-1075}`$, an
 index where that value is an integer below $`2^{32}-1`$; a negative,
-subnormal, infinite or NaN double is none. A store's length is the double
+subnormal, infinite or NaN double is none. A spine's length is the double
 `bitsOfNat` encodes: below $`2^{53}`$, where every natural is a double, its
 exact bits (`encodeBits`), above, the nearest double. A 32-bit operator's
 result is `int32Bits` of its integer, `bitsOfNat` of its magnitude with the
@@ -314,7 +314,7 @@ no safe integer, so no sum fact states it (a witness of
 `SafeIntegers.lean`, as Node computes it).
 
 **Strings.** A string owns its `length` and its index properties, and
-`lenOf` and `elemAt` read them as they read a store's:
+`lenOf` and `elemAt` read them as they read a spine's:
 
 ```math
 \frac{|\mathit{units}(s)|\le 2^{53}-1}{h,\ \mathsf{lenOf}\;\mathsf{str}(s)\ \to\ h,\ \mathsf{num}(|\mathit{units}(s)|)}\ (\texttt{lenStr})
@@ -388,7 +388,7 @@ on any other key is stuck:
      {h,\ \mathsf{indexAt}\;(\mathsf{obj}(\mathit{fs},c))\;v\ \to\ h,\ u}
 ```
 
-The model keeps keys for itself: the array store's `[]`, and names in double
+The model keeps keys for itself: the array spine's `[]`, and names in double
 brackets, the prototype's `[[proto]]`, a function's `[[code]]`, a host
 object's `[[host]]` and a class's
 prototype object's own key. JavaScript's string key $`s`$ is represented
@@ -555,9 +555,9 @@ safe run calls sloppy code with objects only.
 where $`o`$ is the invoked object, and code without a rest enters at once,
 $`\mathrm{entry}^o_{\mathsf{false}}(r,\vec a)=\mathsf{goto}(E,K,s,[r,\mathrm{pad}_m(\vec a),\vec c,o])`$,
 and code with one first allocates the actuals past its $`m`$ parameters as a
-fresh store, found in slot 0, below the receiver,
+fresh spine, found in slot 0, below the receiver,
 $`\mathrm{entry}^o_{\mathsf{true}}(r,\vec a)=\mathsf{let}\ x=[\vec a_{\ge m}]\ \mathsf{in}\ \mathsf{goto}(E,K,s,[x,r,\mathrm{pad}_m(\vec a),\vec c,o])`$
-(`CallArguments.graphEntry`). Padding never enters the store. Code with
+(`CallArguments.graphEntry`). Padding never enters the spine. Code with
 $`\kappa=\mathsf{construct}`$ has no call step: a plain call of a class value
 throws. Construction runs construct code without a rest
 (`CallArguments.construction`), where padding omitted actuals constructs the
@@ -673,7 +673,7 @@ All the callable uses build on this equation:
   (`schemeSemWithArgs`) universally quantifies the conjunction of instantiated
   `callsT` and `restsT`; its shape condition is `Invocable`, even when no
   assignment satisfies the bounds. `T[]` denotes invariant array storage under
-  the same assignment, and each invocation allocates its rest store with that
+  the same assignment, and each invocation allocates its rest spine with that
   contract.
 - Contract weakening follows `PromiseWith.weaken`: admit fewer argument lists
   and weaken the result. Fixed-to-variadic coverage is not generally valid
@@ -810,9 +810,9 @@ ordered arguments separate from invocation.
 `Prepare` evaluates the callee, then the receiver, then processes arguments from
 left to right.
 `Step.callArg` requires earlier arguments to be values. A `spread` is not a
-value: `Step.callSpread` consumes its ready store before any later argument
+value: `Step.callSpread` consumes its ready spine before any later argument
 can step, replacing holes with `undefined`; `new` reads one alike
-(`Step.constructSpread`), and a store literal (`Step.arrSpread`). Splicing can change list length.
+(`Step.constructSpread`), and a spine literal (`Step.arrSpread`). Splicing can change list length.
 `call_step_iff` proves every call step to be preparation or dispatch, and
 `invoke_deterministic` that dispatch of a frame yields one term. A frame
 whose operands are values dispatches to the invocation code its callee holds
@@ -822,9 +822,9 @@ Code uses `parameters n args` to pad missing positions with `undefined` and
 discard extra positions after their effects have occurred; entering graph
 code places the receiver in slot 0 and these values after it, without
 allocating (`graphEntry`). Code collecting a rest pads its fixed positions in
-the same way, while `args.drop n` becomes a fresh rest store in slot 0, below
-the receiver. Padding never enters the rest store. Dispatch itself leaves the
-heap unchanged; the yielded term allocates the store with the ordinary store
+the same way, while `args.drop n` becomes a fresh rest spine in slot 0, below
+the receiver. Padding never enters the rest spine. Dispatch itself leaves the
+heap unchanged; the yielded term allocates the spine with the ordinary spine
 step, and the code wraps it into an array with the prototype it captured, as
 an array literal is allocated. These operational distinctions are independent
 of the contracts callers use.
@@ -843,7 +843,7 @@ front of any pack it admits, as an element rest does. There is no forwarding wra
 
 `.apply` is a source lowering onto these steps, not a new preparation: it saves
 the target, the receiver and the list, then reads the list's length and each
-index in order with the ordinary store operations, then invokes the target with
+index in order with the ordinary spine operations, then invokes the target with
 those elements. It never iterates the list, so it shares the prepared actual
 list with ordinary calls but not the spread's operation.
 
@@ -899,8 +899,8 @@ E ::= [\,]\ a\mid f\,[\,]\mid\mathsf{let}([\,],b)\mid\mathsf{read}([\,])\mid v\m
 
 Here $`J`$ is the [source-value universe](SOURCE-MODEL.md#source-value-boundary).
 `raises_sourceVal` proves that every exception belongs to it. Throwing an
-internal store is stuck; a safe external callable therefore cannot expose a
-store as an exception.
+internal spine is stuck; a safe external callable therefore cannot expose a
+spine as an exception.
 
 A throwing term is not a value, does not step, and throws one value
 (`raises_not_val`, `raises_no_step`, `Raises_det`), so evaluation stays
@@ -979,10 +979,10 @@ in [POSITIVE-TYPES.md](POSITIVE-TYPES.md).
 
 ## The array invariant
 
-`Array.isArray` holds of an object owning the store key $`\sigma`$
+`Array.isArray` holds of an object owning the spine key $`\sigma`$
 ([operational language](#operational-language)); what makes such an object an
 array of `Array.prototype` is an **invariant** of every object the program
-receives or allocates: it holds a possibly sparse store and the built-in prototype, and
+receives or allocates: it holds a possibly sparse spine and the built-in prototype, and
 owns no key that prototype provides. The model states it in the meaning of
 types, not in the heap premise: the tested value is in a slot, not in the heap,
 and it came from an input, a read, a call's result or an allocation, each of
@@ -996,35 +996,35 @@ and keep `JSON.stringify` from calling a hook of an array):
 ```math
 \mathsf{Arr}_{\mathcal B}{}_n(W,v)\iff\forall\mathit{flds}.\;
 v=\mathsf{obj}(\mathit{flds},\mathsf{absent})\land\sigma\in\mathrm{dom}(\mathit{flds})\Rightarrow
-\mathsf{view}(\sigma{:}\mathsf{Store}(⟦U_{\mathcal B}⟧),\mathsf{proto}{:}⟦P_{\mathcal B}⟧)_n(W,v)
+\mathsf{view}(\sigma{:}\mathsf{Spine}(⟦U_{\mathcal B}⟧),\mathsf{proto}{:}⟦P_{\mathcal B}⟧)_n(W,v)
 \land\mathsf{own}(\mathsf{outside}\,N_{\mathcal B})_n(W,v)
 \land\mathsf{numericOwn}_n(W,\mathit{flds})
 ```
 
-with $`\mathsf{Store}(U)`$ the possibly sparse stores of values of $`U`$
-(`builtinStoreT`; `PositiveGraphs.arrayInvariant`), and
+with $`\mathsf{Spine}(U)`$ the possibly sparse spines of values of $`U`$
+(`builtinSpineT`; `PositiveGraphs.arrayInvariant`), and
 $`\mathsf{numericOwn}`$ stating `Array<T>`'s declared `[n: number]: T` of
-every array type at once, with $`c_\sigma`$ the contract of the store's
+every array type at once, with $`c_\sigma`$ the contract of the spine's
 location and $`c_l`$ that of an own field's:
 
 ```math
 \mathsf{numericOwn}_n(W,\mathit{flds})\iff
 \forall\kappa\in\mathsf{numeric}.\;\mathit{flds}(\kappa)=l\Rightarrow
 \forall j{+}1<n.\;\forall A.\;
-c_{\sigma,j+1}\subseteq\mathsf{Store}(A)_{j+1}\Rightarrow c_{l,j}\subseteq A_j .
+c_{\sigma,j+1}\subseteq\mathsf{Spine}(A)_{j+1}\Rightarrow c_{l,j}\subseteq A_j .
 ```
 
-A store's contract at level $`j+1`$ states its elements' contracts at $`j`$,
+A spine's contract at level $`j+1`$ states its elements' contracts at $`j`$,
 so the field holds at $`j`$ what an element does: an array of a type whose
-store holds $`T`$ holds $`T`$ under its own canonical numeric keys too, below
-the world's level (`numericOwn`, `numeric_of_inv`). An array whose store's
-contract admits every store of `T[]` and whose numeric fields hold $`T`$
+spine holds $`T`$ holds $`T`$ under its own canonical numeric keys too, below
+the world's level (`numericOwn`, `numeric_of_inv`). An array whose spine's
+contract admits every spine of `T[]` and whose numeric fields hold $`T`$
 meets it, by the definition above, so an input with `a[-1] = 1` at
-`number[]` is one. An allocation owning the store key
+`number[]` is one. An allocation owning the spine key
 owns no field at such a key (`allocBuiltins`). Every record, dictionary
 and `source` clause of a row means its members meeting it; in a graph
 stating no built-ins, its members owning $`\sigma`$ hold a list there
-(`storeListT`, an array's store being one whatever the built-ins)
+(`spineListT`, an array's spine being one whatever the built-ins)
 (`Clause.carriesInvariant`, `builtinInvariant`, `rowSem`;
 [POSITIVE-TYPES](POSITIVE-TYPES.md#the-built-in-array-invariant)), so the
 built-ins' `unknown` is
@@ -1035,7 +1035,7 @@ built-ins' `unknown` is
 
 (`builtinExc`), the graph's exception family ([throws](#computations-and-recursive-types)).
 The invariant reads the world only: the contract of $`\sigma`$'s location
-implies a store of values of `unknown` in every world and heap to come, and
+implies a spine of values of `unknown` in every world and heap to come, and
 the contract of $`\mathsf{proto}`$'s implies `ArrayProto`; $`U_{\mathcal B}`$
 and $`P_{\mathcal B}`$ are read below the level, through those contracts, so
 the recursion through `unknown`'s own meaning is guarded. A world grows only
@@ -1047,7 +1047,7 @@ fixed at its allocation, so only allocation creates a value the invariant is
 about:
 
 - an allocation from named fields (`HasTyUsing.alloc`) owning $`\sigma`$ is typed only
-  as a built-in array: its store field at a store type whose positions
+  as a built-in array: its spine field at a spine type whose positions
   are of JavaScript values, each of which is a value of `unknown`
   (`sourceTy_exc`, `unknownTy_sound`), its prototype field at
   $`P_{\mathcal B}`$, no name among $`N_{\mathcal B}`$ (`allocBuiltins`,
@@ -1056,8 +1056,8 @@ about:
 - a literal allocated at a dictionary names neither $`\sigma`$ nor the prototype
   key (`HasTyUsing.allocDict`);
 - a merge, the copy a spread or a key-adding write is, allocates the
-  accumulator's fields but its store and the source's copied keys and index
-  keys, never $`\sigma`$ (`ObjectMerge.mergeParts_store`);
+  accumulator's fields but its spine and the source's copied keys and index
+  keys, never $`\sigma`$ (`ObjectMerge.mergeParts_spine`);
 - closures, bound functions and class values carry code, and `isArray` is false
   of them;
 - a write stores a value at an existing location and adds no key; the heap is
@@ -1074,7 +1074,7 @@ binds a value of it (`admitsAll_sound`).
 **The premise.** The safety theorem (`mode8Accepted_sound`) quantifies over
 environments meeting the unit's inputs at their types (`EnvOk`), so a value
 the unit receives at a record, a dictionary or `unknown` meets the invariant:
-an object owning an array's store is a possibly sparse array of `unknown`
+an object owning an array's spine is a possibly sparse array of `unknown`
 values holding `Array.prototype` (meeting `ArrayProto`) and owning none of
 its keys; and a function the unit receives throws only such values. That is
 an assumption about the host and the unit's callers, stated in the

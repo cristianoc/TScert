@@ -1,5 +1,5 @@
 // A function declaration popping the array it is passed: its signature
-// states no footprint keeping array stores, so the `map` callback calling it
+// states no footprint keeping array spines, so the `map` callback calling it
 // with the mapped array is not within one, `map` takes its unrestricted
 // overload, and the result may hold holes.
 function drop(xs: string[], t: string): string {

@@ -19,8 +19,8 @@ const proposed = status("gap", "proposed"), observed = status("neutral", "observ
 const open = status("gap", "open");
 
 
-/* Heap pictures: inline SVG in the shared colours. An array store is a row
- * of cells (STYLE.md, "Roles": a value is `--neutral`); a store a step may
+/* Heap pictures: inline SVG in the shared colours. An array spine is a row
+ * of cells (STYLE.md, "Roles": a value is `--neutral`); a spine a step may
  * change freely sits in a dashed `--neg` region; a cell a growing step may
  * add is dashed `--ok`; a fact kept is `--ok`, a fact lost `--neg`. Labels
  * are in the code typeface at 26 px, captions in the text typeface. */
@@ -31,7 +31,7 @@ const label = (x: number, y: number, runs: [string, string][], o: { sans?: boole
   runs.map(([t, c]) => `<tspan fill="${c}">${esc(t)}</tspan>`).join("") + `</text>`;
 const ink = (x: number, y: number, t: string, o: { sans?: boolean; size?: number; anchor?: string; bold?: boolean; fill?: string } = {}): string =>
   label(x, y, [[t, o.fill ?? K.ink]], o);
-/** A store's cells from x: `n` cells, of which those from `added` on are a
+/** A spine's cells from x: `n` cells, of which those from `added` on are a
  * growth's dashed new cells, each `fill` coloured. */
 const cells = (x: number, y: number, n: number, o: { added?: number; fill?: string; w?: number; h?: number } = {}): string => {
   const w = o.w ?? 52, h = o.h ?? 44;
@@ -52,7 +52,7 @@ const box = (x: number, y: number, w: number, h: number, o: { fill?: string; str
 const panels = (h: number, a: [string, string], b: [string, string]): string =>
   `<svg width="1664" height="${h}" viewBox="0 0 1664 ${h}" xmlns="http://www.w3.org/2000/svg">` +
   [a, b].map(([head, body], i) => box(i * 852, 0, 812, h, { fill: K.surface, r: 16 }) + ink(i * 852 + 32, 46, head, { sans: true, size: 28, bold: true }) + body).join("") + `</svg>`;
-/** A record holding a `@stable` field that points to a store. */
+/** A record holding a `@stable` field that points to a spine. */
 const record = (ox: number, y: number, name: string, field: string): string =>
   box(ox + 32, y, 340, 96, { fill: K["neutral-bg"], stroke: K.neutral }) + ink(ox + 50, y + 38, name, { bold: true }) +
   label(ox + 50, y + 78, [[field, K.ink], [" @stable", K.muted]]);
@@ -152,7 +152,7 @@ const slides: Slide[] = [
         [t("Write `xs[k]` below the length"), "the length"],
         [t("Write `xs[k]` at any index"), "lower bounds of every length (slide 12)"],
         [t("`out.push(v)`"), t("lower bounds on `out.length`; the lengths of arrays older than a literal `out`")],
-        ["Call", t("the facts whose locations the callee’s frame keeps; at `stores: \"grow\"`, lower bounds of lengths")],
+        ["Call", t("the facts whose locations the callee’s frame keeps; at `spines: \"grow\"`, lower bounds of lengths")],
         ["Any step", t("a typed array’s length: fixed for its life (" + "trusted" + ")")],
       ], [38, 62]) +
       para("These rules concern normal returns; a throw carries a frame only where one is stated for it.", 24),
@@ -188,7 +188,7 @@ const slides: Slide[] = [
   }),
   slide("one-array-heap", {
     label: "Frames naming one array · the heap", note: t("the frame of `readRuns` on slide 10 · the rules ") + proved,
-    title: "The region changes freely; every other store is kept", gap: 22,
+    title: "The region changes freely; every other spine is kept", gap: 22,
     body: panels(400, ["At the call readRuns(runs)", (() => {
       const o = 0;
       return ink(o + 32, 126, "flags") + cells(o + 140, 94, 5) + ink(o + 420, 126, "length 5", { fill: K.muted }) +
@@ -202,25 +202,25 @@ const slides: Slide[] = [
         box(o + 464, 228, 188, 84, { stroke: K.neg, dash: true, r: 8 }) + ink(o + 464, 216, "spliced: shorter", { fill: K.neg, size: 24 }) +
         label(o + 32, 366, [["i < flags.length", K.ok], ["  kept", K.ok]]);
     })()]) +
-      para(t("A store is an array’s elements and length. The frame names the store `runs.openBrackets` holds at the call; `@stable` fixes which store that is. `flags !== runs.openBrackets` places `flags` outside the region, and the frame keeps every store outside it, so `i < flags.length` holds after the call."), 26),
+      para(t("A spine is an array’s elements and length. The frame names the spine `runs.openBrackets` holds at the call; `@stable` fixes which spine that is. `flags !== runs.openBrackets` places `flags` outside the region, and the frame keeps every spine outside it, so `i < flags.length` holds after the call."), 26),
   }),
   slide("growth", {
     label: "Growth", note: t("the cases `stated-grow-keeps-lengths`, `invalid-stated-grow-upper-bound` · the rules ") + proved + t(" · native contracts ") + trusted,
     title: "Growth keeps the lower bounds of lengths", gap: 22,
     body: columns([
-      code(["function add(xs: number[]): Modifies<", "    { values: \"any\"; stores: \"grow\" }, void> {", "  xs.push(1);", "}", "", "/** @requires safeInteger(i) && 0 <= i", " *    && i < xs.length */", "export function get(xs: number[], i: number): number {", "  add(xs);", "  return xs[i]!;      // verified", "}"]),
+      code(["function add(xs: number[]): Modifies<", "    { values: \"any\"; spines: \"grow\" }, void> {", "  xs.push(1);", "}", "", "/** @requires safeInteger(i) && 0 <= i", " *    && i < xs.length */", "export function get(xs: number[], i: number): number {", "  add(xs);", "  return xs[i]!;      // verified", "}"]),
       bullets([
-        point("Growth", t("`stores: \"grow\"` states that every array keeps each element present and gets no shorter, within the maximum length 2³² − 1.")),
+        point("Growth", t("`spines: \"grow\"` states that every array keeps each element present and gets no shorter, within the maximum length 2³² − 1.")),
         point("Lower bound", t("`i < xs.length`, read i − xs.length ≤ −1: a fact whose length terms all have coefficients ≤ 0. Growth keeps it.")),
         point("Upper bound", t("`xs.length <= ys.length` is dropped: `add(xs)` may lengthen `xs` (slide 13).")),
-        point("Where it applies", t("a call stated `stores: \"grow\"`; `push`; an element write `out[j] = v` at any index.")),
-        point("Natives", t("a native contract at `store: grow` (`push`, `sort`, a typed array’s `fill`) also states that its arrays get no shorter: ") + trusted + t(", argued from ECMA-262.")),
+        point("Where it applies", t("a call stated `spines: \"grow\"`; `push`; an element write `out[j] = v` at any index.")),
+        point("Natives", t("a native contract at `spine: grow` (`push`, `sort`, a typed array’s `fill`) also states that its arrays get no shorter: ") + trusted + t(", argued from ECMA-262.")),
       ], 26),
     ], [52, 48]),
   }),
   slide("growth-heap", {
-    label: "Growth · the heap", note: t("`add(xs)` of slide 12, stated `stores: \"grow\"` · the rules ") + proved,
-    title: "A store that grows keeps lower bounds and loses upper ones", gap: 22,
+    label: "Growth · the heap", note: t("`add(xs)` of slide 12, stated `spines: \"grow\"` · the rules ") + proved,
+    title: "A spine that grows keeps lower bounds and loses upper ones", gap: 22,
     body: panels(440, ["Lower bound: kept", (() => {
       const o = 0, mark = (y: number): string => `<rect x="${o + 92 + 2 * 52}" y="${y - 48}" width="52" height="44" fill="${K["principled-bg"]}" stroke="${K.neutral}" stroke-width="2"/>` + ink(o + 222, y + 30, "xs[i]", { anchor: "middle" });
       return ink(o + 32, 90, "before", { sans: true, fill: K.muted }) + ink(o + 32, 140, "xs") + cells(o + 92, 108, 4) + ink(o + 316, 140, "length 4", { fill: K.muted }) + mark(156) +
@@ -234,13 +234,13 @@ const slides: Slide[] = [
         `<line x1="${end}" y1="270" x2="${end}" y2="384" stroke="${K.neg}" stroke-width="3" stroke-dasharray="8 5"/>` + ink(o + 420, 336, "5 <= 4 fails", { fill: K.neg }) +
         label(o + 32, 412, [["xs.length <= ys.length", K.neg], ["  lost", K.neg]]);
     })()]) +
-      para(t("A growing step leaves the store no shorter: `i` stays below the length, and the length may pass any bound above it."), 26),
+      para(t("A growing step leaves the spine no shorter: `i` stays below the length, and the length may pass any bound above it."), 26),
   }),
   slide("separation", {
     label: "Separation across calls", note: t("after the case `stated-region-nullable-apart` · the rules ") + proved + t(" · in pretext ") + observed,
     title: "A guarded separation keeps a length across a regional call", gap: 22,
     body: columns([
-      code(["type Runs = { /** @stable */ readonly open: number[] };", "function step(runs: Runs | null, out: number[]):", "    Modifies<{ values: \"any\"; stores: \"grow\";", "      \"runs.open[*]\": \"any\" }, void> {", "  if (runs !== null) runs.open.pop(); out.push(1);", "}", "/** @requires safeInteger(to) && 0 <= to && to <= xs.length */", "export function f(xs: number[], out: number[],", "    to: number, use: boolean): number {", "  const runs: Runs = { open: [] };", "  const chosen = use ? runs : null;", "  let s = 0;", "  /** @invariant safeInteger(i) && safeInteger(to) && 0 <= i", "   *    && to <= xs.length", "   *  @invariant chosen === null || xs !== chosen.open */", "  for (let i = 0; i < to; i++) {", "    step(chosen, out); s += xs[i]!; }", "  return s;", "}"]),
+      code(["type Runs = { /** @stable */ readonly open: number[] };", "function step(runs: Runs | null, out: number[]):", "    Modifies<{ values: \"any\"; spines: \"grow\";", "      \"runs.open[*]\": \"any\" }, void> {", "  if (runs !== null) runs.open.pop(); out.push(1);", "}", "/** @requires safeInteger(to) && 0 <= to && to <= xs.length */", "export function f(xs: number[], out: number[],", "    to: number, use: boolean): number {", "  const runs: Runs = { open: [] };", "  const chosen = use ? runs : null;", "  let s = 0;", "  /** @invariant safeInteger(i) && safeInteger(to) && 0 <= i", "   *    && to <= xs.length", "   *  @invariant chosen === null || xs !== chosen.open */", "  for (let i = 0; i < to; i++) {", "    step(chosen, out); s += xs[i]!; }", "  return s;", "}"]),
       bullets([
         point("Regional growth", t("`step` may change the array `runs.open` holds, its region, and may grow every other array: a lower bound of the length of an array apart from the region survives the call.")),
         point("Guarded separation", t("`chosen === null || xs !== chosen.open`: where `chosen` is `null` the region selects no array, elsewhere `xs` is another array, so `to <= xs.length` survives `step(chosen, out)`. The producer proposes separations through copies, conditional declarations and joins of control flow; the checker checks each on every edge.")),
@@ -264,11 +264,11 @@ const slides: Slide[] = [
       const o = 852;
       return ink(o + 32, 122, "xs") + cells(o + 92, 90, 5) + cells(o + 352, 90, 1, { added: 0 }) + ink(o + 430, 122, "outside: at most grows", { fill: K.ok, size: 24 }) +
         record(o, 186, "runs", "open") + arrow(o + 372, 258, o + 478, 258) + cells(o + 480, 236, 3) + cells(o + 636, 236, 1, { added: 0 }) +
-        ink(o + 32, 340, "chosen = null") + ink(o + 300, 340, "the region selects no store", { fill: K.muted, size: 24 }) +
+        ink(o + 32, 340, "chosen = null") + ink(o + 300, 340, "the region selects no spine", { fill: K.muted, size: 24 }) +
         label(o + 32, 404, [["chosen === null", K.ok], [" || xs !== chosen.open", K.muted]]) +
         label(o + 32, 446, [["to <= xs.length", K.ok], ["  kept", K.ok]]);
     })()]) +
-      para(t("The guarded separation holds in both cases by a different disjunct, and in both `xs` is a store the frame lets only grow."), 26),
+      para(t("The guarded separation holds in both cases by a different disjunct, and in both `xs` is a spine the frame lets only grow."), 26),
   }),
   slide("trust", {
     label: "Soundness and trust", note: t("a conditional safety theorem ") + proved + t(" · explicit assumptions ") + trusted,
@@ -282,7 +282,7 @@ const slides: Slide[] = [
       bullets([
         point("What acceptance states", t("the program meets each statement entry’s required facts (its bindings’ types and contents, a written `@invariant`) and every precondition, postcondition, stated frame and expression claim. A fact the producer supplies at an entry is a candidate, outside what acceptance states.")),
         point("Trusted computing base", "source and annotation translation; correspondence with JavaScript; Lean’s kernel, compiler and executed checker."),
-        point("Environment assumptions", t("native contracts, a native stated at `store: grow` leaving every array no shorter; standard-object behavior; external callers satisfying exported contracts; typed arrays backed by fixed-size buffers that are never detached.")),
+        point("Environment assumptions", t("native contracts, a native stated at `spine: grow` leaving every array no shorter; standard-object behavior; external callers satisfying exported contracts; typed arrays backed by fixed-size buffers that are never detached.")),
       ], 24),
     ], [50, 50]),
   }),
@@ -314,9 +314,9 @@ const slides: Slide[] = [
     body: columns([
       code(["type Visitor = (i: number) => void;", "", "function walk(n: number, onItem?: Visitor): number {", "  let s = 0;", "  for (let i = 0; i < n; i++) {", "    s += i;", "    onItem?.(i);", "  }", "  return s;", "}", "", "/** @requires safeInteger(i) && 0 <= i", " *    && i < xs.length */", "export function get(xs: number[], i: number): number {", "  const n = walk(3);   // no visitor passed", "  return xs[i]! + n;   // refused", "}"]),
       bullets([
-        point("One frame per function", t("`walk`’s frame is inferred once, for every call. An unknown callback may change any array, so the frame is `stores: \"any\"`.")),
+        point("One frame per function", t("`walk`’s frame is inferred once, for every call. An unknown callback may change any array, so the frame is `spines: \"any\"`.")),
         point("The caller pays", t("`get` is refused although `walk(3)` runs no callback: the call drops `i < xs.length`.")),
-        point("A frame on the callback’s type", t("with `Visitor` stated `stores: \"grow\"`, `get` verifies; a public function handing its own caller’s callback to `walk` is then refused.")),
+        point("A frame on the callback’s type", t("with `Visitor` stated `spines: \"grow\"`, `get` verifies; a public function handing its own caller’s callback to `walk` is then refused.")),
         point("A run-time check", t("`if (i >= xs.length) throw …` after the call verifies. It never fires; it stands in for the proof.")),
         point("In pretext", "one such check stands before a call in a loop that also calls a line walker without its optional visitor."),
       ], 26),

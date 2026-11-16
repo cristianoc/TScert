@@ -1,6 +1,6 @@
 // The `length` of a union of arrays, of different element types, presence,
 // writability and length, compared in branch tests and returned: each member
-// is one array contract, whose `length` is its store's, a number, read where
+// is one array contract, whose `length` is its spine's, a number, read where
 // the test runs, after a write that grows or shrinks the array.
 export function longer(
   xs: readonly number[] | string[],

@@ -374,7 +374,7 @@ Language Specification* as of this writing). Sections relied on by name:
 - [ArrayCreate](https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-arraycreate)
   and [ArraySetLength](https://tc39.es/ecma262/multipage/ordinary-and-exotic-objects-behaviours.html#sec-arraysetlength),
   a length above $`2^{32}-1`$ throwing a `RangeError`, for
-  [the length bound of a store](POSITIVE-TYPES.md#arrays);
+  [the length bound of a spine](POSITIVE-TYPES.md#arrays);
 - [Array.prototype.splice](https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.splice),
   including argument counts, removed holes and inserted values, for the
   [native splice contract](SOURCE-CONTRACTS.md#prototype-contracts);

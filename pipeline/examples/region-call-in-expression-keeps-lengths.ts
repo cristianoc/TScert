@@ -1,7 +1,7 @@
-// A call of a function stating a store region keeps the lengths of arrays
+// A call of a function stating a spine region keeps the lengths of arrays
 // apart from the region wherever it stands (`region-call-keep`,
 // `region-call-grow`): as a test's conjunct and as an assignment's right
-// side. An element write of an array of arrays leaves every store no
+// side. An element write of an array of arrays leaves every spine no
 // shorter, as one of an array of numbers does.
 type Runs = { /** @stable */ readonly open: number[] };
 

@@ -1,4 +1,4 @@
-// A function stating {value: any, store: grow} that serializes a record
+// A function stating {value: any, spine: grow} that serializes a record
 // with `JSON.stringify` and a replacer: a value of the record's type may
 // hold a `toJSON`, which serializing calls and which may remove an element
 // of an array. A record is no JSON value, so the call is refused at its

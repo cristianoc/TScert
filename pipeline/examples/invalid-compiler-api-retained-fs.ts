@@ -1,6 +1,6 @@
 // A request of the sync API may call its instance's retained `fs` callbacks
 // (T6), so a callback popping an array the program holds makes a later
-// request shrink it, beyond the requests' statement `{value: any, store:
+// request shrink it, beyond the requests' statement `{value: any, spine:
 // grow}` (COMPILER-API.md, "The sync API"). A verified program makes no
 // instance: the gate refuses `new API`, a constructor no view lists (run
 // under Node: the request pops).

@@ -27,7 +27,7 @@ there):
 **The written form.** A [stated effect](../SOURCE-ELABORATION.md#stated-effects)
 (cited) is a signature's result `Within<F, T>`, `Within` the declaration of
 [`tools/resolvable.d.ts`](../../tools/resolvable.d.ts), with
-$`F=\{\mathsf{value}{:}\,v,\ \mathsf{store}{:}\,s[,\ \mathsf{onThrow}]\}`$:
+$`F=\{\mathsf{value}{:}\,v,\ \mathsf{spine}{:}\,s[,\ \mathsf{onThrow}]\}`$:
 the closed footprint `Closed.Holds`, which is `Post` of the two class
 regions (`ClosedFootprints.lean`). One function reads it for every reader
 (`statedResult`, `tools/type-term.mts`); a program definition stating it is
@@ -51,12 +51,12 @@ carrier.
 
 | Effect | Lean | Its source |
 | --- | --- | --- |
-| the receiver's store excepted, the receiver's own locations | `receiverStore`, `receiverOwn` | native rows (`array-prototype.mts`, `intrinsics.mts`) |
-| an append to the receiver's store | `receiverGrows`: `ReceiverGrows`, `ReceiverAppends` | `push`'s row |
+| the receiver's spine excepted, the receiver's own locations | `receiverSpine`, `receiverFields` | native rows (`array-prototype.mts`, `intrinsics.mts`) |
+| an append to the receiver's spine | `receiverGrows`: `ReceiverGrows`, `ReceiverAppends` | `push`'s row |
 | a typed array's element write, exact or not | `elementWrite` | typed-array rows (`intrinsics.mts`, `library-types.mts`) |
 | a fresh result | `fresh`, `freshObject` | native rows, `compiler-api.mts`'s request entries |
 | a module cell's write | a class bound, `value: init` or wider | the producer, inside the closed footprint |
-| stores read through an argument's fields | `ArgumentStoreRegionsWithin` (chain1) | the producer, on chain1 |
+| spines read through an argument's fields | `ArgumentSpineRegionsWithin` (chain1) | the producer, on chain1 |
 
 A returned closure's footprint (`resultFootprint` of `FunctionClaims`) is
 written as the returned function type's own `Modifies`. `ensures`,
@@ -73,15 +73,15 @@ location.
 
 | Region | Locations at $`(\rho,h_0)`$ | |
 | --- | --- | --- |
-| `field x k`, `own x`, `elems x`, `cls c`, `all` | as in `Footprints.lean` | existing |
+| `field x k`, `fields x`, `cells x`, `cls c`, `all` | as in `Footprints.lean` | existing |
 | `path x p k` | the own field $`k`$ of the object $`p`$ reads from $`x`$ | `field x k` at $`p=[]`$ |
-| `pathOwn x p` | that object's own locations | `own x` at $`p=[]`$ |
-| `pathElems x p` | the element cells its store lists | `elems x` at $`p=[]`$ |
+| `pathFields x p` | that object's own locations | `fields x` at $`p=[]`$ |
+| `pathCells x p` | the element cells its spine lists | `cells x` at $`p=[]`$ |
 | `cell b` | the cell of module binding $`b`$ the function captures | |
 | `inCls r c` | the locations of $`r`$ whose contents in $`h_0`$ are of class $`c`$ | |
 
 The two classes partition the allocated locations: a location holding an
-array store is of class `store`, any other of class `value` (`Cls.has`,
+array spine is of class `spine`, any other of class `value` (`Cls.has`,
 `Closed.at`).
 
 **The frame.** An effect states a footprint $`\Phi_E`$. A normal return
@@ -98,8 +98,8 @@ the entry one. A location at or above $`|h_0|`$ is unconstrained.
 (`Effect.post`); `Effect.excPost` carries none of them onto a throw. Each
 relates the result or the changed locations to the entry heap and the
 actuals. `fresh` and `freshObject` constrain the result alone;
-`ReceiverGrows` keeps every old location but the receiver's store and
-relates that store to its old contents, and `ElementWrite.Holds` bounds the
+`ReceiverGrows` keeps every old location but the receiver's spine and
+relates that spine to its old contents, and `ElementWrite.Holds` bounds the
 heap by `ElementWrite.changes` and, where exact, fixes the written cell:
 these two combine a frame with relational information no entry's change
 states. §2 states where each is written.
@@ -113,8 +113,8 @@ literal written in place, one map from what may change to how much:
 ```math
 \begin{aligned}
 P &::= \texttt{\{}\ (e\texttt{;})^{*}\ \texttt{\}}\\
-e &::= \texttt{values:}\ c \mid \texttt{stores:}\ c \mid \texttt{"}L\texttt{":}\ m \mid \texttt{onThrow: true}\\
-m &::= c \mid \texttt{\{}\ [\texttt{values:}\ c\texttt{;}]\ [\texttt{stores:}\ c\texttt{;}]\ \texttt{\}}\\
+e &::= \texttt{values:}\ c \mid \texttt{spines:}\ c \mid \texttt{"}L\texttt{":}\ m \mid \texttt{onThrow: true}\\
+m &::= c \mid \texttt{\{}\ [\texttt{values:}\ c\texttt{;}]\ [\texttt{spines:}\ c\texttt{;}]\ \texttt{\}}\\
 L &::= \texttt{cell(}b\texttt{)} \mid R\texttt{.}f \mid R\texttt{[*]} \mid R\texttt{.*}\qquad R ::= x \mid \texttt{this} \mid R\texttt{.}f\\
 c &::= \texttt{"keep"} \mid \texttt{"init"} \mid \texttt{"scalar"} \mid \texttt{"grow"} \mid \texttt{"any"}
 \end{aligned}
@@ -123,15 +123,15 @@ c &::= \texttt{"keep"} \mid \texttt{"init"} \mid \texttt{"scalar"} \mid \texttt{
 Each entry adds its regions at its change; a location no entry covers is
 unchanged, so `Modifies<{}, T>` changes nothing. The class keys and the
 flag are written unquoted, a location key quoted. `values: c` is
-`cls value` at $`c`$ and `spines: c` is `cls store` at $`c`$. A location
+`cls value` at $`c`$ and `spines: c` is `cls spine` at $`c`$. A location
 key adds its regions: `cell(b)` is `cell b`, $`R.f`$ is `path`, $`R[*]`$ is
-`path store` with `pathElems`, $`R.*`$ is `pathOwn`. A location key at a
-class map, `"L": { values: c_v; stores: c_s }`, is `inCls L value` at
-$`c_v`$ and `inCls L store` at $`c_s`$, an omitted class unchanged; since
+`path spine` with `pathCells`, $`R.*`$ is `pathFields`. A location key at a
+class map, `"L": { values: c_v; spines: c_s }`, is `inCls L value` at
+$`c_v`$ and `inCls L spine` at $`c_s`$, an omitted class unchanged; since
 the classes partition the locations, `"L": c` is
 `"L": { values: c; spines: c }`. On a value `grow` is `scalar`
-(`Change.onValue`), and on a store `init` and `scalar` are `keep`
-(`Change.onStore`). `onThrow: true` makes the frame hold on a throw too.
+(`Change.onValue`), and on a spine `init` and `scalar` are `keep`
+(`Change.onSpine`). `onThrow: true` makes the frame hold on a throw too.
 A statement whose class keys are both `"any"` lets every location change
 whatever its other entries, adds no guarantee, and is refused, as `Within`'s
 top footprint is.
@@ -182,21 +182,21 @@ entry contents at the return. Beyond the set, `Modifies` states four parts:
 - **A change per entry.** Inside the set a location may take any contents;
   the change $`c`$ of each entry is a two-state relation each covered
   location meets, monotone below `any` (`Change.Holds`): `init` replaces
-  an initially nullish value by a value that is no store, `scalar` an
-  initially non-object, non-store value by a value that is no store (each
-  may introduce an object reference), `grow` keeps a store's dense prefix
+  an initially nullish value by a value that is no spine, `scalar` an
+  initially non-object, non-spine value by a value that is no spine (each
+  may introduce an object reference), `grow` keeps a spine's dense prefix
   and lists only its old cells or fresh ones. It follows the same
   preorder-based preservation pattern as F*'s monotonic references
   ([Ahman et al. 2018](../REFERENCES.md#ahman-et-al-2018)). It belongs in
   the frame because `stable` reads it: a fact whose support tolerates
   `grow` (a length's lower bound) is kept across a call that grows the
-  store it reads, where a plain modifies set, listing that store, would
+  spine it reads, where a plain modifies set, listing that spine, would
   drop it.
 - **Classes.** `values` and `spines` name every location of a class, so a
   frame bounds locations no path reaches.
 - **Normal return by default.** The frame bounds a normal return; a throw
   is unbounded unless the statement writes `onThrow: true`.
-- **Fresh results.** `Fresh<T>` states the result's store allocated during
+- **Fresh results.** `Fresh<T>` states the result's spine allocated during
   the call (§2.1).
 
 **Promises beside the frame.** `Fresh<T>` is the written form of `fresh`.
@@ -260,7 +260,7 @@ $`R.f`$ excepted; a path through a field no type resolves is refused.
 ### 2.1 `Fresh<T>`
 
 A signature's result `Fresh<T>` states that a normal return's value holds
-an array store allocated during this invocation: `FreshAt` of the
+an array spine allocated during this invocation: `FreshAt` of the
 invocation's entry heap length (`ClosedFootprints.lean`), the effect's
 `fresh`. It is a promise of the call, read against its entry heap, rather
 than a property the value keeps. $`T`$ is an array type; it composes with a
@@ -291,15 +291,15 @@ Each translation is the same relation on heaps.
 
 | Existing effect | Frame | Evidence |
 | --- | --- | --- |
-| `Within<{value: v; store: s}, T>`, `Closed` $`\{v,s\}`$ | `Modifies<{values: v; stores: s}, T>`: `cls value: v`, `cls store: s` | `Closed.Holds` is this `Post` (definition) |
-| `receiverStore` with $`\{v,s\}`$ | the two, `path 0 [] store: any` | `HoldsOn` off the store, unconstrained there |
-| `receiverOwn` with $`\{v,s\}`$, whether or not `receiverStore` is set | the two, `"this.*": { values: "any" }` (`inCls (own 0) value: any`) | on an own location the join is `ownChange` $`=\{\mathsf{any},s\}`$, since $`\{v,s\}\le`$ `ownChange` (`Effect.le_ownChange`; proved) |
-| chain1 region $`(i,p)`$ with $`\{v,s\}`$ | the two, `path i p store: any` | `ArgumentStoreRegionsWithin` off the store |
+| `Within<{value: v; spine: s}, T>`, `Closed` $`\{v,s\}`$ | `Modifies<{values: v; spines: s}, T>`: `cls value: v`, `cls spine: s` | `Closed.Holds` is this `Post` (definition) |
+| `receiverSpine` with $`\{v,s\}`$ | the two, `path 0 [] spine: any` | `HoldsOn` off the spine, unconstrained there |
+| `receiverFields` with $`\{v,s\}`$, whether or not `receiverSpine` is set | the two, `"this.*": { values: "any" }` (`inCls (own 0) value: any`) | on an own location the join is `ownChange` $`=\{\mathsf{any},s\}`$, since $`\{v,s\}\le`$ `ownChange` (`Effect.le_ownChange`; proved) |
+| chain1 region $`(i,p)`$ with $`\{v,s\}`$ | the two, `path i p spine: any` | `ArgumentSpineRegionsWithin` off the spine |
 
-`Effect.within` tests `receiverOwn` first, so with both flags set the
-receiver's store, one of its own locations (`storeOf` $`r\in`$ `ownOf` $`r`$),
-is bounded at $`s`$; translating `receiverStore` too would add
-`path 0 [] store: any` and weaken it. `path x p store` alone is a region of
+`Effect.within` tests `receiverFields` first, so with both flags set the
+receiver's spine, one of its own locations (`spineOf` $`r\in`$ `ownOf` $`r`$),
+is bounded at $`s`$; translating `receiverSpine` too would add
+`path 0 [] spine: any` and weaken it. `path x p spine` alone is a region of
 these translations and has no written key: `R[*]` adds its cells.
 
 **One authoritative frame.** An effect holds one frame, read at the call's
@@ -311,16 +311,16 @@ excPost e r args h h' :=  e.onThrow → within e r args h h'
 ```
 
 `Effect.post` is `within` followed by the relational promises. A closed
-bound, a receiver mode and an argument's store region are constructors of
+bound, a receiver mode and an argument's spine region are constructors of
 the frame, each a translation into it (the table above); no other field
 bounds a call. Where a conservative check (a closed coverage test, a
 native row's comparison) needs a closed bound, it computes one from the
-frame, $`\{v,\mathsf{any}\}`$ for a frame with store regions and
+frame, $`\{v,\mathsf{any}\}`$ for a frame with spine regions and
 $`\{v,s\}`$ otherwise, with the proved weakening from `within` to that
 bound's `Closed.HoldsOn` on every location the receiver's entries leave
-uncovered; the approximation is never read as the effect. A store region of the
+uncovered; the approximation is never read as the effect. A spine region of the
 positions $`P`$, an exception to the closed bound $`\{v,s\}`$, is the frame
-`cls value: v`, `cls store: s`, `path i [] store: any` for $`i\in P`$, and
+`cls value: v`, `cls spine: s`, `path i [] spine: any` for $`i\in P`$, and
 `StoresApartWithin` $`\{v,s\}\,P`$ is equivalent to its `Post`. Since adding
 an entry adds permitted locations, a frame with more regions is weaker:
 coverage (O8) checks the target's regions cover the source's, never the
@@ -370,7 +370,7 @@ The wire (`stated` of the Fragment, `CallEffect`) and the Lean names
 **The enclosing function's obligation.** A body certified at a frame
 $`\Phi`$ meets $`\mathrm{Post}\,\Phi`$ at its entry heap $`h_0`$ and entry
 environment. A call inside it meets its callee's frame at the call's own
-entry heap $`h`$ and actuals: `R.f[*]` names the store and cells $`R.f`$
+entry heap $`h`$ and actuals: `R.f[*]` names the spine and cells $`R.f`$
 reads at that call's entry. The body composes the two with `Post.compose`,
 which transports the call's regions to $`h_0`$ (`transport`,
 `transport_sound`); a region it cannot transport becomes `all`, or is
@@ -385,9 +385,9 @@ enclosing entry through checked provenance (`Footprints.rebase`, an
 actual's entry path and a path suffix's agreement), is included in the
 stated frame, which is the accumulated bound and so an invariant through
 loops (`Post.compose_at`; stated in
-[argument-path store regions](../FOOTPRINTS.md#argument-path-store-regions)).
+[argument-path spine regions](../FOOTPRINTS.md#argument-path-spine-regions)).
 The checker extracts each step's frame only: a call's signature frame, push's
-`ReceiverGrows` frame, an element write's `StoreWrite` frame, a step within
+`ReceiverGrows` frame, an element write's `SpineWrite` frame, a step within
 the closed bound. Slot copies and stable reads are provenance steps.
 
 **Transport at a call.**
@@ -402,9 +402,9 @@ the closed bound. Slot copies and stable reads are provenance steps.
    $`h_0`$: `PathEvidenceOk.kept`, a successful read at $`h`$ reads the same
    at $`h_0`$. For a path through `@stable` fields this agreement is proved
    from the entry world (below); otherwise the path transports to `all`.
-3. *`[*]`.* The store and its cells transport separately. The store's
+3. *`[*]`.* The spine and its cells transport separately. The spine's
    location follows from the path's agreement. The cells need cell
-   provenance, `CellsFrom h₀ h v` (every cell the store lists at $`h`$ was
+   provenance, `CellsFrom h₀ h v` (every cell the spine lists at $`h`$ was
    listed at $`h_0`$ or lies at or above $`|h_0|`$), or the value-class
    fallback: where the array's contract makes every element a source value,
    each cell is of class `value` (`pathElemsValue`) and transports to
@@ -413,16 +413,16 @@ the closed bound. Slot copies and stable reads are provenance steps.
 4. *Freshness.* A region of a location allocated at or above $`|h_0|`$
    transports to nothing, and freshness is discharged at the location the
    region actually selects: a fresh wrapper can hold an old array, and the
-   wrapper's freshness says nothing of that array's store. Two facts
+   wrapper's freshness says nothing of that array's spine. Two facts
    differ in what they cover. Transport's `FreshOk` (`Footprints.lean`)
-   holds of every own location of a slot (`field`, `own`, the empty path).
-   Store freshness, `FreshIfStore` (`FootprintRebase.lean`), holds of the
-   store location alone, where the value has one, and makes only the
-   value's store region rebase to nothing (`RebaseEvidence.fresh`), never
-   its own, element-cell or path regions. A regional body tracks store
+   holds of every own location of a slot (`field`, `fields`, the empty path).
+   Spine freshness, `FreshIfSpine` (`FootprintRebase.lean`), holds of the
+   spine location alone, where the value has one, and makes only the
+   value's spine region rebase to nothing (`RebaseEvidence.fresh`), never
+   its own, element-cell or path regions. A regional body tracks spine
    freshness of slots and of a cell's contents
    ([fresh array storage](../FOOTPRINTS.md#fresh-array-storage)); a path's
-   store is fresh only by its own evidence.
+   spine is fresh only by its own evidence.
 
 The remaining regions:
 
@@ -438,7 +438,7 @@ The remaining regions:
   by [module composition](../../WORK.md#module-composition). Without that
   agreement, from another module, or where $`b`$ has no resolution,
   `cell b` at change $`c`$ widens to `cls value: c`: a cell holds a source
-  value of its contract, never a store, so its location is of class
+  value of its contract, never a spine, so its location is of class
   `value`. It never becomes an empty region.
 - *A callback call*: the frame its type states, at its actuals. A closure
   is checked at a type whose frame covers its body's, each captured root
@@ -454,7 +454,7 @@ The remaining regions:
 **Allocation before a call.** Lifting a call's post from the heap after an
 allocation to the heap before it (`Exits.allocStable_of`) holds for a frame
 whose regions are read from values that exist before the allocation: own
-locations and an empty path's store are heap-independent, and a class of
+locations and an empty path's spine are heap-independent, and a class of
 an old location is unchanged by allocation. For a frame reading a nonempty
 path, prefix allocation alone does not suffice: an actual may be a fresh
 object whose field holds an old array. The lifting lemma for general frames
@@ -507,30 +507,30 @@ instantiated frame + checked separation
 
 The callee's frame at the call's actuals, with the caller's separation
 knowledge $`K`$, decides which observations survive: each index term reads
-a store at a root and path, and the pipeline obtains a store bound **per
+a spine at a root and path, and the pipeline obtains a spine bound **per
 slot**, the local observation bound `first s "[]"` of `keptIndicesWith`
-(`FirstKept`); the global `Changes.store` of a closed footprint is the
-constant instance. For a regional frame a slot's store location is kept
-where $`K`$ separates it from the store every region selects at the call
+(`FirstKept`); the global `Changes.spine` of a closed footprint is the
+constant instance. For a regional frame a slot's spine location is kept
+where $`K`$ separates it from the spine every region selects at the call
 (`regionFirst`, over each entry of the frame: its closed bound keeps array
-stores, or it selects a store $`K`$ separates from the slot's;
+spines, or it selects a spine $`K`$ separates from the slot's;
 `regionFirst_kept`). $`K`$ is the caller's knowledge, and separation
 enters it from checked sources only, as its index facts: a region fact
-`apart` (`RegionsApart`; `region-alloc`, `region-write`), and a store
-separation `x.p !== y.q` (`IndexFact.storeApart`, read as `StoreApart`;
-[store separation](../ARITHMETIC.md#store-separation)), stated by a
+`apart` (`RegionsApart`; `region-alloc`, `region-write`), and a spine
+separation `x.p !== y.q` (`IndexFact.spineApart`, read as `SpineApart`;
+[spine separation](../ARITHMETIC.md#spine-separation)), stated by a
 precondition, derived through read links from a region fact or a
-separation of slots (`store-apart-links`, `storeFollows_sound`), restated
-through read links where a slot leaves the knowledge (`restateStores`), and
+separation of slots (`store-apart-links`, `spineFollows_sound`), restated
+through read links where a slot leaves the knowledge (`restateSpines`), and
 kept across a call where each path is at most one `@stable` field
 (`stableFirst`, `stableFirst_frame`). No separation table is kept beside
 the knowledge. A length observation is kept where its path is preserved and
-its store's change is `keep` (or an independently proved
+its spine's change is `keep` (or an independently proved
 length-preserving promise) for an equality, or `grow` for the lower-bound
 uses the coefficient-sensitive monotonicity rules admit. Length growth is
-not density: the arithmetic `StoreChange.grow` alone keeps no dense prefix
+not density: the arithmetic `SpineChange.grow` alone keeps no dense prefix
 (the footprint's `Change.grow` does), and quantified
-element facts keep their store and cell obligations. `effectKept` consumes
+element facts keep their spine and cell obligations. `effectKept` consumes
 the instantiated frame's guarantee, and `FirstKept`, views and the native
 relational promises (`receiverGrows`, `elementWrite`) supply observation
 evidence to the same pipeline; there is no second caller-preservation
@@ -544,22 +544,22 @@ function f(): number { const xs = [1]; shrink(xs); return xs[0]!; }
 ```
 
 `xs` is fresh relative to `f`'s entry, so `shrink`'s change is within any
-frame of `f`, but the fact $`0<|xs|`$, support `field xs store: grow`
+frame of `f`, but the fact $`0<|xs|`$, support `field xs spine: grow`
 (`grow` keeps a dense prefix and so a lower bound, never an exact length),
-is not kept: it meets `path 0 [] store: any` and no separation refutes it.
-Separation is the only refutation: a store separation or a region fact of
+is not kept: it meets `path 0 [] spine: any` and no separation refutes it.
+Separation is the only refutation: a spine separation or a region fact of
 $`K`$.
 
 **Natives.** A native's frame is its own steps' footprint joined with the
 frame of every callback and conversion it may invoke. The native rows hold
-on normal return only. `array_native_post` gives `[store x: grow, cls value: any]`
+on normal return only. `array_native_post` gives `[spine x: grow, cls value: any]`
 and `array_native_post_any` the same at `any` (proved): an element write
 may change any value-class location. On normal return `push`'s
 `ReceiverGrows` with `ReceiverAppends` gives the narrower
-`path 0 [] store: grow` (conjectured; a lemma of O6), where its footprint
+`path 0 [] spine: grow` (conjectured; a lemma of O6), where its footprint
 row is the global $`\{\mathsf{any},\mathsf{grow}\}`$. A row stating
 `"this[*]"` needs a theorem from a narrower audited premise (the native
-changes only its store and the cells its store lists in $`h_0`$, and
+changes only its spine and the cells its spine lists in $`h_0`$, and
 allocates the rest) with `Arr.Within`: `{ values: "any"; spines: "grow" }`
 for `push`, `unshift` and `sort`'s writeback (`unshift` overwrites present
 cells), `"any"` for `pop`, `shift`, `reverse` and `splice`.
@@ -575,10 +575,10 @@ operations stable for a structure is effect-free for its facts by `stable`
 at its type's frame.
 
 - **Separation preconditions**: atoms of the clause language, `apart(P, Q)`
-  (stores and cells, `RegionsApart`; conjectured) and `P !== Q` of two
-  arrays (stores, `StoreApart`, the standard disequality: an array's
-  identity is its store location; proved:
-  [store separation](../ARITHMETIC.md#store-separation)); the first gives
+  (spines and cells, `RegionsApart`; conjectured) and `P !== Q` of two
+  arrays (spines, `SpineApart`, the standard disequality: an array's
+  identity is its spine location; proved:
+  [spine separation](../ARITHMETIC.md#spine-separation)); the first gives
   the second. Each enters `Effect.pre` and the unit's entry knowledge; a
   call establishes it from its knowledge (`call-requires`,
   `store-apart-links`). `P !== Q` is refused where either side may be a
@@ -616,16 +616,16 @@ export function caller(flags: number[]): number {
 }
 ```
 
-`splice` changes its receiver's store, inside `path 0 [openBrackets] store`,
+`splice` changes its receiver's spine, inside `path 0 [openBrackets] spine`,
 and value-class locations (`array_native_post_any`; its frame rebased by the
 step-frame rule, `callStep_ok`; proved), on normal return. `measure`
 keeps $`i<|\mathit{flags}|`$ across the call (`region-call-keep`): the
-frame's closed bound keeps stores, and the precondition's store separation
-places `flags`'s store outside the path's region, kept along the loop
+frame's closed bound keeps spines, and the precondition's spine separation
+places `flags`'s spine outside the path's region, kept along the loop
 since `openBrackets` is stable (`stable-first`); `values: "any"` changes no
-store. `caller` establishes the separation: the literal's `[]` is apart from
+spine. `caller` establishes the separation: the literal's `[]` is apart from
 `flags` (`region-alloc`), read through the field's link
-(`store-apart-links`, `restateStores`). Proved: the case
+(`store-apart-links`, `restateSpines`). Proved: the case
 `stated-argument-path` verifies all four units, and `stated-local-runs`
 the loop with the record allocated in the looping function.
 `measure(xs, { openBrackets: xs })` with `xs = [1, 2, 3]` reads `xs[1]` as
@@ -640,7 +640,7 @@ entry, then splices it, pushes onto it and writes its elements at computed
 indices; writes `runs.read` and `runs.scripts`; and calls
 `getScriptFactsAt`, whose `getScriptFacts` evaluates
 `scriptClasses ??= unpackClasses(…)` and calls `getClass`. With the
-step frames of [the step-frame rule](../FOOTPRINTS.md#argument-path-store-regions)
+step frames of [the step-frame rule](../FOOTPRINTS.md#argument-path-spine-regions)
 its frame on normal return is
 
 ```ts
@@ -649,8 +649,8 @@ Modifies<{ values: "any"; "runs.openBrackets[*]": "any" }, void>
 
 joined with `unpackClasses`'s and `getClass`'s frames. `push` and the
 element writes need no global `spines: "grow"`: `push`'s step frame is the
-one `ReceiverGrows` gives (its receiver's store alone), an element write's
-is value-class locations and the written array's store (`StoreWrite`), and
+one `ReceiverGrows` gives (its receiver's spine alone), an element write's
+is value-class locations and the written array's spine (`SpineWrite`), and
 both rebase into `"runs.openBrackets[*]"` through the destructured slot's
 provenance. `values: "any"` covers `"cell(scriptClasses)": "init"` and the
 two field writes, which then add no precision. None of the native rows states `onThrow`, so the frame holds
@@ -664,21 +664,21 @@ frame, the imports' at their certified or stated signatures. At
 `measureAnalysis` allocates the runs:
 `const scriptRuns: ScriptRuns = { read: 0, scripts: ANY_SCRIPT, openBrackets: [] }`.
 The literal `[]` is apart from every older array slot (`region-alloc`;
-cited), so the record's allocation gives the store separation
+cited), so the record's allocation gives the spine separation
 `scriptRuns.openBrackets !== flags`, and alike of `starts` and `texts`
-(`store-apart-links`, `restateStores`;
-[store separation](../ARITHMETIC.md#store-separation); proved, as
+(`store-apart-links`, `restateSpines`;
+[spine separation](../ARITHMETIC.md#spine-separation); proved, as
 `stated-local-runs` shows). A loop fact on
 those arrays' lengths, support at `grow`, is then kept: `spines: "grow"`
-tolerates it, `values: "any"` misses stores, the path region is apart, the
+tolerates it, `values: "any"` misses spines, the path region is apart, the
 cells are value-class. The stable link from `scriptRuns` to its array is
 `/** @stable */` on `openBrackets`, since the loop's other calls state
 `values: "any"`, which covers the field
-([argument-path store regions](../FOOTPRINTS.md#argument-path-store-regions);
+([argument-path spine regions](../FOOTPRINTS.md#argument-path-spine-regions);
 cited). It is the one source change this separation needs.
 
 The loop's facts are kept only if the complete joined summaries of the
-helpers it calls change the protected stores (those of `flags`, `starts`
+helpers it calls change the protected spines (those of `flags`, `starts`
 and `texts`) at `grow` or less. Read from the code at `tscert-bounds`
 (conjectured), each helper's frame meets it:
 
@@ -701,7 +701,7 @@ and `texts`) at `grow` or less. Read from the code at `tscert-bounds`
 Unverified: the producer's summaries of these bodies, Lean-checked, and
 the native rows these frames rest on (`Map.prototype.set` with its table
 among the map's own locations, §6.4; `RegExp.prototype.test`; typed
-arrays' element writes, `fill` and `subarray`), each changing no store
+arrays' element writes, `fill` and `subarray`), each changing no spine
 beyond `grow`.
 
 Observed (TScert a22e0866, pretext `tscert-bounds` aaa11c50 with the three
@@ -715,9 +715,9 @@ allocates). With `getScriptFactsAt` read at that frame, `readScriptRuns`
 verifies, and `spaceSharesScriptRun` is refused next at `hasProperty`,
 which writes the cached `Uint16Array` `bmpProperties` holds.
 `getUnspacedGraphemes` at `(unspaced ??= []).push(g)`, a push onto an
-array allocated in the body, whose store the step-frame rule rebases to
+array allocated in the body, whose spine the step-frame rule rebases to
 `all`: a selected location's freshness is not tracked by the regional
-check. With store freshness of slots and cells
+check. With spine freshness of slots and cells
 ([fresh array storage](../FOOTPRINTS.md#fresh-array-storage)) and a local
 written inside an expression held in a slot
 ([slot or cell](../SOURCE-ELABORATION.md#slot-or-cell)), observed on the
@@ -751,13 +751,13 @@ places the map's table among the receiver's own locations.
 
 ### 6.5 Footprints ([FOOTPRINTS.md](../FOOTPRINTS.md))
 
-- **Value and store classes**: `values` and `spines`.
+- **Value and spine classes**: `values` and `spines`.
 - **Fresh array storage**: freshness discharges the enclosing obligation
   (§4; `FreshOk`, `Closed.HoldsOn.below_fresh`; cited); a result's
   freshness is `Fresh<T>` (§2.1).
 - **Element writes**: `o[k] = v` is within
   `"o[*]": { values: "any"; spines: "grow" }` (`spines: "keep"` at a
-  required position) once its write is proved confined to the store's
+  required position) once its write is proved confined to the spine's
   cells; without that proof it is the closed
   `{ values: "any"; spines: "grow" }`
   ([element writes](../FOOTPRINTS.md#element-writes); cited).
@@ -782,37 +782,37 @@ replayed and executed after a body-only edit of an imported module
 Paths relative to `lean/Verification/`; "chain1" names a file of branch
 `chain1-argument-regions`.
 
-- **O1 Regions and composition.** `Region.path`, `pathOwn`, `pathElems`,
+- **O1 Regions and composition.** `Region.path`, `pathFields`, `pathCells`,
   `cell`, `inCls`: `mem`, `Region.sub`, and `transport` with §4's premises
   and the earlier-`any` disjunct of `transport_sound`; `Post.compose` over
   them, the only composition. A call's frame instantiated at its actuals
   and renamed to the caller's slots; stable-path agreement as
-  `PathEvidenceOk.kept`; `[*]`'s store and cells transported separately
+  `PathEvidenceOk.kept`; `[*]`'s spine and cells transported separately
   (`CellsFrom` or `pathElemsValue`); freshness at the selected location.
   Prefix lifting for general frames requires checked transport, proved for
   `graphRest_invoke`'s rest pack and on the exceptional exit;
   `Exits.allocStable_of` covers frames whose regions read the heap at the
-  location alone (`Region.atLocation`). Chain1's `ArgumentStoreRegionsWithin` and its `.trans`,
+  location alone (`Region.atLocation`). Chain1's `ArgumentSpineRegionsWithin` and its `.trans`,
   `.nested`, `.receiver`, `frame_length` become lemmas of `Post` at
-  `path _ _ store`.
+  `path _ _ spine`.
 - **O2 Effect.** One authoritative frame; `within e r args` as `Post` of
   it at `callEnv r args`, `excPost` with the same actuals; closed bounds,
-  receiver modes and argument store regions as its constructors. §3's
-  translations proved equal to `within` as defined, `receiverOwn` first, and
-  `StoresApartWithin` equal to its class entries plus argument-store
+  receiver modes and argument spine regions as its constructors. §3's
+  translations proved equal to `within` as defined, `receiverFields` first, and
+  `StoresApartWithin` equal to its class entries plus argument-spine
   entries. Normal and exceptional application, padding, variadics,
   coverage, subtyping, `meet` and certification read it; the closed
   approximation for conservative checks has a proved weakening.
 - **O3 Cell provenance.** A relation `CellsFrom h₀ h x p` and its proof for
   primitive writes, native steps and composition, on both exits; the
-  `elems` fallback where it is missing.
+  `cells` fallback where it is missing.
 - **O4 Module cells.** Module-cell agreement as an invariant of the module
   environment, within module composition; the widening to `cls value`
   where it is not established.
 - **O5 Callee check.** Chain1's provenance table and graph bound
   (`ArgumentPathTracking.lean`, `ArgumentRegionGraph.lean`,
   `ArgumentRegionCertificates.lean`) with node cases for a field write at
-  a `path`/`pathOwn` entry, an element write at `pathElems`, a cell write,
+  a `path`/`pathFields` entry, an element write at `pathCells`, a cell write,
   a nested call and a callback call, on both exits. The entry world
   ($`n\le N`$, `WExt (trunc n … W₀) W`) threaded through the simulation
   beside `BoundState`; entry-path contract checking of each declared
@@ -823,17 +823,17 @@ Paths relative to `lean/Verification/`; "chain1" names a file of branch
   `ReceiverGrows` and `ReceiverAppends`; the confinement theorem of §4
   from the narrower premise and `Arr.Within`.
 - **O7 Separation and preservation.** The knowledge's separation facts
-  for the new regions: the region fact `apart` and the store separation
-  `IndexFact.storeApart` (`PathStoresApart`, `StoreApart` for two arrays),
-  with the element-class premise for `pathElems`; `apart` and `P !== Q` in
+  for the new regions: the region fact `apart` and the spine separation
+  `IndexFact.spineApart` (`PathSpinesApart`, `SpineApart` for two arrays),
+  with the element-class premise for `pathCells`; `apart` and `P !== Q` in
   `Effect.pre`, the unit's entry knowledge and `call-requires`. Proved for
-  store regions: `storeFollows_sound` (`store-apart-links`),
-  `restateStores_holds`, `stableFirst_frame` (`stable-first`),
-  `storeHeld_sound`, `regionFirst_kept` (`region-call-keep`, a region's
-  store separated by a region fact or a store separation) and
+  spine regions: `spineFollows_sound` (`store-apart-links`),
+  `restateSpines_holds`, `stableFirst_frame` (`stable-first`),
+  `spineHeld_sound`, `regionFirst_kept` (`region-call-keep`, a region's
+  spine separated by a region fact or a spine separation) and
   `effectKept_holds` consuming the instantiated frame. The preservation
-  pipeline of §4 beyond store regions: local store bounds per root and path
-  for `pathElems` and cells, term growth, and the quantified lifting.
+  pipeline of §4 beyond spine regions: local spine bounds per root and path
+  for `pathCells` and cells, term growth, and the quantified lifting.
 - **O8 Coverage.** `Footprint.le` with the extended `Region.sub`, sound
   against `Post` under `ClassOk`, on both exits; used by `Effect.covers`,
   subtyping and D6.
@@ -861,7 +861,7 @@ assumption. A statement in a declaration file or a package is an audited
 contract, pinned and reviewed by the owner (§2), and a trust-surface item;
 `freshObject`, `appends` and `writes` are fields of such contracts only. A
 regional native row rests on a narrower audited premise than the closed
-rows (its changes confined to its store and the cells its store lists at
+rows (its changes confined to its spine and the cells its spine lists at
 entry), reviewed with O6. A `@stable` field of a value external code
 builds needs the checked boundary or explicit contract
 [records](../POSITIVE-TYPES.md#records) states.
@@ -900,17 +900,17 @@ malformed values (`"cell(b)": true`, `"cell(b)": undefined`, a class map
 with an unknown member, `{ values: "any"; other: "any" }`), and an
 audited overlay entry pinning a statement in the old spelling; read as
 those bindings, the reserved names written as cells (`"cell(values)"`,
-`"cell(stores)"`, `"cell(onThrow)"`), each refused where no such binding
+`"cell(spines)"`, `"cell(onThrow)"`), each refused where no such binding
 exists; read as an ordinary type, a lookalike `Modifies` or `Fresh`
 declared outside `tools/resolvable.d.ts` (`invalid-method-effect-lookalike`).
 
 Forged controls (`pipeline/test.mts`): a frame narrower than the body's
 writes; `apart` or `!==` forged at a call that cannot establish it
 (`!==`: a separation forged at a caller's entry, and a fact forged across a
-frame that may change its array's store, `pipeline/test.mts`);
+frame that may change its array's spine, `pipeline/test.mts`);
 an entry rooted at another position; a `cell` naming a same-named binding
 of another module, and one substituted exactly without agreement; a
-`pathElems` transported to `cls value` without the element-class premise;
+`pathCells` transported to `cls value` without the element-class premise;
 both receiver flags translated independently; a captured root's write
 claimed within a callback type's parameter keys; a normal-only nested
 summary on a path that throws to the exit, and one caught by a handler; a
@@ -943,15 +943,15 @@ Decisions:
   audited, pinned contract where none is.
 - **Refused only without a guarantee**: both class keys at `"any"`.
 - **`onThrow` as written**, normal return otherwise.
-- **`[*]` is store and cells**; the store-only region serves translations.
+- **`[*]` is spine and cells**; the spine-only region serves translations.
 - **`@stable` on traversed fields**; the final field need not be.
 - **Module cells**: exact under agreement, the class region otherwise.
 - **Cell provenance**: a checked local obligation, the class fallback
   without it.
-- **Store separation is `P !== Q`** of two arrays, read as `StoreApart`;
+- **Spine separation is `P !== Q`** of two arrays, read as `SpineApart`;
   a typed array is refused, and `apart(P, Q)` keeps its name.
 - **One separation source**: the knowledge's index facts (region facts and
-  store separations), each established or restated by a checked rule;
+  spine separations), each established or restated by a checked rule;
   `region-call-keep` reads them per slot through `regionFirst`, over the
   entries of the frame, and a separation
   through a field is kept across a call by the field's stability
@@ -964,12 +964,12 @@ Decisions:
 - **One step rule**: the regional check accepts a node by the step-frame
   rule alone (§4); push's and an element write's frames are proved from
   `ReceiverGrows` and the strengthened write cores, adding no trust. The
-  store of a receiver that `ReceiverGrows` names is at `any` in its step
+  spine of a receiver that `ReceiverGrows` names is at `any` in its step
   frame, which is all a region needs; its `grow` change, which would need
   `ReceiverAppends`'s freshness of the appended cells, is not read.
 - **Conditional entry witnesses**: a traversed field is checked on the
   alternatives a read succeeds on (`null` and `undefined` read none), and a
-  path whose entry value has no such field selects no store.
+  path whose entry value has no such field selects no spine.
 
 Expressiveness limits of this language:
 
@@ -977,12 +977,12 @@ Expressiveness limits of this language:
   has no form (§5).
 - **Relational promises in program code**: `freshObject`, `appends` and
   `writes` have no certifying rule, so a program function states none.
-- **The store-only region** `path x p store` has no written key: `R[*]`
-  adds the store's cells too (§3).
+- **The spine-only region** `path x p spine` has no written key: `R[*]`
+  adds the spine's cells too (§3).
 
 Open:
 
-- **Q1.** Cell provenance across a store change at `any` (`splice`,
+- **Q1.** Cell provenance across a spine change at `any` (`splice`,
   `pop`) beyond the native steps `Arr.Within` covers.
 - **Q2.** Frame variables, for the captured-output accumulation of §5.
 - **Q3.** Whether stated imports save module runs (§7).

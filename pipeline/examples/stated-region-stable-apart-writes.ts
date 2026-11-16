@@ -1,7 +1,7 @@
-// A store separation read through a `@stable` field, `xs !== runs.open`,
+// A spine separation read through a `@stable` field, `xs !== runs.open`,
 // kept across an element write and a field write (`stable-first`): the
 // field's location holds the array its literal put there for the record's
-// life, so neither write changes which store `runs.open` reads. The loop
+// life, so neither write changes which spine `runs.open` reads. The loop
 // writes `out[j]` and `last.at`, then calls `step` in a test, whose frame
 // states the region `runs.open[*]`; the separation, stated at the loop head,
 // keeps `to <= xs.length` across the call.

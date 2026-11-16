@@ -1,4 +1,4 @@
-// The store separation used by stated-region-nullable-apart, expressed
+// The spine separation used by stated-region-nullable-apart, expressed
 // through a mutable local and a branch. Copying `runs` into `chosen`
 // transports its separation; the join guards it by the other edge's null.
 // This exercises the same regional-call obligation with statement flow.

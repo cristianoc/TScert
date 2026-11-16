@@ -3,7 +3,7 @@
 // slot within the expression, and the value `push` receives is the joined
 // result of its arms. The slot holds `null` or an array the body allocates
 // at every point, a fact of the value itself, so it survives `step`, whose
-// frame states `values: "any"`, and the store `push` grows is none of the
+// frame states `values: "any"`, and the spine `push` grows is none of the
 // entry heap's, rebased to no region.
 type Runs = { /** @stable */ readonly open: number[] };
 function step(runs: Runs, s: string): Modifies<{ values: "any"; "runs.open[*]": "any" }, void> {

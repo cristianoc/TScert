@@ -6,7 +6,7 @@
 // node-typing claim, a write at a module cell's contract.
 // A module cell tested against `null`, then a method of a `Map` it holds
 // called, then a field of the cell written: the call may write any location
-// its receiver's store is not known apart from, and a module's cell is
+// its receiver's spine is not known apart from, and a module's cell is
 // separated from no location, so past the call the cell is read at its
 // contract, `State | null`.
 type State = { fonts: Map<string, number>; segments: number };

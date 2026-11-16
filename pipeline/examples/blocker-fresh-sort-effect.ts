@@ -1,5 +1,5 @@
-// Sorting within {value: any, store: grow}: at a comparator whose store
-// changes are at most `grow`, `sort` grows its receiver's store over the
+// Sorting within {value: any, spine: grow}: at a comparator whose spine
+// changes are at most `grow`, `sort` grows its receiver's spine over the
 // whole call, whether the receiver is the fresh result of `filter` or a
 // parameter. A closure calling `Number`, which the module also reads as an
 // object (`Number.isFinite`), is within the call signature's footprint.

@@ -1,6 +1,6 @@
 // `Array.isArray`, and `instanceof Array`, on `unknown` find a built-in
 // array: `unknown` carries the array invariant, so a value owning an array's
-// store holds a possibly sparse store of `unknown` values and
+// spine holds a possibly sparse spine of `unknown` values and
 // `Array.prototype`. A thrown value is of `unknown` as well.
 export function elements(x: unknown): readonly unknown[] {
   if (Array.isArray(x)) return x;

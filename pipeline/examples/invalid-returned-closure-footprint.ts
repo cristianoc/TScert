@@ -1,5 +1,5 @@
 // A factory returning a closure that pops the array it captured: the
-// closure's footprint changes a store, so the factory's claim states none
+// closure's footprint changes a spine, so the factory's claim states none
 // for it, and a call of the closure drops the loop's bound. The read at `i`
 // after the call is refused. Run under Node, it reads `undefined`.
 

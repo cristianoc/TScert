@@ -105,8 +105,8 @@ Each initializer must meet its field's full type, and the resulting record
 must meet the complete written contract through the existing
 [allocation rules](SOURCE-MODEL.md#object-literals). A read-only dictionary
 bound uses the literal's exact own keys; a writable index requires
-allocation at its store contract. The contract lookup requires each member
-to have no call signatures or array store. Overlapping fields receive no
+allocation at its spine contract. The contract lookup requires each member
+to have no call signatures or array spine. Overlapping fields receive no
 combined contract, and their constraints remain in the written contract.
 An existing object gains no own-key bound from a construction contract.
 `blocker-gap-round-scheme-binder-map` exercises a binder whose bound and
@@ -653,7 +653,7 @@ admits a key of $`\mathcal F`$ after it (`in-function-key`);
 
 A key TypeScript types as other than string literals (a `string`, a number,
 an array index among them, a symbol) may name what the model does not answer
-as JavaScript does: a prototype's key, or an array's element, which the store
+as JavaScript does: a prototype's key, or an array's element, which the spine
 holds rather than a key. Such a test is the host's, a call of the intrinsic
 $`\%\mathsf{HasProperty}\%`$ (`intrinsics.mts`), which the parser writes where
 TypeScript's type of the key has another part, and which narrows nothing:
@@ -972,11 +972,11 @@ A keyed access `a[k]` whose key is claimed at one string $`s`$ is the named
 access of $`\mathsf{str}(s)`$, evaluated after `a` and `k`, and the
 [core read rules](PROGRAM-TYPING.md#judgments-and-constructor-views) apply. A key claimed at one number $`n`$ names the property
 $`\mathsf{ToString}(n)`$ (`numberToString`), as JavaScript's `ToPropertyKey`
-converts it, where `a` is claimed only at records owning no array store
-(`recordReceiver`); an array's number key is its store's element (`elemAt`):
+converts it, where `a` is claimed only at records owning no array spine
+(`recordReceiver`); an array's number key is its spine's element (`elemAt`):
 
 ```math
-\frac{\Gamma\vdash_G a:R\quad R\equiv_G c_1\cup\cdots\cup c_m\ \text{records without a store}\quad
+\frac{\Gamma\vdash_G a:R\quad R\equiv_G c_1\cup\cdots\cup c_m\ \text{records without a spine}\quad
       \Gamma\vdash_G k:\mathsf{Num}(n)}
      {a[k]\ \leadsto\ \mathsf{let}\ x=a\ \mathsf{in}\ \mathsf{let}\ \_=k\ \mathsf{in}\ x.\mathsf{str}(\mathsf{ToString}(n))}
 ```
@@ -2040,7 +2040,7 @@ kinds' binders apart,
 GetIterator calls the iterable's own `[Symbol.iterator]`, which for a value
 of kind $`K_i`$ is that kind's standard one: the step is $`\mathit{it}_i`$'s
 for whichever kind the value is, and states the weakest of their effects,
-`{value: any, store: keep}`. An array arm is stepped as `%Iterate%` steps it,
+`{value: any, spine: keep}`. An array arm is stepped as `%Iterate%` steps it,
 at a readable array (`for-of-map-or-array`; `invalid-for-of-map-or-array`, a
 `map` result with a hole, run under Node). A spread over a union of kinds
 takes no union's iteration.
@@ -2096,7 +2096,7 @@ $`\sigma`$ the call's instance:
 ```
 
 The native iterator requires a readable array receiver, so every in-bounds
-read yields `T`, including a hole when `T` admits `undefined`. A sparse store
+read yields `T`, including a hole when `T` admits `undefined`. A sparse spine
 needs a separate proof of readability before it satisfies that contract. Array patterns read positions under the same trust
 ([patterns](SOURCE-ELABORATION.md#patterns)).
 
@@ -2276,7 +2276,7 @@ a host iterable (a string, a `Set`, a `Map`, a host collection iterator)
 spreads its spread intrinsic's array, `[…, ...e, …]` $`\equiv`$
 `[…, ...%Spread:K%(e), …]`, the fresh array of what the host's iterator
 yields, as an argument spread of one is; the literal is a fresh array of its
-own, at the store contract its claim states, also where the spread is its
+own, at the spine contract its claim states, also where the spread is its
 one element (`array-literal-host-spread`). An array pattern
 `const [p₀, …, ...q] = e` over one (`protocolPattern`) steps once per element,
 a hole too, into cells $`v_j`$ starting `undefined`, leaves a labeled block when
@@ -2290,12 +2290,12 @@ An array literal with element contract `E` keeps a spread operand's own
 type when its elements fit `E`; other iterables keep their iterator
 contract. The existing array subtyping check establishes
 this view from the operand's storage contract, including its presence mode;
-the spread rule copies values at `E` into the literal's fresh store.
+the spread rule copies values at `E` into the literal's fresh spine.
 This admits mapped records at a union's element type
 (`blocker-census-spread-map-records`). A map whose callback removes future
 input elements can produce holes, so its sparse result fails a readable
 view excluding `undefined` (`invalid-spread-map-records`). A literal
-proposed at its store contract whatever its operands' elements is refused at
+proposed at its spine contract whatever its operands' elements is refused at
 the literal (`TSCERT_FORCE=array-spreads` over `invalid-array-literal-spread`
 and `invalid-dense-spread-element`, `tests/single-pass-controls.mts`).
 
@@ -2420,13 +2420,13 @@ verifier from its current context. A missing type alone never justifies
 skipping a default. If the condition is unproved, the default's typing and
 execution remain required.
 
-An array rest $`\ldots p`$ at index $`s`$ over $`A`$ whose store is one tuple of
+An array rest $`\ldots p`$ at index $`s`$ over $`A`$ whose spine is one tuple of
 $`n`$ required positions, whose length is exact (`listT`), is the fresh array of
 the positions from $`s`$ on, claimed at the rest's span $`C`$ like an array
 literal:
 
 ```math
-\frac{\mathrm{Store}(A)=[A_0,\ldots,A_{n-1}]\quad
+\frac{\mathrm{Spine}(A)=[A_0,\ldots,A_{n-1}]\quad
       \Gamma\vdash\mathsf{alloc}\{[\,]{:}\mathsf{arr}(\mathsf{elem}(\_,s),\ldots,\mathsf{elem}(\_,n{-}1))\}:C\quad
       \Gamma\vdash p\Leftarrow(\cdot{:}C)\dashv\Delta}
      {\Gamma\vdash[\ldots,\ldots p]\Leftarrow(\_{:}A)\dashv\ldots,\Delta}
@@ -2479,7 +2479,7 @@ its identity and the aliases to its fields (`array-rest-footprints`, run
 under Node).
 
 Fixed-tuple rests read the later positions into local value slots in order,
-then allocate their store from those slots. Collection occupies the rest's
+then allocate their spine from those slots. Collection occupies the rest's
 position in the binding or assignment schedule, after preceding defaults;
 the [restriction on interleaved array mutation](SOURCE-FRAGMENT.md#model-limits)
 applies to both fixed and slice rests. Each initializer and default retains
@@ -3226,7 +3226,7 @@ are refused.
 A closure collecting an array rest is checked at the source's fixed
 parameter types and rest element type, with the source's result annotation
 or, where it is omitted, the result proposed by its single variadic claim.
-Its graph code must establish that result with the collected rest store;
+Its graph code must establish that result with the collected rest spine;
 the offered signature must be within the claim. Its effect is the source's
 stated effect, or the ordinary effect. `blocker-census-rest-result` shows
 an inferred result; `invalid-closure-rest-result` shows that an empty call
@@ -3614,7 +3614,7 @@ may hand it to code that replaces its member or gives the function an own
 
 A call signature states a [closed footprint](FOOTPRINTS.md#changes-and-footprints):
 on normal return, the call changes the contents of the previously allocated
-locations holding a value and of those holding an array store at most as it
+locations holding a value and of those holding an array spine at most as it
 says. The empty footprint leaves every such location's contents unchanged;
 `all: any` constrains none. It may allocate fresh storage. A type guard's and
 an assertion function's signatures state, besides, the promises `guards` and
@@ -3708,7 +3708,7 @@ checking limit, not a restriction on the meaning of heap preservation.
 
 A callback parameter may state its result as `Modifies<P, T>` too:
 `bounds-callback-footprint` states a visitor within
-`{value: any, store: keep}`, so its caller retains array-length bounds, and
+`{value: any, spine: keep}`, so its caller retains array-length bounds, and
 an analyzed callback writing a captured counter meets the contract.
 `invalid-bounds-callback-footprint` passes a shrinking callback and is
 refused; its Node run reads `undefined`.
@@ -3786,8 +3786,8 @@ No per-function global flag can justify a stronger effect on another overload.
 For native `map`, the built-in ordinary-construction invariant supplies the
 construction premise. A dense receiver and a heap-preserving callback produce
 no holes, so the qualified overload can promise the source-readable result
-`U[]` at every `U`. The allocation chooses that lifetime store contract; it does
-not force the stronger dense contract onto the result's writable store location.
+`U[]` at every `U`. The allocation chooses that lifetime spine contract; it does
+not force the stronger dense contract onto the result's writable spine location.
 The unrestricted overload promises a sparse result. Both use ordinary selection and application;
 there is no body-inspecting `map` rule. `find`/`findIndex` similarly consume a
 qualified callback accepting `T`, or an unrestricted one accepting `T | undefined`.
@@ -3798,7 +3798,7 @@ The semantic introduction and elimination rules are proved in
 `ProgramTyping.callsT_of_graph`, `restsT_of_graphRest`, and `CallEffects.call_safe`.
 `PassUnitCodes.codeSpec_of_guarantee` gives ordinary safety and the
 signature's effect together from the code's run; a separate unqualified body check cannot introduce a qualified type.
-Rest-collecting entries retain their store contract in the checked frame, and
+Rest-collecting entries retain their spine contract in the checked frame, and
 the entry allocation preserves the input heap before the checked body runs.
 The effect algorithm ([ExpressionEffects.lean](../lean/Verification/Programs/ExpressionEffects.lean))
 admits a node whose expression is an **inspection**: a term built from slots,
@@ -3873,7 +3873,7 @@ A function literal's unwritten effect is proposed per exit, from a summary
 of each operation the walk meets (`ClassSummary`,
 [ExitProposals.lean](../lean/Verification/Source/Lowering/ExitProposals.lean)):
 a call's is its instance's per-exit contract, each exit's frame read in the
-closed language below the call's entry with a fresh receiver's store
+closed language below the call's entry with a fresh receiver's spine
 discharged (Fresh-Eff); a write's the grade its typed-write rule accepts; a
 `throw`'s an exceptional exit leaving the heap it starts in. Each rule of
 composition is proved sound for runs (`ClassSummary.Sound`): sequence on
@@ -3903,7 +3903,7 @@ normal return (`GraphCode.nodeChecked`, alongside ordinary safety), under the or
 result, a guard's promise or an assertion function's. A node is
 within $`\Phi`$ as an inspection, which preserves the heap; as a write of a
 field every alternative of the object's type gives a type of source values,
-within `{value: any, store: keep}` since the location holds a value
+within `{value: any, spine: keep}` since the location holds a value
 (`ExpressionEffects.write_within`); or as a fixed call at a selected signature
 whose footprint is within $`\Phi`$. The graph's run is then within $`\Phi`$
 (`GraphCode.goto_bounded`), its
@@ -3978,7 +3978,7 @@ footprint (`PassProposals.interface`): the join of the footprints of every
 signature of the checked type of the value each return returns, where the
 result annotation can state it (`resultWithFootprint`). A call of the
 returned closure then keeps what a call at $`\Phi_r`$ keeps
-(`returned-closure-footprint`). A closure changing a store gets no
+(`returned-closure-footprint`). A closure changing a spine gets no
 footprint, and a read after its call is refused
 (`invalid-returned-closure-footprint`, run under Node); $`\Phi_r`$ proposed
 at the empty footprint (`TSCERT_FORCE=results`) is refused for
@@ -3994,27 +3994,27 @@ declaration, never by its spelling: an alias of the repository's file, or of
 a file of exactly its bytes, which declares the same aliases (the census's
 copy of `tools/` holds one). $`P`$ is a type literal written in place,
 one map from what may change to how much: `values: c` for the locations
-holding a value and `spines: c` for those holding an array store, `c` one
+holding a value and `spines: c` for those holding an array spine, `c` one
 of `"keep"`, `"init"`, `"scalar"`, `"grow"`, `"any"`, an omitted class key
-`"keep"`; on a value `grow` is `scalar`, and on a store `init` and `scalar`
-are `keep`. `onThrow: true` makes the frame hold on a throw too. A store
+`"keep"`; on a value `grow` is `scalar`, and on a spine `init` and `scalar`
+are `keep`. `onThrow: true` makes the frame hold on a throw too. A spine
 region `"x[*]": "any"`, `x` a parameter of a function declaration (`this`
-its `this` parameter), excepts from the frame the store `x` holds at the
-call, and `"x.f[*]": "any"` the store its field `f` holds there, which may
-change arbitrarily (see **Store regions** below). Any other quoted location
+its `this` parameter), excepts from the frame the spine `x` holds at the
+call, and `"x.f[*]": "any"` the spine its field `f` holds there, which may
+change arbitrarily (see **Spine regions** below). Any other quoted location
 key (`"x.f"`, `"x.*"`, `"cell(b)"`, a path of more than one field) is
 refused: the regions it names are proved in the model
 ([footprints](FOOTPRINTS.md#changes-and-footprints)) and are not read from
 the source. A result `Fresh<T>`, `T` an array type, states that a normal
-return's value holds an array store the call allocated, at or above the
+return's value holds an array spine the call allocated, at or above the
 length of the heap the call starts in; it stands alone or as
 `Modifies<P, Fresh<T>>`, and is refused anywhere else, a guard's promise
 included. With $`\epsilon(P)`$ the effect of the closed footprint
 $`\{v,s\}`$ of the class keys (`top` without `Modifies`), the flag and the
-fresh result, no promise and no receiver-store exception,
+fresh result, no promise and no receiver-spine exception,
 
 ```math
-\frac{⟦\vec A⟧=\vec Q\qquad ⟦T⟧=B\qquad P=\{\mathsf{values}{:}\,v,\ \mathsf{stores}{:}\,s[,\ \mathsf{onThrow}]\}\qquad \{v,s\}\neq\{\mathsf{any},\mathsf{any}\}\ \text{or a fresh result}}
+\frac{⟦\vec A⟧=\vec Q\qquad ⟦T⟧=B\qquad P=\{\mathsf{values}{:}\,v,\ \mathsf{spines}{:}\,s[,\ \mathsf{onThrow}]\}\qquad \{v,s\}\neq\{\mathsf{any},\mathsf{any}\}\ \text{or a fresh result}}
      {⟦(\vec x:\vec A)\Rightarrow\mathtt{Modifies}\langle P,T\rangle⟧=\mathcal F_{\epsilon(P)}(R,\vec Q,B)}\ \textsf{stated-effect}
 ```
 
@@ -4071,12 +4071,12 @@ $`\Phi\le\epsilon.\mathsf{footprint}`$ gives the stated one by
 `Closed.Holds.mono`). The premise $`\vdash P:\Gamma\to B\;!\;\Phi`$ is
 established by the node-by-node bound check or, where it refuses and no
 fresh result is promised, by the regional check with no regions, which
-rebases a callee's region on a store the body allocated to none
+rebases a callee's region on a spine the body allocated to none
 ([fresh array storage](FOOTPRINTS.md#fresh-array-storage)).
 A unit stating a fresh result is checked node by
 node with its returns fresh, whatever its footprint, the shortcuts of the
 top footprint and of a pure graph excluded, and on normal
-return its value's store lies at or above the entry heap's length
+return its value's spine lies at or above the entry heap's length
 (`FootprintClause` of `PassUnit.RequestSafe`; `stated-fresh`,
 `stated-fresh-frame`; `invalid-stated-fresh-input`, run under Node; the
 control "forged fragment: a fresh result stated of an identity function" of
@@ -4111,22 +4111,22 @@ checked at the field's contract (`invalid-method-field-effect-write`), a
 value passed where a stated member is expected by subtyping
 (`invalid-method-effect-lookalike`), an input by `EnvOk`.
 
-**Store regions.** A function declaration's statement
-`Modifies<{ values: v; stores: s; "R₁[*]": "any"; …; "Rₖ[*]": "any" }, T>`,
+**Spine regions.** A function declaration's statement
+`Modifies<{ values: v; spines: s; "R₁[*]": "any"; …; "Rₖ[*]": "any" }, T>`,
 each $`R_i`$ a parameter $`x_i`$ or a field read from it, $`x_i.f_i`$,
 states that a normal return, and a throw where it writes `onThrow`, leaves
-every location of the entry heap but the stores the regions select at
+every location of the entry heap but the spines the regions select at
 entry within $`\{v,s\}`$ of its entry contents, with $`p_i`$ the
 parameters' call positions and $`q_i`$ the paths, `[]` or $`[f_i]`$:
 
 ```math
 \mathrm{Post}_{\epsilon}(\rho,h_0,h')\iff
-\forall\ell<|h_0|.\ (\forall i.\ \mathrm{store}(\mathrm{read}_{h_0}(\rho\,p_i,q_i))\neq\ell)\Rightarrow\{v,s\}\text{ allows }h_0[\ell]\rightsquigarrow h'[\ell]
+\forall\ell<|h_0|.\ (\forall i.\ \mathrm{spine}(\mathrm{read}_{h_0}(\rho\,p_i,q_i))\neq\ell)\Rightarrow\{v,s\}\text{ allows }h_0[\ell]\rightsquigarrow h'[\ell]
 ```
 
 with $`\rho`$ the call's values by position: the effect's frame, its closed
-bound $`\{v,s\}`$ with each region's store at `any`
-(`CallEffects.Effect.within`, `ArgumentStoreRegionsWithin.iff_post`;
+bound $`\{v,s\}`$ with each region's spine at `any`
+(`CallEffects.Effect.within`, `ArgumentSpineRegionsWithin.iff_post`;
 proved). A conservative check reads the closed bound above the frame
 (`Effect.changeBound`, `Effect.within_changeBound`). A root is a parameter without a
 default and no rest parameter, whose value in the body is the call's;
@@ -4135,9 +4135,9 @@ root with a default (`invalid-modifies-region-root`), a region on any
 signature but a function declaration's (`invalid-modifies-region-callback`),
 and a region beside a fresh result. The unit is certified by the regional
 graph check, whatever its claim: each node's step stays within $`\{v,s\}`$
-off the regions' stores (a closed node, a copy of a slot holding a region's
+off the regions' spines (a closed node, a copy of a slot holding a region's
 value, a read of a traversed field of a slot holding its parameter's entry
-value, or a call at a signature excepting its receiver's store whose
+value, or a call at a signature excepting its receiver's spine whose
 receiver holds one), each slot's provenance checked on every edge
 (`ArgumentRegionGraph.checkNodes`, its table inferred by `regionTable`).
 A traversed field $`f_i`$ is a present `@stable` field of the parameter's
@@ -4156,17 +4156,17 @@ gives the field's entry value (the stable-read node rule,
 (the pass's regional check, `PassUnit.MainAccepted`; proved:
 `RegionalClause` of `PassUnit.RequestSafe`; `stated-argument-store`,
 `stated-argument-path`; `invalid-stated-store-region`, run under Node; the
-controls "forged fragment: store regions moved", "path regions moved" and
+controls "forged fragment: spine regions moved", "path regions moved" and
 "rebased regions" of `tests/single-pass-controls.mts`). Across the call, a caller's fact survives where the call's frame at the
 caller's slots respects its support under the separations the caller's
 knowledge states ([support and respect](FOOTPRINTS.md#support-and-respect),
 [a call's effect at the caller](FOOTPRINTS.md#a-calls-effect-at-the-caller)):
 a length of an array at any path is kept where the closed bound keeps
-stores, and its lower bounds where it grows them, where each region's store
+spines, and its lower bounds where it grows them, where each region's spine
 is separated from the array's and each field location the path reads is
 kept: a first field stated stable by its contract, any other by the frame.
 
-An upper bound of such a length, and every fact about a store a region may
+An upper bound of such a length, and every fact about a spine a region may
 select, is dropped (`stated-region-grow-keeps-lengths`;
 `invalid-stated-region-grow-region` and
 `invalid-stated-region-grow-upper-bound`, run under Node). The pass keeps
@@ -4200,7 +4200,7 @@ its definitions' statements relative to the statements of what it imports.
 bound (`fragmentClaims` in
 [FragmentFront.lean](../lean/Verification/Source/Claims/FragmentFront.lean)),
 which its callers read and its own unit is checked against node by node; a
-statement with store regions proposes `top`, the regional check of its own
+statement with spine regions proposes `top`, the regional check of its own
 regions certifying the statement. Callees' statements reach it through their
 types, as natives' footprints do.
 
@@ -4232,7 +4232,7 @@ with the step disjunct as in `SafePost`. `SafePost Ξ T Q` is
 effect $`e`$ with `onThrow` gives the arrow's run, from entry heap
 $`h_0`$, the exceptional postcondition
 $`R\,h \iff e.\mathsf{footprint}.\mathsf{HoldsOn}\,P\,h_0\,h`$, with
-$`P`$ the locations its `receiverStore` leaves bounded, as `Effect.within`
+$`P`$ the locations its `receiverSpine` leaves bounded, as `Effect.within`
 reads them. Without `onThrow`, $`R`$ is `True`. In coverage
 (`Effect.Covers`), an effect with `onThrow` covers one without, and not the
 other way.

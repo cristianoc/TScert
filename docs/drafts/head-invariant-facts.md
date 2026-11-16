@@ -83,7 +83,7 @@ over values alone, so its support is empty. It is taken.
 `to <= analysis.flags.length` at the outer loop: `analysis` is bound
 outside, `flags` is a `@stable` field and the array's length location is
 written by no step of the loop (its support is the length's location at
-`grow`, which the loop's effects respect where its stores are apart:
+`grow`, which the loop's effects respect where its spines are apart:
 a nonempty support, so the fact is not taken by this statement; it is
 the case the next design step extends to supports the loop's own summary
 respects, out of scope here).
@@ -187,7 +187,7 @@ step of the implementation.
 ## Open questions
 
 - A fact of nonempty support that the loop's own effects respect
-  (`to <= analysis.flags.length` across a loop writing other stores) needs
+  (`to <= analysis.flags.length` across a loop writing other spines) needs
   the loop's summary as the context's frame; this draft takes none.
 - Implications (`guarded` facts) at a head: taken by the same filter where
   their guard's slot is stable.

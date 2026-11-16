@@ -1,5 +1,5 @@
 // A `for...of` loop over an array inside a counter loop's body: the array
-// iterator is allocated apart from every array's store, and its step changes
+// iterator is allocated apart from every array's spine, and its step changes
 // only its own locations (`call-own`), so the counter's bound by the outer
 // array's length survives the inner loop (ARITHMETIC.md, "Linear facts").
 

@@ -1,12 +1,12 @@
 // pretext's `getGraphemeEnds` (line-text.ts): per handle, a `Map` from a
 // segment's index to its grapheme ends, kept in a `WeakMap` and filled on
 // first use. A `Map`'s `set` writes its table, which no location of the
-// model holds, and its `size`, a number: within `{value: scalar, store:
-// keep}`, which alters no location holding an object or a store
+// model holds, and its `size`, a number: within `{value: scalar, spine:
+// keep}`, which alters no location holding an object or a spine
 // (SOURCE-CONTRACTS.md, "Native footprints"). So `ends` is within it too,
 // and `buildText`, pretext's `buildRangeText`, reads
 // `prepared.segments[i]!` below `prepared.segments.length` after each call:
-// the path's object and the store's length are kept. A fact over a number
+// the path's object and the spine's length are kept. A fact over a number
 // field is not: the `size` the call sets could be any number's location.
 
 export type Prepared = { widths: number[]; segments: string[] };

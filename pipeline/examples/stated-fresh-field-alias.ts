@@ -1,7 +1,7 @@
 // A fresh field whose array's contents change through an alias
 // (FOOTPRINTS.md, "Fresh array storage"): `fill` grows and writes the array
 // through `open`, a read of the stable field; the field still holds the
-// same array, whose store the body allocated.
+// same array, whose spine the body allocated.
 type Runs = { /** @stable */ readonly open: number[] };
 
 function fill(runs: Runs): Modifies<{ values: "any"; spines: "grow"; "runs.open[*]": "any" }, void> {

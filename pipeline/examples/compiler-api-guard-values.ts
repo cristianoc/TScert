@@ -1,5 +1,5 @@
 // A listed guard used as a value (HOST-FAMILIES.md, "Guards as values"):
-// read at its entry's signature, which changes no value and no store and
+// read at its entry's signature, which changes no value and no spine and
 // promises the family's shapes at its tag set, so it meets a parameter of
 // the guard type its declaration states, and a call of a name holding it
 // narrows the argument on its `true` edge. A tag guard's value promises

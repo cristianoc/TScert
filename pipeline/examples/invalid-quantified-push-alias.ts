@@ -1,5 +1,5 @@
 // A push into an array that may be the quantified one: no separation fact
-// keeps `other`'s store apart from `ends`'s, so the push may lengthen `ends`
+// keeps `other`'s spine apart from `ends`'s, so the push may lengthen `ends`
 // by a value its fact excludes, and the loop's head refuses its entry (run
 // under Node: `sumAfterPush([5], a, a)` with `a = []` pushes `1` into `ends`
 // through `other`, then reads `widths[1]`, `undefined` at `number`).

@@ -1,5 +1,5 @@
 // A write of an array's element at a literal index keeps every dense
-// prefix: into a listed position's location, or a fresh location the store
+// prefix: into a listed position's location, or a fresh location the spine
 // lists. `map` callbacks writing a pair's element, a tuple's optional
 // position, the mapped array's first element and a nested pair's element by
 // compound assignment are preserving, and the results are dense.

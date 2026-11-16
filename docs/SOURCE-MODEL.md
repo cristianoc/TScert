@@ -33,7 +33,7 @@ unsupported coercions are refused at the source boundary.
 ## Source-value boundary
 
 Let $`J`$ be the JavaScript values: primitives and allocated objects, including
-arrays, functions and constructors. Internal array stores are calculus values
+arrays, functions and constructors. Internal array spines are calculus values
 outside $`J`$. Source `unknown` denotes $`J`$. An unconstrained source type
 parameter ranges over types contained in $`J`$; each instantiation checks that
 bound. Argument-pack parameters range over argument lists separately.
@@ -51,7 +51,7 @@ result contract and throw only JavaScript values. A catch variable has type
 
 Membership in $`J`$ supplies no field, call or array-layout guarantee.
 The calculus clause `source` denotes $`J`$ independently of the built-ins'
-record invariants; calculus `top` also includes internal stores. The
+record invariants; calculus `top` also includes internal spines. The
 [clause semantics](POSITIVE-TYPES.md#types-and-clauses) owns this distinction.
 
 ### Slices of the value universe by tag tests
@@ -112,7 +112,7 @@ No slice is the dictionary view. `{ readonly [key: string]: unknown }` is
 `dictViewT` at the string keys and $`J`$: an object without call code,
 owning no `[[proto]]` and no `[[host]]`, every present string-keyed field's
 contract within $`J`$. A member of $`J_{\mathrm{ref}}\setminus\mathsf{arrays}`$
-($`J_{\mathrm{ref}}`$ with an own-key bound excluding the store key `[]`)
+($`J_{\mathrm{ref}}`$ with an own-key bound excluding the spine key `[]`)
 may own a prototype (a class instance, an object `Object.create` made) or be
 a host object (a `Map`, a `Date`), which pass `typeof v === "object"`,
 `v !== null` and `!Array.isArray(v)` alike, so a guard over `unknown` that
@@ -262,14 +262,14 @@ The **built-ins** are the objects and prototypes of the JavaScript global
 environment a program runs in. The array contracts below assume their
 standard prototypes.
 
-An array is one store of element locations under the reserved
-store key and one object holding `Array.prototype` under `[[proto]]`, read
+An array is one spine of element locations under the reserved
+spine key and one object holding `Array.prototype` under `[[proto]]`, read
 through the one array shape (`arrayClauseOf`,
 [arrays](POSITIVE-TYPES.md#arrays)). Its own keys exclude the members declared by
 `ArrayProto`, `constructor`, `then` and `toJSON`, so `xs.map` reaches the
 prototype, ordinary construction cannot be overridden and `JSON.stringify`
 calls no hook of an array; it may own other keys,
-as a library may tag the arrays it manages with a symbol key. Stores may be sparse;
+as a library may tag the arrays it manages with a symbol key. Spines may be sparse;
 source `T[]` requires **readability**: every in-bounds read, including a hole's
 `undefined`, meets `T`. Density is a separate, stronger guarantee. All three
 spellings (`T[]`, `Array<T>`, `ReadonlyArray<T>`) use the same element-family
@@ -278,15 +278,15 @@ an in-bounds position or appending; they preserve each presence mode.
 Mutable arrays are invariant;
 `readonly T[]` reads only and is covariant. Arrays are `Iterable<T>` through
 their prototype's `[Symbol.iterator]`, a tuple through the readonly array of
-its positions. An array's `length` is read from its store, in a statement and
+its positions. An array's `length` is read from its spine, in a statement and
 in a closed expression alike. An array pattern's rest over a tuple of
 required positions is reads; any other is a slice, a call of the trusted
 `%RestFrom:k%` ([patterns](SOURCE-ELABORATION.md#patterns)).
 Every record and dictionary type, and `unknown`, is of values meeting the
-**array invariant**: an object owning the store key is a built-in array,
-a possibly sparse store of `unknown` values and `Array.prototype`, owning no
-key it provides. Allocation keeps it, since an allocation owning the store key
-is typed only as such an array and a merge copies no store; it is assumed of
+**array invariant**: an object owning the spine key is a built-in array,
+a possibly sparse spine of `unknown` values and `Array.prototype`, owning no
+key it provides. Allocation keeps it, since an allocation owning the spine key
+is typed only as such an array and a merge copies no spine; it is assumed of
 every value a unit receives at such a type and of every value a function it
 receives throws, and a thrown value, of `unknown`, is what a handler binds
 ([the array invariant](SEMANTICS.md#the-array-invariant)). So where
@@ -467,7 +467,7 @@ alias read through its equation at the reference's arguments. A rest typed by a 
 whose contracts are over lists at the actuals' own level
 ([argument packs](POSITIVE-TYPES.md#argument-packs)). A closure claimed at
 several signatures is checked once per signature. A spread among the actuals
-is replaced by its store's elements once every earlier actual is a value;
+is replaced by its spine's elements once every earlier actual is a value;
 spreads may sit at any position of fixed parameters or feed a generic
 signature's inference. Into a rest, a spread followed by an actual that runs
 code is copied where it is written, so the later actual cannot change what it
@@ -553,7 +553,7 @@ with the reason where the model would answer otherwise
 `key in o` (`hasKey`, along the prototype chain the model holds), truthiness
 (`ToBoolean`), `== null`, strict equality against a singleton of any
 primitive kind, `Array.isArray` and `instanceof Array` (`isArray`: owns the
-store key; a record or dictionary arm is then the built-in `readonly
+spine key; a record or dictionary arm is then the built-in `readonly
 unknown[]`, by the [array invariant](#arrays)), and `x instanceof C` for a
 class the file declares (`hasKey` of the key only `C`'s prototype owns; it
 narrows a union's arms, never `unknown`, since JavaScript gives any object

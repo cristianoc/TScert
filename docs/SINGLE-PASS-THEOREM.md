@@ -100,14 +100,14 @@ $`\eta`$:
    on a throw, or a fresh result, $`\mathrm{run}(L, d)`$ from such an entry
    (its environment the frame $`L`$ with default $`d`$, its roots valid),
    with $`L`$ and $`d`$ values, is safe, returns with $`\Phi(h, h')`$ and,
-   where fresh, a value whose store is at or above $`|h|`$, and throws with
+   where fresh, a value whose spine is at or above $`|h|`$, and throws with
    $`\Phi(h, h')`$ where it claims the throw (`FootprintClause`);
 3. *postcondition*: where $`r`$ states facts $`E \ne []`$ at its returns,
    every return of $`\mathrm{run}(L, d)`$ with value $`v`$ and heap $`h'`$
    meets $`E`$ at $`v`$ and the inputs' entry values (`EnsuresClause`);
 4. *regions*: where $`r`$ states a regional bound $`(\Phi, \mathcal R)`$,
    $`\mathrm{run}(L, d)`$ changes no location of $`h`$ outside $`\Phi`$ but
-   the stores $`\mathcal R`$ selects at entry, on a throw too where its
+   the spines $`\mathcal R`$ selects at entry, on a throw too where its
    stated effect bounds one (`RegionalClause`);
 5. *assertions*: for each stated assertion $`(\ell, K)`$ of $`P`$, each
    admitted $`\eta`$, entry and $`j < n`$, $`P \vdash (h, \ell_0\,\rho) \to^j (h', \ell\,\rho')`$
@@ -785,9 +785,9 @@ definitions:
   needs its request's run bound to be its exits' bounds
   (`UnitIsCode.bound`), which a region outside the class bound breaks.
   `RegionalClause` gives the bound; lifting needs the specification's frame
-  condition to be the regional one (`ArgumentStoreRegionsWithin`) in place
+  condition to be the regional one (`ArgumentSpineRegionsWithin`) in place
   of the footprint, in `GraphCodeSpec`.
-- *a rest parameter*: `RowRealized` fixes `e.store = none` and
+- *a rest parameter*: `RowRealized` fixes `e.spine = none` and
   `closure_meets_below` is stated for `CodeOffers … false L S []`, no
   variadic signature realized. Lifting needs `CodeOffers` over the variadic
   signatures $`S_v`$ with the packed rest frame (`codeFrame` with the row's
@@ -1181,11 +1181,11 @@ image operand outside $`\mathit{canon}`$'s form.
 signature reads the graph's exception family (`excOf`: `builtinExc` at the
 built-in values, the $`\Xi`$ of `semWithArgs`), the values a call may throw,
 and that family is the built-ins' array invariant where the graph states
-them and only the store being a list where it states none
+them and only the spine being a list where it states none
 (`builtinInvariant`). So for $`G_m`$ without built-ins and $`G`$ with them,
 and any arrow type $`F`$ of a region of both,
 $`⟦F⟧^{G_m}_{n,W} \not\subseteq ⟦F⟧^{G}_{n,W}`$ in general: a closure that throws
-an array whose store holds a value outside $`G`$'s `unknown` type, or whose
+an array whose spine holds a value outside $`G`$'s `unknown` type, or whose
 prototype is not $`G`$'s, meets the first and not the second.
 [StoreMapsBuiltins](../lean/Verification/Types/StoreMapsBuiltins.lean)
 states the store maps' side, all proved:

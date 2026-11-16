@@ -10,11 +10,11 @@ natives that write them, and over a prefix a function fills and counts.
 
 [Quantified clauses](../ARITHMETIC.md#quantified-clauses): the index fact
 $`\mathrm{every}(x.p,t,\Phi)`$ over an array's or a typed array's element
-store, read at an element by `every-read`, kept across a push, an exact
+spine, read at an element by `every-read`, kept across a push, an exact
 typed-array element write and a write apart from its
 [element region](../FOOTPRINTS.md#element-regions), and extended to a
 prefix by an exact write at its bound. A typed array's elements are the
-cells of the view store its descriptor names, one view store per typed array
+cells of the view spine its descriptor names, one view spine per typed array
 ([typed arrays](../SOURCE-CONTRACTS.md#stated-library-types)).
 
 ## Views sharing bytes

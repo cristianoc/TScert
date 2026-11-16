@@ -134,7 +134,7 @@ first also lowered once through its read links (`lowerGuards`); and a fact
 one predecessor states where another holds a slot at a guard tag's value
 (`null`, `undefined`, `true` or `false`) is kept guarded by that tag
 (`z === false || F`) where every predecessor's facts entail it
-(`indicesCheckWith`), as the join guards a store separation: after `const b
+(`indicesCheckWith`), as the join guards a spine separation: after `const b
 = i > from && f(xs[i - 1])`, `b === false || from < i`, which a test of `b`
 releases (`and-binding-fact`). Everywhere, one linear bound
 is kept per normalized form and condition, the strongest, and a length atom
@@ -185,7 +185,7 @@ adversarial proposal the check refuses.
 Where an edge enters the start, the start is entered as any loop head: its
 slots outside the given inputs and the promised input take fresh names, and
 its given state is an obligation on every edge into it; such a unit under
-store regions is not handled. The lowering makes no edge into a unit's
+spine regions is not handled. The lowering makes no edge into a unit's
 start: a function's entry is a node emitted after its body, a lambda's its
 block's `closure-entry` node or its expression's first node.
 
@@ -238,7 +238,7 @@ with no normal return catches (`deadHandler`) is within the normal bound,
 and one that escapes within the exceptional bound where that is not `⊤`,
 the normal bound inside it (`nodeThrowsWithin`), so an exceptional bound of
 `⊤` admits no such handler; a state also carries the names
-holding a store the run allocated (`inferFresh`'s facts, over names: a copy
+holding a spine the run allocated (`inferFresh`'s facts, over names: a copy
 of such a name, or a call at a signature stating a fresh result whose
 derivation `derivChecked` accepts; a merge
 keeps the names every predecessor holds; a cut holds none, its given
@@ -257,8 +257,8 @@ normally where its body throws, so no bound its body meets is the call's.
 A call whose result is the empty type is within the bound on normal
 return; its throw, caught by a live handler, is within it only at a
 signature bounding its throws. A graph the bound
-refuses may still be within it by its store regions (`regionalChecked`),
-which the regional walk decides ([store regions](#store-regions)). A refusal at a
+refuses may still be within it by its spine regions (`regionalChecked`),
+which the regional walk decides ([spine regions](#spine-regions)). A refusal at a
 node's footprint check is its own outcome (`Outcome.outsideBound`), the one
 the regional fallback answers; a node's exits are typed
 (`SinglePass.Exit`: an edge of its continuation, or its handler's).
@@ -306,11 +306,11 @@ reading no heap), from the node's entry state.
   the node's names.
 - A request's checks over its whole certificate (its footprint,
   `GraphCode.compositionalCheckedResult`; its postcondition, `ensuresResult`;
-  its store regions, `regionalChecked`) are made in the walk, node by node.
+  its spine regions, `regionalChecked`) are made in the walk, node by node.
 
-### Store regions
+### Spine regions
 
-A unit's store regions, and a footprint the walk refuses node by node for a
+A unit's spine regions, and a footprint the walk refuses node by node for a
 result that is not fresh (`effectResult`'s regional fallback, with no
 regions), are checked in the walk as `ArgumentRegionGraph.checkNode` checks
 each node. A label's regional facts (the slots holding an entry argument
@@ -329,7 +329,7 @@ regions, the regions' walk runs from the answers before the fallback, and
 the read summaries of both runs are checked: the fallback's footprint rests
 on its own.
 
-Under store regions the pass checks the entry's fields the regions read
+Under spine regions the pass checks the entry's fields the regions read
 (`ArgumentPathTracking.checkEntryFields`) and, at a node whose step has a
 derivation, that derivation as the footprint check does
 (`regionalDerivChecked`).
@@ -619,7 +619,7 @@ where each binding they name is an integer there; a test's comparison of a count
 test does not read is proposed nothing. A length is an array's, a typed
 array's (`%ByteLength%`) or a string's by a parameter's type, read in the
 type store (a string's where each of its clauses but `null` and
-`undefined` is a string, an array's where each holds an array store, a
+`undefined` is a string, an array's where each holds an array spine, a
 typed array's where each states a view length), and by a declaration's
 written type or initializer; a parameter whose type says none of them, or
 says two, has an array's. `TSCERT_FORCE=head-kinds` also states each
@@ -648,7 +648,7 @@ at an edge into its loop's head.
 `TSCERT_FORCE=head-carried` also states each term of a carried fact at
 most `-1`: `precondition-lengths` `dot`, accepted unforced, is refused at
 an edge into its loop's head.
-A store separation is proposed for a fresh empty array field
+A spine separation is proposed for a fresh empty array field
 (`{ f: [] }`) against every binding of the function that may hold an
 array (by its written type or initializer, or bound by a destructuring),
 for a copy (`x = o`) as `o`'s, and for a choice of a value and `null`
@@ -657,7 +657,7 @@ written invariants' separations are entry facts too. A separation is kept
 but across a write of a field its paths read. A separation names value bindings alone, and at a loop head
 only bindings whose type there, where the walk types it, makes them
 arrays (no string, no `null`): a destructured string or a nullable
-parameter is no store a separation could keep apart.
+parameter is no spine a separation could keep apart.
 A quantified fact (`forall i in xs: B`) of the precondition, of a loop's
 written invariant or of a loop's exit (where the written invariant holds)
 is carried to the heads after it over bindings the loop does not assign,
@@ -705,7 +705,7 @@ discharged guarded fact's first term at most `-1`:
 `invalid-guarded-invariant-short` `narrowing`, accepted unforced, is refused at
 an edge into its loop's head.
 `TSCERT_FORCE=head-separations` also states a carried separation's first
-store apart from itself: `stated-argument-path` `measure`, accepted
+spine apart from itself: `stated-argument-path` `measure`, accepted
 unforced, is refused at an edge into its loop's head.
 
 ### Input slots
@@ -746,18 +746,18 @@ unforced, is refused at an edge into its loop's head.
 
 ### Regional tables
 
-For a unit with store regions or a footprint's
+For a unit with spine regions or a footprint's
 regional fallback, the regional facts
-at its statement entries ([store regions](#store-regions)) are computed
+at its statement entries ([spine regions](#spine-regions)) are computed
 from its plan (`regionalLines`): the slots holding entry argument paths
 (`SourceExtraction.regionTable`), the fresh values and cells and the
 fresh fields, each a greatest fixed point (`freshTables`) over the
 evidence the computed claims give (`claimedCertificate`: a call of a slot its derivation read off the
 callee's signatures, any other node its sequent). A call is taken to
 keep its cells, its step's own evidence deciding it in the pass. The field
-names are those the callees' store regions read through one field
+names are those the callees' spine regions read through one field
 (`calleeRegionNames`). The pass checks each loop head's tables on every
-edge into it; a member the regional check itself refuses (`store regions …`,
+edge into it; a member the regional check itself refuses (`spine regions …`,
 naming no lacking facts) is run again without them, and one a regional walk
 refuses at an edge into a statement entry for facts it lacks is run again with
 those of its proposals left out ([the diagnosing walk](#the-diagnosing-walk)),
@@ -767,13 +767,13 @@ entry one entry of that kind no edge establishes (the next slot as a fresh
 value or cell, an argument path `forced` of slot 0, a fresh field of the
 first name): `stated-region-fresh` `marks`, `stated-region-lazy` `longer`,
 `stated-region-steps` `scan` and `stated-slot-collect` `collect`, accepted
-unforced, are refused at their store regions on an edge into a loop's
+unforced, are refused at their spine regions on an edge into a loop's
 head.
 
 ### Region separations
 
 At each loop head, the pairs of array bindings
-an allocation states apart (`IndexWrites.regionAtoms`: a literal's store
+an allocation states apart (`IndexWrites.regionAtoms`: a literal's spine
 apart from every array slot), carried along every edge to the slots whose
 mappings read them and kept where every predecessor carries them, of an
 allocation whose array the loop writes an element of outside every loop

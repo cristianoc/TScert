@@ -1,4 +1,4 @@
-// A footprint checked by store regions (the regional walk after the
+// A footprint checked by spine regions (the regional walk after the
 // footprint's own walk stops at `step`, whose region `runs.open[*]` lies
 // outside `f`'s stated bound) refused at a loop head for a proposed fact
 // the back edge does not establish (`runs.read`'s value, which `step`

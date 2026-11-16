@@ -27,7 +27,7 @@ row whose mechanism is separate, or absent, is work.
 | Call | `call_exits_exact`, the schema's instantiation, substitution and transport of the mark: instantiation per exit, rest actuals included | Call itself, at the selected signature; the facts a caller derives from it go through the separate Entry and Frame mechanisms above |
 | Alloc | `alloc_post`, with the typed allocation and separation lemmas, for the ordinary empty array | separate: `IndexWrites.regionAtoms`, `Checker.emptyArrays` |
 | Seq-Eff | `Post.compose_rebases`, `ThenEvidence.sound`, `CommandSummary.seq_sound`, `CommandSummary.handle_sound`: composition relative to the entry, on both exits | separate: `footprintCheck` and `StepGrades.admits`, over closed bounds along the walk |
-| Fresh-Eff | `rebaseAll_fresh_eff`, `Post.fresh_eff`, `ThenEvidence.into_fresh`: rebasing erases the fresh store's entry alone | separate: the fresh positions' projection in `StepCertificate.grades` and `Footprint.boundBelow`, and the regional checks |
+| Fresh-Eff | `rebaseAll_fresh_eff`, `Post.fresh_eff`, `ThenEvidence.into_fresh`: rebasing erases the fresh spine's entry alone | separate: the fresh positions' projection in `StepCertificate.grades` and `Footprint.boundBelow`, and the regional checks |
 | Conj | `SafePostExcV.cross_independent`, `PromiseWith.conj`, `Exits.exitPost_meet`, with the world-independence condition | Conj itself: `Effect.meetCovers` checks the rule's conditions |
 | Grow | `Derivation.grow` | separate: support, and the preservation deciders of writes and calls |
 | Dense | `Derivation.dense`, for a prefix bounded by a variable | separate: the density and type checks and the callback contracts |

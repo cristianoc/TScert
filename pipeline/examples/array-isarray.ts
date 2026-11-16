@@ -1,5 +1,5 @@
 // `Array.isArray` is the calculus's test of an array's identity: an array
-// owns its store, which no other value does. The arm where it holds keeps
+// owns its spine, which no other value does. The arm where it holds keeps
 // the array parts of the tested type, and the arm where it fails the rest;
 // an open record may be an array carrying other keys, so it stays on both.
 type Foo = { a: string; b: number };

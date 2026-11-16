@@ -1,4 +1,4 @@
-// A class method stating its effect, `{value: any, store: grow}`: it pushes
+// A class method stating its effect, `{value: any, spine: grow}`: it pushes
 // onto a field. A `map` callback calling it is within that footprint, which
 // keeps every dense prefix, so the result is dense; the instance type's
 // member states it, and the method's code is certified at it.

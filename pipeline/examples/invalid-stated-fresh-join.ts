@@ -1,4 +1,4 @@
-// A join with an old store (FOOTPRINTS.md, "Fresh array storage"): `runs`
+// A join with an old spine (FOOTPRINTS.md, "Fresh array storage"): `runs`
 // holds a fresh array on one branch and the caller's `xs` on the other, so
 // after the join its field has no fresh fact and `drain`'s
 // `spines: "grow"` is refused at the call. Run under Node,

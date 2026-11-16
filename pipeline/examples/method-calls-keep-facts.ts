@@ -2,7 +2,7 @@
 // `WeakMap`'s `get` and a `Map`'s construction state the empty footprint,
 // whose calls preserve every heap fact (`call-keep`), so a path's length bound a
 // precondition states is preserved by the lookup (`cached`); a `Map`'s `set` states
-// `{value: any, store: keep}`, which keeps every store, so a length bound
+// `{value: any, spine: keep}`, which keeps every spine, so a length bound
 // survives it (`mapped`) (SOURCE-CONTRACTS.md, "Weak tables").
 
 type Prepared = { segments: string[] };

@@ -24,16 +24,16 @@ The declarations below are **proposed interfaces and proof obligations**, not co
 Reuse `Footprints.Footprint := List (Region × Change)` and its heap-only interpretation. The stated region language contains:
 
 - The three class regions: values, arrays and views.
-- A store, store-plus-cells, or field at a path rooted at a call position.
+- A spine, spine-plus-cells, or field at a path rooted at a call position.
 - The own value locations of such a path, subject to the expressiveness issue below.
 
 Call position `0` is the receiver; position `i + 1` is argument `i`. Frame paths refer to the entry. Postconditions distinguish entry and exit explicitly; exit position `0` is the returned or thrown value.
 
-The note’s `π[*]` expands to the store entry and its element-cell entry, with the same change. Existing `pathElems` alone denotes only the cells. Selector unions expand to entries for their constituent classes. Internal `.all` expands to the three classes on allocated locations.
+The note’s `π[*]` expands to the spine entry and its element-cell entry, with the same change. Existing `pathCells` alone denotes only the cells. Selector unions expand to entries for their constituent classes. Internal `.all` expands to the three classes on allocated locations.
 
-**An expressiveness correction is necessary.** Today `receiverOwn` selects all own value locations, including fields not enumerated by a structural contract. A finite list of named `π.f` regions cannot generally express that set. Enumerating declared fields requires a proof that they exhaust the runtime own locations.
+**An expressiveness correction is necessary.** Today `receiverFields` selects all own value locations, including fields not enumerated by a structural contract. A finite list of named `π.f` regions cannot generally express that set. Enumerating declared fields requires a proof that they exhaust the runtime own locations.
 
-The smallest exact extension is a region `π.own`, restricted to value locations, with the existing meaning of `.inCls (.pathOwn …) .values`. Add this general region to the note. If the stated language must contain *only* the regions currently printed there, arbitrary `receiverOwn` contracts cannot be translated exactly; some contracts must instead be widened or refused. That is a semantic change, not a serialization refactor.
+The smallest exact extension is a region `π.fields`, restricted to value locations, with the existing meaning of `.inCls (.pathOwn …) .values`. Add this general region to the note. If the stated language must contain *only* the regions currently printed there, arbitrary `receiverFields` contracts cannot be translated exactly; some contracts must instead be widened or refused. That is a semantic change, not a serialization refactor.
 
 ```lean
 -- CHANGED from { value, store }.
@@ -63,11 +63,11 @@ theorem close_sound :
     Action Φ ρ s s' → Action Φ.close.fp ρ s s'
 ```
 
-These are three **components**, each holding a change, not three possible effects. Normalize changes according to their action on each category. In particular, the existing value normalization sends `grow` to `scalar`; store normalization sends `init` and `scalar` to `keep`. Prove the corresponding view normalization against the tagged representation.
+These are three **components**, each holding a change, not three possible effects. Normalize changes according to their action on each category. In particular, the existing value normalization sends `grow` to `scalar`; spine normalization sends `init` and `scalar` to `keep`. Prove the corresponding view normalization against the tagged representation.
 
 `Closed` remains a computational projection for class-only joins, widening and fast support checks. A general effect is never reconstructed from its closed projection. `closed?` gives equivalence; `close` gives only inclusion.
 
-For old closed effects, the exact embedding is `⟨value, store, store⟩`.
+For old closed effects, the exact embedding is `⟨value, spine, spine⟩`.
 
 ### Exit specifications and postconditions
 
@@ -77,7 +77,7 @@ structure CallEffects.ExitSpec where
   frame   : Footprints.Footprint
   ensures : List Parity.Formula
 
--- CHANGED: replaces closed, onThrow, receiverStore, receiverOwn,
+-- CHANGED: replaces closed, onThrow, receiverSpine, receiverFields,
 -- receiverGrows, elementWrite and the separate regions field.
 structure CallEffects.Effect where
   exits    : Exits ExitSpec
@@ -103,12 +103,12 @@ Use the existing assertion arena and two-state formulas. Factor their foundation
 
 The postcondition language must express the guarantees being removed:
 
-- Freshness of the result’s store or own locations.
+- Freshness of the result’s spine or own locations.
 - Conditional element predicates.
 - Append contents and length, including the correspondence with actual arguments.
 - View update contents, conversion, invalid-index behavior and unchanged receiver indices.
 
-Extend the shared assertion language with the required store observations and update expressions. Give these expressions ordinary equality, definedness and quantification semantics. Do not introduce a postcondition constructor whose only meaning is “the old `elementWrite` variant holds.”
+Extend the shared assertion language with the required spine observations and update expressions. Give these expressions ordinary equality, definedness and quantification semantics. Do not introduce a postcondition constructor whose only meaning is “the old `elementWrite` variant holds.”
 
 `ViewAssign` and `ExactWrite` remain useful semantic lemmas. The latter follows from the general assignment post under its format, index and value premises. `Kinds.ViewWrite.frame_iff` supplies the independent `{views: grow}` frame.
 
@@ -210,7 +210,7 @@ Composition follows the control-flow exits:
 
 Rebase each later frame to the composite entry and apply `Post.compose_at`. Join alternative executions by an upper bound. Keep the intermediate state explicit in the semantic proof; derive exported postconditions through checked consequences. Conjoining two posts while identifying their different `old` states is unsound.
 
-Fresh-Eff is part of rebasing. It removes a store entry only when that store lies beyond the composite entry mark. It does not erase old cells reached through a fresh array, or the class-wide view effect of writing through a fresh view.
+Fresh-Eff is part of rebasing. It removes a spine entry only when that spine lies beyond the composite entry mark. It does not erase old cells reached through a fresh array, or the class-wide view effect of writing through a fresh view.
 
 A loop certificate establishes:
 
@@ -227,9 +227,9 @@ The function’s inferred **mutation effect** is its body frame, rebased to the 
 
 | Decider | Present decision | General replacement |
 |---|---|---|
-| `Synthesis.wrote`, `throwWrites` | Accumulate value/store grades; classify unbounded throws; widen receiver and element-write cases | Propose per-exit entries for each operation, compose along control flow, and rebase using provenance. Acceptance uses the checked visits’ summaries. An exceptional path includes its entire preceding prefix. |
+| `Synthesis.wrote`, `throwWrites` | Accumulate value/spine grades; classify unbounded throws; widen receiver and element-write cases | Propose per-exit entries for each operation, compose along control flow, and rebase using provenance. Acceptance uses the checked visits’ summaries. An exceptional path includes its entire preceding prefix. |
 | `PassProposals` | Stand-ins, recursion assumptions and memo entries carry `(Closed, onThrow)` | Carry complete exit summaries. A recursive proposal is accepted only when each body exit entails its assumed specification. Widen frames by region inclusion; weaken proposed posts when necessary. Memo keys include both exits, posts and referenced assertions. |
-| `GraphCode.selectedWithinAt` | Compare the coarse footprint; separately allow receiver-own changes or a fresh receiver store | Instantiate the selected exit’s entries, rebase to the enclosing entry, discharge empty old regions by freshness, then check entry-wise coverage and change inclusion. No receiver-specific exemption remains. |
+| `GraphCode.selectedWithinAt` | Compare the coarse footprint; separately allow receiver-own changes or a fresh receiver spine | Instantiate the selected exit’s entries, rebase to the enclosing entry, discharge empty old regions by freshness, then check entry-wise coverage and change inclusion. No receiver-specific exemption remains. |
 | `PromiseCalls.keepsHeap` | Empty coarse footprint and neither receiver exception | Check that the instantiated frame is included in the empty effect. Prove that success gives entry-heap prefix preservation. |
 | `PromiseCalls.effectKept` | Select growth, receiver, argument-region and element-write branches | For each fact, check support/respect against every applicable effect entry, or derive it from Entry and the exact post. Apply independently to each completion. |
 
@@ -239,14 +239,14 @@ Entry-wise inclusion is a sound finite check, not a complete decision procedure 
 
 | Old field | Exact interpretation |
 |---|---|
-| `closed` | Three class entries, copying the old store grade to arrays and views |
-| `regions` | Each argument path’s store at `any` |
-| `receiverStore` | Receiver store at `any`, when `receiverOwn` does not take precedence |
-| `receiverOwn` | Receiver own **value** locations at `any`; preserve its present precedence |
+| `closed` | Three class entries, copying the old spine grade to arrays and views |
+| `regions` | Each argument path’s spine at `any` |
+| `receiverSpine` | Receiver spine at `any`, when `receiverFields` does not take precedence |
+| `receiverFields` | Receiver own **value** locations at `any`; preserve its present precedence |
 | `onThrow = true` | Exceptional frame equals the old frame; exceptional posts are empty |
 | `onThrow = false` | Exceptional top and true |
 | `ensures`, `fresh`, `freshObject`, `elements` | Corresponding normal postconditions |
-| `receiverGrows` | Its complete growth and append guarantee, including preservation outside the receiver store |
+| `receiverGrows` | Its complete growth and append guarantee, including preservation outside the receiver spine |
 | `elementWrite` | Its world-aware view frame plus its assignment/conversion postconditions |
 
 The first six rows admit exact frame elaboration. The last two do **not** elaborate to entries alone.
@@ -312,7 +312,7 @@ Remove the old wire decoder and its elaboration immediately. There is one accept
 
 Use the recorded local summaries for sequence, handler, loop and function inference. Replace the remaining flag-shaped decisions with the general checks. Connect the resulting certificates through `FunctionPlan.certify` to `PassUnit.mode8Accepted_sound`.
 
-Delete `elementWrite` and `stores/assign/exact` metadata variants; `onThrow`, `receiverStore`, `receiverOwn`, `receiverGrows`; separate argument-region lists; `(Closed, Bool)` stand-ins; superseded `wrote`/`throwWrites` effect inference and preservation branches. Keep semantic view-update and append lemmas used by the common postcondition interpretation.
+Delete `elementWrite` and `spines/assign/exact` metadata variants; `onThrow`, `receiverSpine`, `receiverFields`, `receiverGrows`; separate argument-region lists; `(Closed, Bool)` stand-ins; superseded `wrote`/`throwWrites` effect inference and preservation branches. Keep semantic view-update and append lemmas used by the common postcondition interpretation.
 
 **Obligations:** composition and loop soundness; prefix certificates; checked recursive assumptions; inferred/stated implication; the exact CLI acceptance theorem covering every unit member.
 
@@ -383,7 +383,7 @@ signature whose promise is about an actual past the saved ones and that
 states no precondition (`Effect.keeps`).
 
 A postcondition is read from the normal exit's postconditions by its
-formula: a fresh result store (`freshStore 0`, `ExitSchema.freshResult`), a
+formula: a fresh result spine (`freshSpine 0`, `ExitSchema.freshResult`), a
 fresh result object (`freshObject 0`, `ExitSchema.freshObjectResult`), the
 receiver's elements where the result is `true` (`elementsWhen 0 true 1 R`,
 `ExitSchema.elementsWhenTrue`) and the index facts at the exit
@@ -479,8 +479,8 @@ transitivity, and the postconditions from `hq`. A checked instance of `hq`
 uses the consequence machinery of `ThenEvidence.sound`; there is one
 rebasing relation. For the rest allocation the prefix changes no old
 location; fresh-result guarantees are lowered from the allocation heap's
-mark to the invocation's mark, a fresh entry of the rest store is
-discharged, old cells reached through that store are kept, and the
+mark to the invocation's mark, a fresh entry of the rest spine is
+discharged, old cells reached through that spine are kept, and the
 allocation's exceptional exit meets the invocation's exceptional guarantee.
 `Exits.exitPost_entry` covers equal entry heaps only.
 
@@ -544,8 +544,8 @@ The front end states an effect through its builders (`tools/type-graph.mts`),
 never as a literal object. `EffectOptions` is an authoring type, never
 serialized; a footprint effect (`footprintEffect`) is the exits the old
 fields stated: the closed bound's three class entries, the receiver's own
-locations (else its store) at `any`, then the normal postconditions in
-their order (fresh store, fresh object, elements where the result is
+locations (else its spine) at `any`, then the normal postconditions in
+their order (fresh spine, fresh object, elements where the result is
 `true`, the facts after, the receiver's growth and append, the element
 write's postconditions), and the exceptional exit the same frame where the
 options state throws, `⊤` otherwise, with no postcondition. An exact element
@@ -563,8 +563,8 @@ written differently are two types.
 ### Statements and proposals
 
 A declaration's statement (`Modifies<P, T>`, `Fresh<T>`) is serialized as
-its exits (`statedExits`): the closed frame with its store regions at `any`,
-`freshStore 0` for a fresh result, and on a throw the same frame or `⊤` as
+its exits (`statedExits`): the closed frame with its spine regions at `any`,
+`freshSpine 0` for a fresh result, and on a throw the same frame or `⊤` as
 `onThrow` states; an absent statement is `null`. The claims document states
 a function's proposed exits (`exits`) and its returned function's
 (`resultExits`), and an established interface entry the same two. The pass
@@ -640,9 +640,9 @@ The wire transaction is sequential and has one owner across Lean, TypeScript and
 The note states each point this design relies on
 ([the note](../REFERENCES.md#the-tolerant-frames-note)):
 
-1. **Top includes views.** The note's store class contains view stores, so
+1. **Top includes views.** The note's spine class contains view spines, so
    its `⊤` is the three classes the model's `⊤` is.
-2. **Own regions.** The note's regions include `π.own`, every field
+2. **Own regions.** The note's regions include `π.fields`, every field
    location of the object a path reads, the model's own-value region.
 3. **Seq-Eff's rebasing premise is the note's definition.** `Rebases`
    admits coverage absorbed by an entry of the frame so far at `any`; such

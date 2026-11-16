@@ -656,7 +656,7 @@ attributes.
 
 ## Node lists
 
-A source model array owns its store under `Array.prototype`
+A source model array owns its spine under `Array.prototype`
 ([arrays](SOURCE-MODEL.md#arrays)). A node list has its indices as getters
 on its prototype, the class's fields as its own keys, and a prototype
 overriding `at` and `Symbol.iterator`. The ordinary-array assumptions (own
@@ -785,7 +785,7 @@ visitors' types and its call at $`\varepsilon`$, on normal return
 callbacks, [native footprints](SOURCE-CONTRACTS.md#native-footprints)). A
 callback calling it with a visitor within $`\varepsilon`$ is within
 $`\varepsilon`$ (`compiler-api-visitor-effect`), and one whose visitor pops
-an array it reads is within no footprint keeping array stores
+an array it reads is within no footprint keeping array spines
 (`invalid-compiler-api-visitor-effect`).
 
 `forEachChild<T>(visitNode, visitList?)` takes two visitors, both the
@@ -794,7 +794,7 @@ when given, on each child list (a $`\mathsf{NodeList}`$), in the package's
 child order, stopping at the first truthy result, which it returns, else
 `undefined`. A visitor may write the client's own storage and never a host
 object; the traversal reads only the buffer, so the visited children are
-fixed whatever the visitor does, and a node list's store never changes
+fixed whatever the visitor does, and a node list's spine never changes
 (T4), so no visitor changes what a later visit is passed. The call's effect
 on the caller's heap is its visitors'. The visitor runs synchronously, during the call; an exception it
 throws propagates out of `forEachChild`, which then has no normal
@@ -817,7 +817,7 @@ instance throwing on every later request; a throw is an allowed outcome.
 
 **Requests' footprint.** A method a view lists whose arguments are
 primitives and host objects is read at the footprint
-$`\{\mathit{value}{:}\,\mathsf{any},\ \mathit{store}{:}\,\mathsf{grow}\}`$
+$`\{\mathit{value}{:}\,\mathsf{any},\ \mathit{spine}{:}\,\mathsf{grow}\}`$
 on normal return where its view entry explicitly marks `request`
 (`requestReading`): the client sends the
 primitives and the host objects' ids, so the serialization with
@@ -837,7 +837,7 @@ callback pops an array under Node). The front end's instances are opened by
 `openCompiler` (`tools/compiler-channel.mts`), with `compilerFileSystem`'s
 callbacks (`tools/files.mts`) or `tools/unchecked.mts`'s, which read files,
 record answers in fresh or owned maps and write module cells, removing no
-element of a store they did not allocate, and return strings, Booleans and
+element of a spine they did not allocate, and return strings, Booleans and
 fresh lists of names, JSON values (audited). An instance a verified
 program receives from outside is an input, whose callbacks within the
 footprint are an assumption of T8. A `map` callback calling a request gives
@@ -875,18 +875,18 @@ an assumption about runtime behaviour, rather than a Lean proof.
 
 | View member and declaration | Implementation and contract |
 | --- | --- |
-| `Checker.getContextualType(node: Expression): Type \| undefined;` | `getContextualType` sends snapshot and project ids and `getNodeId(node)`; the response becomes a cached host `Type` or `undefined`. Serialization contains no client object. The request reading gives the store-growth footprint on normal return under the retained-callback assumptions of T6 and T8. |
+| `Checker.getContextualType(node: Expression): Type \| undefined;` | `getContextualType` sends snapshot and project ids and `getNodeId(node)`; the response becomes a cached host `Type` or `undefined`. Serialization contains no client object. The request reading gives the spine-growth footprint on normal return under the retained-callback assumptions of T6 and T8. |
 | `API.parseConfigFile(file: DocumentIdentifier): ConfigResponse;` | `parseConfigFile` initializes the channel and sends `{ file }` directly to `apiRequest`. An object identifier can run getters or `toJSON` during payload serialization, so its view entry retains the ordinary declared signature with no preservation guarantee. The response is the channel's JSON-decoded object; its fields are ordinary writable data. |
 | `Snapshot.getProjects(): readonly Project[];` | `getProjects` checks disposal and returns `[...this.projectMap.values()]`, a fresh dense array of the snapshot's projects. It invokes no client callback and changes no existing model location. A disposed snapshot throws. |
 | `Snapshot.dispose(): void;` | `dispose` marks the snapshot disposed, disposes its projects, clears its maps and registry, calls the internal `onDispose` closure created by `API.updateSnapshot`, then requests `release` with the snapshot id. The closure removes the snapshot and releases cache references; it is not supplied by the client. Retained filesystem callbacks, if requested by the channel, remain subject to T6 and T8. Repeated disposal returns immediately; subsequent operations may throw. The normal-return footprint permits growth and preserves existing stable members. |
 | `Symbol.checkFlags: number` (declaration `readonly checkFlags: number;`) | The `Symbol` constructor assigns `data.checkFlags` once. No other assignment to `checkFlags` occurs in `api.js`. The member is a stable readonly number, with its value supplied by the server under T6. |
 | `Project.rootFiles` (declaration `readonly rootFiles: readonly string[];`) | The `Project` constructor assigns `data.rootFiles`, the channel's JSON-decoded array, once; no other assignment occurs in `api.js`, and the package writes no element of it. The member is a stable readonly view of a dense array of strings under T6; a write through another alias is T8's. |
 | `Program.getDeclarationDiagnostics(file?: DocumentIdentifier): readonly Diagnostic[];` | Sends snapshot and project ids and `file`, as `getSemanticDiagnostics` does, and returns the decoded array or a fresh empty one. An object identifier is serialized with `JSON.stringify`, so its view entry retains the declared signature. |
-| `Program.getGlobalDiagnostics(): readonly Diagnostic[];` | Sends snapshot and project ids alone and returns the decoded array or a fresh empty one: a request, at the store-growth footprint on normal return (T6, T8). |
-| `Checker.getSymbolAtLocation(nodes: readonly Node[]): (Symbol \| undefined)[];` | The method's second overload, beside `getSymbolAtLocation(node: Node)`. `Array.isArray` selects it, and `nodes.map(node => getNodeId(node))` reads the argument; the call runs no code of the program under the [trust surface](DESIGN.md#trust-surface)'s rows on arrays a program receives: a plain array, no proxy, owning no key `ArrayProto` declares (so `map` is the standard one) and no `constructor` (so `map` allocates an ordinary array), and holding data properties at its numeric keys (so `map` runs no getter). Outside those rows, a proxy, an array subclass or an indexed getter runs code during the call. `getNodeId` tests `instanceof RemoteNode` and reads the node's id, throwing on any other value; a hole, which `map` skips, is sent as `null`, and the server's answer, observed under Node, is an error (`invalid node handle`). It sends `getSymbolsAtLocations` with the ids and returns `data.map(…)` over the decoded response: a fresh dense array, one entry per node, each the client's shared `Symbol` for its id (the one the single form returns for that node) or `undefined` where the node has none (a statement, `invalid-compiler-api-array-query-entry`, run under Node). A request at the store-growth footprint on normal return (T6, T8), whose array result is fresh (`fresh` in `hostViews`). |
-| `Checker.getTypeAtLocation(nodes: readonly Node[]): (Type \| undefined)[];` | As the row above, with `getTypeAtLocations` and the client's shared `Type`s: a request at the store-growth footprint whose array result is fresh. |
+| `Program.getGlobalDiagnostics(): readonly Diagnostic[];` | Sends snapshot and project ids alone and returns the decoded array or a fresh empty one: a request, at the spine-growth footprint on normal return (T6, T8). |
+| `Checker.getSymbolAtLocation(nodes: readonly Node[]): (Symbol \| undefined)[];` | The method's second overload, beside `getSymbolAtLocation(node: Node)`. `Array.isArray` selects it, and `nodes.map(node => getNodeId(node))` reads the argument; the call runs no code of the program under the [trust surface](DESIGN.md#trust-surface)'s rows on arrays a program receives: a plain array, no proxy, owning no key `ArrayProto` declares (so `map` is the standard one) and no `constructor` (so `map` allocates an ordinary array), and holding data properties at its numeric keys (so `map` runs no getter). Outside those rows, a proxy, an array subclass or an indexed getter runs code during the call. `getNodeId` tests `instanceof RemoteNode` and reads the node's id, throwing on any other value; a hole, which `map` skips, is sent as `null`, and the server's answer, observed under Node, is an error (`invalid node handle`). It sends `getSymbolsAtLocations` with the ids and returns `data.map(…)` over the decoded response: a fresh dense array, one entry per node, each the client's shared `Symbol` for its id (the one the single form returns for that node) or `undefined` where the node has none (a statement, `invalid-compiler-api-array-query-entry`, run under Node). A request at the spine-growth footprint on normal return (T6, T8), whose array result is fresh (`fresh` in `hostViews`). |
+| `Checker.getTypeAtLocation(nodes: readonly Node[]): (Type \| undefined)[];` | As the row above, with `getTypeAtLocations` and the client's shared `Type`s: a request at the spine-growth footprint whose array result is fresh. |
 | `Signature.declaration` (declaration `readonly declaration?: NodeHandle \| undefined;`) | The `Signature` constructor assigns it, a new `NodeHandle` of the response's handle or `undefined`, and `api.js` assigns it nowhere else. It is an own writable, configurable data property, and the client shares one `Signature` per id (`getOrCreateSignature`), so code holding another alias may reassign it: each read is of `NodeHandle \| undefined`, and a test of it holds until the next call (`invalid-compiler-api-signature-declaration-call`, whose callback reassigns it through a signature fetched again, run under Node). The program writes it through no alias, the view's members being readonly; that what external code writes there is a `NodeHandle` or `undefined` is T8's. A signature with no declaration exists: the one TypeScript resolves at a binary expression (`invalid-compiler-api-signature-declaration`, run under Node). |
-| `Symbol.getMembers(): ReadonlyMap<__String, Symbol>;` | `getMembers` returns `this.membersCache ??= this.fetchSymbolTable("getMembersOfSymbol")`. `fetchSymbolTable` asks the symbols' registry for the symbols (`fetchSymbols`, which sends the snapshot id, the symbol's canonical project id and its own id, primitives alone, and returns `[]` where the response is `null`), then fills a `new Map()` with `table.set(symbol.escapedName, symbol)` for each: the escaped name, a string of the response, as the key, and the registry's shared `Symbol` for its id as the value. A symbol with no members gives an empty `Map`, never `undefined`. The first call makes the request; every later call on the symbol, and on every alias of it (the registry keeps one `Symbol` per id), returns the same `Map`, which the package writes no more. So the result is shared, not fresh: the `Map` and the private field holding it are writable at run time by code holding the symbol, as the registry's own `Map` of symbols by id is, from which every request returning a symbol takes its answer (`getOrCreateSymbol`); a value written there is what a later call or request returns (C7). No check of the program can establish that a value is the package's `Symbol`: `instanceof` is admitted only at a class of the file ([operations](HOST-FAMILIES.md#operations-and-their-obligations)), and at the package's class it would answer `true` of an object other code builds on the class's prototype. What such code writes there being a `Map` of strings to the registry's symbols, as what it writes into the registry being its symbols, is T8's. The view reads it at `ReadonlyMap<string, Symbol>` (reading rule 5), whose members are `Map.prototype`'s, a request at the store-growth footprint on normal return (T6, T8). The keys are escaped names, `___x` for a member `__x`: `get` at a display name may find nothing (`invalid-compiler-api-symbol-table-get`, run under Node). C7 checks the implementation and the table. |
+| `Symbol.getMembers(): ReadonlyMap<__String, Symbol>;` | `getMembers` returns `this.membersCache ??= this.fetchSymbolTable("getMembersOfSymbol")`. `fetchSymbolTable` asks the symbols' registry for the symbols (`fetchSymbols`, which sends the snapshot id, the symbol's canonical project id and its own id, primitives alone, and returns `[]` where the response is `null`), then fills a `new Map()` with `table.set(symbol.escapedName, symbol)` for each: the escaped name, a string of the response, as the key, and the registry's shared `Symbol` for its id as the value. A symbol with no members gives an empty `Map`, never `undefined`. The first call makes the request; every later call on the symbol, and on every alias of it (the registry keeps one `Symbol` per id), returns the same `Map`, which the package writes no more. So the result is shared, not fresh: the `Map` and the private field holding it are writable at run time by code holding the symbol, as the registry's own `Map` of symbols by id is, from which every request returning a symbol takes its answer (`getOrCreateSymbol`); a value written there is what a later call or request returns (C7). No check of the program can establish that a value is the package's `Symbol`: `instanceof` is admitted only at a class of the file ([operations](HOST-FAMILIES.md#operations-and-their-obligations)), and at the package's class it would answer `true` of an object other code builds on the class's prototype. What such code writes there being a `Map` of strings to the registry's symbols, as what it writes into the registry being its symbols, is T8's. The view reads it at `ReadonlyMap<string, Symbol>` (reading rule 5), whose members are `Map.prototype`'s, a request at the spine-growth footprint on normal return (T6, T8). The keys are escaped names, `___x` for a member `__x`: `get` at a display name may find nothing (`invalid-compiler-api-symbol-table-get`, run under Node). C7 checks the implementation and the table. |
 | `Symbol.getExports(): ReadonlyMap<__String, Symbol>;` | As the row above, with `exportsCache` and `getExportsOfSymbol`: a class's statics and its `prototype`, a module's exports. |
 | `TypePredicateKind` (`dist/enums/typePredicateKind.enum.d.ts`) | A host enum of four members, `This` 0, `Identifier` 1, `AssertsThis` 2 and `AssertsIdentifier` 3, whose runtime object is the emitted enum of those values (C1). `getTypePredicateOfSignature` sends the snapshot, project and signature ids and builds a fresh record from the response: `kind`, `parameterIndex` and `parameterName` copied from it, `type` the registry's `Type` or `undefined`. The server's `kind` is the checker's `TypePredicateKind`, whose values the enum file is generated from (`internal/checker/types.go`); C7 meets each member at a predicate of its form. |
 | `ThisTypePredicate`, `AssertsThisTypePredicate` | Their declarations state `parameterIndex: undefined`, but the client copies the server's index, 0 for a predicate about `this` (C7): a test of the index tells no predicate about a parameter from one about `this`, whose `parameterName` is `undefined` (`invalid-compiler-api-type-predicate-this-index`, run under Node). Their views list `kind`, `parameterName` and `type` and no index, so the index is read only where a test of `kind` has left the predicates about a parameter, as `collectDeclarations` reads it ([the repair](SOURCE-REWRITES.md#a-predicates-index-read-before-its-kind-is-tested)). An asserted predicate may state no type (`asserts x`; `invalid-compiler-api-type-predicate-type`, run under Node). |
@@ -1139,7 +1139,7 @@ regression evidence for the named properties, not proofs of the assumptions.
   host-classified model object owning its stated members and its runtime
   object's undeclared own data fields, with model prototype objects owning
   the keys its runtime chain provides beyond those, so `in` and
-  `%HasProperty%` answer as at run time; a node list's also owns its store
+  `%HasProperty%` answer as at run time; a node list's also owns its spine
   of the $`v_i`$; a transparent library entry's contract holds of these as
   of any value of its parameter types. Host values are objects, not callable,
   `typeof` gives `"object"` for them, and `Array.isArray` gives `true`
@@ -1168,7 +1168,7 @@ regression evidence for the named properties, not proofs of the assumptions.
   getters) and what serializing the callbacks' results runs (their
   `toJSON` methods), and changes no stable member of an object it returned earlier.
   With T4 and callbacks within
-  $`\{\mathit{value}{:}\,\mathsf{any},\ \mathit{store}{:}\,\mathsf{grow}\}`$,
+  $`\{\mathit{value}{:}\,\mathsf{any},\ \mathit{spine}{:}\,\mathsf{grow}\}`$,
   a call of a member whose arguments are primitives and host objects is
   within that footprint on normal return. A result need not describe the handles passed when they
   come from another snapshot, project or instance.
@@ -1181,7 +1181,7 @@ regression evidence for the named properties, not proofs of the assumptions.
   interpretation recursively, and every sync API instance it gives was
   opened with `fs` callbacks that, with the serialization of their
   results, stay within
-  $`\{\mathit{value}{:}\,\mathsf{any},\ \mathit{store}{:}\,\mathsf{grow}\}`$:
+  $`\{\mathit{value}{:}\,\mathsf{any},\ \mathit{spine}{:}\,\mathsf{grow}\}`$:
   its arguments, the results of external
   functions it calls, the arguments external code passes to its callbacks,
   and every location reachable from them hold no host object where their

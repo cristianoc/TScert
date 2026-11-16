@@ -1,4 +1,4 @@
-// A recursive visitor captures a forward helper with a store-preserving contract.
+// A recursive visitor captures a forward helper with a spine-preserving contract.
 // Census functions:
 // fragment-expressions.mts#knownLocal
 // fragment-expressions.mts#localArrow

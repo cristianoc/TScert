@@ -1,8 +1,8 @@
-// A frame stating a store region read through a `@stable` field
+// A frame stating a spine region read through a `@stable` field
 // (docs/drafts/stated-effects.md, §6.1): `readRuns` splices the array its
-// record's `openBrackets` holds, changing value locations and that store
+// record's `openBrackets` holds, changing value locations and that spine
 // alone, so it states `values: "any"` and the region
-// `"runs.openBrackets[*]": "any"`, every other store kept. The field is
+// `"runs.openBrackets[*]": "any"`, every other spine kept. The field is
 // stable, so the array the body reads is the one the region names at entry.
 type Runs = { /** @stable */ readonly openBrackets: number[] };
 
@@ -17,9 +17,9 @@ export function closeAll(runs: Runs): Modifies<{ values: "any"; "runs.openBracke
 }
 
 // A caller keeping a fact across the frame (§6.1): `i < flags.length` holds
-// after `readRuns(runs)`, whose region is `runs.openBrackets`'s store, since
-// the precondition states that array's store apart from `flags`'s
-// (`flags !== runs.openBrackets`, ARITHMETIC.md, "Store separation"); the
+// after `readRuns(runs)`, whose region is `runs.openBrackets`'s spine, since
+// the precondition states that array's spine apart from `flags`'s
+// (`flags !== runs.openBrackets`, ARITHMETIC.md, "Spine separation"); the
 // field is stable, so the separation holds at every call of the loop.
 /** @requires flags !== runs.openBrackets */
 export function measure(flags: number[], runs: Runs): number {

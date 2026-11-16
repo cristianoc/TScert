@@ -1,5 +1,5 @@
 // Array literals spreading host iterables and a union of arrays: each is a
-// fresh array of its own, whose store contract its claim states, holding the
+// fresh array of its own, whose spine contract its claim states, holding the
 // elements of `%Spread:K%`'s array; a `Set` built of an array is at the
 // array's element type.
 export function a(xs: string[]): string[] {

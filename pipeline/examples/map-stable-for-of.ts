@@ -1,7 +1,7 @@
 // A `map` callback looping over an array with `for...of`: the array
 // iterator's step writes only its own position, a number, and the loop's
 // body pushes onto an array the callback builds: the callback is within
-// `{value: any, store: grow}`, which keeps every dense prefix, so the result
+// `{value: any, spine: grow}`, which keeps every dense prefix, so the result
 // is dense.
 export function doubled(xss: readonly (readonly number[])[]): number[][] {
   return xss.map((xs: readonly number[]): number[] => {

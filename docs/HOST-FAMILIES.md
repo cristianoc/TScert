@@ -518,7 +518,7 @@ data fields (`parent`, `view`, `_cursorIndex`, …), whose contents the model
 leaves unknown; its prototype field leads to model prototype objects owning
 the keys its runtime chain provides beyond its own (a node list's `at`,
 `pos`, `forEachNode`, then `Array.prototype`'s). A node list's own keys are
-its store of the $`v_i`$, `length` and those data fields, none of them a key
+its spine of the $`v_i`$, `length` and those data fields, none of them a key
 its prototypes provide (T4).
 
 The families of the types a host value can be held at admit host objects:
@@ -528,7 +528,7 @@ object's own keys admit ordinary objects only, and so does every family of
 a callable or a primitive:
 
 - a record with an invariant field (`refsT` of a non-empty field list), and
-  a writable array or tuple, whose store is an invariant field;
+  a writable array or tuple, whose spine is an invariant field;
 - a record whose own-key bound does not admit `[[host]]` (`ownKeysT`, a
   bound listing keys without it or excluding it), and a dictionary
   (`dictViewT`, `dictCellT`);
@@ -594,13 +594,13 @@ Symbol-keyed fields, which the dictionary does not constrain and which may
 hold a host object, are ignored by serialisation.
 
 For the array arm it is argued here; `reach_noHost` does not state it, since
-its premise admits no array. A member of the array arm owns the store key,
+its premise admits no array. A member of the array arm owns the spine key,
 so it is a JavaScript array (the trust surface, DESIGN.md), and
 serialization reads it by its indices only: it may be a host object
 (readonly arrays admit them), and its other own keys are not read. It owns
 no `toJSON` (the array clause's own-key exclusion) and inherits none (the
-trust surface). Each index read gives an element of its store, a
-`JsonValue | undefined` at a lower index by the store's element contract,
+trust surface). Each index read gives an element of its spine, a
+`JsonValue | undefined` at a lower index by the spine's element contract,
 or, at a hole, `undefined`, since neither `Array.prototype` nor
 `Object.prototype` owns a numeric key; SerializeJSONArray writes `null` for
 `undefined`. So the traversal continues at a `JsonValue`, and the descent
@@ -640,10 +640,10 @@ each obligated step by its own rule.
 | Operation                                                                                                                      | Model                                                                                  | Classification                                                                  |
 | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | a member read in every form (`o.m`, `o?.m`, `o["m"]`, a pattern's key); a call of a stated method                              | the member's value                                                                     | transparent                                                                     |
-| `===`, `!==`, `typeof`, `Array.isArray`, `"k" in o`, `%HasProperty%`, `instanceof` a class of the file                          | identity, type tag, the store, the model value's keys                                  | transparent; `in` narrows nothing                                               |
-| `for…of`, `[...x]`, `f(...x)`, `const [a, ...r] = x`, `[a, ...r] = x`                                                          | the store's elements                                                                   | transparent (a node list's table)                                               |
+| `===`, `!==`, `typeof`, `Array.isArray`, `"k" in o`, `%HasProperty%`, `instanceof` a class of the file                          | identity, type tag, the spine, the model value's keys                                  | transparent; `in` narrows nothing                                               |
+| `for…of`, `[...x]`, `f(...x)`, `const [a, ...r] = x`, `[a, ...r] = x`                                                          | the spine's elements                                                                   | transparent (a node list's table)                                               |
 | `f.apply(t, x)`, `f.call(t, …)`, `f.bind(t, …)` of a client function                                                          | `x`'s `length` and indices                                                             | transparent                                                                     |
-| `new Set(x)`; `new Map(x)` with `x` an array of pairs; either of a host collection                                             | the store's elements; a pair's `0` and `1`; the collection's                           | transparent; a node list is no array of pairs and no host collection            |
+| `new Set(x)`; `new Map(x)` with `x` an array of pairs; either of a host collection                                             | the spine's elements; a pair's `0` and `1`; the collection's                           | transparent; a node list is no array of pairs and no host collection            |
 | `Promise.all(x)`                                                                                                               | elements at `Promise` types                                                            | transparent: realm promises by the [await assumption](SOURCE-CONTRACTS.md#async-functions-and-await), never host objects |
 | `String(x)`, a template, `+` with a string, `join`, `toString`                                                                 | the complete [conversion contract](SOURCE-CONTRACTS.md#prototype-contracts)            | transparent where the operand meets the complete contract: a node list owns no `toString`, `join` or `Symbol.toPrimitive`, its prototypes provide none but `Array.prototype`'s, and its elements, nodes, meet the contract nowhere, so only an empty list can |
 | every member of the array overlay on a readonly receiver, `at` included                                                        | its contract                                                                           | transparent: a node list inherits each but `at`, whose override gives `undefined` where `Array.prototype.at` gives an element, within the contract `T \| undefined` |
@@ -659,10 +659,10 @@ each obligated step by its own rule.
 | a member write                                                                                                                 | the receiver's invariant field written                                                 | the write rule's invariant field, which excludes host values (R1)               |
 | `Object.hasOwn(o, k)`                                                                                                           | a Boolean                                                                              | transparent: [[GetOwnProperty]] runs no code, and no value of `o` reaches the program |
 | `Object.freeze` of an object literal written as its argument (`%Freeze:K%`)                                                   | the fresh object, its fields readonly views                                            | transparent: a fresh object, no host value                                      |
-| `Array.from` of an array or of a length record; `structuredClone(x)`                                                                               | the store's elements; a value at `unknown`                                             | transparent                                                                     |
+| `Array.from` of an array or of a length record; `structuredClone(x)`                                                                               | the spine's elements; a value at `unknown`                                             | transparent                                                                     |
 | `Object.getPrototypeOf(o)` compared with `Object.prototype` (`%PrototypeIs:Object%`), `Reflect.ownKeys(o)` (`%OwnKeys%`)        | `o`'s [[GetPrototypeOf]]; its [[OwnPropertyKeys]]                                     | obligated: $`\mathrm{excludesHost}`$ of `o`, whose internal methods may be the host's code |
 | `concat` of arrays, `hasOwnProperty`, `delete`, `Object.freeze` of any other operand, other prototype reflection                | —                                                                                      | refused: not in the fragment                                                    |
-| `sort`, `reverse`, `push`, `pop`, `shift`, `unshift`, `splice`                                                                 | the receiver's store written                                                           | a writable receiver, which excludes host values                                 |
+| `sort`, `reverse`, `push`, `pop`, `shift`, `unshift`, `splice`                                                                 | the receiver's spine written                                                           | a writable receiver, which excludes host values                                 |
 | an `Array.prototype` member called with another receiver (`Array.prototype.sort.call(l)`)                                      | —                                                                                      | refused: no library value but `Boolean`, `String` and `Number` is admitted as a value                  |
 
 **First-class library values.** The obligated library calls are members of
@@ -1059,7 +1059,7 @@ $`P`$:
 ```
 
 with $`\{\mathsf{keep},\mathsf{keep}\}`$ the footprint that changes no value
-and no store, $`\bigcup_{t\in K_g} S_t`$ the union of the root's arms under
+and no spine, $`\bigcup_{t\in K_g} S_t`$ the union of the root's arms under
 the run's selection whose tags meet $`K_g`$ (the family's definition
 `guard.g`, of one arm per tag of $`K_g`$ where the selection gives each its
 own, an arm covering several tags otherwise), and the promise signature of

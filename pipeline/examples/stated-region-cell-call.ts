@@ -2,7 +2,7 @@
 // storage"): `take` writes `acc`, so `acc` is a cell, and `note`'s frame
 // states `values: "any"`, which may replace the cell's contents with an
 // old array. The cell keeps its freshness only across steps whose frames
-// keep every location of class value, so the store `push` grows after the
+// keep every location of class value, so the spine `push` grows after the
 // call is any of the entry heap's, refused at the regional check. `note`
 // cannot reach the cell, but the frame states no reachability; the slot
 // form, `stated-slot-collect`, verifies.

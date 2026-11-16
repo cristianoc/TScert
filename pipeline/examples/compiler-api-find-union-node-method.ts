@@ -3,9 +3,9 @@
 // (tools/declaration-graph.mts), `makeProbe`'s copied part
 // (tools/type-probe.mts) and `lowerFile`'s root declaration
 // (tools/fragment-parse.mts). Each kind holds the method, which the
-// audited contract states changes no array store, so the member is bound
+// audited contract states changes no array spine, so the member is bound
 // to the object and called at that effect: the callback keeps every array
-// store, and each visit passes an element.
+// spine, and each visit passes an element.
 import * as ts from "typescript/unstable/ast";
 
 export function overloadAt(

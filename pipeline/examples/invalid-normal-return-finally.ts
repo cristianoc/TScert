@@ -1,4 +1,4 @@
-// A finalizer's return overrides the throw and exposes the changed store.
+// A finalizer's return overrides the throw and exposes the changed spine.
 export function wrong(
   xs: number[],
 ): Modifies<{ values: "any"; spines: "grow" }, number> {

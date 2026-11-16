@@ -1,4 +1,4 @@
-// Bounds pattern P4: an upper bound of a length across a call growing stores.
+// Bounds pattern P4: an upper bound of a length across a call growing spines.
 // Fact: a.flags.length <= a.starts.length across a callee whose frame names
 // its region (`"out[*]": "any"`), with both arrays stated apart from `out`,
 // so the test i + 1 < a.flags.length bounds the read of a.starts.
@@ -7,7 +7,7 @@
 // measurement.ts getSegmentFit, countLigaturesOnFirstLetter,
 // measureFitAdvances; rich-inline.ts prepareRichInline (18 sites).
 // `regional` verifies: the survival check keeps a length read through a
-// `@stable` path across a regional store frame whose region the stated
+// `@stable` path across a regional spine frame whose region the stated
 // separations place apart. Gap: the separation of a fresh literal's array
 // from an array at a parameter's path is not established at the loop's
 // entry (`paths`), and the test i + 1 < flags.length does not bound the

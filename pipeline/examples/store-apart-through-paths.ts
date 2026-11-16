@@ -3,7 +3,7 @@
 // slot the read gave; the loops' written invariants state it over the path
 // `analysis.flags`, unguarded and under a guard that the second record may
 // be `null`. The edges into the loops entail each from the stated one
-// through the read link (ARITHMETIC.md, "Store separation").
+// through the read link (ARITHMETIC.md, "Spine separation").
 type Runs = { read: number, /** @stable */ readonly open: number[] }
 type Analysis = { /** @stable */ readonly flags: number[] }
 

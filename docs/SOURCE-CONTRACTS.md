@@ -179,7 +179,7 @@ states.
 A value the module does not define joins its scope at the type its
 declaration states. These rules are assumptions a result is relative to.
 What a function's declaration states of a call beyond its precondition (a
-footprint, a postcondition, a guard's promise, a throw bound, store
+footprint, a postcondition, a guard's promise, a throw bound, spine
 regions, a fresh result: $`\epsilon`$) is assumed only of a declaration
 with no body; an import from a module with a body states it only where its
 module's check establishes it, at the import's
@@ -505,7 +505,7 @@ written one stays refused
 
 A host value's declared signature is read over kinded worlds: every location
 has a role fixed at its allocation (a field, a binding's cell, an element
-cell, an array's or a view's store, an object's identity), and a well-formed
+cell, an array's or a view's spine, an object's identity), and a well-formed
 heap holds at each location contents of its role's shape, references
 included ([kinds](SINGLE-PASS-PROOF.md#kinded-states)). The host and the
 libraries are modeled ([modeling a library](#modeling-a-library)), and an
@@ -526,8 +526,8 @@ accurate model of them is one that holds over these worlds:
   world and the running term's references valid, and an exit, normal or a
   throw, meets the signature's result or exception type and
   postconditions. A native allocating a property allocates a field, one
-  growing an array's store lists fresh element cells, and none changes a
-  view store's length.
+  growing an array's spine lists fresh element cells, and none changes a
+  view spine's length.
 
 Lean proves the structural part of the first: the empty state is
 well-formed at every budget (`Kinds.empty_state`), and allocating a declared
@@ -536,10 +536,10 @@ with valid references, keeps the state well-formed and gives the object its
 record type (`Kinds.alloc_state`, the program's allocation rule), so a
 declaration set of records, prototypes and cells whose fields' contents can
 be allocated in some order is realized from the empty state; a structural
-example holding every family at once, a typed array's view store and
+example holding every family at once, a typed array's view spine and
 metadata included, is `Kinds.families_state`. What stays assumed is the
 contents no allocation constructs: a callable's membership in its function
-type (the behaviour of native code), and a host object's view store and
+type (the behaviour of native code), and a host object's view spine and
 length metadata, which no source allocation makes.
 
 A call contract states a typed array's element write (`%ByteSet%`, a
@@ -549,11 +549,11 @@ $`\{\mathsf{all\text{-}views}:\mathsf{grow}\}`$, which on well-formed
 states is the view-element write from the entry world and heap to the exit
 world and heap (`Kinds.ViewWrite.frame_iff`), at the one world the exit
 reaches. The exit world extends the entry one and the exit heap meets it;
-every location whose role in the entry world is no view store keeps its
-contents; a view store keeps its length, and each cell it newly lists is
+every location whose role in the entry world is no view spine keeps its
+contents; a view spine keeps its length, and each cell it newly lists is
 fresh. The roles are the entry world's because a role assignment chosen only
-to fit the entry heap may give an ordinary array's store the role of a view
-store, and so let the write change it (from `[arr [some 1], null]` to
+to fit the entry heap may give an ordinary array's spine the role of a view
+spine, and so let the write change it (from `[arr [some 1], null]` to
 `[arr [some 2], null, null]`, location 0). The meaning of callable and
 constructor types carries these contracts, so `mode8Accepted_sound` is
 relative to the model's accuracy through the entry conditions of its
@@ -593,13 +593,13 @@ front end states a native's or a library's contract through its builder
 (`footprintEffect`, `tools/type-graph.mts`), whose options name the exits:
 
 - **normal frame**: the closed bound's three class entries, then the
-  receiver's own value locations (`receiverOwn`) or else its store
-  (`receiverStore`) at `any`;
-- **normal postconditions**: the result's fresh store (`fresh`) and fresh
+  receiver's own value locations (`receiverFields`) or else its spine
+  (`receiverSpine`) at `any`;
+- **normal postconditions**: the result's fresh spine (`fresh`) and fresh
   object (`freshObject`), the receiver's elements where the result is
   `true` (`elements`), each stated index fact (`ensures`); for
-  `receiverGrows` the action of `{receiver store: any}`, the receiver
-  store's extension and the append of the actuals; for an element write the
+  `receiverGrows` the action of `{receiver spine: any}`, the receiver
+  spine's extension and the append of the actuals; for an element write the
   action of $`\{\mathsf{all\text{-}views}:\mathsf{grow}\}`$, and for
   `assign` View-Write at the typed array's format, for an exact write
   View-Write at the element type's format and its precondition's facts,
@@ -660,13 +660,13 @@ from exits held from the call's entry: `Effect.heldPosts_call`). Each
 consequence a decision of the pass reads of a call is derived from the
 exit's frame or one of its postconditions: the frame
 (`Effect.callPost_within`, on a throw `Effect.callExc_exitFrame`,
-`Effect.callExc_frame`), a fresh result store or object
+`Effect.callExc_frame`), a fresh result spine or object
 (`Effect.callPost_fresh`, `Effect.callPost_freshObject`), the receiver's
 elements (`Effect.callPost_elements`), the index facts it ensures
 (`Effect.callPost_ensures`); and, each from the postconditions that state
 it, read at the call (`Effect.callPost_holds`), the receiver's growth from
-the frame `{receiver store: any}` and the store's extension
-(`Effect.callPost_storeGrows`, `receiverGrows_iff`), the append of the
+the frame `{receiver spine: any}` and the spine's extension
+(`Effect.callPost_spineGrows`, `receiverGrows_iff`), the append of the
 actuals (`Effect.callPost_appends`, `receiverAppends_iff`), an element
 write's change from the views' growth (`Effect.callPost_viewGrowth`), and
 an exact element write from View-Write at its element type's format with
@@ -1587,7 +1587,7 @@ whose body reads as an async function's, its returns and `await`s the
 A constructor call may spread tuples of required positions, including readonly
 and empty tuples. The callee is evaluated once before the actuals. Each spread
 contributes its elements in order; before a later actual executes code, the
-spread's elements are saved in a fresh internal store. Constructor parameter
+spread's elements are saved in a fresh internal spine. Constructor parameter
 contracts check the expanded argument list. Optional and unbounded tuple
 positions require a separate argument-count rule.
 
@@ -2046,7 +2046,7 @@ The entries:
 $`\mathsf{view}_t\,\{\ldots\}`$ is the type `Clause.view` of the typed
 arrays of the format $`t`$ with the listed methods
 ([the calculus](SEMANTICS.md#operational-language)): the values whose
-descriptor makes them typed arrays of that format, naming their view store
+descriptor makes them typed arrays of that format, naming their view spine
 and their fixed length. The declaration's `view` field, which only these
 overlay entries state, is the representation boundary: no field or
 signature shape makes a value a typed array, and no program object meets a
@@ -2069,8 +2069,8 @@ is an integer-indexed exotic object (ECMA-262, "TypedArray Objects"): its
 number of the view's element type (an integer in its range, or for a
 `Float64Array` any double, `NaN` included), and `undefined` at any other, never reading the
 prototype chain, and its `length` is `%TypedArray%.prototype`'s getter.
-A typed array's elements are the cells its view store lists, the view store
-its descriptor names: the value $`\mathsf{viewStore}(t,\langle c_0,\ldots,c_{N-1}\rangle)`$,
+A typed array's elements are the cells its view spine lists, the view spine
+its descriptor names: the value $`\mathsf{viewSpine}(t,\langle c_0,\ldots,c_{N-1}\rangle)`$,
 one element cell per index below its fixed length $`N`$, each holding the
 element, which no step of the program reads or copies and only the
 intrinsics' and the view methods' contracts state (`HeapKnowledge.elementsOf`). An element read at a number and a read of
@@ -2086,7 +2086,7 @@ the intrinsics stating them, and so is an element write at a number,
 \qquad
 \%\mathrm{ByteLength}\%\colon(\mathit{Uint8Array})\Rightarrow_\emptyset\mathtt{number}
 \qquad
-\%\mathrm{ByteSet}\%\colon(\mathit{Uint8Array},\ \mathtt{number},\ \mathtt{number})\Rightarrow_{\{\mathsf{value}:\mathsf{keep},\ \mathsf{store}:\mathsf{grow}\},\ \mathsf{elementWrite}}\mathtt{number}
+\%\mathrm{ByteSet}\%\colon(\mathit{Uint8Array},\ \mathtt{number},\ \mathtt{number})\Rightarrow_{\{\mathsf{value}:\mathsf{keep},\ \mathsf{spine}:\mathsf{grow}\},\ \mathsf{elementWrite}}\mathtt{number}
 ```
 
 each checked at its argument as any call is, so a read the parser writes
@@ -2099,15 +2099,15 @@ index to it converted to the view's element type, modulo 256 for a
 setting none at any other key; it answers the number, the value the
 assignment is. The views over one buffer share its bytes (`subarray`), so a
 write changes the elements of every view over the written bytes: in the
-model it replaces the written entries of those views' element stores by
-fresh locations holding what each view then reads there. It changes stores
-alone and keeps their lengths: the store-growth footprint, values kept, with
+model it replaces the written entries of those views' element spines by
+fresh locations holding what each view then reads there. It changes spines
+alone and keeps their lengths: the spine-growth footprint, values kept, with
 `elementWrite` (`Effect.viewPost`, `Kinds.ViewWriteOf`): every location
-whose role at the call's entry is not a view's element store keeps its
-contents, and each view's element store keeps its length, every cell it
+whose role at the call's entry is not a view's element spine keeps its
+contents, and each view's element spine keeps its length, every cell it
 newly lists fresh, which on well-formed states is the action of the effect
 $`\{\mathsf{all\text{-}views}:\mathsf{grow}\}`$ (proved:
-`Kinds.ViewWrite.frame_iff`). So no object or number changes and every store keeps its
+`Kinds.ViewWrite.frame_iff`). So no object or number changes and every spine keeps its
 length (`ElementWrite.Holds`, what the relation gives of the two heaps), and
 a fact of values,
 paths, lengths and typed-array lengths survives the write, and a quantified
@@ -2162,7 +2162,7 @@ $`65535`$ of a `Uint16Array`, from $`-2^{31}`$ to $`2^{31}-1`$ of an
 `Int32Array`, any of a `Float64Array`:
 
 ```math
-\%\mathrm{ByteSet}\%\colon(V_\mathit{Int32Array},\ \mathtt{number},\ \mathtt{number})\Rightarrow_{\{\mathsf{value}:\mathsf{keep},\ \mathsf{store}:\mathsf{grow}\},\ \mathsf{elementWrite}\ \mathsf{exact}_\mathit{Int32}}^{\ \mathrm{int}(2),\ 0\le 2\le\mathrm{view}(1)-1,\ \mathrm{int}(3),\ -2^{31}\le 3\le 2^{31}-1}\mathtt{number}
+\%\mathrm{ByteSet}\%\colon(V_\mathit{Int32Array},\ \mathtt{number},\ \mathtt{number})\Rightarrow_{\{\mathsf{value}:\mathsf{keep},\ \mathsf{spine}:\mathsf{grow}\},\ \mathsf{elementWrite}\ \mathsf{exact}_\mathit{Int32}}^{\ \mathrm{int}(2),\ 0\le 2\le\mathrm{view}(1)-1,\ \mathrm{int}(3),\ -2^{31}\le 3\le 2^{31}-1}\mathtt{number}
 ```
 
 and alike of the others, $`\mathsf{exact}_t`$ naming the element type $`t`$
@@ -2171,7 +2171,7 @@ and alike of the others, $`\mathsf{exact}_t`$ naming the element type $`t`$
 precondition is the range the pass uses it at, and the effect decoder
 refuses an exact effect whose precondition omits it
 (`ElementKind.preFacts`). `fill`, `copyWithin` and `set` state the frame
-alone (`elementWrite` `stores`). A call meeting it writes a valid index and a value
+alone (`elementWrite` `spines`). A call meeting it writes a valid index and a value
 $`t`$ takes (`ElementKind.exactPre_of_requires`), where the conversion is
 `ElementKind.convert` (`ElementKind.convert_conv`): the index's cell holds
 $`\mathrm{conv}_t(v)`$ and every other index's cell what it held
@@ -2203,7 +2203,7 @@ value, the linear term $`\mathrm{view}(b)`$
 ([linear facts](ARITHMETIC.md#linear-facts)). `%ByteLength%`'s
 postcondition states its result that length, and `%ByteAt%` has a second signature, a read at a safe
 integer below it, whose result is the element, a number, and the element
-the view's view store lists at that index (`IndexFact.element`):
+the view's view spine lists at that index (`IndexFact.element`):
 
 ```math
 \%\mathrm{ByteLength}\%\colon(\mathit{Uint8Array})\Rightarrow_\emptyset^{\ \mathsf{ensures}\ \mathrm{int}(0),\ 0=\mathrm{view}(2)}\mathtt{number}
@@ -2218,7 +2218,7 @@ $`0\le k<\mathrm{view}(b)`$ is a valid integer index (IsValidIntegerIndex:
 integral, not `-0`, below the length; the key `-0` is `0` after
 ToPropertyKey's canonical numeric string), so the read is the element there,
 of the view's element type, a number (a `Float64Array`'s any double, `NaN`
-included), and the element the view's element store holds there, which the
+included), and the element the view's element spine holds there, which the
 model's write keeps current. The getter reads the view's slots and the read
 runs no code; neither writes. The key is never copied (`copiedKey`) and no source property
 names it (`RequestJson.reservedKey`);
@@ -2301,7 +2301,7 @@ A record with a readonly or
 optional field, a method or an index met with a function type has no clause:
 that pair is dropped, as the model's meet drops it (so `{}`'s function arm
 meets such a record as nothing, and its record arm as the record), and an
-intersection it leaves with nothing is refused for it. An array owns its store, so a function is
+intersection it leaves with nothing is refused for it. An array owns its spine, so a function is
 never one, and their meet is empty. An interface stating no member of its own
 is its bases' meet (`interface Callback extends Function {}` is `Function`).
 An intersection whose meet is empty (`string & { a: number }`, a function and
@@ -3029,7 +3029,7 @@ Every kept value is an $`S`$ without the bound $`S\le T`$, which the
 overlay leaves out; at $`S`$ the empty type the result is empty. The
 callback's closed footprint also bounds the native on normal return: beside
 callbacks it only reads existing locations and writes the fresh result's
-store and element cells. This includes reentrant calls; their writes must
+spine and element cells. This includes reentrant calls; their writes must
 meet the callback's contract. No exceptional footprint is stated.
 `guard-filter-footprints` exercises pure, value-writing, growing and
 shrinking callbacks; `blocker-next-guard-filter-map-density` keeps the
@@ -3055,15 +3055,15 @@ plain signatures.
 
 `find` is stated at its guard overload,
 `find<S extends T>(predicate: (value: T, index: number, obj: readonly T[]) => value is S): S | undefined`,
-at each closed footprint $`\varepsilon`$ keeping array stores
-($`\varepsilon.\mathit{store}=\mathsf{keep}`$):
+at each closed footprint $`\varepsilon`$ keeping array spines
+($`\varepsilon.\mathit{spine}=\mathsf{keep}`$):
 
 ```math
-\frac{\varepsilon.\mathit{store}=\mathsf{keep}\quad f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\varepsilon} S\,[\mathsf{guards}\ 0]}
+\frac{\varepsilon.\mathit{spine}=\mathsf{keep}\quad f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\varepsilon} S\,[\mathsf{guards}\ 0]}
      {\mathit{xs}.\mathsf{find}(f):S\cup\mathtt{undefined}\;!\;\varepsilon}\ \textsf{native-guard-find}
 ```
 
-At such a callback the receiver's store, and so its length, stays as it
+At such a callback the receiver's spine, and so its length, stays as it
 was, and each visit passes an element at the receiver's contract, as for
 `find`'s plain signatures. Where the answer converts to `true` the native
 returns that very value, which the promise leaves an $`S`$, running no
@@ -3084,11 +3084,11 @@ native's promised result (`result`). These specify trusted natives; source
 annotations are still translated in full. `join` bounds `T` to the conversion
 contract below,
 `find` and `findIndex` visit every index below the length they read first.
-At a callback whose footprint keeps array stores (`store: keep`), the
+At a callback whose footprint keeps array spines (`spine: keep`), the
 receiver's length stays as it was, so they pass `T` (`find-stable-counter`);
-at any other a store may shrink, and they pass `T | undefined`
+at any other a spine may shrink, and they pass `T | undefined`
 (`invalid-native-find-mutation`). `map` relies on every index below the length it captured staying
-present until it tests it, a fact every closed footprint whose change to stores
+present until it tests it, a fact every closed footprint whose change to spines
 is at most `grow` keeps (`map_rely`, `denseCheck_stable`): at each such
 footprint $`\varepsilon`$, a dense receiver and a callback within
 $`\varepsilon`$ give a dense result, and the call is within $`\varepsilon`$,
@@ -3096,7 +3096,7 @@ since beside the callback `map` reads the receiver and allocates its result.
 Any other callback gives a result that may hold holes:
 
 ```math
-\frac{\varepsilon.\mathit{store}\sqsubseteq\mathsf{grow}\quad \mathit{xs}:\mathsf{dense}\ T[\,]\quad f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\varepsilon}U}
+\frac{\varepsilon.\mathit{spine}\sqsubseteq\mathsf{grow}\quad \mathit{xs}:\mathsf{dense}\ T[\,]\quad f:(T,\ \mathsf{number},\ \mathsf{ReadonlyArray}(T))\Rightarrow_{\varepsilon}U}
      {\mathit{xs}.\mathsf{map}(f):U[\,]\;!\;\varepsilon}\ \textsf{map-stable-callback}
 ```
 
@@ -3162,8 +3162,8 @@ element contract admits `undefined`; a sparse string receiver does not meet
 this contract (`invalid-splice-insert-sparse`). It shifts or deletes remaining
 indices, inserts the already evaluated values, and sets the new length.
 Its normal-return footprint permits value writes and changes to the
-receiver's store, while keeping other existing stores. It states a fresh
-result store and no exceptional preservation. A tuple, whose required
+receiver's spine, while keeping other existing spines. It states a fresh
+result spine and no exceptional preservation. A tuple, whose required
 positions a removal would lose, is no such receiver
 (`invalid-array-splice-tuple`). Insertion can accompany shrinking;
 `invalid-splice-insert-map-density` leaves a hole in an enclosing map's
@@ -3238,9 +3238,9 @@ Its one scheme offers the intersection:
 ```
 
 The comparator signature is also offered once per closed footprint
-$`\varepsilon`$ whose store change is at most `grow`, at a comparator
+$`\varepsilon`$ whose spine change is at most `grow`, at a comparator
 $`C_\varepsilon(T)`$ within $`\varepsilon`$, and states the call within
-`{value: any, store: grow}` ([native footprints](#native-footprints)).
+`{value: any, spine: grow}` ([native footprints](#native-footprints)).
 
 These are audited native contracts, consumed by the existing quantified call
 and subtype rules, not new calculus axioms or a proof of ECMA-262's algorithms.
@@ -3274,12 +3274,12 @@ that structure. A member's signatures state the
 entry's effect: the empty footprint for the readers, `has`, `get`, `keys`,
 `values`, `entries`, `[Symbol.iterator]` and `Date`'s getters, `valueOf`,
 `toString` and `toISOString`, and for a `WeakMap`'s `set` and `delete`
-([weak tables](#weak-tables)); `{value: any, store: keep}` for the members
+([weak tables](#weak-tables)); `{value: any, spine: keep}` for the members
 that change a `Set`, a `Map` or a date, `add`, `set`, `delete`, `clear` and
 `setTime`, which compare by SameValueZero or take a number, run no code and
 write only the receiver's internal slots, which no location of the model
 holds, and change a collection's `size`, a readonly view the model holds as a
-number, so they state `{value: scalar, store: keep}`; none for
+number, so they state `{value: scalar, spine: keep}`; none for
 `forEach`, which calls a callback. `new Set` and `new Map` of an array, of a
 host collection or of nothing state the empty footprint on their construct
 signatures: they read the array or the collection through the host's iterator
@@ -3327,7 +3327,7 @@ held, which met `V` when `set` stored it and meets it in every later world;
 no fact of the program relates a lookup to an earlier `set`, so a later `get`
 needs nothing the footprint drops. `Map`'s and `Set`'s changes are not alike:
 they change `size`, a readonly view the model holds, and keep
-`{value: scalar, store: keep}`. The case is `weak-map-set-keeps-facts`. A weak key is an object (including a function) or a
+`{value: scalar, spine: keep}`. The case is `weak-map-set-keeps-facts`. A weak key is an object (including a function) or a
 non-registered symbol. `set` throws `TypeError` for every other key;
 `get` returns `undefined`, and `has` and `delete` return `false` for such
 keys. The overlay retains TypeScript's key parameter, so calls outside
@@ -3426,34 +3426,34 @@ union with a string.
 A native's **footprint** is the closed footprint its signatures state
 ([FOOTPRINTS](FOOTPRINTS.md#changes-and-footprints)): for the locations that
 existed before a call, the change the call may make to those holding a value
-and the one it may make to those holding a store, an array's or a view store
-(`Footprints.Closed.ofStores`). Each row's footprint is trusted input
+and the one it may make to those holding a spine, an array's or a view spine
+(`Footprints.Closed.ofSpines`). Each row's footprint is trusted input
 of acceptance; its argument is proved of a model of the specification steps
 where the native is modelled, and audited otherwise:
 
 | Native | Footprint | Argument |
 | --- | --- | --- |
-| `push`, `unshift` | `{value: any, store: grow}` | proved of the specification steps: `Arr.push_grow`, `Arr.unshift_grow`, `array_native_post`; that each changes nothing but its store and element contents is audited |
-| `push` on an ordinary array | beside its footprint, `receiverGrows`: no old location changes but the receiver's store, which holds a store extending it, its old elements at their indices, at most $`2^{32}-1`$ long (`CallEffects.ReceiverGrows`); and the append relation: where the actuals are values, the store is longer by their number and its element at the old length plus $`j`$ is present and holds the $`j`$-th actual (`CallEffects.ReceiverAppends`) | audited against [ECMA-262](REFERENCES.md#ecma-262), `Array.prototype.push`, under the approved assumption that standard objects are not tampered with: `push` reads `length`, then for each argument performs `Set(O, ToString(len + i), item, true)` and finally `Set(O, "length", len + n, true)`, on the receiver alone; the arguments are passed as they are, with no conversion. On an ordinary array an index `len + i` is no own property and neither `Array.prototype` nor `Object.prototype` holds one, so each `Set` defines a new element at a fresh location holding `item` (`Arr.set` at an absent index, `Arr.push`), the store grows by one and no element below `len` changes; `Set` of `length` to the length it already has changes nothing. A non-extensible receiver or a length past $`2^{32}-1`$ throws (`TypeError`, `RangeError`), so a normal return leaves a store of at most $`2^{32}-1`$ elements, `len + n` of them; the guarantee is stated of normal returns alone. The append relation is trust approved by the owner on 2026-11-08 |
-| `sort` at a comparator within `ε`, `ε` one of the four of the stable set | `{value: any, store: grow}` | one signature per such `ε`: proved of the specification steps, the snapshot then the writeback grow the receiver's store over the whole call when the comparator keeps its locations among the entry's and fresh ones, which `ε` states (`sort_grow`); beside the comparator's calls it reads the length and the present elements, data properties, converts the comparator's numeric answer, and changes only its receiver's store and element contents (audited) |
-| `sort` at any other comparator, and at `undefined` | none stated | another comparator is client code that may change any store (`invalid-sort-comparator-shrink`, run under Node); the conversion signature states no footprint |
-| `pop`, `shift`, `reverse`, `splice` | `{value: any, store: keep}` but for the receiver's store (`receiverStore`) | each changes only its receiver's store, which it can make lose a present index (controls in `FootprintControls.lean`), and element contents (audited) |
-| `filter`, `map`, `flatMap`, `flat`, `slice`, `splice`, a string's `split` | a fresh result, beside the rows' footprints | each allocates its result by ordinary construction, a store no earlier heap held (audited) |
+| `push`, `unshift` | `{value: any, spine: grow}` | proved of the specification steps: `Arr.push_grow`, `Arr.unshift_grow`, `array_native_post`; that each changes nothing but its spine and element contents is audited |
+| `push` on an ordinary array | beside its footprint, `receiverGrows`: no old location changes but the receiver's spine, which holds a spine extending it, its old elements at their indices, at most $`2^{32}-1`$ long (`CallEffects.ReceiverGrows`); and the append relation: where the actuals are values, the spine is longer by their number and its element at the old length plus $`j`$ is present and holds the $`j`$-th actual (`CallEffects.ReceiverAppends`) | audited against [ECMA-262](REFERENCES.md#ecma-262), `Array.prototype.push`, under the approved assumption that standard objects are not tampered with: `push` reads `length`, then for each argument performs `Set(O, ToString(len + i), item, true)` and finally `Set(O, "length", len + n, true)`, on the receiver alone; the arguments are passed as they are, with no conversion. On an ordinary array an index `len + i` is no own property and neither `Array.prototype` nor `Object.prototype` holds one, so each `Set` defines a new element at a fresh location holding `item` (`Arr.set` at an absent index, `Arr.push`), the spine grows by one and no element below `len` changes; `Set` of `length` to the length it already has changes nothing. A non-extensible receiver or a length past $`2^{32}-1`$ throws (`TypeError`, `RangeError`), so a normal return leaves a spine of at most $`2^{32}-1`$ elements, `len + n` of them; the guarantee is stated of normal returns alone. The append relation is trust approved by the owner on 2026-11-08 |
+| `sort` at a comparator within `ε`, `ε` one of the four of the stable set | `{value: any, spine: grow}` | one signature per such `ε`: proved of the specification steps, the snapshot then the writeback grow the receiver's spine over the whole call when the comparator keeps its locations among the entry's and fresh ones, which `ε` states (`sort_grow`); beside the comparator's calls it reads the length and the present elements, data properties, converts the comparator's numeric answer, and changes only its receiver's spine and element contents (audited) |
+| `sort` at any other comparator, and at `undefined` | none stated | another comparator is client code that may change any spine (`invalid-sort-comparator-shrink`, run under Node); the conversion signature states no footprint |
+| `pop`, `shift`, `reverse`, `splice` | `{value: any, spine: keep}` but for the receiver's spine (`receiverSpine`) | each changes only its receiver's spine, which it can make lose a present index (controls in `FootprintControls.lean`), and element contents (audited) |
+| `filter`, `map`, `flatMap`, `flat`, `slice`, `splice`, a string's `split` | a fresh result, beside the rows' footprints | each allocates its result by ordinary construction, a spine no earlier heap held (audited) |
 | `map` at a dense receiver and a callback within `ε`, `ε` one of the four of the stable set | `ε` | one signature per such `ε`, with a dense result (`map_rely`); `map` reads its receiver and allocates its result (audited) |
-| `map` at any receiver and any callback | `{value: any, store: any}` | the unrestricted signature, with a result that may hold holes |
-| `every` at a guard within the empty footprint promising `R`'s type, `R` one of `string`, `number`, `boolean` | the empty footprint, and on a `true` result every present element of the receiver of kind `R` (`elements R`) | `every` reads the length once, tests presence and calls the guard with each present element, answering `false` at the first falsy answer; the guard changes no location, so the store and each element keep their contents through the call, and a guard's answer is a Boolean, so `true` follows only from `true` at every visit, which leaves that element in `R` ([ECMA-262](REFERENCES.md#ecma-262), `Array.prototype.every`; audited) |
+| `map` at any receiver and any callback | `{value: any, spine: any}` | the unrestricted signature, with a result that may hold holes |
+| `every` at a guard within the empty footprint promising `R`'s type, `R` one of `string`, `number`, `boolean` | the empty footprint, and on a `true` result every present element of the receiver of kind `R` (`elements R`) | `every` reads the length once, tests presence and calls the guard with each present element, answering `false` at the first falsy answer; the guard changes no location, so the spine and each element keep their contents through the call, and a guard's answer is a Boolean, so `true` follows only from `true` at every visit, which leaves that element in `R` ([ECMA-262](REFERENCES.md#ecma-262), `Array.prototype.every`; audited) |
 | `map` at a callback within the empty footprint taking `R`'s type, its receiver's present elements of kind `R` at the call (`requires R`), at a dense receiver and at any receiver | the empty footprint, a fresh result, dense at a dense receiver | the callback changes no location, so the fact holds at every visit (`elems_rely`) and each element `map` passes is in `R`; `map` skips a hole and leaves it in its result, built by ordinary construction ([ECMA-262](REFERENCES.md#ecma-262), `Array.prototype.map`; audited) |
-| a global or sticky native regex's `exec`, `test`, `[Symbol.match]`, `[Symbol.replace]` at a string | `{value: any, store: keep}` | they write only `lastIndex`, a number (audited) |
+| a global or sticky native regex's `exec`, `test`, `[Symbol.match]`, `[Symbol.replace]` at a string | `{value: any, spine: keep}` | they write only `lastIndex`, a number (audited) |
 | a native regex's other members; a regex neither global nor sticky's `exec`, `test`, `[Symbol.match]` at a string and `[Symbol.replace]` at a string and a string replacement | the empty footprint | they write nothing (audited) |
-| a native regex's `[Symbol.replace]` at a replacement callback within `{value: any, store: keep}`, the regex a literal written at the call | `{value: any, store: keep}` | audited against [ECMA-262](REFERENCES.md#ecma-262), `RegExp.prototype[@@replace]` with a function `replaceValue`: beside the callback's calls it reads the fresh literal's flags, writes its `lastIndex`, an own data property holding a number, runs `RegExpBuiltinExec`, allocates the match results and the arguments it passes, and converts each callback result, a string, by `ToString`, which runs no code; the callback is called within the footprint its type states. Trust added on 2026-11-08, for the owner's review (`regexp-replace-callback-keeps-lengths`; `invalid-regexp-replace-callback-pops`, run under Node) |
+| a native regex's `[Symbol.replace]` at a replacement callback within `{value: any, spine: keep}`, the regex a literal written at the call | `{value: any, spine: keep}` | audited against [ECMA-262](REFERENCES.md#ecma-262), `RegExp.prototype[@@replace]` with a function `replaceValue`: beside the callback's calls it reads the fresh literal's flags, writes its `lastIndex`, an own data property holding a number, runs `RegExpBuiltinExec`, allocates the match results and the arguments it passes, and converts each callback result, a string, by `ToString`, which runs no code; the callback is called within the footprint its type states. Trust added on 2026-11-08, for the owner's review (`regexp-replace-callback-keeps-lengths`; `invalid-regexp-replace-callback-pops`, run under Node) |
 | a native regex's `[Symbol.replace]` at any other replacement callback, the regex a literal written at the call | none stated | it calls the callback, client code (`invalid-regexp-replace-callback-effect`) |
 | `%Dispatch:replace%` | its target member's footprint | one signature per closed footprint (audited, as its target's) |
-| `%Iterate%` over an array; its step, called with the iterator as its receiver | the empty footprint, its result a fresh object (`freshObject`); the empty footprint on every location but the receiver's own (`receiverOwn`), which may change their values | creating the iterator runs no client code; the iterator is a fresh object holding its internal state (the array, the next index and whether it is done) at its own locations, none an array store; a step reads the array's current length and the element at the index, which runs no client code on an array of the program (no proxy, an element a data property, `Array.prototype` standard: the [trust surface](DESIGN.md#trust-surface)'s rows), writes only that state, and allocates what it yields (audited against [ECMA-262](REFERENCES.md#ecma-262)'s array iterator objects) |
-| an iteration intrinsic over a string, a `Set`, a `Map`, a host iterator and a native match iterator; its step; a spread form `%Spread:K%` | the empty footprint; `{value: any, store: keep}`; `{value: any, store: keep}` | they run no client code; a step writes only the iterator's position and, for a match iterator, its clone's `lastIndex`, each a number, and allocates what it yields (audited) |
+| `%Iterate%` over an array; its step, called with the iterator as its receiver | the empty footprint, its result a fresh object (`freshObject`); the empty footprint on every location but the receiver's own (`receiverFields`), which may change their values | creating the iterator runs no client code; the iterator is a fresh object holding its internal state (the array, the next index and whether it is done) at its own locations, none an array spine; a step reads the array's current length and the element at the index, which runs no client code on an array of the program (no proxy, an element a data property, `Array.prototype` standard: the [trust surface](DESIGN.md#trust-surface)'s rows), writes only that state, and allocates what it yields (audited against [ECMA-262](REFERENCES.md#ecma-262)'s array iterator objects) |
+| an iteration intrinsic over a string, a `Set`, a `Map`, a host iterator and a native match iterator; its step; a spread form `%Spread:K%` | the empty footprint; `{value: any, spine: keep}`; `{value: any, spine: keep}` | they run no client code; a step writes only the iterator's position and, for a match iterator, its clone's `lastIndex`, each a number, and allocates what it yields (audited) |
 | `Math.max`, `Math.min`, `String.fromCodePoint`, `String.fromCharCode` at primitives | the empty footprint | they convert primitives, which runs no code, and allocate only their result (audited) |
 | `forEach`, `every`, `some`, `filter`, `find`, `findIndex`, `flatMap`, and `reduce`, `reduceRight` with an initial value, at a callback within `ε` | `ε` | one signature per closed footprint; beside the callback each reads the receiver and allocates only its result (audited) |
 | `new Set`, `new Map` of an array, a host collection or nothing | the empty footprint | they read the array or the collection through the host's iterator and allocate (audited) |
-| `Set` and `Map` `add`, `set`, `delete`, `clear`; `Date` `setTime` | `{value: scalar, store: keep}` | they run no code and write only the receiver's internal slots, which no location of the model holds, and a collection's `size`, a location holding a number, which they set to the number of entries (ECMA-262, `Map.prototype.set`, `Set.prototype.add`, `get Map.prototype.size`): no location holding an object or a store changes (audited) |
+| `Set` and `Map` `add`, `set`, `delete`, `clear`; `Date` `setTime` | `{value: scalar, spine: keep}` | they run no code and write only the receiver's internal slots, which no location of the model holds, and a collection's `size`, a location holding a number, which they set to the number of entries (ECMA-262, `Map.prototype.set`, `Set.prototype.add`, `get Map.prototype.size`): no location holding an object or a spine changes (audited) |
 
 
 #### Map result length
@@ -3462,11 +3462,11 @@ where the native is modelled, and audited otherwise:
 and allocates its result at that captured length. It writes only indices
 below that length. Ordinary construction excludes a custom constructor or
 species, and the callback cannot reach the result while it is being built.
-A callback preserving every array store therefore gives
+A callback preserving every array spine therefore gives
 $`|\mathrm{result}|=|\mathrm{receiver}|`$ at return. A callback growing
-stores gives $`|\mathrm{result}|\le|\mathrm{receiver}|`$ instead. These
+spines gives $`|\mathrm{result}|\le|\mathrm{receiver}|`$ instead. These
 are the postconditions of the existing signatures with `keep` and `grow`
-store footprints, respectively; unrestricted callbacks state neither
+spine footprints, respectively; unrestricted callbacks state neither
 relation ([ECMA-262](REFERENCES.md#ecma-262), `Array.prototype.map`; audited).
 Each is consumed by the proved
 [call-ensures rule](ARITHMETIC.md#postconditions). The density contract
@@ -3572,7 +3572,7 @@ The form holds at any union of non-empty separators; which literals are
 collected bounds only which calls it serves. A call of a string's `split`,
 its receiver's type deciding as for a primitive's prototype, collects the
 array prototype its result's members need; a structural `split` does not
-(`tests/trusted-inputs.mts`). Its result's store contract has
+(`tests/trusted-inputs.mts`). Its result's spine contract has
 a required position, which forbids a removal, so the walk types a call at
 the overloads without a required result position where a later statement
 aliases the unannotated constant holding its result or calls a member that
@@ -3600,20 +3600,20 @@ What is proved and what is audited:
   acceptance theorem: a native signature's footprint enters acceptance as
   stated, and these lemmas are the argument for stating it
   ([native footprints from their steps](drafts/native-footprints-from-steps.md)
-  makes them part of acceptance): `push` and `unshift` of a store shorter
+  makes them part of acceptance): `push` and `unshift` of a spine shorter
   than $`2^{32}-1`$ (at that length they throw a `RangeError`), a longer
   length of at most $`2^{32}-1`$ and `sort` over the whole call, at a
-  comparator whose own store changes are within `grow`, change the store by
+  comparator whose own spine changes are within `grow`, change the spine by
   `grow` (`Arr.push_grow`, `Arr.unshift_grow`, `Arr.setLength_grow`,
   `sort_grow`);
-  `pop`, `shift`, `reverse` of a store with a hole and a shorter length do
+  `pop`, `shift`, `reverse` of a spine with a hole and a shorter length do
   not (controls in `Tests/FootprintControls.lean`). `array_native_post`
-  turns a store change by `grow`, with element contents the only other old
+  turns a spine change by `grow`, with element contents the only other old
   locations changed, into the footprint's postcondition. `map_rely` proves
   `map`'s density below its captured length at every presence test from
   callbacks within the stable set ([FOOTPRINTS](FOOTPRINTS.md#the-stable-set-for-density)).
 - **Audited** for every row: that the native changes no old location beyond
-  its footprint; for an array mutator, that it changes nothing but its store
+  its footprint; for an array mutator, that it changes nothing but its spine
   and element contents, and for `map`, that it tests presence only between
   callbacks. These are host assumptions, with the Node runs of
   `tests/node-runs.mts` as their counterexample controls: each removing
@@ -3692,7 +3692,7 @@ Map<K, V>` and `new <K, V>(entries: NativeMapView<K, V> | undefined): Map<K, V>`
 For `undefined`, [ECMA-262's Map constructor](REFERENCES.md#ecma-262)
 allocates an empty map and returns before reading its `set` member or
 obtaining an iterator. This result meets every key and value contract and
-preserves existing values and stores. The present-input form retains its
+preserves existing values and spines. The present-input form retains its
 own signature for inference. `blocker-next-optional-native-map-copy` checks
 the optional form with explicit key and value arguments.
 The host arms take a collection's reading view, which a
@@ -4117,7 +4117,7 @@ wrapped and the unwritten form one meaning (the entry's `filled`,
 
 `%ArrayLength%` is ArrayCreate's check: a RangeError where
 $`\mathrm{ToUint32}(n)\ne n`$, otherwise $`n`$. `%ArrayFilled%` makes an
-array of that length whose every index holds the value, a fresh store (the
+array of that length whose every index holds the value, a fresh spine (the
 effect's `fresh`); each element is the value itself, so an object value is
 one object all indices share, at its own contract. Neither states its
 footprint on a throw: building the RangeError is the engine's.
@@ -4488,7 +4488,7 @@ the iterator's `return`, which neither `%IntlSegmentIteratorPrototype%`
 nor `%IteratorPrototype%` holds, so the close calls nothing. The step
 writes the iterator's position, which the model holds no location of, and
 allocates what it yields; it states the effect every host iteration step
-states, `{value: any, store: keep}`.
+states, `{value: any, spine: keep}`.
 
 That `segment`, `Symbol.iterator` and `next` are these, and that a
 lookup of them runs no other code, rest on a host assumption
@@ -5559,7 +5559,7 @@ type names does, and a definition's methods name it as their receiver
   read no client object, invoke no client callback or coercion, and write
   only fresh private arrays; the result is a string. No exceptional footprint
   is stated. The string-pattern `split` contract gives a fresh dense array,
-  and the checked map callback preserves stores, so `Set` receives readable
+  and the checked map callback preserves spines, so `Set` receives readable
   string elements (`blocker-prep-set-mapped-paths`). No source rewrite or
   extra trust beyond untampered standard objects is needed.
   `invalid-node-path-join-callback` explicitly replaces `path.posix.normalize`
@@ -5892,7 +5892,7 @@ $`g`$ and $`y`$ whether the flags hold `g` and `y`,
 \epsilon_{N(\Sigma)}(m)=\begin{cases}
 \emptyset & m\in\{[@@\mathrm{search}],[@@\mathrm{split}],[@@\mathrm{matchAll}]\},\ \Sigma\ne\Sigma_\top\\
 \emptyset & m\in\{\mathtt{exec},\mathtt{test},[@@\mathrm{match}],[@@\mathrm{replace}]\},\ \Sigma\ne\Sigma_\top,\ \neg g,\ \neg y\\
-\{\mathit{value}{:}\,\mathsf{any},\ \mathit{store}{:}\,\mathsf{keep}\} & m\in\{\mathtt{exec},\mathtt{test},[@@\mathrm{match}],[@@\mathrm{replace}]\},\ \Sigma\ne\Sigma_\top,\ g\lor y\\
+\{\mathit{value}{:}\,\mathsf{any},\ \mathit{spine}{:}\,\mathsf{keep}\} & m\in\{\mathtt{exec},\mathtt{test},[@@\mathrm{match}],[@@\mathrm{replace}]\},\ \Sigma\ne\Sigma_\top,\ g\lor y\\
 \top & \text{otherwise}
 \end{cases}
 ```
@@ -5903,7 +5903,7 @@ writes no `lastIndex`; one that is leaves it where its last match ended,
 changing one location, which holds a number by its contract
 (`map-stable-regexp-test`). At $`\Sigma_\top`$ the flags are not read:
 `exec`, `test`, `[@@match]` and `[@@replace]` state
-$`\{\mathit{value}\colon\mathsf{any},\ \mathit{store}\colon\mathsf{keep}\}`$,
+$`\{\mathit{value}\colon\mathsf{any},\ \mathit{spine}\colon\mathsf{keep}\}`$,
 the bound of a global or sticky regex, and `[@@search]` and `[@@split]`
 state none. A regex's `exec` and `test` take
 `string | undefined`: they convert their argument by `ToString`, which runs no

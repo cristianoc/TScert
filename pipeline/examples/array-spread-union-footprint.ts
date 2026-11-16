@@ -1,6 +1,6 @@
 // Census functions: fragment-statements.mts#statements.
 // An array literal spreading a value that is one of two arrays, a readonly
-// parameter or a fresh copy of part of it: the literal reads the store of
+// parameter or a fresh copy of part of it: the literal reads the spine of
 // whichever it holds, which changes no location, so the function meets the
 // footprint it states.
 export function scope(

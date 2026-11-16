@@ -1,7 +1,7 @@
 // Bounds pattern P1, the unsafe neighbour of `bounds-pattern-visitor-refused`:
 // the walker called with a visitor that empties the array, so the read after
 // the walk is past the end (run under Node: NaN). An effect variable for the
-// visitor must take this visitor's effect, which changes stores.
+// visitor must take this visitor's effect, which changes spines.
 type Visitor = (w: number) => void;
 
 function walk(xs: number[], visit: Visitor | undefined): number {

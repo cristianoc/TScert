@@ -58,7 +58,7 @@ knowledge.
 - **The transfer is written twice.** The producer's dataflow over the
   source (`linear_facts.ml`, which states that it mirrors Lean's steps;
   seven families: bounds, linear, guarded, disjunctions, `every`, regions,
-  store separation) infers what the search's forward pass infers again by
+  spine separation) infers what the search's forward pass infers again by
   Lean's rules; the check then validates the evidence.
 - **Acceptance is not monotone in the proposal** (observed, 2026-11-10): a
   fact claimed at an entry that the preceding node's rule does not keep
@@ -85,7 +85,7 @@ any concatenation:
   effect's promise, the bindings' types;
 - **candidates** $`C_c`$, recorded apart: every fact the producer supplies
   at the entry (bounds, linear, guarded, `either`, quantified, `apart`,
-  `storesApart`, and the links, element and content facts it supplies).
+  `spinesApart`, and the links, element and content facts it supplies).
 
 A `@requires` is an assumption at the function's entry and an obligation at
 each call, as today; the entry's external check is unchanged.

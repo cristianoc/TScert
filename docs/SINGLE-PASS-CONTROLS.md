@@ -33,7 +33,7 @@ Measured: `node tests/single-pass-controls.mts`, branch engine-cleanup,
 | Boundary | Controls | Gap |
 | --- | --- | --- |
 | The parser's fragment: its shape | Malformed bodies, graph labels, claim-shaped annotations, unexamined fields at the root and on nodes, overload units at another function's code, unbound names, deferred mapped types, a regex shape no declaration lists, a family guard's call without its domain: each refused by the fragment's decoder or the front. | An assignment to an unbound name is refused with no span. |
-| The parser's fragment: its contracts (`requires`, `ensures`, loop invariants, statements, store regions) | False postconditions (3), a removed quantified precondition, a false loop-cell invariant, a closure's removed precondition, fresh results, moved, rebased and path regions, an old array at a slot's join, a generic closure's statement, a method's dropped statement, a callee's store separation removed: each refused at its unit. | none |
+| The parser's fragment: its contracts (`requires`, `ensures`, loop invariants, statements, spine regions) | False postconditions (3), a removed quantified precondition, a false loop-cell invariant, a closure's removed precondition, fresh results, moved, rebased and path regions, an old array at a slot's join, a generic closure's statement, a method's dropped statement, a callee's spine separation removed: each refused at its unit. | none |
 | The parser's fragment: its declarations | The Promise tag (renamed, dropped, on another prototype, a base or a callable one, PromiseLike in `then`, an allocation keyed by it, the native contract without it), a generic member's result, a union host's member effects, an array's `toJSON`, stable keys and stable links, written applications' arguments, scopes and references, binder roles, an unguarded alias, guard domains, a guard's promise, another import closure: each refused. | none ([declarations by identity](#declarations-by-identity)) |
 | The parser's fragment: reserved names | Each write form renamed to `stack` refused at the write's span; a member renamed `stack` accepted, the reservation the parser's alone. | none |
 | The type computation's proposals | 106 forced proposals ([below](#forced-proposals)), each a positive unit accepted unforced and refused forced, or a negative one refused both ways. | none |
@@ -77,7 +77,7 @@ forced units is `tests/single-pass-control-inputs.mts`. Among them:
 - `literals` (every function literal at keep/keep), `callees` (every
   function of the file without a written footprint at keep/keep),
   `throws` (every function at keep/keep bounding its throws), `imports`
-  (every imported function a module establishes keeping values and stores
+  (every imported function a module establishes keeping values and spines
   and bounding its throws), `results`, `defaults`, `schemes`, `binds`,
   `steps`, `no-return`: footprints a unit's own check refuses;
 - `elements` (every element read without `undefined`), `objects` (every

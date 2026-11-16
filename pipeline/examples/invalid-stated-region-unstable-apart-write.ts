@@ -1,4 +1,4 @@
-// A store separation read through a field that is not `@stable` is not kept
+// A spine separation read through a field that is not `@stable` is not kept
 // across a write of that field: `box.open = xs` makes the field read `xs`'s
 // array, so `xs !== box.open`, stated at entry, is false after it, and
 // `step`'s region `box.open[*]` pops `xs`. Only a `@stable` field's location

@@ -6,7 +6,7 @@ every location of a heap has a kind, fixed for its life, and a fact
 supported by locations of one kind survives an effect confined to another
 by kinds alone. With kinds in every well-formed state, three statements of
 the note hold with no premise beyond the state: a typed array's length is
-immutable (View), every store lists allocated element cells, and an
+immutable (View), every spine lists allocated element cells, and an
 allocated array is apart from every older one (Alloc).
 
 The kinded worlds are the active model
@@ -60,31 +60,31 @@ A role refines a kind:
 ```
 
 F holds an object's ordinary property, C a binding's storage, E an element,
-S a store, I an object's identity (a location holding `null` that every
+S a spine, I an object's identity (a location holding `null` that every
 object allocation adds, whose contract admits `null` alone: `idCtr`, the
 contract `objectEntries` gives every identity, and the representative host
-world's). An ordinary array's store, $`S_{\mathrm{array}}`$, and a typed
-array's view store of fixed format $`t`$ and length $`N`$,
+world's). An ordinary array's spine, $`S_{\mathrm{array}}`$, and a typed
+array's view spine of fixed format $`t`$ and length $`N`$,
 $`S_{\mathrm{view}(t,N)}`$, are two forms of S, distinguished by role and,
 in a well-formed state, by their contents' tags, $`\mathsf{arr}`$ and
-$`\mathsf{viewStore}`$ (§3).
+$`\mathsf{viewSpine}`$ (§3).
 
-A view store's contract is canonical in a **view world** (`ViewWorld`): the
+A view spine's contract is canonical in a **view world** (`ViewWorld`): the
 contract of an $`S_{\mathrm{view}(t,N)}`$ location admits exactly the view
-stores of format $`t`$ and length $`N`$ whose cells are cells of format
+spines of format $`t`$ and length $`N`$ whose cells are cells of format
 $`t`$, E locations whose contract admits exactly the values $`t`$ stores
-(`viewStoreCtr`, `ViewCell`): an integer in the format's range for
+(`viewSpineCtr`, `ViewCell`): an integer in the format's range for
 `uint8`, `uint16` and `int32`, any number for `float64`
 (`ViewFormat.Stored`). So the contract admits every replacement a write
-through an overlapping view may make (proved: `viewStoreCtr_admits`). An
+through an overlapping view may make (proved: `viewSpineCtr_admits`). An
 admissible world is a view world (`WorldAdm.view`), so every state the pass
 reasons about has one (`IndexedHeap.adm`): truncation keeps it, every rule
-extending a world appends no view store (proved: `WorldAdm_trunc`,
+extending a world appends no view spine (proved: `WorldAdm_trunc`,
 `WorldAdm_appendWs_plain`), and a typed array's allocation, a native
 constructor's, `subarray`'s, `Buffer`'s or an imported typed array's, keeps
 it where it chooses the canonical contract (proved: `WorldAdm.typedArray`),
 which those trusted contracts state by their exit world being admissible.
-On a well-formed heap of an admissible world every cell a view store lists
+On a well-formed heap of an admissible world every cell a view spine lists
 holds a number of its format at level 2 or more (proved:
 `HeapOk.view_cell_stored`); at level 1 a contract inspects no lower world,
 so the cell's contract states nothing of its contents there. The host's
@@ -105,22 +105,22 @@ The calculus's terms and steps are those of `Semantics/Calculus.lean`:
 roles live in worlds, which are proof-level. The typing's storage
 capabilities and the lowering's metadata carry roles (§4); calculus terms
 and steps carry none. A typed array is told by its value alone: an object
-whose descriptor $`\mathsf{view}(s,t,N)`$ names its view store $`s`$, its
-format and its length (`Tm.viewAt`), its view store's contents a
-$`\mathsf{viewStore}(t,\langle c_0,\ldots,c_{N-1}\rangle)`$.
+whose descriptor $`\mathsf{view}(s,t,N)`$ names its view spine $`s`$, its
+format and its length (`Tm.viewAt`), its view spine's contents a
+$`\mathsf{viewSpine}(t,\langle c_0,\ldots,c_{N-1}\rangle)`$.
 
 ## 2. Reference validity
 
 $`\mathrm{RefsOk}(W,t)`$ holds when every location a term refers to has the
 role its position demands: an object's identity is in I; its slot under
 `[]` is in $`S_{\mathrm{array}}`$; under every other key it is in F or C;
-the view store a typed array's descriptor $`\mathsf{view}(s,t,N)`$ names is
+the view spine a typed array's descriptor $`\mathsf{view}(s,t,N)`$ names is
 in $`S_{\mathrm{view}(t,N)}`$, and the typed array owns no slot under `[]`
-(`Ref.view`): a typed array's one store is the view store its descriptor
-names; and every cell a store lists, an array's or a view store's, is in E.
-No slot holds a view store. So on a well-formed typed array the store of
+(`Ref.view`): a typed array's one spine is the view spine its descriptor
+names; and every cell a spine lists, an array's or a view spine's, is in E.
+No slot holds a view spine. So on a well-formed typed array the spine of
 elements is the descriptor's, whatever its other fields, it has no array
-store and no array length (`RefsOk.view_selects`); its length is the
+spine and no array length (`RefsOk.view_selects`); its length is the
 descriptor's (`viewLengthOf`). `RefsOk`
 covers every subterm, the captures, bound targets, receivers and prefixes of
 call descriptors, and a graph's node expressions, and it reads the world
@@ -134,8 +134,8 @@ budget, zero included:
 ```math
 \begin{aligned}
 \mathrm{Shape}(W,F|C|E,u) &\iff u\text{ is a source value}\land\mathrm{RefsOk}(W,u)\\
-\mathrm{Shape}(W,S_{\mathrm{array}},u) &\iff u\text{ is a store}\land\mathrm{RefsOk}(W,u)\\
-\mathrm{Shape}(W,S_{\mathrm{view}(t,N)},u) &\iff u=\mathsf{viewStore}(t,\langle c_0,\ldots,c_{N-1}\rangle)\land\mathrm{RefsOk}(W,u)\\
+\mathrm{Shape}(W,S_{\mathrm{array}},u) &\iff u\text{ is a spine}\land\mathrm{RefsOk}(W,u)\\
+\mathrm{Shape}(W,S_{\mathrm{view}(t,N)},u) &\iff u=\mathsf{viewSpine}(t,\langle c_0,\ldots,c_{N-1}\rangle)\land\mathrm{RefsOk}(W,u)\\
 \mathrm{Shape}(W,I,u) &\iff u=\mathtt{null}\\
 \mathrm{HeapOk}(n,W,h) &\iff h\text{ meets }W\text{'s contracts below }n\land
   \forall l.\ W(l)=(r,c)\Rightarrow\mathrm{Shape}(W,r,h(l))
@@ -170,7 +170,7 @@ the running term at every budget (§5).
 
 Roles belong to allocation provenance. An object literal `{ value: v }`
 and a binding cell holding `v` are the same calculus allocation; an
-array's store slot is one more of its kind. What tells their locations'
+array's spine slot is one more of its kind. What tells their locations'
 roles apart is the typing derivation that justified the allocation, through
 the capability it grants.
 
@@ -189,13 +189,13 @@ constructions:
 
 - an ordinary property of type $`A`$: $`(f,\{(F,A)\})`$;
 - a binding's storage of type $`A`$: $`(\mathtt{value},\{(C,A)\})`$;
-- an ordinary array's store: $`([\,],\{(S_{\mathrm{array}},A)\})`$.
+- an ordinary array's spine: $`([\,],\{(S_{\mathrm{array}},A)\})`$.
 
 **Proved** (`KindsCapabilities`): an allocation choosing role $`r_i`$ and
 type $`A_i`$ for its $`i`$-th key establishes every capability over that
 key permitting $`(r_i,A_i)`$ (`Capability.holds_alloc`), with the object
-literal, the binding cell and the array store as instances
-(`field_holds_literal`, `binding_holds_cell`, `arrayStore_holds_array`); a
+literal, the binding cell and the array spine as instances
+(`field_holds_literal`, `binding_holds_cell`, `arraySpine_holds_array`); a
 holding capability exposes its target's role (`Capability.Holds.role`);
 two capabilities over one key of one object share a role
 (`Capability.Holds.common`), so a binding capability and a field capability
@@ -206,7 +206,7 @@ the paired type keeps `HeapOk` (`Capability.At.write`).
 
 **Storage typing** (**proved** where named). A type states each storage
 position's role as a tag, $`\mathrm{StorageRole} ::= \mathtt{field} \mid
-\mathtt{cell} \mid \mathtt{arrayStore} \mid \mathtt{viewStore}`$
+\mathtt{cell} \mid \mathtt{arraySpine} \mid \mathtt{viewSpine}`$
 ([StorageRoles](../../lean/Verification/Semantics/StorageRoles.lean)), whose
 meaning is the capability $`\mathrm{ofRole}(s,k,A)`$ permitting each role
 the tag names with $`A`$ (`Capability.ofRole`). Distinct tags name disjoint
@@ -216,7 +216,7 @@ object state one tag (`ofRole_exclusive`) and an inclusion keeps the tag
 whose tag names $`r`$ (`ofRole_holds_alloc`). The positions carrying a tag
 are the write-granting ones: every invariant field of a record operand
 (`Clause.refs`, `dict`, `callable`, `ctors`), every optional field, every
-writable index; a view and a store's element position carry none.
+writable index; a view and a spine's element position carry none.
 `Fields`, `recT`, `recT_alloc` and `recT_at`
 ([Types](../../lean/Verification/Types/Types.lean)) range over positions;
 mapping and substitution keep every role (`storage_map`,
@@ -226,20 +226,20 @@ ordinary property (`binding_not_covers_field`). The allocation rule
 (`HasTyWith.alloc`) takes each key's role from the claimed type:
 lowering states `field` for an object literal, `cell` for a binding's cell
 and its uninitialized marker (`CellClaims.reference` takes the role), and
-`arrayStore` for an array's store slot; `AllocationWorlds.next` takes the
+`arraySpine` for an array's spine slot; `AllocationWorlds.next` takes the
 allocation's entries, each the tag's concrete role at its value; the
 allocation rules require each role to fit its key (§2) and its initializer's
 category (§9), and the world records the role (`RoleIn`).
 
 **Concrete roles** (**proved**, `KindsCapabilities`). The role an
 allocation records for a position is its tag's role chosen by the contents
-allocated there (`StorageRole.concrete`): `field`, `cell` and `arrayStore`
+allocated there (`StorageRole.concrete`): `field`, `cell` and `arraySpine`
 their role; none where the contents are not of the tag's category
 (`StorageRole.Holds`). The recorded role is one the tag names
 (`StorageRole.concrete_permits`), the contents have its category
 (`StorageRole.concrete_cat`), and contents of their tags' categories
 determine every recorded role (`concreteRoles_of_holds`). A tag fits its
-key (`StorageRole.fitsKey`: `arrayStore` under `[]`, `field` or `cell` under
+key (`StorageRole.fitsKey`: `arraySpine` under `[]`, `field` or `cell` under
 any other key) exactly so that every role it names is the slot's role
 (`StorageRole.slotRole_of_fitsKey`). Together: an allocation at concrete
 roles, each tag fitting its key, keeps kinds (`concrete_shaped`). `AllocationWorlds.next`'s entries record, beside each
@@ -280,11 +280,11 @@ write):
   the prototype reference is an ordinary property, a source value;
 - a key-adding write's new location gets the agreed role above, or `field`
   for an own property the write makes on an ordinary object: the write's
-  typing must establish that the object is ordinary (it owns no store slot
+  typing must establish that the object is ordinary (it owns no spine slot
   and no metadata key) and that the written value is a source value;
 - every initializer's category (`StorageRole.Holds`) follows from the
   payload premise of its part's rule (`Payload`: a field's, a cell's or an
-  element's contents' type in `V`, a store slot's in `S`;
+  element's contents' type in `V`, a spine slot's in `S`;
   `Payload.stored`, `Payload.element`).
 
 ## 5. The native-contract condition
@@ -378,7 +378,7 @@ configuration (`allocThrow_safe`), and run in a graph node with a handler it
 reaches the handler's entry at a heap well-formed under one extension of the
 entry world (`callback_throw_handled`); a callback's well-formed exit
 followed by a native's write-back of fresh element cells and an ordinary
-array's store is well-formed under one world extending the callback's
+array's spine is well-formed under one world extending the callback's
 (`callback_writeback`).
 
 `SafeWith` and `SafeGraph` state no heap postcondition; their result
@@ -394,8 +394,8 @@ A footprint states where a call may change the heap, not what it may
 write there or allocate. The relations below bound locations only and
 give no well-formed exit by themselves: `ElementWrite.changes`
 (`elementWrite_not_respects`: it lets a field holding a string come to hold
-a store), `array_native_post`, a change confined to one location and
-arbitrary there, as `receiverOwn`, `receiverStore` and an argument store
+a spine), `array_native_post`, a change confined to one location and
+arbitrary there, as `receiverFields`, `receiverSpine` and an argument spine
 region allow at the locations they name (`confined_not_respects`), an
 allocation whatever the fresh locations hold, as `fresh` and `freshObject`
 allow (`allocation_not_respects`), and an unrestricted `excPost`
@@ -414,8 +414,8 @@ heap $`h`$ to the exit world $`W'`$ and heap $`h'`$ (`ViewWrite`):
   $`\mathrm{HeapOk}(n',W',h')`$: the domain grows with the world, every
   location, fresh ones included, has its role's shape and meets its
   contract;
-- every old location whose role is no view store keeps its contents;
-- every cell an old view store newly lists is fresh against $`h`$;
+- every old location whose role is no view spine keeps its contents;
+- every cell an old view spine newly lists is fresh against $`h`$;
 - the exact form adds `ExactWrite` of the designated view's element type,
   view, index and value, the note's View-Write: for every number written at
   a valid index the index's cell holds the format's total conversion of it
@@ -431,7 +431,7 @@ heap $`h`$ to the exit world $`W'`$ and heap $`h'`$ (`ViewWrite`):
   write's statement the one the pass reads (`ExactWrite.taken`).
 
 On well-formed states the relation's frame, every old location but a view
-store kept and each view store replaced by one of its format and length
+spine kept and each view spine replaced by one of its format and length
 whose new cells are fresh, is the action of the effect
 $`\{\mathsf{all\text{-}views}:\mathsf{grow}\}`$ (proved:
 `ViewWrite.frame_iff`).
@@ -440,37 +440,37 @@ A call's normal postcondition states this relation from the call's entry
 world and heap (`Effect.viewPost`); its heap postcondition states what the
 relation gives of the two heaps from a well-formed entry
 (`ElementWrite.Holds`, `ViewWriteOf.holds`): the coarse change, no object or
-number altered and every store's length kept (`ViewWrite.changes`), and
+number altered and every spine's length kept (`ViewWrite.changes`), and
 `ExactWrite` with `ExactPre` for the exact form; for the exact form the
 result is the value written (`Effect.viewPost`). The roles are the entry world's because a
 role assignment chosen only to fit the entry heap's categories may give an
-ordinary array's store the role of a view store, and so let the write change
+ordinary array's spine the role of a view spine, and so let the write change
 it. In a well-formed state the contents' tags tell the two apart too
 (`Shaped.category`).
 
-It constrains every view store, whichever view the call names: an
+It constrains every view spine, whichever view the call names: an
 overlapping view may change, exactness constraining the designated one. An
-updated view store's newly listed cells are fresh, so old element cells keep
+updated view spine's newly listed cells are fresh, so old element cells keep
 their contents. The relation is a world-indexed postcondition
-(`Effect.viewPost`). **Proved**: an ordinary array's store is kept
+(`Effect.viewPost`). **Proved**: an ordinary array's spine is kept
 (`ViewWrite.keeps_array`); an old $`S_{\mathrm{view}(t,N)}`$ location holds a
-view store of format $`t`$ and length $`N`$ listing element cells of $`h'`$
-(`ViewWrite.view_store`); from a well-formed entry heap, the coarse change
+view spine of format $`t`$ and length $`N`$ listing element cells of $`h'`$
+(`ViewWrite.view_spine`); from a well-formed entry heap, the coarse change
 of `ElementWrite` follows (`ViewWrite.changes`, `ViewWriteOf.holds`). Two
 views over the same bytes both change under one exact write while an
-ordinary array's store is kept, between two well-formed heaps
+ordinary array's spine is kept, between two well-formed heaps
 (`viewWrite_overlap`). The numerical correspondence between overlapping
 views' elements and their shared bytes is part of the host contract's
 audit; kinds do not state it.
 
 ## 7. Allocated cells
 
-Every cell a store of a well-formed heap lists has role E and is a
+Every cell a spine of a well-formed heap lists has role E and is a
 location of the heap, at every budget, zero included (**proved**,
-`HeapOk.store_cells`, from `HeapOk.kinds`). This structural consequence is
+`HeapOk.spine_cells`, from `HeapOk.kinds`). This structural consequence is
 what every consumer of allocated cells needs: `RootCells` holds at every
 state and after every action (`rootCells_holds`, `rootCells_box`), and the
-dangling store `[[5], null, null]` meets no kinded world at any budget
+dangling spine `[[5], null, null]` meets no kinded world at any budget
 (`dangling_excluded`).
 
 ## 8. What is proved
@@ -480,13 +480,13 @@ dangling store `[[5], null, null]` meets no kinded world at any budget
   `Shape` is monotone in extension (`Shape_mono`) and survives truncation
   (`Shape_trunc`, `HeapOk_trunc`).
 - **Kinds partition a well-formed heap** (`HeapOk.kinds`): each location has
-  exactly one kind; a location is in S exactly when it holds a store, an
-  array's or a view store; every store lists only element cells, all
+  exactly one kind; a location is in S exactly when it holds a spine, an
+  array's or a view spine; every spine lists only element cells, all
   locations of the heap (`HeapOk.entries_cells`).
 - **Contents tell the category** (`Cat.category`, `Shaped.category`): a
   well-formed heap's every location holds contents whose category, read from
-  the contents alone (`contentsCategory`: $`\mathsf{arr}`$ an array store,
-  $`\mathsf{viewStore}`$ a view store, anything else a value), is its role's;
+  the contents alone (`contentsCategory`: $`\mathsf{arr}`$ an array spine,
+  $`\mathsf{viewSpine}`$ a view spine, anything else a value), is its role's;
   so every admissible transition keeps it at every old location
   (`Admissible.contentsCategory`).
 - **The audit's counter-heap is excluded** (`counterheap_excluded`): no
@@ -498,19 +498,19 @@ dangling store `[[5], null, null]` meets no kinded world at any budget
   after every action of the top footprint (`view_box`).
 - **Allocated cells**: §7.
 - **Alloc**: an array allocated past a well-formed heap is apart from every
-  store of that heap the later heap keeps, with no premise on the old
-  store's cells (`alloc_apart`); the allocated empty array is fresh, of
+  spine of that heap the later heap keeps, with no premise on the old
+  spine's cells (`alloc_apart`); the allocated empty array is fresh, of
   length 0 and apart from every array of the entry heap (`alloc_post`), and
   the extended heap is well-formed with the array valid
   (`alloc_wellformed`).
 - **Allocation** (`HeapOk_appendWs`; `makeFields_shaped` for any object,
   with `objectLiteral_shaped`, `bindingCell_shaped`, `closure_shaped`,
-  `arrayObject_shaped`, `viewStore_shaped` and `typedArray_shaped` for a
-  typed array over its view store;
-  `arrAlloc_shaped` for a store literal's elements; `thrownError_shaped`
+  `arrayObject_shaped`, `viewSpine_shaped` and `typedArray_shaped` for a
+  typed array over its view spine;
+  `arrAlloc_shaped` for a spine literal's elements; `thrownError_shaped`
   for a fresh error).
 - **Writes** (`write_sound`; `writeField_shaped`, `writeOrdinary_shaped`,
-  `bindingWrite_shaped`, `storeWrite_shaped`, `lengthStore_refs`;
+  `bindingWrite_shaped`, `spineWrite_shaped`, `lengthSpine_refs`;
   `setPresent_shaped`, `setGrow_shaped`).
 - **Steps that change no heap keep references valid** (`step_refs`):
   congruences, substitution, a graph's entry, a node's instantiation, every
@@ -521,7 +521,7 @@ dangling store `[[5], null, null]` meets no kinded world at any budget
   array's own properties are copied by no step (`hostOwned`).
 - **Array natives** (`Arr.natives_within`, `Arr.Within.refs`,
   `native_shaped`): `Set`, `Delete`, a length change, `push`, `pop`,
-  `shift`, `unshift`, `reverse` and `sort`'s writeback keep a store's cells
+  `shift`, `unshift`, `reverse` and `sort`'s writeback keep a spine's cells
   among the original and fresh ones, and their element-storage phase
   preserves kinds when the fresh locations are element cells holding
   source values and the old locations changed are element cells holding
@@ -535,16 +535,16 @@ listed; the raw step admits more. The typing rules discharge them, through
 the capabilities of §4.
 
 - **Object allocation** (`Step.makeFields`): the rule's role for each key
-  fits it (a store slot's under `[]`, F or C under any other key); each initializer has its role's category (a
-  source value in F or C, a store in S), which the rule's payload premise
+  fits it (a spine slot's under `[]`, F or C under any other key); each initializer has its role's category (a
+  source value in F or C, a spine in S), which the rule's payload premise
   gives (`Payload`, PROGRAM-TYPING's
   [sorts and categories](../PROGRAM-TYPING.md#sorts-and-categories)). A
   binding allocation chooses C, an object literal F.
-- **Store literal** (`Step.arrAlloc`): each initializer is a source value
+- **Spine literal** (`Step.arrAlloc`): each initializer is a source value
   (`arrLit`'s and `arrParts`' payload premise, `Payload.element`).
 - **Field write** (`Step.writeField`): the payload has the category of its
-  target's role: a source value in F or C, a store under `[]` (a grown
-  store's writeback, a length write).
+  target's role: a source value in F or C, a spine under `[]` (a grown
+  spine's writeback, a length write).
 - **Present element write** (`Step.setPresent`) and **hole or past-end
   write** (`Step.setGrow`): the payload is a source value (`setElem`'s and
   `setElem-bounded`'s payload premise).
@@ -590,7 +590,7 @@ environment's values, `EnvOk`
 - the closed footprint (`closed`, `top` for an undeclared external arrow):
   **fails** alone (`confined_not_respects` for any footprint letting a
   location change arbitrarily); repaired by the host assumption above;
-- `receiverStore`, `receiverOwn`, argument store regions (`regions`):
+- `receiverSpine`, `receiverFields`, argument spine regions (`regions`):
   **fail** alone, each allowing arbitrary contents at the locations it
   names (`confined_not_respects`, the inclusion read from
   `Effect.frame`, unformalized); repaired by the
@@ -628,6 +628,6 @@ the entry world's roles (§5).
 **Non-vacuity** (**proved**, `families_state`, `families_refs`): at every
 budget one heap meets an admissible kinded world with every structural family
 of value valid at once: an object's identity, a property and a prototype
-property, a binding cell, an ordinary array's store and element, a typed
-array's view store of its format and length, a closure's capture and
+property, a binding cell, an ordinary array's spine and element, a typed
+array's view spine of its format and length, a closure's capture and
 code field, and a forwarding descriptor's target, receiver and prefix.

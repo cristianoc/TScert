@@ -1,5 +1,5 @@
 // `map` callbacks calling a variadic function with a spread argument: the
-// spread reads its array's store in place, and `Math.max` of numbers runs
+// spread reads its array's spine in place, and `Math.max` of numbers runs
 // no code and writes nothing, so each callback is within the empty
 // footprint and the result is dense.
 export function peaks(rows: number[][]): number[] {

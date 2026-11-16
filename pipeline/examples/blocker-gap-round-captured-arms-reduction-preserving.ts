@@ -1,4 +1,4 @@
-// Store-preserving splitting keeps mapped arms readable through reduction
+// Spine-preserving splitting keeps mapped arms readable through reduction
 // and iteration before flatMap calls each element's function.
 // Census functions:
 // claim-text.mts#liftClause

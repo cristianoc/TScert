@@ -15,16 +15,16 @@ consumes it at a selected call as it consumes any signature's
 trusted row of the trust surface; for the array mutators the row's argument
 is a proof about a separate model of the specification steps:
 
-- `FootprintNatives.lean` models a store as `Arr` (its element locations and
+- `FootprintNatives.lean` models a spine as `Arr` (its element locations and
   the next location) and the ECMA-262 steps as `Arr.set`, `Delete` and a
   length change; `Arr.push_grow`, `Arr.unshift_grow`, `Arr.setLength_grow`
-  and `sort_grow` prove the store relation `grow` of the step sequences, and
+  and `sort_grow` prove the spine relation `grow` of the step sequences, and
   `map_rely` proves `map`'s density between callbacks (proved);
-- `array_native_post` turns the store relation, with the audited fact that a
-  native changes nothing but its store and element contents, into the
+- `array_native_post` turns the spine relation, with the audited fact that a
+  native changes nothing but its spine and element contents, into the
   footprint's postcondition (proved);
 - the checker never reads these lemmas: the footprint is data in the native's
-  signature, so the trust row says "push grows the store" and the lemma is
+  signature, so the trust row says "push grows the spine" and the lemma is
   evidence for an auditor (no module outside `FootprintNatives.lean` and its
   controls names them at b7fa8da8; observed).
 
@@ -36,11 +36,11 @@ derived from them:
 1. Lean holds a table from each modelled mutator (`push`, `unshift`, `pop`,
    `shift`, `reverse`, `sort`'s writeback) to its step sequence over `Arr`.
 2. The footprint a native signature may state is computed from that table
-   (`grow` for a sequence `Arr.*_grow` covers, `receiverStore` otherwise),
+   (`grow` for a sequence `Arr.*_grow` covers, `receiverSpine` otherwise),
    and the declaration decoder refuses a signature of a modelled mutator
    whose stated footprint is not below the computed one.
 3. The trust premise of a selected native call becomes "the native runs the
-   steps its row names, and changes nothing but its store and element
+   steps its row names, and changes nothing but its spine and element
    contents" (audited, against ECMA-262); `array_native_post` with the step
    lemma discharges the footprint (proved once the rule takes this premise;
    conjectured until then).
@@ -69,7 +69,7 @@ implementation is benchmarked by the merge census).
 
 ## Open questions
 
-- Whether `splice`'s row (`receiverStore`) gets a step sequence too, or stays
+- Whether `splice`'s row (`receiverSpine`) gets a step sequence too, or stays
   audited.
 - Whether the step table lives beside the overlay in Lean or is read from the
   declaration document with its steps named there.

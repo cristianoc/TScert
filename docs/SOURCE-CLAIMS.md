@@ -62,10 +62,10 @@ Each function object has these fields:
 | `params` | Ordered parameter points: `{name,type,current}` |
 | `result` | Claimed return type |
 | `contracts` | Mutable declaration contracts: `{pos,name,type}` |
-| `footprint` | The [closed footprint](FOOTPRINTS.md#changes-and-footprints) proposed for the declaration's signature: `{"value":v,"store":s}` |
+| `footprint` | The [closed footprint](FOOTPRINTS.md#changes-and-footprints) proposed for the declaration's signature: `{"value":v,"spine":s}` |
 | `onThrow` | Whether the footprint is proposed on a throw too, which the unit's graph must then establish as well: `true` or `false` |
-| `resultFootprint` | The closed footprint proposed for the signatures of the function the declaration returns, which its returns must establish ([returned closures](SOURCE-ELABORATION.md#returned-closures)): `{"value":v,"store":s}`, the one letting everything change where it proposes none |
-| `entries` | Entry claims: `{point,start,bindings,bounds,facts,quantified,apart,storesApart}` |
+| `resultFootprint` | The closed footprint proposed for the signatures of the function the declaration returns, which its returns must establish ([returned closures](SOURCE-ELABORATION.md#returned-closures)): `{"value":v,"spine":s}`, the one letting everything change where it proposes none |
+| `entries` | Entry claims: `{point,start,bindings,bounds,facts,quantified,apart,spinesApart}` |
 | `expressions` | Expression claims: `{point,pos,type,current}` |
 | `arrows` | Optional per-signature interior claims, described below |
 
@@ -73,7 +73,7 @@ A parameter point and an entry binding both carry `name`, `type` and
 `current`. Entry `bindings` is a list of those named points. Entry `bounds`
 is a list, possibly empty, of `{array,index}`, each naming two value bindings
 of the entry: the index binding's value is an array index at most the length
-of the array binding's store, which the entry's knowledge states and every
+of the array binding's spine, which the entry's knowledge states and every
 edge into it checks ([writes at a checked index](PROGRAM-TYPING.md#writes-at-a-checked-index)).
 Entry `quantified` is a list, possibly empty, of `{name, path, stop, body}`:
 the array the fields `path` read from the value binding `name` give, the term
@@ -85,11 +85,11 @@ at it and the terms, which the entry's knowledge states and every edge into
 it checks ([quantified clauses](ARITHMETIC.md#quantified-clauses)).
 Entry `apart` is a list, possibly empty, of `{name, other}`, two value
 bindings whose arrays' regions share no location
-([element regions](FOOTPRINTS.md#element-regions)); entry `storesApart` is a
+([element regions](FOOTPRINTS.md#element-regions)); entry `spinesApart` is a
 list, possibly empty, of `{name, path, other, otherPath}`: the arrays the
 fields `path` and `otherPath` read from the value bindings `name` and
-`other` hold different stores
-([store separation](ARITHMETIC.md#store-separation)). The entry's knowledge
+`other` hold different spines
+([spine separation](ARITHMETIC.md#spine-separation)). The entry's knowledge
 states each, and every edge into it checks it.
 Entry `facts` is a list, possibly empty, of `{terms,bound}`, `terms` a list of
 `{name, path, term, coefficient}`, each naming a value binding of the entry,
@@ -120,7 +120,7 @@ contract. Entry types and contents assertions describe execution points;
 they do not replace this lifetime obligation.
 
 A function's `footprint` strengthens its annotated signature only as a
-claim: a footprint other than `{"value":"any","store":"any"}` is an
+claim: a footprint other than `{"value":"any","spine":"any"}` is an
 obligation on the function's own graph, which must establish it
 ([effect certification](SOURCE-ELABORATION.md#inferred-call-effects-elaboration-and-certification)),
 and the other units then read the function at its annotation's signature
@@ -157,10 +157,10 @@ executable input; its identity and point associations must match a Fragment:
   "functions": [{
     "name": "identity", "namePos": [9,17],
     "params": [{"name":"flag","type":[1,2],"current":null}],
-    "result": [1,2], "contracts": [], "footprint": {"value":"keep","store":"keep"},
+    "result": [1,2], "contracts": [], "footprint": {"value":"keep","spine":"keep"},
     "entries": [{"point":"9:17:1","start":43,
       "bindings":[{"name":"flag","type":[1,2],"current":null}], "bounds":[], "facts":[], "quantified":[],
-      "apart":[], "storesApart":[]}],
+      "apart":[], "spinesApart":[]}],
     "expressions": [{"point":"9:17:1","pos":[50,54],
       "type":[1,2],"current":null}]
   }]
@@ -175,7 +175,7 @@ declaration index, `i` is a table index, and `b` is a Boolean:
 | `i` | Row `i` of `types` |
 | `{"decl":k,"args":[A,...]}` | Source declaration `k` applied to its type arguments |
 | `{"meet":[A,...]}` | Intersection of at least two label unions |
-| `{"array":A,"readonly":b}` | Array object over the store contract `A` |
+| `{"array":A,"readonly":b}` | Array object over the spine contract `A` |
 | `{"binder":"T"}` | The in-scope source binder `T`, interpreted within its source bound |
 
 Declaration indices refer to the Fragment's `definitions`. A nullary application
@@ -195,7 +195,7 @@ The `type` language also has these recursive forms:
 | `{"scheme":S}` | Quantified callable signature, specified below |
 | `{"unavailable":"reason"}` | Explicit unavailable proposal; its use fails with that reason |
 
-The two `array` forms serve different levels: a label's array wraps a store
+The two `array` forms serve different levels: a label's array wraps a spine
 contract and requires `readonly`; a claim type's array wraps an element claim.
 Rigid parameters are not replaced by their bounds. A bounded parameter is
 interpreted as the parameter within that bound.
@@ -208,7 +208,7 @@ Ordinary table clauses use the native graph vocabulary:
 | `boolLit`, `numLit`, `strLit`, `bigintLit`, `symbolLit` objects | Singleton values; `symbolLit`'s `id` is the declaration document's listed symbol a symbol key `{"symbol": id}` names |
 | `refs` | Required invariant fields, readonly views, and optional object capabilities |
 | `dict` | Object fields plus index contracts |
-| `list` | Array-store tuple contracts |
+| `list` | Array-spine tuple contracts |
 | `pack` | Argument-list tuple contracts |
 | `arrs` | Call signatures |
 | `ctors` | Construct signatures |
@@ -452,8 +452,8 @@ annotation in the document.
 
 ## Arrays
 
-An array object is represented by an array label over a `list` store contract,
-or by a source declaration application. A tuple store has this shape:
+An array object is represented by an array label over a `list` spine contract,
+or by a source declaration application. A tuple spine has this shape:
 
 ```json
 {"list":{"first":{"required":[[4]],"optional":[],"rest":[4],
@@ -463,7 +463,7 @@ or by a source declaration application. A tuple store has this shape:
 `required` and `optional` contain ordered element unions; `rest` is an element
 union or `null` when there are no further positions. The outer `rest` is a
 list of additional simultaneous tuple contracts. An element location of a
-mutable store retains its invariant type across writes. A readonly contract
+mutable spine retains its invariant type across writes. A readonly contract
 provides upper bounds for reads and no write permission through that contract.
 
 `presence` is `dense`, `readable` or `sparse`. Density excludes holes below
@@ -475,7 +475,7 @@ positions remain present in every mode. Source homogeneous arrays use
 positions are distinct states. See [Array contracts](POSITIVE-TYPES.md) for
 the semantic tuple rules.
 
-Direct calculus store operations use an array-index singleton; their store
+Direct calculus spine operations use an array-index singleton; their spine
 represents element locations. A source read `xs[k]` at a key typed as
 `number` is lowered to the host intrinsic `%ElementAt%`. It can read an
 element below the length, another numeric own property, or `undefined`,

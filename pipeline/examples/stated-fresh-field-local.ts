@@ -1,4 +1,4 @@
-// A fresh store through one `@stable` field, the array bound to a local
+// A fresh spine through one `@stable` field, the array bound to a local
 // first (FOOTPRINTS.md, "Fresh array storage"): the record's field is
 // initialized from a slot holding a fresh value.
 type Runs = { /** @stable */ readonly open: number[] };

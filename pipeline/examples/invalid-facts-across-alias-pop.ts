@@ -1,5 +1,5 @@
 // A call popping an array that may be the one whose length bounded the
-// index: `pop` changes its receiver's store, and no length survives it.
+// index: `pop` changes its receiver's spine, and no length survives it.
 // Under Node, `drained(xs, xs)` with `xs = [1, 2, 3]` reads `xs[1]` of `[1]`,
 // `undefined` at `number`, and answers `NaN`.
 
