@@ -65,7 +65,7 @@ of three reasons: the effect is disjoint from what the fact reads; the
 effect changes what the fact reads only in a direction the fact
 tolerates; or the invariant annotations on a type fix what the fact reads. Thirteen
 patterns from a TypeScript code base become one-line annotations, and
-four more show a form or a derivation it still lacks. Each theorem, proposition and rule carries one of three marks. \status{Lean} names the theorem
+four more show a form or a derivation it still lacks. Each theorem, proposition and rule either has its proof in the text or carries one of three marks. \status{Lean} names the theorem
 of the TScert development that proves the statement's content, and gives
 that theorem's scope; where the theorem is narrower than the statement, the mark says how. \status{conj.} marks a conjecture, and \status{assumed} a specification assumed of the host. A mark states what is proved of the model; it does not say that a tool applies the rule.
 \end{abstract}
@@ -466,7 +466,7 @@ to the new contents $u'$.
 
 The action of an effect sets $b=\len h$ for its entry heap $h$.
 Only condition (iv) of $\grow$ depends on $b$.
-Write $N$ for the maximal array length. For contents $u,u'$:
+Write $N$ for the maximal array length, $2^{32}-1$; the $N$ of a form $\mathsf{view}_N$ is the length of one typed array. For contents $u,u'$:
 \[
 \begin{array}{lcl}
 \keep_b(u,u') &\iff& u'=u\\[2pt]
@@ -708,8 +708,14 @@ reads the same spine in $h$ and in $h'$.
 receiver's fields. An iterator \code{it} whose \code{next} has that
 specification gives
 $\code{it.next()}:\{\mathit{it}.\kw{fields}:\any\}$
-\status{Lean: \lean{ownCall\_sound}, for a call whose normal effect has
-an entry at the receiver's own fields and keeps every other location}.
+\status{Lean: \lean{ownCall\_sound}: a call whose normal effect has an
+entry at the receiver's own fields and keeps every other location is
+safe and keeps the knowledge that \lean{ownOutput} selects. No theorem
+states the effect judgment as displayed}.
+\item[Rigid: the fields at a rigid path] $\{\pi.\kw{fields}:\delta\}$ is
+rigid on the states where $\pi$ is rigid: by (T3) the path then reads an
+object with the same field locations in $h$ and in $h'$
+\status{Lean: \lean{stableRegion}, \lean{region\_mem\_stable}, \lean{RigidityEvidence.sound}, for the region \lean{pathOwn}, which also contains the spine location of an array}.
 \item[Not rigid: cells of a spine changed at $\any$]
 $\{x[\ast]:\any\}$ is not rigid. A first change may make the spine of
 $x$ list an element cell that existed before and that it did not list,
@@ -719,12 +725,15 @@ does not contain.
 \end{description}
 
 \paragraph{The effect of a command.} The judgment $c:\Phi\mid\Phi^{e}$
-states two bounds on a command $c$ run from $(\rho,h)$. If $c$ returns,
-in a heap $h'$, then $h\tr{\Phi}_\rho h'$. If $c$ throws, in a heap
+states two bounds on a command $c$ run from $(\rho,h)$. If $c$ reaches
+its end, or leaves by a \code{break} or a \code{return}, in a heap $h'$,
+then $h\tr{\Phi}_\rho h'$. If $c$ throws, in a heap
 $h'$, then $h\tr{\Phi^{e}}_\rho h'$. We write $c:\Phi$ when $\Phi^{e}$ is
 $\top$. A throw that $c$ itself catches is no exit of $c$: the normal
-bound of \code{try c catch (x) d} covers a return of \code{c}, and a
-throw of \code{c} followed by a return of \code{d}. For example $\code{out[j] = v}:\{\val:\any,\ \st:\grow\}$. This
+bound of \code{try c catch (x) d} covers \code{c} reaching its end, and a
+throw of \code{c} followed by \code{d} reaching its end. A judgment is
+under the knowledge at the entry of the command, as a triple is under
+its precondition. For example $\code{out[j] = v}:\{\val:\any,\ \st:\grow\}$. This
 judgment is what a \code{Modifies} annotation states and what an effect
 system derives
 \status{Lean: \lean{Post}; for graph code \lean{run\_sound\_single\_pass}, whose guarantee states the bound over class regions and the regional bound of an accepted function}.
@@ -736,11 +745,16 @@ language, and the paragraphs after them give the meaning of each form.
 A path $\pi$ is as in Section~3. A \emph{field suffix} $\vec f$ is a
 non-empty sequence of field names $f_1\ldots f_k$. In a term, $n$ is a
 safe-integer literal. In a linear combination, $c$ is any integer. In
-an atom, $v$ and $w$ stand for a scalar literal or a logical variable.
+an atom, $v$ and $w$ stand for a scalar literal, a variable or a logical
+variable, and in the rules of a typed array of format $t$ also for
+$\mathit{conv}_t(v)$ of one of these (Section~6). An atom of this
+grammar is a fact; an atom of a command (Definition~\ref{def:cmd}) is a
+variable or a literal, and the rules of Section~6 write both $a$.
 \[
 \begin{array}{llcl}
 \text{paths} & \pi &::=& x \mid \pi.f\\[2pt]
-\text{terms} & t &::=& n \mid x \mid \pi \mid \len\pi \mid \kw{view}(\pi) \mid \slen(\pi) \mid z[t] \mid z[t].\vec f\\[2pt]
+\text{terms} & t &::=& n \mid x \mid \pi \mid \len\pi \mid \kw{view}(\pi) \mid \slen(\pi) \mid z[e] \mid z[e].\vec f\\
+ & &\mid& \len{z[e].\vec f} \mid \kw{view}(z[e].\vec f) \mid \slen(z[e].\vec f) \mid \slen(z[e])\\[2pt]
 \text{linear combinations} & e &::=& c \mid c\cdot t \mid e+e\\[2pt]
 \text{atoms} & a &::=& e\le e \mid \pi\doteq v \mid \pi.f^{?}\doteq v \mid \dense(x,e) \mid \pi\in V\\
  & &\mid& z[e]\doteq v \mid \every(z,e,\varphi)\\[2pt]
@@ -749,7 +763,7 @@ an atom, $v$ and $w$ stand for a scalar literal or a logical variable.
  & &\mid& \kw{view}(z[i].\vec f) \mid \slen(z[i].\vec f) \mid \slen(z[i]) \mid t\\[2pt]
 \text{assertions} & F,G &::=& \kw{true} \mid \kw{false} \mid a \mid F\wedge G \mid F\vee G \mid \exists v.\,F\\
  & &\mid& \pi\sep\pi' \mid \apart(x,y) \mid \fresh(r) \mid \bx{\Phi}F\\[2pt]
-\text{postconditions} & Q &::=& F \mid \old(F) \mid \kw{tr}_{\Phi} \mid Q\wedge Q \mid Q\vee Q \mid Q\Rightarrow Q \mid \forall j.\,Q
+\text{postconditions} & Q &::=& F \mid \old(F) \mid \kw{tr}_{\Phi} \mid Q\wedge Q \mid Q\vee Q \mid Q\Rightarrow Q \mid \forall j.\,Q \mid \forall u.\,Q
 \end{array}
 \]
 The linear combinations of a body are over body terms $u$ in place of
@@ -762,18 +776,22 @@ condition $a$, in the rules \textsc{If}, \textsc{Test} and \textsc{Loop}
 and in the table of Example~\ref{ex:full}, and it stands for the
 assertion that rule \textsc{Test} gives on the false branch. A
 postcondition is an assertion of two states (Section~6). In it $j$
-ranges over indices, and a term may be $\old(t)$, the value of $t$ at
-the entry. Every rule of this paper has its premises and its conclusions
-in these grammars.
+ranges over indices and $u$ over values, and a term may be $\old(t)$,
+the value of $t$ at the entry. Where a rule writes $F[a/y]$ for a
+literal $a$, it stands for $F$ at a variable $y$ that holds $a$. Every
+rule of this paper has its premises and its conclusions in these
+grammars.
 
 \paragraph{Terms.} A \emph{term} denotes an integer at a state, or is
 undefined there.
 A literal $n$, a safe integer, denotes itself. A variable $x$ and a path $\pi$ denote
 the number they hold or read. $\len\pi$ is the length of the array that
 $\pi$ reads, $\kw{view}(\pi)$ the length of the typed array, and
-$\slen(\pi)$ the length of the string. $z[t]$ is the number that the
-collection $z$ holds at the index $t$, and $z[t].\vec f$ the
-number read from the element at $t$ along the fields $\vec f$. A term is \emph{defined} when the
+$\slen(\pi)$ the length of the string. $z[e]$ is the number that the
+collection $z$ holds at the index $e$, and $z[e].\vec f$ the
+number read from the element at $e$ along the fields $\vec f$; the
+three lengths are also taken of what $z[e].\vec f$ reads, and $\slen$ of
+the element $z[e]$. A term is \emph{defined} when the
 read succeeds, gives a value of the kind the term asks for, and that
 value is a \emph{safe integer}: an integer $n$ with $|n|\le M$, where
 $M=2^{53}-1$. Example: with \code{o = \{ n: 1 \}} and \code{a = [10, , 30]},
@@ -796,12 +814,13 @@ an \emph{optional} field, written $\pi.f^{?}$: where the object that
 $\pi$ reads has no field $f$, the read gives \code{undefined}. Example:
 with \code{o = \{ n: 1 \}}, $o.m^{?}\doteq\code{undefined}$ holds, and
 $o.m\doteq v$ holds of no $v$.
-\item[Density $\dense(x,n)$] The first $n$ indices of the array $x$ are
-present, for $n$ a linear combination of terms. For \code{a = [10, , 30]}, $\dense(a,1)$ holds and $\dense(a,2)$
+\item[Density $\dense(x,n)$] The bound $n$, a linear combination of
+terms, is defined, and the first $n$ indices of the array $x$ are
+present. For \code{a = [10, , 30]}, $\dense(a,1)$ holds and $\dense(a,2)$
 does not.
 \item[Contents $\pi\in V$] The path $\pi$ reads a value in the set $V$.
 The set is a finite union of kinds of value (a number, a string, an
-object, \code{null}, \code{undefined}, a boolean), possibly with
+object, \code{null}, \code{undefined}, a boolean, a bigint), possibly with
 literals added or excluded. Examples: $x.f\in\mathit{number}$, and
 $x.f\notin\{\code{null}\}$, the values other than \code{null}.
 \item[Element $z{[i]}\doteq v$] The collection $z$ reads $v$
@@ -887,10 +906,12 @@ F\text{ is \emph{invariant}}\ \triangleq\ F\vdash\bx{\top}F
 An invariant assertion, once true, is true after every admissible
 transition. A fact about variables alone, such as $i<n$, is invariant.
 So is $x\sep y$ for two variables: an array's spine location is fixed
-when the array is allocated. A path is rigid when it reads the same
-value after every admissible transition. A path through fields whose
-contracts admit one value is rigid: \code{runs.openBrackets} is rigid
-when \code{openBrackets} is declared \code{@stable}. In $\rigid(\pi)$
+when the array is allocated. A path is rigid when it reads a value and
+reads the same value after every admissible transition. A path that
+reads a value through fields whose contracts admit one value is rigid:
+\code{runs.openBrackets} is rigid when \code{openBrackets} is declared
+\code{@stable} and \code{runs} holds an object. Where \code{runs} is
+\code{null} the path reads nothing and is not rigid. In $\rigid(\pi)$
 the witness $v$ is a logical variable, so it is the same value before
 and after the change.
 
@@ -1023,12 +1044,14 @@ the last, $x.f_1\ldots f_k$, at $\delta$.
 \begin{array}{ll}
 \kw{true},\ \kw{false} & \emptyset\\[2pt]
 \text{a literal or a variable} & \emptyset\\[2pt]
-\text{a number }\pi,\ \slen(\pi) & \mathrm{reads}_{\init}(\pi)\\[2pt]
+\text{a path }\pi\text{ read as a number},\ \slen(\pi) & \mathrm{reads}_{\init}(\pi)\\[2pt]
 \kw{view}(\pi) & \mathrm{reads}_{\grow}(\pi)\\[2pt]
 \len\pi & \mathrm{reads}_{\grow}(\pi)\cup\{\pi.\kw{spine}:\delta\}\\[2pt]
-\text{an inequality} & \text{the supports of its terms}\\[2pt]
+\text{a term }z[t] & \mathrm{reads}_{\grow}(z)\cup\{z[\ast]:\keep\}\cup\mathrm{supp}(t)\\[2pt]
+\text{an inequality} & \text{the union of the supports of its terms}\\[2pt]
 \pi\doteq v,\ \pi\in V & \mathrm{reads}_{\keep}(\pi)\\[2pt]
-\dense(x,n) & \{x.\kw{spine}:\grow\}\\[2pt]
+\pi.f^{?}\doteq v & \mathrm{reads}_{\keep}(\pi.f)\\[2pt]
+\dense(x,n) & \{x.\kw{spine}:\grow\}\cup\mathrm{supp}(n)\\[2pt]
 z[t]\doteq v,\ \every(z,t,\varphi) & \mathrm{reads}_{\grow}(z)\cup\{z[\ast]:\keep\}\cup\mathrm{supp}(t)\cup\mathrm{supp}(\varphi)\\[2pt]
 F\wedge G,\ F\vee G & \mathrm{supp}(F)\cup\mathrm{supp}(G)\\[2pt]
 \pi\sep\pi' & \mathrm{reads}_{\keep}(\pi)\cup\mathrm{reads}_{\keep}(\pi')
@@ -1036,14 +1059,18 @@ F\wedge G,\ F\vee G & \mathrm{supp}(F)\cup\mathrm{supp}(G)\\[2pt]
 \]
 For a length $\len\pi$ in an inequality, $\delta$ is $\grow$ where the
 inequality stays true when the length increases, as in
-$n\le\len\pi$, and $\keep$ otherwise. In the index of an element fact
-and in the bound and the body of a quantified fact, every length is at
-$\keep$. A term $z[t].\vec f$ reads a field of an element, for which there
+$n\le\len\pi$, and $\keep$ otherwise. In the index of an element term
+or fact, in the bound of a density, and in the bound and the body of a
+quantified fact, every length is at $\keep$: the support keeps the value
+of the index and of the bound. For an optional field that is absent the region $\pi.f$ is empty,
+and the object keeps its fields (T3). A term $z[t].\vec f$ reads a field of an element, for which there
 is no region, and has no support. A field that a condition $C$ says
 keeps its contents is left out of $\mathrm{reads}$, and the support is
 then under $C$. In the row of $\every$, $z$ reads an array, the body
 $\varphi$ is over the element $z[i]$ and terms that do not mention $i$,
-and $\mathrm{supp}(\varphi)$ is the support of those terms.
+and $\mathrm{supp}(\varphi)$ is the support of those terms. A
+quantified fact whose body has another body term has no support by this
+definition.
 \end{definition}
 \noindent
 Example: $\mathrm{supp}(c.\mathit{at}<\kw{view}(\mathit{flags}))$ is
@@ -1073,7 +1100,7 @@ atom that reads, besides variables, only what is displayed:
 \[
 \begin{array}{ll}
 \textsc{(Grow)} & n\le\len x\ \vdash\ \bx{\val:\any,\ \st:\grow}\,(n\le\len x)\\[2pt]
-\textsc{(Dense)} & \dense(x,n)\ \vdash\ \bx{\val:\any,\ \st:\grow}\,\dense(x,n)\\[2pt]
+\textsc{(Dense)} & \dense(x,n)\ \vdash\ \bx{\val:\any,\ \st:\grow}\,\dense(x,n)\quad n\text{ a variable or a literal}\\[2pt]
 \textsc{(Sep)} & x\sep y\wedge a(\len x)\ \vdash\ \bx{\val:\any,\ y.\kw{spine}:\any}\ a(\len x)\\[2pt]
 \textsc{(Every)} & \apart(x,z)\wedge\every(z,t,\varphi)\ \vdash\ \bx{x[\ast]:\any}\,\every(z,t,\varphi)\quad t\text{ a variable, }\varphi\text{ over scalars}\\[2pt]
 \textsc{(Init)} & a(\len\pi)\ \vdash\ \bx{\val:\init}\ a(\len\pi)\\[2pt]
@@ -1089,9 +1116,10 @@ The marks below give each axiom's scope.
 that only grows arrays. It mentions no separation: it is
 Example~\ref{ex:alias}. Lean: \lean{grow}.
 \item[\textsc{(Dense)}] A dense prefix survives any change that only
-grows arrays. Lean: \lean{dense\_support}, the statement that
-$\{x.\kw{spine}:\grow\}$ supports $\dense(x,n)$; the axiom follows by
-Theorem~\ref{thm:frame}.
+grows arrays. The bound is a variable or a literal: a bound that reads
+the heap may grow with it. Lean: \lean{dense\_support}, the statement that
+$\{x.\kw{spine}:\grow\}$ supports $\dense(x,n)$ for a fixed number $n$;
+the axiom follows by Theorem~\ref{thm:frame}.
 \item[\textsc{(Sep)}] A fact about the length of $x$ survives an
 arbitrary change of another array $y$. It is Example~\ref{ex:sep}.
 \status{Lean: \lean{RawDerivation.sep}, \lean{checkScoped\_sound}, for $a$ a linear
@@ -1107,7 +1135,7 @@ over integers, array lengths and typed-array lengths at any paths.
 \item[\textsc{(Rigid)}] A fact that holds of an array named by a
 variable holds of the array at a rigid path. The substitution of the
 witness for $y$ is capture-avoiding. \status{Lean: \lean{Derivation.rigidSubst}, \lean{Derivation.sound}, with the fresh
-witness absent from the effect}. A path through fields that each type states stable is
+witness absent from the effect}. A path that reads a value through fields that each type states stable is
 rigid (\lean{stableAt\_of\_stableField}, \lean{stableAt\_cons},
 \lean{stable\_rigid}), and the instance for \textsc{(Grow)} is
 \lean{grow\_path\_typed}.
@@ -1145,7 +1173,7 @@ The postcondition $\kw{false}$ says that the command does not reach its
 end. In \textsc{Return}, an $\old$ of $Q$ refers to the entry of the
 function, so $Q[a/y]$ is required of the function's entry state and the
 state at the \code{return}. In \textsc{Try} the assertions $R$, $Q$ and
-$Q^{e}$ are without $\old$, as in \textsc{Seq}, and $R$ does not mention
+$Q^{e}$ are of one state, as in \textsc{Seq}, and $R$ does not mention
 the caught value $x$, of which nothing is known. These four rules, and
 \textsc{If}, \textsc{Seq} and \textsc{Test}, follow from the meaning of
 a triple; no Lean theorem states them in this form. The state a triple speaks of has a
@@ -1239,9 +1267,10 @@ branch checked under its answer to the test:
 Two commands in sequence compose when the first establishes the
 precondition of the second:
 \[
-\inferrule*[left=Seq]{\hoarex{P}{c_1}{A}{Q^{e}} \\ \hoarex{A}{c_2}{R}{Q^{e}} \\ A,R,Q^{e}\text{ without }\old}{\hoarex{P}{\code{c1; c2}}{R}{Q^{e}}}
+\inferrule*[left=Seq]{\hoarex{P}{c_1}{A}{Q^{e}} \\ \hoarex{A}{c_2}{R}{Q^{e}} \\ A,R,Q^{e}\text{ of one state}}{\hoarex{P}{\code{c1; c2}}{R}{Q^{e}}}
 \]
-The assertions are of one state. A relation between the entry and the
+The assertions are of one state: assertions $F$ of the grammar, with
+neither $\old$ nor $\kw{tr}$. A relation between the entry and the
 exit of the sequence is stated with a logical variable for the entry
 value, as $\len z=j$ in the example of \textsc{Entry}
 \status{Lean: \lean{CommandSummary.choice\_sound}, \lean{CommandSummary.join\_sound}, for \textsc{If}; \lean{CommandSummary.seq\_sound}, for two-state specifications composed with their effects; \lean{LoopEvidence.prefix\_sound} and \lean{LoopEvidence.loop\_sound}, for a loop given a specification of its iterations and one of each exit}.
@@ -1255,11 +1284,15 @@ instantiate in the same way; their defaults are $\kw{true}$ and $\top$.
 A specification of a function with a rest parameter $r$ is a family of
 specifications, one for each number $n\ge 0$ of rest arguments. In the
 member for $n$, $r$ stands for $n$ variables $r_0,\ldots,r_{n-1}$. The
-member may mention $n$ and these variables, and nothing else of $r$.
+member may mention $n$ and these variables; it does not mention $r$.
 \textsc{Call} instantiates the member whose $n$ is the number of
 arguments that the call supplies for $r$, with the $j$-th of them for
-$r_j$; a spread argument is first expanded to its elements. In the body
-of the function, $r$ is a fresh array, and at the entry $\len r=n$,
+$r_j$. A spread argument \code{...x} is expanded to its elements where
+the knowledge gives $\len x=k$ and $\dense(x,k)$ for a literal $k$, each
+element read as by \textsc{Elem-Read}; a spread of another array is
+outside this rule. In the body
+of the function, $r$ is an array that the invocation allocates, so
+$\fresh(r)$ holds at the body's mark, and at the entry $\len r=n$,
 $\dense(r,n)$ and $r[j]\doteq r_j$ for each $j<n$ hold. Example: for
 \code{function f(...r)}, the call \code{f(a, b)} instantiates the member
 for $n=2$, with $a$ for $r_0$ and $b$ for $r_1$.
@@ -1360,10 +1393,12 @@ a grown spine adds are new, so each of its cells from the entry heap was
 one it listed. Any other region, and the cells of a new spine, widen to
 their class. For
 example, in \code{f(o) \{ const xs = o.items; xs.push(1); \}} the push
-has the effect $\{\mathit{xs}.\kw{spine}:\grow\}$ where it starts. If
-$o.\mathit{items}$ is rigid, the effect of \code{f} at its entry is
-$\{o.\mathit{items}.\kw{spine}:\grow\}$. Otherwise it widens to
-$\{\st:\grow\}$
+has the effect $\{\mathit{xs}.\kw{spine}:\grow\}$ where it starts. The
+read changes nothing, so $o.\mathit{items}$ reads at the push the array
+it read at the entry, and the effect of \code{f} at its entry is
+$\{o.\mathit{items}.\kw{spine}:\grow\}$. With a call between the read
+and the push that may write the field \code{items}, the path is evidence
+only if it is rigid; otherwise the effect widens to $\{\st:\grow\}$
 \status{Lean: \lean{seq\_eff}; \lean{fresh\_eff}, the bound on the locations below a mark, and \lean{ThenEvidence.into\_fresh}, its composition with what ran before; \lean{fresh\_cells\_not\_erased}, \lean{rebaseAll}, \lean{rebase\_sound}, \lean{rebaseAll\_labels}. The Lean rebasing widens a region it cannot place at an entry path: to its class for a spine at a path, and to every location for a field with no recorded link to an entry path, for a selected spine with no entry path and for the own fields of an object}.
 
 \begin{example}[Freshness bounds effects, not facts]\label{ex:fresh}
@@ -1405,7 +1440,10 @@ object or an array, $a$ an atom and $i$ an integer:
 \end{array}
 \]
 A field read of an object whose type has the field needs no fact; an
-optional field reads $x.f^{?}\doteq y$. \textsc{Elem-Read} gives
+optional field reads $x.f^{?}\doteq y$. \textsc{Field-Write} is of a
+field that the object has. An object's fields are fixed when it is
+allocated (Section~2): the model has no step that adds an absent
+optional field or deletes a field. \textsc{Elem-Read} gives
 \code{undefined} at a hole, by the meaning of the element atom; with
 $\dense(x,n)$ and $i<n$ the element is present. 
 
@@ -1421,9 +1459,9 @@ for \code{<=}, \code{>} and \code{>=}. For \code{y = a1 === a2} the true
 branch has $a_1=a_2$ and the false branch has $a_1<a_2\vee a_2<a_1$. For
 \code{y = a1 !== a2} the two branches are exchanged.
 \item[A comparison with \code{null} or \code{undefined}] The step is
-\code{y = }$\pi$\code{ === null} or \code{y = }$\pi$\code{ !== null}. One
-branch has $\pi\doteq\code{null}$ and the other has
-$\pi\notin\{\code{null}\}$. The equality is on the true branch for
+\code{y = x === null} or \code{y = x !== null}, for a variable $x$. One
+branch has $x\doteq\code{null}$ and the other has
+$x\notin\{\code{null}\}$. The equality is on the true branch for
 \code{===} and on the false branch for \code{!==}. A comparison with
 \code{undefined} gives the same two facts for \code{undefined}.
 \item[A negation] The step is \code{y = !y1}. The true branch has the
@@ -1448,6 +1486,13 @@ Example: let $i$ and $n$ be known to be defined. After
 \code{t = i < n; u = xs !== null; y = t \&\& u}, the true branch of
 \code{if (y)} has $i<n$ and $\mathit{xs}\notin\{\code{null}\}$, and the
 false branch has $n\le i\vee\mathit{xs}\doteq\code{null}$.
+
+The operands of a comparison are atoms of a command, so each of these
+facts is about variables and holds at every later state. A fact about a
+path follows from it by the equality of a read, such as $x.f\doteq t$,
+at a state where that equality holds: after \code{t = o.n; y = t < 1;
+o.n = 2}, the true branch of \code{if (y)} has $t<1$, and $o.n<1$ does
+not follow, since $o.n\doteq t$ no longer holds.
 
 A binding \code{y = a} gives $y\doteq a$
 \status{Lean: \lean{ReadGave} for a field read. \textsc{Elem-Read} is assumed, as the contract of the element read}.
@@ -1725,17 +1770,21 @@ The proof is \textsc{Entry} with $B=\bigwedge\Sigma$, and consequence.
 A derivation of $\Gamma\vdash F$, for two-state assertions, uses these
 rules and no other:
 \begin{description}[leftmargin=1.5em,style=nextline,itemsep=1pt,topsep=2pt]
-\item[Logic] An assumption of $\Gamma$; introduction and elimination of
-$\wedge$, $\vee$ and $\exists$; replacement of a path by a path that
+\item[Logic] An assumption of $\Gamma$; $\kw{true}$; any assertion from
+$\kw{false}$; a derived assertion used as an assumption; introduction
+and elimination of $\wedge$, $\vee$ and $\exists$; replacement of a path by a path that
 reads the same value, outside every modality, and under a modality where
 both paths are rigid; $F\vdash G$ gives $\old(F)\vdash\old(G)$.
 \item[Arithmetic] A linear inequality that follows over the integers
 from the linear inequalities at hand, where each term of the conclusion
-is defined: it occurs in a premise, or is a literal.
+is defined: it occurs in a premise, or is a literal. A defined length
+is within its range: $0\le\len\pi\le N$, $0\le\kw{view}(\pi)\le M$ and
+$0\le\slen(\pi)\le M$. For a safe-integer literal $n$, $\pi\doteq n$ and
+the equality $\pi=n$ of terms give each other.
 \item[Atoms] Proposition~\ref{prop:every}. An element fact
-$z[t]\doteq v$ gives $0\le t$ and $t$ below the length of $z$, and after
-a read \code{y = z[t]} the term $z[t]$ and the variable $y$ replace each
-other. A postcondition quantified over indices is instantiated at a
+$z[t]\doteq v$ gives $0\le t$ and $t$ below the length of $z$, and
+where $z[t]\doteq y$ is at hand the term $z[t]$ and the variable $y$
+replace each other in the facts of that state. A postcondition quantified over indices is instantiated at a
 term, and an implication with its premise gives its conclusion. Two
 facts are contradictory
 when they are $\pi\doteq v$ and $\pi\doteq w$ with $v\ne w$;
@@ -1746,14 +1795,19 @@ elimination across a change, $\old(\bx{\Phi}F)\wedge\kw{tr}_\Phi\vdash F$;
 Theorem~\ref{thm:frame}, with the support of Definition~\ref{def:supports}
 and respect by its sufficient condition; the axioms of Proposition~\ref{prop:axioms}; that
 an assertion over variables alone, and $\pi\sep\pi'$ of two variables,
-are invariant; that a path through fields whose contracts admit one
-value is rigid.
+are invariant; that a path that reads a value through fields whose
+contracts admit one value is rigid.
 \end{description}
 Two regions are disjoint, for the sufficient condition of respect, when
 no kind of location belongs to both, or when a separation at hand says
-so: $\pi\sep\pi'$ for $\pi.\kw{spine}$ and $\pi'.\kw{spine}$,
+so: $\pi\sep\pi'$ for $\pi.\kw{spine}$ and $\pi'.\kw{spine}$ where
+the types of the two paths have no typed-array member,
 $\apart(x,y)$ for $x[\ast]$ and $y[\ast]$, and $\fresh(r)$ for $r$ and
-any region of locations below the mark.
+any region of locations below the mark. The separation $\pi\sep\pi'$
+says nothing of a typed array: $b\sep b$ holds of a typed array $b$.
+The type of a path is its declared type: a test that narrows it does not
+change which regions are well-formed, and a substitution of a path for a
+variable is defined where the regions it produces are well-formed.
 \end{definition}
 
 \paragraph{Sound graphs.} Annotate each point of a graph with knowledge.
@@ -1776,8 +1830,14 @@ rules and the second triple of a library contract do, is applied where
 the knowledge entails that precondition; elsewhere the step has the
 postcondition $\kw{true}$. A step with no precondition needs no fact,
 and its safety is the type system's. A function \emph{verifies} when its graph
-has a sound annotation whose entry knowledge is its precondition and
-which entails its postcondition at each return (rule \textsc{Fun}).
+has a sound annotation that meets the four obligations of rule
+\textsc{Fun}. Its entry knowledge is the function's precondition. At
+each return, and at the end of the body, the knowledge entails the
+normal postcondition, with the returned atom for the result. At each
+throw that leaves the function it entails the exceptional postcondition.
+And the effect of the body at each of these exits, composed from the
+effects of its nodes by \textsc{Seq-Eff} and \textsc{Fresh-Eff}, is
+included in the effect the specification states for that exit.
 
 \paragraph{The forward pass.} A forward pass proposes knowledge for
 $\mathrm{Check}$. A merge retains facts established by every incoming
@@ -1786,7 +1846,7 @@ edge. Loop-head knowledge is supplied.
 Derivations are those of Definition~\ref{def:deriv}. Modal elimination
 is the entailment in \textsc{Frame}. This system is sound for semantic
 entailment
-\status{Lean: \lean{Derivation.sound}, for the rules of Definition~\ref{def:deriv} over the assertions the Lean derivation system represents: its quantified facts are over arrays, with each index present and a body over scalars, and its arithmetic steps carry a certificate that Lean checks}. It is not claimed complete.
+\status{Lean: \lean{Derivation.sound}, the soundness of the rules that the Lean derivation system represents, which are narrower than Definition~\ref{def:deriv}: its quantified facts are over arrays, with each index present and a body over scalars; its density has a variable for bound; its disjunctions are guards with an invariant alternative; and its arithmetic steps carry a certificate that Lean checks}. It is not claimed complete.
 
 \begin{example}[Example~\ref{ex:alias}, in full]\label{ex:full}
 With the loop variable a parameter of the head, and
@@ -1797,7 +1857,7 @@ $\Sigma_H(j)=\{0\le j,\ j\le\mathit{to},\ \mathit{to}\le\len{\mathit{xs}}\}$:
  & \text{node or edge} & \text{effect} & \text{obligation and its reason}\\[2pt]
 1 & \text{entry}\to H(\mathit{from}) & & 0\le\mathit{from}\le\mathit{to}\le\len{\mathit{xs}}\ \text{given}\\
 2 & H(j):\ \code{j < to}\ \text{true} & \emptyset & B=(j<\mathit{to});\ \Sigma_H\ \text{by preservation of existing locations}\\
-3 & k=\code{out.length};\ \code{j > k}\ \text{false} & \emptyset & B=(j\le k),\ Q=(k=\len{\mathit{out}});\ \text{the throw edge has no obligation}\\
+3 & k=\code{out.length};\ \code{j > k}\ \text{false} & \emptyset & B=(j\le k),\ Q=(k=\len{\mathit{out}});\ \text{the throw edge has the obligation }\kw{true}\\
 4 & v=\code{xs[j]} & \emptyset & \text{the read: }0\le j<\mathit{to}\le\len{\mathit{xs}}\\
 5 & \code{out[j] = v} & \val{:}\any,\ \st{:}\grow & \text{the write: }0\le j\le\len{\mathit{out}},\ j<\len{\mathit{xs}}\le 2^{32}-1;\ \mathit{to}\le\len{\mathit{xs}}\ \text{by \textsc{(Grow)}}\\
 6 & j'=j+1 & \emptyset & Q=(j'=j+1),\ \text{exact since }j<\mathit{to}\le 2^{32}-1\\
@@ -1806,7 +1866,11 @@ $\Sigma_H(j)=\{0\le j,\ j\le\mathit{to},\ \mathit{to}\le\len{\mathit{xs}}\}$:
 \end{array}
 $}
 \]
-No row mentions whether \code{out} is an alias of \code{xs}.
+No row mentions whether \code{out} is an alias of \code{xs}. A row that
+shows a comparison as a branch stands for the binding of the comparison
+and the test of its variable. The table gives the bounds of the read of
+row 4; that the element is present is by the type of \code{xs}, taken
+here to be an array type without holes.
 
 Suppose the invariant also includes $\len{\mathit{xs}}\le n$.
 The effect in row 5 permits growth beyond $n$, so that effect alone
@@ -1839,9 +1903,9 @@ Structures built in step & $\hoare{\len a=\len b\wedge a\sep b}{\code{a.push(v)}
 Separation where a value exists & $(z\doteq\code{null}\vee\mathit{xs}\sep z.\mathit{open})\wedge a(\len{\mathit{xs}})\vdash\bx{\val:\any,\,z.\mathit{open}.\kw{spine}:\any}\,a(\len{\mathit{xs}})$; at \code{null} the region is empty\\[2pt]
 Fact through a field & $\rigid(x.f)\wedge n\le\len{x.f}\vdash\bx{\val:\any,\,\st:\grow}(n\le\len{x.f})$; fails without $\rigid$\hfill\textsc{(Rigid)}\\[2pt]
 Typed-array length & $i<\kw{view}(w)\vdash\bx{\top}(i<\kw{view}(w))$\hfill\textsc{(View)}\\[2pt]
-Index from a shift or a mask & $0\le c<2^{31}\vdash 0\le(c\gg d)\wedge 2^{d}(c\gg d)\le c$; $0\le(c\mathbin{\&}m)\le m$; integers with $0\le d<32$, $0\le m<2^{31}$\hfill\textsc{Shr}, \textsc{Mask}\\[2pt]
+Index from a shift or a mask & with $0\le c<2^{31}$: after \code{y = c >> d}, $0\le y\wedge 2^{d}y\le c$; after \code{y = c \& m}, $0\le y\le m$; integers with $0\le d<32$, $0\le m<2^{31}$\hfill\textsc{Shr}, \textsc{Mask}\\[2pt]
 Array facts across a typed-array write (Ex.~\ref{ex:view}) & $\every(\mathit{xs},t,\varphi)\vdash\bx{\vw:\grow}\every(\mathit{xs},t,\varphi)$ for an array $\mathit{xs}$, $t$ a variable, $\varphi$ over scalars\hfill Thm.~\ref{thm:frame}\\[2pt]
-Fact at a handler & $\bx{\Phi^{e}}R^{e}$\hfill\textsc{Frame}\\
+Fact at a handler & $\bx{\Phi^{e}}R^{e}$ at the entry of the command gives $R^{e}$ at its handler\hfill\textsc{Frame}\\
 \bottomrule
 \end{tabular}
 
@@ -1893,13 +1957,9 @@ dense prefix extends: $\old(\dense(x,i))\Rightarrow\dense(x,i+1)$.
 \item[The value of a push]
 \code{y = x.push(v)} gives $y=\len x$. \textsc{Push} states nothing
 of the value it returns.
-\item[Rigidity of the fields at a rigid path]
-$\{\pi.\kw{fields}:\delta\}$ is rigid on the states where $\pi$ is rigid:
-by (T3) the path then reads an object with the same field locations in
-$h$ and in $h'$.
 \end{description}
 
-\paragraph{Extensions of the language.} Four patterns cannot be verified in the language of this paper. Each needs a form that the language lacks.
+\paragraph{Extensions of the language.} Each of the four patterns below needs a form that the language of this paper lacks.
 \begin{description}[leftmargin=1.5em,style=nextline]
 \item[A fact about a field of each element, across a change of such fields] Example:
 $\every(\mathit{rows},t,\ z[i].n\ge 0)$ across a write of a field
@@ -1913,8 +1973,10 @@ distinct view spines whether or not they share bytes, so $\sep$ on
 their spines says nothing about their elements. It needs regions of
 buffer cells with offsets.
 \item[A callback that writes what it captured] Example:
-\code{walk(xs, v => out.push(v))}. Each call of \code{walk} has a closed effect. A
-reusable specification of \code{walk} needs an effect variable,
+\code{walk(xs, v => out.push(v))}. Each call of \code{walk} has a closed
+effect, and \code{walk} has a closed specification that bounds every
+callback by $\{\val:\any,\ \st:\grow\}$. A specification that gives each
+call the effect of its own callback needs an effect variable,
 $\forall\varepsilon.\ \Phi\cup\varepsilon$.
 \item[A record replaced on each loop pass] The new record must be
 separated from the loop's iterator on every back edge. That is a
