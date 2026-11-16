@@ -414,7 +414,7 @@ run_cmd do
   check ``Verification.GraphCode.ArgumentRegionGraph.closedStep_ok
   check ``Verification.GraphCode.ArgumentRegionGraph.callStep_ok
   check ``Verification.GraphCode.ArgumentRegionGraph.writeStep_ok
-  check ``Verification.ExpressionEffects.writeStep_sound
+  check ``Verification.ExpressionEffects.elemWriteStep_sound
   check ``Verification.GraphCode.ArgumentRegionGraph.firstRefusedNode_sound
   check ``Verification.GraphCode.ArgumentRegionGraph.checkEntry_reassign
   check ``Verification.GraphCode.ArgumentRegionGraph.checkNodes_sound

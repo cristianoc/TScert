@@ -1580,7 +1580,7 @@ present cell keeps the spine, and a fresh cell is placed at $`k`$
 ```
 
 `write-append` applies where the write is an element write of that
-footprint (`ExpressionEffects.writeStep`); a term kept is one the change
+footprint (`ExpressionEffects.elemWriteStep`); a term kept is one the change
 keeps exactly (`Term.keptBy`), so the length of another array, which may be
 $`x`$'s, is not. A builder appending by index (`widths[at] = w` at
 $`\mathit{at}\le|\mathit{widths}|`$) keeps $`\mathit{at}\le|\mathit{widths}|`$
@@ -1615,7 +1615,7 @@ $`q_{\mathit{op}}`$ `IndexNumbers.boundAnswer`; proved:
 `doubleOrder_denotes`, against `Float.Model`. The write's evidence is
 `boundedWrite` (`Checker.boundedWrites`, `IndexWrites.boundedWriteCheck`;
 proved: `IndexWrites.boundedWrite_safe`, through `setElem_spine_safe`), its
-output `ordinaryOutput`, its footprint check `elemVarWriteWithin`.
+output `ordinaryOutput`, its footprint check `elemWriteWithin`.
 
 The cases `index-write-guard`, `index-write-guard-loop` and
 `bounds-pattern-write-at-length-refused` (a read at the written index, and
@@ -1871,7 +1871,7 @@ through `GraphCode.writeWithinAt`. The element write's is
 `IndexWrites.keepsLengths` and `lengthOutput` (proved:
 `ExpressionEffects.elem_var_write_length`, `placeAt_length`), and at any
 index `IndexWrites.growOutput` in `Checker.boundedWrites` (proved:
-`ExpressionEffects.writeStep_grow`, `growOutput_sound`). A call's facts across its normal exit are, fact by
+`ExpressionEffects.elemWriteStep_grow`, `growOutput_sound`). A call's facts across its normal exit are, fact by
 fact, those of either of the note's two routes (`PromiseCalls.effectKept`,
 added by `Checker.ensuringCalls`; proved: `effectKept_holds`): its frame
 respects a support of the fact (the note's Frame, `PromiseCalls.frameKeeps`:

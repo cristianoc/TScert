@@ -186,17 +186,17 @@ theorem post_of_run {Ξ T : Fam} {Q : Post} {R : Heap → Prop} {s : IndexedHeap
 open TolerantFrames ExpressionEffects in
 /-- **Write-In's post of the calculus's run**: a normal run of an element
 write below its spine's length ends where `lengthsKept` holds. -/
-theorem lengthsKept_of_run {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)} {f : PropKey}
+theorem lengthsKept_of_run {ι : Type} [DecidableEq ι] {G : NormalGraph ι} {Γ : List (Ty ι)}
     {i j k : Nat} {Ref : Ty ι} {Ξ T : Fam} {ρ : Env} {s : IndexedHeap} {flds : List (PropKey × Nat)}
     {cd : CallCode} {oid fl : Nat} {ls0 : List (Option Nat)} {b0 : UInt64} {idx : Nat}
     (hk : k < Γ.length) (hj : j < Γ.length) (hi : Γ[i]? = some Ref)
-    (hst : spineFieldEvery G (expand G Ref) f = true)
-    (hoi : ρ i = .objAt flds cd oid) (hfl : flds.lookup f = some fl) (hls0 : s.h[fl]? = some (.arr ls0))
+    (hst : spineFieldEvery G (expand G Ref) arraySpineKey = true)
+    (hoi : ρ i = .objAt flds cd oid) (hfl : flds.lookup arraySpineKey = some fl) (hls0 : s.h[fl]? = some (.arr ls0))
     (hb0 : ρ j = .num b0) (hidx : indexOfBits b0 = some idx) (hlt : idx < ls0.length)
     (he : EnvOk G Γ ρ s.n s.W)
-    (hs : Safe Ξ T s.n s.W s.h (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.var j) (.var k)))))
+    (hs : Safe Ξ T s.n s.W s.h (instantiate 0 ρ (.writeAt arraySpineKey (.var i) (.setElem (.readAt arraySpineKey (.var i)) (.var j) (.var k)))))
     {steps : Nat} {h' : Heap} {v : Tm}
-    (hrun : Steps steps s.h (instantiate 0 ρ (.writeAt f (.var i) (.setElem (.readAt f (.var i)) (.var j) (.var k)))) h' v)
+    (hrun : Steps steps s.h (instantiate 0 ρ (.writeAt arraySpineKey (.var i) (.setElem (.readAt arraySpineKey (.var i)) (.var j) (.var k)))) h' v)
     (hv : isVal v = true) (hb : steps < s.n) {x x' : Nat} {η η' : Env} {m : Nat} (hη : η' x' = η x) :
     ∃ s' : IndexedHeap, Admissible s s' ∧ s'.h = h' ∧ (OperationPostF.lengthsKept x x').Holds ⟨η, η', m, s, s'⟩ := by
   obtain ⟨s', ha, hh, hq⟩ :=

@@ -150,8 +150,8 @@ def regionalNode (G : NormalGraph ι) (images : InstanceImageCheck G) (sums : Li
     if thr then ojoin n (alpha (Footprints.rebaseAll ev se.raised)) else n
   let call := (GraphCode.ArgumentRegionGraph.callStep G images sums cEv t thr).bind fun se =>
     (rebased se).map (·, "call frame")
-  let write := (ExpressionEffects.writeStep G (ControlFlow.entry cEv) t).bind fun i =>
-    (rebased (GraphCode.ArgumentRegionGraph.writeStepEffect i)).map (·, "element write frame")
+  let write := (ExpressionEffects.elemWriteStep G (ControlFlow.entry cEv) t).bind fun w =>
+    (rebased (GraphCode.ArgumentRegionGraph.writeStepEffect w)).map (·, "element write frame")
   least ([closed, call, write].filterMap id)
 
 end

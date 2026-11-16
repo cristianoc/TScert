@@ -387,7 +387,7 @@ stated frame, which is the accumulated bound and so an invariant through
 loops (`Post.compose_at`; stated in
 [argument-path spine regions](../FOOTPRINTS.md#argument-path-spine-regions)).
 The checker extracts each step's frame only: a call's signature frame, push's
-`ReceiverGrows` frame, an element write's `SpineWrite` frame, a step within
+`ReceiverGrows` frame, an element write's frame (`elemWriteFrame`), a step within
 the closed bound. Slot copies and stable reads are provenance steps.
 
 **Transport at a call.**
@@ -649,7 +649,7 @@ Modifies<{ values: "any"; "runs.openBrackets[*]": "any" }, void>
 joined with `unpackClasses`'s and `getClass`'s frames. `push` and the
 element writes need no global `spines: "grow"`: `push`'s step frame is the
 one `ReceiverGrows` gives (its receiver's spine alone), an element write's
-is value-class locations and the written array's spine (`SpineWrite`), and
+is the written array's spine and the cells it lists (`elemWriteFrame`), and
 both rebase into `"runs.openBrackets[*]"` through the destructured slot's
 provenance. `values: "any"` covers `"cell(scriptClasses)": "init"` and the
 two field writes, which then add no precision. None of the native rows states `onThrow`, so the frame holds
